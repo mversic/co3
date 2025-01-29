@@ -2,9 +2,9 @@
 
 use std::collections::BTreeMap;
 
-use iroha_ffi::{decl_ffi_fns, ffi, ffi_import, ir::External};
+use co3::{decl_ffi_fns, ffi, ffi_import, ir::External};
 
-iroha_ffi::handles! {OpaqueStruct, Value}
+co3::handles! {OpaqueStruct, Value}
 
 decl_ffi_fns! {Drop, Clone, Eq}
 
@@ -143,11 +143,11 @@ fn compare_opaque_eq<T, U: PartialEq + core::fmt::Debug>(opaque1: &T, opaque2: &
 mod ffi {
     use std::{alloc, collections::BTreeMap};
 
-    use iroha_ffi::{
+    use co3::{
         def_ffi_fns, slice::RefMutSlice, FfiConvert, FfiOutPtr, FfiOutPtrWrite, FfiReturn, FfiType,
     };
 
-    iroha_ffi::handles! {ExternOpaqueStruct, ExternValue}
+    co3::handles! {ExternOpaqueStruct, ExternValue}
 
     def_ffi_fns! {
         Drop: { ExternValue, ExternOpaqueStruct },
@@ -155,7 +155,7 @@ mod ffi {
         Eq: { ExternValue, ExternOpaqueStruct },
     }
 
-    iroha_ffi::def_ffi_fns! { dealloc }
+    co3::def_ffi_fns! { dealloc }
 
     /// Structure that `Value` points to
     #[derive(Debug, Clone, PartialEq, Eq, FfiType)]
@@ -186,7 +186,7 @@ mod ffi {
 
     #[no_mangle]
     unsafe extern "C" fn OpaqueStruct__new(
-        name: <u8 as iroha_ffi::FfiType>::ReprC,
+        name: <u8 as co3::FfiType>::ReprC,
         output: *mut *mut ExternOpaqueStruct,
     ) -> FfiReturn {
         let opaque = Box::new(ExternOpaqueStruct {
@@ -201,9 +201,9 @@ mod ffi {
     #[no_mangle]
     unsafe extern "C" fn OpaqueStruct__with_params(
         handle: *mut ExternOpaqueStruct,
-        params: <Vec<(u8, ExternValue)> as iroha_ffi::FfiType>::ReprC,
+        params: <Vec<(u8, ExternValue)> as co3::FfiType>::ReprC,
         output: *mut *mut ExternOpaqueStruct,
-    ) -> iroha_ffi::FfiReturn {
+    ) -> co3::FfiReturn {
         let mut handle = *Box::from_raw(handle);
         let mut store = Box::default();
         let params: Vec<(u8, ExternValue)> =

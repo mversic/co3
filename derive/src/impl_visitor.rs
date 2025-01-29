@@ -2,7 +2,6 @@
 //!
 //! It also defines descriptors - types that are used for the codegen step
 
-use iroha_macro_utils::Emitter;
 use manyhow::emit;
 use proc_macro2::Span;
 use syn::{
@@ -11,6 +10,8 @@ use syn::{
     visit_mut::VisitMut,
     Attribute, Ident, Path, Type, Visibility,
 };
+
+use crate::emitter::Emitter;
 
 pub struct Arg {
     self_ty: Option<Path>,
@@ -45,7 +46,7 @@ impl Arg {
             src_type = parse_quote! {Box<#src_type>}
         }
 
-        parse_quote! {<#src_type as iroha_ffi::FfiType>::ReprC}
+        parse_quote! {<#src_type as co3::FfiType>::ReprC}
     }
     // TODO: Probably can be removed?
     pub fn wrapper_ffi_type_resolved(&self) -> Type {
@@ -55,7 +56,7 @@ impl Arg {
             src_type = parse_quote! {Box<#src_type>}
         }
 
-        parse_quote! {<<#src_type as iroha_ffi::FfiWrapperType>::InputType as iroha_ffi::FfiType>::ReprC}
+        parse_quote! {<<#src_type as co3::FfiWrapperType>::InputType as co3::FfiType>::ReprC}
     }
 }
 

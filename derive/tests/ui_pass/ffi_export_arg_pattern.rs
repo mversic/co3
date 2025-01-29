@@ -1,4 +1,4 @@
-use iroha_ffi::{ffi_export, FfiType};
+use co3::{ffi_export, FfiType};
 
 #[derive(FfiType)]
 pub struct Hello {

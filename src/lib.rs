@@ -9,9 +9,9 @@ extern crate alloc;
 
 use alloc::{boxed::Box, vec::Vec};
 
+pub use co3_derive::*;
 use derive_more::Display;
 use ir::{Ir, Transmute};
-pub use iroha_ffi_derive::*;
 use repr_c::{
     COutPtr, COutPtrRead, COutPtrWrite, CType, CTypeConvert, CWrapperType, Cloned, NonLocal,
 };
@@ -129,12 +129,12 @@ pub trait FfiOutPtrRead: FfiOutPtr + Sized {
 /// # Example
 ///
 /// ```
-/// #[iroha_ffi::ffi_import]
+/// #[co3::ffi_import]
 /// pub fn func_returns_non_local(a: &u32) -> &u32 {
 ///    a
 /// }
 ///
-/// #[iroha_ffi::ffi_import]
+/// #[co3::ffi_import]
 /// pub fn func_returns_local(a: &(u32, u32)) -> &(u32, u32) {
 ///    a
 /// }
@@ -164,7 +164,7 @@ pub trait FfiOutPtrRead: FfiOutPtr + Sized {
 ///
 ///     let output = output.assume_init();
 ///     let out_store = Default::default();
-
+///
 ///     // &(u32, u32) references out_store which is defined locally
 ///     let output = FfiConvert::try_from_ffi(output, &mut out_store);
 ///     LocalRef(out_store.0, core::marker::PhantomData)
@@ -180,12 +180,12 @@ pub struct LocalRef<'data, R>(R, core::marker::PhantomData<&'data ()>);
 /// # Example
 ///
 /// ```
-/// #[iroha_ffi::ffi_import]
+/// #[co3::ffi_import]
 /// pub fn func_returns_non_local(a: &[u32]) -> &[u32] {
 ///    a
 /// }
 ///
-/// #[iroha_ffi::ffi_import]
+/// #[co3::ffi_import]
 /// pub fn func_returns_local(a: &[(u32, u32)]) -> &[(u32, u32)] {
 ///    a
 /// }
@@ -257,7 +257,7 @@ pub enum FfiReturn {
 /// # Example
 ///
 /// ```
-/// use iroha_ffi::{ffi_type, ReprC};
+/// use co3::{ffi_type, ReprC};
 ///
 /// // Always use a type alias for inner types of transparent items so that if you make
 /// // a change the unsafe code in [`ffi_type!`] will not compile, thus preventing UB
@@ -394,7 +394,7 @@ pub struct Extern {
 /// Example:
 ///
 /// ```
-/// use iroha_ffi::FfiType;
+/// use co3::FfiType;
 ///
 /// #[derive(FfiType)]
 /// #[ffi_type(unsafe {robust})]

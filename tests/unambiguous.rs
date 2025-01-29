@@ -2,7 +2,7 @@
 
 use std::mem::MaybeUninit;
 
-use iroha_ffi::{ffi_export, FfiOutPtrRead, FfiReturn, FfiType};
+use co3::{ffi_export, FfiOutPtrRead, FfiReturn, FfiType};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, FfiType)]
 #[repr(u8)]

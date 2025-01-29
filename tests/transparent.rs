@@ -2,13 +2,13 @@
 
 use std::{alloc, marker::PhantomData, mem::MaybeUninit};
 
-use iroha_ffi::{
+use co3::{
     ffi_export,
     slice::{OutBoxedSlice, RefSlice},
     FfiConvert, FfiOutPtrRead, FfiReturn, FfiType,
 };
 
-iroha_ffi::def_ffi_fns! { dealloc }
+co3::def_ffi_fns! { dealloc }
 
 #[derive(Clone, Copy, PartialEq, Eq, Debug, FfiType)]
 #[ffi_type(unsafe{robust})]
@@ -37,7 +37,7 @@ type NonRobustTransparentInner = [u8; 4];
 #[repr(transparent)]
 pub struct NonRobustTransparent(NonRobustTransparentInner);
 
-iroha_ffi::ffi_type! {
+co3::ffi_type! {
     unsafe impl Transparent for NonRobustTransparent {
         type Target = NonRobustTransparentInner;
 

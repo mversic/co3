@@ -1,5 +1,5 @@
 use getset::Getters;
-use iroha_ffi::{ffi_export, FfiType};
+use co3::{ffi_export, FfiType};
 
 #[ffi_export]
 pub fn freestanding<T>(v: T) -> T {

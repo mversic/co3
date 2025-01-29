@@ -2,9 +2,9 @@
 
 use std::{cmp::Ordering, mem::MaybeUninit};
 
-use iroha_ffi::{def_ffi_fns, ffi_export, FfiConvert, FfiOutPtrRead, FfiReturn, FfiType, Handle};
+use co3::{def_ffi_fns, ffi_export, FfiConvert, FfiOutPtrRead, FfiReturn, FfiType, Handle};
 
-iroha_ffi::handles! {FfiStruct1, FfiStruct2}
+co3::handles! {FfiStruct1, FfiStruct2}
 
 def_ffi_fns! {
     Drop: {FfiStruct1, FfiStruct2},

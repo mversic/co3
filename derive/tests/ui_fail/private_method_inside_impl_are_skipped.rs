@@ -1,4 +1,4 @@
-use iroha_ffi::{ffi_export, FfiConvert, FfiType};
+use co3::{ffi_export, FfiConvert, FfiType};
 
 /// FfiStruct
 #[derive(Clone, FfiType)]

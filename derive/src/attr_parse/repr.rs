@@ -1,7 +1,5 @@
 //! This module provides parsing of standard rust `#[repr(...)]` attributes.
 
-// TODO: it's probably a common functionality, move it to `iroha_derive_primitives` when it will use syn 2.0
-
 use std::str::FromStr;
 
 use darling::{error::Accumulator, util::SpannedValue, FromAttributes};

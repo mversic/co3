@@ -2,8 +2,8 @@
 
 use std::mem::MaybeUninit;
 
+use co3::{ffi_export, FfiType};
 use getset::{Getters, MutGetters, Setters};
-use iroha_ffi::{ffi_export, FfiType};
 
 /// Struct
 #[derive(Debug, Clone, PartialEq, Eq, FfiType)]

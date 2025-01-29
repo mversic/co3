@@ -1,9 +1,9 @@
 #![allow(unsafe_code)]
 
-use iroha_ffi::{ffi, ffi_import};
+use co3::{ffi, ffi_import};
 
-iroha_ffi::handles! {FfiStruct<bool>}
-iroha_ffi::decl_ffi_fns! {Drop, Clone, Eq, Ord}
+co3::handles! {FfiStruct<bool>}
+co3::decl_ffi_fns! {Drop, Clone, Eq, Ord}
 
 ffi! {
     /// Struct without a repr attribute is opaque by default
@@ -35,9 +35,9 @@ fn import_shared_fns() {
 mod ffi {
     use std::alloc;
 
-    use iroha_ffi::{def_ffi_fns, slice::RefMutSlice, FfiReturn, FfiType};
+    use co3::{def_ffi_fns, slice::RefMutSlice, FfiReturn, FfiType};
 
-    iroha_ffi::handles! {ExternFfiStruct}
+    co3::handles! {ExternFfiStruct}
 
     def_ffi_fns! {
         Drop: {ExternFfiStruct},
@@ -46,7 +46,7 @@ mod ffi {
         Ord: {ExternFfiStruct}
     }
 
-    iroha_ffi::def_ffi_fns! { dealloc }
+    co3::def_ffi_fns! { dealloc }
 
     /// Structure that `Value` points to
     #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, FfiType)]

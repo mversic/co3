@@ -1,9 +1,9 @@
 #![allow(unsafe_code)]
 
-use iroha_ffi::{ffi, ffi_import};
+use co3::{ffi, ffi_import};
 
-iroha_ffi::handles! {Name, FfiStruct}
-iroha_ffi::decl_ffi_fns! {Drop, Clone, Eq}
+co3::handles! {Name, FfiStruct}
+co3::decl_ffi_fns! {Drop, Clone, Eq}
 
 ffi! {
     /// Struct
@@ -54,11 +54,11 @@ fn import_shared_fns() {
 mod ffi {
     use std::alloc;
 
-    use iroha_ffi::{
+    use co3::{
         def_ffi_fns, slice::RefMutSlice, FfiConvert, FfiOutPtr, FfiOutPtrWrite, FfiReturn, FfiType,
     };
 
-    iroha_ffi::handles! {ExternName, ExternFfiStruct}
+    co3::handles! {ExternName, ExternFfiStruct}
 
     def_ffi_fns! { dealloc }
     def_ffi_fns! {

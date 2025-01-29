@@ -4,17 +4,19 @@ use std::fmt::{Display, Formatter};
 use darling::{
     ast::Style, util::SpannedValue, FromAttributes, FromDeriveInput, FromField, FromVariant,
 };
-use iroha_macro_utils::{parse_single_list_attr_opt, Emitter};
 use manyhow::{emit, error_message};
 use proc_macro2::{Delimiter, Span, TokenStream};
 use quote::quote;
 use syn::{parse::ParseStream, spanned::Spanned as _, visit::Visit as _, Attribute, Field, Ident};
 
-use crate::attr_parse::{
-    derive::DeriveAttrs,
-    doc::DocAttrs,
-    getset::{GetSetFieldAttrs, GetSetStructAttrs},
-    repr::{Repr, ReprKind, ReprPrimitive},
+use crate::{
+    attr_parse::{
+        derive::DeriveAttrs,
+        doc::DocAttrs,
+        getset::{GetSetFieldAttrs, GetSetStructAttrs},
+        repr::{Repr, ReprKind, ReprPrimitive},
+    },
+    emitter::Emitter,
 };
 
 #[derive(Debug)]
@@ -309,7 +311,7 @@ pub fn derive_ffi_type(emitter: &mut Emitter, input: &syn::DeriveInput) -> Token
 
             let repr_c_impl = {
                 let predicates = &mut input.generics.make_where_clause().predicates;
-                let add_bound = |ty| predicates.push(syn::parse_quote! {#ty: iroha_ffi::ReprC});
+                let add_bound = |ty| predicates.push(syn::parse_quote! {#ty: co3::ReprC});
 
                 if item.style == Style::Unit {
                     emit!(
@@ -341,7 +343,7 @@ fn derive_unsafe_repr_c(name: &Ident, generics: &syn::Generics) -> TokenStream {
 
     quote! {
         // SAFETY: Type is robust with #[repr(C)] attribute attached
-        unsafe impl #impl_generics iroha_ffi::ReprC for #name #ty_generics #where_clause {}
+        unsafe impl #impl_generics co3::ReprC for #name #ty_generics #where_clause {}
     }
 }
 
@@ -349,14 +351,14 @@ fn derive_ffi_type_for_opaque_item(name: &Ident, generics: &syn::Generics) -> To
     let (impl_generics, ty_generics, where_clause) = generics.split_for_impl();
 
     quote! {
-        impl #impl_generics iroha_ffi::ir::Ir for #name #ty_generics #where_clause {
-            type Type = iroha_ffi::ir::Opaque;
+        impl #impl_generics co3::ir::Ir for #name #ty_generics #where_clause {
+            type Type = co3::ir::Opaque;
         }
 
         // SAFETY: Opaque types are never dereferenced and therefore &mut T is considered to be transmutable
-        unsafe impl #impl_generics iroha_ffi::ir::InfallibleTransmute for #name #ty_generics #where_clause {}
+        unsafe impl #impl_generics co3::ir::InfallibleTransmute for #name #ty_generics #where_clause {}
 
-        impl #impl_generics iroha_ffi::option::Niche<'_> for #name #ty_generics #where_clause {
+        impl #impl_generics co3::option::Niche<'_> for #name #ty_generics #where_clause {
             const NICHE_VALUE: *mut Self = core::ptr::null_mut();
         }
     }
@@ -406,7 +408,7 @@ fn derive_ffi_type_for_transparent_item(
 
     if input.ffi_type_attr.kind == Some(FfiTypeKindAttribute::UnsafeRobust) {
         return quote! {
-            iroha_ffi::ffi_type! {
+            co3::ffi_type! {
                 // SAFETY: User must make sure the type is robust
                 unsafe impl #impl_generics Transparent for #name #ty_generics #where_clause {
                     type Target = #inner;
@@ -442,7 +444,7 @@ fn derive_ffi_type_for_fieldless_enum(
     };
 
     quote! {
-        iroha_ffi::ffi_type! {
+        co3::ffi_type! {
             unsafe impl Transparent for #enum_name {
                 type Target = #enum_repr_type;
 
@@ -451,11 +453,11 @@ fn derive_ffi_type_for_fieldless_enum(
 
                     #match_
                 }},
-                niche_value=<Self as iroha_ffi::FfiType>::ReprC::MAX
+                niche_value=<Self as co3::FfiType>::ReprC::MAX
             }
         }
 
-        impl iroha_ffi::WrapperTypeOf<#enum_name> for #enum_repr_type {
+        impl co3::WrapperTypeOf<#enum_name> for #enum_repr_type {
             type Type = #enum_name;
         }
     }
@@ -473,7 +475,7 @@ fn derive_ffi_type_for_data_carrying_enum(
         gen_data_carrying_repr_c_enum(emitter, enum_name, &generics, variants);
 
     generics.make_where_clause();
-    let lifetime = quote! {'__iroha_ffi_itm};
+    let lifetime = quote! {'__co3_itm};
     let (impl_generics, ty_generics, where_clause) = split_for_impl(&generics);
 
     let variant_rust_stores = variants
@@ -485,7 +487,7 @@ fn derive_ffi_type_for_data_carrying_enum(
                 || quote! { () },
                 |field| {
                     let ty = &field.ty;
-                    quote! { <#ty as iroha_ffi::FfiConvert<#lifetime, <#ty as iroha_ffi::FfiType>::ReprC>>::RustStore }
+                    quote! { <#ty as co3::FfiConvert<#lifetime, <#ty as co3::FfiType>::ReprC>>::RustStore }
                 },
             )
         })
@@ -500,7 +502,7 @@ fn derive_ffi_type_for_data_carrying_enum(
                 || quote! { () },
                 |field| {
                     let ty = &field.ty;
-                    quote! { <#ty as iroha_ffi::FfiConvert<#lifetime, <#ty as iroha_ffi::FfiType>::ReprC>>::FfiStore }
+                    quote! { <#ty as co3::FfiConvert<#lifetime, <#ty as co3::FfiType>::ReprC>>::FfiStore }
                 },
             )
         })
@@ -527,7 +529,7 @@ fn derive_ffi_type_for_data_carrying_enum(
                         Self::#variant_name(payload) => {
                             let payload = #payload_name {
                                 #variant_name: core::mem::ManuallyDrop::new(
-                                    iroha_ffi::FfiConvert::into_ffi(payload, &mut store.#idx)
+                                    co3::FfiConvert::into_ffi(payload, &mut store.#idx)
                                 )
                             };
 
@@ -554,7 +556,7 @@ fn derive_ffi_type_for_data_carrying_enum(
                             source.payload.#variant_name
                         );
 
-                        iroha_ffi::FfiConvert::try_from_ffi(payload, &mut store.#idx).map(Self::#variant_name)
+                        co3::FfiConvert::try_from_ffi(payload, &mut store.#idx).map(Self::#variant_name)
                     }
                 }
             },
@@ -593,28 +595,28 @@ fn derive_ffi_type_for_data_carrying_enum(
             };
 
             non_local_where_clause.predicates.push(
-                syn::parse_quote! {#ty: iroha_ffi::repr_c::NonLocal<<#ty as iroha_ffi::ir::Ir>::Type>},
+                syn::parse_quote! {#ty: co3::repr_c::NonLocal<<#ty as co3::ir::Ir>::Type>},
             );
         }
 
         quote! {
-            unsafe impl<#impl_generics> iroha_ffi::repr_c::NonLocal<Self> for #enum_name #ty_generics #non_local_where_clause {}
+            unsafe impl<#impl_generics> co3::repr_c::NonLocal<Self> for #enum_name #ty_generics #non_local_where_clause {}
 
-            impl<#impl_generics> iroha_ffi::repr_c::CWrapperType<Self> for #enum_name #ty_generics #non_local_where_clause {
+            impl<#impl_generics> co3::repr_c::CWrapperType<Self> for #enum_name #ty_generics #non_local_where_clause {
                 type InputType = Self;
                 type ReturnType = Self;
             }
-            impl<#impl_generics> iroha_ffi::repr_c::COutPtr<Self> for #enum_name #ty_generics #non_local_where_clause {
+            impl<#impl_generics> co3::repr_c::COutPtr<Self> for #enum_name #ty_generics #non_local_where_clause {
                 type OutPtr = Self::ReprC;
             }
-            impl<#impl_generics> iroha_ffi::repr_c::COutPtrWrite<Self> for #enum_name #ty_generics #non_local_where_clause {
+            impl<#impl_generics> co3::repr_c::COutPtrWrite<Self> for #enum_name #ty_generics #non_local_where_clause {
                 unsafe fn write_out(self, out_ptr: *mut Self::OutPtr) {
-                    iroha_ffi::repr_c::write_non_local::<_, Self>(self, out_ptr);
+                    co3::repr_c::write_non_local::<_, Self>(self, out_ptr);
                 }
             }
-            impl<#impl_generics> iroha_ffi::repr_c::COutPtrRead<Self> for #enum_name #ty_generics #non_local_where_clause {
-                unsafe fn try_read_out(out_ptr: Self::OutPtr) -> iroha_ffi::Result<Self> {
-                    iroha_ffi::repr_c::read_non_local::<Self, Self>(out_ptr)
+            impl<#impl_generics> co3::repr_c::COutPtrRead<Self> for #enum_name #ty_generics #non_local_where_clause {
+                unsafe fn try_read_out(out_ptr: Self::OutPtr) -> co3::Result<Self> {
+                    co3::repr_c::read_non_local::<Self, Self>(out_ptr)
                 }
             }
         }
@@ -624,14 +626,14 @@ fn derive_ffi_type_for_data_carrying_enum(
         #repr_c_enum
 
         // NOTE: Data-carrying enum cannot implement `ReprC` unless it is robust `repr(C)`
-        impl<#impl_generics> iroha_ffi::ir::Ir for #enum_name #ty_generics #where_clause {
+        impl<#impl_generics> co3::ir::Ir for #enum_name #ty_generics #where_clause {
             type Type = Self;
         }
 
-        impl<#impl_generics> iroha_ffi::repr_c::CType<Self> for #enum_name #ty_generics #where_clause {
+        impl<#impl_generics> co3::repr_c::CType<Self> for #enum_name #ty_generics #where_clause {
             type ReprC = #repr_c_enum_name #ty_generics;
         }
-        impl<#lifetime, #impl_generics> iroha_ffi::repr_c::CTypeConvert<#lifetime, Self, #repr_c_enum_name #ty_generics> for #enum_name #ty_generics #where_clause {
+        impl<#lifetime, #impl_generics> co3::repr_c::CTypeConvert<#lifetime, Self, #repr_c_enum_name #ty_generics> for #enum_name #ty_generics #where_clause {
             type RustStore = #rust_store;
             type FfiStore = #ffi_store;
 
@@ -643,18 +645,18 @@ fn derive_ffi_type_for_data_carrying_enum(
                 }
             }
 
-            unsafe fn try_from_repr_c(source: #repr_c_enum_name #ty_generics, store: &mut Self::FfiStore) -> iroha_ffi::Result<Self> {
+            unsafe fn try_from_repr_c(source: #repr_c_enum_name #ty_generics, store: &mut Self::FfiStore) -> co3::Result<Self> {
                 #rust_store_conversion
 
                 match source.tag {
                     #(#variants_try_from_ffi,)*
-                    _ => Err(iroha_ffi::FfiReturn::TrapRepresentation)
+                    _ => Err(co3::FfiReturn::TrapRepresentation)
                 }
             }
         }
 
         // TODO: Enum can be transmutable if all variants are transmutable and the enum is `repr(C)`
-        impl<#impl_generics> iroha_ffi::repr_c::Cloned for #enum_name #ty_generics #where_clause where Self: Clone {}
+        impl<#impl_generics> co3::repr_c::Cloned for #enum_name #ty_generics #where_clause where Self: Clone {}
 
         #non_locality
     }
@@ -675,7 +677,7 @@ fn derive_ffi_type_for_repr_c(emitter: &mut Emitter, input: &FfiTypeInput) -> To
     let name = &input.ident;
 
     quote! {
-        iroha_ffi::ffi_type! {
+        co3::ffi_type! {
             impl #impl_generics Robust for #name #ty_generics #where_clause {}
         }
     }
@@ -706,7 +708,7 @@ fn gen_data_carrying_repr_c_enum(
         }
 
         impl #impl_generics Copy for #repr_c_enum_name #ty_generics where #payload_name #ty_generics: Copy {}
-        unsafe impl #impl_generics iroha_ffi::ReprC for #repr_c_enum_name #ty_generics #where_clause {}
+        unsafe impl #impl_generics co3::ReprC for #repr_c_enum_name #ty_generics #where_clause {}
     };
 
     (repr_c_enum_name, repr_c_enum)
@@ -732,7 +734,7 @@ fn gen_data_carrying_enum_payload(
                 || quote! {()},
                 |field| {
                     let field_ty = &field.ty;
-                    quote! {core::mem::ManuallyDrop<<#field_ty as iroha_ffi::FfiType>::ReprC>}
+                    quote! {core::mem::ManuallyDrop<<#field_ty as co3::FfiType>::ReprC>}
                 },
             )
         })
@@ -748,7 +750,7 @@ fn gen_data_carrying_enum_payload(
         }
 
         impl #impl_generics Copy for #payload_name #ty_generics where #( #field_tys: Copy ),* {}
-        unsafe impl #impl_generics iroha_ffi::ReprC for #payload_name #ty_generics #where_clause {}
+        unsafe impl #impl_generics co3::ReprC for #payload_name #ty_generics #where_clause {}
     };
 
     (payload_name, payload)
@@ -817,12 +819,12 @@ fn variant_mapper<T: Sized, F0: FnOnce() -> T, F1: FnOnce(&FfiTypeField) -> T>(
 }
 
 fn gen_repr_c_enum_name(enum_name: &Ident) -> Ident {
-    Ident::new(&format!("__iroha_ffi__ReprC{enum_name}"), Span::call_site())
+    Ident::new(&format!("__co3__ReprC{enum_name}"), Span::call_site())
 }
 
 fn gen_repr_c_enum_payload_name(enum_name: &Ident) -> Ident {
     Ident::new(
-        &format!("__iroha_ffi__{enum_name}Payload"),
+        &format!("__co3__{enum_name}Payload"),
         Span::call_site(),
     )
 }
@@ -941,4 +943,102 @@ fn split_for_impl(
     let impl_generics = generics.params.clone();
     let (_, ty_generics, where_clause) = generics.split_for_impl();
     (impl_generics, ty_generics, where_clause)
+}
+
+/// Parses a single attribute of the form `#[attr_name(...)]` for darling using a `syn::parse::Parse` implementation.
+///
+/// If no attribute with specified name is found, returns `Ok(None)`.
+///
+/// # Errors
+///
+/// - If multiple attributes with specified name are found
+/// - If attribute is not a list
+pub fn parse_single_list_attr_opt<Body: syn::parse::Parse>(
+    attr_name: &str,
+    attrs: &[syn::Attribute],
+) -> darling::Result<Option<Body>> {
+    let mut accumulator = darling::error::Accumulator::default();
+
+    let Some(attr) = find_single_attr_opt(&mut accumulator, attr_name, attrs) else {
+        return accumulator.finish_with(None);
+    };
+
+    let mut kind = None;
+
+    match &attr.meta {
+        syn::Meta::Path(_) | syn::Meta::NameValue(_) => accumulator.push(darling::Error::custom(
+            format!("Expected #[{}(...)] attribute to be a list", attr_name),
+        )),
+        syn::Meta::List(list) => {
+            kind = accumulator.handle(syn::parse2(list.tokens.clone()).map_err(Into::into));
+        }
+    }
+
+    accumulator.finish_with(kind)
+}
+
+/// Finds an optional single attribute with specified name.
+///
+/// Returns `None` if no attributes with specified name are found.
+///
+/// Emits an error into accumulator if multiple attributes with specified name are found.
+#[must_use]
+pub fn find_single_attr_opt<'a>(
+    accumulator: &mut darling::error::Accumulator,
+    attr_name: &str,
+    attrs: &'a [syn::Attribute],
+) -> Option<&'a syn::Attribute> {
+    let matching_attrs = attrs
+        .iter()
+        .filter(|a| a.path().is_ident(attr_name))
+        .collect::<Vec<_>>();
+    let attr = match *matching_attrs.as_slice() {
+        [] => {
+            return None;
+        }
+        [attr] => attr,
+        [attr, ref tail @ ..] => {
+            // allow parsing to proceed further to collect more errors
+            accumulator.push(
+                darling::Error::custom(format!("Only one #[{}] attribute is allowed!", attr_name))
+                    .with_spans(tail.iter().map(syn::spanned::Spanned::span)),
+            );
+            attr
+        }
+    };
+
+    Some(attr)
+}
+
+/// Extension trait for [`darling::Error`].
+///
+/// Currently exists to add `with_spans` method.
+pub trait DarlingErrorExt: Sized {
+    /// Attaches a combination of multiple spans to the error.
+    ///
+    /// Note that it only attaches the first span on stable rustc, as the `Span::join` method is not yet stabilized (<https://github.com/rust-lang/rust/issues/54725#issuecomment-649078500>).
+    #[must_use]
+    fn with_spans(self, spans: impl IntoIterator<Item = impl Into<proc_macro2::Span>>) -> Self;
+}
+
+impl DarlingErrorExt for darling::Error {
+    fn with_spans(self, spans: impl IntoIterator<Item = impl Into<proc_macro2::Span>>) -> Self {
+        // Unfortunately, the story for combining multiple spans in rustc proc macro is not yet complete.
+        // (see https://github.com/rust-lang/rust/issues/54725#issuecomment-649078500, https://github.com/rust-lang/rust/issues/54725#issuecomment-1547795742)
+        // syn does some hacks to get error reporting that is a bit better: https://docs.rs/syn/2.0.37/src/syn/error.rs.html#282
+        // we can't to that because darling's error type does not let us do that.
+
+        // on nightly, we are fine, as `.join` method works. On stable, we fall back to returning the first span.
+
+        let mut iter = spans.into_iter();
+        let Some(first) = iter.next() else {
+            return self;
+        };
+        let first: proc_macro2::Span = first.into();
+        let r = iter
+            .try_fold(first, |a, b| a.join(b.into()))
+            .unwrap_or(first);
+
+        self.with_span(&r)
+    }
 }

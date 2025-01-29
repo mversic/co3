@@ -1,6 +1,6 @@
 #![allow(unsafe_code)]
 
-use iroha_ffi::{ffi, ffi_import, LocalRef, LocalSlice};
+use co3::{ffi, ffi_import, LocalRef, LocalSlice};
 
 ffi! {
     // NOTE: Wrapped in ffi! to test that macro expansion works for non-opaque types as well.
@@ -130,12 +130,12 @@ fn return_empty_tuple_result() {
 mod ffi {
     use std::alloc;
 
-    use iroha_ffi::{
+    use co3::{
         slice::{OutBoxedSlice, RefMutSlice, RefSlice},
         FfiOutPtr, FfiReturn, FfiTuple2, FfiType,
     };
 
-    iroha_ffi::def_ffi_fns! { dealloc }
+    co3::def_ffi_fns! { dealloc }
 
     #[no_mangle]
     unsafe extern "C" fn __freestanding_returns_non_local(

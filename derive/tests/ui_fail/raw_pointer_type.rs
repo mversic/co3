@@ -1,4 +1,4 @@
-use iroha_ffi::FfiType;
+use co3::FfiType;
 
 /// Raw pointer type
 #[derive(Clone, Copy, PartialEq, Eq, FfiType)]

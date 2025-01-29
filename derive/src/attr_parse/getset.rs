@@ -191,7 +191,7 @@ fn insert_gen_request(
 
 struct GetSetRawFieldAttr {
     pub skip: bool,
-    pub gen: RequestedAccessors,
+    pub gen_: RequestedAccessors,
 }
 
 impl GetSetRawFieldAttr {
@@ -200,12 +200,12 @@ impl GetSetRawFieldAttr {
         let mut skip_span = None;
         let mut result = GetSetRawFieldAttr {
             skip: false,
-            gen: FxHashMap::default(),
+            gen_: FxHashMap::default(),
         };
         for attr in attrs {
             // getset crate is quite liberal in what it accepts
             // it allows both the `#[getset(get)]` and `#[get]` syntax to be used
-            // Iroha doesn't use the latter form, so it is not supported by `iroha_ffi_derive`
+            // TODO: The latter form is not supported
             if attr.path().is_ident("getset") {
                 let Some(list) = accumulator.handle(attr.meta.require_list().map_err(Into::into))
                 else {
@@ -234,7 +234,7 @@ impl GetSetRawFieldAttr {
                         }
                         GetSetAttrToken::Gen(mode, options) => insert_gen_request(
                             &mut accumulator,
-                            &mut result.gen,
+                            &mut result.gen_,
                             token.span,
                             mode,
                             options,
@@ -249,14 +249,14 @@ impl GetSetRawFieldAttr {
             {
                 accumulator.push(
                     darling::Error::custom(
-                        "getset attributes without `getset` prefix are not supported by iroha_ffi_derive",
+                        "getset attributes without `getset` prefix are not supported by co3_derive",
                     )
                         .with_span(attr),
                 );
             }
         }
 
-        if result.skip && !result.gen.is_empty() {
+        if result.skip && !result.gen_.is_empty() {
             accumulator.push(
                 darling::Error::custom(
                     "`skip` is used, but attributes requesting a getter or setter are also present",
@@ -272,27 +272,27 @@ impl GetSetRawFieldAttr {
 #[derive(Default, Debug, Eq, PartialEq, Clone)]
 pub struct GetSetFieldAttrs {
     pub skip: bool,
-    pub gen: RequestedAccessors,
+    pub gen_: RequestedAccessors,
 }
 
 impl darling::FromAttributes for GetSetFieldAttrs {
     fn from_attributes(attrs: &[Attribute]) -> darling::Result<Self> {
         GetSetRawFieldAttr::from_attributes(attrs, true).map(|raw| GetSetFieldAttrs {
             skip: raw.skip,
-            gen: raw.gen,
+            gen_: raw.gen_,
         })
     }
 }
 
 #[derive(Default, Debug, Eq, PartialEq, Clone)]
 pub struct GetSetStructAttrs {
-    pub gen: FxHashMap<GetSetGenMode, GetSetOptions>,
+    pub gen_: FxHashMap<GetSetGenMode, GetSetOptions>,
 }
 
 impl darling::FromAttributes for GetSetStructAttrs {
     fn from_attributes(attrs: &[Attribute]) -> darling::Result<Self> {
         GetSetRawFieldAttr::from_attributes(attrs, false)
-            .map(|raw| GetSetStructAttrs { gen: raw.gen })
+            .map(|raw| GetSetStructAttrs { gen_: raw.gen_ })
     }
 }
 
@@ -306,8 +306,8 @@ impl GetSetFieldAttrs {
             return FxHashMap::default();
         }
 
-        let mut result = struct_attr.gen.clone();
-        for (mode, options) in &self.gen {
+        let mut result = struct_attr.gen_.clone();
+        for (mode, options) in &self.gen_ {
             match result.entry(*mode) {
                 Entry::Occupied(mut o) => {
                     let o = o.get_mut();
@@ -403,7 +403,7 @@ mod test {
             assert_getset_ok!(
                 #[getset(get)],
                 GetSetFieldAttrs {
-                    gen: FxHashMap::from_iter([
+                    gen_: FxHashMap::from_iter([
                         (GetSetGenMode::Get, GetSetOptions::default()),
                     ]),
                     ..Default::default()
@@ -416,7 +416,7 @@ mod test {
             assert_getset_ok!(
                 #[getset(get = "pub")],
                 GetSetFieldAttrs {
-                    gen: FxHashMap::from_iter([
+                    gen_: FxHashMap::from_iter([
                         (GetSetGenMode::Get, GetSetOptions {
                             visibility: Some(parse_quote! { pub }),
                             ..Default::default()
@@ -432,7 +432,7 @@ mod test {
             assert_getset_ok!(
                 #[getset(get = "pub with_prefix")],
                 GetSetFieldAttrs {
-                    gen: FxHashMap::from_iter([
+                    gen_: FxHashMap::from_iter([
                         (GetSetGenMode::Get, GetSetOptions {
                             visibility: Some(parse_quote! { pub }),
                             with_prefix: true,
@@ -444,7 +444,7 @@ mod test {
             assert_getset_ok!(
                 #[getset(get = "with_prefix pub")],
                 GetSetFieldAttrs {
-                    gen: FxHashMap::from_iter([
+                    gen_: FxHashMap::from_iter([
                         (GetSetGenMode::Get, GetSetOptions {
                             visibility: Some(parse_quote! { pub }),
                             with_prefix: true,
@@ -460,7 +460,7 @@ mod test {
             assert_getset_ok!(
                 #[getset(get)],
                 GetSetStructAttrs {
-                    gen: FxHashMap::from_iter([
+                    gen_: FxHashMap::from_iter([
                         (GetSetGenMode::Get, GetSetOptions::default()),
                     ])
                 }
@@ -472,7 +472,7 @@ mod test {
             assert_getset_ok!(
                 #[getset(get = "pub")],
                 GetSetStructAttrs {
-                    gen: FxHashMap::from_iter([
+                    gen_: FxHashMap::from_iter([
                         (GetSetGenMode::Get, GetSetOptions {
                             visibility: Some(parse_quote! { pub }),
                             ..Default::default()
@@ -487,7 +487,7 @@ mod test {
             assert_getset_ok!(
                 #[getset(get = "pub with_prefix")],
                 GetSetStructAttrs {
-                    gen: FxHashMap::from_iter([
+                    gen_: FxHashMap::from_iter([
                         (GetSetGenMode::Get, GetSetOptions {
                             visibility: Some(parse_quote! { pub }),
                             with_prefix: true,
@@ -498,7 +498,7 @@ mod test {
             assert_getset_ok!(
                 #[getset(get = "with_prefix pub")],
                 GetSetStructAttrs {
-                    gen: FxHashMap::from_iter([
+                    gen_: FxHashMap::from_iter([
                         (GetSetGenMode::Get, GetSetOptions {
                             visibility: Some(parse_quote! { pub }),
                             with_prefix: true,
@@ -513,7 +513,7 @@ mod test {
             assert_getset_ok!(
                 #[getset(get_copy)],
                 GetSetFieldAttrs {
-                    gen: FxHashMap::from_iter([
+                    gen_: FxHashMap::from_iter([
                         (GetSetGenMode::GetCopy, GetSetOptions::default()),
                     ]),
                     ..Default::default()
@@ -526,7 +526,7 @@ mod test {
             assert_getset_ok!(
                 #[getset(set)],
                 GetSetFieldAttrs {
-                    gen: FxHashMap::from_iter([
+                    gen_: FxHashMap::from_iter([
                         (GetSetGenMode::Set, GetSetOptions::default()),
                     ]),
                     ..Default::default()
@@ -539,7 +539,7 @@ mod test {
             assert_getset_ok!(
                 #[getset(get_mut)],
                 GetSetFieldAttrs {
-                    gen: FxHashMap::from_iter([
+                    gen_: FxHashMap::from_iter([
                         (GetSetGenMode::GetMut, GetSetOptions::default()),
                     ]),
                     ..Default::default()
@@ -552,7 +552,7 @@ mod test {
             assert_getset_ok!(
                 #[getset(get_copy)],
                 GetSetStructAttrs {
-                    gen: FxHashMap::from_iter([
+                    gen_: FxHashMap::from_iter([
                         (GetSetGenMode::GetCopy, GetSetOptions::default()),
                     ])
                 }
@@ -564,7 +564,7 @@ mod test {
             assert_getset_ok!(
                 #[getset(set)],
                 GetSetStructAttrs {
-                    gen: FxHashMap::from_iter([
+                    gen_: FxHashMap::from_iter([
                         (GetSetGenMode::Set, GetSetOptions::default()),
                     ])
                 }
@@ -576,7 +576,7 @@ mod test {
             assert_getset_ok!(
                 #[getset(get_mut)],
                 GetSetStructAttrs {
-                    gen: FxHashMap::from_iter([
+                    gen_: FxHashMap::from_iter([
                         (GetSetGenMode::GetMut, GetSetOptions::default()),
                     ])
                 }

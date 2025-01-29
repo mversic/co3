@@ -1,4 +1,3 @@
-use iroha_macro_utils::Emitter;
 use manyhow::emit;
 use proc_macro2::{Span, TokenStream};
 use quote::quote;
@@ -7,6 +6,7 @@ use syn::{parse_quote, visit_mut::VisitMut, Attribute, Ident, Type};
 use crate::{
     attr_parse::derive::{Derive, RustcDerive},
     convert::FfiTypeInput,
+    emitter::Emitter,
     ffi_fn,
     getset_gen::{gen_resolve_type, gen_store_name},
     impl_visitor::{unwrap_result_type, Arg, FnDescriptor, ImplDescriptor, TypeImplTraitResolver},
@@ -29,7 +29,7 @@ fn add_handle_bound(name: &Ident, generics: &mut syn::Generics) {
     generics
         .make_where_clause()
         .predicates
-        .push(parse_quote! {#name #ty_generics: iroha_ffi::Handle});
+        .push(parse_quote! {#name #ty_generics: co3::Handle});
 }
 
 fn impl_clone_for_opaque(name: &Ident, generics: &syn::Generics) -> TokenStream {
@@ -40,14 +40,14 @@ fn impl_clone_for_opaque(name: &Ident, generics: &syn::Generics) -> TokenStream 
             fn clone(&self) -> Self {
                 let mut output = core::mem::MaybeUninit::uninit();
 
-                let handle_id = iroha_ffi::FfiConvert::into_ffi(<#name #ty_generics as iroha_ffi::Handle>::ID, &mut ());
+                let handle_id = co3::FfiConvert::into_ffi(<#name #ty_generics as co3::Handle>::ID, &mut ());
                 let clone_result = unsafe { crate::__clone(handle_id, self.0, output.as_mut_ptr()) };
 
-                if clone_result != iroha_ffi::FfiReturn::Ok  {
+                if clone_result != co3::FfiReturn::Ok  {
                     panic!("Clone returned: {}", clone_result);
                 }
 
-                unsafe {iroha_ffi::FfiOutPtrRead::try_read_out(output.assume_init()).expect("Invalid output")}
+                unsafe {co3::FfiOutPtrRead::try_read_out(output.assume_init()).expect("Invalid output")}
             }
         }
     }
@@ -61,14 +61,14 @@ fn impl_default_for_opaque(name: &Ident, generics: &syn::Generics) -> TokenStrea
             fn default() -> Self {
                 let mut output = core::mem::MaybeUninit::uninit();
 
-                let handle_id = iroha_ffi::FfiConvert::into_ffi(<#name #ty_generics as iroha_ffi::Handle>::ID, &mut ());
+                let handle_id = co3::FfiConvert::into_ffi(<#name #ty_generics as co3::Handle>::ID, &mut ());
                 let default_result = unsafe { crate::__default(handle_id, output.as_mut_ptr()) };
 
-                if default_result != iroha_ffi::FfiReturn::Ok  {
+                if default_result != co3::FfiReturn::Ok  {
                     panic!("Default returned: {}", default_result);
                 }
 
-                unsafe {iroha_ffi::FfiOutPtrRead::try_read_out(output.assume_init()).expect("Invalid output")}
+                unsafe {co3::FfiOutPtrRead::try_read_out(output.assume_init()).expect("Invalid output")}
             }
         }
     }
@@ -86,14 +86,14 @@ fn impl_partial_eq_for_opaque(name: &Ident, generics: &syn::Generics) -> TokenSt
             fn eq(&self, other: &Self) -> bool {
                 let mut output = core::mem::MaybeUninit::uninit();
 
-                let handle_id = iroha_ffi::FfiConvert::into_ffi(<#name #ty_generics as iroha_ffi::Handle>::ID, &mut ());
+                let handle_id = co3::FfiConvert::into_ffi(<#name #ty_generics as co3::Handle>::ID, &mut ());
                 let eq_result = unsafe { crate::__eq(handle_id, self.0, other.0, output.as_mut_ptr()) };
 
-                if eq_result != iroha_ffi::FfiReturn::Ok  {
+                if eq_result != co3::FfiReturn::Ok  {
                     panic!("Eq returned: {}", eq_result);
                 }
 
-                unsafe {iroha_ffi::FfiOutPtrRead::try_read_out(output.assume_init()).expect("Invalid output")}
+                unsafe {co3::FfiOutPtrRead::try_read_out(output.assume_init()).expect("Invalid output")}
             }
         }
     }
@@ -118,14 +118,14 @@ fn impl_ord_for_opaque(name: &Ident, generics: &syn::Generics) -> TokenStream {
             fn cmp(&self, other: &Self) -> core::cmp::Ordering {
                 let mut output = core::mem::MaybeUninit::uninit();
 
-                let handle_id = iroha_ffi::FfiConvert::into_ffi(<#name #ty_generics as iroha_ffi::Handle>::ID, &mut ());
+                let handle_id = co3::FfiConvert::into_ffi(<#name #ty_generics as co3::Handle>::ID, &mut ());
                 let cmp_result = unsafe { crate::__ord(handle_id, self.0, other.0, output.as_mut_ptr()) };
 
-                if cmp_result != iroha_ffi::FfiReturn::Ok  {
+                if cmp_result != co3::FfiReturn::Ok  {
                     panic!("Ord returned: {}", cmp_result);
                 }
 
-                unsafe {iroha_ffi::FfiOutPtrRead::try_read_out(output.assume_init()).expect("Invalid output")}
+                unsafe {co3::FfiOutPtrRead::try_read_out(output.assume_init()).expect("Invalid output")}
             }
         }
     }
@@ -227,30 +227,30 @@ pub fn wrap_as_opaque(emitter: &mut Emitter, mut input: FfiTypeInput) -> TokenSt
     quote! {
         #(#attrs)*
         #[repr(transparent)]
-        #vis struct #name #ty_generics(*mut iroha_ffi::Extern #(#phantom_data_type_defs)*) #handle_bounded_where_clause;
+        #vis struct #name #ty_generics(*mut co3::Extern #(#phantom_data_type_defs)*) #handle_bounded_where_clause;
 
         #(#attrs)*
         #[derive(Clone, Copy)]
         #[repr(transparent)]
-        #vis struct #ref_name #ref_ty_generics (*const iroha_ffi::Extern, core::marker::PhantomData<&#lifetime ()> #(#phantom_data_type_defs)*) #handle_bounded_where_clause;
+        #vis struct #ref_name #ref_ty_generics (*const co3::Extern, core::marker::PhantomData<&#lifetime ()> #(#phantom_data_type_defs)*) #handle_bounded_where_clause;
 
         #(#attrs)*
         #[repr(transparent)]
-        #vis struct #ref_mut_name #ref_ty_generics(*mut iroha_ffi::Extern, core::marker::PhantomData<&#lifetime mut ()> #(#phantom_data_type_defs)*) #handle_bounded_where_clause;
+        #vis struct #ref_mut_name #ref_ty_generics(*mut co3::Extern, core::marker::PhantomData<&#lifetime mut ()> #(#phantom_data_type_defs)*) #handle_bounded_where_clause;
 
         impl #impl_generics Drop for #name #ty_generics #handle_bounded_where_clause {
             fn drop(&mut self) {
-                let handle_id = iroha_ffi::FfiConvert::into_ffi(<#name #ty_generics as iroha_ffi::Handle>::ID, &mut ());
+                let handle_id = co3::FfiConvert::into_ffi(<#name #ty_generics as co3::Handle>::ID, &mut ());
                 let drop_result = unsafe { crate::__drop(handle_id, self.0) };
 
-                if drop_result != iroha_ffi::FfiReturn::Ok  {
+                if drop_result != co3::FfiReturn::Ok  {
                     panic!("Drop returned: {}", drop_result);
                 }
             }
         }
 
         impl #impl_generics #name #ty_generics #handle_bounded_where_clause {
-            fn from_extern_ptr(opaque_ptr: *mut iroha_ffi::Extern) -> Self {
+            fn from_extern_ptr(opaque_ptr: *mut co3::Extern) -> Self {
                 Self(opaque_ptr #(#new_phantom_data_types)*)
             }
         }
@@ -267,7 +267,7 @@ pub fn wrap_as_opaque(emitter: &mut Emitter, mut input: FfiTypeInput) -> TokenSt
             type Target = #name #ty_generics;
 
             fn deref(&self) -> &Self::Target {
-                unsafe {&*(&self.0 as *const *const iroha_ffi::Extern).cast()}
+                unsafe {&*(&self.0 as *const *const co3::Extern).cast()}
             }
         }
 
@@ -275,13 +275,13 @@ pub fn wrap_as_opaque(emitter: &mut Emitter, mut input: FfiTypeInput) -> TokenSt
             type Target = #ref_name #ref_ty_generics;
 
             fn deref(&self) -> &Self::Target {
-                unsafe {&*(&self.0 as *const *mut iroha_ffi::Extern).cast()}
+                unsafe {&*(&self.0 as *const *mut co3::Extern).cast()}
             }
         }
 
         impl #ref_impl_generics core::ops::DerefMut for #ref_mut_name #ref_ty_generics #handle_bounded_where_clause {
             fn deref_mut(&mut self) -> &mut Self::Target {
-                unsafe {&mut *(&mut self.0 as *mut *mut iroha_ffi::Extern).cast()}
+                unsafe {&mut *(&mut self.0 as *mut *mut co3::Extern).cast()}
             }
         }
 
@@ -311,24 +311,24 @@ fn gen_impl_ffi(name: &Ident, generics: &syn::Generics) -> TokenStream {
 
     quote! {
         // SAFETY: Type is a wrapper for `*mut Extern`
-        unsafe impl #impl_generics iroha_ffi::ir::External for #name #ty_generics #where_clause {
+        unsafe impl #impl_generics co3::ir::External for #name #ty_generics #where_clause {
             type RefType<#lifetime> = #ref_name #ref_ty_generics;
             type RefMutType<#lifetime> = #ref_mut_name #ref_ty_generics;
 
-            fn as_extern_ptr(&self) -> *const iroha_ffi::Extern {
+            fn as_extern_ptr(&self) -> *const co3::Extern {
                 self.0
             }
-            fn as_extern_ptr_mut(&mut self) -> *mut iroha_ffi::Extern {
+            fn as_extern_ptr_mut(&mut self) -> *mut co3::Extern {
                 self.0
             }
-            unsafe fn from_extern_ptr(opaque_ptr: *mut iroha_ffi::Extern) -> Self {
+            unsafe fn from_extern_ptr(opaque_ptr: *mut co3::Extern) -> Self {
                 Self::from_extern_ptr(opaque_ptr)
             }
         }
 
         // SAFETY: Type is a wrapper for `*mut Extern`
-        unsafe impl #impl_generics iroha_ffi::ir::Transmute for #name #ty_generics #where_clause {
-            type Target = *mut iroha_ffi::Extern;
+        unsafe impl #impl_generics co3::ir::Transmute for #name #ty_generics #where_clause {
+            type Target = *mut co3::Extern;
 
             #[inline]
             unsafe fn is_valid(target: &Self::Target) -> bool {
@@ -336,93 +336,93 @@ fn gen_impl_ffi(name: &Ident, generics: &syn::Generics) -> TokenStream {
             }
         }
 
-        impl #impl_generics iroha_ffi::ir::Ir for #name #ty_generics #where_clause {
+        impl #impl_generics co3::ir::Ir for #name #ty_generics #where_clause {
             type Type = Self;
         }
 
-        impl #impl_generics iroha_ffi::repr_c::CType<Self> for #name #ty_generics #where_clause {
-            type ReprC = *mut iroha_ffi::Extern;
+        impl #impl_generics co3::repr_c::CType<Self> for #name #ty_generics #where_clause {
+            type ReprC = *mut co3::Extern;
         }
-        impl #impl_generics iroha_ffi::repr_c::CTypeConvert<'_, Self, *mut iroha_ffi::Extern> for #name #ty_generics #where_clause {
+        impl #impl_generics co3::repr_c::CTypeConvert<'_, Self, *mut co3::Extern> for #name #ty_generics #where_clause {
             type RustStore = ();
             type FfiStore = ();
 
-            fn into_repr_c(self, _: &mut ()) -> *mut iroha_ffi::Extern {
+            fn into_repr_c(self, _: &mut ()) -> *mut co3::Extern {
                 core::mem::ManuallyDrop::new(self).0
             }
 
-            unsafe fn try_from_repr_c(source: *mut iroha_ffi::Extern, _: &mut ()) -> iroha_ffi::Result<Self> {
+            unsafe fn try_from_repr_c(source: *mut co3::Extern, _: &mut ()) -> co3::Result<Self> {
                 if source.is_null() {
-                    return Err(iroha_ffi::FfiReturn::ArgIsNull);
+                    return Err(co3::FfiReturn::ArgIsNull);
                 }
 
                 Ok(Self::from_extern_ptr(source))
             }
         }
 
-        impl #impl_generics iroha_ffi::repr_c::CWrapperType<Self> for #name #ty_generics #where_clause {
+        impl #impl_generics co3::repr_c::CWrapperType<Self> for #name #ty_generics #where_clause {
             type InputType = Self;
             type ReturnType = Self;
         }
-        impl #impl_generics iroha_ffi::repr_c::COutPtr<Self> for #name #ty_generics #where_clause {
+        impl #impl_generics co3::repr_c::COutPtr<Self> for #name #ty_generics #where_clause {
             type OutPtr = Self::ReprC;
         }
-        impl #impl_generics iroha_ffi::repr_c::COutPtrRead<Self> for #name #ty_generics #where_clause {
-            unsafe fn try_read_out(out_ptr: Self::OutPtr) -> iroha_ffi::Result<Self> {
-                iroha_ffi::repr_c::read_non_local::<_, Self>(out_ptr)
+        impl #impl_generics co3::repr_c::COutPtrRead<Self> for #name #ty_generics #where_clause {
+            unsafe fn try_read_out(out_ptr: Self::OutPtr) -> co3::Result<Self> {
+                co3::repr_c::read_non_local::<_, Self>(out_ptr)
             }
         }
 
-        impl #impl_generics iroha_ffi::ir::IrTypeFamily for #name #ty_generics #where_clause {
-            type Ref<#lifetime> = &#lifetime iroha_ffi::Extern where #(#lifetime_bounded_where_clause),*;
-            type RefMut<#lifetime> = &#lifetime mut iroha_ffi::Extern where #(#lifetime_bounded_where_clause),*;
-            type Box = Box<iroha_ffi::Extern>;
-            type BoxedSlice = Box<[iroha_ffi::Extern]>;
-            type RefSlice<#lifetime> = &#lifetime [iroha_ffi::ir::Transparent] where #(#lifetime_bounded_where_clause),*;
-            type RefMutSlice<#lifetime> = &#lifetime mut [iroha_ffi::ir::Transparent] where #(#lifetime_bounded_where_clause),*;
-            type Vec = Vec<iroha_ffi::ir::Transparent>;
-            type Arr<const N: usize> = iroha_ffi::ir::Transparent;
+        impl #impl_generics co3::ir::IrTypeFamily for #name #ty_generics #where_clause {
+            type Ref<#lifetime> = &#lifetime co3::Extern where #(#lifetime_bounded_where_clause),*;
+            type RefMut<#lifetime> = &#lifetime mut co3::Extern where #(#lifetime_bounded_where_clause),*;
+            type Box = Box<co3::Extern>;
+            type BoxedSlice = Box<[co3::Extern]>;
+            type RefSlice<#lifetime> = &#lifetime [co3::ir::Transparent] where #(#lifetime_bounded_where_clause),*;
+            type RefMutSlice<#lifetime> = &#lifetime mut [co3::ir::Transparent] where #(#lifetime_bounded_where_clause),*;
+            type Vec = Vec<co3::ir::Transparent>;
+            type Arr<const N: usize> = co3::ir::Transparent;
         }
 
         // SAFETY: Type doesn't use store during conversion
-        unsafe impl #impl_generics iroha_ffi::repr_c::NonLocal<Self> for #name #ty_generics #where_clause {}
+        unsafe impl #impl_generics co3::repr_c::NonLocal<Self> for #name #ty_generics #where_clause {}
 
-        iroha_ffi::ffi_type! {
+        co3::ffi_type! {
             unsafe impl<#lifetime #(, #split_impl_generics)*> Transparent for #ref_name #ref_ty_generics #where_clause {
-                type Target = *const iroha_ffi::Extern;
+                type Target = *const co3::Extern;
 
-                validation_fn=unsafe {|target: &*const iroha_ffi::Extern| !target.is_null()},
+                validation_fn=unsafe {|target: &*const co3::Extern| !target.is_null()},
                 niche_value=core::ptr::null()
             }
         }
-        iroha_ffi::ffi_type! {
+        co3::ffi_type! {
             unsafe impl <#lifetime #(, #split_impl_generics)*> Transparent for #ref_mut_name #ref_ty_generics #where_clause {
-                type Target = *mut iroha_ffi::Extern;
+                type Target = *mut co3::Extern;
 
-                validation_fn=unsafe {|target: &*mut iroha_ffi::Extern| !target.is_null()},
+                validation_fn=unsafe {|target: &*mut co3::Extern| !target.is_null()},
                 niche_value=core::ptr::null_mut()
             }
         }
 
         // SAFETY: Opaque pointer must never be dereferenced
-        unsafe impl #impl_generics iroha_ffi::ir::InfallibleTransmute for #name #ty_generics #where_clause {}
+        unsafe impl #impl_generics co3::ir::InfallibleTransmute for #name #ty_generics #where_clause {}
         // SAFETY: Opaque pointer must never be dereferenced
-        unsafe impl #ref_impl_generics iroha_ffi::ir::InfallibleTransmute for #ref_name #ref_ty_generics #where_clause {}
+        unsafe impl #ref_impl_generics co3::ir::InfallibleTransmute for #ref_name #ref_ty_generics #where_clause {}
         // SAFETY: Opaque pointer must never be dereferenced
-        unsafe impl #ref_impl_generics iroha_ffi::ir::InfallibleTransmute for #ref_mut_name #ref_ty_generics #where_clause {}
+        unsafe impl #ref_impl_generics co3::ir::InfallibleTransmute for #ref_mut_name #ref_ty_generics #where_clause {}
 
-        impl #impl_generics iroha_ffi::WrapperTypeOf<Self> for #name #ty_generics #where_clause {
+        impl #impl_generics co3::WrapperTypeOf<Self> for #name #ty_generics #where_clause {
             type Type = Self;
         }
-        impl #ref_impl_generics iroha_ffi::WrapperTypeOf<&#lifetime #name #ty_generics> for #ref_name #ref_ty_generics #where_clause {
+        impl #ref_impl_generics co3::WrapperTypeOf<&#lifetime #name #ty_generics> for #ref_name #ref_ty_generics #where_clause {
             type Type = Self;
         }
-        impl #ref_impl_generics iroha_ffi::WrapperTypeOf<&#lifetime mut #name #ty_generics> for #ref_mut_name #ref_ty_generics #where_clause {
+        impl #ref_impl_generics co3::WrapperTypeOf<&#lifetime mut #name #ty_generics> for #ref_mut_name #ref_ty_generics #where_clause {
             type Type = Self;
         }
 
-        impl #impl_generics iroha_ffi::option::Niche<'_> for #name #ty_generics #where_clause {
-            const NICHE_VALUE: *mut iroha_ffi::Extern = core::ptr::null_mut();
+        impl #impl_generics co3::option::Niche<'_> for #name #ty_generics #where_clause {
+            const NICHE_VALUE: *mut co3::Extern = core::ptr::null_mut();
         }
     }
 }
@@ -700,7 +700,7 @@ fn gen_input_arg_src_to_ffi(arg: &Arg) -> TokenStream {
     quote! {
         #resolve_impl_trait
         let mut #store_name = Default::default();
-        let #arg_name = iroha_ffi::FfiConvert::into_ffi(#arg_name, &mut #store_name);
+        let #arg_name = co3::FfiConvert::into_ffi(#arg_name, &mut #store_name);
     }
 }
 
@@ -735,7 +735,7 @@ fn gen_ffi_fn_call_stmt(fn_descriptor: &FnDescriptor, ffi_fn_name: &Ident) -> To
         |output| {
             if unwrap_result_type(output.src_type()).is_some() {
                 quote! {
-                    iroha_ffi::FfiReturn::ExecutionFail => {
+                    co3::FfiReturn::ExecutionFail => {
                         // TODO: Implement error handling (https://github.com/hyperledger/iroha/issues/2252)
                         //return Err(Default::default());
                         unimplemented!("Error handling is not properly implemented yet");
@@ -751,7 +751,7 @@ fn gen_ffi_fn_call_stmt(fn_descriptor: &FnDescriptor, ffi_fn_name: &Ident) -> To
         let __ffi_return = #ffi_fn_name(#arg_names);
 
         match __ffi_return {
-            iroha_ffi::FfiReturn::Ok => {},
+            co3::FfiReturn::Ok => {},
             #execution_fail_arm
             _ => panic!(concat!(stringify!(#ffi_fn_name), " returned {}"), __ffi_return)
         }
@@ -771,7 +771,7 @@ fn gen_return_stmt(fn_descriptor: &FnDescriptor) -> TokenStream {
 
         quote! {
             let #arg_name = #arg_name.assume_init();
-            let #arg_name = iroha_ffi::FfiOutPtrRead::try_read_out(#arg_name).expect("Invalid out-pointer value returned");
+            let #arg_name = co3::FfiOutPtrRead::try_read_out(#arg_name).expect("Invalid out-pointer value returned");
             #return_stmt
         }
     })
@@ -798,10 +798,10 @@ impl VisitMut for WrapperTypeResolver {
     fn visit_type_mut(&mut self, i: &mut syn::Type) {
         if self.0 {
             // Patch return type to facilitate returning types referencing local store
-            *i = parse_quote! {<#i as iroha_ffi::FfiWrapperType>::ReturnType};
+            *i = parse_quote! {<#i as co3::FfiWrapperType>::ReturnType};
         } else {
             // Patch the type mainly to facilitate the use of opaque types
-            *i = parse_quote! {<#i as iroha_ffi::FfiWrapperType>::InputType};
+            *i = parse_quote! {<#i as co3::FfiWrapperType>::InputType};
         }
     }
     fn visit_return_type_mut(&mut self, i: &mut syn::ReturnType) {

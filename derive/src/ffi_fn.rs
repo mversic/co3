@@ -55,14 +55,14 @@ pub fn gen_definition(fn_descriptor: &FnDescriptor, trait_name: Option<&Ident>) 
                     return err;
                 }
 
-                iroha_ffi::FfiReturn::Ok
+                co3::FfiReturn::Ok
             };
 
             match std::panic::catch_unwind(fn_) {
                 Ok(res) => res,
                 Err(_) => {
                     // TODO: Implement error handling (https://github.com/hyperledger/iroha/issues/2252)
-                    iroha_ffi::FfiReturn::UnrecoverableError
+                    co3::FfiReturn::UnrecoverableError
                 },
             }
         }
@@ -125,7 +125,7 @@ fn gen_decl_signature(ffi_fn_name: &Ident, fn_descriptor: &FnDescriptor) -> Toke
     let output_arg = ffi_output_arg(fn_descriptor).map(gen_decl_out_ptr_arg);
 
     quote! {
-        fn #ffi_fn_name(#(#self_arg,)* #(#fn_args,)* #output_arg) -> iroha_ffi::FfiReturn
+        fn #ffi_fn_name(#(#self_arg,)* #(#fn_args,)* #output_arg) -> co3::FfiReturn
     }
 }
 
@@ -143,7 +143,7 @@ fn gen_def_signature(ffi_fn_name: &Ident, fn_descriptor: &FnDescriptor) -> Token
     let output_arg = ffi_output_arg(fn_descriptor).map(gen_def_out_ptr_arg);
 
     quote! {
-        fn #ffi_fn_name(#(#self_arg,)* #(#fn_args,)* #output_arg) -> iroha_ffi::FfiReturn
+        fn #ffi_fn_name(#(#self_arg,)* #(#fn_args,)* #output_arg) -> co3::FfiReturn
     }
 }
 
@@ -156,7 +156,7 @@ fn gen_def_input_arg(arg: &Arg) -> TokenStream {
 
 fn gen_def_out_ptr_arg(arg: &Arg) -> TokenStream {
     let (arg_name, arg_type) = (arg.name(), arg.src_type_resolved());
-    quote! { #arg_name: *mut <#arg_type as iroha_ffi::FfiOutPtr>::OutPtr }
+    quote! { #arg_name: *mut <#arg_type as co3::FfiOutPtr>::OutPtr }
 }
 
 fn gen_decl_input_arg(arg: &Arg) -> TokenStream {
@@ -168,7 +168,7 @@ fn gen_decl_input_arg(arg: &Arg) -> TokenStream {
 
 fn gen_decl_out_ptr_arg(arg: &Arg) -> TokenStream {
     let (arg_name, arg_type) = (arg.name(), arg.src_type_resolved());
-    quote! { #arg_name: *mut <<#arg_type as iroha_ffi::FfiWrapperType>::ReturnType as iroha_ffi::FfiOutPtr>::OutPtr }
+    quote! { #arg_name: *mut <<#arg_type as co3::FfiWrapperType>::ReturnType as co3::FfiOutPtr>::OutPtr }
 }
 
 fn gen_body(fn_descriptor: &FnDescriptor, trait_name: Option<&Ident>) -> TokenStream {
@@ -205,7 +205,7 @@ pub fn gen_arg_ffi_to_src(arg: &Arg) -> TokenStream {
 
     quote! {
         let mut #store_name = Default::default();
-        let #arg_name: #src_type = iroha_ffi::FfiConvert::try_from_ffi(#arg_name, &mut #store_name)?;
+        let #arg_name: #src_type = co3::FfiConvert::try_from_ffi(#arg_name, &mut #store_name)?;
     }
 }
 
@@ -271,7 +271,7 @@ fn gen_output_assignment_stmts(fn_descriptor: &FnDescriptor) -> TokenStream {
 
             quote! {
                 #resolve_impl_trait
-                <#arg_type as iroha_ffi::FfiOutPtrWrite>::write_out(#arg_name, __out_ptr);
+                <#arg_type as co3::FfiOutPtrWrite>::write_out(#arg_name, __out_ptr);
             }
         },
     )

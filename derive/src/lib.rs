@@ -1,7 +1,6 @@
 //! Crate containing FFI related macro functionality
 use darling::FromDeriveInput;
 use impl_visitor::{FnDescriptor, ImplDescriptor};
-use iroha_macro_utils::Emitter;
 use manyhow::{emit, manyhow};
 use proc_macro2::TokenStream;
 use quote::quote;
@@ -9,6 +8,7 @@ use syn::Item;
 use wrapper::wrap_method;
 
 use crate::{
+    emitter::Emitter,
     attr_parse::derive::Derive,
     convert::{derive_ffi_type, FfiTypeData, FfiTypeInput},
 };
@@ -19,6 +19,7 @@ mod ffi_fn;
 mod getset_gen;
 mod impl_visitor;
 mod wrapper;
+mod emitter;
 
 struct FfiItems(Vec<FfiTypeInput>);
 
@@ -93,7 +94,7 @@ pub fn ffi(input: TokenStream) -> TokenStream {
             if !item.is_opaque() {
                 let item = item.ast;
                 return quote! {
-                    #[derive(iroha_ffi::FfiType)]
+                    #[derive(co3::FfiType)]
                     #item
                 };
             }
@@ -177,7 +178,7 @@ pub fn ffi(input: TokenStream) -> TokenStream {
 /// whether it carries ownership of the data pointed to. Place this attribute on the field to
 /// indicate pointer doesn't own the data and is robust in the type. Alternatively, if the type
 /// is carrying ownership mark entire type as opaque with `#[ffi_type(opaque)]`. If the type
-/// is not carrying ownership, but is not robust convert it into an equivalent [`iroha_ffi::ReprC`]
+/// is not carrying ownership, but is not robust convert it into an equivalent [`co3::ReprC`]
 /// type that is validated when crossing the FFI boundary. It is also ok to mark non-owning,
 /// non-robust type as opaque
 ///
@@ -232,8 +233,8 @@ pub fn ffi_type_derive(input: TokenStream) -> TokenStream {
 /// use getset::Getters;
 ///
 /// // For a struct such as:
-/// #[iroha_ffi::ffi_export]
-/// #[derive(iroha_ffi::FfiType, Clone, Getters)]
+/// #[co3::ffi_export]
+/// #[derive(co3::FfiType, Clone, Getters)]
 /// #[getset(get = "pub")]
 /// pub struct Foo {
 ///     /// Id of the struct
@@ -242,7 +243,7 @@ pub fn ffi_type_derive(input: TokenStream) -> TokenStream {
 ///     bar: Vec<u8>,
 /// }
 ///
-/// #[iroha_ffi::ffi_export]
+/// #[co3::ffi_export]
 /// impl Foo {
 ///     /// Construct new type
 ///     pub fn new(id: u8) -> Self {
@@ -392,19 +393,19 @@ pub fn ffi_export(attr: TokenStream, item: TokenStream) -> TokenStream {
 ///
 /// # Example:
 /// ```rust
-/// #[iroha_ffi::ffi_import]
+/// #[co3::ffi_import]
 /// pub fn return_first_elem_from_arr(arr: [u8; 8]) -> u8 {
 ///     // The body of this function is replaced with something like the following:
 ///     // let mut store = Default::default();
-///     // let arr = iroha_ffi::FfiConvert::into_ffi(arr, &mut store);
+///     // let arr = co3::FfiConvert::into_ffi(arr, &mut store);
 ///     // let output = MaybeUninit::uninit();
 ///     //
 ///     // let call_res = __return_first_elem_from_arr(arr, output.as_mut_ptr());
-///     // if iroha_ffi::FfiReturn::Ok != call_res {
+///     // if co3::FfiReturn::Ok != call_res {
 ///     //     panic!("Function call failed");
 ///     // }
 ///     //
-///     // iroha_ffi::FfiOutPtrRead::try_read_out(output.assume_init()).expect("Invalid type")
+///     // co3::FfiOutPtrRead::try_read_out(output.assume_init()).expect("Invalid type")
 /// }
 ///
 /// /* The following functions will be declared:

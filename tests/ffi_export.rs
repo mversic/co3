@@ -2,13 +2,13 @@
 
 use std::{alloc, collections::BTreeMap, mem::MaybeUninit};
 
-use iroha_ffi::{
+use co3::{
     ffi_export, slice::OutBoxedSlice, FfiConvert, FfiOutPtrRead, FfiReturn, FfiTuple1, FfiTuple2,
     FfiType, LocalRef,
 };
 
-iroha_ffi::handles! {OpaqueStruct}
-iroha_ffi::def_ffi_fns! { dealloc }
+co3::handles! {OpaqueStruct}
+co3::def_ffi_fns! { dealloc }
 
 pub trait Target {
     type Target;
@@ -290,7 +290,7 @@ fn get_new_struct_with_params() -> OpaqueStruct {
 #[webassembly_test::webassembly_test]
 #[cfg(feature = "non_robust_ref_mut")]
 fn non_robust_ref_mut() {
-    use iroha_ffi::slice::RefMutSlice;
+    use co3::slice::RefMutSlice;
 
     let mut owned = "queen".to_owned();
     let ffi_struct: &mut str = owned.as_mut();
@@ -719,9 +719,9 @@ fn primitive_conversion_failed() {
 #[webassembly_test::webassembly_test]
 fn data_carrying_enum_conversion() {
     let data_carrying_enum = DataCarryingEnum::A(get_new_struct());
-    let mut output = MaybeUninit::new(__iroha_ffi__ReprCDataCarryingEnum {
+    let mut output = MaybeUninit::new(__co3__ReprCDataCarryingEnum {
         tag: 1,
-        payload: __iroha_ffi__DataCarryingEnumPayload {
+        payload: __co3__DataCarryingEnumPayload {
             B: core::mem::ManuallyDrop::new(42),
         },
     });

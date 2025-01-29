@@ -12,7 +12,7 @@ pub type Id = u8;
 /// struct Bar1;
 /// struct Bar2;
 ///
-/// iroha_ffi::handles! {0, Foo1, Foo2, Bar1, Bar2}
+/// co3::handles! {0, Foo1, Foo2, Bar1, Bar2}
 ///
 /// /* will produce:
 /// impl Handle for Foo1 {
@@ -262,7 +262,7 @@ macro_rules! def_ffi_fns {
 #[macro_export]
 macro_rules! decl_ffi_fns {
     ( dealloc ) => {
-        extern {
+        extern "C" {
             /// FFI function equivalent of [`alloc::alloc::dealloc`]
             ///
             /// # Safety
@@ -282,7 +282,7 @@ macro_rules! decl_ffi_fns {
         $( $crate::decl_ffi_fns!{ @decl: $prefix $fn_names } )+
     };
     ( @decl: $prefix:literal Clone ) => {
-        extern {
+        extern "C" {
             /// FFI function equivalent of [`Clone::clone`]
             ///
             /// # Safety
@@ -298,7 +298,7 @@ macro_rules! decl_ffi_fns {
         }
     };
     ( @decl: $prefix:literal Default ) => {
-        extern {
+        extern "C" {
             /// FFI function equivalent of [`Default::default`]
             ///
             /// # Safety
@@ -313,7 +313,7 @@ macro_rules! decl_ffi_fns {
         }
     };
     ( @decl: $prefix:literal Eq ) => {
-        extern {
+        extern "C" {
             /// FFI function equivalent of [`Eq::eq`]
             ///
             /// # Safety
@@ -330,7 +330,7 @@ macro_rules! decl_ffi_fns {
         }
     };
     ( @decl: $prefix:literal Ord ) => {
-        extern {
+        extern "C" {
             /// FFI function equivalent of [`Ord::ord`]
             ///
             /// # Safety
@@ -347,7 +347,7 @@ macro_rules! decl_ffi_fns {
         }
     };
     ( @decl: $prefix:literal Drop ) => {
-        extern {
+        extern "C" {
             /// FFI function equivalent of [`Drop::drop`]
             ///
             /// # Safety

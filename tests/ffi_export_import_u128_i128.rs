@@ -1,4 +1,4 @@
-use iroha_ffi::{ffi_export, ffi_import};
+use co3::{ffi_export, ffi_import};
 
 macro_rules! derive_freestanding_export_import {
     ($(fn $ident:ident($inp:ty) -> $out:ty);+ $(;)?) => {
@@ -15,7 +15,7 @@ macro_rules! derive_freestanding_export_import {
             use std::alloc;
             use super::*;
 
-            iroha_ffi::def_ffi_fns! { dealloc }
+            co3::def_ffi_fns! { dealloc }
 
             $(
                 #[ffi_export]

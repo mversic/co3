@@ -1,4 +1,4 @@
-use iroha_ffi::FfiType;
+use co3::FfiType;
 
 /// ReprC struct
 #[derive(Clone, Copy, PartialEq, Eq, FfiType)]

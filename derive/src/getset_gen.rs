@@ -1,7 +1,6 @@
 use std::default::Default;
 
 use darling::ast::Style;
-use iroha_macro_utils::Emitter;
 use manyhow::emit;
 use proc_macro2::TokenStream;
 use quote::quote;
@@ -14,6 +13,7 @@ use crate::{
         getset::{GetSetGenMode, GetSetStructAttrs},
     },
     convert::{FfiTypeField, FfiTypeFields},
+    emitter::Emitter,
     impl_visitor::{unwrap_result_type, Arg, FnDescriptor},
 };
 
@@ -43,7 +43,7 @@ pub fn gen_derived_methods<'a>(
             if options.with_prefix {
                 emit!(
                     emitter,
-                    "with_prefix option of getset crate is not supported by iroha_ffi_derive"
+                    "with_prefix option of getset crate is not supported by co3_ffi_derive"
                 );
             }
             if options.visibility != Some(parse_quote!(pub)) {
@@ -68,7 +68,7 @@ pub fn gen_resolve_type(arg: &Arg) -> TokenStream {
                 ok
             } else {
                 // TODO: Implement error handling (https://github.com/hyperledger/iroha/issues/2252)
-                return Err(iroha_ffi::FfiReturn::ExecutionFail);
+                return Err(co3::FfiReturn::ExecutionFail);
             };
         };
     }

@@ -1,4 +1,4 @@
-use iroha_ffi::FfiType;
+use co3::FfiType;
 
 #[derive(FfiType)]
 #[repr(u8)]

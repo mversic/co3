@@ -115,14 +115,17 @@ pub trait COutPtrRead<S>: COutPtr<S> + Sized {
 /// # Example
 ///
 /// 1. `&[u8]` implements [`NonLocal`]
+///
 /// This type will be converted to [`RefSlice<u8>`] and during conversion will not make use
 /// of the store (in any direction). The corresponding out-pointer will be `*mut RefSlice<u8>`
 ///
 /// 2. `&[Opaque<T>]` doesn't implement [`NonLocal`]
+///
 /// This type will be converted to [`RefSlice<*const T>`] and during conversion will use the
 /// local store `Vec<*const T>`. The corresponding out-pointer will be `*mut OutBoxedSlice<*const T>`.
 ///
 /// 3. `&(u32, u32)`
+///
 /// This type will be converted to `*const FfiTuple2<u32, u32>` and during conversion will use the
 /// local store `FfiTuple<u32, u32>`. The corresponding out-pointer will be `*mut FfiTuple2<u32, u32>`
 ///

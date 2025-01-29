@@ -1,4 +1,4 @@
-use iroha_ffi::{ffi_export, FfiType};
+use co3::{ffi_export, FfiType};
 
 type WrapperInner = u32;
 
@@ -7,7 +7,7 @@ type WrapperInner = u32;
 #[repr(transparent)]
 pub struct Wrapper(WrapperInner);
 
-iroha_ffi::ffi_type! {
+co3::ffi_type! {
     unsafe impl Transparent for Wrapper {
         type Target = WrapperInner;
 

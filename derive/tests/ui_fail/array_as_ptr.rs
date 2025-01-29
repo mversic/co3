@@ -1,4 +1,4 @@
-use iroha_ffi::ffi_export;
+use co3::ffi_export;
 
 /// Array as argument
 #[ffi_export]
