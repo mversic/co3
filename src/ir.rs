@@ -47,7 +47,7 @@ pub unsafe trait Transmute {
     /// # Safety
     ///
     /// Any raw pointer in [`Self::Target`] that will be dereferenced must be valid.
-    unsafe fn is_valid(target: &Self::Target) -> bool;
+    fn is_valid(target: &Self::Target) -> bool;
 }
 
 /// Marker trait for a type whose [`Transmute::is_valid`] always returns true. The main
@@ -343,14 +343,14 @@ mod transmute {
         /// # Safety
         ///
         /// Any raw pointer in [`Self::Target`] that will be dereferenced must be valid.
-        unsafe fn is_valid(target: &Self::Target) -> bool;
+        fn is_valid(target: &Self::Target) -> bool;
     }
 
     // SAFETY: Transmuting a reference to a pointer of the same type
     unsafe impl<R> SpecializedTransmute<Opaque> for &R {
         type Target = *const R;
 
-        unsafe fn is_valid(target: &Self::Target) -> bool {
+        fn is_valid(target: &Self::Target) -> bool {
             !target.is_null()
         }
     }
@@ -359,7 +359,7 @@ mod transmute {
     unsafe impl<R> SpecializedTransmute<Opaque> for &mut R {
         type Target = *mut R;
 
-        unsafe fn is_valid(target: &Self::Target) -> bool {
+        fn is_valid(target: &Self::Target) -> bool {
             !target.is_null()
         }
     }
@@ -368,7 +368,7 @@ mod transmute {
     unsafe impl<R: ReprC> SpecializedTransmute<Robust> for &R {
         type Target = *const R;
 
-        unsafe fn is_valid(target: &Self::Target) -> bool {
+        fn is_valid(target: &Self::Target) -> bool {
             !target.is_null()
         }
     }
@@ -377,7 +377,7 @@ mod transmute {
     unsafe impl<R: ReprC> SpecializedTransmute<Robust> for &mut R {
         type Target = *mut R;
 
-        unsafe fn is_valid(target: &Self::Target) -> bool {
+        fn is_valid(target: &Self::Target) -> bool {
             !target.is_null()
         }
     }
@@ -386,7 +386,7 @@ mod transmute {
     unsafe impl<R: ReprC, const N: usize> SpecializedTransmute<Robust> for [R; N] {
         type Target = [R; N];
 
-        unsafe fn is_valid(_: &Self::Target) -> bool {
+        fn is_valid(_: &Self::Target) -> bool {
             true
         }
     }
@@ -398,7 +398,7 @@ mod transmute {
     unsafe impl<'itm, R: Transmute> SpecializedTransmute<Transparent> for &'itm R {
         type Target = &'itm R::Target;
 
-        unsafe fn is_valid(target: &Self::Target) -> bool {
+        fn is_valid(target: &Self::Target) -> bool {
             R::is_valid(target)
         }
     }
@@ -407,7 +407,7 @@ mod transmute {
     unsafe impl<'itm, R: Transmute> SpecializedTransmute<Transparent> for &'itm mut R {
         type Target = &'itm mut R::Target;
 
-        unsafe fn is_valid(target: &Self::Target) -> bool {
+        fn is_valid(target: &Self::Target) -> bool {
             R::is_valid(target)
         }
     }
@@ -416,7 +416,7 @@ mod transmute {
     unsafe impl<R: Transmute, const N: usize> SpecializedTransmute<Transparent> for [R; N] {
         type Target = [R::Target; N];
 
-        unsafe fn is_valid(target: &Self::Target) -> bool {
+        fn is_valid(target: &Self::Target) -> bool {
             target.iter().all(|elem| R::is_valid(elem))
         }
     }
@@ -425,7 +425,7 @@ mod transmute {
     unsafe impl<R: TransmuteIr + SpecializedTransmute<R::Type>> Transmute for R {
         type Target = <R as SpecializedTransmute<R::Type>>::Target;
 
-        unsafe fn is_valid(target: &Self::Target) -> bool {
+        fn is_valid(target: &Self::Target) -> bool {
             <R as SpecializedTransmute<R::Type>>::is_valid(target)
         }
     }

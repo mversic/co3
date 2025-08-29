@@ -88,7 +88,7 @@ impl OpaqueStruct {
 
     /// With params
     #[must_use]
-    // Note: `-> OpaqueStruct` used instead of `-> Self` to showcase that such signature supported by `#[ffi_export]`
+    // NOTE: used `-> OpaqueStruct` instead of `-> Self` to showcase that the signature is supported
     pub fn with_params(mut self, params: impl IntoIterator<Item = (Name, Value)>) -> OpaqueStruct {
         self.params = params.into_iter().collect();
         self

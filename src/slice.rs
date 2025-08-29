@@ -53,32 +53,32 @@ impl<C> RefSlice<C> {
     }
 
     /// Create a slice from a data pointer and a length.
-    pub fn from_raw_parts(ptr: *const C, len: usize) -> Self {
+    pub const fn from_raw_parts(ptr: *const C, len: usize) -> Self {
         Self(ptr, len)
     }
 
     /// Returns a raw pointer to the slice's buffer.
-    pub fn as_ptr(&self) -> *const C {
+    pub const fn as_ptr(&self) -> *const C {
         self.0
     }
 
     /// Returns `true` if the slice contains no elements.
-    pub fn is_empty(&self) -> bool {
+    pub const fn is_empty(&self) -> bool {
         self.len() == 0
     }
 
     /// Returns the number of elements in the slice.
-    pub fn len(&self) -> usize {
+    pub const fn len(&self) -> usize {
         self.1
     }
 
     /// Create [`Self`] from shared slice
     pub const fn from_slice(source: Option<&[C]>) -> Self {
         if let Some(slice) = source {
-            Self(slice.as_ptr(), slice.len())
-        } else {
-            Self(core::ptr::null(), 0)
+            return Self(slice.as_ptr(), slice.len());
         }
+
+        Self(core::ptr::null(), 0)
     }
 
     /// Convert [`Self`] into a shared slice. Return `None` if data pointer is null.
@@ -87,7 +87,7 @@ impl<C> RefSlice<C> {
     /// # Safety
     ///
     /// Check [`core::slice::from_raw_parts`]
-    pub unsafe fn into_rust<'slice>(self) -> Option<&'slice [C]> {
+    pub const unsafe fn into_rust<'slice>(self) -> Option<&'slice [C]> {
         if self.0.is_null() {
             return None;
         }
@@ -103,31 +103,32 @@ impl<C> RefMutSlice<C> {
     }
 
     /// Create a slice from a data pointer and a length.
-    pub fn from_raw_parts_mut(ptr: *mut C, len: usize) -> Self {
+    pub const fn from_raw_parts_mut(ptr: *mut C, len: usize) -> Self {
         Self(ptr, len)
     }
 
     /// Returns a raw pointer to the slice's buffer.
-    pub fn as_mut_ptr(&self) -> *mut C {
+    pub const fn as_mut_ptr(&self) -> *mut C {
         self.0
     }
 
     /// Returns `true` if the slice contains no elements.
-    pub fn is_empty(&self) -> bool {
+    pub const fn is_empty(&self) -> bool {
         self.len() == 0
     }
 
     /// Returns the number of elements in the slice.
-    pub fn len(&self) -> usize {
+    pub const fn len(&self) -> usize {
         self.1
     }
 
     /// Create [`Self`] from mutable slice
-    pub fn from_slice(source: Option<&mut [C]>) -> Self {
-        source.map_or_else(
-            || Self(core::ptr::null_mut(), 0),
-            |slice| Self(slice.as_mut_ptr(), slice.len()),
-        )
+    pub const fn from_slice(source: Option<&mut [C]>) -> Self {
+        if let Some(slice) = source {
+            return Self(slice.as_mut_ptr(), slice.len());
+        }
+
+        Self(core::ptr::null_mut(), 0)
     }
 
     /// Convert [`Self`] into a mutable slice. Return `None` if data pointer is null.
@@ -136,7 +137,7 @@ impl<C> RefMutSlice<C> {
     /// # Safety
     ///
     /// Check [`core::slice::from_raw_parts_mut`]
-    pub unsafe fn into_rust<'slice>(self) -> Option<&'slice mut [C]> {
+    pub const unsafe fn into_rust<'slice>(self) -> Option<&'slice mut [C]> {
         if self.0.is_null() {
             return None;
         }
@@ -146,34 +147,33 @@ impl<C> RefMutSlice<C> {
 }
 impl<C: ReprC> OutBoxedSlice<C> {
     /// Create a slice from a data pointer and a length.
-    pub fn from_raw_parts(ptr: *mut C, len: usize) -> Self {
+    pub const fn from_raw_parts(ptr: *mut C, len: usize) -> Self {
         Self(ptr, len)
     }
 
     /// Return a raw pointer to the slice's buffer.
-    pub fn as_mut_ptr(&self) -> *mut C {
+    pub const fn as_mut_ptr(&self) -> *mut C {
         self.0
     }
 
     /// Return `true` if the slice contains no elements.
-    pub fn is_empty(&self) -> bool {
+    pub const fn is_empty(&self) -> bool {
         self.len() == 0
     }
 
     /// Return the number of elements in the slice.
-    pub fn len(&self) -> usize {
+    pub const fn len(&self) -> usize {
         self.1
     }
 
     /// Create [`Self`] from a [`Box<[T]>`]
     pub fn from_boxed_slice(source: Option<Box<[C]>>) -> Self {
-        source.map_or_else(
-            || Self(core::ptr::null_mut(), 0),
-            |boxed_slice| {
-                let mut boxed_slice = core::mem::ManuallyDrop::new(boxed_slice);
-                Self(boxed_slice.as_mut_ptr(), boxed_slice.len())
-            },
-        )
+        if let Some(boxed_slice) = source {
+            let mut boxed_slice = core::mem::ManuallyDrop::new(boxed_slice);
+            return Self(boxed_slice.as_mut_ptr(), boxed_slice.len());
+        }
+
+        Self(core::ptr::null_mut(), 0)
     }
 
     /// Create a `Vec<T>` directly from the raw components of another vector.

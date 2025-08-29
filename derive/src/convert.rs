@@ -448,7 +448,7 @@ fn derive_ffi_type_for_fieldless_enum(
             unsafe impl Transparent for #enum_name {
                 type Target = #enum_repr_type;
 
-                validation_fn=unsafe {|target: &#enum_repr_type| {
+                validation_fn={|target: &Self::Target| {
                     #(#discriminant_decls)*
 
                     #match_

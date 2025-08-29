@@ -72,7 +72,7 @@ fn make_new_opaque(name: u8, params: BTreeMap<u8, Value>) -> OpaqueStruct {
     opaque.with_params(params.into_iter().collect())
 }
 
-fn make_opaque_ref(opaque_struct: &OpaqueStruct) -> RefOpaqueStruct {
+fn make_opaque_ref(opaque_struct: &OpaqueStruct) -> RefOpaqueStruct<'_> {
     RefOpaqueStruct(opaque_struct.as_extern_ptr(), core::marker::PhantomData)
 }
 

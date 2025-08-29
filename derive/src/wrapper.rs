@@ -331,7 +331,7 @@ fn gen_impl_ffi(name: &Ident, generics: &syn::Generics) -> TokenStream {
             type Target = *mut co3::Extern;
 
             #[inline]
-            unsafe fn is_valid(target: &Self::Target) -> bool {
+            fn is_valid(target: &Self::Target) -> bool {
                 !target.is_null()
             }
         }
@@ -391,7 +391,7 @@ fn gen_impl_ffi(name: &Ident, generics: &syn::Generics) -> TokenStream {
             unsafe impl<#lifetime #(, #split_impl_generics)*> Transparent for #ref_name #ref_ty_generics #where_clause {
                 type Target = *const co3::Extern;
 
-                validation_fn=unsafe {|target: &*const co3::Extern| !target.is_null()},
+                validation_fn={|target: &Self::Target| !target.is_null()},
                 niche_value=core::ptr::null()
             }
         }
@@ -399,7 +399,7 @@ fn gen_impl_ffi(name: &Ident, generics: &syn::Generics) -> TokenStream {
             unsafe impl <#lifetime #(, #split_impl_generics)*> Transparent for #ref_mut_name #ref_ty_generics #where_clause {
                 type Target = *mut co3::Extern;
 
-                validation_fn=unsafe {|target: &*mut co3::Extern| !target.is_null()},
+                validation_fn={|target: &Self::Target| !target.is_null()},
                 niche_value=core::ptr::null_mut()
             }
         }

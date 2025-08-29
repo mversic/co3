@@ -282,7 +282,7 @@ pub enum FfiReturn {
 ///     unsafe impl<T> Transparent for NonNull<T> {
 ///         type Target = NonNullInner<T>;
 ///
-///         validation_fn=unsafe {|target: &NonNullInner<T>| !target.is_null()},
+///         validation_fn={|target: &Self::Target| !target.is_null()},
 ///         niche_value=core::ptr::null_mut(),
 ///     }
 /// }
@@ -316,7 +316,7 @@ macro_rules! ffi_type {
     (unsafe impl $(<$($impl_generics: tt $(: $bounds: path)?),*>)? Transparent for $ty: ty $(where $($where_ty:ty: $where_bound:path),* )? {
         type Target = $target:ty;
 
-        validation_fn=unsafe {$validity_fn: expr},
+        validation_fn={$validity_fn: expr},
         niche_value=$niche_value: expr
         $(,)?
     }) => {
@@ -330,7 +330,7 @@ macro_rules! ffi_type {
 
             #[inline]
             #[allow(clippy::redundant_closure_call)]
-            unsafe fn is_valid(target: &Self::Target) -> bool {
+            fn is_valid(target: &Self::Target) -> bool {
                 $validity_fn(target)
             }
         }
@@ -351,7 +351,7 @@ macro_rules! ffi_type {
             type Target = $target;
 
             #[inline]
-            unsafe fn is_valid(_: &Self::Target) -> bool {
+            fn is_valid(_: &Self::Target) -> bool {
                 true
             }
         }
@@ -462,7 +462,7 @@ unsafe impl<'itm, R: Transmute> Transmute for LocalRef<'itm, R> {
     type Target = LocalRef<'itm, R::Target>;
 
     #[inline]
-    unsafe fn is_valid(target: &Self::Target) -> bool {
+    fn is_valid(target: &Self::Target) -> bool {
         R::is_valid(&target.0)
     }
 }
@@ -471,7 +471,7 @@ unsafe impl<'itm, R: Transmute> Transmute for LocalSlice<'itm, R> {
     type Target = LocalSlice<'itm, R::Target>;
 
     #[inline]
-    unsafe fn is_valid(target: &Self::Target) -> bool {
+    fn is_valid(target: &Self::Target) -> bool {
         target.iter().all(|item| R::is_valid(item))
     }
 }

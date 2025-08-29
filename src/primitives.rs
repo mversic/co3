@@ -107,7 +107,7 @@ macro_rules! fieldless_enum_derive {
             unsafe impl Transparent for $src {
                 type Target = $dst;
 
-                validation_fn=unsafe {$validity_fn},
+                validation_fn={$validity_fn},
                 niche_value=$niche_val
             }
         }

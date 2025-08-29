@@ -41,7 +41,7 @@ co3::ffi_type! {
     unsafe impl Transparent for NonRobustTransparent {
         type Target = NonRobustTransparentInner;
 
-        validation_fn=unsafe {|target| target != &[0; 4]},
+        validation_fn={|target| target != &[0; 4]},
         niche_value=[0; 4]
     }
 }

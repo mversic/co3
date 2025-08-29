@@ -16,7 +16,7 @@ ffi_type! {
     unsafe impl Transparent for String {
         type Target = Vec<u8>;
 
-        validation_fn=unsafe {|target| core::str::from_utf8(target).is_ok()},
+        validation_fn={|target| core::str::from_utf8(target).is_ok()},
         niche_value=RefMutSlice::null_mut()
     }
 }
@@ -26,7 +26,7 @@ ffi_type! {
     unsafe impl Transparent for Box<str> {
         type Target = Box<[u8]>;
 
-        validation_fn=unsafe {|target| core::str::from_utf8(target).is_ok()},
+        validation_fn={|target| core::str::from_utf8(target).is_ok()},
         niche_value=RefMutSlice::null_mut()
     }
 }
@@ -34,7 +34,7 @@ ffi_type! {
     unsafe impl<'slice> Transparent for &'slice str {
         type Target = &'slice [u8];
 
-        validation_fn=unsafe {|target| core::str::from_utf8(target).is_ok()},
+        validation_fn={|target| core::str::from_utf8(target).is_ok()},
         niche_value=RefSlice::null()
     }
 }
@@ -43,7 +43,7 @@ ffi_type! {
     unsafe impl<'slice> Transparent for &'slice mut str {
         type Target = &'slice mut [u8];
 
-        validation_fn=unsafe {|target| core::str::from_utf8(target).is_ok()},
+        validation_fn={|target| core::str::from_utf8(target).is_ok()},
         niche_value=RefMutSlice::null_mut()
     }
 }
@@ -56,7 +56,7 @@ ffi_type! {
     unsafe impl<T> Transparent for core::ptr::NonNull<T> {
         type Target = *mut T;
 
-        validation_fn=unsafe {|target: &*mut T| !target.is_null()},
+        validation_fn={|target: &Self::Target| !target.is_null()},
         niche_value=core::ptr::null_mut()
     }
 }

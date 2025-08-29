@@ -11,7 +11,7 @@ co3::ffi_type! {
     unsafe impl Transparent for Wrapper {
         type Target = WrapperInner;
 
-        validation_fn=unsafe {|target: &WrapperInner| *target != 0},
+        validation_fn={|target| *target != 0},
         niche_value=0
     }
 }
