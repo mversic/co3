@@ -144,7 +144,10 @@ mod ffi {
     use std::{alloc, collections::BTreeMap};
 
     use co3::{
-        def_ffi_fns, slice::RefMutSlice, FfiConvert, FfiOutPtr, FfiOutPtrWrite, FfiReturn, FfiType,
+        def_ffi_fns,
+        out_ptr::{FfiOutPtr, FfiOutPtrWrite},
+        slice::RefMutSlice,
+        FfiConvert, FfiReturn, FfiType,
     };
 
     co3::handles! {ExternOpaqueStruct, ExternValue}

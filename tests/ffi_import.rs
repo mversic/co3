@@ -131,8 +131,9 @@ mod ffi {
     use std::alloc;
 
     use co3::{
+        out_ptr::FfiOutPtr,
         slice::{OutBoxedSlice, RefMutSlice, RefSlice},
-        FfiOutPtr, FfiReturn, FfiTuple2, FfiType,
+        FfiReturn, FfiTuple2, FfiType,
     };
 
     co3::def_ffi_fns! { dealloc }

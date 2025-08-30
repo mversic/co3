@@ -2,7 +2,9 @@
 
 use std::{cmp::Ordering, mem::MaybeUninit};
 
-use co3::{def_ffi_fns, ffi_export, FfiConvert, FfiOutPtrRead, FfiReturn, FfiType, Handle};
+use co3::{
+    def_ffi_fns, ffi_export, out_ptr::FfiOutPtrRead, FfiConvert, FfiReturn, FfiType, Handle,
+};
 
 co3::handles! {FfiStruct1, FfiStruct2}
 

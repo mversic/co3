@@ -356,7 +356,7 @@ fn derive_ffi_type_for_opaque_item(name: &Ident, generics: &syn::Generics) -> To
         }
 
         // SAFETY: Opaque types are never dereferenced and therefore &mut T is considered to be transmutable
-        unsafe impl #impl_generics co3::ir::InfallibleTransmute for #name #ty_generics #where_clause {}
+        unsafe impl #impl_generics co3::transmute::InfallibleTransmute for #name #ty_generics #where_clause {}
 
         impl #impl_generics co3::option::Niche<'_> for #name #ty_generics #where_clause {
             const NICHE_VALUE: *mut Self = core::ptr::null_mut();
@@ -595,26 +595,26 @@ fn derive_ffi_type_for_data_carrying_enum(
             };
 
             non_local_where_clause.predicates.push(
-                syn::parse_quote! {#ty: co3::repr_c::NonLocal<<#ty as co3::ir::Ir>::Type>},
+                syn::parse_quote! {#ty: co3::out_ptr::NonLocal},
             );
         }
 
         quote! {
-            unsafe impl<#impl_generics> co3::repr_c::NonLocal<Self> for #enum_name #ty_generics #non_local_where_clause {}
+            unsafe impl<#impl_generics> co3::out_ptr::NonLocal for #enum_name #ty_generics #non_local_where_clause {}
 
-            impl<#impl_generics> co3::repr_c::CWrapperType<Self> for #enum_name #ty_generics #non_local_where_clause {
+            impl<#impl_generics> co3::FfiWrapperType for #enum_name #ty_generics #non_local_where_clause {
                 type InputType = Self;
                 type ReturnType = Self;
             }
-            impl<#impl_generics> co3::repr_c::COutPtr<Self> for #enum_name #ty_generics #non_local_where_clause {
+            impl<#impl_generics> co3::out_ptr::FfiOutPtr for #enum_name #ty_generics #non_local_where_clause {
                 type OutPtr = Self::ReprC;
             }
-            impl<#impl_generics> co3::repr_c::COutPtrWrite<Self> for #enum_name #ty_generics #non_local_where_clause {
+            impl<#impl_generics> co3::out_ptr::FfiOutPtrWrite for #enum_name #ty_generics #non_local_where_clause {
                 unsafe fn write_out(self, out_ptr: *mut Self::OutPtr) {
                     co3::repr_c::write_non_local::<_, Self>(self, out_ptr);
                 }
             }
-            impl<#impl_generics> co3::repr_c::COutPtrRead<Self> for #enum_name #ty_generics #non_local_where_clause {
+            impl<#impl_generics> co3::out_ptr::FfiOutPtrRead for #enum_name #ty_generics #non_local_where_clause {
                 unsafe fn try_read_out(out_ptr: Self::OutPtr) -> co3::Result<Self> {
                     co3::repr_c::read_non_local::<Self, Self>(out_ptr)
                 }
@@ -630,7 +630,7 @@ fn derive_ffi_type_for_data_carrying_enum(
             type Type = Self;
         }
 
-        impl<#impl_generics> co3::repr_c::CType<Self> for #enum_name #ty_generics #where_clause {
+        impl<#impl_generics> co3::FfiType for #enum_name #ty_generics #where_clause {
             type ReprC = #repr_c_enum_name #ty_generics;
         }
         impl<#lifetime, #impl_generics> co3::repr_c::CTypeConvert<#lifetime, Self, #repr_c_enum_name #ty_generics> for #enum_name #ty_generics #where_clause {

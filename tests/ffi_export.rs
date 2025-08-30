@@ -3,8 +3,8 @@
 use std::{alloc, collections::BTreeMap, mem::MaybeUninit};
 
 use co3::{
-    ffi_export, slice::OutBoxedSlice, FfiConvert, FfiOutPtrRead, FfiReturn, FfiTuple1, FfiTuple2,
-    FfiType, LocalRef,
+    ffi_export, out_ptr::FfiOutPtrRead, slice::OutBoxedSlice, FfiConvert, FfiReturn, FfiTuple1,
+    FfiTuple2, FfiType, LocalRef,
 };
 
 co3::handles! {OpaqueStruct}

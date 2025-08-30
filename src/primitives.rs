@@ -1,14 +1,6 @@
 //! Logic related to the conversion of primitives to and from FFI-compatible representation
 
-use crate::{
-    ffi_type,
-    ir::Ir,
-    repr_c::{
-        read_non_local, write_non_local, COutPtr, COutPtrRead, COutPtrWrite, CType, CTypeConvert,
-        CWrapperType, Cloned, NonLocal,
-    },
-    FfiTuple2, ReprC, Result,
-};
+use crate::ffi_type;
 
 #[cfg(target_family = "wasm")]
 mod wasm {
@@ -16,8 +8,8 @@ mod wasm {
 
     use crate::{
         ir::{Robust, Transparent},
-        repr_c::{COutPtr, COutPtrRead, COutPtrWrite, CType, CTypeConvert, CWrapperType},
-        FfiReturn, Result,
+        out_ptr::{FfiOutPtr, FfiOutPtrRead, FfiOutPtrWrite},
+        CTypeConvert, FfiReturn, FfiType, FfiWrapperType, Result,
     };
 
     /// Marker for an integer primitive type that is not recognized by the `WebAssembly`.
@@ -29,36 +21,50 @@ mod wasm {
     impl crate::ir::IrTypeFamily for NonWasmIntPrimitive {
         type Ref<'itm> = Transparent;
         type RefMut<'itm> = Transparent;
-        type Box = Box<Robust>;
         type RefSlice<'itm> = &'itm [Robust];
         type RefMutSlice<'itm> = &'itm mut [Robust];
+        type Box = Box<Robust>;
+        type BoxedSlice = Box<[Robust]>;
         type Vec = Vec<Robust>;
         type Arr<const N: usize> = Robust;
     }
 
     macro_rules! wasm_repr_impls {
         ( $($src:ty => $dst:ty),+ ) => {$(
+            // FIXME: Should it be ReprC?
             // SAFETY: Even if it is not used in `wasm` API it is still a `ReprC` type
             unsafe impl $crate::ReprC for $src {}
 
             impl $crate::option::Niche<'_> for $src {
-                const NICHE_VALUE: $dst = <$src>::MAX as $dst + 1;
+                const NICHE_VALUE: $dst = <$dst>::MAX;
             }
 
-            // SAFETY: Idempotent transmute is always infallible
-            unsafe impl $crate::ir::InfallibleTransmute for $src {}
+            // SAFETY: Conversion of non wasm primitive doesn't use store
+            unsafe impl $crate::out_ptr::NonLocal for $src {}
 
-            impl $crate::WrapperTypeOf<Self> for $src {
-                type Type = Self;
+            // SAFETY: Idempotent transmute is always infallible
+            unsafe impl $crate::transmute::InfallibleTransmute for $src {}
+
+            // SAFETY: Transmute relation is transitive
+            unsafe impl $crate::transmute::Transmute for $src {
+                type Target = $dst;
+
+                fn is_valid(target: &Self::Target) -> bool {
+                    (<$src>::MIN as $dst..<$src>::MAX as $dst).contains(target)
+                }
             }
 
             impl $crate::ir::Ir for $src {
                 type Type = NonWasmIntPrimitive;
             }
 
-            impl CType<NonWasmIntPrimitive> for $src {
+            impl FfiType for $src {
                 type ReprC = $dst;
             }
+            impl FfiOutPtr for $src {
+                type OutPtr = $src;
+            }
+
             impl CTypeConvert<'_, NonWasmIntPrimitive, $dst> for $src {
                 type RustStore = ();
                 type FfiStore = ();
@@ -71,26 +77,24 @@ mod wasm {
                 }
             }
 
-            impl CWrapperType<NonWasmIntPrimitive> for $src {
-                type InputType = Self;
-                type ReturnType = Self;
-            }
-            impl COutPtr<NonWasmIntPrimitive> for $src {
-                type OutPtr = $src;
-            }
-            impl COutPtrWrite<NonWasmIntPrimitive> for $src {
-                unsafe fn write_out(self, out_ptr: *mut Self::OutPtr) {
-                    out_ptr.write(self)
-                }
-            }
-            impl COutPtrRead<NonWasmIntPrimitive> for $src {
+            impl FfiOutPtrRead for $src {
                 unsafe fn try_read_out(out_ptr: Self::OutPtr) -> Result<Self> {
                     Ok(out_ptr)
                 }
             }
+            impl FfiOutPtrWrite for $src {
+                unsafe fn write_out(self, out_ptr: *mut Self::OutPtr) {
+                    out_ptr.write(self)
+                }
+            }
 
-            // SAFETY: Conversion of non wasm primitive doesn't use store
-            unsafe impl $crate::repr_c::NonLocal<NonWasmIntPrimitive> for $src {})+
+            impl FfiWrapperType for $src {
+                type InputType = Self;
+                type ReturnType = Self;
+            }
+            impl $crate::WrapperTypeOf<Self> for $src {
+                type Type = Self;
+            })+
         };
     }
 
@@ -141,26 +145,36 @@ primitive_derive! { u32, i32, u64, i64 }
 #[cfg(not(target_family = "wasm"))]
 primitive_derive! { u8, i8, u16, i16 }
 
+// FIXME: Rust has taken care of 128 bit representation in FFI
 macro_rules! int128_derive {
     ($($src:ty => $dst:ident),+$(,)?) => {$(
         /// Ffi-safe representation of [`u128`]
         #[doc = concat!(" Ffi-safe representation of [", stringify!($src), "]")]
         #[derive(Clone, Copy, Debug, Default)]
         #[repr(transparent)]
-        pub struct $dst(FfiTuple2<u64, u64>);
+        pub struct $dst($crate::FfiTuple2<u64, u64>);
 
-        // SAFETY: Transparent to `FfiTuple<u64, u64>` which is `ReprC`
-        unsafe impl ReprC for $dst where FfiTuple2<u64, u64>: ReprC {}
+        // SAFETY: Transparent to `FfiTuple<u64, u64>` which is `$crate::ReprC`
+        unsafe impl $crate::ReprC for $dst where $crate::FfiTuple2<u64, u64>: $crate::ReprC {}
 
-        impl Ir for $src {
+        impl $crate::Cloned for $src {}
+
+        // SAFETY: `u128/i128` doesn't use local store during conversion
+        unsafe impl $crate::out_ptr::NonLocal for $src {}
+
+        impl $crate::ir::Ir for $src {
             type Type = Self;
         }
 
-        impl CType<Self> for $src {
+        impl $crate::FfiType for $src {
             type ReprC = $dst;
         }
 
-        impl CTypeConvert<'_, Self, $dst> for $src {
+        impl $crate::out_ptr::FfiOutPtr for $src {
+            type OutPtr = Self::ReprC;
+        }
+
+        impl $crate::repr_c::CTypeConvert<'_, Self, $dst> for $src {
             type RustStore = ();
             type FfiStore = ();
 
@@ -169,34 +183,26 @@ macro_rules! int128_derive {
             }
 
             // SAFETY: calling this function is safe since no pointers involved in conversion
-            unsafe fn try_from_repr_c(value: $dst, _: &mut Self::FfiStore) -> Result<Self> {
+            unsafe fn try_from_repr_c(value: $dst, _: &mut Self::FfiStore) -> $crate::Result<Self> {
                 Ok(value.into())
             }
         }
-        impl Cloned for $src {}
 
-        // SAFETY: `u128/i128` doesn't use local store during conversion
-        unsafe impl NonLocal<Self> for $src {}
+        impl $crate::out_ptr::FfiOutPtrWrite for $src {
+            unsafe fn write_out(self, out_ptr: *mut Self::OutPtr) {
+                $crate::repr_c::write_non_local::<_, Self>(self, out_ptr);
+            }
+        }
 
-        impl CWrapperType<Self> for $src {
+        impl $crate::out_ptr::FfiOutPtrRead for $src {
+            unsafe fn try_read_out(out_ptr: Self::OutPtr) -> $crate::Result<Self> {
+                $crate::repr_c::read_non_local::<Self, Self>(out_ptr)
+            }
+        }
+
+        impl $crate::FfiWrapperType for $src {
             type InputType = Self;
             type ReturnType = Self;
-        }
-
-        impl COutPtr<Self> for $src {
-            type OutPtr = Self::ReprC;
-        }
-
-        impl COutPtrWrite<Self> for $src {
-            unsafe fn write_out(self, out_ptr: *mut Self::OutPtr) {
-                write_non_local::<_, Self>(self, out_ptr);
-            }
-        }
-
-        impl COutPtrRead<Self> for $src {
-            unsafe fn try_read_out(out_ptr: Self::OutPtr) -> Result<Self> {
-                read_non_local::<Self, Self>(out_ptr)
-            }
         }
     )*};
 }
@@ -210,14 +216,14 @@ impl From<u128> for FfiU128 {
     fn from(value: u128) -> Self {
         let lo = value as u64;
         let hi = (value >> 64) as u64;
-        FfiU128(FfiTuple2(hi, lo))
+        FfiU128(crate::FfiTuple2(hi, lo))
     }
 }
 
 impl From<FfiU128> for u128 {
     // Truncation is done on purpose
     #[allow(clippy::cast_possible_truncation)]
-    fn from(FfiU128(FfiTuple2(hi, lo)): FfiU128) -> Self {
+    fn from(FfiU128(crate::FfiTuple2(hi, lo)): FfiU128) -> Self {
         (u128::from(hi) << 64) | u128::from(lo)
     }
 }

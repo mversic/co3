@@ -13,6 +13,7 @@ macro_rules! derive_freestanding_export_import {
         // FFI exports
         mod exports {
             use std::alloc;
+
             use super::*;
 
             co3::def_ffi_fns! { dealloc }

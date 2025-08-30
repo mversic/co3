@@ -1,5 +1,3 @@
-#![allow(single_use_lifetimes)] // NOTE: Triggered by &str implementation
-
 use alloc::{boxed::Box, string::String, vec::Vec};
 use core::{mem::ManuallyDrop, ptr::NonNull};
 
@@ -9,7 +7,7 @@ use crate::{
     ReprC, WrapperTypeOf,
 };
 
-// NOTE: This can be contested as it is nowhere documented that String is
+// WARN: This can be contested as it is nowhere documented that String is
 // actually transmutable into Vec<u8>, but implicitly it should be
 // SAFETY: String type should be transmutable into Vec<u8>
 ffi_type! {
@@ -20,7 +18,7 @@ ffi_type! {
         niche_value=RefMutSlice::null_mut()
     }
 }
-// NOTE: `core::str::as_bytes` uses transmute internally which means that
+// WARN: `core::str::as_bytes` uses transmute internally which means that
 // even though it's a string slice it can be transmuted into byte slice.
 ffi_type! {
     unsafe impl Transparent for Box<str> {

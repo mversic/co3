@@ -405,7 +405,7 @@ pub fn ffi_export(attr: TokenStream, item: TokenStream) -> TokenStream {
 ///     //     panic!("Function call failed");
 ///     // }
 ///     //
-///     // co3::FfiOutPtrRead::try_read_out(output.assume_init()).expect("Invalid type")
+///     // co3::out_ptr::FfiOutPtrRead::try_read_out(output.assume_init()).expect("Invalid type")
 /// }
 ///
 /// /* The following functions will be declared:

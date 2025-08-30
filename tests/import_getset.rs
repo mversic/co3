@@ -55,7 +55,10 @@ mod ffi {
     use std::alloc;
 
     use co3::{
-        def_ffi_fns, slice::RefMutSlice, FfiConvert, FfiOutPtr, FfiOutPtrWrite, FfiReturn, FfiType,
+        def_ffi_fns,
+        out_ptr::{FfiOutPtr, FfiOutPtrWrite},
+        slice::RefMutSlice,
+        FfiConvert, FfiReturn, FfiType,
     };
 
     co3::handles! {ExternName, ExternFfiStruct}

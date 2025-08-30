@@ -11,18 +11,30 @@ use alloc::{boxed::Box, vec::Vec};
 
 pub use co3_derive::*;
 use derive_more::Display;
-use ir::{Ir, Transmute};
-use repr_c::{
-    COutPtr, COutPtrRead, COutPtrWrite, CType, CTypeConvert, CWrapperType, Cloned, NonLocal,
+use disjoint_impls::disjoint_impls;
+
+use crate::{
+    ir::{External, Ir, Opaque, Robust, Transparent},
+    option::{Niche, WithoutNiche},
+    out_ptr::NonLocal,
+    repr_c::{write_non_local, CTypeConvert, Cloned},
+    slice::{OutBoxedSlice, RefMutSlice, RefSlice},
+    transmute::{
+        transmute_from_target, transmute_into_target, transmute_into_target_box,
+        transmute_into_target_boxed_slice, transmute_into_target_ref_slice,
+        transmute_into_target_slice_mut, transmute_into_target_vec, Transmute,
+    },
 };
 
 pub mod handle;
 pub mod ir;
 pub mod option;
+pub mod out_ptr;
 pub mod primitives;
 pub mod repr_c;
 pub mod slice;
 mod std_impls;
+pub mod transmute;
 
 /// A specialized `Result` type for FFI operations
 pub type Result<T> = core::result::Result<T, FfiReturn>;
@@ -48,10 +60,227 @@ pub unsafe trait Handle {
 // NOTE: Type is `Copy` to indicate that there can be no ownership transfer
 pub unsafe trait ReprC: Copy {}
 
-/// A type that can be converted into some C type
-pub trait FfiType {
-    /// C type current type can be converted into
-    type ReprC: ReprC;
+disjoint_impls! {
+    /// A type that can be converted into some C type
+    pub trait FfiType {
+        /// C type current type can be converted into
+        type ReprC: ReprC;
+    }
+
+    // TODO: `FfiType` cannot be implemented for `&mut T`. Add compile test
+    // TODO: `FfiType` cannot be implemented for `&mut [T]`. Add compile test
+
+    impl<R: ReprC> FfiType for R
+    where
+        Self: Ir<Type = Robust>,
+    {
+        type ReprC = Self;
+    }
+    impl<R> FfiType for R
+    where
+        Self: Ir<Type = Opaque>,
+    {
+        type ReprC = *mut R;
+    }
+    impl<R: Transmute> FfiType for R
+    where
+        Self: Ir<Type = Transparent>,
+        <R>::Target: FfiType,
+    {
+        type ReprC = <<R>::Target as FfiType>::ReprC;
+    }
+
+    impl<'itm, R: External> FfiType for &'itm R
+    where
+        Self: Ir<Type = &'itm Extern>,
+    {
+        type ReprC = *const Extern;
+    }
+    impl<'a, R: Ir<Type = S> + FfiType, S: Cloned> FfiType for &'a R
+    where
+        Self: Ir<Type = &'a S>,
+    {
+        type ReprC = *const <R>::ReprC;
+    }
+
+    impl<'a, R: ReprC> FfiType for &'a [R]
+    where
+        Self: Ir<Type = &'a [Robust]>,
+    {
+        type ReprC = RefSlice<R>;
+    }
+    impl<'itm, R> FfiType for &'itm [R]
+    where
+        Self: Ir<Type = &'itm [Opaque]>,
+    {
+        type ReprC = RefSlice<*const R>;
+    }
+    impl<'slice, R: Transmute> FfiType for &'slice [R]
+    where
+        Self: Ir<Type = &'slice [Transparent]>,
+        &'slice [<R>::Target]: FfiType,
+    {
+        type ReprC = <&'slice [<R>::Target] as FfiType>::ReprC;
+    }
+    impl<'a, R: Ir<Type = S> + FfiType, S: Cloned> FfiType for &'a [R]
+    where
+        Self: Ir<Type = &'a [S]>,
+    {
+        type ReprC = RefSlice<<R>::ReprC>;
+    }
+
+    impl<'a, R: ReprC> FfiType for &'a mut [R]
+    where
+        Self: Ir<Type = &'a mut [Robust]>,
+    {
+        type ReprC = RefMutSlice<R>;
+    }
+    impl<'itm, R> FfiType for &'itm mut [R]
+    where
+        Self: Ir<Type = &'itm mut [Opaque]>,
+    {
+        type ReprC = RefMutSlice<*mut R>;
+    }
+    impl<'slice, R: Transmute> FfiType for &'slice mut [R]
+    where
+        Self: Ir<Type = &'slice mut [Transparent]>,
+        &'slice mut [<R>::Target]: FfiType,
+    {
+        type ReprC = <&'slice mut [<R>::Target] as FfiType>::ReprC;
+    }
+
+    impl<R: ReprC> FfiType for Box<R>
+    where
+        Self: Ir<Type = Box<Robust>>,
+    {
+        type ReprC = *mut R;
+    }
+    impl<R> FfiType for Box<R>
+    where
+        Self: Ir<Type = Box<Opaque>>,
+    {
+        type ReprC = *mut R;
+    }
+    impl<R: External> FfiType for Box<R>
+    where
+        Self: Ir<Type = Box<Extern>>,
+    {
+        type ReprC = *mut Extern;
+    }
+    impl<R: Transmute> FfiType for Box<R>
+    where
+        Self: Ir<Type = Box<Transparent>>,
+        Box<<R>::Target>: FfiType,
+    {
+        type ReprC = <Box<<R>::Target> as FfiType>::ReprC;
+    }
+    impl<R: Ir<Type = S> + FfiType, S: Cloned> FfiType for Box<R>
+    where
+        Self: Ir<Type = Box<S>>,
+    {
+        type ReprC = *mut <R>::ReprC;
+    }
+
+    impl<R: ReprC> FfiType for Box<[R]>
+    where
+        Self: Ir<Type = Box<[Robust]>>,
+    {
+        type ReprC = RefMutSlice<R>;
+    }
+    impl<R> FfiType for Box<[R]>
+    where
+        Self: Ir<Type = Box<[Opaque]>>,
+    {
+        type ReprC = RefMutSlice<*mut R>;
+    }
+    impl<R: Transmute> FfiType for Box<[R]>
+    where
+        Self: Ir<Type = Box<[Transparent]>>,
+        Box<[<R>::Target]>: FfiType,
+    {
+        type ReprC = <Box<[<R>::Target]> as FfiType>::ReprC;
+    }
+    impl<R: Ir<Type = S> + FfiType, S: Cloned> FfiType for Box<[R]>
+    where
+        Self: Ir<Type = Box<[S]>>,
+    {
+        type ReprC = RefMutSlice<<R>::ReprC>;
+    }
+
+    impl<R: ReprC> FfiType for Vec<R>
+    where
+        Self: Ir<Type = Vec<Robust>>,
+    {
+        type ReprC = RefMutSlice<R>;
+    }
+    impl<R> FfiType for Vec<R>
+    where
+        Self: Ir<Type = Vec<Opaque>>,
+    {
+        type ReprC = RefMutSlice<*mut R>;
+    }
+    impl<R: Transmute> FfiType for Vec<R>
+    where
+        Self: Ir<Type = Vec<Transparent>>,
+        Vec<<R>::Target>: FfiType,
+    {
+        type ReprC = <Vec<<R>::Target> as FfiType>::ReprC;
+    }
+    impl<R: Ir<Type = S> + FfiType, S: Cloned> FfiType for Vec<R>
+    where
+        Self: Ir<Type = Vec<S>>,
+    {
+        type ReprC = RefMutSlice<<R>::ReprC>;
+    }
+
+    impl<R, const N: usize> FfiType for [R; N]
+    where
+        Self: Ir<Type = [Opaque; N]>,
+    {
+        type ReprC = [*mut R; N];
+    }
+    impl<R: Ir<Type = S> + FfiType, S: Cloned, const N: usize> FfiType for [R; N]
+    where
+        Self: Ir<Type = [S; N]>,
+    {
+        type ReprC = [<R>::ReprC; N];
+    }
+
+    impl<R: FfiType> FfiType for Option<R>
+    where
+        Self: Ir<Type = Option<WithoutNiche>>,
+    {
+        type ReprC = FfiTuple2<<u8 as FfiType>::ReprC, <R>::ReprC>;
+    }
+    impl<R: Niche<'_>> FfiType for Option<R>
+    where
+        Self: Ir<Type = Self>,
+    {
+        type ReprC = <R>::ReprC;
+    }
+
+    impl<'itm, R: NonLocal + 'itm, S: Cloned> FfiType for LocalRef<'itm, R>
+    where
+        &'itm R: Ir<Type = &'itm S> + FfiType,
+        Self: Ir<Type = &'itm S>,
+    {
+        type ReprC = <&'itm R as FfiType>::ReprC;
+    }
+    impl<'itm, R: NonLocal + 'itm, S: Cloned> FfiType for LocalSlice<'itm, R>
+    where
+        &'itm [R]: Ir<Type = &'itm [S]> + FfiType,
+        Self: Ir<Type = &'itm [S]>,
+    {
+        type ReprC = <&'itm [R] as FfiType>::ReprC;
+    }
+    // FIXME: Bounds are fishy here?
+    impl<'itm, R, S> FfiType for LocalSlice<'itm, R>
+    where
+        Vec<R>: Ir<Type = Vec<S>> + FfiType,
+        Self: Ir<Type = Vec<S>>,
+    {
+        type ReprC = <Vec<R> as FfiType>::ReprC;
+    }
 }
 
 /// Facilitates conversion of rust types to/from `ReprC` types.
@@ -81,46 +310,326 @@ pub trait FfiConvert<'itm, C: ReprC>: Sized {
     unsafe fn try_from_ffi(source: C, store: &'itm mut Self::FfiStore) -> Result<Self>;
 }
 
-/// The trait is used to replace the type in the wrapper function generated by [`ffi_import`].
-///
-/// Most notably, the necessity to replace the output type for a wrapper function arises when:
-/// - the wrapper function returns a reference that uses store during conversion (i.e. that are cloned)
-/// - the wrapper function takes/return an opaque type reference
-pub trait FfiWrapperType {
-    /// Type used instead of the input type in the wrapper function generated by `ffi_import`
-    type InputType;
-    /// Type used instead of the output type in the wrapper function generated by `ffi_import`
-    type ReturnType;
+impl<'itm, R: Ir + CTypeConvert<'itm, R::Type, C>, C: ReprC> FfiConvert<'itm, C> for R {
+    type RustStore = R::RustStore;
+    type FfiStore = R::FfiStore;
+
+    #[inline]
+    fn into_ffi(self, store: &'itm mut Self::RustStore) -> C {
+        self.into_repr_c(store)
+    }
+
+    #[inline]
+    unsafe fn try_from_ffi(source: C, store: &'itm mut Self::FfiStore) -> Result<Self> {
+        R::try_from_repr_c(source, store)
+    }
 }
 
-/// Facilitates the use of [`Self`] as out-pointer.
-pub trait FfiOutPtr: FfiType {
-    /// Type of the out-pointer
-    type OutPtr: ReprC;
-}
+disjoint_impls! {
+    /// The trait is used to replace the type in the wrapper function generated by [`ffi_import`].
+    ///
+    /// Most notably, the necessity to replace the output type for a wrapper function arises when:
+    /// - the wrapper function returns a reference that uses store during conversion (i.e. that are cloned)
+    /// - the wrapper function takes/return an opaque type reference
+    pub trait FfiWrapperType {
+        /// Type used instead of the input type in the wrapper function generated by `ffi_import`
+        type InputType;
+        /// Type used instead of the output type in the wrapper function generated by `ffi_import`
+        type ReturnType;
+    }
 
-/// Facilitates writing [`Self`] into [`Self::OutPtr`].
-pub trait FfiOutPtrWrite: FfiOutPtr {
-    /// Write the given rust value into the corresponding out-pointer
-    ///
-    /// # Safety
-    ///
-    /// [`*mut Self::OutPtr`] must be valid
-    unsafe fn write_out(self, out_ptr: *mut Self::OutPtr);
-}
+    impl<R: ReprC> FfiWrapperType for R
+    where
+        Self: Ir<Type = Robust>,
+    {
+        type InputType = Self;
+        type ReturnType = Self;
+    }
+    impl<R: Transmute> FfiWrapperType for R
+    where
+        Self: Ir<Type = Transparent>,
+        <R>::Target: FfiWrapperType,
+        <<R>::Target as FfiWrapperType>::InputType: WrapperTypeOf<Self>,
+        <<R>::Target as FfiWrapperType>::ReturnType: WrapperTypeOf<Self>,
+    {
+        type InputType = <<<R>::Target as FfiWrapperType>::InputType as WrapperTypeOf<Self>>::Type;
+        type ReturnType = <<<R>::Target as FfiWrapperType>::ReturnType as WrapperTypeOf<Self>>::Type;
+    }
 
-/// Facilitates reading from [`Self::OutPtr`] out-pointer.
-pub trait FfiOutPtrRead: FfiOutPtr + Sized {
-    /// Read a rust value from the corresponding out-pointer
-    ///
-    /// # Errors
-    ///
-    /// Check [`FfiConvert::try_from_ffi`]
-    ///
-    /// # Safety
-    ///
-    /// Check [`FfiConvert::try_from_ffi`]
-    unsafe fn try_read_out(out_ptr: Self::OutPtr) -> Result<Self>;
+    impl<'itm, R: External> FfiWrapperType for &'itm R
+    where
+        Self: Ir<Type = &'itm Extern>,
+    {
+        type InputType = <R>::RefType<'itm>;
+        type ReturnType = <R>::RefType<'itm>;
+    }
+    impl<'itm, R: Ir<Type = S> + FfiWrapperType, S: Cloned> FfiWrapperType for &'itm R
+    where
+        Self: Ir<Type = &'itm S>,
+    {
+        type InputType = &'itm <R>::InputType;
+        type ReturnType = LocalRef<'itm, <R>::ReturnType>;
+    }
+
+    impl<'itm, R: External> FfiWrapperType for &'itm mut R
+    where
+        Self: Ir<Type = &'itm mut Extern>,
+    {
+        type InputType = <R>::RefMutType<'itm>;
+        type ReturnType = <R>::RefMutType<'itm>;
+    }
+
+    impl<'a, R: ReprC> FfiWrapperType for &'a [R]
+    where
+        Self: Ir<Type = &'a [Robust]>,
+    {
+        type InputType = Self;
+        type ReturnType = Self;
+    }
+    impl<'slice, R: Transmute> FfiWrapperType for &'slice [R]
+    where
+        Self: Ir<Type = &'slice [Transparent]>,
+        &'slice [<R>::Target]: FfiWrapperType,
+        <&'slice [<R>::Target] as FfiWrapperType>::InputType: WrapperTypeOf<Self>,
+        <&'slice [<R>::Target] as FfiWrapperType>::ReturnType: WrapperTypeOf<Self>,
+    {
+        type InputType =
+            <<&'slice [<R>::Target] as FfiWrapperType>::InputType as WrapperTypeOf<Self>>::Type;
+        type ReturnType =
+            <<&'slice [<R>::Target] as FfiWrapperType>::ReturnType as WrapperTypeOf<Self>>::Type;
+    }
+
+    impl<'itm, R: External> FfiWrapperType for &'itm [&'itm R]
+    where
+        Self: Ir<Type = &'itm [&'itm Extern]>,
+    {
+        type InputType = &'itm [<R>::RefType<'itm>];
+        type ReturnType = &'itm [<R>::RefType<'itm>];
+    }
+
+    impl<'itm, R: External> FfiWrapperType for &'itm [&'itm mut R]
+    where
+        Self: Ir<Type = &'itm [&'itm mut Extern]>,
+    {
+        type InputType = &'itm [<R>::RefMutType<'itm>];
+        type ReturnType = &'itm [<R>::RefMutType<'itm>];
+    }
+
+    impl<'a, R: ReprC> FfiWrapperType for &'a mut [R]
+    where
+        Self: Ir<Type = &'a mut [Robust]>,
+    {
+        type InputType = Self;
+        type ReturnType = Self;
+    }
+    impl<'slice, R: Transmute> FfiWrapperType for &'slice mut [R]
+    where
+        Self: Ir<Type = &'slice mut [Transparent]>,
+        &'slice mut [<R>::Target]: FfiWrapperType,
+        <&'slice mut [<R>::Target] as FfiWrapperType>::InputType: WrapperTypeOf<Self>,
+        <&'slice mut [<R>::Target] as FfiWrapperType>::ReturnType: WrapperTypeOf<Self>,
+    {
+        type InputType =
+            <<&'slice mut [<R>::Target] as FfiWrapperType>::InputType as WrapperTypeOf<Self>>::Type;
+        type ReturnType =
+            <<&'slice mut [<R>::Target] as FfiWrapperType>::ReturnType as WrapperTypeOf<Self>>::Type;
+    }
+    impl<'itm, R: Ir<Type = S> + FfiWrapperType, S: Cloned> FfiWrapperType for &'itm [R]
+    where
+        Self: Ir<Type = &'itm [S]>,
+    {
+        type InputType = &'itm [<R>::InputType];
+        type ReturnType = LocalSlice<'itm, <R>::ReturnType>;
+    }
+
+    impl<'itm, R: External> FfiWrapperType for &'itm mut [&'itm R]
+    where
+        Self: Ir<Type = &'itm mut [&'itm Extern]>,
+    {
+        type InputType = &'itm mut [<R>::RefType<'itm>];
+        type ReturnType = &'itm mut [<R>::RefType<'itm>];
+    }
+
+    impl<'itm, R: External> FfiWrapperType for &'itm mut [&'itm mut R]
+    where
+        Self: Ir<Type = &'itm mut [&'itm mut Extern]>,
+    {
+        type InputType = &'itm mut [<R>::RefMutType<'itm>];
+        type ReturnType = &'itm mut [<R>::RefMutType<'itm>];
+    }
+
+    impl<R: ReprC> FfiWrapperType for Box<R>
+    where
+        Self: Ir<Type = Box<Robust>>,
+    {
+        type InputType = Self;
+        type ReturnType = Self;
+    }
+    impl<R: Transmute> FfiWrapperType for Box<R>
+    where
+        Self: Ir<Type = Box<Transparent>>,
+        Box<<R>::Target>: FfiWrapperType,
+        <Box<<R>::Target> as FfiWrapperType>::InputType: WrapperTypeOf<Self>,
+        <Box<<R>::Target> as FfiWrapperType>::ReturnType: WrapperTypeOf<Self>,
+    {
+        type InputType = <<Box<<R>::Target> as FfiWrapperType>::InputType as WrapperTypeOf<Self>>::Type;
+        type ReturnType =
+            <<Box<<R>::Target> as FfiWrapperType>::ReturnType as WrapperTypeOf<Self>>::Type;
+    }
+    impl<R: External> FfiWrapperType for Box<R>
+    where
+        Self: Ir<Type = Box<Extern>>,
+    {
+        type InputType = R;
+        type ReturnType = R;
+    }
+    impl<R: Ir<Type = S> + FfiWrapperType, S: Cloned> FfiWrapperType for Box<R>
+    where
+        Self: Ir<Type = Box<S>>,
+    {
+        type InputType = Box<<R>::InputType>;
+        type ReturnType = Box<<R>::ReturnType>;
+    }
+
+    impl<'itm, R: External> FfiWrapperType for Box<&'itm R>
+    where
+        Self: Ir<Type = Box<&'itm Extern>>,
+    {
+        type InputType = Box<<R>::RefType<'itm>>;
+        type ReturnType = Box<<R>::RefType<'itm>>;
+    }
+
+    impl<'itm, R: External> FfiWrapperType for Box<&'itm mut R>
+    where
+        Self: Ir<Type = Box<&'itm mut Extern>>,
+    {
+        type InputType = Box<<R>::RefMutType<'itm>>;
+        type ReturnType = Box<<R>::RefMutType<'itm>>;
+    }
+
+    impl<R: ReprC> FfiWrapperType for Box<[R]>
+    where
+        Self: Ir<Type = Box<[Robust]>>,
+    {
+        type InputType = Self;
+        type ReturnType = Self;
+    }
+    impl<R: Transmute> FfiWrapperType for Box<[R]>
+    where
+        Self: Ir<Type = Box<[Transparent]>>,
+        Box<[<R>::Target]>: FfiWrapperType,
+        <Box<[<R>::Target]> as FfiWrapperType>::InputType: WrapperTypeOf<Self>,
+        <Box<[<R>::Target]> as FfiWrapperType>::ReturnType: WrapperTypeOf<Self>,
+    {
+        type InputType =
+            <<Box<[<R>::Target]> as FfiWrapperType>::InputType as WrapperTypeOf<Self>>::Type;
+        type ReturnType =
+            <<Box<[<R>::Target]> as FfiWrapperType>::ReturnType as WrapperTypeOf<Self>>::Type;
+    }
+    impl<R: Ir<Type = S> + FfiWrapperType, S: Cloned> FfiWrapperType for Box<[R]>
+    where
+        Self: Ir<Type = Box<[S]>>,
+    {
+        type InputType = Box<[<R>::InputType]>;
+        type ReturnType = Box<[<R>::ReturnType]>;
+    }
+
+    impl<'itm, R: External> FfiWrapperType for Box<[&'itm R]>
+    where
+        Self: Ir<Type = Box<[&'itm Extern]>>,
+    {
+        type InputType = Box<[<R>::RefType<'itm>]>;
+        type ReturnType = Box<[<R>::RefType<'itm>]>;
+    }
+
+    impl<'itm, R: External> FfiWrapperType for Box<[&'itm mut R]>
+    where
+        Self: Ir<Type = Box<[&'itm mut Extern]>>,
+    {
+        type InputType = Box<[<R>::RefMutType<'itm>]>;
+        type ReturnType = Box<[<R>::RefMutType<'itm>]>;
+    }
+
+    impl<R: ReprC> FfiWrapperType for Vec<R>
+    where
+        Self: Ir<Type = Vec<Robust>>,
+    {
+        type InputType = Self;
+        type ReturnType = Self;
+    }
+    impl<R: Transmute> FfiWrapperType for Vec<R>
+    where
+        Self: Ir<Type = Vec<Transparent>>,
+        Vec<<R>::Target>: FfiWrapperType,
+        <Vec<<R>::Target> as FfiWrapperType>::InputType: WrapperTypeOf<Self>,
+        <Vec<<R>::Target> as FfiWrapperType>::ReturnType: WrapperTypeOf<Self>,
+    {
+        type InputType = <<Vec<<R>::Target> as FfiWrapperType>::InputType as WrapperTypeOf<Self>>::Type;
+        type ReturnType =
+            <<Vec<<R>::Target> as FfiWrapperType>::ReturnType as WrapperTypeOf<Self>>::Type;
+    }
+    impl<R: Ir<Type = S> + FfiWrapperType, S: Cloned> FfiWrapperType for Vec<R>
+    where
+        Self: Ir<Type = Vec<S>>,
+    {
+        type InputType = Vec<<R>::InputType>;
+        type ReturnType = Vec<<R>::ReturnType>;
+    }
+
+    impl<'itm, R: External> FfiWrapperType for Vec<&'itm R>
+    where
+        Self: Ir<Type = Vec<&'itm Extern>>,
+    {
+        type InputType = Vec<<R>::RefType<'itm>>;
+        type ReturnType = Vec<<R>::RefType<'itm>>;
+    }
+
+    impl<'itm, R: External> FfiWrapperType for Vec<&'itm mut R>
+    where
+        Self: Ir<Type = Vec<&'itm mut Extern>>,
+    {
+        type InputType = Vec<<R>::RefMutType<'itm>>;
+        type ReturnType = Vec<<R>::RefMutType<'itm>>;
+    }
+
+    impl<R: Ir<Type = S> + FfiWrapperType, S: Cloned, const N: usize> FfiWrapperType for [R; N]
+    where
+        Self: Ir<Type = [S; N]>,
+    {
+        type InputType = [<R>::InputType; N];
+        type ReturnType = [<R>::ReturnType; N];
+    }
+
+    impl<'itm, R: External, const N: usize> FfiWrapperType for [&'itm R; N]
+    where
+        Self: Ir<Type = [&'itm Extern; N]>,
+    {
+        type InputType = [<R>::RefType<'itm>; N];
+        type ReturnType = [<R>::RefType<'itm>; N];
+    }
+
+    impl<'itm, R: External, const N: usize> FfiWrapperType for [&'itm mut R; N]
+    where
+        Self: Ir<Type = [&'itm mut Extern; N]>,
+    {
+        type InputType = [<R>::RefMutType<'itm>; N];
+        type ReturnType = [<R>::RefMutType<'itm>; N];
+    }
+
+    impl<R: FfiWrapperType> FfiWrapperType for Option<R>
+    where
+        Self: Ir<Type = Option<WithoutNiche>>,
+    {
+        type InputType = Option<<R>::InputType>;
+        type ReturnType = Option<<R>::ReturnType>;
+    }
+    impl<R: FfiWrapperType> FfiWrapperType for Option<R>
+    where
+        Self: Ir<Type = Self>,
+    {
+        type InputType = Option<<R>::InputType>;
+        type ReturnType = Option<<R>::ReturnType>;
+    }
 }
 
 /// Reference that owns its referent. This struct is used when wrapper functions generated by
@@ -303,10 +812,10 @@ macro_rules! ffi_type {
         }
 
         // SAFETY: Robust type with a defined C representation by definition
-        unsafe impl$(<$($impl_generics $(: $bounds)?),*>)? $crate::ir::InfallibleTransmute for $ty where Self: $crate::ReprC, $($($where_ty: $where_bound),*)? {}
+        unsafe impl$(<$($impl_generics $(: $bounds)?),*>)? $crate::transmute::InfallibleTransmute for $ty where Self: $crate::ReprC, $($($where_ty: $where_bound),*)? {}
 
-        impl$(<$($impl_generics $(: $bounds)?),*>)? $crate::option::OptionIr for $ty where $($($where_ty: $where_bound),*)? {
-            type Type = Option<$crate::option::WithoutNiche>;
+        impl$(<$($impl_generics $(: $bounds)?),*>)? $crate::option::Ir for $ty where $($($where_ty: $where_bound),*)? {
+            type Type = $crate::option::WithoutNiche;
         }
 
         impl<$($($impl_generics $(: $bounds)?),*)?> $crate::WrapperTypeOf<Self> for $ty where $($($where_ty: $where_bound),*)? {
@@ -325,7 +834,7 @@ macro_rules! ffi_type {
         }
 
         // SAFETY: `$ty` is transmutable into `$target` and `is_valid` doesn't return false positives
-        unsafe impl<$($($impl_generics $(: $bounds)?),*)?> $crate::ir::Transmute for $ty where $($($where_ty: $where_bound),*)? {
+        unsafe impl<$($($impl_generics $(: $bounds)?),*)?> $crate::transmute::Transmute for $ty where $($($where_ty: $where_bound),*)? {
             type Target = $target;
 
             #[inline]
@@ -347,7 +856,7 @@ macro_rules! ffi_type {
         }
 
         // SAFETY: `$ty` is transmutable into `$target` and `is_valid` doesn't return false positives
-        unsafe impl<$($($impl_generics $(: $bounds)?),*)?> $crate::ir::Transmute for $ty where $($($where_ty: $where_bound),*)? {
+        unsafe impl<$($($impl_generics $(: $bounds)?),*)?> $crate::transmute::Transmute for $ty where $($($where_ty: $where_bound),*)? {
             type Target = $target;
 
             #[inline]
@@ -357,7 +866,7 @@ macro_rules! ffi_type {
         }
 
         // SAFETY: `$t` is robust with respect to `$target`
-        unsafe impl<$($($impl_generics $(: $bounds)?),*)?> $crate::ir::InfallibleTransmute for $ty where $($($where_ty: $where_bound),*)? {}
+        unsafe impl<$($($impl_generics $(: $bounds)?),*)?> $crate::transmute::InfallibleTransmute for $ty where $($($where_ty: $where_bound),*)? {}
 
         impl<'dummy, $($($impl_generics $(: $bounds)?),*)?> $crate::option::Niche<'dummy> for $ty where $target: $crate::option::Niche<'dummy>, $($($where_ty: $where_bound),*)? {
             const NICHE_VALUE: <$target as $crate::FfiType>::ReprC = <$target as $crate::option::Niche<'dummy>>::NICHE_VALUE;
@@ -500,44 +1009,9 @@ unsafe impl<R> ReprC for *mut R {}
 // SAFETY: `*mut R` is robust with a defined C ABI
 unsafe impl<C: ReprC, const N: usize> ReprC for [C; N] {}
 
-impl<R: Ir + CType<R::Type>> FfiType for R {
-    type ReprC = <R as CType<R::Type>>::ReprC;
-}
-impl<'itm, R: Ir + CTypeConvert<'itm, R::Type, C>, C: ReprC> FfiConvert<'itm, C> for R {
-    type RustStore = R::RustStore;
-    type FfiStore = R::FfiStore;
-
-    #[inline]
-    fn into_ffi(self, store: &'itm mut Self::RustStore) -> C {
-        self.into_repr_c(store)
-    }
-
-    #[inline]
-    unsafe fn try_from_ffi(source: C, store: &'itm mut Self::FfiStore) -> Result<Self> {
-        R::try_from_repr_c(source, store)
-    }
-}
-
 impl FfiWrapperType for () {
     type InputType = ();
     type ReturnType = ();
-}
-impl<R: Ir + CWrapperType<R::Type>> FfiWrapperType for R {
-    type InputType = R::InputType;
-    type ReturnType = R::ReturnType;
-}
-impl<R: Ir + COutPtr<R::Type>> FfiOutPtr for R {
-    type OutPtr = R::OutPtr;
-}
-impl<R: Ir + COutPtrWrite<R::Type>> FfiOutPtrWrite for R {
-    unsafe fn write_out(self, out_ptr: *mut Self::OutPtr) {
-        R::write_out(self, out_ptr);
-    }
-}
-impl<R: Ir + COutPtrRead<R::Type>> FfiOutPtrRead for R {
-    unsafe fn try_read_out(out_ptr: Self::OutPtr) -> Result<Self> {
-        R::try_read_out(out_ptr)
-    }
 }
 
 macro_rules! impl_tuple {
@@ -562,9 +1036,41 @@ macro_rules! impl_tuple {
             type Type = Self;
         }
 
-        impl<$($ty: FfiType),+> $crate::repr_c::CType<Self> for ($($ty,)+) {
+        impl<$($ty),+> Cloned for ($($ty,)+) {}
+
+        // SAFETY: Tuple doesn't use store if it's inner types don't use it
+        unsafe impl<$($ty: $crate::out_ptr::NonLocal),+> $crate::out_ptr::NonLocal for ($($ty,)+) {}
+
+        impl<$($ty: FfiType),+> $crate::FfiType for ($($ty,)+) {
             type ReprC = $ffi_ty<$($ty::ReprC),+>;
         }
+
+        impl<$($ty: $crate::out_ptr::FfiOutPtr),+> $crate::out_ptr::FfiOutPtr for ($($ty,)+) {
+            type OutPtr = $ffi_ty<$($ty::OutPtr),+>;
+        }
+
+        #[allow(non_snake_case)]
+        impl<$($ty: $crate::out_ptr::FfiOutPtrWrite),+> $crate::out_ptr::FfiOutPtrWrite for ($($ty,)+) {
+            unsafe fn write_out(self, out_ptr: *mut Self::OutPtr) {
+                impl_tuple! {@decl_priv_out_ptr $($ty),+}
+                let mut field_out_ptrs = ($(core::mem::MaybeUninit::<$ty::OutPtr>::uninit(),)+);
+
+                let ($($ty,)+) = self;
+                let field_out_ptrs: private_out_ptr::OutPtr<$($ty),+> = (&mut field_out_ptrs).into();
+                $( $crate::out_ptr::FfiOutPtrWrite::write_out($ty, field_out_ptrs.$ty.as_mut_ptr()); )+
+                out_ptr.write($ffi_ty($( unsafe { field_out_ptrs.$ty.assume_init() } ),+));
+            }
+        }
+        #[allow(non_snake_case)]
+        impl<$($ty: $crate::out_ptr::FfiOutPtrRead),+> $crate::out_ptr::FfiOutPtrRead for ($($ty,)+) {
+            unsafe fn try_read_out(source: Self::OutPtr) -> Result<Self> {
+                impl_tuple! {@decl_priv_out_ptr $($ty),+}
+
+                let $ffi_ty($($ty,)+) = source;
+                Ok(($( $crate::out_ptr::FfiOutPtrRead::try_read_out($ty)?, )+))
+            }
+        }
+
         impl<'itm, $($ty: FfiConvert<'itm, $repr_c>, $repr_c: $crate::ReprC),+> $crate::repr_c::CTypeConvert<'itm, Self, $ffi_ty<$($repr_c),+>> for ($($ty,)+) {
             type RustStore = ($( $ty::RustStore, )+);
             type FfiStore = ($( $ty::FfiStore, )+);
@@ -587,43 +1093,13 @@ macro_rules! impl_tuple {
             }
         }
 
-        impl<$($ty),+> CWrapperType<Self> for ($($ty,)+) {
+        impl<$($ty),+> $crate::FfiWrapperType for ($($ty,)+) {
             type InputType = Self;
             type ReturnType = Self;
         }
-        impl<$($ty: FfiOutPtr),+> COutPtr<Self> for ($($ty,)+) {
-            type OutPtr = $ffi_ty<$($ty::OutPtr),+>;
-        }
-        #[allow(non_snake_case)]
-        impl<$($ty: FfiOutPtrWrite),+> COutPtrWrite<Self> for ($($ty,)+) {
-            unsafe fn write_out(self, out_ptr: *mut Self::OutPtr) {
-                impl_tuple! {@decl_priv_out_ptr $($ty),+}
-                let mut field_out_ptrs = ($(core::mem::MaybeUninit::<$ty::OutPtr>::uninit(),)+);
-
-                let ($($ty,)+) = self;
-                let field_out_ptrs: private_out_ptr::OutPtr<$($ty),+> = (&mut field_out_ptrs).into();
-                $( FfiOutPtrWrite::write_out($ty, field_out_ptrs.$ty.as_mut_ptr()); )+
-                out_ptr.write($ffi_ty($( unsafe { field_out_ptrs.$ty.assume_init() } ),+));
-            }
-        }
-        #[allow(non_snake_case)]
-        impl<$($ty: FfiOutPtrRead),+> COutPtrRead<Self> for ($($ty,)+) {
-            unsafe fn try_read_out(source: Self::OutPtr) -> Result<Self> {
-                impl_tuple! {@decl_priv_out_ptr $($ty),+}
-
-                let $ffi_ty($($ty,)+) = source;
-                Ok(($( FfiOutPtrRead::try_read_out($ty)?, )+))
-            }
-        }
-
-        impl<$($ty),+> WrapperTypeOf<Self> for ($($ty,)+) {
+        impl<$($ty),+> $crate::WrapperTypeOf<Self> for ($($ty,)+) {
             type Type = Self;
         }
-
-        impl<$($ty),+> Cloned for ($($ty,)+) where Self: CType<Self> {}
-
-        // SAFETY: Tuple doesn't use store if it's inner types don't use it
-        unsafe impl<$($ty: Ir + NonLocal<$ty::Type>),+> NonLocal<Self> for ($($ty,)+) {}
     };
 
     // NOTE: This is a trick to index tuples
@@ -645,11 +1121,11 @@ macro_rules! impl_tuple {
     ( @decl_priv_out_ptr $( $ty:ident ),+ $(,)? ) => {
         mod private_out_ptr {
             #[allow(dead_code)]
-            pub struct OutPtr<'itm, $($ty: $crate::FfiOutPtrWrite),+> {
+            pub struct OutPtr<'itm, $($ty: $crate::out_ptr::FfiOutPtrWrite),+> {
                 $(pub $ty: &'itm mut core::mem::MaybeUninit::<$ty::OutPtr>),+
             }
 
-            impl<'itm, $($ty: $crate::FfiOutPtrWrite),+> From<&'itm mut ($(core::mem::MaybeUninit::<$ty::OutPtr>,)+)> for OutPtr<'itm, $($ty),+> {
+            impl<'itm, $($ty: $crate::out_ptr::FfiOutPtrWrite),+> From<&'itm mut ($(core::mem::MaybeUninit::<$ty::OutPtr>,)+)> for OutPtr<'itm, $($ty),+> {
                 fn from(($($ty,)+): &'itm mut ($(core::mem::MaybeUninit::<$ty::OutPtr>,)+)) -> Self {
                     Self {$($ty,)+}
                 }

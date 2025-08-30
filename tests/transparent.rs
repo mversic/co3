@@ -4,8 +4,9 @@ use std::{alloc, marker::PhantomData, mem::MaybeUninit};
 
 use co3::{
     ffi_export,
+    out_ptr::FfiOutPtrRead,
     slice::{OutBoxedSlice, RefSlice},
-    FfiConvert, FfiOutPtrRead, FfiReturn, FfiType,
+    FfiConvert, FfiReturn, FfiType,
 };
 
 co3::def_ffi_fns! { dealloc }

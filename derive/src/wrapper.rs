@@ -47,7 +47,7 @@ fn impl_clone_for_opaque(name: &Ident, generics: &syn::Generics) -> TokenStream 
                     panic!("Clone returned: {}", clone_result);
                 }
 
-                unsafe {co3::FfiOutPtrRead::try_read_out(output.assume_init()).expect("Invalid output")}
+                unsafe {co3::out_ptr::FfiOutPtrRead::try_read_out(output.assume_init()).expect("Invalid output")}
             }
         }
     }
@@ -68,7 +68,7 @@ fn impl_default_for_opaque(name: &Ident, generics: &syn::Generics) -> TokenStrea
                     panic!("Default returned: {}", default_result);
                 }
 
-                unsafe {co3::FfiOutPtrRead::try_read_out(output.assume_init()).expect("Invalid output")}
+                unsafe {co3::out_ptr::FfiOutPtrRead::try_read_out(output.assume_init()).expect("Invalid output")}
             }
         }
     }
@@ -93,7 +93,7 @@ fn impl_partial_eq_for_opaque(name: &Ident, generics: &syn::Generics) -> TokenSt
                     panic!("Eq returned: {}", eq_result);
                 }
 
-                unsafe {co3::FfiOutPtrRead::try_read_out(output.assume_init()).expect("Invalid output")}
+                unsafe {co3::out_ptr::FfiOutPtrRead::try_read_out(output.assume_init()).expect("Invalid output")}
             }
         }
     }
@@ -125,7 +125,7 @@ fn impl_ord_for_opaque(name: &Ident, generics: &syn::Generics) -> TokenStream {
                     panic!("Ord returned: {}", cmp_result);
                 }
 
-                unsafe {co3::FfiOutPtrRead::try_read_out(output.assume_init()).expect("Invalid output")}
+                unsafe {co3::out_ptr::FfiOutPtrRead::try_read_out(output.assume_init()).expect("Invalid output")}
             }
         }
     }
@@ -327,7 +327,7 @@ fn gen_impl_ffi(name: &Ident, generics: &syn::Generics) -> TokenStream {
         }
 
         // SAFETY: Type is a wrapper for `*mut Extern`
-        unsafe impl #impl_generics co3::ir::Transmute for #name #ty_generics #where_clause {
+        unsafe impl #impl_generics co3::transmute::Transmute for #name #ty_generics #where_clause {
             type Target = *mut co3::Extern;
 
             #[inline]
@@ -340,7 +340,7 @@ fn gen_impl_ffi(name: &Ident, generics: &syn::Generics) -> TokenStream {
             type Type = Self;
         }
 
-        impl #impl_generics co3::repr_c::CType<Self> for #name #ty_generics #where_clause {
+        impl #impl_generics co3::FfiType for #name #ty_generics #where_clause {
             type ReprC = *mut co3::Extern;
         }
         impl #impl_generics co3::repr_c::CTypeConvert<'_, Self, *mut co3::Extern> for #name #ty_generics #where_clause {
@@ -360,14 +360,14 @@ fn gen_impl_ffi(name: &Ident, generics: &syn::Generics) -> TokenStream {
             }
         }
 
-        impl #impl_generics co3::repr_c::CWrapperType<Self> for #name #ty_generics #where_clause {
+        impl #impl_generics co3::FfiWrapperType for #name #ty_generics #where_clause {
             type InputType = Self;
             type ReturnType = Self;
         }
-        impl #impl_generics co3::repr_c::COutPtr<Self> for #name #ty_generics #where_clause {
+        impl #impl_generics co3::out_ptr::FfiOutPtr for #name #ty_generics #where_clause {
             type OutPtr = Self::ReprC;
         }
-        impl #impl_generics co3::repr_c::COutPtrRead<Self> for #name #ty_generics #where_clause {
+        impl #impl_generics co3::out_ptr::FfiOutPtrRead for #name #ty_generics #where_clause {
             unsafe fn try_read_out(out_ptr: Self::OutPtr) -> co3::Result<Self> {
                 co3::repr_c::read_non_local::<_, Self>(out_ptr)
             }
@@ -376,16 +376,16 @@ fn gen_impl_ffi(name: &Ident, generics: &syn::Generics) -> TokenStream {
         impl #impl_generics co3::ir::IrTypeFamily for #name #ty_generics #where_clause {
             type Ref<#lifetime> = &#lifetime co3::Extern where #(#lifetime_bounded_where_clause),*;
             type RefMut<#lifetime> = &#lifetime mut co3::Extern where #(#lifetime_bounded_where_clause),*;
-            type Box = Box<co3::Extern>;
-            type BoxedSlice = Box<[co3::Extern]>;
             type RefSlice<#lifetime> = &#lifetime [co3::ir::Transparent] where #(#lifetime_bounded_where_clause),*;
             type RefMutSlice<#lifetime> = &#lifetime mut [co3::ir::Transparent] where #(#lifetime_bounded_where_clause),*;
+            type Box = Box<co3::Extern>;
+            type BoxedSlice = Box<[co3::Extern]>;
             type Vec = Vec<co3::ir::Transparent>;
             type Arr<const N: usize> = co3::ir::Transparent;
         }
 
         // SAFETY: Type doesn't use store during conversion
-        unsafe impl #impl_generics co3::repr_c::NonLocal<Self> for #name #ty_generics #where_clause {}
+        unsafe impl #impl_generics co3::out_ptr::NonLocal for #name #ty_generics #where_clause {}
 
         co3::ffi_type! {
             unsafe impl<#lifetime #(, #split_impl_generics)*> Transparent for #ref_name #ref_ty_generics #where_clause {
@@ -405,11 +405,11 @@ fn gen_impl_ffi(name: &Ident, generics: &syn::Generics) -> TokenStream {
         }
 
         // SAFETY: Opaque pointer must never be dereferenced
-        unsafe impl #impl_generics co3::ir::InfallibleTransmute for #name #ty_generics #where_clause {}
+        unsafe impl #impl_generics co3::transmute::InfallibleTransmute for #name #ty_generics #where_clause {}
         // SAFETY: Opaque pointer must never be dereferenced
-        unsafe impl #ref_impl_generics co3::ir::InfallibleTransmute for #ref_name #ref_ty_generics #where_clause {}
+        unsafe impl #ref_impl_generics co3::transmute::InfallibleTransmute for #ref_name #ref_ty_generics #where_clause {}
         // SAFETY: Opaque pointer must never be dereferenced
-        unsafe impl #ref_impl_generics co3::ir::InfallibleTransmute for #ref_mut_name #ref_ty_generics #where_clause {}
+        unsafe impl #ref_impl_generics co3::transmute::InfallibleTransmute for #ref_mut_name #ref_ty_generics #where_clause {}
 
         impl #impl_generics co3::WrapperTypeOf<Self> for #name #ty_generics #where_clause {
             type Type = Self;
@@ -771,7 +771,7 @@ fn gen_return_stmt(fn_descriptor: &FnDescriptor) -> TokenStream {
 
         quote! {
             let #arg_name = #arg_name.assume_init();
-            let #arg_name = co3::FfiOutPtrRead::try_read_out(#arg_name).expect("Invalid out-pointer value returned");
+            let #arg_name = co3::out_ptr::FfiOutPtrRead::try_read_out(#arg_name).expect("Invalid out-pointer value returned");
             #return_stmt
         }
     })

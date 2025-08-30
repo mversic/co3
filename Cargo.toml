@@ -20,8 +20,8 @@ non_robust_ref_mut = []
 [dependencies]
 co3_derive = { path = "derive" }
 
-derive_more = { version = "1.0.0", features = ["display", "constructor"] }
-disjoint_impls = "1.0.5"
+derive_more = { version = "2.0.1", features = ["display", "constructor"] }
+disjoint_impls = "1.0.8"
 
 [dev-dependencies]
 webassembly-test = "0.1.0"
