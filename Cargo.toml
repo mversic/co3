@@ -11,6 +11,9 @@ keywords = ["FFI", "foreign", "dynamic", "linking", "ABI"]
 
 categories = ["development-tools::ffi"]
 
+# Because of u128/i128
+rust-version = "1.78"
+
 [features]
 # Enables sharing mutable references of non-robust transmutable types across FFI.
 # When handing out non-robust mutable references across FFI, it's possible for the caller
