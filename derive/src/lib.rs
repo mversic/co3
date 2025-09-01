@@ -193,11 +193,11 @@ pub fn extern_type(input: TokenStream) -> TokenStream {
 /// Due to technical limitations of proc macros, it does not have access to the resolved path of the macro, only to what is written in the derive.
 /// As such, it cannot support derives that are used through aliases, such as
 ///
-/// ```ignore
+/// ```
 /// use getset::Getters as GettersAlias;
+///
 /// #[derive(GettersAlias)]
 /// pub struct Hello {
-///     // ...
 /// }
 /// ```
 ///

@@ -1,7 +1,7 @@
 #![allow(unsafe_code)]
 
 co3::handles! {FfiStruct<bool>}
-co3::decl_ffi_fns! {Drop, Clone, Eq, Ord}
+co3::decl_fns! {Drop, Clone, Eq, Ord}
 
 co3::extern_type! {
     /// Struct without a repr attribute is opaque by default
@@ -32,18 +32,18 @@ fn import_shared_fns() {
 mod ffi {
     use std::alloc;
 
-    use co3::{FfiReturn, FfiType, def_ffi_fns, slice::RefMutSlice};
+    use co3::{FfiReturn, FfiType, slice::RefMutSlice};
 
     co3::handles! {ExternFfiStruct}
 
-    def_ffi_fns! {
+    co3::def_fns! {
         Drop: {ExternFfiStruct},
         Clone: {ExternFfiStruct},
         Eq: {ExternFfiStruct},
         Ord: {ExternFfiStruct}
     }
 
-    co3::def_ffi_fns! { dealloc }
+    co3::def_fns! { dealloc }
 
     #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, FfiType)]
     #[mineral(opaque)]

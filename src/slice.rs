@@ -5,7 +5,7 @@ use core::slice;
 
 use crate::ReprC;
 
-crate::decl_ffi_fns! { dealloc }
+crate::decl_fns! { dealloc }
 
 /// Immutable slice `&[C]` with a defined C ABI layout. Consists of a data pointer and a length.
 /// If the data pointer is set to `null`, the struct represents `Option<&[C]>`.

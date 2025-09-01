@@ -12,7 +12,7 @@ macro_rules! derive_freestanding_export_import {
         mod exports {
             use std::alloc;
 
-            co3::def_ffi_fns! { dealloc }
+            co3::def_fns! { dealloc }
 
             $(
                 #[co3::carbonate]

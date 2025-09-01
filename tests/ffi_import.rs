@@ -136,7 +136,7 @@ mod ffi {
         slice::{OutBoxedSlice, RefMutSlice, RefSlice},
     };
 
-    co3::def_ffi_fns! { dealloc }
+    co3::def_fns! { dealloc }
 
     #[unsafe(no_mangle)]
     unsafe extern "C" fn __freestanding_returns_non_local(

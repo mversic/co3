@@ -888,11 +888,10 @@ pub struct Extern {
 
     // Required for !Send & !Sync & !Unpin.
     //
-    // - `*mut u8` is !Send & !Sync. It must be in `PhantomData` to not
-    //   affect alignment.
+    // - `*mut u8` is !Send & !Sync. It's wrapped in `PhantomData` not to affect alignment.
     //
-    // - `PhantomPinned` is !Unpin. It must be in `PhantomData` because
-    //   its memory representation is not considered FFI-safe.
+    // - `PhantomPinned` is !Unpin. It's wrapped in `PhantomData` because
+    //   its memory representation is not guaranteed to be FFI-safe
     __marker: core::marker::PhantomData<(*mut u8, core::marker::PhantomPinned)>,
 }
 

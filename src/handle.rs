@@ -1,10 +1,13 @@
-//! Logic related to opaque pointer handles and functions that are common to multiple handle types
+//! Utilities for defining opaque pointer handles and shared handle logic.
 
-/// Type of the handle id
+/// Type of the handle identifier
 pub type Id = u8;
 
-/// Implement [`crate::Handle`] for given types with the given initial handle id. Ids are
-/// assigned incrementally to every type in the macro invocation. Check the following example:
+/// Implements [`crate::Handle`] for a list of types, starting from the given initial ID.
+///
+/// Each type in the macro invocation is assigned an ID incrementally.
+///
+/// # Example
 ///
 /// ```rust
 /// struct Foo1;
@@ -12,7 +15,7 @@ pub type Id = u8;
 /// struct Bar1;
 /// struct Bar2;
 ///
-/// co3::handles! {0, Foo1, Foo2, Bar1, Bar2}
+/// co3::handles! {Foo1, Foo2, Bar1, Bar2}
 ///
 /// /* will produce:
 /// impl Handle for Foo1 {
@@ -59,7 +62,7 @@ macro_rules! handles {
 /// The only exception to the rule is `__dealloc` function which is forced to be globally
 /// unique, i.e. it's not possible to define multiple versions by setting a prefix.
 #[macro_export]
-macro_rules! def_ffi_fns {
+macro_rules! def_fns {
     (@catch_unwind $block:block ) => {
         match std::panic::catch_unwind(|| unsafe { $block }) {
             Ok(res) => match res {
@@ -73,10 +76,10 @@ macro_rules! def_ffi_fns {
         }
     };
     ( $($fn_name:ident: {$($other:ty),+ $(,)?}),+ $(,)?) => {
-        $( $crate::def_ffi_fns! { link_prefix = "" $fn_name: {$( $other ),+ }} )+
+        $( $crate::def_fns! { link_prefix = "" $fn_name: {$( $other ),+ }} )+
     };
     ( link_prefix = $prefix:literal $($fn_name:ident: {$($other:ty),+ $(,)?}),+ $(,)?) => {
-        $( $crate::def_ffi_fns! {@def: $prefix $fn_name: $( $other ),+ } )+
+        $( $crate::def_fns! {@def: $prefix $fn_name: $( $other ),+ } )+
     };
     ( @def: $prefix:literal Clone: $( $other:ty ),+ $(,)? ) => {
         /// FFI function equivalent of [`Clone::clone`]
@@ -91,7 +94,7 @@ macro_rules! def_ffi_fns {
             handle_ptr: *const core::ffi::c_void,
             out_ptr: *mut *mut core::ffi::c_void
         ) -> $crate::FfiReturn {
-            $crate::def_ffi_fns!(@catch_unwind {
+            $crate::def_fns!(@catch_unwind {
                 match $crate::FfiConvert::try_from_ffi(handle_id, &mut ())? {
                     $( <$other as $crate::Handle>::ID => {
                         let handle_ref: &$other = $crate::FfiConvert::try_from_ffi(handle_ptr as <&$other as $crate::FfiType>::ReprC, &mut ())?;
@@ -117,7 +120,7 @@ macro_rules! def_ffi_fns {
             handle_id: <$crate::handle::Id as $crate::FfiType>::ReprC,
             out_ptr: *mut *mut core::ffi::c_void
         ) -> $crate::FfiReturn {
-            $crate::def_ffi_fns!(@catch_unwind {
+            $crate::def_fns!(@catch_unwind {
                 match $crate::FfiConvert::try_from_ffi(handle_id, &mut ())? {
                     $( <$other as $crate::Handle>::ID => {
                         let default_value = Default::default();
@@ -147,7 +150,7 @@ macro_rules! def_ffi_fns {
             right_handle_ptr: *const core::ffi::c_void,
             out_ptr: *mut <bool as $crate::out_ptr::FfiOutPtr>::OutPtr,
         ) -> $crate::FfiReturn {
-            $crate::def_ffi_fns!(@catch_unwind {
+            $crate::def_fns!(@catch_unwind {
                 match $crate::FfiConvert::try_from_ffi(handle_id, &mut ())? {
                     $( <$other as $crate::Handle>::ID => {
                         let (lhandle_ptr, rhandle_ptr) = (
@@ -185,7 +188,7 @@ macro_rules! def_ffi_fns {
             right_handle_ptr: *const core::ffi::c_void,
             out_ptr: *mut <core::cmp::Ordering as $crate::out_ptr::FfiOutPtr>::OutPtr,
         ) -> $crate::FfiReturn {
-            $crate::def_ffi_fns!(@catch_unwind {
+            $crate::def_fns!(@catch_unwind {
                 match $crate::FfiConvert::try_from_ffi(handle_id, &mut ())? {
                     $( <$other as $crate::Handle>::ID => {
                         let (lhandle_ptr, rhandle_ptr) = (
@@ -221,7 +224,7 @@ macro_rules! def_ffi_fns {
             handle_id: <$crate::handle::Id as $crate::FfiType>::ReprC,
             handle_ptr: *mut core::ffi::c_void,
         ) -> $crate::FfiReturn {
-            $crate::def_ffi_fns!(@catch_unwind {
+            $crate::def_fns!(@catch_unwind {
                 match $crate::FfiConvert::try_from_ffi(handle_id, &mut ())? {
                     $( <$other as $crate::Handle>::ID => {
                         let handle_ptr = handle_ptr as <$other as $crate::FfiType>::ReprC;
@@ -259,7 +262,7 @@ macro_rules! def_ffi_fns {
 
 /// Generate the declaration of FFI functions for the requested trait method (e.g. Clone, Eq, Ord)
 #[macro_export]
-macro_rules! decl_ffi_fns {
+macro_rules! decl_fns {
     ( dealloc ) => {
         unsafe extern "C" {
             /// FFI function equivalent of [`alloc::alloc::dealloc`]
@@ -275,10 +278,10 @@ macro_rules! decl_ffi_fns {
         }
     };
     ( $($fn_names:ident),+ ) => {
-        $( $crate::decl_ffi_fns!{ link_prefix = "" $fn_names } )+
+        $( $crate::decl_fns!{ link_prefix = "" $fn_names } )+
     };
     ( link_prefix = $prefix:literal $($fn_names:ident),+ ) => {
-        $( $crate::decl_ffi_fns!{ @decl: $prefix $fn_names } )+
+        $( $crate::decl_fns!{ @decl: $prefix $fn_names } )+
     };
     ( @decl: $prefix:literal Clone ) => {
         unsafe extern "C" {

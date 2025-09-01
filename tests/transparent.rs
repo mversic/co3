@@ -8,7 +8,7 @@ use co3::{
     slice::{OutBoxedSlice, RefSlice},
 };
 
-co3::def_ffi_fns! { dealloc }
+co3::def_fns! { dealloc }
 
 #[derive(Clone, Copy, PartialEq, Eq, Debug, FfiType)]
 #[mineral(unsafe(robust))]

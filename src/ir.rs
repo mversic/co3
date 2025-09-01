@@ -1,32 +1,44 @@
-//! Internal representation, a.k.a IR of `Rust` types during conversion into FFI types.
-//! While you can implement [`FfiType`] on your `Rust` type directly, it is encouraged
-//! that you map your type into IR by providing the implementation of [`Ir`] and benefit
-//! from automatic, correct and performant conversions from IR to C type equivalent.
+//! Internal Representation (IR) of Rust types during conversion into FFI types.
+//!
+//! While you can implement [`crate::FfiType`] directly on your type, it is often
+//! preferable to map it into IR by implementing [`Ir`]. This approach gives you
+//! automatic, correct, and zero-cost conversions from IR to the equivalent C type.
 use alloc::{boxed::Box, vec::Vec};
 
 #[cfg(not(feature = "non_robust_ref_mut"))]
 use crate::transmute::InfallibleTransmute;
 use crate::{Extern, LocalRef, LocalSlice, repr_c::Cloned};
 
-/// Designates a type that can be converted to/from internal representation. Predefined IR
-/// types are given automatic implementation of [`FfiType`] and other conversion traits.
+/// Designates a type that can be converted to and from an internal representation (IR).
+///
+/// Predefined IR types automatically implement [`crate::FfiType`] and related conversion traits.
 pub trait Ir {
-    /// Internal representation of the type.
+    /// The internal representation of the type.
     ///
-    /// If the `Self` is [`ReprC`], [`Ir::Type`] should be set to [`Robust`] in which
-    /// case the type will be used in the FFI function as given without any conversion.
+    /// - If [`Self`] is [`ReprC`], set [`Ir::Type`] to [`Robust`].
+    ///   In this case, the type is passed to FFI functions as-is, without conversion.
     ///
-    /// If the [`Ir::Type`] is set to [`Transparent`], `Self` will get an automatic
-    /// implementation of [`FfiType`] that delegates to the inner type. If the conversion
-    /// of the inner type is zero-copy conversion of [`Transparent`] will also be.
+    /// - If [`Ir::Type`] is [`Transparent`], `Self` automatically implements [`crate::FfiType`]
+    ///   by delegating to its inner type.
+    ///   If the inner type supports zero-copy conversion, then [`Transparent`] is also zero-copy.
     ///
-    /// If the [`Ir::Type`] is set to [`Opaque`], `T` will be serialized as an
-    /// opaque pointer (the type is heap allocated during conversion). Except for `Vec<T>`,
-    /// [`Opaque`] is currently the only family of types that transfer ownership over FFI.
+    /// - If [`Ir::Type`] is [`Opaque`], `T` is serialized as an opaque pointer (heap-allocated
+    ///   during conversion).
+    // FIXME: what is this about Vec<T>?
+    ///   Except for `Vec<T>`, [`Opaque`] is currently the only family of types that transfer
+    ///   ownership across FFI.
     ///
-    /// Otherwise, in the common case, [`Ir::Type`] should be set to `Self` and implement
-    /// [`Cloned`] to benefit from the default implementation of [`FfiType`]. Be warned
-    /// that in this case [`FfiType`] implementation will clone the given type.
+    /// - If [`Ir::Type`] is [`Extern`], `T` represents the pointee on the far side of an
+    ///   opaque pointer at the FFI boundary.
+    ///
+    /// - If [`Ir::Type`] is [`Option<T>`], serialization is delegated to the inner type,
+    ///   using its *niche value* to represent `None`.
+    ///
+    /// - If [`Ir::Type`] is [`Option<WithoutNiche>`], serialization is delegated to the
+    ///   inner type, but represented explicitly as a `(discriminant, value)` tuple.
+    ///
+    /// - In the common case, set [`Ir::Type`] to `Self` and implement [`Cloned`].
+    ///   This provides a default [`crate::FfiType`] implementation, but note that it will clone the type.
     type Type;
 }
 
@@ -58,40 +70,44 @@ pub trait IrTypeFamily {
     type Arr<const N: usize>;
 }
 
-/// Type which is replaced by an opaque pointer on FFI import
+/// Represents the pointee on the far side of an exported opaque pointer at the FFI boundary.
 ///
 /// # Safety
 ///
-/// Type implementing must have the same representation as [`*mut Extern`]
-/// `Self::RefType` must have the same representation as [`*const Extern`]
-/// `Self::RefMutType` must have the same representation as [`*mut Extern`]
+/// Implementors must guarantee that:
+/// - `Self` has the same representation as `*mut` [`Extern`].
+/// - [`External::RefType`] has the same representation as `*const` [`Extern`].
+/// - [`External::RefMutType`] has the same representation as `*mut` [`Extern`].
 pub unsafe trait External {
-    /// Type which replaces `&T` on FFI import
+    /// Type that replaces `&T` when imported over FFI.
     type RefType<'itm>;
-    /// Type which replaces `&mut T` on FFI import
+
+    /// Type that replaces `&mut T` when imported over FFI.
     type RefMutType<'itm>;
 
-    /// Return shared opaque pointer
+    /// Returns a shared opaque pointer.
     fn as_extern_ptr(&self) -> *const Extern;
-    /// Return mutable opaque pointer
+
+    /// Returns a mutable opaque pointer.
     fn as_extern_ptr_mut(&mut self) -> *mut Extern;
-    /// Construct type from an opaque pointer
+
+    /// Constructs `Self` from an opaque pointer.
     ///
     /// # Safety
     ///
-    /// The given opaque pointer must be non-null and valid
+    /// The pointer argument must be valid.
     unsafe fn from_extern_ptr(source: *mut Extern) -> Self;
 }
 
-/// Marker for a type that is transferred as an opaque pointer over FFI
+/// Marker for a type exported as an opaque pointer over FFI.
 #[derive(Debug, Clone, Copy)]
 pub enum Opaque {}
 
-/// Marker for a type that is transparent with respect to the wrapped type
+/// Marker for a type that is transparent with respect to its wrapped type.
 #[derive(Debug, Clone, Copy)]
 pub enum Transparent {}
 
-/// Marker for a type that is a robust [`ReprC`] type and doesn't require conversion
+/// Marker for a robust [`crate::ReprC`] type that does not require conversion.
 #[derive(Debug, Clone, Copy)]
 pub enum Robust {}
 
@@ -130,7 +146,7 @@ impl<R: Cloned> IrTypeFamily for R {
         = &'itm Self
     where
         Self: 'itm;
-    // NOTE: Unused
+    // FIXME: Replace with never type https://github.com/rust-lang/rust/issues/35121
     type RefMut<'itm>
         = ()
     where
@@ -139,7 +155,7 @@ impl<R: Cloned> IrTypeFamily for R {
         = &'itm [Self]
     where
         Self: 'itm;
-    // NOTE: Unused
+    // FIXME: Replace with never type https://github.com/rust-lang/rust/issues/35121
     type RefMutSlice<'itm>
         = ()
     where

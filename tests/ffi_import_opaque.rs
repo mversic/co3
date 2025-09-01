@@ -2,11 +2,10 @@
 
 use std::collections::BTreeMap;
 
-use co3::{decl_ffi_fns, ir::External};
+use co3::ir::External as _;
 
 co3::handles! {OpaqueStruct, Value}
-
-decl_ffi_fns! {Drop, Clone, Eq}
+co3::decl_fns! {Drop, Clone, Eq}
 
 co3::extern_type! {
     #[derive(Clone, PartialEq, Eq)]
@@ -136,20 +135,20 @@ mod ffi {
     use std::{alloc, collections::BTreeMap};
 
     use co3::{
-        FfiConvert, FfiReturn, FfiType, def_ffi_fns,
+        FfiConvert, FfiReturn, FfiType,
         out_ptr::{FfiOutPtr, FfiOutPtrWrite},
         slice::RefMutSlice,
     };
 
     co3::handles! {ExternOpaqueStruct, ExternValue}
 
-    def_ffi_fns! {
+    co3::def_fns! {
         Drop: { ExternValue, ExternOpaqueStruct },
         Clone: { ExternValue },
         Eq: { ExternValue, ExternOpaqueStruct },
     }
 
-    co3::def_ffi_fns! { dealloc }
+    co3::def_fns! { dealloc }
 
     #[derive(Debug, Clone, PartialEq, Eq, FfiType)]
     #[mineral(opaque)]

@@ -2,11 +2,11 @@
 
 use std::{cmp::Ordering, mem::MaybeUninit};
 
-use co3::{FfiConvert, FfiReturn, FfiType, Handle, def_ffi_fns, out_ptr::FfiOutPtrRead};
+use co3::{FfiConvert, FfiReturn, FfiType, Handle, def_fns, out_ptr::FfiOutPtrRead};
 
 co3::handles! {FfiStruct1, FfiStruct2}
 
-def_ffi_fns! {
+def_fns! {
     Drop: {FfiStruct1, FfiStruct2},
     Clone: {FfiStruct1, FfiStruct2},
     Eq: {FfiStruct1, FfiStruct2},

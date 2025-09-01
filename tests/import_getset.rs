@@ -1,7 +1,7 @@
 #![allow(unsafe_code)]
 
 co3::handles! {Name, FfiStruct}
-co3::decl_ffi_fns! {Drop, Clone, Eq}
+co3::decl_fns! {Drop, Clone, Eq}
 
 co3::extern_type! {
     #[derive(Clone, PartialEq, Eq)]
@@ -47,15 +47,15 @@ mod ffi {
     use std::alloc;
 
     use co3::{
-        FfiConvert, FfiReturn, FfiType, def_ffi_fns,
+        FfiConvert, FfiReturn, FfiType, def_fns,
         out_ptr::{FfiOutPtr, FfiOutPtrWrite},
         slice::RefMutSlice,
     };
 
     co3::handles! {ExternName, ExternFfiStruct}
 
-    def_ffi_fns! { dealloc }
-    def_ffi_fns! {
+    def_fns! { dealloc }
+    def_fns! {
         Drop: {ExternName, ExternFfiStruct},
         Clone: {ExternName, ExternFfiStruct},
         Eq: {ExternName, ExternFfiStruct},

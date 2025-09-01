@@ -8,7 +8,7 @@ use co3::{
 };
 
 co3::handles! {OpaqueStruct}
-co3::def_ffi_fns! { dealloc }
+co3::def_fns! { dealloc }
 
 pub trait Target {
     type Target;
