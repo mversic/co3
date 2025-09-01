@@ -1,60 +1,60 @@
 #![allow(unsafe_code)]
 
-use co3::{LocalRef, LocalSlice, ffi, ffi_import};
+use co3::{LocalRef, LocalSlice};
 
-ffi! {
-    // NOTE: Wrapped in ffi! to test that macro expansion works for non-opaque types as well.
+co3::extern_type! {
+    // NOTE: Wrapped in co3::extern_type! to test that macro expansion works for non-opaque types
     #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-    #[ffi_type(unsafe {robust})]
+    #[mineral(unsafe {robust})]
     #[repr(transparent)]
     pub struct Transparent((u32, u32));
 }
 
-#[ffi_import]
+#[co3::decarbonate]
 pub fn freestanding_returns_non_local(input: &u32) -> &u32 {
-    unreachable!("replaced by ffi_import")
+    unreachable!("replaced by co3::decarbonate")
 }
 
-#[ffi_import]
+#[co3::decarbonate]
 pub fn freestanding_returns_local_ref(input: &(u32, u32)) -> &(u32, u32) {
-    unreachable!("replaced by ffi_import")
+    unreachable!("replaced by co3::decarbonate")
 }
 
-#[ffi_import]
+#[co3::decarbonate]
 pub fn freestanding_returns_local_slice(input: &[(u32, u32)]) -> &[(u32, u32)] {
-    unreachable!("replaced by ffi_import")
+    unreachable!("replaced by co3::decarbonate")
 }
 
-#[ffi_import]
+#[co3::decarbonate]
 pub fn freestanding_returns_boxed_slice(input: Box<[u32]>) -> Box<[u32]> {
-    unreachable!("replaced by ffi_import")
+    unreachable!("replaced by co3::decarbonate")
 }
 
-#[ffi_import]
+#[co3::decarbonate]
 pub fn freestanding_returns_iterator(
     input: impl IntoIterator<Item = u32>,
 ) -> impl ExactSizeIterator<Item = u32> {
-    unreachable!("replaced by ffi_import")
+    unreachable!("replaced by co3::decarbonate")
 }
 
-#[ffi_import]
+#[co3::decarbonate]
 pub fn freestanding_take_and_return_array(input: [(u32, u32); 2]) -> impl Into<[(u32, u32); 2]> {
-    unreachable!("replaced by ffi_import")
+    unreachable!("replaced by co3::decarbonate")
 }
 
-#[ffi_import]
+#[co3::decarbonate]
 pub fn freestanding_take_and_return_local_transparent_ref(input: &Transparent) -> &Transparent {
-    unreachable!("replaced by ffi_import")
+    unreachable!("replaced by co3::decarbonate")
 }
 
-#[ffi_import]
+#[co3::decarbonate]
 pub fn freestanding_take_and_return_boxed_int(input: Box<u8>) -> Box<u8> {
-    unreachable!("replaced by ffi_import")
+    unreachable!("replaced by co3::decarbonate")
 }
 
-#[ffi_import]
+#[co3::decarbonate]
 pub fn freestanding_return_empty_tuple_result(flag: bool) -> Result<(), u8> {
-    unreachable!("replaced by ffi_import")
+    unreachable!("replaced by co3::decarbonate")
 }
 
 #[test]

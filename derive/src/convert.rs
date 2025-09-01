@@ -30,10 +30,10 @@ enum FfiTypeToken {
 impl Display for FfiTypeToken {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         let text = match self {
-            FfiTypeToken::Opaque => "#[ffi_type(opaque)]",
-            FfiTypeToken::UnsafeRobust => "#[ffi_type(unsafe {robust})]",
-            FfiTypeToken::UnsafeNonOwning => "#[ffi_type(unsafe {non_owning})]",
-            FfiTypeToken::Local => "#[ffi_type(local)]",
+            FfiTypeToken::Opaque => "#[mineral(opaque)]",
+            FfiTypeToken::UnsafeRobust => "#[mineral(unsafe {robust})]",
+            FfiTypeToken::UnsafeNonOwning => "#[mineral(unsafe {non_owning})]",
+            FfiTypeToken::Local => "#[mineral(local)]",
         };
         write!(f, "{text}")
     }
@@ -94,7 +94,7 @@ impl syn::parse::Parse for SpannedFfiTypeToken {
     }
 }
 
-/// This represents an `#[ffi_type(...)]` attribute on a type
+/// This represents an `#[mineral(...)]` attribute on a type
 #[derive(Debug, PartialEq, Eq, Copy, Clone)]
 pub enum FfiTypeKindAttribute {
     Opaque,
@@ -120,7 +120,7 @@ impl syn::parse::Parse for FfiTypeKindAttribute {
     }
 }
 
-/// This represents an `#[ffi_type(...)]` attribute on a field
+/// This represents an `#[mineral(...)]` attribute on a field
 #[derive(Debug, PartialEq, Eq, Copy, Clone)]
 pub enum FfiTypeKindFieldAttribute {
     UnsafeNonOwning,
@@ -142,7 +142,7 @@ impl syn::parse::Parse for FfiTypeKindFieldAttribute {
     }
 }
 
-const FFI_TYPE_ATTR: &str = "ffi_type";
+const FFI_TYPE_ATTR: &str = "mineral";
 
 pub struct FfiTypeAttr {
     pub kind: Option<FfiTypeKindAttribute>,
@@ -257,7 +257,7 @@ pub fn derive_ffi_type(emitter: &mut Emitter, input: &syn::DeriveInput) -> Token
         if variants.is_empty() {
             emit!(
                 emitter,
-                input.span,
+                name,
                 "Uninhabited enums are not allowed in FFI"
             );
         }
@@ -408,7 +408,7 @@ fn derive_ffi_type_for_transparent_item(
 
     if input.ffi_type_attr.kind == Some(FfiTypeKindAttribute::UnsafeRobust) {
         return quote! {
-            co3::ffi_type! {
+            co3::mineral! {
                 // SAFETY: User must make sure the type is robust
                 unsafe impl #impl_generics Transparent for #name #ty_generics #where_clause {
                     type Target = #inner;
@@ -444,7 +444,7 @@ fn derive_ffi_type_for_fieldless_enum(
     };
 
     quote! {
-        co3::ffi_type! {
+        co3::mineral! {
             unsafe impl Transparent for #enum_name {
                 type Target = #enum_repr_type;
 
@@ -594,9 +594,9 @@ fn derive_ffi_type_for_data_carrying_enum(
                 continue;
             };
 
-            non_local_where_clause.predicates.push(
-                syn::parse_quote! {#ty: co3::out_ptr::NonLocal},
-            );
+            non_local_where_clause
+                .predicates
+                .push(syn::parse_quote! {#ty: co3::out_ptr::NonLocal});
         }
 
         quote! {
@@ -669,15 +669,15 @@ fn derive_ffi_type_for_repr_c(emitter: &mut Emitter, input: &FfiTypeInput) -> To
             .repr_attr
             .kind
             .map_or_else(Span::call_site, |kind| kind.span());
-        // TODO: this error message may be unclear. Consider adding a note about the `#[ffi_type]` attribute
-        emit!(emitter, span, "To make an FFI type robust you must mark it with `#[repr(C)]`. Alternatively, try using `#[ffi_type(opaque)]` to make it opaque");
+        // TODO: this error message may be unclear. Consider adding a note about the `#[mineral]` attribute
+        emit!(emitter, span, "To make an FFI type robust you must mark it with `#[repr(C)]`. Alternatively, try using `#[mineral(opaque)]` to make it opaque");
     }
 
     let (impl_generics, ty_generics, where_clause) = input.generics.split_for_impl();
     let name = &input.ident;
 
     quote! {
-        co3::ffi_type! {
+        co3::mineral! {
             impl #impl_generics Robust for #name #ty_generics #where_clause {}
         }
     }
@@ -823,10 +823,7 @@ fn gen_repr_c_enum_name(enum_name: &Ident) -> Ident {
 }
 
 fn gen_repr_c_enum_payload_name(enum_name: &Ident) -> Ident {
-    Ident::new(
-        &format!("__co3__{enum_name}Payload"),
-        Span::call_site(),
-    )
+    Ident::new(&format!("__co3__{enum_name}Payload"), Span::call_site())
 }
 
 // NOTE: Except for the raw pointers there should be no other type
@@ -838,7 +835,7 @@ fn verify_is_non_owning(emitter: &mut Emitter, data: &FfiTypeData) {
     }
     impl syn::visit::Visit<'_> for PtrVisitor<'_> {
         fn visit_type_ptr(&mut self, node: &syn::TypePtr) {
-            emit!(self.emitter, node, "Raw pointer found. If the pointer doesn't own the data, attach `#[ffi_type(unsafe {{non_owning}})` to the field. Otherwise, mark the entire type as opaque with `#[ffi_type(opaque)]`");
+            emit!(self.emitter, node, "Raw pointer found. If the pointer doesn't own the data, attach `#[mineral(unsafe {{non_owning}})` to the field. Otherwise, mark the entire type as opaque with `#[mineral(opaque)]`");
         }
     }
 

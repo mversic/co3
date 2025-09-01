@@ -1,4 +1,4 @@
-use co3::{ffi_export, FfiType};
+use co3::{carbonate, FfiType};
 
 #[derive(FfiType)]
 pub struct Hello {
@@ -6,7 +6,7 @@ pub struct Hello {
     b: i32,
 }
 
-#[ffi_export]
+#[carbonate]
 impl Hello {
     pub fn hello(Hello { a: a1, b: b1 }: Hello, Hello { a: a2, b: b2 }: Hello) -> i32 {
         a1 + b1 + a2 + b2

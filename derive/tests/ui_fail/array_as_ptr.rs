@@ -1,7 +1,6 @@
-use co3::ffi_export;
+use co3::carbonate;
 
-/// Array as argument
-#[ffi_export]
+#[carbonate]
 pub fn array_arg(_arr: [u32; 2]) {}
 
 fn main() {

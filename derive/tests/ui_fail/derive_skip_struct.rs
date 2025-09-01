@@ -1,18 +1,15 @@
 use std::mem::MaybeUninit;
 
 use getset::{MutGetters, Setters};
-use co3::{ffi_export, FfiConvert, FfiType};
+use co3::{carbonate, FfiConvert, FfiType};
 
-/// FfiStruct
-#[ffi_export]
+#[carbonate]
 #[derive(Clone, Setters, MutGetters, FfiType)]
 // TODO: I am not really sure what is the purpose of this test
 // getset allows `#[getset(skip)]` to be placed on a struct, but it doesn't seem to have any effect at all
-// Due to it being potentially error-prone, co3_derive disallows such placement
-// hence it's commented out here
+// Due to it being potentially error-prone, co3_derive disallows such placement hence it's commented out here
 // #[getset(skip)]
 pub struct FfiStruct {
-    /// a
     #[getset(set = "pub", get_mut = "pub")]
     a: u32,
     b: i32,

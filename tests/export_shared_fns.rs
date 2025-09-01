@@ -2,9 +2,7 @@
 
 use std::{cmp::Ordering, mem::MaybeUninit};
 
-use co3::{
-    FfiConvert, FfiReturn, FfiType, Handle, def_ffi_fns, ffi_export, out_ptr::FfiOutPtrRead,
-};
+use co3::{FfiConvert, FfiReturn, FfiType, Handle, def_ffi_fns, out_ptr::FfiOutPtrRead};
 
 co3::handles! {FfiStruct1, FfiStruct2}
 
@@ -21,17 +19,16 @@ pub struct FfiStruct1 {
     name: String,
 }
 
-/// Struct with a repr attribute can be forced to become opaque with `#[ffi_type(opaque)]`
+/// Struct with a repr attribute can be forced to become opaque with `#[mineral(opaque)]`
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, FfiType)]
-#[ffi_type(opaque)]
+#[mineral(opaque)]
 #[repr(C)]
 pub struct FfiStruct2 {
     name: String,
 }
 
-#[ffi_export]
+#[co3::carbonate]
 impl FfiStruct1 {
-    /// New
     pub fn new(name: String) -> Self {
         Self { name }
     }

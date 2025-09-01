@@ -2,14 +2,14 @@ use alloc::{boxed::Box, string::String, vec::Vec};
 use core::{mem::ManuallyDrop, ptr::NonNull};
 
 use crate::{
-    ReprC, WrapperTypeOf, ffi_type,
+    ReprC, WrapperTypeOf, mineral,
     slice::{RefMutSlice, RefSlice},
 };
 
 // WARN: This can be contested as it is nowhere documented that String is
 // actually transmutable into Vec<u8>, but implicitly it should be
 // SAFETY: String type should be transmutable into Vec<u8>
-ffi_type! {
+mineral! {
     unsafe impl Transparent for String {
         type Target = Vec<u8>;
 
@@ -19,7 +19,7 @@ ffi_type! {
 }
 // WARN: `core::str::as_bytes` uses transmute internally which means that
 // even though it's a string slice it can be transmuted into byte slice.
-ffi_type! {
+mineral! {
     unsafe impl Transparent for Box<str> {
         type Target = Box<[u8]>;
 
@@ -27,7 +27,7 @@ ffi_type! {
         niche_value=RefMutSlice::null_mut()
     }
 }
-ffi_type! {
+mineral! {
     unsafe impl<'slice> Transparent for &'slice str {
         type Target = &'slice [u8];
 
@@ -36,7 +36,7 @@ ffi_type! {
     }
 }
 #[cfg(feature = "non_robust_ref_mut")]
-ffi_type! {
+mineral! {
     unsafe impl<'slice> Transparent for &'slice mut str {
         type Target = &'slice mut [u8];
 
@@ -44,12 +44,12 @@ ffi_type! {
         niche_value=RefMutSlice::null_mut()
     }
 }
-ffi_type! {
+mineral! {
     unsafe impl<T> Transparent for core::mem::ManuallyDrop<T> {
         type Target = T;
     }
 }
-ffi_type! {
+mineral! {
     unsafe impl<T> Transparent for core::ptr::NonNull<T> {
         type Target = *mut T;
 

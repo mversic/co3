@@ -1,43 +1,35 @@
 #![allow(unsafe_code)]
 
-use co3::{ffi, ffi_import};
-
 co3::handles! {Name, FfiStruct}
 co3::decl_ffi_fns! {Drop, Clone, Eq}
 
-ffi! {
-    /// Struct
+co3::extern_type! {
     #[derive(Clone, PartialEq, Eq)]
     pub struct Name;
 
-    /// FfiStruct
-    #[ffi_import]
+    #[co3::decarbonate]
     #[derive(Clone, PartialEq, Eq, Setters, Getters, MutGetters)]
     #[getset(get = "pub")]
-    #[ffi_type(opaque)]
+    #[mineral(opaque)]
     #[repr(C)]
     pub struct FfiStruct {
-        /// id
         #[getset(set = "pub", get_mut = "pub")]
         id: u8,
-        /// Name
         name: Name,
     }
 }
 
-#[ffi_import]
+#[co3::decarbonate]
 impl Name {
-    /// New
     pub fn new(name: String) -> Self {
-        unreachable!("replaced by ffi_import")
+        unreachable!("replaced by co3::decarbonate")
     }
 }
 
-#[ffi_import]
+#[co3::decarbonate]
 impl FfiStruct {
-    /// New
     pub fn new(name: String, id: u8) -> Self {
-        unreachable!("replaced by ffi_import")
+        unreachable!("replaced by co3::decarbonate")
     }
 }
 
@@ -69,15 +61,13 @@ mod ffi {
         Eq: {ExternName, ExternFfiStruct},
     }
 
-    /// Structure that `Name` points to
     #[derive(Debug, Clone, PartialEq, Eq, FfiType)]
-    #[ffi_type(opaque)]
+    #[mineral(opaque)]
     #[repr(C)]
     pub struct ExternName(String);
 
-    /// Structure that `FfiStruct` points to
     #[derive(Debug, Clone, PartialEq, Eq, FfiType)]
-    #[ffi_type(opaque)]
+    #[mineral(opaque)]
     #[repr(C)]
     pub struct ExternFfiStruct {
         id: u8,

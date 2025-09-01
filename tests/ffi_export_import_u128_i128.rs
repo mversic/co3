@@ -1,12 +1,10 @@
-use co3::{ffi_export, ffi_import};
-
 macro_rules! derive_freestanding_export_import {
     ($(fn $ident:ident($inp:ty) -> $out:ty);+ $(;)?) => {
         // FFI imports
         $(
-            #[ffi_import]
+            #[co3::decarbonate]
             pub fn $ident(value: $inp) -> $out {
-                unreachable!("replaced by ffi_import")
+                unreachable!("replaced by co3::decarbonate")
             }
         )*
 
@@ -14,12 +12,10 @@ macro_rules! derive_freestanding_export_import {
         mod exports {
             use std::alloc;
 
-            use super::*;
-
             co3::def_ffi_fns! { dealloc }
 
             $(
-                #[ffi_export]
+                #[co3::carbonate]
                 pub fn $ident(value: $inp) -> $out {
                     value
                 }

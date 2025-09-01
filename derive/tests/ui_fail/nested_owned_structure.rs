@@ -1,13 +1,11 @@
 use std::mem::MaybeUninit;
 
-use co3::{ffi_export, FfiType};
+use co3::{carbonate, FfiType};
 
-/// Ffi structure
 #[derive(Clone, FfiType)]
 pub struct FfiStruct;
 
-/// Return nested structure
-#[ffi_export]
+#[carbonate]
 pub fn return_nested() -> Vec<Vec<FfiStruct>> {
     vec![vec![FfiStruct, FfiStruct], vec![FfiStruct, FfiStruct]]
 }

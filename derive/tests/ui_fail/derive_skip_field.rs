@@ -1,17 +1,14 @@
 use std::mem::MaybeUninit;
 
 use getset::{Getters, Setters};
-use co3::{ffi_export, FfiConvert, FfiType};
+use co3::{carbonate, FfiConvert, FfiType};
 
-/// FfiStruct
-#[ffi_export]
+#[carbonate]
 #[derive(Clone, Setters, Getters, FfiType)]
 #[getset(get = "pub")]
 pub struct FfiStruct {
-    /// a
     #[getset(set = "pub")]
     a: i32,
-    /// b
     #[getset(skip)]
     b: u32,
 }

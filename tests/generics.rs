@@ -2,22 +2,20 @@
 
 use std::mem::MaybeUninit;
 
-use co3::{FfiConvert, FfiType, ffi_export};
+use co3::{FfiConvert, FfiType};
 use getset::Getters;
 
-/// Struct
 #[derive(Debug, Clone, Copy, PartialEq, Eq, FfiType)]
 pub struct GenericFfiStruct<T>(T);
 
-/// Struct
-#[ffi_export]
+#[co3::carbonate]
 #[derive(Clone, Copy, Getters, FfiType)]
 #[getset(get = "pub")]
 pub struct FfiStruct {
     inner: GenericFfiStruct<bool>,
 }
 
-#[ffi_export]
+#[co3::carbonate]
 pub fn freestanding(input: GenericFfiStruct<String>) -> GenericFfiStruct<String> {
     input
 }

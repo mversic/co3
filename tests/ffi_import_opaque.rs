@@ -2,69 +2,61 @@
 
 use std::collections::BTreeMap;
 
-use co3::{decl_ffi_fns, ffi, ffi_import, ir::External};
+use co3::{decl_ffi_fns, ir::External};
 
 co3::handles! {OpaqueStruct, Value}
 
 decl_ffi_fns! {Drop, Clone, Eq}
 
-ffi! {
-    /// Opaque value
+co3::extern_type! {
     #[derive(Clone, PartialEq, Eq)]
-    // NOTE: struct's body is replaced by ffi!
+    // NOTE: struct's body is replaced by co3!
     pub struct Value;
 
-    /// Opaque structure
     #[derive(Clone, PartialEq, Eq)]
-    // NOTE: struct's body is replaced by ffi!
+    // NOTE: struct's body is replaced by co3!
     pub struct OpaqueStruct;
 }
 
-#[ffi_import]
+#[co3::decarbonate]
 impl Value {
-    /// New
     pub fn new(input: String) -> Self {
-        unreachable!("replaced by ffi_import")
+        unreachable!("replaced by co3::decarbonate")
     }
 }
 
-#[ffi_import]
+#[co3::decarbonate]
 impl OpaqueStruct {
-    /// New
     pub fn new(name: u8) -> Self {
-        unreachable!("replaced by ffi_import")
+        unreachable!("replaced by co3::decarbonate")
     }
 
-    /// With params
     #[must_use]
     pub fn with_params(self, params: impl IntoIterator<Item = (u8, Value)>) -> OpaqueStruct {
-        unreachable!("replaced by ffi_import")
+        unreachable!("replaced by co3::decarbonate")
     }
 
-    /// Get param
     pub fn get_param(&self, name: &u8) -> Option<&Value> {
-        unreachable!("replaced by ffi_import")
+        unreachable!("replaced by co3::decarbonate")
     }
 
-    /// Params
     pub fn params(&self) -> impl ExactSizeIterator<Item = &Value> {
-        unreachable!("replaced by ffi_import")
+        unreachable!("replaced by co3::decarbonate")
     }
 
-    /// Fallible int output
     pub fn fallible_int_output(flag: bool) -> Result<u8, &'static str> {
-        unreachable!("replaced by ffi_import")
+        unreachable!("replaced by co3::decarbonate")
     }
 }
 
-#[ffi_import]
+#[co3::decarbonate]
 pub fn freestanding_returns_opaque_item(input: &OpaqueStruct) -> &OpaqueStruct {
-    unreachable!("replaced by ffi_import")
+    unreachable!("replaced by co3::decarbonate")
 }
 
-#[ffi_import]
+#[co3::decarbonate]
 pub fn some_fn(input: &Vec<OpaqueStruct>) {
-    unreachable!("replaced by ffi_import")
+    unreachable!("replaced by co3::decarbonate")
 }
 
 fn make_new_opaque(name: u8, params: BTreeMap<u8, Value>) -> OpaqueStruct {
@@ -159,15 +151,13 @@ mod ffi {
 
     co3::def_ffi_fns! { dealloc }
 
-    /// Structure that `Value` points to
     #[derive(Debug, Clone, PartialEq, Eq, FfiType)]
-    #[ffi_type(opaque)]
+    #[mineral(opaque)]
     #[repr(C)]
     pub struct ExternValue(pub String);
 
-    /// Structure that `OpaqueStruct` points to
     #[derive(Debug, PartialEq, Eq, FfiType)]
-    #[ffi_type(opaque)]
+    #[mineral(opaque)]
     #[repr(C)]
     pub struct ExternOpaqueStruct {
         pub name: Option<u8>,

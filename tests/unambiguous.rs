@@ -2,7 +2,7 @@
 
 use std::mem::MaybeUninit;
 
-use co3::{FfiReturn, FfiType, ffi_export, out_ptr::FfiOutPtrRead};
+use co3::{FfiReturn, FfiType, out_ptr::FfiOutPtrRead as _};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, FfiType)]
 #[repr(u8)]
@@ -13,13 +13,11 @@ pub enum Ambiguous {
     None,
 }
 
-/// `FfiStruct`
 #[derive(Clone, Copy, FfiType)]
 pub struct FfiStruct;
 
-#[ffi_export]
+#[co3::carbonate]
 impl FfiStruct {
-    /// Ambiguous method
     pub fn ambiguous() -> Ambiguous {
         Ambiguous::Inherent
     }
@@ -33,14 +31,14 @@ pub trait AmbiguousY {
     fn ambiguous() -> Ambiguous;
 }
 
-#[ffi_export]
+#[co3::carbonate]
 impl AmbiguousX for FfiStruct {
     fn ambiguous() -> Ambiguous {
         Ambiguous::AmbiguousX
     }
 }
 
-#[ffi_export]
+#[co3::carbonate]
 impl AmbiguousY for FfiStruct {
     fn ambiguous() -> Ambiguous {
         Ambiguous::AmbiguousY

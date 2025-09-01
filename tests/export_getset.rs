@@ -2,22 +2,18 @@
 
 use std::mem::MaybeUninit;
 
-use co3::{FfiType, ffi_export};
+use co3::FfiType;
 use getset::{Getters, MutGetters, Setters};
 
-/// Struct
 #[derive(Debug, Clone, PartialEq, Eq, FfiType)]
 pub struct Name(String);
 
-/// FfiStruct
-#[ffi_export]
+#[co3::carbonate]
 #[derive(Clone, Setters, Getters, MutGetters, FfiType)]
 #[getset(get = "pub")]
 pub struct FfiStruct {
-    /// id
     #[getset(set = "pub", get_mut = "pub")]
     id: u32,
-    /// Name
     name: Name,
 }
 

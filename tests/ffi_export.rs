@@ -3,8 +3,8 @@
 use std::{alloc, collections::BTreeMap, mem::MaybeUninit};
 
 use co3::{
-    FfiConvert, FfiReturn, FfiTuple1, FfiTuple2, FfiType, LocalRef, ffi_export,
-    out_ptr::FfiOutPtrRead, slice::OutBoxedSlice,
+    FfiConvert, FfiReturn, FfiTuple1, FfiTuple2, FfiType, LocalRef, out_ptr::FfiOutPtrRead,
+    slice::OutBoxedSlice,
 };
 
 co3::handles! {OpaqueStruct}
@@ -21,7 +21,6 @@ pub struct Name(String);
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, FfiType)]
 pub struct Value(String);
 
-/// Opaque structure
 #[derive(Debug, Clone, PartialEq, Eq, Default, FfiType)]
 pub struct OpaqueStruct {
     name: Option<Name>,
@@ -29,7 +28,6 @@ pub struct OpaqueStruct {
     params: BTreeMap<Name, Value>,
 }
 
-/// Fieldless enum
 #[repr(u8)]
 #[derive(Debug, Clone, Copy, PartialEq, Eq, FfiType)]
 pub enum FieldlessEnum {
@@ -44,7 +42,6 @@ pub enum TransparentFieldlessEnum {
     A,
 }
 
-/// Data-carrying enum
 #[derive(Debug, Clone, PartialEq, Eq, FfiType)]
 #[allow(variant_size_differences)]
 pub enum DataCarryingEnum {
@@ -55,7 +52,6 @@ pub enum DataCarryingEnum {
     D,
 }
 
-/// `ReprC` struct
 #[derive(Clone, Copy, PartialEq, Eq, FfiType)]
 #[repr(C)]
 pub struct RobustReprCStruct<T, U> {
@@ -65,9 +61,8 @@ pub struct RobustReprCStruct<T, U> {
     d: core::mem::ManuallyDrop<i16>,
 }
 
-#[ffi_export]
+#[co3::carbonate]
 impl OpaqueStruct {
-    /// New
     pub fn new(name: Name) -> Self {
         Self {
             name: Some(name),
@@ -76,17 +71,14 @@ impl OpaqueStruct {
         }
     }
 
-    /// Consume self
     pub fn consume_self(self) {}
 
-    /// With tokens
     #[must_use]
     pub fn with_tokens(mut self, tokens: impl IntoIterator<Item = impl Into<Value>>) -> Self {
         self.tokens = tokens.into_iter().map(Into::into).collect();
         self
     }
 
-    /// With params
     #[must_use]
     // NOTE: used `-> OpaqueStruct` instead of `-> Self` to showcase that the signature is supported
     pub fn with_params(mut self, params: impl IntoIterator<Item = (Name, Value)>) -> OpaqueStruct {
@@ -94,135 +86,115 @@ impl OpaqueStruct {
         self
     }
 
-    /// Get param
     pub fn get_param(&self, name: &Name) -> Option<&Value> {
         self.params.get(name)
     }
 
-    /// Params
     pub fn params(&self) -> impl ExactSizeIterator<Item = (&Name, &Value)> {
         self.params.iter()
     }
 
-    /// Remove parameter
     pub fn remove_param(&mut self, param: &Name) -> Option<Value> {
         self.params.remove(param)
     }
 
-    /// Fallible int output
     pub fn fallible_int_output(flag: bool) -> Result<u32, &'static str> {
         if flag { Ok(42) } else { Err("fail") }
     }
 
-    /// Fallible empty tuple output
     pub fn fallible_empty_tuple_output(flag: bool) -> Result<(), &'static str> {
         if flag { Ok(()) } else { Err("fail") }
     }
 }
 
-#[ffi_export]
-/// Take and return boxed slice
+#[co3::carbonate]
 pub fn freestanding_with_boxed_slice(item: Box<[u8]>) -> Box<[u8]> {
     item
 }
 
-#[ffi_export]
-/// Take and return byte
+#[co3::carbonate]
 pub fn freestanding_with_option(item: Option<u8>) -> Option<u8> {
     item
 }
 
-#[ffi_export]
-/// Take and return byte
+#[co3::carbonate]
 pub fn freestanding_with_option_with_niche_ref(item: &Option<bool>) -> &Option<bool> {
     item
 }
 
-#[ffi_export]
-/// Take and return byte
+#[co3::carbonate]
 pub fn freestanding_with_option_without_niche_ref(item: &Option<u8>) -> &Option<u8> {
     item
 }
 
-#[ffi_export]
-/// Take and return byte
+#[co3::carbonate]
 pub fn freestanding_with_primitive(byte: u8) -> u8 {
     byte
 }
 
-/// Take and return fieldless enum
-#[ffi_export]
+#[co3::carbonate]
 pub fn freestanding_with_fieldless_enum(enum_: FieldlessEnum) -> FieldlessEnum {
     enum_
 }
 
-/// Return data-carrying enum
-#[ffi_export]
+#[co3::carbonate]
 pub fn freestanding_with_data_carrying_enum(enum_: DataCarryingEnum) -> DataCarryingEnum {
     enum_
 }
 
-/// Return array as pointer
-#[ffi_export]
+#[co3::carbonate]
 pub fn freestanding_with_array(arr: [u8; 1]) -> [u8; 1] {
     arr
 }
 
-/// Take and return array reference
-#[ffi_export]
+#[co3::carbonate]
 pub fn freestanding_with_array_ref(arr: &[u8; 1]) -> &[u8; 1] {
     arr
 }
 
-/// Return array wrapped in a tuple
-#[ffi_export]
+#[co3::carbonate]
 pub fn freestanding_with_array_in_struct(arr: ([u8; 1],)) -> ([u8; 1],) {
     arr
 }
 
-/// Return a `#[repr(C)]` union
-#[ffi_export]
+#[co3::carbonate]
 pub fn freestanding_with_repr_c_struct(
     struct_: RobustReprCStruct<u32, i16>,
 ) -> RobustReprCStruct<u32, i16> {
     struct_
 }
 
-/// Return array wrapped in a tuple
-#[ffi_export]
+#[co3::carbonate]
 #[allow(clippy::vec_box)]
 pub fn get_vec_of_boxed_opaques() -> Vec<Box<OpaqueStruct>> {
     vec![Box::new(get_new_struct())]
 }
 
-/// Take and return array
-#[ffi_export]
+#[co3::carbonate]
 pub fn take_and_return_array_of_opaques(a: [OpaqueStruct; 2]) -> [OpaqueStruct; 2] {
     a
 }
 
-/// Receive nested vector
-#[ffi_export]
+#[co3::carbonate]
 pub fn freestanding_with_nested_vec(_vec: Vec<Vec<Vec<u8>>>) {}
 
-/// Take `&mut String`
-#[ffi_export]
+#[co3::carbonate]
 #[cfg(feature = "non_robust_ref_mut")]
 pub fn take_non_robust_ref_mut(val: &mut str) -> &mut str {
     val
 }
 
-#[ffi_export]
+#[co3::carbonate]
 pub fn take_vec_ref(a: &Vec<u8>) {
     assert_eq!(a, &vec![1, 2])
 }
 
-#[ffi_export]
+#[co3::carbonate]
 pub fn take_tuple_ref(a: &(u8, u8)) -> &(u8, u8) {
     a
 }
 
-#[ffi_export]
+#[co3::carbonate]
 impl Target for OpaqueStruct {
     type Target = Option<Name>;
 
@@ -231,7 +203,7 @@ impl Target for OpaqueStruct {
     }
 }
 
-#[ffi_export]
+#[co3::carbonate]
 pub fn reference_from_slice(a: &[u8]) -> &u8 {
     &a[0]
 }

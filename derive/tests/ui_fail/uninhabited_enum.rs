@@ -1,11 +1,9 @@
 use co3::FfiType;
 
-/// Uninhabited enum
 #[derive(FfiType)]
-#[ffi_type(opaque)]
+#[mineral(opaque)]
 pub enum FfiStruct1 {}
 
-/// Uninhabited enum
 #[derive(FfiType)]
 pub enum FfiStruct2 {}
 

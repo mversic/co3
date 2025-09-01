@@ -251,7 +251,7 @@ impl GetSetRawFieldAttr {
                     darling::Error::custom(
                         "getset attributes without `getset` prefix are not supported by co3_derive",
                     )
-                        .with_span(attr),
+                    .with_span(attr),
                 );
             }
         }

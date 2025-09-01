@@ -387,7 +387,7 @@ fn gen_impl_ffi(name: &Ident, generics: &syn::Generics) -> TokenStream {
         // SAFETY: Type doesn't use store during conversion
         unsafe impl #impl_generics co3::out_ptr::NonLocal for #name #ty_generics #where_clause {}
 
-        co3::ffi_type! {
+        co3::mineral! {
             unsafe impl<#lifetime #(, #split_impl_generics)*> Transparent for #ref_name #ref_ty_generics #where_clause {
                 type Target = *const co3::Extern;
 
@@ -395,7 +395,7 @@ fn gen_impl_ffi(name: &Ident, generics: &syn::Generics) -> TokenStream {
                 niche_value=core::ptr::null()
             }
         }
-        co3::ffi_type! {
+        co3::mineral! {
             unsafe impl <#lifetime #(, #split_impl_generics)*> Transparent for #ref_mut_name #ref_ty_generics #where_clause {
                 type Target = *mut co3::Extern;
 

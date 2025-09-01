@@ -3,7 +3,7 @@
 use std::{alloc, marker::PhantomData, mem::MaybeUninit};
 
 use co3::{
-    FfiConvert, FfiReturn, FfiType, ffi_export,
+    FfiConvert, FfiReturn, FfiType,
     out_ptr::FfiOutPtrRead,
     slice::{OutBoxedSlice, RefSlice},
 };
@@ -11,7 +11,7 @@ use co3::{
 co3::def_ffi_fns! { dealloc }
 
 #[derive(Clone, Copy, PartialEq, Eq, Debug, FfiType)]
-#[ffi_type(unsafe{robust})]
+#[mineral(unsafe{robust})]
 #[repr(transparent)]
 pub struct GenericTransparentStruct<P>(u64, PhantomData<P>);
 
@@ -22,7 +22,7 @@ impl<P> GenericTransparentStruct<P> {
 }
 
 #[derive(Clone, Copy, PartialEq, Eq, Debug, FfiType)]
-#[ffi_type(unsafe{robust})]
+#[mineral(unsafe{robust})]
 #[repr(transparent)]
 pub struct TransparentStruct {
     payload: GenericTransparentStruct<()>,
@@ -37,7 +37,7 @@ type NonRobustTransparentInner = [u8; 4];
 #[repr(transparent)]
 pub struct NonRobustTransparent(NonRobustTransparentInner);
 
-co3::ffi_type! {
+co3::mineral! {
     unsafe impl Transparent for NonRobustTransparent {
         type Target = NonRobustTransparentInner;
 
@@ -46,19 +46,17 @@ co3::ffi_type! {
     }
 }
 
-/// Return array as pointer
-#[ffi_export]
+#[co3::carbonate]
 pub fn array_of_transparent(arr: &mut [TransparentStruct; 1]) -> &mut [TransparentStruct; 1] {
     arr
 }
 
-/// Return array as pointer
-#[ffi_export]
+#[co3::carbonate]
 pub fn transparent_with_niche(arr: Option<NonRobustTransparent>) -> Option<NonRobustTransparent> {
     arr
 }
 
-#[ffi_export]
+#[co3::carbonate]
 impl TransparentStruct {
     pub fn new(payload: GenericTransparentStruct<()>) -> Self {
         Self {
@@ -84,17 +82,17 @@ impl TransparentStruct {
     }
 }
 
-#[ffi_export]
+#[co3::carbonate]
 pub fn self_to_self(value: TransparentStruct) -> TransparentStruct {
     value
 }
 
-#[ffi_export]
+#[co3::carbonate]
 pub fn vec_to_vec(value: Vec<TransparentStruct>) -> Vec<TransparentStruct> {
     value
 }
 
-#[ffi_export]
+#[co3::carbonate]
 pub fn slice_to_slice(value: &[TransparentStruct]) -> &[TransparentStruct] {
     value
 }

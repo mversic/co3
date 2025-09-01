@@ -8,18 +8,18 @@ use syn::Item;
 use wrapper::wrap_method;
 
 use crate::{
-    emitter::Emitter,
     attr_parse::derive::Derive,
     convert::{derive_ffi_type, FfiTypeData, FfiTypeInput},
+    emitter::Emitter,
 };
 
 mod attr_parse;
 mod convert;
+mod emitter;
 mod ffi_fn;
 mod getset_gen;
 mod impl_visitor;
 mod wrapper;
-mod emitter;
 
 struct FfiItems(Vec<FfiTypeInput>);
 
@@ -76,7 +76,7 @@ fn parse_attributes(ts: TokenStream) -> Vec<syn::Attribute> {
 /// It assumes that the derive is imported and referred to by its original name.
 #[manyhow]
 #[proc_macro]
-pub fn ffi(input: TokenStream) -> TokenStream {
+pub fn extern_type(input: TokenStream) -> TokenStream {
     let items = match syn::parse2::<FfiItems>(input) {
         Ok(items) => items.0,
         Err(err) => return err.to_compile_error(),
@@ -144,17 +144,17 @@ pub fn ffi(input: TokenStream) -> TokenStream {
     emitter.finish_token_stream_with(quote! { #(#items)* })
 }
 
-// TODO: ffi_type(`local`) is a workaround for https://github.com/rust-lang/rust/issues/48214
+// TODO: mineral(`local`) is a workaround for https://github.com/rust-lang/rust/issues/48214
 // because some derived types cannot derive `NonLocal` othwerise. Should be removed in future
 /// Derive implementations of traits required to convert to and from an FFI-compatible type
 ///
 /// # Attributes
 ///
-/// * `#[ffi_type(opaque)]`
+/// * `#[mineral(opaque)]`
 /// serialize the type as opaque. If automatically derived type doesn't work just
 /// attach this attribute and force the type to be serialized as opaque across FFI
 ///
-/// * `#[ffi_type(unsafe {robust})]`
+/// * `#[mineral(unsafe {robust})]`
 /// serialize the type as transparent with respect to the wrapped type where every
 /// valid bit pattern of the underlying type must be valid for the wrapper type.
 ///
@@ -164,7 +164,7 @@ pub fn ffi(input: TokenStream) -> TokenStream {
 ///
 /// type must not have trap representations in the serialized form
 ///
-/// * `#[ffi_type(local)]`
+/// * `#[mineral(local)]`
 /// marks the type as local, meaning it contains references to the local frame. If a type
 /// contains references to the local frame you won't be able to return it from an FFI function
 /// because the frame is destroyed on function return which would invalidate your type's references.
@@ -173,11 +173,11 @@ pub fn ffi(input: TokenStream) -> TokenStream {
 ///
 /// NOTE: This attribute is likely to be removed in future versions
 ///
-/// * `#[ffi_type(unsafe {robust_non_owning})]`
+/// * `#[mineral(unsafe {robust_non_owning})]`
 /// when a type contains a raw pointer (e.g. `*const T`/*mut T`) it's not possible to figure out
 /// whether it carries ownership of the data pointed to. Place this attribute on the field to
 /// indicate pointer doesn't own the data and is robust in the type. Alternatively, if the type
-/// is carrying ownership mark entire type as opaque with `#[ffi_type(opaque)]`. If the type
+/// is carrying ownership mark entire type as opaque with `#[mineral(opaque)]`. If the type
 /// is not carrying ownership, but is not robust convert it into an equivalent [`co3::ReprC`]
 /// type that is validated when crossing the FFI boundary. It is also ok to mark non-owning,
 /// non-robust type as opaque
@@ -203,7 +203,7 @@ pub fn ffi(input: TokenStream) -> TokenStream {
 ///
 /// It assumes that the derive is imported and referred to by its original name.
 #[manyhow]
-#[proc_macro_derive(FfiType, attributes(ffi_type))]
+#[proc_macro_derive(FfiType, attributes(mineral))]
 pub fn ffi_type_derive(input: TokenStream) -> TokenStream {
     let mut emitter = Emitter::new();
 
@@ -233,7 +233,7 @@ pub fn ffi_type_derive(input: TokenStream) -> TokenStream {
 /// use getset::Getters;
 ///
 /// // For a struct such as:
-/// #[co3::ffi_export]
+/// #[co3::carbonate]
 /// #[derive(co3::FfiType, Clone, Getters)]
 /// #[getset(get = "pub")]
 /// pub struct Foo {
@@ -243,7 +243,7 @@ pub fn ffi_type_derive(input: TokenStream) -> TokenStream {
 ///     bar: Vec<u8>,
 /// }
 ///
-/// #[co3::ffi_export]
+/// #[co3::carbonate]
 /// impl Foo {
 ///     /// Construct new type
 ///     pub fn new(id: u8) -> Self {
@@ -290,7 +290,7 @@ pub fn ffi_type_derive(input: TokenStream) -> TokenStream {
 /// It assumes that the derive is imported and referred to by its original name.
 #[manyhow]
 #[proc_macro_attribute]
-pub fn ffi_export(attr: TokenStream, item: TokenStream) -> TokenStream {
+pub fn carbonate(attr: TokenStream, item: TokenStream) -> TokenStream {
     let item = match syn::parse2::<Item>(item) {
         Ok(item) => item,
         Err(err) => return err.to_compile_error(),
@@ -387,13 +387,13 @@ pub fn ffi_export(attr: TokenStream, item: TokenStream) -> TokenStream {
     emitter.finish_token_stream_with(result)
 }
 
-/// Replace the function's body with a call to FFI function. Counterpart of [`ffi_export`]
+/// Replace the function's body with a call to FFI function. Counterpart of [`carbonate`]
 ///
 /// When placed on a structure, it integrates with [`getset`] to import derived getter/setter methods.
 ///
 /// # Example:
 /// ```rust
-/// #[co3::ffi_import]
+/// #[co3::decarbonate]
 /// pub fn return_first_elem_from_arr(arr: [u8; 8]) -> u8 {
 ///     // The body of this function is replaced with something like the following:
 ///     // let mut store = Default::default();
@@ -431,7 +431,7 @@ pub fn ffi_export(attr: TokenStream, item: TokenStream) -> TokenStream {
 /// It assumes that the derive is imported and referred to by its original name.
 #[manyhow]
 #[proc_macro_attribute]
-pub fn ffi_import(attr: TokenStream, item: TokenStream) -> TokenStream {
+pub fn decarbonate(attr: TokenStream, item: TokenStream) -> TokenStream {
     let item = match syn::parse2::<Item>(item) {
         Ok(item) => item,
         Err(err) => return err.to_compile_error(),

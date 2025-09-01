@@ -1,22 +1,19 @@
 #![allow(unsafe_code)]
 
-use co3::{ffi, ffi_import};
-
 co3::handles! {FfiStruct<bool>}
 co3::decl_ffi_fns! {Drop, Clone, Eq, Ord}
 
-ffi! {
+co3::extern_type! {
     /// Struct without a repr attribute is opaque by default
     #[derive(Clone, PartialEq, Eq, PartialOrd, Ord)]
-    // NOTE: Replaced by the `ffi` macro
+    // NOTE: Replaced by the [`co3::extern_type`] macro
     pub struct FfiStruct<T>;
 }
 
-#[ffi_import]
+#[co3::decarbonate]
 impl FfiStruct<bool> {
-    /// New
     pub fn new(name: String) -> Self {
-        unreachable!("replaced by ffi_import")
+        unreachable!("replaced by co3::decarbonate")
     }
 }
 
@@ -48,9 +45,8 @@ mod ffi {
 
     co3::def_ffi_fns! { dealloc }
 
-    /// Structure that `Value` points to
     #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, FfiType)]
-    #[ffi_type(opaque)]
+    #[mineral(opaque)]
     #[repr(C)]
     pub struct ExternFfiStruct(pub String);
 
