@@ -2,7 +2,7 @@
 
 use std::mem::MaybeUninit;
 
-use co3::{ffi_export, FfiType};
+use co3::{FfiType, ffi_export};
 use getset::{Getters, MutGetters, Setters};
 
 /// Struct

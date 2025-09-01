@@ -55,10 +55,9 @@ mod ffi {
     use std::alloc;
 
     use co3::{
-        def_ffi_fns,
+        FfiConvert, FfiReturn, FfiType, def_ffi_fns,
         out_ptr::{FfiOutPtr, FfiOutPtrWrite},
         slice::RefMutSlice,
-        FfiConvert, FfiReturn, FfiType,
     };
 
     co3::handles! {ExternName, ExternFfiStruct}
@@ -85,68 +84,87 @@ mod ffi {
         name: ExternName,
     }
 
-    #[no_mangle]
+    #[unsafe(no_mangle)]
     unsafe extern "C" fn Name__new(
         input1: RefMutSlice<u8>,
         output: *mut *mut ExternName,
     ) -> FfiReturn {
-        let string = String::from_utf8(input1.into_rust().expect("Defined").to_vec());
-        let opaque = Box::new(ExternName(string.expect("Valid UTF8 string")));
-        output.write(Box::into_raw(opaque));
+        unsafe {
+            let string = String::from_utf8(input1.into_rust().expect("Defined").to_vec());
+            let opaque = Box::new(ExternName(string.expect("Valid UTF8 string")));
+            output.write(Box::into_raw(opaque));
+        }
+
         FfiReturn::Ok
     }
 
-    #[no_mangle]
+    #[unsafe(no_mangle)]
     unsafe extern "C" fn FfiStruct__new(
         input1: RefMutSlice<u8>,
         input2: <u8 as FfiType>::ReprC,
         output: *mut *mut ExternFfiStruct,
     ) -> FfiReturn {
-        let string = String::from_utf8(input1.into_rust().expect("Defined").to_vec());
-        let num = FfiConvert::try_from_ffi(input2, &mut ()).expect("Valid num");
-        let name = ExternName(string.expect("Valid UTF8 string"));
-        let opaque = Box::new(ExternFfiStruct { id: num, name });
-        output.write(Box::into_raw(opaque));
+        unsafe {
+            let string = String::from_utf8(input1.into_rust().expect("Defined").to_vec());
+            let num = FfiConvert::try_from_ffi(input2, &mut ()).expect("Valid num");
+            let name = ExternName(string.expect("Valid UTF8 string"));
+            let opaque = Box::new(ExternFfiStruct { id: num, name });
+
+            output.write(Box::into_raw(opaque));
+        }
+
         FfiReturn::Ok
     }
 
-    #[no_mangle]
+    #[unsafe(no_mangle)]
     unsafe extern "C" fn FfiStruct__id(
         input: *const ExternFfiStruct,
         output: *mut <&u8 as FfiType>::ReprC,
     ) -> FfiReturn {
-        let input = &*input;
-        output.write(&input.id);
+        unsafe {
+            let input = &*input;
+            output.write(&input.id);
+        }
+
         FfiReturn::Ok
     }
 
-    #[no_mangle]
+    #[unsafe(no_mangle)]
     unsafe extern "C" fn FfiStruct__id_mut(
         input: *mut ExternFfiStruct,
         output: *mut <&mut u8 as FfiType>::ReprC,
     ) -> FfiReturn {
-        let input = &mut *input;
-        output.write(&mut input.id);
+        unsafe {
+            let input = &mut *input;
+            output.write(&mut input.id);
+        }
+
         FfiReturn::Ok
     }
 
-    #[no_mangle]
+    #[unsafe(no_mangle)]
     unsafe extern "C" fn FfiStruct__set_id(
         input: *mut ExternFfiStruct,
         id: <u8 as FfiType>::ReprC,
     ) -> FfiReturn {
-        let input = &mut *input;
-        input.id = FfiConvert::try_from_ffi(id, &mut ()).expect("Valid num");
+        unsafe {
+            let input = &mut *input;
+            input.id = FfiConvert::try_from_ffi(id, &mut ()).expect("Valid num");
+        }
+
         FfiReturn::Ok
     }
 
-    #[no_mangle]
+    #[unsafe(no_mangle)]
     unsafe extern "C" fn FfiStruct__name(
         input: *const ExternFfiStruct,
         output: *mut <&ExternName as FfiOutPtr>::OutPtr,
     ) -> FfiReturn {
-        let input = &*input;
-        FfiOutPtrWrite::write_out(&input.name, output);
+        unsafe {
+            let input = &*input;
+            FfiOutPtrWrite::write_out(&input.name, output);
+        }
+
         FfiReturn::Ok
     }
 }

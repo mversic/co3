@@ -9,17 +9,18 @@ use alloc::{boxed::Box, vec::Vec};
 use core::{mem::ManuallyDrop, ptr::addr_of_mut};
 
 use crate::{
+    Extern, FfiConvert, FfiReturn, ReprC, Result,
     ir::{External, Ir, Opaque, Robust, Transparent},
     out_ptr::NonLocal,
     slice::{RefMutSlice, RefSlice},
     transmute::{
-        transmute_from_target, transmute_from_target_box, transmute_from_target_boxed_slice,
-        transmute_from_target_ref_slice, transmute_from_target_slice_mut,
-        transmute_from_target_vec, transmute_into_target, transmute_into_target_box,
-        transmute_into_target_boxed_slice, transmute_into_target_ref_slice,
-        transmute_into_target_slice_mut, transmute_into_target_vec, Transmute,
+        Transmute, transmute_from_target, transmute_from_target_box,
+        transmute_from_target_boxed_slice, transmute_from_target_ref_slice,
+        transmute_from_target_slice_mut, transmute_from_target_vec, transmute_into_target,
+        transmute_into_target_box, transmute_into_target_boxed_slice,
+        transmute_into_target_ref_slice, transmute_into_target_slice_mut,
+        transmute_into_target_vec,
     },
-    Extern, FfiConvert, FfiReturn, ReprC, Result,
 };
 
 /// Type that cannot be transmuted into a [`ReprC`] type is therefore cloned when
@@ -35,15 +36,12 @@ impl<const N: usize> Cloned for [Opaque; N] {}
 impl<R: Ir, const N: usize> Cloned for [R; N] where R::Type: Cloned {}
 
 fn default_init_arr<R: Default, const N: usize>() -> [R; N] {
+    let vec = core::iter::repeat_with(Default::default)
+        .take(N)
+        .collect::<Vec<_>>();
+
     // SAFETY: Vec<T> length is N
-    unsafe {
-        TryFrom::try_from(
-            core::iter::repeat_with(Default::default)
-                .take(N)
-                .collect::<Vec<_>>(),
-        )
-        .unwrap_unchecked()
-    }
+    unsafe { TryFrom::try_from(vec).unwrap_unchecked() }
 }
 
 /// Write a rust value into an out-pointer of any type that doesn't return a
@@ -61,10 +59,13 @@ pub unsafe fn write_non_local<
     out_ptr: *mut R::ReprC,
 ) {
     let mut store = Default::default();
-    // NOTE: Bypasses the erroneous lifetime check.
-    // Correct as long as `R::into_repr_c` doesn't return a reference to the store (`R: NonLocal`)
-    let store_borrow = &mut *addr_of_mut!(store);
-    out_ptr.write(CTypeConvert::into_repr_c(source, store_borrow));
+
+    unsafe {
+        // NOTE: Bypasses the erroneous lifetime check.
+        // Correct as long as `R::into_repr_c` doesn't return a reference to the store (`R: NonLocal`)
+        let store_borrow = &mut *addr_of_mut!(store);
+        out_ptr.write(CTypeConvert::into_repr_c(source, store_borrow));
+    }
 }
 
 /// Read a rust value from an out-pointer of any type that doesn't return a reference
@@ -85,10 +86,13 @@ pub unsafe fn read_non_local<
     out_ptr: R::ReprC,
 ) -> Result<R> {
     let mut store = Default::default();
-    // NOTE: Bypasses the erroneous lifetime check.
-    // Correct as long as `R::try_from_repr_c` doesn't return a reference to the store (`R: NonLocal`)
-    let store_borrow = &mut *addr_of_mut!(store);
-    CTypeConvert::try_from_repr_c(out_ptr, store_borrow)
+
+    unsafe {
+        // NOTE: Bypasses the erroneous lifetime check.
+        // Correct as long as `R::try_from_repr_c` doesn't return a reference to the store (`R: NonLocal`)
+        let store_borrow = &mut *addr_of_mut!(store);
+        CTypeConvert::try_from_repr_c(out_ptr, store_borrow)
+    }
 }
 
 /// The trait facilitates conversion of rust types to/from `ReprC` types.
@@ -132,15 +136,17 @@ impl<'itm, R: CTypeConvert<'itm, S, C> + Clone, S: Cloned, C: ReprC>
     }
 
     unsafe fn try_from_repr_c(source: *const C, store: &'itm mut Self::FfiStore) -> Result<Self> {
-        if source.as_ref().is_none() {
-            return Err(FfiReturn::ArgIsNull);
-        }
+        unsafe {
+            if source.as_ref().is_none() {
+                return Err(FfiReturn::ArgIsNull);
+            }
 
-        Ok(store.0.insert(
-            R::try_from_repr_c(source.read(), &mut store.1)
-                .map(ManuallyDrop::new)
-                .map(|item| (*item).clone())?,
-        ))
+            Ok(store.0.insert(
+                R::try_from_repr_c(source.read(), &mut store.1)
+                    .map(ManuallyDrop::new)
+                    .map(|item| (*item).clone())?,
+            ))
+        }
     }
 }
 
@@ -154,14 +160,16 @@ impl<'itm, R: CTypeConvert<'itm, S, C> + Clone, S: Cloned, C: ReprC>
         store.0.insert((*self).into_repr_c(&mut store.1))
     }
     unsafe fn try_from_repr_c(source: *mut C, store: &'itm mut Self::FfiStore) -> Result<Self> {
-        if source.as_mut().is_none() {
-            return Err(FfiReturn::ArgIsNull);
-        }
+        unsafe {
+            if source.as_mut().is_none() {
+                return Err(FfiReturn::ArgIsNull);
+            }
 
-        R::try_from_repr_c(source.read(), store)
-            .map(ManuallyDrop::new)
-            .map(|item| (*item).clone())
-            .map(Box::new)
+            R::try_from_repr_c(source.read(), store)
+                .map(ManuallyDrop::new)
+                .map(|item| (*item).clone())
+                .map(Box::new)
+        }
     }
 }
 
@@ -190,7 +198,7 @@ impl<'itm, R: CTypeConvert<'itm, S, C> + Clone, S: Cloned, C: ReprC>
         source: RefMutSlice<C>,
         store: &'itm mut Self::FfiStore,
     ) -> Result<Self> {
-        let slice = source.into_rust().ok_or(FfiReturn::ArgIsNull)?;
+        let slice = unsafe { source.into_rust() }.ok_or(FfiReturn::ArgIsNull)?;
 
         *store = core::iter::repeat_with(Default::default)
             .take(slice.len())
@@ -200,7 +208,9 @@ impl<'itm, R: CTypeConvert<'itm, S, C> + Clone, S: Cloned, C: ReprC>
             .iter()
             .copied()
             .zip(&mut **store)
-            .map(|(item, substore)| R::try_from_repr_c(item, substore).map(ManuallyDrop::new))
+            .map(|(item, substore)| {
+                unsafe { R::try_from_repr_c(item, substore) }.map(ManuallyDrop::new)
+            })
             .collect::<core::result::Result<_, _>>()?;
 
         Ok(vec.iter().cloned().map(ManuallyDrop::into_inner).collect())
@@ -237,12 +247,13 @@ impl<'slice, R: CTypeConvert<'slice, S, C> + Clone, S: Cloned, C: ReprC>
             .take(source.len())
             .collect();
 
-        let source: Box<[_]> = source
-            .into_rust()
+        let source: Box<[_]> = unsafe { source.into_rust() }
             .ok_or(FfiReturn::ArgIsNull)?
             .iter()
             .zip(&mut *store.1)
-            .map(|(&item, substore)| R::try_from_repr_c(item, substore).map(ManuallyDrop::new))
+            .map(|(&item, substore)| {
+                unsafe { R::try_from_repr_c(item, substore) }.map(ManuallyDrop::new)
+            })
             .collect::<core::result::Result<_, _>>()?;
 
         store.0 = source
@@ -280,7 +291,7 @@ impl<'itm, R: CTypeConvert<'itm, S, C> + Clone, S: Cloned, C: ReprC>
         source: RefMutSlice<C>,
         store: &'itm mut Self::FfiStore,
     ) -> Result<Self> {
-        let slice = source.into_rust().ok_or(FfiReturn::ArgIsNull)?;
+        let slice = unsafe { source.into_rust() }.ok_or(FfiReturn::ArgIsNull)?;
 
         *store = core::iter::repeat_with(Default::default)
             .take(slice.len())
@@ -290,7 +301,9 @@ impl<'itm, R: CTypeConvert<'itm, S, C> + Clone, S: Cloned, C: ReprC>
             .iter()
             .copied()
             .zip(&mut **store)
-            .map(|(item, substore)| R::try_from_repr_c(item, substore).map(ManuallyDrop::new))
+            .map(|(item, substore)| unsafe {
+                R::try_from_repr_c(item, substore).map(ManuallyDrop::new)
+            })
             .collect::<core::result::Result<_, _>>()?;
 
         Ok(vec.iter().cloned().map(ManuallyDrop::into_inner).collect())
@@ -320,21 +333,23 @@ where
         unsafe { array.unwrap_unchecked() }
     }
     unsafe fn try_from_repr_c(source: [C; N], store: &'itm mut Self::FfiStore) -> Result<Self> {
-        let array: [ManuallyDrop<R>; N] = source
+        let vec: core::result::Result<[_; N], _> = source
             .into_iter()
             .zip(store.iter_mut())
-            .map(|(item, substore)| R::try_from_repr_c(item, substore).map(ManuallyDrop::new))
+            .map(|(item, substore)| unsafe {
+                R::try_from_repr_c(item, substore).map(ManuallyDrop::new)
+            })
             .collect::<core::result::Result<Vec<_>, FfiReturn>>()?
-            .try_into()
-            .unwrap_unchecked();
+            .try_into();
 
-        Ok(array
+        let array = unsafe { vec.unwrap_unchecked() }
             .iter()
             .cloned()
             .map(ManuallyDrop::into_inner)
             .collect::<Vec<_>>()
-            .try_into()
-            .unwrap_unchecked())
+            .try_into();
+
+        Ok(unsafe { array.unwrap_unchecked() })
     }
 }
 impl<'itm, R: CTypeConvert<'itm, S, C> + Clone, S: Cloned, C: ReprC, const N: usize>
@@ -359,7 +374,7 @@ where
             return Err(FfiReturn::ArgIsNull);
         }
 
-        Self::try_from_repr_c(source.read(), store)
+        unsafe { Self::try_from_repr_c(source.read(), store) }
     }
 }
 impl<R: ReprC> CTypeConvert<'_, Robust, R> for R {
@@ -387,7 +402,7 @@ impl<R: ReprC, const N: usize> CTypeConvert<'_, Robust, *mut [R; N]> for [R; N] 
             return Err(FfiReturn::ArgIsNull);
         }
 
-        Ok(source.read())
+        Ok(unsafe { source.read() })
     }
 }
 impl<R: ReprC> CTypeConvert<'_, Box<Robust>, *mut R> for Box<R> {
@@ -403,7 +418,7 @@ impl<R: ReprC> CTypeConvert<'_, Box<Robust>, *mut R> for Box<R> {
             return Err(FfiReturn::ArgIsNull);
         }
 
-        Ok(Box::new(source.read()))
+        Ok(Box::new(unsafe { source.read() }))
     }
 }
 impl<R: ReprC> CTypeConvert<'_, Box<[Robust]>, RefMutSlice<R>> for Box<[R]> {
@@ -416,8 +431,7 @@ impl<R: ReprC> CTypeConvert<'_, Box<[Robust]>, RefMutSlice<R>> for Box<[R]> {
     }
 
     unsafe fn try_from_repr_c(source: RefMutSlice<R>, (): &mut ()) -> Result<Self> {
-        source
-            .into_rust()
+        unsafe { source.into_rust() }
             .ok_or(FfiReturn::ArgIsNull)
             .map(|slice| (&*slice).into())
     }
@@ -431,7 +445,7 @@ impl<R: ReprC> CTypeConvert<'_, &[Robust], RefSlice<R>> for &[R] {
     }
 
     unsafe fn try_from_repr_c(source: RefSlice<R>, (): &mut ()) -> Result<Self> {
-        source.into_rust().ok_or(FfiReturn::ArgIsNull)
+        unsafe { source.into_rust() }.ok_or(FfiReturn::ArgIsNull)
     }
 }
 impl<R: ReprC> CTypeConvert<'_, &mut [Robust], RefMutSlice<R>> for &mut [R] {
@@ -443,7 +457,7 @@ impl<R: ReprC> CTypeConvert<'_, &mut [Robust], RefMutSlice<R>> for &mut [R] {
     }
 
     unsafe fn try_from_repr_c(source: RefMutSlice<R>, (): &mut ()) -> Result<Self> {
-        source.into_rust().ok_or(FfiReturn::ArgIsNull)
+        unsafe { source.into_rust() }.ok_or(FfiReturn::ArgIsNull)
     }
 }
 
@@ -457,8 +471,7 @@ impl<R: ReprC> CTypeConvert<'_, Vec<Robust>, RefMutSlice<R>> for Vec<R> {
     }
 
     unsafe fn try_from_repr_c(source: RefMutSlice<R>, (): &mut ()) -> Result<Self> {
-        source
-            .into_rust()
+        unsafe { source.into_rust() }
             .ok_or(FfiReturn::ArgIsNull)
             .map(|slice| slice.to_vec())
     }
@@ -475,7 +488,7 @@ impl<R> CTypeConvert<'_, Opaque, *mut R> for R {
             return Err(FfiReturn::ArgIsNull);
         }
 
-        Ok(*Box::from_raw(source))
+        Ok(*unsafe { Box::from_raw(source) })
     }
 }
 
@@ -492,7 +505,7 @@ impl<R> CTypeConvert<'_, Box<Opaque>, *mut R> for Box<R> {
             return Err(FfiReturn::ArgIsNull);
         }
 
-        Ok(Box::from_raw(source))
+        Ok(unsafe { Box::from_raw(source) })
     }
 }
 
@@ -511,11 +524,11 @@ impl<R> CTypeConvert<'_, Box<[Opaque]>, RefMutSlice<*mut R>> for Box<[R]> {
     }
 
     unsafe fn try_from_repr_c(source: RefMutSlice<*mut R>, (): &mut ()) -> Result<Self> {
-        source
-            .into_rust()
-            .ok_or(FfiReturn::ArgIsNull)?
+        let slice = unsafe { source.into_rust() }.ok_or(FfiReturn::ArgIsNull)?;
+
+        slice
             .iter()
-            .map(|&item| {
+            .map(|&item| unsafe {
                 if let Some(item) = item.as_mut() {
                     return Ok(*Box::from_raw(item));
                 }
@@ -541,12 +554,12 @@ impl<'slice, R: Clone> CTypeConvert<'slice, &'slice [Opaque], RefSlice<*const R>
         source: RefSlice<*const R>,
         store: &'slice mut Self::FfiStore,
     ) -> Result<Self> {
-        let source = source.into_rust().ok_or(FfiReturn::ArgIsNull)?;
+        let source = unsafe { source.into_rust() }.ok_or(FfiReturn::ArgIsNull)?;
 
         *store = source
             .iter()
             .map(|item| {
-                item.as_ref()
+                unsafe { item.as_ref() }
                     // NOTE: This function clones every opaque pointer in the slice. This could
                     // be avoided with the entire slice being opaque, if that even makes sense.
                     .cloned()
@@ -572,12 +585,12 @@ impl<'slice, R: Clone> CTypeConvert<'slice, &mut [Opaque], RefMutSlice<*mut R>>
         source: RefMutSlice<*mut R>,
         store: &'slice mut Self::FfiStore,
     ) -> Result<Self> {
-        let source = source.into_rust().ok_or(FfiReturn::ArgIsNull)?;
+        let source = unsafe { source.into_rust() }.ok_or(FfiReturn::ArgIsNull)?;
 
         *store = source
             .iter()
             .map(|item| {
-                item.as_mut()
+                unsafe { item.as_mut() }
                     // NOTE: This function clones every opaque pointer in the slice. This could
                     // be avoided with the entire slice being opaque, if that even makes sense.
                     .cloned()
@@ -599,11 +612,12 @@ impl<R> CTypeConvert<'_, Vec<Opaque>, RefMutSlice<*mut R>> for Vec<R> {
     }
 
     unsafe fn try_from_repr_c(source: RefMutSlice<*mut R>, (): &mut ()) -> Result<Self> {
-        source
-            .into_rust()
+        let slice = unsafe { source.into_rust() };
+
+        slice
             .ok_or(FfiReturn::ArgIsNull)?
             .iter()
-            .map(|&item| {
+            .map(|&item| unsafe {
                 if let Some(item) = item.as_mut() {
                     return Ok(*Box::from_raw(item));
                 }
@@ -631,9 +645,9 @@ impl<R, const N: usize> CTypeConvert<'_, [Opaque; N], [*mut R; N]> for [R; N] {
     }
 
     unsafe fn try_from_repr_c(source: [*mut R; N], (): &mut ()) -> Result<Self> {
-        Ok(source
+        let array = source
             .into_iter()
-            .map(|item| {
+            .map(|item| unsafe {
                 if let Some(item) = item.as_mut() {
                     return Ok(*Box::from_raw(item));
                 }
@@ -641,8 +655,9 @@ impl<R, const N: usize> CTypeConvert<'_, [Opaque; N], [*mut R; N]> for [R; N] {
                 Err(FfiReturn::ArgIsNull)
             })
             .collect::<core::result::Result<Vec<R>, _>>()?
-            .try_into()
-            .unwrap_unchecked())
+            .try_into();
+
+        Ok(unsafe { array.unwrap_unchecked() })
     }
 }
 impl<R, const N: usize> CTypeConvert<'_, [Opaque; N], *mut [*mut R; N]> for [R; N] {
@@ -658,7 +673,7 @@ impl<R, const N: usize> CTypeConvert<'_, [Opaque; N], *mut [*mut R; N]> for [R; 
             return Err(FfiReturn::ArgIsNull);
         }
 
-        CTypeConvert::try_from_repr_c(source.read(), &mut ())
+        unsafe { CTypeConvert::try_from_repr_c(source.read(), &mut ()) }
     }
 }
 
@@ -675,7 +690,7 @@ impl<R: External> CTypeConvert<'_, Box<Extern>, *mut Extern> for Box<R> {
             return Err(FfiReturn::ArgIsNull);
         }
 
-        Ok(Box::new(External::from_extern_ptr(source)))
+        Ok(Box::new(unsafe { External::from_extern_ptr(source) }))
     }
 }
 
@@ -691,7 +706,9 @@ where
     }
 
     unsafe fn try_from_repr_c(source: C, store: &'itm mut Self::FfiStore) -> Result<Self> {
-        FfiConvert::try_from_ffi(source, store).and_then(|inner| transmute_from_target(inner))
+        unsafe {
+            FfiConvert::try_from_ffi(source, store).and_then(|inner| transmute_from_target(inner))
+        }
     }
 }
 
@@ -707,8 +724,10 @@ where
     }
 
     unsafe fn try_from_repr_c(source: C, store: &'itm mut Self::FfiStore) -> Result<Self> {
-        Box::<R::Target>::try_from_ffi(source, store)
-            .and_then(|output| transmute_from_target_box(output))
+        unsafe {
+            Box::<R::Target>::try_from_ffi(source, store)
+                .and_then(|output| transmute_from_target_box(output))
+        }
     }
 }
 
@@ -724,8 +743,10 @@ where
     }
 
     unsafe fn try_from_repr_c(source: C, store: &'itm mut Self::FfiStore) -> Result<Self> {
-        <Box<[R::Target]>>::try_from_ffi(source, store)
-            .and_then(|output| transmute_from_target_boxed_slice(output))
+        unsafe {
+            <Box<[R::Target]>>::try_from_ffi(source, store)
+                .and_then(|output| transmute_from_target_boxed_slice(output))
+        }
     }
 }
 
@@ -742,8 +763,10 @@ where
     }
 
     unsafe fn try_from_repr_c(source: C, store: &'slice mut Self::FfiStore) -> Result<Self> {
-        let slice = <&[R::Target]>::try_from_ffi(source, store)?;
-        transmute_from_target_ref_slice(slice)
+        unsafe {
+            let slice = <&[R::Target]>::try_from_ffi(source, store)?;
+            transmute_from_target_ref_slice(slice)
+        }
     }
 }
 
@@ -760,8 +783,10 @@ where
     }
 
     unsafe fn try_from_repr_c(source: C, store: &'slice mut Self::FfiStore) -> Result<Self> {
-        <&mut [R::Target]>::try_from_ffi(source, store)
-            .and_then(|output| transmute_from_target_slice_mut(output))
+        unsafe {
+            <&mut [R::Target]>::try_from_ffi(source, store)
+                .and_then(|output| transmute_from_target_slice_mut(output))
+        }
     }
 }
 
@@ -777,7 +802,9 @@ where
     }
 
     unsafe fn try_from_repr_c(source: C, store: &'itm mut Self::FfiStore) -> Result<Self> {
-        <Vec<R::Target>>::try_from_ffi(source, store)
-            .and_then(|output| transmute_from_target_vec(output))
+        unsafe {
+            <Vec<R::Target>>::try_from_ffi(source, store)
+                .and_then(|output| transmute_from_target_vec(output))
+        }
     }
 }

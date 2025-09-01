@@ -121,7 +121,7 @@ pub struct Repr {
 
 impl FromAttributes for Repr {
     fn from_attributes(attrs: &[Attribute]) -> darling::Result<Self> {
-        let mut result = Repr::default();
+        let mut result = Self::default();
         let mut accumulator = Accumulator::default();
 
         for attr in attrs {

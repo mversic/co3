@@ -85,7 +85,7 @@ fn constructor() {
     let mut expected_result = ffi::ExternOpaqueStruct {
         name: Some(name),
         tokens: vec![],
-        params: BTreeMap::default(),
+        params: Default::default(),
     };
     let opaque: &mut ffi::ExternOpaqueStruct = unsafe { core::mem::transmute(opaque) };
     assert_eq!(&mut expected_result, opaque);
@@ -144,10 +144,9 @@ mod ffi {
     use std::{alloc, collections::BTreeMap};
 
     use co3::{
-        def_ffi_fns,
+        FfiConvert, FfiReturn, FfiType, def_ffi_fns,
         out_ptr::{FfiOutPtr, FfiOutPtrWrite},
         slice::RefMutSlice,
-        FfiConvert, FfiReturn, FfiType,
     };
 
     co3::handles! {ExternOpaqueStruct, ExternValue}
@@ -176,83 +175,105 @@ mod ffi {
         pub params: BTreeMap<u8, ExternValue>,
     }
 
-    #[no_mangle]
+    #[unsafe(no_mangle)]
     unsafe extern "C" fn Value__new(
         input: RefMutSlice<u8>,
         output: *mut *mut ExternValue,
     ) -> FfiReturn {
-        let string = String::from_utf8(input.into_rust().expect("Defined").to_vec());
-        let opaque = Box::new(ExternValue(string.expect("Valid UTF8 string")));
-        output.write(Box::into_raw(opaque));
+        unsafe {
+            let string = String::from_utf8(input.into_rust().expect("Defined").to_vec());
+            let opaque = Box::new(ExternValue(string.expect("Valid UTF8 string")));
+
+            output.write(Box::into_raw(opaque));
+        }
+
         FfiReturn::Ok
     }
 
-    #[no_mangle]
+    #[unsafe(no_mangle)]
     unsafe extern "C" fn OpaqueStruct__new(
         name: <u8 as co3::FfiType>::ReprC,
         output: *mut *mut ExternOpaqueStruct,
     ) -> FfiReturn {
-        let opaque = Box::new(ExternOpaqueStruct {
-            name: Some(FfiConvert::try_from_ffi(name, &mut ()).expect("Valid num")),
-            tokens: vec![],
-            params: BTreeMap::default(),
-        });
-        output.write(Box::into_raw(opaque));
+        unsafe {
+            let opaque = Box::new(ExternOpaqueStruct {
+                name: Some(FfiConvert::try_from_ffi(name, &mut ()).expect("Valid num")),
+                tokens: vec![],
+                params: Default::default(),
+            });
+
+            output.write(Box::into_raw(opaque));
+        }
+
         FfiReturn::Ok
     }
 
-    #[no_mangle]
+    #[unsafe(no_mangle)]
     unsafe extern "C" fn OpaqueStruct__with_params(
         handle: *mut ExternOpaqueStruct,
         params: <Vec<(u8, ExternValue)> as co3::FfiType>::ReprC,
         output: *mut *mut ExternOpaqueStruct,
     ) -> co3::FfiReturn {
-        let mut handle = *Box::from_raw(handle);
-        let mut store = Box::default();
-        let params: Vec<(u8, ExternValue)> =
-            FfiConvert::try_from_ffi(params, &mut store).expect("Valid");
-        handle.params = params.into_iter().collect();
-        output.write(Box::into_raw(Box::new(handle)));
+        unsafe {
+            let mut handle = *Box::from_raw(handle);
+            let mut store = Default::default();
+
+            let params: Vec<(u8, ExternValue)> =
+                FfiConvert::try_from_ffi(params, &mut store).expect("Valid");
+
+            handle.params = params.into_iter().collect();
+            output.write(Box::into_raw(Box::new(handle)));
+        }
         FfiReturn::Ok
     }
 
-    #[no_mangle]
+    #[unsafe(no_mangle)]
     unsafe extern "C" fn OpaqueStruct__get_param(
         handle: *const ExternOpaqueStruct,
         param_name: <&u8 as FfiType>::ReprC,
         output: *mut *const ExternValue,
     ) -> FfiReturn {
-        let handle = handle.as_ref().expect("Valid");
-        let param_name = param_name.as_ref().expect("Valid");
-        let value = handle.params.get(param_name);
-        FfiOutPtrWrite::write_out(value, output);
+        unsafe {
+            let handle = handle.as_ref().expect("Valid");
+            let param_name = param_name.as_ref().expect("Valid");
+            let value = handle.params.get(param_name);
+            FfiOutPtrWrite::write_out(value, output);
+        }
+
         FfiReturn::Ok
     }
 
-    #[no_mangle]
+    #[unsafe(no_mangle)]
     unsafe extern "C" fn OpaqueStruct__params(
         handle: *const ExternOpaqueStruct,
         output: *mut <Vec<&ExternValue> as FfiOutPtr>::OutPtr,
     ) -> FfiReturn {
-        let handle = handle.as_ref().expect("Valid");
-        let params: Vec<_> = handle.params.values().collect();
-        FfiOutPtrWrite::write_out(params, output);
+        unsafe {
+            let handle = handle.as_ref().expect("Valid");
+            let params: Vec<_> = handle.params.values().collect();
+            FfiOutPtrWrite::write_out(params, output);
+        }
+
         FfiReturn::Ok
     }
 
-    #[no_mangle]
+    #[unsafe(no_mangle)]
     unsafe extern "C" fn OpaqueStruct__remove_param(
         handle: *mut ExternOpaqueStruct,
         param_name: <&u8 as FfiType>::ReprC,
         output: *mut *mut ExternValue,
     ) -> FfiReturn {
-        let handle = handle.as_mut().expect("Valid");
-        let param_name = param_name.as_ref().expect("Valid");
-        output.write(handle.params.remove(param_name).into_ffi(&mut ()));
+        unsafe {
+            let handle = handle.as_mut().expect("Valid");
+            let param_name = param_name.as_ref().expect("Valid");
+
+            output.write(handle.params.remove(param_name).into_ffi(&mut ()));
+        }
+
         FfiReturn::Ok
     }
 
-    #[no_mangle]
+    #[unsafe(no_mangle)]
     unsafe extern "C" fn OpaqueStruct__fallible_int_output(
         input: <bool as FfiType>::ReprC,
         output: *mut <u8 as FfiOutPtr>::OutPtr,
@@ -261,16 +282,22 @@ mod ffi {
             return FfiReturn::ExecutionFail;
         }
 
-        output.write(42);
+        unsafe {
+            output.write(42);
+        }
+
         FfiReturn::Ok
     }
 
-    #[no_mangle]
+    #[unsafe(no_mangle)]
     unsafe extern "C" fn __freestanding_returns_opaque_item(
         input: *const ExternOpaqueStruct,
         output: *mut *const ExternOpaqueStruct,
     ) -> FfiReturn {
-        output.write(input);
+        unsafe {
+            output.write(input);
+        }
+
         FfiReturn::Ok
     }
 }

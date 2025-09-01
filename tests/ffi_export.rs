@@ -3,8 +3,8 @@
 use std::{alloc, collections::BTreeMap, mem::MaybeUninit};
 
 use co3::{
-    ffi_export, out_ptr::FfiOutPtrRead, slice::OutBoxedSlice, FfiConvert, FfiReturn, FfiTuple1,
-    FfiTuple2, FfiType, LocalRef,
+    FfiConvert, FfiReturn, FfiTuple1, FfiTuple2, FfiType, LocalRef, ffi_export,
+    out_ptr::FfiOutPtrRead, slice::OutBoxedSlice,
 };
 
 co3::handles! {OpaqueStruct}
@@ -72,7 +72,7 @@ impl OpaqueStruct {
         Self {
             name: Some(name),
             tokens: Vec::new(),
-            params: BTreeMap::default(),
+            params: Default::default(),
         }
     }
 
@@ -111,20 +111,12 @@ impl OpaqueStruct {
 
     /// Fallible int output
     pub fn fallible_int_output(flag: bool) -> Result<u32, &'static str> {
-        if flag {
-            Ok(42)
-        } else {
-            Err("fail")
-        }
+        if flag { Ok(42) } else { Err("fail") }
     }
 
     /// Fallible empty tuple output
     pub fn fallible_empty_tuple_output(flag: bool) -> Result<(), &'static str> {
-        if flag {
-            Ok(())
-        } else {
-            Err("fail")
-        }
+        if flag { Ok(()) } else { Err("fail") }
     }
 }
 
@@ -794,9 +786,9 @@ fn return_vec_of_boxed_opaques() {
 #[test]
 #[webassembly_test::webassembly_test]
 fn array_of_opaques() {
-    let input = [OpaqueStruct::default(), OpaqueStruct::default()];
+    let input: [OpaqueStruct; 2] = [Default::default(), Default::default()];
     let mut output = MaybeUninit::new([core::ptr::null_mut(), core::ptr::null_mut()]);
-    let mut store = Option::default();
+    let mut store = Default::default();
 
     unsafe {
         assert_eq!(

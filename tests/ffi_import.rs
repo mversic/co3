@@ -1,6 +1,6 @@
 #![allow(unsafe_code)]
 
-use co3::{ffi, ffi_import, LocalRef, LocalSlice};
+use co3::{LocalRef, LocalSlice, ffi, ffi_import};
 
 ffi! {
     // NOTE: Wrapped in ffi! to test that macro expansion works for non-opaque types as well.
@@ -131,89 +131,112 @@ mod ffi {
     use std::alloc;
 
     use co3::{
+        FfiReturn, FfiTuple2, FfiType,
         out_ptr::FfiOutPtr,
         slice::{OutBoxedSlice, RefMutSlice, RefSlice},
-        FfiReturn, FfiTuple2, FfiType,
     };
 
     co3::def_ffi_fns! { dealloc }
 
-    #[no_mangle]
+    #[unsafe(no_mangle)]
     unsafe extern "C" fn __freestanding_returns_non_local(
         input: *const u32,
         output: *mut *const u32,
     ) -> FfiReturn {
-        output.write(input);
+        unsafe {
+            output.write(input);
+        }
+
         FfiReturn::Ok
     }
 
-    #[no_mangle]
+    #[unsafe(no_mangle)]
     unsafe extern "C" fn __freestanding_returns_local_ref(
         input: *const FfiTuple2<u32, u32>,
         output: *mut FfiTuple2<u32, u32>,
     ) -> FfiReturn {
-        output.write(input.read());
+        unsafe {
+            output.write(input.read());
+        }
+
         FfiReturn::Ok
     }
 
-    #[no_mangle]
+    #[unsafe(no_mangle)]
     unsafe extern "C" fn __freestanding_returns_local_slice(
         input: RefSlice<FfiTuple2<u32, u32>>,
         output: *mut OutBoxedSlice<FfiTuple2<u32, u32>>,
     ) -> FfiReturn {
-        let input = input.into_rust().map(Into::into);
-        output.write(OutBoxedSlice::from_boxed_slice(input));
+        unsafe {
+            let input = input.into_rust().map(Into::into);
+            output.write(OutBoxedSlice::from_boxed_slice(input));
+        }
+
         FfiReturn::Ok
     }
 
-    #[no_mangle]
+    #[unsafe(no_mangle)]
     unsafe extern "C" fn __freestanding_returns_boxed_slice(
         input: RefMutSlice<u32>,
         output: *mut OutBoxedSlice<u32>,
     ) -> FfiReturn {
-        let input = input.into_rust().map(|slice| (&*slice).into());
-        output.write(OutBoxedSlice::from_boxed_slice(input));
+        unsafe {
+            let input = input.into_rust().map(|slice| (&*slice).into());
+            output.write(OutBoxedSlice::from_boxed_slice(input));
+        }
+
         FfiReturn::Ok
     }
 
-    #[no_mangle]
+    #[unsafe(no_mangle)]
     unsafe extern "C" fn __freestanding_returns_iterator(
         input: RefMutSlice<u32>,
         output: *mut OutBoxedSlice<u32>,
     ) -> FfiReturn {
-        let input = input.into_rust().map(|slice| (&*slice).into());
-        output.write(OutBoxedSlice::from_boxed_slice(input));
+        unsafe {
+            let input = input.into_rust().map(|slice| (&*slice).into());
+            output.write(OutBoxedSlice::from_boxed_slice(input));
+        }
+
         FfiReturn::Ok
     }
 
-    #[no_mangle]
+    #[unsafe(no_mangle)]
     unsafe extern "C" fn __freestanding_take_and_return_array(
         input: *mut [FfiTuple2<u32, u32>; 2],
         output: *mut [FfiTuple2<u32, u32>; 2],
     ) -> FfiReturn {
-        output.write(input.read());
+        unsafe {
+            output.write(input.read());
+        }
+
         FfiReturn::Ok
     }
 
-    #[no_mangle]
+    #[unsafe(no_mangle)]
     unsafe extern "C" fn __freestanding_take_and_return_local_transparent_ref(
         input: <&(u32, u32) as FfiType>::ReprC,
         output: *mut <&(u32, u32) as FfiOutPtr>::OutPtr,
     ) -> FfiReturn {
-        output.write(input.read());
+        unsafe {
+            output.write(input.read());
+        }
         FfiReturn::Ok
     }
 
-    #[no_mangle]
+    #[unsafe(no_mangle)]
     unsafe extern "C" fn __freestanding_take_and_return_boxed_int(
         input: <Box<u8> as FfiType>::ReprC,
         output: *mut <Box<u8> as FfiOutPtr>::OutPtr,
     ) -> FfiReturn {
-        output.write(input.read());
+        unsafe {
+            output.write(input.read());
+        }
+
         FfiReturn::Ok
     }
 
-    #[no_mangle]
+    #[unsafe(no_mangle)]
     unsafe extern "C" fn __freestanding_return_empty_tuple_result(
         input: <bool as FfiType>::ReprC,
     ) -> FfiReturn {

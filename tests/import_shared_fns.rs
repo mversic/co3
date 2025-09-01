@@ -35,7 +35,7 @@ fn import_shared_fns() {
 mod ffi {
     use std::alloc;
 
-    use co3::{def_ffi_fns, slice::RefMutSlice, FfiReturn, FfiType};
+    use co3::{FfiReturn, FfiType, def_ffi_fns, slice::RefMutSlice};
 
     co3::handles! {ExternFfiStruct}
 
@@ -54,14 +54,18 @@ mod ffi {
     #[repr(C)]
     pub struct ExternFfiStruct(pub String);
 
-    #[no_mangle]
+    #[unsafe(no_mangle)]
     unsafe extern "C" fn FfiStruct__new(
         input: RefMutSlice<u8>,
         output: *mut *mut ExternFfiStruct,
     ) -> FfiReturn {
-        let string = String::from_utf8(input.into_rust().expect("Defined").to_vec());
-        let opaque = Box::new(ExternFfiStruct(string.expect("Valid UTF8 string")));
-        output.write(Box::into_raw(opaque));
+        unsafe {
+            let string = String::from_utf8(input.into_rust().expect("Defined").to_vec());
+            let opaque = Box::new(ExternFfiStruct(string.expect("Valid UTF8 string")));
+
+            output.write(Box::into_raw(opaque));
+        }
+
         FfiReturn::Ok
     }
 }

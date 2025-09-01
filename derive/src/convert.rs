@@ -570,8 +570,8 @@ fn derive_ffi_type_for_data_carrying_enum(
             (
                 quote! { Option<(#( #variant_rust_stores, )*)> },
                 quote! { Option<(#( #variant_ffi_stores, )*)> },
-                quote! { let store = store.insert((#( #variant_rust_stores::default(), )*)); },
-                quote! { let store = store.insert((#( #variant_ffi_stores::default(), )*)); },
+                quote! { let store = store.insert(Default::default()); },
+                quote! { let store = store.insert(Default:default()); },
             )
         } else {
             (
@@ -765,7 +765,7 @@ fn gen_discriminants(
     let discriminant_values = variant_discriminants(variants);
 
     variant_names.iter().zip(discriminant_values.iter()).fold(
-        <(Vec<_>, Vec<_>)>::default(),
+        Default::default(),
         |mut acc, (variant_name, discriminant_value)| {
             let discriminant_name = Ident::new(
                 &format!("{enum_name}__{variant_name}").to_uppercase(),
@@ -957,7 +957,7 @@ pub fn parse_single_list_attr_opt<Body: syn::parse::Parse>(
     attr_name: &str,
     attrs: &[syn::Attribute],
 ) -> darling::Result<Option<Body>> {
-    let mut accumulator = darling::error::Accumulator::default();
+    let mut accumulator = Default::default();
 
     let Some(attr) = find_single_attr_opt(&mut accumulator, attr_name, attrs) else {
         return accumulator.finish_with(None);

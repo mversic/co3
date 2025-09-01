@@ -150,7 +150,7 @@ impl syn::parse::Parse for SpannedGetSetAttrToken {
                 } else {
                     Ok(SpannedGetSetAttrToken {
                         span: ident.span(),
-                        token: GetSetAttrToken::Gen(mode, GetSetOptions::default()),
+                        token: GetSetAttrToken::Gen(mode, Default::default()),
                     })
                 }
             }
@@ -200,7 +200,7 @@ impl GetSetRawFieldAttr {
         let mut skip_span = None;
         let mut result = GetSetRawFieldAttr {
             skip: false,
-            gen_: FxHashMap::default(),
+            gen_: Default::default(),
         };
         for attr in attrs {
             // getset crate is quite liberal in what it accepts
@@ -303,7 +303,7 @@ impl GetSetFieldAttrs {
         struct_attr: &GetSetStructAttrs,
     ) -> RequestedAccessors {
         if self.skip {
-            return FxHashMap::default();
+            return Default::default();
         }
 
         let mut result = struct_attr.gen_.clone();
@@ -404,7 +404,7 @@ mod test {
                 #[getset(get)],
                 GetSetFieldAttrs {
                     gen_: FxHashMap::from_iter([
-                        (GetSetGenMode::Get, GetSetOptions::default()),
+                        (GetSetGenMode::Get, Default::default()),
                     ]),
                     ..Default::default()
                 }
@@ -461,7 +461,7 @@ mod test {
                 #[getset(get)],
                 GetSetStructAttrs {
                     gen_: FxHashMap::from_iter([
-                        (GetSetGenMode::Get, GetSetOptions::default()),
+                        (GetSetGenMode::Get, Default::default()),
                     ])
                 }
             );
@@ -514,7 +514,7 @@ mod test {
                 #[getset(get_copy)],
                 GetSetFieldAttrs {
                     gen_: FxHashMap::from_iter([
-                        (GetSetGenMode::GetCopy, GetSetOptions::default()),
+                        (GetSetGenMode::GetCopy, Default::default()),
                     ]),
                     ..Default::default()
                 }
@@ -527,7 +527,7 @@ mod test {
                 #[getset(set)],
                 GetSetFieldAttrs {
                     gen_: FxHashMap::from_iter([
-                        (GetSetGenMode::Set, GetSetOptions::default()),
+                        (GetSetGenMode::Set, Default::default()),
                     ]),
                     ..Default::default()
                 }
@@ -540,7 +540,7 @@ mod test {
                 #[getset(get_mut)],
                 GetSetFieldAttrs {
                     gen_: FxHashMap::from_iter([
-                        (GetSetGenMode::GetMut, GetSetOptions::default()),
+                        (GetSetGenMode::GetMut, Default::default()),
                     ]),
                     ..Default::default()
                 }
@@ -553,7 +553,7 @@ mod test {
                 #[getset(get_copy)],
                 GetSetStructAttrs {
                     gen_: FxHashMap::from_iter([
-                        (GetSetGenMode::GetCopy, GetSetOptions::default()),
+                        (GetSetGenMode::GetCopy, Default::default()),
                     ])
                 }
             );
@@ -565,7 +565,7 @@ mod test {
                 #[getset(set)],
                 GetSetStructAttrs {
                     gen_: FxHashMap::from_iter([
-                        (GetSetGenMode::Set, GetSetOptions::default()),
+                        (GetSetGenMode::Set, Default::default()),
                     ])
                 }
             );
@@ -577,7 +577,7 @@ mod test {
                 #[getset(get_mut)],
                 GetSetStructAttrs {
                     gen_: FxHashMap::from_iter([
-                        (GetSetGenMode::GetMut, GetSetOptions::default()),
+                        (GetSetGenMode::GetMut, Default::default()),
                     ])
                 }
             );
@@ -686,8 +686,8 @@ mod test {
                 ,
                 #[getset(get, set)],
                 RequestedAccessors::from_iter([
-                    (GetSetGenMode::Get, GetSetOptions::default()),
-                    (GetSetGenMode::Set, GetSetOptions::default()),
+                    (GetSetGenMode::Get, Default::default()),
+                    (GetSetGenMode::Set, Default::default()),
                 ])
             );
         }
@@ -700,7 +700,7 @@ mod test {
                 ,
                 #[getset(get, set)],
                 RequestedAccessors::from_iter([
-                    (GetSetGenMode::Get, GetSetOptions::default())
+                    (GetSetGenMode::Get, Default::default())
                 ])
             );
         }
@@ -712,8 +712,8 @@ mod test {
                 #[getset(get)],
                 #[getset(set)],
                 RequestedAccessors::from_iter([
-                    (GetSetGenMode::Get, GetSetOptions::default()),
-                    (GetSetGenMode::Set, GetSetOptions::default()),
+                    (GetSetGenMode::Get, Default::default()),
+                    (GetSetGenMode::Set, Default::default()),
                 ])
             );
         }

@@ -7,9 +7,9 @@ mod wasm {
     use alloc::{boxed::Box, vec::Vec};
 
     use crate::{
+        CTypeConvert, FfiReturn, FfiType, FfiWrapperType, Result,
         ir::{Robust, Transparent},
         out_ptr::{FfiOutPtr, FfiOutPtrRead, FfiOutPtrWrite},
-        CTypeConvert, FfiReturn, FfiType, FfiWrapperType, Result,
     };
 
     /// Marker for an integer primitive type that is not recognized by the `WebAssembly`.
@@ -84,7 +84,7 @@ mod wasm {
             }
             impl FfiOutPtrWrite for $src {
                 unsafe fn write_out(self, out_ptr: *mut Self::OutPtr) {
-                    out_ptr.write(self)
+                    unsafe {out_ptr.write(self)}
                 }
             }
 

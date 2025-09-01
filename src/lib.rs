@@ -17,12 +17,12 @@ use crate::{
     ir::{External, Ir, Opaque, Robust, Transparent},
     option::{Niche, WithoutNiche},
     out_ptr::NonLocal,
-    repr_c::{write_non_local, CTypeConvert, Cloned},
+    repr_c::{CTypeConvert, Cloned, write_non_local},
     slice::{OutBoxedSlice, RefMutSlice, RefSlice},
     transmute::{
-        transmute_from_target, transmute_into_target, transmute_into_target_box,
+        Transmute, transmute_from_target, transmute_into_target, transmute_into_target_box,
         transmute_into_target_boxed_slice, transmute_into_target_ref_slice,
-        transmute_into_target_slice_mut, transmute_into_target_vec, Transmute,
+        transmute_into_target_slice_mut, transmute_into_target_vec,
     },
 };
 
@@ -321,7 +321,7 @@ impl<'itm, R: Ir + CTypeConvert<'itm, R::Type, C>, C: ReprC> FfiConvert<'itm, C>
 
     #[inline]
     unsafe fn try_from_ffi(source: C, store: &'itm mut Self::FfiStore) -> Result<Self> {
-        R::try_from_repr_c(source, store)
+        unsafe { R::try_from_repr_c(source, store) }
     }
 }
 
@@ -1057,8 +1057,11 @@ macro_rules! impl_tuple {
 
                 let ($($ty,)+) = self;
                 let field_out_ptrs: private_out_ptr::OutPtr<$($ty),+> = (&mut field_out_ptrs).into();
-                $( $crate::out_ptr::FfiOutPtrWrite::write_out($ty, field_out_ptrs.$ty.as_mut_ptr()); )+
-                out_ptr.write($ffi_ty($( unsafe { field_out_ptrs.$ty.assume_init() } ),+));
+
+                unsafe {
+                    $( $crate::out_ptr::FfiOutPtrWrite::write_out($ty, field_out_ptrs.$ty.as_mut_ptr()); )+
+                    out_ptr.write($ffi_ty($( field_out_ptrs.$ty.assume_init() ),+));
+                }
             }
         }
         #[allow(non_snake_case)]
@@ -1067,7 +1070,7 @@ macro_rules! impl_tuple {
                 impl_tuple! {@decl_priv_out_ptr $($ty),+}
 
                 let $ffi_ty($($ty,)+) = source;
-                Ok(($( $crate::out_ptr::FfiOutPtrRead::try_read_out($ty)?, )+))
+                Ok(unsafe {($( $crate::out_ptr::FfiOutPtrRead::try_read_out($ty)?, )+)})
             }
         }
 
@@ -1089,7 +1092,7 @@ macro_rules! impl_tuple {
 
                 let $ffi_ty($($ty,)+) = source;
                 let store: private_store::Store<$($ty),+, $($repr_c),+> = store.into();
-                Ok(($( <$ty as FfiConvert<$repr_c>>::try_from_ffi($ty, store.$ty)?, )+))
+                Ok(unsafe {($( <$ty as FfiConvert<$repr_c>>::try_from_ffi($ty, store.$ty)?, )+)})
             }
         }
 

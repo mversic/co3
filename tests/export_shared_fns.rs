@@ -3,7 +3,7 @@
 use std::{cmp::Ordering, mem::MaybeUninit};
 
 use co3::{
-    def_ffi_fns, ffi_export, out_ptr::FfiOutPtrRead, FfiConvert, FfiReturn, FfiType, Handle,
+    FfiConvert, FfiReturn, FfiType, Handle, def_ffi_fns, ffi_export, out_ptr::FfiOutPtrRead,
 };
 
 co3::handles! {FfiStruct1, FfiStruct2}
@@ -44,7 +44,7 @@ fn export_shared_fns() {
 
     let ffi_struct1 = unsafe {
         let mut ffi_struct = MaybeUninit::new(core::ptr::null_mut());
-        let mut store = Box::default();
+        let mut store = Default::default();
         assert_eq! {FfiReturn::Ok, FfiStruct1__new(FfiConvert::into_ffi(name.clone(), &mut store), ffi_struct.as_mut_ptr())};
         let ffi_struct = ffi_struct.assume_init();
         assert!(!ffi_struct.is_null());

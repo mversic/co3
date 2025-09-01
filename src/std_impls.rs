@@ -2,9 +2,8 @@ use alloc::{boxed::Box, string::String, vec::Vec};
 use core::{mem::ManuallyDrop, ptr::NonNull};
 
 use crate::{
-    ffi_type,
+    ReprC, WrapperTypeOf, ffi_type,
     slice::{RefMutSlice, RefSlice},
-    ReprC, WrapperTypeOf,
 };
 
 // WARN: This can be contested as it is nowhere documented that String is

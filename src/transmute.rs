@@ -128,7 +128,7 @@ pub(super) unsafe fn transmute_from_target<R: Transmute>(source: R::Target) -> R
         target: ManuallyDrop::new(source),
     };
 
-    Ok(ManuallyDrop::into_inner(transmute_helper.source))
+    Ok(ManuallyDrop::into_inner(unsafe { transmute_helper.source }))
 }
 
 pub(super) fn transmute_into_target_box<R: Transmute>(source: Box<R>) -> Box<R::Target> {
@@ -142,7 +142,7 @@ pub(super) unsafe fn transmute_from_target_box<R: Transmute>(
         return Err(FfiReturn::TrapRepresentation);
     }
 
-    Ok(Box::from_raw(Box::into_raw(source).cast::<R>()))
+    Ok(unsafe { Box::from_raw(Box::into_raw(source).cast::<R>()) })
 }
 
 #[allow(clippy::boxed_local)]
@@ -161,10 +161,12 @@ pub(super) unsafe fn transmute_from_target_boxed_slice<R: Transmute>(
         return Err(FfiReturn::TrapRepresentation);
     }
 
-    Ok(Box::from_raw(core::slice::from_raw_parts_mut(
-        source.as_mut_ptr().cast(),
-        source.len(),
-    )))
+    Ok(unsafe {
+        Box::from_raw(core::slice::from_raw_parts_mut(
+            source.as_mut_ptr().cast(),
+            source.len(),
+        ))
+    })
 }
 
 pub(super) fn transmute_into_target_ref_slice<R: Transmute>(source: &[R]) -> &[R::Target] {
@@ -179,10 +181,7 @@ pub(super) unsafe fn transmute_from_target_ref_slice<R: Transmute>(
         return Err(FfiReturn::TrapRepresentation);
     }
 
-    Ok(core::slice::from_raw_parts(
-        source.as_ptr().cast(),
-        source.len(),
-    ))
+    Ok(unsafe { core::slice::from_raw_parts(source.as_ptr().cast(), source.len()) })
 }
 
 pub(super) fn transmute_into_target_slice_mut<R: Transmute>(source: &mut [R]) -> &mut [R::Target] {
@@ -197,10 +196,7 @@ pub(super) unsafe fn transmute_from_target_slice_mut<R: Transmute>(
         return Err(FfiReturn::TrapRepresentation);
     }
 
-    Ok(core::slice::from_raw_parts_mut(
-        source.as_mut_ptr().cast(),
-        source.len(),
-    ))
+    Ok(unsafe { core::slice::from_raw_parts_mut(source.as_mut_ptr().cast(), source.len()) })
 }
 
 pub(super) fn transmute_into_target_vec<R: Transmute>(source: Vec<R>) -> Vec<R::Target> {
@@ -217,9 +213,5 @@ pub(super) unsafe fn transmute_from_target_vec<R: Transmute>(
     }
 
     let mut vec = ManuallyDrop::new(source);
-    Ok(Vec::from_raw_parts(
-        vec.as_mut_ptr().cast(),
-        vec.len(),
-        vec.capacity(),
-    ))
+    Ok(unsafe { Vec::from_raw_parts(vec.as_mut_ptr().cast(), vec.len(), vec.capacity()) })
 }

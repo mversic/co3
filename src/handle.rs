@@ -61,7 +61,7 @@ macro_rules! handles {
 #[macro_export]
 macro_rules! def_ffi_fns {
     (@catch_unwind $block:block ) => {
-        match std::panic::catch_unwind(|| $block) {
+        match std::panic::catch_unwind(|| unsafe { $block }) {
             Ok(res) => match res {
                 Ok(()) => $crate::FfiReturn::Ok,
                 Err(err) => err.into(),
@@ -85,7 +85,7 @@ macro_rules! def_ffi_fns {
         ///
         /// All of the given pointers must be valid and the given handle id must match the expected
         /// pointer type
-        #[export_name = concat!($prefix, "__clone")]
+        #[unsafe(export_name = concat!($prefix, "__clone"))]
         unsafe extern "C" fn __clone(
             handle_id: <$crate::handle::Id as $crate::FfiType>::ReprC,
             handle_ptr: *const core::ffi::c_void,
@@ -112,8 +112,7 @@ macro_rules! def_ffi_fns {
         ///
         /// All of the given pointers must be valid and the given handle id must match the expected
         /// pointer type
-        #[no_mangle]
-        #[export_name = concat!($prefix, "__default")]
+        #[unsafe(export_name = concat!($prefix, "__default"))]
         unsafe extern "C" fn __default(
             handle_id: <$crate::handle::Id as $crate::FfiType>::ReprC,
             out_ptr: *mut *mut core::ffi::c_void
@@ -141,7 +140,7 @@ macro_rules! def_ffi_fns {
         ///
         /// All of the given pointers must be valid and the given handle id must match the expected
         /// pointer type
-        #[export_name = concat!($prefix, "__eq")]
+        #[unsafe(export_name = concat!($prefix, "__eq"))]
         unsafe extern "C" fn __eq(
             handle_id: <$crate::handle::Id as $crate::FfiType>::ReprC,
             left_handle_ptr: *const core::ffi::c_void,
@@ -179,7 +178,7 @@ macro_rules! def_ffi_fns {
         ///
         /// All of the given pointers must be valid and the given handle id must match the expected
         /// pointer type
-        #[export_name = concat!($prefix, "__ord")]
+        #[unsafe(export_name = concat!($prefix, "__ord"))]
         unsafe extern "C" fn __ord(
             handle_id: <$crate::handle::Id as $crate::FfiType>::ReprC,
             left_handle_ptr: *const core::ffi::c_void,
@@ -217,7 +216,7 @@ macro_rules! def_ffi_fns {
         ///
         /// All of the given pointers must be valid and the given handle id must match the expected
         /// pointer type
-        #[export_name = concat!($prefix, "__drop")]
+        #[unsafe(export_name = concat!($prefix, "__drop"))]
         unsafe extern "C" fn __drop(
             handle_id: <$crate::handle::Id as $crate::FfiType>::ReprC,
             handle_ptr: *mut core::ffi::c_void,
@@ -242,7 +241,7 @@ macro_rules! def_ffi_fns {
         /// # Safety
         ///
         /// See [`GlobalAlloc::dealloc`]
-        #[no_mangle]
+        #[unsafe(no_mangle)]
         unsafe extern "C" fn __dealloc(ptr: *mut u8, size: usize, align: usize) -> $crate::FfiReturn {
             if ptr.is_null() {
                 return $crate::FfiReturn::ArgIsNull;
@@ -262,7 +261,7 @@ macro_rules! def_ffi_fns {
 #[macro_export]
 macro_rules! decl_ffi_fns {
     ( dealloc ) => {
-        extern "C" {
+        unsafe extern "C" {
             /// FFI function equivalent of [`alloc::alloc::dealloc`]
             ///
             /// # Safety
@@ -282,7 +281,7 @@ macro_rules! decl_ffi_fns {
         $( $crate::decl_ffi_fns!{ @decl: $prefix $fn_names } )+
     };
     ( @decl: $prefix:literal Clone ) => {
-        extern "C" {
+        unsafe extern "C" {
             /// FFI function equivalent of [`Clone::clone`]
             ///
             /// # Safety
@@ -298,7 +297,7 @@ macro_rules! decl_ffi_fns {
         }
     };
     ( @decl: $prefix:literal Default ) => {
-        extern "C" {
+        unsafe extern "C" {
             /// FFI function equivalent of [`Default::default`]
             ///
             /// # Safety
@@ -313,7 +312,7 @@ macro_rules! decl_ffi_fns {
         }
     };
     ( @decl: $prefix:literal Eq ) => {
-        extern "C" {
+        unsafe extern "C" {
             /// FFI function equivalent of [`Eq::eq`]
             ///
             /// # Safety
@@ -330,7 +329,7 @@ macro_rules! decl_ffi_fns {
         }
     };
     ( @decl: $prefix:literal Ord ) => {
-        extern "C" {
+        unsafe extern "C" {
             /// FFI function equivalent of [`Ord::ord`]
             ///
             /// # Safety
@@ -347,7 +346,7 @@ macro_rules! decl_ffi_fns {
         }
     };
     ( @decl: $prefix:literal Drop ) => {
-        extern "C" {
+        unsafe extern "C" {
             /// FFI function equivalent of [`Drop::drop`]
             ///
             /// # Safety

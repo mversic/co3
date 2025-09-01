@@ -340,7 +340,9 @@ disjoint_impls! {
         Self: Ir<Type = Robust>,
     {
         unsafe fn write_out(self, out_ptr: *mut Self::OutPtr) {
-            write_non_local::<_, Robust>(self, out_ptr);
+            unsafe {
+                write_non_local::<_, Robust>(self, out_ptr);
+            }
         }
     }
     impl<R> FfiOutPtrWrite for R
@@ -348,7 +350,9 @@ disjoint_impls! {
         Self: Ir<Type = Opaque>,
     {
         unsafe fn write_out(self, out_ptr: *mut Self::OutPtr) {
-            write_non_local::<_, Opaque>(self, out_ptr);
+            unsafe {
+                write_non_local::<_, Opaque>(self, out_ptr);
+            }
         }
     }
     impl<R: Transmute> FfiOutPtrWrite for R
@@ -357,7 +361,11 @@ disjoint_impls! {
         <R>::Target: FfiOutPtrWrite,
     {
         unsafe fn write_out(self, out_ptr: *mut Self::OutPtr) {
-            FfiOutPtrWrite::write_out(transmute_into_target(self), out_ptr);
+            let transmuted = transmute_into_target(self);
+
+            unsafe {
+                FfiOutPtrWrite::write_out(transmuted, out_ptr)
+            }
         }
     }
 
@@ -366,7 +374,9 @@ disjoint_impls! {
         Self: Ir<Type = &'a [Robust]>,
     {
         unsafe fn write_out(self, out_ptr: *mut Self::OutPtr) {
-            write_non_local::<_, &'a [Robust]>(self, out_ptr);
+            unsafe {
+                write_non_local::<_, &'a [Robust]>(self, out_ptr);
+            }
         }
     }
     impl<'a, R: Clone> FfiOutPtrWrite for &'a [R]
@@ -374,9 +384,14 @@ disjoint_impls! {
         Self: Ir<Type = &'a [Opaque]>,
     {
         unsafe fn write_out(self, out_ptr: *mut Self::OutPtr) {
-            let mut store = Box::default();
+            let mut store = Default::default();
+
             CTypeConvert::<&[Opaque], _>::into_repr_c(self, &mut store);
-            out_ptr.write(OutBoxedSlice::from_boxed_slice(Some(store)));
+            let output = OutBoxedSlice::from_boxed_slice(Some(store));
+
+            unsafe {
+                out_ptr.write(output);
+            }
         }
     }
     impl<'slice, R: Transmute> FfiOutPtrWrite for &'slice [R]
@@ -385,7 +400,11 @@ disjoint_impls! {
         &'slice [<R>::Target]: FfiOutPtrWrite,
     {
         unsafe fn write_out(self, out_ptr: *mut Self::OutPtr) {
-            FfiOutPtrWrite::write_out(transmute_into_target_ref_slice(self), out_ptr);
+            let transmuted = transmute_into_target_ref_slice(self);
+
+            unsafe {
+                FfiOutPtrWrite::write_out(transmuted, out_ptr);
+            }
         }
     }
     impl<'itm, R: Ir<Type = S> + NonLocal + Clone, S: Cloned> FfiOutPtrWrite for &'itm [R]
@@ -394,12 +413,17 @@ disjoint_impls! {
         Self: Ir<Type = &'itm [S]>,
     {
         unsafe fn write_out(self, out_ptr: *mut Self::OutPtr) {
-            let mut store = <(_, _)>::default();
-            // NOTE: Bypasses the erroneous lifetime check.
-            // Correct as long as `R::into_repr_c` doesn't return a reference to the store (`R: NonLocal`)
-            let store_borrow = &mut *addr_of_mut!(store);
-            CTypeConvert::<&[S], _>::into_repr_c(self, store_borrow);
-            out_ptr.write(OutBoxedSlice::from_boxed_slice(Some(store.0)));
+            let mut store = Default::default();
+
+            unsafe {
+                // NOTE: Bypasses the erroneous lifetime check.
+                // Correct as long as `R::into_repr_c` doesn't return a reference to the store (`R: NonLocal`)
+                let store_borrow = &mut *addr_of_mut!(store);
+                CTypeConvert::<&[S], _>::into_repr_c(self, store_borrow);
+                let output = OutBoxedSlice::from_boxed_slice(Some(store.0));
+
+                out_ptr.write(output);
+            }
         }
     }
 
@@ -408,7 +432,9 @@ disjoint_impls! {
         Self: Ir<Type = &'a mut [Robust]>,
     {
         unsafe fn write_out(self, out_ptr: *mut Self::OutPtr) {
-            write_non_local::<_, &'a mut [Robust]>(self, out_ptr);
+            unsafe {
+                write_non_local::<_, &'a mut [Robust]>(self, out_ptr);
+            }
         }
     }
     impl<'a, R: Clone> FfiOutPtrWrite for &'a mut [R]
@@ -416,9 +442,13 @@ disjoint_impls! {
         Self: Ir<Type = &'a mut [Opaque]>,
     {
         unsafe fn write_out(self, out_ptr: *mut Self::OutPtr) {
-            let mut store = Box::default();
+            let mut store = Default::default();
             CTypeConvert::<&'a mut [Opaque], _>::into_repr_c(self, &mut store);
-            out_ptr.write(OutBoxedSlice::from_boxed_slice(Some(store)));
+            let output = OutBoxedSlice::from_boxed_slice(Some(store));
+
+            unsafe {
+                out_ptr.write(output);
+            }
         }
     }
     impl<'slice, R: Transmute> FfiOutPtrWrite for &'slice mut [R]
@@ -427,7 +457,11 @@ disjoint_impls! {
         &'slice mut [<R>::Target]: FfiOutPtrWrite,
     {
         unsafe fn write_out(self, out_ptr: *mut Self::OutPtr) {
-            FfiOutPtrWrite::write_out(transmute_into_target_slice_mut(self), out_ptr);
+            let transmuted = transmute_into_target_slice_mut(self);
+
+            unsafe {
+                FfiOutPtrWrite::write_out(transmuted, out_ptr);
+            }
         }
     }
 
@@ -436,7 +470,9 @@ disjoint_impls! {
         Self: Ir<Type = Box<Robust>>,
     {
         unsafe fn write_out(self, out_ptr: *mut Self::OutPtr) {
-            out_ptr.write(*self);
+            unsafe {
+                out_ptr.write(*self);
+            }
         }
     }
     impl<R> FfiOutPtrWrite for Box<R>
@@ -444,7 +480,9 @@ disjoint_impls! {
         Self: Ir<Type = Box<Opaque>>,
     {
         unsafe fn write_out(self, out_ptr: *mut Self::OutPtr) {
-            write_non_local::<_, Box<Opaque>>(self, out_ptr);
+            unsafe {
+                write_non_local::<_, Box<Opaque>>(self, out_ptr);
+            }
         }
     }
     impl<R: Transmute> FfiOutPtrWrite for Box<R>
@@ -453,7 +491,11 @@ disjoint_impls! {
         Box<<R>::Target>: FfiOutPtrWrite,
     {
         unsafe fn write_out(self, out_ptr: *mut Self::OutPtr) {
-            FfiOutPtrWrite::write_out(transmute_into_target_box(self), out_ptr);
+            let transmuted = transmute_into_target_box(self);
+
+            unsafe {
+                FfiOutPtrWrite::write_out(transmuted, out_ptr);
+            }
         }
     }
     impl<'itm, R: Ir<Type = S> + NonLocal + Clone + 'itm, S: Cloned + 'itm> FfiOutPtrWrite for Box<R>
@@ -462,14 +504,17 @@ disjoint_impls! {
         Self: Ir<Type = Box<S>>,
     {
         unsafe fn write_out(self, out_ptr: *mut Self::OutPtr) {
-            let mut store = <(_, _)>::default();
-            // NOTE: Bypasses the erroneous lifetime check.
-            // Correct as long as `R::into_repr_c` doesn't return a reference to the store (`R: NonLocal`)
-            let store_borrow = &mut *addr_of_mut!(store);
-            CTypeConvert::<Box<S>, _>::into_repr_c(self, store_borrow);
+            let mut store = Default::default();
 
-            // NOTE: None value indicates a bug in the implementation
-            out_ptr.write(store.0.expect("Store must be initialized"));
+            unsafe {
+                // NOTE: Bypasses the erroneous lifetime check.
+                // Correct as long as `R::into_repr_c` doesn't return a reference to the store (`R: NonLocal`)
+                let store_borrow = &mut *addr_of_mut!(store);
+                CTypeConvert::<Box<S>, _>::into_repr_c(self, store_borrow);
+
+                // NOTE: None value indicates a bug in the implementation
+                out_ptr.write(store.0.expect("Store must be initialized"));
+            }
         }
     }
 
@@ -478,9 +523,12 @@ disjoint_impls! {
         Self: Ir<Type = Box<[Robust]>>,
     {
         unsafe fn write_out(self, out_ptr: *mut Self::OutPtr) {
-            let mut store = Box::default();
+            let mut store = Default::default();
             CTypeConvert::<Box<[Robust]>, _>::into_repr_c(self, &mut store);
-            out_ptr.write(OutBoxedSlice::from_boxed_slice(Some(store)));
+
+            unsafe {
+                out_ptr.write(OutBoxedSlice::from_boxed_slice(Some(store)));
+            }
         }
     }
     impl<R> FfiOutPtrWrite for Box<[R]>
@@ -488,9 +536,12 @@ disjoint_impls! {
         Self: Ir<Type = Box<[Opaque]>>,
     {
         unsafe fn write_out(self, out_ptr: *mut Self::OutPtr) {
-            let mut store = Box::default();
+            let mut store = Default::default();
             CTypeConvert::<Box<[Opaque]>, _>::into_repr_c(self, &mut store);
-            out_ptr.write(OutBoxedSlice::from_boxed_slice(Some(store)));
+
+            unsafe {
+                out_ptr.write(OutBoxedSlice::from_boxed_slice(Some(store)));
+            }
         }
     }
     impl<R: Transmute> FfiOutPtrWrite for Box<[R]>
@@ -499,7 +550,11 @@ disjoint_impls! {
         Box<[<R>::Target]>: FfiOutPtrWrite,
     {
         unsafe fn write_out(self, out_ptr: *mut Self::OutPtr) {
-            FfiOutPtrWrite::write_out(transmute_into_target_boxed_slice(self), out_ptr);
+            let transmuted = transmute_into_target_boxed_slice(self);
+
+            unsafe {
+                FfiOutPtrWrite::write_out(transmuted, out_ptr);
+            }
         }
     }
     impl<'itm, R: Ir<Type = S> + NonLocal + Clone + 'itm, S: Cloned + 'itm> FfiOutPtrWrite for Box<[R]>
@@ -508,12 +563,17 @@ disjoint_impls! {
         Self: Ir<Type = Box<[S]>>,
     {
         unsafe fn write_out(self, out_ptr: *mut Self::OutPtr) {
-            let mut store = <(_, _)>::default();
-            // NOTE: Bypasses the erroneous lifetime check.
-            // Correct as long as `R::into_repr_c` doesn't return a reference to the store (`R: NonLocal`)
-            let store_borrow = &mut *addr_of_mut!(store);
-            CTypeConvert::<Box<[S]>, _>::into_repr_c(self, store_borrow);
-            out_ptr.write(OutBoxedSlice::from_boxed_slice(Some(store.0)));
+            let mut store = Default::default();
+
+            unsafe {
+                // NOTE: Bypasses the erroneous lifetime check.
+                // Correct as long as `R::into_repr_c` doesn't return a reference to the store (`R: NonLocal`)
+                let store_borrow = &mut *addr_of_mut!(store);
+                CTypeConvert::<Box<[S]>, _>::into_repr_c(self, store_borrow);
+                let output = OutBoxedSlice::from_boxed_slice(Some(store.0));
+
+                out_ptr.write(output);
+            }
         }
     }
 
@@ -524,13 +584,16 @@ disjoint_impls! {
     {
         unsafe fn write_out(self, out_ptr: *mut Self::OutPtr) {
             let mut store = Default::default();
-            // NOTE: Bypasses the erroneous lifetime check.
-            // Correct as long as `R::into_repr_c` doesn't return a reference to the store (`R: NonLocal`)
-            let store_borrow = &mut *addr_of_mut!(store);
-            CTypeConvert::<&S, _>::into_repr_c(self, store_borrow);
 
-            // NOTE: None value indicates a bug in the implementation
-            out_ptr.write(store.0.expect("Store must be initialized"));
+            unsafe {
+                // NOTE: Bypasses the erroneous lifetime check.
+                // Correct as long as `R::into_repr_c` doesn't return a reference to the store (`R: NonLocal`)
+                let store_borrow = &mut *addr_of_mut!(store);
+                CTypeConvert::<&S, _>::into_repr_c(self, store_borrow);
+
+                // NOTE: None value indicates a bug in the implementation
+                out_ptr.write(store.0.expect("Store must be initialized"));
+            }
         }
     }
 
@@ -539,9 +602,13 @@ disjoint_impls! {
         Self: Ir<Type = Vec<Robust>>,
     {
         unsafe fn write_out(self, out_ptr: *mut Self::OutPtr) {
-            let mut store = Box::default();
+            let mut store = Default::default();
             CTypeConvert::<Vec<Robust>, _>::into_repr_c(self, &mut store);
-            out_ptr.write(OutBoxedSlice::from_boxed_slice(Some(store)));
+            let output = OutBoxedSlice::from_boxed_slice(Some(store));
+
+            unsafe {
+                out_ptr.write(output);
+            }
         }
     }
     impl<R> FfiOutPtrWrite for Vec<R>
@@ -549,9 +616,14 @@ disjoint_impls! {
         Self: Ir<Type = Vec<Opaque>>,
     {
         unsafe fn write_out(self, out_ptr: *mut Self::OutPtr) {
-            let mut store = Box::default();
+            let mut store = Default::default();
+
             CTypeConvert::<Vec<Opaque>, _>::into_repr_c(self, &mut store);
-            out_ptr.write(OutBoxedSlice::from_boxed_slice(Some(store)));
+            let output = OutBoxedSlice::from_boxed_slice(Some(store));
+
+            unsafe {
+                out_ptr.write(output);
+            }
         }
     }
     impl<'itm, R: Ir<Type = S> + NonLocal + Clone + 'itm, S: Cloned + 'itm> FfiOutPtrWrite for Vec<R>
@@ -560,12 +632,18 @@ disjoint_impls! {
         Self: Ir<Type = Vec<S>>,
     {
         unsafe fn write_out(self, out_ptr: *mut Self::OutPtr) {
-            let mut store = <(_, _)>::default();
-            // NOTE: Bypasses the erroneous lifetime check.
-            // Correct as long as `R::into_repr_c` doesn't return a reference to the store (`R: NonLocal`)
-            let store_borrow = &mut *addr_of_mut!(store);
-            CTypeConvert::<Vec<S>, _>::into_repr_c(self, store_borrow);
-            out_ptr.write(OutBoxedSlice::from_boxed_slice(Some(store.0)));
+            let mut store = Default::default();
+
+            unsafe {
+                // NOTE: Bypasses the erroneous lifetime check.
+                // Correct as long as `R::into_repr_c` doesn't return a reference to the store (`R: NonLocal`)
+                let store_borrow = &mut *addr_of_mut!(store);
+
+                CTypeConvert::<Vec<S>, _>::into_repr_c(self, store_borrow);
+                let output = OutBoxedSlice::from_boxed_slice(Some(store.0));
+
+                out_ptr.write(output);
+            }
         }
     }
 
@@ -575,7 +653,11 @@ disjoint_impls! {
         Vec<<R>::Target>: FfiOutPtrWrite,
     {
         unsafe fn write_out(self, out_ptr: *mut Self::OutPtr) {
-            FfiOutPtrWrite::write_out(transmute_into_target_vec(self), out_ptr);
+            let transmuted = transmute_into_target_vec(self);
+
+            unsafe {
+                FfiOutPtrWrite::write_out(transmuted, out_ptr);
+            }
         }
     }
 
@@ -584,7 +666,9 @@ disjoint_impls! {
         Self: Ir<Type = [Opaque; N]>,
     {
         unsafe fn write_out(self, out_ptr: *mut Self::OutPtr) {
-            write_non_local::<_, [Opaque; N]>(self, out_ptr);
+            unsafe {
+                write_non_local::<_, [Opaque; N]>(self, out_ptr);
+            }
         }
     }
     impl<'itm, R: Ir<Type = S> + NonLocal + Clone + 'itm, S: Cloned + 'itm, const N: usize> FfiOutPtrWrite for [R; N]
@@ -596,12 +680,15 @@ disjoint_impls! {
     {
         unsafe fn write_out(self, out_ptr: *mut Self::OutPtr) {
             let mut store = Default::default();
-            // NOTE: Bypasses the erroneous lifetime check.
-            // Correct as long as `R::into_repr_c` doesn't return a reference to the store (`R: NonLocal`)
-            let store_borrow = &mut *addr_of_mut!(store);
-            let item = Self::into_repr_c(self, store_borrow);
 
-            out_ptr.write(item);
+            unsafe {
+                // NOTE: Bypasses the erroneous lifetime check.
+                // Correct as long as `R::into_repr_c` doesn't return a reference to the store (`R: NonLocal`)
+                let store_borrow = &mut *addr_of_mut!(store);
+                let item = Self::into_repr_c(self, store_borrow);
+
+                out_ptr.write(item);
+            }
         }
     }
 
@@ -615,24 +702,26 @@ disjoint_impls! {
             match self {
                 None => {
                     let mut discriminant_out_ptr = core::mem::MaybeUninit::uninit();
-                    FfiOutPtrWrite::write_out(0u8, discriminant_out_ptr.as_mut_ptr());
-                    let discriminant_out_ptr = unsafe { discriminant_out_ptr.assume_init() };
+                    unsafe {
+                        FfiOutPtrWrite::write_out(0u8, discriminant_out_ptr.as_mut_ptr());
+                        let discriminant_out_ptr = discriminant_out_ptr.assume_init() ;
 
-                    // TODO: No need to zero the memory because it must never be read
-                    out_ptr.write(FfiTuple2(discriminant_out_ptr, unsafe {
-                        core::mem::zeroed()
-                    }));
+                        // TODO: No need to zero the memory because it must never be read
+                        out_ptr.write(FfiTuple2(discriminant_out_ptr, core::mem::zeroed()));
+                    }
                 }
                 Some(value) => {
-                    let mut discriminant_out_ptr = core::mem::MaybeUninit::uninit();
-                    FfiOutPtrWrite::write_out(1u8, discriminant_out_ptr.as_mut_ptr());
-                    let discriminant_out_ptr = unsafe { discriminant_out_ptr.assume_init() };
+                    unsafe {
+                        let mut discriminant_out_ptr = core::mem::MaybeUninit::uninit();
+                        FfiOutPtrWrite::write_out(1u8, discriminant_out_ptr.as_mut_ptr());
+                        let discriminant_out_ptr = discriminant_out_ptr.assume_init();
 
-                    let mut value_out_ptr = core::mem::MaybeUninit::uninit();
-                    FfiOutPtrWrite::write_out(value, value_out_ptr.as_mut_ptr());
-                    let value_out_ptr = unsafe { value_out_ptr.assume_init() };
+                        let mut value_out_ptr = core::mem::MaybeUninit::uninit();
+                        FfiOutPtrWrite::write_out(value, value_out_ptr.as_mut_ptr());
+                        let value_out_ptr = value_out_ptr.assume_init();
 
-                    out_ptr.write(FfiTuple2(discriminant_out_ptr, value_out_ptr));
+                        out_ptr.write(FfiTuple2(discriminant_out_ptr, value_out_ptr));
+                    }
                 }
             }
         }
@@ -642,10 +731,12 @@ disjoint_impls! {
         Self: Ir<Type = Self>,
     {
         unsafe fn write_out(self, out_ptr: *mut Self::OutPtr) {
-            self.map_or_else(
-                || out_ptr.write(<R>::NICHE_VALUE),
-                |value| FfiOutPtrWrite::write_out(value, out_ptr),
-            );
+            unsafe {
+                self.map_or_else(
+                    || out_ptr.write(<R>::NICHE_VALUE),
+                    |value| FfiOutPtrWrite::write_out(value, out_ptr),
+                );
+            }
         }
     }
 }
@@ -670,7 +761,7 @@ disjoint_impls! {
         Self: Ir<Type = Robust>,
     {
         unsafe fn try_read_out(out_ptr: Self::OutPtr) -> Result<Self> {
-            read_non_local::<_, Robust>(out_ptr)
+            unsafe { read_non_local::<_, Robust>(out_ptr) }
         }
     }
     impl<R: Transmute> FfiOutPtrRead for R
@@ -679,7 +770,9 @@ disjoint_impls! {
         <R>::Target: FfiOutPtrRead,
     {
         unsafe fn try_read_out(out_ptr: Self::OutPtr) -> Result<Self> {
-            FfiOutPtrRead::try_read_out(out_ptr).and_then(|output| transmute_from_target(output))
+            unsafe {
+                FfiOutPtrRead::try_read_out(out_ptr).and_then(|output| transmute_from_target(output))
+            }
         }
     }
 
@@ -688,7 +781,7 @@ disjoint_impls! {
         Self: Ir<Type = &'a [Robust]>,
     {
         unsafe fn try_read_out(out_ptr: Self::OutPtr) -> Result<Self> {
-            read_non_local::<_, &'a [Robust]>(out_ptr)
+            unsafe { read_non_local::<_, &'a [Robust]>(out_ptr) }
         }
     }
     impl<'itm, R: Transmute> FfiOutPtrRead for &'itm [R]
@@ -697,8 +790,10 @@ disjoint_impls! {
         &'itm [<R>::Target]: FfiOutPtrRead,
     {
         unsafe fn try_read_out(out_ptr: Self::OutPtr) -> Result<Self> {
-            <&[<R>::Target]>::try_read_out(out_ptr)
-                .and_then(|output| transmute_from_target_ref_slice(output))
+            unsafe {
+                <&[<R>::Target]>::try_read_out(out_ptr)
+                    .and_then(|output| transmute_from_target_ref_slice(output))
+            }
         }
     }
 
@@ -707,7 +802,7 @@ disjoint_impls! {
         Self: Ir<Type = &'a mut [Robust]>,
     {
         unsafe fn try_read_out(out_ptr: Self::OutPtr) -> Result<Self> {
-            read_non_local::<_, &mut [Robust]>(out_ptr)
+            unsafe { read_non_local::<_, &mut [Robust]>(out_ptr) }
         }
     }
     impl<'itm, R: Transmute> FfiOutPtrRead for &'itm mut [R]
@@ -716,8 +811,10 @@ disjoint_impls! {
         &'itm mut [<R>::Target]: FfiOutPtrRead,
     {
         unsafe fn try_read_out(out_ptr: Self::OutPtr) -> Result<Self> {
-            <&mut [<R>::Target]>::try_read_out(out_ptr)
-                .and_then(|output| transmute_from_target_slice_mut(output))
+            unsafe {
+                <&mut [<R>::Target]>::try_read_out(out_ptr)
+                    .and_then(|output| transmute_from_target_slice_mut(output))
+            }
         }
     }
 
@@ -726,7 +823,7 @@ disjoint_impls! {
         Self: Ir<Type = Box<Robust>>,
     {
         unsafe fn try_read_out(out_ptr: Self::OutPtr) -> Result<Self> {
-            CTypeConvert::<Robust, _>::try_from_repr_c(out_ptr, &mut ()).map(Box::new)
+            unsafe { CTypeConvert::<Robust, _>::try_from_repr_c(out_ptr, &mut ()).map(Box::new) }
         }
     }
     impl<R: External> FfiOutPtrRead for Box<R>
@@ -734,7 +831,7 @@ disjoint_impls! {
         Self: Ir<Type = Box<Extern>>,
     {
         unsafe fn try_read_out(out_ptr: Self::OutPtr) -> Result<Self> {
-            read_non_local::<_, Box<Extern>>(out_ptr)
+            unsafe { read_non_local::<_, Box<Extern>>(out_ptr) }
         }
     }
     impl<R: Transmute> FfiOutPtrRead for Box<R>
@@ -743,8 +840,10 @@ disjoint_impls! {
         Box<<R>::Target>: FfiOutPtrRead,
     {
         unsafe fn try_read_out(out_ptr: Self::OutPtr) -> Result<Self> {
-            Box::<<R>::Target>::try_read_out(out_ptr)
-                .and_then(|output| transmute_from_target_box(output))
+            unsafe {
+                Box::<<R>::Target>::try_read_out(out_ptr)
+                    .and_then(|output| transmute_from_target_box(output))
+            }
         }
     }
     impl<'itm, R: Ir<Type = S> + NonLocal + Clone + 'itm, S: Cloned + 'itm> FfiOutPtrRead for Box<R>
@@ -754,10 +853,14 @@ disjoint_impls! {
     {
         unsafe fn try_read_out(out_ptr: Self::OutPtr) -> Result<Self> {
             let mut store = Default::default();
-            // NOTE: Bypasses the erroneous lifetime check.
-            // Correct as long as `R::try_from_repr_c` doesn't return a reference to the store (`R: NonLocal`)
-            let store_borrow = &mut *addr_of_mut!(store);
-            let item = <R>::try_from_repr_c(out_ptr, store_borrow)?;
+
+            let item = unsafe {
+                // NOTE: Bypasses the erroneous lifetime check.
+                // Correct as long as `R::try_from_repr_c` doesn't return a reference to the store (`R: NonLocal`)
+                let store_borrow = &mut *addr_of_mut!(store);
+                <R>::try_from_repr_c(out_ptr, store_borrow)?
+            };
+
             Ok(Box::new(item))
         }
     }
@@ -767,14 +870,16 @@ disjoint_impls! {
         Self: Ir<Type = Box<[Robust]>>,
     {
         unsafe fn try_read_out(out_ptr: Self::OutPtr) -> Result<Self> {
-            let slice = RefMutSlice::from_raw_parts_mut(out_ptr.as_mut_ptr(), out_ptr.len());
-            let res = CTypeConvert::<Box<[Robust]>, _>::try_from_repr_c(slice, &mut ());
+            unsafe {
+                let slice = RefMutSlice::from_raw_parts_mut(out_ptr.as_mut_ptr(), out_ptr.len());
+                let res = CTypeConvert::<Box<[Robust]>, _>::try_from_repr_c(slice, &mut ());
 
-            if !out_ptr.deallocate() {
-                return Err(FfiReturn::TrapRepresentation);
+                if !out_ptr.deallocate() {
+                    return Err(FfiReturn::TrapRepresentation);
+                }
+
+                res
             }
-
-            res
         }
     }
     impl<R: Transmute> FfiOutPtrRead for Box<[R]>
@@ -783,8 +888,10 @@ disjoint_impls! {
         Box<[<R>::Target]>: FfiOutPtrRead,
     {
         unsafe fn try_read_out(out_ptr: Self::OutPtr) -> Result<Self> {
-            <Box<[<R>::Target]>>::try_read_out(out_ptr)
-                .and_then(|output| transmute_from_target_boxed_slice(output))
+            unsafe {
+                <Box<[<R>::Target]>>::try_read_out(out_ptr)
+                    .and_then(|output| transmute_from_target_boxed_slice(output))
+            }
         }
     }
     impl<'itm, R: Ir<Type = S> + NonLocal + Clone + 'itm, S: Cloned + 'itm> FfiOutPtrRead for Box<[R]>
@@ -793,19 +900,21 @@ disjoint_impls! {
         Self: Ir<Type = Box<[S]>>,
     {
         unsafe fn try_read_out(out_ptr: Self::OutPtr) -> Result<Self> {
-            let slice = RefMutSlice::from_raw_parts_mut(out_ptr.as_mut_ptr(), out_ptr.len());
+            unsafe {
+                let slice = RefMutSlice::from_raw_parts_mut(out_ptr.as_mut_ptr(), out_ptr.len());
 
-            let mut store = Box::default();
-            // NOTE: Bypasses the erroneous lifetime check.
-            // Correct as long as `R::try_from_repr_c` doesn't return a reference to the store (`R: NonLocal`)
-            let store_borrow = &mut *addr_of_mut!(store);
-            let res = Self::try_from_repr_c(slice, store_borrow);
+                let mut store = Default::default();
+                // NOTE: Bypasses the erroneous lifetime check.
+                // Correct as long as `R::try_from_repr_c` doesn't return a reference to the store (`R: NonLocal`)
+                let store_borrow = &mut *addr_of_mut!(store);
+                let res = Self::try_from_repr_c(slice, store_borrow);
 
-            if !out_ptr.deallocate() {
-                return Err(FfiReturn::TrapRepresentation);
+                if !out_ptr.deallocate() {
+                    return Err(FfiReturn::TrapRepresentation);
+                }
+
+                res
             }
-
-            res
         }
     }
 
@@ -814,14 +923,16 @@ disjoint_impls! {
         Self: Ir<Type = Vec<Robust>>,
     {
         unsafe fn try_read_out(out_ptr: Self::OutPtr) -> Result<Self> {
-            let slice = RefMutSlice::from_raw_parts_mut(out_ptr.as_mut_ptr(), out_ptr.len());
-            let res = CTypeConvert::<Vec<Robust>, _>::try_from_repr_c(slice, &mut ());
+            unsafe {
+                let slice = RefMutSlice::from_raw_parts_mut(out_ptr.as_mut_ptr(), out_ptr.len());
+                let res = CTypeConvert::<Vec<Robust>, _>::try_from_repr_c(slice, &mut ());
 
-            if !out_ptr.deallocate() {
-                return Err(FfiReturn::TrapRepresentation);
+                if !out_ptr.deallocate() {
+                    return Err(FfiReturn::TrapRepresentation);
+                }
+
+                res
             }
-
-            res
         }
     }
     impl<R: Transmute> FfiOutPtrRead for Vec<R>
@@ -830,8 +941,10 @@ disjoint_impls! {
         Vec<<R>::Target>: FfiOutPtrRead,
     {
         unsafe fn try_read_out(out_ptr: Self::OutPtr) -> Result<Self> {
-            <Vec<<R>::Target>>::try_read_out(out_ptr)
-                .and_then(|output| transmute_from_target_vec(output))
+            unsafe {
+                <Vec<<R>::Target>>::try_read_out(out_ptr)
+                    .and_then(|output| transmute_from_target_vec(output))
+            }
         }
     }
     impl<'itm, R: Ir<Type = S> + NonLocal + Clone + 'itm, S: Cloned + 'itm> FfiOutPtrRead for Vec<R>
@@ -840,23 +953,26 @@ disjoint_impls! {
         Self: Ir<Type = Vec<S>>,
     {
         unsafe fn try_read_out(out_ptr: Self::OutPtr) -> Result<Self> {
-            let slice = RefMutSlice::from_raw_parts_mut(out_ptr.as_mut_ptr(), out_ptr.len());
+            unsafe {
+                let slice = RefMutSlice::from_raw_parts_mut(out_ptr.as_mut_ptr(), out_ptr.len());
 
-            let mut store = Box::default();
-            // NOTE: Bypasses the erroneous lifetime check.
-            // Correct as long as `R::try_from_repr_c` doesn't return a reference to the store (`R: NonLocal`)
-            let store_borrow = &mut *addr_of_mut!(store);
-            let res = Self::try_from_repr_c(slice, store_borrow);
+                let mut store = Default::default();
+                // NOTE: Bypasses the erroneous lifetime check.
+                // Correct as long as `R::try_from_repr_c` doesn't return a reference to the store (`R: NonLocal`)
+                let store_borrow = &mut *addr_of_mut!(store);
+                let res = Self::try_from_repr_c(slice, store_borrow);
 
-            if !out_ptr.deallocate() {
-                return Err(FfiReturn::TrapRepresentation);
+                if !out_ptr.deallocate() {
+                    return Err(FfiReturn::TrapRepresentation);
+                }
+
+                res
             }
-
-            res
         }
     }
 
-    impl<'itm, R: Ir<Type = S> + NonLocal + Clone + 'itm, S: Cloned + 'itm, const N: usize> FfiOutPtrRead for [R; N]
+    impl<'itm, R: Ir<Type = S> + NonLocal + Clone + 'itm, S: Cloned + 'itm, const N: usize>
+        FfiOutPtrRead for [R; N]
     where
         R: CTypeConvert<'itm, S, <R>::ReprC>,
         // FIXME: What is this bound?
@@ -867,10 +983,13 @@ disjoint_impls! {
     {
         unsafe fn try_read_out(out_ptr: Self::OutPtr) -> Result<Self> {
             let mut store = Default::default();
-            // NOTE: Bypasses the erroneous lifetime check.
-            // Correct as long as `R::try_from_repr_c` doesn't return a reference to the store (`R: NonLocal`)
-            let store_borrow = &mut *addr_of_mut!(store);
-            Self::try_from_repr_c(out_ptr, store_borrow)
+
+            unsafe {
+                // NOTE: Bypasses the erroneous lifetime check.
+                // Correct as long as `R::try_from_repr_c` doesn't return a reference to the store (`R: NonLocal`)
+                let store_borrow = &mut *addr_of_mut!(store);
+                Self::try_from_repr_c(out_ptr, store_borrow)
+            }
         }
     }
 
@@ -879,9 +998,9 @@ disjoint_impls! {
         Self: Ir<Type = Option<WithoutNiche>>,
     {
         unsafe fn try_read_out(out_ptr: Self::OutPtr) -> Result<Self> {
-            match <u8 as FfiOutPtrRead>::try_read_out(out_ptr.0)? {
+            match unsafe { <u8 as FfiOutPtrRead>::try_read_out(out_ptr.0)? } {
                 0 => Ok(None),
-                1 => Ok(Some(<R>::try_read_out(out_ptr.1)?)),
+                1 => Ok(Some(unsafe { <R>::try_read_out(out_ptr.1)? })),
                 _ => Err(FfiReturn::TrapRepresentation),
             }
         }
@@ -896,11 +1015,12 @@ disjoint_impls! {
                 return Ok(None);
             }
 
-            <R>::try_read_out(out_ptr).map(Some)
+            unsafe { <R>::try_read_out(out_ptr).map(Some) }
         }
     }
 
-    impl<'itm, R: Ir<Type = S> + NonLocal + Clone + 'itm, S: Cloned + 'itm> FfiOutPtrRead for LocalSlice<'itm, R>
+    impl<'itm, R: Ir<Type = S> + NonLocal + Clone + 'itm, S: Cloned + 'itm> FfiOutPtrRead
+        for LocalSlice<'itm, R>
     where
         R: CTypeConvert<'itm, S, <R>::ReprC>,
         Self: Ir<Type = &'itm [S]>,
@@ -908,32 +1028,41 @@ disjoint_impls! {
         unsafe fn try_read_out(out_ptr: OutBoxedSlice<<R>::ReprC>) -> Result<Self> {
             let slice = RefSlice::from_raw_parts(out_ptr.as_mut_ptr(), out_ptr.len());
 
-            let mut store = <(_, _)>::default();
-            // NOTE: Bypasses the erroneous lifetime check.
-            // Correct as long as `R::try_from_repr_c` doesn't return a reference to the store (`R: NonLocal`)
-            let store_borrow = &mut *addr_of_mut!(store);
-            let res = <&[R]>::try_from_repr_c(slice, store_borrow);
+            let mut store = Default::default();
 
-            if !out_ptr.deallocate() {
-                return Err(FfiReturn::TrapRepresentation);
+            unsafe {
+                // NOTE: Bypasses the erroneous lifetime check.
+                // Correct as long as `R::try_from_repr_c` doesn't return a reference to the store (`R: NonLocal`)
+                let store_borrow = &mut *addr_of_mut!(store);
+                let res = <&[R]>::try_from_repr_c(slice, store_borrow);
+
+                if !out_ptr.deallocate() {
+                    return Err(FfiReturn::TrapRepresentation);
+                }
+
+                res?;
             }
 
-            res?;
             Ok(Self(store.0, core::marker::PhantomData))
         }
     }
 
-    impl<'itm, R: Ir<Type = S> + NonLocal + Clone + 'itm, S: Cloned + 'itm> FfiOutPtrRead for LocalRef<'itm, R>
+    impl<'itm, R: Ir<Type = S> + NonLocal + Clone + 'itm, S: Cloned + 'itm> FfiOutPtrRead
+        for LocalRef<'itm, R>
     where
         R: CTypeConvert<'itm, S, <R>::ReprC>,
         Self: Ir<Type = &'itm S>,
     {
         unsafe fn try_read_out(out_ptr: Self::OutPtr) -> Result<Self> {
             let mut store = Default::default();
-            // NOTE: Bypasses the erroneous lifetime check.
-            // Correct as long as `R::try_from_repr_c` doesn't return a reference to the store (`R: NonLocal`)
-            let store_borrow = &mut *addr_of_mut!(store);
-            let item = <R>::try_from_repr_c(out_ptr, store_borrow)?;
+
+            let item = unsafe {
+                // NOTE: Bypasses the erroneous lifetime check.
+                // Correct as long as `R::try_from_repr_c` doesn't return a reference to the store (`R: NonLocal`)
+                let store_borrow = &mut *addr_of_mut!(store);
+                <R>::try_from_repr_c(out_ptr, store_borrow)?
+            };
+
             Ok(Self(item, core::marker::PhantomData))
         }
     }

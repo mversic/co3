@@ -3,10 +3,9 @@
 use std::{alloc, marker::PhantomData, mem::MaybeUninit};
 
 use co3::{
-    ffi_export,
+    FfiConvert, FfiReturn, FfiType, ffi_export,
     out_ptr::FfiOutPtrRead,
     slice::{OutBoxedSlice, RefSlice},
-    FfiConvert, FfiReturn, FfiType,
 };
 
 co3::def_ffi_fns! { dealloc }
@@ -169,7 +168,7 @@ fn transparent_vec_to_vec() {
         TransparentStruct::new(GenericTransparentStruct::new(3)),
     ];
 
-    let mut store = Box::default();
+    let mut store = Default::default();
     let mut output = MaybeUninit::new(OutBoxedSlice::from_raw_parts(core::ptr::null_mut(), 0));
 
     unsafe {

@@ -92,7 +92,7 @@ impl<C> RefSlice<C> {
             return None;
         }
 
-        Some(slice::from_raw_parts(self.0, self.1))
+        Some(unsafe { slice::from_raw_parts(self.0, self.1) })
     }
 }
 impl<C> RefMutSlice<C> {
@@ -142,7 +142,7 @@ impl<C> RefMutSlice<C> {
             return None;
         }
 
-        Some(slice::from_raw_parts_mut(self.0, self.1))
+        Some(unsafe { slice::from_raw_parts_mut(self.0, self.1) })
     }
 }
 impl<C: ReprC> OutBoxedSlice<C> {
@@ -187,9 +187,9 @@ impl<C: ReprC> OutBoxedSlice<C> {
             return None;
         }
 
-        Some(
-            Box::<[_]>::from_raw(slice::from_raw_parts_mut(self.as_mut_ptr(), self.len())).to_vec(),
-        )
+        Some(unsafe {
+            Box::<[_]>::from_raw(slice::from_raw_parts_mut(self.as_mut_ptr(), self.len())).to_vec()
+        })
     }
 
     pub(crate) unsafe fn deallocate(&self) -> bool {
@@ -198,7 +198,10 @@ impl<C: ReprC> OutBoxedSlice<C> {
         }
 
         if let Ok(layout) = core::alloc::Layout::array::<C>(self.len()) {
-            __dealloc(self.as_mut_ptr().cast(), layout.size(), layout.align());
+            unsafe {
+                __dealloc(self.as_mut_ptr().cast(), layout.size(), layout.align());
+            }
+
             return true;
         }
 

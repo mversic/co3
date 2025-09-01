@@ -1,5 +1,3 @@
-use std::default::Default;
-
 use darling::ast::Style;
 use manyhow::emit;
 use proc_macro2::TokenStream;

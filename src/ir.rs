@@ -6,7 +6,7 @@ use alloc::{boxed::Box, vec::Vec};
 
 #[cfg(not(feature = "non_robust_ref_mut"))]
 use crate::transmute::InfallibleTransmute;
-use crate::{repr_c::Cloned, Extern, LocalRef, LocalSlice};
+use crate::{Extern, LocalRef, LocalSlice, repr_c::Cloned};
 
 /// Designates a type that can be converted to/from internal representation. Predefined IR
 /// types are given automatic implementation of [`FfiType`] and other conversion traits.

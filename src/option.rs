@@ -1,8 +1,8 @@
 //! Logic related to the conversion of [`Option<T>`] to and from FFI-compatible representation
 
 use crate::{
-    repr_c::{CTypeConvert, Cloned},
     FfiConvert, FfiReturn, FfiTuple2, FfiType, ReprC, Result,
+    repr_c::{CTypeConvert, Cloned},
 };
 
 /// Type that has at least one trap representation that can be used as a niche value. The
@@ -69,9 +69,9 @@ impl<'itm, R: FfiConvert<'itm, C>, C: ReprC>
         source: FfiTuple2<<u8 as FfiType>::ReprC, C>,
         store: &'itm mut Self::FfiStore,
     ) -> Result<Self> {
-        match u8::try_from_ffi(source.0, &mut ())? {
+        match unsafe { u8::try_from_ffi(source.0, &mut ()) }? {
             0 => Ok(None),
-            1 => Ok(Some(R::try_from_ffi(source.1, store)?)),
+            1 => Ok(Some(unsafe { R::try_from_ffi(source.1, store) }?)),
             _ => Err(FfiReturn::TrapRepresentation),
         }
     }
@@ -97,6 +97,6 @@ where
             return Ok(None);
         }
 
-        Ok(Some(R::try_from_ffi(source, store)?))
+        Ok(Some(unsafe { R::try_from_ffi(source, store) }?))
     }
 }
