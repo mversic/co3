@@ -5,7 +5,7 @@ use co3::{LocalRef, LocalSlice};
 co3::extern_type! {
     // NOTE: Wrapped in co3::extern_type! to test that macro expansion works for non-opaque types
     #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-    #[mineral(unsafe {robust})]
+    #[mineral(unsafe(robust))]
     #[repr(transparent)]
     pub struct Transparent((u32, u32));
 }

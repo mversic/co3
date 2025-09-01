@@ -154,7 +154,7 @@ pub fn extern_type(input: TokenStream) -> TokenStream {
 /// serialize the type as opaque. If automatically derived type doesn't work just
 /// attach this attribute and force the type to be serialized as opaque across FFI
 ///
-/// * `#[mineral(unsafe {robust})]`
+/// * `#[mineral(unsafe(robust))]`
 /// serialize the type as transparent with respect to the wrapped type where every
 /// valid bit pattern of the underlying type must be valid for the wrapper type.
 ///
@@ -173,7 +173,7 @@ pub fn extern_type(input: TokenStream) -> TokenStream {
 ///
 /// NOTE: This attribute is likely to be removed in future versions
 ///
-/// * `#[mineral(unsafe {robust_non_owning})]`
+/// * `#[mineral(unsafe(non_owning))]`
 /// when a type contains a raw pointer (e.g. `*const T`/*mut T`) it's not possible to figure out
 /// whether it carries ownership of the data pointed to. Place this attribute on the field to
 /// indicate pointer doesn't own the data and is robust in the type. Alternatively, if the type

@@ -11,7 +11,7 @@ use co3::{
 co3::def_ffi_fns! { dealloc }
 
 #[derive(Clone, Copy, PartialEq, Eq, Debug, FfiType)]
-#[mineral(unsafe{robust})]
+#[mineral(unsafe(robust))]
 #[repr(transparent)]
 pub struct GenericTransparentStruct<P>(u64, PhantomData<P>);
 
@@ -22,7 +22,7 @@ impl<P> GenericTransparentStruct<P> {
 }
 
 #[derive(Clone, Copy, PartialEq, Eq, Debug, FfiType)]
-#[mineral(unsafe{robust})]
+#[mineral(unsafe(robust))]
 #[repr(transparent)]
 pub struct TransparentStruct {
     payload: GenericTransparentStruct<()>,

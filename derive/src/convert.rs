@@ -31,8 +31,8 @@ impl Display for FfiTypeToken {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         let text = match self {
             FfiTypeToken::Opaque => "#[mineral(opaque)]",
-            FfiTypeToken::UnsafeRobust => "#[mineral(unsafe {robust})]",
-            FfiTypeToken::UnsafeNonOwning => "#[mineral(unsafe {non_owning})]",
+            FfiTypeToken::UnsafeRobust => "#[mineral(unsafe(robust))]",
+            FfiTypeToken::UnsafeNonOwning => "#[mineral(unsafe(non_owning))]",
             FfiTypeToken::Local => "#[mineral(local)]",
         };
         write!(f, "{text}")
@@ -59,7 +59,7 @@ impl syn::parse::Parse for SpannedFfiTypeToken {
                 "local" => Ok(((span, FfiTypeToken::Local), after_token)),
                 "unsafe" => {
                     let Some((inside_of_group, group_span, after_group)) =
-                        after_token.group(Delimiter::Brace)
+                        after_token.group(Delimiter::Parenthesis)
                     else {
                         return Err(cursor.error("expected `{ ... }` after `unsafe`"));
                     };
@@ -255,11 +255,7 @@ pub fn derive_ffi_type(emitter: &mut Emitter, input: &syn::DeriveInput) -> Token
     let name = &input.ident;
     if let darling::ast::Data::Enum(variants) = &input.data {
         if variants.is_empty() {
-            emit!(
-                emitter,
-                name,
-                "Uninhabited enums are not allowed in FFI"
-            );
+            emit!(emitter, name, "Uninhabited enums are not allowed in FFI");
         }
     }
 
@@ -835,7 +831,7 @@ fn verify_is_non_owning(emitter: &mut Emitter, data: &FfiTypeData) {
     }
     impl syn::visit::Visit<'_> for PtrVisitor<'_> {
         fn visit_type_ptr(&mut self, node: &syn::TypePtr) {
-            emit!(self.emitter, node, "Raw pointer found. If the pointer doesn't own the data, attach `#[mineral(unsafe {{non_owning}})` to the field. Otherwise, mark the entire type as opaque with `#[mineral(opaque)]`");
+            emit!(self.emitter, node, "Raw pointer found. If the pointer doesn't own the data, attach `#[mineral(unsafe(non_owning))` to the field. Otherwise, mark the entire type as opaque with `#[mineral(opaque)]`");
         }
     }
 

@@ -906,7 +906,7 @@ pub struct Extern {
 /// use co3::FfiType;
 ///
 /// #[derive(FfiType)]
-/// #[mineral(unsafe {robust})]
+/// #[mineral(unsafe(robust))]
 /// #[repr(transparent)]
 /// pub struct Example(u32);
 ///

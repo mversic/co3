@@ -1,10 +1,10 @@
-error: Raw pointer found. If the pointer doesn't own the data, attach `#[mineral(unsafe {non_owning})` to the field. Otherwise, mark the entire type as opaque with `#[mineral(opaque)]`
+error: Raw pointer found. If the pointer doesn't own the data, attach `#[mineral(unsafe(non_owning))` to the field. Otherwise, mark the entire type as opaque with `#[mineral(opaque)]`
  --> tests/ui_fail/raw_pointer_type.rs:5:23
   |
 5 | pub struct FfiStruct1(*mut u32);
   |                       ^^^^^^^^
 
-error: Raw pointer found. If the pointer doesn't own the data, attach `#[mineral(unsafe {non_owning})` to the field. Otherwise, mark the entire type as opaque with `#[mineral(opaque)]`
+error: Raw pointer found. If the pointer doesn't own the data, attach `#[mineral(unsafe(non_owning))` to the field. Otherwise, mark the entire type as opaque with `#[mineral(opaque)]`
   --> tests/ui_fail/raw_pointer_type.rs:10:7
    |
 10 |     B(*mut u32),
