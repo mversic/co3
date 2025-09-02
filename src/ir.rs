@@ -37,10 +37,6 @@ pub trait Ir {
     ///
     /// - In the common case, set [`Ir::Type`] to `Self` and implement [`Cloned`].
     ///   This provides a default [`crate::FfiType`] implementation, but note that it will clone the type.
-    ///
-    /// # Example
-    ///
-    /// ``
     type Type;
 }
 
@@ -102,15 +98,12 @@ pub unsafe trait External {
 }
 
 /// Marker for a type exported as an opaque pointer over FFI.
-#[derive(Debug, Clone, Copy)]
 pub enum Opaque {}
 
 /// Marker for a type that is transparent with respect to its wrapped type.
-#[derive(Debug, Clone, Copy)]
 pub enum Transparent {}
 
 /// Marker for a robust [`crate::ReprC`] type that does not require conversion.
-#[derive(Debug, Clone, Copy)]
 pub enum Robust {}
 
 impl IrTypeFamily for Robust {
@@ -148,18 +141,16 @@ impl<R: Cloned> IrTypeFamily for R {
         = &'itm Self
     where
         Self: 'itm;
-    // FIXME: Replace with never type https://github.com/rust-lang/rust/issues/35121
     type RefMut<'itm>
-        = ()
+        = void::Void
     where
         Self: 'itm;
     type RefSlice<'itm>
         = &'itm [Self]
     where
         Self: 'itm;
-    // FIXME: Replace with never type https://github.com/rust-lang/rust/issues/35121
     type RefMutSlice<'itm>
-        = ()
+        = void::Void
     where
         Self: 'itm;
     type Box = Box<Self>;
