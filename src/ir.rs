@@ -13,32 +13,34 @@ use crate::{Extern, LocalRef, LocalSlice, repr_c::Cloned};
 ///
 /// Predefined IR types automatically implement [`crate::FfiType`] and related conversion traits.
 pub trait Ir {
-    /// The internal representation of the type.
+    /// The internal representation (i.e. type family) of the type
     ///
-    /// - If [`Self`] is [`ReprC`], set [`Ir::Type`] to [`Robust`].
-    ///   In this case, the type is passed to FFI functions as-is, without conversion.
+    /// - If `Self` is [`crate::ReprC`], set [`Ir::Type`] to [`Robust`].
+    ///   The type is passed to FFI functions as-is, without conversion.
     ///
     /// - If [`Ir::Type`] is [`Transparent`], `Self` automatically implements [`crate::FfiType`]
-    ///   by delegating to its inner type.
+    ///   by delegating to its inner type via [`core::mem::transmute`].
     ///   If the inner type supports zero-copy conversion, then [`Transparent`] is also zero-copy.
+    ///   See [`crate::Transmute`] for more details.
     ///
-    /// - If [`Ir::Type`] is [`Opaque`], `T` is serialized as an opaque pointer (heap-allocated
-    ///   during conversion).
-    // FIXME: what is this about Vec<T>?
-    ///   Except for `Vec<T>`, [`Opaque`] is currently the only family of types that transfer
-    ///   ownership across FFI.
+    /// - If [`Ir::Type`] is [`Opaque`], `T` is serialized as an opaque pointer.
+    ///   Note that the type will be heap allocated during conversion if not already.
+    ///   [`Opaque`] is the only family of types that transfer ownership across FFI.
     ///
-    /// - If [`Ir::Type`] is [`Extern`], `T` represents the pointee on the far side of an
-    ///   opaque pointer at the FFI boundary.
+    /// - If [`Ir::Type`] is [`Extern`], represents the pointee on the far side of an [`Opaque`] pointer
     ///
-    /// - If [`Ir::Type`] is [`Option<T>`], serialization is delegated to the inner type,
-    ///   using its *niche value* to represent `None`.
+    /// - If [`Ir::Type`] is [`Option<T>`], `Option<T>` is transmuted into the inner type,
+    ///   using its *niche value* to represent [`None`].
     ///
     /// - If [`Ir::Type`] is [`Option<WithoutNiche>`], serialization is delegated to the
     ///   inner type, but represented explicitly as a `(discriminant, value)` tuple.
     ///
     /// - In the common case, set [`Ir::Type`] to `Self` and implement [`Cloned`].
     ///   This provides a default [`crate::FfiType`] implementation, but note that it will clone the type.
+    ///
+    /// # Example
+    ///
+    /// ``
     type Type;
 }
 

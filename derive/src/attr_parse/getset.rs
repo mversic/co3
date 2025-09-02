@@ -5,7 +5,7 @@ use std::{collections::hash_map::Entry, str::FromStr};
 use proc_macro2::Span;
 use rustc_hash::{FxHashMap, FxHashSet};
 use strum::{Display, EnumString};
-use syn::{parse::ParseStream, punctuated::Punctuated, Attribute, Token};
+use syn::{Attribute, Token, parse::ParseStream, punctuated::Punctuated};
 
 use crate::attr_parse::derive::{Derive, DeriveAttrs};
 

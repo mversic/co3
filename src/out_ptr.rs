@@ -697,8 +697,6 @@ disjoint_impls! {
         Self: Ir<Type = Option<WithoutNiche>>,
     {
         unsafe fn write_out(self, out_ptr: *mut Self::OutPtr) {
-            // NOTE: Makes the code much more readable
-            #[allow(clippy::option_if_let_else)]
             match self {
                 None => {
                     let mut discriminant_out_ptr = core::mem::MaybeUninit::uninit();

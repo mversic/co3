@@ -792,7 +792,7 @@ pub enum FfiReturn {
 ///         type Target = NonNullInner<T>;
 ///
 ///         validation_fn={|target: &Self::Target| !target.is_null()},
-///         niche_value=core::ptr::null_mut(),
+///         NICHE_VALUE=core::ptr::null_mut(),
 ///     }
 /// }
 ///
@@ -826,7 +826,7 @@ macro_rules! mineral {
         type Target = $target:ty;
 
         validation_fn={$validity_fn: expr},
-        niche_value=$niche_value: expr
+        NICHE_VALUE=$niche_value: expr
         $(,)?
     }) => {
         impl<$($($impl_generics $(: $bounds)?),*)?> $crate::ir::Ir for $ty where $($($where_ty: $where_bound),*)? {

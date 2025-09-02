@@ -3,7 +3,7 @@ use manyhow::emit;
 use proc_macro2::TokenStream;
 use quote::quote;
 use rustc_hash::FxHashMap;
-use syn::{parse_quote, visit::Visit, Ident};
+use syn::{Ident, parse_quote, visit::Visit};
 
 use crate::{
     attr_parse::{
@@ -12,7 +12,7 @@ use crate::{
     },
     convert::{FfiTypeField, FfiTypeFields},
     emitter::Emitter,
-    impl_visitor::{unwrap_result_type, Arg, FnDescriptor},
+    impl_visitor::{Arg, FnDescriptor, unwrap_result_type},
 };
 
 /// Generate FFI function equivalents of getset-derived methods

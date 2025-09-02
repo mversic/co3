@@ -1,6 +1,6 @@
 use proc_macro2::TokenStream;
 use quote::quote;
-use syn::{visit_mut::VisitMut, Ident};
+use syn::{Ident, visit_mut::VisitMut};
 
 use crate::{
     getset_gen::{gen_resolve_type, gen_store_name},
@@ -28,7 +28,7 @@ pub fn gen_declaration(fn_descriptor: &FnDescriptor, trait_name: Option<&Ident>)
     let fn_signature = gen_decl_signature(&ffi_fn_name, fn_descriptor);
 
     quote! {
-        extern {
+        unsafe extern "C" {
             #[doc = #ffi_fn_doc]
             #(#ffi_fn_attrs)*
             #fn_signature;
@@ -44,9 +44,9 @@ pub fn gen_definition(fn_descriptor: &FnDescriptor, trait_name: Option<&Ident>) 
     let ffi_fn_body = gen_body(fn_descriptor, trait_name);
 
     quote! {
-        #[no_mangle]
         #(#ffi_fn_attrs)*
         #[doc = #ffi_fn_doc]
+        #[unsafe(no_mangle)]
         unsafe extern "C" #fn_signature {
             let fn_ = || {
                 let fn_body = || #ffi_fn_body;
@@ -283,10 +283,10 @@ fn ffi_output_arg<'ast>(fn_descriptor: &'ast FnDescriptor<'ast>) -> Option<&'ast
             return None;
         }
 
-        if let Some(receiver) = &fn_descriptor.receiver {
-            if receiver.name() == output_arg.name() {
-                return None;
-            }
+        if let Some(receiver) = &fn_descriptor.receiver
+            && receiver.name() == output_arg.name()
+        {
+            return None;
         }
 
         Some(output_arg)

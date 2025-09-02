@@ -5,6 +5,7 @@ use co3::FfiType;
 pub struct FfiStruct1(*mut u32);
 
 #[derive(Clone, Copy, PartialEq, Eq, FfiType)]
+#[repr(C)]
 pub enum FfiEnum1 {
     A,
     B(*mut u32),

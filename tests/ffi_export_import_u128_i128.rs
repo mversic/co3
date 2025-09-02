@@ -1,6 +1,5 @@
 macro_rules! derive_freestanding_export_import {
     ($(fn $ident:ident($inp:ty) -> $out:ty);+ $(;)?) => {
-        // FFI imports
         $(
             #[co3::decarbonate]
             pub fn $ident(value: $inp) -> $out {
@@ -8,7 +7,6 @@ macro_rules! derive_freestanding_export_import {
             }
         )*
 
-        // FFI exports
         mod exports {
             use std::alloc;
 

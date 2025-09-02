@@ -14,7 +14,7 @@ mineral! {
         type Target = Vec<u8>;
 
         validation_fn={|target| core::str::from_utf8(target).is_ok()},
-        niche_value=RefMutSlice::null_mut()
+        NICHE_VALUE=RefMutSlice::null_mut()
     }
 }
 // WARN: `core::str::as_bytes` uses transmute internally which means that
@@ -24,7 +24,7 @@ mineral! {
         type Target = Box<[u8]>;
 
         validation_fn={|target| core::str::from_utf8(target).is_ok()},
-        niche_value=RefMutSlice::null_mut()
+        NICHE_VALUE=RefMutSlice::null_mut()
     }
 }
 mineral! {
@@ -32,7 +32,7 @@ mineral! {
         type Target = &'slice [u8];
 
         validation_fn={|target| core::str::from_utf8(target).is_ok()},
-        niche_value=RefSlice::null()
+        NICHE_VALUE=RefSlice::null()
     }
 }
 #[cfg(feature = "non_robust_ref_mut")]
@@ -41,7 +41,7 @@ mineral! {
         type Target = &'slice mut [u8];
 
         validation_fn={|target| core::str::from_utf8(target).is_ok()},
-        niche_value=RefMutSlice::null_mut()
+        NICHE_VALUE=RefMutSlice::null_mut()
     }
 }
 mineral! {
@@ -54,7 +54,7 @@ mineral! {
         type Target = *mut T;
 
         validation_fn={|target: &Self::Target| !target.is_null()},
-        niche_value=core::ptr::null_mut()
+        NICHE_VALUE=core::ptr::null_mut()
     }
 }
 

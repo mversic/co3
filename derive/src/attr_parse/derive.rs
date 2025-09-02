@@ -2,7 +2,7 @@
 
 use darling::FromAttributes;
 use quote::ToTokens;
-use syn::{punctuated::Punctuated, Attribute, Token};
+use syn::{Attribute, Token, punctuated::Punctuated};
 
 use super::getset::GetSetDerive;
 
@@ -80,8 +80,6 @@ impl FromAttributes for DeriveAttrs {
                 };
 
                 for path in paths {
-                    // what clippy suggests here is much harder to read
-                    #[allow(clippy::option_if_let_else)]
                     let derive = if let Some(derive) = RustcDerive::try_from_path(&path) {
                         Derive::Rustc(derive)
                     } else if let Some(derive) = GetSetDerive::try_from_path(&path) {

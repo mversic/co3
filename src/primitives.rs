@@ -110,7 +110,7 @@ macro_rules! fieldless_enum_derive {
                 type Target = $dst;
 
                 validation_fn={$validity_fn},
-                niche_value=$niche_val
+                NICHE_VALUE=$niche_val
             }
         }
 

@@ -1,7 +1,7 @@
 use manyhow::emit;
 use proc_macro2::{Span, TokenStream};
 use quote::quote;
-use syn::{parse_quote, visit_mut::VisitMut, Attribute, Ident, Type};
+use syn::{Attribute, Ident, Type, parse_quote, visit_mut::VisitMut};
 
 use crate::{
     attr_parse::derive::{Derive, RustcDerive},
@@ -9,7 +9,7 @@ use crate::{
     emitter::Emitter,
     ffi_fn,
     getset_gen::{gen_resolve_type, gen_store_name},
-    impl_visitor::{unwrap_result_type, Arg, FnDescriptor, ImplDescriptor, TypeImplTraitResolver},
+    impl_visitor::{Arg, FnDescriptor, ImplDescriptor, TypeImplTraitResolver, unwrap_result_type},
 };
 
 fn gen_lifetime_name_for_opaque() -> TokenStream {
@@ -392,7 +392,7 @@ fn gen_impl_ffi(name: &Ident, generics: &syn::Generics) -> TokenStream {
                 type Target = *const co3::Extern;
 
                 validation_fn={|target: &Self::Target| !target.is_null()},
-                niche_value=core::ptr::null()
+                NICHE_VALUE=core::ptr::null()
             }
         }
         co3::mineral! {
@@ -400,7 +400,7 @@ fn gen_impl_ffi(name: &Ident, generics: &syn::Generics) -> TokenStream {
                 type Target = *mut co3::Extern;
 
                 validation_fn={|target: &Self::Target| !target.is_null()},
-                niche_value=core::ptr::null_mut()
+                NICHE_VALUE=core::ptr::null_mut()
             }
         }
 

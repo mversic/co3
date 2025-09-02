@@ -5,10 +5,9 @@
 use manyhow::emit;
 use proc_macro2::Span;
 use syn::{
-    parse_quote,
-    visit::{visit_signature, Visit},
+    Attribute, Ident, Path, Type, Visibility, parse_quote,
+    visit::{Visit, visit_signature},
     visit_mut::VisitMut,
-    Attribute, Ident, Path, Type, Visibility,
 };
 
 use crate::emitter::Emitter;
@@ -421,10 +420,10 @@ impl<'ast> Visit<'ast> for FnVisitor<'ast, '_> {
         for it in &node.attrs {
             self.visit_attribute(it);
         }
-        if let Some((_, lifetime)) = &node.reference {
-            if lifetime.is_some() {
-                emit!(self.emitter, lifetime, "Explicit lifetimes not supported");
-            }
+        if let Some((_, lifetime)) = &node.reference
+            && lifetime.is_some()
+        {
+            emit!(self.emitter, lifetime, "Explicit lifetimes not supported");
         }
 
         let src_type: Type = node.reference.as_ref().map_or_else(
@@ -546,12 +545,12 @@ impl VisitMut for TypeImplTraitResolver {
                         "IntoIterator" | "ExactSizeIterator" => {
                             if let syn::PathArguments::AngleBracketed(args) = &trait_.arguments {
                                 for arg in &args.args {
-                                    if let syn::GenericArgument::AssocType(binding) = arg {
-                                        if binding.ident == "Item" {
-                                            let mut ty = binding.ty.clone();
-                                            TypeImplTraitResolver.visit_type_mut(&mut ty);
-                                            new_node = Some(parse_quote! { Vec<#ty> });
-                                        }
+                                    if let syn::GenericArgument::AssocType(binding) = arg
+                                        && binding.ident == "Item"
+                                    {
+                                        let mut ty = binding.ty.clone();
+                                        TypeImplTraitResolver.visit_type_mut(&mut ty);
+                                        new_node = Some(parse_quote! { Vec<#ty> });
                                     }
                                 }
                             }
@@ -594,14 +593,12 @@ pub fn unwrap_result_type(node: &Type) -> Option<(&Type, &Type)> {
     if let Type::Path(type_) = node {
         let last_seg = type_.path.segments.last().expect("Defined");
 
-        if last_seg.ident == "Result" {
-            if let syn::PathArguments::AngleBracketed(args) = &last_seg.arguments {
-                if let (syn::GenericArgument::Type(ok), syn::GenericArgument::Type(err)) =
-                    (&args.args[0], &args.args[1])
-                {
-                    return Some((ok, err));
-                }
-            }
+        if last_seg.ident == "Result"
+            && let syn::PathArguments::AngleBracketed(args) = &last_seg.arguments
+            && let (syn::GenericArgument::Type(ok), syn::GenericArgument::Type(err)) =
+                (&args.args[0], &args.args[1])
+        {
+            return Some((ok, err));
         }
     }
 

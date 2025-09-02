@@ -28,8 +28,8 @@ pub struct OpaqueStruct {
     params: BTreeMap<Name, Value>,
 }
 
-#[repr(u8)]
 #[derive(Debug, Clone, Copy, PartialEq, Eq, FfiType)]
+#[repr(u8)]
 pub enum FieldlessEnum {
     A,
     B,
@@ -44,6 +44,7 @@ pub enum TransparentFieldlessEnum {
 
 #[derive(Debug, Clone, PartialEq, Eq, FfiType)]
 #[allow(variant_size_differences)]
+#[repr(C)]
 pub enum DataCarryingEnum {
     A(OpaqueStruct),
     B(u32),
@@ -658,7 +659,7 @@ fn fieldless_enum_conversion() {
         );
 
         let ret_val = FfiOutPtrRead::try_read_out(output.assume_init());
-        assert_eq!(FieldlessEnum::A, ret_val.expect("Conversion failed"));
+        assert_eq!(FieldlessEnum::A, ret_val.unwrap());
     }
 }
 

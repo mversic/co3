@@ -9,7 +9,7 @@ use wrapper::wrap_method;
 
 use crate::{
     attr_parse::derive::Derive,
-    convert::{derive_ffi_type, FfiTypeData, FfiTypeInput},
+    convert::{FfiTypeData, FfiTypeInput, derive_ffi_type},
     emitter::Emitter,
 };
 
@@ -99,42 +99,41 @@ pub fn extern_type(input: TokenStream) -> TokenStream {
                 };
             }
 
-            if let FfiTypeData::Struct(fields) = &item.data {
-                if item
+            if let FfiTypeData::Struct(fields) = &item.data
+                && item
                     .derive_attr
                     .derives
                     .iter()
                     .any(|d| matches!(d, Derive::GetSet(_)))
-                {
-                    let derived_methods: Vec<_> = getset_gen::gen_derived_methods(
-                        &mut emitter,
-                        &item.ident,
-                        &item.derive_attr,
-                        &item.getset_attr,
-                        fields,
-                    )
+            {
+                let derived_methods: Vec<_> = getset_gen::gen_derived_methods(
+                    &mut emitter,
+                    &item.ident,
+                    &item.derive_attr,
+                    &item.getset_attr,
+                    fields,
+                )
+                .collect();
+
+                let ffi_fns: Vec<_> = derived_methods
+                    .iter()
+                    .map(|fn_| ffi_fn::gen_declaration(fn_, None))
                     .collect();
 
-                    let ffi_fns: Vec<_> = derived_methods
-                        .iter()
-                        .map(|fn_| ffi_fn::gen_declaration(fn_, None))
-                        .collect();
+                let impl_block = wrapper::wrap_impl_items(&ImplDescriptor {
+                    attrs: Vec::new(),
+                    trait_name: None,
+                    associated_types: Vec::new(),
+                    fns: derived_methods,
+                });
+                let opaque = wrapper::wrap_as_opaque(&mut emitter, item);
 
-                    let impl_block = wrapper::wrap_impl_items(&ImplDescriptor {
-                        attrs: Vec::new(),
-                        trait_name: None,
-                        associated_types: Vec::new(),
-                        fns: derived_methods,
-                    });
-                    let opaque = wrapper::wrap_as_opaque(&mut emitter, item);
+                return quote! {
+                    #opaque
 
-                    return quote! {
-                        #opaque
-
-                        #impl_block
-                        #(#ffi_fns)*
-                    };
-                }
+                    #impl_block
+                    #(#ffi_fns)*
+                };
             }
 
             wrapper::wrap_as_opaque(&mut emitter, item)
@@ -259,15 +258,15 @@ pub fn ffi_type_derive(input: TokenStream) -> TokenStream {
 /// }
 ///
 /// /* The following functions will be derived:
-/// extern "C" fn Foo__new(id: u8, output: *mut Foo) -> FfiReturn {
+/// unsafe extern "C" fn Foo__new(id: u8, output: *mut Foo) -> FfiReturn {
 ///     /* function implementation */
 ///     FfiReturn::Ok
 /// }
-/// extern "C" fn Foo__bar(handle: *const Foo, output: *mut RefSlice<u8>) -> FfiReturn {
+/// unsafe extern "C" fn Foo__bar(handle: *const Foo, output: *mut RefSlice<u8>) -> FfiReturn {
 ///     /* function implementation */
 ///     FfiReturn::Ok
 /// }
-/// extern "C" fn Foo__id(handle: *const Foo, output: *mut u8) -> FfiReturn {
+/// unsafe extern "C" fn Foo__id(handle: *const Foo, output: *mut u8) -> FfiReturn {
 ///     /* function implementation */
 ///     FfiReturn::Ok
 /// } */
@@ -409,7 +408,7 @@ pub fn carbonate(attr: TokenStream, item: TokenStream) -> TokenStream {
 /// }
 ///
 /// /* The following functions will be declared:
-/// extern {
+/// unsafe extern "C" {
 ///     fn __return_first_elem_from_arr(arr: *const [u8; 8]) -> u8;
 /// } */
 /// ```

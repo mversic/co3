@@ -10,40 +10,45 @@ crate::decl_fns! { dealloc }
 /// Immutable slice `&[C]` with a defined C ABI layout. Consists of a data pointer and a length.
 /// If the data pointer is set to `null`, the struct represents `Option<&[C]>`.
 #[repr(C)]
-#[derive(Debug)]
 pub struct RefSlice<C>(*const C, usize);
 
 /// Mutable slice `&mut [C]` with a defined C ABI layout. Consists of a data pointer and a length.
 /// If the data pointer is set to `null`, the struct represents `Option<&mut [C]>`.
 #[repr(C)]
-#[derive(Debug)]
 pub struct RefMutSlice<C>(*mut C, usize);
 
 /// Owned slice `Box<[C]>` with a defined C ABI layout. Consists of a data pointer and a length.
 /// Used in place of a function out-pointer to transfer ownership of the slice to the caller.
 /// If the data pointer is set to `null`, the struct represents `Option<Box<[C]>>`.
 #[repr(C)]
-#[derive(Debug)]
 pub struct OutBoxedSlice<C>(*mut C, usize);
 
-impl<C> Copy for RefSlice<C> {}
-impl<C> Clone for RefSlice<C> {
-    fn clone(&self) -> Self {
-        *self
-    }
+macro_rules! impl_raw_slice_methods {
+    ($($ty:ty),+ $(,)?) => {$(
+        impl<C> core::fmt::Debug for $ty {
+            fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+                f.debug_struct(stringify!($ty))
+                    .field("ptr", &self.0)
+                    .field("len", &self.1)
+                    .finish()
+            }
+        }
+        impl<C> PartialEq for $ty {
+            fn eq(&self, other: &Self) -> bool {
+                self.0 == other.0 && self.1 == other.1
+            }
+        }
+        impl<C> Clone for $ty {
+            fn clone(&self) -> Self {
+                *self
+            }
+        }
+        impl<C> Copy for $ty {})+
+    };
 }
-impl<C> Copy for RefMutSlice<C> {}
-impl<C> Clone for RefMutSlice<C> {
-    fn clone(&self) -> Self {
-        *self
-    }
-}
-impl<C> Copy for OutBoxedSlice<C> {}
-impl<C> Clone for OutBoxedSlice<C> {
-    fn clone(&self) -> Self {
-        *self
-    }
-}
+
+// NOTE: derive impls regardles of whether `C` implements `ReprC`
+impl_raw_slice_methods! { RefSlice<C>, RefMutSlice<C>, OutBoxedSlice<C> }
 
 impl<C> RefSlice<C> {
     /// Set the slice's data pointer to null

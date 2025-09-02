@@ -5,7 +5,7 @@ error: Raw pointer found. If the pointer doesn't own the data, attach `#[mineral
   |                       ^^^^^^^^
 
 error: Raw pointer found. If the pointer doesn't own the data, attach `#[mineral(unsafe(non_owning))` to the field. Otherwise, mark the entire type as opaque with `#[mineral(opaque)]`
-  --> tests/ui_fail/raw_pointer_type.rs:10:7
+  --> tests/ui_fail/raw_pointer_type.rs:11:7
    |
-10 |     B(*mut u32),
+11 |     B(*mut u32),
    |       ^^^^^^^^

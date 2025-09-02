@@ -1,5 +1,0 @@
-error: Enum representation is not specified. Try adding `#[repr(u32)]` or similar
- --> tests/ui_fail/fieldless_enum_without_repr.rs:4:10
-  |
-4 | pub enum FfiStruct {
-  |          ^^^^^^^^^

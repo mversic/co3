@@ -2,31 +2,27 @@
 
 use std::str::FromStr;
 
-use darling::{error::Accumulator, util::SpannedValue, FromAttributes};
+use darling::{FromAttributes, error::Accumulator, util::SpannedValue};
 use proc_macro2::{Delimiter, Span};
 use strum::{Display, EnumString};
 use syn::{
+    Attribute, Meta, Token,
     parse::{Parse, ParseStream},
     punctuated::Punctuated,
     spanned::Spanned as _,
-    Attribute, Meta, Token,
 };
 
 #[derive(Debug, Copy, Clone, Eq, PartialEq, Display, EnumString)]
 #[strum(serialize_all = "lowercase")]
 pub enum ReprPrimitive {
     U8,
-    U16,
-    U32,
-    U64,
-    U128,
-    Usize,
     I8,
+    U16,
     I16,
+    U32,
     I32,
     I64,
-    I128,
-    Isize,
+    U64,
 }
 
 #[derive(Debug, Copy, Clone, Eq, PartialEq)]
@@ -52,6 +48,23 @@ enum ReprToken {
 struct SpannedReprToken {
     span: Span,
     token: ReprToken,
+}
+
+impl quote::ToTokens for ReprPrimitive {
+    fn to_tokens(&self, tokens: &mut proc_macro2::TokenStream) {
+        let ty = match self {
+            Self::U8 => quote::quote! {u8},
+            Self::I8 => quote::quote! {i8},
+            Self::U16 => quote::quote! {u16},
+            Self::I16 => quote::quote! {i16},
+            Self::U32 => quote::quote! {u32},
+            Self::I32 => quote::quote! {i32},
+            Self::U64 => quote::quote! {u64},
+            Self::I64 => quote::quote! {i64},
+        };
+
+        ty.to_tokens(tokens);
+    }
 }
 
 impl Parse for SpannedReprToken {
@@ -112,8 +125,7 @@ pub struct Repr {
     /// Repr kind
     ///
     /// The value of None means no repr was specified.
-    /// It corresponds what is called `repr(Rust)` in the Rust reference.
-    /// It's not a real syntax though
+    /// It corresponds to what is called `repr()` in the Rust reference.
     pub kind: Option<SpannedValue<ReprKind>>,
     /// Repr alignment
     pub alignment: Option<SpannedValue<ReprAlignment>>,

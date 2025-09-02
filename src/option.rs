@@ -14,11 +14,11 @@ pub trait Niche<'dummy>: FfiType {
     const NICHE_VALUE: Self::ReprC;
 }
 
-/// Marker for [`Option<T>`] that doesn't have niche representation
+/// Marker for a type that doesn't have niche representation
 #[derive(Debug, Clone, Copy)]
 pub enum WithoutNiche {}
 
-/// Used to implement specialized impls of [`Ir`] for [`Option<T>`]
+/// Used to implement specialized impls of [`crate::ir::Ir`] for [`Option<T>`]
 pub trait Ir {
     /// Internal representation of [`Option<T>`]
     type Type;
@@ -56,8 +56,6 @@ impl<'itm, R: FfiConvert<'itm, C>, C: ReprC>
     type FfiStore = R::FfiStore;
 
     fn into_repr_c(self, store: &'itm mut Self::RustStore) -> FfiTuple2<<u8 as FfiType>::ReprC, C> {
-        // NOTE: Makes the code much more readable
-        #[allow(clippy::option_if_let_else)]
         match self {
             // TODO: No need to zero the memory because it must never be read
             None => FfiTuple2(0u8.into_ffi(&mut ()), unsafe { core::mem::zeroed() }),

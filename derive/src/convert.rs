@@ -2,19 +2,22 @@ use core::str::FromStr as _;
 use std::fmt::{Display, Formatter};
 
 use darling::{
-    ast::Style, util::SpannedValue, FromAttributes, FromDeriveInput, FromField, FromVariant,
+    FromAttributes, FromDeriveInput, FromField, FromVariant, ast::Style, util::SpannedValue,
 };
 use manyhow::{emit, error_message};
 use proc_macro2::{Delimiter, Span, TokenStream};
 use quote::quote;
-use syn::{parse::ParseStream, spanned::Spanned as _, visit::Visit as _, Attribute, Field, Ident};
+use syn::{
+    Attribute, Field, Ident, parse::ParseStream, parse_quote, spanned::Spanned as _,
+    visit::Visit as _,
+};
 
 use crate::{
     attr_parse::{
         derive::DeriveAttrs,
         doc::DocAttrs,
         getset::{GetSetFieldAttrs, GetSetStructAttrs},
-        repr::{Repr, ReprKind, ReprPrimitive},
+        repr::{Repr, ReprKind},
     },
     emitter::Emitter,
 };
@@ -113,7 +116,7 @@ impl syn::parse::Parse for FfiTypeKindAttribute {
                     return Err(syn::Error::new(
                         token.span,
                         format!("`{other}` cannot be used on a type"),
-                    ))
+                    ));
                 }
             })
         })
@@ -135,7 +138,7 @@ impl syn::parse::Parse for FfiTypeKindFieldAttribute {
                     return Err(syn::Error::new(
                         token.span,
                         format!("`{other}` cannot be used on a field"),
-                    ))
+                    ));
                 }
             })
         })
@@ -183,8 +186,8 @@ pub struct FfiTypeInput {
 
 impl FfiTypeInput {
     pub fn is_opaque(&self) -> bool {
-        self.ffi_type_attr.kind == Some(FfiTypeKindAttribute::Opaque)
-            || !self.data.is_enum() && self.repr_attr.kind.as_deref().is_none()
+        self.repr_attr.kind.is_none()
+            || self.ffi_type_attr.kind == Some(FfiTypeKindAttribute::Opaque)
     }
 }
 
@@ -253,14 +256,12 @@ pub fn derive_ffi_type(emitter: &mut Emitter, input: &syn::DeriveInput) -> Token
     };
 
     let name = &input.ident;
-    if let darling::ast::Data::Enum(variants) = &input.data {
-        if variants.is_empty() {
-            emit!(emitter, name, "Uninhabited enums are not allowed in FFI");
-        }
+    if let darling::ast::Data::Enum(variants) = &input.data
+        && variants.is_empty()
+    {
+        emit!(emitter, name, "Uninhabited enums are not allowed in FFI");
     }
 
-    // the logic of `is_opaque` is somewhat convoluted and I am not sure if it is even correct
-    // there is also `is_opaque_struct`...
     if input.is_opaque() {
         return derive_ffi_type_for_opaque_item(name, &input.generics);
     }
@@ -271,10 +272,6 @@ pub fn derive_ffi_type(emitter: &mut Emitter, input: &syn::DeriveInput) -> Token
     match &input.data {
         darling::ast::Data::Enum(variants) => {
             if variants.iter().all(|v| v.fields.is_empty()) {
-                if variants.len() == 1 {
-                    // NOTE: one-variant fieldless enums have representation of ()
-                    return derive_ffi_type_for_opaque_item(name, &input.generics);
-                }
                 if let Some(variant) = variants.iter().find(|v| v.discriminant.is_some()) {
                     emit!(
                         emitter,
@@ -283,12 +280,7 @@ pub fn derive_ffi_type(emitter: &mut Emitter, input: &syn::DeriveInput) -> Token
                     );
                 }
 
-                derive_ffi_type_for_fieldless_enum(
-                    emitter,
-                    &input.ident,
-                    variants,
-                    &input.repr_attr,
-                )
+                derive_ffi_type_for_fieldless_enum(&input.repr_attr, &input.ident, variants)
             } else {
                 verify_is_non_owning(emitter, &input.data);
                 let local = input.ffi_type_attr.kind == Some(FfiTypeKindAttribute::Local);
@@ -307,7 +299,7 @@ pub fn derive_ffi_type(emitter: &mut Emitter, input: &syn::DeriveInput) -> Token
 
             let repr_c_impl = {
                 let predicates = &mut input.generics.make_where_clause().predicates;
-                let add_bound = |ty| predicates.push(syn::parse_quote! {#ty: co3::ReprC});
+                let add_bound = |ty| predicates.push(parse_quote! {#ty: co3::ReprC});
 
                 if item.style == Style::Unit {
                     emit!(
@@ -373,10 +365,6 @@ fn derive_ffi_type_for_transparent_item(
 
     let name = &input.ident;
 
-    // #[repr(transparent)] can only be used on a struct or
-    //      single-variant enum that has a single non-zero-sized field (there may be additional zero-sized fields).
-    // The effect is that the layout and ABI of the whole struct/enum is guaranteed to be the same as that one field.
-
     // TODO: We don't check to find which field is not a ZST.
     // It is just assumed that it is the first field
     let inner = match &input.data {
@@ -417,17 +405,17 @@ fn derive_ffi_type_for_transparent_item(
 }
 
 fn derive_ffi_type_for_fieldless_enum(
-    emitter: &mut Emitter,
+    repr: &Repr,
     enum_name: &Ident,
     variants: &[SpannedValue<FfiTypeVariant>],
-    repr: &Repr,
 ) -> TokenStream {
-    let enum_repr_type = get_enum_repr_type(emitter, enum_name, repr, variants.is_empty());
+    let tag_type = gen_enum_tag_type(repr);
+
     // FIXME: I think this doesn't actually require variant names, just using a range would suffice
     // (note that we don't support custom discriminants)
-    let (discriminants, discriminant_decls) =
-        gen_discriminants(enum_name, variants, &enum_repr_type);
+    let (discriminants, discriminant_decls) = gen_discriminants(enum_name, variants, &tag_type);
 
+    let len = variants.len();
     let match_ = if discriminants.is_empty() {
         quote! {false}
     } else {
@@ -442,18 +430,18 @@ fn derive_ffi_type_for_fieldless_enum(
     quote! {
         co3::mineral! {
             unsafe impl Transparent for #enum_name {
-                type Target = #enum_repr_type;
+                type Target = #tag_type;
 
                 validation_fn={|target: &Self::Target| {
                     #(#discriminant_decls)*
 
                     #match_
                 }},
-                niche_value=<Self as co3::FfiType>::ReprC::MAX
+                NICHE_VALUE=#len as <Self as co3::FfiType>::ReprC
             }
         }
 
-        impl co3::WrapperTypeOf<#enum_name> for #enum_repr_type {
+        impl co3::WrapperTypeOf<#enum_name> for #tag_type {
             type Type = #enum_name;
         }
     }
@@ -471,7 +459,7 @@ fn derive_ffi_type_for_data_carrying_enum(
         gen_data_carrying_repr_c_enum(emitter, enum_name, &generics, variants);
 
     generics.make_where_clause();
-    let lifetime = quote! {'__co3_itm};
+    let lifetime = quote! {'__CO3_itm};
     let (impl_generics, ty_generics, where_clause) = split_for_impl(&generics);
 
     let variant_rust_stores = variants
@@ -592,7 +580,7 @@ fn derive_ffi_type_for_data_carrying_enum(
 
             non_local_where_clause
                 .predicates
-                .push(syn::parse_quote! {#ty: co3::out_ptr::NonLocal});
+                .push(parse_quote! {#ty: co3::out_ptr::NonLocal});
         }
 
         quote! {
@@ -666,7 +654,11 @@ fn derive_ffi_type_for_repr_c(emitter: &mut Emitter, input: &FfiTypeInput) -> To
             .kind
             .map_or_else(Span::call_site, |kind| kind.span());
         // TODO: this error message may be unclear. Consider adding a note about the `#[mineral]` attribute
-        emit!(emitter, span, "To make an FFI type robust you must mark it with `#[repr(C)]`. Alternatively, try using `#[mineral(opaque)]` to make it opaque");
+        emit!(
+            emitter,
+            span,
+            "To make an FFI type robust you must mark it with `#[repr(C)]`. Alternatively, try using `#[mineral(opaque)]` to make it opaque"
+        );
     }
 
     let (impl_generics, ty_generics, where_clause) = input.generics.split_for_impl();
@@ -689,8 +681,12 @@ fn gen_data_carrying_repr_c_enum(
         gen_data_carrying_enum_payload(emitter, enum_name, generics, variants);
     let (impl_generics, ty_generics, where_clause) = generics.split_for_impl();
     let doc = format!(" [`ReprC`] equivalent of [`{enum_name}`]");
-    let enum_tag_type = gen_enum_tag_type(variants);
     let repr_c_enum_name = gen_repr_c_enum_name(enum_name);
+
+    // FIXME: This is a hack before https://github.com/mversic/co3/issues/10
+    let repr_c_attr: Attribute = parse_quote!(#[repr(C)]);
+    let repr = &Repr::from_attributes(&[repr_c_attr]).unwrap();
+    let tag_type = gen_enum_tag_type(repr);
 
     let repr_c_enum = quote! {
         #payload
@@ -700,7 +696,7 @@ fn gen_data_carrying_repr_c_enum(
         #[derive(Clone)]
         #[allow(non_camel_case_types)]
         pub struct #repr_c_enum_name #impl_generics #where_clause {
-            tag: #enum_tag_type, payload: #payload_name #ty_generics,
+            tag: #tag_type, payload: #payload_name #ty_generics,
         }
 
         impl #impl_generics Copy for #repr_c_enum_name #ty_generics where #payload_name #ty_generics: Copy {}
@@ -831,7 +827,11 @@ fn verify_is_non_owning(emitter: &mut Emitter, data: &FfiTypeData) {
     }
     impl syn::visit::Visit<'_> for PtrVisitor<'_> {
         fn visit_type_ptr(&mut self, node: &syn::TypePtr) {
-            emit!(self.emitter, node, "Raw pointer found. If the pointer doesn't own the data, attach `#[mineral(unsafe(non_owning))` to the field. Otherwise, mark the entire type as opaque with `#[mineral(opaque)]`");
+            emit!(
+                self.emitter,
+                node,
+                "Raw pointer found. If the pointer doesn't own the data, attach `#[mineral(unsafe(non_owning))` to the field. Otherwise, mark the entire type as opaque with `#[mineral(opaque)]`"
+            );
         }
     }
 
@@ -859,70 +859,15 @@ fn verify_is_non_owning(emitter: &mut Emitter, data: &FfiTypeData) {
     }
 }
 
-fn get_enum_repr_type(
-    emitter: &mut Emitter,
-    enum_name: &Ident,
-    repr: &Repr,
-    is_empty: bool,
-) -> syn::Type {
+fn gen_enum_tag_type(repr: &Repr) -> syn::Type {
     let Some(kind) = repr.kind else {
-        // empty enums are not allowed to have a `#[repr]` attribute
-        // it's an error to use an `#[derive(FfiType)]` on them
-        // but we still want to generate a reasonable error message, so we check for it here
-        if !is_empty {
-            emit!(
-                emitter,
-                enum_name,
-                "Enum representation is not specified. Try adding `#[repr(u32)]` or similar"
-            );
-        }
-        return syn::parse_quote! {u32};
+        unreachable!()
     };
 
-    let ReprKind::Primitive(primitive) = &*kind else {
-        emit!(
-            emitter,
-            &kind.span(),
-            "Enum should have a primitive representation (like `#[repr(u32)]`)"
-        );
-        return syn::parse_quote! {u32};
-    };
-
-    match primitive {
-        ReprPrimitive::U8 => syn::parse_quote! {u8},
-        ReprPrimitive::U16 => syn::parse_quote! {u16},
-        ReprPrimitive::U32 => syn::parse_quote! {u32},
-        ReprPrimitive::U64 => syn::parse_quote! {u64},
-        ReprPrimitive::I8 => syn::parse_quote! {i8},
-        ReprPrimitive::I16 => syn::parse_quote! {i16},
-        ReprPrimitive::I32 => syn::parse_quote! {i32},
-
-        _ => {
-            emit!(
-                emitter,
-                &kind.span(),
-                "Enum representation is not supported"
-            );
-            syn::parse_quote! {u32}
-        }
-    }
-}
-
-fn gen_enum_tag_type(variants: &[SpannedValue<FfiTypeVariant>]) -> TokenStream {
-    const U8_MAX: usize = u8::MAX as usize;
-    const U16_MAX: usize = u16::MAX as usize;
-    const U32_MAX: usize = u32::MAX as usize;
-
-    // NOTE: Arms are matched in the order of declaration
-    #[allow(clippy::match_overlapping_arm)]
-    match variants.len() {
-        0..=U8_MAX => quote! {u8},
-        0..=U16_MAX => quote! {u16},
-        0..=U32_MAX => quote! {u32},
-        _ => {
-            // I don't think ANYONE will ever see this error lol
-            unreachable!("Come get your easter egg!");
-        }
+    match &*kind {
+        ReprKind::Primitive(primitive) => parse_quote!(#primitive),
+        ReprKind::C => parse_quote! {core::ffi::c_int},
+        ReprKind::Transparent => unreachable!(),
     }
 }
 

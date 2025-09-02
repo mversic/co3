@@ -42,7 +42,7 @@ co3::mineral! {
         type Target = NonRobustTransparentInner;
 
         validation_fn={|target| target != &[0; 4]},
-        niche_value=[0; 4]
+        NICHE_VALUE=[0; 4]
     }
 }
 
