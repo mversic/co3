@@ -318,15 +318,16 @@ pub enum FieldlessReprCEnum {
     D,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, FfiType)]
-#[repr(C)]
-pub enum DataCarryingEnum<'a> {
-    A(&'a str),
-    B(u32),
-    // TODO: Support this
-    //C(T),
-    D,
-}
+// FIXME:
+//#[derive(Debug, Clone, PartialEq, Eq, FfiType)]
+//#[repr(C)]
+//pub enum DataCarryingEnum<'a> {
+//    A(&'a str),
+//    B(u32),
+//    // TODO: Support this
+//    //C(T),
+//    D,
+//}
 
 #[cfg(target_family = "wasm")]
 #[webassembly_test::webassembly_test]

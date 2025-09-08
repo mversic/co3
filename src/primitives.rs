@@ -5,7 +5,7 @@ mod wasm {
     use alloc::{boxed::Box, vec::Vec};
 
     use crate::{
-        CTypeConvert, FfiReturn, FfiType, FfiWrapperType, Result,
+        FfiConvert, FfiReturn, FfiType, FfiWrapperType, Result,
         ir::{Robust, Transparent},
         out_ptr::{OutPtr, OutPtrRead, OutPtrWrite},
     };
@@ -63,14 +63,14 @@ mod wasm {
                 type OutPtr = $src;
             }
 
-            impl CTypeConvert<'_, NonWasmIntPrimitive, $dst> for $src {
+            impl FfiConvert<'_, $dst> for $src {
                 type RustStore = ();
                 type FfiStore = ();
 
-                fn into_repr_c(self, _: &mut ()) -> $dst {
+                fn into_ffi(self, _: &mut ()) -> $dst {
                     self as $dst
                 }
-                unsafe fn try_from_repr_c(source: $dst, _: &mut ()) -> Result<Self> {
+                unsafe fn try_from_ffi(source: $dst, _: &mut ()) -> Result<Self> {
                     <$src>::try_from(source).or(Err(FfiReturn::ConversionFailed))
                 }
             }

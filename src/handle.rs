@@ -251,7 +251,10 @@ macro_rules! def_fns {
             }
 
             if let Ok(layout) = core::alloc::Layout::from_size_align(size, align) {
-                alloc::dealloc(ptr, layout);
+                unsafe {
+                    alloc::dealloc(ptr, layout);
+                }
+
                 return $crate::FfiReturn::Ok;
             }
 

@@ -343,15 +343,15 @@ fn gen_impl_ffi(name: &Ident, generics: &syn::Generics) -> TokenStream {
         impl #impl_generics co3::FfiType for #name #ty_generics #where_clause {
             type ReprC = *mut co3::Extern;
         }
-        impl #impl_generics co3::repr_c::CTypeConvert<'_, Self, *mut co3::Extern> for #name #ty_generics #where_clause {
+        impl #impl_generics co3::FfiConvert<'_, *mut co3::Extern> for #name #ty_generics #where_clause {
             type RustStore = ();
             type FfiStore = ();
 
-            fn into_repr_c(self, _: &mut ()) -> *mut co3::Extern {
+            fn into_ffi(self, _: &mut ()) -> *mut co3::Extern {
                 core::mem::ManuallyDrop::new(self).0
             }
 
-            unsafe fn try_from_repr_c(source: *mut co3::Extern, _: &mut ()) -> co3::Result<Self> {
+            unsafe fn try_from_ffi(source: *mut co3::Extern, _: &mut ()) -> co3::Result<Self> {
                 if source.is_null() {
                     return Err(co3::FfiReturn::ArgIsNull);
                 }
@@ -767,7 +767,7 @@ fn gen_return_stmt(fn_descriptor: &FnDescriptor) -> TokenStream {
         let arg_name= output.name();
 
         let return_stmt = unwrap_result_type(output.src_type())
-            .map_or_else(|| quote! {#arg_name}, |_| (quote! { Ok(#arg_name) }));
+            .map_or_else(|| quote! {#arg_name}, |_| quote! { Ok(#arg_name) });
 
         quote! {
             let #arg_name = #arg_name.assume_init();

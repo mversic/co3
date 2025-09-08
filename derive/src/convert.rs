@@ -617,11 +617,11 @@ fn derive_ffi_type_for_data_carrying_enum(
         impl<#impl_generics> co3::FfiType for #enum_name #ty_generics #where_clause {
             type ReprC = #repr_c_enum_name #ty_generics;
         }
-        impl<#lifetime, #impl_generics> co3::repr_c::CTypeConvert<#lifetime, Self, #repr_c_enum_name #ty_generics> for #enum_name #ty_generics #where_clause {
+        impl<#lifetime, #impl_generics> co3::FfiConvert<#lifetime, #repr_c_enum_name #ty_generics> for #enum_name #ty_generics #where_clause {
             type RustStore = #rust_store;
             type FfiStore = #ffi_store;
 
-            fn into_repr_c(self, store: &mut Self::RustStore) -> #repr_c_enum_name #ty_generics {
+            fn into_ffi(self, store: &mut Self::RustStore) -> #repr_c_enum_name #ty_generics {
                 #ffi_store_conversion
 
                 match self {
@@ -629,7 +629,7 @@ fn derive_ffi_type_for_data_carrying_enum(
                 }
             }
 
-            unsafe fn try_from_repr_c(source: #repr_c_enum_name #ty_generics, store: &mut Self::FfiStore) -> co3::Result<Self> {
+            unsafe fn try_from_ffi(source: #repr_c_enum_name #ty_generics, store: &mut Self::FfiStore) -> co3::Result<Self> {
                 #rust_store_conversion
 
                 match source.tag {

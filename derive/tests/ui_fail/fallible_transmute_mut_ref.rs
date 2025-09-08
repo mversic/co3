@@ -11,7 +11,7 @@ co3::mineral! {
         type Target = WrapperInner;
 
         validation_fn={|target: &Self::Target| *target != 0},
-        niche_value=0
+        NICHE_VALUE=0
     }
 }
 
