@@ -136,7 +136,7 @@ mod ffi {
 
     use co3::{
         FfiConvert, FfiReturn, FfiType,
-        out_ptr::{FfiOutPtr, FfiOutPtrWrite},
+        out_ptr::{OutPtr, OutPtrWrite},
         slice::RefMutSlice,
     };
 
@@ -226,7 +226,7 @@ mod ffi {
             let handle = handle.as_ref().expect("Valid");
             let param_name = param_name.as_ref().expect("Valid");
             let value = handle.params.get(param_name);
-            FfiOutPtrWrite::write_out(value, output);
+            OutPtrWrite::write_out(value, output);
         }
 
         FfiReturn::Ok
@@ -235,12 +235,12 @@ mod ffi {
     #[unsafe(no_mangle)]
     unsafe extern "C" fn OpaqueStruct__params(
         handle: *const ExternOpaqueStruct,
-        output: *mut <Vec<&ExternValue> as FfiOutPtr>::OutPtr,
+        output: *mut <Vec<&ExternValue> as OutPtr>::OutPtr,
     ) -> FfiReturn {
         unsafe {
             let handle = handle.as_ref().expect("Valid");
             let params: Vec<_> = handle.params.values().collect();
-            FfiOutPtrWrite::write_out(params, output);
+            OutPtrWrite::write_out(params, output);
         }
 
         FfiReturn::Ok
@@ -265,7 +265,7 @@ mod ffi {
     #[unsafe(no_mangle)]
     unsafe extern "C" fn OpaqueStruct__fallible_int_output(
         input: <bool as FfiType>::ReprC,
-        output: *mut <u8 as FfiOutPtr>::OutPtr,
+        output: *mut <u8 as OutPtr>::OutPtr,
     ) -> FfiReturn {
         if input == 0 {
             return FfiReturn::ExecutionFail;

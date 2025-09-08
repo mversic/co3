@@ -98,7 +98,7 @@ macro_rules! def_fns {
                 match $crate::FfiConvert::try_from_ffi(handle_id, &mut ())? {
                     $( <$other as $crate::Handle>::ID => {
                         let handle_ref: &$other = $crate::FfiConvert::try_from_ffi(handle_ptr as <&$other as $crate::FfiType>::ReprC, &mut ())?;
-                        <$other as $crate::out_ptr::FfiOutPtrWrite>::write_out(Clone::clone(handle_ref), out_ptr.cast::<<$other as $crate::FfiType>::ReprC>());
+                        <$other as $crate::out_ptr::OutPtrWrite>::write_out(Clone::clone(handle_ref), out_ptr.cast::<<$other as $crate::FfiType>::ReprC>());
                     } )+
                     // TODO: Implement error handling (https://github.com/hyperledger/iroha/issues/2252)
                     _ => return Err($crate::FfiReturn::UnknownHandle),
@@ -126,7 +126,7 @@ macro_rules! def_fns {
                         let default_value = Default::default();
 
                         let out_ptr = out_ptr.cast::<<$other as $crate::FfiType>::ReprC>();
-                        <$other as $crate::out_ptr::FfiOutPtrWrite>::write_out(default_value, out_ptr);
+                        <$other as $crate::out_ptr::OutPtrWrite>::write_out(default_value, out_ptr);
                     } )+
                     // TODO: Implement error handling (https://github.com/hyperledger/iroha/issues/2252)
                     _ => return Err($crate::FfiReturn::UnknownHandle),
@@ -148,7 +148,7 @@ macro_rules! def_fns {
             handle_id: <$crate::handle::Id as $crate::FfiType>::ReprC,
             left_handle_ptr: *const core::ffi::c_void,
             right_handle_ptr: *const core::ffi::c_void,
-            out_ptr: *mut <bool as $crate::out_ptr::FfiOutPtr>::OutPtr,
+            out_ptr: *mut <bool as $crate::out_ptr::OutPtr>::OutPtr,
         ) -> $crate::FfiReturn {
             $crate::def_fns!(@catch_unwind {
                 match $crate::FfiConvert::try_from_ffi(handle_id, &mut ())? {
@@ -164,7 +164,7 @@ macro_rules! def_fns {
                         let lhandle: &$other = $crate::FfiConvert::try_from_ffi(lhandle_ptr, &mut lhandle_store)?;
                         let rhandle: &$other = $crate::FfiConvert::try_from_ffi(rhandle_ptr, &mut rhandle_store)?;
 
-                        <bool as $crate::out_ptr::FfiOutPtrWrite>::write_out(lhandle == rhandle, out_ptr);
+                        <bool as $crate::out_ptr::OutPtrWrite>::write_out(lhandle == rhandle, out_ptr);
                     } )+
                     // TODO: Implement error handling (https://github.com/hyperledger/iroha/issues/2252)
                     _ => return Err($crate::FfiReturn::UnknownHandle),
@@ -186,7 +186,7 @@ macro_rules! def_fns {
             handle_id: <$crate::handle::Id as $crate::FfiType>::ReprC,
             left_handle_ptr: *const core::ffi::c_void,
             right_handle_ptr: *const core::ffi::c_void,
-            out_ptr: *mut <core::cmp::Ordering as $crate::out_ptr::FfiOutPtr>::OutPtr,
+            out_ptr: *mut <core::cmp::Ordering as $crate::out_ptr::OutPtr>::OutPtr,
         ) -> $crate::FfiReturn {
             $crate::def_fns!(@catch_unwind {
                 match $crate::FfiConvert::try_from_ffi(handle_id, &mut ())? {
@@ -202,7 +202,7 @@ macro_rules! def_fns {
                         let lhandle: &$other = $crate::FfiConvert::try_from_ffi(lhandle_ptr, &mut lhandle_store)?;
                         let rhandle: &$other = $crate::FfiConvert::try_from_ffi(rhandle_ptr, &mut rhandle_store)?;
 
-                        <core::cmp::Ordering as $crate::out_ptr::FfiOutPtrWrite>::write_out(lhandle.cmp(rhandle), out_ptr);
+                        <core::cmp::Ordering as $crate::out_ptr::OutPtrWrite>::write_out(lhandle.cmp(rhandle), out_ptr);
                     } )+
                     // TODO: Implement error handling (https://github.com/hyperledger/iroha/issues/2252)
                     _ => return Err($crate::FfiReturn::UnknownHandle),

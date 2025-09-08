@@ -2,7 +2,7 @@
 
 use std::{cmp::Ordering, mem::MaybeUninit};
 
-use co3::{FfiConvert, FfiReturn, FfiType, Handle, def_fns, out_ptr::FfiOutPtrRead};
+use co3::{FfiConvert, FfiReturn, FfiType, Handle, def_fns, out_ptr::OutPtrRead};
 
 co3::handles! {FfiStruct1, FfiStruct2}
 
@@ -74,7 +74,7 @@ fn export_shared_fns() {
             cloned_ptr.cast(),
             is_equal.as_mut_ptr(),
         );
-        let is_equal: bool = FfiOutPtrRead::try_read_out(is_equal.assume_init()).unwrap();
+        let is_equal: bool = OutPtrRead::try_read_out(is_equal.assume_init()).unwrap();
         assert!(is_equal);
 
         let mut ordering = MaybeUninit::new(1);
@@ -84,7 +84,7 @@ fn export_shared_fns() {
             cloned_ptr.cast(),
             ordering.as_mut_ptr(),
         );
-        let ordering: Ordering = FfiOutPtrRead::try_read_out(ordering.assume_init()).unwrap();
+        let ordering: Ordering = OutPtrRead::try_read_out(ordering.assume_init()).unwrap();
         assert_eq!(ordering, Ordering::Equal);
 
         assert_eq!(

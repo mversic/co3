@@ -156,7 +156,7 @@ fn gen_def_input_arg(arg: &Arg) -> TokenStream {
 
 fn gen_def_out_ptr_arg(arg: &Arg) -> TokenStream {
     let (arg_name, arg_type) = (arg.name(), arg.src_type_resolved());
-    quote! { #arg_name: *mut <#arg_type as co3::out_ptr::FfiOutPtr>::OutPtr }
+    quote! { #arg_name: *mut <#arg_type as co3::out_ptr::OutPtr>::OutPtr }
 }
 
 fn gen_decl_input_arg(arg: &Arg) -> TokenStream {
@@ -168,7 +168,7 @@ fn gen_decl_input_arg(arg: &Arg) -> TokenStream {
 
 fn gen_decl_out_ptr_arg(arg: &Arg) -> TokenStream {
     let (arg_name, arg_type) = (arg.name(), arg.src_type_resolved());
-    quote! { #arg_name: *mut <<#arg_type as co3::FfiWrapperType>::ReturnType as co3::out_ptr::FfiOutPtr>::OutPtr }
+    quote! { #arg_name: *mut <<#arg_type as co3::FfiWrapperType>::ReturnType as co3::out_ptr::OutPtr>::OutPtr }
 }
 
 fn gen_body(fn_descriptor: &FnDescriptor, trait_name: Option<&Ident>) -> TokenStream {
@@ -271,7 +271,7 @@ fn gen_output_assignment_stmts(fn_descriptor: &FnDescriptor) -> TokenStream {
 
             quote! {
                 #resolve_impl_trait
-                <#arg_type as co3::out_ptr::FfiOutPtrWrite>::write_out(#arg_name, __out_ptr);
+                <#arg_type as co3::out_ptr::OutPtrWrite>::write_out(#arg_name, __out_ptr);
             }
         },
     )

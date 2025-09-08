@@ -404,7 +404,7 @@ pub fn carbonate(attr: TokenStream, item: TokenStream) -> TokenStream {
 ///     //     panic!("Function call failed");
 ///     // }
 ///     //
-///     // co3::out_ptr::FfiOutPtrRead::try_read_out(output.assume_init()).expect("Invalid type")
+///     // co3::out_ptr::OutPtrRead::try_read_out(output.assume_init()).expect("Invalid type")
 /// }
 ///
 /// /* The following functions will be declared:

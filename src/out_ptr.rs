@@ -35,7 +35,7 @@ disjoint_impls! {
     /// # Safety
     ///
     /// Type must not make use of the store during conversion into [`FfiType::ReprC`] via [`FfiConvert::into_ffi`] or [`FfiConvert::try_from_ffi`]
-    pub unsafe trait NonLocal: FfiOutPtr {}
+    pub unsafe trait NonLocal: OutPtr {}
 
     // SAFETY: Type doesn't use store during conversion
     unsafe impl<R: ReprC> NonLocal for R where Self: Ir<Type = Robust> {}
@@ -111,222 +111,222 @@ disjoint_impls! {
     ///
     /// If a type implements [`Ir`], i.e. has a defined internal representation,
     /// a blanket implementation is provided.
-    pub trait FfiOutPtr: FfiType {
+    pub trait OutPtr: FfiType {
         /// Type of the out-pointer
         type OutPtr: ReprC;
     }
 
-    impl<R: ReprC> FfiOutPtr for R
+    impl<R: ReprC> OutPtr for R
     where
         Self: Ir<Type = Robust>,
     {
         type OutPtr = Self::ReprC;
     }
-    impl<R> FfiOutPtr for R
+    impl<R> OutPtr for R
     where
         Self: Ir<Type = Opaque>,
     {
         type OutPtr = Self::ReprC;
     }
-    impl<R: Transmute> FfiOutPtr for R
+    impl<R: Transmute> OutPtr for R
     where
         Self: Ir<Type = Transparent>,
-        <R>::Target: FfiOutPtr,
+        <R>::Target: OutPtr,
     {
-        type OutPtr = <<R>::Target as FfiOutPtr>::OutPtr;
+        type OutPtr = <<R>::Target as OutPtr>::OutPtr;
     }
 
-    impl<'a, R: Ir<Type = S> + NonLocal, S: Cloned> FfiOutPtr for &'a R
+    impl<'a, R: Ir<Type = S> + NonLocal, S: Cloned> OutPtr for &'a R
     where
         Self: Ir<Type = &'a S>,
     {
         type OutPtr = <R>::ReprC;
     }
 
-    impl<'a, R: ReprC> FfiOutPtr for &'a [R]
+    impl<'a, R: ReprC> OutPtr for &'a [R]
     where
         Self: Ir<Type = &'a [Robust]>,
     {
         type OutPtr = Self::ReprC;
     }
-    impl<'a, R> FfiOutPtr for &'a [R]
+    impl<'a, R> OutPtr for &'a [R]
     where
         Self: Ir<Type = &'a [Opaque]>,
     {
         type OutPtr = OutBoxedSlice<*const R>;
     }
-    impl<'slice, R: Transmute> FfiOutPtr for &'slice [R]
+    impl<'slice, R: Transmute> OutPtr for &'slice [R]
     where
         Self: Ir<Type = &'slice [Transparent]>,
-        &'slice [<R>::Target]: FfiOutPtr,
+        &'slice [<R>::Target]: OutPtr,
     {
-        type OutPtr = <&'slice [<R>::Target] as FfiOutPtr>::OutPtr;
+        type OutPtr = <&'slice [<R>::Target] as OutPtr>::OutPtr;
     }
-    impl<'a, R: Ir<Type = S> + NonLocal, S: Cloned> FfiOutPtr for &'a [R]
+    impl<'a, R: Ir<Type = S> + NonLocal, S: Cloned> OutPtr for &'a [R]
     where
         Self: Ir<Type = &'a [S]>,
     {
         type OutPtr = OutBoxedSlice<<R>::ReprC>;
     }
 
-    impl<'a, R: ReprC> FfiOutPtr for &'a mut [R]
+    impl<'a, R: ReprC> OutPtr for &'a mut [R]
     where
         Self: Ir<Type = &'a mut [Robust]>,
     {
         type OutPtr = Self::ReprC;
     }
-    impl<'a, R> FfiOutPtr for &'a mut [R]
+    impl<'a, R> OutPtr for &'a mut [R]
     where
         Self: Ir<Type = &'a mut [Opaque]>,
     {
         type OutPtr = OutBoxedSlice<*mut R>;
     }
-    impl<'slice, R: Transmute> FfiOutPtr for &'slice mut [R]
+    impl<'slice, R: Transmute> OutPtr for &'slice mut [R]
     where
         Self: Ir<Type = &'slice mut [Transparent]>,
-        &'slice mut [<R>::Target]: FfiOutPtr,
+        &'slice mut [<R>::Target]: OutPtr,
     {
-        type OutPtr = <&'slice mut [<R>::Target] as FfiOutPtr>::OutPtr;
+        type OutPtr = <&'slice mut [<R>::Target] as OutPtr>::OutPtr;
     }
 
-    impl<R: ReprC> FfiOutPtr for Box<R>
+    impl<R: ReprC> OutPtr for Box<R>
     where
         Self: Ir<Type = Box<Robust>>,
     {
         type OutPtr = R;
     }
-    impl<R> FfiOutPtr for Box<R>
+    impl<R> OutPtr for Box<R>
     where
         Self: Ir<Type = Box<Opaque>>,
     {
         type OutPtr = Self::ReprC;
     }
-    impl<R: Transmute> FfiOutPtr for Box<R>
+    impl<R: Transmute> OutPtr for Box<R>
     where
         Self: Ir<Type = Box<Transparent>>,
-        Box<<R>::Target>: FfiOutPtr,
+        Box<<R>::Target>: OutPtr,
     {
-        type OutPtr = <Box<<R>::Target> as FfiOutPtr>::OutPtr;
+        type OutPtr = <Box<<R>::Target> as OutPtr>::OutPtr;
     }
-    impl<R: External> FfiOutPtr for Box<R>
+    impl<R: External> OutPtr for Box<R>
     where
         Self: Ir<Type = Box<Extern>>,
     {
         type OutPtr = Self::ReprC;
     }
-    impl<R: Ir<Type = S> + NonLocal, S: Cloned> FfiOutPtr for Box<R>
+    impl<R: Ir<Type = S> + NonLocal, S: Cloned> OutPtr for Box<R>
     where
         Self: Ir<Type = Box<S>>,
     {
         type OutPtr = <R>::ReprC;
     }
 
-    impl<R: ReprC> FfiOutPtr for Box<[R]>
+    impl<R: ReprC> OutPtr for Box<[R]>
     where
         Self: Ir<Type = Box<[Robust]>>,
     {
         type OutPtr = OutBoxedSlice<R>;
     }
-    impl<R> FfiOutPtr for Box<[R]>
+    impl<R> OutPtr for Box<[R]>
     where
         Self: Ir<Type = Box<[Opaque]>>,
     {
         type OutPtr = OutBoxedSlice<*mut R>;
     }
-    impl<R: Transmute> FfiOutPtr for Box<[R]>
+    impl<R: Transmute> OutPtr for Box<[R]>
     where
         Self: Ir<Type = Box<[Transparent]>>,
-        Box<[<R>::Target]>: FfiOutPtr,
+        Box<[<R>::Target]>: OutPtr,
     {
-        type OutPtr = <Box<[<R>::Target]> as FfiOutPtr>::OutPtr;
+        type OutPtr = <Box<[<R>::Target]> as OutPtr>::OutPtr;
     }
-    impl<R: Ir<Type = S> + NonLocal, S: Cloned> FfiOutPtr for Box<[R]>
+    impl<R: Ir<Type = S> + NonLocal, S: Cloned> OutPtr for Box<[R]>
     where
         Self: Ir<Type = Box<[S]>>,
     {
         type OutPtr = OutBoxedSlice<<R>::ReprC>;
     }
 
-    impl<R: ReprC> FfiOutPtr for Vec<R>
+    impl<R: ReprC> OutPtr for Vec<R>
     where
         Self: Ir<Type = Vec<Robust>>,
     {
         type OutPtr = OutBoxedSlice<R>;
     }
-    impl<R> FfiOutPtr for Vec<R>
+    impl<R> OutPtr for Vec<R>
     where
         Self: Ir<Type = Vec<Opaque>>,
     {
         type OutPtr = OutBoxedSlice<*mut R>;
     }
-    impl<R: Transmute> FfiOutPtr for Vec<R>
+    impl<R: Transmute> OutPtr for Vec<R>
     where
         Self: Ir<Type = Vec<Transparent>>,
-        Vec<<R>::Target>: FfiOutPtr,
+        Vec<<R>::Target>: OutPtr,
     {
-        type OutPtr = <Vec<<R>::Target> as FfiOutPtr>::OutPtr;
+        type OutPtr = <Vec<<R>::Target> as OutPtr>::OutPtr;
     }
-    impl<R: Ir<Type = S> + NonLocal, S: Cloned> FfiOutPtr for Vec<R>
+    impl<R: Ir<Type = S> + NonLocal, S: Cloned> OutPtr for Vec<R>
     where
         Self: Ir<Type = Vec<S>>,
     {
         type OutPtr = OutBoxedSlice<<R>::ReprC>;
     }
 
-    impl<R, const N: usize> FfiOutPtr for [R; N]
+    impl<R, const N: usize> OutPtr for [R; N]
     where
         Self: Ir<Type = [Opaque; N]>,
     {
         type OutPtr = Self::ReprC;
     }
 
-    impl<R: Ir<Type = S> + NonLocal, S: Cloned, const N: usize> FfiOutPtr for [R; N]
+    impl<R: Ir<Type = S> + NonLocal, S: Cloned, const N: usize> OutPtr for [R; N]
     where
         Self: Ir<Type = [S; N]>,
     {
         type OutPtr = Self::ReprC;
     }
 
-    impl<R: FfiOutPtr> FfiOutPtr for Option<R>
+    impl<R: OutPtr> OutPtr for Option<R>
     where
         Self: Ir<Type = Option<WithoutNiche>>,
     {
-        type OutPtr = FfiTuple2<<u8 as FfiOutPtr>::OutPtr, <R>::OutPtr>;
+        type OutPtr = FfiTuple2<<u8 as OutPtr>::OutPtr, <R>::OutPtr>;
     }
-    impl<R: Niche<'_> + FfiOutPtr> FfiOutPtr for Option<R>
+    impl<R: Niche<'_> + OutPtr> OutPtr for Option<R>
     where
         Self: Ir<Type = Self>,
     {
         type OutPtr = <R>::OutPtr;
     }
 
-    impl<'itm, R: NonLocal + 'itm, S: Cloned> FfiOutPtr for LocalRef<'itm, R>
+    impl<'itm, R: NonLocal + 'itm, S: Cloned> OutPtr for LocalRef<'itm, R>
     where
-        &'itm R: Ir<Type = &'itm S> + FfiOutPtr,
+        &'itm R: Ir<Type = &'itm S> + OutPtr,
         Self: Ir<Type = &'itm S>,
     {
-        type OutPtr = <&'itm R as FfiOutPtr>::OutPtr;
+        type OutPtr = <&'itm R as OutPtr>::OutPtr;
     }
-    impl<'itm, R: NonLocal + 'itm, S: Cloned> FfiOutPtr for LocalSlice<'itm, R>
+    impl<'itm, R: NonLocal + 'itm, S: Cloned> OutPtr for LocalSlice<'itm, R>
     where
-        &'itm [R]: Ir<Type = &'itm [S]> + FfiOutPtr,
+        &'itm [R]: Ir<Type = &'itm [S]> + OutPtr,
         Self: Ir<Type = &'itm [S]>,
     {
-        type OutPtr = <&'itm [R] as FfiOutPtr>::OutPtr;
+        type OutPtr = <&'itm [R] as OutPtr>::OutPtr;
     }
     // FIXME: Check comment in FfiType?
-    impl<R, S> FfiOutPtr for LocalSlice<'_, R>
+    impl<R, S> OutPtr for LocalSlice<'_, R>
     where
-        Vec<R>: Ir<Type = Vec<S>> + FfiOutPtr,
+        Vec<R>: Ir<Type = Vec<S>> + OutPtr,
         Self: Ir<Type = Vec<S>>,
     {
-        type OutPtr = <Vec<R> as FfiOutPtr>::OutPtr;
+        type OutPtr = <Vec<R> as OutPtr>::OutPtr;
     }
 }
 
 disjoint_impls! {
     /// Facilitates writing [`Self`] into [`Self::OutPtr`].
-    pub trait FfiOutPtrWrite: FfiOutPtr {
+    pub trait OutPtrWrite: OutPtr {
         /// Write the given rust value into the corresponding out-pointer
         ///
         /// # Safety
@@ -335,7 +335,7 @@ disjoint_impls! {
         unsafe fn write_out(self, out_ptr: *mut Self::OutPtr);
     }
 
-    impl<R: ReprC> FfiOutPtrWrite for R
+    impl<R: ReprC> OutPtrWrite for R
     where
         Self: Ir<Type = Robust>,
     {
@@ -345,7 +345,7 @@ disjoint_impls! {
             }
         }
     }
-    impl<R> FfiOutPtrWrite for R
+    impl<R> OutPtrWrite for R
     where
         Self: Ir<Type = Opaque>,
     {
@@ -355,229 +355,21 @@ disjoint_impls! {
             }
         }
     }
-    impl<R: Transmute> FfiOutPtrWrite for R
+    impl<R: Transmute> OutPtrWrite for R
     where
         Self: Ir<Type = Transparent>,
-        <R>::Target: FfiOutPtrWrite,
+        <R>::Target: OutPtrWrite,
     {
         unsafe fn write_out(self, out_ptr: *mut Self::OutPtr) {
             let transmuted = transmute_into_target(self);
 
             unsafe {
-                FfiOutPtrWrite::write_out(transmuted, out_ptr)
+                OutPtrWrite::write_out(transmuted, out_ptr)
             }
         }
     }
 
-    impl<'a, R: ReprC> FfiOutPtrWrite for &'a [R]
-    where
-        Self: Ir<Type = &'a [Robust]>,
-    {
-        unsafe fn write_out(self, out_ptr: *mut Self::OutPtr) {
-            unsafe {
-                write_non_local::<_, &'a [Robust]>(self, out_ptr);
-            }
-        }
-    }
-    impl<'a, R: Clone> FfiOutPtrWrite for &'a [R]
-    where
-        Self: Ir<Type = &'a [Opaque]>,
-    {
-        unsafe fn write_out(self, out_ptr: *mut Self::OutPtr) {
-            let mut store = Default::default();
-
-            CTypeConvert::<&[Opaque], _>::into_repr_c(self, &mut store);
-            let output = OutBoxedSlice::from_boxed_slice(Some(store));
-
-            unsafe {
-                out_ptr.write(output);
-            }
-        }
-    }
-    impl<'slice, R: Transmute> FfiOutPtrWrite for &'slice [R]
-    where
-        Self: Ir<Type = &'slice [Transparent]>,
-        &'slice [<R>::Target]: FfiOutPtrWrite,
-    {
-        unsafe fn write_out(self, out_ptr: *mut Self::OutPtr) {
-            let transmuted = transmute_into_target_ref_slice(self);
-
-            unsafe {
-                FfiOutPtrWrite::write_out(transmuted, out_ptr);
-            }
-        }
-    }
-    impl<'itm, R: Ir<Type = S> + NonLocal + Clone, S: Cloned> FfiOutPtrWrite for &'itm [R]
-    where
-        R: CTypeConvert<'itm, S, <R>::ReprC>,
-        Self: Ir<Type = &'itm [S]>,
-    {
-        unsafe fn write_out(self, out_ptr: *mut Self::OutPtr) {
-            let mut store = Default::default();
-
-            unsafe {
-                // NOTE: Bypasses the erroneous lifetime check.
-                // Correct as long as `R::into_repr_c` doesn't return a reference to the store (`R: NonLocal`)
-                let store_borrow = &mut *addr_of_mut!(store);
-                CTypeConvert::<&[S], _>::into_repr_c(self, store_borrow);
-                let output = OutBoxedSlice::from_boxed_slice(Some(store.0));
-
-                out_ptr.write(output);
-            }
-        }
-    }
-
-    impl<'a, R: ReprC> FfiOutPtrWrite for &'a mut [R]
-    where
-        Self: Ir<Type = &'a mut [Robust]>,
-    {
-        unsafe fn write_out(self, out_ptr: *mut Self::OutPtr) {
-            unsafe {
-                write_non_local::<_, &'a mut [Robust]>(self, out_ptr);
-            }
-        }
-    }
-    impl<'a, R: Clone> FfiOutPtrWrite for &'a mut [R]
-    where
-        Self: Ir<Type = &'a mut [Opaque]>,
-    {
-        unsafe fn write_out(self, out_ptr: *mut Self::OutPtr) {
-            let mut store = Default::default();
-            CTypeConvert::<&'a mut [Opaque], _>::into_repr_c(self, &mut store);
-            let output = OutBoxedSlice::from_boxed_slice(Some(store));
-
-            unsafe {
-                out_ptr.write(output);
-            }
-        }
-    }
-    impl<'slice, R: Transmute> FfiOutPtrWrite for &'slice mut [R]
-    where
-        Self: Ir<Type = &'slice mut [Transparent]>,
-        &'slice mut [<R>::Target]: FfiOutPtrWrite,
-    {
-        unsafe fn write_out(self, out_ptr: *mut Self::OutPtr) {
-            let transmuted = transmute_into_target_slice_mut(self);
-
-            unsafe {
-                FfiOutPtrWrite::write_out(transmuted, out_ptr);
-            }
-        }
-    }
-
-    impl<R: ReprC> FfiOutPtrWrite for Box<R>
-    where
-        Self: Ir<Type = Box<Robust>>,
-    {
-        unsafe fn write_out(self, out_ptr: *mut Self::OutPtr) {
-            unsafe {
-                out_ptr.write(*self);
-            }
-        }
-    }
-    impl<R> FfiOutPtrWrite for Box<R>
-    where
-        Self: Ir<Type = Box<Opaque>>,
-    {
-        unsafe fn write_out(self, out_ptr: *mut Self::OutPtr) {
-            unsafe {
-                write_non_local::<_, Box<Opaque>>(self, out_ptr);
-            }
-        }
-    }
-    impl<R: Transmute> FfiOutPtrWrite for Box<R>
-    where
-        Self: Ir<Type = Box<Transparent>>,
-        Box<<R>::Target>: FfiOutPtrWrite,
-    {
-        unsafe fn write_out(self, out_ptr: *mut Self::OutPtr) {
-            let transmuted = transmute_into_target_box(self);
-
-            unsafe {
-                FfiOutPtrWrite::write_out(transmuted, out_ptr);
-            }
-        }
-    }
-    impl<'itm, R: Ir<Type = S> + NonLocal + Clone + 'itm, S: Cloned + 'itm> FfiOutPtrWrite for Box<R>
-    where
-        R: CTypeConvert<'itm, S, <R>::ReprC>,
-        Self: Ir<Type = Box<S>>,
-    {
-        unsafe fn write_out(self, out_ptr: *mut Self::OutPtr) {
-            let mut store = Default::default();
-
-            unsafe {
-                // NOTE: Bypasses the erroneous lifetime check.
-                // Correct as long as `R::into_repr_c` doesn't return a reference to the store (`R: NonLocal`)
-                let store_borrow = &mut *addr_of_mut!(store);
-                CTypeConvert::<Box<S>, _>::into_repr_c(self, store_borrow);
-
-                // NOTE: None value indicates a bug in the implementation
-                out_ptr.write(store.0.expect("Store must be initialized"));
-            }
-        }
-    }
-
-    impl<R: ReprC> FfiOutPtrWrite for Box<[R]>
-    where
-        Self: Ir<Type = Box<[Robust]>>,
-    {
-        unsafe fn write_out(self, out_ptr: *mut Self::OutPtr) {
-            let mut store = Default::default();
-            CTypeConvert::<Box<[Robust]>, _>::into_repr_c(self, &mut store);
-
-            unsafe {
-                out_ptr.write(OutBoxedSlice::from_boxed_slice(Some(store)));
-            }
-        }
-    }
-    impl<R> FfiOutPtrWrite for Box<[R]>
-    where
-        Self: Ir<Type = Box<[Opaque]>>,
-    {
-        unsafe fn write_out(self, out_ptr: *mut Self::OutPtr) {
-            let mut store = Default::default();
-            CTypeConvert::<Box<[Opaque]>, _>::into_repr_c(self, &mut store);
-
-            unsafe {
-                out_ptr.write(OutBoxedSlice::from_boxed_slice(Some(store)));
-            }
-        }
-    }
-    impl<R: Transmute> FfiOutPtrWrite for Box<[R]>
-    where
-        Self: Ir<Type = Box<[Transparent]>>,
-        Box<[<R>::Target]>: FfiOutPtrWrite,
-    {
-        unsafe fn write_out(self, out_ptr: *mut Self::OutPtr) {
-            let transmuted = transmute_into_target_boxed_slice(self);
-
-            unsafe {
-                FfiOutPtrWrite::write_out(transmuted, out_ptr);
-            }
-        }
-    }
-    impl<'itm, R: Ir<Type = S> + NonLocal + Clone + 'itm, S: Cloned + 'itm> FfiOutPtrWrite for Box<[R]>
-    where
-        R: CTypeConvert<'itm, S, <R>::ReprC>,
-        Self: Ir<Type = Box<[S]>>,
-    {
-        unsafe fn write_out(self, out_ptr: *mut Self::OutPtr) {
-            let mut store = Default::default();
-
-            unsafe {
-                // NOTE: Bypasses the erroneous lifetime check.
-                // Correct as long as `R::into_repr_c` doesn't return a reference to the store (`R: NonLocal`)
-                let store_borrow = &mut *addr_of_mut!(store);
-                CTypeConvert::<Box<[S]>, _>::into_repr_c(self, store_borrow);
-                let output = OutBoxedSlice::from_boxed_slice(Some(store.0));
-
-                out_ptr.write(output);
-            }
-        }
-    }
-
-    impl<'itm, R: Ir<Type = S> + NonLocal + Clone, S: Cloned + 'itm> FfiOutPtrWrite for &'itm R
+    impl<'itm, R: Ir<Type = S> + NonLocal + Clone, S: Cloned + 'itm> OutPtrWrite for &'itm R
     where
         R: CTypeConvert<'itm, S, <R>::ReprC>,
         Self: Ir<Type = &'itm S>,
@@ -597,7 +389,215 @@ disjoint_impls! {
         }
     }
 
-    impl<R: ReprC> FfiOutPtrWrite for Vec<R>
+    impl<'a, R: ReprC> OutPtrWrite for &'a [R]
+    where
+        Self: Ir<Type = &'a [Robust]>,
+    {
+        unsafe fn write_out(self, out_ptr: *mut Self::OutPtr) {
+            unsafe {
+                write_non_local::<_, &'a [Robust]>(self, out_ptr);
+            }
+        }
+    }
+    impl<'a, R: Clone> OutPtrWrite for &'a [R]
+    where
+        Self: Ir<Type = &'a [Opaque]>,
+    {
+        unsafe fn write_out(self, out_ptr: *mut Self::OutPtr) {
+            let mut store = Default::default();
+
+            CTypeConvert::<&[Opaque], _>::into_repr_c(self, &mut store);
+            let output = OutBoxedSlice::from_boxed_slice(Some(store));
+
+            unsafe {
+                out_ptr.write(output);
+            }
+        }
+    }
+    impl<'slice, R: Transmute> OutPtrWrite for &'slice [R]
+    where
+        Self: Ir<Type = &'slice [Transparent]>,
+        &'slice [<R>::Target]: OutPtrWrite,
+    {
+        unsafe fn write_out(self, out_ptr: *mut Self::OutPtr) {
+            let transmuted = transmute_into_target_ref_slice(self);
+
+            unsafe {
+                OutPtrWrite::write_out(transmuted, out_ptr);
+            }
+        }
+    }
+    impl<'itm, R: Ir<Type = S> + NonLocal + Clone, S: Cloned> OutPtrWrite for &'itm [R]
+    where
+        R: CTypeConvert<'itm, S, <R>::ReprC>,
+        Self: Ir<Type = &'itm [S]>,
+    {
+        unsafe fn write_out(self, out_ptr: *mut Self::OutPtr) {
+            let mut store = Default::default();
+
+            unsafe {
+                // NOTE: Bypasses the erroneous lifetime check.
+                // Correct as long as `R::into_repr_c` doesn't return a reference to the store (`R: NonLocal`)
+                let store_borrow = &mut *addr_of_mut!(store);
+                CTypeConvert::<&[S], _>::into_repr_c(self, store_borrow);
+                let output = OutBoxedSlice::from_boxed_slice(Some(store.0));
+
+                out_ptr.write(output);
+            }
+        }
+    }
+
+    impl<'a, R: ReprC> OutPtrWrite for &'a mut [R]
+    where
+        Self: Ir<Type = &'a mut [Robust]>,
+    {
+        unsafe fn write_out(self, out_ptr: *mut Self::OutPtr) {
+            unsafe {
+                write_non_local::<_, &'a mut [Robust]>(self, out_ptr);
+            }
+        }
+    }
+    impl<'a, R: Clone> OutPtrWrite for &'a mut [R]
+    where
+        Self: Ir<Type = &'a mut [Opaque]>,
+    {
+        unsafe fn write_out(self, out_ptr: *mut Self::OutPtr) {
+            let mut store = Default::default();
+            CTypeConvert::<&'a mut [Opaque], _>::into_repr_c(self, &mut store);
+            let output = OutBoxedSlice::from_boxed_slice(Some(store));
+
+            unsafe {
+                out_ptr.write(output);
+            }
+        }
+    }
+    impl<'slice, R: Transmute> OutPtrWrite for &'slice mut [R]
+    where
+        Self: Ir<Type = &'slice mut [Transparent]>,
+        &'slice mut [<R>::Target]: OutPtrWrite,
+    {
+        unsafe fn write_out(self, out_ptr: *mut Self::OutPtr) {
+            let transmuted = transmute_into_target_slice_mut(self);
+
+            unsafe {
+                OutPtrWrite::write_out(transmuted, out_ptr);
+            }
+        }
+    }
+
+    impl<R: ReprC> OutPtrWrite for Box<R>
+    where
+        Self: Ir<Type = Box<Robust>>,
+    {
+        unsafe fn write_out(self, out_ptr: *mut Self::OutPtr) {
+            unsafe {
+                out_ptr.write(*self);
+            }
+        }
+    }
+    impl<R> OutPtrWrite for Box<R>
+    where
+        Self: Ir<Type = Box<Opaque>>,
+    {
+        unsafe fn write_out(self, out_ptr: *mut Self::OutPtr) {
+            unsafe {
+                write_non_local::<_, Box<Opaque>>(self, out_ptr);
+            }
+        }
+    }
+    impl<R: Transmute> OutPtrWrite for Box<R>
+    where
+        Self: Ir<Type = Box<Transparent>>,
+        Box<<R>::Target>: OutPtrWrite,
+    {
+        unsafe fn write_out(self, out_ptr: *mut Self::OutPtr) {
+            let transmuted = transmute_into_target_box(self);
+
+            unsafe {
+                OutPtrWrite::write_out(transmuted, out_ptr);
+            }
+        }
+    }
+    impl<'itm, R: Ir<Type = S> + NonLocal + Clone + 'itm, S: Cloned + 'itm> OutPtrWrite for Box<R>
+    where
+        R: CTypeConvert<'itm, S, <R>::ReprC>,
+        Self: Ir<Type = Box<S>>,
+    {
+        unsafe fn write_out(self, out_ptr: *mut Self::OutPtr) {
+            let mut store = Default::default();
+
+            unsafe {
+                // NOTE: Bypasses the erroneous lifetime check.
+                // Correct as long as `R::into_repr_c` doesn't return a reference to the store (`R: NonLocal`)
+                let store_borrow = &mut *addr_of_mut!(store);
+                CTypeConvert::<Box<S>, _>::into_repr_c(self, store_borrow);
+
+                // NOTE: None value indicates a bug in the implementation
+                out_ptr.write(store.0.expect("Store must be initialized"));
+            }
+        }
+    }
+
+    impl<R: ReprC> OutPtrWrite for Box<[R]>
+    where
+        Self: Ir<Type = Box<[Robust]>>,
+    {
+        unsafe fn write_out(self, out_ptr: *mut Self::OutPtr) {
+            let mut store = Default::default();
+            CTypeConvert::<Box<[Robust]>, _>::into_repr_c(self, &mut store);
+
+            unsafe {
+                out_ptr.write(OutBoxedSlice::from_boxed_slice(Some(store)));
+            }
+        }
+    }
+    impl<R> OutPtrWrite for Box<[R]>
+    where
+        Self: Ir<Type = Box<[Opaque]>>,
+    {
+        unsafe fn write_out(self, out_ptr: *mut Self::OutPtr) {
+            let mut store = Default::default();
+            CTypeConvert::<Box<[Opaque]>, _>::into_repr_c(self, &mut store);
+
+            unsafe {
+                out_ptr.write(OutBoxedSlice::from_boxed_slice(Some(store)));
+            }
+        }
+    }
+    impl<R: Transmute> OutPtrWrite for Box<[R]>
+    where
+        Self: Ir<Type = Box<[Transparent]>>,
+        Box<[<R>::Target]>: OutPtrWrite,
+    {
+        unsafe fn write_out(self, out_ptr: *mut Self::OutPtr) {
+            let transmuted = transmute_into_target_boxed_slice(self);
+
+            unsafe {
+                OutPtrWrite::write_out(transmuted, out_ptr);
+            }
+        }
+    }
+    impl<'itm, R: Ir<Type = S> + NonLocal + Clone + 'itm, S: Cloned + 'itm> OutPtrWrite for Box<[R]>
+    where
+        R: CTypeConvert<'itm, S, <R>::ReprC>,
+        Self: Ir<Type = Box<[S]>>,
+    {
+        unsafe fn write_out(self, out_ptr: *mut Self::OutPtr) {
+            let mut store = Default::default();
+
+            unsafe {
+                // NOTE: Bypasses the erroneous lifetime check.
+                // Correct as long as `R::into_repr_c` doesn't return a reference to the store (`R: NonLocal`)
+                let store_borrow = &mut *addr_of_mut!(store);
+                CTypeConvert::<Box<[S]>, _>::into_repr_c(self, store_borrow);
+                let output = OutBoxedSlice::from_boxed_slice(Some(store.0));
+
+                out_ptr.write(output);
+            }
+        }
+    }
+
+    impl<R: ReprC> OutPtrWrite for Vec<R>
     where
         Self: Ir<Type = Vec<Robust>>,
     {
@@ -611,7 +611,7 @@ disjoint_impls! {
             }
         }
     }
-    impl<R> FfiOutPtrWrite for Vec<R>
+    impl<R> OutPtrWrite for Vec<R>
     where
         Self: Ir<Type = Vec<Opaque>>,
     {
@@ -626,7 +626,7 @@ disjoint_impls! {
             }
         }
     }
-    impl<'itm, R: Ir<Type = S> + NonLocal + Clone + 'itm, S: Cloned + 'itm> FfiOutPtrWrite for Vec<R>
+    impl<'itm, R: Ir<Type = S> + NonLocal + Clone + 'itm, S: Cloned + 'itm> OutPtrWrite for Vec<R>
     where
         R: CTypeConvert<'itm, S, <R>::ReprC>,
         Self: Ir<Type = Vec<S>>,
@@ -647,21 +647,21 @@ disjoint_impls! {
         }
     }
 
-    impl<R: Transmute> FfiOutPtrWrite for Vec<R>
+    impl<R: Transmute> OutPtrWrite for Vec<R>
     where
         Self: Ir<Type = Vec<Transparent>>,
-        Vec<<R>::Target>: FfiOutPtrWrite,
+        Vec<<R>::Target>: OutPtrWrite,
     {
         unsafe fn write_out(self, out_ptr: *mut Self::OutPtr) {
             let transmuted = transmute_into_target_vec(self);
 
             unsafe {
-                FfiOutPtrWrite::write_out(transmuted, out_ptr);
+                OutPtrWrite::write_out(transmuted, out_ptr);
             }
         }
     }
 
-    impl<R, const N: usize> FfiOutPtrWrite for [R; N]
+    impl<R, const N: usize> OutPtrWrite for [R; N]
     where
         Self: Ir<Type = [Opaque; N]>,
     {
@@ -671,7 +671,7 @@ disjoint_impls! {
             }
         }
     }
-    impl<'itm, R: Ir<Type = S> + NonLocal + Clone + 'itm, S: Cloned + 'itm, const N: usize> FfiOutPtrWrite for [R; N]
+    impl<'itm, R: Ir<Type = S> + NonLocal + Clone + 'itm, S: Cloned + 'itm, const N: usize> OutPtrWrite for [R; N]
     where
         R: CTypeConvert<'itm, S, <R>::ReprC>,
         [<R>::RustStore; N]: Default,
@@ -692,7 +692,7 @@ disjoint_impls! {
         }
     }
 
-    impl<R: FfiOutPtrWrite> FfiOutPtrWrite for Option<R>
+    impl<R: OutPtrWrite> OutPtrWrite for Option<R>
     where
         Self: Ir<Type = Option<WithoutNiche>>,
     {
@@ -701,7 +701,7 @@ disjoint_impls! {
                 None => {
                     let mut discriminant_out_ptr = core::mem::MaybeUninit::uninit();
                     unsafe {
-                        FfiOutPtrWrite::write_out(0u8, discriminant_out_ptr.as_mut_ptr());
+                        OutPtrWrite::write_out(0u8, discriminant_out_ptr.as_mut_ptr());
                         let discriminant_out_ptr = discriminant_out_ptr.assume_init() ;
 
                         // TODO: No need to zero the memory because it must never be read
@@ -711,11 +711,11 @@ disjoint_impls! {
                 Some(value) => {
                     unsafe {
                         let mut discriminant_out_ptr = core::mem::MaybeUninit::uninit();
-                        FfiOutPtrWrite::write_out(1u8, discriminant_out_ptr.as_mut_ptr());
+                        OutPtrWrite::write_out(1u8, discriminant_out_ptr.as_mut_ptr());
                         let discriminant_out_ptr = discriminant_out_ptr.assume_init();
 
                         let mut value_out_ptr = core::mem::MaybeUninit::uninit();
-                        FfiOutPtrWrite::write_out(value, value_out_ptr.as_mut_ptr());
+                        OutPtrWrite::write_out(value, value_out_ptr.as_mut_ptr());
                         let value_out_ptr = value_out_ptr.assume_init();
 
                         out_ptr.write(FfiTuple2(discriminant_out_ptr, value_out_ptr));
@@ -724,7 +724,7 @@ disjoint_impls! {
             }
         }
     }
-    impl<R: Niche<'_> + FfiOutPtrWrite<OutPtr = <R as FfiType>::ReprC>> FfiOutPtrWrite for Option<R>
+    impl<R: Niche<'_> + OutPtrWrite<OutPtr = <R as FfiType>::ReprC>> OutPtrWrite for Option<R>
     where
         Self: Ir<Type = Self>,
     {
@@ -732,7 +732,7 @@ disjoint_impls! {
             unsafe {
                 self.map_or_else(
                     || out_ptr.write(<R>::NICHE_VALUE),
-                    |value| FfiOutPtrWrite::write_out(value, out_ptr),
+                    |value| OutPtrWrite::write_out(value, out_ptr),
                 );
             }
         }
@@ -741,7 +741,7 @@ disjoint_impls! {
 
 disjoint_impls! {
     /// Facilitates reading from [`Self::OutPtr`] out-pointer.
-    pub trait FfiOutPtrRead: FfiOutPtr + Sized {
+    pub trait OutPtrRead: OutPtr + Sized {
         /// Read a rust value from the corresponding out-pointer
         ///
         /// # Errors
@@ -754,7 +754,7 @@ disjoint_impls! {
         unsafe fn try_read_out(out_ptr: Self::OutPtr) -> Result<Self>;
     }
 
-    impl<R: ReprC> FfiOutPtrRead for R
+    impl<R: ReprC> OutPtrRead for R
     where
         Self: Ir<Type = Robust>,
     {
@@ -762,19 +762,19 @@ disjoint_impls! {
             unsafe { read_non_local::<_, Robust>(out_ptr) }
         }
     }
-    impl<R: Transmute> FfiOutPtrRead for R
+    impl<R: Transmute> OutPtrRead for R
     where
         Self: Ir<Type = Transparent>,
-        <R>::Target: FfiOutPtrRead,
+        <R>::Target: OutPtrRead,
     {
         unsafe fn try_read_out(out_ptr: Self::OutPtr) -> Result<Self> {
             unsafe {
-                FfiOutPtrRead::try_read_out(out_ptr).and_then(|output| transmute_from_target(output))
+                OutPtrRead::try_read_out(out_ptr).and_then(|output| transmute_from_target(output))
             }
         }
     }
 
-    impl<'a, R: ReprC> FfiOutPtrRead for &'a [R]
+    impl<'a, R: ReprC> OutPtrRead for &'a [R]
     where
         Self: Ir<Type = &'a [Robust]>,
     {
@@ -782,10 +782,10 @@ disjoint_impls! {
             unsafe { read_non_local::<_, &'a [Robust]>(out_ptr) }
         }
     }
-    impl<'itm, R: Transmute> FfiOutPtrRead for &'itm [R]
+    impl<'itm, R: Transmute> OutPtrRead for &'itm [R]
     where
         Self: Ir<Type = &'itm [Transparent]>,
-        &'itm [<R>::Target]: FfiOutPtrRead,
+        &'itm [<R>::Target]: OutPtrRead,
     {
         unsafe fn try_read_out(out_ptr: Self::OutPtr) -> Result<Self> {
             unsafe {
@@ -795,7 +795,7 @@ disjoint_impls! {
         }
     }
 
-    impl<'a, R: ReprC> FfiOutPtrRead for &'a mut [R]
+    impl<'a, R: ReprC> OutPtrRead for &'a mut [R]
     where
         Self: Ir<Type = &'a mut [Robust]>,
     {
@@ -803,10 +803,10 @@ disjoint_impls! {
             unsafe { read_non_local::<_, &mut [Robust]>(out_ptr) }
         }
     }
-    impl<'itm, R: Transmute> FfiOutPtrRead for &'itm mut [R]
+    impl<'itm, R: Transmute> OutPtrRead for &'itm mut [R]
     where
         Self: Ir<Type = &'itm mut [Transparent]>,
-        &'itm mut [<R>::Target]: FfiOutPtrRead,
+        &'itm mut [<R>::Target]: OutPtrRead,
     {
         unsafe fn try_read_out(out_ptr: Self::OutPtr) -> Result<Self> {
             unsafe {
@@ -816,7 +816,7 @@ disjoint_impls! {
         }
     }
 
-    impl<R: ReprC> FfiOutPtrRead for Box<R>
+    impl<R: ReprC> OutPtrRead for Box<R>
     where
         Self: Ir<Type = Box<Robust>>,
     {
@@ -824,7 +824,7 @@ disjoint_impls! {
             unsafe { CTypeConvert::<Robust, _>::try_from_repr_c(out_ptr, &mut ()).map(Box::new) }
         }
     }
-    impl<R: External> FfiOutPtrRead for Box<R>
+    impl<R: External> OutPtrRead for Box<R>
     where
         Self: Ir<Type = Box<Extern>>,
     {
@@ -832,10 +832,10 @@ disjoint_impls! {
             unsafe { read_non_local::<_, Box<Extern>>(out_ptr) }
         }
     }
-    impl<R: Transmute> FfiOutPtrRead for Box<R>
+    impl<R: Transmute> OutPtrRead for Box<R>
     where
         Self: Ir<Type = Box<Transparent>>,
-        Box<<R>::Target>: FfiOutPtrRead,
+        Box<<R>::Target>: OutPtrRead,
     {
         unsafe fn try_read_out(out_ptr: Self::OutPtr) -> Result<Self> {
             unsafe {
@@ -844,7 +844,7 @@ disjoint_impls! {
             }
         }
     }
-    impl<'itm, R: Ir<Type = S> + NonLocal + Clone + 'itm, S: Cloned + 'itm> FfiOutPtrRead for Box<R>
+    impl<'itm, R: Ir<Type = S> + NonLocal + Clone + 'itm, S: Cloned + 'itm> OutPtrRead for Box<R>
     where
         R: CTypeConvert<'itm, S, <R>::ReprC>,
         Self: Ir<Type = Box<S>>,
@@ -863,7 +863,7 @@ disjoint_impls! {
         }
     }
 
-    impl<R: ReprC> FfiOutPtrRead for Box<[R]>
+    impl<R: ReprC> OutPtrRead for Box<[R]>
     where
         Self: Ir<Type = Box<[Robust]>>,
     {
@@ -880,10 +880,10 @@ disjoint_impls! {
             }
         }
     }
-    impl<R: Transmute> FfiOutPtrRead for Box<[R]>
+    impl<R: Transmute> OutPtrRead for Box<[R]>
     where
         Self: Ir<Type = Box<[Transparent]>>,
-        Box<[<R>::Target]>: FfiOutPtrRead,
+        Box<[<R>::Target]>: OutPtrRead,
     {
         unsafe fn try_read_out(out_ptr: Self::OutPtr) -> Result<Self> {
             unsafe {
@@ -892,7 +892,7 @@ disjoint_impls! {
             }
         }
     }
-    impl<'itm, R: Ir<Type = S> + NonLocal + Clone + 'itm, S: Cloned + 'itm> FfiOutPtrRead for Box<[R]>
+    impl<'itm, R: Ir<Type = S> + NonLocal + Clone + 'itm, S: Cloned + 'itm> OutPtrRead for Box<[R]>
     where
         R: CTypeConvert<'itm, S, <R>::ReprC>,
         Self: Ir<Type = Box<[S]>>,
@@ -916,7 +916,7 @@ disjoint_impls! {
         }
     }
 
-    impl<R: ReprC> FfiOutPtrRead for Vec<R>
+    impl<R: ReprC> OutPtrRead for Vec<R>
     where
         Self: Ir<Type = Vec<Robust>>,
     {
@@ -933,10 +933,10 @@ disjoint_impls! {
             }
         }
     }
-    impl<R: Transmute> FfiOutPtrRead for Vec<R>
+    impl<R: Transmute> OutPtrRead for Vec<R>
     where
         Self: Ir<Type = Vec<Transparent>>,
-        Vec<<R>::Target>: FfiOutPtrRead,
+        Vec<<R>::Target>: OutPtrRead,
     {
         unsafe fn try_read_out(out_ptr: Self::OutPtr) -> Result<Self> {
             unsafe {
@@ -945,7 +945,7 @@ disjoint_impls! {
             }
         }
     }
-    impl<'itm, R: Ir<Type = S> + NonLocal + Clone + 'itm, S: Cloned + 'itm> FfiOutPtrRead for Vec<R>
+    impl<'itm, R: Ir<Type = S> + NonLocal + Clone + 'itm, S: Cloned + 'itm> OutPtrRead for Vec<R>
     where
         R: CTypeConvert<'itm, S, <R>::ReprC>,
         Self: Ir<Type = Vec<S>>,
@@ -970,7 +970,7 @@ disjoint_impls! {
     }
 
     impl<'itm, R: Ir<Type = S> + NonLocal + Clone + 'itm, S: Cloned + 'itm, const N: usize>
-        FfiOutPtrRead for [R; N]
+        OutPtrRead for [R; N]
     where
         R: CTypeConvert<'itm, S, <R>::ReprC>,
         // FIXME: What is this bound?
@@ -991,19 +991,19 @@ disjoint_impls! {
         }
     }
 
-    impl<R: FfiOutPtrRead> FfiOutPtrRead for Option<R>
+    impl<R: OutPtrRead> OutPtrRead for Option<R>
     where
         Self: Ir<Type = Option<WithoutNiche>>,
     {
         unsafe fn try_read_out(out_ptr: Self::OutPtr) -> Result<Self> {
-            match unsafe { <u8 as FfiOutPtrRead>::try_read_out(out_ptr.0)? } {
+            match unsafe { <u8 as OutPtrRead>::try_read_out(out_ptr.0)? } {
                 0 => Ok(None),
                 1 => Ok(Some(unsafe { <R>::try_read_out(out_ptr.1)? })),
                 _ => Err(FfiReturn::TrapRepresentation),
             }
         }
     }
-    impl<R: Niche<'_> + FfiOutPtrRead<OutPtr = <R as FfiType>::ReprC>> FfiOutPtrRead for Option<R>
+    impl<R: Niche<'_> + OutPtrRead<OutPtr = <R as FfiType>::ReprC>> OutPtrRead for Option<R>
     where
         Self: Ir<Type = Self>,
         <R>::ReprC: PartialEq,
@@ -1017,7 +1017,7 @@ disjoint_impls! {
         }
     }
 
-    impl<'itm, R: Ir<Type = S> + NonLocal + Clone + 'itm, S: Cloned + 'itm> FfiOutPtrRead
+    impl<'itm, R: Ir<Type = S> + NonLocal + Clone + 'itm, S: Cloned + 'itm> OutPtrRead
         for LocalSlice<'itm, R>
     where
         R: CTypeConvert<'itm, S, <R>::ReprC>,
@@ -1045,7 +1045,7 @@ disjoint_impls! {
         }
     }
 
-    impl<'itm, R: Ir<Type = S> + NonLocal + Clone + 'itm, S: Cloned + 'itm> FfiOutPtrRead
+    impl<'itm, R: Ir<Type = S> + NonLocal + Clone + 'itm, S: Cloned + 'itm> OutPtrRead
         for LocalRef<'itm, R>
     where
         R: CTypeConvert<'itm, S, <R>::ReprC>,

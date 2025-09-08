@@ -881,8 +881,6 @@ macro_rules! mineral {
 /// Wrapper around struct/enum opaque pointer. When wrapped with the [`co3::extern_type`] macro in
 /// the crate linking dynamically to some `cdylib` crate, it replaces struct/enum body definition
 #[repr(C)]
-// NOTE: Irrelevant for a type that is always behind a pointer
-#[allow(missing_copy_implementations)]
 pub struct Extern {
     __data: [u8; 0],
 
@@ -1044,12 +1042,12 @@ macro_rules! impl_tuple {
             type ReprC = $ffi_ty<$($ty::ReprC),+>;
         }
 
-        impl<$($ty: $crate::out_ptr::FfiOutPtr),+> $crate::out_ptr::FfiOutPtr for ($($ty,)+) {
+        impl<$($ty: $crate::out_ptr::OutPtr),+> $crate::out_ptr::OutPtr for ($($ty,)+) {
             type OutPtr = $ffi_ty<$($ty::OutPtr),+>;
         }
 
         #[allow(non_snake_case)]
-        impl<$($ty: $crate::out_ptr::FfiOutPtrWrite),+> $crate::out_ptr::FfiOutPtrWrite for ($($ty,)+) {
+        impl<$($ty: $crate::out_ptr::OutPtrWrite),+> $crate::out_ptr::OutPtrWrite for ($($ty,)+) {
             unsafe fn write_out(self, out_ptr: *mut Self::OutPtr) {
                 impl_tuple! {@decl_priv_out_ptr $($ty),+}
                 let mut field_out_ptrs = ($(core::mem::MaybeUninit::<$ty::OutPtr>::uninit(),)+);
@@ -1058,18 +1056,18 @@ macro_rules! impl_tuple {
                 let field_out_ptrs: private_out_ptr::OutPtr<$($ty),+> = (&mut field_out_ptrs).into();
 
                 unsafe {
-                    $( $crate::out_ptr::FfiOutPtrWrite::write_out($ty, field_out_ptrs.$ty.as_mut_ptr()); )+
+                    $( $crate::out_ptr::OutPtrWrite::write_out($ty, field_out_ptrs.$ty.as_mut_ptr()); )+
                     out_ptr.write($ffi_ty($( field_out_ptrs.$ty.assume_init() ),+));
                 }
             }
         }
         #[allow(non_snake_case)]
-        impl<$($ty: $crate::out_ptr::FfiOutPtrRead),+> $crate::out_ptr::FfiOutPtrRead for ($($ty,)+) {
+        impl<$($ty: $crate::out_ptr::OutPtrRead),+> $crate::out_ptr::OutPtrRead for ($($ty,)+) {
             unsafe fn try_read_out(source: Self::OutPtr) -> Result<Self> {
                 impl_tuple! {@decl_priv_out_ptr $($ty),+}
 
                 let $ffi_ty($($ty,)+) = source;
-                Ok(unsafe {($( $crate::out_ptr::FfiOutPtrRead::try_read_out($ty)?, )+)})
+                Ok(unsafe {($( $crate::out_ptr::OutPtrRead::try_read_out($ty)?, )+)})
             }
         }
 
@@ -1123,11 +1121,11 @@ macro_rules! impl_tuple {
     ( @decl_priv_out_ptr $( $ty:ident ),+ $(,)? ) => {
         mod private_out_ptr {
             #[allow(dead_code)]
-            pub struct OutPtr<'itm, $($ty: $crate::out_ptr::FfiOutPtrWrite),+> {
+            pub struct OutPtr<'itm, $($ty: $crate::out_ptr::OutPtrWrite),+> {
                 $(pub $ty: &'itm mut core::mem::MaybeUninit::<$ty::OutPtr>),+
             }
 
-            impl<'itm, $($ty: $crate::out_ptr::FfiOutPtrWrite),+> From<&'itm mut ($(core::mem::MaybeUninit::<$ty::OutPtr>,)+)> for OutPtr<'itm, $($ty),+> {
+            impl<'itm, $($ty: $crate::out_ptr::OutPtrWrite),+> From<&'itm mut ($(core::mem::MaybeUninit::<$ty::OutPtr>,)+)> for OutPtr<'itm, $($ty),+> {
                 fn from(($($ty,)+): &'itm mut ($(core::mem::MaybeUninit::<$ty::OutPtr>,)+)) -> Self {
                     Self {$($ty,)+}
                 }

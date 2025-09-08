@@ -47,7 +47,7 @@ fn impl_clone_for_opaque(name: &Ident, generics: &syn::Generics) -> TokenStream 
                     panic!("Clone returned: {}", clone_result);
                 }
 
-                unsafe {co3::out_ptr::FfiOutPtrRead::try_read_out(output.assume_init()).expect("Invalid output")}
+                unsafe {co3::out_ptr::OutPtrRead::try_read_out(output.assume_init()).expect("Invalid output")}
             }
         }
     }
@@ -68,7 +68,7 @@ fn impl_default_for_opaque(name: &Ident, generics: &syn::Generics) -> TokenStrea
                     panic!("Default returned: {}", default_result);
                 }
 
-                unsafe {co3::out_ptr::FfiOutPtrRead::try_read_out(output.assume_init()).expect("Invalid output")}
+                unsafe {co3::out_ptr::OutPtrRead::try_read_out(output.assume_init()).expect("Invalid output")}
             }
         }
     }
@@ -93,7 +93,7 @@ fn impl_partial_eq_for_opaque(name: &Ident, generics: &syn::Generics) -> TokenSt
                     panic!("Eq returned: {}", eq_result);
                 }
 
-                unsafe {co3::out_ptr::FfiOutPtrRead::try_read_out(output.assume_init()).expect("Invalid output")}
+                unsafe {co3::out_ptr::OutPtrRead::try_read_out(output.assume_init()).expect("Invalid output")}
             }
         }
     }
@@ -125,7 +125,7 @@ fn impl_ord_for_opaque(name: &Ident, generics: &syn::Generics) -> TokenStream {
                     panic!("Ord returned: {}", cmp_result);
                 }
 
-                unsafe {co3::out_ptr::FfiOutPtrRead::try_read_out(output.assume_init()).expect("Invalid output")}
+                unsafe {co3::out_ptr::OutPtrRead::try_read_out(output.assume_init()).expect("Invalid output")}
             }
         }
     }
@@ -364,10 +364,10 @@ fn gen_impl_ffi(name: &Ident, generics: &syn::Generics) -> TokenStream {
             type InputType = Self;
             type ReturnType = Self;
         }
-        impl #impl_generics co3::out_ptr::FfiOutPtr for #name #ty_generics #where_clause {
+        impl #impl_generics co3::out_ptr::OutPtr for #name #ty_generics #where_clause {
             type OutPtr = Self::ReprC;
         }
-        impl #impl_generics co3::out_ptr::FfiOutPtrRead for #name #ty_generics #where_clause {
+        impl #impl_generics co3::out_ptr::OutPtrRead for #name #ty_generics #where_clause {
             unsafe fn try_read_out(out_ptr: Self::OutPtr) -> co3::Result<Self> {
                 co3::repr_c::read_non_local::<_, Self>(out_ptr)
             }
@@ -771,7 +771,7 @@ fn gen_return_stmt(fn_descriptor: &FnDescriptor) -> TokenStream {
 
         quote! {
             let #arg_name = #arg_name.assume_init();
-            let #arg_name = co3::out_ptr::FfiOutPtrRead::try_read_out(#arg_name).expect("Invalid out-pointer value returned");
+            let #arg_name = co3::out_ptr::OutPtrRead::try_read_out(#arg_name).expect("Invalid out-pointer value returned");
             #return_stmt
         }
     })

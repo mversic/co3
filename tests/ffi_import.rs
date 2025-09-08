@@ -132,7 +132,7 @@ mod ffi {
 
     use co3::{
         FfiReturn, FfiTuple2, FfiType,
-        out_ptr::FfiOutPtr,
+        out_ptr::OutPtr,
         slice::{OutBoxedSlice, RefMutSlice, RefSlice},
     };
 
@@ -216,7 +216,7 @@ mod ffi {
     #[unsafe(no_mangle)]
     unsafe extern "C" fn __freestanding_take_and_return_local_transparent_ref(
         input: <&(u32, u32) as FfiType>::ReprC,
-        output: *mut <&(u32, u32) as FfiOutPtr>::OutPtr,
+        output: *mut <&(u32, u32) as OutPtr>::OutPtr,
     ) -> FfiReturn {
         unsafe {
             output.write(input.read());
@@ -227,7 +227,7 @@ mod ffi {
     #[unsafe(no_mangle)]
     unsafe extern "C" fn __freestanding_take_and_return_boxed_int(
         input: <Box<u8> as FfiType>::ReprC,
-        output: *mut <Box<u8> as FfiOutPtr>::OutPtr,
+        output: *mut <Box<u8> as OutPtr>::OutPtr,
     ) -> FfiReturn {
         unsafe {
             output.write(input.read());

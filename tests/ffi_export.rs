@@ -3,7 +3,7 @@
 use std::{alloc, collections::BTreeMap, mem::MaybeUninit};
 
 use co3::{
-    FfiConvert, FfiReturn, FfiTuple1, FfiTuple2, FfiType, LocalRef, out_ptr::FfiOutPtrRead,
+    FfiConvert, FfiReturn, FfiTuple1, FfiTuple2, FfiType, LocalRef, out_ptr::OutPtrRead,
     slice::OutBoxedSlice,
 };
 
@@ -268,7 +268,7 @@ fn non_robust_ref_mut() {
             __take_non_robust_ref_mut(ffi_type, output.as_mut_ptr())
         );
 
-        let output: &mut str = FfiOutPtrRead::try_read_out(output.assume_init()).unwrap();
+        let output: &mut str = OutPtrRead::try_read_out(output.assume_init()).unwrap();
         assert_eq!(output, owned.as_mut());
     }
 }
@@ -435,7 +435,7 @@ fn take_and_return_option_without_niche() {
         );
 
         let output = output.assume_init();
-        assert_eq!(input, FfiOutPtrRead::try_read_out(output).expect("Valid"));
+        assert_eq!(input, OutPtrRead::try_read_out(output).expect("Valid"));
     }
 }
 
@@ -658,7 +658,7 @@ fn fieldless_enum_conversion() {
             )
         );
 
-        let ret_val = FfiOutPtrRead::try_read_out(output.assume_init());
+        let ret_val = OutPtrRead::try_read_out(output.assume_init());
         assert_eq!(FieldlessEnum::A, ret_val.unwrap());
     }
 }
@@ -701,7 +701,7 @@ fn data_carrying_enum_conversion() {
             )
         );
 
-        let ret_val = FfiOutPtrRead::try_read_out(output.assume_init());
+        let ret_val = OutPtrRead::try_read_out(output.assume_init());
         assert_eq!(data_carrying_enum, ret_val.expect("Conversion failed"));
     }
 }
@@ -825,7 +825,7 @@ fn borrow_local() {
                 __take_tuple_ref(<&(u8, u8)>::into_ffi(&a, &mut store), output.as_mut_ptr())
             );
 
-            FfiOutPtrRead::try_read_out(output.assume_init()).expect("Valid")
+            OutPtrRead::try_read_out(output.assume_init()).expect("Valid")
         }
     };
 

@@ -2,7 +2,7 @@
 
 use std::mem::MaybeUninit;
 
-use co3::{FfiReturn, FfiType, out_ptr::FfiOutPtrRead as _};
+use co3::{FfiReturn, FfiType, out_ptr::OutPtrRead as _};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, FfiType)]
 #[repr(u8)]

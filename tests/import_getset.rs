@@ -48,7 +48,7 @@ mod ffi {
 
     use co3::{
         FfiConvert, FfiReturn, FfiType, def_fns,
-        out_ptr::{FfiOutPtr, FfiOutPtrWrite},
+        out_ptr::{OutPtr, OutPtrWrite},
         slice::RefMutSlice,
     };
 
@@ -148,11 +148,11 @@ mod ffi {
     #[unsafe(no_mangle)]
     unsafe extern "C" fn FfiStruct__name(
         input: *const ExternFfiStruct,
-        output: *mut <&ExternName as FfiOutPtr>::OutPtr,
+        output: *mut <&ExternName as OutPtr>::OutPtr,
     ) -> FfiReturn {
         unsafe {
             let input = &*input;
-            FfiOutPtrWrite::write_out(&input.name, output);
+            OutPtrWrite::write_out(&input.name, output);
         }
 
         FfiReturn::Ok

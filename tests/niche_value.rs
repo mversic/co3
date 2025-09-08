@@ -1,4 +1,5 @@
 use core::{cmp::Ordering, ffi::c_int, ptr::NonNull};
+use std::mem::ManuallyDrop;
 
 use co3::{
     FfiConvert, FfiType,
@@ -317,6 +318,16 @@ pub enum FieldlessReprCEnum {
     D,
 }
 
+#[derive(Debug, Clone, PartialEq, Eq, FfiType)]
+#[repr(C)]
+pub enum DataCarryingEnum<'a> {
+    A(&'a str),
+    B(u32),
+    // TODO: Support this
+    //C(T),
+    D,
+}
+
 #[cfg(target_family = "wasm")]
 #[webassembly_test::webassembly_test]
 fn wasm_niche_value() {
@@ -353,6 +364,12 @@ fn std_niche_value() {
         core::ptr::null_mut(),
         None::<NonNull<String>>.into_ffi(&mut ())
     );
+    assert_eq!(
+        RefMutSlice::<u8>::null_mut(),
+        None::<ManuallyDrop<String>>.into_ffi(&mut Default::default())
+    );
+
+    assert_eq!(2_u8, None::<ManuallyDrop<bool>>.into_ffi(&mut ()));
 }
 
 #[test]
@@ -379,4 +396,5 @@ fn enum_niche_value() {
     assert_eq!(3 as c_int, None::<FieldlessReprCEnum>.into_ffi(&mut ()));
 
     // TODO: Add a test for data caryying enum
+    //assert_eq!(3 as c_int, None::<DataCarryingEnum>.into_ffi(&mut ()));
 }

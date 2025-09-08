@@ -24,7 +24,6 @@ pub trait Ir {
     type Type;
 }
 
-// TODO: Are they all cloned?
 impl<R> Cloned for Option<R> {}
 
 impl<R, C> Niche<'_> for &R

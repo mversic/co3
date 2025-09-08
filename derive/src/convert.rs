@@ -590,15 +590,15 @@ fn derive_ffi_type_for_data_carrying_enum(
                 type InputType = Self;
                 type ReturnType = Self;
             }
-            impl<#impl_generics> co3::out_ptr::FfiOutPtr for #enum_name #ty_generics #non_local_where_clause {
+            impl<#impl_generics> co3::out_ptr::OutPtr for #enum_name #ty_generics #non_local_where_clause {
                 type OutPtr = Self::ReprC;
             }
-            impl<#impl_generics> co3::out_ptr::FfiOutPtrWrite for #enum_name #ty_generics #non_local_where_clause {
+            impl<#impl_generics> co3::out_ptr::OutPtrWrite for #enum_name #ty_generics #non_local_where_clause {
                 unsafe fn write_out(self, out_ptr: *mut Self::OutPtr) {
                     co3::repr_c::write_non_local::<_, Self>(self, out_ptr);
                 }
             }
-            impl<#impl_generics> co3::out_ptr::FfiOutPtrRead for #enum_name #ty_generics #non_local_where_clause {
+            impl<#impl_generics> co3::out_ptr::OutPtrRead for #enum_name #ty_generics #non_local_where_clause {
                 unsafe fn try_read_out(out_ptr: Self::OutPtr) -> co3::Result<Self> {
                     co3::repr_c::read_non_local::<Self, Self>(out_ptr)
                 }

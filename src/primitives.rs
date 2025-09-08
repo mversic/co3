@@ -7,7 +7,7 @@ mod wasm {
     use crate::{
         CTypeConvert, FfiReturn, FfiType, FfiWrapperType, Result,
         ir::{Robust, Transparent},
-        out_ptr::{FfiOutPtr, FfiOutPtrRead, FfiOutPtrWrite},
+        out_ptr::{OutPtr, OutPtrRead, OutPtrWrite},
     };
 
     /// Marker for an integer primitive type that is not recognized by the `WebAssembly`.
@@ -59,7 +59,7 @@ mod wasm {
             impl FfiType for $src {
                 type ReprC = $dst;
             }
-            impl FfiOutPtr for $src {
+            impl OutPtr for $src {
                 type OutPtr = $src;
             }
 
@@ -75,12 +75,12 @@ mod wasm {
                 }
             }
 
-            impl FfiOutPtrRead for $src {
+            impl OutPtrRead for $src {
                 unsafe fn try_read_out(out_ptr: Self::OutPtr) -> Result<Self> {
                     Ok(out_ptr)
                 }
             }
-            impl FfiOutPtrWrite for $src {
+            impl OutPtrWrite for $src {
                 unsafe fn write_out(self, out_ptr: *mut Self::OutPtr) {
                     unsafe {out_ptr.write(self)}
                 }

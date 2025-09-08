@@ -4,7 +4,7 @@ use std::{alloc, marker::PhantomData, mem::MaybeUninit};
 
 use co3::{
     FfiConvert, FfiReturn, FfiType,
-    out_ptr::FfiOutPtrRead,
+    out_ptr::OutPtrRead,
     slice::{OutBoxedSlice, RefSlice},
 };
 
@@ -206,7 +206,7 @@ fn transparent_slice_to_slice() {
         );
 
         let output: &[TransparentStruct] =
-            FfiOutPtrRead::try_read_out(output.assume_init()).expect("Invalid output");
+            OutPtrRead::try_read_out(output.assume_init()).expect("Invalid output");
         assert_eq!(output, transparent_struct_slice);
     }
 }
