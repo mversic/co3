@@ -1,8 +1,8 @@
 error[E0277]: the trait bound `Wrapper: InfallibleTransmute` is not satisfied
   --> tests/ui_fail/fallible_transmute_mut_ref.rs:20:1
    |
-20 | #[carbonate]
-   | ^^^^^^^^^^^^ the trait `InfallibleTransmute` is not implemented for `Wrapper`
+20 | #[co3::carbonate]
+   | ^^^^^^^^^^^^^^^^^ the trait `InfallibleTransmute` is not implemented for `Wrapper`
    |
    = help: the following other types implement trait `InfallibleTransmute`:
              ManuallyDrop<T>
@@ -16,13 +16,13 @@ error[E0277]: the trait bound `Wrapper: InfallibleTransmute` is not satisfied
            and $N others
    = note: required for `&mut Wrapper` to implement `co3::ir::Ir`
    = note: required for `&mut Wrapper` to implement `FfiType`
-   = note: this error originates in the attribute macro `carbonate` (in Nightly builds, run with -Z macro-backtrace for more info)
+   = note: this error originates in the attribute macro `co3::carbonate` (in Nightly builds, run with -Z macro-backtrace for more info)
 
 error[E0277]: the trait bound `&mut Wrapper: FfiConvert<'_, *mut u32>` is not satisfied
   --> tests/ui_fail/fallible_transmute_mut_ref.rs:21:32
    |
-20 | #[carbonate]
-   | ------------ required by a bound introduced by this call
+20 | #[co3::carbonate]
+   | ----------------- required by a bound introduced by this call
 21 | pub fn take_non_robust_ref_mut(_ffi_struct: &mut Wrapper) {}
    |                                ^^^^^^^^^^^ the trait `InfallibleTransmute` is not implemented for `Wrapper`
    |

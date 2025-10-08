@@ -1,12 +1,12 @@
+use co3::FfiType;
 use getset::Getters;
-use co3::{carbonate, FfiType};
 
-#[carbonate]
+#[co3::carbonate]
 pub fn freestanding<T>(v: T) -> T {
     v
 }
 
-#[carbonate]
+#[co3::carbonate]
 #[derive(Getters, FfiType)]
 #[getset(get = "pub")]
 pub struct FfiStruct<T> {

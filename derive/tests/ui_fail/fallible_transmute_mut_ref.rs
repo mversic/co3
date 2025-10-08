@@ -1,4 +1,4 @@
-use co3::{carbonate, FfiType};
+use co3::FfiType;
 
 type WrapperInner = u32;
 
@@ -17,7 +17,7 @@ co3::mineral! {
 
 /// Take exclusive reference to a structure that is not-robust structure, for which it cannot
 /// be guaranteed that the caller of the function will not set it to a trap representation.
-#[carbonate]
+#[co3::carbonate]
 pub fn take_non_robust_ref_mut(_ffi_struct: &mut Wrapper) {}
 
 fn main() {}

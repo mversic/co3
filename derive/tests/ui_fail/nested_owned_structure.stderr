@@ -1,25 +1,25 @@
 error[E0277]: the trait bound `Vec<FfiStruct>: NonLocal` is not satisfied
  --> tests/ui_fail/nested_owned_structure.rs:8:1
   |
-8 | #[carbonate]
-  | ^^^^^^^^^^^^ the trait `out_ptr::_::NonLocal0<Vec<Opaque>>` is not implemented for `Vec<FfiStruct>`
+8 | #[co3::carbonate]
+  | ^^^^^^^^^^^^^^^^^ the trait `out_ptr::_::NonLocal0<Vec<Opaque>>` is not implemented for `Vec<FfiStruct>`
   |
-  = help: the trait `out_ptr::_::NonLocal0<Vec<Transparent>>` is implemented for `Vec<_ŠČ0>`
+  = help: the trait `out_ptr::_::NonLocal0<Vec<Transparent>>` is implemented for `Vec<R>`
   = note: required for `Vec<FfiStruct>` to implement `NonLocal`
   = note: required for `Vec<Vec<FfiStruct>>` to implement `out_ptr::_::OutPtr0<Vec<Vec<Opaque>>>`
   = note: required for `Vec<Vec<FfiStruct>>` to implement `OutPtr`
-  = note: this error originates in the attribute macro `carbonate` (in Nightly builds, run with -Z macro-backtrace for more info)
+  = note: this error originates in the attribute macro `co3::carbonate` (in Nightly builds, run with -Z macro-backtrace for more info)
 
 error[E0277]: the trait bound `Vec<FfiStruct>: NonLocal` is not satisfied
  --> tests/ui_fail/nested_owned_structure.rs:8:1
   |
-8 | #[carbonate]
-  | ^^^^^^^^^^^^ the trait `out_ptr::_::NonLocal0<Vec<Opaque>>` is not implemented for `Vec<FfiStruct>`
+8 | #[co3::carbonate]
+  | ^^^^^^^^^^^^^^^^^ the trait `out_ptr::_::NonLocal0<Vec<Opaque>>` is not implemented for `Vec<FfiStruct>`
   |
-  = help: the trait `out_ptr::_::NonLocal0<Vec<Transparent>>` is implemented for `Vec<_ŠČ0>`
+  = help: the trait `out_ptr::_::NonLocal0<Vec<Transparent>>` is implemented for `Vec<R>`
   = note: required for `Vec<FfiStruct>` to implement `NonLocal`
   = note: required for `Vec<Vec<FfiStruct>>` to implement `out_ptr::_::OutPtr0<Vec<Vec<Opaque>>>`
-  = note: this error originates in the attribute macro `carbonate` (in Nightly builds, run with -Z macro-backtrace for more info)
+  = note: this error originates in the attribute macro `co3::carbonate` (in Nightly builds, run with -Z macro-backtrace for more info)
 
 error[E0277]: the trait bound `Vec<FfiStruct>: NonLocal` is not satisfied
   --> tests/ui_fail/nested_owned_structure.rs:15:14
@@ -27,6 +27,6 @@ error[E0277]: the trait bound `Vec<FfiStruct>: NonLocal` is not satisfied
 15 |     unsafe { __return_nested(nested.as_mut_ptr()) };
    |              ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ the trait `out_ptr::_::NonLocal0<Vec<Opaque>>` is not implemented for `Vec<FfiStruct>`
    |
-   = help: the trait `out_ptr::_::NonLocal0<Vec<Transparent>>` is implemented for `Vec<_ŠČ0>`
+   = help: the trait `out_ptr::_::NonLocal0<Vec<Transparent>>` is implemented for `Vec<R>`
    = note: required for `Vec<FfiStruct>` to implement `NonLocal`
    = note: required for `Vec<Vec<FfiStruct>>` to implement `out_ptr::_::OutPtr0<Vec<Vec<Opaque>>>`

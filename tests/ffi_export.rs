@@ -179,8 +179,8 @@ pub fn take_and_return_array_of_opaques(a: [OpaqueStruct; 2]) -> [OpaqueStruct; 
 #[co3::carbonate]
 pub fn freestanding_with_nested_vec(_vec: Vec<Vec<Vec<u8>>>) {}
 
-#[co3::carbonate]
 #[cfg(feature = "non_robust_ref_mut")]
+#[co3::carbonate]
 pub fn take_non_robust_ref_mut(val: &mut str) -> &mut str {
     val
 }
@@ -545,7 +545,7 @@ fn return_empty_tuple_result() {
 fn array_to_pointer() {
     let array = [1_u8];
     let mut store = Option::default();
-    let ptr: *mut [u8; 1] = array.into_ffi(&mut store);
+    let ptr: *const [u8; 1] = array.into_ffi(&mut store);
     let mut output = MaybeUninit::new([0_u8]);
 
     unsafe {

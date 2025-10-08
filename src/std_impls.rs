@@ -1,10 +1,7 @@
 use alloc::{boxed::Box, string::String, vec::Vec};
 use core::{mem::ManuallyDrop, ptr::NonNull};
 
-use crate::{
-    ReprC, WrapperTypeOf, mineral,
-    slice::{RefMutSlice, RefSlice},
-};
+use crate::{ReprC, WrapperTypeOf, mineral, slice::RefSlice};
 
 // WARN: This can be contested as it is nowhere documented that String is
 // actually transmutable into Vec<u8>, but implicitly it should be
@@ -14,7 +11,7 @@ mineral! {
         type Target = Vec<u8>;
 
         validation_fn={|target| core::str::from_utf8(target).is_ok()},
-        NICHE_VALUE=RefMutSlice::null_mut()
+        NICHE_VALUE=RefSlice::null()
     }
 }
 // WARN: `core::str::as_bytes` uses transmute internally which means that
@@ -24,7 +21,7 @@ mineral! {
         type Target = Box<[u8]>;
 
         validation_fn={|target| core::str::from_utf8(target).is_ok()},
-        NICHE_VALUE=RefMutSlice::null_mut()
+        NICHE_VALUE=RefSlice::null()
     }
 }
 mineral! {
@@ -41,7 +38,7 @@ mineral! {
         type Target = &'slice mut [u8];
 
         validation_fn={|target| core::str::from_utf8(target).is_ok()},
-        NICHE_VALUE=RefMutSlice::null_mut()
+        NICHE_VALUE=RefSlice::null()
     }
 }
 mineral! {

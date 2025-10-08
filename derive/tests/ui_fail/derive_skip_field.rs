@@ -1,9 +1,9 @@
 use std::mem::MaybeUninit;
 
+use co3::{FfiConvert, FfiType};
 use getset::{Getters, Setters};
-use co3::{carbonate, FfiConvert, FfiType};
 
-#[carbonate]
+#[co3::carbonate]
 #[derive(Clone, Setters, Getters, FfiType)]
 #[getset(get = "pub")]
 pub struct FfiStruct {

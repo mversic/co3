@@ -1,9 +1,9 @@
 use std::mem::MaybeUninit;
 
 use getset::{MutGetters, Setters};
-use co3::{carbonate, FfiConvert, FfiType};
+use co3::{FfiConvert, FfiType};
 
-#[carbonate]
+#[co3::carbonate]
 #[derive(Clone, Setters, MutGetters, FfiType)]
 // TODO: I am not really sure what is the purpose of this test
 // getset allows `#[getset(skip)]` to be placed on a struct, but it doesn't seem to have any effect at all

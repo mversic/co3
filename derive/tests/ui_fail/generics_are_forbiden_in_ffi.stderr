@@ -9,3 +9,17 @@ error: Generics on derived methods not supported
    |
 12 | pub struct FfiStruct<T> {
    |                     ^^^
+
+warning: unused import: `co3::FfiType`
+ --> tests/ui_fail/generics_are_forbiden_in_ffi.rs:1:5
+  |
+1 | use co3::FfiType;
+  |     ^^^^^^^^^^^^
+  |
+  = note: `#[warn(unused_imports)]` on by default
+
+warning: unused import: `getset::Getters`
+ --> tests/ui_fail/generics_are_forbiden_in_ffi.rs:2:5
+  |
+2 | use getset::Getters;
+  |     ^^^^^^^^^^^^^^^

@@ -1,11 +1,11 @@
 use std::mem::MaybeUninit;
 
-use co3::{carbonate, FfiType};
+use co3::FfiType;
 
 #[derive(Clone, FfiType)]
 pub struct FfiStruct;
 
-#[carbonate]
+#[co3::carbonate]
 pub fn return_nested() -> Vec<Vec<FfiStruct>> {
     vec![vec![FfiStruct, FfiStruct], vec![FfiStruct, FfiStruct]]
 }

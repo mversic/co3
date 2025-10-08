@@ -5,17 +5,8 @@ use disjoint_impls::disjoint_impls;
 use super::*;
 use crate::ReprC;
 
-/// Marker trait for a type whose [`Transmute::is_valid`] always returns true. The main
-/// use of this trait is to guard against the use of `&mut T` in FFI where the caller
-/// can set the underlying `T` to a trap representation and cause UB.
-///
-/// # Safety
-///
-/// Implementation of [`Transmute::is_valid`] must always return true for this type
-pub unsafe trait InfallibleTransmute {}
-
 disjoint_impls! {
-    /// Marker trait for a type that can be transmuted into some C Type
+    /// Marker trait for a type that can be **safely transmuted** into another type for all values.
     ///
     /// # Safety
     ///
@@ -25,12 +16,8 @@ disjoint_impls! {
         /// Type that [`Self`] can be transmuted into
         type Target;
 
-        /// Function that is called when transmuting types to check for trap representations. This function
-        /// will never return false positives, i.e. return `true` for a trap representations.
-        ///
-        /// # Safety
-        ///
-        /// Any raw pointer in [`Self::Target`] that will be dereferenced must be valid.
+        /// Called when transmuting [`Self::Target`] into [`Self`] to check for trap representations.
+        /// This function must never return false positives, i.e. return `true` for a trap representation.
         fn is_valid(target: &Self::Target) -> bool;
     }
 
@@ -84,7 +71,7 @@ disjoint_impls! {
         }
     }
 
-    // SAFETY: Robust arrays have a defined representation
+    // SAFETY: Arrays of robust types are guaranteed to have a defined representation
     unsafe impl<R: ReprC, const N: usize> Transmute for [R; N] where R: Ir<Type = Robust> {
         type Target = [R; N];
 
@@ -102,24 +89,35 @@ disjoint_impls! {
     }
 }
 
+/// Marker trait for a type whose [`Transmute::is_valid`] always returns true.
+///
+/// Main use of this trait is to guard against the use of `&mut T` in FFI where
+/// the caller can set the underlying `T` to a trap representation and cause UB.
+///
+/// # Safety
+///
+/// Implementation of [`Transmute::is_valid`] must always return true for this type.
+pub unsafe trait InfallibleTransmute {}
+
+// SAFETY: Array is just a contiguous block of bytes in memory
+// and has a defined representation if the element type does
+unsafe impl<R: InfallibleTransmute, const N: usize> InfallibleTransmute for [R; N] {}
+
 #[repr(C)]
 union TransmuteHelper<R: Transmute> {
     source: ManuallyDrop<R>,
     target: ManuallyDrop<R::Target>,
 }
 
-// SAFETY: Arrays have a defined representation
-unsafe impl<R: InfallibleTransmute, const N: usize> InfallibleTransmute for [R; N] {}
-
 pub(super) fn transmute_into_target<R: Transmute>(source: R) -> R::Target {
     let transmute_helper = TransmuteHelper {
         source: ManuallyDrop::new(source),
     };
 
-    // SAFETY: Transmute is always valid because R::Target is a superset of R
+    // SAFETY: Soundness is guaranteed by [`Transmute`]
     ManuallyDrop::into_inner(unsafe { transmute_helper.target })
 }
-pub(super) unsafe fn transmute_from_target<R: Transmute>(source: R::Target) -> Result<R> {
+pub(super) fn transmute_from_target<R: Transmute>(source: R::Target) -> Result<R> {
     if !R::is_valid(&source) {
         return Err(FfiReturn::TrapRepresentation);
     }
@@ -128,20 +126,19 @@ pub(super) unsafe fn transmute_from_target<R: Transmute>(source: R::Target) -> R
         target: ManuallyDrop::new(source),
     };
 
+    // SAFETY: Soundness is guaranteed by [`Transmute`]
     Ok(ManuallyDrop::into_inner(unsafe { transmute_helper.source }))
 }
 
 pub(super) fn transmute_into_target_box<R: Transmute>(source: Box<R>) -> Box<R::Target> {
-    // SAFETY: `R` is guaranteed to be transmutable into `R::Target`
     unsafe { Box::from_raw(Box::into_raw(source).cast::<R::Target>()) }
 }
-pub(super) unsafe fn transmute_from_target_box<R: Transmute>(
-    source: Box<R::Target>,
-) -> Result<Box<R>> {
+pub(super) fn transmute_from_target_box<R: Transmute>(source: Box<R::Target>) -> Result<Box<R>> {
     if !R::is_valid(&source) {
         return Err(FfiReturn::TrapRepresentation);
     }
 
+    // SAFETY: Soundness is guaranteed by [`Transmute`]
     Ok(unsafe { Box::from_raw(Box::into_raw(source).cast::<R>()) })
 }
 
@@ -150,17 +147,19 @@ pub(super) fn transmute_into_target_boxed_slice<R: Transmute>(
     mut source: Box<[R]>,
 ) -> Box<[R::Target]> {
     let (ptr, len) = (source.as_mut_ptr().cast::<R::Target>(), source.len());
-    // SAFETY: `R` is guaranteed to be transmutable into `R::Target`
+
+    // SAFETY: Soundness is guaranteed by [`Transmute`]
     unsafe { Box::from_raw(core::slice::from_raw_parts_mut(ptr, len)) }
 }
 #[allow(clippy::boxed_local)]
-pub(super) unsafe fn transmute_from_target_boxed_slice<R: Transmute>(
+pub(super) fn transmute_from_target_boxed_slice<R: Transmute>(
     mut source: Box<[R::Target]>,
 ) -> Result<Box<[R]>> {
     if !source.iter().all(|item| R::is_valid(item)) {
         return Err(FfiReturn::TrapRepresentation);
     }
 
+    // SAFETY: Soundness is guaranteed by [`Transmute`]
     Ok(unsafe {
         Box::from_raw(core::slice::from_raw_parts_mut(
             source.as_mut_ptr().cast(),
@@ -171,47 +170,47 @@ pub(super) unsafe fn transmute_from_target_boxed_slice<R: Transmute>(
 
 pub(super) fn transmute_into_target_ref_slice<R: Transmute>(source: &[R]) -> &[R::Target] {
     let (ptr, len) = (source.as_ptr().cast::<R::Target>(), source.len());
-    // SAFETY: `R` is guaranteed to be transmutable into `R::Target`
     unsafe { core::slice::from_raw_parts(ptr, len) }
 }
-pub(super) unsafe fn transmute_from_target_ref_slice<R: Transmute>(
-    source: &[R::Target],
-) -> Result<&[R]> {
+pub(super) fn transmute_from_target_ref_slice<R: Transmute>(source: &[R::Target]) -> Result<&[R]> {
     if !source.iter().all(|item| R::is_valid(item)) {
         return Err(FfiReturn::TrapRepresentation);
     }
 
+    // SAFETY: Soundness is guaranteed by [`Transmute`]
     Ok(unsafe { core::slice::from_raw_parts(source.as_ptr().cast(), source.len()) })
 }
 
 pub(super) fn transmute_into_target_slice_mut<R: Transmute>(source: &mut [R]) -> &mut [R::Target] {
     let (ptr, len) = (source.as_mut_ptr().cast::<R::Target>(), source.len());
-    // SAFETY: `R` is guaranteed to be transmutable into `R::Target`
+
+    // SAFETY: Soundness is guaranteed by [`Transmute`]
     unsafe { core::slice::from_raw_parts_mut(ptr, len) }
 }
-pub(super) unsafe fn transmute_from_target_slice_mut<R: Transmute>(
+pub(super) fn transmute_from_target_slice_mut<R: Transmute>(
     source: &mut [R::Target],
 ) -> Result<&mut [R]> {
     if !source.iter_mut().all(|item| R::is_valid(item)) {
         return Err(FfiReturn::TrapRepresentation);
     }
 
+    // SAFETY: Soundness is guaranteed by [`Transmute`]
     Ok(unsafe { core::slice::from_raw_parts_mut(source.as_mut_ptr().cast(), source.len()) })
 }
 
 pub(super) fn transmute_into_target_vec<R: Transmute>(source: Vec<R>) -> Vec<R::Target> {
     let mut vec = ManuallyDrop::new(source);
 
-    // SAFETY: `Transparency` guarantees `T` can be transmuted into `C`
+    // SAFETY: Soundness is guaranteed by [`Transmute`]
     unsafe { Vec::from_raw_parts(vec.as_mut_ptr().cast(), vec.len(), vec.capacity()) }
 }
-pub(super) unsafe fn transmute_from_target_vec<R: Transmute>(
-    source: Vec<R::Target>,
-) -> Result<Vec<R>> {
+pub(super) fn transmute_from_target_vec<R: Transmute>(source: Vec<R::Target>) -> Result<Vec<R>> {
     if !source.iter().all(|item| R::is_valid(item)) {
         return Err(FfiReturn::TrapRepresentation);
     }
 
     let mut vec = ManuallyDrop::new(source);
+
+    // SAFETY: Soundness is guaranteed by [`Transmute`]
     Ok(unsafe { Vec::from_raw_parts(vec.as_mut_ptr().cast(), vec.len(), vec.capacity()) })
 }

@@ -872,7 +872,7 @@ disjoint_impls! {
     {
         unsafe fn try_read_out(out_ptr: Self::OutPtr) -> Result<Self> {
             unsafe {
-                let slice = RefMutSlice::from_raw_parts_mut(out_ptr.as_mut_ptr(), out_ptr.len());
+                let slice = RefSlice::from_raw_parts(out_ptr.as_mut_ptr(), out_ptr.len());
                 let res = FfiConvert::try_from_ffi(slice, &mut ());
 
                 if !out_ptr.deallocate() {
@@ -902,7 +902,7 @@ disjoint_impls! {
     {
         unsafe fn try_read_out(out_ptr: Self::OutPtr) -> Result<Self> {
             unsafe {
-                let slice = RefMutSlice::from_raw_parts_mut(out_ptr.as_mut_ptr(), out_ptr.len());
+                let slice = RefSlice::from_raw_parts(out_ptr.as_mut_ptr(), out_ptr.len());
 
                 let mut store = Default::default();
                 // NOTE: Bypasses the erroneous lifetime check.
@@ -925,7 +925,7 @@ disjoint_impls! {
     {
         unsafe fn try_read_out(out_ptr: Self::OutPtr) -> Result<Self> {
             unsafe {
-                let slice = RefMutSlice::from_raw_parts_mut(out_ptr.as_mut_ptr(), out_ptr.len());
+                let slice = RefSlice::from_raw_parts(out_ptr.as_mut_ptr(), out_ptr.len());
                 let res = FfiConvert::try_from_ffi(slice, &mut ());
 
                 if !out_ptr.deallocate() {
@@ -955,7 +955,7 @@ disjoint_impls! {
     {
         unsafe fn try_read_out(out_ptr: Self::OutPtr) -> Result<Self> {
             unsafe {
-                let slice = RefMutSlice::from_raw_parts_mut(out_ptr.as_mut_ptr(), out_ptr.len());
+                let slice = RefSlice::from_raw_parts(out_ptr.as_mut_ptr(), out_ptr.len());
 
                 let mut store = Default::default();
                 // NOTE: Bypasses the erroneous lifetime check.

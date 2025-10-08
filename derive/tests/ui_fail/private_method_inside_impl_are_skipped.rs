@@ -1,9 +1,9 @@
-use co3::{carbonate, FfiConvert, FfiType};
+use co3::{FfiConvert, FfiType};
 
 #[derive(Clone, FfiType)]
 pub struct FfiStruct;
 
-#[carbonate]
+#[co3::carbonate]
 impl FfiStruct {
     fn private(self) {}
 }

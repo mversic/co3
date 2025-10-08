@@ -103,7 +103,7 @@ pub enum Opaque {}
 /// Marker for a type that is transparent with respect to its wrapped type.
 pub enum Transparent {}
 
-/// Marker for a robust [`crate::ReprC`] type that does not require conversion.
+/// Marker for a robust [`crate::ReprC`] type that does not require conversion
 pub enum Robust {}
 
 impl IrTypeFamily for Robust {

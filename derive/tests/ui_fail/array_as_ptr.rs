@@ -1,6 +1,4 @@
-use co3::carbonate;
-
-#[carbonate]
+#[co3::carbonate]
 pub fn array_arg(_arr: [u32; 2]) {}
 
 fn main() {

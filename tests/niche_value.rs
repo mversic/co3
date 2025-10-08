@@ -1,10 +1,7 @@
 use core::{cmp::Ordering, ffi::c_int, ptr::NonNull};
 use std::mem::ManuallyDrop;
 
-use co3::{
-    FfiConvert, FfiType,
-    slice::{RefMutSlice, RefSlice},
-};
+use co3::{FfiConvert, FfiType, slice::RefSlice};
 
 #[derive(FfiType)]
 pub enum FieldlessEnumWithoutRepr {
@@ -346,27 +343,24 @@ fn std_niche_value() {
     assert_eq!(core::ptr::null::<u8>(), None::<&mut bool>.into_ffi(&mut ()));
 
     assert_eq!(
-        RefMutSlice::<u8>::null_mut(),
+        RefSlice::<u8>::null(),
         None::<String>.into_ffi(&mut Default::default())
     );
     assert_eq!(
-        RefMutSlice::<u8>::null_mut(),
+        RefSlice::<u8>::null(),
         None::<Box<str>>.into_ffi(&mut Default::default())
     );
 
     assert_eq!(RefSlice::<u8>::null(), None::<&str>.into_ffi(&mut ()));
 
     #[cfg(feature = "non_robust_ref_mut")]
-    assert_eq!(
-        RefMutSlice::<u8>::null_mut(),
-        None::<&mut str>.into_ffi(&mut ())
-    );
+    assert_eq!(RefSlice::<u8>::null(), None::<&mut str>.into_ffi(&mut ()));
     assert_eq!(
         core::ptr::null_mut(),
         None::<NonNull<String>>.into_ffi(&mut ())
     );
     assert_eq!(
-        RefMutSlice::<u8>::null_mut(),
+        RefSlice::<u8>::null(),
         None::<ManuallyDrop<String>>.into_ffi(&mut Default::default())
     );
 
