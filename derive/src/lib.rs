@@ -75,8 +75,8 @@ fn parse_attributes(ts: TokenStream) -> Vec<syn::Attribute> {
 ///
 /// It assumes that the derive is imported and referred to by its original name.
 #[manyhow]
-#[proc_macro]
-pub fn extern_type(input: TokenStream) -> TokenStream {
+#[proc_macro_attribute]
+pub fn extern_type(_args: TokenStream, input: TokenStream) -> TokenStream {
     let items = match syn::parse2::<FfiItems>(input) {
         Ok(items) => items.0,
         Err(err) => return err.to_compile_error(),

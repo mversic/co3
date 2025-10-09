@@ -273,11 +273,7 @@ macro_rules! decl_fns {
             /// # Safety
             ///
             /// See [`GlobalAlloc::dealloc`]
-            fn __dealloc(
-                ptr: *mut $crate::Extern,
-                size: usize,
-                align: usize,
-            ) -> $crate::FfiReturn;
+            fn __dealloc(ptr: *mut u8, size: usize, align: usize) -> $crate::FfiReturn;
         }
     };
     ( $($fn_names:ident),+ ) => {

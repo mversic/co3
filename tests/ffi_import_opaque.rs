@@ -7,15 +7,15 @@ use co3::ir::External as _;
 co3::handles! {OpaqueStruct, Value}
 co3::decl_fns! {Drop, Clone, Eq}
 
-co3::extern_type! {
-    #[derive(Clone, PartialEq, Eq)]
-    // NOTE: struct's body is replaced by co3!
-    pub struct Value;
+#[co3::extern_type]
+#[derive(Clone, PartialEq, Eq)]
+// NOTE: struct's body is replaced by co3!
+pub struct Value;
 
-    #[derive(Clone, PartialEq, Eq)]
-    // NOTE: struct's body is replaced by co3!
-    pub struct OpaqueStruct;
-}
+#[co3::extern_type]
+#[derive(Clone, PartialEq, Eq)]
+// NOTE: struct's body is replaced by co3!
+pub struct OpaqueStruct;
 
 #[co3::decarbonate]
 impl Value {

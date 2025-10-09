@@ -3,20 +3,19 @@
 co3::handles! {Name, FfiStruct}
 co3::decl_fns! {Drop, Clone, Eq}
 
-co3::extern_type! {
-    #[derive(Clone, PartialEq, Eq)]
-    pub struct Name;
+#[co3::extern_type]
+#[derive(Clone, PartialEq, Eq)]
+pub struct Name;
 
-    #[co3::decarbonate]
-    #[derive(Clone, PartialEq, Eq, Setters, Getters, MutGetters)]
-    #[getset(get = "pub")]
-    #[mineral(opaque)]
-    #[repr(C)]
-    pub struct FfiStruct {
-        #[getset(set = "pub", get_mut = "pub")]
-        id: u8,
-        name: Name,
-    }
+#[co3::extern_type]
+#[derive(Clone, PartialEq, Eq, Setters, Getters, MutGetters)]
+#[getset(get = "pub")]
+#[mineral(opaque)]
+#[repr(C)]
+pub struct FfiStruct {
+    #[getset(set = "pub", get_mut = "pub")]
+    id: u8,
+    name: Name,
 }
 
 #[co3::decarbonate]

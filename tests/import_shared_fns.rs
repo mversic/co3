@@ -3,12 +3,11 @@
 co3::handles! {FfiStruct<bool>}
 co3::decl_fns! {Drop, Clone, Eq, Ord}
 
-co3::extern_type! {
-    /// Struct without a repr attribute is opaque by default
-    #[derive(Clone, PartialEq, Eq, PartialOrd, Ord)]
-    // NOTE: Replaced by the [`co3::extern_type`] macro
-    pub struct FfiStruct<T>;
-}
+#[co3::extern_type]
+/// Struct without a repr attribute is opaque by default
+#[derive(Clone, PartialEq, Eq, PartialOrd, Ord)]
+// NOTE: Replaced by the [`co3::extern_type`] macro
+pub struct FfiStruct<T>;
 
 #[co3::decarbonate]
 impl FfiStruct<bool> {
