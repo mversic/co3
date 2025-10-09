@@ -85,12 +85,12 @@ disjoint_impls! {
     where
         Self: Ir<Type = Opaque>,
     {
-        type ReprC = *mut R;
+        type ReprC = *mut Self;
     }
     impl<R: Transmute> FfiType for R
     where
         Self: Ir<Type = Transparent>,
-        <R>::Target: FfiType,
+        Self::Target: FfiType,
     {
         type ReprC = <<R>::Target as FfiType>::ReprC;
     }
@@ -316,26 +316,32 @@ disjoint_impls! {
         unsafe fn try_from_ffi(source: C, store: &'itm mut Self::FfiStore) -> Result<Self>;
     }
 
-    impl<R: ReprC> FfiConvert<'_, R> for R where Self: Ir<Type = Robust> {
+    impl<R: ReprC> FfiConvert<'_, Self> for R
+    where
+        Self: Ir<Type = Robust>,
+    {
         type RustStore = ();
         type FfiStore = ();
 
-        fn into_ffi(self, (): &mut ()) -> R {
+        fn into_ffi(self, (): &mut ()) -> Self {
             self
         }
 
-        unsafe fn try_from_ffi(source: R, (): &mut ()) -> Result<Self> {
+        unsafe fn try_from_ffi(source: Self, (): &mut ()) -> Result<Self> {
             Ok(source)
         }
     }
-    impl<R> FfiConvert<'_, *mut R> for R where Self: Ir<Type = Opaque> {
+    impl<R> FfiConvert<'_, *mut Self> for R
+    where
+        Self: Ir<Type = Opaque>,
+    {
         type RustStore = ();
         type FfiStore = ();
 
-        fn into_ffi(self, (): &mut ()) -> *mut R {
+        fn into_ffi(self, (): &mut ()) -> *mut Self {
             Box::into_raw(Box::new(self))
         }
-        unsafe fn try_from_ffi(source: *mut R, (): &mut ()) -> Result<Self> {
+        unsafe fn try_from_ffi(source: *mut Self, (): &mut ()) -> Result<Self> {
             if source.is_null() {
                 return Err(FfiReturn::ArgIsNull);
             }
@@ -345,7 +351,7 @@ disjoint_impls! {
     }
     impl<'itm, R: Transmute, C: ReprC> FfiConvert<'itm, C> for R
     where
-        <R as Transmute>::Target: FfiConvert<'itm, C>,
+        <Self as Transmute>::Target: FfiConvert<'itm, C>,
         Self: Ir<Type = Transparent>,
     {
         type RustStore = <<R>::Target as FfiConvert<'itm, C>>::RustStore;
@@ -389,7 +395,10 @@ disjoint_impls! {
         }
     }
 
-    impl<'itm, R: ReprC> FfiConvert<'itm, RefSlice<R>> for &'itm [R] where Self: Ir<Type = &'itm [Robust]> {
+    impl<'itm, R: ReprC> FfiConvert<'itm, RefSlice<R>> for &'itm [R]
+    where
+        Self: Ir<Type = &'itm [Robust]>,
+    {
         type RustStore = ();
         type FfiStore = ();
 
@@ -401,8 +410,7 @@ disjoint_impls! {
             unsafe { source.into_rust() }.ok_or(FfiReturn::ArgIsNull)
         }
     }
-    impl<'slice, R: Clone> FfiConvert<'slice, RefSlice<*const R>>
-        for &'slice [R]
+    impl<'slice, R: Clone> FfiConvert<'slice, RefSlice<*const R>> for &'slice [R]
     where
         Self: Ir<Type = &'slice [Opaque]>,
     {
@@ -434,8 +442,7 @@ disjoint_impls! {
             Ok(store)
         }
     }
-    impl<'slice, R: Transmute, C: ReprC> FfiConvert<'slice, C>
-        for &'slice [R]
+    impl<'slice, R: Transmute, C: ReprC> FfiConvert<'slice, C> for &'slice [R]
     where
         &'slice [<R>::Target]: FfiConvert<'slice, C>,
         Self: Ir<Type = &'slice [Transparent]>,
@@ -478,10 +485,7 @@ disjoint_impls! {
             RefSlice::from_slice(Some(&store.0))
         }
 
-        unsafe fn try_from_ffi(
-            source: RefSlice<C>,
-            store: &'slice mut Self::FfiStore,
-        ) -> Result<Self> {
+        unsafe fn try_from_ffi(source: RefSlice<C>, store: &'slice mut Self::FfiStore) -> Result<Self> {
             store.1 = core::iter::repeat_with(Default::default)
                 .take(source.len())
                 .collect();
@@ -506,7 +510,9 @@ disjoint_impls! {
     }
 
     impl<'slice, R: ReprC> FfiConvert<'slice, RefMutSlice<R>> for &'slice mut [R]
-    where Self: Ir<Type = &'slice mut [Robust]> {
+    where
+        Self: Ir<Type = &'slice mut [Robust]>,
+    {
         type RustStore = ();
         type FfiStore = ();
 
@@ -518,8 +524,7 @@ disjoint_impls! {
             unsafe { source.into_rust() }.ok_or(FfiReturn::ArgIsNull)
         }
     }
-    impl<'slice, R: Clone> FfiConvert<'slice, RefMutSlice<*mut R>>
-        for &'slice mut [R]
+    impl<'slice, R: Clone> FfiConvert<'slice, RefMutSlice<*mut R>> for &'slice mut [R]
     where
         Self: Ir<Type = &'slice mut [Opaque]>,
     {
@@ -551,8 +556,7 @@ disjoint_impls! {
             Ok(store)
         }
     }
-    impl<'slice, R: Transmute, C: ReprC> FfiConvert<'slice, C>
-        for &'slice mut [R]
+    impl<'slice, R: Transmute, C: ReprC> FfiConvert<'slice, C> for &'slice mut [R]
     where
         &'slice mut [<R>::Target]: FfiConvert<'slice, C>,
         Self: Ir<Type = &'slice mut [Transparent]>,
@@ -572,7 +576,10 @@ disjoint_impls! {
         }
     }
 
-    impl<R: ReprC> FfiConvert<'_, *const R> for Box<R> where Self: Ir<Type = Box<Robust>> {
+    impl<R: ReprC> FfiConvert<'_, *const R> for Box<R>
+    where
+        Self: Ir<Type = Box<Robust>>,
+    {
         type RustStore = Option<Self>;
         type FfiStore = ();
 
@@ -588,7 +595,10 @@ disjoint_impls! {
             Ok(Box::new(unsafe { source.read() }))
         }
     }
-    impl<R> FfiConvert<'_, *mut R> for Box<R> where Self: Ir<Type = Box<Opaque>> {
+    impl<R> FfiConvert<'_, *mut R> for Box<R>
+    where
+        Self: Ir<Type = Box<Opaque>>,
+    {
         // FIXME: Which type to use for unused store?
         type RustStore = ();
         type FfiStore = ();
@@ -649,7 +659,10 @@ disjoint_impls! {
         }
     }
 
-    impl<R: ReprC> FfiConvert<'_, RefSlice<R>> for Box<[R]> where Self: Ir<Type = Box<[Robust]>> {
+    impl<R: ReprC> FfiConvert<'_, RefSlice<R>> for Box<[R]>
+    where
+        Self: Ir<Type = Box<[Robust]>>,
+    {
         type RustStore = Self;
         type FfiStore = ();
 
@@ -664,7 +677,10 @@ disjoint_impls! {
                 .map(|slice| slice.into())
         }
     }
-    impl<R> FfiConvert<'_, RefSlice<*mut R>> for Box<[R]> where Self: Ir<Type = Box<[Opaque]>> {
+    impl<R> FfiConvert<'_, RefSlice<*mut R>> for Box<[R]>
+    where
+        Self: Ir<Type = Box<[Opaque]>>,
+    {
         type RustStore = Box<[*mut R]>;
         type FfiStore = ();
 
@@ -735,10 +751,7 @@ disjoint_impls! {
 
             RefSlice::from_slice(Some(&store.0))
         }
-        unsafe fn try_from_ffi(
-            source: RefSlice<C>,
-            store: &'itm mut Self::FfiStore,
-        ) -> Result<Self> {
+        unsafe fn try_from_ffi(source: RefSlice<C>, store: &'itm mut Self::FfiStore) -> Result<Self> {
             let slice = unsafe { source.into_rust() }.ok_or(FfiReturn::ArgIsNull)?;
 
             *store = core::iter::repeat_with(Default::default)
@@ -758,7 +771,10 @@ disjoint_impls! {
         }
     }
 
-    impl<R: ReprC> FfiConvert<'_, RefSlice<R>> for Vec<R> where Self: Ir<Type = Vec<Robust>> {
+    impl<R: ReprC> FfiConvert<'_, RefSlice<R>> for Vec<R>
+    where
+        Self: Ir<Type = Vec<Robust>>,
+    {
         type RustStore = Box<[R]>;
         type FfiStore = ();
 
@@ -773,7 +789,10 @@ disjoint_impls! {
                 .map(|slice| slice.to_vec())
         }
     }
-    impl<R> FfiConvert<'_, RefSlice<*mut R>> for Vec<R> where Self: Ir<Type = Vec<Opaque>> {
+    impl<R> FfiConvert<'_, RefSlice<*mut R>> for Vec<R>
+    where
+        Self: Ir<Type = Vec<Opaque>>,
+    {
         type RustStore = Box<[*mut R]>;
         type FfiStore = ();
 
@@ -840,10 +859,7 @@ disjoint_impls! {
 
             RefSlice::from_slice(Some(&store.0))
         }
-        unsafe fn try_from_ffi(
-            source: RefSlice<C>,
-            store: &'itm mut Self::FfiStore,
-        ) -> Result<Self> {
+        unsafe fn try_from_ffi(source: RefSlice<C>, store: &'itm mut Self::FfiStore) -> Result<Self> {
             let slice = unsafe { source.into_rust() }.ok_or(FfiReturn::ArgIsNull)?;
 
             *store = core::iter::repeat_with(Default::default)
@@ -863,7 +879,10 @@ disjoint_impls! {
         }
     }
 
-    impl<R: External> FfiConvert<'_, *mut Extern> for Box<R> where Self: Ir<Type = Box<Extern>> {
+    impl<R: External> FfiConvert<'_, *mut Extern> for Box<R>
+    where
+        Self: Ir<Type = Box<Extern>>,
+    {
         type RustStore = ();
         type FfiStore = ();
 
@@ -880,7 +899,10 @@ disjoint_impls! {
         }
     }
 
-    impl<R: ReprC, const N: usize> FfiConvert<'_, *const Self> for [R; N] where Self: Ir<Type = Robust> {
+    impl<R: ReprC, const N: usize> FfiConvert<'_, *const Self> for [R; N]
+    where
+        Self: Ir<Type = Robust>,
+    {
         type RustStore = Option<Self>;
         type FfiStore = ();
 
@@ -896,7 +918,10 @@ disjoint_impls! {
             Ok(unsafe { source.read() })
         }
     }
-    impl<R, const N: usize> FfiConvert<'_, [*mut R; N]> for [R; N] where Self: Ir<Type = [Opaque; N]> {
+    impl<R, const N: usize> FfiConvert<'_, [*mut R; N]> for [R; N]
+    where
+        Self: Ir<Type = [Opaque; N]>,
+    {
         type RustStore = ();
         type FfiStore = ();
 
@@ -928,7 +953,10 @@ disjoint_impls! {
             Ok(unsafe { array.unwrap_unchecked() })
         }
     }
-    impl<R, const N: usize> FfiConvert<'_, *const [*mut R; N]> for [R; N] where Self: Ir<Type = [Opaque; N]> {
+    impl<R, const N: usize> FfiConvert<'_, *const [*mut R; N]> for [R; N]
+    where
+        Self: Ir<Type = [Opaque; N]>,
+    {
         type RustStore = Option<[*mut R; N]>;
         type FfiStore = ();
 
@@ -1002,10 +1030,7 @@ disjoint_impls! {
             store.0 = FfiConvert::into_ffi(self, &mut store.1);
             &mut store.0
         }
-        unsafe fn try_from_ffi(
-            source: *const [C; N],
-            store: &'itm mut Self::FfiStore,
-        ) -> Result<Self> {
+        unsafe fn try_from_ffi(source: *const [C; N], store: &'itm mut Self::FfiStore) -> Result<Self> {
             if source.is_null() {
                 return Err(FfiReturn::ArgIsNull);
             }
@@ -1014,11 +1039,10 @@ disjoint_impls! {
         }
     }
 
-
-    impl<'itm, R: FfiConvert<'itm, C>, C: ReprC>
-        FfiConvert<'itm, FfiTuple2<<u8 as FfiType>::ReprC, C>> for Option<R>
-        where
-            Self: Ir<Type = Option<WithoutNiche>>,
+    impl<'itm, R: FfiConvert<'itm, C>, C: ReprC> FfiConvert<'itm, FfiTuple2<<u8 as FfiType>::ReprC, C>>
+        for Option<R>
+    where
+        Self: Ir<Type = Option<WithoutNiche>>,
     {
         type RustStore = <R>::RustStore;
         type FfiStore = <R>::FfiStore;
@@ -1026,7 +1050,9 @@ disjoint_impls! {
         fn into_ffi(self, store: &'itm mut Self::RustStore) -> FfiTuple2<<u8 as FfiType>::ReprC, C> {
             match self {
                 // TODO: No need to zero the memory because it must never be read
-                None => FfiTuple2(FfiConvert::into_ffi(0u8, &mut ()), unsafe { core::mem::zeroed() }),
+                None => FfiTuple2(FfiConvert::into_ffi(0u8, &mut ()), unsafe {
+                    core::mem::zeroed()
+                }),
                 Some(value) => FfiTuple2(FfiConvert::into_ffi(1u8, &mut ()), value.into_ffi(store)),
             }
         }
@@ -1042,8 +1068,8 @@ disjoint_impls! {
             }
         }
     }
-    impl<'dummy, 'itm, R: Niche<'dummy, ReprC = C> + FfiConvert<'itm, C>, C: ReprC>
-        FfiConvert<'itm, C> for Option<R>
+    impl<'dummy, 'itm, R: Niche<'dummy, ReprC = C> + FfiConvert<'itm, C>, C: ReprC> FfiConvert<'itm, C>
+        for Option<R>
     where
         <R as FfiType>::ReprC: PartialEq,
         Self: Ir<Type = Self>,
