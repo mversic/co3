@@ -1,3 +1,9 @@
+[workspace]
+resolver = "2"
+members = [
+    "derive",
+]
+
 [package]
 name = "co3"
 
