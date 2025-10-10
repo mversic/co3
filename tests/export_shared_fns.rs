@@ -2,7 +2,7 @@
 
 use std::{cmp::Ordering, mem::MaybeUninit};
 
-use co3::{FfiConvert, FfiReturn, FfiType, Handle, def_fns, out_ptr::OutPtrRead};
+use co3::{FfiConvert, FfiReturn, FfiType, def_fns, out_ptr::OutPtrRead};
 
 co3::handles! {FfiStruct1, FfiStruct2}
 
@@ -37,6 +37,8 @@ impl FfiStruct1 {
 #[test]
 #[webassembly_test::webassembly_test]
 fn export_shared_fns() {
+    use co3::handle::Handle as _;
+
     let name = String::from("X");
 
     let ffi_struct1 = unsafe {

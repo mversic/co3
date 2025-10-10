@@ -3,7 +3,18 @@
 /// Type of the handle identifier
 pub type Id = u8;
 
-/// Implements [`crate::Handle`] for a list of types, starting from the given initial ID.
+/// Represents the handle in an FFI context
+///
+/// # Safety
+///
+/// If two structures implement the same id, it may result in a void pointer being casted to the wrong type
+pub unsafe trait Handle {
+    /// Unique identifier of the handle. Most commonly, it is
+    /// used to facilitate generic monomorphization over FFI
+    const ID: Id;
+}
+
+/// Implements [`Handle`] for a list of types, starting from the given initial ID.
 ///
 /// Each type in the macro invocation is assigned an ID incrementally.
 ///
@@ -37,7 +48,7 @@ macro_rules! handles {
         $crate::handles! {0, $( $other ),+}
     };
     ( $id:expr, $ty:ty $(, $other:ty)* $(,)? ) => {
-        unsafe impl $crate::Handle for $ty {
+        unsafe impl $crate::handle::Handle for $ty {
             const ID: $crate::handle::Id = $id;
         }
 
@@ -96,7 +107,7 @@ macro_rules! def_fns {
         ) -> $crate::FfiReturn {
             $crate::def_fns!(@catch_unwind {
                 match $crate::FfiConvert::try_from_ffi(handle_id, &mut ())? {
-                    $( <$other as $crate::Handle>::ID => {
+                    $( <$other as $crate::handle::Handle>::ID => {
                         let handle_ref: &$other = $crate::FfiConvert::try_from_ffi(handle_ptr as <&$other as $crate::FfiType>::ReprC, &mut ())?;
                         <$other as $crate::out_ptr::OutPtrWrite>::write_out(Clone::clone(handle_ref), out_ptr.cast::<<$other as $crate::FfiType>::ReprC>());
                     } )+
@@ -122,7 +133,7 @@ macro_rules! def_fns {
         ) -> $crate::FfiReturn {
             $crate::def_fns!(@catch_unwind {
                 match $crate::FfiConvert::try_from_ffi(handle_id, &mut ())? {
-                    $( <$other as $crate::Handle>::ID => {
+                    $( <$other as $crate::handle::Handle>::ID => {
                         let default_value = Default::default();
 
                         let out_ptr = out_ptr.cast::<<$other as $crate::FfiType>::ReprC>();
@@ -152,7 +163,7 @@ macro_rules! def_fns {
         ) -> $crate::FfiReturn {
             $crate::def_fns!(@catch_unwind {
                 match $crate::FfiConvert::try_from_ffi(handle_id, &mut ())? {
-                    $( <$other as $crate::Handle>::ID => {
+                    $( <$other as $crate::handle::Handle>::ID => {
                         let (lhandle_ptr, rhandle_ptr) = (
                             left_handle_ptr as <&$other as $crate::FfiType>::ReprC,
                             right_handle_ptr as <&$other as $crate::FfiType>::ReprC
@@ -190,7 +201,7 @@ macro_rules! def_fns {
         ) -> $crate::FfiReturn {
             $crate::def_fns!(@catch_unwind {
                 match $crate::FfiConvert::try_from_ffi(handle_id, &mut ())? {
-                    $( <$other as $crate::Handle>::ID => {
+                    $( <$other as $crate::handle::Handle>::ID => {
                         let (lhandle_ptr, rhandle_ptr) = (
                             left_handle_ptr as <&$other as $crate::FfiType>::ReprC,
                             right_handle_ptr as <&$other as $crate::FfiType>::ReprC
@@ -226,7 +237,7 @@ macro_rules! def_fns {
         ) -> $crate::FfiReturn {
             $crate::def_fns!(@catch_unwind {
                 match $crate::FfiConvert::try_from_ffi(handle_id, &mut ())? {
-                    $( <$other as $crate::Handle>::ID => {
+                    $( <$other as $crate::handle::Handle>::ID => {
                         let handle_ptr = handle_ptr as <$other as $crate::FfiType>::ReprC;
                         let _handle: $other = $crate::FfiConvert::try_from_ffi(handle_ptr, &mut ())?;
                     } )+

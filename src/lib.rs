@@ -44,17 +44,6 @@ pub mod transmute;
 /// A specialized `Result` type for FFI operations
 pub type Result<T> = core::result::Result<T, FfiReturn>;
 
-/// Represents the handle in an FFI context
-///
-/// # Safety
-///
-/// If two structures implement the same id, it may result in a void pointer being casted to the wrong type
-pub unsafe trait Handle {
-    /// Unique identifier of the handle. Most commonly, it is
-    /// used to facilitate generic monomorphization over FFI
-    const ID: handle::Id;
-}
-
 /// Robust type that conforms to C ABI and can be safely shared across FFI boundaries. This does
 /// not guarantee the ABI compatibility of the referent for pointers. These pointers are opaque
 ///
