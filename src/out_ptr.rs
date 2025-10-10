@@ -103,7 +103,7 @@ disjoint_impls! {
     // SAFETY: `Option<T>` doesn't use the store if it's inner type doesn't use it
     unsafe impl<R: NonLocal> NonLocal for Option<R> where Self: Ir<Type = Option<WithoutNiche>> {}
     // SAFETY: `Option<T>` doesn't use the store if it's inner type doesn't use it
-    unsafe impl<R: Niche<'_> + NonLocal> NonLocal for Option<R> where Self: Ir<Type = Self> {}
+    unsafe impl<R: Niche + NonLocal> NonLocal for Option<R> where Self: Ir<Type = Self> {}
 }
 
 disjoint_impls! {
@@ -293,7 +293,7 @@ disjoint_impls! {
     {
         type OutPtr = FfiTuple2<<u8 as OutPtr>::OutPtr, <R>::OutPtr>;
     }
-    impl<R: Niche<'_> + OutPtr> OutPtr for Option<R>
+    impl<R: Niche + OutPtr> OutPtr for Option<R>
     where
         Self: Ir<Type = Self>,
     {
@@ -726,7 +726,7 @@ disjoint_impls! {
             }
         }
     }
-    impl<R: Niche<'_> + OutPtrWrite<OutPtr = <R as FfiType>::ReprC>> OutPtrWrite for Option<R>
+    impl<R: Niche + OutPtrWrite<OutPtr = <R as FfiType>::ReprC>> OutPtrWrite for Option<R>
     where
         Self: Ir<Type = Self>,
     {
@@ -1006,7 +1006,7 @@ disjoint_impls! {
             }
         }
     }
-    impl<R: Niche<'_> + OutPtrRead<OutPtr = <R as FfiType>::ReprC>> OutPtrRead for Option<R>
+    impl<R: Niche + OutPtrRead<OutPtr = <R as FfiType>::ReprC>> OutPtrRead for Option<R>
     where
         Self: Ir<Type = Self>,
         <R>::ReprC: PartialEq,

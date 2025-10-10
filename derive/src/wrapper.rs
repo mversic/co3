@@ -421,7 +421,7 @@ fn gen_impl_ffi(name: &Ident, generics: &syn::Generics) -> TokenStream {
             type Type = Self;
         }
 
-        impl #impl_generics co3::option::Niche<'_> for #name #ty_generics #where_clause {
+        impl #impl_generics co3::option::Niche for #name #ty_generics #where_clause {
             const NICHE_VALUE: *mut co3::Extern = core::ptr::null_mut();
         }
     }

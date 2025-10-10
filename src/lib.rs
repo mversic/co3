@@ -257,7 +257,7 @@ disjoint_impls! {
     {
         type ReprC = FfiTuple2<<u8 as FfiType>::ReprC, <R>::ReprC>;
     }
-    impl<R: Niche<'_>> FfiType for Option<R>
+    impl<R: Niche> FfiType for Option<R>
     where
         Self: Ir<Type = Self>,
     {
@@ -994,7 +994,7 @@ disjoint_impls! {
             }
         }
     }
-    impl<'dummy, 'itm, R: Niche<'dummy> + FfiConvert<'itm>> FfiConvert<'itm> for Option<R>
+    impl<'itm, R: Niche + FfiConvert<'itm>> FfiConvert<'itm> for Option<R>
     where
         <R as FfiType>::ReprC: PartialEq,
         Self: Ir<Type = Self>,
@@ -1539,7 +1539,7 @@ macro_rules! mineral {
             }
         }
 
-        impl<$($($impl_generics $(: $bounds)?),*)?> $crate::option::Niche<'_> for $ty where $($($where_ty: $where_bound),*)? {
+        impl<$($($impl_generics $(: $bounds)?),*)?> $crate::option::Niche for $ty where $($($where_ty: $where_bound),*)? {
             const NICHE_VALUE: <$target as $crate::FfiType>::ReprC = $niche_value;
         }
     };
@@ -1563,8 +1563,8 @@ macro_rules! mineral {
         // SAFETY: `$t` is robust with respect to `$target`
         unsafe impl<$($($impl_generics $(: $bounds)?),*)?> $crate::transmute::InfallibleTransmute for $ty where $($($where_ty: $where_bound),*)? {}
 
-        impl<'dummy, $($($impl_generics $(: $bounds)?),*)?> $crate::option::Niche<'dummy> for $ty where $target: $crate::option::Niche<'dummy>, $($($where_ty: $where_bound),*)? {
-            const NICHE_VALUE: <$target as $crate::FfiType>::ReprC = <$target as $crate::option::Niche<'dummy>>::NICHE_VALUE;
+        impl<$($($impl_generics $(: $bounds)?),*)?> $crate::option::Niche for $ty where for<'dummy> $target: $crate::option::Niche, $($($where_ty: $where_bound),*)? {
+            const NICHE_VALUE: <$target as $crate::FfiType>::ReprC = <$target as $crate::option::Niche>::NICHE_VALUE;
         }
 
         impl<$($($impl_generics $(: $bounds)?),*)?> $crate::WrapperTypeOf<$ty> for $target where $($($where_ty: $where_bound),*)? {

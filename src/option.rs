@@ -6,7 +6,7 @@ use crate::{FfiType, repr_c::Cloned};
 /// niche value is used in the serialization of [`Option<T>`]. For example, [`Option<bool>`]
 /// will be serilized into one byte and [`Option<*const T>`] will take the size of the pointer
 // TODO: Lifetime is used as a hack to deal with https://github.com/rust-lang/rust/issues/48214
-pub trait Niche<'dummy>: FfiType {
+pub trait Niche: FfiType {
     /// The niche value of the type
     const NICHE_VALUE: Self::ReprC;
 }
@@ -23,21 +23,21 @@ pub trait Ir {
 
 impl<R> Cloned for Option<R> {}
 
-impl<R, C> Niche<'_> for &R
+impl<R, C> Niche for &R
 where
     Self: FfiType<ReprC = *const C>,
 {
     const NICHE_VALUE: Self::ReprC = core::ptr::null();
 }
 
-impl<R, C> Niche<'_> for &mut R
+impl<R, C> Niche for &mut R
 where
     Self: FfiType<ReprC = *mut C>,
 {
     const NICHE_VALUE: Self::ReprC = core::ptr::null_mut();
 }
 
-impl<'dummy, R: Niche<'dummy>> Ir for R {
+impl<R: Niche> Ir for R {
     type Type = Self;
 }
 

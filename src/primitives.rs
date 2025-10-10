@@ -63,14 +63,14 @@ mod wasm {
                 type OutPtr = $src;
             }
 
-            impl FfiConvert<'_, $dst> for $src {
+            impl FfiConvert<'_> for $src {
                 type RustStore = ();
                 type FfiStore = ();
 
-                fn into_ffi(self, _: &mut ()) -> $dst {
+                fn into_ffi(self, _: &mut ()) -> Self::ReprC {
                     self as $dst
                 }
-                unsafe fn try_from_ffi(source: $dst, _: &mut ()) -> Result<Self> {
+                unsafe fn try_from_ffi(source: Self::ReprC, _: &mut ()) -> Result<Self> {
                     <$src>::try_from(source).or(Err(FfiReturn::ConversionFailed))
                 }
             }
