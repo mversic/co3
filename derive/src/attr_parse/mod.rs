@@ -1,4 +1,4 @@
 pub mod derive;
-pub mod doc;
+#[cfg(feature = "getset")]
 pub mod getset;
 pub mod repr;

@@ -2,6 +2,7 @@
 
 use std::{collections::hash_map::Entry, str::FromStr};
 
+use darling::FromAttributes;
 use proc_macro2::Span;
 use rustc_hash::{FxHashMap, FxHashSet};
 use strum::{Display, EnumString};
@@ -269,12 +270,27 @@ impl GetSetRawFieldAttr {
     }
 }
 
+pub struct DocAttrs {
+    pub attrs: Vec<Attribute>,
+}
+
 #[derive(Default, Debug, Eq, PartialEq, Clone)]
 pub struct GetSetFieldAttrs {
     pub skip: bool,
     pub gen_: RequestedAccessors,
 }
 
+impl FromAttributes for DocAttrs {
+    fn from_attributes(attrs: &[Attribute]) -> darling::Result<Self> {
+        let mut docs = Vec::new();
+        for attr in attrs {
+            if attr.path().is_ident("doc") {
+                docs.push(attr.clone());
+            }
+        }
+        Ok(DocAttrs { attrs: docs })
+    }
+}
 impl darling::FromAttributes for GetSetFieldAttrs {
     fn from_attributes(attrs: &[Attribute]) -> darling::Result<Self> {
         GetSetRawFieldAttr::from_attributes(attrs, true).map(|raw| GetSetFieldAttrs {

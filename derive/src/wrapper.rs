@@ -8,8 +8,8 @@ use crate::{
     convert::FfiTypeInput,
     emitter::Emitter,
     ffi_fn,
-    getset_gen::{gen_resolve_type, gen_store_name},
-    impl_visitor::{Arg, FnDescriptor, ImplDescriptor, TypeImplTraitResolver, unwrap_result_type},
+    impl_visitor::{Arg, FnDescriptor, ImplDescriptor, TypeImplTraitResolver},
+    utils::{gen_resolve_type, gen_store_name, unwrap_result_type},
 };
 
 fn gen_lifetime_name_for_opaque() -> TokenStream {
@@ -172,6 +172,7 @@ fn gen_shared_fns(emitter: &mut Emitter, input: &FfiTypeInput) -> Vec<TokenStrea
                     );
                 }
             },
+            #[cfg(feature = "getset")]
             Derive::GetSet(_) => {
                 // handled by `getset_gen` module
             }

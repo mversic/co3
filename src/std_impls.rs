@@ -38,7 +38,7 @@ mineral! {
         type Target = &'slice mut [u8];
 
         validation_fn={|target| core::str::from_utf8(target).is_ok()},
-        NICHE_VALUE=RefSlice::null()
+        NICHE_VALUE=crate::slice::RefMutSlice::null_mut()
     }
 }
 mineral! {

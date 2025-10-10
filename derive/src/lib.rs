@@ -4,21 +4,24 @@ use impl_visitor::{FnDescriptor, ImplDescriptor};
 use manyhow::{emit, manyhow};
 use proc_macro2::TokenStream;
 use quote::quote;
-use syn::Item;
 use wrapper::wrap_method;
 
+#[cfg(feature = "getset")]
+use crate::{attr_parse::derive::Derive, convert::FfiTypeData};
 use crate::{
-    attr_parse::derive::Derive,
-    convert::{FfiTypeData, FfiTypeInput, derive_ffi_type},
+    convert::{FfiTypeInput, derive_ffi_type},
     emitter::Emitter,
+    impl_visitor::Arg,
 };
 
 mod attr_parse;
 mod convert;
 mod emitter;
 mod ffi_fn;
+#[cfg(feature = "getset")]
 mod getset_gen;
 mod impl_visitor;
+mod utils;
 mod wrapper;
 
 struct FfiItems(Vec<FfiTypeInput>);
@@ -48,9 +51,7 @@ fn parse_attributes(ts: TokenStream) -> Vec<syn::Attribute> {
         }
     }
 
-    syn::parse2::<Attributes>(ts)
-        .expect("Failed to parse attributes")
-        .0
+    syn::parse2::<Attributes>(ts).unwrap().0
 }
 
 /// Replace struct/enum/union definition with opaque pointer. This applies to types that
@@ -77,12 +78,12 @@ fn parse_attributes(ts: TokenStream) -> Vec<syn::Attribute> {
 #[manyhow]
 #[proc_macro_attribute]
 pub fn extern_type(_args: TokenStream, input: TokenStream) -> TokenStream {
-    let items = match syn::parse2::<FfiItems>(input) {
-        Ok(items) => items.0,
-        Err(err) => return err.to_compile_error(),
-    };
-
     let mut emitter = Emitter::new();
+
+    let items = match syn::parse2::<FfiItems>(input) {
+        Err(err) => return err.to_compile_error(),
+        Ok(items) => items.0,
+    };
 
     let items = items
         .into_iter()
@@ -93,12 +94,14 @@ pub fn extern_type(_args: TokenStream, input: TokenStream) -> TokenStream {
 
             if !item.is_opaque() {
                 let item = item.ast;
+
                 return quote! {
                     #[derive(co3::ExternC)]
                     #item
                 };
             }
 
+            #[cfg(feature = "getset")]
             if let FfiTypeData::Struct(fields) = &item.data
                 && item
                     .derive_attr
@@ -196,8 +199,7 @@ pub fn extern_type(_args: TokenStream, input: TokenStream) -> TokenStream {
 /// use getset::Getters as GettersAlias;
 ///
 /// #[derive(GettersAlias)]
-/// pub struct Hello {
-/// }
+/// pub struct Hello {}
 /// ```
 ///
 /// It assumes that the derive is imported and referred to by its original name.
@@ -290,21 +292,21 @@ pub fn derive_extern_c(input: TokenStream) -> TokenStream {
 #[manyhow]
 #[proc_macro_attribute]
 pub fn carbonate(attr: TokenStream, item: TokenStream) -> TokenStream {
-    let item = match syn::parse2::<Item>(item) {
-        Ok(item) => item,
-        Err(err) => return err.to_compile_error(),
-    };
-
     let mut emitter = Emitter::new();
+
+    let item = match syn::parse2::<syn::Item>(item) {
+        Err(err) => return err.to_compile_error(),
+        Ok(item) => item,
+    };
 
     if !attr.is_empty() {
         emit!(emitter, item, "Unknown tokens in the attribute");
     }
 
+    use syn::Item::*;
     let result = match item {
-        Item::Impl(item) => {
+        Impl(item) => {
             let Some(impl_descriptor) = ImplDescriptor::from_impl(&mut emitter, &item) else {
-                // continuing here creates a lot of dubious errors
                 return emitter.finish_token_stream();
             };
             let ffi_fns = impl_descriptor
@@ -317,9 +319,8 @@ pub fn carbonate(attr: TokenStream, item: TokenStream) -> TokenStream {
                 #(#ffi_fns)*
             }
         }
-        Item::Fn(item) => {
+        Fn(item) => {
             let Some(fn_descriptor) = FnDescriptor::from_fn(&mut emitter, &item) else {
-                // continuing here creates a lot of dubious errors
                 return emitter.finish_token_stream();
             };
             let ffi_fn = ffi_fn::gen_definition(&fn_descriptor, None);
@@ -329,54 +330,63 @@ pub fn carbonate(attr: TokenStream, item: TokenStream) -> TokenStream {
                 #ffi_fn
             }
         }
-        Item::Struct(item) => {
-            // re-parse as a DeriveInput to utilize darling
+        Struct(item) => {
             let input = syn::parse2(quote!(#item)).unwrap();
             let Some(input) = emitter.handle(FfiTypeInput::from_derive_input(&input)) else {
                 return emitter.finish_token_stream();
             };
 
-            // we don't need ffi fns for getset accessors if the type is not opaque or there are no accessors
-            if !input.is_opaque()
-                || !input
-                    .derive_attr
-                    .derives
-                    .iter()
-                    .any(|d| matches!(d, Derive::GetSet(_)))
-            {
+            if !input.is_opaque() {
                 let input = input.ast;
                 return emitter.finish_token_stream_with(quote! { #input });
             }
 
-            let darling::ast::Data::Struct(fields) = &input.data else {
-                unreachable!("We parsed struct above");
-            };
+            #[cfg(feature = "getset")]
+            if input
+                .derive_attr
+                .derives
+                .iter()
+                .any(|d| matches!(d, Derive::GetSet(_)))
+            {
+                let darling::ast::Data::Struct(fields) = &input.data else {
+                    unreachable!();
+                };
 
-            if !input.generics.params.is_empty() {
-                emit!(
-                    emitter,
-                    input.generics,
-                    "Generics on derived methods not supported"
-                );
-                // continuing codegen results in a lot of spurious errors
-                return emitter.finish_token_stream();
+                if !input.generics.params.is_empty() {
+                    emit!(
+                        emitter,
+                        input.generics,
+                        "Generics on derived methods not supported"
+                    );
+
+                    return emitter.finish_token_stream();
+                }
+                let derived_ffi_fns = getset_gen::gen_derived_methods(
+                    &mut emitter,
+                    &input.ident,
+                    &input.derive_attr,
+                    &input.getset_attr,
+                    fields,
+                )
+                .map(|fn_| ffi_fn::gen_definition(&fn_, None));
+
+                quote! {
+                    #item
+                    #(#derived_ffi_fns)*
+                }
+            } else {
+                let input = input.ast;
+                quote!(#input)
             }
-            let derived_ffi_fns = getset_gen::gen_derived_methods(
-                &mut emitter,
-                &input.ident,
-                &input.derive_attr,
-                &input.getset_attr,
-                fields,
-            )
-            .map(|fn_| ffi_fn::gen_definition(&fn_, None));
 
-            quote! {
-                #item
-                #(#derived_ffi_fns)*
+            #[cfg(not(feature = "getset"))]
+            {
+                let input = input.ast;
+                quote!(#input)
             }
         }
-        Item::Enum(item) => quote! { #item },
-        Item::Union(item) => quote! { #item },
+        Enum(item) => quote! { #item },
+        Union(item) => quote! { #item },
         item => {
             emit!(emitter, item, "Item not supported");
             quote!()
@@ -404,7 +414,7 @@ pub fn carbonate(attr: TokenStream, item: TokenStream) -> TokenStream {
 ///     //     panic!("Function call failed");
 ///     // }
 ///     //
-///     // co3::out_ptr::OutPtrRead::try_read_out(output.assume_init()).expect("Invalid type")
+///     // co3::out_ptr::OutPtrRead::try_read_out(output.assume_init()).unwrap()
 /// }
 ///
 /// /* The following functions will be declared:
@@ -431,21 +441,22 @@ pub fn carbonate(attr: TokenStream, item: TokenStream) -> TokenStream {
 #[manyhow]
 #[proc_macro_attribute]
 pub fn decarbonate(attr: TokenStream, item: TokenStream) -> TokenStream {
-    let item = match syn::parse2::<Item>(item) {
-        Ok(item) => item,
-        Err(err) => return err.to_compile_error(),
-    };
     let mut emitter = Emitter::new();
+
+    let item = match syn::parse2::<syn::Item>(item) {
+        Err(err) => return err.to_compile_error(),
+        Ok(item) => item,
+    };
 
     if !attr.is_empty() {
         emit!(emitter, item, "Unknown tokens in the attribute");
     }
 
+    use syn::Item::*;
     let result = match item {
-        Item::Impl(item) => {
+        Impl(item) => {
             let attrs = &item.attrs;
             let Some(impl_desc) = ImplDescriptor::from_impl(&mut emitter, &item) else {
-                // continuing codegen results in a lot of spurious errors
                 return emitter.finish_token_stream();
             };
             let wrapped_items = wrapper::wrap_impl_items(&impl_desc);
@@ -477,11 +488,11 @@ pub fn decarbonate(attr: TokenStream, item: TokenStream) -> TokenStream {
                 #(#ffi_fns)*
             }
         }
-        Item::Fn(item) => {
+        Fn(item) => {
             let Some(fn_descriptor) = FnDescriptor::from_fn(&mut emitter, &item) else {
-                // continuing here creates a lot of dubious errors
                 return emitter.finish_token_stream();
             };
+
             let ffi_fn = ffi_fn::gen_declaration(&fn_descriptor, None);
             let wrapped_item = wrap_method(&fn_descriptor, None);
 
@@ -490,9 +501,9 @@ pub fn decarbonate(attr: TokenStream, item: TokenStream) -> TokenStream {
                 #ffi_fn
             }
         }
-        Item::Struct(item) => quote! { #item },
-        Item::Enum(item) => quote! { #item },
-        Item::Union(item) => quote! { #item },
+        Struct(item) => quote! { #item },
+        Enum(item) => quote! { #item },
+        Union(item) => quote! { #item },
         item => {
             emit!(emitter, item, "Item not supported");
             quote!()

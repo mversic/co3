@@ -1,5 +1,5 @@
 error[E0425]: cannot find function, tuple struct or tuple variant `FfiStruct__b_mut` in this scope
-  --> tests/ui_fail/derive_skip_struct.rs:32:9
+  --> tests/ui_fail/getset_skip_struct.rs:32:9
    |
  6 | #[co3::carbonate]
    | ----------------- similarly named function `FfiStruct__a_mut` defined here
@@ -8,7 +8,7 @@ error[E0425]: cannot find function, tuple struct or tuple variant `FfiStruct__b_
    |         ^^^^^^^^^^^^^^^^ help: a function with a similar name exists: `FfiStruct__a_mut`
 
 error[E0425]: cannot find function, tuple struct or tuple variant `FfiStruct__set_b` in this scope
-  --> tests/ui_fail/derive_skip_struct.rs:34:9
+  --> tests/ui_fail/getset_skip_struct.rs:34:9
    |
  6 | #[co3::carbonate]
    | ----------------- similarly named function `FfiStruct__set_a` defined here

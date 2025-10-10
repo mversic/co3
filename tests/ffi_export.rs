@@ -464,8 +464,16 @@ fn take_and_return_option_with_niche_ref() {
 #[test]
 #[webassembly_test::webassembly_test]
 fn take_and_return_option_without_niche_ref() {
+    #[cfg(not(target_family = "wasm"))]
     let input = Some(42u8);
-    let mut output = MaybeUninit::new(FfiTuple2(0, 0));
+    #[cfg(target_family = "wasm")]
+    let input = Some(42u32);
+    #[cfg(not(target_family = "wasm"))]
+    let init_val = FfiTuple2(0_u8, 0_u8);
+    #[cfg(target_family = "wasm")]
+    let init_val = FfiTuple2(0_u32, 0_u32);
+
+    let mut output = MaybeUninit::new(init_val);
     let mut in_store = Default::default();
 
     unsafe {

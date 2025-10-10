@@ -1,0 +1,19 @@
+error: Generics on derived methods not supported
+ --> tests/ui_fail/getset_generic_struct.rs:7:21
+  |
+7 | pub struct FfiStruct<T> {
+  |                     ^^^
+
+warning: unused import: `co3::ExternC`
+ --> tests/ui_fail/getset_generic_struct.rs:1:5
+  |
+1 | use co3::ExternC;
+  |     ^^^^^^^^^^^^
+  |
+  = note: `#[warn(unused_imports)]` on by default
+
+warning: unused import: `getset::Getters`
+ --> tests/ui_fail/getset_generic_struct.rs:2:5
+  |
+2 | use getset::Getters;
+  |     ^^^^^^^^^^^^^^^

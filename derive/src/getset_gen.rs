@@ -1,9 +1,7 @@
 use darling::ast::Style;
 use manyhow::emit;
-use proc_macro2::TokenStream;
-use quote::quote;
 use rustc_hash::FxHashMap;
-use syn::{Ident, parse_quote, visit::Visit};
+use syn::{Ident, parse_quote};
 
 use crate::{
     attr_parse::{
@@ -12,7 +10,7 @@ use crate::{
     },
     convert::{FfiTypeField, FfiTypeFields},
     emitter::Emitter,
-    impl_visitor::{Arg, FnDescriptor, unwrap_result_type},
+    impl_visitor::{Arg, FnDescriptor},
 };
 
 /// Generate FFI function equivalents of getset-derived methods
@@ -55,25 +53,6 @@ pub fn gen_derived_methods<'a>(
     }
 
     ffi_derives.into_values()
-}
-
-pub fn gen_resolve_type(arg: &Arg) -> TokenStream {
-    let (arg_name, src_type) = (arg.name(), arg.src_type());
-
-    if unwrap_result_type(src_type).is_some() {
-        return quote! {
-            let #arg_name = if let Ok(ok) = #arg_name {
-                ok
-            } else {
-                // TODO: Implement error handling (https://github.com/hyperledger/iroha/issues/2252)
-                return Err(co3::FfiReturn::ExecutionFail);
-            };
-        };
-    }
-
-    let mut type_resolver = FfiTypeResolver(arg_name, quote! {});
-    type_resolver.visit_type(src_type);
-    type_resolver.1
 }
 
 fn gen_derived_method<'ast>(
@@ -165,25 +144,5 @@ fn gen_derived_method_sig(field: &FfiTypeField, mode: GetSetGenMode) -> syn::Sig
         GetSetGenMode::GetMut => parse_quote! {
             fn #method_name(&mut self) -> &mut #field_ty
         },
-    }
-}
-
-pub fn gen_store_name(arg_name: &Ident) -> Ident {
-    Ident::new(&format!("{arg_name}_store"), proc_macro2::Span::call_site())
-}
-
-struct FfiTypeResolver<'itm>(&'itm Ident, TokenStream);
-impl<'itm> Visit<'itm> for FfiTypeResolver<'itm> {
-    fn visit_trait_bound(&mut self, i: &'itm syn::TraitBound) {
-        let trait_ = i.path.segments.last().expect("Defined");
-
-        let arg_name = self.0;
-        if trait_.ident == "IntoIterator" || trait_.ident == "ExactSizeIterator" {
-            self.1 = quote! { let #arg_name: Vec<_> = #arg_name.into_iter().collect(); };
-        } else if trait_.ident == "Into" {
-            self.1 = quote! { let #arg_name = #arg_name.into(); };
-        } else if trait_.ident == "AsRef" {
-            self.1 = quote! { let #arg_name = #arg_name.as_ref(); };
-        }
     }
 }

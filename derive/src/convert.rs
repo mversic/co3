@@ -12,11 +12,11 @@ use syn::{
     visit::Visit as _,
 };
 
+#[cfg(feature = "getset")]
+use crate::attr_parse::getset::{DocAttrs, GetSetFieldAttrs, GetSetStructAttrs};
 use crate::{
     attr_parse::{
         derive::DeriveAttrs,
-        doc::DocAttrs,
-        getset::{GetSetFieldAttrs, GetSetStructAttrs},
         repr::{Repr, ReprKind},
     },
     emitter::Emitter,
@@ -168,6 +168,7 @@ impl FromAttributes for FfiTypeFieldAttr {
 }
 
 pub type FfiTypeData = darling::ast::Data<SpannedValue<FfiTypeVariant>, FfiTypeField>;
+#[cfg(feature = "getset")]
 pub type FfiTypeFields = darling::ast::Fields<FfiTypeField>;
 
 pub struct FfiTypeInput {
@@ -178,6 +179,7 @@ pub struct FfiTypeInput {
     pub derive_attr: DeriveAttrs,
     pub repr_attr: Repr,
     pub ffi_type_attr: FfiTypeAttr,
+    #[cfg(feature = "getset")]
     pub getset_attr: GetSetStructAttrs,
     pub span: Span,
     /// The original `DeriveInput` this structure was parsed from
@@ -200,6 +202,7 @@ impl darling::FromDeriveInput for FfiTypeInput {
         let derive_attr = DeriveAttrs::from_attributes(&input.attrs)?;
         let repr_attr = Repr::from_attributes(&input.attrs)?;
         let ffi_type_attr = FfiTypeAttr::from_attributes(&input.attrs)?;
+        #[cfg(feature = "getset")]
         let getset_attr = GetSetStructAttrs::from_attributes(&input.attrs)?;
         let span = input.span();
 
@@ -211,6 +214,7 @@ impl darling::FromDeriveInput for FfiTypeInput {
             derive_attr,
             repr_attr,
             ffi_type_attr,
+            #[cfg(feature = "getset")]
             getset_attr,
             span,
             ast: input.clone(),
@@ -226,25 +230,34 @@ pub struct FfiTypeVariant {
 }
 
 pub struct FfiTypeField {
+    #[cfg(feature = "getset")]
     pub ident: Option<syn::Ident>,
     pub ty: syn::Type,
+    #[cfg(feature = "getset")]
     pub doc_attrs: DocAttrs,
     pub ffi_type_attr: FfiTypeFieldAttr,
+    #[cfg(feature = "getset")]
     pub getset_attr: GetSetFieldAttrs,
 }
 
 impl FromField for FfiTypeField {
     fn from_field(field: &Field) -> darling::Result<Self> {
+        #[cfg(feature = "getset")]
         let ident = field.ident.clone();
         let ty = field.ty.clone();
+        #[cfg(feature = "getset")]
         let doc_attrs = DocAttrs::from_attributes(&field.attrs)?;
         let ffi_type_attr = FfiTypeFieldAttr::from_attributes(&field.attrs)?;
+        #[cfg(feature = "getset")]
         let getset_attr = GetSetFieldAttrs::from_attributes(&field.attrs)?;
         Ok(Self {
+            #[cfg(feature = "getset")]
             ident,
             ty,
+            #[cfg(feature = "getset")]
             doc_attrs,
             ffi_type_attr,
+            #[cfg(feature = "getset")]
             getset_attr,
         })
     }

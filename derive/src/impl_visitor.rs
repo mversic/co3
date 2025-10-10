@@ -10,7 +10,7 @@ use syn::{
     visit_mut::VisitMut,
 };
 
-use crate::emitter::Emitter;
+use crate::{emitter::Emitter, utils::unwrap_result_type};
 
 pub struct Arg {
     self_ty: Option<Path>,
@@ -589,20 +589,4 @@ impl VisitMut for TypeImplTraitResolver {
 
 fn last_seg_ident(path: &syn::Path) -> &Ident {
     &path.segments.last().expect("Defined").ident
-}
-
-pub fn unwrap_result_type(node: &Type) -> Option<(&Type, &Type)> {
-    if let Type::Path(type_) = node {
-        let last_seg = type_.path.segments.last().expect("Defined");
-
-        if last_seg.ident == "Result"
-            && let syn::PathArguments::AngleBracketed(args) = &last_seg.arguments
-            && let (syn::GenericArgument::Type(ok), syn::GenericArgument::Type(err)) =
-                (&args.args[0], &args.args[1])
-        {
-            return Some((ok, err));
-        }
-    }
-
-    None
 }

@@ -1,0 +1,13 @@
+error: Generics are not supported
+ --> tests/ui_fail/generics_are_forbiden_in_ffi.rs:5:21
+  |
+5 | pub fn freestanding<T>(v: T) -> T {
+  |                     ^
+
+warning: unused import: `getset::Getters`
+ --> tests/ui_fail/generics_are_forbiden_in_ffi.rs:2:5
+  |
+2 | use getset::Getters;
+  |     ^^^^^^^^^^^^^^^
+  |
+  = note: `#[warn(unused_imports)]` on by default

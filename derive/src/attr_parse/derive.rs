@@ -4,6 +4,7 @@ use darling::FromAttributes;
 use quote::ToTokens;
 use syn::{Attribute, Token, punctuated::Punctuated};
 
+#[cfg(feature = "getset")]
 use super::getset::GetSetDerive;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
@@ -41,6 +42,7 @@ impl RustcDerive {
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub enum Derive {
     Rustc(RustcDerive),
+    #[cfg(feature = "getset")]
     GetSet(GetSetDerive),
     Other(String),
 }
@@ -81,10 +83,20 @@ impl FromAttributes for DeriveAttrs {
                 for path in paths {
                     let derive = if let Some(derive) = RustcDerive::try_from_path(&path) {
                         Derive::Rustc(derive)
-                    } else if let Some(derive) = GetSetDerive::try_from_path(&path) {
-                        Derive::GetSet(derive)
                     } else {
-                        Derive::Other(path.to_token_stream().to_string())
+                        #[cfg(feature = "getset")]
+                        {
+                            if let Some(derive) = GetSetDerive::try_from_path(&path) {
+                                Derive::GetSet(derive)
+                            } else {
+                                Derive::Other(path.to_token_stream().to_string())
+                            }
+                        }
+
+                        #[cfg(not(feature = "getset"))]
+                        {
+                            Derive::Other(path.to_token_stream().to_string())
+                        }
                     };
 
                     // Funnily, rust allows the usage of the same derive multiple times
@@ -106,7 +118,7 @@ mod test {
     use proc_macro2::TokenStream;
     use quote::quote;
 
-    use super::{Derive, DeriveAttrs, GetSetDerive, RustcDerive};
+    use super::*;
 
     fn parse_derives(attrs: TokenStream) -> darling::Result<DeriveAttrs> {
         let attrs = crate::parse_attributes(attrs);
@@ -146,6 +158,7 @@ mod test {
     }
 
     #[test]
+    #[cfg(feature = "getset")]
     fn derive_getset() {
         assert_derive_ok!(
             #[derive(Getters, Setters, MutGetters, CopyGetters)],

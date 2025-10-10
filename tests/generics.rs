@@ -6,7 +6,7 @@ use getset::Getters;
 #[derive(Debug, Clone, Copy, PartialEq, Eq, ExternC)]
 pub struct GenericFfiStruct<T>(T);
 
-#[co3::carbonate]
+#[cfg_attr(feature = "getset", co3::carbonate)]
 #[derive(Clone, Copy, Getters, ExternC)]
 #[getset(get = "pub")]
 pub struct FfiStruct {
@@ -19,6 +19,7 @@ pub fn freestanding(input: GenericFfiStruct<String>) -> GenericFfiStruct<String>
 }
 
 #[test]
+#[cfg(feature = "getset")]
 #[webassembly_test::webassembly_test]
 fn get_return_generic() {
     let ffi_struct = &FfiStruct {

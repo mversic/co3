@@ -3,8 +3,8 @@ use quote::quote;
 use syn::{Ident, visit_mut::VisitMut};
 
 use crate::{
-    getset_gen::{gen_resolve_type, gen_store_name},
     impl_visitor::{Arg, FnDescriptor},
+    utils::{gen_resolve_type, gen_store_name},
 };
 
 fn prune_fn_declaration_attributes<'a>(attrs: &[&'a syn::Attribute]) -> Vec<&'a syn::Attribute> {
@@ -85,6 +85,7 @@ pub fn gen_fn_name(fn_descriptor: &FnDescriptor, trait_name: Option<&Ident>) -> 
 
 fn gen_doc(fn_descriptor: &FnDescriptor, trait_name: Option<&Ident>) -> String {
     let method_name = &fn_descriptor.sig.ident;
+
     let self_type = fn_descriptor
         .self_ty
         .as_ref()
@@ -101,7 +102,6 @@ fn gen_doc(fn_descriptor: &FnDescriptor, trait_name: Option<&Ident>) -> String {
         },
     );
 
-    // NOTE: [#docs = "some_doc"] expands to ///some_doc, therefore the leading space
     format!(
         " FFI function equivalent of [`{path}`]\n \
           \n \

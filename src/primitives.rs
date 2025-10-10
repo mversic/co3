@@ -33,7 +33,7 @@ mod wasm {
             // SAFETY: Even if it is not used in `wasm` API it is still a `ReprC` type
             unsafe impl $crate::ReprC for $src {}
 
-            impl $crate::option::Niche<'_> for $src {
+            impl $crate::option::Niche for $src {
                 const NICHE_VALUE: $dst = <$dst>::MAX;
             }
 

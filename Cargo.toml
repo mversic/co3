@@ -17,6 +17,9 @@ categories = ["development-tools::ffi"]
 # to modify the given reference and store a trap representation causing immediate UB.
 non_robust_ref_mut = []
 
+# Enable integration with `getset` when deriving `extern C` ABI
+getset = ["co3_derive/getset"]
+
 [dependencies]
 co3_derive = { path = "derive" }
 
