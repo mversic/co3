@@ -35,10 +35,11 @@ pub fn freestanding_returns_iterator(
     unreachable!("replaced by co3::decarbonate")
 }
 
-#[co3::decarbonate]
-pub fn freestanding_take_and_return_array(input: [(u32, u32); 2]) -> impl Into<[(u32, u32); 2]> {
-    unreachable!("replaced by co3::decarbonate")
-}
+// FIXME: Write a test
+//#[co3::decarbonate]
+//pub fn freestanding_take_and_return_array(input: [(u32, u32); 2]) -> impl Into<[(u32, u32); 2]> {
+//    unreachable!("replaced by co3::decarbonate")
+//}
 
 #[co3::decarbonate]
 pub fn freestanding_take_and_return_local_transparent_ref(input: &Transparent) -> &Transparent {
@@ -95,13 +96,14 @@ fn return_iterator() {
     assert_eq!(input, output);
 }
 
-#[test]
-#[webassembly_test::webassembly_test]
-fn take_and_return_array() {
-    let input = [(420, 420), (420, 420)];
-    let output: [(u32, u32); 2] = freestanding_take_and_return_array(input);
-    assert_eq!(input, output);
-}
+// FIXME: Check previous comment
+//#[test]
+//#[webassembly_test::webassembly_test]
+//fn take_and_return_array() {
+//    let input = [(420, 420), (420, 420)];
+//    let output: [(u32, u32); 2] = freestanding_take_and_return_array(input);
+//    assert_eq!(input, output);
+//}
 
 #[test]
 #[webassembly_test::webassembly_test]
@@ -194,18 +196,6 @@ mod ffi {
         unsafe {
             let input = input.into_rust().map(|slice| (&*slice).into());
             output.write(OutBoxedSlice::from_boxed_slice(input));
-        }
-
-        FfiReturn::Ok
-    }
-
-    #[unsafe(no_mangle)]
-    unsafe extern "C" fn __freestanding_take_and_return_array(
-        input: *mut [FfiTuple2<u32, u32>; 2],
-        output: *mut [FfiTuple2<u32, u32>; 2],
-    ) -> FfiReturn {
-        unsafe {
-            output.write(input.read());
         }
 
         FfiReturn::Ok

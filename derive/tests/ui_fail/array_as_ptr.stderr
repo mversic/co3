@@ -1,16 +1,13 @@
-error[E0308]: mismatched types
- --> tests/ui_fail/array_as_ptr.rs:6:17
-  |
-6 |     __array_arg(arg);
-  |     ----------- ^^^ expected `*const [u32; 2]`, found `[u32; 2]`
-  |     |
-  |     arguments to this function are incorrect
-  |
-  = note: expected raw pointer `*const [u32; 2]`
-                   found array `[u32; 2]`
-note: function defined here
+error: custom attribute panicked
  --> tests/ui_fail/array_as_ptr.rs:1:1
   |
 1 | #[co3::carbonate]
   | ^^^^^^^^^^^^^^^^^
-  = note: this error originates in the attribute macro `co3::carbonate` (in Nightly builds, run with -Z macro-backtrace for more info)
+  |
+  = help: message: not implemented: Arrays are not supported by C ABI. Use a pointer or struct wrapper
+
+error[E0425]: cannot find function `__array_arg` in this scope
+ --> tests/ui_fail/array_as_ptr.rs:5:5
+  |
+5 |     __array_arg([12_u32, 42_u32]);
+  |     ^^^^^^^^^^^ not found in this scope

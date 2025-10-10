@@ -371,7 +371,7 @@ disjoint_impls! {
 
     impl<'itm, R: Ir<Type = S> + NonLocal + Clone, S: Cloned + 'itm> OutPtrWrite for &'itm R
     where
-        R: FfiConvert<'itm, <R>::ReprC>,
+        R: FfiConvert<'itm>,
         Self: Ir<Type = &'itm S>,
     {
         unsafe fn write_out(self, out_ptr: *mut Self::OutPtr) {
@@ -430,7 +430,7 @@ disjoint_impls! {
     }
     impl<'itm, R: Ir<Type = S> + NonLocal + Clone, S: Cloned> OutPtrWrite for &'itm [R]
     where
-        R: FfiConvert<'itm, <R>::ReprC>,
+        R: FfiConvert<'itm>,
         Self: Ir<Type = &'itm [S]>,
     {
         unsafe fn write_out(self, out_ptr: *mut Self::OutPtr) {
@@ -522,7 +522,7 @@ disjoint_impls! {
     }
     impl<'itm, R: Ir<Type = S> + NonLocal + Clone + 'itm, S: Cloned + 'itm> OutPtrWrite for Box<R>
     where
-        R: FfiConvert<'itm, <R>::ReprC>,
+        R: FfiConvert<'itm>,
         Self: Ir<Type = Box<S>>,
     {
         unsafe fn write_out(self, out_ptr: *mut Self::OutPtr) {
@@ -581,7 +581,7 @@ disjoint_impls! {
     }
     impl<'itm, R: Ir<Type = S> + NonLocal + Clone + 'itm, S: Cloned + 'itm> OutPtrWrite for Box<[R]>
     where
-        R: FfiConvert<'itm, <R>::ReprC>,
+        R: FfiConvert<'itm>,
         Self: Ir<Type = Box<[S]>>,
     {
         unsafe fn write_out(self, out_ptr: *mut Self::OutPtr) {
@@ -630,7 +630,7 @@ disjoint_impls! {
     }
     impl<'itm, R: Ir<Type = S> + NonLocal + Clone + 'itm, S: Cloned + 'itm> OutPtrWrite for Vec<R>
     where
-        R: FfiConvert<'itm, <R>::ReprC>,
+        R: FfiConvert<'itm>,
         Self: Ir<Type = Vec<S>>,
     {
         unsafe fn write_out(self, out_ptr: *mut Self::OutPtr) {
@@ -675,7 +675,7 @@ disjoint_impls! {
     }
     impl<'itm, R: Ir<Type = S> + NonLocal + Clone + 'itm, S: Cloned + 'itm, const N: usize> OutPtrWrite for [R; N]
     where
-        R: FfiConvert<'itm, <R>::ReprC>,
+        R: FfiConvert<'itm>,
         [<R>::RustStore; N]: Default,
         [<R>::FfiStore; N]: Default,
         Self: Ir<Type = [S; N]>,
@@ -849,7 +849,7 @@ disjoint_impls! {
     }
     impl<'itm, R: Ir<Type = S> + NonLocal + Clone + 'itm, S: Cloned + 'itm> OutPtrRead for Box<R>
     where
-        R: FfiConvert<'itm, <R>::ReprC>,
+        R: FfiConvert<'itm>,
         Self: Ir<Type = Box<S>>,
     {
         unsafe fn try_read_out(out_ptr: Self::OutPtr) -> Result<Self> {
@@ -897,7 +897,7 @@ disjoint_impls! {
     }
     impl<'itm, R: Ir<Type = S> + NonLocal + Clone + 'itm, S: Cloned + 'itm> OutPtrRead for Box<[R]>
     where
-        R: FfiConvert<'itm, <R>::ReprC>,
+        R: FfiConvert<'itm>,
         Self: Ir<Type = Box<[S]>>,
     {
         unsafe fn try_read_out(out_ptr: Self::OutPtr) -> Result<Self> {
@@ -950,7 +950,7 @@ disjoint_impls! {
     }
     impl<'itm, R: Ir<Type = S> + NonLocal + Clone + 'itm, S: Cloned + 'itm> OutPtrRead for Vec<R>
     where
-        R: FfiConvert<'itm, <R>::ReprC>,
+        R: FfiConvert<'itm>,
         Self: Ir<Type = Vec<S>>,
     {
         unsafe fn try_read_out(out_ptr: Self::OutPtr) -> Result<Self> {
@@ -975,7 +975,7 @@ disjoint_impls! {
     impl<'itm, R: Ir<Type = S> + NonLocal + Clone + 'itm, S: Cloned + 'itm, const N: usize>
         OutPtrRead for [R; N]
     where
-        R: FfiConvert<'itm, <R>::ReprC>,
+        R: FfiConvert<'itm>,
         // FIXME: What is this bound?
         //[R; N]: FfiConvert<'itm, [R; N]::ReprC>
         [<R>::RustStore; N]: Default,
@@ -1023,7 +1023,7 @@ disjoint_impls! {
     impl<'itm, R: Ir<Type = S> + NonLocal + Clone + 'itm, S: Cloned + 'itm> OutPtrRead
         for LocalSlice<'itm, R>
     where
-        R: FfiConvert<'itm, <R>::ReprC>,
+        R: FfiConvert<'itm>,
         Self: Ir<Type = &'itm [S]>,
     {
         unsafe fn try_read_out(out_ptr: OutBoxedSlice<<R>::ReprC>) -> Result<Self> {
@@ -1051,7 +1051,7 @@ disjoint_impls! {
     impl<'itm, R: Ir<Type = S> + NonLocal + Clone + 'itm, S: Cloned + 'itm> OutPtrRead
         for LocalRef<'itm, R>
     where
-        R: FfiConvert<'itm, <R>::ReprC>,
+        R: FfiConvert<'itm>,
         Self: Ir<Type = &'itm S>,
     {
         unsafe fn try_read_out(out_ptr: Self::OutPtr) -> Result<Self> {

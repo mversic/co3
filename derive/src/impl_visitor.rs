@@ -39,20 +39,22 @@ impl Arg {
         resolve_type(self.self_ty.as_ref(), self.type_.clone())
     }
     pub fn ffi_type_resolved(&self) -> Type {
-        let mut src_type = resolve_type(self.self_ty.as_ref(), self.type_.clone());
+        let src_type = resolve_type(self.self_ty.as_ref(), self.type_.clone());
 
+        // TODO: Handle error properly
         if matches!(src_type, Type::Array(_)) {
-            src_type = parse_quote! {Box<#src_type>}
+            unimplemented!("Arrays are not supported by C ABI. Use a pointer or struct wrapper");
         }
 
         parse_quote! {<#src_type as co3::FfiType>::ReprC}
     }
     // TODO: Probably can be removed?
     pub fn wrapper_ffi_type_resolved(&self) -> Type {
-        let mut src_type = resolve_type(self.self_ty.as_ref(), self.type_.clone());
+        let src_type = resolve_type(self.self_ty.as_ref(), self.type_.clone());
 
+        // TODO: Handle error properly
         if matches!(src_type, Type::Array(_)) {
-            src_type = parse_quote! {Box<#src_type>}
+            unimplemented!("Arrays are not supported by C ABI. Use a pointer or struct wrapper");
         }
 
         parse_quote! {<<#src_type as co3::FfiWrapperType>::InputType as co3::FfiType>::ReprC}

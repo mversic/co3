@@ -49,7 +49,7 @@ pub(super) fn default_init_arr<R: Default, const N: usize>() -> [R; N] {
 /// out-pointer must be valid for writes
 pub unsafe fn write_non_local<
     'itm,
-    R: Ir<Type = S> + NonLocal + FfiConvert<'itm, R::ReprC> + 'itm,
+    R: Ir<Type = S> + NonLocal + FfiConvert<'itm> + 'itm,
     S: 'itm,
 >(
     source: R,
@@ -77,7 +77,7 @@ pub unsafe fn write_non_local<
 /// Check [`FfiConvert::try_from_ffi`]
 pub unsafe fn read_non_local<
     'itm,
-    R: Ir<Type = S> + NonLocal + FfiConvert<'itm, R::ReprC> + 'itm,
+    R: Ir<Type = S> + NonLocal + FfiConvert<'itm> + 'itm,
     S: 'itm,
 >(
     out_ptr: R::ReprC,

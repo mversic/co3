@@ -2,6 +2,5 @@
 pub fn array_arg(_arr: [u32; 2]) {}
 
 fn main() {
-    let arg = [12_u32, 42_u32];
-    __array_arg(arg);
+    __array_arg([12_u32, 42_u32]);
 }

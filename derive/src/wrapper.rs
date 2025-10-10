@@ -343,15 +343,15 @@ fn gen_impl_ffi(name: &Ident, generics: &syn::Generics) -> TokenStream {
         impl #impl_generics co3::FfiType for #name #ty_generics #where_clause {
             type ReprC = *mut co3::Extern;
         }
-        impl #impl_generics co3::FfiConvert<'_, *mut co3::Extern> for #name #ty_generics #where_clause {
+        impl #impl_generics co3::FfiConvert<'_> for #name #ty_generics #where_clause {
             type RustStore = ();
             type FfiStore = ();
 
-            fn into_ffi(self, _: &mut ()) -> *mut co3::Extern {
+            fn into_ffi(self, _: &mut ()) -> Self::ReprC {
                 core::mem::ManuallyDrop::new(self).0
             }
 
-            unsafe fn try_from_ffi(source: *mut co3::Extern, _: &mut ()) -> co3::Result<Self> {
+            unsafe fn try_from_ffi(source: Self::ReprC, _: &mut ()) -> co3::Result<Self> {
                 if source.is_null() {
                     return Err(co3::FfiReturn::ArgIsNull);
                 }

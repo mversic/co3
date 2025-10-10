@@ -109,6 +109,11 @@ impl OpaqueStruct {
 }
 
 #[co3::carbonate]
+pub fn kita(item: &(u32, u32)) -> &(u32, u32) {
+    item
+}
+
+#[co3::carbonate]
 pub fn freestanding_with_boxed_slice(item: Box<[u8]>) -> Box<[u8]> {
     item
 }
@@ -143,10 +148,10 @@ pub fn freestanding_with_data_carrying_enum(enum_: DataCarryingEnum) -> DataCarr
     enum_
 }
 
-#[co3::carbonate]
-pub fn freestanding_with_array(arr: [u8; 1]) -> [u8; 1] {
-    arr
-}
+//#[co3::carbonate]
+//pub fn freestanding_with_array(arr: [u8; 1]) -> [u8; 1] {
+//    arr
+//}
 
 #[co3::carbonate]
 pub fn freestanding_with_array_ref(arr: &[u8; 1]) -> &[u8; 1] {
@@ -172,7 +177,7 @@ pub fn get_vec_of_boxed_opaques() -> Vec<Box<OpaqueStruct>> {
 }
 
 #[co3::carbonate]
-pub fn take_and_return_array_of_opaques(a: [OpaqueStruct; 2]) -> [OpaqueStruct; 2] {
+pub fn take_and_return_array_of_opaques(a: &[OpaqueStruct; 2]) -> &[OpaqueStruct; 2] {
     a
 }
 
@@ -425,7 +430,7 @@ fn take_and_return_boxed_slice() {
 #[test]
 #[webassembly_test::webassembly_test]
 fn take_and_return_option_without_niche() {
-    let input = Some(42);
+    let input = Some(42u8);
     let mut output = MaybeUninit::new(FfiTuple2(0, unsafe { core::mem::zeroed() }));
 
     unsafe {
@@ -540,26 +545,26 @@ fn return_empty_tuple_result() {
     }
 }
 
-#[test]
-#[webassembly_test::webassembly_test]
-fn array_to_pointer() {
-    let array = [1_u8];
-    let mut store = Option::default();
-    let ptr: *const [u8; 1] = array.into_ffi(&mut store);
-    let mut output = MaybeUninit::new([0_u8]);
-
-    unsafe {
-        assert_eq!(
-            FfiReturn::Ok,
-            __freestanding_with_array(ptr, output.as_mut_ptr())
-        );
-
-        assert_eq!(
-            [1_u8],
-            <[u8; 1]>::try_from_ffi(output.assume_init(), &mut ()).unwrap()
-        );
-    }
-}
+//#[test]
+//#[webassembly_test::webassembly_test]
+//fn array_to_pointer() {
+//    let array = [1_u8];
+//    let mut store = Option::default();
+//    let ptr: *const [u8; 1] = array.into_ffi(&mut store);
+//    let mut output = MaybeUninit::new([0_u8]);
+//
+//    unsafe {
+//        assert_eq!(
+//            FfiReturn::Ok,
+//            __freestanding_with_array(ptr, output.as_mut_ptr())
+//        );
+//
+//        assert_eq!(
+//            [1_u8],
+//            <[u8; 1]>::try_from_ffi(output.assume_init(), &mut ()).unwrap()
+//        );
+//    }
+//}
 
 #[test]
 #[webassembly_test::webassembly_test]
@@ -766,10 +771,7 @@ fn array_of_opaques() {
     unsafe {
         assert_eq!(
             FfiReturn::Ok,
-            __take_and_return_array_of_opaques(
-                input.clone().into_ffi(&mut store),
-                output.as_mut_ptr()
-            )
+            __take_and_return_array_of_opaques((&input).into_ffi(&mut store), output.as_mut_ptr())
         );
         let output = output.assume_init();
         let output = <[OpaqueStruct; 2]>::try_from_ffi(output, &mut ()).unwrap();
