@@ -1520,14 +1520,13 @@ macro_rules! mineral {
         unsafe impl<$($($impl_generics $(: $bounds)?),*)?> $crate::transmute::Transmute for $ty where $($($where_ty: $where_bound),*)? {
             type Target = $target;
 
-            #[inline]
             fn is_valid(target: &Self::Target) -> bool {
                 $validity_fn(target)
             }
         }
 
         impl<$($($impl_generics $(: $bounds)?),*)?> $crate::option::Niche for $ty where $($($where_ty: $where_bound),*)? {
-            const NICHE_VALUE: <$target as $crate::ExternC>::CType = $niche_value;
+            const NICHE_VALUE: <Self as $crate::ExternC>::CType = $niche_value;
         }
     };
     (unsafe impl $(<$($impl_generics: tt $(: $bounds: path)?),*>)? Transparent for $ty: ty $(where $($where_ty:ty: $where_bound:path),* )? {
@@ -1541,7 +1540,6 @@ macro_rules! mineral {
         unsafe impl<$($($impl_generics $(: $bounds)?),*)?> $crate::transmute::Transmute for $ty where $($($where_ty: $where_bound),*)? {
             type Target = $target;
 
-            #[inline]
             fn is_valid(_: &Self::Target) -> bool {
                 true
             }
@@ -1551,7 +1549,7 @@ macro_rules! mineral {
         unsafe impl<$($($impl_generics $(: $bounds)?),*)?> $crate::transmute::InfallibleTransmute for $ty where $($($where_ty: $where_bound),*)? {}
 
         impl<$($($impl_generics $(: $bounds)?),*)?> $crate::option::Niche for $ty where for<'dummy> $target: $crate::option::Niche, $($($where_ty: $where_bound),*)? {
-            const NICHE_VALUE: <$target as $crate::ExternC>::CType = <$target as $crate::option::Niche>::NICHE_VALUE;
+            const NICHE_VALUE: <Self as $crate::ExternC>::CType = <$target as $crate::option::Niche>::NICHE_VALUE;
         }
 
         impl<$($($impl_generics $(: $bounds)?),*)?> $crate::WrapperTypeOf<$ty> for $target where $($($where_ty: $where_bound),*)? {
@@ -1649,7 +1647,6 @@ impl<'slice, R, T> WrapperTypeOf<&'slice [R]> for LocalSlice<'slice, T> {
 unsafe impl<'itm, R: Transmute> Transmute for LocalRef<'itm, R> {
     type Target = LocalRef<'itm, <R>::Target>;
 
-    #[inline]
     fn is_valid(target: &Self::Target) -> bool {
         <R>::is_valid(&target.0)
     }
@@ -1658,7 +1655,6 @@ unsafe impl<'itm, R: Transmute> Transmute for LocalRef<'itm, R> {
 unsafe impl<'itm, R: Transmute> Transmute for LocalSlice<'itm, R> {
     type Target = LocalSlice<'itm, <R>::Target>;
 
-    #[inline]
     fn is_valid(target: &Self::Target) -> bool {
         target.iter().all(|item| <R>::is_valid(item))
     }

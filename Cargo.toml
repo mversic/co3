@@ -23,12 +23,12 @@ non_robust_ref_mut = []
 derive = ["co3_derive"]
 
 # Enable integration with `getset` when deriving `extern C` ABI
-getset = ["co3_derive/getset"]
+getset = ["derive", "co3_derive/getset"]
 
 [dependencies]
 co3_derive = { path = "derive", optional = true }
 
-derive_more = { version = "2.0.1", features = ["display", "constructor"] }
+derive_more = { version = "2.0.1", features = ["display"] }
 disjoint_impls = "1.1.3"
 
 # FIXME: Replace with never type https://github.com/rust-lang/rust/issues/35121
