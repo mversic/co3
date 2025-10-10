@@ -14,26 +14,52 @@ jobs:
   static-analysis:
     runs-on: ubuntu-latest
 
+    strategy:
+      matrix:
+        target: [system, wasm32]
+
     steps:
     - uses: actions/checkout@v5
     - uses: dtolnay/rust-toolchain@stable
       with:
-        components: "rustfmt, clippy"
+        targets: wasm32-unknown-unknown
+        components: rustfmt, clippy
     - uses: Swatinem/rust-cache@v2
+      with:
+        key: ${{ matrix.target }}
 
     - name: Rust Format + Check + Lint
       run: |
         cargo fmt --all --check
-        cargo clippy --workspace --benches --tests --examples --quiet
+
+        if [ "${{ matrix.target }}" = "wasm32" ]; then
+          cargo clippy --workspace --tests --all-features --target wasm32-unknown-unknown
+        else
+          cargo clippy --workspace --tests --all-features
+        fi
 
   test:
     runs-on: ubuntu-latest
     needs: static-analysis
 
+    strategy:
+      matrix:
+        target: [system, wasm32]
+
     steps:
     - uses: actions/checkout@v5
     - uses: dtolnay/rust-toolchain@stable
+      with:
+        targets: wasm32-unknown-unknown
     - uses: Swatinem/rust-cache@v2
+      with:
+        key: ${{ matrix.target }}
 
     - name: Run tests
-      run: cargo test --workspace
+      run: |
+        if [ "${{ matrix.target }}" = "wasm32" ]; then
+          cargo test --workspace --all-features --target wasm32-unknown-unknown
+        else
+          cargo test --workspace --all-features
+        fi
+
