@@ -12,6 +12,7 @@ description = "Derive macros for `CO3`"
 proc-macro = true
 
 [features]
+# Enable integration with `getset` when deriving `extern C` ABI
 getset = []
 
 [dependencies]

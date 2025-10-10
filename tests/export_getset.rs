@@ -1,3 +1,4 @@
+#![cfg(feature = "derive")]
 #![cfg(feature = "getset")]
 
 use std::mem::MaybeUninit;

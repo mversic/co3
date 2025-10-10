@@ -1,3 +1,4 @@
+#![cfg(feature = "derive")]
 use std::collections::BTreeMap;
 
 use co3::ir::External as _;

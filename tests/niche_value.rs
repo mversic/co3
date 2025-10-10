@@ -1,3 +1,4 @@
+#![cfg(feature = "derive")]
 use core::{cmp::Ordering, ffi::c_int, ptr::NonNull};
 use std::mem::ManuallyDrop;
 
@@ -388,11 +389,6 @@ fn enum_niche_value() {
     #[cfg(target_family = "wasm")]
     let expected_ord = 2_i32;
 
-    #[cfg(not(target_family = "wasm"))]
-    let expected_ord = 2_i8;
-    #[cfg(target_family = "wasm")]
-    let expected_ord = 2_i32;
-
     assert_eq!(expected_bool, None::<bool>.encode(&mut ()));
     assert_eq!(expected_ord, None::<Ordering>.encode(&mut ()));
 
@@ -414,7 +410,7 @@ fn enum_niche_value() {
     );
 
     assert_eq!(
-        1_i8,
+        expected2,
         None::<FieldlessSingleFieldEnumWithReprI>.encode(&mut ())
     );
 

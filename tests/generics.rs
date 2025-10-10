@@ -1,3 +1,4 @@
+#![cfg(feature = "derive")]
 use std::mem::MaybeUninit;
 
 use co3::{ExternC, FfiConvert};

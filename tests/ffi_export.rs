@@ -1,3 +1,4 @@
+#![cfg(feature = "derive")]
 use std::{alloc, collections::BTreeMap, mem::MaybeUninit};
 
 use co3::{

@@ -1,3 +1,4 @@
+#![cfg(feature = "derive")]
 use std::mem::MaybeUninit;
 
 use co3::{ExternC, FfiReturn, out_ptr::OutPtrRead as _};

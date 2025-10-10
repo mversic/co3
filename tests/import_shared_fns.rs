@@ -1,3 +1,4 @@
+#![cfg(feature = "derive")]
 co3::handles! {FfiStruct<bool>}
 co3::decl_fns! {Drop, Clone, Eq, Ord}
 

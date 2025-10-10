@@ -1,3 +1,4 @@
+#![cfg(feature = "derive")]
 use std::{cmp::Ordering, mem::MaybeUninit};
 
 use co3::{ExternC, FfiConvert, FfiReturn, def_fns, out_ptr::OutPtrRead};

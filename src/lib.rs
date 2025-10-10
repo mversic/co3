@@ -9,6 +9,7 @@ use core::mem::ManuallyDrop;
 
 use alloc::{boxed::Box, vec::Vec};
 
+#[cfg(feature = "derive")]
 pub use co3_derive::*;
 use derive_more::Display;
 use disjoint_impls::disjoint_impls;

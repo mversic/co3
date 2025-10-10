@@ -1,3 +1,4 @@
+#![cfg(feature = "derive")]
 use co3::{LocalRef, LocalSlice};
 
 #[co3::extern_type]

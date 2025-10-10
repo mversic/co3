@@ -1,3 +1,4 @@
+#![cfg(feature = "derive")]
 #![cfg(feature = "getset")]
 
 co3::handles! {Name, FfiStruct}
