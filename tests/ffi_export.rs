@@ -1,9 +1,7 @@
-#![allow(unsafe_code, clippy::pedantic)]
-
 use std::{alloc, collections::BTreeMap, mem::MaybeUninit};
 
 use co3::{
-    FfiConvert, FfiReturn, FfiTuple1, FfiTuple2, FfiType, LocalRef, out_ptr::OutPtrRead,
+    ExternC, FfiConvert, FfiReturn, FfiTuple1, FfiTuple2, LocalRef, out_ptr::OutPtrRead,
     slice::OutBoxedSlice,
 };
 
@@ -16,19 +14,19 @@ pub trait Target {
     fn target(self) -> Self::Target;
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, FfiType)]
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, ExternC)]
 pub struct Name(String);
-#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, FfiType)]
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, ExternC)]
 pub struct Value(String);
 
-#[derive(Debug, Clone, PartialEq, Eq, Default, FfiType)]
+#[derive(Debug, Clone, PartialEq, Eq, Default, ExternC)]
 pub struct OpaqueStruct {
     name: Option<Name>,
     tokens: Vec<Value>,
     params: BTreeMap<Name, Value>,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, FfiType)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, ExternC)]
 #[repr(u8)]
 pub enum FieldlessEnum {
     A,
@@ -36,14 +34,13 @@ pub enum FieldlessEnum {
     C,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, FfiType)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, ExternC)]
 #[repr(transparent)]
 pub enum TransparentFieldlessEnum {
     A,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, FfiType)]
-#[allow(variant_size_differences)]
+#[derive(Debug, Clone, PartialEq, Eq, ExternC)]
 #[repr(C)]
 pub enum DataCarryingEnum {
     A(OpaqueStruct),
@@ -53,7 +50,7 @@ pub enum DataCarryingEnum {
     D,
 }
 
-#[derive(Clone, Copy, PartialEq, Eq, FfiType)]
+#[derive(Clone, Copy, PartialEq, Eq, ExternC)]
 #[repr(C)]
 pub struct RobustReprCStruct<T, U> {
     a: u8,
@@ -171,7 +168,6 @@ pub fn freestanding_with_repr_c_struct(
 }
 
 #[co3::carbonate]
-#[allow(clippy::vec_box)]
 pub fn get_vec_of_boxed_opaques() -> Vec<Box<OpaqueStruct>> {
     vec![Box::new(get_new_struct())]
 }
@@ -229,11 +225,11 @@ fn get_new_struct() -> OpaqueStruct {
 
         assert_eq!(
             FfiReturn::Ok,
-            OpaqueStruct__new(FfiConvert::into_ffi(name, &mut ()), ffi_struct.as_mut_ptr())
+            OpaqueStruct__new(FfiConvert::encode(name, &mut ()), ffi_struct.as_mut_ptr())
         );
 
         let ffi_struct = ffi_struct.assume_init();
-        FfiConvert::try_from_ffi(ffi_struct, &mut ()).unwrap()
+        FfiConvert::decode(ffi_struct, &mut ()).unwrap()
     }
 }
 
@@ -244,16 +240,16 @@ fn get_new_struct_with_params() -> OpaqueStruct {
     let mut output = MaybeUninit::new(core::ptr::null_mut());
 
     let mut store = Default::default();
-    let params_ffi = params.into_ffi(&mut store);
+    let params_ffi = params.encode(&mut store);
     assert_eq!(FfiReturn::Ok, unsafe {
         OpaqueStruct__with_params(
-            FfiConvert::into_ffi(ffi_struct, &mut ()),
+            FfiConvert::encode(ffi_struct, &mut ()),
             params_ffi,
             output.as_mut_ptr(),
         )
     });
 
-    unsafe { FfiConvert::try_from_ffi(output.assume_init(), &mut ()).expect("valid") }
+    unsafe { FfiConvert::decode(output.assume_init(), &mut ()).expect("valid") }
 }
 
 #[test]
@@ -265,7 +261,7 @@ fn non_robust_ref_mut() {
     let mut owned = "queen".to_owned();
     let ffi_struct: &mut str = owned.as_mut();
     let mut output = MaybeUninit::new(RefMutSlice::from_raw_parts_mut(core::ptr::null_mut(), 0));
-    let ffi_type: RefMutSlice<u8> = FfiConvert::into_ffi(ffi_struct, &mut ());
+    let ffi_type: RefMutSlice<u8> = FfiConvert::encode(ffi_struct, &mut ());
 
     unsafe {
         assert_eq!(
@@ -306,7 +302,7 @@ fn consume_self() {
     unsafe {
         assert_eq!(
             FfiReturn::Ok,
-            OpaqueStruct__consume_self(ffi_struct.into_ffi(&mut ()).cast())
+            OpaqueStruct__consume_self(ffi_struct.encode(&mut ()).cast())
         );
     }
 }
@@ -321,7 +317,7 @@ fn into_iter_item_impl_into() {
 
     let mut ffi_struct = get_new_struct();
     let mut tokens_store = Box::default();
-    let tokens_ffi = tokens.clone().into_ffi(&mut tokens_store);
+    let tokens_ffi = tokens.clone().encode(&mut tokens_store);
 
     let mut output = MaybeUninit::new(core::ptr::null_mut());
 
@@ -329,13 +325,13 @@ fn into_iter_item_impl_into() {
         assert_eq!(
             FfiReturn::Ok,
             OpaqueStruct__with_tokens(
-                FfiConvert::into_ffi(ffi_struct, &mut ()),
+                FfiConvert::encode(ffi_struct, &mut ()),
                 tokens_ffi,
                 output.as_mut_ptr()
             )
         );
 
-        ffi_struct = FfiConvert::try_from_ffi(output.assume_init(), &mut ()).expect("valid");
+        ffi_struct = FfiConvert::decode(output.assume_init(), &mut ()).expect("valid");
 
         assert_eq!(2, ffi_struct.tokens.len());
         assert_eq!(ffi_struct.tokens, tokens);
@@ -353,14 +349,14 @@ fn mutate_opaque() {
         assert_eq!(
             FfiReturn::Ok,
             OpaqueStruct__remove_param(
-                FfiConvert::into_ffi(&mut ffi_struct, &mut ()),
+                FfiConvert::encode(&mut ffi_struct, &mut ()),
                 &param_name,
                 removed.as_mut_ptr(),
             )
         );
 
         let removed = removed.assume_init();
-        let removed = Option::try_from_ffi(removed, &mut ()).unwrap();
+        let removed = Option::decode(removed, &mut ()).unwrap();
         assert_eq!(Some(Value(String::from("Omen"))), removed);
         assert!(!ffi_struct.params.contains_key(&param_name));
     }
@@ -377,20 +373,20 @@ fn return_option() {
     let name1 = Name(String::from("Non"));
     assert_eq!(FfiReturn::Ok, unsafe {
         OpaqueStruct__get_param(
-            FfiConvert::into_ffi(&ffi_struct, &mut ()),
+            FfiConvert::encode(&ffi_struct, &mut ()),
             &name1,
             param1.as_mut_ptr(),
         )
     });
     let param1 = unsafe { param1.assume_init() };
     assert!(param1.is_null());
-    let param1: Option<&Value> = unsafe { FfiConvert::try_from_ffi(param1, &mut ()).unwrap() };
+    let param1: Option<&Value> = unsafe { FfiConvert::decode(param1, &mut ()).unwrap() };
     assert!(param1.is_none());
 
     let name2 = Name(String::from("Nomen"));
     assert_eq!(FfiReturn::Ok, unsafe {
         OpaqueStruct__get_param(
-            FfiConvert::into_ffi(&ffi_struct, &mut ()),
+            FfiConvert::encode(&ffi_struct, &mut ()),
             &name2,
             param2.as_mut_ptr(),
         )
@@ -399,7 +395,7 @@ fn return_option() {
     unsafe {
         let param2 = param2.assume_init();
         assert!(!param2.is_null());
-        let param2: Option<&Value> = FfiConvert::try_from_ffi(param2, &mut ()).unwrap();
+        let param2: Option<&Value> = FfiConvert::decode(param2, &mut ()).unwrap();
         assert_eq!(Some(&Value(String::from("Omen"))), param2);
     }
 }
@@ -415,7 +411,7 @@ fn take_and_return_boxed_slice() {
         assert_eq!(
             FfiReturn::Ok,
             __freestanding_with_boxed_slice(
-                FfiConvert::into_ffi(input, &mut in_store),
+                FfiConvert::encode(input, &mut in_store),
                 output.as_mut_ptr()
             )
         );
@@ -436,7 +432,7 @@ fn take_and_return_option_without_niche() {
     unsafe {
         assert_eq!(
             FfiReturn::Ok,
-            __freestanding_with_option(FfiConvert::into_ffi(input, &mut ()), output.as_mut_ptr())
+            __freestanding_with_option(FfiConvert::encode(input, &mut ()), output.as_mut_ptr())
         );
 
         let output = output.assume_init();
@@ -455,7 +451,7 @@ fn take_and_return_option_with_niche_ref() {
         assert_eq!(
             FfiReturn::Ok,
             __freestanding_with_option_with_niche_ref(
-                FfiConvert::into_ffi(&input, &mut in_store),
+                FfiConvert::encode(&input, &mut in_store),
                 output.as_mut_ptr()
             )
         );
@@ -476,7 +472,7 @@ fn take_and_return_option_without_niche_ref() {
         assert_eq!(
             FfiReturn::Ok,
             __freestanding_with_option_without_niche_ref(
-                FfiConvert::into_ffi(&input, &mut in_store),
+                FfiConvert::encode(&input, &mut in_store),
                 output.as_mut_ptr()
             )
         );
@@ -496,7 +492,7 @@ fn return_iterator() {
         assert_eq!(
             FfiReturn::Ok,
             OpaqueStruct__params(
-                FfiConvert::into_ffi(&ffi_struct, &mut ()),
+                FfiConvert::encode(&ffi_struct, &mut ()),
                 out_params.as_mut_ptr()
             )
         );
@@ -519,12 +515,12 @@ fn return_result() {
     unsafe {
         assert_eq!(
             FfiReturn::ExecutionFail,
-            OpaqueStruct__fallible_int_output(false.into_ffi(&mut ()), output.as_mut_ptr())
+            OpaqueStruct__fallible_int_output(false.encode(&mut ()), output.as_mut_ptr())
         );
         assert_eq!(0, output.assume_init());
         assert_eq!(
             FfiReturn::Ok,
-            OpaqueStruct__fallible_int_output(true.into_ffi(&mut ()), output.as_mut_ptr())
+            OpaqueStruct__fallible_int_output(true.encode(&mut ()), output.as_mut_ptr())
         );
         assert_eq!(42, output.assume_init());
     }
@@ -536,11 +532,11 @@ fn return_empty_tuple_result() {
     unsafe {
         assert_eq!(
             FfiReturn::ExecutionFail,
-            OpaqueStruct__fallible_empty_tuple_output(false.into_ffi(&mut ()))
+            OpaqueStruct__fallible_empty_tuple_output(false.encode(&mut ()))
         );
         assert_eq!(
             FfiReturn::Ok,
-            OpaqueStruct__fallible_empty_tuple_output(true.into_ffi(&mut ()))
+            OpaqueStruct__fallible_empty_tuple_output(true.encode(&mut ()))
         );
     }
 }
@@ -550,7 +546,7 @@ fn return_empty_tuple_result() {
 //fn array_to_pointer() {
 //    let array = [1_u8];
 //    let mut store = Option::default();
-//    let ptr: *const [u8; 1] = array.into_ffi(&mut store);
+//    let ptr: *const [u8; 1] = array.encode(&mut store);
 //    let mut output = MaybeUninit::new([0_u8]);
 //
 //    unsafe {
@@ -561,7 +557,7 @@ fn return_empty_tuple_result() {
 //
 //        assert_eq!(
 //            [1_u8],
-//            <[u8; 1]>::try_from_ffi(output.assume_init(), &mut ()).unwrap()
+//            <[u8; 1]>::decode(output.assume_init(), &mut ()).unwrap()
 //        );
 //    }
 //}
@@ -570,7 +566,7 @@ fn return_empty_tuple_result() {
 #[webassembly_test::webassembly_test]
 fn take_and_return_array_ref() {
     let array = [1_u8];
-    let ptr: *const [u8; 1] = (&array).into_ffi(&mut ());
+    let ptr: *const [u8; 1] = (&array).encode(&mut ());
     let mut output = MaybeUninit::new(core::ptr::null());
 
     unsafe {
@@ -581,7 +577,7 @@ fn take_and_return_array_ref() {
 
         assert_eq!(
             &[1_u8; 1],
-            <&[u8; 1]>::try_from_ffi(output.assume_init(), &mut ()).unwrap()
+            <&[u8; 1]>::decode(output.assume_init(), &mut ()).unwrap()
         );
     }
 }
@@ -590,7 +586,7 @@ fn take_and_return_array_ref() {
 #[webassembly_test::webassembly_test]
 fn array_in_struct() {
     let array = ([1_u8],);
-    let ffi_arr: FfiTuple1<[u8; 1]> = array.into_ffi(&mut ((),));
+    let ffi_arr: FfiTuple1<[u8; 1]> = array.encode(&mut ((),));
     let mut output = MaybeUninit::new(FfiTuple1([0; 1]));
 
     unsafe {
@@ -601,7 +597,7 @@ fn array_in_struct() {
 
         assert_eq!(
             ([1_u8],),
-            <([u8; 1],)>::try_from_ffi(output.assume_init(), &mut ((),)).unwrap()
+            <([u8; 1],)>::decode(output.assume_init(), &mut ((),)).unwrap()
         );
     }
 }
@@ -641,7 +637,7 @@ fn primitive_conversion() {
     unsafe {
         assert_eq!(
             FfiReturn::Ok,
-            __freestanding_with_primitive(byte.into_ffi(&mut ()), output.as_mut_ptr())
+            __freestanding_with_primitive(byte.encode(&mut ()), output.as_mut_ptr())
         );
 
         assert_eq!(1, output.assume_init());
@@ -657,10 +653,7 @@ fn fieldless_enum_conversion() {
     unsafe {
         assert_eq!(
             FfiReturn::Ok,
-            __freestanding_with_fieldless_enum(
-                fieldless_enum.into_ffi(&mut ()),
-                output.as_mut_ptr()
-            )
+            __freestanding_with_fieldless_enum(fieldless_enum.encode(&mut ()), output.as_mut_ptr())
         );
 
         let ret_val = OutPtrRead::try_read_out(output.assume_init());
@@ -701,7 +694,7 @@ fn data_carrying_enum_conversion() {
         assert_eq!(
             FfiReturn::Ok,
             __freestanding_with_data_carrying_enum(
-                data_carrying_enum.clone().into_ffi(&mut store),
+                data_carrying_enum.clone().encode(&mut store),
                 output.as_mut_ptr()
             )
         );
@@ -721,11 +714,11 @@ fn invoke_trait_method() {
         assert_eq!(
             FfiReturn::Ok,
             OpaqueStruct__Target__target(
-                FfiConvert::into_ffi(ffi_struct, &mut ()),
+                FfiConvert::encode(ffi_struct, &mut ()),
                 output.as_mut_ptr()
             )
         );
-        let name = FfiConvert::try_from_ffi(output.assume_init(), &mut ()).unwrap();
+        let name = FfiConvert::decode(output.assume_init(), &mut ()).unwrap();
         assert_eq!(Name(String::from("X")), name);
     }
 }
@@ -739,7 +732,7 @@ fn nested_vec() {
         let mut store = Default::default();
         assert_eq!(
             FfiReturn::Ok,
-            __freestanding_with_nested_vec(vec.into_ffi(&mut store))
+            __freestanding_with_nested_vec(vec.encode(&mut store))
         );
     }
 }
@@ -771,10 +764,10 @@ fn array_of_opaques() {
     unsafe {
         assert_eq!(
             FfiReturn::Ok,
-            __take_and_return_array_of_opaques((&input).into_ffi(&mut store), output.as_mut_ptr())
+            __take_and_return_array_of_opaques((&input).encode(&mut store), output.as_mut_ptr())
         );
         let output = output.assume_init();
-        let output = <[OpaqueStruct; 2]>::try_from_ffi(output, &mut ()).unwrap();
+        let output = <[OpaqueStruct; 2]>::decode(output, &mut ()).unwrap();
         assert_eq!(input, output);
     }
 }
@@ -789,7 +782,7 @@ fn borrow_vec() {
     unsafe {
         assert_eq!(
             FfiReturn::Ok,
-            __take_vec_ref(<&Vec<u8>>::into_ffi(&a, &mut store))
+            __take_vec_ref(<&Vec<u8>>::encode(&a, &mut store))
         );
     }
 }
@@ -804,7 +797,7 @@ fn return_reference_from_slice() {
     unsafe {
         assert_eq!(
             FfiReturn::Ok,
-            __reference_from_slice(<&[u8]>::into_ffi(&a, &mut ()), output.as_mut_ptr())
+            __reference_from_slice(<&[u8]>::encode(&a, &mut ()), output.as_mut_ptr())
         );
 
         let output = <&u8>::try_read_out(output.assume_init()).unwrap();
@@ -824,7 +817,7 @@ fn borrow_local() {
         unsafe {
             assert_eq!(
                 FfiReturn::Ok,
-                __take_tuple_ref(<&(u8, u8)>::into_ffi(&a, &mut store), output.as_mut_ptr())
+                __take_tuple_ref(<&(u8, u8)>::encode(&a, &mut store), output.as_mut_ptr())
             );
 
             OutPtrRead::try_read_out(output.assume_init()).expect("Valid")

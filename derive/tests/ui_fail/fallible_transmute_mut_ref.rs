@@ -1,8 +1,8 @@
-use co3::FfiType;
+use co3::ExternC;
 
 type WrapperInner = u32;
 
-#[derive(FfiType)]
+#[derive(ExternC)]
 #[repr(transparent)]
 pub struct Wrapper(WrapperInner);
 

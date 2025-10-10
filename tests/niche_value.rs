@@ -1,32 +1,32 @@
 use core::{cmp::Ordering, ffi::c_int, ptr::NonNull};
 use std::mem::ManuallyDrop;
 
-use co3::{FfiConvert, FfiType, slice::RefSlice};
+use co3::{ExternC, FfiConvert, slice::RefSlice};
 
-#[derive(FfiType)]
+#[derive(ExternC)]
 pub enum FieldlessEnumWithoutRepr {
     Var1,
 }
 
-#[derive(FfiType)]
+#[derive(ExternC)]
 #[repr(u8)]
 pub enum FieldlessSingleFieldEnumWithReprU {
     Var1,
 }
 
-#[derive(FfiType)]
+#[derive(ExternC)]
 #[repr(i8)]
 pub enum FieldlessSingleFieldEnumWithReprI {
     Var1,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, FfiType)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, ExternC)]
 #[repr(transparent)]
 pub enum FieldlessTransparentEnum {
     A,
 }
 
-#[derive(FfiType)]
+#[derive(ExternC)]
 #[repr(u8)]
 pub enum FieldlessUEnum {
     Var1,
@@ -36,7 +36,7 @@ pub enum FieldlessUEnum {
     Var5,
 }
 
-#[derive(FfiType)]
+#[derive(ExternC)]
 #[repr(i8)]
 pub enum FieldlessIEnum {
     Var1,
@@ -46,7 +46,7 @@ pub enum FieldlessIEnum {
     Var5,
 }
 
-#[derive(FfiType)]
+#[derive(ExternC)]
 #[repr(u16)]
 pub enum FieldlessLargeEnum {
     Var1,
@@ -307,7 +307,7 @@ pub enum FieldlessLargeEnum {
     Var256,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, FfiType)]
+#[derive(Debug, Clone, PartialEq, Eq, ExternC)]
 #[repr(C)]
 pub enum FieldlessReprCEnum {
     A,
@@ -316,7 +316,7 @@ pub enum FieldlessReprCEnum {
 }
 
 // FIXME:
-//#[derive(Debug, Clone, PartialEq, Eq, FfiType)]
+//#[derive(Debug, Clone, PartialEq, Eq, ExternC)]
 //#[repr(C)]
 //pub enum DataCarryingEnum<'a> {
 //    A(&'a str),
@@ -329,67 +329,67 @@ pub enum FieldlessReprCEnum {
 #[cfg(target_family = "wasm")]
 #[webassembly_test::webassembly_test]
 fn wasm_niche_value() {
-    assert_eq!(u32::MAX, None::<u8>.into_ffi(&mut ()));
-    assert_eq!(i32::MAX, None::<i8>.into_ffi(&mut ()));
-    assert_eq!(u64::MAX, None::<u16>.into_ffi(&mut ()));
-    assert_eq!(i64::MAX, None::<i16>.into_ffi(&mut ()));
+    assert_eq!(u32::MAX, None::<u8>.encode(&mut ()));
+    assert_eq!(i32::MAX, None::<i8>.encode(&mut ()));
+    assert_eq!(u64::MAX, None::<u16>.encode(&mut ()));
+    assert_eq!(i64::MAX, None::<i16>.encode(&mut ()));
 }
 
 #[test]
 #[webassembly_test::webassembly_test]
 fn std_niche_value() {
-    assert_eq!(core::ptr::null::<u8>(), None::<&bool>.into_ffi(&mut ()));
+    assert_eq!(core::ptr::null::<u8>(), None::<&bool>.encode(&mut ()));
     #[cfg(feature = "non_robust_ref_mut")]
-    assert_eq!(core::ptr::null::<u8>(), None::<&mut bool>.into_ffi(&mut ()));
+    assert_eq!(core::ptr::null::<u8>(), None::<&mut bool>.encode(&mut ()));
 
     assert_eq!(
         RefSlice::<u8>::null(),
-        None::<String>.into_ffi(&mut Default::default())
+        None::<String>.encode(&mut Default::default())
     );
     assert_eq!(
         RefSlice::<u8>::null(),
-        None::<Box<str>>.into_ffi(&mut Default::default())
+        None::<Box<str>>.encode(&mut Default::default())
     );
 
-    assert_eq!(RefSlice::<u8>::null(), None::<&str>.into_ffi(&mut ()));
+    assert_eq!(RefSlice::<u8>::null(), None::<&str>.encode(&mut ()));
 
     #[cfg(feature = "non_robust_ref_mut")]
-    assert_eq!(RefSlice::<u8>::null(), None::<&mut str>.into_ffi(&mut ()));
+    assert_eq!(RefSlice::<u8>::null(), None::<&mut str>.encode(&mut ()));
     assert_eq!(
         core::ptr::null_mut(),
-        None::<NonNull<String>>.into_ffi(&mut ())
+        None::<NonNull<String>>.encode(&mut ())
     );
     assert_eq!(
         RefSlice::<u8>::null(),
-        None::<ManuallyDrop<String>>.into_ffi(&mut Default::default())
+        None::<ManuallyDrop<String>>.encode(&mut Default::default())
     );
 
-    assert_eq!(2_u8, None::<ManuallyDrop<bool>>.into_ffi(&mut ()));
+    assert_eq!(2_u8, None::<ManuallyDrop<bool>>.encode(&mut ()));
 }
 
 #[test]
 #[webassembly_test::webassembly_test]
 fn enum_niche_value() {
-    assert_eq!(2_u8, None::<bool>.into_ffi(&mut ()));
-    assert_eq!(2_i8, None::<Ordering>.into_ffi(&mut ()));
-    assert!(None::<FieldlessTransparentEnum>.into_ffi(&mut ()).is_null());
-    assert!(None::<FieldlessEnumWithoutRepr>.into_ffi(&mut ()).is_null());
+    assert_eq!(2_u8, None::<bool>.encode(&mut ()));
+    assert_eq!(2_i8, None::<Ordering>.encode(&mut ()));
+    assert!(None::<FieldlessTransparentEnum>.encode(&mut ()).is_null());
+    assert!(None::<FieldlessEnumWithoutRepr>.encode(&mut ()).is_null());
 
     assert_eq!(
         1_u8,
-        None::<FieldlessSingleFieldEnumWithReprU>.into_ffi(&mut ())
+        None::<FieldlessSingleFieldEnumWithReprU>.encode(&mut ())
     );
 
     assert_eq!(
         1_i8,
-        None::<FieldlessSingleFieldEnumWithReprI>.into_ffi(&mut ())
+        None::<FieldlessSingleFieldEnumWithReprI>.encode(&mut ())
     );
 
-    assert_eq!(5_u8, None::<FieldlessUEnum>.into_ffi(&mut ()));
-    assert_eq!(5_i8, None::<FieldlessIEnum>.into_ffi(&mut ()));
-    assert_eq!(256_u16, None::<FieldlessLargeEnum>.into_ffi(&mut ()));
-    assert_eq!(3 as c_int, None::<FieldlessReprCEnum>.into_ffi(&mut ()));
+    assert_eq!(5_u8, None::<FieldlessUEnum>.encode(&mut ()));
+    assert_eq!(5_i8, None::<FieldlessIEnum>.encode(&mut ()));
+    assert_eq!(256_u16, None::<FieldlessLargeEnum>.encode(&mut ()));
+    assert_eq!(3 as c_int, None::<FieldlessReprCEnum>.encode(&mut ()));
 
     // TODO: Add a test for data caryying enum
-    //assert_eq!(3 as c_int, None::<DataCarryingEnum>.into_ffi(&mut ()));
+    //assert_eq!(3 as c_int, None::<DataCarryingEnum>.encode(&mut ()));
 }

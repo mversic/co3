@@ -1,6 +1,6 @@
-use co3::FfiType;
+use co3::ExternC;
 
-#[derive(Clone, Copy, PartialEq, Eq, FfiType)]
+#[derive(Clone, Copy, PartialEq, Eq, ExternC)]
 #[repr(C)]
 pub struct NonRobustReprCStruct<T> {
     a: bool,

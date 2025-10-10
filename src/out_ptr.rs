@@ -11,7 +11,7 @@ use crate::{
 };
 
 disjoint_impls! {
-    /// Marker trait indicating that [`FfiConvert::into_ffi`] and [`FfiConvert::try_from_ffi`] don't
+    /// Marker trait indicating that [`FfiConvert::encode`] and [`FfiConvert::decode`] don't
     /// return a reference to the store. This is useful to determine which(and how) types can be
     /// returned from an FFI function considering that, after return, local context is destroyed
     ///
@@ -34,7 +34,7 @@ disjoint_impls! {
     ///
     /// # Safety
     ///
-    /// Type must not make use of the store during conversion into [`FfiType::ReprC`] via [`FfiConvert::into_ffi`] or [`FfiConvert::try_from_ffi`]
+    /// Type must not make use of the store during conversion into [`ExternC::CType`] via [`FfiConvert::encode`] or [`FfiConvert::decode`]
     pub unsafe trait NonLocal: OutPtr {}
 
     // SAFETY: Type doesn't use store during conversion
@@ -111,7 +111,7 @@ disjoint_impls! {
     ///
     /// If a type implements [`Ir`], i.e. has a defined internal representation,
     /// a blanket implementation is provided.
-    pub trait OutPtr: FfiType {
+    pub trait OutPtr: ExternC {
         /// Type of the out-pointer
         type OutPtr: ReprC;
     }
@@ -120,13 +120,13 @@ disjoint_impls! {
     where
         Self: Ir<Type = Robust>,
     {
-        type OutPtr = Self::ReprC;
+        type OutPtr = Self::CType;
     }
     impl<R> OutPtr for R
     where
         Self: Ir<Type = Opaque>,
     {
-        type OutPtr = Self::ReprC;
+        type OutPtr = Self::CType;
     }
     impl<R: Transmute> OutPtr for R
     where
@@ -140,14 +140,14 @@ disjoint_impls! {
     where
         Self: Ir<Type = &'a S>,
     {
-        type OutPtr = <R>::ReprC;
+        type OutPtr = <R>::CType;
     }
 
     impl<'a, R: ReprC> OutPtr for &'a [R]
     where
         Self: Ir<Type = &'a [Robust]>,
     {
-        type OutPtr = Self::ReprC;
+        type OutPtr = Self::CType;
     }
     impl<'a, R> OutPtr for &'a [R]
     where
@@ -166,14 +166,14 @@ disjoint_impls! {
     where
         Self: Ir<Type = &'a [S]>,
     {
-        type OutPtr = OutBoxedSlice<<R>::ReprC>;
+        type OutPtr = OutBoxedSlice<<R>::CType>;
     }
 
     impl<'a, R: ReprC> OutPtr for &'a mut [R]
     where
         Self: Ir<Type = &'a mut [Robust]>,
     {
-        type OutPtr = Self::ReprC;
+        type OutPtr = Self::CType;
     }
     impl<'a, R> OutPtr for &'a mut [R]
     where
@@ -199,7 +199,7 @@ disjoint_impls! {
     where
         Self: Ir<Type = Box<Opaque>>,
     {
-        type OutPtr = Self::ReprC;
+        type OutPtr = Self::CType;
     }
     impl<R: Transmute> OutPtr for Box<R>
     where
@@ -212,13 +212,13 @@ disjoint_impls! {
     where
         Self: Ir<Type = Box<Extern>>,
     {
-        type OutPtr = Self::ReprC;
+        type OutPtr = Self::CType;
     }
     impl<R: Ir<Type = S> + NonLocal, S: Cloned> OutPtr for Box<R>
     where
         Self: Ir<Type = Box<S>>,
     {
-        type OutPtr = <R>::ReprC;
+        type OutPtr = <R>::CType;
     }
 
     impl<R: ReprC> OutPtr for Box<[R]>
@@ -244,7 +244,7 @@ disjoint_impls! {
     where
         Self: Ir<Type = Box<[S]>>,
     {
-        type OutPtr = OutBoxedSlice<<R>::ReprC>;
+        type OutPtr = OutBoxedSlice<<R>::CType>;
     }
 
     impl<R: ReprC> OutPtr for Vec<R>
@@ -270,21 +270,21 @@ disjoint_impls! {
     where
         Self: Ir<Type = Vec<S>>,
     {
-        type OutPtr = OutBoxedSlice<<R>::ReprC>;
+        type OutPtr = OutBoxedSlice<<R>::CType>;
     }
 
     impl<R, const N: usize> OutPtr for [R; N]
     where
         Self: Ir<Type = [Opaque; N]>,
     {
-        type OutPtr = Self::ReprC;
+        type OutPtr = Self::CType;
     }
 
     impl<R: Ir<Type = S> + NonLocal, S: Cloned, const N: usize> OutPtr for [R; N]
     where
         Self: Ir<Type = [S; N]>,
     {
-        type OutPtr = Self::ReprC;
+        type OutPtr = Self::CType;
     }
 
     impl<R: OutPtr> OutPtr for Option<R>
@@ -314,7 +314,7 @@ disjoint_impls! {
     {
         type OutPtr = <&'itm [R] as OutPtr>::OutPtr;
     }
-    // FIXME: Check comment in FfiType?
+    // FIXME: Check comment in ExternC?
     impl<R, S> OutPtr for LocalSlice<'_, R>
     where
         Vec<R>: Ir<Type = Vec<S>> + OutPtr,
@@ -379,9 +379,9 @@ disjoint_impls! {
 
             unsafe {
                 // NOTE: Bypasses the erroneous lifetime check.
-                // Correct as long as `R::into_ffi` doesn't return a reference to the store (`R: NonLocal`)
+                // Correct as long as `R::encode` doesn't return a reference to the store (`R: NonLocal`)
                 let store_borrow = &mut *addr_of_mut!(store);
-                FfiConvert::into_ffi(self, store_borrow);
+                FfiConvert::encode(self, store_borrow);
 
                 // NOTE: None value indicates a bug in the implementation
                 out_ptr.write(store.0.expect("Store must be initialized"));
@@ -407,7 +407,7 @@ disjoint_impls! {
             unimplemented!();
             //let mut store = Default::default();
 
-            //FfiConvert::into_ffi(self, &mut store);
+            //FfiConvert::encode(self, &mut store);
             //let output = OutBoxedSlice::from_boxed_slice(Some(store));
 
             //unsafe {
@@ -438,9 +438,9 @@ disjoint_impls! {
 
             unsafe {
                 // NOTE: Bypasses the erroneous lifetime check.
-                // Correct as long as `R::into_ffi` doesn't return a reference to the store (`R: NonLocal`)
+                // Correct as long as `R::encode` doesn't return a reference to the store (`R: NonLocal`)
                 let store_borrow = &mut *addr_of_mut!(store);
-                FfiConvert::into_ffi(self, store_borrow);
+                FfiConvert::encode(self, store_borrow);
                 let output = OutBoxedSlice::from_boxed_slice(Some(store.0));
 
                 out_ptr.write(output);
@@ -465,7 +465,7 @@ disjoint_impls! {
         unsafe fn write_out(self, out_ptr: *mut Self::OutPtr) {
             unimplemented!();
             //let mut store = Default::default();
-            //FfiConvert::into_ffi(self, &mut store);
+            //FfiConvert::encode(self, &mut store);
             //let output = OutBoxedSlice::from_boxed_slice(Some(store));
 
             //unsafe {
@@ -530,9 +530,9 @@ disjoint_impls! {
 
             unsafe {
                 // NOTE: Bypasses the erroneous lifetime check.
-                // Correct as long as `R::into_ffi` doesn't return a reference to the store (`R: NonLocal`)
+                // Correct as long as `R::encode` doesn't return a reference to the store (`R: NonLocal`)
                 let store_borrow = &mut *addr_of_mut!(store);
-                FfiConvert::into_ffi(self, store_borrow);
+                FfiConvert::encode(self, store_borrow);
 
                 // NOTE: None value indicates a bug in the implementation
                 out_ptr.write(store.0.expect("Store must be initialized"));
@@ -546,7 +546,7 @@ disjoint_impls! {
     {
         unsafe fn write_out(self, out_ptr: *mut Self::OutPtr) {
             let mut store = Default::default();
-            FfiConvert::into_ffi(self, &mut store);
+            FfiConvert::encode(self, &mut store);
 
             unsafe {
                 out_ptr.write(OutBoxedSlice::from_boxed_slice(Some(store)));
@@ -559,7 +559,7 @@ disjoint_impls! {
     {
         unsafe fn write_out(self, out_ptr: *mut Self::OutPtr) {
             let mut store = Default::default();
-            FfiConvert::into_ffi(self, &mut store);
+            FfiConvert::encode(self, &mut store);
 
             unsafe {
                 out_ptr.write(OutBoxedSlice::from_boxed_slice(Some(store)));
@@ -589,9 +589,9 @@ disjoint_impls! {
 
             unsafe {
                 // NOTE: Bypasses the erroneous lifetime check.
-                // Correct as long as `R::into_ffi` doesn't return a reference to the store (`R: NonLocal`)
+                // Correct as long as `R::encode` doesn't return a reference to the store (`R: NonLocal`)
                 let store_borrow = &mut *addr_of_mut!(store);
-                FfiConvert::into_ffi(self, store_borrow);
+                FfiConvert::encode(self, store_borrow);
                 let output = OutBoxedSlice::from_boxed_slice(Some(store.0));
 
                 out_ptr.write(output);
@@ -605,7 +605,7 @@ disjoint_impls! {
     {
         unsafe fn write_out(self, out_ptr: *mut Self::OutPtr) {
             let mut store = Default::default();
-            FfiConvert::into_ffi(self, &mut store);
+            FfiConvert::encode(self, &mut store);
             let output = OutBoxedSlice::from_boxed_slice(Some(store));
 
             unsafe {
@@ -620,7 +620,7 @@ disjoint_impls! {
         unsafe fn write_out(self, out_ptr: *mut Self::OutPtr) {
             let mut store = Default::default();
 
-            FfiConvert::into_ffi(self, &mut store);
+            FfiConvert::encode(self, &mut store);
             let output = OutBoxedSlice::from_boxed_slice(Some(store));
 
             unsafe {
@@ -638,10 +638,10 @@ disjoint_impls! {
 
             unsafe {
                 // NOTE: Bypasses the erroneous lifetime check.
-                // Correct as long as `R::into_ffi` doesn't return a reference to the store (`R: NonLocal`)
+                // Correct as long as `R::encode` doesn't return a reference to the store (`R: NonLocal`)
                 let store_borrow = &mut *addr_of_mut!(store);
 
-                FfiConvert::into_ffi(self, store_borrow);
+                FfiConvert::encode(self, store_borrow);
                 let output = OutBoxedSlice::from_boxed_slice(Some(store.0));
 
                 out_ptr.write(output);
@@ -685,9 +685,9 @@ disjoint_impls! {
 
             unsafe {
                 // NOTE: Bypasses the erroneous lifetime check.
-                // Correct as long as `R::into_ffi` doesn't return a reference to the store (`R: NonLocal`)
+                // Correct as long as `R::encode` doesn't return a reference to the store (`R: NonLocal`)
                 let store_borrow = &mut *addr_of_mut!(store);
-                let item = Self::into_ffi(self, store_borrow);
+                let item = Self::encode(self, store_borrow);
 
                 out_ptr.write(item);
             }
@@ -726,7 +726,7 @@ disjoint_impls! {
             }
         }
     }
-    impl<R: Niche + OutPtrWrite<OutPtr = <R as FfiType>::ReprC>> OutPtrWrite for Option<R>
+    impl<R: Niche + OutPtrWrite<OutPtr = <R as ExternC>::CType>> OutPtrWrite for Option<R>
     where
         Self: Ir<Type = Self>,
     {
@@ -748,11 +748,11 @@ disjoint_impls! {
         ///
         /// # Errors
         ///
-        /// Check [`FfiConvert::try_from_ffi`]
+        /// Check [`FfiConvert::decode`]
         ///
         /// # Safety
         ///
-        /// Check [`FfiConvert::try_from_ffi`]
+        /// Check [`FfiConvert::decode`]
         unsafe fn try_read_out(out_ptr: Self::OutPtr) -> Result<Self>;
     }
 
@@ -824,7 +824,7 @@ disjoint_impls! {
     {
         unsafe fn try_read_out(out_ptr: Self::OutPtr) -> Result<Self> {
             unimplemented!()
-            //unsafe { FfiConvert::try_from_ffi(out_ptr, &mut ()).map(Box::new) }
+            //unsafe { FfiConvert::decode(out_ptr, &mut ()).map(Box::new) }
         }
     }
     impl<R: External> OutPtrRead for Box<R>
@@ -857,9 +857,9 @@ disjoint_impls! {
 
             let item = unsafe {
                 // NOTE: Bypasses the erroneous lifetime check.
-                // Correct as long as `R::try_from_ffi` doesn't return a reference to the store (`R: NonLocal`)
+                // Correct as long as `R::decode` doesn't return a reference to the store (`R: NonLocal`)
                 let store_borrow = &mut *addr_of_mut!(store);
-                <R>::try_from_ffi(out_ptr, store_borrow)?
+                <R>::decode(out_ptr, store_borrow)?
             };
 
             Ok(Box::new(item))
@@ -873,7 +873,7 @@ disjoint_impls! {
         unsafe fn try_read_out(out_ptr: Self::OutPtr) -> Result<Self> {
             unsafe {
                 let slice = RefSlice::from_raw_parts(out_ptr.as_mut_ptr(), out_ptr.len());
-                let res = FfiConvert::try_from_ffi(slice, &mut ());
+                let res = FfiConvert::decode(slice, &mut ());
 
                 if !out_ptr.deallocate() {
                     return Err(FfiReturn::TrapRepresentation);
@@ -906,9 +906,9 @@ disjoint_impls! {
 
                 let mut store = Default::default();
                 // NOTE: Bypasses the erroneous lifetime check.
-                // Correct as long as `R::try_from_ffi` doesn't return a reference to the store (`R: NonLocal`)
+                // Correct as long as `R::decode` doesn't return a reference to the store (`R: NonLocal`)
                 let store_borrow = &mut *addr_of_mut!(store);
-                let res = Self::try_from_ffi(slice, store_borrow);
+                let res = Self::decode(slice, store_borrow);
 
                 if !out_ptr.deallocate() {
                     return Err(FfiReturn::TrapRepresentation);
@@ -926,7 +926,7 @@ disjoint_impls! {
         unsafe fn try_read_out(out_ptr: Self::OutPtr) -> Result<Self> {
             unsafe {
                 let slice = RefSlice::from_raw_parts(out_ptr.as_mut_ptr(), out_ptr.len());
-                let res = FfiConvert::try_from_ffi(slice, &mut ());
+                let res = FfiConvert::decode(slice, &mut ());
 
                 if !out_ptr.deallocate() {
                     return Err(FfiReturn::TrapRepresentation);
@@ -959,9 +959,9 @@ disjoint_impls! {
 
                 let mut store = Default::default();
                 // NOTE: Bypasses the erroneous lifetime check.
-                // Correct as long as `R::try_from_ffi` doesn't return a reference to the store (`R: NonLocal`)
+                // Correct as long as `R::decode` doesn't return a reference to the store (`R: NonLocal`)
                 let store_borrow = &mut *addr_of_mut!(store);
-                let res = Self::try_from_ffi(slice, store_borrow);
+                let res = Self::decode(slice, store_borrow);
 
                 if !out_ptr.deallocate() {
                     return Err(FfiReturn::TrapRepresentation);
@@ -977,7 +977,7 @@ disjoint_impls! {
     where
         R: FfiConvert<'itm>,
         // FIXME: What is this bound?
-        //[R; N]: FfiConvert<'itm, [R; N]::ReprC>
+        //[R; N]: FfiConvert<'itm>
         [<R>::RustStore; N]: Default,
         [<R>::FfiStore; N]: Default,
         Self: Ir<Type = [S; N]>,
@@ -987,9 +987,9 @@ disjoint_impls! {
 
             unsafe {
                 // NOTE: Bypasses the erroneous lifetime check.
-                // Correct as long as `R::try_from_ffi` doesn't return a reference to the store (`R: NonLocal`)
+                // Correct as long as `R::decode` doesn't return a reference to the store (`R: NonLocal`)
                 let store_borrow = &mut *addr_of_mut!(store);
-                Self::try_from_ffi(out_ptr, store_borrow)
+                Self::decode(out_ptr, store_borrow)
             }
         }
     }
@@ -1006,10 +1006,10 @@ disjoint_impls! {
             }
         }
     }
-    impl<R: Niche + OutPtrRead<OutPtr = <R as FfiType>::ReprC>> OutPtrRead for Option<R>
+    impl<R: Niche + OutPtrRead<OutPtr = <R as ExternC>::CType>> OutPtrRead for Option<R>
     where
         Self: Ir<Type = Self>,
-        <R>::ReprC: PartialEq,
+        <R>::CType: PartialEq,
     {
         unsafe fn try_read_out(out_ptr: Self::OutPtr) -> Result<Self> {
             if out_ptr == <R>::NICHE_VALUE {
@@ -1026,16 +1026,16 @@ disjoint_impls! {
         R: FfiConvert<'itm>,
         Self: Ir<Type = &'itm [S]>,
     {
-        unsafe fn try_read_out(out_ptr: OutBoxedSlice<<R>::ReprC>) -> Result<Self> {
+        unsafe fn try_read_out(out_ptr: OutBoxedSlice<<R>::CType>) -> Result<Self> {
             let slice = RefSlice::from_raw_parts(out_ptr.as_mut_ptr(), out_ptr.len());
 
             let mut store = Default::default();
 
             unsafe {
                 // NOTE: Bypasses the erroneous lifetime check.
-                // Correct as long as `R::try_from_ffi` doesn't return a reference to the store (`R: NonLocal`)
+                // Correct as long as `R::decode` doesn't return a reference to the store (`R: NonLocal`)
                 let store_borrow = &mut *addr_of_mut!(store);
-                let res = <&[R]>::try_from_ffi(slice, store_borrow);
+                let res = <&[R]>::decode(slice, store_borrow);
 
                 if !out_ptr.deallocate() {
                     return Err(FfiReturn::TrapRepresentation);
@@ -1059,9 +1059,9 @@ disjoint_impls! {
 
             let item = unsafe {
                 // NOTE: Bypasses the erroneous lifetime check.
-                // Correct as long as `R::try_from_ffi` doesn't return a reference to the store (`R: NonLocal`)
+                // Correct as long as `R::decode` doesn't return a reference to the store (`R: NonLocal`)
                 let store_borrow = &mut *addr_of_mut!(store);
-                <R>::try_from_ffi(out_ptr, store_borrow)?
+                <R>::decode(out_ptr, store_borrow)?
             };
 
             Ok(Self(item, core::marker::PhantomData))

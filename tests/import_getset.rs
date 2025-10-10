@@ -1,5 +1,3 @@
-#![allow(unsafe_code)]
-
 co3::handles! {Name, FfiStruct}
 co3::decl_fns! {Drop, Clone, Eq}
 
@@ -46,7 +44,7 @@ mod ffi {
     use std::alloc;
 
     use co3::{
-        FfiConvert, FfiReturn, FfiType, def_fns,
+        ExternC, FfiConvert, FfiReturn, def_fns,
         out_ptr::{OutPtr, OutPtrWrite},
         slice::RefMutSlice,
     };
@@ -60,12 +58,12 @@ mod ffi {
         Eq: {ExternName, ExternFfiStruct},
     }
 
-    #[derive(Debug, Clone, PartialEq, Eq, FfiType)]
+    #[derive(Debug, Clone, PartialEq, Eq, ExternC)]
     #[mineral(opaque)]
     #[repr(C)]
     pub struct ExternName(String);
 
-    #[derive(Debug, Clone, PartialEq, Eq, FfiType)]
+    #[derive(Debug, Clone, PartialEq, Eq, ExternC)]
     #[mineral(opaque)]
     #[repr(C)]
     pub struct ExternFfiStruct {
@@ -90,12 +88,12 @@ mod ffi {
     #[unsafe(no_mangle)]
     unsafe extern "C" fn FfiStruct__new(
         input1: RefMutSlice<u8>,
-        input2: <u8 as FfiType>::ReprC,
+        input2: <u8 as ExternC>::CType,
         output: *mut *mut ExternFfiStruct,
     ) -> FfiReturn {
         unsafe {
             let string = String::from_utf8(input1.into_rust().expect("Defined").to_vec());
-            let num = FfiConvert::try_from_ffi(input2, &mut ()).expect("Valid num");
+            let num = FfiConvert::decode(input2, &mut ()).expect("Valid num");
             let name = ExternName(string.expect("Valid UTF8 string"));
             let opaque = Box::new(ExternFfiStruct { id: num, name });
 
@@ -108,7 +106,7 @@ mod ffi {
     #[unsafe(no_mangle)]
     unsafe extern "C" fn FfiStruct__id(
         input: *const ExternFfiStruct,
-        output: *mut <&u8 as FfiType>::ReprC,
+        output: *mut <&u8 as ExternC>::CType,
     ) -> FfiReturn {
         unsafe {
             let input = &*input;
@@ -121,7 +119,7 @@ mod ffi {
     #[unsafe(no_mangle)]
     unsafe extern "C" fn FfiStruct__id_mut(
         input: *mut ExternFfiStruct,
-        output: *mut <&mut u8 as FfiType>::ReprC,
+        output: *mut <&mut u8 as ExternC>::CType,
     ) -> FfiReturn {
         unsafe {
             let input = &mut *input;
@@ -134,11 +132,11 @@ mod ffi {
     #[unsafe(no_mangle)]
     unsafe extern "C" fn FfiStruct__set_id(
         input: *mut ExternFfiStruct,
-        id: <u8 as FfiType>::ReprC,
+        id: <u8 as ExternC>::CType,
     ) -> FfiReturn {
         unsafe {
             let input = &mut *input;
-            input.id = FfiConvert::try_from_ffi(id, &mut ()).expect("Valid num");
+            input.id = FfiConvert::decode(id, &mut ()).expect("Valid num");
         }
 
         FfiReturn::Ok

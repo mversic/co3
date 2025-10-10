@@ -1,6 +1,6 @@
 //! Internal Representation (IR) of Rust types during conversion into FFI types.
 //!
-//! While you can implement [`crate::FfiType`] directly on your type, it is often
+//! While you can implement [`crate::ExternC`] directly on your type, it is often
 //! preferable to map it into IR by implementing [`Ir`]. This approach gives you
 //! automatic, correct, and zero-cost conversions from IR to the equivalent C type.
 use alloc::{boxed::Box, vec::Vec};
@@ -11,14 +11,14 @@ use crate::{Extern, LocalRef, LocalSlice, repr_c::Cloned};
 
 /// Designates a type that can be converted to and from an internal representation (IR).
 ///
-/// Predefined IR types automatically implement [`crate::FfiType`] and related conversion traits.
+/// Predefined IR types automatically implement [`crate::ExternC`] and related conversion traits.
 pub trait Ir {
     /// The internal representation (i.e. type family) of the type
     ///
     /// - If `Self` is [`crate::ReprC`], set [`Ir::Type`] to [`Robust`].
     ///   The type is passed to FFI functions as-is, without conversion.
     ///
-    /// - If [`Ir::Type`] is [`Transparent`], `Self` automatically implements [`crate::FfiType`]
+    /// - If [`Ir::Type`] is [`Transparent`], `Self` automatically implements [`crate::ExternC`]
     ///   by delegating to its inner type via [`core::mem::transmute`].
     ///   If the inner type supports zero-copy conversion, then [`Transparent`] is also zero-copy.
     ///   See [`crate::Transmute`] for more details.
@@ -36,7 +36,7 @@ pub trait Ir {
     ///   inner type, but represented explicitly as a `(discriminant, value)` tuple.
     ///
     /// - In the common case, set [`Ir::Type`] to `Self` and implement [`Cloned`].
-    ///   This provides a default [`crate::FfiType`] implementation, but note that it will clone the type.
+    ///   This provides a default [`crate::ExternC`] implementation, but note that it will clone the type.
     type Type;
 }
 

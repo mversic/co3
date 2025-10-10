@@ -38,7 +38,6 @@ impl RustcDerive {
     }
 }
 
-#[allow(variant_size_differences)] // it's not like it's possible to change that..
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub enum Derive {
     Rustc(RustcDerive),

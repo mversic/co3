@@ -1,10 +1,10 @@
-use co3::FfiType;
+use co3::ExternC;
 
-#[derive(Clone, Copy, PartialEq, Eq, FfiType)]
+#[derive(Clone, Copy, PartialEq, Eq, ExternC)]
 #[repr(C)]
 pub struct FfiStruct1(*mut u32);
 
-#[derive(Clone, Copy, PartialEq, Eq, FfiType)]
+#[derive(Clone, Copy, PartialEq, Eq, ExternC)]
 #[repr(C)]
 pub enum FfiEnum1 {
     A,

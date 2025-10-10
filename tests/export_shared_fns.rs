@@ -1,8 +1,6 @@
-#![allow(unsafe_code)]
-
 use std::{cmp::Ordering, mem::MaybeUninit};
 
-use co3::{FfiConvert, FfiReturn, FfiType, def_fns, out_ptr::OutPtrRead};
+use co3::{ExternC, FfiConvert, FfiReturn, def_fns, out_ptr::OutPtrRead};
 
 co3::handles! {FfiStruct1, FfiStruct2}
 
@@ -14,13 +12,13 @@ def_fns! {
 }
 
 /// Struct without a repr attribute is opaque by default
-#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, FfiType)]
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, ExternC)]
 pub struct FfiStruct1 {
     name: String,
 }
 
 /// Struct with a repr attribute can be forced to become opaque with `#[mineral(opaque)]`
-#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, FfiType)]
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, ExternC)]
 #[mineral(opaque)]
 #[repr(C)]
 pub struct FfiStruct2 {
@@ -44,7 +42,7 @@ fn export_shared_fns() {
     let ffi_struct1 = unsafe {
         let mut ffi_struct = MaybeUninit::new(core::ptr::null_mut());
         let mut store = Default::default();
-        assert_eq! {FfiReturn::Ok, FfiStruct1__new(FfiConvert::into_ffi(name.clone(), &mut store), ffi_struct.as_mut_ptr())};
+        assert_eq! {FfiReturn::Ok, FfiStruct1__new(FfiConvert::encode(name.clone(), &mut store), ffi_struct.as_mut_ptr())};
         let ffi_struct = ffi_struct.assume_init();
         assert!(!ffi_struct.is_null());
         assert_eq!(FfiStruct1 { name }, *ffi_struct);
@@ -56,22 +54,22 @@ fn export_shared_fns() {
             let mut cloned = MaybeUninit::<*mut FfiStruct1>::new(core::ptr::null_mut());
 
             __clone(
-                FfiStruct1::ID.into_ffi(&mut ()),
+                FfiStruct1::ID.encode(&mut ()),
                 ffi_struct1.cast(),
                 cloned.as_mut_ptr().cast(),
             );
 
-            let cloned = FfiConvert::try_from_ffi(cloned.assume_init(), &mut ()).unwrap();
+            let cloned = FfiConvert::decode(cloned.assume_init(), &mut ()).unwrap();
             assert_eq!(*ffi_struct1, cloned);
 
             cloned
         };
 
         let mut is_equal = MaybeUninit::new(1);
-        let cloned_ptr = FfiConvert::into_ffi(&cloned, &mut ());
+        let cloned_ptr = FfiConvert::encode(&cloned, &mut ());
 
         __eq(
-            FfiStruct1::ID.into_ffi(&mut ()),
+            FfiStruct1::ID.encode(&mut ()),
             ffi_struct1.cast(),
             cloned_ptr.cast(),
             is_equal.as_mut_ptr(),
@@ -81,7 +79,7 @@ fn export_shared_fns() {
 
         let mut ordering = MaybeUninit::new(1);
         __ord(
-            FfiStruct1::ID.into_ffi(&mut ()),
+            FfiStruct1::ID.encode(&mut ()),
             ffi_struct1.cast(),
             cloned_ptr.cast(),
             ordering.as_mut_ptr(),
@@ -91,13 +89,13 @@ fn export_shared_fns() {
 
         assert_eq!(
             FfiReturn::Ok,
-            __drop(FfiStruct1::ID.into_ffi(&mut ()), ffi_struct1.cast())
+            __drop(FfiStruct1::ID.encode(&mut ()), ffi_struct1.cast())
         );
         assert_eq!(
             FfiReturn::Ok,
             __drop(
-                FfiStruct1::ID.into_ffi(&mut ()),
-                cloned.into_ffi(&mut ()).cast()
+                FfiStruct1::ID.encode(&mut ()),
+                cloned.encode(&mut ()).cast()
             )
         );
     }

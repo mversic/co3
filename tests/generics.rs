@@ -1,15 +1,13 @@
-#![allow(unsafe_code)]
-
 use std::mem::MaybeUninit;
 
-use co3::{FfiConvert, FfiType};
+use co3::{ExternC, FfiConvert};
 use getset::Getters;
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, FfiType)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, ExternC)]
 pub struct GenericFfiStruct<T>(T);
 
 #[co3::carbonate]
-#[derive(Clone, Copy, Getters, FfiType)]
+#[derive(Clone, Copy, Getters, ExternC)]
 #[getset(get = "pub")]
 pub struct FfiStruct {
     inner: GenericFfiStruct<bool>,
@@ -29,9 +27,9 @@ fn get_return_generic() {
     let mut output = MaybeUninit::<*const GenericFfiStruct<bool>>::new(core::ptr::null());
 
     unsafe {
-        FfiStruct__inner(ffi_struct.into_ffi(&mut ()), output.as_mut_ptr());
+        FfiStruct__inner(ffi_struct.encode(&mut ()), output.as_mut_ptr());
         assert_eq!(
-            FfiConvert::try_from_ffi(output.assume_init(), &mut ()),
+            FfiConvert::decode(output.assume_init(), &mut ()),
             Ok(&ffi_struct.inner)
         );
     }
@@ -44,10 +42,7 @@ fn freestanding_accept_and_return_generic() {
     let mut output = MaybeUninit::<*mut GenericFfiStruct<String>>::new(core::ptr::null_mut());
 
     unsafe {
-        __freestanding(inner.clone().into_ffi(&mut ()), output.as_mut_ptr());
-        assert_eq!(
-            FfiConvert::try_from_ffi(output.assume_init(), &mut ()),
-            Ok(inner)
-        );
+        __freestanding(inner.clone().encode(&mut ()), output.as_mut_ptr());
+        assert_eq!(FfiConvert::decode(output.assume_init(), &mut ()), Ok(inner));
     }
 }

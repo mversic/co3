@@ -1,4 +1,4 @@
-use co3::FfiType;
+use co3::ExternC;
 use getset::Getters;
 
 #[co3::carbonate]
@@ -7,7 +7,7 @@ pub fn freestanding<T>(v: T) -> T {
 }
 
 #[co3::carbonate]
-#[derive(Getters, FfiType)]
+#[derive(Getters, ExternC)]
 #[getset(get = "pub")]
 pub struct FfiStruct<T> {
     inner: T,

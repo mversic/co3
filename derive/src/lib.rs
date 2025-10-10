@@ -94,7 +94,7 @@ pub fn extern_type(_args: TokenStream, input: TokenStream) -> TokenStream {
             if !item.is_opaque() {
                 let item = item.ast;
                 return quote! {
-                    #[derive(co3::FfiType)]
+                    #[derive(co3::ExternC)]
                     #item
                 };
             }
@@ -202,8 +202,8 @@ pub fn extern_type(_args: TokenStream, input: TokenStream) -> TokenStream {
 ///
 /// It assumes that the derive is imported and referred to by its original name.
 #[manyhow]
-#[proc_macro_derive(FfiType, attributes(mineral))]
-pub fn ffi_type_derive(input: TokenStream) -> TokenStream {
+#[proc_macro_derive(ExternC, attributes(mineral))]
+pub fn derive_extern_c(input: TokenStream) -> TokenStream {
     let mut emitter = Emitter::new();
 
     let Some(item) = emitter.handle(syn::parse2::<syn::DeriveInput>(input)) else {
@@ -233,7 +233,7 @@ pub fn ffi_type_derive(input: TokenStream) -> TokenStream {
 ///
 /// // For a struct such as:
 /// #[co3::carbonate]
-/// #[derive(co3::FfiType, Clone, Getters)]
+/// #[derive(co3::ExternC, Clone, Getters)]
 /// #[getset(get = "pub")]
 /// pub struct Foo {
 ///     /// Id of the struct
@@ -396,7 +396,7 @@ pub fn carbonate(attr: TokenStream, item: TokenStream) -> TokenStream {
 /// pub fn return_first_elem_from_arr(arr: &[u8; 8]) -> &u8 {
 ///     // The body of this function is replaced with something like the following:
 ///     // let mut store = Default::default();
-///     // let arr = co3::FfiConvert::into_ffi(&arr, &mut store);
+///     // let arr = co3::FfiConvert::encode(&arr, &mut store);
 ///     // let output = MaybeUninit::uninit();
 ///     //
 ///     // let call_res = __return_first_elem_from_arr(arr, output.as_mut_ptr());

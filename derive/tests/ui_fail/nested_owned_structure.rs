@@ -1,8 +1,8 @@
 use std::mem::MaybeUninit;
 
-use co3::FfiType;
+use co3::ExternC;
 
-#[derive(Clone, FfiType)]
+#[derive(Clone, ExternC)]
 pub struct FfiStruct;
 
 #[co3::carbonate]

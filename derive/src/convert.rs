@@ -437,7 +437,7 @@ fn derive_ffi_type_for_fieldless_enum(
 
                     #match_
                 }},
-                NICHE_VALUE=#len as <Self as co3::FfiType>::ReprC
+                NICHE_VALUE=#len as <Self as co3::ExternC>::CType
             }
         }
 
@@ -447,7 +447,6 @@ fn derive_ffi_type_for_fieldless_enum(
     }
 }
 
-#[allow(clippy::too_many_lines)]
 fn derive_ffi_type_for_data_carrying_enum(
     emitter: &mut Emitter,
     enum_name: &Ident,
@@ -513,7 +512,7 @@ fn derive_ffi_type_for_data_carrying_enum(
                         Self::#variant_name(payload) => {
                             let payload = #payload_name {
                                 #variant_name: core::mem::ManuallyDrop::new(
-                                    co3::FfiConvert::into_ffi(payload, &mut store.#idx)
+                                    co3::FfiConvert::encode(payload, &mut store.#idx)
                                 )
                             };
 
@@ -525,7 +524,7 @@ fn derive_ffi_type_for_data_carrying_enum(
         })
         .collect::<Vec<_>>();
 
-    let variants_try_from_ffi = variants.iter().enumerate().map(|(i, variant)| {
+    let variants_decode = variants.iter().enumerate().map(|(i, variant)| {
         let idx = TokenStream::from_str(&format!("{i}")).expect("Valid");
         let variant_name = &variant.ident;
 
@@ -540,7 +539,7 @@ fn derive_ffi_type_for_data_carrying_enum(
                             source.payload.#variant_name
                         );
 
-                        co3::FfiConvert::try_from_ffi(payload, &mut store.#idx).map(Self::#variant_name)
+                        co3::FfiConvert::decode(payload, &mut store.#idx).map(Self::#variant_name)
                     }
                 }
             },
@@ -591,7 +590,7 @@ fn derive_ffi_type_for_data_carrying_enum(
                 type ReturnType = Self;
             }
             impl<#impl_generics> co3::out_ptr::OutPtr for #enum_name #ty_generics #non_local_where_clause {
-                type OutPtr = Self::ReprC;
+                type OutPtr = Self::CType;
             }
             impl<#impl_generics> co3::out_ptr::OutPtrWrite for #enum_name #ty_generics #non_local_where_clause {
                 unsafe fn write_out(self, out_ptr: *mut Self::OutPtr) {
@@ -614,14 +613,14 @@ fn derive_ffi_type_for_data_carrying_enum(
             type Type = Self;
         }
 
-        impl<#impl_generics> co3::FfiType for #enum_name #ty_generics #where_clause {
-            type ReprC = #repr_c_enum_name #ty_generics;
+        impl<#impl_generics> co3::ExternC for #enum_name #ty_generics #where_clause {
+            type CType = #repr_c_enum_name #ty_generics;
         }
         impl<#lifetime, #impl_generics> co3::FfiConvert<#lifetime> for #enum_name #ty_generics #where_clause {
             type RustStore = #rust_store;
             type FfiStore = #ffi_store;
 
-            fn into_ffi(self, store: &mut Self::RustStore) -> Self::ReprC {
+            fn encode(self, store: &mut Self::RustStore) -> Self::CType {
                 #ffi_store_conversion
 
                 match self {
@@ -629,11 +628,11 @@ fn derive_ffi_type_for_data_carrying_enum(
                 }
             }
 
-            unsafe fn try_from_ffi(source: Self::ReprC, store: &mut Self::FfiStore) -> co3::Result<Self> {
+            unsafe fn decode(source: Self::CType, store: &mut Self::FfiStore) -> co3::Result<Self> {
                 #rust_store_conversion
 
                 match source.tag {
-                    #(#variants_try_from_ffi,)*
+                    #(#variants_decode,)*
                     _ => Err(co3::FfiReturn::TrapRepresentation)
                 }
             }
@@ -694,7 +693,6 @@ fn gen_data_carrying_repr_c_enum(
         #[repr(C)]
         #[doc = #doc]
         #[derive(Clone)]
-        #[allow(non_camel_case_types)]
         pub struct #repr_c_enum_name #impl_generics #where_clause {
             tag: #tag_type, payload: #payload_name #ty_generics,
         }
@@ -726,7 +724,7 @@ fn gen_data_carrying_enum_payload(
                 || quote! {()},
                 |field| {
                     let field_ty = &field.ty;
-                    quote! {core::mem::ManuallyDrop<<#field_ty as co3::FfiType>::ReprC>}
+                    quote! {core::mem::ManuallyDrop<<#field_ty as co3::ExternC>::CType>}
                 },
             )
         })
@@ -736,7 +734,7 @@ fn gen_data_carrying_enum_payload(
         #[repr(C)]
         #[doc = #doc]
         #[derive(Clone)]
-        #[allow(non_snake_case, non_camel_case_types)]
+        #[expect(non_snake_case)]
         pub union #payload_name #impl_generics #where_clause {
             #(#field_names: #field_tys),*
         }

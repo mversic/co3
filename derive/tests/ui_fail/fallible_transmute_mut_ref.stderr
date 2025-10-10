@@ -15,5 +15,5 @@ error[E0277]: the trait bound `Wrapper: InfallibleTransmute` is not satisfied
              u128
            and $N others
    = note: required for `&mut Wrapper` to implement `co3::ir::Ir`
-   = note: required for `&mut Wrapper` to implement `FfiType`
+   = note: required for `&mut Wrapper` to implement `ExternC`
    = note: this error originates in the attribute macro `co3::carbonate` (in Nightly builds, run with -Z macro-backtrace for more info)

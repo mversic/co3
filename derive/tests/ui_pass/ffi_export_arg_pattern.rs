@@ -1,6 +1,6 @@
-use co3::FfiType;
+use co3::ExternC;
 
-#[derive(FfiType)]
+#[derive(ExternC)]
 pub struct Hello {
     a: i32,
     b: i32,

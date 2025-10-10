@@ -1,10 +1,8 @@
-#![allow(unsafe_code)]
-
 use std::mem::MaybeUninit;
 
-use co3::{FfiReturn, FfiType, out_ptr::OutPtrRead as _};
+use co3::{ExternC, FfiReturn, out_ptr::OutPtrRead as _};
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, FfiType)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, ExternC)]
 #[repr(u8)]
 pub enum Ambiguous {
     Inherent,
@@ -13,7 +11,7 @@ pub enum Ambiguous {
     None,
 }
 
-#[derive(Clone, Copy, FfiType)]
+#[derive(Clone, Copy, ExternC)]
 pub struct FfiStruct;
 
 #[co3::carbonate]

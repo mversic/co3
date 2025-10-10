@@ -1,7 +1,7 @@
 error[E0277]: the trait bound `bool: ReprC` is not satisfied
  --> tests/ui_fail/non_robust_repr_c.rs:3:38
   |
-3 | #[derive(Clone, Copy, PartialEq, Eq, FfiType)]
+3 | #[derive(Clone, Copy, PartialEq, Eq, ExternC)]
   |                                      ^^^^^^^ the trait `ReprC` is not implemented for `bool`
   |
   = help: the following other types implement trait `ReprC`:
@@ -15,4 +15,4 @@ error[E0277]: the trait bound `bool: ReprC` is not satisfied
             FfiTuple3<A, B, C>
           and $N others
   = help: see issue #48214
-  = note: this error originates in the derive macro `FfiType` (in Nightly builds, run with -Z macro-backtrace for more info)
+  = note: this error originates in the derive macro `ExternC` (in Nightly builds, run with -Z macro-backtrace for more info)

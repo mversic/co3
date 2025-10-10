@@ -1,10 +1,10 @@
-use co3::FfiType;
+use co3::ExternC;
 
-#[derive(FfiType)]
+#[derive(ExternC)]
 #[mineral(opaque)]
 pub enum FfiStruct1 {}
 
-#[derive(FfiType)]
+#[derive(ExternC)]
 pub enum FfiStruct2 {}
 
 fn main() {}

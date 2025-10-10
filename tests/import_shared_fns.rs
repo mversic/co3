@@ -1,5 +1,3 @@
-#![allow(unsafe_code)]
-
 co3::handles! {FfiStruct<bool>}
 co3::decl_fns! {Drop, Clone, Eq, Ord}
 
@@ -17,7 +15,6 @@ impl FfiStruct<bool> {
 }
 
 #[test]
-#[allow(clippy::nonminimal_bool)]
 #[webassembly_test::webassembly_test]
 fn import_shared_fns() {
     let ffi_struct = FfiStruct::new("ipso facto".to_string());
@@ -25,13 +22,13 @@ fn import_shared_fns() {
     let cloned_ffi_struct: FfiStruct<_> = Clone::clone(&ref_ffi_struct);
 
     assert!(*ref_ffi_struct == *cloned_ffi_struct.as_ref());
-    assert!(!(*ref_ffi_struct < *cloned_ffi_struct.as_ref()));
+    assert!(*ref_ffi_struct >= *cloned_ffi_struct.as_ref());
 }
 
 mod ffi {
     use std::alloc;
 
-    use co3::{FfiReturn, FfiType, slice::RefMutSlice};
+    use co3::{ExternC, FfiReturn, slice::RefMutSlice};
 
     co3::handles! {ExternFfiStruct}
 
@@ -44,7 +41,7 @@ mod ffi {
 
     co3::def_fns! { dealloc }
 
-    #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, FfiType)]
+    #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, ExternC)]
     #[mineral(opaque)]
     #[repr(C)]
     pub struct ExternFfiStruct(pub String);

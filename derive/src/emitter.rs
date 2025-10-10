@@ -46,7 +46,7 @@ impl Emitter {
     }
 
     /// Same as [`Emitter::handle`], but returns the default value of `T` if the passed value is `Err`.
-    #[allow(unused)]
+    #[expect(unused)]
     pub fn handle_or_default<E: ToTokensError + 'static, T: Default>(
         &mut self,
         result: manyhow::Result<T, E>,
@@ -69,7 +69,6 @@ impl Emitter {
     /// # Errors
     ///
     /// This function returns an error if the emitter has some errors accumulated.
-    #[allow(unused)]
     pub fn finish_with<T>(self, result: T) -> manyhow::Result<T> {
         self.finish().map(|_| result)
     }
@@ -81,7 +80,7 @@ impl Emitter {
     /// This function returns an error if:
     /// - The given result is `Err`
     /// - The emitter has some errors accumulated
-    #[allow(unused)]
+    #[expect(unused)]
     pub fn finish_and<E: ToTokensError + 'static, T>(
         mut self,
         result: manyhow::Result<T, E>,

@@ -1,5 +1,3 @@
-#![allow(trivial_casts)]
-
 //! Logic related to the conversion of IR types to equivalent robust C types. Types that are mapped into
 //! one of the predefined [`Ir`] types will be provided an automatic implementation of traits in this module.
 //!
@@ -18,7 +16,7 @@ use crate::{
 /// the likes of `&Self` or `&[Self]` into an FFI-compatible representation
 ///
 /// This type clones the pointed-to value to get owned value that has implemented
-/// [`FfiType`]. This type therefore uses the store
+/// [`ExternC`]. This type therefore uses the store
 pub trait Cloned {}
 
 impl<R: Ir<Type: Cloned>> Cloned for &R {}
@@ -53,15 +51,15 @@ pub unsafe fn write_non_local<
     S: 'itm,
 >(
     source: R,
-    out_ptr: *mut R::ReprC,
+    out_ptr: *mut R::CType,
 ) {
     let mut store = Default::default();
 
     unsafe {
         // NOTE: Bypasses the erroneous lifetime check.
-        // Correct as long as `R::into_ffi` doesn't return a reference to the store (`R: NonLocal`)
+        // Correct as long as `R::encode` doesn't return a reference to the store (`R: NonLocal`)
         let store_borrow = &mut *addr_of_mut!(store);
-        out_ptr.write(FfiConvert::into_ffi(source, store_borrow));
+        out_ptr.write(FfiConvert::encode(source, store_borrow));
     }
 }
 
@@ -70,24 +68,24 @@ pub unsafe fn write_non_local<
 ///
 /// # Errors
 ///
-/// Check [`FfiConvert::try_from_ffi`]
+/// Check [`FfiConvert::decode`]
 ///
 /// # Safety
 ///
-/// Check [`FfiConvert::try_from_ffi`]
+/// Check [`FfiConvert::decode`]
 pub unsafe fn read_non_local<
     'itm,
     R: Ir<Type = S> + NonLocal + FfiConvert<'itm> + 'itm,
     S: 'itm,
 >(
-    out_ptr: R::ReprC,
+    out_ptr: R::CType,
 ) -> Result<R> {
     let mut store = Default::default();
 
     unsafe {
         // NOTE: Bypasses the erroneous lifetime check.
-        // Correct as long as `R::try_from_ffi` doesn't return a reference to the store (`R: NonLocal`)
+        // Correct as long as `R::decode` doesn't return a reference to the store (`R: NonLocal`)
         let store_borrow = &mut *addr_of_mut!(store);
-        FfiConvert::try_from_ffi(out_ptr, store_borrow)
+        FfiConvert::decode(out_ptr, store_borrow)
     }
 }

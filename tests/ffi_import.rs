@@ -1,5 +1,3 @@
-#![allow(unsafe_code)]
-
 use co3::{LocalRef, LocalSlice};
 
 #[co3::extern_type]
@@ -131,7 +129,7 @@ mod ffi {
     use std::alloc;
 
     use co3::{
-        FfiReturn, FfiTuple2, FfiType,
+        ExternC, FfiReturn, FfiTuple2,
         out_ptr::OutPtr,
         slice::{OutBoxedSlice, RefMutSlice, RefSlice},
     };
@@ -203,7 +201,7 @@ mod ffi {
 
     #[unsafe(no_mangle)]
     unsafe extern "C" fn __freestanding_take_and_return_local_transparent_ref(
-        input: <&(u32, u32) as FfiType>::ReprC,
+        input: <&(u32, u32) as ExternC>::CType,
         output: *mut <&(u32, u32) as OutPtr>::OutPtr,
     ) -> FfiReturn {
         unsafe {
@@ -214,7 +212,7 @@ mod ffi {
 
     #[unsafe(no_mangle)]
     unsafe extern "C" fn __freestanding_take_and_return_boxed_int(
-        input: <Box<u8> as FfiType>::ReprC,
+        input: <Box<u8> as ExternC>::CType,
         output: *mut <Box<u8> as OutPtr>::OutPtr,
     ) -> FfiReturn {
         unsafe {
@@ -226,7 +224,7 @@ mod ffi {
 
     #[unsafe(no_mangle)]
     unsafe extern "C" fn __freestanding_return_empty_tuple_result(
-        input: <bool as FfiType>::ReprC,
+        input: <bool as ExternC>::CType,
     ) -> FfiReturn {
         if input == 1 {
             return FfiReturn::ExecutionFail;

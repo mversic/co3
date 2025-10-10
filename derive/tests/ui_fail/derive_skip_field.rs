@@ -1,10 +1,10 @@
 use std::mem::MaybeUninit;
 
-use co3::{FfiConvert, FfiType};
+use co3::{FfiConvert, ExternC};
 use getset::{Getters, Setters};
 
 #[co3::carbonate]
-#[derive(Clone, Setters, Getters, FfiType)]
+#[derive(Clone, Setters, Getters, ExternC)]
 #[getset(get = "pub")]
 pub struct FfiStruct {
     #[getset(set = "pub")]
@@ -20,18 +20,18 @@ fn main() {
     let mut b = MaybeUninit::<*const u32>::uninit();
 
     unsafe {
-        FfiStruct__a(FfiConvert::into_ffi(&s, &mut ()), a.as_mut_ptr());
-        let a: &i32 = FfiConvert::try_from_ffi(a.assume_init(), &mut ()).unwrap();
+        FfiStruct__a(FfiConvert::encode(&s, &mut ()), a.as_mut_ptr());
+        let a: &i32 = FfiConvert::decode(a.assume_init(), &mut ()).unwrap();
         FfiStruct__set_a(
-            FfiConvert::into_ffi(&mut s, &mut ()),
-            FfiConvert::into_ffi(*a, &mut ()),
+            FfiConvert::encode(&mut s, &mut ()),
+            FfiConvert::encode(*a, &mut ()),
         );
 
-        FfiStruct__b(FfiConvert::into_ffi(&s, &mut ()), b.as_mut_ptr());
-        let b: &u32 = FfiConvert::try_from_ffi(b.assume_init(), &mut ()).unwrap();
+        FfiStruct__b(FfiConvert::encode(&s, &mut ()), b.as_mut_ptr());
+        let b: &u32 = FfiConvert::decode(b.assume_init(), &mut ()).unwrap();
         FfiStruct__set_b(
-            FfiConvert::into_ffi(&mut s, &mut ()),
-            FfiConvert::into_ffi(*b, &mut ()),
+            FfiConvert::encode(&mut s, &mut ()),
+            FfiConvert::encode(*b, &mut ()),
         );
     }
 }

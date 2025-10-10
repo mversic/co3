@@ -46,7 +46,7 @@ impl Arg {
             unimplemented!("Arrays are not supported by C ABI. Use a pointer or struct wrapper");
         }
 
-        parse_quote! {<#src_type as co3::FfiType>::ReprC}
+        parse_quote! {<#src_type as co3::ExternC>::CType}
     }
     // TODO: Probably can be removed?
     pub fn wrapper_ffi_type_resolved(&self) -> Type {
@@ -57,7 +57,7 @@ impl Arg {
             unimplemented!("Arrays are not supported by C ABI. Use a pointer or struct wrapper");
         }
 
-        parse_quote! {<<#src_type as co3::FfiWrapperType>::InputType as co3::FfiType>::ReprC}
+        parse_quote! {<<#src_type as co3::FfiWrapperType>::InputType as co3::ExternC>::CType}
     }
 }
 

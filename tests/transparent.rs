@@ -1,16 +1,14 @@
-#![allow(unsafe_code)]
-
 use std::{alloc, marker::PhantomData, mem::MaybeUninit};
 
 use co3::{
-    FfiConvert, FfiReturn, FfiType,
+    ExternC, FfiConvert, FfiReturn,
     out_ptr::OutPtrRead,
     slice::{OutBoxedSlice, RefSlice},
 };
 
 co3::def_fns! { dealloc }
 
-#[derive(Clone, Copy, PartialEq, Eq, Debug, FfiType)]
+#[derive(Clone, Copy, PartialEq, Eq, Debug, ExternC)]
 #[mineral(unsafe(robust))]
 #[repr(transparent)]
 pub struct GenericTransparentStruct<P>(u64, PhantomData<P>);
@@ -21,7 +19,7 @@ impl<P> GenericTransparentStruct<P> {
     }
 }
 
-#[derive(Clone, Copy, PartialEq, Eq, Debug, FfiType)]
+#[derive(Clone, Copy, PartialEq, Eq, Debug, ExternC)]
 #[mineral(unsafe(robust))]
 #[repr(transparent)]
 pub struct TransparentStruct {
@@ -33,7 +31,7 @@ pub struct TransparentStruct {
 
 type NonRobustTransparentInner = [u8; 4];
 
-#[derive(Clone, Copy, PartialEq, Eq, Debug, FfiType)]
+#[derive(Clone, Copy, PartialEq, Eq, Debug, ExternC)]
 #[repr(transparent)]
 pub struct NonRobustTransparent(NonRobustTransparentInner);
 
@@ -103,7 +101,7 @@ fn take_and_return_transparent_array_ref() {
     let value = TransparentStruct::new(GenericTransparentStruct::new(42));
 
     let mut array = [value; 1];
-    let ptr: *mut [u64; 1] = (&mut array).into_ffi(&mut ());
+    let ptr: *mut [u64; 1] = (&mut array).encode(&mut ());
     let mut output = MaybeUninit::new(core::ptr::null_mut());
 
     unsafe {
@@ -114,7 +112,7 @@ fn take_and_return_transparent_array_ref() {
 
         assert_eq!(
             &[value; 1],
-            <&[TransparentStruct; 1]>::try_from_ffi(output.assume_init(), &mut ()).unwrap()
+            <&[TransparentStruct; 1]>::decode(output.assume_init(), &mut ()).unwrap()
         );
     }
 }
@@ -128,12 +126,12 @@ fn take_and_return_option_of_transparent() {
     unsafe {
         assert_eq!(
             FfiReturn::Ok,
-            __transparent_with_niche(value.into_ffi(&mut ()), output.as_mut_ptr())
+            __transparent_with_niche(value.encode(&mut ()), output.as_mut_ptr())
         );
 
         assert_eq!(
             value,
-            FfiConvert::try_from_ffi(output.assume_init(), &mut ()).unwrap()
+            FfiConvert::decode(output.assume_init(), &mut ()).unwrap()
         );
     }
 }
@@ -148,11 +146,11 @@ fn transparent_self_to_self() {
     unsafe {
         assert_eq!(
             FfiReturn::Ok,
-            __self_to_self(transparent_struct.into_ffi(&mut ()), output.as_mut_ptr())
+            __self_to_self(transparent_struct.encode(&mut ()), output.as_mut_ptr())
         );
         assert_eq!(
             Ok(transparent_struct),
-            TransparentStruct::try_from_ffi(output.assume_init(), &mut ())
+            TransparentStruct::decode(output.assume_init(), &mut ())
         );
     }
 }
@@ -173,7 +171,7 @@ fn transparent_vec_to_vec() {
         assert_eq!(
             FfiReturn::Ok,
             __vec_to_vec(
-                transparent_struct_vec.clone().into_ffi(&mut store),
+                transparent_struct_vec.clone().encode(&mut store),
                 output.as_mut_ptr()
             )
         );
@@ -200,7 +198,7 @@ fn transparent_slice_to_slice() {
         assert_eq!(
             FfiReturn::Ok,
             __slice_to_slice(
-                transparent_struct_slice.as_slice().into_ffi(&mut ()),
+                transparent_struct_slice.as_slice().encode(&mut ()),
                 output.as_mut_ptr()
             )
         );
@@ -223,13 +221,13 @@ fn transparent_method_consume() {
         assert_eq!(
             FfiReturn::Ok,
             TransparentStruct__with_payload(
-                transparent_struct.into_ffi(&mut ()),
-                payload.into_ffi(&mut ()),
+                transparent_struct.encode(&mut ()),
+                payload.encode(&mut ()),
                 output.as_mut_ptr()
             )
         );
         transparent_struct =
-            TransparentStruct::try_from_ffi(output.assume_init(), &mut ()).expect("valid");
+            TransparentStruct::decode(output.assume_init(), &mut ()).expect("valid");
 
         assert_eq!(transparent_struct.payload, payload);
     }
@@ -244,14 +242,11 @@ fn transparent_method_borrow() {
     unsafe {
         assert_eq!(
             FfiReturn::Ok,
-            TransparentStruct__payload(
-                (&transparent_struct).into_ffi(&mut ()),
-                output.as_mut_ptr()
-            )
+            TransparentStruct__payload((&transparent_struct).encode(&mut ()), output.as_mut_ptr())
         );
         assert_eq!(
             Ok(&transparent_struct.payload),
-            <&GenericTransparentStruct<_>>::try_from_ffi(output.assume_init(), &mut ())
+            <&GenericTransparentStruct<_>>::decode(output.assume_init(), &mut ())
         );
     }
 }
@@ -265,13 +260,13 @@ fn transparent_method_borrow_mut() {
         assert_eq!(
             FfiReturn::Ok,
             TransparentStruct__payload_mut(
-                (&mut transparent_struct).into_ffi(&mut ()),
+                (&mut transparent_struct).encode(&mut ()),
                 output.as_mut_ptr()
             )
         );
         assert_eq!(
             Ok(&mut transparent_struct.payload),
-            <&mut GenericTransparentStruct<_>>::try_from_ffi(output.assume_init(), &mut ())
+            <&mut GenericTransparentStruct<_>>::decode(output.assume_init(), &mut ())
         );
     }
 }

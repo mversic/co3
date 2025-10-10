@@ -1,15 +1,13 @@
-#![allow(unsafe_code)]
-
 use std::mem::MaybeUninit;
 
-use co3::FfiType;
+use co3::ExternC;
 use getset::{Getters, MutGetters, Setters};
 
-#[derive(Debug, Clone, PartialEq, Eq, FfiType)]
+#[derive(Debug, Clone, PartialEq, Eq, ExternC)]
 pub struct Name(String);
 
 #[co3::carbonate]
-#[derive(Clone, Setters, Getters, MutGetters, FfiType)]
+#[derive(Clone, Setters, Getters, MutGetters, ExternC)]
 #[getset(get = "pub")]
 pub struct FfiStruct {
     #[getset(set = "pub", get_mut = "pub")]

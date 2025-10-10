@@ -142,18 +142,16 @@ pub(super) fn transmute_from_target_box<R: Transmute>(source: Box<R::Target>) ->
     Ok(unsafe { Box::from_raw(Box::into_raw(source).cast::<R>()) })
 }
 
-#[allow(clippy::boxed_local)]
 pub(super) fn transmute_into_target_boxed_slice<R: Transmute>(
-    mut source: Box<[R]>,
+    #[expect(clippy::boxed_local)] mut source: Box<[R]>,
 ) -> Box<[R::Target]> {
     let (ptr, len) = (source.as_mut_ptr().cast::<R::Target>(), source.len());
 
     // SAFETY: Soundness is guaranteed by [`Transmute`]
     unsafe { Box::from_raw(core::slice::from_raw_parts_mut(ptr, len)) }
 }
-#[allow(clippy::boxed_local)]
 pub(super) fn transmute_from_target_boxed_slice<R: Transmute>(
-    mut source: Box<[R::Target]>,
+    #[expect(clippy::boxed_local)] mut source: Box<[R::Target]>,
 ) -> Result<Box<[R]>> {
     if !source.iter().all(|item| R::is_valid(item)) {
         return Err(FfiReturn::TrapRepresentation);
