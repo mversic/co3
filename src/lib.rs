@@ -1474,8 +1474,10 @@ pub enum FfiReturn {
 ///     unsafe impl<T> Transparent for NonNull<T> {
 ///         type Target = NonNullInner<T>;
 ///
-///         validation_fn={|target: &Self::Target| !target.is_null()},
-///         NICHE_VALUE=core::ptr::null_mut(),
+///         const NICHE_VALUE: Self::CType = core::ptr::null_mut();
+///         fn is_valid(target: &Self::Target) -> bool {
+///             !target.is_null()
+///         }
 ///     }
 /// }
 ///
@@ -1508,9 +1510,9 @@ macro_rules! mineral {
     (unsafe impl $(<$($impl_generics: tt $(: $bounds: path)?),*>)? Transparent for $ty: ty $(where $($where_ty:ty: $where_bound:path),* )? {
         type Target = $target:ty;
 
-        validation_fn={$validity_fn: expr},
-        NICHE_VALUE=$niche_value: expr
-        $(,)?
+        const NICHE_VALUE: $niche_ty:ty = $niche_value:expr;
+        fn is_valid($target_var:ident: $target_ty:ty) -> $ret_val:ty
+            $block:block
     }) => {
         impl<$($($impl_generics $(: $bounds)?),*)?> $crate::ir::Ir for $ty where $($($where_ty: $where_bound),*)? {
             type Type = $crate::ir::Transparent;
@@ -1520,13 +1522,39 @@ macro_rules! mineral {
         unsafe impl<$($($impl_generics $(: $bounds)?),*)?> $crate::transmute::Transmute for $ty where $($($where_ty: $where_bound),*)? {
             type Target = $target;
 
-            fn is_valid(target: &Self::Target) -> bool {
-                $validity_fn(target)
-            }
+            fn is_valid($target_var: $target_ty) -> bool $block
         }
 
         impl<$($($impl_generics $(: $bounds)?),*)?> $crate::option::Niche for $ty where $($($where_ty: $where_bound),*)? {
-            const NICHE_VALUE: <Self as $crate::ExternC>::CType = $niche_value;
+            const NICHE_VALUE: $niche_ty = $niche_value;
+        }
+    };
+    (unsafe impl $(<$($impl_generics: tt $(: $bounds: path)?),*>)? Transparent for $ty: ty $(where $($where_ty:ty: $where_bound:path),* )? {
+        type Target = $target:ty;
+        const NICHE_VALUE = "DELEGATE";
+    }) => {
+        impl<$($($impl_generics $(: $bounds)?),*)?> $crate::ir::Ir for $ty where $($($where_ty: $where_bound),*)? {
+            type Type = $crate::ir::Transparent;
+        }
+
+        // SAFETY: `$ty` is transmutable into `$target` and `is_valid` doesn't return false positives
+        unsafe impl<$($($impl_generics $(: $bounds)?),*)?> $crate::transmute::Transmute for $ty where $($($where_ty: $where_bound),*)? {
+            type Target = $target;
+
+            fn is_valid(_: &Self::Target) -> bool {
+                true
+            }
+        }
+
+        // SAFETY: `$t` is robust with respect to `$target`
+        unsafe impl<$($($impl_generics $(: $bounds)?),*)?> $crate::transmute::InfallibleTransmute for $ty where $($($where_ty: $where_bound),*)? {}
+
+        impl<$($($impl_generics $(: $bounds)?),*)?> $crate::WrapperTypeOf<$ty> for $target where $($($where_ty: $where_bound),*)? {
+            type Type = $ty;
+        }
+
+        impl<$($($impl_generics $(: $bounds)?),*)?> $crate::option::Niche for $ty where for<'dummy> $target: $crate::option::Niche, $($($where_ty: $where_bound),*)? {
+            const NICHE_VALUE: <Self as $crate::ExternC>::CType = <$target as $crate::option::Niche>::NICHE_VALUE;
         }
     };
     (unsafe impl $(<$($impl_generics: tt $(: $bounds: path)?),*>)? Transparent for $ty: ty $(where $($where_ty:ty: $where_bound:path),* )? {
@@ -1548,12 +1576,12 @@ macro_rules! mineral {
         // SAFETY: `$t` is robust with respect to `$target`
         unsafe impl<$($($impl_generics $(: $bounds)?),*)?> $crate::transmute::InfallibleTransmute for $ty where $($($where_ty: $where_bound),*)? {}
 
-        impl<$($($impl_generics $(: $bounds)?),*)?> $crate::option::Niche for $ty where for<'dummy> $target: $crate::option::Niche, $($($where_ty: $where_bound),*)? {
-            const NICHE_VALUE: <Self as $crate::ExternC>::CType = <$target as $crate::option::Niche>::NICHE_VALUE;
-        }
-
         impl<$($($impl_generics $(: $bounds)?),*)?> $crate::WrapperTypeOf<$ty> for $target where $($($where_ty: $where_bound),*)? {
             type Type = $ty;
+        }
+
+        impl$(<$($impl_generics $(: $bounds)?),*>)? $crate::option::Ir for $ty where $($($where_ty: $where_bound),*)? {
+            type Type = $crate::option::WithoutNiche;
         }
     };
 }
@@ -1583,7 +1611,7 @@ pub struct Extern {
 /// use co3::ExternC;
 ///
 /// #[derive(ExternC)]
-/// #[mineral(unsafe(robust))]
+/// #[mineral(unsafe(robust, has_niche = "false"))]
 /// #[repr(transparent)]
 /// pub struct Example(u32);
 ///

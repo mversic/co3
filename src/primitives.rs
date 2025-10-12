@@ -109,8 +109,10 @@ macro_rules! fieldless_enum_derive {
             unsafe impl Transparent for $src {
                 type Target = $dst;
 
-                validation_fn={$validity_fn},
-                NICHE_VALUE=$niche_val
+                const NICHE_VALUE: Self::CType = $niche_val;
+                fn is_valid(target: &Self::Target) -> bool {
+                    $validity_fn(target)
+                }
             }
         }
 

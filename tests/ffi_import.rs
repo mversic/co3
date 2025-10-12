@@ -3,7 +3,7 @@ use co3::{LocalRef, LocalSlice};
 
 #[co3::extern_type]
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-#[mineral(unsafe(robust))]
+#[mineral(unsafe(robust, has_niche = "false"))]
 #[repr(transparent)]
 pub struct Transparent((u32, u32));
 

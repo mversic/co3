@@ -1,27 +1,25 @@
 #![cfg(feature = "derive")]
-use std::{alloc, marker::PhantomData, mem::MaybeUninit};
+use std::{alloc, marker::PhantomData, mem::MaybeUninit, num::NonZeroU64};
 
 use co3::{
-    ExternC, FfiConvert, FfiReturn,
-    out_ptr::OutPtrRead,
-    slice::{OutBoxedSlice, RefSlice},
+    option::Niche as _, out_ptr::OutPtrRead, slice::{OutBoxedSlice, RefSlice}, ExternC, FfiConvert, FfiReturn, FfiTuple2
 };
 
 co3::def_fns! { dealloc }
 
 #[derive(Clone, Copy, PartialEq, Eq, Debug, ExternC)]
-#[mineral(unsafe(robust))]
+#[mineral(unsafe(robust, has_niche = "true"))]
 #[repr(transparent)]
-pub struct GenericTransparentStruct<P>(u64, PhantomData<P>);
+pub struct GenericTransparentStruct<P>(NonZeroU64, PhantomData<P>);
 
 impl<P> GenericTransparentStruct<P> {
     fn new(value: u64) -> Self {
-        Self(value, PhantomData)
+        Self(NonZeroU64::new(value).unwrap(), PhantomData)
     }
 }
 
 #[derive(Clone, Copy, PartialEq, Eq, Debug, ExternC)]
-#[mineral(unsafe(robust))]
+#[mineral(unsafe(robust, has_niche = "false"))]
 #[repr(transparent)]
 pub struct TransparentStruct {
     payload: GenericTransparentStruct<()>,
@@ -40,8 +38,10 @@ co3::mineral! {
     unsafe impl Transparent for NonRobustTransparent {
         type Target = NonRobustTransparentInner;
 
-        validation_fn={|target| target != &[0; 4]},
-        NICHE_VALUE=[0; 4]
+        const NICHE_VALUE: Self::CType = [0; 4];
+        fn is_valid(target: &Self::Target) -> bool {
+            *target != Self::NICHE_VALUE
+        }
     }
 }
 
@@ -52,6 +52,18 @@ pub fn array_of_transparent(arr: &mut [TransparentStruct; 1]) -> &mut [Transpare
 
 #[co3::carbonate]
 pub fn transparent_with_niche(arr: Option<NonRobustTransparent>) -> Option<NonRobustTransparent> {
+    arr
+}
+
+#[co3::carbonate]
+pub fn transparent_without_niche(arr: Option<TransparentStruct>) -> Option<TransparentStruct> {
+    arr
+}
+
+#[co3::carbonate]
+pub fn transparent_with_inner_niche(
+    arr: Option<GenericTransparentStruct<u32>>,
+) -> Option<GenericTransparentStruct<u32>> {
     arr
 }
 
@@ -120,7 +132,7 @@ fn take_and_return_transparent_array_ref() {
 
 #[test]
 #[webassembly_test::webassembly_test]
-fn take_and_return_option_of_transparent() {
+fn take_and_return_option_of_transparent_with_niche() {
     let value = Some(NonRobustTransparent([1; 4]));
     let mut output = MaybeUninit::new([0u8; 4]);
 
@@ -139,9 +151,46 @@ fn take_and_return_option_of_transparent() {
 
 #[test]
 #[webassembly_test::webassembly_test]
+fn take_and_return_option_of_transparent_without_niche() {
+    let value = Some(TransparentStruct::new(GenericTransparentStruct::new(42)));
+    let mut output: MaybeUninit<FfiTuple2<u8, u64>> = MaybeUninit::new(FfiTuple2(1, 0));
+
+    unsafe {
+        assert_eq!(
+            FfiReturn::Ok,
+            __transparent_without_niche(value.encode(&mut ()), output.as_mut_ptr())
+        );
+
+        assert_eq!(
+            value,
+            FfiConvert::decode(output.assume_init(), &mut ()).unwrap()
+        );
+    }
+}
+
+#[test]
+#[webassembly_test::webassembly_test]
+fn take_and_return_option_of_transparent_with_inner_niche() {
+    let value = Some(GenericTransparentStruct::<()>::new(42));
+    let mut output: MaybeUninit<u64> = MaybeUninit::new(0);
+
+    unsafe {
+        assert_eq!(
+            FfiReturn::Ok,
+            __transparent_with_inner_niche(value.encode(&mut ()), output.as_mut_ptr())
+        );
+
+        assert_eq!(
+            value,
+            FfiConvert::decode(output.assume_init(), &mut ()).unwrap()
+        );
+    }
+}
+
+#[test]
+#[webassembly_test::webassembly_test]
 fn transparent_self_to_self() {
     let transparent_struct = TransparentStruct::new(GenericTransparentStruct::new(42));
-    // NOTE: recursively traversing transparent structs
     let mut output: MaybeUninit<u64> = MaybeUninit::new(0);
 
     unsafe {

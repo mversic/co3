@@ -78,13 +78,12 @@ fn parse_attributes(ts: TokenStream) -> Vec<syn::Attribute> {
 #[manyhow]
 #[proc_macro_attribute]
 pub fn extern_type(_args: TokenStream, input: TokenStream) -> TokenStream {
-    let mut emitter = Emitter::new();
-
     let items = match syn::parse2::<FfiItems>(input) {
         Err(err) => return err.to_compile_error(),
         Ok(items) => items.0,
     };
 
+    let mut emitter = Emitter::new();
     let items = items
         .into_iter()
         .map(|item| {
@@ -441,12 +440,12 @@ pub fn carbonate(attr: TokenStream, item: TokenStream) -> TokenStream {
 #[manyhow]
 #[proc_macro_attribute]
 pub fn decarbonate(attr: TokenStream, item: TokenStream) -> TokenStream {
-    let mut emitter = Emitter::new();
-
     let item = match syn::parse2::<syn::Item>(item) {
         Err(err) => return err.to_compile_error(),
         Ok(item) => item,
     };
+
+    let mut emitter = Emitter::new();
 
     if !attr.is_empty() {
         emit!(emitter, item, "Unknown tokens in the attribute");

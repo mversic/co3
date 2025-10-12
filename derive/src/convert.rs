@@ -25,20 +25,21 @@ use crate::{
 #[derive(Debug)]
 enum FfiTypeToken {
     Opaque,
-    UnsafeRobust,
+    UnsafeRobust(bool),
     UnsafeNonOwning,
     Local,
 }
 
 impl Display for FfiTypeToken {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
-        let text = match self {
-            FfiTypeToken::Opaque => "#[mineral(opaque)]",
-            FfiTypeToken::UnsafeRobust => "#[mineral(unsafe(robust))]",
-            FfiTypeToken::UnsafeNonOwning => "#[mineral(unsafe(non_owning))]",
-            FfiTypeToken::Local => "#[mineral(local)]",
-        };
-        write!(f, "{text}")
+        match self {
+            FfiTypeToken::Opaque => write!(f, "#[mineral(opaque)]"),
+            FfiTypeToken::UnsafeRobust(has_niche) => {
+                write!(f, "#[mineral(unsafe(robust, has_niche = {has_niche}))]",)
+            }
+            FfiTypeToken::UnsafeNonOwning => write!(f, "#[mineral(unsafe(non_owning))]"),
+            FfiTypeToken::Local => write!(f, "#[mineral(local)]"),
+        }
     }
 }
 
@@ -51,45 +52,87 @@ struct SpannedFfiTypeToken {
 impl syn::parse::Parse for SpannedFfiTypeToken {
     fn parse(input: ParseStream) -> syn::Result<Self> {
         let (span, token) = input.step(|cursor| {
-            let Some((token, after_token)) = cursor.ident() else {
+            let Some((token, after_ident)) = cursor.ident() else {
                 return Err(cursor.error("expected ffi type kind"));
             };
 
             let mut span = token.span();
             let token = token.to_string();
             match token.as_str() {
-                "opaque" => Ok(((span, FfiTypeToken::Opaque), after_token)),
-                "local" => Ok(((span, FfiTypeToken::Local), after_token)),
+                "opaque" => Ok(((span, FfiTypeToken::Opaque), after_ident)),
+                "local" => Ok(((span, FfiTypeToken::Local), after_ident)),
                 "unsafe" => {
-                    let Some((inside_of_group, group_span, after_group)) =
-                        after_token.group(Delimiter::Parenthesis)
+                    let Some((inside, group_span, after_group)) =
+                        after_ident.group(Delimiter::Parenthesis)
                     else {
-                        return Err(cursor.error("expected `{ ... }` after `unsafe`"));
+                        return Err(cursor.error("expected `(...)` after `unsafe`"));
                     };
                     span = span.join(group_span.span()).unwrap_or(span);
 
-                    let Some((token, after_token)) = inside_of_group.ident() else {
-                        return Err(cursor.error("expected ffi type kind"));
+                    let Some((inner_ident, after_inner_ident)) = inside.ident() else {
+                        return Err(cursor.error("expected ffi type kind inside unsafe(...)"));
                     };
-                    if !after_token.eof() {
-                        return Err(cursor
-                            .error("`unsafe { ... }` should only contain one identifier inside"));
-                    }
+                    let inner_str = inner_ident.to_string();
 
-                    let token = token.to_string();
-                    match token.as_str() {
-                        "robust" => Ok(((span, FfiTypeToken::UnsafeRobust), after_group)),
-                        "non_owning" => Ok(((span, FfiTypeToken::UnsafeNonOwning), after_group)),
+                    match inner_str.as_str() {
+                        "robust" => {
+                            let mut after = after_inner_ident;
+                            let Some((punct, after_punct)) = after.punct() else {
+                                return Err(
+                                    cursor.error("expected `, has_niche = ...` after `robust`")
+                                );
+                            };
+                            if punct.as_char() != ',' {
+                                return Err(
+                                    cursor.error("expected `, has_niche = ...` after `robust`")
+                                );
+                            }
+                            after = after_punct;
+
+                            let Some((niche_ident, after_niche_ident)) = after.ident() else {
+                                return Err(cursor.error("expected `has_niche =` after comma"));
+                            };
+                            if niche_ident != "has_niche" {
+                                return Err(syn::Error::new(
+                                    niche_ident.span(),
+                                    "expected `has_niche`",
+                                ));
+                            }
+                            after = after_niche_ident;
+
+                            let Some((eq, after_eq)) = after.punct() else {
+                                return Err(cursor.error("expected `=` after `has_niche`"));
+                            };
+                            if eq.as_char() != '=' {
+                                return Err(cursor.error("expected `=` after `has_niche`"));
+                            }
+                            after = after_eq;
+
+                            let expr = syn::parse2::<syn::LitStr>(after.token_stream())?;
+                            let expr_value = expr.value().parse().map_err(|_| {
+                                syn::Error::new(
+                                    niche_ident.span(),
+                                    "expected `has_niche = \"bool\"`",
+                                )
+                            })?;
+                            Ok(((span, FfiTypeToken::UnsafeRobust(expr_value)), after_group))
+                        }
+                        "non_owning" => {
+                            if !after_ident.eof() {
+                                return Err(cursor.error(
+                                    "`unsafe(non_owning) should contain only one identifier",
+                                ));
+                            }
+
+                            Ok(((span, FfiTypeToken::UnsafeNonOwning), after_group))
+                        }
                         other => Err(syn::Error::new(
                             token.span(),
                             format!("unknown unsafe ffi type kind: {other}"),
                         )),
                     }
                 }
-                other => Err(syn::Error::new(
-                    span,
-                    format!("unknown unsafe ffi type kind: {other}"),
-                )),
+                other => Err(syn::Error::new(span, format!("unknown type kind: {other}"))),
             }
         })?;
 
@@ -98,10 +141,10 @@ impl syn::parse::Parse for SpannedFfiTypeToken {
 }
 
 /// This represents an `#[mineral(...)]` attribute on a type
-#[derive(Debug, PartialEq, Eq, Copy, Clone)]
-pub enum FfiTypeKindAttribute {
+#[derive(Debug, PartialEq, Eq, Clone)]
+enum FfiTypeKindAttribute {
     Opaque,
-    UnsafeRobust,
+    UnsafeRobust(bool),
     Local,
 }
 
@@ -110,7 +153,7 @@ impl syn::parse::Parse for FfiTypeKindAttribute {
         input.call(SpannedFfiTypeToken::parse).and_then(|token| {
             Ok(match token.token {
                 FfiTypeToken::Opaque => FfiTypeKindAttribute::Opaque,
-                FfiTypeToken::UnsafeRobust => FfiTypeKindAttribute::UnsafeRobust,
+                FfiTypeToken::UnsafeRobust(niche) => FfiTypeKindAttribute::UnsafeRobust(niche),
                 FfiTypeToken::Local => FfiTypeKindAttribute::Local,
                 other => {
                     return Err(syn::Error::new(
@@ -147,7 +190,7 @@ impl syn::parse::Parse for FfiTypeKindFieldAttribute {
 
 const FFI_TYPE_ATTR: &str = "mineral";
 
-pub struct FfiTypeAttr {
+struct FfiTypeAttr {
     pub kind: Option<FfiTypeKindAttribute>,
 }
 
@@ -177,8 +220,8 @@ pub struct FfiTypeInput {
     pub generics: syn::Generics,
     pub data: FfiTypeData,
     pub derive_attr: DeriveAttrs,
-    pub repr_attr: Repr,
-    pub ffi_type_attr: FfiTypeAttr,
+    repr_attr: Repr,
+    ffi_type_attr: FfiTypeAttr,
     #[cfg(feature = "getset")]
     pub getset_attr: GetSetStructAttrs,
     pub span: Span,
@@ -403,12 +446,19 @@ fn derive_ffi_type_for_transparent_item(
         }
     };
 
-    if input.ffi_type_attr.kind == Some(FfiTypeKindAttribute::UnsafeRobust) {
+    if let Some(FfiTypeKindAttribute::UnsafeRobust(niche)) = input.ffi_type_attr.kind {
+        let niche_value = if niche {
+            quote!(const NICHE_VALUE = "DELEGATE";)
+        } else {
+            quote!()
+        };
+
         return quote! {
             co3::mineral! {
                 // SAFETY: User must make sure the type is robust
                 unsafe impl #impl_generics Transparent for #name #ty_generics #where_clause {
                     type Target = #inner;
+                    #niche_value
                 }
             }
         };
@@ -445,12 +495,12 @@ fn derive_ffi_type_for_fieldless_enum(
             unsafe impl Transparent for #enum_name {
                 type Target = #tag_type;
 
-                validation_fn={|target: &Self::Target| {
+                const NICHE_VALUE: <Self as co3::ExternC>::CType = #len as <Self as co3::ExternC>::CType;
+                fn is_valid(target: &Self::Target) -> bool {
                     #(#discriminant_decls)*
 
                     #match_
-                }},
-                NICHE_VALUE=#len as <Self as co3::ExternC>::CType
+                }
             }
         }
 

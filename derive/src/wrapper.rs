@@ -390,16 +390,20 @@ fn gen_impl_ffi(name: &Ident, generics: &syn::Generics) -> TokenStream {
             unsafe impl<#lifetime #(, #split_impl_generics)*> Transparent for #ref_name #ref_ty_generics #where_clause {
                 type Target = *const co3::Extern;
 
-                validation_fn={|target: &Self::Target| !target.is_null()},
-                NICHE_VALUE=core::ptr::null()
+                const NICHE_VALUE: <Self as co3::ExternC>::CType = core::ptr::null();
+                fn is_valid(target: &Self::Target) -> bool {
+                    !target.is_null()
+                }
             }
         }
         co3::mineral! {
             unsafe impl <#lifetime #(, #split_impl_generics)*> Transparent for #ref_mut_name #ref_ty_generics #where_clause {
                 type Target = *mut co3::Extern;
 
-                validation_fn={|target: &Self::Target| !target.is_null()},
-                NICHE_VALUE=core::ptr::null_mut()
+                const NICHE_VALUE: <Self as co3::ExternC>::CType = core::ptr::null_mut();
+                fn is_valid(target: &Self::Target) -> bool {
+                    !target.is_null()
+                }
             }
         }
 
