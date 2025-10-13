@@ -53,6 +53,11 @@ pub type Result<T> = core::result::Result<T, FfiReturn>;
 // NOTE: Type is `Copy` to indicate that there can be no ownership transfer
 pub unsafe trait ReprC: Copy {}
 
+// TODO: Check https://github.com/mversic/co3/issues/13
+const fn assert_arr_has_non_zero_len<const N: usize>() {
+    assert!(N != 0, "empty array is a ZST");
+}
+
 disjoint_impls! {
     /// A Rust type that has an `extern "C"` ABI
     pub trait ExternC {
@@ -81,6 +86,9 @@ disjoint_impls! {
         Self::Target: ExternC,
     {
         type CType = <<R>::Target as ExternC>::CType;
+    }
+    impl<R: Ir<Type = Extern>> ExternC for R {
+        type CType = *mut Extern;
     }
 
     impl<'itm, R: External> ExternC for &'itm R
@@ -226,6 +234,12 @@ disjoint_impls! {
         type CType = RefSlice<<R>::CType>;
     }
 
+    impl<R: ReprC, const N: usize> ExternC for [R; N]
+    where
+        Self: Ir<Type = [Robust; N]>,
+    {
+        type CType = Self;
+    }
     impl<R, const N: usize> ExternC for [R; N]
     where
         Self: Ir<Type = [Opaque; N]>,
@@ -274,10 +288,6 @@ disjoint_impls! {
     {
         type CType = <Vec<R> as ExternC>::CType;
     }
-
-    impl<R: Ir<Type = Extern>> ExternC for R {
-        type CType = *mut Extern;
-    }
 }
 
 disjoint_impls! {
@@ -306,22 +316,6 @@ disjoint_impls! {
         ///
         /// All conversions from a pointer must ensure pointer validity beforehand
         unsafe fn decode(source: Self::CType, store: &'itm mut Self::FfiStore) -> Result<Self>;
-    }
-    impl<R: Ir<Type = Extern> + External> FfiConvert<'_> for R {
-        type RustStore = ();
-        type FfiStore = ();
-
-        fn encode(self, _: &mut ()) -> Self::CType {
-            core::mem::ManuallyDrop::new(self).as_extern_ptr_mut()
-        }
-
-        unsafe fn decode(source: Self::CType, _: &mut ()) -> Result<Self> {
-            if source.is_null() {
-                return Err(FfiReturn::ArgIsNull);
-            }
-
-            Ok(unsafe {Self::from_extern_ptr(source)})
-        }
     }
 
     impl<R: ReprC> FfiConvert<'_> for R
@@ -373,6 +367,22 @@ disjoint_impls! {
             unsafe {
                 FfiConvert::decode(source, store).and_then(|inner| transmute_from_target(inner))
             }
+        }
+    }
+    impl<R: Ir<Type = Extern> + External> FfiConvert<'_> for R {
+        type RustStore = ();
+        type FfiStore = ();
+
+        fn encode(self, _: &mut ()) -> Self::CType {
+            core::mem::ManuallyDrop::new(self).as_extern_ptr_mut()
+        }
+
+        unsafe fn decode(source: Self::CType, _: &mut ()) -> Result<Self> {
+            if source.is_null() {
+                return Err(FfiReturn::ArgIsNull);
+            }
+
+            Ok(unsafe {Self::from_extern_ptr(source)})
         }
     }
 
@@ -898,6 +908,23 @@ disjoint_impls! {
         }
     }
 
+    impl<R: ReprC, const N: usize> FfiConvert<'_> for [R; N]
+    where
+        Self: Ir<Type = [Robust; N]>,
+    {
+        type RustStore = ();
+        type FfiStore = ();
+
+        fn encode(self, (): &mut ()) -> Self::CType {
+            assert_arr_has_non_zero_len::<N>();
+            self
+        }
+
+        unsafe fn decode(source: Self::CType, (): &mut ()) -> Result<Self> {
+            assert_arr_has_non_zero_len::<N>();
+            Ok(source)
+        }
+    }
     impl<R, const N: usize> FfiConvert<'_> for [R; N]
     where
         Self: Ir<Type = [Opaque; N]>,
@@ -906,6 +933,8 @@ disjoint_impls! {
         type FfiStore = ();
 
         fn encode(self, (): &mut Self::RustStore) -> Self::CType {
+            assert_arr_has_non_zero_len::<N>();
+
             let array = self
                 .into_iter()
                 .map(Box::new)
@@ -918,6 +947,8 @@ disjoint_impls! {
         }
 
         unsafe fn decode(source: Self::CType, (): &mut ()) -> Result<Self> {
+            assert_arr_has_non_zero_len::<N>();
+
             let array = source
                 .into_iter()
                 .map(|item| unsafe {
@@ -944,6 +975,7 @@ disjoint_impls! {
         type FfiStore = [<R>::FfiStore; N];
 
         fn encode(self, store: &'itm mut Self::RustStore) -> Self::CType {
+            assert_arr_has_non_zero_len::<N>();
             *store = default_init_arr();
 
             let array = self
@@ -957,6 +989,8 @@ disjoint_impls! {
             unsafe { array.unwrap_unchecked() }
         }
         unsafe fn decode(source: Self::CType, store: &'itm mut Self::FfiStore) -> Result<Self> {
+            assert_arr_has_non_zero_len::<N>();
+
             let vec: core::result::Result<[_; N], _> = source
                 .into_iter()
                 .zip(store.iter_mut())
@@ -1041,10 +1075,6 @@ disjoint_impls! {
         type ReturnType;
     }
 
-    impl<R: Ir<Type = Extern> + External> FfiWrapperType for R {
-        type InputType = Self;
-        type ReturnType = Self;
-    }
     impl<R: ReprC> FfiWrapperType for R
     where
         Self: Ir<Type = Robust>,
@@ -1061,6 +1091,10 @@ disjoint_impls! {
     {
         type InputType = <<<R>::Target as FfiWrapperType>::InputType as WrapperTypeOf<Self>>::Type;
         type ReturnType = <<<R>::Target as FfiWrapperType>::ReturnType as WrapperTypeOf<Self>>::Type;
+    }
+    impl<R: Ir<Type = Extern> + External> FfiWrapperType for R {
+        type InputType = Self;
+        type ReturnType = Self;
     }
 
     impl<'itm, R: External> FfiWrapperType for &'itm R
@@ -1520,9 +1554,6 @@ macro_rules! mineral {
             type Type = $crate::ir::Robust;
         }
 
-        // SAFETY: Robust type with a defined C representation by definition
-        unsafe impl$(<$($impl_generics $(: $bounds)?),*>)? $crate::transmute::InfallibleTransmute for $ty where Self: $crate::ReprC, $($($where_ty: $where_bound),*)? {}
-
         impl$(<$($impl_generics $(: $bounds)?),*>)? $crate::option::Ir for $ty where $($($where_ty: $where_bound),*)? {
             type Type = $crate::option::WithoutNiche;
         }
@@ -1761,6 +1792,11 @@ macro_rules! impl_tuple {
 
         impl<$($ty),+> $crate::ir::Ir for ($($ty,)+) {
             type Type = Self;
+        }
+
+        // FIXME: But how to implement Niche?
+        impl<$($ty: $crate::option::Ir<Type = $crate::option::WithoutNiche>),+> $crate::option::Ir for ($($ty,)+) {
+            type Type = $crate::option::WithoutNiche;
         }
 
         impl<$($ty),+> Cloned for ($($ty,)+) {}

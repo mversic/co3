@@ -107,11 +107,6 @@ impl OpaqueStruct {
 }
 
 #[co3::carbonate]
-pub fn kita(item: &(u32, u32)) -> &(u32, u32) {
-    item
-}
-
-#[co3::carbonate]
 pub fn freestanding_with_boxed_slice(item: Box<[u8]>) -> Box<[u8]> {
     item
 }
@@ -146,6 +141,7 @@ pub fn freestanding_with_data_carrying_enum(enum_: DataCarryingEnum) -> DataCarr
     enum_
 }
 
+// FIXME: implement compile test
 //#[co3::carbonate]
 //pub fn freestanding_with_array(arr: [u8; 1]) -> [u8; 1] {
 //    arr

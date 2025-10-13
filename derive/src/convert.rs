@@ -399,9 +399,6 @@ fn derive_ffi_type_for_opaque_item(name: &Ident, generics: &syn::Generics) -> To
             type Type = co3::ir::Opaque;
         }
 
-        // SAFETY: Opaque types are never dereferenced and therefore &mut T is considered to be transmutable
-        unsafe impl #impl_generics co3::transmute::InfallibleTransmute for #name #ty_generics #where_clause {}
-
         impl #impl_generics co3::option::Niche for #name #ty_generics #where_clause {
             const NICHE_VALUE: *mut Self = core::ptr::null_mut();
         }

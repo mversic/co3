@@ -6,7 +6,7 @@ mod wasm {
 
     use crate::{
         ExternC, FfiConvert, FfiReturn, FfiWrapperType, Result,
-        ir::{Robust, Transparent, Ir},
+        ir::{Ir, Robust, Transparent},
         out_ptr::{OutPtr, OutPtrRead, OutPtrWrite},
     };
 
@@ -16,29 +16,55 @@ mod wasm {
     #[derive(Debug, Clone, Copy)]
     pub enum NonWasmIntPrimitive {}
 
-    impl<R> Ir for &R where R: Ir<Type = NonWasmIntPrimitive> {
+    impl<R> Ir for &R
+    where
+        R: Ir<Type = NonWasmIntPrimitive>,
+    {
         type Type = Transparent;
     }
-    impl<R> Ir for &mut R where R: Ir<Type = NonWasmIntPrimitive> {
+    impl<R> Ir for &mut R
+    where
+        R: Ir<Type = NonWasmIntPrimitive>,
+    {
         type Type = Transparent;
     }
-    impl<'itm, R> Ir for &'itm [R] where R: Ir<Type = NonWasmIntPrimitive> {
+    impl<'itm, R> Ir for &'itm [R]
+    where
+        R: Ir<Type = NonWasmIntPrimitive>,
+    {
         type Type = &'itm [Robust];
     }
-    impl<'itm, R> Ir for &'itm mut [R] where R: Ir<Type = NonWasmIntPrimitive> {
+    impl<'itm, R> Ir for &'itm mut [R]
+    where
+        R: Ir<Type = NonWasmIntPrimitive>,
+    {
         type Type = &'itm mut [Robust];
     }
-    impl<R> Ir for Box<R> where R: Ir<Type = NonWasmIntPrimitive> {
+    impl<R> Ir for Box<R>
+    where
+        R: Ir<Type = NonWasmIntPrimitive>,
+    {
         type Type = Box<Robust>;
     }
-    impl<R> Ir for Box<[R]> where R: Ir<Type = NonWasmIntPrimitive> {
+    impl<R> Ir for Box<[R]>
+    where
+        R: Ir<Type = NonWasmIntPrimitive>,
+    {
         type Type = Box<[Robust]>;
     }
-    impl<R> Ir for Vec<R> where R: Ir<Type = NonWasmIntPrimitive> {
+    impl<R> Ir for Vec<R>
+    where
+        R: Ir<Type = NonWasmIntPrimitive>,
+    {
         type Type = Vec<Robust>;
     }
-    impl<R, const N: usize> Ir for [R; N] where R: Ir<Type = NonWasmIntPrimitive> {
-        type Type = Robust;
+    // FIXME: Check comment in `impl IrTypeFamily for Robust`
+    // This should be just: type `Arr<const N: usize> = Robust`;
+    impl<R, const N: usize> Ir for [R; N]
+    where
+        R: Ir<Type = NonWasmIntPrimitive>,
+    {
+        type Type = [Robust; N];
     }
 
     macro_rules! wasm_repr_impls {
@@ -53,9 +79,6 @@ mod wasm {
 
             // SAFETY: Conversion of non wasm primitive doesn't use store
             unsafe impl $crate::out_ptr::NonLocal for $src {}
-
-            // SAFETY: Idempotent transmute is always infallible
-            unsafe impl $crate::transmute::InfallibleTransmute for $src {}
 
             // SAFETY: Transmute relation is transitive
             unsafe impl $crate::transmute::Transmute for $src {

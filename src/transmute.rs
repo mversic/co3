@@ -22,7 +22,7 @@ disjoint_impls! {
     }
 
     // SAFETY: Transmuting a reference to a pointer of the same type
-    unsafe impl<R: ReprC> Transmute for &R where R: Ir<Type = Robust> {
+    unsafe impl<R: Ir<Type = Robust> + ReprC> Transmute for &R {
         type Target = *const R;
 
         fn is_valid(target: &Self::Target) -> bool {
@@ -30,7 +30,7 @@ disjoint_impls! {
         }
     }
     // SAFETY: Transmuting a reference to a pointer of the same type
-    unsafe impl<R> Transmute for &R where R: Ir<Type = Opaque> {
+    unsafe impl<R: Ir<Type = Opaque>> Transmute for &R {
         type Target = *const R;
 
         fn is_valid(target: &Self::Target) -> bool {
@@ -38,16 +38,24 @@ disjoint_impls! {
         }
     }
     // SAFETY: Transmute relation is transitive
-    unsafe impl<'itm, R: Transmute> Transmute for &'itm R where R: Ir<Type = Transparent> {
+    unsafe impl<'itm, R: Ir<Type = Transparent> + Transmute> Transmute for &'itm R {
         type Target = &'itm <R>::Target;
 
         fn is_valid(target: &Self::Target) -> bool {
             <R>::is_valid(target)
         }
     }
+    // SAFETY: Transmuting a reference to a pointer of the same type
+    unsafe impl<R: Ir<Type = Extern>> Transmute for &R {
+        type Target = *const Extern;
+
+        fn is_valid(target: &Self::Target) -> bool {
+            !target.is_null()
+        }
+    }
 
     // SAFETY: Transmuting a reference to a pointer of the same type
-    unsafe impl<R: ReprC> Transmute for &mut R where R: Ir<Type = Robust> {
+    unsafe impl<R: Ir<Type = Robust> + ReprC> Transmute for &mut R {
         type Target = *mut R;
 
         fn is_valid(target: &Self::Target) -> bool {
@@ -55,7 +63,7 @@ disjoint_impls! {
         }
     }
     // SAFETY: Transmuting a reference to a pointer of the same type
-    unsafe impl<R> Transmute for &mut R where R: Ir<Type = Opaque> {
+    unsafe impl<R: Ir<Type = Opaque>> Transmute for &mut R {
         type Target = *mut R;
 
         fn is_valid(target: &Self::Target) -> bool {
@@ -63,28 +71,53 @@ disjoint_impls! {
         }
     }
     // SAFETY: Transmute relation is transitive
-    unsafe impl<'itm, R: Transmute> Transmute for &'itm mut R where R: Ir<Type = Transparent> {
+    unsafe impl<'itm, R: Ir<Type = Transparent> + Transmute> Transmute for &'itm mut R {
         type Target = &'itm mut <R>::Target;
 
         fn is_valid(target: &Self::Target) -> bool {
             <R>::is_valid(target)
         }
     }
+    // SAFETY: Transmuting a reference to a pointer of the same type
+    unsafe impl<R: Ir<Type = Extern>> Transmute for &mut R {
+        type Target = *mut Extern;
 
-    // SAFETY: Arrays of robust types are guaranteed to have a defined representation
-    unsafe impl<R: ReprC, const N: usize> Transmute for [R; N] where R: Ir<Type = Robust> {
-        type Target = [R; N];
-
-        fn is_valid(_: &Self::Target) -> bool {
-            true
+        fn is_valid(target: &Self::Target) -> bool {
+            !target.is_null()
         }
     }
+
     // SAFETY: Transmute relation is transitive
-    unsafe impl<R: Transmute, const N: usize> Transmute for [R; N] where R: Ir<Type = Transparent> {
+    unsafe impl<R: Ir<Type = Transparent> + Transmute, const N: usize> Transmute for [R; N] {
         type Target = [<R>::Target; N];
 
         fn is_valid(target: &Self::Target) -> bool {
+            assert_arr_has_non_zero_len::<N>();
             target.iter().all(|elem| <R>::is_valid(elem))
+        }
+    }
+
+    // SAFETY: Transmuting a reference to a pointer of the same type
+    unsafe impl<R: ReprC, const N: usize> Transmute for &[R; N]
+    where
+        [R; N]: Ir<Type = [Robust; N]>,
+    {
+        type Target = *const [R; N];
+
+        fn is_valid(target: &Self::Target) -> bool {
+            !target.is_null()
+        }
+    }
+
+    // SAFETY: Transmuting a reference to a pointer of the same type
+    unsafe impl<R: ReprC, const N: usize> Transmute for &mut [R; N]
+    where
+        [R; N]: Ir<Type = [Robust; N]>,
+    {
+        type Target = *mut [R; N];
+
+        fn is_valid(target: &Self::Target) -> bool {
+            !target.is_null()
         }
     }
 }
@@ -97,11 +130,14 @@ disjoint_impls! {
 /// # Safety
 ///
 /// Implementation of [`Transmute::is_valid`] must always return true for this type.
-pub unsafe trait InfallibleTransmute {}
+pub unsafe trait InfallibleTransmute: Transmute {}
 
 // SAFETY: Array is just a contiguous block of bytes in memory
 // and has a defined representation if the element type does
-unsafe impl<R: InfallibleTransmute, const N: usize> InfallibleTransmute for [R; N] {}
+unsafe impl<R: Ir<Type = Transparent> + InfallibleTransmute, const N: usize> InfallibleTransmute
+    for [R; N]
+{
+}
 
 #[repr(C)]
 union TransmuteHelper<R: Transmute> {

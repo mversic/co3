@@ -38,16 +38,17 @@ disjoint_impls! {
     pub unsafe trait NonLocal: OutPtr {}
 
     // SAFETY: Type doesn't use store during conversion
-    unsafe impl<R: ReprC> NonLocal for R where Self: Ir<Type = Robust> {}
+    unsafe impl<R: Ir<Type = Robust> + ReprC> NonLocal for R where {}
     // SAFETY: Type doesn't use store during conversion
-    unsafe impl<R> NonLocal for R where Self: Ir<Type = Opaque> {}
+    unsafe impl<R: Ir<Type = Opaque>> NonLocal for R {}
     // SAFETY: Type doesn't return a reference to the store if the inner type doesn't
-    unsafe impl<R: Transmute> NonLocal for R
+    unsafe impl<R: Ir<Type = Transparent> + Transmute> NonLocal for R
     where
-        Self: Ir<Type = Transparent>,
-        <R>::Target: NonLocal,
+        <Self as Transmute>::Target: NonLocal
     {
     }
+    // SAFETY: Type doesn't use store during conversion
+    unsafe impl<R: Ir<Type = Extern> + External> NonLocal for R {}
 
     // SAFETY: Type doesn't use store during conversion
     unsafe impl<'a, R: ReprC> NonLocal for &'a [R] where Self: Ir<Type = &'a [Robust]> {}
@@ -98,15 +99,14 @@ disjoint_impls! {
     }
 
     // SAFETY: Type doesn't use store during conversion
+    unsafe impl<R: ReprC, const N: usize> NonLocal for [R; N] where Self: Ir<Type = [Robust; N]> {}
+    // SAFETY: Type doesn't use store during conversion
     unsafe impl<R, const N: usize> NonLocal for [R; N] where Self: Ir<Type = [Opaque; N]> {}
 
     // SAFETY: `Option<T>` doesn't use the store if it's inner type doesn't use it
     unsafe impl<R: NonLocal> NonLocal for Option<R> where Self: Ir<Type = Option<WithoutNiche>> {}
     // SAFETY: `Option<T>` doesn't use the store if it's inner type doesn't use it
     unsafe impl<R: Niche + NonLocal> NonLocal for Option<R> where Self: Ir<Type = Self> {}
-
-    // SAFETY: Type doesn't use store during conversion
-    unsafe impl<R: Ir<Type = Extern> + External> NonLocal for R {}
 }
 
 disjoint_impls! {
@@ -137,6 +137,9 @@ disjoint_impls! {
         <R>::Target: OutPtr,
     {
         type OutPtr = <<R>::Target as OutPtr>::OutPtr;
+    }
+    impl<R: Ir<Type = Extern> + External> OutPtr for R {
+        type OutPtr = Self::CType;
     }
 
     impl<'a, R: Ir<Type = S> + NonLocal, S: Cloned> OutPtr for &'a R
@@ -276,6 +279,12 @@ disjoint_impls! {
         type OutPtr = OutBoxedSlice<<R>::CType>;
     }
 
+    impl<R: ReprC, const N: usize> OutPtr for [R; N]
+    where
+        Self: Ir<Type = [Robust; N]>,
+    {
+        type OutPtr = Self::CType;
+    }
     impl<R, const N: usize> OutPtr for [R; N]
     where
         Self: Ir<Type = [Opaque; N]>,
@@ -324,9 +333,6 @@ disjoint_impls! {
         Self: Ir<Type = Vec<S>>,
     {
         type OutPtr = <Vec<R> as OutPtr>::OutPtr;
-    }
-    impl<R: Ir<Type = Extern> + External> OutPtr for R {
-        type OutPtr = Self::CType;
     }
 }
 
@@ -669,11 +675,25 @@ disjoint_impls! {
         }
     }
 
+    impl<R: ReprC, const N: usize> OutPtrWrite for [R; N]
+    where
+        Self: Ir<Type = [Robust; N]>,
+    {
+        unsafe fn write_out(self, out_ptr: *mut Self::OutPtr) {
+            assert_arr_has_non_zero_len::<N>();
+
+            unsafe {
+                write_non_local::<_, [Robust; N]>(self, out_ptr);
+            }
+        }
+    }
     impl<R, const N: usize> OutPtrWrite for [R; N]
     where
         Self: Ir<Type = [Opaque; N]>,
     {
         unsafe fn write_out(self, out_ptr: *mut Self::OutPtr) {
+            assert_arr_has_non_zero_len::<N>();
+
             unsafe {
                 write_non_local::<_, [Opaque; N]>(self, out_ptr);
             }
@@ -687,6 +707,7 @@ disjoint_impls! {
         Self: Ir<Type = [S; N]>,
     {
         unsafe fn write_out(self, out_ptr: *mut Self::OutPtr) {
+            assert_arr_has_non_zero_len::<N>();
             let mut store = Default::default();
 
             unsafe {
@@ -762,12 +783,6 @@ disjoint_impls! {
         unsafe fn try_read_out(out_ptr: Self::OutPtr) -> Result<Self>;
     }
 
-    impl<R: Ir<Type = Extern> + External> OutPtrRead for R {
-        unsafe fn try_read_out(out_ptr: Self::OutPtr) -> Result<Self> {
-            read_non_local::<_, Extern>(out_ptr)
-        }
-    }
-
     impl<R: ReprC> OutPtrRead for R
     where
         Self: Ir<Type = Robust>,
@@ -785,6 +800,11 @@ disjoint_impls! {
             unsafe {
                 OutPtrRead::try_read_out(out_ptr).and_then(|output| transmute_from_target(output))
             }
+        }
+    }
+    impl<R: Ir<Type = Extern> + External> OutPtrRead for R {
+        unsafe fn try_read_out(out_ptr: Self::OutPtr) -> Result<Self> {
+            unsafe { read_non_local::<_, Extern>(out_ptr) }
         }
     }
 
@@ -984,6 +1004,15 @@ disjoint_impls! {
         }
     }
 
+    impl<R: ReprC, const N: usize> OutPtrRead for [R; N]
+    where
+        Self: Ir<Type = [Robust; N]>,
+    {
+        unsafe fn try_read_out(out_ptr: Self::OutPtr) -> Result<Self> {
+            assert_arr_has_non_zero_len::<N>();
+            unsafe { read_non_local::<_, [Robust; N]>(out_ptr) }
+        }
+    }
     impl<'itm, R: Ir<Type = S> + NonLocal + Clone + 'itm, S: Cloned + 'itm, const N: usize>
         OutPtrRead for [R; N]
     where
@@ -995,6 +1024,7 @@ disjoint_impls! {
         Self: Ir<Type = [S; N]>,
     {
         unsafe fn try_read_out(out_ptr: Self::OutPtr) -> Result<Self> {
+            assert_arr_has_non_zero_len::<N>();
             let mut store = Default::default();
 
             unsafe {

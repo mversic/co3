@@ -7,7 +7,7 @@ use alloc::{boxed::Box, vec::Vec};
 use core::ptr::addr_of_mut;
 
 use crate::{
-    FfiConvert, Result,
+    FfiConvert, Result, assert_arr_has_non_zero_len,
     ir::{Ir, Opaque},
     out_ptr::NonLocal,
 };
@@ -31,6 +31,8 @@ impl<const N: usize> Cloned for [Opaque; N] {}
 impl<R: Ir, const N: usize> Cloned for [R; N] where R::Type: Cloned {}
 
 pub(super) fn default_init_arr<R: Default, const N: usize>() -> [R; N] {
+    assert_arr_has_non_zero_len::<N>();
+
     let vec = core::iter::repeat_with(Default::default)
         .take(N)
         .collect::<Vec<_>>();

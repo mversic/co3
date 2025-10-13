@@ -355,13 +355,6 @@ fn gen_impl_ffi(name: &Ident, generics: &syn::Generics) -> TokenStream {
             }
         }
 
-        // SAFETY: Opaque pointer must never be dereferenced
-        unsafe impl #impl_generics co3::transmute::InfallibleTransmute for #name #ty_generics #where_clause {}
-        // SAFETY: Opaque pointer must never be dereferenced
-        unsafe impl #ref_impl_generics co3::transmute::InfallibleTransmute for #ref_name #ref_ty_generics #where_clause {}
-        // SAFETY: Opaque pointer must never be dereferenced
-        unsafe impl #ref_impl_generics co3::transmute::InfallibleTransmute for #ref_mut_name #ref_ty_generics #where_clause {}
-
         impl #impl_generics co3::WrapperTypeOf<Self> for #name #ty_generics #where_clause {
             type Type = Self;
         }

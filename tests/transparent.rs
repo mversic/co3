@@ -2,7 +2,10 @@
 use std::{alloc, marker::PhantomData, mem::MaybeUninit, num::NonZeroU64};
 
 use co3::{
-    option::Niche as _, out_ptr::OutPtrRead, slice::{OutBoxedSlice, RefSlice}, ExternC, FfiConvert, FfiReturn, FfiTuple2
+    ExternC, FfiConvert, FfiReturn, FfiTuple2,
+    option::Niche as _,
+    out_ptr::OutPtrRead,
+    slice::{OutBoxedSlice, RefSlice},
 };
 
 co3::def_fns! { dealloc }
