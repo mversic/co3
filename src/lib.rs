@@ -274,6 +274,10 @@ disjoint_impls! {
     {
         type CType = <Vec<R> as ExternC>::CType;
     }
+
+    impl<R: Ir<Type = Extern>> ExternC for R {
+        type CType = *mut Extern;
+    }
 }
 
 disjoint_impls! {
@@ -302,6 +306,22 @@ disjoint_impls! {
         ///
         /// All conversions from a pointer must ensure pointer validity beforehand
         unsafe fn decode(source: Self::CType, store: &'itm mut Self::FfiStore) -> Result<Self>;
+    }
+    impl<R: Ir<Type = Extern> + External> FfiConvert<'_> for R {
+        type RustStore = ();
+        type FfiStore = ();
+
+        fn encode(self, _: &mut ()) -> Self::CType {
+            core::mem::ManuallyDrop::new(self).as_extern_ptr_mut()
+        }
+
+        unsafe fn decode(source: Self::CType, _: &mut ()) -> Result<Self> {
+            if source.is_null() {
+                return Err(FfiReturn::ArgIsNull);
+            }
+
+            Ok(unsafe {Self::from_extern_ptr(source)})
+        }
     }
 
     impl<R: ReprC> FfiConvert<'_> for R
@@ -1021,6 +1041,10 @@ disjoint_impls! {
         type ReturnType;
     }
 
+    impl<R: Ir<Type = Extern> + External> FfiWrapperType for R {
+        type InputType = Self;
+        type ReturnType = Self;
+    }
     impl<R: ReprC> FfiWrapperType for R
     where
         Self: Ir<Type = Robust>,

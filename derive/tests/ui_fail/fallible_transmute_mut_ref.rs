@@ -10,8 +10,10 @@ co3::mineral! {
     unsafe impl Transparent for Wrapper {
         type Target = WrapperInner;
 
-        validation_fn={|target: &Self::Target| *target != 0},
-        NICHE_VALUE=0
+        const NICHE_VALUE: Self::CType = 0;
+        fn is_valid(target: &Self::Target) -> bool {
+            *target != 0
+        }
     }
 }
 

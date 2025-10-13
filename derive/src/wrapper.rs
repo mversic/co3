@@ -13,7 +13,7 @@ use crate::{
 };
 
 fn gen_lifetime_name_for_opaque() -> TokenStream {
-    quote! {'a}
+    quote! {'_LŠČ}
 }
 fn gen_ref_name(name: &Ident) -> Ident {
     Ident::new(&format!("Ref{name}"), Span::call_site())
@@ -300,11 +300,6 @@ fn gen_impl_ffi(name: &Ident, generics: &syn::Generics) -> TokenStream {
     let lifetime = gen_lifetime_name_for_opaque();
     ref_generics.params.push(parse_quote!(#lifetime));
 
-    let lifetime_bounded_where_clause = generics
-        .type_params()
-        .map(|param| parse_quote! {#param: #lifetime})
-        .collect::<Vec<syn::WherePredicate>>();
-
     let (impl_generics, ty_generics, where_clause) = generics.split_for_impl();
     let (ref_impl_generics, ref_ty_generics, _) = ref_generics.split_for_impl();
     let split_impl_generics: Vec<_> = generics.type_params().collect();
@@ -336,55 +331,8 @@ fn gen_impl_ffi(name: &Ident, generics: &syn::Generics) -> TokenStream {
         }
 
         impl #impl_generics co3::ir::Ir for #name #ty_generics #where_clause {
-            type Type = Self;
+            type Type = co3::Extern;
         }
-
-        impl #impl_generics co3::ExternC for #name #ty_generics #where_clause {
-            type CType = *mut co3::Extern;
-        }
-        impl #impl_generics co3::FfiConvert<'_> for #name #ty_generics #where_clause {
-            type RustStore = ();
-            type FfiStore = ();
-
-            fn encode(self, _: &mut ()) -> Self::CType {
-                core::mem::ManuallyDrop::new(self).0
-            }
-
-            unsafe fn decode(source: Self::CType, _: &mut ()) -> co3::Result<Self> {
-                if source.is_null() {
-                    return Err(co3::FfiReturn::ArgIsNull);
-                }
-
-                Ok(Self::from_extern_ptr(source))
-            }
-        }
-
-        impl #impl_generics co3::FfiWrapperType for #name #ty_generics #where_clause {
-            type InputType = Self;
-            type ReturnType = Self;
-        }
-        impl #impl_generics co3::out_ptr::OutPtr for #name #ty_generics #where_clause {
-            type OutPtr = Self::CType;
-        }
-        impl #impl_generics co3::out_ptr::OutPtrRead for #name #ty_generics #where_clause {
-            unsafe fn try_read_out(out_ptr: Self::OutPtr) -> co3::Result<Self> {
-                co3::repr_c::read_non_local::<_, Self>(out_ptr)
-            }
-        }
-
-        impl #impl_generics co3::ir::IrTypeFamily for #name #ty_generics #where_clause {
-            type Ref<#lifetime> = &#lifetime co3::Extern where #(#lifetime_bounded_where_clause),*;
-            type RefMut<#lifetime> = &#lifetime mut co3::Extern where #(#lifetime_bounded_where_clause),*;
-            type RefSlice<#lifetime> = &#lifetime [co3::ir::Transparent] where #(#lifetime_bounded_where_clause),*;
-            type RefMutSlice<#lifetime> = &#lifetime mut [co3::ir::Transparent] where #(#lifetime_bounded_where_clause),*;
-            type Box = Box<co3::Extern>;
-            type BoxedSlice = Box<[co3::Extern]>;
-            type Vec = Vec<co3::ir::Transparent>;
-            type Arr<const N: usize> = co3::ir::Transparent;
-        }
-
-        // SAFETY: Type doesn't use store during conversion
-        unsafe impl #impl_generics co3::out_ptr::NonLocal for #name #ty_generics #where_clause {}
 
         co3::mineral! {
             unsafe impl<#lifetime #(, #split_impl_generics)*> Transparent for #ref_name #ref_ty_generics #where_clause {

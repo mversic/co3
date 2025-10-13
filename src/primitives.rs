@@ -6,7 +6,7 @@ mod wasm {
 
     use crate::{
         ExternC, FfiConvert, FfiReturn, FfiWrapperType, Result,
-        ir::{Robust, Transparent},
+        ir::{Robust, Transparent, Ir},
         out_ptr::{OutPtr, OutPtrRead, OutPtrWrite},
     };
 
@@ -16,15 +16,29 @@ mod wasm {
     #[derive(Debug, Clone, Copy)]
     pub enum NonWasmIntPrimitive {}
 
-    impl crate::ir::IrTypeFamily for NonWasmIntPrimitive {
-        type Ref<'itm> = Transparent;
-        type RefMut<'itm> = Transparent;
-        type RefSlice<'itm> = &'itm [Robust];
-        type RefMutSlice<'itm> = &'itm mut [Robust];
-        type Box = Box<Robust>;
-        type BoxedSlice = Box<[Robust]>;
-        type Vec = Vec<Robust>;
-        type Arr<const N: usize> = Robust;
+    impl<R> Ir for &R where R: Ir<Type = NonWasmIntPrimitive> {
+        type Type = Transparent;
+    }
+    impl<R> Ir for &mut R where R: Ir<Type = NonWasmIntPrimitive> {
+        type Type = Transparent;
+    }
+    impl<'itm, R> Ir for &'itm [R] where R: Ir<Type = NonWasmIntPrimitive> {
+        type Type = &'itm [Robust];
+    }
+    impl<'itm, R> Ir for &'itm mut [R] where R: Ir<Type = NonWasmIntPrimitive> {
+        type Type = &'itm mut [Robust];
+    }
+    impl<R> Ir for Box<R> where R: Ir<Type = NonWasmIntPrimitive> {
+        type Type = Box<Robust>;
+    }
+    impl<R> Ir for Box<[R]> where R: Ir<Type = NonWasmIntPrimitive> {
+        type Type = Box<[Robust]>;
+    }
+    impl<R> Ir for Vec<R> where R: Ir<Type = NonWasmIntPrimitive> {
+        type Type = Vec<Robust>;
+    }
+    impl<R, const N: usize> Ir for [R; N] where R: Ir<Type = NonWasmIntPrimitive> {
+        type Type = Robust;
     }
 
     macro_rules! wasm_repr_impls {

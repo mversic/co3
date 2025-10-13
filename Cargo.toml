@@ -29,7 +29,7 @@ getset = ["derive", "co3_derive/getset"]
 co3_derive = { path = "derive", optional = true }
 
 derive_more = { version = "2.0.1", features = ["display"] }
-disjoint_impls = "1.1.3"
+disjoint_impls = "1.2.0"
 
 # FIXME: Replace with never type https://github.com/rust-lang/rust/issues/35121
 void = "1.0.2"

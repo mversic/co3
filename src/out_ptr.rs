@@ -104,6 +104,9 @@ disjoint_impls! {
     unsafe impl<R: NonLocal> NonLocal for Option<R> where Self: Ir<Type = Option<WithoutNiche>> {}
     // SAFETY: `Option<T>` doesn't use the store if it's inner type doesn't use it
     unsafe impl<R: Niche + NonLocal> NonLocal for Option<R> where Self: Ir<Type = Self> {}
+
+    // SAFETY: Type doesn't use store during conversion
+    unsafe impl<R: Ir<Type = Extern> + External> NonLocal for R {}
 }
 
 disjoint_impls! {
@@ -321,6 +324,9 @@ disjoint_impls! {
         Self: Ir<Type = Vec<S>>,
     {
         type OutPtr = <Vec<R> as OutPtr>::OutPtr;
+    }
+    impl<R: Ir<Type = Extern> + External> OutPtr for R {
+        type OutPtr = Self::CType;
     }
 }
 
@@ -754,6 +760,12 @@ disjoint_impls! {
         ///
         /// Check [`FfiConvert::decode`]
         unsafe fn try_read_out(out_ptr: Self::OutPtr) -> Result<Self>;
+    }
+
+    impl<R: Ir<Type = Extern> + External> OutPtrRead for R {
+        unsafe fn try_read_out(out_ptr: Self::OutPtr) -> Result<Self> {
+            read_non_local::<_, Extern>(out_ptr)
+        }
     }
 
     impl<R: ReprC> OutPtrRead for R
