@@ -377,15 +377,8 @@ pub fn wrap_impl_items(impl_desc: &ImplDescriptor) -> TokenStream {
     if impl_desc.fns.is_empty() {
         return quote! {};
     }
-    let lifetime = gen_lifetime_name_for_opaque();
-    let self_ty_name = impl_desc.fns[0].self_ty_name().expect("Defined");
     let self_ty = &impl_desc.fns[0].self_ty;
-    let ref_self_ty_name = gen_ref_name(self_ty_name);
-    let ref_mut_self_ty_name = gen_ref_mut_name(self_ty_name);
-
     let mut self_methods = Vec::new();
-    let mut self_ref_methods = Vec::new();
-    let mut self_ref_mut_methods = Vec::new();
     let impl_trait_for = impl_desc
         .trait_name
         .map(|trait_name| quote! { #trait_name for });
@@ -405,24 +398,7 @@ pub fn wrap_impl_items(impl_desc: &ImplDescriptor) -> TokenStream {
             return wrapped;
         }
 
-        if let Some(recv) = &fn_.receiver {
-            if let Type::Reference(ref_ty) = recv.src_type() {
-                let mutability = ref_ty.mutability.is_some();
-                let ref_wrapped = wrap_ref_method(fn_, trait_name);
-
-                if mutability {
-                    self_ref_mut_methods.push(ref_wrapped);
-                } else {
-                    self_ref_methods.push(ref_wrapped);
-                }
-
-                self_methods.push(gen_self_ref_method(fn_, trait_name, mutability));
-            } else {
-                self_methods.push(wrap_method(fn_, trait_name));
-            }
-        } else {
-            self_methods.push(wrap_method(fn_, trait_name));
-        }
+        self_methods.push(wrap_method(fn_, trait_name));
     }
 
     let mut result = Vec::new();
@@ -435,43 +411,7 @@ pub fn wrap_impl_items(impl_desc: &ImplDescriptor) -> TokenStream {
             }
         });
     }
-    if !self_ref_methods.is_empty() {
-        result.push(quote! {
-            #(#impl_attrs)*
-            impl<#lifetime> #impl_trait_for #ref_self_ty_name<#lifetime> {
-                #(type #associated_names = #associated_types;)*
-                #(#self_ref_methods)*
-            }
-        });
-    }
-    if !self_ref_mut_methods.is_empty() {
-        result.push(quote! {
-            #(#impl_attrs)*
-            impl<#lifetime> #impl_trait_for #ref_mut_self_ty_name<#lifetime> {
-                #(type #associated_names = #associated_types;)*
-                #(#self_ref_mut_methods)*
-            }
-        });
-    }
-
     quote! { #(#result)* }
-}
-
-fn gen_ref_wrapper_signature(fn_descriptor: &FnDescriptor) -> syn::Signature {
-    let mut signature = gen_wrapper_signature(fn_descriptor);
-
-    let add_lifetime = fn_descriptor
-        .receiver
-        .as_ref()
-        .filter(|arg| matches!(arg.src_type(), Type::Reference(_)))
-        .is_some();
-
-    if fn_descriptor.self_ty.is_some() && add_lifetime {
-        let mut lifetime_resolver = WrapperLifetimeResolver::new();
-        lifetime_resolver.visit_signature_mut(&mut signature);
-    }
-
-    signature
 }
 
 fn gen_wrapper_signature(fn_descriptor: &FnDescriptor) -> syn::Signature {
@@ -516,61 +456,10 @@ fn is_shared_fn(fn_descriptor: &FnDescriptor, trait_name: Option<&Ident>) -> Opt
     None
 }
 
-fn gen_self_ref_method(
-    fn_descriptor: &FnDescriptor,
-    trait_name: Option<&Ident>,
-    mutability: bool,
-) -> TokenStream {
-    let fn_name = &fn_descriptor.sig.ident;
-
-    let args = fn_descriptor.sig.inputs.iter().filter_map(|input| {
-        if let syn::FnArg::Typed(arg) = input {
-            return Some(&arg.pat);
-        }
-
-        None
-    });
-
-    let ref_ty = if mutability {
-        quote! {as_mut}
-    } else {
-        quote! {as_ref}
-    };
-
-    let method_body = quote! {
-        self.#ref_ty().#fn_name(#(#args),*)
-    };
-
-    let signature = gen_wrapper_signature(fn_descriptor);
-    wrap_method_with_signature_and_body(fn_descriptor, trait_name, &signature, &method_body)
-}
-
-fn wrap_ref_method(fn_descriptor: &FnDescriptor, trait_name: Option<&Ident>) -> TokenStream {
-    let signature = gen_ref_wrapper_signature(fn_descriptor);
-    wrap_method_with_signature(fn_descriptor, trait_name, &signature)
-}
-
 pub fn wrap_method(fn_descriptor: &FnDescriptor, trait_name: Option<&Ident>) -> TokenStream {
     let signature = gen_wrapper_signature(fn_descriptor);
-    wrap_method_with_signature(fn_descriptor, trait_name, &signature)
-}
-
-fn wrap_method_with_signature(
-    fn_descriptor: &FnDescriptor,
-    trait_name: Option<&Ident>,
-    signature: &syn::Signature,
-) -> TokenStream {
     let ffi_fn_name = ffi_fn::gen_fn_name(fn_descriptor, trait_name);
     let method_body = gen_wrapper_method_body(fn_descriptor, &ffi_fn_name);
-    wrap_method_with_signature_and_body(fn_descriptor, trait_name, signature, &method_body)
-}
-
-fn wrap_method_with_signature_and_body(
-    fn_descriptor: &FnDescriptor,
-    trait_name: Option<&Ident>,
-    signature: &syn::Signature,
-    method_body: &TokenStream,
-) -> TokenStream {
     let ffi_fn_attrs = &fn_descriptor.attrs;
     let method_doc = &fn_descriptor.doc;
     let visibility = if trait_name.is_none() {
@@ -743,9 +632,6 @@ impl VisitMut for WrapperTypeResolver {
         if self.0 {
             // Patch return type to facilitate returning types referencing local store
             *i = parse_quote! {<#i as co3::FfiWrapperType>::ReturnType};
-        } else {
-            // Patch the type mainly to facilitate the use of opaque types
-            *i = parse_quote! {<#i as co3::FfiWrapperType>::InputType};
         }
     }
     fn visit_return_type_mut(&mut self, i: &mut syn::ReturnType) {
@@ -761,28 +647,5 @@ impl VisitMut for WrapperTypeResolver {
                 self.visit_type_mut(output);
             }
         }
-    }
-}
-
-struct WrapperLifetimeResolver(bool);
-impl WrapperLifetimeResolver {
-    fn new() -> Self {
-        Self(false)
-    }
-}
-
-impl VisitMut for WrapperLifetimeResolver {
-    fn visit_type_reference_mut(&mut self, i: &mut syn::TypeReference) {
-        let lifetime = gen_lifetime_name_for_opaque();
-
-        if !self.0 || i.lifetime.is_some() {
-            return;
-        }
-
-        i.lifetime = parse_quote! {#lifetime};
-    }
-    fn visit_return_type_mut(&mut self, i: &mut syn::ReturnType) {
-        self.0 = true;
-        syn::visit_mut::visit_return_type_mut(self, i);
     }
 }

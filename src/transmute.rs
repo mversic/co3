@@ -45,14 +45,6 @@ disjoint_impls! {
             <R>::is_valid(target)
         }
     }
-    // SAFETY: Transmuting a reference to a pointer of the same type
-    unsafe impl<R: Ir<Type = Extern>> Transmute for &R {
-        type Target = *const Extern;
-
-        fn is_valid(target: &Self::Target) -> bool {
-            !target.is_null()
-        }
-    }
 
     // SAFETY: Transmuting a reference to a pointer of the same type
     unsafe impl<R: Ir<Type = Robust> + ReprC> Transmute for &mut R {
@@ -76,14 +68,6 @@ disjoint_impls! {
 
         fn is_valid(target: &Self::Target) -> bool {
             <R>::is_valid(target)
-        }
-    }
-    // SAFETY: Transmuting a reference to a pointer of the same type
-    unsafe impl<R: Ir<Type = Extern>> Transmute for &mut R {
-        type Target = *mut Extern;
-
-        fn is_valid(target: &Self::Target) -> bool {
-            !target.is_null()
         }
     }
 

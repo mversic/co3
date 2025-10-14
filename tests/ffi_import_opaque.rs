@@ -108,7 +108,7 @@ fn take_and_return_opaque_ref() {
     let opaque: OpaqueStruct = make_new_opaque(name, params);
     let ref_opaque: RefOpaqueStruct = make_opaque_ref(&opaque);
 
-    let opaque_ref: RefOpaqueStruct = freestanding_returns_opaque_item(ref_opaque);
+    let opaque_ref: RefOpaqueStruct = freestanding_returns_opaque_item(&ref_opaque);
     compare_opaque_eq::<_, ffi::ExternOpaqueStruct>(&opaque, &opaque_ref);
 }
 

@@ -54,8 +54,8 @@ disjoint_impls! {
     impl<'itm, R: Ir<Type = S> + Clone, S: Cloned + 'itm> Ir for &'itm R {
         type Type = &'itm S;
     }
-    impl<R: Ir<Type = Extern>> Ir for &R {
-        type Type = Transparent;
+    impl<'itm, R: Ir<Type = Extern>> Ir for &'itm R {
+        type Type = &'itm Extern;
     }
 
     impl<'itm, R: Ir<Type = Robust>> Ir for &'itm mut R {
@@ -74,8 +74,8 @@ disjoint_impls! {
     {
         type Type = Transparent;
     }
-    impl<R: Ir<Type = Extern>> Ir for &mut R {
-        type Type = Transparent;
+    impl<'itm, R: Ir<Type = Extern>> Ir for &'itm mut R {
+        type Type = &'itm mut Extern;
     }
 
     impl<'itm, R: Ir<Type = Robust> + ReprC> Ir for &'itm [R] {

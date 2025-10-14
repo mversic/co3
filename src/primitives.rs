@@ -124,7 +124,6 @@ mod wasm {
             }
 
             impl FfiWrapperType for $src {
-                type InputType = Self;
                 type ReturnType = Self;
             }
             impl $crate::WrapperTypeOf<Self> for $src {

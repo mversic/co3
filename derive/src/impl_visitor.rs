@@ -57,7 +57,7 @@ impl Arg {
             unimplemented!("Arrays are not supported by C ABI. Use a pointer or struct wrapper");
         }
 
-        parse_quote! {<<#src_type as co3::FfiWrapperType>::InputType as co3::ExternC>::CType}
+        parse_quote! {<#src_type as co3::ExternC>::CType}
     }
 }
 

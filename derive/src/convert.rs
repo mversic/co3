@@ -646,7 +646,6 @@ fn derive_ffi_type_for_data_carrying_enum(
             unsafe impl<#impl_generics> co3::out_ptr::NonLocal for #enum_name #ty_generics #non_local_where_clause {}
 
             impl<#impl_generics> co3::FfiWrapperType for #enum_name #ty_generics #non_local_where_clause {
-                type InputType = Self;
                 type ReturnType = Self;
             }
             impl<#impl_generics> co3::out_ptr::OutPtr for #enum_name #ty_generics #non_local_where_clause {
