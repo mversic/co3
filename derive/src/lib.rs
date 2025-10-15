@@ -405,7 +405,7 @@ pub fn carbonate(attr: TokenStream, item: TokenStream) -> TokenStream {
 /// pub fn return_first_elem_from_arr(arr: &[u8; 8]) -> &u8 {
 ///     // The body of this function is replaced with something like the following:
 ///     // let mut store = Default::default();
-///     // let arr = co3::FfiConvert::encode(&arr, &mut store);
+///     // let arr = co3::Encode::encode(&arr, &mut store);
 ///     // let output = MaybeUninit::uninit();
 ///     //
 ///     // let call_res = __return_first_elem_from_arr(arr, output.as_mut_ptr());

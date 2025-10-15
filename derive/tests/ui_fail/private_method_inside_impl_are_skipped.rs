@@ -1,4 +1,4 @@
-use co3::{FfiConvert, ExternC};
+use co3::{Encode, ExternC};
 
 #[derive(Clone, ExternC)]
 pub struct FfiStruct;
@@ -11,6 +11,6 @@ impl FfiStruct {
 fn main() {
     let s = FfiStruct;
     unsafe {
-        FfiStruct__private(FfiConvert::encode(s, &mut ()));
+        FfiStruct__private(Encode::encode(s, &mut ()));
     }
 }

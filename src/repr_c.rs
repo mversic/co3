@@ -7,7 +7,7 @@ use alloc::{boxed::Box, vec::Vec};
 use core::ptr::addr_of_mut;
 
 use crate::{
-    FfiConvert, Result, assert_arr_has_non_zero_len,
+    Decode, Encode, Result, assert_arr_has_non_zero_len,
     ir::{Ir, Opaque},
     out_ptr::NonLocal,
 };
@@ -47,11 +47,7 @@ pub(super) fn default_init_arr<R: Default, const N: usize>() -> [R; N] {
 /// # Safety
 ///
 /// out-pointer must be valid for writes
-pub unsafe fn write_non_local<
-    'itm,
-    R: Ir<Type = S> + NonLocal + FfiConvert<'itm> + 'itm,
-    S: 'itm,
->(
+pub unsafe fn write_non_local<'itm, R: Ir<Type = S> + NonLocal + Encode<'itm> + 'itm, S: 'itm>(
     source: R,
     out_ptr: *mut R::CType,
 ) {
@@ -61,7 +57,7 @@ pub unsafe fn write_non_local<
         // NOTE: Bypasses the erroneous lifetime check.
         // Correct as long as `R::encode` doesn't return a reference to the store (`R: NonLocal`)
         let store_borrow = &mut *addr_of_mut!(store);
-        out_ptr.write(FfiConvert::encode(source, store_borrow));
+        out_ptr.write(Encode::encode(source, store_borrow));
     }
 }
 
@@ -70,16 +66,12 @@ pub unsafe fn write_non_local<
 ///
 /// # Errors
 ///
-/// Check [`FfiConvert::decode`]
+/// Check [`Decode::decode`]
 ///
 /// # Safety
 ///
-/// Check [`FfiConvert::decode`]
-pub unsafe fn read_non_local<
-    'itm,
-    R: Ir<Type = S> + NonLocal + FfiConvert<'itm> + 'itm,
-    S: 'itm,
->(
+/// Check [`Decode::decode`]
+pub unsafe fn read_non_local<'itm, R: Ir<Type = S> + NonLocal + Decode<'itm> + 'itm, S: 'itm>(
     out_ptr: R::CType,
 ) -> Result<R> {
     let mut store = Default::default();
@@ -88,6 +80,6 @@ pub unsafe fn read_non_local<
         // NOTE: Bypasses the erroneous lifetime check.
         // Correct as long as `R::decode` doesn't return a reference to the store (`R: NonLocal`)
         let store_borrow = &mut *addr_of_mut!(store);
-        FfiConvert::decode(out_ptr, store_borrow)
+        Decode::decode(out_ptr, store_borrow)
     }
 }

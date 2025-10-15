@@ -1,6 +1,6 @@
 use std::mem::MaybeUninit;
 
-use co3::{FfiConvert, ExternC};
+use co3::{Encode, Decode, ExternC};
 use getset::{Getters, Setters};
 
 #[co3::carbonate]
@@ -20,18 +20,18 @@ fn main() {
     let mut b = MaybeUninit::<*const u32>::uninit();
 
     unsafe {
-        FfiStruct__a(FfiConvert::encode(&s, &mut ()), a.as_mut_ptr());
-        let a: &i32 = FfiConvert::decode(a.assume_init(), &mut ()).unwrap();
+        FfiStruct__a(Encode::encode(&s, &mut ()), a.as_mut_ptr());
+        let a: &i32 = Decode::decode(a.assume_init(), &mut ()).unwrap();
         FfiStruct__set_a(
-            FfiConvert::encode(&mut s, &mut ()),
-            FfiConvert::encode(*a, &mut ()),
+            Encode::encode(&mut s, &mut ()),
+            Encode::encode(*a, &mut ()),
         );
 
-        FfiStruct__b(FfiConvert::encode(&s, &mut ()), b.as_mut_ptr());
-        let b: &u32 = FfiConvert::decode(b.assume_init(), &mut ()).unwrap();
+        FfiStruct__b(Encode::encode(&s, &mut ()), b.as_mut_ptr());
+        let b: &u32 = Decode::decode(b.assume_init(), &mut ()).unwrap();
         FfiStruct__set_b(
-            FfiConvert::encode(&mut s, &mut ()),
-            FfiConvert::encode(*b, &mut ()),
+            Encode::encode(&mut s, &mut ()),
+            Encode::encode(*b, &mut ()),
         );
     }
 }

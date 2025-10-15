@@ -133,7 +133,7 @@ mod ffi {
     use std::{alloc, collections::BTreeMap};
 
     use co3::{
-        ExternC, FfiConvert, FfiReturn,
+        Decode, Encode, ExternC, FfiReturn,
         out_ptr::{OutPtr, OutPtrWrite},
         slice::RefMutSlice,
     };
@@ -184,7 +184,7 @@ mod ffi {
     ) -> FfiReturn {
         unsafe {
             let opaque = Box::new(ExternOpaqueStruct {
-                name: Some(FfiConvert::decode(name, &mut ()).expect("Valid num")),
+                name: Some(Decode::decode(name, &mut ()).expect("Valid num")),
                 tokens: vec![],
                 params: Default::default(),
             });
@@ -205,8 +205,7 @@ mod ffi {
             let mut handle = *Box::from_raw(handle);
             let mut store = Default::default();
 
-            let params: Vec<(u8, ExternValue)> =
-                FfiConvert::decode(params, &mut store).expect("Valid");
+            let params: Vec<(u8, ExternValue)> = Decode::decode(params, &mut store).expect("Valid");
 
             handle.params = params.into_iter().collect();
             output.write(Box::into_raw(Box::new(handle)));

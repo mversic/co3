@@ -299,19 +299,441 @@ disjoint_impls! {
 
 disjoint_impls! {
     /// Facilitates conversion of rust types to/from `ReprC` types.
-    pub trait FfiConvert<'itm>: ExternC + Sized {
+    pub trait Encode<'itm>: ExternC {
         /// Type into which state can be stored during conversion from [`Self`]. Useful for
         /// returning owning heap allocated types or non-owning types that are not transmutable.
         /// Serves similar purpose as does context in a closure
-        type RustStore: Default;
+        type Store: Default;
 
+        /// Perform the conversion from [`Self`] into [`Self::CType`]
+        fn encode(self, store: &'itm mut Self::Store) -> Self::CType;
+    }
+
+    impl<R: ReprC> Encode<'_> for R
+    where
+        Self: Ir<Type = Robust>,
+    {
+        type Store = ();
+
+        fn encode(self, (): &mut ()) -> Self::CType {
+            self
+        }
+    }
+    impl<R> Encode<'_> for R
+    where
+        Self: Ir<Type = Opaque>,
+    {
+        type Store = ();
+
+        fn encode(self, (): &mut ()) -> Self::CType {
+            Box::into_raw(Box::new(self))
+        }
+    }
+    impl<'itm, R: Transmute> Encode<'itm> for R
+    where
+        <Self as Transmute>::Target: Encode<'itm>,
+        Self: Ir<Type = Transparent>,
+    {
+        type Store = <<R>::Target as Encode<'itm>>::Store;
+
+        fn encode(self, store: &'itm mut Self::Store) -> Self::CType {
+            transmute_into_target(self).encode(store)
+        }
+    }
+    impl<R: Ir<Type = Extern> + External> Encode<'_> for R {
+        type Store = ();
+
+        fn encode(self, _: &mut ()) -> Self::CType {
+            core::mem::ManuallyDrop::new(self).as_extern_ptr_mut()
+        }
+    }
+
+    impl<'itm, R: Ir<Type = S> + Encode<'itm> + Clone, S: Cloned> Encode<'itm> for &'itm R
+    where
+        Self: Ir<Type = &'itm S>,
+    {
+        type Store = (Option<R::CType>, <R>::Store);
+
+        fn encode(self, store: &'itm mut Self::Store) -> Self::CType {
+            store.0.insert(self.clone().encode(&mut store.1))
+        }
+    }
+    impl<'itm, R: External> Encode<'itm> for &'itm R
+    where
+        Self: Ir<Type = &'itm Extern>,
+    {
+        type Store = ();
+
+        fn encode(self, _: &mut ()) -> Self::CType {
+            self.as_extern_ptr()
+        }
+    }
+
+    impl<'itm, R: External> Encode<'itm> for &'itm mut R
+    where
+        Self: Ir<Type = &'itm mut Extern>,
+    {
+        type Store = ();
+
+        fn encode(self, _: &mut ()) -> Self::CType {
+            self.as_extern_ptr_mut()
+        }
+    }
+
+    impl<'itm, R: ReprC> Encode<'itm> for &'itm [R]
+    where
+        Self: Ir<Type = &'itm [Robust]>,
+    {
+        type Store = ();
+
+        fn encode(self, (): &mut ()) -> Self::CType {
+            RefSlice::from_slice(Some(self))
+        }
+    }
+    impl<'slice, R: Clone> Encode<'slice> for &'slice [R]
+    where
+        Self: Ir<Type = &'slice [Opaque]>,
+    {
+        type Store = Box<[*const R]>;
+
+        fn encode(self, store: &mut Self::Store) -> Self::CType {
+            *store = self.iter().map(core::ptr::from_ref).collect();
+            RefSlice::from_slice(Some(store))
+        }
+    }
+    impl<'slice, R: Transmute> Encode<'slice> for &'slice [R]
+    where
+        &'slice [<R>::Target]: Encode<'slice>,
+        Self: Ir<Type = &'slice [Transparent]>,
+    {
+        type Store = <&'slice [<R>::Target] as Encode<'slice>>::Store;
+
+        fn encode(self, store: &'slice mut Self::Store) -> Self::CType {
+            transmute_into_target_ref_slice(self).encode(store)
+        }
+    }
+    impl<'slice, R: Ir<Type = S>, S: Cloned> Encode<'slice> for &'slice [R]
+    where
+        R: Encode<'slice> + Clone,
+        Self: Ir<Type = &'slice [S]>,
+    {
+        type Store = (Box<[R::CType]>, Box<[<R>::Store]>);
+
+        fn encode(self, store: &'slice mut Self::Store) -> Self::CType {
+            let slice = self.to_vec();
+
+            store.1 = core::iter::repeat_with(Default::default)
+                .take(slice.len())
+                .collect();
+
+            store.0 = slice
+                .into_iter()
+                .zip(&mut *store.1)
+                .map(|(item, substore)| item.encode(substore))
+                .collect();
+
+            RefSlice::from_slice(Some(&store.0))
+        }
+    }
+
+    impl<'slice, R: ReprC> Encode<'slice> for &'slice mut [R]
+    where
+        Self: Ir<Type = &'slice mut [Robust]>,
+    {
+        type Store = ();
+
+        fn encode(self, (): &mut ()) -> Self::CType {
+            RefMutSlice::from_slice(Some(self))
+        }
+    }
+    impl<'slice, R: Clone> Encode<'slice> for &'slice mut [R]
+    where
+        Self: Ir<Type = &'slice mut [Opaque]>,
+    {
+        type Store = Box<[*mut R]>;
+
+        fn encode(self, store: &mut Self::Store) -> Self::CType {
+            *store = self.iter_mut().map(core::ptr::from_mut).collect();
+            RefMutSlice::from_slice(Some(store))
+        }
+    }
+    impl<'slice, R: Transmute> Encode<'slice> for &'slice mut [R]
+    where
+        &'slice mut [<R>::Target]: Encode<'slice>,
+        Self: Ir<Type = &'slice mut [Transparent]>,
+    {
+        type Store = <&'slice mut [<R>::Target] as Encode<'slice>>::Store;
+
+        fn encode(self, store: &'slice mut Self::Store) -> Self::CType {
+            transmute_into_target_slice_mut(self).encode(store)
+        }
+    }
+
+    impl<R: ReprC> Encode<'_> for Box<R>
+    where
+        Self: Ir<Type = Box<Robust>>,
+    {
+        type Store = Option<Self>;
+
+        fn encode(self, store: &mut Self::Store) -> Self::CType {
+            &mut **store.insert(self)
+        }
+    }
+    impl<R> Encode<'_> for Box<R>
+    where
+        Self: Ir<Type = Box<Opaque>>,
+    {
+        // FIXME: Which type to use for unused store?
+        type Store = ();
+
+        fn encode(self, (): &mut ()) -> Self::CType {
+            Box::into_raw(self)
+        }
+    }
+    impl<'itm, R: Transmute> Encode<'itm> for Box<R>
+    where
+        Box<<R>::Target>: Encode<'itm>,
+        Self: Ir<Type = Box<Transparent>>,
+    {
+        type Store = <Box<<R>::Target> as Encode<'itm>>::Store;
+
+        fn encode(self, store: &'itm mut Self::Store) -> Self::CType {
+            transmute_into_target_box(self).encode(store)
+        }
+    }
+    impl<'itm, R: Ir<Type = S> + Encode<'itm> + Clone, S: Cloned> Encode<'itm> for Box<R>
+    where
+        Self: Ir<Type = Box<S>>,
+    {
+        type Store = (Option<R::CType>, <R>::Store);
+
+        fn encode(self, store: &'itm mut Self::Store) -> Self::CType {
+            store.0.insert((*self).encode(&mut store.1))
+        }
+    }
+
+    impl<R: ReprC> Encode<'_> for Box<[R]>
+    where
+        Self: Ir<Type = Box<[Robust]>>,
+    {
+        type Store = Self;
+
+        fn encode(self, store: &mut Self::Store) -> Self::CType {
+            *store = self;
+            RefSlice::from_slice(Some(store))
+        }
+    }
+    impl<R> Encode<'_> for Box<[R]>
+    where
+        Self: Ir<Type = Box<[Opaque]>>,
+    {
+        type Store = Box<[*mut R]>;
+
+        fn encode(self, store: &mut Self::Store) -> Self::CType {
+            *store = Vec::from(self)
+                .into_iter()
+                .map(Box::new)
+                .map(Box::into_raw)
+                .collect();
+
+            RefSlice::from_slice(Some(store))
+        }
+    }
+    impl<'itm, R: Transmute> Encode<'itm> for Box<[R]>
+    where
+        Box<[<R>::Target]>: Encode<'itm>,
+        Self: Ir<Type = Box<[Transparent]>>,
+    {
+        type Store = <Box<[<R>::Target]> as Encode<'itm>>::Store;
+
+        fn encode(self, store: &'itm mut Self::Store) -> Self::CType {
+            transmute_into_target_boxed_slice(self).encode(store)
+        }
+    }
+    impl<'itm, R: Ir<Type = S> + Encode<'itm> + Clone, S: Cloned> Encode<'itm> for Box<[R]>
+    where
+        Self: Ir<Type = Box<[S]>>,
+    {
+        type Store = (Box<[R::CType]>, Box<[<R>::Store]>);
+
+        fn encode(self, store: &'itm mut Self::Store) -> Self::CType {
+            let boxed_slice = self;
+
+            store.1 = core::iter::repeat_with(Default::default)
+                .take(boxed_slice.len())
+                .collect();
+
+            store.0 = Vec::from(boxed_slice)
+                .into_iter()
+                .zip(&mut *store.1)
+                .map(|(item, substore)| item.encode(substore))
+                .collect();
+
+            RefSlice::from_slice(Some(&store.0))
+        }
+    }
+
+    impl<R: ReprC> Encode<'_> for Vec<R>
+    where
+        Self: Ir<Type = Vec<Robust>>,
+    {
+        type Store = Box<[R]>;
+
+        fn encode(self, store: &mut Self::Store) -> Self::CType {
+            *store = self.into_boxed_slice();
+            RefSlice::from_slice(Some(store))
+        }
+    }
+    impl<R> Encode<'_> for Vec<R>
+    where
+        Self: Ir<Type = Vec<Opaque>>,
+    {
+        type Store = Box<[*mut R]>;
+
+        fn encode(self, store: &mut Self::Store) -> Self::CType {
+            *store = self.into_iter().map(Box::new).map(Box::into_raw).collect();
+            RefSlice::from_slice(Some(store))
+        }
+    }
+    impl<'itm, R: Transmute> Encode<'itm> for Vec<R>
+    where
+        Vec<<R>::Target>: Encode<'itm>,
+        Self: Ir<Type = Vec<Transparent>>,
+    {
+        type Store = <Vec<<R>::Target> as Encode<'itm>>::Store;
+
+        fn encode(self, store: &'itm mut Self::Store) -> Self::CType {
+            transmute_into_target_vec(self).encode(store)
+        }
+    }
+    impl<'itm, R: Ir<Type = S>, S: Cloned> Encode<'itm> for Vec<R>
+    where
+        R: Encode<'itm> + Clone,
+        Self: Ir<Type = Vec<S>>,
+    {
+        type Store = (Box<[R::CType]>, Box<[<R>::Store]>);
+
+        fn encode(self, store: &'itm mut Self::Store) -> Self::CType {
+            let vec = self;
+
+            store.1 = core::iter::repeat_with(Default::default)
+                .take(vec.len())
+                .collect();
+
+            store.0 = vec
+                .into_iter()
+                .zip(&mut *store.1)
+                .map(|(item, substore)| item.encode(substore))
+                .collect();
+
+            RefSlice::from_slice(Some(&store.0))
+        }
+    }
+
+    impl<R: External> Encode<'_> for Box<R>
+    where
+        Self: Ir<Type = Box<Extern>>,
+    {
+        type Store = ();
+
+        fn encode(self, (): &mut ()) -> Self::CType {
+            ManuallyDrop::new(*self).as_extern_ptr_mut()
+        }
+    }
+
+    impl<R: ReprC, const N: usize> Encode<'_> for [R; N]
+    where
+        Self: Ir<Type = [Robust; N]>,
+    {
+        type Store = ();
+
+        fn encode(self, (): &mut ()) -> Self::CType {
+            assert_arr_has_non_zero_len::<N>();
+            self
+        }
+    }
+    impl<R, const N: usize> Encode<'_> for [R; N]
+    where
+        Self: Ir<Type = [Opaque; N]>,
+    {
+        type Store = ();
+
+        fn encode(self, (): &mut Self::Store) -> Self::CType {
+            assert_arr_has_non_zero_len::<N>();
+
+            let array = self
+                .into_iter()
+                .map(Box::new)
+                .map(Box::into_raw)
+                .collect::<Vec<_>>()
+                .try_into();
+
+            // SAFETY: Vec<T> length is N
+            unsafe { array.unwrap_unchecked() }
+        }
+    }
+    impl<'itm, R: Ir<Type = S>, S: Cloned, const N: usize> Encode<'itm> for [R; N]
+    where
+        R: Encode<'itm> + Clone,
+        [<R>::Store; N]: Default,
+        Self: Ir<Type = [S; N]>,
+    {
+        type Store = [<R>::Store; N];
+
+        fn encode(self, store: &'itm mut Self::Store) -> Self::CType {
+            assert_arr_has_non_zero_len::<N>();
+            *store = default_init_arr();
+
+            let array = self
+                .into_iter()
+                .zip(store.iter_mut())
+                .map(|(item, substore)| item.encode(substore))
+                .collect::<Vec<_>>()
+                .try_into();
+
+            // SAFETY: Vec<T> length is N
+            unsafe { array.unwrap_unchecked() }
+        }
+    }
+
+    impl<'itm, R: Encode<'itm>> Encode<'itm> for Option<R>
+    where
+        Self: Ir<Type = Option<WithoutNiche>>,
+    {
+        type Store = <R>::Store;
+
+        fn encode(self, store: &'itm mut Self::Store) -> Self::CType {
+            match self {
+                // TODO: No need to zero the memory because it must never be read
+                None => FfiTuple2(Encode::encode(0u8, &mut ()), unsafe { core::mem::zeroed() }),
+                Some(value) => FfiTuple2(Encode::encode(1u8, &mut ()), value.encode(store)),
+            }
+        }
+    }
+    impl<'itm, R: Niche + Encode<'itm>> Encode<'itm> for Option<R>
+    where
+        <R as ExternC>::CType: PartialEq,
+        Self: Ir<Type = Self>,
+    {
+        type Store = <R>::Store;
+
+        fn encode(self, store: &'itm mut Self::Store) -> Self::CType {
+            if let Some(value) = self {
+                return value.encode(store);
+            }
+
+            <R>::NICHE_VALUE
+        }
+    }
+}
+
+disjoint_impls! {
+    /// Facilitates conversion of rust types to/from `ReprC` types.
+    pub trait Decode<'itm>: ExternC + Sized {
         /// Type into which state can be stored during conversion into [`Self`]. Useful for
         /// returning non-owning types that are not transmutable. Serves similar purpose as
         /// does context in a closure
-        type FfiStore: Default;
-
-        /// Perform the conversion from [`Self`] into [`Self::CType`]
-        fn encode(self, store: &'itm mut Self::RustStore) -> Self::CType;
+        type Store: Default;
 
         /// Perform the conversion from [`Self::CType`] into [`Self`]
         ///
@@ -322,34 +744,25 @@ disjoint_impls! {
         /// # Safety
         ///
         /// All conversions from a pointer must ensure pointer validity beforehand
-        unsafe fn decode(source: Self::CType, store: &'itm mut Self::FfiStore) -> Result<Self>;
+        unsafe fn decode(source: Self::CType, store: &'itm mut Self::Store) -> Result<Self>;
     }
 
-    impl<R: ReprC> FfiConvert<'_> for R
+    impl<R: ReprC> Decode<'_> for R
     where
         Self: Ir<Type = Robust>,
     {
-        type RustStore = ();
-        type FfiStore = ();
-
-        fn encode(self, (): &mut ()) -> Self::CType {
-            self
-        }
+        type Store = ();
 
         unsafe fn decode(source: Self::CType, (): &mut ()) -> Result<Self> {
             Ok(source)
         }
     }
-    impl<R> FfiConvert<'_> for R
+    impl<R> Decode<'_> for R
     where
         Self: Ir<Type = Opaque>,
     {
-        type RustStore = ();
-        type FfiStore = ();
+        type Store = ();
 
-        fn encode(self, (): &mut ()) -> Self::CType {
-            Box::into_raw(Box::new(self))
-        }
         unsafe fn decode(source: Self::CType, (): &mut ()) -> Result<Self> {
             if source.is_null() {
                 return Err(FfiReturn::ArgIsNull);
@@ -358,53 +771,36 @@ disjoint_impls! {
             Ok(*unsafe { Box::from_raw(source) })
         }
     }
-    impl<'itm, R: Transmute> FfiConvert<'itm> for R
+    impl<'itm, R: Transmute> Decode<'itm> for R
     where
-        <Self as Transmute>::Target: FfiConvert<'itm>,
+        <Self as Transmute>::Target: Decode<'itm>,
         Self: Ir<Type = Transparent>,
     {
-        type RustStore = <<R>::Target as FfiConvert<'itm>>::RustStore;
-        type FfiStore = <<R>::Target as FfiConvert<'itm>>::FfiStore;
+        type Store = <<R>::Target as Decode<'itm>>::Store;
 
-        fn encode(self, store: &'itm mut Self::RustStore) -> Self::CType {
-            transmute_into_target(self).encode(store)
-        }
-
-        unsafe fn decode(source: Self::CType, store: &'itm mut Self::FfiStore) -> Result<Self> {
-            unsafe {
-                FfiConvert::decode(source, store).and_then(|inner| transmute_from_target(inner))
-            }
+        unsafe fn decode(source: Self::CType, store: &'itm mut Self::Store) -> Result<Self> {
+            unsafe { Decode::decode(source, store).and_then(|inner| transmute_from_target(inner)) }
         }
     }
-    impl<R: Ir<Type = Extern> + External> FfiConvert<'_> for R {
-        type RustStore = ();
-        type FfiStore = ();
-
-        fn encode(self, _: &mut ()) -> Self::CType {
-            core::mem::ManuallyDrop::new(self).as_extern_ptr_mut()
-        }
+    impl<R: Ir<Type = Extern> + External> Decode<'_> for R {
+        type Store = ();
 
         unsafe fn decode(source: Self::CType, _: &mut ()) -> Result<Self> {
             if source.is_null() {
                 return Err(FfiReturn::ArgIsNull);
             }
 
-            Ok(unsafe {Self::from_extern_ptr(source)})
+            Ok(unsafe { Self::from_extern_ptr(source) })
         }
     }
 
-    impl<'itm, R: Ir<Type = S> + FfiConvert<'itm> + Clone, S: Cloned> FfiConvert<'itm> for &'itm R
+    impl<'itm, R: Ir<Type = S> + Decode<'itm> + Clone, S: Cloned> Decode<'itm> for &'itm R
     where
         Self: Ir<Type = &'itm S>,
     {
-        type RustStore = (Option<R::CType>, <R>::RustStore);
-        type FfiStore = (Option<R>, <R>::FfiStore);
+        type Store = (Option<R>, <R>::Store);
 
-        fn encode(self, store: &'itm mut Self::RustStore) -> Self::CType {
-            store.0.insert(self.clone().encode(&mut store.1))
-        }
-
-        unsafe fn decode(source: Self::CType, store: &'itm mut Self::FfiStore) -> Result<Self> {
+        unsafe fn decode(source: Self::CType, store: &'itm mut Self::Store) -> Result<Self> {
             unsafe {
                 if source.as_ref().is_none() {
                     return Err(FfiReturn::ArgIsNull);
@@ -418,60 +814,45 @@ disjoint_impls! {
             }
         }
     }
-    impl<'itm, R: External> FfiConvert<'itm> for &'itm R where Self: Ir<Type = &'itm Extern> {
-        type RustStore = ();
-        type FfiStore = ();
-
-        fn encode(self, _: &mut ()) -> Self::CType {
-            self.as_extern_ptr()
-        }
+    impl<'itm, R: External> Decode<'itm> for &'itm R
+    where
+        Self: Ir<Type = &'itm Extern>,
+    {
+        type Store = ();
 
         unsafe fn decode(_: Self::CType, _: &mut ()) -> Result<Self> {
             unimplemented!("Extern opaque pointers must be decoded into ExternRef")
         }
     }
 
-    impl<'itm, R: External> FfiConvert<'itm> for &'itm mut R where Self: Ir<Type = &'itm mut Extern> {
-        type RustStore = ();
-        type FfiStore = ();
-
-        fn encode(self, _: &mut ()) -> Self::CType {
-            self.as_extern_ptr_mut()
-        }
+    impl<'itm, R: External> Decode<'itm> for &'itm mut R
+    where
+        Self: Ir<Type = &'itm mut Extern>,
+    {
+        type Store = ();
 
         unsafe fn decode(_: Self::CType, _: &mut ()) -> Result<Self> {
             unimplemented!("Extern opaque pointers must be decoded into ExternRefMut")
         }
     }
 
-    impl<'itm, R: ReprC> FfiConvert<'itm> for &'itm [R]
+    impl<'itm, R: ReprC> Decode<'itm> for &'itm [R]
     where
         Self: Ir<Type = &'itm [Robust]>,
     {
-        type RustStore = ();
-        type FfiStore = ();
-
-        fn encode(self, (): &mut ()) -> Self::CType {
-            RefSlice::from_slice(Some(self))
-        }
+        type Store = ();
 
         unsafe fn decode(source: Self::CType, (): &mut ()) -> Result<Self> {
             unsafe { source.into_rust() }.ok_or(FfiReturn::ArgIsNull)
         }
     }
-    impl<'slice, R: Clone> FfiConvert<'slice> for &'slice [R]
+    impl<'slice, R: Clone> Decode<'slice> for &'slice [R]
     where
         Self: Ir<Type = &'slice [Opaque]>,
     {
-        type RustStore = Box<[*const R]>;
-        type FfiStore = Box<[R]>;
+        type Store = Box<[R]>;
 
-        fn encode(self, store: &mut Self::RustStore) -> Self::CType {
-            *store = self.iter().map(core::ptr::from_ref).collect();
-            RefSlice::from_slice(Some(store))
-        }
-
-        unsafe fn decode(source: Self::CType, store: &'slice mut Self::FfiStore) -> Result<Self> {
+        unsafe fn decode(source: Self::CType, store: &'slice mut Self::Store) -> Result<Self> {
             let source = unsafe { source.into_rust() }.ok_or(FfiReturn::ArgIsNull)?;
 
             *store = source
@@ -488,50 +869,28 @@ disjoint_impls! {
             Ok(store)
         }
     }
-    impl<'slice, R: Transmute> FfiConvert<'slice> for &'slice [R]
+    impl<'slice, R: Transmute> Decode<'slice> for &'slice [R]
     where
-        &'slice [<R>::Target]: FfiConvert<'slice>,
+        &'slice [<R>::Target]: Decode<'slice>,
         Self: Ir<Type = &'slice [Transparent]>,
     {
-        type RustStore = <&'slice [<R>::Target] as FfiConvert<'slice>>::RustStore;
-        type FfiStore = <&'slice [<R>::Target] as FfiConvert<'slice>>::FfiStore;
+        type Store = <&'slice [<R>::Target] as Decode<'slice>>::Store;
 
-        fn encode(self, store: &'slice mut Self::RustStore) -> Self::CType {
-            transmute_into_target_ref_slice(self).encode(store)
-        }
-
-        unsafe fn decode(source: Self::CType, store: &'slice mut Self::FfiStore) -> Result<Self> {
+        unsafe fn decode(source: Self::CType, store: &'slice mut Self::Store) -> Result<Self> {
             unsafe {
                 let slice = <&[<R>::Target]>::decode(source, store)?;
                 transmute_from_target_ref_slice(slice)
             }
         }
     }
-    impl<'slice, R: Ir<Type = S>, S: Cloned> FfiConvert<'slice> for &'slice [R]
+    impl<'slice, R: Ir<Type = S>, S: Cloned> Decode<'slice> for &'slice [R]
     where
-        R: FfiConvert<'slice> + Clone,
+        R: Decode<'slice> + Clone,
         Self: Ir<Type = &'slice [S]>,
     {
-        type RustStore = (Box<[R::CType]>, Box<[<R>::RustStore]>);
-        type FfiStore = (Box<[R]>, Box<[<R>::FfiStore]>);
+        type Store = (Box<[R]>, Box<[<R>::Store]>);
 
-        fn encode(self, store: &'slice mut Self::RustStore) -> Self::CType {
-            let slice = self.to_vec();
-
-            store.1 = core::iter::repeat_with(Default::default)
-                .take(slice.len())
-                .collect();
-
-            store.0 = slice
-                .into_iter()
-                .zip(&mut *store.1)
-                .map(|(item, substore)| item.encode(substore))
-                .collect();
-
-            RefSlice::from_slice(Some(&store.0))
-        }
-
-        unsafe fn decode(source: Self::CType, store: &'slice mut Self::FfiStore) -> Result<Self> {
+        unsafe fn decode(source: Self::CType, store: &'slice mut Self::Store) -> Result<Self> {
             store.1 = core::iter::repeat_with(Default::default)
                 .take(source.len())
                 .collect();
@@ -540,9 +899,7 @@ disjoint_impls! {
                 .ok_or(FfiReturn::ArgIsNull)?
                 .iter()
                 .zip(&mut *store.1)
-                .map(|(&item, substore)| {
-                    unsafe { <R>::decode(item, substore) }.map(ManuallyDrop::new)
-                })
+                .map(|(&item, substore)| unsafe { <R>::decode(item, substore) }.map(ManuallyDrop::new))
                 .collect::<core::result::Result<_, _>>()?;
 
             store.0 = source
@@ -555,34 +912,23 @@ disjoint_impls! {
         }
     }
 
-    impl<'slice, R: ReprC> FfiConvert<'slice> for &'slice mut [R]
+    impl<'slice, R: ReprC> Decode<'slice> for &'slice mut [R]
     where
         Self: Ir<Type = &'slice mut [Robust]>,
     {
-        type RustStore = ();
-        type FfiStore = ();
-
-        fn encode(self, (): &mut ()) -> Self::CType {
-            RefMutSlice::from_slice(Some(self))
-        }
+        type Store = ();
 
         unsafe fn decode(source: Self::CType, (): &mut ()) -> Result<Self> {
             unsafe { source.into_rust() }.ok_or(FfiReturn::ArgIsNull)
         }
     }
-    impl<'slice, R: Clone> FfiConvert<'slice> for &'slice mut [R]
+    impl<'slice, R: Clone> Decode<'slice> for &'slice mut [R]
     where
         Self: Ir<Type = &'slice mut [Opaque]>,
     {
-        type RustStore = Box<[*mut R]>;
-        type FfiStore = Box<[R]>;
+        type Store = Box<[R]>;
 
-        fn encode(self, store: &mut Self::RustStore) -> Self::CType {
-            *store = self.iter_mut().map(core::ptr::from_mut).collect();
-            RefMutSlice::from_slice(Some(store))
-        }
-
-        unsafe fn decode(source: Self::CType, store: &'slice mut Self::FfiStore) -> Result<Self> {
+        unsafe fn decode(source: Self::CType, store: &'slice mut Self::Store) -> Result<Self> {
             let source = unsafe { source.into_rust() }.ok_or(FfiReturn::ArgIsNull)?;
 
             *store = source
@@ -599,19 +945,14 @@ disjoint_impls! {
             Ok(store)
         }
     }
-    impl<'slice, R: Transmute> FfiConvert<'slice> for &'slice mut [R]
+    impl<'slice, R: Transmute> Decode<'slice> for &'slice mut [R]
     where
-        &'slice mut [<R>::Target]: FfiConvert<'slice>,
+        &'slice mut [<R>::Target]: Decode<'slice>,
         Self: Ir<Type = &'slice mut [Transparent]>,
     {
-        type RustStore = <&'slice mut [<R>::Target] as FfiConvert<'slice>>::RustStore;
-        type FfiStore = <&'slice mut [<R>::Target] as FfiConvert<'slice>>::FfiStore;
+        type Store = <&'slice mut [<R>::Target] as Decode<'slice>>::Store;
 
-        fn encode(self, store: &'slice mut Self::RustStore) -> Self::CType {
-            transmute_into_target_slice_mut(self).encode(store)
-        }
-
-        unsafe fn decode(source: Self::CType, store: &'slice mut Self::FfiStore) -> Result<Self> {
+        unsafe fn decode(source: Self::CType, store: &'slice mut Self::Store) -> Result<Self> {
             unsafe {
                 <&mut [<R>::Target]>::decode(source, store)
                     .and_then(|output| transmute_from_target_slice_mut(output))
@@ -619,16 +960,11 @@ disjoint_impls! {
         }
     }
 
-    impl<R: ReprC> FfiConvert<'_> for Box<R>
+    impl<R: ReprC> Decode<'_> for Box<R>
     where
         Self: Ir<Type = Box<Robust>>,
     {
-        type RustStore = Option<Self>;
-        type FfiStore = ();
-
-        fn encode(self, store: &mut Self::RustStore) -> Self::CType {
-            &mut **store.insert(self)
-        }
+        type Store = ();
 
         unsafe fn decode(source: Self::CType, (): &mut ()) -> Result<Self> {
             if source.is_null() {
@@ -638,17 +974,12 @@ disjoint_impls! {
             Ok(Box::new(unsafe { source.read() }))
         }
     }
-    impl<R> FfiConvert<'_> for Box<R>
+    impl<R> Decode<'_> for Box<R>
     where
         Self: Ir<Type = Box<Opaque>>,
     {
         // FIXME: Which type to use for unused store?
-        type RustStore = ();
-        type FfiStore = ();
-
-        fn encode(self, (): &mut ()) -> Self::CType {
-            Box::into_raw(self)
-        }
+        type Store = ();
 
         unsafe fn decode(source: Self::CType, (): &mut ()) -> Result<Self> {
             if source.is_null() {
@@ -658,36 +989,27 @@ disjoint_impls! {
             Ok(unsafe { Box::from_raw(source) })
         }
     }
-    impl<'itm, R: Transmute> FfiConvert<'itm> for Box<R>
+    impl<'itm, R: Transmute> Decode<'itm> for Box<R>
     where
-        Box<<R>::Target>: FfiConvert<'itm>,
+        Box<<R>::Target>: Decode<'itm>,
         Self: Ir<Type = Box<Transparent>>,
     {
-        type RustStore = <Box<<R>::Target> as FfiConvert<'itm>>::RustStore;
-        type FfiStore = <Box<<R>::Target> as FfiConvert<'itm>>::FfiStore;
+        type Store = <Box<<R>::Target> as Decode<'itm>>::Store;
 
-        fn encode(self, store: &'itm mut Self::RustStore) -> Self::CType {
-            transmute_into_target_box(self).encode(store)
-        }
-
-        unsafe fn decode(source: Self::CType, store: &'itm mut Self::FfiStore) -> Result<Self> {
+        unsafe fn decode(source: Self::CType, store: &'itm mut Self::Store) -> Result<Self> {
             unsafe {
                 Box::<<R>::Target>::decode(source, store)
                     .and_then(|output| transmute_from_target_box(output))
             }
         }
     }
-    impl<'itm, R: Ir<Type = S> + FfiConvert<'itm> + Clone, S: Cloned> FfiConvert<'itm> for Box<R>
+    impl<'itm, R: Ir<Type = S> + Decode<'itm> + Clone, S: Cloned> Decode<'itm> for Box<R>
     where
         Self: Ir<Type = Box<S>>,
     {
-        type RustStore = (Option<R::CType>, <R>::RustStore);
-        type FfiStore = <R>::FfiStore;
+        type Store = <R>::Store;
 
-        fn encode(self, store: &'itm mut Self::RustStore) -> Self::CType {
-            store.0.insert((*self).encode(&mut store.1))
-        }
-        unsafe fn decode(source: Self::CType, store: &'itm mut Self::FfiStore) -> Result<Self> {
+        unsafe fn decode(source: Self::CType, store: &'itm mut Self::Store) -> Result<Self> {
             unsafe {
                 if source.as_ref().is_none() {
                     return Err(FfiReturn::ArgIsNull);
@@ -701,17 +1023,11 @@ disjoint_impls! {
         }
     }
 
-    impl<R: ReprC> FfiConvert<'_> for Box<[R]>
+    impl<R: ReprC> Decode<'_> for Box<[R]>
     where
         Self: Ir<Type = Box<[Robust]>>,
     {
-        type RustStore = Self;
-        type FfiStore = ();
-
-        fn encode(self, store: &mut Self::RustStore) -> Self::CType {
-            *store = self;
-            RefSlice::from_slice(Some(store))
-        }
+        type Store = ();
 
         unsafe fn decode(source: Self::CType, (): &mut ()) -> Result<Self> {
             unsafe { source.into_rust() }
@@ -719,22 +1035,11 @@ disjoint_impls! {
                 .map(|slice| slice.into())
         }
     }
-    impl<R> FfiConvert<'_> for Box<[R]>
+    impl<R> Decode<'_> for Box<[R]>
     where
         Self: Ir<Type = Box<[Opaque]>>,
     {
-        type RustStore = Box<[*mut R]>;
-        type FfiStore = ();
-
-        fn encode(self, store: &mut Self::RustStore) -> Self::CType {
-            *store = Vec::from(self)
-                .into_iter()
-                .map(Box::new)
-                .map(Box::into_raw)
-                .collect();
-
-            RefSlice::from_slice(Some(store))
-        }
+        type Store = ();
 
         unsafe fn decode(source: Self::CType, (): &mut ()) -> Result<Self> {
             let slice = unsafe { source.into_rust() }.ok_or(FfiReturn::ArgIsNull)?;
@@ -751,48 +1056,27 @@ disjoint_impls! {
                 .collect::<core::result::Result<_, _>>()
         }
     }
-    impl<'itm, R: Transmute> FfiConvert<'itm> for Box<[R]>
+    impl<'itm, R: Transmute> Decode<'itm> for Box<[R]>
     where
-        Box<[<R>::Target]>: FfiConvert<'itm>,
+        Box<[<R>::Target]>: Decode<'itm>,
         Self: Ir<Type = Box<[Transparent]>>,
     {
-        type RustStore = <Box<[<R>::Target]> as FfiConvert<'itm>>::RustStore;
-        type FfiStore = <Box<[<R>::Target]> as FfiConvert<'itm>>::FfiStore;
+        type Store = <Box<[<R>::Target]> as Decode<'itm>>::Store;
 
-        fn encode(self, store: &'itm mut Self::RustStore) -> Self::CType {
-            transmute_into_target_boxed_slice(self).encode(store)
-        }
-
-        unsafe fn decode(source: Self::CType, store: &'itm mut Self::FfiStore) -> Result<Self> {
+        unsafe fn decode(source: Self::CType, store: &'itm mut Self::Store) -> Result<Self> {
             unsafe {
                 <Box<[<R>::Target]>>::decode(source, store)
                     .and_then(|output| transmute_from_target_boxed_slice(output))
             }
         }
     }
-    impl<'itm, R: Ir<Type = S> + FfiConvert<'itm> + Clone, S: Cloned> FfiConvert<'itm> for Box<[R]>
+    impl<'itm, R: Ir<Type = S> + Decode<'itm> + Clone, S: Cloned> Decode<'itm> for Box<[R]>
     where
         Self: Ir<Type = Box<[S]>>,
     {
-        type RustStore = (Box<[R::CType]>, Box<[<R>::RustStore]>);
-        type FfiStore = Box<[<R>::FfiStore]>;
+        type Store = Box<[<R>::Store]>;
 
-        fn encode(self, store: &'itm mut Self::RustStore) -> Self::CType {
-            let boxed_slice = self;
-
-            store.1 = core::iter::repeat_with(Default::default)
-                .take(boxed_slice.len())
-                .collect();
-
-            store.0 = Vec::from(boxed_slice)
-                .into_iter()
-                .zip(&mut *store.1)
-                .map(|(item, substore)| item.encode(substore))
-                .collect();
-
-            RefSlice::from_slice(Some(&store.0))
-        }
-        unsafe fn decode(source: Self::CType, store: &'itm mut Self::FfiStore) -> Result<Self> {
+        unsafe fn decode(source: Self::CType, store: &'itm mut Self::Store) -> Result<Self> {
             let slice = unsafe { source.into_rust() }.ok_or(FfiReturn::ArgIsNull)?;
 
             *store = core::iter::repeat_with(Default::default)
@@ -803,26 +1087,18 @@ disjoint_impls! {
                 .iter()
                 .copied()
                 .zip(&mut **store)
-                .map(|(item, substore)| {
-                    unsafe { <R>::decode(item, substore) }.map(ManuallyDrop::new)
-                })
+                .map(|(item, substore)| unsafe { <R>::decode(item, substore) }.map(ManuallyDrop::new))
                 .collect::<core::result::Result<_, _>>()?;
 
             Ok(vec.iter().cloned().map(ManuallyDrop::into_inner).collect())
         }
     }
 
-    impl<R: ReprC> FfiConvert<'_> for Vec<R>
+    impl<R: ReprC> Decode<'_> for Vec<R>
     where
         Self: Ir<Type = Vec<Robust>>,
     {
-        type RustStore = Box<[R]>;
-        type FfiStore = ();
-
-        fn encode(self, store: &mut Self::RustStore) -> Self::CType {
-            *store = self.into_boxed_slice();
-            RefSlice::from_slice(Some(store))
-        }
+        type Store = ();
 
         unsafe fn decode(source: Self::CType, (): &mut ()) -> Result<Self> {
             unsafe { source.into_rust() }
@@ -830,17 +1106,11 @@ disjoint_impls! {
                 .map(|slice| slice.to_vec())
         }
     }
-    impl<R> FfiConvert<'_> for Vec<R>
+    impl<R> Decode<'_> for Vec<R>
     where
         Self: Ir<Type = Vec<Opaque>>,
     {
-        type RustStore = Box<[*mut R]>;
-        type FfiStore = ();
-
-        fn encode(self, store: &mut Self::RustStore) -> Self::CType {
-            *store = self.into_iter().map(Box::new).map(Box::into_raw).collect();
-            RefSlice::from_slice(Some(store))
-        }
+        type Store = ();
 
         unsafe fn decode(source: Self::CType, (): &mut ()) -> Result<Self> {
             let slice = unsafe { source.into_rust() };
@@ -858,49 +1128,28 @@ disjoint_impls! {
                 .collect::<core::result::Result<_, _>>()
         }
     }
-    impl<'itm, R: Transmute> FfiConvert<'itm> for Vec<R>
+    impl<'itm, R: Transmute> Decode<'itm> for Vec<R>
     where
-        Vec<<R>::Target>: FfiConvert<'itm>,
+        Vec<<R>::Target>: Decode<'itm>,
         Self: Ir<Type = Vec<Transparent>>,
     {
-        type RustStore = <Vec<<R>::Target> as FfiConvert<'itm>>::RustStore;
-        type FfiStore = <Vec<<R>::Target> as FfiConvert<'itm>>::FfiStore;
+        type Store = <Vec<<R>::Target> as Decode<'itm>>::Store;
 
-        fn encode(self, store: &'itm mut Self::RustStore) -> Self::CType {
-            transmute_into_target_vec(self).encode(store)
-        }
-
-        unsafe fn decode(source: Self::CType, store: &'itm mut Self::FfiStore) -> Result<Self> {
+        unsafe fn decode(source: Self::CType, store: &'itm mut Self::Store) -> Result<Self> {
             unsafe {
                 <Vec<<R>::Target>>::decode(source, store)
                     .and_then(|output| transmute_from_target_vec(output))
             }
         }
     }
-    impl<'itm, R: Ir<Type = S>, S: Cloned> FfiConvert<'itm> for Vec<R>
+    impl<'itm, R: Ir<Type = S>, S: Cloned> Decode<'itm> for Vec<R>
     where
-        R: FfiConvert<'itm> + Clone,
+        R: Decode<'itm> + Clone,
         Self: Ir<Type = Vec<S>>,
     {
-        type RustStore = (Box<[R::CType]>, Box<[<R>::RustStore]>);
-        type FfiStore = Box<[<R>::FfiStore]>;
+        type Store = Box<[<R>::Store]>;
 
-        fn encode(self, store: &'itm mut Self::RustStore) -> Self::CType {
-            let vec = self;
-
-            store.1 = core::iter::repeat_with(Default::default)
-                .take(vec.len())
-                .collect();
-
-            store.0 = vec
-                .into_iter()
-                .zip(&mut *store.1)
-                .map(|(item, substore)| item.encode(substore))
-                .collect();
-
-            RefSlice::from_slice(Some(&store.0))
-        }
-        unsafe fn decode(source: Self::CType, store: &'itm mut Self::FfiStore) -> Result<Self> {
+        unsafe fn decode(source: Self::CType, store: &'itm mut Self::Store) -> Result<Self> {
             let slice = unsafe { source.into_rust() }.ok_or(FfiReturn::ArgIsNull)?;
 
             *store = core::iter::repeat_with(Default::default)
@@ -911,25 +1160,18 @@ disjoint_impls! {
                 .iter()
                 .copied()
                 .zip(&mut **store)
-                .map(|(item, substore)| unsafe {
-                    <R>::decode(item, substore).map(ManuallyDrop::new)
-                })
+                .map(|(item, substore)| unsafe { <R>::decode(item, substore).map(ManuallyDrop::new) })
                 .collect::<core::result::Result<_, _>>()?;
 
             Ok(vec.iter().cloned().map(ManuallyDrop::into_inner).collect())
         }
     }
 
-    impl<R: External> FfiConvert<'_> for Box<R>
+    impl<R: External> Decode<'_> for Box<R>
     where
         Self: Ir<Type = Box<Extern>>,
     {
-        type RustStore = ();
-        type FfiStore = ();
-
-        fn encode(self, (): &mut ()) -> Self::CType {
-            ManuallyDrop::new(*self).as_extern_ptr_mut()
-        }
+        type Store = ();
 
         unsafe fn decode(source: Self::CType, (): &mut ()) -> Result<Self> {
             if source.is_null() {
@@ -940,43 +1182,22 @@ disjoint_impls! {
         }
     }
 
-    impl<R: ReprC, const N: usize> FfiConvert<'_> for [R; N]
+    impl<R: ReprC, const N: usize> Decode<'_> for [R; N]
     where
         Self: Ir<Type = [Robust; N]>,
     {
-        type RustStore = ();
-        type FfiStore = ();
-
-        fn encode(self, (): &mut ()) -> Self::CType {
-            assert_arr_has_non_zero_len::<N>();
-            self
-        }
+        type Store = ();
 
         unsafe fn decode(source: Self::CType, (): &mut ()) -> Result<Self> {
             assert_arr_has_non_zero_len::<N>();
             Ok(source)
         }
     }
-    impl<R, const N: usize> FfiConvert<'_> for [R; N]
+    impl<R, const N: usize> Decode<'_> for [R; N]
     where
         Self: Ir<Type = [Opaque; N]>,
     {
-        type RustStore = ();
-        type FfiStore = ();
-
-        fn encode(self, (): &mut Self::RustStore) -> Self::CType {
-            assert_arr_has_non_zero_len::<N>();
-
-            let array = self
-                .into_iter()
-                .map(Box::new)
-                .map(Box::into_raw)
-                .collect::<Vec<_>>()
-                .try_into();
-
-            // SAFETY: Vec<T> length is N
-            unsafe { array.unwrap_unchecked() }
-        }
+        type Store = ();
 
         unsafe fn decode(source: Self::CType, (): &mut ()) -> Result<Self> {
             assert_arr_has_non_zero_len::<N>();
@@ -996,39 +1217,21 @@ disjoint_impls! {
             Ok(unsafe { array.unwrap_unchecked() })
         }
     }
-    impl<'itm, R: Ir<Type = S>, S: Cloned, const N: usize> FfiConvert<'itm> for [R; N]
+    impl<'itm, R: Ir<Type = S>, S: Cloned, const N: usize> Decode<'itm> for [R; N]
     where
-        R: FfiConvert<'itm> + Clone,
-        [<R>::RustStore; N]: Default,
-        [<R>::FfiStore; N]: Default,
+        R: Decode<'itm> + Clone,
+        [<R>::Store; N]: Default,
         Self: Ir<Type = [S; N]>,
     {
-        type RustStore = [<R>::RustStore; N];
-        type FfiStore = [<R>::FfiStore; N];
+        type Store = [<R>::Store; N];
 
-        fn encode(self, store: &'itm mut Self::RustStore) -> Self::CType {
-            assert_arr_has_non_zero_len::<N>();
-            *store = default_init_arr();
-
-            let array = self
-                .into_iter()
-                .zip(store.iter_mut())
-                .map(|(item, substore)| item.encode(substore))
-                .collect::<Vec<_>>()
-                .try_into();
-
-            // SAFETY: Vec<T> length is N
-            unsafe { array.unwrap_unchecked() }
-        }
-        unsafe fn decode(source: Self::CType, store: &'itm mut Self::FfiStore) -> Result<Self> {
+        unsafe fn decode(source: Self::CType, store: &'itm mut Self::Store) -> Result<Self> {
             assert_arr_has_non_zero_len::<N>();
 
             let vec: core::result::Result<[_; N], _> = source
                 .into_iter()
                 .zip(store.iter_mut())
-                .map(|(item, substore)| unsafe {
-                    <R>::decode(item, substore).map(ManuallyDrop::new)
-                })
+                .map(|(item, substore)| unsafe { <R>::decode(item, substore).map(ManuallyDrop::new) })
                 .collect::<core::result::Result<Vec<_>, FfiReturn>>()?
                 .try_into();
 
@@ -1043,23 +1246,14 @@ disjoint_impls! {
         }
     }
 
-    impl<'itm, R: FfiConvert<'itm>> FfiConvert<'itm> for Option<R>
+    impl<'itm, R: Decode<'itm>> Decode<'itm> for Option<R>
     where
         Self: Ir<Type = Option<WithoutNiche>>,
     {
-        type RustStore = <R>::RustStore;
-        type FfiStore = <R>::FfiStore;
+        type Store = <R>::Store;
 
-        fn encode(self, store: &'itm mut Self::RustStore) -> Self::CType {
-            match self {
-                // TODO: No need to zero the memory because it must never be read
-                None => FfiTuple2(FfiConvert::encode(0u8, &mut ()), unsafe { core::mem::zeroed() }),
-                Some(value) => FfiTuple2(FfiConvert::encode(1u8, &mut ()), value.encode(store)),
-            }
-        }
-
-        unsafe fn decode(source: Self::CType, store: &'itm mut Self::FfiStore) -> Result<Self> {
-            let discriminant: <u8 as ExternC>::CType = unsafe { FfiConvert::decode(source.0, &mut ())? };
+        unsafe fn decode(source: Self::CType, store: &'itm mut Self::Store) -> Result<Self> {
+            let discriminant: <u8 as ExternC>::CType = unsafe { Decode::decode(source.0, &mut ())? };
 
             match discriminant {
                 0 => Ok(None),
@@ -1068,23 +1262,14 @@ disjoint_impls! {
             }
         }
     }
-    impl<'itm, R: Niche + FfiConvert<'itm>> FfiConvert<'itm> for Option<R>
+    impl<'itm, R: Niche + Decode<'itm>> Decode<'itm> for Option<R>
     where
         <R as ExternC>::CType: PartialEq,
         Self: Ir<Type = Self>,
     {
-        type RustStore = <R>::RustStore;
-        type FfiStore = <R>::FfiStore;
+        type Store = <R>::Store;
 
-        fn encode(self, store: &'itm mut Self::RustStore) -> Self::CType {
-            if let Some(value) = self {
-                return value.encode(store);
-            }
-
-            <R>::NICHE_VALUE
-        }
-
-        unsafe fn decode(source: Self::CType, store: &'itm mut Self::FfiStore) -> Result<Self> {
+        unsafe fn decode(source: Self::CType, store: &'itm mut Self::Store) -> Result<Self> {
             if source == <R>::NICHE_VALUE {
                 return Ok(None);
             }
@@ -1386,7 +1571,7 @@ disjoint_impls! {
 ///     let output = output.assume_init();
 ///
 ///     // &u32 doesn't reference local scope of a function
-///     let output = FfiConvert::decode(output, &mut out_store);
+///     let output = Decode::decode(output, &mut out_store);
 ///     output
 /// }
 ///
@@ -1401,7 +1586,7 @@ disjoint_impls! {
 ///     let out_store = Default::default();
 ///
 ///     // &(u32, u32) references out_store which is defined locally
-///     let output = FfiConvert::decode(output, &mut out_store);
+///     let output = Decode::decode(output, &mut out_store);
 ///     LocalRef(out_store.0, core::marker::PhantomData)
 /// } */
 /// ```
@@ -1437,7 +1622,7 @@ pub struct LocalRef<'data, R>(R, core::marker::PhantomData<&'data ()>);
 ///     let output = output.assume_init();
 ///
 ///     // &[u32] doesn't reference local scope of a function
-///     let output = FfiConvert::decode(output, &mut out_store);
+///     let output = Decode::decode(output, &mut out_store);
 ///     output
 /// }
 ///
@@ -1452,7 +1637,7 @@ pub struct LocalRef<'data, R>(R, core::marker::PhantomData<&'data ()>);
 ///     let out_store = Default::default();
 ///
 ///     // &[(u32, u32)] references out_store which is defined locally
-///     let output = FfiConvert::decode(output, &mut out_store);
+///     let output = Decode::decode(output, &mut out_store);
 ///     LocalSlice(out_store.0, core::marker::PhantomData)
 /// } */
 /// ```
@@ -1820,25 +2005,28 @@ macro_rules! impl_tuple {
             }
         }
 
-        impl<'itm, $($ty: $crate::FfiConvert<'itm>),+> $crate::FfiConvert<'itm> for ($($ty,)+) {
-            type RustStore = ($( $ty::RustStore, )+);
-            type FfiStore = ($( $ty::FfiStore, )+);
+        impl<'itm, $($ty: $crate::Encode<'itm>),+> $crate::Encode<'itm> for ($($ty,)+) {
+            type Store = ($( $ty::Store, )+);
 
             #[expect(non_snake_case)]
-            fn encode(self, store: &'itm mut Self::RustStore) -> Self::CType {
-                impl_tuple! {@decl_priv_store $($ty),+ for RustStore}
+            fn encode(self, store: &'itm mut Self::Store) -> Self::CType {
+                impl_tuple! {@decl_priv_store $($ty),+ for $crate::Encode<'itm> : Store}
 
                 let ($($ty,)+) = self;
                 let store: private_store::Store<$($ty),+> = store.into();
-                $ffi_ty($( <$ty as $crate::FfiConvert>::encode($ty, store.$ty),)+)
+                $ffi_ty($( <$ty as $crate::Encode>::encode($ty, store.$ty),)+)
             }
+        }
+        impl<'itm, $($ty: $crate::Decode<'itm>),+> $crate::Decode<'itm> for ($($ty,)+) {
+            type Store = ($( $ty::Store, )+);
+
             #[expect(non_snake_case)]
-            unsafe fn decode(source: Self::CType, store: &'itm mut Self::FfiStore) -> Result<Self> {
-                impl_tuple! {@decl_priv_store $($ty),+ for FfiStore}
+            unsafe fn decode(source: Self::CType, store: &'itm mut Self::Store) -> Result<Self> {
+                impl_tuple! {@decl_priv_store $($ty),+ for $crate::Decode<'itm> : Store}
 
                 let $ffi_ty($($ty,)+) = source;
                 let store: private_store::Store<$($ty),+> = store.into();
-                Ok(unsafe {($( <$ty as $crate::FfiConvert>::decode($ty, store.$ty)?, )+)})
+                Ok(unsafe {($( <$ty as $crate::Decode>::decode($ty, store.$ty)?, )+)})
             }
         }
 
@@ -1851,13 +2039,13 @@ macro_rules! impl_tuple {
     };
 
     // NOTE: This is a trick to index tuples
-    ( @decl_priv_store $( $ty:ident ),+ for $store:ident) => {
+    ( @decl_priv_store $( $ty:ident ),+ for $trait:path : $store:ident) => {
         mod private_store {
-            pub struct Store<'itm, $($ty: $crate::FfiConvert<'itm>),+> {
+            pub struct Store<'itm, $($ty: $trait),+> {
                 $(pub $ty: &'itm mut $ty::$store),+
             }
 
-            impl<'itm, $($ty: $crate::FfiConvert<'itm>),+> From<&'itm mut ($($ty::$store,)+)> for Store<'itm, $($ty,)+> {
+            impl<'itm, $($ty: $trait),+> From<&'itm mut ($($ty::$store,)+)> for Store<'itm, $($ty,)+> {
                 fn from(($($ty,)+): &'itm mut ($($ty::$store,)+)) -> Self {
                     Self {$($ty,)+}
                 }

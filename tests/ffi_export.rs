@@ -2,7 +2,7 @@
 use std::{alloc, collections::BTreeMap, mem::MaybeUninit};
 
 use co3::{
-    ExternC, FfiConvert, FfiReturn, FfiTuple1, FfiTuple2, LocalRef, out_ptr::OutPtrRead,
+    Decode, Encode, ExternC, FfiReturn, FfiTuple1, FfiTuple2, LocalRef, out_ptr::OutPtrRead,
     slice::OutBoxedSlice,
 };
 
@@ -222,11 +222,11 @@ fn get_new_struct() -> OpaqueStruct {
 
         assert_eq!(
             FfiReturn::Ok,
-            OpaqueStruct__new(FfiConvert::encode(name, &mut ()), ffi_struct.as_mut_ptr())
+            OpaqueStruct__new(Encode::encode(name, &mut ()), ffi_struct.as_mut_ptr())
         );
 
         let ffi_struct = ffi_struct.assume_init();
-        FfiConvert::decode(ffi_struct, &mut ()).unwrap()
+        Decode::decode(ffi_struct, &mut ()).unwrap()
     }
 }
 
@@ -240,13 +240,13 @@ fn get_new_struct_with_params() -> OpaqueStruct {
     let params_ffi = params.encode(&mut store);
     assert_eq!(FfiReturn::Ok, unsafe {
         OpaqueStruct__with_params(
-            FfiConvert::encode(ffi_struct, &mut ()),
+            Encode::encode(ffi_struct, &mut ()),
             params_ffi,
             output.as_mut_ptr(),
         )
     });
 
-    unsafe { FfiConvert::decode(output.assume_init(), &mut ()).expect("valid") }
+    unsafe { Decode::decode(output.assume_init(), &mut ()).expect("valid") }
 }
 
 #[test]
@@ -258,7 +258,7 @@ fn non_robust_ref_mut() {
     let mut owned = "queen".to_owned();
     let ffi_struct: &mut str = owned.as_mut();
     let mut output = MaybeUninit::new(RefMutSlice::from_raw_parts_mut(core::ptr::null_mut(), 0));
-    let ffi_type: RefMutSlice<u8> = FfiConvert::encode(ffi_struct, &mut ());
+    let ffi_type: RefMutSlice<u8> = Encode::encode(ffi_struct, &mut ());
 
     unsafe {
         assert_eq!(
@@ -322,13 +322,13 @@ fn into_iter_item_impl_into() {
         assert_eq!(
             FfiReturn::Ok,
             OpaqueStruct__with_tokens(
-                FfiConvert::encode(ffi_struct, &mut ()),
+                Encode::encode(ffi_struct, &mut ()),
                 tokens_ffi,
                 output.as_mut_ptr()
             )
         );
 
-        ffi_struct = FfiConvert::decode(output.assume_init(), &mut ()).expect("valid");
+        ffi_struct = Decode::decode(output.assume_init(), &mut ()).expect("valid");
 
         assert_eq!(2, ffi_struct.tokens.len());
         assert_eq!(ffi_struct.tokens, tokens);
@@ -346,7 +346,7 @@ fn mutate_opaque() {
         assert_eq!(
             FfiReturn::Ok,
             OpaqueStruct__remove_param(
-                FfiConvert::encode(&mut ffi_struct, &mut ()),
+                Encode::encode(&mut ffi_struct, &mut ()),
                 &param_name,
                 removed.as_mut_ptr(),
             )
@@ -370,20 +370,20 @@ fn return_option() {
     let name1 = Name(String::from("Non"));
     assert_eq!(FfiReturn::Ok, unsafe {
         OpaqueStruct__get_param(
-            FfiConvert::encode(&ffi_struct, &mut ()),
+            Encode::encode(&ffi_struct, &mut ()),
             &name1,
             param1.as_mut_ptr(),
         )
     });
     let param1 = unsafe { param1.assume_init() };
     assert!(param1.is_null());
-    let param1: Option<&Value> = unsafe { FfiConvert::decode(param1, &mut ()).unwrap() };
+    let param1: Option<&Value> = unsafe { Decode::decode(param1, &mut ()).unwrap() };
     assert!(param1.is_none());
 
     let name2 = Name(String::from("Nomen"));
     assert_eq!(FfiReturn::Ok, unsafe {
         OpaqueStruct__get_param(
-            FfiConvert::encode(&ffi_struct, &mut ()),
+            Encode::encode(&ffi_struct, &mut ()),
             &name2,
             param2.as_mut_ptr(),
         )
@@ -392,7 +392,7 @@ fn return_option() {
     unsafe {
         let param2 = param2.assume_init();
         assert!(!param2.is_null());
-        let param2: Option<&Value> = FfiConvert::decode(param2, &mut ()).unwrap();
+        let param2: Option<&Value> = Decode::decode(param2, &mut ()).unwrap();
         assert_eq!(Some(&Value(String::from("Omen"))), param2);
     }
 }
@@ -408,7 +408,7 @@ fn take_and_return_boxed_slice() {
         assert_eq!(
             FfiReturn::Ok,
             __freestanding_with_boxed_slice(
-                FfiConvert::encode(input, &mut in_store),
+                Encode::encode(input, &mut in_store),
                 output.as_mut_ptr()
             )
         );
@@ -429,7 +429,7 @@ fn take_and_return_option_without_niche() {
     unsafe {
         assert_eq!(
             FfiReturn::Ok,
-            __freestanding_with_option(FfiConvert::encode(input, &mut ()), output.as_mut_ptr())
+            __freestanding_with_option(Encode::encode(input, &mut ()), output.as_mut_ptr())
         );
 
         let output = output.assume_init();
@@ -448,7 +448,7 @@ fn take_and_return_option_with_niche_ref() {
         assert_eq!(
             FfiReturn::Ok,
             __freestanding_with_option_with_niche_ref(
-                FfiConvert::encode(&input, &mut in_store),
+                Encode::encode(&input, &mut in_store),
                 output.as_mut_ptr()
             )
         );
@@ -477,7 +477,7 @@ fn take_and_return_option_without_niche_ref() {
         assert_eq!(
             FfiReturn::Ok,
             __freestanding_with_option_without_niche_ref(
-                FfiConvert::encode(&input, &mut in_store),
+                Encode::encode(&input, &mut in_store),
                 output.as_mut_ptr()
             )
         );
@@ -497,7 +497,7 @@ fn return_iterator() {
         assert_eq!(
             FfiReturn::Ok,
             OpaqueStruct__params(
-                FfiConvert::encode(&ffi_struct, &mut ()),
+                Encode::encode(&ffi_struct, &mut ()),
                 out_params.as_mut_ptr()
             )
         );
@@ -718,12 +718,9 @@ fn invoke_trait_method() {
     unsafe {
         assert_eq!(
             FfiReturn::Ok,
-            OpaqueStruct__Target__target(
-                FfiConvert::encode(ffi_struct, &mut ()),
-                output.as_mut_ptr()
-            )
+            OpaqueStruct__Target__target(Encode::encode(ffi_struct, &mut ()), output.as_mut_ptr())
         );
-        let name = FfiConvert::decode(output.assume_init(), &mut ()).unwrap();
+        let name = Decode::decode(output.assume_init(), &mut ()).unwrap();
         assert_eq!(Name(String::from("X")), name);
     }
 }

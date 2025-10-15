@@ -40,7 +40,7 @@ fn impl_clone_for_opaque(name: &Ident, generics: &syn::Generics) -> TokenStream 
             fn clone(&self) -> Self {
                 let mut output = core::mem::MaybeUninit::uninit();
 
-                let handle_id = co3::FfiConvert::encode(<#name #ty_generics as co3::handle::Handle>::ID, &mut ());
+                let handle_id = co3::Encode::encode(<#name #ty_generics as co3::handle::Handle>::ID, &mut ());
                 let clone_result = unsafe { crate::__clone(handle_id, self.0, output.as_mut_ptr()) };
 
                 if clone_result != co3::FfiReturn::Ok  {
@@ -61,7 +61,7 @@ fn impl_default_for_opaque(name: &Ident, generics: &syn::Generics) -> TokenStrea
             fn default() -> Self {
                 let mut output = core::mem::MaybeUninit::uninit();
 
-                let handle_id = co3::FfiConvert::encode(<#name #ty_generics as co3::handle::Handle>::ID, &mut ());
+                let handle_id = co3::Encode::encode(<#name #ty_generics as co3::handle::Handle>::ID, &mut ());
                 let default_result = unsafe { crate::__default(handle_id, output.as_mut_ptr()) };
 
                 if default_result != co3::FfiReturn::Ok  {
@@ -86,7 +86,7 @@ fn impl_partial_eq_for_opaque(name: &Ident, generics: &syn::Generics) -> TokenSt
             fn eq(&self, other: &Self) -> bool {
                 let mut output = core::mem::MaybeUninit::uninit();
 
-                let handle_id = co3::FfiConvert::encode(<#name #ty_generics as co3::handle::Handle>::ID, &mut ());
+                let handle_id = co3::Encode::encode(<#name #ty_generics as co3::handle::Handle>::ID, &mut ());
                 let eq_result = unsafe { crate::__eq(handle_id, self.0, other.0, output.as_mut_ptr()) };
 
                 if eq_result != co3::FfiReturn::Ok  {
@@ -118,7 +118,7 @@ fn impl_ord_for_opaque(name: &Ident, generics: &syn::Generics) -> TokenStream {
             fn cmp(&self, other: &Self) -> core::cmp::Ordering {
                 let mut output = core::mem::MaybeUninit::uninit();
 
-                let handle_id = co3::FfiConvert::encode(<#name #ty_generics as co3::handle::Handle>::ID, &mut ());
+                let handle_id = co3::Encode::encode(<#name #ty_generics as co3::handle::Handle>::ID, &mut ());
                 let cmp_result = unsafe { crate::__ord(handle_id, self.0, other.0, output.as_mut_ptr()) };
 
                 if cmp_result != co3::FfiReturn::Ok  {
@@ -241,7 +241,7 @@ pub fn wrap_as_opaque(emitter: &mut Emitter, mut input: FfiTypeInput) -> TokenSt
 
         impl #impl_generics Drop for #name #ty_generics #handle_bounded_where_clause {
             fn drop(&mut self) {
-                let handle_id = co3::FfiConvert::encode(<#name #ty_generics as co3::handle::Handle>::ID, &mut ());
+                let handle_id = co3::Encode::encode(<#name #ty_generics as co3::handle::Handle>::ID, &mut ());
                 let drop_result = unsafe { crate::__drop(handle_id, self.0) };
 
                 if drop_result != co3::FfiReturn::Ok  {
@@ -533,7 +533,7 @@ fn gen_input_arg_src_to_ffi(arg: &Arg) -> TokenStream {
     quote! {
         #resolve_impl_trait
         let mut #store_name = Default::default();
-        let #arg_name = co3::FfiConvert::encode(#arg_name, &mut #store_name);
+        let #arg_name = co3::Encode::encode(#arg_name, &mut #store_name);
     }
 }
 

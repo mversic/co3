@@ -47,7 +47,7 @@ mod ffi {
     use std::alloc;
 
     use co3::{
-        ExternC, FfiConvert, FfiReturn, def_fns,
+        ExternC, Encode, Decode, FfiReturn, def_fns,
         out_ptr::{OutPtr, OutPtrWrite},
         slice::RefMutSlice,
     };
@@ -96,7 +96,7 @@ mod ffi {
     ) -> FfiReturn {
         unsafe {
             let string = String::from_utf8(input1.into_rust().expect("Defined").to_vec());
-            let num = FfiConvert::decode(input2, &mut ()).expect("Valid num");
+            let num = Decode::decode(input2, &mut ()).expect("Valid num");
             let name = ExternName(string.expect("Valid UTF8 string"));
             let opaque = Box::new(ExternFfiStruct { id: num, name });
 
@@ -139,7 +139,7 @@ mod ffi {
     ) -> FfiReturn {
         unsafe {
             let input = &mut *input;
-            input.id = FfiConvert::decode(id, &mut ()).expect("Valid num");
+            input.id = Decode::decode(id, &mut ()).expect("Valid num");
         }
 
         FfiReturn::Ok

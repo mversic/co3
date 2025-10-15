@@ -1,7 +1,7 @@
 #![cfg(feature = "derive")]
 use std::{cmp::Ordering, mem::MaybeUninit};
 
-use co3::{ExternC, FfiConvert, FfiReturn, def_fns, out_ptr::OutPtrRead};
+use co3::{Decode, Encode, ExternC, FfiReturn, def_fns, out_ptr::OutPtrRead};
 
 co3::handles! {FfiStruct1, FfiStruct2}
 
@@ -43,7 +43,7 @@ fn export_shared_fns() {
     let ffi_struct1 = unsafe {
         let mut ffi_struct = MaybeUninit::new(core::ptr::null_mut());
         let mut store = Default::default();
-        assert_eq! {FfiReturn::Ok, FfiStruct1__new(FfiConvert::encode(name.clone(), &mut store), ffi_struct.as_mut_ptr())};
+        assert_eq! {FfiReturn::Ok, FfiStruct1__new(Encode::encode(name.clone(), &mut store), ffi_struct.as_mut_ptr())};
         let ffi_struct = ffi_struct.assume_init();
         assert!(!ffi_struct.is_null());
         assert_eq!(FfiStruct1 { name }, *ffi_struct);
@@ -60,14 +60,14 @@ fn export_shared_fns() {
                 cloned.as_mut_ptr().cast(),
             );
 
-            let cloned = FfiConvert::decode(cloned.assume_init(), &mut ()).unwrap();
+            let cloned = Decode::decode(cloned.assume_init(), &mut ()).unwrap();
             assert_eq!(*ffi_struct1, cloned);
 
             cloned
         };
 
         let mut is_equal = MaybeUninit::new(1);
-        let cloned_ptr = FfiConvert::encode(&cloned, &mut ());
+        let cloned_ptr = Encode::encode(&cloned, &mut ());
 
         __eq(
             FfiStruct1::ID.encode(&mut ()),

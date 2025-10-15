@@ -205,7 +205,7 @@ pub fn gen_arg_ffi_to_src(arg: &Arg) -> TokenStream {
 
     quote! {
         let mut #store_name = Default::default();
-        let #arg_name: #src_type = co3::FfiConvert::decode(#arg_name, &mut #store_name)?;
+        let #arg_name: #src_type = co3::Decode::decode(#arg_name, &mut #store_name)?;
     }
 }
 

@@ -1,7 +1,7 @@
 #![cfg(feature = "derive")]
 use std::mem::MaybeUninit;
 
-use co3::{ExternC, FfiConvert};
+use co3::{Decode, Encode, ExternC};
 use getset::Getters;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, ExternC)]
@@ -31,7 +31,7 @@ fn get_return_generic() {
     unsafe {
         FfiStruct__inner(ffi_struct.encode(&mut ()), output.as_mut_ptr());
         assert_eq!(
-            FfiConvert::decode(output.assume_init(), &mut ()),
+            Decode::decode(output.assume_init(), &mut ()),
             Ok(&ffi_struct.inner)
         );
     }
@@ -45,6 +45,6 @@ fn freestanding_accept_and_return_generic() {
 
     unsafe {
         __freestanding(inner.clone().encode(&mut ()), output.as_mut_ptr());
-        assert_eq!(FfiConvert::decode(output.assume_init(), &mut ()), Ok(inner));
+        assert_eq!(Decode::decode(output.assume_init(), &mut ()), Ok(inner));
     }
 }

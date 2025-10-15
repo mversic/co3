@@ -530,7 +530,7 @@ fn derive_ffi_type_for_data_carrying_enum(
                 || quote! { () },
                 |field| {
                     let ty = &field.ty;
-                    quote! { <#ty as co3::FfiConvert<#lifetime>>::RustStore }
+                    quote! { <#ty as co3::Encode<#lifetime>>::Store }
                 },
             )
         })
@@ -545,7 +545,7 @@ fn derive_ffi_type_for_data_carrying_enum(
                 || quote! { () },
                 |field| {
                     let ty = &field.ty;
-                    quote! { <#ty as co3::FfiConvert<#lifetime>>::FfiStore }
+                    quote! { <#ty as co3::Decode<#lifetime>>::Store }
                 },
             )
         })
@@ -572,7 +572,7 @@ fn derive_ffi_type_for_data_carrying_enum(
                         Self::#variant_name(payload) => {
                             let payload = #payload_name {
                                 #variant_name: core::mem::ManuallyDrop::new(
-                                    co3::FfiConvert::encode(payload, &mut store.#idx)
+                                    co3::Encode::encode(payload, &mut store.#idx)
                                 )
                             };
 
@@ -599,7 +599,7 @@ fn derive_ffi_type_for_data_carrying_enum(
                             source.payload.#variant_name
                         );
 
-                        co3::FfiConvert::decode(payload, &mut store.#idx).map(Self::#variant_name)
+                        co3::Decode::decode(payload, &mut store.#idx).map(Self::#variant_name)
                     }
                 }
             },
@@ -675,19 +675,22 @@ fn derive_ffi_type_for_data_carrying_enum(
         impl<#impl_generics> co3::ExternC for #enum_name #ty_generics #where_clause {
             type CType = #repr_c_enum_name #ty_generics;
         }
-        impl<#lifetime, #impl_generics> co3::FfiConvert<#lifetime> for #enum_name #ty_generics #where_clause {
-            type RustStore = #rust_store;
-            type FfiStore = #ffi_store;
+        impl<#lifetime, #impl_generics> co3::Encode<#lifetime> for #enum_name #ty_generics #where_clause {
+            type Store = #rust_store;
 
-            fn encode(self, store: &mut Self::RustStore) -> Self::CType {
+            fn encode(self, store: &mut Self::Store) -> Self::CType {
                 #ffi_store_conversion
 
                 match self {
                     #(#variants_into_ffi,)*
                 }
             }
+        }
 
-            unsafe fn decode(source: Self::CType, store: &mut Self::FfiStore) -> co3::Result<Self> {
+        impl<#lifetime, #impl_generics> co3::Decode<#lifetime> for #enum_name #ty_generics #where_clause {
+            type Store = #ffi_store;
+
+            unsafe fn decode(source: Self::CType, store: &mut Self::Store) -> co3::Result<Self> {
                 #rust_store_conversion
 
                 match source.tag {

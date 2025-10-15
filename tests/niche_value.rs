@@ -2,7 +2,7 @@
 use core::{cmp::Ordering, ffi::c_int, ptr::NonNull};
 use std::mem::ManuallyDrop;
 
-use co3::{ExternC, FfiConvert, slice::RefSlice};
+use co3::{ExternC, Encode, slice::RefSlice};
 
 #[derive(ExternC)]
 pub enum FieldlessEnumWithoutRepr {
