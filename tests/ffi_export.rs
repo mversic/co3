@@ -2,7 +2,7 @@
 use std::{alloc, collections::BTreeMap, mem::MaybeUninit};
 
 use co3::{
-    Decode, Encode, ExternC, FfiReturn, FfiTuple1, FfiTuple2, LocalRef, out_ptr::OutPtrRead,
+    Decode, Encode, ExternC, FfiReturn, FfiTuple1, FfiTuple2, local::LocalRef, out_ptr::OutPtrRead,
     slice::OutBoxedSlice,
 };
 

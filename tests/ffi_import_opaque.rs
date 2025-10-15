@@ -1,7 +1,7 @@
 #![cfg(feature = "derive")]
 use std::collections::BTreeMap;
 
-use co3::opaque::ExternRef;
+use co3::external::ExternRef;
 
 co3::handles! {OpaqueStruct, Value}
 co3::decl_fns! {Drop, Clone, Eq}

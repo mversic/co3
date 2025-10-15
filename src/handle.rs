@@ -304,8 +304,8 @@ macro_rules! decl_fns {
             #[link_name = concat!($prefix, "__clone")]
             fn __clone(
                 handle_id: <$crate::handle::Id as $crate::ExternC>::CType,
-                handle_ptr: *const $crate::opaque::Extern,
-                out_ptr: *mut *mut $crate::opaque::Extern
+                handle_ptr: *const $crate::external::Extern,
+                out_ptr: *mut *mut $crate::external::Extern
             ) -> $crate::FfiReturn;
         }
     };
@@ -320,7 +320,7 @@ macro_rules! decl_fns {
             #[link_name = concat!($prefix, "__default")]
             fn __default(
                 handle_id: <$crate::handle::Id as $crate::ExternC>::CType,
-                out_ptr: *mut *mut $crate::opaque::Extern
+                out_ptr: *mut *mut $crate::external::Extern
             ) -> $crate::FfiReturn;
         }
     };
@@ -335,8 +335,8 @@ macro_rules! decl_fns {
             #[link_name = concat!($prefix, "__eq")]
             fn __eq(
                 handle_id: <$crate::handle::Id as $crate::ExternC>::CType,
-                left_handle_ptr: *const $crate::opaque::Extern,
-                right_handle_ptr: *const $crate::opaque::Extern,
+                left_handle_ptr: *const $crate::external::Extern,
+                right_handle_ptr: *const $crate::external::Extern,
                 out_ptr: *mut u8,
             ) -> $crate::FfiReturn;
         }
@@ -352,8 +352,8 @@ macro_rules! decl_fns {
             #[link_name = concat!($prefix, "__ord")]
             fn __ord(
                 handle_id: <$crate::handle::Id as $crate::ExternC>::CType,
-                left_handle_ptr: *const $crate::opaque::Extern,
-                right_handle_ptr: *const $crate::opaque::Extern,
+                left_handle_ptr: *const $crate::external::Extern,
+                right_handle_ptr: *const $crate::external::Extern,
                 out_ptr: *mut i8,
             ) -> $crate::FfiReturn;
         }
@@ -369,7 +369,7 @@ macro_rules! decl_fns {
             #[link_name = concat!($prefix, "__drop")]
             fn __drop(
                 handle_id: <$crate::handle::Id as $crate::ExternC>::CType,
-                handle_ptr: *mut $crate::opaque::Extern,
+                handle_ptr: *mut $crate::external::Extern,
             ) -> $crate::FfiReturn;
         }
     };

@@ -211,7 +211,7 @@ pub fn wrap_as_opaque(emitter: &mut Emitter, mut input: FfiTypeInput) -> TokenSt
     quote! {
         #(#attrs)*
         #[repr(transparent)]
-        #vis struct #name #ty_generics(*mut co3::opaque::Extern #(#phantom_data_type_defs)*) #handle_bounded_where_clause;
+        #vis struct #name #ty_generics(*mut co3::external::Extern #(#phantom_data_type_defs)*) #handle_bounded_where_clause;
 
         impl #impl_generics Drop for #name #ty_generics #handle_bounded_where_clause {
             fn drop(&mut self) {
@@ -225,7 +225,7 @@ pub fn wrap_as_opaque(emitter: &mut Emitter, mut input: FfiTypeInput) -> TokenSt
         }
 
         impl #impl_generics #name #ty_generics #handle_bounded_where_clause {
-            fn from_extern_ptr(opaque_ptr: *mut co3::opaque::Extern) -> Self {
+            fn from_extern_ptr(opaque_ptr: *mut co3::external::Extern) -> Self {
                 Self(opaque_ptr #(#new_phantom_data_types)*)
             }
         }
@@ -240,21 +240,21 @@ fn gen_impl_ffi(name: &Ident, generics: &syn::Generics) -> TokenStream {
 
     quote! {
         // SAFETY: Type is a wrapper for `*mut Extern`
-        unsafe impl #impl_generics co3::opaque::External for #name #ty_generics #where_clause {
-            fn as_extern_ptr(&self) -> *const co3::opaque::Extern {
+        unsafe impl #impl_generics co3::external::External for #name #ty_generics #where_clause {
+            fn as_extern_ptr(&self) -> *const co3::external::Extern {
                 self.0
             }
-            fn as_extern_ptr_mut(&mut self) -> *mut co3::opaque::Extern {
+            fn as_extern_ptr_mut(&mut self) -> *mut co3::external::Extern {
                 self.0
             }
-            unsafe fn from_extern_ptr(opaque_ptr: *mut co3::opaque::Extern) -> Self {
+            unsafe fn from_extern_ptr(opaque_ptr: *mut co3::external::Extern) -> Self {
                 Self::from_extern_ptr(opaque_ptr)
             }
         }
 
         // SAFETY: Type is a wrapper for `*mut Extern`
         unsafe impl #impl_generics co3::transmute::Transmute for #name #ty_generics #where_clause {
-            type Target = *mut co3::opaque::Extern;
+            type Target = *mut co3::external::Extern;
 
             fn is_valid(target: &Self::Target) -> bool {
                 !target.is_null()
@@ -262,7 +262,7 @@ fn gen_impl_ffi(name: &Ident, generics: &syn::Generics) -> TokenStream {
         }
 
         impl #impl_generics co3::ir::Ir for #name #ty_generics #where_clause {
-            type Type = co3::opaque::Extern;
+            type Type = co3::ir::Extern;
         }
 
         impl #impl_generics co3::WrapperTypeOf<Self> for #name #ty_generics #where_clause {
@@ -270,7 +270,7 @@ fn gen_impl_ffi(name: &Ident, generics: &syn::Generics) -> TokenStream {
         }
 
         impl #impl_generics co3::option::Niche for #name #ty_generics #where_clause {
-            const NICHE_VALUE: *mut co3::opaque::Extern = core::ptr::null_mut();
+            const NICHE_VALUE: *mut co3::external::Extern = core::ptr::null_mut();
         }
     }
 }

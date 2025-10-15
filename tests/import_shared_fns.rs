@@ -1,6 +1,6 @@
 #![cfg(feature = "derive")]
 
-use co3::opaque::ExternRef;
+use co3::external::ExternRef;
 co3::handles! {FfiStruct<bool>}
 co3::decl_fns! {Drop, Clone, Eq, Ord}
 

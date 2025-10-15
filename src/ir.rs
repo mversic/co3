@@ -8,7 +8,7 @@ use disjoint_impls::disjoint_impls;
 
 #[cfg(not(feature = "non_robust_ref_mut"))]
 use crate::transmute::InfallibleTransmute;
-use crate::{LocalRef, LocalSlice, ReprC, opaque::Extern, repr_c::Cloned};
+use crate::{LocalRef, LocalSlice, ReprC, repr_c::Cloned};
 
 disjoint_impls! {
     /// Designates a type that can be converted to and from an internal representation (IR).
@@ -227,14 +227,17 @@ disjoint_impls! {
     }
 }
 
+/// Marker for a robust [`crate::ReprC`] type that does not require conversion
+pub enum Robust {}
+
 /// Marker for a type exported as an opaque pointer over FFI.
 pub enum Opaque {}
 
 /// Marker for a type that is transparent with respect to its wrapped type.
 pub enum Transparent {}
 
-/// Marker for a robust [`crate::ReprC`] type that does not require conversion
-pub enum Robust {}
+/// Marker for a type imported as an opaque pointer over FFI.
+pub enum Extern {}
 
 impl<R> Ir for *const R {
     type Type = Robust;

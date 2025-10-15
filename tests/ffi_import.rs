@@ -1,5 +1,5 @@
 #![cfg(feature = "derive")]
-use co3::{LocalRef, LocalSlice};
+use co3::local::{LocalRef, LocalSlice};
 
 #[co3::extern_type]
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
