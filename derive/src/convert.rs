@@ -584,27 +584,31 @@ fn derive_ffi_type_for_data_carrying_enum(
         })
         .collect::<Vec<_>>();
 
-    let variants_decode = variants.iter().enumerate().map(|(i, variant)| {
-        let idx = TokenStream::from_str(&format!("{i}")).expect("Valid");
-        let variant_name = &variant.ident;
+    let variants_decode = variants
+        .iter()
+        .enumerate()
+        .map(|(i, variant)| {
+            let idx = TokenStream::from_str(&format!("{i}")).expect("Valid");
+            let variant_name = &variant.ident;
 
-        variant_mapper(
-            emitter,
-            variant,
-            || quote! { #idx => Ok(Self::#variant_name) },
-            |_| {
-                quote! {
-                    #idx => {
-                        let payload = core::mem::ManuallyDrop::into_inner(
-                            source.payload.#variant_name
-                        );
+            variant_mapper(
+                emitter,
+                variant,
+                || quote! { #idx => Ok(Self::#variant_name) },
+                |_| {
+                    quote! {
+                        #idx => {
+                            let payload = core::mem::ManuallyDrop::into_inner(
+                                source.payload.#variant_name
+                            );
 
-                        co3::Decode::decode(payload, &mut store.#idx).map(Self::#variant_name)
+                            co3::Decode::decode(payload, &mut store.#idx).map(Self::#variant_name)
+                        }
                     }
-                }
-            },
-        )
-    }).collect::<Vec<_>>();
+                },
+            )
+        })
+        .collect::<Vec<_>>();
 
     // TODO: Tuples don't support impl of `Default` for arity > 12 currently.
     // Once this limitation is lifted `Option<tuple>` will not be necessary

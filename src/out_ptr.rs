@@ -1084,7 +1084,7 @@ disjoint_impls! {
                 res?;
             }
 
-            Ok(Self(store.0, core::marker::PhantomData))
+            Ok(Self::new(store.0))
         }
     }
 
@@ -1104,7 +1104,7 @@ disjoint_impls! {
                 <R>::decode(out_ptr, store_borrow)?
             };
 
-            Ok(Self(item, core::marker::PhantomData))
+            Ok(Self::new(item))
         }
     }
 }

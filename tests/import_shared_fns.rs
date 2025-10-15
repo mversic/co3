@@ -1,4 +1,6 @@
 #![cfg(feature = "derive")]
+
+use co3::opaque::ExternRef;
 co3::handles! {FfiStruct<bool>}
 co3::decl_fns! {Drop, Clone, Eq, Ord}
 
@@ -19,11 +21,11 @@ impl FfiStruct<bool> {
 #[webassembly_test::webassembly_test]
 fn import_shared_fns() {
     let ffi_struct = FfiStruct::new("ipso facto".to_string());
-    let ref_ffi_struct: RefFfiStruct<_> = ffi_struct.as_ref();
+    let ref_ffi_struct: ExternRef<FfiStruct<_>> = ExternRef::new(&ffi_struct);
     let cloned_ffi_struct: FfiStruct<_> = Clone::clone(&ref_ffi_struct);
 
-    assert!(*ref_ffi_struct == *cloned_ffi_struct.as_ref());
-    assert!(*ref_ffi_struct >= *cloned_ffi_struct.as_ref());
+    assert!(*ref_ffi_struct == cloned_ffi_struct);
+    assert!(*ref_ffi_struct >= cloned_ffi_struct);
 }
 
 mod ffi {

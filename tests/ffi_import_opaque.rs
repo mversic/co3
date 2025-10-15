@@ -1,7 +1,7 @@
 #![cfg(feature = "derive")]
 use std::collections::BTreeMap;
 
-use co3::ir::External as _;
+use co3::opaque::ExternRef;
 
 co3::handles! {OpaqueStruct, Value}
 co3::decl_fns! {Drop, Clone, Eq}
@@ -62,10 +62,6 @@ fn make_new_opaque(name: u8, params: BTreeMap<u8, Value>) -> OpaqueStruct {
     opaque.with_params(params.into_iter().collect())
 }
 
-fn make_opaque_ref(opaque_struct: &OpaqueStruct) -> RefOpaqueStruct<'_> {
-    RefOpaqueStruct(opaque_struct.as_extern_ptr(), core::marker::PhantomData)
-}
-
 #[test]
 #[webassembly_test::webassembly_test]
 fn constructor() {
@@ -91,9 +87,8 @@ fn return_option_ref() {
     params.insert(name, value.clone());
 
     let opaque = make_new_opaque(name, params);
-    let ref_opaque = make_opaque_ref(&opaque);
 
-    let param: Option<RefValue> = ref_opaque.get_param(&name);
+    let param: Option<ExternRef<Value>> = opaque.get_param(&name);
     compare_opaque_eq::<_, ffi::ExternValue>(&value, &param.expect("Defined"));
 }
 
@@ -106,9 +101,8 @@ fn take_and_return_opaque_ref() {
     params.insert(name, value);
 
     let opaque: OpaqueStruct = make_new_opaque(name, params);
-    let ref_opaque: RefOpaqueStruct = make_opaque_ref(&opaque);
 
-    let opaque_ref: RefOpaqueStruct = freestanding_returns_opaque_item(&ref_opaque);
+    let opaque_ref: ExternRef<OpaqueStruct> = freestanding_returns_opaque_item(&opaque);
     compare_opaque_eq::<_, ffi::ExternOpaqueStruct>(&opaque, &opaque_ref);
 }
 

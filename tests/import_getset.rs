@@ -40,14 +40,14 @@ fn import_shared_fns() {
     ffi_struct.set_id(84);
     assert!(&mut 84 == ffi_struct.id_mut());
 
-    assert!(*Name::new("ipso facto".to_string()).as_ref() == *ffi_struct.name());
+    assert!(Name::new("ipso facto".to_string()) == *ffi_struct.name());
 }
 
 mod ffi {
     use std::alloc;
 
     use co3::{
-        ExternC, Encode, Decode, FfiReturn, def_fns,
+        Decode, ExternC, FfiReturn, def_fns,
         out_ptr::{OutPtr, OutPtrWrite},
         slice::RefMutSlice,
     };

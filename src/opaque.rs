@@ -1,12 +1,48 @@
-// FIXME: I think I should check variance of phantom data
+use crate::{ExternC, mineral};
 
-use crate::{Extern, ir::External};
+/// Represents the pointee on the far side of an exported opaque pointer at the FFI boundary.
+///
+/// # Safety
+///
+/// Implementors must guarantee that:
+/// - `Self` has the same representation as `*mut` [`Extern`].
+pub unsafe trait External {
+    /// Returns a shared opaque pointer.
+    fn as_extern_ptr(&self) -> *const Extern;
+
+    /// Returns a mutable opaque pointer.
+    fn as_extern_ptr_mut(&mut self) -> *mut Extern;
+
+    /// Constructs `Self` from an opaque pointer.
+    ///
+    /// # Safety
+    ///
+    /// The pointer argument must be valid.
+    unsafe fn from_extern_ptr(source: *mut Extern) -> Self;
+}
+
+/// Wrapper around struct/enum opaque pointer. When wrapped with the [`co3::extern_type`] macro in
+/// the crate linking dynamically to some `cdylib` crate, it replaces struct/enum body definition
+#[repr(C)]
+pub struct Extern {
+    __data: [u8; 0],
+
+    // Required for !Send & !Sync & !Unpin.
+    //
+    // - `*mut u8` is !Send & !Sync. It's wrapped in `PhantomData` not to affect alignment.
+    //
+    // - `PhantomPinned` is !Unpin. It's wrapped in `PhantomData` because
+    //   its memory representation is not guaranteed to be FFI-safe
+    __marker: core::marker::PhantomData<(*mut u8, core::marker::PhantomPinned)>,
+}
 
 #[derive(Clone, Copy)]
 #[repr(transparent)]
+// FIXME: I think I should check variance of phantom data
 pub struct ExternRef<'a, T>(*const Extern, core::marker::PhantomData<&'a T>);
 
 #[repr(transparent)]
+// FIXME: I think I should check variance of phantom data
 pub struct ExternRefMut<'a, T>(*mut Extern, core::marker::PhantomData<&'a mut T>);
 
 impl<T: External> ExternRef<'_, T> {
@@ -40,5 +76,26 @@ impl<T> core::ops::Deref for ExternRefMut<'_, T> {
 impl<T> core::ops::DerefMut for ExternRefMut<'_, T> {
     fn deref_mut(&mut self) -> &mut Self::Target {
         unsafe { &mut *(&mut self.0 as *mut *mut Extern).cast() }
+    }
+}
+
+mineral! {
+    unsafe impl<R> Transparent for ExternRef<'_, R> {
+        type Target = *const Extern;
+
+        const NICHE_VALUE: <Self as ExternC>::CType = core::ptr::null();
+        fn is_valid(target: &Self::Target) -> bool {
+            !target.is_null()
+        }
+    }
+}
+mineral! {
+    unsafe impl<R> Transparent for ExternRefMut<'_, R> {
+        type Target = *mut Extern;
+
+        const NICHE_VALUE: <Self as ExternC>::CType = core::ptr::null_mut();
+        fn is_valid(target: &Self::Target) -> bool {
+            !target.is_null()
+        }
     }
 }

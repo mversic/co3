@@ -8,7 +8,7 @@ use disjoint_impls::disjoint_impls;
 
 #[cfg(not(feature = "non_robust_ref_mut"))]
 use crate::transmute::InfallibleTransmute;
-use crate::{Extern, LocalRef, LocalSlice, ReprC, repr_c::Cloned};
+use crate::{LocalRef, LocalSlice, ReprC, opaque::Extern, repr_c::Cloned};
 
 disjoint_impls! {
     /// Designates a type that can be converted to and from an internal representation (IR).
@@ -225,35 +225,6 @@ disjoint_impls! {
     {
         type Type = Vec<Robust>;
     }
-}
-
-/// Represents the pointee on the far side of an exported opaque pointer at the FFI boundary.
-///
-/// # Safety
-///
-/// Implementors must guarantee that:
-/// - `Self` has the same representation as `*mut` [`Extern`].
-/// - [`External::RefType`] has the same representation as `*const` [`Extern`].
-/// - [`External::RefMutType`] has the same representation as `*mut` [`Extern`].
-pub unsafe trait External {
-    /// Type that replaces `&T` when imported over FFI.
-    type RefType<'itm>;
-
-    /// Type that replaces `&mut T` when imported over FFI.
-    type RefMutType<'itm>;
-
-    /// Returns a shared opaque pointer.
-    fn as_extern_ptr(&self) -> *const Extern;
-
-    /// Returns a mutable opaque pointer.
-    fn as_extern_ptr_mut(&mut self) -> *mut Extern;
-
-    /// Constructs `Self` from an opaque pointer.
-    ///
-    /// # Safety
-    ///
-    /// The pointer argument must be valid.
-    unsafe fn from_extern_ptr(source: *mut Extern) -> Self;
 }
 
 /// Marker for a type exported as an opaque pointer over FFI.

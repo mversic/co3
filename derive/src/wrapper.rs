@@ -1,5 +1,5 @@
 use manyhow::emit;
-use proc_macro2::{Span, TokenStream};
+use proc_macro2::TokenStream;
 use quote::quote;
 use syn::{Attribute, Ident, Type, parse_quote, visit_mut::VisitMut};
 
@@ -11,16 +11,6 @@ use crate::{
     impl_visitor::{Arg, FnDescriptor, ImplDescriptor, TypeImplTraitResolver},
     utils::{gen_resolve_type, gen_store_name, unwrap_result_type},
 };
-
-fn gen_lifetime_name_for_opaque() -> TokenStream {
-    quote! {'_LŠČ}
-}
-fn gen_ref_name(name: &Ident) -> Ident {
-    Ident::new(&format!("Ref{name}"), Span::call_site())
-}
-fn gen_ref_mut_name(name: &Ident) -> Ident {
-    Ident::new(&format!("RefMut{name}"), Span::call_site())
-}
 
 fn add_handle_bound(name: &Ident, generics: &mut syn::Generics) {
     let cloned_generics = generics.clone();
@@ -195,12 +185,7 @@ pub fn wrap_as_opaque(emitter: &mut Emitter, mut input: FfiTypeInput) -> TokenSt
     let vis = &input.vis;
 
     add_handle_bound(name, &mut input.generics);
-    let mut ref_generics = input.generics.clone();
-    let lifetime = gen_lifetime_name_for_opaque();
-    ref_generics.params.push(parse_quote!(#lifetime));
-
     let (impl_generics, ty_generics, handle_bounded_where_clause) = input.generics.split_for_impl();
-    let (ref_impl_generics, ref_ty_generics, _) = ref_generics.split_for_impl();
 
     let phantom_data_type_defs: Vec<_> = input
         .generics
@@ -214,8 +199,6 @@ pub fn wrap_as_opaque(emitter: &mut Emitter, mut input: FfiTypeInput) -> TokenSt
         .map(|_| quote! {, core::marker::PhantomData})
         .collect();
 
-    let ref_name = gen_ref_name(name);
-    let ref_mut_name = gen_ref_mut_name(name);
     let impl_ffi = gen_impl_ffi(name, &input.generics);
 
     let shared_fns = gen_shared_fns(emitter, &input);
@@ -228,16 +211,7 @@ pub fn wrap_as_opaque(emitter: &mut Emitter, mut input: FfiTypeInput) -> TokenSt
     quote! {
         #(#attrs)*
         #[repr(transparent)]
-        #vis struct #name #ty_generics(*mut co3::Extern #(#phantom_data_type_defs)*) #handle_bounded_where_clause;
-
-        #(#attrs)*
-        #[derive(Clone, Copy)]
-        #[repr(transparent)]
-        #vis struct #ref_name #ref_ty_generics (*const co3::Extern, core::marker::PhantomData<&#lifetime ()> #(#phantom_data_type_defs)*) #handle_bounded_where_clause;
-
-        #(#attrs)*
-        #[repr(transparent)]
-        #vis struct #ref_mut_name #ref_ty_generics(*mut co3::Extern, core::marker::PhantomData<&#lifetime mut ()> #(#phantom_data_type_defs)*) #handle_bounded_where_clause;
+        #vis struct #name #ty_generics(*mut co3::opaque::Extern #(#phantom_data_type_defs)*) #handle_bounded_where_clause;
 
         impl #impl_generics Drop for #name #ty_generics #handle_bounded_where_clause {
             fn drop(&mut self) {
@@ -251,38 +225,8 @@ pub fn wrap_as_opaque(emitter: &mut Emitter, mut input: FfiTypeInput) -> TokenSt
         }
 
         impl #impl_generics #name #ty_generics #handle_bounded_where_clause {
-            fn from_extern_ptr(opaque_ptr: *mut co3::Extern) -> Self {
+            fn from_extern_ptr(opaque_ptr: *mut co3::opaque::Extern) -> Self {
                 Self(opaque_ptr #(#new_phantom_data_types)*)
-            }
-        }
-
-        impl #ref_impl_generics #name #ty_generics #handle_bounded_where_clause {
-            fn as_ref(&self) -> #ref_name #ref_ty_generics {
-                #ref_name(self.0, core::marker::PhantomData #(#new_phantom_data_types)*)
-            }
-            fn as_mut(&mut self) -> #ref_mut_name #ref_ty_generics #handle_bounded_where_clause {
-                #ref_mut_name(self.0, core::marker::PhantomData #(#new_phantom_data_types)*)
-            }
-        }
-        impl #ref_impl_generics core::ops::Deref for #ref_name #ref_ty_generics #handle_bounded_where_clause {
-            type Target = #name #ty_generics;
-
-            fn deref(&self) -> &Self::Target {
-                unsafe {&*(&self.0 as *const *const co3::Extern).cast()}
-            }
-        }
-
-        impl #ref_impl_generics core::ops::Deref for #ref_mut_name #ref_ty_generics #handle_bounded_where_clause {
-            type Target = #ref_name #ref_ty_generics;
-
-            fn deref(&self) -> &Self::Target {
-                unsafe {&*(&self.0 as *const *mut co3::Extern).cast()}
-            }
-        }
-
-        impl #ref_impl_generics core::ops::DerefMut for #ref_mut_name #ref_ty_generics #handle_bounded_where_clause {
-            fn deref_mut(&mut self) -> &mut Self::Target {
-                unsafe {&mut *(&mut self.0 as *mut *mut co3::Extern).cast()}
             }
         }
 
@@ -292,38 +236,25 @@ pub fn wrap_as_opaque(emitter: &mut Emitter, mut input: FfiTypeInput) -> TokenSt
 }
 
 fn gen_impl_ffi(name: &Ident, generics: &syn::Generics) -> TokenStream {
-    let mut ref_generics = generics.clone();
-
-    let ref_name = gen_ref_name(name);
-    let ref_mut_name = gen_ref_mut_name(name);
-
-    let lifetime = gen_lifetime_name_for_opaque();
-    ref_generics.params.push(parse_quote!(#lifetime));
-
     let (impl_generics, ty_generics, where_clause) = generics.split_for_impl();
-    let (ref_impl_generics, ref_ty_generics, _) = ref_generics.split_for_impl();
-    let split_impl_generics: Vec<_> = generics.type_params().collect();
 
     quote! {
         // SAFETY: Type is a wrapper for `*mut Extern`
-        unsafe impl #impl_generics co3::ir::External for #name #ty_generics #where_clause {
-            type RefType<#lifetime> = #ref_name #ref_ty_generics;
-            type RefMutType<#lifetime> = #ref_mut_name #ref_ty_generics;
-
-            fn as_extern_ptr(&self) -> *const co3::Extern {
+        unsafe impl #impl_generics co3::opaque::External for #name #ty_generics #where_clause {
+            fn as_extern_ptr(&self) -> *const co3::opaque::Extern {
                 self.0
             }
-            fn as_extern_ptr_mut(&mut self) -> *mut co3::Extern {
+            fn as_extern_ptr_mut(&mut self) -> *mut co3::opaque::Extern {
                 self.0
             }
-            unsafe fn from_extern_ptr(opaque_ptr: *mut co3::Extern) -> Self {
+            unsafe fn from_extern_ptr(opaque_ptr: *mut co3::opaque::Extern) -> Self {
                 Self::from_extern_ptr(opaque_ptr)
             }
         }
 
         // SAFETY: Type is a wrapper for `*mut Extern`
         unsafe impl #impl_generics co3::transmute::Transmute for #name #ty_generics #where_clause {
-            type Target = *mut co3::Extern;
+            type Target = *mut co3::opaque::Extern;
 
             fn is_valid(target: &Self::Target) -> bool {
                 !target.is_null()
@@ -331,42 +262,15 @@ fn gen_impl_ffi(name: &Ident, generics: &syn::Generics) -> TokenStream {
         }
 
         impl #impl_generics co3::ir::Ir for #name #ty_generics #where_clause {
-            type Type = co3::Extern;
-        }
-
-        co3::mineral! {
-            unsafe impl<#lifetime #(, #split_impl_generics)*> Transparent for #ref_name #ref_ty_generics #where_clause {
-                type Target = *const co3::Extern;
-
-                const NICHE_VALUE: <Self as co3::ExternC>::CType = core::ptr::null();
-                fn is_valid(target: &Self::Target) -> bool {
-                    !target.is_null()
-                }
-            }
-        }
-        co3::mineral! {
-            unsafe impl <#lifetime #(, #split_impl_generics)*> Transparent for #ref_mut_name #ref_ty_generics #where_clause {
-                type Target = *mut co3::Extern;
-
-                const NICHE_VALUE: <Self as co3::ExternC>::CType = core::ptr::null_mut();
-                fn is_valid(target: &Self::Target) -> bool {
-                    !target.is_null()
-                }
-            }
+            type Type = co3::opaque::Extern;
         }
 
         impl #impl_generics co3::WrapperTypeOf<Self> for #name #ty_generics #where_clause {
             type Type = Self;
         }
-        impl #ref_impl_generics co3::WrapperTypeOf<&#lifetime #name #ty_generics> for #ref_name #ref_ty_generics #where_clause {
-            type Type = Self;
-        }
-        impl #ref_impl_generics co3::WrapperTypeOf<&#lifetime mut #name #ty_generics> for #ref_mut_name #ref_ty_generics #where_clause {
-            type Type = Self;
-        }
 
         impl #impl_generics co3::option::Niche for #name #ty_generics #where_clause {
-            const NICHE_VALUE: *mut co3::Extern = core::ptr::null_mut();
+            const NICHE_VALUE: *mut co3::opaque::Extern = core::ptr::null_mut();
         }
     }
 }

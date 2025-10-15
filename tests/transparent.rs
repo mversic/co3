@@ -2,7 +2,7 @@
 use std::{alloc, marker::PhantomData, mem::MaybeUninit, num::NonZeroU64};
 
 use co3::{
-    ExternC, Encode, Decode, FfiReturn, FfiTuple2,
+    Decode, Encode, ExternC, FfiReturn, FfiTuple2,
     option::Niche as _,
     out_ptr::OutPtrRead,
     slice::{OutBoxedSlice, RefSlice},
