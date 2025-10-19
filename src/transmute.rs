@@ -5,188 +5,139 @@ use disjoint_impls::disjoint_impls;
 use super::*;
 use crate::ReprC;
 
-/// Marker trait for a type that can be **safely transmuted** into another type for all values.
-///
-/// # Safety
-///
-/// * `Self` and `Self::Target` must be mutually transmutable
-/// * `Self::is_valid` must not return false positives, i.e. return `true` for trap representations
-pub unsafe trait Transmute {
-    /// Type that [`Self`] can be transmuted into
-    type Target;
-    /// Called when transmuting [`Self::Target`] into [`Self`] to check for trap representations.
-    /// This function must never return false positives, i.e. return `true` for a trap representation.
-    fn is_valid(target: &Self::Target) -> bool;
-}
-#[allow(clippy::needless_lifetimes)]
-const _: () = {
+disjoint_impls! {
     /// Marker trait for a type that can be **safely transmuted** into another type for all values.
     ///
     /// # Safety
     ///
     /// * `Self` and `Self::Target` must be mutually transmutable
     /// * `Self::is_valid` must not return false positives, i.e. return `true` for trap representations
-    pub unsafe trait Transmute0<_TŠČ0: ?Sized> {
+    pub unsafe trait Transmute {
         /// Type that [`Self`] can be transmuted into
         type Target;
+
         /// Called when transmuting [`Self::Target`] into [`Self`] to check for trap representations.
         /// This function must never return false positives, i.e. return `true` for a trap representation.
         fn is_valid(target: &Self::Target) -> bool;
     }
-    /// Marker trait for a type that can be **safely transmuted** into another type for all values.
-    ///
-    /// # Safety
-    ///
-    /// * `Self` and `Self::Target` must be mutually transmutable
-    /// * `Self::is_valid` must not return false positives, i.e. return `true` for trap representations
-    pub unsafe trait Transmute2<_TŠČ0: ?Sized> {
-        /// Type that [`Self`] can be transmuted into
-        type Target;
-        /// Called when transmuting [`Self::Target`] into [`Self`] to check for trap representations.
-        /// This function must never return false positives, i.e. return `true` for a trap representation.
-        fn is_valid(target: &Self::Target) -> bool;
-    }
-    /// Marker trait for a type that can be **safely transmuted** into another type for all values.
-    ///
-    /// # Safety
-    ///
-    /// * `Self` and `Self::Target` must be mutually transmutable
-    /// * `Self::is_valid` must not return false positives, i.e. return `true` for trap representations
-    pub unsafe trait Transmute4<_TŠČ0: ?Sized> {
-        /// Type that [`Self`] can be transmuted into
-        type Target;
-        /// Called when transmuting [`Self::Target`] into [`Self`] to check for trap representations.
-        /// This function must never return false positives, i.e. return `true` for a trap representation.
-        fn is_valid(target: &Self::Target) -> bool;
-    }
-    unsafe impl<'_lšč0, R: Ir<Type = Robust> + ReprC> Transmute0<Robust>
-    for &'_lšč0 R {
+
+    // SAFETY: Transmuting a reference to a pointer of the same type
+    unsafe impl<R: Ir<Type = Robust> + ReprC> Transmute for &R {
         type Target = *const R;
+
         fn is_valid(target: &Self::Target) -> bool {
             !target.is_null()
         }
     }
-    unsafe impl<'_lšč0, R: Ir<Type = Opaque>> Transmute0<Opaque> for &'_lšč0 R {
+    // SAFETY: Transmuting a reference to a pointer of the same type
+    unsafe impl<R: Ir<Type = Opaque>> Transmute for &R {
         type Target = *const R;
+
         fn is_valid(target: &Self::Target) -> bool {
             !target.is_null()
         }
     }
-    unsafe impl<'itm, R: Ir<Type = Transparent> + Transmute> Transmute0<Transparent>
-    for &'itm R {
+    // SAFETY: Transmute relation is transitive
+    unsafe impl<'itm, R: Ir<Type = Transparent> + Transmute> Transmute for &'itm R {
         type Target = &'itm <R>::Target;
+
         fn is_valid(target: &Self::Target) -> bool {
             <R>::is_valid(target)
         }
     }
-    unsafe impl<'_lšč0, R: ReprC, const N: usize> Transmute0<[Robust; N]>
-    for &'_lšč0 [R; N]
+    // SAFETY: Transmuting a reference to a pointer of the same type
+    unsafe impl<'a, R: ReprC> Transmute for &'a Box<R>
     where
-        [R; N]: Ir<Type = [Robust; N]>,
+        Box<R>: Ir<Type = Box<Robust>>
     {
-        type Target = *const [R; N];
+        type Target = &'a *mut R;
+
         fn is_valid(target: &Self::Target) -> bool {
             !target.is_null()
         }
     }
-    unsafe impl<'_lšč0, R: Ir<Type = Robust> + ReprC> Transmute2<Robust>
-    for &'_lšč0 mut R {
+
+    // SAFETY: Transmuting a reference to a pointer of the same type
+    unsafe impl<R: Ir<Type = Robust> + ReprC> Transmute for &mut R {
         type Target = *mut R;
+
         fn is_valid(target: &Self::Target) -> bool {
             !target.is_null()
         }
     }
-    unsafe impl<'_lšč0, R: Ir<Type = Opaque>> Transmute2<Opaque> for &'_lšč0 mut R {
+    // SAFETY: Transmuting a reference to a pointer of the same type
+    unsafe impl<R: Ir<Type = Opaque>> Transmute for &mut R {
         type Target = *mut R;
+
         fn is_valid(target: &Self::Target) -> bool {
             !target.is_null()
         }
     }
-    unsafe impl<'itm, R: Ir<Type = Transparent> + Transmute> Transmute2<Transparent>
-    for &'itm mut R {
+    // SAFETY: Transmute relation is transitive
+    unsafe impl<'itm, R: Ir<Type = Transparent> + Transmute> Transmute for &'itm mut R {
         type Target = &'itm mut <R>::Target;
+
         fn is_valid(target: &Self::Target) -> bool {
             <R>::is_valid(target)
         }
     }
-    unsafe impl<'_lšč0, R: ReprC, const N: usize> Transmute2<[Robust; N]>
-    for &'_lšč0 mut [R; N]
+    // SAFETY: Transmuting a reference to a pointer of the same type
+    unsafe impl<'a, R: ReprC> Transmute for &'a mut Box<R>
     where
-        [R; N]: Ir<Type = [Robust; N]>,
+        Box<R>: Ir<Type = Box<Robust>>
     {
-        type Target = *mut [R; N];
+        type Target = &'a mut *mut R;
+
         fn is_valid(target: &Self::Target) -> bool {
             !target.is_null()
         }
     }
-    unsafe impl<
-        R: Ir<Type = Transparent> + Transmute,
-        const N: usize,
-    > Transmute4<Transparent> for [R; N] {
+
+    // SAFETY: Transmuting a reference to a pointer of the same type
+    unsafe impl<R: ReprC, const N: usize> Transmute for [Box<R>; N]
+    where
+        Box<R>: Ir<Type = Box<Robust>>,
+    {
+        type Target = [*mut R; N];
+
+        fn is_valid(target: &Self::Target) -> bool {
+            target.iter().all(|elem| !elem.is_null())
+        }
+    }
+    // SAFETY: Transmute relation is transitive
+    unsafe impl<R: Ir<Type = Transparent> + Transmute, const N: usize> Transmute for [R; N] {
         type Target = [<R>::Target; N];
+
         fn is_valid(target: &Self::Target) -> bool {
             assert_arr_has_non_zero_len::<N>();
             target.iter().all(|elem| <R>::is_valid(elem))
         }
     }
-    unsafe impl<R: ReprC, const N: usize> Transmute4<Box<Robust>> for [Box<R>; N]
+
+    // SAFETY: Transmuting a reference to a pointer of the same type
+    unsafe impl<R: ReprC, const N: usize> Transmute for &[R; N]
     where
-        Box<R>: Ir<Type = Box<Robust>>,
+        [R; N]: Ir<Type = [Robust; N]>,
     {
-        type Target = *mut [Box<R>; N];
+        type Target = *const [R; N];
+
         fn is_valid(target: &Self::Target) -> bool {
             !target.is_null()
         }
     }
-    unsafe impl<'_lšč0, R: '_lšč0> Transmute for &'_lšč0 R
+
+    // SAFETY: Transmuting a reference to a pointer of the same type
+    unsafe impl<R: ReprC, const N: usize> Transmute for &mut [R; N]
     where
-        Self: Transmute0<<R as Ir>::Type>,
-        R: Ir,
+        [R; N]: Ir<Type = [Robust; N]>,
     {
-        type Target = <Self as Transmute0<<R as Ir>::Type>>::Target;
-        fn is_valid(target: &Self::Target) -> bool {
-            <Self as Transmute0<<R as Ir>::Type>>::is_valid(target)
-        }
-    }
-    unsafe impl<'_lšč0, R: ReprC> Transmute0<Box<Robust>> for &'_lšč0 Box<R>
-    where
-        &'_lšč0 Box<R>: Ir<Type = Box<Robust>>,
-    {
-        type Target = *const Box<R>;
+        type Target = *mut [R; N];
+
         fn is_valid(target: &Self::Target) -> bool {
             !target.is_null()
         }
     }
-    unsafe impl<'_lšč0, R: '_lšč0> Transmute for &'_lšč0 mut R
-    where
-        Self: Transmute2<<R as Ir>::Type>,
-        R: Ir,
-    {
-        type Target = <Self as Transmute2<<R as Ir>::Type>>::Target;
-        fn is_valid(target: &Self::Target) -> bool {
-            <Self as Transmute2<<R as Ir>::Type>>::is_valid(target)
-        }
-    }
-    unsafe impl<'_lšč0, R: ReprC> Transmute2<Box<Robust>> for &'_lšč0 mut Box<R>
-    where
-        &'_lšč0 mut Box<R>: Ir<Type = Box<Robust>>,
-    {
-        type Target = *mut Box<R>;
-        fn is_valid(target: &Self::Target) -> bool {
-            !target.is_null()
-        }
-    }
-    unsafe impl<R, const N: usize> Transmute for [R; N]
-    where
-        Self: Transmute4<<R as Ir>::Type>,
-        R: Ir,
-    {
-        type Target = <Self as Transmute4<<R as Ir>::Type>>::Target;
-        fn is_valid(target: &Self::Target) -> bool {
-            <Self as Transmute4<<R as Ir>::Type>>::is_valid(target)
-        }
-    }
-};
+}
 
 /// Marker trait for a type whose [`Transmute::is_valid`] always returns true.
 ///

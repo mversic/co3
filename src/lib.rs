@@ -15,7 +15,7 @@ use derive_more::Display;
 use disjoint_impls::disjoint_impls;
 
 use crate::{
-    external::{ExternRef, ExternRefMut, External},
+    external::{ExternBox, ExternRef, ExternRefMut, External},
     ir::{Extern, Ir, Opaque, Robust, Transparent},
     local::{LocalRef, LocalSlice},
     option::{Niche, WithoutNiche},
@@ -1332,20 +1332,6 @@ disjoint_impls! {
         type ReturnType = LocalSlice<'itm, <R>::ReturnType>;
     }
 
-    impl<'itm, R: External> FfiWrapperType for &'itm mut [&'itm R]
-    where
-        Self: Ir<Type = &'itm mut [&'itm Extern]>,
-    {
-        type ReturnType = &'itm mut [ExternRef<'itm, R>];
-    }
-
-    impl<'itm, R: External> FfiWrapperType for &'itm mut [&'itm mut R]
-    where
-        Self: Ir<Type = &'itm mut [&'itm mut Extern]>,
-    {
-        type ReturnType = &'itm mut [ExternRefMut<'itm, R>];
-    }
-
     impl<R: ReprC> FfiWrapperType for Box<R>
     where
         Self: Ir<Type = Box<Robust>>,
@@ -1363,7 +1349,7 @@ disjoint_impls! {
     }
     impl<R: External> FfiWrapperType for Box<R>
     where
-        Self: Ir<Type = Box<Extern>>,
+        Self: Ir<Type = ExternBox<R>>,
     {
         type ReturnType = R;
     }

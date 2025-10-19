@@ -53,6 +53,11 @@ pub fn freestanding_returns_opaque_item(input: &OpaqueStruct) -> &OpaqueStruct {
 }
 
 #[co3::decarbonate]
+pub fn freestanding_returns_opaque_boxed_ref(input: &Box<OpaqueStruct>) -> &Box<OpaqueStruct> {
+    unreachable!("replaced by co3::decarbonate")
+}
+
+#[co3::decarbonate]
 pub fn some_fn(input: &Vec<OpaqueStruct>) {
     unreachable!("replaced by co3::decarbonate")
 }
@@ -102,6 +107,19 @@ fn take_and_return_opaque_ref() {
 
     let opaque: OpaqueStruct = make_new_opaque(name, params);
 
+    let opaque_ref: ExternRef<OpaqueStruct> = freestanding_returns_opaque_item(&opaque);
+    compare_opaque_eq::<_, ffi::ExternOpaqueStruct>(&opaque, &opaque_ref);
+}
+
+#[test]
+#[webassembly_test::webassembly_test]
+fn take_and_return_opaque_boxed_ref() {
+    let name = 42u8;
+    let value: Value = Value::new("Dummy param value".to_owned());
+    let mut params = BTreeMap::default();
+    params.insert(name, value);
+
+    let opaque: Box<OpaqueStruct> = Box::new(make_new_opaque(name, params));
     let opaque_ref: ExternRef<OpaqueStruct> = freestanding_returns_opaque_item(&opaque);
     compare_opaque_eq::<_, ffi::ExternOpaqueStruct>(&opaque, &opaque_ref);
 }

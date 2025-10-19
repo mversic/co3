@@ -208,46 +208,25 @@ disjoint_impls! {
     impl<R: Ir<Type = Robust> + ReprC, const N: usize> Ir for [R; N] {
         type Type = [Robust; N];
     }
-    impl<R, const N: usize> Ir for &[R; N]
-    where
-        [R; N]: Ir<Type = [Robust; N]>,
-    {
+    impl<R, const N: usize> Ir for &[R; N] where [R; N]: Ir<Type = [Robust; N]> {
         type Type = Transparent;
     }
-    impl<R, const N: usize> Ir for &mut [R; N]
-    where
-        [R; N]: Ir<Type = [Robust; N]>,
-    {
+    impl<R, const N: usize> Ir for &mut [R; N] where [R; N]: Ir<Type = [Robust; N]> {
         type Type = Transparent;
     }
-    impl<'itm, R, const N: usize> Ir for &'itm [[R; N]]
-    where
-        [R; N]: Ir<Type = [Robust; N]>,
-    {
+    impl<'itm, R, const N: usize> Ir for &'itm [[R; N]] where [R; N]: Ir<Type = [Robust; N]> {
         type Type = &'itm [Robust];
     }
-    impl<'itm, R, const N: usize> Ir for &'itm mut [[R; N]]
-    where
-        [R; N]: Ir<Type = [Robust; N]>,
-    {
+    impl<'itm, R, const N: usize> Ir for &'itm mut [[R; N]] where [R; N]: Ir<Type = [Robust; N]> {
         type Type = &'itm mut [Robust];
     }
-    impl<R, const N: usize> Ir for Box<[R; N]>
-    where
-        [R; N]: Ir<Type = [Robust; N]>,
-    {
+    impl<R, const N: usize> Ir for Box<[R; N]> where [R; N]: Ir<Type = [Robust; N]> {
         type Type = Box<Robust>;
     }
-    impl<R, const N: usize> Ir for Box<[[R; N]]>
-    where
-        [R; N]: Ir<Type = [Robust; N]>,
-    {
+    impl<R, const N: usize> Ir for Box<[[R; N]]> where [R; N]: Ir<Type = [Robust; N]> {
         type Type = Box<[Robust]>;
     }
-    impl<R, const N: usize> Ir for Vec<[R; N]>
-    where
-        [R; N]: Ir<Type = [Robust; N]>,
-    {
+    impl<R, const N: usize> Ir for Vec<[R; N]> where [R; N]: Ir<Type = [Robust; N]> {
         type Type = Vec<Robust>;
     }
 }

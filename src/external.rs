@@ -38,6 +38,10 @@ pub struct Extern {
 
 #[derive(Clone, Copy)]
 #[repr(transparent)]
+pub struct ExternBox<T>(*mut Extern, core::marker::PhantomData<T>);
+
+#[derive(Clone, Copy)]
+#[repr(transparent)]
 // FIXME: I think I should check variance of phantom data
 pub struct ExternRef<'a, T>(*const Extern, core::marker::PhantomData<&'a T>);
 
@@ -79,6 +83,16 @@ impl<T> core::ops::DerefMut for ExternRefMut<'_, T> {
     }
 }
 
+mineral! {
+    unsafe impl<R> Transparent for ExternBox<R> {
+        type Target = *mut Extern;
+
+        const NICHE_VALUE: <Self as ExternC>::CType = core::ptr::null_mut();
+        fn is_valid(target: &Self::Target) -> bool {
+            !target.is_null()
+        }
+    }
+}
 mineral! {
     unsafe impl<R> Transparent for ExternRef<'_, R> {
         type Target = *const Extern;
