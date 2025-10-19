@@ -51,7 +51,7 @@ disjoint_impls! {
     impl<R: Ir<Type = Transparent>> Ir for &R {
         type Type = Transparent;
     }
-    impl<'itm, R: Ir<Type = S> + Clone, S: Cloned + 'itm> Ir for &'itm R {
+    impl<'itm, R: Ir<Type = S>, S: Cloned + 'itm> Ir for &'itm R {
         type Type = &'itm S;
     }
     impl<'itm, R: Ir<Type = Extern>> Ir for &'itm R {
@@ -87,7 +87,7 @@ disjoint_impls! {
     impl<'itm, R: Ir<Type = Transparent>> Ir for &'itm [R] {
         type Type = &'itm [Transparent];
     }
-    impl<'itm, R: Ir<Type = S> + Clone, S: Cloned + 'itm> Ir for &'itm [R] {
+    impl<'itm, R: Ir<Type = S>, S: Cloned + 'itm> Ir for &'itm [R] {
         type Type = &'itm [S];
     }
     impl<'itm, R: Ir<Type = Extern>> Ir for &'itm [R] {
@@ -123,7 +123,7 @@ disjoint_impls! {
     impl<R: Ir<Type = Transparent>> Ir for Box<R> {
         type Type = Box<Transparent>;
     }
-    impl<R: Ir<Type = S> + Clone, S: Cloned> Ir for Box<R> {
+    impl<R: Ir<Type = S>, S: Cloned> Ir for Box<R> {
         type Type = Box<S>;
     }
     impl<R: Ir<Type = Extern>> Ir for Box<R> {
@@ -139,7 +139,7 @@ disjoint_impls! {
     impl<R: Ir<Type = Transparent>> Ir for Box<[R]> {
         type Type = Box<[Transparent]>;
     }
-    impl<R: Ir<Type = S> + Clone, S: Cloned> Ir for Box<[R]> {
+    impl<R: Ir<Type = S>, S: Cloned> Ir for Box<[R]> {
         type Type = Box<[S]>;
     }
     impl<R: Ir<Type = Extern>> Ir for Box<[R]> {
@@ -155,7 +155,7 @@ disjoint_impls! {
     impl<R: Ir<Type = Transparent>> Ir for Vec<R> {
         type Type = Vec<Transparent>;
     }
-    impl<R: Ir<Type = S> + Clone, S: Cloned> Ir for Vec<R> {
+    impl<R: Ir<Type = S>, S: Cloned> Ir for Vec<R> {
         type Type = Vec<S>;
     }
     // FIXME: This seems suspicious when compared with Opaque
@@ -169,11 +169,36 @@ disjoint_impls! {
     impl<R: Ir<Type = Transparent>, const N: usize> Ir for [R; N] {
         type Type = Transparent;
     }
-    impl<R: Ir<Type = S> + Clone, S: Cloned, const N: usize> Ir for [R; N] {
+    impl<R: Ir<Type = S>, S: Cloned, const N: usize> Ir for [R; N] {
         type Type = [S; N];
     }
     // FIXME: This seems suspicious when compared with Opaque
     impl<R: Ir<Type = Extern>, const N: usize> Ir for [R; N] {
+        type Type = Transparent;
+    }
+
+    impl<R> Ir for &Box<R> where Box<R>: Ir<Type = Box<Robust>> {
+        type Type = Transparent;
+    }
+    impl<R> Ir for &mut Box<R> where Box<R>: Ir<Type = Box<Robust>> {
+        type Type = Transparent;
+    }
+    impl<'a, R> Ir for &'a [Box<R>] where Box<R>: Ir<Type = Box<Robust>> {
+        type Type = &'a [Transparent];
+    }
+    impl<'a, R> Ir for &'a mut [Box<R>] where Box<R>: Ir<Type = Box<Robust>> {
+        type Type = &'a mut [Transparent];
+    }
+    impl<R> Ir for Box<Box<R>> where Box<R>: Ir<Type = Box<Robust>> {
+        type Type = Box<Transparent>;
+    }
+    impl<R> Ir for Box<[Box<R>]> where Box<R>: Ir<Type = Box<Robust>> {
+        type Type = Box<[Transparent]>;
+    }
+    impl<R> Ir for Vec<Box<R>> where Box<R>: Ir<Type = Box<Robust>> {
+        type Type = Vec<Transparent>;
+    }
+    impl<R, const N: usize> Ir for [Box<R>; N] where Box<R>: Ir<Type = Box<Robust>> {
         type Type = Transparent;
     }
 

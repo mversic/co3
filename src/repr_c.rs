@@ -6,7 +6,7 @@
 use alloc::{boxed::Box, vec::Vec};
 
 use crate::{
-    Encode, assert_arr_has_non_zero_len,
+    assert_arr_has_non_zero_len,
     ir::{Ir, Opaque},
 };
 
@@ -17,16 +17,14 @@ use crate::{
 /// [`ExternC`]. This type therefore uses the store
 pub trait Cloned {}
 
-impl<R: Ir<Type: Cloned>> Cloned for &R {}
-// FIX: This is WRONG!!
-impl<R> Cloned for Box<R> {}
-// FIX: This is CORRECT!!
-//impl<R: Ir<Type: Cloned>> Cloned for Box<R> {}
-impl<R> Cloned for [R] {}
+impl<R: Ir<Type: Cloned> + ?Sized> Cloned for &R {}
+impl<R: Ir<Type: Cloned> + ?Sized> Cloned for Box<R> {}
+impl Cloned for Box<Opaque> {}
+impl<R> Cloned for &[R] {}
 impl<R> Cloned for Vec<R> {}
 // TODO: This means there is unnecesary clone?
 impl<const N: usize> Cloned for [Opaque; N] {}
-impl<R: Ir, const N: usize> Cloned for [R; N] where R::Type: Cloned {}
+impl<R: Ir<Type: Cloned + ?Sized>, const N: usize> Cloned for [R; N] {}
 
 pub(super) fn default_init_arr<R: Default, const N: usize>() -> [R; N] {
     assert_arr_has_non_zero_len::<N>();

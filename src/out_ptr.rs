@@ -31,13 +31,11 @@ disjoint_impls! {
     /// # Safety
     ///
     /// Type must not make use of the store during conversion into [`ExternC::CType`] via [`Encode::encode`] or [`Decode::decode`]
-    pub unsafe trait NonLocal: OutPtr {}
+    pub unsafe trait NonLocal: OutPtr + Clone {}
 
-    unsafe impl<'d, T: OutPtr> NonLocal for T where T: Decode<'d, Store = ()> {}
-    unsafe impl<'d, T, const N: usize> NonLocal for [T; N] where
-        [T; N]: Decode<'d, Store = [(); N]> + OutPtr
-    {
-    }
+    unsafe impl<'d, R: Clone> NonLocal for R where R: Decode<'d, Store = ()> + OutPtr {}
+    unsafe impl<'d, R: Clone> NonLocal for R where R: Decode<'d, Store = Box<[()]>> + OutPtr {}
+    unsafe impl<'d, R: Clone, const N: usize> NonLocal for R where R: Decode<'d, Store = [(); N]> + OutPtr {}
 }
 
 disjoint_impls! {
@@ -73,7 +71,7 @@ disjoint_impls! {
         type OutPtr = Self::CType;
     }
 
-    impl<'a, R: Ir<Type = S> + ExternC, S: Cloned> OutPtr for &'a R
+    impl<'a, R: Ir<Type = S> + NonLocal, S: Cloned> OutPtr for &'a R
     where
         Self: Ir<Type = &'a S>,
     {
@@ -99,7 +97,7 @@ disjoint_impls! {
     {
         type OutPtr = <&'slice [R::Target] as OutPtr>::OutPtr;
     }
-    impl<'a, R: Ir<Type = S> + ExternC, S: Cloned> OutPtr for &'a [R]
+    impl<'a, R: Ir<Type = S> + NonLocal, S: Cloned> OutPtr for &'a [R]
     where
         Self: Ir<Type = &'a [S]>,
     {
@@ -145,7 +143,7 @@ disjoint_impls! {
     {
         type OutPtr = Self::CType;
     }
-    impl<R: Ir<Type = S> + ExternC, S: Cloned> OutPtr for Box<R>
+    impl<R: Ir<Type = S> + NonLocal, S: Cloned> OutPtr for Box<R>
     where
         Self: Ir<Type = Box<S>>,
     {
@@ -171,7 +169,7 @@ disjoint_impls! {
     {
         type OutPtr = <Box<[R::Target]> as OutPtr>::OutPtr;
     }
-    impl<R: Ir<Type = S> + ExternC, S: Cloned> OutPtr for Box<[R]>
+    impl<R: Ir<Type = S> + NonLocal, S: Cloned> OutPtr for Box<[R]>
     where
         Self: Ir<Type = Box<[S]>>,
     {
@@ -197,7 +195,7 @@ disjoint_impls! {
     {
         type OutPtr = <Vec<R::Target> as OutPtr>::OutPtr;
     }
-    impl<R: Ir<Type = S> + ExternC, S: Cloned> OutPtr for Vec<R>
+    impl<R: Ir<Type = S> + NonLocal, S: Cloned> OutPtr for Vec<R>
     where
         Self: Ir<Type = Vec<S>>,
     {
@@ -217,7 +215,7 @@ disjoint_impls! {
         type OutPtr = Self::CType;
     }
 
-    impl<R: Ir<Type = S> + ExternC, S: Cloned, const N: usize> OutPtr for [R; N]
+    impl<R: Ir<Type = S> + NonLocal, S: Cloned, const N: usize> OutPtr for [R; N]
     where
         Self: Ir<Type = [S; N]>,
     {
@@ -296,7 +294,7 @@ disjoint_impls! {
         }
     }
 
-    impl<'itm, R: Ir<Type = S> + Clone + Encode, S: Cloned> OutPtrWrite for &'itm R
+    impl<'itm, R: Ir<Type = S> + NonLocal + Encode, S: Cloned> OutPtrWrite for &'itm R
     where
         Self: Ir<Type = &'itm S>,
     {
@@ -346,9 +344,8 @@ disjoint_impls! {
             }
         }
     }
-    impl<'itm, R: Ir<Type = S> + Clone, S: Cloned> OutPtrWrite for &'itm [R]
+    impl<'itm, R: Ir<Type = S> + NonLocal + Encode, S: Cloned> OutPtrWrite for &'itm [R]
     where
-        R: Encode,
         Self: Ir<Type = &'itm [S]>,
     {
         unsafe fn write_out(self, out_ptr: *mut Self::OutPtr) {
@@ -418,7 +415,7 @@ disjoint_impls! {
             }
         }
     }
-    impl<R: Ir<Type = S> + Clone + Encode, S: Cloned> OutPtrWrite for Box<R>
+    impl<R: Ir<Type = S> + NonLocal + Encode, S: Cloned> OutPtrWrite for Box<R>
     where
         Self: Ir<Type = Box<S>>,
     {
@@ -469,9 +466,8 @@ disjoint_impls! {
             }
         }
     }
-    impl<R: Ir<Type = S> + Clone, S: Cloned> OutPtrWrite for Box<[R]>
+    impl<R: Ir<Type = S> + NonLocal + Encode, S: Cloned> OutPtrWrite for Box<[R]>
     where
-        R: Encode,
         Self: Ir<Type = Box<[S]>>,
     {
         unsafe fn write_out(self, out_ptr: *mut Self::OutPtr) {
@@ -515,9 +511,8 @@ disjoint_impls! {
             }
         }
     }
-    impl<R: Ir<Type = S> + Clone, S: Cloned> OutPtrWrite for Vec<R>
+    impl<R: Ir<Type = S> + NonLocal + Encode, S: Cloned> OutPtrWrite for Vec<R>
     where
-        R: Encode,
         Self: Ir<Type = Vec<S>>,
     {
         unsafe fn write_out(self, out_ptr: *mut Self::OutPtr) {
@@ -566,10 +561,10 @@ disjoint_impls! {
             unsafe { out_ptr.write(encoded); }
         }
     }
-    impl<R: Ir<Type = S> + Clone, S: Cloned, const N: usize> OutPtrWrite for [R; N]
+    impl<R: Ir<Type = S> + NonLocal + Encode, S: Cloned, const N: usize> OutPtrWrite for [R; N]
     where
-        R: Encode,
-        [<R as Encode>::Store; N]: Default,
+        // FIXME: https://github.com/rust-lang/rust/issues/61415
+        [<R>::Store; N]: Default,
         Self: Ir<Type = [S; N]>,
     {
         unsafe fn write_out(self, out_ptr: *mut Self::OutPtr) {
@@ -738,21 +733,15 @@ disjoint_impls! {
             }
         }
     }
-    impl<'d, R: Ir<Type = S> + NonLocal + Clone + Decode<'d> + 'd, S: Cloned> OutPtrRead for Box<R>
+    impl<'d, R: Ir<Type = S> + NonLocal + Decode<'d> + 'd, S: Cloned> OutPtrRead for Box<R>
     where
         Self: Ir<Type = Box<S>>,
     {
         unsafe fn try_read_out(out_ptr: Self::OutPtr) -> Result<Self> {
             let mut store = Default::default();
 
-            let item = unsafe {
-                // NOTE: Bypasses the erroneous lifetime check.
-                // Correct as long as `R::decode` doesn't return a reference to the store (`R: NonLocal`)
-                let store_borrow = &mut *addr_of_mut!(store);
-                R::decode(out_ptr, store_borrow)?
-            };
-
-            Ok(Box::new(item))
+            let store_ref = unused_store::<R>(&mut store);
+            unsafe { Self::decode(out_ptr, store_ref) }
         }
     }
 
@@ -785,26 +774,26 @@ disjoint_impls! {
             }
         }
     }
-    impl<'d, R: Ir<Type = S> + NonLocal + Clone + Decode<'d> + 'd, S: Cloned> OutPtrRead for Box<[R]>
+    impl<'d, R: Ir<Type = S> + NonLocal + Decode<'d> + 'd, S: Cloned> OutPtrRead for Box<[R]>
     where
         Self: Ir<Type = Box<[S]>>,
     {
         unsafe fn try_read_out(out_ptr: Self::OutPtr) -> Result<Self> {
-            unsafe {
-                let slice = RefSlice::from_raw_parts(out_ptr.as_mut_ptr(), out_ptr.len());
+            unimplemented!();
+            //let mut store = Default::default();
+            //let store_ref = unused_store::<Box<[R]>>(&mut store);
 
-                let mut store = Default::default();
-                // NOTE: Bypasses the erroneous lifetime check.
-                // Correct as long as `R::decode` doesn't return a reference to the store (`R: NonLocal`)
-                let store_borrow = &mut *addr_of_mut!(store);
-                let res = Self::decode(slice, store_borrow);
+            //unsafe {
+            //    let slice = RefSlice::from_raw_parts(out_ptr.as_mut_ptr(), out_ptr.len());
 
-                if !out_ptr.deallocate() {
-                    return Err(FfiReturn::TrapRepresentation);
-                }
+            //    let res = Self::decode(slice, store_ref);
 
-                res
-            }
+            //    if !out_ptr.deallocate() {
+            //        return Err(FfiReturn::TrapRepresentation);
+            //    }
+
+            //    res
+            //}
         }
     }
 
@@ -837,25 +826,24 @@ disjoint_impls! {
             }
         }
     }
-    impl<'d, R: Ir<Type = S> + NonLocal + Clone + Decode<'d> + 'd, S: Cloned> OutPtrRead for Vec<R>
+    impl<'d, R: Ir<Type = S> + NonLocal + Decode<'d> + 'd, S: Cloned> OutPtrRead for Vec<R>
     where
         Self: Ir<Type = Vec<S>>,
     {
         unsafe fn try_read_out(out_ptr: Self::OutPtr) -> Result<Self> {
             unsafe {
-                let slice = RefSlice::from_raw_parts(out_ptr.as_mut_ptr(), out_ptr.len());
+                unimplemented!();
+                //let slice = RefSlice::from_raw_parts(out_ptr.as_mut_ptr(), out_ptr.len());
 
-                let mut store = Default::default();
-                // NOTE: Bypasses the erroneous lifetime check.
-                // Correct as long as `R::decode` doesn't return a reference to the store (`R: NonLocal`)
-                let store_borrow = &mut *addr_of_mut!(store);
-                let res = Self::decode(slice, store_borrow);
+                //let mut store = Default::default();
+                //let store_ref = unused_store::<Vec<R>>(&mut store);
+                //let res = Self::decode(slice, store_ref);
 
-                if !out_ptr.deallocate() {
-                    return Err(FfiReturn::TrapRepresentation);
-                }
+                //if !out_ptr.deallocate() {
+                //    return Err(FfiReturn::TrapRepresentation);
+                //}
 
-                res
+                //res
             }
         }
     }
@@ -869,22 +857,20 @@ disjoint_impls! {
             unsafe { Decode::decode(out_ptr, &mut ()) }
         }
     }
-    impl<'d, R: Ir<Type = S> + NonLocal + Clone + Decode<'d> + 'd, S: Cloned, const N: usize>
+    impl<'d, R: Ir<Type = S> + NonLocal + Decode<'d> + 'd, S: Cloned, const N: usize>
         OutPtrRead for [R; N]
     where
+        // FIXME: https://github.com/rust-lang/rust/issues/61415
         [<R>::Store; N]: Default,
         Self: Ir<Type = [S; N]>,
     {
         unsafe fn try_read_out(out_ptr: Self::OutPtr) -> Result<Self> {
-            assert_arr_has_non_zero_len::<N>();
-            let mut store = Default::default();
+            unimplemented!()
+            //assert_arr_has_non_zero_len::<N>();
+            //let mut store = Default::default();
 
-            unsafe {
-                // NOTE: Bypasses the erroneous lifetime check.
-                // Correct as long as `R::decode` doesn't return a reference to the store (`R: NonLocal`)
-                let store_borrow = &mut *addr_of_mut!(store);
-                Self::decode(out_ptr, store_borrow)
-            }
+            //let store_ref = unused_store::<[R; N]>(&mut store);
+            //unsafe { Self::decode(out_ptr, store_ref) }
         }
     }
 
@@ -914,7 +900,7 @@ disjoint_impls! {
         }
     }
 
-    impl<'d, R: Ir<Type = S> + NonLocal + Clone + Decode<'d>, S: Cloned + 'd> OutPtrRead
+    impl<'d, R: Ir<Type = S> + NonLocal + Decode<'d>, S: Cloned + 'd> OutPtrRead
         for LocalSlice<'d, R>
     where
         Self: Ir<Type = &'d [S]>,
@@ -927,8 +913,8 @@ disjoint_impls! {
             unsafe {
                 // NOTE: Bypasses the erroneous lifetime check.
                 // Correct as long as `R::decode` doesn't return a reference to the store (`R: NonLocal`)
-                let store_borrow = &mut *addr_of_mut!(store);
-                let res = <&[R]>::decode(slice, store_borrow);
+                let store_ref = &mut *addr_of_mut!(store);
+                let res = <&[R]>::decode(slice, store_ref);
 
                 if !out_ptr.deallocate() {
                     return Err(FfiReturn::TrapRepresentation);
@@ -941,7 +927,7 @@ disjoint_impls! {
         }
     }
 
-    impl<'d, R: Ir<Type = S> + NonLocal + Clone + Decode<'d>, S: Cloned + 'd> OutPtrRead
+    impl<'d, R: Ir<Type = S> + NonLocal + Decode<'d>, S: Cloned + 'd> OutPtrRead
         for LocalRef<'d, R>
     where
         Self: Ir<Type = &'d S>,
@@ -952,11 +938,16 @@ disjoint_impls! {
             let item = unsafe {
                 // NOTE: Bypasses the erroneous lifetime check.
                 // Correct as long as `R::decode` doesn't return a reference to the store (`R: NonLocal`)
-                let store_borrow = &mut *addr_of_mut!(store);
-                R::decode(out_ptr, store_borrow)?
+                let store_ref = &mut *addr_of_mut!(store);
+                R::decode(out_ptr, store_ref)?
             };
 
             Ok(Self::new(item))
         }
     }
+}
+
+fn unused_store<'d, T: NonLocal + Decode<'d> + 'd>(store_ref: &mut T::Store) -> &'d mut T::Store {
+    // SAFETY: Check [`NonLocal`] guarantees
+    unsafe { core::mem::transmute(store_ref) }
 }
