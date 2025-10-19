@@ -5,7 +5,7 @@ mod wasm {
     use alloc::{boxed::Box, vec::Vec};
 
     use crate::{
-        Decode, Encode, ExternC, FfiReturn, FfiWrapperType, Result,
+        Decode, Encode, ExternC, FfiReturn, Result,
         ir::{Ir, Robust, Transparent},
         out_ptr::{OutPtr, OutPtrRead, OutPtrWrite},
     };
@@ -77,9 +77,6 @@ mod wasm {
                 const NICHE_VALUE: $dst = <$dst>::MAX;
             }
 
-            // SAFETY: Conversion of non wasm primitive doesn't use store
-            unsafe impl $crate::out_ptr::NonLocal for $src {}
-
             // SAFETY: Transmute relation is transitive
             unsafe impl $crate::transmute::Transmute for $src {
                 type Target = $dst;
@@ -100,10 +97,10 @@ mod wasm {
                 type OutPtr = $src;
             }
 
-            impl Encode<'_> for $src {
+            impl Encode for $src {
                 type Store = ();
 
-                fn encode(self, _: &mut ()) -> Self::CType {
+                fn encode<'itm>(self, (): &mut ()) -> Self::CType where Self: 'itm {
                     self as $dst
                 }
             }
@@ -111,7 +108,7 @@ mod wasm {
             impl Decode<'_> for $src {
                 type Store = ();
 
-                unsafe fn decode(source: Self::CType, _: &mut ()) -> Result<Self> {
+                unsafe fn decode<'itm: 'd>(source: Self::CType, (): &mut ()) -> Result<Self> {
                     <$src>::try_from(source).or(Err(FfiReturn::ConversionFailed))
                 }
             }

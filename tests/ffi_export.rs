@@ -222,7 +222,7 @@ fn get_new_struct() -> OpaqueStruct {
 
         assert_eq!(
             FfiReturn::Ok,
-            OpaqueStruct__new(Encode::encode(name, &mut ()), ffi_struct.as_mut_ptr())
+            OpaqueStruct__new(name.encode(&mut ()), ffi_struct.as_mut_ptr())
         );
 
         let ffi_struct = ffi_struct.assume_init();
@@ -239,11 +239,7 @@ fn get_new_struct_with_params() -> OpaqueStruct {
     let mut store = Default::default();
     let params_ffi = params.encode(&mut store);
     assert_eq!(FfiReturn::Ok, unsafe {
-        OpaqueStruct__with_params(
-            Encode::encode(ffi_struct, &mut ()),
-            params_ffi,
-            output.as_mut_ptr(),
-        )
+        OpaqueStruct__with_params(ffi_struct.encode(&mut ()), params_ffi, output.as_mut_ptr())
     });
 
     unsafe { Decode::decode(output.assume_init(), &mut ()).expect("valid") }
@@ -258,7 +254,7 @@ fn non_robust_ref_mut() {
     let mut owned = "queen".to_owned();
     let ffi_struct: &mut str = owned.as_mut();
     let mut output = MaybeUninit::new(RefMutSlice::from_raw_parts_mut(core::ptr::null_mut(), 0));
-    let ffi_type: RefMutSlice<u8> = Encode::encode(ffi_struct, &mut ());
+    let ffi_type: RefMutSlice<u8> = ffi_struct.encode(&mut ());
 
     unsafe {
         assert_eq!(
@@ -321,11 +317,7 @@ fn into_iter_item_impl_into() {
     unsafe {
         assert_eq!(
             FfiReturn::Ok,
-            OpaqueStruct__with_tokens(
-                Encode::encode(ffi_struct, &mut ()),
-                tokens_ffi,
-                output.as_mut_ptr()
-            )
+            OpaqueStruct__with_tokens(ffi_struct.encode(&mut ()), tokens_ffi, output.as_mut_ptr())
         );
 
         ffi_struct = Decode::decode(output.assume_init(), &mut ()).expect("valid");
@@ -346,7 +338,7 @@ fn mutate_opaque() {
         assert_eq!(
             FfiReturn::Ok,
             OpaqueStruct__remove_param(
-                Encode::encode(&mut ffi_struct, &mut ()),
+                (&mut ffi_struct).encode(&mut ()),
                 &param_name,
                 removed.as_mut_ptr(),
             )
@@ -369,11 +361,7 @@ fn return_option() {
 
     let name1 = Name(String::from("Non"));
     assert_eq!(FfiReturn::Ok, unsafe {
-        OpaqueStruct__get_param(
-            Encode::encode(&ffi_struct, &mut ()),
-            &name1,
-            param1.as_mut_ptr(),
-        )
+        OpaqueStruct__get_param((&ffi_struct).encode(&mut ()), &name1, param1.as_mut_ptr())
     });
     let param1 = unsafe { param1.assume_init() };
     assert!(param1.is_null());
@@ -382,11 +370,7 @@ fn return_option() {
 
     let name2 = Name(String::from("Nomen"));
     assert_eq!(FfiReturn::Ok, unsafe {
-        OpaqueStruct__get_param(
-            Encode::encode(&ffi_struct, &mut ()),
-            &name2,
-            param2.as_mut_ptr(),
-        )
+        OpaqueStruct__get_param((&ffi_struct).encode(&mut ()), &name2, param2.as_mut_ptr())
     });
 
     unsafe {
@@ -407,10 +391,7 @@ fn take_and_return_boxed_slice() {
     unsafe {
         assert_eq!(
             FfiReturn::Ok,
-            __freestanding_with_boxed_slice(
-                Encode::encode(input, &mut in_store),
-                output.as_mut_ptr()
-            )
+            __freestanding_with_boxed_slice(input.encode(&mut in_store), output.as_mut_ptr())
         );
 
         let output = output.assume_init();
@@ -429,7 +410,7 @@ fn take_and_return_option_without_niche() {
     unsafe {
         assert_eq!(
             FfiReturn::Ok,
-            __freestanding_with_option(Encode::encode(input, &mut ()), output.as_mut_ptr())
+            __freestanding_with_option(input.encode(&mut ()), output.as_mut_ptr())
         );
 
         let output = output.assume_init();
@@ -448,7 +429,7 @@ fn take_and_return_option_with_niche_ref() {
         assert_eq!(
             FfiReturn::Ok,
             __freestanding_with_option_with_niche_ref(
-                Encode::encode(&input, &mut in_store),
+                (&input).encode(&mut in_store),
                 output.as_mut_ptr()
             )
         );
@@ -477,7 +458,7 @@ fn take_and_return_option_without_niche_ref() {
         assert_eq!(
             FfiReturn::Ok,
             __freestanding_with_option_without_niche_ref(
-                Encode::encode(&input, &mut in_store),
+                (&input).encode(&mut in_store),
                 output.as_mut_ptr()
             )
         );
@@ -496,10 +477,7 @@ fn return_iterator() {
     unsafe {
         assert_eq!(
             FfiReturn::Ok,
-            OpaqueStruct__params(
-                Encode::encode(&ffi_struct, &mut ()),
-                out_params.as_mut_ptr()
-            )
+            OpaqueStruct__params((&ffi_struct).encode(&mut ()), out_params.as_mut_ptr())
         );
 
         let out_params = out_params.assume_init();
@@ -718,7 +696,7 @@ fn invoke_trait_method() {
     unsafe {
         assert_eq!(
             FfiReturn::Ok,
-            OpaqueStruct__Target__target(Encode::encode(ffi_struct, &mut ()), output.as_mut_ptr())
+            OpaqueStruct__Target__target(ffi_struct.encode(&mut ()), output.as_mut_ptr())
         );
         let name = Decode::decode(output.assume_init(), &mut ()).unwrap();
         assert_eq!(Name(String::from("X")), name);
@@ -777,15 +755,11 @@ fn array_of_opaques() {
 #[test]
 #[webassembly_test::webassembly_test]
 fn borrow_vec() {
-    let a = vec![1, 2];
-
+    let a: Vec<u8> = vec![1, 2];
     let mut store = Default::default();
 
     unsafe {
-        assert_eq!(
-            FfiReturn::Ok,
-            __take_vec_ref(<&Vec<u8>>::encode(&a, &mut store))
-        );
+        assert_eq!(FfiReturn::Ok, __take_vec_ref((&a).encode(&mut store)));
     }
 }
 
@@ -799,7 +773,7 @@ fn return_reference_from_slice() {
     unsafe {
         assert_eq!(
             FfiReturn::Ok,
-            __reference_from_slice(<&[u8]>::encode(&a, &mut ()), output.as_mut_ptr())
+            __reference_from_slice(a.as_slice().encode(&mut ()), output.as_mut_ptr())
         );
 
         let output = <&u8>::try_read_out(output.assume_init()).unwrap();
@@ -819,7 +793,7 @@ fn borrow_local() {
         unsafe {
             assert_eq!(
                 FfiReturn::Ok,
-                __take_tuple_ref(<&(u8, u8)>::encode(&a, &mut store), output.as_mut_ptr())
+                __take_tuple_ref((&a).encode(&mut store), output.as_mut_ptr())
             );
 
             OutPtrRead::try_read_out(output.assume_init()).expect("Valid")

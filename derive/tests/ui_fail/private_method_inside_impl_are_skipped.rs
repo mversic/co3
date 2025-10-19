@@ -11,6 +11,6 @@ impl FfiStruct {
 fn main() {
     let s = FfiStruct;
     unsafe {
-        FfiStruct__private(Encode::encode(s, &mut ()));
+        FfiStruct__private(s.encode(&mut ()));
     }
 }

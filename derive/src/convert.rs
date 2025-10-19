@@ -518,7 +518,6 @@ fn derive_ffi_type_for_data_carrying_enum(
         gen_data_carrying_repr_c_enum(emitter, enum_name, &generics, variants);
 
     generics.make_where_clause();
-    let lifetime = quote! {'__CO3_itm};
     let (impl_generics, ty_generics, where_clause) = split_for_impl(&generics);
 
     let variant_rust_stores = variants
@@ -530,7 +529,7 @@ fn derive_ffi_type_for_data_carrying_enum(
                 || quote! { () },
                 |field| {
                     let ty = &field.ty;
-                    quote! { <#ty as co3::Encode<#lifetime>>::Store }
+                    quote! { <#ty as co3::Encode>::Store }
                 },
             )
         })
@@ -545,7 +544,7 @@ fn derive_ffi_type_for_data_carrying_enum(
                 || quote! { () },
                 |field| {
                     let ty = &field.ty;
-                    quote! { <#ty as co3::Decode<#lifetime>>::Store }
+                    quote! { <#ty as co3::Decode<'d>>::Store }
                 },
             )
         })
@@ -610,8 +609,6 @@ fn derive_ffi_type_for_data_carrying_enum(
         })
         .collect::<Vec<_>>();
 
-    // TODO: Tuples don't support impl of `Default` for arity > 12 currently.
-    // Once this limitation is lifted `Option<tuple>` will not be necessary
     let (rust_store, ffi_store, rust_store_conversion, ffi_store_conversion) =
         if variants.len() > 12 {
             (
@@ -649,21 +646,29 @@ fn derive_ffi_type_for_data_carrying_enum(
         quote! {
             unsafe impl<#impl_generics> co3::out_ptr::NonLocal for #enum_name #ty_generics #non_local_where_clause {}
 
-            impl<#impl_generics> co3::FfiWrapperType for #enum_name #ty_generics #non_local_where_clause {
-                type ReturnType = Self;
-            }
             impl<#impl_generics> co3::out_ptr::OutPtr for #enum_name #ty_generics #non_local_where_clause {
                 type OutPtr = Self::CType;
             }
             impl<#impl_generics> co3::out_ptr::OutPtrWrite for #enum_name #ty_generics #non_local_where_clause {
                 unsafe fn write_out(self, out_ptr: *mut Self::OutPtr) {
-                    co3::repr_c::write_non_local::<_, Self>(self, out_ptr);
+                    let mut store = Default::default();
+                    let encoded = self.encode(&mut store);
+                    unsafe { out_ptr.write(encoded); }
                 }
             }
             impl<#impl_generics> co3::out_ptr::OutPtrRead for #enum_name #ty_generics #non_local_where_clause {
                 unsafe fn try_read_out(out_ptr: Self::OutPtr) -> co3::Result<Self> {
-                    co3::repr_c::read_non_local::<Self, Self>(out_ptr)
+                    let mut store = Default::default();
+
+                    unsafe {
+                        // SAFETY: check `NonLocal` for guarantees
+                        let store_ref = &mut *(&mut store as *mut _);
+                        Decode::decode(out_ptr, store_ref)
+                    }
                 }
+            }
+            impl<#impl_generics> co3::FfiWrapperType for #enum_name #ty_generics #non_local_where_clause {
+                type ReturnType = Self;
             }
         }
     };
@@ -679,10 +684,10 @@ fn derive_ffi_type_for_data_carrying_enum(
         impl<#impl_generics> co3::ExternC for #enum_name #ty_generics #where_clause {
             type CType = #repr_c_enum_name #ty_generics;
         }
-        impl<#lifetime, #impl_generics> co3::Encode<#lifetime> for #enum_name #ty_generics #where_clause {
+        impl<#impl_generics> co3::Encode for #enum_name #ty_generics #where_clause {
             type Store = #rust_store;
 
-            fn encode(self, store: &mut Self::Store) -> Self::CType {
+            fn encode<'itm>(self, store: &'itm mut Self::Store) -> Self::CType where Self: 'itm {
                 #ffi_store_conversion
 
                 match self {
@@ -691,10 +696,10 @@ fn derive_ffi_type_for_data_carrying_enum(
             }
         }
 
-        impl<#lifetime, #impl_generics> co3::Decode<#lifetime> for #enum_name #ty_generics #where_clause {
+        impl<'d, #impl_generics> co3::Decode<'d> for #enum_name #ty_generics #where_clause {
             type Store = #ffi_store;
 
-            unsafe fn decode(source: Self::CType, store: &mut Self::Store) -> co3::Result<Self> {
+            unsafe fn decode<'itm: 'd>(source: Self::CType, store: &'itm mut Self::Store) -> co3::Result<Self> {
                 #rust_store_conversion
 
                 match source.tag {

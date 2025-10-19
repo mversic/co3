@@ -8,7 +8,7 @@ use disjoint_impls::disjoint_impls;
 
 #[cfg(not(feature = "non_robust_ref_mut"))]
 use crate::transmute::InfallibleTransmute;
-use crate::{LocalRef, LocalSlice, ReprC, repr_c::Cloned};
+use crate::{ReprC, repr_c::Cloned};
 
 disjoint_impls! {
     /// Designates a type that can be converted to and from an internal representation (IR).
@@ -244,17 +244,4 @@ impl<R> Ir for *const R {
 }
 impl<R> Ir for *mut R {
     type Type = Robust;
-}
-
-impl<'itm, R: 'itm> Ir for LocalRef<'itm, R>
-where
-    &'itm R: Ir,
-{
-    type Type = <&'itm R as Ir>::Type;
-}
-impl<'itm, R: 'itm> Ir for LocalSlice<'itm, R>
-where
-    &'itm [R]: Ir,
-{
-    type Type = <&'itm [R] as Ir>::Type;
 }

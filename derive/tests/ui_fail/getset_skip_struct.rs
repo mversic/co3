@@ -22,18 +22,18 @@ fn main() {
     let mut b = MaybeUninit::<*mut i32>::uninit();
 
     unsafe {
-        FfiStruct__a_mut(Encode::encode(&mut s, &mut ()), a.as_mut_ptr());
+        FfiStruct__a_mut((&mut s).encode(&mut ()), a.as_mut_ptr());
         let a: &mut u32 = Decode::decode(a.assume_init(), &mut ()).unwrap();
         FfiStruct__set_a(
-            Encode::encode(&mut s, &mut ()),
-            Encode::encode(*a, &mut ()),
+            (&mut s).encode(&mut ()),
+            *a.encode(&mut ()),
         );
 
-        FfiStruct__b_mut(Encode::encode(&s, &mut ()), b.as_mut_ptr());
+        FfiStruct__b_mut((&s).encode(&mut ()), b.as_mut_ptr());
         let b: &mut i32 = Decode::decode(b.assume_init(), &mut ()).unwrap();
         FfiStruct__set_b(
-            Encode::encode(&mut s, &mut ()),
-            Encode::encode(*b, &mut ()),
+            (&mut s).encode(&mut ()),
+            *b.encode(&mut ()),
         );
     }
 }

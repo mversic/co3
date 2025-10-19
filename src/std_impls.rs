@@ -1,5 +1,4 @@
 use alloc::{boxed::Box, string::String, vec::Vec};
-use core::{mem::ManuallyDrop, ptr::NonNull};
 
 use crate::{ReprC, WrapperTypeOf, mineral, option::Niche as _, slice::RefSlice};
 
@@ -94,12 +93,12 @@ mineral! {
     }
 }
 
-impl<T> WrapperTypeOf<NonNull<T>> for *mut T {
-    type Type = NonNull<T>;
+// SAFETY: Type is `ReprC` if the inner type is
+unsafe impl<T: ReprC> ReprC for core::mem::ManuallyDrop<T> {}
+
+impl<T> WrapperTypeOf<core::ptr::NonNull<T>> for *mut T {
+    type Type = core::ptr::NonNull<T>;
 }
 impl WrapperTypeOf<String> for Vec<u8> {
     type Type = String;
 }
-
-// SAFETY: Type is `ReprC` if the inner type is
-unsafe impl<T: ReprC> ReprC for ManuallyDrop<T> {}

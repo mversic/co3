@@ -217,7 +217,7 @@ mod ffi {
         output: *mut <Box<u8> as OutPtr>::OutPtr,
     ) -> FfiReturn {
         unsafe {
-            output.write(input.read());
+            output.write(input);
         }
 
         FfiReturn::Ok

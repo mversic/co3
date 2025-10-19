@@ -43,7 +43,7 @@ fn export_shared_fns() {
     let ffi_struct1 = unsafe {
         let mut ffi_struct = MaybeUninit::new(core::ptr::null_mut());
         let mut store = Default::default();
-        assert_eq! {FfiReturn::Ok, FfiStruct1__new(Encode::encode(name.clone(), &mut store), ffi_struct.as_mut_ptr())};
+        assert_eq! {FfiReturn::Ok, FfiStruct1__new(name.clone().encode(&mut store), ffi_struct.as_mut_ptr())};
         let ffi_struct = ffi_struct.assume_init();
         assert!(!ffi_struct.is_null());
         assert_eq!(FfiStruct1 { name }, *ffi_struct);
@@ -67,7 +67,7 @@ fn export_shared_fns() {
         };
 
         let mut is_equal = MaybeUninit::new(1);
-        let cloned_ptr = Encode::encode(&cloned, &mut ());
+        let cloned_ptr = (&cloned).encode(&mut ());
 
         __eq(
             FfiStruct1::ID.encode(&mut ()),

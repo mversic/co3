@@ -265,12 +265,11 @@ fn gen_impl_ffi(name: &Ident, generics: &syn::Generics) -> TokenStream {
             type Type = co3::ir::Extern;
         }
 
-        impl #impl_generics co3::WrapperTypeOf<Self> for #name #ty_generics #where_clause {
-            type Type = Self;
-        }
-
         impl #impl_generics co3::option::Niche for #name #ty_generics #where_clause {
             const NICHE_VALUE: *mut co3::external::Extern = core::ptr::null_mut();
+        }
+        impl #impl_generics co3::WrapperTypeOf<Self> for #name #ty_generics #where_clause {
+            type Type = Self;
         }
     }
 }
