@@ -6,9 +6,28 @@
 use alloc::{boxed::Box, vec::Vec};
 use disjoint_impls::disjoint_impls;
 
+use crate::ReprC;
 #[cfg(not(feature = "non_robust_ref_mut"))]
 use crate::transmute::InfallibleTransmute;
-use crate::{ReprC, repr_c::Cloned};
+
+/// Marker for a type that is transparent with respect to its wrapped type.
+pub enum Transparent {}
+
+/// Marker for a robust [`crate::ReprC`] type that does not require conversion
+pub enum Robust {}
+
+/// Marker for a type exported as an opaque pointer over FFI.
+pub enum Opaque {}
+
+/// Marker for a type imported as an opaque pointer over FFI.
+pub enum Extern {}
+
+/// Marker for an [`Ir`] type that delegates to the pointed-to type when converting
+/// the likes of `&Self` or `&[Self]` into an FFI-compatible representation
+///
+/// This type clones the pointed-to value to get owned value that has implemented
+/// [`ExternC`]. This type therefore uses the store
+pub trait Cloned {}
 
 disjoint_impls! {
     /// Designates a type that can be converted to and from an internal representation (IR).
@@ -51,61 +70,61 @@ disjoint_impls! {
     impl<R: Ir<Type = Opaque>> Ir for &R {
         type Type = Transparent;
     }
-    impl<'itm, R: Ir<Type = Extern>> Ir for &'itm R {
-        type Type = &'itm Extern;
+    impl<'a, R: Ir<Type = Extern>> Ir for &'a R {
+        type Type = &'a Extern;
     }
-    impl<'itm, R: Ir<Type = S>, S: Cloned + 'itm> Ir for &'itm R {
-        type Type = &'itm S;
+    impl<'a, R: Ir<Type = S>, S: Cloned + 'a> Ir for &'a R {
+        type Type = &'a S;
     }
 
     impl<
-        'itm,
+        'a,
         #[cfg(not(feature = "non_robust_ref_mut"))] R: InfallibleTransmute,
         #[cfg(feature = "non_robust_ref_mut")] R,
-    > Ir for &'itm mut R
+    > Ir for &'a mut R
     where
         R: Ir<Type = Transparent>,
     {
         type Type = Transparent;
     }
-    impl<'itm, R: Ir<Type = Robust>> Ir for &'itm mut R {
+    impl<'a, R: Ir<Type = Robust>> Ir for &'a mut R {
         type Type = Transparent;
     }
-    impl<'itm, R: Ir<Type = Opaque>> Ir for &'itm mut R {
+    impl<'a, R: Ir<Type = Opaque>> Ir for &'a mut R {
         type Type = Transparent;
     }
-    impl<'itm, R: Ir<Type = Extern>> Ir for &'itm mut R {
-        type Type = &'itm mut Extern;
+    impl<'a, R: Ir<Type = Extern>> Ir for &'a mut R {
+        type Type = &'a mut Extern;
     }
 
-    impl<'itm, R: Ir<Type = Transparent>> Ir for &'itm [R] {
-        type Type = &'itm [Transparent];
+    impl<'a, R: Ir<Type = Transparent>> Ir for &'a [R] {
+        type Type = &'a [Transparent];
     }
-    impl<'itm, R: Ir<Type = Robust> + ReprC> Ir for &'itm [R] {
-        type Type = &'itm [Robust];
+    impl<'a, R: Ir<Type = Robust> + ReprC> Ir for &'a [R] {
+        type Type = &'a [Robust];
     }
-    impl<'itm, R: Ir<Type = Opaque>> Ir for &'itm [R] {
-        type Type = &'itm [Opaque];
+    impl<'a, R: Ir<Type = Opaque>> Ir for &'a [R] {
+        type Type = &'a [Opaque];
     }
-    impl<'itm, R: Ir<Type = Extern>> Ir for &'itm [R] {
-        type Type = &'itm [Extern];
+    impl<'a, R: Ir<Type = Extern>> Ir for &'a [R] {
+        type Type = &'a [Extern];
     }
-    impl<'itm, R: Ir<Type = S>, S: Cloned + 'itm> Ir for &'itm [R] {
-        type Type = &'itm [S];
+    impl<'a, R: Ir<Type = S>, S: Cloned + 'a> Ir for &'a [R] {
+        type Type = &'a [S];
     }
 
     impl<
-        'itm,
+        'a,
         #[cfg(not(feature = "non_robust_ref_mut"))] R: InfallibleTransmute,
         #[cfg(feature = "non_robust_ref_mut")] R,
-    > Ir for &'itm mut [R]
+    > Ir for &'a mut [R]
     where
         R: Ir<Type = Transparent>,
     {
-        type Type = &'itm mut [Transparent];
+        type Type = &'a mut [Transparent];
     }
-    impl<'itm, R: Ir<Type = Robust>> Ir for &'itm mut [R] {
-        type Type = &'itm mut [Robust];
+    impl<'a, R: Ir<Type = Robust>> Ir for &'a mut [R] {
+        type Type = &'a mut [Robust];
     }
 
     impl<R: Ir<Type = Transparent>> Ir for Box<R> {
@@ -157,13 +176,12 @@ disjoint_impls! {
         type Type = Vec<S>;
     }
 
-    // TODO: due to https://github.com/mversic/co3/issues/13 we can't yet implement
-    // traits only for some const values (non-zero). Otherwise, it should be just:
-    // R: Ir<Type = Robust>,
     impl<R: Ir<Type = Robust> + ReprC, const N: usize> Ir for [R; N] {
-        type Type = [Robust; N];
+        // WARN: due to https://github.com/mversic/co3/issues/13 we can't yet implement
+        // traits only for some const values (non-zero). Therefore, the user must make
+        // sure they don't have any `[Robust; 0]` types crossing the FFI boundary
+        type Type = Robust;
     }
-    // TODO: likewise, it should be just: R: Ir<Type = Transparent>,
     impl<R: Ir<Type = Transparent>, const N: usize> Ir for [R; N] {
         type Type = Transparent;
     }
@@ -200,43 +218,18 @@ disjoint_impls! {
         type Type = Vec<Transparent>;
     }
     impl<R, const N: usize> Ir for [Box<R>; N] where Box<R>: Ir<Type = Box<Robust>> {
-        type Type = [Robust; N];
+        type Type = Robust;
     }
-
-    impl<R, const N: usize> Ir for &[R; N] where [R; N]: Ir<Type = [Robust; N]> {
-        type Type = Transparent;
-    }
-    impl<R, const N: usize> Ir for &mut [R; N] where [R; N]: Ir<Type = [Robust; N]> {
-        type Type = Transparent;
-    }
-    impl<'itm, R, const N: usize> Ir for &'itm [[R; N]] where [R; N]: Ir<Type = [Robust; N]> {
-        type Type = &'itm [Robust];
-    }
-    impl<'itm, R, const N: usize> Ir for &'itm mut [[R; N]] where [R; N]: Ir<Type = [Robust; N]> {
-        type Type = &'itm mut [Robust];
-    }
-    impl<R, const N: usize> Ir for Box<[R; N]> where [R; N]: Ir<Type = [Robust; N]> {
-        type Type = Box<Robust>;
-    }
-    impl<R, const N: usize> Ir for Box<[[R; N]]> where [R; N]: Ir<Type = [Robust; N]> {
-        type Type = Box<[Robust]>;
-    }
-    impl<R, const N: usize> Ir for Vec<[R; N]> where [R; N]: Ir<Type = [Robust; N]> {
-        type Type = Vec<Robust>;
-    }
+    // TODO: What about Option<[Box<R>; N]> where R: Robust?
 }
 
-/// Marker for a robust [`crate::ReprC`] type that does not require conversion
-pub enum Robust {}
-
-/// Marker for a type exported as an opaque pointer over FFI.
-pub enum Opaque {}
-
-/// Marker for a type that is transparent with respect to its wrapped type.
-pub enum Transparent {}
-
-/// Marker for a type imported as an opaque pointer over FFI.
-pub enum Extern {}
+impl<R: Ir<Type: Cloned>> Cloned for &R {}
+impl Cloned for &Extern {}
+impl<R> Cloned for &[R] {}
+impl<R: Ir<Type: Cloned>> Cloned for Box<R> {}
+impl<R> Cloned for Vec<R> {}
+impl<const N: usize> Cloned for [Opaque; N] {}
+impl<R: Ir<Type: Cloned>, const N: usize> Cloned for [R; N] {}
 
 impl<R> Ir for *const R {
     type Type = Robust;

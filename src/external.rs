@@ -7,18 +7,18 @@ use crate::{mineral, ExternC, WrapperTypeOf};
 /// Implementors must guarantee that:
 /// - `Self` has the same representation as `*mut` [`Extern`].
 pub unsafe trait External {
-    /// Returns a shared opaque pointer.
-    fn as_extern_ptr(&self) -> *const Extern;
-
-    /// Returns a mutable opaque pointer.
-    fn as_extern_ptr_mut(&mut self) -> *mut Extern;
-
     /// Constructs `Self` from an opaque pointer.
     ///
     /// # Safety
     ///
     /// The pointer argument must be valid.
     unsafe fn from_extern_ptr(source: *mut Extern) -> Self;
+
+    /// Returns a shared opaque pointer.
+    fn as_extern_ptr(&self) -> *const Extern;
+
+    /// Returns a mutable opaque pointer.
+    fn as_extern_ptr_mut(&mut self) -> *mut Extern;
 }
 
 /// Wrapper around struct/enum opaque pointer. When wrapped with the [`co3::extern_type`] macro in

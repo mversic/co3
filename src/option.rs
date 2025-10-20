@@ -1,6 +1,6 @@
 //! Logic related to the conversion of [`Option<T>`] to and from FFI-compatible representation
 
-use crate::{ExternC, assert_arr_has_non_zero_len, repr_c::Cloned};
+use crate::{ExternC, assert_arr_has_non_zero_len, ir::Cloned};
 
 /// Type that has at least one trap representation that can be used as a niche value. The
 /// niche value is used in the serialization of [`Option<T>`]. For example, [`Option<bool>`]

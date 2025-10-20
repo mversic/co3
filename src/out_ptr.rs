@@ -196,12 +196,6 @@ disjoint_impls! {
         type OutPtr = OutBoxedSlice<R::CType>;
     }
 
-    impl<R: ReprC, const N: usize> OutPtr for [R; N]
-    where
-        Self: Ir<Type = [Robust; N]>,
-    {
-        type OutPtr = Self::CType;
-    }
     impl<R, const N: usize> OutPtr for [R; N]
     where
         Self: Ir<Type = [Opaque; N]>,
@@ -525,16 +519,6 @@ disjoint_impls! {
         }
     }
 
-    impl<R: ReprC, const N: usize> OutPtrWrite for [R; N]
-    where
-        Self: Ir<Type = [Robust; N]>,
-    {
-        unsafe fn write_out(self, out_ptr: *mut Self::OutPtr) {
-            assert_arr_has_non_zero_len::<N>();
-            let encoded = self.encode(&mut ());
-            unsafe { out_ptr.write(encoded); }
-        }
-    }
     impl<R, const N: usize> OutPtrWrite for [R; N]
     where
         Self: Ir<Type = [Opaque; N]>,
@@ -832,15 +816,6 @@ disjoint_impls! {
         }
     }
 
-    impl<R: ReprC, const N: usize> OutPtrRead for [R; N]
-    where
-        Self: Ir<Type = [Robust; N]>,
-    {
-        unsafe fn try_read_out(out_ptr: Self::OutPtr) -> Result<Self> {
-            assert_arr_has_non_zero_len::<N>();
-            unsafe { Decode::decode(out_ptr, &mut ()) }
-        }
-    }
     impl<'d, R: Ir<Type = S> + NonLocal + Decode<'d> + 'd, S: Cloned, const N: usize>
         OutPtrRead for [R; N]
     where

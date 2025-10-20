@@ -16,10 +16,10 @@ use disjoint_impls::disjoint_impls;
 
 use crate::{
     external::{ExternRef, ExternRefMut, External},
-    ir::{Extern, Ir, Opaque, Robust, Transparent},
+    ir::{Cloned, Extern, Ir, Opaque, Robust, Transparent},
     local::{LocalRef, LocalSlice},
     option::{Niche, WithoutNiche},
-    repr_c::{Cloned, default_init_arr},
+    repr_c::default_init_arr,
     slice::{OutBoxedSlice, RefMutSlice, RefSlice},
     transmute::{
         Transmute, transmute_from_target, transmute_from_target_box,
@@ -38,7 +38,7 @@ pub mod local;
 pub mod option;
 pub mod out_ptr;
 pub mod primitives;
-pub mod repr_c;
+mod repr_c;
 pub mod slice;
 mod std_impls;
 pub mod transmute;
@@ -68,11 +68,6 @@ disjoint_impls! {
         type CType: ReprC;
     }
 
-    // TODO: `ExternC` cannot be implemented for `&mut Cloned`. Add compile test
-    // TODO: `ExternC` cannot be implemented for `&mut [Cloned]`. Add compile test
-    // TODO: `ExternC` cannot be implemented for `&mut [Opaque]`. Add compile test
-    // If the entire slice is opaque then `ExternC` can also be implemented for `&mut [Opaque]`
-
     impl<R: Transmute> ExternC for R
     where
         Self: Ir<Type = Transparent>,
@@ -96,6 +91,12 @@ disjoint_impls! {
         type CType = *mut external::Extern;
     }
 
+    impl<'a, R: External> ExternC for &'a R
+    where
+        Self: Ir<Type = &'a Extern>,
+    {
+        type CType = *const external::Extern;
+    }
     impl<'a, R: ExternC, S: Cloned> ExternC for &'a R
     where
         Self: Ir<Type = &'a S>,
@@ -103,9 +104,9 @@ disjoint_impls! {
         type CType = *const R::CType;
     }
 
-    impl<'itm, R: External> ExternC for &'itm mut R
+    impl<'a, R: External> ExternC for &'a mut R
     where
-        Self: Ir<Type = &'itm mut Extern>,
+        Self: Ir<Type = &'a mut Extern>,
     {
         type CType = *mut external::Extern;
     }
@@ -123,9 +124,9 @@ disjoint_impls! {
     {
         type CType = RefSlice<R>;
     }
-    impl<'itm, R> ExternC for &'itm [R]
+    impl<'a, R> ExternC for &'a [R]
     where
-        Self: Ir<Type = &'itm [Opaque]>,
+        Self: Ir<Type = &'a [Opaque]>,
     {
         type CType = RefSlice<*const R>;
     }
@@ -232,12 +233,6 @@ disjoint_impls! {
         type CType = RefSlice<R::CType>;
     }
 
-    impl<R: ReprC, const N: usize> ExternC for [R; N]
-    where
-        Self: Ir<Type = [Robust; N]>,
-    {
-        type CType = Self;
-    }
     impl<R, const N: usize> ExternC for [R; N]
     where
         Self: Ir<Type = [Opaque; N]>,
@@ -264,26 +259,26 @@ disjoint_impls! {
         type CType = R::CType;
     }
 
-    impl<'itm, R: 'itm, S: Cloned> ExternC for LocalRef<'itm, R>
+    impl<'a, R: 'a, S: Cloned> ExternC for LocalRef<'a, R>
     where
-        Self: Ir<Type = &'itm S>,
-        &'itm R: ExternC,
+        Self: Ir<Type = &'a S>,
+        &'a R: ExternC,
     {
-        type CType = <&'itm R as ExternC>::CType;
+        type CType = <&'a R as ExternC>::CType;
     }
-    impl<'itm, R: 'itm> ExternC for LocalSlice<'itm, R>
+    impl<'a, R: 'a> ExternC for LocalSlice<'a, R>
     where
-        Self: Ir<Type = &'itm [Opaque]>,
-        &'itm [R]: ExternC,
+        Self: Ir<Type = &'a [Opaque]>,
+        &'a [R]: ExternC,
     {
         type CType = OutBoxedSlice<*const R>;
     }
-    impl<'itm, R: 'itm, S: Cloned> ExternC for LocalSlice<'itm, R>
+    impl<'a, R: 'a, S: Cloned> ExternC for LocalSlice<'a, R>
     where
-        Self: Ir<Type = &'itm [S]>,
-        &'itm [R]: ExternC,
+        Self: Ir<Type = &'a [S]>,
+        &'a [R]: ExternC,
     {
-        type CType = <&'itm [R] as ExternC>::CType;
+        type CType = <&'a [R] as ExternC>::CType;
     }
 }
 
@@ -619,17 +614,6 @@ disjoint_impls! {
         }
     }
 
-    impl<R: ReprC, const N: usize> Encode for [R; N]
-    where
-        Self: Ir<Type = [Robust; N]>,
-    {
-        type Store = ();
-
-        fn encode<'itm>(self, (): &mut ()) -> Self::CType where Self: 'itm {
-            assert_arr_has_non_zero_len::<N>();
-            self
-        }
-    }
     impl<R, const N: usize> Encode for [R; N]
     where
         Self: Ir<Type = [Opaque; N]>,
@@ -1097,17 +1081,6 @@ disjoint_impls! {
         }
     }
 
-    impl<'d, R: ReprC + 'd, const N: usize> Decode<'d> for [R; N]
-    where
-        Self: Ir<Type = [Robust; N]>,
-    {
-        type Store = ();
-
-        unsafe fn decode<'itm: 'd>(source: Self::CType, (): &mut ()) -> Result<Self> {
-            assert_arr_has_non_zero_len::<N>();
-            Ok(source)
-        }
-    }
     impl<'d, R: 'd, const N: usize> Decode<'d> for [R; N]
     where
         Self: Ir<Type = [Opaque; N]>,

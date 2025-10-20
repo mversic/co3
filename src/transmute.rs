@@ -114,29 +114,6 @@ disjoint_impls! {
             !target.is_null()
         }
     }
-
-    // SAFETY: Transmuting reference to a pointer of the same type
-    unsafe impl<R: ReprC, const N: usize> Transmute for &[R; N]
-    where
-        [R; N]: Ir<Type = [Robust; N]>,
-    {
-        type Target = *const [R; N];
-
-        fn is_valid(target: &Self::Target) -> bool {
-            !target.is_null()
-        }
-    }
-    // SAFETY: Transmuting reference to a pointer of the same type
-    unsafe impl<R: ReprC, const N: usize> Transmute for &mut [R; N]
-    where
-        [R; N]: Ir<Type = [Robust; N]>,
-    {
-        type Target = *mut [R; N];
-
-        fn is_valid(target: &Self::Target) -> bool {
-            !target.is_null()
-        }
-    }
 }
 
 /// Marker trait for a type whose [`Transmute::is_valid`] always returns true.

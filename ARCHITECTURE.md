@@ -11,21 +11,21 @@ I have derivative types:
 * &Transparent                  => Transparent (Target = &inner)    |
 * &Robust                       => Transparent (Target = *const R)  |
 * &Opaque                       => Transparent (Target = *const R)  |
-* &Extern                       => TODO                             |            |  ExternRef
+* &Extern                       =>                                  |            |  ExternRef
 * &S where C: Cloned                                                |   Cloned   |  LocalRef
-*
+
 * &mut Transparent              => Transparent (Target = *mut R)    |
 * &mut Robust                   => Transparent (Target = *mut R)    |
 * &mut Opaque                   => Transparent (Target = *mut R)    |
-* &mut Extern                   => TODO                             |            |  ExternRefMut
+* &mut Extern                   =>                                  |            |  ExternRefMut
 * DOESN'T EXIST
-*
+
 * &[Transparent]                                                    |   Cloned
 * &[Robust]                                                         |   Cloned
 * &[Opaque]                                                         |   Cloned
 * &[Extern]                     => TODO                             |   Cloned
 * &[S] where S: Cloned                                              |   Cloned   |  LocalSlice
-*
+
 * &mut [Transparent]
 * &mut [Robust]
 * DOESN'T EXIST
@@ -34,7 +34,7 @@ I have derivative types:
 
 * Box<Transparent>                                                  |  Sometimes |
 * Box<Robust>                                                       |  Not       |
-* Box<Opaque>                                                       |  Not       |
+* Box<Opaque>                   => Transparent (Target = *mut R)    |  Not       |
 * Box<Extern>                                                       |  Not       |
 * Box<S> where S: Cloned                                            |  Cloned    |
 

@@ -64,7 +64,7 @@ mod wasm {
     where
         R: Ir<Type = NonWasmIntPrimitive>,
     {
-        type Type = [Robust; N];
+        type Type = Robust;
     }
 
     macro_rules! wasm_repr_impls {
