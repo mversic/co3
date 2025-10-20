@@ -252,18 +252,23 @@ fn gen_impl_ffi(name: &Ident, generics: &syn::Generics) -> TokenStream {
             }
         }
 
+        impl #impl_generics co3::ir::Ir for #name #ty_generics #where_clause {
+            type Type = co3::ir::Extern;
+        }
+
         // SAFETY: Type is a wrapper for `*mut Extern`
         unsafe impl #impl_generics co3::transmute::Transmute for #name #ty_generics #where_clause {
             type Target = *mut co3::external::Extern;
 
             fn is_valid(target: &Self::Target) -> bool {
-                !target.is_null()
+                // TODO: The type is never dereferenced
+                // so it is considered as always valid
+                true
             }
         }
 
-        impl #impl_generics co3::ir::Ir for #name #ty_generics #where_clause {
-            type Type = co3::ir::Extern;
-        }
+        // SAFETY: The type is never dereferenced so it is considered as always valid
+        unsafe impl #impl_generics co3::transmute::InfallibleTransmute for #name #ty_generics #where_clause {}
 
         impl #impl_generics co3::option::Niche for #name #ty_generics #where_clause {
             const NICHE_VALUE: *mut co3::external::Extern = core::ptr::null_mut();

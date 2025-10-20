@@ -710,7 +710,7 @@ fn derive_ffi_type_for_data_carrying_enum(
         }
 
         // TODO: Enum can be transmutable if all variants are transmutable and the enum is `repr(C)`
-        impl<#impl_generics> co3::repr_c::Cloned for #enum_name #ty_generics #where_clause where Self: Clone {}
+        impl<#impl_generics> co3::ir::Cloned for #enum_name #ty_generics #where_clause where Self: Clone {}
 
         #non_locality
     }

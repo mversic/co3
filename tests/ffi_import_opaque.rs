@@ -53,7 +53,7 @@ pub fn freestanding_returns_opaque_item(input: &OpaqueStruct) -> &OpaqueStruct {
 }
 
 #[co3::decarbonate]
-pub fn freestanding_returns_opaque_boxed_ref(input: &Box<OpaqueStruct>) -> &Box<OpaqueStruct> {
+pub fn freestanding_returns_opaque_boxed_ref(input: &Box<OpaqueStruct>) -> &OpaqueStruct {
     unreachable!("replaced by co3::decarbonate")
 }
 

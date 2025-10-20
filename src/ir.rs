@@ -107,7 +107,7 @@ disjoint_impls! {
         type Type = &'a [Opaque];
     }
     impl<'a, R: Ir<Type = Extern>> Ir for &'a [R] {
-        type Type = &'a [Extern];
+        type Type = &'a [Transparent];
     }
     impl<'a, R: Ir<Type = S>, S: Cloned + 'a> Ir for &'a [R] {
         type Type = &'a [S];
@@ -153,7 +153,7 @@ disjoint_impls! {
         type Type = Box<[Opaque]>;
     }
     impl<R: Ir<Type = Extern>> Ir for Box<[R]> {
-        type Type = Box<[Extern]>;
+        type Type = Box<[Transparent]>;
     }
     impl<R: Ir<Type = S>, S: Cloned> Ir for Box<[R]> {
         type Type = Box<[S]>;
@@ -168,7 +168,6 @@ disjoint_impls! {
     impl<R: Ir<Type = Opaque>> Ir for Vec<R> {
         type Type = Vec<Opaque>;
     }
-    // FIXME: This seems suspicious when compared with Opaque
     impl<R: Ir<Type = Extern>> Ir for Vec<R> {
         type Type = Vec<Transparent>;
     }
@@ -176,21 +175,17 @@ disjoint_impls! {
         type Type = Vec<S>;
     }
 
-    impl<R: Ir<Type = Robust> + ReprC, const N: usize> Ir for [R; N] {
-        // WARN: due to https://github.com/mversic/co3/issues/13 we can't yet implement
-        // traits only for some const values (non-zero). Therefore, the user must make
-        // sure they don't have any `[Robust; 0]` types crossing the FFI boundary
-        type Type = Robust;
-    }
     impl<R: Ir<Type = Transparent>, const N: usize> Ir for [R; N] {
         type Type = Transparent;
+    }
+    impl<R: Ir<Type = Robust> + ReprC, const N: usize> Ir for [R; N] {
+        type Type = Robust;
     }
     impl<R: Ir<Type = Opaque>, const N: usize> Ir for [R; N] {
         type Type = [Opaque; N];
     }
-    // FIXME: This seems suspicious when compared with Opaque
     impl<R: Ir<Type = Extern>, const N: usize> Ir for [R; N] {
-        type Type = Transparent;
+        type Type = [Extern; N];
     }
     impl<R: Ir<Type = S>, S: Cloned, const N: usize> Ir for [R; N] {
         type Type = [S; N];
@@ -227,8 +222,10 @@ impl<R: Ir<Type: Cloned>> Cloned for &R {}
 impl Cloned for &Extern {}
 impl<R> Cloned for &[R] {}
 impl<R: Ir<Type: Cloned>> Cloned for Box<R> {}
+impl Cloned for Box<Extern> {}
 impl<R> Cloned for Vec<R> {}
 impl<const N: usize> Cloned for [Opaque; N] {}
+impl<const N: usize> Cloned for [Extern; N] {}
 impl<R: Ir<Type: Cloned>, const N: usize> Cloned for [R; N] {}
 
 impl<R> Ir for *const R {

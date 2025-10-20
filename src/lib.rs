@@ -239,6 +239,12 @@ disjoint_impls! {
     {
         type CType = [*mut R; N];
     }
+    impl<R, const N: usize> ExternC for [R; N]
+    where
+        Self: Ir<Type = [Extern; N]>,
+    {
+        type CType = [*mut external::Extern; N];
+    }
     impl<R: ExternC, S: Cloned, const N: usize> ExternC for [R; N]
     where
         Self: Ir<Type = [S; N]>,
@@ -627,6 +633,25 @@ disjoint_impls! {
                 .into_iter()
                 .map(Box::new)
                 .map(Box::into_raw)
+                .collect::<Vec<_>>()
+                .try_into();
+
+            // SAFETY: Vec<T> length is N
+            unsafe { array.unwrap_unchecked() }
+        }
+    }
+    impl<R: External, const N: usize> Encode for [R; N]
+    where
+        Self: Ir<Type = [Extern; N]>,
+    {
+        type Store = ();
+
+        fn encode<'itm>(self, (): &mut ()) -> Self::CType where Self: 'itm {
+            assert_arr_has_non_zero_len::<N>();
+
+            let array = self
+                .into_iter()
+                .map(|item| ManuallyDrop::new(item).as_extern_ptr_mut())
                 .collect::<Vec<_>>()
                 .try_into();
 
@@ -1099,7 +1124,25 @@ disjoint_impls! {
 
                     Err(FfiReturn::ArgIsNull)
                 })
-                .collect::<core::result::Result<Vec<R>, _>>()?
+                .collect::<core::result::Result<Vec<_>, _>>()?
+                .try_into();
+
+            Ok(unsafe { array.unwrap_unchecked() })
+        }
+    }
+    impl<'d, R: External + 'd, const N: usize> Decode<'d> for [R; N]
+    where
+        Self: Ir<Type = [Extern; N]>,
+    {
+        type Store = ();
+
+        unsafe fn decode<'itm: 'd>(source: Self::CType, (): &mut ()) -> Result<Self> {
+            assert_arr_has_non_zero_len::<N>();
+
+            let array = source
+                .into_iter()
+                .map(|item| unsafe { External::from_extern_ptr(item) })
+                .collect::<Vec<_>>()
                 .try_into();
 
             Ok(unsafe { array.unwrap_unchecked() })
@@ -1202,12 +1245,6 @@ disjoint_impls! {
     {
         type ReturnType = &'itm mut ExternRefMut<'a, R>;
     }
-    impl<'itm, 'a, R: External> FfiWrapperType for &'itm &'a R
-    where
-        Self: Ir<Type = &'itm &'a Extern>,
-    {
-        type ReturnType = &'itm ExternRef<'a, R>;
-    }
     impl<'itm, 'a, R: External> FfiWrapperType for &'itm &'a mut R
     where
         Self: Ir<Type = &'itm &'a mut Extern>,
@@ -1254,13 +1291,6 @@ disjoint_impls! {
         Self: Ir<Type = &'a [Robust]>,
     {
         type ReturnType = Self;
-    }
-
-    impl<'itm, R: External> FfiWrapperType for &'itm [&'itm R]
-    where
-        Self: Ir<Type = &'itm [&'itm Extern]>,
-    {
-        type ReturnType = &'itm [ExternRef<'itm, R>];
     }
 
     impl<'itm, R: External> FfiWrapperType for &'itm [&'itm mut R]
@@ -1320,13 +1350,6 @@ disjoint_impls! {
         type ReturnType = Box<<R>::ReturnType>;
     }
 
-    impl<'itm, R: External> FfiWrapperType for Box<&'itm R>
-    where
-        Self: Ir<Type = Box<&'itm Extern>>,
-    {
-        type ReturnType = Box<ExternRef<'itm, R>>;
-    }
-
     impl<'itm, R: External> FfiWrapperType for Box<&'itm mut R>
     where
         Self: Ir<Type = Box<&'itm mut Extern>>,
@@ -1354,13 +1377,6 @@ disjoint_impls! {
         Self: Ir<Type = Box<[S]>>,
     {
         type ReturnType = Box<[<R>::ReturnType]>;
-    }
-
-    impl<'itm, R: External> FfiWrapperType for Box<[&'itm R]>
-    where
-        Self: Ir<Type = Box<[&'itm Extern]>>,
-    {
-        type ReturnType = Box<[ExternRef<'itm, R>]>;
     }
 
     impl<'itm, R: External> FfiWrapperType for Box<[&'itm mut R]>
@@ -1392,13 +1408,6 @@ disjoint_impls! {
         type ReturnType = Vec<<R>::ReturnType>;
     }
 
-    impl<'itm, R: External> FfiWrapperType for Vec<&'itm R>
-    where
-        Self: Ir<Type = Vec<&'itm Extern>>,
-    {
-        type ReturnType = Vec<ExternRef<'itm, R>>;
-    }
-
     impl<'itm, R: External> FfiWrapperType for Vec<&'itm mut R>
     where
         Self: Ir<Type = Vec<&'itm mut Extern>>,
@@ -1411,13 +1420,6 @@ disjoint_impls! {
         Self: Ir<Type = [S; N]>,
     {
         type ReturnType = [<R>::ReturnType; N];
-    }
-
-    impl<'itm, R: External, const N: usize> FfiWrapperType for [&'itm R; N]
-    where
-        Self: Ir<Type = [&'itm Extern; N]>,
-    {
-        type ReturnType = [ExternRef<'itm, R>; N];
     }
 
     impl<'itm, R: External, const N: usize> FfiWrapperType for [&'itm mut R; N]
