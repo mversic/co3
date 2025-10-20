@@ -21,7 +21,15 @@ disjoint_impls! {
         fn is_valid(target: &Self::Target) -> bool;
     }
 
-    // SAFETY: Transmuting a reference to a pointer of the same type
+    // SAFETY: Transmute relation is transitive
+    unsafe impl<'a, R: Ir<Type = Transparent> + Transmute> Transmute for &'a R {
+        type Target = &'a R::Target;
+
+        fn is_valid(target: &Self::Target) -> bool {
+            R::is_valid(target)
+        }
+    }
+    // SAFETY: Idempotent transmute can't fail
     unsafe impl<R: Ir<Type = Robust> + ReprC> Transmute for &R {
         type Target = *const R;
 
@@ -29,7 +37,7 @@ disjoint_impls! {
             !target.is_null()
         }
     }
-    // SAFETY: Transmuting a reference to a pointer of the same type
+    // SAFETY: Transmuting reference to a pointer of the same type
     unsafe impl<R: Ir<Type = Opaque>> Transmute for &R {
         type Target = *const R;
 
@@ -37,15 +45,54 @@ disjoint_impls! {
             !target.is_null()
         }
     }
+
     // SAFETY: Transmute relation is transitive
-    unsafe impl<'itm, R: Ir<Type = Transparent> + Transmute> Transmute for &'itm R {
-        type Target = &'itm <R>::Target;
+    unsafe impl<'a, R: Ir<Type = Transparent> + Transmute> Transmute for &'a mut R {
+        type Target = &'a mut R::Target;
 
         fn is_valid(target: &Self::Target) -> bool {
-            <R>::is_valid(target)
+            R::is_valid(target)
         }
     }
-    // SAFETY: Transmuting a reference to a pointer of the same type
+    // SAFETY: Idempotent transmute can't fail
+    unsafe impl<R: Ir<Type = Robust> + ReprC> Transmute for &mut R {
+        type Target = *mut R;
+
+        fn is_valid(target: &Self::Target) -> bool {
+            !target.is_null()
+        }
+    }
+    // SAFETY: Transmuting reference to a pointer of the same type
+    unsafe impl<R: Ir<Type = Opaque>> Transmute for &mut R {
+        type Target = *mut R;
+
+        fn is_valid(target: &Self::Target) -> bool {
+            !target.is_null()
+        }
+    }
+
+    // SAFETY: Transmute relation is transitive
+    unsafe impl<R: Ir<Type = Transparent> + Transmute, const N: usize> Transmute for [R; N] {
+        type Target = [R::Target; N];
+
+        fn is_valid(target: &Self::Target) -> bool {
+            assert_arr_has_non_zero_len::<N>();
+            target.iter().all(|elem| R::is_valid(elem))
+        }
+    }
+
+    // SAFETY: Transmuting reference to a pointer of the same type
+    unsafe impl<R: ReprC> Transmute for Box<R>
+    where
+        R: Ir<Type = Opaque>
+    {
+        type Target = *mut R;
+
+        fn is_valid(target: &Self::Target) -> bool {
+            !target.is_null()
+        }
+    }
+    // SAFETY: Transmuting reference to a pointer of the same type
     unsafe impl<'a, R: ReprC> Transmute for &'a Box<R>
     where
         Box<R>: Ir<Type = Box<Robust>>
@@ -56,32 +103,7 @@ disjoint_impls! {
             !target.is_null()
         }
     }
-
-    // SAFETY: Transmuting a reference to a pointer of the same type
-    unsafe impl<R: Ir<Type = Robust> + ReprC> Transmute for &mut R {
-        type Target = *mut R;
-
-        fn is_valid(target: &Self::Target) -> bool {
-            !target.is_null()
-        }
-    }
-    // SAFETY: Transmuting a reference to a pointer of the same type
-    unsafe impl<R: Ir<Type = Opaque>> Transmute for &mut R {
-        type Target = *mut R;
-
-        fn is_valid(target: &Self::Target) -> bool {
-            !target.is_null()
-        }
-    }
-    // SAFETY: Transmute relation is transitive
-    unsafe impl<'itm, R: Ir<Type = Transparent> + Transmute> Transmute for &'itm mut R {
-        type Target = &'itm mut <R>::Target;
-
-        fn is_valid(target: &Self::Target) -> bool {
-            <R>::is_valid(target)
-        }
-    }
-    // SAFETY: Transmuting a reference to a pointer of the same type
+    // SAFETY: Transmuting reference to a pointer of the same type
     unsafe impl<'a, R: ReprC> Transmute for &'a mut Box<R>
     where
         Box<R>: Ir<Type = Box<Robust>>
@@ -93,28 +115,7 @@ disjoint_impls! {
         }
     }
 
-    // SAFETY: Transmuting a reference to a pointer of the same type
-    unsafe impl<R: ReprC, const N: usize> Transmute for [Box<R>; N]
-    where
-        Box<R>: Ir<Type = Box<Robust>>,
-    {
-        type Target = [*mut R; N];
-
-        fn is_valid(target: &Self::Target) -> bool {
-            target.iter().all(|elem| !elem.is_null())
-        }
-    }
-    // SAFETY: Transmute relation is transitive
-    unsafe impl<R: Ir<Type = Transparent> + Transmute, const N: usize> Transmute for [R; N] {
-        type Target = [<R>::Target; N];
-
-        fn is_valid(target: &Self::Target) -> bool {
-            assert_arr_has_non_zero_len::<N>();
-            target.iter().all(|elem| <R>::is_valid(elem))
-        }
-    }
-
-    // SAFETY: Transmuting a reference to a pointer of the same type
+    // SAFETY: Transmuting reference to a pointer of the same type
     unsafe impl<R: ReprC, const N: usize> Transmute for &[R; N]
     where
         [R; N]: Ir<Type = [Robust; N]>,
@@ -125,8 +126,7 @@ disjoint_impls! {
             !target.is_null()
         }
     }
-
-    // SAFETY: Transmuting a reference to a pointer of the same type
+    // SAFETY: Transmuting reference to a pointer of the same type
     unsafe impl<R: ReprC, const N: usize> Transmute for &mut [R; N]
     where
         [R; N]: Ir<Type = [Robust; N]>,

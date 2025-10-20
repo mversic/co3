@@ -42,28 +42,22 @@ disjoint_impls! {
         type Type;
     }
 
+    impl<R: Ir<Type = Transparent>> Ir for &R {
+        type Type = Transparent;
+    }
     impl<R: Ir<Type = Robust> + ReprC> Ir for &R {
         type Type = Transparent;
     }
     impl<R: Ir<Type = Opaque>> Ir for &R {
         type Type = Transparent;
     }
-    impl<R: Ir<Type = Transparent>> Ir for &R {
-        type Type = Transparent;
+    impl<'itm, R: Ir<Type = Extern>> Ir for &'itm R {
+        type Type = &'itm Extern;
     }
     impl<'itm, R: Ir<Type = S>, S: Cloned + 'itm> Ir for &'itm R {
         type Type = &'itm S;
     }
-    impl<'itm, R: Ir<Type = Extern>> Ir for &'itm R {
-        type Type = &'itm Extern;
-    }
 
-    impl<'itm, R: Ir<Type = Robust>> Ir for &'itm mut R {
-        type Type = Transparent;
-    }
-    impl<'itm, R: Ir<Type = Opaque>> Ir for &'itm mut R {
-        type Type = Transparent;
-    }
     impl<
         'itm,
         #[cfg(not(feature = "non_robust_ref_mut"))] R: InfallibleTransmute,
@@ -74,32 +68,32 @@ disjoint_impls! {
     {
         type Type = Transparent;
     }
+    impl<'itm, R: Ir<Type = Robust>> Ir for &'itm mut R {
+        type Type = Transparent;
+    }
+    impl<'itm, R: Ir<Type = Opaque>> Ir for &'itm mut R {
+        type Type = Transparent;
+    }
     impl<'itm, R: Ir<Type = Extern>> Ir for &'itm mut R {
         type Type = &'itm mut Extern;
     }
 
+    impl<'itm, R: Ir<Type = Transparent>> Ir for &'itm [R] {
+        type Type = &'itm [Transparent];
+    }
     impl<'itm, R: Ir<Type = Robust> + ReprC> Ir for &'itm [R] {
         type Type = &'itm [Robust];
     }
     impl<'itm, R: Ir<Type = Opaque>> Ir for &'itm [R] {
         type Type = &'itm [Opaque];
     }
-    impl<'itm, R: Ir<Type = Transparent>> Ir for &'itm [R] {
-        type Type = &'itm [Transparent];
+    impl<'itm, R: Ir<Type = Extern>> Ir for &'itm [R] {
+        type Type = &'itm [Extern];
     }
     impl<'itm, R: Ir<Type = S>, S: Cloned + 'itm> Ir for &'itm [R] {
         type Type = &'itm [S];
     }
-    impl<'itm, R: Ir<Type = Extern>> Ir for &'itm [R] {
-        type Type = &'itm [Extern];
-    }
 
-    impl<'itm, R: Ir<Type = Robust>> Ir for &'itm mut [R] {
-        type Type = &'itm mut [Robust];
-    }
-    impl<'itm, R: Ir<Type = Opaque>> Ir for &'itm mut [R] {
-        type Type = &'itm mut [Opaque];
-    }
     impl<
         'itm,
         #[cfg(not(feature = "non_robust_ref_mut"))] R: InfallibleTransmute,
@@ -110,71 +104,78 @@ disjoint_impls! {
     {
         type Type = &'itm mut [Transparent];
     }
-    impl<'itm, R: Ir<Type = Extern>> Ir for &'itm mut [R] {
-        type Type = &'itm mut [Extern];
+    impl<'itm, R: Ir<Type = Robust>> Ir for &'itm mut [R] {
+        type Type = &'itm mut [Robust];
     }
 
+    impl<R: Ir<Type = Transparent>> Ir for Box<R> {
+        type Type = Box<Transparent>;
+    }
     impl<R: Ir<Type = Robust> + ReprC> Ir for Box<R> {
         type Type = Box<Robust>;
     }
     impl<R: Ir<Type = Opaque>> Ir for Box<R> {
-        type Type = Box<Opaque>;
-    }
-    impl<R: Ir<Type = Transparent>> Ir for Box<R> {
-        type Type = Box<Transparent>;
-    }
-    impl<R: Ir<Type = S>, S: Cloned> Ir for Box<R> {
-        type Type = Box<S>;
+        type Type = Transparent;
     }
     impl<R: Ir<Type = Extern>> Ir for Box<R> {
         type Type = Box<Extern>;
     }
+    impl<R: Ir<Type = S>, S: Cloned> Ir for Box<R> {
+        type Type = Box<S>;
+    }
 
+    impl<R: Ir<Type = Transparent>> Ir for Box<[R]> {
+        type Type = Box<[Transparent]>;
+    }
     impl<R: Ir<Type = Robust> + ReprC> Ir for Box<[R]> {
         type Type = Box<[Robust]>;
     }
     impl<R: Ir<Type = Opaque>> Ir for Box<[R]> {
         type Type = Box<[Opaque]>;
     }
-    impl<R: Ir<Type = Transparent>> Ir for Box<[R]> {
-        type Type = Box<[Transparent]>;
+    impl<R: Ir<Type = Extern>> Ir for Box<[R]> {
+        type Type = Box<[Extern]>;
     }
     impl<R: Ir<Type = S>, S: Cloned> Ir for Box<[R]> {
         type Type = Box<[S]>;
     }
-    impl<R: Ir<Type = Extern>> Ir for Box<[R]> {
-        type Type = Box<[Extern]>;
-    }
 
+    impl<R: Ir<Type = Transparent>> Ir for Vec<R> {
+        type Type = Vec<Transparent>;
+    }
     impl<R: Ir<Type = Robust> + ReprC> Ir for Vec<R> {
         type Type = Vec<Robust>;
     }
     impl<R: Ir<Type = Opaque>> Ir for Vec<R> {
         type Type = Vec<Opaque>;
     }
-    impl<R: Ir<Type = Transparent>> Ir for Vec<R> {
+    // FIXME: This seems suspicious when compared with Opaque
+    impl<R: Ir<Type = Extern>> Ir for Vec<R> {
         type Type = Vec<Transparent>;
     }
     impl<R: Ir<Type = S>, S: Cloned> Ir for Vec<R> {
         type Type = Vec<S>;
     }
-    // FIXME: This seems suspicious when compared with Opaque
-    impl<R: Ir<Type = Extern>> Ir for Vec<R> {
-        type Type = Vec<Transparent>;
-    }
 
-    impl<R: Ir<Type = Opaque>, const N: usize> Ir for [R; N] {
-        type Type = [Opaque; N];
+    // TODO: due to https://github.com/mversic/co3/issues/13 we can't yet implement
+    // traits only for some const values (non-zero). Otherwise, it should be just:
+    // R: Ir<Type = Robust>,
+    impl<R: Ir<Type = Robust> + ReprC, const N: usize> Ir for [R; N] {
+        type Type = [Robust; N];
     }
+    // TODO: likewise, it should be just: R: Ir<Type = Transparent>,
     impl<R: Ir<Type = Transparent>, const N: usize> Ir for [R; N] {
         type Type = Transparent;
     }
-    impl<R: Ir<Type = S>, S: Cloned, const N: usize> Ir for [R; N] {
-        type Type = [S; N];
+    impl<R: Ir<Type = Opaque>, const N: usize> Ir for [R; N] {
+        type Type = [Opaque; N];
     }
     // FIXME: This seems suspicious when compared with Opaque
     impl<R: Ir<Type = Extern>, const N: usize> Ir for [R; N] {
         type Type = Transparent;
+    }
+    impl<R: Ir<Type = S>, S: Cloned, const N: usize> Ir for [R; N] {
+        type Type = [S; N];
     }
 
     impl<R> Ir for &Box<R> where Box<R>: Ir<Type = Box<Robust>> {
@@ -199,15 +200,9 @@ disjoint_impls! {
         type Type = Vec<Transparent>;
     }
     impl<R, const N: usize> Ir for [Box<R>; N] where Box<R>: Ir<Type = Box<Robust>> {
-        type Type = Transparent;
-    }
-
-    // TODO: due to https://github.com/mversic/co3/issues/13 we can't yet implement
-    // traits only for some const values (non-zero). Otherwise, it should be just:
-    // R: Ir<Type = Robust>,
-    impl<R: Ir<Type = Robust> + ReprC, const N: usize> Ir for [R; N] {
         type Type = [Robust; N];
     }
+
     impl<R, const N: usize> Ir for &[R; N] where [R; N]: Ir<Type = [Robust; N]> {
         type Type = Transparent;
     }

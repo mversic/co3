@@ -15,7 +15,7 @@ use derive_more::Display;
 use disjoint_impls::disjoint_impls;
 
 use crate::{
-    external::{ExternBox, ExternRef, ExternRefMut, External},
+    external::{ExternRef, ExternRefMut, External},
     ir::{Extern, Ir, Opaque, Robust, Transparent},
     local::{LocalRef, LocalSlice},
     option::{Niche, WithoutNiche},
@@ -73,6 +73,13 @@ disjoint_impls! {
     // TODO: `ExternC` cannot be implemented for `&mut [Opaque]`. Add compile test
     // If the entire slice is opaque then `ExternC` can also be implemented for `&mut [Opaque]`
 
+    impl<R: Transmute> ExternC for R
+    where
+        Self: Ir<Type = Transparent>,
+        <R>::Target: ExternC,
+    {
+        type CType = <R::Target as ExternC>::CType;
+    }
     impl<R: ReprC> ExternC for R
     where
         Self: Ir<Type = Robust>,
@@ -85,13 +92,6 @@ disjoint_impls! {
     {
         type CType = *mut Self;
     }
-    impl<R: Transmute> ExternC for R
-    where
-        Self: Ir<Type = Transparent>,
-        <R>::Target: ExternC,
-    {
-        type CType = <R::Target as ExternC>::CType;
-    }
     impl<R: Ir<Type = Extern>> ExternC for R {
         type CType = *mut external::Extern;
     }
@@ -102,12 +102,6 @@ disjoint_impls! {
     {
         type CType = *const R::CType;
     }
-    impl<'itm, R: External> ExternC for &'itm R
-    where
-        Self: Ir<Type = &'itm Extern>,
-    {
-        type CType = *const external::Extern;
-    }
 
     impl<'itm, R: External> ExternC for &'itm mut R
     where
@@ -116,6 +110,13 @@ disjoint_impls! {
         type CType = *mut external::Extern;
     }
 
+    impl<'slice, R: Transmute> ExternC for &'slice [R]
+    where
+        Self: Ir<Type = &'slice [Transparent]>,
+        &'slice [<R>::Target]: ExternC,
+    {
+        type CType = <&'slice [R::Target] as ExternC>::CType;
+    }
     impl<'a, R: ReprC> ExternC for &'a [R]
     where
         Self: Ir<Type = &'a [Robust]>,
@@ -128,13 +129,6 @@ disjoint_impls! {
     {
         type CType = RefSlice<*const R>;
     }
-    impl<'slice, R: Transmute> ExternC for &'slice [R]
-    where
-        Self: Ir<Type = &'slice [Transparent]>,
-        &'slice [<R>::Target]: ExternC,
-    {
-        type CType = <&'slice [R::Target] as ExternC>::CType;
-    }
     impl<'a, R: ExternC, S: Cloned> ExternC for &'a [R]
     where
         Self: Ir<Type = &'a [S]>,
@@ -142,12 +136,6 @@ disjoint_impls! {
         type CType = RefSlice<R::CType>;
     }
 
-    impl<'a, R: ReprC> ExternC for &'a mut [R]
-    where
-        Self: Ir<Type = &'a mut [Robust]>,
-    {
-        type CType = RefMutSlice<R>;
-    }
     impl<'slice, R: Transmute> ExternC for &'slice mut [R]
     where
         Self: Ir<Type = &'slice mut [Transparent]>,
@@ -155,7 +143,20 @@ disjoint_impls! {
     {
         type CType = <&'slice mut [R::Target] as ExternC>::CType;
     }
+    impl<'a, R: ReprC> ExternC for &'a mut [R]
+    where
+        Self: Ir<Type = &'a mut [Robust]>,
+    {
+        type CType = RefMutSlice<R>;
+    }
 
+    impl<R: Transmute> ExternC for Box<R>
+    where
+        Self: Ir<Type = Box<Transparent>>,
+        Box<<R>::Target>: ExternC,
+    {
+        type CType = <Box<R::Target> as ExternC>::CType;
+    }
     impl<R: ReprC> ExternC for Box<R>
     where
         Self: Ir<Type = Box<Robust>>,
@@ -164,24 +165,11 @@ disjoint_impls! {
         // to postpone reading the pointer (only applies if there is no ownership transfer)
         type CType = R;
     }
-    impl<R> ExternC for Box<R>
-    where
-        Self: Ir<Type = Box<Opaque>>,
-    {
-        type CType = *mut R;
-    }
     impl<R: External> ExternC for Box<R>
     where
         Self: Ir<Type = Box<Extern>>,
     {
         type CType = *mut external::Extern;
-    }
-    impl<R: Transmute> ExternC for Box<R>
-    where
-        Self: Ir<Type = Box<Transparent>>,
-        Box<<R>::Target>: ExternC,
-    {
-        type CType = <Box<R::Target> as ExternC>::CType;
     }
     impl<R: ExternC, S: Cloned> ExternC for Box<R>
     where
@@ -192,6 +180,13 @@ disjoint_impls! {
         type CType = R::CType;
     }
 
+    impl<R: Transmute> ExternC for Box<[R]>
+    where
+        Self: Ir<Type = Box<[Transparent]>>,
+        Box<[<R>::Target]>: ExternC,
+    {
+        type CType = <Box<[R::Target]> as ExternC>::CType;
+    }
     impl<R: ReprC> ExternC for Box<[R]>
     where
         Self: Ir<Type = Box<[Robust]>>,
@@ -204,13 +199,6 @@ disjoint_impls! {
     {
         type CType = RefSlice<*mut R>;
     }
-    impl<R: Transmute> ExternC for Box<[R]>
-    where
-        Self: Ir<Type = Box<[Transparent]>>,
-        Box<[<R>::Target]>: ExternC,
-    {
-        type CType = <Box<[R::Target]> as ExternC>::CType;
-    }
     impl<R: ExternC, S: Cloned> ExternC for Box<[R]>
     where
         Self: Ir<Type = Box<[S]>>,
@@ -218,6 +206,13 @@ disjoint_impls! {
         type CType = RefSlice<R::CType>;
     }
 
+    impl<R: Transmute> ExternC for Vec<R>
+    where
+        Self: Ir<Type = Vec<Transparent>>,
+        Vec<<R>::Target>: ExternC,
+    {
+        type CType = <Vec<R::Target> as ExternC>::CType;
+    }
     impl<R: ReprC> ExternC for Vec<R>
     where
         Self: Ir<Type = Vec<Robust>>,
@@ -229,13 +224,6 @@ disjoint_impls! {
         Self: Ir<Type = Vec<Opaque>>,
     {
         type CType = RefSlice<*mut R>;
-    }
-    impl<R: Transmute> ExternC for Vec<R>
-    where
-        Self: Ir<Type = Vec<Transparent>>,
-        Vec<<R>::Target>: ExternC,
-    {
-        type CType = <Vec<R::Target> as ExternC>::CType;
     }
     impl<R: ExternC, S: Cloned> ExternC for Vec<R>
     where
@@ -315,6 +303,17 @@ disjoint_impls! {
         fn encode<'itm>(self, store: &'itm mut Self::Store) -> Self::CType where Self: 'itm;
     }
 
+    impl<R: Transmute> Encode for R
+    where
+        <Self as Transmute>::Target: Encode,
+        Self: Ir<Type = Transparent>,
+    {
+        type Store = <R::Target as Encode>::Store;
+
+        fn encode<'itm>(self, store: &'itm mut Self::Store) -> Self::CType where Self: 'itm {
+            transmute_into_target(self).encode(store)
+        }
+    }
     impl<R: ReprC> Encode for R
     where
         Self: Ir<Type = Robust>,
@@ -333,17 +332,6 @@ disjoint_impls! {
 
         fn encode<'itm>(self, (): &mut ()) -> Self::CType where Self: 'itm {
             Box::into_raw(Box::new(self))
-        }
-    }
-    impl<R: Transmute> Encode for R
-    where
-        <Self as Transmute>::Target: Encode,
-        Self: Ir<Type = Transparent>,
-    {
-        type Store = <R::Target as Encode>::Store;
-
-        fn encode<'itm>(self, store: &'itm mut Self::Store) -> Self::CType where Self: 'itm {
-            transmute_into_target(self).encode(store)
         }
     }
     impl<R: Ir<Type = Extern> + External> Encode for R {
@@ -386,6 +374,17 @@ disjoint_impls! {
         }
     }
 
+    impl<'slice, R: Transmute> Encode for &'slice [R]
+    where
+        &'slice [<R>::Target]: Encode,
+        Self: Ir<Type = &'slice [Transparent]>,
+    {
+        type Store = <&'slice [R::Target] as Encode>::Store;
+
+        fn encode<'itm>(self, store: &'itm mut Self::Store) -> Self::CType where Self: 'itm {
+            transmute_into_target_ref_slice(self).encode(store)
+        }
+    }
     impl<'slice, R: ReprC> Encode for &'slice [R]
     where
         Self: Ir<Type = &'slice [Robust]>,
@@ -405,17 +404,6 @@ disjoint_impls! {
         fn encode<'itm>(self, store: &'itm mut Self::Store) -> Self::CType where Self: 'itm {
             *store = self.iter().map(core::ptr::from_ref).collect();
             RefSlice::from_slice(Some(store))
-        }
-    }
-    impl<'slice, R: Transmute> Encode for &'slice [R]
-    where
-        &'slice [<R>::Target]: Encode,
-        Self: Ir<Type = &'slice [Transparent]>,
-    {
-        type Store = <&'slice [R::Target] as Encode>::Store;
-
-        fn encode<'itm>(self, store: &'itm mut Self::Store) -> Self::CType where Self: 'itm {
-            transmute_into_target_ref_slice(self).encode(store)
         }
     }
     impl<'slice, R: Encode + Clone, S: Cloned> Encode for &'slice [R]
@@ -444,16 +432,6 @@ disjoint_impls! {
         }
     }
 
-    impl<'slice, R: ReprC> Encode for &'slice mut [R]
-    where
-        Self: Ir<Type = &'slice mut [Robust]>,
-    {
-        type Store = ();
-
-        fn encode<'itm>(self, (): &mut ()) -> Self::CType where Self: 'itm {
-            RefMutSlice::from_slice(Some(self))
-        }
-    }
     impl<'slice, R: Transmute> Encode for &'slice mut [R]
     where
         &'slice mut [<R>::Target]: Encode,
@@ -465,7 +443,28 @@ disjoint_impls! {
             transmute_into_target_slice_mut(self).encode(store)
         }
     }
+    impl<'slice, R: ReprC> Encode for &'slice mut [R]
+    where
+        Self: Ir<Type = &'slice mut [Robust]>,
+    {
+        type Store = ();
 
+        fn encode<'itm>(self, (): &mut ()) -> Self::CType where Self: 'itm {
+            RefMutSlice::from_slice(Some(self))
+        }
+    }
+
+    impl<R: Transmute> Encode for Box<R>
+    where
+        Box<<R>::Target>: Encode,
+        Self: Ir<Type = Box<Transparent>>,
+    {
+        type Store = <Box<R::Target> as Encode>::Store;
+
+        fn encode<'itm>(self, store: &'itm mut Self::Store) -> Self::CType where Self: 'itm {
+            transmute_into_target_box(self).encode(store)
+        }
+    }
     impl<R: ReprC> Encode for Box<R>
     where
         Self: Ir<Type = Box<Robust>>,
@@ -476,25 +475,14 @@ disjoint_impls! {
             *self
         }
     }
-    impl<R> Encode for Box<R>
+    impl<R: External> Encode for Box<R>
     where
-        Self: Ir<Type = Box<Opaque>>,
+        Self: Ir<Type = Box<Extern>>,
     {
         type Store = ();
 
         fn encode<'itm>(self, (): &mut ()) -> Self::CType where Self: 'itm {
-            Box::into_raw(self)
-        }
-    }
-    impl<R: Transmute> Encode for Box<R>
-    where
-        Box<<R>::Target>: Encode,
-        Self: Ir<Type = Box<Transparent>>,
-    {
-        type Store = <Box<R::Target> as Encode>::Store;
-
-        fn encode<'itm>(self, store: &'itm mut Self::Store) -> Self::CType where Self: 'itm {
-            transmute_into_target_box(self).encode(store)
+            ManuallyDrop::new(*self).as_extern_ptr_mut()
         }
     }
     impl<R: Encode + Clone, S: Cloned> Encode for Box<R>
@@ -508,6 +496,17 @@ disjoint_impls! {
         }
     }
 
+    impl<R: Transmute> Encode for Box<[R]>
+    where
+        Box<[<R>::Target]>: Encode,
+        Self: Ir<Type = Box<[Transparent]>>,
+    {
+        type Store = <Box<[R::Target]> as Encode>::Store;
+
+        fn encode<'itm>(self, store: &'itm mut Self::Store) -> Self::CType where Self: 'itm {
+            transmute_into_target_boxed_slice(self).encode(store)
+        }
+    }
     impl<R: ReprC> Encode for Box<[R]>
     where
         Self: Ir<Type = Box<[Robust]>>,
@@ -533,17 +532,6 @@ disjoint_impls! {
                 .collect();
 
             RefSlice::from_slice(Some(store))
-        }
-    }
-    impl<R: Transmute> Encode for Box<[R]>
-    where
-        Box<[<R>::Target]>: Encode,
-        Self: Ir<Type = Box<[Transparent]>>,
-    {
-        type Store = <Box<[R::Target]> as Encode>::Store;
-
-        fn encode<'itm>(self, store: &'itm mut Self::Store) -> Self::CType where Self: 'itm {
-            transmute_into_target_boxed_slice(self).encode(store)
         }
     }
     impl<R: Encode + Clone, S: Cloned> Encode for Box<[R]>
@@ -572,6 +560,17 @@ disjoint_impls! {
         }
     }
 
+    impl<R: Transmute> Encode for Vec<R>
+    where
+        Vec<<R>::Target>: Encode,
+        Self: Ir<Type = Vec<Transparent>>,
+    {
+        type Store = <Vec<R::Target> as Encode>::Store;
+
+        fn encode<'itm>(self, store: &'itm mut Self::Store) -> Self::CType where Self: 'itm {
+            transmute_into_target_vec(self).encode(store)
+        }
+    }
     impl<R: ReprC> Encode for Vec<R>
     where
         Self: Ir<Type = Vec<Robust>>,
@@ -592,17 +591,6 @@ disjoint_impls! {
         fn encode<'itm>(self, store: &'itm mut Self::Store) -> Self::CType where Self: 'itm {
             *store = self.into_iter().map(Box::new).map(Box::into_raw).collect();
             RefSlice::from_slice(Some(store))
-        }
-    }
-    impl<R: Transmute> Encode for Vec<R>
-    where
-        Vec<<R>::Target>: Encode,
-        Self: Ir<Type = Vec<Transparent>>,
-    {
-        type Store = <Vec<R::Target> as Encode>::Store;
-
-        fn encode<'itm>(self, store: &'itm mut Self::Store) -> Self::CType where Self: 'itm {
-            transmute_into_target_vec(self).encode(store)
         }
     }
     impl<R: Encode + Clone, S: Cloned> Encode for Vec<R>
@@ -628,17 +616,6 @@ disjoint_impls! {
                 .collect();
 
             RefSlice::from_slice(Some(&store.0))
-        }
-    }
-
-    impl<R: External> Encode for Box<R>
-    where
-        Self: Ir<Type = Box<Extern>>,
-    {
-        type Store = ();
-
-        fn encode<'itm>(self, (): &mut ()) -> Self::CType where Self: 'itm {
-            ManuallyDrop::new(*self).as_extern_ptr_mut()
         }
     }
 
@@ -753,6 +730,17 @@ disjoint_impls! {
         unsafe fn decode<'itm: 'd>(source: Self::CType, store: &'itm mut Self::Store) -> Result<Self>;
     }
 
+    impl<'d, R: Transmute> Decode<'d> for R
+    where
+        <Self as Transmute>::Target: Decode<'d>,
+        Self: Ir<Type = Transparent>,
+    {
+        type Store = <R::Target as Decode<'d>>::Store;
+
+        unsafe fn decode<'itm: 'd>(source: Self::CType, store: &'itm mut Self::Store) -> Result<Self> {
+            unsafe { Decode::decode(source, store).and_then(|inner| transmute_from_target(inner)) }
+        }
+    }
     impl<'d, R: ReprC + 'd> Decode<'d> for R
     where
         Self: Ir<Type = Robust>,
@@ -775,17 +763,6 @@ disjoint_impls! {
             }
 
             Ok(*unsafe { Box::from_raw(source) })
-        }
-    }
-    impl<'d, R: Transmute> Decode<'d> for R
-    where
-        <Self as Transmute>::Target: Decode<'d>,
-        Self: Ir<Type = Transparent>,
-    {
-        type Store = <R::Target as Decode<'d>>::Store;
-
-        unsafe fn decode<'itm: 'd>(source: Self::CType, store: &'itm mut Self::Store) -> Result<Self> {
-            unsafe { Decode::decode(source, store).and_then(|inner| transmute_from_target(inner)) }
         }
     }
     impl<'d, R: Ir<Type = Extern> + External> Decode<'d> for R {
@@ -821,6 +798,20 @@ disjoint_impls! {
         }
     }
 
+    impl<'slice, R: Transmute> Decode<'slice> for &'slice [R]
+    where
+        &'slice [<R>::Target]: Decode<'slice>,
+        Self: Ir<Type = &'slice [Transparent]>,
+    {
+        type Store = <&'slice [R::Target] as Decode<'slice>>::Store;
+
+        unsafe fn decode<'itm: 'slice>(source: Self::CType, store: &'itm mut Self::Store) -> Result<Self> {
+            unsafe {
+                let slice = <&[R::Target]>::decode(source, store)?;
+                transmute_from_target_ref_slice(slice)
+            }
+        }
+    }
     impl<'slice, R: ReprC> Decode<'slice> for &'slice [R]
     where
         Self: Ir<Type = &'slice [Robust]>,
@@ -856,20 +847,6 @@ disjoint_impls! {
             Ok(store)
         }
     }
-    impl<'slice, R: Transmute> Decode<'slice> for &'slice [R]
-    where
-        &'slice [<R>::Target]: Decode<'slice>,
-        Self: Ir<Type = &'slice [Transparent]>,
-    {
-        type Store = <&'slice [R::Target] as Decode<'slice>>::Store;
-
-        unsafe fn decode<'itm: 'slice>(source: Self::CType, store: &'itm mut Self::Store) -> Result<Self> {
-            unsafe {
-                let slice = <&[R::Target]>::decode(source, store)?;
-                transmute_from_target_ref_slice(slice)
-            }
-        }
-    }
     impl<'slice, R: Decode<'slice> + Clone, S: Cloned> Decode<'slice> for &'slice [R]
     where
         Self: Ir<Type = &'slice [S]>,
@@ -898,16 +875,6 @@ disjoint_impls! {
         }
     }
 
-    impl<'slice, R: ReprC> Decode<'slice> for &'slice mut [R]
-    where
-        Self: Ir<Type = &'slice mut [Robust]>,
-    {
-        type Store = ();
-
-        unsafe fn decode<'itm: 'slice>(source: Self::CType, (): &mut ()) -> Result<Self> {
-            unsafe { source.into_rust() }.ok_or(FfiReturn::ArgIsNull)
-        }
-    }
     impl<'slice, R: Transmute> Decode<'slice> for &'slice mut [R]
     where
         &'slice mut [<R>::Target]: Decode<'slice>,
@@ -922,31 +889,17 @@ disjoint_impls! {
             }
         }
     }
-
-    impl<'d, R: ReprC + 'd> Decode<'d> for Box<R>
+    impl<'slice, R: ReprC> Decode<'slice> for &'slice mut [R]
     where
-        Self: Ir<Type = Box<Robust>>,
+        Self: Ir<Type = &'slice mut [Robust]>,
     {
         type Store = ();
 
-        unsafe fn decode<'itm: 'd>(source: Self::CType, (): &mut ()) -> Result<Self> {
-            Ok(Box::new(source))
+        unsafe fn decode<'itm: 'slice>(source: Self::CType, (): &mut ()) -> Result<Self> {
+            unsafe { source.into_rust() }.ok_or(FfiReturn::ArgIsNull)
         }
     }
-    impl<'d, R: 'd> Decode<'d> for Box<R>
-    where
-        Self: Ir<Type = Box<Opaque>>,
-    {
-        type Store = ();
 
-        unsafe fn decode<'itm: 'd>(source: Self::CType, (): &mut ()) -> Result<Self> {
-            if source.is_null() {
-                return Err(FfiReturn::ArgIsNull);
-            }
-
-            Ok(unsafe { Box::from_raw(source) })
-        }
-    }
     impl<'d, R: Transmute> Decode<'d> for Box<R>
     where
         Box<<R>::Target>: Decode<'d>,
@@ -959,6 +912,16 @@ disjoint_impls! {
                 Box::<R::Target>::decode(source, store)
                     .and_then(|output| transmute_from_target_box(output))
             }
+        }
+    }
+    impl<'d, R: ReprC + 'd> Decode<'d> for Box<R>
+    where
+        Self: Ir<Type = Box<Robust>>,
+    {
+        type Store = ();
+
+        unsafe fn decode<'itm: 'd>(source: Self::CType, (): &mut ()) -> Result<Self> {
+            Ok(Box::new(source))
         }
     }
     impl<'d, R: Decode<'d> + Clone, S: Cloned> Decode<'d> for Box<R>
@@ -991,6 +954,20 @@ disjoint_impls! {
         }
     }
 
+    impl<'d, R: Transmute> Decode<'d> for Box<[R]>
+    where
+        Box<[<R>::Target]>: Decode<'d>,
+        Self: Ir<Type = Box<[Transparent]>>,
+    {
+        type Store = <Box<[R::Target]> as Decode<'d>>::Store;
+
+        unsafe fn decode<'itm: 'd>(source: Self::CType, store: &'itm mut Self::Store) -> Result<Self> {
+            unsafe {
+                <Box<[R::Target]>>::decode(source, store)
+                    .and_then(|output| transmute_from_target_boxed_slice(output))
+            }
+        }
+    }
     impl<'d, R: ReprC + 'd> Decode<'d> for Box<[R]>
     where
         Self: Ir<Type = Box<[Robust]>>,
@@ -1024,20 +1001,6 @@ disjoint_impls! {
                 .collect::<core::result::Result<_, _>>()
         }
     }
-    impl<'d, R: Transmute> Decode<'d> for Box<[R]>
-    where
-        Box<[<R>::Target]>: Decode<'d>,
-        Self: Ir<Type = Box<[Transparent]>>,
-    {
-        type Store = <Box<[R::Target]> as Decode<'d>>::Store;
-
-        unsafe fn decode<'itm: 'd>(source: Self::CType, store: &'itm mut Self::Store) -> Result<Self> {
-            unsafe {
-                <Box<[R::Target]>>::decode(source, store)
-                    .and_then(|output| transmute_from_target_boxed_slice(output))
-            }
-        }
-    }
     impl<'d, R: Decode<'d> + Clone, S: Cloned> Decode<'d> for Box<[R]>
     where
         Self: Ir<Type = Box<[S]>>,
@@ -1062,6 +1025,20 @@ disjoint_impls! {
         }
     }
 
+    impl<'d, R: Transmute> Decode<'d> for Vec<R>
+    where
+        Vec<<R>::Target>: Decode<'d>,
+        Self: Ir<Type = Vec<Transparent>>,
+    {
+        type Store = <Vec<R::Target> as Decode<'d>>::Store;
+
+        unsafe fn decode<'itm: 'd>(source: Self::CType, store: &'itm mut Self::Store) -> Result<Self> {
+            unsafe {
+                <Vec<R::Target>>::decode(source, store)
+                    .and_then(|output| transmute_from_target_vec(output))
+            }
+        }
+    }
     impl<'d, R: ReprC + 'd> Decode<'d> for Vec<R>
     where
         Self: Ir<Type = Vec<Robust>>,
@@ -1094,20 +1071,6 @@ disjoint_impls! {
                     Err(FfiReturn::ArgIsNull)
                 })
                 .collect::<core::result::Result<_, _>>()
-        }
-    }
-    impl<'d, R: Transmute> Decode<'d> for Vec<R>
-    where
-        Vec<<R>::Target>: Decode<'d>,
-        Self: Ir<Type = Vec<Transparent>>,
-    {
-        type Store = <Vec<R::Target> as Decode<'d>>::Store;
-
-        unsafe fn decode<'itm: 'd>(source: Self::CType, store: &'itm mut Self::Store) -> Result<Self> {
-            unsafe {
-                <Vec<R::Target>>::decode(source, store)
-                    .and_then(|output| transmute_from_target_vec(output))
-            }
         }
     }
     impl<'d, R: Decode<'d> + Clone, S: Cloned> Decode<'d> for Vec<R>
@@ -1242,12 +1205,6 @@ disjoint_impls! {
         type ReturnType;
     }
 
-    impl<R: ReprC> FfiWrapperType for R
-    where
-        Self: Ir<Type = Robust>,
-    {
-        type ReturnType = Self;
-    }
     impl<R: Transmute> FfiWrapperType for R
     where
         Self: Ir<Type = Transparent>,
@@ -1256,10 +1213,40 @@ disjoint_impls! {
     {
         type ReturnType = <<<R>::Target as FfiWrapperType>::ReturnType as WrapperTypeOf<Self>>::Type;
     }
+    impl<R: ReprC> FfiWrapperType for R
+    where
+        Self: Ir<Type = Robust>,
+    {
+        type ReturnType = Self;
+    }
     impl<R: Ir<Type = Extern> + External> FfiWrapperType for R {
         type ReturnType = Self;
     }
 
+    impl<'itm, 'a, R: External> FfiWrapperType for &'itm mut &'a mut R
+    where
+        Self: Ir<Type = &'itm mut &'a mut Extern>,
+    {
+        type ReturnType = &'itm mut ExternRefMut<'a, R>;
+    }
+    impl<'itm, 'a, R: External> FfiWrapperType for &'itm &'a R
+    where
+        Self: Ir<Type = &'itm &'a Extern>,
+    {
+        type ReturnType = &'itm ExternRef<'a, R>;
+    }
+    impl<'itm, 'a, R: External> FfiWrapperType for &'itm &'a mut R
+    where
+        Self: Ir<Type = &'itm &'a mut Extern>,
+    {
+        type ReturnType = &'itm ExternRefMut<'a, R>;
+    }
+    impl<'itm, 'a, R: External> FfiWrapperType for &'itm mut &'a R
+    where
+        Self: Ir<Type = &'itm mut &'a Extern>,
+    {
+        type ReturnType = &'itm mut ExternRef<'a, R>;
+    }
     impl<'itm, R: External> FfiWrapperType for &'itm R
     where
         Self: Ir<Type = &'itm Extern>,
@@ -1280,12 +1267,6 @@ disjoint_impls! {
         type ReturnType = ExternRefMut<'itm, R>;
     }
 
-    impl<'a, R: ReprC> FfiWrapperType for &'a [R]
-    where
-        Self: Ir<Type = &'a [Robust]>,
-    {
-        type ReturnType = Self;
-    }
     impl<'slice, R: Transmute> FfiWrapperType for &'slice [R]
     where
         Self: Ir<Type = &'slice [Transparent]>,
@@ -1294,6 +1275,12 @@ disjoint_impls! {
     {
         type ReturnType =
             <<&'slice [<R>::Target] as FfiWrapperType>::ReturnType as WrapperTypeOf<Self>>::Type;
+    }
+    impl<'a, R: ReprC> FfiWrapperType for &'a [R]
+    where
+        Self: Ir<Type = &'a [Robust]>,
+    {
+        type ReturnType = Self;
     }
 
     impl<'itm, R: External> FfiWrapperType for &'itm [&'itm R]
@@ -1310,12 +1297,6 @@ disjoint_impls! {
         type ReturnType = &'itm [ExternRefMut<'itm, R>];
     }
 
-    impl<'a, R: ReprC> FfiWrapperType for &'a mut [R]
-    where
-        Self: Ir<Type = &'a mut [Robust]>,
-    {
-        type ReturnType = Self;
-    }
     impl<'slice, R: Transmute> FfiWrapperType for &'slice mut [R]
     where
         Self: Ir<Type = &'slice mut [Transparent]>,
@@ -1325,6 +1306,12 @@ disjoint_impls! {
         type ReturnType =
             <<&'slice mut [<R>::Target] as FfiWrapperType>::ReturnType as WrapperTypeOf<Self>>::Type;
     }
+    impl<'a, R: ReprC> FfiWrapperType for &'a mut [R]
+    where
+        Self: Ir<Type = &'a mut [Robust]>,
+    {
+        type ReturnType = Self;
+    }
     impl<'itm, R: Ir<Type = S> + FfiWrapperType, S: Cloned> FfiWrapperType for &'itm [R]
     where
         Self: Ir<Type = &'itm [S]>,
@@ -1332,12 +1319,6 @@ disjoint_impls! {
         type ReturnType = LocalSlice<'itm, <R>::ReturnType>;
     }
 
-    impl<R: ReprC> FfiWrapperType for Box<R>
-    where
-        Self: Ir<Type = Box<Robust>>,
-    {
-        type ReturnType = Self;
-    }
     impl<R: Transmute> FfiWrapperType for Box<R>
     where
         Self: Ir<Type = Box<Transparent>>,
@@ -1347,9 +1328,15 @@ disjoint_impls! {
         type ReturnType =
             <<Box<<R>::Target> as FfiWrapperType>::ReturnType as WrapperTypeOf<Self>>::Type;
     }
+    impl<R: ReprC> FfiWrapperType for Box<R>
+    where
+        Self: Ir<Type = Box<Robust>>,
+    {
+        type ReturnType = Self;
+    }
     impl<R: External> FfiWrapperType for Box<R>
     where
-        Self: Ir<Type = ExternBox<R>>,
+        Self: Ir<Type = Box<Extern>>,
     {
         type ReturnType = R;
     }
@@ -1374,12 +1361,6 @@ disjoint_impls! {
         type ReturnType = Box<ExternRefMut<'itm, R>>;
     }
 
-    impl<R: ReprC> FfiWrapperType for Box<[R]>
-    where
-        Self: Ir<Type = Box<[Robust]>>,
-    {
-        type ReturnType = Self;
-    }
     impl<R: Transmute> FfiWrapperType for Box<[R]>
     where
         Self: Ir<Type = Box<[Transparent]>>,
@@ -1388,6 +1369,12 @@ disjoint_impls! {
     {
         type ReturnType =
             <<Box<[<R>::Target]> as FfiWrapperType>::ReturnType as WrapperTypeOf<Self>>::Type;
+    }
+    impl<R: ReprC> FfiWrapperType for Box<[R]>
+    where
+        Self: Ir<Type = Box<[Robust]>>,
+    {
+        type ReturnType = Self;
     }
     impl<R: Ir<Type = S> + FfiWrapperType, S: Cloned> FfiWrapperType for Box<[R]>
     where
@@ -1410,12 +1397,6 @@ disjoint_impls! {
         type ReturnType = Box<[ExternRefMut<'itm, R>]>;
     }
 
-    impl<R: ReprC> FfiWrapperType for Vec<R>
-    where
-        Self: Ir<Type = Vec<Robust>>,
-    {
-        type ReturnType = Self;
-    }
     impl<R: Transmute> FfiWrapperType for Vec<R>
     where
         Self: Ir<Type = Vec<Transparent>>,
@@ -1424,6 +1405,12 @@ disjoint_impls! {
     {
         type ReturnType =
             <<Vec<<R>::Target> as FfiWrapperType>::ReturnType as WrapperTypeOf<Self>>::Type;
+    }
+    impl<R: ReprC> FfiWrapperType for Vec<R>
+    where
+        Self: Ir<Type = Vec<Robust>>,
+    {
+        type ReturnType = Self;
     }
     impl<R: Ir<Type = S> + FfiWrapperType, S: Cloned> FfiWrapperType for Vec<R>
     where

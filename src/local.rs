@@ -148,23 +148,6 @@ where
     type Type = <&'itm [R] as Ir>::Type;
 }
 
-// SAFETY: `LocalRef` is transparent and `R` is transmutable into `<R>::Target`
-unsafe impl<'itm, R: Transmute> Transmute for LocalRef<'itm, R> {
-    type Target = LocalRef<'itm, <R>::Target>;
-
-    fn is_valid(target: &Self::Target) -> bool {
-        <R>::is_valid(&target.0)
-    }
-}
-// SAFETY: `LocalSlice` is transparent and `R` is transmutable into `<R>::Target`
-unsafe impl<'itm, R: Transmute> Transmute for LocalSlice<'itm, R> {
-    type Target = LocalSlice<'itm, <R>::Target>;
-
-    fn is_valid(target: &Self::Target) -> bool {
-        target.iter().all(|item| <R>::is_valid(item))
-    }
-}
-
 impl<'itm, R, T> WrapperTypeOf<&'itm R> for LocalRef<'itm, T> {
     type Type = LocalRef<'itm, R>;
 }

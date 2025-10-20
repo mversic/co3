@@ -1,4 +1,4 @@
-use crate::{ExternC, mineral};
+use crate::{mineral, ExternC, WrapperTypeOf};
 
 /// Represents the pointee on the far side of an exported opaque pointer at the FFI boundary.
 ///
@@ -35,10 +35,6 @@ pub struct Extern {
     //   its memory representation is not guaranteed to be FFI-safe
     __marker: core::marker::PhantomData<(*mut u8, core::marker::PhantomPinned)>,
 }
-
-#[derive(Clone, Copy)]
-#[repr(transparent)]
-pub struct ExternBox<T>(*mut Extern, core::marker::PhantomData<T>);
 
 #[derive(Clone, Copy)]
 #[repr(transparent)]
@@ -84,16 +80,6 @@ impl<T> core::ops::DerefMut for ExternRefMut<'_, T> {
 }
 
 mineral! {
-    unsafe impl<R> Transparent for ExternBox<R> {
-        type Target = *mut Extern;
-
-        const NICHE_VALUE: <Self as ExternC>::CType = core::ptr::null_mut();
-        fn is_valid(target: &Self::Target) -> bool {
-            !target.is_null()
-        }
-    }
-}
-mineral! {
     unsafe impl<R> Transparent for ExternRef<'_, R> {
         type Target = *const Extern;
 
@@ -112,4 +98,11 @@ mineral! {
             !target.is_null()
         }
     }
+}
+
+impl<'a, R: 'a, T> WrapperTypeOf<*const R> for ExternRef<'a, T> {
+    type Type = ExternRef<'a, R>;
+}
+impl<'a, R: 'a, T> WrapperTypeOf<*mut R> for ExternRefMut<'a, T> {
+    type Type = ExternRefMut<'a, R>;
 }

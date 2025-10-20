@@ -48,6 +48,13 @@ disjoint_impls! {
         type OutPtr: ReprC;
     }
 
+    impl<R: Transmute> OutPtr for R
+    where
+        Self: Ir<Type = Transparent>,
+        <R>::Target: OutPtr,
+    {
+        type OutPtr = <R::Target as OutPtr>::OutPtr;
+    }
     impl<R: ReprC> OutPtr for R
     where
         Self: Ir<Type = Robust>,
@@ -60,13 +67,6 @@ disjoint_impls! {
     {
         type OutPtr = Self::CType;
     }
-    impl<R: Transmute> OutPtr for R
-    where
-        Self: Ir<Type = Transparent>,
-        <R>::Target: OutPtr,
-    {
-        type OutPtr = <R::Target as OutPtr>::OutPtr;
-    }
     impl<R: Ir<Type = Extern> + External> OutPtr for R {
         type OutPtr = Self::CType;
     }
@@ -78,6 +78,13 @@ disjoint_impls! {
         type OutPtr = R::CType;
     }
 
+    impl<'slice, R: Transmute> OutPtr for &'slice [R]
+    where
+        Self: Ir<Type = &'slice [Transparent]>,
+        &'slice [<R>::Target]: OutPtr,
+    {
+        type OutPtr = <&'slice [R::Target] as OutPtr>::OutPtr;
+    }
     impl<'a, R: ReprC> OutPtr for &'a [R]
     where
         Self: Ir<Type = &'a [Robust]>,
@@ -90,13 +97,6 @@ disjoint_impls! {
     {
         type OutPtr = OutBoxedSlice<*const R>;
     }
-    impl<'slice, R: Transmute> OutPtr for &'slice [R]
-    where
-        Self: Ir<Type = &'slice [Transparent]>,
-        &'slice [<R>::Target]: OutPtr,
-    {
-        type OutPtr = <&'slice [R::Target] as OutPtr>::OutPtr;
-    }
     impl<'a, R: Ir<Type = S> + NonLocal, S: Cloned> OutPtr for &'a [R]
     where
         Self: Ir<Type = &'a [S]>,
@@ -104,12 +104,6 @@ disjoint_impls! {
         type OutPtr = OutBoxedSlice<R::CType>;
     }
 
-    impl<'a, R: ReprC> OutPtr for &'a mut [R]
-    where
-        Self: Ir<Type = &'a mut [Robust]>,
-    {
-        type OutPtr = Self::CType;
-    }
     impl<'slice, R: Transmute> OutPtr for &'slice mut [R]
     where
         Self: Ir<Type = &'slice mut [Transparent]>,
@@ -117,25 +111,25 @@ disjoint_impls! {
     {
         type OutPtr = <&'slice mut [R::Target] as OutPtr>::OutPtr;
     }
-
-    impl<R: ReprC> OutPtr for Box<R>
+    impl<'a, R: ReprC> OutPtr for &'a mut [R]
     where
-        Self: Ir<Type = Box<Robust>>,
-    {
-        type OutPtr = R;
-    }
-    impl<R> OutPtr for Box<R>
-    where
-        Self: Ir<Type = Box<Opaque>>,
+        Self: Ir<Type = &'a mut [Robust]>,
     {
         type OutPtr = Self::CType;
     }
+
     impl<R: Transmute> OutPtr for Box<R>
     where
         Self: Ir<Type = Box<Transparent>>,
         Box<<R>::Target>: OutPtr,
     {
         type OutPtr = <Box<R::Target> as OutPtr>::OutPtr;
+    }
+    impl<R: ReprC> OutPtr for Box<R>
+    where
+        Self: Ir<Type = Box<Robust>>,
+    {
+        type OutPtr = R;
     }
     impl<R: External> OutPtr for Box<R>
     where
@@ -150,6 +144,13 @@ disjoint_impls! {
         type OutPtr = R::CType;
     }
 
+    impl<R: Transmute> OutPtr for Box<[R]>
+    where
+        Self: Ir<Type = Box<[Transparent]>>,
+        Box<[<R>::Target]>: OutPtr,
+    {
+        type OutPtr = <Box<[R::Target]> as OutPtr>::OutPtr;
+    }
     impl<R: ReprC> OutPtr for Box<[R]>
     where
         Self: Ir<Type = Box<[Robust]>>,
@@ -162,13 +163,6 @@ disjoint_impls! {
     {
         type OutPtr = OutBoxedSlice<*mut R>;
     }
-    impl<R: Transmute> OutPtr for Box<[R]>
-    where
-        Self: Ir<Type = Box<[Transparent]>>,
-        Box<[<R>::Target]>: OutPtr,
-    {
-        type OutPtr = <Box<[R::Target]> as OutPtr>::OutPtr;
-    }
     impl<R: Ir<Type = S> + NonLocal, S: Cloned> OutPtr for Box<[R]>
     where
         Self: Ir<Type = Box<[S]>>,
@@ -176,6 +170,13 @@ disjoint_impls! {
         type OutPtr = OutBoxedSlice<<R>::CType>;
     }
 
+    impl<R: Transmute> OutPtr for Vec<R>
+    where
+        Self: Ir<Type = Vec<Transparent>>,
+        Vec<<R>::Target>: OutPtr,
+    {
+        type OutPtr = <Vec<R::Target> as OutPtr>::OutPtr;
+    }
     impl<R: ReprC> OutPtr for Vec<R>
     where
         Self: Ir<Type = Vec<Robust>>,
@@ -187,13 +188,6 @@ disjoint_impls! {
         Self: Ir<Type = Vec<Opaque>>,
     {
         type OutPtr = OutBoxedSlice<*mut R>;
-    }
-    impl<R: Transmute> OutPtr for Vec<R>
-    where
-        Self: Ir<Type = Vec<Transparent>>,
-        Vec<<R>::Target>: OutPtr,
-    {
-        type OutPtr = <Vec<R::Target> as OutPtr>::OutPtr;
     }
     impl<R: Ir<Type = S> + NonLocal, S: Cloned> OutPtr for Vec<R>
     where
@@ -262,6 +256,19 @@ disjoint_impls! {
         unsafe fn write_out(self, out_ptr: *mut Self::OutPtr);
     }
 
+    impl<R: Transmute> OutPtrWrite for R
+    where
+        Self: Ir<Type = Transparent>,
+        <R>::Target: OutPtrWrite,
+    {
+        unsafe fn write_out(self, out_ptr: *mut Self::OutPtr) {
+            let transmuted = transmute_into_target(self);
+
+            unsafe {
+                OutPtrWrite::write_out(transmuted, out_ptr)
+            }
+        }
+    }
     impl<R: ReprC> OutPtrWrite for R
     where
         Self: Ir<Type = Robust>,
@@ -280,19 +287,6 @@ disjoint_impls! {
             unsafe { out_ptr.write(encoded); }
         }
     }
-    impl<R: Transmute> OutPtrWrite for R
-    where
-        Self: Ir<Type = Transparent>,
-        <R>::Target: OutPtrWrite,
-    {
-        unsafe fn write_out(self, out_ptr: *mut Self::OutPtr) {
-            let transmuted = transmute_into_target(self);
-
-            unsafe {
-                OutPtrWrite::write_out(transmuted, out_ptr)
-            }
-        }
-    }
 
     impl<'itm, R: Ir<Type = S> + NonLocal + Encode, S: Cloned> OutPtrWrite for &'itm R
     where
@@ -307,6 +301,19 @@ disjoint_impls! {
         }
     }
 
+    impl<'slice, R: Transmute> OutPtrWrite for &'slice [R]
+    where
+        Self: Ir<Type = &'slice [Transparent]>,
+        &'slice [<R>::Target]: OutPtrWrite,
+    {
+        unsafe fn write_out(self, out_ptr: *mut Self::OutPtr) {
+            let transmuted = transmute_into_target_ref_slice(self);
+
+            unsafe {
+                OutPtrWrite::write_out(transmuted, out_ptr);
+            }
+        }
+    }
     impl<'a, R: ReprC> OutPtrWrite for &'a [R]
     where
         Self: Ir<Type = &'a [Robust]>,
@@ -331,19 +338,6 @@ disjoint_impls! {
             }
         }
     }
-    impl<'slice, R: Transmute> OutPtrWrite for &'slice [R]
-    where
-        Self: Ir<Type = &'slice [Transparent]>,
-        &'slice [<R>::Target]: OutPtrWrite,
-    {
-        unsafe fn write_out(self, out_ptr: *mut Self::OutPtr) {
-            let transmuted = transmute_into_target_ref_slice(self);
-
-            unsafe {
-                OutPtrWrite::write_out(transmuted, out_ptr);
-            }
-        }
-    }
     impl<'itm, R: Ir<Type = S> + NonLocal + Encode, S: Cloned> OutPtrWrite for &'itm [R]
     where
         Self: Ir<Type = &'itm [S]>,
@@ -360,15 +354,6 @@ disjoint_impls! {
         }
     }
 
-    impl<'a, R: ReprC> OutPtrWrite for &'a mut [R]
-    where
-        Self: Ir<Type = &'a mut [Robust]>,
-    {
-        unsafe fn write_out(self, out_ptr: *mut Self::OutPtr) {
-            let encoded = self.encode(&mut ());
-            unsafe { out_ptr.write(encoded); }
-        }
-    }
     impl<'slice, R: Transmute> OutPtrWrite for &'slice mut [R]
     where
         Self: Ir<Type = &'slice mut [Transparent]>,
@@ -382,26 +367,16 @@ disjoint_impls! {
             }
         }
     }
-
-    impl<R: ReprC> OutPtrWrite for Box<R>
+    impl<'a, R: ReprC> OutPtrWrite for &'a mut [R]
     where
-        Self: Ir<Type = Box<Robust>>,
-    {
-        unsafe fn write_out(self, out_ptr: *mut Self::OutPtr) {
-            unsafe {
-                out_ptr.write(*self);
-            }
-        }
-    }
-    impl<R> OutPtrWrite for Box<R>
-    where
-        Self: Ir<Type = Box<Opaque>>,
+        Self: Ir<Type = &'a mut [Robust]>,
     {
         unsafe fn write_out(self, out_ptr: *mut Self::OutPtr) {
             let encoded = self.encode(&mut ());
             unsafe { out_ptr.write(encoded); }
         }
     }
+
     impl<R: Transmute> OutPtrWrite for Box<R>
     where
         Self: Ir<Type = Box<Transparent>>,
@@ -412,6 +387,16 @@ disjoint_impls! {
 
             unsafe {
                 OutPtrWrite::write_out(transmuted, out_ptr);
+            }
+        }
+    }
+    impl<R: ReprC> OutPtrWrite for Box<R>
+    where
+        Self: Ir<Type = Box<Robust>>,
+    {
+        unsafe fn write_out(self, out_ptr: *mut Self::OutPtr) {
+            unsafe {
+                out_ptr.write(*self);
             }
         }
     }
@@ -427,6 +412,19 @@ disjoint_impls! {
         }
     }
 
+    impl<R: Transmute> OutPtrWrite for Box<[R]>
+    where
+        Self: Ir<Type = Box<[Transparent]>>,
+        Box<[<R>::Target]>: OutPtrWrite,
+    {
+        unsafe fn write_out(self, out_ptr: *mut Self::OutPtr) {
+            let transmuted = transmute_into_target_boxed_slice(self);
+
+            unsafe {
+                OutPtrWrite::write_out(transmuted, out_ptr);
+            }
+        }
+    }
     impl<R: ReprC> OutPtrWrite for Box<[R]>
     where
         Self: Ir<Type = Box<[Robust]>>,
@@ -453,19 +451,6 @@ disjoint_impls! {
             }
         }
     }
-    impl<R: Transmute> OutPtrWrite for Box<[R]>
-    where
-        Self: Ir<Type = Box<[Transparent]>>,
-        Box<[<R>::Target]>: OutPtrWrite,
-    {
-        unsafe fn write_out(self, out_ptr: *mut Self::OutPtr) {
-            let transmuted = transmute_into_target_boxed_slice(self);
-
-            unsafe {
-                OutPtrWrite::write_out(transmuted, out_ptr);
-            }
-        }
-    }
     impl<R: Ir<Type = S> + NonLocal + Encode, S: Cloned> OutPtrWrite for Box<[R]>
     where
         Self: Ir<Type = Box<[S]>>,
@@ -482,6 +467,19 @@ disjoint_impls! {
         }
     }
 
+    impl<R: Transmute> OutPtrWrite for Vec<R>
+    where
+        Self: Ir<Type = Vec<Transparent>>,
+        Vec<<R>::Target>: OutPtrWrite,
+    {
+        unsafe fn write_out(self, out_ptr: *mut Self::OutPtr) {
+            let transmuted = transmute_into_target_vec(self);
+
+            unsafe {
+                OutPtrWrite::write_out(transmuted, out_ptr);
+            }
+        }
+    }
     impl<R: ReprC> OutPtrWrite for Vec<R>
     where
         Self: Ir<Type = Vec<Robust>>,
@@ -523,20 +521,6 @@ disjoint_impls! {
 
             unsafe {
                 out_ptr.write(output);
-            }
-        }
-    }
-
-    impl<R: Transmute> OutPtrWrite for Vec<R>
-    where
-        Self: Ir<Type = Vec<Transparent>>,
-        Vec<<R>::Target>: OutPtrWrite,
-    {
-        unsafe fn write_out(self, out_ptr: *mut Self::OutPtr) {
-            let transmuted = transmute_into_target_vec(self);
-
-            unsafe {
-                OutPtrWrite::write_out(transmuted, out_ptr);
             }
         }
     }
@@ -638,14 +622,6 @@ disjoint_impls! {
         unsafe fn try_read_out(out_ptr: Self::OutPtr) -> Result<Self>;
     }
 
-    impl<R: ReprC> OutPtrRead for R
-    where
-        Self: Ir<Type = Robust>,
-    {
-        unsafe fn try_read_out(out_ptr: Self::OutPtr) -> Result<Self> {
-            unsafe { Decode::decode(out_ptr, &mut ()) }
-        }
-    }
     impl<R: Transmute> OutPtrRead for R
     where
         Self: Ir<Type = Transparent>,
@@ -657,20 +633,20 @@ disjoint_impls! {
             }
         }
     }
+    impl<R: ReprC> OutPtrRead for R
+    where
+        Self: Ir<Type = Robust>,
+    {
+        unsafe fn try_read_out(out_ptr: Self::OutPtr) -> Result<Self> {
+            unsafe { Decode::decode(out_ptr, &mut ()) }
+        }
+    }
     impl<R: Ir<Type = Extern> + External> OutPtrRead for R {
         unsafe fn try_read_out(out_ptr: Self::OutPtr) -> Result<Self> {
             unsafe { Decode::decode(out_ptr, &mut ()) }
         }
     }
 
-    impl<'a, R: ReprC> OutPtrRead for &'a [R]
-    where
-        Self: Ir<Type = &'a [Robust]>,
-    {
-        unsafe fn try_read_out(out_ptr: Self::OutPtr) -> Result<Self> {
-            unsafe { out_ptr.into_rust() }.ok_or(FfiReturn::ArgIsNull)
-        }
-    }
     impl<'d, R: Transmute> OutPtrRead for &'d [R]
     where
         Self: Ir<Type = &'d [Transparent]>,
@@ -683,15 +659,15 @@ disjoint_impls! {
             }
         }
     }
-
-    impl<'a, R: ReprC> OutPtrRead for &'a mut [R]
+    impl<'a, R: ReprC> OutPtrRead for &'a [R]
     where
-        Self: Ir<Type = &'a mut [Robust]>,
+        Self: Ir<Type = &'a [Robust]>,
     {
         unsafe fn try_read_out(out_ptr: Self::OutPtr) -> Result<Self> {
             unsafe { out_ptr.into_rust() }.ok_or(FfiReturn::ArgIsNull)
         }
     }
+
     impl<'d, R: Transmute> OutPtrRead for &'d mut [R]
     where
         Self: Ir<Type = &'d mut [Transparent]>,
@@ -704,7 +680,27 @@ disjoint_impls! {
             }
         }
     }
+    impl<'a, R: ReprC> OutPtrRead for &'a mut [R]
+    where
+        Self: Ir<Type = &'a mut [Robust]>,
+    {
+        unsafe fn try_read_out(out_ptr: Self::OutPtr) -> Result<Self> {
+            unsafe { out_ptr.into_rust() }.ok_or(FfiReturn::ArgIsNull)
+        }
+    }
 
+    impl<R: Transmute> OutPtrRead for Box<R>
+    where
+        Self: Ir<Type = Box<Transparent>>,
+        Box<<R>::Target>: OutPtrRead,
+    {
+        unsafe fn try_read_out(out_ptr: Self::OutPtr) -> Result<Self> {
+            unsafe {
+                Box::<R::Target>::try_read_out(out_ptr)
+                    .and_then(|output| transmute_from_target_box(output))
+            }
+        }
+    }
     impl<R: ReprC> OutPtrRead for Box<R>
     where
         Self: Ir<Type = Box<Robust>>,
@@ -721,18 +717,6 @@ disjoint_impls! {
             unsafe { Decode::decode(out_ptr, &mut ()) }
         }
     }
-    impl<R: Transmute> OutPtrRead for Box<R>
-    where
-        Self: Ir<Type = Box<Transparent>>,
-        Box<<R>::Target>: OutPtrRead,
-    {
-        unsafe fn try_read_out(out_ptr: Self::OutPtr) -> Result<Self> {
-            unsafe {
-                Box::<R::Target>::try_read_out(out_ptr)
-                    .and_then(|output| transmute_from_target_box(output))
-            }
-        }
-    }
     impl<'d, R: Ir<Type = S> + NonLocal + Decode<'d> + 'd, S: Cloned> OutPtrRead for Box<R>
     where
         Self: Ir<Type = Box<S>>,
@@ -745,6 +729,18 @@ disjoint_impls! {
         }
     }
 
+    impl<R: Transmute> OutPtrRead for Box<[R]>
+    where
+        Self: Ir<Type = Box<[Transparent]>>,
+        Box<[<R>::Target]>: OutPtrRead,
+    {
+        unsafe fn try_read_out(out_ptr: Self::OutPtr) -> Result<Self> {
+            unsafe {
+                <Box<[R::Target]>>::try_read_out(out_ptr)
+                    .and_then(|output| transmute_from_target_boxed_slice(output))
+            }
+        }
+    }
     impl<R: ReprC> OutPtrRead for Box<[R]>
     where
         Self: Ir<Type = Box<[Robust]>>,
@@ -759,18 +755,6 @@ disjoint_impls! {
                 }
 
                 res
-            }
-        }
-    }
-    impl<R: Transmute> OutPtrRead for Box<[R]>
-    where
-        Self: Ir<Type = Box<[Transparent]>>,
-        Box<[<R>::Target]>: OutPtrRead,
-    {
-        unsafe fn try_read_out(out_ptr: Self::OutPtr) -> Result<Self> {
-            unsafe {
-                <Box<[R::Target]>>::try_read_out(out_ptr)
-                    .and_then(|output| transmute_from_target_boxed_slice(output))
             }
         }
     }
@@ -797,6 +781,18 @@ disjoint_impls! {
         }
     }
 
+    impl<R: Transmute> OutPtrRead for Vec<R>
+    where
+        Self: Ir<Type = Vec<Transparent>>,
+        Vec<<R>::Target>: OutPtrRead,
+    {
+        unsafe fn try_read_out(out_ptr: Self::OutPtr) -> Result<Self> {
+            unsafe {
+                <Vec<R::Target>>::try_read_out(out_ptr)
+                    .and_then(|output| transmute_from_target_vec(output))
+            }
+        }
+    }
     impl<R: ReprC> OutPtrRead for Vec<R>
     where
         Self: Ir<Type = Vec<Robust>>,
@@ -811,18 +807,6 @@ disjoint_impls! {
                 }
 
                 res
-            }
-        }
-    }
-    impl<R: Transmute> OutPtrRead for Vec<R>
-    where
-        Self: Ir<Type = Vec<Transparent>>,
-        Vec<<R>::Target>: OutPtrRead,
-    {
-        unsafe fn try_read_out(out_ptr: Self::OutPtr) -> Result<Self> {
-            unsafe {
-                <Vec<R::Target>>::try_read_out(out_ptr)
-                    .and_then(|output| transmute_from_target_vec(output))
             }
         }
     }

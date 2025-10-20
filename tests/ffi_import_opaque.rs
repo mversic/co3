@@ -121,7 +121,7 @@ fn take_and_return_opaque_boxed_ref() {
 
     let opaque: Box<OpaqueStruct> = Box::new(make_new_opaque(name, params));
     let opaque_ref: ExternRef<OpaqueStruct> = freestanding_returns_opaque_item(&opaque);
-    compare_opaque_eq::<_, ffi::ExternOpaqueStruct>(&opaque, &opaque_ref);
+    compare_opaque_eq::<_, ffi::ExternOpaqueStruct>(&*opaque, &opaque_ref);
 }
 
 #[test]
