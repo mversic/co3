@@ -1,10 +1,12 @@
 use core::ptr::addr_of_mut;
 
 use super::*;
+#[cfg(feature = "owned_types")]
+#[cfg(feature = "owned_as_ref")]
 use crate::transmute::{
-    transmute_from_target_box, transmute_from_target_boxed_slice, transmute_from_target_ref_slice,
-    transmute_from_target_slice_mut, transmute_from_target_vec,
+    transmute_from_target_box, transmute_from_target_boxed_slice, transmute_from_target_vec,
 };
+use crate::transmute::{transmute_from_target_ref_slice, transmute_from_target_slice_mut};
 
 disjoint_impls! {
     /// Marker trait indicating that [`Encode::encode`] and [`Decode::decode`] don't
@@ -139,6 +141,8 @@ disjoint_impls! {
     {
         type OutPtr = <Box<R::Target> as OutPtr>::OutPtr;
     }
+    #[cfg(feature = "owned_types")]
+    #[cfg(feature = "owned_as_ref")]
     impl<R: ReprC> OutPtr for Box<R>
     where
         Self: Ir<Type = Box<Robust>>,
@@ -151,6 +155,8 @@ disjoint_impls! {
     {
         type OutPtr = Self::CType;
     }
+    #[cfg(feature = "owned_types")]
+    #[cfg(feature = "owned_as_ref")]
     impl<R: Ir<Type = S> + NonLocal, S: Cloned> OutPtr for Box<R>
     where
         Self: Ir<Type = Box<S>>,
@@ -158,6 +164,7 @@ disjoint_impls! {
         type OutPtr = R::CType;
     }
 
+    #[cfg(feature = "owned_types")]
     impl<R: Transmute> OutPtr for Box<[R]>
     where
         Self: Ir<Type = Box<[Transparent]>>,
@@ -165,18 +172,24 @@ disjoint_impls! {
     {
         type OutPtr = <Box<[R::Target]> as OutPtr>::OutPtr;
     }
+    #[cfg(feature = "owned_types")]
+    #[cfg(feature = "owned_as_ref")]
     impl<R: ReprC> OutPtr for Box<[R]>
     where
         Self: Ir<Type = Box<[Robust]>>,
     {
         type OutPtr = OutBoxedSlice<R>;
     }
+    #[cfg(feature = "owned_types")]
+    #[cfg(feature = "owned_as_ref")]
     impl<R> OutPtr for Box<[R]>
     where
         Self: Ir<Type = Box<[Opaque]>>,
     {
         type OutPtr = OutBoxedSlice<*mut R>;
     }
+    #[cfg(feature = "owned_types")]
+    #[cfg(feature = "owned_as_ref")]
     impl<R: Ir<Type = S> + NonLocal, S: Cloned> OutPtr for Box<[R]>
     where
         Self: Ir<Type = Box<[S]>>,
@@ -184,6 +197,7 @@ disjoint_impls! {
         type OutPtr = OutBoxedSlice<<R>::CType>;
     }
 
+    #[cfg(feature = "owned_types")]
     impl<R: Transmute> OutPtr for Vec<R>
     where
         Self: Ir<Type = Vec<Transparent>>,
@@ -191,18 +205,24 @@ disjoint_impls! {
     {
         type OutPtr = <Vec<R::Target> as OutPtr>::OutPtr;
     }
+    #[cfg(feature = "owned_types")]
+    #[cfg(feature = "owned_as_ref")]
     impl<R: ReprC> OutPtr for Vec<R>
     where
         Self: Ir<Type = Vec<Robust>>,
     {
         type OutPtr = OutBoxedSlice<R>;
     }
+    #[cfg(feature = "owned_types")]
+    #[cfg(feature = "owned_as_ref")]
     impl<R> OutPtr for Vec<R>
     where
         Self: Ir<Type = Vec<Opaque>>,
     {
         type OutPtr = OutBoxedSlice<*mut R>;
     }
+    #[cfg(feature = "owned_types")]
+    #[cfg(feature = "owned_as_ref")]
     impl<R: Ir<Type = S> + NonLocal, S: Cloned> OutPtr for Vec<R>
     where
         Self: Ir<Type = Vec<S>>,
@@ -403,6 +423,8 @@ disjoint_impls! {
             }
         }
     }
+    #[cfg(feature = "owned_types")]
+    #[cfg(feature = "owned_as_ref")]
     impl<R: ReprC> OutPtrWrite for Box<R>
     where
         Self: Ir<Type = Box<Robust>>,
@@ -413,6 +435,8 @@ disjoint_impls! {
             }
         }
     }
+    #[cfg(feature = "owned_types")]
+    #[cfg(feature = "owned_as_ref")]
     impl<R: Ir<Type = S> + NonLocal + Encode, S: Cloned> OutPtrWrite for Box<R>
     where
         Self: Ir<Type = Box<S>>,
@@ -425,6 +449,7 @@ disjoint_impls! {
         }
     }
 
+    #[cfg(feature = "owned_types")]
     impl<R: Transmute> OutPtrWrite for Box<[R]>
     where
         Self: Ir<Type = Box<[Transparent]>>,
@@ -438,6 +463,8 @@ disjoint_impls! {
             }
         }
     }
+    #[cfg(feature = "owned_types")]
+    #[cfg(feature = "owned_as_ref")]
     impl<R: ReprC> OutPtrWrite for Box<[R]>
     where
         Self: Ir<Type = Box<[Robust]>>,
@@ -451,6 +478,8 @@ disjoint_impls! {
             }
         }
     }
+    #[cfg(feature = "owned_types")]
+    #[cfg(feature = "owned_as_ref")]
     impl<R> OutPtrWrite for Box<[R]>
     where
         Self: Ir<Type = Box<[Opaque]>>,
@@ -464,6 +493,8 @@ disjoint_impls! {
             }
         }
     }
+    #[cfg(feature = "owned_types")]
+    #[cfg(feature = "owned_as_ref")]
     impl<R: Ir<Type = S> + NonLocal + Encode, S: Cloned> OutPtrWrite for Box<[R]>
     where
         Self: Ir<Type = Box<[S]>>,
@@ -480,6 +511,7 @@ disjoint_impls! {
         }
     }
 
+    #[cfg(feature = "owned_types")]
     impl<R: Transmute> OutPtrWrite for Vec<R>
     where
         Self: Ir<Type = Vec<Transparent>>,
@@ -493,6 +525,8 @@ disjoint_impls! {
             }
         }
     }
+    #[cfg(feature = "owned_types")]
+    #[cfg(feature = "owned_as_ref")]
     impl<R: ReprC> OutPtrWrite for Vec<R>
     where
         Self: Ir<Type = Vec<Robust>>,
@@ -507,6 +541,8 @@ disjoint_impls! {
             }
         }
     }
+    #[cfg(feature = "owned_types")]
+    #[cfg(feature = "owned_as_ref")]
     impl<R> OutPtrWrite for Vec<R>
     where
         Self: Ir<Type = Vec<Opaque>>,
@@ -522,6 +558,8 @@ disjoint_impls! {
             }
         }
     }
+    #[cfg(feature = "owned_types")]
+    #[cfg(feature = "owned_as_ref")]
     impl<R: Ir<Type = S> + NonLocal + Encode, S: Cloned> OutPtrWrite for Vec<R>
     where
         Self: Ir<Type = Vec<S>>,
@@ -746,6 +784,8 @@ disjoint_impls! {
             }
         }
     }
+    #[cfg(feature = "owned_types")]
+    #[cfg(feature = "owned_as_ref")]
     impl<R: ReprC> OutPtrRead for Box<R>
     where
         Self: Ir<Type = Box<Robust>>,
@@ -762,6 +802,8 @@ disjoint_impls! {
             unsafe { Decode::decode(out_ptr, &mut ()) }
         }
     }
+    #[cfg(feature = "owned_types")]
+    #[cfg(feature = "owned_as_ref")]
     impl<'d, R: Ir<Type = S> + NonLocal + Decode<'d> + 'd, S: Cloned> OutPtrRead for Box<R>
     where
         Self: Ir<Type = Box<S>>,
@@ -777,6 +819,7 @@ disjoint_impls! {
         }
     }
 
+    #[cfg(feature = "owned_types")]
     impl<R: Transmute> OutPtrRead for Box<[R]>
     where
         Self: Ir<Type = Box<[Transparent]>>,
@@ -789,6 +832,8 @@ disjoint_impls! {
             }
         }
     }
+    #[cfg(feature = "owned_types")]
+    #[cfg(feature = "owned_as_ref")]
     impl<R: ReprC> OutPtrRead for Box<[R]>
     where
         Self: Ir<Type = Box<[Robust]>>,
@@ -807,6 +852,8 @@ disjoint_impls! {
             }
         }
     }
+    #[cfg(feature = "owned_types")]
+    #[cfg(feature = "owned_as_ref")]
     impl<'d, R: Ir<Type = S> + NonLocal + 'd, S: Cloned + 'd> OutPtrRead for Box<[R]>
     where
         Self: Ir<Type = Box<[S]>> + Decode<'d, CType = RefSlice<<R as ExternC>::CType>>,
@@ -835,6 +882,7 @@ disjoint_impls! {
         }
     }
 
+    #[cfg(feature = "owned_types")]
     impl<R: Transmute> OutPtrRead for Vec<R>
     where
         Self: Ir<Type = Vec<Transparent>>,
@@ -847,6 +895,8 @@ disjoint_impls! {
             }
         }
     }
+    #[cfg(feature = "owned_types")]
+    #[cfg(feature = "owned_as_ref")]
     impl<R: ReprC> OutPtrRead for Vec<R>
     where
         Self: Ir<Type = Vec<Robust>>,
@@ -865,6 +915,8 @@ disjoint_impls! {
             }
         }
     }
+    #[cfg(feature = "owned_types")]
+    #[cfg(feature = "owned_as_ref")]
     impl<'d, R: Ir<Type = S> + NonLocal + 'd, S: Cloned> OutPtrRead for Vec<R>
     where
         Self: Ir<Type = Vec<S>> + Decode<'d, CType = RefSlice<<R as ExternC>::CType>>,

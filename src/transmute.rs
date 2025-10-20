@@ -158,9 +158,13 @@ pub(super) fn transmute_from_target<R: Transmute>(source: R::Target) -> Result<R
     Ok(ManuallyDrop::into_inner(unsafe { transmute_helper.source }))
 }
 
+#[cfg(feature = "owned_types")]
+#[cfg(feature = "owned_as_ref")]
 pub(super) fn transmute_into_target_box<R: Transmute>(source: Box<R>) -> Box<R::Target> {
     unsafe { Box::from_raw(Box::into_raw(source).cast::<R::Target>()) }
 }
+#[cfg(feature = "owned_types")]
+#[cfg(feature = "owned_as_ref")]
 pub(super) fn transmute_from_target_box<R: Transmute>(source: Box<R::Target>) -> Result<Box<R>> {
     if !R::is_valid(&source) {
         return Err(FfiReturn::TrapRepresentation);
@@ -170,6 +174,8 @@ pub(super) fn transmute_from_target_box<R: Transmute>(source: Box<R::Target>) ->
     Ok(unsafe { Box::from_raw(Box::into_raw(source).cast::<R>()) })
 }
 
+#[cfg(feature = "owned_types")]
+#[cfg(feature = "owned_as_ref")]
 pub(super) fn transmute_into_target_boxed_slice<R: Transmute>(
     #[expect(clippy::boxed_local)] mut source: Box<[R]>,
 ) -> Box<[R::Target]> {
@@ -178,6 +184,8 @@ pub(super) fn transmute_into_target_boxed_slice<R: Transmute>(
     // SAFETY: Soundness is guaranteed by [`Transmute`]
     unsafe { Box::from_raw(core::slice::from_raw_parts_mut(ptr, len)) }
 }
+#[cfg(feature = "owned_types")]
+#[cfg(feature = "owned_as_ref")]
 pub(super) fn transmute_from_target_boxed_slice<R: Transmute>(
     #[expect(clippy::boxed_local)] mut source: Box<[R::Target]>,
 ) -> Result<Box<[R]>> {
@@ -224,12 +232,16 @@ pub(super) fn transmute_from_target_slice_mut<R: Transmute>(
     Ok(unsafe { core::slice::from_raw_parts_mut(source.as_mut_ptr().cast(), source.len()) })
 }
 
+#[cfg(feature = "owned_types")]
+#[cfg(feature = "owned_as_ref")]
 pub(super) fn transmute_into_target_vec<R: Transmute>(source: Vec<R>) -> Vec<R::Target> {
     let mut vec = ManuallyDrop::new(source);
 
     // SAFETY: Soundness is guaranteed by [`Transmute`]
     unsafe { Vec::from_raw_parts(vec.as_mut_ptr().cast(), vec.len(), vec.capacity()) }
 }
+#[cfg(feature = "owned_types")]
+#[cfg(feature = "owned_as_ref")]
 pub(super) fn transmute_from_target_vec<R: Transmute>(source: Vec<R::Target>) -> Result<Vec<R>> {
     if !source.iter().all(|item| R::is_valid(item)) {
         return Err(FfiReturn::TrapRepresentation);

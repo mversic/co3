@@ -1,6 +1,8 @@
+#[cfg(feature = "owned_types")]
+#[cfg(feature = "owned_as_ref")]
 use alloc::{boxed::Box, string::String, vec::Vec};
 
-use crate::{ReprC, WrapperTypeOf, mineral, option::Niche as _, slice::RefSlice};
+use crate::{WrapperTypeOf, mineral, option::Niche as _, slice::RefSlice};
 
 macro_rules! non_zero_derive {
     ($($ty:ty => $target:ty),+ $(,)?) => {$(
@@ -30,6 +32,8 @@ non_zero_derive! {
     core::num::NonZeroI128 => i128,
 }
 
+#[cfg(feature = "owned_types")]
+#[cfg(feature = "owned_as_ref")]
 // WARN: This can be contested as it is nowhere documented that String is
 // actually transmutable into Vec<u8>, but implicitly it should be
 // SAFETY: String type should be transmutable into Vec<u8>
@@ -43,6 +47,9 @@ mineral! {
         }
     }
 }
+
+#[cfg(feature = "owned_types")]
+#[cfg(feature = "owned_as_ref")]
 // WARN: `core::str::as_bytes` uses transmute internally which means that
 // even though it's a string slice it can be transmuted into byte slice.
 mineral! {
@@ -55,6 +62,7 @@ mineral! {
         }
     }
 }
+
 mineral! {
     unsafe impl<'slice> Transparent for &'slice str {
         type Target = &'slice [u8];
@@ -65,6 +73,7 @@ mineral! {
         }
     }
 }
+
 #[cfg(feature = "non_robust_ref_mut")]
 mineral! {
     unsafe impl<'slice> Transparent for &'slice mut str {
@@ -76,12 +85,16 @@ mineral! {
         }
     }
 }
+
+#[cfg(feature = "owned_types")]
+#[cfg(feature = "owned_as_ref")]
 mineral! {
     unsafe impl<T> Transparent for core::mem::ManuallyDrop<T> {
         type Target = T;
         const NICHE_VALUE = "DELEGATE";
     }
 }
+
 mineral! {
     unsafe impl<T> Transparent for core::ptr::NonNull<T> {
         type Target = *mut T;
@@ -93,12 +106,16 @@ mineral! {
     }
 }
 
+#[cfg(feature = "owned_types")]
+#[cfg(feature = "owned_as_ref")]
 // SAFETY: Type is `ReprC` if the inner type is
-unsafe impl<T: ReprC> ReprC for core::mem::ManuallyDrop<T> {}
+unsafe impl<T: crate::ReprC> crate::ReprC for core::mem::ManuallyDrop<T> {}
 
 impl<T> WrapperTypeOf<core::ptr::NonNull<T>> for *mut T {
     type Type = core::ptr::NonNull<T>;
 }
+#[cfg(feature = "owned_types")]
+#[cfg(feature = "owned_as_ref")]
 impl WrapperTypeOf<String> for Vec<u8> {
     type Type = String;
 }
