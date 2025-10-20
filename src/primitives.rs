@@ -40,18 +40,24 @@ mod wasm {
     {
         type Type = &'itm mut [Robust];
     }
+    #[cfg(feature = "owned_types")]
+    #[cfg(feature = "owned_as_ref")]
     impl<R> Ir for Box<R>
     where
         R: Ir<Type = NonWasmIntPrimitive>,
     {
         type Type = Box<Robust>;
     }
+        #[cfg(feature = "owned_types")]
+    #[cfg(feature = "owned_as_ref")]
     impl<R> Ir for Box<[R]>
     where
         R: Ir<Type = NonWasmIntPrimitive>,
     {
         type Type = Box<[Robust]>;
     }
+    #[cfg(feature = "owned_types")]
+    #[cfg(feature = "owned_as_ref")]
     impl<R> Ir for Vec<R>
     where
         R: Ir<Type = NonWasmIntPrimitive>,
@@ -78,11 +84,20 @@ mod wasm {
             }
 
             // SAFETY: Transmute relation is transitive
-            unsafe impl $crate::transmute::Transmute for $src {
-                type Target = $dst;
+            unsafe impl<'a> $crate::transmute::Transmute for &'a $src {
+                type Target = &'a $dst;
 
                 fn is_valid(target: &Self::Target) -> bool {
-                    (<$src>::MIN as $dst..<$src>::MAX as $dst).contains(target)
+                    unimplemented!()
+                }
+            }
+
+            // SAFETY: Transmute relation is transitive
+            unsafe impl<'a> $crate::transmute::Transmute for &'a mut $src {
+                type Target = &'a mut $dst;
+
+                fn is_valid(target: &Self::Target) -> bool {
+                    unimplemented!()
                 }
             }
 

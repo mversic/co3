@@ -12,7 +12,15 @@ keywords = ["FFI", "foreign", "dynamic", "linking", "ABI"]
 categories = ["development-tools::ffi"]
 
 [features]
+default = ["owned_as_ref"]
+
+# TODO: This should allow ownership transfer
+owned_types = []
+
+owned_as_ref = ["owned_types"]
+
 # Enables sharing mutable references of non-robust transmutable types across FFI.
+#
 # When handing out non-robust mutable references across FFI, it's possible for the caller
 # to modify the given reference and store a trap representation causing immediate UB.
 non_robust_ref_mut = []
