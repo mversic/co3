@@ -17,8 +17,8 @@ use disjoint_impls::disjoint_impls;
 #[cfg(feature = "owned_types")]
 #[cfg(feature = "owned_as_ref")]
 use crate::transmute::{
-    transmute_from_target_box, transmute_from_target_boxed_slice, transmute_from_target_vec,
-    transmute_into_target_box, transmute_into_target_boxed_slice, transmute_into_target_vec,
+    transmute_from_target_boxed_slice, transmute_from_target_vec,
+    transmute_into_target_boxed_slice, transmute_into_target_vec,
 };
 use crate::{
     external::{ExternRef, ExternRefMut, External},
@@ -154,13 +154,6 @@ disjoint_impls! {
         type CType = RefMutSlice<R>;
     }
 
-    impl<R: Transmute> ExternC for Box<R>
-    where
-        Self: Ir<Type = Box<Transparent>>,
-        Box<<R>::Target>: ExternC,
-    {
-        type CType = <Box<R::Target> as ExternC>::CType;
-    }
     #[cfg(feature = "owned_types")]
     #[cfg(feature = "owned_as_ref")]
     impl<R: ReprC> ExternC for Box<R>
@@ -476,17 +469,6 @@ disjoint_impls! {
         }
     }
 
-    impl<R: Transmute> Encode for Box<R>
-    where
-        Box<<R>::Target>: Encode,
-        Self: Ir<Type = Box<Transparent>>,
-    {
-        type Store = <Box<R::Target> as Encode>::Store;
-
-        fn encode<'itm>(self, store: &'itm mut Self::Store) -> Self::CType where Self: 'itm {
-            transmute_into_target_box(self).encode(store)
-        }
-    }
     #[cfg(feature = "owned_types")]
     #[cfg(feature = "owned_as_ref")]
     impl<R: ReprC> Encode for Box<R>
@@ -948,20 +930,6 @@ disjoint_impls! {
         }
     }
 
-    impl<'d, R: Transmute> Decode<'d> for Box<R>
-    where
-        Box<<R>::Target>: Decode<'d>,
-        Self: Ir<Type = Box<Transparent>>,
-    {
-        type Store = <Box<R::Target> as Decode<'d>>::Store;
-
-        unsafe fn decode<'itm: 'd>(source: Self::CType, store: &'itm mut Self::Store) -> Result<Self> {
-            unsafe {
-                Box::<R::Target>::decode(source, store)
-                    .and_then(|output| transmute_from_target_box(output))
-            }
-        }
-    }
     #[cfg(feature = "owned_types")]
     #[cfg(feature = "owned_as_ref")]
     impl<'d, R: ReprC + 'd> Decode<'d> for Box<R>
@@ -1379,15 +1347,6 @@ disjoint_impls! {
         type ReturnType = LocalSlice<'itm, <R>::ReturnType>;
     }
 
-    impl<R: Transmute> FfiWrapperType for Box<R>
-    where
-        Self: Ir<Type = Box<Transparent>>,
-        Box<<R>::Target>: FfiWrapperType,
-        <Box<<R>::Target> as FfiWrapperType>::ReturnType: WrapperTypeOf<Self>,
-    {
-        type ReturnType =
-            <<Box<<R>::Target> as FfiWrapperType>::ReturnType as WrapperTypeOf<Self>>::Type;
-    }
     #[cfg(feature = "owned_types")]
     #[cfg(feature = "owned_as_ref")]
     impl<R: ReprC> FfiWrapperType for Box<R>

@@ -8,13 +8,13 @@ I have base types:
 
 I have derivative types:
 
-* &Transparent             => Transparent(Target = &inner)            |  DELEGATED |
+* &Transparent             => Transparent(Target = &R::Target)        |  DELEGATED |
 * &Robust                  => Transparent(Target = *const R)          |  DELEGATED |
 * &Opaque                  => Transparent(Target = *const R)          |  DELEGATED |
 * &Extern                  =>                                         |   Cloned   |  ExternRef
 * &S where C: Cloned                                                  |   Cloned   |  LocalRef
 
-* &mut Transparent         => Transparent(Target = *mut R)            |  DELEGATED |
+* &mut Transparent         => Transparent(Target = &mut R::Target)    |  DELEGATED |
 * &mut Robust              => Transparent(Target = *mut R)            |  DELEGATED |
 * &mut Opaque              => Transparent(Target = *mut R)            |  DELEGATED |
 * &mut Extern              =>                                         |            |  ExternRefMut
@@ -32,7 +32,7 @@ I have derivative types:
 * DOESN'T EXIST
 * DOESN'T EXIST
 
-* Box<Transparent>                                                    |  DELEGATED |
+* Box<Transparent>         => Transparent(Target = Box<R::Target>)    |  DELEGATED |
 * Box<Robust>                                                         |     Not    |
 * Box<Opaque>              => Transparent(Target = *mut R)            |     Not    |
 * Box<Extern>                                                         |   Cloned   |
@@ -50,7 +50,7 @@ I have derivative types:
 * Vec<S> where S: Cloned
 * Vec<Extern>              => Vec<Transparent>                        |
 
-* [Transparent; N]         => Transparent (Target = [inner; N])       |
+* [Transparent; N]         => Transparent(Target = [R::Target; N])    |
 * [Robust; N]              => Robust                                  |
 * [Opaque; N]                                                         |   Cloned   |
 * [Extern; N]                                                         |   Cloned   |

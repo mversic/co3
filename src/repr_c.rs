@@ -3,11 +3,9 @@
 //!
 //! Traits in this module mainly exist to bridge the gap between IR and C type equivalents. User should
 //! only implement these traits if none of the predefined IR types provide an adequate mapping.
-use alloc::{vec::Vec};
+use alloc::vec::Vec;
 
-use crate::{
-    assert_arr_has_non_zero_len,
-};
+use crate::assert_arr_has_non_zero_len;
 
 pub(super) fn default_init_arr<R: Default, const N: usize>() -> [R; N] {
     assert_arr_has_non_zero_len::<N>();

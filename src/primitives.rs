@@ -48,7 +48,7 @@ mod wasm {
     {
         type Type = Box<Robust>;
     }
-        #[cfg(feature = "owned_types")]
+    #[cfg(feature = "owned_types")]
     #[cfg(feature = "owned_as_ref")]
     impl<R> Ir for Box<[R]>
     where

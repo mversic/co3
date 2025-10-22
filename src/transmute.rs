@@ -138,6 +138,8 @@ union TransmuteHelper<R: Transmute> {
 }
 
 pub(super) fn transmute_into_target<R: Transmute>(source: R) -> R::Target {
+    assert_size_and_allignment_match::<R>();
+
     let transmute_helper = TransmuteHelper {
         source: ManuallyDrop::new(source),
     };
@@ -146,6 +148,8 @@ pub(super) fn transmute_into_target<R: Transmute>(source: R) -> R::Target {
     ManuallyDrop::into_inner(unsafe { transmute_helper.target })
 }
 pub(super) fn transmute_from_target<R: Transmute>(source: R::Target) -> Result<R> {
+    assert_size_and_allignment_match::<R>();
+
     if !R::is_valid(&source) {
         return Err(FfiReturn::TrapRepresentation);
     }
@@ -160,25 +164,11 @@ pub(super) fn transmute_from_target<R: Transmute>(source: R::Target) -> Result<R
 
 #[cfg(feature = "owned_types")]
 #[cfg(feature = "owned_as_ref")]
-pub(super) fn transmute_into_target_box<R: Transmute>(source: Box<R>) -> Box<R::Target> {
-    unsafe { Box::from_raw(Box::into_raw(source).cast::<R::Target>()) }
-}
-#[cfg(feature = "owned_types")]
-#[cfg(feature = "owned_as_ref")]
-pub(super) fn transmute_from_target_box<R: Transmute>(source: Box<R::Target>) -> Result<Box<R>> {
-    if !R::is_valid(&source) {
-        return Err(FfiReturn::TrapRepresentation);
-    }
-
-    // SAFETY: Soundness is guaranteed by [`Transmute`]
-    Ok(unsafe { Box::from_raw(Box::into_raw(source).cast::<R>()) })
-}
-
-#[cfg(feature = "owned_types")]
-#[cfg(feature = "owned_as_ref")]
 pub(super) fn transmute_into_target_boxed_slice<R: Transmute>(
     #[expect(clippy::boxed_local)] mut source: Box<[R]>,
 ) -> Box<[R::Target]> {
+    assert_size_and_allignment_match::<R>();
+
     let (ptr, len) = (source.as_mut_ptr().cast::<R::Target>(), source.len());
 
     // SAFETY: Soundness is guaranteed by [`Transmute`]
@@ -189,6 +179,8 @@ pub(super) fn transmute_into_target_boxed_slice<R: Transmute>(
 pub(super) fn transmute_from_target_boxed_slice<R: Transmute>(
     #[expect(clippy::boxed_local)] mut source: Box<[R::Target]>,
 ) -> Result<Box<[R]>> {
+    assert_size_and_allignment_match::<R>();
+
     if !source.iter().all(|item| R::is_valid(item)) {
         return Err(FfiReturn::TrapRepresentation);
     }
@@ -203,10 +195,15 @@ pub(super) fn transmute_from_target_boxed_slice<R: Transmute>(
 }
 
 pub(super) fn transmute_into_target_ref_slice<R: Transmute>(source: &[R]) -> &[R::Target] {
+    assert_size_and_allignment_match::<R>();
+
     let (ptr, len) = (source.as_ptr().cast::<R::Target>(), source.len());
+
     unsafe { core::slice::from_raw_parts(ptr, len) }
 }
 pub(super) fn transmute_from_target_ref_slice<R: Transmute>(source: &[R::Target]) -> Result<&[R]> {
+    assert_size_and_allignment_match::<R>();
+
     if !source.iter().all(|item| R::is_valid(item)) {
         return Err(FfiReturn::TrapRepresentation);
     }
@@ -216,6 +213,8 @@ pub(super) fn transmute_from_target_ref_slice<R: Transmute>(source: &[R::Target]
 }
 
 pub(super) fn transmute_into_target_slice_mut<R: Transmute>(source: &mut [R]) -> &mut [R::Target] {
+    assert_size_and_allignment_match::<R>();
+
     let (ptr, len) = (source.as_mut_ptr().cast::<R::Target>(), source.len());
 
     // SAFETY: Soundness is guaranteed by [`Transmute`]
@@ -224,6 +223,8 @@ pub(super) fn transmute_into_target_slice_mut<R: Transmute>(source: &mut [R]) ->
 pub(super) fn transmute_from_target_slice_mut<R: Transmute>(
     source: &mut [R::Target],
 ) -> Result<&mut [R]> {
+    assert_size_and_allignment_match::<R>();
+
     if !source.iter_mut().all(|item| R::is_valid(item)) {
         return Err(FfiReturn::TrapRepresentation);
     }
@@ -235,6 +236,8 @@ pub(super) fn transmute_from_target_slice_mut<R: Transmute>(
 #[cfg(feature = "owned_types")]
 #[cfg(feature = "owned_as_ref")]
 pub(super) fn transmute_into_target_vec<R: Transmute>(source: Vec<R>) -> Vec<R::Target> {
+    assert_size_and_allignment_match::<R>();
+
     let mut vec = ManuallyDrop::new(source);
 
     // SAFETY: Soundness is guaranteed by [`Transmute`]
@@ -243,6 +246,8 @@ pub(super) fn transmute_into_target_vec<R: Transmute>(source: Vec<R>) -> Vec<R::
 #[cfg(feature = "owned_types")]
 #[cfg(feature = "owned_as_ref")]
 pub(super) fn transmute_from_target_vec<R: Transmute>(source: Vec<R::Target>) -> Result<Vec<R>> {
+    assert_size_and_allignment_match::<R>();
+
     if !source.iter().all(|item| R::is_valid(item)) {
         return Err(FfiReturn::TrapRepresentation);
     }
@@ -251,4 +256,11 @@ pub(super) fn transmute_from_target_vec<R: Transmute>(source: Vec<R::Target>) ->
 
     // SAFETY: Soundness is guaranteed by [`Transmute`]
     Ok(unsafe { Vec::from_raw_parts(vec.as_mut_ptr().cast(), vec.len(), vec.capacity()) })
+}
+
+fn assert_size_and_allignment_match<R: Transmute>() {
+    const {
+        debug_assert!(core::mem::size_of::<R>() == core::mem::size_of::<R::Target>());
+        debug_assert!(core::mem::align_of::<R>() == core::mem::align_of::<R::Target>());
+    };
 }

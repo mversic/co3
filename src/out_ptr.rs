@@ -3,9 +3,7 @@ use core::ptr::addr_of_mut;
 use super::*;
 #[cfg(feature = "owned_types")]
 #[cfg(feature = "owned_as_ref")]
-use crate::transmute::{
-    transmute_from_target_box, transmute_from_target_boxed_slice, transmute_from_target_vec,
-};
+use crate::transmute::{transmute_from_target_boxed_slice, transmute_from_target_vec};
 use crate::transmute::{transmute_from_target_ref_slice, transmute_from_target_slice_mut};
 
 disjoint_impls! {
@@ -134,13 +132,6 @@ disjoint_impls! {
         type OutPtr = Self::CType;
     }
 
-    impl<R: Transmute> OutPtr for Box<R>
-    where
-        Self: Ir<Type = Box<Transparent>>,
-        Box<<R>::Target>: OutPtr,
-    {
-        type OutPtr = <Box<R::Target> as OutPtr>::OutPtr;
-    }
     #[cfg(feature = "owned_types")]
     #[cfg(feature = "owned_as_ref")]
     impl<R: ReprC> OutPtr for Box<R>
@@ -410,19 +401,6 @@ disjoint_impls! {
         }
     }
 
-    impl<R: Transmute> OutPtrWrite for Box<R>
-    where
-        Self: Ir<Type = Box<Transparent>>,
-        Box<<R>::Target>: OutPtrWrite,
-    {
-        unsafe fn write_out(self, out_ptr: *mut Self::OutPtr) {
-            let transmuted = transmute_into_target_box(self);
-
-            unsafe {
-                OutPtrWrite::write_out(transmuted, out_ptr);
-            }
-        }
-    }
     #[cfg(feature = "owned_types")]
     #[cfg(feature = "owned_as_ref")]
     impl<R: ReprC> OutPtrWrite for Box<R>
@@ -772,18 +750,6 @@ disjoint_impls! {
         }
     }
 
-    impl<R: Transmute> OutPtrRead for Box<R>
-    where
-        Self: Ir<Type = Box<Transparent>>,
-        Box<<R>::Target>: OutPtrRead,
-    {
-        unsafe fn try_read_out(out_ptr: Self::OutPtr) -> Result<Self> {
-            unsafe {
-                Box::<R::Target>::try_read_out(out_ptr)
-                    .and_then(|output| transmute_from_target_box(output))
-            }
-        }
-    }
     #[cfg(feature = "owned_types")]
     #[cfg(feature = "owned_as_ref")]
     impl<R: ReprC> OutPtrRead for Box<R>

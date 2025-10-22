@@ -64,7 +64,7 @@ disjoint_impls! {
     impl<R: Ir<Type = Transparent>> Ir for &R {
         type Type = Transparent;
     }
-    impl<R: Ir<Type = Robust> + ReprC> Ir for &R {
+    impl<R: Ir<Type = Robust>> Ir for &R {
         type Type = Transparent;
     }
     impl<R: Ir<Type = Opaque>> Ir for &R {
@@ -100,7 +100,7 @@ disjoint_impls! {
     impl<'a, R: Ir<Type = Transparent>> Ir for &'a [R] {
         type Type = &'a [Transparent];
     }
-    impl<'a, R: Ir<Type = Robust> + ReprC> Ir for &'a [R] {
+    impl<'a, R: Ir<Type = Robust>> Ir for &'a [R] {
         type Type = &'a [Robust];
     }
     impl<'a, R: Ir<Type = Opaque>> Ir for &'a [R] {
@@ -128,10 +128,10 @@ disjoint_impls! {
     }
 
     impl<R: Ir<Type = Transparent>> Ir for Box<R> {
-        type Type = Box<Transparent>;
+        type Type = Transparent;
     }
     #[cfg(feature = "owned_types")]
-    impl<R: Ir<Type = Robust> + ReprC> Ir for Box<R> {
+    impl<R: Ir<Type = Robust>> Ir for Box<R> {
         type Type = Box<Robust>;
     }
     impl<R: Ir<Type = Opaque>> Ir for Box<R> {
@@ -150,7 +150,7 @@ disjoint_impls! {
         type Type = Box<[Transparent]>;
     }
     #[cfg(feature = "owned_types")]
-    impl<R: Ir<Type = Robust> + ReprC> Ir for Box<[R]> {
+    impl<R: Ir<Type = Robust>> Ir for Box<[R]> {
         type Type = Box<[Robust]>;
     }
     #[cfg(feature = "owned_types")]
@@ -171,7 +171,7 @@ disjoint_impls! {
         type Type = Vec<Transparent>;
     }
     #[cfg(feature = "owned_types")]
-    impl<R: Ir<Type = Robust> + ReprC> Ir for Vec<R> {
+    impl<R: Ir<Type = Robust>> Ir for Vec<R> {
         type Type = Vec<Robust>;
     }
     #[cfg(feature = "owned_types")]
@@ -190,7 +190,7 @@ disjoint_impls! {
     impl<R: Ir<Type = Transparent>, const N: usize> Ir for [R; N] {
         type Type = Transparent;
     }
-    impl<R: Ir<Type = Robust> + ReprC, const N: usize> Ir for [R; N] {
+    impl<R: Ir<Type = Robust>, const N: usize> Ir for [R; N] {
         type Type = Robust;
     }
     impl<R: Ir<Type = Opaque>, const N: usize> Ir for [R; N] {
@@ -216,7 +216,7 @@ disjoint_impls! {
         type Type = &'a mut [Transparent];
     }
     impl<R> Ir for Box<Box<R>> where Box<R>: Ir<Type = Box<Robust>> {
-        type Type = Box<Transparent>;
+        type Type = Transparent;
     }
     #[cfg(feature = "owned_types")]
     impl<R> Ir for Box<[Box<R>]> where Box<R>: Ir<Type = Box<Robust>> {

@@ -1,4 +1,4 @@
-use crate::{mineral, ExternC, WrapperTypeOf};
+use crate::{ExternC, WrapperTypeOf, mineral};
 
 /// Represents the pointee on the far side of an exported opaque pointer at the FFI boundary.
 ///

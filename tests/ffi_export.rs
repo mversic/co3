@@ -435,7 +435,10 @@ fn take_and_return_option_with_niche_ref() {
         );
 
         let output = output.assume_init();
-        assert_eq!(input, *LocalRef::<Option<bool>>::try_read_out(output).expect("Valid"));
+        assert_eq!(
+            input,
+            *LocalRef::<Option<bool>>::try_read_out(output).expect("Valid")
+        );
     }
 }
 
@@ -464,7 +467,10 @@ fn take_and_return_option_without_niche_ref() {
         );
 
         let output = output.assume_init();
-        assert_eq!(input, *LocalRef::<Option<u8>>::try_read_out(output).expect("Valid"));
+        assert_eq!(
+            input,
+            *LocalRef::<Option<u8>>::try_read_out(output).expect("Valid")
+        );
     }
 }
 
