@@ -4,7 +4,10 @@ use super::*;
 #[cfg(feature = "owned_types")]
 #[cfg(feature = "owned_as_ref")]
 use crate::transmute::{transmute_from_target_boxed_slice, transmute_from_target_vec};
-use crate::transmute::{transmute_from_target_ref_slice, transmute_from_target_slice_mut};
+use crate::{
+    ir::Transparent,
+    transmute::{transmute_from_target_ref_slice, transmute_from_target_slice_mut},
+};
 
 disjoint_impls! {
     /// Marker trait indicating that [`Encode::encode`] and [`Decode::decode`] don't
@@ -240,15 +243,27 @@ disjoint_impls! {
         type OutPtr = Self::CType;
     }
 
+    impl<R: Optional> OutPtr for R
+    where
+        Self: Ir<Type = Option<Transparent>>,
+    {
+        type OutPtr = R::Inner;
+    }
     impl<R: OutPtr> OutPtr for Option<R>
     where
-        Self: Ir<Type = Option<WithoutNiche>>,
+        Self: Ir<Type = Option<Robust>>,
     {
         type OutPtr = FfiTuple2<<u8 as OutPtr>::OutPtr, R::OutPtr>;
     }
-    impl<R: Niche + OutPtr> OutPtr for Option<R>
+    impl<R: OutPtr> OutPtr for Option<R>
     where
-        Self: Ir<Type = Self>,
+        Self: Ir<Type = Option<Opaque>>,
+    {
+        type OutPtr = *mut R;
+    }
+    impl<R: Niche + OutPtr, S: Cloned> OutPtr for Option<R>
+    where
+        Self: Ir<Type = Option<S>>,
     {
         type OutPtr = R::OutPtr;
     }
@@ -577,9 +592,17 @@ disjoint_impls! {
         }
     }
 
+    impl<R: Optional> OutPtrWrite for R
+    where
+        Self: Ir<Type = Option<Transparent>>,
+    {
+        unsafe fn write_out(self, out_ptr: *mut Self::OutPtr) {
+            unimplemented!();
+        }
+    }
     impl<R: OutPtrWrite> OutPtrWrite for Option<R>
     where
-        Self: Ir<Type = Option<WithoutNiche>>,
+        Self: Ir<Type = Option<Robust>>,
     {
         unsafe fn write_out(self, out_ptr: *mut Self::OutPtr) {
             match self {
@@ -587,39 +610,46 @@ disjoint_impls! {
                     let mut discriminant_out_ptr = core::mem::MaybeUninit::uninit();
                     unsafe {
                         OutPtrWrite::write_out(0u8, discriminant_out_ptr.as_mut_ptr());
-                        let discriminant_out_ptr = discriminant_out_ptr.assume_init() ;
+                        let discriminant_out_ptr = discriminant_out_ptr.assume_init();
 
                         // TODO: No need to zero the memory because it must never be read
                         out_ptr.write(FfiTuple2(discriminant_out_ptr, core::mem::zeroed()));
                     }
                 }
-                Some(value) => {
-                    unsafe {
-                        let mut discriminant_out_ptr = core::mem::MaybeUninit::uninit();
-                        OutPtrWrite::write_out(1u8, discriminant_out_ptr.as_mut_ptr());
-                        let discriminant_out_ptr = discriminant_out_ptr.assume_init();
+                Some(value) => unsafe {
+                    let mut discriminant_out_ptr = core::mem::MaybeUninit::uninit();
+                    OutPtrWrite::write_out(1u8, discriminant_out_ptr.as_mut_ptr());
+                    let discriminant_out_ptr = discriminant_out_ptr.assume_init();
 
-                        let mut value_out_ptr = core::mem::MaybeUninit::uninit();
-                        OutPtrWrite::write_out(value, value_out_ptr.as_mut_ptr());
-                        let value_out_ptr = value_out_ptr.assume_init();
+                    let mut value_out_ptr = core::mem::MaybeUninit::uninit();
+                    OutPtrWrite::write_out(value, value_out_ptr.as_mut_ptr());
+                    let value_out_ptr = value_out_ptr.assume_init();
 
-                        out_ptr.write(FfiTuple2(discriminant_out_ptr, value_out_ptr));
-                    }
-                }
+                    out_ptr.write(FfiTuple2(discriminant_out_ptr, value_out_ptr));
+                },
             }
         }
     }
-    impl<R: Niche + OutPtrWrite<OutPtr = <R as ExternC>::CType>> OutPtrWrite for Option<R>
+    impl<R: OutPtrWrite> OutPtrWrite for Option<R>
     where
-        Self: Ir<Type = Self>,
+        Self: Ir<Type = Option<Opaque>>,
     {
         unsafe fn write_out(self, out_ptr: *mut Self::OutPtr) {
-            unsafe {
-                self.map_or_else(
-                    || out_ptr.write(R::NICHE_VALUE),
-                    |value| OutPtrWrite::write_out(value, out_ptr),
-                );
-            }
+            unimplemented!()
+        }
+    }
+    impl<R: Niche + OutPtrWrite, S: Cloned> OutPtrWrite for R
+    where
+        Self: Ir<Type = Option<S>>,
+    {
+        unsafe fn write_out(self, out_ptr: *mut Self::OutPtr) {
+            unimplemented!()
+            //unsafe {
+            //    self.map_or_else(
+            //        || out_ptr.write(R::NICHE_VALUE),
+            //        |value| OutPtrWrite::write_out(value, out_ptr),
+            //    );
+            //}
         }
     }
 }
@@ -758,14 +788,6 @@ disjoint_impls! {
     {
         unsafe fn try_read_out(out_ptr: Self::OutPtr) -> Result<Self> {
             Ok(Box::new(out_ptr))
-        }
-    }
-    impl<R: External> OutPtrRead for Box<R>
-    where
-        Self: Ir<Type = Box<Extern>>,
-    {
-        unsafe fn try_read_out(out_ptr: Self::OutPtr) -> Result<Self> {
-            unsafe { Decode::decode(out_ptr, &mut ()) }
         }
     }
     #[cfg(feature = "owned_types")]
@@ -915,6 +937,7 @@ disjoint_impls! {
         Self: Ir<Type = [S; N]> + Decode<'d>,
     {
         unsafe fn try_read_out(out_ptr: Self::OutPtr) -> Result<Self> {
+            assert_arr_has_non_zero_len::<N>();
             let mut store = <Self as Decode>::Store::default();
 
             let store_ref = unsafe {
@@ -928,9 +951,17 @@ disjoint_impls! {
         }
     }
 
+    impl<R: Optional> OutPtrRead for R
+    where
+        Self: Ir<Type = Option<Transparent>>,
+    {
+        unsafe fn try_read_out(out_ptr: Self::OutPtr) -> Result<Self> {
+            unimplemented!()
+        }
+    }
     impl<R: OutPtrRead> OutPtrRead for Option<R>
     where
-        Self: Ir<Type = Option<WithoutNiche>>,
+        Self: Ir<Type = Option<Robust>>,
     {
         unsafe fn try_read_out(out_ptr: Self::OutPtr) -> Result<Self> {
             match unsafe { <u8 as OutPtrRead>::try_read_out(out_ptr.0)? } {
@@ -940,17 +971,18 @@ disjoint_impls! {
             }
         }
     }
-    impl<R: Niche + OutPtrRead<OutPtr = <R as ExternC>::CType>> OutPtrRead for Option<R>
+    impl<R: Niche + OutPtrRead, S: Cloned> OutPtrRead for Option<R>
     where
-        Self: Ir<Type = Self>,
-        <R>::CType: PartialEq,
+        Self: Ir<Type = Option<S>>,
+        //<R>::CType: PartialEq,
     {
         unsafe fn try_read_out(out_ptr: Self::OutPtr) -> Result<Self> {
-            if out_ptr == R::NICHE_VALUE {
-                return Ok(None);
-            }
+            unimplemented!()
+            //if out_ptr == R::NICHE_VALUE {
+            //    return Ok(None);
+            //}
 
-            unsafe { R::try_read_out(out_ptr).map(Some) }
+            //unsafe { R::try_read_out(out_ptr).map(Some) }
         }
     }
 }

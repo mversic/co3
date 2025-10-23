@@ -79,7 +79,7 @@ mod wasm {
             // SAFETY: Even if it is not used in `wasm` API it is still a `ReprC` type
             unsafe impl $crate::ReprC for $src {}
 
-            impl $crate::option::Niche for $src {
+            impl $crate::niche::Niche for $src {
                 const NICHE_VALUE: $dst = <$dst>::MAX;
             }
 
@@ -185,11 +185,11 @@ macro_rules! primitive_derive {
 }
 
 fieldless_enum_derive! {
-    bool => u8: {2}:
+    bool => <u8 as crate::ExternC>::CType: {2}:
     |i: &u8| *i == 0 || *i == 1
 }
 fieldless_enum_derive! {
-    core::cmp::Ordering => i8: {2}:
+    core::cmp::Ordering => <i8 as crate::ExternC>::CType: {2}:
     |i: &i8| *i == -1 || *i == 0 || *i == 1
 }
 

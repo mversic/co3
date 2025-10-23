@@ -6,7 +6,6 @@
 use alloc::{boxed::Box, vec::Vec};
 use disjoint_impls::disjoint_impls;
 
-use crate::ReprC;
 #[cfg(not(feature = "non_robust_ref_mut"))]
 use crate::transmute::InfallibleTransmute;
 
@@ -53,7 +52,7 @@ disjoint_impls! {
         /// - If [`Ir::Type`] is [`Option<T>`], `Option<T>` is transmuted into the inner type,
         ///   using its *niche value* to represent [`None`].
         ///
-        /// - If [`Ir::Type`] is [`Option<WithoutNiche>`], serialization is delegated to the
+        /// - If [`Ir::Type`] is [`Option<Robust>`], serialization is delegated to the
         ///   inner type, but represented explicitly as a `(discriminant, value)` tuple.
         ///
         /// - In the common case, set [`Ir::Type`] to `Self` and implement [`Cloned`].
@@ -203,46 +202,105 @@ disjoint_impls! {
         type Type = [S; N];
     }
 
-    impl<R> Ir for &Box<R> where Box<R>: Ir<Type = Box<Robust>> {
+    impl<R: Ir<Type = Option<Transparent>>, const N: usize> Ir for [R; N] {
+        type Type = Option<Transparent>;
+    }
+    impl<R: Ir<Type = Option<Opaque>>, const N: usize> Ir for [R; N] {
+        type Type = Option<Transparent>;
+    }
+
+    // FIXME:
+    //
+    //impl<R: Ir<Type = Transparent> + crate::niche::Ir<Type = Robust>> Ir for Option<R> {
+    //    type Type = Option<Robust>;
+    //}
+    impl<R: Ir<Type = Transparent> + crate::niche::Ir<Type = Transparent>> Ir for Option<R> {
+        // FIXME: This could be considered a misnomer, it's Option<WithNiche>
+        type Type = Option<Transparent>;
+    }
+    impl<R: Ir<Type = Robust>> Ir for Option<R> {
+        type Type = Option<Robust>;
+    }
+    impl<R: Ir<Type = Opaque>> Ir for Option<R> {
+        type Type = Option<Opaque>;
+    }
+    impl<R: Ir<Type = Extern>> Ir for Option<R> {
+        type Type = Option<Transparent>;
+    }
+    //impl<R: Ir<Type = S> + crate::niche::Ir<Type = Robust>, S: Cloned> Ir for Option<R> {
+    //    type Type = Option<Robust>;
+    //}
+    impl<R: Ir<Type = S> + crate::niche::Ir<Type = S>, S: Cloned> Ir for Option<R> {
+        type Type = Option<S>;
+    }
+
+    impl<R: Ir<Type = Option<Transparent>>> Ir for &R {
+        type Type = Option<Transparent>;
+    }
+    impl<R: Ir<Type = Option<Opaque>>> Ir for &R {
+        type Type = Option<Transparent>;
+    }
+    impl<R: Ir<Type = Option<Transparent>>> Ir for &mut R {
+        type Type = Option<Transparent>;
+    }
+    impl<R: Ir<Type = Option<Opaque>>> Ir for &mut R {
+        type Type = Option<Transparent>;
+    }
+    impl<R: Ir<Type = Option<Transparent>>> Ir for Box<R> {
+        type Type = Option<Transparent>;
+    }
+    impl<R: Ir<Type = Option<Opaque>>> Ir for Box<R> {
+        type Type = Option<Transparent>;
+    }
+
+    // TODO: Decide on how to handle Robust types and put impls in their corresponding place
+    impl<R: Ir<Type = Box<Robust>>> Ir for &R {
         type Type = Transparent;
     }
-    impl<R> Ir for &mut Box<R> where Box<R>: Ir<Type = Box<Robust>> {
+    impl<R: Ir<Type = Box<Robust>>> Ir for &mut R {
         type Type = Transparent;
     }
-    impl<'a, R> Ir for &'a [Box<R>] where Box<R>: Ir<Type = Box<Robust>> {
+    impl<'a, R: Ir<Type = Box<Robust>>> Ir for &'a [R] {
         type Type = &'a [Transparent];
     }
-    impl<'a, R> Ir for &'a mut [Box<R>] where Box<R>: Ir<Type = Box<Robust>> {
+    impl<'a, R: Ir<Type = Box<Robust>>> Ir for &'a mut [R] {
         type Type = &'a mut [Transparent];
     }
-    impl<R> Ir for Box<Box<R>> where Box<R>: Ir<Type = Box<Robust>> {
-        type Type = Transparent;
-    }
+    //impl<R: Ir<Type = Box<Robust>>> Ir for R {
+    //    type Type = Transparent;
+    //}
     #[cfg(feature = "owned_types")]
-    impl<R> Ir for Box<[Box<R>]> where Box<R>: Ir<Type = Box<Robust>> {
+    impl<R: Ir<Type = Box<Robust>>> Ir for Box<[R]> {
         type Type = Box<[Transparent]>;
     }
     #[cfg(feature = "owned_types")]
-    impl<R> Ir for Vec<Box<R>> where Box<R>: Ir<Type = Box<Robust>> {
+    impl<R: Ir<Type = Box<Robust>>> Ir for Vec<R> {
         type Type = Vec<Transparent>;
     }
-    impl<R, const N: usize> Ir for [Box<R>; N] where Box<R>: Ir<Type = Box<Robust>> {
+    impl<R: Ir<Type = Box<Robust>>, const N: usize> Ir for [R; N] {
         type Type = Robust;
     }
-    // TODO: What about Option<[Box<R>; N]> where R: Robust?
+    impl<R: Ir<Type = Box<Robust>>> Ir for Option<R> {
+        type Type = Option<Transparent>;
+    }
 }
 
-impl<R: Ir<Type: Cloned>> Cloned for &R {}
+impl<S: Cloned> Cloned for &S {}
 impl Cloned for &Extern {}
-impl<R> Cloned for &[R] {}
-#[cfg(feature = "owned_types")]
-impl<R: Ir<Type: Cloned>> Cloned for Box<R> {}
+impl<S> Cloned for &[S] {}
 impl Cloned for Box<Extern> {}
 #[cfg(feature = "owned_types")]
-impl<R> Cloned for Vec<R> {}
+impl<S: Cloned> Cloned for Box<S> {}
+#[cfg(feature = "owned_types")]
+impl<S> Cloned for Box<[S]> {}
+#[cfg(feature = "owned_types")]
+impl<S> Cloned for Vec<S> {}
 impl<const N: usize> Cloned for [Opaque; N] {}
 impl<const N: usize> Cloned for [Extern; N] {}
-impl<R: Ir<Type: Cloned>, const N: usize> Cloned for [R; N] {}
+impl<S: Cloned, const N: usize> Cloned for [S; N] {}
+
+impl Cloned for Option<Robust> {}
+impl<S: Cloned> Cloned for Option<S> {}
 
 impl<R> Ir for *const R {
     type Type = Robust;

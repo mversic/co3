@@ -10,7 +10,7 @@ disjoint_impls! {
     ///
     /// # Safety
     ///
-    /// * `Self` and `Self::Target` must be mutually transmutable
+    /// * `Self` and `Self::Target` must be mutually transmutable (this includes [`Drop`] semantics)
     /// * `Self::is_valid` must not return false positives, i.e. return `true` for trap representations
     pub unsafe trait Transmute {
         /// Type that [`Self`] can be transmuted into

@@ -24,7 +24,7 @@ use crate::{
     external::{ExternRef, ExternRefMut, External},
     ir::{Cloned, Extern, Ir, Opaque, Robust, Transparent},
     local::{LocalRef, LocalSlice},
-    option::{Niche, WithoutNiche},
+    niche::{Niche, Optional},
     repr_c::default_init_arr,
     slice::{OutBoxedSlice, RefMutSlice, RefSlice},
     transmute::{
@@ -38,7 +38,7 @@ pub mod external;
 pub mod handle;
 pub mod ir;
 pub mod local;
-pub mod option;
+pub mod niche;
 pub mod out_ptr;
 pub mod primitives;
 mod repr_c;
@@ -94,7 +94,7 @@ disjoint_impls! {
         type CType = *mut external::Extern;
     }
 
-    impl<'a, R: External> ExternC for &'a R
+    impl<'a, R> ExternC for &'a R
     where
         Self: Ir<Type = &'a Extern>,
     {
@@ -107,7 +107,7 @@ disjoint_impls! {
         type CType = *const R::CType;
     }
 
-    impl<'a, R: External> ExternC for &'a mut R
+    impl<'a, R> ExternC for &'a mut R
     where
         Self: Ir<Type = &'a mut Extern>,
     {
@@ -164,7 +164,7 @@ disjoint_impls! {
         // to postpone reading the pointer (only applies if there is no ownership transfer)
         type CType = R;
     }
-    impl<R: External> ExternC for Box<R>
+    impl<R> ExternC for Box<R>
     where
         Self: Ir<Type = Box<Extern>>,
     {
@@ -265,17 +265,29 @@ disjoint_impls! {
         type CType = [R::CType; N];
     }
 
+    impl<R: Optional> ExternC for R
+    where
+        Self: Ir<Type = Option<Transparent>>,
+    {
+        type CType = R::Inner;
+    }
     impl<R: ExternC> ExternC for Option<R>
     where
-        Self: Ir<Type = Option<WithoutNiche>>,
+        Self: Ir<Type = Option<Robust>>,
     {
         type CType = FfiTuple2<<u8 as ExternC>::CType, R::CType>;
     }
-    impl<R: Niche> ExternC for Option<R>
+    impl<R: ExternC> ExternC for Option<R>
     where
-        Self: Ir<Type = Self>,
+        Self: Ir<Type = Option<Opaque>>,
     {
-        type CType = R::CType;
+        type CType = *mut R;
+    }
+    impl<R: Niche, S: Cloned> ExternC for Option<R>
+    where
+        Self: Ir<Type = Option<S>>,
+    {
+        type CType = <R as ExternC>::CType;
     }
 
     // TODO: These shouldn't be required?
@@ -479,16 +491,6 @@ disjoint_impls! {
 
         fn encode<'itm>(self, (): &mut ()) -> Self::CType where Self: 'itm {
             *self
-        }
-    }
-    impl<R: External> Encode for Box<R>
-    where
-        Self: Ir<Type = Box<Extern>>,
-    {
-        type Store = ();
-
-        fn encode<'itm>(self, (): &mut ()) -> Self::CType where Self: 'itm {
-            ManuallyDrop::new(*self).as_extern_ptr_mut()
         }
     }
     #[cfg(feature = "owned_types")]
@@ -704,9 +706,24 @@ disjoint_impls! {
         }
     }
 
+    impl<R: Optional> Encode for R
+    where
+        Self: Ir<Type = Option<Transparent>>,
+    {
+        type Store = ();
+
+        fn encode<'itm>(self, (): &mut ()) -> Self::CType where Self: 'itm {
+            // WARN: We assume that niche value used by rust matches `Niche::NICHE_VALUE`
+            unimplemented!();
+            //// SAFETY: Guaranteed by [`Optional`]
+            //let inner = unsafe {
+            //    core::mem::transmute::<R, R::Inner>(self)
+            //};
+        }
+    }
     impl<R: Encode> Encode for Option<R>
     where
-        Self: Ir<Type = Option<WithoutNiche>>,
+        Self: Ir<Type = Option<Robust>>,
     {
         type Store = R::Store;
 
@@ -718,12 +735,21 @@ disjoint_impls! {
             }
         }
     }
-    impl<R: Niche + Encode> Encode for Option<R>
+    impl<R: Encode> Encode for Option<R>
     where
-        <R as ExternC>::CType: PartialEq,
-        Self: Ir<Type = Self>,
+        Self: Ir<Type = Option<Opaque>>,
     {
         type Store = R::Store;
+
+        fn encode<'itm>(self, store: &'itm mut Self::Store) -> Self::CType where Self: 'itm {
+            unimplemented!()
+        }
+    }
+    impl<R: Niche + Encode, S: Cloned> Encode for Option<R>
+    where
+        Self: Ir<Type = Option<S>>,
+    {
+        type Store = <R as Encode>::Store;
 
         fn encode<'itm>(self, store: &'itm mut Self::Store) -> Self::CType where Self: 'itm {
             if let Some(value) = self {
@@ -959,20 +985,6 @@ disjoint_impls! {
             }
         }
     }
-    impl<'d, R: External> Decode<'d> for Box<R>
-    where
-        Self: Ir<Type = Box<Extern>>,
-    {
-        type Store = ();
-
-        unsafe fn decode<'itm: 'd>(source: Self::CType, (): &mut ()) -> Result<Self> {
-            if source.is_null() {
-                return Err(FfiReturn::ArgIsNull);
-            }
-
-            Ok(Box::new(unsafe { External::from_extern_ptr(source) }))
-        }
-    }
 
     #[cfg(feature = "owned_types")]
     impl<'d, R: Transmute> Decode<'d> for Box<[R]>
@@ -1202,9 +1214,20 @@ disjoint_impls! {
         }
     }
 
+    impl<'d, R: Optional + 'd> Decode<'d> for R
+    where
+        Self: Ir<Type = Option<Transparent>>,
+    {
+        type Store = ();
+
+        unsafe fn decode<'itm: 'd>(source: Self::CType, store: &'itm mut Self::Store) -> Result<Self> {
+            unimplemented!()
+            //Ok(core::mem::transmute::<R::Inner, R>(source))
+        }
+    }
     impl<'d, R: Decode<'d>> Decode<'d> for Option<R>
     where
-        Self: Ir<Type = Option<WithoutNiche>>,
+        Self: Ir<Type = Option<Robust>>,
     {
         type Store = R::Store;
 
@@ -1218,12 +1241,21 @@ disjoint_impls! {
             }
         }
     }
-    impl<'d, R: Niche + Decode<'d>> Decode<'d> for Option<R>
+    impl<'d, R: Decode<'d> + 'd> Decode<'d> for Option<R>
     where
-        <R as ExternC>::CType: PartialEq,
-        Self: Ir<Type = Self>,
+        Self: Ir<Type = Option<Opaque>>,
     {
         type Store = R::Store;
+
+        unsafe fn decode<'itm: 'd>(source: Self::CType, store: &'itm mut Self::Store) -> Result<Self> {
+            unimplemented!()
+        }
+    }
+    impl<'d, R: Niche<CType: PartialEq> + Decode<'d>, S: Cloned> Decode<'d> for Option<R>
+    where
+        Self: Ir<Type = Option<S>>,
+    {
+        type Store = <R as Decode<'d>>::Store;
 
         unsafe fn decode<'itm: 'd>(source: Self::CType, store: &'itm mut Self::Store) -> Result<Self> {
             if source == R::NICHE_VALUE {
@@ -1252,7 +1284,7 @@ disjoint_impls! {
         <R>::Target: FfiWrapperType,
         <<R>::Target as FfiWrapperType>::ReturnType: WrapperTypeOf<Self>,
     {
-        type ReturnType = <<<R>::Target as FfiWrapperType>::ReturnType as WrapperTypeOf<Self>>::Type;
+        type ReturnType = <<R::Target as FfiWrapperType>::ReturnType as WrapperTypeOf<Self>>::Type;
     }
     impl<R: ReprC> FfiWrapperType for R
     where
@@ -1264,24 +1296,102 @@ disjoint_impls! {
         type ReturnType = Self;
     }
 
-    impl<'itm, 'a, R: External> FfiWrapperType for &'itm mut &'a mut R
+    //impl<'a, R> FfiWrapperType for Option<&'a R>
+    //where
+    //    Self: Ir<Type = Option<&'a Transparent>>,
+    //    &'a R: Optional<Inner: WrapperTypeOf<Self>>,
+    //{
+    //    type ReturnType = <<&'a R as Optional>::Inner as WrapperTypeOf<Self>>::Type;
+    //}
+    //impl<'a, R> FfiWrapperType for Option<&'a mut R>
+    //where
+    //    Self: Ir<Type = Option<&'a mut Transparent>>,
+    //    &'a mut R: Optional<Inner: WrapperTypeOf<Self>>,
+    //{
+    //    type ReturnType = <<&'a mut R as Optional>::Inner as WrapperTypeOf<Self>>::Type;
+    //}
+    //impl<R> FfiWrapperType for Option<Box<R>>
+    //where
+    //    Self: Ir<Type = Option<Box<Transparent>>>,
+    //    Box<R>: Optional<Inner: WrapperTypeOf<Self>>,
+    //{
+    //    type ReturnType = <<Box<R> as Optional>::Inner as WrapperTypeOf<Self>>::Type;
+    //}
+    //impl<R: Ir<Type = Option<Opaque>>> FfiWrapperType for &R
+    //where
+    //    Self: Ir<Type = Option<Transparent>>,
+    //{
+    //    type ReturnType = Self;
+    //}
+    //impl<'a, R> FfiWrapperType for Option<&'a mut R>
+    //where
+    //    Self: Ir<Type = Option<&'a mut Opaque>>,
+    //{
+    //    type ReturnType = Self;
+    //}
+    //impl<R> FfiWrapperType for Option<Box<R>>
+    //where
+    //    Self: Ir<Type = Option<Box<Opaque>>>,
+    //{
+    //    type ReturnType = Self;
+    //}
+    impl<'a, R> FfiWrapperType for Option<&'a R>
     where
-        Self: Ir<Type = &'itm mut &'a mut Extern>,
+        Self: Ir<Type = Option<&'a Extern>>,
     {
-        type ReturnType = &'itm mut ExternRefMut<'a, R>;
+        type ReturnType = Option<ExternRef<'a, R>>;
     }
-    impl<'itm, 'a, R: External> FfiWrapperType for &'itm &'a mut R
+    //impl<'a, R> FfiWrapperType for Option<&'a mut R>
+    //where
+    //    Self: Ir<Type = Option<&'a mut Extern>>,
+    //{
+    //    type ReturnType = Option<ExternRefMut<'a, R>>;
+    //}
+    //impl<R> FfiWrapperType for Option<Box<R>>
+    //where
+    //    Self: Ir<Type = Option<Box<Extern>>>,
+    //{
+    //    type ReturnType = Option<R>;
+    //}
+    //impl<R: Optional> FfiWrapperType for R
+    //where
+    //    Self: Ir<Type = Option<Transparent>> + crate::niche::Ir<Type = Robust>,
+    //{
+    //    type ReturnType = <<R::Target as FfiWrapperType>::ReturnType as WrapperTypeOf<Self>>::Type;
+    //}
+    impl<R: Transmute> FfiWrapperType for Option<R>
     where
-        Self: Ir<Type = &'itm &'a mut Extern>,
+        Self: Ir<Type = Option<Transparent>>,
+        Option<<R>::Target>: FfiWrapperType,
+        <Option<<R>::Target> as FfiWrapperType>::ReturnType: WrapperTypeOf<Self>,
     {
-        type ReturnType = &'itm ExternRefMut<'a, R>;
+        type ReturnType = <<Option<R::Target> as FfiWrapperType>::ReturnType as WrapperTypeOf<Self>>::Type;
     }
-    impl<'itm, 'a, R: External> FfiWrapperType for &'itm mut &'a R
+    impl<R> FfiWrapperType for Option<R>
     where
-        Self: Ir<Type = &'itm mut &'a Extern>,
+        Self: Ir<Type = Option<Robust>>,
     {
-        type ReturnType = &'itm mut ExternRef<'a, R>;
+        type ReturnType = Self;
     }
+    impl<R> FfiWrapperType for Option<R>
+    where
+        Self: Ir<Type = Option<Opaque>>,
+    {
+        type ReturnType = Self;
+    }
+    //impl<R: FfiWrapperType, S: Cloned> FfiWrapperType for R
+    //where
+    //    Self: Ir<Type = Option<S>> + crate::niche::Ir<Type = Robust>,
+    //{
+    //    type ReturnType = Self;
+    //}
+    impl<R: FfiWrapperType, S: Cloned> FfiWrapperType for R
+    where
+        Self: Ir<Type = Option<S>> + crate::niche::Ir<Type = S>,
+    {
+        type ReturnType = Self;
+    }
+
     impl<'itm, R: External> FfiWrapperType for &'itm R
     where
         Self: Ir<Type = &'itm Extern>,
@@ -1292,7 +1402,7 @@ disjoint_impls! {
     where
         Self: Ir<Type = &'itm S>,
     {
-        type ReturnType = LocalRef<'itm, <R>::ReturnType>;
+        type ReturnType = LocalRef<'itm, R::ReturnType>;
     }
 
     impl<'itm, R: External> FfiWrapperType for &'itm mut R
@@ -1309,20 +1419,13 @@ disjoint_impls! {
         <&'slice [<R>::Target] as FfiWrapperType>::ReturnType: WrapperTypeOf<Self>,
     {
         type ReturnType =
-            <<&'slice [<R>::Target] as FfiWrapperType>::ReturnType as WrapperTypeOf<Self>>::Type;
+            <<&'slice [R::Target] as FfiWrapperType>::ReturnType as WrapperTypeOf<Self>>::Type;
     }
     impl<'a, R: ReprC> FfiWrapperType for &'a [R]
     where
         Self: Ir<Type = &'a [Robust]>,
     {
         type ReturnType = Self;
-    }
-
-    impl<'itm, R: External> FfiWrapperType for &'itm [&'itm mut R]
-    where
-        Self: Ir<Type = &'itm [&'itm mut Extern]>,
-    {
-        type ReturnType = &'itm [ExternRefMut<'itm, R>];
     }
 
     impl<'slice, R: Transmute> FfiWrapperType for &'slice mut [R]
@@ -1332,7 +1435,7 @@ disjoint_impls! {
         <&'slice mut [<R>::Target] as FfiWrapperType>::ReturnType: WrapperTypeOf<Self>,
     {
         type ReturnType =
-            <<&'slice mut [<R>::Target] as FfiWrapperType>::ReturnType as WrapperTypeOf<Self>>::Type;
+            <<&'slice mut [R::Target] as FfiWrapperType>::ReturnType as WrapperTypeOf<Self>>::Type;
     }
     impl<'a, R: ReprC> FfiWrapperType for &'a mut [R]
     where
@@ -1344,7 +1447,7 @@ disjoint_impls! {
     where
         Self: Ir<Type = &'itm [S]>,
     {
-        type ReturnType = LocalSlice<'itm, <R>::ReturnType>;
+        type ReturnType = LocalSlice<'itm, R::ReturnType>;
     }
 
     #[cfg(feature = "owned_types")]
@@ -1370,13 +1473,6 @@ disjoint_impls! {
         type ReturnType = Box<<R>::ReturnType>;
     }
 
-    impl<'itm, R: External> FfiWrapperType for Box<&'itm mut R>
-    where
-        Self: Ir<Type = Box<&'itm mut Extern>>,
-    {
-        type ReturnType = Box<ExternRefMut<'itm, R>>;
-    }
-
     #[cfg(feature = "owned_types")]
     impl<R: Transmute> FfiWrapperType for Box<[R]>
     where
@@ -1385,7 +1481,7 @@ disjoint_impls! {
         <Box<[<R>::Target]> as FfiWrapperType>::ReturnType: WrapperTypeOf<Self>,
     {
         type ReturnType =
-            <<Box<[<R>::Target]> as FfiWrapperType>::ReturnType as WrapperTypeOf<Self>>::Type;
+            <<Box<[R::Target]> as FfiWrapperType>::ReturnType as WrapperTypeOf<Self>>::Type;
     }
     #[cfg(feature = "owned_types")]
     #[cfg(feature = "owned_as_ref")]
@@ -1401,16 +1497,7 @@ disjoint_impls! {
     where
         Self: Ir<Type = Box<[S]>>,
     {
-        type ReturnType = Box<[<R>::ReturnType]>;
-    }
-
-    #[cfg(feature = "owned_types")]
-    #[cfg(feature = "owned_as_ref")]
-    impl<'itm, R: External> FfiWrapperType for Box<[&'itm mut R]>
-    where
-        Self: Ir<Type = Box<[&'itm mut Extern]>>,
-    {
-        type ReturnType = Box<[ExternRefMut<'itm, R>]>;
+        type ReturnType = Box<[R::ReturnType]>;
     }
 
     #[cfg(feature = "owned_types")]
@@ -1421,7 +1508,7 @@ disjoint_impls! {
         <Vec<<R>::Target> as FfiWrapperType>::ReturnType: WrapperTypeOf<Self>,
     {
         type ReturnType =
-            <<Vec<<R>::Target> as FfiWrapperType>::ReturnType as WrapperTypeOf<Self>>::Type;
+            <<Vec<R::Target> as FfiWrapperType>::ReturnType as WrapperTypeOf<Self>>::Type;
     }
     #[cfg(feature = "owned_types")]
     #[cfg(feature = "owned_as_ref")]
@@ -1440,40 +1527,11 @@ disjoint_impls! {
         type ReturnType = Vec<<R>::ReturnType>;
     }
 
-    #[cfg(feature = "owned_types")]
-    #[cfg(feature = "owned_as_ref")]
-    impl<'itm, R: External> FfiWrapperType for Vec<&'itm mut R>
-    where
-        Self: Ir<Type = Vec<&'itm mut Extern>>,
-    {
-        type ReturnType = Vec<ExternRefMut<'itm, R>>;
-    }
-
     impl<R: Ir<Type = S> + FfiWrapperType, S: Cloned, const N: usize> FfiWrapperType for [R; N]
     where
         Self: Ir<Type = [S; N]>,
     {
-        type ReturnType = [<R>::ReturnType; N];
-    }
-
-    impl<'itm, R: External, const N: usize> FfiWrapperType for [&'itm mut R; N]
-    where
-        Self: Ir<Type = [&'itm mut Extern; N]>,
-    {
-        type ReturnType = [ExternRefMut<'itm, R>; N];
-    }
-
-    impl<R: FfiWrapperType> FfiWrapperType for Option<R>
-    where
-        Self: Ir<Type = Option<WithoutNiche>>,
-    {
-        type ReturnType = Option<<R>::ReturnType>;
-    }
-    impl<R: FfiWrapperType> FfiWrapperType for Option<R>
-    where
-        Self: Ir<Type = Self>,
-    {
-        type ReturnType = Option<<R>::ReturnType>;
+        type ReturnType = [R::ReturnType; N];
     }
 }
 
@@ -1556,10 +1614,6 @@ macro_rules! mineral {
             type Type = $crate::ir::Robust;
         }
 
-        impl$(<$($impl_generics $(: $bounds)?),*>)? $crate::option::Ir for $ty where $($($where_ty: $where_bound),*)? {
-            type Type = $crate::option::WithoutNiche;
-        }
-
         impl<$($($impl_generics $(: $bounds)?),*)?> $crate::WrapperTypeOf<Self> for $ty where $($($where_ty: $where_bound),*)? {
             type Type = Self;
         }
@@ -1582,8 +1636,12 @@ macro_rules! mineral {
             fn is_valid($target_var: $target_ty) -> bool $block
         }
 
-        impl<$($($impl_generics $(: $bounds)?),*)?> $crate::option::Niche for $ty where $($($where_ty: $where_bound),*)? {
+        impl<$($($impl_generics $(: $bounds)?),*)?> $crate::niche::Niche for $ty where $($($where_ty: $where_bound),*)? {
             const NICHE_VALUE: $niche_ty = $niche_value;
+        }
+
+        impl<$($($impl_generics $(: $bounds)?),*)?> $crate::niche::Ir for $ty where $($($where_ty: $where_bound),*)? {
+            type Type = $crate::ir::Transparent;
         }
     };
     (unsafe impl $(<$($impl_generics: tt $(: $bounds: path)?),*>)? Transparent for $ty: ty $(where $($where_ty:ty: $where_bound:path),* )? {
@@ -1606,8 +1664,43 @@ macro_rules! mineral {
         // SAFETY: `$t` is robust with respect to `$target`
         unsafe impl<$($($impl_generics $(: $bounds)?),*)?> $crate::transmute::InfallibleTransmute for $ty where $($($where_ty: $where_bound),*)? {}
 
-        impl<$($($impl_generics $(: $bounds)?),*)?> $crate::option::Niche for $ty where for<'dummy> $target: $crate::option::Niche, $($($where_ty: $where_bound),*)? {
-            const NICHE_VALUE: <Self as $crate::ExternC>::CType = <$target as $crate::option::Niche>::NICHE_VALUE;
+        const _: () = {
+            use $crate::niche::Ir;
+
+            disjoint_impls::disjoint_impls! {
+                #[disjoint_impls(remote)]
+                trait Ir {
+                    type Type;
+                }
+
+                impl<$($($impl_generics $(: $bounds)?),*)?> Ir for $ty where
+                    Self: $crate::transmute::Transmute,
+                    <Self as $crate::transmute::Transmute>::Target: Ir<Type = $crate::ir::Robust>,
+                    $($($where_ty: $where_bound),*)?
+                {
+                    type Type = $crate::ir::Robust;
+                }
+                impl<$($($impl_generics $(: $bounds)?),*)?> Ir for $ty where
+                    Self: $crate::transmute::Transmute,
+                    <Self as $crate::transmute::Transmute>::Target: Ir<Type = $crate::ir::Transparent>,
+                    $($($where_ty: $where_bound),*)?
+                {
+                    type Type = $crate::ir::Transparent;
+                }
+                impl<S: $crate::ir::Cloned, $($($impl_generics $(: $bounds)?),*)?> Ir for $ty where
+                    Self: $crate::transmute::Transmute + $crate::niche::Niche,
+                    <Self as $crate::transmute::Transmute>::Target: Ir<Type = S>,
+                    $($($where_ty: $where_bound),*)?
+                {
+                    type Type = Self;
+                }
+            }
+        };
+
+        impl<$($($impl_generics $(: $bounds)?),*)?> $crate::niche::Niche for $ty where
+            <Self as $crate::transmute::Transmute>::Target: $crate::niche::Niche,
+            $($($where_ty: $where_bound),*)? {
+            const NICHE_VALUE: <Self as $crate::ExternC>::CType = <$target as $crate::niche::Niche>::NICHE_VALUE;
         }
 
         impl<$($($impl_generics $(: $bounds)?),*)?> $crate::WrapperTypeOf<$ty> for $target where $($($where_ty: $where_bound),*)? {
@@ -1633,8 +1726,8 @@ macro_rules! mineral {
         // SAFETY: `$t` is robust with respect to `$target`
         unsafe impl<$($($impl_generics $(: $bounds)?),*)?> $crate::transmute::InfallibleTransmute for $ty where $($($where_ty: $where_bound),*)? {}
 
-        impl$(<$($impl_generics $(: $bounds)?),*>)? $crate::option::Ir for $ty where $($($where_ty: $where_bound),*)? {
-            type Type = $crate::option::WithoutNiche;
+        impl<$($($impl_generics $(: $bounds)?),*)?> $crate::niche::Ir for $ty where $($($where_ty: $where_bound),*)? {
+            type Type = $crate::ir::Robust;
         }
 
         impl<$($($impl_generics $(: $bounds)?),*)?> $crate::WrapperTypeOf<$ty> for $target where $($($where_ty: $where_bound),*)? {
@@ -1744,10 +1837,33 @@ macro_rules! impl_tuple {
             type Type = Self;
         }
 
-        // FIXME: But how to implement Niche?
-        impl<$($ty: $crate::option::Ir<Type = $crate::option::WithoutNiche>),+> $crate::option::Ir for ($($ty,)+) {
-            type Type = $crate::option::WithoutNiche;
+        // FIXME: Produce an impl of niche::Niche and niche::Ir
+        // for every combination of bounds on input parameters
+        impl<$($ty: $crate::niche::Niche),+> $crate::niche::Niche for ($($ty,)+) {
+            const NICHE_VALUE: <Self as $crate::ExternC>::CType = $ffi_ty($(<$ty as $crate::niche::Niche>::NICHE_VALUE,)+);
         }
+
+        const _: () = {
+            use crate::niche::Ir;
+
+            disjoint_impls::disjoint_impls! {
+                #[disjoint_impls(remote)]
+                trait Ir {
+                    type Type;
+                }
+
+                impl<$($ty: $crate::niche::Ir<Type = $crate::ir::Robust>),+> Ir for ($($ty,)+) {
+                    type Type = $crate::ir::Robust;
+                }
+                //impl<$($ty: $crate::niche::Ir<Type = $crate::ir::Transparent>),+> Ir for ($($ty,)+) {
+                //    type Type = Self;
+                //}
+                // FIXME: This is even incorrect because every type should be mapped into different S
+                //impl<S: $crate::ir::Cloned, $($ty: $crate::niche::Ir<Type = S>),+ + Niche> Ir for ($($ty,)+) {
+                //    type Type = Self;
+                //}
+            }
+        };
 
         impl<$($ty),+> Cloned for ($($ty,)+) {}
 

@@ -237,8 +237,19 @@ pub fn wrap_as_opaque(emitter: &mut Emitter, mut input: FfiTypeInput) -> TokenSt
 
 fn gen_impl_ffi(name: &Ident, generics: &syn::Generics) -> TokenStream {
     let (impl_generics, ty_generics, where_clause) = generics.split_for_impl();
+    let lifetime: syn::Lifetime = parse_quote!('a);
 
     quote! {
+        impl #impl_generics #name #ty_generics #where_clause {
+            fn as_ref<#lifetime>(&#lifetime self) -> co3::external::ExternRef<#lifetime, #name #ty_generics> {
+                co3::external::ExternRef::new(self)
+            }
+
+            fn as_mut<#lifetime>(&#lifetime mut self) -> co3::external::ExternRefMut<#lifetime, #name #ty_generics> {
+                co3::external::ExternRefMut::new(self)
+            }
+        }
+
         // SAFETY: Type is a wrapper for `*mut Extern`
         unsafe impl #impl_generics co3::external::External for #name #ty_generics #where_clause {
             fn as_extern_ptr(&self) -> *const co3::external::Extern {
@@ -270,7 +281,7 @@ fn gen_impl_ffi(name: &Ident, generics: &syn::Generics) -> TokenStream {
         // SAFETY: The type is never dereferenced so it is considered as always valid
         unsafe impl #impl_generics co3::transmute::InfallibleTransmute for #name #ty_generics #where_clause {}
 
-        impl #impl_generics co3::option::Niche for #name #ty_generics #where_clause {
+        impl #impl_generics co3::niche::Niche for #name #ty_generics #where_clause {
             const NICHE_VALUE: *mut co3::external::Extern = core::ptr::null_mut();
         }
         impl #impl_generics co3::WrapperTypeOf<Self> for #name #ty_generics #where_clause {

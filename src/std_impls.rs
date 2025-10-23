@@ -2,7 +2,10 @@
 #[cfg(feature = "owned_as_ref")]
 use alloc::{boxed::Box, string::String, vec::Vec};
 
-use crate::{WrapperTypeOf, mineral, option::Niche as _, slice::RefSlice};
+#[cfg(feature = "owned_as_ref")]
+#[cfg(feature = "owned_types")]
+use crate::niche::Niche;
+use crate::{WrapperTypeOf, mineral, slice::RefSlice};
 
 macro_rules! non_zero_derive {
     ($($ty:ty => $target:ty),+ $(,)?) => {$(
@@ -103,6 +106,12 @@ mineral! {
         fn is_valid(target: &Self::Target) -> bool {
             !target.is_null()
         }
+    }
+}
+
+mineral! {
+    unsafe impl<T> Transparent for core::cell::UnsafeCell<T> {
+        type Target = T;
     }
 }
 
