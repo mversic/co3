@@ -23,9 +23,10 @@ fn prune_fn_declaration_attributes<'a>(attrs: &[&'a syn::Attribute]) -> Vec<&'a 
 
 pub fn gen_declaration(fn_descriptor: &FnDescriptor, trait_name: Option<&Ident>) -> TokenStream {
     let ffi_fn_attrs = prune_fn_declaration_attributes(&fn_descriptor.attrs);
+
     let ffi_fn_name = gen_fn_name(fn_descriptor, trait_name);
     let ffi_fn_doc = gen_doc(fn_descriptor, trait_name);
-    let fn_signature = gen_decl_signature(&ffi_fn_name, fn_descriptor);
+    let fn_signature = gen_fn_signature(&ffi_fn_name, fn_descriptor);
 
     quote! {
         unsafe extern "C" {
@@ -38,9 +39,11 @@ pub fn gen_declaration(fn_descriptor: &FnDescriptor, trait_name: Option<&Ident>)
 
 pub fn gen_definition(fn_descriptor: &FnDescriptor, trait_name: Option<&Ident>) -> TokenStream {
     let ffi_fn_attrs = &fn_descriptor.attrs;
+
     let ffi_fn_name = gen_fn_name(fn_descriptor, trait_name);
     let ffi_fn_doc = gen_doc(fn_descriptor, trait_name);
-    let fn_signature = gen_def_signature(&ffi_fn_name, fn_descriptor);
+    let fn_signature = gen_fn_signature(&ffi_fn_name, fn_descriptor);
+
     let ffi_fn_body = gen_body(fn_descriptor, trait_name);
 
     quote! {
@@ -111,64 +114,34 @@ fn gen_doc(fn_descriptor: &FnDescriptor, trait_name: Option<&Ident>) -> String {
     )
 }
 
-fn gen_decl_signature(ffi_fn_name: &Ident, fn_descriptor: &FnDescriptor) -> TokenStream {
+fn gen_fn_signature(ffi_fn_name: &Ident, fn_descriptor: &FnDescriptor) -> TokenStream {
     let self_arg = fn_descriptor
         .receiver
         .as_ref()
-        .map(gen_decl_input_arg)
+        .map(gen_input_arg)
         .map_or_else(Vec::new, |self_arg| vec![self_arg]);
     let fn_args: Vec<_> = fn_descriptor
         .input_args
         .iter()
-        .map(gen_decl_input_arg)
+        .map(gen_input_arg)
         .collect();
-    let output_arg = ffi_output_arg(fn_descriptor).map(gen_decl_out_ptr_arg);
+    let output_arg = ffi_output_arg(fn_descriptor).map(gen_out_ptr_arg);
 
     quote! {
         fn #ffi_fn_name(#(#self_arg,)* #(#fn_args,)* #output_arg) -> co3::FfiReturn
     }
 }
 
-fn gen_def_signature(ffi_fn_name: &Ident, fn_descriptor: &FnDescriptor) -> TokenStream {
-    let self_arg = fn_descriptor
-        .receiver
-        .as_ref()
-        .map(gen_def_input_arg)
-        .map_or_else(Vec::new, |self_arg| vec![self_arg]);
-    let fn_args: Vec<_> = fn_descriptor
-        .input_args
-        .iter()
-        .map(gen_def_input_arg)
-        .collect();
-    let output_arg = ffi_output_arg(fn_descriptor).map(gen_def_out_ptr_arg);
-
-    quote! {
-        fn #ffi_fn_name(#(#self_arg,)* #(#fn_args,)* #output_arg) -> co3::FfiReturn
-    }
-}
-
-fn gen_def_input_arg(arg: &Arg) -> TokenStream {
+fn gen_input_arg(arg: &Arg) -> TokenStream {
     let arg_name = arg.name();
     let arg_type = arg.ffi_type_resolved();
 
     quote! { #arg_name: #arg_type }
 }
 
-fn gen_def_out_ptr_arg(arg: &Arg) -> TokenStream {
+fn gen_out_ptr_arg(arg: &Arg) -> TokenStream {
     let (arg_name, arg_type) = (arg.name(), arg.src_type_resolved());
     quote! { #arg_name: *mut <#arg_type as co3::out_ptr::OutPtr>::OutPtr }
-}
-
-fn gen_decl_input_arg(arg: &Arg) -> TokenStream {
-    let arg_name = arg.name();
-    let arg_type = arg.wrapper_ffi_type_resolved();
-
-    quote! { #arg_name: #arg_type }
-}
-
-fn gen_decl_out_ptr_arg(arg: &Arg) -> TokenStream {
-    let (arg_name, arg_type) = (arg.name(), arg.src_type_resolved());
-    quote! { #arg_name: *mut <<#arg_type as co3::FfiWrapperType>::ReturnType as co3::out_ptr::OutPtr>::OutPtr }
 }
 
 fn gen_body(fn_descriptor: &FnDescriptor, trait_name: Option<&Ident>) -> TokenStream {

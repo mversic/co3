@@ -500,10 +500,6 @@ fn derive_ffi_type_for_fieldless_enum(
                 }
             }
         }
-
-        impl co3::WrapperTypeOf<#enum_name> for #tag_type {
-            type Type = #enum_name;
-        }
     }
 }
 
@@ -666,9 +662,6 @@ fn derive_ffi_type_for_data_carrying_enum(
                         Decode::decode(out_ptr, store_ref)
                     }
                 }
-            }
-            impl<#impl_generics> co3::FfiWrapperType for #enum_name #ty_generics #non_local_where_clause {
-                type ReturnType = Self;
             }
         }
     };

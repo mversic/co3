@@ -237,15 +237,14 @@ pub fn wrap_as_opaque(emitter: &mut Emitter, mut input: FfiTypeInput) -> TokenSt
 
 fn gen_impl_ffi(name: &Ident, generics: &syn::Generics) -> TokenStream {
     let (impl_generics, ty_generics, where_clause) = generics.split_for_impl();
-    let lifetime: syn::Lifetime = parse_quote!('a);
 
     quote! {
         impl #impl_generics #name #ty_generics #where_clause {
-            fn as_ref<#lifetime>(&#lifetime self) -> co3::external::ExternRef<#lifetime, #name #ty_generics> {
+            fn as_ref(&self) -> co3::external::ExternRef<'_, #name #ty_generics> {
                 co3::external::ExternRef::new(self)
             }
 
-            fn as_mut<#lifetime>(&#lifetime mut self) -> co3::external::ExternRefMut<#lifetime, #name #ty_generics> {
+            fn as_mut(&mut self) -> co3::external::ExternRefMut<'_, #name #ty_generics> {
                 co3::external::ExternRefMut::new(self)
             }
         }
@@ -283,9 +282,6 @@ fn gen_impl_ffi(name: &Ident, generics: &syn::Generics) -> TokenStream {
 
         impl #impl_generics co3::niche::Niche for #name #ty_generics #where_clause {
             const NICHE_VALUE: *mut co3::external::Extern = core::ptr::null_mut();
-        }
-        impl #impl_generics co3::WrapperTypeOf<Self> for #name #ty_generics #where_clause {
-            type Type = Self;
         }
     }
 }
@@ -338,9 +334,6 @@ fn gen_wrapper_signature(fn_descriptor: &FnDescriptor) -> syn::Signature {
 
     let mut type_impl_trait_resolver = TypeImplTraitResolver;
     type_impl_trait_resolver.visit_signature_mut(&mut signature);
-
-    let mut type_resolver = WrapperTypeResolver::new();
-    type_resolver.visit_signature_mut(&mut signature);
 
     signature
 }
@@ -527,44 +520,4 @@ fn gen_return_stmt(fn_descriptor: &FnDescriptor) -> TokenStream {
             #return_stmt
         }
     })
-}
-
-pub struct WrapperTypeResolver(bool);
-impl WrapperTypeResolver {
-    pub fn new() -> Self {
-        Self(false)
-    }
-}
-impl VisitMut for WrapperTypeResolver {
-    fn visit_receiver_mut(&mut self, i: &mut syn::Receiver) {
-        if i.reference.is_none() {
-            i.mutability = None;
-        }
-
-        // we do NOT want to visit the type in the receiver:
-        // 1. what can actually go in there is severely limited
-        // 2. in syn 2.0 even &self has a reconstructed type &Self, which, when patched, leads to an incorrect rust syntax
-        // syn::visit_mut::visit_receiver_mut(self, i);
-    }
-
-    fn visit_type_mut(&mut self, i: &mut syn::Type) {
-        if self.0 {
-            // Patch return type to facilitate returning types referencing local store
-            *i = parse_quote! {<#i as co3::FfiWrapperType>::ReturnType};
-        }
-    }
-    fn visit_return_type_mut(&mut self, i: &mut syn::ReturnType) {
-        self.0 = true;
-
-        if let syn::ReturnType::Type(_, output) = i {
-            if let Some((ok, err)) = unwrap_result_type(output) {
-                let mut ok = ok.clone();
-                self.visit_type_mut(&mut ok);
-
-                **output = parse_quote! {core::result::Result<#ok, #err>}
-            } else {
-                self.visit_type_mut(output);
-            }
-        }
-    }
 }

@@ -34,13 +34,13 @@ impl OpaqueStruct {
         unreachable!("replaced by co3::decarbonate")
     }
 
-    pub fn get_param(&self, name: &u8) -> Option<&Value> {
+    pub fn get_param(&self, name: &u8) -> Option<ExternRef<'_, Value>> {
         unreachable!("replaced by co3::decarbonate")
     }
 
-    pub fn params(&self) -> impl ExactSizeIterator<Item = &Value> {
-        unreachable!("replaced by co3::decarbonate")
-    }
+    //pub fn params(&self) -> impl ExactSizeIterator<Item = &Value> {
+    //    unreachable!("replaced by co3::decarbonate")
+    //}
 
     pub fn fallible_int_output(flag: bool) -> Result<u8, &'static str> {
         unreachable!("replaced by co3::decarbonate")
@@ -48,7 +48,7 @@ impl OpaqueStruct {
 }
 
 #[co3::decarbonate]
-pub fn freestanding_returns_opaque_item(input: &OpaqueStruct) -> &OpaqueStruct {
+pub fn freestanding_returns_opaque_item(input: ExternRef<OpaqueStruct>) -> ExternRef<OpaqueStruct> {
     unreachable!("replaced by co3::decarbonate")
 }
 
@@ -108,8 +108,8 @@ fn take_and_return_opaque_ref() {
 
     let opaque: OpaqueStruct = make_new_opaque(name, params);
 
-    let opaque_ref: ExternRef<OpaqueStruct> = freestanding_returns_opaque_item(&opaque);
-    compare_opaque_eq::<_, ffi::ExternOpaqueStruct>(&opaque, &opaque_ref);
+    let opaque_ref: ExternRef<OpaqueStruct> = freestanding_returns_opaque_item(opaque.as_ref());
+    compare_opaque_eq::<_, ffi::ExternOpaqueStruct>(&opaque.as_ref(), &opaque_ref);
 }
 
 //#[test]

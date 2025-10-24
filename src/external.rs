@@ -1,4 +1,4 @@
-use crate::{ExternC, WrapperTypeOf, mineral};
+use crate::{mineral, transmute::InfallibleTransmute, ExternC};
 
 /// Represents the pointee on the far side of an exported opaque pointer at the FFI boundary.
 ///
@@ -100,9 +100,7 @@ mineral! {
     }
 }
 
-impl<'a, R: 'a, T> WrapperTypeOf<*const R> for ExternRef<'a, T> {
-    type Type = ExternRef<'a, R>;
-}
-impl<'a, R: 'a, T> WrapperTypeOf<*mut R> for ExternRefMut<'a, T> {
-    type Type = ExternRefMut<'a, R>;
-}
+// SAFETY: The type is never dereferenced
+unsafe impl<R> InfallibleTransmute for ExternRef<'_, R> {}
+// SAFETY: The type is never dereferenced
+unsafe impl<R> InfallibleTransmute for ExternRefMut<'_, R> {}

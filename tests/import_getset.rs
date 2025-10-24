@@ -16,6 +16,7 @@ pub struct Name;
 pub struct FfiStruct {
     #[getset(set = "pub", get_mut = "pub")]
     id: u8,
+    #[extern_type]
     name: Name,
 }
 

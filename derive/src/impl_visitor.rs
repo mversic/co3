@@ -48,17 +48,6 @@ impl Arg {
 
         parse_quote! {<#src_type as co3::ExternC>::CType}
     }
-    // TODO: Probably can be removed?
-    pub fn wrapper_ffi_type_resolved(&self) -> Type {
-        let src_type = resolve_type(self.self_ty.as_ref(), self.type_.clone());
-
-        // TODO: Handle error properly
-        if matches!(src_type, Type::Array(_)) {
-            unimplemented!("Arrays are not supported by C ABI. Use a pointer or struct wrapper");
-        }
-
-        parse_quote! {<#src_type as co3::ExternC>::CType}
-    }
 }
 
 fn resolve_type(self_type: Option<&Path>, mut arg_type: Type) -> Type {

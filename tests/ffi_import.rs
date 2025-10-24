@@ -7,18 +7,21 @@ use co3::local::{LocalRef, LocalSlice};
 #[repr(transparent)]
 pub struct Transparent((u32, u32));
 
+// FIXME: Shouldn't these structs be defined inside macro?
+type TransparentRef<'a> = LocalRef<'a, (u32, u32)>;
+
 #[co3::decarbonate]
 pub fn freestanding_returns_non_local(input: &u32) -> &u32 {
     unreachable!("replaced by co3::decarbonate")
 }
 
 #[co3::decarbonate]
-pub fn freestanding_returns_local_ref(input: &(u32, u32)) -> &(u32, u32) {
+pub fn freestanding_returns_local_ref(input: &(u32, u32)) -> LocalRef<'_, (u32, u32)> {
     unreachable!("replaced by co3::decarbonate")
 }
 
 #[co3::decarbonate]
-pub fn freestanding_returns_local_slice(input: &[(u32, u32)]) -> &[(u32, u32)] {
+pub fn freestanding_returns_local_slice(input: &[(u32, u32)]) -> LocalSlice<'_, (u32, u32)> {
     unreachable!("replaced by co3::decarbonate")
 }
 
@@ -41,7 +44,9 @@ pub fn freestanding_returns_iterator(
 //}
 
 #[co3::decarbonate]
-pub fn freestanding_take_and_return_local_transparent_ref(input: &Transparent) -> &Transparent {
+pub fn freestanding_take_and_return_local_transparent_ref(
+    input: &Transparent,
+) -> TransparentRef<'_> {
     unreachable!("replaced by co3::decarbonate")
 }
 
@@ -113,8 +118,8 @@ fn return_iterator() {
 #[webassembly_test::webassembly_test]
 fn take_and_return_transparent_local_ref() {
     let input = Transparent((420, 420));
-    let output: LocalRef<Transparent> = freestanding_take_and_return_local_transparent_ref(&input);
-    assert_eq!(input, *output);
+    let output: TransparentRef = freestanding_take_and_return_local_transparent_ref(&input);
+    assert_eq!(input.0, *output);
 }
 
 #[test]

@@ -5,7 +5,7 @@ use alloc::{boxed::Box, string::String, vec::Vec};
 #[cfg(feature = "owned_as_ref")]
 #[cfg(feature = "owned_types")]
 use crate::niche::Niche;
-use crate::{WrapperTypeOf, mineral, slice::RefSlice};
+use crate::{mineral, slice::RefSlice};
 
 macro_rules! non_zero_derive {
     ($($ty:ty => $target:ty),+ $(,)?) => {$(
@@ -119,12 +119,3 @@ mineral! {
 #[cfg(feature = "owned_as_ref")]
 // SAFETY: Type is `ReprC` if the inner type is
 unsafe impl<T: crate::ReprC> crate::ReprC for core::mem::ManuallyDrop<T> {}
-
-impl<T> WrapperTypeOf<core::ptr::NonNull<T>> for *mut T {
-    type Type = core::ptr::NonNull<T>;
-}
-#[cfg(feature = "owned_types")]
-#[cfg(feature = "owned_as_ref")]
-impl WrapperTypeOf<String> for Vec<u8> {
-    type Type = String;
-}

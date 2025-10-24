@@ -137,13 +137,6 @@ mod wasm {
                 unsafe fn write_out(self, out_ptr: *mut Self::OutPtr) {
                     unsafe {out_ptr.write(self)}
                 }
-            }
-
-            impl FfiWrapperType for $src {
-                type ReturnType = Self;
-            }
-            impl $crate::WrapperTypeOf<Self> for $src {
-                type Type = Self;
             })+
         };
     }
@@ -166,10 +159,6 @@ macro_rules! fieldless_enum_derive {
                     $validity_fn(target)
                 }
             }
-        }
-
-        impl $crate::WrapperTypeOf<$src> for $dst {
-            type Type = $src;
         }
     };
 }
