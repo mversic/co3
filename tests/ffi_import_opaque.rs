@@ -38,9 +38,9 @@ impl OpaqueStruct {
         unreachable!("replaced by co3::decarbonate")
     }
 
-    //pub fn params(&self) -> impl ExactSizeIterator<Item = &Value> {
-    //    unreachable!("replaced by co3::decarbonate")
-    //}
+    pub fn params(&self) -> impl ExactSizeIterator<Item = &Value> {
+        unreachable!("replaced by co3::decarbonate")
+    }
 
     pub fn fallible_int_output(flag: bool) -> Result<u8, &'static str> {
         unreachable!("replaced by co3::decarbonate")

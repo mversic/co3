@@ -1,4 +1,4 @@
-use crate::{mineral, transmute::InfallibleTransmute, ExternC};
+use crate::{ExternC, mineral, transmute::InfallibleTransmute};
 
 /// Represents the pointee on the far side of an exported opaque pointer at the FFI boundary.
 ///
@@ -38,11 +38,9 @@ pub struct Extern {
 
 #[derive(Clone, Copy)]
 #[repr(transparent)]
-// FIXME: I think I should check variance of phantom data
 pub struct ExternRef<'a, T>(*const Extern, core::marker::PhantomData<&'a T>);
 
 #[repr(transparent)]
-// FIXME: I think I should check variance of phantom data
 pub struct ExternRefMut<'a, T>(*mut Extern, core::marker::PhantomData<&'a mut T>);
 
 impl<T: External> ExternRef<'_, T> {
@@ -100,7 +98,7 @@ mineral! {
     }
 }
 
-// SAFETY: The type is never dereferenced
+// SAFETY: The type is never dereferenced on the far side
 unsafe impl<R> InfallibleTransmute for ExternRef<'_, R> {}
-// SAFETY: The type is never dereferenced
+// SAFETY: The type is never dereferenced on the far side
 unsafe impl<R> InfallibleTransmute for ExternRefMut<'_, R> {}

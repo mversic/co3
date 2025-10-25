@@ -1,5 +1,4 @@
 #![cfg(feature = "derive")]
-use co3::local::{LocalRef, LocalSlice};
 
 #[co3::extern_type]
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -7,21 +6,18 @@ use co3::local::{LocalRef, LocalSlice};
 #[repr(transparent)]
 pub struct Transparent((u32, u32));
 
-// FIXME: Shouldn't these structs be defined inside macro?
-type TransparentRef<'a> = LocalRef<'a, (u32, u32)>;
-
 #[co3::decarbonate]
 pub fn freestanding_returns_non_local(input: &u32) -> &u32 {
     unreachable!("replaced by co3::decarbonate")
 }
 
 #[co3::decarbonate]
-pub fn freestanding_returns_local_ref(input: &(u32, u32)) -> LocalRef<'_, (u32, u32)> {
+pub fn freestanding_returns_local_ref(input: &(u32, u32)) -> (u32, u32) {
     unreachable!("replaced by co3::decarbonate")
 }
 
 #[co3::decarbonate]
-pub fn freestanding_returns_local_slice(input: &[(u32, u32)]) -> LocalSlice<'_, (u32, u32)> {
+pub fn freestanding_returns_local_slice(input: &[(u32, u32)]) -> Box<[(u32, u32)]> {
     unreachable!("replaced by co3::decarbonate")
 }
 
@@ -44,9 +40,7 @@ pub fn freestanding_returns_iterator(
 //}
 
 #[co3::decarbonate]
-pub fn freestanding_take_and_return_local_transparent_ref(
-    input: &Transparent,
-) -> TransparentRef<'_> {
+pub fn freestanding_take_and_return_local_transparent_ref(input: &Transparent) -> Transparent {
     unreachable!("replaced by co3::decarbonate")
 }
 
@@ -77,16 +71,16 @@ fn take_and_return_non_local() {
 #[webassembly_test::webassembly_test]
 fn tuple_ref_is_coppied_when_returned() {
     let in_tuple = (420, 420);
-    let out_tuple: LocalRef<(u32, u32)> = freestanding_returns_local_ref(&in_tuple);
-    assert_eq!(in_tuple, *out_tuple);
+    let out_tuple: (u32, u32) = freestanding_returns_local_ref(&in_tuple);
+    assert_eq!(in_tuple, out_tuple);
 }
 
 #[test]
 #[webassembly_test::webassembly_test]
 fn vec_of_tuples_is_coppied_when_returned() {
-    let in_tuple = vec![(420_u32, 420_u32)];
-    let out_tuple: LocalSlice<(u32, u32)> = freestanding_returns_local_slice(&in_tuple);
-    assert_eq!(in_tuple, *out_tuple);
+    let in_tuple = Box::from([(420_u32, 420_u32)]);
+    let out_tuple: Box<[(u32, u32)]> = freestanding_returns_local_slice(&in_tuple);
+    assert_eq!(in_tuple, out_tuple);
 }
 
 #[test]
@@ -118,8 +112,8 @@ fn return_iterator() {
 #[webassembly_test::webassembly_test]
 fn take_and_return_transparent_local_ref() {
     let input = Transparent((420, 420));
-    let output: TransparentRef = freestanding_take_and_return_local_transparent_ref(&input);
-    assert_eq!(input.0, *output);
+    let output: Transparent = freestanding_take_and_return_local_transparent_ref(&input);
+    assert_eq!(input, output);
 }
 
 #[test]

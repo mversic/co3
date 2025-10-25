@@ -17,7 +17,7 @@ I have derivative types:
 * &Robust                  => Transparent(Target = *const R)          |  DELEGATED |
 * &Opaque                  => Transparent(Target = *const R)          |  DELEGATED |
 * &Extern                  =>                                         |   Cloned   |  ExternRef
-* &S where S: Cloned                                                  |   Cloned   |  LocalRef
+* &S where S: Cloned                                                  |   Cloned   |
 
 * &mut Transparent         => Transparent(Target = &mut R::Target)    |  DELEGATED |
 * &mut Robust              => Transparent(Target = *mut R)            |  DELEGATED |
@@ -29,7 +29,7 @@ I have derivative types:
 * &[Robust]                                                           |   Cloned
 * &[Opaque]                                                           |   Cloned
 * &[Extern]                => &[Transparent]                          |   Cloned
-* &[S] where S: Cloned                                                |   Cloned   |  LocalSlice
+* &[S] where S: Cloned                                                |   Cloned   |
 
 * &mut [Transparent]
 * &mut [Robust]
@@ -91,5 +91,3 @@ I have derivative types:
 // TODO: There is special types like
 ExternRef
 ExternRefMut
-LocalRef
-LocalSlice

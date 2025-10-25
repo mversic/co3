@@ -23,7 +23,6 @@ use crate::transmute::{
 use crate::{
     external::External,
     ir::{Cloned, Extern, Ir, Opaque, Robust, Transparent},
-    local::{LocalRef, LocalSlice},
     niche::{Niche, Optional},
     repr_c::default_init_arr,
     slice::{OutBoxedSlice, RefMutSlice, RefSlice},
@@ -37,7 +36,6 @@ use crate::{
 pub mod external;
 pub mod handle;
 pub mod ir;
-pub mod local;
 pub mod niche;
 pub mod out_ptr;
 pub mod primitives;
@@ -288,29 +286,6 @@ disjoint_impls! {
         Self: Ir<Type = Option<S>>,
     {
         type CType = <R as ExternC>::CType;
-    }
-
-    // TODO: These shouldn't be required?
-    impl<'a, R: 'a, S: Cloned> ExternC for LocalRef<'a, R>
-    where
-        Self: Ir<Type = &'a S>,
-        &'a R: ExternC,
-    {
-        type CType = <&'a R as ExternC>::CType;
-    }
-    impl<'a, R: 'a> ExternC for LocalSlice<'a, R>
-    where
-        Self: Ir<Type = &'a [Opaque]>,
-        &'a [R]: ExternC,
-    {
-        type CType = OutBoxedSlice<*const R>;
-    }
-    impl<'a, R: 'a, S: Cloned> ExternC for LocalSlice<'a, R>
-    where
-        Self: Ir<Type = &'a [S]>,
-        &'a [R]: ExternC,
-    {
-        type CType = <&'a [R] as ExternC>::CType;
     }
 }
 

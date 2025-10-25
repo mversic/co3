@@ -2,7 +2,7 @@
 use std::{alloc, collections::BTreeMap, mem::MaybeUninit};
 
 use co3::{
-    Decode, Encode, ExternC, FfiReturn, FfiTuple1, FfiTuple2, local::LocalRef, out_ptr::OutPtrRead,
+    Decode, Encode, ExternC, FfiReturn, FfiTuple1, FfiTuple2, out_ptr::OutPtrRead,
     slice::OutBoxedSlice,
 };
 
@@ -116,10 +116,10 @@ pub fn freestanding_with_option(item: Option<u8>) -> Option<u8> {
     item
 }
 
-//#[co3::carbonate]
-//pub fn freestanding_with_option_tuple(item: Option<(u32, u32)>) -> Option<(u32, u32)> {
-//    item
-//}
+#[co3::carbonate]
+pub fn freestanding_with_option_tuple(item: Option<(u32, u32)>) -> Option<(u32, u32)> {
+    item
+}
 
 #[co3::carbonate]
 pub fn freestanding_with_option_with_niche_ref(item: &Option<bool>) -> &Option<bool> {
@@ -443,7 +443,7 @@ fn take_and_return_option_with_tuple() {
     //    let output = output.assume_init();
     //    assert_eq!(
     //        input,
-    //        *LocalRef::<Option<bool>>::try_read_out(output).expect("Valid")
+    //        Option::<bool>::try_read_out(output).expect("Valid")
     //    );
     //}
 }
@@ -467,7 +467,7 @@ fn take_and_return_option_with_niche_ref() {
     //        let output = output.assume_init();
     //        assert_eq!(
     //            input,
-    //            *LocalRef::<Option<bool>>::try_read_out(output).expect("Valid")
+    //            *Option<bool>::try_read_out(output).expect("Valid")
     //        );
     //    }
 }
@@ -497,10 +497,7 @@ fn take_and_return_option_without_niche_ref() {
         );
 
         let output = output.assume_init();
-        assert_eq!(
-            input,
-            *LocalRef::<Option<u8>>::try_read_out(output).expect("Valid")
-        );
+        assert_eq!(input, Option::<u8>::try_read_out(output).expect("Valid"));
     }
 }
 
@@ -822,7 +819,7 @@ fn return_reference_from_slice() {
 fn borrow_local() {
     let a = (1_u8, 2_u8);
 
-    let b: LocalRef<(u8, u8)> = {
+    let b: (u8, u8) = {
         let mut store = Default::default();
         let mut output = MaybeUninit::new(FfiTuple2(0, 0));
 
@@ -836,5 +833,5 @@ fn borrow_local() {
         }
     };
 
-    assert_eq!(*b, (1, 2));
+    assert_eq!(b, (1, 2));
 }

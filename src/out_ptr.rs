@@ -267,21 +267,6 @@ disjoint_impls! {
     {
         type OutPtr = R::OutPtr;
     }
-
-    impl<'itm, R, S: Cloned> OutPtr for LocalRef<'itm, R>
-    where
-        &'itm R: Ir<Type = &'itm S> + OutPtr,
-        Self: Ir<Type = &'itm S>,
-    {
-        type OutPtr = <&'itm R as OutPtr>::OutPtr;
-    }
-    impl<'itm, R, S: Cloned> OutPtr for LocalSlice<'itm, R>
-    where
-        &'itm [R]: Ir<Type = &'itm [S]> + OutPtr,
-        Self: Ir<Type = &'itm [S]>,
-    {
-        type OutPtr = <&'itm [R] as OutPtr>::OutPtr;
-    }
 }
 
 disjoint_impls! {
@@ -694,50 +679,6 @@ disjoint_impls! {
         }
     }
 
-    impl<'d, R: Ir<Type = S> + NonLocal + Decode<'d>, S: Cloned + 'd> OutPtrRead
-        for LocalRef<'d, R>
-    where
-        Self: Ir<Type = &'d S>,
-    {
-        unsafe fn try_read_out(out_ptr: Self::OutPtr) -> Result<Self> {
-            let mut store = Default::default();
-
-            let item = unsafe {
-                // NOTE: Bypasses the erroneous lifetime check.
-                // Correct as long as `R::decode` doesn't return a reference to the store (`R: NonLocal`)
-                let store_ref = &mut *addr_of_mut!(store);
-                R::decode(out_ptr, store_ref)?
-            };
-
-            Ok(Self::new(item))
-        }
-    }
-
-    impl<'d, R: Ir<Type = S> + NonLocal + Decode<'d>, S: Cloned + 'd> OutPtrRead for LocalSlice<'d, R>
-    where
-        Self: Ir<Type = &'d [S]>,
-    {
-        unsafe fn try_read_out(out_ptr: OutBoxedSlice<<R>::CType>) -> Result<Self> {
-            let slice = RefSlice::from_raw_parts(out_ptr.as_mut_ptr(), out_ptr.len());
-
-            let mut store = Default::default();
-
-            unsafe {
-                // NOTE: Bypasses the erroneous lifetime check.
-                // Correct as long as `R::decode` doesn't return a reference to the store (`R: NonLocal`)
-                let store_ref = &mut *addr_of_mut!(store);
-                let res = <&[R]>::decode(slice, store_ref);
-
-                if !out_ptr.deallocate() {
-                    return Err(FfiReturn::TrapRepresentation);
-                }
-
-                res?;
-            }
-
-            Ok(Self::new(store.0))
-        }
-    }
     impl<'d, R: Transmute> OutPtrRead for &'d [R]
     where
         Self: Ir<Type = &'d [Transparent]>,

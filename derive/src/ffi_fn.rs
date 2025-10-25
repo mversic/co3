@@ -120,11 +120,7 @@ fn gen_fn_signature(ffi_fn_name: &Ident, fn_descriptor: &FnDescriptor) -> TokenS
         .as_ref()
         .map(gen_input_arg)
         .map_or_else(Vec::new, |self_arg| vec![self_arg]);
-    let fn_args: Vec<_> = fn_descriptor
-        .input_args
-        .iter()
-        .map(gen_input_arg)
-        .collect();
+    let fn_args: Vec<_> = fn_descriptor.input_args.iter().map(gen_input_arg).collect();
     let output_arg = ffi_output_arg(fn_descriptor).map(gen_out_ptr_arg);
 
     quote! {

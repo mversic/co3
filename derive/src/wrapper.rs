@@ -193,12 +193,6 @@ pub fn wrap_as_opaque(emitter: &mut Emitter, mut input: FfiTypeInput) -> TokenSt
         .map(|param| quote! {, core::marker::PhantomData<#param>})
         .collect();
 
-    let new_phantom_data_types: Vec<_> = input
-        .generics
-        .type_params()
-        .map(|_| quote! {, core::marker::PhantomData})
-        .collect();
-
     let impl_ffi = gen_impl_ffi(name, &input.generics);
 
     let shared_fns = gen_shared_fns(emitter, &input);
@@ -224,12 +218,6 @@ pub fn wrap_as_opaque(emitter: &mut Emitter, mut input: FfiTypeInput) -> TokenSt
             }
         }
 
-        impl #impl_generics #name #ty_generics #handle_bounded_where_clause {
-            fn from_extern_ptr(opaque_ptr: *mut co3::external::Extern) -> Self {
-                Self(opaque_ptr #(#new_phantom_data_types)*)
-            }
-        }
-
         #(#shared_fns)*
         #impl_ffi
     }
@@ -237,6 +225,11 @@ pub fn wrap_as_opaque(emitter: &mut Emitter, mut input: FfiTypeInput) -> TokenSt
 
 fn gen_impl_ffi(name: &Ident, generics: &syn::Generics) -> TokenStream {
     let (impl_generics, ty_generics, where_clause) = generics.split_for_impl();
+
+    let new_phantom_data_types: Vec<_> = generics
+        .type_params()
+        .map(|_| quote! {, core::marker::PhantomData})
+        .collect();
 
     quote! {
         impl #impl_generics #name #ty_generics #where_clause {
@@ -258,7 +251,7 @@ fn gen_impl_ffi(name: &Ident, generics: &syn::Generics) -> TokenStream {
                 self.0
             }
             unsafe fn from_extern_ptr(opaque_ptr: *mut co3::external::Extern) -> Self {
-                Self::from_extern_ptr(opaque_ptr)
+                Self(opaque_ptr #(#new_phantom_data_types)*)
             }
         }
 
@@ -414,11 +407,15 @@ fn gen_input_conversion_stmts(fn_descriptor: &FnDescriptor) -> TokenStream {
         let arg_name = arg.name();
 
         stmts.extend(quote! {let #arg_name = self;});
-        if matches!(arg.src_type(), Type::Reference(_)) {
-            stmts.extend(quote! { let #arg_name = #arg_name.0; });
-        }
-
-        stmts.extend(gen_input_arg_src_to_ffi(arg));
+        stmts.extend(if let Type::Reference(ref_ty) = arg.src_type() {
+            if ref_ty.mutability.is_some() {
+                quote! { let #arg_name = co3::external::External::as_extern_ptr_mut(#arg_name); }
+            } else {
+                quote! { let #arg_name = co3::external::External::as_extern_ptr(#arg_name); }
+            }
+        } else {
+            quote! { let #arg_name = #arg_name.0; }
+        });
     }
     for arg in &fn_descriptor.input_args {
         stmts.extend(gen_input_arg_src_to_ffi(arg));
