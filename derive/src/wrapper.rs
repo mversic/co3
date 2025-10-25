@@ -401,24 +401,19 @@ fn gen_wrapper_method_body(fn_descriptor: &FnDescriptor, ffi_fn_name: &Ident) ->
 }
 
 fn gen_input_conversion_stmts(fn_descriptor: &FnDescriptor) -> TokenStream {
-    let mut stmts = quote! {};
+    let self_ty = fn_descriptor.self_ty.as_ref();
 
+    let mut stmts = quote! {};
     if let Some(arg) = &fn_descriptor.receiver {
         let arg_name = arg.name();
 
         stmts.extend(quote! {let #arg_name = self;});
-        stmts.extend(if let Type::Reference(ref_ty) = arg.src_type() {
-            if ref_ty.mutability.is_some() {
-                quote! { let #arg_name = co3::external::External::as_extern_ptr_mut(#arg_name); }
-            } else {
-                quote! { let #arg_name = co3::external::External::as_extern_ptr(#arg_name); }
-            }
-        } else {
-            quote! { let #arg_name = #arg_name.0; }
-        });
+        if let Some(processed) = process_self_type(arg_name, arg.src_type(), self_ty) {
+            stmts.extend(quote!(let #arg_name = #processed;));
+        }
     }
     for arg in &fn_descriptor.input_args {
-        stmts.extend(gen_input_arg_src_to_ffi(arg));
+        stmts.extend(gen_input_arg_src_to_ffi(arg, self_ty));
     }
     if let Some(arg) = &fn_descriptor.output_arg {
         let name = &arg.name();
@@ -433,17 +428,76 @@ fn gen_input_conversion_stmts(fn_descriptor: &FnDescriptor) -> TokenStream {
     stmts
 }
 
-fn gen_input_arg_src_to_ffi(arg: &Arg) -> TokenStream {
+fn process_self_type(
+    arg_name: &Ident,
+    ty: &Type,
+    self_ty: Option<&syn::Path>,
+) -> Option<TokenStream> {
+    if is_self_ty(ty, self_ty) {
+        return Some(quote! { #arg_name.0 });
+    }
+
+    match ty {
+        Type::Path(path_ty) => {
+            let last_seg = path_ty.path.segments.last().unwrap();
+
+            if last_seg.ident == "Box"
+                && let syn::PathArguments::AngleBracketed(bracketed) = &last_seg.arguments
+                && bracketed.args.len() == 1
+                && let syn::GenericArgument::Type(boxed) = &bracketed.args[0]
+                && let Some(processed) = process_self_type(arg_name, boxed, self_ty)
+            {
+                return Some(quote! {{
+                    let #arg_name = *#arg_name;
+                    #processed
+                }});
+            }
+
+            None
+        }
+        Type::Reference(ref_ty) => {
+            if !is_self_ty(&ref_ty.elem, self_ty) {
+                return None;
+            };
+
+            if ref_ty.mutability.is_none() {
+                Some(quote! { co3::external::External::as_extern_ptr(#arg_name) })
+            } else {
+                Some(quote! { co3::external::External::as_extern_ptr_mut(#arg_name) })
+            }
+        }
+        _ => None,
+    }
+}
+
+pub fn is_self_ty(ty: &Type, self_ty: Option<&syn::Path>) -> bool {
+    if let Type::Path(syn::TypePath { qself: None, path }) = ty {
+        return path.is_ident("Self") || self_ty.is_some_and(|self_ty| self_ty == path);
+    }
+
+    false
+}
+
+fn gen_input_arg_src_to_ffi(arg: &Arg, self_ty: Option<&syn::Path>) -> TokenStream {
     let arg_name = arg.name();
 
     let resolve_impl_trait = gen_resolve_type(arg);
     let store_name = gen_store_name(arg_name);
 
-    quote! {
+    let mut stmts = quote! {
         #resolve_impl_trait
         let mut #store_name = Default::default();
-        let #arg_name = co3::Encode::encode(#arg_name, &mut #store_name);
-    }
+    };
+
+    stmts.extend(
+        if let Some(processed) = process_self_type(arg.name(), arg.src_type(), self_ty) {
+            quote!(let #arg_name = #processed;)
+        } else {
+            quote!(let #arg_name = co3::Encode::encode(#arg_name, &mut #store_name);)
+        },
+    );
+
+    stmts
 }
 
 fn gen_ffi_fn_call_stmt(fn_descriptor: &FnDescriptor, ffi_fn_name: &Ident) -> TokenStream {

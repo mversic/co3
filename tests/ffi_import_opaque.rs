@@ -25,7 +25,7 @@ impl Value {
 
 #[co3::decarbonate]
 impl OpaqueStruct {
-    pub fn new(name: u8) -> Self {
+    pub fn new(name: u8) -> Box<Self> {
         unreachable!("replaced by co3::decarbonate")
     }
 
@@ -34,11 +34,13 @@ impl OpaqueStruct {
         unreachable!("replaced by co3::decarbonate")
     }
 
+    // FIXME: Is it possible to implement support for &Value as return type?
     pub fn get_param(&self, name: &u8) -> Option<ExternRef<'_, Value>> {
         unreachable!("replaced by co3::decarbonate")
     }
 
-    pub fn params(&self) -> impl ExactSizeIterator<Item = &Value> {
+    // FIXME: Is it possible to implement support for &Value as return type?
+    pub fn params(&self) -> impl ExactSizeIterator<Item = ExternRef<'_, Value>> {
         unreachable!("replaced by co3::decarbonate")
     }
 
@@ -121,7 +123,7 @@ fn take_and_return_opaque_ref() {
 //    params.insert(name, value);
 //
 //    let opaque: Box<OpaqueStruct> = Box::new(make_new_opaque(name, params));
-//    let opaque_ref: ExternRef<OpaqueStruct> = freestanding_returns_opaque_item(&opaque);
+//    let opaque_ref: OpaqueStruct = freestanding_returns_opaque_item(&opaque);
 //    compare_opaque_eq::<_, ffi::ExternOpaqueStruct>(&*opaque, &opaque_ref);
 //}
 

@@ -10,7 +10,7 @@ use syn::{
     visit_mut::VisitMut,
 };
 
-use crate::{emitter::Emitter, utils::unwrap_result_type};
+use crate::{emitter::Emitter, utils::unwrap_result_type, wrapper::is_self_ty};
 
 pub struct Arg {
     self_ty: Option<Path>,
@@ -61,6 +61,46 @@ fn resolve_type(self_type: Option<&Path>, mut arg_type: Type) -> Type {
     }
 
     arg_type
+}
+
+struct ForeignOutputArgProcessor<'a> {
+    self_ty: Option<&'a Path>,
+}
+
+impl VisitMut for ForeignOutputArgProcessor<'_> {
+    fn visit_type_mut(&mut self, node: &mut Type) {
+        if is_self_ty(node, self.self_ty) {
+            return;
+        }
+
+        match node {
+            Type::Path(path_ty) => {
+                let last_seg = path_ty.path.segments.last().unwrap();
+
+                if last_seg.ident == "Box"
+                    && let syn::PathArguments::AngleBracketed(bracketed) = &last_seg.arguments
+                    && bracketed.args.len() == 1
+                    && let syn::GenericArgument::Type(boxed) = &bracketed.args[0]
+                    && is_self_ty(boxed, self.self_ty)
+                {
+                    *node = parse_quote!(Self);
+                    return;
+                }
+            }
+            Type::Reference(ref_ty) if is_self_ty(&ref_ty.elem, self.self_ty) => {
+                *node = if ref_ty.mutability.is_some() {
+                    parse_quote!(&mut Self)
+                } else {
+                    parse_quote!(&Self)
+                };
+
+                return;
+            }
+            _ => (),
+        }
+
+        syn::visit_mut::visit_type_mut(self, node);
+    }
 }
 
 pub struct ImplDescriptor<'ast> {
@@ -134,6 +174,25 @@ impl<'ast> ImplDescriptor<'ast> {
         visitor.visit_item_impl(node);
 
         ImplDescriptor::from_visitor(visitor)
+    }
+
+    pub fn from_foreign_impl(emitter: &mut Emitter, node: &'ast syn::ItemImpl) -> Option<Self> {
+        let mut impl_desc = Self::from_impl(emitter, node)?;
+
+        impl_desc.fns.iter_mut().for_each(|fn_| {
+            let mut output_arg_processor = ForeignOutputArgProcessor {
+                self_ty: fn_.self_ty.as_ref(),
+            };
+
+            if let syn::ReturnType::Type(_, output) = &mut fn_.sig.output {
+                output_arg_processor.visit_type_mut(&mut *output);
+            }
+            if let Some(output_arg) = &mut fn_.output_arg {
+                output_arg_processor.visit_type_mut(&mut output_arg.type_);
+            }
+        });
+
+        Some(impl_desc)
     }
 
     fn from_visitor(visitor: ImplVisitor<'ast, '_>) -> Option<Self> {
