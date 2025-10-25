@@ -5,7 +5,7 @@ use alloc::{boxed::Box, string::String, vec::Vec};
 #[cfg(feature = "owned_as_ref")]
 #[cfg(feature = "owned_types")]
 use crate::niche::Niche;
-use crate::{mineral, slice::RefSlice};
+use crate::{mineral, out_ptr::Zst, slice::RefSlice};
 
 macro_rules! non_zero_derive {
     ($($ty:ty => $target:ty),+ $(,)?) => {$(

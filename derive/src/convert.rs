@@ -307,6 +307,8 @@ impl FromField for FfiTypeField {
 }
 
 pub fn derive_ffi_type(emitter: &mut Emitter, input: &syn::DeriveInput) -> TokenStream {
+    let (impl_generics, ty_generics, _where_clause) = input.generics.split_for_impl();
+
     let Some(mut input) = emitter.handle(FfiTypeInput::from_derive_input(input)) else {
         return quote!();
     };
@@ -315,7 +317,11 @@ pub fn derive_ffi_type(emitter: &mut Emitter, input: &syn::DeriveInput) -> Token
     if let darling::ast::Data::Enum(variants) = &input.data
         && variants.is_empty()
     {
-        emit!(emitter, name, "Uninhabited enums are not allowed in FFI");
+        emit!(
+            emitter,
+            name,
+            "Uninhabited enums are not allowed in FFI. Annotate with #[co3::mineral(opaque)]?"
+        );
     }
 
     if input.is_opaque() {
@@ -353,41 +359,47 @@ pub fn derive_ffi_type(emitter: &mut Emitter, input: &syn::DeriveInput) -> Token
         darling::ast::Data::Struct(item) => {
             let ffi_type_impl = derive_ffi_type_for_repr_c(emitter, &input);
 
-            let repr_c_impl = {
-                let predicates = &mut input.generics.make_where_clause().predicates;
-                let add_bound = |ty| predicates.push(parse_quote! {#ty: co3::ReprC});
+            if item.style == Style::Unit {
+                emit!(
+                    emitter,
+                    &input.span,
+                    "Unit structs are not allowed in FFI. Annotate with #[co3::mineral(opaque)]?",
+                );
+            }
 
-                if item.style == Style::Unit {
-                    emit!(
-                        emitter,
-                        &input.span,
-                        "Unit structs cannot implement `ReprC`"
-                    );
+            let zst_impl = {
+                let mut predicates = input.generics.make_where_clause().predicates.to_owned();
+
+                item.fields.iter().map(|field| &field.ty).for_each(|ty| {
+                    predicates.push(parse_quote! {for<'dummy> #ty: co3::out_ptr::Zst})
+                });
+
+                quote! {
+                    unsafe impl #impl_generics co3::out_ptr::Zst for #name #ty_generics where #predicates {}
                 }
+            };
+
+            let repr_c_impl = {
+                let mut predicates = input.generics.make_where_clause().predicates.to_owned();
 
                 item.fields
                     .iter()
                     .map(|field| &field.ty)
-                    .for_each(add_bound);
+                    .for_each(|ty| predicates.push(parse_quote! {for<'dummy> #ty: co3::ReprC}));
 
-                derive_unsafe_repr_c(&input.ident, &input.generics)
+                quote! {
+                    // SAFETY: Type is robust with #[repr(C)] attribute attached
+                    unsafe impl #impl_generics co3::ReprC for #name #ty_generics where #predicates {}
+                }
             };
 
             quote! {
+                #zst_impl
+
                 #repr_c_impl
                 #ffi_type_impl
             }
         }
-    }
-}
-
-/// Before deriving this trait make sure that all invariants are upheld
-fn derive_unsafe_repr_c(name: &Ident, generics: &syn::Generics) -> TokenStream {
-    let (impl_generics, ty_generics, where_clause) = generics.split_for_impl();
-
-    quote! {
-        // SAFETY: Type is robust with #[repr(C)] attribute attached
-        unsafe impl #impl_generics co3::ReprC for #name #ty_generics #where_clause {}
     }
 }
 
@@ -417,30 +429,48 @@ fn derive_ffi_type_for_transparent_item(
     let (impl_generics, ty_generics, where_clause) = input.generics.split_for_impl();
 
     let name = &input.ident;
-
-    // TODO: We don't check to find which field is not a ZST.
-    // It is just assumed that it is the first field
     let inner = match &input.data {
         darling::ast::Data::Enum(variants) => {
             let first_variant = emitter.handle(variants.iter().next().ok_or_else(|| {
                 error_message!("transparent enum must have exactly one variant, but it has none")
             }));
 
-            if let Some(first_variant) = first_variant.and_then(|v| v.fields.fields.first()) {
-                &first_variant.ty
-            } else {
-                // NOTE: one-variant fieldless enums have representation of ()
-                return derive_ffi_type_for_opaque_item(name, &input.generics);
-            }
+            first_variant
+                .and_then(|v| v.fields.fields.first())
+                .map(|first_variant| &first_variant.ty)
+                .or_else(|| {
+                    // NOTE: one-variant fieldless enums have representation of ()
+                    emit!(
+                        emitter,
+                        &input.span,
+                        "ZSTs are not allowed in FFI. Annotate with #[co3::mineral(opaque)]?",
+                    );
+
+                    None
+                })
         }
         darling::ast::Data::Struct(item) => {
-            if let Some(first_field) = item.fields.first() {
-                &first_field.ty
-            } else {
-                // NOTE: Fieldless structs have representation of ()
-                return derive_ffi_type_for_opaque_item(name, &input.generics);
-            }
+            // TODO: We don't check to find which field is not a ZST.
+            // It is just assumed that it is the first field. I think something can be done
+            // inside `co3::mineral!` through the use of disjoint_impls!
+            item.fields
+                .first()
+                .map(|first_field| &first_field.ty)
+                .or_else(|| {
+                    // NOTE: fieldless structs have representation of ()
+                    emit!(
+                        emitter,
+                        &input.span,
+                        "ZSTs are not allowed in FFI. Annotate with #[co3::mineral(opaque)]?",
+                    );
+
+                    None
+                })
         }
+    };
+
+    if inner.is_none() {
+        return quote! {};
     };
 
     if let Some(FfiTypeKindAttribute::UnsafeRobust(niche)) = input.ffi_type_attr.kind {
@@ -636,7 +666,7 @@ fn derive_ffi_type_for_data_carrying_enum(
 
             non_local_where_clause
                 .predicates
-                .push(parse_quote! {#ty: co3::out_ptr::NonLocal});
+                .push(parse_quote! {for<'dummy> #ty: co3::out_ptr::NonLocal});
         }
 
         quote! {
@@ -705,12 +735,24 @@ fn derive_ffi_type_for_data_carrying_enum(
         // TODO: Enum can be transmutable if all variants are transmutable and the enum is `repr(C)`
         impl<#impl_generics> co3::ir::Cloned for #enum_name #ty_generics #where_clause where Self: Clone {}
 
+        // TODO: This type can utilize niche optimization in some cases. For instance:
+        // enum Kita {
+        //     A(bool),
+        //     B,
+        //     C,
+        // }
+        // assert!(core::mem::size_of::<#enum_name #ty_generics>() == 1);
+        //unsafe impl <#impl_generics> core::niche::Optional for #enum_name #ty_generics #where_clause {
+        //    type Inner = <Self as co3::ExternC>::CType;
+        //}
+
         #non_locality
     }
 }
 
 fn derive_ffi_type_for_repr_c(emitter: &mut Emitter, input: &FfiTypeInput) -> TokenStream {
     verify_is_non_owning(emitter, &input.data);
+
     if input.repr_attr.kind.as_deref().copied() != Some(ReprKind::C) {
         let span = input
             .repr_attr

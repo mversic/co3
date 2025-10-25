@@ -1289,6 +1289,12 @@ macro_rules! mineral {
         impl<$($($impl_generics $(: $bounds)?),*)?> $crate::niche::Ir for $ty where $($($where_ty: $where_bound),*)? {
             type Type = $crate::ir::Transparent;
         }
+
+        // SAFETY: ZST relation is transitive
+        unsafe impl<$($($impl_generics $(: $bounds)?),*)?> $crate::out_ptr::Zst for $ty where
+            for<'dummy> <Self as $crate::transmute::Transmute>::Target: $crate::out_ptr::Zst,
+            $($($where_ty: $where_bound),*)? {
+        }
     };
     (unsafe impl $(<$($impl_generics: tt $(: $bounds: path)?),*>)? Transparent for $ty: ty $(where $($where_ty:ty: $where_bound:path),* )? {
         type Target = $target:ty;
@@ -1321,21 +1327,21 @@ macro_rules! mineral {
 
                 impl<$($($impl_generics $(: $bounds)?),*)?> Ir for $ty where
                     Self: $crate::transmute::Transmute,
-                    <Self as $crate::transmute::Transmute>::Target: Ir<Type = $crate::ir::Robust>,
+                    for<'dummy> <Self as $crate::transmute::Transmute>::Target: Ir<Type = $crate::ir::Robust>,
                     $($($where_ty: $where_bound),*)?
                 {
                     type Type = $crate::ir::Robust;
                 }
                 impl<$($($impl_generics $(: $bounds)?),*)?> Ir for $ty where
                     Self: $crate::transmute::Transmute,
-                    <Self as $crate::transmute::Transmute>::Target: Ir<Type = $crate::ir::Transparent>,
+                    for<'dummy> <Self as $crate::transmute::Transmute>::Target: Ir<Type = $crate::ir::Transparent>,
                     $($($where_ty: $where_bound),*)?
                 {
                     type Type = $crate::ir::Transparent;
                 }
                 impl<S: $crate::ir::Cloned, $($($impl_generics $(: $bounds)?),*)?> Ir for $ty where
                     Self: $crate::transmute::Transmute + $crate::niche::Niche,
-                    <Self as $crate::transmute::Transmute>::Target: Ir<Type = S>,
+                    for<'dummy> <Self as $crate::transmute::Transmute>::Target: Ir<Type = S>,
                     $($($where_ty: $where_bound),*)?
                 {
                     type Type = Self;
@@ -1344,9 +1350,15 @@ macro_rules! mineral {
         };
 
         impl<$($($impl_generics $(: $bounds)?),*)?> $crate::niche::Niche for $ty where
-            <Self as $crate::transmute::Transmute>::Target: $crate::niche::Niche,
+            for<'dummy> <Self as $crate::transmute::Transmute>::Target: $crate::niche::Niche,
             $($($where_ty: $where_bound),*)? {
             const NICHE_VALUE: <Self as $crate::ExternC>::CType = <$target as $crate::niche::Niche>::NICHE_VALUE;
+        }
+
+        // SAFETY: ZST relation is transitive
+        unsafe impl<$($($impl_generics $(: $bounds)?),*)?> $crate::out_ptr::Zst for $ty where
+            for<'dummy> <Self as $crate::transmute::Transmute>::Target: $crate::out_ptr::Zst,
+            $($($where_ty: $where_bound),*)? {
         }
     };
     (unsafe impl $(<$($impl_generics: tt $(: $bounds: path)?),*>)? Transparent for $ty: ty $(where $($where_ty:ty: $where_bound:path),* )? {
@@ -1370,6 +1382,12 @@ macro_rules! mineral {
 
         impl<$($($impl_generics $(: $bounds)?),*)?> $crate::niche::Ir for $ty where $($($where_ty: $where_bound),*)? {
             type Type = $crate::ir::Robust;
+        }
+
+        // SAFETY: ZST relation is transitive
+        unsafe impl<$($($impl_generics $(: $bounds)?),*)?> $crate::out_ptr::Zst for $ty where
+            for<'dummy> <Self as $crate::transmute::Transmute>::Target: $crate::out_ptr::Zst,
+            $($($where_ty: $where_bound),*)? {
         }
     };
 }
@@ -1397,6 +1415,8 @@ macro_rules! impl_tuple {
                 Self($( $ty ),+)
             }
         }
+
+        unsafe impl<$($ty: $crate::out_ptr::Zst),+> $crate::out_ptr::Zst for ($($ty,)+) {}
 
         // SAFETY: Implementing type is robust with a defined C ABI
         unsafe impl<$($ty: ReprC),+> ReprC for $ffi_ty<$($ty),+> {}

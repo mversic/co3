@@ -4,6 +4,12 @@ use std::mem::ManuallyDrop;
 
 use co3::{Encode, ExternC, slice::RefSlice};
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, ExternC)]
+#[mineral(opaque)]
+pub enum Opaque {
+    A,
+}
+
 #[derive(ExternC)]
 pub enum FieldlessEnumWithoutRepr {
     Var1,
@@ -19,12 +25,6 @@ pub enum FieldlessSingleFieldEnumWithReprU {
 #[repr(i8)]
 pub enum FieldlessSingleFieldEnumWithReprI {
     Var1,
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq, ExternC)]
-#[repr(transparent)]
-pub enum FieldlessTransparentEnum {
-    A,
 }
 
 #[derive(ExternC)]
@@ -392,7 +392,7 @@ fn enum_niche_value() {
     assert_eq!(expected_bool, None::<bool>.encode(&mut ()));
     assert_eq!(expected_ord, None::<Ordering>.encode(&mut ()));
 
-    assert!(None::<FieldlessTransparentEnum>.encode(&mut ()).is_null());
+    assert!(None::<Opaque>.encode(&mut ()).is_null());
     assert!(None::<FieldlessEnumWithoutRepr>.encode(&mut ()).is_null());
 
     #[cfg(not(target_family = "wasm"))]

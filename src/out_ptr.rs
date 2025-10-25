@@ -1,5 +1,3 @@
-use core::ptr::addr_of_mut;
-
 use super::*;
 #[cfg(feature = "owned_types")]
 #[cfg(feature = "owned_as_ref")]
@@ -37,9 +35,28 @@ disjoint_impls! {
     pub unsafe trait NonLocal: OutPtr + Clone {}
 
     unsafe impl<'d, R: Clone> NonLocal for R where R: Decode<'d, Store = ()> + OutPtr {}
-    unsafe impl<'d, R: Clone> NonLocal for R where R: Decode<'d, Store = Box<[()]>> + OutPtr {}
-    unsafe impl<'d, R: Clone, const N: usize> NonLocal for R where R: Decode<'d, Store = [(); N]> + OutPtr {}
+    unsafe impl<'d, R: Clone, Z: Zst> NonLocal for R where R: Decode<'d, Store = Box<[Z]>> + OutPtr {}
+    unsafe impl<'d, R: Clone, Z: Zst> NonLocal for R where R: Decode<'d, Store = Vec<Z>> + OutPtr {}
+    unsafe impl<'d, R: Clone, Z: Zst> NonLocal for R where R: Decode<'d, Store = Option<Z>> + OutPtr {}
+    unsafe impl<'d, R: Clone, Z: Zst, const N: usize> NonLocal for R where R: Decode<'d, Store = [Z; N]> + OutPtr {}
+    // TODO: It's not possbile to implement for specific len yet: https://github.com/mversic/co3/issues/13
+    //unsafe impl<'d, R: Clone, T> NonLocal for R where R: Decode<'d, Store = [T; 0]> + OutPtr {}
 }
+
+// Marker for a ZST(zero-sized type)
+//
+// # Safety
+//
+// Type must be a ZST
+//
+// This is because implementations of [`NonLocal`](which is an unsafe trait) depend on it
+pub unsafe trait Zst {}
+
+unsafe impl Zst for () {}
+unsafe impl<T: Zst, const N: usize> Zst for [T; N] {}
+// TODO: It's not possbile to implement for specific len yet: https://github.com/mversic/co3/issues/13
+//unsafe impl<T> Zst for [T; 0] {}
+unsafe impl<T> Zst for core::marker::PhantomData<T> {}
 
 disjoint_impls! {
     /// Facilitates the use of [`Self`] as out-pointer.

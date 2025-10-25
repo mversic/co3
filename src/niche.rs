@@ -10,8 +10,10 @@ use crate::{
     transmute::Transmute,
 };
 
-// This is a type that can't just be transmuted into inner because it can have a niche
-// It's usually a marker for derivatives of `Option<T>` like `&Option<T>`, `&mut Option<T>` or `Box<Option<T>>`
+/// Type that utilizes niche optimization (e.g. `Option<T>`)
+///
+/// This is a type that can't just be transmuted into inner because it can have a niche
+/// It's usually a marker for derivatives of `Option<T>` like `&Option<T>`, `&mut Option<T>` or `Box<Option<T>>`
 pub unsafe trait Optional {
     /// It would be incorrect to transmute into intermediate type
     /// but transmuting into end type is ok

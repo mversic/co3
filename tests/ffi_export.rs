@@ -35,12 +35,6 @@ pub enum FieldlessEnum {
     C,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, ExternC)]
-#[repr(transparent)]
-pub enum TransparentFieldlessEnum {
-    A,
-}
-
 #[derive(Debug, Clone, PartialEq, Eq, ExternC)]
 #[repr(C)]
 pub enum DataCarryingEnum {
@@ -116,10 +110,11 @@ pub fn freestanding_with_option(item: Option<u8>) -> Option<u8> {
     item
 }
 
-#[co3::carbonate]
-pub fn freestanding_with_option_tuple(item: Option<(u32, u32)>) -> Option<(u32, u32)> {
-    item
-}
+// FIXME: Depends on the fix in disjoint_impls
+//#[co3::carbonate]
+//pub fn freestanding_with_option_tuple(item: Option<(u32, u32)>) -> Option<(u32, u32)> {
+//    item
+//}
 
 #[co3::carbonate]
 pub fn freestanding_with_option_with_niche_ref(item: &Option<bool>) -> &Option<bool> {
