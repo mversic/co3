@@ -110,6 +110,7 @@ pub struct ImplDescriptor<'ast> {
     pub trait_name: Option<&'ast Path>,
     /// Associated types
     pub associated_types: Vec<(&'ast Ident, &'ast Type)>,
+    pub generics: &'ast syn::Generics,
     /// Functions in the impl block
     pub fns: Vec<FnDescriptor<'ast>>,
 }
@@ -141,6 +142,7 @@ struct ImplVisitor<'ast, 'emitter> {
     trait_name: Option<&'ast Path>,
     /// Resolved type of the `Self` type
     self_ty: Option<&'ast Path>,
+    generics: Option<&'ast syn::Generics>,
     associated_types: Vec<(&'ast Ident, &'ast Type)>,
     fns: Vec<FnDescriptor<'ast>>,
 }
@@ -202,6 +204,7 @@ impl<'ast> ImplDescriptor<'ast> {
         Some(Self {
             attrs: visitor.attrs,
             trait_name: visitor.trait_name,
+            generics: visitor.generics.unwrap(),
             associated_types: visitor.associated_types,
             fns: visitor.fns,
         })
@@ -262,6 +265,7 @@ impl<'ast, 'emitter> ImplVisitor<'ast, 'emitter> {
             attrs: Vec::new(),
             trait_name: None,
             self_ty: None,
+            generics: None,
             associated_types: Vec::new(),
             fns: vec![],
         }
@@ -342,9 +346,8 @@ impl<'ast> Visit<'ast> for ImplVisitor<'ast, '_> {
     fn visit_attribute(&mut self, node: &'ast syn::Attribute) {
         self.attrs.push(node);
     }
-    fn visit_generic_param(&mut self, node: &'ast syn::GenericParam) {
-        emit!(self.emitter, node, "Generics are not supported");
-        self.fatal = true;
+    fn visit_generics(&mut self, node: &'ast syn::Generics) {
+        self.generics = Some(node);
     }
     fn visit_item_impl(&mut self, node: &'ast syn::ItemImpl) {
         if node.unsafety.is_some() {
@@ -398,10 +401,6 @@ impl<'ast> Visit<'ast> for FnVisitor<'ast, '_> {
 
     fn visit_abi(&mut self, node: &'ast syn::Abi) {
         emit!(self.emitter, node, "You shouldn't specify function ABI");
-    }
-    fn visit_generic_param(&mut self, node: &'ast syn::GenericParam) {
-        emit!(self.emitter, node, "Generics are not supported");
-        self.fatal = true;
     }
     fn visit_impl_item_fn(&mut self, node: &'ast syn::ImplItemFn) {
         for attr in &node.attrs {

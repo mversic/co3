@@ -119,13 +119,14 @@ pub fn extern_type(_args: TokenStream, input: TokenStream) -> TokenStream {
 
                 let ffi_fns: Vec<_> = derived_methods
                     .iter()
-                    .map(|fn_| ffi_fn::gen_declaration(fn_, None))
+                    .map(|fn_| ffi_fn::gen_declaration(&Default::default(), fn_, None))
                     .collect();
 
                 let impl_block = wrapper::wrap_impl_items(&ImplDescriptor {
                     attrs: Vec::new(),
                     trait_name: None,
                     associated_types: Vec::new(),
+                    generics: &Default::default(),
                     fns: derived_methods,
                 });
                 let opaque = wrapper::wrap_as_opaque(&mut emitter, item);
@@ -308,10 +309,9 @@ pub fn carbonate(attr: TokenStream, item: TokenStream) -> TokenStream {
             let Some(impl_descriptor) = ImplDescriptor::from_impl(&mut emitter, &item) else {
                 return emitter.finish_token_stream();
             };
-            let ffi_fns = impl_descriptor
-                .fns
-                .iter()
-                .map(|fn_| ffi_fn::gen_definition(fn_, impl_descriptor.trait_name()));
+            let ffi_fns = impl_descriptor.fns.iter().map(|fn_| {
+                ffi_fn::gen_definition(fn_, impl_descriptor.trait_name(), impl_descriptor.generics)
+            });
 
             quote! {
                 #item
@@ -322,7 +322,7 @@ pub fn carbonate(attr: TokenStream, item: TokenStream) -> TokenStream {
             let Some(fn_descriptor) = FnDescriptor::from_fn(&mut emitter, &item) else {
                 return emitter.finish_token_stream();
             };
-            let ffi_fn = ffi_fn::gen_definition(&fn_descriptor, None);
+            let ffi_fn = ffi_fn::gen_definition(&fn_descriptor, None, &Default::default());
 
             quote! {
                 #item
@@ -367,7 +367,7 @@ pub fn carbonate(attr: TokenStream, item: TokenStream) -> TokenStream {
                     &input.getset_attr,
                     fields,
                 )
-                .map(|fn_| ffi_fn::gen_definition(&fn_, None));
+                .map(|fn_| ffi_fn::gen_definition(&fn_, None, &Default::default()));
 
                 quote! {
                     #item
@@ -477,7 +477,9 @@ pub fn decarbonate(attr: TokenStream, item: TokenStream) -> TokenStream {
                 impl_desc
                     .fns
                     .iter()
-                    .map(|fn_| ffi_fn::gen_declaration(fn_, impl_desc.trait_name()))
+                    .map(|fn_| {
+                        ffi_fn::gen_declaration(impl_desc.generics, fn_, impl_desc.trait_name())
+                    })
                     .collect()
             };
 
@@ -492,7 +494,7 @@ pub fn decarbonate(attr: TokenStream, item: TokenStream) -> TokenStream {
                 return emitter.finish_token_stream();
             };
 
-            let ffi_fn = ffi_fn::gen_declaration(&fn_descriptor, None);
+            let ffi_fn = ffi_fn::gen_declaration(&Default::default(), &fn_descriptor, None);
             let wrapped_item = wrap_method(&fn_descriptor, None);
 
             quote! {

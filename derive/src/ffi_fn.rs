@@ -21,12 +21,16 @@ fn prune_fn_declaration_attributes<'a>(attrs: &[&'a syn::Attribute]) -> Vec<&'a 
     pruned
 }
 
-pub fn gen_declaration(fn_descriptor: &FnDescriptor, trait_name: Option<&Ident>) -> TokenStream {
+pub fn gen_declaration(
+    impl_generics: &syn::Generics,
+    fn_descriptor: &FnDescriptor,
+    trait_name: Option<&Ident>,
+) -> TokenStream {
     let ffi_fn_attrs = prune_fn_declaration_attributes(&fn_descriptor.attrs);
 
     let ffi_fn_name = gen_fn_name(fn_descriptor, trait_name);
     let ffi_fn_doc = gen_doc(fn_descriptor, trait_name);
-    let fn_signature = gen_fn_signature(&ffi_fn_name, fn_descriptor);
+    let fn_signature = gen_fn_signature(&ffi_fn_name, fn_descriptor, impl_generics);
 
     quote! {
         unsafe extern "C" {
@@ -37,12 +41,16 @@ pub fn gen_declaration(fn_descriptor: &FnDescriptor, trait_name: Option<&Ident>)
     }
 }
 
-pub fn gen_definition(fn_descriptor: &FnDescriptor, trait_name: Option<&Ident>) -> TokenStream {
+pub fn gen_definition(
+    fn_descriptor: &FnDescriptor,
+    trait_name: Option<&Ident>,
+    impl_generics: &syn::Generics,
+) -> TokenStream {
     let ffi_fn_attrs = &fn_descriptor.attrs;
 
     let ffi_fn_name = gen_fn_name(fn_descriptor, trait_name);
     let ffi_fn_doc = gen_doc(fn_descriptor, trait_name);
-    let fn_signature = gen_fn_signature(&ffi_fn_name, fn_descriptor);
+    let fn_signature = gen_fn_signature(&ffi_fn_name, fn_descriptor, impl_generics);
 
     let ffi_fn_body = gen_body(fn_descriptor, trait_name);
 
@@ -114,7 +122,11 @@ fn gen_doc(fn_descriptor: &FnDescriptor, trait_name: Option<&Ident>) -> String {
     )
 }
 
-fn gen_fn_signature(ffi_fn_name: &Ident, fn_descriptor: &FnDescriptor) -> TokenStream {
+fn gen_fn_signature(
+    ffi_fn_name: &Ident,
+    fn_descriptor: &FnDescriptor,
+    impl_generics: &syn::Generics,
+) -> TokenStream {
     let self_arg = fn_descriptor
         .receiver
         .as_ref()
@@ -123,8 +135,20 @@ fn gen_fn_signature(ffi_fn_name: &Ident, fn_descriptor: &FnDescriptor) -> TokenS
     let fn_args: Vec<_> = fn_descriptor.input_args.iter().map(gen_input_arg).collect();
     let output_arg = ffi_output_arg(fn_descriptor).map(gen_out_ptr_arg);
 
+    let mut generics = impl_generics.clone();
+    let fn_generics = &fn_descriptor.sig.generics;
+    generics.params.extend(fn_generics.params.clone());
+    if let Some(fn_where_clause) = &fn_generics.where_clause {
+        generics
+            .make_where_clause()
+            .predicates
+            .extend(fn_where_clause.predicates.clone());
+    }
+
+    let (impl_generics, _, where_clause) = generics.split_for_impl();
+
     quote! {
-        fn #ffi_fn_name(#(#self_arg,)* #(#fn_args,)* #output_arg) -> co3::FfiReturn
+        fn #ffi_fn_name #impl_generics (#(#self_arg,)* #(#fn_args,)* #output_arg) -> co3::FfiReturn #where_clause
     }
 }
 

@@ -340,7 +340,7 @@ disjoint_impls! {
         type Store = ();
 
         fn encode<'itm>(self, (): &mut ()) -> Self::CType where Self: 'itm {
-            core::mem::ManuallyDrop::new(self).as_extern_ptr_mut()
+            self.into_raw()
         }
     }
 
@@ -765,7 +765,7 @@ disjoint_impls! {
                 return Err(FfiReturn::ArgIsNull);
             }
 
-            Ok(unsafe { Self::from_extern_ptr(source) })
+            Ok(unsafe { Self::from_raw(source) })
         }
     }
 

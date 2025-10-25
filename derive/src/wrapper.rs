@@ -244,13 +244,13 @@ fn gen_impl_ffi(name: &Ident, generics: &syn::Generics) -> TokenStream {
 
         // SAFETY: Type is a wrapper for `*mut Extern`
         unsafe impl #impl_generics co3::external::External for #name #ty_generics #where_clause {
-            fn as_extern_ptr(&self) -> *const co3::external::Extern {
+            fn as_ptr(&self) -> *const co3::external::Extern {
                 self.0
             }
-            fn as_extern_ptr_mut(&mut self) -> *mut co3::external::Extern {
+            fn as_mut_ptr(&mut self) -> *mut co3::external::Extern {
                 self.0
             }
-            unsafe fn from_extern_ptr(opaque_ptr: *mut co3::external::Extern) -> Self {
+            unsafe fn from_raw(opaque_ptr: *mut co3::external::Extern) -> Self {
                 Self(opaque_ptr #(#new_phantom_data_types)*)
             }
         }
@@ -434,7 +434,7 @@ fn process_self_type(
     self_ty: Option<&syn::Path>,
 ) -> Option<TokenStream> {
     if is_self_ty(ty, self_ty) {
-        return Some(quote! { #arg_name.0 });
+        return Some(quote! { co3::external::External::into_raw(#arg_name) });
     }
 
     match ty {
@@ -457,13 +457,13 @@ fn process_self_type(
         }
         Type::Reference(ref_ty) => {
             if !is_self_ty(&ref_ty.elem, self_ty) {
-                return None;
+                return process_self_type(arg_name, &ref_ty.elem, self_ty);
             };
 
             if ref_ty.mutability.is_none() {
-                Some(quote! { co3::external::External::as_extern_ptr(#arg_name) })
+                Some(quote! { co3::external::External::as_ptr(#arg_name) })
             } else {
-                Some(quote! { co3::external::External::as_extern_ptr_mut(#arg_name) })
+                Some(quote! { co3::external::External::as_mut_ptr(#arg_name) })
             }
         }
         _ => None,

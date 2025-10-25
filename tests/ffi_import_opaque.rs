@@ -34,12 +34,10 @@ impl OpaqueStruct {
         unreachable!("replaced by co3::decarbonate")
     }
 
-    // FIXME: Is it possible to implement support for &Value as return type?
     pub fn get_param(&self, name: &u8) -> Option<ExternRef<'_, Value>> {
         unreachable!("replaced by co3::decarbonate")
     }
 
-    // FIXME: Is it possible to implement support for &Value as return type?
     pub fn params(&self) -> impl ExactSizeIterator<Item = ExternRef<'_, Value>> {
         unreachable!("replaced by co3::decarbonate")
     }
@@ -54,11 +52,15 @@ pub fn freestanding_returns_opaque_item(input: ExternRef<OpaqueStruct>) -> Exter
     unreachable!("replaced by co3::decarbonate")
 }
 
-// TODO: Does not exist atm, use `OpaqueStruct`, not `Box<OpaqueStruct>`
-//#[co3::decarbonate]
-//pub fn freestanding_returns_opaque_boxed_ref(input: &Box<OpaqueStruct>) -> &OpaqueStruct {
-//    unreachable!("replaced by co3::decarbonate")
-//}
+#[co3::decarbonate]
+pub fn freestanding_returns_opaque_double_ref<'a, 'b>(
+    input: &'b ExternRef<'a, OpaqueStruct>,
+) -> &'b ExternRef<'a, OpaqueStruct>
+where
+    'a: 'b,
+{
+    unreachable!("replaced by co3::decarbonate")
+}
 
 #[co3::decarbonate]
 pub fn some_fn(input: &Vec<OpaqueStruct>) {
@@ -114,18 +116,19 @@ fn take_and_return_opaque_ref() {
     compare_opaque_eq::<_, ffi::ExternOpaqueStruct>(&opaque.as_ref(), &opaque_ref);
 }
 
-//#[test]
-//#[webassembly_test::webassembly_test]
-//fn take_and_return_opaque_boxed_ref() {
-//    let name = 42u8;
-//    let value: Value = Value::new("Dummy param value".to_owned());
-//    let mut params = BTreeMap::default();
-//    params.insert(name, value);
-//
-//    let opaque: Box<OpaqueStruct> = Box::new(make_new_opaque(name, params));
-//    let opaque_ref: OpaqueStruct = freestanding_returns_opaque_item(&opaque);
-//    compare_opaque_eq::<_, ffi::ExternOpaqueStruct>(&*opaque, &opaque_ref);
-//}
+#[test]
+#[webassembly_test::webassembly_test]
+fn take_and_return_opaque_double_ref() {
+    let name = 42u8;
+    let value: Value = Value::new("Dummy param value".to_owned());
+    let mut params = BTreeMap::default();
+    params.insert(name, value);
+
+    let opaque: OpaqueStruct = make_new_opaque(name, params);
+    let opaque_ref: ExternRef<_> = opaque.as_ref();
+    let opaque_double_ref: &ExternRef<_> = freestanding_returns_opaque_double_ref(&opaque_ref);
+    compare_opaque_eq::<_, ffi::ExternOpaqueStruct>(&opaque, opaque_double_ref);
+}
 
 #[test]
 #[webassembly_test::webassembly_test]

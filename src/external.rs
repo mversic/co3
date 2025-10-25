@@ -6,19 +6,23 @@ use crate::{ExternC, mineral, transmute::InfallibleTransmute};
 ///
 /// Implementors must guarantee that:
 /// - `Self` has the same representation as `*mut` [`Extern`].
-pub unsafe trait External {
+pub unsafe trait External: Sized {
     /// Constructs `Self` from an opaque pointer.
     ///
     /// # Safety
     ///
     /// The pointer argument must be valid.
-    unsafe fn from_extern_ptr(source: *mut Extern) -> Self;
+    unsafe fn from_raw(source: *mut Extern) -> Self;
+
+    fn into_raw(self) -> *mut Extern {
+        core::mem::ManuallyDrop::new(self).as_mut_ptr()
+    }
 
     /// Returns a shared opaque pointer.
-    fn as_extern_ptr(&self) -> *const Extern;
+    fn as_ptr(&self) -> *const Extern;
 
     /// Returns a mutable opaque pointer.
-    fn as_extern_ptr_mut(&mut self) -> *mut Extern;
+    fn as_mut_ptr(&mut self) -> *mut Extern;
 }
 
 /// Wrapper around struct/enum opaque pointer. When wrapped with the [`co3::extern_type`] macro in
@@ -45,13 +49,13 @@ pub struct ExternRefMut<'a, T>(*mut Extern, core::marker::PhantomData<&'a mut T>
 
 impl<T: External> ExternRef<'_, T> {
     pub fn new(inner: &T) -> Self {
-        Self(inner.as_extern_ptr(), core::marker::PhantomData)
+        Self(inner.as_ptr(), core::marker::PhantomData)
     }
 }
 
 impl<T: External> ExternRefMut<'_, T> {
     pub fn new(inner: &mut T) -> Self {
-        Self(inner.as_extern_ptr_mut(), core::marker::PhantomData)
+        Self(inner.as_mut_ptr(), core::marker::PhantomData)
     }
 }
 
