@@ -25,14 +25,16 @@ disjoint_impls! {
     unsafe impl<'a, R: Ir<Type = Transparent> + Transmute> Transmute for &'a R {
         type Target = &'a R::Target;
 
-        fn is_valid(target: &Self::Target) -> bool {
-            R::is_valid(target)
+        #[inline(always)]
+        fn is_valid(_: &Self::Target) -> bool {
+            true
         }
     }
     // SAFETY: Idempotent transmute can't fail
     unsafe impl<R: Ir<Type = Robust> + ReprC> Transmute for &R {
         type Target = *const R;
 
+        #[inline(always)]
         fn is_valid(target: &Self::Target) -> bool {
             !target.is_null()
         }
@@ -41,6 +43,7 @@ disjoint_impls! {
     unsafe impl<R: Ir<Type = Opaque>> Transmute for &R {
         type Target = *const R;
 
+        #[inline(always)]
         fn is_valid(target: &Self::Target) -> bool {
             !target.is_null()
         }
@@ -50,14 +53,16 @@ disjoint_impls! {
     unsafe impl<'a, R: Ir<Type = Transparent> + Transmute> Transmute for &'a mut R {
         type Target = &'a mut R::Target;
 
-        fn is_valid(target: &Self::Target) -> bool {
-            R::is_valid(target)
+        #[inline(always)]
+        fn is_valid(_: &Self::Target) -> bool {
+            true
         }
     }
     // SAFETY: Idempotent transmute can't fail
     unsafe impl<R: Ir<Type = Robust> + ReprC> Transmute for &mut R {
         type Target = *mut R;
 
+        #[inline(always)]
         fn is_valid(target: &Self::Target) -> bool {
             !target.is_null()
         }
@@ -66,6 +71,7 @@ disjoint_impls! {
     unsafe impl<R: Ir<Type = Opaque>> Transmute for &mut R {
         type Target = *mut R;
 
+        #[inline(always)]
         fn is_valid(target: &Self::Target) -> bool {
             !target.is_null()
         }
@@ -75,6 +81,7 @@ disjoint_impls! {
     unsafe impl<R: Ir<Type = Opaque>> Transmute for Box<R> {
         type Target = *mut R;
 
+        #[inline(always)]
         fn is_valid(target: &Self::Target) -> bool {
             !target.is_null()
         }
@@ -84,9 +91,10 @@ disjoint_impls! {
     unsafe impl<R: Ir<Type = Transparent> + Transmute, const N: usize> Transmute for [R; N] {
         type Target = [R::Target; N];
 
-        fn is_valid(target: &Self::Target) -> bool {
+        #[inline(always)]
+        fn is_valid(_: &Self::Target) -> bool {
             assert_arr_has_non_zero_len::<N>();
-            target.iter().all(|elem| R::is_valid(elem))
+            true
         }
     }
 
@@ -97,6 +105,7 @@ disjoint_impls! {
     {
         type Target = &'a *mut R;
 
+        #[inline(always)]
         fn is_valid(target: &Self::Target) -> bool {
             !target.is_null()
         }
@@ -108,6 +117,7 @@ disjoint_impls! {
     {
         type Target = &'a mut *mut R;
 
+        #[inline(always)]
         fn is_valid(target: &Self::Target) -> bool {
             !target.is_null()
         }

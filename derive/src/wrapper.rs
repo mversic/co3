@@ -312,6 +312,7 @@ fn gen_impl_ffi(name: &Ident, generics: &syn::Generics) -> TokenStream {
         unsafe impl #impl_generics co3::transmute::Transmute for #name #ty_generics #where_clause {
             type Target = core::ptr::NonNull<co3::external::Extern>;
 
+            #[inline(always)]
             fn is_valid(target: &Self::Target) -> bool {
                 true
             }

@@ -1283,6 +1283,7 @@ macro_rules! mineral {
         unsafe impl<$($($impl_generics $(: $bounds)?),*)?> $crate::transmute::Transmute for $ty where $($($where_ty: $where_bound),*)? {
             type Target = $target;
 
+            #[inline(always)]
             fn is_valid($target_var: $target_ty) -> bool $block
         }
 
@@ -1312,6 +1313,7 @@ macro_rules! mineral {
         unsafe impl<$($($impl_generics $(: $bounds)?),*)?> $crate::transmute::Transmute for $ty where $($($where_ty: $where_bound),*)? {
             type Target = $target;
 
+            #[inline(always)]
             fn is_valid(_: &Self::Target) -> bool {
                 true
             }
@@ -1373,6 +1375,7 @@ macro_rules! mineral {
         unsafe impl<$($($impl_generics $(: $bounds)?),*)?> $crate::transmute::Transmute for $ty where $($($where_ty: $where_bound),*)? {
             type Target = $target;
 
+            #[inline(always)]
             fn is_valid(_: &Self::Target) -> bool {
                 true
             }
