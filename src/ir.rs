@@ -215,7 +215,6 @@ disjoint_impls! {
     //    type Type = Option<Robust>;
     //}
     impl<R: Ir<Type = Transparent> + crate::niche::Ir<Type = Transparent>> Ir for Option<R> {
-        // FIXME: This could be considered a misnomer, it's Option<WithNiche>
         type Type = Option<Transparent>;
     }
     impl<R: Ir<Type = Robust>> Ir for Option<R> {

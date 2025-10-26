@@ -1,22 +1,26 @@
-use crate::{ExternC, mineral, transmute::InfallibleTransmute};
+use core::{marker::PhantomData, ptr::NonNull};
+
+use crate::mineral;
 
 /// Represents the pointee on the far side of an exported opaque pointer at the FFI boundary.
 ///
 /// # Safety
 ///
 /// Implementors must guarantee that:
-/// - `Self` has the same representation as `*mut` [`Extern`].
+/// - `Self` has the same representation as [`NonNull<Extern>`].
 pub unsafe trait External: Sized {
     /// Constructs `Self` from an opaque pointer.
     ///
     /// # Safety
     ///
-    /// The pointer argument must be valid.
-    unsafe fn from_raw(source: *mut Extern) -> Self;
+    /// The pointer argument must uniquely own the memory
+    // TODO: I'm not sure if this function needs to be unsafe
+    // because this pointer is never dereferenced? However,
+    // `Send` and `Sync` impls may depend on it?
+    unsafe fn from_non_null(source: NonNull<Extern>) -> Self;
 
-    fn into_raw(self) -> *mut Extern {
-        core::mem::ManuallyDrop::new(self).as_mut_ptr()
-    }
+    /// Consumes the type, returning a wrapped [`NonNull`] pointer.
+    fn into_non_null(self) -> NonNull<Extern>;
 
     /// Returns a shared opaque pointer.
     fn as_ptr(&self) -> *const Extern;
@@ -37,25 +41,29 @@ pub struct Extern {
     //
     // - `PhantomPinned` is !Unpin. It's wrapped in `PhantomData` because
     //   its memory representation is not guaranteed to be FFI-safe
-    __marker: core::marker::PhantomData<(*mut u8, core::marker::PhantomPinned)>,
+    __marker: PhantomData<(*mut u8, core::marker::PhantomPinned)>,
 }
 
 #[derive(Clone, Copy)]
 #[repr(transparent)]
-pub struct ExternRef<'a, T>(*const Extern, core::marker::PhantomData<&'a T>);
+pub struct ExternRef<'a, T>(NonNull<Extern>, PhantomData<&'a T>);
 
 #[repr(transparent)]
-pub struct ExternRefMut<'a, T>(*mut Extern, core::marker::PhantomData<&'a mut T>);
+pub struct ExternRefMut<'a, T>(NonNull<Extern>, core::marker::PhantomData<&'a mut T>);
 
 impl<T: External> ExternRef<'_, T> {
     pub fn new(inner: &T) -> Self {
-        Self(inner.as_ptr(), core::marker::PhantomData)
+        let value = unsafe { NonNull::new_unchecked(inner.as_ptr() as *mut _) };
+
+        Self(value, PhantomData)
     }
 }
 
 impl<T: External> ExternRefMut<'_, T> {
     pub fn new(inner: &mut T) -> Self {
-        Self(inner.as_mut_ptr(), core::marker::PhantomData)
+        let value = unsafe { NonNull::new_unchecked(inner.as_mut_ptr()) };
+
+        Self(value, PhantomData)
     }
 }
 
@@ -63,7 +71,8 @@ impl<T> core::ops::Deref for ExternRef<'_, T> {
     type Target = T;
 
     fn deref(&self) -> &Self::Target {
-        unsafe { &*(&self.0 as *const *const Extern).cast() }
+        let ptr: *const _ = &self.0.as_ptr();
+        unsafe { &*(ptr.cast::<T>()) }
     }
 }
 
@@ -71,38 +80,27 @@ impl<T> core::ops::Deref for ExternRefMut<'_, T> {
     type Target = T;
 
     fn deref(&self) -> &Self::Target {
-        unsafe { &*(&self.0 as *const *mut Extern).cast() }
+        let ptr: *const _ = &self.0.as_ptr();
+        unsafe { &*(ptr.cast::<T>()) }
     }
 }
 
 impl<T> core::ops::DerefMut for ExternRefMut<'_, T> {
     fn deref_mut(&mut self) -> &mut Self::Target {
-        unsafe { &mut *(&mut self.0 as *mut *mut Extern).cast() }
+        let ptr: *mut _ = &mut self.0.as_ptr();
+        unsafe { &mut *(ptr.cast::<T>()) }
     }
 }
 
 mineral! {
     unsafe impl<R> Transparent for ExternRef<'_, R> {
-        type Target = *const Extern;
-
-        const NICHE_VALUE: <Self as ExternC>::CType = core::ptr::null();
-        fn is_valid(target: &Self::Target) -> bool {
-            !target.is_null()
-        }
+        type Target = core::ptr::NonNull<Extern>;
+        const NICHE_VALUE = "DELEGATE";
     }
 }
 mineral! {
     unsafe impl<R> Transparent for ExternRefMut<'_, R> {
-        type Target = *mut Extern;
-
-        const NICHE_VALUE: <Self as ExternC>::CType = core::ptr::null_mut();
-        fn is_valid(target: &Self::Target) -> bool {
-            !target.is_null()
-        }
+        type Target = core::ptr::NonNull<Extern>;
+        const NICHE_VALUE = "DELEGATE";
     }
 }
-
-// SAFETY: The type is never dereferenced on the far side
-unsafe impl<R> InfallibleTransmute for ExternRef<'_, R> {}
-// SAFETY: The type is never dereferenced on the far side
-unsafe impl<R> InfallibleTransmute for ExternRefMut<'_, R> {}

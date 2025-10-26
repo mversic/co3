@@ -57,7 +57,7 @@ macro_rules! handles {
     ( $id:expr, $(,)? ) => {};
 }
 
-/// Generate FFI equivalent implementation of the requested trait method (e.g. Clone, Eq, Ord).
+/// Generate FFI equivalent implementation of requested trait methods (e.g. Clone, Eq, Ord).
 ///
 /// One `[prefix]__<fn_name>` is generated per invokation of this macro. User should ensure that
 /// function names don't collide by using a globally (per dynamic library) unique prefix.
@@ -274,7 +274,7 @@ macro_rules! def_fns {
     };
 }
 
-/// Generate the declaration of FFI functions for the requested trait method (e.g. Clone, Eq, Ord)
+/// Generate declarations of FFI functions for he requested trait methods (e.g. Clone, Eq, Ord)
 #[macro_export]
 macro_rules! decl_fns {
     ( dealloc ) => {

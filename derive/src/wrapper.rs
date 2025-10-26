@@ -28,10 +28,16 @@ fn impl_clone_for_opaque(name: &Ident, generics: &syn::Generics) -> TokenStream 
     quote! {
         impl #impl_generics Clone for #name #ty_generics #where_clause {
             fn clone(&self) -> Self {
+                let handle_id = <#name #ty_generics as co3::handle::Handle>::ID;
                 let mut output = core::mem::MaybeUninit::uninit();
 
-                let handle_id = co3::Encode::encode(<#name #ty_generics as co3::handle::Handle>::ID, &mut ());
-                let clone_result = unsafe { crate::__clone(handle_id, self.0, output.as_mut_ptr()) };
+                let clone_result = unsafe {
+                    crate::__clone(
+                        co3::Encode::encode(handle_id, &mut ()),
+                        co3::Encode::encode(self.as_ref(), &mut ()),
+                        output.as_mut_ptr(),
+                    )
+                };
 
                 if clone_result != co3::FfiReturn::Ok  {
                     panic!("Clone returned: {}", clone_result);
@@ -49,10 +55,15 @@ fn impl_default_for_opaque(name: &Ident, generics: &syn::Generics) -> TokenStrea
     quote! {
         impl #impl_generics Default for #name #ty_generics #where_clause {
             fn default() -> Self {
+                let handle_id = <#name #ty_generics as co3::handle::Handle>::ID;
                 let mut output = core::mem::MaybeUninit::uninit();
 
-                let handle_id = co3::Encode::encode(<#name #ty_generics as co3::handle::Handle>::ID, &mut ());
-                let default_result = unsafe { crate::__default(handle_id, output.as_mut_ptr()) };
+                let default_result = unsafe {
+                    crate::__default(
+                        co3::Encode::encode(handle_id, &mut ()),
+                        output.as_mut_ptr(),
+                    )
+                };
 
                 if default_result != co3::FfiReturn::Ok  {
                     panic!("Default returned: {}", default_result);
@@ -74,10 +85,17 @@ fn impl_partial_eq_for_opaque(name: &Ident, generics: &syn::Generics) -> TokenSt
     quote! {
         impl #impl_generics PartialEq for #name #ty_generics #where_clause {
             fn eq(&self, other: &Self) -> bool {
+                let handle_id = <#name #ty_generics as co3::handle::Handle>::ID;
                 let mut output = core::mem::MaybeUninit::uninit();
 
-                let handle_id = co3::Encode::encode(<#name #ty_generics as co3::handle::Handle>::ID, &mut ());
-                let eq_result = unsafe { crate::__eq(handle_id, self.0, other.0, output.as_mut_ptr()) };
+                let eq_result = unsafe {
+                    crate::__eq(
+                        co3::Encode::encode(handle_id, &mut ()),
+                        co3::Encode::encode(self.as_ref(), &mut ()),
+                        co3::Encode::encode(other.as_ref(), &mut ()),
+                        output.as_mut_ptr(),
+                    )
+                };
 
                 if eq_result != co3::FfiReturn::Ok  {
                     panic!("Eq returned: {}", eq_result);
@@ -106,10 +124,17 @@ fn impl_ord_for_opaque(name: &Ident, generics: &syn::Generics) -> TokenStream {
     quote! {
         impl #impl_generics Ord for #name #ty_generics #where_clause {
             fn cmp(&self, other: &Self) -> core::cmp::Ordering {
+                let handle_id = <#name #ty_generics as co3::handle::Handle>::ID;
                 let mut output = core::mem::MaybeUninit::uninit();
 
-                let handle_id = co3::Encode::encode(<#name #ty_generics as co3::handle::Handle>::ID, &mut ());
-                let cmp_result = unsafe { crate::__ord(handle_id, self.0, other.0, output.as_mut_ptr()) };
+                let cmp_result = unsafe {
+                    crate::__ord(
+                        co3::Encode::encode(handle_id, &mut ()),
+                        co3::Encode::encode(self.as_ref(), &mut ()),
+                        co3::Encode::encode(other.as_ref(), &mut ()),
+                        output.as_mut_ptr(),
+                    )
+                };
 
                 if cmp_result != co3::FfiReturn::Ok  {
                     panic!("Ord returned: {}", cmp_result);
@@ -190,7 +215,7 @@ pub fn wrap_as_opaque(emitter: &mut Emitter, mut input: FfiTypeInput) -> TokenSt
     let phantom_data_type_defs: Vec<_> = input
         .generics
         .type_params()
-        .map(|param| quote! {, core::marker::PhantomData<#param>})
+        .map(|param| quote! { core::marker::PhantomData<#param> })
         .collect();
 
     let impl_ffi = gen_impl_ffi(name, &input.generics);
@@ -205,12 +230,21 @@ pub fn wrap_as_opaque(emitter: &mut Emitter, mut input: FfiTypeInput) -> TokenSt
     quote! {
         #(#attrs)*
         #[repr(transparent)]
-        #vis struct #name #ty_generics(*mut co3::external::Extern #(#phantom_data_type_defs)*) #handle_bounded_where_clause;
+        #vis struct #name #ty_generics(
+            core::ptr::NonNull<co3::external::Extern>
+            #(, #phantom_data_type_defs)*
+        ) #handle_bounded_where_clause;
 
         impl #impl_generics Drop for #name #ty_generics #handle_bounded_where_clause {
             fn drop(&mut self) {
-                let handle_id = co3::Encode::encode(<#name #ty_generics as co3::handle::Handle>::ID, &mut ());
-                let drop_result = unsafe { crate::__drop(handle_id, self.0) };
+                let handle_id = <#name #ty_generics as co3::handle::Handle>::ID;
+
+                let drop_result = unsafe {
+                    crate::__drop(
+                        co3::Encode::encode(handle_id, &mut ()),
+                        co3::Encode::encode(self.as_mut(), &mut ())
+                    )
+                };
 
                 if drop_result != co3::FfiReturn::Ok  {
                     panic!("Drop returned: {}", drop_result);
@@ -226,12 +260,24 @@ pub fn wrap_as_opaque(emitter: &mut Emitter, mut input: FfiTypeInput) -> TokenSt
 fn gen_impl_ffi(name: &Ident, generics: &syn::Generics) -> TokenStream {
     let (impl_generics, ty_generics, where_clause) = generics.split_for_impl();
 
+    let send_predicates = generics.type_params().map(|param| {
+        quote! { #param: Send }
+    });
+    let sync_predicates = generics.type_params().map(|param| {
+        quote! { #param: Sync }
+    });
+
     let new_phantom_data_types: Vec<_> = generics
         .type_params()
         .map(|_| quote! {, core::marker::PhantomData})
         .collect();
 
     quote! {
+        // SAFETY: The underlying data is unaliased, i.e. it is owned
+        unsafe impl #impl_generics Send for #name #ty_generics #where_clause #(, #send_predicates)* {}
+        // SAFETY: The underlying data is unaliased, i.e. it is owned
+        unsafe impl #impl_generics Sync for #name #ty_generics #where_clause #(, #sync_predicates)* {}
+
         impl #impl_generics #name #ty_generics #where_clause {
             fn as_ref(&self) -> co3::external::ExternRef<'_, #name #ty_generics> {
                 co3::external::ExternRef::new(self)
@@ -242,16 +288,19 @@ fn gen_impl_ffi(name: &Ident, generics: &syn::Generics) -> TokenStream {
             }
         }
 
-        // SAFETY: Type is a wrapper for `*mut Extern`
+        // SAFETY: Type is a thin wrapper around [`core::ptr::NonNull<co3::external::Extern>`]
         unsafe impl #impl_generics co3::external::External for #name #ty_generics #where_clause {
-            fn as_ptr(&self) -> *const co3::external::Extern {
+            unsafe fn from_non_null(opaque_ptr: core::ptr::NonNull<co3::external::Extern>) -> Self {
+                Self(opaque_ptr #(#new_phantom_data_types)*)
+            }
+            fn into_non_null(self) -> core::ptr::NonNull<co3::external::Extern> {
                 self.0
+            }
+            fn as_ptr(&self) -> *const co3::external::Extern {
+                self.0.as_ptr() as *const _
             }
             fn as_mut_ptr(&mut self) -> *mut co3::external::Extern {
-                self.0
-            }
-            unsafe fn from_raw(opaque_ptr: *mut co3::external::Extern) -> Self {
-                Self(opaque_ptr #(#new_phantom_data_types)*)
+                self.0.as_ptr()
             }
         }
 
@@ -259,13 +308,11 @@ fn gen_impl_ffi(name: &Ident, generics: &syn::Generics) -> TokenStream {
             type Type = co3::ir::Extern;
         }
 
-        // SAFETY: Type is a wrapper for `*mut Extern`
+        // SAFETY: Type is a thin wrapper around [`core::ptr::NonNull<co3::external::Extern>`]
         unsafe impl #impl_generics co3::transmute::Transmute for #name #ty_generics #where_clause {
-            type Target = *mut co3::external::Extern;
+            type Target = core::ptr::NonNull<co3::external::Extern>;
 
             fn is_valid(target: &Self::Target) -> bool {
-                // TODO: The type is never dereferenced
-                // so it is considered as always valid
                 true
             }
         }
@@ -434,7 +481,7 @@ fn process_self_type(
     self_ty: Option<&syn::Path>,
 ) -> Option<TokenStream> {
     if is_self_ty(ty, self_ty) {
-        return Some(quote! { co3::external::External::into_raw(#arg_name) });
+        return Some(quote! { co3::external::External::into_non_null(#arg_name).as_ptr() });
     }
 
     match ty {

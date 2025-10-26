@@ -47,8 +47,10 @@ pub mod transmute;
 /// A specialized `Result` type for FFI operations
 pub type Result<T> = core::result::Result<T, FfiReturn>;
 
-/// Robust type that conforms to C ABI and can be safely shared across FFI boundaries. This does
-/// not guarantee the ABI compatibility of the referent for pointers. These pointers are opaque
+/// Robust type that conforms to C ABI and can be safely shared across FFI boundaries.
+///
+/// Note that ABI compatibility of referent is not guaranteed. Dereferencing pointers
+/// whose referents don't also implement `ReprC` is very likely to cause UB
 ///
 /// # Safety
 ///
@@ -340,7 +342,9 @@ disjoint_impls! {
         type Store = ();
 
         fn encode<'itm>(self, (): &mut ()) -> Self::CType where Self: 'itm {
-            self.into_raw()
+            // FIXME: This should work
+            //self.into_non_null().encode(&mut ())
+            Encode::encode(self.into_non_null(), &mut ())
         }
     }
 
@@ -719,6 +723,7 @@ disjoint_impls! {
         ///
         /// - All conversions from a pointer must ensure pointer validity beforehand
         /// - If `type Store = ()`, then the store **must never be dereferenced**
+        /// - In the case of owned extern types the pointer must own the referent
         unsafe fn decode<'itm: 'd>(source: Self::CType, store: &'itm mut Self::Store) -> Result<Self>;
     }
 
@@ -761,11 +766,10 @@ disjoint_impls! {
         type Store = ();
 
         unsafe fn decode<'itm: 'd>(source: Self::CType, (): &mut ()) -> Result<Self> {
-            if source.is_null() {
-                return Err(FfiReturn::ArgIsNull);
-            }
+            let non_null_ptr = core::ptr::NonNull::new(source).ok_or(FfiReturn::ArgIsNull)?;
 
-            Ok(unsafe { Self::from_raw(source) })
+            // SAFETY: Pointer is expected to own the referent
+            Ok(unsafe { Self::from_non_null(non_null_ptr) })
         }
     }
 
@@ -1326,22 +1330,19 @@ macro_rules! mineral {
                 }
 
                 impl<$($($impl_generics $(: $bounds)?),*)?> Ir for $ty where
-                    Self: $crate::transmute::Transmute,
-                    for<'dummy> <Self as $crate::transmute::Transmute>::Target: Ir<Type = $crate::ir::Robust>,
+                    for<'dummy> Self: $crate::transmute::Transmute<Target: Ir<Type = $crate::ir::Robust>>,
                     $($($where_ty: $where_bound),*)?
                 {
                     type Type = $crate::ir::Robust;
                 }
                 impl<$($($impl_generics $(: $bounds)?),*)?> Ir for $ty where
-                    Self: $crate::transmute::Transmute,
-                    for<'dummy> <Self as $crate::transmute::Transmute>::Target: Ir<Type = $crate::ir::Transparent>,
+                    for<'dummy> Self: $crate::transmute::Transmute<Target: Ir<Type = $crate::ir::Transparent>>,
                     $($($where_ty: $where_bound),*)?
                 {
                     type Type = $crate::ir::Transparent;
                 }
                 impl<S: $crate::ir::Cloned, $($($impl_generics $(: $bounds)?),*)?> Ir for $ty where
-                    Self: $crate::transmute::Transmute + $crate::niche::Niche,
-                    for<'dummy> <Self as $crate::transmute::Transmute>::Target: Ir<Type = S>,
+                    for<'dummy> Self: $crate::transmute::Transmute<Target: Ir<Type = S>> + $crate::niche::Niche,
                     $($($where_ty: $where_bound),*)?
                 {
                     type Type = Self;

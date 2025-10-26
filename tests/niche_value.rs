@@ -4,9 +4,17 @@ use std::mem::ManuallyDrop;
 
 use co3::{Encode, ExternC, slice::RefSlice};
 
+co3::handles! {Extern}
+co3::decl_fns! {Drop}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq, ExternC)]
 #[mineral(opaque)]
 pub enum Opaque {
+    A,
+}
+
+#[co3::extern_type]
+pub enum Extern {
     A,
 }
 
@@ -393,6 +401,7 @@ fn enum_niche_value() {
     assert_eq!(expected_ord, None::<Ordering>.encode(&mut ()));
 
     assert!(None::<Opaque>.encode(&mut ()).is_null());
+    assert!(None::<Extern>.encode(&mut ()).is_null());
     assert!(None::<FieldlessEnumWithoutRepr>.encode(&mut ()).is_null());
 
     #[cfg(not(target_family = "wasm"))]
