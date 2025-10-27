@@ -26,11 +26,11 @@ disjoint_impls! {
         type Target = &'a R::Target;
 
         #[inline(always)]
-        fn is_valid(_: &Self::Target) -> bool {
-            true
+        fn is_valid(target: &Self::Target) -> bool {
+            R::is_valid(target)
         }
     }
-    // SAFETY: Idempotent transmute can't fail
+    // SAFETY: Transmuting reference to a pointer of the same type
     unsafe impl<R: Ir<Type = Robust> + ReprC> Transmute for &R {
         type Target = *const R;
 
@@ -54,11 +54,11 @@ disjoint_impls! {
         type Target = &'a mut R::Target;
 
         #[inline(always)]
-        fn is_valid(_: &Self::Target) -> bool {
-            true
+        fn is_valid(target: &Self::Target) -> bool {
+            R::is_valid(target)
         }
     }
-    // SAFETY: Idempotent transmute can't fail
+    // SAFETY: Transmuting reference to a pointer of the same type
     unsafe impl<R: Ir<Type = Robust> + ReprC> Transmute for &mut R {
         type Target = *mut R;
 
@@ -92,9 +92,9 @@ disjoint_impls! {
         type Target = [R::Target; N];
 
         #[inline(always)]
-        fn is_valid(_: &Self::Target) -> bool {
+        fn is_valid(target: &Self::Target) -> bool {
             assert_arr_has_non_zero_len::<N>();
-            true
+            target.iter().all(R::is_valid)
         }
     }
 

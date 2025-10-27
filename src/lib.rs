@@ -71,23 +71,13 @@ disjoint_impls! {
         type CType: ReprC;
     }
 
-    impl<R: Transmute> ExternC for R
-    where
-        Self: Ir<Type = Transparent>,
-        <R>::Target: ExternC,
-    {
+    impl<R: Ir<Type = Transparent> + Transmute<Target: ExternC>> ExternC for R {
         type CType = <R::Target as ExternC>::CType;
     }
-    impl<R: ReprC> ExternC for R
-    where
-        Self: Ir<Type = Robust>,
-    {
+    impl<R: Ir<Type = Robust> + ReprC> ExternC for R {
         type CType = Self;
     }
-    impl<R> ExternC for R
-    where
-        Self: Ir<Type = Opaque>,
-    {
+    impl<R: Ir<Type = Opaque>> ExternC for R {
         type CType = *mut Self;
     }
     impl<R: Ir<Type = Extern>> ExternC for R {
@@ -112,6 +102,29 @@ disjoint_impls! {
         Self: Ir<Type = &'a mut Extern>,
     {
         type CType = *mut external::Extern;
+    }
+
+    #[cfg(feature = "owned_types")]
+    #[cfg(feature = "owned_as_ref")]
+    impl<R: ReprC> ExternC for Box<R>
+    where
+        Self: Ir<Type = Box<Robust>>,
+    {
+        type CType = *mut R;
+    }
+    impl<R> ExternC for Box<R>
+    where
+        Self: Ir<Type = Box<Extern>>,
+    {
+        type CType = *mut external::Extern;
+    }
+    #[cfg(feature = "owned_types")]
+    #[cfg(feature = "owned_as_ref")]
+    impl<R: ExternC, S: Cloned> ExternC for Box<R>
+    where
+        Self: Ir<Type = Box<S>>,
+    {
+        type CType = *mut R::CType;
     }
 
     impl<'slice, R: Transmute> ExternC for &'slice [R]
@@ -154,33 +167,6 @@ disjoint_impls! {
         type CType = RefMutSlice<R>;
     }
 
-    #[cfg(feature = "owned_types")]
-    #[cfg(feature = "owned_as_ref")]
-    impl<R: ReprC> ExternC for Box<R>
-    where
-        Self: Ir<Type = Box<Robust>>,
-    {
-        // NOTE:One might expect the serialized form to be `*const R` but there is no need
-        // to postpone reading the pointer (only applies if there is no ownership transfer)
-        type CType = R;
-    }
-    impl<R> ExternC for Box<R>
-    where
-        Self: Ir<Type = Box<Extern>>,
-    {
-        type CType = *mut external::Extern;
-    }
-    #[cfg(feature = "owned_types")]
-    #[cfg(feature = "owned_as_ref")]
-    impl<R: ExternC, S: Cloned> ExternC for Box<R>
-    where
-        Self: Ir<Type = Box<S>>,
-    {
-        // NOTE:One might expect the serialized form to be `*const R::CType` but there is no need
-        // to postpone reading the pointer (only applies when there is no ownership transfer)
-        type CType = R::CType;
-    }
-
     impl<R: Transmute> ExternC for Box<[R]>
     where
         Self: Ir<Type = Box<[Transparent]>>,
@@ -194,7 +180,7 @@ disjoint_impls! {
     where
         Self: Ir<Type = Box<[Robust]>>,
     {
-        type CType = RefSlice<R>;
+        type CType = RefMutSlice<R>;
     }
     #[cfg(feature = "owned_types")]
     #[cfg(feature = "owned_as_ref")]
@@ -202,7 +188,7 @@ disjoint_impls! {
     where
         Self: Ir<Type = Box<[Opaque]>>,
     {
-        type CType = RefSlice<*mut R>;
+        type CType = RefMutSlice<*mut R>;
     }
     #[cfg(feature = "owned_types")]
     #[cfg(feature = "owned_as_ref")]
@@ -210,7 +196,7 @@ disjoint_impls! {
     where
         Self: Ir<Type = Box<[S]>>,
     {
-        type CType = RefSlice<R::CType>;
+        type CType = RefMutSlice<R::CType>;
     }
 
     #[cfg(feature = "owned_types")]
@@ -227,7 +213,7 @@ disjoint_impls! {
     where
         Self: Ir<Type = Vec<Robust>>,
     {
-        type CType = RefSlice<R>;
+        type CType = RefMutSlice<R>;
     }
     #[cfg(feature = "owned_types")]
     #[cfg(feature = "owned_as_ref")]
@@ -235,7 +221,7 @@ disjoint_impls! {
     where
         Self: Ir<Type = Vec<Opaque>>,
     {
-        type CType = RefSlice<*mut R>;
+        type CType = RefMutSlice<*mut R>;
     }
     #[cfg(feature = "owned_types")]
     #[cfg(feature = "owned_as_ref")]
@@ -243,7 +229,7 @@ disjoint_impls! {
     where
         Self: Ir<Type = Vec<S>>,
     {
-        type CType = RefSlice<R::CType>;
+        type CType = RefMutSlice<R::CType>;
     }
 
     impl<R, const N: usize> ExternC for [R; N]
@@ -307,31 +293,21 @@ disjoint_impls! {
         fn encode<'itm>(self, store: &'itm mut Self::Store) -> Self::CType where Self: 'itm;
     }
 
-    impl<R: Transmute> Encode for R
-    where
-        <Self as Transmute>::Target: Encode,
-        Self: Ir<Type = Transparent>,
-    {
+    impl<R: Ir<Type = Transparent> + Transmute<Target: Encode>> Encode for R {
         type Store = <R::Target as Encode>::Store;
 
         fn encode<'itm>(self, store: &'itm mut Self::Store) -> Self::CType where Self: 'itm {
             transmute_into_target(self).encode(store)
         }
     }
-    impl<R: ReprC> Encode for R
-    where
-        Self: Ir<Type = Robust>,
-    {
+    impl<R: Ir<Type = Robust> + ReprC> Encode for R {
         type Store = ();
 
         fn encode<'itm>(self, (): &mut ()) -> Self::CType where Self: 'itm {
             self
         }
     }
-    impl<R> Encode for R
-    where
-        Self: Ir<Type = Opaque>,
-    {
+    impl<R: Ir<Type = Opaque>> Encode for R {
         type Store = ();
 
         fn encode<'itm>(self, (): &mut ()) -> Self::CType where Self: 'itm {
@@ -342,8 +318,6 @@ disjoint_impls! {
         type Store = ();
 
         fn encode<'itm>(self, (): &mut ()) -> Self::CType where Self: 'itm {
-            // FIXME: This should work
-            //self.into_non_null().encode(&mut ())
             Encode::encode(self.into_non_null(), &mut ())
         }
     }
@@ -359,11 +333,35 @@ disjoint_impls! {
         }
     }
 
+    #[cfg(feature = "owned_types")]
+    #[cfg(feature = "owned_as_ref")]
+    impl<R: ReprC> Encode for Box<R>
+    where
+        Self: Ir<Type = Box<Robust>>,
+    {
+        type Store = Option<Box<R>>;
+
+        fn encode<'itm>(self, store: &mut Self::Store) -> Self::CType where Self: 'itm {
+            (*store.insert(self)).as_mut()
+        }
+    }
+    #[cfg(feature = "owned_types")]
+    #[cfg(feature = "owned_as_ref")]
+    impl<R: Encode + Clone, S: Cloned> Encode for Box<R>
+    where
+        Self: Ir<Type = Box<S>>,
+    {
+        type Store = (Option<R::CType>, R::Store);
+
+        fn encode<'itm>(self, store: &'itm mut Self::Store) -> Self::CType where Self: 'itm {
+            store.0.insert((*self).encode(&mut store.1))
+        }
+    }
 
     impl<'slice, R: Transmute> Encode for &'slice [R]
     where
-        &'slice [<R>::Target]: Encode,
         Self: Ir<Type = &'slice [Transparent]>,
+        &'slice [<R>::Target]: Encode,
     {
         type Store = <&'slice [R::Target] as Encode>::Store;
 
@@ -396,7 +394,7 @@ disjoint_impls! {
     where
         Self: Ir<Type = &'slice [S]>,
     {
-        type Store =  (
+        type Store = (
             Box<[R::CType]>,
             Box<[R::Store]>,
         );
@@ -420,8 +418,8 @@ disjoint_impls! {
 
     impl<'slice, R: Transmute> Encode for &'slice mut [R]
     where
-        &'slice mut [<R>::Target]: Encode,
         Self: Ir<Type = &'slice mut [Transparent]>,
+        &'slice mut [<R>::Target]: Encode,
     {
         type Store = <&'slice mut [R::Target] as Encode>::Store;
 
@@ -437,31 +435,6 @@ disjoint_impls! {
 
         fn encode<'itm>(self, (): &mut ()) -> Self::CType where Self: 'itm {
             RefMutSlice::from_slice(Some(self))
-        }
-    }
-
-    #[cfg(feature = "owned_types")]
-    #[cfg(feature = "owned_as_ref")]
-    impl<R: ReprC> Encode for Box<R>
-    where
-        Self: Ir<Type = Box<Robust>>,
-    {
-        type Store = ();
-
-        fn encode<'itm>(self, (): &mut ()) -> Self::CType where Self: 'itm {
-            *self
-        }
-    }
-    #[cfg(feature = "owned_types")]
-    #[cfg(feature = "owned_as_ref")]
-    impl<R: Encode + Clone, S: Cloned> Encode for Box<R>
-    where
-        Self: Ir<Type = Box<S>>,
-    {
-        type Store = R::Store;
-
-        fn encode<'itm>(self, store: &'itm mut Self::Store) -> Self::CType where Self: 'itm {
-            (*self).encode(store)
         }
     }
 
@@ -487,7 +460,7 @@ disjoint_impls! {
 
         fn encode<'itm>(self, store: &'itm mut Self::Store) -> Self::CType where Self: 'itm {
             *store = self;
-            RefSlice::from_slice(Some(store))
+            RefMutSlice::from_slice(Some(store))
         }
     }
     #[cfg(feature = "owned_types")]
@@ -505,7 +478,7 @@ disjoint_impls! {
                 .map(Box::into_raw)
                 .collect();
 
-            RefSlice::from_slice(Some(store))
+            RefMutSlice::from_slice(Some(store))
         }
     }
     #[cfg(feature = "owned_types")]
@@ -532,7 +505,7 @@ disjoint_impls! {
                 .map(|(item, substore)| item.encode(substore))
                 .collect();
 
-            RefSlice::from_slice(Some(&store.0))
+            RefMutSlice::from_slice(Some(&mut store.0))
         }
     }
 
@@ -558,7 +531,7 @@ disjoint_impls! {
 
         fn encode<'itm>(self, store: &'itm mut Self::Store) -> Self::CType where Self: 'itm {
             *store = self.into_boxed_slice();
-            RefSlice::from_slice(Some(store))
+            RefMutSlice::from_slice(Some(store))
         }
     }
     #[cfg(feature = "owned_types")]
@@ -571,7 +544,7 @@ disjoint_impls! {
 
         fn encode<'itm>(self, store: &'itm mut Self::Store) -> Self::CType where Self: 'itm {
             *store = self.into_iter().map(Box::new).map(Box::into_raw).collect();
-            RefSlice::from_slice(Some(store))
+            RefMutSlice::from_slice(Some(store))
         }
     }
     #[cfg(feature = "owned_types")]
@@ -598,7 +571,7 @@ disjoint_impls! {
                 .map(|(item, substore)| item.encode(substore))
                 .collect();
 
-            RefSlice::from_slice(Some(&store.0))
+            RefMutSlice::from_slice(Some(&mut store.0))
         }
     }
 
@@ -661,28 +634,28 @@ disjoint_impls! {
             //};
         }
     }
-    impl<R: Encode> Encode for Option<R>
+    impl<R: Encode<CType = R, Store = ()> + ReprC> Encode for Option<R>
     where
         Self: Ir<Type = Option<Robust>>,
     {
-        type Store = R::Store;
+        type Store = ();
 
-        fn encode<'itm>(self, store: &'itm mut Self::Store) -> Self::CType where Self: 'itm {
+        fn encode<'itm>(self, (): &mut ()) -> Self::CType where Self: 'itm {
             match self {
                 // TODO: No need to zero the memory because it must never be read
                 None => FfiTuple2(Encode::encode(0u8, &mut ()), unsafe { core::mem::zeroed() }),
-                Some(value) => FfiTuple2(Encode::encode(1u8, &mut ()), value.encode(store)),
+                Some(value) => FfiTuple2(Encode::encode(1u8, &mut ()), value.encode(&mut ())),
             }
         }
     }
-    impl<R: Encode> Encode for Option<R>
+    impl<R: Encode<CType = *mut R, Store = ()>> Encode for Option<R>
     where
         Self: Ir<Type = Option<Opaque>>,
     {
-        type Store = R::Store;
+        type Store = ();
 
-        fn encode<'itm>(self, store: &'itm mut Self::Store) -> Self::CType where Self: 'itm {
-            unimplemented!()
+        fn encode<'itm>(self, (): &mut ()) -> Self::CType where Self: 'itm {
+            self.map(|value| value.encode(&mut ())).unwrap_or_default()
         }
     }
     impl<R: Niche + Encode, S: Cloned> Encode for Option<R>
@@ -794,6 +767,42 @@ disjoint_impls! {
         }
     }
 
+    #[cfg(feature = "owned_types")]
+    #[cfg(feature = "owned_as_ref")]
+    impl<'d, R: ReprC + 'd> Decode<'d> for Box<R>
+    where
+        Self: Ir<Type = Box<Robust>>,
+    {
+        type Store = ();
+
+        unsafe fn decode<'itm: 'd>(source: Self::CType, (): &mut ()) -> Result<Self> {
+            if source.is_null() {
+                return Err(FfiReturn::ArgIsNull);
+            }
+
+            Ok(Box::new(unsafe { source.read() }))
+        }
+    }
+    #[cfg(feature = "owned_types")]
+    #[cfg(feature = "owned_as_ref")]
+    impl<'d, R: Decode<'d> + Clone, S: Cloned> Decode<'d> for Box<R>
+    where
+        Self: Ir<Type = Box<S>>,
+    {
+        type Store = R::Store;
+
+        unsafe fn decode<'itm: 'd>(source: Self::CType, store: &'itm mut Self::Store) -> Result<Self> {
+            if source.is_null() {
+                return Err(FfiReturn::ArgIsNull);
+            }
+
+            unsafe { R::decode(source.read(), store) }
+                    .map(ManuallyDrop::new)
+                    .map(|item| (*item).clone())
+                    .map(Box::new)
+        }
+    }
+
     impl<'slice, R: Transmute> Decode<'slice> for &'slice [R]
     where
         &'slice [<R>::Target]: Decode<'slice>,
@@ -893,36 +902,6 @@ disjoint_impls! {
 
         unsafe fn decode<'itm: 'slice>(source: Self::CType, (): &mut ()) -> Result<Self> {
             unsafe { source.into_rust() }.ok_or(FfiReturn::ArgIsNull)
-        }
-    }
-
-    #[cfg(feature = "owned_types")]
-    #[cfg(feature = "owned_as_ref")]
-    impl<'d, R: ReprC + 'd> Decode<'d> for Box<R>
-    where
-        Self: Ir<Type = Box<Robust>>,
-    {
-        type Store = ();
-
-        unsafe fn decode<'itm: 'd>(source: Self::CType, (): &mut ()) -> Result<Self> {
-            Ok(Box::new(source))
-        }
-    }
-    #[cfg(feature = "owned_types")]
-    #[cfg(feature = "owned_as_ref")]
-    impl<'d, R: Decode<'d> + Clone, S: Cloned> Decode<'d> for Box<R>
-    where
-        Self: Ir<Type = Box<S>>,
-    {
-        type Store = R::Store;
-
-        unsafe fn decode<'itm: 'd>(source: Self::CType, store: &'itm mut Self::Store) -> Result<Self> {
-            unsafe {
-                R::decode(source, store)
-                    .map(ManuallyDrop::new)
-                    .map(|item| (*item).clone())
-                    .map(Box::new)
-            }
         }
     }
 
@@ -1147,13 +1126,13 @@ disjoint_impls! {
             //Ok(core::mem::transmute::<R::Inner, R>(source))
         }
     }
-    impl<'d, R: Decode<'d>> Decode<'d> for Option<R>
+    impl<'d, R: Decode<'d, CType = R, Store = ()> + ReprC> Decode<'d> for Option<R>
     where
         Self: Ir<Type = Option<Robust>>,
     {
-        type Store = R::Store;
+        type Store = ();
 
-        unsafe fn decode<'itm: 'd>(source: Self::CType, store: &'itm mut Self::Store) -> Result<Self> {
+        unsafe fn decode<'itm: 'd>(source: Self::CType, store: &'itm mut ()) -> Result<Self> {
             let discriminant: <u8 as ExternC>::CType = unsafe { Decode::decode(source.0, &mut ())? };
 
             match discriminant {
@@ -1163,14 +1142,18 @@ disjoint_impls! {
             }
         }
     }
-    impl<'d, R: Decode<'d> + 'd> Decode<'d> for Option<R>
+    impl<'d, R: Decode<'d, CType = *mut R, Store = ()> + 'd> Decode<'d> for Option<R>
     where
         Self: Ir<Type = Option<Opaque>>,
     {
-        type Store = R::Store;
+        type Store = ();
 
-        unsafe fn decode<'itm: 'd>(source: Self::CType, store: &'itm mut Self::Store) -> Result<Self> {
-            unimplemented!()
+        unsafe fn decode<'itm: 'd>(source: Self::CType, store: &'itm mut ()) -> Result<Self> {
+            if source.is_null() {
+                return Ok(None);
+            }
+
+            Ok(Some(unsafe { R::decode(source, store) }?))
         }
     }
     impl<'d, R: Niche<CType: PartialEq> + Decode<'d>, S: Cloned> Decode<'d> for Option<R>

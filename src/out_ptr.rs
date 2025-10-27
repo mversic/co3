@@ -73,7 +73,6 @@ disjoint_impls! {
         Self: Ir<Type = Transparent>,
         <R>::Target: OutPtr,
     {
-        // TODO: Why is it not Self::CType here?
         type OutPtr = <R::Target as OutPtr>::OutPtr;
     }
     impl<R: ReprC> OutPtr for R
@@ -98,7 +97,7 @@ disjoint_impls! {
     {
         type OutPtr = Self::CType;
     }
-    impl<'a, R: Ir<Type = S> + NonLocal, S: Cloned> OutPtr for &'a R
+    impl<'a, R: NonLocal, S: Cloned> OutPtr for &'a R
     where
         Self: Ir<Type = &'a S>,
     {
@@ -110,6 +109,29 @@ disjoint_impls! {
         Self: Ir<Type = &'a mut Extern>,
     {
         type OutPtr = Self::CType;
+    }
+
+    #[cfg(feature = "owned_types")]
+    #[cfg(feature = "owned_as_ref")]
+    impl<R: ReprC> OutPtr for Box<R>
+    where
+        Self: Ir<Type = Box<Robust>>,
+    {
+        type OutPtr = R;
+    }
+    impl<R: External> OutPtr for Box<R>
+    where
+        Self: Ir<Type = Box<Extern>>,
+    {
+        type OutPtr = Self::CType;
+    }
+    #[cfg(feature = "owned_types")]
+    #[cfg(feature = "owned_as_ref")]
+    impl<R: NonLocal, S: Cloned> OutPtr for Box<R>
+    where
+        Self: Ir<Type = Box<S>>,
+    {
+        type OutPtr = R::CType;
     }
 
     impl<'slice, R: Transmute> OutPtr for &'slice [R]
@@ -131,7 +153,7 @@ disjoint_impls! {
     {
         type OutPtr = OutBoxedSlice<*const R>;
     }
-    impl<'a, R: Ir<Type = S> + NonLocal, S: Cloned> OutPtr for &'a [R]
+    impl<'a, R: NonLocal, S: Cloned> OutPtr for &'a [R]
     where
         Self: Ir<Type = &'a [S]>,
     {
@@ -150,29 +172,6 @@ disjoint_impls! {
         Self: Ir<Type = &'a mut [Robust]>,
     {
         type OutPtr = Self::CType;
-    }
-
-    #[cfg(feature = "owned_types")]
-    #[cfg(feature = "owned_as_ref")]
-    impl<R: ReprC> OutPtr for Box<R>
-    where
-        Self: Ir<Type = Box<Robust>>,
-    {
-        type OutPtr = R;
-    }
-    impl<R: External> OutPtr for Box<R>
-    where
-        Self: Ir<Type = Box<Extern>>,
-    {
-        type OutPtr = Self::CType;
-    }
-    #[cfg(feature = "owned_types")]
-    #[cfg(feature = "owned_as_ref")]
-    impl<R: Ir<Type = S> + NonLocal, S: Cloned> OutPtr for Box<R>
-    where
-        Self: Ir<Type = Box<S>>,
-    {
-        type OutPtr = R::CType;
     }
 
     #[cfg(feature = "owned_types")]
@@ -201,7 +200,7 @@ disjoint_impls! {
     }
     #[cfg(feature = "owned_types")]
     #[cfg(feature = "owned_as_ref")]
-    impl<R: Ir<Type = S> + NonLocal, S: Cloned> OutPtr for Box<[R]>
+    impl<R: NonLocal, S: Cloned> OutPtr for Box<[R]>
     where
         Self: Ir<Type = Box<[S]>>,
     {
@@ -234,7 +233,7 @@ disjoint_impls! {
     }
     #[cfg(feature = "owned_types")]
     #[cfg(feature = "owned_as_ref")]
-    impl<R: Ir<Type = S> + NonLocal, S: Cloned> OutPtr for Vec<R>
+    impl<R: NonLocal, S: Cloned> OutPtr for Vec<R>
     where
         Self: Ir<Type = Vec<S>>,
     {
@@ -253,7 +252,7 @@ disjoint_impls! {
     {
         type OutPtr = Self::CType;
     }
-    impl<R: Ir<Type = S> + NonLocal, S: Cloned, const N: usize> OutPtr for [R; N]
+    impl<R: NonLocal, S: Cloned, const N: usize> OutPtr for [R; N]
     where
         Self: Ir<Type = [S; N]>,
     {
@@ -329,7 +328,7 @@ disjoint_impls! {
         }
     }
 
-    impl<'itm, R: Ir<Type = S> + NonLocal + Encode, S: Cloned> OutPtrWrite for &'itm R
+    impl<'itm, R: NonLocal + Encode, S: Cloned> OutPtrWrite for &'itm R
     where
         Self: Ir<Type = &'itm S>,
     {
@@ -339,6 +338,32 @@ disjoint_impls! {
             let output = store.0.unwrap();
 
             unsafe { out_ptr.write(output); }
+        }
+    }
+
+    #[cfg(feature = "owned_types")]
+    #[cfg(feature = "owned_as_ref")]
+    impl<R: ReprC> OutPtrWrite for Box<R>
+    where
+        Self: Ir<Type = Box<Robust>>,
+    {
+        unsafe fn write_out(self, out_ptr: *mut Self::OutPtr) {
+            unsafe {
+                out_ptr.write(*self);
+            }
+        }
+    }
+    #[cfg(feature = "owned_types")]
+    #[cfg(feature = "owned_as_ref")]
+    impl<R: NonLocal + Encode, S: Cloned> OutPtrWrite for Box<R>
+    where
+        Self: Ir<Type = Box<S>>,
+    {
+        unsafe fn write_out(self, out_ptr: *mut Self::OutPtr) {
+            let mut store = Default::default();
+            let _ = self.encode(&mut store);
+
+            unsafe { out_ptr.write(store.0.unwrap()); }
         }
     }
 
@@ -379,7 +404,7 @@ disjoint_impls! {
             }
         }
     }
-    impl<'itm, R: Ir<Type = S> + NonLocal + Encode, S: Cloned> OutPtrWrite for &'itm [R]
+    impl<'itm, R: NonLocal + Encode, S: Cloned> OutPtrWrite for &'itm [R]
     where
         Self: Ir<Type = &'itm [S]>,
     {
@@ -415,32 +440,6 @@ disjoint_impls! {
         unsafe fn write_out(self, out_ptr: *mut Self::OutPtr) {
             let encoded = self.encode(&mut ());
             unsafe { out_ptr.write(encoded); }
-        }
-    }
-
-    #[cfg(feature = "owned_types")]
-    #[cfg(feature = "owned_as_ref")]
-    impl<R: ReprC> OutPtrWrite for Box<R>
-    where
-        Self: Ir<Type = Box<Robust>>,
-    {
-        unsafe fn write_out(self, out_ptr: *mut Self::OutPtr) {
-            unsafe {
-                out_ptr.write(*self);
-            }
-        }
-    }
-    #[cfg(feature = "owned_types")]
-    #[cfg(feature = "owned_as_ref")]
-    impl<R: Ir<Type = S> + NonLocal + Encode, S: Cloned> OutPtrWrite for Box<R>
-    where
-        Self: Ir<Type = Box<S>>,
-    {
-        unsafe fn write_out(self, out_ptr: *mut Self::OutPtr) {
-            let mut store = Default::default();
-            let output = self.encode(&mut store);
-
-            unsafe { out_ptr.write(output); }
         }
     }
 
@@ -481,7 +480,7 @@ disjoint_impls! {
     {
         unsafe fn write_out(self, out_ptr: *mut Self::OutPtr) {
             let mut store = Default::default();
-            self.encode(&mut store);
+            let _ = self.encode(&mut store);
 
             unsafe {
                 out_ptr.write(OutBoxedSlice::from_boxed_slice(Some(store)));
@@ -490,7 +489,7 @@ disjoint_impls! {
     }
     #[cfg(feature = "owned_types")]
     #[cfg(feature = "owned_as_ref")]
-    impl<R: Ir<Type = S> + NonLocal + Encode, S: Cloned> OutPtrWrite for Box<[R]>
+    impl<R: NonLocal + Encode, S: Cloned> OutPtrWrite for Box<[R]>
     where
         Self: Ir<Type = Box<[S]>>,
     {
@@ -555,7 +554,7 @@ disjoint_impls! {
     }
     #[cfg(feature = "owned_types")]
     #[cfg(feature = "owned_as_ref")]
-    impl<R: Ir<Type = S> + NonLocal + Encode, S: Cloned> OutPtrWrite for Vec<R>
+    impl<R: NonLocal + Encode, S: Cloned> OutPtrWrite for Vec<R>
     where
         Self: Ir<Type = Vec<S>>,
     {
@@ -581,7 +580,7 @@ disjoint_impls! {
             unsafe { out_ptr.write(encoded); }
         }
     }
-    impl<R: Ir<Type = S> + NonLocal, S: Cloned, const N: usize> OutPtrWrite for [R; N]
+    impl<R: NonLocal, S: Cloned, const N: usize> OutPtrWrite for [R; N]
     where
         Self: Ir<Type = [S; N]> + Encode,
     {
@@ -632,15 +631,18 @@ disjoint_impls! {
             }
         }
     }
-    impl<R: OutPtrWrite> OutPtrWrite for Option<R>
+    impl<R: OutPtrWrite<OutPtr = *mut R>> OutPtrWrite for Option<R>
     where
         Self: Ir<Type = Option<Opaque>>,
     {
-        unsafe fn write_out(self, out_ptr: *mut Self::OutPtr) {
-            unimplemented!()
+        unsafe fn write_out(self, out_ptr: *mut *mut R) {
+            self.map_or_else(
+                || unsafe { out_ptr.write(core::ptr::null_mut()) },
+                |value| unsafe { OutPtrWrite::write_out(value, out_ptr) },
+            )
         }
     }
-    impl<R: Niche + OutPtrWrite, S: Cloned> OutPtrWrite for R
+    impl<R: Niche + OutPtrWrite, S: Cloned> OutPtrWrite for Option<R>
     where
         Self: Ir<Type = Option<S>>,
     {
@@ -696,6 +698,33 @@ disjoint_impls! {
         }
     }
 
+    #[cfg(feature = "owned_types")]
+    #[cfg(feature = "owned_as_ref")]
+    impl<R: ReprC> OutPtrRead for Box<R>
+    where
+        Self: Ir<Type = Box<Robust>>,
+    {
+        unsafe fn try_read_out(out_ptr: Self::OutPtr) -> Result<Self> {
+            Ok(Box::new(out_ptr))
+        }
+    }
+    #[cfg(feature = "owned_types")]
+    #[cfg(feature = "owned_as_ref")]
+    impl<'d, R: NonLocal + Decode<'d> + 'd, S: Cloned> OutPtrRead for Box<R>
+    where
+        Self: Ir<Type = Box<S>>,
+    {
+        unsafe fn try_read_out(out_ptr: Self::OutPtr) -> Result<Self> {
+            let mut store = Default::default();
+
+            let store_ref = unsafe {
+                core::mem::transmute::<&mut R::Store, &'d mut R::Store>(&mut store)
+            };
+
+            unsafe { Decode::decode(out_ptr, store_ref).map(Box::new) }
+        }
+    }
+
     impl<'d, R: Transmute> OutPtrRead for &'d [R]
     where
         Self: Ir<Type = &'d [Transparent]>,
@@ -739,33 +768,6 @@ disjoint_impls! {
     }
 
     #[cfg(feature = "owned_types")]
-    #[cfg(feature = "owned_as_ref")]
-    impl<R: ReprC> OutPtrRead for Box<R>
-    where
-        Self: Ir<Type = Box<Robust>>,
-    {
-        unsafe fn try_read_out(out_ptr: Self::OutPtr) -> Result<Self> {
-            Ok(Box::new(out_ptr))
-        }
-    }
-    #[cfg(feature = "owned_types")]
-    #[cfg(feature = "owned_as_ref")]
-    impl<'d, R: Ir<Type = S> + NonLocal + Decode<'d> + 'd, S: Cloned> OutPtrRead for Box<R>
-    where
-        Self: Ir<Type = Box<S>>,
-    {
-        unsafe fn try_read_out(out_ptr: Self::OutPtr) -> Result<Self> {
-            let mut store = Default::default();
-
-            let store_ref = unsafe {
-                core::mem::transmute::<&mut R::Store, &'d mut R::Store>(&mut store)
-            };
-
-            unsafe { Decode::decode(out_ptr, store_ref) }
-        }
-    }
-
-    #[cfg(feature = "owned_types")]
     impl<R: Transmute> OutPtrRead for Box<[R]>
     where
         Self: Ir<Type = Box<[Transparent]>>,
@@ -785,7 +787,7 @@ disjoint_impls! {
         Self: Ir<Type = Box<[Robust]>>,
     {
         unsafe fn try_read_out(out_ptr: Self::OutPtr) -> Result<Self> {
-            let slice = RefSlice::from_raw_parts(out_ptr.as_mut_ptr(), out_ptr.len());
+            let slice = RefMutSlice::from_raw_parts_mut(out_ptr.as_mut_ptr(), out_ptr.len());
 
             unsafe {
                 let res = Decode::decode(slice, &mut ());
@@ -800,12 +802,12 @@ disjoint_impls! {
     }
     #[cfg(feature = "owned_types")]
     #[cfg(feature = "owned_as_ref")]
-    impl<'d, R: Ir<Type = S> + NonLocal + 'd, S: Cloned + 'd> OutPtrRead for Box<[R]>
+    impl<'d, R: NonLocal + 'd, S: Cloned + 'd> OutPtrRead for Box<[R]>
     where
-        Self: Ir<Type = Box<[S]>> + Decode<'d, CType = RefSlice<<R as ExternC>::CType>>,
+        Self: Ir<Type = Box<[S]>> + Decode<'d, CType = RefMutSlice<<R as ExternC>::CType>>,
     {
         unsafe fn try_read_out(out_ptr: Self::OutPtr) -> Result<Self> {
-            let slice = RefSlice::from_raw_parts(out_ptr.as_mut_ptr(), out_ptr.len());
+            let slice = RefMutSlice::from_raw_parts_mut(out_ptr.as_mut_ptr(), out_ptr.len());
 
             let mut store = Default::default();
 
@@ -848,7 +850,7 @@ disjoint_impls! {
         Self: Ir<Type = Vec<Robust>>,
     {
         unsafe fn try_read_out(out_ptr: Self::OutPtr) -> Result<Self> {
-            let slice = RefSlice::from_raw_parts(out_ptr.as_mut_ptr(), out_ptr.len());
+            let slice = RefMutSlice::from_raw_parts_mut(out_ptr.as_mut_ptr(), out_ptr.len());
 
             unsafe {
                 let res = Decode::decode(slice, &mut ());
@@ -863,12 +865,12 @@ disjoint_impls! {
     }
     #[cfg(feature = "owned_types")]
     #[cfg(feature = "owned_as_ref")]
-    impl<'d, R: Ir<Type = S> + NonLocal + 'd, S: Cloned> OutPtrRead for Vec<R>
+    impl<'d, R: NonLocal + 'd, S: Cloned> OutPtrRead for Vec<R>
     where
-        Self: Ir<Type = Vec<S>> + Decode<'d, CType = RefSlice<<R as ExternC>::CType>>,
+        Self: Ir<Type = Vec<S>> + Decode<'d, CType = RefMutSlice<<R as ExternC>::CType>>,
     {
         unsafe fn try_read_out(out_ptr: Self::OutPtr) -> Result<Self> {
-            let slice = RefSlice::from_raw_parts(out_ptr.as_mut_ptr(), out_ptr.len());
+            let slice = RefMutSlice::from_raw_parts_mut(out_ptr.as_mut_ptr(), out_ptr.len());
             let mut store = <Self as Decode>::Store::default();
 
             let store_ref = unsafe {
@@ -890,7 +892,7 @@ disjoint_impls! {
         }
     }
 
-    impl<'d, R: Ir<Type = S> + NonLocal + 'd, S: Cloned, const N: usize> OutPtrRead for [R; N]
+    impl<'d, R: NonLocal + 'd, S: Cloned, const N: usize> OutPtrRead for [R; N]
     where
         Self: Ir<Type = [S; N]> + Decode<'d>,
     {

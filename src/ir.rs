@@ -96,6 +96,24 @@ disjoint_impls! {
         type Type = &'a mut Extern;
     }
 
+    impl<R: Ir<Type = Transparent>> Ir for Box<R> {
+        type Type = Transparent;
+    }
+    #[cfg(feature = "owned_types")]
+    impl<R: Ir<Type = Robust>> Ir for Box<R> {
+        type Type = Box<Robust>;
+    }
+    impl<R: Ir<Type = Opaque>> Ir for Box<R> {
+        type Type = Transparent;
+    }
+    impl<R: Ir<Type = Extern>> Ir for Box<R> {
+        type Type = Box<Extern>;
+    }
+    #[cfg(feature = "owned_types")]
+    impl<R: Ir<Type = S>, S: Cloned> Ir for Box<R> {
+        type Type = Box<S>;
+    }
+
     impl<'a, R: Ir<Type = Transparent>> Ir for &'a [R] {
         type Type = &'a [Transparent];
     }
@@ -124,24 +142,6 @@ disjoint_impls! {
     }
     impl<'a, R: Ir<Type = Robust>> Ir for &'a mut [R] {
         type Type = &'a mut [Robust];
-    }
-
-    impl<R: Ir<Type = Transparent>> Ir for Box<R> {
-        type Type = Transparent;
-    }
-    #[cfg(feature = "owned_types")]
-    impl<R: Ir<Type = Robust>> Ir for Box<R> {
-        type Type = Box<Robust>;
-    }
-    impl<R: Ir<Type = Opaque>> Ir for Box<R> {
-        type Type = Transparent;
-    }
-    impl<R: Ir<Type = Extern>> Ir for Box<R> {
-        type Type = Box<Extern>;
-    }
-    #[cfg(feature = "owned_types")]
-    impl<R: Ir<Type = S>, S: Cloned> Ir for Box<R> {
-        type Type = Box<S>;
     }
 
     #[cfg(feature = "owned_types")]
@@ -259,15 +259,15 @@ disjoint_impls! {
     impl<R: Ir<Type = Box<Robust>>> Ir for &mut R {
         type Type = Transparent;
     }
+    impl<R: Ir<Type = Box<Robust>>> Ir for Box<R> {
+        type Type = Transparent;
+    }
     impl<'a, R: Ir<Type = Box<Robust>>> Ir for &'a [R] {
         type Type = &'a [Transparent];
     }
     impl<'a, R: Ir<Type = Box<Robust>>> Ir for &'a mut [R] {
         type Type = &'a mut [Transparent];
     }
-    //impl<R: Ir<Type = Box<Robust>>> Ir for R {
-    //    type Type = Transparent;
-    //}
     #[cfg(feature = "owned_types")]
     impl<R: Ir<Type = Box<Robust>>> Ir for Box<[R]> {
         type Type = Box<[Transparent]>;
@@ -276,9 +276,9 @@ disjoint_impls! {
     impl<R: Ir<Type = Box<Robust>>> Ir for Vec<R> {
         type Type = Vec<Transparent>;
     }
-    impl<R: Ir<Type = Box<Robust>>, const N: usize> Ir for [R; N] {
-        type Type = Robust;
-    }
+    //impl<R: Ir<Type = Box<Robust>>, const N: usize> Ir for [R; N] {
+    //    type Type = Robust;
+    //}
     impl<R: Ir<Type = Box<Robust>>> Ir for Option<R> {
         type Type = Option<Transparent>;
     }
@@ -286,10 +286,9 @@ disjoint_impls! {
 
 impl<S: Cloned> Cloned for &S {}
 impl Cloned for &Extern {}
-impl<S> Cloned for &[S] {}
 impl Cloned for Box<Extern> {}
-#[cfg(feature = "owned_types")]
 impl<S: Cloned> Cloned for Box<S> {}
+impl<S> Cloned for &[S] {}
 #[cfg(feature = "owned_types")]
 impl<S> Cloned for Box<[S]> {}
 #[cfg(feature = "owned_types")]

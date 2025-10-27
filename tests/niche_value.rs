@@ -2,7 +2,10 @@
 use core::{cmp::Ordering, ffi::c_int, ptr::NonNull};
 use std::mem::ManuallyDrop;
 
-use co3::{Encode, ExternC, slice::RefSlice};
+use co3::{
+    Encode, ExternC,
+    slice::{RefMutSlice, RefSlice},
+};
 
 co3::handles! {Extern}
 co3::decl_fns! {Drop}
@@ -352,11 +355,11 @@ fn std_niche_value() {
     assert_eq!(core::ptr::null::<u8>(), None::<&mut bool>.encode(&mut ()));
 
     assert_eq!(
-        RefSlice::<u8>::null(),
+        RefMutSlice::<u8>::null_mut(),
         None::<String>.encode(&mut Default::default())
     );
     assert_eq!(
-        RefSlice::<u8>::null(),
+        RefMutSlice::<u8>::null_mut(),
         None::<Box<str>>.encode(&mut Default::default())
     );
 
@@ -372,7 +375,7 @@ fn std_niche_value() {
         None::<NonNull<String>>.encode(&mut ())
     );
     assert_eq!(
-        RefSlice::<u8>::null(),
+        RefMutSlice::<u8>::null_mut(),
         None::<ManuallyDrop<String>>.encode(&mut Default::default())
     );
 

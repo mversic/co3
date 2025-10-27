@@ -2,10 +2,10 @@
 #[cfg(feature = "owned_as_ref")]
 use alloc::{boxed::Box, string::String, vec::Vec};
 
+use crate::{mineral, slice::RefSlice};
 #[cfg(feature = "owned_as_ref")]
 #[cfg(feature = "owned_types")]
-use crate::niche::Niche;
-use crate::{mineral, slice::RefSlice};
+use crate::{niche::Niche, slice::RefMutSlice};
 
 macro_rules! non_zero_derive {
     ($($ty:ty => $target:ty),+ $(,)?) => {$(
@@ -44,7 +44,7 @@ mineral! {
     unsafe impl Transparent for String {
         type Target = Vec<u8>;
 
-        const NICHE_VALUE: Self::CType = RefSlice::null();
+        const NICHE_VALUE: Self::CType = RefMutSlice::null_mut();
         fn is_valid(target: &Self::Target) -> bool {
             core::str::from_utf8(target).is_ok()
         }
@@ -59,7 +59,7 @@ mineral! {
     unsafe impl Transparent for Box<str> {
         type Target = Box<[u8]>;
 
-        const NICHE_VALUE: Self::CType = RefSlice::null();
+        const NICHE_VALUE: Self::CType = RefMutSlice::null_mut();
         fn is_valid(target: &Self::Target) -> bool {
             core::str::from_utf8(target).is_ok()
         }

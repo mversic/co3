@@ -63,17 +63,6 @@ disjoint_impls! {
     {
         const NICHE_VALUE: RefMutSlice<C> = RefMutSlice::null_mut();
     }
-
-// TODO: This type doesn't havea niche!
-//#[cfg(feature = "owned_types")]
-//impl<R, C> Niche for Box<R>
-//where
-//    Self: ExternC<CType = C>,
-//    Self: Ir<Type = Box<Robust>>,
-//{
-//    const NICHE_VALUE: <Self as ExternC>::CType = core::ptr::null_mut();
-//}
-
 }
 
 disjoint_impls! {
@@ -112,6 +101,24 @@ disjoint_impls! {
         type Type = &'a mut Extern;
     }
 
+    impl<R: crate::ir::Ir<Type = Transparent>> Ir for Box<R> {
+        type Type = Transparent;
+    }
+    #[cfg(feature = "owned_types")]
+    impl<R: crate::ir::Ir<Type = Robust>> Ir for Box<R> {
+        type Type = Transparent;
+    }
+    impl<R: crate::ir::Ir<Type = Opaque>> Ir for Box<R> {
+        type Type = Transparent;
+    }
+    impl<R: crate::ir::Ir<Type = Extern>> Ir for Box<R> {
+        type Type = Box<Extern>;
+    }
+    #[cfg(feature = "owned_types")]
+    impl<R: crate::ir::Ir<Type = S>, S: Cloned> Ir for Box<R> {
+        type Type = Box<S>;
+    }
+
     impl<'a, R: crate::ir::Ir<Type = Transparent>> Ir for &'a [R] {
         type Type = &'a [Transparent];
     }
@@ -133,24 +140,6 @@ disjoint_impls! {
     }
     impl<'a, R: crate::ir::Ir<Type = Robust>> Ir for &'a mut [R] {
         type Type = &'a mut [Robust];
-    }
-
-    impl<R: crate::ir::Ir<Type = Transparent>> Ir for Box<R> {
-        type Type = Transparent;
-    }
-    #[cfg(feature = "owned_types")]
-    impl<R: crate::ir::Ir<Type = Robust>> Ir for Box<R> {
-        type Type = Transparent;
-    }
-    impl<R: crate::ir::Ir<Type = Opaque>> Ir for Box<R> {
-        type Type = Transparent;
-    }
-    impl<R: crate::ir::Ir<Type = Extern>> Ir for Box<R> {
-        type Type = Box<Extern>;
-    }
-    #[cfg(feature = "owned_types")]
-    impl<R: crate::ir::Ir<Type = S>, S: Cloned> Ir for Box<R> {
-        type Type = Box<S>;
     }
 
     #[cfg(feature = "owned_types")]
