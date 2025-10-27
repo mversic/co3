@@ -455,7 +455,7 @@ pub fn decarbonate(attr: TokenStream, item: TokenStream) -> TokenStream {
     let result = match item {
         Impl(item) => {
             let attrs = &item.attrs;
-            let Some(impl_desc) = ImplDescriptor::from_foreign_impl(&mut emitter, &item) else {
+            let Some(mut impl_desc) = ImplDescriptor::from_foreign_impl(&mut emitter, &item) else {
                 return emitter.finish_token_stream();
             };
             let wrapped_items = wrapper::wrap_impl_items(&impl_desc);

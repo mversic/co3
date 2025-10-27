@@ -63,7 +63,7 @@ fn resolve_type(self_type: Option<&Path>, mut arg_type: Type) -> Type {
     arg_type
 }
 
-struct ForeignArgProcessor<'a> {
+pub struct ForeignArgProcessor<'a> {
     self_ty: Option<&'a Path>,
 }
 
@@ -182,15 +182,18 @@ impl<'ast> ImplDescriptor<'ast> {
         let mut impl_desc = Self::from_impl(emitter, node)?;
 
         impl_desc.fns.iter_mut().for_each(|fn_| {
-            let mut output_arg_processor = ForeignArgProcessor {
+            let mut arg_processor = ForeignArgProcessor {
                 self_ty: fn_.self_ty.as_ref(),
             };
 
+            if let Some(receiver) = &mut fn_.receiver {
+                arg_processor.visit_type_mut(&mut receiver.type_);
+            }
             if let syn::ReturnType::Type(_, output) = &mut fn_.sig.output {
-                output_arg_processor.visit_type_mut(&mut *output);
+                arg_processor.visit_type_mut(&mut *output);
             }
             if let Some(output_arg) = &mut fn_.output_arg {
-                output_arg_processor.visit_type_mut(&mut output_arg.type_);
+                arg_processor.visit_type_mut(&mut output_arg.type_);
             }
         });
 

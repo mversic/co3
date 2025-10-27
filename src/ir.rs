@@ -18,9 +18,6 @@ pub enum Robust {}
 /// Marker for a type exported as an opaque pointer over FFI.
 pub enum Opaque {}
 
-/// Marker for a type imported as an opaque pointer over FFI.
-pub enum Extern {}
-
 /// Marker for an [`Ir`] type that delegates to the pointed-to type when converting
 /// the likes of `&Self` or `&[Self]` into an FFI-compatible representation
 ///
@@ -48,8 +45,6 @@ disjoint_impls! {
         ///   Note that the type will be heap allocated during conversion if not already.
         ///   [`Opaque`] is the only family of types that transfer ownership across FFI.
         ///
-        /// - If [`Ir::Type`] is [`Extern`], represents the pointee on the far side of an [`Opaque`] pointer
-        ///
         /// - If [`Ir::Type`] is [`Option<T>`], `Option<T>` is transmuted into the inner type,
         ///   using its *niche value* to represent [`None`].
         ///
@@ -69,9 +64,6 @@ disjoint_impls! {
     }
     impl<R: Ir<Type = Opaque>> Ir for &R {
         type Type = Transparent;
-    }
-    impl<'a, R: Ir<Type = Extern>> Ir for &'a R {
-        type Type = &'a Extern;
     }
     #[cfg(feature = "cloned_types")]
     impl<'a, R: Ir<Type = S>, S: Cloned + 'a> Ir for &'a R {
@@ -94,9 +86,6 @@ disjoint_impls! {
     impl<'a, R: Ir<Type = Opaque>> Ir for &'a mut R {
         type Type = Transparent;
     }
-    impl<'a, R: Ir<Type = Extern>> Ir for &'a mut R {
-        type Type = &'a mut Extern;
-    }
 
     impl<R: Ir<Type = Transparent>> Ir for Box<R> {
         type Type = Transparent;
@@ -107,9 +96,6 @@ disjoint_impls! {
     }
     impl<R: Ir<Type = Opaque>> Ir for Box<R> {
         type Type = Transparent;
-    }
-    impl<R: Ir<Type = Extern>> Ir for Box<R> {
-        type Type = Box<Extern>;
     }
     #[cfg(feature = "owned_types")]
     #[cfg(feature = "cloned_types")]
@@ -126,9 +112,6 @@ disjoint_impls! {
     #[cfg(feature = "cloned_types")]
     impl<'a, R: Ir<Type = Opaque>> Ir for &'a [R] {
         type Type = &'a [Opaque];
-    }
-    impl<'a, R: Ir<Type = Extern>> Ir for &'a [R] {
-        type Type = &'a [Transparent];
     }
     #[cfg(feature = "cloned_types")]
     impl<'a, R: Ir<Type = S>, S: Cloned + 'a> Ir for &'a [R] {
@@ -163,10 +146,6 @@ disjoint_impls! {
         type Type = Box<[Opaque]>;
     }
     #[cfg(feature = "owned_types")]
-    impl<R: Ir<Type = Extern>> Ir for Box<[R]> {
-        type Type = Box<[Transparent]>;
-    }
-    #[cfg(feature = "owned_types")]
     #[cfg(feature = "cloned_types")]
     impl<R: Ir<Type = S>, S: Cloned> Ir for Box<[R]> {
         type Type = Box<[S]>;
@@ -186,10 +165,6 @@ disjoint_impls! {
         type Type = Vec<Opaque>;
     }
     #[cfg(feature = "owned_types")]
-    impl<R: Ir<Type = Extern>> Ir for Vec<R> {
-        type Type = Vec<Transparent>;
-    }
-    #[cfg(feature = "owned_types")]
     #[cfg(feature = "cloned_types")]
     impl<R: Ir<Type = S>, S: Cloned> Ir for Vec<R> {
         type Type = Vec<S>;
@@ -204,9 +179,6 @@ disjoint_impls! {
     #[cfg(feature = "cloned_types")]
     impl<R: Ir<Type = Opaque>, const N: usize> Ir for [R; N] {
         type Type = [Opaque; N];
-    }
-    impl<R: Ir<Type = Extern>, const N: usize> Ir for [R; N] {
-        type Type = Transparent;
     }
     #[cfg(feature = "cloned_types")]
     impl<R: Ir<Type = S>, S: Cloned, const N: usize> Ir for [R; N] {
@@ -233,9 +205,6 @@ disjoint_impls! {
     }
     impl<R: Ir<Type = Opaque>> Ir for Option<R> {
         type Type = Option<Opaque>;
-    }
-    impl<R: Ir<Type = Extern>> Ir for Option<R> {
-        type Type = Option<Transparent>;
     }
     //#[cfg(feature = "cloned_types")]
     //impl<R: Ir<Type = S> + crate::niche::Ir<Type = Robust>, S: Cloned> Ir for Option<R> {
@@ -300,10 +269,6 @@ disjoint_impls! {
 #[cfg(feature = "cloned_types")]
 impl<S: Cloned> Cloned for &S {}
 #[cfg(feature = "cloned_types")]
-impl Cloned for &Extern {}
-#[cfg(feature = "cloned_types")]
-impl Cloned for Box<Extern> {}
-#[cfg(feature = "cloned_types")]
 impl<S: Cloned> Cloned for Box<S> {}
 #[cfg(feature = "cloned_types")]
 impl<S> Cloned for &[S] {}
@@ -315,8 +280,6 @@ impl<S> Cloned for Box<[S]> {}
 impl<S> Cloned for Vec<S> {}
 #[cfg(feature = "cloned_types")]
 impl<const N: usize> Cloned for [Opaque; N] {}
-#[cfg(feature = "cloned_types")]
-impl<const N: usize> Cloned for [Extern; N] {}
 #[cfg(feature = "cloned_types")]
 impl<S: Cloned, const N: usize> Cloned for [S; N] {}
 

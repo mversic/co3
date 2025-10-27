@@ -7,7 +7,7 @@ use disjoint_impls::disjoint_impls;
 use crate::ir::Cloned;
 use crate::{
     ExternC, ReprC, assert_arr_has_non_zero_len,
-    ir::{Extern, Opaque, Robust, Transparent},
+    ir::{Opaque, Robust, Transparent},
     slice::{RefMutSlice, RefSlice},
     transmute::Transmute,
 };
@@ -83,9 +83,6 @@ disjoint_impls! {
     impl<R: crate::ir::Ir<Type = Opaque>> Ir for &R {
         type Type = Transparent;
     }
-    impl<'a, R: crate::ir::Ir<Type = Extern>> Ir for &'a R {
-        type Type = &'a Extern;
-    }
     #[cfg(feature = "cloned_types")]
     impl<'a, R: crate::ir::Ir<Type = S>, S: Cloned + 'a> Ir for &'a R {
         type Type = &'a S;
@@ -100,9 +97,6 @@ disjoint_impls! {
     impl<R: crate::ir::Ir<Type = Opaque>> Ir for &mut R {
         type Type = Transparent;
     }
-    impl<'a, R: crate::ir::Ir<Type = Extern>> Ir for &'a mut R {
-        type Type = &'a mut Extern;
-    }
 
     impl<R: crate::ir::Ir<Type = Transparent>> Ir for Box<R> {
         type Type = Transparent;
@@ -113,9 +107,6 @@ disjoint_impls! {
     }
     impl<R: crate::ir::Ir<Type = Opaque>> Ir for Box<R> {
         type Type = Transparent;
-    }
-    impl<R: crate::ir::Ir<Type = Extern>> Ir for Box<R> {
-        type Type = Box<Extern>;
     }
     #[cfg(feature = "owned_types")]
     #[cfg(feature = "cloned_types")]
@@ -132,9 +123,6 @@ disjoint_impls! {
     #[cfg(feature = "cloned_types")]
     impl<'a, R: crate::ir::Ir<Type = Opaque>> Ir for &'a [R] {
         type Type = &'a [Opaque];
-    }
-    impl<'a, R: crate::ir::Ir<Type = Extern>> Ir for &'a [R] {
-        type Type = &'a [Extern];
     }
     #[cfg(feature = "cloned_types")]
     impl<'a, R: crate::ir::Ir<Type = S>, S: Cloned + 'a> Ir for &'a [R] {
@@ -162,10 +150,6 @@ disjoint_impls! {
         type Type = Box<[Opaque]>;
     }
     #[cfg(feature = "owned_types")]
-    impl<R: crate::ir::Ir<Type = Extern>> Ir for Box<[R]> {
-        type Type = Box<[Extern]>;
-    }
-    #[cfg(feature = "owned_types")]
     #[cfg(feature = "cloned_types")]
     impl<R: crate::ir::Ir<Type = S>, S: Cloned> Ir for Box<[R]> {
         type Type = Box<[S]>;
@@ -183,10 +167,6 @@ disjoint_impls! {
     #[cfg(feature = "cloned_types")]
     impl<R: crate::ir::Ir<Type = Opaque>> Ir for Vec<R> {
         type Type = Vec<Opaque>;
-    }
-    #[cfg(feature = "owned_types")]
-    impl<R: crate::ir::Ir<Type = Extern>> Ir for Vec<R> {
-        type Type = Vec<Extern>;
     }
     #[cfg(feature = "owned_types")]
     #[cfg(feature = "cloned_types")]

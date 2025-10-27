@@ -94,8 +94,12 @@ impl<T> core::ops::DerefMut for ExternRefMut<'_, T> {
 
 mineral! {
     unsafe impl<R> Transparent for ExternRef<'_, R> {
-        type Target = core::ptr::NonNull<Extern>;
-        const NICHE_VALUE = "DELEGATE";
+        type Target = *const Extern;
+
+        const NICHE_VALUE: *const Extern = core::ptr::null();
+        fn is_valid(target: &Self::Target) -> bool {
+            !target.is_null()
+        }
     }
 }
 mineral! {

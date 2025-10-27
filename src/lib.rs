@@ -23,7 +23,7 @@ use crate::transmute::{
 };
 use crate::{
     external::External,
-    ir::{Extern, Ir, Opaque, Robust, Transparent},
+    ir::{Ir, Opaque, Robust, Transparent},
     niche::Optional,
     slice::{OutBoxedSlice, RefMutSlice, RefSlice},
     transmute::{
@@ -81,29 +81,13 @@ disjoint_impls! {
     impl<R: Ir<Type = Opaque>> ExternC for R {
         type CType = *mut Self;
     }
-    impl<R: Ir<Type = Extern>> ExternC for R {
-        type CType = *mut external::Extern;
-    }
 
-    impl<'a, R> ExternC for &'a R
-    where
-        Self: Ir<Type = &'a Extern>,
-    {
-        type CType = *const external::Extern;
-    }
     #[cfg(feature = "cloned_types")]
     impl<'a, R: ExternC, S: Cloned> ExternC for &'a R
     where
         Self: Ir<Type = &'a S>,
     {
         type CType = *const R::CType;
-    }
-
-    impl<'a, R> ExternC for &'a mut R
-    where
-        Self: Ir<Type = &'a mut Extern>,
-    {
-        type CType = *mut external::Extern;
     }
 
     #[cfg(feature = "owned_types")]
@@ -113,12 +97,6 @@ disjoint_impls! {
         Self: Ir<Type = Box<Robust>>,
     {
         type CType = *mut R;
-    }
-    impl<R> ExternC for Box<R>
-    where
-        Self: Ir<Type = Box<Extern>>,
-    {
-        type CType = *mut external::Extern;
     }
     #[cfg(feature = "owned_types")]
     #[cfg(feature = "owned_as_ref")]
@@ -318,13 +296,6 @@ disjoint_impls! {
 
         fn encode<'itm>(self, (): &mut ()) -> Self::CType where Self: 'itm {
             Box::into_raw(Box::new(self))
-        }
-    }
-    impl<R: Ir<Type = Extern> + External> Encode for R {
-        type Store = ();
-
-        fn encode<'itm>(self, (): &mut ()) -> Self::CType where Self: 'itm {
-            Encode::encode(self.into_non_null(), &mut ())
         }
     }
 
@@ -724,7 +695,6 @@ disjoint_impls! {
         ///
         /// - All conversions from a pointer must ensure pointer validity beforehand
         /// - If `type Store = ()`, then the store **must never be dereferenced**
-        /// - In the case of owned extern types the pointer must own the referent
         unsafe fn decode<'itm: 'd>(source: Self::CType, store: &'itm mut Self::Store) -> Result<Self>;
     }
 
@@ -761,16 +731,6 @@ disjoint_impls! {
             }
 
             Ok(*unsafe { Box::from_raw(source) })
-        }
-    }
-    impl<'d, R: Ir<Type = Extern> + External> Decode<'d> for R {
-        type Store = ();
-
-        unsafe fn decode<'itm: 'd>(source: Self::CType, (): &mut ()) -> Result<Self> {
-            let non_null_ptr = core::ptr::NonNull::new(source).ok_or(FfiReturn::ArgIsNull)?;
-
-            // SAFETY: Pointer is expected to own the referent
-            Ok(unsafe { Self::from_non_null(non_null_ptr) })
         }
     }
 
@@ -1365,13 +1325,13 @@ macro_rules! mineral {
                 {
                     type Type = $crate::ir::Transparent;
                 }
-                #[cfg(feature = "cloned_types")]
-                impl<S: $crate::ir::Cloned, $($($impl_generics $(: $bounds)?),*)?> Ir for $ty where
-                    for<'dummy> Self: $crate::transmute::Transmute<Target: Ir<Type = S>> + $crate::niche::Niche,
-                    $($($where_ty: $where_bound),*)?
-                {
-                    type Type = Self;
-                }
+                //#[cfg(feature = "cloned_types")]
+                //impl<S: $crate::ir::Cloned, $($($impl_generics $(: $bounds)?),*)?> Ir for $ty where
+                //    for<'dummy> Self: $crate::transmute::Transmute<Target: Ir<Type = S>> + $crate::niche::Niche,
+                //    $($($where_ty: $where_bound),*)?
+                //{
+                //    type Type = Self;
+                //}
             }
         };
 

@@ -87,29 +87,13 @@ disjoint_impls! {
     {
         type OutPtr = Self::CType;
     }
-    impl<R: Ir<Type = Extern> + External> OutPtr for R {
-        type OutPtr = Self::CType;
-    }
 
-    impl<'a, R: Ir<Type = Extern> + External> OutPtr for &'a R
-    where
-        Self: Ir<Type = &'a Extern>,
-    {
-        type OutPtr = Self::CType;
-    }
     #[cfg(feature = "cloned_types")]
     impl<'a, R: NonLocal, S: Cloned> OutPtr for &'a R
     where
         Self: Ir<Type = &'a S>,
     {
         type OutPtr = R::CType;
-    }
-
-    impl<'a, R: Ir<Type = Extern> + External> OutPtr for &'a mut R
-    where
-        Self: Ir<Type = &'a mut Extern>,
-    {
-        type OutPtr = Self::CType;
     }
 
     #[cfg(feature = "owned_types")]
@@ -119,12 +103,6 @@ disjoint_impls! {
         Self: Ir<Type = Box<Robust>>,
     {
         type OutPtr = R;
-    }
-    impl<R: External> OutPtr for Box<R>
-    where
-        Self: Ir<Type = Box<Extern>>,
-    {
-        type OutPtr = Self::CType;
     }
     #[cfg(feature = "owned_types")]
     #[cfg(feature = "owned_as_ref")]
@@ -704,11 +682,6 @@ disjoint_impls! {
     where
         Self: Ir<Type = Robust>,
     {
-        unsafe fn try_read_out(out_ptr: Self::OutPtr) -> Result<Self> {
-            unsafe { Decode::decode(out_ptr, &mut ()) }
-        }
-    }
-    impl<R: Ir<Type = Extern> + External> OutPtrRead for R {
         unsafe fn try_read_out(out_ptr: Self::OutPtr) -> Result<Self> {
             unsafe { Decode::decode(out_ptr, &mut ()) }
         }

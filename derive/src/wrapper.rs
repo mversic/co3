@@ -278,16 +278,6 @@ fn gen_impl_ffi(name: &Ident, generics: &syn::Generics) -> TokenStream {
         // SAFETY: The underlying data is unaliased, i.e. it is owned
         unsafe impl #impl_generics Sync for #name #ty_generics #where_clause #(, #sync_predicates)* {}
 
-        impl #impl_generics #name #ty_generics #where_clause {
-            fn as_ref(&self) -> co3::external::ExternRef<'_, #name #ty_generics> {
-                co3::external::ExternRef::new(self)
-            }
-
-            fn as_mut(&mut self) -> co3::external::ExternRefMut<'_, #name #ty_generics> {
-                co3::external::ExternRefMut::new(self)
-            }
-        }
-
         // SAFETY: Type is a thin wrapper around [`core::ptr::NonNull<co3::external::Extern>`]
         unsafe impl #impl_generics co3::external::External for #name #ty_generics #where_clause {
             unsafe fn from_non_null(opaque_ptr: core::ptr::NonNull<co3::external::Extern>) -> Self {
@@ -304,25 +294,21 @@ fn gen_impl_ffi(name: &Ident, generics: &syn::Generics) -> TokenStream {
             }
         }
 
-        impl #impl_generics co3::ir::Ir for #name #ty_generics #where_clause {
-            type Type = co3::ir::Extern;
-        }
+        impl #impl_generics #name #ty_generics #where_clause {
+            fn as_ref(&self) -> co3::external::ExternRef<'_, #name #ty_generics> {
+                co3::external::ExternRef::new(self)
+            }
 
-        // SAFETY: Type is a thin wrapper around [`core::ptr::NonNull<co3::external::Extern>`]
-        unsafe impl #impl_generics co3::transmute::Transmute for #name #ty_generics #where_clause {
-            type Target = core::ptr::NonNull<co3::external::Extern>;
-
-            #[inline(always)]
-            fn is_valid(target: &Self::Target) -> bool {
-                true
+            fn as_mut(&mut self) -> co3::external::ExternRefMut<'_, #name #ty_generics> {
+                co3::external::ExternRefMut::new(self)
             }
         }
 
-        // SAFETY: The type is never dereferenced so it is considered as always valid
-        unsafe impl #impl_generics co3::transmute::InfallibleTransmute for #name #ty_generics #where_clause {}
-
-        impl #impl_generics co3::niche::Niche for #name #ty_generics #where_clause {
-            const NICHE_VALUE: *mut co3::external::Extern = core::ptr::null_mut();
+        co3::mineral! {
+            unsafe impl #impl_generics Transparent for #name #ty_generics #where_clause {
+                type Target = core::ptr::NonNull<co3::external::Extern>;
+                const NICHE_VALUE = "DELEGATE";
+            }
         }
     }
 }
@@ -455,9 +441,11 @@ fn gen_input_conversion_stmts(fn_descriptor: &FnDescriptor) -> TokenStream {
     if let Some(arg) = &fn_descriptor.receiver {
         let arg_name = arg.name();
 
-        stmts.extend(quote! {let #arg_name = self;});
         if let Some(processed) = process_self_type(arg_name, arg.src_type(), self_ty) {
+            stmts.extend(quote! {let #arg_name = self;});
             stmts.extend(quote!(let #arg_name = #processed;));
+        } else {
+            stmts.extend(quote! {let #arg_name = self.as_ptr();});
         }
     }
     for arg in &fn_descriptor.input_args {
