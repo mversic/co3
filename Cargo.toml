@@ -15,11 +15,18 @@ categories = ["development-tools::ffi"]
 default = ["owned_as_ref"]
 
 # Types that are expensive to convert between C and Rust.
+#
+# Conversion of owned types may become expensive if `owned_as_ref` is enabled.
+# TODO: Rename to `expensive_types`
 cloned_types = []
 
-# TODO: This should allow ownership transfer
+# Enable ownership carrying types, i.e. heap-allocated types such as `Box<T>` or `Vec<T>`.
 owned_types = []
 
+# Send owned(heap-allocated) types as shared references instead of transferring ownership.
+#
+# This feature prevents ownership transfer of dynamically allocated memory across FFI boundary.
+# The notable exception are `Opaque` types which always carry ownership regardless of this feature.
 owned_as_ref = ["owned_types"]
 
 # Enables sharing mutable references of non-robust transmutable types across FFI.

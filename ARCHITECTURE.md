@@ -1,15 +1,29 @@
-I have base types:
+Ir type markers:
 
-1. Robust
-2. Opaque
-3. Transparent
-4. Cloned
-5. Extern
+1. Transparent (depends on `Transmute` trait)
+- type that recursively delegates to the `Transmute::Target` type through transmutation
+- `Transmute::Target` takes the ownership and must know how to handle conversion further
+
+2. Box<Robust> (depends on `owned_as_ref` feature)
+- `Robust` types that carry ownership, i.e. heap-allocated types such as `Box<T>` and `Vec<T>`
+- the `owned_as_ref` feature converts owned values into borrowed ones before handing them out
+
+3. Robust (depends on `ReprC` trait)
+- types that have a stable layout with no trap representations
+- these types don't require conversion into C-compatible types
+
+4. Opaque (always carries ownership)
+- types that are not expected to be read on the other side of the FFI boundary
+- opaque types are always heap-allocated and handed out as pointers with ownership
+
+5. Cloned (a trait, not a marker type)
+- types that are not transmutable, i.e. types that execute some form of conversion logic
+- references types implementing `Cloned` are always first cloned, ergo the name of the trait
 
 6. Option<WithoutNiche>
 7. Option<Transparent>
+8. Option<S> where S: Cloned
 
-8. Box<Robust>
 
 I have derivative types:
 

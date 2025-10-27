@@ -22,7 +22,6 @@ use crate::transmute::{
     transmute_into_target_boxed_slice, transmute_into_target_vec,
 };
 use crate::{
-    external::External,
     ir::{Ir, Opaque, Robust, Transparent},
     niche::Optional,
     slice::{OutBoxedSlice, RefMutSlice, RefSlice},
@@ -92,11 +91,11 @@ disjoint_impls! {
 
     #[cfg(feature = "owned_types")]
     #[cfg(feature = "owned_as_ref")]
-    impl<R: ReprC> ExternC for Box<R>
+    impl<R: Transmute<Target: ReprC>> ExternC for R
     where
         Self: Ir<Type = Box<Robust>>,
     {
-        type CType = *mut R;
+        type CType = R::Target;
     }
     #[cfg(feature = "owned_types")]
     #[cfg(feature = "owned_as_ref")]
@@ -219,7 +218,6 @@ disjoint_impls! {
         type CType = RefMutSlice<R::CType>;
     }
 
-    #[cfg(feature = "cloned_types")]
     impl<R, const N: usize> ExternC for [R; N]
     where
         Self: Ir<Type = [Opaque; N]>,
@@ -313,14 +311,14 @@ disjoint_impls! {
 
     #[cfg(feature = "owned_types")]
     #[cfg(feature = "owned_as_ref")]
-    impl<R: ReprC> Encode for Box<R>
+    impl<R: Transmute<Target: ReprC>> Encode for R
     where
         Self: Ir<Type = Box<Robust>>,
     {
-        type Store = Option<Box<R>>;
+        type Store = Option<R>;
 
         fn encode<'itm>(self, store: &mut Self::Store) -> Self::CType where Self: 'itm {
-            (*store.insert(self)).as_mut()
+            *transmute_into_target(store.insert(self))
         }
     }
     #[cfg(feature = "owned_types")]
@@ -446,7 +444,6 @@ disjoint_impls! {
     }
     #[cfg(feature = "owned_types")]
     #[cfg(feature = "owned_as_ref")]
-    #[cfg(feature = "cloned_types")]
     impl<R> Encode for Box<[R]>
     where
         Self: Ir<Type = Box<[Opaque]>>,
@@ -519,7 +516,6 @@ disjoint_impls! {
     }
     #[cfg(feature = "owned_types")]
     #[cfg(feature = "owned_as_ref")]
-    #[cfg(feature = "cloned_types")]
     impl<R> Encode for Vec<R>
     where
         Self: Ir<Type = Vec<Opaque>>,
@@ -560,7 +556,6 @@ disjoint_impls! {
         }
     }
 
-    #[cfg(feature = "cloned_types")]
     impl<R, const N: usize> Encode for [R; N]
     where
         Self: Ir<Type = [Opaque; N]>,
@@ -758,18 +753,15 @@ disjoint_impls! {
 
     #[cfg(feature = "owned_types")]
     #[cfg(feature = "owned_as_ref")]
-    impl<'d, R: ReprC + 'd> Decode<'d> for Box<R>
+    #[cfg(feature = "cloned_types")]
+    impl<'d, R: Transmute<Target: ReprC> + Clone + 'd> Decode<'d> for R
     where
         Self: Ir<Type = Box<Robust>>,
     {
         type Store = ();
 
         unsafe fn decode<'itm: 'd>(source: Self::CType, (): &mut ()) -> Result<Self> {
-            if source.is_null() {
-                return Err(FfiReturn::ArgIsNull);
-            }
-
-            Ok(Box::new(unsafe { source.read() }))
+            transmute_from_target::<&R>(&source).cloned()
         }
     }
     #[cfg(feature = "owned_types")]
@@ -928,7 +920,6 @@ disjoint_impls! {
     }
     #[cfg(feature = "owned_types")]
     #[cfg(feature = "owned_as_ref")]
-    #[cfg(feature = "cloned_types")]
     impl<'d, R: 'd> Decode<'d> for Box<[R]>
     where
         Self: Ir<Type = Box<[Opaque]>>,
@@ -1008,7 +999,6 @@ disjoint_impls! {
     }
     #[cfg(feature = "owned_types")]
     #[cfg(feature = "owned_as_ref")]
-    #[cfg(feature = "cloned_types")]
     impl<'d, R: 'd> Decode<'d> for Vec<R>
     where
         Self: Ir<Type = Vec<Opaque>>,
@@ -1058,7 +1048,6 @@ disjoint_impls! {
         }
     }
 
-    #[cfg(feature = "cloned_types")]
     impl<'d, R: 'd, const N: usize> Decode<'d> for [R; N]
     where
         Self: Ir<Type = [Opaque; N]>,

@@ -9,19 +9,6 @@ use crate::mineral;
 /// Implementors must guarantee that:
 /// - `Self` has the same representation as [`NonNull<Extern>`].
 pub unsafe trait External: Sized {
-    /// Constructs `Self` from an opaque pointer.
-    ///
-    /// # Safety
-    ///
-    /// The pointer argument must uniquely own the memory
-    // TODO: I'm not sure if this function needs to be unsafe
-    // because this pointer is never dereferenced? However,
-    // `Send` and `Sync` impls may depend on it?
-    unsafe fn from_non_null(source: NonNull<Extern>) -> Self;
-
-    /// Consumes the type, returning a wrapped [`NonNull`] pointer.
-    fn into_non_null(self) -> NonNull<Extern>;
-
     /// Returns a shared opaque pointer.
     fn as_ptr(&self) -> *const Extern;
 

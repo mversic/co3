@@ -230,10 +230,8 @@ pub fn wrap_as_opaque(emitter: &mut Emitter, mut input: FfiTypeInput) -> TokenSt
     quote! {
         #(#attrs)*
         #[repr(transparent)]
-        #vis struct #name #ty_generics(
-            core::ptr::NonNull<co3::external::Extern>
-            #(, #phantom_data_type_defs)*
-        ) #handle_bounded_where_clause;
+        #vis struct #name #ty_generics(core::ptr::NonNull<co3::external::Extern> #(, #phantom_data_type_defs)*)
+        #handle_bounded_where_clause;
 
         impl #impl_generics Drop for #name #ty_generics #handle_bounded_where_clause {
             fn drop(&mut self) {
@@ -267,11 +265,6 @@ fn gen_impl_ffi(name: &Ident, generics: &syn::Generics) -> TokenStream {
         quote! { #param: Sync }
     });
 
-    let new_phantom_data_types: Vec<_> = generics
-        .type_params()
-        .map(|_| quote! {, core::marker::PhantomData})
-        .collect();
-
     quote! {
         // SAFETY: The underlying data is unaliased, i.e. it is owned
         unsafe impl #impl_generics Send for #name #ty_generics #where_clause #(, #send_predicates)* {}
@@ -280,12 +273,6 @@ fn gen_impl_ffi(name: &Ident, generics: &syn::Generics) -> TokenStream {
 
         // SAFETY: Type is a thin wrapper around [`core::ptr::NonNull<co3::external::Extern>`]
         unsafe impl #impl_generics co3::external::External for #name #ty_generics #where_clause {
-            unsafe fn from_non_null(opaque_ptr: core::ptr::NonNull<co3::external::Extern>) -> Self {
-                Self(opaque_ptr #(#new_phantom_data_types)*)
-            }
-            fn into_non_null(self) -> core::ptr::NonNull<co3::external::Extern> {
-                self.0
-            }
             fn as_ptr(&self) -> *const co3::external::Extern {
                 self.0.as_ptr() as *const _
             }
@@ -470,7 +457,7 @@ fn process_self_type(
     self_ty: Option<&syn::Path>,
 ) -> Option<TokenStream> {
     if is_self_ty(ty, self_ty) {
-        return Some(quote! { co3::external::External::into_non_null(#arg_name).as_ptr() });
+        return Some(quote! { core::mem::ManuallyDrop::new(#arg_name).0.as_ptr() });
     }
 
     match ty {
