@@ -97,6 +97,7 @@ disjoint_impls! {
     {
         type OutPtr = Self::CType;
     }
+    #[cfg(feature = "cloned_types")]
     impl<'a, R: NonLocal, S: Cloned> OutPtr for &'a R
     where
         Self: Ir<Type = &'a S>,
@@ -127,6 +128,7 @@ disjoint_impls! {
     }
     #[cfg(feature = "owned_types")]
     #[cfg(feature = "owned_as_ref")]
+    #[cfg(feature = "cloned_types")]
     impl<R: NonLocal, S: Cloned> OutPtr for Box<R>
     where
         Self: Ir<Type = Box<S>>,
@@ -147,12 +149,14 @@ disjoint_impls! {
     {
         type OutPtr = Self::CType;
     }
+    #[cfg(feature = "cloned_types")]
     impl<'a, R> OutPtr for &'a [R]
     where
         Self: Ir<Type = &'a [Opaque]>,
     {
         type OutPtr = OutBoxedSlice<*const R>;
     }
+    #[cfg(feature = "cloned_types")]
     impl<'a, R: NonLocal, S: Cloned> OutPtr for &'a [R]
     where
         Self: Ir<Type = &'a [S]>,
@@ -192,6 +196,7 @@ disjoint_impls! {
     }
     #[cfg(feature = "owned_types")]
     #[cfg(feature = "owned_as_ref")]
+    #[cfg(feature = "cloned_types")]
     impl<R> OutPtr for Box<[R]>
     where
         Self: Ir<Type = Box<[Opaque]>>,
@@ -200,6 +205,7 @@ disjoint_impls! {
     }
     #[cfg(feature = "owned_types")]
     #[cfg(feature = "owned_as_ref")]
+    #[cfg(feature = "cloned_types")]
     impl<R: NonLocal, S: Cloned> OutPtr for Box<[R]>
     where
         Self: Ir<Type = Box<[S]>>,
@@ -225,6 +231,7 @@ disjoint_impls! {
     }
     #[cfg(feature = "owned_types")]
     #[cfg(feature = "owned_as_ref")]
+    #[cfg(feature = "cloned_types")]
     impl<R> OutPtr for Vec<R>
     where
         Self: Ir<Type = Vec<Opaque>>,
@@ -233,6 +240,7 @@ disjoint_impls! {
     }
     #[cfg(feature = "owned_types")]
     #[cfg(feature = "owned_as_ref")]
+    #[cfg(feature = "cloned_types")]
     impl<R: NonLocal, S: Cloned> OutPtr for Vec<R>
     where
         Self: Ir<Type = Vec<S>>,
@@ -240,18 +248,14 @@ disjoint_impls! {
         type OutPtr = OutBoxedSlice<R::CType>;
     }
 
+    #[cfg(feature = "cloned_types")]
     impl<R, const N: usize> OutPtr for [R; N]
     where
         Self: Ir<Type = [Opaque; N]>,
     {
         type OutPtr = Self::CType;
     }
-    impl<R, const N: usize> OutPtr for [R; N]
-    where
-        Self: Ir<Type = [Extern; N]>,
-    {
-        type OutPtr = Self::CType;
-    }
+    #[cfg(feature = "cloned_types")]
     impl<R: NonLocal, S: Cloned, const N: usize> OutPtr for [R; N]
     where
         Self: Ir<Type = [S; N]>,
@@ -277,6 +281,7 @@ disjoint_impls! {
     {
         type OutPtr = *mut R;
     }
+    #[cfg(feature = "cloned_types")]
     impl<R: Niche + OutPtr, S: Cloned> OutPtr for Option<R>
     where
         Self: Ir<Type = Option<S>>,
@@ -328,6 +333,7 @@ disjoint_impls! {
         }
     }
 
+    #[cfg(feature = "cloned_types")]
     impl<'itm, R: NonLocal + Encode, S: Cloned> OutPtrWrite for &'itm R
     where
         Self: Ir<Type = &'itm S>,
@@ -355,6 +361,7 @@ disjoint_impls! {
     }
     #[cfg(feature = "owned_types")]
     #[cfg(feature = "owned_as_ref")]
+    #[cfg(feature = "cloned_types")]
     impl<R: NonLocal + Encode, S: Cloned> OutPtrWrite for Box<R>
     where
         Self: Ir<Type = Box<S>>,
@@ -389,6 +396,7 @@ disjoint_impls! {
             unsafe { out_ptr.write(encoded); }
         }
     }
+    #[cfg(feature = "cloned_types")]
     impl<'a, R: Clone> OutPtrWrite for &'a [R]
     where
         Self: Ir<Type = &'a [Opaque]>,
@@ -404,6 +412,7 @@ disjoint_impls! {
             }
         }
     }
+    #[cfg(feature = "cloned_types")]
     impl<'itm, R: NonLocal + Encode, S: Cloned> OutPtrWrite for &'itm [R]
     where
         Self: Ir<Type = &'itm [S]>,
@@ -474,6 +483,7 @@ disjoint_impls! {
     }
     #[cfg(feature = "owned_types")]
     #[cfg(feature = "owned_as_ref")]
+    #[cfg(feature = "cloned_types")]
     impl<R> OutPtrWrite for Box<[R]>
     where
         Self: Ir<Type = Box<[Opaque]>>,
@@ -489,6 +499,7 @@ disjoint_impls! {
     }
     #[cfg(feature = "owned_types")]
     #[cfg(feature = "owned_as_ref")]
+    #[cfg(feature = "cloned_types")]
     impl<R: NonLocal + Encode, S: Cloned> OutPtrWrite for Box<[R]>
     where
         Self: Ir<Type = Box<[S]>>,
@@ -537,6 +548,7 @@ disjoint_impls! {
     }
     #[cfg(feature = "owned_types")]
     #[cfg(feature = "owned_as_ref")]
+    #[cfg(feature = "cloned_types")]
     impl<R> OutPtrWrite for Vec<R>
     where
         Self: Ir<Type = Vec<Opaque>>,
@@ -554,6 +566,7 @@ disjoint_impls! {
     }
     #[cfg(feature = "owned_types")]
     #[cfg(feature = "owned_as_ref")]
+    #[cfg(feature = "cloned_types")]
     impl<R: NonLocal + Encode, S: Cloned> OutPtrWrite for Vec<R>
     where
         Self: Ir<Type = Vec<S>>,
@@ -570,6 +583,7 @@ disjoint_impls! {
         }
     }
 
+    #[cfg(feature = "cloned_types")]
     impl<R, const N: usize> OutPtrWrite for [R; N]
     where
         Self: Ir<Type = [Opaque; N]>,
@@ -580,6 +594,7 @@ disjoint_impls! {
             unsafe { out_ptr.write(encoded); }
         }
     }
+    #[cfg(feature = "cloned_types")]
     impl<R: NonLocal, S: Cloned, const N: usize> OutPtrWrite for [R; N]
     where
         Self: Ir<Type = [S; N]> + Encode,
@@ -642,6 +657,7 @@ disjoint_impls! {
             )
         }
     }
+    #[cfg(feature = "cloned_types")]
     impl<R: Niche + OutPtrWrite, S: Cloned> OutPtrWrite for Option<R>
     where
         Self: Ir<Type = Option<S>>,
@@ -710,6 +726,7 @@ disjoint_impls! {
     }
     #[cfg(feature = "owned_types")]
     #[cfg(feature = "owned_as_ref")]
+    #[cfg(feature = "cloned_types")]
     impl<'d, R: NonLocal + Decode<'d> + 'd, S: Cloned> OutPtrRead for Box<R>
     where
         Self: Ir<Type = Box<S>>,
@@ -802,6 +819,7 @@ disjoint_impls! {
     }
     #[cfg(feature = "owned_types")]
     #[cfg(feature = "owned_as_ref")]
+    #[cfg(feature = "cloned_types")]
     impl<'d, R: NonLocal + 'd, S: Cloned + 'd> OutPtrRead for Box<[R]>
     where
         Self: Ir<Type = Box<[S]>> + Decode<'d, CType = RefMutSlice<<R as ExternC>::CType>>,
@@ -865,6 +883,7 @@ disjoint_impls! {
     }
     #[cfg(feature = "owned_types")]
     #[cfg(feature = "owned_as_ref")]
+    #[cfg(feature = "cloned_types")]
     impl<'d, R: NonLocal + 'd, S: Cloned> OutPtrRead for Vec<R>
     where
         Self: Ir<Type = Vec<S>> + Decode<'d, CType = RefMutSlice<<R as ExternC>::CType>>,
@@ -892,6 +911,7 @@ disjoint_impls! {
         }
     }
 
+    #[cfg(feature = "cloned_types")]
     impl<'d, R: NonLocal + 'd, S: Cloned, const N: usize> OutPtrRead for [R; N]
     where
         Self: Ir<Type = [S; N]> + Decode<'d>,
@@ -931,6 +951,7 @@ disjoint_impls! {
             }
         }
     }
+    #[cfg(feature = "cloned_types")]
     impl<R: Niche + OutPtrRead, S: Cloned> OutPtrRead for Option<R>
     where
         Self: Ir<Type = Option<S>>,

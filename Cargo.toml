@@ -14,6 +14,9 @@ categories = ["development-tools::ffi"]
 [features]
 default = ["owned_as_ref"]
 
+# Types that are expensive to convert between C and Rust.
+cloned_types = []
+
 # TODO: This should allow ownership transfer
 owned_types = []
 

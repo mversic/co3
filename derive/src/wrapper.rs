@@ -242,7 +242,7 @@ pub fn wrap_as_opaque(emitter: &mut Emitter, mut input: FfiTypeInput) -> TokenSt
                 let drop_result = unsafe {
                     crate::__drop(
                         co3::Encode::encode(handle_id, &mut ()),
-                        co3::Encode::encode(self.as_mut(), &mut ())
+                        co3::Encode::encode(self.0, &mut ())
                     )
                 };
 

@@ -63,11 +63,11 @@ fn resolve_type(self_type: Option<&Path>, mut arg_type: Type) -> Type {
     arg_type
 }
 
-struct ForeignOutputArgProcessor<'a> {
+struct ForeignArgProcessor<'a> {
     self_ty: Option<&'a Path>,
 }
 
-impl VisitMut for ForeignOutputArgProcessor<'_> {
+impl VisitMut for ForeignArgProcessor<'_> {
     fn visit_type_mut(&mut self, node: &mut Type) {
         if is_self_ty(node, self.self_ty) {
             return;
@@ -89,9 +89,9 @@ impl VisitMut for ForeignOutputArgProcessor<'_> {
             }
             Type::Reference(ref_ty) if is_self_ty(&ref_ty.elem, self.self_ty) => {
                 *node = if ref_ty.mutability.is_some() {
-                    parse_quote!(&mut Self)
+                    parse_quote!(ExternMut<'_, Self>)
                 } else {
-                    parse_quote!(&Self)
+                    parse_quote!(ExternRef<'_, Self>)
                 };
 
                 return;
@@ -182,7 +182,7 @@ impl<'ast> ImplDescriptor<'ast> {
         let mut impl_desc = Self::from_impl(emitter, node)?;
 
         impl_desc.fns.iter_mut().for_each(|fn_| {
-            let mut output_arg_processor = ForeignOutputArgProcessor {
+            let mut output_arg_processor = ForeignArgProcessor {
                 self_ty: fn_.self_ty.as_ref(),
             };
 
