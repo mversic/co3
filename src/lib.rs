@@ -5,9 +5,7 @@
 
 extern crate alloc;
 
-#[cfg(feature = "cloned_types")]
 use core::mem::ManuallyDrop;
-
 use alloc::{boxed::Box, vec::Vec};
 
 #[cfg(feature = "derive")]
@@ -31,7 +29,6 @@ use crate::{
         transmute_into_target_slice_mut,
     },
 };
-#[cfg(feature = "cloned_types")]
 use crate::{ir::Cloned, niche::Niche};
 
 pub mod external;
@@ -71,6 +68,13 @@ disjoint_impls! {
         type CType: ReprC;
     }
 
+    #[cfg(feature = "owned_types")]
+    impl<R: Transmute<Target: ReprC>> ExternC for R
+    where
+        Self: Ir<Type = Box<Robust>>,
+    {
+        type CType = R::Target;
+    }
     impl<R: Ir<Type = Transparent> + Transmute<Target: ExternC>> ExternC for R {
         type CType = <R::Target as ExternC>::CType;
     }
@@ -81,7 +85,7 @@ disjoint_impls! {
         type CType = *mut Self;
     }
 
-    #[cfg(feature = "cloned_types")]
+    #[cfg(feature = "cloned_refs")]
     impl<'a, R: ExternC, S: Cloned> ExternC for &'a R
     where
         Self: Ir<Type = &'a S>,
@@ -90,16 +94,6 @@ disjoint_impls! {
     }
 
     #[cfg(feature = "owned_types")]
-    #[cfg(feature = "owned_as_ref")]
-    impl<R: Transmute<Target: ReprC>> ExternC for R
-    where
-        Self: Ir<Type = Box<Robust>>,
-    {
-        type CType = R::Target;
-    }
-    #[cfg(feature = "owned_types")]
-    #[cfg(feature = "owned_as_ref")]
-    #[cfg(feature = "cloned_types")]
     impl<R: ExternC, S: Cloned> ExternC for Box<R>
     where
         Self: Ir<Type = Box<S>>,
@@ -120,14 +114,14 @@ disjoint_impls! {
     {
         type CType = RefSlice<R>;
     }
-    #[cfg(feature = "cloned_types")]
+    #[cfg(feature = "cloned_refs")]
     impl<'a, R> ExternC for &'a [R]
     where
         Self: Ir<Type = &'a [Opaque]>,
     {
         type CType = RefSlice<*const R>;
     }
-    #[cfg(feature = "cloned_types")]
+    #[cfg(feature = "cloned_refs")]
     impl<'a, R: ExternC, S: Cloned> ExternC for &'a [R]
     where
         Self: Ir<Type = &'a [S]>,
@@ -166,7 +160,6 @@ disjoint_impls! {
     }
     #[cfg(feature = "owned_types")]
     #[cfg(feature = "owned_as_ref")]
-    #[cfg(feature = "cloned_types")]
     impl<R> ExternC for Box<[R]>
     where
         Self: Ir<Type = Box<[Opaque]>>,
@@ -175,7 +168,6 @@ disjoint_impls! {
     }
     #[cfg(feature = "owned_types")]
     #[cfg(feature = "owned_as_ref")]
-    #[cfg(feature = "cloned_types")]
     impl<R: ExternC, S: Cloned> ExternC for Box<[R]>
     where
         Self: Ir<Type = Box<[S]>>,
@@ -201,7 +193,6 @@ disjoint_impls! {
     }
     #[cfg(feature = "owned_types")]
     #[cfg(feature = "owned_as_ref")]
-    #[cfg(feature = "cloned_types")]
     impl<R> ExternC for Vec<R>
     where
         Self: Ir<Type = Vec<Opaque>>,
@@ -210,7 +201,6 @@ disjoint_impls! {
     }
     #[cfg(feature = "owned_types")]
     #[cfg(feature = "owned_as_ref")]
-    #[cfg(feature = "cloned_types")]
     impl<R: ExternC, S: Cloned> ExternC for Vec<R>
     where
         Self: Ir<Type = Vec<S>>,
@@ -224,7 +214,6 @@ disjoint_impls! {
     {
         type CType = [*mut R; N];
     }
-    #[cfg(feature = "cloned_types")]
     impl<R: ExternC, S: Cloned, const N: usize> ExternC for [R; N]
     where
         Self: Ir<Type = [S; N]>,
@@ -250,7 +239,6 @@ disjoint_impls! {
     {
         type CType = *mut R;
     }
-    #[cfg(feature = "cloned_types")]
     impl<R: Niche, S: Cloned> ExternC for Option<R>
     where
         Self: Ir<Type = Option<S>>,
@@ -275,6 +263,18 @@ disjoint_impls! {
         fn encode<'itm>(self, store: &'itm mut Self::Store) -> Self::CType where Self: 'itm;
     }
 
+    #[cfg(feature = "owned_types")]
+    #[cfg(feature = "owned_as_ref")]
+    impl<R: Transmute<Target: ReprC>> Encode for R
+    where
+        Self: Ir<Type = Box<Robust>>,
+    {
+        type Store = Option<R>;
+
+        fn encode<'itm>(self, store: &mut Self::Store) -> Self::CType where Self: 'itm {
+            *transmute_into_target(store.insert(self))
+        }
+    }
     impl<R: Ir<Type = Transparent> + Transmute<Target: Encode>> Encode for R {
         type Store = <R::Target as Encode>::Store;
 
@@ -297,7 +297,7 @@ disjoint_impls! {
         }
     }
 
-    #[cfg(feature = "cloned_types")]
+    #[cfg(feature = "cloned_refs")]
     impl<'a, R: Encode + Clone, S: Cloned> Encode for &'a R
     where
         Self: Ir<Type = &'a S>,
@@ -311,20 +311,7 @@ disjoint_impls! {
 
     #[cfg(feature = "owned_types")]
     #[cfg(feature = "owned_as_ref")]
-    impl<R: Transmute<Target: ReprC>> Encode for R
-    where
-        Self: Ir<Type = Box<Robust>>,
-    {
-        type Store = Option<R>;
-
-        fn encode<'itm>(self, store: &mut Self::Store) -> Self::CType where Self: 'itm {
-            *transmute_into_target(store.insert(self))
-        }
-    }
-    #[cfg(feature = "owned_types")]
-    #[cfg(feature = "owned_as_ref")]
-    #[cfg(feature = "cloned_types")]
-    impl<R: Encode + Clone, S: Cloned> Encode for Box<R>
+    impl<R: Encode, S: Cloned> Encode for Box<R>
     where
         Self: Ir<Type = Box<S>>,
     {
@@ -356,8 +343,8 @@ disjoint_impls! {
             RefSlice::from_slice(Some(self))
         }
     }
-    #[cfg(feature = "cloned_types")]
-    impl<'slice, R: Clone> Encode for &'slice [R]
+    #[cfg(feature = "cloned_refs")]
+    impl<'slice, R> Encode for &'slice [R]
     where
         Self: Ir<Type = &'slice [Opaque]>,
     {
@@ -368,7 +355,7 @@ disjoint_impls! {
             RefSlice::from_slice(Some(store))
         }
     }
-    #[cfg(feature = "cloned_types")]
+    #[cfg(feature = "cloned_refs")]
     impl<'slice, R: Encode + Clone, S: Cloned> Encode for &'slice [R]
     where
         Self: Ir<Type = &'slice [S]>,
@@ -462,8 +449,7 @@ disjoint_impls! {
     }
     #[cfg(feature = "owned_types")]
     #[cfg(feature = "owned_as_ref")]
-    #[cfg(feature = "cloned_types")]
-    impl<R: Encode + Clone, S: Cloned> Encode for Box<[R]>
+    impl<R: Encode, S: Cloned> Encode for Box<[R]>
     where
         Self: Ir<Type = Box<[S]>>,
     {
@@ -529,8 +515,7 @@ disjoint_impls! {
     }
     #[cfg(feature = "owned_types")]
     #[cfg(feature = "owned_as_ref")]
-    #[cfg(feature = "cloned_types")]
-    impl<R: Encode + Clone, S: Cloned> Encode for Vec<R>
+    impl<R: Encode, S: Cloned> Encode for Vec<R>
     where
         Self: Ir<Type = Vec<S>>,
     {
@@ -576,8 +561,7 @@ disjoint_impls! {
             unsafe { array.unwrap_unchecked() }
         }
     }
-    #[cfg(feature = "cloned_types")]
-    impl<R: Encode + Clone, S: Cloned, const N: usize> Encode for [R; N]
+    impl<R: Encode, S: Cloned, const N: usize> Encode for [R; N]
     where
         // FIXME: https://github.com/rust-lang/rust/issues/61415
         [<R>::Store; N]: Default,
@@ -651,7 +635,6 @@ disjoint_impls! {
             self.map(|value| value.encode(&mut ())).unwrap_or_default()
         }
     }
-    #[cfg(feature = "cloned_types")]
     impl<R: Niche + Encode, S: Cloned> Encode for Option<R>
     where
         Self: Ir<Type = Option<S>>,
@@ -693,6 +676,18 @@ disjoint_impls! {
         unsafe fn decode<'itm: 'd>(source: Self::CType, store: &'itm mut Self::Store) -> Result<Self>;
     }
 
+    #[cfg(feature = "owned_types")]
+    #[cfg(feature = "owned_as_ref")]
+    impl<'d, R: Transmute<Target: ReprC + 'd> + Clone + 'd> Decode<'d> for R
+    where
+        Self: Ir<Type = Box<Robust>>,
+    {
+        type Store = ();
+
+        unsafe fn decode<'itm: 'd>(source: Self::CType, (): &mut ()) -> Result<Self> {
+            transmute_from_target::<&R>(&source).cloned()
+        }
+    }
     impl<'d, R: Transmute> Decode<'d> for R
     where
         <Self as Transmute>::Target: Decode<'d>,
@@ -729,7 +724,7 @@ disjoint_impls! {
         }
     }
 
-    #[cfg(feature = "cloned_types")]
+    #[cfg(feature = "cloned_refs")]
     impl<'d, R: Decode<'d> + Clone, S: Cloned> Decode<'d> for &'d R
     where
         Self: Ir<Type = &'d S>,
@@ -753,20 +748,6 @@ disjoint_impls! {
 
     #[cfg(feature = "owned_types")]
     #[cfg(feature = "owned_as_ref")]
-    #[cfg(feature = "cloned_types")]
-    impl<'d, R: Transmute<Target: ReprC> + Clone + 'd> Decode<'d> for R
-    where
-        Self: Ir<Type = Box<Robust>>,
-    {
-        type Store = ();
-
-        unsafe fn decode<'itm: 'd>(source: Self::CType, (): &mut ()) -> Result<Self> {
-            transmute_from_target::<&R>(&source).cloned()
-        }
-    }
-    #[cfg(feature = "owned_types")]
-    #[cfg(feature = "owned_as_ref")]
-    #[cfg(feature = "cloned_types")]
     impl<'d, R: Decode<'d> + Clone, S: Cloned> Decode<'d> for Box<R>
     where
         Self: Ir<Type = Box<S>>,
@@ -809,7 +790,7 @@ disjoint_impls! {
             unsafe { source.into_rust() }.ok_or(FfiReturn::ArgIsNull)
         }
     }
-    #[cfg(feature = "cloned_types")]
+    #[cfg(feature = "cloned_refs")]
     impl<'slice, R: Clone> Decode<'slice> for &'slice [R]
     where
         Self: Ir<Type = &'slice [Opaque]>,
@@ -835,7 +816,7 @@ disjoint_impls! {
             Ok(store)
         }
     }
-    #[cfg(feature = "cloned_types")]
+    #[cfg(feature = "cloned_refs")]
     impl<'slice, R: Decode<'slice> + Clone, S: Cloned> Decode<'slice> for &'slice [R]
     where
         Self: Ir<Type = &'slice [S]>,
@@ -943,7 +924,6 @@ disjoint_impls! {
     }
     #[cfg(feature = "owned_types")]
     #[cfg(feature = "owned_as_ref")]
-    #[cfg(feature = "cloned_types")]
     impl<'d, R: Decode<'d> + Clone, S: Cloned> Decode<'d> for Box<[R]>
     where
         Self: Ir<Type = Box<[S]>>,
@@ -1023,7 +1003,6 @@ disjoint_impls! {
     }
     #[cfg(feature = "owned_types")]
     #[cfg(feature = "owned_as_ref")]
-    #[cfg(feature = "cloned_types")]
     impl<'d, R: Decode<'d> + Clone, S: Cloned> Decode<'d> for Vec<R>
     where
         Self: Ir<Type = Vec<S>>,
@@ -1072,7 +1051,6 @@ disjoint_impls! {
             Ok(unsafe { array.unwrap_unchecked() })
         }
     }
-    #[cfg(feature = "cloned_types")]
     impl<'d, R: Decode<'d> + Clone, S: Cloned, const N: usize> Decode<'d> for [R; N]
     where
         // FIXME: https://github.com/rust-lang/rust/issues/61415
@@ -1143,7 +1121,6 @@ disjoint_impls! {
             Ok(Some(unsafe { R::decode(source, store) }?))
         }
     }
-    #[cfg(feature = "cloned_types")]
     impl<'d, R: Niche<CType: PartialEq> + Decode<'d>, S: Cloned> Decode<'d> for Option<R>
     where
         Self: Ir<Type = Option<S>>,
@@ -1314,7 +1291,7 @@ macro_rules! mineral {
                 {
                     type Type = $crate::ir::Transparent;
                 }
-                //#[cfg(feature = "cloned_types")]
+                //#[cfg(feature = "cloned_refs")]
                 //impl<S: $crate::ir::Cloned, $($($impl_generics $(: $bounds)?),*)?> Ir for $ty where
                 //    for<'dummy> Self: $crate::transmute::Transmute<Target: Ir<Type = S>> + $crate::niche::Niche,
                 //    $($($where_ty: $where_bound),*)?
@@ -1423,14 +1400,13 @@ macro_rules! impl_tuple {
                 //    type Type = Self;
                 //}
                 // FIXME: This is even incorrect because every type should be mapped into different S
-                //#[cfg(feature = "cloned_types")]
+                //#[cfg(feature = "cloned_refs")]
                 //impl<S: $crate::ir::Cloned, $($ty: $crate::niche::Ir<Type = S>),+ + Niche> Ir for ($($ty,)+) {
                 //    type Type = Self;
                 //}
             }
         };
 
-        #[cfg(feature = "cloned_types")]
         impl<$($ty),+> Cloned for ($($ty,)+) {}
 
         // SAFETY: Tuple doesn't use store if it's inner types don't use it

@@ -32,24 +32,24 @@ disjoint_impls! {
     /// # Safety
     ///
     /// Type must not make use of the store during conversion into [`ExternC::CType`] via [`Encode::encode`] or [`Decode::decode`]
-    pub unsafe trait NonLocal: OutPtr + Clone {}
+    pub unsafe trait NonLocal: OutPtr {}
 
-    unsafe impl<'d, R: Clone> NonLocal for R where R: Decode<'d, Store = ()> + OutPtr {}
-    unsafe impl<'d, R: Clone, Z: Zst> NonLocal for R where R: Decode<'d, Store = Box<[Z]>> + OutPtr {}
-    unsafe impl<'d, R: Clone, Z: Zst> NonLocal for R where R: Decode<'d, Store = Vec<Z>> + OutPtr {}
-    unsafe impl<'d, R: Clone, Z: Zst> NonLocal for R where R: Decode<'d, Store = Option<Z>> + OutPtr {}
-    unsafe impl<'d, R: Clone, Z: Zst, const N: usize> NonLocal for R where R: Decode<'d, Store = [Z; N]> + OutPtr {}
+    unsafe impl<'d, R> NonLocal for R where R: Decode<'d, Store = ()> + OutPtr {}
+    unsafe impl<'d, R, Z: Zst> NonLocal for R where R: Decode<'d, Store = Box<[Z]>> + OutPtr {}
+    unsafe impl<'d, R, Z: Zst> NonLocal for R where R: Decode<'d, Store = Vec<Z>> + OutPtr {}
+    unsafe impl<'d, R, Z: Zst> NonLocal for R where R: Decode<'d, Store = Option<Z>> + OutPtr {}
+    unsafe impl<'d, R, Z: Zst, const N: usize> NonLocal for R where R: Decode<'d, Store = [Z; N]> + OutPtr {}
     // TODO: It's not possbile to implement for specific len yet: https://github.com/mversic/co3/issues/13
-    //unsafe impl<'d, R: Clone, T> NonLocal for R where R: Decode<'d, Store = [T; 0]> + OutPtr {}
+    //unsafe impl<'d, R, T> NonLocal for R where R: Decode<'d, Store = [T; 0]> + OutPtr {}
 }
 
-// Marker for a ZST(zero-sized type)
-//
-// # Safety
-//
-// Type must be a ZST
-//
-// This is because implementations of [`NonLocal`](which is an unsafe trait) depend on it
+/// Marker for a ZST(zero-sized type)
+///
+/// # Safety
+///
+/// Type must be a ZST
+///
+/// This is because implementations of [`NonLocal`](which is an unsafe trait) depend on it
 pub unsafe trait Zst {}
 
 unsafe impl Zst for () {}
@@ -68,6 +68,14 @@ disjoint_impls! {
         type OutPtr: ReprC;
     }
 
+    #[cfg(feature = "owned_types")]
+    #[cfg(feature = "owned_as_ref")]
+    impl<R: Transmute<Target: ReprC>> OutPtr for R
+    where
+        Self: Ir<Type = Box<Robust>>,
+    {
+        type OutPtr = R::Target;
+    }
     impl<R: Transmute> OutPtr for R
     where
         Self: Ir<Type = Transparent>,
@@ -88,7 +96,7 @@ disjoint_impls! {
         type OutPtr = Self::CType;
     }
 
-    #[cfg(feature = "cloned_types")]
+    #[cfg(feature = "cloned_refs")]
     impl<'a, R: NonLocal, S: Cloned> OutPtr for &'a R
     where
         Self: Ir<Type = &'a S>,
@@ -98,15 +106,6 @@ disjoint_impls! {
 
     #[cfg(feature = "owned_types")]
     #[cfg(feature = "owned_as_ref")]
-    impl<R: Transmute<Target: ReprC>> OutPtr for R
-    where
-        Self: Ir<Type = Box<Robust>>,
-    {
-        type OutPtr = R::Target;
-    }
-    #[cfg(feature = "owned_types")]
-    #[cfg(feature = "owned_as_ref")]
-    #[cfg(feature = "cloned_types")]
     impl<R: NonLocal, S: Cloned> OutPtr for Box<R>
     where
         Self: Ir<Type = Box<S>>,
@@ -127,14 +126,14 @@ disjoint_impls! {
     {
         type OutPtr = Self::CType;
     }
-    #[cfg(feature = "cloned_types")]
+    #[cfg(feature = "cloned_refs")]
     impl<'a, R> OutPtr for &'a [R]
     where
         Self: Ir<Type = &'a [Opaque]>,
     {
         type OutPtr = OutBoxedSlice<*const R>;
     }
-    #[cfg(feature = "cloned_types")]
+    #[cfg(feature = "cloned_refs")]
     impl<'a, R: NonLocal, S: Cloned> OutPtr for &'a [R]
     where
         Self: Ir<Type = &'a [S]>,
@@ -182,7 +181,6 @@ disjoint_impls! {
     }
     #[cfg(feature = "owned_types")]
     #[cfg(feature = "owned_as_ref")]
-    #[cfg(feature = "cloned_types")]
     impl<R: NonLocal, S: Cloned> OutPtr for Box<[R]>
     where
         Self: Ir<Type = Box<[S]>>,
@@ -216,7 +214,6 @@ disjoint_impls! {
     }
     #[cfg(feature = "owned_types")]
     #[cfg(feature = "owned_as_ref")]
-    #[cfg(feature = "cloned_types")]
     impl<R: NonLocal, S: Cloned> OutPtr for Vec<R>
     where
         Self: Ir<Type = Vec<S>>,
@@ -230,7 +227,6 @@ disjoint_impls! {
     {
         type OutPtr = Self::CType;
     }
-    #[cfg(feature = "cloned_types")]
     impl<R: NonLocal, S: Cloned, const N: usize> OutPtr for [R; N]
     where
         Self: Ir<Type = [S; N]>,
@@ -256,7 +252,6 @@ disjoint_impls! {
     {
         type OutPtr = *mut R;
     }
-    #[cfg(feature = "cloned_types")]
     impl<R: Niche + OutPtr, S: Cloned> OutPtr for Option<R>
     where
         Self: Ir<Type = Option<S>>,
@@ -276,6 +271,20 @@ disjoint_impls! {
         unsafe fn write_out(self, out_ptr: *mut Self::OutPtr);
     }
 
+    #[cfg(feature = "owned_types")]
+    #[cfg(feature = "owned_as_ref")]
+    impl<R: Transmute<Target: ReprC>> OutPtrWrite for R
+    where
+        Self: Ir<Type = Box<Robust>>,
+    {
+        unsafe fn write_out(self, out_ptr: *mut Self::OutPtr) {
+            unimplemented!()
+            //let mut store = Default::default();
+            //let _ = self.encode(&mut store);
+
+            //unsafe { out_ptr.write(store.unwrap()); }
+        }
+    }
     impl<R: Transmute> OutPtrWrite for R
     where
         Self: Ir<Type = Transparent>,
@@ -308,8 +317,8 @@ disjoint_impls! {
         }
     }
 
-    #[cfg(feature = "cloned_types")]
-    impl<'itm, R: NonLocal + Encode, S: Cloned> OutPtrWrite for &'itm R
+    #[cfg(feature = "cloned_refs")]
+    impl<'itm, R: NonLocal + Encode + Clone, S: Cloned> OutPtrWrite for &'itm R
     where
         Self: Ir<Type = &'itm S>,
     {
@@ -324,21 +333,6 @@ disjoint_impls! {
 
     #[cfg(feature = "owned_types")]
     #[cfg(feature = "owned_as_ref")]
-    #[cfg(feature = "cloned_types")]
-    impl<R: Transmute<Target: ReprC>> OutPtrWrite for R
-    where
-        Self: Ir<Type = Box<Robust>>,
-    {
-        unsafe fn write_out(self, out_ptr: *mut Self::OutPtr) {
-            let mut store = Default::default();
-            let _ = self.encode(&mut store);
-
-            unsafe { out_ptr.write(store.unwrap()); }
-        }
-    }
-    #[cfg(feature = "owned_types")]
-    #[cfg(feature = "owned_as_ref")]
-    #[cfg(feature = "cloned_types")]
     impl<R: NonLocal + Encode, S: Cloned> OutPtrWrite for Box<R>
     where
         Self: Ir<Type = Box<S>>,
@@ -373,7 +367,7 @@ disjoint_impls! {
             unsafe { out_ptr.write(encoded); }
         }
     }
-    #[cfg(feature = "cloned_types")]
+    #[cfg(feature = "cloned_refs")]
     impl<'a, R: Clone> OutPtrWrite for &'a [R]
     where
         Self: Ir<Type = &'a [Opaque]>,
@@ -389,8 +383,8 @@ disjoint_impls! {
             }
         }
     }
-    #[cfg(feature = "cloned_types")]
-    impl<'itm, R: NonLocal + Encode, S: Cloned> OutPtrWrite for &'itm [R]
+    #[cfg(feature = "cloned_refs")]
+    impl<'itm, R: NonLocal + Encode + Clone, S: Cloned> OutPtrWrite for &'itm [R]
     where
         Self: Ir<Type = &'itm [S]>,
     {
@@ -475,7 +469,6 @@ disjoint_impls! {
     }
     #[cfg(feature = "owned_types")]
     #[cfg(feature = "owned_as_ref")]
-    #[cfg(feature = "cloned_types")]
     impl<R: NonLocal + Encode, S: Cloned> OutPtrWrite for Box<[R]>
     where
         Self: Ir<Type = Box<[S]>>,
@@ -541,7 +534,6 @@ disjoint_impls! {
     }
     #[cfg(feature = "owned_types")]
     #[cfg(feature = "owned_as_ref")]
-    #[cfg(feature = "cloned_types")]
     impl<R: NonLocal + Encode, S: Cloned> OutPtrWrite for Vec<R>
     where
         Self: Ir<Type = Vec<S>>,
@@ -568,7 +560,6 @@ disjoint_impls! {
             unsafe { out_ptr.write(encoded); }
         }
     }
-    #[cfg(feature = "cloned_types")]
     impl<R: NonLocal, S: Cloned, const N: usize> OutPtrWrite for [R; N]
     where
         Self: Ir<Type = [S; N]> + Encode,
@@ -631,7 +622,6 @@ disjoint_impls! {
             )
         }
     }
-    #[cfg(feature = "cloned_types")]
     impl<R: Niche + OutPtrWrite, S: Cloned> OutPtrWrite for Option<R>
     where
         Self: Ir<Type = Option<S>>,
@@ -690,12 +680,12 @@ disjoint_impls! {
         Self: Ir<Type = Box<Robust>>,
     {
         unsafe fn try_read_out(out_ptr: Self::OutPtr) -> Result<Self> {
-            Ok(Box::new(out_ptr))
+            unimplemented!()
+            //Ok(Box::new(out_ptr))
         }
     }
     #[cfg(feature = "owned_types")]
     #[cfg(feature = "owned_as_ref")]
-    #[cfg(feature = "cloned_types")]
     impl<'d, R: NonLocal + Decode<'d> + 'd, S: Cloned> OutPtrRead for Box<R>
     where
         Self: Ir<Type = Box<S>>,
@@ -788,7 +778,6 @@ disjoint_impls! {
     }
     #[cfg(feature = "owned_types")]
     #[cfg(feature = "owned_as_ref")]
-    #[cfg(feature = "cloned_types")]
     impl<'d, R: NonLocal + 'd, S: Cloned + 'd> OutPtrRead for Box<[R]>
     where
         Self: Ir<Type = Box<[S]>> + Decode<'d, CType = RefMutSlice<<R as ExternC>::CType>>,
@@ -852,7 +841,6 @@ disjoint_impls! {
     }
     #[cfg(feature = "owned_types")]
     #[cfg(feature = "owned_as_ref")]
-    #[cfg(feature = "cloned_types")]
     impl<'d, R: NonLocal + 'd, S: Cloned> OutPtrRead for Vec<R>
     where
         Self: Ir<Type = Vec<S>> + Decode<'d, CType = RefMutSlice<<R as ExternC>::CType>>,
@@ -880,7 +868,6 @@ disjoint_impls! {
         }
     }
 
-    #[cfg(feature = "cloned_types")]
     impl<'d, R: NonLocal + 'd, S: Cloned, const N: usize> OutPtrRead for [R; N]
     where
         Self: Ir<Type = [S; N]> + Decode<'d>,
@@ -920,7 +907,6 @@ disjoint_impls! {
             }
         }
     }
-    #[cfg(feature = "cloned_types")]
     impl<R: Niche + OutPtrRead, S: Cloned> OutPtrRead for Option<R>
     where
         Self: Ir<Type = Option<S>>,
