@@ -79,7 +79,7 @@ disjoint_impls! {
     impl<R: Transmute> OutPtr for R
     where
         Self: Ir<Type = Transparent>,
-        <R>::Target: OutPtr,
+        <R as Transmute>::Target: OutPtr,
     {
         type OutPtr = <R::Target as OutPtr>::OutPtr;
     }
@@ -116,7 +116,7 @@ disjoint_impls! {
     impl<'slice, R: Transmute> OutPtr for &'slice [R]
     where
         Self: Ir<Type = &'slice [Transparent]>,
-        &'slice [<R>::Target]: OutPtr,
+        &'slice [<R as Transmute>::Target]: OutPtr,
     {
         type OutPtr = <&'slice [R::Target] as OutPtr>::OutPtr;
     }
@@ -144,7 +144,7 @@ disjoint_impls! {
     impl<'slice, R: Transmute> OutPtr for &'slice mut [R]
     where
         Self: Ir<Type = &'slice mut [Transparent]>,
-        &'slice mut [<R>::Target]: OutPtr,
+        &'slice mut [<R as Transmute>::Target]: OutPtr,
     {
         type OutPtr = <&'slice mut [R::Target] as OutPtr>::OutPtr;
     }
@@ -159,7 +159,7 @@ disjoint_impls! {
     impl<R: Transmute> OutPtr for Box<[R]>
     where
         Self: Ir<Type = Box<[Transparent]>>,
-        Box<[<R>::Target]>: OutPtr,
+        Box<[<R as Transmute>::Target]>: OutPtr,
     {
         type OutPtr = <Box<[R::Target]> as OutPtr>::OutPtr;
     }
@@ -185,14 +185,14 @@ disjoint_impls! {
     where
         Self: Ir<Type = Box<[S]>>,
     {
-        type OutPtr = OutBoxedSlice<<R>::CType>;
+        type OutPtr = OutBoxedSlice<R::CType>;
     }
 
     #[cfg(feature = "owned_types")]
     impl<R: Transmute> OutPtr for Vec<R>
     where
         Self: Ir<Type = Vec<Transparent>>,
-        Vec<<R>::Target>: OutPtr,
+        Vec<<R as Transmute>::Target>: OutPtr,
     {
         type OutPtr = <Vec<R::Target> as OutPtr>::OutPtr;
     }
@@ -288,7 +288,7 @@ disjoint_impls! {
     impl<R: Transmute> OutPtrWrite for R
     where
         Self: Ir<Type = Transparent>,
-        <R>::Target: OutPtrWrite,
+        <R as Transmute>::Target: OutPtrWrite,
     {
         unsafe fn write_out(self, out_ptr: *mut Self::OutPtr) {
             let transmuted = transmute_into_target(self);
@@ -348,7 +348,7 @@ disjoint_impls! {
     impl<'slice, R: Transmute> OutPtrWrite for &'slice [R]
     where
         Self: Ir<Type = &'slice [Transparent]>,
-        &'slice [<R>::Target]: OutPtrWrite,
+        &'slice [<R as Transmute>::Target]: OutPtrWrite,
     {
         unsafe fn write_out(self, out_ptr: *mut Self::OutPtr) {
             let transmuted = transmute_into_target_ref_slice(self);
@@ -403,7 +403,7 @@ disjoint_impls! {
     impl<'slice, R: Transmute> OutPtrWrite for &'slice mut [R]
     where
         Self: Ir<Type = &'slice mut [Transparent]>,
-        &'slice mut [<R>::Target]: OutPtrWrite,
+        &'slice mut [<R as Transmute>::Target]: OutPtrWrite,
     {
         unsafe fn write_out(self, out_ptr: *mut Self::OutPtr) {
             let transmuted = transmute_into_target_slice_mut(self);
@@ -427,7 +427,7 @@ disjoint_impls! {
     impl<R: Transmute> OutPtrWrite for Box<[R]>
     where
         Self: Ir<Type = Box<[Transparent]>>,
-        Box<[<R>::Target]>: OutPtrWrite,
+        Box<[<R as Transmute>::Target]>: OutPtrWrite,
     {
         unsafe fn write_out(self, out_ptr: *mut Self::OutPtr) {
             let transmuted = transmute_into_target_boxed_slice(self);
@@ -489,7 +489,7 @@ disjoint_impls! {
     impl<R: Transmute> OutPtrWrite for Vec<R>
     where
         Self: Ir<Type = Vec<Transparent>>,
-        Vec<<R>::Target>: OutPtrWrite,
+        Vec<<R as Transmute>::Target>: OutPtrWrite,
     {
         unsafe fn write_out(self, out_ptr: *mut Self::OutPtr) {
             let transmuted = transmute_into_target_vec(self);
@@ -656,7 +656,7 @@ disjoint_impls! {
     impl<R: Transmute> OutPtrRead for R
     where
         Self: Ir<Type = Transparent>,
-        <R>::Target: OutPtrRead,
+        <R as Transmute>::Target: OutPtrRead,
     {
         unsafe fn try_read_out(out_ptr: Self::OutPtr) -> Result<Self> {
             unsafe {
@@ -704,7 +704,7 @@ disjoint_impls! {
     impl<'d, R: Transmute> OutPtrRead for &'d [R]
     where
         Self: Ir<Type = &'d [Transparent]>,
-        &'d [<R>::Target]: OutPtrRead,
+        &'d [<R as Transmute>::Target]: OutPtrRead,
     {
         unsafe fn try_read_out(out_ptr: Self::OutPtr) -> Result<Self> {
             unsafe {
@@ -725,7 +725,7 @@ disjoint_impls! {
     impl<'d, R: Transmute> OutPtrRead for &'d mut [R]
     where
         Self: Ir<Type = &'d mut [Transparent]>,
-        &'d mut [<R>::Target]: OutPtrRead,
+        &'d mut [<R as Transmute>::Target]: OutPtrRead,
     {
         unsafe fn try_read_out(out_ptr: Self::OutPtr) -> Result<Self> {
             unsafe {
@@ -747,7 +747,7 @@ disjoint_impls! {
     impl<R: Transmute> OutPtrRead for Box<[R]>
     where
         Self: Ir<Type = Box<[Transparent]>>,
-        Box<[<R>::Target]>: OutPtrRead,
+        Box<[<R as Transmute>::Target]>: OutPtrRead,
     {
         unsafe fn try_read_out(out_ptr: Self::OutPtr) -> Result<Self> {
             unsafe {
@@ -810,7 +810,7 @@ disjoint_impls! {
     impl<R: Transmute> OutPtrRead for Vec<R>
     where
         Self: Ir<Type = Vec<Transparent>>,
-        Vec<<R>::Target>: OutPtrRead,
+        Vec<<R as Transmute>::Target>: OutPtrRead,
     {
         unsafe fn try_read_out(out_ptr: Self::OutPtr) -> Result<Self> {
             unsafe {
@@ -910,7 +910,7 @@ disjoint_impls! {
     impl<R: Niche + OutPtrRead, S: Cloned> OutPtrRead for Option<R>
     where
         Self: Ir<Type = Option<S>>,
-        //<R>::CType: PartialEq,
+        //<R as ExternC>::CType: PartialEq,
     {
         unsafe fn try_read_out(out_ptr: Self::OutPtr) -> Result<Self> {
             unimplemented!()

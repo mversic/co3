@@ -104,7 +104,7 @@ disjoint_impls! {
     impl<'slice, R: Transmute> ExternC for &'slice [R]
     where
         Self: Ir<Type = &'slice [Transparent]>,
-        &'slice [<R>::Target]: ExternC,
+        &'slice [<R as Transmute>::Target]: ExternC,
     {
         type CType = <&'slice [R::Target] as ExternC>::CType;
     }
@@ -132,7 +132,7 @@ disjoint_impls! {
     impl<'slice, R: Transmute> ExternC for &'slice mut [R]
     where
         Self: Ir<Type = &'slice mut [Transparent]>,
-        &'slice mut [<R>::Target]: ExternC,
+        &'slice mut [<R as Transmute>::Target]: ExternC,
     {
         type CType = <&'slice mut [R::Target] as ExternC>::CType;
     }
@@ -146,7 +146,7 @@ disjoint_impls! {
     impl<R: Transmute> ExternC for Box<[R]>
     where
         Self: Ir<Type = Box<[Transparent]>>,
-        Box<[<R>::Target]>: ExternC,
+        Box<[<R as Transmute>::Target]>: ExternC,
     {
         type CType = <Box<[R::Target]> as ExternC>::CType;
     }
@@ -179,7 +179,7 @@ disjoint_impls! {
     impl<R: Transmute> ExternC for Vec<R>
     where
         Self: Ir<Type = Vec<Transparent>>,
-        Vec<<R>::Target>: ExternC,
+        Vec<<R as Transmute>::Target>: ExternC,
     {
         type CType = <Vec<R::Target> as ExternC>::CType;
     }
@@ -325,7 +325,7 @@ disjoint_impls! {
     impl<'slice, R: Transmute> Encode for &'slice [R]
     where
         Self: Ir<Type = &'slice [Transparent]>,
-        &'slice [<R>::Target]: Encode,
+        &'slice [<R as Transmute>::Target]: Encode,
     {
         type Store = <&'slice [R::Target] as Encode>::Store;
 
@@ -385,7 +385,7 @@ disjoint_impls! {
     impl<'slice, R: Transmute> Encode for &'slice mut [R]
     where
         Self: Ir<Type = &'slice mut [Transparent]>,
-        &'slice mut [<R>::Target]: Encode,
+        &'slice mut [<R as Transmute>::Target]: Encode,
     {
         type Store = <&'slice mut [R::Target] as Encode>::Store;
 
@@ -407,7 +407,7 @@ disjoint_impls! {
     #[cfg(feature = "owned_types")]
     impl<R: Transmute> Encode for Box<[R]>
     where
-        Box<[<R>::Target]>: Encode,
+        Box<[<R as Transmute>::Target]>: Encode,
         Self: Ir<Type = Box<[Transparent]>>,
     {
         type Store = <Box<[R::Target]> as Encode>::Store;
@@ -478,7 +478,7 @@ disjoint_impls! {
     #[cfg(feature = "owned_types")]
     impl<R: Transmute> Encode for Vec<R>
     where
-        Vec<<R>::Target>: Encode,
+        Vec<<R as Transmute>::Target>: Encode,
         Self: Ir<Type = Vec<Transparent>>,
     {
         type Store = <Vec<R::Target> as Encode>::Store;
@@ -564,7 +564,7 @@ disjoint_impls! {
     impl<R: Encode, S: Cloned, const N: usize> Encode for [R; N]
     where
         // FIXME: https://github.com/rust-lang/rust/issues/61415
-        [<R>::Store; N]: Default,
+        [<R as Encode>::Store; N]: Default,
         Self: Ir<Type = [S; N]>,
     {
         type Store = [R::Store; N];
@@ -768,7 +768,7 @@ disjoint_impls! {
 
     impl<'slice, R: Transmute> Decode<'slice> for &'slice [R]
     where
-        &'slice [<R>::Target]: Decode<'slice>,
+        &'slice [<R as Transmute>::Target]: Decode<'slice>,
         Self: Ir<Type = &'slice [Transparent]>,
     {
         type Store = <&'slice [R::Target] as Decode<'slice>>::Store;
@@ -847,7 +847,7 @@ disjoint_impls! {
 
     impl<'slice, R: Transmute> Decode<'slice> for &'slice mut [R]
     where
-        &'slice mut [<R>::Target]: Decode<'slice>,
+        &'slice mut [<R as Transmute>::Target]: Decode<'slice>,
         Self: Ir<Type = &'slice mut [Transparent]>,
     {
         type Store = <&'slice mut [R::Target] as Decode<'slice>>::Store;
@@ -873,7 +873,7 @@ disjoint_impls! {
     #[cfg(feature = "owned_types")]
     impl<'d, R: Transmute> Decode<'d> for Box<[R]>
     where
-        Box<[<R>::Target]>: Decode<'d>,
+        Box<[<R as Transmute>::Target]>: Decode<'d>,
         Self: Ir<Type = Box<[Transparent]>>,
     {
         type Store = <Box<[R::Target]> as Decode<'d>>::Store;
@@ -951,7 +951,7 @@ disjoint_impls! {
     #[cfg(feature = "owned_types")]
     impl<'d, R: Transmute> Decode<'d> for Vec<R>
     where
-        Vec<<R>::Target>: Decode<'d>,
+        Vec<<R as Transmute>::Target>: Decode<'d>,
         Self: Ir<Type = Vec<Transparent>>,
     {
         type Store = <Vec<R::Target> as Decode<'d>>::Store;
@@ -1054,7 +1054,7 @@ disjoint_impls! {
     impl<'d, R: Decode<'d> + Clone, S: Cloned, const N: usize> Decode<'d> for [R; N]
     where
         // FIXME: https://github.com/rust-lang/rust/issues/61415
-        [<R>::Store; N]: Default,
+        [<R as Decode<'d>>::Store; N]: Default,
         Self: Ir<Type = [S; N]>,
     {
         type Store = [R::Store; N];
