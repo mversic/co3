@@ -1293,7 +1293,7 @@ macro_rules! mineral {
                 }
                 //#[cfg(feature = "cloned_refs")]
                 //impl<S: $crate::ir::Cloned, $($($impl_generics $(: $bounds)?),*)?> Ir for $ty where
-                //    for<'dummy> Self: $crate::transmute::Transmute<Target: Ir<Type = S>> + $crate::niche::Niche,
+                //    for<'dummy> Self: $crate::transmute::Transmute<Target: Ir<Type: $crate::ir::Cloned>> + $crate::niche::Niche,
                 //    $($($where_ty: $where_bound),*)?
                 //{
                 //    type Type = Self;
@@ -1401,7 +1401,7 @@ macro_rules! impl_tuple {
                 //}
                 // FIXME: This is even incorrect because every type should be mapped into different S
                 //#[cfg(feature = "cloned_refs")]
-                //impl<S: $crate::ir::Cloned, $($ty: $crate::niche::Ir<Type = S>),+ + Niche> Ir for ($($ty,)+) {
+                //impl<$($ty: $crate::niche::Ir<Type: $crate::ir::Cloned>),+ + Niche> Ir for ($($ty,)+) {
                 //    type Type = Self;
                 //}
             }
