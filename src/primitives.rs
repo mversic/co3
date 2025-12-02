@@ -174,14 +174,24 @@ macro_rules! primitive_derive {
 }
 
 fieldless_enum_derive! {
+    char => <u32 as crate::ExternC>::CType: {0x110000}:
+    |i: &Self::Target| char::from_u32(*i).is_some()
+}
+fieldless_enum_derive! {
     bool => <u8 as crate::ExternC>::CType: {2}:
-    |i: &u8| *i == 0 || *i == 1
+    |i: &Self::Target| *i == 0 || *i == 1
 }
 fieldless_enum_derive! {
     core::cmp::Ordering => <i8 as crate::ExternC>::CType: {2}:
-    |i: &i8| *i == -1 || *i == 0 || *i == 1
+    |i: &Self::Target| *i == -1 || *i == 0 || *i == 1
 }
 
-primitive_derive! { u32, i32, u64, i64, u128, i128 }
+primitive_derive! { u32, i32, u64, i64, u128, i128, f32, f64 }
 #[cfg(not(target_family = "wasm"))]
 primitive_derive! { u8, i8, u16, i16 }
+
+// TODO: Find a way to implement for all recursively wrapped
+// `Option<R>` where `R` has multiple niche values
+//impl Niche for Option<bool> {
+//    const NICHE_VALUE: <u8 as ExternC>::CType = 3;
+//}

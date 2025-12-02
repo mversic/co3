@@ -10,8 +10,8 @@ disjoint_impls! {
     ///
     /// # Safety
     ///
-    /// * `Self` and `Self::Target` must be mutually transmutable (this includes [`Drop`] semantics)
-    /// * `Self::is_valid` must not return false positives, i.e. return `true` for trap representations
+    /// - `Self` and `Self::Target` must be mutually transmutable (this includes [`Drop`] semantics)
+    /// - `Self::is_valid` must not return false positives, i.e. return `true` for trap representations
     pub unsafe trait Transmute {
         /// Type that [`Self`] can be transmuted into
         type Target;
@@ -22,7 +22,7 @@ disjoint_impls! {
     }
 
     // SAFETY: Transmute relation is transitive
-    unsafe impl<'a, R: Ir<Type = Box<Robust>> + Transmute> Transmute for &'a R {
+    unsafe impl<'a, R: Ir<Type = Transparent> + Transmute> Transmute for &'a R {
         type Target = &'a R::Target;
 
         #[inline(always)]
@@ -31,7 +31,7 @@ disjoint_impls! {
         }
     }
     // SAFETY: Transmute relation is transitive
-    unsafe impl<'a, R: Ir<Type = Transparent> + Transmute> Transmute for &'a R {
+    unsafe impl<'a, R: Ir<Type = Box<Robust>> + Transmute> Transmute for &'a R {
         type Target = &'a R::Target;
 
         #[inline(always)]
@@ -59,7 +59,14 @@ disjoint_impls! {
     }
 
     // SAFETY: Transmute relation is transitive
-    unsafe impl<'a, R: Ir<Type = Box<Robust>> + Transmute> Transmute for &'a mut R {
+    unsafe impl<
+        'a,
+        #[cfg(not(feature = "non_robust_ref_mut"))] R: InfallibleTransmute,
+        #[cfg(feature = "non_robust_ref_mut")] R: Transmute,
+    > Transmute for &'a mut R
+    where
+        R: Ir<Type = Transparent>,
+    {
         type Target = &'a mut R::Target;
 
         #[inline(always)]
@@ -68,7 +75,8 @@ disjoint_impls! {
         }
     }
     // SAFETY: Transmute relation is transitive
-    unsafe impl<'a, R: Ir<Type = Transparent> + Transmute> Transmute for &'a mut R {
+    #[cfg(feature = "non_robust_ref_mut")]
+    unsafe impl<'a, R: Ir<Type = Box<Robust>> + Transmute> Transmute for &'a mut R {
         type Target = &'a mut R::Target;
 
         #[inline(always)]
@@ -96,7 +104,7 @@ disjoint_impls! {
     }
 
     // SAFETY: Transmute relation is transitive
-    unsafe impl<R: Ir<Type = Box<Robust>> + Transmute> Transmute for Box<R> {
+    unsafe impl<R: Ir<Type = Transparent> + Transmute> Transmute for Box<R> {
         type Target = Box<R::Target>;
 
         #[inline(always)]
@@ -105,7 +113,7 @@ disjoint_impls! {
         }
     }
     // SAFETY: Transmute relation is transitive
-    unsafe impl<R: Ir<Type = Transparent> + Transmute> Transmute for Box<R> {
+    unsafe impl<R: Ir<Type = Box<Robust>> + Transmute> Transmute for Box<R> {
         type Target = Box<R::Target>;
 
         #[inline(always)]
@@ -131,16 +139,16 @@ disjoint_impls! {
             !target.is_null()
         }
     }
+}
 
-    // SAFETY: Transmute relation is transitive
-    unsafe impl<R: Ir<Type = Transparent> + Transmute, const N: usize> Transmute for [R; N] {
-        type Target = [R::Target; N];
+// SAFETY: Transmute relation is transitive
+unsafe impl<R: Transmute, const N: usize> Transmute for [R; N] {
+    type Target = [R::Target; N];
 
-        #[inline(always)]
-        fn is_valid(target: &Self::Target) -> bool {
-            assert_arr_has_non_zero_len::<N>();
-            target.iter().all(R::is_valid)
-        }
+    #[inline(always)]
+    fn is_valid(target: &Self::Target) -> bool {
+        assert_arr_has_non_zero_len::<N>();
+        target.iter().all(R::is_valid)
     }
 }
 
@@ -156,10 +164,7 @@ pub unsafe trait InfallibleTransmute: Transmute {}
 
 // SAFETY: Array is just a contiguous block of bytes in memory
 // and has a defined representation if the element type does
-unsafe impl<R: Ir<Type = Transparent> + InfallibleTransmute, const N: usize> InfallibleTransmute
-    for [R; N]
-{
-}
+unsafe impl<R: InfallibleTransmute, const N: usize> InfallibleTransmute for [R; N] {}
 
 #[repr(C)]
 union TransmuteHelper<R: Transmute> {

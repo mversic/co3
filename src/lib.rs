@@ -5,8 +5,8 @@
 
 extern crate alloc;
 
-use core::mem::ManuallyDrop;
 use alloc::{boxed::Box, vec::Vec};
+use core::mem::ManuallyDrop;
 
 #[cfg(feature = "derive")]
 pub use co3_derive::*;
@@ -19,6 +19,7 @@ use crate::transmute::{
     transmute_from_target_boxed_slice, transmute_from_target_vec,
     transmute_into_target_boxed_slice, transmute_into_target_vec,
 };
+use crate::{ir::Cloned, niche::Niche};
 use crate::{
     ir::{Ir, Opaque, Robust, Transparent},
     niche::Optional,
@@ -29,7 +30,6 @@ use crate::{
         transmute_into_target_slice_mut,
     },
 };
-use crate::{ir::Cloned, niche::Niche};
 
 pub mod external;
 pub mod handle;
@@ -263,18 +263,19 @@ disjoint_impls! {
         fn encode<'itm>(self, store: &'itm mut Self::Store) -> Self::CType where Self: 'itm;
     }
 
-    #[cfg(feature = "owned_types")]
-    #[cfg(feature = "owned_as_ref")]
-    impl<R: Transmute<Target: ReprC>> Encode for R
-    where
-        Self: Ir<Type = Box<Robust>>,
-    {
-        type Store = Option<R>;
+    //#[cfg(feature = "owned_types")]
+    //#[cfg(feature = "owned_as_ref")]
+    //impl<R: Transmute<Target: ReprC>> Encode for R
+    //where
+    //    Self: Ir<Type = Box<Robust>>,
+    //    for<'a> &'a mut <R as Transmute>::Target: Encode,
+    //{
+    //    type Store = Option<R>;
 
-        fn encode<'itm>(self, store: &mut Self::Store) -> Self::CType where Self: 'itm {
-            *transmute_into_target(store.insert(self))
-        }
-    }
+    //    fn encode<'itm>(self, store: &mut Self::Store) -> Self::CType where Self: 'itm {
+    //        *Encode::encode(store.insert(self), &mut ())
+    //    }
+    //}
     impl<R: Ir<Type = Transparent> + Transmute<Target: Encode>> Encode for R {
         type Store = <R::Target as Encode>::Store;
 
@@ -596,6 +597,20 @@ disjoint_impls! {
         }
     }
 
+    //impl<R> Encode for R
+    //where
+    //    Self: Ir<Type = Option<Box<Robust>>>,
+    //{
+    //    type Store = ();
+
+    //    fn encode<'itm>(self, (): &mut ()) -> Self::CType where Self: 'itm {
+    //        unimplemented!();
+    //        //// SAFETY: Guaranteed by [`Optional`]
+    //        //let inner = unsafe {
+    //        //    core::mem::transmute::<R, R::Inner>(self)
+    //        //};
+    //    }
+    //}
     impl<R: Optional> Encode for R
     where
         Self: Ir<Type = Option<Transparent>>,
@@ -603,7 +618,6 @@ disjoint_impls! {
         type Store = ();
 
         fn encode<'itm>(self, (): &mut ()) -> Self::CType where Self: 'itm {
-            // WARN: We assume that niche value used by rust matches `Niche::NICHE_VALUE`
             unimplemented!();
             //// SAFETY: Guaranteed by [`Optional`]
             //let inner = unsafe {
@@ -619,7 +633,7 @@ disjoint_impls! {
 
         fn encode<'itm>(self, (): &mut ()) -> Self::CType where Self: 'itm {
             match self {
-                // TODO: No need to zero the memory because it must never be read
+                // TODO: No need to zero the memory because it must never be read. Use MaybeUninit
                 None => FfiTuple2(Encode::encode(0u8, &mut ()), unsafe { core::mem::zeroed() }),
                 Some(value) => FfiTuple2(Encode::encode(1u8, &mut ()), value.encode(&mut ())),
             }
@@ -1218,6 +1232,36 @@ macro_rules! mineral {
     };
     (unsafe impl $(<$($impl_generics: tt $(: $bounds: path)?),*>)? Transparent for $ty: ty $(where $($where_ty:ty: $where_bound:path),* )? {
         type Target = $target:ty;
+    } ) => {
+        impl<$($($impl_generics $(: $bounds)?),*)?> $crate::ir::Ir for $ty where $($($where_ty: $where_bound),*)? {
+            type Type = $crate::ir::Transparent;
+        }
+
+        // SAFETY: `$ty` is transmutable into `$target` and `is_valid` doesn't return false positives
+        unsafe impl<$($($impl_generics $(: $bounds)?),*)?> $crate::transmute::Transmute for $ty where $($($where_ty: $where_bound),*)? {
+            type Target = $target;
+
+            #[inline(always)]
+            fn is_valid(_: &Self::Target) -> bool {
+                true
+            }
+        }
+
+        // SAFETY: `$t` is robust with respect to `$target`
+        unsafe impl<$($($impl_generics $(: $bounds)?),*)?> $crate::transmute::InfallibleTransmute for $ty where $($($where_ty: $where_bound),*)? {}
+
+        impl<$($($impl_generics $(: $bounds)?),*)?> $crate::niche::Ir for $ty where $($($where_ty: $where_bound),*)? {
+            type Type = $crate::ir::Robust;
+        }
+
+        // SAFETY: ZST relation is transitive
+        unsafe impl<$($($impl_generics $(: $bounds)?),*)?> $crate::out_ptr::Zst for $ty where
+            for<'dummy> <Self as $crate::transmute::Transmute>::Target: $crate::out_ptr::Zst,
+            $($($where_ty: $where_bound),*)? {
+        }
+    };
+    (unsafe impl $(<$($impl_generics: tt $(: $bounds: path)?),*>)? Transparent for $ty: ty $(where $($where_ty:ty: $where_bound:path),* )? {
+        type Target = $target:ty;
 
         const NICHE_VALUE: $niche_ty:ty = $niche_value:expr;
         fn is_valid($target_var:ident: $target_ty:ty) -> $ret_val:ty
@@ -1240,7 +1284,7 @@ macro_rules! mineral {
         }
 
         impl<$($($impl_generics $(: $bounds)?),*)?> $crate::niche::Ir for $ty where $($($where_ty: $where_bound),*)? {
-            type Type = $crate::ir::Transparent;
+            type Type = Self;
         }
 
         // SAFETY: ZST relation is transitive
@@ -1291,13 +1335,13 @@ macro_rules! mineral {
                 {
                     type Type = $crate::ir::Transparent;
                 }
-                //#[cfg(feature = "cloned_refs")]
-                //impl<S: $crate::ir::Cloned, $($($impl_generics $(: $bounds)?),*)?> Ir for $ty where
-                //    for<'dummy> Self: $crate::transmute::Transmute<Target: Ir<Type: $crate::ir::Cloned>> + $crate::niche::Niche,
-                //    $($($where_ty: $where_bound),*)?
-                //{
-                //    type Type = Self;
-                //}
+                #[cfg(feature = "cloned_refs")]
+                impl<$($($impl_generics $(: $bounds)?),*)?> Ir for $ty where
+                    for<'dummy> Self: $crate::transmute::Transmute<Target: Ir<Type: $crate::ir::Cloned>> + $crate::niche::Niche,
+                    $($($where_ty: $where_bound),*)?
+                {
+                    type Type = Self;
+                }
             }
         };
 
@@ -1307,34 +1351,9 @@ macro_rules! mineral {
             const NICHE_VALUE: <Self as $crate::ExternC>::CType = <$target as $crate::niche::Niche>::NICHE_VALUE;
         }
 
-        // SAFETY: ZST relation is transitive
-        unsafe impl<$($($impl_generics $(: $bounds)?),*)?> $crate::out_ptr::Zst for $ty where
-            for<'dummy> <Self as $crate::transmute::Transmute>::Target: $crate::out_ptr::Zst,
+        unsafe impl<$($($impl_generics $(: $bounds)?),*)?> $crate::niche::StableNiche for $ty where
+            for<'dummy> <Self as $crate::transmute::Transmute>::Target: $crate::niche::StableNiche,
             $($($where_ty: $where_bound),*)? {
-        }
-    };
-    (unsafe impl $(<$($impl_generics: tt $(: $bounds: path)?),*>)? Transparent for $ty: ty $(where $($where_ty:ty: $where_bound:path),* )? {
-        type Target = $target:ty;
-    } ) => {
-        impl<$($($impl_generics $(: $bounds)?),*)?> $crate::ir::Ir for $ty where $($($where_ty: $where_bound),*)? {
-            type Type = $crate::ir::Transparent;
-        }
-
-        // SAFETY: `$ty` is transmutable into `$target` and `is_valid` doesn't return false positives
-        unsafe impl<$($($impl_generics $(: $bounds)?),*)?> $crate::transmute::Transmute for $ty where $($($where_ty: $where_bound),*)? {
-            type Target = $target;
-
-            #[inline(always)]
-            fn is_valid(_: &Self::Target) -> bool {
-                true
-            }
-        }
-
-        // SAFETY: `$t` is robust with respect to `$target`
-        unsafe impl<$($($impl_generics $(: $bounds)?),*)?> $crate::transmute::InfallibleTransmute for $ty where $($($where_ty: $where_bound),*)? {}
-
-        impl<$($($impl_generics $(: $bounds)?),*)?> $crate::niche::Ir for $ty where $($($where_ty: $where_bound),*)? {
-            type Type = $crate::ir::Robust;
         }
 
         // SAFETY: ZST relation is transitive

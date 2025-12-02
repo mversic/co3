@@ -3,9 +3,12 @@
 use alloc::{boxed::Box, vec::Vec};
 use disjoint_impls::disjoint_impls;
 
+use crate::ReprC;
 use crate::ir::Cloned;
+#[cfg(not(feature = "non_robust_ref_mut"))]
+use crate::transmute::InfallibleTransmute;
 use crate::{
-    ExternC, ReprC, assert_arr_has_non_zero_len,
+    ExternC, assert_arr_has_non_zero_len,
     ir::{Opaque, Robust, Transparent},
     slice::{RefMutSlice, RefSlice},
     transmute::Transmute,
@@ -15,6 +18,10 @@ use crate::{
 ///
 /// This is a type that can't just be transmuted into inner because it can have a niche
 /// It's usually a marker for derivatives of `Option<T>` like `&Option<T>`, `&mut Option<T>` or `Box<Option<T>>`
+///
+/// # Safety
+///
+/// - type must have no trap representations
 pub unsafe trait Optional {
     /// It would be incorrect to transmute into intermediate type
     /// but transmuting into end type is ok
@@ -22,14 +29,8 @@ pub unsafe trait Optional {
 }
 
 disjoint_impls! {
-    /// Type that has at least one trap representation that can be used as a niche value.
-    ///
-    /// The niche value is used in the serialization of [`Option<T>`]. For example, [`Option<bool>`]
-    /// will be serilized into one byte and [`Option<*const T>`] will take the size of the pointer.
-    ///
-    /// Trait is not unsafe because incorrect implementations can lead only to data corruption, not UB
+    /// Type that has a trap representation that can be used as a niche value.
     pub trait Niche: ExternC {
-        /// The niche value of the type
         const NICHE_VALUE: Self::CType;
     }
 
@@ -46,7 +47,6 @@ disjoint_impls! {
     {
         const NICHE_VALUE: *const C = core::ptr::null();
     }
-
     #[cfg(feature = "owned_types")]
     #[cfg(feature = "owned_as_ref")]
     impl<R, C> Niche for Box<[R]>
@@ -67,6 +67,28 @@ disjoint_impls! {
 }
 
 disjoint_impls! {
+    /// Type that has a compiler guaranteed trap representation that can be used as a [`Niche`] value.
+    ///
+    /// The stable niche value is made use of when serializing [`Option<T>`].
+    ///
+    /// # Example
+    ///
+    /// [`Option<bool>`]     - will be serilized into one byte
+    /// [`Option<*const T>`] - will take the size of the pointer
+    ///
+    /// # Safety
+    ///
+    /// - the niche value must be congruent with what is guaranteed by the Rust compiler
+    /// - if type is [`Transmute`], it must have the same niche as [`Transmute::Target`]
+    /// - type must have exactly one trap representation
+    pub unsafe trait StableNiche: Niche {}
+
+    #[cfg(feature = "owned_as_ref")]
+    unsafe impl<R, C> StableNiche for Box<R> where Self: ExternC<CType = *const C> {}
+    unsafe impl<R, C> StableNiche for Box<R> where Self: ExternC<CType = *mut C> {}
+}
+
+disjoint_impls! {
     /// Used to implement specialized impls of [`crate::ir::Ir`] for [`Option<T>`]
     pub trait Ir {
         /// Internal representation of [`Option<T>`]
@@ -84,11 +106,17 @@ disjoint_impls! {
         type Type = Transparent;
     }
     #[cfg(feature = "cloned_refs")]
-    impl<'a, R: crate::ir::Ir<Type: Cloned> + 'a> Ir for &'a R {
+    impl<'a, R: crate::ir::Ir<Type: Cloned + 'a>> Ir for &'a R {
         type Type = &'a R::Type;
     }
 
-    impl<R: crate::ir::Ir<Type = Transparent>> Ir for &mut R {
+    impl<
+        #[cfg(not(feature = "non_robust_ref_mut"))] R: InfallibleTransmute,
+        #[cfg(feature = "non_robust_ref_mut")] R,
+    > Ir for &mut R
+    where
+        R: crate::ir::Ir<Type = Transparent>,
+    {
         type Type = Transparent;
     }
     impl<R: crate::ir::Ir<Type = Robust>> Ir for &mut R {
@@ -124,11 +152,18 @@ disjoint_impls! {
         type Type = &'a [Opaque];
     }
     #[cfg(feature = "cloned_refs")]
-    impl<'a, R: crate::ir::Ir<Type: Cloned>> Ir for &'a [R] {
+    impl<'a, R: crate::ir::Ir<Type: Cloned + 'a>> Ir for &'a [R] {
         type Type = &'a [R::Type];
     }
 
-    impl<'a, R: crate::ir::Ir<Type = Transparent>> Ir for &'a mut [R] {
+    impl<
+        'a,
+        #[cfg(not(feature = "non_robust_ref_mut"))] R: InfallibleTransmute,
+        #[cfg(feature = "non_robust_ref_mut")] R,
+    > Ir for &'a mut [R]
+    where
+        R: crate::ir::Ir<Type = Transparent>,
+    {
         type Type = &'a mut [Transparent];
     }
     impl<'a, R: crate::ir::Ir<Type = Robust>> Ir for &'a mut [R] {
@@ -169,25 +204,25 @@ disjoint_impls! {
         type Type = Vec<R::Type>;
     }
 
-    impl<R: crate::ir::Ir<Type = Transparent> + Niche, const N: usize> Ir for [R; N]
+    impl<R: crate::ir::Ir<Type = Transparent> + StableNiche, const N: usize> Ir for [R; N]
     where
         Option<Self>: crate::ir::Ir<Type = Option<Transparent>>,
     {
         type Type = Transparent;
     }
-    impl<R: crate::ir::Ir<Type = Transparent> + Niche, const N: usize> Ir for [R; N]
+    impl<R: crate::ir::Ir<Type = Transparent> + StableNiche, const N: usize> Ir for [R; N]
     where
         Option<Self>: crate::ir::Ir<Type = Option<Robust>>,
     {
         type Type = Robust;
     }
-    impl<R: crate::ir::Ir<Type: Cloned> + Niche, const N: usize> Ir for [R; N]
+    impl<R: crate::ir::Ir<Type: Cloned> + StableNiche, S: Cloned, const N: usize> Ir for [R; N]
     where
-        Option<Self>: crate::ir::Ir<Type = Option<<R as crate::ir::Ir>::Type>>,
+        Option<Self>: crate::ir::Ir<Type = Option<S>>,
     {
         type Type = [<R as crate::ir::Ir>::Type; N];
     }
-    impl<R: crate::ir::Ir<Type: Cloned> + Niche, const N: usize> Ir for [R; N]
+    impl<R: crate::ir::Ir<Type: Cloned> + StableNiche, const N: usize> Ir for [R; N]
     where
         Option<Self>: crate::ir::Ir<Type = Option<Robust>>,
     {
@@ -213,6 +248,7 @@ disjoint_impls! {
 //impl<R: crate::ir::Ir<Type: Cloned>, const N: usize> Ir for [(R,); N] where (R,): crate::niche::Ir<Type = Robust> {
 //    type Type = Robust;
 //}
+
 impl<R, C> Niche for &R
 where
     Self: ExternC<CType = *const C>,
@@ -240,6 +276,7 @@ where
 {
     const NICHE_VALUE: RefMutSlice<C> = RefMutSlice::null_mut();
 }
+
 #[cfg(feature = "owned_types")]
 #[cfg(feature = "owned_as_ref")]
 impl<R, C> Niche for Vec<R>
@@ -259,13 +296,11 @@ where
     };
 }
 
-// TODO: Find a way to implement for all recursively wrapped
-// `Option<R>` where `R` has multiple niche values
-impl Niche for Option<bool> {
-    const NICHE_VALUE: <u8 as ExternC>::CType = 3;
-}
+unsafe impl<R, C> StableNiche for &R where Self: ExternC<CType = *const C> {}
+unsafe impl<R, C> StableNiche for &mut R where Self: ExternC<CType = *mut C> {}
+unsafe impl<R> StableNiche for core::ptr::NonNull<R> {}
 
-unsafe impl<R: Niche + Transmute> Optional for Option<R> {
+unsafe impl<R: Transmute + StableNiche> Optional for Option<R> {
     type Inner = R::CType;
 }
 
@@ -277,7 +312,8 @@ unsafe impl<R: Optional> Optional for &mut R {
     type Inner = *mut R::Inner;
 }
 
-#[cfg(feature = "owned_types")]
+// TODO: Should it be conditionally enabled?
+//#[cfg(feature = "owned_types")]
 unsafe impl<R: Optional> Optional for Box<R> {
     type Inner = *mut R::Inner;
 }
@@ -285,3 +321,8 @@ unsafe impl<R: Optional> Optional for Box<R> {
 unsafe impl<R: Optional, const N: usize> Optional for [R; N] {
     type Inner = [R::Inner; N];
 }
+
+// TODO: Impl for derivative types
+//unsafe impl<R: Optional> Optional for UnsafeCell<R> {
+//    type Inner = R::Inner;
+//}

@@ -2,10 +2,10 @@
 #[cfg(feature = "owned_as_ref")]
 use alloc::{boxed::Box, string::String, vec::Vec};
 
-use crate::{mineral, slice::RefSlice};
 #[cfg(feature = "owned_as_ref")]
 #[cfg(feature = "owned_types")]
-use crate::{niche::Niche, slice::RefMutSlice};
+use crate::slice::RefMutSlice;
+use crate::{mineral, slice::RefSlice};
 
 macro_rules! non_zero_derive {
     ($($ty:ty => $target:ty),+ $(,)?) => {$(
@@ -15,10 +15,12 @@ macro_rules! non_zero_derive {
 
                 const NICHE_VALUE: Self::CType = 0;
                 fn is_valid(target: &Self::Target) -> bool {
-                    *target != Self::NICHE_VALUE
+                    *target != <Self as crate::niche::Niche>::NICHE_VALUE
                 }
             }
-        })+
+        }
+
+        unsafe impl crate::niche::StableNiche for $ty {})+
     }
 }
 
@@ -39,7 +41,6 @@ non_zero_derive! {
 #[cfg(feature = "owned_as_ref")]
 // WARN: This can be contested as it is nowhere documented that String is
 // actually transmutable into Vec<u8>, but implicitly it should be
-// SAFETY: String type should be transmutable into Vec<u8>
 mineral! {
     unsafe impl Transparent for String {
         type Target = Vec<u8>;

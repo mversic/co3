@@ -68,7 +68,7 @@ disjoint_impls! {
         type Type = Transparent;
     }
     #[cfg(feature = "cloned_refs")]
-    impl<'a, R: Ir<Type: Cloned>> Ir for &'a R {
+    impl<'a, R: Ir<Type: Cloned + 'a>> Ir for &'a R {
         type Type = &'a R::Type;
     }
 
@@ -85,10 +85,10 @@ disjoint_impls! {
     {
         type Type = Transparent;
     }
-    impl<'a, R: Ir<Type = Robust>> Ir for &'a mut R {
+    impl<R: Ir<Type = Robust>> Ir for &mut R {
         type Type = Transparent;
     }
-    impl<'a, R: Ir<Type = Opaque>> Ir for &'a mut R {
+    impl<R: Ir<Type = Opaque>> Ir for &mut R {
         type Type = Transparent;
     }
 
@@ -111,7 +111,6 @@ disjoint_impls! {
         type Type = Box<R::Type>;
     }
 
-    #[cfg(feature = "owned_types")]
     impl<'a, R: Ir<Type = Box<Robust>>> Ir for &'a [R] {
         type Type = &'a [Transparent];
     }
@@ -126,7 +125,7 @@ disjoint_impls! {
         type Type = &'a [Opaque];
     }
     #[cfg(feature = "cloned_refs")]
-    impl<'a, R: Ir<Type: Cloned>> Ir for &'a [R] {
+    impl<'a, R: Ir<Type: Cloned + 'a>> Ir for &'a [R] {
         type Type = &'a [R::Type];
     }
 
@@ -190,6 +189,7 @@ disjoint_impls! {
         type Type = Vec<R::Type>;
     }
 
+    #[cfg(feature = "owned_types")]
     impl<R: Ir<Type = Box<Robust>>, const N: usize> Ir for [R; N] {
         type Type = Box<Robust>;
     }
@@ -206,22 +206,19 @@ disjoint_impls! {
         type Type = [R::Type; N];
     }
 
-    impl<R: Ir<Type = Option<Transparent>>, const N: usize> Ir for [R; N] {
-        type Type = Option<Transparent>;
-    }
-    impl<R: Ir<Type = Option<Opaque>>, const N: usize> Ir for [R; N] {
-        type Type = Option<Transparent>;
-    }
-
-    // TODO:
+    // FIXME: Verify is correct
+    //#[cfg(feature = "owned_types")]
     //impl<R: Ir<Type = Box<Robust>>> Ir for Option<R> {
-    //    type Type = Option<Transparent>;
+    //    type Type = Box<Robust>;
     //}
     impl<R: Ir<Type = Transparent> + crate::niche::Ir<Type = Robust>> Ir for Option<R> {
         type Type = Option<Robust>;
     }
     impl<R: Ir<Type = Transparent> + crate::niche::Ir<Type = Transparent>> Ir for Option<R> {
         type Type = Option<Transparent>;
+    }
+    impl<R: Ir<Type = Transparent> + crate::niche::Ir<Type: Cloned>> Ir for Option<R> {
+        type Type = Option<<R as crate::niche::Ir>::Type>;
     }
     impl<R: Ir<Type = Robust>> Ir for Option<R> {
         type Type = Option<Robust>;
@@ -233,27 +230,34 @@ disjoint_impls! {
         type Type = Option<Robust>;
     }
     impl<R: Ir<Type: Cloned> + crate::niche::Ir<Type = <R as Ir>::Type>> Ir for Option<R> {
-        type Type = Option<<R as Ir>::Type>;
+        type Type = Option<<R as crate::niche::Ir>::Type>;
     }
 
-    impl<R: Ir<Type = Option<Transparent>>> Ir for &R {
-        type Type = Option<Transparent>;
-    }
-    impl<R: Ir<Type = Option<Opaque>>> Ir for &R {
-        type Type = Option<Transparent>;
-    }
-    impl<R: Ir<Type = Option<Transparent>>> Ir for &mut R {
-        type Type = Option<Transparent>;
-    }
-    impl<R: Ir<Type = Option<Opaque>>> Ir for &mut R {
-        type Type = Option<Transparent>;
-    }
-    impl<R: Ir<Type = Option<Transparent>>> Ir for Box<R> {
-        type Type = Option<Transparent>;
-    }
-    impl<R: Ir<Type = Option<Opaque>>> Ir for Box<R> {
-        type Type = Option<Transparent>;
-    }
+    //impl<R: Ir<Type = Option<Transparent>>> Ir for &R {
+    //    type Type = Option<Transparent>;
+    //}
+    //impl<R: Ir<Type = Option<Opaque>>> Ir for &R {
+    //    type Type = Option<Transparent>;
+    //}
+    //impl<R: Ir<Type = Option<Transparent>>> Ir for &mut R {
+    //    type Type = Option<Transparent>;
+    //}
+    //impl<R: Ir<Type = Option<Opaque>>> Ir for &mut R {
+    //    type Type = Option<Transparent>;
+    //}
+    //impl<R: Ir<Type = Option<Transparent>>> Ir for Box<R> {
+    //    type Type = Option<Transparent>;
+    //}
+    //impl<R: Ir<Type = Option<Opaque>>> Ir for Box<R> {
+    //    type Type = Option<Transparent>;
+    //}
+
+    //impl<R: Ir<Type = Option<Transparent>>, const N: usize> Ir for [R; N] {
+    //    type Type = Option<Transparent>;
+    //}
+    //impl<R: Ir<Type = Option<Opaque>>, const N: usize> Ir for [R; N] {
+    //    type Type = Option<Transparent>;
+    //}
 }
 
 impl<S: Cloned> Cloned for &S {}

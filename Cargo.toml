@@ -31,7 +31,7 @@ owned_types = []
 # This feature will have the same effect as `cloned_ref` in that it will
 owned_as_ref = ["owned_types"]
 
-# Enables sharing mutable references of non-robust transmutable types across FFI.
+# Enables sharing mutable references of non-robust transmutable types (e.g. `&mut bool`) across FFI.
 #
 # When handing out non-robust mutable references across FFI, it's possible for the caller
 # to modify the given reference and store a trap representation causing immediate UB.
@@ -49,7 +49,7 @@ getset = ["derive", "co3_derive/getset"]
 co3_derive = { path = "derive", optional = true }
 
 derive_more = { version = "2.0.1", features = ["display"] }
-disjoint_impls = "1.3.2"
+disjoint_impls = "1.3.4"
 
 [dev-dependencies]
 webassembly-test = "0.1.0"
