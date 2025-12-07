@@ -156,15 +156,15 @@ pub fn extern_type(_args: TokenStream, input: TokenStream) -> TokenStream {
 /// serialize the type as opaque. If automatically derived type doesn't work just
 /// attach this attribute and force the type to be serialized as opaque across FFI
 ///
-/// * `#[mineral(unsafe(robust))]`
-/// serialize the type as transparent with respect to the wrapped type where every
-/// valid bit pattern of the underlying type must be valid for the wrapper type.
-///
-/// Only applicable to `#[repr(transparent)]` types
+/// * `#[mineral(NICHE_VALUE = <expr>, unsafe(is_valid = |target| ...))]`
+/// customize [`co3::niche::Niche`] value and validation function for `#[repr(transparent)]` types.
+/// `NICHE_VALUE` can be ommitted in which case the implementation delegates to the wrapped type.
 ///
 /// # Safety
 ///
-/// type must not have trap representations in the serialized form
+/// `is_valid` must not return false positives
+///
+/// Check [`co3::transmute::Transmute`] or [`co3::mineral`] for more details
 ///
 /// * `#[mineral(local)]`
 /// marks the type as local, meaning it contains references to the local frame. If a type
@@ -188,12 +188,6 @@ pub fn extern_type(_args: TokenStream, input: TokenStream) -> TokenStream {
 ///
 /// * wrapping type must allow for all possible values of the pointer including `null` (it's robust)
 /// * the wrapping types's field of the pointer type must not carry ownership (it's non owning)
-///
-/// ## A note on `#[derive(...)]` limitations
-///
-/// This proc-macro crate parses the `#[derive(...)]` attributes.
-/// Due to technical limitations of proc macros, it does not have access to the resolved path of the macro, only to what is written in the derive.
-/// As such, it cannot support derives that are used through aliases, such as
 ///
 /// ```
 /// use getset::Getters as GettersAlias;

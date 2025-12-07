@@ -294,7 +294,6 @@ fn gen_impl_ffi(name: &Ident, generics: &syn::Generics) -> TokenStream {
         co3::mineral! {
             unsafe impl #impl_generics Transparent for #name #ty_generics #where_clause {
                 type Target = core::ptr::NonNull<co3::external::Extern>;
-                const NICHE_VALUE = "DELEGATE";
             }
         }
     }

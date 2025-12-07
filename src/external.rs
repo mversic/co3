@@ -82,12 +82,10 @@ impl<T> core::ops::DerefMut for ExternRefMut<'_, T> {
 mineral! {
     unsafe impl<R> Transparent for ExternRef<'_, R> {
         type Target = core::ptr::NonNull<Extern>;
-        const NICHE_VALUE = "DELEGATE";
     }
 }
 mineral! {
     unsafe impl<R> Transparent for ExternRefMut<'_, R> {
         type Target = core::ptr::NonNull<Extern>;
-        const NICHE_VALUE = "DELEGATE";
     }
 }

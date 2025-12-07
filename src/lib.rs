@@ -1232,7 +1232,28 @@ macro_rules! mineral {
     };
     (unsafe impl $(<$($impl_generics: tt $(: $bounds: path)?),*>)? Transparent for $ty: ty $(where $($where_ty:ty: $where_bound:path),* )? {
         type Target = $target:ty;
-    } ) => {
+    }) => {
+        $crate::mineral! {
+            unsafe impl$(<$($impl_generics $(: $bounds)?),*>)? Transparent for $ty where $($($where_ty: $where_bound),*)? {
+                type Target = $target;
+
+                fn is_valid(_target: &Self::Target) -> bool {
+                    // NOTE: When delegating there is no trap representations in the immediate `Self::Target`
+                    // Whether `Self::Target` itself has trap representations is not to be considered here
+                    true
+                }
+            }
+        }
+
+        // SAFETY: When delagating, `$t` is robust with respect to `$target` even though `$target` itself may not be
+        unsafe impl<$($($impl_generics $(: $bounds)?),*)?> $crate::transmute::InfallibleTransmute for $ty where $($($where_ty: $where_bound),*)? {}
+    };
+    (unsafe impl $(<$($impl_generics: tt $(: $bounds: path)?),*>)? Transparent for $ty: ty $(where $($where_ty:ty: $where_bound:path),* )? {
+        type Target = $target:ty;
+
+        fn is_valid($target_var:ident: $target_ty:ty) -> $ret_val:ty
+            $block:block
+    }) => {
         impl<$($($impl_generics $(: $bounds)?),*)?> $crate::ir::Ir for $ty where $($($where_ty: $where_bound),*)? {
             type Type = $crate::ir::Transparent;
         }
@@ -1242,19 +1263,52 @@ macro_rules! mineral {
             type Target = $target;
 
             #[inline(always)]
-            fn is_valid(_: &Self::Target) -> bool {
-                true
+            fn is_valid($target_var: $target_ty) -> bool $block
+        }
+
+        const _: () = {
+            use $crate::niche::Ir;
+
+            disjoint_impls::disjoint_impls! {
+                #[disjoint_impls(remote)]
+                trait Ir {
+                    type Type;
+                }
+
+                impl<$($($impl_generics $(: $bounds)?),*)?> Ir for $ty where
+                    for<'dummy> Self: $crate::transmute::Transmute<Target: Ir<Type = $crate::ir::Robust>>,
+                    $($($where_ty: $where_bound),*)?
+                {
+                    type Type = $crate::ir::Robust;
+                }
+                impl<$($($impl_generics $(: $bounds)?),*)?> Ir for $ty where
+                    for<'dummy> Self: $crate::transmute::Transmute<Target: Ir<Type = $crate::ir::Transparent> + $crate::niche::StableNiche>,
+                    $($($where_ty: $where_bound),*)?
+                {
+                    type Type = $crate::ir::Transparent;
+                }
+                // FIXME: Use concrete type instead of Cloned
+                //#[cfg(feature = "cloned_refs")]
+                //impl<$($($impl_generics $(: $bounds)?),*)?> Ir for $ty where
+                //    for<'dummy> Self: $crate::transmute::Transmute<Target: Ir<Type = $crate::ir::Kita>> + $crate::niche::Niche,
+                //    $($($where_ty: $where_bound),*)?
+                //{
+                //    type Type = Kita;
+                //}
             }
+        };
+
+        impl<$($($impl_generics $(: $bounds)?),*)?> $crate::niche::Niche for $ty where
+            for<'dummy> <Self as $crate::transmute::Transmute>::Target: $crate::niche::Niche,
+            $($($where_ty: $where_bound),*)? {
+            const NICHE_VALUE: <Self as $crate::ExternC>::CType = <$target as $crate::niche::Niche>::NICHE_VALUE;
         }
 
-        // SAFETY: `$t` is robust with respect to `$target`
-        unsafe impl<$($($impl_generics $(: $bounds)?),*)?> $crate::transmute::InfallibleTransmute for $ty where $($($where_ty: $where_bound),*)? {}
-
-        impl<$($($impl_generics $(: $bounds)?),*)?> $crate::niche::Ir for $ty where $($($where_ty: $where_bound),*)? {
-            type Type = $crate::ir::Robust;
+        unsafe impl<$($($impl_generics $(: $bounds)?),*)?> $crate::niche::StableNiche for $ty where
+            for<'dummy> <Self as $crate::transmute::Transmute>::Target: $crate::niche::StableNiche,
+            $($($where_ty: $where_bound),*)? {
         }
 
-        // SAFETY: ZST relation is transitive
         unsafe impl<$($($impl_generics $(: $bounds)?),*)?> $crate::out_ptr::Zst for $ty where
             for<'dummy> <Self as $crate::transmute::Transmute>::Target: $crate::out_ptr::Zst,
             $($($where_ty: $where_bound),*)? {
@@ -1280,80 +1334,21 @@ macro_rules! mineral {
         }
 
         impl<$($($impl_generics $(: $bounds)?),*)?> $crate::niche::Niche for $ty where $($($where_ty: $where_bound),*)? {
-            const NICHE_VALUE: $niche_ty = $niche_value;
+            const NICHE_VALUE: $niche_ty = {
+                // FIXME: don't allow defining niche value if Niche is present on the inner type
+                // That is, only if the inner type is Robust can outer have custom niche value
+                //assert!(impls::impls!(
+                //    !<Self as $crate::transmute::Transmute>::Target: $crate::niche::Niche,
+                //));
+
+                $niche_value
+            };
         }
 
         impl<$($($impl_generics $(: $bounds)?),*)?> $crate::niche::Ir for $ty where $($($where_ty: $where_bound),*)? {
+            // FIXME: Replace after transitionion to new niche::Ir types
+            // type Type = Kita;
             type Type = Self;
-        }
-
-        // SAFETY: ZST relation is transitive
-        unsafe impl<$($($impl_generics $(: $bounds)?),*)?> $crate::out_ptr::Zst for $ty where
-            for<'dummy> <Self as $crate::transmute::Transmute>::Target: $crate::out_ptr::Zst,
-            $($($where_ty: $where_bound),*)? {
-        }
-    };
-    (unsafe impl $(<$($impl_generics: tt $(: $bounds: path)?),*>)? Transparent for $ty: ty $(where $($where_ty:ty: $where_bound:path),* )? {
-        type Target = $target:ty;
-        const NICHE_VALUE = "DELEGATE";
-    }) => {
-        impl<$($($impl_generics $(: $bounds)?),*)?> $crate::ir::Ir for $ty where $($($where_ty: $where_bound),*)? {
-            type Type = $crate::ir::Transparent;
-        }
-
-        // SAFETY: `$ty` is transmutable into `$target` and `is_valid` doesn't return false positives
-        unsafe impl<$($($impl_generics $(: $bounds)?),*)?> $crate::transmute::Transmute for $ty where $($($where_ty: $where_bound),*)? {
-            type Target = $target;
-
-            #[inline(always)]
-            fn is_valid(_: &Self::Target) -> bool {
-                true
-            }
-        }
-
-        // SAFETY: `$t` is robust with respect to `$target`
-        unsafe impl<$($($impl_generics $(: $bounds)?),*)?> $crate::transmute::InfallibleTransmute for $ty where $($($where_ty: $where_bound),*)? {}
-
-        const _: () = {
-            use $crate::niche::Ir;
-
-            disjoint_impls::disjoint_impls! {
-                #[disjoint_impls(remote)]
-                trait Ir {
-                    type Type;
-                }
-
-                impl<$($($impl_generics $(: $bounds)?),*)?> Ir for $ty where
-                    for<'dummy> Self: $crate::transmute::Transmute<Target: Ir<Type = $crate::ir::Robust>>,
-                    $($($where_ty: $where_bound),*)?
-                {
-                    type Type = $crate::ir::Robust;
-                }
-                impl<$($($impl_generics $(: $bounds)?),*)?> Ir for $ty where
-                    for<'dummy> Self: $crate::transmute::Transmute<Target: Ir<Type = $crate::ir::Transparent>>,
-                    $($($where_ty: $where_bound),*)?
-                {
-                    type Type = $crate::ir::Transparent;
-                }
-                #[cfg(feature = "cloned_refs")]
-                impl<$($($impl_generics $(: $bounds)?),*)?> Ir for $ty where
-                    for<'dummy> Self: $crate::transmute::Transmute<Target: Ir<Type: $crate::ir::Cloned>> + $crate::niche::Niche,
-                    $($($where_ty: $where_bound),*)?
-                {
-                    type Type = Self;
-                }
-            }
-        };
-
-        impl<$($($impl_generics $(: $bounds)?),*)?> $crate::niche::Niche for $ty where
-            for<'dummy> <Self as $crate::transmute::Transmute>::Target: $crate::niche::Niche,
-            $($($where_ty: $where_bound),*)? {
-            const NICHE_VALUE: <Self as $crate::ExternC>::CType = <$target as $crate::niche::Niche>::NICHE_VALUE;
-        }
-
-        unsafe impl<$($($impl_generics $(: $bounds)?),*)?> $crate::niche::StableNiche for $ty where
-            for<'dummy> <Self as $crate::transmute::Transmute>::Target: $crate::niche::StableNiche,
-            $($($where_ty: $where_bound),*)? {
         }
 
         // SAFETY: ZST relation is transitive

@@ -3,19 +3,14 @@ use co3::ExternC;
 type WrapperInner = u32;
 
 #[derive(ExternC)]
+#[mineral(
+    NICHE_VALUE = 0,
+    unsafe(is_valid = |target|
+        target != 0
+    )
+)]
 #[repr(transparent)]
 pub struct Wrapper(WrapperInner);
-
-co3::mineral! {
-    unsafe impl Transparent for Wrapper {
-        type Target = WrapperInner;
-
-        const NICHE_VALUE: Self::CType = 0;
-        fn is_valid(target: &Self::Target) -> bool {
-            *target != 0
-        }
-    }
-}
 
 /// Take exclusive reference to a structure that is not-robust structure, for which it cannot
 /// be guaranteed that the caller of the function will not set it to a trap representation.

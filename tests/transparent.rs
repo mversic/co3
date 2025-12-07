@@ -3,7 +3,6 @@ use std::{alloc, marker::PhantomData, mem::MaybeUninit, num::NonZeroU64};
 
 use co3::{
     Decode, Encode, ExternC, FfiReturn, FfiTuple2,
-    niche::Niche as _,
     out_ptr::OutPtrRead,
     slice::{OutBoxedSlice, RefSlice},
 };
@@ -11,7 +10,6 @@ use co3::{
 co3::def_fns! { dealloc }
 
 #[derive(Clone, Copy, PartialEq, Eq, Debug, ExternC)]
-#[mineral(unsafe(robust, has_niche = "true"))]
 #[repr(transparent)]
 pub struct GenericTransparentStruct<P>(NonZeroU64, PhantomData<P>);
 
@@ -22,7 +20,11 @@ impl<P> GenericTransparentStruct<P> {
 }
 
 #[derive(Clone, Copy, PartialEq, Eq, Debug, ExternC)]
-#[mineral(unsafe(robust, has_niche = "false"))]
+#[mineral(
+    unsafe(is_valid = |target|
+        target != GenericTransparentStruct::new(1)
+    )
+)]
 #[repr(transparent)]
 pub struct TransparentStruct {
     payload: GenericTransparentStruct<()>,
@@ -31,22 +33,15 @@ pub struct TransparentStruct {
     _zst3: PhantomData<String>,
 }
 
-type NonRobustTransparentInner = [u8; 4];
-
 #[derive(Clone, Copy, PartialEq, Eq, Debug, ExternC)]
+#[mineral(
+    NICHE_VALUE = [0; 4],
+    unsafe(is_valid = |target|
+        target.iter().all(|x| x != 0)
+    )
+)]
 #[repr(transparent)]
-pub struct NonRobustTransparent(NonRobustTransparentInner);
-
-co3::mineral! {
-    unsafe impl Transparent for NonRobustTransparent {
-        type Target = NonRobustTransparentInner;
-
-        const NICHE_VALUE: Self::CType = [0; 4];
-        fn is_valid(target: &Self::Target) -> bool {
-            *target != Self::NICHE_VALUE
-        }
-    }
-}
+pub struct RobustTargetTransparent([u8; 4]);
 
 #[co3::carbonate]
 pub fn array_of_transparent(arr: &mut [TransparentStruct; 1]) -> &mut [TransparentStruct; 1] {
@@ -54,7 +49,7 @@ pub fn array_of_transparent(arr: &mut [TransparentStruct; 1]) -> &mut [Transpare
 }
 
 #[co3::carbonate]
-pub fn transparent_with_niche(arr: Option<NonRobustTransparent>) -> Option<NonRobustTransparent> {
+pub fn transparent_with_niche(arr: Option<RobustTargetTransparent>) -> Option<RobustTargetTransparent> {
     arr
 }
 
@@ -136,7 +131,7 @@ fn take_and_return_transparent_array_ref() {
 #[test]
 #[webassembly_test::webassembly_test]
 fn take_and_return_option_of_transparent_with_niche() {
-    let value = Some(NonRobustTransparent([1; 4]));
+    let value = Some(RobustTargetTransparent([1; 4]));
     let mut output = MaybeUninit::new([0u8; 4]);
 
     unsafe {

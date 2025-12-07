@@ -5,11 +5,11 @@ use darling::{
     FromAttributes, FromDeriveInput, FromField, FromVariant, ast::Style, util::SpannedValue,
 };
 use manyhow::{emit, error_message};
-use proc_macro2::{Delimiter, Span, TokenStream};
+use proc_macro2::{Span, TokenStream};
 use quote::quote;
 use syn::{
-    Attribute, Field, Ident, parse::ParseStream, parse_quote, spanned::Spanned as _,
-    visit::Visit as _,
+    Attribute, Field, Ident, ext::IdentExt as _, parse::ParseStream, parse_quote,
+    spanned::Spanned as _, visit::Visit as _,
 };
 
 #[cfg(feature = "getset")]
@@ -24,21 +24,25 @@ use crate::{
 
 #[derive(Debug)]
 enum FfiTypeToken {
-    Opaque,
-    UnsafeRobust(bool),
+    Transparent(Option<syn::Expr>, syn::ExprClosure),
     UnsafeNonOwning,
+    Opaque,
     Local,
 }
 
 impl Display for FfiTypeToken {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         match self {
-            FfiTypeToken::Opaque => write!(f, "#[mineral(opaque)]"),
-            FfiTypeToken::UnsafeRobust(has_niche) => {
-                write!(f, "#[mineral(unsafe(robust, has_niche = {has_niche}))]",)
-            }
             FfiTypeToken::UnsafeNonOwning => write!(f, "#[mineral(unsafe(non_owning))]"),
+            FfiTypeToken::Opaque => write!(f, "#[mineral(opaque)]"),
             FfiTypeToken::Local => write!(f, "#[mineral(local)]"),
+            FfiTypeToken::Transparent(niche, is_valid) => {
+                write!(f, "#[mineral(")?;
+                if let Some(niche) = niche {
+                    write!(f, "NICHE_VALUE = {}, ", quote!(#niche))?;
+                }
+                write!(f, "unsafe(is_valid = {}))]", quote!(#is_valid))
+            }
         }
     }
 }
@@ -51,100 +55,135 @@ struct SpannedFfiTypeToken {
 
 impl syn::parse::Parse for SpannedFfiTypeToken {
     fn parse(input: ParseStream) -> syn::Result<Self> {
-        let (span, token) = input.step(|cursor| {
-            let Some((token, after_ident)) = cursor.ident() else {
-                return Err(cursor.error("expected ffi type kind"));
-            };
+        fn join_span(span: &mut Option<Span>, new_span: Span) {
+            *span = Some(match *span {
+                Some(existing) => existing.join(new_span).unwrap_or(existing),
+                None => new_span,
+            });
+        }
 
-            let mut span = token.span();
-            let token = token.to_string();
-            match token.as_str() {
-                "opaque" => Ok(((span, FfiTypeToken::Opaque), after_ident)),
-                "local" => Ok(((span, FfiTypeToken::Local), after_ident)),
+        let mut span: Option<Span> = None;
+        let mut niche_value = None;
+        let mut is_valid = None;
+        let mut token = None;
+
+        while !input.is_empty() {
+            let ident: Ident = input.call(Ident::parse_any)?;
+            join_span(&mut span, ident.span());
+
+            match ident.to_string().as_str() {
+                "opaque" => {
+                    token = Some(FfiTypeToken::Opaque);
+                }
+                "local" => {
+                    token = Some(FfiTypeToken::Local);
+                }
                 "unsafe" => {
-                    let Some((inside, group_span, after_group)) =
-                        after_ident.group(Delimiter::Parenthesis)
-                    else {
-                        return Err(cursor.error("expected `(...)` after `unsafe`"));
-                    };
-                    span = span.join(group_span.span()).unwrap_or(span);
+                    if !input.peek(syn::token::Paren) {
+                        return Err(syn::Error::new(ident.span(), "expected `(...)` after `unsafe`"));
+                    }
 
-                    let Some((inner_ident, after_inner_ident)) = inside.ident() else {
-                        return Err(cursor.error("expected ffi type kind inside unsafe(...)"));
-                    };
+                    let content;
+                    syn::parenthesized!(content in input);
+                    join_span(&mut span, content.span());
+
+                    let inner_ident: Ident = content
+                        .parse()
+                        .map_err(|_| {
+                            syn::Error::new(content.span(), "expected ffi type kind inside unsafe(...)")
+                        })?;
                     let inner_str = inner_ident.to_string();
 
                     match inner_str.as_str() {
-                        "robust" => {
-                            let mut after = after_inner_ident;
-                            let Some((punct, after_punct)) = after.punct() else {
-                                return Err(
-                                    cursor.error("expected `, has_niche = ...` after `robust`")
-                                );
-                            };
-                            if punct.as_char() != ',' {
-                                return Err(
-                                    cursor.error("expected `, has_niche = ...` after `robust`")
-                                );
-                            }
-                            after = after_punct;
-
-                            let Some((niche_ident, after_niche_ident)) = after.ident() else {
-                                return Err(cursor.error("expected `has_niche =` after comma"));
-                            };
-                            if niche_ident != "has_niche" {
-                                return Err(syn::Error::new(
-                                    niche_ident.span(),
-                                    "expected `has_niche`",
-                                ));
-                            }
-                            after = after_niche_ident;
-
-                            let Some((eq, after_eq)) = after.punct() else {
-                                return Err(cursor.error("expected `=` after `has_niche`"));
-                            };
-                            if eq.as_char() != '=' {
-                                return Err(cursor.error("expected `=` after `has_niche`"));
-                            }
-                            after = after_eq;
-
-                            let expr = syn::parse2::<syn::LitStr>(after.token_stream())?;
-                            let expr_value = expr.value().parse().map_err(|_| {
-                                syn::Error::new(
-                                    niche_ident.span(),
-                                    "expected `has_niche = \"bool\"`",
-                                )
-                            })?;
-                            Ok(((span, FfiTypeToken::UnsafeRobust(expr_value)), after_group))
-                        }
                         "non_owning" => {
-                            if !after_ident.eof() {
-                                return Err(cursor.error(
+                            if !content.is_empty() {
+                                return Err(syn::Error::new(
+                                    content.span(),
                                     "`unsafe(non_owning) should contain only one identifier",
                                 ));
                             }
 
-                            Ok(((span, FfiTypeToken::UnsafeNonOwning), after_group))
+                            token = Some(FfiTypeToken::UnsafeNonOwning);
                         }
-                        other => Err(syn::Error::new(
-                            token.span(),
-                            format!("unknown unsafe ffi type kind: {other}"),
-                        )),
+                        "is_valid" => {
+                            content.parse::<syn::Token![=]>()?;
+                            let closure: syn::ExprClosure = content.parse()?;
+                            join_span(&mut span, closure.span());
+
+                            if !content.is_empty() {
+                                return Err(syn::Error::new(
+                                    content.span(),
+                                    "unexpected tokens after `is_valid` closure",
+                                ));
+                            }
+
+                            is_valid = Some(closure);
+                        }
+                        other => {
+                            return Err(syn::Error::new(
+                                inner_ident.span(),
+                                format!("unknown unsafe ffi type kind: {other}"),
+                            ));
+                        }
                     }
                 }
-                other => Err(syn::Error::new(span, format!("unknown type kind: {other}"))),
+                "NICHE_VALUE" => {
+                    input.parse::<syn::Token![=]>()?;
+                    let value: syn::Expr = input.parse()?;
+                    join_span(&mut span, value.span());
+                    niche_value = Some(value);
+                }
+                other => return Err(syn::Error::new(ident.span(), format!("unknown type kind: {other}"))),
             }
-        })?;
 
-        Ok(Self { span, token })
+            if input.is_empty() {
+                break;
+            }
+
+            if input.peek(syn::Token![,]) {
+                let comma: syn::token::Comma = input.parse()?;
+                join_span(&mut span, comma.span);
+                if input.is_empty() {
+                    break;
+                }
+            } else {
+                return Err(input.error("expected `,`"));
+            }
+        }
+
+        let span = span.unwrap_or_else(Span::call_site);
+
+        if let Some(token) = token {
+            if is_valid.is_some() || niche_value.is_some() {
+                return Err(syn::Error::new(span, "unexpected tokens after ffi type kind"));
+            }
+
+            return Ok(Self { span, token });
+        }
+
+        let Some(is_valid) = is_valid else {
+            if niche_value.is_some() {
+                return Err(syn::Error::new(
+                    span,
+                    "expected `unsafe(is_valid = ...)` when specifying `NICHE_VALUE`",
+                ));
+            }
+
+            return Err(syn::Error::new(span, "expected ffi type kind"));
+        };
+
+        Ok(Self {
+            span,
+            token: FfiTypeToken::Transparent(niche_value, is_valid),
+        })
     }
 }
 
 /// This represents an `#[mineral(...)]` attribute on a type
 #[derive(Debug, PartialEq, Eq, Clone)]
 enum FfiTypeKindAttribute {
+    Transparent(Option<syn::Expr>, syn::ExprClosure),
     Opaque,
-    UnsafeRobust(bool),
     Local,
 }
 
@@ -152,8 +191,10 @@ impl syn::parse::Parse for FfiTypeKindAttribute {
     fn parse(input: ParseStream) -> syn::Result<Self> {
         input.call(SpannedFfiTypeToken::parse).and_then(|token| {
             Ok(match token.token {
+                FfiTypeToken::Transparent(niche_value, is_valid) => {
+                    FfiTypeKindAttribute::Transparent(niche_value, is_valid)
+                }
                 FfiTypeToken::Opaque => FfiTypeKindAttribute::Opaque,
-                FfiTypeToken::UnsafeRobust(niche) => FfiTypeKindAttribute::UnsafeRobust(niche),
                 FfiTypeToken::Local => FfiTypeKindAttribute::Local,
                 other => {
                     return Err(syn::Error::new(
@@ -473,25 +514,33 @@ fn derive_ffi_type_for_transparent_item(
         return quote! {};
     };
 
-    if let Some(FfiTypeKindAttribute::UnsafeRobust(niche)) = input.ffi_type_attr.kind {
-        let niche_value = if niche {
-            quote!(const NICHE_VALUE = "DELEGATE";)
-        } else {
-            quote!()
-        };
+    let custom_validation = if let Some(FfiTypeKindAttribute::Transparent(niche_value, is_valid)) =
+        &input.ffi_type_attr.kind
+    {
+        let niche_value = niche_value.as_ref().map(|value| {
+            quote!(const NICHE_VALUE: <Self as co3::ExternC>::CType = #value;)
+        });
 
-        return quote! {
-            co3::mineral! {
-                // SAFETY: User must make sure the type is robust
-                unsafe impl #impl_generics Transparent for #name #ty_generics #where_clause {
-                    type Target = #inner;
-                    #niche_value
-                }
+        quote! {
+            #niche_value
+            fn is_valid(target: &Self::Target) -> bool {
+                #is_valid(target)
             }
-        };
-    }
+        }
+    } else {
+        quote!()
+    };
 
-    quote! {}
+    quote! {
+        co3::mineral! {
+            // SAFETY: User must make sure the type is robust
+            unsafe impl #impl_generics Transparent for #name #ty_generics #where_clause {
+                type Target = #inner;
+
+                #custom_validation
+            }
+        }
+    }
 }
 
 fn derive_ffi_type_for_fieldless_enum(
@@ -596,9 +645,7 @@ fn derive_ffi_type_for_data_carrying_enum(
                     quote! {
                         Self::#variant_name(payload) => {
                             let payload = #payload_name {
-                                #variant_name: core::mem::ManuallyDrop::new(
-                                    co3::Encode::encode(payload, &mut store.#idx)
-                                )
+                                #variant_name: co3::Encode::encode(payload, &mut store.#idx)
                             };
 
                             #repr_c_enum_name { tag: #idx, payload }
@@ -623,10 +670,7 @@ fn derive_ffi_type_for_data_carrying_enum(
                 |_| {
                     quote! {
                         #idx => {
-                            let payload = core::mem::ManuallyDrop::into_inner(
-                                source.payload.#variant_name
-                            );
-
+                            let payload = source.payload.#variant_name;
                             co3::Decode::decode(payload, &mut store.#idx).map(Self::#variant_name)
                         }
                     }
@@ -830,7 +874,7 @@ fn gen_data_carrying_enum_payload(
                 || quote! {()},
                 |field| {
                     let field_ty = &field.ty;
-                    quote! {core::mem::ManuallyDrop<<#field_ty as co3::ExternC>::CType>}
+                    quote! {<#field_ty as co3::ExternC>::CType}
                 },
             )
         })

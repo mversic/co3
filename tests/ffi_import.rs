@@ -2,7 +2,6 @@
 
 #[co3::extern_type]
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-#[mineral(unsafe(robust, has_niche = "false"))]
 #[repr(transparent)]
 pub struct Transparent((u32, u32));
 
