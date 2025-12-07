@@ -252,9 +252,9 @@ disjoint_impls! {
     {
         type OutPtr = *mut R;
     }
-    impl<R: Niche + OutPtr, S: Cloned> OutPtr for Option<R>
+    impl<R: Niche + OutPtr> OutPtr for Option<R>
     where
-        Self: Ir<Type = Option<S>>,
+        Self: Ir<Type = Option<crate::niche::Cloned>>,
     {
         type OutPtr = R::OutPtr;
     }
@@ -622,9 +622,9 @@ disjoint_impls! {
             )
         }
     }
-    impl<R: Niche + OutPtrWrite, S: Cloned> OutPtrWrite for Option<R>
+    impl<R: Niche + OutPtrWrite> OutPtrWrite for Option<R>
     where
-        Self: Ir<Type = Option<S>>,
+        Self: Ir<Type = Option<crate::niche::Cloned>>,
     {
         unsafe fn write_out(self, out_ptr: *mut Self::OutPtr) {
             unimplemented!()
@@ -907,9 +907,9 @@ disjoint_impls! {
             }
         }
     }
-    impl<R: Niche + OutPtrRead, S: Cloned> OutPtrRead for Option<R>
+    impl<R: Niche + OutPtrRead> OutPtrRead for Option<R>
     where
-        Self: Ir<Type = Option<S>>,
+        Self: Ir<Type = Option<crate::niche::Cloned>>,
         //<R as ExternC>::CType: PartialEq,
     {
         unsafe fn try_read_out(out_ptr: Self::OutPtr) -> Result<Self> {

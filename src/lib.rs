@@ -239,9 +239,9 @@ disjoint_impls! {
     {
         type CType = *mut R;
     }
-    impl<R: Niche, S: Cloned> ExternC for Option<R>
+    impl<R: Niche> ExternC for Option<R>
     where
-        Self: Ir<Type = Option<S>>,
+        Self: Ir<Type = Option<crate::niche::Cloned>>,
     {
         type CType = <R as ExternC>::CType;
     }
@@ -625,7 +625,7 @@ disjoint_impls! {
             //};
         }
     }
-    impl<R: Encode<CType = R, Store = ()> + ReprC> Encode for Option<R>
+    impl<R: Encode<Store = ()>> Encode for Option<R>
     where
         Self: Ir<Type = Option<Robust>>,
     {
@@ -649,9 +649,9 @@ disjoint_impls! {
             self.map(|value| value.encode(&mut ())).unwrap_or_default()
         }
     }
-    impl<R: Niche + Encode, S: Cloned> Encode for Option<R>
+    impl<R: Niche + Encode> Encode for Option<R>
     where
-        Self: Ir<Type = Option<S>>,
+        Self: Ir<Type = Option<crate::niche::Cloned>>,
     {
         type Store = <R as Encode>::Store;
 
@@ -1105,7 +1105,7 @@ disjoint_impls! {
             //Ok(core::mem::transmute::<R::Inner, R>(source))
         }
     }
-    impl<'d, R: Decode<'d, CType = R, Store = ()> + ReprC> Decode<'d> for Option<R>
+    impl<'d, R: Decode<'d, Store = ()>> Decode<'d> for Option<R>
     where
         Self: Ir<Type = Option<Robust>>,
     {
@@ -1135,9 +1135,9 @@ disjoint_impls! {
             Ok(Some(unsafe { R::decode(source, store) }?))
         }
     }
-    impl<'d, R: Niche<CType: PartialEq> + Decode<'d>, S: Cloned> Decode<'d> for Option<R>
+    impl<'d, R: Niche<CType: PartialEq> + Decode<'d>> Decode<'d> for Option<R>
     where
-        Self: Ir<Type = Option<S>>,
+        Self: Ir<Type = Option<crate::niche::Cloned>>,
     {
         type Store = <R as Decode<'d>>::Store;
 
@@ -1229,6 +1229,9 @@ macro_rules! mineral {
         impl$(<$($impl_generics $(: $bounds)?),*>)? $crate::ir::Ir for $ty where Self: $crate::ReprC, $($($where_ty: $where_bound),*)? {
             type Type = $crate::ir::Robust;
         }
+        impl<$($($impl_generics $(: $bounds)?),*)?> $crate::niche::Ir for $ty where $($($where_ty: $where_bound),*)? {
+            type Type = $crate::ir::Robust;
+        }
     };
     (unsafe impl $(<$($impl_generics: tt $(: $bounds: path)?),*>)? Transparent for $ty: ty $(where $($where_ty:ty: $where_bound:path),* )? {
         type Target = $target:ty;
@@ -1287,14 +1290,12 @@ macro_rules! mineral {
                 {
                     type Type = $crate::ir::Transparent;
                 }
-                // FIXME: Use concrete type instead of Cloned
-                //#[cfg(feature = "cloned_refs")]
-                //impl<$($($impl_generics $(: $bounds)?),*)?> Ir for $ty where
-                //    for<'dummy> Self: $crate::transmute::Transmute<Target: Ir<Type = $crate::ir::Kita>> + $crate::niche::Niche,
-                //    $($($where_ty: $where_bound),*)?
-                //{
-                //    type Type = Kita;
-                //}
+                impl<$($($impl_generics $(: $bounds)?),*)?> Ir for $ty where
+                    for<'dummy> Self: $crate::transmute::Transmute<Target: Ir<Type = $crate::niche::Cloned>> + $crate::niche::Niche,
+                    $($($where_ty: $where_bound),*)?
+                {
+                    type Type = $crate::niche::Cloned;
+                }
             }
         };
 
@@ -1346,9 +1347,7 @@ macro_rules! mineral {
         }
 
         impl<$($($impl_generics $(: $bounds)?),*)?> $crate::niche::Ir for $ty where $($($where_ty: $where_bound),*)? {
-            // FIXME: Replace after transitionion to new niche::Ir types
-            // type Type = Kita;
-            type Type = Self;
+            type Type = $crate::niche::Cloned;
         }
 
         // SAFETY: ZST relation is transitive

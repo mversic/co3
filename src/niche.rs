@@ -4,7 +4,6 @@ use alloc::{boxed::Box, vec::Vec};
 use disjoint_impls::disjoint_impls;
 
 use crate::ReprC;
-use crate::ir::Cloned;
 #[cfg(not(feature = "non_robust_ref_mut"))]
 use crate::transmute::InfallibleTransmute;
 use crate::{
@@ -13,6 +12,8 @@ use crate::{
     slice::{RefMutSlice, RefSlice},
     transmute::Transmute,
 };
+
+pub enum Cloned {}
 
 /// Type that has a trap representation that can be used as a niche value.
 pub trait Niche: ExternC {
@@ -49,9 +50,6 @@ pub unsafe trait Optional {
     type Inner: ReprC;
 }
 
-// FIXME: Use proper type
-type Kita = ();
-
 disjoint_impls! {
     /// Used to implement specialized impls of [`crate::ir::Ir`] for [`Option<T>`]
     pub trait Ir {
@@ -70,8 +68,8 @@ disjoint_impls! {
         type Type = Transparent;
     }
     #[cfg(feature = "cloned_refs")]
-    impl<R: crate::ir::Ir<Type: Cloned>> Ir for &R {
-        type Type = Kita;
+    impl<R: crate::ir::Ir<Type: crate::ir::Cloned>> Ir for &R {
+        type Type = Cloned;
     }
 
     impl<
@@ -101,23 +99,23 @@ disjoint_impls! {
         type Type = Transparent;
     }
     #[cfg(feature = "owned_types")]
-    impl<R: crate::ir::Ir<Type: Cloned>> Ir for Box<R> {
-        type Type = Kita;
+    impl<R: crate::ir::Ir<Type: crate::ir::Cloned>> Ir for Box<R> {
+        type Type = Cloned;
     }
 
-    impl<'a, R: crate::ir::Ir<Type = Transparent>> Ir for &'a [R] {
-        type Type = Kita;
+    impl<R: crate::ir::Ir<Type = Transparent>> Ir for &[R] {
+        type Type = Cloned;
     }
-    impl<'a, R: crate::ir::Ir<Type = Robust>> Ir for &'a [R] {
-        type Type = Kita;
+    impl<R: crate::ir::Ir<Type = Robust>> Ir for &[R] {
+        type Type = Cloned;
     }
     #[cfg(feature = "cloned_refs")]
     impl<R: crate::ir::Ir<Type = Opaque>> Ir for &[R] {
-        type Type = Kita;
+        type Type = Cloned;
     }
     #[cfg(feature = "cloned_refs")]
-    impl<R: crate::ir::Ir<Type: Cloned>> Ir for &[R] {
-        type Type = Kita;
+    impl<R: crate::ir::Ir<Type: crate::ir::Cloned>> Ir for &[R] {
+        type Type = Cloned;
     }
 
     impl<
@@ -128,65 +126,66 @@ disjoint_impls! {
     where
         R: crate::ir::Ir<Type = Transparent>,
     {
-        type Type = Kita;
+        type Type = Cloned;
     }
-    impl<'a, R: crate::ir::Ir<Type = Robust>> Ir for &'a mut [R] {
-        type Type = Kita;
+    impl<R: crate::ir::Ir<Type = Robust>> Ir for &mut [R] {
+        type Type = Cloned;
     }
 
     #[cfg(feature = "owned_types")]
     impl<R: crate::ir::Ir<Type = Transparent>> Ir for Box<[R]> {
-        type Type = Kita;
+        type Type = Cloned;
     }
     #[cfg(feature = "owned_types")]
     impl<R: crate::ir::Ir<Type = Robust>> Ir for Box<[R]> {
-        type Type = Kita;
+        type Type = Cloned;
     }
     #[cfg(feature = "owned_types")]
     impl<R: crate::ir::Ir<Type = Opaque>> Ir for Box<[R]> {
-        type Type = Kita;
+        type Type = Cloned;
     }
     #[cfg(feature = "owned_types")]
-    impl<R: crate::ir::Ir<Type: Cloned>> Ir for Box<[R]> {
-        type Type = Kita;
+    impl<R: crate::ir::Ir<Type: crate::ir::Cloned>> Ir for Box<[R]> {
+        type Type = Cloned;
     }
 
     #[cfg(feature = "owned_types")]
     impl<R: crate::ir::Ir<Type = Transparent>> Ir for Vec<R> {
-        type Type = Kita;
+        type Type = Cloned;
     }
     #[cfg(feature = "owned_types")]
     impl<R: crate::ir::Ir<Type = Robust>> Ir for Vec<R> {
-        type Type = Kita;
+        type Type = Cloned;
     }
     #[cfg(feature = "owned_types")]
     impl<R: crate::ir::Ir<Type = Opaque>> Ir for Vec<R> {
-        type Type = Kita;
+        type Type = Cloned;
     }
     #[cfg(feature = "owned_types")]
-    impl<R: crate::ir::Ir<Type: Cloned>> Ir for Vec<R> {
-        type Type = Kita;
+    impl<R: crate::ir::Ir<Type: crate::ir::Cloned>> Ir for Vec<R> {
+        type Type = Cloned;
     }
 
-    impl<R: crate::ir::Ir<Type = Transparent> + StableNiche, const N: usize> Ir for [R; N]
+    // TODO: Not sure about the array types,
+    impl<R: crate::ir::Ir<Type = Transparent>, const N: usize> Ir for [R; N]
     where
         Option<Self>: crate::ir::Ir<Type = Option<Transparent>>,
     {
-        type Type = Transparent;
+        type Type = Cloned;
     }
-    impl<R: crate::ir::Ir<Type = Transparent> + StableNiche, const N: usize> Ir for [R; N]
+    impl<R: crate::ir::Ir<Type = Transparent>, const N: usize> Ir for [R; N]
     where
         Option<Self>: crate::ir::Ir<Type = Option<Robust>>,
     {
         type Type = Robust;
     }
-    impl<R: crate::ir::Ir<Type: Cloned> + StableNiche, S: Cloned, const N: usize> Ir for [R; N]
+    impl<R: crate::ir::Ir<Type: crate::ir::Cloned>, S: crate::ir::Cloned, const N: usize> Ir for [R; N]
     where
         Option<Self>: crate::ir::Ir<Type = Option<S>>,
     {
-        type Type = [<R as crate::ir::Ir>::Type; N];
+        type Type = Cloned;
     }
-    impl<R: crate::ir::Ir<Type: Cloned> + StableNiche, const N: usize> Ir for [R; N]
+    impl<R: crate::ir::Ir<Type: crate::ir::Cloned>, const N: usize> Ir for [R; N]
     where
         Option<Self>: crate::ir::Ir<Type = Option<Robust>>,
     {
@@ -199,7 +198,7 @@ disjoint_impls! {
     //impl<R: crate::ir::Ir<Type = Transparent>> Ir for Option<R> {
     //    type Type = Transparent;
     //}
-    //impl<R: crate::ir::Ir<Type: Cloned>> Ir for Option<R> {
+    //impl<R: crate::ir::Ir<Type: crate::ir::Cloned>> Ir for Option<R> {
     //    type Type = Option<S>;
     //}
 }
@@ -227,7 +226,7 @@ unsafe impl<R, C> StableNiche for Box<R> where Self: ExternC<CType = *mut C> {}
 //impl<R: crate::niche::Ir<Type = Robust>, const N: usize> Ir for [] where (R,): Ir<Type = Robust> {
 //    type Type = Robust;
 //}
-//impl<R: crate::ir::Ir<Type: Cloned>, const N: usize> Ir for [(R,); N] where (R,): crate::niche::Ir<Type = Robust> {
+//impl<R: crate::ir::Ir<Type: crate::ir::Cloned>, const N: usize> Ir for [(R,); N] where (R,): crate::niche::Ir<Type = Robust> {
 //    type Type = Robust;
 //}
 
@@ -304,7 +303,7 @@ unsafe impl<R: Optional, const N: usize> Optional for [R; N] {
     type Inner = [R::Inner; N];
 }
 
-// TODO: Impl for derivative types
+// TODO: Impl for derivative types. Also derivate types mappings should be set in ir::Ir
 //unsafe impl<R: Optional> Optional for UnsafeCell<R> {
 //    type Inner = R::Inner;
 //}

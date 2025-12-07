@@ -11,6 +11,10 @@ co3::def_fns! { dealloc }
 
 #[derive(Clone, Copy, PartialEq, Eq, Debug, ExternC)]
 #[repr(transparent)]
+pub struct TransparentWithoutNiche(u64);
+
+#[derive(Clone, Copy, PartialEq, Eq, Debug, ExternC)]
+#[repr(transparent)]
 pub struct GenericTransparentStruct<P>(NonZeroU64, PhantomData<P>);
 
 impl<P> GenericTransparentStruct<P> {
@@ -21,8 +25,8 @@ impl<P> GenericTransparentStruct<P> {
 
 #[derive(Clone, Copy, PartialEq, Eq, Debug, ExternC)]
 #[mineral(
-    unsafe(is_valid = |target|
-        target != GenericTransparentStruct::new(1)
+    unsafe(is_valid = |target: &Self::Target|
+        *target != GenericTransparentStruct::new(1)
     )
 )]
 #[repr(transparent)]
@@ -36,8 +40,8 @@ pub struct TransparentStruct {
 #[derive(Clone, Copy, PartialEq, Eq, Debug, ExternC)]
 #[mineral(
     NICHE_VALUE = [0; 4],
-    unsafe(is_valid = |target|
-        target.iter().all(|x| x != 0)
+    unsafe(is_valid = |target: &Self::Target|
+        target.iter().all(|&x| x != 0)
     )
 )]
 #[repr(transparent)]
@@ -49,12 +53,16 @@ pub fn array_of_transparent(arr: &mut [TransparentStruct; 1]) -> &mut [Transpare
 }
 
 #[co3::carbonate]
-pub fn transparent_with_niche(arr: Option<RobustTargetTransparent>) -> Option<RobustTargetTransparent> {
+pub fn transparent_with_niche(
+    arr: Option<RobustTargetTransparent>,
+) -> Option<RobustTargetTransparent> {
     arr
 }
 
 #[co3::carbonate]
-pub fn transparent_without_niche(arr: Option<TransparentStruct>) -> Option<TransparentStruct> {
+pub fn transparent_without_niche(
+    arr: Option<TransparentWithoutNiche>,
+) -> Option<TransparentWithoutNiche> {
     arr
 }
 
@@ -150,7 +158,7 @@ fn take_and_return_option_of_transparent_with_niche() {
 #[test]
 #[webassembly_test::webassembly_test]
 fn take_and_return_option_of_transparent_without_niche() {
-    let value = Some(TransparentStruct::new(GenericTransparentStruct::new(42)));
+    let value = Some(TransparentWithoutNiche(42));
     let mut output: MaybeUninit<FfiTuple2<u8, u64>> = MaybeUninit::new(FfiTuple2(1, 0));
 
     unsafe {

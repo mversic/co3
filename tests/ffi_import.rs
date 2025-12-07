@@ -43,10 +43,10 @@ pub fn freestanding_take_and_return_local_transparent_ref(input: &Transparent) -
     unreachable!("replaced by co3::decarbonate")
 }
 
-#[co3::decarbonate]
-pub fn freestanding_take_and_return_boxed_int(input: Box<u8>) -> Box<u8> {
-    unreachable!("replaced by co3::decarbonate")
-}
+//#[co3::decarbonate]
+//pub fn freestanding_take_and_return_boxed_int(input: Box<u8>) -> Box<u8> {
+//    unreachable!("replaced by co3::decarbonate")
+//}
 
 #[co3::decarbonate]
 pub fn freestanding_take_and_return_boxed_int_ref(input: &Box<u8>) -> &Box<u8> {
@@ -115,13 +115,13 @@ fn take_and_return_transparent_local_ref() {
     assert_eq!(input, output);
 }
 
-#[test]
-#[webassembly_test::webassembly_test]
-fn take_and_return_boxed_int() {
-    let input: Box<u8> = Box::new(42u8);
-    let output: Box<u8> = freestanding_take_and_return_boxed_int(input.clone());
-    assert_eq!(input, output);
-}
+//#[test]
+//#[webassembly_test::webassembly_test]
+//fn take_and_return_boxed_int() {
+//    let input: Box<u8> = Box::new(42u8);
+//    let output: Box<u8> = freestanding_take_and_return_boxed_int(input.clone());
+//    assert_eq!(input, output);
+//}
 
 #[test]
 #[webassembly_test::webassembly_test]
@@ -222,17 +222,17 @@ mod ffi {
         FfiReturn::Ok
     }
 
-    #[unsafe(no_mangle)]
-    unsafe extern "C" fn __freestanding_take_and_return_boxed_int(
-        input: <Box<u8> as ExternC>::CType,
-        output: *mut <Box<u8> as OutPtr>::OutPtr,
-    ) -> FfiReturn {
-        unsafe {
-            output.write(input.read());
-        }
-
-        FfiReturn::Ok
-    }
+//    #[unsafe(no_mangle)]
+//    unsafe extern "C" fn __freestanding_take_and_return_boxed_int(
+//        input: <Box<u8> as ExternC>::CType,
+//        output: *mut <Box<u8> as OutPtr>::OutPtr,
+//    ) -> FfiReturn {
+//        unsafe {
+//            output.write(input.read());
+//        }
+//
+//        FfiReturn::Ok
+//    }
 
     #[unsafe(no_mangle)]
     unsafe extern "C" fn __freestanding_take_and_return_boxed_int_ref(

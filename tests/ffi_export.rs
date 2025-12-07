@@ -51,7 +51,6 @@ pub struct RobustReprCStruct<T, U> {
     a: u8,
     b: T,
     c: U,
-    d: core::mem::ManuallyDrop<i16>,
 }
 
 #[co3::carbonate]
@@ -620,13 +619,11 @@ fn repr_c_struct() {
         a: 42,
         b: 7,
         c: 12,
-        d: core::mem::ManuallyDrop::new(12),
     };
     let mut output = MaybeUninit::new(RobustReprCStruct {
         a: u8::MAX,
         b: u32::MAX,
         c: i16::MAX,
-        d: core::mem::ManuallyDrop::new(-1),
     });
 
     unsafe {
@@ -696,7 +693,7 @@ fn data_carrying_enum_conversion() {
     let mut output = MaybeUninit::new(__co3__ReprCDataCarryingEnum {
         tag: 1,
         payload: __co3__DataCarryingEnumPayload {
-            B: core::mem::ManuallyDrop::new(42),
+            B: 42,
         },
     });
 

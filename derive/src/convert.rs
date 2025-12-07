@@ -452,6 +452,10 @@ fn derive_ffi_type_for_opaque_item(name: &Ident, generics: &syn::Generics) -> To
             type Type = co3::ir::Opaque;
         }
 
+        impl #impl_generics co3::niche::Ir for #name #ty_generics #where_clause {
+            type Type = co3::ir::Opaque;
+        }
+
         impl #impl_generics co3::niche::Niche for #name #ty_generics #where_clause {
             const NICHE_VALUE: *mut Self = core::ptr::null_mut();
         }
@@ -524,7 +528,7 @@ fn derive_ffi_type_for_transparent_item(
         quote! {
             #niche_value
             fn is_valid(target: &Self::Target) -> bool {
-                #is_valid(target)
+                (#is_valid)(target)
             }
         }
     } else {
