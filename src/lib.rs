@@ -633,6 +633,7 @@ disjoint_impls! {
 
         fn encode<'itm>(self, (): &mut ()) -> Self::CType where Self: 'itm {
             match self {
+                // FIXME: Using core::mem::zeroed likely leads to UB
                 // TODO: No need to zero the memory because it must never be read. Use MaybeUninit
                 None => FfiTuple2(Encode::encode(0u8, &mut ()), unsafe { core::mem::zeroed() }),
                 Some(value) => FfiTuple2(Encode::encode(1u8, &mut ()), value.encode(&mut ())),

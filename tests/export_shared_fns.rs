@@ -2,6 +2,7 @@
 use std::{cmp::Ordering, mem::MaybeUninit};
 
 use co3::{Decode, Encode, ExternC, FfiReturn, def_fns, out_ptr::OutPtrRead};
+use webassembly_test::webassembly_test;
 
 co3::handles! {FfiStruct1, FfiStruct2}
 
@@ -34,7 +35,7 @@ impl FfiStruct1 {
 }
 
 #[test]
-#[webassembly_test::webassembly_test]
+#[webassembly_test]
 fn export_shared_fns() {
     use co3::handle::Handle as _;
 

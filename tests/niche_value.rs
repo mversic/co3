@@ -6,6 +6,7 @@ use co3::{
     Encode, ExternC,
     slice::{RefMutSlice, RefSlice},
 };
+use webassembly_test::webassembly_test;
 
 co3::handles! {Extern}
 co3::decl_fns! {Drop}
@@ -339,7 +340,7 @@ pub enum FieldlessReprCEnum {
 //}
 
 #[cfg(target_family = "wasm")]
-#[webassembly_test::webassembly_test]
+#[webassembly_test]
 fn wasm_niche_value() {
     assert_eq!(u32::MAX, None::<u8>.encode(&mut ()));
     assert_eq!(i32::MAX, None::<i8>.encode(&mut ()));
@@ -348,7 +349,7 @@ fn wasm_niche_value() {
 }
 
 #[test]
-#[webassembly_test::webassembly_test]
+#[webassembly_test]
 fn std_niche_value() {
     assert_eq!(core::ptr::null::<u8>(), None::<&bool>.encode(&mut ()));
     #[cfg(feature = "non_robust_ref_mut")]
@@ -388,7 +389,7 @@ fn std_niche_value() {
 }
 
 #[test]
-#[webassembly_test::webassembly_test]
+#[webassembly_test]
 fn enum_niche_value() {
     #[cfg(not(target_family = "wasm"))]
     let expected_bool = 2_u8;

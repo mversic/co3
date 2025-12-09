@@ -1,6 +1,8 @@
 #![cfg(feature = "derive")]
 
 use co3::external::ExternRef;
+use webassembly_test::webassembly_test;
+
 co3::handles! {FfiStruct<bool>}
 co3::decl_fns! {Drop, Clone, Eq, Ord}
 
@@ -18,7 +20,7 @@ impl FfiStruct<bool> {
 }
 
 #[test]
-#[webassembly_test::webassembly_test]
+#[webassembly_test]
 fn import_shared_fns() {
     let ffi_struct = FfiStruct::new("ipso facto".to_string());
     let ref_ffi_struct: ExternRef<FfiStruct<_>> = ExternRef::new(&ffi_struct);

@@ -1,9 +1,22 @@
 #![cfg(feature = "derive")]
 
+use webassembly_test::webassembly_test;
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[repr(C)]
+pub struct Robust(u64);
+
 #[co3::extern_type]
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 #[repr(transparent)]
 pub struct Transparent((u32, u32));
+
+#[co3::decarbonate]
+impl Robust {
+    pub fn take_ref(&self) -> &Self {
+        unreachable!("replaced by co3::decarbonate")
+    }
+}
 
 #[co3::decarbonate]
 pub fn freestanding_returns_non_local(input: &u32) -> &u32 {
@@ -59,7 +72,15 @@ pub fn freestanding_return_empty_tuple_result(flag: bool) -> Result<(), u8> {
 }
 
 #[test]
-#[webassembly_test::webassembly_test]
+#[webassembly_test]
+fn take_and_return_robust_ref() {
+    let input = Robust(420);
+    let output: &Robust = input.take_ref();
+    assert_eq!(&input, output);
+}
+
+#[test]
+#[webassembly_test]
 fn take_and_return_non_local() {
     let input = 420;
     let output: &u32 = freestanding_returns_non_local(&input);
@@ -67,7 +88,7 @@ fn take_and_return_non_local() {
 }
 
 #[test]
-#[webassembly_test::webassembly_test]
+#[webassembly_test]
 fn tuple_ref_is_coppied_when_returned() {
     let in_tuple = (420, 420);
     let out_tuple: (u32, u32) = freestanding_returns_local_ref(&in_tuple);
@@ -75,7 +96,7 @@ fn tuple_ref_is_coppied_when_returned() {
 }
 
 #[test]
-#[webassembly_test::webassembly_test]
+#[webassembly_test]
 fn vec_of_tuples_is_coppied_when_returned() {
     let in_tuple = Box::from([(420_u32, 420_u32)]);
     let out_tuple: Box<[(u32, u32)]> = freestanding_returns_local_slice(&in_tuple);
@@ -83,7 +104,7 @@ fn vec_of_tuples_is_coppied_when_returned() {
 }
 
 #[test]
-#[webassembly_test::webassembly_test]
+#[webassembly_test]
 fn boxed_slice_of_primitives() {
     let in_boxed_slice = vec![420_u32, 420_u32].into_boxed_slice();
     let out_boxed_slice: Box<[u32]> = freestanding_returns_boxed_slice(in_boxed_slice.clone());
@@ -91,7 +112,7 @@ fn boxed_slice_of_primitives() {
 }
 
 #[test]
-#[webassembly_test::webassembly_test]
+#[webassembly_test]
 fn return_iterator() {
     let input = vec![420_u32, 420_u32];
     let output = freestanding_returns_iterator(input.clone());
@@ -100,7 +121,7 @@ fn return_iterator() {
 
 // FIXME: Check previous comment
 //#[test]
-//#[webassembly_test::webassembly_test]
+//#[webassembly_test]
 //fn take_and_return_array() {
 //    let input = [(420, 420), (420, 420)];
 //    let output: [(u32, u32); 2] = freestanding_take_and_return_array(input);
@@ -108,7 +129,7 @@ fn return_iterator() {
 //}
 
 #[test]
-#[webassembly_test::webassembly_test]
+#[webassembly_test]
 fn take_and_return_transparent_local_ref() {
     let input = Transparent((420, 420));
     let output: Transparent = freestanding_take_and_return_local_transparent_ref(&input);
@@ -116,7 +137,7 @@ fn take_and_return_transparent_local_ref() {
 }
 
 //#[test]
-//#[webassembly_test::webassembly_test]
+//#[webassembly_test]
 //fn take_and_return_boxed_int() {
 //    let input: Box<u8> = Box::new(42u8);
 //    let output: Box<u8> = freestanding_take_and_return_boxed_int(input.clone());
@@ -124,7 +145,7 @@ fn take_and_return_transparent_local_ref() {
 //}
 
 #[test]
-#[webassembly_test::webassembly_test]
+#[webassembly_test]
 fn take_and_return_boxed_int_ref() {
     let input: Box<u8> = Box::new(42u8);
     let output: &Box<u8> = freestanding_take_and_return_boxed_int_ref(&input);
@@ -132,7 +153,7 @@ fn take_and_return_boxed_int_ref() {
 }
 
 #[test]
-#[webassembly_test::webassembly_test]
+#[webassembly_test]
 fn return_empty_tuple_result() {
     assert!(freestanding_return_empty_tuple_result(false).is_ok());
 }
@@ -147,6 +168,18 @@ mod ffi {
     };
 
     co3::def_fns! { dealloc }
+
+    #[unsafe(no_mangle)]
+    unsafe extern "C" fn Robust__take_ref(
+        input: *const super::Robust,
+        output: *mut *const super::Robust,
+    ) -> FfiReturn {
+        unsafe {
+            output.write(input);
+        }
+
+        FfiReturn::Ok
+    }
 
     #[unsafe(no_mangle)]
     unsafe extern "C" fn __freestanding_returns_non_local(

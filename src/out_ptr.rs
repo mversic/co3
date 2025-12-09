@@ -593,6 +593,7 @@ disjoint_impls! {
                         OutPtrWrite::write_out(0u8, discriminant_out_ptr.as_mut_ptr());
                         let discriminant_out_ptr = discriminant_out_ptr.assume_init();
 
+                        // FIXME: Using core::mem::zeroed likely leads to UB
                         // TODO: No need to zero the memory because it must never be read
                         out_ptr.write(FfiTuple2(discriminant_out_ptr, core::mem::zeroed()));
                     }

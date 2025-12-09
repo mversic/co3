@@ -89,9 +89,9 @@ impl VisitMut for ForeignArgProcessor<'_> {
             }
             Type::Reference(ref_ty) if is_self_ty(&ref_ty.elem, self.self_ty) => {
                 *node = if ref_ty.mutability.is_some() {
-                    parse_quote!(ExternMut<'_, Self>)
+                    parse_quote!(co3::external::ExternMut<'_, Self>)
                 } else {
-                    parse_quote!(ExternRef<'_, Self>)
+                    parse_quote!(co3::external::ExternRef<'_, Self>)
                 };
 
                 return;

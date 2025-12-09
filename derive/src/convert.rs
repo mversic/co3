@@ -80,18 +80,19 @@ impl syn::parse::Parse for SpannedFfiTypeToken {
                 }
                 "unsafe" => {
                     if !input.peek(syn::token::Paren) {
-                        return Err(syn::Error::new(ident.span(), "expected `(...)` after `unsafe`"));
+                        return Err(syn::Error::new(
+                            ident.span(),
+                            "expected `(...)` after `unsafe`",
+                        ));
                     }
 
                     let content;
                     syn::parenthesized!(content in input);
                     join_span(&mut span, content.span());
 
-                    let inner_ident: Ident = content
-                        .parse()
-                        .map_err(|_| {
-                            syn::Error::new(content.span(), "expected ffi type kind inside unsafe(...)")
-                        })?;
+                    let inner_ident: Ident = content.parse().map_err(|_| {
+                        syn::Error::new(content.span(), "expected ffi type kind inside unsafe(...)")
+                    })?;
                     let inner_str = inner_ident.to_string();
 
                     match inner_str.as_str() {
@@ -133,7 +134,12 @@ impl syn::parse::Parse for SpannedFfiTypeToken {
                     join_span(&mut span, value.span());
                     niche_value = Some(value);
                 }
-                other => return Err(syn::Error::new(ident.span(), format!("unknown type kind: {other}"))),
+                other => {
+                    return Err(syn::Error::new(
+                        ident.span(),
+                        format!("unknown type kind: {other}"),
+                    ));
+                }
             }
 
             if input.is_empty() {
@@ -155,7 +161,10 @@ impl syn::parse::Parse for SpannedFfiTypeToken {
 
         if let Some(token) = token {
             if is_valid.is_some() || niche_value.is_some() {
-                return Err(syn::Error::new(span, "unexpected tokens after ffi type kind"));
+                return Err(syn::Error::new(
+                    span,
+                    "unexpected tokens after ffi type kind",
+                ));
             }
 
             return Ok(Self { span, token });
@@ -521,9 +530,9 @@ fn derive_ffi_type_for_transparent_item(
     let custom_validation = if let Some(FfiTypeKindAttribute::Transparent(niche_value, is_valid)) =
         &input.ffi_type_attr.kind
     {
-        let niche_value = niche_value.as_ref().map(|value| {
-            quote!(const NICHE_VALUE: <Self as co3::ExternC>::CType = #value;)
-        });
+        let niche_value = niche_value
+            .as_ref()
+            .map(|value| quote!(const NICHE_VALUE: <Self as co3::ExternC>::CType = #value;));
 
         quote! {
             #niche_value
@@ -593,6 +602,8 @@ fn derive_ffi_type_for_data_carrying_enum(
     variants: &[SpannedValue<FfiTypeVariant>],
     local: bool,
 ) -> TokenStream {
+    let len = TokenStream::from_str(&format!("{}", variants.len())).expect("Valid");
+
     let (repr_c_enum_name, repr_c_enum) =
         gen_data_carrying_repr_c_enum(emitter, enum_name, &generics, variants);
 
@@ -747,9 +758,23 @@ fn derive_ffi_type_for_data_carrying_enum(
     quote! {
         #repr_c_enum
 
+        // TODO: Enum can be transmutable if all variants are transmutable and the enum is `repr(C)`
+        impl<#impl_generics> co3::ir::Cloned for #enum_name #ty_generics #where_clause where Self: Clone {}
+
         // NOTE: Data-carrying enum cannot implement `ReprC` unless it is robust `repr(C)`
         impl<#impl_generics> co3::ir::Ir for #enum_name #ty_generics #where_clause {
             type Type = Self;
+        }
+        impl<#impl_generics> co3::niche::Ir for #enum_name #ty_generics #where_clause {
+            type Type = co3::niche::Cloned;
+        }
+
+        impl<#impl_generics> co3::niche::Niche for #enum_name #ty_generics #where_clause {
+            const NICHE_VALUE: #repr_c_enum_name = #repr_c_enum_name {
+                tag: #len,
+                // FIXME: This likely leads to UB
+                payload: unsafe { core::mem::zeroed() }
+            };
         }
 
         impl<#impl_generics> co3::ExternC for #enum_name #ty_generics #where_clause {
@@ -758,7 +783,7 @@ fn derive_ffi_type_for_data_carrying_enum(
         impl<#impl_generics> co3::Encode for #enum_name #ty_generics #where_clause {
             type Store = #rust_store;
 
-            fn encode<'itm>(self, store: &'itm mut Self::Store) -> Self::CType where Self: 'itm {
+            fn encode<'itm>(self, store: &'itm mut Self::Store) -> <Self as ExternC>::CType where Self: 'itm {
                 #ffi_store_conversion
 
                 match self {
@@ -770,7 +795,7 @@ fn derive_ffi_type_for_data_carrying_enum(
         impl<'d, #impl_generics> co3::Decode<'d> for #enum_name #ty_generics #where_clause {
             type Store = #ffi_store;
 
-            unsafe fn decode<'itm: 'd>(source: Self::CType, store: &'itm mut Self::Store) -> co3::Result<Self> {
+            unsafe fn decode<'itm: 'd>(source: <Self as ExternC>::CType, store: &'itm mut Self::Store) -> co3::Result<Self> {
                 #rust_store_conversion
 
                 match source.tag {
@@ -779,9 +804,6 @@ fn derive_ffi_type_for_data_carrying_enum(
                 }
             }
         }
-
-        // TODO: Enum can be transmutable if all variants are transmutable and the enum is `repr(C)`
-        impl<#impl_generics> co3::ir::Cloned for #enum_name #ty_generics #where_clause where Self: Clone {}
 
         // TODO: This type can utilize niche optimization in some cases. For instance:
         // enum Kita {

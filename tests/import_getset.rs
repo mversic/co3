@@ -35,7 +35,7 @@ impl FfiStruct {
 }
 
 //#[test]
-//#[webassembly_test::webassembly_test]
+//#[webassembly_test]
 //fn import_shared_fns() {
 //    let mut ffi_struct = FfiStruct::new("ipso facto".to_string(), 42);
 //    ffi_struct.set_id(84);

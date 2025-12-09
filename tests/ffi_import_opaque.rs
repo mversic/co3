@@ -1,7 +1,8 @@
 #![cfg(feature = "derive")]
 use std::collections::BTreeMap;
 
-use co3::external::ExternRef;
+use co3::external::{ExternRef, External};
+use webassembly_test::webassembly_test;
 
 co3::handles! {OpaqueStruct, Value}
 co3::decl_fns! {Drop, Clone, Eq}
@@ -63,7 +64,7 @@ where
 }
 
 #[co3::decarbonate]
-pub fn some_fn(input: &Vec<OpaqueStruct>) {
+pub fn some_fn(input: &[OpaqueStruct]) {
     unreachable!("replaced by co3::decarbonate")
 }
 
@@ -73,7 +74,7 @@ fn make_new_opaque(name: u8, params: BTreeMap<u8, Value>) -> OpaqueStruct {
 }
 
 #[test]
-#[webassembly_test::webassembly_test]
+#[webassembly_test]
 fn constructor() {
     let name = 42_u8;
 
@@ -88,7 +89,7 @@ fn constructor() {
 }
 
 #[test]
-#[webassembly_test::webassembly_test]
+#[webassembly_test]
 fn return_option_ref() {
     let name = 42_u8;
 
@@ -103,7 +104,7 @@ fn return_option_ref() {
 }
 
 #[test]
-#[webassembly_test::webassembly_test]
+#[webassembly_test]
 fn take_and_return_opaque_ref() {
     let name = 42u8;
     let value: Value = Value::new("Dummy param value".to_owned());
@@ -117,7 +118,7 @@ fn take_and_return_opaque_ref() {
 }
 
 #[test]
-#[webassembly_test::webassembly_test]
+#[webassembly_test]
 fn take_and_return_opaque_double_ref() {
     let name = 42u8;
     let value: Value = Value::new("Dummy param value".to_owned());
@@ -131,7 +132,7 @@ fn take_and_return_opaque_double_ref() {
 }
 
 #[test]
-#[webassembly_test::webassembly_test]
+#[webassembly_test]
 fn fallible_output() {
     assert_eq!(Ok(42), OpaqueStruct::fallible_int_output(true));
     // TODO:
