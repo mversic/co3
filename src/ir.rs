@@ -6,7 +6,7 @@
 use alloc::{boxed::Box, vec::Vec};
 use disjoint_impls::disjoint_impls;
 
-use crate::niche::{WithCustomNiche, WithNiche, WithStableNiche};
+use crate::niche::{WithCustomNiche, WithStableNiche};
 #[cfg(not(feature = "non_robust_ref_mut"))]
 use crate::transmute::InfallibleTransmute;
 
@@ -27,7 +27,7 @@ pub enum Robust {}
 pub enum Opaque {}
 
 disjoint_impls! {
-    /// Designates a type that can be converted to and from an internal representation (IR).
+    /// Type that can be converted to and from an internal representation (IR).
     ///
     /// Predefined IR types automatically implement [`crate::ExternC`] and related conversion traits.
     pub trait Ir {
@@ -39,7 +39,7 @@ disjoint_impls! {
         /// - If [`Ir::Type`] is [`Transparent`], `Self` automatically implements [`crate::ExternC`]
         ///   by delegating to its inner type via [`core::mem::transmute`].
         ///   If the inner type supports zero-copy conversion, then [`Transparent`] is also zero-copy.
-        ///   See [`crate::Transmute`] for more details.
+        ///   See [`crate::transmute::CheckedTransmute`] for more details.
         ///
         /// - If [`Ir::Type`] is [`Opaque`], `T` is serialized as an opaque pointer.
         ///   Note that the type will be heap allocated during conversion if not already.

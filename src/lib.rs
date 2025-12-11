@@ -23,10 +23,10 @@ use crate::transmute::{
 use crate::{ir::Cloned, niche::Niche};
 use crate::{
     ir::{Ir, Opaque, Robust, Transparent},
-    niche::Optional,
+    niche::FlatTransmute,
     slice::{OutBoxedSlice, RefMutSlice, RefSlice},
     transmute::{
-        Transmute, transmute_from_target, transmute_from_target_ref_slice,
+        CheckedTransmute, transmute_from_target, transmute_from_target_ref_slice,
         transmute_from_target_slice_mut, transmute_into_target, transmute_into_target_ref_slice,
         transmute_into_target_slice_mut,
     },
@@ -70,13 +70,13 @@ disjoint_impls! {
     }
 
     #[cfg(feature = "owned_types")]
-    impl<R: Transmute<Target: ReprC>> ExternC for R
+    impl<R: CheckedTransmute<Target: ReprC>> ExternC for R
     where
         Self: Ir<Type = Box<Robust>>,
     {
         type CType = R::Target;
     }
-    impl<R: Ir<Type = Transparent> + Transmute<Target: ExternC>> ExternC for R {
+    impl<R: Ir<Type = Transparent> + CheckedTransmute<Target: ExternC>> ExternC for R {
         type CType = <R::Target as ExternC>::CType;
     }
     impl<R: Ir<Type = Robust> + ReprC> ExternC for R {
@@ -102,10 +102,10 @@ disjoint_impls! {
         type CType = *mut R::CType;
     }
 
-    impl<'slice, R: Transmute> ExternC for &'slice [R]
+    impl<'slice, R: CheckedTransmute> ExternC for &'slice [R]
     where
         Self: Ir<Type = &'slice [Transparent]>,
-        &'slice [<R as Transmute>::Target]: ExternC,
+        &'slice [<R as CheckedTransmute>::Target]: ExternC,
     {
         type CType = <&'slice [R::Target] as ExternC>::CType;
     }
@@ -130,10 +130,10 @@ disjoint_impls! {
         type CType = RefSlice<R::CType>;
     }
 
-    impl<'slice, R: Transmute> ExternC for &'slice mut [R]
+    impl<'slice, R: CheckedTransmute> ExternC for &'slice mut [R]
     where
         Self: Ir<Type = &'slice mut [Transparent]>,
-        &'slice mut [<R as Transmute>::Target]: ExternC,
+        &'slice mut [<R as CheckedTransmute>::Target]: ExternC,
     {
         type CType = <&'slice mut [R::Target] as ExternC>::CType;
     }
@@ -144,10 +144,10 @@ disjoint_impls! {
         type CType = RefMutSlice<R>;
     }
 
-    impl<R: Transmute> ExternC for Box<[R]>
+    impl<R: CheckedTransmute> ExternC for Box<[R]>
     where
         Self: Ir<Type = Box<[Transparent]>>,
-        Box<[<R as Transmute>::Target]>: ExternC,
+        Box<[<R as CheckedTransmute>::Target]>: ExternC,
     {
         type CType = <Box<[R::Target]> as ExternC>::CType;
     }
@@ -177,10 +177,10 @@ disjoint_impls! {
     }
 
     #[cfg(feature = "owned_types")]
-    impl<R: Transmute> ExternC for Vec<R>
+    impl<R: CheckedTransmute> ExternC for Vec<R>
     where
         Self: Ir<Type = Vec<Transparent>>,
-        Vec<<R as Transmute>::Target>: ExternC,
+        Vec<<R as CheckedTransmute>::Target>: ExternC,
     {
         type CType = <Vec<R::Target> as ExternC>::CType;
     }
@@ -222,11 +222,11 @@ disjoint_impls! {
         type CType = [R::CType; N];
     }
 
-    impl<R: Optional> ExternC for R
+    impl<R: FlatTransmute> ExternC for R
     where
         Self: Ir<Type = Option<WithStableNiche>>,
     {
-        type CType = R::Inner;
+        type CType = R::Target;
     }
     impl<R: ExternC> ExternC for Option<R>
     where
@@ -260,10 +260,10 @@ disjoint_impls! {
 
     //#[cfg(feature = "owned_types")]
     //#[cfg(feature = "owned_as_ref")]
-    //impl<R: Transmute<Target: ReprC>> Encode for R
+    //impl<R: CheckedTransmute<Target: ReprC>> Encode for R
     //where
     //    Self: Ir<Type = Box<Robust>>,
-    //    for<'a> &'a mut <R as Transmute>::Target: Encode,
+    //    for<'a> &'a mut <R as CheckedTransmute>::Target: Encode,
     //{
     //    type Store = Option<R>;
 
@@ -271,7 +271,7 @@ disjoint_impls! {
     //        *Encode::encode(store.insert(self), &mut ())
     //    }
     //}
-    impl<R: Ir<Type = Transparent> + Transmute<Target: Encode>> Encode for R {
+    impl<R: Ir<Type = Transparent> + CheckedTransmute<Target: Encode>> Encode for R {
         type Store = <R::Target as Encode>::Store;
 
         fn encode<'itm>(self, store: &'itm mut Self::Store) -> Self::CType where Self: 'itm {
@@ -318,10 +318,10 @@ disjoint_impls! {
         }
     }
 
-    impl<'slice, R: Transmute> Encode for &'slice [R]
+    impl<'slice, R: CheckedTransmute> Encode for &'slice [R]
     where
         Self: Ir<Type = &'slice [Transparent]>,
-        &'slice [<R as Transmute>::Target]: Encode,
+        &'slice [<R as CheckedTransmute>::Target]: Encode,
     {
         type Store = <&'slice [R::Target] as Encode>::Store;
 
@@ -378,10 +378,10 @@ disjoint_impls! {
         }
     }
 
-    impl<'slice, R: Transmute> Encode for &'slice mut [R]
+    impl<'slice, R: CheckedTransmute> Encode for &'slice mut [R]
     where
         Self: Ir<Type = &'slice mut [Transparent]>,
-        &'slice mut [<R as Transmute>::Target]: Encode,
+        &'slice mut [<R as CheckedTransmute>::Target]: Encode,
     {
         type Store = <&'slice mut [R::Target] as Encode>::Store;
 
@@ -401,9 +401,9 @@ disjoint_impls! {
     }
 
     #[cfg(feature = "owned_types")]
-    impl<R: Transmute> Encode for Box<[R]>
+    impl<R: CheckedTransmute> Encode for Box<[R]>
     where
-        Box<[<R as Transmute>::Target]>: Encode,
+        Box<[<R as CheckedTransmute>::Target]>: Encode,
         Self: Ir<Type = Box<[Transparent]>>,
     {
         type Store = <Box<[R::Target]> as Encode>::Store;
@@ -472,9 +472,9 @@ disjoint_impls! {
     }
 
     #[cfg(feature = "owned_types")]
-    impl<R: Transmute> Encode for Vec<R>
+    impl<R: CheckedTransmute> Encode for Vec<R>
     where
-        Vec<<R as Transmute>::Target>: Encode,
+        Vec<<R as CheckedTransmute>::Target>: Encode,
         Self: Ir<Type = Vec<Transparent>>,
     {
         type Store = <Vec<R::Target> as Encode>::Store;
@@ -600,23 +600,22 @@ disjoint_impls! {
 
     //    fn encode<'itm>(self, (): &mut ()) -> Self::CType where Self: 'itm {
     //        unimplemented!();
-    //        //// SAFETY: Guaranteed by [`Optional`]
+    //        //// SAFETY: Guaranteed by [`FlatTransmute`]
     //        //let inner = unsafe {
-    //        //    core::mem::transmute::<R, R::Inner>(self)
+    //        //    core::mem::transmute::<R, R::Target>(self)
     //        //};
     //    }
     //}
-    impl<R: Optional> Encode for R
+    impl<R: FlatTransmute> Encode for R
     where
         Self: Ir<Type = Option<WithStableNiche>>,
     {
         type Store = ();
 
         fn encode<'itm>(self, (): &mut ()) -> Self::CType where Self: 'itm {
-            unimplemented!();
-            //// SAFETY: Guaranteed by [`Optional`]
+            unimplemented!()
             //let inner = unsafe {
-            //    core::mem::transmute::<R, R::Inner>(self)
+            //    core::mem::transmute::<R, R::Target>(self)
             //};
         }
     }
@@ -678,7 +677,7 @@ disjoint_impls! {
 
     #[cfg(feature = "owned_types")]
     #[cfg(feature = "owned_as_ref")]
-    impl<'d, R: Transmute<Target: ReprC + 'd> + Clone + 'd> Decode<'d> for R
+    impl<'d, R: CheckedTransmute<Target: ReprC + 'd> + Clone + 'd> Decode<'d> for R
     where
         Self: Ir<Type = Box<Robust>>,
     {
@@ -688,9 +687,9 @@ disjoint_impls! {
             transmute_from_target::<&R>(&source).cloned()
         }
     }
-    impl<'d, R: Transmute> Decode<'d> for R
+    impl<'d, R: CheckedTransmute> Decode<'d> for R
     where
-        <Self as Transmute>::Target: Decode<'d>,
+        <Self as CheckedTransmute>::Target: Decode<'d>,
         Self: Ir<Type = Transparent>,
     {
         type Store = <R::Target as Decode<'d>>::Store;
@@ -766,9 +765,9 @@ disjoint_impls! {
         }
     }
 
-    impl<'slice, R: Transmute> Decode<'slice> for &'slice [R]
+    impl<'slice, R: CheckedTransmute> Decode<'slice> for &'slice [R]
     where
-        &'slice [<R as Transmute>::Target]: Decode<'slice>,
+        &'slice [<R as CheckedTransmute>::Target]: Decode<'slice>,
         Self: Ir<Type = &'slice [Transparent]>,
     {
         type Store = <&'slice [R::Target] as Decode<'slice>>::Store;
@@ -845,9 +844,9 @@ disjoint_impls! {
         }
     }
 
-    impl<'slice, R: Transmute> Decode<'slice> for &'slice mut [R]
+    impl<'slice, R: CheckedTransmute> Decode<'slice> for &'slice mut [R]
     where
-        &'slice mut [<R as Transmute>::Target]: Decode<'slice>,
+        &'slice mut [<R as CheckedTransmute>::Target]: Decode<'slice>,
         Self: Ir<Type = &'slice mut [Transparent]>,
     {
         type Store = <&'slice mut [R::Target] as Decode<'slice>>::Store;
@@ -871,9 +870,9 @@ disjoint_impls! {
     }
 
     #[cfg(feature = "owned_types")]
-    impl<'d, R: Transmute> Decode<'d> for Box<[R]>
+    impl<'d, R: CheckedTransmute> Decode<'d> for Box<[R]>
     where
-        Box<[<R as Transmute>::Target]>: Decode<'d>,
+        Box<[<R as CheckedTransmute>::Target]>: Decode<'d>,
         Self: Ir<Type = Box<[Transparent]>>,
     {
         type Store = <Box<[R::Target]> as Decode<'d>>::Store;
@@ -949,9 +948,9 @@ disjoint_impls! {
     }
 
     #[cfg(feature = "owned_types")]
-    impl<'d, R: Transmute> Decode<'d> for Vec<R>
+    impl<'d, R: CheckedTransmute> Decode<'d> for Vec<R>
     where
-        Vec<<R as Transmute>::Target>: Decode<'d>,
+        Vec<<R as CheckedTransmute>::Target>: Decode<'d>,
         Self: Ir<Type = Vec<Transparent>>,
     {
         type Store = <Vec<R::Target> as Decode<'d>>::Store;
@@ -1080,7 +1079,7 @@ disjoint_impls! {
         }
     }
 
-    impl<'d, R: Optional + 'd> Decode<'d> for R
+    impl<'d, R: FlatTransmute + 'd> Decode<'d> for R
     where
         Self: Ir<Type = Option<WithStableNiche>>,
     {
@@ -1088,7 +1087,7 @@ disjoint_impls! {
 
         unsafe fn decode<'itm: 'd>(source: Self::CType, store: &'itm mut Self::Store) -> Result<Self> {
             unimplemented!()
-            //Ok(core::mem::transmute::<R::Inner, R>(source))
+            //Ok(core::mem::transmute::<R::Target, R>(source))
         }
     }
     impl<'d, R: Decode<'d, Store = ()>> Decode<'d> for Option<R>
@@ -1143,14 +1142,14 @@ pub enum FfiReturn {
     Ok = 0,
 }
 
-/// Macro for defining FFI types of a known category ([`Robust`] or [`Transmute`]).
+/// Macro for defining FFI types of a known category ([`Robust`] or [`CheckedTransmute`]).
 /// The implementation for an FFI type of one of the categories incurs a lot of bloat that
 /// is reduced by the use of this macro
 ///
 /// # Safety
 ///
 /// * If the type is [`Robust`], it derives [`ReprC`]. Check safety invariants for [`ReprC`]
-/// * If the type is [`Transparent`], it derives [`Transmute`]. Check safety invariants for [`Transmute`]
+/// * If the type is [`Transparent`], it derives [`CheckedTransmute`]. Check safety invariants for [`CheckedTransmute`]
 ///
 /// # Example
 ///
@@ -1234,7 +1233,7 @@ macro_rules! mineral {
         }
 
         // SAFETY: `$ty` is transmutable into `$target` and `is_valid` doesn't return false positives
-        unsafe impl<$($($impl_generics $(: $bounds)?),*)?> $crate::transmute::Transmute for $ty where $($($where_ty: $where_bound),*)? {
+        unsafe impl<$($($impl_generics $(: $bounds)?),*)?> $crate::transmute::CheckedTransmute for $ty where $($($where_ty: $where_bound),*)? {
             type Target = $target;
 
             #[inline(always)]
@@ -1251,19 +1250,19 @@ macro_rules! mineral {
                 }
 
                 impl<$($($impl_generics $(: $bounds)?),*)?> Ir for $ty where
-                    for<'dummy> Self: $crate::transmute::Transmute<Target: Ir<Type = $crate::ir::Robust>>,
+                    for<'dummy> Self: $crate::transmute::CheckedTransmute<Target: Ir<Type = $crate::ir::Robust>>,
                     $($($where_ty: $where_bound),*)?
                 {
                     type Type = $crate::ir::Robust;
                 }
                 impl<$($($impl_generics $(: $bounds)?),*)?> Ir for $ty where
-                    for<'dummy> Self: $crate::transmute::Transmute<Target: Ir<Type = $crate::niche::WithCustomNiche>> + $crate::niche::Niche,
+                    for<'dummy> Self: $crate::transmute::CheckedTransmute<Target: Ir<Type = $crate::niche::WithCustomNiche>> + $crate::niche::Niche,
                     $($($where_ty: $where_bound),*)?
                 {
                     type Type = $crate::niche::WithCustomNiche;
                 }
                 impl<$($($impl_generics $(: $bounds)?),*)?> Ir for $ty where
-                    for<'dummy> Self: $crate::transmute::Transmute<Target: Ir<Type = $crate::niche::WithStableNiche> + $crate::niche::StableNiche>,
+                    for<'dummy> Self: $crate::transmute::CheckedTransmute<Target: Ir<Type = $crate::niche::WithStableNiche> + $crate::niche::StableNiche>,
                     $($($where_ty: $where_bound),*)?
                 {
                     type Type = $crate::niche::WithStableNiche;
@@ -1272,18 +1271,18 @@ macro_rules! mineral {
         };
 
         impl<$($($impl_generics $(: $bounds)?),*)?> $crate::niche::Niche for $ty where
-            for<'dummy> <Self as $crate::transmute::Transmute>::Target: $crate::niche::Niche,
+            for<'dummy> <Self as $crate::transmute::CheckedTransmute>::Target: $crate::niche::Niche,
             $($($where_ty: $where_bound),*)? {
             const NICHE_VALUE: <Self as $crate::ExternC>::CType = <$target as $crate::niche::Niche>::NICHE_VALUE;
         }
 
         unsafe impl<$($($impl_generics $(: $bounds)?),*)?> $crate::niche::StableNiche for $ty where
-            for<'dummy> <Self as $crate::transmute::Transmute>::Target: $crate::niche::StableNiche,
+            for<'dummy> <Self as $crate::transmute::CheckedTransmute>::Target: $crate::niche::StableNiche,
             $($($where_ty: $where_bound),*)? {
         }
 
         unsafe impl<$($($impl_generics $(: $bounds)?),*)?> $crate::out_ptr::Zst for $ty where
-            for<'dummy> <Self as $crate::transmute::Transmute>::Target: $crate::out_ptr::Zst,
+            for<'dummy> <Self as $crate::transmute::CheckedTransmute>::Target: $crate::out_ptr::Zst,
             $($($where_ty: $where_bound),*)? {
         }
     };
@@ -1299,7 +1298,7 @@ macro_rules! mineral {
         }
 
         // SAFETY: `$ty` is transmutable into `$target` and `is_valid` doesn't return false positives
-        unsafe impl<$($($impl_generics $(: $bounds)?),*)?> $crate::transmute::Transmute for $ty where $($($where_ty: $where_bound),*)? {
+        unsafe impl<$($($impl_generics $(: $bounds)?),*)?> $crate::transmute::CheckedTransmute for $ty where $($($where_ty: $where_bound),*)? {
             type Target = $target;
 
             #[inline(always)]
@@ -1311,7 +1310,7 @@ macro_rules! mineral {
                 // FIXME: don't allow defining niche value if Niche is present on the inner type
                 // That is, only if the inner type is Robust can outer have custom niche value
                 //assert!(impls::impls!(
-                //    !<Self as $crate::transmute::Transmute>::Target: $crate::niche::Niche,
+                //    !<Self as $crate::transmute::CheckedTransmute>::Target: $crate::niche::Niche,
                 //));
 
                 $niche_value
@@ -1324,7 +1323,7 @@ macro_rules! mineral {
 
         // SAFETY: ZST relation is transitive
         unsafe impl<$($($impl_generics $(: $bounds)?),*)?> $crate::out_ptr::Zst for $ty where
-            for<'dummy> <Self as $crate::transmute::Transmute>::Target: $crate::out_ptr::Zst,
+            for<'dummy> <Self as $crate::transmute::CheckedTransmute>::Target: $crate::out_ptr::Zst,
             $($($where_ty: $where_bound),*)? {
         }
     };

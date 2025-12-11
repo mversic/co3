@@ -113,7 +113,7 @@ impl<T> crate::ir::Ir for core::cell::UnsafeCell<T> {
     type Type = crate::ir::Transparent;
 }
 
-unsafe impl<T> crate::transmute::Transmute for core::cell::UnsafeCell<T> {
+unsafe impl<T> crate::transmute::CheckedTransmute for core::cell::UnsafeCell<T> {
     type Target = T;
 
     #[inline(always)]
@@ -129,6 +129,6 @@ impl<T> crate::niche::Ir for core::cell::UnsafeCell<T> {
 }
 
 unsafe impl<T> crate::out_ptr::Zst for core::cell::UnsafeCell<T> where
-    for<'dummy> <Self as crate::transmute::Transmute>::Target: crate::out_ptr::Zst
+    for<'dummy> <Self as crate::transmute::CheckedTransmute>::Target: crate::out_ptr::Zst
 {
 }

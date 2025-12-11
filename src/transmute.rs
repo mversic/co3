@@ -12,7 +12,7 @@ disjoint_impls! {
     ///
     /// - `Self` and `Self::Target` must be mutually transmutable (this includes [`Drop`] semantics)
     /// - `Self::is_valid` must not return false positives, i.e. return `true` for trap representations
-    pub unsafe trait Transmute {
+    pub unsafe trait CheckedTransmute {
         /// Type that [`Self`] can be transmuted into
         type Target;
 
@@ -21,8 +21,7 @@ disjoint_impls! {
         fn is_valid(target: &Self::Target) -> bool;
     }
 
-    // SAFETY: Transmute relation is transitive
-    unsafe impl<'a, R: Ir<Type = Transparent> + Transmute> Transmute for &'a R {
+    unsafe impl<'a, R: Ir<Type = Transparent> + CheckedTransmute> CheckedTransmute for &'a R {
         type Target = &'a R::Target;
 
         #[inline(always)]
@@ -30,8 +29,7 @@ disjoint_impls! {
             R::is_valid(target)
         }
     }
-    // SAFETY: Transmute relation is transitive
-    unsafe impl<'a, R: Ir<Type = Box<Robust>> + Transmute> Transmute for &'a R {
+    unsafe impl<'a, R: Ir<Type = Box<Robust>> + CheckedTransmute> CheckedTransmute for &'a R {
         type Target = &'a R::Target;
 
         #[inline(always)]
@@ -39,8 +37,7 @@ disjoint_impls! {
             R::is_valid(target)
         }
     }
-    // SAFETY: Transmuting reference to a pointer of the same type
-    unsafe impl<R: Ir<Type = Robust> + ReprC> Transmute for &R {
+    unsafe impl<R: Ir<Type = Robust> + ReprC> CheckedTransmute for &R {
         type Target = *const R;
 
         #[inline(always)]
@@ -48,8 +45,7 @@ disjoint_impls! {
             !target.is_null()
         }
     }
-    // SAFETY: Transmuting reference to a pointer of the same type
-    unsafe impl<R: Ir<Type = Opaque>> Transmute for &R {
+    unsafe impl<R: Ir<Type = Opaque>> CheckedTransmute for &R {
         type Target = *const R;
 
         #[inline(always)]
@@ -58,12 +54,11 @@ disjoint_impls! {
         }
     }
 
-    // SAFETY: Transmute relation is transitive
     unsafe impl<
         'a,
         #[cfg(not(feature = "non_robust_ref_mut"))] R: InfallibleTransmute,
-        #[cfg(feature = "non_robust_ref_mut")] R: Transmute,
-    > Transmute for &'a mut R
+        #[cfg(feature = "non_robust_ref_mut")] R: CheckedTransmute,
+    > CheckedTransmute for &'a mut R
     where
         R: Ir<Type = Transparent>,
     {
@@ -74,9 +69,8 @@ disjoint_impls! {
             R::is_valid(target)
         }
     }
-    // SAFETY: Transmute relation is transitive
     #[cfg(feature = "non_robust_ref_mut")]
-    unsafe impl<'a, R: Ir<Type = Box<Robust>> + Transmute> Transmute for &'a mut R {
+    unsafe impl<'a, R: Ir<Type = Box<Robust>> + CheckedTransmute> CheckedTransmute for &'a mut R {
         type Target = &'a mut R::Target;
 
         #[inline(always)]
@@ -84,8 +78,7 @@ disjoint_impls! {
             R::is_valid(target)
         }
     }
-    // SAFETY: Transmuting reference to a pointer of the same type
-    unsafe impl<R: Ir<Type = Robust> + ReprC> Transmute for &mut R {
+    unsafe impl<R: Ir<Type = Robust> + ReprC> CheckedTransmute for &mut R {
         type Target = *mut R;
 
         #[inline(always)]
@@ -93,8 +86,7 @@ disjoint_impls! {
             !target.is_null()
         }
     }
-    // SAFETY: Transmuting reference to a pointer of the same type
-    unsafe impl<R: Ir<Type = Opaque>> Transmute for &mut R {
+    unsafe impl<R: Ir<Type = Opaque>> CheckedTransmute for &mut R {
         type Target = *mut R;
 
         #[inline(always)]
@@ -103,8 +95,7 @@ disjoint_impls! {
         }
     }
 
-    // SAFETY: Transmute relation is transitive
-    unsafe impl<R: Ir<Type = Transparent> + Transmute> Transmute for Box<R> {
+    unsafe impl<R: Ir<Type = Transparent> + CheckedTransmute> CheckedTransmute for Box<R> {
         type Target = Box<R::Target>;
 
         #[inline(always)]
@@ -112,8 +103,8 @@ disjoint_impls! {
             R::is_valid(target)
         }
     }
-    // SAFETY: Transmute relation is transitive
-    unsafe impl<R: Ir<Type = Box<Robust>> + Transmute> Transmute for Box<R> {
+    #[cfg(feature = "owned_types")]
+    unsafe impl<R: Ir<Type = Box<Robust>> + CheckedTransmute> CheckedTransmute for Box<R> {
         type Target = Box<R::Target>;
 
         #[inline(always)]
@@ -121,8 +112,8 @@ disjoint_impls! {
             R::is_valid(target)
         }
     }
-    // SAFETY: Transmuting reference to a pointer of the same type
-    unsafe impl<R: Ir<Type = Robust> + ReprC> Transmute for Box<R> {
+    #[cfg(feature = "owned_types")]
+    unsafe impl<R: Ir<Type = Robust> + ReprC> CheckedTransmute for Box<R> {
         type Target = *mut R;
 
         #[inline(always)]
@@ -130,8 +121,7 @@ disjoint_impls! {
             !target.is_null()
         }
     }
-    // SAFETY: Transmuting reference to a pointer of the same type
-    unsafe impl<R: Ir<Type = Opaque>> Transmute for Box<R> {
+    unsafe impl<R: Ir<Type = Opaque>> CheckedTransmute for Box<R> {
         type Target = *mut R;
 
         #[inline(always)]
@@ -141,8 +131,7 @@ disjoint_impls! {
     }
 }
 
-// SAFETY: Transmute relation is transitive
-unsafe impl<R: Transmute, const N: usize> Transmute for [R; N] {
+unsafe impl<R: CheckedTransmute, const N: usize> CheckedTransmute for [R; N] {
     type Target = [R::Target; N];
 
     #[inline(always)]
@@ -160,19 +149,17 @@ unsafe impl<R: Transmute, const N: usize> Transmute for [R; N] {
 /// # Safety
 ///
 /// Implementation of [`Transmute::is_valid`] must always return true for this type.
-pub unsafe trait InfallibleTransmute: Transmute {}
+pub unsafe trait InfallibleTransmute: CheckedTransmute {}
 
-// SAFETY: Array is just a contiguous block of bytes in memory
-// and has a defined representation if the element type does
 unsafe impl<R: InfallibleTransmute, const N: usize> InfallibleTransmute for [R; N] {}
 
 #[repr(C)]
-union TransmuteHelper<R: Transmute> {
+union TransmuteHelper<R: CheckedTransmute> {
     source: ManuallyDrop<R>,
     target: ManuallyDrop<R::Target>,
 }
 
-pub(super) fn transmute_into_target<R: Transmute>(source: R) -> R::Target {
+pub(super) fn transmute_into_target<R: CheckedTransmute>(source: R) -> R::Target {
     assert_size_and_allignment_match::<R>();
 
     let transmute_helper = TransmuteHelper {
@@ -182,7 +169,7 @@ pub(super) fn transmute_into_target<R: Transmute>(source: R) -> R::Target {
     // SAFETY: Soundness is guaranteed by [`Transmute`]
     ManuallyDrop::into_inner(unsafe { transmute_helper.target })
 }
-pub(super) fn transmute_from_target<R: Transmute>(source: R::Target) -> Result<R> {
+pub(super) fn transmute_from_target<R: CheckedTransmute>(source: R::Target) -> Result<R> {
     assert_size_and_allignment_match::<R>();
 
     if !R::is_valid(&source) {
@@ -199,7 +186,7 @@ pub(super) fn transmute_from_target<R: Transmute>(source: R::Target) -> Result<R
 
 #[cfg(feature = "owned_types")]
 #[cfg(feature = "owned_as_ref")]
-pub(super) fn transmute_into_target_boxed_slice<R: Transmute>(
+pub(super) fn transmute_into_target_boxed_slice<R: CheckedTransmute>(
     #[expect(clippy::boxed_local)] mut source: Box<[R]>,
 ) -> Box<[R::Target]> {
     assert_size_and_allignment_match::<R>();
@@ -211,7 +198,7 @@ pub(super) fn transmute_into_target_boxed_slice<R: Transmute>(
 }
 #[cfg(feature = "owned_types")]
 #[cfg(feature = "owned_as_ref")]
-pub(super) fn transmute_from_target_boxed_slice<R: Transmute>(
+pub(super) fn transmute_from_target_boxed_slice<R: CheckedTransmute>(
     #[expect(clippy::boxed_local)] mut source: Box<[R::Target]>,
 ) -> Result<Box<[R]>> {
     assert_size_and_allignment_match::<R>();
@@ -229,14 +216,16 @@ pub(super) fn transmute_from_target_boxed_slice<R: Transmute>(
     })
 }
 
-pub(super) fn transmute_into_target_ref_slice<R: Transmute>(source: &[R]) -> &[R::Target] {
+pub(super) fn transmute_into_target_ref_slice<R: CheckedTransmute>(source: &[R]) -> &[R::Target] {
     assert_size_and_allignment_match::<R>();
 
     let (ptr, len) = (source.as_ptr().cast::<R::Target>(), source.len());
 
     unsafe { core::slice::from_raw_parts(ptr, len) }
 }
-pub(super) fn transmute_from_target_ref_slice<R: Transmute>(source: &[R::Target]) -> Result<&[R]> {
+pub(super) fn transmute_from_target_ref_slice<R: CheckedTransmute>(
+    source: &[R::Target],
+) -> Result<&[R]> {
     assert_size_and_allignment_match::<R>();
 
     if !source.iter().all(|item| R::is_valid(item)) {
@@ -247,7 +236,9 @@ pub(super) fn transmute_from_target_ref_slice<R: Transmute>(source: &[R::Target]
     Ok(unsafe { core::slice::from_raw_parts(source.as_ptr().cast(), source.len()) })
 }
 
-pub(super) fn transmute_into_target_slice_mut<R: Transmute>(source: &mut [R]) -> &mut [R::Target] {
+pub(super) fn transmute_into_target_slice_mut<R: CheckedTransmute>(
+    source: &mut [R],
+) -> &mut [R::Target] {
     assert_size_and_allignment_match::<R>();
 
     let (ptr, len) = (source.as_mut_ptr().cast::<R::Target>(), source.len());
@@ -255,7 +246,7 @@ pub(super) fn transmute_into_target_slice_mut<R: Transmute>(source: &mut [R]) ->
     // SAFETY: Soundness is guaranteed by [`Transmute`]
     unsafe { core::slice::from_raw_parts_mut(ptr, len) }
 }
-pub(super) fn transmute_from_target_slice_mut<R: Transmute>(
+pub(super) fn transmute_from_target_slice_mut<R: CheckedTransmute>(
     source: &mut [R::Target],
 ) -> Result<&mut [R]> {
     assert_size_and_allignment_match::<R>();
@@ -270,7 +261,7 @@ pub(super) fn transmute_from_target_slice_mut<R: Transmute>(
 
 #[cfg(feature = "owned_types")]
 #[cfg(feature = "owned_as_ref")]
-pub(super) fn transmute_into_target_vec<R: Transmute>(source: Vec<R>) -> Vec<R::Target> {
+pub(super) fn transmute_into_target_vec<R: CheckedTransmute>(source: Vec<R>) -> Vec<R::Target> {
     assert_size_and_allignment_match::<R>();
 
     let mut vec = ManuallyDrop::new(source);
@@ -280,7 +271,9 @@ pub(super) fn transmute_into_target_vec<R: Transmute>(source: Vec<R>) -> Vec<R::
 }
 #[cfg(feature = "owned_types")]
 #[cfg(feature = "owned_as_ref")]
-pub(super) fn transmute_from_target_vec<R: Transmute>(source: Vec<R::Target>) -> Result<Vec<R>> {
+pub(super) fn transmute_from_target_vec<R: CheckedTransmute>(
+    source: Vec<R::Target>,
+) -> Result<Vec<R>> {
     assert_size_and_allignment_match::<R>();
 
     if !source.iter().all(|item| R::is_valid(item)) {
@@ -293,7 +286,7 @@ pub(super) fn transmute_from_target_vec<R: Transmute>(source: Vec<R::Target>) ->
     Ok(unsafe { Vec::from_raw_parts(vec.as_mut_ptr().cast(), vec.len(), vec.capacity()) })
 }
 
-fn assert_size_and_allignment_match<R: Transmute>() {
+fn assert_size_and_allignment_match<R: CheckedTransmute>() {
     const {
         debug_assert!(core::mem::size_of::<R>() == core::mem::size_of::<R::Target>());
         debug_assert!(core::mem::align_of::<R>() == core::mem::align_of::<R::Target>());

@@ -812,7 +812,7 @@ fn derive_ffi_type_for_data_carrying_enum(
         //     C,
         // }
         // assert!(core::mem::size_of::<#enum_name #ty_generics>() == 1);
-        //unsafe impl <#impl_generics> core::niche::Optional for #enum_name #ty_generics #where_clause {
+        //unsafe impl <#impl_generics> core::niche::FlatTransmute for #enum_name #ty_generics #where_clause {
         //    type Inner = <Self as co3::ExternC>::CType;
         //}
 

@@ -14,21 +14,18 @@ categories = ["development-tools::ffi"]
 [features]
 default = ["owned_as_ref"]
 
-# Enables references that don't maintain stable position in memory
-#
-# Conversion of owned types may become expensive if `owned_as_ref` is enabled.
-# TODO: Find a better name for this feature flag
-cloned_refs = []
+# Enable deriving `extern C` ABI. Macros made available are:
+# 2. `ExternC`/`extern_type`
+# 1. `carbonate`/`decarbonate`
+derive = ["co3_derive"]
 
-# Enable ownership carrying types, i.e. heap-allocated types such as `Box<T>` or `Vec<T>`.
+# Enable types that carry ownership, i.e. heap-allocated types (e.g. `Box<T>` or `Vec<T>`).
 owned_types = []
 
-# Send owned(heap-allocated) types as shared references instead of transferring ownership.
+# Convert owned(heap-allocated) types into shared references instead of transferring ownership.
 #
-# With the notable exception are `Opaque` types which always carry ownership regardless, this
-# feature prevents ownership transfer of dynamically allocated memory across FFI boundary.
-#
-# This feature will have the same effect as `cloned_ref` in that it will
+# With the notable exception of `Opaque` types which always carry ownership, this feature
+# prevents ownership transfer of dynamically allocated memory across FFI boundary.
 owned_as_ref = ["owned_types"]
 
 # Enables sharing mutable references of non-robust transmutable types (e.g. `&mut bool`) across FFI.
@@ -37,10 +34,10 @@ owned_as_ref = ["owned_types"]
 # to modify the given reference and store a trap representation causing immediate UB.
 non_robust_ref_mut = []
 
-# Enable deriving `extern C` ABI. Macros made available are:
-# 2. `ExternC`/`extern_type`
-# 1. `carbonate`/`decarbonate`
-derive = ["co3_derive"]
+# Enables references that don't maintain stable position in memory (e.g. `&(u32, u32)`))
+#
+# Conversion of owned types may become expensive if `owned_as_ref` is enabled.
+cloned_refs = []
 
 # Enable integration with `getset` when deriving `extern C` ABI
 getset = ["derive", "co3_derive/getset"]

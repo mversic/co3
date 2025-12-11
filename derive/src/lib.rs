@@ -164,7 +164,7 @@ pub fn extern_type(_args: TokenStream, input: TokenStream) -> TokenStream {
 ///
 /// `is_valid` must not return false positives
 ///
-/// Check [`co3::transmute::Transmute`] or [`co3::mineral`] for more details
+/// Check [`co3::transmute::CheckedTransmute`] or [`co3::mineral`] for more details
 ///
 /// * `#[mineral(local)]`
 /// marks the type as local, meaning it contains references to the local frame. If a type

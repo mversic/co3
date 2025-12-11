@@ -84,7 +84,7 @@ mod wasm {
             }
 
             // SAFETY: Transmute relation is transitive
-            unsafe impl<'a> $crate::transmute::Transmute for &'a $src {
+            unsafe impl<'a> $crate::transmute::CheckedTransmute for &'a $src {
                 type Target = &'a $dst;
 
                 fn is_valid(target: &Self::Target) -> bool {
@@ -93,7 +93,7 @@ mod wasm {
             }
 
             // SAFETY: Transmute relation is transitive
-            unsafe impl<'a> $crate::transmute::Transmute for &'a mut $src {
+            unsafe impl<'a> $crate::transmute::CheckedTransmute for &'a mut $src {
                 type Target = &'a mut $dst;
 
                 fn is_valid(target: &Self::Target) -> bool {
