@@ -6,8 +6,16 @@
 use alloc::{boxed::Box, vec::Vec};
 use disjoint_impls::disjoint_impls;
 
+use crate::niche::{WithCustomNiche, WithNiche, WithStableNiche};
 #[cfg(not(feature = "non_robust_ref_mut"))]
 use crate::transmute::InfallibleTransmute;
+
+/// Marker for an [`Ir`] type that delegates to the pointed-to type when converting
+/// the likes of `&Self` or `&[Self]` into an FFI-compatible representation
+///
+/// This type clones the pointed-to value to get owned value that has implemented
+/// [`ExternC`]. This type therefore uses the store
+pub trait Cloned {}
 
 /// Marker for a type that is transparent with respect to its wrapped type.
 pub enum Transparent {}
@@ -17,13 +25,6 @@ pub enum Robust {}
 
 /// Marker for a type exported as an opaque pointer over FFI.
 pub enum Opaque {}
-
-/// Marker for an [`Ir`] type that delegates to the pointed-to type when converting
-/// the likes of `&Self` or `&[Self]` into an FFI-compatible representation
-///
-/// This type clones the pointed-to value to get owned value that has implemented
-/// [`ExternC`]. This type therefore uses the store
-pub trait Cloned {}
 
 disjoint_impls! {
     /// Designates a type that can be converted to and from an internal representation (IR).
@@ -214,36 +215,36 @@ disjoint_impls! {
     impl<R: Ir<Type = Transparent> + crate::niche::Ir<Type = Robust>> Ir for Option<R> {
         type Type = Option<Robust>;
     }
-    impl<R: Ir<Type = Transparent> + crate::niche::Ir<Type = Transparent>> Ir for Option<R> {
-        type Type = Option<Transparent>;
+    impl<R: Ir<Type = Transparent> + crate::niche::Ir<Type = WithCustomNiche>> Ir for Option<R> {
+        type Type = Option<WithCustomNiche>;
     }
-    impl<R: Ir<Type = Transparent> + crate::niche::Ir<Type = crate::niche::Cloned>> Ir for Option<R> {
-        type Type = Option<crate::niche::Cloned>;
+    impl<R: Ir<Type = Transparent> + crate::niche::Ir<Type = WithStableNiche>> Ir for Option<R> {
+        type Type = Option<WithStableNiche>;
     }
     impl<R: Ir<Type = Robust>> Ir for Option<R> {
         type Type = Option<Robust>;
     }
     impl<R: Ir<Type = Opaque>> Ir for Option<R> {
-        type Type = Option<crate::niche::Cloned>;
+        type Type = Option<WithCustomNiche>;
     }
     impl<R: Ir<Type: Cloned> + crate::niche::Ir<Type = Robust>> Ir for Option<R> {
         type Type = Option<Robust>;
     }
-    impl<R: Ir<Type: Cloned> + crate::niche::Ir<Type = crate::niche::Cloned>> Ir for Option<R> {
-        type Type = Option<crate::niche::Cloned>;
+    impl<R: Ir<Type: Cloned> + crate::niche::Ir<Type = WithCustomNiche>> Ir for Option<R> {
+        type Type = Option<WithCustomNiche>;
     }
 
-    impl<R: Ir<Type = Option<Transparent>>> Ir for &R {
-        type Type = Option<Transparent>;
+    impl<R: Ir<Type = Option<WithStableNiche>>> Ir for &R {
+        type Type = Option<WithStableNiche>;
     }
-    impl<R: Ir<Type = Option<Transparent>>> Ir for &mut R {
-        type Type = Option<Transparent>;
+    impl<R: Ir<Type = Option<WithStableNiche>>> Ir for &mut R {
+        type Type = Option<WithStableNiche>;
     }
-    impl<R: Ir<Type = Option<Transparent>>> Ir for Box<R> {
-        type Type = Option<Transparent>;
+    impl<R: Ir<Type = Option<WithStableNiche>>> Ir for Box<R> {
+        type Type = Option<WithStableNiche>;
     }
-    impl<R: Ir<Type = Option<Transparent>>, const N: usize> Ir for [R; N] {
-        type Type = Option<Transparent>;
+    impl<R: Ir<Type = Option<WithStableNiche>>, const N: usize> Ir for [R; N] {
+        type Type = Option<WithStableNiche>;
     }
 }
 
@@ -258,7 +259,7 @@ impl<const N: usize> Cloned for [Opaque; N] {}
 impl<S: Cloned, const N: usize> Cloned for [S; N] {}
 
 impl Cloned for Option<Robust> {}
-impl Cloned for Option<crate::niche::Cloned> {}
+impl Cloned for Option<WithCustomNiche> {}
 
 impl<R> Ir for *const R {
     type Type = Robust;
@@ -266,4 +267,3 @@ impl<R> Ir for *const R {
 impl<R> Ir for *mut R {
     type Type = Robust;
 }
-

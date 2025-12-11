@@ -462,7 +462,7 @@ fn derive_ffi_type_for_opaque_item(name: &Ident, generics: &syn::Generics) -> To
         }
 
         impl #impl_generics co3::niche::Ir for #name #ty_generics #where_clause {
-            type Type = co3::niche::Cloned;
+            type Type = co3::niche::WithCustomNiche;
         }
 
         impl #impl_generics co3::niche::Niche for #name #ty_generics #where_clause {
@@ -766,7 +766,7 @@ fn derive_ffi_type_for_data_carrying_enum(
             type Type = Self;
         }
         impl<#impl_generics> co3::niche::Ir for #enum_name #ty_generics #where_clause {
-            type Type = co3::niche::Cloned;
+            type Type = co3::niche::WithCustomNiche;
         }
 
         impl<#impl_generics> co3::niche::Niche for #enum_name #ty_generics #where_clause {

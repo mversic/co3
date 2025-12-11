@@ -113,8 +113,6 @@ impl<T> crate::ir::Ir for core::cell::UnsafeCell<T> {
     type Type = crate::ir::Transparent;
 }
 
-// SAFETY: `UnsafeCell<T>` is transmutable into `T`
-// and `is_valid` doesn't return false positives
 unsafe impl<T> crate::transmute::Transmute for core::cell::UnsafeCell<T> {
     type Target = T;
 
@@ -124,14 +122,12 @@ unsafe impl<T> crate::transmute::Transmute for core::cell::UnsafeCell<T> {
     }
 }
 
-// SAFETY: `UnsafeCell<T>` is robust with respect to `T`
 unsafe impl<T> crate::transmute::InfallibleTransmute for core::cell::UnsafeCell<T> {}
 
 impl<T> crate::niche::Ir for core::cell::UnsafeCell<T> {
     type Type = crate::ir::Robust;
 }
 
-// SAFETY: ZST relation is transitive
 unsafe impl<T> crate::out_ptr::Zst for core::cell::UnsafeCell<T> where
     for<'dummy> <Self as crate::transmute::Transmute>::Target: crate::out_ptr::Zst
 {

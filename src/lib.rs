@@ -13,6 +13,7 @@ pub use co3_derive::*;
 use derive_more::Display;
 use disjoint_impls::disjoint_impls;
 
+use crate::niche::{WithCustomNiche, WithStableNiche};
 #[cfg(feature = "owned_types")]
 #[cfg(feature = "owned_as_ref")]
 use crate::transmute::{
@@ -223,7 +224,7 @@ disjoint_impls! {
 
     impl<R: Optional> ExternC for R
     where
-        Self: Ir<Type = Option<Transparent>>,
+        Self: Ir<Type = Option<WithStableNiche>>,
     {
         type CType = R::Inner;
     }
@@ -235,7 +236,7 @@ disjoint_impls! {
     }
     impl<R: Niche> ExternC for Option<R>
     where
-        Self: Ir<Type = Option<crate::niche::Cloned>>,
+        Self: Ir<Type = Option<WithCustomNiche>>,
     {
         type CType = <R as ExternC>::CType;
     }
@@ -607,7 +608,7 @@ disjoint_impls! {
     //}
     impl<R: Optional> Encode for R
     where
-        Self: Ir<Type = Option<Transparent>>,
+        Self: Ir<Type = Option<WithStableNiche>>,
     {
         type Store = ();
 
@@ -636,7 +637,7 @@ disjoint_impls! {
     }
     impl<R: Niche + Encode> Encode for Option<R>
     where
-        Self: Ir<Type = Option<crate::niche::Cloned>>,
+        Self: Ir<Type = Option<WithCustomNiche>>,
     {
         type Store = <R as Encode>::Store;
 
@@ -1081,7 +1082,7 @@ disjoint_impls! {
 
     impl<'d, R: Optional + 'd> Decode<'d> for R
     where
-        Self: Ir<Type = Option<Transparent>>,
+        Self: Ir<Type = Option<WithStableNiche>>,
     {
         type Store = ();
 
@@ -1108,7 +1109,7 @@ disjoint_impls! {
     }
     impl<'d, R: Niche<CType: PartialEq> + Decode<'d>> Decode<'d> for Option<R>
     where
-        Self: Ir<Type = Option<crate::niche::Cloned>>,
+        Self: Ir<Type = Option<WithCustomNiche>>,
     {
         type Store = <R as Decode<'d>>::Store;
 
@@ -1256,16 +1257,16 @@ macro_rules! mineral {
                     type Type = $crate::ir::Robust;
                 }
                 impl<$($($impl_generics $(: $bounds)?),*)?> Ir for $ty where
-                    for<'dummy> Self: $crate::transmute::Transmute<Target: Ir<Type = $crate::ir::Transparent> + $crate::niche::StableNiche>,
+                    for<'dummy> Self: $crate::transmute::Transmute<Target: Ir<Type = $crate::niche::WithCustomNiche>> + $crate::niche::Niche,
                     $($($where_ty: $where_bound),*)?
                 {
-                    type Type = $crate::ir::Transparent;
+                    type Type = $crate::niche::WithCustomNiche;
                 }
                 impl<$($($impl_generics $(: $bounds)?),*)?> Ir for $ty where
-                    for<'dummy> Self: $crate::transmute::Transmute<Target: Ir<Type = $crate::niche::Cloned>> + $crate::niche::Niche,
+                    for<'dummy> Self: $crate::transmute::Transmute<Target: Ir<Type = $crate::niche::WithStableNiche> + $crate::niche::StableNiche>,
                     $($($where_ty: $where_bound),*)?
                 {
-                    type Type = $crate::niche::Cloned;
+                    type Type = $crate::niche::WithStableNiche;
                 }
             }
         };
@@ -1318,7 +1319,7 @@ macro_rules! mineral {
         }
 
         impl<$($($impl_generics $(: $bounds)?),*)?> $crate::niche::Ir for $ty where $($($where_ty: $where_bound),*)? {
-            type Type = $crate::niche::Cloned;
+            type Type = $crate::niche::WithCustomNiche;
         }
 
         // SAFETY: ZST relation is transitive
@@ -1380,11 +1381,8 @@ macro_rules! impl_tuple {
                 impl<$($ty: $crate::niche::Ir<Type = $crate::ir::Robust>),+> Ir for ($($ty,)+) {
                     type Type = $crate::ir::Robust;
                 }
-                impl<$($ty: $crate::niche::Ir<Type = $crate::ir::Transparent>),+> Ir for ($($ty,)+) {
-                    type Type = $crate::niche::Cloned;
-                }
-                impl<$($ty: $crate::niche::Ir<Type: $crate::ir::Cloned>),+ + Niche> Ir for ($($ty,)+) {
-                    type Type = $crate::niche::Cloned;
+                impl<$($ty: $crate::niche::Ir<Type: $crate::niche::WithNiche> + $crate::niche::Niche),+> Ir for ($($ty,)+) {
+                    type Type = $crate::niche::WithCustomNiche;
                 }
             }
         };

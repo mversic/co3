@@ -13,7 +13,18 @@ use crate::{
     transmute::Transmute,
 };
 
-pub enum Cloned {}
+/// Marker trait for an [`Ir`] type of a Rust type that has a niche value (stable or custom)
+///
+/// There are only 2 notable implementations of this trait:
+/// 1. [`Transparent`] types have a single stable (compiler guaranteed) niche value (e.g. `&u32`)
+/// 2. [`Cloned`] types have a custom defined (by this crate) niche value (e.g. `[NonZeroU32; 2]`)
+pub(crate) trait WithNiche {}
+
+/// Marker for a type that has a single stable (compiler guaranteed) niche value (e.g. `&u32`).
+pub enum WithStableNiche {}
+
+/// Marker for a type that has a custom defined (by this crate) niche value (e.g. `[NonZeroU32; 2]`).
+pub enum WithCustomNiche {}
 
 /// Type that has a trap representation that can be used as a niche value.
 pub trait Niche: ExternC {
@@ -59,17 +70,17 @@ disjoint_impls! {
 
     // TODO: Implement for Box<Robust> types
     impl<R: crate::ir::Ir<Type = Transparent>> Ir for &R {
-        type Type = Transparent;
+        type Type = WithStableNiche;
     }
     impl<R: crate::ir::Ir<Type = Robust>> Ir for &R {
-        type Type = Transparent;
+        type Type = WithStableNiche;
     }
     impl<R: crate::ir::Ir<Type = Opaque>> Ir for &R {
-        type Type = Transparent;
+        type Type = WithStableNiche;
     }
     #[cfg(feature = "cloned_refs")]
     impl<R: crate::ir::Ir<Type: crate::ir::Cloned>> Ir for &R {
-        type Type = Cloned;
+        type Type = WithCustomNiche;
     }
 
     impl<
@@ -79,43 +90,43 @@ disjoint_impls! {
     where
         R: crate::ir::Ir<Type = Transparent>,
     {
-        type Type = Transparent;
+        type Type = WithStableNiche;
     }
     impl<R: crate::ir::Ir<Type = Robust>> Ir for &mut R {
-        type Type = Transparent;
+        type Type = WithStableNiche;
     }
     impl<R: crate::ir::Ir<Type = Opaque>> Ir for &mut R {
-        type Type = Transparent;
+        type Type = WithStableNiche;
     }
 
     impl<R: crate::ir::Ir<Type = Transparent>> Ir for Box<R> {
-        type Type = Transparent;
+        type Type = WithStableNiche;
     }
     #[cfg(feature = "owned_types")]
     impl<R: crate::ir::Ir<Type = Robust>> Ir for Box<R> {
-        type Type = Transparent;
+        type Type = WithStableNiche;
     }
     impl<R: crate::ir::Ir<Type = Opaque>> Ir for Box<R> {
-        type Type = Transparent;
+        type Type = WithStableNiche;
     }
     #[cfg(feature = "owned_types")]
     impl<R: crate::ir::Ir<Type: crate::ir::Cloned>> Ir for Box<R> {
-        type Type = Cloned;
+        type Type = WithCustomNiche;
     }
 
     impl<R: crate::ir::Ir<Type = Transparent>> Ir for &[R] {
-        type Type = Cloned;
+        type Type = WithCustomNiche;
     }
     impl<R: crate::ir::Ir<Type = Robust>> Ir for &[R] {
-        type Type = Cloned;
+        type Type = WithCustomNiche;
     }
     #[cfg(feature = "cloned_refs")]
     impl<R: crate::ir::Ir<Type = Opaque>> Ir for &[R] {
-        type Type = Cloned;
+        type Type = WithCustomNiche;
     }
     #[cfg(feature = "cloned_refs")]
     impl<R: crate::ir::Ir<Type: crate::ir::Cloned>> Ir for &[R] {
-        type Type = Cloned;
+        type Type = WithCustomNiche;
     }
 
     impl<
@@ -126,52 +137,52 @@ disjoint_impls! {
     where
         R: crate::ir::Ir<Type = Transparent>,
     {
-        type Type = Cloned;
+        type Type = WithCustomNiche;
     }
     impl<R: crate::ir::Ir<Type = Robust>> Ir for &mut [R] {
-        type Type = Cloned;
+        type Type = WithCustomNiche;
     }
 
     #[cfg(feature = "owned_types")]
     impl<R: crate::ir::Ir<Type = Transparent>> Ir for Box<[R]> {
-        type Type = Cloned;
+        type Type = WithCustomNiche;
     }
     #[cfg(feature = "owned_types")]
     impl<R: crate::ir::Ir<Type = Robust>> Ir for Box<[R]> {
-        type Type = Cloned;
+        type Type = WithCustomNiche;
     }
     #[cfg(feature = "owned_types")]
     impl<R: crate::ir::Ir<Type = Opaque>> Ir for Box<[R]> {
-        type Type = Cloned;
+        type Type = WithCustomNiche;
     }
     #[cfg(feature = "owned_types")]
     impl<R: crate::ir::Ir<Type: crate::ir::Cloned>> Ir for Box<[R]> {
-        type Type = Cloned;
+        type Type = WithCustomNiche;
     }
 
     #[cfg(feature = "owned_types")]
     impl<R: crate::ir::Ir<Type = Transparent>> Ir for Vec<R> {
-        type Type = Cloned;
+        type Type = WithCustomNiche;
     }
     #[cfg(feature = "owned_types")]
     impl<R: crate::ir::Ir<Type = Robust>> Ir for Vec<R> {
-        type Type = Cloned;
+        type Type = WithCustomNiche;
     }
     #[cfg(feature = "owned_types")]
     impl<R: crate::ir::Ir<Type = Opaque>> Ir for Vec<R> {
-        type Type = Cloned;
+        type Type = WithCustomNiche;
     }
     #[cfg(feature = "owned_types")]
     impl<R: crate::ir::Ir<Type: crate::ir::Cloned>> Ir for Vec<R> {
-        type Type = Cloned;
+        type Type = WithCustomNiche;
     }
 
     // TODO: Not sure about the array types,
     impl<R: crate::ir::Ir<Type = Transparent>, const N: usize> Ir for [R; N]
     where
-        Option<Self>: crate::ir::Ir<Type = Option<Transparent>>,
+        Option<Self>: crate::ir::Ir<Type = Option<WithStableNiche>>,
     {
-        type Type = Cloned;
+        type Type = WithCustomNiche;
     }
     impl<R: crate::ir::Ir<Type = Transparent>, const N: usize> Ir for [R; N]
     where
@@ -183,7 +194,7 @@ disjoint_impls! {
     where
         Option<Self>: crate::ir::Ir<Type = Option<S>>,
     {
-        type Type = Cloned;
+        type Type = WithCustomNiche;
     }
     impl<R: crate::ir::Ir<Type: crate::ir::Cloned>, const N: usize> Ir for [R; N]
     where
@@ -196,7 +207,7 @@ disjoint_impls! {
     //    type Type = Option<Robust>;
     //}
     //impl<R: crate::ir::Ir<Type = Transparent>> Ir for Option<R> {
-    //    type Type = Transparent;
+    //    type Type = WithStableNiche;
     //}
     //impl<R: crate::ir::Ir<Type: crate::ir::Cloned>> Ir for Option<R> {
     //    type Type = Option<S>;
@@ -307,3 +318,6 @@ unsafe impl<R: Optional, const N: usize> Optional for [R; N] {
 //unsafe impl<R: Optional> Optional for UnsafeCell<R> {
 //    type Inner = R::Inner;
 //}
+
+impl WithNiche for WithStableNiche {}
+impl WithNiche for WithCustomNiche {}

@@ -72,7 +72,16 @@
 4. Cloned
 - types that have a niche value, but not a stable one
 
-# Option<T>
+# Niche::IR marker types
+
+1. WithStableNiche (depends on `Optional` trait)
+- has a single stable (compiler guaranteed) niche value
+
+2. WithCustomNiche
+- has a custom (defined by this crate) niche value
+
+3. Robust (depends on `ReprC` trait)
+- has no trap representations and consequently no niche value
 
 * Option<Transparent, Transparent>       =>                           |    Not     |
 * Option<Transparent, Robust>            => Option<Robust>            |   Cloned   |

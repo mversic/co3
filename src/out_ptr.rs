@@ -236,7 +236,7 @@ disjoint_impls! {
 
     impl<R: Optional> OutPtr for R
     where
-        Self: Ir<Type = Option<Transparent>>,
+        Self: Ir<Type = Option<WithStableNiche>>,
     {
         type OutPtr = R::Inner;
     }
@@ -248,7 +248,7 @@ disjoint_impls! {
     }
     impl<R: Niche + OutPtr> OutPtr for Option<R>
     where
-        Self: Ir<Type = Option<crate::niche::Cloned>>,
+        Self: Ir<Type = Option<WithCustomNiche>>,
     {
         type OutPtr = R::OutPtr;
     }
@@ -569,7 +569,7 @@ disjoint_impls! {
 
     impl<R: Optional> OutPtrWrite for R
     where
-        Self: Ir<Type = Option<Transparent>>,
+        Self: Ir<Type = Option<WithStableNiche>>,
     {
         unsafe fn write_out(self, out_ptr: *mut Self::OutPtr) {
             unimplemented!();
@@ -608,7 +608,7 @@ disjoint_impls! {
     }
     impl<R: Niche + OutPtrWrite<OutPtr = <R as ExternC>::CType>> OutPtrWrite for Option<R>
     where
-        Self: Ir<Type = Option<crate::niche::Cloned>>,
+        Self: Ir<Type = Option<WithCustomNiche>>,
     {
         unsafe fn write_out(self, out_ptr: *mut Self::OutPtr) {
             self.map_or_else(
@@ -870,7 +870,7 @@ disjoint_impls! {
 
     impl<R: Optional> OutPtrRead for R
     where
-        Self: Ir<Type = Option<Transparent>>,
+        Self: Ir<Type = Option<WithStableNiche>>,
     {
         unsafe fn try_read_out(out_ptr: Self::OutPtr) -> Result<Self> {
             unimplemented!()
@@ -890,7 +890,7 @@ disjoint_impls! {
     }
     impl<R: Niche + OutPtrRead> OutPtrRead for Option<R>
     where
-        Self: Ir<Type = Option<crate::niche::Cloned>>,
+        Self: Ir<Type = Option<WithCustomNiche>>,
         //<R as ExternC>::CType: PartialEq,
     {
         unsafe fn try_read_out(out_ptr: Self::OutPtr) -> Result<Self> {
