@@ -3,7 +3,9 @@ use super::*;
 #[cfg(feature = "owned_as_ref")]
 use crate::transmute::{transmute_from_target_boxed_slice, transmute_from_target_vec};
 use crate::{
-    ir::Transparent, niche::StableNiche, transmute::{transmute_from_target_ref_slice, transmute_from_target_slice_mut}
+    ir::Transparent,
+    niche::StableNiche,
+    transmute::{transmute_from_target_ref_slice, transmute_from_target_slice_mut},
 };
 
 disjoint_impls! {
@@ -233,17 +235,17 @@ disjoint_impls! {
         type OutPtr = Self::CType;
     }
 
+    impl<R: OutPtr> OutPtr for Option<R>
+    where
+        Self: Ir<Type = Option<WithoutNiche>>,
+    {
+        type OutPtr = FfiTuple2<<u8 as OutPtr>::OutPtr, R::OutPtr>;
+    }
     impl<R: StableNiche> OutPtr for Option<R>
     where
         Self: Ir<Type = Option<WithStableNiche>>,
     {
         type OutPtr = <Option<R> as CheckedTransmute>::Target;
-    }
-    impl<R: OutPtr> OutPtr for Option<R>
-    where
-        Self: Ir<Type = Option<Robust>>,
-    {
-        type OutPtr = FfiTuple2<<u8 as OutPtr>::OutPtr, R::OutPtr>;
     }
     impl<R: Niche + OutPtr> OutPtr for Option<R>
     where
@@ -566,17 +568,9 @@ disjoint_impls! {
         }
     }
 
-    impl<R: StableNiche> OutPtrWrite for Option<R>
-    where
-        Self: Ir<Type = Option<WithStableNiche>>,
-    {
-        unsafe fn write_out(self, out_ptr: *mut Self::OutPtr) {
-            unimplemented!();
-        }
-    }
     impl<R: OutPtrWrite> OutPtrWrite for Option<R>
     where
-        Self: Ir<Type = Option<Robust>>,
+        Self: Ir<Type = Option<WithoutNiche>>,
     {
         unsafe fn write_out(self, out_ptr: *mut Self::OutPtr) {
             match self {
@@ -603,6 +597,14 @@ disjoint_impls! {
                     out_ptr.write(FfiTuple2(discriminant_out_ptr, value_out_ptr));
                 },
             }
+        }
+    }
+    impl<R: StableNiche> OutPtrWrite for Option<R>
+    where
+        Self: Ir<Type = Option<WithStableNiche>>,
+    {
+        unsafe fn write_out(self, out_ptr: *mut Self::OutPtr) {
+            unimplemented!();
         }
     }
     impl<R: Niche + OutPtrWrite<OutPtr = <R as ExternC>::CType>> OutPtrWrite for Option<R>
@@ -867,17 +869,9 @@ disjoint_impls! {
         }
     }
 
-    impl<R: StableNiche> OutPtrRead for Option<R>
-    where
-        Self: Ir<Type = Option<WithStableNiche>>,
-    {
-        unsafe fn try_read_out(out_ptr: Self::OutPtr) -> Result<Self> {
-            unimplemented!()
-        }
-    }
     impl<R: OutPtrRead> OutPtrRead for Option<R>
     where
-        Self: Ir<Type = Option<Robust>>,
+        Self: Ir<Type = Option<WithoutNiche>>,
     {
         unsafe fn try_read_out(out_ptr: Self::OutPtr) -> Result<Self> {
             match unsafe { <u8 as OutPtrRead>::try_read_out(out_ptr.0)? } {
@@ -885,6 +879,14 @@ disjoint_impls! {
                 1 => Ok(Some(unsafe { R::try_read_out(out_ptr.1)? })),
                 _ => Err(FfiReturn::TrapRepresentation),
             }
+        }
+    }
+    impl<R: StableNiche> OutPtrRead for Option<R>
+    where
+        Self: Ir<Type = Option<WithStableNiche>>,
+    {
+        unsafe fn try_read_out(out_ptr: Self::OutPtr) -> Result<Self> {
+            unimplemented!()
         }
     }
     impl<R: Niche + OutPtrRead> OutPtrRead for Option<R>

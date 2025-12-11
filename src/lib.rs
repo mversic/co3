@@ -13,7 +13,7 @@ pub use co3_derive::*;
 use derive_more::Display;
 use disjoint_impls::disjoint_impls;
 
-use crate::niche::{StableNiche, WithCustomNiche, WithStableNiche};
+use crate::niche::{StableNiche, WithCustomNiche, WithStableNiche, WithoutNiche};
 #[cfg(feature = "owned_types")]
 #[cfg(feature = "owned_as_ref")]
 use crate::transmute::{
@@ -221,17 +221,17 @@ disjoint_impls! {
         type CType = [R::CType; N];
     }
 
+    impl<R: ExternC> ExternC for Option<R>
+    where
+        Self: Ir<Type = Option<WithoutNiche>>,
+    {
+        type CType = FfiTuple2<<u8 as ExternC>::CType, R::CType>;
+    }
     impl<R: StableNiche> ExternC for Option<R>
     where
         Self: Ir<Type = Option<WithStableNiche>>,
     {
         type CType = <Option<R> as CheckedTransmute>::Target;
-    }
-    impl<R: ExternC> ExternC for Option<R>
-    where
-        Self: Ir<Type = Option<Robust>>,
-    {
-        type CType = FfiTuple2<<u8 as ExternC>::CType, R::CType>;
     }
     impl<R: Niche> ExternC for Option<R>
     where
@@ -661,22 +661,9 @@ disjoint_impls! {
     //        //};
     //    }
     //}
-    impl<R: StableNiche> Encode for Option<R>
-    where
-        Self: Ir<Type = Option<WithStableNiche>>,
-    {
-        type Store = ();
-
-        fn encode<'itm>(self, (): &mut ()) -> Self::CType
-        where
-            Self: 'itm,
-        {
-            transmute_into_target(self)
-        }
-    }
     impl<R: Encode> Encode for Option<R>
     where
-        Self: Ir<Type = Option<Robust>>,
+        Self: Ir<Type = Option<WithoutNiche>>,
     {
         type Store = <R as Encode>::Store;
 
@@ -690,6 +677,19 @@ disjoint_impls! {
                 None => FfiTuple2(Encode::encode(0u8, &mut ()), unsafe { core::mem::zeroed() }),
                 Some(value) => FfiTuple2(Encode::encode(1u8, &mut ()), value.encode(store)),
             }
+        }
+    }
+    impl<R: StableNiche> Encode for Option<R>
+    where
+        Self: Ir<Type = Option<WithStableNiche>>,
+    {
+        type Store = ();
+
+        fn encode<'itm>(self, (): &mut ()) -> Self::CType
+        where
+            Self: 'itm,
+        {
+            transmute_into_target(self)
         }
     }
     impl<R: Niche + Encode> Encode for Option<R>
@@ -1140,19 +1140,9 @@ disjoint_impls! {
         }
     }
 
-    impl<'d, R: StableNiche + 'd> Decode<'d> for Option<R>
-    where
-        Self: Ir<Type = Option<WithStableNiche>>,
-    {
-        type Store = ();
-
-        unsafe fn decode<'itm: 'd>(source: Self::CType, _: &'itm mut ()) -> Result<Self> {
-            transmute_from_target(source)
-        }
-    }
     impl<'d, R: Decode<'d>> Decode<'d> for Option<R>
     where
-        Self: Ir<Type = Option<Robust>>,
+        Self: Ir<Type = Option<WithoutNiche>>,
     {
         type Store = <R as Decode<'d>>::Store;
 
@@ -1164,6 +1154,16 @@ disjoint_impls! {
                 1 => Ok(Some(unsafe { R::decode(source.1, store) }?)),
                 _ => Err(FfiReturn::TrapRepresentation),
             }
+        }
+    }
+    impl<'d, R: StableNiche + 'd> Decode<'d> for Option<R>
+    where
+        Self: Ir<Type = Option<WithStableNiche>>,
+    {
+        type Store = ();
+
+        unsafe fn decode<'itm: 'd>(source: Self::CType, _: &'itm mut ()) -> Result<Self> {
+            transmute_from_target(source)
         }
     }
     impl<'d, R: Niche<CType: PartialEq> + Decode<'d>> Decode<'d> for Option<R>
@@ -1261,7 +1261,7 @@ macro_rules! mineral {
             type Type = $crate::ir::Robust;
         }
         impl<$($($impl_generics $(: $bounds)?),*)?> $crate::niche::Ir for $ty where $($($where_ty: $where_bound),*)? {
-            type Type = $crate::ir::Robust;
+            type Type = $crate::niche::WithoutNiche;
         }
     };
     (unsafe impl $(<$($impl_generics: tt $(: $bounds: path)?),*>)? Transparent for $ty: ty $(where $($where_ty:ty: $where_bound:path),* )? {
@@ -1310,10 +1310,10 @@ macro_rules! mineral {
                 }
 
                 impl<$($($impl_generics $(: $bounds)?),*)?> Ir for $ty where
-                    for<'dummy> Self: $crate::transmute::CheckedTransmute<Target: Ir<Type = $crate::ir::Robust>>,
+                    for<'dummy> Self: $crate::transmute::CheckedTransmute<Target: Ir<Type = $crate::niche::WithoutNiche>>,
                     $($($where_ty: $where_bound),*)?
                 {
-                    type Type = $crate::ir::Robust;
+                    type Type = $crate::niche::WithoutNiche;
                 }
                 impl<$($($impl_generics $(: $bounds)?),*)?> Ir for $ty where
                     for<'dummy> Self: $crate::transmute::CheckedTransmute<Target: Ir<Type = $crate::niche::WithCustomNiche>> + $crate::niche::Niche,
@@ -1437,8 +1437,8 @@ macro_rules! impl_tuple {
                     type Type;
                 }
 
-                impl<$($ty: $crate::niche::Ir<Type = $crate::ir::Robust>),+> Ir for ($($ty,)+) {
-                    type Type = $crate::ir::Robust;
+                impl<$($ty: $crate::niche::Ir<Type = $crate::niche::WithoutNiche>),+> Ir for ($($ty,)+) {
+                    type Type = $crate::niche::WithoutNiche;
                 }
                 impl<$($ty: $crate::niche::Ir<Type: $crate::niche::WithNiche> + $crate::niche::Niche),+> Ir for ($($ty,)+) {
                     type Type = $crate::niche::WithCustomNiche;

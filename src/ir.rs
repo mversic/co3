@@ -6,7 +6,7 @@
 use alloc::{boxed::Box, vec::Vec};
 use disjoint_impls::disjoint_impls;
 
-use crate::niche::{WithCustomNiche, WithStableNiche};
+use crate::niche::{WithCustomNiche, WithStableNiche, WithoutNiche};
 #[cfg(not(feature = "non_robust_ref_mut"))]
 use crate::transmute::InfallibleTransmute;
 
@@ -212,23 +212,23 @@ disjoint_impls! {
     //impl<R: Ir<Type = Box<Robust>>> Ir for Option<R> {
     //    type Type = Box<Robust>;
     //}
-    impl<R: Ir<Type = Transparent> + crate::niche::Ir<Type = Robust>> Ir for Option<R> {
-        type Type = Option<Robust>;
-    }
-    impl<R: Ir<Type = Transparent> + crate::niche::Ir<Type = WithCustomNiche>> Ir for Option<R> {
-        type Type = Option<WithCustomNiche>;
+    impl<R: Ir<Type = Transparent> + crate::niche::Ir<Type = WithoutNiche>> Ir for Option<R> {
+        type Type = Option<WithoutNiche>;
     }
     impl<R: Ir<Type = Transparent> + crate::niche::Ir<Type = WithStableNiche>> Ir for Option<R> {
         type Type = Option<WithStableNiche>;
     }
+    impl<R: Ir<Type = Transparent> + crate::niche::Ir<Type = WithCustomNiche>> Ir for Option<R> {
+        type Type = Option<WithCustomNiche>;
+    }
     impl<R: Ir<Type = Robust>> Ir for Option<R> {
-        type Type = Option<Robust>;
+        type Type = Option<WithoutNiche>;
     }
     impl<R: Ir<Type = Opaque>> Ir for Option<R> {
         type Type = Option<WithCustomNiche>;
     }
-    impl<R: Ir<Type: Cloned> + crate::niche::Ir<Type = Robust>> Ir for Option<R> {
-        type Type = Option<Robust>;
+    impl<R: Ir<Type: Cloned> + crate::niche::Ir<Type = WithoutNiche>> Ir for Option<R> {
+        type Type = Option<WithoutNiche>;
     }
     impl<R: Ir<Type: Cloned> + crate::niche::Ir<Type = WithCustomNiche>> Ir for Option<R> {
         type Type = Option<WithCustomNiche>;
@@ -258,7 +258,7 @@ impl<S> Cloned for Vec<S> {}
 impl<const N: usize> Cloned for [Opaque; N] {}
 impl<S: Cloned, const N: usize> Cloned for [S; N] {}
 
-impl Cloned for Option<Robust> {}
+impl Cloned for Option<WithoutNiche> {}
 impl Cloned for Option<WithCustomNiche> {}
 
 impl<R> Ir for *const R {

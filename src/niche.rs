@@ -26,6 +26,9 @@ pub enum WithStableNiche {}
 /// Marker for a type that has a custom defined (by this crate) niche value (e.g. `[NonZeroU32; 2]`).
 pub enum WithCustomNiche {}
 
+/// Marker for a type that has no trap representations and therefore no niche value
+pub enum WithoutNiche {}
+
 /// Type that has a trap representation that can be used as a niche value.
 ///
 /// # Example
@@ -50,7 +53,7 @@ disjoint_impls! {
     pub trait Ir {
         /// The internal representation (i.e. type family) of the type
         ///
-        /// - If `Self` doesn't have any niche value, set [`Ir::Type`] to [`Robust`].
+        /// - If `Self` doesn't have any niche value, set [`Ir::Type`] to [`WithoutNiche`].
         ///   `Option<T>` will be serialized as [`crate::FfiTuple2(discriminant, value)`]
         ///
         /// - If `Self` has a compiler guaranteed niche value, set [`Ir::Type`] to [`WithStableNiche`].
@@ -170,40 +173,26 @@ disjoint_impls! {
         type Type = WithCustomNiche;
     }
 
-    // TODO: Not sure about the array types,
-    impl<R: crate::ir::Ir<Type = Transparent>, const N: usize> Ir for [R; N]
-    where
-        Option<Self>: crate::ir::Ir<Type = Option<WithStableNiche>>,
-    {
+    impl<R: Ir<Type = WithoutNiche>, const N: usize> Ir for [R; N] {
+        type Type = WithoutNiche;
+    }
+    impl<R: Ir<Type = WithStableNiche>, const N: usize> Ir for [R; N] {
+        type Type = WithStableNiche;
+    }
+    impl<R: Ir<Type = WithCustomNiche>, const N: usize> Ir for [R; N] {
         type Type = WithCustomNiche;
-    }
-    impl<R: crate::ir::Ir<Type = Transparent>, const N: usize> Ir for [R; N]
-    where
-        Option<Self>: crate::ir::Ir<Type = Option<Robust>>,
-    {
-        type Type = Robust;
-    }
-    impl<R: crate::ir::Ir<Type: crate::ir::Cloned>, S: crate::ir::Cloned, const N: usize> Ir for [R; N]
-    where
-        Option<Self>: crate::ir::Ir<Type = Option<S>>,
-    {
-        type Type = WithCustomNiche;
-    }
-    impl<R: crate::ir::Ir<Type: crate::ir::Cloned>, const N: usize> Ir for [R; N]
-    where
-        Option<Self>: crate::ir::Ir<Type = Option<Robust>>,
-    {
-        type Type = Robust;
     }
 
-    //impl<R: crate::ir::Ir<Type = Option<Robust>>> Ir for R {
-    //    type Type = Option<Robust>;
-    //}
-    //impl<R: crate::ir::Ir<Type = Transparent>> Ir for Option<R> {
-    //    type Type = WithStableNiche;
-    //}
-    //impl<R: crate::ir::Ir<Type: crate::ir::Cloned>> Ir for Option<R> {
-    //    type Type = Option<S>;
+    impl<R: Ir<Type = WithoutNiche>> Ir for Option<R> {
+        type Type = WithCustomNiche;
+    }
+    impl<R: Ir<Type = WithStableNiche>> Ir for Option<R> {
+        type Type = WithoutNiche;
+    }
+    // TODO: It can be either WithoutNiche or WithCustomNiche
+    // Depends on: https://github.com/mversic/co3/issues/33
+    //impl<R: Ir<Type = WithCustomNiche>> Ir for Option<R> {
+    //    type Type = XXX;
     //}
 }
 
