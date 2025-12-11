@@ -462,7 +462,7 @@ fn derive_ffi_type_for_opaque_item(name: &Ident, generics: &syn::Generics) -> To
         }
 
         impl #impl_generics co3::niche::Ir for #name #ty_generics #where_clause {
-            type Type = co3::ir::Opaque;
+            type Type = co3::niche::Cloned;
         }
 
         impl #impl_generics co3::niche::Niche for #name #ty_generics #where_clause {

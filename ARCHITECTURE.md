@@ -78,7 +78,7 @@
 * Option<Transparent, Robust>            => Option<Robust>            |   Cloned   |
 * Option<Transparent, S> where S: Cloned => Option<S>                 |   Cloned   |
 * Option<Robust>                         =>                           |   Cloned   |
-* Option<Opaque>                         =>                           |    Not     |
+* Option<Opaque>                         => Option<Cloned>            |    Not     |
 * Option<S, Robust> where S: Cloned      => Option<Robust>            |   Cloned   |
 * Option<S, S> where S: Cloned           =>                           |   Cloned   |
 
@@ -86,11 +86,6 @@
 * &mut Option<Transparent, Transparent>  => Option<Transparent>       |  DELEGATED |
 * Box<Option<Transparent, Transparent>>  => Option<Transparent>       |  DELEGATED |
 * [Option<Transparent, Transparent>; N]  => Option<Transparent>       |  DELEGATED |
-
-* &Option<Opaque>                        => Option<Transparent>       |  DELEGATED |
-* &mut Option<Opaque>                    => Option<Transparent>       |  DELEGATED |
-* Box<Option<Opaque>>                    => Option<Transparent>       |  DELEGATED |
-* [Option<Opaque>; N]                    => Option<Transparent>       |  DELEGATED |
 
 # Derivative niche marker types:
 // TODO

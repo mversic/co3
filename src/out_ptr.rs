@@ -246,12 +246,6 @@ disjoint_impls! {
     {
         type OutPtr = FfiTuple2<<u8 as OutPtr>::OutPtr, R::OutPtr>;
     }
-    impl<R: OutPtr> OutPtr for Option<R>
-    where
-        Self: Ir<Type = Option<Opaque>>,
-    {
-        type OutPtr = *mut R;
-    }
     impl<R: Niche + OutPtr> OutPtr for Option<R>
     where
         Self: Ir<Type = Option<crate::niche::Cloned>>,
@@ -612,29 +606,15 @@ disjoint_impls! {
             }
         }
     }
-    impl<R: OutPtrWrite<OutPtr = *mut R>> OutPtrWrite for Option<R>
-    where
-        Self: Ir<Type = Option<Opaque>>,
-    {
-        unsafe fn write_out(self, out_ptr: *mut *mut R) {
-            self.map_or_else(
-                || unsafe { out_ptr.write(core::ptr::null_mut()) },
-                |value| unsafe { OutPtrWrite::write_out(value, out_ptr) },
-            )
-        }
-    }
-    impl<R: Niche + OutPtrWrite> OutPtrWrite for Option<R>
+    impl<R: Niche + OutPtrWrite<OutPtr = <R as ExternC>::CType>> OutPtrWrite for Option<R>
     where
         Self: Ir<Type = Option<crate::niche::Cloned>>,
     {
         unsafe fn write_out(self, out_ptr: *mut Self::OutPtr) {
-            unimplemented!()
-            //unsafe {
-            //    self.map_or_else(
-            //        || out_ptr.write(R::NICHE_VALUE),
-            //        |value| OutPtrWrite::write_out(value, out_ptr),
-            //    );
-            //}
+            self.map_or_else(
+                || unsafe { out_ptr.write(R::NICHE_VALUE) },
+                |v| unsafe { OutPtrWrite::write_out(v, out_ptr) },
+            );
         }
     }
 }

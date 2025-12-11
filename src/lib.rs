@@ -233,12 +233,6 @@ disjoint_impls! {
     {
         type CType = FfiTuple2<<u8 as ExternC>::CType, R::CType>;
     }
-    impl<R: ExternC> ExternC for Option<R>
-    where
-        Self: Ir<Type = Option<Opaque>>,
-    {
-        type CType = *mut R;
-    }
     impl<R: Niche> ExternC for Option<R>
     where
         Self: Ir<Type = Option<crate::niche::Cloned>>,
@@ -638,16 +632,6 @@ disjoint_impls! {
                 None => FfiTuple2(Encode::encode(0u8, &mut ()), unsafe { core::mem::zeroed() }),
                 Some(value) => FfiTuple2(Encode::encode(1u8, &mut ()), value.encode(&mut ())),
             }
-        }
-    }
-    impl<R: Encode<CType = *mut R, Store = ()>> Encode for Option<R>
-    where
-        Self: Ir<Type = Option<Opaque>>,
-    {
-        type Store = ();
-
-        fn encode<'itm>(self, (): &mut ()) -> Self::CType where Self: 'itm {
-            self.map(|value| value.encode(&mut ())).unwrap_or_default()
         }
     }
     impl<R: Niche + Encode> Encode for Option<R>
@@ -1122,20 +1106,6 @@ disjoint_impls! {
             }
         }
     }
-    impl<'d, R: Decode<'d, CType = *mut R, Store = ()> + 'd> Decode<'d> for Option<R>
-    where
-        Self: Ir<Type = Option<Opaque>>,
-    {
-        type Store = ();
-
-        unsafe fn decode<'itm: 'd>(source: Self::CType, store: &'itm mut ()) -> Result<Self> {
-            if source.is_null() {
-                return Ok(None);
-            }
-
-            Ok(Some(unsafe { R::decode(source, store) }?))
-        }
-    }
     impl<'d, R: Niche<CType: PartialEq> + Decode<'d>> Decode<'d> for Option<R>
     where
         Self: Ir<Type = Option<crate::niche::Cloned>>,
@@ -1410,14 +1380,12 @@ macro_rules! impl_tuple {
                 impl<$($ty: $crate::niche::Ir<Type = $crate::ir::Robust>),+> Ir for ($($ty,)+) {
                     type Type = $crate::ir::Robust;
                 }
-                //impl<$($ty: $crate::niche::Ir<Type = $crate::ir::Transparent>),+> Ir for ($($ty,)+) {
-                //    type Type = Self;
-                //}
-                // FIXME: This is even incorrect because every type should be mapped into different S
-                //#[cfg(feature = "cloned_refs")]
-                //impl<$($ty: $crate::niche::Ir<Type: $crate::ir::Cloned>),+ + Niche> Ir for ($($ty,)+) {
-                //    type Type = Self;
-                //}
+                impl<$($ty: $crate::niche::Ir<Type = $crate::ir::Transparent>),+> Ir for ($($ty,)+) {
+                    type Type = $crate::niche::Cloned;
+                }
+                impl<$($ty: $crate::niche::Ir<Type: $crate::ir::Cloned>),+ + Niche> Ir for ($($ty,)+) {
+                    type Type = $crate::niche::Cloned;
+                }
             }
         };
 
