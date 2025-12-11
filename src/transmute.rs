@@ -3,7 +3,7 @@ use core::mem::ManuallyDrop;
 use disjoint_impls::disjoint_impls;
 
 use super::*;
-use crate::ReprC;
+use crate::{ReprC, niche::StableNiche};
 
 disjoint_impls! {
     /// Marker trait for a type that can be **safely transmuted** into another type for all values.
@@ -53,6 +53,17 @@ disjoint_impls! {
             !target.is_null()
         }
     }
+    unsafe impl<'a, R: StableNiche> CheckedTransmute for &'a Option<R>
+    where
+        Option<R>: Ir<Type = Option<WithStableNiche>>
+    {
+        type Target = &'a R::CType;
+
+        #[inline(always)]
+        fn is_valid(_: &Self::Target) -> bool {
+            true
+        }
+    }
 
     unsafe impl<
         'a,
@@ -94,6 +105,17 @@ disjoint_impls! {
             !target.is_null()
         }
     }
+    unsafe impl<'a, R: StableNiche> CheckedTransmute for &'a mut Option<R>
+    where
+        Option<R>: Ir<Type = Option<WithStableNiche>>
+    {
+        type Target = &'a mut R::CType;
+
+        #[inline(always)]
+        fn is_valid(_: &Self::Target) -> bool {
+            true
+        }
+    }
 
     unsafe impl<R: Ir<Type = Transparent> + CheckedTransmute> CheckedTransmute for Box<R> {
         type Target = Box<R::Target>;
@@ -129,6 +151,18 @@ disjoint_impls! {
             !target.is_null()
         }
     }
+    #[cfg(feature = "owned_types")]
+    unsafe impl<R: StableNiche> CheckedTransmute for Box<Option<R>>
+    where
+        Option<R>: Ir<Type = Option<WithStableNiche>>
+    {
+        type Target = Box<R::CType>;
+
+        #[inline(always)]
+        fn is_valid(_: &Self::Target) -> bool {
+            true
+        }
+    }
 }
 
 unsafe impl<R: CheckedTransmute, const N: usize> CheckedTransmute for [R; N] {
@@ -138,6 +172,15 @@ unsafe impl<R: CheckedTransmute, const N: usize> CheckedTransmute for [R; N] {
     fn is_valid(target: &Self::Target) -> bool {
         assert_arr_has_non_zero_len::<N>();
         target.iter().all(R::is_valid)
+    }
+}
+
+unsafe impl<R: StableNiche> CheckedTransmute for Option<R> {
+    type Target = R::CType;
+
+    #[inline(always)]
+    fn is_valid(_: &Self::Target) -> bool {
+        true
     }
 }
 
@@ -152,6 +195,19 @@ unsafe impl<R: CheckedTransmute, const N: usize> CheckedTransmute for [R; N] {
 pub unsafe trait InfallibleTransmute: CheckedTransmute {}
 
 unsafe impl<R: InfallibleTransmute, const N: usize> InfallibleTransmute for [R; N] {}
+unsafe impl<R: StableNiche> InfallibleTransmute for Option<R> {}
+unsafe impl<R: StableNiche> InfallibleTransmute for &Option<R> where
+    Option<R>: Ir<Type = Option<WithStableNiche>>
+{
+}
+unsafe impl<R: StableNiche> InfallibleTransmute for &mut Option<R> where
+    Option<R>: Ir<Type = Option<WithStableNiche>>
+{
+}
+unsafe impl<R: StableNiche> InfallibleTransmute for Box<Option<R>> where
+    Option<R>: Ir<Type = Option<WithStableNiche>>
+{
+}
 
 #[repr(C)]
 union TransmuteHelper<R: CheckedTransmute> {

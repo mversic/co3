@@ -3,7 +3,6 @@
 use alloc::{boxed::Box, vec::Vec};
 use disjoint_impls::disjoint_impls;
 
-use crate::ReprC;
 #[cfg(feature = "non_robust_ref_mut")]
 use crate::transmute::CheckedTransmute;
 #[cfg(not(feature = "non_robust_ref_mut"))]
@@ -46,23 +45,6 @@ pub trait Niche: ExternC {
 /// - the niche value must be congruent with what is guaranteed by the Rust compiler
 pub unsafe trait StableNiche: Niche {}
 
-/// Type that utilizes niche optimization (e.g. `Option<T>`)
-///
-/// This is a type that can't just be transmuted into inner because it can have a niche
-/// It's usually a marker for derivatives of `Option<T>` like `&Option<T>`, `&mut Option<T>` or `Box<Option<T>>`
-///
-/// # Safety
-///
-/// - type must have no trap representations
-pub unsafe trait FlatTransmute {
-    /// Type that [`Self`] can be transmuted into
-    type Target: ReprC;
-
-    /// Called when transmuting [`Self::Target`] into [`Self`] to check for trap representations.
-    /// This function must never return false positives, i.e. return `true` for a trap representation.
-    fn is_valid(target: &Self::Target) -> bool;
-}
-
 disjoint_impls! {
     /// Niche kind of the type in the internal representation (IR)[`crate::ir::Ir`]
     pub trait Ir {
@@ -72,10 +54,10 @@ disjoint_impls! {
         ///   `Option<T>` will be serialized as [`crate::FfiTuple2(discriminant, value)`]
         ///
         /// - If `Self` has a compiler guaranteed niche value, set [`Ir::Type`] to [`WithStableNiche`].
-        ///   `Option<T>` will be blindly transmuted into underlying [`ReprC`] type
+        ///   `Option<T>` will be blindly transmuted into underlying [`crate::ReprC`] type
         ///
         /// - Otherwise, if `Self` has at least one trap, set [`Ir::Type`] to [`WithCustomNiche`].
-        ///   `Option<T>` will be serialized into a [`ReprC`], but with a manually set niche value
+        ///   `Option<T>` will be serialized into a [`crate::ReprC`] with a manually set niche value
         type Type;
     }
 
@@ -301,63 +283,6 @@ unsafe impl<R, C> StableNiche for &R where Self: ExternC<CType = *const C> {}
 unsafe impl<R, C> StableNiche for &mut R where Self: ExternC<CType = *mut C> {}
 unsafe impl<R, C> StableNiche for Box<R> where Self: ExternC<CType = *mut C> {}
 unsafe impl<R> StableNiche for core::ptr::NonNull<R> {}
-
-unsafe impl<R: StableNiche> FlatTransmute for Option<R> {
-    type Target = R::CType;
-
-    #[inline(always)]
-    fn is_valid(_: &Self::Target) -> bool {
-        true
-    }
-}
-
-unsafe impl<R: FlatTransmute> FlatTransmute for &R {
-    type Target = *const R::Target;
-
-    #[inline(always)]
-    fn is_valid(target: &Self::Target) -> bool {
-        !target.is_null()
-    }
-}
-
-unsafe impl<
-    #[cfg(not(feature = "non_robust_ref_mut"))] R: InfallibleTransmute,
-    #[cfg(feature = "non_robust_ref_mut")] R: CheckedTransmute,
-> FlatTransmute for &mut R
-{
-    type Target = *mut R::Target;
-
-    #[inline(always)]
-    fn is_valid(target: &Self::Target) -> bool {
-        !target.is_null()
-    }
-}
-
-// TODO: Should it be conditionally enabled?
-//#[cfg(feature = "owned_types")]
-unsafe impl<R: FlatTransmute> FlatTransmute for Box<R> {
-    type Target = *mut R::Target;
-
-    #[inline(always)]
-    fn is_valid(target: &Self::Target) -> bool {
-        !target.is_null()
-    }
-}
-
-unsafe impl<R: FlatTransmute, const N: usize> FlatTransmute for [R; N] {
-    type Target = [R::Target; N];
-
-    #[inline(always)]
-    fn is_valid(target: &Self::Target) -> bool {
-        assert_arr_has_non_zero_len::<N>();
-        target.iter().all(R::is_valid)
-    }
-}
-
-// TODO: Impl for derivative types. Also derivate types mappings should be set in ir::Ir
-//unsafe impl<R: FlatTransmute> FlatTransmute for UnsafeCell<R> {
-//    type Target = R::Target;
-//}
 
 impl WithNiche for WithStableNiche {}
 impl WithNiche for WithCustomNiche {}

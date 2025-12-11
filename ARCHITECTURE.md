@@ -74,7 +74,7 @@
 
 # Niche::IR marker types
 
-1. WithStableNiche (depends on `FlatTransmute` trait)
+1. WithStableNiche (depends on `Transmute` trait)
 - has a single stable (compiler guaranteed) niche value
 
 2. WithCustomNiche

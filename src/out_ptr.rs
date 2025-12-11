@@ -3,8 +3,7 @@ use super::*;
 #[cfg(feature = "owned_as_ref")]
 use crate::transmute::{transmute_from_target_boxed_slice, transmute_from_target_vec};
 use crate::{
-    ir::Transparent,
-    transmute::{transmute_from_target_ref_slice, transmute_from_target_slice_mut},
+    ir::Transparent, niche::StableNiche, transmute::{transmute_from_target_ref_slice, transmute_from_target_slice_mut}
 };
 
 disjoint_impls! {
@@ -234,11 +233,11 @@ disjoint_impls! {
         type OutPtr = Self::CType;
     }
 
-    impl<R: FlatTransmute> OutPtr for R
+    impl<R: StableNiche> OutPtr for Option<R>
     where
         Self: Ir<Type = Option<WithStableNiche>>,
     {
-        type OutPtr = R::Target;
+        type OutPtr = <Option<R> as CheckedTransmute>::Target;
     }
     impl<R: OutPtr> OutPtr for Option<R>
     where
@@ -567,7 +566,7 @@ disjoint_impls! {
         }
     }
 
-    impl<R: FlatTransmute> OutPtrWrite for R
+    impl<R: StableNiche> OutPtrWrite for Option<R>
     where
         Self: Ir<Type = Option<WithStableNiche>>,
     {
@@ -868,7 +867,7 @@ disjoint_impls! {
         }
     }
 
-    impl<R: FlatTransmute> OutPtrRead for R
+    impl<R: StableNiche> OutPtrRead for Option<R>
     where
         Self: Ir<Type = Option<WithStableNiche>>,
     {

@@ -13,7 +13,7 @@ pub use co3_derive::*;
 use derive_more::Display;
 use disjoint_impls::disjoint_impls;
 
-use crate::niche::{WithCustomNiche, WithStableNiche};
+use crate::niche::{StableNiche, WithCustomNiche, WithStableNiche};
 #[cfg(feature = "owned_types")]
 #[cfg(feature = "owned_as_ref")]
 use crate::transmute::{
@@ -23,7 +23,6 @@ use crate::transmute::{
 use crate::{ir::Cloned, niche::Niche};
 use crate::{
     ir::{Ir, Opaque, Robust, Transparent},
-    niche::FlatTransmute,
     slice::{OutBoxedSlice, RefMutSlice, RefSlice},
     transmute::{
         CheckedTransmute, transmute_from_target, transmute_from_target_ref_slice,
@@ -222,11 +221,11 @@ disjoint_impls! {
         type CType = [R::CType; N];
     }
 
-    impl<R: FlatTransmute> ExternC for R
+    impl<R: StableNiche> ExternC for Option<R>
     where
         Self: Ir<Type = Option<WithStableNiche>>,
     {
-        type CType = R::Target;
+        type CType = <Option<R> as CheckedTransmute>::Target;
     }
     impl<R: ExternC> ExternC for Option<R>
     where
@@ -255,7 +254,9 @@ disjoint_impls! {
         type Store: Default;
 
         /// Convert from [`Self`] into [`Self::CType`]
-        fn encode<'itm>(self, store: &'itm mut Self::Store) -> Self::CType where Self: 'itm;
+        fn encode<'itm>(self, store: &'itm mut Self::Store) -> Self::CType
+        where
+            Self: 'itm;
     }
 
     //#[cfg(feature = "owned_types")]
@@ -274,21 +275,30 @@ disjoint_impls! {
     impl<R: Ir<Type = Transparent> + CheckedTransmute<Target: Encode>> Encode for R {
         type Store = <R::Target as Encode>::Store;
 
-        fn encode<'itm>(self, store: &'itm mut Self::Store) -> Self::CType where Self: 'itm {
+        fn encode<'itm>(self, store: &'itm mut Self::Store) -> Self::CType
+        where
+            Self: 'itm,
+        {
             transmute_into_target(self).encode(store)
         }
     }
     impl<R: Ir<Type = Robust> + ReprC> Encode for R {
         type Store = ();
 
-        fn encode<'itm>(self, (): &mut ()) -> Self::CType where Self: 'itm {
+        fn encode<'itm>(self, (): &mut ()) -> Self::CType
+        where
+            Self: 'itm,
+        {
             self
         }
     }
     impl<R: Ir<Type = Opaque>> Encode for R {
         type Store = ();
 
-        fn encode<'itm>(self, (): &mut ()) -> Self::CType where Self: 'itm {
+        fn encode<'itm>(self, (): &mut ()) -> Self::CType
+        where
+            Self: 'itm,
+        {
             Box::into_raw(Box::new(self))
         }
     }
@@ -300,7 +310,10 @@ disjoint_impls! {
     {
         type Store = (Option<R::CType>, R::Store);
 
-        fn encode<'itm>(self, store: &'itm mut Self::Store) -> Self::CType where Self: 'itm {
+        fn encode<'itm>(self, store: &'itm mut Self::Store) -> Self::CType
+        where
+            Self: 'itm,
+        {
             store.0.insert(self.clone().encode(&mut store.1))
         }
     }
@@ -313,7 +326,10 @@ disjoint_impls! {
     {
         type Store = (Option<R::CType>, R::Store);
 
-        fn encode<'itm>(self, store: &'itm mut Self::Store) -> Self::CType where Self: 'itm {
+        fn encode<'itm>(self, store: &'itm mut Self::Store) -> Self::CType
+        where
+            Self: 'itm,
+        {
             store.0.insert((*self).encode(&mut store.1))
         }
     }
@@ -325,7 +341,10 @@ disjoint_impls! {
     {
         type Store = <&'slice [R::Target] as Encode>::Store;
 
-        fn encode<'itm>(self, store: &'itm mut Self::Store) -> Self::CType where Self: 'itm {
+        fn encode<'itm>(self, store: &'itm mut Self::Store) -> Self::CType
+        where
+            Self: 'itm,
+        {
             transmute_into_target_ref_slice(self).encode(store)
         }
     }
@@ -335,7 +354,10 @@ disjoint_impls! {
     {
         type Store = ();
 
-        fn encode<'itm>(self, (): &mut ()) -> Self::CType where Self: 'itm {
+        fn encode<'itm>(self, (): &mut ()) -> Self::CType
+        where
+            Self: 'itm,
+        {
             RefSlice::from_slice(Some(self))
         }
     }
@@ -346,7 +368,10 @@ disjoint_impls! {
     {
         type Store = Box<[*const R]>;
 
-        fn encode<'itm>(self, store: &'itm mut Self::Store) -> Self::CType where Self: 'itm {
+        fn encode<'itm>(self, store: &'itm mut Self::Store) -> Self::CType
+        where
+            Self: 'itm,
+        {
             *store = self.iter().map(core::ptr::from_ref).collect();
             RefSlice::from_slice(Some(store))
         }
@@ -356,12 +381,12 @@ disjoint_impls! {
     where
         Self: Ir<Type = &'slice [S]>,
     {
-        type Store = (
-            Box<[R::CType]>,
-            Box<[R::Store]>,
-        );
+        type Store = (Box<[R::CType]>, Box<[R::Store]>);
 
-        fn encode<'itm>(self, store: &'itm mut Self::Store) -> Self::CType where Self: 'itm {
+        fn encode<'itm>(self, store: &'itm mut Self::Store) -> Self::CType
+        where
+            Self: 'itm,
+        {
             let slice = self.to_vec();
 
             store.1 = core::iter::repeat_with(Default::default)
@@ -385,7 +410,10 @@ disjoint_impls! {
     {
         type Store = <&'slice mut [R::Target] as Encode>::Store;
 
-        fn encode<'itm>(self, store: &'itm mut Self::Store) -> Self::CType where Self: 'itm {
+        fn encode<'itm>(self, store: &'itm mut Self::Store) -> Self::CType
+        where
+            Self: 'itm,
+        {
             transmute_into_target_slice_mut(self).encode(store)
         }
     }
@@ -395,7 +423,10 @@ disjoint_impls! {
     {
         type Store = ();
 
-        fn encode<'itm>(self, (): &mut ()) -> Self::CType where Self: 'itm {
+        fn encode<'itm>(self, (): &mut ()) -> Self::CType
+        where
+            Self: 'itm,
+        {
             RefMutSlice::from_slice(Some(self))
         }
     }
@@ -408,7 +439,10 @@ disjoint_impls! {
     {
         type Store = <Box<[R::Target]> as Encode>::Store;
 
-        fn encode<'itm>(self, store: &'itm mut Self::Store) -> Self::CType where Self: 'itm {
+        fn encode<'itm>(self, store: &'itm mut Self::Store) -> Self::CType
+        where
+            Self: 'itm,
+        {
             transmute_into_target_boxed_slice(self).encode(store)
         }
     }
@@ -420,7 +454,10 @@ disjoint_impls! {
     {
         type Store = Self;
 
-        fn encode<'itm>(self, store: &'itm mut Self::Store) -> Self::CType where Self: 'itm {
+        fn encode<'itm>(self, store: &'itm mut Self::Store) -> Self::CType
+        where
+            Self: 'itm,
+        {
             *store = self;
             RefMutSlice::from_slice(Some(store))
         }
@@ -433,7 +470,10 @@ disjoint_impls! {
     {
         type Store = Box<[*mut R]>;
 
-        fn encode<'itm>(self, store: &'itm mut Self::Store) -> Self::CType where Self: 'itm {
+        fn encode<'itm>(self, store: &'itm mut Self::Store) -> Self::CType
+        where
+            Self: 'itm,
+        {
             *store = Vec::from(self)
                 .into_iter()
                 .map(Box::new)
@@ -449,12 +489,12 @@ disjoint_impls! {
     where
         Self: Ir<Type = Box<[S]>>,
     {
-        type Store = (
-            Box<[R::CType]>,
-            Box<[R::Store]>,
-        );
+        type Store = (Box<[R::CType]>, Box<[R::Store]>);
 
-        fn encode<'itm>(self, store: &'itm mut Self::Store) -> Self::CType where Self: 'itm {
+        fn encode<'itm>(self, store: &'itm mut Self::Store) -> Self::CType
+        where
+            Self: 'itm,
+        {
             let boxed_slice = self;
 
             store.1 = core::iter::repeat_with(Default::default)
@@ -479,7 +519,10 @@ disjoint_impls! {
     {
         type Store = <Vec<R::Target> as Encode>::Store;
 
-        fn encode<'itm>(self, store: &'itm mut Self::Store) -> Self::CType where Self: 'itm {
+        fn encode<'itm>(self, store: &'itm mut Self::Store) -> Self::CType
+        where
+            Self: 'itm,
+        {
             transmute_into_target_vec(self).encode(store)
         }
     }
@@ -491,7 +534,10 @@ disjoint_impls! {
     {
         type Store = Box<[R]>;
 
-        fn encode<'itm>(self, store: &'itm mut Self::Store) -> Self::CType where Self: 'itm {
+        fn encode<'itm>(self, store: &'itm mut Self::Store) -> Self::CType
+        where
+            Self: 'itm,
+        {
             *store = self.into_boxed_slice();
             RefMutSlice::from_slice(Some(store))
         }
@@ -504,7 +550,10 @@ disjoint_impls! {
     {
         type Store = Box<[*mut R]>;
 
-        fn encode<'itm>(self, store: &'itm mut Self::Store) -> Self::CType where Self: 'itm {
+        fn encode<'itm>(self, store: &'itm mut Self::Store) -> Self::CType
+        where
+            Self: 'itm,
+        {
             *store = self.into_iter().map(Box::new).map(Box::into_raw).collect();
             RefMutSlice::from_slice(Some(store))
         }
@@ -515,12 +564,12 @@ disjoint_impls! {
     where
         Self: Ir<Type = Vec<S>>,
     {
-        type Store = (
-            Box<[R::CType]>,
-            Box<[R::Store]>,
-        );
+        type Store = (Box<[R::CType]>, Box<[R::Store]>);
 
-        fn encode<'itm>(self, store: &'itm mut Self::Store) -> Self::CType where Self: 'itm {
+        fn encode<'itm>(self, store: &'itm mut Self::Store) -> Self::CType
+        where
+            Self: 'itm,
+        {
             let vec = self;
 
             store.1 = core::iter::repeat_with(Default::default)
@@ -543,7 +592,10 @@ disjoint_impls! {
     {
         type Store = ();
 
-        fn encode<'itm>(self, (): &mut ()) -> Self::CType where Self: 'itm {
+        fn encode<'itm>(self, (): &mut ()) -> Self::CType
+        where
+            Self: 'itm,
+        {
             assert_arr_has_non_zero_len::<N>();
 
             let array = self
@@ -565,7 +617,10 @@ disjoint_impls! {
     {
         type Store = [R::Store; N];
 
-        fn encode<'itm>(self, store: &'itm mut Self::Store) -> Self::CType where Self: 'itm {
+        fn encode<'itm>(self, store: &'itm mut Self::Store) -> Self::CType
+        where
+            Self: 'itm,
+        {
             fn default_init_arr<R: Default, const N: usize>() -> [R; N] {
                 assert_arr_has_non_zero_len::<N>();
 
@@ -600,37 +655,40 @@ disjoint_impls! {
 
     //    fn encode<'itm>(self, (): &mut ()) -> Self::CType where Self: 'itm {
     //        unimplemented!();
-    //        //// SAFETY: Guaranteed by [`FlatTransmute`]
+    //        //// SAFETY: Guaranteed by [`StableNiche`]
     //        //let inner = unsafe {
     //        //    core::mem::transmute::<R, R::Target>(self)
     //        //};
     //    }
     //}
-    impl<R: FlatTransmute> Encode for R
+    impl<R: StableNiche> Encode for Option<R>
     where
         Self: Ir<Type = Option<WithStableNiche>>,
     {
         type Store = ();
 
-        fn encode<'itm>(self, (): &mut ()) -> Self::CType where Self: 'itm {
-            unimplemented!()
-            //let inner = unsafe {
-            //    core::mem::transmute::<R, R::Target>(self)
-            //};
+        fn encode<'itm>(self, (): &mut ()) -> Self::CType
+        where
+            Self: 'itm,
+        {
+            transmute_into_target(self)
         }
     }
-    impl<R: Encode<Store = ()>> Encode for Option<R>
+    impl<R: Encode> Encode for Option<R>
     where
         Self: Ir<Type = Option<Robust>>,
     {
-        type Store = ();
+        type Store = <R as Encode>::Store;
 
-        fn encode<'itm>(self, (): &mut ()) -> Self::CType where Self: 'itm {
+        fn encode<'itm>(self, store: &mut Self::Store) -> Self::CType
+        where
+            Self: 'itm,
+        {
             match self {
                 // FIXME: Using core::mem::zeroed likely leads to UB
-                // TODO: No need to zero the memory because it must never be read. Use MaybeUninit
+                // TODO: No need to zero the memory because it must never be read. Use MaybeUninit?
                 None => FfiTuple2(Encode::encode(0u8, &mut ()), unsafe { core::mem::zeroed() }),
-                Some(value) => FfiTuple2(Encode::encode(1u8, &mut ()), value.encode(&mut ())),
+                Some(value) => FfiTuple2(Encode::encode(1u8, &mut ()), value.encode(store)),
             }
         }
     }
@@ -640,7 +698,10 @@ disjoint_impls! {
     {
         type Store = <R as Encode>::Store;
 
-        fn encode<'itm>(self, store: &'itm mut Self::Store) -> Self::CType where Self: 'itm {
+        fn encode<'itm>(self, store: &'itm mut Self::Store) -> Self::CType
+        where
+            Self: 'itm,
+        {
             if let Some(value) = self {
                 return value.encode(store);
             }
@@ -1079,24 +1140,23 @@ disjoint_impls! {
         }
     }
 
-    impl<'d, R: FlatTransmute + 'd> Decode<'d> for R
+    impl<'d, R: StableNiche + 'd> Decode<'d> for Option<R>
     where
         Self: Ir<Type = Option<WithStableNiche>>,
     {
         type Store = ();
 
-        unsafe fn decode<'itm: 'd>(source: Self::CType, store: &'itm mut Self::Store) -> Result<Self> {
-            unimplemented!()
-            //Ok(core::mem::transmute::<R::Target, R>(source))
+        unsafe fn decode<'itm: 'd>(source: Self::CType, _: &'itm mut ()) -> Result<Self> {
+            transmute_from_target(source)
         }
     }
-    impl<'d, R: Decode<'d, Store = ()>> Decode<'d> for Option<R>
+    impl<'d, R: Decode<'d>> Decode<'d> for Option<R>
     where
         Self: Ir<Type = Option<Robust>>,
     {
-        type Store = ();
+        type Store = <R as Decode<'d>>::Store;
 
-        unsafe fn decode<'itm: 'd>(source: Self::CType, store: &'itm mut ()) -> Result<Self> {
+        unsafe fn decode<'itm: 'd>(source: Self::CType, store: &'itm mut Self::Store) -> Result<Self> {
             let discriminant: <u8 as ExternC>::CType = unsafe { Decode::decode(source.0, &mut ())? };
 
             match discriminant {

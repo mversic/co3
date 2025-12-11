@@ -235,16 +235,16 @@ disjoint_impls! {
     }
 
     impl<R: Ir<Type = Option<WithStableNiche>>> Ir for &R {
-        type Type = Option<WithStableNiche>;
+        type Type = Transparent;
     }
     impl<R: Ir<Type = Option<WithStableNiche>>> Ir for &mut R {
-        type Type = Option<WithStableNiche>;
+        type Type = Transparent;
     }
     impl<R: Ir<Type = Option<WithStableNiche>>> Ir for Box<R> {
-        type Type = Option<WithStableNiche>;
+        type Type = Transparent;
     }
     impl<R: Ir<Type = Option<WithStableNiche>>, const N: usize> Ir for [R; N] {
-        type Type = Option<WithStableNiche>;
+        type Type = Transparent;
     }
 }
 
