@@ -1406,26 +1406,26 @@ macro_rules! impl_tuple {
         pub struct $ffi_ty<$($ty: ReprC),+>($(pub $ty),+);
 
         #[expect(non_snake_case)]
-        impl<$($ty: $crate::ReprC),+> From<($( $ty, )+)> for $ffi_ty<$($ty),+> {
+        impl<$($ty: crate::ReprC),+> From<($( $ty, )+)> for $ffi_ty<$($ty),+> {
             fn from(source: ($( $ty, )+)) -> Self {
                 let ($($ty,)+) = source;
                 Self($( $ty ),+)
             }
         }
 
-        unsafe impl<$($ty: $crate::out_ptr::Zst),+> $crate::out_ptr::Zst for ($($ty,)+) {}
+        unsafe impl<$($ty: crate::out_ptr::Zst),+> crate::out_ptr::Zst for ($($ty,)+) {}
 
         // SAFETY: Implementing type is robust with a defined C ABI
         unsafe impl<$($ty: ReprC),+> ReprC for $ffi_ty<$($ty),+> {}
 
-        impl<$($ty),+> $crate::ir::Ir for ($($ty,)+) {
+        impl<$($ty),+> crate::ir::Ir for ($($ty,)+) {
             type Type = Self;
         }
 
         // FIXME: Produce an impl of niche::Niche and niche::Ir
         // for every combination of bounds on input parameters
-        impl<$($ty: $crate::niche::Niche),+> $crate::niche::Niche for ($($ty,)+) {
-            const NICHE_VALUE: <Self as $crate::ExternC>::CType = $ffi_ty($(<$ty as $crate::niche::Niche>::NICHE_VALUE,)+);
+        impl<$($ty: crate::niche::Niche),+> crate::niche::Niche for ($($ty,)+) {
+            const NICHE_VALUE: <Self as crate::ExternC>::CType = $ffi_ty($(<$ty as crate::niche::Niche>::NICHE_VALUE,)+);
         }
 
         const _: () = {
@@ -1437,11 +1437,11 @@ macro_rules! impl_tuple {
                     type Type;
                 }
 
-                impl<$($ty: $crate::niche::Ir<Type = $crate::niche::WithoutNiche>),+> Ir for ($($ty,)+) {
-                    type Type = $crate::niche::WithoutNiche;
+                impl<$($ty: crate::niche::Ir<Type = crate::niche::WithoutNiche>),+> Ir for ($($ty,)+) {
+                    type Type = crate::niche::WithoutNiche;
                 }
-                impl<$($ty: $crate::niche::Ir<Type: $crate::niche::WithNiche> + $crate::niche::Niche),+> Ir for ($($ty,)+) {
-                    type Type = $crate::niche::WithCustomNiche;
+                impl<$($ty: crate::niche::Ir<Type: crate::niche::WithNiche> + crate::niche::Niche),+> Ir for ($($ty,)+) {
+                    type Type = crate::niche::WithCustomNiche;
                 }
             }
         };
@@ -1449,18 +1449,18 @@ macro_rules! impl_tuple {
         impl<$($ty),+> Cloned for ($($ty,)+) {}
 
         // SAFETY: Tuple doesn't use store if it's inner types don't use it
-        unsafe impl<$($ty: $crate::out_ptr::NonLocal),+> $crate::out_ptr::NonLocal for ($($ty,)+) {}
+        unsafe impl<$($ty: crate::out_ptr::NonLocal),+> crate::out_ptr::NonLocal for ($($ty,)+) {}
 
-        impl<$($ty: ExternC),+> $crate::ExternC for ($($ty,)+) {
+        impl<$($ty: ExternC),+> crate::ExternC for ($($ty,)+) {
             type CType = $ffi_ty<$($ty::CType),+>;
         }
 
-        impl<$($ty: $crate::out_ptr::OutPtr),+> $crate::out_ptr::OutPtr for ($($ty,)+) {
+        impl<$($ty: crate::out_ptr::OutPtr),+> crate::out_ptr::OutPtr for ($($ty,)+) {
             type OutPtr = $ffi_ty<$($ty::OutPtr),+>;
         }
 
         #[expect(non_snake_case)]
-        impl<$($ty: $crate::out_ptr::OutPtrWrite),+> $crate::out_ptr::OutPtrWrite for ($($ty,)+) {
+        impl<$($ty: crate::out_ptr::OutPtrWrite),+> crate::out_ptr::OutPtrWrite for ($($ty,)+) {
             unsafe fn write_out(self, out_ptr: *mut Self::OutPtr) {
                 impl_tuple! {@decl_priv_out_ptr $($ty),+}
                 let mut field_out_ptrs = ($(core::mem::MaybeUninit::<$ty::OutPtr>::uninit(),)+);
@@ -1469,43 +1469,43 @@ macro_rules! impl_tuple {
                 let field_out_ptrs: private_out_ptr::OutPtr<$($ty),+> = (&mut field_out_ptrs).into();
 
                 unsafe {
-                    $( $crate::out_ptr::OutPtrWrite::write_out($ty, field_out_ptrs.$ty.as_mut_ptr()); )+
+                    $( crate::out_ptr::OutPtrWrite::write_out($ty, field_out_ptrs.$ty.as_mut_ptr()); )+
                     out_ptr.write($ffi_ty($( field_out_ptrs.$ty.assume_init() ),+));
                 }
             }
         }
         #[expect(non_snake_case)]
-        impl<$($ty: $crate::out_ptr::OutPtrRead),+> $crate::out_ptr::OutPtrRead for ($($ty,)+) {
+        impl<$($ty: crate::out_ptr::OutPtrRead),+> crate::out_ptr::OutPtrRead for ($($ty,)+) {
             unsafe fn try_read_out(source: Self::OutPtr) -> Result<Self> {
                 impl_tuple! {@decl_priv_out_ptr $($ty),+}
 
                 let $ffi_ty($($ty,)+) = source;
-                Ok(unsafe {($( $crate::out_ptr::OutPtrRead::try_read_out($ty)?, )+)})
+                Ok(unsafe {($( crate::out_ptr::OutPtrRead::try_read_out($ty)?, )+)})
             }
         }
 
-        impl<$($ty: $crate::Encode),+> $crate::Encode for ($($ty,)+) {
+        impl<$($ty: crate::Encode),+> crate::Encode for ($($ty,)+) {
             type Store = ($( $ty::Store, )+);
 
             #[expect(non_snake_case)]
             fn encode<'itm>(self, store: &mut Self::Store) -> Self::CType where Self: 'itm {
-                impl_tuple! {@decl_priv_store $($ty),+ for $crate::Encode : Store}
+                impl_tuple! {@decl_priv_store $($ty),+ for crate::Encode : Store}
 
                 let ($($ty,)+) = self;
                 let store: private_store::Store<$($ty),+> = store.into();
-                $ffi_ty($( <$ty as $crate::Encode>::encode($ty, store.$ty),)+)
+                $ffi_ty($( <$ty as crate::Encode>::encode($ty, store.$ty),)+)
             }
         }
-        impl<'d, $($ty: $crate::Decode<'d>),+> $crate::Decode<'d> for ($($ty,)+) {
+        impl<'d, $($ty: crate::Decode<'d>),+> crate::Decode<'d> for ($($ty,)+) {
             type Store = ($( $ty::Store, )+);
 
             #[expect(non_snake_case)]
             unsafe fn decode<'itm: 'd>(source: Self::CType, store: &'itm mut Self::Store) -> Result<Self> {
-                impl_tuple! {@decl_priv_store $($ty),+ for $crate::Decode<'itm> : Store}
+                impl_tuple! {@decl_priv_store $($ty),+ for crate::Decode<'itm> : Store}
 
                 let $ffi_ty($($ty,)+) = source;
                 let store: private_store::Store<$($ty),+> = store.into();
-                Ok(unsafe {($( <$ty as $crate::Decode<'d>>::decode($ty, store.$ty)?, )+)})
+                Ok(unsafe {($( <$ty as crate::Decode<'d>>::decode($ty, store.$ty)?, )+)})
             }
         }
     };
@@ -1529,11 +1529,11 @@ macro_rules! impl_tuple {
     ( @decl_priv_out_ptr $( $ty:ident ),+ $(,)? ) => {
         mod private_out_ptr {
             #[allow(dead_code)]
-            pub struct OutPtr<'itm, $($ty: $crate::out_ptr::OutPtrWrite),+> {
+            pub struct OutPtr<'itm, $($ty: crate::out_ptr::OutPtrWrite),+> {
                 $(pub $ty: &'itm mut core::mem::MaybeUninit::<$ty::OutPtr>),+
             }
 
-            impl<'itm, $($ty: $crate::out_ptr::OutPtrWrite),+> From<&'itm mut ($(core::mem::MaybeUninit::<$ty::OutPtr>,)+)> for OutPtr<'itm, $($ty),+> {
+            impl<'itm, $($ty: crate::out_ptr::OutPtrWrite),+> From<&'itm mut ($(core::mem::MaybeUninit::<$ty::OutPtr>,)+)> for OutPtr<'itm, $($ty),+> {
                 fn from(($($ty,)+): &'itm mut ($(core::mem::MaybeUninit::<$ty::OutPtr>,)+)) -> Self {
                     Self {$($ty,)+}
                 }

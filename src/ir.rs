@@ -267,3 +267,61 @@ impl<R> Ir for *const R {
 impl<R> Ir for *mut R {
     type Type = Robust;
 }
+
+macro_rules! impl_fn_types {
+    ( $( ( $( $arg:ident ),* ) ),* $(,)? ) => {$(
+        // FIXME: I'm not sure if arguments are required to be ReprC, what if fn pointer is opaque?
+        // or should we create new function with argument conversion?
+        unsafe impl<$($arg: crate::ReprC,)* R: crate::ReprC> crate::ReprC for unsafe extern "C" fn($($arg),*) -> R {}
+        unsafe impl<$($arg: crate::ReprC,)*> crate::ReprC for unsafe extern "C" fn($($arg),*) {}
+
+        impl<$($arg: crate::ReprC,)* R: crate::ReprC> Ir for unsafe extern "C" fn($($arg),*) -> R {
+            type Type = Self;
+        }
+        //impl<$($arg: crate::ReprC,)*> Ir for unsafe extern "C" fn($($arg),*) {
+        //    type Type = Self;
+        //}
+        impl<$($arg: crate::ReprC,)* R: crate::ReprC> crate::ExternC for unsafe extern "C" fn($($arg),*) -> R {
+            type CType = Self;
+        }
+        impl<$($arg: crate::ReprC,)*> crate::ExternC for unsafe extern "C" fn($($arg),*) {
+            type CType = Self;
+        }
+        //impl<$($arg: crate::ReprC,)* R: crate::ReprC> crate::Encode for unsafe extern "C" fn($($arg),*) -> R {
+        //    type Store = ();
+
+        //    fn encode<'itm>(self, _: &mut ()) -> Self::CType where Self: 'itm {
+        //        self
+        //    }
+        //}
+        impl<$($arg: crate::ReprC,)*> crate::Encode for unsafe extern "C" fn($($arg),*) {
+            type Store = ();
+
+            fn encode<'itm>(self, _: &mut ()) -> Self::CType where Self: 'itm {
+                self
+            }
+        }
+
+        unsafe impl<$($arg: crate::ReprC,)* R: crate::ReprC> crate::ReprC for Option<unsafe extern "C" fn($($arg),*) -> R> {}
+        unsafe impl<$($arg: crate::ReprC),*> crate::ReprC for Option<unsafe extern "C" fn($($arg),*)> {}
+        //crate::mineral! { impl<$($arg: crate::ReprC,)* R: crate::ReprC> Robust for Option<unsafe extern "C" fn($($arg),*) -> R> {} }
+        //crate::mineral! { impl<$($arg: crate::ReprC),*> Robust for Option<unsafe extern "C" fn($($arg),*)> {} }
+        )*
+    }
+}
+
+impl_fn_types! {
+    (),
+    (A),
+    (A, B),
+    (A, B, C),
+    (A, B, C, D),
+    (A, B, C, D, E),
+    (A, B, C, D, E, F),
+    (A, B, C, D, E, F, G),
+    (A, B, C, D, E, F, G, H),
+    (A, B, C, D, E, F, G, H, I),
+    (A, B, C, D, E, F, G, H, I, J),
+    (A, B, C, D, E, F, G, H, I, J, K),
+    (A, B, C, D, E, F, G, H, I, J, K, L),
+}

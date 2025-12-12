@@ -3,8 +3,6 @@
 use alloc::{boxed::Box, vec::Vec};
 use disjoint_impls::disjoint_impls;
 
-#[cfg(feature = "non_robust_ref_mut")]
-use crate::transmute::CheckedTransmute;
 #[cfg(not(feature = "non_robust_ref_mut"))]
 use crate::transmute::InfallibleTransmute;
 use crate::{
