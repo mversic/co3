@@ -4,7 +4,6 @@ use super::*;
 use crate::transmute::{transmute_from_target_boxed_slice, transmute_from_target_vec};
 use crate::{
     ir::Transparent,
-    niche::StableNiche,
     transmute::{transmute_from_target_ref_slice, transmute_from_target_slice_mut},
 };
 
@@ -240,12 +239,6 @@ disjoint_impls! {
         Self: Ir<Type = Option<WithoutNiche>>,
     {
         type OutPtr = FfiTuple2<<u8 as OutPtr>::OutPtr, R::OutPtr>;
-    }
-    impl<R: StableNiche> OutPtr for Option<R>
-    where
-        Self: Ir<Type = Option<WithStableNiche>>,
-    {
-        type OutPtr = <Option<R> as CheckedTransmute>::Target;
     }
     impl<R: Niche + OutPtr> OutPtr for Option<R>
     where
@@ -599,14 +592,6 @@ disjoint_impls! {
             }
         }
     }
-    impl<R: StableNiche> OutPtrWrite for Option<R>
-    where
-        Self: Ir<Type = Option<WithStableNiche>>,
-    {
-        unsafe fn write_out(self, out_ptr: *mut Self::OutPtr) {
-            unimplemented!();
-        }
-    }
     impl<R: Niche + OutPtrWrite<OutPtr = <R as ExternC>::CType>> OutPtrWrite for Option<R>
     where
         Self: Ir<Type = Option<WithCustomNiche>>,
@@ -879,14 +864,6 @@ disjoint_impls! {
                 1 => Ok(Some(unsafe { R::try_read_out(out_ptr.1)? })),
                 _ => Err(FfiReturn::TrapRepresentation),
             }
-        }
-    }
-    impl<R: StableNiche> OutPtrRead for Option<R>
-    where
-        Self: Ir<Type = Option<WithStableNiche>>,
-    {
-        unsafe fn try_read_out(out_ptr: Self::OutPtr) -> Result<Self> {
-            unimplemented!()
         }
     }
     impl<R: Niche + OutPtrRead> OutPtrRead for Option<R>

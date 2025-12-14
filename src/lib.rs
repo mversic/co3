@@ -13,7 +13,7 @@ pub use co3_derive::*;
 use derive_more::Display;
 use disjoint_impls::disjoint_impls;
 
-use crate::niche::{StableNiche, WithCustomNiche, WithStableNiche, WithoutNiche};
+use crate::niche::{StableNiche, WithCustomNiche, WithoutNiche};
 #[cfg(feature = "owned_types")]
 #[cfg(feature = "owned_as_ref")]
 use crate::transmute::{
@@ -226,12 +226,6 @@ disjoint_impls! {
         Self: Ir<Type = Option<WithoutNiche>>,
     {
         type CType = FfiTuple2<<u8 as ExternC>::CType, R::CType>;
-    }
-    impl<R: StableNiche> ExternC for Option<R>
-    where
-        Self: Ir<Type = Option<WithStableNiche>>,
-    {
-        type CType = <Option<R> as CheckedTransmute>::Target;
     }
     impl<R: Niche> ExternC for Option<R>
     where
@@ -677,19 +671,6 @@ disjoint_impls! {
                 None => FfiTuple2(Encode::encode(0u8, &mut ()), unsafe { core::mem::zeroed() }),
                 Some(value) => FfiTuple2(Encode::encode(1u8, &mut ()), value.encode(store)),
             }
-        }
-    }
-    impl<R: StableNiche> Encode for Option<R>
-    where
-        Self: Ir<Type = Option<WithStableNiche>>,
-    {
-        type Store = ();
-
-        fn encode<'itm>(self, (): &mut ()) -> Self::CType
-        where
-            Self: 'itm,
-        {
-            transmute_into_target(self)
         }
     }
     impl<R: Niche + Encode> Encode for Option<R>
@@ -1156,16 +1137,6 @@ disjoint_impls! {
             }
         }
     }
-    impl<'d, R: StableNiche + 'd> Decode<'d> for Option<R>
-    where
-        Self: Ir<Type = Option<WithStableNiche>>,
-    {
-        type Store = ();
-
-        unsafe fn decode<'itm: 'd>(source: Self::CType, _: &'itm mut ()) -> Result<Self> {
-            transmute_from_target(source)
-        }
-    }
     impl<'d, R: Niche<CType: PartialEq> + Decode<'d>> Decode<'d> for Option<R>
     where
         Self: Ir<Type = Option<WithCustomNiche>>,
@@ -1279,7 +1250,7 @@ macro_rules! mineral {
             }
         }
 
-        // SAFETY: When delagating, `$t` is robust with respect to `$target` even though `$target` itself may not be
+        // NOTE: When delagating, `$t` is robust with respect to `$target` even though `$target` itself may not be
         unsafe impl<$($($impl_generics $(: $bounds)?),*)?> $crate::transmute::InfallibleTransmute for $ty where $($($where_ty: $where_bound),*)? {}
     };
     (unsafe impl $(<$($impl_generics: tt $(: $bounds: path)?),*>)? Transparent for $ty: ty $(where $($where_ty:ty: $where_bound:path),* )? {
@@ -1292,7 +1263,6 @@ macro_rules! mineral {
             type Type = $crate::ir::Transparent;
         }
 
-        // SAFETY: `$ty` is transmutable into `$target` and `is_valid` doesn't return false positives
         unsafe impl<$($($impl_generics $(: $bounds)?),*)?> $crate::transmute::CheckedTransmute for $ty where $($($where_ty: $where_bound),*)? {
             type Target = $target;
 

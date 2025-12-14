@@ -7,8 +7,6 @@ use alloc::{boxed::Box, vec::Vec};
 use disjoint_impls::disjoint_impls;
 
 use crate::niche::{WithCustomNiche, WithStableNiche, WithoutNiche};
-#[cfg(not(feature = "non_robust_ref_mut"))]
-use crate::transmute::InfallibleTransmute;
 
 /// Marker for an [`Ir`] type that delegates to the pointed-to type when converting
 /// the likes of `&Self` or `&[Self]` into an FFI-compatible representation
@@ -77,13 +75,7 @@ disjoint_impls! {
     impl<R: Ir<Type = Box<Robust>>> Ir for &mut R {
         type Type = Transparent;
     }
-    impl<
-        #[cfg(not(feature = "non_robust_ref_mut"))] R: InfallibleTransmute,
-        #[cfg(feature = "non_robust_ref_mut")] R,
-    > Ir for &mut R
-    where
-        R: Ir<Type = Transparent>,
-    {
+    impl<R: Ir<Type = Transparent>> Ir for &mut R {
         type Type = Transparent;
     }
     impl<R: Ir<Type = Robust>> Ir for &mut R {
@@ -134,14 +126,7 @@ disjoint_impls! {
     impl<'a, R: Ir<Type = Box<Robust>>> Ir for &'a mut [R] {
         type Type = &'a mut [Transparent];
     }
-    impl<
-        'a,
-        #[cfg(not(feature = "non_robust_ref_mut"))] R: InfallibleTransmute,
-        #[cfg(feature = "non_robust_ref_mut")] R,
-    > Ir for &'a mut [R]
-    where
-        R: Ir<Type = Transparent>,
-    {
+    impl<'a, R: Ir<Type = Transparent>> Ir for &'a mut [R] {
         type Type = &'a mut [Transparent];
     }
     impl<'a, R: Ir<Type = Robust>> Ir for &'a mut [R] {
@@ -216,7 +201,7 @@ disjoint_impls! {
         type Type = Option<WithoutNiche>;
     }
     impl<R: Ir<Type = Transparent> + crate::niche::Ir<Type = WithStableNiche>> Ir for Option<R> {
-        type Type = Option<WithStableNiche>;
+        type Type = Transparent;
     }
     impl<R: Ir<Type = Transparent> + crate::niche::Ir<Type = WithCustomNiche>> Ir for Option<R> {
         type Type = Option<WithCustomNiche>;
@@ -233,18 +218,8 @@ disjoint_impls! {
     impl<R: Ir<Type: Cloned> + crate::niche::Ir<Type = WithCustomNiche>> Ir for Option<R> {
         type Type = Option<WithCustomNiche>;
     }
-
-    impl<R: Ir<Type = Option<WithStableNiche>>> Ir for &R {
-        type Type = Transparent;
-    }
-    impl<R: Ir<Type = Option<WithStableNiche>>> Ir for &mut R {
-        type Type = Transparent;
-    }
-    impl<R: Ir<Type = Option<WithStableNiche>>> Ir for Box<R> {
-        type Type = Transparent;
-    }
-    impl<R: Ir<Type = Option<WithStableNiche>>, const N: usize> Ir for [R; N] {
-        type Type = Transparent;
+    impl<R: Ir<Type = Option<WithStableNiche>>> Ir for Option<R> {
+        type Type = Option<WithoutNiche>;
     }
 }
 

@@ -3,7 +3,7 @@ use core::mem::ManuallyDrop;
 use disjoint_impls::disjoint_impls;
 
 use super::*;
-use crate::{ReprC, niche::StableNiche};
+use crate::ReprC;
 
 disjoint_impls! {
     /// Marker trait for a type that can be **safely transmuted** into another type for all values.
@@ -53,17 +53,6 @@ disjoint_impls! {
             !target.is_null()
         }
     }
-    unsafe impl<'a, R: StableNiche> CheckedTransmute for &'a Option<R>
-    where
-        Option<R>: Ir<Type = Option<WithStableNiche>>
-    {
-        type Target = &'a R::CType;
-
-        #[inline(always)]
-        fn is_valid(_: &Self::Target) -> bool {
-            true
-        }
-    }
 
     unsafe impl<
         'a,
@@ -105,17 +94,6 @@ disjoint_impls! {
             !target.is_null()
         }
     }
-    unsafe impl<'a, R: StableNiche> CheckedTransmute for &'a mut Option<R>
-    where
-        Option<R>: Ir<Type = Option<WithStableNiche>>
-    {
-        type Target = &'a mut R::CType;
-
-        #[inline(always)]
-        fn is_valid(_: &Self::Target) -> bool {
-            true
-        }
-    }
 
     unsafe impl<R: Ir<Type = Transparent> + CheckedTransmute> CheckedTransmute for Box<R> {
         type Target = Box<R::Target>;
@@ -151,12 +129,17 @@ disjoint_impls! {
             !target.is_null()
         }
     }
-    #[cfg(feature = "owned_types")]
-    unsafe impl<R: StableNiche> CheckedTransmute for Box<Option<R>>
-    where
-        Option<R>: Ir<Type = Option<WithStableNiche>>
-    {
-        type Target = Box<R::CType>;
+
+    unsafe impl<R: CheckedTransmute<Target: Ir<Type = Transparent>> + StableNiche> CheckedTransmute for Option<R> {
+        type Target = Option<R::Target>;
+
+        #[inline(always)]
+        fn is_valid(target: &Self::Target) -> bool {
+            target.as_ref().is_none_or(R::is_valid)
+        }
+    }
+    unsafe impl<R: CheckedTransmute<Target: Ir<Type = Robust> + ReprC> + StableNiche> CheckedTransmute for Option<R> {
+        type Target = R::Target;
 
         #[inline(always)]
         fn is_valid(_: &Self::Target) -> bool {
@@ -175,39 +158,30 @@ unsafe impl<R: CheckedTransmute, const N: usize> CheckedTransmute for [R; N] {
     }
 }
 
-unsafe impl<R: StableNiche> CheckedTransmute for Option<R> {
-    type Target = R::CType;
+disjoint_impls! {
+    /// Marker trait for a type whose [`Transmute::is_valid`] always returns true.
+    ///
+    /// Main use of this trait is to guard against the use of `&mut T` in FFI where
+    /// the caller can set the underlying `T` to a trap representation and cause UB.
+    ///
+    /// # Safety
+    ///
+    /// Implementation of [`Transmute::is_valid`] must always return true for this type.
+    pub unsafe trait InfallibleTransmute: CheckedTransmute {}
 
-    #[inline(always)]
-    fn is_valid(_: &Self::Target) -> bool {
-        true
+    unsafe impl<R: CheckedTransmute<Target: Ir<Type = Transparent>> + StableNiche> InfallibleTransmute
+        for Option<R>
+    where
+        Option<<R as CheckedTransmute>::Target>: InfallibleTransmute,
+    {
+    }
+    unsafe impl<R: CheckedTransmute<Target: Ir<Type = Robust> + ReprC> + StableNiche>
+        InfallibleTransmute for Option<R>
+    {
     }
 }
 
-/// Marker trait for a type whose [`Transmute::is_valid`] always returns true.
-///
-/// Main use of this trait is to guard against the use of `&mut T` in FFI where
-/// the caller can set the underlying `T` to a trap representation and cause UB.
-///
-/// # Safety
-///
-/// Implementation of [`Transmute::is_valid`] must always return true for this type.
-pub unsafe trait InfallibleTransmute: CheckedTransmute {}
-
 unsafe impl<R: InfallibleTransmute, const N: usize> InfallibleTransmute for [R; N] {}
-unsafe impl<R: StableNiche> InfallibleTransmute for Option<R> {}
-unsafe impl<R: StableNiche> InfallibleTransmute for &Option<R> where
-    Option<R>: Ir<Type = Option<WithStableNiche>>
-{
-}
-unsafe impl<R: StableNiche> InfallibleTransmute for &mut Option<R> where
-    Option<R>: Ir<Type = Option<WithStableNiche>>
-{
-}
-unsafe impl<R: StableNiche> InfallibleTransmute for Box<Option<R>> where
-    Option<R>: Ir<Type = Option<WithStableNiche>>
-{
-}
 
 #[repr(C)]
 union TransmuteHelper<R: CheckedTransmute> {

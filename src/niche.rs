@@ -3,11 +3,8 @@
 use alloc::{boxed::Box, vec::Vec};
 use disjoint_impls::disjoint_impls;
 
-#[cfg(not(feature = "non_robust_ref_mut"))]
-use crate::transmute::InfallibleTransmute;
 use crate::{
     ExternC, assert_arr_has_non_zero_len,
-    ir::{Opaque, Robust, Transparent},
     slice::{RefMutSlice, RefSlice},
 };
 
@@ -19,6 +16,8 @@ use crate::{
 pub(crate) trait WithNiche {}
 
 /// Marker for a type that has a single stable (compiler guaranteed) niche value (e.g. `&u32`).
+///
+/// Only a handful of [`Transparent`] types have a stable niche
 pub enum WithStableNiche {}
 
 /// Marker for a type that has a custom defined (by this crate) niche value (e.g. `[NonZeroU32; 2]`).
@@ -62,125 +61,6 @@ disjoint_impls! {
         type Type;
     }
 
-    // TODO: Implement for Box<Robust> types
-    impl<R: crate::ir::Ir<Type = Transparent>> Ir for &R {
-        type Type = WithStableNiche;
-    }
-    impl<R: crate::ir::Ir<Type = Robust>> Ir for &R {
-        type Type = WithStableNiche;
-    }
-    impl<R: crate::ir::Ir<Type = Opaque>> Ir for &R {
-        type Type = WithStableNiche;
-    }
-    #[cfg(feature = "cloned_refs")]
-    impl<R: crate::ir::Ir<Type: crate::ir::Cloned>> Ir for &R {
-        type Type = WithCustomNiche;
-    }
-
-    impl<
-        #[cfg(not(feature = "non_robust_ref_mut"))] R: InfallibleTransmute,
-        #[cfg(feature = "non_robust_ref_mut")] R,
-    > Ir for &mut R
-    where
-        R: crate::ir::Ir<Type = Transparent>,
-    {
-        type Type = WithStableNiche;
-    }
-    impl<R: crate::ir::Ir<Type = Robust>> Ir for &mut R {
-        type Type = WithStableNiche;
-    }
-    impl<R: crate::ir::Ir<Type = Opaque>> Ir for &mut R {
-        type Type = WithStableNiche;
-    }
-
-    impl<R: crate::ir::Ir<Type = Transparent>> Ir for Box<R> {
-        type Type = WithStableNiche;
-    }
-    #[cfg(feature = "owned_types")]
-    impl<R: crate::ir::Ir<Type = Robust>> Ir for Box<R> {
-        type Type = WithStableNiche;
-    }
-    impl<R: crate::ir::Ir<Type = Opaque>> Ir for Box<R> {
-        type Type = WithStableNiche;
-    }
-    #[cfg(feature = "owned_types")]
-    impl<R: crate::ir::Ir<Type: crate::ir::Cloned>> Ir for Box<R> {
-        type Type = WithCustomNiche;
-    }
-
-    impl<R: crate::ir::Ir<Type = Transparent>> Ir for &[R] {
-        type Type = WithCustomNiche;
-    }
-    impl<R: crate::ir::Ir<Type = Robust>> Ir for &[R] {
-        type Type = WithCustomNiche;
-    }
-    #[cfg(feature = "cloned_refs")]
-    impl<R: crate::ir::Ir<Type = Opaque>> Ir for &[R] {
-        type Type = WithCustomNiche;
-    }
-    #[cfg(feature = "cloned_refs")]
-    impl<R: crate::ir::Ir<Type: crate::ir::Cloned>> Ir for &[R] {
-        type Type = WithCustomNiche;
-    }
-
-    impl<
-        'a,
-        #[cfg(not(feature = "non_robust_ref_mut"))] R: InfallibleTransmute,
-        #[cfg(feature = "non_robust_ref_mut")] R,
-    > Ir for &'a mut [R]
-    where
-        R: crate::ir::Ir<Type = Transparent>,
-    {
-        type Type = WithCustomNiche;
-    }
-    impl<R: crate::ir::Ir<Type = Robust>> Ir for &mut [R] {
-        type Type = WithCustomNiche;
-    }
-
-    #[cfg(feature = "owned_types")]
-    impl<R: crate::ir::Ir<Type = Transparent>> Ir for Box<[R]> {
-        type Type = WithCustomNiche;
-    }
-    #[cfg(feature = "owned_types")]
-    impl<R: crate::ir::Ir<Type = Robust>> Ir for Box<[R]> {
-        type Type = WithCustomNiche;
-    }
-    #[cfg(feature = "owned_types")]
-    impl<R: crate::ir::Ir<Type = Opaque>> Ir for Box<[R]> {
-        type Type = WithCustomNiche;
-    }
-    #[cfg(feature = "owned_types")]
-    impl<R: crate::ir::Ir<Type: crate::ir::Cloned>> Ir for Box<[R]> {
-        type Type = WithCustomNiche;
-    }
-
-    #[cfg(feature = "owned_types")]
-    impl<R: crate::ir::Ir<Type = Transparent>> Ir for Vec<R> {
-        type Type = WithCustomNiche;
-    }
-    #[cfg(feature = "owned_types")]
-    impl<R: crate::ir::Ir<Type = Robust>> Ir for Vec<R> {
-        type Type = WithCustomNiche;
-    }
-    #[cfg(feature = "owned_types")]
-    impl<R: crate::ir::Ir<Type = Opaque>> Ir for Vec<R> {
-        type Type = WithCustomNiche;
-    }
-    #[cfg(feature = "owned_types")]
-    impl<R: crate::ir::Ir<Type: crate::ir::Cloned>> Ir for Vec<R> {
-        type Type = WithCustomNiche;
-    }
-
-    impl<R: Ir<Type = WithoutNiche>, const N: usize> Ir for [R; N] {
-        type Type = WithoutNiche;
-    }
-    impl<R: Ir<Type = WithStableNiche>, const N: usize> Ir for [R; N] {
-        type Type = WithStableNiche;
-    }
-    impl<R: Ir<Type = WithCustomNiche>, const N: usize> Ir for [R; N] {
-        type Type = WithCustomNiche;
-    }
-
     impl<R: Ir<Type = WithoutNiche>> Ir for Option<R> {
         type Type = WithCustomNiche;
     }
@@ -192,6 +72,33 @@ disjoint_impls! {
     //impl<R: Ir<Type = WithCustomNiche>> Ir for Option<R> {
     //    type Type = XXX;
     //}
+}
+
+impl<R> Ir for &R {
+    type Type = WithStableNiche;
+}
+impl<R> Ir for &mut R {
+    type Type = WithStableNiche;
+}
+impl<R> Ir for Box<R> {
+    type Type = WithStableNiche;
+}
+impl<R> Ir for &[R] {
+    type Type = WithCustomNiche;
+}
+impl<R> Ir for &mut [R] {
+    type Type = WithCustomNiche;
+}
+#[cfg(feature = "owned_types")]
+impl<R> Ir for Box<[R]> {
+    type Type = WithCustomNiche;
+}
+#[cfg(feature = "owned_types")]
+impl<R> Ir for Vec<R> {
+    type Type = WithCustomNiche;
+}
+impl<R, const N: usize> Ir for [R; N] {
+    type Type = WithCustomNiche;
 }
 
 impl<R, C> Niche for Box<R>
@@ -209,15 +116,6 @@ where
 {
     const NICHE_VALUE: RefMutSlice<C> = RefMutSlice::null_mut();
 }
-
-// TODO: Do it for all tuples in impl_tuple! macro
-
-//impl<R: crate::niche::Ir<Type = Robust>, const N: usize> Ir for [] where (R,): Ir<Type = Robust> {
-//    type Type = Robust;
-//}
-//impl<R: crate::ir::Ir<Type: crate::ir::Cloned>, const N: usize> Ir for [(R,); N] where (R,): crate::niche::Ir<Type = Robust> {
-//    type Type = Robust;
-//}
 
 impl<R, C> Niche for &R
 where
