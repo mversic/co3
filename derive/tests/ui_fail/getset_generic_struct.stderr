@@ -10,7 +10,7 @@ warning: unused import: `co3::ExternC`
 1 | use co3::ExternC;
   |     ^^^^^^^^^^^^
   |
-  = note: `#[warn(unused_imports)]` on by default
+  = note: `#[warn(unused_imports)]` (part of `#[warn(unused)]`) on by default
 
 warning: unused import: `getset::Getters`
  --> tests/ui_fail/getset_generic_struct.rs:2:5

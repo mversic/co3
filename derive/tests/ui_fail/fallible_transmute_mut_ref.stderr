@@ -1,19 +1,43 @@
 error[E0277]: the trait bound `Wrapper: InfallibleTransmute` is not satisfied
-  --> tests/ui_fail/fallible_transmute_mut_ref.rs:20:1
+  --> tests/ui_fail/fallible_transmute_mut_ref.rs:17:1
    |
-20 | #[co3::carbonate]
-   | ^^^^^^^^^^^^^^^^^ the trait `InfallibleTransmute` is not implemented for `Wrapper`
+17 | #[co3::carbonate]
+   | ^^^^^^^^^^^^^^^^^ unsatisfied trait bound
    |
+help: the trait `InfallibleTransmute` is not implemented for `Wrapper`
+  --> tests/ui_fail/fallible_transmute_mut_ref.rs:13:1
+   |
+13 | pub struct Wrapper(WrapperInner);
+   | ^^^^^^^^^^^^^^^^^^
    = help: the following other types implement trait `InfallibleTransmute`:
+             ExternRef<'_, R>
+             ExternRefMut<'_, R>
              ManuallyDrop<T>
+             Option<_TŠČ0>
+             UnsafeCell<T>
              [R; N]
-             i128
-             i16
-             i32
-             i64
-             i8
-             u128
-           and $N others
-   = note: required for `&mut Wrapper` to implement `co3::ir::Ir`
+   = note: required for `&mut Wrapper` to implement `transmute::_::CheckedTransmute1<Transparent>`
+   = note: required for `&mut Wrapper` to implement `co3::_::ExternC0<Transparent>`
    = note: required for `&mut Wrapper` to implement `ExternC`
+   = note: this error originates in the attribute macro `co3::carbonate` (in Nightly builds, run with -Z macro-backtrace for more info)
+
+error[E0277]: the trait bound `Wrapper: InfallibleTransmute` is not satisfied
+  --> tests/ui_fail/fallible_transmute_mut_ref.rs:17:1
+   |
+17 | #[co3::carbonate]
+   | ^^^^^^^^^^^^^^^^^ unsatisfied trait bound
+   |
+help: the trait `InfallibleTransmute` is not implemented for `Wrapper`
+  --> tests/ui_fail/fallible_transmute_mut_ref.rs:13:1
+   |
+13 | pub struct Wrapper(WrapperInner);
+   | ^^^^^^^^^^^^^^^^^^
+   = help: the following other types implement trait `InfallibleTransmute`:
+             ExternRef<'_, R>
+             ExternRefMut<'_, R>
+             ManuallyDrop<T>
+             Option<_TŠČ0>
+             UnsafeCell<T>
+             [R; N]
+   = note: required for `&mut Wrapper` to implement `transmute::_::CheckedTransmute1<Transparent>`
    = note: this error originates in the attribute macro `co3::carbonate` (in Nightly builds, run with -Z macro-backtrace for more info)

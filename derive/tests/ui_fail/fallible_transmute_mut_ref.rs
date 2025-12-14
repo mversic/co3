@@ -5,8 +5,8 @@ type WrapperInner = u32;
 #[derive(ExternC)]
 #[mineral(
     NICHE_VALUE = 0,
-    unsafe(is_valid = |target|
-        target != 0
+    unsafe(is_valid = |target: &Self::Target|
+        *target != 0
     )
 )]
 #[repr(transparent)]

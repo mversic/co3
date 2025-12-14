@@ -737,7 +737,7 @@ fn derive_ffi_type_for_data_carrying_enum(
             impl<#impl_generics> co3::out_ptr::OutPtrWrite for #enum_name #ty_generics #non_local_where_clause {
                 unsafe fn write_out(self, out_ptr: *mut Self::OutPtr) {
                     let mut store = Default::default();
-                    let encoded = self.encode(&mut store);
+                    let encoded = co3::Encode::encode(self, &mut store);
                     unsafe { out_ptr.write(encoded); }
                 }
             }
@@ -748,7 +748,7 @@ fn derive_ffi_type_for_data_carrying_enum(
                     unsafe {
                         // SAFETY: check `NonLocal` for guarantees
                         let store_ref = &mut *(&mut store as *mut _);
-                        Decode::decode(out_ptr, store_ref)
+                        co3::Decode::decode(out_ptr, store_ref)
                     }
                 }
             }
@@ -783,7 +783,7 @@ fn derive_ffi_type_for_data_carrying_enum(
         impl<#impl_generics> co3::Encode for #enum_name #ty_generics #where_clause {
             type Store = #rust_store;
 
-            fn encode<'itm>(self, store: &'itm mut Self::Store) -> <Self as ExternC>::CType where Self: 'itm {
+            fn encode<'itm>(self, store: &'itm mut Self::Store) -> <Self as co3::ExternC>::CType where Self: 'itm {
                 #ffi_store_conversion
 
                 match self {
@@ -795,7 +795,7 @@ fn derive_ffi_type_for_data_carrying_enum(
         impl<'d, #impl_generics> co3::Decode<'d> for #enum_name #ty_generics #where_clause {
             type Store = #ffi_store;
 
-            unsafe fn decode<'itm: 'd>(source: <Self as ExternC>::CType, store: &'itm mut Self::Store) -> co3::Result<Self> {
+            unsafe fn decode<'itm: 'd>(source: <Self as co3::ExternC>::CType, store: &'itm mut Self::Store) -> co3::Result<Self> {
                 #rust_store_conversion
 
                 match source.tag {

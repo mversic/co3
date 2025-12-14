@@ -27,7 +27,7 @@ drop_bomb = "0.1.5"
 quote = "1.0.40"
 
 [dev-dependencies]
-co3 = { path = ".." }
+co3 = { path = "..", features = ["derive"] }
 
 trybuild = "1.0.110"
 getset = "0.1.6"
