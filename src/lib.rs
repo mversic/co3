@@ -1207,7 +1207,7 @@ pub enum FfiReturn {
 /// co3::mineral! { impl Robust for RobustStruct {} }
 ///
 /// co3::mineral! {
-///     unsafe impl<T> Transparent for NonNull<T> {
+///     unsafe impl(T) Transparent for NonNull<T> where (T: Copy) {
 ///         type Target = NonNullInner<T>;
 ///
 ///         const NICHE_VALUE: Self::CType = core::ptr::null_mut();
@@ -1217,8 +1217,8 @@ pub enum FfiReturn {
 ///     }
 /// }
 ///
-/// // Validation function is `|_| true` implicitly indicating
-/// // this type is robust with respect to the wrapped type
+/// // If no validation function or niche value is given,
+/// // wrapper type delegates to the inner type
 /// co3::mineral! {
 ///     unsafe impl Transparent for Wrapper {
 ///         type Target = WrapperInner;
@@ -1227,19 +1227,19 @@ pub enum FfiReturn {
 /// ```
 #[macro_export]
 macro_rules! mineral {
-    (impl $(<$($impl_generics: tt $(: $bounds: path)?),*>)? Robust for $ty: ty $(where $($where_ty:ty: $where_bound:path),* )? {} ) => {
-        impl$(<$($impl_generics $(: $bounds)?),*>)? $crate::ir::Ir for $ty where Self: $crate::ReprC, $($($where_ty: $where_bound),*)? {
+    (impl $(( $($params:tt)* ))? Robust for $self_ty:ty $(where ($($preds:tt)*))? {}) => {
+        impl$(<$($params)*>)? $crate::ir::Ir for $self_ty where Self: $crate::ReprC, $($($preds)*)? {
             type Type = $crate::ir::Robust;
         }
-        impl<$($($impl_generics $(: $bounds)?),*)?> $crate::niche::Ir for $ty where $($($where_ty: $where_bound),*)? {
+        impl $(<$($params)*>)? $crate::niche::Ir for $self_ty $(where $($preds)*)? {
             type Type = $crate::niche::WithoutNiche;
         }
     };
-    (unsafe impl $(<$($impl_generics: tt $(: $bounds: path)?),*>)? Transparent for $ty: ty $(where $($where_ty:ty: $where_bound:path),* )? {
+    (unsafe impl $(( $($params:tt)* ))? Transparent for $self_ty:ty $(where ( $($preds:tt)* ))? {
         type Target = $target:ty;
     }) => {
         $crate::mineral! {
-            unsafe impl$(<$($impl_generics $(: $bounds)?),*>)? Transparent for $ty where $($($where_ty: $where_bound),*)? {
+            unsafe impl $(( $($params)* ))? Transparent for $self_ty $(where ( $($preds)* ))? {
                 type Target = $target;
 
                 fn is_valid(_target: &Self::Target) -> bool {
@@ -1251,19 +1251,19 @@ macro_rules! mineral {
         }
 
         // NOTE: When delagating, `$t` is robust with respect to `$target` even though `$target` itself may not be
-        unsafe impl<$($($impl_generics $(: $bounds)?),*)?> $crate::transmute::InfallibleTransmute for $ty where $($($where_ty: $where_bound),*)? {}
+        unsafe impl$(<$($params)*>)? $crate::transmute::InfallibleTransmute for $self_ty $(where $($preds)*)? {}
     };
-    (unsafe impl $(<$($impl_generics: tt $(: $bounds: path)?),*>)? Transparent for $ty: ty $(where $($where_ty:ty: $where_bound:path),* )? {
+    (unsafe impl $(( $($params:tt)* ))? Transparent for $self_ty:ty $(where ( $($preds:tt)* ))? {
         type Target = $target:ty;
 
         fn is_valid($target_var:ident: $target_ty:ty) -> $ret_val:ty
             $block:block
     }) => {
-        impl<$($($impl_generics $(: $bounds)?),*)?> $crate::ir::Ir for $ty where $($($where_ty: $where_bound),*)? {
+        impl $(<$($params)*>)? $crate::ir::Ir for $self_ty $(where $($preds)*)? {
             type Type = $crate::ir::Transparent;
         }
 
-        unsafe impl<$($($impl_generics $(: $bounds)?),*)?> $crate::transmute::CheckedTransmute for $ty where $($($where_ty: $where_bound),*)? {
+        unsafe impl $(<$($params)*>)? $crate::transmute::CheckedTransmute for $self_ty $(where $($preds)*)? {
             type Target = $target;
 
             #[inline(always)]
@@ -1279,63 +1279,66 @@ macro_rules! mineral {
                     type Type;
                 }
 
-                impl<$($($impl_generics $(: $bounds)?),*)?> Ir for $ty where
+                impl $(<$($params)*>)? Ir for $self_ty where
                     for<'dummy> Self: $crate::transmute::CheckedTransmute<Target: Ir<Type = $crate::niche::WithoutNiche>>,
-                    $($($where_ty: $where_bound),*)?
+                    $($($preds)*)?
                 {
                     type Type = $crate::niche::WithoutNiche;
                 }
-                impl<$($($impl_generics $(: $bounds)?),*)?> Ir for $ty where
+                impl $(<$($params)*>)? Ir for $self_ty where
                     for<'dummy> Self: $crate::transmute::CheckedTransmute<Target: Ir<Type = $crate::niche::WithCustomNiche>> + $crate::niche::Niche,
-                    $($($where_ty: $where_bound),*)?
+                    $($($preds)*)?
                 {
                     type Type = $crate::niche::WithCustomNiche;
                 }
-                impl<$($($impl_generics $(: $bounds)?),*)?> Ir for $ty where
+                impl $(<$($params)*>)? Ir for $self_ty where
                     for<'dummy> Self: $crate::transmute::CheckedTransmute<Target: Ir<Type = $crate::niche::WithStableNiche> + $crate::niche::StableNiche>,
-                    $($($where_ty: $where_bound),*)?
+                    $($($preds)*)?
                 {
                     type Type = $crate::niche::WithStableNiche;
                 }
             }
         };
 
-        impl<$($($impl_generics $(: $bounds)?),*)?> $crate::niche::Niche for $ty where
+        impl $(<$($params)*>)? $crate::niche::Niche for $self_ty where
             for<'dummy> <Self as $crate::transmute::CheckedTransmute>::Target: $crate::niche::Niche,
-            $($($where_ty: $where_bound),*)? {
+            $($($preds)*)?
+        {
             const NICHE_VALUE: <Self as $crate::ExternC>::CType = <$target as $crate::niche::Niche>::NICHE_VALUE;
         }
 
-        unsafe impl<$($($impl_generics $(: $bounds)?),*)?> $crate::niche::StableNiche for $ty where
+        unsafe impl $(<$($params)*>)? $crate::niche::StableNiche for $self_ty where
             for<'dummy> <Self as $crate::transmute::CheckedTransmute>::Target: $crate::niche::StableNiche,
-            $($($where_ty: $where_bound),*)? {
+            $($($preds)*)?
+        {
         }
 
-        unsafe impl<$($($impl_generics $(: $bounds)?),*)?> $crate::out_ptr::Zst for $ty where
+        unsafe impl $(<$($params)*>)? $crate::out_ptr::Zst for $self_ty where
             for<'dummy> <Self as $crate::transmute::CheckedTransmute>::Target: $crate::out_ptr::Zst,
-            $($($where_ty: $where_bound),*)? {
+            $($($preds)*)?
+        {
         }
     };
-    (unsafe impl $(<$($impl_generics: tt $(: $bounds: path)?),*>)? Transparent for $ty: ty $(where $($where_ty:ty: $where_bound:path),* )? {
+    (unsafe impl $(( $($params:tt)* ))? Transparent for $self_ty:ty $(where ( $($preds:tt)* ))? {
         type Target = $target:ty;
 
         const NICHE_VALUE: $niche_ty:ty = $niche_value:expr;
         fn is_valid($target_var:ident: $target_ty:ty) -> $ret_val:ty
             $block:block
     }) => {
-        impl<$($($impl_generics $(: $bounds)?),*)?> $crate::ir::Ir for $ty where $($($where_ty: $where_bound),*)? {
+        impl $(<$($params)*>)? $crate::ir::Ir for $self_ty $(where $($preds)*)? {
             type Type = $crate::ir::Transparent;
         }
 
         // SAFETY: `$ty` is transmutable into `$target` and `is_valid` doesn't return false positives
-        unsafe impl<$($($impl_generics $(: $bounds)?),*)?> $crate::transmute::CheckedTransmute for $ty where $($($where_ty: $where_bound),*)? {
+        unsafe impl $(<$($params)*>)? $crate::transmute::CheckedTransmute for $self_ty $(where $($preds)*)? {
             type Target = $target;
 
             #[inline(always)]
             fn is_valid($target_var: $target_ty) -> bool $block
         }
 
-        impl<$($($impl_generics $(: $bounds)?),*)?> $crate::niche::Niche for $ty where $($($where_ty: $where_bound),*)? {
+        impl $(<$($params)*>)? $crate::niche::Niche for $self_ty $(where $($preds)*)? {
             const NICHE_VALUE: $niche_ty = {
                 // FIXME: don't allow defining niche value if Niche is present on the inner type
                 // That is, only if the inner type is Robust can outer have custom niche value
@@ -1347,14 +1350,15 @@ macro_rules! mineral {
             };
         }
 
-        impl<$($($impl_generics $(: $bounds)?),*)?> $crate::niche::Ir for $ty where $($($where_ty: $where_bound),*)? {
+        impl $(<$($params)*>)? $crate::niche::Ir for $self_ty $(where $($preds)*)? {
             type Type = $crate::niche::WithCustomNiche;
         }
 
         // SAFETY: ZST relation is transitive
-        unsafe impl<$($($impl_generics $(: $bounds)?),*)?> $crate::out_ptr::Zst for $ty where
+        unsafe impl $(<$($params)*>)? $crate::out_ptr::Zst for $self_ty where
             for<'dummy> <Self as $crate::transmute::CheckedTransmute>::Target: $crate::out_ptr::Zst,
-            $($($where_ty: $where_bound),*)? {
+            $($($preds)*)?
+        {
         }
     };
 }

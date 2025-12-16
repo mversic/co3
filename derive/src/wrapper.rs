@@ -257,6 +257,11 @@ pub fn wrap_as_opaque(emitter: &mut Emitter, mut input: FfiTypeInput) -> TokenSt
 
 fn gen_impl_ffi(name: &Ident, generics: &syn::Generics) -> TokenStream {
     let (impl_generics, ty_generics, where_clause) = generics.split_for_impl();
+    let predicates = generics
+        .where_clause
+        .as_ref()
+        .map(|where_clause| &where_clause.predicates);
+    let params = &generics.params;
 
     let send_predicates = generics.type_params().map(|param| {
         quote! { #param: Send }
@@ -292,7 +297,7 @@ fn gen_impl_ffi(name: &Ident, generics: &syn::Generics) -> TokenStream {
         }
 
         co3::mineral! {
-            unsafe impl #impl_generics Transparent for #name #ty_generics #where_clause {
+            unsafe impl(#params) Transparent for #name #ty_generics where (#predicates) {
                 type Target = core::ptr::NonNull<co3::external::Extern>;
             }
         }

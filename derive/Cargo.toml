@@ -29,5 +29,7 @@ quote = "1.0.40"
 [dev-dependencies]
 co3 = { path = "..", features = ["derive"] }
 
+static_assertions = "1.1.0"
+disjoint_impls = "1.3.4"
 trybuild = "1.0.110"
 getset = "0.1.6"

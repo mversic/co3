@@ -480,7 +480,13 @@ fn derive_ffi_type_for_transparent_item(
         Some(ReprKind::Transparent)
     );
 
-    let (impl_generics, ty_generics, where_clause) = input.generics.split_for_impl();
+    let (_, ty_generics, _) = input.generics.split_for_impl();
+    let predicates = input
+        .generics
+        .where_clause
+        .as_ref()
+        .map(|where_clause| &where_clause.predicates);
+    let params = &input.generics.params;
 
     let name = &input.ident;
     let inner = match &input.data {
@@ -547,7 +553,7 @@ fn derive_ffi_type_for_transparent_item(
     quote! {
         co3::mineral! {
             // SAFETY: User must make sure the type is robust
-            unsafe impl #impl_generics Transparent for #name #ty_generics #where_clause {
+            unsafe impl(#params) Transparent for #name #ty_generics where (#predicates) {
                 type Target = #inner;
 
                 #custom_validation
@@ -833,12 +839,18 @@ fn derive_ffi_type_for_repr_c(emitter: &mut Emitter, input: &FfiTypeInput) -> To
         );
     }
 
-    let (impl_generics, ty_generics, where_clause) = input.generics.split_for_impl();
+    let (_, ty_generics, _) = input.generics.split_for_impl();
+    let predicates = input
+        .generics
+        .where_clause
+        .as_ref()
+        .map(|where_clause| &where_clause.predicates);
+    let params = &input.generics.params;
     let name = &input.ident;
 
     quote! {
         co3::mineral! {
-            impl #impl_generics Robust for #name #ty_generics #where_clause {}
+            impl (#params) Robust for #name #ty_generics where (#predicates) {}
         }
     }
 }

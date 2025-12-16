@@ -68,7 +68,7 @@ mineral! {
 }
 
 mineral! {
-    unsafe impl<'slice> Transparent for &'slice str {
+    unsafe impl('slice) Transparent for &'slice str {
         type Target = &'slice [u8];
 
         const NICHE_VALUE: Self::CType = RefSlice::null();
@@ -80,7 +80,7 @@ mineral! {
 
 #[cfg(feature = "non_robust_ref_mut")]
 mineral! {
-    unsafe impl<'slice> Transparent for &'slice mut str {
+    unsafe impl('slice) Transparent for &'slice mut str {
         type Target = &'slice mut [u8];
 
         const NICHE_VALUE: Self::CType = crate::slice::RefMutSlice::null_mut();
@@ -93,13 +93,13 @@ mineral! {
 #[cfg(feature = "owned_types")]
 #[cfg(feature = "owned_as_ref")]
 mineral! {
-    unsafe impl<T> Transparent for core::mem::ManuallyDrop<T> {
+    unsafe impl(T,) Transparent for core::mem::ManuallyDrop<T> {
         type Target = T;
     }
 }
 
 mineral! {
-    unsafe impl<T> Transparent for core::ptr::NonNull<T> {
+    unsafe impl(T) Transparent for core::ptr::NonNull<T> {
         type Target = *mut T;
 
         const NICHE_VALUE: Self::CType = core::ptr::null_mut();
