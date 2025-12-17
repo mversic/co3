@@ -23,24 +23,24 @@ pub enum Opaque {
 //    A,
 //}
 
-#[derive(ExternC)]
+#[derive(Clone, Copy, ExternC)]
 pub enum FieldlessEnumWithoutRepr {
     Var1,
 }
 
-#[derive(ExternC)]
+#[derive(Clone, Copy, ExternC)]
 #[repr(u8)]
 pub enum FieldlessSingleFieldEnumWithReprU {
     Var1,
 }
 
-#[derive(ExternC)]
+#[derive(Clone, Copy, ExternC)]
 #[repr(i8)]
 pub enum FieldlessSingleFieldEnumWithReprI {
     Var1,
 }
 
-#[derive(ExternC)]
+#[derive(Clone, Copy, ExternC)]
 #[repr(u8)]
 pub enum FieldlessUEnum {
     Var1,
@@ -50,7 +50,7 @@ pub enum FieldlessUEnum {
     Var5,
 }
 
-#[derive(ExternC)]
+#[derive(Clone, Copy, ExternC)]
 #[repr(i8)]
 pub enum FieldlessIEnum {
     Var1,
@@ -60,7 +60,7 @@ pub enum FieldlessIEnum {
     Var5,
 }
 
-#[derive(ExternC)]
+#[derive(Clone, Copy, ExternC)]
 #[repr(u16)]
 pub enum FieldlessLargeEnum {
     Var1,
@@ -321,7 +321,7 @@ pub enum FieldlessLargeEnum {
     Var256,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, ExternC)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, ExternC)]
 #[repr(C)]
 pub enum FieldlessReprCEnum {
     A,

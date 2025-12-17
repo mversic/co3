@@ -1,11 +1,33 @@
 error: Uninhabited enums are not allowed in FFI. Annotate with #[co3::mineral(opaque)]?
- --> tests/ui_fail/uninhabited_enum.rs:5:10
-  |
-5 | pub enum FfiStruct1 {}
-  |          ^^^^^^^^^^
+  --> tests/ui_fail/uninhabited_enum.rs:12:10
+   |
+12 | pub enum FfiStruct3 {}
+   |          ^^^^^^^^^^
 
 error: Uninhabited enums are not allowed in FFI. Annotate with #[co3::mineral(opaque)]?
- --> tests/ui_fail/uninhabited_enum.rs:8:10
-  |
-8 | pub enum FfiStruct2 {}
-  |          ^^^^^^^^^^
+  --> tests/ui_fail/uninhabited_enum.rs:16:10
+   |
+16 | pub enum FfiStruct4 {}
+   |          ^^^^^^^^^^
+
+error[E0084]: unsupported representation for zero-variant enum
+  --> tests/ui_fail/uninhabited_enum.rs:11:8
+   |
+11 | #[repr(transparent)]
+   |        ^^^^^^^^^^^
+12 | pub enum FfiStruct3 {}
+   | ------------------- zero-variant enum
+
+error[E0731]: transparent enum needs exactly one variant, but has 0
+  --> tests/ui_fail/uninhabited_enum.rs:12:1
+   |
+12 | pub enum FfiStruct3 {}
+   | ^^^^^^^^^^^^^^^^^^^ needs exactly one variant, but has 0
+
+error[E0084]: unsupported representation for zero-variant enum
+  --> tests/ui_fail/uninhabited_enum.rs:15:8
+   |
+15 | #[repr(C)]
+   |        ^
+16 | pub enum FfiStruct4 {}
+   | ------------------- zero-variant enum

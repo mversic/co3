@@ -4,7 +4,7 @@ use std::fmt::{Display, Formatter};
 use darling::{
     FromAttributes, FromDeriveInput, FromField, FromVariant, ast::Style, util::SpannedValue,
 };
-use manyhow::{emit, error_message};
+use manyhow::emit;
 use proc_macro2::{Span, TokenStream};
 use quote::quote;
 use syn::{
@@ -364,8 +364,10 @@ pub fn derive_ffi_type(emitter: &mut Emitter, input: &syn::DeriveInput) -> Token
     };
 
     let name = &input.ident;
+    let is_opaque = input.is_opaque();
     if let darling::ast::Data::Enum(variants) = &input.data
         && variants.is_empty()
+        && !is_opaque
     {
         emit!(
             emitter,
@@ -374,11 +376,11 @@ pub fn derive_ffi_type(emitter: &mut Emitter, input: &syn::DeriveInput) -> Token
         );
     }
 
-    if input.is_opaque() {
+    if is_opaque {
         return derive_ffi_type_for_opaque_item(name, &input.generics);
     }
     if input.repr_attr.kind.as_deref() == Some(&ReprKind::Transparent) {
-        return derive_ffi_type_for_transparent_item(emitter, &input);
+        return derive_ffi_type_for_transparent_item(&input);
     }
 
     match &input.data {
@@ -471,10 +473,7 @@ fn derive_ffi_type_for_opaque_item(name: &Ident, generics: &syn::Generics) -> To
     }
 }
 
-fn derive_ffi_type_for_transparent_item(
-    emitter: &mut Emitter,
-    input: &FfiTypeInput,
-) -> TokenStream {
+fn derive_ffi_type_for_transparent_item(input: &FfiTypeInput) -> TokenStream {
     assert_eq!(
         input.repr_attr.kind.as_deref().copied(),
         Some(ReprKind::Transparent)
@@ -490,43 +489,17 @@ fn derive_ffi_type_for_transparent_item(
 
     let name = &input.ident;
     let inner = match &input.data {
-        darling::ast::Data::Enum(variants) => {
-            let first_variant = emitter.handle(variants.iter().next().ok_or_else(|| {
-                error_message!("transparent enum must have exactly one variant, but it has none")
-            }));
-
-            first_variant
-                .and_then(|v| v.fields.fields.first())
-                .map(|first_variant| &first_variant.ty)
-                .or_else(|| {
-                    // NOTE: one-variant fieldless enums have representation of ()
-                    emit!(
-                        emitter,
-                        &input.span,
-                        "ZSTs are not allowed in FFI. Annotate with #[co3::mineral(opaque)]?",
-                    );
-
-                    None
-                })
-        }
-        darling::ast::Data::Struct(item) => {
-            // TODO: We don't check to find which field is not a ZST.
-            // It is just assumed that it is the first field. I think something can be done
-            // inside `co3::mineral!` through the use of disjoint_impls!
-            item.fields
+        // NOTE: one-variant fieldless enums have representation of ()
+        darling::ast::Data::Enum(variants) => variants.iter().next().and_then(|v| {
+            v.fields
+                .fields
                 .first()
-                .map(|first_field| &first_field.ty)
-                .or_else(|| {
-                    // NOTE: fieldless structs have representation of ()
-                    emit!(
-                        emitter,
-                        &input.span,
-                        "ZSTs are not allowed in FFI. Annotate with #[co3::mineral(opaque)]?",
-                    );
-
-                    None
-                })
-        }
+                .map(|first_variant| &first_variant.ty)
+        }),
+        // NOTE: fieldless structs have representation of ()
+        // TODO: We don't check to find which field is not a ZST. It is just assumed that it is the first field.
+        // I think something can be done inside `co3::mineral!` through the use of disjoint_impls! or via macro attribute
+        darling::ast::Data::Struct(item) => item.fields.first().map(|first_field| &first_field.ty),
     };
 
     if inner.is_none() {
@@ -598,6 +571,9 @@ fn derive_ffi_type_for_fieldless_enum(
                 }
             }
         }
+
+        // TODO: Only applicable if number of variants fills out entire discriminant domain space
+        //unsafe impl co3::ReprC for #enum_name {}
     }
 }
 
@@ -882,8 +858,8 @@ fn gen_data_carrying_repr_c_enum(
             tag: #tag_type, payload: #payload_name #ty_generics,
         }
 
-        impl #impl_generics Copy for #repr_c_enum_name #ty_generics where #payload_name #ty_generics: Copy {}
-        unsafe impl #impl_generics co3::ReprC for #repr_c_enum_name #ty_generics #where_clause {}
+        impl #impl_generics Copy for #repr_c_enum_name #ty_generics where for<'dummy> #payload_name #ty_generics: Copy {}
+        unsafe impl #impl_generics co3::ReprC for #repr_c_enum_name #ty_generics where for<'dummy> #payload_name #ty_generics: co3::ReprC {}
     };
 
     (repr_c_enum_name, repr_c_enum)
@@ -924,8 +900,8 @@ fn gen_data_carrying_enum_payload(
             #(#field_names: #field_tys),*
         }
 
-        impl #impl_generics Copy for #payload_name #ty_generics where #( #field_tys: Copy ),* {}
-        unsafe impl #impl_generics co3::ReprC for #payload_name #ty_generics #where_clause {}
+        impl #impl_generics Copy for #payload_name #ty_generics where #( for<'dummy> #field_tys: Copy ),* {}
+        unsafe impl #impl_generics co3::ReprC for #payload_name #ty_generics where #( for<'dummy> #field_tys: co3::ReprC ),* {}
     };
 
     (payload_name, payload)

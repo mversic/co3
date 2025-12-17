@@ -56,11 +56,11 @@ disjoint_impls! {
 
     unsafe impl<
         'a,
-        #[cfg(not(feature = "non_robust_ref_mut"))] R: InfallibleTransmute,
-        #[cfg(feature = "non_robust_ref_mut")] R: CheckedTransmute,
+        #[cfg(not(feature = "non_robust_ref_mut"))] R: ReprC,
+        #[cfg(feature = "non_robust_ref_mut")] R,
     > CheckedTransmute for &'a mut R
     where
-        R: Ir<Type = Transparent>,
+        R: Ir<Type = Transparent> + CheckedTransmute,
     {
         type Target = &'a mut R::Target;
 
@@ -157,31 +157,6 @@ unsafe impl<R: CheckedTransmute, const N: usize> CheckedTransmute for [R; N] {
         target.iter().all(R::is_valid)
     }
 }
-
-disjoint_impls! {
-    /// Marker trait for a type whose [`Transmute::is_valid`] always returns true.
-    ///
-    /// Main use of this trait is to guard against the use of `&mut T` in FFI where
-    /// the caller can set the underlying `T` to a trap representation and cause UB.
-    ///
-    /// # Safety
-    ///
-    /// Implementation of [`Transmute::is_valid`] must always return true for this type.
-    pub unsafe trait InfallibleTransmute: CheckedTransmute {}
-
-    unsafe impl<R: CheckedTransmute<Target: Ir<Type = Transparent>> + StableNiche> InfallibleTransmute
-        for Option<R>
-    where
-        Option<<R as CheckedTransmute>::Target>: InfallibleTransmute,
-    {
-    }
-    unsafe impl<R: CheckedTransmute<Target: Ir<Type = Robust> + ReprC> + StableNiche>
-        InfallibleTransmute for Option<R>
-    {
-    }
-}
-
-unsafe impl<R: InfallibleTransmute, const N: usize> InfallibleTransmute for [R; N] {}
 
 #[repr(C)]
 union TransmuteHelper<R: CheckedTransmute> {

@@ -122,7 +122,8 @@ unsafe impl<T> crate::transmute::CheckedTransmute for core::cell::UnsafeCell<T> 
     }
 }
 
-unsafe impl<T> crate::transmute::InfallibleTransmute for core::cell::UnsafeCell<T> {}
+// FIXME: `UnsafeCell<T>` doesn't implement `Copy` but it should be `ReprC`
+//unsafe impl<T: ReprC> crate::ReprC for core::cell::UnsafeCell<T> {}
 
 impl<T> crate::niche::Ir for core::cell::UnsafeCell<T> {
     type Type = crate::ir::Robust;

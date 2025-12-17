@@ -44,17 +44,26 @@ pub mod transmute;
 /// A specialized `Result` type for FFI operations
 pub type Result<T> = core::result::Result<T, FfiReturn>;
 
-/// Robust type that conforms to C ABI and can be safely shared across FFI boundaries.
-///
-/// Note that ABI compatibility of referent is not guaranteed. Dereferencing pointers
-/// whose referents don't also implement `ReprC` is very likely to cause UB
-///
-/// # Safety
-///
-/// Type implementing the trait must be a robust type with a guaranteed C ABI. Care must be taken
-/// not to dereference pointers whose referents don't implement `ReprC`; they are considered opaque
-// NOTE: Type is `Copy` to indicate that there can be no ownership transfer
-pub unsafe trait ReprC: Copy {}
+disjoint_impls! {
+    /// Robust type that conforms to C ABI and can be safely shared across FFI boundaries.
+    ///
+    /// Note that ABI compatibility of referent is not guaranteed. Dereferencing pointers
+    /// whose referents don't also implement `ReprC` is very likely to cause UB
+    ///
+    /// # Safety
+    ///
+    /// Type implementing the trait must be a robust type with a guaranteed C ABI. Care must be taken
+    /// not to dereference pointers whose referents don't implement `ReprC`; they are considered opaque
+    // NOTE: Type is `Copy` to indicate that there can be no ownership transfer
+    pub unsafe trait ReprC: Copy {}
+
+    // FIXME: `&mut T` and `Box<T>` don't implement `Copy` but they should still be considered `ReprC`
+    unsafe impl<R: CheckedTransmute<Target: Ir<Type = Robust> + ReprC> + Copy> ReprC for Option<R> {}
+    unsafe impl<R: CheckedTransmute<Target: Ir<Type = Transparent>> + Copy> ReprC for Option<R>
+    where
+        Option<<R as CheckedTransmute>::Target>: ReprC,
+    {}
+}
 
 // TODO: Check https://github.com/mversic/co3/issues/13
 const fn assert_arr_has_non_zero_len<const N: usize>() {
@@ -1250,8 +1259,9 @@ macro_rules! mineral {
             }
         }
 
-        // NOTE: When delagating, `$t` is robust with respect to `$target` even though `$target` itself may not be
-        unsafe impl$(<$($params)*>)? $crate::transmute::InfallibleTransmute for $self_ty $(where $($preds)*)? {}
+        unsafe impl$(<$($params)*>)? $crate::ReprC for $self_ty where
+            for<'dummy> Self: $crate::transmute::CheckedTransmute<Target: $crate::ReprC> + Copy,
+            $($($preds)*)? {}
     };
     (unsafe impl $(( $($params:tt)* ))? Transparent for $self_ty:ty $(where ( $($preds:tt)* ))? {
         type Target = $target:ty;
@@ -1286,13 +1296,13 @@ macro_rules! mineral {
                     type Type = $crate::niche::WithoutNiche;
                 }
                 impl $(<$($params)*>)? Ir for $self_ty where
-                    for<'dummy> Self: $crate::transmute::CheckedTransmute<Target: Ir<Type = $crate::niche::WithCustomNiche>> + $crate::niche::Niche,
+                    for<'dummy> Self: $crate::transmute::CheckedTransmute<Target: Ir<Type = $crate::niche::WithCustomNiche>>,
                     $($($preds)*)?
                 {
                     type Type = $crate::niche::WithCustomNiche;
                 }
                 impl $(<$($params)*>)? Ir for $self_ty where
-                    for<'dummy> Self: $crate::transmute::CheckedTransmute<Target: Ir<Type = $crate::niche::WithStableNiche> + $crate::niche::StableNiche>,
+                    for<'dummy> Self: $crate::transmute::CheckedTransmute<Target: Ir<Type = $crate::niche::WithStableNiche>>,
                     $($($preds)*)?
                 {
                     type Type = $crate::niche::WithStableNiche;
@@ -1309,15 +1319,11 @@ macro_rules! mineral {
 
         unsafe impl $(<$($params)*>)? $crate::niche::StableNiche for $self_ty where
             for<'dummy> <Self as $crate::transmute::CheckedTransmute>::Target: $crate::niche::StableNiche,
-            $($($preds)*)?
-        {
-        }
+            $($($preds)*)? {}
 
         unsafe impl $(<$($params)*>)? $crate::out_ptr::Zst for $self_ty where
             for<'dummy> <Self as $crate::transmute::CheckedTransmute>::Target: $crate::out_ptr::Zst,
-            $($($preds)*)?
-        {
-        }
+            $($($preds)*)? {}
     };
     (unsafe impl $(( $($params:tt)* ))? Transparent for $self_ty:ty $(where ( $($preds:tt)* ))? {
         type Target = $target:ty;
@@ -1369,8 +1375,8 @@ unsafe impl<R> ReprC for *const R {}
 // SAFETY: `*mut R` is robust with a defined C ABI regardless of whether `R` is
 // When `R` is not `ReprC` the pointer is opaque; dereferencing is immediate UB
 unsafe impl<R> ReprC for *mut R {}
-// SAFETY: `*mut R` is robust with a defined C ABI
-unsafe impl<C: ReprC, const N: usize> ReprC for [C; N] {}
+// SAFETY: Arrays is just a contiguous block of memory
+unsafe impl<R: ReprC, const N: usize> ReprC for [R; N] {}
 
 macro_rules! impl_tuple {
     ( ($( $ty:ident ),+) -> $ffi_ty:ident ) => {
