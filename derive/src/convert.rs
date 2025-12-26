@@ -2,7 +2,9 @@ use core::str::FromStr as _;
 use std::fmt::{Display, Formatter};
 
 use darling::{
-    FromAttributes, FromDeriveInput, FromField, FromVariant, ast::Style, util::SpannedValue,
+    FromAttributes, FromDeriveInput, FromField, FromVariant,
+    ast::{Fields, Style},
+    util::SpannedValue,
 };
 use manyhow::emit;
 use proc_macro2::{Span, TokenStream};
@@ -17,7 +19,7 @@ use crate::attr_parse::getset::{DocAttrs, GetSetFieldAttrs, GetSetStructAttrs};
 use crate::{
     attr_parse::{
         derive::DeriveAttrs,
-        repr::{Repr, ReprKind},
+        repr::{Repr, ReprKind, ReprPrimitive},
     },
     emitter::Emitter,
 };
@@ -190,7 +192,7 @@ impl syn::parse::Parse for SpannedFfiTypeToken {
 
 /// This represents an `#[mineral(...)]` attribute on a type
 #[derive(Debug, PartialEq, Eq, Clone)]
-enum FfiTypeKindAttribute {
+pub enum FfiTypeKindAttribute {
     Transparent(Option<syn::Expr>, syn::ExprClosure),
     Opaque,
     Local,
@@ -240,7 +242,7 @@ impl syn::parse::Parse for FfiTypeKindFieldAttribute {
 
 const FFI_TYPE_ATTR: &str = "mineral";
 
-struct FfiTypeAttr {
+pub struct FfiTypeAttr {
     pub kind: Option<FfiTypeKindAttribute>,
 }
 
@@ -271,19 +273,12 @@ pub struct FfiTypeInput {
     pub data: FfiTypeData,
     pub derive_attr: DeriveAttrs,
     repr_attr: Repr,
-    ffi_type_attr: FfiTypeAttr,
-    #[cfg(feature = "getset")]
-    pub getset_attr: GetSetStructAttrs,
+    pub ffi_type_attr: FfiTypeAttr,
     pub span: Span,
     /// The original `DeriveInput` this structure was parsed from
     pub ast: syn::DeriveInput,
-}
-
-impl FfiTypeInput {
-    pub fn is_opaque(&self) -> bool {
-        self.repr_attr.kind.is_none()
-            || self.ffi_type_attr.kind == Some(FfiTypeKindAttribute::Opaque)
-    }
+    #[cfg(feature = "getset")]
+    pub getset_attr: GetSetStructAttrs,
 }
 
 impl darling::FromDeriveInput for FfiTypeInput {
@@ -295,9 +290,9 @@ impl darling::FromDeriveInput for FfiTypeInput {
         let derive_attr = DeriveAttrs::from_attributes(&input.attrs)?;
         let repr_attr = Repr::from_attributes(&input.attrs)?;
         let ffi_type_attr = FfiTypeAttr::from_attributes(&input.attrs)?;
+        let span = input.span();
         #[cfg(feature = "getset")]
         let getset_attr = GetSetStructAttrs::from_attributes(&input.attrs)?;
-        let span = input.span();
 
         Ok(FfiTypeInput {
             vis,
@@ -307,10 +302,10 @@ impl darling::FromDeriveInput for FfiTypeInput {
             derive_attr,
             repr_attr,
             ffi_type_attr,
-            #[cfg(feature = "getset")]
-            getset_attr,
             span,
             ast: input.clone(),
+            #[cfg(feature = "getset")]
+            getset_attr,
         })
     }
 }
@@ -323,33 +318,30 @@ pub struct FfiTypeVariant {
 }
 
 pub struct FfiTypeField {
-    #[cfg(feature = "getset")]
-    pub ident: Option<syn::Ident>,
     pub ty: syn::Type,
+    pub ffi_type_attr: FfiTypeFieldAttr,
+    pub ident: Option<syn::Ident>,
     #[cfg(feature = "getset")]
     pub doc_attrs: DocAttrs,
-    pub ffi_type_attr: FfiTypeFieldAttr,
     #[cfg(feature = "getset")]
     pub getset_attr: GetSetFieldAttrs,
 }
 
 impl FromField for FfiTypeField {
     fn from_field(field: &Field) -> darling::Result<Self> {
-        #[cfg(feature = "getset")]
-        let ident = field.ident.clone();
         let ty = field.ty.clone();
+        let ffi_type_attr = FfiTypeFieldAttr::from_attributes(&field.attrs)?;
+        let ident = field.ident.clone();
         #[cfg(feature = "getset")]
         let doc_attrs = DocAttrs::from_attributes(&field.attrs)?;
-        let ffi_type_attr = FfiTypeFieldAttr::from_attributes(&field.attrs)?;
         #[cfg(feature = "getset")]
         let getset_attr = GetSetFieldAttrs::from_attributes(&field.attrs)?;
         Ok(Self {
-            #[cfg(feature = "getset")]
-            ident,
             ty,
+            ffi_type_attr,
+            ident,
             #[cfg(feature = "getset")]
             doc_attrs,
-            ffi_type_attr,
             #[cfg(feature = "getset")]
             getset_attr,
         })
@@ -357,100 +349,58 @@ impl FromField for FfiTypeField {
 }
 
 pub fn derive_ffi_type(emitter: &mut Emitter, input: &syn::DeriveInput) -> TokenStream {
-    let (impl_generics, ty_generics, _where_clause) = input.generics.split_for_impl();
-
-    let Some(mut input) = emitter.handle(FfiTypeInput::from_derive_input(input)) else {
+    let Some(input) = emitter.handle(FfiTypeInput::from_derive_input(input)) else {
         return quote!();
     };
 
-    let name = &input.ident;
-    let is_opaque = input.is_opaque();
-    if let darling::ast::Data::Enum(variants) = &input.data
-        && variants.is_empty()
-        && !is_opaque
+    if input.ffi_type_attr.kind == Some(FfiTypeKindAttribute::Opaque) {
+        return derive_ffi_type_for_opaque_item(&input.ident, &input.generics);
+    }
+
+    if let darling::ast::Data::Struct(darling::ast::Fields {
+        style: Style::Unit, ..
+    }) = &input.data
     {
         emit!(
             emitter,
-            name,
-            "Uninhabited enums are not allowed in FFI. Annotate with #[co3::mineral(opaque)]?"
+            &input.span,
+            "Unit structs are not allowed in FFI. Annotate with #[co3::mineral(opaque)]?",
         );
+
+        return quote! {};
     }
-
-    if is_opaque {
-        return derive_ffi_type_for_opaque_item(name, &input.generics);
-    }
-    if input.repr_attr.kind.as_deref() == Some(&ReprKind::Transparent) {
-        return derive_ffi_type_for_transparent_item(&input);
-    }
-
-    match &input.data {
-        darling::ast::Data::Enum(variants) => {
-            if variants.iter().all(|v| v.fields.is_empty()) {
-                if let Some(variant) = variants.iter().find(|v| v.discriminant.is_some()) {
-                    emit!(
-                        emitter,
-                        &variant.span(),
-                        "Fieldless enums with explicit discriminants are prohibited",
-                    );
-                }
-
-                derive_ffi_type_for_fieldless_enum(&input.repr_attr, &input.ident, variants)
-            } else {
-                verify_is_non_owning(emitter, &input.data);
-                let local = input.ffi_type_attr.kind == Some(FfiTypeKindAttribute::Local);
-
-                derive_ffi_type_for_data_carrying_enum(
-                    emitter,
-                    &input.ident,
-                    input.generics,
-                    variants,
-                    local,
-                )
+    match input.repr_attr.kind.as_deref() {
+        Some(ReprKind::Transparent) => return derive_ffi_type_for_transparent_item(&input),
+        Some(ReprKind::C) => return derive_ffi_type_for_repr_c_item(emitter, &input),
+        Some(ReprKind::Primitive(repr)) => {
+            if let darling::ast::Data::Enum(variants) = &input.data {
+                return derive_ffi_type_for_fieldless_enum(*repr, &input.ident, variants);
             }
         }
-        darling::ast::Data::Struct(item) => {
-            let ffi_type_impl = derive_ffi_type_for_repr_c(emitter, &input);
+        None => {}
+    }
 
-            if item.style == Style::Unit {
-                emit!(
-                    emitter,
-                    &input.span,
-                    "Unit structs are not allowed in FFI. Annotate with #[co3::mineral(opaque)]?",
-                );
-            }
+    let local = input.ffi_type_attr.kind == Some(FfiTypeKindAttribute::Local);
+    verify_is_non_owning(emitter, &input.data);
+    match &input.data {
+        darling::ast::Data::Enum(variants) if variants.is_empty() => {
+            emit!(
+                emitter,
+                input.ident,
+                "Uninhabited enums are not allowed in FFI. Annotate with #[co3::mineral(opaque)]?"
+            );
 
-            let zst_impl = {
-                let mut predicates = input.generics.make_where_clause().predicates.to_owned();
-
-                item.fields.iter().map(|field| &field.ty).for_each(|ty| {
-                    predicates.push(parse_quote! {for<'dummy> #ty: co3::out_ptr::Zst})
-                });
-
-                quote! {
-                    unsafe impl #impl_generics co3::out_ptr::Zst for #name #ty_generics where #predicates {}
-                }
-            };
-
-            let repr_c_impl = {
-                let mut predicates = input.generics.make_where_clause().predicates.to_owned();
-
-                item.fields
-                    .iter()
-                    .map(|field| &field.ty)
-                    .for_each(|ty| predicates.push(parse_quote! {for<'dummy> #ty: co3::ReprC}));
-
-                quote! {
-                    // SAFETY: Type is robust with #[repr(C)] attribute attached
-                    unsafe impl #impl_generics co3::ReprC for #name #ty_generics where #predicates {}
-                }
-            };
-
-            quote! {
-                #zst_impl
-
-                #repr_c_impl
-                #ffi_type_impl
-            }
+            quote! {}
+        }
+        darling::ast::Data::Enum(variants) => derive_ffi_type_for_no_repr_data_carrying_enum(
+            emitter,
+            &input.ident,
+            input.generics,
+            variants,
+            local,
+        ),
+        darling::ast::Data::Struct(fields) => {
+            derive_ffi_type_for_no_repr_struct(&input.ident, input.generics, fields, local)
         }
     }
 }
@@ -473,36 +423,38 @@ fn derive_ffi_type_for_opaque_item(name: &Ident, generics: &syn::Generics) -> To
     }
 }
 
+/// Possible transparent items:
+///
+/// * fieldless structs
+/// * one-variant fieldless enums
 fn derive_ffi_type_for_transparent_item(input: &FfiTypeInput) -> TokenStream {
-    assert_eq!(
+    debug_assert_eq!(
         input.repr_attr.kind.as_deref().copied(),
         Some(ReprKind::Transparent)
     );
 
     let (_, ty_generics, _) = input.generics.split_for_impl();
+    let params = &input.generics.params;
     let predicates = input
         .generics
         .where_clause
         .as_ref()
         .map(|where_clause| &where_clause.predicates);
-    let params = &input.generics.params;
 
     let name = &input.ident;
-    let inner = match &input.data {
-        // NOTE: one-variant fieldless enums have representation of ()
+    let target = match &input.data {
         darling::ast::Data::Enum(variants) => variants.iter().next().and_then(|v| {
             v.fields
                 .fields
                 .first()
                 .map(|first_variant| &first_variant.ty)
         }),
-        // NOTE: fieldless structs have representation of ()
-        // TODO: We don't check to find which field is not a ZST. It is just assumed that it is the first field.
+        // TODO: We don't check to find which struct field is not a ZST. It is just assumed that it is the first field.
         // I think something can be done inside `co3::mineral!` through the use of disjoint_impls! or via macro attribute
         darling::ast::Data::Struct(item) => item.fields.first().map(|first_field| &first_field.ty),
     };
 
-    if inner.is_none() {
+    if target.is_none() {
         return quote! {};
     };
 
@@ -525,9 +477,10 @@ fn derive_ffi_type_for_transparent_item(input: &FfiTypeInput) -> TokenStream {
 
     quote! {
         co3::mineral! {
-            // SAFETY: User must make sure the type is robust
+            // SAFETY: `Self` and `Self::Target` are guaranteed to be transmutable, but the user
+            // must make sure the provided validation function does not return false positives
             unsafe impl(#params) Transparent for #name #ty_generics where (#predicates) {
-                type Target = #inner;
+                type Target = #target;
 
                 #custom_validation
             }
@@ -536,11 +489,11 @@ fn derive_ffi_type_for_transparent_item(input: &FfiTypeInput) -> TokenStream {
 }
 
 fn derive_ffi_type_for_fieldless_enum(
-    repr: &Repr,
+    repr: ReprPrimitive,
     enum_name: &Ident,
     variants: &[SpannedValue<FfiTypeVariant>],
 ) -> TokenStream {
-    let tag_type = gen_enum_tag_type(repr);
+    let tag_type = parse_quote!(#repr);
 
     // FIXME: I think this doesn't actually require variant names, just using a range would suffice
     // (note that we don't support custom discriminants)
@@ -577,7 +530,209 @@ fn derive_ffi_type_for_fieldless_enum(
     }
 }
 
-fn derive_ffi_type_for_data_carrying_enum(
+fn derive_ffi_type_for_no_repr_struct(
+    name: &Ident,
+    mut generics: syn::Generics,
+    fields: &Fields<FfiTypeField>,
+    local: bool,
+) -> TokenStream {
+    let (repr_c_struct_name, repr_c_struct) = gen_repr_c_struct(name, &generics, fields);
+
+    generics.make_where_clause();
+    let params = &generics.params;
+    let (impl_generics, ty_generics, where_clause) = generics.split_for_impl();
+
+    let field_rust_stores = fields
+        .iter()
+        .map(|field| {
+            let ty = &field.ty;
+            quote! { <#ty as co3::Encode>::Store }
+        })
+        .collect::<Vec<_>>();
+
+    let field_ffi_stores = fields
+        .iter()
+        .map(|field| {
+            let ty = &field.ty;
+            quote! { <#ty as co3::Decode<'_dšč>>::Store }
+        })
+        .collect::<Vec<_>>();
+
+    let num_fields = fields.len();
+    let (rust_store, ffi_store, rust_store_conversion, ffi_store_conversion) = if num_fields > 12 {
+        (
+            quote! { Option<(#( #field_rust_stores, )*)> },
+            quote! { Option<(#( #field_ffi_stores, )*)> },
+            quote! { let store = store.insert(Default::default()); },
+            quote! { let store = store.insert(Default::default()); },
+        )
+    } else {
+        (
+            quote! { (#( #field_rust_stores, )*) },
+            quote! { (#( #field_ffi_stores, )*) },
+            quote! {},
+            quote! {},
+        )
+    };
+
+    let encode_impl = match &fields.style {
+        Style::Struct => {
+            let field_names: Vec<_> = fields.iter().filter_map(|f| f.ident.as_ref()).collect();
+            let field_indices = (0..field_names.len()).map(syn::Index::from);
+
+            quote! {
+                let Self { #(#field_names),* } = self;
+
+                #repr_c_struct_name {
+                    #(#field_names: co3::Encode::encode(#field_names, &mut store.#field_indices)),*
+                }
+            }
+        }
+        Style::Tuple => {
+            let field_indices = (0..num_fields).map(syn::Index::from);
+
+            let field_vars: Vec<_> = (0..num_fields)
+                .map(|i| Ident::new(&format!("field_{}", i), Span::call_site()))
+                .collect();
+
+            quote! {
+                let Self(#(#field_vars),*) = self;
+
+                #repr_c_struct_name(
+                    #(co3::Encode::encode(#field_vars, &mut store.#field_indices)),*
+                )
+            }
+        }
+        Style::Unit => quote! { #repr_c_struct_name },
+    };
+
+    let decode_impl = match &fields.style {
+        Style::Struct => {
+            let field_names: Vec<_> = fields.iter().filter_map(|f| f.ident.as_ref()).collect();
+            let field_indices = (0..field_names.len()).map(syn::Index::from);
+
+            quote! {
+                Ok(Self {
+                    #(#field_names: co3::Decode::decode(source.#field_names, &mut store.#field_indices)?),*
+                })
+            }
+        }
+        Style::Tuple => {
+            let field_indices = (0..num_fields).map(syn::Index::from);
+
+            quote! {
+                Ok(Self(
+                    #(co3::Decode::decode(source.#field_indices, &mut store.#field_indices)?),*
+                ))
+            }
+        }
+        Style::Unit => quote! { Ok(Self) },
+    };
+
+    let non_locality = if local {
+        quote! {}
+    } else {
+        let mut non_local_where_clause = where_clause.unwrap().clone();
+
+        for field in fields.iter() {
+            let ty = &field.ty;
+            non_local_where_clause
+                .predicates
+                .push(parse_quote! {for<'_dummy> #ty: co3::out_ptr::NonLocal});
+        }
+
+        quote! {
+            unsafe impl #impl_generics co3::out_ptr::NonLocal for #name #ty_generics #non_local_where_clause {}
+
+            impl #impl_generics co3::out_ptr::OutPtr for #name #ty_generics #non_local_where_clause {
+                type OutPtr = Self::CType;
+            }
+            impl #impl_generics co3::out_ptr::OutPtrWrite for #name #ty_generics #non_local_where_clause {
+                unsafe fn write_out(self, out_ptr: *mut Self::OutPtr) {
+                    let mut store = Default::default();
+                    let encoded = co3::Encode::encode(self, &mut store);
+                    unsafe { out_ptr.write(encoded); }
+                }
+            }
+            impl #impl_generics co3::out_ptr::OutPtrRead for #name #ty_generics #non_local_where_clause {
+                unsafe fn try_read_out(out_ptr: Self::OutPtr) -> co3::Result<Self> {
+                    let mut store = Default::default();
+
+                    unsafe {
+                        let store_ref = &mut *(&mut store as *mut _);
+                        co3::Decode::decode(out_ptr, store_ref)
+                    }
+                }
+            }
+        }
+    };
+
+    let niche_ir_without = {
+        let mut without_niche_where_clause = where_clause.unwrap().clone();
+
+        for ty in fields.iter().map(|f| &f.ty) {
+            without_niche_where_clause
+                .predicates
+                .push(parse_quote! { #ty: co3::niche::Ir<Type = co3::niche::WithoutNiche> });
+        }
+
+        quote! {
+            impl #impl_generics co3::niche::Ir for #name #ty_generics #without_niche_where_clause {
+                type Type = co3::niche::WithoutNiche;
+            }
+        }
+    };
+
+    let niche_ir_with = quote! {
+        impl #impl_generics co3::niche::Ir for #name #ty_generics #where_clause {
+            type Type = co3::niche::WithCustomNiche;
+        }
+
+        impl #impl_generics co3::niche::Niche for #name #ty_generics #where_clause {
+            const NICHE_VALUE: #repr_c_struct_name = unsafe { core::mem::zeroed() };
+        }
+    };
+
+    quote! {
+        #repr_c_struct
+
+        impl #impl_generics co3::ir::Cloned for #name #ty_generics #where_clause {}
+
+        impl #impl_generics co3::ir::Ir for #name #ty_generics #where_clause {
+            type Type = Self;
+        }
+
+        #niche_ir_without
+        #niche_ir_with
+
+        impl #impl_generics co3::ExternC for #name #ty_generics #where_clause {
+            type CType = #repr_c_struct_name #ty_generics;
+        }
+        impl #impl_generics co3::Encode for #name #ty_generics #where_clause {
+            type Store = #rust_store;
+
+            fn encode<'_išč>(self, store: &'_išč mut Self::Store) -> <Self as co3::ExternC>::CType where Self: '_išč {
+                #rust_store_conversion
+
+                #encode_impl
+            }
+        }
+
+        impl<'_dšč, #params> co3::Decode<'_dšč> for #name #ty_generics #where_clause {
+            type Store = #ffi_store;
+
+            unsafe fn decode<'_išč: '_dšč>(source: <Self as co3::ExternC>::CType, store: &'_išč mut Self::Store) -> co3::Result<Self> {
+                #ffi_store_conversion
+
+                #decode_impl
+            }
+        }
+
+        #non_locality
+    }
+}
+
+fn derive_ffi_type_for_no_repr_data_carrying_enum(
     emitter: &mut Emitter,
     enum_name: &Ident,
     mut generics: syn::Generics,
@@ -590,7 +745,8 @@ fn derive_ffi_type_for_data_carrying_enum(
         gen_data_carrying_repr_c_enum(emitter, enum_name, &generics, variants);
 
     generics.make_where_clause();
-    let (impl_generics, ty_generics, where_clause) = split_for_impl(&generics);
+    let params = &generics.params;
+    let (impl_generics, ty_generics, where_clause) = generics.split_for_impl();
 
     let variant_rust_stores = variants
         .iter()
@@ -616,7 +772,7 @@ fn derive_ffi_type_for_data_carrying_enum(
                 || quote! { () },
                 |field| {
                     let ty = &field.ty;
-                    quote! { <#ty as co3::Decode<'d>>::Store }
+                    quote! { <#ty as co3::Decode<'_dšč>>::Store }
                 },
             )
         })
@@ -707,23 +863,23 @@ fn derive_ffi_type_for_data_carrying_enum(
 
             non_local_where_clause
                 .predicates
-                .push(parse_quote! {for<'dummy> #ty: co3::out_ptr::NonLocal});
+                .push(parse_quote! {for<'_dummy> #ty: co3::out_ptr::NonLocal});
         }
 
         quote! {
-            unsafe impl<#impl_generics> co3::out_ptr::NonLocal for #enum_name #ty_generics #non_local_where_clause {}
+            unsafe impl #impl_generics co3::out_ptr::NonLocal for #enum_name #ty_generics #non_local_where_clause {}
 
-            impl<#impl_generics> co3::out_ptr::OutPtr for #enum_name #ty_generics #non_local_where_clause {
+            impl #impl_generics co3::out_ptr::OutPtr for #enum_name #ty_generics #non_local_where_clause {
                 type OutPtr = Self::CType;
             }
-            impl<#impl_generics> co3::out_ptr::OutPtrWrite for #enum_name #ty_generics #non_local_where_clause {
+            impl #impl_generics co3::out_ptr::OutPtrWrite for #enum_name #ty_generics #non_local_where_clause {
                 unsafe fn write_out(self, out_ptr: *mut Self::OutPtr) {
                     let mut store = Default::default();
                     let encoded = co3::Encode::encode(self, &mut store);
                     unsafe { out_ptr.write(encoded); }
                 }
             }
-            impl<#impl_generics> co3::out_ptr::OutPtrRead for #enum_name #ty_generics #non_local_where_clause {
+            impl #impl_generics co3::out_ptr::OutPtrRead for #enum_name #ty_generics #non_local_where_clause {
                 unsafe fn try_read_out(out_ptr: Self::OutPtr) -> co3::Result<Self> {
                     let mut store = Default::default();
 
@@ -737,35 +893,84 @@ fn derive_ffi_type_for_data_carrying_enum(
         }
     };
 
+    let has_discriminant_niche = variants.len() < (u32::MAX as usize);
+
+    let (niche_ir_without, niche_ir_with) = if has_discriminant_niche {
+        (
+            quote! {},
+            quote! {
+                impl #impl_generics co3::niche::Ir for #enum_name #ty_generics #where_clause {
+                    type Type = co3::niche::WithCustomNiche;
+                }
+
+                impl #impl_generics co3::niche::Niche for #enum_name #ty_generics #where_clause {
+                    const NICHE_VALUE: #repr_c_enum_name = #repr_c_enum_name {
+                        tag: #len,
+                        // FIXME: This likely leads to UB
+                        payload: unsafe { core::mem::zeroed() }
+                    };
+                }
+            },
+        )
+    } else {
+        let mut without_niche_where_clause = where_clause.unwrap().clone();
+
+        let mut variant_field_types = Vec::new();
+        for variant in variants {
+            if let Some(ty) =
+                variant_mapper(emitter, variant, || None, |field| Some(field.ty.clone()))
+            {
+                variant_field_types.push(ty);
+            }
+        }
+
+        for ty in &variant_field_types {
+            without_niche_where_clause
+                .predicates
+                .push(parse_quote! { #ty: co3::niche::Ir<Type = co3::niche::WithoutNiche> });
+        }
+
+        (
+            quote! {
+                impl #impl_generics co3::niche::Ir for #enum_name #ty_generics #without_niche_where_clause {
+                    type Type = co3::niche::WithoutNiche;
+                }
+            },
+            quote! {
+                impl #impl_generics co3::niche::Ir for #enum_name #ty_generics #where_clause {
+                    type Type = co3::niche::WithCustomNiche;
+                }
+
+                impl #impl_generics co3::niche::Niche for #enum_name #ty_generics #where_clause {
+                    const NICHE_VALUE: #repr_c_enum_name = #repr_c_enum_name {
+                        tag: #len,
+                        // FIXME: This likely leads to UB
+                        payload: unsafe { core::mem::zeroed() }
+                    };
+                }
+            },
+        )
+    };
+
     quote! {
         #repr_c_enum
 
-        // TODO: Enum can be transmutable if all variants are transmutable and the enum is `repr(C)`
-        impl<#impl_generics> co3::ir::Cloned for #enum_name #ty_generics #where_clause where Self: Clone {}
+        impl #impl_generics co3::ir::Cloned for #enum_name #ty_generics #where_clause {}
 
-        // NOTE: Data-carrying enum cannot implement `ReprC` unless it is robust `repr(C)`
-        impl<#impl_generics> co3::ir::Ir for #enum_name #ty_generics #where_clause {
+        impl #impl_generics co3::ir::Ir for #enum_name #ty_generics #where_clause {
             type Type = Self;
         }
-        impl<#impl_generics> co3::niche::Ir for #enum_name #ty_generics #where_clause {
-            type Type = co3::niche::WithCustomNiche;
-        }
 
-        impl<#impl_generics> co3::niche::Niche for #enum_name #ty_generics #where_clause {
-            const NICHE_VALUE: #repr_c_enum_name = #repr_c_enum_name {
-                tag: #len,
-                // FIXME: This likely leads to UB
-                payload: unsafe { core::mem::zeroed() }
-            };
-        }
+        #niche_ir_without
+        #niche_ir_with
 
-        impl<#impl_generics> co3::ExternC for #enum_name #ty_generics #where_clause {
+        impl #impl_generics co3::ExternC for #enum_name #ty_generics #where_clause {
             type CType = #repr_c_enum_name #ty_generics;
         }
-        impl<#impl_generics> co3::Encode for #enum_name #ty_generics #where_clause {
+        impl #impl_generics co3::Encode for #enum_name #ty_generics #where_clause {
             type Store = #rust_store;
 
-            fn encode<'itm>(self, store: &'itm mut Self::Store) -> <Self as co3::ExternC>::CType where Self: 'itm {
+            fn encode<'_išč>(self, store: &'_išč mut Self::Store) -> <Self as co3::ExternC>::CType where Self: '_išč {
                 #ffi_store_conversion
 
                 match self {
@@ -774,10 +979,10 @@ fn derive_ffi_type_for_data_carrying_enum(
             }
         }
 
-        impl<'d, #impl_generics> co3::Decode<'d> for #enum_name #ty_generics #where_clause {
+        impl<'_dšč, #params> co3::Decode<'_dšč> for #enum_name #ty_generics #where_clause {
             type Store = #ffi_store;
 
-            unsafe fn decode<'itm: 'd>(source: <Self as co3::ExternC>::CType, store: &'itm mut Self::Store) -> co3::Result<Self> {
+            unsafe fn decode<'_išč: '_dšč>(source: <Self as co3::ExternC>::CType, store: &'_išč mut Self::Store) -> co3::Result<Self> {
                 #rust_store_conversion
 
                 match source.tag {
@@ -799,36 +1004,95 @@ fn derive_ffi_type_for_data_carrying_enum(
     }
 }
 
-fn derive_ffi_type_for_repr_c(emitter: &mut Emitter, input: &FfiTypeInput) -> TokenStream {
+fn derive_ffi_type_for_repr_c_item(emitter: &mut Emitter, input: &FfiTypeInput) -> TokenStream {
     verify_is_non_owning(emitter, &input.data);
 
-    if input.repr_attr.kind.as_deref().copied() != Some(ReprKind::C) {
-        let span = input
-            .repr_attr
-            .kind
-            .map_or_else(Span::call_site, |kind| kind.span());
-        // TODO: this error message may be unclear. Consider adding a note about the `#[mineral]` attribute
-        emit!(
-            emitter,
-            span,
-            "To make an FFI type robust you must mark it with `#[repr(C)]`. Alternatively, try using `#[mineral(opaque)]` to make it opaque"
-        );
-    }
-
+    let item_name = &input.ident;
     let (_, ty_generics, _) = input.generics.split_for_impl();
+    let params = &input.generics.params;
     let predicates = input
         .generics
         .where_clause
         .as_ref()
         .map(|where_clause| &where_clause.predicates);
-    let params = &input.generics.params;
-    let name = &input.ident;
 
-    quote! {
-        co3::mineral! {
-            impl (#params) Robust for #name #ty_generics where (#predicates) {}
+    match &input.data {
+        darling::ast::Data::Enum(variants) => {
+            let len = TokenStream::from_str(&format!("{}", variants.len())).expect("Valid");
+
+            let (_, repr_c_enum) =
+                gen_data_carrying_repr_c_enum(emitter, item_name, &input.generics, variants);
+
+            quote! {
+                #repr_c_enum
+
+                co3::mineral! {
+                    impl(#params) Transparent for #item_name #ty_generics where (#predicates) {
+                        type Target = #repr_c_enum;
+
+                        fn is_valid(target: &Self::Target) -> bool {
+                            // TODO: Can it be less than 0?
+                            // Depends on the c type used
+                            target.tag <= #len
+                        }
+                    }
+                }
+            }
+        }
+        darling::ast::Data::Struct(_) => {
+            quote! {
+                co3::mineral! {
+                    // FIXME: I think this should be Transparent
+                    impl(#params) Robust for #item_name #ty_generics where (#predicates) {}
+                }
+
+                // TODO: Shouldn't I implement ReprC for the struct as well?
+            }
         }
     }
+}
+
+fn gen_repr_c_struct(
+    name: &Ident,
+    generics: &syn::Generics,
+    fields: &Fields<FfiTypeField>,
+) -> (Ident, TokenStream) {
+    let doc = format!(" [`ReprC`] equivalent of [`{name}`]");
+    let repr_c_struct_name = gen_repr_c_item_name(name);
+
+    let (impl_generics, ty_generics, where_clause) = generics.split_for_impl();
+    let params = &generics.params;
+    let predicates = where_clause
+        .as_ref()
+        .map(|where_clause| &where_clause.predicates);
+
+    let fields = fields.iter().map(|field| {
+        let field_ty = &field.ty;
+
+        if let Some(field_ident) = &field.ident {
+            quote! { #field_ident: <#field_ty as co3::ExternC>::CType }
+        } else {
+            quote! { <#field_ty as co3::ExternC>::CType }
+        }
+    });
+
+    let repr_c_struct = quote! {
+        #[repr(C)]
+        #[doc = #doc]
+        #[derive(Clone)]
+        struct #repr_c_struct_name #impl_generics #where_clause {
+            #(#fields),*
+        }
+
+        impl #impl_generics Copy for #repr_c_struct_name #ty_generics #where_clause {}
+        unsafe impl #impl_generics co3::ReprC for #repr_c_struct_name #ty_generics #where_clause {}
+
+        co3::mineral! {
+            impl(#params) Robust for #repr_c_struct_name where (#predicates) {}
+        }
+    };
+
+    (repr_c_struct_name, repr_c_struct)
 }
 
 fn gen_data_carrying_repr_c_enum(
@@ -839,14 +1103,17 @@ fn gen_data_carrying_repr_c_enum(
 ) -> (Ident, TokenStream) {
     let (payload_name, payload) =
         gen_data_carrying_enum_payload(emitter, enum_name, generics, variants);
-    let (impl_generics, ty_generics, where_clause) = generics.split_for_impl();
-    let doc = format!(" [`ReprC`] equivalent of [`{enum_name}`]");
-    let repr_c_enum_name = gen_repr_c_enum_name(enum_name);
 
-    // FIXME: This is a hack before https://github.com/mversic/co3/issues/10
-    let repr_c_attr: Attribute = parse_quote!(#[repr(C)]);
-    let repr = &Repr::from_attributes(&[repr_c_attr]).unwrap();
-    let tag_type = gen_enum_tag_type(repr);
+    let doc = format!(" [`ReprC`] equivalent of [`{enum_name}`]");
+    let repr_c_enum_name = gen_repr_c_item_name(enum_name);
+    // FIXME: What is the correct repr here?
+    let tag_type = quote! { core::ffi::c_uint };
+
+    let (impl_generics, ty_generics, where_clause) = generics.split_for_impl();
+    let params = &generics.params;
+    let predicates = where_clause
+        .as_ref()
+        .map(|where_clause| &where_clause.predicates);
 
     let repr_c_enum = quote! {
         #payload
@@ -854,12 +1121,16 @@ fn gen_data_carrying_repr_c_enum(
         #[repr(C)]
         #[doc = #doc]
         #[derive(Clone)]
-        pub struct #repr_c_enum_name #impl_generics #where_clause {
+        struct #repr_c_enum_name #impl_generics #where_clause {
             tag: #tag_type, payload: #payload_name #ty_generics,
         }
 
-        impl #impl_generics Copy for #repr_c_enum_name #ty_generics where for<'dummy> #payload_name #ty_generics: Copy {}
-        unsafe impl #impl_generics co3::ReprC for #repr_c_enum_name #ty_generics where for<'dummy> #payload_name #ty_generics: co3::ReprC {}
+        impl #impl_generics Copy for #repr_c_enum_name #ty_generics #where_clause {}
+        unsafe impl #impl_generics co3::ReprC for #repr_c_enum_name #ty_generics #where_clause {}
+
+        co3::mineral! {
+            impl(#params) Robust for #repr_c_enum_name where (#predicates) {}
+        }
     };
 
     (repr_c_enum_name, repr_c_enum)
@@ -871,37 +1142,36 @@ fn gen_data_carrying_enum_payload(
     generics: &syn::Generics,
     variants: &[SpannedValue<FfiTypeVariant>],
 ) -> (Ident, TokenStream) {
+    let payload_name = gen_repr_c_enum_payload_name(enum_name);
+    let repr_c_enum_name = gen_repr_c_item_name(enum_name);
+
     let (impl_generics, ty_generics, where_clause) = generics.split_for_impl();
     let field_names = variants.iter().map(|variant| &variant.ident);
-    let payload_name = gen_repr_c_enum_payload_name(enum_name);
-    let doc = format!(" [`ReprC`] equivalent of [`{enum_name}`]");
+    let doc = format!(" Payload of [`{repr_c_enum_name}`]");
 
-    let field_tys = variants
-        .iter()
-        .map(|variant| {
-            variant_mapper(
-                emitter,
-                variant,
-                || quote! {()},
-                |field| {
-                    let field_ty = &field.ty;
-                    quote! {<#field_ty as co3::ExternC>::CType}
-                },
-            )
-        })
-        .collect::<Vec<_>>();
+    let field_tys = variants.iter().map(|variant| {
+        variant_mapper(
+            emitter,
+            variant,
+            || quote! {()},
+            |field| {
+                let field_ty = &field.ty;
+                quote! {<#field_ty as co3::ExternC>::CType}
+            },
+        )
+    });
 
     let payload = quote! {
         #[repr(C)]
         #[doc = #doc]
         #[derive(Clone)]
         #[expect(non_snake_case)]
-        pub union #payload_name #impl_generics #where_clause {
+        union #payload_name #impl_generics #where_clause {
             #(#field_names: #field_tys),*
         }
 
-        impl #impl_generics Copy for #payload_name #ty_generics where #( for<'dummy> #field_tys: Copy ),* {}
-        unsafe impl #impl_generics co3::ReprC for #payload_name #ty_generics where #( for<'dummy> #field_tys: co3::ReprC ),* {}
+        impl #impl_generics Copy for #payload_name #ty_generics #where_clause {}
+        unsafe impl #impl_generics co3::ReprC for #payload_name #ty_generics #where_clause {}
     };
 
     (payload_name, payload)
@@ -912,10 +1182,10 @@ fn gen_discriminants(
     variants: &[SpannedValue<FfiTypeVariant>],
     tag_type: &syn::Type,
 ) -> (Vec<Ident>, Vec<TokenStream>) {
-    let variant_names: Vec<_> = variants.iter().map(|v| &v.ident).collect();
+    let variant_names = variants.iter().map(|v| &v.ident);
     let discriminant_values = variant_discriminants(variants);
 
-    variant_names.iter().zip(discriminant_values.iter()).fold(
+    variant_names.zip(discriminant_values.iter()).fold(
         Default::default(),
         |mut acc, (variant_name, discriminant_value)| {
             let discriminant_name = Ident::new(
@@ -969,7 +1239,7 @@ fn variant_mapper<T: Sized, F0: FnOnce() -> T, F1: FnOnce(&FfiTypeField) -> T>(
     }
 }
 
-fn gen_repr_c_enum_name(enum_name: &Ident) -> Ident {
+fn gen_repr_c_item_name(enum_name: &Ident) -> Ident {
     Ident::new(&format!("__co3__ReprC{enum_name}"), Span::call_site())
 }
 
@@ -979,7 +1249,7 @@ fn gen_repr_c_enum_payload_name(enum_name: &Ident) -> Ident {
 
 // NOTE: Except for the raw pointers there should be no other type
 // that is at the same time Robust and also transfers ownership
-/// Verifies for each pointer type found inside the `FfiTypeData` that it is marked as non-owning
+/// Verifies for each pointer type found inside the `FfiTypeData` is marked as non-owning
 fn verify_is_non_owning(emitter: &mut Emitter, data: &FfiTypeData) {
     struct PtrVisitor<'a> {
         emitter: &'a mut Emitter,
@@ -1016,30 +1286,6 @@ fn verify_is_non_owning(emitter: &mut Emitter, data: &FfiTypeData) {
             }
         }
     }
-}
-
-fn gen_enum_tag_type(repr: &Repr) -> syn::Type {
-    let Some(kind) = repr.kind else {
-        unreachable!()
-    };
-
-    match &*kind {
-        ReprKind::Primitive(primitive) => parse_quote!(#primitive),
-        ReprKind::C => parse_quote! {core::ffi::c_int},
-        ReprKind::Transparent => unreachable!(),
-    }
-}
-
-fn split_for_impl(
-    generics: &syn::Generics,
-) -> (
-    syn::punctuated::Punctuated<syn::GenericParam, syn::Token![,]>,
-    syn::TypeGenerics<'_>,
-    Option<&syn::WhereClause>,
-) {
-    let impl_generics = generics.params.clone();
-    let (_, ty_generics, where_clause) = generics.split_for_impl();
-    (impl_generics, ty_generics, where_clause)
 }
 
 /// Parses a single attribute of the form `#[attr_name(...)]` for darling using a `syn::parse::Parse` implementation.

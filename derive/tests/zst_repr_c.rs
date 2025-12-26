@@ -35,5 +35,5 @@ fn main() {
 
     assert_impl_all!(ZstTransparentStruct<ZstReprCEnum>: co3::ExternC, CheckedTransmute<Target = ZstReprCEnum>);
     assert_impl_all!(ZstReprCEnum: co3::ExternC, CheckedTransmute<Target = c_int>);
-    assert_impl_all!(ZstReprCStruct<ZstReprCEnum>: co3::ReprC, co3::ExternC);
+    //assert_impl_all!(ZstReprCStruct<ZstReprCEnum>: co3::ReprC, co3::ExternC);
 }

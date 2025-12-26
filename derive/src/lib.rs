@@ -9,7 +9,7 @@ use wrapper::wrap_method;
 #[cfg(feature = "getset")]
 use crate::{attr_parse::derive::Derive, convert::FfiTypeData};
 use crate::{
-    convert::{FfiTypeInput, derive_ffi_type},
+    convert::{FfiTypeInput, FfiTypeKindAttribute, derive_ffi_type},
     emitter::Emitter,
     impl_visitor::Arg,
 };
@@ -91,7 +91,7 @@ pub fn extern_type(_args: TokenStream, input: TokenStream) -> TokenStream {
                 emit!(emitter, item.span, "Only public types are allowed in FFI");
             }
 
-            if !item.is_opaque() {
+            if item.ffi_type_attr.kind != Some(FfiTypeKindAttribute::Opaque) {
                 let item = item.ast;
 
                 return quote! {
@@ -329,7 +329,7 @@ pub fn carbonate(attr: TokenStream, item: TokenStream) -> TokenStream {
                 return emitter.finish_token_stream();
             };
 
-            if !input.is_opaque() {
+            if input.ffi_type_attr.kind != Some(FfiTypeKindAttribute::Opaque) {
                 let input = input.ast;
                 return emitter.finish_token_stream_with(quote! { #input });
             }
