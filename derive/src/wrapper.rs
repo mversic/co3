@@ -5,8 +5,8 @@ use syn::{Attribute, Ident, Type, parse_quote, visit_mut::VisitMut};
 
 use crate::{
     attr_parse::derive::{Derive, RustcDerive},
-    convert::FfiTypeInput,
     emitter::Emitter,
+    extern_c::FfiTypeInput,
     ffi_fn,
     impl_visitor::{Arg, FnDescriptor, ImplDescriptor, TypeImplTraitResolver},
     utils::{gen_resolve_type, gen_store_name, unwrap_result_type},

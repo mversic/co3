@@ -8,8 +8,8 @@ use crate::{
         derive::DeriveAttrs,
         getset::{GetSetGenMode, GetSetStructAttrs},
     },
-    convert::{FfiTypeField, FfiTypeFields},
     emitter::Emitter,
+    extern_c::{FfiTypeField, FfiTypeFields},
     impl_visitor::{Arg, FnDescriptor},
 };
 

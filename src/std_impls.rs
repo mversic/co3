@@ -7,16 +7,6 @@ use alloc::{boxed::Box, string::String, vec::Vec};
 use crate::slice::RawSliceMut;
 use crate::{mineral, slice::RawSlice};
 
-macro_rules! impl_repr_c {
-    ($($ty:ty),* $(,)?) => {$(
-        unsafe impl ReprC for $ty {}
-
-        $crate::mineral! {
-            impl Robust for $ty {}
-        })*
-    };
-}
-
 macro_rules! non_zero_derive {
     ($($ty:ty => $target:ty),+ $(,)?) => {$(
         mineral! {
@@ -32,22 +22,6 @@ macro_rules! non_zero_derive {
 
         unsafe impl crate::niche::StableNiche for $ty {})+
     }
-}
-
-impl_repr_c! {
-    core::ffi::c_char,
-    core::ffi::c_double,
-    core::ffi::c_float,
-    core::ffi::c_int,
-    core::ffi::c_long,
-    core::ffi::c_longlong,
-    core::ffi::c_schar,
-    core::ffi::c_short,
-    core::ffi::c_uchar,
-    core::ffi::c_uint,
-    core::ffi::c_ulong,
-    core::ffi::c_ulonglong,
-    core::ffi::c_ushort,
 }
 
 non_zero_derive! {

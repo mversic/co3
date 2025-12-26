@@ -13,6 +13,7 @@ pub enum Ambiguous {
 }
 
 #[derive(Clone, Copy, ExternC)]
+#[mineral(opaque)]
 pub struct FfiStruct;
 
 #[co3::carbonate]

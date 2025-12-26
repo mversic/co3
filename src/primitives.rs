@@ -1,5 +1,7 @@
 //! Logic related to the conversion of primitives to and from FFI-compatible representation
 
+use crate::niche::Niche;
+
 #[cfg(target_family = "wasm")]
 mod wasm {
     use alloc::{boxed::Box, vec::Vec};
@@ -189,9 +191,3 @@ fieldless_enum_derive! {
 primitive_derive! { u32, i32, u64, i64, u128, i128, f32, f64 }
 #[cfg(not(target_family = "wasm"))]
 primitive_derive! { u8, i8, u16, i16 }
-
-// TODO: Find a way to implement for all recursively wrapped
-// `Option<R>` where `R` has multiple niche values
-//impl Niche for Option<bool> {
-//    const NICHE_VALUE: <u8 as ExternC>::CType = 3;
-//}

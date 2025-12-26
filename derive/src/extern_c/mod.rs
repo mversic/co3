@@ -1,0 +1,556 @@
+use std::fmt::{Display, Formatter};
+
+use darling::{
+    FromAttributes, FromDeriveInput, FromField, FromVariant, ast::Style, util::SpannedValue,
+};
+use manyhow::emit;
+use proc_macro2::{Span, TokenStream};
+use quote::quote;
+use syn::{
+    Attribute, Field, Ident, ext::IdentExt as _, parse::ParseStream, spanned::Spanned as _,
+    visit::Visit as _,
+};
+
+#[cfg(feature = "getset")]
+use crate::attr_parse::getset::{DocAttrs, GetSetFieldAttrs, GetSetStructAttrs};
+use crate::{
+    attr_parse::{
+        derive::DeriveAttrs,
+        repr::{Repr, ReprKind},
+    },
+    emitter::Emitter,
+    extern_c::no_repr::derive_opaque_item,
+};
+use no_repr::{derive_no_repr_data_carrying_enum, derive_no_repr_struct};
+use primitive_repr::derive_fieldless_enum;
+use repr_c::derive_repr_c_item;
+use transparent::derive_transparent_item;
+
+mod no_repr;
+mod primitive_repr;
+mod repr_c;
+mod transparent;
+
+#[derive(Debug)]
+enum FfiTypeToken {
+    Transparent(Option<syn::Expr>, syn::ExprClosure),
+    UnsafeNonOwning,
+    Opaque,
+    Local,
+}
+
+impl Display for FfiTypeToken {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        match self {
+            FfiTypeToken::UnsafeNonOwning => write!(f, "#[mineral(unsafe(non_owning))]"),
+            FfiTypeToken::Opaque => write!(f, "#[mineral(opaque)]"),
+            FfiTypeToken::Local => write!(f, "#[mineral(local)]"),
+            FfiTypeToken::Transparent(niche, is_valid) => {
+                write!(f, "#[mineral(")?;
+                if let Some(niche) = niche {
+                    write!(f, "NICHE_VALUE = {}, ", quote!(#niche))?;
+                }
+                write!(f, "unsafe(is_valid = {}))]", quote!(#is_valid))
+            }
+        }
+    }
+}
+
+#[derive(Debug)]
+struct SpannedFfiTypeToken {
+    span: Span,
+    token: FfiTypeToken,
+}
+
+impl syn::parse::Parse for SpannedFfiTypeToken {
+    fn parse(input: ParseStream) -> syn::Result<Self> {
+        fn join_span(span: &mut Option<Span>, new_span: Span) {
+            *span = Some(match *span {
+                Some(existing) => existing.join(new_span).unwrap_or(existing),
+                None => new_span,
+            });
+        }
+
+        let mut span: Option<Span> = None;
+        let mut niche_value = None;
+        let mut is_valid = None;
+        let mut token = None;
+
+        while !input.is_empty() {
+            let ident: Ident = input.call(Ident::parse_any)?;
+            join_span(&mut span, ident.span());
+
+            match ident.to_string().as_str() {
+                "opaque" => {
+                    token = Some(FfiTypeToken::Opaque);
+                }
+                "local" => {
+                    token = Some(FfiTypeToken::Local);
+                }
+                "unsafe" => {
+                    if !input.peek(syn::token::Paren) {
+                        return Err(syn::Error::new(
+                            ident.span(),
+                            "expected `(...)` after `unsafe`",
+                        ));
+                    }
+
+                    let content;
+                    syn::parenthesized!(content in input);
+                    join_span(&mut span, content.span());
+
+                    let inner_ident: Ident = content.parse().map_err(|_| {
+                        syn::Error::new(content.span(), "expected ffi type kind inside unsafe(...)")
+                    })?;
+                    let inner_str = inner_ident.to_string();
+
+                    match inner_str.as_str() {
+                        "non_owning" => {
+                            if !content.is_empty() {
+                                return Err(syn::Error::new(
+                                    content.span(),
+                                    "`unsafe(non_owning) should contain only one identifier",
+                                ));
+                            }
+
+                            token = Some(FfiTypeToken::UnsafeNonOwning);
+                        }
+                        "is_valid" => {
+                            content.parse::<syn::Token![=]>()?;
+                            let closure: syn::ExprClosure = content.parse()?;
+                            join_span(&mut span, closure.span());
+
+                            if !content.is_empty() {
+                                return Err(syn::Error::new(
+                                    content.span(),
+                                    "unexpected tokens after `is_valid` closure",
+                                ));
+                            }
+
+                            is_valid = Some(closure);
+                        }
+                        other => {
+                            return Err(syn::Error::new(
+                                inner_ident.span(),
+                                format!("unknown unsafe ffi type kind: {other}"),
+                            ));
+                        }
+                    }
+                }
+                "NICHE_VALUE" => {
+                    input.parse::<syn::Token![=]>()?;
+                    let value: syn::Expr = input.parse()?;
+                    join_span(&mut span, value.span());
+                    niche_value = Some(value);
+                }
+                other => {
+                    return Err(syn::Error::new(
+                        ident.span(),
+                        format!("unknown type kind: {other}"),
+                    ));
+                }
+            }
+
+            if input.is_empty() {
+                break;
+            }
+
+            if input.peek(syn::Token![,]) {
+                let comma: syn::token::Comma = input.parse()?;
+                join_span(&mut span, comma.span);
+                if input.is_empty() {
+                    break;
+                }
+            } else {
+                return Err(input.error("expected `,`"));
+            }
+        }
+
+        let span = span.unwrap_or_else(Span::call_site);
+
+        if let Some(token) = token {
+            if is_valid.is_some() || niche_value.is_some() {
+                return Err(syn::Error::new(
+                    span,
+                    "unexpected tokens after ffi type kind",
+                ));
+            }
+
+            return Ok(Self { span, token });
+        }
+
+        let Some(is_valid) = is_valid else {
+            if niche_value.is_some() {
+                return Err(syn::Error::new(
+                    span,
+                    "expected `unsafe(is_valid = ...)` when specifying `NICHE_VALUE`",
+                ));
+            }
+
+            return Err(syn::Error::new(span, "expected ffi type kind"));
+        };
+
+        Ok(Self {
+            span,
+            token: FfiTypeToken::Transparent(niche_value, is_valid),
+        })
+    }
+}
+
+/// This represents an `#[mineral(...)]` attribute on a type
+#[derive(Debug, PartialEq, Eq, Clone)]
+pub enum FfiTypeKindAttribute {
+    Transparent(Option<syn::Expr>, syn::ExprClosure),
+    Opaque,
+    Local,
+}
+
+impl syn::parse::Parse for FfiTypeKindAttribute {
+    fn parse(input: ParseStream) -> syn::Result<Self> {
+        input.call(SpannedFfiTypeToken::parse).and_then(|token| {
+            Ok(match token.token {
+                FfiTypeToken::Transparent(niche_value, is_valid) => {
+                    FfiTypeKindAttribute::Transparent(niche_value, is_valid)
+                }
+                FfiTypeToken::Opaque => FfiTypeKindAttribute::Opaque,
+                FfiTypeToken::Local => FfiTypeKindAttribute::Local,
+                other => {
+                    return Err(syn::Error::new(
+                        token.span,
+                        format!("`{other}` cannot be used on a type"),
+                    ));
+                }
+            })
+        })
+    }
+}
+
+/// This represents an `#[mineral(...)]` attribute on a field
+#[derive(Debug, PartialEq, Eq, Copy, Clone)]
+pub enum FfiTypeKindFieldAttribute {
+    UnsafeNonOwning,
+}
+
+impl syn::parse::Parse for FfiTypeKindFieldAttribute {
+    fn parse(input: ParseStream) -> syn::Result<Self> {
+        input.call(SpannedFfiTypeToken::parse).and_then(|token| {
+            Ok(match token.token {
+                FfiTypeToken::UnsafeNonOwning => FfiTypeKindFieldAttribute::UnsafeNonOwning,
+                other => {
+                    return Err(syn::Error::new(
+                        token.span,
+                        format!("`{other}` cannot be used on a field"),
+                    ));
+                }
+            })
+        })
+    }
+}
+
+const FFI_TYPE_ATTR: &str = "mineral";
+
+pub struct FfiTypeAttr {
+    pub kind: Option<FfiTypeKindAttribute>,
+}
+
+impl FromAttributes for FfiTypeAttr {
+    fn from_attributes(attrs: &[Attribute]) -> darling::Result<Self> {
+        parse_single_list_attr_opt(FFI_TYPE_ATTR, attrs).map(|kind| Self { kind })
+    }
+}
+
+pub struct FfiTypeFieldAttr {
+    kind: Option<FfiTypeKindFieldAttribute>,
+}
+
+impl FromAttributes for FfiTypeFieldAttr {
+    fn from_attributes(attrs: &[Attribute]) -> darling::Result<Self> {
+        parse_single_list_attr_opt(FFI_TYPE_ATTR, attrs).map(|kind| Self { kind })
+    }
+}
+
+pub type FfiTypeData = darling::ast::Data<SpannedValue<FfiTypeVariant>, FfiTypeField>;
+#[cfg(feature = "getset")]
+pub type FfiTypeFields = darling::ast::Fields<FfiTypeField>;
+
+pub struct FfiTypeInput {
+    pub vis: syn::Visibility,
+    pub ident: syn::Ident,
+    pub generics: syn::Generics,
+    pub data: FfiTypeData,
+    pub derive_attr: DeriveAttrs,
+    repr_attr: Repr,
+    pub ffi_type_attr: FfiTypeAttr,
+    pub span: Span,
+    /// The original `DeriveInput` this structure was parsed from
+    pub ast: syn::DeriveInput,
+    #[cfg(feature = "getset")]
+    pub getset_attr: GetSetStructAttrs,
+}
+
+impl darling::FromDeriveInput for FfiTypeInput {
+    fn from_derive_input(input: &syn::DeriveInput) -> darling::Result<Self> {
+        let vis = input.vis.clone();
+        let ident = input.ident.clone();
+        let generics = input.generics.clone();
+        let data = darling::ast::Data::try_from(&input.data)?;
+        let derive_attr = DeriveAttrs::from_attributes(&input.attrs)?;
+        let repr_attr = Repr::from_attributes(&input.attrs)?;
+        let ffi_type_attr = FfiTypeAttr::from_attributes(&input.attrs)?;
+        let span = input.span();
+        #[cfg(feature = "getset")]
+        let getset_attr = GetSetStructAttrs::from_attributes(&input.attrs)?;
+
+        Ok(FfiTypeInput {
+            vis,
+            ident,
+            generics,
+            data,
+            derive_attr,
+            repr_attr,
+            ffi_type_attr,
+            span,
+            ast: input.clone(),
+            #[cfg(feature = "getset")]
+            getset_attr,
+        })
+    }
+}
+
+#[derive(FromVariant)]
+pub struct FfiTypeVariant {
+    pub ident: syn::Ident,
+    pub discriminant: Option<syn::Expr>,
+    pub fields: darling::ast::Fields<FfiTypeField>,
+}
+
+pub struct FfiTypeField {
+    pub ty: syn::Type,
+    pub ffi_type_attr: FfiTypeFieldAttr,
+    pub ident: Option<syn::Ident>,
+    #[cfg(feature = "getset")]
+    pub doc_attrs: DocAttrs,
+    #[cfg(feature = "getset")]
+    pub getset_attr: GetSetFieldAttrs,
+}
+
+impl FromField for FfiTypeField {
+    fn from_field(field: &Field) -> darling::Result<Self> {
+        let ty = field.ty.clone();
+        let ffi_type_attr = FfiTypeFieldAttr::from_attributes(&field.attrs)?;
+        let ident = field.ident.clone();
+        #[cfg(feature = "getset")]
+        let doc_attrs = DocAttrs::from_attributes(&field.attrs)?;
+        #[cfg(feature = "getset")]
+        let getset_attr = GetSetFieldAttrs::from_attributes(&field.attrs)?;
+        Ok(Self {
+            ty,
+            ffi_type_attr,
+            ident,
+            #[cfg(feature = "getset")]
+            doc_attrs,
+            #[cfg(feature = "getset")]
+            getset_attr,
+        })
+    }
+}
+
+pub fn derive_extern_c(emitter: &mut Emitter, input: &syn::DeriveInput) -> TokenStream {
+    let Some(input) = emitter.handle(FfiTypeInput::from_derive_input(input)) else {
+        return quote!();
+    };
+
+    if input.ffi_type_attr.kind == Some(FfiTypeKindAttribute::Opaque) {
+        return derive_opaque_item(&input.ident, &input.generics);
+    }
+
+    if let darling::ast::Data::Struct(darling::ast::Fields {
+        style: Style::Unit, ..
+    }) = &input.data
+    {
+        emit!(
+            emitter,
+            &input.span,
+            "Unit structs are not allowed in FFI. Annotate with #[co3::mineral(opaque)]?",
+        );
+
+        return quote! {};
+    }
+    match input.repr_attr.kind.as_deref() {
+        Some(ReprKind::Transparent) => derive_transparent_item(&input),
+        Some(ReprKind::C) => derive_repr_c_item(emitter, &input),
+        Some(ReprKind::Primitive(repr)) => {
+            if let darling::ast::Data::Enum(variants) = &input.data {
+                derive_fieldless_enum(*repr, &input.ident, variants)
+            } else {
+                // NOTE: This branch will get rejected by the compiler
+                quote! {}
+            }
+        }
+        None => {
+            let local = input.ffi_type_attr.kind == Some(FfiTypeKindAttribute::Local);
+            verify_is_non_owning(emitter, &input.data);
+
+            match &input.data {
+                darling::ast::Data::Enum(variants) if variants.is_empty() => {
+                    emit!(
+                        emitter,
+                        input.ident,
+                        "Uninhabited enums are not allowed in FFI. Annotate with #[co3::mineral(opaque)]?"
+                    );
+
+                    quote! {}
+                }
+                darling::ast::Data::Enum(variants) => derive_no_repr_data_carrying_enum(
+                    emitter,
+                    &input.ident,
+                    input.generics,
+                    variants,
+                    local,
+                ),
+                darling::ast::Data::Struct(fields) => {
+                    derive_no_repr_struct(&input.ident, input.generics, fields, local)
+                }
+            }
+        }
+    }
+}
+
+// NOTE: Except for the raw pointers there should be no other type
+// that is at the same time Robust and also transfers ownership
+/// Verifies for each pointer type found inside the `FfiTypeData` is marked as non-owning
+fn verify_is_non_owning(emitter: &mut Emitter, data: &FfiTypeData) {
+    struct PtrVisitor<'a> {
+        emitter: &'a mut Emitter,
+    }
+    impl syn::visit::Visit<'_> for PtrVisitor<'_> {
+        fn visit_type_ptr(&mut self, node: &syn::TypePtr) {
+            emit!(
+                self.emitter,
+                node,
+                "Raw pointer found. If the pointer doesn't own the data, attach `#[mineral(unsafe(non_owning))` to the field. Otherwise, mark the entire type as opaque with `#[mineral(opaque)]`"
+            );
+        }
+    }
+
+    fn visit_field(ptr_visitor: &mut PtrVisitor, field: &FfiTypeField) {
+        if field.ffi_type_attr.kind == Some(FfiTypeKindFieldAttribute::UnsafeNonOwning) {
+            return;
+        }
+        ptr_visitor.visit_type(&field.ty);
+    }
+
+    let mut ptr_visitor = PtrVisitor { emitter };
+    match data {
+        FfiTypeData::Enum(variants) => {
+            for variant in variants {
+                for field in variant.fields.iter() {
+                    visit_field(&mut ptr_visitor, field);
+                }
+            }
+        }
+        FfiTypeData::Struct(fields) => {
+            for field in fields.iter() {
+                visit_field(&mut ptr_visitor, field);
+            }
+        }
+    }
+}
+
+/// Parses a single attribute of the form `#[attr_name(...)]` for darling using a `syn::parse::Parse` implementation.
+///
+/// If no attribute with specified name is found, returns `Ok(None)`.
+///
+/// # Errors
+///
+/// - If multiple attributes with specified name are found
+/// - If attribute is not a list
+pub fn parse_single_list_attr_opt<Body: syn::parse::Parse>(
+    attr_name: &str,
+    attrs: &[syn::Attribute],
+) -> darling::Result<Option<Body>> {
+    let mut accumulator = Default::default();
+
+    let Some(attr) = find_single_attr_opt(&mut accumulator, attr_name, attrs) else {
+        return accumulator.finish_with(None);
+    };
+
+    let mut kind = None;
+
+    match &attr.meta {
+        syn::Meta::Path(_) | syn::Meta::NameValue(_) => accumulator.push(darling::Error::custom(
+            format!("Expected #[{}(...)] attribute to be a list", attr_name),
+        )),
+        syn::Meta::List(list) => {
+            kind = accumulator.handle(syn::parse2(list.tokens.clone()).map_err(Into::into));
+        }
+    }
+
+    accumulator.finish_with(kind)
+}
+
+/// Finds an optional single attribute with specified name.
+///
+/// Returns `None` if no attributes with specified name are found.
+///
+/// Emits an error into accumulator if multiple attributes with specified name are found.
+#[must_use]
+pub fn find_single_attr_opt<'a>(
+    accumulator: &mut darling::error::Accumulator,
+    attr_name: &str,
+    attrs: &'a [syn::Attribute],
+) -> Option<&'a syn::Attribute> {
+    let matching_attrs = attrs
+        .iter()
+        .filter(|a| a.path().is_ident(attr_name))
+        .collect::<Vec<_>>();
+    let attr = match *matching_attrs.as_slice() {
+        [] => {
+            return None;
+        }
+        [attr] => attr,
+        [attr, ref tail @ ..] => {
+            // allow parsing to proceed further to collect more errors
+            accumulator.push(
+                darling::Error::custom(format!("Only one #[{}] attribute is allowed!", attr_name))
+                    .with_spans(tail.iter().map(syn::spanned::Spanned::span)),
+            );
+            attr
+        }
+    };
+
+    Some(attr)
+}
+
+/// Extension trait for [`darling::Error`].
+///
+/// Currently exists to add `with_spans` method.
+pub trait DarlingErrorExt: Sized {
+    /// Attaches a combination of multiple spans to the error.
+    ///
+    /// Note that it only attaches the first span on stable rustc, as the `Span::join` method is not yet stabilized (<https://github.com/rust-lang/rust/issues/54725#issuecomment-649078500>).
+    #[must_use]
+    fn with_spans(self, spans: impl IntoIterator<Item = impl Into<proc_macro2::Span>>) -> Self;
+}
+
+impl DarlingErrorExt for darling::Error {
+    fn with_spans(self, spans: impl IntoIterator<Item = impl Into<proc_macro2::Span>>) -> Self {
+        // Unfortunately, the story for combining multiple spans in rustc proc macro is not yet complete.
+        // (see https://github.com/rust-lang/rust/issues/54725#issuecomment-649078500, https://github.com/rust-lang/rust/issues/54725#issuecomment-1547795742)
+        // syn does some hacks to get error reporting that is a bit better: https://docs.rs/syn/2.0.37/src/syn/error.rs.html#282
+        // we can't to that because darling's error type does not let us do that.
+
+        // on nightly, we are fine, as `.join` method works. On stable, we fall back to returning the first span.
+
+        let mut iter = spans.into_iter();
+        let Some(first) = iter.next() else {
+            return self;
+        };
+        let first: proc_macro2::Span = first.into();
+        let r = iter
+            .try_fold(first, |a, b| a.join(b.into()))
+            .unwrap_or(first);
+
+        self.with_span(&r)
+    }
+}

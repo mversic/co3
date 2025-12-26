@@ -70,7 +70,8 @@ disjoint_impls! {
     // TODO: It can be either WithoutNiche or WithCustomNiche
     // Depends on: https://github.com/mversic/co3/issues/33
     //impl<R: Ir<Type = WithCustomNiche>> Ir for Option<R> {
-    //    type Type = XXX;
+    //    type Type = WithCustomNiche;  // like Option<bool>
+    //    type Type = WithoutNiche;     // like Option<&R>
     //}
 }
 

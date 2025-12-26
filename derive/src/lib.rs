@@ -7,16 +7,16 @@ use quote::quote;
 use wrapper::wrap_method;
 
 #[cfg(feature = "getset")]
-use crate::{attr_parse::derive::Derive, convert::FfiTypeData};
+use crate::{attr_parse::derive::Derive, extern_c::FfiTypeData};
 use crate::{
-    convert::{FfiTypeInput, FfiTypeKindAttribute, derive_ffi_type},
     emitter::Emitter,
+    extern_c::{FfiTypeInput, FfiTypeKindAttribute, derive_extern_c},
     impl_visitor::Arg,
 };
 
 mod attr_parse;
-mod convert;
 mod emitter;
+mod extern_c;
 mod ffi_fn;
 #[cfg(feature = "getset")]
 mod getset_gen;
@@ -199,7 +199,7 @@ pub fn extern_type(_args: TokenStream, input: TokenStream) -> TokenStream {
 /// It assumes that the derive is imported and referred to by its original name.
 #[manyhow]
 #[proc_macro_derive(ExternC, attributes(mineral))]
-pub fn derive_extern_c(input: TokenStream) -> TokenStream {
+pub fn extern_c_derive(input: TokenStream) -> TokenStream {
     let mut emitter = Emitter::new();
 
     let Some(item) = emitter.handle(syn::parse2::<syn::DeriveInput>(input)) else {
@@ -210,7 +210,7 @@ pub fn derive_extern_c(input: TokenStream) -> TokenStream {
         emit!(emitter, item, "Only public types are allowed in FFI");
     }
 
-    let result = derive_ffi_type(&mut emitter, &item);
+    let result = derive_extern_c(&mut emitter, &item);
     emitter.finish_token_stream_with(result)
 }
 
