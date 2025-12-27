@@ -33,7 +33,7 @@ fn import_shared_fns() {
 mod ffi {
     use std::alloc;
 
-    use co3::{ExternC, FfiReturn, slice::RefMutSlice};
+    use co3::{ExternC, FfiReturn, slice::RawSliceMut};
 
     co3::handles! {ExternFfiStruct}
 
@@ -53,7 +53,7 @@ mod ffi {
 
     #[unsafe(no_mangle)]
     unsafe extern "C" fn FfiStruct__new(
-        input: RefMutSlice<u8>,
+        input: RawSliceMut<u8>,
         output: *mut *mut ExternFfiStruct,
     ) -> FfiReturn {
         unsafe {

@@ -23,7 +23,7 @@ use crate::transmute::{
 use crate::{ir::Cloned, niche::Niche};
 use crate::{
     ir::{Ir, Opaque, Robust, Transparent},
-    slice::{OutBoxedSlice, RefMutSlice, RefSlice},
+    slice::{OutBoxedSlice, RawSlice, RawSliceMut},
     transmute::{
         CheckedTransmute, transmute_from_target, transmute_from_target_ref_slice,
         transmute_from_target_slice_mut, transmute_into_target, transmute_into_target_ref_slice,
@@ -121,21 +121,21 @@ disjoint_impls! {
     where
         Self: Ir<Type = &'a [Robust]>,
     {
-        type CType = RefSlice<R>;
+        type CType = RawSlice<R>;
     }
     #[cfg(feature = "cloned_refs")]
     impl<'a, R> ExternC for &'a [R]
     where
         Self: Ir<Type = &'a [Opaque]>,
     {
-        type CType = RefSlice<*const R>;
+        type CType = RawSlice<*const R>;
     }
     #[cfg(feature = "cloned_refs")]
     impl<'a, R: ExternC, S: Cloned> ExternC for &'a [R]
     where
         Self: Ir<Type = &'a [S]>,
     {
-        type CType = RefSlice<R::CType>;
+        type CType = RawSlice<R::CType>;
     }
 
     impl<'slice, R: CheckedTransmute> ExternC for &'slice mut [R]
@@ -149,7 +149,7 @@ disjoint_impls! {
     where
         Self: Ir<Type = &'a mut [Robust]>,
     {
-        type CType = RefMutSlice<R>;
+        type CType = RawSliceMut<R>;
     }
 
     impl<R: CheckedTransmute> ExternC for Box<[R]>
@@ -165,7 +165,7 @@ disjoint_impls! {
     where
         Self: Ir<Type = Box<[Robust]>>,
     {
-        type CType = RefMutSlice<R>;
+        type CType = RawSliceMut<R>;
     }
     #[cfg(feature = "owned_types")]
     #[cfg(feature = "owned_as_ref")]
@@ -173,7 +173,7 @@ disjoint_impls! {
     where
         Self: Ir<Type = Box<[Opaque]>>,
     {
-        type CType = RefMutSlice<*mut R>;
+        type CType = RawSliceMut<*mut R>;
     }
     #[cfg(feature = "owned_types")]
     #[cfg(feature = "owned_as_ref")]
@@ -181,7 +181,7 @@ disjoint_impls! {
     where
         Self: Ir<Type = Box<[S]>>,
     {
-        type CType = RefMutSlice<R::CType>;
+        type CType = RawSliceMut<R::CType>;
     }
 
     #[cfg(feature = "owned_types")]
@@ -198,7 +198,7 @@ disjoint_impls! {
     where
         Self: Ir<Type = Vec<Robust>>,
     {
-        type CType = RefMutSlice<R>;
+        type CType = RawSliceMut<R>;
     }
     #[cfg(feature = "owned_types")]
     #[cfg(feature = "owned_as_ref")]
@@ -206,7 +206,7 @@ disjoint_impls! {
     where
         Self: Ir<Type = Vec<Opaque>>,
     {
-        type CType = RefMutSlice<*mut R>;
+        type CType = RawSliceMut<*mut R>;
     }
     #[cfg(feature = "owned_types")]
     #[cfg(feature = "owned_as_ref")]
@@ -214,7 +214,7 @@ disjoint_impls! {
     where
         Self: Ir<Type = Vec<S>>,
     {
-        type CType = RefMutSlice<R::CType>;
+        type CType = RawSliceMut<R::CType>;
     }
 
     impl<R, const N: usize> ExternC for [R; N]
@@ -361,7 +361,7 @@ disjoint_impls! {
         where
             Self: 'itm,
         {
-            RefSlice::from_slice(Some(self))
+            RawSlice::from_slice(Some(self))
         }
     }
     #[cfg(feature = "cloned_refs")]
@@ -376,7 +376,7 @@ disjoint_impls! {
             Self: 'itm,
         {
             *store = self.iter().map(core::ptr::from_ref).collect();
-            RefSlice::from_slice(Some(store))
+            RawSlice::from_slice(Some(store))
         }
     }
     #[cfg(feature = "cloned_refs")]
@@ -402,7 +402,7 @@ disjoint_impls! {
                 .map(|(item, substore)| item.encode(substore))
                 .collect();
 
-            RefSlice::from_slice(Some(&store.0))
+            RawSlice::from_slice(Some(&store.0))
         }
     }
 
@@ -430,7 +430,7 @@ disjoint_impls! {
         where
             Self: 'itm,
         {
-            RefMutSlice::from_slice(Some(self))
+            RawSliceMut::from_slice(Some(self))
         }
     }
 
@@ -462,7 +462,7 @@ disjoint_impls! {
             Self: 'itm,
         {
             *store = self;
-            RefMutSlice::from_slice(Some(store))
+            RawSliceMut::from_slice(Some(store))
         }
     }
     #[cfg(feature = "owned_types")]
@@ -483,7 +483,7 @@ disjoint_impls! {
                 .map(Box::into_raw)
                 .collect();
 
-            RefMutSlice::from_slice(Some(store))
+            RawSliceMut::from_slice(Some(store))
         }
     }
     #[cfg(feature = "owned_types")]
@@ -510,7 +510,7 @@ disjoint_impls! {
                 .map(|(item, substore)| item.encode(substore))
                 .collect();
 
-            RefMutSlice::from_slice(Some(&mut store.0))
+            RawSliceMut::from_slice(Some(&mut store.0))
         }
     }
 
@@ -542,7 +542,7 @@ disjoint_impls! {
             Self: 'itm,
         {
             *store = self.into_boxed_slice();
-            RefMutSlice::from_slice(Some(store))
+            RawSliceMut::from_slice(Some(store))
         }
     }
     #[cfg(feature = "owned_types")]
@@ -558,7 +558,7 @@ disjoint_impls! {
             Self: 'itm,
         {
             *store = self.into_iter().map(Box::new).map(Box::into_raw).collect();
-            RefMutSlice::from_slice(Some(store))
+            RawSliceMut::from_slice(Some(store))
         }
     }
     #[cfg(feature = "owned_types")]
@@ -585,7 +585,7 @@ disjoint_impls! {
                 .map(|(item, substore)| item.encode(substore))
                 .collect();
 
-            RefMutSlice::from_slice(Some(&mut store.0))
+            RawSliceMut::from_slice(Some(&mut store.0))
         }
     }
 
@@ -874,18 +874,19 @@ disjoint_impls! {
         type Store = (Box<[R]>, Box<[R::Store]>);
 
         unsafe fn decode<'itm: 'slice>(source: Self::CType, store: &'itm mut Self::Store) -> Result<Self> {
+            let source = unsafe { source.into_rust() }.ok_or(FfiReturn::ArgIsNull)?;
+
             store.1 = core::iter::repeat_with(Default::default)
                 .take(source.len())
                 .collect();
 
-            let source: Box<[_]> = unsafe { source.into_rust() }
-                .ok_or(FfiReturn::ArgIsNull)?
+            let slice: Box<[_]> = source
                 .iter()
                 .zip(&mut *store.1)
                 .map(|(&item, substore)| unsafe { R::decode(item, substore) }.map(ManuallyDrop::new))
                 .collect::<core::result::Result<_, _>>()?;
 
-            store.0 = source
+            store.0 = slice
                 .iter()
                 .cloned()
                 .map(ManuallyDrop::into_inner)

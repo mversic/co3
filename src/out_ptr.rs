@@ -16,12 +16,12 @@ disjoint_impls! {
     ///
     /// 1. `&[u8]` implements [`NonLocal`]
     ///
-    /// This type will be converted to [`RefSlice<u8>`] and during conversion will not make use
-    /// of the store (in any direction). The corresponding out-pointer will be `*mut RefSlice<u8>`
+    /// This type will be converted to [`RawSlice<u8>`] and during conversion will not make use
+    /// of the store (in any direction). The corresponding out-pointer will be `*mut RawSlice<u8>`
     ///
     /// 2. `&[Opaque<T>]` doesn't implement [`NonLocal`]
     ///
-    /// This type will be converted to [`RefSlice<*const T>`] and during conversion will use the
+    /// This type will be converted to [`RawSlice<*const T>`] and during conversion will use the
     /// local store `Vec<*const T>`. The corresponding out-pointer will be `*mut OutBoxedSlice<*const T>`.
     ///
     /// 3. `&(u32, u32)`
@@ -730,10 +730,8 @@ disjoint_impls! {
         Self: Ir<Type = Box<[Robust]>>,
     {
         unsafe fn try_read_out(out_ptr: Self::OutPtr) -> Result<Self> {
-            let slice = RefMutSlice::from_raw_parts_mut(out_ptr.as_mut_ptr(), out_ptr.len());
-
             unsafe {
-                let res = Decode::decode(slice, &mut ());
+                let res = Decode::decode(out_ptr.into(), &mut ());
 
                 if !out_ptr.deallocate() {
                     return Err(FfiReturn::TrapRepresentation);
@@ -747,11 +745,9 @@ disjoint_impls! {
     #[cfg(feature = "owned_as_ref")]
     impl<'d, R: NonLocal + 'd, S: Cloned + 'd> OutPtrRead for Box<[R]>
     where
-        Self: Ir<Type = Box<[S]>> + Decode<'d, CType = RefMutSlice<<R as ExternC>::CType>>,
+        Self: Ir<Type = Box<[S]>> + Decode<'d, CType = RawSliceMut<<R as ExternC>::CType>>,
     {
         unsafe fn try_read_out(out_ptr: Self::OutPtr) -> Result<Self> {
-            let slice = RefMutSlice::from_raw_parts_mut(out_ptr.as_mut_ptr(), out_ptr.len());
-
             let mut store = Default::default();
 
             let store_ref = unsafe {
@@ -762,7 +758,7 @@ disjoint_impls! {
             };
 
             unsafe {
-                let res = Decode::decode(slice, store_ref);
+                let res = Decode::decode(out_ptr.into(), store_ref);
 
                 if !out_ptr.deallocate() {
                     return Err(FfiReturn::TrapRepresentation);
@@ -793,10 +789,8 @@ disjoint_impls! {
         Self: Ir<Type = Vec<Robust>>,
     {
         unsafe fn try_read_out(out_ptr: Self::OutPtr) -> Result<Self> {
-            let slice = RefMutSlice::from_raw_parts_mut(out_ptr.as_mut_ptr(), out_ptr.len());
-
             unsafe {
-                let res = Decode::decode(slice, &mut ());
+                let res = Decode::decode(out_ptr.into(), &mut ());
 
                 if !out_ptr.deallocate() {
                     return Err(FfiReturn::TrapRepresentation);
@@ -810,10 +804,9 @@ disjoint_impls! {
     #[cfg(feature = "owned_as_ref")]
     impl<'d, R: NonLocal + 'd, S: Cloned> OutPtrRead for Vec<R>
     where
-        Self: Ir<Type = Vec<S>> + Decode<'d, CType = RefMutSlice<<R as ExternC>::CType>>,
+        Self: Ir<Type = Vec<S>> + Decode<'d, CType = RawSliceMut<<R as ExternC>::CType>>,
     {
         unsafe fn try_read_out(out_ptr: Self::OutPtr) -> Result<Self> {
-            let slice = RefMutSlice::from_raw_parts_mut(out_ptr.as_mut_ptr(), out_ptr.len());
             let mut store = <Self as Decode>::Store::default();
 
             let store_ref = unsafe {
@@ -824,7 +817,7 @@ disjoint_impls! {
             };
 
             unsafe {
-                let res = Decode::decode(slice, store_ref);
+                let res = Decode::decode(out_ptr.into(), store_ref);
 
                 if !out_ptr.deallocate() {
                     return Err(FfiReturn::TrapRepresentation);

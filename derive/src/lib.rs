@@ -258,7 +258,7 @@ pub fn derive_extern_c(input: TokenStream) -> TokenStream {
 ///     /* function implementation */
 ///     FfiReturn::Ok
 /// }
-/// unsafe extern "C" fn Foo__bar(handle: *const Foo, output: *mut RefSlice<u8>) -> FfiReturn {
+/// unsafe extern "C" fn Foo__bar(handle: *const Foo, output: *mut RawSlice<u8>) -> FfiReturn {
 ///     /* function implementation */
 ///     FfiReturn::Ok
 /// }

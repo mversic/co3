@@ -4,7 +4,7 @@ use std::mem::ManuallyDrop;
 
 use co3::{
     Encode, ExternC,
-    slice::{RefMutSlice, RefSlice},
+    slice::{RawSlice, RawSliceMut},
 };
 use webassembly_test::webassembly_test;
 
@@ -357,19 +357,19 @@ fn std_niche_value() {
     assert_eq!(core::ptr::null::<u8>(), None::<&mut bool>.encode(&mut ()));
 
     assert_eq!(
-        RefMutSlice::<u8>::null_mut(),
+        RawSliceMut::<u8>::none(),
         None::<String>.encode(&mut Default::default())
     );
     assert_eq!(
-        RefMutSlice::<u8>::null_mut(),
+        RawSliceMut::<u8>::none(),
         None::<Box<str>>.encode(&mut Default::default())
     );
 
-    assert_eq!(RefSlice::<u8>::null(), None::<&str>.encode(&mut ()));
+    assert_eq!(RawSlice::<u8>::none(), None::<&str>.encode(&mut ()));
 
     #[cfg(feature = "non_robust_ref_mut")]
     assert_eq!(
-        co3::slice::RefMutSlice::<u8>::null_mut(),
+        co3::slice::RawSliceMut::<u8>::none(),
         None::<&mut str>.encode(&mut ())
     );
     assert_eq!(
@@ -377,7 +377,7 @@ fn std_niche_value() {
         None::<NonNull<String>>.encode(&mut ())
     );
     assert_eq!(
-        RefMutSlice::<u8>::null_mut(),
+        RawSliceMut::<u8>::none(),
         None::<ManuallyDrop<String>>.encode(&mut Default::default())
     );
 

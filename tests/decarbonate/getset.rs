@@ -50,7 +50,7 @@
 //    use co3::{
 //        Decode, ExternC, FfiReturn, def_fns,
 //        out_ptr::{OutPtr, OutPtrWrite},
-//        slice::RefMutSlice,
+//        slice::RawSliceMut,
 //    };
 //
 //    co3::handles! {ExternName, ExternFfiStruct}
@@ -77,7 +77,7 @@
 //
 //    #[unsafe(no_mangle)]
 //    unsafe extern "C" fn Name__new(
-//        input1: RefMutSlice<u8>,
+//        input1: RawSliceMut<u8>,
 //        output: *mut *mut ExternName,
 //    ) -> FfiReturn {
 //        unsafe {
@@ -91,7 +91,7 @@
 //
 //    #[unsafe(no_mangle)]
 //    unsafe extern "C" fn FfiStruct__new(
-//        input1: RefMutSlice<u8>,
+//        input1: RawSliceMut<u8>,
 //        input2: <u8 as ExternC>::CType,
 //        output: *mut *mut ExternFfiStruct,
 //    ) -> FfiReturn {

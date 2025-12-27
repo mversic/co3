@@ -154,7 +154,7 @@
 //    use co3::{
 //        Decode, Encode, ExternC, FfiReturn,
 //        out_ptr::{OutPtr, OutPtrWrite},
-//        slice::RefMutSlice,
+//        slice::RawSliceMut,
 //    };
 //
 //    co3::handles! {ExternOpaqueStruct, ExternValue}
@@ -183,7 +183,7 @@
 //
 //    #[unsafe(no_mangle)]
 //    unsafe extern "C" fn Value__new(
-//        input: RefMutSlice<u8>,
+//        input: RawSliceMut<u8>,
 //        output: *mut *mut ExternValue,
 //    ) -> FfiReturn {
 //        unsafe {

@@ -249,12 +249,12 @@ fn get_new_struct_with_params() -> OpaqueStruct {
 #[webassembly_test]
 #[cfg(feature = "non_robust_ref_mut")]
 fn non_robust_ref_mut() {
-    use co3::slice::RefMutSlice;
+    use co3::slice::RawSliceMut;
 
     let mut owned = "queen".to_owned();
     let ffi_struct: &mut str = owned.as_mut();
-    let mut output = MaybeUninit::new(RefMutSlice::from_raw_parts_mut(core::ptr::null_mut(), 0));
-    let ffi_type: RefMutSlice<u8> = ffi_struct.encode(&mut ());
+    let mut output = MaybeUninit::new(RawSliceMut::from_raw_parts_mut(core::ptr::null_mut(), 0));
+    let ffi_type: RawSliceMut<u8> = ffi_struct.encode(&mut ());
 
     unsafe {
         assert_eq!(

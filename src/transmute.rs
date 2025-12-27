@@ -199,7 +199,7 @@ pub(super) fn transmute_into_target_boxed_slice<R: CheckedTransmute>(
     let (ptr, len) = (source.as_mut_ptr().cast::<R::Target>(), source.len());
 
     // SAFETY: Soundness is guaranteed by [`Transmute`]
-    unsafe { Box::from_raw(core::slice::from_raw_parts_mut(ptr, len)) }
+    unsafe { Box::from_raw(core::ptr::slice_from_raw_parts_mut(ptr, len)) }
 }
 #[cfg(feature = "owned_types")]
 #[cfg(feature = "owned_as_ref")]
@@ -214,7 +214,7 @@ pub(super) fn transmute_from_target_boxed_slice<R: CheckedTransmute>(
 
     // SAFETY: Soundness is guaranteed by [`Transmute`]
     Ok(unsafe {
-        Box::from_raw(core::slice::from_raw_parts_mut(
+        Box::from_raw(core::ptr::slice_from_raw_parts_mut(
             source.as_mut_ptr().cast(),
             source.len(),
         ))
