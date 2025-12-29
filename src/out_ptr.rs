@@ -57,6 +57,8 @@ unsafe impl<T: Zst, const N: usize> Zst for [T; N] {}
 // TODO: It's not possbile to implement for specific len yet: https://github.com/mversic/co3/issues/13
 //unsafe impl<T> Zst for [T; 0] {}
 unsafe impl<T> Zst for core::marker::PhantomData<T> {}
+unsafe impl<T: Zst> Zst for core::mem::ManuallyDrop<T> {}
+unsafe impl<T: Zst> Zst for core::cell::UnsafeCell<T> {}
 
 disjoint_impls! {
     /// Facilitates the use of [`Self`] as out-pointer.

@@ -13,7 +13,7 @@ pub use co3_derive::*;
 use derive_more::Display;
 use disjoint_impls::disjoint_impls;
 
-use crate::niche::{StableNiche, WithCustomNiche, WithoutNiche};
+use crate::niche::{WithCustomNiche, WithoutNiche};
 #[cfg(feature = "owned_types")]
 #[cfg(feature = "owned_as_ref")]
 use crate::transmute::{
@@ -57,7 +57,6 @@ disjoint_impls! {
     // NOTE: Type is `Copy` to indicate that there can be no ownership transfer
     pub unsafe trait ReprC: Copy {}
 
-    // FIXME: `&mut T` and `Box<T>` don't implement `Copy` but they should still be considered `ReprC`
     unsafe impl<R: CheckedTransmute<Target: Ir<Type = Robust> + ReprC> + Copy> ReprC for Option<R> {}
     unsafe impl<R: CheckedTransmute<Target: Ir<Type = Transparent>> + Copy> ReprC for Option<R>
     where
@@ -1184,6 +1183,7 @@ pub enum FfiReturn {
 }
 
 /// Macro for defining FFI types of a known category ([`Robust`] or [`CheckedTransmute`]).
+///
 /// The implementation for an FFI type of one of the categories incurs a lot of bloat that
 /// is reduced by the use of this macro
 ///
@@ -1238,7 +1238,7 @@ pub enum FfiReturn {
 #[macro_export]
 macro_rules! mineral {
     (impl $(( $($params:tt)* ))? Robust for $self_ty:ty $(where ($($preds:tt)*))? {}) => {
-        impl$(<$($params)*>)? $crate::ir::Ir for $self_ty where Self: $crate::ReprC, $($($preds)*)? {
+        impl$(<$($params)*>)? $crate::ir::Ir for $self_ty $(where $($preds)*)? {
             type Type = $crate::ir::Robust;
         }
         impl $(<$($params)*>)? $crate::niche::Ir for $self_ty $(where $($preds)*)? {
@@ -1261,7 +1261,7 @@ macro_rules! mineral {
         }
 
         unsafe impl$(<$($params)*>)? $crate::ReprC for $self_ty where
-            for<'dummy> Self: $crate::transmute::CheckedTransmute<Target: $crate::ReprC> + Copy,
+            for<'_dummy> Self: $crate::transmute::CheckedTransmute<Target: $crate::ReprC> + Copy,
             $($($preds)*)? {}
     };
     (unsafe impl $(( $($params:tt)* ))? Transparent for $self_ty:ty $(where ( $($preds:tt)* ))? {
@@ -1291,19 +1291,19 @@ macro_rules! mineral {
                 }
 
                 impl $(<$($params)*>)? Ir for $self_ty where
-                    for<'dummy> Self: $crate::transmute::CheckedTransmute<Target: Ir<Type = $crate::niche::WithoutNiche>>,
+                    Self: $crate::transmute::CheckedTransmute<Target: Ir<Type = $crate::niche::WithoutNiche>>,
                     $($($preds)*)?
                 {
                     type Type = $crate::niche::WithoutNiche;
                 }
                 impl $(<$($params)*>)? Ir for $self_ty where
-                    for<'dummy> Self: $crate::transmute::CheckedTransmute<Target: Ir<Type = $crate::niche::WithCustomNiche>>,
+                    Self: $crate::transmute::CheckedTransmute<Target: Ir<Type = $crate::niche::WithCustomNiche>>,
                     $($($preds)*)?
                 {
                     type Type = $crate::niche::WithCustomNiche;
                 }
                 impl $(<$($params)*>)? Ir for $self_ty where
-                    for<'dummy> Self: $crate::transmute::CheckedTransmute<Target: Ir<Type = $crate::niche::WithStableNiche>>,
+                    Self: $crate::transmute::CheckedTransmute<Target: Ir<Type = $crate::niche::WithStableNiche>>,
                     $($($preds)*)?
                 {
                     type Type = $crate::niche::WithStableNiche;
@@ -1312,18 +1312,14 @@ macro_rules! mineral {
         };
 
         impl $(<$($params)*>)? $crate::niche::Niche for $self_ty where
-            for<'dummy> <Self as $crate::transmute::CheckedTransmute>::Target: $crate::niche::Niche,
+            for<'_dummy> Self: $crate::transmute::CheckedTransmute<Target: $crate::niche::Niche>,
             $($($preds)*)?
         {
-            const NICHE_VALUE: <Self as $crate::ExternC>::CType = <$target as $crate::niche::Niche>::NICHE_VALUE;
+            const NICHE_VALUE: <Self as $crate::ExternC>::CType = <<Self as $crate::transmute::CheckedTransmute>::Target as $crate::niche::Niche>::NICHE_VALUE;
         }
 
         unsafe impl $(<$($params)*>)? $crate::niche::StableNiche for $self_ty where
-            for<'dummy> <Self as $crate::transmute::CheckedTransmute>::Target: $crate::niche::StableNiche,
-            $($($preds)*)? {}
-
-        unsafe impl $(<$($params)*>)? $crate::out_ptr::Zst for $self_ty where
-            for<'dummy> <Self as $crate::transmute::CheckedTransmute>::Target: $crate::out_ptr::Zst,
+            for<'_dummy> Self: $crate::transmute::CheckedTransmute<Target: $crate::niche::StableNiche>,
             $($($preds)*)? {}
     };
     (unsafe impl $(( $($params:tt)* ))? Transparent for $self_ty:ty $(where ( $($preds:tt)* ))? {
@@ -1347,10 +1343,10 @@ macro_rules! mineral {
 
         impl $(<$($params)*>)? $crate::niche::Niche for $self_ty $(where $($preds)*)? {
             const NICHE_VALUE: $niche_ty = {
-                // FIXME: don't allow defining niche value if Niche is present on the inner type
-                // That is, only if the inner type is Robust can outer have custom niche value
+                // FIXME: don't allow defining niche value if Niche is present on the target type
+                // That is, only if the target type is Robust can outer have custom niche value
                 //assert!(impls::impls!(
-                //    !<Self as $crate::transmute::CheckedTransmute>::Target: $crate::niche::Niche,
+                //    !Self: $crate::transmute::CheckedTransmute<Target: $crate::niche::Niche>,
                 //));
 
                 $niche_value
@@ -1359,13 +1355,6 @@ macro_rules! mineral {
 
         impl $(<$($params)*>)? $crate::niche::Ir for $self_ty $(where $($preds)*)? {
             type Type = $crate::niche::WithCustomNiche;
-        }
-
-        // SAFETY: ZST relation is transitive
-        unsafe impl $(<$($params)*>)? $crate::out_ptr::Zst for $self_ty where
-            for<'dummy> <Self as $crate::transmute::CheckedTransmute>::Target: $crate::out_ptr::Zst,
-            $($($preds)*)?
-        {
         }
     };
 }

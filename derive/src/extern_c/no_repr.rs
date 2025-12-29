@@ -4,15 +4,17 @@ use darling::{
     ast::{Fields, Style},
     util::SpannedValue,
 };
+use manyhow::emit;
 use proc_macro2::{Span, TokenStream};
 use quote::quote;
 use syn::{Ident, parse_quote};
 
 use crate::{
+    attr_parse::repr::ReprPrimitive,
     emitter::Emitter,
     extern_c::{
         FfiTypeField, FfiTypeVariant,
-        repr_c::{gen_data_carrying_repr_c_enum, gen_repr_c_enum_payload_name, gen_repr_c_item_name},
+        repr_c::{gen_repr_c_data_enum, gen_repr_c_struct},
     },
 };
 
@@ -35,14 +37,14 @@ pub(super) fn derive_opaque_item(name: &Ident, generics: &syn::Generics) -> Toke
 }
 
 pub(super) fn derive_no_repr_struct(
+    emitter: &mut Emitter,
     name: &Ident,
-    mut generics: syn::Generics,
+    generics: &syn::Generics,
     fields: &Fields<FfiTypeField>,
     local: bool,
 ) -> TokenStream {
-    let (repr_c_struct_name, repr_c_struct) = gen_repr_c_struct(name, &generics, fields);
+    let (repr_c_struct_name, repr_c_struct) = gen_repr_c_struct(emitter, name, generics, fields);
 
-    generics.make_where_clause();
     let params = &generics.params;
     let (impl_generics, ty_generics, where_clause) = generics.split_for_impl();
 
@@ -121,7 +123,7 @@ pub(super) fn derive_no_repr_struct(
     };
 
     let non_locality =
-        local.then(|| gen_out_ptr_impls(name, &generics, fields.iter().map(|f| f.ty.clone())));
+        local.then(|| gen_out_ptr_impls(name, generics, fields.iter().map(|f| f.ty.clone())));
 
     let niche_ir_without = {
         let mut without_niche_where_clause = where_clause.unwrap().clone();
@@ -149,7 +151,7 @@ pub(super) fn derive_no_repr_struct(
         }
     };
 
-    let basic_impls = gen_basic_trait_impls(name, &generics);
+    let basic_impls = gen_basic_trait_impls(name, generics);
 
     quote! {
         #repr_c_struct
@@ -157,7 +159,7 @@ pub(super) fn derive_no_repr_struct(
         #basic_impls
 
         #niche_ir_without
-        #niche_ir_with
+        //#niche_ir_with
 
         impl #impl_generics co3::ExternC for #name #ty_generics #where_clause {
             type CType = #repr_c_struct_name #ty_generics;
@@ -186,19 +188,40 @@ pub(super) fn derive_no_repr_struct(
     }
 }
 
-pub(super) fn derive_no_repr_data_carrying_enum(
+pub(super) fn derive_no_repr_enum(
     emitter: &mut Emitter,
     enum_name: &Ident,
-    mut generics: syn::Generics,
+    generics: &syn::Generics,
     variants: &[SpannedValue<FfiTypeVariant>],
     local: bool,
 ) -> TokenStream {
     let len = TokenStream::from_str(&format!("{}", variants.len())).expect("Valid");
 
-    let (repr_c_enum_name, repr_c_enum) =
-        gen_data_carrying_repr_c_enum(emitter, enum_name, &generics, variants);
+    const U8_MAX: usize = u8::MAX as usize;
+    const U16_MAX: usize = u16::MAX as usize;
+    const U32_MAX: usize = u32::MAX as usize;
+    const U64_MAX: usize = u64::MAX as usize;
 
-    generics.make_where_clause();
+    #[expect(clippy::match_overlapping_arm)]
+    let inferred_repr = match variants.len() {
+        0..=U8_MAX => ReprPrimitive::U8,
+        0..=U16_MAX => ReprPrimitive::U16,
+        0..=U32_MAX => ReprPrimitive::U32,
+        0..=U64_MAX => ReprPrimitive::U64,
+        _ => {
+            emit!(emitter, enum_name, "Enum too large");
+            return quote! {};
+        }
+    };
+
+    let (repr_c_enum_name, repr_c_enum) = if variants.iter().any(|v| !v.fields.fields.is_empty()) {
+        gen_repr_c_data_enum(emitter, enum_name, generics, inferred_repr, variants)
+    } else {
+        // For fieldless enums, just use the integer type directly
+        let type_name = syn::Ident::new(&inferred_repr.to_string(), proc_macro2::Span::call_site());
+        (type_name, quote! {})
+    };
+
     let params = &generics.params;
     let (impl_generics, ty_generics, where_clause) = generics.split_for_impl();
 
@@ -232,34 +255,41 @@ pub(super) fn derive_no_repr_data_carrying_enum(
         })
         .collect::<Vec<_>>();
 
+    let is_fieldless = variants.iter().all(|v| v.fields.fields.is_empty());
+
     let variants_into_ffi = variants
         .iter()
         .enumerate()
         .map(|(i, variant)| {
             let idx = TokenStream::from_str(&format!("{i}")).expect("Valid");
-            let payload_name = gen_repr_c_enum_payload_name(enum_name);
             let variant_name = &variant.ident;
 
-            variant_mapper(
-                emitter,
-                variant,
-                || {
-                    quote! { Self::#variant_name => #repr_c_enum_name {
-                        tag: #idx, payload: #payload_name {#variant_name: ()}
-                    }}
-                },
-                |_| {
-                    quote! {
-                        Self::#variant_name(payload) => {
-                            let payload = #payload_name {
-                                #variant_name: co3::Encode::encode(payload, &mut store.#idx)
-                            };
+            if is_fieldless {
+                quote! { Self::#variant_name => #idx }
+            } else {
+                let payload_name = gen_repr_c_enum_payload_name(enum_name);
 
-                            #repr_c_enum_name { tag: #idx, payload }
+                variant_mapper(
+                    emitter,
+                    variant,
+                    || {
+                        quote! { Self::#variant_name => #repr_c_enum_name {
+                            tag: #idx, payload: #payload_name {#variant_name: ()}
+                        }}
+                    },
+                    |_| {
+                        quote! {
+                            Self::#variant_name(payload) => {
+                                let payload = #payload_name {
+                                    #variant_name: co3::Encode::encode(payload, &mut store.#idx)
+                                };
+
+                                #repr_c_enum_name { tag: #idx, payload }
+                            }
                         }
-                    }
-                },
-            )
+                    },
+                )
+            }
         })
         .collect::<Vec<_>>();
 
@@ -270,19 +300,23 @@ pub(super) fn derive_no_repr_data_carrying_enum(
             let idx = TokenStream::from_str(&format!("{i}")).expect("Valid");
             let variant_name = &variant.ident;
 
-            variant_mapper(
-                emitter,
-                variant,
-                || quote! { #idx => Ok(Self::#variant_name) },
-                |_| {
-                    quote! {
-                        #idx => {
-                            let payload = source.payload.#variant_name;
-                            co3::Decode::decode(payload, &mut store.#idx).map(Self::#variant_name)
+            if is_fieldless {
+                quote! { #idx => Ok(Self::#variant_name) }
+            } else {
+                variant_mapper(
+                    emitter,
+                    variant,
+                    || quote! { #idx => Ok(Self::#variant_name) },
+                    |_| {
+                        quote! {
+                            #idx => {
+                                let payload = source.payload.#variant_name;
+                                co3::Decode::decode(payload, &mut store.#idx).map(Self::#variant_name)
+                            }
                         }
-                    }
-                },
-            )
+                    },
+                )
+            }
         })
         .collect::<Vec<_>>();
 
@@ -292,7 +326,7 @@ pub(super) fn derive_no_repr_data_carrying_enum(
     let non_locality = local.then(|| {
         gen_out_ptr_impls(
             enum_name,
-            &generics,
+            generics,
             variants.iter().filter_map(|variant| {
                 variant_mapper(emitter, variant, || None, |field| Some(field.ty.clone()))
             }),
@@ -301,6 +335,18 @@ pub(super) fn derive_no_repr_data_carrying_enum(
 
     let has_discriminant_niche = variants.len() < (u32::MAX as usize);
     let (niche_ir_without, niche_ir_with) = if has_discriminant_niche {
+        let niche_value = if is_fieldless {
+            quote! { #len }
+        } else {
+            quote! {
+                #repr_c_enum_name {
+                    tag: #len,
+                    // FIXME: This likely leads to UB
+                    payload: unsafe { core::mem::zeroed() }
+                }
+            }
+        };
+
         (
             quote! {},
             quote! {
@@ -309,11 +355,7 @@ pub(super) fn derive_no_repr_data_carrying_enum(
                 }
 
                 impl #impl_generics co3::niche::Niche for #enum_name #ty_generics #where_clause {
-                    const NICHE_VALUE: #repr_c_enum_name = #repr_c_enum_name {
-                        tag: #len,
-                        // FIXME: This likely leads to UB
-                        payload: unsafe { core::mem::zeroed() }
-                    };
+                    const NICHE_VALUE: #repr_c_enum_name = #niche_value;
                 }
             },
         )
@@ -335,6 +377,18 @@ pub(super) fn derive_no_repr_data_carrying_enum(
                 .push(parse_quote! { #ty: co3::niche::Ir<Type = co3::niche::WithoutNiche> });
         }
 
+        let niche_value = if is_fieldless {
+            quote! { #len }
+        } else {
+            quote! {
+                #repr_c_enum_name {
+                    tag: #len,
+                    // FIXME: This likely leads to UB
+                    payload: unsafe { core::mem::zeroed() }
+                }
+            }
+        };
+
         (
             quote! {
                 impl #impl_generics co3::niche::Ir for #enum_name #ty_generics #without_niche_where_clause {
@@ -347,17 +401,19 @@ pub(super) fn derive_no_repr_data_carrying_enum(
                 }
 
                 impl #impl_generics co3::niche::Niche for #enum_name #ty_generics #where_clause {
-                    const NICHE_VALUE: #repr_c_enum_name = #repr_c_enum_name {
-                        tag: #len,
-                        // FIXME: This likely leads to UB
-                        payload: unsafe { core::mem::zeroed() }
-                    };
+                    const NICHE_VALUE: #repr_c_enum_name = #niche_value;
                 }
             },
         )
     };
 
-    let basic_impls = gen_basic_trait_impls(enum_name, &generics);
+    let basic_impls = gen_basic_trait_impls(enum_name, generics);
+
+    let decode_match_expr = if is_fieldless {
+        quote! { source }
+    } else {
+        quote! { source.tag }
+    };
 
     quote! {
         #repr_c_enum
@@ -365,7 +421,7 @@ pub(super) fn derive_no_repr_data_carrying_enum(
         #basic_impls
 
         #niche_ir_without
-        #niche_ir_with
+        //#niche_ir_with
 
         impl #impl_generics co3::ExternC for #enum_name #ty_generics #where_clause {
             type CType = #repr_c_enum_name #ty_generics;
@@ -388,7 +444,7 @@ pub(super) fn derive_no_repr_data_carrying_enum(
             unsafe fn decode<'_išč: '_dšč>(source: <Self as co3::ExternC>::CType, store: &'_išč mut Self::Store) -> co3::Result<Self> {
                 #rust_store_conversion
 
-                match source.tag {
+                match #decode_match_expr {
                     #(#variants_decode,)*
                     _ => Err(co3::FfiReturn::TrapRepresentation)
                 }
@@ -405,49 +461,6 @@ pub(super) fn derive_no_repr_data_carrying_enum(
 
         #non_locality
     }
-}
-
-fn gen_repr_c_struct(
-    name: &syn::Ident,
-    generics: &syn::Generics,
-    fields: &Fields<FfiTypeField>,
-) -> (syn::Ident, TokenStream) {
-    let doc = format!(" [`ReprC`] equivalent of [`{name}`]");
-    let repr_c_struct_name = gen_repr_c_item_name(name);
-
-    let (impl_generics, ty_generics, where_clause) = generics.split_for_impl();
-    let params = &generics.params;
-    let predicates = where_clause
-        .as_ref()
-        .map(|where_clause| &where_clause.predicates);
-
-    let fields = fields.iter().map(|field| {
-        let field_ty = &field.ty;
-
-        if let Some(field_ident) = &field.ident {
-            quote! { #field_ident: <#field_ty as co3::ExternC>::CType }
-        } else {
-            quote! { <#field_ty as co3::ExternC>::CType }
-        }
-    });
-
-    let repr_c_struct = quote! {
-        #[repr(C)]
-        #[doc = #doc]
-        #[derive(Clone)]
-        struct #repr_c_struct_name #impl_generics #where_clause {
-            #(#fields),*
-        }
-
-        impl #impl_generics Copy for #repr_c_struct_name #ty_generics #where_clause {}
-        unsafe impl #impl_generics co3::ReprC for #repr_c_struct_name #ty_generics #where_clause {}
-
-        co3::mineral! {
-            impl(#params) Robust for #repr_c_struct_name where (#predicates) {}
-        }
-    };
-
-    (repr_c_struct_name, repr_c_struct)
 }
 
 fn gen_out_ptr_impls(
@@ -532,8 +545,6 @@ pub(super) fn variant_mapper<T: Sized, F0: FnOnce() -> T, F1: FnOnce(&FfiTypeFie
     unit_mapper: F0,
     field_mapper: F1,
 ) -> T {
-    use manyhow::emit;
-
     match &variant.fields.style {
         Style::Tuple if variant.fields.fields.len() == 1 => field_mapper(&variant.fields.fields[0]),
         Style::Tuple => {
@@ -554,4 +565,11 @@ pub(super) fn variant_mapper<T: Sized, F0: FnOnce() -> T, F1: FnOnce(&FfiTypeFie
         }
         Style::Unit => unit_mapper(),
     }
+}
+
+pub(super) fn gen_repr_c_enum_payload_name(enum_name: &syn::Ident) -> syn::Ident {
+    syn::Ident::new(
+        &format!("__co3__{enum_name}Payload"),
+        proc_macro2::Span::call_site(),
+    )
 }

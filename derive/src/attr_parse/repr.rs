@@ -27,9 +27,9 @@ pub enum ReprPrimitive {
 
 #[derive(Debug, Copy, Clone, Eq, PartialEq)]
 pub enum ReprKind {
-    C,
-    Transparent,
+    C(Option<ReprPrimitive>),
     Primitive(ReprPrimitive),
+    Transparent,
 }
 
 #[derive(Debug, Copy, Clone, Eq, PartialEq)]
@@ -75,27 +75,42 @@ impl Parse for SpannedReprToken {
             };
 
             let mut span = ident.span();
-
             let str = ident.to_string();
+
             if let Ok(primitive) = ReprPrimitive::from_str(&str) {
-                return Ok(((span,ReprToken::Kind(ReprKind::Primitive(primitive))), after_token));
+                return Ok((
+                    (span, ReprToken::Kind(ReprKind::Primitive(primitive))),
+                    after_token,
+                ));
             }
 
             match str.as_str() {
-                "C" => Ok(((span,ReprToken::Kind(ReprKind::C)), after_token)),
-                "transparent" => Ok(((span,ReprToken::Kind(ReprKind::Transparent)), after_token)),
-                "packed" => Ok(((span,ReprToken::Alignment(ReprAlignment::Packed)), after_token)),
+                "transparent" => Ok(((span, ReprToken::Kind(ReprKind::Transparent)), after_token)),
+                "C" => Ok(((span, ReprToken::Kind(ReprKind::C(None))), after_token)),
+                "packed" => Ok((
+                    (span, ReprToken::Alignment(ReprAlignment::Packed)),
+                    after_token,
+                )),
                 "aligned" => {
-                    let Some((inside_of_group, group_span, after_group)) = after_token.group(Delimiter::Parenthesis) else {
-                        return Err(cursor.error("Expected a number inside of a `repr(aligned(<number>)), found `repr(aligned)`"));
+                    let Some((inside_of_group, group_span, after_group)) =
+                        after_token.group(Delimiter::Parenthesis)
+                    else {
+                        return Ok((
+                            (span, ReprToken::Alignment(ReprAlignment::Aligned(1))),
+                            after_token,
+                        ));
                     };
 
                     span = span.join(group_span.span()).unwrap_or(span);
-                    let alignment = syn::parse2::<syn::LitInt>(inside_of_group.token_stream())?;
-                    let alignment = alignment.base10_parse::<u32>()?;
+                    let alignment = syn::parse2::<syn::LitInt>(inside_of_group.token_stream())
+                        .and_then(|lit| lit.base10_parse::<u32>())
+                        .unwrap_or(1);
 
                     Ok((
-                        (span, ReprToken::Alignment(ReprAlignment::Aligned(alignment))),
+                        (
+                            span,
+                            ReprToken::Alignment(ReprAlignment::Aligned(alignment)),
+                        ),
                         after_group,
                     ))
                 }
@@ -133,55 +148,73 @@ pub struct Repr {
 
 impl FromAttributes for Repr {
     fn from_attributes(attrs: &[Attribute]) -> darling::Result<Self> {
-        let mut result = Self::default();
+        let mut alignment: Option<(ReprAlignment, Span)> = None;
+        let mut kind: Option<(ReprKind, Span)> = None;
         let mut accumulator = Accumulator::default();
 
-        for attr in attrs {
-            if attr.path().is_ident("repr") {
-                match &attr.meta {
-                    Meta::Path(_) | Meta::NameValue(_) => accumulator.push(
-                        darling::Error::custom(
-                            "Unsupported repr shape, expected parenthesized list",
-                        )
-                        .with_span(&attr),
-                    ),
-                    Meta::List(list) => {
-                        let Some(tokens) = accumulator.handle(
-                            syn::parse2::<ReprTokens>(list.tokens.clone()).map_err(Into::into),
-                        ) else {
-                            continue;
-                        };
+        let repr_attrs: Vec<_> = attrs
+            .iter()
+            .filter(|attr| attr.path().is_ident("repr"))
+            .collect();
 
-                        for SpannedReprToken { token, span } in tokens.0 {
-                            match token {
-                                ReprToken::Kind(kind) => {
-                                    if result.kind.is_some() {
-                                        accumulator.push(
-                                            darling::error::Error::custom("Duplicate repr kind")
-                                                .with_span(&span),
-                                        );
-                                    }
-                                    result.kind = Some(SpannedValue::new(kind, span));
-                                }
-                                ReprToken::Alignment(alignment) => {
-                                    if result.alignment.is_some() {
-                                        accumulator.push(
-                                            darling::error::Error::custom(
-                                                "Duplicate repr alignment",
-                                            )
-                                            .with_span(&span),
-                                        );
-                                    }
-                                    result.alignment = Some(SpannedValue::new(alignment, span));
-                                }
-                            }
-                        }
+        if repr_attrs.len() > 1 {
+            for attr in &repr_attrs[1..] {
+                accumulator
+                    .push(darling::Error::custom("Multiple repr attributes").with_span(attr));
+            }
+
+            return accumulator.finish_with(Self::default());
+        }
+
+        let Some(&attr) = repr_attrs.first() else {
+            return accumulator.finish_with(Self::default());
+        };
+
+        let Meta::List(list) = &attr.meta else {
+            return accumulator.finish_with(Self::default());
+        };
+
+        let Some(tokens) =
+            accumulator.handle(syn::parse2::<ReprTokens>(list.tokens.clone()).map_err(Into::into))
+        else {
+            return accumulator.finish_with(Self::default());
+        };
+
+        for SpannedReprToken { token, span } in tokens.0 {
+            match token {
+                ReprToken::Kind(new_kind) => match (&mut kind, new_kind) {
+                    (Some((ReprKind::C(None), _)), ReprKind::Primitive(prim)) => {
+                        kind = Some((ReprKind::C(Some(prim)), span));
                     }
+                    (Some((ReprKind::Primitive(prim), _)), ReprKind::C(None)) => {
+                        kind = Some((ReprKind::C(Some(*prim)), span));
+                    }
+                    (Some(_), _) => {
+                        accumulator.push(
+                            darling::error::Error::custom("Duplicate repr kind within attribute")
+                                .with_span(&span),
+                        );
+                    }
+                    (None, new_kind) => kind = Some((new_kind, span)),
+                },
+                ReprToken::Alignment(new_alignment) => {
+                    if alignment.is_some() {
+                        accumulator.push(
+                            darling::error::Error::custom(
+                                "Duplicate repr alignment within attribute",
+                            )
+                            .with_span(&span),
+                        );
+                    }
+                    alignment = Some((new_alignment, span));
                 }
             }
         }
 
-        accumulator.finish_with(result)
+        accumulator.finish_with(Self {
+            kind: kind.map(|(k, s)| SpannedValue::new(k, s)),
+            alignment: alignment.map(|(a, s)| SpannedValue::new(a, s)),
+        })
     }
 }
 
@@ -231,7 +264,7 @@ mod test {
         assert_repr_ok!(
             #[repr(C)],
             Repr {
-                kind: Some(ReprKind::C),
+                kind: Some(ReprKind::C(None)),
                 alignment: None,
             }
         );
@@ -264,8 +297,19 @@ mod test {
         assert_repr_ok!(
             #[repr(C, aligned(4))],
             Repr {
-                kind: Some(ReprKind::C),
+                kind: Some(ReprKind::C(None)),
                 alignment: Some(ReprAlignment::Aligned(4)),
+            }
+        );
+    }
+
+    #[test]
+    fn repr_c_with_primitive() {
+        assert_repr_ok!(
+            #[repr(C, u8)],
+            Repr {
+                kind: Some(ReprKind::C(Some(ReprPrimitive::U8))),
+                alignment: None,
             }
         );
     }
@@ -287,46 +331,79 @@ mod test {
     // we don't care __that__ much about good errors here
     // rustc should already handle the #[repr] attributes and produce reasonable errors
     #[test]
-    fn err_duplicate_kind() {
+    fn err_multiple_repr_attributes() {
         assert_repr_err!(
             #[repr(C)] #[repr(C)],
-            "Duplicate repr kind"
+            "Multiple repr attributes"
         );
         assert_repr_err!(
             #[repr(C)] #[repr(u32)],
-            "Duplicate repr kind"
+            "Multiple repr attributes"
         );
-    }
-
-    #[test]
-    fn err_duplicate_alignment() {
         assert_repr_err!(
             #[repr(aligned(4))] #[repr(aligned(4))],
-            "Duplicate repr alignment"
+            "Multiple repr attributes"
         );
         assert_repr_err!(
             #[repr(aligned(4))] #[repr(aligned(8))],
-            "Duplicate repr alignment"
+            "Multiple repr attributes"
         );
     }
 
     #[test]
-    fn err_incomplete_alignment() {
+    fn err_duplicate_kind_within_attribute() {
         assert_repr_err!(
+            #[repr(C, transparent)],
+            "Duplicate repr kind within attribute"
+        );
+        assert_repr_err!(
+            #[repr(u8, u16)],
+            "Duplicate repr kind within attribute"
+        );
+    }
+
+    #[test]
+    fn err_duplicate_alignment_within_attribute() {
+        assert_repr_err!(
+            #[repr(aligned(4), packed)],
+            "Duplicate repr alignment within attribute"
+        );
+        assert_repr_err!(
+            #[repr(aligned(4), aligned(8))],
+            "Duplicate repr alignment within attribute"
+        );
+    }
+
+    #[test]
+    fn incomplete_alignment_defaults_to_one() {
+        // When alignment can't be parsed, default to 1 (has no effect)
+        assert_repr_ok!(
             #[repr(aligned)],
-            "Expected a number inside of a `repr(aligned(<number>)), found `repr(aligned)`"
+            Repr {
+                kind: None,
+                alignment: Some(ReprAlignment::Aligned(1)),
+            }
         );
-        assert_repr_err!(
+        assert_repr_ok!(
             #[repr(aligned())],
-            "unexpected end of input, expected integer literal"
+            Repr {
+                kind: None,
+                alignment: Some(ReprAlignment::Aligned(1)),
+            }
         );
-        assert_repr_err!(
+        assert_repr_ok!(
             #[repr(aligned(4,))],
-            "unexpected token"
+            Repr {
+                kind: None,
+                alignment: Some(ReprAlignment::Aligned(1)),
+            }
         );
-        assert_repr_err!(
+        assert_repr_ok!(
             #[repr(aligned(4, 8))],
-            "unexpected token"
+            Repr {
+                kind: None,
+                alignment: Some(ReprAlignment::Aligned(1)),
+            }
         );
     }
 

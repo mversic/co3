@@ -6,10 +6,7 @@ use darling::{
 use manyhow::emit;
 use proc_macro2::{Span, TokenStream};
 use quote::quote;
-use syn::{
-    Attribute, Field, Ident, ext::IdentExt as _, parse::ParseStream, spanned::Spanned as _,
-    visit::Visit as _,
-};
+use syn::{Attribute, Field, Ident, ext::IdentExt as _, parse::ParseStream, spanned::Spanned as _};
 
 #[cfg(feature = "getset")]
 use crate::attr_parse::getset::{DocAttrs, GetSetFieldAttrs, GetSetStructAttrs};
@@ -19,15 +16,17 @@ use crate::{
         repr::{Repr, ReprKind},
     },
     emitter::Emitter,
-    extern_c::no_repr::derive_opaque_item,
+    extern_c::{
+        no_repr::derive_opaque_item,
+        repr_c::{
+            derive_data_enum, derive_fieldless_enum, derive_repr_c_data_enum, derive_repr_c_struct,
+        },
+    },
 };
-use no_repr::{derive_no_repr_data_carrying_enum, derive_no_repr_struct};
-use primitive_repr::derive_fieldless_enum;
-use repr_c::derive_repr_c_item;
+use no_repr::{derive_no_repr_enum, derive_no_repr_struct};
 use transparent::derive_transparent_item;
 
 mod no_repr;
-mod primitive_repr;
 mod repr_c;
 mod transparent;
 
@@ -356,7 +355,7 @@ impl FromField for FfiTypeField {
 }
 
 pub fn derive_extern_c(emitter: &mut Emitter, input: &syn::DeriveInput) -> TokenStream {
-    let Some(input) = emitter.handle(FfiTypeInput::from_derive_input(input)) else {
+    let Some(mut input) = emitter.handle(FfiTypeInput::from_derive_input(input)) else {
         return quote!();
     };
 
@@ -364,94 +363,95 @@ pub fn derive_extern_c(emitter: &mut Emitter, input: &syn::DeriveInput) -> Token
         return derive_opaque_item(&input.ident, &input.generics);
     }
 
-    if let darling::ast::Data::Struct(darling::ast::Fields {
-        style: Style::Unit, ..
-    }) = &input.data
-    {
-        emit!(
-            emitter,
-            &input.span,
-            "Unit structs are not allowed in FFI. Annotate with #[co3::mineral(opaque)]?",
-        );
+    match &input.data {
+        // FIXME: allow ZST fields as long as there is at least one non-ZST
+        darling::ast::Data::Struct(darling::ast::Fields {
+            style: Style::Unit, ..
+        }) => {
+            emit!(
+                emitter,
+                &input.span,
+                "Unit struct is a ZST. Annotate with #[co3::mineral(opaque)]?",
+            );
 
-        return quote! {};
+            return quote! {};
+        }
+        darling::ast::Data::Enum(variants)
+            // FIXME: allow ZST fields as long as there is at least one non-ZST
+            if variants.len() == 1 && variants[0].fields.fields.is_empty() =>
+        {
+            emit!(
+                emitter,
+                &input.span,
+                "Single-variant fieldless enum is a ZST. Annotate with #[co3::mineral(opaque)]?",
+            );
+
+            return quote! {};
+        }
+        _ => {}
     }
+
+    input.generics.make_where_clause();
     match input.repr_attr.kind.as_deref() {
         Some(ReprKind::Transparent) => derive_transparent_item(&input),
-        Some(ReprKind::C) => derive_repr_c_item(emitter, &input),
+        Some(ReprKind::C(None)) => {
+            if let darling::ast::Data::Struct(fields) = &input.data {
+                derive_repr_c_struct(emitter, &input.ident, &input.generics, fields)
+            } else {
+                emit!(
+                    emitter,
+                    input.ident,
+                    "repr(C) on enums requires a primitive type (e.g., repr(C, u8))"
+                );
+
+                quote! {}
+            }
+        }
+        Some(ReprKind::C(Some(primitive_repr))) => {
+            if let darling::ast::Data::Enum(variants) = &input.data
+                && variants.iter().any(|v| !v.fields.fields.is_empty())
+            {
+                derive_repr_c_data_enum(
+                    emitter,
+                    *primitive_repr,
+                    &input.ident,
+                    &input.generics,
+                    variants,
+                )
+            } else {
+                quote! {}
+            }
+        }
         Some(ReprKind::Primitive(repr)) => {
             if let darling::ast::Data::Enum(variants) = &input.data {
-                derive_fieldless_enum(*repr, &input.ident, variants)
+                if variants.iter().all(|v| v.fields.fields.is_empty()) {
+                    derive_fieldless_enum(emitter, *repr, &input.ident, variants)
+                } else {
+                    derive_data_enum(emitter, *repr, &input.ident, &input.generics, variants)
+                }
             } else {
-                // NOTE: This branch will get rejected by the compiler
                 quote! {}
             }
         }
         None => {
             let local = input.ffi_type_attr.kind == Some(FfiTypeKindAttribute::Local);
-            verify_is_non_owning(emitter, &input.data);
 
             match &input.data {
                 darling::ast::Data::Enum(variants) if variants.is_empty() => {
                     emit!(
                         emitter,
                         input.ident,
-                        "Uninhabited enums are not allowed in FFI. Annotate with #[co3::mineral(opaque)]?"
+                        "Uninhabited enum is a never type. Annotate with #[co3::mineral(opaque)]?"
                     );
 
                     quote! {}
                 }
-                darling::ast::Data::Enum(variants) => derive_no_repr_data_carrying_enum(
-                    emitter,
-                    &input.ident,
-                    input.generics,
-                    variants,
-                    local,
-                ),
+                darling::ast::Data::Enum(variants) => {
+                    derive_no_repr_enum(emitter, &input.ident, &input.generics, variants, local)
+                }
                 darling::ast::Data::Struct(fields) => {
-                    derive_no_repr_struct(&input.ident, input.generics, fields, local)
+                    derive_no_repr_struct(emitter, &input.ident, &input.generics, fields, local)
                 }
-            }
-        }
-    }
-}
-
-// NOTE: Except for the raw pointers there should be no other type
-// that is at the same time Robust and also transfers ownership
-/// Verifies for each pointer type found inside the `FfiTypeData` is marked as non-owning
-fn verify_is_non_owning(emitter: &mut Emitter, data: &FfiTypeData) {
-    struct PtrVisitor<'a> {
-        emitter: &'a mut Emitter,
-    }
-    impl syn::visit::Visit<'_> for PtrVisitor<'_> {
-        fn visit_type_ptr(&mut self, node: &syn::TypePtr) {
-            emit!(
-                self.emitter,
-                node,
-                "Raw pointer found. If the pointer doesn't own the data, attach `#[mineral(unsafe(non_owning))` to the field. Otherwise, mark the entire type as opaque with `#[mineral(opaque)]`"
-            );
-        }
-    }
-
-    fn visit_field(ptr_visitor: &mut PtrVisitor, field: &FfiTypeField) {
-        if field.ffi_type_attr.kind == Some(FfiTypeKindFieldAttribute::UnsafeNonOwning) {
-            return;
-        }
-        ptr_visitor.visit_type(&field.ty);
-    }
-
-    let mut ptr_visitor = PtrVisitor { emitter };
-    match data {
-        FfiTypeData::Enum(variants) => {
-            for variant in variants {
-                for field in variant.fields.iter() {
-                    visit_field(&mut ptr_visitor, field);
-                }
-            }
-        }
-        FfiTypeData::Struct(fields) => {
-            for field in fields.iter() {
-                visit_field(&mut ptr_visitor, field);
             }
         }
     }

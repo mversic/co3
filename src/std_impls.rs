@@ -122,14 +122,12 @@ unsafe impl<T> crate::transmute::CheckedTransmute for core::cell::UnsafeCell<T> 
     }
 }
 
-// FIXME: `UnsafeCell<T>` doesn't implement `Copy` but it should be `ReprC`
-//unsafe impl<T: ReprC> crate::ReprC for core::cell::UnsafeCell<T> {}
-
 impl<T> crate::niche::Ir for core::cell::UnsafeCell<T> {
     type Type = crate::ir::Robust;
 }
 
-unsafe impl<T> crate::out_ptr::Zst for core::cell::UnsafeCell<T> where
-    for<'dummy> <Self as crate::transmute::CheckedTransmute>::Target: crate::out_ptr::Zst
-{
-}
+// FIXME: `UnsafeCell<T>` doesn't implement `Copy` but it should be `ReprC`
+// ReprC on Transparent types is used to express InfallibleTransmute relation
+// which is regulated by `non_robust_ref_mut` feature. It should be considered
+// to reintroduce `InfallibleTransmute` back
+//unsafe impl<T: ReprC> crate::ReprC for core::cell::UnsafeCell<T> {}

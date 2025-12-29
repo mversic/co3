@@ -1,7 +1,5 @@
 //! Logic related to the conversion of primitives to and from FFI-compatible representation
 
-use crate::niche::Niche;
-
 #[cfg(target_family = "wasm")]
 mod wasm {
     use alloc::{boxed::Box, vec::Vec};

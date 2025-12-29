@@ -3,7 +3,7 @@ use core::mem::ManuallyDrop;
 use disjoint_impls::disjoint_impls;
 
 use super::*;
-use crate::ReprC;
+use crate::{ReprC, niche::StableNiche};
 
 disjoint_impls! {
     /// Marker trait for a type that can be **safely transmuted** into another type.
@@ -157,31 +157,23 @@ disjoint_impls! {
     ///
     /// - `Self` and `Self::CType` must be mutually transmutable (this includes [`Drop`] semantics)
     /// - `Self::is_valid` must not return false positives, i.e. return `true` for trap representations
-    pub trait FlatTransmute: CheckedTransmute {
-        /// [`ReprC`] type that [`Self`] can be transmuted into
-        type CType: ReprC;
-
+    pub unsafe trait FlatTransmute: ExternC {
         /// Called when transmuting [`Self::CType`] back into [`Self`] to check for trap representations.
         /// This function must never return false positives, i.e. return `true` for a trap representation.
         fn is_valid(target: &Self::CType) -> bool;
     }
 
-    impl<R: CheckedTransmute<Target: Ir<Type = Transparent> + FlatTransmute>> FlatTransmute for R {
-        type CType = <R::Target as FlatTransmute>::CType;
-
+    unsafe impl<R: Ir<Type = Transparent> + CheckedTransmute<Target: FlatTransmute>> FlatTransmute for R {
         fn is_valid(target: &Self::CType) -> bool {
             if !<R::Target as FlatTransmute>::is_valid(target) {
                 return false;
             }
 
-            // SAFETY: Self::CType == <R::Target as FlatTransmute>::CType
             let target_ptr = core::ptr::from_ref(target).cast::<R::Target>();
             <R as CheckedTransmute>::is_valid(unsafe { &*target_ptr })
         }
     }
-    impl<R: CheckedTransmute<Target: Ir<Type = Robust> + ReprC>> FlatTransmute for R {
-        type CType = R::Target;
-
+    unsafe impl<R: Ir<Type = Robust> + ReprC> FlatTransmute for R {
         fn is_valid(_: &Self::CType) -> bool {
             true
         }
