@@ -6,7 +6,7 @@ use super::*;
 use crate::ReprC;
 
 disjoint_impls! {
-    /// Marker trait for a type that can be **safely transmuted** into another type for all values.
+    /// Marker trait for a type that can be **safely transmuted** into another type.
     ///
     /// # Safety
     ///
@@ -16,7 +16,7 @@ disjoint_impls! {
         /// Type that [`Self`] can be transmuted into
         type Target;
 
-        /// Called when transmuting [`Self::Target`] into [`Self`] to check for trap representations.
+        /// Called when transmuting [`Self::Target`] back into [`Self`] to check for trap representations.
         /// This function must never return false positives, i.e. return `true` for a trap representation.
         fn is_valid(target: &Self::Target) -> bool;
     }
@@ -143,6 +143,46 @@ disjoint_impls! {
 
         #[inline(always)]
         fn is_valid(_: &Self::Target) -> bool {
+            true
+        }
+    }
+}
+
+disjoint_impls! {
+    /// Marker trait for a type that can be **safely transmuted** into another [`ReprC`] type.
+    ///
+    /// This trait compresses the chain of transmutations done via [`CheckedTransmute`]
+    ///
+    /// # Safety
+    ///
+    /// - `Self` and `Self::CType` must be mutually transmutable (this includes [`Drop`] semantics)
+    /// - `Self::is_valid` must not return false positives, i.e. return `true` for trap representations
+    pub trait FlatTransmute: CheckedTransmute {
+        /// [`ReprC`] type that [`Self`] can be transmuted into
+        type CType: ReprC;
+
+        /// Called when transmuting [`Self::CType`] back into [`Self`] to check for trap representations.
+        /// This function must never return false positives, i.e. return `true` for a trap representation.
+        fn is_valid(target: &Self::CType) -> bool;
+    }
+
+    impl<R: CheckedTransmute<Target: Ir<Type = Transparent> + FlatTransmute>> FlatTransmute for R {
+        type CType = <R::Target as FlatTransmute>::CType;
+
+        fn is_valid(target: &Self::CType) -> bool {
+            if !<R::Target as FlatTransmute>::is_valid(target) {
+                return false;
+            }
+
+            // SAFETY: Self::CType == <R::Target as FlatTransmute>::CType
+            let target_ptr = core::ptr::from_ref(target).cast::<R::Target>();
+            <R as CheckedTransmute>::is_valid(unsafe { &*target_ptr })
+        }
+    }
+    impl<R: CheckedTransmute<Target: Ir<Type = Robust> + ReprC>> FlatTransmute for R {
+        type CType = R::Target;
+
+        fn is_valid(_: &Self::CType) -> bool {
             true
         }
     }
