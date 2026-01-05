@@ -2,7 +2,7 @@
 use std::{alloc, marker::PhantomData, mem::MaybeUninit, num::NonZeroU64};
 
 use co3::{
-    Decode, Encode, ExternC, FfiReturn, FfiTuple2,
+    Decode, Encode, ExternC, FfiReturn, CTuple2,
     out_ptr::OutPtrRead,
     slice::{OutBoxedSlice, RawSlice},
 };
@@ -160,7 +160,7 @@ fn take_and_return_option_of_transparent_with_niche() {
 #[webassembly_test]
 fn take_and_return_option_of_transparent_without_niche() {
     let value = Some(TransparentWithoutNiche(42));
-    let mut output: MaybeUninit<FfiTuple2<u8, u64>> = MaybeUninit::new(FfiTuple2(1, 0));
+    let mut output: MaybeUninit<CTuple2<u8, u64>> = MaybeUninit::new(CTuple2(1, 0));
 
     unsafe {
         assert_eq!(

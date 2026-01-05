@@ -20,7 +20,7 @@ pub(crate) trait WithNiche {}
 /// Only a handful of [`Transparent`] types have a stable niche
 pub enum WithStableNiche {}
 
-/// Marker for a type that has a custom defined (by this crate) niche value (e.g. `[NonZeroU32; 2]`).
+/// Marker for a type that has a custom defined (by this crate) niche (e.g. `[NonZeroU8; 2]`).
 pub enum WithCustomNiche {}
 
 /// Marker for a type that has no trap representations and therefore no niche value
@@ -46,12 +46,12 @@ pub trait Niche: ExternC {
 pub unsafe trait StableNiche: Niche {}
 
 disjoint_impls! {
-    /// Niche kind of the type in the internal representation (IR)[`crate::ir::Ir`]
+    /// Niche kind of the type in the internal representation [IR](`crate::ir::Ir`)
     pub trait Ir {
         /// The internal representation (i.e. type family) of the type
         ///
         /// - If `Self` doesn't have any niche value, set [`Ir::Type`] to [`WithoutNiche`].
-        ///   `Option<T>` will be serialized as [`crate::FfiTuple2(discriminant, value)`]
+        ///   `Option<T>` will be serialized as [`crate::tuple::CTuple2(discriminant, value)`]
         ///
         /// - If `Self` has a compiler guaranteed niche value, set [`Ir::Type`] to [`WithStableNiche`].
         ///   `Option<T>` will be blindly transmuted into underlying [`crate::ReprC`] type

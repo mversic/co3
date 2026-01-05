@@ -162,7 +162,7 @@
 //    use std::alloc;
 //
 //    use co3::{
-//        ExternC, FfiReturn, FfiTuple2,
+//        ExternC, FfiReturn, CTuple2,
 //        out_ptr::OutPtr,
 //        slice::{OutBoxedSlice, RawSliceMut, RawSlice},
 //    };
@@ -195,8 +195,8 @@
 //
 //    #[unsafe(no_mangle)]
 //    unsafe extern "C" fn __freestanding_returns_local_ref(
-//        input: *const FfiTuple2<u32, u32>,
-//        output: *mut FfiTuple2<u32, u32>,
+//        input: *const CTuple2<u32, u32>,
+//        output: *mut CTuple2<u32, u32>,
 //    ) -> FfiReturn {
 //        unsafe {
 //            output.write(input.read());
@@ -207,8 +207,8 @@
 //
 //    #[unsafe(no_mangle)]
 //    unsafe extern "C" fn __freestanding_returns_local_slice(
-//        input: RawSlice<FfiTuple2<u32, u32>>,
-//        output: *mut OutBoxedSlice<FfiTuple2<u32, u32>>,
+//        input: RawSlice<CTuple2<u32, u32>>,
+//        output: *mut OutBoxedSlice<CTuple2<u32, u32>>,
 //    ) -> FfiReturn {
 //        unsafe {
 //            let input = input.into_rust().map(Into::into);

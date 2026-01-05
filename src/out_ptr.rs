@@ -26,8 +26,8 @@ disjoint_impls! {
     ///
     /// 3. `&(u32, u32)`
     ///
-    /// This type will be converted to `*const FfiTuple2<u32, u32>` and during conversion will use the
-    /// local store `FfiTuple<u32, u32>`. The corresponding out-pointer will be `*mut FfiTuple2<u32, u32>`
+    /// This type will be converted to `*const CTuple2<u32, u32>` and during conversion will use the
+    /// local store `CTuple<u32, u32>`. The corresponding out-pointer will be `*mut CTuple2<u32, u32>`
     ///
     /// # Safety
     ///
@@ -240,7 +240,7 @@ disjoint_impls! {
     where
         Self: Ir<Type = Option<WithoutNiche>>,
     {
-        type OutPtr = FfiTuple2<<u8 as OutPtr>::OutPtr, R::OutPtr>;
+        type OutPtr = CTuple2<<u8 as OutPtr>::OutPtr, R::OutPtr>;
     }
     impl<R: Niche + OutPtr> OutPtr for Option<R>
     where
@@ -575,9 +575,9 @@ disjoint_impls! {
                         OutPtrWrite::write_out(0u8, discriminant_out_ptr.as_mut_ptr());
                         let discriminant_out_ptr = discriminant_out_ptr.assume_init();
 
-                        // FIXME: Using core::mem::zeroed likely leads to UB
+                        // SAFETY: `ReprC` type is robust and can't have trap representations
                         // TODO: No need to zero the memory because it must never be read
-                        out_ptr.write(FfiTuple2(discriminant_out_ptr, core::mem::zeroed()));
+                        out_ptr.write(CTuple2(discriminant_out_ptr, core::mem::zeroed()));
                     }
                 }
                 Some(value) => unsafe {
@@ -589,7 +589,7 @@ disjoint_impls! {
                     OutPtrWrite::write_out(value, value_out_ptr.as_mut_ptr());
                     let value_out_ptr = value_out_ptr.assume_init();
 
-                    out_ptr.write(FfiTuple2(discriminant_out_ptr, value_out_ptr));
+                    out_ptr.write(CTuple2(discriminant_out_ptr, value_out_ptr));
                 },
             }
         }

@@ -2,7 +2,7 @@
 use std::{alloc, collections::BTreeMap, mem::MaybeUninit};
 
 use co3::{
-    Decode, Encode, ExternC, FfiReturn, FfiTuple1, FfiTuple2, out_ptr::OutPtrRead,
+    Decode, Encode, ExternC, FfiReturn, CTuple1, CTuple2, out_ptr::OutPtrRead,
     slice::OutBoxedSlice,
 };
 use webassembly_test::webassembly_test;
@@ -405,7 +405,7 @@ fn take_and_return_boxed_slice() {
 #[webassembly_test]
 fn take_and_return_option_without_niche() {
     let input = Some(42u8);
-    let mut output = MaybeUninit::new(FfiTuple2(0, unsafe { core::mem::zeroed() }));
+    let mut output = MaybeUninit::new(CTuple2(0, unsafe { core::mem::zeroed() }));
 
     unsafe {
         assert_eq!(
@@ -475,9 +475,9 @@ fn take_and_return_option_without_niche_ref() {
     #[cfg(target_family = "wasm")]
     let input = Some(42u32);
     #[cfg(not(target_family = "wasm"))]
-    let init_val = FfiTuple2(0_u8, 0_u8);
+    let init_val = CTuple2(0_u8, 0_u8);
     #[cfg(target_family = "wasm")]
-    let init_val = FfiTuple2(0_u32, 0_u32);
+    let init_val = CTuple2(0_u32, 0_u32);
 
     let mut output = MaybeUninit::new(init_val);
     let mut in_store = Default::default();
@@ -597,8 +597,8 @@ fn take_and_return_array_ref() {
 #[webassembly_test]
 fn array_in_struct() {
     let array = ([1_u8],);
-    let ffi_arr: FfiTuple1<[u8; 1]> = array.encode(&mut ((),));
-    let mut output = MaybeUninit::new(FfiTuple1([0; 1]));
+    let ffi_arr: CTuple1<[u8; 1]> = array.encode(&mut ((),));
+    let mut output = MaybeUninit::new(CTuple1([0; 1]));
 
     unsafe {
         assert_eq!(
@@ -808,7 +808,7 @@ fn borrow_local() {
 
     let b: (u8, u8) = {
         let mut store = Default::default();
-        let mut output = MaybeUninit::new(FfiTuple2(0, 0));
+        let mut output = MaybeUninit::new(CTuple2(0, 0));
 
         unsafe {
             assert_eq!(

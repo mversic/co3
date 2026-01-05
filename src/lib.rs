@@ -20,15 +20,16 @@ use crate::transmute::{
     transmute_from_target_boxed_slice, transmute_from_target_vec,
     transmute_into_target_boxed_slice, transmute_into_target_vec,
 };
-use crate::{ir::Cloned, niche::Niche};
 use crate::{
-    ir::{Ir, Opaque, Robust, Transparent},
+    ir::{Cloned, Ir, Opaque, Robust, Transparent},
+    niche::Niche,
     slice::{OutBoxedSlice, RawSlice, RawSliceMut},
     transmute::{
         CheckedTransmute, transmute_from_target, transmute_from_target_ref_slice,
         transmute_from_target_slice_mut, transmute_into_target, transmute_into_target_ref_slice,
         transmute_into_target_slice_mut,
     },
+    tuple::CTuple2,
 };
 
 pub mod external;
@@ -40,6 +41,7 @@ pub mod primitives;
 pub mod slice;
 mod std_impls;
 pub mod transmute;
+pub mod tuple;
 
 /// A specialized `Result` type for FFI operations
 pub type Result<T> = core::result::Result<T, FfiReturn>;
@@ -233,7 +235,7 @@ disjoint_impls! {
     where
         Self: Ir<Type = Option<WithoutNiche>>,
     {
-        type CType = FfiTuple2<<u8 as ExternC>::CType, R::CType>;
+        type CType = CTuple2<<u8 as ExternC>::CType, R::CType>;
     }
     impl<R: Niche> ExternC for Option<R>
     where
@@ -674,10 +676,10 @@ disjoint_impls! {
             Self: 'itm,
         {
             match self {
-                // FIXME: Using core::mem::zeroed likely leads to UB
+                // SAFETY: `ReprC` type is robust and can't have any trap representations
                 // TODO: No need to zero the memory because it must never be read. Use MaybeUninit?
-                None => FfiTuple2(Encode::encode(0u8, &mut ()), unsafe { core::mem::zeroed() }),
-                Some(value) => FfiTuple2(Encode::encode(1u8, &mut ()), value.encode(store)),
+                None => CTuple2(Encode::encode(0u8, &mut ()), unsafe { core::mem::zeroed() }),
+                Some(value) => CTuple2(Encode::encode(1u8, &mut ()), value.encode(store)),
             }
         }
     }
@@ -1367,160 +1369,3 @@ unsafe impl<R> ReprC for *const R {}
 unsafe impl<R> ReprC for *mut R {}
 // SAFETY: Arrays is just a contiguous block of memory
 unsafe impl<R: ReprC, const N: usize> ReprC for [R; N] {}
-
-macro_rules! impl_tuple {
-    ( ($( $ty:ident ),+) -> $ffi_ty:ident ) => {
-        /// FFI-compatible tuple with n elements
-        #[repr(C)]
-        #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, PartialOrd, Ord)]
-        pub struct $ffi_ty<$($ty: ReprC),+>($(pub $ty),+);
-
-        #[expect(non_snake_case)]
-        impl<$($ty: crate::ReprC),+> From<($( $ty, )+)> for $ffi_ty<$($ty),+> {
-            fn from(source: ($( $ty, )+)) -> Self {
-                let ($($ty,)+) = source;
-                Self($( $ty ),+)
-            }
-        }
-
-        unsafe impl<$($ty: crate::out_ptr::Zst),+> crate::out_ptr::Zst for ($($ty,)+) {}
-
-        // SAFETY: Implementing type is robust with a defined C ABI
-        unsafe impl<$($ty: ReprC),+> ReprC for $ffi_ty<$($ty),+> {}
-
-        impl<$($ty),+> crate::ir::Ir for ($($ty,)+) {
-            type Type = Self;
-        }
-
-        // FIXME: Produce an impl of niche::Niche and niche::Ir
-        // for every combination of bounds on input parameters
-        impl<$($ty: crate::niche::Niche),+> crate::niche::Niche for ($($ty,)+) {
-            const NICHE_VALUE: <Self as crate::ExternC>::CType = $ffi_ty($(<$ty as crate::niche::Niche>::NICHE_VALUE,)+);
-        }
-
-        const _: () = {
-            use crate::niche::Ir;
-
-            disjoint_impls::disjoint_impls! {
-                #[disjoint_impls(remote)]
-                trait Ir {
-                    type Type;
-                }
-
-                impl<$($ty: crate::niche::Ir<Type = crate::niche::WithoutNiche>),+> Ir for ($($ty,)+) {
-                    type Type = crate::niche::WithoutNiche;
-                }
-                impl<$($ty: crate::niche::Ir<Type: crate::niche::WithNiche> + crate::niche::Niche),+> Ir for ($($ty,)+) {
-                    type Type = crate::niche::WithCustomNiche;
-                }
-            }
-        };
-
-        impl<$($ty),+> Cloned for ($($ty,)+) {}
-
-        // SAFETY: Tuple doesn't use store if it's inner types don't use it
-        unsafe impl<$($ty: crate::out_ptr::NonLocal),+> crate::out_ptr::NonLocal for ($($ty,)+) {}
-
-        impl<$($ty: ExternC),+> crate::ExternC for ($($ty,)+) {
-            type CType = $ffi_ty<$($ty::CType),+>;
-        }
-
-        impl<$($ty: crate::out_ptr::OutPtr),+> crate::out_ptr::OutPtr for ($($ty,)+) {
-            type OutPtr = $ffi_ty<$($ty::OutPtr),+>;
-        }
-
-        #[expect(non_snake_case)]
-        impl<$($ty: crate::out_ptr::OutPtrWrite),+> crate::out_ptr::OutPtrWrite for ($($ty,)+) {
-            unsafe fn write_out(self, out_ptr: *mut Self::OutPtr) {
-                impl_tuple! {@decl_priv_out_ptr $($ty),+}
-                let mut field_out_ptrs = ($(core::mem::MaybeUninit::<$ty::OutPtr>::uninit(),)+);
-
-                let ($($ty,)+) = self;
-                let field_out_ptrs: private_out_ptr::OutPtr<$($ty),+> = (&mut field_out_ptrs).into();
-
-                unsafe {
-                    $( crate::out_ptr::OutPtrWrite::write_out($ty, field_out_ptrs.$ty.as_mut_ptr()); )+
-                    out_ptr.write($ffi_ty($( field_out_ptrs.$ty.assume_init() ),+));
-                }
-            }
-        }
-        #[expect(non_snake_case)]
-        impl<$($ty: crate::out_ptr::OutPtrRead),+> crate::out_ptr::OutPtrRead for ($($ty,)+) {
-            unsafe fn try_read_out(source: Self::OutPtr) -> Result<Self> {
-                impl_tuple! {@decl_priv_out_ptr $($ty),+}
-
-                let $ffi_ty($($ty,)+) = source;
-                Ok(unsafe {($( crate::out_ptr::OutPtrRead::try_read_out($ty)?, )+)})
-            }
-        }
-
-        impl<$($ty: crate::Encode),+> crate::Encode for ($($ty,)+) {
-            type Store = ($( $ty::Store, )+);
-
-            #[expect(non_snake_case)]
-            fn encode<'itm>(self, store: &mut Self::Store) -> Self::CType where Self: 'itm {
-                impl_tuple! {@decl_priv_store $($ty),+ for crate::Encode : Store}
-
-                let ($($ty,)+) = self;
-                let store: private_store::Store<$($ty),+> = store.into();
-                $ffi_ty($( <$ty as crate::Encode>::encode($ty, store.$ty),)+)
-            }
-        }
-        impl<'d, $($ty: crate::Decode<'d>),+> crate::Decode<'d> for ($($ty,)+) {
-            type Store = ($( $ty::Store, )+);
-
-            #[expect(non_snake_case)]
-            unsafe fn decode<'itm: 'd>(source: Self::CType, store: &'itm mut Self::Store) -> Result<Self> {
-                impl_tuple! {@decl_priv_store $($ty),+ for crate::Decode<'itm> : Store}
-
-                let $ffi_ty($($ty,)+) = source;
-                let store: private_store::Store<$($ty),+> = store.into();
-                Ok(unsafe {($( <$ty as crate::Decode<'d>>::decode($ty, store.$ty)?, )+)})
-            }
-        }
-    };
-
-    // NOTE: This is a trick to index tuples
-    ( @decl_priv_store $( $ty:ident ),+ for $trait:path : $store:ident) => {
-        mod private_store {
-            pub struct Store<'itm, $($ty: $trait),+> {
-                $(pub $ty: &'itm mut $ty::$store),+
-            }
-
-            impl<'itm, $($ty: $trait),+> From<&'itm mut ($($ty::$store,)+)> for Store<'itm, $($ty,)+> {
-                fn from(($($ty,)+): &'itm mut ($($ty::$store,)+)) -> Self {
-                    Self {$($ty,)+}
-                }
-            }
-        }
-    };
-
-    // NOTE: This is a trick to index tuples
-    ( @decl_priv_out_ptr $( $ty:ident ),+ $(,)? ) => {
-        mod private_out_ptr {
-            #[allow(dead_code)]
-            pub struct OutPtr<'itm, $($ty: crate::out_ptr::OutPtrWrite),+> {
-                $(pub $ty: &'itm mut core::mem::MaybeUninit::<$ty::OutPtr>),+
-            }
-
-            impl<'itm, $($ty: crate::out_ptr::OutPtrWrite),+> From<&'itm mut ($(core::mem::MaybeUninit::<$ty::OutPtr>,)+)> for OutPtr<'itm, $($ty),+> {
-                fn from(($($ty,)+): &'itm mut ($(core::mem::MaybeUninit::<$ty::OutPtr>,)+)) -> Self {
-                    Self {$($ty,)+}
-                }
-            }
-        }
-    };
-}
-
-impl_tuple! {(A) -> FfiTuple1}
-impl_tuple! {(A, B) -> FfiTuple2}
-impl_tuple! {(A, B, C) -> FfiTuple3}
-impl_tuple! {(A, B, C, D) -> FfiTuple4}
-impl_tuple! {(A, B, C, D, E) -> FfiTuple5}
-impl_tuple! {(A, B, C, D, E, F) -> FfiTuple6}
-impl_tuple! {(A, B, C, D, E, F, G) -> FfiTuple7}
-impl_tuple! {(A, B, C, D, E, F, G, H) -> FfiTuple8}
-impl_tuple! {(A, B, C, D, E, F, G, H, I) -> FfiTuple9}
-impl_tuple! {(A, B, C, D, E, F, G, H, I, J) -> FfiTuple10}
-impl_tuple! {(A, B, C, D, E, F, G, H, I, J, K) -> FfiTuple11}
-impl_tuple! {(A, B, C, D, E, F, G, H, I, J, K, L) -> FfiTuple12}

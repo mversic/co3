@@ -147,6 +147,7 @@ pub(super) fn derive_no_repr_struct(
         }
 
         impl #impl_generics co3::niche::Niche for #name #ty_generics #where_clause {
+            // SAFETY: `ReprC` type is robust and can't have trap representations
             const NICHE_VALUE: #repr_c_struct_name = unsafe { core::mem::zeroed() };
         }
     };
@@ -341,7 +342,7 @@ pub(super) fn derive_no_repr_enum(
             quote! {
                 #repr_c_enum_name {
                     tag: #len,
-                    // FIXME: This likely leads to UB
+                    // SAFETY: `ReprC` type is robust
                     payload: unsafe { core::mem::zeroed() }
                 }
             }
@@ -383,7 +384,7 @@ pub(super) fn derive_no_repr_enum(
             quote! {
                 #repr_c_enum_name {
                     tag: #len,
-                    // FIXME: This likely leads to UB
+                    // SAFETY: `ReprC` type is robust
                     payload: unsafe { core::mem::zeroed() }
                 }
             }
