@@ -81,6 +81,8 @@ impl<T> core::ops::DerefMut for ExternRefMut<'_, T> {
 
 mineral! {
     unsafe impl(R) Transparent for ExternRef<'_, R> {
+        // FIXME: I think this should be &Extern. If not,
+        // it should still not map to a mutable pointer
         type Target = core::ptr::NonNull<Extern>;
     }
 }

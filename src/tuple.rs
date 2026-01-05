@@ -54,7 +54,7 @@
 use crate::{
     ExternC, ReprC, Result,
     ir::Cloned,
-    niche::{Ir, Niche},
+    niche::{Ir, Niche, WithCustomNiche, WithNiche, WithoutNiche},
 };
 
 macro_rules! impl_tuple {
@@ -195,14 +195,14 @@ impl<A: Niche> Niche for (A,) {
 
 disjoint_impls::disjoint_impls! {
     #[disjoint_impls(remote)]
-    trait Niche: ExternC {
+    pub trait Niche: ExternC {
         const NICHE_VALUE: Self::CType;
     }
 
     impl<A, B> Niche for (A, B)
     where
-        A: Ir<Type: crate::niche::WithNiche> + Niche,
-        B: Ir<Type = crate::niche::WithoutNiche> + ExternC,
+        A: Ir<Type: WithNiche> + Niche,
+        B: Ir<Type = WithoutNiche> + ExternC,
     {
         // TODO: Instead of using `core::mem::zeroed`, memory can be left uninitialized. Use MaybeUninit?
         const NICHE_VALUE: Self::CType = CTuple2(A::NICHE_VALUE, unsafe { core::mem::zeroed() });
@@ -210,1416 +210,350 @@ disjoint_impls::disjoint_impls! {
 
     impl<A, B> Niche for (A, B)
     where
-        A: Ir<Type = crate::niche::WithoutNiche> + ExternC,
-        B: Ir<Type: crate::niche::WithNiche> + Niche,
+        A: Ir<Type = WithoutNiche> + ExternC,
+        B: Ir<Type: WithNiche> + Niche,
     {
         const NICHE_VALUE: Self::CType = CTuple2(unsafe { core::mem::zeroed() }, B::NICHE_VALUE);
     }
 
     impl<A, B> Niche for (A, B)
     where
-        A: Ir<Type: crate::niche::WithNiche> + Niche,
-        B: Ir<Type: crate::niche::WithNiche> + ExternC,
+        A: Ir<Type: WithNiche> + Niche,
+        B: Ir<Type: WithNiche> + ExternC,
     {
         const NICHE_VALUE: Self::CType = CTuple2(A::NICHE_VALUE, unsafe { core::mem::zeroed() });
     }
 }
 
-disjoint_impls::disjoint_impls! {
-    #[disjoint_impls(remote)]
-    trait Niche: ExternC {
-        const NICHE_VALUE: Self::CType;
-    }
+impl<A: ExternC, B: ExternC, C: ExternC> Niche for (A, B, C)
+where
+    (A, (B, C)): Niche<CType = CTuple2<<A as ExternC>::CType, <(B, C) as ExternC>::CType>>,
+{
+    const NICHE_VALUE: Self::CType = CTuple3(
+        <(A, (B, C))>::NICHE_VALUE.0,
+        <(A, (B, C))>::NICHE_VALUE.1.0,
+        <(A, (B, C))>::NICHE_VALUE.1.1,
+    );
+}
 
-    impl<A, B, C> Niche for (A, B, C)
-    where
-        A: Ir<Type: crate::niche::WithNiche> + Niche,
-        (B, C): Ir<Type = crate::niche::WithoutNiche>,
-        A: ExternC,
-        B: ExternC,
-        C: ExternC,
-    {
-        const NICHE_VALUE: Self::CType = CTuple3(
-            <A as Niche>::NICHE_VALUE,
-            unsafe { core::mem::zeroed() },
-            unsafe { core::mem::zeroed() },
-        );
-    }
+impl<A: ExternC, B: ExternC, C: ExternC, D: ExternC> Niche for (A, B, C, D)
+where
+    ((A, B), (C, D)):
+        Niche<CType = CTuple2<<(A, B) as ExternC>::CType, <(C, D) as ExternC>::CType>>,
+{
+    const NICHE_VALUE: Self::CType = CTuple4(
+        <((A, B), (C, D))>::NICHE_VALUE.0.0,
+        <((A, B), (C, D))>::NICHE_VALUE.0.1,
+        <((A, B), (C, D))>::NICHE_VALUE.1.0,
+        <((A, B), (C, D))>::NICHE_VALUE.1.1,
+    );
+}
 
-    impl<A, B, C> Niche for (A, B, C)
-    where
-        A: Ir<Type = crate::niche::WithoutNiche>,
-        (B, C): Ir<Type: crate::niche::WithNiche>
-            + Niche<CType = CTuple2<<B as ExternC>::CType, <C as ExternC>::CType>>,
-        A: ExternC,
-        B: ExternC,
-        C: ExternC,
-    {
-        const NICHE_VALUE: Self::CType = CTuple3(
-            unsafe { core::mem::zeroed() },
-            <(B, C) as Niche>::NICHE_VALUE.0,
-            <(B, C) as Niche>::NICHE_VALUE.1,
-        );
-    }
+impl<A: ExternC, B: ExternC, C: ExternC, D: ExternC, E: ExternC> Niche for (A, B, C, D, E)
+where
+    ((A, B), (C, D, E)):
+        Niche<CType = CTuple2<<(A, B) as ExternC>::CType, <(C, D, E) as ExternC>::CType>>,
+{
+    const NICHE_VALUE: Self::CType = CTuple5(
+        <((A, B), (C, D, E))>::NICHE_VALUE.0.0,
+        <((A, B), (C, D, E))>::NICHE_VALUE.0.1,
+        <((A, B), (C, D, E))>::NICHE_VALUE.1.0,
+        <((A, B), (C, D, E))>::NICHE_VALUE.1.1,
+        <((A, B), (C, D, E))>::NICHE_VALUE.1.2,
+    );
+}
 
-    impl<A, B, C> Niche for (A, B, C)
-    where
-        A: Ir<Type: crate::niche::WithNiche> + Niche,
-        (B, C): Ir<Type: crate::niche::WithNiche>,
-        A: ExternC,
-        B: ExternC,
-        C: ExternC,
-    {
-        const NICHE_VALUE: Self::CType = CTuple3(
-            <A as Niche>::NICHE_VALUE,
-            unsafe { core::mem::zeroed() },
-            unsafe { core::mem::zeroed() },
-        );
-    }
+impl<A: ExternC, B: ExternC, C: ExternC, D: ExternC, E: ExternC, F: ExternC> Niche
+    for (A, B, C, D, E, F)
+where
+    ((A, B, C), (D, E, F)):
+        Niche<CType = CTuple2<<(A, B, C) as ExternC>::CType, <(D, E, F) as ExternC>::CType>>,
+{
+    const NICHE_VALUE: Self::CType = CTuple6(
+        <((A, B, C), (D, E, F))>::NICHE_VALUE.0.0,
+        <((A, B, C), (D, E, F))>::NICHE_VALUE.0.1,
+        <((A, B, C), (D, E, F))>::NICHE_VALUE.0.2,
+        <((A, B, C), (D, E, F))>::NICHE_VALUE.1.0,
+        <((A, B, C), (D, E, F))>::NICHE_VALUE.1.1,
+        <((A, B, C), (D, E, F))>::NICHE_VALUE.1.2,
+    );
+}
+
+impl<A: ExternC, B: ExternC, C: ExternC, D: ExternC, E: ExternC, F: ExternC, G: ExternC> Niche
+    for (A, B, C, D, E, F, G)
+where
+    ((A, B, C), (D, E, F, G)):
+        Niche<CType = CTuple2<<(A, B, C) as ExternC>::CType, <(D, E, F, G) as ExternC>::CType>>,
+{
+    const NICHE_VALUE: Self::CType = CTuple7(
+        <((A, B, C), (D, E, F, G))>::NICHE_VALUE.0.0,
+        <((A, B, C), (D, E, F, G))>::NICHE_VALUE.0.1,
+        <((A, B, C), (D, E, F, G))>::NICHE_VALUE.0.2,
+        <((A, B, C), (D, E, F, G))>::NICHE_VALUE.1.0,
+        <((A, B, C), (D, E, F, G))>::NICHE_VALUE.1.1,
+        <((A, B, C), (D, E, F, G))>::NICHE_VALUE.1.2,
+        <((A, B, C), (D, E, F, G))>::NICHE_VALUE.1.3,
+    );
+}
+
+impl<A: ExternC, B: ExternC, C: ExternC, D: ExternC, E: ExternC, F: ExternC, G: ExternC, H: ExternC>
+    Niche for (A, B, C, D, E, F, G, H)
+where
+    ((A, B, C, D), (E, F, G, H)):
+        Niche<CType = CTuple2<<(A, B, C, D) as ExternC>::CType, <(E, F, G, H) as ExternC>::CType>>,
+{
+    const NICHE_VALUE: Self::CType = CTuple8(
+        <((A, B, C, D), (E, F, G, H))>::NICHE_VALUE.0.0,
+        <((A, B, C, D), (E, F, G, H))>::NICHE_VALUE.0.1,
+        <((A, B, C, D), (E, F, G, H))>::NICHE_VALUE.0.2,
+        <((A, B, C, D), (E, F, G, H))>::NICHE_VALUE.0.3,
+        <((A, B, C, D), (E, F, G, H))>::NICHE_VALUE.1.0,
+        <((A, B, C, D), (E, F, G, H))>::NICHE_VALUE.1.1,
+        <((A, B, C, D), (E, F, G, H))>::NICHE_VALUE.1.2,
+        <((A, B, C, D), (E, F, G, H))>::NICHE_VALUE.1.3,
+    );
+}
+
+impl<
+    A: ExternC,
+    B: ExternC,
+    C: ExternC,
+    D: ExternC,
+    E: ExternC,
+    F: ExternC,
+    G: ExternC,
+    H: ExternC,
+    I: ExternC,
+> Niche for (A, B, C, D, E, F, G, H, I)
+where
+    ((A, B, C, D), (E, F, G, H, I)): Niche<
+        CType = CTuple2<<(A, B, C, D) as ExternC>::CType, <(E, F, G, H, I) as ExternC>::CType>,
+    >,
+{
+    const NICHE_VALUE: Self::CType = CTuple9(
+        <((A, B, C, D), (E, F, G, H, I))>::NICHE_VALUE.0.0,
+        <((A, B, C, D), (E, F, G, H, I))>::NICHE_VALUE.0.1,
+        <((A, B, C, D), (E, F, G, H, I))>::NICHE_VALUE.0.2,
+        <((A, B, C, D), (E, F, G, H, I))>::NICHE_VALUE.0.3,
+        <((A, B, C, D), (E, F, G, H, I))>::NICHE_VALUE.1.0,
+        <((A, B, C, D), (E, F, G, H, I))>::NICHE_VALUE.1.1,
+        <((A, B, C, D), (E, F, G, H, I))>::NICHE_VALUE.1.2,
+        <((A, B, C, D), (E, F, G, H, I))>::NICHE_VALUE.1.3,
+        <((A, B, C, D), (E, F, G, H, I))>::NICHE_VALUE.1.4,
+    );
+}
+
+impl<
+    A: ExternC,
+    B: ExternC,
+    C: ExternC,
+    D: ExternC,
+    E: ExternC,
+    F: ExternC,
+    G: ExternC,
+    H: ExternC,
+    I: ExternC,
+    J: ExternC,
+> Niche for (A, B, C, D, E, F, G, H, I, J)
+where
+    ((A, B, C, D, E), (F, G, H, I, J)): Niche<
+        CType = CTuple2<<(A, B, C, D, E) as ExternC>::CType, <(F, G, H, I, J) as ExternC>::CType>,
+    >,
+{
+    const NICHE_VALUE: Self::CType = CTuple10(
+        <((A, B, C, D, E), (F, G, H, I, J))>::NICHE_VALUE.0.0,
+        <((A, B, C, D, E), (F, G, H, I, J))>::NICHE_VALUE.0.1,
+        <((A, B, C, D, E), (F, G, H, I, J))>::NICHE_VALUE.0.2,
+        <((A, B, C, D, E), (F, G, H, I, J))>::NICHE_VALUE.0.3,
+        <((A, B, C, D, E), (F, G, H, I, J))>::NICHE_VALUE.0.4,
+        <((A, B, C, D, E), (F, G, H, I, J))>::NICHE_VALUE.1.0,
+        <((A, B, C, D, E), (F, G, H, I, J))>::NICHE_VALUE.1.1,
+        <((A, B, C, D, E), (F, G, H, I, J))>::NICHE_VALUE.1.2,
+        <((A, B, C, D, E), (F, G, H, I, J))>::NICHE_VALUE.1.3,
+        <((A, B, C, D, E), (F, G, H, I, J))>::NICHE_VALUE.1.4,
+    );
+}
+
+impl<
+    A: ExternC,
+    B: ExternC,
+    C: ExternC,
+    D: ExternC,
+    E: ExternC,
+    F: ExternC,
+    G: ExternC,
+    H: ExternC,
+    I: ExternC,
+    J: ExternC,
+    K: ExternC,
+> Niche for (A, B, C, D, E, F, G, H, I, J, K)
+where
+    ((A, B, C, D, E), (F, G, H, I, J, K)): Niche<
+        CType = CTuple2<
+            <(A, B, C, D, E) as ExternC>::CType,
+            <(F, G, H, I, J, K) as ExternC>::CType,
+        >,
+    >,
+{
+    const NICHE_VALUE: Self::CType = CTuple11(
+        <((A, B, C, D, E), (F, G, H, I, J, K))>::NICHE_VALUE.0.0,
+        <((A, B, C, D, E), (F, G, H, I, J, K))>::NICHE_VALUE.0.1,
+        <((A, B, C, D, E), (F, G, H, I, J, K))>::NICHE_VALUE.0.2,
+        <((A, B, C, D, E), (F, G, H, I, J, K))>::NICHE_VALUE.0.3,
+        <((A, B, C, D, E), (F, G, H, I, J, K))>::NICHE_VALUE.0.4,
+        <((A, B, C, D, E), (F, G, H, I, J, K))>::NICHE_VALUE.1.0,
+        <((A, B, C, D, E), (F, G, H, I, J, K))>::NICHE_VALUE.1.1,
+        <((A, B, C, D, E), (F, G, H, I, J, K))>::NICHE_VALUE.1.2,
+        <((A, B, C, D, E), (F, G, H, I, J, K))>::NICHE_VALUE.1.3,
+        <((A, B, C, D, E), (F, G, H, I, J, K))>::NICHE_VALUE.1.4,
+        <((A, B, C, D, E), (F, G, H, I, J, K))>::NICHE_VALUE.1.5,
+    );
+}
+
+impl<
+    A: ExternC,
+    B: ExternC,
+    C: ExternC,
+    D: ExternC,
+    E: ExternC,
+    F: ExternC,
+    G: ExternC,
+    H: ExternC,
+    I: ExternC,
+    J: ExternC,
+    K: ExternC,
+    L: ExternC,
+> Niche for (A, B, C, D, E, F, G, H, I, J, K, L)
+where
+    ((A, B, C, D, E, F), (G, H, I, J, K, L)): Niche<
+        CType = CTuple2<
+            <(A, B, C, D, E, F) as ExternC>::CType,
+            <(G, H, I, J, K, L) as ExternC>::CType,
+        >,
+    >,
+{
+    const NICHE_VALUE: Self::CType = CTuple12(
+        <((A, B, C, D, E, F), (G, H, I, J, K, L))>::NICHE_VALUE.0.0,
+        <((A, B, C, D, E, F), (G, H, I, J, K, L))>::NICHE_VALUE.0.1,
+        <((A, B, C, D, E, F), (G, H, I, J, K, L))>::NICHE_VALUE.0.2,
+        <((A, B, C, D, E, F), (G, H, I, J, K, L))>::NICHE_VALUE.0.3,
+        <((A, B, C, D, E, F), (G, H, I, J, K, L))>::NICHE_VALUE.0.4,
+        <((A, B, C, D, E, F), (G, H, I, J, K, L))>::NICHE_VALUE.0.5,
+        <((A, B, C, D, E, F), (G, H, I, J, K, L))>::NICHE_VALUE.1.0,
+        <((A, B, C, D, E, F), (G, H, I, J, K, L))>::NICHE_VALUE.1.1,
+        <((A, B, C, D, E, F), (G, H, I, J, K, L))>::NICHE_VALUE.1.2,
+        <((A, B, C, D, E, F), (G, H, I, J, K, L))>::NICHE_VALUE.1.3,
+        <((A, B, C, D, E, F), (G, H, I, J, K, L))>::NICHE_VALUE.1.4,
+        <((A, B, C, D, E, F), (G, H, I, J, K, L))>::NICHE_VALUE.1.5,
+    );
+}
+
+impl<A: Ir> Ir for (A,) {
+    type Type = A::Type;
 }
 
 disjoint_impls::disjoint_impls! {
     #[disjoint_impls(remote)]
-    trait Niche: ExternC {
-        const NICHE_VALUE: Self::CType;
-    }
-
-    impl<A, B, C, D> Niche for (A, B, C, D)
-    where
-        (A, B): Ir<Type: crate::niche::WithNiche>
-            + Niche<CType = CTuple2<<A as ExternC>::CType, <B as ExternC>::CType>>,
-        (C, D): Ir<Type = crate::niche::WithoutNiche>,
-        A: ExternC,
-        B: ExternC,
-        C: ExternC,
-        D: ExternC,
-    {
-        const NICHE_VALUE: Self::CType = CTuple4(
-            <(A, B) as Niche>::NICHE_VALUE.0,
-            <(A, B) as Niche>::NICHE_VALUE.1,
-            unsafe { core::mem::zeroed() },
-            unsafe { core::mem::zeroed() },
-        );
-    }
-
-    impl<A, B, C, D> Niche for (A, B, C, D)
-    where
-        (A, B): Ir<Type = crate::niche::WithoutNiche>,
-        (C, D): Ir<Type: crate::niche::WithNiche>
-            + Niche<CType = CTuple2<<C as ExternC>::CType, <D as ExternC>::CType>>,
-        A: ExternC,
-        B: ExternC,
-        C: ExternC,
-        D: ExternC,
-    {
-        const NICHE_VALUE: Self::CType = CTuple4(
-            unsafe { core::mem::zeroed() },
-            unsafe { core::mem::zeroed() },
-            <(C, D) as Niche>::NICHE_VALUE.0,
-            <(C, D) as Niche>::NICHE_VALUE.1,
-        );
-    }
-
-    impl<A, B, C, D> Niche for (A, B, C, D)
-    where
-        (A, B): Ir<Type: crate::niche::WithNiche>
-            + Niche<CType = CTuple2<<A as ExternC>::CType, <B as ExternC>::CType>>,
-        (C, D): Ir<Type: crate::niche::WithNiche>,
-        A: ExternC,
-        B: ExternC,
-        C: ExternC,
-        D: ExternC,
-    {
-        const NICHE_VALUE: Self::CType = CTuple4(
-            <(A, B) as Niche>::NICHE_VALUE.0,
-            <(A, B) as Niche>::NICHE_VALUE.1,
-            unsafe { core::mem::zeroed() },
-            unsafe { core::mem::zeroed() },
-        );
-    }
-}
-
-disjoint_impls::disjoint_impls! {
-    #[disjoint_impls(remote)]
-    trait Niche: ExternC {
-        const NICHE_VALUE: Self::CType;
-    }
-
-    impl<A, B, C, D, E> Niche for (A, B, C, D, E)
-    where
-        (A, B): Ir<Type: crate::niche::WithNiche>
-            + Niche<CType = CTuple2<<A as ExternC>::CType, <B as ExternC>::CType>>,
-        (C, D, E): Ir<Type = crate::niche::WithoutNiche>,
-        A: ExternC,
-        B: ExternC,
-        C: ExternC,
-        D: ExternC,
-        E: ExternC,
-    {
-        const NICHE_VALUE: Self::CType = CTuple5(
-            <(A, B) as Niche>::NICHE_VALUE.0,
-            <(A, B) as Niche>::NICHE_VALUE.1,
-            unsafe { core::mem::zeroed() },
-            unsafe { core::mem::zeroed() },
-            unsafe { core::mem::zeroed() },
-        );
-    }
-
-    impl<A, B, C, D, E> Niche for (A, B, C, D, E)
-    where
-        (A, B): Ir<Type = crate::niche::WithoutNiche>,
-        (C, D, E): Ir<Type: crate::niche::WithNiche>
-            + Niche<
-                CType = CTuple3<
-                    <C as ExternC>::CType,
-                    <D as ExternC>::CType,
-                    <E as ExternC>::CType,
-                >,
-            >,
-        A: ExternC,
-        B: ExternC,
-        C: ExternC,
-        D: ExternC,
-        E: ExternC,
-    {
-        const NICHE_VALUE: Self::CType = CTuple5(
-            unsafe { core::mem::zeroed() },
-            unsafe { core::mem::zeroed() },
-            <(C, D, E) as Niche>::NICHE_VALUE.0,
-            <(C, D, E) as Niche>::NICHE_VALUE.1,
-            <(C, D, E) as Niche>::NICHE_VALUE.2,
-        );
-    }
-
-    impl<A, B, C, D, E> Niche for (A, B, C, D, E)
-    where
-        (A, B): Ir<Type: crate::niche::WithNiche>
-            + Niche<CType = CTuple2<<A as ExternC>::CType, <B as ExternC>::CType>>,
-        (C, D, E): Ir<Type: crate::niche::WithNiche>,
-        A: ExternC,
-        B: ExternC,
-        C: ExternC,
-        D: ExternC,
-        E: ExternC,
-    {
-        const NICHE_VALUE: Self::CType = CTuple5(
-            <(A, B) as Niche>::NICHE_VALUE.0,
-            <(A, B) as Niche>::NICHE_VALUE.1,
-            unsafe { core::mem::zeroed() },
-            unsafe { core::mem::zeroed() },
-            unsafe { core::mem::zeroed() },
-        );
-    }
-}
-
-disjoint_impls::disjoint_impls! {
-    #[disjoint_impls(remote)]
-    trait Niche: ExternC {
-        const NICHE_VALUE: Self::CType;
-    }
-
-    impl<A, B, C, D, E, F> Niche for (A, B, C, D, E, F)
-    where
-        (A, B, C): Ir<Type: crate::niche::WithNiche>
-            + Niche<
-                CType = CTuple3<
-                    <A as ExternC>::CType,
-                    <B as ExternC>::CType,
-                    <C as ExternC>::CType,
-                >,
-            >,
-        (D, E, F): Ir<Type = crate::niche::WithoutNiche>,
-        A: ExternC,
-        B: ExternC,
-        C: ExternC,
-        D: ExternC,
-        E: ExternC,
-        F: ExternC,
-    {
-        const NICHE_VALUE: Self::CType = CTuple6(
-            <(A, B, C) as Niche>::NICHE_VALUE.0,
-            <(A, B, C) as Niche>::NICHE_VALUE.1,
-            <(A, B, C) as Niche>::NICHE_VALUE.2,
-            unsafe { core::mem::zeroed() },
-            unsafe { core::mem::zeroed() },
-            unsafe { core::mem::zeroed() },
-        );
-    }
-
-    impl<A, B, C, D, E, F> Niche for (A, B, C, D, E, F)
-    where
-        (A, B, C): Ir<Type = crate::niche::WithoutNiche>,
-        (D, E, F): Ir<Type: crate::niche::WithNiche>
-            + Niche<
-                CType = CTuple3<
-                    <D as ExternC>::CType,
-                    <E as ExternC>::CType,
-                    <F as ExternC>::CType,
-                >,
-            >,
-        A: ExternC,
-        B: ExternC,
-        C: ExternC,
-        D: ExternC,
-        E: ExternC,
-        F: ExternC,
-    {
-        const NICHE_VALUE: Self::CType = CTuple6(
-            unsafe { core::mem::zeroed() },
-            unsafe { core::mem::zeroed() },
-            unsafe { core::mem::zeroed() },
-            <(D, E, F) as Niche>::NICHE_VALUE.0,
-            <(D, E, F) as Niche>::NICHE_VALUE.1,
-            <(D, E, F) as Niche>::NICHE_VALUE.2,
-        );
-    }
-
-    impl<A, B, C, D, E, F> Niche for (A, B, C, D, E, F)
-    where
-        (A, B, C): Ir<Type: crate::niche::WithNiche>
-            + Niche<
-                CType = CTuple3<
-                    <A as ExternC>::CType,
-                    <B as ExternC>::CType,
-                    <C as ExternC>::CType,
-                >,
-            >,
-        (D, E, F): Ir<Type: crate::niche::WithNiche>,
-        A: ExternC,
-        B: ExternC,
-        C: ExternC,
-        D: ExternC,
-        E: ExternC,
-        F: ExternC,
-    {
-        const NICHE_VALUE: Self::CType = CTuple6(
-            <(A, B, C) as Niche>::NICHE_VALUE.0,
-            <(A, B, C) as Niche>::NICHE_VALUE.1,
-            <(A, B, C) as Niche>::NICHE_VALUE.2,
-            unsafe { core::mem::zeroed() },
-            unsafe { core::mem::zeroed() },
-            unsafe { core::mem::zeroed() },
-        );
-    }
-}
-
-disjoint_impls::disjoint_impls! {
-    #[disjoint_impls(remote)]
-    trait Niche: ExternC {
-        const NICHE_VALUE: Self::CType;
-    }
-
-    impl<A, B, C, D, E, F, G> Niche for (A, B, C, D, E, F, G)
-    where
-        (A, B, C): Ir<Type: crate::niche::WithNiche>
-            + Niche<
-                CType = CTuple3<
-                    <A as ExternC>::CType,
-                    <B as ExternC>::CType,
-                    <C as ExternC>::CType,
-                >,
-            >,
-        (D, E, F, G): Ir<Type = crate::niche::WithoutNiche>,
-        A: ExternC,
-        B: ExternC,
-        C: ExternC,
-        D: ExternC,
-        E: ExternC,
-        F: ExternC,
-        G: ExternC,
-    {
-        const NICHE_VALUE: Self::CType = CTuple7(
-            <(A, B, C) as Niche>::NICHE_VALUE.0,
-            <(A, B, C) as Niche>::NICHE_VALUE.1,
-            <(A, B, C) as Niche>::NICHE_VALUE.2,
-            unsafe { core::mem::zeroed() },
-            unsafe { core::mem::zeroed() },
-            unsafe { core::mem::zeroed() },
-            unsafe { core::mem::zeroed() },
-        );
-    }
-
-    impl<A, B, C, D, E, F, G> Niche for (A, B, C, D, E, F, G)
-    where
-        (A, B, C): Ir<Type = crate::niche::WithoutNiche>,
-        (D, E, F, G): Ir<Type: crate::niche::WithNiche>
-            + Niche<
-                CType = CTuple4<
-                    <D as ExternC>::CType,
-                    <E as ExternC>::CType,
-                    <F as ExternC>::CType,
-                    <G as ExternC>::CType,
-                >,
-            >,
-        A: ExternC,
-        B: ExternC,
-        C: ExternC,
-        D: ExternC,
-        E: ExternC,
-        F: ExternC,
-        G: ExternC,
-    {
-        const NICHE_VALUE: Self::CType = CTuple7(
-            unsafe { core::mem::zeroed() },
-            unsafe { core::mem::zeroed() },
-            unsafe { core::mem::zeroed() },
-            <(D, E, F, G) as Niche>::NICHE_VALUE.0,
-            <(D, E, F, G) as Niche>::NICHE_VALUE.1,
-            <(D, E, F, G) as Niche>::NICHE_VALUE.2,
-            <(D, E, F, G) as Niche>::NICHE_VALUE.3,
-        );
-    }
-
-    impl<A, B, C, D, E, F, G> Niche for (A, B, C, D, E, F, G)
-    where
-        (A, B, C): Ir<Type: crate::niche::WithNiche>
-            + Niche<
-                CType = CTuple3<
-                    <A as ExternC>::CType,
-                    <B as ExternC>::CType,
-                    <C as ExternC>::CType,
-                >,
-            >,
-        (D, E, F, G): Ir<Type: crate::niche::WithNiche>,
-        A: ExternC,
-        B: ExternC,
-        C: ExternC,
-        D: ExternC,
-        E: ExternC,
-        F: ExternC,
-        G: ExternC,
-    {
-        const NICHE_VALUE: Self::CType = CTuple7(
-            <(A, B, C) as Niche>::NICHE_VALUE.0,
-            <(A, B, C) as Niche>::NICHE_VALUE.1,
-            <(A, B, C) as Niche>::NICHE_VALUE.2,
-            unsafe { core::mem::zeroed() },
-            unsafe { core::mem::zeroed() },
-            unsafe { core::mem::zeroed() },
-            unsafe { core::mem::zeroed() },
-        );
-    }
-}
-
-disjoint_impls::disjoint_impls! {
-    #[disjoint_impls(remote)]
-    trait Niche: ExternC {
-        const NICHE_VALUE: Self::CType;
-    }
-
-    impl<A, B, C, D, E, F, G, H> Niche for (A, B, C, D, E, F, G, H)
-    where
-        (A, B, C, D): Ir<Type: crate::niche::WithNiche>
-            + Niche<
-                CType = CTuple4<
-                    <A as ExternC>::CType,
-                    <B as ExternC>::CType,
-                    <C as ExternC>::CType,
-                    <D as ExternC>::CType,
-                >,
-            >,
-        (E, F, G, H): Ir<Type = crate::niche::WithoutNiche>,
-        A: ExternC,
-        B: ExternC,
-        C: ExternC,
-        D: ExternC,
-        E: ExternC,
-        F: ExternC,
-        G: ExternC,
-        H: ExternC,
-    {
-        const NICHE_VALUE: Self::CType = CTuple8(
-            <(A, B, C, D) as Niche>::NICHE_VALUE.0,
-            <(A, B, C, D) as Niche>::NICHE_VALUE.1,
-            <(A, B, C, D) as Niche>::NICHE_VALUE.2,
-            <(A, B, C, D) as Niche>::NICHE_VALUE.3,
-            unsafe { core::mem::zeroed() },
-            unsafe { core::mem::zeroed() },
-            unsafe { core::mem::zeroed() },
-            unsafe { core::mem::zeroed() },
-        );
-    }
-
-    impl<A, B, C, D, E, F, G, H> Niche for (A, B, C, D, E, F, G, H)
-    where
-        (A, B, C, D): Ir<Type = crate::niche::WithoutNiche>,
-        (E, F, G, H): Ir<Type: crate::niche::WithNiche>
-            + Niche<
-                CType = CTuple4<
-                    <E as ExternC>::CType,
-                    <F as ExternC>::CType,
-                    <G as ExternC>::CType,
-                    <H as ExternC>::CType,
-                >,
-            >,
-        A: ExternC,
-        B: ExternC,
-        C: ExternC,
-        D: ExternC,
-        E: ExternC,
-        F: ExternC,
-        G: ExternC,
-        H: ExternC,
-    {
-        const NICHE_VALUE: Self::CType = CTuple8(
-            unsafe { core::mem::zeroed() },
-            unsafe { core::mem::zeroed() },
-            unsafe { core::mem::zeroed() },
-            unsafe { core::mem::zeroed() },
-            <(E, F, G, H) as Niche>::NICHE_VALUE.0,
-            <(E, F, G, H) as Niche>::NICHE_VALUE.1,
-            <(E, F, G, H) as Niche>::NICHE_VALUE.2,
-            <(E, F, G, H) as Niche>::NICHE_VALUE.3,
-        );
-    }
-
-    impl<A, B, C, D, E, F, G, H> Niche for (A, B, C, D, E, F, G, H)
-    where
-        (A, B, C, D): Ir<Type: crate::niche::WithNiche>
-            + Niche<
-                CType = CTuple4<
-                    <A as ExternC>::CType,
-                    <B as ExternC>::CType,
-                    <C as ExternC>::CType,
-                    <D as ExternC>::CType,
-                >,
-            >,
-        (E, F, G, H): Ir<Type: crate::niche::WithNiche>,
-        A: ExternC,
-        B: ExternC,
-        C: ExternC,
-        D: ExternC,
-        E: ExternC,
-        F: ExternC,
-        G: ExternC,
-        H: ExternC,
-    {
-        const NICHE_VALUE: Self::CType = CTuple8(
-            <(A, B, C, D) as Niche>::NICHE_VALUE.0,
-            <(A, B, C, D) as Niche>::NICHE_VALUE.1,
-            <(A, B, C, D) as Niche>::NICHE_VALUE.2,
-            <(A, B, C, D) as Niche>::NICHE_VALUE.3,
-            unsafe { core::mem::zeroed() },
-            unsafe { core::mem::zeroed() },
-            unsafe { core::mem::zeroed() },
-            unsafe { core::mem::zeroed() },
-        );
-    }
-}
-
-disjoint_impls::disjoint_impls! {
-    #[disjoint_impls(remote)]
-    trait Niche: ExternC {
-        const NICHE_VALUE: Self::CType;
-    }
-
-    impl<A, B, C, D, E, F, G, H, I> Niche for (A, B, C, D, E, F, G, H, I)
-    where
-        (A, B, C, D): Ir<Type: crate::niche::WithNiche>
-            + Niche<
-                CType = CTuple4<
-                    <A as ExternC>::CType,
-                    <B as ExternC>::CType,
-                    <C as ExternC>::CType,
-                    <D as ExternC>::CType,
-                >,
-            >,
-        (E, F, G, H, I): Ir<Type = crate::niche::WithoutNiche>,
-        A: ExternC,
-        B: ExternC,
-        C: ExternC,
-        D: ExternC,
-        E: ExternC,
-        F: ExternC,
-        G: ExternC,
-        H: ExternC,
-        I: ExternC,
-    {
-        const NICHE_VALUE: Self::CType = CTuple9(
-            <(A, B, C, D) as Niche>::NICHE_VALUE.0,
-            <(A, B, C, D) as Niche>::NICHE_VALUE.1,
-            <(A, B, C, D) as Niche>::NICHE_VALUE.2,
-            <(A, B, C, D) as Niche>::NICHE_VALUE.3,
-            unsafe { core::mem::zeroed() },
-            unsafe { core::mem::zeroed() },
-            unsafe { core::mem::zeroed() },
-            unsafe { core::mem::zeroed() },
-            unsafe { core::mem::zeroed() },
-        );
-    }
-
-    impl<A, B, C, D, E, F, G, H, I> Niche for (A, B, C, D, E, F, G, H, I)
-    where
-        (A, B, C, D): Ir<Type = crate::niche::WithoutNiche>,
-        (E, F, G, H, I): Ir<Type: crate::niche::WithNiche>
-            + Niche<
-                CType = CTuple5<
-                    <E as ExternC>::CType,
-                    <F as ExternC>::CType,
-                    <G as ExternC>::CType,
-                    <H as ExternC>::CType,
-                    <I as ExternC>::CType,
-                >,
-            >,
-        A: ExternC,
-        B: ExternC,
-        C: ExternC,
-        D: ExternC,
-        E: ExternC,
-        F: ExternC,
-        G: ExternC,
-        H: ExternC,
-        I: ExternC,
-    {
-        const NICHE_VALUE: Self::CType = CTuple9(
-            unsafe { core::mem::zeroed() },
-            unsafe { core::mem::zeroed() },
-            unsafe { core::mem::zeroed() },
-            unsafe { core::mem::zeroed() },
-            <(E, F, G, H, I) as Niche>::NICHE_VALUE.0,
-            <(E, F, G, H, I) as Niche>::NICHE_VALUE.1,
-            <(E, F, G, H, I) as Niche>::NICHE_VALUE.2,
-            <(E, F, G, H, I) as Niche>::NICHE_VALUE.3,
-            <(E, F, G, H, I) as Niche>::NICHE_VALUE.4,
-        );
-    }
-
-    impl<A, B, C, D, E, F, G, H, I> Niche for (A, B, C, D, E, F, G, H, I)
-    where
-        (A, B, C, D): Ir<Type: crate::niche::WithNiche>
-            + Niche<
-                CType = CTuple4<
-                    <A as ExternC>::CType,
-                    <B as ExternC>::CType,
-                    <C as ExternC>::CType,
-                    <D as ExternC>::CType,
-                >,
-            >,
-        (E, F, G, H, I): Ir<Type: crate::niche::WithNiche>,
-        A: ExternC,
-        B: ExternC,
-        C: ExternC,
-        D: ExternC,
-        E: ExternC,
-        F: ExternC,
-        G: ExternC,
-        H: ExternC,
-        I: ExternC,
-    {
-        const NICHE_VALUE: Self::CType = CTuple9(
-            <(A, B, C, D) as Niche>::NICHE_VALUE.0,
-            <(A, B, C, D) as Niche>::NICHE_VALUE.1,
-            <(A, B, C, D) as Niche>::NICHE_VALUE.2,
-            <(A, B, C, D) as Niche>::NICHE_VALUE.3,
-            unsafe { core::mem::zeroed() },
-            unsafe { core::mem::zeroed() },
-            unsafe { core::mem::zeroed() },
-            unsafe { core::mem::zeroed() },
-            unsafe { core::mem::zeroed() },
-        );
-    }
-}
-
-disjoint_impls::disjoint_impls! {
-    #[disjoint_impls(remote)]
-    trait Niche: ExternC {
-        const NICHE_VALUE: Self::CType;
-    }
-
-    impl<A, B, C, D, E, F, G, H, I, J> Niche for (A, B, C, D, E, F, G, H, I, J)
-    where
-        (A, B, C, D, E): Ir<Type: crate::niche::WithNiche>
-            + Niche<
-                CType = CTuple5<
-                    <A as ExternC>::CType,
-                    <B as ExternC>::CType,
-                    <C as ExternC>::CType,
-                    <D as ExternC>::CType,
-                    <E as ExternC>::CType,
-                >,
-            >,
-        (F, G, H, I, J): Ir<Type = crate::niche::WithoutNiche>,
-        A: ExternC,
-        B: ExternC,
-        C: ExternC,
-        D: ExternC,
-        E: ExternC,
-        F: ExternC,
-        G: ExternC,
-        H: ExternC,
-        I: ExternC,
-        J: ExternC,
-    {
-        const NICHE_VALUE: Self::CType = CTuple10(
-            <(A, B, C, D, E) as Niche>::NICHE_VALUE.0,
-            <(A, B, C, D, E) as Niche>::NICHE_VALUE.1,
-            <(A, B, C, D, E) as Niche>::NICHE_VALUE.2,
-            <(A, B, C, D, E) as Niche>::NICHE_VALUE.3,
-            <(A, B, C, D, E) as Niche>::NICHE_VALUE.4,
-            unsafe { core::mem::zeroed() },
-            unsafe { core::mem::zeroed() },
-            unsafe { core::mem::zeroed() },
-            unsafe { core::mem::zeroed() },
-            unsafe { core::mem::zeroed() },
-        );
-    }
-
-    impl<A, B, C, D, E, F, G, H, I, J> Niche for (A, B, C, D, E, F, G, H, I, J)
-    where
-        (A, B, C, D, E): Ir<Type = crate::niche::WithoutNiche>,
-        (F, G, H, I, J): Ir<Type: crate::niche::WithNiche>
-            + Niche<
-                CType = CTuple5<
-                    <F as ExternC>::CType,
-                    <G as ExternC>::CType,
-                    <H as ExternC>::CType,
-                    <I as ExternC>::CType,
-                    <J as ExternC>::CType,
-                >,
-            >,
-        A: ExternC,
-        B: ExternC,
-        C: ExternC,
-        D: ExternC,
-        E: ExternC,
-        F: ExternC,
-        G: ExternC,
-        H: ExternC,
-        I: ExternC,
-        J: ExternC,
-    {
-        const NICHE_VALUE: Self::CType = CTuple10(
-            unsafe { core::mem::zeroed() },
-            unsafe { core::mem::zeroed() },
-            unsafe { core::mem::zeroed() },
-            unsafe { core::mem::zeroed() },
-            unsafe { core::mem::zeroed() },
-            <(F, G, H, I, J) as Niche>::NICHE_VALUE.0,
-            <(F, G, H, I, J) as Niche>::NICHE_VALUE.1,
-            <(F, G, H, I, J) as Niche>::NICHE_VALUE.2,
-            <(F, G, H, I, J) as Niche>::NICHE_VALUE.3,
-            <(F, G, H, I, J) as Niche>::NICHE_VALUE.4,
-        );
-    }
-
-    impl<A, B, C, D, E, F, G, H, I, J> Niche for (A, B, C, D, E, F, G, H, I, J)
-    where
-        (A, B, C, D, E): Ir<Type: crate::niche::WithNiche>
-            + Niche<
-                CType = CTuple5<
-                    <A as ExternC>::CType,
-                    <B as ExternC>::CType,
-                    <C as ExternC>::CType,
-                    <D as ExternC>::CType,
-                    <E as ExternC>::CType,
-                >,
-            >,
-        (F, G, H, I, J): Ir<Type: crate::niche::WithNiche>,
-        A: ExternC,
-        B: ExternC,
-        C: ExternC,
-        D: ExternC,
-        E: ExternC,
-        F: ExternC,
-        G: ExternC,
-        H: ExternC,
-        I: ExternC,
-        J: ExternC,
-    {
-        const NICHE_VALUE: Self::CType = CTuple10(
-            <(A, B, C, D, E) as Niche>::NICHE_VALUE.0,
-            <(A, B, C, D, E) as Niche>::NICHE_VALUE.1,
-            <(A, B, C, D, E) as Niche>::NICHE_VALUE.2,
-            <(A, B, C, D, E) as Niche>::NICHE_VALUE.3,
-            <(A, B, C, D, E) as Niche>::NICHE_VALUE.4,
-            unsafe { core::mem::zeroed() },
-            unsafe { core::mem::zeroed() },
-            unsafe { core::mem::zeroed() },
-            unsafe { core::mem::zeroed() },
-            unsafe { core::mem::zeroed() },
-        );
-    }
-}
-
-disjoint_impls::disjoint_impls! {
-    #[disjoint_impls(remote)]
-    trait Niche: ExternC {
-        const NICHE_VALUE: Self::CType;
-    }
-
-    impl<A, B, C, D, E, F, G, H, I, J, K> Niche for (A, B, C, D, E, F, G, H, I, J, K)
-    where
-        (A, B, C, D, E): Ir<Type: crate::niche::WithNiche>
-            + Niche<
-                CType = CTuple5<
-                    <A as ExternC>::CType,
-                    <B as ExternC>::CType,
-                    <C as ExternC>::CType,
-                    <D as ExternC>::CType,
-                    <E as ExternC>::CType,
-                >,
-            >,
-        (F, G, H, I, J, K): Ir<Type = crate::niche::WithoutNiche>,
-        A: ExternC,
-        B: ExternC,
-        C: ExternC,
-        D: ExternC,
-        E: ExternC,
-        F: ExternC,
-        G: ExternC,
-        H: ExternC,
-        I: ExternC,
-        J: ExternC,
-        K: ExternC,
-    {
-        const NICHE_VALUE: Self::CType = CTuple11(
-            <(A, B, C, D, E) as Niche>::NICHE_VALUE.0,
-            <(A, B, C, D, E) as Niche>::NICHE_VALUE.1,
-            <(A, B, C, D, E) as Niche>::NICHE_VALUE.2,
-            <(A, B, C, D, E) as Niche>::NICHE_VALUE.3,
-            <(A, B, C, D, E) as Niche>::NICHE_VALUE.4,
-            unsafe { core::mem::zeroed() },
-            unsafe { core::mem::zeroed() },
-            unsafe { core::mem::zeroed() },
-            unsafe { core::mem::zeroed() },
-            unsafe { core::mem::zeroed() },
-            unsafe { core::mem::zeroed() },
-        );
-    }
-
-    impl<A, B, C, D, E, F, G, H, I, J, K> Niche for (A, B, C, D, E, F, G, H, I, J, K)
-    where
-        (A, B, C, D, E): Ir<Type = crate::niche::WithoutNiche>,
-        (F, G, H, I, J, K): Ir<Type: crate::niche::WithNiche>
-            + Niche<
-                CType = CTuple6<
-                    <F as ExternC>::CType,
-                    <G as ExternC>::CType,
-                    <H as ExternC>::CType,
-                    <I as ExternC>::CType,
-                    <J as ExternC>::CType,
-                    <K as ExternC>::CType,
-                >,
-            >,
-        A: ExternC,
-        B: ExternC,
-        C: ExternC,
-        D: ExternC,
-        E: ExternC,
-        F: ExternC,
-        G: ExternC,
-        H: ExternC,
-        I: ExternC,
-        J: ExternC,
-        K: ExternC,
-    {
-        const NICHE_VALUE: Self::CType = CTuple11(
-            unsafe { core::mem::zeroed() },
-            unsafe { core::mem::zeroed() },
-            unsafe { core::mem::zeroed() },
-            unsafe { core::mem::zeroed() },
-            unsafe { core::mem::zeroed() },
-            <(F, G, H, I, J, K) as Niche>::NICHE_VALUE.0,
-            <(F, G, H, I, J, K) as Niche>::NICHE_VALUE.1,
-            <(F, G, H, I, J, K) as Niche>::NICHE_VALUE.2,
-            <(F, G, H, I, J, K) as Niche>::NICHE_VALUE.3,
-            <(F, G, H, I, J, K) as Niche>::NICHE_VALUE.4,
-            <(F, G, H, I, J, K) as Niche>::NICHE_VALUE.5,
-        );
-    }
-
-    impl<A, B, C, D, E, F, G, H, I, J, K> Niche for (A, B, C, D, E, F, G, H, I, J, K)
-    where
-        (A, B, C, D, E): Ir<Type: crate::niche::WithNiche>
-            + Niche<
-                CType = CTuple5<
-                    <A as ExternC>::CType,
-                    <B as ExternC>::CType,
-                    <C as ExternC>::CType,
-                    <D as ExternC>::CType,
-                    <E as ExternC>::CType,
-                >,
-            >,
-        (F, G, H, I, J, K): Ir<Type: crate::niche::WithNiche>,
-        A: ExternC,
-        B: ExternC,
-        C: ExternC,
-        D: ExternC,
-        E: ExternC,
-        F: ExternC,
-        G: ExternC,
-        H: ExternC,
-        I: ExternC,
-        J: ExternC,
-        K: ExternC,
-    {
-        const NICHE_VALUE: Self::CType = CTuple11(
-            <(A, B, C, D, E) as Niche>::NICHE_VALUE.0,
-            <(A, B, C, D, E) as Niche>::NICHE_VALUE.1,
-            <(A, B, C, D, E) as Niche>::NICHE_VALUE.2,
-            <(A, B, C, D, E) as Niche>::NICHE_VALUE.3,
-            <(A, B, C, D, E) as Niche>::NICHE_VALUE.4,
-            unsafe { core::mem::zeroed() },
-            unsafe { core::mem::zeroed() },
-            unsafe { core::mem::zeroed() },
-            unsafe { core::mem::zeroed() },
-            unsafe { core::mem::zeroed() },
-            unsafe { core::mem::zeroed() },
-        );
-    }
-}
-
-disjoint_impls::disjoint_impls! {
-    #[disjoint_impls(remote)]
-    trait Niche: ExternC {
-        const NICHE_VALUE: Self::CType;
-    }
-
-    impl<A, B, C, D, E, F, G, H, I, J, K, L> Niche for (A, B, C, D, E, F, G, H, I, J, K, L)
-    where
-        (A, B, C, D, E, F): Ir<Type: crate::niche::WithNiche>
-            + Niche<
-                CType = CTuple6<
-                    <A as ExternC>::CType,
-                    <B as ExternC>::CType,
-                    <C as ExternC>::CType,
-                    <D as ExternC>::CType,
-                    <E as ExternC>::CType,
-                    <F as ExternC>::CType,
-                >,
-            >,
-        (G, H, I, J, K, L): Ir<Type = crate::niche::WithoutNiche>,
-        A: ExternC,
-        B: ExternC,
-        C: ExternC,
-        D: ExternC,
-        E: ExternC,
-        F: ExternC,
-        G: ExternC,
-        H: ExternC,
-        I: ExternC,
-        J: ExternC,
-        K: ExternC,
-        L: ExternC,
-    {
-        const NICHE_VALUE: Self::CType = CTuple12(
-            <(A, B, C, D, E, F) as Niche>::NICHE_VALUE.0,
-            <(A, B, C, D, E, F) as Niche>::NICHE_VALUE.1,
-            <(A, B, C, D, E, F) as Niche>::NICHE_VALUE.2,
-            <(A, B, C, D, E, F) as Niche>::NICHE_VALUE.3,
-            <(A, B, C, D, E, F) as Niche>::NICHE_VALUE.4,
-            <(A, B, C, D, E, F) as Niche>::NICHE_VALUE.5,
-            unsafe { core::mem::zeroed() },
-            unsafe { core::mem::zeroed() },
-            unsafe { core::mem::zeroed() },
-            unsafe { core::mem::zeroed() },
-            unsafe { core::mem::zeroed() },
-            unsafe { core::mem::zeroed() },
-        );
-    }
-
-    impl<A, B, C, D, E, F, G, H, I, J, K, L> Niche for (A, B, C, D, E, F, G, H, I, J, K, L)
-    where
-        (A, B, C, D, E, F): Ir<Type = crate::niche::WithoutNiche>,
-        (G, H, I, J, K, L): Ir<Type: crate::niche::WithNiche>
-            + Niche<
-                CType = CTuple6<
-                    <G as ExternC>::CType,
-                    <H as ExternC>::CType,
-                    <I as ExternC>::CType,
-                    <J as ExternC>::CType,
-                    <K as ExternC>::CType,
-                    <L as ExternC>::CType,
-                >,
-            >,
-        A: ExternC,
-        B: ExternC,
-        C: ExternC,
-        D: ExternC,
-        E: ExternC,
-        F: ExternC,
-        G: ExternC,
-        H: ExternC,
-        I: ExternC,
-        J: ExternC,
-        K: ExternC,
-        L: ExternC,
-    {
-        const NICHE_VALUE: Self::CType = CTuple12(
-            unsafe { core::mem::zeroed() },
-            unsafe { core::mem::zeroed() },
-            unsafe { core::mem::zeroed() },
-            unsafe { core::mem::zeroed() },
-            unsafe { core::mem::zeroed() },
-            unsafe { core::mem::zeroed() },
-            <(G, H, I, J, K, L) as Niche>::NICHE_VALUE.0,
-            <(G, H, I, J, K, L) as Niche>::NICHE_VALUE.1,
-            <(G, H, I, J, K, L) as Niche>::NICHE_VALUE.2,
-            <(G, H, I, J, K, L) as Niche>::NICHE_VALUE.3,
-            <(G, H, I, J, K, L) as Niche>::NICHE_VALUE.4,
-            <(G, H, I, J, K, L) as Niche>::NICHE_VALUE.5,
-        );
-    }
-
-    impl<A, B, C, D, E, F, G, H, I, J, K, L> Niche for (A, B, C, D, E, F, G, H, I, J, K, L)
-    where
-        (A, B, C, D, E, F): Ir<Type: crate::niche::WithNiche>
-            + Niche<
-                CType = CTuple6<
-                    <A as ExternC>::CType,
-                    <B as ExternC>::CType,
-                    <C as ExternC>::CType,
-                    <D as ExternC>::CType,
-                    <E as ExternC>::CType,
-                    <F as ExternC>::CType,
-                >,
-            >,
-        (G, H, I, J, K, L): Ir<Type: crate::niche::WithNiche>,
-        A: ExternC,
-        B: ExternC,
-        C: ExternC,
-        D: ExternC,
-        E: ExternC,
-        F: ExternC,
-        G: ExternC,
-        H: ExternC,
-        I: ExternC,
-        J: ExternC,
-        K: ExternC,
-        L: ExternC,
-    {
-        const NICHE_VALUE: Self::CType = CTuple12(
-            <(A, B, C, D, E, F) as Niche>::NICHE_VALUE.0,
-            <(A, B, C, D, E, F) as Niche>::NICHE_VALUE.1,
-            <(A, B, C, D, E, F) as Niche>::NICHE_VALUE.2,
-            <(A, B, C, D, E, F) as Niche>::NICHE_VALUE.3,
-            <(A, B, C, D, E, F) as Niche>::NICHE_VALUE.4,
-            <(A, B, C, D, E, F) as Niche>::NICHE_VALUE.5,
-            unsafe { core::mem::zeroed() },
-            unsafe { core::mem::zeroed() },
-            unsafe { core::mem::zeroed() },
-            unsafe { core::mem::zeroed() },
-            unsafe { core::mem::zeroed() },
-            unsafe { core::mem::zeroed() },
-        );
-    }
-}
-
-disjoint_impls::disjoint_impls! {
-    #[disjoint_impls(remote)]
-    trait Ir {
-        type Type;
-    }
-
-    impl<A> Ir for (A,)
-    where
-        A: Ir<Type = crate::niche::WithoutNiche>,
-    {
-        type Type = crate::niche::WithoutNiche;
-    }
-    impl<A> Ir for (A,)
-    where
-        A: Ir<Type: crate::niche::WithNiche>,
-    {
-        type Type = crate::niche::WithCustomNiche;
-    }
-}
-
-disjoint_impls::disjoint_impls! {
-    #[disjoint_impls(remote)]
-    trait Ir {
+    pub trait Ir {
         type Type;
     }
 
     impl<A, B> Ir for (A, B)
     where
-        A: Ir<Type = crate::niche::WithoutNiche>,
-        B: Ir<Type = crate::niche::WithoutNiche>,
+        A: Ir<Type = WithoutNiche>,
+        B: Ir<Type = WithoutNiche>,
     {
-        type Type = crate::niche::WithoutNiche;
+        type Type = WithoutNiche;
     }
     impl<A, B> Ir for (A, B)
     where
-        A: Ir<Type: crate::niche::WithNiche>,
-        B: Ir<Type = crate::niche::WithoutNiche>,
+        A: Ir<Type: WithNiche>,
+        B: Ir<Type = WithoutNiche>,
     {
-        type Type = crate::niche::WithCustomNiche;
+        type Type = WithCustomNiche;
     }
     impl<A, B> Ir for (A, B)
     where
-        A: Ir<Type = crate::niche::WithoutNiche>,
-        B: Ir<Type: crate::niche::WithNiche>,
+        A: Ir<Type = WithoutNiche>,
+        B: Ir<Type: WithNiche>,
     {
-        type Type = crate::niche::WithCustomNiche;
+        type Type = WithCustomNiche;
     }
     impl<A, B> Ir for (A, B)
     where
-        A: Ir<Type: crate::niche::WithNiche>,
-        B: Ir<Type: crate::niche::WithNiche>,
+        A: Ir<Type: WithNiche>,
+        B: Ir<Type: WithNiche>,
     {
-        type Type = crate::niche::WithCustomNiche;
+        type Type = WithCustomNiche;
     }
 }
 
-disjoint_impls::disjoint_impls! {
-    #[disjoint_impls(remote)]
-    trait Ir {
-        type Type;
-    }
-
-    impl<A, B, C> Ir for (A, B, C)
-    where
-        A: Ir<Type = crate::niche::WithoutNiche>,
-        (B, C): Ir<Type = crate::niche::WithoutNiche>,
-    {
-        type Type = crate::niche::WithoutNiche;
-    }
-    impl<A, B, C> Ir for (A, B, C)
-    where
-        A: Ir<Type: crate::niche::WithNiche>,
-        (B, C): Ir<Type = crate::niche::WithoutNiche>,
-    {
-        type Type = crate::niche::WithCustomNiche;
-    }
-    impl<A, B, C> Ir for (A, B, C)
-    where
-        A: Ir<Type = crate::niche::WithoutNiche>,
-        (B, C): Ir<Type: crate::niche::WithNiche>,
-    {
-        type Type = crate::niche::WithCustomNiche;
-    }
-    impl<A, B, C> Ir for (A, B, C)
-    where
-        A: Ir<Type: crate::niche::WithNiche>,
-        (B, C): Ir<Type: crate::niche::WithNiche>,
-    {
-        type Type = crate::niche::WithCustomNiche;
-    }
+impl<A, B, C> Ir for (A, B, C)
+where
+    (A, (B, C)): Ir,
+{
+    type Type = <(A, (B, C)) as Ir>::Type;
 }
 
-disjoint_impls::disjoint_impls! {
-    #[disjoint_impls(remote)]
-    trait Ir {
-        type Type;
-    }
-
-    impl<A, B, C, D> Ir for (A, B, C, D)
-    where
-        (A, B): Ir<Type = crate::niche::WithoutNiche>,
-        (C, D): Ir<Type = crate::niche::WithoutNiche>,
-    {
-        type Type = crate::niche::WithoutNiche;
-    }
-    impl<A, B, C, D> Ir for (A, B, C, D)
-    where
-        (A, B): Ir<Type: crate::niche::WithNiche>,
-        (C, D): Ir<Type = crate::niche::WithoutNiche>,
-    {
-        type Type = crate::niche::WithCustomNiche;
-    }
-    impl<A, B, C, D> Ir for (A, B, C, D)
-    where
-        (A, B): Ir<Type = crate::niche::WithoutNiche>,
-        (C, D): Ir<Type: crate::niche::WithNiche>,
-    {
-        type Type = crate::niche::WithCustomNiche;
-    }
-    impl<A, B, C, D> Ir for (A, B, C, D)
-    where
-        (A, B): Ir<Type: crate::niche::WithNiche>,
-        (C, D): Ir<Type: crate::niche::WithNiche>,
-    {
-        type Type = crate::niche::WithCustomNiche;
-    }
+impl<A, B, C, D> Ir for (A, B, C, D)
+where
+    ((A, B), (C, D)): Ir,
+{
+    type Type = <((A, B), (C, D)) as Ir>::Type;
 }
 
-disjoint_impls::disjoint_impls! {
-    #[disjoint_impls(remote)]
-    trait Ir {
-        type Type;
-    }
-
-    impl<A, B, C, D, E> Ir for (A, B, C, D, E)
-    where
-        (A, B): Ir<Type = crate::niche::WithoutNiche>,
-        (C, D, E): Ir<Type = crate::niche::WithoutNiche>,
-    {
-        type Type = crate::niche::WithoutNiche;
-    }
-    impl<A, B, C, D, E> Ir for (A, B, C, D, E)
-    where
-        (A, B): Ir<Type: crate::niche::WithNiche>,
-        (C, D, E): Ir<Type = crate::niche::WithoutNiche>,
-    {
-        type Type = crate::niche::WithCustomNiche;
-    }
-    impl<A, B, C, D, E> Ir for (A, B, C, D, E)
-    where
-        (A, B): Ir<Type = crate::niche::WithoutNiche>,
-        (C, D, E): Ir<Type: crate::niche::WithNiche>,
-    {
-        type Type = crate::niche::WithCustomNiche;
-    }
-    impl<A, B, C, D, E> Ir for (A, B, C, D, E)
-    where
-        (A, B): Ir<Type: crate::niche::WithNiche>,
-        (C, D, E): Ir<Type: crate::niche::WithNiche>,
-    {
-        type Type = crate::niche::WithCustomNiche;
-    }
+impl<A, B, C, D, E> Ir for (A, B, C, D, E)
+where
+    ((A, B), (C, D, E)): Ir,
+{
+    type Type = <((A, B), (C, D, E)) as Ir>::Type;
 }
 
-disjoint_impls::disjoint_impls! {
-    #[disjoint_impls(remote)]
-    trait Ir {
-        type Type;
-    }
-
-    impl<A, B, C, D, E, F> Ir for (A, B, C, D, E, F)
-    where
-        (A, B, C): Ir<Type = crate::niche::WithoutNiche>,
-        (D, E, F): Ir<Type = crate::niche::WithoutNiche>,
-    {
-        type Type = crate::niche::WithoutNiche;
-    }
-    impl<A, B, C, D, E, F> Ir for (A, B, C, D, E, F)
-    where
-        (A, B, C): Ir<Type: crate::niche::WithNiche>,
-        (D, E, F): Ir<Type = crate::niche::WithoutNiche>,
-    {
-        type Type = crate::niche::WithCustomNiche;
-    }
-    impl<A, B, C, D, E, F> Ir for (A, B, C, D, E, F)
-    where
-        (A, B, C): Ir<Type = crate::niche::WithoutNiche>,
-        (D, E, F): Ir<Type: crate::niche::WithNiche>,
-    {
-        type Type = crate::niche::WithCustomNiche;
-    }
-    impl<A, B, C, D, E, F> Ir for (A, B, C, D, E, F)
-    where
-        (A, B, C): Ir<Type: crate::niche::WithNiche>,
-        (D, E, F): Ir<Type: crate::niche::WithNiche>,
-    {
-        type Type = crate::niche::WithCustomNiche;
-    }
+impl<A, B, C, D, E, F> Ir for (A, B, C, D, E, F)
+where
+    ((A, B, C), (D, E, F)): Ir,
+{
+    type Type = <((A, B, C), (D, E, F)) as Ir>::Type;
 }
 
-disjoint_impls::disjoint_impls! {
-    #[disjoint_impls(remote)]
-    trait Ir {
-        type Type;
-    }
-
-    impl<A, B, C, D, E, F, G> Ir for (A, B, C, D, E, F, G)
-    where
-        (A, B, C): Ir<Type = crate::niche::WithoutNiche>,
-        (D, E, F, G): Ir<Type = crate::niche::WithoutNiche>,
-    {
-        type Type = crate::niche::WithoutNiche;
-    }
-    impl<A, B, C, D, E, F, G> Ir for (A, B, C, D, E, F, G)
-    where
-        (A, B, C): Ir<Type: crate::niche::WithNiche>,
-        (D, E, F, G): Ir<Type = crate::niche::WithoutNiche>,
-    {
-        type Type = crate::niche::WithCustomNiche;
-    }
-    impl<A, B, C, D, E, F, G> Ir for (A, B, C, D, E, F, G)
-    where
-        (A, B, C): Ir<Type = crate::niche::WithoutNiche>,
-        (D, E, F, G): Ir<Type: crate::niche::WithNiche>,
-    {
-        type Type = crate::niche::WithCustomNiche;
-    }
-    impl<A, B, C, D, E, F, G> Ir for (A, B, C, D, E, F, G)
-    where
-        (A, B, C): Ir<Type: crate::niche::WithNiche>,
-        (D, E, F, G): Ir<Type: crate::niche::WithNiche>,
-    {
-        type Type = crate::niche::WithCustomNiche;
-    }
+impl<A, B, C, D, E, F, G> Ir for (A, B, C, D, E, F, G)
+where
+    ((A, B, C), (D, E, F, G)): Ir,
+{
+    type Type = <((A, B, C), (D, E, F, G)) as Ir>::Type;
 }
 
-disjoint_impls::disjoint_impls! {
-    #[disjoint_impls(remote)]
-    trait Ir {
-        type Type;
-    }
-
-    impl<A, B, C, D, E, F, G, H> Ir for (A, B, C, D, E, F, G, H)
-    where
-        (A, B, C, D): Ir<Type = crate::niche::WithoutNiche>,
-        (E, F, G, H): Ir<Type = crate::niche::WithoutNiche>,
-    {
-        type Type = crate::niche::WithoutNiche;
-    }
-    impl<A, B, C, D, E, F, G, H> Ir for (A, B, C, D, E, F, G, H)
-    where
-        (A, B, C, D): Ir<Type: crate::niche::WithNiche>,
-        (E, F, G, H): Ir<Type = crate::niche::WithoutNiche>,
-    {
-        type Type = crate::niche::WithCustomNiche;
-    }
-    impl<A, B, C, D, E, F, G, H> Ir for (A, B, C, D, E, F, G, H)
-    where
-        (A, B, C, D): Ir<Type = crate::niche::WithoutNiche>,
-        (E, F, G, H): Ir<Type: crate::niche::WithNiche>,
-    {
-        type Type = crate::niche::WithCustomNiche;
-    }
-    impl<A, B, C, D, E, F, G, H> Ir for (A, B, C, D, E, F, G, H)
-    where
-        (A, B, C, D): Ir<Type: crate::niche::WithNiche>,
-        (E, F, G, H): Ir<Type: crate::niche::WithNiche>,
-    {
-        type Type = crate::niche::WithCustomNiche;
-    }
+impl<A, B, C, D, E, F, G, H> Ir for (A, B, C, D, E, F, G, H)
+where
+    ((A, B, C, D), (E, F, G, H)): Ir,
+{
+    type Type = <((A, B, C, D), (E, F, G, H)) as Ir>::Type;
 }
 
-disjoint_impls::disjoint_impls! {
-    #[disjoint_impls(remote)]
-    trait Ir {
-        type Type;
-    }
-
-    impl<A, B, C, D, E, F, G, H, I> Ir for (A, B, C, D, E, F, G, H, I)
-    where
-        (A, B, C, D): Ir<Type = crate::niche::WithoutNiche>,
-        (E, F, G, H, I): Ir<Type = crate::niche::WithoutNiche>,
-    {
-        type Type = crate::niche::WithoutNiche;
-    }
-    impl<A, B, C, D, E, F, G, H, I> Ir for (A, B, C, D, E, F, G, H, I)
-    where
-        (A, B, C, D): Ir<Type: crate::niche::WithNiche>,
-        (E, F, G, H, I): Ir<Type = crate::niche::WithoutNiche>,
-    {
-        type Type = crate::niche::WithCustomNiche;
-    }
-    impl<A, B, C, D, E, F, G, H, I> Ir for (A, B, C, D, E, F, G, H, I)
-    where
-        (A, B, C, D): Ir<Type = crate::niche::WithoutNiche>,
-        (E, F, G, H, I): Ir<Type: crate::niche::WithNiche>,
-    {
-        type Type = crate::niche::WithCustomNiche;
-    }
-    impl<A, B, C, D, E, F, G, H, I> Ir for (A, B, C, D, E, F, G, H, I)
-    where
-        (A, B, C, D): Ir<Type: crate::niche::WithNiche>,
-        (E, F, G, H, I): Ir<Type: crate::niche::WithNiche>,
-    {
-        type Type = crate::niche::WithCustomNiche;
-    }
+impl<A, B, C, D, E, F, G, H, I> Ir for (A, B, C, D, E, F, G, H, I)
+where
+    ((A, B, C, D), (E, F, G, H, I)): Ir,
+{
+    type Type = <((A, B, C, D), (E, F, G, H, I)) as Ir>::Type;
 }
 
-disjoint_impls::disjoint_impls! {
-    #[disjoint_impls(remote)]
-    trait Ir {
-        type Type;
-    }
-
-    impl<A, B, C, D, E, F, G, H, I, J> Ir for (A, B, C, D, E, F, G, H, I, J)
-    where
-        (A, B, C, D, E): Ir<Type = crate::niche::WithoutNiche>,
-        (F, G, H, I, J): Ir<Type = crate::niche::WithoutNiche>,
-    {
-        type Type = crate::niche::WithoutNiche;
-    }
-    impl<A, B, C, D, E, F, G, H, I, J> Ir for (A, B, C, D, E, F, G, H, I, J)
-    where
-        (A, B, C, D, E): Ir<Type: crate::niche::WithNiche>,
-        (F, G, H, I, J): Ir<Type = crate::niche::WithoutNiche>,
-    {
-        type Type = crate::niche::WithCustomNiche;
-    }
-    impl<A, B, C, D, E, F, G, H, I, J> Ir for (A, B, C, D, E, F, G, H, I, J)
-    where
-        (A, B, C, D, E): Ir<Type = crate::niche::WithoutNiche>,
-        (F, G, H, I, J): Ir<Type: crate::niche::WithNiche>,
-    {
-        type Type = crate::niche::WithCustomNiche;
-    }
-    impl<A, B, C, D, E, F, G, H, I, J> Ir for (A, B, C, D, E, F, G, H, I, J)
-    where
-        (A, B, C, D, E): Ir<Type: crate::niche::WithNiche>,
-        (F, G, H, I, J): Ir<Type: crate::niche::WithNiche>,
-    {
-        type Type = crate::niche::WithCustomNiche;
-    }
+impl<A, B, C, D, E, F, G, H, I, J> Ir for (A, B, C, D, E, F, G, H, I, J)
+where
+    ((A, B, C, D, E), (F, G, H, I, J)): Ir,
+{
+    type Type = <((A, B, C, D, E), (F, G, H, I, J)) as Ir>::Type;
 }
 
-disjoint_impls::disjoint_impls! {
-    #[disjoint_impls(remote)]
-    trait Ir {
-        type Type;
-    }
-
-    impl<A, B, C, D, E, F, G, H, I, J, K> Ir for (A, B, C, D, E, F, G, H, I, J, K)
-    where
-        (A, B, C, D, E): Ir<Type = crate::niche::WithoutNiche>,
-        (F, G, H, I, J, K): Ir<Type = crate::niche::WithoutNiche>,
-    {
-        type Type = crate::niche::WithoutNiche;
-    }
-    impl<A, B, C, D, E, F, G, H, I, J, K> Ir for (A, B, C, D, E, F, G, H, I, J, K)
-    where
-        (A, B, C, D, E): Ir<Type: crate::niche::WithNiche>,
-        (F, G, H, I, J, K): Ir<Type = crate::niche::WithoutNiche>,
-    {
-        type Type = crate::niche::WithCustomNiche;
-    }
-    impl<A, B, C, D, E, F, G, H, I, J, K> Ir for (A, B, C, D, E, F, G, H, I, J, K)
-    where
-        (A, B, C, D, E): Ir<Type = crate::niche::WithoutNiche>,
-        (F, G, H, I, J, K): Ir<Type: crate::niche::WithNiche>,
-    {
-        type Type = crate::niche::WithCustomNiche;
-    }
-    impl<A, B, C, D, E, F, G, H, I, J, K> Ir for (A, B, C, D, E, F, G, H, I, J, K)
-    where
-        (A, B, C, D, E): Ir<Type: crate::niche::WithNiche>,
-        (F, G, H, I, J, K): Ir<Type: crate::niche::WithNiche>,
-    {
-        type Type = crate::niche::WithCustomNiche;
-    }
+impl<A, B, C, D, E, F, G, H, I, J, K> Ir for (A, B, C, D, E, F, G, H, I, J, K)
+where
+    ((A, B, C, D, E), (F, G, H, I, J, K)): Ir,
+{
+    type Type = <((A, B, C, D, E), (F, G, H, I, J, K)) as Ir>::Type;
 }
 
-disjoint_impls::disjoint_impls! {
-    #[disjoint_impls(remote)]
-    trait Ir {
-        type Type;
-    }
-
-    impl<A, B, C, D, E, F, G, H, I, J, K, L> Ir for (A, B, C, D, E, F, G, H, I, J, K, L)
-    where
-        (A, B, C, D, E, F): Ir<Type = crate::niche::WithoutNiche>,
-        (G, H, I, J, K, L): Ir<Type = crate::niche::WithoutNiche>,
-    {
-        type Type = crate::niche::WithoutNiche;
-    }
-    impl<A, B, C, D, E, F, G, H, I, J, K, L> Ir for (A, B, C, D, E, F, G, H, I, J, K, L)
-    where
-        (A, B, C, D, E, F): Ir<Type: crate::niche::WithNiche>,
-        (G, H, I, J, K, L): Ir<Type = crate::niche::WithoutNiche>,
-    {
-        type Type = crate::niche::WithCustomNiche;
-    }
-    impl<A, B, C, D, E, F, G, H, I, J, K, L> Ir for (A, B, C, D, E, F, G, H, I, J, K, L)
-    where
-        (A, B, C, D, E, F): Ir<Type = crate::niche::WithoutNiche>,
-        (G, H, I, J, K, L): Ir<Type: crate::niche::WithNiche>,
-    {
-        type Type = crate::niche::WithCustomNiche;
-    }
-    impl<A, B, C, D, E, F, G, H, I, J, K, L> Ir for (A, B, C, D, E, F, G, H, I, J, K, L)
-    where
-        (A, B, C, D, E, F): Ir<Type: crate::niche::WithNiche>,
-        (G, H, I, J, K, L): Ir<Type: crate::niche::WithNiche>,
-    {
-        type Type = crate::niche::WithCustomNiche;
-    }
+impl<A, B, C, D, E, F, G, H, I, J, K, L> Ir for (A, B, C, D, E, F, G, H, I, J, K, L)
+where
+    ((A, B, C, D, E, F), (G, H, I, J, K, L)): Ir,
+{
+    type Type = <((A, B, C, D, E, F), (G, H, I, J, K, L)) as Ir>::Type;
 }
-
-#[cfg(test)]
-mod tests {}

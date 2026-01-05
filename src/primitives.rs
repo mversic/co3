@@ -168,8 +168,7 @@ macro_rules! fieldless_enum_derive {
 /// Type must be a robust #[repr(C)]
 macro_rules! primitive_derive {
     ( $($primitive:ty),* $(,)? ) => { $(
-        unsafe impl crate::ReprC for $primitive {}
-        crate::mineral! { impl Robust for $primitive {} } )*
+        crate::mineral! { unsafe impl Robust for $primitive {} } )*
     };
 }
 

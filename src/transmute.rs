@@ -157,6 +157,8 @@ disjoint_impls! {
     ///
     /// - `Self` and `Self::CType` must be mutually transmutable (this includes [`Drop`] semantics)
     /// - `Self::is_valid` must not return false positives, i.e. return `true` for trap representations
+    // FIXME: Rename to something more sensible, ReprCTransmute, ExternCTransmute?
+    // or integrate it with ExternC?
     pub unsafe trait FlatTransmute: ExternC {
         /// Called when transmuting [`Self::CType`] back into [`Self`] to check for trap representations.
         /// This function must never return false positives, i.e. return `true` for a trap representation.
@@ -328,4 +330,23 @@ fn assert_size_and_allignment_match<R: CheckedTransmute>() {
         debug_assert!(core::mem::size_of::<R>() == core::mem::size_of::<R::Target>());
         debug_assert!(core::mem::align_of::<R>() == core::mem::align_of::<R::Target>());
     };
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    use alloc::string::String;
+    use static_assertions::assert_impl_all;
+
+    #[test]
+    fn impls_flat_transmute() {
+        assert_impl_all!(u8: Ir<Type = Robust>, FlatTransmute<CType = u8>);
+        assert_impl_all!(&u8: Ir<Type = Transparent>, CheckedTransmute<Target = *const u8>, FlatTransmute<CType = *const u8>);
+        assert_impl_all!(&mut u8: Ir<Type = Transparent>, CheckedTransmute<Target = *mut u8>, FlatTransmute<CType = *mut u8>);
+        // FIXME:
+        //assert_impl_all!(Box<u8>: Ir<Type = Transparent>, FlatTransmute<CType = *mut u8>);
+        assert_impl_all!(String: Ir<Type = Transparent>, CheckedTransmute<Target = Vec<u8>>);
+        assert_impl_all!(Vec<u8>: Ir<Type = Vec<Robust>>, ExternC<CType = CSliceMut<u8>>);
+    }
 }

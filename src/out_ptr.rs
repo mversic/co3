@@ -745,7 +745,7 @@ disjoint_impls! {
     }
     #[cfg(feature = "owned_types")]
     #[cfg(feature = "owned_as_ref")]
-    impl<'d, R: NonLocal + 'd, S: Cloned + 'd> OutPtrRead for Box<[R]>
+    impl<'d, R: NonLocal + 'd, S: Cloned> OutPtrRead for Box<[R]>
     where
         Self: Ir<Type = Box<[S]>> + Decode<'d, CType = CSliceMut<<R as ExternC>::CType>>,
     {

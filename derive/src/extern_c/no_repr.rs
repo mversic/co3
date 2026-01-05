@@ -4,17 +4,18 @@ use darling::{
     ast::{Fields, Style},
     util::SpannedValue,
 };
-use manyhow::emit;
 use proc_macro2::{Span, TokenStream};
 use quote::quote;
 use syn::{Ident, parse_quote};
 
 use crate::{
     attr_parse::repr::ReprPrimitive,
-    emitter::Emitter,
     extern_c::{
-        FfiTypeField, FfiTypeVariant,
-        repr_c::{gen_repr_c_data_enum, gen_repr_c_struct},
+        FfiTypeField, FfiTypeVariant, is_type_parameterized,
+        niche::{gen_enum_niche_ir, gen_struct_niche_ir},
+        repr_c::{
+            gen_data_enum, gen_data_enum_variant_name, gen_extern_c_bounds, gen_repr_c_struct,
+        },
     },
 };
 
@@ -37,16 +38,18 @@ pub(super) fn derive_opaque_item(name: &Ident, generics: &syn::Generics) -> Toke
 }
 
 pub(super) fn derive_no_repr_struct(
-    emitter: &mut Emitter,
     name: &Ident,
     generics: &syn::Generics,
     fields: &Fields<FfiTypeField>,
     local: bool,
 ) -> TokenStream {
-    let (repr_c_struct_name, repr_c_struct) = gen_repr_c_struct(emitter, name, generics, fields);
-
-    let params = &generics.params;
     let (impl_generics, ty_generics, where_clause) = generics.split_for_impl();
+    let (repr_c_struct_name, repr_c_struct) = gen_repr_c_struct(name, generics, fields);
+    let field_types = fields.iter().map(|f| &f.ty).collect::<Vec<_>>();
+
+    let predicates = where_clause
+        .as_ref()
+        .map(|where_clause| &where_clause.predicates);
 
     let field_rust_stores = fields
         .iter()
@@ -64,9 +67,9 @@ pub(super) fn derive_no_repr_struct(
         })
         .collect::<Vec<_>>();
 
-    let num_fields = fields.len();
-    let (rust_store, ffi_store, rust_store_conversion, ffi_store_conversion) =
-        gen_store_types(num_fields, field_rust_stores, field_ffi_stores);
+    let basic_impls = gen_ir_impl(name, &repr_c_struct_name, &field_types, generics);
+    let (rust_store, ffi_store, store_init) =
+        gen_store_types(fields.len(), field_rust_stores, field_ffi_stores);
 
     let encode_impl = match &fields.style {
         Style::Struct => {
@@ -82,10 +85,10 @@ pub(super) fn derive_no_repr_struct(
             }
         }
         Style::Tuple => {
-            let field_indices = (0..num_fields).map(syn::Index::from);
+            let field_indices = (0..fields.len()).map(syn::Index::from);
 
-            let field_vars: Vec<_> = (0..num_fields)
-                .map(|i| Ident::new(&format!("field_{}", i), Span::call_site()))
+            let field_vars: Vec<_> = (0..fields.len())
+                .map(|i| Ident::new(&format!("_{}", i), Span::call_site()))
                 .collect();
 
             quote! {
@@ -96,7 +99,7 @@ pub(super) fn derive_no_repr_struct(
                 )
             }
         }
-        Style::Unit => quote! { #repr_c_struct_name },
+        Style::Unit => unreachable!("ZSTs are not FFI safe"),
     };
 
     let decode_impl = match &fields.style {
@@ -106,81 +109,54 @@ pub(super) fn derive_no_repr_struct(
 
             quote! {
                 Ok(Self {
-                    #(#field_names: co3::Decode::decode(source.#field_names, &mut store.#field_indices)?),*
+                    #(#field_names: unsafe {co3::Decode::decode(source.#field_names, &mut store.#field_indices)?}),*
                 })
             }
         }
         Style::Tuple => {
-            let field_indices = (0..num_fields).map(syn::Index::from);
+            let field_indices = (0..fields.len()).map(syn::Index::from);
 
             quote! {
-                Ok(Self(
+                Ok(Self(unsafe {
                     #(co3::Decode::decode(source.#field_indices, &mut store.#field_indices)?),*
-                ))
+                }))
             }
         }
-        Style::Unit => quote! { Ok(Self) },
+        Style::Unit => unreachable!("ZSTs are not FFI safe"),
     };
 
+    let mut params = generics.params.clone();
+    params.iter_mut().for_each(|param| {
+        if let syn::GenericParam::Type(ty) = param {
+            ty.bounds.push(parse_quote! {'_dšč });
+        }
+    });
+    let encode_bounds = gen_encode_bounds(&field_types, generics);
+    let decode_bounds = gen_decode_bounds(&field_types, generics);
+    let niche_ir = gen_struct_niche_ir(name, generics, fields);
     let non_locality =
-        local.then(|| gen_out_ptr_impls(name, generics, fields.iter().map(|f| f.ty.clone())));
-
-    let niche_ir_without = {
-        let mut without_niche_where_clause = where_clause.unwrap().clone();
-
-        for ty in fields.iter().map(|f| &f.ty) {
-            without_niche_where_clause
-                .predicates
-                .push(parse_quote! { #ty: co3::niche::Ir<Type = co3::niche::WithoutNiche> });
-        }
-
-        quote! {
-            impl #impl_generics co3::niche::Ir for #name #ty_generics #without_niche_where_clause {
-                type Type = co3::niche::WithoutNiche;
-            }
-        }
-    };
-
-    let niche_ir_with = quote! {
-        impl #impl_generics co3::niche::Ir for #name #ty_generics #where_clause {
-            type Type = co3::niche::WithCustomNiche;
-        }
-
-        impl #impl_generics co3::niche::Niche for #name #ty_generics #where_clause {
-            // SAFETY: `ReprC` type is robust and can't have trap representations
-            const NICHE_VALUE: #repr_c_struct_name = unsafe { core::mem::zeroed() };
-        }
-    };
-
-    let basic_impls = gen_basic_trait_impls(name, generics);
+        (!local).then(|| gen_out_ptr_impls(name, generics, fields.iter().map(|f| f.ty.clone())));
 
     quote! {
         #repr_c_struct
 
         #basic_impls
+        #niche_ir
 
-        #niche_ir_without
-        //#niche_ir_with
-
-        impl #impl_generics co3::ExternC for #name #ty_generics #where_clause {
-            type CType = #repr_c_struct_name #ty_generics;
-        }
-        impl #impl_generics co3::Encode for #name #ty_generics #where_clause {
+        impl #impl_generics co3::Encode for #name #ty_generics where #encode_bounds #predicates {
             type Store = #rust_store;
 
             fn encode<'_išč>(self, store: &'_išč mut Self::Store) -> <Self as co3::ExternC>::CType where Self: '_išč {
-                #rust_store_conversion
-
+                #store_init
                 #encode_impl
             }
         }
 
-        impl<'_dšč, #params> co3::Decode<'_dšč> for #name #ty_generics #where_clause {
+        impl<'_dšč, #params> co3::Decode<'_dšč> for #name #ty_generics where #decode_bounds #predicates {
             type Store = #ffi_store;
 
             unsafe fn decode<'_išč: '_dšč>(source: <Self as co3::ExternC>::CType, store: &'_išč mut Self::Store) -> co3::Result<Self> {
-                #ffi_store_conversion
-
+                #store_init
                 #decode_impl
             }
         }
@@ -189,48 +165,29 @@ pub(super) fn derive_no_repr_struct(
     }
 }
 
-pub(super) fn derive_no_repr_enum(
-    emitter: &mut Emitter,
+pub(super) fn derive_no_repr_data_enum(
     enum_name: &Ident,
     generics: &syn::Generics,
     variants: &[SpannedValue<FfiTypeVariant>],
     local: bool,
 ) -> TokenStream {
-    let len = TokenStream::from_str(&format!("{}", variants.len())).expect("Valid");
+    let inferred_repr = infer_repr(variants.len());
 
-    const U8_MAX: usize = u8::MAX as usize;
-    const U16_MAX: usize = u16::MAX as usize;
-    const U32_MAX: usize = u32::MAX as usize;
-    const U64_MAX: usize = u64::MAX as usize;
+    let (repr_c_enum_name, repr_c_enum) =
+        gen_data_enum(enum_name, generics, inferred_repr, variants);
 
-    #[expect(clippy::match_overlapping_arm)]
-    let inferred_repr = match variants.len() {
-        0..=U8_MAX => ReprPrimitive::U8,
-        0..=U16_MAX => ReprPrimitive::U16,
-        0..=U32_MAX => ReprPrimitive::U32,
-        0..=U64_MAX => ReprPrimitive::U64,
-        _ => {
-            emit!(emitter, enum_name, "Enum too large");
-            return quote! {};
-        }
-    };
-
-    let (repr_c_enum_name, repr_c_enum) = if variants.iter().any(|v| !v.fields.fields.is_empty()) {
-        gen_repr_c_data_enum(emitter, enum_name, generics, inferred_repr, variants)
-    } else {
-        // For fieldless enums, just use the integer type directly
-        let type_name = syn::Ident::new(&inferred_repr.to_string(), proc_macro2::Span::call_site());
-        (type_name, quote! {})
-    };
-
-    let params = &generics.params;
     let (impl_generics, ty_generics, where_clause) = generics.split_for_impl();
+    let mut params = generics.params.clone();
+    params.iter_mut().for_each(|param| {
+        if let syn::GenericParam::Type(ty) = param {
+            ty.bounds.push(parse_quote! {'_dšč });
+        }
+    });
 
     let variant_rust_stores = variants
         .iter()
         .map(|variant| {
             variant_mapper(
-                emitter,
                 variant,
                 || quote! { () },
                 |field| {
@@ -245,7 +202,6 @@ pub(super) fn derive_no_repr_enum(
         .iter()
         .map(|variant| {
             variant_mapper(
-                emitter,
                 variant,
                 || quote! { () },
                 |field| {
@@ -256,182 +212,98 @@ pub(super) fn derive_no_repr_enum(
         })
         .collect::<Vec<_>>();
 
-    let is_fieldless = variants.iter().all(|v| v.fields.fields.is_empty());
-
-    let variants_into_ffi = variants
-        .iter()
-        .enumerate()
-        .map(|(i, variant)| {
-            let idx = TokenStream::from_str(&format!("{i}")).expect("Valid");
-            let variant_name = &variant.ident;
-
-            if is_fieldless {
-                quote! { Self::#variant_name => #idx }
-            } else {
-                let payload_name = gen_repr_c_enum_payload_name(enum_name);
-
-                variant_mapper(
-                    emitter,
-                    variant,
-                    || {
-                        quote! { Self::#variant_name => #repr_c_enum_name {
-                            tag: #idx, payload: #payload_name {#variant_name: ()}
-                        }}
-                    },
-                    |_| {
-                        quote! {
-                            Self::#variant_name(payload) => {
-                                let payload = #payload_name {
-                                    #variant_name: co3::Encode::encode(payload, &mut store.#idx)
-                                };
-
-                                #repr_c_enum_name { tag: #idx, payload }
-                            }
-                        }
-                    },
-                )
-            }
-        })
-        .collect::<Vec<_>>();
-
-    let variants_decode = variants
-        .iter()
-        .enumerate()
-        .map(|(i, variant)| {
-            let idx = TokenStream::from_str(&format!("{i}")).expect("Valid");
-            let variant_name = &variant.ident;
-
-            if is_fieldless {
-                quote! { #idx => Ok(Self::#variant_name) }
-            } else {
-                variant_mapper(
-                    emitter,
-                    variant,
-                    || quote! { #idx => Ok(Self::#variant_name) },
-                    |_| {
-                        quote! {
-                            #idx => {
-                                let payload = source.payload.#variant_name;
-                                co3::Decode::decode(payload, &mut store.#idx).map(Self::#variant_name)
-                            }
-                        }
-                    },
-                )
-            }
-        })
-        .collect::<Vec<_>>();
-
-    let (rust_store, ffi_store, rust_store_conversion, ffi_store_conversion) =
+    let mut field_types = Vec::new();
+    for variant in variants {
+        for field in variant.fields.iter() {
+            field_types.push(&field.ty);
+        }
+    }
+    let basic_impls = gen_ir_impl(enum_name, &repr_c_enum_name, &field_types, generics);
+    let (rust_store, ffi_store, store_init) =
         gen_store_types(variants.len(), variant_rust_stores, variant_ffi_stores);
 
-    let non_locality = local.then(|| {
+    let variants_into_ffi = variants.iter().enumerate().map(|(i, variant)| {
+        let idx = TokenStream::from_str(&format!("{i}")).expect("Valid");
+        let variant_name = &variant.ident;
+
+        let variant_struct_name = gen_data_enum_variant_name(enum_name, variant_name);
+
+        variant_mapper(
+            variant,
+            || {
+                quote! { Self::#variant_name => #repr_c_enum_name {
+                    #variant_name: #variant_struct_name { tag: #idx }
+                }}
+            },
+            |_| {
+                quote! {
+                    Self::#variant_name(payload) => {
+                        #repr_c_enum_name {
+                            #variant_name: #variant_struct_name {
+                                tag: #idx,
+                                value: co3::Encode::encode(payload, &mut store.#idx)
+                            }
+                        }
+                    }
+                }
+            },
+        )
+    });
+
+    let variants_decode = variants.iter().enumerate().map(|(i, variant)| {
+        let idx = TokenStream::from_str(&format!("{i}")).expect("Valid");
+        let variant_name = &variant.ident;
+
+        variant_mapper(
+            variant,
+            || quote! { #idx => Ok(Self::#variant_name) },
+            |_| {
+                quote! {
+                    #idx => {
+                        let value = unsafe { source.#variant_name.value };
+                        unsafe {co3::Decode::decode(value, &mut store.#idx).map(Self::#variant_name)}
+                    }
+                }
+            },
+        )
+    });
+
+    let non_locality = (!local).then(|| {
         gen_out_ptr_impls(
             enum_name,
             generics,
             variants.iter().filter_map(|variant| {
-                variant_mapper(emitter, variant, || None, |field| Some(field.ty.clone()))
+                variant_mapper(variant, || None, |field| Some(field.ty.clone()))
             }),
         )
     });
 
-    let has_discriminant_niche = variants.len() < (u32::MAX as usize);
-    let (niche_ir_without, niche_ir_with) = if has_discriminant_niche {
-        let niche_value = if is_fieldless {
-            quote! { #len }
-        } else {
-            quote! {
-                #repr_c_enum_name {
-                    tag: #len,
-                    // SAFETY: `ReprC` type is robust
-                    payload: unsafe { core::mem::zeroed() }
-                }
-            }
-        };
+    let niche_ir = gen_enum_niche_ir(inferred_repr, enum_name, generics, variants);
 
-        (
-            quote! {},
-            quote! {
-                impl #impl_generics co3::niche::Ir for #enum_name #ty_generics #where_clause {
-                    type Type = co3::niche::WithCustomNiche;
-                }
-
-                impl #impl_generics co3::niche::Niche for #enum_name #ty_generics #where_clause {
-                    const NICHE_VALUE: #repr_c_enum_name = #niche_value;
-                }
-            },
-        )
-    } else {
-        let mut without_niche_where_clause = where_clause.unwrap().clone();
-
-        let mut variant_field_types = Vec::new();
-        for variant in variants {
-            if let Some(ty) =
-                variant_mapper(emitter, variant, || None, |field| Some(field.ty.clone()))
-            {
-                variant_field_types.push(ty);
-            }
-        }
-
-        for ty in &variant_field_types {
-            without_niche_where_clause
-                .predicates
-                .push(parse_quote! { #ty: co3::niche::Ir<Type = co3::niche::WithoutNiche> });
-        }
-
-        let niche_value = if is_fieldless {
-            quote! { #len }
-        } else {
-            quote! {
-                #repr_c_enum_name {
-                    tag: #len,
-                    // SAFETY: `ReprC` type is robust
-                    payload: unsafe { core::mem::zeroed() }
-                }
-            }
-        };
-
-        (
-            quote! {
-                impl #impl_generics co3::niche::Ir for #enum_name #ty_generics #without_niche_where_clause {
-                    type Type = co3::niche::WithoutNiche;
-                }
-            },
-            quote! {
-                impl #impl_generics co3::niche::Ir for #enum_name #ty_generics #where_clause {
-                    type Type = co3::niche::WithCustomNiche;
-                }
-
-                impl #impl_generics co3::niche::Niche for #enum_name #ty_generics #where_clause {
-                    const NICHE_VALUE: #repr_c_enum_name = #niche_value;
-                }
-            },
-        )
+    let decode_match_expr = quote! {
+        // SAFETY: All variant structs have tag as first field at offset 0
+        // We can safely read it by casting the union pointer to the repr type
+        unsafe { *core::ptr::from_ref(&source).cast::<#inferred_repr>() }
     };
 
-    let basic_impls = gen_basic_trait_impls(enum_name, generics);
+    let predicates = where_clause
+        .as_ref()
+        .map(|where_clause| &where_clause.predicates);
 
-    let decode_match_expr = if is_fieldless {
-        quote! { source }
-    } else {
-        quote! { source.tag }
-    };
+    let encode_bounds = gen_encode_bounds(&field_types, generics);
+    let decode_bounds = gen_decode_bounds(&field_types, generics);
 
     quote! {
         #repr_c_enum
 
         #basic_impls
+        #niche_ir
 
-        #niche_ir_without
-        //#niche_ir_with
-
-        impl #impl_generics co3::ExternC for #enum_name #ty_generics #where_clause {
-            type CType = #repr_c_enum_name #ty_generics;
-        }
-        impl #impl_generics co3::Encode for #enum_name #ty_generics #where_clause {
+        impl #impl_generics co3::Encode for #enum_name #ty_generics where #encode_bounds #predicates {
             type Store = #rust_store;
 
             fn encode<'_išč>(self, store: &'_išč mut Self::Store) -> <Self as co3::ExternC>::CType where Self: '_išč {
-                #ffi_store_conversion
+                #store_init
 
                 match self {
                     #(#variants_into_ffi,)*
@@ -439,11 +311,11 @@ pub(super) fn derive_no_repr_enum(
             }
         }
 
-        impl<'_dšč, #params> co3::Decode<'_dšč> for #enum_name #ty_generics #where_clause {
+        impl<'_dšč, #params> co3::Decode<'_dšč> for #enum_name #ty_generics where #decode_bounds #predicates {
             type Store = #ffi_store;
 
             unsafe fn decode<'_išč: '_dšč>(source: <Self as co3::ExternC>::CType, store: &'_išč mut Self::Store) -> co3::Result<Self> {
-                #rust_store_conversion
+                #store_init
 
                 match #decode_match_expr {
                     #(#variants_decode,)*
@@ -452,14 +324,70 @@ pub(super) fn derive_no_repr_enum(
             }
         }
 
-        // TODO: This type can utilize niche optimization in some cases. For instance:
-        // enum Kita {
-        //     A(bool),
-        //     B,
-        //     C,
-        // }
-        // assert!(core::mem::size_of::<#enum_name #ty_generics>() == 1);
+        #non_locality
+    }
+}
 
+pub(super) fn derive_no_repr_fieldless_enum(
+    enum_name: &Ident,
+    variants: &[SpannedValue<FfiTypeVariant>],
+) -> TokenStream {
+    let inferred_repr = infer_repr(variants.len());
+
+    let basic_impls = gen_ir_impl(
+        enum_name,
+        &parse_quote!( #inferred_repr ),
+        &[],
+        &syn::Generics::default(),
+    );
+
+    let variants_decode = variants.iter().enumerate().map(|(i, variant)| {
+        let idx = TokenStream::from_str(&format!("{i}")).expect("Valid");
+        let variant_name = &variant.ident;
+        quote! { #idx => Ok(Self::#variant_name) }
+    });
+
+    let niche_ir = gen_enum_niche_ir(
+        inferred_repr,
+        enum_name,
+        &syn::Generics::default(),
+        variants,
+    );
+
+    let mut generics = syn::Generics::default();
+    generics.make_where_clause();
+
+    let non_locality = gen_out_ptr_impls(
+        enum_name,
+        &generics,
+        variants
+            .iter()
+            .filter_map(|variant| variant_mapper(variant, || None, |field| Some(field.ty.clone()))),
+    );
+
+    quote! {
+        #basic_impls
+
+        impl co3::Encode for #enum_name {
+            type Store = ();
+
+            fn encode<'_išč>(self, _store: &'_išč mut Self::Store) -> <Self as co3::ExternC>::CType where Self: '_išč {
+                self as #inferred_repr
+            }
+        }
+
+        impl<'_dšč> co3::Decode<'_dšč> for #enum_name {
+            type Store = ();
+
+            unsafe fn decode<'_išč: '_dšč>(source: <Self as co3::ExternC>::CType, _store: &'_išč mut Self::Store) -> co3::Result<Self> {
+                match source {
+                    #(#variants_decode,)*
+                    _ => Err(co3::FfiReturn::TrapRepresentation)
+                }
+            }
+        }
+
+        #niche_ir
         #non_locality
     }
 }
@@ -467,32 +395,34 @@ pub(super) fn derive_no_repr_enum(
 fn gen_out_ptr_impls(
     type_name: &Ident,
     generics: &syn::Generics,
-    types: impl Iterator<Item = syn::Type>,
+    types: impl IntoIterator<Item = syn::Type>,
 ) -> TokenStream {
     let (impl_generics, ty_generics, where_clause) = generics.split_for_impl();
+    let predicates = where_clause
+        .as_ref()
+        .map(|where_clause| &where_clause.predicates);
 
-    let mut non_local_where_clause = where_clause.unwrap().clone();
-
-    for ty in types {
-        non_local_where_clause
-            .predicates
-            .push(parse_quote! {for<'_dummy> #ty: co3::out_ptr::NonLocal});
-    }
+    let for_dummy = if types
+        .into_iter()
+        .all(|ty| !is_type_parameterized(&ty, generics))
+    {
+        Some(quote! { for<'_dummy> })
+    } else {
+        None
+    };
 
     quote! {
-        unsafe impl #impl_generics co3::out_ptr::NonLocal for #type_name #ty_generics #non_local_where_clause {}
-
-        impl #impl_generics co3::out_ptr::OutPtr for #type_name #ty_generics #non_local_where_clause {
+        impl #impl_generics co3::out_ptr::OutPtr for #type_name #ty_generics where #for_dummy Self: co3::out_ptr::NonLocal, #predicates {
             type OutPtr = Self::CType;
         }
-        impl #impl_generics co3::out_ptr::OutPtrWrite for #type_name #ty_generics #non_local_where_clause {
+        impl #impl_generics co3::out_ptr::OutPtrWrite for #type_name #ty_generics where #for_dummy Self: co3::out_ptr::NonLocal, #predicates {
             unsafe fn write_out(self, out_ptr: *mut Self::OutPtr) {
                 let mut store = Default::default();
                 let encoded = co3::Encode::encode(self, &mut store);
                 unsafe { out_ptr.write(encoded); }
             }
         }
-        impl #impl_generics co3::out_ptr::OutPtrRead for #type_name #ty_generics #non_local_where_clause {
+        impl #impl_generics co3::out_ptr::OutPtrRead for #type_name #ty_generics where #for_dummy Self: co3::out_ptr::NonLocal, #predicates {
             unsafe fn try_read_out(out_ptr: Self::OutPtr) -> co3::Result<Self> {
                 let mut store = Default::default();
 
@@ -506,14 +436,44 @@ fn gen_out_ptr_impls(
     }
 }
 
-pub fn gen_basic_trait_impls(type_name: &Ident, generics: &syn::Generics) -> TokenStream {
+fn infer_repr(num_variants: usize) -> ReprPrimitive {
+    const U8_MAX: usize = u8::MAX as usize;
+    const U16_MAX: usize = u16::MAX as usize;
+    const U32_MAX: usize = u32::MAX as usize;
+    const U64_MAX: usize = u64::MAX as usize;
+
+    #[expect(clippy::match_overlapping_arm)]
+    match num_variants {
+        0..=U8_MAX => ReprPrimitive::U8,
+        0..=U16_MAX => ReprPrimitive::U16,
+        0..=U32_MAX => ReprPrimitive::U32,
+        0..=U64_MAX => ReprPrimitive::U64,
+        _ => unreachable!(),
+    }
+}
+
+pub fn gen_ir_impl(
+    type_name: &Ident,
+    repr_c_name: &Ident,
+    fields: &[&syn::Type],
+    generics: &syn::Generics,
+) -> TokenStream {
     let (impl_generics, ty_generics, where_clause) = generics.split_for_impl();
+
+    let extern_c_bounds = gen_extern_c_bounds(fields, generics);
+    let predicates = where_clause
+        .as_ref()
+        .map(|where_clause| &where_clause.predicates);
 
     quote! {
         impl #impl_generics co3::ir::Cloned for #type_name #ty_generics #where_clause {}
 
-        impl #impl_generics co3::ir::Ir for #type_name #ty_generics #where_clause {
+        impl #impl_generics co3::ir::Ir for #type_name #ty_generics where #extern_c_bounds #predicates {
             type Type = Self;
+        }
+
+        impl #impl_generics co3::ExternC for #type_name #ty_generics where #extern_c_bounds #predicates {
+            type CType = #repr_c_name #ty_generics;
         }
     }
 }
@@ -522,12 +482,11 @@ pub fn gen_store_types(
     count: usize,
     rust_stores: Vec<TokenStream>,
     ffi_stores: Vec<TokenStream>,
-) -> (TokenStream, TokenStream, TokenStream, TokenStream) {
+) -> (TokenStream, TokenStream, TokenStream) {
     if count > 12 {
         (
             quote! { Option<(#( #rust_stores, )*)> },
             quote! { Option<(#( #ffi_stores, )*)> },
-            quote! { let store = store.insert(Default::default()); },
             quote! { let store = store.insert(Default::default()); },
         )
     } else {
@@ -535,42 +494,34 @@ pub fn gen_store_types(
             quote! { (#( #rust_stores, )*) },
             quote! { (#( #ffi_stores, )*) },
             quote! {},
-            quote! {},
         )
     }
 }
 
 pub(super) fn variant_mapper<T: Sized, F0: FnOnce() -> T, F1: FnOnce(&FfiTypeField) -> T>(
-    emitter: &mut Emitter,
     variant: &SpannedValue<FfiTypeVariant>,
     unit_mapper: F0,
     field_mapper: F1,
 ) -> T {
     match &variant.fields.style {
         Style::Tuple if variant.fields.fields.len() == 1 => field_mapper(&variant.fields.fields[0]),
-        Style::Tuple => {
-            emit!(
-                emitter,
-                variant.span(),
-                "Only unit or single unnamed field variants supported"
-            );
-            unit_mapper()
-        }
-        Style::Struct => {
-            emit!(
-                emitter,
-                variant.span(),
-                "Only unit or single unnamed field variants supported"
-            );
-            unit_mapper()
-        }
         Style::Unit => unit_mapper(),
+        _ => unreachable!(),
     }
 }
 
-pub(super) fn gen_repr_c_enum_payload_name(enum_name: &syn::Ident) -> syn::Ident {
-    syn::Ident::new(
-        &format!("__co3__{enum_name}Payload"),
-        proc_macro2::Span::call_site(),
-    )
+fn gen_encode_bounds(fields: &[&syn::Type], generics: &syn::Generics) -> TokenStream {
+    let parameterized_field_types = fields
+        .iter()
+        .filter(|ty| is_type_parameterized(ty, generics));
+
+    quote! { #(#parameterized_field_types: co3::Encode,)* }
+}
+
+fn gen_decode_bounds(fields: &[&syn::Type], generics: &syn::Generics) -> TokenStream {
+    let parameterized_field_types = fields
+        .iter()
+        .filter(|ty| is_type_parameterized(ty, generics));
+
+    quote! { #(#parameterized_field_types: co3::Decode<'_dšč>,)* }
 }

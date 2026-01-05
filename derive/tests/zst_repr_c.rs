@@ -12,7 +12,7 @@ pub struct ZstReprCStruct<T>(T);
 #[derive(Debug, Clone, ExternC)]
 #[repr(transparent)]
 pub enum ZstTransparentEnum<T> {
-    A(T),
+    A(Box<T>),
 }
 
 #[derive(Debug, Clone, Copy, ExternC)]

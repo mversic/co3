@@ -54,6 +54,13 @@ impl Emitter {
         self.handle(result).unwrap_or_default()
     }
 
+    /// Check if any errors have been accumulated.
+    ///
+    /// Returns `true` if there are errors, `false` otherwise.
+    pub fn has_errors(&self) -> bool {
+        !self.inner.is_empty()
+    }
+
     /// Consume the emitter, returning a [`manyhow::Error`] if any errors were emitted.
     ///
     /// # Errors

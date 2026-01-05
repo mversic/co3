@@ -6,7 +6,10 @@ use darling::{
 use manyhow::emit;
 use proc_macro2::{Span, TokenStream};
 use quote::quote;
-use syn::{Attribute, Field, Ident, ext::IdentExt as _, parse::ParseStream, spanned::Spanned as _};
+use syn::{
+    Attribute, Field, Ident, ext::IdentExt as _, parse::ParseStream, spanned::Spanned as _,
+    visit::Visit,
+};
 
 #[cfg(feature = "getset")]
 use crate::attr_parse::getset::{DocAttrs, GetSetFieldAttrs, GetSetStructAttrs};
@@ -17,22 +20,23 @@ use crate::{
     },
     emitter::Emitter,
     extern_c::{
-        no_repr::derive_opaque_item,
+        no_repr::{derive_no_repr_fieldless_enum, derive_opaque_item},
         repr_c::{
             derive_data_enum, derive_fieldless_enum, derive_repr_c_data_enum, derive_repr_c_struct,
         },
     },
 };
-use no_repr::{derive_no_repr_enum, derive_no_repr_struct};
+use no_repr::{derive_no_repr_data_enum, derive_no_repr_struct};
 use transparent::derive_transparent_item;
 
+mod niche;
 mod no_repr;
 mod repr_c;
 mod transparent;
 
 #[derive(Debug)]
 enum FfiTypeToken {
-    Transparent(Option<syn::Expr>, syn::ExprClosure),
+    Transparent(Option<syn::Expr>, Box<syn::ExprClosure>),
     UnsafeNonOwning,
     Opaque,
     Local,
@@ -191,7 +195,7 @@ impl syn::parse::Parse for SpannedFfiTypeToken {
 
         Ok(Self {
             span,
-            token: FfiTypeToken::Transparent(niche_value, is_valid),
+            token: FfiTypeToken::Transparent(niche_value, Box::new(is_valid)),
         })
     }
 }
@@ -199,7 +203,7 @@ impl syn::parse::Parse for SpannedFfiTypeToken {
 /// This represents an `#[mineral(...)]` attribute on a type
 #[derive(Debug, PartialEq, Eq, Clone)]
 pub enum FfiTypeKindAttribute {
-    Transparent(Option<syn::Expr>, syn::ExprClosure),
+    Transparent(Option<syn::Expr>, Box<syn::ExprClosure>),
     Opaque,
     Local,
 }
@@ -324,9 +328,9 @@ pub struct FfiTypeVariant {
 }
 
 pub struct FfiTypeField {
-    pub ty: syn::Type,
     pub ffi_type_attr: FfiTypeFieldAttr,
     pub ident: Option<syn::Ident>,
+    pub ty: syn::Type,
     #[cfg(feature = "getset")]
     pub doc_attrs: DocAttrs,
     #[cfg(feature = "getset")]
@@ -373,8 +377,6 @@ pub fn derive_extern_c(emitter: &mut Emitter, input: &syn::DeriveInput) -> Token
                 &input.span,
                 "Unit struct is a ZST. Annotate with #[co3::mineral(opaque)]?",
             );
-
-            return quote! {};
         }
         darling::ast::Data::Enum(variants)
             // FIXME: allow ZST fields as long as there is at least one non-ZST
@@ -385,18 +387,53 @@ pub fn derive_extern_c(emitter: &mut Emitter, input: &syn::DeriveInput) -> Token
                 &input.span,
                 "Single-variant fieldless enum is a ZST. Annotate with #[co3::mineral(opaque)]?",
             );
-
-            return quote! {};
         }
-        _ => {}
+        darling::ast::Data::Struct(fields) => {
+            for field in fields.iter() {
+                verify_field_non_owning(emitter, field);
+            }
+        }
+        darling::ast::Data::Enum(variants) => {
+            verify_variants_non_owning(emitter, variants);
+
+            for variant in variants {
+                if variant.discriminant.is_some() {
+                    emit!(
+                        emitter,
+                        variant.span(),
+                        "Explicit discriminants are not supported"
+                    );
+                }
+
+                match &variant.fields.style {
+                    Style::Tuple if variant.fields.fields.len() > 1 => emit!(
+                        emitter,
+                        variant.span(),
+                        "Tuple variants with arity > 1 are not supported"
+                    ),
+                    Style::Struct => emit!(
+                        emitter,
+                        variant.span(),
+                        "Structure variants are not supported"
+                    ),
+                    _ => {}
+                }
+            }
+        }
+    }
+
+    if emitter.has_errors() {
+        return quote! {};
     }
 
     input.generics.make_where_clause();
+    let derives = &input.derive_attr.derives;
+
     match input.repr_attr.kind.as_deref() {
         Some(ReprKind::Transparent) => derive_transparent_item(&input),
         Some(ReprKind::C(None)) => {
             if let darling::ast::Data::Struct(fields) = &input.data {
-                derive_repr_c_struct(emitter, &input.ident, &input.generics, fields)
+                derive_repr_c_struct(&input.ident, derives, &input.generics, fields)
             } else {
                 emit!(
                     emitter,
@@ -407,17 +444,11 @@ pub fn derive_extern_c(emitter: &mut Emitter, input: &syn::DeriveInput) -> Token
                 quote! {}
             }
         }
-        Some(ReprKind::C(Some(primitive_repr))) => {
+        Some(ReprKind::C(Some(repr))) => {
             if let darling::ast::Data::Enum(variants) = &input.data
                 && variants.iter().any(|v| !v.fields.fields.is_empty())
             {
-                derive_repr_c_data_enum(
-                    emitter,
-                    *primitive_repr,
-                    &input.ident,
-                    &input.generics,
-                    variants,
-                )
+                derive_repr_c_data_enum(*repr, &input.ident, derives, &input.generics, variants)
             } else {
                 quote! {}
             }
@@ -425,9 +456,9 @@ pub fn derive_extern_c(emitter: &mut Emitter, input: &syn::DeriveInput) -> Token
         Some(ReprKind::Primitive(repr)) => {
             if let darling::ast::Data::Enum(variants) = &input.data {
                 if variants.iter().all(|v| v.fields.fields.is_empty()) {
-                    derive_fieldless_enum(emitter, *repr, &input.ident, variants)
+                    derive_fieldless_enum(*repr, derives, &input.ident, variants)
                 } else {
-                    derive_data_enum(emitter, *repr, &input.ident, &input.generics, variants)
+                    derive_data_enum(*repr, &input.ident, derives, &input.generics, variants)
                 }
             } else {
                 quote! {}
@@ -447,10 +478,14 @@ pub fn derive_extern_c(emitter: &mut Emitter, input: &syn::DeriveInput) -> Token
                     quote! {}
                 }
                 darling::ast::Data::Enum(variants) => {
-                    derive_no_repr_enum(emitter, &input.ident, &input.generics, variants, local)
+                    if variants.iter().all(|v| v.fields.fields.is_empty()) {
+                        derive_no_repr_fieldless_enum(&input.ident, variants)
+                    } else {
+                        derive_no_repr_data_enum(&input.ident, &input.generics, variants, local)
+                    }
                 }
                 darling::ast::Data::Struct(fields) => {
-                    derive_no_repr_struct(emitter, &input.ident, &input.generics, fields, local)
+                    derive_no_repr_struct(&input.ident, &input.generics, fields, local)
                 }
             }
         }
@@ -552,5 +587,71 @@ impl DarlingErrorExt for darling::Error {
             .unwrap_or(first);
 
         self.with_span(&r)
+    }
+}
+
+/// Visitor to check if a type contains any of the specified type parameters
+struct TypeParamVisitor<'a> {
+    type_params: &'a [&'a syn::Ident],
+    is_generic: bool,
+}
+
+impl Visit<'_> for TypeParamVisitor<'_> {
+    fn visit_type_path(&mut self, type_path: &syn::TypePath) {
+        if let Some(ident) = type_path.path.get_ident()
+            && self.type_params.contains(&ident)
+        {
+            self.is_generic = true;
+        }
+
+        syn::visit::visit_type_path(self, type_path);
+    }
+}
+
+/// Check if a type contains any of the type parameters from generics
+pub fn is_type_parameterized(ty: &syn::Type, generics: &syn::Generics) -> bool {
+    let type_param_idents: Vec<_> = generics.type_params().map(|tp| &tp.ident).collect();
+
+    let mut visitor = TypeParamVisitor {
+        type_params: &type_param_idents,
+        is_generic: false,
+    };
+    visitor.visit_type(ty);
+    visitor.is_generic
+}
+
+// NOTE: Except for the raw pointers there should be no other type
+// that is at the same time Robust and also transfers ownership
+/// Verifies each field's pointer types are marked as non-owning
+fn verify_field_non_owning(emitter: &mut Emitter, field: &FfiTypeField) {
+    use syn::visit::Visit;
+
+    if field.ffi_type_attr.kind == Some(FfiTypeKindFieldAttribute::UnsafeNonOwning) {
+        return;
+    }
+
+    struct PtrVisitor<'a> {
+        emitter: &'a mut Emitter,
+    }
+    impl Visit<'_> for PtrVisitor<'_> {
+        fn visit_type_ptr(&mut self, node: &syn::TypePtr) {
+            emit!(
+                self.emitter,
+                node,
+                "Raw pointer found. If the pointer doesn't own the data, attach `#[mineral(unsafe(non_owning))` to the field. Otherwise, mark the entire type as opaque with `#[mineral(opaque)]`"
+            );
+        }
+    }
+
+    let mut ptr_visitor = PtrVisitor { emitter };
+    ptr_visitor.visit_type(&field.ty);
+}
+
+/// Verifies each field in enum variants are non-owning
+fn verify_variants_non_owning(emitter: &mut Emitter, variants: &[SpannedValue<FfiTypeVariant>]) {
+    for variant in variants {
+        for field in variant.fields.iter() {
+            verify_field_non_owning(emitter, field);
+        }
     }
 }

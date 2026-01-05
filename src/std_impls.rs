@@ -68,8 +68,8 @@ mineral! {
 }
 
 mineral! {
-    unsafe impl('slice) Transparent for &'slice str {
-        type Target = &'slice [u8];
+    unsafe impl('a) Transparent for &'a str {
+        type Target = &'a [u8];
 
         const NICHE_VALUE: Self::CType = CSlice::none();
         fn is_valid(target: &Self::Target) -> bool {
@@ -80,8 +80,8 @@ mineral! {
 
 #[cfg(feature = "non_robust_ref_mut")]
 mineral! {
-    unsafe impl('slice) Transparent for &'slice mut str {
-        type Target = &'slice mut [u8];
+    unsafe impl('a) Transparent for &'a mut str {
+        type Target = &'a mut [u8];
 
         const NICHE_VALUE: Self::CType = crate::slice::CSliceMut::none();
         fn is_valid(target: &Self::Target) -> bool {
@@ -125,9 +125,3 @@ unsafe impl<T> crate::transmute::CheckedTransmute for core::cell::UnsafeCell<T> 
 impl<T> crate::niche::Ir for core::cell::UnsafeCell<T> {
     type Type = crate::ir::Robust;
 }
-
-// FIXME: `UnsafeCell<T>` doesn't implement `Copy` but it should be `ReprC`
-// ReprC on Transparent types is used to express InfallibleTransmute relation
-// which is regulated by `non_robust_ref_mut` feature. It should be considered
-// to reintroduce `InfallibleTransmute` back
-//unsafe impl<T: ReprC> crate::ReprC for core::cell::UnsafeCell<T> {}
