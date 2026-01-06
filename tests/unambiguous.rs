@@ -49,6 +49,12 @@ impl AmbiguousY for FfiStruct {
 fn unambiguous_method_call() {
     let mut output = MaybeUninit::new(Ambiguous::None as _);
 
+    unsafe extern "C" {
+        fn FfiStruct__ambiguous(output: *mut u8) -> FfiReturn;
+        fn FfiStruct__AmbiguousX__ambiguous(output: *mut u8) -> FfiReturn;
+        fn FfiStruct__AmbiguousY__ambiguous(output: *mut u8) -> FfiReturn;
+    }
+
     unsafe {
         assert_eq!(FfiReturn::Ok, FfiStruct__ambiguous(output.as_mut_ptr()));
         let inherent = Ambiguous::try_read_out(output.assume_init()).unwrap();

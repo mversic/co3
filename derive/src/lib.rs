@@ -299,29 +299,47 @@ pub fn carbonate(attr: TokenStream, item: TokenStream) -> TokenStream {
 
     use syn::Item::*;
     let result = match item {
-        Impl(item) => {
+        Impl(mut item) => {
             let Some(impl_descriptor) = ImplDescriptor::from_impl(&mut emitter, &item) else {
                 return emitter.finish_token_stream();
             };
-            let ffi_fns = impl_descriptor.fns.iter().map(|fn_| {
-                ffi_fn::gen_definition(fn_, impl_descriptor.trait_name(), impl_descriptor.generics)
-            });
 
-            quote! {
-                #item
-                #(#ffi_fns)*
+            let ffi_fns: Vec<_> = impl_descriptor
+                .fns
+                .iter()
+                .map(|fn_| {
+                    ffi_fn::gen_definition(
+                        fn_,
+                        impl_descriptor.trait_name(),
+                        impl_descriptor.generics,
+                    )
+                })
+                .collect();
+
+            for (idx, ffi_fn) in ffi_fns.into_iter().enumerate() {
+                if let Some(syn::ImplItem::Fn(method)) = item.items.get_mut(idx) {
+                    method.block.stmts.insert(0, syn::parse_quote! { #ffi_fn });
+                }
             }
+
+            quote! { #item }
         }
-        Fn(item) => {
+        Fn(mut item) => {
             let Some(fn_descriptor) = FnDescriptor::from_fn(&mut emitter, &item) else {
                 return emitter.finish_token_stream();
             };
             let ffi_fn = ffi_fn::gen_definition(&fn_descriptor, None, &Default::default());
+            let fn_name = &fn_descriptor.sig.ident;
 
-            quote! {
-                #item
-                #ffi_fn
-            }
+            item.block.stmts.insert(
+                0,
+                syn::parse_quote! {
+                    #[unsafe(export_name = stringify!(#fn_name))]
+                    #ffi_fn
+                },
+            );
+
+            quote! { #item }
         }
         Struct(item) => {
             let input = syn::parse2(quote!(#item)).unwrap();
