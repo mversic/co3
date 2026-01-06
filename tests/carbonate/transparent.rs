@@ -4,7 +4,7 @@ use std::{alloc, marker::PhantomData, mem::MaybeUninit, num::NonZeroU64};
 use co3::{
     Decode, Encode, ExternC, FfiReturn, CTuple2,
     out_ptr::OutPtrRead,
-    slice::{OutBoxedSlice, RawSlice},
+    slice::{OutBoxedSlice, CSlice},
 };
 use webassembly_test::webassembly_test;
 
@@ -249,7 +249,7 @@ fn transparent_slice_to_slice() {
         TransparentStruct::new(GenericTransparentStruct::new(2)),
         TransparentStruct::new(GenericTransparentStruct::new(3)),
     ];
-    let mut output = MaybeUninit::new(RawSlice::from_raw_parts(core::ptr::null(), 0));
+    let mut output = MaybeUninit::new(CSlice::from_raw_parts(core::ptr::null(), 0));
 
     unsafe {
         assert_eq!(

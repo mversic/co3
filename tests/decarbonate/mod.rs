@@ -164,7 +164,7 @@
 //    use co3::{
 //        ExternC, FfiReturn, CTuple2,
 //        out_ptr::OutPtr,
-//        slice::{OutBoxedSlice, RawSliceMut, RawSlice},
+//        slice::{OutBoxedSlice, CSliceMut, CSlice},
 //    };
 //
 //    co3::def_fns! { dealloc }
@@ -207,7 +207,7 @@
 //
 //    #[unsafe(no_mangle)]
 //    unsafe extern "C" fn __freestanding_returns_local_slice(
-//        input: RawSlice<CTuple2<u32, u32>>,
+//        input: CSlice<CTuple2<u32, u32>>,
 //        output: *mut OutBoxedSlice<CTuple2<u32, u32>>,
 //    ) -> FfiReturn {
 //        unsafe {
@@ -220,7 +220,7 @@
 //
 //    #[unsafe(no_mangle)]
 //    unsafe extern "C" fn __freestanding_returns_boxed_slice(
-//        input: RawSliceMut<u32>,
+//        input: CSliceMut<u32>,
 //        output: *mut OutBoxedSlice<u32>,
 //    ) -> FfiReturn {
 //        unsafe {
@@ -233,7 +233,7 @@
 //
 //    #[unsafe(no_mangle)]
 //    unsafe extern "C" fn __freestanding_returns_iterator(
-//        input: RawSliceMut<u32>,
+//        input: CSliceMut<u32>,
 //        output: *mut OutBoxedSlice<u32>,
 //    ) -> FfiReturn {
 //        unsafe {

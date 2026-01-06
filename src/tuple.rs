@@ -1622,6 +1622,4 @@ disjoint_impls::disjoint_impls! {
 }
 
 #[cfg(test)]
-mod tests {
-
-}
+mod tests {}

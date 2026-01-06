@@ -4,8 +4,8 @@ use alloc::{boxed::Box, string::String, vec::Vec};
 
 #[cfg(feature = "owned_as_ref")]
 #[cfg(feature = "owned_types")]
-use crate::slice::RawSliceMut;
-use crate::{mineral, slice::RawSlice};
+use crate::slice::CSliceMut;
+use crate::{mineral, slice::CSlice};
 
 macro_rules! non_zero_derive {
     ($($ty:ty => $target:ty),+ $(,)?) => {$(
@@ -45,7 +45,7 @@ mineral! {
     unsafe impl Transparent for String {
         type Target = Vec<u8>;
 
-        const NICHE_VALUE: Self::CType = RawSliceMut::none();
+        const NICHE_VALUE: Self::CType = CSliceMut::none();
         fn is_valid(target: &Self::Target) -> bool {
             core::str::from_utf8(target).is_ok()
         }
@@ -60,7 +60,7 @@ mineral! {
     unsafe impl Transparent for Box<str> {
         type Target = Box<[u8]>;
 
-        const NICHE_VALUE: Self::CType = RawSliceMut::none();
+        const NICHE_VALUE: Self::CType = CSliceMut::none();
         fn is_valid(target: &Self::Target) -> bool {
             core::str::from_utf8(target).is_ok()
         }
@@ -71,7 +71,7 @@ mineral! {
     unsafe impl('slice) Transparent for &'slice str {
         type Target = &'slice [u8];
 
-        const NICHE_VALUE: Self::CType = RawSlice::none();
+        const NICHE_VALUE: Self::CType = CSlice::none();
         fn is_valid(target: &Self::Target) -> bool {
             core::str::from_utf8(target).is_ok()
         }
@@ -83,7 +83,7 @@ mineral! {
     unsafe impl('slice) Transparent for &'slice mut str {
         type Target = &'slice mut [u8];
 
-        const NICHE_VALUE: Self::CType = crate::slice::RawSliceMut::none();
+        const NICHE_VALUE: Self::CType = crate::slice::CSliceMut::none();
         fn is_valid(target: &Self::Target) -> bool {
             core::str::from_utf8(target).is_ok()
         }

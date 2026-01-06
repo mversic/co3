@@ -16,12 +16,12 @@ disjoint_impls! {
     ///
     /// 1. `&[u8]` implements [`NonLocal`]
     ///
-    /// This type will be converted to [`RawSlice<u8>`] and during conversion will not make use
-    /// of the store (in any direction). The corresponding out-pointer will be `*mut RawSlice<u8>`
+    /// This type will be converted to [`CSlice<u8>`] and during conversion will not make use
+    /// of the store (in any direction). The corresponding out-pointer will be `*mut CSlice<u8>`
     ///
     /// 2. `&[Opaque<T>]` doesn't implement [`NonLocal`]
     ///
-    /// This type will be converted to [`RawSlice<*const T>`] and during conversion will use the
+    /// This type will be converted to [`CSlice<*const T>`] and during conversion will use the
     /// local store `Vec<*const T>`. The corresponding out-pointer will be `*mut OutBoxedSlice<*const T>`.
     ///
     /// 3. `&(u32, u32)`
@@ -747,7 +747,7 @@ disjoint_impls! {
     #[cfg(feature = "owned_as_ref")]
     impl<'d, R: NonLocal + 'd, S: Cloned + 'd> OutPtrRead for Box<[R]>
     where
-        Self: Ir<Type = Box<[S]>> + Decode<'d, CType = RawSliceMut<<R as ExternC>::CType>>,
+        Self: Ir<Type = Box<[S]>> + Decode<'d, CType = CSliceMut<<R as ExternC>::CType>>,
     {
         unsafe fn try_read_out(out_ptr: Self::OutPtr) -> Result<Self> {
             let mut store = Default::default();
@@ -806,7 +806,7 @@ disjoint_impls! {
     #[cfg(feature = "owned_as_ref")]
     impl<'d, R: NonLocal + 'd, S: Cloned> OutPtrRead for Vec<R>
     where
-        Self: Ir<Type = Vec<S>> + Decode<'d, CType = RawSliceMut<<R as ExternC>::CType>>,
+        Self: Ir<Type = Vec<S>> + Decode<'d, CType = CSliceMut<<R as ExternC>::CType>>,
     {
         unsafe fn try_read_out(out_ptr: Self::OutPtr) -> Result<Self> {
             let mut store = <Self as Decode>::Store::default();

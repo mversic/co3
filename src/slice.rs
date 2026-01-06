@@ -10,12 +10,12 @@ crate::decl_fns! { dealloc }
 /// Immutable slice `&[C]` with a defined C ABI layout. Consists of a data pointer and a length.
 /// If the data pointer is set to `null`, the struct represents `Option<&[C]>`.
 #[repr(C)]
-pub struct RawSlice<C>(*const C, usize);
+pub struct CSlice<C>(*const C, usize);
 
 /// Mutable slice `&mut [C]` with a defined C ABI layout. Consists of a data pointer and a length.
 /// If the data pointer is set to `null`, the struct represents `Option<&mut [C]>`.
 #[repr(C)]
-pub struct RawSliceMut<C>(*mut C, usize);
+pub struct CSliceMut<C>(*mut C, usize);
 
 /// Owned slice `Box<[C]>` with a defined C ABI layout. Consists of a data pointer and a length.
 /// Used in place of a function out-pointer to transfer ownership of the slice to the caller.
@@ -90,9 +90,9 @@ macro_rules! impl_raw_slice_methods {
 }
 
 // NOTE: derive impls regardles of whether `C` implements `ReprC`
-impl_raw_slice_methods! { RawSlice<C>, RawSliceMut<C>, OutBoxedSlice<C> }
+impl_raw_slice_methods! { CSlice<C>, CSliceMut<C>, OutBoxedSlice<C> }
 
-impl<C> RawSlice<C> {
+impl<C> CSlice<C> {
     /// Set the slice's data pointer to null
     pub const fn none() -> Self {
         Self(core::ptr::null(), 0)
@@ -126,7 +126,7 @@ impl<C> RawSlice<C> {
         Some(unsafe { slice::from_raw_parts(self.0, self.1) })
     }
 }
-impl<C> RawSliceMut<C> {
+impl<C> CSliceMut<C> {
     /// Set the slice's data pointer to null
     pub const fn none() -> Self {
         Self(core::ptr::null_mut(), 0)
@@ -215,15 +215,15 @@ impl<C: ReprC> OutBoxedSlice<C> {
     }
 }
 
-impl<C: ReprC> From<OutBoxedSlice<C>> for RawSliceMut<C> {
+impl<C: ReprC> From<OutBoxedSlice<C>> for CSliceMut<C> {
     fn from(slice: OutBoxedSlice<C>) -> Self {
         Self::from_raw_parts_mut(slice.0, slice.1)
     }
 }
 
 // SAFETY: Robust type with a defined C ABI
-unsafe impl<T: ReprC> ReprC for RawSlice<T> {}
+unsafe impl<T: ReprC> ReprC for CSlice<T> {}
 // SAFETY: Robust type with a defined C ABI
-unsafe impl<T: ReprC> ReprC for RawSliceMut<T> {}
+unsafe impl<T: ReprC> ReprC for CSliceMut<T> {}
 // SAFETY: Robust type with a defined C ABI
 unsafe impl<T: ReprC> ReprC for OutBoxedSlice<T> {}

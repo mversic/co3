@@ -549,22 +549,19 @@ fn verify_variants_non_owning(emitter: &mut Emitter, variants: &[SpannedValue<Ff
 }
 
 pub(super) fn gen_repr_c_item_name(item_name: &syn::Ident) -> syn::Ident {
-    syn::Ident::new(
-        &format!("__co3__ReprC{item_name}"),
-        proc_macro2::Span::call_site(),
-    )
+    syn::Ident::new(&format!("C{item_name}"), proc_macro2::Span::call_site())
 }
 
 pub(super) fn gen_data_enum_payload_name(enum_name: &syn::Ident) -> syn::Ident {
     syn::Ident::new(
-        &format!("__co3__{enum_name}Payload"),
+        &format!("C{enum_name}Payload"),
         proc_macro2::Span::call_site(),
     )
 }
 
 fn gen_data_enum_variant_name(enum_name: &syn::Ident, variant_name: &syn::Ident) -> syn::Ident {
     syn::Ident::new(
-        &format!("__co3__{enum_name}Variant{variant_name}"),
+        &format!("C{enum_name}Variant{variant_name}"),
         proc_macro2::Span::call_site(),
     )
 }

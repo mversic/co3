@@ -5,7 +5,7 @@ use disjoint_impls::disjoint_impls;
 
 use crate::{
     ExternC, assert_arr_has_non_zero_len,
-    slice::{RawSlice, RawSliceMut},
+    slice::{CSlice, CSliceMut},
 };
 
 /// Marker trait for an [`Ir`] type of a Rust type that has a niche value (stable or custom)
@@ -113,9 +113,9 @@ where
 #[cfg(feature = "owned_as_ref")]
 impl<R, C> Niche for Box<[R]>
 where
-    Self: ExternC<CType = RawSliceMut<C>>,
+    Self: ExternC<CType = CSliceMut<C>>,
 {
-    const NICHE_VALUE: RawSliceMut<C> = RawSliceMut::none();
+    const NICHE_VALUE: CSliceMut<C> = CSliceMut::none();
 }
 
 impl<R, C> Niche for &R
@@ -134,25 +134,25 @@ where
 
 impl<R, C> Niche for &[R]
 where
-    Self: ExternC<CType = RawSlice<C>>,
+    Self: ExternC<CType = CSlice<C>>,
 {
-    const NICHE_VALUE: RawSlice<C> = RawSlice::none();
+    const NICHE_VALUE: CSlice<C> = CSlice::none();
 }
 
 impl<R, C> Niche for &mut [R]
 where
-    Self: ExternC<CType = RawSliceMut<C>>,
+    Self: ExternC<CType = CSliceMut<C>>,
 {
-    const NICHE_VALUE: RawSliceMut<C> = RawSliceMut::none();
+    const NICHE_VALUE: CSliceMut<C> = CSliceMut::none();
 }
 
 #[cfg(feature = "owned_types")]
 #[cfg(feature = "owned_as_ref")]
 impl<R, C> Niche for Vec<R>
 where
-    Self: ExternC<CType = RawSliceMut<C>>,
+    Self: ExternC<CType = CSliceMut<C>>,
 {
-    const NICHE_VALUE: RawSliceMut<C> = RawSliceMut::none();
+    const NICHE_VALUE: CSliceMut<C> = CSliceMut::none();
 }
 
 impl<R: Niche, const N: usize> Niche for [R; N]
