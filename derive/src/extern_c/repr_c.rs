@@ -55,7 +55,7 @@ pub(super) fn derive_repr_c_struct(
         struct_name,
         derives,
         generics,
-        quote! { #repr_c_struct_name },
+        &repr_c_struct_name,
         is_valid,
         fields.iter(),
     );
@@ -117,7 +117,7 @@ pub(super) fn derive_repr_c_data_enum(
         enum_name,
         derives,
         generics,
-        quote! { #repr_c_enum_name },
+        &repr_c_enum_name,
         is_valid,
         fields,
     );
@@ -175,14 +175,8 @@ pub(super) fn derive_data_enum(
     let fields = variants.iter().flat_map(|variant| variant.fields.iter());
     let niche_ir = gen_enum_niche_ir(repr, enum_name, generics, variants);
 
-    let transparent_impl = gen_transparent_impl(
-        enum_name,
-        derives,
-        generics,
-        quote! { #union_name },
-        is_valid,
-        fields,
-    );
+    let transparent_impl =
+        gen_transparent_impl(enum_name, derives, generics, &union_name, is_valid, fields);
 
     quote! {
         #union_and_helpers
@@ -242,7 +236,7 @@ fn gen_transparent_impl<'a>(
     item_name: &Ident,
     derives: &[Derive],
     generics: &syn::Generics,
-    target_type: TokenStream,
+    target: &syn::Ident,
     is_valid_body: TokenStream,
     fields: impl IntoIterator<Item = &'a FfiTypeField>,
 ) -> TokenStream {
@@ -268,7 +262,7 @@ fn gen_transparent_impl<'a>(
         }
 
         unsafe impl #impl_generics co3::transmute::CheckedTransmute for #item_name #ty_generics where #flat_transmute_bounds #predicates {
-            type Target = #target_type #ty_generics;
+            type Target = #target #ty_generics;
 
             #[inline(always)]
             fn is_valid(target: &Self::Target) -> bool {

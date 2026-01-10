@@ -8,11 +8,13 @@ use alloc::{boxed::Box, string::String, vec::Vec};
 #[cfg(feature = "owned_types")]
 use crate::slice::CSliceMut;
 use crate::{
+    Decode, Encode, ExternC, ReprC,
     ir::{Ir, Transparent},
     mineral,
     niche::{Ir as NicheIr, Niche, WithCustomNiche, WithStableNiche, WithoutNiche},
     slice::CSlice,
     transmute::CheckedTransmute,
+    tuple::CTuple2,
 };
 
 macro_rules! non_zero_derive {
@@ -51,6 +53,9 @@ mineral! {
     }
 }
 
+impl<T, E> Ir for Result<T, E> {
+    type Type = Self;
+}
 impl<T> Ir for UnsafeCell<T> {
     type Type = Transparent;
 }
@@ -75,6 +80,12 @@ impl Ir for String {
     type Type = Transparent;
 }
 
+impl<T, E> NicheIr for Result<T, E>
+where
+    (T, E): NicheIr,
+{
+    type Type = <(T, E) as NicheIr>::Type;
+}
 impl<T> NicheIr for UnsafeCell<T> {
     type Type = WithoutNiche;
 }
@@ -157,6 +168,9 @@ unsafe impl CheckedTransmute for String {
     }
 }
 
+impl<T: ExternC, E: ExternC> Niche for Result<T, E> {
+    const NICHE_VALUE: Self::CType = CTuple2(2u8, unsafe { core::mem::zeroed() });
+}
 impl<T> Niche for NonNull<T> {
     const NICHE_VALUE: Self::CType = core::ptr::null_mut();
 }
@@ -176,4 +190,65 @@ impl Niche for String {
 #[cfg(feature = "owned_as_ref")]
 impl Niche for Box<str> {
     const NICHE_VALUE: Self::CType = CSliceMut::none();
+}
+
+impl<T: ExternC, E: ExternC> ExternC for Result<T, E> {
+    type CType = CTuple2<<u8 as ExternC>::CType, ResultPayload<T::CType, E::CType>>;
+}
+impl<T: Encode, E: Encode> Encode for Result<T, E> {
+    type Store = (T::Store, E::Store);
+
+    fn encode<'itm>(self, store: &'itm mut Self::Store) -> Self::CType
+    where
+        Self: 'itm,
+    {
+        match self {
+            Ok(ok) => CTuple2(
+                Encode::encode(0u8, &mut ()),
+                ResultPayload {
+                    Ok: ok.encode(&mut store.0),
+                },
+            ),
+            Err(err) => CTuple2(
+                Encode::encode(1u8, &mut ()),
+                ResultPayload {
+                    Err: err.encode(&mut store.1),
+                },
+            ),
+        }
+    }
+}
+impl<'d, T: Decode<'d>, E: Decode<'d>> Decode<'d> for Result<T, E> {
+    type Store = (T::Store, E::Store);
+
+    unsafe fn decode<'itm: 'd>(
+        source: Self::CType,
+        store: &'itm mut Self::Store,
+    ) -> crate::Result<Self> {
+        let payload = source.1;
+
+        match source.0 {
+            0 => Ok(Ok(unsafe { T::decode(payload.Ok, &mut store.0)? })),
+            1 => Ok(Err(unsafe { E::decode(payload.Err, &mut store.1)? })),
+            _ => Err(crate::FfiReturn::TrapRepresentation),
+        }
+    }
+}
+
+#[repr(C)]
+#[expect(non_snake_case)]
+pub union ResultPayload<T: ReprC, E: ReprC> {
+    pub Ok: T,
+    pub Err: E,
+}
+
+impl<T: ReprC, E: ReprC> Copy for ResultPayload<T, E> {}
+impl<T: ReprC, E: ReprC> Clone for ResultPayload<T, E> {
+    fn clone(&self) -> Self {
+        *self
+    }
+}
+
+mineral! {
+    unsafe impl(T: ReprC, E: ReprC) Robust for ResultPayload<T, E> {}
 }

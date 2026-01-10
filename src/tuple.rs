@@ -1,4 +1,4 @@
-//! This module provides `repr(C)` tuple types that can be safely passed across FFI boundaries.
+//! Provides `repr(C)` tuple types that can be safely passed across FFI boundaries.
 //!
 //! # Memory Layout
 //!
