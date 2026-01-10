@@ -1,3 +1,5 @@
+use core::{cell::UnsafeCell, ptr::NonNull};
+
 #[cfg(feature = "owned_types")]
 #[cfg(feature = "owned_as_ref")]
 use alloc::{boxed::Box, string::String, vec::Vec};
@@ -5,7 +7,13 @@ use alloc::{boxed::Box, string::String, vec::Vec};
 #[cfg(feature = "owned_as_ref")]
 #[cfg(feature = "owned_types")]
 use crate::slice::CSliceMut;
-use crate::{mineral, slice::CSlice};
+use crate::{
+    ir::{Ir, Transparent},
+    mineral,
+    niche::{Ir as NicheIr, Niche, WithCustomNiche, WithStableNiche, WithoutNiche},
+    slice::CSlice,
+    transmute::CheckedTransmute,
+};
 
 macro_rules! non_zero_derive {
     ($($ty:ty => $target:ty),+ $(,)?) => {$(
@@ -37,83 +45,61 @@ non_zero_derive! {
     core::num::NonZeroI128 => i128,
 }
 
-#[cfg(feature = "owned_types")]
-#[cfg(feature = "owned_as_ref")]
-// WARN: This can be contested as it is nowhere documented that String is
-// actually transmutable into Vec<u8>, but implicitly it should be
-mineral! {
-    unsafe impl Transparent for String {
-        type Target = Vec<u8>;
-
-        const NICHE_VALUE: Self::CType = CSliceMut::none();
-        fn is_valid(target: &Self::Target) -> bool {
-            core::str::from_utf8(target).is_ok()
-        }
-    }
-}
-
-#[cfg(feature = "owned_types")]
-#[cfg(feature = "owned_as_ref")]
-// WARN: `core::str::as_bytes` uses transmute internally which means that
-// even though it's a string slice it can be transmuted into byte slice.
-mineral! {
-    unsafe impl Transparent for Box<str> {
-        type Target = Box<[u8]>;
-
-        const NICHE_VALUE: Self::CType = CSliceMut::none();
-        fn is_valid(target: &Self::Target) -> bool {
-            core::str::from_utf8(target).is_ok()
-        }
-    }
-}
-
-mineral! {
-    unsafe impl('a) Transparent for &'a str {
-        type Target = &'a [u8];
-
-        const NICHE_VALUE: Self::CType = CSlice::none();
-        fn is_valid(target: &Self::Target) -> bool {
-            core::str::from_utf8(target).is_ok()
-        }
-    }
-}
-
-#[cfg(feature = "non_robust_ref_mut")]
-mineral! {
-    unsafe impl('a) Transparent for &'a mut str {
-        type Target = &'a mut [u8];
-
-        const NICHE_VALUE: Self::CType = crate::slice::CSliceMut::none();
-        fn is_valid(target: &Self::Target) -> bool {
-            core::str::from_utf8(target).is_ok()
-        }
-    }
-}
-
-#[cfg(feature = "owned_types")]
-#[cfg(feature = "owned_as_ref")]
 mineral! {
     unsafe impl(T,) Transparent for core::mem::ManuallyDrop<T> {
         type Target = T;
     }
 }
 
-mineral! {
-    unsafe impl(T) Transparent for core::ptr::NonNull<T> {
-        type Target = *mut T;
-
-        const NICHE_VALUE: Self::CType = core::ptr::null_mut();
-        fn is_valid(target: &Self::Target) -> bool {
-            !target.is_null()
-        }
-    }
+impl<T> Ir for UnsafeCell<T> {
+    type Type = Transparent;
+}
+impl<T> Ir for NonNull<T> {
+    type Type = Transparent;
+}
+impl Ir for &str {
+    type Type = Transparent;
+}
+#[cfg(feature = "non_robust_ref_mut")]
+impl Ir for &mut str {
+    type Type = Transparent;
+}
+#[cfg(feature = "owned_types")]
+#[cfg(feature = "owned_as_ref")]
+impl Ir for Box<str> {
+    type Type = Transparent;
+}
+#[cfg(feature = "owned_types")]
+#[cfg(feature = "owned_as_ref")]
+impl Ir for String {
+    type Type = Transparent;
 }
 
-impl<T> crate::ir::Ir for core::cell::UnsafeCell<T> {
-    type Type = crate::ir::Transparent;
+impl<T> NicheIr for UnsafeCell<T> {
+    type Type = WithoutNiche;
+}
+impl<T> NicheIr for NonNull<T> {
+    type Type = WithStableNiche;
+}
+impl NicheIr for &str {
+    type Type = WithCustomNiche;
+}
+#[cfg(feature = "non_robust_ref_mut")]
+impl NicheIr for &mut str {
+    type Type = WithCustomNiche;
+}
+#[cfg(feature = "owned_types")]
+#[cfg(feature = "owned_as_ref")]
+impl NicheIr for Box<str> {
+    type Type = WithCustomNiche;
+}
+#[cfg(feature = "owned_types")]
+#[cfg(feature = "owned_as_ref")]
+impl NicheIr for String {
+    type Type = WithCustomNiche;
 }
 
-unsafe impl<T> crate::transmute::CheckedTransmute for core::cell::UnsafeCell<T> {
+unsafe impl<T> CheckedTransmute for UnsafeCell<T> {
     type Target = T;
 
     #[inline(always)]
@@ -121,7 +107,73 @@ unsafe impl<T> crate::transmute::CheckedTransmute for core::cell::UnsafeCell<T> 
         true
     }
 }
+unsafe impl<T> CheckedTransmute for NonNull<T> {
+    type Target = *mut T;
 
-impl<T> crate::niche::Ir for core::cell::UnsafeCell<T> {
-    type Type = crate::ir::Robust;
+    #[inline(always)]
+    fn is_valid(target: &Self::Target) -> bool {
+        !target.is_null()
+    }
+}
+unsafe impl<'a> CheckedTransmute for &'a str {
+    type Target = &'a [u8];
+
+    #[inline(always)]
+    fn is_valid(target: &Self::Target) -> bool {
+        core::str::from_utf8(target).is_ok()
+    }
+}
+#[cfg(feature = "non_robust_ref_mut")]
+unsafe impl<'a> CheckedTransmute for &'a mut str {
+    type Target = &'a mut [u8];
+
+    #[inline(always)]
+    fn is_valid(target: &Self::Target) -> bool {
+        core::str::from_utf8(target).is_ok()
+    }
+}
+#[cfg(feature = "owned_types")]
+#[cfg(feature = "owned_as_ref")]
+unsafe impl CheckedTransmute for Box<str> {
+    // WARN: `core::str::as_bytes` uses transmute internally which means that
+    // even though it's a string slice it can be transmuted into byte slice.
+    type Target = Box<[u8]>;
+
+    #[inline(always)]
+    fn is_valid(target: &Self::Target) -> bool {
+        core::str::from_utf8(target).is_ok()
+    }
+}
+#[cfg(feature = "owned_types")]
+#[cfg(feature = "owned_as_ref")]
+unsafe impl CheckedTransmute for String {
+    // WARN: This can be contested as it is nowhere documented that String is
+    // actually transmutable into Vec<u8>, but implicitly it should be
+    type Target = Vec<u8>;
+
+    #[inline(always)]
+    fn is_valid(target: &Self::Target) -> bool {
+        core::str::from_utf8(target).is_ok()
+    }
+}
+
+impl<T> Niche for NonNull<T> {
+    const NICHE_VALUE: Self::CType = core::ptr::null_mut();
+}
+impl Niche for &str {
+    const NICHE_VALUE: Self::CType = CSlice::none();
+}
+#[cfg(feature = "non_robust_ref_mut")]
+impl Niche for &mut str {
+    const NICHE_VALUE: Self::CType = CSliceMut::none();
+}
+#[cfg(feature = "owned_types")]
+#[cfg(feature = "owned_as_ref")]
+impl Niche for String {
+    const NICHE_VALUE: Self::CType = CSliceMut::none();
+}
+#[cfg(feature = "owned_types")]
+#[cfg(feature = "owned_as_ref")]
+impl Niche for Box<str> {
+    const NICHE_VALUE: Self::CType = CSliceMut::none();
 }

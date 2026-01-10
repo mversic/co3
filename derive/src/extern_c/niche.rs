@@ -74,7 +74,7 @@ fn build_nested_tuple(types: &[&syn::Type]) -> (TokenStream, TokenStream, Vec<To
     build_recursive(types, &mut Vec::new())
 }
 
-pub fn gen_struct_niche_ir<'a>(
+pub fn gen_struct_niche_ir(
     struct_name: &syn::Ident,
     generics: &syn::Generics,
     fields: &darling::ast::Fields<FfiTypeField>,

@@ -257,11 +257,6 @@ pub fn wrap_as_opaque(emitter: &mut Emitter, mut input: FfiTypeInput) -> TokenSt
 
 fn gen_impl_ffi(name: &Ident, generics: &syn::Generics) -> TokenStream {
     let (impl_generics, ty_generics, where_clause) = generics.split_for_impl();
-    let predicates = generics
-        .where_clause
-        .as_ref()
-        .map(|where_clause| &where_clause.predicates);
-    let params = &generics.params;
 
     let send_predicates = generics.type_params().map(|param| {
         quote! { #param: Send }
@@ -296,11 +291,28 @@ fn gen_impl_ffi(name: &Ident, generics: &syn::Generics) -> TokenStream {
             }
         }
 
-        co3::mineral! {
-            unsafe impl(#params) Transparent for #name #ty_generics where (#predicates) {
-                type Target = core::ptr::NonNull<co3::external::Extern>;
+        impl #impl_generics co3::ir::Ir for #name #ty_generics #where_clause {
+            type Type = co3::ir::Transparent;
+        }
+
+        unsafe impl #impl_generics co3::transmute::CheckedTransmute for #name #ty_generics #where_clause {
+            type Target = *mut co3::external::Extern;
+
+            #[inline(always)]
+            fn is_valid(_: &Self::Target) -> bool {
+                // NOTE: Opaque types are never dereferenced
+                true
             }
         }
+        impl #impl_generics co3::niche::Ir for #name #ty_generics #where_clause {
+            type Type = co3::niche::WithStableNiche;
+        }
+
+        impl #impl_generics co3::niche::Niche for #name #ty_generics #where_clause {
+            const NICHE_VALUE: <Self as $crate::ExternC>::CType = core::ptr::null_mut();
+        }
+
+        unsafe impl #impl_generics co3::niche::StableNiche for #name #ty_generics #where_clause {}
     }
 }
 

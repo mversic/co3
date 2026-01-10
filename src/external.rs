@@ -1,6 +1,10 @@
 use core::{marker::PhantomData, ptr::NonNull};
 
-use crate::mineral;
+use crate::{
+    ir::{Ir, Transparent},
+    niche::{Ir as NicheIr, Niche, StableNiche, WithStableNiche},
+    transmute::CheckedTransmute,
+};
 
 /// Represents the pointee on the far side of an exported opaque pointer at the FFI boundary.
 ///
@@ -79,15 +83,43 @@ impl<T> core::ops::DerefMut for ExternRefMut<'_, T> {
     }
 }
 
-mineral! {
-    unsafe impl(R) Transparent for ExternRef<'_, R> {
-        // FIXME: I think this should be &Extern. If not,
-        // it should still not map to a mutable pointer
-        type Target = core::ptr::NonNull<Extern>;
+impl<R> Ir for ExternRef<'_, R> {
+    type Type = Transparent;
+}
+impl<R> Ir for ExternRefMut<'_, R> {
+    type Type = Transparent;
+}
+
+impl<R> NicheIr for ExternRef<'_, R> {
+    type Type = WithStableNiche;
+}
+impl<R> NicheIr for ExternRefMut<'_, R> {
+    type Type = WithStableNiche;
+}
+
+unsafe impl<R> CheckedTransmute for ExternRef<'_, R> {
+    type Target = *const Extern;
+
+    #[inline(always)]
+    fn is_valid(target: &Self::Target) -> bool {
+        !target.is_null()
     }
 }
-mineral! {
-    unsafe impl(R) Transparent for ExternRefMut<'_, R> {
-        type Target = core::ptr::NonNull<Extern>;
+unsafe impl<R> CheckedTransmute for ExternRefMut<'_, R> {
+    type Target = *const Extern;
+
+    #[inline(always)]
+    fn is_valid(target: &Self::Target) -> bool {
+        !target.is_null()
     }
 }
+
+impl<R> Niche for ExternRef<'_, R> {
+    const NICHE_VALUE: Self::CType = core::ptr::null();
+}
+impl<R> Niche for ExternRefMut<'_, R> {
+    const NICHE_VALUE: Self::CType = core::ptr::null_mut();
+}
+
+unsafe impl<R> StableNiche for ExternRef<'_, R> {}
+unsafe impl<R> StableNiche for ExternRefMut<'_, R> {}

@@ -243,6 +243,13 @@ impl<R> Ir for *mut R {
     type Type = Robust;
 }
 
+impl<R> crate::niche::Ir for *const R {
+    type Type = WithoutNiche;
+}
+impl<R> crate::niche::Ir for *mut R {
+    type Type = WithoutNiche;
+}
+
 macro_rules! impl_fn_types {
     ( $( ( $( $arg:ident ),* ) ),* $(,)? ) => {$(
         // FIXME: I'm not sure if arguments are required to be ReprC, what if fn pointer is opaque?

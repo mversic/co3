@@ -1214,10 +1214,13 @@ pub enum FfiReturn {
 /// #[repr(C)]
 /// struct RobustStruct(u64, i32);
 ///
-/// // SAFETY: Type MUST NOT have trap representations
-/// co3::mineral! { unsafe impl Robust for RobustStruct {} }
+/// co3::mineral! {
+///     // SAFETY: Type MUST NOT have traps
+///     unsafe impl Robust for RobustStruct {}
+/// }
 ///
 /// co3::mineral! {
+///     // SAFETY: `Self::is_valid` must not return false posives
 ///     unsafe impl(T) Transparent for NonNull<T> where (T: Copy) {
 ///         type Target = NonNullInner<T>;
 ///
@@ -1249,131 +1252,6 @@ macro_rules! mineral {
         }
     };
     (unsafe impl $(( $($params:tt)* ))? Transparent for $self_ty:ty $(where ( $($preds:tt)* ))? {
-        type CType = $target:ty;
-    }) => {
-        impl $(<$($params)*>)? $crate::ir::Ir for $self_ty $(where $($preds)*)? {
-            type Type = $crate::ir::Transparent;
-        }
-
-        unsafe impl $(<$($params)*>)? $crate::transmute::CheckedTransmute for $self_ty $(where $($preds)*)? {
-            type Target = $target;
-
-            #[inline(always)]
-            fn is_valid(_target: &Self::Target) -> bool {
-                true
-            }
-        }
-        unsafe impl$(<$($params)*>)? $crate::ReprC for $self_ty where
-            <Self as $crate::transmute::CheckedTransmute>::Target: $crate::ReprC,
-            $($($preds)*)? {}
-    };
-    // TODO: Deduplicate
-    (unsafe impl Transparent for $self_ty:ty $(where ( $($preds:tt)* ))? {
-        type Target = $target:ty;
-    }) => {
-        $crate::mineral! {
-            unsafe impl $(( $($params)* ))? Transparent for $self_ty $(where ( $($preds)* ))? {
-                type Target = $target;
-
-                fn is_valid(_target: &Self::Target) -> bool {
-                    // NOTE: When delegating there is no trap representations in the immediate `Self::Target`
-                    // Whether `Self::Target` itself has trap representations is not to be considered here
-                    true
-                }
-            }
-        }
-
-        unsafe impl$(<$($params)*>)? $crate::ReprC for $self_ty where
-            for<'_dummy> Self: $crate::transmute::CheckedTransmute<Target: $crate::ReprC> + Copy,
-            $($($preds)*)? {}
-    };
-    (unsafe impl ( $($params:tt)* ) Transparent for $self_ty:ty $(where ( $($preds:tt)* ))? {
-        type Target = $target:ty;
-    }) => {
-        $crate::mineral! {
-            unsafe impl ( $($params)* ) Transparent for $self_ty $(where ( $($preds)* ))? {
-                type Target = $target;
-
-                fn is_valid(_target: &Self::Target) -> bool {
-                    // NOTE: When delegating there is no trap representations in the immediate `Self::Target`
-                    // Whether `Self::Target` itself has trap representations is not to be considered here
-                    true
-                }
-            }
-        }
-
-        unsafe impl<$($params)*> $crate::ReprC for $self_ty where
-            Self: $crate::transmute::CheckedTransmute<Target: $crate::ReprC> + Copy,
-            $($($preds)*)? {}
-    };
-    (unsafe impl Transparent for $self_ty:ty $(where ( $($preds:tt)* ))? {
-        type Target = $target:ty;
-
-        fn is_valid($target_var:ident: $target_ty:ty) -> $ret_val:ty
-            $block:block
-    }) => {
-        impl $crate::ir::Ir for $self_ty $(where $($preds)*)? {
-            type Type = $crate::ir::Transparent;
-        }
-
-        unsafe impl $crate::transmute::CheckedTransmute for $self_ty $(where $($preds)*)? {
-            type Target = $target;
-
-            #[inline(always)]
-            fn is_valid($target_var: $target_ty) -> bool $block
-        }
-
-        impl $crate::niche::Ir for $self_ty where $($($preds)*)? {
-            type Type = <<Self as $crate::transmute::CheckedTransmute>::Target as $crate::niche::Ir>::Type;
-        }
-
-        impl $crate::niche::Niche for $self_ty where
-            for<'_dummy> Self: $crate::transmute::CheckedTransmute<Target: $crate::niche::Niche>,
-            $($($preds)*)?
-        {
-            const NICHE_VALUE: <Self as $crate::ExternC>::CType = <<Self as $crate::transmute::CheckedTransmute>::Target as $crate::niche::Niche>::NICHE_VALUE;
-        }
-
-        unsafe impl $crate::niche::StableNiche for $self_ty where
-            for<'_dummy> Self: $crate::transmute::CheckedTransmute<Target: $crate::niche::StableNiche>,
-            $($($preds)*)? {}
-    };
-    (unsafe impl ( $($params:tt)* ) Transparent for $self_ty:ty $(where ( $($preds:tt)* ))? {
-        type Target = $target:ty;
-
-        fn is_valid($target_var:ident: $target_ty:ty) -> $ret_val:ty
-            $block:block
-    }) => {
-        impl <$($params)*> $crate::ir::Ir for $self_ty $(where $($preds)*)? {
-            type Type = $crate::ir::Transparent;
-        }
-
-        unsafe impl <$($params)*> $crate::transmute::CheckedTransmute for $self_ty $(where $($preds)*)? {
-            type Target = $target;
-
-            #[inline(always)]
-            fn is_valid($target_var: $target_ty) -> bool $block
-        }
-
-        impl <$($params)*> $crate::niche::Ir for $self_ty where
-            Self: $crate::transmute::CheckedTransmute<Target: $crate::niche::Ir>,
-            $($($preds)*)?
-        {
-            type Type = <<Self as $crate::transmute::CheckedTransmute>::Target as $crate::niche::Ir>::Type;
-        }
-
-        impl <$($params)*> $crate::niche::Niche for $self_ty where
-            Self: $crate::transmute::CheckedTransmute<Target: $crate::niche::Niche>,
-            $($($preds)*)?
-        {
-            const NICHE_VALUE: <Self as $crate::ExternC>::CType = <<Self as $crate::transmute::CheckedTransmute>::Target as $crate::niche::Niche>::NICHE_VALUE;
-        }
-
-        unsafe impl <$($params)*> $crate::niche::StableNiche for $self_ty where
-            Self: $crate::transmute::CheckedTransmute<Target: $crate::niche::StableNiche>,
-            $($($preds)*)? {}
-    };
-    (unsafe impl $(( $($params:tt)* ))? Transparent for $self_ty:ty $(where ( $($preds:tt)* ))? {
         type Target = $target:ty;
 
         const NICHE_VALUE: $niche_ty:ty = $niche_value:expr;
@@ -1394,11 +1272,12 @@ macro_rules! mineral {
 
         impl $(<$($params)*>)? $crate::niche::Niche for $self_ty $(where $($preds)*)? {
             const NICHE_VALUE: $niche_ty = {
-                // FIXME: don't allow defining niche value if Niche is present on the target type
-                // That is, only if the target type is Robust can outer have custom niche value
-                //assert!(impls::impls!(
-                //    !Self: $crate::transmute::CheckedTransmute<Target: $crate::niche::Niche>,
-                //));
+                debug_assert!(impls::impls!
+                    // TODO: This introduces a dependency, can we do without?
+                    // and it also adds checks for internal types like `NonZeroU8`
+                    ($target: $crate::niche::Ir<Type = $crate::niche::WithoutNiche>),
+                    "Transparent CAN'T define a custom niche if target has a niche"
+                );
 
                 $niche_value
             };
@@ -1407,6 +1286,85 @@ macro_rules! mineral {
         impl $(<$($params)*>)? $crate::niche::Ir for $self_ty $(where $($preds)*)? {
             type Type = $crate::niche::WithCustomNiche;
         }
+    };
+    (unsafe impl Transparent for $self_ty:ty $(where ( $($preds:tt)* ))? {
+        type Target = $target:ty;
+    }) => {
+        $crate::mineral! {
+            @transparent [for<'_dummy>] [] $self_ty $([$($preds)*])? {
+                type Target = $target;
+                // NOTE: When delegating there is no trap representations in the immediate `Self::Target`
+                // Whether `Self::Target` itself has trap representations is not to be considered here
+                fn is_valid(_target: &Self::Target) -> bool { true }
+            }
+        }
+
+        unsafe impl $crate::ReprC for $self_ty where for<'_dummy> Self: Copy, for<'_dummy> $target: $crate::ReprC, $($($preds)*)? {}
+    };
+    (unsafe impl ( $($params:tt)* ) Transparent for $self_ty:ty $(where ( $($preds:tt)* ))? {
+        type Target = $target:ty;
+    }) => {
+        $crate::mineral! {
+            @transparent [] [<$($params)*>] $self_ty $([$($preds)*])? {
+                type Target = $target;
+                // NOTE: When delegating there is no trap representations in the immediate `Self::Target`
+                // Whether `Self::Target` itself has trap representations is not to be considered here
+                fn is_valid(_target: &Self::Target) -> bool { true }
+            }
+        }
+
+        unsafe impl<$($params)*> $crate::ReprC for $self_ty where Self: Copy, $target: $crate::ReprC, $($($preds)*)? {}
+    };
+    (unsafe impl Transparent for $self_ty:ty $(where ( $($preds:tt)* ))? {
+        type Target = $target:ty;
+
+        fn is_valid($target_var:ident: $target_ty:ty) -> $ret_val:ty
+            $block:block
+    }) => {
+        $crate::mineral! {
+            @transparent [for<'_dummy>] [] $self_ty $([$($preds)*])? {
+                type Target = $target;
+                fn is_valid($target_var: $target_ty) -> bool $block
+            }
+        }
+    };
+    (unsafe impl ( $($params:tt)* ) Transparent for $self_ty:ty $(where ( $($preds:tt)* ))? {
+        type Target = $target:ty;
+
+        fn is_valid($target_var:ident: $target_ty:ty) -> $ret_val:ty
+            $block:block
+    }) => {
+        $crate::mineral! {
+            @transparent [] [<$($params)*>] $self_ty $([$($preds)*])? {
+                type Target = $target;
+                fn is_valid($target_var: $target_ty) -> bool $block
+            }
+        }
+    };
+    (@transparent [$($for_dummy:tt)?] [$($impl_generics:tt)*] $self_ty:ty $([$($preds:tt)*])? {
+        type Target = $target:ty;
+        fn is_valid($target_var:ident: $target_ty:ty) -> bool $block:block
+    }) => {
+        impl $($impl_generics)* $crate::ir::Ir for $self_ty $(where $($preds)*)? {
+            type Type = $crate::ir::Transparent;
+        }
+
+        unsafe impl $($impl_generics)* $crate::transmute::CheckedTransmute for $self_ty $(where $($preds)*)? {
+            type Target = $target;
+
+            #[inline(always)]
+            fn is_valid($target_var: $target_ty) -> bool $block
+        }
+
+        impl $($impl_generics)* $crate::niche::Ir for $self_ty where $($for_dummy)? $target: $crate::niche::Ir, $($($preds)*)? {
+            type Type = <$target as $crate::niche::Ir>::Type;
+        }
+
+        impl $($impl_generics)* $crate::niche::Niche for $self_ty where $($for_dummy)? $target: $crate::niche::Niche, $($($preds)*)? {
+            const NICHE_VALUE: <Self as $crate::ExternC>::CType = <$target as $crate::niche::Niche>::NICHE_VALUE;
+        }
+
+        unsafe impl $($impl_generics)* $crate::niche::StableNiche for $self_ty where $($for_dummy)? $target: $crate::niche::StableNiche, $($($preds)*)? {}
     };
 }
 
