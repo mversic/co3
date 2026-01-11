@@ -54,14 +54,7 @@ disjoint_impls! {
         }
     }
 
-    unsafe impl<
-        'a,
-        #[cfg(not(feature = "non_robust_ref_mut"))] R: ReprC,
-        #[cfg(feature = "non_robust_ref_mut")] R,
-    > CheckedTransmute for &'a mut R
-    where
-        R: ReprFamily<Kind = Transparent> + CheckedTransmute,
-    {
+    unsafe impl<'a, R: ReprFamily<Kind = Transparent> + CheckedTransmute> CheckedTransmute for &'a mut R {
         type Target = &'a mut R::Target;
 
         #[inline(always)]

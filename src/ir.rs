@@ -6,7 +6,10 @@
 use alloc::{boxed::Box, vec::Vec};
 use disjoint_impls::disjoint_impls;
 
-use crate::niche::{NicheFamily, WithCustomNiche, WithStableNiche, WithoutNiche};
+use crate::{
+    ReprC,
+    niche::{NicheFamily, WithCustomNiche, WithStableNiche, WithoutNiche},
+};
 
 /// Marker for a [`ReprFamily`] type that delegates to the pointed-to type when converting
 /// the likes of `&Self` or `&[Self]` into an FFI-compatible representation
@@ -18,7 +21,7 @@ pub trait Cloned {}
 /// Marker for a type that is transparent with respect to its wrapped type.
 pub enum Transparent {}
 
-/// Marker for a robust [`crate::ReprC`] type that does not require conversion
+/// Marker for a robust [`ReprC`] type that does not require conversion
 pub enum Robust {}
 
 /// Marker for a type exported as an opaque pointer over FFI.
@@ -31,7 +34,7 @@ disjoint_impls! {
     pub trait ReprFamily {
         /// The internal representation (i.e. type family) of the type
         ///
-        /// - If `Self` is [`crate::ReprC`], set [`ReprFamily::Kind`] to [`Robust`].
+        /// - If `Self` is [`ReprC`], set [`ReprFamily::Kind`] to [`Robust`].
         ///   The type is passed to FFI functions as-is, without conversion.
         ///
         /// - If [`ReprFamily::Kind`] is [`Transparent`], `Self` automatically implements [`crate::ExternC`]
@@ -75,7 +78,14 @@ disjoint_impls! {
     impl<R: ReprFamily<Kind = Box<Robust>>> ReprFamily for &mut R {
         type Kind = Transparent;
     }
-    impl<R: ReprFamily<Kind = Transparent>> ReprFamily for &mut R {
+    impl<
+        'a,
+        #[cfg(not(feature = "non_robust_ref_mut"))] R: ReprC,
+        #[cfg(feature = "non_robust_ref_mut")] R,
+    > ReprFamily for &'a mut R
+    where
+        R: ReprFamily<Kind = Transparent>,
+    {
         type Kind = Transparent;
     }
     impl<R: ReprFamily<Kind = Robust>> ReprFamily for &mut R {
@@ -126,7 +136,14 @@ disjoint_impls! {
     impl<'a, R: ReprFamily<Kind = Box<Robust>>> ReprFamily for &'a mut [R] {
         type Kind = &'a mut [Transparent];
     }
-    impl<'a, R: ReprFamily<Kind = Transparent>> ReprFamily for &'a mut [R] {
+    impl<
+        'a,
+        #[cfg(not(feature = "non_robust_ref_mut"))] R: ReprC,
+        #[cfg(feature = "non_robust_ref_mut")] R,
+    > ReprFamily for &'a mut [R]
+    where
+        R: ReprFamily<Kind = Transparent>,
+    {
         type Kind = &'a mut [Transparent];
     }
     impl<'a, R: ReprFamily<Kind = Robust>> ReprFamily for &'a mut [R] {
@@ -240,29 +257,29 @@ macro_rules! impl_fn_types {
     ( $( ( $( $arg:ident ),* ) ),* $(,)? ) => {$(
         // FIXME: I'm not sure if arguments are required to be ReprFamilyC, what if fn pointer is opaque?
         // or should we create new function with argument conversion?
-        unsafe impl<$($arg: crate::ReprC,)* R: crate::ReprC> crate::ReprC for unsafe extern "C" fn($($arg),*) -> R {}
-        unsafe impl<$($arg: crate::ReprC,)*> crate::ReprC for unsafe extern "C" fn($($arg),*) {}
+        unsafe impl<$($arg: ReprC,)* R: ReprC> ReprC for unsafe extern "C" fn($($arg),*) -> R {}
+        unsafe impl<$($arg: ReprC,)*> ReprC for unsafe extern "C" fn($($arg),*) {}
 
-        impl<$($arg: crate::ReprC,)* R: crate::ReprC> ReprFamily for unsafe extern "C" fn($($arg),*) -> R {
+        impl<$($arg: ReprC,)* R: ReprC> ReprFamily for unsafe extern "C" fn($($arg),*) -> R {
             type Kind = Self;
         }
-        //impl<$($arg: crate::ReprC,)*> ReprFamily for unsafe extern "C" fn($($arg),*) {
+        //impl<$($arg: ReprC,)*> ReprFamily for unsafe extern "C" fn($($arg),*) {
         //    type Kind = Self;
         //}
-        impl<$($arg: crate::ReprC,)* R: crate::ReprC> crate::ExternC for unsafe extern "C" fn($($arg),*) -> R {
+        impl<$($arg: ReprC,)* R: ReprC> crate::ExternC for unsafe extern "C" fn($($arg),*) -> R {
             type CType = Self;
         }
-        impl<$($arg: crate::ReprC,)*> crate::ExternC for unsafe extern "C" fn($($arg),*) {
+        impl<$($arg: ReprC,)*> crate::ExternC for unsafe extern "C" fn($($arg),*) {
             type CType = Self;
         }
-        //impl<$($arg: crate::ReprC,)* R: crate::ReprC> crate::Encode for unsafe extern "C" fn($($arg),*) -> R {
+        //impl<$($arg: ReprC,)* R: ReprC> crate::Encode for unsafe extern "C" fn($($arg),*) -> R {
         //    type Store = ();
 
         //    fn encode<'itm>(self, _: &mut ()) -> Self::CType where Self: 'itm {
         //        self
         //    }
         //}
-        impl<$($arg: crate::ReprC,)*> crate::Encode for unsafe extern "C" fn($($arg),*) {
+        impl<$($arg: ReprC,)*> crate::Encode for unsafe extern "C" fn($($arg),*) {
             type Store = ();
 
             fn encode<'itm>(self, _: &mut ()) -> Self::CType where Self: 'itm {
@@ -270,10 +287,10 @@ macro_rules! impl_fn_types {
             }
         }
 
-        unsafe impl<$($arg: crate::ReprC,)* R: crate::ReprC> crate::ReprC for Option<unsafe extern "C" fn($($arg),*) -> R> {}
-        unsafe impl<$($arg: crate::ReprC),*> crate::ReprC for Option<unsafe extern "C" fn($($arg),*)> {}
-        //crate::mineral! { impl<$($arg: crate::ReprC,)* R: crate::ReprC> Robust for Option<unsafe extern "C" fn($($arg),*) -> R> {} }
-        //crate::mineral! { impl<$($arg: crate::ReprC),*> Robust for Option<unsafe extern "C" fn($($arg),*)> {} }
+        unsafe impl<$($arg: ReprC,)* R: ReprC> ReprC for Option<unsafe extern "C" fn($($arg),*) -> R> {}
+        unsafe impl<$($arg: ReprC),*> ReprC for Option<unsafe extern "C" fn($($arg),*)> {}
+        //crate::mineral! { impl<$($arg: ReprC,)* R: ReprC> Robust for Option<unsafe extern "C" fn($($arg),*) -> R> {} }
+        //crate::mineral! { impl<$($arg: ReprC),*> Robust for Option<unsafe extern "C" fn($($arg),*)> {} }
         )*
     }
 }

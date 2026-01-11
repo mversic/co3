@@ -641,6 +641,22 @@ fn verify_field_non_owning(emitter: &mut Emitter, field: &FfiTypeField) {
                 "Raw pointer found. If the pointer doesn't own the data, attach `#[mineral(unsafe(non_owning))` to the field. Otherwise, mark the entire type as opaque with `#[mineral(opaque)]`"
             );
         }
+        fn visit_type_path(&mut self, node: &syn::TypePath) {
+            if node
+                .path
+                .segments
+                .last()
+                .is_some_and(|segment| segment.ident == "NonNull")
+            {
+                emit!(
+                    self.emitter,
+                    node,
+                    "NonNull pointer found. If the pointer doesn't own the data, attach `#[mineral(unsafe(non_owning))` to the field. Otherwise, mark the entire type as opaque with `#[mineral(opaque)]`"
+                );
+            }
+
+            syn::visit::visit_type_path(self, node);
+        }
     }
 
     let mut ptr_visitor = PtrVisitor { emitter };

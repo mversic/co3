@@ -1,17 +1,62 @@
 //! FFI-safe equivalent of [`core::option`] related functionality
 
-use crate::{ReprC, mineral};
+use crate::{FfiReturn, ReprC, mineral};
 
-pub use private::Option as COption;
+/// FFI-safe equivalent of [`core::option::Option`] for [`crate::ir::Robust`] types
+#[derive(Debug, PartialEq, Eq, PartialOrd, Ord)]
+#[repr(C)]
+pub struct COption<T: ReprC> {
+    tag: u8,
+    payload: T,
+}
 
-mod private {
-    use super::*;
+impl<T: ReprC> COption<T> {
+    /// Construct no value
+    #[expect(non_snake_case)]
+    pub const fn None() -> Self {
+        Self {
+            tag: 0,
+            // SAFETY: `ReprC` type is robust and can't have any trap representations
+            // TODO: No need to zero the memory because it must never be read. Use MaybeUninit?
+            payload: unsafe { core::mem::zeroed() },
+        }
+    }
 
-    /// FFI-safe equivalent of [`core::option::Option`] for [`crate::ir::Robust`] types
-    #[repr(C)]
-    pub struct Option<T: ReprC> {
-        pub tag: u8,
-        pub payload: T,
+    /// Construct some value
+    #[expect(non_snake_case)]
+    pub const fn Some(value: T) -> Self {
+        Self {
+            tag: 1,
+            payload: value,
+        }
+    }
+
+    pub(crate) const fn niche() -> Self {
+        Self {
+            tag: 2,
+            payload: unsafe { core::mem::zeroed() },
+        }
+    }
+}
+
+impl<T: ReprC> From<Option<T>> for COption<T> {
+    fn from(value: Option<T>) -> Self {
+        match value {
+            Some(value) => Self::Some(value),
+            None => Self::None(),
+        }
+    }
+}
+
+impl<T: ReprC> TryFrom<COption<T>> for Option<T> {
+    type Error = FfiReturn;
+
+    fn try_from(value: COption<T>) -> Result<Self, Self::Error> {
+        match value.tag {
+            0 => Ok(None),
+            1 => Ok(Some(value.payload)),
+            _ => Err(FfiReturn::TrapRepresentation),
+        }
     }
 }
 

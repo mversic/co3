@@ -7,24 +7,66 @@ use crate::{
     niche::{Niche, NicheFamily},
 };
 
-pub use private::{Result as CResult, ResultPayload as CResultPayload};
+/// FFI-safe equivalent of [`core::result::Result`]
+#[repr(C)]
+pub struct CResult<T: ReprC, E: ReprC> {
+    tag: u8,
+    payload: CResultPayload<T, E>,
+}
 
-mod private {
-    use super::*;
+/// Payload of [`CResult`]
+#[repr(C)]
+#[expect(non_snake_case)]
+union CResultPayload<T: ReprC, E: ReprC> {
+    Ok: T,
+    Err: E,
+}
 
-    /// FFI-safe equivalent of [`core::result::Result`]
-    #[repr(C)]
-    pub struct Result<T: ReprC, E: ReprC> {
-        pub tag: u8,
-        pub payload: ResultPayload<T, E>,
+impl<T: ReprC, E: ReprC> CResult<T, E> {
+    /// Construct the success value
+    #[expect(non_snake_case)]
+    pub const fn Ok(ok: T) -> Self {
+        Self {
+            tag: 0,
+            payload: CResultPayload { Ok: ok },
+        }
     }
 
-    /// Payload of [`Result`]
-    #[repr(C)]
+    /// Construct the error value
     #[expect(non_snake_case)]
-    pub union ResultPayload<T: ReprC, E: ReprC> {
-        pub Ok: T,
-        pub Err: E,
+    pub const fn Err(err: E) -> Self {
+        Self {
+            tag: 1,
+            payload: CResultPayload { Err: err },
+        }
+    }
+
+    pub(crate) const fn niche() -> Self {
+        Self {
+            tag: 2,
+            payload: unsafe { core::mem::zeroed() },
+        }
+    }
+}
+
+impl<T: ReprC, E: ReprC> From<Result<T, E>> for CResult<T, E> {
+    fn from(value: Result<T, E>) -> Self {
+        match value {
+            Ok(ok) => Self::Ok(ok),
+            Err(err) => Self::Err(err),
+        }
+    }
+}
+
+impl<T: ReprC, E: ReprC> TryFrom<CResult<T, E>> for Result<T, E> {
+    type Error = crate::FfiReturn;
+
+    fn try_from(value: CResult<T, E>) -> Result<Self, Self::Error> {
+        match value.tag {
+            0 => Ok(Ok(unsafe { value.payload.Ok })),
+            1 => Ok(Err(unsafe { value.payload.Err })),
+            _ => Err(crate::FfiReturn::TrapRepresentation),
+        }
     }
 }
 
@@ -62,10 +104,7 @@ where
 }
 
 impl<T: ExternC, E: ExternC> Niche for Result<T, E> {
-    const NICHE_VALUE: Self::CType = CResult {
-        tag: 2,
-        payload: unsafe { core::mem::zeroed() },
-    };
+    const NICHE_VALUE: Self::CType = CResult::niche();
 }
 
 impl<T: ExternC, E: ExternC> ExternC for Result<T, E> {
@@ -80,18 +119,8 @@ impl<T: Encode, E: Encode> Encode for Result<T, E> {
         Self: 'itm,
     {
         match self {
-            Ok(ok) => CResult {
-                tag: 0,
-                payload: CResultPayload {
-                    Ok: ok.encode(&mut store.0),
-                },
-            },
-            Err(err) => CResult {
-                tag: 1,
-                payload: CResultPayload {
-                    Err: err.encode(&mut store.1),
-                },
-            },
+            Ok(ok) => CResult::Ok(ok.encode(&mut store.0)),
+            Err(err) => CResult::Err(err.encode(&mut store.1)),
         }
     }
 }
@@ -103,10 +132,9 @@ impl<'d, T: Decode<'d>, E: Decode<'d>> Decode<'d> for Result<T, E> {
         source: Self::CType,
         store: &'itm mut Self::Store,
     ) -> crate::Result<Self> {
-        match source.tag {
-            0 => Ok(Ok(unsafe { T::decode(source.payload.Ok, &mut store.0)? })),
-            1 => Ok(Err(unsafe { E::decode(source.payload.Err, &mut store.1)? })),
-            _ => Err(crate::FfiReturn::TrapRepresentation),
+        match TryInto::<Result<_, _>>::try_into(source)? {
+            Ok(ok) => Ok(Ok(unsafe { T::decode(ok, &mut store.0)? })),
+            Err(err) => Ok(Err(unsafe { E::decode(err, &mut store.1)? })),
         }
     }
 }

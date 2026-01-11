@@ -570,25 +570,13 @@ disjoint_impls! {
     {
         unsafe fn write_out(self, out_ptr: *mut Self::OutPtr) {
             match self {
-                None => {
-                    unsafe {
-                        // SAFETY: `ReprC` type is robust and can't have trap representations
-                        // TODO: No need to zero the memory because it must never be read
-                        out_ptr.write(COption {
-                            tag: 0,
-                            payload: core::mem::zeroed(),
-                        });
-                    }
-                }
+                None => unsafe { out_ptr.write(COption::None()) },
                 Some(value) => unsafe {
                     let mut value_out_ptr = core::mem::MaybeUninit::uninit();
                     OutPtrWrite::write_out(value, value_out_ptr.as_mut_ptr());
                     let value_out_ptr = value_out_ptr.assume_init();
 
-                    out_ptr.write(COption {
-                        tag: 1,
-                        payload: value_out_ptr,
-                    });
+                    out_ptr.write(COption::Some(value_out_ptr));
                 },
             }
         }
@@ -853,11 +841,9 @@ disjoint_impls! {
         Self: ReprFamily<Kind = Option<WithoutNiche>>,
     {
         unsafe fn try_read_out(out_ptr: Self::OutPtr) -> Result<Self> {
-            match out_ptr.tag {
-                0 => Ok(None),
-                1 => Ok(Some(unsafe { R::try_read_out(out_ptr.payload)? })),
-                _ => Err(FfiReturn::TrapRepresentation),
-            }
+            TryInto::<Option<_>>::try_into(out_ptr)?
+                .map(|payload| unsafe { R::try_read_out(payload) })
+                .transpose()
         }
     }
     impl<R: Niche + OutPtrRead> OutPtrRead for Option<R>

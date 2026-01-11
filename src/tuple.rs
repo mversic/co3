@@ -7,31 +7,35 @@
 //!
 //! # Niche Optimization
 //!
-//! When one of the tuple elements has a niche value (trap representations), `Option<(A, B, ...)>`
-//! is optimized to use niche value of the **first element with a niche**. Values of all the other
-//! elements in the niche representation are zeroed, though this is not not a stable guarantee
-//! at the moment.
+//! When one of the tuple elements has a niche value (trap representations), `Option<(A, B, ...)>` is
+//! optimized to use niche value of the **first element with a niche** to represent [`None`] value.
+//! Values of all the other tuple elements of the niche are zeroed (NOT a stable guarantee yet)
 //!
 //! When none of the tuple elements have a niche value [`Option<(A, B, ...)>`] is represented as a
-//! [`CTuple2<u8, CTupleN<A, B, ...>>`] where first element corresponds to the discriminant
+//! [`COption<CTupleN<A, B, ...>>`]
 //!
 //! # Example
 //!
 //! ```rust
 //! use core::mem::size_of;
 //!
-//! use co3::{ExternC, Encode, CTuple3};
+//! use co3::{option::COption, tuple::CTuple3, ExternC, Encode};
 //!
-//! type TupleWithNiche1 = (u8, bool, &bool);
-//! type TupleWithNiche2 = (u8, &bool, bool);
+//! type TupleWithNiche1<'a> = (u8, bool, &'a bool);
+//! type TupleWithNiche2<'a> = (u8, &'a bool, bool);
 //! type TupleWithoutNiche = (u64, u32, u8);
 //!
-//! assert_eq!(size_of::<TupleWithNiche1::CType>(), size_of::<Option::<TupleWithNiche1>::CType>());
-//! assert_eq!(size_of::<TupleWithNiche2::CType>(), size_of::<Option::<TupleWithNiche2>::CType>());
+//! assert_eq!(
+//!     size_of::<<TupleWithNiche1 as ExternC>::CType>(),
+//!     size_of::<<Option::<TupleWithNiche1> as ExternC>::CType>()
+//! );
+//! assert_eq!(
+//!     size_of::<<TupleWithNiche2 as ExternC>::CType>(),
+//!     size_of::<<Option::<TupleWithNiche2> as ExternC>::CType>());
 //!
 //! assert_eq!(
-//!     1 + size_of::<TupleWithoutNiche::CType>(),
-//!     size_of::<Option::<TupleWithoutNiche>::CType>()
+//!     8 + size_of::<<TupleWithoutNiche as ExternC>::CType>(),
+//!     size_of::<<Option::<TupleWithoutNiche> as ExternC>::CType>()
 //! );
 //!
 //! let none_value_1: Option<TupleWithNiche1> = None;
@@ -42,12 +46,17 @@
 //! let mut store2 = Default::default();
 //! let mut store3 = Default::default();
 //!
-//! assert_eq!(none_value_1.encode(&mut store1), TupleWithNiche1(0, 2, core::ptr::null()));
-//! assert_eq!(none_value_2.encode(&mut store2), TupleWithNiche2(0, core::ptr::null(), 0));
-//!
+//! assert_eq!(
+//!     none_value_1.encode(&mut store1),
+//!     CTuple3(0, 2, core::ptr::null())
+//! );
+//! assert_eq!(
+//!     none_value_2.encode(&mut store2),
+//!     CTuple3(0, core::ptr::null(), 0)
+//! );
 //! assert_eq!(
 //!     none_value_3.encode(&mut store3),
-//!     CTuple2(0, TupleWithoutNiche(0, core::ptr::null(), 0))
+//!     COption::None()
 //! );
 //! ```
 
@@ -556,4 +565,73 @@ where
     ((A, B, C, D, E, F), (G, H, I, J, K, L)): NicheFamily,
 {
     type Kind = <((A, B, C, D, E, F), (G, H, I, J, K, L)) as NicheFamily>::Kind;
+}
+
+#[cfg(test)]
+mod tests {
+    #[cfg(feature = "cloned_refs")]
+    use crate::slice::CSlice;
+    use crate::{
+        niche::StableNiche,
+        option::COption,
+        transmute::{CheckedTransmute, FlatTransmute},
+    };
+
+    use super::*;
+
+    use alloc::boxed::Box;
+    use static_assertions::{assert_impl_all, assert_not_impl_any};
+
+    #[test]
+    fn cloned_tuple_3_without_niche() {
+        assert_impl_all!((u8, u8, u8): ExternC<CType = CTuple3<u8, u8, u8>>);
+        #[cfg(feature = "cloned_refs")]
+        assert_impl_all!(&(u8, u8, u8): StableNiche<CType = *const CTuple3<u8, u8, u8>>);
+        assert_impl_all!(Box<(u8, u8, u8)>: StableNiche<CType = *mut CTuple3<u8, u8, u8>>);
+        #[cfg(feature = "cloned_refs")]
+        assert_impl_all!(&[(u8, u8, u8)]: Niche<CType = CSlice<CTuple3<u8, u8, u8>>>);
+        assert_impl_all!([(u8, u8, u8); 2]: ExternC<CType = [CTuple3<u8, u8, u8>; 2]>);
+        assert_impl_all!(Option<(u8, u8, u8)>: Niche<CType = COption<CTuple3<u8, u8, u8>>>);
+
+        assert_not_impl_any!((u8, u8, u8): ReprC, CheckedTransmute, FlatTransmute, Niche);
+        assert_not_impl_any!(&(u8, u8, u8): ReprC, CheckedTransmute, FlatTransmute);
+        assert_not_impl_any!(&mut (u8, u8, u8): ReprC, ExternC, CheckedTransmute, FlatTransmute);
+        assert_not_impl_any!(Box<(u8, u8, u8)>: ReprC, CheckedTransmute, FlatTransmute);
+        assert_not_impl_any!(&[(u8, u8, u8)]: ReprC, CheckedTransmute, FlatTransmute, StableNiche);
+        assert_not_impl_any!(&mut [(u8, u8, u8)]: ReprC, ExternC, CheckedTransmute, FlatTransmute, StableNiche);
+        assert_not_impl_any!([(u8, u8, u8); 2]: ReprC, CheckedTransmute, FlatTransmute, Niche);
+        assert_not_impl_any!(Option<(u8, u8, u8)>: ReprC, CheckedTransmute, FlatTransmute, StableNiche);
+
+        #[cfg(not(feature = "cloned_refs"))]
+        assert_not_impl_any!(&(u8, u8, u8): ExternC);
+        #[cfg(not(feature = "cloned_refs"))]
+        assert_not_impl_any!(&[(u8, u8, u8)]: ExternC);
+    }
+
+    #[test]
+    fn cloned_tuple_3_with_niche() {
+        assert_impl_all!((u8, bool, u8): Niche<CType = CTuple3<u8, u8, u8>>);
+        #[cfg(feature = "cloned_refs")]
+        assert_impl_all!(&(u8, bool, u8): StableNiche<CType = *const CTuple3<u8, u8, u8>>);
+        assert_impl_all!(Box<(u8, bool, u8)>: StableNiche<CType = *mut CTuple3<u8, u8, u8>>);
+        #[cfg(feature = "cloned_refs")]
+        assert_impl_all!(&[(u8, bool, u8)]: Niche<CType = CSlice<CTuple3<u8, u8, u8>>>);
+        assert_impl_all!([(u8, bool, u8); 2]: Niche<CType = [CTuple3<u8, u8, u8>; 2]>);
+        // TODO: Depends on: https://github.com/mversic/co3/issues/33
+        //assert_impl_all!(Option<(u8, bool, u8)>: Niche<CType = COption<CTuple3<u8, u8, u8>>>);
+
+        assert_not_impl_any!((u8, bool, u8): ReprC, CheckedTransmute, FlatTransmute, StableNiche);
+        assert_not_impl_any!(&(u8, bool, u8): ReprC, CheckedTransmute, FlatTransmute);
+        assert_not_impl_any!(&mut (u8, bool, u8): ReprC, ExternC, CheckedTransmute, FlatTransmute);
+        assert_not_impl_any!(Box<(u8, bool, u8)>: ReprC, CheckedTransmute, FlatTransmute);
+        assert_not_impl_any!(&[(u8, bool, u8)]: ReprC, CheckedTransmute, FlatTransmute, StableNiche);
+        assert_not_impl_any!(&mut [(u8, bool, u8)]: ReprC, ExternC, CheckedTransmute, FlatTransmute, StableNiche);
+        assert_not_impl_any!([(u8, bool, u8); 2]: ReprC, CheckedTransmute, FlatTransmute, StableNiche);
+        assert_not_impl_any!(Option<(u8, bool, u8)>: ReprC, CheckedTransmute, FlatTransmute, StableNiche);
+
+        #[cfg(not(feature = "cloned_refs"))]
+        assert_not_impl_any!(&(u8, bool, u8): ExternC);
+        #[cfg(not(feature = "cloned_refs"))]
+        assert_not_impl_any!(&[(u8, bool, u8)]: ExternC);
+    }
 }

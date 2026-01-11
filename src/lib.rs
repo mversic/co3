@@ -13,7 +13,7 @@ pub use co3_derive::*;
 use derive_more::Display;
 use disjoint_impls::disjoint_impls;
 
-use crate::niche::{WithCustomNiche, WithoutNiche};
+use crate::niche::{StableNiche, WithCustomNiche, WithoutNiche};
 #[cfg(feature = "owned_types")]
 #[cfg(feature = "owned_as_ref")]
 use crate::transmute::{
@@ -49,30 +49,37 @@ use option::COption;
 /// A specialized `Result` type for FFI operations
 pub type Result<T> = core::result::Result<T, FfiReturn>;
 
-disjoint_impls! {
-    /// Robust type that conforms to C ABI and can be safely shared across FFI boundaries.
-    ///
-    /// Note that ABI compatibility of referent is not guaranteed. Dereferencing pointers
-    /// whose referents don't also implement `ReprC` is very likely to cause UB
-    ///
-    /// # Safety
-    ///
-    /// Type implementing the trait must be a robust type with a guaranteed C ABI. Care must be taken
-    /// not to dereference pointers whose referents don't implement `ReprC`; they are considered opaque
-    // NOTE: Type is `Copy` to indicate that there can be no ownership transfer
-    pub unsafe trait ReprC: Copy {}
-
-    unsafe impl<R: CheckedTransmute<Target: ReprFamily<Kind = Robust> + ReprC> + Copy> ReprC for Option<R> {}
-    unsafe impl<R: CheckedTransmute<Target: ReprFamily<Kind = Transparent>> + Copy> ReprC for Option<R>
-    where
-        Option<<R as CheckedTransmute>::Target>: ReprC,
-    {}
+/// Result of execution of an FFI function
+#[derive(Debug, Display, Clone, Copy, PartialEq, Eq)]
+#[repr(i8)]
+pub enum FfiReturn {
+    /// The input argument provided to FFI function can't be converted into inner rust representation.
+    ConversionFailed = -6,
+    /// The input argument provided to FFI function contains a trap representation.
+    TrapRepresentation = -5,
+    /// FFI function execution panicked.
+    UnrecoverableError = -4,
+    /// Provided handle id doesn't match any known handles.
+    UnknownHandle = -3,
+    /// FFI function failed during the execution of the wrapped method on the provided handle.
+    ExecutionFail = -2,
+    /// The input argument provided to FFI function is a null pointer.
+    ArgIsNull = -1,
+    /// FFI function executed successfully.
+    Ok = 0,
 }
 
-// TODO: Check https://github.com/mversic/co3/issues/13
-const fn assert_arr_has_non_zero_len<const N: usize>() {
-    assert!(N != 0, "empty array is a ZST");
-}
+/// Robust type that conforms to C ABI and can be safely shared across FFI boundaries.
+///
+/// Note that ABI compatibility of referent is not guaranteed. Dereferencing pointers
+/// whose referents don't also implement `ReprC` is very likely to cause UB
+///
+/// # Safety
+///
+/// Type implementing the trait must be a robust type with a guaranteed C ABI. Care must be taken
+/// not to dereference pointers whose referents don't implement `ReprC`; they are considered opaque
+// NOTE: Type is `Copy` to indicate that there can be no ownership transfer
+pub unsafe trait ReprC: Copy {}
 
 disjoint_impls! {
     /// A Rust type that has an `extern "C"` ABI
@@ -678,18 +685,7 @@ disjoint_impls! {
         where
             Self: 'itm,
         {
-            match self {
-                // SAFETY: `ReprC` type is robust and can't have any trap representations
-                // TODO: No need to zero the memory because it must never be read. Use MaybeUninit?
-                None => COption {
-                    tag: 0,
-                    payload: unsafe { core::mem::zeroed() },
-                },
-                Some(value) => COption {
-                    tag: 1,
-                    payload: value.encode(store),
-                },
-            }
+            self.map(|v| v.encode(store)).into()
         }
     }
     impl<R: Niche + Encode> Encode for Option<R>
@@ -1148,11 +1144,9 @@ disjoint_impls! {
         type Store = <R as Decode<'d>>::Store;
 
         unsafe fn decode<'itm: 'd>(source: Self::CType, store: &'itm mut Self::Store) -> Result<Self> {
-            match source.tag {
-                0 => Ok(None),
-                1 => Ok(Some(unsafe { R::decode(source.payload, store) }?)),
-                _ => Err(FfiReturn::TrapRepresentation),
-            }
+            TryInto::<Option<_>>::try_into(source)?
+                .map(|payload| unsafe { R::decode(payload, store) })
+                .transpose()
         }
     }
     impl<'d, R: Niche<CType: PartialEq> + Decode<'d>> Decode<'d> for Option<R>
@@ -1169,26 +1163,6 @@ disjoint_impls! {
             Ok(Some(unsafe { R::decode(source, store) }?))
         }
     }
-}
-
-/// Result of execution of an FFI function
-#[derive(Debug, Display, Clone, Copy, PartialEq, Eq)]
-#[repr(i8)]
-pub enum FfiReturn {
-    /// The input argument provided to FFI function can't be converted into inner rust representation.
-    ConversionFailed = -6,
-    /// The input argument provided to FFI function contains a trap representation.
-    TrapRepresentation = -5,
-    /// FFI function execution panicked.
-    UnrecoverableError = -4,
-    /// Provided handle id doesn't match any known handles.
-    UnknownHandle = -3,
-    /// FFI function failed during the execution of the wrapped method on the provided handle.
-    ExecutionFail = -2,
-    /// The input argument provided to FFI function is a null pointer.
-    ArgIsNull = -1,
-    /// FFI function executed successfully.
-    Ok = 0,
 }
 
 /// Macro for defining FFI types of a known category ([`Robust`] or [`CheckedTransmute`]).
@@ -1348,7 +1322,7 @@ macro_rules! mineral {
             }
         }
     };
-    (@transparent [$($for_dummy:tt)?] [$($impl_generics:tt)*] $self_ty:ty $([$($preds:tt)*])? {
+    (@transparent [$($for_dummy:tt)*] [$($impl_generics:tt)*] $self_ty:ty $([$($preds:tt)*])? {
         type Target = $target:ty;
         fn is_valid($target_var:ident: $target_ty:ty) -> bool $block:block
     }) => {
@@ -1363,15 +1337,15 @@ macro_rules! mineral {
             fn is_valid($target_var: $target_ty) -> bool $block
         }
 
-        impl $($impl_generics)* $crate::niche::NicheFamily for $self_ty where $($for_dummy)? $target: $crate::niche::NicheFamily, $($($preds)*)? {
+        impl $($impl_generics)* $crate::niche::NicheFamily for $self_ty where $($for_dummy)* $target: $crate::niche::NicheFamily, $($($preds)*)? {
             type Kind = <$target as $crate::niche::NicheFamily>::Kind;
         }
 
-        impl $($impl_generics)* $crate::niche::Niche for $self_ty where $($for_dummy)? $target: $crate::niche::Niche, $($($preds)*)? {
+        impl $($impl_generics)* $crate::niche::Niche for $self_ty where $($for_dummy)* $target: $crate::niche::Niche, $($($preds)*)? {
             const NICHE_VALUE: <Self as $crate::ExternC>::CType = <$target as $crate::niche::Niche>::NICHE_VALUE;
         }
 
-        unsafe impl $($impl_generics)* $crate::niche::StableNiche for $self_ty where $($for_dummy)? $target: $crate::niche::StableNiche, $($($preds)*)? {}
+        unsafe impl $($impl_generics)* $crate::niche::StableNiche for $self_ty where $($for_dummy)* $target: $crate::niche::StableNiche, $($($preds)*)? {}
     };
 }
 
@@ -1385,25 +1359,187 @@ mineral! {
 // SAFETY: Arrays is just a contiguous block of memory
 unsafe impl<R: ReprC, const N: usize> ReprC for [R; N] {}
 
+unsafe impl<R: StableNiche + Copy> ReprC for Option<R> where Self: ReprFamily<Kind = Transparent> {}
+
+// TODO: Check https://github.com/mversic/co3/issues/13
+const fn assert_arr_has_non_zero_len<const N: usize>() {
+    assert!(N != 0, "empty array is a ZST");
+}
+
 #[cfg(test)]
 mod tests {
-    use crate::transmute::FlatTransmute;
+    use crate::{niche::StableNiche, transmute::FlatTransmute};
 
     use super::*;
 
-    use static_assertions::assert_impl_all;
+    use alloc::string::String;
+    use static_assertions::{assert_impl_all, assert_not_impl_any};
 
     #[test]
-    fn impls() {
-        assert_impl_all!(u8: ReprFamily<Kind = Robust>, FlatTransmute<CType = u8>, ReprC);
-        assert_impl_all!(&u8: ReprFamily<Kind = Transparent>, CheckedTransmute<Target = *const u8>, FlatTransmute<CType = *const u8>);
-        assert_impl_all!(&mut u8: ReprFamily<Kind = Transparent>, CheckedTransmute<Target = *mut u8>, FlatTransmute<CType = *mut u8>);
-        //assert_impl_all!(Box<u8>: Repr<Kind = Transparent>, FlatTransmute<CType = *mut u8>);
-        assert_impl_all!(&[u8]: ReprFamily<Kind = &'static [Robust]>, ExternC<CType = CSlice<u8>>);
-        assert_impl_all!(&mut [u8]: ReprFamily<Kind = &'static mut [Robust]>, ExternC<CType = CSliceMut<u8>>);
-        assert_impl_all!(Box<[u8]>: ReprFamily<Kind = Box<[Robust]>>, ExternC<CType = CSliceMut<u8>>);
-        assert_impl_all!(Vec<u8>: ReprFamily<Kind = Vec<Robust>>, ExternC<CType = CSliceMut<u8>>);
-        assert_impl_all!([u8; 2]: ReprFamily<Kind = Robust>, ExternC<CType = [u8; 2]>);
-        assert_impl_all!(Option<u8>: ReprFamily<Kind = Option<WithoutNiche>>, ExternC<CType = COption<u8>>);
+    fn robust_u8() {
+        assert_impl_all!(u8: ReprC, FlatTransmute<CType = u8>);
+        assert_impl_all!(&u8: CheckedTransmute<Target = *const u8>, FlatTransmute<CType = *const u8>, StableNiche);
+        assert_impl_all!(&mut u8: CheckedTransmute<Target = *mut u8>, FlatTransmute<CType = *mut u8>, StableNiche);
+        // FIXME:
+        //assert_impl_all!(Box<u8>: CheckedTransmute<Target = *mut u8>, FlatTransmute<CType = *mut u8>, StableNiche);
+        assert_impl_all!(&[u8]: Niche<CType = CSlice<u8>>);
+        assert_impl_all!(&mut [u8]: Niche<CType = CSliceMut<u8>>);
+        assert_impl_all!([u8; 2]: ReprC, FlatTransmute<CType = [u8; 2]>);
+        assert_impl_all!(Option<u8>: Niche<CType = COption<u8>>);
+
+        assert_not_impl_any!(u8: CheckedTransmute);
+        assert_not_impl_any!(Box<u8>: ReprC);
+        assert_not_impl_any!(&mut u8: ReprC);
+        assert_not_impl_any!(&u8: ReprC);
+        assert_not_impl_any!(&[u8]: ReprC, CheckedTransmute, FlatTransmute, StableNiche);
+        assert_not_impl_any!(&mut [u8]: ReprC, CheckedTransmute, FlatTransmute, StableNiche);
+        assert_not_impl_any!([u8; 2]: CheckedTransmute, Niche);
+        assert_not_impl_any!(Option<u8>: ReprC, CheckedTransmute, FlatTransmute, StableNiche);
+    }
+
+    #[test]
+    fn robust_ptr() {
+        assert_impl_all!(*const String: ReprC, FlatTransmute<CType = *const String>);
+        assert_impl_all!(&*const String: CheckedTransmute<Target = *const *const String>, FlatTransmute<CType = *const *const String>, StableNiche);
+        assert_impl_all!(&mut *const String: CheckedTransmute<Target = *mut *const String>, FlatTransmute<CType = *mut *const String>, StableNiche);
+        //assert_impl_all!(Box<*const String>: CheckedTransmute<Target = *mut *const String>, FlatTransmute<CType = *mut *const String>, StableNiche);
+        assert_impl_all!(&[*const String]: Niche<CType = CSlice<*const String>>);
+        assert_impl_all!(&mut [*const String]: Niche<CType = CSliceMut<*const String>>);
+        assert_impl_all!([*const String; 2]: ReprC, FlatTransmute<CType = [*const String; 2]>);
+        assert_impl_all!(Option<*const String>: Niche<CType = COption<*const String>>);
+
+        assert_not_impl_any!(*const String: CheckedTransmute);
+        assert_not_impl_any!(&*const String: ReprC);
+        assert_not_impl_any!(&mut *const String: ReprC);
+        assert_not_impl_any!(Box<*const String>: ReprC);
+        assert_not_impl_any!(&[*const String]: ReprC, CheckedTransmute, FlatTransmute, StableNiche);
+        assert_not_impl_any!(&mut [*const String]: ReprC, CheckedTransmute, FlatTransmute, StableNiche);
+        assert_not_impl_any!([*const String; 2]: CheckedTransmute, Niche);
+        assert_not_impl_any!(Option<*const String>: ReprC, CheckedTransmute, FlatTransmute, StableNiche);
+    }
+
+    #[test]
+    fn transparent_bool() {
+        assert_impl_all!(bool: CheckedTransmute<Target = u8>, FlatTransmute<CType = u8>, Niche);
+        assert_impl_all!(&bool: CheckedTransmute<Target = &'static u8>, FlatTransmute<CType = *const u8>, StableNiche);
+        #[cfg(feature = "non_robust_ref_mut")]
+        assert_impl_all!(&mut bool: CheckedTransmute<Target = &'static mut u8>, FlatTransmute<CType = *mut u8>, StableNiche);
+        // FIXME:
+        //assert_impl_all!(Box<&bool>: CheckedTransmute<Target = Box<*const u8>>, FlatTransmute<CType = *mut *const u8>, StableNiche);
+        assert_impl_all!(&[bool]: Niche<CType = CSlice<u8>>);
+        #[cfg(feature = "non_robust_ref_mut")]
+        assert_impl_all!(&mut [bool]: Niche<CType = CSliceMut<u8>>);
+        assert_impl_all!([bool; 2]: CheckedTransmute<Target = [u8; 2]>, FlatTransmute<CType = [u8; 2]>, Niche);
+        assert_impl_all!(Option<bool>: Niche<CType = u8>);
+
+        assert_not_impl_any!(bool: ReprC, StableNiche);
+        assert_not_impl_any!(&bool: ReprC);
+        assert_not_impl_any!(&mut bool: ReprC);
+        assert_not_impl_any!(Box<bool>: ReprC);
+        assert_not_impl_any!(&[bool]: ReprC, CheckedTransmute, FlatTransmute, StableNiche);
+        assert_not_impl_any!(&mut [bool]: ReprC, CheckedTransmute, FlatTransmute, StableNiche);
+        assert_not_impl_any!([bool; 2]: ReprC, StableNiche);
+        assert_not_impl_any!(Option<bool>: ReprC, CheckedTransmute, FlatTransmute, StableNiche);
+
+        #[cfg(not(feature = "non_robust_ref_mut"))]
+        assert_not_impl_any!(&mut bool: ExternC);
+        #[cfg(not(feature = "non_robust_ref_mut"))]
+        assert_not_impl_any!(&mut [bool]: ExternC);
+    }
+
+    #[test]
+    fn robust_u8_ref() {
+        assert_impl_all!(&u8: FlatTransmute<CType = *const u8>, StableNiche);
+        assert_impl_all!(&&u8: CheckedTransmute<Target = &'static *const u8>, FlatTransmute<CType = *const *const u8>, StableNiche);
+        #[cfg(feature = "non_robust_ref_mut")]
+        assert_impl_all!(&mut &u8: CheckedTransmute<Target = &'static mut *const u8>, FlatTransmute<CType = *mut *const u8>, StableNiche);
+        // FIXME:
+        //assert_impl_all!(Box<&u8>: CheckedTransmute<Target = Box<*const u8>>, FlatTransmute<CType = *mut *const u8>, StableNiche);
+        assert_impl_all!(&[&u8]: Niche<CType = CSlice<*const u8>>);
+        #[cfg(feature = "non_robust_ref_mut")]
+        assert_impl_all!(&mut [&u8]: Niche<CType = CSliceMut<*const u8>>);
+        assert_impl_all!([&u8; 2]: CheckedTransmute<Target = [*const u8; 2]>, FlatTransmute<CType = [*const u8; 2]>, Niche);
+        assert_impl_all!(Option<&u8>: ReprC, CheckedTransmute<Target = *const u8>, FlatTransmute<CType = *const u8>);
+
+        assert_not_impl_any!(&u8: ReprC);
+        assert_not_impl_any!(&&u8: ReprC);
+        assert_not_impl_any!(&mut &u8: ReprC);
+        assert_not_impl_any!(Box<&u8>: ReprC);
+        assert_not_impl_any!(&[&u8]: ReprC, CheckedTransmute, FlatTransmute, StableNiche);
+        assert_not_impl_any!(&mut [&u8]: ReprC, CheckedTransmute, FlatTransmute, StableNiche);
+        assert_not_impl_any!([&u8; 2]: ReprC, StableNiche);
+        assert_not_impl_any!(Option<&u8>: Niche);
+
+        #[cfg(not(feature = "non_robust_ref_mut"))]
+        assert_not_impl_any!(&mut &u8: ExternC);
+        #[cfg(not(feature = "non_robust_ref_mut"))]
+        assert_not_impl_any!(&mut [&u8]: ExternC);
+    }
+
+    #[test]
+    fn transparent_bool_ref() {
+        assert_impl_all!(&bool: CheckedTransmute<Target = &'static u8>, FlatTransmute<CType = *const u8>, StableNiche);
+        assert_impl_all!(&&bool: CheckedTransmute<Target = &'static &'static u8>, FlatTransmute<CType = *const *const u8>, StableNiche);
+        #[cfg(feature = "non_robust_ref_mut")]
+        assert_impl_all!(&mut &bool: CheckedTransmute<Target = &'static mut &'static u8>, FlatTransmute<CType = *mut *const u8>, StableNiche);
+        // FIXME:
+        //assert_impl_all!(Box<&bool>: CheckedTransmute<Target = Box<*const u8>>, FlatTransmute<CType = *mut *const u8>, StableNiche);
+        assert_impl_all!(&[&bool]: Niche<CType = CSlice<*const u8>>);
+        #[cfg(feature = "non_robust_ref_mut")]
+        assert_impl_all!(&mut [&bool]: Niche<CType = CSliceMut<*const u8>>);
+        assert_impl_all!([&bool; 2]: CheckedTransmute<Target = [&'static u8; 2]>, FlatTransmute<CType = [*const u8; 2]>, Niche);
+        assert_impl_all!(Option<&bool>: CheckedTransmute<Target = Option<&'static u8>>, FlatTransmute<CType = *const u8>);
+
+        assert_not_impl_any!(&bool: ReprC);
+        assert_not_impl_any!(&&bool: ReprC);
+        assert_not_impl_any!(&mut &bool: ReprC);
+        assert_not_impl_any!(Box<&bool>: ReprC);
+        assert_not_impl_any!(&[&bool]: ReprC, CheckedTransmute, FlatTransmute, StableNiche);
+        assert_not_impl_any!(&mut [&bool]: ReprC, CheckedTransmute, FlatTransmute, StableNiche);
+        assert_not_impl_any!([&bool; 2]: ReprC, StableNiche);
+        assert_not_impl_any!(Option<&bool>: Niche);
+        // FIXME: `Option<&bool>` should NOT implement `ReprC`!!!
+        //assert_not_impl_any!(Option<&bool>: ReprC);
+
+        #[cfg(not(feature = "non_robust_ref_mut"))]
+        assert_not_impl_any!(&mut &bool: ExternC);
+        #[cfg(not(feature = "non_robust_ref_mut"))]
+        assert_not_impl_any!(&mut [&bool]: ExternC);
+    }
+
+    #[test]
+    #[cfg(feature = "owned_types")]
+    fn owned_types() {
+        use crate::tuple::CTuple3;
+
+        assert_impl_all!(Box<[u8]>: Niche<CType = CSliceMut<u8>>);
+        assert_impl_all!(Vec<u8>: Niche<CType = CSliceMut<u8>>);
+        assert_impl_all!(Box<[*const String]>: Niche<CType = CSliceMut<*const String>>);
+        assert_impl_all!(Vec<*const String>: Niche<CType = CSliceMut<*const String>>);
+        assert_impl_all!(Box<[bool]>: Niche<CType = CSliceMut<u8>>);
+        assert_impl_all!(Vec<bool>: Niche<CType = CSliceMut<u8>>);
+        assert_impl_all!(Box<[&u8]>: Niche<CType = CSliceMut<*const u8>>);
+        assert_impl_all!(Vec<&u8>: Niche<CType = CSliceMut<*const u8>>);
+        assert_impl_all!(Box<[&bool]>: Niche<CType = CSliceMut<*const u8>>);
+        assert_impl_all!(Vec<&bool>: Niche<CType = CSliceMut<*const u8>>);
+        assert_impl_all!(Box<[(u8, u8, u8)]>: Niche<CType = CSliceMut<CTuple3<u8, u8, u8>>>);
+        assert_impl_all!(Vec<(u8, u8, u8)>: Niche<CType = CSliceMut<CTuple3<u8, u8, u8>>>);
+        assert_impl_all!(Box<[(u8, bool, u8)]>: Niche<CType = CSliceMut<CTuple3<u8, u8, u8>>>);
+        assert_impl_all!(Vec<(u8, bool, u8)>: Niche<CType = CSliceMut<CTuple3<u8, u8, u8>>>);
+
+        assert_not_impl_any!(Box<[u8]>: ReprC, CheckedTransmute, FlatTransmute, StableNiche);
+        assert_not_impl_any!(Vec<u8>: ReprC, CheckedTransmute, FlatTransmute, StableNiche);
+        assert_not_impl_any!(Box<[*const String]>: ReprC, CheckedTransmute, FlatTransmute, StableNiche);
+        assert_not_impl_any!(Vec<*const String>: ReprC, CheckedTransmute, FlatTransmute, StableNiche);
+        assert_not_impl_any!(Box<[bool]>: ReprC, CheckedTransmute, FlatTransmute, StableNiche);
+        assert_not_impl_any!(Vec<bool>: ReprC, CheckedTransmute, FlatTransmute, StableNiche);
+        assert_not_impl_any!(Box<[&u8]>: ReprC, CheckedTransmute, FlatTransmute, StableNiche);
+        assert_not_impl_any!(Vec<&u8>: ReprC, CheckedTransmute, FlatTransmute, StableNiche);
+        assert_not_impl_any!(Box<[&bool]>: ReprC, CheckedTransmute, FlatTransmute, StableNiche);
+        assert_not_impl_any!(Vec<&bool>: ReprC, CheckedTransmute, FlatTransmute, StableNiche);
+        assert_not_impl_any!(Box<[(u8, u8, u8)]>: ReprC, CheckedTransmute, FlatTransmute, StableNiche);
+        assert_not_impl_any!(Vec<(u8, u8, u8)>: ReprC, CheckedTransmute, FlatTransmute, StableNiche);
+        assert_not_impl_any!(Box<[(u8, bool, u8)]>: ReprC, CheckedTransmute, FlatTransmute, StableNiche);
+        assert_not_impl_any!(Vec<(u8, bool, u8)>: ReprC, CheckedTransmute, FlatTransmute, StableNiche);
     }
 }

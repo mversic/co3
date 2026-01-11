@@ -4,11 +4,12 @@ use alloc::{boxed::Box, vec::Vec};
 use disjoint_impls::disjoint_impls;
 
 use crate::{
-    ExternC, assert_arr_has_non_zero_len,
+    ExternC, ReprC, assert_arr_has_non_zero_len,
+    option::COption,
     slice::{CSlice, CSliceMut},
 };
 
-/// Marker trait for an [`Ir`] type of a Rust type that has a niche value (stable or custom)
+/// Marker trait for an [`NicheFamily`] type of a Rust type that has a niche value (stable or custom)
 ///
 /// There are only 2 notable implementations of this trait:
 /// 1. [`Transparent`] types have a single stable (compiler guaranteed) niche value (e.g. `&u32`)
@@ -50,14 +51,14 @@ disjoint_impls! {
     pub trait NicheFamily {
         /// The internal representation (i.e. type family) of the type
         ///
-        /// - If `Self` doesn't have any niche value, set [`Ir::Type`] to [`WithoutNiche`].
+        /// - If `Self` doesn't have any niche value, set [`NicheFamily::Kind`] to [`WithoutNiche`].
         ///   `Option<T>` will be serialized as [`crate::tuple::CTuple2(discriminant, value)`]
         ///
-        /// - If `Self` has a compiler guaranteed niche value, set [`Ir::Type`] to [`WithStableNiche`].
-        ///   `Option<T>` will be blindly transmuted into underlying [`crate::ReprC`] type
+        /// - If `Self` has a compiler guaranteed niche value, set [`NicheFamily::Kind`] to [`WithStableNiche`].
+        ///   `Option<T>` will be blindly transmuted into underlying [`ReprC`] type
         ///
-        /// - Otherwise, if `Self` has at least one trap, set [`Ir::Type`] to [`WithCustomNiche`].
-        ///   `Option<T>` will be serialized into a [`crate::ReprC`] with a manually set niche value
+        /// - Otherwise, if `Self` has at least one trap, set [`NicheFamily::Kind`] to [`WithCustomNiche`].
+        ///   `Option<T>` will be serialized into a [`ReprC`] with a manually set niche value
         type Kind;
     }
 
@@ -172,9 +173,20 @@ where
     };
 }
 
-unsafe impl<R, C> StableNiche for &R where Self: ExternC<CType = *const C> {}
-unsafe impl<R, C> StableNiche for &mut R where Self: ExternC<CType = *mut C> {}
-unsafe impl<R, C> StableNiche for Box<R> where Self: ExternC<CType = *mut C> {}
+impl<R, C: ReprC> Niche for Option<R>
+where
+    Self: ExternC<CType = COption<C>>,
+{
+    const NICHE_VALUE: COption<C> = COption::niche();
+}
+
+impl Niche for Option<bool> {
+    const NICHE_VALUE: Self::CType = 3;
+}
+
+unsafe impl<R> StableNiche for &R where Self: Niche {}
+unsafe impl<R> StableNiche for &mut R where Self: Niche {}
+unsafe impl<R> StableNiche for Box<R> where Self: Niche {}
 unsafe impl<R> StableNiche for core::ptr::NonNull<R> {}
 
 impl WithNiche for WithStableNiche {}
