@@ -4,7 +4,7 @@ use std::{alloc, marker::PhantomData, mem::MaybeUninit, num::NonZeroU64};
 use co3::{
     COption, Decode, Encode, ExternC, FfiReturn,
     out_ptr::OutPtrRead,
-    slice::{OutBoxedSlice, CSlice},
+    slice::{CBoxedSlice, CSlice},
 };
 use webassembly_test::webassembly_test;
 
@@ -222,7 +222,7 @@ fn transparent_vec_to_vec() {
     ];
 
     let mut store = Default::default();
-    let mut output = MaybeUninit::new(OutBoxedSlice::from_raw_parts(core::ptr::null_mut(), 0));
+    let mut output = MaybeUninit::new(CBoxedSlice::from_raw_parts(core::ptr::null_mut(), 0));
 
     unsafe {
         assert_eq!(

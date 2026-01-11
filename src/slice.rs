@@ -10,44 +10,53 @@ crate::decl_fns! { dealloc }
 /// Immutable slice `&[C]` with a defined C ABI layout. Consists of a data pointer and a length.
 /// If the data pointer is set to `null`, the struct represents `Option<&[C]>`.
 #[repr(C)]
-pub struct CSlice<C>(*const C, usize);
+pub struct CSlice<C> {
+    data: *const C,
+    len: usize,
+}
 
 /// Mutable slice `&mut [C]` with a defined C ABI layout. Consists of a data pointer and a length.
 /// If the data pointer is set to `null`, the struct represents `Option<&mut [C]>`.
 #[repr(C)]
-pub struct CSliceMut<C>(*mut C, usize);
+pub struct CSliceMut<C> {
+    data: *mut C,
+    len: usize,
+}
 
 /// Owned slice `Box<[C]>` with a defined C ABI layout. Consists of a data pointer and a length.
 /// Used in place of a function out-pointer to transfer ownership of the slice to the caller.
 /// If the data pointer is set to `null`, the struct represents `Option<Box<[C]>>`.
 #[repr(C)]
-pub struct OutBoxedSlice<C>(*mut C, usize);
+pub struct CBoxedSlice<C> {
+    data: *mut C,
+    len: usize,
+}
 
 macro_rules! impl_raw_slice_methods {
     ($($ty:ty),+ $(,)?) => {$(
         impl<C> core::fmt::Debug for $ty {
             fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
-                if self.0.is_null() {
+                if self.data.is_null() {
                     f.debug_struct(stringify!($ty))
-                        .field("ptr", &self.0)
+                        .field("data", &self.data)
                         .finish_non_exhaustive()
                 } else {
                     f.debug_struct(stringify!($ty))
-                        .field("ptr", &self.0)
-                        .field("len", &self.1)
+                        .field("data", &self.data)
+                        .field("len", &self.len)
                         .finish()
                 }
             }
         }
         impl<C> PartialEq for $ty {
             fn eq(&self, other: &Self) -> bool {
-                match (self.0.is_null(), other.0.is_null()) {
+                match (self.data.is_null(), other.data.is_null()) {
                     (true, true) => true,
                     (false, false) => {
-                        if self.1 == 0 || other.1 == 0 {
-                            self.1 == other.1
+                        if self.len == 0 || other.len == 0 {
+                            self.len == other.len
                         } else {
-                            self.0 == other.0 && self.1 == other.1
+                            self.data == other.data && self.len == other.len
                         }
                     }
                     _ => false,
@@ -63,16 +72,16 @@ macro_rules! impl_raw_slice_methods {
         impl<C> Ord for $ty {
             fn cmp(&self, other: &Self) -> core::cmp::Ordering {
                 use core::cmp::Ordering;
-                match (self.0.is_null(), other.0.is_null()) {
+                match (self.data.is_null(), other.data.is_null()) {
                     (true, true) => Ordering::Equal,
                     (true, false) => Ordering::Less,
                     (false, true) => Ordering::Greater,
                     (false, false) => {
-                        if self.1 == 0 || other.1 == 0 {
-                            self.1.cmp(&other.1)
+                        if self.len == 0 || other.len == 0 {
+                            self.len.cmp(&other.len)
                         } else {
-                            match self.0.cmp(&other.0) {
-                                Ordering::Equal => self.1.cmp(&other.1),
+                            match self.data.cmp(&other.data) {
+                                Ordering::Equal => self.len.cmp(&other.len),
                                 ordering => ordering,
                             }
                         }
@@ -90,23 +99,29 @@ macro_rules! impl_raw_slice_methods {
 }
 
 // NOTE: derive impls regardles of whether `C` implements `ReprC`
-impl_raw_slice_methods! { CSlice<C>, CSliceMut<C>, OutBoxedSlice<C> }
+impl_raw_slice_methods! { CSlice<C>, CSliceMut<C>, CBoxedSlice<C> }
 
 impl<C> CSlice<C> {
     /// Set the slice's data pointer to null
     pub const fn none() -> Self {
-        Self(core::ptr::null(), 0)
+        Self {
+            data: core::ptr::null(),
+            len: 0,
+        }
     }
 
     /// Create a slice from a data pointer and a length.
-    pub const fn from_raw_parts(ptr: *const C, len: usize) -> Self {
-        Self(ptr, len)
+    pub const fn from_raw_parts(data: *const C, len: usize) -> Self {
+        Self { data, len }
     }
 
     /// Create [`Self`] from shared slice
     pub const fn from_slice(source: Option<&[C]>) -> Self {
         if let Some(slice) = source {
-            return Self(slice.as_ptr(), slice.len());
+            return Self {
+                data: slice.as_ptr(),
+                len: slice.len(),
+            };
         }
 
         Self::none()
@@ -119,28 +134,34 @@ impl<C> CSlice<C> {
     ///
     /// Check [`core::slice::from_raw_parts`]
     pub const unsafe fn into_rust<'slice>(self) -> Option<&'slice [C]> {
-        if self.0.is_null() {
+        if self.data.is_null() {
             return None;
         }
 
-        Some(unsafe { slice::from_raw_parts(self.0, self.1) })
+        Some(unsafe { slice::from_raw_parts(self.data, self.len) })
     }
 }
 impl<C> CSliceMut<C> {
     /// Set the slice's data pointer to null
     pub const fn none() -> Self {
-        Self(core::ptr::null_mut(), 0)
+        Self {
+            data: core::ptr::null_mut(),
+            len: 0,
+        }
     }
 
     /// Create a slice from a data pointer and a length.
-    pub const fn from_raw_parts_mut(ptr: *mut C, len: usize) -> Self {
-        Self(ptr, len)
+    pub const fn from_raw_parts_mut(data: *mut C, len: usize) -> Self {
+        Self { data, len }
     }
 
     /// Create [`Self`] from mutable slice
     pub const fn from_slice(source: Option<&mut [C]>) -> Self {
         if let Some(slice) = source {
-            return Self(slice.as_mut_ptr(), slice.len());
+            return Self {
+                data: slice.as_mut_ptr(),
+                len: slice.len(),
+            };
         }
 
         Self::none()
@@ -153,29 +174,35 @@ impl<C> CSliceMut<C> {
     ///
     /// Check [`core::slice::from_raw_parts_mut`]
     pub const unsafe fn into_rust<'slice>(self) -> Option<&'slice mut [C]> {
-        if self.0.is_null() {
+        if self.data.is_null() {
             return None;
         }
 
-        Some(unsafe { slice::from_raw_parts_mut(self.0, self.1) })
+        Some(unsafe { slice::from_raw_parts_mut(self.data, self.len) })
     }
 }
-impl<C: ReprC> OutBoxedSlice<C> {
+impl<C: ReprC> CBoxedSlice<C> {
     /// Set the slice's data pointer to null
     const fn none() -> Self {
-        Self(core::ptr::null_mut(), 0)
+        Self {
+            data: core::ptr::null_mut(),
+            len: 0,
+        }
     }
 
     /// Create a slice from a data pointer and a length.
-    pub const fn from_raw_parts(ptr: *mut C, len: usize) -> Self {
-        Self(ptr, len)
+    pub const fn from_raw_parts(data: *mut C, len: usize) -> Self {
+        Self { data, len }
     }
 
     /// Create [`Self`] from a [`Box<[T]>`]
     pub fn from_boxed_slice(source: Option<Box<[C]>>) -> Self {
         if let Some(boxed_slice) = source {
             let mut boxed_slice = core::mem::ManuallyDrop::new(boxed_slice);
-            return Self(boxed_slice.as_mut_ptr(), boxed_slice.len());
+            return Self {
+                data: boxed_slice.as_mut_ptr(),
+                len: boxed_slice.len(),
+            };
         }
 
         Self::none()
@@ -188,24 +215,26 @@ impl<C: ReprC> OutBoxedSlice<C> {
     ///
     /// Check [`Vec::from_raw_parts`]
     pub unsafe fn into_rust(self) -> Option<Vec<C>> {
-        if self.0.is_null() {
+        if self.data.is_null() {
             return None;
         }
 
-        Some(unsafe { Box::from_raw(core::ptr::slice_from_raw_parts_mut(self.0, self.1)).to_vec() })
+        Some(unsafe {
+            Box::from_raw(core::ptr::slice_from_raw_parts_mut(self.data, self.len)).to_vec()
+        })
     }
 
     pub(crate) unsafe fn deallocate(&self) -> bool {
-        if self.0.is_null() {
+        if self.data.is_null() {
             return true;
         }
-        if self.1 == 0 {
+        if self.len == 0 {
             return true;
         }
 
-        if let Ok(layout) = core::alloc::Layout::array::<C>(self.1) {
+        if let Ok(layout) = core::alloc::Layout::array::<C>(self.len) {
             unsafe {
-                __dealloc(self.0.cast(), layout.size(), layout.align());
+                __dealloc(self.data.cast(), layout.size(), layout.align());
             }
 
             return true;
@@ -215,9 +244,9 @@ impl<C: ReprC> OutBoxedSlice<C> {
     }
 }
 
-impl<C: ReprC> From<OutBoxedSlice<C>> for CSliceMut<C> {
-    fn from(slice: OutBoxedSlice<C>) -> Self {
-        Self::from_raw_parts_mut(slice.0, slice.1)
+impl<C: ReprC> From<CBoxedSlice<C>> for CSliceMut<C> {
+    fn from(slice: CBoxedSlice<C>) -> Self {
+        Self::from_raw_parts_mut(slice.data, slice.len)
     }
 }
 
@@ -226,4 +255,4 @@ unsafe impl<T: ReprC> ReprC for CSlice<T> {}
 // SAFETY: Robust type with a defined C ABI
 unsafe impl<T: ReprC> ReprC for CSliceMut<T> {}
 // SAFETY: Robust type with a defined C ABI
-unsafe impl<T: ReprC> ReprC for OutBoxedSlice<T> {}
+unsafe impl<T: ReprC> ReprC for CBoxedSlice<T> {}

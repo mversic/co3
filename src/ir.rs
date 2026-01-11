@@ -6,7 +6,7 @@
 use alloc::{boxed::Box, vec::Vec};
 use disjoint_impls::disjoint_impls;
 
-use crate::niche::{WithCustomNiche, WithStableNiche, WithoutNiche};
+use crate::{mineral, niche::{WithCustomNiche, WithStableNiche, WithoutNiche}};
 
 /// Marker for an [`Ir`] type that delegates to the pointed-to type when converting
 /// the likes of `&Self` or `&[Self]` into an FFI-compatible representation
@@ -235,20 +235,6 @@ impl<S: Cloned, const N: usize> Cloned for [S; N] {}
 
 impl Cloned for Option<WithoutNiche> {}
 impl Cloned for Option<WithCustomNiche> {}
-
-impl<R> Ir for *const R {
-    type Type = Robust;
-}
-impl<R> Ir for *mut R {
-    type Type = Robust;
-}
-
-impl<R> crate::niche::Ir for *const R {
-    type Type = WithoutNiche;
-}
-impl<R> crate::niche::Ir for *mut R {
-    type Type = WithoutNiche;
-}
 
 macro_rules! impl_fn_types {
     ( $( ( $( $arg:ident ),* ) ),* $(,)? ) => {$(

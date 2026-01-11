@@ -23,7 +23,7 @@ use crate::transmute::{
 use crate::{
     ir::{Cloned, Ir, Opaque, Robust, Transparent},
     niche::Niche,
-    slice::{CSlice, CSliceMut, OutBoxedSlice},
+    slice::{CBoxedSlice, CSlice, CSliceMut},
     transmute::{
         CheckedTransmute, transmute_from_target, transmute_from_target_ref_slice,
         transmute_from_target_slice_mut, transmute_into_target, transmute_into_target_ref_slice,
@@ -1375,11 +1375,35 @@ macro_rules! mineral {
     };
 }
 
-// SAFETY: `*const R` is robust with a defined C ABI regardless of whether `R` is
-// When `R` is not `ReprC` the pointer is opaque; dereferencing is immediate UB
-unsafe impl<R> ReprC for *const R {}
-// SAFETY: `*mut R` is robust with a defined C ABI regardless of whether `R` is
-// When `R` is not `ReprC` the pointer is opaque; dereferencing is immediate UB
-unsafe impl<R> ReprC for *mut R {}
+mineral! {
+    unsafe impl(R) Robust for *const R {}
+}
+mineral! {
+    unsafe impl(R) Robust for *mut R {}
+}
+
 // SAFETY: Arrays is just a contiguous block of memory
 unsafe impl<R: ReprC, const N: usize> ReprC for [R; N] {}
+
+#[cfg(test)]
+mod tests {
+    use crate::transmute::FlatTransmute;
+
+    use super::*;
+
+    use static_assertions::assert_impl_all;
+
+    #[test]
+    fn impls() {
+        assert_impl_all!(u8: Ir<Type = Robust>, FlatTransmute<CType = u8>, ReprC);
+        assert_impl_all!(&u8: Ir<Type = Transparent>, CheckedTransmute<Target = *const u8>, FlatTransmute<CType = *const u8>);
+        assert_impl_all!(&mut u8: Ir<Type = Transparent>, CheckedTransmute<Target = *mut u8>, FlatTransmute<CType = *mut u8>);
+        //assert_impl_all!(Box<u8>: Ir<Type = Transparent>, FlatTransmute<CType = *mut u8>);
+        assert_impl_all!(&[u8]: Ir<Type = &'static [Robust]>, ExternC<CType = CSlice<u8>>);
+        assert_impl_all!(&mut [u8]: Ir<Type = &'static mut [Robust]>, ExternC<CType = CSliceMut<u8>>);
+        assert_impl_all!(Box<[u8]>: Ir<Type = Box<[Robust]>>, ExternC<CType = CSliceMut<u8>>);
+        assert_impl_all!(Vec<u8>: Ir<Type = Vec<Robust>>, ExternC<CType = CSliceMut<u8>>);
+        assert_impl_all!([u8; 2]: Ir<Type = Robust>, ExternC<CType = [u8; 2]>);
+        assert_impl_all!(Option<u8>: Ir<Type = Option<WithoutNiche>>, ExternC<CType = COption<u8>>);
+    }
+}

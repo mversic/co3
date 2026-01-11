@@ -61,6 +61,16 @@ disjoint_impls! {
         type Type;
     }
 
+    impl<R: Ir<Type = WithStableNiche>, const N: usize> Ir for [R; N] {
+        type Type = WithCustomNiche;
+    }
+    impl<R: Ir<Type = WithCustomNiche>, const N: usize> Ir for [R; N] {
+        type Type = WithCustomNiche;
+    }
+    impl<R: Ir<Type = WithoutNiche>, const N: usize> Ir for [R; N] {
+        type Type = WithoutNiche;
+    }
+
     impl<R: Ir<Type = WithoutNiche>> Ir for Option<R> {
         type Type = WithCustomNiche;
     }
@@ -98,25 +108,6 @@ impl<R> Ir for Box<[R]> {
 impl<R> Ir for Vec<R> {
     type Type = WithCustomNiche;
 }
-impl<R, const N: usize> Ir for [R; N] {
-    type Type = WithCustomNiche;
-}
-
-impl<R, C> Niche for Box<R>
-where
-    Self: ExternC<CType = *mut C>,
-{
-    const NICHE_VALUE: *mut C = core::ptr::null_mut();
-}
-
-#[cfg(feature = "owned_types")]
-#[cfg(feature = "owned_as_ref")]
-impl<R, C> Niche for Box<[R]>
-where
-    Self: ExternC<CType = CSliceMut<C>>,
-{
-    const NICHE_VALUE: CSliceMut<C> = CSliceMut::none();
-}
 
 impl<R, C> Niche for &R
 where
@@ -132,6 +123,13 @@ where
     const NICHE_VALUE: *mut C = core::ptr::null_mut();
 }
 
+impl<R, C> Niche for Box<R>
+where
+    Self: ExternC<CType = *mut C>,
+{
+    const NICHE_VALUE: *mut C = core::ptr::null_mut();
+}
+
 impl<R, C> Niche for &[R]
 where
     Self: ExternC<CType = CSlice<C>>,
@@ -140,6 +138,15 @@ where
 }
 
 impl<R, C> Niche for &mut [R]
+where
+    Self: ExternC<CType = CSliceMut<C>>,
+{
+    const NICHE_VALUE: CSliceMut<C> = CSliceMut::none();
+}
+
+#[cfg(feature = "owned_types")]
+#[cfg(feature = "owned_as_ref")]
+impl<R, C> Niche for Box<[R]>
 where
     Self: ExternC<CType = CSliceMut<C>>,
 {

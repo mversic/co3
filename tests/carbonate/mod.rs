@@ -3,7 +3,7 @@ use std::{alloc, collections::BTreeMap, mem::MaybeUninit};
 
 use co3::{
     COption, Decode, Encode, ExternC, FfiReturn, CTuple1, CTuple2, out_ptr::OutPtrRead,
-    slice::OutBoxedSlice,
+    slice::CBoxedSlice,
 };
 use webassembly_test::webassembly_test;
 
@@ -385,7 +385,7 @@ fn return_option() {
 #[webassembly_test]
 fn take_and_return_boxed_slice() {
     let input: Box<[u8]> = [12u8, 42u8].into();
-    let mut output = MaybeUninit::new(OutBoxedSlice::from_raw_parts(core::ptr::null_mut(), 0));
+    let mut output = MaybeUninit::new(CBoxedSlice::from_raw_parts(core::ptr::null_mut(), 0));
     let mut in_store = Default::default();
 
     unsafe {
@@ -503,7 +503,7 @@ fn take_and_return_option_without_niche_ref() {
 #[webassembly_test]
 fn return_iterator() {
     let ffi_struct = get_new_struct_with_params();
-    let mut out_params = MaybeUninit::new(OutBoxedSlice::from_raw_parts(core::ptr::null_mut(), 0));
+    let mut out_params = MaybeUninit::new(CBoxedSlice::from_raw_parts(core::ptr::null_mut(), 0));
 
     unsafe {
         assert_eq!(
@@ -743,7 +743,7 @@ fn nested_vec() {
 #[test]
 #[webassembly_test]
 fn return_vec_of_boxed_opaques() {
-    let mut output = MaybeUninit::new(OutBoxedSlice::from_raw_parts(core::ptr::null_mut(), 0));
+    let mut output = MaybeUninit::new(CBoxedSlice::from_raw_parts(core::ptr::null_mut(), 0));
 
     unsafe {
         assert_eq!(

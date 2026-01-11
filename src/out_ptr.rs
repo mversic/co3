@@ -23,7 +23,7 @@ disjoint_impls! {
     /// 2. `&[Opaque<T>]` doesn't implement [`NonLocal`]
     ///
     /// This type will be converted to [`CSlice<*const T>`] and during conversion will use the
-    /// local store `Vec<*const T>`. The corresponding out-pointer will be `*mut OutBoxedSlice<*const T>`.
+    /// local store `Vec<*const T>`. The corresponding out-pointer will be `*mut CBoxedSlice<*const T>`.
     ///
     /// 3. `&(u32, u32)`
     ///
@@ -134,14 +134,14 @@ disjoint_impls! {
     where
         Self: Ir<Type = &'a [Opaque]>,
     {
-        type OutPtr = OutBoxedSlice<*const R>;
+        type OutPtr = CBoxedSlice<*const R>;
     }
     #[cfg(feature = "cloned_refs")]
     impl<'a, R: NonLocal, S: Cloned> OutPtr for &'a [R]
     where
         Self: Ir<Type = &'a [S]>,
     {
-        type OutPtr = OutBoxedSlice<R::CType>;
+        type OutPtr = CBoxedSlice<R::CType>;
     }
 
     impl<'slice, R: CheckedTransmute> OutPtr for &'slice mut [R]
@@ -172,7 +172,7 @@ disjoint_impls! {
     where
         Self: Ir<Type = Box<[Robust]>>,
     {
-        type OutPtr = OutBoxedSlice<R>;
+        type OutPtr = CBoxedSlice<R>;
     }
     #[cfg(feature = "owned_types")]
     #[cfg(feature = "owned_as_ref")]
@@ -180,7 +180,7 @@ disjoint_impls! {
     where
         Self: Ir<Type = Box<[Opaque]>>,
     {
-        type OutPtr = OutBoxedSlice<*mut R>;
+        type OutPtr = CBoxedSlice<*mut R>;
     }
     #[cfg(feature = "owned_types")]
     #[cfg(feature = "owned_as_ref")]
@@ -188,7 +188,7 @@ disjoint_impls! {
     where
         Self: Ir<Type = Box<[S]>>,
     {
-        type OutPtr = OutBoxedSlice<R::CType>;
+        type OutPtr = CBoxedSlice<R::CType>;
     }
 
     #[cfg(feature = "owned_types")]
@@ -205,7 +205,7 @@ disjoint_impls! {
     where
         Self: Ir<Type = Vec<Robust>>,
     {
-        type OutPtr = OutBoxedSlice<R>;
+        type OutPtr = CBoxedSlice<R>;
     }
     #[cfg(feature = "owned_types")]
     #[cfg(feature = "owned_as_ref")]
@@ -213,7 +213,7 @@ disjoint_impls! {
     where
         Self: Ir<Type = Vec<Opaque>>,
     {
-        type OutPtr = OutBoxedSlice<*mut R>;
+        type OutPtr = CBoxedSlice<*mut R>;
     }
     #[cfg(feature = "owned_types")]
     #[cfg(feature = "owned_as_ref")]
@@ -221,7 +221,7 @@ disjoint_impls! {
     where
         Self: Ir<Type = Vec<S>>,
     {
-        type OutPtr = OutBoxedSlice<R::CType>;
+        type OutPtr = CBoxedSlice<R::CType>;
     }
 
     impl<R, const N: usize> OutPtr for [R; N]
@@ -367,7 +367,7 @@ disjoint_impls! {
             let mut store = Default::default();
             let _ = self.encode(&mut store);
 
-            let output = OutBoxedSlice::from_boxed_slice(Some(store));
+            let output = CBoxedSlice::from_boxed_slice(Some(store));
 
             unsafe {
                 out_ptr.write(output);
@@ -383,7 +383,7 @@ disjoint_impls! {
             let mut store = Default::default();
             let _ = self.encode(&mut store);
 
-            let output = OutBoxedSlice::from_boxed_slice(Some(store.0));
+            let output = CBoxedSlice::from_boxed_slice(Some(store.0));
 
             unsafe {
                 out_ptr.write(output);
@@ -439,7 +439,7 @@ disjoint_impls! {
             self.encode(&mut store);
 
             unsafe {
-                out_ptr.write(OutBoxedSlice::from_boxed_slice(Some(store)));
+                out_ptr.write(CBoxedSlice::from_boxed_slice(Some(store)));
             }
         }
     }
@@ -454,7 +454,7 @@ disjoint_impls! {
             let _ = self.encode(&mut store);
 
             unsafe {
-                out_ptr.write(OutBoxedSlice::from_boxed_slice(Some(store)));
+                out_ptr.write(CBoxedSlice::from_boxed_slice(Some(store)));
             }
         }
     }
@@ -468,7 +468,7 @@ disjoint_impls! {
             let mut store = Default::default();
             let _  = self.encode(&mut store);
 
-            let output = OutBoxedSlice::from_boxed_slice(Some(store.0));
+            let output = CBoxedSlice::from_boxed_slice(Some(store.0));
 
             unsafe {
                 out_ptr.write(output);
@@ -499,7 +499,7 @@ disjoint_impls! {
         unsafe fn write_out(self, out_ptr: *mut Self::OutPtr) {
             let mut store = Default::default();
             self.encode(&mut store);
-            let output = OutBoxedSlice::from_boxed_slice(Some(store));
+            let output = CBoxedSlice::from_boxed_slice(Some(store));
 
             unsafe {
                 out_ptr.write(output);
@@ -516,7 +516,7 @@ disjoint_impls! {
             let mut store = Default::default();
 
             self.encode(&mut store);
-            let output = OutBoxedSlice::from_boxed_slice(Some(store));
+            let output = CBoxedSlice::from_boxed_slice(Some(store));
 
             unsafe {
                 out_ptr.write(output);
@@ -533,7 +533,7 @@ disjoint_impls! {
             let mut store = Default::default();
             let _ = self.encode(&mut store);
 
-            let output = OutBoxedSlice::from_boxed_slice(Some(store.0));
+            let output = CBoxedSlice::from_boxed_slice(Some(store.0));
 
             unsafe {
                 out_ptr.write(output);

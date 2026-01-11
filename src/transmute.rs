@@ -331,22 +331,3 @@ fn assert_size_and_allignment_match<R: CheckedTransmute>() {
         debug_assert!(core::mem::align_of::<R>() == core::mem::align_of::<R::Target>());
     };
 }
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    use alloc::string::String;
-    use static_assertions::assert_impl_all;
-
-    #[test]
-    fn impls_flat_transmute() {
-        assert_impl_all!(u8: Ir<Type = Robust>, FlatTransmute<CType = u8>);
-        assert_impl_all!(&u8: Ir<Type = Transparent>, CheckedTransmute<Target = *const u8>, FlatTransmute<CType = *const u8>);
-        assert_impl_all!(&mut u8: Ir<Type = Transparent>, CheckedTransmute<Target = *mut u8>, FlatTransmute<CType = *mut u8>);
-        // FIXME:
-        //assert_impl_all!(Box<u8>: Ir<Type = Transparent>, FlatTransmute<CType = *mut u8>);
-        assert_impl_all!(String: Ir<Type = Transparent>, CheckedTransmute<Target = Vec<u8>>);
-        assert_impl_all!(Vec<u8>: Ir<Type = Vec<Robust>>, ExternC<CType = CSliceMut<u8>>);
-    }
-}
