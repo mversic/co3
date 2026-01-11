@@ -6,9 +6,9 @@
 use alloc::{boxed::Box, vec::Vec};
 use disjoint_impls::disjoint_impls;
 
-use crate::{mineral, niche::{WithCustomNiche, WithStableNiche, WithoutNiche}};
+use crate::niche::{NicheFamily, WithCustomNiche, WithStableNiche, WithoutNiche};
 
-/// Marker for an [`Ir`] type that delegates to the pointed-to type when converting
+/// Marker for a [`ReprFamily`] type that delegates to the pointed-to type when converting
 /// the likes of `&Self` or `&[Self]` into an FFI-compatible representation
 ///
 /// This type clones the pointed-to value to get owned value that has implemented
@@ -28,198 +28,198 @@ disjoint_impls! {
     /// Type that can be converted to and from an internal representation (IR).
     ///
     /// Predefined IR types automatically implement [`crate::ExternC`] and related conversion traits.
-    pub trait Ir {
+    pub trait ReprFamily {
         /// The internal representation (i.e. type family) of the type
         ///
-        /// - If `Self` is [`crate::ReprC`], set [`Ir::Type`] to [`Robust`].
+        /// - If `Self` is [`crate::ReprC`], set [`ReprFamily::Kind`] to [`Robust`].
         ///   The type is passed to FFI functions as-is, without conversion.
         ///
-        /// - If [`Ir::Type`] is [`Transparent`], `Self` automatically implements [`crate::ExternC`]
+        /// - If [`ReprFamily::Kind`] is [`Transparent`], `Self` automatically implements [`crate::ExternC`]
         ///   by delegating to its inner type via [`core::mem::transmute`].
         ///   If the inner type supports zero-copy conversion, then [`Transparent`] is also zero-copy.
         ///   See [`crate::transmute::CheckedTransmute`] for more details.
         ///
-        /// - If [`Ir::Type`] is [`Opaque`], `T` is serialized as an opaque pointer.
+        /// - If [`ReprFamily::Kind`] is [`Opaque`], `T` is serialized as an opaque pointer.
         ///   Note that the type will be heap allocated during conversion if not already.
         ///   [`Opaque`] is the only family of types that transfer ownership across FFI.
         ///
-        /// - If [`Ir::Type`] is [`Option<T>`], `Option<T>` is transmuted into the inner type,
+        /// - If [`ReprFamily::Kind`] is [`Option<T>`], `Option<T>` is transmuted into the inner type,
         ///   using its *niche value* to represent [`None`].
         ///
-        /// - If [`Ir::Type`] is [`Option<Robust>`], serialization is delegated to the
+        /// - If [`ReprFamily::Kind`] is [`Option<WithoutNiche>`], serialization is delegated to the
         ///   inner type, but represented explicitly as a `(discriminant, value)` tuple.
         ///
-        /// - In the common case, set [`Ir::Type`] to `Self` and implement [`Cloned`].
+        /// - In the common case, set [`ReprFamily::Kind`] to `Self` and implement [`Cloned`].
         ///   This provides a default [`crate::ExternC`] implementation, but note that it will clone the type.
-        type Type;
+        type Kind;
     }
 
-    impl<R: Ir<Type = Box<Robust>>> Ir for &R {
-        type Type = Transparent;
+    impl<R: ReprFamily<Kind = Box<Robust>>> ReprFamily for &R {
+        type Kind = Transparent;
     }
-    impl<R: Ir<Type = Transparent>> Ir for &R {
-        type Type = Transparent;
+    impl<R: ReprFamily<Kind = Transparent>> ReprFamily for &R {
+        type Kind = Transparent;
     }
-    impl<R: Ir<Type = Robust>> Ir for &R {
-        type Type = Transparent;
+    impl<R: ReprFamily<Kind = Robust>> ReprFamily for &R {
+        type Kind = Transparent;
     }
-    impl<R: Ir<Type = Opaque>> Ir for &R {
-        type Type = Transparent;
+    impl<R: ReprFamily<Kind = Opaque>> ReprFamily for &R {
+        type Kind = Transparent;
     }
     #[cfg(feature = "cloned_refs")]
-    impl<'a, R: Ir<Type: Cloned + 'a>> Ir for &'a R {
-        type Type = &'a R::Type;
+    impl<'a, R: ReprFamily<Kind: Cloned + 'a>> ReprFamily for &'a R {
+        type Kind = &'a R::Kind;
     }
 
     #[cfg(feature = "non_robust_ref_mut")]
-    impl<R: Ir<Type = Box<Robust>>> Ir for &mut R {
-        type Type = Transparent;
+    impl<R: ReprFamily<Kind = Box<Robust>>> ReprFamily for &mut R {
+        type Kind = Transparent;
     }
-    impl<R: Ir<Type = Transparent>> Ir for &mut R {
-        type Type = Transparent;
+    impl<R: ReprFamily<Kind = Transparent>> ReprFamily for &mut R {
+        type Kind = Transparent;
     }
-    impl<R: Ir<Type = Robust>> Ir for &mut R {
-        type Type = Transparent;
+    impl<R: ReprFamily<Kind = Robust>> ReprFamily for &mut R {
+        type Kind = Transparent;
     }
-    impl<R: Ir<Type = Opaque>> Ir for &mut R {
-        type Type = Transparent;
-    }
-
-    #[cfg(feature = "owned_types")]
-    impl<R: Ir<Type = Box<Robust>>> Ir for Box<R> {
-        type Type = Transparent;
-    }
-    impl<R: Ir<Type = Transparent>> Ir for Box<R> {
-        type Type = Transparent;
-    }
-    #[cfg(feature = "owned_types")]
-    impl<R: Ir<Type = Robust>> Ir for Box<R> {
-        type Type = Box<Robust>;
-    }
-    impl<R: Ir<Type = Opaque>> Ir for Box<R> {
-        type Type = Transparent;
-    }
-    #[cfg(feature = "owned_types")]
-    impl<R: Ir<Type: Cloned>> Ir for Box<R> {
-        type Type = Box<R::Type>;
+    impl<R: ReprFamily<Kind = Opaque>> ReprFamily for &mut R {
+        type Kind = Transparent;
     }
 
-    impl<'a, R: Ir<Type = Box<Robust>>> Ir for &'a [R] {
-        type Type = &'a [Transparent];
+    #[cfg(feature = "owned_types")]
+    impl<R: ReprFamily<Kind = Box<Robust>>> ReprFamily for Box<R> {
+        type Kind = Transparent;
     }
-    impl<'a, R: Ir<Type = Transparent>> Ir for &'a [R] {
-        type Type = &'a [Transparent];
+    impl<R: ReprFamily<Kind = Transparent>> ReprFamily for Box<R> {
+        type Kind = Transparent;
     }
-    impl<'a, R: Ir<Type = Robust>> Ir for &'a [R] {
-        type Type = &'a [Robust];
+    #[cfg(feature = "owned_types")]
+    impl<R: ReprFamily<Kind = Robust>> ReprFamily for Box<R> {
+        type Kind = Box<Robust>;
+    }
+    impl<R: ReprFamily<Kind = Opaque>> ReprFamily for Box<R> {
+        type Kind = Transparent;
+    }
+    #[cfg(feature = "owned_types")]
+    impl<R: ReprFamily<Kind: Cloned>> ReprFamily for Box<R> {
+        type Kind = Box<R::Kind>;
+    }
+
+    impl<'a, R: ReprFamily<Kind = Box<Robust>>> ReprFamily for &'a [R] {
+        type Kind = &'a [Transparent];
+    }
+    impl<'a, R: ReprFamily<Kind = Transparent>> ReprFamily for &'a [R] {
+        type Kind = &'a [Transparent];
+    }
+    impl<'a, R: ReprFamily<Kind = Robust>> ReprFamily for &'a [R] {
+        type Kind = &'a [Robust];
     }
     #[cfg(feature = "cloned_refs")]
-    impl<'a, R: Ir<Type = Opaque>> Ir for &'a [R] {
-        type Type = &'a [Opaque];
+    impl<'a, R: ReprFamily<Kind = Opaque>> ReprFamily for &'a [R] {
+        type Kind = &'a [Opaque];
     }
     #[cfg(feature = "cloned_refs")]
-    impl<'a, R: Ir<Type: Cloned + 'a>> Ir for &'a [R] {
-        type Type = &'a [R::Type];
+    impl<'a, R: ReprFamily<Kind: Cloned + 'a>> ReprFamily for &'a [R] {
+        type Kind = &'a [R::Kind];
     }
 
     #[cfg(feature = "non_robust_ref_mut")]
-    impl<'a, R: Ir<Type = Box<Robust>>> Ir for &'a mut [R] {
-        type Type = &'a mut [Transparent];
+    impl<'a, R: ReprFamily<Kind = Box<Robust>>> ReprFamily for &'a mut [R] {
+        type Kind = &'a mut [Transparent];
     }
-    impl<'a, R: Ir<Type = Transparent>> Ir for &'a mut [R] {
-        type Type = &'a mut [Transparent];
+    impl<'a, R: ReprFamily<Kind = Transparent>> ReprFamily for &'a mut [R] {
+        type Kind = &'a mut [Transparent];
     }
-    impl<'a, R: Ir<Type = Robust>> Ir for &'a mut [R] {
-        type Type = &'a mut [Robust];
-    }
-
-    #[cfg(feature = "owned_types")]
-    impl<R: Ir<Type = Box<Robust>>> Ir for Box<[R]> {
-        type Type = Box<[Transparent]>;
-    }
-    #[cfg(feature = "owned_types")]
-    impl<R: Ir<Type = Transparent>> Ir for Box<[R]> {
-        type Type = Box<[Transparent]>;
-    }
-    #[cfg(feature = "owned_types")]
-    impl<R: Ir<Type = Robust>> Ir for Box<[R]> {
-        type Type = Box<[Robust]>;
-    }
-    #[cfg(feature = "owned_types")]
-    impl<R: Ir<Type = Opaque>> Ir for Box<[R]> {
-        type Type = Box<[Opaque]>;
-    }
-    #[cfg(feature = "owned_types")]
-    impl<R: Ir<Type: Cloned>> Ir for Box<[R]> {
-        type Type = Box<[R::Type]>;
+    impl<'a, R: ReprFamily<Kind = Robust>> ReprFamily for &'a mut [R] {
+        type Kind = &'a mut [Robust];
     }
 
     #[cfg(feature = "owned_types")]
-    impl<R: Ir<Type = Box<Robust>>> Ir for Vec<R> {
-        type Type = Vec<Transparent>;
+    impl<R: ReprFamily<Kind = Box<Robust>>> ReprFamily for Box<[R]> {
+        type Kind = Box<[Transparent]>;
     }
     #[cfg(feature = "owned_types")]
-    impl<R: Ir<Type = Transparent>> Ir for Vec<R> {
-        type Type = Vec<Transparent>;
+    impl<R: ReprFamily<Kind = Transparent>> ReprFamily for Box<[R]> {
+        type Kind = Box<[Transparent]>;
     }
     #[cfg(feature = "owned_types")]
-    impl<R: Ir<Type = Robust>> Ir for Vec<R> {
-        type Type = Vec<Robust>;
+    impl<R: ReprFamily<Kind = Robust>> ReprFamily for Box<[R]> {
+        type Kind = Box<[Robust]>;
     }
     #[cfg(feature = "owned_types")]
-    impl<R: Ir<Type = Opaque>> Ir for Vec<R> {
-        type Type = Vec<Opaque>;
+    impl<R: ReprFamily<Kind = Opaque>> ReprFamily for Box<[R]> {
+        type Kind = Box<[Opaque]>;
     }
     #[cfg(feature = "owned_types")]
-    impl<R: Ir<Type: Cloned>> Ir for Vec<R> {
-        type Type = Vec<R::Type>;
+    impl<R: ReprFamily<Kind: Cloned>> ReprFamily for Box<[R]> {
+        type Kind = Box<[R::Kind]>;
     }
 
     #[cfg(feature = "owned_types")]
-    impl<R: Ir<Type = Box<Robust>>, const N: usize> Ir for [R; N] {
-        type Type = Box<Robust>;
+    impl<R: ReprFamily<Kind = Box<Robust>>> ReprFamily for Vec<R> {
+        type Kind = Vec<Transparent>;
     }
-    impl<R: Ir<Type = Transparent>, const N: usize> Ir for [R; N] {
-        type Type = Transparent;
+    #[cfg(feature = "owned_types")]
+    impl<R: ReprFamily<Kind = Transparent>> ReprFamily for Vec<R> {
+        type Kind = Vec<Transparent>;
     }
-    impl<R: Ir<Type = Robust>, const N: usize> Ir for [R; N] {
-        type Type = Robust;
+    #[cfg(feature = "owned_types")]
+    impl<R: ReprFamily<Kind = Robust>> ReprFamily for Vec<R> {
+        type Kind = Vec<Robust>;
     }
-    impl<R: Ir<Type = Opaque>, const N: usize> Ir for [R; N] {
-        type Type = [Opaque; N];
+    #[cfg(feature = "owned_types")]
+    impl<R: ReprFamily<Kind = Opaque>> ReprFamily for Vec<R> {
+        type Kind = Vec<Opaque>;
     }
-    impl<R: Ir<Type: Cloned>, const N: usize> Ir for [R; N] {
-        type Type = [R::Type; N];
+    #[cfg(feature = "owned_types")]
+    impl<R: ReprFamily<Kind: Cloned>> ReprFamily for Vec<R> {
+        type Kind = Vec<R::Kind>;
+    }
+
+    #[cfg(feature = "owned_types")]
+    impl<R: ReprFamily<Kind = Box<Robust>>, const N: usize> ReprFamily for [R; N] {
+        type Kind = Box<Robust>;
+    }
+    impl<R: ReprFamily<Kind = Transparent>, const N: usize> ReprFamily for [R; N] {
+        type Kind = Transparent;
+    }
+    impl<R: ReprFamily<Kind = Robust>, const N: usize> ReprFamily for [R; N] {
+        type Kind = Robust;
+    }
+    impl<R: ReprFamily<Kind = Opaque>, const N: usize> ReprFamily for [R; N] {
+        type Kind = [Opaque; N];
+    }
+    impl<R: ReprFamily<Kind: Cloned>, const N: usize> ReprFamily for [R; N] {
+        type Kind = [R::Kind; N];
     }
 
     // FIXME: Verify is correct
     //#[cfg(feature = "owned_types")]
-    //impl<R: Ir<Type = Box<Robust>>> Ir for Option<R> {
-    //    type Type = Box<Robust>;
+    //impl<R: ReprFamily<Type = Box<Robust>>> ReprFamily for Option<R> {
+    //    type Kind = Box<Robust>;
     //}
-    impl<R: Ir<Type = Transparent> + crate::niche::Ir<Type = WithoutNiche>> Ir for Option<R> {
-        type Type = Option<WithoutNiche>;
+    impl<R: ReprFamily<Kind = Transparent> + NicheFamily<Kind = WithoutNiche>> ReprFamily for Option<R> {
+        type Kind = Option<WithoutNiche>;
     }
-    impl<R: Ir<Type = Transparent> + crate::niche::Ir<Type = WithStableNiche>> Ir for Option<R> {
-        type Type = Transparent;
+    impl<R: ReprFamily<Kind = Transparent> + NicheFamily<Kind = WithStableNiche>> ReprFamily for Option<R> {
+        type Kind = Transparent;
     }
-    impl<R: Ir<Type = Transparent> + crate::niche::Ir<Type = WithCustomNiche>> Ir for Option<R> {
-        type Type = Option<WithCustomNiche>;
+    impl<R: ReprFamily<Kind = Transparent> + NicheFamily<Kind = WithCustomNiche>> ReprFamily for Option<R> {
+        type Kind = Option<WithCustomNiche>;
     }
-    impl<R: Ir<Type = Robust>> Ir for Option<R> {
-        type Type = Option<WithoutNiche>;
+    impl<R: ReprFamily<Kind = Robust>> ReprFamily for Option<R> {
+        type Kind = Option<WithoutNiche>;
     }
-    impl<R: Ir<Type = Opaque>> Ir for Option<R> {
-        type Type = Option<WithCustomNiche>;
+    impl<R: ReprFamily<Kind = Opaque>> ReprFamily for Option<R> {
+        type Kind = Option<WithCustomNiche>;
     }
-    impl<R: Ir<Type: Cloned> + crate::niche::Ir<Type = WithoutNiche>> Ir for Option<R> {
-        type Type = Option<WithoutNiche>;
+    impl<R: ReprFamily<Kind: Cloned> + NicheFamily<Kind = WithoutNiche>> ReprFamily for Option<R> {
+        type Kind = Option<WithoutNiche>;
     }
-    impl<R: Ir<Type: Cloned> + crate::niche::Ir<Type = WithCustomNiche>> Ir for Option<R> {
-        type Type = Option<WithCustomNiche>;
+    impl<R: ReprFamily<Kind: Cloned> + NicheFamily<Kind = WithCustomNiche>> ReprFamily for Option<R> {
+        type Kind = Option<WithCustomNiche>;
     }
-    impl<R: Ir<Type = Option<WithStableNiche>>> Ir for Option<R> {
-        type Type = Option<WithoutNiche>;
+    impl<R: ReprFamily<Kind = Option<WithStableNiche>>> ReprFamily for Option<R> {
+        type Kind = Option<WithoutNiche>;
     }
 }
 
@@ -238,16 +238,16 @@ impl Cloned for Option<WithCustomNiche> {}
 
 macro_rules! impl_fn_types {
     ( $( ( $( $arg:ident ),* ) ),* $(,)? ) => {$(
-        // FIXME: I'm not sure if arguments are required to be ReprC, what if fn pointer is opaque?
+        // FIXME: I'm not sure if arguments are required to be ReprFamilyC, what if fn pointer is opaque?
         // or should we create new function with argument conversion?
         unsafe impl<$($arg: crate::ReprC,)* R: crate::ReprC> crate::ReprC for unsafe extern "C" fn($($arg),*) -> R {}
         unsafe impl<$($arg: crate::ReprC,)*> crate::ReprC for unsafe extern "C" fn($($arg),*) {}
 
-        impl<$($arg: crate::ReprC,)* R: crate::ReprC> Ir for unsafe extern "C" fn($($arg),*) -> R {
-            type Type = Self;
+        impl<$($arg: crate::ReprC,)* R: crate::ReprC> ReprFamily for unsafe extern "C" fn($($arg),*) -> R {
+            type Kind = Self;
         }
-        //impl<$($arg: crate::ReprC,)*> Ir for unsafe extern "C" fn($($arg),*) {
-        //    type Type = Self;
+        //impl<$($arg: crate::ReprC,)*> ReprFamily for unsafe extern "C" fn($($arg),*) {
+        //    type Kind = Self;
         //}
         impl<$($arg: crate::ReprC,)* R: crate::ReprC> crate::ExternC for unsafe extern "C" fn($($arg),*) -> R {
             type CType = Self;

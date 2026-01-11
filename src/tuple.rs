@@ -54,7 +54,7 @@
 use crate::{
     ExternC, ReprC, Result,
     ir::Cloned,
-    niche::{Ir, Niche, WithCustomNiche, WithNiche, WithoutNiche},
+    niche::{Niche, NicheFamily, WithCustomNiche, WithNiche, WithoutNiche},
 };
 
 macro_rules! impl_tuple {
@@ -69,8 +69,8 @@ macro_rules! impl_tuple {
         pub struct $ffi_ty<$($ty: ReprC),+>($(pub $ty),+);
 
         impl<$($ty),+> Cloned for ($($ty,)+) {}
-        impl<$($ty),+> crate::ir::Ir for ($($ty,)+) {
-            type Type = Self;
+        impl<$($ty),+> crate::ir::ReprFamily for ($($ty,)+) {
+            type Kind = Self;
         }
 
         impl<$($ty: ExternC),+> crate::ExternC for ($($ty,)+) {
@@ -201,8 +201,8 @@ disjoint_impls::disjoint_impls! {
 
     impl<A, B> Niche for (A, B)
     where
-        A: Ir<Type: WithNiche> + Niche,
-        B: Ir<Type = WithoutNiche> + ExternC,
+        A: NicheFamily<Kind: WithNiche> + Niche,
+        B: NicheFamily<Kind = WithoutNiche> + ExternC,
     {
         // TODO: Instead of using `core::mem::zeroed`, memory can be left uninitialized. Use MaybeUninit?
         const NICHE_VALUE: Self::CType = CTuple2(A::NICHE_VALUE, unsafe { core::mem::zeroed() });
@@ -210,16 +210,16 @@ disjoint_impls::disjoint_impls! {
 
     impl<A, B> Niche for (A, B)
     where
-        A: Ir<Type = WithoutNiche> + ExternC,
-        B: Ir<Type: WithNiche> + Niche,
+        A: NicheFamily<Kind = WithoutNiche> + ExternC,
+        B: NicheFamily<Kind: WithNiche> + Niche,
     {
         const NICHE_VALUE: Self::CType = CTuple2(unsafe { core::mem::zeroed() }, B::NICHE_VALUE);
     }
 
     impl<A, B> Niche for (A, B)
     where
-        A: Ir<Type: WithNiche> + Niche,
-        B: Ir<Type: WithNiche> + ExternC,
+        A: NicheFamily<Kind: WithNiche> + Niche,
+        B: NicheFamily<Kind: WithNiche> + ExternC,
     {
         const NICHE_VALUE: Self::CType = CTuple2(A::NICHE_VALUE, unsafe { core::mem::zeroed() });
     }
@@ -448,112 +448,112 @@ where
     );
 }
 
-impl<A: Ir> Ir for (A,) {
-    type Type = A::Type;
+impl<A: NicheFamily> NicheFamily for (A,) {
+    type Kind = A::Kind;
 }
 
 disjoint_impls::disjoint_impls! {
     #[disjoint_impls(remote)]
-    pub trait Ir {
-        type Type;
+    pub trait NicheFamily {
+        type Kind;
     }
 
-    impl<A, B> Ir for (A, B)
+    impl<A, B> NicheFamily for (A, B)
     where
-        A: Ir<Type = WithoutNiche>,
-        B: Ir<Type = WithoutNiche>,
+        A: NicheFamily<Kind = WithoutNiche>,
+        B: NicheFamily<Kind = WithoutNiche>,
     {
-        type Type = WithoutNiche;
+        type Kind = WithoutNiche;
     }
-    impl<A, B> Ir for (A, B)
+    impl<A, B> NicheFamily for (A, B)
     where
-        A: Ir<Type: WithNiche>,
-        B: Ir<Type = WithoutNiche>,
+        A: NicheFamily<Kind: WithNiche>,
+        B: NicheFamily<Kind = WithoutNiche>,
     {
-        type Type = WithCustomNiche;
+        type Kind = WithCustomNiche;
     }
-    impl<A, B> Ir for (A, B)
+    impl<A, B> NicheFamily for (A, B)
     where
-        A: Ir<Type = WithoutNiche>,
-        B: Ir<Type: WithNiche>,
+        A: NicheFamily<Kind = WithoutNiche>,
+        B: NicheFamily<Kind: WithNiche>,
     {
-        type Type = WithCustomNiche;
+        type Kind = WithCustomNiche;
     }
-    impl<A, B> Ir for (A, B)
+    impl<A, B> NicheFamily for (A, B)
     where
-        A: Ir<Type: WithNiche>,
-        B: Ir<Type: WithNiche>,
+        A: NicheFamily<Kind: WithNiche>,
+        B: NicheFamily<Kind: WithNiche>,
     {
-        type Type = WithCustomNiche;
+        type Kind = WithCustomNiche;
     }
 }
 
-impl<A, B, C> Ir for (A, B, C)
+impl<A, B, C> NicheFamily for (A, B, C)
 where
-    (A, (B, C)): Ir,
+    (A, (B, C)): NicheFamily,
 {
-    type Type = <(A, (B, C)) as Ir>::Type;
+    type Kind = <(A, (B, C)) as NicheFamily>::Kind;
 }
 
-impl<A, B, C, D> Ir for (A, B, C, D)
+impl<A, B, C, D> NicheFamily for (A, B, C, D)
 where
-    ((A, B), (C, D)): Ir,
+    ((A, B), (C, D)): NicheFamily,
 {
-    type Type = <((A, B), (C, D)) as Ir>::Type;
+    type Kind = <((A, B), (C, D)) as NicheFamily>::Kind;
 }
 
-impl<A, B, C, D, E> Ir for (A, B, C, D, E)
+impl<A, B, C, D, E> NicheFamily for (A, B, C, D, E)
 where
-    ((A, B), (C, D, E)): Ir,
+    ((A, B), (C, D, E)): NicheFamily,
 {
-    type Type = <((A, B), (C, D, E)) as Ir>::Type;
+    type Kind = <((A, B), (C, D, E)) as NicheFamily>::Kind;
 }
 
-impl<A, B, C, D, E, F> Ir for (A, B, C, D, E, F)
+impl<A, B, C, D, E, F> NicheFamily for (A, B, C, D, E, F)
 where
-    ((A, B, C), (D, E, F)): Ir,
+    ((A, B, C), (D, E, F)): NicheFamily,
 {
-    type Type = <((A, B, C), (D, E, F)) as Ir>::Type;
+    type Kind = <((A, B, C), (D, E, F)) as NicheFamily>::Kind;
 }
 
-impl<A, B, C, D, E, F, G> Ir for (A, B, C, D, E, F, G)
+impl<A, B, C, D, E, F, G> NicheFamily for (A, B, C, D, E, F, G)
 where
-    ((A, B, C), (D, E, F, G)): Ir,
+    ((A, B, C), (D, E, F, G)): NicheFamily,
 {
-    type Type = <((A, B, C), (D, E, F, G)) as Ir>::Type;
+    type Kind = <((A, B, C), (D, E, F, G)) as NicheFamily>::Kind;
 }
 
-impl<A, B, C, D, E, F, G, H> Ir for (A, B, C, D, E, F, G, H)
+impl<A, B, C, D, E, F, G, H> NicheFamily for (A, B, C, D, E, F, G, H)
 where
-    ((A, B, C, D), (E, F, G, H)): Ir,
+    ((A, B, C, D), (E, F, G, H)): NicheFamily,
 {
-    type Type = <((A, B, C, D), (E, F, G, H)) as Ir>::Type;
+    type Kind = <((A, B, C, D), (E, F, G, H)) as NicheFamily>::Kind;
 }
 
-impl<A, B, C, D, E, F, G, H, I> Ir for (A, B, C, D, E, F, G, H, I)
+impl<A, B, C, D, E, F, G, H, I> NicheFamily for (A, B, C, D, E, F, G, H, I)
 where
-    ((A, B, C, D), (E, F, G, H, I)): Ir,
+    ((A, B, C, D), (E, F, G, H, I)): NicheFamily,
 {
-    type Type = <((A, B, C, D), (E, F, G, H, I)) as Ir>::Type;
+    type Kind = <((A, B, C, D), (E, F, G, H, I)) as NicheFamily>::Kind;
 }
 
-impl<A, B, C, D, E, F, G, H, I, J> Ir for (A, B, C, D, E, F, G, H, I, J)
+impl<A, B, C, D, E, F, G, H, I, J> NicheFamily for (A, B, C, D, E, F, G, H, I, J)
 where
-    ((A, B, C, D, E), (F, G, H, I, J)): Ir,
+    ((A, B, C, D, E), (F, G, H, I, J)): NicheFamily,
 {
-    type Type = <((A, B, C, D, E), (F, G, H, I, J)) as Ir>::Type;
+    type Kind = <((A, B, C, D, E), (F, G, H, I, J)) as NicheFamily>::Kind;
 }
 
-impl<A, B, C, D, E, F, G, H, I, J, K> Ir for (A, B, C, D, E, F, G, H, I, J, K)
+impl<A, B, C, D, E, F, G, H, I, J, K> NicheFamily for (A, B, C, D, E, F, G, H, I, J, K)
 where
-    ((A, B, C, D, E), (F, G, H, I, J, K)): Ir,
+    ((A, B, C, D, E), (F, G, H, I, J, K)): NicheFamily,
 {
-    type Type = <((A, B, C, D, E), (F, G, H, I, J, K)) as Ir>::Type;
+    type Kind = <((A, B, C, D, E), (F, G, H, I, J, K)) as NicheFamily>::Kind;
 }
 
-impl<A, B, C, D, E, F, G, H, I, J, K, L> Ir for (A, B, C, D, E, F, G, H, I, J, K, L)
+impl<A, B, C, D, E, F, G, H, I, J, K, L> NicheFamily for (A, B, C, D, E, F, G, H, I, J, K, L)
 where
-    ((A, B, C, D, E, F), (G, H, I, J, K, L)): Ir,
+    ((A, B, C, D, E, F), (G, H, I, J, K, L)): NicheFamily,
 {
-    type Type = <((A, B, C, D, E, F), (G, H, I, J, K, L)) as Ir>::Type;
+    type Kind = <((A, B, C, D, E, F), (G, H, I, J, K, L)) as NicheFamily>::Kind;
 }

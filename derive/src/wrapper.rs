@@ -291,8 +291,8 @@ fn gen_impl_ffi(name: &Ident, generics: &syn::Generics) -> TokenStream {
             }
         }
 
-        impl #impl_generics co3::ir::Ir for #name #ty_generics #where_clause {
-            type Type = co3::ir::Transparent;
+        impl #impl_generics co3::ir::ReprFamily for #name #ty_generics #where_clause {
+            type Kind = co3::ir::Transparent;
         }
 
         unsafe impl #impl_generics co3::transmute::CheckedTransmute for #name #ty_generics #where_clause {
@@ -304,8 +304,8 @@ fn gen_impl_ffi(name: &Ident, generics: &syn::Generics) -> TokenStream {
                 true
             }
         }
-        impl #impl_generics co3::niche::Ir for #name #ty_generics #where_clause {
-            type Type = co3::niche::WithStableNiche;
+        impl #impl_generics co3::niche::NicheFamily for #name #ty_generics #where_clause {
+            type Kind = co3::niche::WithStableNiche;
         }
 
         impl #impl_generics co3::niche::Niche for #name #ty_generics #where_clause {

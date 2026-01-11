@@ -91,7 +91,9 @@ pub fn gen_struct_niche_ir(
     let extern_c_bounds = gen_extern_c_bounds(&types, generics);
     let (fields_tuple, c_fields_tuple, accessors) = build_nested_tuple(&types);
     let is_parametrized = types.iter().any(|ty| is_type_parameterized(ty, generics));
-    let niche_ir_bound = is_parametrized.then_some(quote! { #fields_tuple: co3::niche::Ir, });
+    let niche_ir_bound = is_parametrized.then_some(quote! {
+        #fields_tuple: co3::niche::NicheFamily,
+    });
 
     let for_dummy = (!is_parametrized).then_some(quote! { for<'_dšč> });
     let niche_field_values = accessors.iter().map(|accessor| {
@@ -118,8 +120,8 @@ pub fn gen_struct_niche_ir(
             const NICHE_VALUE: Self::CType = #niche_value;
         }
 
-        impl #impl_generics co3::niche::Ir for #struct_name #ty_generics where #niche_ir_bound #predicates {
-            type Type = <#fields_tuple as co3::niche::Ir>::Type;
+        impl #impl_generics co3::niche::NicheFamily for #struct_name #ty_generics where #niche_ir_bound #predicates {
+            type Kind = <#fields_tuple as co3::niche::NicheFamily>::Kind;
         }
     }
 }
@@ -154,8 +156,8 @@ pub fn gen_enum_niche_ir(
 
     if is_exhaustive_enum(variants.len(), repr) {
         return quote! {
-            impl #impl_generics co3::niche::Ir for #enum_name #ty_generics #where_clause {
-                type Type = co3::niche::WithoutNiche;
+            impl #impl_generics co3::niche::NicheFamily for #enum_name #ty_generics #where_clause {
+                type Kind = co3::niche::WithoutNiche;
             }
         };
     }
@@ -165,8 +167,8 @@ pub fn gen_enum_niche_ir(
             const NICHE_VALUE: <Self as co3::ExternC>::CType = #niche_value;
         }
 
-        impl #impl_generics co3::niche::Ir for #enum_name #ty_generics #where_clause {
-            type Type = co3::niche::WithCustomNiche;
+        impl #impl_generics co3::niche::NicheFamily for #enum_name #ty_generics #where_clause {
+            type Kind = co3::niche::WithCustomNiche;
         }
     }
 }

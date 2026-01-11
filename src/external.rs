@@ -1,8 +1,8 @@
 use core::{marker::PhantomData, ptr::NonNull};
 
 use crate::{
-    ir::{Ir, Transparent},
-    niche::{Ir as NicheIr, Niche, StableNiche, WithStableNiche},
+    ir::{ReprFamily, Transparent},
+    niche::{Niche, NicheFamily, StableNiche, WithStableNiche},
     transmute::CheckedTransmute,
 };
 
@@ -83,18 +83,18 @@ impl<T> core::ops::DerefMut for ExternRefMut<'_, T> {
     }
 }
 
-impl<R> Ir for ExternRef<'_, R> {
-    type Type = Transparent;
+impl<R> ReprFamily for ExternRef<'_, R> {
+    type Kind = Transparent;
 }
-impl<R> Ir for ExternRefMut<'_, R> {
-    type Type = Transparent;
+impl<R> ReprFamily for ExternRefMut<'_, R> {
+    type Kind = Transparent;
 }
 
-impl<R> NicheIr for ExternRef<'_, R> {
-    type Type = WithStableNiche;
+impl<R> NicheFamily for ExternRef<'_, R> {
+    type Kind = WithStableNiche;
 }
-impl<R> NicheIr for ExternRefMut<'_, R> {
-    type Type = WithStableNiche;
+impl<R> NicheFamily for ExternRefMut<'_, R> {
+    type Kind = WithStableNiche;
 }
 
 unsafe impl<R> CheckedTransmute for ExternRef<'_, R> {

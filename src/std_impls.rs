@@ -8,9 +8,9 @@ use alloc::{boxed::Box, string::String, vec::Vec};
 #[cfg(feature = "owned_types")]
 use crate::slice::CSliceMut;
 use crate::{
-    ir::{Ir, Transparent},
+    ir::{ReprFamily, Transparent},
     mineral,
-    niche::{Ir as NicheIr, Niche, WithCustomNiche, WithStableNiche, WithoutNiche},
+    niche::{Niche, NicheFamily, WithCustomNiche, WithStableNiche, WithoutNiche},
     slice::CSlice,
     transmute::CheckedTransmute,
 };
@@ -51,52 +51,52 @@ mineral! {
     }
 }
 
-impl<T> Ir for UnsafeCell<T> {
-    type Type = Transparent;
+impl<T> ReprFamily for UnsafeCell<T> {
+    type Kind = Transparent;
 }
-impl<T> Ir for NonNull<T> {
-    type Type = Transparent;
+impl<T> ReprFamily for NonNull<T> {
+    type Kind = Transparent;
 }
-impl Ir for &str {
-    type Type = Transparent;
+impl ReprFamily for &str {
+    type Kind = Transparent;
 }
 #[cfg(feature = "non_robust_ref_mut")]
-impl Ir for &mut str {
-    type Type = Transparent;
+impl ReprFamily for &mut str {
+    type Kind = Transparent;
 }
 #[cfg(feature = "owned_types")]
 #[cfg(feature = "owned_as_ref")]
-impl Ir for Box<str> {
-    type Type = Transparent;
+impl ReprFamily for Box<str> {
+    type Kind = Transparent;
 }
 #[cfg(feature = "owned_types")]
 #[cfg(feature = "owned_as_ref")]
-impl Ir for String {
-    type Type = Transparent;
+impl ReprFamily for String {
+    type Kind = Transparent;
 }
 
-impl<T> NicheIr for UnsafeCell<T> {
-    type Type = WithoutNiche;
+impl<T> NicheFamily for UnsafeCell<T> {
+    type Kind = WithoutNiche;
 }
-impl<T> NicheIr for NonNull<T> {
-    type Type = WithStableNiche;
+impl<T> NicheFamily for NonNull<T> {
+    type Kind = WithStableNiche;
 }
-impl NicheIr for &str {
-    type Type = WithCustomNiche;
+impl NicheFamily for &str {
+    type Kind = WithCustomNiche;
 }
 #[cfg(feature = "non_robust_ref_mut")]
-impl NicheIr for &mut str {
-    type Type = WithCustomNiche;
+impl NicheFamily for &mut str {
+    type Kind = WithCustomNiche;
 }
 #[cfg(feature = "owned_types")]
 #[cfg(feature = "owned_as_ref")]
-impl NicheIr for Box<str> {
-    type Type = WithCustomNiche;
+impl NicheFamily for Box<str> {
+    type Kind = WithCustomNiche;
 }
 #[cfg(feature = "owned_types")]
 #[cfg(feature = "owned_as_ref")]
-impl NicheIr for String {
-    type Type = WithCustomNiche;
+impl NicheFamily for String {
+    type Kind = WithCustomNiche;
 }
 
 unsafe impl<T> CheckedTransmute for UnsafeCell<T> {

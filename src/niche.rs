@@ -46,8 +46,8 @@ pub trait Niche: ExternC {
 pub unsafe trait StableNiche: Niche {}
 
 disjoint_impls! {
-    /// Niche kind of the type in the internal representation [IR](`crate::ir::Ir`)
-    pub trait Ir {
+    /// Niche kind of the type in the internal representation [IR](`crate::ir::Repr`)
+    pub trait NicheFamily {
         /// The internal representation (i.e. type family) of the type
         ///
         /// - If `Self` doesn't have any niche value, set [`Ir::Type`] to [`WithoutNiche`].
@@ -58,55 +58,55 @@ disjoint_impls! {
         ///
         /// - Otherwise, if `Self` has at least one trap, set [`Ir::Type`] to [`WithCustomNiche`].
         ///   `Option<T>` will be serialized into a [`crate::ReprC`] with a manually set niche value
-        type Type;
+        type Kind;
     }
 
-    impl<R: Ir<Type = WithStableNiche>, const N: usize> Ir for [R; N] {
-        type Type = WithCustomNiche;
+    impl<R: NicheFamily<Kind = WithStableNiche>, const N: usize> NicheFamily for [R; N] {
+        type Kind = WithCustomNiche;
     }
-    impl<R: Ir<Type = WithCustomNiche>, const N: usize> Ir for [R; N] {
-        type Type = WithCustomNiche;
+    impl<R: NicheFamily<Kind = WithCustomNiche>, const N: usize> NicheFamily for [R; N] {
+        type Kind = WithCustomNiche;
     }
-    impl<R: Ir<Type = WithoutNiche>, const N: usize> Ir for [R; N] {
-        type Type = WithoutNiche;
+    impl<R: NicheFamily<Kind = WithoutNiche>, const N: usize> NicheFamily for [R; N] {
+        type Kind = WithoutNiche;
     }
 
-    impl<R: Ir<Type = WithoutNiche>> Ir for Option<R> {
-        type Type = WithCustomNiche;
+    impl<R: NicheFamily<Kind = WithoutNiche>> NicheFamily for Option<R> {
+        type Kind = WithCustomNiche;
     }
-    impl<R: Ir<Type = WithStableNiche>> Ir for Option<R> {
-        type Type = WithoutNiche;
+    impl<R: NicheFamily<Kind = WithStableNiche>> NicheFamily for Option<R> {
+        type Kind = WithoutNiche;
     }
     // TODO: It can be either WithoutNiche or WithCustomNiche
     // Depends on: https://github.com/mversic/co3/issues/33
-    //impl<R: Ir<Type = WithCustomNiche>> Ir for Option<R> {
-    //    type Type = WithCustomNiche;  // like Option<bool>
-    //    type Type = WithoutNiche;     // like Option<&R>
+    //impl<R: Ir<Type = WithCustomNiche>> NicheFamily for Option<R> {
+    //    type Kind = WithCustomNiche;  // like Option<bool>
+    //    type Kind = WithoutNiche;     // like Option<&R>
     //}
 }
 
-impl<R> Ir for &R {
-    type Type = WithStableNiche;
+impl<R> NicheFamily for &R {
+    type Kind = WithStableNiche;
 }
-impl<R> Ir for &mut R {
-    type Type = WithStableNiche;
+impl<R> NicheFamily for &mut R {
+    type Kind = WithStableNiche;
 }
-impl<R> Ir for Box<R> {
-    type Type = WithStableNiche;
+impl<R> NicheFamily for Box<R> {
+    type Kind = WithStableNiche;
 }
-impl<R> Ir for &[R] {
-    type Type = WithCustomNiche;
+impl<R> NicheFamily for &[R] {
+    type Kind = WithCustomNiche;
 }
-impl<R> Ir for &mut [R] {
-    type Type = WithCustomNiche;
-}
-#[cfg(feature = "owned_types")]
-impl<R> Ir for Box<[R]> {
-    type Type = WithCustomNiche;
+impl<R> NicheFamily for &mut [R] {
+    type Kind = WithCustomNiche;
 }
 #[cfg(feature = "owned_types")]
-impl<R> Ir for Vec<R> {
-    type Type = WithCustomNiche;
+impl<R> NicheFamily for Box<[R]> {
+    type Kind = WithCustomNiche;
+}
+#[cfg(feature = "owned_types")]
+impl<R> NicheFamily for Vec<R> {
+    type Kind = WithCustomNiche;
 }
 
 impl<R, C> Niche for &R

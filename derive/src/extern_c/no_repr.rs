@@ -23,12 +23,12 @@ pub(super) fn derive_opaque_item(name: &Ident, generics: &syn::Generics) -> Toke
     let (impl_generics, ty_generics, where_clause) = generics.split_for_impl();
 
     quote! {
-        impl #impl_generics co3::ir::Ir for #name #ty_generics #where_clause {
-            type Type = co3::ir::Opaque;
+        impl #impl_generics co3::ir::ReprFamily for #name #ty_generics #where_clause {
+            type Kind = co3::ir::Opaque;
         }
 
-        impl #impl_generics co3::niche::Ir for #name #ty_generics #where_clause {
-            type Type = co3::niche::WithCustomNiche;
+        impl #impl_generics co3::niche::NicheFamily for #name #ty_generics #where_clause {
+            type Kind = co3::niche::WithCustomNiche;
         }
 
         impl #impl_generics co3::niche::Niche for #name #ty_generics #where_clause {
@@ -458,8 +458,8 @@ pub fn gen_ir_impl(
     quote! {
         impl #impl_generics co3::ir::Cloned for #type_name #ty_generics #where_clause {}
 
-        impl #impl_generics co3::ir::Ir for #type_name #ty_generics where #extern_c_bounds #predicates {
-            type Type = Self;
+        impl #impl_generics co3::ir::ReprFamily for #type_name #ty_generics where #extern_c_bounds #predicates {
+            type Kind = Self;
         }
 
         impl #impl_generics co3::ExternC for #type_name #ty_generics where #extern_c_bounds #predicates {

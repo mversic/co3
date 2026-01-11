@@ -21,7 +21,7 @@ disjoint_impls! {
         fn is_valid(target: &Self::Target) -> bool;
     }
 
-    unsafe impl<'a, R: Ir<Type = Transparent> + CheckedTransmute> CheckedTransmute for &'a R {
+    unsafe impl<'a, R: ReprFamily<Kind = Transparent> + CheckedTransmute> CheckedTransmute for &'a R {
         type Target = &'a R::Target;
 
         #[inline(always)]
@@ -29,7 +29,7 @@ disjoint_impls! {
             R::is_valid(target)
         }
     }
-    unsafe impl<'a, R: Ir<Type = Box<Robust>> + CheckedTransmute> CheckedTransmute for &'a R {
+    unsafe impl<'a, R: ReprFamily<Kind = Box<Robust>> + CheckedTransmute> CheckedTransmute for &'a R {
         type Target = &'a R::Target;
 
         #[inline(always)]
@@ -37,7 +37,7 @@ disjoint_impls! {
             R::is_valid(target)
         }
     }
-    unsafe impl<R: Ir<Type = Robust> + ReprC> CheckedTransmute for &R {
+    unsafe impl<R: ReprFamily<Kind = Robust> + ReprC> CheckedTransmute for &R {
         type Target = *const R;
 
         #[inline(always)]
@@ -45,7 +45,7 @@ disjoint_impls! {
             !target.is_null()
         }
     }
-    unsafe impl<R: Ir<Type = Opaque>> CheckedTransmute for &R {
+    unsafe impl<R: ReprFamily<Kind = Opaque>> CheckedTransmute for &R {
         type Target = *const R;
 
         #[inline(always)]
@@ -60,7 +60,7 @@ disjoint_impls! {
         #[cfg(feature = "non_robust_ref_mut")] R,
     > CheckedTransmute for &'a mut R
     where
-        R: Ir<Type = Transparent> + CheckedTransmute,
+        R: ReprFamily<Kind = Transparent> + CheckedTransmute,
     {
         type Target = &'a mut R::Target;
 
@@ -70,7 +70,7 @@ disjoint_impls! {
         }
     }
     #[cfg(feature = "non_robust_ref_mut")]
-    unsafe impl<'a, R: Ir<Type = Box<Robust>> + CheckedTransmute> CheckedTransmute for &'a mut R {
+    unsafe impl<'a, R: ReprFamily<Kind = Box<Robust>> + CheckedTransmute> CheckedTransmute for &'a mut R {
         type Target = &'a mut R::Target;
 
         #[inline(always)]
@@ -78,7 +78,7 @@ disjoint_impls! {
             R::is_valid(target)
         }
     }
-    unsafe impl<R: Ir<Type = Robust> + ReprC> CheckedTransmute for &mut R {
+    unsafe impl<R: ReprFamily<Kind = Robust> + ReprC> CheckedTransmute for &mut R {
         type Target = *mut R;
 
         #[inline(always)]
@@ -86,7 +86,7 @@ disjoint_impls! {
             !target.is_null()
         }
     }
-    unsafe impl<R: Ir<Type = Opaque>> CheckedTransmute for &mut R {
+    unsafe impl<R: ReprFamily<Kind = Opaque>> CheckedTransmute for &mut R {
         type Target = *mut R;
 
         #[inline(always)]
@@ -95,7 +95,7 @@ disjoint_impls! {
         }
     }
 
-    unsafe impl<R: Ir<Type = Transparent> + CheckedTransmute> CheckedTransmute for Box<R> {
+    unsafe impl<R: ReprFamily<Kind = Transparent> + CheckedTransmute> CheckedTransmute for Box<R> {
         type Target = Box<R::Target>;
 
         #[inline(always)]
@@ -104,7 +104,7 @@ disjoint_impls! {
         }
     }
     #[cfg(feature = "owned_types")]
-    unsafe impl<R: Ir<Type = Box<Robust>> + CheckedTransmute> CheckedTransmute for Box<R> {
+    unsafe impl<R: ReprFamily<Kind = Box<Robust>> + CheckedTransmute> CheckedTransmute for Box<R> {
         type Target = Box<R::Target>;
 
         #[inline(always)]
@@ -113,7 +113,7 @@ disjoint_impls! {
         }
     }
     #[cfg(feature = "owned_types")]
-    unsafe impl<R: Ir<Type = Robust> + ReprC> CheckedTransmute for Box<R> {
+    unsafe impl<R: ReprFamily<Kind = Robust> + ReprC> CheckedTransmute for Box<R> {
         type Target = *mut R;
 
         #[inline(always)]
@@ -121,7 +121,7 @@ disjoint_impls! {
             !target.is_null()
         }
     }
-    unsafe impl<R: Ir<Type = Opaque>> CheckedTransmute for Box<R> {
+    unsafe impl<R: ReprFamily<Kind = Opaque>> CheckedTransmute for Box<R> {
         type Target = *mut R;
 
         #[inline(always)]
@@ -130,7 +130,7 @@ disjoint_impls! {
         }
     }
 
-    unsafe impl<R: CheckedTransmute<Target: Ir<Type = Transparent>> + StableNiche> CheckedTransmute for Option<R> {
+    unsafe impl<R: CheckedTransmute<Target: ReprFamily<Kind = Transparent>> + StableNiche> CheckedTransmute for Option<R> {
         type Target = Option<R::Target>;
 
         #[inline(always)]
@@ -138,7 +138,7 @@ disjoint_impls! {
             target.as_ref().is_none_or(R::is_valid)
         }
     }
-    unsafe impl<R: CheckedTransmute<Target: Ir<Type = Robust> + ReprC> + StableNiche> CheckedTransmute for Option<R> {
+    unsafe impl<R: CheckedTransmute<Target: ReprFamily<Kind = Robust> + ReprC> + StableNiche> CheckedTransmute for Option<R> {
         type Target = R::Target;
 
         #[inline(always)]
@@ -165,7 +165,7 @@ disjoint_impls! {
         fn is_valid(target: &Self::CType) -> bool;
     }
 
-    unsafe impl<R: Ir<Type = Transparent> + CheckedTransmute<Target: FlatTransmute>> FlatTransmute for R {
+    unsafe impl<R: ReprFamily<Kind = Transparent> + CheckedTransmute<Target: FlatTransmute>> FlatTransmute for R {
         fn is_valid(target: &Self::CType) -> bool {
             if !<R::Target as FlatTransmute>::is_valid(target) {
                 return false;
@@ -175,7 +175,7 @@ disjoint_impls! {
             <R as CheckedTransmute>::is_valid(unsafe { &*target_ptr })
         }
     }
-    unsafe impl<R: Ir<Type = Robust> + ReprC> FlatTransmute for R {
+    unsafe impl<R: ReprFamily<Kind = Robust> + ReprC> FlatTransmute for R {
         fn is_valid(_: &Self::CType) -> bool {
             true
         }

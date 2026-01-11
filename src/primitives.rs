@@ -6,7 +6,7 @@ mod wasm {
 
     use crate::{
         Decode, Encode, ExternC, FfiReturn, Result,
-        ir::{Ir, Robust, Transparent},
+        ir::{ReprFamily, Robust, Transparent},
         out_ptr::{OutPtr, OutPtrRead, OutPtrWrite},
     };
 
@@ -16,61 +16,61 @@ mod wasm {
     #[derive(Debug, Clone, Copy)]
     pub enum NonWasmIntPrimitive {}
 
-    impl<R> Ir for &R
+    impl<R> ReprFamily for &R
     where
-        R: Ir<Type = NonWasmIntPrimitive>,
+        R: ReprFamily<Type = NonWasmIntPrimitive>,
     {
-        type Type = Transparent;
+        type Kind = Transparent;
     }
-    impl<R> Ir for &mut R
+    impl<R> ReprFamily for &mut R
     where
-        R: Ir<Type = NonWasmIntPrimitive>,
+        R: ReprFamily<Type = NonWasmIntPrimitive>,
     {
-        type Type = Transparent;
+        type Kind = Transparent;
     }
-    impl<'itm, R> Ir for &'itm [R]
+    impl<'itm, R> ReprFamily for &'itm [R]
     where
-        R: Ir<Type = NonWasmIntPrimitive>,
+        R: ReprFamily<Type = NonWasmIntPrimitive>,
     {
-        type Type = &'itm [Robust];
+        type Kind = &'itm [Robust];
     }
-    impl<'itm, R> Ir for &'itm mut [R]
+    impl<'itm, R> ReprFamily for &'itm mut [R]
     where
-        R: Ir<Type = NonWasmIntPrimitive>,
+        R: ReprFamily<Type = NonWasmIntPrimitive>,
     {
-        type Type = &'itm mut [Robust];
-    }
-    #[cfg(feature = "owned_types")]
-    #[cfg(feature = "owned_as_ref")]
-    impl<R> Ir for Box<R>
-    where
-        R: Ir<Type = NonWasmIntPrimitive>,
-    {
-        type Type = Box<Robust>;
+        type Kind = &'itm mut [Robust];
     }
     #[cfg(feature = "owned_types")]
     #[cfg(feature = "owned_as_ref")]
-    impl<R> Ir for Box<[R]>
+    impl<R> ReprFamily for Box<R>
     where
-        R: Ir<Type = NonWasmIntPrimitive>,
+        R: ReprFamily<Type = NonWasmIntPrimitive>,
     {
-        type Type = Box<[Robust]>;
+        type Kind = Box<Robust>;
     }
     #[cfg(feature = "owned_types")]
     #[cfg(feature = "owned_as_ref")]
-    impl<R> Ir for Vec<R>
+    impl<R> ReprFamily for Box<[R]>
     where
-        R: Ir<Type = NonWasmIntPrimitive>,
+        R: ReprFamily<Type = NonWasmIntPrimitive>,
     {
-        type Type = Vec<Robust>;
+        type Kind = Box<[Robust]>;
     }
-    // FIXME: Check comment in `impl IrTypeFamily for Robust`
+    #[cfg(feature = "owned_types")]
+    #[cfg(feature = "owned_as_ref")]
+    impl<R> ReprFamily for Vec<R>
+    where
+        R: ReprFamily<Type = NonWasmIntPrimitive>,
+    {
+        type Kind = Vec<Robust>;
+    }
+    // FIXME: Check comment in `impl IrReprFamily for Robust`
     // This should be just: type `Arr<const N: usize> = Robust`;
-    impl<R, const N: usize> Ir for [R; N]
+    impl<R, const N: usize> ReprFamily for [R; N]
     where
-        R: Ir<Type = NonWasmIntPrimitive>,
+        R: ReprFamily<Type = NonWasmIntPrimitive>,
     {
-        type Type = Robust;
+        type Kind = Robust;
     }
 
     macro_rules! wasm_repr_impls {
@@ -101,8 +101,8 @@ mod wasm {
                 }
             }
 
-            impl $crate::ir::Ir for $src {
-                type Type = NonWasmIntPrimitive;
+            impl $crate::ir::ReprFamily for $src {
+                type Kind = NonWasmIntPrimitive;
             }
 
             impl ExternC for $src {

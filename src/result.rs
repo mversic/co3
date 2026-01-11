@@ -2,9 +2,9 @@
 
 use crate::{
     Decode, Encode, ExternC, ReprC,
-    ir::Ir,
+    ir::ReprFamily,
     mineral,
-    niche::{Ir as NicheIr, Niche},
+    niche::{Niche, NicheFamily},
 };
 
 pub use private::{Result as CResult, ResultPayload as CResultPayload};
@@ -50,15 +50,15 @@ mineral! {
     unsafe impl(T: ReprC, E: ReprC) Robust for CResultPayload<T, E> {}
 }
 
-impl<T, E> Ir for Result<T, E> {
-    type Type = Self;
+impl<T, E> ReprFamily for Result<T, E> {
+    type Kind = Self;
 }
 
-impl<T, E> NicheIr for Result<T, E>
+impl<T, E> NicheFamily for Result<T, E>
 where
-    (T, E): NicheIr,
+    (T, E): NicheFamily,
 {
-    type Type = <(T, E) as NicheIr>::Type;
+    type Kind = <(T, E) as NicheFamily>::Kind;
 }
 
 impl<T: ExternC, E: ExternC> Niche for Result<T, E> {

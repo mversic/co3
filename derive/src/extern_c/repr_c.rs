@@ -214,8 +214,8 @@ pub(crate) fn derive_fieldless_enum(
     };
 
     quote! {
-        impl co3::ir::Ir for #enum_name {
-            type Type = co3::ir::Transparent;
+        impl co3::ir::ReprFamily for #enum_name {
+            type Kind = co3::ir::Transparent;
         }
 
         unsafe impl co3::transmute::CheckedTransmute for #enum_name {
@@ -519,8 +519,8 @@ fn gen_transparent_impl<'a>(
         });
 
     quote! {
-        impl #impl_generics co3::ir::Ir for #item_name #ty_generics where #predicates {
-            type Type = co3::ir::Transparent;
+        impl #impl_generics co3::ir::ReprFamily for #item_name #ty_generics where #predicates {
+            type Kind = co3::ir::Transparent;
         }
 
         unsafe impl #impl_generics co3::transmute::CheckedTransmute for #item_name #ty_generics where #flat_transmute_bounds #predicates {
