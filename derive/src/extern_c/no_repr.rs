@@ -109,7 +109,7 @@ pub(super) fn derive_no_repr_struct(
 
             quote! {
                 Ok(Self {
-                    #(#field_names: unsafe {co3::Decode::decode(source.#field_names, &mut store.#field_indices)?}),*
+                    #(#field_names: unsafe { co3::Decode::decode(source.#field_names, &mut store.#field_indices)? }),*
                 })
             }
         }
@@ -117,20 +117,15 @@ pub(super) fn derive_no_repr_struct(
             let field_indices = (0..fields.len()).map(syn::Index::from);
 
             quote! {
-                Ok(Self(unsafe {
-                    #(co3::Decode::decode(source.#field_indices, &mut store.#field_indices)?),*
-                }))
+                Ok(Self(
+                    #(unsafe { co3::Decode::decode(source.#field_indices, &mut store.#field_indices)? }),*
+                ))
             }
         }
         Style::Unit => unreachable!("ZSTs are not FFI safe"),
     };
 
-    let mut params = generics.params.clone();
-    params.iter_mut().for_each(|param| {
-        if let syn::GenericParam::Type(ty) = param {
-            ty.bounds.push(parse_quote! {'_dšč });
-        }
-    });
+    let params = generics.params.clone();
     let encode_bounds = gen_encode_bounds(&field_types, generics);
     let decode_bounds = gen_decode_bounds(&field_types, generics);
     let niche_ir = gen_struct_niche_ir(name, generics, fields);
@@ -152,7 +147,7 @@ pub(super) fn derive_no_repr_struct(
             }
         }
 
-        impl<'_dšč, #params> co3::Decode<'_dšč> for #name #ty_generics where #decode_bounds #predicates {
+        impl<'_dšč, #params> co3::Decode<'_dšč> for #name #ty_generics where #repr_c_struct_name #ty_generics: '_dšč, #decode_bounds #predicates {
             type Store = #ffi_store;
 
             unsafe fn decode<'_išč: '_dšč>(source: <Self as co3::ExternC>::CType, store: &'_išč mut Self::Store) -> co3::Result<Self> {
@@ -177,12 +172,7 @@ pub(super) fn derive_no_repr_data_enum(
         gen_data_enum(enum_name, generics, inferred_repr, variants);
 
     let (impl_generics, ty_generics, where_clause) = generics.split_for_impl();
-    let mut params = generics.params.clone();
-    params.iter_mut().for_each(|param| {
-        if let syn::GenericParam::Type(ty) = param {
-            ty.bounds.push(parse_quote! {'_dšč });
-        }
-    });
+    let params = generics.params.clone();
 
     let variant_rust_stores = variants
         .iter()
@@ -311,7 +301,7 @@ pub(super) fn derive_no_repr_data_enum(
             }
         }
 
-        impl<'_dšč, #params> co3::Decode<'_dšč> for #enum_name #ty_generics where #decode_bounds #predicates {
+        impl<'_dšč, #params> co3::Decode<'_dšč> for #enum_name #ty_generics where #repr_c_enum_name #ty_generics: '_dšč, #decode_bounds #predicates {
             type Store = #ffi_store;
 
             unsafe fn decode<'_išč: '_dšč>(source: <Self as co3::ExternC>::CType, store: &'_išč mut Self::Store) -> co3::Result<Self> {

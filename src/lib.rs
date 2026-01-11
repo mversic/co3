@@ -29,19 +29,22 @@ use crate::{
         transmute_from_target_slice_mut, transmute_into_target, transmute_into_target_ref_slice,
         transmute_into_target_slice_mut,
     },
-    tuple::CTuple2,
 };
 
 pub mod external;
 pub mod handle;
 pub mod ir;
 pub mod niche;
+pub mod option;
 pub mod out_ptr;
 pub mod primitives;
+pub mod result;
 pub mod slice;
 mod std_impls;
 pub mod transmute;
 pub mod tuple;
+
+use option::COption;
 
 /// A specialized `Result` type for FFI operations
 pub type Result<T> = core::result::Result<T, FfiReturn>;
@@ -235,7 +238,7 @@ disjoint_impls! {
     where
         Self: Ir<Type = Option<WithoutNiche>>,
     {
-        type CType = CTuple2<<u8 as ExternC>::CType, R::CType>;
+        type CType = COption<R::CType>;
     }
     impl<R: Niche> ExternC for Option<R>
     where
@@ -678,8 +681,14 @@ disjoint_impls! {
             match self {
                 // SAFETY: `ReprC` type is robust and can't have any trap representations
                 // TODO: No need to zero the memory because it must never be read. Use MaybeUninit?
-                None => CTuple2(Encode::encode(0u8, &mut ()), unsafe { core::mem::zeroed() }),
-                Some(value) => CTuple2(Encode::encode(1u8, &mut ()), value.encode(store)),
+                None => COption {
+                    tag: 0,
+                    payload: unsafe { core::mem::zeroed() },
+                },
+                Some(value) => COption {
+                    tag: 1,
+                    payload: value.encode(store),
+                },
             }
         }
     }
@@ -1139,11 +1148,9 @@ disjoint_impls! {
         type Store = <R as Decode<'d>>::Store;
 
         unsafe fn decode<'itm: 'd>(source: Self::CType, store: &'itm mut Self::Store) -> Result<Self> {
-            let discriminant: <u8 as ExternC>::CType = unsafe { Decode::decode(source.0, &mut ())? };
-
-            match discriminant {
+            match source.tag {
                 0 => Ok(None),
-                1 => Ok(Some(unsafe { R::decode(source.1, store) }?)),
+                1 => Ok(Some(unsafe { R::decode(source.payload, store) }?)),
                 _ => Err(FfiReturn::TrapRepresentation),
             }
         }

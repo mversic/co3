@@ -1,7 +1,7 @@
 use darling::util::SpannedValue;
 use proc_macro2::TokenStream;
-use quote::quote;
-use syn::Ident;
+use quote::{ToTokens, quote};
+use syn::{Ident, visit::Visit};
 
 use crate::{
     attr_parse::{
@@ -232,58 +232,168 @@ pub(crate) fn derive_fieldless_enum(
     }
 }
 
-fn gen_transparent_impl<'a>(
-    item_name: &Ident,
-    derives: &[Derive],
+pub(super) fn gen_repr_c_struct(
+    struct_name: &syn::Ident,
     generics: &syn::Generics,
-    target: &syn::Ident,
-    is_valid_body: TokenStream,
-    fields: impl IntoIterator<Item = &'a FfiTypeField>,
-) -> TokenStream {
-    let (impl_generics, ty_generics, _) = generics.split_for_impl();
-    let predicates = generics
-        .where_clause
+    fields: &darling::ast::Fields<FfiTypeField>,
+) -> (syn::Ident, TokenStream) {
+    let repr_c_struct_name = gen_repr_c_item_name(struct_name);
+
+    let field_types: Vec<_> = fields.iter().map(|field| &field.ty).collect();
+
+    let fields_code = match fields.style {
+        darling::ast::Style::Struct => {
+            let field_names = fields.iter().map(|field| &field.ident);
+            let field_tys = fields.iter().map(|field| {
+                let field_ty = &field.ty;
+                quote! {<#field_ty as co3::ExternC>::CType}
+            });
+
+            quote! { #(#field_names: #field_tys),* }
+        }
+        darling::ast::Style::Tuple => {
+            let field_tys = fields.iter().map(|field| {
+                let field_ty = &field.ty;
+                quote! { pub <#field_ty as co3::ExternC>::CType }
+            });
+
+            quote! { #(#field_tys),* }
+        }
+        darling::ast::Style::Unit => unreachable!("ZSTs are not FFI safe"),
+    };
+
+    let repr_c_struct = gen_repr_c_type::<false, true>(
+        format!(" FFI-safe equivalent of [`{struct_name}`]"),
+        repr_c_struct_name.clone(),
+        generics,
+        fields.style,
+        fields_code,
+        &field_types,
+    );
+
+    (repr_c_struct_name, repr_c_struct)
+}
+
+pub(super) fn gen_data_enum(
+    enum_name: &syn::Ident,
+    generics: &syn::Generics,
+    repr: ReprPrimitive,
+    variants: &[SpannedValue<FfiTypeVariant>],
+) -> (syn::Ident, TokenStream) {
+    let union_name = gen_repr_c_item_name(enum_name);
+
+    let mut all_field_types = Vec::new();
+    for variant in variants {
+        for field in variant.fields.iter() {
+            all_field_types.push(&field.ty);
+        }
+    }
+
+    let mut variant_structs = Vec::new();
+    let mut variant_ty_generics = Vec::new();
+
+    for variant in variants {
+        let variant_name = &variant.ident;
+        let variant_struct_name = gen_data_enum_variant_name(enum_name, variant_name);
+
+        let variant_field_types: Vec<_> = variant.fields.iter().map(|f| &f.ty).collect();
+
+        let filtered_generics = filter_generics(&variant_field_types, generics);
+        let (_, var_ty_generics, _) = filtered_generics.split_for_impl();
+        variant_ty_generics.push(var_ty_generics.into_token_stream());
+
+        let fields = variant_mapper(
+            variant,
+            || quote! { tag: #repr },
+            |field| {
+                let field_ty = &field.ty;
+                quote! {
+                    pub tag: #repr,
+                    pub value: <#field_ty as co3::ExternC>::CType
+                }
+            },
+        );
+
+        variant_structs.push(gen_repr_c_type::<false, true>(
+            format!(" Variant struct for [`{enum_name}::{variant_name}`]"),
+            variant_struct_name,
+            &filtered_generics,
+            darling::ast::Style::Struct,
+            fields,
+            &variant_field_types,
+        ));
+    }
+
+    let union_fields = variants
+        .iter()
+        .zip(variant_ty_generics.iter())
+        .map(|(variant, ty_gen)| {
+            let variant_name = &variant.ident;
+            let variant_struct_name = gen_data_enum_variant_name(enum_name, variant_name);
+            quote! { pub #variant_name: #variant_struct_name #ty_gen }
+        });
+
+    let union_def = gen_repr_c_type::<true, true>(
+        format!(" FFI-safe equivalent of [`{enum_name}`]"),
+        union_name.clone(),
+        generics,
+        darling::ast::Style::Struct,
+        quote! { #(#union_fields),* },
+        &all_field_types,
+    );
+
+    let all_code = quote! {
+        #(#variant_structs)*
+        #union_def
+    };
+
+    (union_name, all_code)
+}
+
+fn gen_repr_c_data_enum(
+    enum_name: &syn::Ident,
+    generics: &syn::Generics,
+    repr: ReprPrimitive,
+    variants: &[SpannedValue<FfiTypeVariant>],
+) -> (syn::Ident, TokenStream) {
+    let (payload_name, payload) = gen_data_enum_payload(enum_name, generics, variants);
+
+    let doc = format!(" FFI-safe equivalent of [`{enum_name}`]");
+    let repr_c_enum_name = gen_repr_c_item_name(enum_name);
+
+    let (impl_generics, ty_generics, where_clause) = generics.split_for_impl();
+    let params = &generics.params;
+    let predicates = where_clause
         .as_ref()
         .map(|where_clause| &where_clause.predicates);
 
-    let field_types = fields.into_iter().map(|f| &f.ty).collect::<Vec<_>>();
-    let flat_transmute_bounds = gen_flat_transmute_bounds(&field_types, generics);
-    let repr_c_bounds = gen_repr_c_bounds(&field_types, generics);
-
-    let repr_c = derives
-        .contains(&Derive::Rustc(RustcDerive::Copy))
-        .then_some(quote! {
-            unsafe #impl_generics impl co3::ReprC for #item_name #ty_generics where #repr_c_bounds #predicates {}
-        });
-
-    quote! {
-        impl #impl_generics co3::ir::Ir for #item_name #ty_generics where #predicates {
-            type Type = co3::ir::Transparent;
+    let mut field_types = Vec::new();
+    for variant in variants {
+        for field in variant.fields.iter() {
+            field_types.push(&field.ty);
         }
-
-        unsafe impl #impl_generics co3::transmute::CheckedTransmute for #item_name #ty_generics where #flat_transmute_bounds #predicates {
-            type Target = #target #ty_generics;
-
-            #[inline(always)]
-            fn is_valid(target: &Self::Target) -> bool {
-                #is_valid_body
-            }
-        }
-
-        #repr_c
     }
-}
+    let extern_c_bounds = gen_extern_c_bounds(&field_types, generics);
 
-/// Checks if an enum exhausts all possible values of its repr type
-pub(super) fn is_exhaustive_enum(num_variants: usize, repr: ReprPrimitive) -> bool {
-    let max_values = match repr {
-        ReprPrimitive::U8 | ReprPrimitive::I8 => 1u64 << 8,
-        ReprPrimitive::U16 | ReprPrimitive::I16 => 1u64 << 16,
-        ReprPrimitive::U32 | ReprPrimitive::I32 => 1u64 << 32,
-        ReprPrimitive::U64 | ReprPrimitive::I64 => return false,
+    let repr_c_enum = quote! {
+        #payload
+
+        #[repr(C)]
+        #[doc = #doc]
+        #[doc(hidden)]
+        pub struct #repr_c_enum_name #impl_generics where #extern_c_bounds #predicates {
+            tag: #repr, payload: #payload_name #ty_generics,
+        }
+
+        impl #impl_generics Clone for #repr_c_enum_name #ty_generics where #extern_c_bounds #predicates {
+            fn clone(&self) -> Self { *self }
+        }
+
+        impl #impl_generics Copy for #repr_c_enum_name #ty_generics where #extern_c_bounds #predicates {}
+        co3::mineral! { unsafe impl(#params) Robust for #repr_c_enum_name #ty_generics where (#extern_c_bounds #predicates) {} }
     };
 
-    num_variants as u64 == max_values
+    (repr_c_enum_name, repr_c_enum)
 }
 
 fn gen_repr_c_type<const IS_UNION: bool, const IS_PUBLIC: bool>(
@@ -345,161 +455,6 @@ fn gen_repr_c_type<const IS_UNION: bool, const IS_PUBLIC: bool>(
     }
 }
 
-pub(super) fn gen_repr_c_struct(
-    struct_name: &syn::Ident,
-    generics: &syn::Generics,
-    fields: &darling::ast::Fields<FfiTypeField>,
-) -> (syn::Ident, TokenStream) {
-    let repr_c_struct_name = gen_repr_c_item_name(struct_name);
-
-    let field_types: Vec<_> = fields.iter().map(|field| &field.ty).collect();
-
-    let fields_code = match fields.style {
-        darling::ast::Style::Struct => {
-            let field_names = fields.iter().map(|field| &field.ident);
-            let field_tys = fields.iter().map(|field| {
-                let field_ty = &field.ty;
-                quote! {<#field_ty as co3::ExternC>::CType}
-            });
-
-            quote! { #(#field_names: #field_tys),* }
-        }
-        darling::ast::Style::Tuple => {
-            let field_tys = fields.iter().map(|field| {
-                let field_ty = &field.ty;
-                quote! { pub <#field_ty as co3::ExternC>::CType }
-            });
-
-            quote! { #(#field_tys),* }
-        }
-        darling::ast::Style::Unit => unreachable!("ZSTs are not FFI safe"),
-    };
-
-    let repr_c_struct = gen_repr_c_type::<false, true>(
-        format!(" FFI-safe equivalent of [`{struct_name}`]"),
-        repr_c_struct_name.clone(),
-        generics,
-        fields.style,
-        fields_code,
-        &field_types,
-    );
-
-    (repr_c_struct_name, repr_c_struct)
-}
-
-pub(super) fn gen_data_enum(
-    enum_name: &syn::Ident,
-    generics: &syn::Generics,
-    repr: ReprPrimitive,
-    variants: &[SpannedValue<FfiTypeVariant>],
-) -> (syn::Ident, TokenStream) {
-    let union_name = gen_repr_c_item_name(enum_name);
-
-    let mut all_field_types = Vec::new();
-    for variant in variants {
-        for field in variant.fields.iter() {
-            all_field_types.push(&field.ty);
-        }
-    }
-
-    let variant_structs = variants.iter().map(|variant| {
-        let variant_name = &variant.ident;
-        let variant_struct_name = gen_data_enum_variant_name(enum_name, variant_name);
-
-        let variant_field_types: Vec<_> = variant.fields.iter().map(|f| &f.ty).collect();
-
-        let fields = variant_mapper(
-            variant,
-            || quote! { tag: #repr },
-            |field| {
-                let field_ty = &field.ty;
-                quote! {
-                    pub tag: #repr,
-                    pub value: <#field_ty as co3::ExternC>::CType
-                }
-            },
-        );
-
-        gen_repr_c_type::<false, true>(
-            format!(" Variant struct for [`{enum_name}::{variant_name}`]"),
-            variant_struct_name,
-            generics,
-            darling::ast::Style::Struct,
-            fields,
-            &variant_field_types,
-        )
-    });
-
-    let union_variant_names = variants.iter().map(|v| &v.ident);
-    let union_variant_struct_names = variants
-        .iter()
-        .map(|v| gen_data_enum_variant_name(enum_name, &v.ident));
-
-    let (_, ty_generics, _) = generics.split_for_impl();
-
-    let union_def = gen_repr_c_type::<true, true>(
-        format!(" FFI-safe equivalent of [`{enum_name}`]"),
-        union_name.clone(),
-        generics,
-        darling::ast::Style::Struct,
-        quote! { #(pub #union_variant_names: #union_variant_struct_names #ty_generics),* },
-        &all_field_types,
-    );
-
-    let all_code = quote! {
-        #(#variant_structs)*
-        #union_def
-    };
-
-    (union_name, all_code)
-}
-
-fn gen_repr_c_data_enum(
-    enum_name: &syn::Ident,
-    generics: &syn::Generics,
-    repr: ReprPrimitive,
-    variants: &[SpannedValue<FfiTypeVariant>],
-) -> (syn::Ident, TokenStream) {
-    let (payload_name, payload) = gen_data_enum_payload(enum_name, generics, variants);
-
-    let doc = format!(" FFI-safe equivalent of [`{enum_name}`]");
-    let repr_c_enum_name = gen_repr_c_item_name(enum_name);
-
-    let (impl_generics, ty_generics, where_clause) = generics.split_for_impl();
-    let params = &generics.params;
-    let predicates = where_clause
-        .as_ref()
-        .map(|where_clause| &where_clause.predicates);
-
-    let mut field_types = Vec::new();
-    for variant in variants {
-        for field in variant.fields.iter() {
-            field_types.push(&field.ty);
-        }
-    }
-    let extern_c_bounds = gen_extern_c_bounds(&field_types, generics);
-
-    let repr_c_enum = quote! {
-        #payload
-
-        #[repr(C)]
-        #[doc = #doc]
-        #[doc(hidden)]
-        pub struct #repr_c_enum_name #impl_generics where #extern_c_bounds #predicates {
-            tag: #repr, payload: #payload_name #ty_generics,
-        }
-
-        impl #impl_generics Clone for #repr_c_enum_name #ty_generics where #extern_c_bounds #predicates {
-            fn clone(&self) -> Self { *self }
-        }
-
-        impl #impl_generics Copy for #repr_c_enum_name #ty_generics where #extern_c_bounds #predicates {}
-        co3::mineral! { unsafe impl(#params) Robust for #repr_c_enum_name #ty_generics where (#extern_c_bounds #predicates) {} }
-    };
-
-    (repr_c_enum_name, repr_c_enum)
-}
-
 fn gen_data_enum_payload(
     enum_name: &syn::Ident,
     generics: &syn::Generics,
@@ -537,6 +492,60 @@ fn gen_data_enum_payload(
     );
 
     (payload_name, payload)
+}
+
+fn gen_transparent_impl<'a>(
+    item_name: &Ident,
+    derives: &[Derive],
+    generics: &syn::Generics,
+    target: &syn::Ident,
+    is_valid_body: TokenStream,
+    fields: impl IntoIterator<Item = &'a FfiTypeField>,
+) -> TokenStream {
+    let (impl_generics, ty_generics, _) = generics.split_for_impl();
+    let predicates = generics
+        .where_clause
+        .as_ref()
+        .map(|where_clause| &where_clause.predicates);
+
+    let field_types = fields.into_iter().map(|f| &f.ty).collect::<Vec<_>>();
+    let flat_transmute_bounds = gen_flat_transmute_bounds(&field_types, generics);
+    let repr_c_bounds = gen_repr_c_bounds(&field_types, generics);
+
+    let repr_c = derives
+        .contains(&Derive::Rustc(RustcDerive::Copy))
+        .then_some(quote! {
+            unsafe #impl_generics impl co3::ReprC for #item_name #ty_generics where #repr_c_bounds #predicates {}
+        });
+
+    quote! {
+        impl #impl_generics co3::ir::Ir for #item_name #ty_generics where #predicates {
+            type Type = co3::ir::Transparent;
+        }
+
+        unsafe impl #impl_generics co3::transmute::CheckedTransmute for #item_name #ty_generics where #flat_transmute_bounds #predicates {
+            type Target = #target #ty_generics;
+
+            #[inline(always)]
+            fn is_valid(target: &Self::Target) -> bool {
+                #is_valid_body
+            }
+        }
+
+        #repr_c
+    }
+}
+
+/// Checks if an enum exhausts all possible values of its repr type
+pub(super) fn is_exhaustive_enum(num_variants: usize, repr: ReprPrimitive) -> bool {
+    let max_values = match repr {
+        ReprPrimitive::U8 | ReprPrimitive::I8 => 1u64 << 8,
+        ReprPrimitive::U16 | ReprPrimitive::I16 => 1u64 << 16,
+        ReprPrimitive::U32 | ReprPrimitive::I32 => 1u64 << 32,
+        ReprPrimitive::U64 | ReprPrimitive::I64 => return false,
+    };
+
+    num_variants as u64 == max_values
 }
 
 pub(super) fn gen_repr_c_item_name(item_name: &syn::Ident) -> syn::Ident {
@@ -586,4 +595,84 @@ fn gen_repr_c_bounds(fields: &[&syn::Type], generics: &syn::Generics) -> TokenSt
     });
 
     quote! { #(#repr_c_bounds,)* }
+}
+
+struct UsedGenericsVisitor<'a> {
+    generics: &'a syn::Generics,
+    used_lifetimes: std::collections::HashSet<&'a syn::Ident>,
+    used_type_params: std::collections::HashSet<&'a syn::Ident>,
+    used_const_params: std::collections::HashSet<&'a syn::Ident>,
+}
+
+impl<'a> UsedGenericsVisitor<'a> {
+    fn new(generics: &'a syn::Generics) -> Self {
+        Self {
+            generics,
+            used_lifetimes: std::collections::HashSet::new(),
+            used_type_params: std::collections::HashSet::new(),
+            used_const_params: std::collections::HashSet::new(),
+        }
+    }
+}
+
+impl<'a> Visit<'_> for UsedGenericsVisitor<'a> {
+    fn visit_lifetime(&mut self, lifetime: &syn::Lifetime) {
+        for lt in self.generics.lifetimes() {
+            if lt.lifetime.ident == lifetime.ident {
+                self.used_lifetimes.insert(&lt.lifetime.ident);
+            }
+        }
+
+        syn::visit::visit_lifetime(self, lifetime);
+    }
+
+    fn visit_type_path(&mut self, type_path: &syn::TypePath) {
+        if let Some(ident) = type_path.path.get_ident() {
+            for tp in self.generics.type_params() {
+                if &tp.ident == ident {
+                    self.used_type_params.insert(&tp.ident);
+                }
+            }
+            for cp in self.generics.const_params() {
+                if &cp.ident == ident {
+                    self.used_const_params.insert(&cp.ident);
+                }
+            }
+        }
+
+        syn::visit::visit_type_path(self, type_path);
+    }
+
+    fn visit_expr_path(&mut self, expr_path: &syn::ExprPath) {
+        if let Some(ident) = expr_path.path.get_ident() {
+            for cp in self.generics.const_params() {
+                if &cp.ident == ident {
+                    self.used_const_params.insert(&cp.ident);
+                }
+            }
+        }
+
+        syn::visit::visit_expr_path(self, expr_path);
+    }
+}
+
+pub fn filter_generics(field_types: &[&syn::Type], generics: &syn::Generics) -> syn::Generics {
+    let mut visitor = UsedGenericsVisitor::new(generics);
+    for ty in field_types {
+        visitor.visit_type(ty);
+    }
+
+    let mut filtered = generics.clone();
+    filtered.params = generics
+        .params
+        .iter()
+        .filter(|param| match param {
+            syn::GenericParam::Lifetime(lt) => visitor.used_lifetimes.contains(&lt.lifetime.ident),
+            syn::GenericParam::Type(tp) => visitor.used_type_params.contains(&tp.ident),
+            syn::GenericParam::Const(cp) => visitor.used_const_params.contains(&cp.ident),
+        })
+        .cloned()
+        .collect();
+
+    filtered
 }

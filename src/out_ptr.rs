@@ -1,4 +1,5 @@
 use super::*;
+use crate::COption;
 #[cfg(feature = "owned_types")]
 #[cfg(feature = "owned_as_ref")]
 use crate::transmute::{transmute_from_target_boxed_slice, transmute_from_target_vec};
@@ -240,7 +241,7 @@ disjoint_impls! {
     where
         Self: Ir<Type = Option<WithoutNiche>>,
     {
-        type OutPtr = CTuple2<<u8 as OutPtr>::OutPtr, R::OutPtr>;
+        type OutPtr = COption<R::OutPtr>;
     }
     impl<R: Niche + OutPtr> OutPtr for Option<R>
     where
@@ -570,26 +571,24 @@ disjoint_impls! {
         unsafe fn write_out(self, out_ptr: *mut Self::OutPtr) {
             match self {
                 None => {
-                    let mut discriminant_out_ptr = core::mem::MaybeUninit::uninit();
                     unsafe {
-                        OutPtrWrite::write_out(0u8, discriminant_out_ptr.as_mut_ptr());
-                        let discriminant_out_ptr = discriminant_out_ptr.assume_init();
-
                         // SAFETY: `ReprC` type is robust and can't have trap representations
                         // TODO: No need to zero the memory because it must never be read
-                        out_ptr.write(CTuple2(discriminant_out_ptr, core::mem::zeroed()));
+                        out_ptr.write(COption {
+                            tag: 0,
+                            payload: core::mem::zeroed(),
+                        });
                     }
                 }
                 Some(value) => unsafe {
-                    let mut discriminant_out_ptr = core::mem::MaybeUninit::uninit();
-                    OutPtrWrite::write_out(1u8, discriminant_out_ptr.as_mut_ptr());
-                    let discriminant_out_ptr = discriminant_out_ptr.assume_init();
-
                     let mut value_out_ptr = core::mem::MaybeUninit::uninit();
                     OutPtrWrite::write_out(value, value_out_ptr.as_mut_ptr());
                     let value_out_ptr = value_out_ptr.assume_init();
 
-                    out_ptr.write(CTuple2(discriminant_out_ptr, value_out_ptr));
+                    out_ptr.write(COption {
+                        tag: 1,
+                        payload: value_out_ptr,
+                    });
                 },
             }
         }
@@ -854,9 +853,9 @@ disjoint_impls! {
         Self: Ir<Type = Option<WithoutNiche>>,
     {
         unsafe fn try_read_out(out_ptr: Self::OutPtr) -> Result<Self> {
-            match unsafe { <u8 as OutPtrRead>::try_read_out(out_ptr.0)? } {
+            match out_ptr.tag {
                 0 => Ok(None),
-                1 => Ok(Some(unsafe { R::try_read_out(out_ptr.1)? })),
+                1 => Ok(Some(unsafe { R::try_read_out(out_ptr.payload)? })),
                 _ => Err(FfiReturn::TrapRepresentation),
             }
         }
