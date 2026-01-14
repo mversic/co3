@@ -5,7 +5,7 @@ mod wasm {
     use alloc::{boxed::Box, vec::Vec};
 
     use crate::{
-        Decode, Encode, ExternC, FfiReturn, Result,
+        Decode, Encode, ExternC,
         ir::{ReprFamily, Robust, Transparent},
         out_ptr::{OutPtr, OutPtrRead, OutPtrWrite},
     };
@@ -123,14 +123,14 @@ mod wasm {
             impl Decode<'_> for $src {
                 type Store = ();
 
-                unsafe fn decode<'itm: 'd>(source: Self::CType, (): &mut ()) -> Result<Self> {
-                    <$src>::try_from(source).or(Err(FfiReturn::ConversionFailed))
+                unsafe fn decode<'itm: 'd>(source: Self::CType, (): &mut ()) -> Option<Self> {
+                    <$src>::try_from(source).ok()
                 }
             }
 
             impl OutPtrRead for $src {
-                unsafe fn try_read_out(out_ptr: Self::OutPtr) -> Result<Self> {
-                    Ok(out_ptr)
+                unsafe fn try_read_out(out_ptr: Self::OutPtr) -> Option<Self> {
+                    Some(out_ptr)
                 }
             }
             impl OutPtrWrite for $src {

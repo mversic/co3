@@ -268,12 +268,12 @@ disjoint_impls! {
     where
         Self: ReprFamily<Kind = Box<Robust>>,
     {
-        unsafe fn write_out(self, out_ptr: *mut Self::OutPtr) {
+        unsafe fn write_out(self, _out_ptr: *mut Self::OutPtr) {
             unimplemented!()
             //let mut store = Default::default();
             //let _ = self.encode(&mut store);
 
-            //unsafe { out_ptr.write(store.unwrap()); }
+            //unsafe { _out_ptr.write(store.unwrap()); }
         }
     }
     impl<R: CheckedTransmute> OutPtrWrite for R
@@ -284,9 +284,7 @@ disjoint_impls! {
         unsafe fn write_out(self, out_ptr: *mut Self::OutPtr) {
             let transmuted = transmute_into_target(self);
 
-            unsafe {
-                OutPtrWrite::write_out(transmuted, out_ptr)
-            }
+            unsafe { OutPtrWrite::write_out(transmuted, out_ptr) }
         }
     }
     impl<R: ReprC> OutPtrWrite for R
@@ -295,7 +293,9 @@ disjoint_impls! {
     {
         unsafe fn write_out(self, out_ptr: *mut Self::OutPtr) {
             let encoded = self.encode(&mut ());
-            unsafe { out_ptr.write(encoded); }
+            unsafe {
+                out_ptr.write(encoded);
+            }
         }
     }
     impl<R> OutPtrWrite for R
@@ -304,7 +304,9 @@ disjoint_impls! {
     {
         unsafe fn write_out(self, out_ptr: *mut Self::OutPtr) {
             let encoded = self.encode(&mut ());
-            unsafe { out_ptr.write(encoded); }
+            unsafe {
+                out_ptr.write(encoded);
+            }
         }
     }
 
@@ -318,7 +320,9 @@ disjoint_impls! {
             let _ = self.encode(&mut store);
             let output = store.0.unwrap();
 
-            unsafe { out_ptr.write(output); }
+            unsafe {
+                out_ptr.write(output);
+            }
         }
     }
 
@@ -332,7 +336,9 @@ disjoint_impls! {
             let mut store = Default::default();
             let _ = self.encode(&mut store);
 
-            unsafe { out_ptr.write(store.0.unwrap()); }
+            unsafe {
+                out_ptr.write(store.0.unwrap());
+            }
         }
     }
 
@@ -355,7 +361,9 @@ disjoint_impls! {
     {
         unsafe fn write_out(self, out_ptr: *mut Self::OutPtr) {
             let encoded = self.encode(&mut ());
-            unsafe { out_ptr.write(encoded); }
+            unsafe {
+                out_ptr.write(encoded);
+            }
         }
     }
     #[cfg(feature = "cloned_refs")]
@@ -410,7 +418,9 @@ disjoint_impls! {
     {
         unsafe fn write_out(self, out_ptr: *mut Self::OutPtr) {
             let encoded = self.encode(&mut ());
-            unsafe { out_ptr.write(encoded); }
+            unsafe {
+                out_ptr.write(encoded);
+            }
         }
     }
 
@@ -466,7 +476,7 @@ disjoint_impls! {
     {
         unsafe fn write_out(self, out_ptr: *mut Self::OutPtr) {
             let mut store = Default::default();
-            let _  = self.encode(&mut store);
+            let _ = self.encode(&mut store);
 
             let output = CBoxedSlice::from_boxed_slice(Some(store.0));
 
@@ -548,7 +558,9 @@ disjoint_impls! {
         unsafe fn write_out(self, out_ptr: *mut Self::OutPtr) {
             assert_arr_has_non_zero_len::<N>();
             let encoded = self.encode(&mut ());
-            unsafe { out_ptr.write(encoded); }
+            unsafe {
+                out_ptr.write(encoded);
+            }
         }
     }
     impl<R: NonLocal, S: Cloned, const N: usize> OutPtrWrite for [R; N]
@@ -560,7 +572,9 @@ disjoint_impls! {
             let mut store = Default::default();
             let item = self.encode(&mut store);
 
-            unsafe { out_ptr.write(item); }
+            unsafe {
+                out_ptr.write(item);
+            }
         }
     }
 
@@ -606,7 +620,7 @@ disjoint_impls! {
         /// # Safety
         ///
         /// Check [`Decode::decode`]
-        unsafe fn try_read_out(out_ptr: Self::OutPtr) -> Result<Self>;
+        unsafe fn try_read_out(out_ptr: Self::OutPtr) -> Option<Self>;
     }
 
     impl<R: CheckedTransmute> OutPtrRead for R
@@ -614,7 +628,7 @@ disjoint_impls! {
         Self: ReprFamily<Kind = Transparent>,
         <R as CheckedTransmute>::Target: OutPtrRead,
     {
-        unsafe fn try_read_out(out_ptr: Self::OutPtr) -> Result<Self> {
+        unsafe fn try_read_out(out_ptr: Self::OutPtr) -> Option<Self> {
             unsafe {
                 OutPtrRead::try_read_out(out_ptr).and_then(|output| transmute_from_target(output))
             }
@@ -624,7 +638,7 @@ disjoint_impls! {
     where
         Self: ReprFamily<Kind = Robust>,
     {
-        unsafe fn try_read_out(out_ptr: Self::OutPtr) -> Result<Self> {
+        unsafe fn try_read_out(out_ptr: Self::OutPtr) -> Option<Self> {
             unsafe { Decode::decode(out_ptr, &mut ()) }
         }
     }
@@ -635,9 +649,9 @@ disjoint_impls! {
     where
         Self: ReprFamily<Kind = Box<Robust>>,
     {
-        unsafe fn try_read_out(out_ptr: Self::OutPtr) -> Result<Self> {
+        unsafe fn try_read_out(_out_ptr: Self::OutPtr) -> Option<Self> {
             unimplemented!()
-            //Ok(Box::new(out_ptr))
+            //Ok(Box::new(_out_ptr))
         }
     }
     #[cfg(feature = "owned_types")]
@@ -646,12 +660,11 @@ disjoint_impls! {
     where
         Self: ReprFamily<Kind = Box<S>>,
     {
-        unsafe fn try_read_out(out_ptr: Self::OutPtr) -> Result<Self> {
+        unsafe fn try_read_out(out_ptr: Self::OutPtr) -> Option<Self> {
             let mut store = Default::default();
 
-            let store_ref = unsafe {
-                core::mem::transmute::<&mut R::Store, &'d mut R::Store>(&mut store)
-            };
+            let store_ref =
+                unsafe { core::mem::transmute::<&mut R::Store, &'d mut R::Store>(&mut store) };
 
             unsafe { Decode::decode(out_ptr, store_ref).map(Box::new) }
         }
@@ -662,7 +675,7 @@ disjoint_impls! {
         Self: ReprFamily<Kind = &'d [Transparent]>,
         &'d [<R as CheckedTransmute>::Target]: OutPtrRead,
     {
-        unsafe fn try_read_out(out_ptr: Self::OutPtr) -> Result<Self> {
+        unsafe fn try_read_out(out_ptr: Self::OutPtr) -> Option<Self> {
             unsafe {
                 <&[R::Target]>::try_read_out(out_ptr)
                     .and_then(|output| transmute_from_target_ref_slice(output))
@@ -673,8 +686,8 @@ disjoint_impls! {
     where
         Self: ReprFamily<Kind = &'a [Robust]>,
     {
-        unsafe fn try_read_out(out_ptr: Self::OutPtr) -> Result<Self> {
-            unsafe { out_ptr.into_rust() }.ok_or(FfiReturn::ArgIsNull)
+        unsafe fn try_read_out(out_ptr: Self::OutPtr) -> Option<Self> {
+            unsafe { out_ptr.into_rust() }
         }
     }
 
@@ -683,7 +696,7 @@ disjoint_impls! {
         Self: ReprFamily<Kind = &'d mut [Transparent]>,
         &'d mut [<R as CheckedTransmute>::Target]: OutPtrRead,
     {
-        unsafe fn try_read_out(out_ptr: Self::OutPtr) -> Result<Self> {
+        unsafe fn try_read_out(out_ptr: Self::OutPtr) -> Option<Self> {
             unsafe {
                 <&mut [R::Target]>::try_read_out(out_ptr)
                     .and_then(|output| transmute_from_target_slice_mut(output))
@@ -694,8 +707,8 @@ disjoint_impls! {
     where
         Self: ReprFamily<Kind = &'a mut [Robust]>,
     {
-        unsafe fn try_read_out(out_ptr: Self::OutPtr) -> Result<Self> {
-            unsafe { out_ptr.into_rust() }.ok_or(FfiReturn::ArgIsNull)
+        unsafe fn try_read_out(out_ptr: Self::OutPtr) -> Option<Self> {
+            unsafe { out_ptr.into_rust() }
         }
     }
 
@@ -705,7 +718,7 @@ disjoint_impls! {
         Self: ReprFamily<Kind = Box<[Transparent]>>,
         Box<[<R as CheckedTransmute>::Target]>: OutPtrRead,
     {
-        unsafe fn try_read_out(out_ptr: Self::OutPtr) -> Result<Self> {
+        unsafe fn try_read_out(out_ptr: Self::OutPtr) -> Option<Self> {
             unsafe {
                 <Box<[R::Target]>>::try_read_out(out_ptr)
                     .and_then(|output| transmute_from_target_boxed_slice(output))
@@ -718,12 +731,12 @@ disjoint_impls! {
     where
         Self: ReprFamily<Kind = Box<[Robust]>>,
     {
-        unsafe fn try_read_out(out_ptr: Self::OutPtr) -> Result<Self> {
+        unsafe fn try_read_out(out_ptr: Self::OutPtr) -> Option<Self> {
             unsafe {
                 let res = Decode::decode(out_ptr.into(), &mut ());
 
                 if !out_ptr.deallocate() {
-                    return Err(FfiReturn::TrapRepresentation);
+                    return None;
                 }
 
                 res
@@ -736,21 +749,20 @@ disjoint_impls! {
     where
         Self: ReprFamily<Kind = Box<[S]>> + Decode<'d, CType = CSliceMut<<R as ExternC>::CType>>,
     {
-        unsafe fn try_read_out(out_ptr: Self::OutPtr) -> Result<Self> {
+        unsafe fn try_read_out(out_ptr: Self::OutPtr) -> Option<Self> {
             let mut store = Default::default();
 
             let store_ref = unsafe {
-                core::mem::transmute::<
-                    &mut <Self as Decode>::Store,
-                    &'d mut <Self as Decode>::Store
-                >(&mut store)
+                core::mem::transmute::<&mut <Self as Decode>::Store, &'d mut <Self as Decode>::Store>(
+                    &mut store,
+                )
             };
 
             unsafe {
                 let res = Decode::decode(out_ptr.into(), store_ref);
 
                 if !out_ptr.deallocate() {
-                    return Err(FfiReturn::TrapRepresentation);
+                    return None;
                 }
 
                 res
@@ -764,7 +776,7 @@ disjoint_impls! {
         Self: ReprFamily<Kind = Vec<Transparent>>,
         Vec<<R as CheckedTransmute>::Target>: OutPtrRead,
     {
-        unsafe fn try_read_out(out_ptr: Self::OutPtr) -> Result<Self> {
+        unsafe fn try_read_out(out_ptr: Self::OutPtr) -> Option<Self> {
             unsafe {
                 <Vec<R::Target>>::try_read_out(out_ptr)
                     .and_then(|output| transmute_from_target_vec(output))
@@ -777,12 +789,12 @@ disjoint_impls! {
     where
         Self: ReprFamily<Kind = Vec<Robust>>,
     {
-        unsafe fn try_read_out(out_ptr: Self::OutPtr) -> Result<Self> {
+        unsafe fn try_read_out(out_ptr: Self::OutPtr) -> Option<Self> {
             unsafe {
                 let res = Decode::decode(out_ptr.into(), &mut ());
 
                 if !out_ptr.deallocate() {
-                    return Err(FfiReturn::TrapRepresentation);
+                    return None;
                 }
 
                 res
@@ -795,21 +807,20 @@ disjoint_impls! {
     where
         Self: ReprFamily<Kind = Vec<S>> + Decode<'d, CType = CSliceMut<<R as ExternC>::CType>>,
     {
-        unsafe fn try_read_out(out_ptr: Self::OutPtr) -> Result<Self> {
+        unsafe fn try_read_out(out_ptr: Self::OutPtr) -> Option<Self> {
             let mut store = <Self as Decode>::Store::default();
 
             let store_ref = unsafe {
-                core::mem::transmute::<
-                    &mut <Self as Decode>::Store,
-                    &'d mut <Self as Decode>::Store
-                >(&mut store)
+                core::mem::transmute::<&mut <Self as Decode>::Store, &'d mut <Self as Decode>::Store>(
+                    &mut store,
+                )
             };
 
             unsafe {
                 let res = Decode::decode(out_ptr.into(), store_ref);
 
                 if !out_ptr.deallocate() {
-                    return Err(FfiReturn::TrapRepresentation);
+                    return None;
                 }
 
                 res
@@ -821,15 +832,14 @@ disjoint_impls! {
     where
         Self: ReprFamily<Kind = [S; N]> + Decode<'d>,
     {
-        unsafe fn try_read_out(out_ptr: Self::OutPtr) -> Result<Self> {
+        unsafe fn try_read_out(out_ptr: Self::OutPtr) -> Option<Self> {
             assert_arr_has_non_zero_len::<N>();
             let mut store = <Self as Decode>::Store::default();
 
             let store_ref = unsafe {
-                core::mem::transmute::<
-                    &mut <Self as Decode>::Store,
-                    &'d mut <Self as Decode>::Store
-                >(&mut store)
+                core::mem::transmute::<&mut <Self as Decode>::Store, &'d mut <Self as Decode>::Store>(
+                    &mut store,
+                )
             };
 
             unsafe { Decode::decode(out_ptr, store_ref) }
@@ -840,10 +850,12 @@ disjoint_impls! {
     where
         Self: ReprFamily<Kind = Option<WithoutNiche>>,
     {
-        unsafe fn try_read_out(out_ptr: Self::OutPtr) -> Result<Self> {
-            TryInto::<Option<_>>::try_into(out_ptr)?
-                .map(|payload| unsafe { R::try_read_out(payload) })
-                .transpose()
+        unsafe fn try_read_out(out_ptr: Self::OutPtr) -> Option<Self> {
+            let option = TryInto::<Option<_>>::try_into(out_ptr).ok()?;
+            match option {
+                Some(payload) => unsafe { R::try_read_out(payload) }.map(Some),
+                None => Some(None),
+            }
         }
     }
     impl<R: Niche + OutPtrRead> OutPtrRead for Option<R>
@@ -851,13 +863,13 @@ disjoint_impls! {
         Self: ReprFamily<Kind = Option<WithCustomNiche>>,
         //<R as ExternC>::CType: PartialEq,
     {
-        unsafe fn try_read_out(out_ptr: Self::OutPtr) -> Result<Self> {
+        unsafe fn try_read_out(_out_ptr: Self::OutPtr) -> Option<Self> {
             unimplemented!()
-            //if out_ptr == R::NICHE_VALUE {
+            //if _out_ptr == R::NICHE_VALUE {
             //    return Ok(None);
             //}
 
-            //unsafe { R::try_read_out(out_ptr).map(Some) }
+            //unsafe { R::try_read_out(_out_ptr).map(Some) }
         }
     }
 }

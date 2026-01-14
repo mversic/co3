@@ -61,7 +61,7 @@
 //! ```
 
 use crate::{
-    ExternC, ReprC, Result,
+    ExternC, ReprC,
     ir::Cloned,
     niche::{Niche, NicheFamily, WithCustomNiche, WithNiche, WithoutNiche},
 };
@@ -107,11 +107,11 @@ macro_rules! impl_tuple {
         }
         #[expect(non_snake_case)]
         impl<$($ty: crate::out_ptr::OutPtrRead),+> crate::out_ptr::OutPtrRead for ($($ty,)+) {
-            unsafe fn try_read_out(source: Self::OutPtr) -> Result<Self> {
+            unsafe fn try_read_out(source: Self::OutPtr) -> Option<Self> {
                 impl_tuple! {@decl_priv_out_ptr $($ty),+}
 
                 let $ffi_ty($($ty,)+) = source;
-                Ok(unsafe {($( crate::out_ptr::OutPtrRead::try_read_out($ty)?, )+)})
+                Some(unsafe {($( crate::out_ptr::OutPtrRead::try_read_out($ty)?, )+)})
             }
         }
 
@@ -131,12 +131,12 @@ macro_rules! impl_tuple {
             type Store = ($( $ty::Store, )+);
 
             #[expect(non_snake_case)]
-            unsafe fn decode<'itm: 'd>(source: Self::CType, store: &'itm mut Self::Store) -> Result<Self> {
+            unsafe fn decode<'itm: 'd>(source: Self::CType, store: &'itm mut Self::Store) -> Option<Self> {
                 impl_tuple! {@decl_priv_store $($ty),+ for crate::Decode<'itm> : Store}
 
                 let $ffi_ty($($ty,)+) = source;
                 let store: private_store::Store<$($ty),+> = store.into();
-                Ok(unsafe {($( <$ty as crate::Decode<'d>>::decode($ty, store.$ty)?, )+)})
+                Some(unsafe {($( <$ty as crate::Decode<'d>>::decode($ty, store.$ty)?, )+)})
             }
         }
 

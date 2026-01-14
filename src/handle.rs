@@ -106,9 +106,13 @@ macro_rules! def_fns {
             out_ptr: *mut *mut core::ffi::c_void
         ) -> $crate::FfiReturn {
             $crate::def_fns!(@catch_unwind {
-                match $crate::Decode::decode(handle_id, &mut ())? {
+                match $crate::Decode::decode(handle_id, &mut ())
+                    .ok_or($crate::FfiReturn::TrapRepresentation)? {
                     $( <$other as $crate::handle::Handle>::ID => {
-                        let handle_ref: &$other = $crate::Decode::decode(handle_ptr as <&$other as $crate::ExternC>::CType, &mut ())?;
+                        let handle_ref: &$other = $crate::Decode::decode(
+                            handle_ptr as <&$other as $crate::ExternC>::CType,
+                            &mut ()
+                        ).ok_or($crate::FfiReturn::TrapRepresentation)?;
                         <$other as $crate::out_ptr::OutPtrWrite>::write_out(Clone::clone(handle_ref), out_ptr.cast::<<$other as $crate::ExternC>::CType>());
                     } )+
                     // TODO: Implement error handling (https://github.com/hyperledger/iroha/issues/2252)
@@ -132,7 +136,8 @@ macro_rules! def_fns {
             out_ptr: *mut *mut core::ffi::c_void
         ) -> $crate::FfiReturn {
             $crate::def_fns!(@catch_unwind {
-                match $crate::Decode::decode(handle_id, &mut ())? {
+                match $crate::Decode::decode(handle_id, &mut ())
+                    .ok_or($crate::FfiReturn::TrapRepresentation)? {
                     $( <$other as $crate::handle::Handle>::ID => {
                         let default_value = Default::default();
 
@@ -162,7 +167,8 @@ macro_rules! def_fns {
             out_ptr: *mut <bool as $crate::out_ptr::OutPtr>::OutPtr,
         ) -> $crate::FfiReturn {
             $crate::def_fns!(@catch_unwind {
-                match $crate::Decode::decode(handle_id, &mut ())? {
+                match $crate::Decode::decode(handle_id, &mut ())
+                    .ok_or($crate::FfiReturn::TrapRepresentation)? {
                     $( <$other as $crate::handle::Handle>::ID => {
                         let (lhandle_ptr, rhandle_ptr) = (
                             left_handle_ptr as <&$other as $crate::ExternC>::CType,
@@ -172,8 +178,10 @@ macro_rules! def_fns {
                         let mut lhandle_store = Default::default();
                         let mut rhandle_store = Default::default();
 
-                        let lhandle: &$other = $crate::Decode::decode(lhandle_ptr, &mut lhandle_store)?;
-                        let rhandle: &$other = $crate::Decode::decode(rhandle_ptr, &mut rhandle_store)?;
+                        let lhandle: &$other = $crate::Decode::decode(lhandle_ptr, &mut lhandle_store)
+                            .ok_or($crate::FfiReturn::TrapRepresentation)?;
+                        let rhandle: &$other = $crate::Decode::decode(rhandle_ptr, &mut rhandle_store)
+                            .ok_or($crate::FfiReturn::TrapRepresentation)?;
 
                         <bool as $crate::out_ptr::OutPtrWrite>::write_out(lhandle == rhandle, out_ptr);
                     } )+
@@ -200,7 +208,8 @@ macro_rules! def_fns {
             out_ptr: *mut <core::cmp::Ordering as $crate::out_ptr::OutPtr>::OutPtr,
         ) -> $crate::FfiReturn {
             $crate::def_fns!(@catch_unwind {
-                match $crate::Decode::decode(handle_id, &mut ())? {
+                match $crate::Decode::decode(handle_id, &mut ())
+                    .ok_or($crate::FfiReturn::TrapRepresentation)? {
                     $( <$other as $crate::handle::Handle>::ID => {
                         let (lhandle_ptr, rhandle_ptr) = (
                             left_handle_ptr as <&$other as $crate::ExternC>::CType,
@@ -210,8 +219,10 @@ macro_rules! def_fns {
                         let mut lhandle_store = Default::default();
                         let mut rhandle_store = Default::default();
 
-                        let lhandle: &$other = $crate::Decode::decode(lhandle_ptr, &mut lhandle_store)?;
-                        let rhandle: &$other = $crate::Decode::decode(rhandle_ptr, &mut rhandle_store)?;
+                        let lhandle: &$other = $crate::Decode::decode(lhandle_ptr, &mut lhandle_store)
+                            .ok_or($crate::FfiReturn::TrapRepresentation)?;
+                        let rhandle: &$other = $crate::Decode::decode(rhandle_ptr, &mut rhandle_store)
+                            .ok_or($crate::FfiReturn::TrapRepresentation)?;
 
                         <core::cmp::Ordering as $crate::out_ptr::OutPtrWrite>::write_out(lhandle.cmp(rhandle), out_ptr);
                     } )+
@@ -236,10 +247,12 @@ macro_rules! def_fns {
             handle_ptr: *mut core::ffi::c_void,
         ) -> $crate::FfiReturn {
             $crate::def_fns!(@catch_unwind {
-                match $crate::Decode::decode(handle_id, &mut ())? {
+                match $crate::Decode::decode(handle_id, &mut ())
+                    .ok_or($crate::FfiReturn::TrapRepresentation)? {
                     $( <$other as $crate::handle::Handle>::ID => {
                         let handle_ptr = handle_ptr as <$other as $crate::ExternC>::CType;
-                        let _handle: $other = $crate::Decode::decode(handle_ptr, &mut ())?;
+                        let _handle: $other = $crate::Decode::decode(handle_ptr, &mut ())
+                            .ok_or($crate::FfiReturn::TrapRepresentation)?;
                     } )+
                     // TODO: Implement error handling (https://github.com/hyperledger/iroha/issues/2252)
                     _ => return Err($crate::FfiReturn::UnknownHandle),
@@ -258,7 +271,7 @@ macro_rules! def_fns {
         #[unsafe(no_mangle)]
         unsafe extern "C" fn __dealloc(ptr: *mut u8, size: usize, align: usize) -> $crate::FfiReturn {
             if ptr.is_null() {
-                return $crate::FfiReturn::ArgIsNull;
+                return $crate::FfiReturn::TrapRepresentation;
             }
 
             if let Ok(layout) = core::alloc::Layout::from_size_align(size, align) {

@@ -46,25 +46,18 @@ pub mod tuple;
 
 use option::COption;
 
-/// A specialized `Result` type for FFI operations
-pub type Result<T> = core::result::Result<T, FfiReturn>;
-
 /// Result of execution of an FFI function
 #[derive(Debug, Display, Clone, Copy, PartialEq, Eq)]
 #[repr(i8)]
 pub enum FfiReturn {
-    /// The input argument provided to FFI function can't be converted into inner rust representation.
-    ConversionFailed = -6,
-    /// The input argument provided to FFI function contains a trap representation.
-    TrapRepresentation = -5,
-    /// FFI function execution panicked.
-    UnrecoverableError = -4,
-    /// Provided handle id doesn't match any known handles.
-    UnknownHandle = -3,
     /// FFI function failed during the execution of the wrapped method on the provided handle.
-    ExecutionFail = -2,
-    /// The input argument provided to FFI function is a null pointer.
-    ArgIsNull = -1,
+    ExecutionFail = -4,
+    /// FFI function execution panicked.
+    UnrecoverableError = -3,
+    /// The input argument provided to FFI function contains a trap representation.
+    TrapRepresentation = -2,
+    /// Provided handle id doesn't match any known handles.
+    UnknownHandle = -1,
     /// FFI function executed successfully.
     Ok = 0,
 }
@@ -721,15 +714,11 @@ disjoint_impls! {
 
         /// Perform the conversion from [`Self::CType`] into [`Self`]
         ///
-        /// # Errors
-        ///
-        /// Check [`FfiReturn`]
-        ///
         /// # Safety
         ///
         /// - All conversions from a pointer must ensure pointer validity beforehand
         /// - If `type Store = ()`, then the store **must never be dereferenced**
-        unsafe fn decode<'itm: 'd>(source: Self::CType, store: &'itm mut Self::Store) -> Result<Self>;
+        unsafe fn decode<'itm: 'd>(source: Self::CType, store: &'itm mut Self::Store) -> Option<Self>;
     }
 
     #[cfg(feature = "owned_types")]
@@ -740,7 +729,7 @@ disjoint_impls! {
     {
         type Store = ();
 
-        unsafe fn decode<'itm: 'd>(source: Self::CType, (): &mut ()) -> Result<Self> {
+        unsafe fn decode<'itm: 'd>(source: Self::CType, (): &mut ()) -> Option<Self> {
             transmute_from_target::<&R>(&source).cloned()
         }
     }
@@ -751,7 +740,7 @@ disjoint_impls! {
     {
         type Store = <R::Target as Decode<'d>>::Store;
 
-        unsafe fn decode<'itm: 'd>(source: Self::CType, store: &'itm mut Self::Store) -> Result<Self> {
+        unsafe fn decode<'itm: 'd>(source: Self::CType, store: &'itm mut Self::Store) -> Option<Self> {
             unsafe { Decode::decode(source, store).and_then(|inner| transmute_from_target(inner)) }
         }
     }
@@ -761,8 +750,8 @@ disjoint_impls! {
     {
         type Store = ();
 
-        unsafe fn decode<'itm: 'd>(source: Self::CType, (): &mut ()) -> Result<Self>{
-            Ok(source)
+        unsafe fn decode<'itm: 'd>(source: Self::CType, (): &mut ()) -> Option<Self> {
+            Some(source)
         }
     }
     impl<'d, R: 'd> Decode<'d> for R
@@ -771,12 +760,12 @@ disjoint_impls! {
     {
         type Store = ();
 
-        unsafe fn decode<'itm: 'd>(source: Self::CType, (): &mut ()) -> Result<Self> {
+        unsafe fn decode<'itm: 'd>(source: Self::CType, (): &mut ()) -> Option<Self> {
             if source.is_null() {
-                return Err(FfiReturn::ArgIsNull);
+                return None;
             }
 
-            Ok(*unsafe { Box::from_raw(source) })
+            Some(*unsafe { Box::from_raw(source) })
         }
     }
 
@@ -787,17 +776,19 @@ disjoint_impls! {
     {
         type Store = (Option<R>, R::Store);
 
-        unsafe fn decode<'itm: 'd>(source: Self::CType, store: &'itm mut Self::Store) -> Result<Self> {
+        unsafe fn decode<'itm: 'd>(source: Self::CType, store: &'itm mut Self::Store) -> Option<Self> {
             unsafe {
                 if source.as_ref().is_none() {
-                    return Err(FfiReturn::ArgIsNull);
+                    return None;
                 }
 
-                Ok(store.0.insert(
-                    R::decode(source.read(), &mut store.1)
-                        .map(ManuallyDrop::new)
-                        .map(|item| (*item).clone())?,
-                ))
+                Some(
+                    store.0.insert(
+                        R::decode(source.read(), &mut store.1)
+                            .map(ManuallyDrop::new)
+                            .map(|item| (*item).clone())?,
+                    ),
+                )
             }
         }
     }
@@ -810,15 +801,15 @@ disjoint_impls! {
     {
         type Store = R::Store;
 
-        unsafe fn decode<'itm: 'd>(source: Self::CType, store: &'itm mut Self::Store) -> Result<Self> {
+        unsafe fn decode<'itm: 'd>(source: Self::CType, store: &'itm mut Self::Store) -> Option<Self> {
             if source.is_null() {
-                return Err(FfiReturn::ArgIsNull);
+                return None;
             }
 
             unsafe { R::decode(source.read(), store) }
-                    .map(ManuallyDrop::new)
-                    .map(|item| (*item).clone())
-                    .map(Box::new)
+                .map(ManuallyDrop::new)
+                .map(|item| (*item).clone())
+                .map(Box::new)
         }
     }
 
@@ -829,7 +820,10 @@ disjoint_impls! {
     {
         type Store = <&'slice [R::Target] as Decode<'slice>>::Store;
 
-        unsafe fn decode<'itm: 'slice>(source: Self::CType, store: &'itm mut Self::Store) -> Result<Self> {
+        unsafe fn decode<'itm: 'slice>(
+            source: Self::CType,
+            store: &'itm mut Self::Store,
+        ) -> Option<Self> {
             unsafe {
                 let slice = <&[R::Target]>::decode(source, store)?;
                 transmute_from_target_ref_slice(slice)
@@ -842,8 +836,8 @@ disjoint_impls! {
     {
         type Store = ();
 
-        unsafe fn decode<'itm: 'slice>(source: Self::CType, (): &mut ()) -> Result<Self> {
-            unsafe { source.into_rust() }.ok_or(FfiReturn::ArgIsNull)
+        unsafe fn decode<'itm: 'slice>(source: Self::CType, (): &mut ()) -> Option<Self> {
+            unsafe { source.into_rust() }
         }
     }
     #[cfg(feature = "cloned_refs")]
@@ -853,23 +847,26 @@ disjoint_impls! {
     {
         type Store = Box<[R]>;
 
-        unsafe fn decode<'itm: 'slice>(source: Self::CType, store: &'itm mut Self::Store) -> Result<Self> {
-            let source = unsafe { source.into_rust() }.ok_or(FfiReturn::ArgIsNull)?;
+        unsafe fn decode<'itm: 'slice>(
+            source: Self::CType,
+            store: &'itm mut Self::Store,
+        ) -> Option<Self> {
+            let source = unsafe { source.into_rust() }?;
 
-            *store = source
+            let vec = source
                 .iter()
                 .map(|item| {
-                    unsafe { item.as_ref() }
-                        // TODO: This function clones every opaque pointer in the slice. This could
-                        // be avoided with the entire slice being opaque, if that even makes sense.
-                        // If the entire slice is opaque then `ExternC` can also be implemented for
-                        // `&mut [Opaque]`
-                        .cloned()
-                        .ok_or(FfiReturn::ArgIsNull)
+                    // TODO: This function clones every opaque pointer in the slice. This could
+                    // be avoided with the entire slice being opaque, if that even makes sense.
+                    // If the entire slice is opaque then `ExternC` can also be implemented for
+                    // `&mut [Opaque]`
+                    unsafe { item.as_ref() }.cloned()
                 })
-                .collect::<core::result::Result<_, _>>()?;
+                .collect::<Option<Vec<_>>>()?;
 
-            Ok(store)
+            *store = vec.into_boxed_slice();
+
+            Some(&*store)
         }
     }
     #[cfg(feature = "cloned_refs")]
@@ -879,8 +876,11 @@ disjoint_impls! {
     {
         type Store = (Box<[R]>, Box<[R::Store]>);
 
-        unsafe fn decode<'itm: 'slice>(source: Self::CType, store: &'itm mut Self::Store) -> Result<Self> {
-            let source = unsafe { source.into_rust() }.ok_or(FfiReturn::ArgIsNull)?;
+        unsafe fn decode<'itm: 'slice>(
+            source: Self::CType,
+            store: &'itm mut Self::Store,
+        ) -> Option<Self> {
+            let source = unsafe { source.into_rust() }?;
 
             store.1 = core::iter::repeat_with(Default::default)
                 .take(source.len())
@@ -890,7 +890,8 @@ disjoint_impls! {
                 .iter()
                 .zip(&mut *store.1)
                 .map(|(&item, substore)| unsafe { R::decode(item, substore) }.map(ManuallyDrop::new))
-                .collect::<core::result::Result<_, _>>()?;
+                .collect::<Option<Vec<_>>>()?
+                .into_boxed_slice();
 
             store.0 = slice
                 .iter()
@@ -898,7 +899,7 @@ disjoint_impls! {
                 .map(ManuallyDrop::into_inner)
                 .collect();
 
-            Ok(&store.0)
+            Some(&*store.0)
         }
     }
 
@@ -909,7 +910,10 @@ disjoint_impls! {
     {
         type Store = <&'slice mut [R::Target] as Decode<'slice>>::Store;
 
-        unsafe fn decode<'itm: 'slice>(source: Self::CType, store: &'itm mut Self::Store) -> Result<Self> {
+        unsafe fn decode<'itm: 'slice>(
+            source: Self::CType,
+            store: &'itm mut Self::Store,
+        ) -> Option<Self> {
             unsafe {
                 <&mut [R::Target]>::decode(source, store)
                     .and_then(|output| transmute_from_target_slice_mut(output))
@@ -922,8 +926,8 @@ disjoint_impls! {
     {
         type Store = ();
 
-        unsafe fn decode<'itm: 'slice>(source: Self::CType, (): &mut ()) -> Result<Self> {
-            unsafe { source.into_rust() }.ok_or(FfiReturn::ArgIsNull)
+        unsafe fn decode<'itm: 'slice>(source: Self::CType, (): &mut ()) -> Option<Self> {
+            unsafe { source.into_rust() }
         }
     }
 
@@ -935,7 +939,7 @@ disjoint_impls! {
     {
         type Store = <Box<[R::Target]> as Decode<'d>>::Store;
 
-        unsafe fn decode<'itm: 'd>(source: Self::CType, store: &'itm mut Self::Store) -> Result<Self> {
+        unsafe fn decode<'itm: 'd>(source: Self::CType, store: &'itm mut Self::Store) -> Option<Self> {
             unsafe {
                 <Box<[R::Target]>>::decode(source, store)
                     .and_then(|output| transmute_from_target_boxed_slice(output))
@@ -950,10 +954,8 @@ disjoint_impls! {
     {
         type Store = ();
 
-        unsafe fn decode<'itm: 'd>(source: Self::CType, (): &mut ()) -> Result<Self> {
-            unsafe { source.into_rust() }
-                .ok_or(FfiReturn::ArgIsNull)
-                .map(|slice| slice.into())
+        unsafe fn decode<'itm: 'd>(source: Self::CType, (): &mut ()) -> Option<Self> {
+            unsafe { source.into_rust() }.map(|slice| slice.into())
         }
     }
     #[cfg(feature = "owned_types")]
@@ -964,19 +966,13 @@ disjoint_impls! {
     {
         type Store = ();
 
-        unsafe fn decode<'itm: 'd>(source: Self::CType, (): &mut ()) -> Result<Self> {
-            let slice = unsafe { source.into_rust() }.ok_or(FfiReturn::ArgIsNull)?;
+        unsafe fn decode<'itm: 'd>(source: Self::CType, (): &mut ()) -> Option<Self> {
+            let slice = unsafe { source.into_rust() }?;
 
             slice
                 .iter()
-                .map(|&item| unsafe {
-                    if let Some(item) = item.as_mut() {
-                        return Ok(*Box::from_raw(item));
-                    }
-
-                    Err(FfiReturn::ArgIsNull)
-                })
-                .collect::<core::result::Result<_, _>>()
+                .map(|&item| unsafe { item.as_mut().map(|item| *Box::from_raw(item)) })
+                .collect::<Option<_>>()
         }
     }
     #[cfg(feature = "owned_types")]
@@ -987,8 +983,8 @@ disjoint_impls! {
     {
         type Store = Box<[R::Store]>;
 
-        unsafe fn decode<'itm: 'd>(source: Self::CType, store: &'itm mut Self::Store) -> Result<Self> {
-            let slice = unsafe { source.into_rust() }.ok_or(FfiReturn::ArgIsNull)?;
+        unsafe fn decode<'itm: 'd>(source: Self::CType, store: &'itm mut Self::Store) -> Option<Self> {
+            let slice = unsafe { source.into_rust() }?;
 
             *store = core::iter::repeat_with(Default::default)
                 .take(slice.len())
@@ -999,9 +995,10 @@ disjoint_impls! {
                 .copied()
                 .zip(&mut **store)
                 .map(|(item, substore)| unsafe { R::decode(item, substore) }.map(ManuallyDrop::new))
-                .collect::<core::result::Result<_, _>>()?;
+                .collect::<Option<Vec<_>>>()?
+                .into_boxed_slice();
 
-            Ok(vec.iter().cloned().map(ManuallyDrop::into_inner).collect())
+            Some(vec.iter().cloned().map(ManuallyDrop::into_inner).collect())
         }
     }
 
@@ -1013,7 +1010,7 @@ disjoint_impls! {
     {
         type Store = <Vec<R::Target> as Decode<'d>>::Store;
 
-        unsafe fn decode<'itm: 'd>(source: Self::CType, store: &'itm mut Self::Store) -> Result<Self> {
+        unsafe fn decode<'itm: 'd>(source: Self::CType, store: &'itm mut Self::Store) -> Option<Self> {
             unsafe {
                 <Vec<R::Target>>::decode(source, store)
                     .and_then(|output| transmute_from_target_vec(output))
@@ -1028,10 +1025,8 @@ disjoint_impls! {
     {
         type Store = ();
 
-        unsafe fn decode<'itm: 'd>(source: Self::CType, (): &mut ()) -> Result<Self> {
-            unsafe { source.into_rust() }
-                .ok_or(FfiReturn::ArgIsNull)
-                .map(|slice| slice.to_vec())
+        unsafe fn decode<'itm: 'd>(source: Self::CType, (): &mut ()) -> Option<Self> {
+            unsafe { source.into_rust() }.map(|slice| slice.to_vec())
         }
     }
     #[cfg(feature = "owned_types")]
@@ -1042,20 +1037,13 @@ disjoint_impls! {
     {
         type Store = ();
 
-        unsafe fn decode<'itm: 'd>(source: Self::CType, (): &mut ()) -> Result<Self> {
+        unsafe fn decode<'itm: 'd>(source: Self::CType, (): &mut ()) -> Option<Self> {
             let slice = unsafe { source.into_rust() };
 
-            slice
-                .ok_or(FfiReturn::ArgIsNull)?
+            slice?
                 .iter()
-                .map(|&item| unsafe {
-                    if let Some(item) = item.as_mut() {
-                        return Ok(*Box::from_raw(item));
-                    }
-
-                    Err(FfiReturn::ArgIsNull)
-                })
-                .collect::<core::result::Result<_, _>>()
+                .map(|&item| unsafe { item.as_mut().map(|item| *Box::from_raw(item)) })
+                .collect::<Option<_>>()
         }
     }
     #[cfg(feature = "owned_types")]
@@ -1066,8 +1054,8 @@ disjoint_impls! {
     {
         type Store = Box<[R::Store]>;
 
-        unsafe fn decode<'itm: 'd>(source: Self::CType, store: &'itm mut Self::Store) -> Result<Self> {
-            let slice = unsafe { source.into_rust() }.ok_or(FfiReturn::ArgIsNull)?;
+        unsafe fn decode<'itm: 'd>(source: Self::CType, store: &'itm mut Self::Store) -> Option<Self> {
+            let slice = unsafe { source.into_rust() }?;
 
             *store = core::iter::repeat_with(Default::default)
                 .take(slice.len())
@@ -1078,9 +1066,10 @@ disjoint_impls! {
                 .copied()
                 .zip(&mut **store)
                 .map(|(item, substore)| unsafe { R::decode(item, substore).map(ManuallyDrop::new) })
-                .collect::<core::result::Result<_, _>>()?;
+                .collect::<Option<Vec<_>>>()?
+                .into_boxed_slice();
 
-            Ok(vec.iter().cloned().map(ManuallyDrop::into_inner).collect())
+            Some(vec.iter().cloned().map(ManuallyDrop::into_inner).collect())
         }
     }
 
@@ -1090,22 +1079,17 @@ disjoint_impls! {
     {
         type Store = ();
 
-        unsafe fn decode<'itm: 'd>(source: Self::CType, (): &mut ()) -> Result<Self> {
+        unsafe fn decode<'itm: 'd>(source: Self::CType, (): &mut ()) -> Option<Self> {
             assert_arr_has_non_zero_len::<N>();
 
-            let array = source
+            let array: [R; N] = source
                 .into_iter()
-                .map(|item| unsafe {
-                    if let Some(item) = item.as_mut() {
-                        return Ok(*Box::from_raw(item));
-                    }
+                .map(|item| unsafe { item.as_mut().map(|item| *Box::from_raw(item)) })
+                .collect::<Option<Vec<_>>>()?
+                .try_into()
+                .ok()?;
 
-                    Err(FfiReturn::ArgIsNull)
-                })
-                .collect::<core::result::Result<Vec<_>, _>>()?
-                .try_into();
-
-            Ok(unsafe { array.unwrap_unchecked() })
+            Some(array)
         }
     }
     impl<'d, R: Decode<'d> + Clone, S: Cloned, const N: usize> Decode<'d> for [R; N]
@@ -1116,24 +1100,26 @@ disjoint_impls! {
     {
         type Store = [R::Store; N];
 
-        unsafe fn decode<'itm: 'd>(source: Self::CType, store: &'itm mut Self::Store) -> Result<Self> {
+        unsafe fn decode<'itm: 'd>(source: Self::CType, store: &'itm mut Self::Store) -> Option<Self> {
             assert_arr_has_non_zero_len::<N>();
 
-            let vec: core::result::Result<[_; N], _> = source
+            let vec: [_; N] = source
                 .into_iter()
                 .zip(store.iter_mut())
                 .map(|(item, substore)| unsafe { R::decode(item, substore).map(ManuallyDrop::new) })
-                .collect::<core::result::Result<Vec<_>, FfiReturn>>()?
-                .try_into();
+                .collect::<Option<Vec<_>>>()?
+                .try_into()
+                .ok()?;
 
-            let array = unsafe { vec.unwrap_unchecked() }
+            let array: [R; N] = vec
                 .iter()
                 .cloned()
                 .map(ManuallyDrop::into_inner)
                 .collect::<Vec<_>>()
-                .try_into();
+                .try_into()
+                .ok()?;
 
-            Ok(unsafe { array.unwrap_unchecked() })
+            Some(array)
         }
     }
 
@@ -1143,10 +1129,12 @@ disjoint_impls! {
     {
         type Store = <R as Decode<'d>>::Store;
 
-        unsafe fn decode<'itm: 'd>(source: Self::CType, store: &'itm mut Self::Store) -> Result<Self> {
-            TryInto::<Option<_>>::try_into(source)?
-                .map(|payload| unsafe { R::decode(payload, store) })
-                .transpose()
+        unsafe fn decode<'itm: 'd>(source: Self::CType, store: &'itm mut Self::Store) -> Option<Self> {
+            let option = TryInto::<Option<_>>::try_into(source).ok()?;
+            match option {
+                Some(payload) => unsafe { R::decode(payload, store) }.map(Some),
+                None => Some(None),
+            }
         }
     }
     impl<'d, R: Niche<CType: PartialEq> + Decode<'d>> Decode<'d> for Option<R>
@@ -1155,12 +1143,12 @@ disjoint_impls! {
     {
         type Store = <R as Decode<'d>>::Store;
 
-        unsafe fn decode<'itm: 'd>(source: Self::CType, store: &'itm mut Self::Store) -> Result<Self> {
+        unsafe fn decode<'itm: 'd>(source: Self::CType, store: &'itm mut Self::Store) -> Option<Self> {
             if source == R::NICHE_VALUE {
-                return Ok(None);
+                return Some(None);
             }
 
-            Ok(Some(unsafe { R::decode(source, store) }?))
+            unsafe { R::decode(source, store) }.map(Some)
         }
     }
 }

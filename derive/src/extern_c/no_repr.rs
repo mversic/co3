@@ -108,7 +108,7 @@ pub(super) fn derive_no_repr_struct(
             let field_indices = (0..field_names.len()).map(syn::Index::from);
 
             quote! {
-                Ok(Self {
+                Some(Self {
                     #(#field_names: unsafe { co3::Decode::decode(source.#field_names, &mut store.#field_indices)? }),*
                 })
             }
@@ -117,7 +117,7 @@ pub(super) fn derive_no_repr_struct(
             let field_indices = (0..fields.len()).map(syn::Index::from);
 
             quote! {
-                Ok(Self(
+                Some(Self(
                     #(unsafe { co3::Decode::decode(source.#field_indices, &mut store.#field_indices)? }),*
                 ))
             }
@@ -150,7 +150,7 @@ pub(super) fn derive_no_repr_struct(
         impl<'_dšč, #params> co3::Decode<'_dšč> for #name #ty_generics where #repr_c_struct_name #ty_generics: '_dšč, #decode_bounds #predicates {
             type Store = #ffi_store;
 
-            unsafe fn decode<'_išč: '_dšč>(source: <Self as co3::ExternC>::CType, store: &'_išč mut Self::Store) -> co3::Result<Self> {
+            unsafe fn decode<'_išč: '_dšč>(source: <Self as co3::ExternC>::CType, store: &'_išč mut Self::Store) -> Option<Self> {
                 #store_init
                 #decode_impl
             }
@@ -246,12 +246,12 @@ pub(super) fn derive_no_repr_data_enum(
 
         variant_mapper(
             variant,
-            || quote! { #idx => Ok(Self::#variant_name) },
+            || quote! { #idx => Some(Self::#variant_name) },
             |_| {
                 quote! {
                     #idx => {
                         let value = unsafe { source.#variant_name.value };
-                        unsafe {co3::Decode::decode(value, &mut store.#idx).map(Self::#variant_name)}
+                        unsafe { co3::Decode::decode(value, &mut store.#idx).map(Self::#variant_name) }
                     }
                 }
             },
@@ -304,12 +304,12 @@ pub(super) fn derive_no_repr_data_enum(
         impl<'_dšč, #params> co3::Decode<'_dšč> for #enum_name #ty_generics where #repr_c_enum_name #ty_generics: '_dšč, #decode_bounds #predicates {
             type Store = #ffi_store;
 
-            unsafe fn decode<'_išč: '_dšč>(source: <Self as co3::ExternC>::CType, store: &'_išč mut Self::Store) -> co3::Result<Self> {
+            unsafe fn decode<'_išč: '_dšč>(source: <Self as co3::ExternC>::CType, store: &'_išč mut Self::Store) -> Option<Self> {
                 #store_init
 
                 match #decode_match_expr {
                     #(#variants_decode,)*
-                    _ => Err(co3::FfiReturn::TrapRepresentation)
+                    _ => None
                 }
             }
         }
@@ -334,7 +334,7 @@ pub(super) fn derive_no_repr_fieldless_enum(
     let variants_decode = variants.iter().enumerate().map(|(i, variant)| {
         let idx = TokenStream::from_str(&format!("{i}")).expect("Valid");
         let variant_name = &variant.ident;
-        quote! { #idx => Ok(Self::#variant_name) }
+        quote! { #idx => Some(Self::#variant_name) }
     });
 
     let niche_ir = gen_enum_niche_ir(
@@ -369,10 +369,10 @@ pub(super) fn derive_no_repr_fieldless_enum(
         impl<'_dšč> co3::Decode<'_dšč> for #enum_name {
             type Store = ();
 
-            unsafe fn decode<'_išč: '_dšč>(source: <Self as co3::ExternC>::CType, _store: &'_išč mut Self::Store) -> co3::Result<Self> {
+            unsafe fn decode<'_išč: '_dšč>(source: <Self as co3::ExternC>::CType, _store: &'_išč mut Self::Store) -> Option<Self> {
                 match source {
                     #(#variants_decode,)*
-                    _ => Err(co3::FfiReturn::TrapRepresentation)
+                    _ => None
                 }
             }
         }
@@ -413,7 +413,7 @@ fn gen_out_ptr_impls(
             }
         }
         impl #impl_generics co3::out_ptr::OutPtrRead for #type_name #ty_generics where #for_dummy Self: co3::out_ptr::NonLocal, #predicates {
-            unsafe fn try_read_out(out_ptr: Self::OutPtr) -> co3::Result<Self> {
+            unsafe fn try_read_out(out_ptr: Self::OutPtr) -> Option<Self> {
                 let mut store = Default::default();
 
                 unsafe {

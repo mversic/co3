@@ -128,13 +128,10 @@ impl<T: Encode, E: Encode> Encode for Result<T, E> {
 impl<'d, T: Decode<'d>, E: Decode<'d>> Decode<'d> for Result<T, E> {
     type Store = (T::Store, E::Store);
 
-    unsafe fn decode<'itm: 'd>(
-        source: Self::CType,
-        store: &'itm mut Self::Store,
-    ) -> crate::Result<Self> {
-        match TryInto::<Result<_, _>>::try_into(source)? {
-            Ok(ok) => Ok(Ok(unsafe { T::decode(ok, &mut store.0)? })),
-            Err(err) => Ok(Err(unsafe { E::decode(err, &mut store.1)? })),
+    unsafe fn decode<'itm: 'd>(source: Self::CType, store: &'itm mut Self::Store) -> Option<Self> {
+        match TryInto::<Result<_, _>>::try_into(source).ok()? {
+            Ok(ok) => Some(Ok(unsafe { T::decode(ok, &mut store.0)? })),
+            Err(err) => Some(Err(unsafe { E::decode(err, &mut store.1)? })),
         }
     }
 }

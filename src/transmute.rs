@@ -201,11 +201,11 @@ pub(super) fn transmute_into_target<R: CheckedTransmute>(source: R) -> R::Target
     // SAFETY: Soundness is guaranteed by [`Transmute`]
     ManuallyDrop::into_inner(unsafe { transmute_helper.target })
 }
-pub(super) fn transmute_from_target<R: CheckedTransmute>(source: R::Target) -> Result<R> {
+pub(super) fn transmute_from_target<R: CheckedTransmute>(source: R::Target) -> Option<R> {
     assert_size_and_allignment_match::<R>();
 
     if !R::is_valid(&source) {
-        return Err(FfiReturn::TrapRepresentation);
+        return None;
     }
 
     let transmute_helper = TransmuteHelper {
@@ -213,7 +213,7 @@ pub(super) fn transmute_from_target<R: CheckedTransmute>(source: R::Target) -> R
     };
 
     // SAFETY: Soundness is guaranteed by [`Transmute`]
-    Ok(ManuallyDrop::into_inner(unsafe { transmute_helper.source }))
+    Some(ManuallyDrop::into_inner(unsafe { transmute_helper.source }))
 }
 
 #[cfg(feature = "owned_types")]
@@ -232,15 +232,15 @@ pub(super) fn transmute_into_target_boxed_slice<R: CheckedTransmute>(
 #[cfg(feature = "owned_as_ref")]
 pub(super) fn transmute_from_target_boxed_slice<R: CheckedTransmute>(
     #[expect(clippy::boxed_local)] mut source: Box<[R::Target]>,
-) -> Result<Box<[R]>> {
+) -> Option<Box<[R]>> {
     assert_size_and_allignment_match::<R>();
 
     if !source.iter().all(|item| R::is_valid(item)) {
-        return Err(FfiReturn::TrapRepresentation);
+        return None;
     }
 
     // SAFETY: Soundness is guaranteed by [`Transmute`]
-    Ok(unsafe {
+    Some(unsafe {
         Box::from_raw(core::ptr::slice_from_raw_parts_mut(
             source.as_mut_ptr().cast(),
             source.len(),
@@ -257,15 +257,15 @@ pub(super) fn transmute_into_target_ref_slice<R: CheckedTransmute>(source: &[R])
 }
 pub(super) fn transmute_from_target_ref_slice<R: CheckedTransmute>(
     source: &[R::Target],
-) -> Result<&[R]> {
+) -> Option<&[R]> {
     assert_size_and_allignment_match::<R>();
 
     if !source.iter().all(|item| R::is_valid(item)) {
-        return Err(FfiReturn::TrapRepresentation);
+        return None;
     }
 
     // SAFETY: Soundness is guaranteed by [`Transmute`]
-    Ok(unsafe { core::slice::from_raw_parts(source.as_ptr().cast(), source.len()) })
+    Some(unsafe { core::slice::from_raw_parts(source.as_ptr().cast(), source.len()) })
 }
 
 pub(super) fn transmute_into_target_slice_mut<R: CheckedTransmute>(
@@ -280,15 +280,15 @@ pub(super) fn transmute_into_target_slice_mut<R: CheckedTransmute>(
 }
 pub(super) fn transmute_from_target_slice_mut<R: CheckedTransmute>(
     source: &mut [R::Target],
-) -> Result<&mut [R]> {
+) -> Option<&mut [R]> {
     assert_size_and_allignment_match::<R>();
 
     if !source.iter_mut().all(|item| R::is_valid(item)) {
-        return Err(FfiReturn::TrapRepresentation);
+        return None;
     }
 
     // SAFETY: Soundness is guaranteed by [`Transmute`]
-    Ok(unsafe { core::slice::from_raw_parts_mut(source.as_mut_ptr().cast(), source.len()) })
+    Some(unsafe { core::slice::from_raw_parts_mut(source.as_mut_ptr().cast(), source.len()) })
 }
 
 #[cfg(feature = "owned_types")]
@@ -305,17 +305,17 @@ pub(super) fn transmute_into_target_vec<R: CheckedTransmute>(source: Vec<R>) -> 
 #[cfg(feature = "owned_as_ref")]
 pub(super) fn transmute_from_target_vec<R: CheckedTransmute>(
     source: Vec<R::Target>,
-) -> Result<Vec<R>> {
+) -> Option<Vec<R>> {
     assert_size_and_allignment_match::<R>();
 
     if !source.iter().all(|item| R::is_valid(item)) {
-        return Err(FfiReturn::TrapRepresentation);
+        return None;
     }
 
     let mut vec = ManuallyDrop::new(source);
 
     // SAFETY: Soundness is guaranteed by [`Transmute`]
-    Ok(unsafe { Vec::from_raw_parts(vec.as_mut_ptr().cast(), vec.len(), vec.capacity()) })
+    Some(unsafe { Vec::from_raw_parts(vec.as_mut_ptr().cast(), vec.len(), vec.capacity()) })
 }
 
 fn assert_size_and_allignment_match<R: CheckedTransmute>() {
