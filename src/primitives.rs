@@ -6,7 +6,7 @@ mod wasm {
 
     use crate::{
         Decode, Encode, ExternC,
-        ir::{ReprFamily, Robust, Transparent},
+        ir::{ReprFamily, Robust, Transmuted},
         out_ptr::{OutPtr, OutPtrRead, OutPtrWrite},
     };
 
@@ -83,7 +83,6 @@ mod wasm {
                 const NICHE_VALUE: $dst = <$dst>::MAX;
             }
 
-            // SAFETY: Transmute relation is transitive
             unsafe impl<'a> $crate::transmute::CheckedTransmute for &'a $src {
                 type Target = &'a $dst;
 
@@ -91,8 +90,6 @@ mod wasm {
                     unimplemented!()
                 }
             }
-
-            // SAFETY: Transmute relation is transitive
             unsafe impl<'a> $crate::transmute::CheckedTransmute for &'a mut $src {
                 type Target = &'a mut $dst;
 
@@ -100,6 +97,8 @@ mod wasm {
                     unimplemented!()
                 }
             }
+
+            unsafe impl Encodable for &$src {}
 
             impl $crate::ir::ReprFamily for $src {
                 type Kind = NonWasmIntPrimitive;

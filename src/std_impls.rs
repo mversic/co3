@@ -8,11 +8,11 @@ use alloc::{boxed::Box, string::String, vec::Vec};
 #[cfg(feature = "owned_types")]
 use crate::slice::CSliceMut;
 use crate::{
-    ir::{ReprFamily, Transparent},
+    ir::{ReprFamily, Transmuted},
     mineral,
     niche::{Niche, NicheFamily, WithCustomNiche, WithStableNiche, WithoutNiche},
     slice::CSlice,
-    transmute::CheckedTransmute,
+    transmute::{CheckedTransmute, Encodable},
 };
 
 macro_rules! non_zero_derive {
@@ -52,26 +52,26 @@ mineral! {
 }
 
 impl<T> ReprFamily for UnsafeCell<T> {
-    type Kind = Transparent;
+    type Kind = Transmuted;
 }
 impl<T> ReprFamily for NonNull<T> {
-    type Kind = Transparent;
+    type Kind = Transmuted;
 }
 impl ReprFamily for &str {
-    type Kind = Transparent;
+    type Kind = Transmuted;
 }
 impl ReprFamily for &mut str {
-    type Kind = Transparent;
+    type Kind = Transmuted;
 }
 #[cfg(feature = "owned_types")]
 #[cfg(feature = "owned_as_ref")]
 impl ReprFamily for Box<str> {
-    type Kind = Transparent;
+    type Kind = Transmuted;
 }
 #[cfg(feature = "owned_types")]
 #[cfg(feature = "owned_as_ref")]
 impl ReprFamily for String {
-    type Kind = Transparent;
+    type Kind = Transmuted;
 }
 
 impl<T> NicheFamily for UnsafeCell<T> {
@@ -175,3 +175,13 @@ impl Niche for String {
 impl Niche for Box<str> {
     const NICHE_VALUE: Self::CType = CSliceMut::none();
 }
+
+unsafe impl<R> Encodable for UnsafeCell<R> {}
+unsafe impl<R> Encodable for NonNull<R> {}
+unsafe impl Encodable for &str {}
+#[cfg(feature = "owned_types")]
+#[cfg(feature = "owned_as_ref")]
+unsafe impl Encodable for Box<str> {}
+#[cfg(feature = "owned_types")]
+#[cfg(feature = "owned_as_ref")]
+unsafe impl Encodable for String {}

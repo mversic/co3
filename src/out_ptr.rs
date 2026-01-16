@@ -4,7 +4,7 @@ use crate::COption;
 #[cfg(feature = "owned_as_ref")]
 use crate::transmute::{transmute_from_target_boxed_slice, transmute_from_target_vec};
 use crate::{
-    ir::Transparent,
+    ir::Transmuted,
     transmute::{transmute_from_target_ref_slice, transmute_from_target_slice_mut},
 };
 
@@ -81,7 +81,7 @@ disjoint_impls! {
     }
     impl<R: CheckedTransmute> OutPtr for R
     where
-        Self: ReprFamily<Kind = Transparent>,
+        Self: ReprFamily<Kind = Transmuted>,
         <R as CheckedTransmute>::Target: OutPtr,
     {
         type OutPtr = <R::Target as OutPtr>::OutPtr;
@@ -118,7 +118,7 @@ disjoint_impls! {
 
     impl<'slice, R: CheckedTransmute> OutPtr for &'slice [R]
     where
-        Self: ReprFamily<Kind = &'slice [Transparent]>,
+        Self: ReprFamily<Kind = &'slice [Transmuted]>,
         &'slice [<R as CheckedTransmute>::Target]: OutPtr,
     {
         type OutPtr = <&'slice [R::Target] as OutPtr>::OutPtr;
@@ -146,7 +146,7 @@ disjoint_impls! {
 
     impl<'slice, R: FlatTransmute> OutPtr for &'slice mut [R]
     where
-        Self: ReprFamily<Kind = &'slice mut [Transparent]>,
+        Self: ReprFamily<Kind = &'slice mut [Transmuted]>,
     {
         type OutPtr = Self::CType;
     }
@@ -154,7 +154,7 @@ disjoint_impls! {
     #[cfg(feature = "owned_types")]
     impl<R: CheckedTransmute> OutPtr for Box<[R]>
     where
-        Self: ReprFamily<Kind = Box<[Transparent]>>,
+        Self: ReprFamily<Kind = Box<[Transmuted]>>,
         Box<[<R as CheckedTransmute>::Target]>: OutPtr,
     {
         type OutPtr = <Box<[R::Target]> as OutPtr>::OutPtr;
@@ -187,7 +187,7 @@ disjoint_impls! {
     #[cfg(feature = "owned_types")]
     impl<R: CheckedTransmute> OutPtr for Vec<R>
     where
-        Self: ReprFamily<Kind = Vec<Transparent>>,
+        Self: ReprFamily<Kind = Vec<Transmuted>>,
         Vec<<R as CheckedTransmute>::Target>: OutPtr,
     {
         type OutPtr = <Vec<R::Target> as OutPtr>::OutPtr;
@@ -271,7 +271,7 @@ disjoint_impls! {
     }
     impl<R: CheckedTransmute> OutPtrWrite for R
     where
-        Self: ReprFamily<Kind = Transparent>,
+        Self: ReprFamily<Kind = Transmuted>,
         <R as CheckedTransmute>::Target: OutPtrWrite,
     {
         unsafe fn write_out(self, out_ptr: *mut Self::OutPtr) {
@@ -337,7 +337,7 @@ disjoint_impls! {
 
     impl<'slice, R: CheckedTransmute> OutPtrWrite for &'slice [R]
     where
-        Self: ReprFamily<Kind = &'slice [Transparent]>,
+        Self: ReprFamily<Kind = &'slice [Transmuted]>,
         &'slice [<R as CheckedTransmute>::Target]: OutPtrWrite,
     {
         unsafe fn write_out(self, out_ptr: *mut Self::OutPtr) {
@@ -398,7 +398,7 @@ disjoint_impls! {
         #[cfg(feature = "non_robust_ref_mut")] R: FlatTransmute,
     > OutPtrWrite for &'slice mut [R]
     where
-        Self: ReprFamily<Kind = &'slice mut [Transparent]>,
+        Self: ReprFamily<Kind = &'slice mut [Transmuted]>,
     {
         unsafe fn write_out(self, out_ptr: *mut Self::OutPtr) {
             let encoded = self.encode(&mut ());
@@ -412,7 +412,7 @@ disjoint_impls! {
     #[cfg(feature = "owned_types")]
     impl<R: CheckedTransmute> OutPtrWrite for Box<[R]>
     where
-        Self: ReprFamily<Kind = Box<[Transparent]>>,
+        Self: ReprFamily<Kind = Box<[Transmuted]>>,
         Box<[<R as CheckedTransmute>::Target]>: OutPtrWrite,
     {
         unsafe fn write_out(self, out_ptr: *mut Self::OutPtr) {
@@ -474,7 +474,7 @@ disjoint_impls! {
     #[cfg(feature = "owned_types")]
     impl<R: CheckedTransmute> OutPtrWrite for Vec<R>
     where
-        Self: ReprFamily<Kind = Vec<Transparent>>,
+        Self: ReprFamily<Kind = Vec<Transmuted>>,
         Vec<<R as CheckedTransmute>::Target>: OutPtrWrite,
     {
         unsafe fn write_out(self, out_ptr: *mut Self::OutPtr) {
@@ -610,7 +610,7 @@ disjoint_impls! {
 
     impl<R: CheckedTransmute> OutPtrRead for R
     where
-        Self: ReprFamily<Kind = Transparent>,
+        Self: ReprFamily<Kind = Transmuted>,
         <R as CheckedTransmute>::Target: OutPtrRead,
     {
         unsafe fn try_read_out(out_ptr: Self::OutPtr) -> Option<Self> {
@@ -657,7 +657,7 @@ disjoint_impls! {
 
     impl<'d, R: CheckedTransmute> OutPtrRead for &'d [R]
     where
-        Self: ReprFamily<Kind = &'d [Transparent]>,
+        Self: ReprFamily<Kind = &'d [Transmuted]>,
         &'d [<R as CheckedTransmute>::Target]: OutPtrRead,
     {
         unsafe fn try_read_out(out_ptr: Self::OutPtr) -> Option<Self> {
@@ -678,7 +678,7 @@ disjoint_impls! {
 
     impl<'d, R: FlatTransmute> OutPtrRead for &'d mut [R]
     where
-        Self: ReprFamily<Kind = &'d mut [Transparent]>,
+        Self: ReprFamily<Kind = &'d mut [Transmuted]>,
     {
         unsafe fn try_read_out(out_ptr: Self::OutPtr) -> Option<Self> {
             transmute_from_target_slice_mut(unsafe { out_ptr.into_rust()? })
@@ -688,7 +688,7 @@ disjoint_impls! {
     #[cfg(feature = "owned_types")]
     impl<R: CheckedTransmute> OutPtrRead for Box<[R]>
     where
-        Self: ReprFamily<Kind = Box<[Transparent]>>,
+        Self: ReprFamily<Kind = Box<[Transmuted]>>,
         Box<[<R as CheckedTransmute>::Target]>: OutPtrRead,
     {
         unsafe fn try_read_out(out_ptr: Self::OutPtr) -> Option<Self> {
@@ -746,7 +746,7 @@ disjoint_impls! {
     #[cfg(feature = "owned_types")]
     impl<R: CheckedTransmute> OutPtrRead for Vec<R>
     where
-        Self: ReprFamily<Kind = Vec<Transparent>>,
+        Self: ReprFamily<Kind = Vec<Transmuted>>,
         Vec<<R as CheckedTransmute>::Target>: OutPtrRead,
     {
         unsafe fn try_read_out(out_ptr: Self::OutPtr) -> Option<Self> {

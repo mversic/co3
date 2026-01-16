@@ -18,8 +18,8 @@ use crate::{
 /// [`ExternC`]. This type therefore uses the store
 pub trait Cloned {}
 
-/// Marker for a type that is transparent with respect to its wrapped type.
-pub enum Transparent {}
+/// Marker for a type that can is transmuted to another type and thus delegates it's conversion
+pub enum Transmuted {}
 
 /// Marker for a robust [`ReprC`] type that does not require conversion
 pub enum Robust {}
@@ -37,9 +37,9 @@ disjoint_impls! {
         /// - If `Self` is [`ReprC`], set [`ReprFamily::Kind`] to [`Robust`].
         ///   The type is passed to FFI functions as-is, without conversion.
         ///
-        /// - If [`ReprFamily::Kind`] is [`Transparent`], `Self` automatically implements [`crate::ExternC`]
+        /// - If [`ReprFamily::Kind`] is [`Transmuted`], `Self` automatically implements [`crate::ExternC`]
         ///   by delegating to its inner type via [`core::mem::transmute`].
-        ///   If the inner type supports zero-copy conversion, then [`Transparent`] is also zero-copy.
+        ///   If the inner type supports zero-copy conversion, then [`Transmuted`] is also zero-copy.
         ///   See [`crate::transmute::CheckedTransmute`] for more details.
         ///
         /// - If [`ReprFamily::Kind`] is [`Opaque`], `T` is serialized as an opaque pointer.
@@ -58,16 +58,16 @@ disjoint_impls! {
     }
 
     impl<R: ReprFamily<Kind = Box<Robust>>> ReprFamily for &R {
-        type Kind = Transparent;
+        type Kind = Transmuted;
     }
-    impl<R: ReprFamily<Kind = Transparent>> ReprFamily for &R {
-        type Kind = Transparent;
+    impl<R: ReprFamily<Kind = Transmuted>> ReprFamily for &R {
+        type Kind = Transmuted;
     }
     impl<R: ReprFamily<Kind = Robust>> ReprFamily for &R {
-        type Kind = Transparent;
+        type Kind = Transmuted;
     }
     impl<R: ReprFamily<Kind = Opaque>> ReprFamily for &R {
-        type Kind = Transparent;
+        type Kind = Transmuted;
     }
     #[cfg(feature = "cloned_refs")]
     impl<'a, R: ReprFamily<Kind: Cloned + 'a>> ReprFamily for &'a R {
@@ -75,31 +75,31 @@ disjoint_impls! {
     }
 
     impl<R: ReprFamily<Kind = Box<Robust>>> ReprFamily for &mut R {
-        type Kind = Transparent;
+        type Kind = Transmuted;
     }
-    impl<R: ReprFamily<Kind = Transparent>> ReprFamily for &mut R {
-        type Kind = Transparent;
+    impl<R: ReprFamily<Kind = Transmuted>> ReprFamily for &mut R {
+        type Kind = Transmuted;
     }
     impl<R: ReprFamily<Kind = Robust>> ReprFamily for &mut R {
-        type Kind = Transparent;
+        type Kind = Transmuted;
     }
     impl<R: ReprFamily<Kind = Opaque>> ReprFamily for &mut R {
-        type Kind = Transparent;
+        type Kind = Transmuted;
     }
 
     #[cfg(feature = "owned_types")]
     impl<R: ReprFamily<Kind = Box<Robust>>> ReprFamily for Box<R> {
-        type Kind = Transparent;
+        type Kind = Transmuted;
     }
-    impl<R: ReprFamily<Kind = Transparent>> ReprFamily for Box<R> {
-        type Kind = Transparent;
+    impl<R: ReprFamily<Kind = Transmuted>> ReprFamily for Box<R> {
+        type Kind = Transmuted;
     }
     #[cfg(feature = "owned_types")]
     impl<R: ReprFamily<Kind = Robust>> ReprFamily for Box<R> {
         type Kind = Box<Robust>;
     }
     impl<R: ReprFamily<Kind = Opaque>> ReprFamily for Box<R> {
-        type Kind = Transparent;
+        type Kind = Transmuted;
     }
     #[cfg(feature = "owned_types")]
     impl<R: ReprFamily<Kind: Cloned>> ReprFamily for Box<R> {
@@ -107,10 +107,10 @@ disjoint_impls! {
     }
 
     impl<'a, R: ReprFamily<Kind = Box<Robust>>> ReprFamily for &'a [R] {
-        type Kind = &'a [Transparent];
+        type Kind = &'a [Transmuted];
     }
-    impl<'a, R: ReprFamily<Kind = Transparent>> ReprFamily for &'a [R] {
-        type Kind = &'a [Transparent];
+    impl<'a, R: ReprFamily<Kind = Transmuted>> ReprFamily for &'a [R] {
+        type Kind = &'a [Transmuted];
     }
     impl<'a, R: ReprFamily<Kind = Robust>> ReprFamily for &'a [R] {
         type Kind = &'a [Robust];
@@ -125,22 +125,22 @@ disjoint_impls! {
     }
 
     impl<'a, R: ReprFamily<Kind = Box<Robust>>> ReprFamily for &'a mut [R] {
-        type Kind = &'a mut [Transparent];
+        type Kind = &'a mut [Transmuted];
     }
-    impl<'a, R: ReprFamily<Kind = Transparent>> ReprFamily for &'a mut [R] {
-        type Kind = &'a mut [Transparent];
+    impl<'a, R: ReprFamily<Kind = Transmuted>> ReprFamily for &'a mut [R] {
+        type Kind = &'a mut [Transmuted];
     }
     impl<'a, R: ReprFamily<Kind = Robust>> ReprFamily for &'a mut [R] {
-        type Kind = &'a mut [Transparent];
+        type Kind = &'a mut [Transmuted];
     }
 
     #[cfg(feature = "owned_types")]
     impl<R: ReprFamily<Kind = Box<Robust>>> ReprFamily for Box<[R]> {
-        type Kind = Box<[Transparent]>;
+        type Kind = Box<[Transmuted]>;
     }
     #[cfg(feature = "owned_types")]
-    impl<R: ReprFamily<Kind = Transparent>> ReprFamily for Box<[R]> {
-        type Kind = Box<[Transparent]>;
+    impl<R: ReprFamily<Kind = Transmuted>> ReprFamily for Box<[R]> {
+        type Kind = Box<[Transmuted]>;
     }
     #[cfg(feature = "owned_types")]
     impl<R: ReprFamily<Kind = Robust>> ReprFamily for Box<[R]> {
@@ -157,11 +157,11 @@ disjoint_impls! {
 
     #[cfg(feature = "owned_types")]
     impl<R: ReprFamily<Kind = Box<Robust>>> ReprFamily for Vec<R> {
-        type Kind = Vec<Transparent>;
+        type Kind = Vec<Transmuted>;
     }
     #[cfg(feature = "owned_types")]
-    impl<R: ReprFamily<Kind = Transparent>> ReprFamily for Vec<R> {
-        type Kind = Vec<Transparent>;
+    impl<R: ReprFamily<Kind = Transmuted>> ReprFamily for Vec<R> {
+        type Kind = Vec<Transmuted>;
     }
     #[cfg(feature = "owned_types")]
     impl<R: ReprFamily<Kind = Robust>> ReprFamily for Vec<R> {
@@ -180,8 +180,8 @@ disjoint_impls! {
     impl<R: ReprFamily<Kind = Box<Robust>>, const N: usize> ReprFamily for [R; N] {
         type Kind = Box<Robust>;
     }
-    impl<R: ReprFamily<Kind = Transparent>, const N: usize> ReprFamily for [R; N] {
-        type Kind = Transparent;
+    impl<R: ReprFamily<Kind = Transmuted>, const N: usize> ReprFamily for [R; N] {
+        type Kind = Transmuted;
     }
     impl<R: ReprFamily<Kind = Robust>, const N: usize> ReprFamily for [R; N] {
         type Kind = Robust;
@@ -198,13 +198,13 @@ disjoint_impls! {
     //impl<R: ReprFamily<Type = Box<Robust>>> ReprFamily for Option<R> {
     //    type Kind = Box<Robust>;
     //}
-    impl<R: ReprFamily<Kind = Transparent> + NicheFamily<Kind = WithoutNiche>> ReprFamily for Option<R> {
+    impl<R: ReprFamily<Kind = Transmuted> + NicheFamily<Kind = WithoutNiche>> ReprFamily for Option<R> {
         type Kind = Option<WithoutNiche>;
     }
-    impl<R: ReprFamily<Kind = Transparent> + NicheFamily<Kind = WithStableNiche>> ReprFamily for Option<R> {
-        type Kind = Transparent;
+    impl<R: ReprFamily<Kind = Transmuted> + NicheFamily<Kind = WithStableNiche>> ReprFamily for Option<R> {
+        type Kind = Transmuted;
     }
-    impl<R: ReprFamily<Kind = Transparent> + NicheFamily<Kind = WithCustomNiche>> ReprFamily for Option<R> {
+    impl<R: ReprFamily<Kind = Transmuted> + NicheFamily<Kind = WithCustomNiche>> ReprFamily for Option<R> {
         type Kind = Option<WithCustomNiche>;
     }
     impl<R: ReprFamily<Kind = Robust>> ReprFamily for Option<R> {

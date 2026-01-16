@@ -12,13 +12,13 @@ use crate::{
 /// Marker trait for an [`NicheFamily`] type of a Rust type that has a niche value (stable or custom)
 ///
 /// There are only 2 notable implementations of this trait:
-/// 1. [`Transparent`] types have a single stable (compiler guaranteed) niche value (e.g. `&u32`)
+/// 1. [`Transmuted`] types have a single stable (compiler guaranteed) niche value (e.g. `&u32`)
 /// 2. [`Cloned`] types have a custom defined (by this crate) niche value (e.g. `[NonZeroU32; 2]`)
 pub(crate) trait WithNiche {}
 
 /// Marker for a type that has a single stable (compiler guaranteed) niche value (e.g. `&u32`).
 ///
-/// Only a handful of [`Transparent`] types have a stable niche
+/// Only a handful of [`crate::transmute::Transmuted`] types have a stable niche
 pub enum WithStableNiche {}
 
 /// Marker for a type that has a custom defined (by this crate) niche (e.g. `[NonZeroU8; 2]`).

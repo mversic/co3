@@ -8,27 +8,9 @@ use disjoint_impls::disjoint_impls;
 
 use crate::{
     ExternC, ReprC, assert_arr_has_non_zero_len,
-    ir::{Opaque, ReprFamily, Robust, Transparent},
+    ir::{Opaque, ReprFamily, Robust, Transmuted},
     niche::StableNiche,
 };
-
-disjoint_impls! {
-    /// # Safety
-    ///
-    // TODO: Write safety comment
-    pub unsafe trait Encodable {}
-
-    unsafe impl<R: ReprFamily<Kind = Robust>> Encodable for R {}
-
-    unsafe impl<R> Encodable for &R where Self: ReprFamily<Kind = Transparent> {}
-    unsafe impl<R: ReprC> Encodable for &mut R where Self: ReprFamily<Kind = Transparent> {}
-    // WARN: Since `Box<&mut R>` is mapped to `*mut *mut R` this can be disputed in the case of
-    // no ownership transfer where Box's invariant can be violated by the caller by NULLing the
-    // inner pointer. However, because the box is immediately dropped following the function call,
-    // we deem it ok as it would most likely lead to a catastrophic segfault, not a silent UB.
-    unsafe impl<R: crate::Encode> Encodable for Box<R> where Self: ReprFamily<Kind = Transparent> {}
-    unsafe impl<R: crate::Encode> Encodable for Option<R> where Self: ReprFamily<Kind = Transparent> {}
-}
 
 disjoint_impls! {
     /// Marker trait for a type that can be **safely transmuted** into another type.
@@ -46,7 +28,7 @@ disjoint_impls! {
         fn is_valid(target: &Self::Target) -> bool;
     }
 
-    unsafe impl<'a, R: ReprFamily<Kind = Transparent> + CheckedTransmute> CheckedTransmute for &'a R {
+    unsafe impl<'a, R: ReprFamily<Kind = Transmuted> + CheckedTransmute> CheckedTransmute for &'a R {
         type Target = &'a R::Target;
 
         #[inline(always)]
@@ -79,7 +61,7 @@ disjoint_impls! {
         }
     }
 
-    unsafe impl<'a, R: ReprFamily<Kind = Transparent> + CheckedTransmute> CheckedTransmute for &'a mut R {
+    unsafe impl<'a, R: ReprFamily<Kind = Transmuted> + CheckedTransmute> CheckedTransmute for &'a mut R {
         type Target = &'a mut R::Target;
 
         #[inline(always)]
@@ -112,7 +94,7 @@ disjoint_impls! {
         }
     }
 
-    unsafe impl<R: ReprFamily<Kind = Transparent> + CheckedTransmute> CheckedTransmute for Box<R> {
+    unsafe impl<R: ReprFamily<Kind = Transmuted> + CheckedTransmute> CheckedTransmute for Box<R> {
         type Target = Box<R::Target>;
 
         #[inline(always)]
@@ -147,7 +129,7 @@ disjoint_impls! {
         }
     }
 
-    unsafe impl<R: CheckedTransmute<Target: ReprFamily<Kind = Transparent>> + StableNiche> CheckedTransmute for Option<R> {
+    unsafe impl<R: CheckedTransmute<Target: ReprFamily<Kind = Transmuted>> + StableNiche> CheckedTransmute for Option<R> {
         type Target = Option<R::Target>;
 
         #[inline(always)]
@@ -182,7 +164,7 @@ disjoint_impls! {
         fn is_valid(target: &Self::CType) -> bool;
     }
 
-    unsafe impl<R: ReprFamily<Kind = Transparent> + CheckedTransmute<Target: FlatTransmute>> FlatTransmute for R {
+    unsafe impl<R: ReprFamily<Kind = Transmuted> + CheckedTransmute<Target: FlatTransmute>> FlatTransmute for R {
         fn is_valid(target: &Self::CType) -> bool {
             if !<R::Target as FlatTransmute>::is_valid(target) {
                 return false;
@@ -197,6 +179,24 @@ disjoint_impls! {
             true
         }
     }
+}
+
+disjoint_impls! {
+    /// # Safety
+    ///
+    // TODO: Write safety comment
+    pub unsafe trait Encodable {}
+
+    unsafe impl<R: ReprFamily<Kind = Robust>> Encodable for R {}
+
+    unsafe impl<R> Encodable for &R where Self: ReprFamily<Kind = Transmuted> {}
+    unsafe impl<R: ReprC> Encodable for &mut R where Self: ReprFamily<Kind = Transmuted> {}
+    // WARN: Since `Box<&mut R>` is mapped to `*mut *mut R` this can be disputed in the case of
+    // no ownership transfer where Box's invariant can be violated by the caller by NULLing the
+    // inner pointer. However, because the box is immediately dropped following the function call,
+    // we deem it ok as it would most likely lead to a catastrophic segfault, not a silent UB.
+    unsafe impl<R: crate::Encode> Encodable for Box<R> where Self: ReprFamily<Kind = Transmuted> {}
+    unsafe impl<R: crate::Encode> Encodable for Option<R> where Self: ReprFamily<Kind = Transmuted> {}
 }
 
 unsafe impl<R: CheckedTransmute, const N: usize> CheckedTransmute for [R; N] {

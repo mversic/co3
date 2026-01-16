@@ -15,6 +15,8 @@ pub use co3_derive::*;
 use derive_more::Display;
 use disjoint_impls::disjoint_impls;
 
+#[cfg(not(feature = "non_robust_ref_mut"))]
+use crate::transmute::Encodable;
 #[cfg(feature = "owned_types")]
 #[cfg(feature = "owned_as_ref")]
 use crate::transmute::{
@@ -22,12 +24,12 @@ use crate::transmute::{
     transmute_into_target_boxed_slice, transmute_into_target_vec,
 };
 use crate::{
-    ir::{Cloned, Opaque, ReprFamily, Robust, Transparent},
+    ir::{Cloned, Opaque, ReprFamily, Robust, Transmuted},
     niche::{Niche, StableNiche, WithCustomNiche, WithoutNiche},
     slice::{CBoxedSlice, CSlice, CSliceMut},
     transmute::FlatTransmute,
     transmute::{
-        CheckedTransmute, Encodable, transmute_from_target, transmute_from_target_ref_slice,
+        CheckedTransmute, transmute_from_target, transmute_from_target_ref_slice,
         transmute_from_target_slice_mut, transmute_into_target, transmute_into_target_ref_slice,
         transmute_into_target_slice_mut,
     },
@@ -90,7 +92,7 @@ disjoint_impls! {
     {
         type CType = R::Target;
     }
-    impl<R: ReprFamily<Kind = Transparent> + CheckedTransmute<Target: ExternC>> ExternC for R {
+    impl<R: ReprFamily<Kind = Transmuted> + CheckedTransmute<Target: ExternC>> ExternC for R {
         type CType = <R::Target as ExternC>::CType;
     }
     impl<R: ReprFamily<Kind = Robust> + ReprC> ExternC for R {
@@ -118,7 +120,7 @@ disjoint_impls! {
 
     impl<'slice, R: CheckedTransmute> ExternC for &'slice [R]
     where
-        Self: ReprFamily<Kind = &'slice [Transparent]>,
+        Self: ReprFamily<Kind = &'slice [Transmuted]>,
         &'slice [<R as CheckedTransmute>::Target]: ExternC,
     {
         type CType = <&'slice [R::Target] as ExternC>::CType;
@@ -146,14 +148,14 @@ disjoint_impls! {
 
     impl<'slice, R: FlatTransmute> ExternC for &'slice mut [R]
     where
-        Self: ReprFamily<Kind = &'slice mut [Transparent]>,
+        Self: ReprFamily<Kind = &'slice mut [Transmuted]>,
     {
         type CType = CSliceMut<R::CType>;
     }
 
     impl<R: CheckedTransmute> ExternC for Box<[R]>
     where
-        Self: ReprFamily<Kind = Box<[Transparent]>>,
+        Self: ReprFamily<Kind = Box<[Transmuted]>>,
         Box<[<R as CheckedTransmute>::Target]>: ExternC,
     {
         type CType = <Box<[R::Target]> as ExternC>::CType;
@@ -186,7 +188,7 @@ disjoint_impls! {
     #[cfg(feature = "owned_types")]
     impl<R: CheckedTransmute> ExternC for Vec<R>
     where
-        Self: ReprFamily<Kind = Vec<Transparent>>,
+        Self: ReprFamily<Kind = Vec<Transmuted>>,
         Vec<<R as CheckedTransmute>::Target>: ExternC,
     {
         type CType = <Vec<R::Target> as ExternC>::CType;
@@ -279,7 +281,7 @@ disjoint_impls! {
         #[cfg(not(feature = "non_robust_ref_mut"))] R: Encodable,
     > Encode for R
     where
-        R: ReprFamily<Kind = Transparent> + CheckedTransmute<Target: Encode>
+        R: ReprFamily<Kind = Transmuted> + CheckedTransmute<Target: Encode>
     {
         type Store = <R::Target as Encode>::Store;
 
@@ -344,7 +346,7 @@ disjoint_impls! {
 
     impl<'slice, R: CheckedTransmute> Encode for &'slice [R]
     where
-        Self: ReprFamily<Kind = &'slice [Transparent]>,
+        Self: ReprFamily<Kind = &'slice [Transmuted]>,
         &'slice [<R as CheckedTransmute>::Target]: Encode,
     {
         type Store = <&'slice [R::Target] as Encode>::Store;
@@ -417,7 +419,7 @@ disjoint_impls! {
         #[cfg(feature = "non_robust_ref_mut")] R: FlatTransmute,
     > Encode for &'slice mut [R]
     where
-        Self: ReprFamily<Kind = &'slice mut [Transparent]>,
+        Self: ReprFamily<Kind = &'slice mut [Transmuted]>,
     {
         type Store = ();
 
@@ -433,7 +435,7 @@ disjoint_impls! {
     impl<R: CheckedTransmute> Encode for Box<[R]>
     where
         Box<[<R as CheckedTransmute>::Target]>: Encode,
-        Self: ReprFamily<Kind = Box<[Transparent]>>,
+        Self: ReprFamily<Kind = Box<[Transmuted]>>,
     {
         type Store = <Box<[R::Target]> as Encode>::Store;
 
@@ -513,7 +515,7 @@ disjoint_impls! {
     impl<R: CheckedTransmute> Encode for Vec<R>
     where
         Vec<<R as CheckedTransmute>::Target>: Encode,
-        Self: ReprFamily<Kind = Vec<Transparent>>,
+        Self: ReprFamily<Kind = Vec<Transmuted>>,
     {
         type Store = <Vec<R::Target> as Encode>::Store;
 
@@ -727,7 +729,7 @@ disjoint_impls! {
     impl<'d, R: CheckedTransmute> Decode<'d> for R
     where
         <Self as CheckedTransmute>::Target: Decode<'d>,
-        Self: ReprFamily<Kind = Transparent>,
+        Self: ReprFamily<Kind = Transmuted>,
     {
         type Store = <R::Target as Decode<'d>>::Store;
 
@@ -807,7 +809,7 @@ disjoint_impls! {
     impl<'slice, R: CheckedTransmute> Decode<'slice> for &'slice [R]
     where
         &'slice [<R as CheckedTransmute>::Target]: Decode<'slice>,
-        Self: ReprFamily<Kind = &'slice [Transparent]>,
+        Self: ReprFamily<Kind = &'slice [Transmuted]>,
     {
         type Store = <&'slice [R::Target] as Decode<'slice>>::Store;
 
@@ -896,7 +898,7 @@ disjoint_impls! {
 
     impl<'slice, R: FlatTransmute> Decode<'slice> for &'slice mut [R]
     where
-        Self: ReprFamily<Kind = &'slice mut [Transparent]>,
+        Self: ReprFamily<Kind = &'slice mut [Transmuted]>,
     {
         type Store = ();
 
@@ -909,7 +911,7 @@ disjoint_impls! {
     impl<'d, R: CheckedTransmute> Decode<'d> for Box<[R]>
     where
         Box<[<R as CheckedTransmute>::Target]>: Decode<'d>,
-        Self: ReprFamily<Kind = Box<[Transparent]>>,
+        Self: ReprFamily<Kind = Box<[Transmuted]>>,
     {
         type Store = <Box<[R::Target]> as Decode<'d>>::Store;
 
@@ -980,7 +982,7 @@ disjoint_impls! {
     impl<'d, R: CheckedTransmute> Decode<'d> for Vec<R>
     where
         Vec<<R as CheckedTransmute>::Target>: Decode<'d>,
-        Self: ReprFamily<Kind = Vec<Transparent>>,
+        Self: ReprFamily<Kind = Vec<Transmuted>>,
     {
         type Store = <Vec<R::Target> as Decode<'d>>::Store;
 
@@ -1135,7 +1137,7 @@ disjoint_impls! {
 /// # Safety
 ///
 /// * If the type is [`Robust`], it derives [`ReprC`]. Check safety invariants for [`ReprC`]
-/// * If the type is [`Transparent`], it derives [`CheckedTransmute`]. Check safety invariants for [`CheckedTransmute`]
+/// * If the type is [`Transmuted`], it derives [`CheckedTransmute`]. Check safety invariants for [`CheckedTransmute`]
 ///
 /// # Example
 ///
@@ -1202,7 +1204,7 @@ macro_rules! mineral {
             $block:block
     }) => {
         impl $(<$($params)*>)? $crate::ir::ReprFamily for $self_ty $(where $($preds)*)? {
-            type Kind = $crate::ir::Transparent;
+            type Kind = $crate::ir::Transmuted;
         }
 
         // SAFETY: `$ty` is transmutable into `$target` and `is_valid` doesn't return false positives
@@ -1291,7 +1293,7 @@ macro_rules! mineral {
         fn is_valid($target_var:ident: $target_ty:ty) -> bool $block:block
     }) => {
         impl $($impl_generics)* $crate::ir::ReprFamily for $self_ty $(where $($preds)*)? {
-            type Kind = $crate::ir::Transparent;
+            type Kind = $crate::ir::Transmuted;
         }
 
         unsafe impl $($impl_generics)* $crate::transmute::CheckedTransmute for $self_ty $(where $($preds)*)? {
@@ -1324,7 +1326,7 @@ mineral! {
 // SAFETY: Arrays is just a contiguous block of memory
 unsafe impl<R: ReprC, const N: usize> ReprC for [R; N] {}
 
-unsafe impl<R: StableNiche + Copy> ReprC for Option<R> where Self: ReprFamily<Kind = Transparent> {}
+unsafe impl<R: StableNiche + Copy> ReprC for Option<R> where Self: ReprFamily<Kind = Transmuted> {}
 
 // TODO: Check https://github.com/mversic/co3/issues/13
 const fn assert_arr_has_non_zero_len<const N: usize>() {

@@ -1,9 +1,9 @@
 use core::{marker::PhantomData, ptr::NonNull};
 
 use crate::{
-    ir::{ReprFamily, Transparent},
+    ir::{ReprFamily, Transmuted},
     niche::{Niche, NicheFamily, StableNiche, WithStableNiche},
-    transmute::CheckedTransmute,
+    transmute::{CheckedTransmute, Encodable},
 };
 
 /// Represents the pointee on the far side of an exported opaque pointer at the FFI boundary.
@@ -39,8 +39,9 @@ pub struct Extern {
 #[repr(transparent)]
 pub struct ExternRef<'a, T>(NonNull<Extern>, PhantomData<&'a T>);
 
+#[derive(Clone)]
 #[repr(transparent)]
-pub struct ExternRefMut<'a, T>(NonNull<Extern>, core::marker::PhantomData<&'a mut T>);
+pub struct ExternRefMut<'a, T>(NonNull<Extern>, PhantomData<&'a mut T>);
 
 impl<T: External> ExternRef<'_, T> {
     pub fn new(inner: &T) -> Self {
@@ -84,10 +85,10 @@ impl<T> core::ops::DerefMut for ExternRefMut<'_, T> {
 }
 
 impl<R> ReprFamily for ExternRef<'_, R> {
-    type Kind = Transparent;
+    type Kind = Transmuted;
 }
 impl<R> ReprFamily for ExternRefMut<'_, R> {
-    type Kind = Transparent;
+    type Kind = Transmuted;
 }
 
 impl<R> NicheFamily for ExternRef<'_, R> {
@@ -123,3 +124,6 @@ impl<R> Niche for ExternRefMut<'_, R> {
 
 unsafe impl<R> StableNiche for ExternRef<'_, R> {}
 unsafe impl<R> StableNiche for ExternRefMut<'_, R> {}
+
+unsafe impl<R> Encodable for ExternRef<'_, R> {}
+unsafe impl<R> Encodable for ExternRefMut<'_, R> {}

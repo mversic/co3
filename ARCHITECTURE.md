@@ -21,50 +21,50 @@
 - types implementing `Cloned` are always first cloned, ergo the name of the trait
 
 # Derivative marker types:
-* &Transparent             => Transparent(Target = &R::Target)        |  DELEGATED |
-* &Robust                  => Transparent(Target = *const R)          |  DELEGATED |
-* &Opaque                  => Transparent(Target = *const R)          |  DELEGATED |
+* &Transmuted              => Transmuted(Target = &R::Target)        |  DELEGATED |
+* &Robust                  => Transmuted(Target = *const R)          |  DELEGATED |
+* &Opaque                  => Transmuted(Target = *const R)          |  DELEGATED |
 * &S where S: Cloned                                                  |   Cloned   |
 
-* &mut Transparent         => Transparent(Target = &mut R::Target)    |  DELEGATED |
-* &mut Robust              => Transparent(Target = *mut R)            |  DELEGATED |
-* &mut Opaque              => Transparent(Target = *mut R)            |  DELEGATED |
+* &mut Transmuted          => Transmuted(Target = &mut R::Target)    |  DELEGATED |
+* &mut Robust              => Transmuted(Target = *mut R)            |  DELEGATED |
+* &mut Opaque              => Transmuted(Target = *mut R)            |  DELEGATED |
 * DOESN'T EXIST
 
-* &[Transparent]                                                      |   Cloned
+* &[Transmuted]                                                      |   Cloned
 * &[Robust]                                                           |   Cloned
 * &[Opaque]                                                           |   Cloned
 * &[S] where S: Cloned                                                |   Cloned   |
 
-* &mut [Transparent]
-* &mut [Robust]
+* &mut [Transmuted]
+* &mut [Robust]            => &mut [Transmuted]
 * DOESN'T EXIST
 * DOESN'T EXIST
 * DOESN'T EXIST
 
-* Box<Transparent>         => Transparent(Target = Box<R::Target>)    |  DELEGATED |
+* Box<Transmuted>          => Transmuted(Target = Box<R::Target>)    |  DELEGATED |
 * Box<Robust>                                                         |     Not    |
-* Box<Opaque>              => Transparent(Target = *mut R)            |  DELEGATED |
+* Box<Opaque>              => Transmuted(Target = *mut R)            |  DELEGATED |
 * Box<S> where S: Cloned                                              |   Cloned   |
 
-* Box<[Transparent]>
+* Box<[Transmuted]>
 * Box<[Robust]>
 * Box<[Opaque]>
 * Box<[S]> where S: Cloned
 
-* Vec<Transparent>
+* Vec<Transmuted>
 * Vec<Robust>
 * Vec<Opaque>
 * Vec<S> where S: Cloned
 
-* [Transparent; N]         => Transparent(Target = [R::Target; N])    |
+* [Transmuted; N]          => Transmuted(Target = [R::Target; N])    |
 * [Robust; N]              => Robust                                  |
 * [Opaque; N]                                                         |   Cloned   |
 * [S; N] where S: Cloned                                              |   Cloned   |
 
 # Niche IR marker types:
-1. Transparent
-- types that are transparent and have a stable niche value
+1. Transmuted
+- types that are Transmuted and have a stable niche value
 2. Robust
 - types that don't have a niche value
 3. Opaque
@@ -83,18 +83,18 @@
 3. Robust (depends on `ReprC` trait)
 - has no trap representations and consequently no niche value
 
-* Option<Transparent, Transparent>       =>                           |    Not     |
-* Option<Transparent, Robust>            => Option<Robust>            |   Cloned   |
-* Option<Transparent, S> where S: Cloned => Option<S>                 |   Cloned   |
+* Option<Transmuted, Transmuted>         =>                           |    Not     |
+* Option<Transmuted, Robust>             => Option<Robust>            |   Cloned   |
+* Option<Transmuted, S> where S: Cloned  => Option<S>                 |   Cloned   |
 * Option<Robust>                         =>                           |   Cloned   |
 * Option<Opaque>                         => Option<Cloned>            |    Not     |
 * Option<S, Robust> where S: Cloned      => Option<Robust>            |   Cloned   |
 * Option<S, S> where S: Cloned           =>                           |   Cloned   |
 
-* &Option<Transparent, Transparent>      => Option<Transparent>       |  DELEGATED |
-* &mut Option<Transparent, Transparent>  => Option<Transparent>       |  DELEGATED |
-* Box<Option<Transparent, Transparent>>  => Option<Transparent>       |  DELEGATED |
-* [Option<Transparent, Transparent>; N]  => Option<Transparent>       |  DELEGATED |
+* &Option<Transmuted, Transmuted>        => Option<Transmuted>       |  DELEGATED |
+* &mut Option<Transmuted, Transmuted>    => Option<Transmuted>       |  DELEGATED |
+* Box<Option<Transmuted, Transmuted>>    => Option<Transmuted>       |  DELEGATED |
+* [Option<Transmuted, Transmuted>; N]    => Option<Transmuted>       |  DELEGATED |
 
 # Derivative niche marker types:
 // TODO
