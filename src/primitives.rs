@@ -40,7 +40,6 @@ mod wasm {
     {
         type Kind = &'itm mut [Transparent];
     }
-    #[cfg(feature = "owned_types")]
     #[cfg(feature = "owned_as_ref")]
     impl<R> ReprFamily for Box<R>
     where
@@ -48,7 +47,6 @@ mod wasm {
     {
         type Kind = Box<Robust>;
     }
-    #[cfg(feature = "owned_types")]
     #[cfg(feature = "owned_as_ref")]
     impl<R> ReprFamily for Box<[R]>
     where
@@ -56,7 +54,6 @@ mod wasm {
     {
         type Kind = Box<[Robust]>;
     }
-    #[cfg(feature = "owned_types")]
     #[cfg(feature = "owned_as_ref")]
     impl<R> ReprFamily for Vec<R>
     where

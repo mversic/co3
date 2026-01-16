@@ -17,19 +17,19 @@ use disjoint_impls::disjoint_impls;
 
 #[cfg(not(feature = "non_robust_ref_mut"))]
 use crate::transmute::MutSafe;
-#[cfg(feature = "owned_types")]
 #[cfg(feature = "owned_as_ref")]
 use crate::transmute::{
     transmute_from_target_boxed_slice, transmute_from_target_vec,
     transmute_into_target_boxed_slice, transmute_into_target_vec,
 };
+#[cfg(not(feature = "owned_as_ref"))]
+use crate::vec::CVec;
 use crate::{
     ir::{Cloned, Opaque, ReprFamily, Robust, Transmuted},
     niche::{Niche, StableNiche, WithCustomNiche, WithoutNiche},
     slice::{CBoxedSlice, CSlice, CSliceMut},
-    transmute::FlatTransmute,
     transmute::{
-        CheckedTransmute, transmute_from_target, transmute_from_target_ref_slice,
+        CheckedTransmute, FlatTransmute, transmute_from_target, transmute_from_target_ref_slice,
         transmute_from_target_slice_mut, transmute_into_target, transmute_into_target_ref_slice,
         transmute_into_target_slice_mut,
     },
@@ -47,8 +47,19 @@ pub mod slice;
 mod std_impls;
 pub mod transmute;
 pub mod tuple;
+pub mod vec;
 
 use option::COption;
+
+#[cfg(feature = "owned_as_ref")]
+type BoxedSliceCType<C> = CSliceMut<C>;
+#[cfg(not(feature = "owned_as_ref"))]
+type BoxedSliceCType<C> = CBoxedSlice<C>;
+
+#[cfg(feature = "owned_as_ref")]
+type VecCType<C> = CSliceMut<C>;
+#[cfg(not(feature = "owned_as_ref"))]
+type VecCType<C> = CVec<C>;
 
 /// Result of execution of an FFI function
 #[derive(Debug, Display, Clone, Copy, PartialEq, Eq)]
@@ -110,7 +121,7 @@ disjoint_impls! {
         type CType = *const R::CType;
     }
 
-    #[cfg(feature = "owned_types")]
+    #[cfg(feature = "owned_as_ref")]
     impl<R: ExternC, S: Cloned> ExternC for Box<R>
     where
         Self: ReprFamily<Kind = Box<S>>,
@@ -161,23 +172,20 @@ disjoint_impls! {
         type CType = <Box<[R::Target]> as ExternC>::CType;
     }
     #[cfg(feature = "owned_types")]
-    #[cfg(feature = "owned_as_ref")]
     impl<R: ReprC> ExternC for Box<[R]>
     where
         Self: ReprFamily<Kind = Box<[Robust]>>,
     {
-        type CType = CSliceMut<R>;
+        type CType = BoxedSliceCType<R>;
     }
     #[cfg(feature = "owned_types")]
-    #[cfg(feature = "owned_as_ref")]
     impl<R> ExternC for Box<[R]>
     where
         Self: ReprFamily<Kind = Box<[Opaque]>>,
     {
-        type CType = CSliceMut<*mut R>;
+        type CType = BoxedSliceCType<*mut R>;
     }
     #[cfg(feature = "owned_types")]
-    #[cfg(feature = "owned_as_ref")]
     impl<R: ExternC, S: Cloned> ExternC for Box<[R]>
     where
         Self: ReprFamily<Kind = Box<[S]>>,
@@ -194,23 +202,20 @@ disjoint_impls! {
         type CType = <Vec<R::Target> as ExternC>::CType;
     }
     #[cfg(feature = "owned_types")]
-    #[cfg(feature = "owned_as_ref")]
     impl<R: ReprC> ExternC for Vec<R>
     where
         Self: ReprFamily<Kind = Vec<Robust>>,
     {
-        type CType = CSliceMut<R>;
+        type CType = VecCType<R>;
     }
     #[cfg(feature = "owned_types")]
-    #[cfg(feature = "owned_as_ref")]
     impl<R> ExternC for Vec<R>
     where
         Self: ReprFamily<Kind = Vec<Opaque>>,
     {
-        type CType = CSliceMut<*mut R>;
+        type CType = VecCType<*mut R>;
     }
     #[cfg(feature = "owned_types")]
-    #[cfg(feature = "owned_as_ref")]
     impl<R: ExternC, S: Cloned> ExternC for Vec<R>
     where
         Self: ReprFamily<Kind = Vec<S>>,
@@ -318,29 +323,28 @@ disjoint_impls! {
     where
         Self: ReprFamily<Kind = &'a S>,
     {
-        type Store = (Option<R::CType>, R::Store);
+        type Store = (R::Store, Option<R::CType>);
 
         fn encode<'itm>(self, store: &'itm mut Self::Store) -> Self::CType
         where
             Self: 'itm,
         {
-            store.0.insert(self.clone().encode(&mut store.1))
+            store.1.insert(self.clone().encode(&mut store.0))
         }
     }
 
-    #[cfg(feature = "owned_types")]
     #[cfg(feature = "owned_as_ref")]
     impl<R: Encode, S: Cloned> Encode for Box<R>
     where
         Self: ReprFamily<Kind = Box<S>>,
     {
-        type Store = (Option<R::CType>, R::Store);
+        type Store = (R::Store, Option<R::CType>);
 
         fn encode<'itm>(self, store: &'itm mut Self::Store) -> Self::CType
         where
             Self: 'itm,
         {
-            store.0.insert((*self).encode(&mut store.1))
+            store.1.insert((*self).encode(&mut store.0))
         }
     }
 
@@ -391,7 +395,7 @@ disjoint_impls! {
     where
         Self: ReprFamily<Kind = &'slice [S]>,
     {
-        type Store = (Box<[R::CType]>, Box<[R::Store]>);
+        type Store = (Box<[R::Store]>, Box<[R::CType]>);
 
         fn encode<'itm>(self, store: &'itm mut Self::Store) -> Self::CType
         where
@@ -399,17 +403,17 @@ disjoint_impls! {
         {
             let slice = self.to_vec();
 
-            store.1 = core::iter::repeat_with(Default::default)
+            store.0 = core::iter::repeat_with(Default::default)
                 .take(slice.len())
                 .collect();
 
-            store.0 = slice
+            store.1 = slice
                 .into_iter()
-                .zip(&mut *store.1)
+                .zip(&mut *store.0)
                 .map(|(item, substore)| item.encode(substore))
                 .collect();
 
-            CSlice::from_slice(Some(&store.0))
+            CSlice::from_slice(Some(&store.1))
         }
     }
 
@@ -423,7 +427,7 @@ disjoint_impls! {
     {
         type Store = ();
 
-        fn encode<'itm>(self, _: &mut ()) -> Self::CType
+        fn encode<'itm>(self, (): &mut ()) -> Self::CType
         where
             Self: 'itm,
         {
@@ -447,49 +451,67 @@ disjoint_impls! {
         }
     }
     #[cfg(feature = "owned_types")]
-    #[cfg(feature = "owned_as_ref")]
     impl<R: ReprC> Encode for Box<[R]>
     where
         Self: ReprFamily<Kind = Box<[Robust]>>,
     {
+        #[cfg(feature = "owned_as_ref")]
         type Store = Self;
+        #[cfg(not(feature = "owned_as_ref"))]
+        type Store = ();
 
         fn encode<'itm>(self, store: &'itm mut Self::Store) -> Self::CType
         where
             Self: 'itm,
         {
-            *store = self;
-            CSliceMut::from_slice(Some(store))
+            #[cfg(feature = "owned_as_ref")]
+            let encoded = {
+                *store = self;
+                CSliceMut::from_slice(Some(store))
+            };
+            #[cfg(not(feature = "owned_as_ref"))]
+            let encoded = CBoxedSlice::from_boxed_slice(Some(self));
+
+            encoded
         }
     }
     #[cfg(feature = "owned_types")]
-    #[cfg(feature = "owned_as_ref")]
     impl<R> Encode for Box<[R]>
     where
         Self: ReprFamily<Kind = Box<[Opaque]>>,
     {
+        #[cfg(feature = "owned_as_ref")]
         type Store = Box<[*mut R]>;
+        #[cfg(not(feature = "owned_as_ref"))]
+        type Store = ();
 
         fn encode<'itm>(self, store: &'itm mut Self::Store) -> Self::CType
         where
             Self: 'itm,
         {
-            *store = Vec::from(self)
+            let boxed_ptrs = Vec::from(self)
                 .into_iter()
                 .map(Box::new)
                 .map(Box::into_raw)
                 .collect();
 
-            CSliceMut::from_slice(Some(store))
+            #[cfg(feature = "owned_as_ref")]
+            let encoded = {
+                *store = boxed_ptrs;
+                CSliceMut::from_slice(Some(store))
+            };
+            #[cfg(not(feature = "owned_as_ref"))]
+            let encoded = CBoxedSlice::from_boxed_slice(Some(boxed_ptrs));
+
+            encoded
         }
     }
     #[cfg(feature = "owned_types")]
-    #[cfg(feature = "owned_as_ref")]
     impl<R: Encode, S: Cloned> Encode for Box<[R]>
     where
         Self: ReprFamily<Kind = Box<[S]>>,
     {
-        type Store = (Box<[R::CType]>, Box<[R::Store]>);
+        type Store = (Box<[R::Store]>, Box<[R::CType]>);
 
         fn encode<'itm>(self, store: &'itm mut Self::Store) -> Self::CType
         where
@@ -497,17 +519,17 @@ disjoint_impls! {
         {
             let boxed_slice = self;
 
-            store.1 = core::iter::repeat_with(Default::default)
+            store.0 = core::iter::repeat_with(Default::default)
                 .take(boxed_slice.len())
                 .collect();
 
-            store.0 = Vec::from(boxed_slice)
+            store.1 = Vec::from(boxed_slice)
                 .into_iter()
-                .zip(&mut *store.1)
+                .zip(&mut store.0)
                 .map(|(item, substore)| item.encode(substore))
                 .collect();
 
-            CSliceMut::from_slice(Some(&mut store.0))
+            CSliceMut::from_slice(Some(&mut store.1))
         }
     }
 
@@ -527,44 +549,67 @@ disjoint_impls! {
         }
     }
     #[cfg(feature = "owned_types")]
-    #[cfg(feature = "owned_as_ref")]
     impl<R: ReprC> Encode for Vec<R>
     where
         Self: ReprFamily<Kind = Vec<Robust>>,
     {
+        #[cfg(feature = "owned_as_ref")]
         type Store = Box<[R]>;
+        #[cfg(not(feature = "owned_as_ref"))]
+        type Store = ();
 
         fn encode<'itm>(self, store: &'itm mut Self::Store) -> Self::CType
         where
             Self: 'itm,
         {
-            *store = self.into_boxed_slice();
-            CSliceMut::from_slice(Some(store))
+            #[cfg(feature = "owned_as_ref")]
+            let encoded = {
+                *store = self.into_boxed_slice();
+                CSliceMut::from_slice(Some(store))
+            };
+            #[cfg(not(feature = "owned_as_ref"))]
+            let encoded = CVec::from_vec(Some(self));
+
+            encoded
         }
     }
     #[cfg(feature = "owned_types")]
-    #[cfg(feature = "owned_as_ref")]
     impl<R> Encode for Vec<R>
     where
         Self: ReprFamily<Kind = Vec<Opaque>>,
     {
+        #[cfg(feature = "owned_as_ref")]
         type Store = Box<[*mut R]>;
+        #[cfg(not(feature = "owned_as_ref"))]
+        type Store = ();
 
         fn encode<'itm>(self, store: &'itm mut Self::Store) -> Self::CType
         where
             Self: 'itm,
         {
-            *store = self.into_iter().map(Box::new).map(Box::into_raw).collect();
-            CSliceMut::from_slice(Some(store))
+            let boxed_ptrs = self
+                .into_iter()
+                .map(Box::new)
+                .map(Box::into_raw)
+                .collect();
+
+            #[cfg(feature = "owned_as_ref")]
+            let encoded = {
+                *store = boxed_ptrs;
+                CSliceMut::from_slice(Some(store))
+            };
+            #[cfg(not(feature = "owned_as_ref"))]
+            let encoded = CVec::from_vec(Some(boxed_ptrs));
+
+            encoded
         }
     }
     #[cfg(feature = "owned_types")]
-    #[cfg(feature = "owned_as_ref")]
     impl<R: Encode, S: Cloned> Encode for Vec<R>
     where
         Self: ReprFamily<Kind = Vec<S>>,
     {
-        type Store = (Box<[R::CType]>, Box<[R::Store]>);
+        type Store = (Box<[R::Store]>, Box<[R::CType]>);
 
         fn encode<'itm>(self, store: &'itm mut Self::Store) -> Self::CType
         where
@@ -572,17 +617,15 @@ disjoint_impls! {
         {
             let vec = self;
 
-            store.1 = core::iter::repeat_with(Default::default)
+            store.0 = core::iter::repeat_with(Default::default)
                 .take(vec.len())
                 .collect();
 
-            store.0 = vec
-                .into_iter()
-                .zip(&mut *store.1)
+            store.1 = vec.into_iter()
+                .zip(&mut store.0)
                 .map(|(item, substore)| item.encode(substore))
                 .collect();
-
-            CSliceMut::from_slice(Some(&mut store.0))
+            CSliceMut::from_slice(Some(&mut store.1))
         }
     }
 
@@ -714,7 +757,6 @@ disjoint_impls! {
         unsafe fn decode<'itm: 'd>(source: Self::CType, store: &'itm mut Self::Store) -> Option<Self>;
     }
 
-    #[cfg(feature = "owned_types")]
     #[cfg(feature = "owned_as_ref")]
     impl<'d, R: CheckedTransmute<Target: ReprC + 'd> + Clone> Decode<'d> for R
     where
@@ -767,7 +809,7 @@ disjoint_impls! {
     where
         Self: ReprFamily<Kind = &'d S>,
     {
-        type Store = (Option<R>, R::Store);
+        type Store = (R::Store, Option<R>);
 
         unsafe fn decode<'itm: 'd>(source: Self::CType, store: &'itm mut Self::Store) -> Option<Self> {
             unsafe {
@@ -776,8 +818,8 @@ disjoint_impls! {
                 }
 
                 Some(
-                    store.0.insert(
-                        R::decode(source.read(), &mut store.1)
+                    store.1.insert(
+                        R::decode(source.read(), &mut store.0)
                             .map(ManuallyDrop::new)
                             .map(|item| (*item).clone())?,
                     ),
@@ -786,7 +828,6 @@ disjoint_impls! {
         }
     }
 
-    #[cfg(feature = "owned_types")]
     #[cfg(feature = "owned_as_ref")]
     impl<'d, R: Decode<'d> + Clone, S: Cloned> Decode<'d> for Box<R>
     where
@@ -867,7 +908,7 @@ disjoint_impls! {
     where
         Self: ReprFamily<Kind = &'slice [S]>,
     {
-        type Store = (Box<[R]>, Box<[R::Store]>);
+        type Store = (Box<[R::Store]>, Box<[R]>);
 
         unsafe fn decode<'itm: 'slice>(
             source: Self::CType,
@@ -875,24 +916,24 @@ disjoint_impls! {
         ) -> Option<Self> {
             let source = unsafe { source.into_rust() }?;
 
-            store.1 = core::iter::repeat_with(Default::default)
+            store.0 = core::iter::repeat_with(Default::default)
                 .take(source.len())
                 .collect();
 
-            let slice: Box<[_]> = source
+            let slice = source
                 .iter()
-                .zip(&mut *store.1)
+                .zip(&mut *store.0)
                 .map(|(&item, substore)| unsafe { R::decode(item, substore) }.map(ManuallyDrop::new))
                 .collect::<Option<Vec<_>>>()?
                 .into_boxed_slice();
 
-            store.0 = slice
+            store.1 = slice
                 .iter()
                 .cloned()
                 .map(ManuallyDrop::into_inner)
                 .collect();
 
-            Some(&*store.0)
+            Some(&*store.1)
         }
     }
 
@@ -902,12 +943,12 @@ disjoint_impls! {
     {
         type Store = ();
 
-        unsafe fn decode<'itm: 'slice>(source: Self::CType, _: &mut ()) -> Option<Self> {
+        unsafe fn decode<'itm: 'slice>(source: Self::CType, (): &mut ()) -> Option<Self> {
             transmute_from_target_slice_mut(unsafe { source.into_rust()? })
         }
     }
 
-    #[cfg(feature = "owned_types")]
+    #[cfg(feature = "owned_as_ref")]
     impl<'d, R: CheckedTransmute> Decode<'d> for Box<[R]>
     where
         Box<[<R as CheckedTransmute>::Target]>: Decode<'d>,
@@ -917,12 +958,10 @@ disjoint_impls! {
 
         unsafe fn decode<'itm: 'd>(source: Self::CType, store: &'itm mut Self::Store) -> Option<Self> {
             unsafe {
-                <Box<[R::Target]>>::decode(source, store)
-                    .and_then(|output| transmute_from_target_boxed_slice(output))
+                Decode::decode(source, store).and_then(|output| transmute_from_target_boxed_slice(output))
             }
         }
     }
-    #[cfg(feature = "owned_types")]
     #[cfg(feature = "owned_as_ref")]
     impl<'d, R: ReprC + 'd> Decode<'d> for Box<[R]>
     where
@@ -934,7 +973,6 @@ disjoint_impls! {
             unsafe { source.into_rust() }.map(|slice| slice.into())
         }
     }
-    #[cfg(feature = "owned_types")]
     #[cfg(feature = "owned_as_ref")]
     impl<'d, R: 'd> Decode<'d> for Box<[R]>
     where
@@ -952,7 +990,6 @@ disjoint_impls! {
         }
     }
     #[cfg(feature = "owned_types")]
-    #[cfg(feature = "owned_as_ref")]
     impl<'d, R: Decode<'d> + Clone, S: Cloned> Decode<'d> for Box<[R]>
     where
         Self: ReprFamily<Kind = Box<[S]>>,
@@ -966,7 +1003,7 @@ disjoint_impls! {
                 .take(slice.len())
                 .collect();
 
-            let vec: Box<[_]> = slice
+            let vec = slice
                 .iter()
                 .copied()
                 .zip(&mut **store)
@@ -978,7 +1015,7 @@ disjoint_impls! {
         }
     }
 
-    #[cfg(feature = "owned_types")]
+    #[cfg(feature = "owned_as_ref")]
     impl<'d, R: CheckedTransmute> Decode<'d> for Vec<R>
     where
         Vec<<R as CheckedTransmute>::Target>: Decode<'d>,
@@ -993,7 +1030,6 @@ disjoint_impls! {
             }
         }
     }
-    #[cfg(feature = "owned_types")]
     #[cfg(feature = "owned_as_ref")]
     impl<'d, R: ReprC + 'd> Decode<'d> for Vec<R>
     where
@@ -1005,7 +1041,6 @@ disjoint_impls! {
             unsafe { source.into_rust() }.map(|slice| slice.to_vec())
         }
     }
-    #[cfg(feature = "owned_types")]
     #[cfg(feature = "owned_as_ref")]
     impl<'d, R: 'd> Decode<'d> for Vec<R>
     where
@@ -1014,17 +1049,16 @@ disjoint_impls! {
         type Store = ();
 
         unsafe fn decode<'itm: 'd>(source: Self::CType, (): &mut ()) -> Option<Self> {
-            let slice = unsafe { source.into_rust() };
+            let slice = unsafe { source.into_rust()? };
 
-            slice?
+            slice
                 .iter()
                 .map(|&item| unsafe { item.as_mut().map(|item| *Box::from_raw(item)) })
                 .collect::<Option<_>>()
         }
     }
     #[cfg(feature = "owned_types")]
-    #[cfg(feature = "owned_as_ref")]
-    impl<'d, R: Decode<'d> + Clone, S: Cloned> Decode<'d> for Vec<R>
+    impl<'d, R: Decode<'d> + Clone, S: Cloned > Decode<'d> for Vec<R>
     where
         Self: ReprFamily<Kind = Vec<S>>,
     {
@@ -1037,7 +1071,7 @@ disjoint_impls! {
                 .take(slice.len())
                 .collect();
 
-            let vec: Box<[_]> = slice
+            let vec = slice
                 .iter()
                 .copied()
                 .zip(&mut **store)
@@ -1323,7 +1357,7 @@ mineral! {
     unsafe impl(R) Robust for *mut R {}
 }
 
-// SAFETY: Arrays is just a contiguous block of memory
+// SAFETY: Array is just a contiguous block of memory
 unsafe impl<R: ReprC, const N: usize> ReprC for [R; N] {}
 
 unsafe impl<R: StableNiche + Copy> ReprC for Option<R> where Self: ReprFamily<Kind = Transmuted> {}
@@ -1389,20 +1423,20 @@ mod tests {
     fn owned_types() {
         use crate::tuple::CTuple3;
 
-        assert_impl_all!(Box<[u8]>: Niche<CType = CSliceMut<u8>>);
-        assert_impl_all!(Vec<u8>: Niche<CType = CSliceMut<u8>>);
-        assert_impl_all!(Box<[*const String]>: Niche<CType = CSliceMut<*const String>>);
-        assert_impl_all!(Vec<*const String>: Niche<CType = CSliceMut<*const String>>);
-        assert_impl_all!(Box<[bool]>: Niche<CType = CSliceMut<u8>>);
-        assert_impl_all!(Vec<bool>: Niche<CType = CSliceMut<u8>>);
-        assert_impl_all!(Box<[&u8]>: Niche<CType = CSliceMut<*const u8>>);
-        assert_impl_all!(Vec<&u8>: Niche<CType = CSliceMut<*const u8>>);
-        assert_impl_all!(Box<[&bool]>: Niche<CType = CSliceMut<*const u8>>);
-        assert_impl_all!(Vec<&bool>: Niche<CType = CSliceMut<*const u8>>);
-        assert_impl_all!(Box<[(u8, u8, u8)]>: Niche<CType = CSliceMut<CTuple3<u8, u8, u8>>>);
-        assert_impl_all!(Vec<(u8, u8, u8)>: Niche<CType = CSliceMut<CTuple3<u8, u8, u8>>>);
-        assert_impl_all!(Box<[(u8, bool, u8)]>: Niche<CType = CSliceMut<CTuple3<u8, u8, u8>>>);
-        assert_impl_all!(Vec<(u8, bool, u8)>: Niche<CType = CSliceMut<CTuple3<u8, u8, u8>>>);
+        assert_impl_all!(Box<[u8]>: Niche<CType = BoxedSliceCType<u8>>);
+        assert_impl_all!(Vec<u8>: Niche<CType = VecCType<u8>>);
+        assert_impl_all!(Box<[*const String]>: Niche<CType = BoxedSliceCType<*const String>>);
+        assert_impl_all!(Vec<*const String>: Niche<CType = VecCType<*const String>>);
+        assert_impl_all!(Box<[bool]>: Niche<CType = BoxedSliceCType<u8>>);
+        assert_impl_all!(Vec<bool>: Niche<CType = VecCType<u8>>);
+        assert_impl_all!(Box<[&u8]>: Niche<CType = BoxedSliceCType<*const u8>>);
+        assert_impl_all!(Vec<&u8>: Niche<CType = VecCType<*const u8>>);
+        assert_impl_all!(Box<[&bool]>: Niche<CType = BoxedSliceCType<*const u8>>);
+        assert_impl_all!(Vec<&bool>: Niche<CType = VecCType<*const u8>>);
+        assert_impl_all!(Box<[(u8, u8, u8)]>: Niche<CType = BoxedSliceCType<CTuple3<u8, u8, u8>>>);
+        assert_impl_all!(Vec<(u8, u8, u8)>: Niche<CType = VecCType<CTuple3<u8, u8, u8>>>);
+        assert_impl_all!(Box<[(u8, bool, u8)]>: Niche<CType = BoxedSliceCType<CTuple3<u8, u8, u8>>>);
+        assert_impl_all!(Vec<(u8, bool, u8)>: Niche<CType = VecCType<CTuple3<u8, u8, u8>>>);
 
         assert_not_impl_any!(Box<[u8]>: ReprC, CheckedTransmute, FlatTransmute, StableNiche);
         assert_not_impl_any!(Vec<u8>: ReprC, CheckedTransmute, FlatTransmute, StableNiche);

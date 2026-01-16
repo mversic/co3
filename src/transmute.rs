@@ -2,7 +2,6 @@ use core::mem::ManuallyDrop;
 
 use alloc::boxed::Box;
 #[cfg(feature = "owned_as_ref")]
-#[cfg(feature = "owned_types")]
 use alloc::vec::Vec;
 use disjoint_impls::disjoint_impls;
 
@@ -214,6 +213,7 @@ disjoint_impls! {
     // we deem it ok as it would most likely lead to a catastrophic segfault, not a silent UB.
     unsafe impl<R: crate::Encode> MutSafe for Box<R> where Self: ReprFamily<Kind = Transmuted> {}
     unsafe impl<R: crate::Encode> MutSafe for Option<R> where Self: ReprFamily<Kind = Transmuted> {}
+    unsafe impl<R: crate::Encode, const N: usize> MutSafe for [R; N] where Self: ReprFamily<Kind = Transmuted> {}
 }
 
 unsafe impl<R: CheckedTransmute, const N: usize> CheckedTransmute for [R; N] {
@@ -257,7 +257,6 @@ pub(super) fn transmute_from_target<R: CheckedTransmute>(source: R::Target) -> O
     Some(ManuallyDrop::into_inner(unsafe { transmute_helper.source }))
 }
 
-#[cfg(feature = "owned_types")]
 #[cfg(feature = "owned_as_ref")]
 pub(super) fn transmute_into_target_boxed_slice<R: CheckedTransmute>(
     #[expect(clippy::boxed_local)] mut source: Box<[R]>,
@@ -269,7 +268,6 @@ pub(super) fn transmute_into_target_boxed_slice<R: CheckedTransmute>(
     // SAFETY: Soundness is guaranteed by [`Transmute`]
     unsafe { Box::from_raw(core::ptr::slice_from_raw_parts_mut(ptr, len)) }
 }
-#[cfg(feature = "owned_types")]
 #[cfg(feature = "owned_as_ref")]
 pub(super) fn transmute_from_target_boxed_slice<R: CheckedTransmute>(
     #[expect(clippy::boxed_local)] mut source: Box<[R::Target]>,
@@ -328,7 +326,6 @@ pub(super) fn transmute_from_target_slice_mut<R: FlatTransmute>(
     Some(unsafe { core::slice::from_raw_parts_mut(source.as_mut_ptr().cast(), source.len()) })
 }
 
-#[cfg(feature = "owned_types")]
 #[cfg(feature = "owned_as_ref")]
 pub(super) fn transmute_into_target_vec<R: CheckedTransmute>(source: Vec<R>) -> Vec<R::Target> {
     assert_size_and_allignment_match::<R>();
@@ -338,7 +335,6 @@ pub(super) fn transmute_into_target_vec<R: CheckedTransmute>(source: Vec<R>) -> 
     // SAFETY: Soundness is guaranteed by [`Transmute`]
     unsafe { Vec::from_raw_parts(vec.as_mut_ptr().cast(), vec.len(), vec.capacity()) }
 }
-#[cfg(feature = "owned_types")]
 #[cfg(feature = "owned_as_ref")]
 pub(super) fn transmute_from_target_vec<R: CheckedTransmute>(
     source: Vec<R::Target>,
@@ -370,17 +366,19 @@ mod tests {
 
     #[cfg(feature = "non_robust_ref_mut")]
     use crate::slice::CSliceMut;
-    use crate::{Decode, Encode, niche::Niche, option::COption, slice::CSlice};
+    use crate::{Decode, Encode, niche::Niche, slice::CSlice};
 
     use super::*;
 
+    #[cfg(feature = "derive")]
     #[derive(ExternC)]
     #[repr(transparent)]
     pub struct TransparentWrapper<T>(T);
 
-    #[derive(ExternC)]
+    #[cfg(feature = "derive")]
+    #[derive(PartialEq, ExternC)]
     #[repr(C)]
-    pub struct MyStruct<T>(T);
+    pub struct MyStruct<T>(T, u32);
 
     #[test]
     fn transparent_bool() {
@@ -428,6 +426,7 @@ mod tests {
         assert_not_impl_any!(Option<&u8>: Niche);
 
         assert_impl_all!(&&mut u8: CheckedTransmute<Target = &'static *mut u8 >, FlatTransmute<CType = *const *mut u8>, StableNiche, Encode, Decode<'static>);
+        // TODO: Should this type be MutSafe? It's not because Option<&mut u8> is not ReprC because `&mut T` isn't copy
         assert_impl_all!(Option<&mut u8>: CheckedTransmute<Target = *mut u8>, FlatTransmute<CType = *mut u8>, Decode<'static>);
     }
 
@@ -466,6 +465,7 @@ mod tests {
     }
 
     #[test]
+    #[cfg(feature = "derive")]
     fn transparent_wrapper() {
         assert_impl_all!(&mut TransparentWrapper<bool>: CheckedTransmute<Target = &'static mut bool>, FlatTransmute<CType = *mut u8>, StableNiche, Decode<'static>);
         assert_impl_all!(TransparentWrapper<&mut bool>: CheckedTransmute<Target = &'static mut bool>, FlatTransmute<CType = *mut u8>, StableNiche, Decode<'static>);
@@ -480,7 +480,27 @@ mod tests {
         assert_not_impl_any!(&mut TransparentWrapper<&mut bool>: ReprC);
 
         assert_impl_all!(&mut [TransparentWrapper<bool>]: Niche, Decode<'static>);
-        assert_not_impl_any!(&mut [TransparentWrapper<bool>]: StableNiche);
+        assert_not_impl_any!(&mut [TransparentWrapper<bool>]: ReprC, CheckedTransmute, FlatTransmute, StableNiche);
+    }
+
+    #[test]
+    #[cfg(feature = "derive")]
+    fn repr_c_struct() {
+        assert_impl_all!(&mut MyStruct<bool>: CheckedTransmute<Target = &'static mut CMyStruct<bool>>, FlatTransmute<CType = *mut CMyStruct<bool>>, StableNiche, Decode<'static>);
+        assert_impl_all!(MyStruct<&mut bool>: CheckedTransmute<Target = CMyStruct<&'static mut bool>>, FlatTransmute<CType = CMyStruct<&'static mut bool>>, Niche, Decode<'static>);
+        assert_impl_all!(&mut MyStruct<&mut bool>: CheckedTransmute<Target = &'static mut CMyStruct<&'static mut bool>>, FlatTransmute<CType = *mut CMyStruct<&'static mut bool>>, StableNiche, Decode<'static>);
+        assert_impl_all!(Option<&mut MyStruct<bool>>: CheckedTransmute<Target = Option<&'static mut CMyStruct<bool>>>, FlatTransmute<CType = *mut CMyStruct<bool>>, Decode<'static>);
+        // FIXME:
+        //assert_impl_all!(Option<MyStruct<&mut bool>>: ExternC<CType = CMyStruct<&'static mut bool>>, Decode<'static>);
+
+        assert_not_impl_any!(&mut MyStruct<bool>: ReprC);
+        assert_not_impl_any!(MyStruct<&mut bool>: ReprC, StableNiche);
+        assert_not_impl_any!(&mut MyStruct<&mut bool>: ReprC);
+        assert_not_impl_any!(Option<&mut MyStruct<bool>>: ReprC, Niche);
+        assert_not_impl_any!(Option<MyStruct<&mut bool>>: ReprC, CheckedTransmute, FlatTransmute, Niche);
+
+        assert_impl_all!(&mut [MyStruct<bool>]: Niche, Decode<'static>);
+        assert_not_impl_any!(&mut [MyStruct<bool>]: ReprC, CheckedTransmute, FlatTransmute, StableNiche);
     }
 
     #[test]
@@ -490,21 +510,14 @@ mod tests {
         assert_not_impl_any!(&mut &bool: Encode);
         assert_not_impl_any!(&mut &u8: Encode);
 
-        assert_not_impl_any!(&mut TransparentWrapper<bool>: Encode);
-        assert_not_impl_any!(TransparentWrapper<&mut bool>: Encode);
         assert_not_impl_any!(Option<&mut bool>: Encode);
-        assert_not_impl_any!(Option<&mut TransparentWrapper<bool>>: Encode);
-        assert_not_impl_any!(Option<TransparentWrapper<&mut bool>>: Encode);
 
         assert_not_impl_any!(&mut &mut bool: Encode);
         assert_not_impl_any!(&mut Option<&mut bool>: Encode);
-        assert_not_impl_any!(&mut TransparentWrapper<&mut bool>: Encode);
 
         assert_not_impl_any!(&mut [bool]: Encode);
         assert_not_impl_any!(&mut [&bool]: Encode);
         assert_not_impl_any!(&mut [&u8]: Encode);
-
-        assert_not_impl_any!(&mut [TransparentWrapper<bool>]: Encode);
     }
 
     #[test]
@@ -514,19 +527,51 @@ mod tests {
         assert_impl_all!(&mut &bool: Encode);
         assert_impl_all!(&mut &u8: Encode);
 
-        assert_impl_all!(&mut TransparentWrapper<bool>: Encode);
-        assert_impl_all!(TransparentWrapper<&mut bool>: Encode);
         assert_impl_all!(Option<&mut u8>: Encode);
         assert_impl_all!(Option<&mut bool>: Encode);
-        assert_impl_all!(Option<&mut TransparentWrapper<bool>>: Encode);
-        assert_impl_all!(Option<TransparentWrapper<&mut bool>>: Encode);
         assert_impl_all!(&mut &mut bool: Encode);
         assert_impl_all!(&mut Option<&mut bool>: Encode);
-        assert_impl_all!(&mut TransparentWrapper<&mut bool>: Encode);
 
         assert_impl_all!(&mut [bool]: Encode);
         assert_impl_all!(&mut [&bool]: Encode);
         assert_impl_all!(&mut [&u8]: Encode);
+    }
+
+    #[test]
+    #[cfg(feature = "derive")]
+    #[cfg(not(feature = "non_robust_ref_mut"))]
+    fn non_robust_ref_mut_derive() {
+        assert_not_impl_any!(&mut TransparentWrapper<bool>: Encode);
+        assert_not_impl_any!(TransparentWrapper<&mut bool>: Encode);
+        assert_not_impl_any!(Option<&mut TransparentWrapper<bool>>: Encode);
+        assert_not_impl_any!(Option<TransparentWrapper<&mut bool>>: Encode);
+        assert_not_impl_any!(&mut TransparentWrapper<&mut bool>: Encode);
+        assert_not_impl_any!(&mut [TransparentWrapper<bool>]: Encode);
+
+        assert_not_impl_any!(&mut MyStruct<bool>: Encode);
+        assert_not_impl_any!(MyStruct<&mut bool>: Encode);
+        assert_not_impl_any!(&mut MyStruct<&mut bool>: Encode);
+        assert_not_impl_any!(Option<&mut MyStruct<bool>>: Encode);
+        assert_not_impl_any!(Option<MyStruct<&mut bool>>: Encode);
+        assert_not_impl_any!(&mut [MyStruct<bool>]: Encode);
+    }
+
+    #[test]
+    #[cfg(feature = "derive")]
+    #[cfg(feature = "non_robust_ref_mut")]
+    fn non_robust_ref_mut_derive() {
+        assert_impl_all!(&mut TransparentWrapper<bool>: Encode);
+        assert_impl_all!(TransparentWrapper<&mut bool>: Encode);
+        assert_impl_all!(Option<&mut TransparentWrapper<bool>>: Encode);
+        assert_impl_all!(Option<TransparentWrapper<&mut bool>>: Encode);
+        assert_impl_all!(&mut TransparentWrapper<&mut bool>: Encode);
+
+        assert_impl_all!(&mut MyStruct<bool>: Encode);
+        assert_impl_all!(MyStruct<&mut bool>: Encode);
+        assert_impl_all!(&mut MyStruct<&mut bool>: Encode);
+        assert_impl_all!(Option<&mut MyStruct<bool>>: Encode);
+        assert_impl_all!(Option<MyStruct<&mut bool>>: Encode);
+        assert_impl_all!(&mut [MyStruct<bool>]: Encode);
         assert_impl_all!(&mut [TransparentWrapper<bool>]: Encode);
     }
 

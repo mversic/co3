@@ -4,7 +4,7 @@ use alloc::{boxed::Box, vec::Vec};
 use disjoint_impls::disjoint_impls;
 
 use crate::{
-    ExternC, ReprC, assert_arr_has_non_zero_len,
+    BoxedSliceCType, ExternC, ReprC, VecCType, assert_arr_has_non_zero_len,
     option::COption,
     slice::{CSlice, CSliceMut},
 };
@@ -52,13 +52,13 @@ disjoint_impls! {
         /// The internal representation (i.e. type family) of the type
         ///
         /// - If `Self` doesn't have any niche value, set [`NicheFamily::Kind`] to [`WithoutNiche`].
-        ///   `Option<T>` will be serialized as [`crate::tuple::CTuple2(discriminant, value)`]
+        ///   `Option<T>` will be serialized as [`crate::option::COption`]
         ///
         /// - If `Self` has a compiler guaranteed niche value, set [`NicheFamily::Kind`] to [`WithStableNiche`].
         ///   `Option<T>` will be blindly transmuted into underlying [`ReprC`] type
         ///
         /// - Otherwise, if `Self` has at least one trap, set [`NicheFamily::Kind`] to [`WithCustomNiche`].
-        ///   `Option<T>` will be serialized into a [`ReprC`] with a manually set niche value
+        ///   `Option<T>` will be serialized into a [`T::CType`] with a manually set niche value
         type Kind;
     }
 
@@ -146,21 +146,19 @@ where
 }
 
 #[cfg(feature = "owned_types")]
-#[cfg(feature = "owned_as_ref")]
 impl<R, C> Niche for Box<[R]>
 where
-    Self: ExternC<CType = CSliceMut<C>>,
+    Self: ExternC<CType = BoxedSliceCType<C>>,
 {
-    const NICHE_VALUE: CSliceMut<C> = CSliceMut::none();
+    const NICHE_VALUE: Self::CType = BoxedSliceCType::none();
 }
 
 #[cfg(feature = "owned_types")]
-#[cfg(feature = "owned_as_ref")]
 impl<R, C> Niche for Vec<R>
 where
-    Self: ExternC<CType = CSliceMut<C>>,
+    Self: ExternC<CType = VecCType<C>>,
 {
-    const NICHE_VALUE: CSliceMut<C> = CSliceMut::none();
+    const NICHE_VALUE: Self::CType = VecCType::none();
 }
 
 impl<R: Niche, const N: usize> Niche for [R; N]

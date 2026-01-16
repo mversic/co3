@@ -1,17 +1,14 @@
 use core::{cell::UnsafeCell, ptr::NonNull};
 
 #[cfg(feature = "owned_types")]
-#[cfg(feature = "owned_as_ref")]
 use alloc::{boxed::Box, string::String, vec::Vec};
 
-#[cfg(feature = "owned_as_ref")]
-#[cfg(feature = "owned_types")]
-use crate::slice::CSliceMut;
 use crate::{
+    ReprC, VecCType,
     ir::{ReprFamily, Transmuted},
     mineral,
-    niche::{Niche, NicheFamily, WithCustomNiche, WithStableNiche, WithoutNiche},
-    slice::CSlice,
+    niche::{Niche, NicheFamily, StableNiche, WithCustomNiche, WithStableNiche, WithoutNiche},
+    slice::{CSlice, CSliceMut},
     transmute::{CheckedTransmute, MutSafe},
 };
 
@@ -28,7 +25,8 @@ macro_rules! non_zero_derive {
             }
         }
 
-        unsafe impl crate::niche::StableNiche for $ty {})+
+        unsafe impl StableNiche for $ty {}
+        unsafe impl ReprC for Option<$ty> {})+
     }
 }
 
@@ -64,12 +62,10 @@ impl ReprFamily for &mut str {
     type Kind = Transmuted;
 }
 #[cfg(feature = "owned_types")]
-#[cfg(feature = "owned_as_ref")]
 impl ReprFamily for Box<str> {
     type Kind = Transmuted;
 }
 #[cfg(feature = "owned_types")]
-#[cfg(feature = "owned_as_ref")]
 impl ReprFamily for String {
     type Kind = Transmuted;
 }
@@ -87,12 +83,10 @@ impl NicheFamily for &mut str {
     type Kind = WithCustomNiche;
 }
 #[cfg(feature = "owned_types")]
-#[cfg(feature = "owned_as_ref")]
 impl NicheFamily for Box<str> {
     type Kind = WithCustomNiche;
 }
 #[cfg(feature = "owned_types")]
-#[cfg(feature = "owned_as_ref")]
 impl NicheFamily for String {
     type Kind = WithCustomNiche;
 }
@@ -132,7 +126,6 @@ unsafe impl<'a> CheckedTransmute for &'a mut str {
     }
 }
 #[cfg(feature = "owned_types")]
-#[cfg(feature = "owned_as_ref")]
 unsafe impl CheckedTransmute for Box<str> {
     // WARN: `core::str::as_bytes` uses transmute internally which means that
     // even though it's a string slice it can be transmuted into byte slice.
@@ -144,7 +137,6 @@ unsafe impl CheckedTransmute for Box<str> {
     }
 }
 #[cfg(feature = "owned_types")]
-#[cfg(feature = "owned_as_ref")]
 unsafe impl CheckedTransmute for String {
     // WARN: This can be contested as it is nowhere documented that String is
     // actually transmutable into Vec<u8>, but implicitly it should be
@@ -166,22 +158,18 @@ impl Niche for &mut str {
     const NICHE_VALUE: Self::CType = CSliceMut::none();
 }
 #[cfg(feature = "owned_types")]
-#[cfg(feature = "owned_as_ref")]
 impl Niche for String {
-    const NICHE_VALUE: Self::CType = CSliceMut::none();
+    const NICHE_VALUE: Self::CType = VecCType::none();
 }
 #[cfg(feature = "owned_types")]
-#[cfg(feature = "owned_as_ref")]
 impl Niche for Box<str> {
-    const NICHE_VALUE: Self::CType = CSliceMut::none();
+    const NICHE_VALUE: Self::CType = VecCType::none();
 }
 
 unsafe impl<R> MutSafe for UnsafeCell<R> {}
 unsafe impl<R> MutSafe for NonNull<R> {}
 unsafe impl MutSafe for &str {}
 #[cfg(feature = "owned_types")]
-#[cfg(feature = "owned_as_ref")]
 unsafe impl MutSafe for Box<str> {}
 #[cfg(feature = "owned_types")]
-#[cfg(feature = "owned_as_ref")]
 unsafe impl MutSafe for String {}

@@ -572,7 +572,10 @@ mod tests {
     #[cfg(feature = "cloned_refs")]
     use crate::slice::CSlice;
     use crate::{
-        ir::ReprFamily, niche::StableNiche, option::COption, transmute::{CheckedTransmute, FlatTransmute}
+        ir::ReprFamily,
+        niche::StableNiche,
+        option::COption,
+        transmute::{CheckedTransmute, FlatTransmute},
     };
 
     use super::*;

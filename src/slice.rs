@@ -1,6 +1,6 @@
 //! Logic related to the conversion of slices to and from FFI-compatible representation
 
-use alloc::{boxed::Box, vec::Vec};
+use alloc::boxed::Box;
 use core::slice;
 
 use crate::ReprC;
@@ -208,20 +208,18 @@ impl<C: ReprC> CBoxedSlice<C> {
         Self::none()
     }
 
-    /// Create a `Vec<T>` directly from the raw components of another vector.
-    /// Unlike [`Vec::from_raw_parts`], data pointer is allowed to be null.
+    /// Convert [`Self`] into a boxed slice. Return `None` if data pointer is null.
+    /// Unlike [`Box::from_raw`], data pointer is allowed to be null.
     ///
     /// # Safety
     ///
-    /// Check [`Vec::from_raw_parts`]
-    pub unsafe fn into_rust(self) -> Option<Vec<C>> {
+    /// Check [`Box::from_raw`]
+    pub unsafe fn into_rust(self) -> Option<Box<[C]>> {
         if self.data.is_null() {
             return None;
         }
 
-        Some(unsafe {
-            Box::from_raw(core::ptr::slice_from_raw_parts_mut(self.data, self.len)).to_vec()
-        })
+        Some(unsafe { Box::from_raw(core::ptr::slice_from_raw_parts_mut(self.data, self.len)) })
     }
 
     pub(crate) unsafe fn deallocate(&self) -> bool {
