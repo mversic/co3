@@ -214,7 +214,7 @@ pub(crate) fn derive_fieldless_enum(
     };
 
     quote! {
-        unsafe impl co3::transmute::Encodable for #enum_name {}
+        unsafe impl co3::transmute::MutSafe for #enum_name {}
 
         impl co3::ir::ReprFamily for #enum_name {
             type Kind = co3::ir::Transmuted;
@@ -522,7 +522,7 @@ fn gen_transparent_impl<'a>(
         });
 
     quote! {
-        unsafe impl #impl_generics co3::transmute::Encodable for #item_name #ty_generics where #encodable_bounds #predicates {}
+        unsafe impl #impl_generics co3::transmute::MutSafe for #item_name #ty_generics where #encodable_bounds #predicates {}
 
         impl #impl_generics co3::ir::ReprFamily for #item_name #ty_generics where #predicates {
             type Kind = co3::ir::Transmuted;

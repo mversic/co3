@@ -3,7 +3,7 @@ use core::{marker::PhantomData, ptr::NonNull};
 use crate::{
     ir::{ReprFamily, Transmuted},
     niche::{Niche, NicheFamily, StableNiche, WithStableNiche},
-    transmute::{CheckedTransmute, Encodable},
+    transmute::{CheckedTransmute, MutSafe},
 };
 
 /// Represents the pointee on the far side of an exported opaque pointer at the FFI boundary.
@@ -125,5 +125,5 @@ impl<R> Niche for ExternRefMut<'_, R> {
 unsafe impl<R> StableNiche for ExternRef<'_, R> {}
 unsafe impl<R> StableNiche for ExternRefMut<'_, R> {}
 
-unsafe impl<R> Encodable for ExternRef<'_, R> {}
-unsafe impl<R> Encodable for ExternRefMut<'_, R> {}
+unsafe impl<R> MutSafe for ExternRef<'_, R> {}
+unsafe impl<R> MutSafe for ExternRefMut<'_, R> {}

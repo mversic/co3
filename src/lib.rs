@@ -16,7 +16,7 @@ use derive_more::Display;
 use disjoint_impls::disjoint_impls;
 
 #[cfg(not(feature = "non_robust_ref_mut"))]
-use crate::transmute::Encodable;
+use crate::transmute::MutSafe;
 #[cfg(feature = "owned_types")]
 #[cfg(feature = "owned_as_ref")]
 use crate::transmute::{
@@ -278,7 +278,7 @@ disjoint_impls! {
     //}
     impl<
         #[cfg(feature = "non_robust_ref_mut")] R,
-        #[cfg(not(feature = "non_robust_ref_mut"))] R: Encodable,
+        #[cfg(not(feature = "non_robust_ref_mut"))] R: MutSafe,
     > Encode for R
     where
         R: ReprFamily<Kind = Transmuted> + CheckedTransmute<Target: Encode>
@@ -1232,7 +1232,7 @@ macro_rules! mineral {
             type Kind = $crate::niche::WithCustomNiche;
         }
 
-        unsafe impl $(<$($params)*>)? $crate::transmute::Encodable for $self_ty where $target: $crate::Encode, $($($preds)*)? {}
+        unsafe impl $(<$($params)*>)? $crate::transmute::MutSafe for $self_ty where $target: $crate::Encode, $($($preds)*)? {}
     };
     (unsafe impl Transparent for $self_ty:ty $(where ( $($preds:tt)* ))? {
         type Target = $target:ty;
@@ -1312,7 +1312,7 @@ macro_rules! mineral {
         }
 
         unsafe impl $($impl_generics)* $crate::niche::StableNiche for $self_ty where $($for_dummy)* $target: $crate::niche::StableNiche, $($($preds)*)? {}
-        unsafe impl $($impl_generics)* $crate::transmute::Encodable for $self_ty where $($for_dummy)* $target: $crate::Encode, $($($preds)*)? {}
+        unsafe impl $($impl_generics)* $crate::transmute::MutSafe for $self_ty where $($for_dummy)* $target: $crate::Encode, $($($preds)*)? {}
     };
 }
 

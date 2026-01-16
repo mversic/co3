@@ -24,6 +24,7 @@ disjoint_impls! {
         type Target;
 
         /// Called when transmuting [`Self::Target`] back into [`Self`] to check for trap representations.
+        ///
         /// This function must never return false positives, i.e. return `true` for a trap representation.
         fn is_valid(target: &Self::Target) -> bool;
     }
@@ -160,6 +161,7 @@ disjoint_impls! {
     // or integrate it with ExternC?
     pub unsafe trait FlatTransmute: ExternC {
         /// Called when transmuting [`Self::CType`] back into [`Self`] to check for trap representations.
+        ///
         /// This function must never return false positives, i.e. return `true` for a trap representation.
         fn is_valid(target: &Self::CType) -> bool;
     }
@@ -182,21 +184,36 @@ disjoint_impls! {
 }
 
 disjoint_impls! {
+    /// Marker trait for types that are safe to mutatate
+    ///
+    /// Trait is used to prevent handing out (i.e. encoding) mutable references to non-robust types
+    /// across FFI boundary. This prevents UB that might arise from caller setting the referent to
+    /// a trap representation.
+    ///
+    /// Types safe to mutate include:
+    /// * `&T` (it's guaranteed to be immutable)
+    /// * `&mut T` where `T: ReprC` (robust referent)
+    /// * any type that contains only `MutSafe` types
+    ///
+    /// When `non_robust_ref_mut` feature is active this trait is unused, i.e. an implementation
+    /// of [`crate::Encode`] is provided even for mutable references to non-robust types. Use it
+    /// at your own discretion
+    ///
     /// # Safety
     ///
-    // TODO: Write safety comment
-    pub unsafe trait Encodable {}
+    /// The type must not carry a mutable reference to a non-robust type
+    pub unsafe trait MutSafe {}
 
-    unsafe impl<R: ReprFamily<Kind = Robust>> Encodable for R {}
+    unsafe impl<R: ReprFamily<Kind = Robust>> MutSafe for R {}
 
-    unsafe impl<R> Encodable for &R where Self: ReprFamily<Kind = Transmuted> {}
-    unsafe impl<R: ReprC> Encodable for &mut R where Self: ReprFamily<Kind = Transmuted> {}
+    unsafe impl<R> MutSafe for &R where Self: ReprFamily<Kind = Transmuted> {}
+    unsafe impl<R: ReprC> MutSafe for &mut R where Self: ReprFamily<Kind = Transmuted> {}
     // WARN: Since `Box<&mut R>` is mapped to `*mut *mut R` this can be disputed in the case of
     // no ownership transfer where Box's invariant can be violated by the caller by NULLing the
     // inner pointer. However, because the box is immediately dropped following the function call,
     // we deem it ok as it would most likely lead to a catastrophic segfault, not a silent UB.
-    unsafe impl<R: crate::Encode> Encodable for Box<R> where Self: ReprFamily<Kind = Transmuted> {}
-    unsafe impl<R: crate::Encode> Encodable for Option<R> where Self: ReprFamily<Kind = Transmuted> {}
+    unsafe impl<R: crate::Encode> MutSafe for Box<R> where Self: ReprFamily<Kind = Transmuted> {}
+    unsafe impl<R: crate::Encode> MutSafe for Option<R> where Self: ReprFamily<Kind = Transmuted> {}
 }
 
 unsafe impl<R: CheckedTransmute, const N: usize> CheckedTransmute for [R; N] {
@@ -353,7 +370,7 @@ mod tests {
 
     #[cfg(feature = "non_robust_ref_mut")]
     use crate::slice::CSliceMut;
-    use crate::{Decode, Encode, niche::Niche, slice::CSlice};
+    use crate::{Decode, Encode, niche::Niche, option::COption, slice::CSlice};
 
     use super::*;
 
@@ -361,18 +378,22 @@ mod tests {
     #[repr(transparent)]
     pub struct TransparentWrapper<T>(T);
 
+    #[derive(ExternC)]
+    #[repr(C)]
+    pub struct MyStruct<T>(T);
+
     #[test]
     fn transparent_bool() {
-        assert_impl_all!(bool: CheckedTransmute<Target = u8>, FlatTransmute<CType = u8>, Niche);
-        assert_impl_all!(&bool: CheckedTransmute<Target = &'static u8>, FlatTransmute<CType = *const u8>, StableNiche);
-        assert_impl_all!(&mut bool: CheckedTransmute, FlatTransmute<CType = *mut u8>, StableNiche);
+        assert_impl_all!(bool: CheckedTransmute<Target = u8>, FlatTransmute<CType = u8>, Niche, Decode<'static>);
+        assert_impl_all!(&bool: CheckedTransmute<Target = &'static u8>, FlatTransmute<CType = *const u8>, StableNiche, Decode<'static>);
+        assert_impl_all!(&mut bool: CheckedTransmute<Target = &'static mut u8>, Decode<'static>, FlatTransmute<CType = *mut u8>, StableNiche, Decode<'static>);
         // FIXME:
-        //assert_impl_all!(Box<&bool>: CheckedTransmute<Target = Box<*const u8>>, FlatTransmute<CType = *mut *const u8>, StableNiche);
-        assert_impl_all!(&[bool]: Niche<CType = CSlice<u8>>);
+        //assert_impl_all!(Box<&bool>: CheckedTransmute<Target = Box<*const u8>>, FlatTransmute<CType = *mut *const u8>, StableNiche, Decode<'static>);
+        assert_impl_all!(&[bool]: Niche<CType = CSlice<u8>>, Decode<'static>);
         #[cfg(feature = "non_robust_ref_mut")]
-        assert_impl_all!(&mut [bool]: Niche<CType = CSliceMut<u8>>);
-        assert_impl_all!([bool; 2]: CheckedTransmute<Target = [u8; 2]>, FlatTransmute<CType = [u8; 2]>, Niche);
-        assert_impl_all!(Option<bool>: Niche<CType = u8>);
+        assert_impl_all!(&mut [bool]: Niche<CType = CSliceMut<u8>>, Decode<'static>);
+        assert_impl_all!([bool; 2]: CheckedTransmute<Target = [u8; 2]>, FlatTransmute<CType = [u8; 2]>, Niche, Decode<'static>);
+        assert_impl_all!(Option<bool>: Niche<CType = u8>, Decode<'static>);
 
         assert_not_impl_any!(bool: ReprC, StableNiche);
         assert_not_impl_any!(&bool: ReprC);
@@ -386,16 +407,16 @@ mod tests {
 
     #[test]
     fn robust_u8_ref() {
-        assert_impl_all!(&u8: FlatTransmute<CType = *const u8>, StableNiche);
-        assert_impl_all!(&&u8: CheckedTransmute<Target = &'static *const u8>, FlatTransmute<CType = *const *const u8>, StableNiche);
-        assert_impl_all!(&mut &u8: CheckedTransmute, FlatTransmute<CType = *mut *const u8>, StableNiche);
+        assert_impl_all!(&u8: CheckedTransmute<Target = *const u8>, FlatTransmute<CType = *const u8>, StableNiche, Decode<'static>);
+        assert_impl_all!(&&u8: CheckedTransmute<Target = &'static *const u8>, FlatTransmute<CType = *const *const u8>, StableNiche, Decode<'static>);
+        assert_impl_all!(&mut &u8: CheckedTransmute<Target = &'static mut *const u8>, FlatTransmute<CType = *mut *const u8>, StableNiche, Decode<'static>);
         // FIXME:
-        //assert_impl_all!(Box<&u8>: CheckedTransmute<Target = Box<*const u8>>, FlatTransmute<CType = *mut *const u8>, StableNiche);
-        assert_impl_all!(&[&u8]: Niche<CType = CSlice<*const u8>>);
+        //assert_impl_all!(Box<&u8>: CheckedTransmute<Target = Box<*const u8>>, FlatTransmute<CType = *mut *const u8>, StableNiche, Decode<'static>);
+        assert_impl_all!(&[&u8]: Niche<CType = CSlice<*const u8>>, Decode<'static>);
         #[cfg(feature = "non_robust_ref_mut")]
-        assert_impl_all!(&mut [&u8]: Niche<CType = CSliceMut<*const u8>>);
-        assert_impl_all!([&u8; 2]: CheckedTransmute<Target = [*const u8; 2]>, FlatTransmute<CType = [*const u8; 2]>, Niche);
-        assert_impl_all!(Option<&u8>: ReprC, CheckedTransmute<Target = *const u8>, FlatTransmute<CType = *const u8>);
+        assert_impl_all!(&mut [&u8]: Niche<CType = CSliceMut<*const u8>>, Decode<'static>);
+        assert_impl_all!([&u8; 2]: CheckedTransmute<Target = [*const u8; 2]>, FlatTransmute<CType = [*const u8; 2]>, Niche, Decode<'static>);
+        assert_impl_all!(Option<&u8>: ReprC, CheckedTransmute<Target = *const u8>, FlatTransmute<CType = *const u8>, Decode<'static>);
 
         assert_not_impl_any!(&u8: ReprC);
         assert_not_impl_any!(&&u8: ReprC);
@@ -405,20 +426,23 @@ mod tests {
         assert_not_impl_any!(&mut [&u8]: ReprC, CheckedTransmute, FlatTransmute, StableNiche);
         assert_not_impl_any!([&u8; 2]: ReprC, StableNiche);
         assert_not_impl_any!(Option<&u8>: Niche);
+
+        assert_impl_all!(&&mut u8: CheckedTransmute<Target = &'static *mut u8 >, FlatTransmute<CType = *const *mut u8>, StableNiche, Encode, Decode<'static>);
+        assert_impl_all!(Option<&mut u8>: CheckedTransmute<Target = *mut u8>, FlatTransmute<CType = *mut u8>, Decode<'static>);
     }
 
     #[test]
     fn transparent_bool_ref() {
-        assert_impl_all!(&bool: CheckedTransmute<Target = &'static u8>, FlatTransmute<CType = *const u8>, StableNiche);
-        assert_impl_all!(&&bool: CheckedTransmute<Target = &'static &'static u8>, FlatTransmute<CType = *const *const u8>, StableNiche);
-        assert_impl_all!(&mut &bool: CheckedTransmute, FlatTransmute<CType = *mut *const u8>, StableNiche);
+        assert_impl_all!(&bool: CheckedTransmute<Target = &'static u8>, FlatTransmute<CType = *const u8>, StableNiche, Decode<'static>);
+        assert_impl_all!(&&bool: CheckedTransmute<Target = &'static &'static u8>, FlatTransmute<CType = *const *const u8>, StableNiche, Decode<'static>);
+        assert_impl_all!(&mut &bool: CheckedTransmute<Target = &'static mut &'static u8>, FlatTransmute<CType = *mut *const u8>, StableNiche, Decode<'static>);
         // FIXME:
-        //assert_impl_all!(Box<&bool>: CheckedTransmute<Target = Box<*const u8>>, FlatTransmute<CType = *mut *const u8>, StableNiche);
-        assert_impl_all!(&[&bool]: Niche<CType = CSlice<*const u8>>);
+        //assert_impl_all!(Box<&bool>: CheckedTransmute<Target = Box<*const u8>>, FlatTransmute<CType = *mut *const u8>, StableNiche, Decode<'static>);
+        assert_impl_all!(&[&bool]: Niche<CType = CSlice<*const u8>>, Decode<'static>);
         #[cfg(feature = "non_robust_ref_mut")]
-        assert_impl_all!(&mut [&bool]: Niche<CType = CSliceMut<*const u8>>);
-        assert_impl_all!([&bool; 2]: CheckedTransmute<Target = [&'static u8; 2]>, FlatTransmute<CType = [*const u8; 2]>, Niche);
-        assert_impl_all!(Option<&bool>: CheckedTransmute<Target = Option<&'static u8>>, FlatTransmute<CType = *const u8>);
+        assert_impl_all!(&mut [&bool]: Niche<CType = CSliceMut<*const u8>>, Decode<'static>);
+        assert_impl_all!([&bool; 2]: CheckedTransmute<Target = [&'static u8; 2]>, FlatTransmute<CType = [*const u8; 2]>, Niche, Decode<'static>);
+        assert_impl_all!(Option<&bool>: CheckedTransmute<Target = Option<&'static u8>>, FlatTransmute<CType = *const u8>, Decode<'static>);
 
         assert_not_impl_any!(&bool: ReprC);
         assert_not_impl_any!(&&bool: ReprC);
@@ -430,77 +454,80 @@ mod tests {
         assert_not_impl_any!(Option<&bool>: Niche);
         // FIXME: `Option<&bool>` should NOT implement `ReprC`!!!
         //assert_not_impl_any!(Option<&bool>: ReprC);
+
+        assert_impl_all!(Option<&mut bool>: CheckedTransmute<Target = Option<&'static mut u8>>, FlatTransmute<CType = *mut u8>, Decode<'static>);
+        assert_impl_all!(&mut Option<&mut bool>: CheckedTransmute<Target = &'static mut Option<&'static mut u8>>, FlatTransmute<CType = *mut *mut u8>, StableNiche, Decode<'static>);
+        assert_impl_all!(&&mut bool: CheckedTransmute<Target = &'static &'static mut u8 >, FlatTransmute<CType = *const *mut u8>, StableNiche, Encode, Decode<'static>);
+        assert_impl_all!(&mut &mut bool: CheckedTransmute<Target = &'static mut &'static mut u8>, FlatTransmute<CType = *mut *mut u8>, StableNiche, Decode<'static>);
+
+        assert_not_impl_any!(Option<&mut bool>: ReprC, Niche);
+        assert_not_impl_any!(&mut &mut bool: ReprC);
+        assert_not_impl_any!(&mut Option<&mut bool>: ReprC);
     }
 
     #[test]
-    fn mut_ref_behind_ref() {
-        //assert_impl_all!(&&mut bool: Decode<'static>);
+    fn transparent_wrapper() {
+        assert_impl_all!(&mut TransparentWrapper<bool>: CheckedTransmute<Target = &'static mut bool>, FlatTransmute<CType = *mut u8>, StableNiche, Decode<'static>);
+        assert_impl_all!(TransparentWrapper<&mut bool>: CheckedTransmute<Target = &'static mut bool>, FlatTransmute<CType = *mut u8>, StableNiche, Decode<'static>);
+        assert_impl_all!(&mut TransparentWrapper<&mut bool>: CheckedTransmute<Target = &'static mut &'static mut bool>, FlatTransmute<CType = *mut *mut u8>, StableNiche, Decode<'static>);
+        assert_impl_all!(Option<&mut TransparentWrapper<bool>>: CheckedTransmute<Target = Option<&'static mut bool>>, FlatTransmute<CType = *mut u8>, Decode<'static>);
+        assert_impl_all!(Option<TransparentWrapper<&mut bool>>: CheckedTransmute<Target = Option<&'static mut bool>>, FlatTransmute<CType = *mut u8>, Decode<'static>);
+
+        assert_not_impl_any!(&mut TransparentWrapper<bool>: ReprC);
+        assert_not_impl_any!(TransparentWrapper<&mut bool>: ReprC);
+        assert_not_impl_any!(Option<&mut TransparentWrapper<bool>>: ReprC, Niche);
+        assert_not_impl_any!(Option<TransparentWrapper<&mut bool>>: ReprC, Niche);
+        assert_not_impl_any!(&mut TransparentWrapper<&mut bool>: ReprC);
+
+        assert_impl_all!(&mut [TransparentWrapper<bool>]: Niche, Decode<'static>);
+        assert_not_impl_any!(&mut [TransparentWrapper<bool>]: StableNiche);
     }
 
     #[test]
     #[cfg(not(feature = "non_robust_ref_mut"))]
     fn non_robust_ref_mut() {
-        assert_impl_all!(&mut bool: CheckedTransmute<Target = &'static mut u8>, Decode<'static>);
-        assert_impl_all!(&mut &bool: CheckedTransmute<Target = &'static mut &'static u8>, Decode<'static>);
-        assert_impl_all!(&mut &u8: CheckedTransmute<Target = &'static mut *const u8>, Decode<'static>);
-        assert_impl_all!(&mut TransparentWrapper<bool>: CheckedTransmute<Target = &'static mut bool>, Decode<'static>);
-        assert_impl_all!(TransparentWrapper<&mut bool>: CheckedTransmute<Target = &'static mut bool>, Decode<'static>, Niche);
-        assert_impl_all!(Option<&mut u8>: CheckedTransmute<Target = *mut u8>, FlatTransmute, Decode<'static>);
-        assert_impl_all!(Option<&mut bool>: CheckedTransmute<Target = Option<&'static mut u8>>, FlatTransmute, Decode<'static>);
-        assert_impl_all!(Option<&mut TransparentWrapper<bool>>: CheckedTransmute<Target = Option<&'static mut bool>>, FlatTransmute, Decode<'static>);
-        assert_impl_all!(Option<TransparentWrapper<&mut bool>>: CheckedTransmute<Target = Option<&'static mut bool>>, FlatTransmute, Decode<'static>);
-        assert_impl_all!(&mut &mut bool: CheckedTransmute<Target = &'static mut &'static mut u8>, Decode<'static>);
-        assert_impl_all!(&mut Option<&mut bool>: CheckedTransmute<Target = &'static mut Option<&'static mut u8>>, Decode<'static>);
-        assert_impl_all!(&mut TransparentWrapper<&mut bool>: CheckedTransmute<Target = &'static mut &'static mut bool>, Decode<'static>);
+        assert_not_impl_any!(&mut bool: Encode);
+        assert_not_impl_any!(&mut &bool: Encode);
+        assert_not_impl_any!(&mut &u8: Encode);
 
-        assert_not_impl_any!(&mut bool: ReprC, Encode);
-        assert_not_impl_any!(&mut TransparentWrapper<bool>: ReprC, Encode);
-        assert_not_impl_any!(TransparentWrapper<&mut bool>: ReprC, Encode);
-        assert_not_impl_any!(&mut &bool: ReprC, Encode);
-        assert_not_impl_any!(&mut &u8: ReprC, Encode);
-        assert_not_impl_any!(Option<&mut bool>: ReprC, Encode, Niche);
-        assert_not_impl_any!(Option<&mut TransparentWrapper<bool>>: ReprC, Encode, Niche);
-        assert_not_impl_any!(Option<TransparentWrapper<&mut bool>>: ReprC, Encode, Niche);
-        assert_not_impl_any!(&mut &mut bool: ReprC, Encode);
-        assert_not_impl_any!(&mut Option<&mut bool>: ReprC, Encode);
-        assert_not_impl_any!(&mut TransparentWrapper<&mut bool>: ReprC, Encode);
+        assert_not_impl_any!(&mut TransparentWrapper<bool>: Encode);
+        assert_not_impl_any!(TransparentWrapper<&mut bool>: Encode);
+        assert_not_impl_any!(Option<&mut bool>: Encode);
+        assert_not_impl_any!(Option<&mut TransparentWrapper<bool>>: Encode);
+        assert_not_impl_any!(Option<TransparentWrapper<&mut bool>>: Encode);
 
-        assert_not_impl_any!(&mut [bool]: Encode, StableNiche);
-        assert_not_impl_any!(&mut [&bool]: Encode, StableNiche);
-        assert_not_impl_any!(&mut [&u8]: Encode, StableNiche);
-        assert_not_impl_any!(&mut [TransparentWrapper<bool>]: Encode, StableNiche);
+        assert_not_impl_any!(&mut &mut bool: Encode);
+        assert_not_impl_any!(&mut Option<&mut bool>: Encode);
+        assert_not_impl_any!(&mut TransparentWrapper<&mut bool>: Encode);
 
-        assert_impl_all!(&mut [bool]: Decode<'static>, Niche);
-        assert_impl_all!(&mut [&bool]: Decode<'static>, Niche);
-        assert_impl_all!(&mut [&u8]: Decode<'static>, Niche);
-        assert_impl_all!(&mut [TransparentWrapper<bool>]: Decode<'static>, Niche);
+        assert_not_impl_any!(&mut [bool]: Encode);
+        assert_not_impl_any!(&mut [&bool]: Encode);
+        assert_not_impl_any!(&mut [&u8]: Encode);
+
+        assert_not_impl_any!(&mut [TransparentWrapper<bool>]: Encode);
     }
 
     #[test]
     #[cfg(feature = "non_robust_ref_mut")]
     fn non_robust_ref_mut() {
-        assert_impl_all!(&mut bool: CheckedTransmute<Target = &'static mut u8>, Encode, Decode<'static>);
-        assert_impl_all!(&mut &bool: CheckedTransmute<Target = &'static mut &'static u8>, Encode, Decode<'static>);
-        assert_impl_all!(&mut &u8: CheckedTransmute<Target = &'static mut *const u8>, Encode, Decode<'static>);
-        assert_impl_all!(&mut TransparentWrapper<bool>: CheckedTransmute<Target = &'static mut bool>, Encode, Decode<'static>);
-        assert_impl_all!(TransparentWrapper<&mut bool>: CheckedTransmute<Target = &'static mut bool>, Encode, Decode<'static>, Niche);
-        assert_impl_all!(Option<&mut u8>: CheckedTransmute<Target = *mut u8>, FlatTransmute, Encode, Decode<'static>);
-        assert_impl_all!(Option<&mut bool>: CheckedTransmute<Target = Option<&'static mut u8>>, FlatTransmute, Encode, Decode<'static>);
-        assert_impl_all!(Option<&mut TransparentWrapper<bool>>: CheckedTransmute<Target = Option<&'static mut bool>>, FlatTransmute, Encode, Decode<'static>);
-        assert_impl_all!(Option<TransparentWrapper<&mut bool>>: CheckedTransmute<Target = Option<&'static mut bool>>, FlatTransmute, Encode, Decode<'static>);
-        assert_impl_all!(&mut &mut bool: CheckedTransmute<Target = &'static mut &'static mut u8>, Decode<'static>);
-        assert_impl_all!(&mut Option<&mut bool>: CheckedTransmute<Target = &'static mut Option<&'static mut u8>>, Decode<'static>);
-        assert_impl_all!(&mut TransparentWrapper<&mut bool>: CheckedTransmute<Target = &'static mut &'static mut bool>, Decode<'static>);
+        assert_impl_all!(&mut bool: Encode);
+        assert_impl_all!(&mut &bool: Encode);
+        assert_impl_all!(&mut &u8: Encode);
 
-        assert_not_impl_any!(&mut [bool]: StableNiche);
-        assert_not_impl_any!(&mut [&bool]: StableNiche);
-        assert_not_impl_any!(&mut [&u8]: StableNiche);
-        assert_not_impl_any!(&mut [TransparentWrapper<bool>]: StableNiche);
+        assert_impl_all!(&mut TransparentWrapper<bool>: Encode);
+        assert_impl_all!(TransparentWrapper<&mut bool>: Encode);
+        assert_impl_all!(Option<&mut u8>: Encode);
+        assert_impl_all!(Option<&mut bool>: Encode);
+        assert_impl_all!(Option<&mut TransparentWrapper<bool>>: Encode);
+        assert_impl_all!(Option<TransparentWrapper<&mut bool>>: Encode);
+        assert_impl_all!(&mut &mut bool: Encode);
+        assert_impl_all!(&mut Option<&mut bool>: Encode);
+        assert_impl_all!(&mut TransparentWrapper<&mut bool>: Encode);
 
-        assert_impl_all!(&mut [bool]: Encode, Decode<'static>, Niche);
-        assert_impl_all!(&mut [&bool]: Encode, Decode<'static>, Niche);
-        assert_impl_all!(&mut [&u8]: Encode, Decode<'static>, Niche);
-        assert_impl_all!(&mut [TransparentWrapper<bool>]: Encode, Decode<'static>, Niche);
+        assert_impl_all!(&mut [bool]: Encode);
+        assert_impl_all!(&mut [&bool]: Encode);
+        assert_impl_all!(&mut [&u8]: Encode);
+        assert_impl_all!(&mut [TransparentWrapper<bool>]: Encode);
     }
 
     #[test]

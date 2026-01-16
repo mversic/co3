@@ -12,7 +12,7 @@ use crate::{
     mineral,
     niche::{Niche, NicheFamily, WithCustomNiche, WithStableNiche, WithoutNiche},
     slice::CSlice,
-    transmute::{CheckedTransmute, Encodable},
+    transmute::{CheckedTransmute, MutSafe},
 };
 
 macro_rules! non_zero_derive {
@@ -176,12 +176,12 @@ impl Niche for Box<str> {
     const NICHE_VALUE: Self::CType = CSliceMut::none();
 }
 
-unsafe impl<R> Encodable for UnsafeCell<R> {}
-unsafe impl<R> Encodable for NonNull<R> {}
-unsafe impl Encodable for &str {}
+unsafe impl<R> MutSafe for UnsafeCell<R> {}
+unsafe impl<R> MutSafe for NonNull<R> {}
+unsafe impl MutSafe for &str {}
 #[cfg(feature = "owned_types")]
 #[cfg(feature = "owned_as_ref")]
-unsafe impl Encodable for Box<str> {}
+unsafe impl MutSafe for Box<str> {}
 #[cfg(feature = "owned_types")]
 #[cfg(feature = "owned_as_ref")]
-unsafe impl Encodable for String {}
+unsafe impl MutSafe for String {}

@@ -572,9 +572,7 @@ mod tests {
     #[cfg(feature = "cloned_refs")]
     use crate::slice::CSlice;
     use crate::{
-        niche::StableNiche,
-        option::COption,
-        transmute::{CheckedTransmute, FlatTransmute},
+        ir::ReprFamily, niche::StableNiche, option::COption, transmute::{CheckedTransmute, FlatTransmute}
     };
 
     use super::*;
@@ -606,6 +604,8 @@ mod tests {
         assert_not_impl_any!(&(u8, u8, u8): ExternC);
         #[cfg(not(feature = "cloned_refs"))]
         assert_not_impl_any!(&[(u8, u8, u8)]: ExternC);
+
+        assert_not_impl_any!(&mut (u8, u8, u8): ReprFamily);
     }
 
     #[test]
@@ -633,5 +633,7 @@ mod tests {
         assert_not_impl_any!(&(u8, bool, u8): ExternC);
         #[cfg(not(feature = "cloned_refs"))]
         assert_not_impl_any!(&[(u8, bool, u8)]: ExternC);
+
+        assert_not_impl_any!(&mut (u8, bool, u8): ReprFamily);
     }
 }
