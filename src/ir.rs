@@ -74,18 +74,10 @@ disjoint_impls! {
         type Kind = &'a R::Kind;
     }
 
-    #[cfg(feature = "non_robust_ref_mut")]
     impl<R: ReprFamily<Kind = Box<Robust>>> ReprFamily for &mut R {
         type Kind = Transparent;
     }
-    impl<
-        'a,
-        #[cfg(not(feature = "non_robust_ref_mut"))] R: ReprC,
-        #[cfg(feature = "non_robust_ref_mut")] R,
-    > ReprFamily for &'a mut R
-    where
-        R: ReprFamily<Kind = Transparent>,
-    {
+    impl<R: ReprFamily<Kind = Transparent>> ReprFamily for &mut R {
         type Kind = Transparent;
     }
     impl<R: ReprFamily<Kind = Robust>> ReprFamily for &mut R {
@@ -132,22 +124,14 @@ disjoint_impls! {
         type Kind = &'a [R::Kind];
     }
 
-    #[cfg(feature = "non_robust_ref_mut")]
     impl<'a, R: ReprFamily<Kind = Box<Robust>>> ReprFamily for &'a mut [R] {
         type Kind = &'a mut [Transparent];
     }
-    impl<
-        'a,
-        #[cfg(not(feature = "non_robust_ref_mut"))] R: ReprC,
-        #[cfg(feature = "non_robust_ref_mut")] R,
-    > ReprFamily for &'a mut [R]
-    where
-        R: ReprFamily<Kind = Transparent>,
-    {
+    impl<'a, R: ReprFamily<Kind = Transparent>> ReprFamily for &'a mut [R] {
         type Kind = &'a mut [Transparent];
     }
     impl<'a, R: ReprFamily<Kind = Robust>> ReprFamily for &'a mut [R] {
-        type Kind = &'a mut [Robust];
+        type Kind = &'a mut [Transparent];
     }
 
     #[cfg(feature = "owned_types")]

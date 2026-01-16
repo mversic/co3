@@ -38,7 +38,7 @@ mod wasm {
     where
         R: ReprFamily<Type = NonWasmIntPrimitive>,
     {
-        type Kind = &'itm mut [Robust];
+        type Kind = &'itm mut [Transparent];
     }
     #[cfg(feature = "owned_types")]
     #[cfg(feature = "owned_as_ref")]

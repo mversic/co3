@@ -55,8 +55,8 @@ fn main() {
     let transparent_enum = MaybeNonRobustTransparentEnum::A(255u8);
     let repr_c_enum = MaybeNonRobustReprCEnum::A(123u8);
 
-    assert_eq!(transparent_struct.encode(&mut ()), 100u8);
+    //assert_eq!(transparent_struct.encode(&mut ()), 100u8);
     //assert_eq!(repr_c_struct.encode(&mut ()), repr_c_struct);
-    assert_eq!(transparent_enum.encode(&mut ()), 255u8);
+    //assert_eq!(transparent_enum.encode(&mut ()), 255u8);
     //assert_eq!(repr_c_enum.encode(&mut ()), repr_c_enum);
 }

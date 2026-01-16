@@ -60,7 +60,6 @@ impl<T> ReprFamily for NonNull<T> {
 impl ReprFamily for &str {
     type Kind = Transparent;
 }
-#[cfg(feature = "non_robust_ref_mut")]
 impl ReprFamily for &mut str {
     type Kind = Transparent;
 }
@@ -84,7 +83,6 @@ impl<T> NicheFamily for NonNull<T> {
 impl NicheFamily for &str {
     type Kind = WithCustomNiche;
 }
-#[cfg(feature = "non_robust_ref_mut")]
 impl NicheFamily for &mut str {
     type Kind = WithCustomNiche;
 }
@@ -123,8 +121,9 @@ unsafe impl<'a> CheckedTransmute for &'a str {
         core::str::from_utf8(target).is_ok()
     }
 }
-#[cfg(feature = "non_robust_ref_mut")]
 unsafe impl<'a> CheckedTransmute for &'a mut str {
+    // WARN: `core::str::as_bytes` uses transmute internally which means that
+    // even though it's a string slice it can be transmuted into byte slice.
     type Target = &'a mut [u8];
 
     #[inline(always)]
@@ -163,7 +162,6 @@ impl<T> Niche for NonNull<T> {
 impl Niche for &str {
     const NICHE_VALUE: Self::CType = CSlice::none();
 }
-#[cfg(feature = "non_robust_ref_mut")]
 impl Niche for &mut str {
     const NICHE_VALUE: Self::CType = CSliceMut::none();
 }

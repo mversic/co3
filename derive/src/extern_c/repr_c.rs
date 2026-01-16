@@ -511,6 +511,7 @@ fn gen_transparent_impl<'a>(
     let field_types = fields.into_iter().map(|f| &f.ty).collect::<Vec<_>>();
     let flat_transmute_bounds = gen_flat_transmute_bounds(&field_types, generics);
     let repr_c_bounds = gen_repr_c_bounds(&field_types, generics);
+    let encodable_bounds = gen_encodable_bounds(&field_types);
 
     let repr_c = derives
         .contains(&Derive::Rustc(RustcDerive::Copy))
@@ -519,6 +520,8 @@ fn gen_transparent_impl<'a>(
         });
 
     quote! {
+        unsafe impl #impl_generics co3::transmute::Encodable for #item_name #ty_generics where #encodable_bounds #predicates {}
+
         impl #impl_generics co3::ir::ReprFamily for #item_name #ty_generics where #predicates {
             type Kind = co3::ir::Transparent;
         }
@@ -577,6 +580,14 @@ pub(super) fn gen_extern_c_bounds(fields: &[&syn::Type], generics: &syn::Generic
     quote! { #(#parameterized_field_types: co3::ExternC,)* }
 }
 
+fn gen_encodable_bounds(fields: &[&syn::Type]) -> TokenStream {
+    let encodable_bounds = fields.iter().map(|&ty| {
+        quote! { #ty: co3::Encode }
+    });
+
+    quote! { #(#encodable_bounds,)* }
+}
+
 fn gen_flat_transmute_bounds(fields: &[&syn::Type], generics: &syn::Generics) -> TokenStream {
     let parameterized_field_types = fields
         .iter()
@@ -587,7 +598,7 @@ fn gen_flat_transmute_bounds(fields: &[&syn::Type], generics: &syn::Generics) ->
 
 fn gen_repr_c_bounds(fields: &[&syn::Type], generics: &syn::Generics) -> TokenStream {
     let repr_c_bounds = fields.iter().map(|&ty| {
-        let for_dummy = (!is_type_parameterized(ty, generics)).then_some(quote!(for<'dummy>));
+        let for_dummy = (!is_type_parameterized(ty, generics)).then_some(quote!(for<'_dummy>));
 
         quote! {
             #for_dummy #ty: co3::ReprC
