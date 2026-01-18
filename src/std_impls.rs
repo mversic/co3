@@ -1,4 +1,7 @@
-use core::{cell::UnsafeCell, ptr::NonNull};
+use core::{
+    cell::{Cell, UnsafeCell},
+    ptr::NonNull,
+};
 
 #[cfg(feature = "owned_types")]
 use alloc::{boxed::Box, string::String, vec::Vec};
@@ -52,6 +55,9 @@ mineral! {
 impl<T> ReprFamily for UnsafeCell<T> {
     type Kind = Transmuted;
 }
+impl<T> ReprFamily for Cell<T> {
+    type Kind = Transmuted;
+}
 impl<T> ReprFamily for NonNull<T> {
     type Kind = Transmuted;
 }
@@ -71,6 +77,9 @@ impl ReprFamily for String {
 }
 
 impl<T> NicheFamily for UnsafeCell<T> {
+    type Kind = WithoutNiche;
+}
+impl<T> NicheFamily for Cell<T> {
     type Kind = WithoutNiche;
 }
 impl<T> NicheFamily for NonNull<T> {
@@ -93,6 +102,14 @@ impl NicheFamily for String {
 
 unsafe impl<T> CheckedTransmute for UnsafeCell<T> {
     type Target = T;
+
+    #[inline(always)]
+    fn is_valid(_: &Self::Target) -> bool {
+        true
+    }
+}
+unsafe impl<T> CheckedTransmute for Cell<T> {
+    type Target = UnsafeCell<T>;
 
     #[inline(always)]
     fn is_valid(_: &Self::Target) -> bool {
@@ -167,6 +184,7 @@ impl Niche for Box<str> {
 }
 
 unsafe impl<R> MutSafe for UnsafeCell<R> {}
+unsafe impl<R> MutSafe for Cell<R> {}
 unsafe impl<R> MutSafe for NonNull<R> {}
 unsafe impl MutSafe for &str {}
 #[cfg(feature = "owned_types")]

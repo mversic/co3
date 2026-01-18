@@ -239,7 +239,7 @@ impl Cloned for Option<WithCustomNiche> {}
 
 macro_rules! impl_fn_types {
     ( $( ( $( $arg:ident ),* ) ),* $(,)? ) => {$(
-        // FIXME: I'm not sure if arguments are required to be ReprFamilyC, what if fn pointer is opaque?
+        // FIXME: I'm not sure if arguments are required to be ReprC, what if fn pointer is opaque?
         // or should we create new function with argument conversion?
         unsafe impl<$($arg: ReprC,)* R: ReprC> ReprC for unsafe extern "C" fn($($arg),*) -> R {}
         unsafe impl<$($arg: ReprC,)*> ReprC for unsafe extern "C" fn($($arg),*) {}

@@ -102,3 +102,7 @@
 // TODO: There is special types like
 ExternRef
 ExternRefMut
+
+# Good Materials
+
+* https://faultlore.com/blah/rust-layouts-and-abis/

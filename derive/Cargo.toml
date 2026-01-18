@@ -13,23 +13,23 @@ proc-macro = true
 
 [features]
 # Enable integration with `getset` when deriving `extern C` ABI
-getset = []
+getset = ["rustc-hash"]
 
 [dependencies]
-syn = { version = "2.0.104", features = ["full", "extra-traits", "visit", "visit-mut"] }
+syn = { version = "2.0.114", features = ["full", "extra-traits", "visit", "visit-mut"] }
 manyhow = { version = "0.11.4", features = ["darling"] }
 strum = { version = "0.27.2", features = ["derive"] }
-proc-macro2 = "1.0.97"
+proc-macro2 = "1.0.105"
 # FIX: Bump to 0.21.1. It breaks some code
 darling = "0.20.10"
-rustc-hash = "2.1.1"
+rustc-hash = { version = "2.1.1", optional = true }
 drop_bomb = "0.1.5"
-quote = "1.0.40"
+quote = "1.0.43"
 
 [dev-dependencies]
 co3 = { path = "..", features = ["derive"] }
 
 static_assertions = "1.1.0"
 disjoint_impls = "1.3.4"
-trybuild = "1.0.110"
+trybuild = "1.0.114"
 getset = "0.1.6"

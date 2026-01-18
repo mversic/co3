@@ -3,11 +3,11 @@
 /// Type of the handle identifier
 pub type Id = u8;
 
-/// Represents the handle in an FFI context
+/// Represents an opaque handle in an FFI context
 ///
 /// # Safety
 ///
-/// If two structures implement the same id, it may result in a void pointer being casted to the wrong type
+/// If two structures implement the same id, it may result in a void pointer cast to a wrong type
 pub unsafe trait Handle {
     /// Unique identifier of the handle. Most commonly, it is
     /// used to facilitate generic monomorphization over FFI
@@ -59,7 +59,7 @@ macro_rules! handles {
 
 /// Generate FFI equivalent implementation of requested trait methods (e.g. Clone, Eq, Ord).
 ///
-/// One `[prefix]__<fn_name>` is generated per invokation of this macro. User should ensure that
+/// One `[prefix]__<fn_name>` is generated per invocation of this macro. User should ensure that
 /// function names don't collide by using a globally (per dynamic library) unique prefix.
 ///
 /// If globally unique handle id is guaranteed across crates, user can leverage this to export

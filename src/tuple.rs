@@ -213,7 +213,6 @@ disjoint_impls::disjoint_impls! {
         A: NicheFamily<Kind: WithNiche> + Niche,
         B: NicheFamily<Kind = WithoutNiche> + ExternC,
     {
-        // TODO: Instead of using `core::mem::zeroed`, memory can be left uninitialized. Use MaybeUninit?
         const NICHE_VALUE: Self::CType = CTuple2(A::NICHE_VALUE, unsafe { core::mem::zeroed() });
     }
 
@@ -621,7 +620,7 @@ mod tests {
         assert_impl_all!(&[(u8, bool, u8)]: Niche<CType = CSlice<CTuple3<u8, u8, u8>>>);
         assert_impl_all!([(u8, bool, u8); 2]: Niche<CType = [CTuple3<u8, u8, u8>; 2]>);
         // TODO: Depends on: https://github.com/mversic/co3/issues/33
-        //assert_impl_all!(Option<(u8, bool, u8)>: Niche<CType = COption<CTuple3<u8, u8, u8>>>);
+        //assert_impl_all!(Option<(u8, bool, u8)>: Niche<CType = CTuple3<u8, u8, u8>>);
 
         assert_not_impl_any!((u8, bool, u8): ReprC, CheckedTransmute, FlatTransmute, StableNiche);
         assert_not_impl_any!(&(u8, bool, u8): ReprC, CheckedTransmute, FlatTransmute);

@@ -17,7 +17,6 @@ impl<T: ReprC> COption<T> {
         Self {
             tag: 0,
             // SAFETY: `ReprC` type is robust and can't have any trap representations
-            // TODO: No need to zero the memory because it must never be read. Use MaybeUninit?
             payload: unsafe { core::mem::zeroed() },
         }
     }
