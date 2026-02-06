@@ -8,35 +8,42 @@ extern crate alloc;
 extern crate self as co3;
 
 use alloc::{boxed::Box, vec::Vec};
-use core::mem::ManuallyDrop;
 
 #[cfg(feature = "derive")]
 pub use co3_derive::*;
 use derive_more::Display;
 use disjoint_impls::disjoint_impls;
 
-#[cfg(feature = "cloned_refs")]
-use crate::out_ptr::NonLocal;
 #[cfg(not(feature = "non_robust_ref_mut"))]
 use crate::transmute::MutSafe;
-#[cfg(feature = "owned_as_ref")]
-use crate::transmute::{
-    transmute_from_target_boxed_slice, transmute_from_target_vec,
-    transmute_into_target_boxed_slice, transmute_into_target_vec,
-};
-#[cfg(not(feature = "owned_as_ref"))]
-use crate::vec::CVec;
+#[cfg(feature = "cloned_refs")]
+use crate::{cloned::DecodeCloneWrapper, out_ptr::NonLocal};
 use crate::{
+    cloned::decode_cloned_array,
     ir::{Cloned, Opaque, ReprFamily, Robust, Transmuted},
     niche::{Niche, StableNiche, WithCustomNiche, WithoutNiche},
-    slice::{CBoxedSlice, CSlice, CSliceMut},
+    slice::{CSlice, CSliceMut},
     transmute::{
         CheckedTransmute, FlatTransmute, transmute_from_target, transmute_from_target_ref_slice,
         transmute_from_target_slice_mut, transmute_into_target, transmute_into_target_ref_slice,
         transmute_into_target_slice_mut,
     },
 };
+#[cfg(feature = "owned_as_ref")]
+use crate::{
+    cloned::{decode_cloned_box_ptr, decode_cloned_collection},
+    transmute::{
+        transmute_from_target_boxed_slice, transmute_from_target_vec,
+        transmute_into_target_boxed_slice, transmute_into_target_vec,
+    },
+};
+#[cfg(feature = "owned_types")]
+#[cfg(not(feature = "owned_as_ref"))]
+use crate::{slice::CBoxedSlice, vec::CVec};
 
+// TODO:
+//#[cfg(feature = "cloned_refs")]
+mod cloned;
 pub mod external;
 pub mod handle;
 pub mod ir;
@@ -53,15 +60,10 @@ pub mod vec;
 
 use option::COption;
 
-#[cfg(feature = "owned_as_ref")]
+#[cfg(feature = "owned_types")]
 type BoxedSliceCType<C> = CSliceMut<C>;
-#[cfg(not(feature = "owned_as_ref"))]
-type BoxedSliceCType<C> = CBoxedSlice<C>;
-
-#[cfg(feature = "owned_as_ref")]
+#[cfg(feature = "owned_types")]
 type VecCType<C> = CSliceMut<C>;
-#[cfg(not(feature = "owned_as_ref"))]
-type VecCType<C> = CVec<C>;
 
 /// Result of execution of an FFI function
 #[derive(Debug, Display, Clone, Copy, PartialEq, Eq)]
@@ -131,7 +133,7 @@ disjoint_impls! {
         type CType = *mut R::CType;
     }
 
-    #[cfg(feature = "owned_as_ref")]
+    #[cfg(feature = "owned_types")]
     impl<R: ExternC, S: Cloned> ExternC for Box<R>
     where
         Self: ReprFamily<Kind = Box<S>>,
@@ -376,7 +378,7 @@ disjoint_impls! {
         }
     }
 
-    #[cfg(feature = "owned_as_ref")]
+    #[cfg(feature = "owned_types")]
     impl<R: Encode, S: Cloned> Encode for Box<R>
     where
         Self: ReprFamily<Kind = Box<S>>,
@@ -575,10 +577,7 @@ disjoint_impls! {
     where
         Self: ReprFamily<Kind = Box<[Opaque]>>,
     {
-        #[cfg(feature = "owned_as_ref")]
         type Store = OwningStore<*mut R>;
-        #[cfg(not(feature = "owned_as_ref"))]
-        type Store = ();
 
         fn encode<'itm>(self, store: &'itm mut Self::Store) -> Self::CType
         where
@@ -586,15 +585,8 @@ disjoint_impls! {
         {
             let boxed_ptrs = self.into_iter().map(Box::new).map(Box::into_raw).collect();
 
-            #[cfg(feature = "owned_as_ref")]
-            let encoded = {
-                let store = store.0.insert(boxed_ptrs);
-                CSliceMut::from_slice(Some(store))
-            };
-            #[cfg(not(feature = "owned_as_ref"))]
-            let encoded = CBoxedSlice::from_boxed_slice(Some(boxed_ptrs));
-
-            encoded
+            let store = store.0.insert(boxed_ptrs);
+            CSliceMut::from_slice(Some(store))
         }
     }
     #[cfg(feature = "owned_types")]
@@ -670,10 +662,7 @@ disjoint_impls! {
     where
         Self: ReprFamily<Kind = Vec<Opaque>>,
     {
-        #[cfg(feature = "owned_as_ref")]
         type Store = OwningStore<*mut R>;
-        #[cfg(not(feature = "owned_as_ref"))]
-        type Store = ();
 
         fn encode<'itm>(self, store: &'itm mut Self::Store) -> Self::CType
         where
@@ -681,15 +670,8 @@ disjoint_impls! {
         {
             let boxed_ptrs = self.into_iter().map(Box::new).map(Box::into_raw).collect();
 
-            #[cfg(feature = "owned_as_ref")]
-            let encoded = {
-                let store = store.0.insert(boxed_ptrs);
-                CSliceMut::from_slice(Some(store))
-            };
-            #[cfg(not(feature = "owned_as_ref"))]
-            let encoded = CVec::from_vec(Some(boxed_ptrs.into_vec()));
-
-            encoded
+            let store = store.0.insert(boxed_ptrs);
+            CSliceMut::from_slice(Some(store))
         }
     }
     #[cfg(feature = "owned_types")]
@@ -731,22 +713,12 @@ disjoint_impls! {
             Self: 'itm,
         {
             assert_arr_has_non_zero_len::<N>();
-
-            let ctypes = self
-                .into_iter()
-                .map(Box::new)
-                .map(Box::into_raw)
-                .collect::<Vec<_>>()
-                .try_into();
-
-            // SAFETY: Vec<T> length is N
-            unsafe { ctypes.unwrap_unchecked() }
+            self.map(|item| Box::into_raw(Box::new(item)))
         }
     }
+
     impl<R: Encode, S: Cloned, const N: usize> Encode for [R; N]
     where
-        // FIXME: https://github.com/rust-lang/rust/issues/61415
-        [<R as Encode>::Store; N]: Default,
         Self: ReprFamily<Kind = [S; N]>,
     {
         type Store = ArraySyncStore<R::Store, N>;
@@ -755,27 +727,18 @@ disjoint_impls! {
         where
             Self: 'itm,
         {
-            fn default_init_arr<R: Default, const N: usize>() -> [R; N] {
-                assert_arr_has_non_zero_len::<N>();
-
-                let vec = core::iter::repeat_with(Default::default)
-                    .take(N)
-                    .collect::<Vec<_>>();
-
-                // SAFETY: Vec<T> length is N
-                unsafe { TryFrom::try_from(vec).unwrap_unchecked() }
-            }
-
             assert_arr_has_non_zero_len::<N>();
-            store.0 = default_init_arr();
 
-            let ctypes: Vec<_> = self
+            let store = store.0.insert(
+                core::iter::repeat_with(Default::default).take(N).collect()
+            );
+
+            let ctypes = self
                 .into_iter()
-                .zip(store.0.iter_mut())
+                .zip(store)
                 .map(|(item, substore)| item.encode(substore))
-                .collect();
+                .collect::<Vec<_>>();
 
-            // SAFETY: Vec<T> length is N
             unsafe { ctypes.try_into().unwrap_unchecked() }
         }
     }
@@ -896,7 +859,7 @@ disjoint_impls! {
     }
 
     #[cfg(feature = "cloned_refs")]
-    impl<'d, R: Decode<'d> + Clone, S: Cloned> Decode<'d> for &'d R
+    impl<'d, R: DecodeCloneWrapper<'d>, S: Cloned> Decode<'d> for &'d R
     where
         Self: ReprFamily<Kind = &'d S>,
     {
@@ -907,18 +870,12 @@ disjoint_impls! {
                 return None;
             }
 
-            Some(
-                store.value.insert(
-                    unsafe { R::decode(source.read(), &mut store.store) }
-                        .map(ManuallyDrop::new)
-                        .map(|item| (*item).clone())?,
-                ),
-            )
+            Some(store.value.insert(unsafe { R::decode_wrapped(source.read(), &mut store.store) }?))
         }
     }
 
     #[cfg(feature = "cloned_refs")]
-    impl<'d, R: Encode + Decode<'d> + NonLocal + Clone, S: Cloned> Decode<'d> for &'d mut R
+    impl<'d, R: DecodeCloneWrapper<'d> + Encode + NonLocal, S: Cloned> Decode<'d> for &'d mut R
     where
         Self: ReprFamily<Kind = &'d mut S>,
     {
@@ -932,32 +889,19 @@ disjoint_impls! {
             let source = store.source.insert(source);
             let source = unsafe { source.read() };
 
-            Some(
-                store.decoded.insert(
-                    unsafe { R::decode(source, &mut store.decode_store) }
-                        .map(ManuallyDrop::new)
-                        .map(|item| (*item).clone())?,
-                ),
-            )
+            Some(store.value.insert(unsafe { R::decode_wrapped(source, &mut store.decode_store) }?))
         }
     }
 
-    #[cfg(feature = "owned_as_ref")]
-    impl<'d, R: Decode<'d> + Clone, S: Cloned> Decode<'d> for Box<R>
+    #[cfg(feature = "owned_types")]
+    impl<'d, R: Decode<'d>, S: Cloned> Decode<'d> for Box<R>
     where
         Self: ReprFamily<Kind = Box<S>>,
     {
         type Store = R::Store;
 
         unsafe fn decode<'itm: 'd>(source: Self::CType, store: &'itm mut Self::Store) -> Option<Self> {
-            if source.is_null() {
-                return None;
-            }
-
-            unsafe { R::decode(source.read(), store) }
-                .map(ManuallyDrop::new)
-                .map(|item| (*item).clone())
-                .map(Box::new)
+            unsafe { decode_cloned_box_ptr(source, store, |item, substore| R::decode(item, substore)) }
         }
     }
 
@@ -1012,7 +956,7 @@ disjoint_impls! {
         }
     }
     #[cfg(feature = "cloned_refs")]
-    impl<'slice, R: Decode<'slice> + Clone, S: Cloned> Decode<'slice> for &'slice [R]
+    impl<'slice, R: DecodeCloneWrapper<'slice>, S: Cloned> Decode<'slice> for &'slice [R]
     where
         Self: ReprFamily<Kind = &'slice [S]>,
     {
@@ -1030,18 +974,12 @@ disjoint_impls! {
                     .collect(),
             );
 
-            let slice = source
-                .iter()
-                .zip(&mut *stores)
-                .map(|(&item, substore)| unsafe { R::decode(item, substore) }.map(ManuallyDrop::new))
-                .collect::<Option<Vec<_>>>()?;
-
             let values = store.values.insert(
-                slice
+                source
                     .iter()
-                    .cloned()
-                    .map(ManuallyDrop::into_inner)
-                    .collect(),
+                    .zip(&mut *stores)
+                    .map(|(&item, substore)| unsafe { R::decode_wrapped(item, substore) })
+                    .collect::<Option<_>>()?,
             );
 
             Some(values)
@@ -1083,13 +1021,16 @@ disjoint_impls! {
         }
     }
     #[cfg(feature = "cloned_refs")]
-    impl<'slice, R: Encode + Decode<'slice> + NonLocal + Clone, S: Cloned> Decode<'slice> for &'slice mut [R]
+    impl<'slice, R: DecodeCloneWrapper<'slice> + Encode + NonLocal, S: Cloned> Decode<'slice> for &'slice mut [R]
     where
         Self: ReprFamily<Kind = &'slice mut [S]>,
     {
         type Store = MutSliceDecodeStore<R, <R as Decode<'slice>>::Store>;
 
-        unsafe fn decode<'itm: 'slice>(source: Self::CType, store: &'itm mut Self::Store) -> Option<Self> {
+        unsafe fn decode<'itm: 'slice>(
+            source: Self::CType,
+            store: &'itm mut Self::Store,
+        ) -> Option<Self> {
             let source: &mut CSliceMut<_> = store.source.insert(source);
             let source: &mut [_] = unsafe { source.into_rust() }?;
 
@@ -1099,15 +1040,13 @@ disjoint_impls! {
                     .collect(),
             );
 
-            let decoded = source
-                .iter()
-                .zip(&mut *stores)
-                .map(|(&item, substore)| unsafe { R::decode(item, substore) }.map(ManuallyDrop::new))
-                .collect::<Option<Vec<_>>>()?;
-
-            let values = store
-                .values
-                .insert(decoded.into_iter().map(ManuallyDrop::into_inner).collect());
+            let values = store.values.insert(
+                source
+                    .iter()
+                    .zip(&mut *stores)
+                    .map(|(&item, substore)| unsafe { R::decode_wrapped(item, substore) })
+                    .collect::<Option<_>>()?,
+            );
 
             Some(values)
         }
@@ -1139,7 +1078,7 @@ disjoint_impls! {
             unsafe { source.into_rust() }.map(|slice| slice.into())
         }
     }
-    #[cfg(feature = "owned_as_ref")]
+    #[cfg(feature = "owned_types")]
     impl<'d, R: 'd> Decode<'d> for Box<[R]>
     where
         Self: ReprFamily<Kind = Box<[Opaque]>>,
@@ -1156,29 +1095,14 @@ disjoint_impls! {
         }
     }
     #[cfg(feature = "owned_types")]
-    impl<'d, R: Decode<'d> + Clone, S: Cloned> Decode<'d> for Box<[R]>
+    impl<'d, R: Decode<'d>, S: Cloned> Decode<'d> for Box<[R]>
     where
         Self: ReprFamily<Kind = Box<[S]>>,
     {
         type Store = DecodeStoreSlice<R::Store>;
 
         unsafe fn decode<'itm: 'd>(source: Self::CType, store: &'itm mut Self::Store) -> Option<Self> {
-            let slice = unsafe { source.into_rust() }?;
-
-            let store = store.0.insert(
-                core::iter::repeat_with(Default::default)
-                    .take(slice.len())
-                    .collect(),
-            );
-
-            let vec = slice
-                .iter()
-                .copied()
-                .zip(&mut *store)
-                .map(|(item, substore)| unsafe { R::decode(item, substore) }.map(ManuallyDrop::new))
-                .collect::<Option<Vec<_>>>()?;
-
-            Some(vec.iter().cloned().map(ManuallyDrop::into_inner).collect())
+            unsafe { decode_cloned_collection(source, store, |item, substore| R::decode(item, substore)) }
         }
     }
 
@@ -1208,7 +1132,7 @@ disjoint_impls! {
             unsafe { source.into_rust() }.map(|slice| slice.to_vec())
         }
     }
-    #[cfg(feature = "owned_as_ref")]
+    #[cfg(feature = "owned_types")]
     impl<'d, R: 'd> Decode<'d> for Vec<R>
     where
         Self: ReprFamily<Kind = Vec<Opaque>>,
@@ -1225,29 +1149,14 @@ disjoint_impls! {
         }
     }
     #[cfg(feature = "owned_types")]
-    impl<'d, R: Decode<'d> + Clone, S: Cloned> Decode<'d> for Vec<R>
+    impl<'d, R: Decode<'d>, S: Cloned> Decode<'d> for Vec<R>
     where
         Self: ReprFamily<Kind = Vec<S>>,
     {
         type Store = DecodeStoreSlice<R::Store>;
 
         unsafe fn decode<'itm: 'd>(source: Self::CType, store: &'itm mut Self::Store) -> Option<Self> {
-            let slice = unsafe { source.into_rust() }?;
-
-            let store = store.0.insert(
-                core::iter::repeat_with(Default::default)
-                    .take(slice.len())
-                    .collect(),
-            );
-
-            let vec = slice
-                .iter()
-                .copied()
-                .zip(&mut *store)
-                .map(|(item, substore)| unsafe { R::decode(item, substore).map(ManuallyDrop::new) })
-                .collect::<Option<Vec<_>>>()?;
-
-            Some(vec.iter().cloned().map(ManuallyDrop::into_inner).collect())
+            unsafe { decode_cloned_collection(source, store, |item, substore| R::decode(item, substore)) }
         }
     }
 
@@ -1260,44 +1169,23 @@ disjoint_impls! {
         unsafe fn decode<'itm: 'd>(source: Self::CType, (): &mut ()) -> Option<Self> {
             assert_arr_has_non_zero_len::<N>();
 
-            let array: [R; N] = source
-                .into_iter()
+            let vec = source
                 .map(|item| unsafe { item.as_mut().map(|item| *Box::from_raw(item)) })
-                .collect::<Option<Vec<_>>>()?
-                .try_into()
-                .ok()?;
+                // TODO: https://github.com/rust-lang/rust/issues/130828
+                .into_iter()
+                .collect::<Option<Vec<_>>>()?;
 
-            Some(array)
+            Some(unsafe { vec.try_into().unwrap_unchecked() })
         }
     }
-    impl<'d, R: Decode<'d> + Clone, S: Cloned, const N: usize> Decode<'d> for [R; N]
+    impl<'d, R: Decode<'d>, S: Cloned, const N: usize> Decode<'d> for [R; N]
     where
-        // FIXME: https://github.com/rust-lang/rust/issues/61415
-        [<R as Decode<'d>>::Store; N]: Default,
         Self: ReprFamily<Kind = [S; N]>,
     {
-        type Store = DecodeArrayStore<<R as Decode<'d>>::Store, N>;
+        type Store = ArraySyncStore<R::Store, N>;
 
         unsafe fn decode<'itm: 'd>(source: Self::CType, store: &'itm mut Self::Store) -> Option<Self> {
-            assert_arr_has_non_zero_len::<N>();
-
-            let vec: [_; N] = source
-                .into_iter()
-                .zip(store.0.iter_mut())
-                .map(|(item, substore)| unsafe { R::decode(item, substore).map(ManuallyDrop::new) })
-                .collect::<Option<Vec<_>>>()?
-                .try_into()
-                .ok()?;
-
-            let array: [R; N] = vec
-                .iter()
-                .cloned()
-                .map(ManuallyDrop::into_inner)
-                .collect::<Vec<_>>()
-                .try_into()
-                .ok()?;
-
-            Some(array)
+            unsafe { decode_cloned_array(source, store, |item, substore| R::decode(item, substore)) }
         }
     }
 
@@ -1407,25 +1295,6 @@ impl<R, D> Default for DecodeStoreSlicePair<R, D> {
 impl<R, D: Store> Store for DecodeStoreSlicePair<R, D> {
     fn sync(self) {
         for store in self.stores.unwrap() {
-            store.sync();
-        }
-    }
-}
-
-pub struct DecodeArrayStore<D, const N: usize>(pub [D; N]);
-
-impl<D, const N: usize> Default for DecodeArrayStore<D, N>
-where
-    [D; N]: Default,
-{
-    fn default() -> Self {
-        Self(Default::default())
-    }
-}
-
-impl<D: Store, const N: usize> Store for DecodeArrayStore<D, N> {
-    fn sync(self) {
-        for store in self.0 {
             store.sync();
         }
     }
@@ -1579,23 +1448,19 @@ impl<'slice, 'b, R: Encode + Decode<'b> + NonLocal + 'b> Store for MutSliceStore
     }
 }
 
-pub struct ArraySyncStore<D, const N: usize>(pub [D; N]);
+// FIXME: use [D; N] instead of Option<Box<[D]>>
+// https://github.com/rust-lang/rust/issues/61415
+pub struct ArraySyncStore<D, const N: usize>(Option<Box<[D]>>);
 
-impl<D: Default, const N: usize> Default for ArraySyncStore<D, N>
-where
-    [D; N]: Default,
-{
+impl<D, const N: usize> Default for ArraySyncStore<D, N> {
     fn default() -> Self {
-        Self(Default::default())
+        Self(None)
     }
 }
 
-impl<D: Store, const N: usize> Store for ArraySyncStore<D, N>
-where
-    [D; N]: Default,
-{
+impl<D: Store, const N: usize> Store for ArraySyncStore<D, N> {
     fn sync(self) {
-        for store in self.0 {
+        for store in self.0.unwrap() {
             store.sync();
         }
     }
@@ -1603,7 +1468,7 @@ where
 
 #[cfg(feature = "cloned_refs")]
 pub struct RefMutDecodeStore<R: ExternC, DS> {
-    decoded: Option<R>,
+    value: Option<R>,
     decode_store: DS,
     source: Option<*mut R::CType>,
 }
@@ -1612,7 +1477,7 @@ pub struct RefMutDecodeStore<R: ExternC, DS> {
 impl<R: ExternC, DS: Default> Default for RefMutDecodeStore<R, DS> {
     fn default() -> Self {
         Self {
-            decoded: None,
+            value: None,
             decode_store: Default::default(),
             source: None,
         }
@@ -1620,10 +1485,10 @@ impl<R: ExternC, DS: Default> Default for RefMutDecodeStore<R, DS> {
 }
 
 #[cfg(feature = "cloned_refs")]
-impl<R: Encode + NonLocal + Clone, DS: Store> Store for RefMutDecodeStore<R, DS> {
+impl<R: Encode + NonLocal, DS: Store> Store for RefMutDecodeStore<R, DS> {
     fn sync(self) {
         let mut encode_store = Default::default();
-        let encoded = self.decoded.unwrap().encode(&mut encode_store);
+        let encoded = self.value.unwrap().encode(&mut encode_store);
         unsafe { *self.source.unwrap() = encoded };
     }
 }

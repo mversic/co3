@@ -1,10 +1,14 @@
 //! Logic related to the conversion of [`Option<T>`] to and from FFI-compatible representation
 
-use alloc::{boxed::Box, vec::Vec};
+use alloc::boxed::Box;
+#[cfg(feature = "owned_types")]
+use alloc::vec::Vec;
 use disjoint_impls::disjoint_impls;
 
+#[cfg(feature = "owned_types")]
+use crate::{BoxedSliceCType, VecCType};
 use crate::{
-    BoxedSliceCType, ExternC, ReprC, VecCType, assert_arr_has_non_zero_len,
+    ExternC, ReprC, assert_arr_has_non_zero_len,
     option::COption,
     slice::{CSlice, CSliceMut},
 };

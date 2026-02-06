@@ -231,9 +231,6 @@ disjoint_impls! {
     impl<R: ReprFamily<Kind: Cloned> + NicheFamily<Kind = WithCustomNiche>> ReprFamily for Option<R> {
         type Kind = Option<WithCustomNiche>;
     }
-    impl<R: ReprFamily<Kind = Option<WithStableNiche>>> ReprFamily for Option<R> {
-        type Kind = Option<WithoutNiche>;
-    }
 }
 
 impl<S: Cloned> Cloned for &S {}

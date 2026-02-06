@@ -6,8 +6,10 @@ use core::{
 #[cfg(feature = "owned_types")]
 use alloc::{boxed::Box, string::String, vec::Vec};
 
+#[cfg(feature = "owned_types")]
+use crate::VecCType;
 use crate::{
-    ReprC, VecCType,
+    ReprC,
     ir::{ReprFamily, Transmuted},
     mineral,
     niche::{Niche, NicheFamily, StableNiche, WithCustomNiche, WithStableNiche, WithoutNiche},

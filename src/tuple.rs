@@ -62,6 +62,7 @@
 
 use crate::{
     ExternC, ReprC, Store,
+    cloned::DecodeCloneWrapper,
     ir::Cloned,
     niche::{Niche, NicheFamily, WithCustomNiche, WithNiche, WithoutNiche},
 };
@@ -98,8 +99,8 @@ macro_rules! impl_tuple {
             type OutPtr = $ffi_ty<$($ty::OutPtr),+>;
         }
 
-        #[expect(non_snake_case)]
         impl<$($ty: crate::out_ptr::OutPtrWrite),+> crate::out_ptr::OutPtrWrite for ($($ty,)+) {
+            #[expect(non_snake_case)]
             unsafe fn write_out(self, out_ptr: *mut Self::OutPtr) {
                 impl_tuple! {@decl_priv_out_ptr $($ty),+}
                 let mut field_out_ptrs = ($(core::mem::MaybeUninit::<$ty::OutPtr>::uninit(),)+);
@@ -113,8 +114,8 @@ macro_rules! impl_tuple {
                 }
             }
         }
-        #[expect(non_snake_case)]
         impl<$($ty: crate::out_ptr::OutPtrRead),+> crate::out_ptr::OutPtrRead for ($($ty,)+) {
+            #[expect(non_snake_case)]
             unsafe fn try_read_out(source: Self::OutPtr) -> Option<Self> {
                 impl_tuple! {@decl_priv_out_ptr $($ty),+}
 
@@ -132,7 +133,7 @@ macro_rules! impl_tuple {
 
                 let ($($ty,)+) = self;
                 let store: private_store::Store<$($ty),+> = store.into();
-                $ffi_ty($( <$ty as crate::Encode>::encode($ty, store.$ty), )+)
+                $ffi_ty($( $ty::encode($ty, store.$ty), )+)
             }
         }
         impl<'d, $($ty: crate::Decode<'d>),+> crate::Decode<'d> for ($($ty,)+) {
@@ -144,15 +145,26 @@ macro_rules! impl_tuple {
 
                 let $ffi_ty($($ty,)+) = source;
                 let store: private_store::Store<$($ty),+> = store.into();
-                Some(unsafe {($( <$ty as crate::Decode<'d>>::decode($ty, store.$ty)?, )+)})
+                Some(unsafe {($( $ty::decode($ty, store.$ty)?, )+)})
+            }
+        }
+
+        impl<'d, $($ty: DecodeCloneWrapper<'d>),+> DecodeCloneWrapper<'d> for ($($ty,)+) {
+            #[expect(non_snake_case)]
+            unsafe fn decode_wrapped<'itm: 'd>(source: Self::CType, store: &'itm mut Self::Store) -> Option<Self> {
+                impl_tuple! {@decl_priv_store $($ty),+ for crate::Decode<'itm> : Store}
+
+                let $ffi_ty($($ty,)+) = source;
+                let store: private_store::Store<$($ty),+> = store.into();
+                Some(unsafe {($( $ty::decode_wrapped($ty, store.$ty)?, )+)})
             }
         }
 
         unsafe impl<$($ty: crate::out_ptr::NonLocal),+> crate::out_ptr::NonLocal for ($($ty,)+) {}
         unsafe impl<$($ty: crate::out_ptr::Zst),+> crate::out_ptr::Zst for ($($ty,)+) {}
 
-        #[expect(non_snake_case)]
         impl<$($ty: crate::ReprC),+> From<($( $ty, )+)> for $ffi_ty<$($ty),+> {
+            #[expect(non_snake_case)]
             fn from(source: ($( $ty, )+)) -> Self {
                 let ($($ty,)+) = source;
                 Self($( $ty ),+)
@@ -163,6 +175,7 @@ macro_rules! impl_tuple {
     // NOTE: This is a trick to index tuples
     ( @decl_priv_store $( $ty:ident ),+ for $trait:path : $store:ident) => {
         mod private_store {
+            #[allow(dead_code)]
             pub struct Store<'itm, $($ty: $trait),+> {
                 $(pub $ty: &'itm mut $ty::$store),+
             }

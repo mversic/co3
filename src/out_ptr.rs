@@ -1,7 +1,7 @@
 use super::*;
-use crate::COption;
 #[cfg(feature = "owned_as_ref")]
 use crate::transmute::{transmute_from_target_boxed_slice, transmute_from_target_vec};
+use crate::{COption, slice::CBoxedSlice};
 use crate::{
     ir::Transmuted,
     transmute::{transmute_from_target_ref_slice, transmute_from_target_slice_mut},
