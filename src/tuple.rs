@@ -61,7 +61,7 @@
 //! ```
 
 use crate::{
-    ExternC, ReprC,
+    ExternC, ReprC, Store,
     ir::Cloned,
     niche::{Niche, NicheFamily, WithCustomNiche, WithNiche, WithoutNiche},
 };
@@ -84,6 +84,14 @@ macro_rules! impl_tuple {
 
         impl<$($ty: ExternC),+> crate::ExternC for ($($ty,)+) {
             type CType = $ffi_ty<$($ty::CType),+>;
+        }
+
+        #[expect(non_snake_case)]
+        impl<$($ty: Store),+> Store for ($($ty,)+) {
+            fn sync(self) {
+                let ($($ty,)+) = self;
+                $( $ty.sync(); )+
+            }
         }
 
         impl<$($ty: crate::out_ptr::OutPtr),+> crate::out_ptr::OutPtr for ($($ty,)+) {
@@ -124,7 +132,7 @@ macro_rules! impl_tuple {
 
                 let ($($ty,)+) = self;
                 let store: private_store::Store<$($ty),+> = store.into();
-                $ffi_ty($( <$ty as crate::Encode>::encode($ty, store.$ty),)+)
+                $ffi_ty($( <$ty as crate::Encode>::encode($ty, store.$ty), )+)
             }
         }
         impl<'d, $($ty: crate::Decode<'d>),+> crate::Decode<'d> for ($($ty,)+) {
@@ -182,7 +190,6 @@ macro_rules! impl_tuple {
             }
         }
     };
-
 }
 
 impl_tuple! {(A) -> CTuple1}
@@ -568,10 +575,11 @@ where
 
 #[cfg(test)]
 mod tests {
+    #[cfg(not(feature = "cloned_refs"))]
+    use crate::ir::ReprFamily;
     #[cfg(feature = "cloned_refs")]
     use crate::slice::CSlice;
     use crate::{
-        ir::ReprFamily,
         niche::StableNiche,
         option::COption,
         transmute::{CheckedTransmute, FlatTransmute},
@@ -595,10 +603,10 @@ mod tests {
 
         assert_not_impl_any!((u8, u8, u8): ReprC, CheckedTransmute, FlatTransmute, Niche);
         assert_not_impl_any!(&(u8, u8, u8): ReprC, CheckedTransmute, FlatTransmute);
-        assert_not_impl_any!(&mut (u8, u8, u8): ReprC, ExternC, CheckedTransmute, FlatTransmute);
+        assert_not_impl_any!(&mut (u8, u8, u8): ReprC, CheckedTransmute, FlatTransmute);
         assert_not_impl_any!(Box<(u8, u8, u8)>: ReprC, CheckedTransmute, FlatTransmute);
         assert_not_impl_any!(&[(u8, u8, u8)]: ReprC, CheckedTransmute, FlatTransmute, StableNiche);
-        assert_not_impl_any!(&mut [(u8, u8, u8)]: ReprC, ExternC, CheckedTransmute, FlatTransmute, StableNiche);
+        assert_not_impl_any!(&mut [(u8, u8, u8)]: ReprC, CheckedTransmute, FlatTransmute, StableNiche);
         assert_not_impl_any!([(u8, u8, u8); 2]: ReprC, CheckedTransmute, FlatTransmute, Niche);
         assert_not_impl_any!(Option<(u8, u8, u8)>: ReprC, CheckedTransmute, FlatTransmute, StableNiche);
 
@@ -606,8 +614,15 @@ mod tests {
         assert_not_impl_any!(&(u8, u8, u8): ExternC);
         #[cfg(not(feature = "cloned_refs"))]
         assert_not_impl_any!(&[(u8, u8, u8)]: ExternC);
+        #[cfg(not(feature = "cloned_refs"))]
+        assert_not_impl_any!(&mut (u8, u8, u8): ExternC);
+        #[cfg(not(feature = "cloned_refs"))]
+        assert_not_impl_any!(&mut [(u8, u8, u8)]: ExternC);
 
+        #[cfg(not(feature = "cloned_refs"))]
         assert_not_impl_any!(&mut (u8, u8, u8): ReprFamily);
+        //#[cfg(not(feature = "cloned_refs"))]
+        //assert_not_impl_any!(&mut [(u8, u8, u8)]: ReprFamily);
     }
 
     #[test]
@@ -624,10 +639,10 @@ mod tests {
 
         assert_not_impl_any!((u8, bool, u8): ReprC, CheckedTransmute, FlatTransmute, StableNiche);
         assert_not_impl_any!(&(u8, bool, u8): ReprC, CheckedTransmute, FlatTransmute);
-        assert_not_impl_any!(&mut (u8, bool, u8): ReprC, ExternC, CheckedTransmute, FlatTransmute);
+        assert_not_impl_any!(&mut (u8, bool, u8): ReprC, CheckedTransmute, FlatTransmute);
         assert_not_impl_any!(Box<(u8, bool, u8)>: ReprC, CheckedTransmute, FlatTransmute);
         assert_not_impl_any!(&[(u8, bool, u8)]: ReprC, CheckedTransmute, FlatTransmute, StableNiche);
-        assert_not_impl_any!(&mut [(u8, bool, u8)]: ReprC, ExternC, CheckedTransmute, FlatTransmute, StableNiche);
+        assert_not_impl_any!(&mut [(u8, bool, u8)]: ReprC, CheckedTransmute, FlatTransmute, StableNiche);
         assert_not_impl_any!([(u8, bool, u8); 2]: ReprC, CheckedTransmute, FlatTransmute, StableNiche);
         assert_not_impl_any!(Option<(u8, bool, u8)>: ReprC, CheckedTransmute, FlatTransmute, StableNiche);
 
@@ -636,6 +651,9 @@ mod tests {
         #[cfg(not(feature = "cloned_refs"))]
         assert_not_impl_any!(&[(u8, bool, u8)]: ExternC);
 
-        assert_not_impl_any!(&mut (u8, bool, u8): ReprFamily);
+        #[cfg(not(feature = "cloned_refs"))]
+        assert_not_impl_any!(&mut (u8, bool, u8): ReprFamily, ExternC);
+        #[cfg(not(feature = "cloned_refs"))]
+        assert_not_impl_any!(&mut [(u8, bool, u8)]: ExternC);
     }
 }

@@ -86,6 +86,10 @@ disjoint_impls! {
     impl<R: ReprFamily<Kind = Opaque>> ReprFamily for &mut R {
         type Kind = Transmuted;
     }
+    #[cfg(feature = "cloned_refs")]
+    impl<'a, R: ReprFamily<Kind: Cloned + 'a>> ReprFamily for &'a mut R {
+        type Kind = &'a mut R::Kind;
+    }
 
     #[cfg(feature = "owned_types")]
     impl<R: ReprFamily<Kind = Box<Robust>>> ReprFamily for Box<R> {
@@ -132,6 +136,14 @@ disjoint_impls! {
     }
     impl<'a, R: ReprFamily<Kind = Robust>> ReprFamily for &'a mut [R] {
         type Kind = &'a mut [Transmuted];
+    }
+    #[cfg(feature = "cloned_refs")]
+    impl<'a, R: ReprFamily<Kind = Opaque>> ReprFamily for &'a mut [R] {
+        type Kind = &'a mut [Opaque];
+    }
+    #[cfg(feature = "cloned_refs")]
+    impl<'a, R: ReprFamily<Kind: Cloned + 'a>> ReprFamily for &'a mut [R] {
+        type Kind = &'a mut [R::Kind];
     }
 
     #[cfg(feature = "owned_types")]
@@ -225,11 +237,11 @@ disjoint_impls! {
 }
 
 impl<S: Cloned> Cloned for &S {}
+impl<S: Cloned> Cloned for &mut S {}
 impl<S: Cloned> Cloned for Box<S> {}
 impl<S> Cloned for &[S] {}
-#[cfg(feature = "owned_types")]
+impl<S> Cloned for &mut [S] {}
 impl<S> Cloned for Box<[S]> {}
-#[cfg(feature = "owned_types")]
 impl<S> Cloned for Vec<S> {}
 impl<const N: usize> Cloned for [Opaque; N] {}
 impl<S: Cloned, const N: usize> Cloned for [S; N] {}
@@ -266,6 +278,7 @@ macro_rules! impl_fn_types {
         impl<$($arg: ReprC,)*> crate::Encode for unsafe extern "C" fn($($arg),*) {
             type Store = ();
 
+            #[inline(always)]
             fn encode<'itm>(self, _: &mut ()) -> Self::CType where Self: 'itm {
                 self
             }

@@ -423,6 +423,7 @@ pub fn wrap_method(fn_descriptor: &FnDescriptor, trait_name: Option<&Ident>) -> 
 fn gen_wrapper_method_body(fn_descriptor: &FnDescriptor, ffi_fn_name: &Ident) -> TokenStream {
     let input_conversions = gen_input_conversion_stmts(fn_descriptor);
     let ffi_fn_call_stmt = gen_ffi_fn_call_stmt(fn_descriptor, ffi_fn_name);
+    let store_sync_stmts = gen_store_sync_stmts(fn_descriptor);
     let return_stmt = gen_return_stmt(fn_descriptor);
 
     quote! {
@@ -433,9 +434,21 @@ fn gen_wrapper_method_body(fn_descriptor: &FnDescriptor, ffi_fn_name: &Ident) ->
         // 2. out-pointer is initialized, i.e. MaybeUninit::assume_init() is not UB
         unsafe {
             #ffi_fn_call_stmt
+            #store_sync_stmts
             #return_stmt
         }
     }
+}
+
+fn gen_store_sync_stmts(fn_descriptor: &FnDescriptor) -> TokenStream {
+    let mut stmts = quote! {};
+
+    for arg in &fn_descriptor.input_args {
+        let store_name = gen_store_name(arg.name());
+        stmts.extend(quote! { co3::Store::sync(#store_name); });
+    }
+
+    stmts
 }
 
 fn gen_input_conversion_stmts(fn_descriptor: &FnDescriptor) -> TokenStream {

@@ -48,7 +48,7 @@ getset = ["derive", "co3_derive/getset"]
 co3_derive = { path = "derive", optional = true }
 
 derive_more = { version = "2.1.1", features = ["display"] }
-disjoint_impls = "1.3.4"
+disjoint_impls = "1.3.6"
 impls = "1.0.3"
 
 [dev-dependencies]

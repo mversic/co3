@@ -8,9 +8,9 @@ use crate::{
 };
 
 disjoint_impls! {
-    /// Marker trait indicating that [`Encode::encode`] and [`Decode::decode`] don't
-    /// return a reference to the store. This is useful to determine which(and how) types can be
-    /// returned from an FFI function considering that, after return, local context is destroyed
+    /// Marker trait indicating that [`Encode::encode`] doesn't return a reference to the store.
+    /// This is useful to determine which(and how) types can be returned from an FFI function
+    /// considering that, after return, local context is destroyed
     ///
     /// # Example
     ///
@@ -31,16 +31,16 @@ disjoint_impls! {
     ///
     /// # Safety
     ///
-    /// Type must not make use of the store during conversion into [`ExternC::CType`] via [`Encode::encode`] or [`Decode::decode`]
-    pub unsafe trait NonLocal: OutPtr {}
+    /// Type must not make use of the store during conversion into [`ExternC::CType`] via [`Encode::encode`]
+    pub unsafe trait NonLocal {}
 
-    unsafe impl<'d, R> NonLocal for R where R: Decode<'d, Store = ()> + OutPtr {}
-    unsafe impl<'d, R, Z: Zst> NonLocal for R where R: Decode<'d, Store = Box<[Z]>> + OutPtr {}
-    unsafe impl<'d, R, Z: Zst> NonLocal for R where R: Decode<'d, Store = Vec<Z>> + OutPtr {}
-    unsafe impl<'d, R, Z: Zst> NonLocal for R where R: Decode<'d, Store = Option<Z>> + OutPtr {}
-    unsafe impl<'d, R, Z: Zst, const N: usize> NonLocal for R where R: Decode<'d, Store = [Z; N]> + OutPtr {}
+    unsafe impl<R> NonLocal for R where R: Encode<Store = ()> {}
+    unsafe impl<R, Z: Zst> NonLocal for R where R: Encode<Store = Box<[Z]>> {}
+    unsafe impl<R, Z: Zst> NonLocal for R where R: Encode<Store = Vec<Z>> {}
+    unsafe impl<R, Z: Zst> NonLocal for R where R: Encode<Store = Option<Z>> {}
+    unsafe impl<R, Z: Zst, const N: usize> NonLocal for R where R: Encode<Store = [Z; N]> {}
     // TODO: It's not possbile to implement for specific len yet: https://github.com/mversic/co3/issues/13
-    //unsafe impl<'d, R, T> NonLocal for R where R: Decode<'d, Store = [T; 0]> + OutPtr {}
+    //unsafe impl<R, T> NonLocal for R where R: Encode<Store = [T; 0]> {}
 }
 
 /// Marker for a ZST(zero-sized type)
@@ -295,14 +295,14 @@ disjoint_impls! {
     }
 
     #[cfg(feature = "cloned_refs")]
-    impl<'itm, R: NonLocal + Encode + Clone, S: Cloned> OutPtrWrite for &'itm R
+    impl<'itm, R: Encode + NonLocal + Clone, S: Cloned> OutPtrWrite for &'itm R
     where
         Self: ReprFamily<Kind = &'itm S>,
     {
         unsafe fn write_out(self, out_ptr: *mut Self::OutPtr) {
             let mut store = Default::default();
             let _ = self.encode(&mut store);
-            let output = store.1.unwrap();
+            let output = store.encoded.unwrap();
 
             unsafe {
                 out_ptr.write(output);
@@ -311,14 +311,14 @@ disjoint_impls! {
     }
 
     #[cfg(feature = "owned_as_ref")]
-    impl<R: NonLocal + Encode, S: Cloned> OutPtrWrite for Box<R>
+    impl<R: Encode + NonLocal, S: Cloned> OutPtrWrite for Box<R>
     where
         Self: ReprFamily<Kind = Box<S>>,
     {
         unsafe fn write_out(self, out_ptr: *mut Self::OutPtr) {
             let mut store = Default::default();
             let _ = self.encode(&mut store);
-            let output = store.1.unwrap();
+            let output = store.encoded.unwrap();
 
             unsafe {
                 out_ptr.write(output);
@@ -360,9 +360,7 @@ disjoint_impls! {
             let mut store = Default::default();
             let _ = self.encode(&mut store);
 
-            let output = CBoxedSlice::from_boxed_slice(
-                Some(store)
-            );
+            let output = CBoxedSlice::from_boxed_slice(store.0);
 
             unsafe {
                 out_ptr.write(output);
@@ -370,7 +368,7 @@ disjoint_impls! {
         }
     }
     #[cfg(feature = "cloned_refs")]
-    impl<'itm, R: NonLocal + Encode + Clone, S: Cloned> OutPtrWrite for &'itm [R]
+    impl<'itm, R: Encode + NonLocal + Clone, S: Cloned> OutPtrWrite for &'itm [R]
     where
         Self: ReprFamily<Kind = &'itm [S]>,
     {
@@ -378,9 +376,7 @@ disjoint_impls! {
             let mut store = Default::default();
             let _ = self.encode(&mut store);
 
-            let output = CBoxedSlice::from_boxed_slice(
-                Some(store.1)
-            );
+            let output = CBoxedSlice::from_boxed_slice(store.ctypes);
 
             unsafe {
                 out_ptr.write(output);
@@ -430,7 +426,7 @@ disjoint_impls! {
                 let mut store = Default::default();
                 let _ = self.encode(&mut store);
 
-                CBoxedSlice::from_boxed_slice(Some(store))
+                CBoxedSlice::from_boxed_slice(store.0)
             };
             #[cfg(not(feature = "owned_as_ref"))]
             let output = self.encode(&mut ());
@@ -451,7 +447,7 @@ disjoint_impls! {
                 let mut store = Default::default();
                 let _ = self.encode(&mut store);
 
-                CBoxedSlice::from_boxed_slice(Some(store))
+                CBoxedSlice::from_boxed_slice(store.0)
             };
             #[cfg(not(feature = "owned_as_ref"))]
             let output = self.encode(&mut ());
@@ -462,7 +458,7 @@ disjoint_impls! {
         }
     }
     #[cfg(feature = "owned_types")]
-    impl<R: NonLocal + Encode, S: Cloned> OutPtrWrite for Box<[R]>
+    impl<R: Encode + NonLocal, S: Cloned> OutPtrWrite for Box<[R]>
     where
         Self: ReprFamily<Kind = Box<[S]>>,
     {
@@ -470,9 +466,7 @@ disjoint_impls! {
             let mut store = Default::default();
             let _ = self.encode(&mut store);
 
-            let output = CBoxedSlice::from_boxed_slice(
-                Some(store.1)
-            );
+            let output = CBoxedSlice::from_boxed_slice(store.ctypes);
 
             unsafe {
                 out_ptr.write(output);
@@ -505,7 +499,7 @@ disjoint_impls! {
                 let mut store = Default::default();
                 let _ = self.encode(&mut store);
 
-                CBoxedSlice::from_boxed_slice(Some(store))
+                CBoxedSlice::from_boxed_slice(store.0)
             };
             #[cfg(not(feature = "owned_as_ref"))]
             let output = self.encode(&mut ());
@@ -526,7 +520,7 @@ disjoint_impls! {
                 let mut store = Default::default();
                 let _ = self.encode(&mut store);
 
-                CBoxedSlice::from_boxed_slice(Some(store))
+                CBoxedSlice::from_boxed_slice(store.0)
             };
             #[cfg(not(feature = "owned_as_ref"))]
             let output = self.encode(&mut ());
@@ -537,7 +531,7 @@ disjoint_impls! {
         }
     }
     #[cfg(feature = "owned_types")]
-    impl<R: NonLocal + Encode, S: Cloned> OutPtrWrite for Vec<R>
+    impl<R: Encode + NonLocal, S: Cloned> OutPtrWrite for Vec<R>
     where
         Self: ReprFamily<Kind = Vec<S>>,
     {
@@ -545,9 +539,7 @@ disjoint_impls! {
             let mut store = Default::default();
             let _ = self.encode(&mut store);
 
-            let output = CBoxedSlice::from_boxed_slice(
-                Some(store.1)
-            );
+            let output = CBoxedSlice::from_boxed_slice(store.ctypes);
 
             unsafe {
                 out_ptr.write(output);
@@ -567,7 +559,7 @@ disjoint_impls! {
             }
         }
     }
-    impl<R: NonLocal, S: Cloned, const N: usize> OutPtrWrite for [R; N]
+    impl<R: Encode + NonLocal, S: Cloned, const N: usize> OutPtrWrite for [R; N]
     where
         Self: ReprFamily<Kind = [S; N]> + Encode,
     {
@@ -659,7 +651,7 @@ disjoint_impls! {
         }
     }
     #[cfg(feature = "owned_as_ref")]
-    impl<'d, R: NonLocal + Decode<'d> + 'd, S: Cloned> OutPtrRead for Box<R>
+    impl<'d, R: Decode<'d> + NonLocal + 'd, S: Cloned> OutPtrRead for Box<R>
     where
         Self: ReprFamily<Kind = Box<S>>,
     {
@@ -735,7 +727,7 @@ disjoint_impls! {
         }
     }
     #[cfg(feature = "owned_as_ref")]
-    impl<'d, R: NonLocal + 'd, S: Cloned> OutPtrRead for Box<[R]>
+    impl<'d, R: ExternC + NonLocal + 'd, S: Cloned> OutPtrRead for Box<[R]>
     where
         Self: ReprFamily<Kind = Box<[S]>> + Decode<'d, CType = CSliceMut<<R as ExternC>::CType>>,
     {
@@ -791,7 +783,7 @@ disjoint_impls! {
         }
     }
     #[cfg(feature = "owned_as_ref")]
-    impl<'d, R: NonLocal + 'd, S: Cloned> OutPtrRead for Vec<R>
+    impl<'d, R: ExternC + NonLocal + 'd, S: Cloned> OutPtrRead for Vec<R>
     where
         Self: ReprFamily<Kind = Vec<S>> + Decode<'d, CType = CSliceMut<<R as ExternC>::CType>>,
     {
@@ -816,7 +808,7 @@ disjoint_impls! {
         }
     }
 
-    impl<'d, R: NonLocal + 'd, S: Cloned, const N: usize> OutPtrRead for [R; N]
+    impl<'d, R: ExternC + NonLocal + 'd, S: Cloned, const N: usize> OutPtrRead for [R; N]
     where
         Self: ReprFamily<Kind = [S; N]> + Decode<'d>,
     {
@@ -858,6 +850,35 @@ disjoint_impls! {
             //}
 
             //unsafe { R::try_read_out(_out_ptr).map(Some) }
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use static_assertions::assert_impl_all;
+    #[cfg(feature = "owned_as_ref")]
+    use static_assertions::assert_not_impl_any;
+
+    use super::*;
+
+    #[test]
+    fn non_local_types() {
+        #[cfg(feature = "owned_as_ref")]
+        {
+            // FIXME:
+            //assert_not_impl_any!(Vec<u8>: OutPtrWrite);
+            assert_not_impl_any!(Option<Vec<u8>>: OutPtrWrite);
+            assert_not_impl_any!(&Vec<u8>: OutPtrWrite);
+            assert_not_impl_any!(&Option<Vec<u8>>: OutPtrWrite);
+        }
+
+        #[cfg(not(feature = "owned_as_ref"))]
+        {
+            assert_impl_all!(Vec<u8>: OutPtrWrite);
+            assert_impl_all!(Option<Vec<u8>>: OutPtrWrite);
+            assert_impl_all!(&Vec<u8>: OutPtrWrite);
+            assert_impl_all!(&Option<Vec<u8>>: OutPtrWrite);
         }
     }
 }

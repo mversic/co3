@@ -360,6 +360,7 @@ fn assert_size_and_allignment_match<R: CheckedTransmute>() {
 
 #[cfg(test)]
 mod tests {
+    #[cfg(not(feature = "cloned_refs"))]
     use core::num::NonZeroU8;
 
     use static_assertions::{assert_impl_all, assert_not_impl_any};
@@ -576,6 +577,7 @@ mod tests {
     }
 
     #[test]
+    #[cfg(not(feature = "cloned_refs"))]
     fn unsupported_ref_mut() {
         assert_not_impl_any!(&mut (u8,): ReprC, ExternC);
         assert_not_impl_any!(&mut (NonZeroU8,): ReprC, ExternC);

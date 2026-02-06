@@ -168,14 +168,27 @@ fn gen_body(fn_descriptor: &FnDescriptor, trait_name: Option<&Ident>) -> TokenSt
     let input_conversions = gen_input_conversion_stmts(fn_descriptor);
     let method_call_stmt = gen_method_call_stmt(fn_descriptor, trait_name);
     let output_assignment = gen_output_assignment_stmts(fn_descriptor);
+    let store_sync_stmts = gen_store_sync_stmts(fn_descriptor);
 
     quote! {{
         #input_conversions
         #method_call_stmt
         #output_assignment
+        #store_sync_stmts
 
         Ok(())
     }}
+}
+
+fn gen_store_sync_stmts(fn_descriptor: &FnDescriptor) -> TokenStream {
+    let mut stmts = quote! {};
+
+    for arg in &fn_descriptor.input_args {
+        let store_name = gen_store_name(arg.name());
+        stmts.extend(quote! { co3::Store::sync(#store_name); });
+    }
+
+    stmts
 }
 
 fn gen_input_conversion_stmts(fn_descriptor: &FnDescriptor) -> TokenStream {
