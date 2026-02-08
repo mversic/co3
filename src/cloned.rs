@@ -86,29 +86,17 @@ disjoint_impls! {
         }
     }
 
-    //impl<'d, R: CheckedTransmute> DecodeCloneWrapper<'d> for R
-    //where
-    //    <Self as CheckedTransmute>::Target: DecodeCloneWrapper<'d>,
-    //    Self: ReprFamily<Kind = Transmuted>,
-    //{
-    //    #[inline(always)]
-    //    unsafe fn decode_wrapped<'itm: 'd>(
-    //        source: Self::CType,
-    //        store: &'itm mut Self::Store,
-    //    ) -> Option<Self> {
-    //        unimplemented!()
-    //    }
-    //}
-
     #[cfg(feature = "cloned_refs")]
-    impl<'d, R, S: Cloned> DecodeCloneWrapper<'d> for &'d R where
-        Self: ReprFamily<Kind = &'d S>
+    impl<'d, R: DecodeCloneWrapper<'d>, S: Cloned> DecodeCloneWrapper<'d> for &'d R
+    where
+        Self: ReprFamily<Kind = &'d S>,
     {
     }
 
     #[cfg(feature = "cloned_refs")]
-    impl<'d, R, S: Cloned> DecodeCloneWrapper<'d> for &'d mut R where
-        Self: ReprFamily<Kind = &'d mut S>
+    impl<'d, R: DecodeCloneWrapper<'d> + Encode + NonLocal, S: Cloned> DecodeCloneWrapper<'d> for &'d mut R
+    where
+        Self: ReprFamily<Kind = &'d mut S>,
     {
     }
 
@@ -142,12 +130,15 @@ disjoint_impls! {
     {
     }
     #[cfg(feature = "cloned_refs")]
-    impl<'slice, R, S: Cloned> DecodeCloneWrapper<'slice> for &'slice [R] where
-        Self: ReprFamily<Kind = &'slice [S]>
+    impl<'slice, R: DecodeCloneWrapper<'slice>, S: Cloned> DecodeCloneWrapper<'slice> for &'slice [R]
+    where
+        Self: ReprFamily<Kind = &'slice [S]>,
     {
     }
 
-    impl<'slice, R: FlatTransmute> DecodeCloneWrapper<'slice> for &'slice mut [R] where
+    impl<'slice, R: CheckedTransmute> DecodeCloneWrapper<'slice> for &'slice mut [R]
+    where
+        &'slice mut [<R as CheckedTransmute>::Target]: Decode<'slice>,
         Self: ReprFamily<Kind = &'slice mut [Transmuted]>
     {
     }
@@ -157,8 +148,9 @@ disjoint_impls! {
     {
     }
     #[cfg(feature = "cloned_refs")]
-    impl<'slice, R, S: Cloned> DecodeCloneWrapper<'slice> for &'slice mut [R] where
-        Self: ReprFamily<Kind = &'slice mut [S]>
+    impl<'slice, R: DecodeCloneWrapper<'slice> + Encode + NonLocal, S: Cloned> DecodeCloneWrapper<'slice> for &'slice mut [R]
+    where
+        Self: ReprFamily<Kind = &'slice mut [S]>,
     {
     }
 

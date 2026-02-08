@@ -50,8 +50,13 @@ pub trait Niche: ExternC {
 /// - the niche value must be congruent with what is guaranteed by the Rust compiler
 pub unsafe trait StableNiche: Niche {}
 
+// FIXME: Should we make this trait unsafe? Because if bool is marked as WithoutNiche, `&mut bool` will be transmuted and may produce UB
 disjoint_impls! {
     /// Niche kind of the type in the internal representation [IR](`crate::ir::Repr`)
+    ///
+    /// # Safety
+    ///
+    /// - if the type has `ReprFamily<Kind = Robust>` it must not be incorrectly marked as `WithoutNiche`
     pub trait NicheFamily {
         /// The internal representation (i.e. type family) of the type
         ///

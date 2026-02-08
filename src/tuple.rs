@@ -89,9 +89,10 @@ macro_rules! impl_tuple {
 
         #[expect(non_snake_case)]
         impl<$($ty: Store),+> Store for ($($ty,)+) {
-            fn sync(self) {
+            fn sync(self) -> Option<()> {
                 let ($($ty,)+) = self;
-                $( $ty.sync(); )+
+                $( $ty.sync()?; )+
+                Some(())
             }
         }
 

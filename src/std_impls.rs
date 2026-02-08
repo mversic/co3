@@ -14,7 +14,7 @@ use crate::{
     mineral,
     niche::{Niche, NicheFamily, StableNiche, WithCustomNiche, WithStableNiche, WithoutNiche},
     slice::{CSlice, CSliceMut},
-    transmute::{CheckedTransmute, MutSafe},
+    transmute::{CheckedTransmute, EncodeTransmuted},
 };
 
 macro_rules! non_zero_derive {
@@ -185,11 +185,47 @@ impl Niche for Box<str> {
     const NICHE_VALUE: Self::CType = VecCType::none();
 }
 
-unsafe impl<R> MutSafe for UnsafeCell<R> {}
-unsafe impl<R> MutSafe for Cell<R> {}
-unsafe impl<R> MutSafe for NonNull<R> {}
-unsafe impl MutSafe for &str {}
+unsafe impl<R> EncodeTransmuted for UnsafeCell<R>
+where
+    Self: CheckedTransmute<Target: crate::Encode>,
+{
+    type Store = <Self::Target as crate::Encode>::Store;
+}
+unsafe impl<R> EncodeTransmuted for Cell<R>
+where
+    Self: CheckedTransmute<Target: crate::Encode>,
+{
+    type Store = <Self::Target as crate::Encode>::Store;
+}
+unsafe impl<R> EncodeTransmuted for NonNull<R>
+where
+    Self: CheckedTransmute<Target: crate::Encode>,
+{
+    type Store = <Self::Target as crate::Encode>::Store;
+}
+unsafe impl EncodeTransmuted for &str
+where
+    Self: CheckedTransmute<Target: crate::Encode>,
+{
+    type Store = <Self::Target as crate::Encode>::Store;
+}
+unsafe impl EncodeTransmuted for &mut str
+where
+    Self: CheckedTransmute<Target: crate::Encode>,
+{
+    type Store = <Self::Target as crate::Encode>::Store;
+}
 #[cfg(feature = "owned_types")]
-unsafe impl MutSafe for Box<str> {}
+unsafe impl EncodeTransmuted for Box<str>
+where
+    Self: CheckedTransmute<Target: crate::Encode>,
+{
+    type Store = <Self::Target as crate::Encode>::Store;
+}
 #[cfg(feature = "owned_types")]
-unsafe impl MutSafe for String {}
+unsafe impl EncodeTransmuted for String
+where
+    Self: CheckedTransmute<Target: crate::Encode>,
+{
+    type Store = <Self::Target as crate::Encode>::Store;
+}

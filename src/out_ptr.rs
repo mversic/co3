@@ -141,11 +141,12 @@ disjoint_impls! {
         type OutPtr = CBoxedSlice<R::CType>;
     }
 
-    impl<'slice, R: FlatTransmute> OutPtr for &'slice mut [R]
+    impl<'slice, R: CheckedTransmute> OutPtr for &'slice mut [R]
     where
+        &'slice mut [<R as CheckedTransmute>::Target]: OutPtr,
         Self: ReprFamily<Kind = &'slice mut [Transmuted]>,
     {
-        type OutPtr = Self::CType;
+        type OutPtr = <&'slice mut [R::Target] as OutPtr>::OutPtr;
     }
 
     #[cfg(feature = "owned_types")]
@@ -328,8 +329,8 @@ disjoint_impls! {
 
     impl<'slice, R: CheckedTransmute> OutPtrWrite for &'slice [R]
     where
-        Self: ReprFamily<Kind = &'slice [Transmuted]>,
         &'slice [<R as CheckedTransmute>::Target]: OutPtrWrite,
+        Self: ReprFamily<Kind = &'slice [Transmuted]>,
     {
         unsafe fn write_out(self, out_ptr: *mut Self::OutPtr) {
             let transmuted = transmute_into_target_ref_slice(self);
@@ -384,19 +385,16 @@ disjoint_impls! {
         }
     }
 
-    impl<
-        'slice,
-        #[cfg(not(feature = "non_robust_ref_mut"))] R: ReprC + FlatTransmute,
-        #[cfg(feature = "non_robust_ref_mut")] R: FlatTransmute,
-    > OutPtrWrite for &'slice mut [R]
+    impl<'slice, R: CheckedTransmute> OutPtrWrite for &'slice mut [R]
     where
+        &'slice mut [<R as CheckedTransmute>::Target]: OutPtrWrite,
         Self: ReprFamily<Kind = &'slice mut [Transmuted]>,
     {
         unsafe fn write_out(self, out_ptr: *mut Self::OutPtr) {
-            let encoded = self.encode(&mut ());
+            let transmuted = transmute_into_target_slice_mut(self);
 
             unsafe {
-                out_ptr.write(encoded)
+                OutPtrWrite::write_out(transmuted, out_ptr);
             }
         }
     }
@@ -668,14 +666,12 @@ disjoint_impls! {
 
     impl<'d, R: CheckedTransmute> OutPtrRead for &'d [R]
     where
-        Self: ReprFamily<Kind = &'d [Transmuted]>,
         &'d [<R as CheckedTransmute>::Target]: OutPtrRead,
+        Self: ReprFamily<Kind = &'d [Transmuted]>,
     {
         unsafe fn try_read_out(out_ptr: Self::OutPtr) -> Option<Self> {
-            unsafe {
-                <&[R::Target]>::try_read_out(out_ptr)
-                    .and_then(|output| transmute_from_target_ref_slice(output))
-            }
+            unsafe { <&[R::Target]>::try_read_out(out_ptr) }
+                .and_then(|output| transmute_from_target_ref_slice(output))
         }
     }
     impl<'a, R: ReprC> OutPtrRead for &'a [R]
@@ -687,12 +683,14 @@ disjoint_impls! {
         }
     }
 
-    impl<'d, R: FlatTransmute> OutPtrRead for &'d mut [R]
+    impl<'d, R: CheckedTransmute> OutPtrRead for &'d mut [R]
     where
+        &'d mut [<R as CheckedTransmute>::Target]: OutPtrRead,
         Self: ReprFamily<Kind = &'d mut [Transmuted]>,
     {
         unsafe fn try_read_out(out_ptr: Self::OutPtr) -> Option<Self> {
-            transmute_from_target_slice_mut(unsafe { out_ptr.into_rust()? })
+            unsafe { <&mut [R::Target]>::try_read_out(out_ptr) }
+                .and_then(|output| transmute_from_target_slice_mut(output))
         }
     }
 

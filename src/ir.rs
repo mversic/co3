@@ -27,6 +27,11 @@ pub enum Robust {}
 /// Marker for a type exported as an opaque pointer over FFI.
 pub enum Opaque {}
 
+pub(crate) trait NonRobust {}
+impl<T: Cloned> NonRobust for T {}
+impl NonRobust for Transmuted {}
+impl NonRobust for Opaque {}
+
 disjoint_impls! {
     /// Type that can be converted to and from an internal representation (IR).
     ///
@@ -135,7 +140,7 @@ disjoint_impls! {
         type Kind = &'a mut [Transmuted];
     }
     impl<'a, R: ReprFamily<Kind = Robust>> ReprFamily for &'a mut [R] {
-        type Kind = &'a mut [Transmuted];
+        type Kind = &'a mut [Robust];
     }
     #[cfg(feature = "cloned_refs")]
     impl<'a, R: ReprFamily<Kind = Opaque>> ReprFamily for &'a mut [R] {

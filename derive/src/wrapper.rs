@@ -445,7 +445,7 @@ fn gen_store_sync_stmts(fn_descriptor: &FnDescriptor) -> TokenStream {
 
     for arg in &fn_descriptor.input_args {
         let store_name = gen_store_name(arg.name());
-        stmts.extend(quote! { co3::Store::sync(#store_name); });
+        stmts.extend(quote! { co3::Store::sync(#store_name)?; });
     }
 
     stmts

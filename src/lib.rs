@@ -14,17 +14,19 @@ pub use co3_derive::*;
 use derive_more::Display;
 use disjoint_impls::disjoint_impls;
 
-#[cfg(not(feature = "non_robust_ref_mut"))]
-use crate::transmute::MutSafe;
 #[cfg(feature = "cloned_refs")]
-use crate::{cloned::DecodeCloneWrapper, out_ptr::NonLocal};
+use crate::cloned::DecodeCloneWrapper;
+#[cfg(feature = "cloned_refs")]
+use crate::out_ptr::NonLocal;
+#[cfg(not(feature = "non_robust_ref_mut"))]
+use crate::transmute::EncodeTransmuted;
 use crate::{
     cloned::decode_cloned_array,
-    ir::{Cloned, Opaque, ReprFamily, Robust, Transmuted},
-    niche::{Niche, StableNiche, WithCustomNiche, WithoutNiche},
+    ir::{Cloned, NonRobust, Opaque, ReprFamily, Robust, Transmuted},
+    niche::{Niche, NicheFamily, StableNiche, WithCustomNiche, WithNiche, WithoutNiche},
     slice::{CSlice, CSliceMut},
     transmute::{
-        CheckedTransmute, FlatTransmute, transmute_from_target, transmute_from_target_ref_slice,
+        CheckedTransmute, transmute_from_target, transmute_from_target_ref_slice,
         transmute_from_target_slice_mut, transmute_into_target, transmute_into_target_ref_slice,
         transmute_into_target_slice_mut,
     },
@@ -169,11 +171,18 @@ disjoint_impls! {
         type CType = CSlice<R::CType>;
     }
 
-    impl<'slice, R: FlatTransmute> ExternC for &'slice mut [R]
+    impl<'slice, R: CheckedTransmute> ExternC for &'slice mut [R]
     where
         Self: ReprFamily<Kind = &'slice mut [Transmuted]>,
+        &'slice mut [<R as CheckedTransmute>::Target]: ExternC,
     {
-        type CType = CSliceMut<R::CType>;
+        type CType = <&'slice mut [R::Target] as ExternC>::CType;
+    }
+    impl<'a, R: ReprC> ExternC for &'a mut [R]
+    where
+        Self: ReprFamily<Kind = &'a mut [Robust]>,
+    {
+        type CType = CSliceMut<R>;
     }
     #[cfg(feature = "cloned_refs")]
     impl<'slice, R> ExternC for &'slice mut [R]
@@ -309,19 +318,33 @@ disjoint_impls! {
     //    }
     //}
     impl<
+        #[cfg(not(feature = "non_robust_ref_mut"))] R: EncodeTransmuted,
         #[cfg(feature = "non_robust_ref_mut")] R,
-        #[cfg(not(feature = "non_robust_ref_mut"))] R: MutSafe,
     > Encode for R
     where
         R: ReprFamily<Kind = Transmuted> + CheckedTransmute<Target: Encode>,
     {
+        #[cfg(not(feature = "non_robust_ref_mut"))]
+        type Store = R::Store;
+        #[cfg(feature = "non_robust_ref_mut")]
         type Store = <R::Target as Encode>::Store;
 
         fn encode<'itm>(self, store: &'itm mut Self::Store) -> Self::CType
         where
             Self: 'itm,
         {
-            transmute_into_target(self).encode(store)
+            #[cfg(not(feature = "non_robust_ref_mut"))]
+            {
+                let target = R::encode_transmuted(self, store);
+                let store = unsafe {
+                    &mut *(store as *mut Self::Store as *mut <R::Target as Encode>::Store)
+                };
+                Encode::encode(target, store)
+            }
+            #[cfg(feature = "non_robust_ref_mut")]
+            {
+                transmute_into_target(self).encode(store)
+            }
         }
     }
     impl<R: ReprFamily<Kind = Robust> + ReprC> Encode for R {
@@ -467,11 +490,21 @@ disjoint_impls! {
         }
     }
 
-    impl<
-        'slice,
-        #[cfg(not(feature = "non_robust_ref_mut"))] R: ReprC + FlatTransmute,
-        #[cfg(feature = "non_robust_ref_mut")] R: FlatTransmute,
-    > Encode for &'slice mut [R]
+    impl<'slice, R: CheckedTransmute<Target: ReprFamily<Kind: NonRobust> + 'slice>> Encode for &'slice mut [R]
+    where
+        &'slice mut [<R as CheckedTransmute>::Target]: Encode,
+        Self: ReprFamily<Kind = &'slice mut [Transmuted]>,
+    {
+        type Store = <&'slice mut [R::Target] as Encode>::Store;
+
+        fn encode<'itm>(self, store: &mut Self::Store) -> Self::CType
+        where
+            Self: 'itm,
+        {
+            transmute_into_target_slice_mut(self).encode(store)
+        }
+    }
+    impl<'slice, R: CheckedTransmute<Target: ReprFamily<Kind = Robust> + ReprC + 'slice> + NicheFamily<Kind = WithoutNiche>> Encode for &'slice mut [R]
     where
         Self: ReprFamily<Kind = &'slice mut [Transmuted]>,
     {
@@ -481,7 +514,45 @@ disjoint_impls! {
         where
             Self: 'itm,
         {
-            CSliceMut::from_slice(Some(transmute_into_target_slice_mut(self)))
+            Encode::encode(transmute_into_target_slice_mut(self), &mut ())
+        }
+    }
+    impl<'slice, R: CheckedTransmute<Target: ReprFamily<Kind = Robust> + ReprC + 'slice> + NicheFamily<Kind: WithNiche>> Encode for &'slice mut [R]
+    where
+        Self: ReprFamily<Kind = &'slice mut [Transmuted]>,
+    {
+        #[cfg(not(feature = "non_robust_ref_mut"))]
+        type Store = SliceMutTransmuteStore<'slice, R>;
+        #[cfg(feature = "non_robust_ref_mut")]
+        type Store = ();
+
+        fn encode<'itm>(self, store: &'itm mut Self::Store) -> Self::CType
+        where
+            Self: 'itm,
+        {
+            #[cfg(not(feature = "non_robust_ref_mut"))]
+            let ctypes: &mut [_] = {
+                let original: &mut [R] = store.original.insert(self);
+                let robust = transmute_into_target_slice_mut(original);
+                store.target.insert(robust.to_vec().into_boxed_slice())
+            };
+            #[cfg(feature = "non_robust_ref_mut")]
+            let ctypes = transmute_into_target_slice_mut(self);
+
+            Encode::encode(ctypes, &mut ())
+        }
+    }
+    impl<'slice, R: ReprC> Encode for &'slice mut [R]
+    where
+        Self: ReprFamily<Kind = &'slice mut [Robust]>,
+    {
+        type Store = ();
+
+        fn encode<'itm>(self, (): &mut ()) -> Self::CType
+        where
+            Self: 'itm,
+        {
+            CSliceMut::from_slice(Some(self))
         }
     }
     #[cfg(feature = "cloned_refs")]
@@ -512,7 +583,6 @@ disjoint_impls! {
             Self: 'itm,
         {
             let original = store.original.insert(self);
-            let cloned_items: Vec<R> = original.iter().cloned().collect();
 
             let stores = store.stores.insert(
                 core::iter::repeat_with(Default::default)
@@ -521,8 +591,9 @@ disjoint_impls! {
             );
 
             let ctypes = store.ctypes.insert(
-                cloned_items
-                    .into_iter()
+                original
+                    .iter()
+                    .cloned()
                     .zip(&mut *stores)
                     .map(|(item, substore)| item.encode(substore))
                     .collect(),
@@ -811,20 +882,19 @@ disjoint_impls! {
         unsafe fn decode<'itm: 'd>(source: Self::CType, store: &'itm mut Self::Store) -> Option<Self>;
     }
 
-    #[cfg(feature = "owned_as_ref")]
-    impl<'d, R: CheckedTransmute<Target: ReprC + 'd> + Clone> Decode<'d> for R
-    where
-        Self: ReprFamily<Kind = Box<Robust>>,
-    {
-        type Store = ();
+    //#[cfg(feature = "owned_as_ref")]
+    //impl<'d, R: CheckedTransmute<Target: 'd> + Clone> Decode<'d> for R
+    //where
+    //    Self: ReprFamily<Kind = Box<Robust>>,
+    //{
+    //    type Store = ();
 
-        unsafe fn decode<'itm: 'd>(source: Self::CType, (): &mut ()) -> Option<Self> {
-            transmute_from_target::<&R>(&source).cloned()
-        }
-    }
-    impl<'d, R: CheckedTransmute> Decode<'d> for R
+    //    unsafe fn decode<'itm: 'd>(source: Self::CType, (): &mut ()) -> Option<Self> {
+    //        transmute_from_target::<&R>(&source).cloned()
+    //    }
+    //}
+    impl<'d, R: CheckedTransmute<Target: Decode<'d>>> Decode<'d> for R
     where
-        <Self as CheckedTransmute>::Target: Decode<'d>,
         Self: ReprFamily<Kind = Transmuted>,
     {
         type Store = <R::Target as Decode<'d>>::Store;
@@ -916,10 +986,7 @@ disjoint_impls! {
             source: Self::CType,
             store: &'itm mut Self::Store,
         ) -> Option<Self> {
-            unsafe {
-                let slice = <&[R::Target]>::decode(source, store)?;
-                transmute_from_target_ref_slice(slice)
-            }
+            transmute_from_target_ref_slice(unsafe { <&[R::Target]>::decode(source, store)? })
         }
     }
     impl<'slice, R: ReprC> Decode<'slice> for &'slice [R]
@@ -986,14 +1053,25 @@ disjoint_impls! {
         }
     }
 
-    impl<'slice, R: FlatTransmute> Decode<'slice> for &'slice mut [R]
+    impl<'slice, R: CheckedTransmute> Decode<'slice> for &'slice mut [R]
     where
+        &'slice mut [<R as CheckedTransmute>::Target]: Decode<'slice>,
         Self: ReprFamily<Kind = &'slice mut [Transmuted]>,
+    {
+        type Store = <&'slice mut [R::Target] as Decode<'slice>>::Store;
+
+        unsafe fn decode<'itm: 'slice>(source: Self::CType, store: &'itm mut Self::Store) -> Option<Self> {
+            transmute_from_target_slice_mut(unsafe { <&mut [R::Target]>::decode(source, store)? })
+        }
+    }
+    impl<'slice, R: ReprC> Decode<'slice> for &'slice mut [R]
+    where
+        Self: ReprFamily<Kind = &'slice mut [Robust]>,
     {
         type Store = ();
 
         unsafe fn decode<'itm: 'slice>(source: Self::CType, (): &mut ()) -> Option<Self> {
-            transmute_from_target_slice_mut(unsafe { source.into_rust()? })
+            unsafe { source.into_rust() }
         }
     }
     #[cfg(feature = "cloned_refs")]
@@ -1220,12 +1298,15 @@ disjoint_impls! {
 }
 
 // TODO: Could the store just be synced on drop?
+// FIXME: Encode types can never error during sync
 pub trait Store {
-    fn sync(self);
+    fn sync(self) -> Option<()>;
 }
 
 impl Store for () {
-    fn sync(self) {}
+    fn sync(self) -> Option<()> {
+        Some(())
+    }
 }
 
 pub struct DecodeStoreSlice<D>(Option<Box<[D]>>);
@@ -1237,10 +1318,12 @@ impl<D> Default for DecodeStoreSlice<D> {
 }
 
 impl<D: Store> Store for DecodeStoreSlice<D> {
-    fn sync(self) {
+    fn sync(self) -> Option<()> {
         for store in self.0.unwrap() {
-            store.sync();
+            store.sync()?;
         }
+
+        Some(())
     }
 }
 
@@ -1260,8 +1343,8 @@ impl<R, D: Default> Default for RefDecodeStore<R, D> {
 }
 
 impl<R, D: Store> Store for RefDecodeStore<R, D> {
-    fn sync(self) {
-        self.store.sync();
+    fn sync(self) -> Option<()> {
+        self.store.sync()
     }
 }
 
@@ -1274,7 +1357,9 @@ impl<T> Default for OwningStore<T> {
 }
 
 impl<T> Store for OwningStore<T> {
-    fn sync(self) {}
+    fn sync(self) -> Option<()> {
+        Some(())
+    }
 }
 
 pub struct DecodeStoreSlicePair<R, D> {
@@ -1293,10 +1378,12 @@ impl<R, D> Default for DecodeStoreSlicePair<R, D> {
 }
 
 impl<R, D: Store> Store for DecodeStoreSlicePair<R, D> {
-    fn sync(self) {
+    fn sync(self) -> Option<()> {
         for store in self.stores.unwrap() {
-            store.sync();
+            store.sync()?;
         }
+
+        Some(())
     }
 }
 
@@ -1318,12 +1405,18 @@ impl<'a, R> Default for OpaqueMutSliceEncodeStore<'a, R> {
 
 #[cfg(feature = "cloned_refs")]
 impl<'a, R> Store for OpaqueMutSliceEncodeStore<'a, R> {
-    fn sync(self) {
-        for (orig, ptr) in self.original.unwrap().iter_mut().zip(self.encoded.unwrap()) {
-            if !core::ptr::eq(ptr, orig) {
-                *orig = unsafe { ptr.read() };
-            }
+    fn sync(self) -> Option<()> {
+        let encoded = self.encoded.unwrap();
+
+        if encoded.iter().any(|ptr| ptr.is_null()) {
+            return None;
         }
+
+        for (orig, ptr) in self.original.unwrap().iter_mut().zip(encoded) {
+            *orig = unsafe { ptr.read() };
+        }
+
+        Some(())
     }
 }
 
@@ -1345,8 +1438,8 @@ impl<R: Encode> Default for RefStore<R> {
 
 #[cfg(any(feature = "cloned_refs", feature = "owned_as_ref"))]
 impl<R: Encode> Store for RefStore<R> {
-    fn sync(self) {
-        self.encode_store.sync();
+    fn sync(self) -> Option<()> {
+        self.encode_store.sync()
     }
 }
 
@@ -1370,7 +1463,7 @@ impl<'a, R: Encode> Default for RefMutStore<'a, R> {
 
 #[cfg(feature = "cloned_refs")]
 impl<'a, 'b, R: Encode + Decode<'b> + NonLocal + 'b> Store for RefMutStore<'a, R> {
-    fn sync(self) {
+    fn sync(self) -> Option<()> {
         if let (Some(encoded), Some(original)) = (self.encoded, self.original) {
             let mut decode_store = Default::default();
 
@@ -1380,10 +1473,10 @@ impl<'a, 'b, R: Encode + Decode<'b> + NonLocal + 'b> Store for RefMutStore<'a, R
                 )
             };
 
-            if let Some(decoded) = unsafe { R::decode(encoded, store_ref) } {
-                *original = decoded;
-            }
+            *original = unsafe { R::decode(encoded, store_ref)? };
         }
+
+        Some(())
     }
 }
 
@@ -1402,10 +1495,12 @@ impl<C, D> Default for SliceStore<C, D> {
 }
 
 impl<C, D: Store> Store for SliceStore<C, D> {
-    fn sync(self) {
+    fn sync(self) -> Option<()> {
         for store in self.stores.unwrap() {
-            store.sync();
+            store.sync()?;
         }
+
+        Some(())
     }
 }
 
@@ -1429,7 +1524,7 @@ impl<'slice, R: Encode> Default for MutSliceStore<'slice, R> {
 
 #[cfg(feature = "cloned_refs")]
 impl<'slice, 'b, R: Encode + Decode<'b> + NonLocal + 'b> Store for MutSliceStore<'slice, R> {
-    fn sync(self) {
+    fn sync(self) -> Option<()> {
         if let (Some(borrows), Some(ctypes)) = (self.original, self.ctypes) {
             let mut decode_store = Default::default();
 
@@ -1440,11 +1535,42 @@ impl<'slice, 'b, R: Encode + Decode<'b> + NonLocal + 'b> Store for MutSliceStore
                     )
                 };
 
-                if let Some(decoded) = unsafe { R::decode(encoded, store_ref) } {
-                    *original = decoded;
-                }
+                *original = unsafe { R::decode(encoded, store_ref)? };
             }
         }
+
+        Some(())
+    }
+}
+
+#[cfg(not(feature = "non_robust_ref_mut"))]
+pub struct SliceMutTransmuteStore<'slice, R: CheckedTransmute> {
+    target: Option<Box<[R::Target]>>,
+    original: Option<&'slice mut [R]>,
+}
+
+#[cfg(not(feature = "non_robust_ref_mut"))]
+impl<'slice, R: CheckedTransmute> Default for SliceMutTransmuteStore<'slice, R> {
+    fn default() -> Self {
+        Self {
+            target: None,
+            original: None,
+        }
+    }
+}
+
+#[cfg(not(feature = "non_robust_ref_mut"))]
+impl<'slice, R: CheckedTransmute> Store for SliceMutTransmuteStore<'slice, R> {
+    fn sync(self) -> Option<()> {
+        if let (Some(borrows), Some(target)) = (self.original, self.target) {
+            let target = crate::transmute::transmute_from_target_boxed_slice(target)?;
+
+            for (original, t) in borrows.iter_mut().zip(target) {
+                *original = t;
+            }
+        }
+
+        Some(())
     }
 }
 
@@ -1459,10 +1585,12 @@ impl<D, const N: usize> Default for ArraySyncStore<D, N> {
 }
 
 impl<D: Store, const N: usize> Store for ArraySyncStore<D, N> {
-    fn sync(self) {
+    fn sync(self) -> Option<()> {
         for store in self.0.unwrap() {
-            store.sync();
+            store.sync()?;
         }
+
+        Some(())
     }
 }
 
@@ -1486,10 +1614,11 @@ impl<R: ExternC, DS: Default> Default for RefMutDecodeStore<R, DS> {
 
 #[cfg(feature = "cloned_refs")]
 impl<R: Encode + NonLocal, DS: Store> Store for RefMutDecodeStore<R, DS> {
-    fn sync(self) {
+    fn sync(self) -> Option<()> {
         let mut encode_store = Default::default();
         let encoded = self.value.unwrap().encode(&mut encode_store);
         unsafe { *self.source.unwrap() = encoded };
+        Some(())
     }
 }
 
@@ -1513,14 +1642,15 @@ impl<R: ExternC, DS: Default> Default for MutSliceDecodeStore<R, DS> {
 
 #[cfg(feature = "cloned_refs")]
 impl<R: Encode + NonLocal, DS: Store> Store for MutSliceDecodeStore<R, DS> {
-    fn sync(self) {
+    fn sync(self) -> Option<()> {
         let mut encode_store = Default::default();
 
         let source = unsafe { self.source.unwrap().into_rust().unwrap() };
         for (src, decoded) in source.iter_mut().zip(self.values.unwrap()) {
-            let encoded = decoded.encode(&mut encode_store);
-            *src = encoded;
+            *src = decoded.encode(&mut encode_store);
         }
+
+        Some(())
     }
 }
 
@@ -1542,12 +1672,14 @@ impl<R> Default for OpaqueMutSliceDecodeStore<R> {
 
 #[cfg(feature = "cloned_refs")]
 impl<R> Store for OpaqueMutSliceDecodeStore<R> {
-    fn sync(self) {
+    fn sync(self) -> Option<()> {
         let slice = unsafe { self.source.unwrap().into_rust().unwrap() };
 
         for (src, decoded) in slice.iter_mut().zip(self.values.unwrap()) {
             unsafe { **src = decoded };
         }
+
+        Some(())
     }
 }
 
@@ -1654,7 +1786,13 @@ macro_rules! mineral {
             type Kind = $crate::niche::WithCustomNiche;
         }
 
-        unsafe impl $(<$($params)*>)? $crate::transmute::MutSafe for $self_ty where $target: $crate::Encode, $($($preds)*)? {}
+        unsafe impl $(<$($params)*>)? $crate::transmute::EncodeTransmuted for $self_ty
+        where
+            $target: $crate::Encode,
+            $($($preds)*)?
+        {
+            type Store = <$target as $crate::Encode>::Store;
+        }
     };
     (unsafe impl Transparent for $self_ty:ty $(where ( $($preds:tt)* ))? {
         type Target = $target:ty;
@@ -1734,7 +1872,13 @@ macro_rules! mineral {
         }
 
         unsafe impl $($impl_generics)* $crate::niche::StableNiche for $self_ty where $($for_dummy)* $target: $crate::niche::StableNiche, $($($preds)*)? {}
-        unsafe impl $($impl_generics)* $crate::transmute::MutSafe for $self_ty where $($for_dummy)* $target: $crate::Encode, $($($preds)*)? {}
+        unsafe impl $($impl_generics)* $crate::transmute::EncodeTransmuted for $self_ty
+        where
+            $($for_dummy)* $target: $crate::Encode,
+            $($($preds)*)?
+        {
+            type Store = <$target as $crate::Encode>::Store;
+        }
     };
 }
 
@@ -1757,6 +1901,8 @@ const fn assert_arr_has_non_zero_len<const N: usize>() {
 
 #[cfg(test)]
 mod tests {
+    use crate::transmute::FlatTransmute;
+
     use super::*;
 
     use alloc::string::String;
@@ -1845,35 +1991,65 @@ mod tests {
     #[test]
     #[cfg(feature = "cloned_refs")]
     fn encode_cloned_mut_ref() {
+        use crate::option::COption;
+
         let inner = 8u8;
         let other = 42u8;
-        let mut value = (&inner,);
-        let value_mut_ref = &mut value;
+        let mut value = Some(inner);
+        let value_mut_ref: &mut Option<u8> = &mut value;
         {
-            let mut store = Box::new(Default::default());
+            let mut store: Box<<&mut Option<u8> as Encode>::Store> = Box::new(Default::default());
             let encoded = value_mut_ref.encode(&mut *store);
             unsafe {
-                (*encoded).0 = &other;
+                *encoded = COption::Some(other);
             }
-            store.sync();
+            store.sync().unwrap();
         }
-        assert_eq!(value, (&42u8,));
+        assert_eq!(value, Some(42u8));
 
-        let mut slice = [(&1u8,)];
-        let ref_mut: &mut [(&u8,)] = &mut slice;
+        let mut slice = [Some(1u8)];
+        let ref_mut: &mut [_] = &mut slice;
         {
-            let mut store = Box::new(Default::default());
+            let mut store: Box<<&mut [Option<u8>] as Encode>::Store> = Box::new(Default::default());
             let encoded = ref_mut.encode(&mut *store);
             let c_slice = unsafe { encoded.into_rust().unwrap() };
-            c_slice[0].0 = &other;
-            store.sync();
+            c_slice[0] = COption::Some(other);
+            store.sync().unwrap();
         }
-        assert_eq!(slice, [(&42,)]);
+        assert_eq!(slice, [Some(42u8)]);
     }
 
     #[test]
     #[cfg(feature = "cloned_refs")]
-    fn encode_opaque_mut_ref() {
+    fn decode_cloned_mut_ref() {
+        use crate::{option::COption, slice::CSliceMut};
+
+        let mut c_opt = COption::Some(1u8);
+        let c_ptr: *mut _ = &mut c_opt;
+        let new_val: u8 = 42;
+        {
+            let mut store: Box<<&mut Option<u8> as Decode>::Store> = Box::new(Default::default());
+            let decoded = unsafe { <&mut Option<u8>>::decode(c_ptr, &mut *store) }.unwrap();
+            *decoded = Some(new_val);
+            store.sync().unwrap();
+        }
+        assert_eq!(c_opt, COption::Some(42u8));
+
+        let mut c_opts = [COption::Some(1u8)];
+        let c_slice = CSliceMut::from_slice(Some(&mut c_opts));
+        let x: u8 = 10;
+        {
+            let mut store: Box<<&mut [Option<u8>] as Decode>::Store> = Box::new(Default::default());
+            let decoded = unsafe { <&mut [Option<u8>]>::decode(c_slice, &mut *store) }.unwrap();
+            decoded[0] = Some(x);
+            store.sync().unwrap();
+        }
+        assert_eq!(c_opts[0], COption::Some(10u8));
+    }
+
+    #[test]
+    #[cfg(feature = "cloned_refs")]
+    fn encode_opaque_ref_mut_slice() {
         #[derive(Clone, PartialEq, Eq)]
         struct OpaqueData {
             value: i32,
@@ -1892,7 +2068,7 @@ mod tests {
             let c_slice = unsafe { encoded.into_rust().unwrap() };
             c_slice[0] = &mut *other;
 
-            store.sync();
+            store.sync().unwrap();
         }
         assert_eq!(items[0].value, 100);
     }
@@ -1919,40 +2095,9 @@ mod tests {
             let mut store = Box::new(Default::default());
             let decoded = unsafe { <&mut [OpaqueData]>::decode(c_slice, &mut store) }.unwrap();
             decoded[0].value = 100;
-            store.sync();
+            store.sync().unwrap();
         }
 
         assert_eq!(item1.value, 100);
-    }
-
-    #[test]
-    #[cfg(feature = "cloned_refs")]
-    fn decode_cloned_mut_ref() {
-        use crate::{slice::CSliceMut, tuple::CTuple1};
-
-        let inner: u8 = 1;
-        let inner_ptr: *const u8 = &inner;
-        let mut c_tuple = CTuple1(inner_ptr);
-        let c_ptr: *mut CTuple1<*const u8> = &mut c_tuple;
-        let new_val: u8 = 42;
-        {
-            let mut store = Box::new(Default::default());
-            let decoded = unsafe { <&mut (&u8,)>::decode(c_ptr, &mut *store) }.unwrap();
-            decoded.0 = &new_val;
-            store.sync();
-        }
-        assert_eq!(unsafe { *c_tuple.0 }, 42);
-
-        let a: u8 = 1;
-        let mut c_tuples = [CTuple1(&a as *const u8)];
-        let c_slice = CSliceMut::from_slice(Some(&mut c_tuples));
-        let x: u8 = 10;
-        {
-            let mut store = Box::new(Default::default());
-            let decoded = unsafe { <&mut [(&u8,)]>::decode(c_slice, &mut *store) }.unwrap();
-            decoded[0].0 = &x;
-            store.sync();
-        }
-        assert_eq!(unsafe { *c_tuples[0].0 }, 10);
     }
 }
