@@ -595,7 +595,11 @@ fn gen_flat_transmute_bounds(fields: &[&syn::Type], generics: &syn::Generics) ->
         .iter()
         .filter(|&ty| is_type_parameterized(ty, generics));
 
-    quote! { #(#parameterized_field_types: co3::transmute::FlatTransmute,)* }
+    quote! {
+        #(#parameterized_field_types:
+            co3::transmute::FlatTransmute<Target: co3::ir::ReprFamily<Kind = co3::ir::Robust>>,
+        )*
+    }
 }
 
 fn gen_repr_c_bounds(fields: &[&syn::Type], generics: &syn::Generics) -> TokenStream {

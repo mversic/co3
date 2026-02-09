@@ -589,11 +589,10 @@ where
 
 #[cfg(test)]
 mod tests {
-    #[cfg(not(feature = "cloned_refs"))]
-    use crate::ir::ReprFamily;
     #[cfg(feature = "cloned_refs")]
     use crate::slice::CSlice;
     use crate::{
+        ir::{ReprFamily, Robust},
         niche::StableNiche,
         option::COption,
         transmute::{CheckedTransmute, FlatTransmute},
@@ -615,14 +614,14 @@ mod tests {
         assert_impl_all!([(u8, u8, u8); 2]: ExternC<CType = [CTuple3<u8, u8, u8>; 2]>);
         assert_impl_all!(Option<(u8, u8, u8)>: Niche<CType = COption<CTuple3<u8, u8, u8>>>);
 
-        assert_not_impl_any!((u8, u8, u8): ReprC, CheckedTransmute, FlatTransmute, Niche);
-        assert_not_impl_any!(&(u8, u8, u8): ReprC, CheckedTransmute, FlatTransmute);
-        assert_not_impl_any!(&mut (u8, u8, u8): ReprC, CheckedTransmute, FlatTransmute);
-        assert_not_impl_any!(Box<(u8, u8, u8)>: ReprC, CheckedTransmute, FlatTransmute);
-        assert_not_impl_any!(&[(u8, u8, u8)]: ReprC, CheckedTransmute, FlatTransmute, StableNiche);
-        assert_not_impl_any!(&mut [(u8, u8, u8)]: ReprC, CheckedTransmute, FlatTransmute, StableNiche);
-        assert_not_impl_any!([(u8, u8, u8); 2]: ReprC, CheckedTransmute, FlatTransmute, Niche);
-        assert_not_impl_any!(Option<(u8, u8, u8)>: ReprC, CheckedTransmute, FlatTransmute, StableNiche);
+        assert_not_impl_any!((u8, u8, u8): ReprC, CheckedTransmute, FlatTransmute<Target: ReprFamily<Kind = Robust>>, Niche);
+        assert_not_impl_any!(&(u8, u8, u8): ReprC, CheckedTransmute, FlatTransmute<Target: ReprFamily<Kind = Robust>>);
+        assert_not_impl_any!(&mut (u8, u8, u8): ReprC, CheckedTransmute, FlatTransmute<Target: ReprFamily<Kind = Robust>>);
+        assert_not_impl_any!(Box<(u8, u8, u8)>: ReprC, CheckedTransmute, FlatTransmute<Target: ReprFamily<Kind = Robust>>);
+        assert_not_impl_any!(&[(u8, u8, u8)]: ReprC, CheckedTransmute, FlatTransmute<Target: ReprFamily<Kind = Robust>>, StableNiche);
+        assert_not_impl_any!(&mut [(u8, u8, u8)]: ReprC, CheckedTransmute, FlatTransmute<Target: ReprFamily<Kind = Robust>>, StableNiche);
+        assert_not_impl_any!([(u8, u8, u8); 2]: ReprC, CheckedTransmute, FlatTransmute<Target: ReprFamily<Kind = Robust>>, Niche);
+        assert_not_impl_any!(Option<(u8, u8, u8)>: ReprC, CheckedTransmute, FlatTransmute<Target: ReprFamily<Kind = Robust>>, StableNiche);
 
         #[cfg(not(feature = "cloned_refs"))]
         assert_not_impl_any!(&(u8, u8, u8): ExternC);
@@ -651,14 +650,14 @@ mod tests {
         // TODO: Depends on: https://github.com/mversic/co3/issues/33
         //assert_impl_all!(Option<(u8, bool, u8)>: Niche<CType = CTuple3<u8, u8, u8>>);
 
-        assert_not_impl_any!((u8, bool, u8): ReprC, CheckedTransmute, FlatTransmute, StableNiche);
-        assert_not_impl_any!(&(u8, bool, u8): ReprC, CheckedTransmute, FlatTransmute);
-        assert_not_impl_any!(&mut (u8, bool, u8): ReprC, CheckedTransmute, FlatTransmute);
-        assert_not_impl_any!(Box<(u8, bool, u8)>: ReprC, CheckedTransmute, FlatTransmute);
-        assert_not_impl_any!(&[(u8, bool, u8)]: ReprC, CheckedTransmute, FlatTransmute, StableNiche);
-        assert_not_impl_any!(&mut [(u8, bool, u8)]: ReprC, CheckedTransmute, FlatTransmute, StableNiche);
-        assert_not_impl_any!([(u8, bool, u8); 2]: ReprC, CheckedTransmute, FlatTransmute, StableNiche);
-        assert_not_impl_any!(Option<(u8, bool, u8)>: ReprC, CheckedTransmute, FlatTransmute, StableNiche);
+        assert_not_impl_any!((u8, bool, u8): ReprC, CheckedTransmute, FlatTransmute<Target: ReprFamily<Kind = Robust>>, StableNiche);
+        assert_not_impl_any!(&(u8, bool, u8): ReprC, CheckedTransmute, FlatTransmute<Target: ReprFamily<Kind = Robust>>);
+        assert_not_impl_any!(&mut (u8, bool, u8): ReprC, CheckedTransmute, FlatTransmute<Target: ReprFamily<Kind = Robust>>);
+        assert_not_impl_any!(Box<(u8, bool, u8)>: ReprC, CheckedTransmute, FlatTransmute<Target: ReprFamily<Kind = Robust>>);
+        assert_not_impl_any!(&[(u8, bool, u8)]: ReprC, CheckedTransmute, FlatTransmute<Target: ReprFamily<Kind = Robust>>, StableNiche);
+        assert_not_impl_any!(&mut [(u8, bool, u8)]: ReprC, CheckedTransmute, FlatTransmute<Target: ReprFamily<Kind = Robust>>, StableNiche);
+        assert_not_impl_any!([(u8, bool, u8); 2]: ReprC, CheckedTransmute, FlatTransmute<Target: ReprFamily<Kind = Robust>>, StableNiche);
+        assert_not_impl_any!(Option<(u8, bool, u8)>: ReprC, CheckedTransmute, FlatTransmute<Target: ReprFamily<Kind = Robust>>, StableNiche);
 
         #[cfg(not(feature = "cloned_refs"))]
         assert_not_impl_any!(&(u8, bool, u8): ExternC);

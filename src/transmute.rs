@@ -6,8 +6,8 @@ use alloc::vec::Vec;
 use disjoint_impls::disjoint_impls;
 
 use crate::{
-    Encode, ExternC, ReprC, Store, assert_arr_has_non_zero_len,
-    ir::{NonRobust, Opaque, ReprFamily, Robust, Transmuted},
+    Encode, ReprC, Store, assert_arr_has_non_zero_len,
+    ir::{Cloned, NonRobust, Opaque, ReprFamily, Robust, Transmuted},
     niche::{NicheFamily, StableNiche, WithNiche, WithoutNiche},
 };
 
@@ -150,34 +150,58 @@ disjoint_impls! {
 disjoint_impls! {
     /// Marker trait for a type that can be **safely transmuted** into another [`ReprC`] type.
     ///
-    /// This trait compresses the chain of transmutations done via [`CheckedTransmute`]
+    /// This trait compresses the chain of transmutations done via [`CheckedTransmute`], i.e.
+    /// `Self::Target` of this type is never of `ReprFamily<Kind = Transmuted>`
     ///
     /// # Safety
     ///
     /// - `Self` and `Self::CType` must be mutually transmutable (this includes [`Drop`] semantics)
     /// - `Self::is_valid` must not return false positives, i.e. return `true` for trap representations
-    // FIXME: Rename to something more sensible, ReprCTransmute, ExternCTransmute?
-    // or integrate it with ExternC?
-    pub unsafe trait FlatTransmute: ExternC {
-        /// Called when transmuting [`Self::CType`] back into [`Self`] to check for trap representations.
+    pub unsafe trait FlatTransmute {
+        type Target;
+
+        /// Called when transmuting [`Self::Target`] back into [`Self`] to check for trap representations.
         ///
         /// This function must never return false positives, i.e. return `true` for a trap representation.
-        fn is_valid(target: &Self::CType) -> bool;
+        fn is_valid(target: &Self::Target) -> bool;
+    }
+
+    unsafe impl<R: ReprFamily<Kind = Robust>> FlatTransmute for R {
+        type Target = Self;
+
+        #[inline(always)]
+        fn is_valid(_: &Self::Target) -> bool {
+            true
+        }
+    }
+    unsafe impl<R: ReprFamily<Kind = Opaque>> FlatTransmute for R {
+        type Target = Self;
+
+        #[inline(always)]
+        fn is_valid(_: &Self::Target) -> bool {
+            true
+        }
+    }
+    unsafe impl<R: ReprFamily<Kind: Cloned>> FlatTransmute for R {
+        type Target = Self;
+
+        #[inline(always)]
+        fn is_valid(_: &Self::Target) -> bool {
+            true
+        }
     }
 
     unsafe impl<R: ReprFamily<Kind = Transmuted> + CheckedTransmute<Target: FlatTransmute>> FlatTransmute for R {
-        fn is_valid(target: &Self::CType) -> bool {
+        type Target = <R::Target as FlatTransmute>::Target;
+
+        #[inline(always)]
+        fn is_valid(target: &Self::Target) -> bool {
             if !<R::Target as FlatTransmute>::is_valid(target) {
                 return false;
             }
 
             let target_ptr = core::ptr::from_ref(target).cast::<R::Target>();
             <R as CheckedTransmute>::is_valid(unsafe { &*target_ptr })
-        }
-    }
-    unsafe impl<R: ReprFamily<Kind = Robust> + ReprC> FlatTransmute for R {
-        fn is_valid(_: &Self::CType) -> bool {
-            true
         }
     }
 }
@@ -450,7 +474,12 @@ mod tests {
 
     #[cfg(feature = "unsafe_optimizations")]
     use crate::slice::CSliceMut;
-    use crate::{Decode, Encode, niche::Niche, slice::CSlice};
+    use crate::{
+        Decode, Encode, ExternC,
+        ir::{ReprFamily, Robust},
+        niche::Niche,
+        slice::CSlice,
+    };
 
     use super::*;
 
@@ -466,82 +495,82 @@ mod tests {
 
     #[test]
     fn transparent_bool() {
-        assert_impl_all!(bool: CheckedTransmute<Target = u8>, FlatTransmute<CType = u8>, Niche, Decode<'static>);
-        assert_impl_all!(&bool: CheckedTransmute<Target = &'static u8>, FlatTransmute<CType = *const u8>, StableNiche, Decode<'static>);
-        assert_impl_all!(&mut bool: CheckedTransmute<Target = &'static mut u8>, Decode<'static>, FlatTransmute<CType = *mut u8>, StableNiche, Decode<'static>);
+        assert_impl_all!(bool: CheckedTransmute<Target = u8>, FlatTransmute<Target: ReprFamily<Kind = Robust>>, Niche, Decode<'static>);
+        assert_impl_all!(&bool: CheckedTransmute<Target = &'static u8>, FlatTransmute<Target: ReprFamily<Kind = Robust>>, StableNiche, Decode<'static>);
+        assert_impl_all!(&mut bool: CheckedTransmute<Target = &'static mut u8>, Decode<'static>, FlatTransmute<Target: ReprFamily<Kind = Robust>>, StableNiche, Decode<'static>);
         // FIXME:
-        //assert_impl_all!(Box<&bool>: CheckedTransmute<Target = Box<*const u8>>, FlatTransmute<CType = *mut *const u8>, StableNiche, Decode<'static>);
+        //assert_impl_all!(Box<&bool>: CheckedTransmute<Target = Box<*const u8>>, FlatTransmute<Target: ReprFamily<Kind = Robust>>, StableNiche, Decode<'static>);
         assert_impl_all!(&[bool]: Niche<CType = CSlice<u8>>, Decode<'static>);
         #[cfg(feature = "unsafe_optimizations")]
         assert_impl_all!(&mut [bool]: Niche<CType = CSliceMut<u8>>, Decode<'static>);
-        assert_impl_all!([bool; 2]: CheckedTransmute<Target = [u8; 2]>, FlatTransmute<CType = [u8; 2]>, Niche, Decode<'static>);
+        assert_impl_all!([bool; 2]: CheckedTransmute<Target = [u8; 2]>, FlatTransmute<Target: ReprFamily<Kind = Robust>>, Niche, Decode<'static>);
         assert_impl_all!(Option<bool>: Niche<CType = u8>, Decode<'static>);
 
         assert_not_impl_any!(bool: ReprC, StableNiche);
         assert_not_impl_any!(&bool: ReprC);
         assert_not_impl_any!(&mut bool: ReprC);
         assert_not_impl_any!(Box<bool>: ReprC);
-        assert_not_impl_any!(&[bool]: ReprC, CheckedTransmute, FlatTransmute, StableNiche);
-        assert_not_impl_any!(&mut [bool]: ReprC, CheckedTransmute, FlatTransmute, StableNiche);
+        assert_not_impl_any!(&[bool]: ReprC, CheckedTransmute, FlatTransmute<Target: ReprFamily<Kind = Robust>>, StableNiche);
+        assert_not_impl_any!(&mut [bool]: ReprC, CheckedTransmute, FlatTransmute<Target: ReprFamily<Kind = Robust>>, StableNiche);
         assert_not_impl_any!([bool; 2]: ReprC, StableNiche);
-        assert_not_impl_any!(Option<bool>: ReprC, CheckedTransmute, FlatTransmute, StableNiche);
+        assert_not_impl_any!(Option<bool>: ReprC, CheckedTransmute, FlatTransmute<Target: ReprFamily<Kind = Robust>>, StableNiche);
     }
 
     #[test]
     fn robust_u8_ref() {
-        assert_impl_all!(&u8: CheckedTransmute<Target = *const u8>, FlatTransmute<CType = *const u8>, StableNiche, Decode<'static>);
-        assert_impl_all!(&&u8: CheckedTransmute<Target = &'static *const u8>, FlatTransmute<CType = *const *const u8>, StableNiche, Decode<'static>);
-        assert_impl_all!(&mut &u8: CheckedTransmute<Target = &'static mut *const u8>, FlatTransmute<CType = *mut *const u8>, StableNiche, Decode<'static>);
+        assert_impl_all!(&u8: CheckedTransmute<Target = *const u8>, FlatTransmute<Target: ReprFamily<Kind = Robust>>, StableNiche, Decode<'static>);
+        assert_impl_all!(&&u8: CheckedTransmute<Target = &'static *const u8>, FlatTransmute<Target: ReprFamily<Kind = Robust>>, StableNiche, Decode<'static>);
+        assert_impl_all!(&mut &u8: CheckedTransmute<Target = &'static mut *const u8>, FlatTransmute<Target: ReprFamily<Kind = Robust>>, StableNiche, Decode<'static>);
         // FIXME:
-        //assert_impl_all!(Box<&u8>: CheckedTransmute<Target = Box<*const u8>>, FlatTransmute<CType = *mut *const u8>, StableNiche, Decode<'static>);
+        //assert_impl_all!(Box<&u8>: CheckedTransmute<Target = Box<*const u8>>, FlatTransmute<Target: ReprFamily<Kind = Robust>>, StableNiche, Decode<'static>);
         assert_impl_all!(&[&u8]: Niche<CType = CSlice<*const u8>>, Decode<'static>);
         #[cfg(feature = "unsafe_optimizations")]
         assert_impl_all!(&mut [&u8]: Niche<CType = CSliceMut<*const u8>>, Decode<'static>);
-        assert_impl_all!([&u8; 2]: CheckedTransmute<Target = [*const u8; 2]>, FlatTransmute<CType = [*const u8; 2]>, Niche, Decode<'static>);
-        assert_impl_all!(Option<&u8>: ReprC, CheckedTransmute<Target = *const u8>, FlatTransmute<CType = *const u8>, Decode<'static>);
+        assert_impl_all!([&u8; 2]: CheckedTransmute<Target = [*const u8; 2]>, FlatTransmute<Target: ReprFamily<Kind = Robust>>, Niche, Decode<'static>);
+        assert_impl_all!(Option<&u8>: ReprC, CheckedTransmute<Target = *const u8>, FlatTransmute<Target: ReprFamily<Kind = Robust>>, Decode<'static>);
 
         assert_not_impl_any!(&u8: ReprC);
         assert_not_impl_any!(&&u8: ReprC);
         assert_not_impl_any!(&mut &u8: ReprC);
         assert_not_impl_any!(Box<&u8>: ReprC);
-        assert_not_impl_any!(&[&u8]: ReprC, CheckedTransmute, FlatTransmute, StableNiche);
-        assert_not_impl_any!(&mut [&u8]: ReprC, CheckedTransmute, FlatTransmute, StableNiche);
+        assert_not_impl_any!(&[&u8]: ReprC, CheckedTransmute, FlatTransmute<Target: ReprFamily<Kind = Robust>>, StableNiche);
+        assert_not_impl_any!(&mut [&u8]: ReprC, CheckedTransmute, FlatTransmute<Target: ReprFamily<Kind = Robust>>, StableNiche);
         assert_not_impl_any!([&u8; 2]: ReprC, StableNiche);
         assert_not_impl_any!(Option<&u8>: Niche);
 
-        assert_impl_all!(&&mut u8: CheckedTransmute<Target = &'static *mut u8 >, FlatTransmute<CType = *const *mut u8>, StableNiche, Encode, Decode<'static>);
+        assert_impl_all!(&&mut u8: CheckedTransmute<Target = &'static *mut u8 >, FlatTransmute<Target: ReprFamily<Kind = Robust>>, StableNiche, Encode, Decode<'static>);
         // TODO: Should this type be EncodeTransmuted? It's not because Option<&mut u8> is not ReprC because `&mut T` isn't copy
-        assert_impl_all!(Option<&mut u8>: CheckedTransmute<Target = *mut u8>, FlatTransmute<CType = *mut u8>, Decode<'static>);
+        assert_impl_all!(Option<&mut u8>: CheckedTransmute<Target = *mut u8>, FlatTransmute<Target: ReprFamily<Kind = Robust>>, Decode<'static>);
     }
 
     #[test]
     fn transparent_bool_ref() {
-        assert_impl_all!(&bool: CheckedTransmute<Target = &'static u8>, FlatTransmute<CType = *const u8>, StableNiche, Decode<'static>);
-        assert_impl_all!(&&bool: CheckedTransmute<Target = &'static &'static u8>, FlatTransmute<CType = *const *const u8>, StableNiche, Decode<'static>);
-        assert_impl_all!(&mut &bool: CheckedTransmute<Target = &'static mut &'static u8>, FlatTransmute<CType = *mut *const u8>, StableNiche, Decode<'static>);
+        assert_impl_all!(&bool: CheckedTransmute<Target = &'static u8>, FlatTransmute<Target: ReprFamily<Kind = Robust>>, StableNiche, Decode<'static>);
+        assert_impl_all!(&&bool: CheckedTransmute<Target = &'static &'static u8>, FlatTransmute<Target: ReprFamily<Kind = Robust>>, StableNiche, Decode<'static>);
+        assert_impl_all!(&mut &bool: CheckedTransmute<Target = &'static mut &'static u8>, FlatTransmute<Target: ReprFamily<Kind = Robust>>, StableNiche, Decode<'static>);
         // FIXME:
-        //assert_impl_all!(Box<&bool>: CheckedTransmute<Target = Box<*const u8>>, FlatTransmute<CType = *mut *const u8>, StableNiche, Decode<'static>);
+        //assert_impl_all!(Box<&bool>: CheckedTransmute<Target = Box<*const u8>>, FlatTransmute<Target: ReprFamily<Kind = Robust>>, StableNiche, Decode<'static>);
         assert_impl_all!(&[&bool]: Niche<CType = CSlice<*const u8>>, Decode<'static>);
         #[cfg(feature = "unsafe_optimizations")]
         assert_impl_all!(&mut [&bool]: Niche<CType = CSliceMut<*const u8>>, Decode<'static>);
-        assert_impl_all!([&bool; 2]: CheckedTransmute<Target = [&'static u8; 2]>, FlatTransmute<CType = [*const u8; 2]>, Niche, Decode<'static>);
-        assert_impl_all!(Option<&bool>: CheckedTransmute<Target = Option<&'static u8>>, FlatTransmute<CType = *const u8>, Decode<'static>);
+        assert_impl_all!([&bool; 2]: CheckedTransmute<Target = [&'static u8; 2]>, FlatTransmute<Target: ReprFamily<Kind = Robust>>, Niche, Decode<'static>);
+        assert_impl_all!(Option<&bool>: CheckedTransmute<Target = Option<&'static u8>>, FlatTransmute<Target: ReprFamily<Kind = Robust>>, Decode<'static>);
 
         assert_not_impl_any!(&bool: ReprC);
         assert_not_impl_any!(&&bool: ReprC);
         assert_not_impl_any!(&mut &bool: ReprC);
         assert_not_impl_any!(Box<&bool>: ReprC);
-        assert_not_impl_any!(&[&bool]: ReprC, CheckedTransmute, FlatTransmute, StableNiche);
-        assert_not_impl_any!(&mut [&bool]: ReprC, CheckedTransmute, FlatTransmute, StableNiche);
+        assert_not_impl_any!(&[&bool]: ReprC, CheckedTransmute, FlatTransmute<Target: ReprFamily<Kind = Robust>>, StableNiche);
+        assert_not_impl_any!(&mut [&bool]: ReprC, CheckedTransmute, FlatTransmute<Target: ReprFamily<Kind = Robust>>, StableNiche);
         assert_not_impl_any!([&bool; 2]: ReprC, StableNiche);
         assert_not_impl_any!(Option<&bool>: Niche);
         // FIXME: `Option<&bool>` should NOT implement `ReprC`!!!
         //assert_not_impl_any!(Option<&bool>: ReprC);
 
-        assert_impl_all!(Option<&mut bool>: CheckedTransmute<Target = Option<&'static mut u8>>, FlatTransmute<CType = *mut u8>, Decode<'static>);
-        assert_impl_all!(&mut Option<&mut bool>: CheckedTransmute<Target = &'static mut Option<&'static mut u8>>, FlatTransmute<CType = *mut *mut u8>, StableNiche, Decode<'static>);
-        assert_impl_all!(&&mut bool: CheckedTransmute<Target = &'static &'static mut u8 >, FlatTransmute<CType = *const *mut u8>, StableNiche, Encode, Decode<'static>);
-        assert_impl_all!(&mut &mut bool: CheckedTransmute<Target = &'static mut &'static mut u8>, FlatTransmute<CType = *mut *mut u8>, StableNiche, Decode<'static>);
+        assert_impl_all!(Option<&mut bool>: CheckedTransmute<Target = Option<&'static mut u8>>, FlatTransmute<Target: ReprFamily<Kind = Robust>>, Decode<'static>);
+        assert_impl_all!(&mut Option<&mut bool>: CheckedTransmute<Target = &'static mut Option<&'static mut u8>>, FlatTransmute<Target: ReprFamily<Kind = Robust>>, StableNiche, Decode<'static>);
+        assert_impl_all!(&&mut bool: CheckedTransmute<Target = &'static &'static mut u8 >, FlatTransmute<Target: ReprFamily<Kind = Robust>>, StableNiche, Encode, Decode<'static>);
+        assert_impl_all!(&mut &mut bool: CheckedTransmute<Target = &'static mut &'static mut u8>, FlatTransmute<Target: ReprFamily<Kind = Robust>>, StableNiche, Decode<'static>);
 
         assert_not_impl_any!(Option<&mut bool>: ReprC, Niche);
         assert_not_impl_any!(&mut &mut bool: ReprC);
@@ -551,11 +580,11 @@ mod tests {
     #[test]
     #[cfg(feature = "derive")]
     fn transparent_wrapper() {
-        assert_impl_all!(&mut TransparentWrapper<bool>: CheckedTransmute<Target = &'static mut bool>, FlatTransmute<CType = *mut u8>, StableNiche, Decode<'static>);
-        assert_impl_all!(TransparentWrapper<&mut bool>: CheckedTransmute<Target = &'static mut bool>, FlatTransmute<CType = *mut u8>, StableNiche, Decode<'static>);
-        assert_impl_all!(&mut TransparentWrapper<&mut bool>: CheckedTransmute<Target = &'static mut &'static mut bool>, FlatTransmute<CType = *mut *mut u8>, StableNiche, Decode<'static>);
-        assert_impl_all!(Option<&mut TransparentWrapper<bool>>: CheckedTransmute<Target = Option<&'static mut bool>>, FlatTransmute<CType = *mut u8>, Decode<'static>);
-        assert_impl_all!(Option<TransparentWrapper<&mut bool>>: CheckedTransmute<Target = Option<&'static mut bool>>, FlatTransmute<CType = *mut u8>, Decode<'static>);
+        assert_impl_all!(&mut TransparentWrapper<bool>: CheckedTransmute<Target = &'static mut bool>, FlatTransmute<Target: ReprFamily<Kind = Robust>>, StableNiche, Decode<'static>);
+        assert_impl_all!(TransparentWrapper<&mut bool>: CheckedTransmute<Target = &'static mut bool>, FlatTransmute<Target: ReprFamily<Kind = Robust>>, StableNiche, Decode<'static>);
+        assert_impl_all!(&mut TransparentWrapper<&mut bool>: CheckedTransmute<Target = &'static mut &'static mut bool>, FlatTransmute<Target: ReprFamily<Kind = Robust>>, StableNiche, Decode<'static>);
+        assert_impl_all!(Option<&mut TransparentWrapper<bool>>: CheckedTransmute<Target = Option<&'static mut bool>>, FlatTransmute<Target: ReprFamily<Kind = Robust>>, Decode<'static>);
+        assert_impl_all!(Option<TransparentWrapper<&mut bool>>: CheckedTransmute<Target = Option<&'static mut bool>>, FlatTransmute<Target: ReprFamily<Kind = Robust>>, Decode<'static>);
 
         assert_not_impl_any!(&mut TransparentWrapper<bool>: ReprC);
         assert_not_impl_any!(TransparentWrapper<&mut bool>: ReprC);
@@ -564,16 +593,16 @@ mod tests {
         assert_not_impl_any!(&mut TransparentWrapper<&mut bool>: ReprC);
 
         assert_impl_all!(&mut [TransparentWrapper<bool>]: Niche, Decode<'static>);
-        assert_not_impl_any!(&mut [TransparentWrapper<bool>]: ReprC, CheckedTransmute, FlatTransmute, StableNiche);
+        assert_not_impl_any!(&mut [TransparentWrapper<bool>]: ReprC, CheckedTransmute, FlatTransmute<Target: ReprFamily<Kind = Robust>>, StableNiche);
     }
 
     #[test]
     #[cfg(feature = "derive")]
     fn repr_c_struct() {
-        assert_impl_all!(&mut MyStruct<bool>: CheckedTransmute<Target = &'static mut CMyStruct<bool>>, FlatTransmute<CType = *mut CMyStruct<bool>>, StableNiche, Decode<'static>);
-        assert_impl_all!(MyStruct<&mut bool>: CheckedTransmute<Target = CMyStruct<&'static mut bool>>, FlatTransmute<CType = CMyStruct<&'static mut bool>>, Niche, Decode<'static>);
-        assert_impl_all!(&mut MyStruct<&mut bool>: CheckedTransmute<Target = &'static mut CMyStruct<&'static mut bool>>, FlatTransmute<CType = *mut CMyStruct<&'static mut bool>>, StableNiche, Decode<'static>);
-        assert_impl_all!(Option<&mut MyStruct<bool>>: CheckedTransmute<Target = Option<&'static mut CMyStruct<bool>>>, FlatTransmute<CType = *mut CMyStruct<bool>>, Decode<'static>);
+        assert_impl_all!(&mut MyStruct<bool>: CheckedTransmute<Target = &'static mut CMyStruct<bool>>, FlatTransmute<Target: ReprFamily<Kind = Robust>>, StableNiche, Decode<'static>);
+        assert_impl_all!(MyStruct<&mut bool>: CheckedTransmute<Target = CMyStruct<&'static mut bool>>, FlatTransmute<Target: ReprFamily<Kind = Robust>>, Niche, Decode<'static>);
+        assert_impl_all!(&mut MyStruct<&mut bool>: CheckedTransmute<Target = &'static mut CMyStruct<&'static mut bool>>, FlatTransmute<Target: ReprFamily<Kind = Robust>>, StableNiche, Decode<'static>);
+        assert_impl_all!(Option<&mut MyStruct<bool>>: CheckedTransmute<Target = Option<&'static mut CMyStruct<bool>>>, FlatTransmute<Target: ReprFamily<Kind = Robust>>, Decode<'static>);
         // FIXME:
         //assert_impl_all!(Option<MyStruct<&mut bool>>: ExternC<CType = CMyStruct<&'static mut bool>>, Decode<'static>);
 
@@ -581,10 +610,10 @@ mod tests {
         assert_not_impl_any!(MyStruct<&mut bool>: ReprC, StableNiche);
         assert_not_impl_any!(&mut MyStruct<&mut bool>: ReprC);
         assert_not_impl_any!(Option<&mut MyStruct<bool>>: ReprC, Niche);
-        assert_not_impl_any!(Option<MyStruct<&mut bool>>: ReprC, CheckedTransmute, FlatTransmute, Niche);
+        assert_not_impl_any!(Option<MyStruct<&mut bool>>: ReprC, CheckedTransmute, FlatTransmute<Target: ReprFamily<Kind = Robust>>, Niche);
 
         assert_impl_all!(&mut [MyStruct<bool>]: Niche, Decode<'static>);
-        assert_not_impl_any!(&mut [MyStruct<bool>]: ReprC, CheckedTransmute, FlatTransmute, StableNiche);
+        assert_not_impl_any!(&mut [MyStruct<bool>]: ReprC, CheckedTransmute, FlatTransmute<Target: ReprFamily<Kind = Robust>>, StableNiche);
     }
 
     #[test]

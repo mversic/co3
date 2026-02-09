@@ -1927,46 +1927,46 @@ mod tests {
 
     #[test]
     fn robust_u8() {
-        assert_impl_all!(u8: ReprC, FlatTransmute<CType = u8>);
-        assert_impl_all!(&u8: CheckedTransmute<Target = *const u8>, FlatTransmute<CType = *const u8>, StableNiche);
-        assert_impl_all!(&mut u8: CheckedTransmute<Target = *mut u8>, FlatTransmute<CType = *mut u8>, StableNiche);
+        assert_impl_all!(u8: ReprC, FlatTransmute<Target: ReprFamily<Kind = Robust>>);
+        assert_impl_all!(&u8: CheckedTransmute<Target = *const u8>, FlatTransmute<Target: ReprFamily<Kind = Robust>>, StableNiche);
+        assert_impl_all!(&mut u8: CheckedTransmute<Target = *mut u8>, FlatTransmute<Target: ReprFamily<Kind = Robust>>, StableNiche);
         // FIXME:
-        //assert_impl_all!(Box<u8>: CheckedTransmute<Target = *mut u8>, FlatTransmute<CType = *mut u8>, StableNiche);
+        //assert_impl_all!(Box<u8>: CheckedTransmute<Target = *mut u8>, FlatTransmute<Target: ReprFamily<Kind = Robust>>, StableNiche);
         assert_impl_all!(&[u8]: Niche<CType = CSlice<u8>>);
         assert_impl_all!(&mut [u8]: Niche<CType = CSliceMut<u8>>);
-        assert_impl_all!([u8; 2]: ReprC, FlatTransmute<CType = [u8; 2]>);
+        assert_impl_all!([u8; 2]: ReprC, FlatTransmute<Target: ReprFamily<Kind = Robust>>);
         assert_impl_all!(Option<u8>: Niche<CType = COption<u8>>);
 
         assert_not_impl_any!(u8: CheckedTransmute);
         assert_not_impl_any!(Box<u8>: ReprC);
         assert_not_impl_any!(&mut u8: ReprC);
         assert_not_impl_any!(&u8: ReprC);
-        assert_not_impl_any!(&[u8]: ReprC, CheckedTransmute, FlatTransmute, StableNiche);
-        assert_not_impl_any!(&mut [u8]: ReprC, CheckedTransmute, FlatTransmute, StableNiche);
+        assert_not_impl_any!(&[u8]: ReprC, CheckedTransmute, FlatTransmute<Target: ReprFamily<Kind = Robust>>, StableNiche);
+        assert_not_impl_any!(&mut [u8]: ReprC, CheckedTransmute, FlatTransmute<Target: ReprFamily<Kind = Robust>>, StableNiche);
         assert_not_impl_any!([u8; 2]: CheckedTransmute, Niche);
-        assert_not_impl_any!(Option<u8>: ReprC, CheckedTransmute, FlatTransmute, StableNiche);
+        assert_not_impl_any!(Option<u8>: ReprC, CheckedTransmute, FlatTransmute<Target: ReprFamily<Kind = Robust>>, StableNiche);
     }
 
     #[test]
     fn robust_ptr() {
-        assert_impl_all!(*const String: ReprC, FlatTransmute<CType = *const String>);
-        assert_impl_all!(&*const String: CheckedTransmute<Target = *const *const String>, FlatTransmute<CType = *const *const String>, StableNiche);
-        assert_impl_all!(&mut *const String: CheckedTransmute<Target = *mut *const String>, FlatTransmute<CType = *mut *const String>, StableNiche);
+        assert_impl_all!(*const String: ReprC, FlatTransmute<Target: ReprFamily<Kind = Robust>>);
+        assert_impl_all!(&*const String: CheckedTransmute<Target = *const *const String>, FlatTransmute<Target: ReprFamily<Kind = Robust>>, StableNiche);
+        assert_impl_all!(&mut *const String: CheckedTransmute<Target = *mut *const String>, FlatTransmute<Target: ReprFamily<Kind = Robust>>, StableNiche);
         // FIXME:
-        //assert_impl_all!(Box<*const String>: CheckedTransmute<Target = *mut *const String>, FlatTransmute<CType = *mut *const String>, StableNiche);
+        //assert_impl_all!(Box<*const String>: CheckedTransmute<Target = *mut *const String>, FlatTransmute<Target: ReprFamily<Kind = Robust>>, StableNiche);
         assert_impl_all!(&[*const String]: Niche<CType = CSlice<*const String>>);
         assert_impl_all!(&mut [*const String]: Niche<CType = CSliceMut<*const String>>);
-        assert_impl_all!([*const String; 2]: ReprC, FlatTransmute<CType = [*const String; 2]>);
+        assert_impl_all!([*const String; 2]: ReprC, FlatTransmute<Target: ReprFamily<Kind = Robust>>);
         assert_impl_all!(Option<*const String>: Niche<CType = COption<*const String>>);
 
         assert_not_impl_any!(*const String: CheckedTransmute);
         assert_not_impl_any!(&*const String: ReprC);
         assert_not_impl_any!(&mut *const String: ReprC);
         assert_not_impl_any!(Box<*const String>: ReprC);
-        assert_not_impl_any!(&[*const String]: ReprC, CheckedTransmute, FlatTransmute, StableNiche);
-        assert_not_impl_any!(&mut [*const String]: ReprC, CheckedTransmute, FlatTransmute, StableNiche);
+        assert_not_impl_any!(&[*const String]: ReprC, CheckedTransmute, FlatTransmute<Target: ReprFamily<Kind = Robust>>, StableNiche);
+        assert_not_impl_any!(&mut [*const String]: ReprC, CheckedTransmute, FlatTransmute<Target: ReprFamily<Kind = Robust>>, StableNiche);
         assert_not_impl_any!([*const String; 2]: CheckedTransmute, Niche);
-        assert_not_impl_any!(Option<*const String>: ReprC, CheckedTransmute, FlatTransmute, StableNiche);
+        assert_not_impl_any!(Option<*const String>: ReprC, CheckedTransmute, FlatTransmute<Target: ReprFamily<Kind = Robust>>, StableNiche);
     }
 
     #[test]
@@ -1989,20 +1989,20 @@ mod tests {
         assert_impl_all!(Box<[(u8, bool, u8)]>: Niche<CType = BoxedSliceCType<CTuple3<u8, u8, u8>>>);
         assert_impl_all!(Vec<(u8, bool, u8)>: Niche<CType = VecCType<CTuple3<u8, u8, u8>>>);
 
-        assert_not_impl_any!(Box<[u8]>: ReprC, CheckedTransmute, FlatTransmute, StableNiche);
-        assert_not_impl_any!(Vec<u8>: ReprC, CheckedTransmute, FlatTransmute, StableNiche);
-        assert_not_impl_any!(Box<[*const String]>: ReprC, CheckedTransmute, FlatTransmute, StableNiche);
-        assert_not_impl_any!(Vec<*const String>: ReprC, CheckedTransmute, FlatTransmute, StableNiche);
-        assert_not_impl_any!(Box<[bool]>: ReprC, CheckedTransmute, FlatTransmute, StableNiche);
-        assert_not_impl_any!(Vec<bool>: ReprC, CheckedTransmute, FlatTransmute, StableNiche);
-        assert_not_impl_any!(Box<[&u8]>: ReprC, CheckedTransmute, FlatTransmute, StableNiche);
-        assert_not_impl_any!(Vec<&u8>: ReprC, CheckedTransmute, FlatTransmute, StableNiche);
-        assert_not_impl_any!(Box<[&bool]>: ReprC, CheckedTransmute, FlatTransmute, StableNiche);
-        assert_not_impl_any!(Vec<&bool>: ReprC, CheckedTransmute, FlatTransmute, StableNiche);
-        assert_not_impl_any!(Box<[(u8, u8, u8)]>: ReprC, CheckedTransmute, FlatTransmute, StableNiche);
-        assert_not_impl_any!(Vec<(u8, u8, u8)>: ReprC, CheckedTransmute, FlatTransmute, StableNiche);
-        assert_not_impl_any!(Box<[(u8, bool, u8)]>: ReprC, CheckedTransmute, FlatTransmute, StableNiche);
-        assert_not_impl_any!(Vec<(u8, bool, u8)>: ReprC, CheckedTransmute, FlatTransmute, StableNiche);
+        assert_not_impl_any!(Box<[u8]>: ReprC, CheckedTransmute, FlatTransmute<Target: ReprFamily<Kind = Robust>>, StableNiche);
+        assert_not_impl_any!(Vec<u8>: ReprC, CheckedTransmute, FlatTransmute<Target: ReprFamily<Kind = Robust>>, StableNiche);
+        assert_not_impl_any!(Box<[*const String]>: ReprC, CheckedTransmute, FlatTransmute<Target: ReprFamily<Kind = Robust>>, StableNiche);
+        assert_not_impl_any!(Vec<*const String>: ReprC, CheckedTransmute, FlatTransmute<Target: ReprFamily<Kind = Robust>>, StableNiche);
+        assert_not_impl_any!(Box<[bool]>: ReprC, CheckedTransmute, FlatTransmute<Target: ReprFamily<Kind = Robust>>, StableNiche);
+        assert_not_impl_any!(Vec<bool>: ReprC, CheckedTransmute, FlatTransmute<Target: ReprFamily<Kind = Robust>>, StableNiche);
+        assert_not_impl_any!(Box<[&u8]>: ReprC, CheckedTransmute, FlatTransmute<Target: ReprFamily<Kind = Robust>>, StableNiche);
+        assert_not_impl_any!(Vec<&u8>: ReprC, CheckedTransmute, FlatTransmute<Target: ReprFamily<Kind = Robust>>, StableNiche);
+        assert_not_impl_any!(Box<[&bool]>: ReprC, CheckedTransmute, FlatTransmute<Target: ReprFamily<Kind = Robust>>, StableNiche);
+        assert_not_impl_any!(Vec<&bool>: ReprC, CheckedTransmute, FlatTransmute<Target: ReprFamily<Kind = Robust>>, StableNiche);
+        assert_not_impl_any!(Box<[(u8, u8, u8)]>: ReprC, CheckedTransmute, FlatTransmute<Target: ReprFamily<Kind = Robust>>, StableNiche);
+        assert_not_impl_any!(Vec<(u8, u8, u8)>: ReprC, CheckedTransmute, FlatTransmute<Target: ReprFamily<Kind = Robust>>, StableNiche);
+        assert_not_impl_any!(Box<[(u8, bool, u8)]>: ReprC, CheckedTransmute, FlatTransmute<Target: ReprFamily<Kind = Robust>>, StableNiche);
+        assert_not_impl_any!(Vec<(u8, bool, u8)>: ReprC, CheckedTransmute, FlatTransmute<Target: ReprFamily<Kind = Robust>>, StableNiche);
     }
 
     #[test]
