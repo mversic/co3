@@ -16,9 +16,7 @@ use disjoint_impls::disjoint_impls;
 
 #[cfg(feature = "cloned_refs")]
 use crate::cloned::DecodeCloneWrapper;
-#[cfg(feature = "cloned_refs")]
-use crate::out_ptr::NonLocal;
-#[cfg(not(feature = "non_robust_ref_mut"))]
+#[cfg(not(feature = "unsafe_optimizations"))]
 use crate::transmute::EncodeTransmuted;
 use crate::{
     cloned::decode_cloned_array,
@@ -318,22 +316,22 @@ disjoint_impls! {
     //    }
     //}
     impl<
-        #[cfg(not(feature = "non_robust_ref_mut"))] R: EncodeTransmuted,
-        #[cfg(feature = "non_robust_ref_mut")] R,
+        #[cfg(not(feature = "unsafe_optimizations"))] R: EncodeTransmuted,
+        #[cfg(feature = "unsafe_optimizations")] R,
     > Encode for R
     where
         R: ReprFamily<Kind = Transmuted> + CheckedTransmute<Target: Encode>,
     {
-        #[cfg(not(feature = "non_robust_ref_mut"))]
+        #[cfg(not(feature = "unsafe_optimizations"))]
         type Store = R::Store;
-        #[cfg(feature = "non_robust_ref_mut")]
+        #[cfg(feature = "unsafe_optimizations")]
         type Store = <R::Target as Encode>::Store;
 
         fn encode<'itm>(self, store: &'itm mut Self::Store) -> Self::CType
         where
             Self: 'itm,
         {
-            #[cfg(not(feature = "non_robust_ref_mut"))]
+            #[cfg(not(feature = "unsafe_optimizations"))]
             {
                 let target = R::encode_transmuted(self, store);
                 let store = unsafe {
@@ -341,7 +339,7 @@ disjoint_impls! {
                 };
                 Encode::encode(target, store)
             }
-            #[cfg(feature = "non_robust_ref_mut")]
+            #[cfg(feature = "unsafe_optimizations")]
             {
                 transmute_into_target(self).encode(store)
             }
@@ -379,13 +377,12 @@ disjoint_impls! {
         where
             Self: 'itm,
         {
-            let encoded = self.clone().encode(&mut store.encode_store);
-            store.encoded.insert(encoded)
+            store.encoded.insert(self.clone().encode(&mut store.encode_store))
         }
     }
 
     #[cfg(feature = "cloned_refs")]
-    impl<'a, 'b, R: Encode + Decode<'b> + NonLocal + Clone + 'b, S: Cloned> Encode for &'a mut R
+    impl<'a, 'b, R: Encode + Decode<'b> + Clone + 'b, S: Cloned> Encode for &'a mut R
     where
         Self: ReprFamily<Kind = &'a mut S>,
     {
@@ -521,22 +518,22 @@ disjoint_impls! {
     where
         Self: ReprFamily<Kind = &'slice mut [Transmuted]>,
     {
-        #[cfg(not(feature = "non_robust_ref_mut"))]
+        #[cfg(not(feature = "unsafe_optimizations"))]
         type Store = SliceMutTransmuteStore<'slice, R>;
-        #[cfg(feature = "non_robust_ref_mut")]
+        #[cfg(feature = "unsafe_optimizations")]
         type Store = ();
 
         fn encode<'itm>(self, store: &'itm mut Self::Store) -> Self::CType
         where
             Self: 'itm,
         {
-            #[cfg(not(feature = "non_robust_ref_mut"))]
+            #[cfg(not(feature = "unsafe_optimizations"))]
             let ctypes: &mut [_] = {
                 let original: &mut [R] = store.original.insert(self);
                 let robust = transmute_into_target_slice_mut(original);
                 store.target.insert(robust.to_vec().into_boxed_slice())
             };
-            #[cfg(feature = "non_robust_ref_mut")]
+            #[cfg(feature = "unsafe_optimizations")]
             let ctypes = transmute_into_target_slice_mut(self);
 
             Encode::encode(ctypes, &mut ())
@@ -572,7 +569,7 @@ disjoint_impls! {
         }
     }
     #[cfg(feature = "cloned_refs")]
-    impl<'slice, 'b, R: Encode + Decode<'b> + NonLocal + Clone + 'b, S: Cloned> Encode for &'slice mut [R]
+    impl<'slice, 'b, R: Encode + Decode<'b> + Clone + 'b, S: Cloned> Encode for &'slice mut [R]
     where
         Self: ReprFamily<Kind = &'slice mut [S]>,
     {
@@ -945,7 +942,7 @@ disjoint_impls! {
     }
 
     #[cfg(feature = "cloned_refs")]
-    impl<'d, R: DecodeCloneWrapper<'d> + Encode + NonLocal, S: Cloned> Decode<'d> for &'d mut R
+    impl<'d, R: DecodeCloneWrapper<'d> + Encode, S: Cloned> Decode<'d> for &'d mut R
     where
         Self: ReprFamily<Kind = &'d mut S>,
     {
@@ -1099,7 +1096,7 @@ disjoint_impls! {
         }
     }
     #[cfg(feature = "cloned_refs")]
-    impl<'slice, R: DecodeCloneWrapper<'slice> + Encode + NonLocal, S: Cloned> Decode<'slice> for &'slice mut [R]
+    impl<'slice, R: DecodeCloneWrapper<'slice> + Encode, S: Cloned> Decode<'slice> for &'slice mut [R]
     where
         Self: ReprFamily<Kind = &'slice mut [S]>,
     {
@@ -1408,12 +1405,16 @@ impl<'a, R> Store for OpaqueMutSliceEncodeStore<'a, R> {
     fn sync(self) -> Option<()> {
         let encoded = self.encoded.unwrap();
 
+        // TODO: this can be disabled if unsafe_optimizations
+        // is active, but is it worth it? Quite unlikely it is
         if encoded.iter().any(|ptr| ptr.is_null()) {
             return None;
         }
 
         for (orig, ptr) in self.original.unwrap().iter_mut().zip(encoded) {
-            *orig = unsafe { ptr.read() };
+            if !core::ptr::eq(orig, ptr) {
+                *orig = unsafe { ptr.read() };
+            }
         }
 
         Some(())
@@ -1462,8 +1463,16 @@ impl<'a, R: Encode> Default for RefMutStore<'a, R> {
 }
 
 #[cfg(feature = "cloned_refs")]
-impl<'a, 'b, R: Encode + Decode<'b> + NonLocal + 'b> Store for RefMutStore<'a, R> {
+impl<'a, 'b, R: Encode + Decode<'b> + 'b> Store for RefMutStore<'a, R> {
     fn sync(self) -> Option<()> {
+        #[cfg(not(feature = "unsafe_optimizations"))]
+        const {
+            assert!(
+                impls::impls!(R: crate::out_ptr::NonLocal),
+                "Not yet implemented"
+            );
+        }
+
         if let (Some(encoded), Some(original)) = (self.encoded, self.original) {
             let mut decode_store = Default::default();
 
@@ -1523,8 +1532,16 @@ impl<'slice, R: Encode> Default for MutSliceStore<'slice, R> {
 }
 
 #[cfg(feature = "cloned_refs")]
-impl<'slice, 'b, R: Encode + Decode<'b> + NonLocal + 'b> Store for MutSliceStore<'slice, R> {
+impl<'slice, 'b, R: Encode + Decode<'b> + 'b> Store for MutSliceStore<'slice, R> {
     fn sync(self) -> Option<()> {
+        const {
+            #[cfg(not(feature = "unsafe_optimizations"))]
+            assert!(
+                impls::impls!(R: crate::out_ptr::NonLocal),
+                "Not yet implemented"
+            );
+        }
+
         if let (Some(borrows), Some(ctypes)) = (self.original, self.ctypes) {
             let mut decode_store = Default::default();
 
@@ -1543,13 +1560,13 @@ impl<'slice, 'b, R: Encode + Decode<'b> + NonLocal + 'b> Store for MutSliceStore
     }
 }
 
-#[cfg(not(feature = "non_robust_ref_mut"))]
+#[cfg(not(feature = "unsafe_optimizations"))]
 pub struct SliceMutTransmuteStore<'slice, R: CheckedTransmute> {
     target: Option<Box<[R::Target]>>,
     original: Option<&'slice mut [R]>,
 }
 
-#[cfg(not(feature = "non_robust_ref_mut"))]
+#[cfg(not(feature = "unsafe_optimizations"))]
 impl<'slice, R: CheckedTransmute> Default for SliceMutTransmuteStore<'slice, R> {
     fn default() -> Self {
         Self {
@@ -1559,7 +1576,7 @@ impl<'slice, R: CheckedTransmute> Default for SliceMutTransmuteStore<'slice, R> 
     }
 }
 
-#[cfg(not(feature = "non_robust_ref_mut"))]
+#[cfg(not(feature = "unsafe_optimizations"))]
 impl<'slice, R: CheckedTransmute> Store for SliceMutTransmuteStore<'slice, R> {
     fn sync(self) -> Option<()> {
         if let (Some(borrows), Some(target)) = (self.original, self.target) {
@@ -1613,7 +1630,7 @@ impl<R: ExternC, DS: Default> Default for RefMutDecodeStore<R, DS> {
 }
 
 #[cfg(feature = "cloned_refs")]
-impl<R: Encode + NonLocal, DS: Store> Store for RefMutDecodeStore<R, DS> {
+impl<R: Encode, DS: Store> Store for RefMutDecodeStore<R, DS> {
     fn sync(self) -> Option<()> {
         let mut encode_store = Default::default();
         let encoded = self.value.unwrap().encode(&mut encode_store);
@@ -1641,7 +1658,7 @@ impl<R: ExternC, DS: Default> Default for MutSliceDecodeStore<R, DS> {
 }
 
 #[cfg(feature = "cloned_refs")]
-impl<R: Encode + NonLocal, DS: Store> Store for MutSliceDecodeStore<R, DS> {
+impl<R: Encode, DS: Store> Store for MutSliceDecodeStore<R, DS> {
     fn sync(self) -> Option<()> {
         let mut encode_store = Default::default();
 
@@ -1675,8 +1692,8 @@ impl<R> Store for OpaqueMutSliceDecodeStore<R> {
     fn sync(self) -> Option<()> {
         let slice = unsafe { self.source.unwrap().into_rust().unwrap() };
 
-        for (src, decoded) in slice.iter_mut().zip(self.values.unwrap()) {
-            unsafe { **src = decoded };
+        for (&mut src, decoded) in slice.iter_mut().zip(self.values.unwrap()) {
+            unsafe { *src = decoded };
         }
 
         Some(())

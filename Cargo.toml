@@ -28,13 +28,22 @@ owned_types = []
 # prevents ownership transfer of dynamically allocated memory across FFI boundary.
 owned_as_ref = ["owned_types"]
 
-# Enables sharing mutable references of non-robust transmuted types (e.g. `&mut bool`) across FFI.
+# Enables transmute-based encoding for mutable references to:
+# - droppable transmuted types (e.g. `&mut Box<u32>`) where the callee can transfer ownership
+# - non-robust transmuted types (e.g. `&mut bool`) where the callee can set a trap value
 #
-# Warn
+# Otherwise, the referent is cloned and validated before updating the reference, after calling the `extern "C"` function.
 #
-# When handing out mutable references to non-robust types across FFI, it's possible for the caller
-# to modify the referent to store a trap representation thus causing UB. Use at your own discretion
-non_robust_ref_mut = []
+# Safety
+#
+# When handing out mutable references to droppable types across FFI, it's possible for the callee
+# to modify the referent to store values requiring custom Drop logic (such as calling allocator)
+#
+# When handing out mutable references to non-robust types across FFI, it's possible for the callee
+# to modify the referent to store a trap representation thus causing UB.
+#
+# Use at your own discretion
+unsafe_optimizations = []
 
 # Enables references that don't maintain stable position in memory (e.g. `&(u32, u32)`))
 #

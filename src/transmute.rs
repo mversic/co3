@@ -6,7 +6,9 @@ use alloc::vec::Vec;
 use disjoint_impls::disjoint_impls;
 
 use crate::{
-    Encode, ExternC, ReprC, Store, assert_arr_has_non_zero_len, ir::{NonRobust, Opaque, ReprFamily, Robust, Transmuted}, niche::{NicheFamily, StableNiche, WithNiche, WithoutNiche}
+    Encode, ExternC, ReprC, Store, assert_arr_has_non_zero_len,
+    ir::{NonRobust, Opaque, ReprFamily, Robust, Transmuted},
+    niche::{NicheFamily, StableNiche, WithNiche, WithoutNiche},
 };
 
 disjoint_impls! {
@@ -212,7 +214,7 @@ disjoint_impls! {
     /// * `&mut T` where `T: ReprC` (robust referent)
     /// * any type that contains only `EncodeTransmuted` types
     ///
-    /// When `non_robust_ref_mut` feature is active this trait is unused, i.e. an implementation
+    /// When `unsafe_optimizations` feature is active this trait is unused, i.e. an implementation
     /// of [`crate::Encode`] is provided even for mutable references to non-robust types. Use it
     /// at your own discretion
     ///
@@ -239,21 +241,21 @@ disjoint_impls! {
         type Store = <Self::Target as crate::Encode>::Store;
     }
     unsafe impl<'a, R: ReprFamily<Kind = Robust> + NicheFamily<Kind: WithNiche> + ReprC> EncodeTransmuted for &'a mut R where Self: CheckedTransmute<Target = *mut R> {
-        #[cfg(not(feature = "non_robust_ref_mut"))]
+        #[cfg(not(feature = "unsafe_optimizations"))]
         type Store = TransmutedRefMutStore<'a, R>;
-        #[cfg(feature = "non_robust_ref_mut")]
+        #[cfg(feature = "unsafe_optimizations")]
         type Store = ();
 
         fn encode_transmuted<'itm>(self, store: &'itm mut Self::Store) -> Self::Target
         where
             Self: 'itm,
         {
-            #[cfg(not(feature = "non_robust_ref_mut"))]
+            #[cfg(not(feature = "unsafe_optimizations"))]
             let ctype: &mut R = {
                 let original: &mut R = store.original.insert(self);
                 store.target.insert(*original)
             };
-            #[cfg(feature = "non_robust_ref_mut")]
+            #[cfg(feature = "unsafe_optimizations")]
             let ctype = self;
 
             ctype
@@ -261,27 +263,39 @@ disjoint_impls! {
     }
 }
 
-unsafe impl<R> EncodeTransmuted for &R where Self: CheckedTransmute<Target: Encode> {
+unsafe impl<R> EncodeTransmuted for &R
+where
+    Self: CheckedTransmute<Target: Encode>,
+{
     type Store = <Self::Target as crate::Encode>::Store;
 }
 // WARN: Since `Box<&mut R>` is mapped to `*mut *mut R` this can be disputed in the case of
 // no ownership transfer where Box's invariant can be violated by the caller by NULLing the
 // inner pointer. However, because the box is immediately dropped following the function call,
 // we deem it ok as it would most likely lead to a catastrophic segfault, not a silent UB.
-unsafe impl<R> EncodeTransmuted for Box<R> where Self: CheckedTransmute<Target: Encode> {
+unsafe impl<R: EncodeTransmuted> EncodeTransmuted for Box<R>
+where
+    Self: CheckedTransmute<Target: Encode>,
+{
     type Store = <Self::Target as crate::Encode>::Store;
 
     fn encode_transmuted<'itm>(self, store: &'itm mut Self::Store) -> Self::Target
     where
         Self: 'itm,
     {
-        transmute_into_target(self)
+        unimplemented!()
     }
 }
-unsafe impl<R: crate::Encode> EncodeTransmuted for Option<R> where Self: CheckedTransmute<Target: Encode> {
+unsafe impl<R> EncodeTransmuted for Option<R>
+where
+    Self: CheckedTransmute<Target: Encode>,
+{
     type Store = <Self::Target as crate::Encode>::Store;
 }
-unsafe impl<R: crate::Encode, const N: usize> EncodeTransmuted for [R; N] where Self: CheckedTransmute<Target: Encode> {
+unsafe impl<R, const N: usize> EncodeTransmuted for [R; N]
+where
+    Self: CheckedTransmute<Target: Encode>,
+{
     type Store = <Self::Target as crate::Encode>::Store;
 }
 
@@ -337,7 +351,7 @@ pub(super) fn transmute_into_target_boxed_slice<R: CheckedTransmute>(
     // SAFETY: Soundness is guaranteed by [`Transmute`]
     unsafe { Box::from_raw(core::ptr::slice_from_raw_parts_mut(ptr, len)) }
 }
-#[cfg(any(feature = "owned_as_ref", not(feature = "non_robust_ref_mut")))]
+#[cfg(any(feature = "owned_as_ref", not(feature = "unsafe_optimizations")))]
 pub(super) fn transmute_from_target_boxed_slice<R: CheckedTransmute>(
     #[expect(clippy::boxed_local)] mut source: Box<[R::Target]>,
 ) -> Option<Box<[R]>> {
@@ -434,7 +448,7 @@ mod tests {
 
     use static_assertions::{assert_impl_all, assert_not_impl_any};
 
-    #[cfg(feature = "non_robust_ref_mut")]
+    #[cfg(feature = "unsafe_optimizations")]
     use crate::slice::CSliceMut;
     use crate::{Decode, Encode, niche::Niche, slice::CSlice};
 
@@ -458,7 +472,7 @@ mod tests {
         // FIXME:
         //assert_impl_all!(Box<&bool>: CheckedTransmute<Target = Box<*const u8>>, FlatTransmute<CType = *mut *const u8>, StableNiche, Decode<'static>);
         assert_impl_all!(&[bool]: Niche<CType = CSlice<u8>>, Decode<'static>);
-        #[cfg(feature = "non_robust_ref_mut")]
+        #[cfg(feature = "unsafe_optimizations")]
         assert_impl_all!(&mut [bool]: Niche<CType = CSliceMut<u8>>, Decode<'static>);
         assert_impl_all!([bool; 2]: CheckedTransmute<Target = [u8; 2]>, FlatTransmute<CType = [u8; 2]>, Niche, Decode<'static>);
         assert_impl_all!(Option<bool>: Niche<CType = u8>, Decode<'static>);
@@ -481,7 +495,7 @@ mod tests {
         // FIXME:
         //assert_impl_all!(Box<&u8>: CheckedTransmute<Target = Box<*const u8>>, FlatTransmute<CType = *mut *const u8>, StableNiche, Decode<'static>);
         assert_impl_all!(&[&u8]: Niche<CType = CSlice<*const u8>>, Decode<'static>);
-        #[cfg(feature = "non_robust_ref_mut")]
+        #[cfg(feature = "unsafe_optimizations")]
         assert_impl_all!(&mut [&u8]: Niche<CType = CSliceMut<*const u8>>, Decode<'static>);
         assert_impl_all!([&u8; 2]: CheckedTransmute<Target = [*const u8; 2]>, FlatTransmute<CType = [*const u8; 2]>, Niche, Decode<'static>);
         assert_impl_all!(Option<&u8>: ReprC, CheckedTransmute<Target = *const u8>, FlatTransmute<CType = *const u8>, Decode<'static>);
@@ -508,7 +522,7 @@ mod tests {
         // FIXME:
         //assert_impl_all!(Box<&bool>: CheckedTransmute<Target = Box<*const u8>>, FlatTransmute<CType = *mut *const u8>, StableNiche, Decode<'static>);
         assert_impl_all!(&[&bool]: Niche<CType = CSlice<*const u8>>, Decode<'static>);
-        #[cfg(feature = "non_robust_ref_mut")]
+        #[cfg(feature = "unsafe_optimizations")]
         assert_impl_all!(&mut [&bool]: Niche<CType = CSliceMut<*const u8>>, Decode<'static>);
         assert_impl_all!([&bool; 2]: CheckedTransmute<Target = [&'static u8; 2]>, FlatTransmute<CType = [*const u8; 2]>, Niche, Decode<'static>);
         assert_impl_all!(Option<&bool>: CheckedTransmute<Target = Option<&'static u8>>, FlatTransmute<CType = *const u8>, Decode<'static>);
@@ -574,8 +588,8 @@ mod tests {
     }
 
     #[test]
-    #[cfg(not(feature = "non_robust_ref_mut"))]
-    fn non_robust_ref_mut() {
+    #[cfg(not(feature = "unsafe_optimizations"))]
+    fn unsafe_optimizations() {
         assert_not_impl_any!(&mut bool: Encode);
         assert_not_impl_any!(&mut &bool: Encode);
         assert_not_impl_any!(&mut &u8: Encode);
@@ -592,8 +606,8 @@ mod tests {
     }
 
     #[test]
-    #[cfg(feature = "non_robust_ref_mut")]
-    fn non_robust_ref_mut() {
+    #[cfg(feature = "unsafe_optimizations")]
+    fn unsafe_optimizations() {
         assert_impl_all!(&mut bool: Encode);
         assert_impl_all!(&mut &bool: Encode);
         assert_impl_all!(&mut &u8: Encode);
@@ -610,7 +624,7 @@ mod tests {
 
     #[test]
     #[cfg(feature = "derive")]
-    #[cfg(not(feature = "non_robust_ref_mut"))]
+    #[cfg(not(feature = "unsafe_optimizations"))]
     fn non_robust_ref_mut_derive() {
         assert_not_impl_any!(&mut TransparentWrapper<bool>: Encode);
         assert_not_impl_any!(TransparentWrapper<&mut bool>: Encode);
@@ -630,7 +644,7 @@ mod tests {
 
     #[test]
     #[cfg(feature = "derive")]
-    #[cfg(feature = "non_robust_ref_mut")]
+    #[cfg(feature = "unsafe_optimizations")]
     fn non_robust_ref_mut_derive() {
         assert_impl_all!(&mut TransparentWrapper<bool>: Encode);
         assert_impl_all!(TransparentWrapper<&mut bool>: Encode);

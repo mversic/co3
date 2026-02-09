@@ -2,37 +2,13 @@ use core::mem::ManuallyDrop;
 
 use super::*;
 
-pub trait CloneFromWrapped<R> {
+trait CloneFromWrapped<R> {
     fn clone_from_wrapped(self) -> R;
 }
 
 impl<R: Clone> CloneFromWrapped<R> for ManuallyDrop<R> {
     fn clone_from_wrapped(self) -> R {
         ManuallyDrop::into_inner(self.clone())
-    }
-}
-
-impl<'a, R> CloneFromWrapped<&'a R> for &'a R {
-    fn clone_from_wrapped(self) -> &'a R {
-        self
-    }
-}
-
-impl<'a, R> CloneFromWrapped<&'a mut R> for &'a mut R {
-    fn clone_from_wrapped(self) -> &'a mut R {
-        self
-    }
-}
-
-impl<'a, R> CloneFromWrapped<&'a [R]> for &'a [R] {
-    fn clone_from_wrapped(self) -> &'a [R] {
-        self
-    }
-}
-
-impl<'a, R> CloneFromWrapped<&'a mut [R]> for &'a mut [R] {
-    fn clone_from_wrapped(self) -> &'a mut [R] {
-        self
     }
 }
 
@@ -65,12 +41,6 @@ impl<R, W: CloneFromWrapped<R>, const N: usize> CloneFromWrapped<[R; N]> for [W;
     }
 }
 
-//impl<R> CloneFromWrapped<Option<R>> for Option<ManuallyDrop<R>> {
-//    fn clone_from_wrapped(self) -> Option<R> {
-//        self.map(ManuallyDrop::into_inner)
-//    }
-//}
-
 disjoint_impls! {
     /// Controls how decoded values are wrapped for cloned references.
     ///
@@ -94,9 +64,9 @@ disjoint_impls! {
     }
 
     #[cfg(feature = "cloned_refs")]
-    impl<'d, R: DecodeCloneWrapper<'d> + Encode + NonLocal, S: Cloned> DecodeCloneWrapper<'d> for &'d mut R
+    impl<'d, R, S: Cloned> DecodeCloneWrapper<'d> for &'d mut R
     where
-        Self: ReprFamily<Kind = &'d mut S>,
+        Self: ReprFamily<Kind = &'d mut S> + Decode<'d>,
     {
     }
 
@@ -136,10 +106,9 @@ disjoint_impls! {
     {
     }
 
-    impl<'slice, R: CheckedTransmute> DecodeCloneWrapper<'slice> for &'slice mut [R]
+    impl<'slice, R> DecodeCloneWrapper<'slice> for &'slice mut [R]
     where
-        &'slice mut [<R as CheckedTransmute>::Target]: Decode<'slice>,
-        Self: ReprFamily<Kind = &'slice mut [Transmuted]>
+        Self: ReprFamily<Kind = &'slice mut [Transmuted]> + Decode<'slice>
     {
     }
     #[cfg(feature = "cloned_refs")]
@@ -148,9 +117,9 @@ disjoint_impls! {
     {
     }
     #[cfg(feature = "cloned_refs")]
-    impl<'slice, R: DecodeCloneWrapper<'slice> + Encode + NonLocal, S: Cloned> DecodeCloneWrapper<'slice> for &'slice mut [R]
+    impl<'slice, R, S: Cloned> DecodeCloneWrapper<'slice> for &'slice mut [R]
     where
-        Self: ReprFamily<Kind = &'slice mut [S]>,
+        Self: ReprFamily<Kind = &'slice mut [S]> + Decode<'slice>,
     {
     }
 
