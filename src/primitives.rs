@@ -40,21 +40,21 @@ mod wasm {
     {
         type Kind = &'itm mut [Transparent];
     }
-    #[cfg(feature = "owned_as_ref")]
+    #[cfg(feature = "owned-as-ref")]
     impl<R> ReprFamily for Box<R>
     where
         R: ReprFamily<Type = NonWasmIntPrimitive>,
     {
         type Kind = Box<Robust>;
     }
-    #[cfg(feature = "owned_as_ref")]
+    #[cfg(feature = "owned-as-ref")]
     impl<R> ReprFamily for Box<[R]>
     where
         R: ReprFamily<Type = NonWasmIntPrimitive>,
     {
         type Kind = Box<[Robust]>;
     }
-    #[cfg(feature = "owned_as_ref")]
+    #[cfg(feature = "owned-as-ref")]
     impl<R> ReprFamily for Vec<R>
     where
         R: ReprFamily<Type = NonWasmIntPrimitive>,

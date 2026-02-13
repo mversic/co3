@@ -74,7 +74,7 @@ disjoint_impls! {
     impl<R: ReprFamily<Kind = Opaque>> ReprFamily for &R {
         type Kind = Transmuted;
     }
-    #[cfg(feature = "cloned_refs")]
+    #[cfg(feature = "cloned-refs")]
     impl<'a, R: ReprFamily<Kind: Cloned + 'a>> ReprFamily for &'a R {
         type Kind = &'a R::Kind;
     }
@@ -91,26 +91,26 @@ disjoint_impls! {
     impl<R: ReprFamily<Kind = Opaque>> ReprFamily for &mut R {
         type Kind = Transmuted;
     }
-    #[cfg(feature = "cloned_refs")]
+    #[cfg(feature = "cloned-refs")]
     impl<'a, R: ReprFamily<Kind: Cloned + 'a>> ReprFamily for &'a mut R {
         type Kind = &'a mut R::Kind;
     }
 
-    #[cfg(feature = "owned_types")]
+    #[cfg(feature = "owned-types")]
     impl<R: ReprFamily<Kind = Box<Robust>>> ReprFamily for Box<R> {
         type Kind = Transmuted;
     }
     impl<R: ReprFamily<Kind = Transmuted>> ReprFamily for Box<R> {
         type Kind = Transmuted;
     }
-    #[cfg(feature = "owned_types")]
+    #[cfg(feature = "owned-types")]
     impl<R: ReprFamily<Kind = Robust>> ReprFamily for Box<R> {
         type Kind = Box<Robust>;
     }
     impl<R: ReprFamily<Kind = Opaque>> ReprFamily for Box<R> {
         type Kind = Transmuted;
     }
-    #[cfg(feature = "owned_types")]
+    #[cfg(feature = "owned-types")]
     impl<R: ReprFamily<Kind: Cloned>> ReprFamily for Box<R> {
         type Kind = Box<R::Kind>;
     }
@@ -124,11 +124,11 @@ disjoint_impls! {
     impl<'a, R: ReprFamily<Kind = Robust>> ReprFamily for &'a [R] {
         type Kind = &'a [Robust];
     }
-    #[cfg(feature = "cloned_refs")]
+    #[cfg(feature = "cloned-refs")]
     impl<'a, R: ReprFamily<Kind = Opaque>> ReprFamily for &'a [R] {
         type Kind = &'a [Opaque];
     }
-    #[cfg(feature = "cloned_refs")]
+    #[cfg(feature = "cloned-refs")]
     impl<'a, R: ReprFamily<Kind: Cloned + 'a>> ReprFamily for &'a [R] {
         type Kind = &'a [R::Kind];
     }
@@ -142,58 +142,58 @@ disjoint_impls! {
     impl<'a, R: ReprFamily<Kind = Robust>> ReprFamily for &'a mut [R] {
         type Kind = &'a mut [Robust];
     }
-    #[cfg(feature = "cloned_refs")]
+    #[cfg(feature = "cloned-refs")]
     impl<'a, R: ReprFamily<Kind = Opaque>> ReprFamily for &'a mut [R] {
         type Kind = &'a mut [Opaque];
     }
-    #[cfg(feature = "cloned_refs")]
+    #[cfg(feature = "cloned-refs")]
     impl<'a, R: ReprFamily<Kind: Cloned + 'a>> ReprFamily for &'a mut [R] {
         type Kind = &'a mut [R::Kind];
     }
 
-    #[cfg(feature = "owned_types")]
+    #[cfg(feature = "owned-types")]
     impl<R: ReprFamily<Kind = Box<Robust>>> ReprFamily for Box<[R]> {
         type Kind = Box<[Transmuted]>;
     }
-    #[cfg(feature = "owned_types")]
+    #[cfg(feature = "owned-types")]
     impl<R: ReprFamily<Kind = Transmuted>> ReprFamily for Box<[R]> {
         type Kind = Box<[Transmuted]>;
     }
-    #[cfg(feature = "owned_types")]
+    #[cfg(feature = "owned-types")]
     impl<R: ReprFamily<Kind = Robust>> ReprFamily for Box<[R]> {
         type Kind = Box<[Robust]>;
     }
-    #[cfg(feature = "owned_types")]
+    #[cfg(feature = "owned-types")]
     impl<R: ReprFamily<Kind = Opaque>> ReprFamily for Box<[R]> {
         type Kind = Box<[Opaque]>;
     }
-    #[cfg(feature = "owned_types")]
+    #[cfg(feature = "owned-types")]
     impl<R: ReprFamily<Kind: Cloned>> ReprFamily for Box<[R]> {
         type Kind = Box<[R::Kind]>;
     }
 
-    #[cfg(feature = "owned_types")]
+    #[cfg(feature = "owned-types")]
     impl<R: ReprFamily<Kind = Box<Robust>>> ReprFamily for Vec<R> {
         type Kind = Vec<Transmuted>;
     }
-    #[cfg(feature = "owned_types")]
+    #[cfg(feature = "owned-types")]
     impl<R: ReprFamily<Kind = Transmuted>> ReprFamily for Vec<R> {
         type Kind = Vec<Transmuted>;
     }
-    #[cfg(feature = "owned_types")]
+    #[cfg(feature = "owned-types")]
     impl<R: ReprFamily<Kind = Robust>> ReprFamily for Vec<R> {
         type Kind = Vec<Robust>;
     }
-    #[cfg(feature = "owned_types")]
+    #[cfg(feature = "owned-types")]
     impl<R: ReprFamily<Kind = Opaque>> ReprFamily for Vec<R> {
         type Kind = Vec<Opaque>;
     }
-    #[cfg(feature = "owned_types")]
+    #[cfg(feature = "owned-types")]
     impl<R: ReprFamily<Kind: Cloned>> ReprFamily for Vec<R> {
         type Kind = Vec<R::Kind>;
     }
 
-    #[cfg(feature = "owned_types")]
+    #[cfg(feature = "owned-types")]
     impl<R: ReprFamily<Kind = Box<Robust>>, const N: usize> ReprFamily for [R; N] {
         type Kind = Box<Robust>;
     }
@@ -211,7 +211,7 @@ disjoint_impls! {
     }
 
     // FIXME: Verify is correct
-    //#[cfg(feature = "owned_types")]
+    //#[cfg(feature = "owned-types")]
     //impl<R: ReprFamily<Type = Box<Robust>>> ReprFamily for Option<R> {
     //    type Kind = Box<Robust>;
     //}

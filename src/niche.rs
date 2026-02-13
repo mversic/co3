@@ -1,11 +1,11 @@
 //! Logic related to the conversion of [`Option<T>`] to and from FFI-compatible representation
 
 use alloc::boxed::Box;
-#[cfg(feature = "owned_types")]
+#[cfg(feature = "owned-types")]
 use alloc::vec::Vec;
 use disjoint_impls::disjoint_impls;
 
-#[cfg(feature = "owned_types")]
+#[cfg(feature = "owned-types")]
 use crate::{BoxedSliceCType, VecCType};
 use crate::{
     ExternC, ReprC, assert_arr_has_non_zero_len,
@@ -116,11 +116,11 @@ impl<R> NicheFamily for &[R] {
 impl<R> NicheFamily for &mut [R] {
     type Kind = WithCustomNiche;
 }
-#[cfg(feature = "owned_types")]
+#[cfg(feature = "owned-types")]
 impl<R> NicheFamily for Box<[R]> {
     type Kind = WithCustomNiche;
 }
-#[cfg(feature = "owned_types")]
+#[cfg(feature = "owned-types")]
 impl<R> NicheFamily for Vec<R> {
     type Kind = WithCustomNiche;
 }
@@ -160,7 +160,7 @@ where
     const NICHE_VALUE: CSliceMut<C> = CSliceMut::none();
 }
 
-#[cfg(feature = "owned_types")]
+#[cfg(feature = "owned-types")]
 impl<R, C> Niche for Box<[R]>
 where
     Self: ExternC<CType = BoxedSliceCType<C>>,
@@ -168,7 +168,7 @@ where
     const NICHE_VALUE: Self::CType = BoxedSliceCType::none();
 }
 
-#[cfg(feature = "owned_types")]
+#[cfg(feature = "owned-types")]
 impl<R, C> Niche for Vec<R>
 where
     Self: ExternC<CType = VecCType<C>>,

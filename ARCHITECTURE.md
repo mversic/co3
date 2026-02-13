@@ -4,9 +4,9 @@
 - type that recursively delegates to the `Transmute::Target` type through transmutation
 - `Transmute::Target` takes the ownership and must know how to handle conversion further
 
-2. Box<Robust> (controlled through `owned_as_ref` feature flag)
+2. Box<Robust> (controlled through `owned-as-ref` feature flag)
 - `Robust` types that carry ownership, i.e. heap-allocated types such as `Box<T>` and `Vec<T>`
-- if enabled, `owned_as_ref` feature converts owned values into borrowed before handing them out
+- if enabled, `owned-as-ref` feature converts owned values into borrowed before handing them out
 
 3. Robust (depends on `ReprC` trait)
 - types that have a stable layout with no trap representations

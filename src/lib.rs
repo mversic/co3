@@ -14,9 +14,9 @@ pub use co3_derive::*;
 use derive_more::Display;
 use disjoint_impls::disjoint_impls;
 
-#[cfg(feature = "cloned_refs")]
-use crate::cloned::DecodeCloneWrapper;
-#[cfg(not(feature = "unsafe_optimizations"))]
+#[cfg(feature = "cloned-refs")]
+use crate::cloned::DecodeCloned;
+#[cfg(not(feature = "unsafe-optimizations"))]
 use crate::transmute::EncodeTransmuted;
 use crate::{
     cloned::decode_cloned_array,
@@ -29,7 +29,7 @@ use crate::{
         transmute_into_target_slice_mut,
     },
 };
-#[cfg(feature = "owned_as_ref")]
+#[cfg(feature = "owned-as-ref")]
 use crate::{
     cloned::{decode_cloned_box_ptr, decode_cloned_collection},
     transmute::{
@@ -37,12 +37,12 @@ use crate::{
         transmute_into_target_boxed_slice, transmute_into_target_vec,
     },
 };
-#[cfg(feature = "owned_types")]
-#[cfg(not(feature = "owned_as_ref"))]
+#[cfg(feature = "owned-types")]
+#[cfg(not(feature = "owned-as-ref"))]
 use crate::{slice::CBoxedSlice, vec::CVec};
 
 // TODO:
-//#[cfg(feature = "cloned_refs")]
+//#[cfg(feature = "cloned-refs")]
 mod cloned;
 pub mod external;
 pub mod handle;
@@ -60,9 +60,9 @@ pub mod vec;
 
 use option::COption;
 
-#[cfg(feature = "owned_types")]
+#[cfg(feature = "owned-types")]
 type BoxedSliceCType<C> = CSliceMut<C>;
-#[cfg(feature = "owned_types")]
+#[cfg(feature = "owned-types")]
 type VecCType<C> = CSliceMut<C>;
 
 /// Result of execution of an FFI function
@@ -100,7 +100,7 @@ disjoint_impls! {
         type CType: ReprC;
     }
 
-    #[cfg(feature = "owned_types")]
+    #[cfg(feature = "owned-types")]
     impl<R: CheckedTransmute<Target: ReprC>> ExternC for R
     where
         Self: ReprFamily<Kind = Box<Robust>>,
@@ -117,7 +117,7 @@ disjoint_impls! {
         type CType = *mut Self;
     }
 
-    #[cfg(feature = "cloned_refs")]
+    #[cfg(feature = "cloned-refs")]
     impl<'a, R: ExternC, S: Cloned> ExternC for &'a R
     where
         Self: ReprFamily<Kind = &'a S>,
@@ -125,7 +125,7 @@ disjoint_impls! {
         type CType = *const R::CType;
     }
 
-    #[cfg(feature = "cloned_refs")]
+    #[cfg(feature = "cloned-refs")]
     impl<'a, R: ExternC, S: Cloned> ExternC for &'a mut R
     where
         Self: ReprFamily<Kind = &'a mut S>,
@@ -133,7 +133,7 @@ disjoint_impls! {
         type CType = *mut R::CType;
     }
 
-    #[cfg(feature = "owned_types")]
+    #[cfg(feature = "owned-types")]
     impl<R: ExternC, S: Cloned> ExternC for Box<R>
     where
         Self: ReprFamily<Kind = Box<S>>,
@@ -154,14 +154,14 @@ disjoint_impls! {
     {
         type CType = CSlice<R>;
     }
-    #[cfg(feature = "cloned_refs")]
+    #[cfg(feature = "cloned-refs")]
     impl<'a, R> ExternC for &'a [R]
     where
         Self: ReprFamily<Kind = &'a [Opaque]>,
     {
         type CType = CSlice<*const R>;
     }
-    #[cfg(feature = "cloned_refs")]
+    #[cfg(feature = "cloned-refs")]
     impl<'a, R: ExternC, S: Cloned> ExternC for &'a [R]
     where
         Self: ReprFamily<Kind = &'a [S]>,
@@ -182,14 +182,14 @@ disjoint_impls! {
     {
         type CType = CSliceMut<R>;
     }
-    #[cfg(feature = "cloned_refs")]
+    #[cfg(feature = "cloned-refs")]
     impl<'slice, R> ExternC for &'slice mut [R]
     where
         Self: ReprFamily<Kind = &'slice mut [Opaque]>,
     {
         type CType = CSliceMut<*mut R>;
     }
-    #[cfg(feature = "cloned_refs")]
+    #[cfg(feature = "cloned-refs")]
     impl<'slice, R: ExternC, S: Cloned> ExternC for &'slice mut [R]
     where
         Self: ReprFamily<Kind = &'slice mut [S]>,
@@ -204,21 +204,21 @@ disjoint_impls! {
     {
         type CType = <Box<[R::Target]> as ExternC>::CType;
     }
-    #[cfg(feature = "owned_types")]
+    #[cfg(feature = "owned-types")]
     impl<R: ReprC> ExternC for Box<[R]>
     where
         Self: ReprFamily<Kind = Box<[Robust]>>,
     {
         type CType = BoxedSliceCType<R>;
     }
-    #[cfg(feature = "owned_types")]
+    #[cfg(feature = "owned-types")]
     impl<R> ExternC for Box<[R]>
     where
         Self: ReprFamily<Kind = Box<[Opaque]>>,
     {
         type CType = BoxedSliceCType<*mut R>;
     }
-    #[cfg(feature = "owned_types")]
+    #[cfg(feature = "owned-types")]
     impl<R: ExternC, S: Cloned> ExternC for Box<[R]>
     where
         Self: ReprFamily<Kind = Box<[S]>>,
@@ -226,7 +226,7 @@ disjoint_impls! {
         type CType = CSliceMut<R::CType>;
     }
 
-    #[cfg(feature = "owned_types")]
+    #[cfg(feature = "owned-types")]
     impl<R: CheckedTransmute> ExternC for Vec<R>
     where
         Self: ReprFamily<Kind = Vec<Transmuted>>,
@@ -234,21 +234,21 @@ disjoint_impls! {
     {
         type CType = <Vec<R::Target> as ExternC>::CType;
     }
-    #[cfg(feature = "owned_types")]
+    #[cfg(feature = "owned-types")]
     impl<R: ReprC> ExternC for Vec<R>
     where
         Self: ReprFamily<Kind = Vec<Robust>>,
     {
         type CType = VecCType<R>;
     }
-    #[cfg(feature = "owned_types")]
+    #[cfg(feature = "owned-types")]
     impl<R> ExternC for Vec<R>
     where
         Self: ReprFamily<Kind = Vec<Opaque>>,
     {
         type CType = VecCType<*mut R>;
     }
-    #[cfg(feature = "owned_types")]
+    #[cfg(feature = "owned-types")]
     impl<R: ExternC, S: Cloned> ExternC for Vec<R>
     where
         Self: ReprFamily<Kind = Vec<S>>,
@@ -302,8 +302,8 @@ disjoint_impls! {
             Self: 'itm;
     }
 
-    //#[cfg(feature = "owned_types")]
-    //#[cfg(feature = "owned_as_ref")]
+    //#[cfg(feature = "owned-types")]
+    //#[cfg(feature = "owned-as-ref")]
     //impl<R: CheckedTransmute<Target: ReprC>> Encode for R
     //where
     //    Self: Ir<Type = Box<Robust>>,
@@ -316,22 +316,22 @@ disjoint_impls! {
     //    }
     //}
     impl<
-        #[cfg(not(feature = "unsafe_optimizations"))] R: EncodeTransmuted,
-        #[cfg(feature = "unsafe_optimizations")] R,
+        #[cfg(not(feature = "unsafe-optimizations"))] R: EncodeTransmuted,
+        #[cfg(feature = "unsafe-optimizations")] R,
     > Encode for R
     where
         R: ReprFamily<Kind = Transmuted> + CheckedTransmute<Target: Encode>,
     {
-        #[cfg(not(feature = "unsafe_optimizations"))]
+        #[cfg(not(feature = "unsafe-optimizations"))]
         type Store = R::Store;
-        #[cfg(feature = "unsafe_optimizations")]
+        #[cfg(feature = "unsafe-optimizations")]
         type Store = <R::Target as Encode>::Store;
 
         fn encode<'itm>(self, store: &'itm mut Self::Store) -> Self::CType
         where
             Self: 'itm,
         {
-            #[cfg(not(feature = "unsafe_optimizations"))]
+            #[cfg(not(feature = "unsafe-optimizations"))]
             {
                 let target = R::encode_transmuted(self, store);
                 let store = unsafe {
@@ -339,7 +339,7 @@ disjoint_impls! {
                 };
                 Encode::encode(target, store)
             }
-            #[cfg(feature = "unsafe_optimizations")]
+            #[cfg(feature = "unsafe-optimizations")]
             {
                 transmute_into_target(self).encode(store)
             }
@@ -366,7 +366,7 @@ disjoint_impls! {
         }
     }
 
-    #[cfg(feature = "cloned_refs")]
+    #[cfg(feature = "cloned-refs")]
     impl<'a, R: Encode + Clone, S: Cloned> Encode for &'a R
     where
         Self: ReprFamily<Kind = &'a S>,
@@ -381,7 +381,7 @@ disjoint_impls! {
         }
     }
 
-    #[cfg(feature = "cloned_refs")]
+    #[cfg(feature = "cloned-refs")]
     impl<'a, 'b, R: Encode + Decode<'b> + Clone + 'b, S: Cloned> Encode for &'a mut R
     where
         Self: ReprFamily<Kind = &'a mut S>,
@@ -398,7 +398,7 @@ disjoint_impls! {
         }
     }
 
-    #[cfg(feature = "owned_types")]
+    #[cfg(feature = "owned-types")]
     impl<R: Encode, S: Cloned> Encode for Box<R>
     where
         Self: ReprFamily<Kind = Box<S>>,
@@ -441,7 +441,7 @@ disjoint_impls! {
             CSlice::from_slice(Some(self))
         }
     }
-    #[cfg(feature = "cloned_refs")]
+    #[cfg(feature = "cloned-refs")]
     impl<'slice, R> Encode for &'slice [R]
     where
         Self: ReprFamily<Kind = &'slice [Opaque]>,
@@ -456,7 +456,7 @@ disjoint_impls! {
             CSlice::from_slice(Some(store.0.insert(ctypes)))
         }
     }
-    #[cfg(feature = "cloned_refs")]
+    #[cfg(feature = "cloned-refs")]
     impl<'slice, R: Encode + Clone, S: Cloned> Encode for &'slice [R]
     where
         Self: ReprFamily<Kind = &'slice [S]>,
@@ -518,22 +518,22 @@ disjoint_impls! {
     where
         Self: ReprFamily<Kind = &'slice mut [Transmuted]>,
     {
-        #[cfg(not(feature = "unsafe_optimizations"))]
+        #[cfg(not(feature = "unsafe-optimizations"))]
         type Store = SliceMutTransmuteStore<'slice, R>;
-        #[cfg(feature = "unsafe_optimizations")]
+        #[cfg(feature = "unsafe-optimizations")]
         type Store = ();
 
         fn encode<'itm>(self, store: &'itm mut Self::Store) -> Self::CType
         where
             Self: 'itm,
         {
-            #[cfg(not(feature = "unsafe_optimizations"))]
+            #[cfg(not(feature = "unsafe-optimizations"))]
             let ctypes: &mut [_] = {
                 let original: &mut [R] = store.original.insert(self);
                 let robust = transmute_into_target_slice_mut(original);
                 store.target.insert(robust.to_vec().into_boxed_slice())
             };
-            #[cfg(feature = "unsafe_optimizations")]
+            #[cfg(feature = "unsafe-optimizations")]
             let ctypes = transmute_into_target_slice_mut(self);
 
             Encode::encode(ctypes, &mut ())
@@ -552,7 +552,7 @@ disjoint_impls! {
             CSliceMut::from_slice(Some(self))
         }
     }
-    #[cfg(feature = "cloned_refs")]
+    #[cfg(feature = "cloned-refs")]
     impl<'slice, R> Encode for &'slice mut [R]
     where
         Self: ReprFamily<Kind = &'slice mut [Opaque]>,
@@ -568,7 +568,7 @@ disjoint_impls! {
             CSliceMut::from_slice(Some(store.encoded.insert(ctypes)))
         }
     }
-    #[cfg(feature = "cloned_refs")]
+    #[cfg(feature = "cloned-refs")]
     impl<'slice, 'b, R: Encode + Decode<'b> + Clone + 'b, S: Cloned> Encode for &'slice mut [R]
     where
         Self: ReprFamily<Kind = &'slice mut [S]>,
@@ -600,7 +600,7 @@ disjoint_impls! {
         }
     }
 
-    #[cfg(feature = "owned_types")]
+    #[cfg(feature = "owned-types")]
     impl<R: CheckedTransmute> Encode for Box<[R]>
     where
         Box<[<R as CheckedTransmute>::Target]>: Encode,
@@ -615,32 +615,32 @@ disjoint_impls! {
             transmute_into_target_boxed_slice(self).encode(store)
         }
     }
-    #[cfg(feature = "owned_types")]
+    #[cfg(feature = "owned-types")]
     impl<R: ReprC> Encode for Box<[R]>
     where
         Self: ReprFamily<Kind = Box<[Robust]>>,
     {
-        #[cfg(feature = "owned_as_ref")]
+        #[cfg(feature = "owned-as-ref")]
         type Store = OwningStore<R>;
-        #[cfg(not(feature = "owned_as_ref"))]
+        #[cfg(not(feature = "owned-as-ref"))]
         type Store = ();
 
         fn encode<'itm>(self, store: &'itm mut Self::Store) -> Self::CType
         where
             Self: 'itm,
         {
-            #[cfg(feature = "owned_as_ref")]
+            #[cfg(feature = "owned-as-ref")]
             let encoded = {
                 let store = store.0.insert(self);
                 CSliceMut::from_slice(Some(store))
             };
-            #[cfg(not(feature = "owned_as_ref"))]
+            #[cfg(not(feature = "owned-as-ref"))]
             let encoded = CBoxedSlice::from_boxed_slice(Some(self));
 
             encoded
         }
     }
-    #[cfg(feature = "owned_types")]
+    #[cfg(feature = "owned-types")]
     impl<R> Encode for Box<[R]>
     where
         Self: ReprFamily<Kind = Box<[Opaque]>>,
@@ -657,7 +657,7 @@ disjoint_impls! {
             CSliceMut::from_slice(Some(store))
         }
     }
-    #[cfg(feature = "owned_types")]
+    #[cfg(feature = "owned-types")]
     impl<R: Encode, S: Cloned> Encode for Box<[R]>
     where
         Self: ReprFamily<Kind = Box<[S]>>,
@@ -685,7 +685,7 @@ disjoint_impls! {
         }
     }
 
-    #[cfg(feature = "owned_types")]
+    #[cfg(feature = "owned-types")]
     impl<R: CheckedTransmute> Encode for Vec<R>
     where
         Vec<<R as CheckedTransmute>::Target>: Encode,
@@ -700,32 +700,32 @@ disjoint_impls! {
             transmute_into_target_vec(self).encode(store)
         }
     }
-    #[cfg(feature = "owned_types")]
+    #[cfg(feature = "owned-types")]
     impl<R: ReprC> Encode for Vec<R>
     where
         Self: ReprFamily<Kind = Vec<Robust>>,
     {
-        #[cfg(feature = "owned_as_ref")]
+        #[cfg(feature = "owned-as-ref")]
         type Store = OwningStore<R>;
-        #[cfg(not(feature = "owned_as_ref"))]
+        #[cfg(not(feature = "owned-as-ref"))]
         type Store = ();
 
         fn encode<'itm>(self, store: &'itm mut Self::Store) -> Self::CType
         where
             Self: 'itm,
         {
-            #[cfg(feature = "owned_as_ref")]
+            #[cfg(feature = "owned-as-ref")]
             let encoded = {
                 let store = store.0.insert(self.into_boxed_slice());
                 CSliceMut::from_slice(Some(store))
             };
-            #[cfg(not(feature = "owned_as_ref"))]
+            #[cfg(not(feature = "owned-as-ref"))]
             let encoded = CVec::from_vec(Some(self));
 
             encoded
         }
     }
-    #[cfg(feature = "owned_types")]
+    #[cfg(feature = "owned-types")]
     impl<R> Encode for Vec<R>
     where
         Self: ReprFamily<Kind = Vec<Opaque>>,
@@ -742,7 +742,7 @@ disjoint_impls! {
             CSliceMut::from_slice(Some(store))
         }
     }
-    #[cfg(feature = "owned_types")]
+    #[cfg(feature = "owned-types")]
     impl<R: Encode, S: Cloned> Encode for Vec<R>
     where
         Self: ReprFamily<Kind = Vec<S>>,
@@ -879,7 +879,7 @@ disjoint_impls! {
         unsafe fn decode<'itm: 'd>(source: Self::CType, store: &'itm mut Self::Store) -> Option<Self>;
     }
 
-    //#[cfg(feature = "owned_as_ref")]
+    //#[cfg(feature = "owned-as-ref")]
     //impl<'d, R: CheckedTransmute<Target: 'd> + Clone> Decode<'d> for R
     //where
     //    Self: ReprFamily<Kind = Box<Robust>>,
@@ -925,8 +925,8 @@ disjoint_impls! {
         }
     }
 
-    #[cfg(feature = "cloned_refs")]
-    impl<'d, R: DecodeCloneWrapper<'d>, S: Cloned> Decode<'d> for &'d R
+    #[cfg(feature = "cloned-refs")]
+    impl<'d, R: DecodeCloned<'d>, S: Cloned> Decode<'d> for &'d R
     where
         Self: ReprFamily<Kind = &'d S>,
     {
@@ -937,12 +937,12 @@ disjoint_impls! {
                 return None;
             }
 
-            Some(store.value.insert(unsafe { R::decode_wrapped(source.read(), &mut store.store) }?))
+            Some(store.value.insert(unsafe { R::decode_cloned(source.read(), &mut store.store) }?))
         }
     }
 
-    #[cfg(feature = "cloned_refs")]
-    impl<'d, R: DecodeCloneWrapper<'d> + Encode, S: Cloned> Decode<'d> for &'d mut R
+    #[cfg(feature = "cloned-refs")]
+    impl<'d, R: DecodeCloned<'d> + Encode, S: Cloned> Decode<'d> for &'d mut R
     where
         Self: ReprFamily<Kind = &'d mut S>,
     {
@@ -956,11 +956,11 @@ disjoint_impls! {
             let source = store.source.insert(source);
             let source = unsafe { source.read() };
 
-            Some(store.value.insert(unsafe { R::decode_wrapped(source, &mut store.decode_store) }?))
+            Some(store.value.insert(unsafe { R::decode_cloned(source, &mut store.decode_store) }?))
         }
     }
 
-    #[cfg(feature = "owned_types")]
+    #[cfg(feature = "owned-types")]
     impl<'d, R: Decode<'d>, S: Cloned> Decode<'d> for Box<R>
     where
         Self: ReprFamily<Kind = Box<S>>,
@@ -996,7 +996,7 @@ disjoint_impls! {
             unsafe { source.into_rust() }
         }
     }
-    #[cfg(feature = "cloned_refs")]
+    #[cfg(feature = "cloned-refs")]
     impl<'slice, R: Clone> Decode<'slice> for &'slice [R]
     where
         Self: ReprFamily<Kind = &'slice [Opaque]>,
@@ -1019,8 +1019,8 @@ disjoint_impls! {
             Some(store)
         }
     }
-    #[cfg(feature = "cloned_refs")]
-    impl<'slice, R: DecodeCloneWrapper<'slice>, S: Cloned> Decode<'slice> for &'slice [R]
+    #[cfg(feature = "cloned-refs")]
+    impl<'slice, R: DecodeCloned<'slice>, S: Cloned> Decode<'slice> for &'slice [R]
     where
         Self: ReprFamily<Kind = &'slice [S]>,
     {
@@ -1042,7 +1042,7 @@ disjoint_impls! {
                 source
                     .iter()
                     .zip(&mut *stores)
-                    .map(|(&item, substore)| unsafe { R::decode_wrapped(item, substore) })
+                    .map(|(&item, substore)| unsafe { R::decode_cloned(item, substore) })
                     .collect::<Option<_>>()?,
             );
 
@@ -1071,7 +1071,7 @@ disjoint_impls! {
             unsafe { source.into_rust() }
         }
     }
-    #[cfg(feature = "cloned_refs")]
+    #[cfg(feature = "cloned-refs")]
     impl<'slice, R: Clone> Decode<'slice> for &'slice mut [R]
     where
         Self: ReprFamily<Kind = &'slice mut [Opaque]>,
@@ -1095,8 +1095,8 @@ disjoint_impls! {
             Some(values)
         }
     }
-    #[cfg(feature = "cloned_refs")]
-    impl<'slice, R: DecodeCloneWrapper<'slice> + Encode, S: Cloned> Decode<'slice> for &'slice mut [R]
+    #[cfg(feature = "cloned-refs")]
+    impl<'slice, R: DecodeCloned<'slice> + Encode, S: Cloned> Decode<'slice> for &'slice mut [R]
     where
         Self: ReprFamily<Kind = &'slice mut [S]>,
     {
@@ -1119,7 +1119,7 @@ disjoint_impls! {
                 source
                     .iter()
                     .zip(&mut *stores)
-                    .map(|(&item, substore)| unsafe { R::decode_wrapped(item, substore) })
+                    .map(|(&item, substore)| unsafe { R::decode_cloned(item, substore) })
                     .collect::<Option<_>>()?,
             );
 
@@ -1127,7 +1127,7 @@ disjoint_impls! {
         }
     }
 
-    #[cfg(feature = "owned_as_ref")]
+    #[cfg(feature = "owned-as-ref")]
     impl<'d, R: CheckedTransmute> Decode<'d> for Box<[R]>
     where
         Box<[<R as CheckedTransmute>::Target]>: Decode<'d>,
@@ -1142,7 +1142,7 @@ disjoint_impls! {
             }
         }
     }
-    #[cfg(feature = "owned_as_ref")]
+    #[cfg(feature = "owned-as-ref")]
     impl<'d, R: ReprC + 'd> Decode<'d> for Box<[R]>
     where
         Self: ReprFamily<Kind = Box<[Robust]>>,
@@ -1153,7 +1153,7 @@ disjoint_impls! {
             unsafe { source.into_rust() }.map(|slice| slice.into())
         }
     }
-    #[cfg(feature = "owned_types")]
+    #[cfg(feature = "owned-types")]
     impl<'d, R: 'd> Decode<'d> for Box<[R]>
     where
         Self: ReprFamily<Kind = Box<[Opaque]>>,
@@ -1169,7 +1169,7 @@ disjoint_impls! {
                 .collect::<Option<_>>()
         }
     }
-    #[cfg(feature = "owned_types")]
+    #[cfg(feature = "owned-types")]
     impl<'d, R: Decode<'d>, S: Cloned> Decode<'d> for Box<[R]>
     where
         Self: ReprFamily<Kind = Box<[S]>>,
@@ -1181,7 +1181,7 @@ disjoint_impls! {
         }
     }
 
-    #[cfg(feature = "owned_as_ref")]
+    #[cfg(feature = "owned-as-ref")]
     impl<'d, R: CheckedTransmute> Decode<'d> for Vec<R>
     where
         Vec<<R as CheckedTransmute>::Target>: Decode<'d>,
@@ -1196,7 +1196,7 @@ disjoint_impls! {
             }
         }
     }
-    #[cfg(feature = "owned_as_ref")]
+    #[cfg(feature = "owned-as-ref")]
     impl<'d, R: ReprC + 'd> Decode<'d> for Vec<R>
     where
         Self: ReprFamily<Kind = Vec<Robust>>,
@@ -1207,7 +1207,7 @@ disjoint_impls! {
             unsafe { source.into_rust() }.map(|slice| slice.to_vec())
         }
     }
-    #[cfg(feature = "owned_types")]
+    #[cfg(feature = "owned-types")]
     impl<'d, R: 'd> Decode<'d> for Vec<R>
     where
         Self: ReprFamily<Kind = Vec<Opaque>>,
@@ -1223,7 +1223,7 @@ disjoint_impls! {
                 .collect::<Option<_>>()
         }
     }
-    #[cfg(feature = "owned_types")]
+    #[cfg(feature = "owned-types")]
     impl<'d, R: Decode<'d>, S: Cloned> Decode<'d> for Vec<R>
     where
         Self: ReprFamily<Kind = Vec<S>>,
@@ -1384,13 +1384,13 @@ impl<R, D: Store> Store for DecodeStoreSlicePair<R, D> {
     }
 }
 
-#[cfg(feature = "cloned_refs")]
+#[cfg(feature = "cloned-refs")]
 pub struct OpaqueMutSliceEncodeStore<'a, R> {
     encoded: Option<Box<[*mut R]>>,
     original: Option<&'a mut [R]>,
 }
 
-#[cfg(feature = "cloned_refs")]
+#[cfg(feature = "cloned-refs")]
 impl<'a, R> Default for OpaqueMutSliceEncodeStore<'a, R> {
     fn default() -> Self {
         Self {
@@ -1400,12 +1400,12 @@ impl<'a, R> Default for OpaqueMutSliceEncodeStore<'a, R> {
     }
 }
 
-#[cfg(feature = "cloned_refs")]
+#[cfg(feature = "cloned-refs")]
 impl<'a, R> Store for OpaqueMutSliceEncodeStore<'a, R> {
     fn sync(self) -> Option<()> {
         let encoded = self.encoded.unwrap();
 
-        // TODO: this can be disabled if unsafe_optimizations
+        // TODO: this can be disabled if unsafe-optimizations
         // is active, but is it worth it? Quite unlikely it is
         if encoded.iter().any(|ptr| ptr.is_null()) {
             return None;
@@ -1421,13 +1421,13 @@ impl<'a, R> Store for OpaqueMutSliceEncodeStore<'a, R> {
     }
 }
 
-#[cfg(any(feature = "cloned_refs", feature = "owned_as_ref"))]
+#[cfg(any(feature = "cloned-refs", feature = "owned-as-ref"))]
 pub struct RefStore<R: Encode> {
     encoded: Option<R::CType>,
     encode_store: R::Store,
 }
 
-#[cfg(any(feature = "cloned_refs", feature = "owned_as_ref"))]
+#[cfg(any(feature = "cloned-refs", feature = "owned-as-ref"))]
 impl<R: Encode> Default for RefStore<R> {
     fn default() -> Self {
         Self {
@@ -1437,21 +1437,21 @@ impl<R: Encode> Default for RefStore<R> {
     }
 }
 
-#[cfg(any(feature = "cloned_refs", feature = "owned_as_ref"))]
+#[cfg(any(feature = "cloned-refs", feature = "owned-as-ref"))]
 impl<R: Encode> Store for RefStore<R> {
     fn sync(self) -> Option<()> {
         self.encode_store.sync()
     }
 }
 
-#[cfg(feature = "cloned_refs")]
+#[cfg(feature = "cloned-refs")]
 pub struct RefMutStore<'a, R: Encode> {
     encoded: Option<R::CType>,
     encode_store: R::Store,
     original: Option<&'a mut R>,
 }
 
-#[cfg(feature = "cloned_refs")]
+#[cfg(feature = "cloned-refs")]
 impl<'a, R: Encode> Default for RefMutStore<'a, R> {
     fn default() -> Self {
         Self {
@@ -1462,10 +1462,10 @@ impl<'a, R: Encode> Default for RefMutStore<'a, R> {
     }
 }
 
-#[cfg(feature = "cloned_refs")]
+#[cfg(feature = "cloned-refs")]
 impl<'a, 'b, R: Encode + Decode<'b> + 'b> Store for RefMutStore<'a, R> {
     fn sync(self) -> Option<()> {
-        #[cfg(not(feature = "unsafe_optimizations"))]
+        #[cfg(not(feature = "unsafe-optimizations"))]
         const {
             assert!(
                 impls::impls!(R: crate::out_ptr::NonLocal),
@@ -1513,14 +1513,14 @@ impl<C, D: Store> Store for SliceStore<C, D> {
     }
 }
 
-#[cfg(feature = "cloned_refs")]
+#[cfg(feature = "cloned-refs")]
 pub struct MutSliceStore<'slice, R: Encode> {
     ctypes: Option<Box<[R::CType]>>,
     stores: Option<Box<[R::Store]>>,
     original: Option<&'slice mut [R]>,
 }
 
-#[cfg(feature = "cloned_refs")]
+#[cfg(feature = "cloned-refs")]
 impl<'slice, R: Encode> Default for MutSliceStore<'slice, R> {
     fn default() -> Self {
         Self {
@@ -1531,11 +1531,11 @@ impl<'slice, R: Encode> Default for MutSliceStore<'slice, R> {
     }
 }
 
-#[cfg(feature = "cloned_refs")]
+#[cfg(feature = "cloned-refs")]
 impl<'slice, 'b, R: Encode + Decode<'b> + 'b> Store for MutSliceStore<'slice, R> {
     fn sync(self) -> Option<()> {
         const {
-            #[cfg(not(feature = "unsafe_optimizations"))]
+            #[cfg(not(feature = "unsafe-optimizations"))]
             assert!(
                 impls::impls!(R: crate::out_ptr::NonLocal),
                 "Not yet implemented"
@@ -1560,13 +1560,13 @@ impl<'slice, 'b, R: Encode + Decode<'b> + 'b> Store for MutSliceStore<'slice, R>
     }
 }
 
-#[cfg(not(feature = "unsafe_optimizations"))]
+#[cfg(not(feature = "unsafe-optimizations"))]
 pub struct SliceMutTransmuteStore<'slice, R: CheckedTransmute> {
     target: Option<Box<[R::Target]>>,
     original: Option<&'slice mut [R]>,
 }
 
-#[cfg(not(feature = "unsafe_optimizations"))]
+#[cfg(not(feature = "unsafe-optimizations"))]
 impl<'slice, R: CheckedTransmute> Default for SliceMutTransmuteStore<'slice, R> {
     fn default() -> Self {
         Self {
@@ -1576,7 +1576,7 @@ impl<'slice, R: CheckedTransmute> Default for SliceMutTransmuteStore<'slice, R> 
     }
 }
 
-#[cfg(not(feature = "unsafe_optimizations"))]
+#[cfg(not(feature = "unsafe-optimizations"))]
 impl<'slice, R: CheckedTransmute> Store for SliceMutTransmuteStore<'slice, R> {
     fn sync(self) -> Option<()> {
         if let (Some(borrows), Some(target)) = (self.original, self.target) {
@@ -1611,14 +1611,14 @@ impl<D: Store, const N: usize> Store for ArraySyncStore<D, N> {
     }
 }
 
-#[cfg(feature = "cloned_refs")]
+#[cfg(feature = "cloned-refs")]
 pub struct RefMutDecodeStore<R: ExternC, DS> {
     value: Option<R>,
     decode_store: DS,
     source: Option<*mut R::CType>,
 }
 
-#[cfg(feature = "cloned_refs")]
+#[cfg(feature = "cloned-refs")]
 impl<R: ExternC, DS: Default> Default for RefMutDecodeStore<R, DS> {
     fn default() -> Self {
         Self {
@@ -1629,7 +1629,7 @@ impl<R: ExternC, DS: Default> Default for RefMutDecodeStore<R, DS> {
     }
 }
 
-#[cfg(feature = "cloned_refs")]
+#[cfg(feature = "cloned-refs")]
 impl<R: Encode, DS: Store> Store for RefMutDecodeStore<R, DS> {
     fn sync(self) -> Option<()> {
         let mut encode_store = Default::default();
@@ -1639,14 +1639,14 @@ impl<R: Encode, DS: Store> Store for RefMutDecodeStore<R, DS> {
     }
 }
 
-#[cfg(feature = "cloned_refs")]
+#[cfg(feature = "cloned-refs")]
 pub struct MutSliceDecodeStore<R: ExternC, DS> {
     values: Option<Box<[R]>>,
     stores: Option<Box<[DS]>>,
     source: Option<CSliceMut<R::CType>>,
 }
 
-#[cfg(feature = "cloned_refs")]
+#[cfg(feature = "cloned-refs")]
 impl<R: ExternC, DS: Default> Default for MutSliceDecodeStore<R, DS> {
     fn default() -> Self {
         Self {
@@ -1657,7 +1657,7 @@ impl<R: ExternC, DS: Default> Default for MutSliceDecodeStore<R, DS> {
     }
 }
 
-#[cfg(feature = "cloned_refs")]
+#[cfg(feature = "cloned-refs")]
 impl<R: Encode, DS: Store> Store for MutSliceDecodeStore<R, DS> {
     fn sync(self) -> Option<()> {
         let mut encode_store = Default::default();
@@ -1671,13 +1671,13 @@ impl<R: Encode, DS: Store> Store for MutSliceDecodeStore<R, DS> {
     }
 }
 
-#[cfg(feature = "cloned_refs")]
+#[cfg(feature = "cloned-refs")]
 pub struct OpaqueMutSliceDecodeStore<R> {
     values: Option<Box<[R]>>,
     source: Option<CSliceMut<*mut R>>,
 }
 
-#[cfg(feature = "cloned_refs")]
+#[cfg(feature = "cloned-refs")]
 impl<R> Default for OpaqueMutSliceDecodeStore<R> {
     fn default() -> Self {
         Self {
@@ -1687,7 +1687,7 @@ impl<R> Default for OpaqueMutSliceDecodeStore<R> {
     }
 }
 
-#[cfg(feature = "cloned_refs")]
+#[cfg(feature = "cloned-refs")]
 impl<R> Store for OpaqueMutSliceDecodeStore<R> {
     fn sync(self) -> Option<()> {
         let slice = unsafe { self.source.unwrap().into_rust().unwrap() };
@@ -1970,8 +1970,8 @@ mod tests {
     }
 
     #[test]
-    #[cfg(feature = "owned_types")]
-    fn owned_types() {
+    #[cfg(feature = "owned-types")]
+    fn owned-types() {
         use crate::tuple::CTuple3;
 
         assert_impl_all!(Box<[u8]>: Niche<CType = BoxedSliceCType<u8>>);
@@ -2006,7 +2006,7 @@ mod tests {
     }
 
     #[test]
-    #[cfg(feature = "cloned_refs")]
+    #[cfg(feature = "cloned-refs")]
     fn encode_cloned_mut_ref() {
         use crate::option::COption;
 
@@ -2037,7 +2037,7 @@ mod tests {
     }
 
     #[test]
-    #[cfg(feature = "cloned_refs")]
+    #[cfg(feature = "cloned-refs")]
     fn decode_cloned_mut_ref() {
         use crate::{option::COption, slice::CSliceMut};
 
@@ -2065,7 +2065,7 @@ mod tests {
     }
 
     #[test]
-    #[cfg(feature = "cloned_refs")]
+    #[cfg(feature = "cloned-refs")]
     fn encode_opaque_ref_mut_slice() {
         #[derive(Clone, PartialEq, Eq)]
         struct OpaqueData {
@@ -2091,7 +2091,7 @@ mod tests {
     }
 
     #[test]
-    #[cfg(feature = "cloned_refs")]
+    #[cfg(feature = "cloned-refs")]
     fn decode_opaque_mut_ref() {
         use crate::slice::CSliceMut;
 

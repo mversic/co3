@@ -313,7 +313,8 @@ fn gen_impl_ffi(name: &Ident, generics: &syn::Generics) -> TokenStream {
         }
 
         unsafe impl #impl_generics co3::niche::StableNiche for #name #ty_generics #where_clause {}
-        unsafe impl #impl_generics co3::transmute::MutSafe for #name #ty_generics #where_clause {}
+        // FIXME:
+        //unsafe impl #impl_generics co3::transmute::MutSafe for #name #ty_generics #where_clause {}
     }
 }
 
