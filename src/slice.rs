@@ -1,5 +1,6 @@
 //! Logic related to the conversion of slices to and from FFI-compatible representation
 
+#[cfg(feature = "alloc")]
 use alloc::boxed::Box;
 use core::slice;
 
@@ -196,6 +197,7 @@ impl<C: ReprC> CBoxedSlice<C> {
     }
 
     /// Create [`Self`] from a [`Box<[T]>`]
+    #[cfg(feature = "alloc")]
     pub fn from_boxed_slice(source: Option<Box<[C]>>) -> Self {
         if let Some(boxed_slice) = source {
             let mut boxed_slice = core::mem::ManuallyDrop::new(boxed_slice);
@@ -214,6 +216,7 @@ impl<C: ReprC> CBoxedSlice<C> {
     /// # Safety
     ///
     /// Check [`Box::from_raw`]
+    #[cfg(feature = "alloc")]
     pub unsafe fn into_rust(self) -> Option<Box<[C]>> {
         if self.data.is_null() {
             return None;

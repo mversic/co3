@@ -3,10 +3,10 @@ use core::{
     ptr::NonNull,
 };
 
-#[cfg(feature = "owned-types")]
+#[cfg(feature = "alloc")]
 use alloc::{boxed::Box, string::String, vec::Vec};
 
-#[cfg(feature = "owned-types")]
+#[cfg(feature = "alloc")]
 use crate::VecCType;
 use crate::{
     ReprC,
@@ -69,11 +69,11 @@ impl ReprFamily for &str {
 impl ReprFamily for &mut str {
     type Kind = Transmuted;
 }
-#[cfg(feature = "owned-types")]
+#[cfg(feature = "alloc")]
 impl ReprFamily for Box<str> {
     type Kind = Transmuted;
 }
-#[cfg(feature = "owned-types")]
+#[cfg(feature = "alloc")]
 impl ReprFamily for String {
     type Kind = Transmuted;
 }
@@ -93,11 +93,11 @@ impl NicheFamily for &str {
 impl NicheFamily for &mut str {
     type Kind = WithCustomNiche;
 }
-#[cfg(feature = "owned-types")]
+#[cfg(feature = "alloc")]
 impl NicheFamily for Box<str> {
     type Kind = WithCustomNiche;
 }
-#[cfg(feature = "owned-types")]
+#[cfg(feature = "alloc")]
 impl NicheFamily for String {
     type Kind = WithCustomNiche;
 }
@@ -144,7 +144,7 @@ unsafe impl<'a> CheckedTransmute for &'a mut str {
         core::str::from_utf8(target).is_ok()
     }
 }
-#[cfg(feature = "owned-types")]
+#[cfg(feature = "alloc")]
 unsafe impl CheckedTransmute for Box<str> {
     // WARN: `core::str::as_bytes` uses transmute internally which means that
     // even though it's a string slice it can be transmuted into byte slice.
@@ -155,7 +155,7 @@ unsafe impl CheckedTransmute for Box<str> {
         core::str::from_utf8(target).is_ok()
     }
 }
-#[cfg(feature = "owned-types")]
+#[cfg(feature = "alloc")]
 unsafe impl CheckedTransmute for String {
     // WARN: This can be contested as it is nowhere documented that String is
     // actually transmutable into Vec<u8>, but implicitly it should be
@@ -176,11 +176,11 @@ impl Niche for &str {
 impl Niche for &mut str {
     const NICHE_VALUE: Self::CType = CSliceMut::none();
 }
-#[cfg(feature = "owned-types")]
+#[cfg(feature = "alloc")]
 impl Niche for String {
     const NICHE_VALUE: Self::CType = VecCType::none();
 }
-#[cfg(feature = "owned-types")]
+#[cfg(feature = "alloc")]
 impl Niche for Box<str> {
     const NICHE_VALUE: Self::CType = VecCType::none();
 }
@@ -215,14 +215,14 @@ where
 {
     type Store = <Self::Target as crate::Encode>::Store;
 }
-#[cfg(feature = "owned-types")]
+#[cfg(feature = "alloc")]
 unsafe impl EncodeTransmuted for Box<str>
 where
     Self: CheckedTransmute<Target: crate::Encode>,
 {
     type Store = <Self::Target as crate::Encode>::Store;
 }
-#[cfg(feature = "owned-types")]
+#[cfg(feature = "alloc")]
 unsafe impl EncodeTransmuted for String
 where
     Self: CheckedTransmute<Target: crate::Encode>,

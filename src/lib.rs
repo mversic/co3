@@ -3,10 +3,12 @@
 //! is advisable to implement [`Ir`] and benefit from automatic implementation of [`ExternC`]
 #![no_std]
 
+#[cfg(feature = "alloc")]
 extern crate alloc;
 
 extern crate self as co3;
 
+#[cfg(feature = "alloc")]
 use alloc::{boxed::Box, vec::Vec};
 
 #[cfg(feature = "derive")]
@@ -29,7 +31,7 @@ use crate::{
         transmute_into_target_slice_mut,
     },
 };
-#[cfg(feature = "owned-as-ref")]
+#[cfg(feature = "alloc")]
 use crate::{
     cloned::{decode_cloned_box_ptr, decode_cloned_collection},
     transmute::{
@@ -37,7 +39,7 @@ use crate::{
         transmute_into_target_boxed_slice, transmute_into_target_vec,
     },
 };
-#[cfg(feature = "owned-types")]
+#[cfg(feature = "alloc")]
 #[cfg(not(feature = "owned-as-ref"))]
 use crate::{slice::CBoxedSlice, vec::CVec};
 
@@ -60,9 +62,9 @@ pub mod vec;
 
 use option::COption;
 
-#[cfg(feature = "owned-types")]
+#[cfg(feature = "alloc")]
 type BoxedSliceCType<C> = CSliceMut<C>;
-#[cfg(feature = "owned-types")]
+#[cfg(feature = "alloc")]
 type VecCType<C> = CSliceMut<C>;
 
 /// Result of execution of an FFI function
@@ -100,7 +102,7 @@ disjoint_impls! {
         type CType: ReprC;
     }
 
-    #[cfg(feature = "owned-types")]
+    #[cfg(feature = "alloc")]
     impl<R: CheckedTransmute<Target: ReprC>> ExternC for R
     where
         Self: ReprFamily<Kind = Box<Robust>>,
@@ -133,7 +135,7 @@ disjoint_impls! {
         type CType = *mut R::CType;
     }
 
-    #[cfg(feature = "owned-types")]
+    #[cfg(feature = "alloc")]
     impl<R: ExternC, S: Cloned> ExternC for Box<R>
     where
         Self: ReprFamily<Kind = Box<S>>,
@@ -197,6 +199,7 @@ disjoint_impls! {
         type CType = CSliceMut<R::CType>;
     }
 
+    #[cfg(feature = "alloc")]
     impl<R: CheckedTransmute> ExternC for Box<[R]>
     where
         Self: ReprFamily<Kind = Box<[Transmuted]>>,
@@ -204,21 +207,21 @@ disjoint_impls! {
     {
         type CType = <Box<[R::Target]> as ExternC>::CType;
     }
-    #[cfg(feature = "owned-types")]
+    #[cfg(feature = "alloc")]
     impl<R: ReprC> ExternC for Box<[R]>
     where
         Self: ReprFamily<Kind = Box<[Robust]>>,
     {
         type CType = BoxedSliceCType<R>;
     }
-    #[cfg(feature = "owned-types")]
+    #[cfg(feature = "alloc")]
     impl<R> ExternC for Box<[R]>
     where
         Self: ReprFamily<Kind = Box<[Opaque]>>,
     {
         type CType = BoxedSliceCType<*mut R>;
     }
-    #[cfg(feature = "owned-types")]
+    #[cfg(feature = "alloc")]
     impl<R: ExternC, S: Cloned> ExternC for Box<[R]>
     where
         Self: ReprFamily<Kind = Box<[S]>>,
@@ -226,7 +229,7 @@ disjoint_impls! {
         type CType = CSliceMut<R::CType>;
     }
 
-    #[cfg(feature = "owned-types")]
+    #[cfg(feature = "alloc")]
     impl<R: CheckedTransmute> ExternC for Vec<R>
     where
         Self: ReprFamily<Kind = Vec<Transmuted>>,
@@ -234,21 +237,21 @@ disjoint_impls! {
     {
         type CType = <Vec<R::Target> as ExternC>::CType;
     }
-    #[cfg(feature = "owned-types")]
+    #[cfg(feature = "alloc")]
     impl<R: ReprC> ExternC for Vec<R>
     where
         Self: ReprFamily<Kind = Vec<Robust>>,
     {
         type CType = VecCType<R>;
     }
-    #[cfg(feature = "owned-types")]
+    #[cfg(feature = "alloc")]
     impl<R> ExternC for Vec<R>
     where
         Self: ReprFamily<Kind = Vec<Opaque>>,
     {
         type CType = VecCType<*mut R>;
     }
-    #[cfg(feature = "owned-types")]
+    #[cfg(feature = "alloc")]
     impl<R: ExternC, S: Cloned> ExternC for Vec<R>
     where
         Self: ReprFamily<Kind = Vec<S>>,
@@ -302,7 +305,7 @@ disjoint_impls! {
             Self: 'itm;
     }
 
-    //#[cfg(feature = "owned-types")]
+    //#[cfg(feature = "alloc")]
     //#[cfg(feature = "owned-as-ref")]
     //impl<R: CheckedTransmute<Target: ReprC>> Encode for R
     //where
@@ -355,6 +358,7 @@ disjoint_impls! {
             self
         }
     }
+    #[cfg(feature = "alloc")]
     impl<R: ReprFamily<Kind = Opaque>> Encode for R {
         type Store = ();
 
@@ -398,7 +402,7 @@ disjoint_impls! {
         }
     }
 
-    #[cfg(feature = "owned-types")]
+    #[cfg(feature = "alloc")]
     impl<R: Encode, S: Cloned> Encode for Box<R>
     where
         Self: ReprFamily<Kind = Box<S>>,
@@ -441,7 +445,7 @@ disjoint_impls! {
             CSlice::from_slice(Some(self))
         }
     }
-    #[cfg(feature = "cloned-refs")]
+    #[cfg(all(feature = "alloc", feature = "cloned-refs"))]
     impl<'slice, R> Encode for &'slice [R]
     where
         Self: ReprFamily<Kind = &'slice [Opaque]>,
@@ -456,7 +460,7 @@ disjoint_impls! {
             CSlice::from_slice(Some(store.0.insert(ctypes)))
         }
     }
-    #[cfg(feature = "cloned-refs")]
+    #[cfg(all(feature = "alloc", feature = "cloned-refs"))]
     impl<'slice, R: Encode + Clone, S: Cloned> Encode for &'slice [R]
     where
         Self: ReprFamily<Kind = &'slice [S]>,
@@ -514,6 +518,7 @@ disjoint_impls! {
             Encode::encode(transmute_into_target_slice_mut(self), &mut ())
         }
     }
+    #[cfg(feature = "alloc")]
     impl<'slice, R: CheckedTransmute<Target: ReprFamily<Kind = Robust> + ReprC + 'slice> + NicheFamily<Kind: WithNiche>> Encode for &'slice mut [R]
     where
         Self: ReprFamily<Kind = &'slice mut [Transmuted]>,
@@ -552,7 +557,7 @@ disjoint_impls! {
             CSliceMut::from_slice(Some(self))
         }
     }
-    #[cfg(feature = "cloned-refs")]
+    #[cfg(all(feature = "alloc", feature = "cloned-refs"))]
     impl<'slice, R> Encode for &'slice mut [R]
     where
         Self: ReprFamily<Kind = &'slice mut [Opaque]>,
@@ -568,7 +573,7 @@ disjoint_impls! {
             CSliceMut::from_slice(Some(store.encoded.insert(ctypes)))
         }
     }
-    #[cfg(feature = "cloned-refs")]
+    #[cfg(all(feature = "alloc", feature = "cloned-refs"))]
     impl<'slice, 'b, R: Encode + Decode<'b> + Clone + 'b, S: Cloned> Encode for &'slice mut [R]
     where
         Self: ReprFamily<Kind = &'slice mut [S]>,
@@ -600,7 +605,7 @@ disjoint_impls! {
         }
     }
 
-    #[cfg(feature = "owned-types")]
+    #[cfg(feature = "alloc")]
     impl<R: CheckedTransmute> Encode for Box<[R]>
     where
         Box<[<R as CheckedTransmute>::Target]>: Encode,
@@ -615,7 +620,7 @@ disjoint_impls! {
             transmute_into_target_boxed_slice(self).encode(store)
         }
     }
-    #[cfg(feature = "owned-types")]
+    #[cfg(feature = "alloc")]
     impl<R: ReprC> Encode for Box<[R]>
     where
         Self: ReprFamily<Kind = Box<[Robust]>>,
@@ -640,7 +645,7 @@ disjoint_impls! {
             encoded
         }
     }
-    #[cfg(feature = "owned-types")]
+    #[cfg(feature = "alloc")]
     impl<R> Encode for Box<[R]>
     where
         Self: ReprFamily<Kind = Box<[Opaque]>>,
@@ -657,7 +662,7 @@ disjoint_impls! {
             CSliceMut::from_slice(Some(store))
         }
     }
-    #[cfg(feature = "owned-types")]
+    #[cfg(feature = "alloc")]
     impl<R: Encode, S: Cloned> Encode for Box<[R]>
     where
         Self: ReprFamily<Kind = Box<[S]>>,
@@ -685,7 +690,7 @@ disjoint_impls! {
         }
     }
 
-    #[cfg(feature = "owned-types")]
+    #[cfg(feature = "alloc")]
     impl<R: CheckedTransmute> Encode for Vec<R>
     where
         Vec<<R as CheckedTransmute>::Target>: Encode,
@@ -700,7 +705,7 @@ disjoint_impls! {
             transmute_into_target_vec(self).encode(store)
         }
     }
-    #[cfg(feature = "owned-types")]
+    #[cfg(feature = "alloc")]
     impl<R: ReprC> Encode for Vec<R>
     where
         Self: ReprFamily<Kind = Vec<Robust>>,
@@ -725,7 +730,7 @@ disjoint_impls! {
             encoded
         }
     }
-    #[cfg(feature = "owned-types")]
+    #[cfg(feature = "alloc")]
     impl<R> Encode for Vec<R>
     where
         Self: ReprFamily<Kind = Vec<Opaque>>,
@@ -742,7 +747,7 @@ disjoint_impls! {
             CSliceMut::from_slice(Some(store))
         }
     }
-    #[cfg(feature = "owned-types")]
+    #[cfg(feature = "alloc")]
     impl<R: Encode, S: Cloned> Encode for Vec<R>
     where
         Self: ReprFamily<Kind = Vec<S>>,
@@ -770,6 +775,7 @@ disjoint_impls! {
         }
     }
 
+    #[cfg(feature = "alloc")]
     impl<R, const N: usize> Encode for [R; N]
     where
         Self: ReprFamily<Kind = [Opaque; N]>,
@@ -797,17 +803,17 @@ disjoint_impls! {
         {
             assert_arr_has_non_zero_len::<N>();
 
-            let store = store.0.insert(
-                core::iter::repeat_with(Default::default).take(N).collect()
-            );
+            let store = &mut store.0;
 
-            let ctypes = self
-                .into_iter()
-                .zip(store)
-                .map(|(item, substore)| item.encode(substore))
-                .collect::<Vec<_>>();
+            let mut items = self.into_iter();
+            let mut stores = store.iter_mut();
 
-            unsafe { ctypes.try_into().unwrap_unchecked() }
+            core::array::from_fn(|_| {
+                let item = items.next().unwrap();
+                let store = stores.next().unwrap();
+
+                item.encode(store)
+            })
         }
     }
 
@@ -910,6 +916,7 @@ disjoint_impls! {
             Some(source)
         }
     }
+    #[cfg(feature = "alloc")]
     impl<'d, R: 'd> Decode<'d> for R
     where
         Self: ReprFamily<Kind = Opaque>,
@@ -960,7 +967,7 @@ disjoint_impls! {
         }
     }
 
-    #[cfg(feature = "owned-types")]
+    #[cfg(feature = "alloc")]
     impl<'d, R: Decode<'d>, S: Cloned> Decode<'d> for Box<R>
     where
         Self: ReprFamily<Kind = Box<S>>,
@@ -996,7 +1003,7 @@ disjoint_impls! {
             unsafe { source.into_rust() }
         }
     }
-    #[cfg(feature = "cloned-refs")]
+    #[cfg(all(feature = "alloc", feature = "cloned-refs"))]
     impl<'slice, R: Clone> Decode<'slice> for &'slice [R]
     where
         Self: ReprFamily<Kind = &'slice [Opaque]>,
@@ -1019,7 +1026,7 @@ disjoint_impls! {
             Some(store)
         }
     }
-    #[cfg(feature = "cloned-refs")]
+    #[cfg(all(feature = "alloc", feature = "cloned-refs"))]
     impl<'slice, R: DecodeCloned<'slice>, S: Cloned> Decode<'slice> for &'slice [R]
     where
         Self: ReprFamily<Kind = &'slice [S]>,
@@ -1071,7 +1078,7 @@ disjoint_impls! {
             unsafe { source.into_rust() }
         }
     }
-    #[cfg(feature = "cloned-refs")]
+    #[cfg(all(feature = "alloc", feature = "cloned-refs"))]
     impl<'slice, R: Clone> Decode<'slice> for &'slice mut [R]
     where
         Self: ReprFamily<Kind = &'slice mut [Opaque]>,
@@ -1127,7 +1134,7 @@ disjoint_impls! {
         }
     }
 
-    #[cfg(feature = "owned-as-ref")]
+    #[cfg(all(feature = "alloc", feature = "owned-as-ref"))]
     impl<'d, R: CheckedTransmute> Decode<'d> for Box<[R]>
     where
         Box<[<R as CheckedTransmute>::Target]>: Decode<'d>,
@@ -1142,7 +1149,7 @@ disjoint_impls! {
             }
         }
     }
-    #[cfg(feature = "owned-as-ref")]
+    #[cfg(all(feature = "alloc", feature = "owned-as-ref"))]
     impl<'d, R: ReprC + 'd> Decode<'d> for Box<[R]>
     where
         Self: ReprFamily<Kind = Box<[Robust]>>,
@@ -1153,7 +1160,7 @@ disjoint_impls! {
             unsafe { source.into_rust() }.map(|slice| slice.into())
         }
     }
-    #[cfg(feature = "owned-types")]
+    #[cfg(feature = "alloc")]
     impl<'d, R: 'd> Decode<'d> for Box<[R]>
     where
         Self: ReprFamily<Kind = Box<[Opaque]>>,
@@ -1169,7 +1176,7 @@ disjoint_impls! {
                 .collect::<Option<_>>()
         }
     }
-    #[cfg(feature = "owned-types")]
+    #[cfg(feature = "alloc")]
     impl<'d, R: Decode<'d>, S: Cloned> Decode<'d> for Box<[R]>
     where
         Self: ReprFamily<Kind = Box<[S]>>,
@@ -1181,7 +1188,7 @@ disjoint_impls! {
         }
     }
 
-    #[cfg(feature = "owned-as-ref")]
+    #[cfg(all(feature = "alloc", feature = "owned-as-ref"))]
     impl<'d, R: CheckedTransmute> Decode<'d> for Vec<R>
     where
         Vec<<R as CheckedTransmute>::Target>: Decode<'d>,
@@ -1196,7 +1203,7 @@ disjoint_impls! {
             }
         }
     }
-    #[cfg(feature = "owned-as-ref")]
+    #[cfg(all(feature = "alloc", feature = "owned-as-ref"))]
     impl<'d, R: ReprC + 'd> Decode<'d> for Vec<R>
     where
         Self: ReprFamily<Kind = Vec<Robust>>,
@@ -1207,7 +1214,7 @@ disjoint_impls! {
             unsafe { source.into_rust() }.map(|slice| slice.to_vec())
         }
     }
-    #[cfg(feature = "owned-types")]
+    #[cfg(feature = "alloc")]
     impl<'d, R: 'd> Decode<'d> for Vec<R>
     where
         Self: ReprFamily<Kind = Vec<Opaque>>,
@@ -1223,7 +1230,7 @@ disjoint_impls! {
                 .collect::<Option<_>>()
         }
     }
-    #[cfg(feature = "owned-types")]
+    #[cfg(feature = "alloc")]
     impl<'d, R: Decode<'d>, S: Cloned> Decode<'d> for Vec<R>
     where
         Self: ReprFamily<Kind = Vec<S>>,
@@ -1235,6 +1242,7 @@ disjoint_impls! {
         }
     }
 
+    #[cfg(feature = "alloc")]
     impl<'d, R: 'd, const N: usize> Decode<'d> for [R; N]
     where
         Self: ReprFamily<Kind = [Opaque; N]>,
@@ -1306,14 +1314,17 @@ impl Store for () {
     }
 }
 
+#[cfg(feature = "alloc")]
 pub struct DecodeStoreSlice<D>(Option<Box<[D]>>);
 
+#[cfg(feature = "alloc")]
 impl<D> Default for DecodeStoreSlice<D> {
     fn default() -> Self {
         Self(None)
     }
 }
 
+#[cfg(feature = "alloc")]
 impl<D: Store> Store for DecodeStoreSlice<D> {
     fn sync(self) -> Option<()> {
         for store in self.0.unwrap() {
@@ -1345,26 +1356,31 @@ impl<R, D: Store> Store for RefDecodeStore<R, D> {
     }
 }
 
+#[cfg(feature = "alloc")]
 pub struct OwningStore<T>(Option<Box<[T]>>);
 
+#[cfg(feature = "alloc")]
 impl<T> Default for OwningStore<T> {
     fn default() -> Self {
         Self(None)
     }
 }
 
+#[cfg(feature = "alloc")]
 impl<T> Store for OwningStore<T> {
     fn sync(self) -> Option<()> {
         Some(())
     }
 }
 
+#[cfg(feature = "alloc")]
 pub struct DecodeStoreSlicePair<R, D> {
     #[allow(dead_code)]
     values: Option<Box<[R]>>,
     stores: Option<Box<[D]>>,
 }
 
+#[cfg(feature = "alloc")]
 impl<R, D> Default for DecodeStoreSlicePair<R, D> {
     fn default() -> Self {
         Self {
@@ -1374,7 +1390,9 @@ impl<R, D> Default for DecodeStoreSlicePair<R, D> {
     }
 }
 
+#[cfg(feature = "alloc")]
 impl<R, D: Store> Store for DecodeStoreSlicePair<R, D> {
+    #[cfg(feature = "alloc")]
     fn sync(self) -> Option<()> {
         for store in self.stores.unwrap() {
             store.sync()?;
@@ -1384,12 +1402,14 @@ impl<R, D: Store> Store for DecodeStoreSlicePair<R, D> {
     }
 }
 
+#[cfg(feature = "alloc")]
 #[cfg(feature = "cloned-refs")]
 pub struct OpaqueMutSliceEncodeStore<'a, R> {
     encoded: Option<Box<[*mut R]>>,
     original: Option<&'a mut [R]>,
 }
 
+#[cfg(feature = "alloc")]
 #[cfg(feature = "cloned-refs")]
 impl<'a, R> Default for OpaqueMutSliceEncodeStore<'a, R> {
     fn default() -> Self {
@@ -1400,6 +1420,7 @@ impl<'a, R> Default for OpaqueMutSliceEncodeStore<'a, R> {
     }
 }
 
+#[cfg(feature = "alloc")]
 #[cfg(feature = "cloned-refs")]
 impl<'a, R> Store for OpaqueMutSliceEncodeStore<'a, R> {
     fn sync(self) -> Option<()> {
@@ -1489,11 +1510,13 @@ impl<'a, 'b, R: Encode + Decode<'b> + 'b> Store for RefMutStore<'a, R> {
     }
 }
 
+#[cfg(feature = "alloc")]
 pub struct SliceStore<C, D> {
     ctypes: Option<Box<[C]>>,
     stores: Option<Box<[D]>>,
 }
 
+#[cfg(feature = "alloc")]
 impl<C, D> Default for SliceStore<C, D> {
     fn default() -> Self {
         Self {
@@ -1503,6 +1526,7 @@ impl<C, D> Default for SliceStore<C, D> {
     }
 }
 
+#[cfg(feature = "alloc")]
 impl<C, D: Store> Store for SliceStore<C, D> {
     fn sync(self) -> Option<()> {
         for store in self.stores.unwrap() {
@@ -1513,6 +1537,7 @@ impl<C, D: Store> Store for SliceStore<C, D> {
     }
 }
 
+#[cfg(feature = "alloc")]
 #[cfg(feature = "cloned-refs")]
 pub struct MutSliceStore<'slice, R: Encode> {
     ctypes: Option<Box<[R::CType]>>,
@@ -1520,6 +1545,7 @@ pub struct MutSliceStore<'slice, R: Encode> {
     original: Option<&'slice mut [R]>,
 }
 
+#[cfg(feature = "alloc")]
 #[cfg(feature = "cloned-refs")]
 impl<'slice, R: Encode> Default for MutSliceStore<'slice, R> {
     fn default() -> Self {
@@ -1531,6 +1557,7 @@ impl<'slice, R: Encode> Default for MutSliceStore<'slice, R> {
     }
 }
 
+#[cfg(feature = "alloc")]
 #[cfg(feature = "cloned-refs")]
 impl<'slice, 'b, R: Encode + Decode<'b> + 'b> Store for MutSliceStore<'slice, R> {
     fn sync(self) -> Option<()> {
@@ -1560,12 +1587,14 @@ impl<'slice, 'b, R: Encode + Decode<'b> + 'b> Store for MutSliceStore<'slice, R>
     }
 }
 
+#[cfg(feature = "alloc")]
 #[cfg(not(feature = "unsafe-optimizations"))]
 pub struct SliceMutTransmuteStore<'slice, R: CheckedTransmute> {
     target: Option<Box<[R::Target]>>,
     original: Option<&'slice mut [R]>,
 }
 
+#[cfg(feature = "alloc")]
 #[cfg(not(feature = "unsafe-optimizations"))]
 impl<'slice, R: CheckedTransmute> Default for SliceMutTransmuteStore<'slice, R> {
     fn default() -> Self {
@@ -1576,6 +1605,7 @@ impl<'slice, R: CheckedTransmute> Default for SliceMutTransmuteStore<'slice, R> 
     }
 }
 
+#[cfg(feature = "alloc")]
 #[cfg(not(feature = "unsafe-optimizations"))]
 impl<'slice, R: CheckedTransmute> Store for SliceMutTransmuteStore<'slice, R> {
     fn sync(self) -> Option<()> {
@@ -1591,19 +1621,18 @@ impl<'slice, R: CheckedTransmute> Store for SliceMutTransmuteStore<'slice, R> {
     }
 }
 
-// FIXME: use [D; N] instead of Option<Box<[D]>>
-// https://github.com/rust-lang/rust/issues/61415
-pub struct ArraySyncStore<D, const N: usize>(Option<Box<[D]>>);
+pub struct ArraySyncStore<D, const N: usize>([D; N]);
 
-impl<D, const N: usize> Default for ArraySyncStore<D, N> {
+impl<D: Default, const N: usize> Default for ArraySyncStore<D, N> {
     fn default() -> Self {
-        Self(None)
+        // FIXME: https://github.com/rust-lang/rust/issues/61415
+        Self(core::array::from_fn(|_| D::default()))
     }
 }
 
 impl<D: Store, const N: usize> Store for ArraySyncStore<D, N> {
     fn sync(self) -> Option<()> {
-        for store in self.0.unwrap() {
+        for store in self.0 {
             store.sync()?;
         }
 
@@ -1671,13 +1700,13 @@ impl<R: Encode, DS: Store> Store for MutSliceDecodeStore<R, DS> {
     }
 }
 
-#[cfg(feature = "cloned-refs")]
+#[cfg(all(feature = "alloc", feature = "cloned-refs"))]
 pub struct OpaqueMutSliceDecodeStore<R> {
     values: Option<Box<[R]>>,
     source: Option<CSliceMut<*mut R>>,
 }
 
-#[cfg(feature = "cloned-refs")]
+#[cfg(all(feature = "alloc", feature = "cloned-refs"))]
 impl<R> Default for OpaqueMutSliceDecodeStore<R> {
     fn default() -> Self {
         Self {
@@ -1687,7 +1716,7 @@ impl<R> Default for OpaqueMutSliceDecodeStore<R> {
     }
 }
 
-#[cfg(feature = "cloned-refs")]
+#[cfg(all(feature = "alloc", feature = "cloned-refs"))]
 impl<R> Store for OpaqueMutSliceDecodeStore<R> {
     fn sync(self) -> Option<()> {
         let slice = unsafe { self.source.unwrap().into_rust().unwrap() };
@@ -1970,8 +1999,8 @@ mod tests {
     }
 
     #[test]
-    #[cfg(feature = "owned-types")]
-    fn owned-types() {
+    #[cfg(feature = "alloc")]
+    fn alloc() {
         use crate::tuple::CTuple3;
 
         assert_impl_all!(Box<[u8]>: Niche<CType = BoxedSliceCType<u8>>);
@@ -2065,7 +2094,7 @@ mod tests {
     }
 
     #[test]
-    #[cfg(feature = "cloned-refs")]
+    #[cfg(all(feature = "alloc", feature = "cloned-refs"))]
     fn encode_opaque_ref_mut_slice() {
         #[derive(Clone, PartialEq, Eq)]
         struct OpaqueData {
@@ -2091,7 +2120,7 @@ mod tests {
     }
 
     #[test]
-    #[cfg(feature = "cloned-refs")]
+    #[cfg(all(feature = "alloc", feature = "cloned-refs"))]
     fn decode_opaque_mut_ref() {
         use crate::slice::CSliceMut;
 

@@ -1,1 +1,2 @@
-Always consider consistency with SPEC.md and ARCHITECTURE.md before any change
+- Always consider consistency with SPEC.md and ARCHITECTURE.md before any change
+- if you find any discrepancies, unrelated to the current prompt, report them

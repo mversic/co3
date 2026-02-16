@@ -1,13 +1,13 @@
 use core::mem::ManuallyDrop;
 
-use alloc::boxed::Box;
-#[cfg(feature = "owned-as-ref")]
-use alloc::vec::Vec;
+#[cfg(all(feature = "alloc", feature = "owned-as-ref"))]
+use alloc::{boxed::Box, vec::Vec};
 use disjoint_impls::disjoint_impls;
 
+use crate::ir::Opaque;
 use crate::{
     Encode, ReprC, Store, assert_arr_has_non_zero_len,
-    ir::{Cloned, NonRobust, Opaque, ReprFamily, Robust, Transmuted},
+    ir::{Cloned, NonRobust, ReprFamily, Robust, Transmuted},
     niche::{NicheFamily, StableNiche, WithNiche, WithoutNiche},
 };
 
@@ -36,6 +36,7 @@ disjoint_impls! {
             R::is_valid(target)
         }
     }
+    #[cfg(feature = "alloc")]
     unsafe impl<'a, R: ReprFamily<Kind = Box<Robust>> + CheckedTransmute> CheckedTransmute for &'a R {
         type Target = &'a R::Target;
 
@@ -69,6 +70,7 @@ disjoint_impls! {
             R::is_valid(target)
         }
     }
+    #[cfg(feature = "alloc")]
     unsafe impl<'a, R: ReprFamily<Kind = Box<Robust>> + CheckedTransmute> CheckedTransmute for &'a mut R {
         type Target = &'a mut R::Target;
 
@@ -94,6 +96,7 @@ disjoint_impls! {
         }
     }
 
+    #[cfg(feature = "alloc")]
     unsafe impl<R: ReprFamily<Kind = Transmuted> + CheckedTransmute> CheckedTransmute for Box<R> {
         type Target = Box<R::Target>;
 
@@ -102,7 +105,7 @@ disjoint_impls! {
             R::is_valid(target)
         }
     }
-    #[cfg(feature = "owned-types")]
+    #[cfg(feature = "alloc")]
     unsafe impl<R: ReprFamily<Kind = Box<Robust>> + CheckedTransmute> CheckedTransmute for Box<R> {
         type Target = Box<R::Target>;
 
@@ -111,7 +114,7 @@ disjoint_impls! {
             R::is_valid(target)
         }
     }
-    #[cfg(feature = "owned-types")]
+    #[cfg(feature = "alloc")]
     unsafe impl<R: ReprFamily<Kind = Robust> + ReprC> CheckedTransmute for Box<R> {
         type Target = *mut R;
 
@@ -120,6 +123,7 @@ disjoint_impls! {
             !target.is_null()
         }
     }
+    #[cfg(feature = "alloc")]
     unsafe impl<R: ReprFamily<Kind = Opaque>> CheckedTransmute for Box<R> {
         type Target = *mut R;
 
@@ -297,6 +301,7 @@ where
 // no ownership transfer where Box's invariant can be violated by the caller by NULLing the
 // inner pointer. However, because the box is immediately dropped following the function call,
 // we deem it ok as it would most likely lead to a catastrophic segfault, not a silent UB.
+#[cfg(feature = "alloc")]
 unsafe impl<R: EncodeTransmuted> EncodeTransmuted for Box<R>
 where
     Self: CheckedTransmute<Target: Encode>,
@@ -364,7 +369,7 @@ pub(super) fn transmute_from_target<R: CheckedTransmute>(source: R::Target) -> O
     Some(ManuallyDrop::into_inner(unsafe { transmute_helper.source }))
 }
 
-#[cfg(feature = "owned-as-ref")]
+#[cfg(all(feature = "alloc", feature = "owned-as-ref"))]
 pub(super) fn transmute_into_target_boxed_slice<R: CheckedTransmute>(
     #[expect(clippy::boxed_local)] mut source: Box<[R]>,
 ) -> Box<[R::Target]> {
@@ -375,7 +380,7 @@ pub(super) fn transmute_into_target_boxed_slice<R: CheckedTransmute>(
     // SAFETY: Soundness is guaranteed by [`Transmute`]
     unsafe { Box::from_raw(core::ptr::slice_from_raw_parts_mut(ptr, len)) }
 }
-#[cfg(any(feature = "owned-as-ref", not(feature = "unsafe-optimizations")))]
+#[cfg(all(feature = "alloc", any(feature = "owned-as-ref")))]
 pub(super) fn transmute_from_target_boxed_slice<R: CheckedTransmute>(
     #[expect(clippy::boxed_local)] mut source: Box<[R::Target]>,
 ) -> Option<Box<[R]>> {
@@ -433,7 +438,7 @@ pub(super) fn transmute_from_target_slice_mut<R: CheckedTransmute>(
     Some(unsafe { core::slice::from_raw_parts_mut(source.as_mut_ptr().cast(), source.len()) })
 }
 
-#[cfg(feature = "owned-as-ref")]
+#[cfg(all(feature = "alloc", feature = "owned-as-ref"))]
 pub(super) fn transmute_into_target_vec<R: CheckedTransmute>(source: Vec<R>) -> Vec<R::Target> {
     assert_size_and_allignment_match::<R>();
 
@@ -442,7 +447,7 @@ pub(super) fn transmute_into_target_vec<R: CheckedTransmute>(source: Vec<R>) -> 
     // SAFETY: Soundness is guaranteed by [`Transmute`]
     unsafe { Vec::from_raw_parts(vec.as_mut_ptr().cast(), vec.len(), vec.capacity()) }
 }
-#[cfg(feature = "owned-as-ref")]
+#[cfg(all(feature = "alloc", feature = "owned-as-ref"))]
 pub(super) fn transmute_from_target_vec<R: CheckedTransmute>(
     source: Vec<R::Target>,
 ) -> Option<Vec<R>> {
@@ -618,7 +623,7 @@ mod tests {
 
     #[test]
     #[cfg(not(feature = "unsafe-optimizations"))]
-    fn unsafe-optimizations() {
+    fn unsafe_optimizations_disabled() {
         assert_not_impl_any!(&mut bool: Encode);
         assert_not_impl_any!(&mut &bool: Encode);
         assert_not_impl_any!(&mut &u8: Encode);
@@ -636,7 +641,7 @@ mod tests {
 
     #[test]
     #[cfg(feature = "unsafe-optimizations")]
-    fn unsafe-optimizations() {
+    fn unsafe_optimizations_enabled() {
         assert_impl_all!(&mut bool: Encode);
         assert_impl_all!(&mut &bool: Encode);
         assert_impl_all!(&mut &u8: Encode);

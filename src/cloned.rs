@@ -1,5 +1,8 @@
 use core::mem::ManuallyDrop;
 
+#[cfg(feature = "alloc")]
+use alloc::{boxed::Box, vec::Vec};
+
 use super::*;
 
 trait CloneFromWrapped<R> {
@@ -12,6 +15,7 @@ impl<R: Clone> CloneFromWrapped<R> for ManuallyDrop<R> {
     }
 }
 
+#[cfg(feature = "alloc")]
 impl<R, W: CloneFromWrapped<R>> CloneFromWrapped<Box<R>> for Box<W> {
     fn clone_from_wrapped(self) -> Box<R> {
         let wrapped = *self;
@@ -19,6 +23,7 @@ impl<R, W: CloneFromWrapped<R>> CloneFromWrapped<Box<R>> for Box<W> {
     }
 }
 
+#[cfg(feature = "alloc")]
 impl<R, W: CloneFromWrapped<R>> CloneFromWrapped<Box<[R]>> for Box<[W]> {
     fn clone_from_wrapped(self) -> Box<[R]> {
         self.into_iter()
@@ -27,6 +32,7 @@ impl<R, W: CloneFromWrapped<R>> CloneFromWrapped<Box<[R]>> for Box<[W]> {
     }
 }
 
+#[cfg(feature = "alloc")]
 impl<R, W: CloneFromWrapped<R>> CloneFromWrapped<Vec<R>> for Vec<W> {
     fn clone_from_wrapped(self) -> Vec<R> {
         self.into_iter()
@@ -78,7 +84,7 @@ disjoint_impls! {
     {
     }
 
-    #[cfg(feature = "owned-types")]
+    #[cfg(feature = "alloc")]
     impl<'d, R: DecodeCloned<'d>, S: Cloned> DecodeCloned<'d> for Box<R>
     where
         Self: ReprFamily<Kind = Box<S>>,
@@ -102,7 +108,7 @@ disjoint_impls! {
         Self: ReprFamily<Kind = &'slice [Robust]>
     {
     }
-    #[cfg(feature = "cloned-refs")]
+    #[cfg(all(feature = "alloc", feature = "cloned-refs"))]
     impl<'slice, R: Clone> DecodeCloned<'slice> for &'slice [R] where
         Self: ReprFamily<Kind = &'slice [Opaque]>
     {
@@ -119,7 +125,7 @@ disjoint_impls! {
         Self: ReprFamily<Kind = &'slice mut [Transmuted]> + Decode<'slice>
     {
     }
-    #[cfg(feature = "cloned-refs")]
+    #[cfg(all(feature = "alloc", feature = "cloned-refs"))]
     impl<'slice, R: Clone> DecodeCloned<'slice> for &'slice mut [R] where
         Self: ReprFamily<Kind = &'slice mut [Opaque]>
     {
@@ -131,7 +137,7 @@ disjoint_impls! {
     {
     }
 
-    #[cfg(feature = "owned-types")]
+    #[cfg(feature = "alloc")]
     impl<'d, R: CheckedTransmute> DecodeCloned<'d> for Box<[R]>
     where
         Box<[<R as CheckedTransmute>::Target]>: DecodeCloned<'d>,
@@ -146,7 +152,7 @@ disjoint_impls! {
                 .and_then(transmute_from_target_boxed_slice)
         }
     }
-    #[cfg(feature = "owned-types")]
+    #[cfg(feature = "alloc")]
     impl<'d, R: ReprC + 'd> DecodeCloned<'d> for Box<[R]>
     where
         Self: ReprFamily<Kind = Box<[Robust]>>,
@@ -161,7 +167,7 @@ disjoint_impls! {
                 .map(CloneFromWrapped::clone_from_wrapped)
         }
     }
-    #[cfg(feature = "owned-types")]
+    #[cfg(feature = "alloc")]
     impl<'d, R: Clone + 'd> DecodeCloned<'d> for Box<[R]>
     where
         Self: ReprFamily<Kind = Box<[Opaque]>>,
@@ -175,7 +181,7 @@ disjoint_impls! {
                 .map(CloneFromWrapped::clone_from_wrapped)
         }
     }
-    #[cfg(feature = "owned-types")]
+    #[cfg(feature = "alloc")]
     impl<'d, R: DecodeCloned<'d>, S: Cloned> DecodeCloned<'d> for Box<[R]>
     where
         Self: ReprFamily<Kind = Box<[S]>>,
@@ -193,7 +199,7 @@ disjoint_impls! {
         }
     }
 
-    #[cfg(feature = "owned-types")]
+    #[cfg(feature = "alloc")]
     impl<'d, R: CheckedTransmute> DecodeCloned<'d> for Vec<R>
     where
         Vec<<R as CheckedTransmute>::Target>: DecodeCloned<'d>,
@@ -208,7 +214,7 @@ disjoint_impls! {
                 .and_then(transmute_from_target_vec)
         }
     }
-    #[cfg(feature = "owned-types")]
+    #[cfg(feature = "alloc")]
     impl<'d, R: ReprC + 'd> DecodeCloned<'d> for Vec<R>
     where
         Self: ReprFamily<Kind = Vec<Robust>>,
@@ -223,7 +229,7 @@ disjoint_impls! {
                 .map(CloneFromWrapped::clone_from_wrapped(wrapped))
         }
     }
-    #[cfg(feature = "owned-types")]
+    #[cfg(feature = "alloc")]
     impl<'d, R: Clone + 'd> DecodeCloned<'d> for Vec<R>
     where
         Self: ReprFamily<Kind = Vec<Opaque>>,
@@ -237,7 +243,7 @@ disjoint_impls! {
                 .map(CloneFromWrapped::clone_from_wrapped)
         }
     }
-    #[cfg(feature = "owned-types")]
+    #[cfg(feature = "alloc")]
     impl<'d, R: DecodeCloned<'d>, S: Cloned> DecodeCloned<'d> for Vec<R>
     where
         Self: ReprFamily<Kind = Vec<S>>,
@@ -255,6 +261,7 @@ disjoint_impls! {
         }
     }
 
+    #[cfg(feature = "alloc")]
     impl<'d, R: Clone + 'd, const N: usize> DecodeCloned<'d> for [R; N]
     where
         Self: ReprFamily<Kind = [Opaque; N]>,
@@ -320,6 +327,7 @@ disjoint_impls! {
     //        unimplemented!()
     //    }
     //}
+    #[cfg(feature = "alloc")]
     impl<'d, R: ReprFamily<Kind = Opaque>> DecodeCloned<'d> for Option<R>
     where
         Self: ReprFamily<Kind = Option<WithCustomNiche>> + Decode<'d>,
@@ -359,6 +367,7 @@ disjoint_impls! {
     //}
 }
 
+#[cfg(feature = "alloc")]
 pub(super) unsafe fn decode_cloned_box_ptr<'d, R, C: ReprC, S, F>(
     source: *mut C,
     store: &'d mut S,
@@ -375,6 +384,7 @@ where
     Some(Box::new(decoder(source, store)?))
 }
 
+#[cfg(feature = "alloc")]
 pub(super) unsafe fn decode_cloned_collection<'d, R, C: ReprC, S: Default, F, Out>(
     source: CSliceMut<C>,
     store: &'d mut DecodeStoreSlice<S>,
@@ -409,16 +419,15 @@ where
     F: FnMut(C, &'d mut S) -> Option<R>,
 {
     assert_arr_has_non_zero_len::<N>();
+    let mut stores = store.0.iter_mut();
 
-    let store = store
-        .0
-        .insert(core::iter::repeat_with(Default::default).take(N).collect());
+    let decoded = source.map(|item|
+        decoder(item, stores.next().unwrap())
+    );
 
-    let vec = source
-        .into_iter()
-        .zip(store)
-        .map(|(item, substore)| decoder(item, substore))
-        .collect::<Option<Vec<_>>>()?;
+    if decoded.iter().any(Option::is_none) {
+        return None;
+    }
 
-    Some(unsafe { vec.try_into().unwrap_unchecked() })
+    Some(decoded.map(|item| unsafe { item.unwrap_unchecked() }))
 }

@@ -1,11 +1,13 @@
 use super::*;
-#[cfg(feature = "owned-as-ref")]
+#[cfg(all(feature = "alloc", feature = "owned-as-ref"))]
 use crate::transmute::{transmute_from_target_boxed_slice, transmute_from_target_vec};
 use crate::{COption, slice::CBoxedSlice};
 use crate::{
     ir::Transmuted,
     transmute::{transmute_from_target_ref_slice, transmute_from_target_slice_mut},
 };
+#[cfg(feature = "alloc")]
+use alloc::{boxed::Box, vec::Vec};
 
 disjoint_impls! {
     /// Marker trait indicating that [`Encode::encode`] doesn't return a reference to the store.
@@ -35,7 +37,9 @@ disjoint_impls! {
     pub unsafe trait NonLocal {}
 
     unsafe impl<R> NonLocal for R where R: Encode<Store = ()> {}
+    #[cfg(feature = "alloc")]
     unsafe impl<R, Z: Zst> NonLocal for R where R: Encode<Store = Box<[Z]>> {}
+    #[cfg(feature = "alloc")]
     unsafe impl<R, Z: Zst> NonLocal for R where R: Encode<Store = Vec<Z>> {}
     unsafe impl<R, Z: Zst> NonLocal for R where R: Encode<Store = Option<Z>> {}
     unsafe impl<R, Z: Zst, const N: usize> NonLocal for R where R: Encode<Store = [Z; N]> {}
@@ -70,7 +74,7 @@ disjoint_impls! {
         type OutPtr: ReprC;
     }
 
-    #[cfg(feature = "owned-as-ref")]
+    #[cfg(all(feature = "alloc", feature = "owned-as-ref"))]
     impl<R: CheckedTransmute<Target: ReprC>> OutPtr for R
     where
         Self: ReprFamily<Kind = Box<Robust>>,
@@ -105,7 +109,7 @@ disjoint_impls! {
         type OutPtr = R::CType;
     }
 
-    #[cfg(feature = "owned-as-ref")]
+    #[cfg(all(feature = "alloc", feature = "owned-as-ref"))]
     impl<R: ExternC, S: Cloned> OutPtr for Box<R>
     where
         Self: ReprFamily<Kind = Box<S>>,
@@ -149,7 +153,7 @@ disjoint_impls! {
         type OutPtr = <&'slice mut [R::Target] as OutPtr>::OutPtr;
     }
 
-    #[cfg(feature = "owned-types")]
+    #[cfg(feature = "alloc")]
     impl<R: CheckedTransmute> OutPtr for Box<[R]>
     where
         Self: ReprFamily<Kind = Box<[Transmuted]>>,
@@ -157,21 +161,21 @@ disjoint_impls! {
     {
         type OutPtr = <Box<[R::Target]> as OutPtr>::OutPtr;
     }
-    #[cfg(feature = "owned-types")]
+    #[cfg(feature = "alloc")]
     impl<R: ReprC> OutPtr for Box<[R]>
     where
         Self: ReprFamily<Kind = Box<[Robust]>>,
     {
         type OutPtr = CBoxedSlice<R>;
     }
-    #[cfg(feature = "owned-types")]
+    #[cfg(feature = "alloc")]
     impl<R> OutPtr for Box<[R]>
     where
         Self: ReprFamily<Kind = Box<[Opaque]>>,
     {
         type OutPtr = CBoxedSlice<*mut R>;
     }
-    #[cfg(feature = "owned-types")]
+    #[cfg(feature = "alloc")]
     impl<R: ExternC, S: Cloned> OutPtr for Box<[R]>
     where
         Self: ReprFamily<Kind = Box<[S]>>,
@@ -179,7 +183,7 @@ disjoint_impls! {
         type OutPtr = CBoxedSlice<R::CType>;
     }
 
-    #[cfg(feature = "owned-types")]
+    #[cfg(feature = "alloc")]
     impl<R: CheckedTransmute> OutPtr for Vec<R>
     where
         Self: ReprFamily<Kind = Vec<Transmuted>>,
@@ -187,21 +191,21 @@ disjoint_impls! {
     {
         type OutPtr = <Vec<R::Target> as OutPtr>::OutPtr;
     }
-    #[cfg(feature = "owned-types")]
+    #[cfg(feature = "alloc")]
     impl<R: ReprC> OutPtr for Vec<R>
     where
         Self: ReprFamily<Kind = Vec<Robust>>,
     {
         type OutPtr = CBoxedSlice<R>;
     }
-    #[cfg(feature = "owned-types")]
+    #[cfg(feature = "alloc")]
     impl<R> OutPtr for Vec<R>
     where
         Self: ReprFamily<Kind = Vec<Opaque>>,
     {
         type OutPtr = CBoxedSlice<*mut R>;
     }
-    #[cfg(feature = "owned-types")]
+    #[cfg(feature = "alloc")]
     impl<R: ExternC, S: Cloned> OutPtr for Vec<R>
     where
         Self: ReprFamily<Kind = Vec<S>>,
@@ -247,7 +251,7 @@ disjoint_impls! {
         unsafe fn write_out(self, out_ptr: *mut Self::OutPtr);
     }
 
-    #[cfg(feature = "owned-as-ref")]
+    #[cfg(all(feature = "alloc", feature = "owned-as-ref"))]
     impl<R: CheckedTransmute<Target: ReprC>> OutPtrWrite for R
     where
         Self: ReprFamily<Kind = Box<Robust>>,
@@ -282,10 +286,8 @@ disjoint_impls! {
             }
         }
     }
-    impl<R> OutPtrWrite for R
-    where
-        Self: ReprFamily<Kind = Opaque>,
-    {
+    #[cfg(feature = "alloc")]
+    impl<R: ReprFamily<Kind = Opaque>> OutPtrWrite for R {
         unsafe fn write_out(self, out_ptr: *mut Self::OutPtr) {
             let encoded = self.encode(&mut ());
 
@@ -311,7 +313,7 @@ disjoint_impls! {
         }
     }
 
-    #[cfg(feature = "owned-as-ref")]
+    #[cfg(all(feature = "alloc", feature = "owned-as-ref"))]
     impl<R: Encode + NonLocal, S: Cloned> OutPtrWrite for Box<R>
     where
         Self: ReprFamily<Kind = Box<S>>,
@@ -352,7 +354,7 @@ disjoint_impls! {
             }
         }
     }
-    #[cfg(feature = "cloned-refs")]
+    #[cfg(all(feature = "alloc", feature = "cloned-refs"))]
     impl<'a, R> OutPtrWrite for &'a [R]
     where
         Self: ReprFamily<Kind = &'a [Opaque]>,
@@ -399,7 +401,7 @@ disjoint_impls! {
         }
     }
 
-    #[cfg(feature = "owned-types")]
+    #[cfg(feature = "alloc")]
     impl<R: CheckedTransmute> OutPtrWrite for Box<[R]>
     where
         Self: ReprFamily<Kind = Box<[Transmuted]>>,
@@ -413,13 +415,13 @@ disjoint_impls! {
             }
         }
     }
-    #[cfg(feature = "owned-types")]
+    #[cfg(feature = "alloc")]
     impl<R: ReprC> OutPtrWrite for Box<[R]>
     where
         Self: ReprFamily<Kind = Box<[Robust]>>,
     {
         unsafe fn write_out(self, out_ptr: *mut Self::OutPtr) {
-            #[cfg(feature = "owned-as-ref")]
+            #[cfg(all(feature = "alloc", feature = "owned-as-ref"))]
             let output = {
                 let mut store = Default::default();
                 let _ = self.encode(&mut store);
@@ -434,13 +436,13 @@ disjoint_impls! {
             }
         }
     }
-    #[cfg(feature = "owned-types")]
+    #[cfg(feature = "alloc")]
     impl<R> OutPtrWrite for Box<[R]>
     where
         Self: ReprFamily<Kind = Box<[Opaque]>>,
     {
         unsafe fn write_out(self, out_ptr: *mut Self::OutPtr) {
-            #[cfg(feature = "owned-as-ref")]
+            #[cfg(all(feature = "alloc", feature = "owned-as-ref"))]
             let output = {
                 let mut store = Default::default();
                 let _ = self.encode(&mut store);
@@ -455,7 +457,7 @@ disjoint_impls! {
             }
         }
     }
-    #[cfg(feature = "owned-types")]
+    #[cfg(feature = "alloc")]
     impl<R: Encode + NonLocal, S: Cloned> OutPtrWrite for Box<[R]>
     where
         Self: ReprFamily<Kind = Box<[S]>>,
@@ -472,11 +474,11 @@ disjoint_impls! {
         }
     }
 
-    #[cfg(feature = "owned-types")]
+    #[cfg(feature = "alloc")]
     impl<R: CheckedTransmute> OutPtrWrite for Vec<R>
     where
-        Self: ReprFamily<Kind = Vec<Transmuted>>,
         Vec<<R as CheckedTransmute>::Target>: OutPtrWrite,
+        Self: ReprFamily<Kind = Vec<Transmuted>>,
     {
         unsafe fn write_out(self, out_ptr: *mut Self::OutPtr) {
             let transmuted = transmute_into_target_vec(self);
@@ -486,13 +488,13 @@ disjoint_impls! {
             }
         }
     }
-    #[cfg(feature = "owned-types")]
+    #[cfg(feature = "alloc")]
     impl<R: ReprC> OutPtrWrite for Vec<R>
     where
         Self: ReprFamily<Kind = Vec<Robust>>,
     {
         unsafe fn write_out(self, out_ptr: *mut Self::OutPtr) {
-            #[cfg(feature = "owned-as-ref")]
+            #[cfg(all(feature = "alloc", feature = "owned-as-ref"))]
             let output = {
                 let mut store = Default::default();
                 let _ = self.encode(&mut store);
@@ -507,13 +509,13 @@ disjoint_impls! {
             }
         }
     }
-    #[cfg(feature = "owned-types")]
+    #[cfg(feature = "alloc")]
     impl<R> OutPtrWrite for Vec<R>
     where
         Self: ReprFamily<Kind = Vec<Opaque>>,
     {
         unsafe fn write_out(self, out_ptr: *mut Self::OutPtr) {
-            #[cfg(feature = "owned-as-ref")]
+            #[cfg(all(feature = "alloc", feature = "owned-as-ref"))]
             let output = {
                 let mut store = Default::default();
                 let _ = self.encode(&mut store);
@@ -528,7 +530,7 @@ disjoint_impls! {
             }
         }
     }
-    #[cfg(feature = "owned-types")]
+    #[cfg(feature = "alloc")]
     impl<R: Encode + NonLocal, S: Cloned> OutPtrWrite for Vec<R>
     where
         Self: ReprFamily<Kind = Vec<S>>,
@@ -545,6 +547,7 @@ disjoint_impls! {
         }
     }
 
+    #[cfg(feature = "alloc")]
     impl<R, const N: usize> OutPtrWrite for [R; N]
     where
         Self: ReprFamily<Kind = [Opaque; N]>,
@@ -638,7 +641,7 @@ disjoint_impls! {
         }
     }
 
-    #[cfg(feature = "owned-as-ref")]
+    #[cfg(all(feature = "alloc", feature = "owned-as-ref"))]
     impl<R: CheckedTransmute<Target: ReprC>> OutPtrRead for R
     where
         Self: ReprFamily<Kind = Box<Robust>>,
@@ -648,7 +651,7 @@ disjoint_impls! {
             //Ok(Box::new(_out_ptr))
         }
     }
-    #[cfg(feature = "owned-as-ref")]
+    #[cfg(all(feature = "alloc", feature = "owned-as-ref"))]
     impl<'d, R: Decode<'d> + NonLocal + 'd, S: Cloned> OutPtrRead for Box<R>
     where
         Self: ReprFamily<Kind = Box<S>>,
@@ -694,7 +697,7 @@ disjoint_impls! {
         }
     }
 
-    #[cfg(feature = "owned-as-ref")]
+    #[cfg(all(feature = "alloc", feature = "owned-as-ref"))]
     impl<R: CheckedTransmute> OutPtrRead for Box<[R]>
     where
         Self: ReprFamily<Kind = Box<[Transmuted]>>,
@@ -707,7 +710,7 @@ disjoint_impls! {
             }
         }
     }
-    #[cfg(feature = "owned-as-ref")]
+    #[cfg(all(feature = "alloc", feature = "owned-as-ref"))]
     impl<R: ReprC> OutPtrRead for Box<[R]>
     where
         Self: ReprFamily<Kind = Box<[Robust]>>,
@@ -724,7 +727,7 @@ disjoint_impls! {
             }
         }
     }
-    #[cfg(feature = "owned-as-ref")]
+    #[cfg(all(feature = "alloc", feature = "owned-as-ref"))]
     impl<'d, R: ExternC + NonLocal + 'd, S: Cloned> OutPtrRead for Box<[R]>
     where
         Self: ReprFamily<Kind = Box<[S]>> + Decode<'d, CType = CSliceMut<<R as ExternC>::CType>>,
@@ -750,7 +753,7 @@ disjoint_impls! {
         }
     }
 
-    #[cfg(feature = "owned-as-ref")]
+    #[cfg(all(feature = "alloc", feature = "owned-as-ref"))]
     impl<R: CheckedTransmute> OutPtrRead for Vec<R>
     where
         Self: ReprFamily<Kind = Vec<Transmuted>>,
@@ -763,7 +766,7 @@ disjoint_impls! {
             }
         }
     }
-    #[cfg(feature = "owned-as-ref")]
+    #[cfg(all(feature = "alloc", feature = "owned-as-ref"))]
     impl<R: ReprC> OutPtrRead for Vec<R>
     where
         Self: ReprFamily<Kind = Vec<Robust>>,
@@ -780,7 +783,7 @@ disjoint_impls! {
             }
         }
     }
-    #[cfg(feature = "owned-as-ref")]
+    #[cfg(all(feature = "alloc", feature = "owned-as-ref"))]
     impl<'d, R: ExternC + NonLocal + 'd, S: Cloned> OutPtrRead for Vec<R>
     where
         Self: ReprFamily<Kind = Vec<S>> + Decode<'d, CType = CSliceMut<<R as ExternC>::CType>>,
@@ -855,14 +858,14 @@ disjoint_impls! {
 #[cfg(test)]
 mod tests {
     use static_assertions::assert_impl_all;
-    #[cfg(feature = "owned-as-ref")]
+    #[cfg(all(feature = "alloc", feature = "owned-as-ref"))]
     use static_assertions::assert_not_impl_any;
 
     use super::*;
 
     #[test]
     fn non_local_types() {
-        #[cfg(feature = "owned-as-ref")]
+        #[cfg(all(feature = "alloc", feature = "owned-as-ref"))]
         {
             // FIXME:
             //assert_not_impl_any!(Vec<u8>: OutPtrWrite);

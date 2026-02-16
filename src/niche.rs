@@ -1,11 +1,12 @@
 //! Logic related to the conversion of [`Option<T>`] to and from FFI-compatible representation
 
+#[cfg(feature = "alloc")]
 use alloc::boxed::Box;
-#[cfg(feature = "owned-types")]
+#[cfg(feature = "alloc")]
 use alloc::vec::Vec;
 use disjoint_impls::disjoint_impls;
 
-#[cfg(feature = "owned-types")]
+#[cfg(feature = "alloc")]
 use crate::{BoxedSliceCType, VecCType};
 use crate::{
     ExternC, ReprC, assert_arr_has_non_zero_len,
@@ -107,6 +108,7 @@ impl<R> NicheFamily for &R {
 impl<R> NicheFamily for &mut R {
     type Kind = WithStableNiche;
 }
+#[cfg(feature = "alloc")]
 impl<R> NicheFamily for Box<R> {
     type Kind = WithStableNiche;
 }
@@ -116,11 +118,11 @@ impl<R> NicheFamily for &[R] {
 impl<R> NicheFamily for &mut [R] {
     type Kind = WithCustomNiche;
 }
-#[cfg(feature = "owned-types")]
+#[cfg(feature = "alloc")]
 impl<R> NicheFamily for Box<[R]> {
     type Kind = WithCustomNiche;
 }
-#[cfg(feature = "owned-types")]
+#[cfg(feature = "alloc")]
 impl<R> NicheFamily for Vec<R> {
     type Kind = WithCustomNiche;
 }
@@ -139,6 +141,7 @@ where
     const NICHE_VALUE: *mut C = core::ptr::null_mut();
 }
 
+#[cfg(feature = "alloc")]
 impl<R, C> Niche for Box<R>
 where
     Self: ExternC<CType = *mut C>,
@@ -160,7 +163,7 @@ where
     const NICHE_VALUE: CSliceMut<C> = CSliceMut::none();
 }
 
-#[cfg(feature = "owned-types")]
+#[cfg(feature = "alloc")]
 impl<R, C> Niche for Box<[R]>
 where
     Self: ExternC<CType = BoxedSliceCType<C>>,
@@ -168,7 +171,7 @@ where
     const NICHE_VALUE: Self::CType = BoxedSliceCType::none();
 }
 
-#[cfg(feature = "owned-types")]
+#[cfg(feature = "alloc")]
 impl<R, C> Niche for Vec<R>
 where
     Self: ExternC<CType = VecCType<C>>,
@@ -203,6 +206,7 @@ impl Niche for Option<Option<bool>> {
 
 unsafe impl<R> StableNiche for &R where Self: Niche {}
 unsafe impl<R> StableNiche for &mut R where Self: Niche {}
+#[cfg(feature = "alloc")]
 unsafe impl<R> StableNiche for Box<R> where Self: Niche {}
 unsafe impl<R> StableNiche for core::ptr::NonNull<R> {}
 

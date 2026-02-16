@@ -3,6 +3,7 @@
 //! While you can implement [`crate::ExternC`] directly on your type, it is often
 //! preferable to map it into IR by implementing [`Ir`]. This approach gives you
 //! automatic, correct, and zero-cost conversions from IR to the equivalent C type.
+#[cfg(feature = "alloc")]
 use alloc::{boxed::Box, vec::Vec};
 use disjoint_impls::disjoint_impls;
 
@@ -62,6 +63,7 @@ disjoint_impls! {
         type Kind;
     }
 
+    #[cfg(feature = "alloc")]
     impl<R: ReprFamily<Kind = Box<Robust>>> ReprFamily for &R {
         type Kind = Transmuted;
     }
@@ -79,6 +81,7 @@ disjoint_impls! {
         type Kind = &'a R::Kind;
     }
 
+    #[cfg(feature = "alloc")]
     impl<R: ReprFamily<Kind = Box<Robust>>> ReprFamily for &mut R {
         type Kind = Transmuted;
     }
@@ -96,25 +99,28 @@ disjoint_impls! {
         type Kind = &'a mut R::Kind;
     }
 
-    #[cfg(feature = "owned-types")]
+    #[cfg(feature = "alloc")]
     impl<R: ReprFamily<Kind = Box<Robust>>> ReprFamily for Box<R> {
         type Kind = Transmuted;
     }
+    #[cfg(feature = "alloc")]
     impl<R: ReprFamily<Kind = Transmuted>> ReprFamily for Box<R> {
         type Kind = Transmuted;
     }
-    #[cfg(feature = "owned-types")]
+    #[cfg(feature = "alloc")]
     impl<R: ReprFamily<Kind = Robust>> ReprFamily for Box<R> {
         type Kind = Box<Robust>;
     }
+    #[cfg(feature = "alloc")]
     impl<R: ReprFamily<Kind = Opaque>> ReprFamily for Box<R> {
         type Kind = Transmuted;
     }
-    #[cfg(feature = "owned-types")]
+    #[cfg(feature = "alloc")]
     impl<R: ReprFamily<Kind: Cloned>> ReprFamily for Box<R> {
         type Kind = Box<R::Kind>;
     }
 
+    #[cfg(feature = "alloc")]
     impl<'a, R: ReprFamily<Kind = Box<Robust>>> ReprFamily for &'a [R] {
         type Kind = &'a [Transmuted];
     }
@@ -133,6 +139,7 @@ disjoint_impls! {
         type Kind = &'a [R::Kind];
     }
 
+    #[cfg(feature = "alloc")]
     impl<'a, R: ReprFamily<Kind = Box<Robust>>> ReprFamily for &'a mut [R] {
         type Kind = &'a mut [Transmuted];
     }
@@ -151,49 +158,49 @@ disjoint_impls! {
         type Kind = &'a mut [R::Kind];
     }
 
-    #[cfg(feature = "owned-types")]
+    #[cfg(feature = "alloc")]
     impl<R: ReprFamily<Kind = Box<Robust>>> ReprFamily for Box<[R]> {
         type Kind = Box<[Transmuted]>;
     }
-    #[cfg(feature = "owned-types")]
+    #[cfg(feature = "alloc")]
     impl<R: ReprFamily<Kind = Transmuted>> ReprFamily for Box<[R]> {
         type Kind = Box<[Transmuted]>;
     }
-    #[cfg(feature = "owned-types")]
+    #[cfg(feature = "alloc")]
     impl<R: ReprFamily<Kind = Robust>> ReprFamily for Box<[R]> {
         type Kind = Box<[Robust]>;
     }
-    #[cfg(feature = "owned-types")]
+    #[cfg(feature = "alloc")]
     impl<R: ReprFamily<Kind = Opaque>> ReprFamily for Box<[R]> {
         type Kind = Box<[Opaque]>;
     }
-    #[cfg(feature = "owned-types")]
+    #[cfg(feature = "alloc")]
     impl<R: ReprFamily<Kind: Cloned>> ReprFamily for Box<[R]> {
         type Kind = Box<[R::Kind]>;
     }
 
-    #[cfg(feature = "owned-types")]
+    #[cfg(feature = "alloc")]
     impl<R: ReprFamily<Kind = Box<Robust>>> ReprFamily for Vec<R> {
         type Kind = Vec<Transmuted>;
     }
-    #[cfg(feature = "owned-types")]
+    #[cfg(feature = "alloc")]
     impl<R: ReprFamily<Kind = Transmuted>> ReprFamily for Vec<R> {
         type Kind = Vec<Transmuted>;
     }
-    #[cfg(feature = "owned-types")]
+    #[cfg(feature = "alloc")]
     impl<R: ReprFamily<Kind = Robust>> ReprFamily for Vec<R> {
         type Kind = Vec<Robust>;
     }
-    #[cfg(feature = "owned-types")]
+    #[cfg(feature = "alloc")]
     impl<R: ReprFamily<Kind = Opaque>> ReprFamily for Vec<R> {
         type Kind = Vec<Opaque>;
     }
-    #[cfg(feature = "owned-types")]
+    #[cfg(feature = "alloc")]
     impl<R: ReprFamily<Kind: Cloned>> ReprFamily for Vec<R> {
         type Kind = Vec<R::Kind>;
     }
 
-    #[cfg(feature = "owned-types")]
+    #[cfg(feature = "alloc")]
     impl<R: ReprFamily<Kind = Box<Robust>>, const N: usize> ReprFamily for [R; N] {
         type Kind = Box<Robust>;
     }
@@ -211,7 +218,7 @@ disjoint_impls! {
     }
 
     // FIXME: Verify is correct
-    //#[cfg(feature = "owned-types")]
+    //#[cfg(feature = "alloc")]
     //impl<R: ReprFamily<Type = Box<Robust>>> ReprFamily for Option<R> {
     //    type Kind = Box<Robust>;
     //}
@@ -240,10 +247,13 @@ disjoint_impls! {
 
 impl<S: Cloned> Cloned for &S {}
 impl<S: Cloned> Cloned for &mut S {}
+#[cfg(feature = "alloc")]
 impl<S: Cloned> Cloned for Box<S> {}
 impl<S> Cloned for &[S] {}
 impl<S> Cloned for &mut [S] {}
+#[cfg(feature = "alloc")]
 impl<S> Cloned for Box<[S]> {}
+#[cfg(feature = "alloc")]
 impl<S> Cloned for Vec<S> {}
 impl<const N: usize> Cloned for [Opaque; N] {}
 impl<S: Cloned, const N: usize> Cloned for [S; N] {}

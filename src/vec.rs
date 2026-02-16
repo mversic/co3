@@ -1,5 +1,6 @@
 //! Logic related to the conversion of vectors to and from FFI-compatible representation
 
+#[cfg(feature = "alloc")]
 use alloc::vec::Vec;
 use core::mem::ManuallyDrop;
 
@@ -101,6 +102,7 @@ impl<C> CVec<C> {
     }
 
     /// Create [`Self`] from a [`Vec<T>`].
+    #[cfg(feature = "alloc")]
     pub fn from_vec(source: Option<Vec<C>>) -> Self {
         if let Some(vec) = source {
             let mut vec = ManuallyDrop::new(vec);
@@ -120,6 +122,7 @@ impl<C> CVec<C> {
     /// # Safety
     ///
     /// Check [`Vec::from_raw_parts`]
+    #[cfg(feature = "alloc")]
     pub unsafe fn into_rust(self) -> Option<Vec<C>> {
         if self.data.is_null() {
             return None;
