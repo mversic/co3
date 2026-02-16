@@ -70,14 +70,14 @@ disjoint_impls! {
         }
     }
 
-    #[cfg(feature = "cloned-refs")]
+    #[cfg(feature = "unstable-refs")]
     impl<'d, R: DecodeCloned<'d>, S: Cloned> DecodeCloned<'d> for &'d R
     where
         Self: ReprFamily<Kind = &'d S>,
     {
     }
 
-    #[cfg(feature = "cloned-refs")]
+    #[cfg(feature = "unstable-refs")]
     impl<'d, R, S: Cloned> DecodeCloned<'d> for &'d mut R
     where
         Self: ReprFamily<Kind = &'d mut S> + Decode<'d>,
@@ -108,12 +108,12 @@ disjoint_impls! {
         Self: ReprFamily<Kind = &'slice [Robust]>
     {
     }
-    #[cfg(all(feature = "alloc", feature = "cloned-refs"))]
+    #[cfg(all(feature = "alloc", feature = "unstable-refs"))]
     impl<'slice, R: Clone> DecodeCloned<'slice> for &'slice [R] where
         Self: ReprFamily<Kind = &'slice [Opaque]>
     {
     }
-    #[cfg(feature = "cloned-refs")]
+    #[cfg(feature = "unstable-refs")]
     impl<'slice, R: DecodeCloned<'slice>, S: Cloned> DecodeCloned<'slice> for &'slice [R]
     where
         Self: ReprFamily<Kind = &'slice [S]>,
@@ -125,12 +125,12 @@ disjoint_impls! {
         Self: ReprFamily<Kind = &'slice mut [Transmuted]> + Decode<'slice>
     {
     }
-    #[cfg(all(feature = "alloc", feature = "cloned-refs"))]
+    #[cfg(all(feature = "alloc", feature = "unstable-refs"))]
     impl<'slice, R: Clone> DecodeCloned<'slice> for &'slice mut [R] where
         Self: ReprFamily<Kind = &'slice mut [Opaque]>
     {
     }
-    #[cfg(feature = "cloned-refs")]
+    #[cfg(feature = "unstable-refs")]
     impl<'slice, R, S: Cloned> DecodeCloned<'slice> for &'slice mut [R]
     where
         Self: ReprFamily<Kind = &'slice mut [S]> + Decode<'slice>,

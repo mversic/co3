@@ -39,7 +39,7 @@ Conversion modes define how values cross the FFI boundary, including ownership b
 3. **`unsafe-optimizations` (opt-in)**
 - Eliminates cloning in encode path of mutable references to transmutable `Drop` types (e.g. `&mut Box<u32>`).
 - Eliminates cloning in encode path of transmutable mutable references to non-robust types (e.g. `&mut bool`).
-- Responsibility to maintain soundness by avoiding trap values or ownership transfer is shifted to the calee.
+- Responsibility to maintain soundness by avoiding trap values or ownership transfer is shifted to the callee.
 
 ## 2. Core Model
 
@@ -103,7 +103,7 @@ The following rules define externally visible representation behavior.
 
 ### 5.3 Owned Collections
 
-When `owned-types` is enabled:
+When `alloc` is enabled:
 
 - `Box<[R]>`/`Vec<R>` robust:
   - with `owned-as-ref`: represented as `CSliceMut<R>` and borrowed through store.
@@ -216,9 +216,9 @@ This section maps operational modes and optional capabilities to current compile
 | Config Control | Default | Maps To | Notes |
 | --- | --- | --- | --- |
 | `cloned-refs` | Disabled | `1.2` `cloned-refs` mode | Compatibility-focused mode for additional reference families. |
-| `owned-as-ref` | Enabled | `1.2` `owned-as-ref` mode | Implies `owned-types`; ownership transfer of robust owned containers is avoided by default. |
+| `owned-as-ref` | Enabled | `1.2` `owned-as-ref` mode | Implies `alloc`; ownership transfer of robust owned containers is avoided by default. |
 | `unsafe-optimizations` | Disabled | `1.2` `unsafe-optimizations` mode | Only control in this set intended to relax default soundness guardrails. |
-| `owned-types` | Enabled indirectly (via default `owned-as-ref`) | Capability toggle | Enables owned container conversion families used by modes. |
+| `alloc` | Enabled indirectly (via default `owned-as-ref`) | Capability toggle | Enables owned container conversion families used by modes. |
 | `derive` | Disabled | Optional codegen capability | Enables proc-macro API from `co3_derive`. |
 | `getset` | Disabled | Optional codegen capability | Enables `getset` integration in derive wrappers; implies `derive`. |
 

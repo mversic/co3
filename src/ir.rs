@@ -76,7 +76,7 @@ disjoint_impls! {
     impl<R: ReprFamily<Kind = Opaque>> ReprFamily for &R {
         type Kind = Transmuted;
     }
-    #[cfg(feature = "cloned-refs")]
+    #[cfg(feature = "unstable-refs")]
     impl<'a, R: ReprFamily<Kind: Cloned + 'a>> ReprFamily for &'a R {
         type Kind = &'a R::Kind;
     }
@@ -94,7 +94,7 @@ disjoint_impls! {
     impl<R: ReprFamily<Kind = Opaque>> ReprFamily for &mut R {
         type Kind = Transmuted;
     }
-    #[cfg(feature = "cloned-refs")]
+    #[cfg(feature = "unstable-refs")]
     impl<'a, R: ReprFamily<Kind: Cloned + 'a>> ReprFamily for &'a mut R {
         type Kind = &'a mut R::Kind;
     }
@@ -130,11 +130,11 @@ disjoint_impls! {
     impl<'a, R: ReprFamily<Kind = Robust>> ReprFamily for &'a [R] {
         type Kind = &'a [Robust];
     }
-    #[cfg(feature = "cloned-refs")]
+    #[cfg(feature = "unstable-refs")]
     impl<'a, R: ReprFamily<Kind = Opaque>> ReprFamily for &'a [R] {
         type Kind = &'a [Opaque];
     }
-    #[cfg(feature = "cloned-refs")]
+    #[cfg(feature = "unstable-refs")]
     impl<'a, R: ReprFamily<Kind: Cloned + 'a>> ReprFamily for &'a [R] {
         type Kind = &'a [R::Kind];
     }
@@ -149,11 +149,11 @@ disjoint_impls! {
     impl<'a, R: ReprFamily<Kind = Robust>> ReprFamily for &'a mut [R] {
         type Kind = &'a mut [Robust];
     }
-    #[cfg(feature = "cloned-refs")]
+    #[cfg(feature = "unstable-refs")]
     impl<'a, R: ReprFamily<Kind = Opaque>> ReprFamily for &'a mut [R] {
         type Kind = &'a mut [Opaque];
     }
-    #[cfg(feature = "cloned-refs")]
+    #[cfg(feature = "unstable-refs")]
     impl<'a, R: ReprFamily<Kind: Cloned + 'a>> ReprFamily for &'a mut [R] {
         type Kind = &'a mut [R::Kind];
     }

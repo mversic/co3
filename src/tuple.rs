@@ -589,7 +589,7 @@ where
 
 #[cfg(test)]
 mod tests {
-    #[cfg(feature = "cloned-refs")]
+    #[cfg(feature = "unstable-refs")]
     use crate::slice::CSlice;
     use crate::{
         ir::{ReprFamily, Robust},
@@ -606,10 +606,10 @@ mod tests {
     #[test]
     fn cloned_tuple_3_without_niche() {
         assert_impl_all!((u8, u8, u8): ExternC<CType = CTuple3<u8, u8, u8>>);
-        #[cfg(feature = "cloned-refs")]
+        #[cfg(feature = "unstable-refs")]
         assert_impl_all!(&(u8, u8, u8): StableNiche<CType = *const CTuple3<u8, u8, u8>>);
         assert_impl_all!(Box<(u8, u8, u8)>: StableNiche<CType = *mut CTuple3<u8, u8, u8>>);
-        #[cfg(feature = "cloned-refs")]
+        #[cfg(feature = "unstable-refs")]
         assert_impl_all!(&[(u8, u8, u8)]: Niche<CType = CSlice<CTuple3<u8, u8, u8>>>);
         assert_impl_all!([(u8, u8, u8); 2]: ExternC<CType = [CTuple3<u8, u8, u8>; 2]>);
         assert_impl_all!(Option<(u8, u8, u8)>: Niche<CType = COption<CTuple3<u8, u8, u8>>>);
@@ -623,28 +623,28 @@ mod tests {
         assert_not_impl_any!([(u8, u8, u8); 2]: ReprC, CheckedTransmute, FlatTransmute<Target: ReprFamily<Kind = Robust>>, Niche);
         assert_not_impl_any!(Option<(u8, u8, u8)>: ReprC, CheckedTransmute, FlatTransmute<Target: ReprFamily<Kind = Robust>>, StableNiche);
 
-        #[cfg(not(feature = "cloned-refs"))]
+        #[cfg(not(feature = "unstable-refs"))]
         assert_not_impl_any!(&(u8, u8, u8): ExternC);
-        #[cfg(not(feature = "cloned-refs"))]
+        #[cfg(not(feature = "unstable-refs"))]
         assert_not_impl_any!(&[(u8, u8, u8)]: ExternC);
-        #[cfg(not(feature = "cloned-refs"))]
+        #[cfg(not(feature = "unstable-refs"))]
         assert_not_impl_any!(&mut (u8, u8, u8): ExternC);
-        #[cfg(not(feature = "cloned-refs"))]
+        #[cfg(not(feature = "unstable-refs"))]
         assert_not_impl_any!(&mut [(u8, u8, u8)]: ExternC);
 
-        #[cfg(not(feature = "cloned-refs"))]
+        #[cfg(not(feature = "unstable-refs"))]
         assert_not_impl_any!(&mut (u8, u8, u8): ReprFamily);
-        //#[cfg(not(feature = "cloned-refs"))]
+        //#[cfg(not(feature = "unstable-refs"))]
         //assert_not_impl_any!(&mut [(u8, u8, u8)]: ReprFamily);
     }
 
     #[test]
     fn cloned_tuple_3_with_niche() {
         assert_impl_all!((u8, bool, u8): Niche<CType = CTuple3<u8, u8, u8>>);
-        #[cfg(feature = "cloned-refs")]
+        #[cfg(feature = "unstable-refs")]
         assert_impl_all!(&(u8, bool, u8): StableNiche<CType = *const CTuple3<u8, u8, u8>>);
         assert_impl_all!(Box<(u8, bool, u8)>: StableNiche<CType = *mut CTuple3<u8, u8, u8>>);
-        #[cfg(feature = "cloned-refs")]
+        #[cfg(feature = "unstable-refs")]
         assert_impl_all!(&[(u8, bool, u8)]: Niche<CType = CSlice<CTuple3<u8, u8, u8>>>);
         assert_impl_all!([(u8, bool, u8); 2]: Niche<CType = [CTuple3<u8, u8, u8>; 2]>);
         // TODO: Depends on: https://github.com/mversic/co3/issues/33
@@ -659,14 +659,14 @@ mod tests {
         assert_not_impl_any!([(u8, bool, u8); 2]: ReprC, CheckedTransmute, FlatTransmute<Target: ReprFamily<Kind = Robust>>, StableNiche);
         assert_not_impl_any!(Option<(u8, bool, u8)>: ReprC, CheckedTransmute, FlatTransmute<Target: ReprFamily<Kind = Robust>>, StableNiche);
 
-        #[cfg(not(feature = "cloned-refs"))]
+        #[cfg(not(feature = "unstable-refs"))]
         assert_not_impl_any!(&(u8, bool, u8): ExternC);
-        #[cfg(not(feature = "cloned-refs"))]
+        #[cfg(not(feature = "unstable-refs"))]
         assert_not_impl_any!(&[(u8, bool, u8)]: ExternC);
 
-        #[cfg(not(feature = "cloned-refs"))]
+        #[cfg(not(feature = "unstable-refs"))]
         assert_not_impl_any!(&mut (u8, bool, u8): ReprFamily, ExternC);
-        #[cfg(not(feature = "cloned-refs"))]
+        #[cfg(not(feature = "unstable-refs"))]
         assert_not_impl_any!(&mut [(u8, bool, u8)]: ExternC);
     }
 }

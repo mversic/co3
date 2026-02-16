@@ -101,7 +101,7 @@ disjoint_impls! {
         type OutPtr = Self::CType;
     }
 
-    #[cfg(feature = "cloned-refs")]
+    #[cfg(feature = "unstable-refs")]
     impl<'a, R: ExternC, S: Cloned> OutPtr for &'a R
     where
         Self: ReprFamily<Kind = &'a S>,
@@ -130,14 +130,14 @@ disjoint_impls! {
     {
         type OutPtr = Self::CType;
     }
-    #[cfg(feature = "cloned-refs")]
+    #[cfg(feature = "unstable-refs")]
     impl<'a, R> OutPtr for &'a [R]
     where
         Self: ReprFamily<Kind = &'a [Opaque]>,
     {
         type OutPtr = CBoxedSlice<*const R>;
     }
-    #[cfg(feature = "cloned-refs")]
+    #[cfg(feature = "unstable-refs")]
     impl<'a, R: ExternC, S: Cloned> OutPtr for &'a [R]
     where
         Self: ReprFamily<Kind = &'a [S]>,
@@ -297,7 +297,7 @@ disjoint_impls! {
         }
     }
 
-    #[cfg(feature = "cloned-refs")]
+    #[cfg(feature = "unstable-refs")]
     impl<'itm, R: Encode + NonLocal + Clone, S: Cloned> OutPtrWrite for &'itm R
     where
         Self: ReprFamily<Kind = &'itm S>,
@@ -354,7 +354,7 @@ disjoint_impls! {
             }
         }
     }
-    #[cfg(all(feature = "alloc", feature = "cloned-refs"))]
+    #[cfg(all(feature = "alloc", feature = "unstable-refs"))]
     impl<'a, R> OutPtrWrite for &'a [R]
     where
         Self: ReprFamily<Kind = &'a [Opaque]>,
@@ -370,7 +370,7 @@ disjoint_impls! {
             }
         }
     }
-    #[cfg(feature = "cloned-refs")]
+    #[cfg(feature = "unstable-refs")]
     impl<'itm, R: Encode + NonLocal + Clone, S: Cloned> OutPtrWrite for &'itm [R]
     where
         Self: ReprFamily<Kind = &'itm [S]>,

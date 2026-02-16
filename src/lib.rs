@@ -16,7 +16,7 @@ pub use co3_derive::*;
 use derive_more::Display;
 use disjoint_impls::disjoint_impls;
 
-#[cfg(feature = "cloned-refs")]
+#[cfg(feature = "unstable-refs")]
 use crate::cloned::DecodeCloned;
 #[cfg(not(feature = "unsafe-optimizations"))]
 use crate::transmute::EncodeTransmuted;
@@ -44,7 +44,7 @@ use crate::{
 use crate::{slice::CBoxedSlice, vec::CVec};
 
 // TODO:
-//#[cfg(feature = "cloned-refs")]
+//#[cfg(feature = "unstable-refs")]
 mod cloned;
 pub mod external;
 pub mod handle;
@@ -119,7 +119,7 @@ disjoint_impls! {
         type CType = *mut Self;
     }
 
-    #[cfg(feature = "cloned-refs")]
+    #[cfg(feature = "unstable-refs")]
     impl<'a, R: ExternC, S: Cloned> ExternC for &'a R
     where
         Self: ReprFamily<Kind = &'a S>,
@@ -127,7 +127,7 @@ disjoint_impls! {
         type CType = *const R::CType;
     }
 
-    #[cfg(feature = "cloned-refs")]
+    #[cfg(feature = "unstable-refs")]
     impl<'a, R: ExternC, S: Cloned> ExternC for &'a mut R
     where
         Self: ReprFamily<Kind = &'a mut S>,
@@ -156,14 +156,14 @@ disjoint_impls! {
     {
         type CType = CSlice<R>;
     }
-    #[cfg(feature = "cloned-refs")]
+    #[cfg(feature = "unstable-refs")]
     impl<'a, R> ExternC for &'a [R]
     where
         Self: ReprFamily<Kind = &'a [Opaque]>,
     {
         type CType = CSlice<*const R>;
     }
-    #[cfg(feature = "cloned-refs")]
+    #[cfg(feature = "unstable-refs")]
     impl<'a, R: ExternC, S: Cloned> ExternC for &'a [R]
     where
         Self: ReprFamily<Kind = &'a [S]>,
@@ -184,14 +184,14 @@ disjoint_impls! {
     {
         type CType = CSliceMut<R>;
     }
-    #[cfg(feature = "cloned-refs")]
+    #[cfg(feature = "unstable-refs")]
     impl<'slice, R> ExternC for &'slice mut [R]
     where
         Self: ReprFamily<Kind = &'slice mut [Opaque]>,
     {
         type CType = CSliceMut<*mut R>;
     }
-    #[cfg(feature = "cloned-refs")]
+    #[cfg(feature = "unstable-refs")]
     impl<'slice, R: ExternC, S: Cloned> ExternC for &'slice mut [R]
     where
         Self: ReprFamily<Kind = &'slice mut [S]>,
@@ -370,7 +370,7 @@ disjoint_impls! {
         }
     }
 
-    #[cfg(feature = "cloned-refs")]
+    #[cfg(feature = "unstable-refs")]
     impl<'a, R: Encode + Clone, S: Cloned> Encode for &'a R
     where
         Self: ReprFamily<Kind = &'a S>,
@@ -385,7 +385,7 @@ disjoint_impls! {
         }
     }
 
-    #[cfg(feature = "cloned-refs")]
+    #[cfg(feature = "unstable-refs")]
     impl<'a, 'b, R: Encode + Decode<'b> + Clone + 'b, S: Cloned> Encode for &'a mut R
     where
         Self: ReprFamily<Kind = &'a mut S>,
@@ -445,7 +445,7 @@ disjoint_impls! {
             CSlice::from_slice(Some(self))
         }
     }
-    #[cfg(all(feature = "alloc", feature = "cloned-refs"))]
+    #[cfg(all(feature = "alloc", feature = "unstable-refs"))]
     impl<'slice, R> Encode for &'slice [R]
     where
         Self: ReprFamily<Kind = &'slice [Opaque]>,
@@ -460,7 +460,7 @@ disjoint_impls! {
             CSlice::from_slice(Some(store.0.insert(ctypes)))
         }
     }
-    #[cfg(all(feature = "alloc", feature = "cloned-refs"))]
+    #[cfg(all(feature = "alloc", feature = "unstable-refs"))]
     impl<'slice, R: Encode + Clone, S: Cloned> Encode for &'slice [R]
     where
         Self: ReprFamily<Kind = &'slice [S]>,
@@ -557,7 +557,7 @@ disjoint_impls! {
             CSliceMut::from_slice(Some(self))
         }
     }
-    #[cfg(all(feature = "alloc", feature = "cloned-refs"))]
+    #[cfg(all(feature = "alloc", feature = "unstable-refs"))]
     impl<'slice, R> Encode for &'slice mut [R]
     where
         Self: ReprFamily<Kind = &'slice mut [Opaque]>,
@@ -573,7 +573,7 @@ disjoint_impls! {
             CSliceMut::from_slice(Some(store.encoded.insert(ctypes)))
         }
     }
-    #[cfg(all(feature = "alloc", feature = "cloned-refs"))]
+    #[cfg(all(feature = "alloc", feature = "unstable-refs"))]
     impl<'slice, 'b, R: Encode + Decode<'b> + Clone + 'b, S: Cloned> Encode for &'slice mut [R]
     where
         Self: ReprFamily<Kind = &'slice mut [S]>,
@@ -932,7 +932,7 @@ disjoint_impls! {
         }
     }
 
-    #[cfg(feature = "cloned-refs")]
+    #[cfg(feature = "unstable-refs")]
     impl<'d, R: DecodeCloned<'d>, S: Cloned> Decode<'d> for &'d R
     where
         Self: ReprFamily<Kind = &'d S>,
@@ -948,7 +948,7 @@ disjoint_impls! {
         }
     }
 
-    #[cfg(feature = "cloned-refs")]
+    #[cfg(feature = "unstable-refs")]
     impl<'d, R: DecodeCloned<'d> + Encode, S: Cloned> Decode<'d> for &'d mut R
     where
         Self: ReprFamily<Kind = &'d mut S>,
@@ -1003,7 +1003,7 @@ disjoint_impls! {
             unsafe { source.into_rust() }
         }
     }
-    #[cfg(all(feature = "alloc", feature = "cloned-refs"))]
+    #[cfg(all(feature = "alloc", feature = "unstable-refs"))]
     impl<'slice, R: Clone> Decode<'slice> for &'slice [R]
     where
         Self: ReprFamily<Kind = &'slice [Opaque]>,
@@ -1026,7 +1026,7 @@ disjoint_impls! {
             Some(store)
         }
     }
-    #[cfg(all(feature = "alloc", feature = "cloned-refs"))]
+    #[cfg(all(feature = "alloc", feature = "unstable-refs"))]
     impl<'slice, R: DecodeCloned<'slice>, S: Cloned> Decode<'slice> for &'slice [R]
     where
         Self: ReprFamily<Kind = &'slice [S]>,
@@ -1078,7 +1078,7 @@ disjoint_impls! {
             unsafe { source.into_rust() }
         }
     }
-    #[cfg(all(feature = "alloc", feature = "cloned-refs"))]
+    #[cfg(all(feature = "alloc", feature = "unstable-refs"))]
     impl<'slice, R: Clone> Decode<'slice> for &'slice mut [R]
     where
         Self: ReprFamily<Kind = &'slice mut [Opaque]>,
@@ -1102,7 +1102,7 @@ disjoint_impls! {
             Some(values)
         }
     }
-    #[cfg(feature = "cloned-refs")]
+    #[cfg(feature = "unstable-refs")]
     impl<'slice, R: DecodeCloned<'slice> + Encode, S: Cloned> Decode<'slice> for &'slice mut [R]
     where
         Self: ReprFamily<Kind = &'slice mut [S]>,
@@ -1403,14 +1403,14 @@ impl<R, D: Store> Store for DecodeStoreSlicePair<R, D> {
 }
 
 #[cfg(feature = "alloc")]
-#[cfg(feature = "cloned-refs")]
+#[cfg(feature = "unstable-refs")]
 pub struct OpaqueMutSliceEncodeStore<'a, R> {
     encoded: Option<Box<[*mut R]>>,
     original: Option<&'a mut [R]>,
 }
 
 #[cfg(feature = "alloc")]
-#[cfg(feature = "cloned-refs")]
+#[cfg(feature = "unstable-refs")]
 impl<'a, R> Default for OpaqueMutSliceEncodeStore<'a, R> {
     fn default() -> Self {
         Self {
@@ -1421,7 +1421,7 @@ impl<'a, R> Default for OpaqueMutSliceEncodeStore<'a, R> {
 }
 
 #[cfg(feature = "alloc")]
-#[cfg(feature = "cloned-refs")]
+#[cfg(feature = "unstable-refs")]
 impl<'a, R> Store for OpaqueMutSliceEncodeStore<'a, R> {
     fn sync(self) -> Option<()> {
         let encoded = self.encoded.unwrap();
@@ -1442,13 +1442,13 @@ impl<'a, R> Store for OpaqueMutSliceEncodeStore<'a, R> {
     }
 }
 
-#[cfg(any(feature = "cloned-refs", feature = "owned-as-ref"))]
+#[cfg(any(feature = "unstable-refs", feature = "owned-as-ref"))]
 pub struct RefStore<R: Encode> {
     encoded: Option<R::CType>,
     encode_store: R::Store,
 }
 
-#[cfg(any(feature = "cloned-refs", feature = "owned-as-ref"))]
+#[cfg(any(feature = "unstable-refs", feature = "owned-as-ref"))]
 impl<R: Encode> Default for RefStore<R> {
     fn default() -> Self {
         Self {
@@ -1458,21 +1458,21 @@ impl<R: Encode> Default for RefStore<R> {
     }
 }
 
-#[cfg(any(feature = "cloned-refs", feature = "owned-as-ref"))]
+#[cfg(any(feature = "unstable-refs", feature = "owned-as-ref"))]
 impl<R: Encode> Store for RefStore<R> {
     fn sync(self) -> Option<()> {
         self.encode_store.sync()
     }
 }
 
-#[cfg(feature = "cloned-refs")]
+#[cfg(feature = "unstable-refs")]
 pub struct RefMutStore<'a, R: Encode> {
     encoded: Option<R::CType>,
     encode_store: R::Store,
     original: Option<&'a mut R>,
 }
 
-#[cfg(feature = "cloned-refs")]
+#[cfg(feature = "unstable-refs")]
 impl<'a, R: Encode> Default for RefMutStore<'a, R> {
     fn default() -> Self {
         Self {
@@ -1483,7 +1483,7 @@ impl<'a, R: Encode> Default for RefMutStore<'a, R> {
     }
 }
 
-#[cfg(feature = "cloned-refs")]
+#[cfg(feature = "unstable-refs")]
 impl<'a, 'b, R: Encode + Decode<'b> + 'b> Store for RefMutStore<'a, R> {
     fn sync(self) -> Option<()> {
         #[cfg(not(feature = "unsafe-optimizations"))]
@@ -1538,7 +1538,7 @@ impl<C, D: Store> Store for SliceStore<C, D> {
 }
 
 #[cfg(feature = "alloc")]
-#[cfg(feature = "cloned-refs")]
+#[cfg(feature = "unstable-refs")]
 pub struct MutSliceStore<'slice, R: Encode> {
     ctypes: Option<Box<[R::CType]>>,
     stores: Option<Box<[R::Store]>>,
@@ -1546,7 +1546,7 @@ pub struct MutSliceStore<'slice, R: Encode> {
 }
 
 #[cfg(feature = "alloc")]
-#[cfg(feature = "cloned-refs")]
+#[cfg(feature = "unstable-refs")]
 impl<'slice, R: Encode> Default for MutSliceStore<'slice, R> {
     fn default() -> Self {
         Self {
@@ -1558,7 +1558,7 @@ impl<'slice, R: Encode> Default for MutSliceStore<'slice, R> {
 }
 
 #[cfg(feature = "alloc")]
-#[cfg(feature = "cloned-refs")]
+#[cfg(feature = "unstable-refs")]
 impl<'slice, 'b, R: Encode + Decode<'b> + 'b> Store for MutSliceStore<'slice, R> {
     fn sync(self) -> Option<()> {
         const {
@@ -1640,14 +1640,14 @@ impl<D: Store, const N: usize> Store for ArraySyncStore<D, N> {
     }
 }
 
-#[cfg(feature = "cloned-refs")]
+#[cfg(feature = "unstable-refs")]
 pub struct RefMutDecodeStore<R: ExternC, DS> {
     value: Option<R>,
     decode_store: DS,
     source: Option<*mut R::CType>,
 }
 
-#[cfg(feature = "cloned-refs")]
+#[cfg(feature = "unstable-refs")]
 impl<R: ExternC, DS: Default> Default for RefMutDecodeStore<R, DS> {
     fn default() -> Self {
         Self {
@@ -1658,7 +1658,7 @@ impl<R: ExternC, DS: Default> Default for RefMutDecodeStore<R, DS> {
     }
 }
 
-#[cfg(feature = "cloned-refs")]
+#[cfg(feature = "unstable-refs")]
 impl<R: Encode, DS: Store> Store for RefMutDecodeStore<R, DS> {
     fn sync(self) -> Option<()> {
         let mut encode_store = Default::default();
@@ -1668,14 +1668,14 @@ impl<R: Encode, DS: Store> Store for RefMutDecodeStore<R, DS> {
     }
 }
 
-#[cfg(feature = "cloned-refs")]
+#[cfg(feature = "unstable-refs")]
 pub struct MutSliceDecodeStore<R: ExternC, DS> {
     values: Option<Box<[R]>>,
     stores: Option<Box<[DS]>>,
     source: Option<CSliceMut<R::CType>>,
 }
 
-#[cfg(feature = "cloned-refs")]
+#[cfg(feature = "unstable-refs")]
 impl<R: ExternC, DS: Default> Default for MutSliceDecodeStore<R, DS> {
     fn default() -> Self {
         Self {
@@ -1686,7 +1686,7 @@ impl<R: ExternC, DS: Default> Default for MutSliceDecodeStore<R, DS> {
     }
 }
 
-#[cfg(feature = "cloned-refs")]
+#[cfg(feature = "unstable-refs")]
 impl<R: Encode, DS: Store> Store for MutSliceDecodeStore<R, DS> {
     fn sync(self) -> Option<()> {
         let mut encode_store = Default::default();
@@ -1700,13 +1700,13 @@ impl<R: Encode, DS: Store> Store for MutSliceDecodeStore<R, DS> {
     }
 }
 
-#[cfg(all(feature = "alloc", feature = "cloned-refs"))]
+#[cfg(all(feature = "alloc", feature = "unstable-refs"))]
 pub struct OpaqueMutSliceDecodeStore<R> {
     values: Option<Box<[R]>>,
     source: Option<CSliceMut<*mut R>>,
 }
 
-#[cfg(all(feature = "alloc", feature = "cloned-refs"))]
+#[cfg(all(feature = "alloc", feature = "unstable-refs"))]
 impl<R> Default for OpaqueMutSliceDecodeStore<R> {
     fn default() -> Self {
         Self {
@@ -1716,7 +1716,7 @@ impl<R> Default for OpaqueMutSliceDecodeStore<R> {
     }
 }
 
-#[cfg(all(feature = "alloc", feature = "cloned-refs"))]
+#[cfg(all(feature = "alloc", feature = "unstable-refs"))]
 impl<R> Store for OpaqueMutSliceDecodeStore<R> {
     fn sync(self) -> Option<()> {
         let slice = unsafe { self.source.unwrap().into_rust().unwrap() };
@@ -2035,7 +2035,7 @@ mod tests {
     }
 
     #[test]
-    #[cfg(feature = "cloned-refs")]
+    #[cfg(feature = "unstable-refs")]
     fn encode_cloned_mut_ref() {
         use crate::option::COption;
 
@@ -2066,7 +2066,7 @@ mod tests {
     }
 
     #[test]
-    #[cfg(feature = "cloned-refs")]
+    #[cfg(feature = "unstable-refs")]
     fn decode_cloned_mut_ref() {
         use crate::{option::COption, slice::CSliceMut};
 
@@ -2094,7 +2094,7 @@ mod tests {
     }
 
     #[test]
-    #[cfg(all(feature = "alloc", feature = "cloned-refs"))]
+    #[cfg(all(feature = "alloc", feature = "unstable-refs"))]
     fn encode_opaque_ref_mut_slice() {
         #[derive(Clone, PartialEq, Eq)]
         struct OpaqueData {
@@ -2120,7 +2120,7 @@ mod tests {
     }
 
     #[test]
-    #[cfg(all(feature = "alloc", feature = "cloned-refs"))]
+    #[cfg(all(feature = "alloc", feature = "unstable-refs"))]
     fn decode_opaque_mut_ref() {
         use crate::slice::CSliceMut;
 
