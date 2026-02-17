@@ -2,6 +2,7 @@
 
 #[cfg(feature = "alloc")]
 use alloc::vec::Vec;
+#[cfg(feature = "alloc")]
 use core::mem::ManuallyDrop;
 
 use crate::ReprC;

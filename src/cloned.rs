@@ -226,7 +226,7 @@ disjoint_impls! {
             store: &'itm mut Self::Store,
         ) -> Option<Self> {
             unsafe { ManuallyDrop::<Self>::decode(source, store) }
-                .map(CloneFromWrapped::clone_from_wrapped(wrapped))
+                .map(CloneFromWrapped::clone_from_wrapped)
         }
     }
     #[cfg(feature = "alloc")]
@@ -284,87 +284,63 @@ disjoint_impls! {
             source: Self::CType,
             store: &'itm mut Self::Store,
         ) -> Option<Self> {
-            unsafe {
-                decode_cloned_array(source, store, |item, substore| {
-                    R::decode_cloned(item, substore)
-                })
-            }
+            decode_cloned_array(source, store, |item, substore| {
+                unsafe { R::decode_cloned(item, substore) }
+            })
         }
     }
 
-    //impl<'d, R: ReprFamily<Kind = Transmuted> + 'd> DecodeCloned<'d> for Option<R>
-    //where
-    //    Self: ReprFamily<Kind = Option<WithoutNiche>>,
-    //{
-    //}
-    impl<'d, R: ReprFamily<Kind = Robust> + ReprC + 'd> DecodeCloned<'d> for Option<R>
-    where
-        Self: ReprFamily<Kind = Option<WithoutNiche>>,
-    {
-    }
-    impl<'d, R: ReprFamily<Kind: Cloned> + 'd> DecodeCloned<'d> for Option<R>
+    impl<'d, R: ReprFamily<Kind = Transmuted>> DecodeCloned<'d> for Option<R>
     where
         Self: ReprFamily<Kind = Option<WithoutNiche>> + Decode<'d>,
     {
+        // FIXME: This should be handled further for owned transmuted types
+    }
+    impl<'d, R: ReprFamily<Kind = Robust>> DecodeCloned<'d> for Option<R>
+    where
+        Self: ReprFamily<Kind = Option<WithoutNiche>> + Decode<'d>,
+    {
+    }
+    impl<'d, R: ReprFamily<Kind: Cloned> + DecodeCloned<'d>> DecodeCloned<'d> for Option<R>
+    where
+        Self: ReprFamily<Kind = Option<WithoutNiche>>
+    {
         #[inline(always)]
         unsafe fn decode_cloned<'itm: 'd>(
             source: Self::CType,
             store: &'itm mut Self::Store,
         ) -> Option<Self> {
-            unimplemented!()
+            decode_cloned_option_without_niche(source, store, |source, store| unsafe {
+                R::decode_cloned(source, store)
+            })
         }
     }
 
-    //impl<'d, R: ReprFamily<Kind = Transmuted> + 'd> DecodeCloned<'d> for Option<R>
-    //where
-    //    Self: ReprFamily<Kind = Option<WithCustomNiche>> + Decode<'d>,
-    //{
-    //    #[inline(always)]
-    //    unsafe fn decode_cloned<'itm: 'd>(
-    //        source: Self::CType,
-    //        store: &'itm mut Self::Store,
-    //    ) -> Option<Self> {
-    //        unimplemented!()
-    //    }
-    //}
-    #[cfg(feature = "alloc")]
+    impl<'d, R: ReprFamily<Kind = Transmuted>> DecodeCloned<'d> for Option<R>
+    where
+        Self: ReprFamily<Kind = Option<WithCustomNiche>> + Decode<'d>,
+    {
+        // FIXME: This should be handled further for owned transmuted types
+    }
     impl<'d, R: ReprFamily<Kind = Opaque>> DecodeCloned<'d> for Option<R>
     where
-        Self: ReprFamily<Kind = Option<WithCustomNiche>> + Decode<'d>,
+        Self: ReprFamily<Kind = Option<WithCustomNiche>> + Decode<'d>
     {
-        #[inline(always)]
-        unsafe fn decode_cloned<'itm: 'd>(
-            source: Self::CType,
-            store: &'itm mut Self::Store,
-        ) -> Option<Self> {
-            unimplemented!()
-        }
     }
-    impl<'d, R: ReprFamily<Kind: Cloned>> DecodeCloned<'d> for Option<R>
+    impl<'d, R: ReprFamily<Kind: Cloned> + Niche<CType: PartialEq> + DecodeCloned<'d>> DecodeCloned<'d> for Option<R>
     where
-        Self: ReprFamily<Kind = Option<WithCustomNiche>> + Decode<'d>,
+        Self: ReprFamily<Kind = Option<WithCustomNiche>>
     {
         #[inline(always)]
         unsafe fn decode_cloned<'itm: 'd>(
             source: Self::CType,
             store: &'itm mut Self::Store,
         ) -> Option<Self> {
-            unimplemented!()
+            decode_cloned_option_with_custom_niche(source, store, R::NICHE_VALUE, |source, store| unsafe {
+                R::decode_cloned(source, store)
+            })
         }
     }
-    // TODO: Not sure this situation is possible to have
-    //impl<'d, R: ReprFamily<Kind: Cloned> + NicheFamily<Kind = WithStableNiche>> DecodeCloned<'d> for Option<R>
-    //where
-    //    Self: ReprFamily<Kind = Option<WithCustomNiche>> + Decode<'d>,
-    //{
-    //    #[inline(always)]
-    //    unsafe fn decode_cloned<'itm: 'd>(
-    //        source: Self::CType,
-    //        store: &'itm mut Self::Store,
-    //    ) -> Option<Self> {
-    //        unimplemented!()
-    //    }
-    //}
 }
 
 #[cfg(feature = "alloc")]
@@ -410,7 +386,7 @@ where
         .collect()
 }
 
-pub(super) unsafe fn decode_cloned_array<'d, R, C: ReprC, S: Default, F, const N: usize>(
+pub(super) fn decode_cloned_array<'d, R, C: ReprC, S: Default, F, const N: usize>(
     source: [C; N],
     store: &'d mut ArraySyncStore<S, N>,
     mut decoder: F,
@@ -421,13 +397,41 @@ where
     assert_arr_has_non_zero_len::<N>();
     let mut stores = store.0.iter_mut();
 
-    let decoded = source.map(|item|
-        decoder(item, stores.next().unwrap())
-    );
+    let decoded = source.map(|item| decoder(item, stores.next().unwrap()));
 
     if decoded.iter().any(Option::is_none) {
         return None;
     }
 
     Some(decoded.map(|item| unsafe { item.unwrap_unchecked() }))
+}
+
+pub(super) fn decode_cloned_option_without_niche<'d, R, C: ReprC, S, F>(
+    source: COption<C>,
+    store: &'d mut S,
+    decoder: F,
+) -> Option<Option<R>>
+where
+    F: FnOnce(C, &'d mut S) -> Option<R>,
+{
+    match source.try_into().ok()? {
+        Some(source) => decoder(source, store).map(Some),
+        None => Some(None),
+    }
+}
+
+pub(super) fn decode_cloned_option_with_custom_niche<'d, R, C: PartialEq, S, F>(
+    source: C,
+    store: &'d mut S,
+    niche: C,
+    decoder: F,
+) -> Option<Option<R>>
+where
+    F: FnOnce(C, &'d mut S) -> Option<R>,
+{
+    if source == niche {
+        return Some(None);
+    }
+
+    decoder(source, store).map(Some)
 }

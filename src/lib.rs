@@ -21,9 +21,13 @@ use crate::cloned::DecodeCloned;
 #[cfg(not(feature = "unsafe-optimizations"))]
 use crate::transmute::EncodeTransmuted;
 use crate::{
-    cloned::decode_cloned_array,
+    cloned::{
+        decode_cloned_array, decode_cloned_option_with_custom_niche,
+        decode_cloned_option_without_niche,
+    },
     ir::{Cloned, NonRobust, Opaque, ReprFamily, Robust, Transmuted},
     niche::{Niche, NicheFamily, StableNiche, WithCustomNiche, WithNiche, WithoutNiche},
+    option::COption,
     slice::{CSlice, CSliceMut},
     transmute::{
         CheckedTransmute, transmute_from_target, transmute_from_target_ref_slice,
@@ -43,9 +47,7 @@ use crate::{
 #[cfg(not(feature = "owned-as-ref"))]
 use crate::{slice::CBoxedSlice, vec::CVec};
 
-// TODO:
-//#[cfg(feature = "unstable-refs")]
-mod cloned;
+pub mod cloned;
 pub mod external;
 pub mod handle;
 pub mod ir;
@@ -59,8 +61,6 @@ mod std_impls;
 pub mod transmute;
 pub mod tuple;
 pub mod vec;
-
-use option::COption;
 
 #[cfg(feature = "alloc")]
 type BoxedSliceCType<C> = CSliceMut<C>;
@@ -518,12 +518,19 @@ disjoint_impls! {
             Encode::encode(transmute_into_target_slice_mut(self), &mut ())
         }
     }
-    #[cfg(feature = "alloc")]
+    #[cfg(any(
+        feature = "unsafe-optimizations",
+        all(feature = "alloc", feature = "unstable-refs")
+    ))]
     impl<'slice, R: CheckedTransmute<Target: ReprFamily<Kind = Robust> + ReprC + 'slice> + NicheFamily<Kind: WithNiche>> Encode for &'slice mut [R]
     where
         Self: ReprFamily<Kind = &'slice mut [Transmuted]>,
     {
-        #[cfg(not(feature = "unsafe-optimizations"))]
+        #[cfg(all(
+            feature = "alloc",
+            feature = "unstable-refs",
+            not(feature = "unsafe-optimizations")
+        ))]
         type Store = SliceMutTransmuteStore<'slice, R>;
         #[cfg(feature = "unsafe-optimizations")]
         type Store = ();
@@ -532,7 +539,11 @@ disjoint_impls! {
         where
             Self: 'itm,
         {
-            #[cfg(not(feature = "unsafe-optimizations"))]
+            #[cfg(all(
+                feature = "alloc",
+                feature = "unstable-refs",
+                not(feature = "unsafe-optimizations")
+            ))]
             let ctypes: &mut [_] = {
                 let original: &mut [R] = store.original.insert(self);
                 let robust = transmute_into_target_slice_mut(original);
@@ -1268,7 +1279,7 @@ disjoint_impls! {
         type Store = ArraySyncStore<R::Store, N>;
 
         unsafe fn decode<'itm: 'd>(source: Self::CType, store: &'itm mut Self::Store) -> Option<Self> {
-            unsafe { decode_cloned_array(source, store, |item, substore| R::decode(item, substore)) }
+            decode_cloned_array(source, store, |item, substore| unsafe { R::decode(item, substore) })
         }
     }
 
@@ -1279,11 +1290,9 @@ disjoint_impls! {
         type Store = <R as Decode<'d>>::Store;
 
         unsafe fn decode<'itm: 'd>(source: Self::CType, store: &'itm mut Self::Store) -> Option<Self> {
-            let option = TryInto::<Option<_>>::try_into(source).ok()?;
-            match option {
-                Some(payload) => unsafe { R::decode(payload, store) }.map(Some),
-                None => Some(None),
-            }
+            decode_cloned_option_without_niche(source, store, |source, store| unsafe {
+                R::decode(source, store)
+            })
         }
     }
     impl<'d, R: Niche<CType: PartialEq> + Decode<'d>> Decode<'d> for Option<R>
@@ -1293,11 +1302,9 @@ disjoint_impls! {
         type Store = <R as Decode<'d>>::Store;
 
         unsafe fn decode<'itm: 'd>(source: Self::CType, store: &'itm mut Self::Store) -> Option<Self> {
-            if source == R::NICHE_VALUE {
-                return Some(None);
-            }
-
-            unsafe { R::decode(source, store) }.map(Some)
+            decode_cloned_option_with_custom_niche(source, store, R::NICHE_VALUE, |source, store| unsafe {
+                R::decode(source, store)
+            })
         }
     }
 }

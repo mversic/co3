@@ -1,108 +1,180 @@
-# IR marker types:
+# Architecture
 
-1. Transparent (depends on `Transmute` trait)
-- type that recursively delegates to the `Transmute::Target` type through transmutation
-- `Transmute::Target` takes the ownership and must know how to handle conversion further
+## 1. Mental Model
 
-2. Box<Robust> (controlled through `owned-as-ref` feature flag)
-- `Robust` types that carry ownership, i.e. heap-allocated types such as `Box<T>` and `Vec<T>`
-- if enabled, `owned-as-ref` feature converts owned values into borrowed before handing them out
+Conversion is built from four layers:
 
-3. Robust (depends on `ReprC` trait)
-- types that have a stable layout with no trap representations
-- these types don't require conversion into C-compatible types
+1. **Family classification** (`ReprFamily`): decide internal representation (IR) of the Rust type.
+2. **ABI mapping** (`ExternC`): map the Rust type into a robust `repr(C)` type based on the IR family.
+3. **Value conversion** (`Encode`/`Decode`): convert values to and from that robust `repr(C)` type.
+4. **Post-call writeback** (`Store::sync`): apply deferred updates for mutable reference paths.
 
-4. Opaque (always carries ownership)
-- types that are not expected to be read on the other side of the FFI boundary
-- opaque types are always heap-allocated and handed out as pointers with ownership
+## 2. Representation Family
 
-5. Cloned (marker trait, not a marker type)
-- types that are not transmutable, i.e. types that execute some form of conversion logic
-- types implementing `Cloned` are always first cloned, ergo the name of the trait
+Representation family categorization is done through the following trait:
 
-# Derivative marker types:
-* &Transmuted              => Transmuted(Target = &R::Target)        |  DELEGATED |
-* &Robust                  => Transmuted(Target = *const R)          |  DELEGATED |
-* &Opaque                  => Transmuted(Target = *const R)          |  DELEGATED |
-* &S where S: Cloned                                                  |   Cloned   |
+```rs
+trait ReprFamily {
+    type Kind;
+}
+```
 
-* &mut Transmuted          => Transmuted(Target = &mut R::Target)    |  DELEGATED |
-* &mut Robust              => Transmuted(Target = *mut R)            |  DELEGATED |
-* &mut Opaque              => Transmuted(Target = *mut R)            |  DELEGATED |
-* DOESN'T EXIST
+where `ReprFamily::Kind` is assigned one of the categories below through a marker of the same name:
 
-* &[Transmuted]                                                      |   Cloned
-* &[Robust]                                                           |   Cloned
-* &[Opaque]                                                           |   Cloned
-* &[S] where S: Cloned                                                |   Cloned   |
+1. **`Robust`** (marker type)
+- Types with stable C layout and no trap representations (e.g. `u32`).
+- Usually map directly to themselves in ABI (no conversion necessary).
 
-* &mut [Transmuted]
-* &mut [Robust]            => &mut [Transmuted]
-* DOESN'T EXIST
-* DOESN'T EXIST
-* DOESN'T EXIST
+2. **`Transmuted`** (marker type)
+- Types that can be safely transmuted into a single chosen target type.
+- IR/ABI mapping and value conversion continue through the target type.
 
-* Box<Transmuted>          => Transmuted(Target = Box<R::Target>)    |  DELEGATED |
-* Box<Robust>                                                         |     Not    |
-* Box<Opaque>              => Transmuted(Target = *mut R)            |  DELEGATED |
-* Box<S> where S: Cloned                                              |   Cloned   |
+3. **`Opaque`** (marker type)
+- Types passed across FFI as opaque pointers, derived from a `Box`ed value.
+- Consuming side SHOULD NOT rely on the layout of the referent or access its value.
 
-* Box<[Transmuted]>
-* Box<[Robust]>
-* Box<[Opaque]>
-* Box<[S]> where S: Cloned
+4. **`Cloned`** (marker trait)
+- Fallback for types that don't belong to any of the previous IR type families.
+- Conversion of references/slices piggybacks on the referent and incurs cloning.
 
-* Vec<Transmuted>
-* Vec<Robust>
-* Vec<Opaque>
-* Vec<S> where S: Cloned
+### 2.1 Composite Types
 
-* [Transmuted; N]          => Transmuted(Target = [R::Target; N])    |
-* [Robust; N]              => Robust                                  |
-* [Opaque; N]                                                         |   Cloned   |
-* [S; N] where S: Cloned                                              |   Cloned   |
+The tables below specifies how composite types derive `ReprFamily::Kind`:
 
-# Niche IR marker types:
-1. Transmuted
-- types that are Transmuted and have a stable niche value
-2. Robust
-- types that don't have a niche value
-3. Opaque
-- opaque types
-4. Cloned
-- types that have a niche value, but not a stable one
+#### `&R`
 
-# Niche::IR marker types
+| R::Kind | Self::Kind |
+| --- | --- |
+| `Transmuted` | `Transmuted` |
+| `Robust` | `Transmuted` |
+| `Opaque` | `Transmuted` |
+| `Cloned` | `&R::Kind`[1] |
 
-1. WithStableNiche (depends on `Transmute` trait)
-- has a single stable (compiler guaranteed) niche value
+#### `&mut R`
 
-2. WithCustomNiche
-- has a custom (defined by this crate) niche value
+| R::Kind | Self::Kind |
+| --- | --- |
+| `Transmuted` | `Transmuted`[2] |
+| `Robust` | `Transmuted` |
+| `Opaque` | `Transmuted` |
+| `Cloned` | `&mut R::Kind`[1] |
 
-3. Robust (depends on `ReprC` trait)
-- has no trap representations and consequently no niche value
+#### `Box<R>`
 
-* Option<Transmuted, Transmuted>         =>                           |    Not     |
-* Option<Transmuted, Robust>             => Option<Robust>            |   Cloned   |
-* Option<Transmuted, S> where S: Cloned  => Option<S>                 |   Cloned   |
-* Option<Robust>                         =>                           |   Cloned   |
-* Option<Opaque>                         => Option<Cloned>            |    Not     |
-* Option<S, Robust> where S: Cloned      => Option<Robust>            |   Cloned   |
-* Option<S, S> where S: Cloned           =>                           |   Cloned   |
+| R::Kind | Self::Kind |
+| --- | --- |
+| `Transmuted` | `Transmuted` |
+| `Robust` | `Box<Robust>` |
+| `Opaque` | `Transmuted` |
+| `Cloned` | `Box<R::Kind>` |
 
-* &Option<Transmuted, Transmuted>        => Option<Transmuted>       |  DELEGATED |
-* &mut Option<Transmuted, Transmuted>    => Option<Transmuted>       |  DELEGATED |
-* Box<Option<Transmuted, Transmuted>>    => Option<Transmuted>       |  DELEGATED |
-* [Option<Transmuted, Transmuted>; N]    => Option<Transmuted>       |  DELEGATED |
+#### `&[R]`
 
-# Derivative niche marker types:
-// TODO
+| R::Kind | Self::Kind |
+| --- | --- |
+| `Transmuted` | `&[Transmuted]` |
+| `Robust` | `&[Robust]` |
+| `Opaque` | `&[Opaque]`[1] |
+| `Cloned` | `&[R::Kind]`[1] |
 
-// TODO: There is special types like
-ExternRef
-ExternRefMut
+#### `&mut [R]`
 
-# Good Materials
+| R::Kind | Self::Kind |
+| --- | --- |
+| `Transmuted` | `&mut [Transmuted]` |
+| `Robust` | `&mut [Robust]` |
+| `Opaque` | `&mut [Opaque]`[1] |
+| `Cloned` | `&mut [R::Kind]`[1] |
 
-* https://faultlore.com/blah/rust-layouts-and-abis/
+#### `Box<[R]>`
+
+| R::Kind | Self::Kind |
+| --- | --- |
+| `Transmuted` | `Box<[Transmuted]>` |
+| `Robust` | `Box<[Robust]>` |
+| `Opaque` | `Box<[Opaque]>` |
+| `Cloned` | `Box<[R::Kind]>` |
+
+#### `Vec<R>`
+
+| R::Kind | Self::Kind |
+| --- | --- |
+| `Transmuted` | `Vec<Transmuted>` |
+| `Robust` | `Vec<Robust>` |
+| `Opaque` | `Vec<Opaque>` |
+| `Cloned` | `Vec<R::Kind>` |
+
+#### `[R; N]`
+
+| R::Kind | Self::Kind |
+| --- | --- |
+| `Transmuted` | `Transmuted` |
+| `Robust` | `Robust` |
+| `Opaque` | `[Opaque; N]` |
+| `Cloned` | `[R::Kind; N]` |
+
+#### `Option<R>`
+
+| R::Kind | \<R as NicheFamily\>::Kind | Self::Kind |
+| --- | --- | --- |
+| `Transmuted` | `WithoutNiche` | `Option<WithoutNiche>` |
+| `Transmuted` | `WithStableNiche` | `Transmuted` |
+| `Transmuted` | `WithCustomNiche` | `Option<WithCustomNiche>` |
+| `Robust` | `-` | `Option<WithoutNiche>` |
+| `Opaque` | `-` | `Option<WithCustomNiche>` |
+| `Cloned` | `WithoutNiche` | `Option<WithoutNiche>` |
+| `Cloned` | `WithCustomNiche` | `Option<WithCustomNiche>` |
+
+- `[1]` - Conditional on `unstable-refs` feature.
+- `[2]` - For non-robust `R`, `Encode` path of `&mut R` is conditional on `unstable-refs` or `unsafe-optimizations` feature.
+
+## 3. Niche Family
+
+Niche family categorization is done through the following trait:
+
+```rs
+trait NicheFamily {
+    type Kind;
+}
+```
+
+where `NicheFamily::Kind` is assigned one of the categories below through a marker of the same name:
+
+1. **`WithStableNiche`** (marker type)
+- Type has a compiler-guaranteed niche value (refer to [doc](https://doc.rust-lang.org/std/option/#representation)).
+
+2. **`WithCustomNiche`** (marker type)
+- Type has a `crate`-defined sentinel niche value and `Option<T>` is encoded as `T::CType`.
+
+3. **`WithoutNiche`** (marker type)
+- Type has no niche value and `Option<T>` must be encoded as a 2-tuple with a discriminant.
+
+### 3.1 Composite Types
+
+The tables below specifies how composite types derive `NicheFamily::Kind`:
+
+| Self | `Self::Kind` |
+| --- | --- |
+| `&R` | `WithStableNiche` |
+| `&mut R` | `WithStableNiche` |
+| `Box<R>` | `WithStableNiche` |
+| `&[R]` | `WithCustomNiche` |
+| `&mut [R]` | `WithCustomNiche` |
+| `Box<[R]>` | `WithCustomNiche` |
+| `Vec<R>` | `WithCustomNiche` |
+
+#### `[R; N]`
+
+| `R::NicheFamily::Kind` | `Self::Kind` |
+| --- | --- |
+| `WithStableNiche` | `WithCustomNiche` |
+| `WithCustomNiche` | `WithCustomNiche` |
+| `WithoutNiche` | `WithoutNiche` |
+
+#### `Option<R>`
+
+| `R::NicheFamily::Kind` | `Self::Kind` |
+| --- | --- |
+| `WithoutNiche` | `WithCustomNiche` |
+| `WithStableNiche` | `WithoutNiche` |
+| `WithCustomNiche` | `WithCustomNiche` |

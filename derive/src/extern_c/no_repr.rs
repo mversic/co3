@@ -5,7 +5,7 @@ use darling::{
     util::SpannedValue,
 };
 use proc_macro2::{Span, TokenStream};
-use quote::quote;
+use quote::{format_ident, quote};
 use syn::{Ident, parse_quote};
 
 use crate::{
@@ -68,8 +68,8 @@ pub(super) fn derive_no_repr_struct(
         .collect::<Vec<_>>();
 
     let basic_impls = gen_ir_impl(name, &repr_c_struct_name, &field_types, generics);
-    let (rust_store, ffi_store, store_init) =
-        gen_store_types(fields.len(), field_rust_stores, field_ffi_stores);
+    let (store_defs, rust_store, ffi_store) =
+        gen_custom_store_types(name, generics, &field_rust_stores, &field_ffi_stores);
 
     let encode_impl = match &fields.style {
         Style::Struct => {
@@ -128,21 +128,45 @@ pub(super) fn derive_no_repr_struct(
     let params = generics.params.clone();
     let encode_bounds = gen_encode_bounds(&field_types, generics);
     let decode_bounds = gen_decode_bounds(&field_types, generics);
+    let decode_cloned_bounds = gen_decode_cloned_bounds(&field_types);
     let niche_ir = gen_struct_niche_ir(name, generics, fields);
     let non_locality =
         (!local).then(|| gen_out_ptr_impls(name, generics, fields.iter().map(|f| f.ty.clone())));
+
+    let decode_cloned_impl = match &fields.style {
+        Style::Struct => {
+            let field_names: Vec<_> = fields.iter().filter_map(|f| f.ident.as_ref()).collect();
+            let field_indices = (0..field_names.len()).map(syn::Index::from);
+
+            quote! {
+                Some(Self {
+                    #(#field_names: unsafe { co3::DecodeCloned::decode_cloned(source.#field_names, &mut store.#field_indices)? }),*
+                })
+            }
+        }
+        Style::Tuple => {
+            let field_indices = (0..fields.len()).map(syn::Index::from);
+
+            quote! {
+                Some(Self(
+                    #(unsafe { co3::DecodeCloned::decode_cloned(source.#field_indices, &mut store.#field_indices)? }),*
+                ))
+            }
+        }
+        Style::Unit => unreachable!("ZSTs are not FFI safe"),
+    };
 
     quote! {
         #repr_c_struct
 
         #basic_impls
+        #store_defs
         #niche_ir
 
         impl #impl_generics co3::Encode for #name #ty_generics where #encode_bounds #predicates {
             type Store = #rust_store;
 
             fn encode<'_išč>(self, store: &'_išč mut Self::Store) -> <Self as co3::ExternC>::CType where Self: '_išč {
-                #store_init
                 #encode_impl
             }
         }
@@ -151,8 +175,12 @@ pub(super) fn derive_no_repr_struct(
             type Store = #ffi_store;
 
             unsafe fn decode<'_išč: '_dšč>(source: <Self as co3::ExternC>::CType, store: &'_išč mut Self::Store) -> Option<Self> {
-                #store_init
                 #decode_impl
+            }
+        }
+        impl<'_dšč, #params> co3::DecodeCloned<'_dšč> for #name #ty_generics where #repr_c_struct_name #ty_generics: '_dšč, #decode_cloned_bounds #predicates {
+            unsafe fn decode_cloned<'_išč: '_dšč>(source: <Self as co3::ExternC>::CType, store: &'_išč mut Self::Store) -> Option<Self> {
+                #decode_cloned_impl
             }
         }
 
@@ -209,8 +237,12 @@ pub(super) fn derive_no_repr_data_enum(
         }
     }
     let basic_impls = gen_ir_impl(enum_name, &repr_c_enum_name, &field_types, generics);
-    let (rust_store, ffi_store, store_init) =
-        gen_store_types(variants.len(), variant_rust_stores, variant_ffi_stores);
+    let (store_defs, rust_store, ffi_store) = gen_custom_store_types(
+        enum_name,
+        generics,
+        &variant_rust_stores,
+        &variant_ffi_stores,
+    );
 
     let variants_into_ffi = variants.iter().enumerate().map(|(i, variant)| {
         let idx = TokenStream::from_str(&format!("{i}")).expect("Valid");
@@ -257,6 +289,23 @@ pub(super) fn derive_no_repr_data_enum(
             },
         )
     });
+    let variants_decode_cloned = variants.iter().enumerate().map(|(i, variant)| {
+        let idx = TokenStream::from_str(&format!("{i}")).expect("Valid");
+        let variant_name = &variant.ident;
+
+        variant_mapper(
+            variant,
+            || quote! { #idx => Some(Self::#variant_name) },
+            |_| {
+                quote! {
+                    #idx => {
+                        let value = unsafe { source.#variant_name.value };
+                        unsafe { co3::DecodeCloned::decode_cloned(value, &mut store.#idx).map(Self::#variant_name) }
+                    }
+                }
+            },
+        )
+    });
 
     let non_locality = (!local).then(|| {
         gen_out_ptr_impls(
@@ -282,19 +331,19 @@ pub(super) fn derive_no_repr_data_enum(
 
     let encode_bounds = gen_encode_bounds(&field_types, generics);
     let decode_bounds = gen_decode_bounds(&field_types, generics);
+    let decode_cloned_bounds = gen_decode_cloned_bounds(&field_types);
 
     quote! {
         #repr_c_enum
 
         #basic_impls
+        #store_defs
         #niche_ir
 
         impl #impl_generics co3::Encode for #enum_name #ty_generics where #encode_bounds #predicates {
             type Store = #rust_store;
 
             fn encode<'_išč>(self, store: &'_išč mut Self::Store) -> <Self as co3::ExternC>::CType where Self: '_išč {
-                #store_init
-
                 match self {
                     #(#variants_into_ffi,)*
                 }
@@ -305,10 +354,16 @@ pub(super) fn derive_no_repr_data_enum(
             type Store = #ffi_store;
 
             unsafe fn decode<'_išč: '_dšč>(source: <Self as co3::ExternC>::CType, store: &'_išč mut Self::Store) -> Option<Self> {
-                #store_init
-
                 match #decode_match_expr {
                     #(#variants_decode,)*
+                    _ => None
+                }
+            }
+        }
+        impl<'_dšč, #params> co3::DecodeCloned<'_dšč> for #enum_name #ty_generics where #repr_c_enum_name #ty_generics: '_dšč, #decode_cloned_bounds #predicates {
+            unsafe fn decode_cloned<'_išč: '_dšč>(source: <Self as co3::ExternC>::CType, store: &'_išč mut Self::Store) -> Option<Self> {
+                match #decode_match_expr {
+                    #(#variants_decode_cloned,)*
                     _ => None
                 }
             }
@@ -376,6 +431,7 @@ pub(super) fn derive_no_repr_fieldless_enum(
                 }
             }
         }
+        impl<'_dšč> co3::DecodeCloned<'_dšč> for #enum_name {}
 
         #niche_ir
         #non_locality
@@ -468,24 +524,98 @@ pub fn gen_ir_impl(
     }
 }
 
-pub fn gen_store_types(
-    count: usize,
-    rust_stores: Vec<TokenStream>,
-    ffi_stores: Vec<TokenStream>,
+pub fn gen_custom_store_types(
+    name: &Ident,
+    generics: &syn::Generics,
+    encode_stores: &[TokenStream],
+    decode_stores: &[TokenStream],
 ) -> (TokenStream, TokenStream, TokenStream) {
-    if count > 12 {
-        (
-            quote! { Option<(#( #rust_stores, )*)> },
-            quote! { Option<(#( #ffi_stores, )*)> },
-            quote! { let store = store.insert(Default::default()); },
-        )
-    } else {
-        (
-            quote! { (#( #rust_stores, )*) },
-            quote! { (#( #ffi_stores, )*) },
-            quote! {},
-        )
-    }
+    let (impl_generics, ty_generics, where_clause) = generics.split_for_impl();
+
+    let params = generics.params.iter().collect::<Vec<_>>();
+    let encode_name = format_ident!("{}EncodeStore", name);
+    let decode_name = format_ident!("{}DecodeStore", name);
+
+    let predicates = where_clause
+        .as_ref()
+        .map(|where_clause| &where_clause.predicates);
+
+    let ty_args = generics
+        .params
+        .iter()
+        .map(|param| match param {
+            syn::GenericParam::Type(param) => {
+                let ident = &param.ident;
+                quote! { #ident }
+            }
+            syn::GenericParam::Lifetime(param) => {
+                let lifetime = &param.lifetime;
+                quote! { #lifetime }
+            }
+            syn::GenericParam::Const(param) => {
+                let ident = &param.ident;
+                quote! { #ident }
+            }
+        })
+        .collect::<Vec<_>>();
+
+    let enc_idxs = (0..encode_stores.len())
+        .map(syn::Index::from)
+        .collect::<Vec<_>>();
+    let dec_idxs = (0..decode_stores.len())
+        .map(syn::Index::from)
+        .collect::<Vec<_>>();
+
+    let stores = quote! {
+        pub struct #encode_name #impl_generics (#(pub #encode_stores),*) #where_clause;
+        pub struct #decode_name<'_dšč #(, #params)*>(#(pub #decode_stores),*) #where_clause;
+
+        impl #impl_generics Default for #encode_name #ty_generics
+        where
+            #(#encode_stores: Default,)*
+            #predicates
+        {
+            fn default() -> Self {
+                Self(#(<#encode_stores as Default>::default()),*)
+            }
+        }
+        impl<'_dšč #(, #params)*> Default for #decode_name<'_dšč #(, #ty_args)*>
+        where
+            #(#decode_stores: Default,)*
+            #predicates
+        {
+            fn default() -> Self {
+                Self(#(<#decode_stores as Default>::default()),*)
+            }
+        }
+
+        impl #impl_generics co3::Store for #encode_name #ty_generics
+        where
+            #(#encode_stores: co3::Store,)*
+            #predicates
+        {
+            fn sync(self) -> Option<()> {
+                #(self.#enc_idxs.sync()?;)*
+                Some(())
+            }
+        }
+        impl<'_dšč #(, #params)*> co3::Store for #decode_name<'_dšč #(, #ty_args)*>
+        where
+            #(#decode_stores: co3::Store,)*
+            #predicates
+        {
+            fn sync(self) -> Option<()> {
+                #(self.#dec_idxs.sync()?;)*
+                Some(())
+            }
+        }
+    };
+
+    (
+        stores,
+        quote! { #encode_name #ty_generics },
+        quote! { #decode_name<'_dšč #(, #ty_args)*> },
+    )
 }
 
 pub(super) fn variant_mapper<T: Sized, F0: FnOnce() -> T, F1: FnOnce(&FfiTypeField) -> T>(
@@ -514,4 +644,8 @@ fn gen_decode_bounds(fields: &[&syn::Type], generics: &syn::Generics) -> TokenSt
         .filter(|ty| is_type_parameterized(ty, generics));
 
     quote! { #(#parameterized_field_types: co3::Decode<'_dšč>,)* }
+}
+
+fn gen_decode_cloned_bounds(fields: &[&syn::Type]) -> TokenStream {
+    quote! { #(#fields: co3::DecodeCloned<'_dšč>,)* }
 }
