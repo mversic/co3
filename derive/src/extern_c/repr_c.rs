@@ -4,10 +4,7 @@ use quote::{ToTokens, quote};
 use syn::{Ident, visit::Visit};
 
 use crate::{
-    attr_parse::{
-        derive::{Derive, RustcDerive},
-        repr::ReprPrimitive,
-    },
+    attr_parse::repr::ReprPrimitive,
     extern_c::{
         FfiTypeField, FfiTypeVariant, is_type_parameterized,
         niche::{gen_enum_niche_ir, gen_struct_niche_ir},
@@ -17,7 +14,6 @@ use crate::{
 
 pub(super) fn derive_repr_c_struct(
     struct_name: &Ident,
-    derives: &[Derive],
     generics: &syn::Generics,
     fields: &darling::ast::Fields<FfiTypeField>,
 ) -> TokenStream {
@@ -53,7 +49,6 @@ pub(super) fn derive_repr_c_struct(
 
     let transparent_impl = gen_transparent_impl(
         struct_name,
-        derives,
         generics,
         &repr_c_struct_name,
         is_valid,
@@ -72,7 +67,6 @@ pub(super) fn derive_repr_c_struct(
 pub(super) fn derive_repr_c_data_enum(
     repr: ReprPrimitive,
     enum_name: &Ident,
-    derives: &[Derive],
     generics: &syn::Generics,
     variants: &[SpannedValue<FfiTypeVariant>],
 ) -> TokenStream {
@@ -113,14 +107,8 @@ pub(super) fn derive_repr_c_data_enum(
     let fields = variants.iter().flat_map(|variant| variant.fields.iter());
     let niche_ir = gen_enum_niche_ir(repr, enum_name, generics, variants);
 
-    let transparent_impl = gen_transparent_impl(
-        enum_name,
-        derives,
-        generics,
-        &repr_c_enum_name,
-        is_valid,
-        fields,
-    );
+    let transparent_impl =
+        gen_transparent_impl(enum_name, generics, &repr_c_enum_name, is_valid, fields);
 
     quote! {
         #repr_c_enum
@@ -132,7 +120,6 @@ pub(super) fn derive_repr_c_data_enum(
 pub(super) fn derive_data_enum(
     repr: ReprPrimitive,
     enum_name: &Ident,
-    derives: &[Derive],
     generics: &syn::Generics,
     variants: &[SpannedValue<FfiTypeVariant>],
 ) -> TokenStream {
@@ -175,8 +162,7 @@ pub(super) fn derive_data_enum(
     let fields = variants.iter().flat_map(|variant| variant.fields.iter());
     let niche_ir = gen_enum_niche_ir(repr, enum_name, generics, variants);
 
-    let transparent_impl =
-        gen_transparent_impl(enum_name, derives, generics, &union_name, is_valid, fields);
+    let transparent_impl = gen_transparent_impl(enum_name, generics, &union_name, is_valid, fields);
 
     quote! {
         #union_and_helpers
@@ -187,19 +173,14 @@ pub(super) fn derive_data_enum(
 
 pub(crate) fn derive_fieldless_enum(
     repr: ReprPrimitive,
-    derives: &[Derive],
     enum_name: &Ident,
     variants: &[SpannedValue<FfiTypeVariant>],
 ) -> TokenStream {
     let niche_ir = gen_enum_niche_ir(repr, enum_name, &syn::Generics::default(), variants);
 
     let niche_value = proc_macro2::Literal::usize_unsuffixed(variants.len());
-    let (target_arg, is_valid, repr_c) = if is_exhaustive_enum(variants.len(), repr) {
-        let repr_c = derives
-            .contains(&Derive::Rustc(RustcDerive::Copy))
-            .then_some(quote! { unsafe impl co3::ReprC for #enum_name {} });
-
-        (quote! { _ }, quote! { true }, repr_c)
+    let (target_arg, is_valid) = if is_exhaustive_enum(variants.len(), repr) {
+        (quote! { _ }, quote! { true })
     } else {
         let is_valid = match repr {
             ReprPrimitive::U8 | ReprPrimitive::U16 | ReprPrimitive::U32 | ReprPrimitive::U64 => {
@@ -210,7 +191,7 @@ pub(crate) fn derive_fieldless_enum(
             }
         };
 
-        (quote! { target }, is_valid, None)
+        (quote! { target }, is_valid)
     };
 
     quote! {
@@ -230,7 +211,6 @@ pub(crate) fn derive_fieldless_enum(
             }
         }
 
-        #repr_c
         #niche_ir
     }
 }
@@ -499,7 +479,6 @@ fn gen_data_enum_payload(
 
 fn gen_transparent_impl<'a>(
     item_name: &Ident,
-    derives: &[Derive],
     generics: &syn::Generics,
     target: &syn::Ident,
     is_valid_body: TokenStream,
@@ -513,14 +492,6 @@ fn gen_transparent_impl<'a>(
 
     let field_types = fields.into_iter().map(|f| &f.ty).collect::<Vec<_>>();
     let flat_transmute_bounds = gen_flat_transmute_bounds(&field_types, generics);
-    let repr_c_bounds = gen_repr_c_bounds(&field_types, generics);
-    let encodable_bounds = gen_encodable_bounds(&field_types);
-
-    let repr_c = derives
-        .contains(&Derive::Rustc(RustcDerive::Copy))
-        .then_some(quote! {
-            unsafe #impl_generics impl co3::ReprC for #item_name #ty_generics where #repr_c_bounds #predicates {}
-        });
 
     quote! {
         // FIXME:
@@ -538,8 +509,6 @@ fn gen_transparent_impl<'a>(
                 #is_valid_body
             }
         }
-
-        #repr_c
     }
 }
 
@@ -584,14 +553,6 @@ pub(super) fn gen_extern_c_bounds(fields: &[&syn::Type], generics: &syn::Generic
     quote! { #(#parameterized_field_types: co3::ExternC,)* }
 }
 
-fn gen_encodable_bounds(fields: &[&syn::Type]) -> TokenStream {
-    let encodable_bounds = fields.iter().map(|&ty| {
-        quote! { #ty: co3::Encode }
-    });
-
-    quote! { #(#encodable_bounds,)* }
-}
-
 fn gen_flat_transmute_bounds(fields: &[&syn::Type], generics: &syn::Generics) -> TokenStream {
     let parameterized_field_types = fields
         .iter()
@@ -602,18 +563,6 @@ fn gen_flat_transmute_bounds(fields: &[&syn::Type], generics: &syn::Generics) ->
             co3::transmute::FlatTransmute<Target: co3::ir::ReprFamily<Kind = co3::ir::Robust>>,
         )*
     }
-}
-
-fn gen_repr_c_bounds(fields: &[&syn::Type], generics: &syn::Generics) -> TokenStream {
-    let repr_c_bounds = fields.iter().map(|&ty| {
-        let for_dummy = (!is_type_parameterized(ty, generics)).then_some(quote!(for<'_dummy>));
-
-        quote! {
-            #for_dummy #ty: co3::ReprC
-        }
-    });
-
-    quote! { #(#repr_c_bounds,)* }
 }
 
 struct UsedGenericsVisitor<'a> {

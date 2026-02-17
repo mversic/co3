@@ -9,7 +9,7 @@ use crate::{
 
 /// FFI-safe equivalent of [`core::result::Result`]
 #[repr(C)]
-pub struct CResult<T: ReprC, E: ReprC> {
+pub struct CResult<T: Copy, E: Copy> {
     tag: u8,
     payload: CResultPayload<T, E>,
 }
@@ -17,12 +17,12 @@ pub struct CResult<T: ReprC, E: ReprC> {
 /// Payload of [`CResult`]
 #[repr(C)]
 #[expect(non_snake_case)]
-union CResultPayload<T: ReprC, E: ReprC> {
+union CResultPayload<T: Copy, E: Copy> {
     Ok: T,
     Err: E,
 }
 
-impl<T: ReprC, E: ReprC> CResult<T, E> {
+impl<T: Copy, E: Copy> CResult<T, E> {
     /// Construct the success value
     #[expect(non_snake_case)]
     pub const fn Ok(ok: T) -> Self {
@@ -49,7 +49,7 @@ impl<T: ReprC, E: ReprC> CResult<T, E> {
     }
 }
 
-impl<T: ReprC, E: ReprC> From<Result<T, E>> for CResult<T, E> {
+impl<T: Copy, E: Copy> From<Result<T, E>> for CResult<T, E> {
     fn from(value: Result<T, E>) -> Self {
         match value {
             Ok(ok) => Self::Ok(ok),
@@ -58,7 +58,7 @@ impl<T: ReprC, E: ReprC> From<Result<T, E>> for CResult<T, E> {
     }
 }
 
-impl<T: ReprC, E: ReprC> TryFrom<CResult<T, E>> for Result<T, E> {
+impl<T: Copy, E: Copy> TryFrom<CResult<T, E>> for Result<T, E> {
     type Error = crate::FfiReturn;
 
     fn try_from(value: CResult<T, E>) -> Result<Self, Self::Error> {
@@ -70,15 +70,15 @@ impl<T: ReprC, E: ReprC> TryFrom<CResult<T, E>> for Result<T, E> {
     }
 }
 
-impl<T: ReprC, E: ReprC> Copy for CResult<T, E> {}
-impl<T: ReprC, E: ReprC> Clone for CResult<T, E> {
+impl<T: Copy, E: Copy> Copy for CResult<T, E> {}
+impl<T: Copy, E: Copy> Clone for CResult<T, E> {
     fn clone(&self) -> Self {
         *self
     }
 }
 
-impl<T: ReprC, E: ReprC> Copy for CResultPayload<T, E> {}
-impl<T: ReprC, E: ReprC> Clone for CResultPayload<T, E> {
+impl<T: Copy, E: Copy> Copy for CResultPayload<T, E> {}
+impl<T: Copy, E: Copy> Clone for CResultPayload<T, E> {
     fn clone(&self) -> Self {
         *self
     }

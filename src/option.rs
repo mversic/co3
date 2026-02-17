@@ -5,12 +5,12 @@ use crate::{FfiReturn, ReprC, mineral};
 /// FFI-safe equivalent of [`core::option::Option`] for [`crate::ir::Robust`] types
 #[derive(Debug, PartialEq, Eq, PartialOrd, Ord)]
 #[repr(C)]
-pub struct COption<T: ReprC> {
+pub struct COption<T> {
     tag: u8,
     payload: T,
 }
 
-impl<T: ReprC> COption<T> {
+impl<T> COption<T> {
     /// Construct no value
     #[expect(non_snake_case)]
     pub const fn None() -> Self {
@@ -38,7 +38,7 @@ impl<T: ReprC> COption<T> {
     }
 }
 
-impl<T: ReprC> From<Option<T>> for COption<T> {
+impl<T> From<Option<T>> for COption<T> {
     fn from(value: Option<T>) -> Self {
         match value {
             Some(value) => Self::Some(value),
@@ -47,7 +47,7 @@ impl<T: ReprC> From<Option<T>> for COption<T> {
     }
 }
 
-impl<T: ReprC> TryFrom<COption<T>> for Option<T> {
+impl<T> TryFrom<COption<T>> for Option<T> {
     type Error = FfiReturn;
 
     fn try_from(value: COption<T>) -> Result<Self, Self::Error> {
@@ -59,8 +59,8 @@ impl<T: ReprC> TryFrom<COption<T>> for Option<T> {
     }
 }
 
-impl<T: ReprC> Copy for COption<T> {}
-impl<T: ReprC> Clone for COption<T> {
+impl<T: Copy> Copy for COption<T> {}
+impl<T: Copy> Clone for COption<T> {
     fn clone(&self) -> Self {
         *self
     }

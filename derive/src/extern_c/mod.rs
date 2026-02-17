@@ -427,13 +427,11 @@ pub fn derive_extern_c(emitter: &mut Emitter, input: &syn::DeriveInput) -> Token
     }
 
     input.generics.make_where_clause();
-    let derives = &input.derive_attr.derives;
-
     match input.repr_attr.kind.as_deref() {
         Some(ReprKind::Transparent) => derive_transparent_item(&input),
         Some(ReprKind::C(None)) => {
             if let darling::ast::Data::Struct(fields) = &input.data {
-                derive_repr_c_struct(&input.ident, derives, &input.generics, fields)
+                derive_repr_c_struct(&input.ident, &input.generics, fields)
             } else {
                 emit!(
                     emitter,
@@ -448,7 +446,7 @@ pub fn derive_extern_c(emitter: &mut Emitter, input: &syn::DeriveInput) -> Token
             if let darling::ast::Data::Enum(variants) = &input.data
                 && variants.iter().any(|v| !v.fields.fields.is_empty())
             {
-                derive_repr_c_data_enum(*repr, &input.ident, derives, &input.generics, variants)
+                derive_repr_c_data_enum(*repr, &input.ident, &input.generics, variants)
             } else {
                 quote! {}
             }
@@ -456,9 +454,9 @@ pub fn derive_extern_c(emitter: &mut Emitter, input: &syn::DeriveInput) -> Token
         Some(ReprKind::Primitive(repr)) => {
             if let darling::ast::Data::Enum(variants) = &input.data {
                 if variants.iter().all(|v| v.fields.fields.is_empty()) {
-                    derive_fieldless_enum(*repr, derives, &input.ident, variants)
+                    derive_fieldless_enum(*repr, &input.ident, variants)
                 } else {
-                    derive_data_enum(*repr, &input.ident, derives, &input.generics, variants)
+                    derive_data_enum(*repr, &input.ident, &input.generics, variants)
                 }
             } else {
                 quote! {}

@@ -48,6 +48,7 @@ impl<R, W: CloneFromWrapped<R>, const N: usize> CloneFromWrapped<[R; N]> for [W;
 }
 
 disjoint_impls! {
+    // FIXME: I'm not happy with the name anymore since it's implemented for all IR types
     /// Decode helper for [`Cloned`] types.
     ///
     /// Implementations of [`Decode`] for `&T`/`&mut T` where `T: Cloned` depend on decoding `T`,
@@ -60,7 +61,7 @@ disjoint_impls! {
     ///
     /// [`decode_cloned`](Self::decode_cloned) is the method cloned containers/tuples call
     /// recursively for their elements.
-    pub trait DecodeCloned<'d>: ReprFamily<Kind: Cloned> + Decode<'d> {
+    pub trait DecodeCloned<'d>: Decode<'d> {
         #[inline(always)]
         unsafe fn decode_cloned<'itm: 'd>(
             source: Self::CType,
@@ -70,10 +71,43 @@ disjoint_impls! {
         }
     }
 
-    #[cfg(feature = "unstable-refs")]
-    impl<'d, R: DecodeCloned<'d>, S: Cloned> DecodeCloned<'d> for &'d R
+    impl<'d, R> DecodeCloned<'d> for R
     where
-        Self: ReprFamily<Kind = &'d S>,
+        Self: ReprFamily<Kind = Robust> + Decode<'d>,
+    {}
+    #[cfg(feature = "alloc")]
+    impl<'d, R: Clone + 'd> DecodeCloned<'d> for R
+    where
+        Self: ReprFamily<Kind = Opaque>,
+    {
+        #[inline(always)]
+        unsafe fn decode_cloned<'itm: 'd>(
+            source: Self::CType,
+            store: &'itm mut Self::Store,
+        ) -> Option<Self> {
+            unsafe { ManuallyDrop::<R>::decode(source, store) }
+                .map(CloneFromWrapped::clone_from_wrapped)
+        }
+    }
+    impl<'d, R: CheckedTransmute> DecodeCloned<'d> for R
+    where
+        <R as CheckedTransmute>::Target: DecodeCloned<'d>,
+        Self: ReprFamily<Kind = Transmuted>,
+    {
+        #[inline(always)]
+        unsafe fn decode_cloned<'itm: 'd>(
+            source: Self::CType,
+            store: &'itm mut Self::Store,
+        ) -> Option<Self> {
+            unsafe { <R::Target>::decode_cloned(source, store) }
+                .and_then(transmute_from_target)
+        }
+    }
+
+    #[cfg(feature = "unstable-refs")]
+    impl<'d, R, S: Cloned> DecodeCloned<'d> for &'d R
+    where
+        Self: ReprFamily<Kind = &'d S> + Decode<'d>,
     {
     }
 
@@ -98,12 +132,6 @@ disjoint_impls! {
         }
     }
 
-    impl<'slice, R: CheckedTransmute> DecodeCloned<'slice> for &'slice [R]
-    where
-        &'slice [<R as CheckedTransmute>::Target]: Decode<'slice>,
-        Self: ReprFamily<Kind = &'slice [Transmuted]>,
-    {
-    }
     impl<'slice, R: ReprC> DecodeCloned<'slice> for &'slice [R] where
         Self: ReprFamily<Kind = &'slice [Robust]>
     {
@@ -113,21 +141,27 @@ disjoint_impls! {
         Self: ReprFamily<Kind = &'slice [Opaque]>
     {
     }
-    #[cfg(feature = "unstable-refs")]
-    impl<'slice, R: DecodeCloned<'slice>, S: Cloned> DecodeCloned<'slice> for &'slice [R]
+    impl<'slice, R: CheckedTransmute> DecodeCloned<'slice> for &'slice [R]
     where
-        Self: ReprFamily<Kind = &'slice [S]>,
+        &'slice [<R as CheckedTransmute>::Target]: Decode<'slice>,
+        Self: ReprFamily<Kind = &'slice [Transmuted]>,
+    {
+    }
+    #[cfg(feature = "unstable-refs")]
+    impl<'slice, R, S: Cloned> DecodeCloned<'slice> for &'slice [R]
+    where
+        Self: ReprFamily<Kind = &'slice [S]> + Decode<'slice>,
     {
     }
 
-    impl<'slice, R> DecodeCloned<'slice> for &'slice mut [R]
-    where
-        Self: ReprFamily<Kind = &'slice mut [Transmuted]> + Decode<'slice>
-    {
-    }
     #[cfg(all(feature = "alloc", feature = "unstable-refs"))]
     impl<'slice, R: Clone> DecodeCloned<'slice> for &'slice mut [R] where
         Self: ReprFamily<Kind = &'slice mut [Opaque]>
+    {
+    }
+    impl<'slice, R> DecodeCloned<'slice> for &'slice mut [R]
+    where
+        Self: ReprFamily<Kind = &'slice mut [Transmuted]> + Decode<'slice>
     {
     }
     #[cfg(feature = "unstable-refs")]
@@ -137,21 +171,6 @@ disjoint_impls! {
     {
     }
 
-    #[cfg(feature = "alloc")]
-    impl<'d, R: CheckedTransmute> DecodeCloned<'d> for Box<[R]>
-    where
-        Box<[<R as CheckedTransmute>::Target]>: DecodeCloned<'d>,
-        Self: ReprFamily<Kind = Box<[Transmuted]>>,
-    {
-        #[inline(always)]
-        unsafe fn decode_cloned<'itm: 'd>(
-            source: Self::CType,
-            store: &'itm mut Self::Store,
-        ) -> Option<Self> {
-            unsafe { <Box<[R::Target]>>::decode_cloned(source, store) }
-                .and_then(transmute_from_target_boxed_slice)
-        }
-    }
     #[cfg(feature = "alloc")]
     impl<'d, R: ReprC + 'd> DecodeCloned<'d> for Box<[R]>
     where
@@ -179,6 +198,21 @@ disjoint_impls! {
         ) -> Option<Self> {
             unsafe { Box::<[ManuallyDrop<R>]>::decode(source, store) }
                 .map(CloneFromWrapped::clone_from_wrapped)
+        }
+    }
+    #[cfg(feature = "alloc")]
+    impl<'d, R: CheckedTransmute> DecodeCloned<'d> for Box<[R]>
+    where
+        Box<[<R as CheckedTransmute>::Target]>: DecodeCloned<'d>,
+        Self: ReprFamily<Kind = Box<[Transmuted]>>,
+    {
+        #[inline(always)]
+        unsafe fn decode_cloned<'itm: 'd>(
+            source: Self::CType,
+            store: &'itm mut Self::Store,
+        ) -> Option<Self> {
+            unsafe { <Box<[R::Target]>>::decode_cloned(source, store) }
+                .and_then(transmute_from_target_boxed_slice)
         }
     }
     #[cfg(feature = "alloc")]
@@ -290,18 +324,7 @@ disjoint_impls! {
         }
     }
 
-    impl<'d, R: ReprFamily<Kind = Transmuted>> DecodeCloned<'d> for Option<R>
-    where
-        Self: ReprFamily<Kind = Option<WithoutNiche>> + Decode<'d>,
-    {
-        // FIXME: This should be handled further for owned transmuted types
-    }
-    impl<'d, R: ReprFamily<Kind = Robust>> DecodeCloned<'d> for Option<R>
-    where
-        Self: ReprFamily<Kind = Option<WithoutNiche>> + Decode<'d>,
-    {
-    }
-    impl<'d, R: ReprFamily<Kind: Cloned> + DecodeCloned<'d>> DecodeCloned<'d> for Option<R>
+    impl<'d, R: DecodeCloned<'d>> DecodeCloned<'d> for Option<R>
     where
         Self: ReprFamily<Kind = Option<WithoutNiche>>
     {
@@ -316,18 +339,7 @@ disjoint_impls! {
         }
     }
 
-    impl<'d, R: ReprFamily<Kind = Transmuted>> DecodeCloned<'d> for Option<R>
-    where
-        Self: ReprFamily<Kind = Option<WithCustomNiche>> + Decode<'d>,
-    {
-        // FIXME: This should be handled further for owned transmuted types
-    }
-    impl<'d, R: ReprFamily<Kind = Opaque>> DecodeCloned<'d> for Option<R>
-    where
-        Self: ReprFamily<Kind = Option<WithCustomNiche>> + Decode<'d>
-    {
-    }
-    impl<'d, R: ReprFamily<Kind: Cloned> + Niche<CType: PartialEq> + DecodeCloned<'d>> DecodeCloned<'d> for Option<R>
+    impl<'d, R: Niche<CType: PartialEq> + DecodeCloned<'d>> DecodeCloned<'d> for Option<R>
     where
         Self: ReprFamily<Kind = Option<WithCustomNiche>>
     {

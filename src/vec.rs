@@ -5,7 +5,7 @@ use alloc::vec::Vec;
 #[cfg(feature = "alloc")]
 use core::mem::ManuallyDrop;
 
-use crate::ReprC;
+use crate::{ReprC, mineral};
 
 crate::decl_fns! { dealloc }
 
@@ -133,5 +133,6 @@ impl<C> CVec<C> {
     }
 }
 
-// SAFETY: Robust type with a defined C ABI
-unsafe impl<T: ReprC> ReprC for CVec<T> {}
+mineral! {
+    unsafe impl(T: ReprC) Robust for CVec<T> {}
+}

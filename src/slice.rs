@@ -4,7 +4,7 @@
 use alloc::boxed::Box;
 use core::slice;
 
-use crate::ReprC;
+use crate::{ReprC, mineral};
 
 crate::decl_fns! { dealloc }
 
@@ -251,9 +251,12 @@ impl<C: ReprC> From<CBoxedSlice<C>> for CSliceMut<C> {
     }
 }
 
-// SAFETY: Robust type with a defined C ABI
-unsafe impl<T: ReprC> ReprC for CSlice<T> {}
-// SAFETY: Robust type with a defined C ABI
-unsafe impl<T: ReprC> ReprC for CSliceMut<T> {}
-// SAFETY: Robust type with a defined C ABI
-unsafe impl<T: ReprC> ReprC for CBoxedSlice<T> {}
+mineral! {
+    unsafe impl(T: ReprC) Robust for CSlice<T> {}
+}
+mineral! {
+    unsafe impl(T: ReprC) Robust for CSliceMut<T> {}
+}
+mineral! {
+    unsafe impl(T: ReprC) Robust for CBoxedSlice<T> {}
+}

@@ -25,13 +25,13 @@ where `ReprFamily::Kind` is assigned one of the categories below through a marke
 - Types with stable C layout and no trap representations (e.g. `u32`).
 - Usually map directly to themselves in ABI (no conversion necessary).
 
-2. **`Transmuted`** (marker type)
-- Types that can be safely transmuted into a single chosen target type.
-- IR/ABI mapping and value conversion continue through the target type.
-
-3. **`Opaque`** (marker type)
+2. **`Opaque`** (marker type)
 - Types passed across FFI as opaque pointers, derived from a `Box`ed value.
 - Consuming side SHOULD NOT rely on the layout of the referent or access its value.
+
+3. **`Transmuted`** (marker type)
+- Types that can be safely transmuted into a single chosen target type.
+- IR/ABI mapping and value conversion continue through the target type.
 
 4. **`Cloned`** (marker trait)
 - Fallback for types that don't belong to any of the previous IR type families.
