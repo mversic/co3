@@ -85,3 +85,15 @@ getset = "0.1.6"
 [workspace]
 resolver = "2"
 members = ["derive"]
+
+[[test]]
+name = "abi"
+required-features = ["alloc", "derive"]
+
+[[test]]
+name = "carbonate"
+required-features = ["alloc", "derive"]
+
+[[test]]
+name = "decarbonate"
+required-features = ["alloc", "derive"]

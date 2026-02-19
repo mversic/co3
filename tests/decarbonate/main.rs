@@ -1,6 +1,12 @@
-//#![cfg(feature = "derive")]
-//
+mod imported_abi;
+
 //use webassembly_test::webassembly_test;
+//
+//
+//#[cfg(feature = "getset")]
+//mod getset;
+//mod shared_fns;
+//mod opaque;
 //
 //#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 //#[repr(C)]

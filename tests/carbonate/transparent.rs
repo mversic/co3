@@ -1,4 +1,3 @@
-#![cfg(feature = "derive")]
 use std::{alloc, marker::PhantomData, mem::MaybeUninit, num::NonZeroU64};
 
 use co3::{

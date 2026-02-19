@@ -1,6 +1,3 @@
-#![cfg(feature = "derive")]
-#![cfg(feature = "getset")]
-
 use std::mem::MaybeUninit;
 
 use co3::ExternC;

@@ -1,17 +1,23 @@
 error[E0425]: cannot find function, tuple struct or tuple variant `FfiStruct__b_mut` in this scope
-  --> tests/ui_fail/getset_skip_struct.rs:32:9
+  --> tests/ui_fail/getset_skip_struct.rs:39:9
    |
- 6 | #[co3::carbonate]
-   | ----------------- similarly named function `FfiStruct__a_mut` defined here
+15 | /     fn FfiStruct__a_mut(
+16 | |         arg: <FfiStruct as ExternC>::CType,
+17 | |         output: *mut <&mut u32 as ExternC>::CType,
+18 | |     ) -> co3::FfiReturn;
+   | |________________________- similarly named function `FfiStruct__a_mut` defined here
 ...
-32 |         FfiStruct__b_mut((&s).encode(&mut ()), b.as_mut_ptr());
-   |         ^^^^^^^^^^^^^^^^ help: a function with a similar name exists: `FfiStruct__a_mut`
+39 |           FfiStruct__b_mut((&s).encode(&mut Default::default()), b.as_mut_ptr());
+   |           ^^^^^^^^^^^^^^^^ help: a function with a similar name exists: `FfiStruct__a_mut`
 
 error[E0425]: cannot find function, tuple struct or tuple variant `FfiStruct__set_b` in this scope
-  --> tests/ui_fail/getset_skip_struct.rs:34:9
+  --> tests/ui_fail/getset_skip_struct.rs:41:9
    |
- 6 | #[co3::carbonate]
-   | ----------------- similarly named function `FfiStruct__set_a` defined here
+19 | /     fn FfiStruct__set_a(
+20 | |         arg: <FfiStruct as ExternC>::CType,
+21 | |         value: <u32 as ExternC>::CType,
+22 | |     ) -> co3::FfiReturn;
+   | |________________________- similarly named function `FfiStruct__set_a` defined here
 ...
-34 |         FfiStruct__set_b(
-   |         ^^^^^^^^^^^^^^^^ help: a function with a similar name exists: `FfiStruct__set_a`
+41 |           FfiStruct__set_b(
+   |           ^^^^^^^^^^^^^^^^ help: a function with a similar name exists: `FfiStruct__set_a`

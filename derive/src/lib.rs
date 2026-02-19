@@ -347,22 +347,15 @@ pub fn carbonate(attr: TokenStream, item: TokenStream) -> TokenStream {
                 return emitter.finish_token_stream();
             };
 
-            if input.ffi_type_attr.kind != Some(FfiTypeKindAttribute::Opaque) {
-                let input = input.ast;
-                return emitter.finish_token_stream_with(quote! { #input });
-            }
-
             #[cfg(feature = "getset")]
-            if input
+            let has_getset_derive = input
                 .derive_attr
                 .derives
                 .iter()
-                .any(|d| matches!(d, Derive::GetSet(_)))
-            {
-                let darling::ast::Data::Struct(fields) = &input.data else {
-                    unreachable!();
-                };
+                .any(|d| matches!(d, Derive::GetSet(_)));
 
+            #[cfg(feature = "getset")]
+            if has_getset_derive {
                 if !input.generics.params.is_empty() {
                     emit!(
                         emitter,
@@ -372,6 +365,19 @@ pub fn carbonate(attr: TokenStream, item: TokenStream) -> TokenStream {
 
                     return emitter.finish_token_stream();
                 }
+            }
+
+            if input.ffi_type_attr.kind != Some(FfiTypeKindAttribute::Opaque) {
+                let input = input.ast;
+                return emitter.finish_token_stream_with(quote! { #input });
+            }
+
+            #[cfg(feature = "getset")]
+            if has_getset_derive {
+                let darling::ast::Data::Struct(fields) = &input.data else {
+                    unreachable!();
+                };
+
                 let derived_ffi_fns = getset_gen::gen_derived_methods(
                     &mut emitter,
                     &input.ident,
@@ -387,13 +393,13 @@ pub fn carbonate(attr: TokenStream, item: TokenStream) -> TokenStream {
                 }
             } else {
                 let input = input.ast;
-                quote!(#input)
+                quote! { #input }
             }
 
             #[cfg(not(feature = "getset"))]
             {
                 let input = input.ast;
-                quote!(#input)
+                quote! { #input }
             }
         }
         Enum(item) => quote! { #item },

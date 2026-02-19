@@ -1,4 +1,3 @@
-#![cfg(feature = "derive")]
 use std::{cmp::Ordering, mem::MaybeUninit};
 
 use co3::{Decode, Encode, ExternC, FfiReturn, def_fns, out_ptr::OutPtrRead};
@@ -55,7 +54,7 @@ fn export_shared_fns() {
         let cloned = {
             let mut cloned = MaybeUninit::<*mut FfiStruct1>::new(core::ptr::null_mut());
 
-            __clone(
+            __co3_export::clone(
                 FfiStruct1::ID.encode(&mut ()),
                 ffi_struct1.cast(),
                 cloned.as_mut_ptr().cast(),
@@ -70,7 +69,7 @@ fn export_shared_fns() {
         let mut is_equal = MaybeUninit::new(1);
         let cloned_ptr = (&cloned).encode(&mut ());
 
-        __eq(
+        __co3_export::eq(
             FfiStruct1::ID.encode(&mut ()),
             ffi_struct1.cast(),
             cloned_ptr.cast(),
@@ -80,7 +79,7 @@ fn export_shared_fns() {
         assert!(is_equal);
 
         let mut ordering = MaybeUninit::new(1);
-        __ord(
+        __co3_export::ord(
             FfiStruct1::ID.encode(&mut ()),
             ffi_struct1.cast(),
             cloned_ptr.cast(),
@@ -91,11 +90,11 @@ fn export_shared_fns() {
 
         assert_eq!(
             FfiReturn::Ok,
-            __drop(FfiStruct1::ID.encode(&mut ()), ffi_struct1.cast())
+            __co3_export::drop(FfiStruct1::ID.encode(&mut ()), ffi_struct1.cast())
         );
         assert_eq!(
             FfiReturn::Ok,
-            __drop(
+            __co3_export::drop(
                 FfiStruct1::ID.encode(&mut ()),
                 cloned.encode(&mut ()).cast()
             )

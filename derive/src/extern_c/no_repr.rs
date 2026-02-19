@@ -69,7 +69,7 @@ pub(super) fn derive_no_repr_struct(
 
     let basic_impls = gen_ir_impl(name, &repr_c_struct_name, &field_types, generics);
     let (store_defs, rust_store, ffi_store) =
-        gen_custom_store_types(name, generics, &field_rust_stores, &field_ffi_stores);
+        gen_custom_store_types(name, &field_rust_stores, &field_ffi_stores, &field_types);
 
     let encode_impl = match &fields.style {
         Style::Struct => {
@@ -140,7 +140,7 @@ pub(super) fn derive_no_repr_struct(
 
             quote! {
                 Some(Self {
-                    #(#field_names: unsafe { co3::DecodeCloned::decode_cloned(source.#field_names, &mut store.#field_indices)? }),*
+                    #(#field_names: unsafe { co3::cloned::DecodeCloned::decode_cloned(source.#field_names, &mut store.#field_indices)? }),*
                 })
             }
         }
@@ -149,7 +149,7 @@ pub(super) fn derive_no_repr_struct(
 
             quote! {
                 Some(Self(
-                    #(unsafe { co3::DecodeCloned::decode_cloned(source.#field_indices, &mut store.#field_indices)? }),*
+                    #(unsafe { co3::cloned::DecodeCloned::decode_cloned(source.#field_indices, &mut store.#field_indices)? }),*
                 ))
             }
         }
@@ -178,7 +178,7 @@ pub(super) fn derive_no_repr_struct(
                 #decode_impl
             }
         }
-        impl<'_dšč, #params> co3::DecodeCloned<'_dšč> for #name #ty_generics where #repr_c_struct_name #ty_generics: '_dšč, #decode_cloned_bounds #predicates {
+        impl<'_dšč, #params> co3::cloned::DecodeCloned<'_dšč> for #name #ty_generics where #repr_c_struct_name #ty_generics: '_dšč, #decode_cloned_bounds #predicates {
             unsafe fn decode_cloned<'_išč: '_dšč>(source: <Self as co3::ExternC>::CType, store: &'_išč mut Self::Store) -> Option<Self> {
                 #decode_cloned_impl
             }
@@ -239,9 +239,9 @@ pub(super) fn derive_no_repr_data_enum(
     let basic_impls = gen_ir_impl(enum_name, &repr_c_enum_name, &field_types, generics);
     let (store_defs, rust_store, ffi_store) = gen_custom_store_types(
         enum_name,
-        generics,
         &variant_rust_stores,
         &variant_ffi_stores,
+        &field_types,
     );
 
     let variants_into_ffi = variants.iter().enumerate().map(|(i, variant)| {
@@ -300,7 +300,7 @@ pub(super) fn derive_no_repr_data_enum(
                 quote! {
                     #idx => {
                         let value = unsafe { source.#variant_name.value };
-                        unsafe { co3::DecodeCloned::decode_cloned(value, &mut store.#idx).map(Self::#variant_name) }
+                        unsafe { co3::cloned::DecodeCloned::decode_cloned(value, &mut store.#idx).map(Self::#variant_name) }
                     }
                 }
             },
@@ -360,7 +360,7 @@ pub(super) fn derive_no_repr_data_enum(
                 }
             }
         }
-        impl<'_dšč, #params> co3::DecodeCloned<'_dšč> for #enum_name #ty_generics where #repr_c_enum_name #ty_generics: '_dšč, #decode_cloned_bounds #predicates {
+        impl<'_dšč, #params> co3::cloned::DecodeCloned<'_dšč> for #enum_name #ty_generics where #repr_c_enum_name #ty_generics: '_dšč, #decode_cloned_bounds #predicates {
             unsafe fn decode_cloned<'_išč: '_dšč>(source: <Self as co3::ExternC>::CType, store: &'_išč mut Self::Store) -> Option<Self> {
                 match #decode_match_expr {
                     #(#variants_decode_cloned,)*
@@ -431,7 +431,7 @@ pub(super) fn derive_no_repr_fieldless_enum(
                 }
             }
         }
-        impl<'_dšč> co3::DecodeCloned<'_dšč> for #enum_name {}
+        impl<'_dšč> co3::cloned::DecodeCloned<'_dšč> for #enum_name {}
 
         #niche_ir
         #non_locality
@@ -444,6 +444,7 @@ fn gen_out_ptr_impls(
     types: impl IntoIterator<Item = syn::Type>,
 ) -> TokenStream {
     let (impl_generics, ty_generics, where_clause) = generics.split_for_impl();
+    let params = &generics.params;
     let predicates = where_clause
         .as_ref()
         .map(|where_clause| &where_clause.predicates);
@@ -458,25 +459,33 @@ fn gen_out_ptr_impls(
     };
 
     quote! {
-        impl #impl_generics co3::out_ptr::OutPtr for #type_name #ty_generics where #for_dummy Self: co3::out_ptr::NonLocal, #predicates {
+        impl #impl_generics co3::out_ptr::OutPtr for #type_name #ty_generics where #for_dummy Self: co3::ExternC + co3::out_ptr::NonLocal, #predicates {
             type OutPtr = Self::CType;
         }
-        impl #impl_generics co3::out_ptr::OutPtrWrite for #type_name #ty_generics where #for_dummy Self: co3::out_ptr::NonLocal, #predicates {
+        impl #impl_generics co3::out_ptr::OutPtrWrite for #type_name #ty_generics where
+            #for_dummy Self: co3::Encode + co3::out_ptr::OutPtr + co3::out_ptr::NonLocal, #predicates
+        {
             unsafe fn write_out(self, out_ptr: *mut Self::OutPtr) {
-                let mut store = Default::default();
-                let encoded = co3::Encode::encode(self, &mut store);
-                unsafe { out_ptr.write(encoded); }
+                unimplemented!()
+                // FIXME:
+                //let mut store = Default::default();
+                //let encoded = co3::Encode::encode(self, &mut store);
+                //unsafe { out_ptr.write(encoded); }
             }
         }
-        impl #impl_generics co3::out_ptr::OutPtrRead for #type_name #ty_generics where #for_dummy Self: co3::out_ptr::NonLocal, #predicates {
+        impl<'_dšč, #params> co3::out_ptr::OutPtrRead for #type_name #ty_generics where
+            #for_dummy Self: co3::Decode<'_dšč> + co3::out_ptr::OutPtr + co3::out_ptr::NonLocal, #predicates
+        {
             unsafe fn try_read_out(out_ptr: Self::OutPtr) -> Option<Self> {
-                let mut store = Default::default();
+                unimplemented!()
+                // FIXME:
+                //let mut store = Default::default();
 
-                unsafe {
-                    // SAFETY: check `NonLocal` for guarantees
-                    let store_ref = &mut *(&mut store as *mut _);
-                    co3::Decode::decode(out_ptr, store_ref)
-                }
+                //unsafe {
+                //    // SAFETY: check `NonLocal` for guarantees
+                //    let store_ref = &mut *(&mut store as *mut _);
+                //    co3::Decode::decode(out_ptr, store_ref)
+                //}
             }
         }
     }
@@ -526,95 +535,42 @@ pub fn gen_ir_impl(
 
 pub fn gen_custom_store_types(
     name: &Ident,
-    generics: &syn::Generics,
     encode_stores: &[TokenStream],
     decode_stores: &[TokenStream],
+    field_types: &[&syn::Type],
 ) -> (TokenStream, TokenStream, TokenStream) {
-    let (impl_generics, ty_generics, where_clause) = generics.split_for_impl();
-
-    let params = generics.params.iter().collect::<Vec<_>>();
-    let encode_name = format_ident!("{}EncodeStore", name);
-    let decode_name = format_ident!("{}DecodeStore", name);
-
-    let predicates = where_clause
-        .as_ref()
-        .map(|where_clause| &where_clause.predicates);
-
-    let ty_args = generics
-        .params
-        .iter()
-        .map(|param| match param {
-            syn::GenericParam::Type(param) => {
-                let ident = &param.ident;
-                quote! { #ident }
-            }
-            syn::GenericParam::Lifetime(param) => {
-                let lifetime = &param.lifetime;
-                quote! { #lifetime }
-            }
-            syn::GenericParam::Const(param) => {
-                let ident = &param.ident;
-                quote! { #ident }
-            }
-        })
-        .collect::<Vec<_>>();
-
-    let enc_idxs = (0..encode_stores.len())
-        .map(syn::Index::from)
-        .collect::<Vec<_>>();
-    let dec_idxs = (0..decode_stores.len())
+    let store_name = format_ident!("{}Store", name);
+    let idxs = (0..field_types.len())
         .map(syn::Index::from)
         .collect::<Vec<_>>();
 
-    let stores = quote! {
-        pub struct #encode_name #impl_generics (#(pub #encode_stores),*) #where_clause;
-        pub struct #decode_name<'_dšč #(, #params)*>(#(pub #decode_stores),*) #where_clause;
+    let store_defs = {
+        let store_params = (0..field_types.len())
+            .map(|idx| format_ident!("D{idx}"))
+            .collect::<Vec<_>>();
 
-        impl #impl_generics Default for #encode_name #ty_generics
-        where
-            #(#encode_stores: Default,)*
-            #predicates
-        {
-            fn default() -> Self {
-                Self(#(<#encode_stores as Default>::default()),*)
-            }
-        }
-        impl<'_dšč #(, #params)*> Default for #decode_name<'_dšč #(, #ty_args)*>
-        where
-            #(#decode_stores: Default,)*
-            #predicates
-        {
-            fn default() -> Self {
-                Self(#(<#decode_stores as Default>::default()),*)
-            }
-        }
+        quote! {
+            pub struct #store_name<#(#store_params),*>(#(#store_params),*);
 
-        impl #impl_generics co3::Store for #encode_name #ty_generics
-        where
-            #(#encode_stores: co3::Store,)*
-            #predicates
-        {
-            fn sync(self) -> Option<()> {
-                #(self.#enc_idxs.sync()?;)*
-                Some(())
+            impl<#(#store_params),*> Default for #store_name<#(#store_params),*> where #(#store_params: Default,)* {
+                fn default() -> Self {
+                    Self(#(<#store_params as Default>::default()),*)
+                }
             }
-        }
-        impl<'_dšč #(, #params)*> co3::Store for #decode_name<'_dšč #(, #ty_args)*>
-        where
-            #(#decode_stores: co3::Store,)*
-            #predicates
-        {
-            fn sync(self) -> Option<()> {
-                #(self.#dec_idxs.sync()?;)*
-                Some(())
+
+            impl<#(#store_params),*> co3::Store for #store_name<#(#store_params),*> where #(#store_params: co3::Store,)* {
+                fn sync(self) -> Option<()> {
+                    #(self.#idxs.sync()?;)*
+                    Some(())
+                }
             }
         }
     };
 
     (
-        stores,
-        quote! { #encode_name #ty_generics },
-        quote! { #decode_name<'_dšč #(, #ty_args)*> },
+        quote! { #store_defs },
+        quote! { #store_name<#(#encode_stores),*> },
+        quote! { #store_name<#(#decode_stores),*> },
     )
 }
 
@@ -647,5 +603,5 @@ fn gen_decode_bounds(fields: &[&syn::Type], generics: &syn::Generics) -> TokenSt
 }
 
 fn gen_decode_cloned_bounds(fields: &[&syn::Type]) -> TokenStream {
-    quote! { #(#fields: co3::DecodeCloned<'_dšč>,)* }
+    quote! { #(#fields: co3::cloned::DecodeCloned<'_dšč>,)* }
 }

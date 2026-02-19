@@ -1,5 +1,3 @@
-#![cfg(feature = "derive")]
-
 use co3::external::ExternRef;
 use webassembly_test::webassembly_test;
 

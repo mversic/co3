@@ -59,18 +59,17 @@ macro_rules! handles {
 
 /// Generate FFI equivalent implementation of requested trait methods (e.g. Clone, Eq, Ord).
 ///
-/// One `[prefix]__<fn_name>` is generated per invocation of this macro. User should ensure that
+/// One `[prefix]<fn_name>` is generated per invocation of this macro. User should ensure
 /// function names don't collide by using a globally (per dynamic library) unique prefix.
 ///
-/// If globally unique handle id is guaranteed across crates, user can leverage this to export
-/// only one function instead of one per crate. This approach, however, is more brittle since
-/// the same id could easily be assigned to structures in different crates causing a silent UB.
+/// If handle IDs are globally unique across the linked crates, only one crate should export a
+/// given shared function symbol and all other crates should import that symbol. This approach is
+/// somewhat brittle: an ID collision across crates can cause mismatched dispatch and potential UB.
 ///
-/// If only a unique handle id per crate is guaranteed, user should define at least one version
-/// of the exported function per crate. This approach, although it produces a little smaller binary,
-/// cannot trigger an accidental UB (link step would fail if exported function names are duplicated).
+/// If IDs are only unique per crate, each crate should export its own prefixed symbols. In this
+/// mode symbol name collisions are caught by the linker when duplicate exports share the same name.
 ///
-/// The only exception to the rule is `__dealloc` function which is forced to be globally
+/// The only exception to the rule is `__co3_dealloc` function which is forced to be globally
 /// unique, i.e. it's not possible to define multiple versions by setting a prefix.
 #[macro_export]
 macro_rules! def_fns {
@@ -87,10 +86,14 @@ macro_rules! def_fns {
         }
     };
     ( $($fn_name:ident: {$($other:ty),+ $(,)?}),+ $(,)?) => {
-        $( $crate::def_fns! { link_prefix = "" $fn_name: {$( $other ),+ }} )+
+        $crate::def_fns! { link_prefix = "__co3_" $( $fn_name: {$( $other ),+ }),+ }
     };
     ( link_prefix = $prefix:literal $($fn_name:ident: {$($other:ty),+ $(,)?}),+ $(,)?) => {
-        $( $crate::def_fns! {@def: $prefix $fn_name: $( $other ),+ } )+
+        mod __co3_export {
+            use super::*;
+
+            $( $crate::def_fns! {@def: $prefix $fn_name: $( $other ),+ } )+
+        }
     };
     ( @def: $prefix:literal Clone: $( $other:ty ),+ $(,)? ) => {
         /// FFI function equivalent of [`Clone::clone`]
@@ -99,8 +102,8 @@ macro_rules! def_fns {
         ///
         /// All of the given pointers must be valid and the given handle id must match the expected
         /// pointer type
-        #[unsafe(export_name = concat!($prefix, "__clone"))]
-        unsafe extern "C" fn __clone(
+        #[unsafe(export_name = concat!($prefix, "clone"))]
+        unsafe extern "C" fn clone(
             handle_id: <$crate::handle::Id as $crate::ExternC>::CType,
             handle_ptr: *const core::ffi::c_void,
             out_ptr: *mut *mut core::ffi::c_void
@@ -130,8 +133,8 @@ macro_rules! def_fns {
         ///
         /// All of the given pointers must be valid and the given handle id must match the expected
         /// pointer type
-        #[unsafe(export_name = concat!($prefix, "__default"))]
-        unsafe extern "C" fn __default(
+        #[unsafe(export_name = concat!($prefix, "default"))]
+        unsafe extern "C" fn default(
             handle_id: <$crate::handle::Id as $crate::ExternC>::CType,
             out_ptr: *mut *mut core::ffi::c_void
         ) -> $crate::FfiReturn {
@@ -159,8 +162,8 @@ macro_rules! def_fns {
         ///
         /// All of the given pointers must be valid and the given handle id must match the expected
         /// pointer type
-        #[unsafe(export_name = concat!($prefix, "__eq"))]
-        unsafe extern "C" fn __eq(
+        #[unsafe(export_name = concat!($prefix, "eq"))]
+        unsafe extern "C" fn eq(
             handle_id: <$crate::handle::Id as $crate::ExternC>::CType,
             left_handle_ptr: *const core::ffi::c_void,
             right_handle_ptr: *const core::ffi::c_void,
@@ -200,8 +203,8 @@ macro_rules! def_fns {
         ///
         /// All of the given pointers must be valid and the given handle id must match the expected
         /// pointer type
-        #[unsafe(export_name = concat!($prefix, "__ord"))]
-        unsafe extern "C" fn __ord(
+        #[unsafe(export_name = concat!($prefix, "ord"))]
+        unsafe extern "C" fn ord(
             handle_id: <$crate::handle::Id as $crate::ExternC>::CType,
             left_handle_ptr: *const core::ffi::c_void,
             right_handle_ptr: *const core::ffi::c_void,
@@ -241,8 +244,8 @@ macro_rules! def_fns {
         ///
         /// All of the given pointers must be valid and the given handle id must match the expected
         /// pointer type
-        #[unsafe(export_name = concat!($prefix, "__drop"))]
-        unsafe extern "C" fn __drop(
+        #[unsafe(export_name = concat!($prefix, "drop"))]
+        unsafe extern "C" fn drop(
             handle_id: <$crate::handle::Id as $crate::ExternC>::CType,
             handle_ptr: *mut core::ffi::c_void,
         ) -> $crate::FfiReturn {
@@ -269,7 +272,7 @@ macro_rules! def_fns {
         ///
         /// See [`GlobalAlloc::dealloc`]
         #[unsafe(no_mangle)]
-        unsafe extern "C" fn __dealloc(ptr: *mut u8, size: usize, align: usize) -> $crate::FfiReturn {
+        unsafe extern "C" fn __co3_dealloc(ptr: *mut u8, size: usize, align: usize) -> $crate::FfiReturn {
             if ptr.is_null() {
                 return $crate::FfiReturn::TrapRepresentation;
             }
@@ -297,14 +300,16 @@ macro_rules! decl_fns {
             /// # Safety
             ///
             /// See [`GlobalAlloc::dealloc`]
-            fn __dealloc(ptr: *mut u8, size: usize, align: usize) -> $crate::FfiReturn;
+            pub(crate) fn __co3_dealloc(ptr: *mut u8, size: usize, align: usize) -> $crate::FfiReturn;
         }
     };
     ( $($fn_names:ident),+ ) => {
-        $( $crate::decl_fns!{ link_prefix = "" $fn_names } )+
+        $crate::decl_fns!{ link_prefix = "__co3_" $( $fn_names ),+ }
     };
     ( link_prefix = $prefix:literal $($fn_names:ident),+ ) => {
-        $( $crate::decl_fns!{ @decl: $prefix $fn_names } )+
+        pub(crate) mod __co3_import {
+            $( $crate::decl_fns!{ @decl: $prefix $fn_names } )+
+        }
     };
     ( @decl: $prefix:literal Clone ) => {
         unsafe extern "C" {
@@ -314,8 +319,8 @@ macro_rules! decl_fns {
             ///
             /// All of the given pointers must be valid and the given handle id must match the expected
             /// pointer type
-            #[link_name = concat!($prefix, "__clone")]
-            fn __clone(
+            #[link_name = concat!($prefix, "clone")]
+            pub(crate) fn clone(
                 handle_id: <$crate::handle::Id as $crate::ExternC>::CType,
                 handle_ptr: *const $crate::external::Extern,
                 out_ptr: *mut *mut $crate::external::Extern
@@ -330,8 +335,8 @@ macro_rules! decl_fns {
             ///
             /// All of the given pointers must be valid and the given handle id must match the expected
             /// pointer type
-            #[link_name = concat!($prefix, "__default")]
-            fn __default(
+            #[link_name = concat!($prefix, "default")]
+            pub(crate) fn default(
                 handle_id: <$crate::handle::Id as $crate::ExternC>::CType,
                 out_ptr: *mut *mut $crate::external::Extern
             ) -> $crate::FfiReturn;
@@ -345,8 +350,8 @@ macro_rules! decl_fns {
             ///
             /// All of the given pointers must be valid and the given handle id must match the expected
             /// pointer type
-            #[link_name = concat!($prefix, "__eq")]
-            fn __eq(
+            #[link_name = concat!($prefix, "eq")]
+            pub(crate) fn eq(
                 handle_id: <$crate::handle::Id as $crate::ExternC>::CType,
                 left_handle_ptr: *const $crate::external::Extern,
                 right_handle_ptr: *const $crate::external::Extern,
@@ -362,8 +367,8 @@ macro_rules! decl_fns {
             ///
             /// All of the given pointers must be valid and the given handle id must match the expected
             /// pointer type
-            #[link_name = concat!($prefix, "__ord")]
-            fn __ord(
+            #[link_name = concat!($prefix, "ord")]
+            pub(crate) fn ord(
                 handle_id: <$crate::handle::Id as $crate::ExternC>::CType,
                 left_handle_ptr: *const $crate::external::Extern,
                 right_handle_ptr: *const $crate::external::Extern,
@@ -379,8 +384,8 @@ macro_rules! decl_fns {
             ///
             /// All of the given pointers must be valid and the given handle id must match the expected
             /// pointer type
-            #[link_name = concat!($prefix, "__drop")]
-            fn __drop(
+            #[link_name = concat!($prefix, "drop")]
+            pub(crate) fn drop(
                 handle_id: <$crate::handle::Id as $crate::ExternC>::CType,
                 handle_ptr: *mut $crate::external::Extern,
             ) -> $crate::FfiReturn;

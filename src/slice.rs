@@ -235,7 +235,7 @@ impl<C: ReprC> CBoxedSlice<C> {
 
         if let Ok(layout) = core::alloc::Layout::array::<C>(self.len) {
             unsafe {
-                __dealloc(self.data.cast(), layout.size(), layout.align());
+                __co3_dealloc(self.data.cast(), layout.size(), layout.align());
             }
 
             return true;

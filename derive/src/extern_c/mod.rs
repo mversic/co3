@@ -251,6 +251,7 @@ impl syn::parse::Parse for FfiTypeKindFieldAttribute {
 }
 
 const FFI_TYPE_ATTR: &str = "mineral";
+const FFI_TYPE_ATTR_ALT: &str = "co3";
 
 pub struct FfiTypeAttr {
     pub kind: Option<FfiTypeKindAttribute>,
@@ -258,7 +259,46 @@ pub struct FfiTypeAttr {
 
 impl FromAttributes for FfiTypeAttr {
     fn from_attributes(attrs: &[Attribute]) -> darling::Result<Self> {
-        parse_single_list_attr_opt(FFI_TYPE_ATTR, attrs).map(|kind| Self { kind })
+        let mut accumulator = darling::error::Accumulator::default();
+        let mineral_kind = accumulator
+            .handle(parse_single_list_attr_opt(FFI_TYPE_ATTR, attrs))
+            .flatten();
+        let co3_kind = accumulator
+            .handle(parse_single_list_attr_opt(FFI_TYPE_ATTR_ALT, attrs))
+            .flatten();
+        let opaque_attr = find_single_attr_opt(&mut accumulator, "opaque", attrs);
+
+        if let Some(attr) = opaque_attr
+            && !matches!(attr.meta, syn::Meta::Path(_))
+        {
+            accumulator.push(darling::Error::custom(
+                "Expected #[opaque] attribute to be a path",
+            ));
+        }
+
+        if mineral_kind.is_some() && co3_kind.is_some() {
+            accumulator.push(darling::Error::custom(
+                "Use either #[mineral(...)] or #[co3(...)], not both",
+            ));
+        }
+
+        let kind_attr_kind = mineral_kind.or(co3_kind);
+        let kind = match (kind_attr_kind, opaque_attr) {
+            (Some(_), Some(attr)) => {
+                accumulator.push(
+                    darling::Error::custom(
+                        "Use either #[mineral(...)]/#[co3(...)] or #[opaque], not both",
+                    )
+                    .with_span(attr),
+                );
+                None
+            }
+            (Some(kind), None) => Some(kind),
+            (None, Some(_)) => Some(FfiTypeKindAttribute::Opaque),
+            (None, None) => None,
+        };
+
+        accumulator.finish_with(Self { kind })
     }
 }
 
@@ -268,7 +308,23 @@ pub struct FfiTypeFieldAttr {
 
 impl FromAttributes for FfiTypeFieldAttr {
     fn from_attributes(attrs: &[Attribute]) -> darling::Result<Self> {
-        parse_single_list_attr_opt(FFI_TYPE_ATTR, attrs).map(|kind| Self { kind })
+        let mut accumulator = darling::error::Accumulator::default();
+        let mineral_kind = accumulator
+            .handle(parse_single_list_attr_opt(FFI_TYPE_ATTR, attrs))
+            .flatten();
+        let co3_kind = accumulator
+            .handle(parse_single_list_attr_opt(FFI_TYPE_ATTR_ALT, attrs))
+            .flatten();
+
+        if mineral_kind.is_some() && co3_kind.is_some() {
+            accumulator.push(darling::Error::custom(
+                "Use either #[mineral(...)] or #[co3(...)], not both",
+            ));
+        }
+
+        accumulator.finish_with(Self {
+            kind: mineral_kind.or(co3_kind),
+        })
     }
 }
 

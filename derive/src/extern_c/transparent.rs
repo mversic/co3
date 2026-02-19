@@ -59,11 +59,17 @@ pub(crate) fn derive_transparent_item(input: &FfiTypeInput) -> TokenStream {
         quote!()
     };
 
+    let params = if params.is_empty() {
+        quote!()
+    } else {
+        quote!((#params))
+    };
+
     quote! {
         co3::mineral! {
             // SAFETY: `Self` and `Self::Target` are guaranteed to be transmutable, but the user
             // must make sure the provided validation function does not return false positives
-            unsafe impl(#params) Transparent for #name #ty_generics where (#predicates) {
+            unsafe impl #params Transparent for #name #ty_generics where (#predicates) {
                 type Target = #target;
 
                 #custom_validation

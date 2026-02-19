@@ -1,49 +1,5 @@
-error[E0277]: the trait bound `Wrapper: ReprC` is not satisfied
-  --> tests/ui_fail/fallible_transmute_mut_ref.rs:17:1
+error[E0601]: `main` function not found in crate `$CRATE`
+  --> tests/ui_fail/fallible_transmute_mut_ref.rs:24:13
    |
-17 | #[co3::carbonate]
-   | ^^^^^^^^^^^^^^^^^ unsatisfied trait bound
-   |
-help: the trait `ReprC` is not implemented for `Wrapper`
-  --> tests/ui_fail/fallible_transmute_mut_ref.rs:13:1
-   |
-13 | pub struct Wrapper(WrapperInner);
-   | ^^^^^^^^^^^^^^^^^^
-   = help: the following other types implement trait `ReprC`:
-             *const R
-             *mut R
-             ExternRef<'_, R>
-             ExternRefMut<'_, R>
-             FfiTuple10<A, B, C, D, E, F, G, H, I, J>
-             FfiTuple11<A, B, C, D, E, F, G, H, I, J, K>
-             FfiTuple12<A, B, C, D, E, F, G, H, I, J, K, L>
-             FfiTuple1<A>
-           and $N others
-   = note: required for `&mut Wrapper` to implement `transmute::_::CheckedTransmute1<Transparent>`
-   = note: required for `&mut Wrapper` to implement `co3::_::ExternC0<Transparent>`
-   = note: required for `&mut Wrapper` to implement `ExternC`
-   = note: this error originates in the attribute macro `co3::carbonate` (in Nightly builds, run with -Z macro-backtrace for more info)
-
-error[E0277]: the trait bound `Wrapper: ReprC` is not satisfied
-  --> tests/ui_fail/fallible_transmute_mut_ref.rs:17:1
-   |
-17 | #[co3::carbonate]
-   | ^^^^^^^^^^^^^^^^^ unsatisfied trait bound
-   |
-help: the trait `ReprC` is not implemented for `Wrapper`
-  --> tests/ui_fail/fallible_transmute_mut_ref.rs:13:1
-   |
-13 | pub struct Wrapper(WrapperInner);
-   | ^^^^^^^^^^^^^^^^^^
-   = help: the following other types implement trait `ReprC`:
-             *const R
-             *mut R
-             ExternRef<'_, R>
-             ExternRefMut<'_, R>
-             FfiTuple10<A, B, C, D, E, F, G, H, I, J>
-             FfiTuple11<A, B, C, D, E, F, G, H, I, J, K>
-             FfiTuple12<A, B, C, D, E, F, G, H, I, J, K, L>
-             FfiTuple1<A>
-           and $N others
-   = note: required for `&mut Wrapper` to implement `transmute::_::CheckedTransmute1<Transparent>`
-   = note: this error originates in the attribute macro `co3::carbonate` (in Nightly builds, run with -Z macro-backtrace for more info)
+24 | fn kita() {}
+   |             ^ consider adding a `main` function to `$DIR/tests/ui_fail/fallible_transmute_mut_ref.rs`

@@ -215,20 +215,88 @@ impl WithNiche for WithCustomNiche {}
 
 #[cfg(test)]
 mod tests {
+    #[cfg(feature = "alloc")]
+    use alloc::string::String;
+    use core::{mem::ManuallyDrop, ptr::NonNull};
+
     use static_assertions::{assert_impl_all, assert_not_impl_any};
 
-    use crate::ir::ReprFamily;
-
     use super::*;
+    use crate::{
+        Decode, Encode,
+        ir::ReprFamily,
+        slice::{CSlice, CSliceMut},
+    };
 
     #[test]
     fn nested_option_niche_family() {
-        assert_impl_all!(Option<bool>: NicheFamily<Kind = WithCustomNiche>, ReprFamily<Kind = Option<WithCustomNiche>>, Niche, ExternC<CType = u8>);
-        assert_impl_all!(Option<Option<bool>>: NicheFamily<Kind = WithCustomNiche>, ReprFamily<Kind = Option<WithCustomNiche>>, Niche, ExternC<CType = u8>);
+        assert_impl_all!(Option<bool>:
+            ReprFamily<Kind = Option<WithCustomNiche>>,
+            NicheFamily<Kind = WithCustomNiche>,
+            Niche<CType = u8>,
+            Decode<'static>,
+            Encode
+        );
+        assert_impl_all!(Option<Option<bool>>:
+            NicheFamily<Kind = WithCustomNiche>,
+            ReprFamily<Kind = Option<WithCustomNiche>>,
+            Niche<CType = u8>,
+            Decode<'static>,
+            Encode
+        );
         // TODO: Depends on: https://github.com/mversic/co3/issues/33
         //assert_impl_all!(Option<(u8, NonZeroU8)>: NicheFamily<Kind = WithoutNiche>, ReprFamily<Kind = Option<WithoutNiche>>, ExternC<CType = CTuple2<u8, u8>>);
 
         assert_not_impl_any!(Option<bool>: ReprC, StableNiche);
         assert_not_impl_any!(Option<Option<bool>>: ReprC, StableNiche);
+    }
+
+    #[test]
+    fn niche_values() {
+        assert_eq!(core::ptr::null::<u8>(), None::<&bool>.encode(&mut ()));
+        #[cfg(any(
+            feature = "unstable-refs",
+            all(feature = "alloc", feature = "unsafe-optimizations")
+        ))]
+        assert_eq!(core::ptr::null::<u8>(), None::<&mut bool>.encode(&mut ()));
+
+        #[cfg(feature = "alloc")]
+        assert_eq!(
+            CSliceMut::<u8>::none(),
+            None::<String>.encode(&mut Default::default())
+        );
+        #[cfg(feature = "alloc")]
+        assert_eq!(
+            CSliceMut::<u8>::none(),
+            None::<Box<str>>.encode(&mut Default::default())
+        );
+
+        assert_eq!(CSlice::<u8>::none(), None::<&str>.encode(&mut ()));
+
+        #[cfg(any(
+            feature = "unstable-refs",
+            all(feature = "alloc", feature = "unsafe-optimizations")
+        ))]
+        assert_eq!(
+            co3::slice::CSliceMut::<u8>::none(),
+            None::<&mut str>.encode(&mut ())
+        );
+        #[cfg(feature = "alloc")]
+        assert_eq!(
+            core::ptr::null_mut(),
+            None::<NonNull<String>>.encode(&mut ())
+        );
+        #[cfg(feature = "alloc")]
+        assert_eq!(
+            CSliceMut::<u8>::none(),
+            None::<ManuallyDrop<String>>.encode(&mut Default::default())
+        );
+
+        #[cfg(not(target_family = "wasm"))]
+        let expected = 2_u8;
+        #[cfg(target_family = "wasm")]
+        let expected = 2_u32;
+
+        assert_eq!(expected, None::<ManuallyDrop<bool>>.encode(&mut ()));
     }
 }

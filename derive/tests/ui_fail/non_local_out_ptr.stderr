@@ -1,0 +1,49 @@
+error[E0277]: the trait bound `NoReprStruct: out_ptr::_::NonLocal0<NoReprStructStore<OwningStore<u8>>>` is not satisfied
+  --> tests/ui_fail/non_local_out_ptr.rs:12:35
+   |
+12 | pub fn return_no_repr_struct() -> Vec<NoReprStruct> {
+   |                                   ^^^^^^^^^^^^^^^^^ unsatisfied trait bound
+   |
+help: the trait `out_ptr::_::NonLocal0<NoReprStructStore<OwningStore<u8>>>` is not implemented for `NoReprStruct`
+  --> tests/ui_fail/non_local_out_ptr.rs:4:1
+   |
+ 4 | pub struct NoReprStruct(String);
+   | ^^^^^^^^^^^^^^^^^^^^^^^
+   = help: the following other types implement trait `OutPtrWrite`:
+             (A, B)
+             (A, B, C)
+             (A, B, C, D)
+             (A, B, C, D, E)
+             (A, B, C, D, E, F)
+             (A, B, C, D, E, F, G)
+             (A, B, C, D, E, F, G, H)
+             (A, B, C, D, E, F, G, H, I)
+           and $N others
+   = note: required for `NoReprStruct` to implement `NonLocal`
+   = note: required for `Vec<NoReprStruct>` to implement `out_ptr::_::OutPtrWrite0<Vec<NoReprStruct>>`
+   = note: required for `Vec<NoReprStruct>` to implement `OutPtrWrite`
+
+error[E0277]: the trait bound `NoReprEnum: out_ptr::_::NonLocal0<NoReprEnumStore<OwningStore<u8>>>` is not satisfied
+  --> tests/ui_fail/non_local_out_ptr.rs:17:33
+   |
+17 | pub fn return_no_repr_enum() -> Vec<NoReprEnum> {
+   |                                 ^^^^^^^^^^^^^^^ unsatisfied trait bound
+   |
+help: the trait `out_ptr::_::NonLocal0<NoReprEnumStore<OwningStore<u8>>>` is not implemented for `NoReprEnum`
+  --> tests/ui_fail/non_local_out_ptr.rs:7:1
+   |
+ 7 | pub enum NoReprEnum {
+   | ^^^^^^^^^^^^^^^^^^^
+   = help: the following other types implement trait `OutPtrWrite`:
+             (A, B)
+             (A, B, C)
+             (A, B, C, D)
+             (A, B, C, D, E)
+             (A, B, C, D, E, F)
+             (A, B, C, D, E, F, G)
+             (A, B, C, D, E, F, G, H)
+             (A, B, C, D, E, F, G, H, I)
+           and $N others
+   = note: required for `NoReprEnum` to implement `NonLocal`
+   = note: required for `Vec<NoReprEnum>` to implement `out_ptr::_::OutPtrWrite0<Vec<NoReprEnum>>`
+   = note: required for `Vec<NoReprEnum>` to implement `OutPtrWrite`

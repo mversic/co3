@@ -1,4 +1,3 @@
-//#![cfg(feature = "derive")]
 //use std::collections::BTreeMap;
 //
 //use co3::external::{ExternRef, External};

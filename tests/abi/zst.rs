@@ -1,0 +1,83 @@
+use co3::{ExternC, ReprC, transmute::CheckedTransmute};
+use static_assertions::assert_not_impl_any;
+
+#[derive(Debug, Clone, PartialEq, Eq, ExternC)]
+pub struct NoReprStruct<T: ?Sized> {
+    b: Box<T>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, ExternC)]
+pub enum NoReprEnum<T: ?Sized> {
+    A(Box<T>),
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, ExternC)]
+#[repr(C)]
+pub struct ReprCStruct<T: ?Sized> {
+    b: Box<T>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, ExternC)]
+#[repr(u8)]
+pub enum ReprCEnum<T: ?Sized> {
+    A(Box<T>),
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, ExternC)]
+#[repr(C, u8)]
+pub enum ReprCDataEnum<T: ?Sized> {
+    A(Box<T>),
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, ExternC)]
+#[repr(transparent)]
+pub struct TransparentStruct<T: ?Sized>(Box<T>);
+
+#[derive(Debug, Clone, PartialEq, Eq, ExternC)]
+#[repr(transparent)]
+pub enum TransparentEnum<T: ?Sized> {
+    A(Box<T>),
+}
+
+#[test]
+fn zst_no_impl() {
+    assert_not_impl_any!(NoReprStruct<()>:
+        CheckedTransmute,
+        ExternC,
+        ReprC,
+    );
+
+    assert_not_impl_any!(NoReprEnum<()>:
+        CheckedTransmute,
+        ExternC,
+        ReprC,
+    );
+
+    assert_not_impl_any!(ReprCStruct<()>:
+        CheckedTransmute,
+        ExternC,
+        ReprC,
+    );
+
+    assert_not_impl_any!(ReprCEnum<()>:
+        CheckedTransmute,
+        ExternC,
+        ReprC,
+    );
+
+    assert_not_impl_any!(ReprCDataEnum<()>:
+        CheckedTransmute,
+        ExternC,
+        ReprC,
+    );
+
+    assert_not_impl_any!(TransparentStruct<()>:
+        ExternC,
+        ReprC,
+    );
+
+    assert_not_impl_any!(TransparentEnum<()>:
+        ExternC,
+        ReprC,
+    );
+}

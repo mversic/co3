@@ -195,9 +195,6 @@ pub(crate) fn derive_fieldless_enum(
     };
 
     quote! {
-        // FIXME:
-        //unsafe impl co3::transmute::MutSafe for #enum_name {}
-
         impl co3::ir::ReprFamily for #enum_name {
             type Kind = co3::ir::Transmuted;
         }
@@ -209,6 +206,10 @@ pub(crate) fn derive_fieldless_enum(
             fn is_valid(#target_arg: &Self::Target) -> bool {
                 #is_valid
             }
+        }
+
+        unsafe impl co3::transmute::EncodeTransmuted for #enum_name {
+            type Store = <Self::Target as co3::Encode>::Store;
         }
 
         #niche_ir
@@ -484,7 +485,7 @@ fn gen_transparent_impl<'a>(
     is_valid_body: TokenStream,
     fields: impl IntoIterator<Item = &'a FfiTypeField>,
 ) -> TokenStream {
-    let (impl_generics, ty_generics, _) = generics.split_for_impl();
+    let (impl_generics, ty_generics, where_clause) = generics.split_for_impl();
     let predicates = generics
         .where_clause
         .as_ref()
@@ -494,10 +495,7 @@ fn gen_transparent_impl<'a>(
     let flat_transmute_bounds = gen_flat_transmute_bounds(&field_types, generics);
 
     quote! {
-        // FIXME:
-        //unsafe impl #impl_generics co3::transmute::MutSafe for #item_name #ty_generics where #encodable_bounds #predicates {}
-
-        impl #impl_generics co3::ir::ReprFamily for #item_name #ty_generics where #predicates {
+        impl #impl_generics co3::ir::ReprFamily for #item_name #ty_generics #where_clause {
             type Kind = co3::ir::Transmuted;
         }
 
@@ -508,6 +506,15 @@ fn gen_transparent_impl<'a>(
             fn is_valid(target: &Self::Target) -> bool {
                 #is_valid_body
             }
+        }
+
+        unsafe impl #impl_generics co3::transmute::EncodeTransmuted for #item_name #ty_generics where
+            // FIXME:
+            #target #ty_generics: co3::Encode,
+            #flat_transmute_bounds
+            #predicates
+        {
+            type Store = <Self::Target as co3::Encode>::Store;
         }
     }
 }
@@ -558,10 +565,10 @@ fn gen_flat_transmute_bounds(fields: &[&syn::Type], generics: &syn::Generics) ->
         .iter()
         .filter(|&ty| is_type_parameterized(ty, generics));
 
-    quote! {
-        #(#parameterized_field_types:
-            co3::transmute::FlatTransmute<Target: co3::ir::ReprFamily<Kind = co3::ir::Robust>>,
-        )*
+    quote! { #(
+        #parameterized_field_types: co3::ExternC + co3::transmute::FlatTransmute<
+            Target = <#parameterized_field_types as co3::ExternC>::CType
+        >,)*
     }
 }
 

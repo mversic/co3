@@ -1,11 +1,6 @@
-#![cfg(feature = "derive")]
-use core::{cmp::Ordering, ffi::c_int, ptr::NonNull};
-use std::mem::ManuallyDrop;
+use core::cmp::Ordering;
 
-use co3::{
-    Encode, ExternC,
-    slice::{RawSlice, RawSliceMut},
-};
+use co3::{Encode, ExternC};
 use webassembly_test::webassembly_test;
 
 //co3::handles! {Extern}
@@ -13,6 +8,7 @@ co3::decl_fns! {Drop}
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, ExternC)]
 #[mineral(opaque)]
+#[allow(unused)]
 pub enum Opaque {
     A,
 }
@@ -24,43 +20,55 @@ pub enum Opaque {
 //}
 
 #[derive(Clone, Copy, ExternC)]
-pub enum FieldlessEnumWithoutRepr {
-    Var1,
-}
-
-#[derive(Clone, Copy, ExternC)]
-#[repr(u8)]
-pub enum FieldlessSingleFieldEnumWithReprU {
-    Var1,
-}
-
-#[derive(Clone, Copy, ExternC)]
-#[repr(i8)]
-pub enum FieldlessSingleFieldEnumWithReprI {
-    Var1,
-}
-
-#[derive(Clone, Copy, ExternC)]
+#[allow(unused)]
 #[repr(u8)]
 pub enum FieldlessUEnum {
     Var1,
     Var2,
     Var3,
     Var4,
-    Var5,
 }
 
 #[derive(Clone, Copy, ExternC)]
+#[allow(unused)]
 #[repr(i8)]
 pub enum FieldlessIEnum {
     Var1,
     Var2,
     Var3,
     Var4,
-    Var5,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, ExternC)]
+pub enum FieldlessNoReprEnum {
+    A,
+    B,
+    C,
+    D,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, ExternC)]
+#[allow(unused)]
+#[repr(C, i8)]
+pub enum ReprCDataEnum<'a, T> {
+    A(&'a [u32; 2]),
+    B(u32),
+    C(T),
+    D,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, ExternC)]
+#[allow(unused)]
+#[repr(i8)]
+pub enum DataEnum<'a, T> {
+    A(&'a [u32; 2]),
+    B(u32),
+    C(T),
+    D,
 }
 
 #[derive(Clone, Copy, ExternC)]
+#[allow(unused)]
 #[repr(u16)]
 pub enum FieldlessLargeEnum {
     Var1,
@@ -321,25 +329,6 @@ pub enum FieldlessLargeEnum {
     Var256,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, ExternC)]
-#[repr(C)]
-pub enum FieldlessReprCEnum {
-    A,
-    B,
-    D,
-}
-
-// FIXME:
-//#[derive(Debug, Clone, PartialEq, Eq, ExternC)]
-//#[repr(C)]
-//pub enum DataCarryingEnum<'a> {
-//    A(&'a str),
-//    B(u32),
-//    // TODO: Support this
-//    //C(T),
-//    D,
-//}
-
 #[cfg(target_family = "wasm")]
 #[webassembly_test]
 fn wasm_niche_value() {
@@ -351,52 +340,11 @@ fn wasm_niche_value() {
 
 #[test]
 #[webassembly_test]
-fn std_niche_value() {
-    assert_eq!(core::ptr::null::<u8>(), None::<&bool>.encode(&mut ()));
-    #[cfg(feature = "non_robust_ref_mut")]
-    assert_eq!(core::ptr::null::<u8>(), None::<&mut bool>.encode(&mut ()));
-
-    assert_eq!(
-        RawSliceMut::<u8>::none(),
-        None::<String>.encode(&mut Default::default())
-    );
-    assert_eq!(
-        RawSliceMut::<u8>::none(),
-        None::<Box<str>>.encode(&mut Default::default())
-    );
-
-    assert_eq!(RawSlice::<u8>::none(), None::<&str>.encode(&mut ()));
-
-    #[cfg(feature = "non_robust_ref_mut")]
-    assert_eq!(
-        co3::slice::RawSliceMut::<u8>::none(),
-        None::<&mut str>.encode(&mut ())
-    );
-    assert_eq!(
-        core::ptr::null_mut(),
-        None::<NonNull<String>>.encode(&mut ())
-    );
-    assert_eq!(
-        RawSliceMut::<u8>::none(),
-        None::<ManuallyDrop<String>>.encode(&mut Default::default())
-    );
-
-    #[cfg(not(target_family = "wasm"))]
-    let expected = 2_u8;
-    #[cfg(target_family = "wasm")]
-    let expected = 2_u32;
-
-    assert_eq!(expected, None::<ManuallyDrop<bool>>.encode(&mut ()));
-}
-
-#[test]
-#[webassembly_test]
-fn enum_niche_value() {
+fn verify_enum_niche_value() {
     #[cfg(not(target_family = "wasm"))]
     let expected_bool = 2_u8;
     #[cfg(target_family = "wasm")]
     let expected_bool = 2_u32;
-
     #[cfg(not(target_family = "wasm"))]
     let expected_ord = 2_i8;
     #[cfg(target_family = "wasm")]
@@ -407,47 +355,56 @@ fn enum_niche_value() {
 
     assert!(None::<Opaque>.encode(&mut ()).is_null());
     //assert!(None::<Extern>.encode(&mut ()).is_null());
-    assert!(None::<FieldlessEnumWithoutRepr>.encode(&mut ()).is_null());
 
     #[cfg(not(target_family = "wasm"))]
-    let expected1 = 1_u8;
+    let expected_niche_enum_discriminant_u = 4_u8;
     #[cfg(target_family = "wasm")]
-    let expected1 = 1_u32;
+    let expected_niche_enum_discriminant_u = 4_u32;
     #[cfg(not(target_family = "wasm"))]
-    let expected2 = 1_i8;
+    let expected_niche_enum_discriminant_i = 4_i8;
     #[cfg(target_family = "wasm")]
-    let expected2 = 1_i32;
+    let expected_niche_enum_discriminant_i = 4_i32;
 
     assert_eq!(
-        expected1,
-        None::<FieldlessSingleFieldEnumWithReprU>.encode(&mut ())
+        expected_niche_enum_discriminant_u,
+        None::<FieldlessUEnum>.encode(&mut ())
     );
+    assert_eq!(
+        expected_niche_enum_discriminant_i,
+        None::<FieldlessIEnum>.encode(&mut ())
+    );
+    assert_eq!(
+        expected_niche_enum_discriminant_u,
+        None::<FieldlessNoReprEnum>.encode(&mut ())
+    );
+
+    let encoded = None::<ReprCDataEnum<&u8>>.encode(&mut ());
+    assert_eq!(expected_niche_enum_discriminant_i, encoded.tag);
+    let bytes = unsafe {
+        core::slice::from_raw_parts(
+            core::ptr::from_ref(&encoded.payload).cast::<u8>(),
+            core::mem::size_of_val(&encoded.payload),
+        )
+    };
+    assert!(bytes.iter().all(|&byte| byte == 0));
+
+    let encoded = None::<DataEnum<&u8>>.encode(&mut ());
+    let bytes = unsafe {
+        core::slice::from_raw_parts(
+            core::ptr::from_ref(&encoded).cast::<i8>(),
+            core::mem::size_of_val(&encoded),
+        )
+    };
+    assert_eq!(expected_niche_enum_discriminant_i, bytes[0]);
+    assert!(bytes[1..].iter().all(|&byte| byte == 0));
+
+    #[cfg(not(target_family = "wasm"))]
+    let expected_fieldless_large_enum = 256u16;
+    #[cfg(target_family = "wasm")]
+    let expected_fieldless_large_enum = 256u32;
 
     assert_eq!(
-        expected2,
-        None::<FieldlessSingleFieldEnumWithReprI>.encode(&mut ())
+        expected_fieldless_large_enum,
+        None::<FieldlessLargeEnum>.encode(&mut ())
     );
-
-    #[cfg(not(target_family = "wasm"))]
-    let expected3 = 5_u8;
-    #[cfg(target_family = "wasm")]
-    let expected3 = 5_u32;
-    #[cfg(not(target_family = "wasm"))]
-    let expected4 = 5_i8;
-    #[cfg(target_family = "wasm")]
-    let expected4 = 5_i32;
-
-    assert_eq!(expected3, None::<FieldlessUEnum>.encode(&mut ()));
-    assert_eq!(expected4, None::<FieldlessIEnum>.encode(&mut ()));
-
-    #[cfg(not(target_family = "wasm"))]
-    let expected5 = 256u16;
-    #[cfg(target_family = "wasm")]
-    let expected5 = 256u32;
-
-    assert_eq!(expected5, None::<FieldlessLargeEnum>.encode(&mut ()));
-    assert_eq!(3 as c_int, None::<FieldlessReprCEnum>.encode(&mut ()));
-
-    // TODO: Add a test for data caryying enum
-    //assert_eq!(3 as c_int, None::<DataCarryingEnum>.encode(&mut ()));
 }

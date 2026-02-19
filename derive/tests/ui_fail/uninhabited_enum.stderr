@@ -1,10 +1,10 @@
-error: Uninhabited enums are not allowed in FFI. Annotate with #[co3::mineral(opaque)]?
-  --> tests/ui_fail/uninhabited_enum.rs:12:10
-   |
-12 | pub enum FfiStruct3 {}
-   |          ^^^^^^^^^^
+error: Uninhabited enum is a never type. Annotate with #[co3::mineral(opaque)]?
+ --> tests/ui_fail/uninhabited_enum.rs:8:10
+  |
+8 | pub enum FfiStruct2 {}
+  |          ^^^^^^^^^^
 
-error: Uninhabited enums are not allowed in FFI. Annotate with #[co3::mineral(opaque)]?
+error: repr(C) on enums requires a primitive type (e.g., repr(C, u8))
   --> tests/ui_fail/uninhabited_enum.rs:16:10
    |
 16 | pub enum FfiStruct4 {}

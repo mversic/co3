@@ -32,7 +32,7 @@ fn impl_clone_for_opaque(name: &Ident, generics: &syn::Generics) -> TokenStream 
                 let mut output = core::mem::MaybeUninit::uninit();
 
                 let clone_result = unsafe {
-                    crate::__clone(
+                    crate::__co3_import::clone(
                         co3::Encode::encode(handle_id, &mut ()),
                         co3::Encode::encode(self.as_ref(), &mut ()),
                         output.as_mut_ptr(),
@@ -43,7 +43,7 @@ fn impl_clone_for_opaque(name: &Ident, generics: &syn::Generics) -> TokenStream 
                     panic!("Clone returned: {}", clone_result);
                 }
 
-                unsafe {co3::out_ptr::OutPtrRead::try_read_out(output.assume_init()).expect("Invalid output")}
+                unsafe {co3::Decode::decode(output.assume_init(), &mut ()).expect("Invalid output")}
             }
         }
     }
@@ -59,7 +59,7 @@ fn impl_default_for_opaque(name: &Ident, generics: &syn::Generics) -> TokenStrea
                 let mut output = core::mem::MaybeUninit::uninit();
 
                 let default_result = unsafe {
-                    crate::__default(
+                    crate::__co3_import::default(
                         co3::Encode::encode(handle_id, &mut ()),
                         output.as_mut_ptr(),
                     )
@@ -69,7 +69,7 @@ fn impl_default_for_opaque(name: &Ident, generics: &syn::Generics) -> TokenStrea
                     panic!("Default returned: {}", default_result);
                 }
 
-                unsafe {co3::out_ptr::OutPtrRead::try_read_out(output.assume_init()).expect("Invalid output")}
+                unsafe {co3::Decode::decode(output.assume_init(), &mut ()).expect("Invalid output")}
             }
         }
     }
@@ -89,7 +89,7 @@ fn impl_partial_eq_for_opaque(name: &Ident, generics: &syn::Generics) -> TokenSt
                 let mut output = core::mem::MaybeUninit::uninit();
 
                 let eq_result = unsafe {
-                    crate::__eq(
+                    crate::__co3_import::eq(
                         co3::Encode::encode(handle_id, &mut ()),
                         co3::Encode::encode(self.as_ref(), &mut ()),
                         co3::Encode::encode(other.as_ref(), &mut ()),
@@ -101,7 +101,7 @@ fn impl_partial_eq_for_opaque(name: &Ident, generics: &syn::Generics) -> TokenSt
                     panic!("Eq returned: {}", eq_result);
                 }
 
-                unsafe {co3::out_ptr::OutPtrRead::try_read_out(output.assume_init()).expect("Invalid output")}
+                unsafe {co3::Decode::decode(output.assume_init(), &mut ()).expect("Invalid output")}
             }
         }
     }
@@ -128,7 +128,7 @@ fn impl_ord_for_opaque(name: &Ident, generics: &syn::Generics) -> TokenStream {
                 let mut output = core::mem::MaybeUninit::uninit();
 
                 let cmp_result = unsafe {
-                    crate::__ord(
+                    crate::__co3_import::ord(
                         co3::Encode::encode(handle_id, &mut ()),
                         co3::Encode::encode(self.as_ref(), &mut ()),
                         co3::Encode::encode(other.as_ref(), &mut ()),
@@ -140,7 +140,7 @@ fn impl_ord_for_opaque(name: &Ident, generics: &syn::Generics) -> TokenStream {
                     panic!("Ord returned: {}", cmp_result);
                 }
 
-                unsafe {co3::out_ptr::OutPtrRead::try_read_out(output.assume_init()).expect("Invalid output")}
+                unsafe {co3::Decode::decode(output.assume_init(), &mut ()).expect("Invalid output")}
             }
         }
     }
@@ -238,7 +238,7 @@ pub fn wrap_as_opaque(emitter: &mut Emitter, mut input: FfiTypeInput) -> TokenSt
                 let handle_id = <#name #ty_generics as co3::handle::Handle>::ID;
 
                 let drop_result = unsafe {
-                    crate::__drop(
+                    crate::__co3_import::drop(
                         co3::Encode::encode(handle_id, &mut ()),
                         co3::Encode::encode(self.0, &mut ())
                     )
@@ -309,12 +309,10 @@ fn gen_impl_ffi(name: &Ident, generics: &syn::Generics) -> TokenStream {
         }
 
         impl #impl_generics co3::niche::Niche for #name #ty_generics #where_clause {
-            const NICHE_VALUE: <Self as $crate::ExternC>::CType = core::ptr::null_mut();
+            const NICHE_VALUE: <Self as co3::ExternC>::CType = core::ptr::null_mut();
         }
 
         unsafe impl #impl_generics co3::niche::StableNiche for #name #ty_generics #where_clause {}
-        // FIXME:
-        //unsafe impl #impl_generics co3::transmute::MutSafe for #name #ty_generics #where_clause {}
     }
 }
 
@@ -446,7 +444,13 @@ fn gen_store_sync_stmts(fn_descriptor: &FnDescriptor) -> TokenStream {
 
     for arg in &fn_descriptor.input_args {
         let store_name = gen_store_name(arg.name());
-        stmts.extend(quote! { co3::Store::sync(#store_name)?; });
+        let arg_name = arg.name();
+
+        stmts.extend(quote! {
+            if co3::Store::sync(#store_name).is_none() {
+                panic!("failed to sync store for {}", stringify!(#arg_name));
+            }
+        });
     }
 
     stmts
@@ -463,7 +467,7 @@ fn gen_input_conversion_stmts(fn_descriptor: &FnDescriptor) -> TokenStream {
             stmts.extend(quote! {let #arg_name = self;});
             stmts.extend(quote!(let #arg_name = #processed;));
         } else {
-            stmts.extend(quote! {let #arg_name = self.as_ptr();});
+            stmts.extend(quote! {let #arg_name = co3::external::External::as_ptr(self);});
         }
     }
     for arg in &fn_descriptor.input_args {

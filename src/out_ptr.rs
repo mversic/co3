@@ -850,4 +850,10 @@ mod tests {
             assert_impl_all!(&Option<Vec<u8>>: OutPtrWrite);
         }
     }
+
+    // TODO:
+    //#[test]
+    //pub fn nested_owned() {
+    //    unimplemented!()
+    //}
 }

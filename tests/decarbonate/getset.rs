@@ -1,6 +1,3 @@
-//#![cfg(feature = "derive")]
-//#![cfg(feature = "getset")]
-//
 //co3::handles! {Name, FfiStruct}
 //co3::decl_fns! {Drop, Clone, Eq}
 //

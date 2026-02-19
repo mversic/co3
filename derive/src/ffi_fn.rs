@@ -31,10 +31,17 @@ pub fn gen_declaration(
     let ffi_fn_name = gen_fn_name(fn_descriptor, trait_name);
     let ffi_fn_doc = gen_doc(fn_descriptor, trait_name);
     let fn_signature = gen_fn_signature(&ffi_fn_name, fn_descriptor, impl_generics);
+    let link_name = if fn_descriptor.self_ty.is_none() && trait_name.is_none() {
+        let fn_name = &fn_descriptor.sig.ident;
+        quote! { #[link_name = stringify!(#fn_name)] }
+    } else {
+        quote! {}
+    };
 
     quote! {
         unsafe extern "C" {
             #[doc = #ffi_fn_doc]
+            #link_name
             #(#ffi_fn_attrs)*
             #fn_signature;
         }
@@ -185,7 +192,10 @@ fn gen_store_sync_stmts(fn_descriptor: &FnDescriptor) -> TokenStream {
 
     for arg in &fn_descriptor.input_args {
         let store_name = gen_store_name(arg.name());
-        stmts.extend(quote! { co3::Store::sync(#store_name)?; });
+
+        stmts.extend(quote! {
+            co3::Store::sync(#store_name).ok_or(co3::FfiReturn::TrapRepresentation)?;
+        });
     }
 
     stmts
@@ -211,7 +221,7 @@ pub fn gen_arg_ffi_to_src(arg: &Arg) -> TokenStream {
 
     quote! {
         let mut #store_name = Default::default();
-        let #arg_name: #src_type = co3::Decode::decode(#arg_name, &mut #store_name)
+        let #arg_name: #src_type = unsafe { co3::Decode::decode(#arg_name, &mut #store_name) }
             .ok_or(co3::FfiReturn::TrapRepresentation)?;
     }
 }

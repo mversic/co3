@@ -30,6 +30,8 @@ quote = "1.0.43"
 co3 = { path = "..", features = ["derive"] }
 
 static_assertions = "1.1.0"
+webassembly-test = "0.1.0"
 disjoint_impls = "1.3.4"
 trybuild = "1.0.114"
 getset = "0.1.6"
+impls = "1.0.3"
