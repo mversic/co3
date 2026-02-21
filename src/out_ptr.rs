@@ -9,6 +9,11 @@ use crate::{
 #[cfg(feature = "alloc")]
 use alloc::{boxed::Box, vec::Vec};
 
+unsafe extern "C" {
+    #[link_name = concat!(env!("CARGO_CRATE_NAME"), "_dealloc")]
+    pub(crate) fn co3_dealloc(ptr: *mut u8, size: usize, align: usize) -> crate::FfiReturn;
+}
+
 disjoint_impls! {
     /// Marker trait indicating that [`Encode::encode`] doesn't return a reference to the store.
     /// This is useful to determine which(and how) types can be returned from an FFI function
@@ -330,7 +335,7 @@ disjoint_impls! {
             let mut store = Default::default();
             let _ = self.encode(&mut store);
 
-            let output = CBoxedSlice::from_boxed_slice(store.0);
+            let output = CBoxedSlice::from_boxed_slice(store.0, co3_dealloc);
 
             unsafe {
                 out_ptr.write(output);
@@ -359,7 +364,7 @@ disjoint_impls! {
             let mut store = Default::default();
             let _ = self.encode(&mut store);
 
-            let output = CBoxedSlice::from_boxed_slice(store.ctypes);
+            let output = CBoxedSlice::from_boxed_slice(store.ctypes, co3_dealloc);
 
             unsafe {
                 out_ptr.write(output);
@@ -392,7 +397,7 @@ disjoint_impls! {
                 let mut store = Default::default();
                 let _ = self.encode(&mut store);
 
-                CBoxedSlice::from_boxed_slice(store.0)
+                CBoxedSlice::from_boxed_slice(store.0, co3_dealloc)
             };
             #[cfg(not(feature = "owned-as-ref"))]
             let output = self.encode(&mut ());
@@ -413,7 +418,7 @@ disjoint_impls! {
                 let mut store = Default::default();
                 let _ = self.encode(&mut store);
 
-                CBoxedSlice::from_boxed_slice(store.0)
+                CBoxedSlice::from_boxed_slice(store.0, co3_dealloc)
             };
             #[cfg(not(feature = "owned-as-ref"))]
             let output = self.encode(&mut ());
@@ -446,7 +451,7 @@ disjoint_impls! {
             let mut store = Default::default();
             let _ = self.encode(&mut store);
 
-            let output = CBoxedSlice::from_boxed_slice(store.ctypes);
+            let output = CBoxedSlice::from_boxed_slice(store.ctypes, co3_dealloc);
 
             unsafe {
                 out_ptr.write(output);
@@ -465,7 +470,7 @@ disjoint_impls! {
                 let mut store = Default::default();
                 let _ = self.encode(&mut store);
 
-                CBoxedSlice::from_boxed_slice(store.0)
+                CBoxedSlice::from_boxed_slice(store.0, co3_dealloc)
             };
             #[cfg(not(feature = "owned-as-ref"))]
             let output = self.encode(&mut ());
@@ -486,7 +491,7 @@ disjoint_impls! {
                 let mut store = Default::default();
                 let _ = self.encode(&mut store);
 
-                CBoxedSlice::from_boxed_slice(store.0)
+                CBoxedSlice::from_boxed_slice(store.0, co3_dealloc)
             };
             #[cfg(not(feature = "owned-as-ref"))]
             let output = self.encode(&mut ());
@@ -519,7 +524,7 @@ disjoint_impls! {
             let mut store = Default::default();
             let _ = self.encode(&mut store);
 
-            let output = CBoxedSlice::from_boxed_slice(store.ctypes);
+            let output = CBoxedSlice::from_boxed_slice(store.ctypes, co3_dealloc);
 
             unsafe { out_ptr.write(output); }
         }

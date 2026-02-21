@@ -6,7 +6,7 @@ use core::slice;
 
 use crate::{ReprC, mineral};
 
-crate::decl_fns! { dealloc }
+type DeallocFn = unsafe extern "C" fn(*mut u8, usize, usize) -> crate::FfiReturn;
 
 /// Immutable slice `&[C]` with a defined C ABI layout. Consists of a data pointer and a length.
 /// If the data pointer is set to `null`, the struct represents `Option<&[C]>`.
@@ -31,6 +31,7 @@ pub struct CSliceMut<C> {
 pub struct CBoxedSlice<C> {
     data: *mut C,
     len: usize,
+    dealloc: Option<DeallocFn>,
 }
 
 macro_rules! impl_raw_slice_methods {
@@ -188,26 +189,24 @@ impl<C: ReprC> CBoxedSlice<C> {
         Self {
             data: core::ptr::null_mut(),
             len: 0,
+            dealloc: None,
         }
-    }
-
-    /// Create a slice from a data pointer and a length.
-    pub const fn from_raw_parts(data: *mut C, len: usize) -> Self {
-        Self { data, len }
     }
 
     /// Create [`Self`] from a [`Box<[T]>`]
     #[cfg(feature = "alloc")]
-    pub fn from_boxed_slice(source: Option<Box<[C]>>) -> Self {
-        if let Some(boxed_slice) = source {
-            let mut boxed_slice = core::mem::ManuallyDrop::new(boxed_slice);
-            return Self {
-                data: boxed_slice.as_mut_ptr(),
-                len: boxed_slice.len(),
-            };
-        }
+    pub fn from_boxed_slice(source: Option<Box<[C]>>, dealloc: DeallocFn) -> Self {
+        let mut boxed_slice = core::mem::ManuallyDrop::new(source);
 
-        Self::none()
+        let Some(boxed_slice) = boxed_slice.as_deref_mut() else {
+            return Self::none();
+        };
+
+        Self {
+            data: boxed_slice.as_mut_ptr(),
+            len: boxed_slice.len(),
+            dealloc: Some(dealloc),
+        }
     }
 
     /// Convert [`Self`] into a boxed slice. Return `None` if data pointer is null.
@@ -226,16 +225,14 @@ impl<C: ReprC> CBoxedSlice<C> {
     }
 
     pub(crate) unsafe fn deallocate(&self) -> bool {
-        if self.data.is_null() {
-            return true;
-        }
-        if self.len == 0 {
+        if self.data.is_null() || self.len == 0 {
             return true;
         }
 
+        let dealloc = self.dealloc.unwrap();
         if let Ok(layout) = core::alloc::Layout::array::<C>(self.len) {
             unsafe {
-                __co3_dealloc(self.data.cast(), layout.size(), layout.align());
+                dealloc(self.data.cast(), layout.size(), layout.align());
             }
 
             return true;

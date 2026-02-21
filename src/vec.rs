@@ -7,8 +7,6 @@ use core::mem::ManuallyDrop;
 
 use crate::{ReprC, mineral};
 
-crate::decl_fns! { dealloc }
-
 /// Owned vector `Vec<C>` with a defined C ABI layout. Consists of a data pointer, a length, and a capacity.
 /// If the data pointer is set to `null`, the struct represents `Option<Vec<C>>`.
 #[repr(C)]
@@ -95,11 +93,6 @@ impl<C> CVec<C> {
             len: 0,
             cap: 0,
         }
-    }
-
-    /// Create a vector from a data pointer, a length, and a capacity.
-    pub const fn from_raw_parts(data: *mut C, len: usize, cap: usize) -> Self {
-        Self { data, len, cap }
     }
 
     /// Create [`Self`] from a [`Vec<T>`].

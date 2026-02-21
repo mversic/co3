@@ -1,9 +1,6 @@
 use co3::external::ExternRef;
 use webassembly_test::webassembly_test;
 
-co3::handles! {FfiStruct<bool>}
-co3::decl_fns! {Drop, Clone, Eq, Ord}
-
 #[co3::extern_type]
 /// Struct without a repr attribute is opaque by default
 #[derive(Clone, PartialEq, Eq, PartialOrd, Ord)]

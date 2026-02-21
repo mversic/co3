@@ -3,9 +3,6 @@ use core::cmp::Ordering;
 use co3::{Encode, ExternC};
 use webassembly_test::webassembly_test;
 
-//co3::handles! {Extern}
-co3::decl_fns! {Drop}
-
 #[derive(Debug, Clone, Copy, PartialEq, Eq, ExternC)]
 #[mineral(opaque)]
 #[allow(unused)]

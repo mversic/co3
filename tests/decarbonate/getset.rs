@@ -1,5 +1,3 @@
-//co3::handles! {Name, FfiStruct}
-//co3::decl_fns! {Drop, Clone, Eq}
 //
 //#[co3::extern_type]
 //#[derive(Clone, PartialEq, Eq)]

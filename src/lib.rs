@@ -18,6 +18,8 @@ use disjoint_impls::disjoint_impls;
 
 #[cfg(feature = "unstable-refs")]
 use crate::cloned::DecodeCloned;
+#[cfg(not(feature = "owned-as-ref"))]
+use crate::out_ptr::co3_dealloc;
 #[cfg(not(feature = "unsafe-optimizations"))]
 use crate::transmute::EncodeTransmuted;
 use crate::{
@@ -617,7 +619,7 @@ disjoint_impls! {
                 CSliceMut::from_slice(Some(store))
             };
             #[cfg(not(feature = "owned-as-ref"))]
-            let ctypes = CBoxedSlice::from_boxed_slice(Some(self));
+            let ctypes = CBoxedSlice::from_boxed_slice(Some(self), co3_dealloc);
 
             ctypes
         }
@@ -702,7 +704,7 @@ disjoint_impls! {
                 CSliceMut::from_slice(Some(store))
             };
             #[cfg(not(feature = "owned-as-ref"))]
-            let ctypes = CVec::from_vec(Some(self));
+            let ctypes = CVec::from_vec(Some(self), co3_dealloc);
 
             ctypes
         }

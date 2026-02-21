@@ -3,8 +3,6 @@
 //use co3::external::{ExternRef, External};
 //use webassembly_test::webassembly_test;
 //
-//co3::handles! {OpaqueStruct, Value}
-//co3::decl_fns! {Drop, Clone, Eq}
 //
 //#[co3::extern_type]
 //#[derive(Clone, PartialEq, Eq)]
