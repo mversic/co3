@@ -7,8 +7,8 @@ use webassembly_test::webassembly_test;
 #[derive(Debug, Clone, PartialEq, Eq, ExternC)]
 pub struct Name(String);
 
-#[co3::carbonate]
 #[derive(Clone, Setters, Getters, MutGetters, ExternC)]
+#[co3::carbonate]
 #[getset(get = "pub")]
 pub struct FfiStruct {
     #[getset(set = "pub", get_mut = "pub")]
@@ -29,14 +29,14 @@ fn export_getset_get() {
     let mut name = MaybeUninit::<*const Name>::new(core::ptr::null());
 
     unsafe {
-        FfiStruct__set_id(<*mut _>::from(ffi_struct), 2);
+        FfiStruct_set_id(<*mut _>::from(ffi_struct), 2);
         assert_eq!(&2, ffi_struct.id());
 
-        FfiStruct__id_mut(<*mut _>::from(ffi_struct), id.as_mut_ptr());
+        FfiStruct_id_mut(<*mut _>::from(ffi_struct), id.as_mut_ptr());
         let id = &mut *id.assume_init();
         assert_eq!(&mut 2, id);
 
-        FfiStruct__name(ffi_struct, name.as_mut_ptr());
+        FfiStruct_name(ffi_struct, name.as_mut_ptr());
         let name = &*name.assume_init();
 
         assert_eq!(&init_name, name);

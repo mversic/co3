@@ -346,10 +346,8 @@ fn gen_repr_c_data_enum(
     let repr_c_enum_name = gen_repr_c_item_name(enum_name);
 
     let (impl_generics, ty_generics, where_clause) = generics.split_for_impl();
+    let predicates = where_clause.as_ref().map(|w| &w.predicates);
     let params = &generics.params;
-    let predicates = where_clause
-        .as_ref()
-        .map(|where_clause| &where_clause.predicates);
 
     let mut field_types = Vec::new();
     for variant in variants {

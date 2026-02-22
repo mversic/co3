@@ -15,8 +15,8 @@ categories = ["development-tools::ffi"]
 default = ["alloc", "owned-as-ref"]
 
 # Enable deriving `extern C` ABI. Macros made available are:
-# 2. `ExternC`/`extern_type`
-# 1. `carbonate`/`decarbonate`
+# 2. `#derive(ExternC)`/`#[extern_type]`
+# 1. `#[carbonate]`/`#[decarbonate]`/`extern_c!`
 derive = ["co3_derive"]
 
 # Implements conversion traits for types from the `alloc` crate (e.g. `Box<T>` or `Vec<T>`).

@@ -1,14 +1,14 @@
 use manyhow::emit;
-use proc_macro2::TokenStream;
+use proc_macro2::{Span, TokenStream};
 use quote::quote;
-use syn::{Attribute, Ident, Type, parse_quote, visit_mut::VisitMut};
+use syn::{Ident, LitStr, Path, Type, visit_mut::VisitMut};
 
 use crate::{
     attr_parse::derive::{Derive, RustcDerive},
     emitter::Emitter,
     extern_c::FfiTypeInput,
     ffi_fn,
-    impl_visitor::{Arg, FnDescriptor, ImplDescriptor, TypeImplTraitResolver},
+    impl_visitor::{Arg, FnDescriptor, ImplDescriptor, TypeImplTraitResolver, path_symbol_name},
     utils::{gen_resolve_type, gen_store_name, unwrap_result_type},
 };
 
@@ -19,10 +19,77 @@ fn add_handle_bound(name: &Ident, generics: &mut syn::Generics) {
     generics
         .make_where_clause()
         .predicates
-        .push(parse_quote! {#name #ty_generics: co3::handle::Handle});
+        .push(syn::parse_quote! {
+            #name #ty_generics: co3::handle::Handle
+        });
 }
 
-fn impl_clone_for_opaque(name: &Ident, generics: &syn::Generics) -> TokenStream {
+fn link_name(prefix: &TokenStream, suffix: &str) -> TokenStream {
+    let suffix = LitStr::new(suffix, Span::call_site());
+    quote!(concat!(#prefix, #suffix))
+}
+
+#[derive(Clone)]
+pub struct ExternTypeSymbolOverride {
+    pub trait_name: Ident,
+    pub method_name: Ident,
+    pub symbol: LitStr,
+}
+
+pub enum ExternTypeLinkMode {
+    LinkCrate(TokenStream),
+    ExplicitSymbols(Vec<ExternTypeSymbolOverride>),
+}
+
+fn override_symbol(
+    mode: &ExternTypeLinkMode,
+    trait_name: &str,
+    method_name: &str,
+) -> Option<TokenStream> {
+    let ExternTypeLinkMode::ExplicitSymbols(overrides) = mode else {
+        return None;
+    };
+
+    let symbol = &overrides
+        .iter()
+        .find(|entry| entry.trait_name == trait_name && entry.method_name == method_name)?
+        .symbol;
+
+    Some(quote!(#symbol))
+}
+
+fn built_in_symbol(
+    emitter: &mut Emitter,
+    mode: &ExternTypeLinkMode,
+    item_name: &Ident,
+    trait_name: &str,
+    method_name: &str,
+) -> TokenStream {
+    if let Some(symbol) = override_symbol(mode, trait_name, method_name) {
+        return symbol;
+    }
+
+    match mode {
+        ExternTypeLinkMode::LinkCrate(crate_) => {
+            link_name(crate_, &format!("{trait_name}_{method_name}"))
+        }
+        ExternTypeLinkMode::ExplicitSymbols(_) => {
+            emit!(
+                emitter,
+                item_name,
+                "Missing symbol mapping for `{trait_name}::{method_name}` in `co3::extern_type(...)`"
+            );
+            let fallback = LitStr::new("__co3_missing_symbol__", item_name.span());
+            quote!(#fallback)
+        }
+    }
+}
+
+fn impl_clone_for_opaque(
+    name: &Ident,
+    generics: &syn::Generics,
+    link_name: TokenStream,
+) -> TokenStream {
     let (impl_generics, ty_generics, where_clause) = generics.split_for_impl();
 
     quote! {
@@ -32,7 +99,16 @@ fn impl_clone_for_opaque(name: &Ident, generics: &syn::Generics) -> TokenStream 
                 let mut output = core::mem::MaybeUninit::uninit();
 
                 let clone_result = unsafe {
-                    crate::__co3_import::clone(
+                    unsafe extern "C" {
+                        #[link_name = #link_name]
+                        fn co3_clone(
+                            handle_id: <co3::handle::Id as co3::ExternC>::CType,
+                            handle_ptr: *const co3::external::Extern,
+                            out_ptr: *mut *mut co3::external::Extern,
+                        ) -> co3::FfiReturn;
+                    }
+
+                    co3_clone(
                         co3::Encode::encode(handle_id, &mut ()),
                         co3::Encode::encode(self.as_ref(), &mut ()),
                         output.as_mut_ptr(),
@@ -49,7 +125,11 @@ fn impl_clone_for_opaque(name: &Ident, generics: &syn::Generics) -> TokenStream 
     }
 }
 
-fn impl_default_for_opaque(name: &Ident, generics: &syn::Generics) -> TokenStream {
+fn impl_default_for_opaque(
+    name: &Ident,
+    generics: &syn::Generics,
+    link_name: TokenStream,
+) -> TokenStream {
     let (impl_generics, ty_generics, where_clause) = generics.split_for_impl();
 
     quote! {
@@ -59,7 +139,15 @@ fn impl_default_for_opaque(name: &Ident, generics: &syn::Generics) -> TokenStrea
                 let mut output = core::mem::MaybeUninit::uninit();
 
                 let default_result = unsafe {
-                    crate::__co3_import::default(
+                    unsafe extern "C" {
+                        #[link_name = #link_name]
+                        fn co3_default(
+                            handle_id: <co3::handle::Id as co3::ExternC>::CType,
+                            out_ptr: *mut *mut co3::external::Extern,
+                        ) -> co3::FfiReturn;
+                    }
+
+                    co3_default(
                         co3::Encode::encode(handle_id, &mut ()),
                         output.as_mut_ptr(),
                     )
@@ -79,7 +167,11 @@ fn impl_eq_for_opaque(name: &Ident, generics: &syn::Generics) -> TokenStream {
     let (impl_generics, ty_generics, where_clause) = generics.split_for_impl();
     quote! { impl #impl_generics Eq for #name #ty_generics #where_clause {} }
 }
-fn impl_partial_eq_for_opaque(name: &Ident, generics: &syn::Generics) -> TokenStream {
+fn impl_partial_eq_for_opaque(
+    name: &Ident,
+    generics: &syn::Generics,
+    link_name: TokenStream,
+) -> TokenStream {
     let (impl_generics, ty_generics, where_clause) = generics.split_for_impl();
 
     quote! {
@@ -89,7 +181,17 @@ fn impl_partial_eq_for_opaque(name: &Ident, generics: &syn::Generics) -> TokenSt
                 let mut output = core::mem::MaybeUninit::uninit();
 
                 let eq_result = unsafe {
-                    crate::__co3_import::eq(
+                    unsafe extern "C" {
+                        #[link_name = #link_name]
+                        fn co3_eq(
+                            handle_id: <co3::handle::Id as co3::ExternC>::CType,
+                            left_handle_ptr: *const co3::external::Extern,
+                            right_handle_ptr: *const co3::external::Extern,
+                            out_ptr: *mut u8,
+                        ) -> co3::FfiReturn;
+                    }
+
+                    co3_eq(
                         co3::Encode::encode(handle_id, &mut ()),
                         co3::Encode::encode(self.as_ref(), &mut ()),
                         co3::Encode::encode(other.as_ref(), &mut ()),
@@ -118,7 +220,11 @@ fn impl_partial_ord_for_opaque(name: &Ident, generics: &syn::Generics) -> TokenS
         }
     }
 }
-fn impl_ord_for_opaque(name: &Ident, generics: &syn::Generics) -> TokenStream {
+fn impl_ord_for_opaque(
+    name: &Ident,
+    generics: &syn::Generics,
+    link_name: TokenStream,
+) -> TokenStream {
     let (impl_generics, ty_generics, where_clause) = generics.split_for_impl();
 
     quote! {
@@ -128,7 +234,17 @@ fn impl_ord_for_opaque(name: &Ident, generics: &syn::Generics) -> TokenStream {
                 let mut output = core::mem::MaybeUninit::uninit();
 
                 let cmp_result = unsafe {
-                    crate::__co3_import::ord(
+                    unsafe extern "C" {
+                        #[link_name = #link_name]
+                        fn co3_ord(
+                            handle_id: <co3::handle::Id as co3::ExternC>::CType,
+                            left_handle_ptr: *const co3::external::Extern,
+                            right_handle_ptr: *const co3::external::Extern,
+                            out_ptr: *mut i8,
+                        ) -> co3::FfiReturn;
+                    }
+
+                    co3_ord(
                         co3::Encode::encode(handle_id, &mut ()),
                         co3::Encode::encode(self.as_ref(), &mut ()),
                         co3::Encode::encode(other.as_ref(), &mut ()),
@@ -146,7 +262,39 @@ fn impl_ord_for_opaque(name: &Ident, generics: &syn::Generics) -> TokenStream {
     }
 }
 
-fn gen_shared_fns(emitter: &mut Emitter, input: &FfiTypeInput) -> Vec<TokenStream> {
+fn impl_shared_trait_for_opaque(
+    name: &Ident,
+    generics: &syn::Generics,
+    trait_path: &syn::Path,
+    shared_macro_ident: &Ident,
+    link_mode: &ExternTypeLinkMode,
+) -> TokenStream {
+    let (impl_generics, ty_generics, where_clause) = generics.split_for_impl();
+    let (prefix, overrides) = match link_mode {
+        ExternTypeLinkMode::LinkCrate(prefix) => (quote!(#prefix), quote!()),
+        ExternTypeLinkMode::ExplicitSymbols(overrides) => {
+            let entries = overrides.iter().map(|entry| {
+                let trait_name = &entry.trait_name;
+                let method_name = &entry.method_name;
+                let symbol = &entry.symbol;
+                quote!(#trait_name :: #method_name = #symbol)
+            });
+            (quote!(""), quote!(#(#entries),*))
+        }
+    };
+
+    quote! {
+        impl #impl_generics #trait_path for #name #ty_generics #where_clause {
+            #shared_macro_ident! { @impl [ #prefix ] [ #overrides ] }
+        }
+    }
+}
+
+fn gen_shared_fns(
+    emitter: &mut Emitter,
+    input: &FfiTypeInput,
+    link_mode: &ExternTypeLinkMode,
+) -> Vec<TokenStream> {
     let name = &input.ident;
 
     let mut shared_fn_impls = Vec::new();
@@ -161,13 +309,25 @@ fn gen_shared_fns(emitter: &mut Emitter, input: &FfiTypeInput) -> Vec<TokenStrea
                     );
                 }
                 RustcDerive::Clone => {
-                    shared_fn_impls.push(impl_clone_for_opaque(name, &input.generics));
+                    shared_fn_impls.push(impl_clone_for_opaque(
+                        name,
+                        &input.generics,
+                        built_in_symbol(emitter, link_mode, name, "Clone", "clone"),
+                    ));
                 }
                 RustcDerive::Default => {
-                    shared_fn_impls.push(impl_default_for_opaque(name, &input.generics));
+                    shared_fn_impls.push(impl_default_for_opaque(
+                        name,
+                        &input.generics,
+                        built_in_symbol(emitter, link_mode, name, "Default", "default"),
+                    ));
                 }
                 RustcDerive::PartialEq => {
-                    shared_fn_impls.push(impl_partial_eq_for_opaque(name, &input.generics));
+                    shared_fn_impls.push(impl_partial_eq_for_opaque(
+                        name,
+                        &input.generics,
+                        built_in_symbol(emitter, link_mode, name, "Eq", "eq"),
+                    ));
                 }
                 RustcDerive::Eq => {
                     shared_fn_impls.push(impl_eq_for_opaque(name, &input.generics));
@@ -176,7 +336,11 @@ fn gen_shared_fns(emitter: &mut Emitter, input: &FfiTypeInput) -> Vec<TokenStrea
                     shared_fn_impls.push(impl_partial_ord_for_opaque(name, &input.generics));
                 }
                 RustcDerive::Ord => {
-                    shared_fn_impls.push(impl_ord_for_opaque(name, &input.generics));
+                    shared_fn_impls.push(impl_ord_for_opaque(
+                        name,
+                        &input.generics,
+                        built_in_symbol(emitter, link_mode, name, "Ord", "cmp"),
+                    ));
                 }
                 RustcDerive::Hash | RustcDerive::Debug => {
                     emit!(
@@ -192,12 +356,22 @@ fn gen_shared_fns(emitter: &mut Emitter, input: &FfiTypeInput) -> Vec<TokenStrea
                 // handled by `getset_gen` module
             }
             Derive::Other(derive) => {
-                emit!(
-                    emitter,
+                let Some(trait_path) = emitter.handle(syn::parse_str::<syn::Path>(derive)) else {
+                    emit!(emitter, name, "Invalid derive path `{}`", derive);
+                    continue;
+                };
+                let Some(shared_macro_ident) = trait_path.segments.last().map(|seg| &seg.ident)
+                else {
+                    emit!(emitter, name, "Invalid derive path `{}`", derive);
+                    continue;
+                };
+                shared_fn_impls.push(impl_shared_trait_for_opaque(
                     name,
-                    "Opaque type should not implement `{}` trait",
-                    derive
-                );
+                    &input.generics,
+                    &trait_path,
+                    shared_macro_ident,
+                    link_mode,
+                ));
             }
         }
     }
@@ -205,51 +379,65 @@ fn gen_shared_fns(emitter: &mut Emitter, input: &FfiTypeInput) -> Vec<TokenStrea
     shared_fn_impls
 }
 
-pub fn wrap_as_opaque(emitter: &mut Emitter, mut input: FfiTypeInput) -> TokenStream {
+pub fn wrap_as_opaque(
+    emitter: &mut Emitter,
+    mut input: FfiTypeInput,
+    link_mode: &ExternTypeLinkMode,
+) -> TokenStream {
     let name = &input.ident;
     let vis = &input.vis;
 
     add_handle_bound(name, &mut input.generics);
-    let (impl_generics, ty_generics, handle_bounded_where_clause) = input.generics.split_for_impl();
+    let shared_fns = gen_shared_fns(emitter, &input, link_mode);
+    let (impl_generics, ty_generics, where_clause) = input.generics.split_for_impl();
 
-    let phantom_data_type_defs: Vec<_> = input
+    let phantom_data_fields = input
         .generics
-        .type_params()
-        .map(|param| quote! { core::marker::PhantomData<#param> })
-        .collect();
+        .params
+        .iter()
+        .filter_map(|param| match param {
+            syn::GenericParam::Lifetime(param) => {
+                let lifetime = &param.lifetime;
+                Some(quote! { core::marker::PhantomData<&#lifetime ()> })
+            }
+            syn::GenericParam::Type(param) => {
+                let ident = &param.ident;
+                Some(quote! { core::marker::PhantomData<#ident> })
+            }
+            syn::GenericParam::Const(_) => None,
+        });
 
     let impl_ffi = gen_impl_ffi(name, &input.generics);
-
-    let shared_fns = gen_shared_fns(emitter, &input);
-    // TODO: which attributes do we need to keep?
-    // in darling there is mechanism to forwards attrs, but it needs to be an whitelist
-    // it seems that as of now no such forwarding needs to take place
-    // so we just drop all attributes
-    let attrs = Vec::<Attribute>::new();
+    let drop_link_name = built_in_symbol(emitter, link_mode, name, "Drop", "drop");
 
     quote! {
-        #(#attrs)*
         #[repr(transparent)]
-        #vis struct #name #ty_generics(core::ptr::NonNull<co3::external::Extern> #(, #phantom_data_type_defs)*)
-        #handle_bounded_where_clause;
+        #vis struct #name #ty_generics(core::ptr::NonNull<co3::external::Extern> #(, #phantom_data_fields)*) #where_clause;
 
-        impl #impl_generics Drop for #name #ty_generics #handle_bounded_where_clause {
+        impl #impl_generics Drop for #name #ty_generics #where_clause {
             fn drop(&mut self) {
                 let handle_id = <#name #ty_generics as co3::handle::Handle>::ID;
 
                 let drop_result = unsafe {
-                    crate::__co3_import::drop(
+                    unsafe extern "C" {
+                        #[link_name = #drop_link_name]
+                        fn co3_drop(
+                            handle_id: <co3::handle::Id as co3::ExternC>::CType,
+                            handle_ptr: *mut co3::external::Extern,
+                        ) -> co3::FfiReturn;
+                    }
+
+                    co3_drop(
                         co3::Encode::encode(handle_id, &mut ()),
-                        co3::Encode::encode(self.0, &mut ())
+                        co3::external::External::as_mut_ptr(self),
                     )
                 };
 
-                if drop_result != co3::FfiReturn::Ok  {
+                if drop_result != co3::FfiReturn::Ok {
                     panic!("Drop returned: {}", drop_result);
                 }
             }
         }
-
         #(#shared_fns)*
         #impl_ffi
     }
@@ -259,10 +447,12 @@ fn gen_impl_ffi(name: &Ident, generics: &syn::Generics) -> TokenStream {
     let (impl_generics, ty_generics, where_clause) = generics.split_for_impl();
 
     let send_predicates = generics.type_params().map(|param| {
-        quote! { #param: Send }
+        let ident = &param.ident;
+        quote! { #ident: Send }
     });
     let sync_predicates = generics.type_params().map(|param| {
-        quote! { #param: Sync }
+        let ident = &param.ident;
+        quote! { #ident: Sync }
     });
 
     quote! {
@@ -316,8 +506,15 @@ fn gen_impl_ffi(name: &Ident, generics: &syn::Generics) -> TokenStream {
     }
 }
 
-pub fn wrap_impl_items(impl_desc: &ImplDescriptor) -> TokenStream {
-    let impl_attrs = &impl_desc.attrs;
+pub fn wrap_impl_items(
+    impl_desc: &ImplDescriptor,
+    _import_crate_name: Option<&TokenStream>,
+) -> TokenStream {
+    let impl_attrs = impl_desc
+        .attrs
+        .iter()
+        .copied()
+        .filter(|attr| !is_decarbonate_attr(attr));
 
     if impl_desc.fns.is_empty() {
         return quote! {};
@@ -337,13 +534,7 @@ pub fn wrap_impl_items(impl_desc: &ImplDescriptor) -> TokenStream {
     );
 
     for fn_ in &impl_desc.fns {
-        let trait_name = impl_desc.trait_name();
-
-        if let Some(wrapped) = is_shared_fn(fn_, trait_name) {
-            return wrapped;
-        }
-
-        self_methods.push(wrap_method(fn_, trait_name));
+        self_methods.push(wrap_method(fn_, impl_desc.trait_name));
     }
 
     let mut result = Vec::new();
@@ -368,43 +559,25 @@ fn gen_wrapper_signature(fn_descriptor: &FnDescriptor) -> syn::Signature {
     signature
 }
 
-fn is_shared_fn(fn_descriptor: &FnDescriptor, trait_name: Option<&Ident>) -> Option<TokenStream> {
-    let mut generics = parse_quote! {};
-
-    if let Some(trait_name) = trait_name {
-        let self_ty = fn_descriptor.self_ty_name().expect("Method without Self");
-        add_handle_bound(self_ty, &mut generics);
-
-        if trait_name == "Clone" {
-            return Some(impl_clone_for_opaque(self_ty, &generics));
-        }
-        if trait_name == "Default" {
-            return Some(impl_default_for_opaque(self_ty, &generics));
-        }
-        if trait_name == "PartialEq" {
-            return Some(impl_partial_eq_for_opaque(self_ty, &generics));
-        }
-        if trait_name == "Eq" {
-            return Some(impl_eq_for_opaque(self_ty, &generics));
-        }
-        if trait_name == "PartialOrd" {
-            return Some(impl_partial_ord_for_opaque(self_ty, &generics));
-        }
-        if trait_name == "Ord" {
-            return Some(impl_ord_for_opaque(self_ty, &generics));
-        }
-    }
-
-    None
+fn is_decarbonate_attr(attr: &syn::Attribute) -> bool {
+    attr.path()
+        .segments
+        .last()
+        .is_some_and(|seg| seg.ident == "decarbonate")
 }
 
-pub fn wrap_method(fn_descriptor: &FnDescriptor, trait_name: Option<&Ident>) -> TokenStream {
+pub fn wrap_method(fn_descriptor: &FnDescriptor, trait_path: Option<&Path>) -> TokenStream {
     let signature = gen_wrapper_signature(fn_descriptor);
-    let ffi_fn_name = ffi_fn::gen_fn_name(fn_descriptor, trait_name);
+    let trait_symbol_name = trait_path.map(path_symbol_name);
+    let ffi_fn_name = ffi_fn::gen_fn_name(fn_descriptor, trait_symbol_name.as_deref());
     let method_body = gen_wrapper_method_body(fn_descriptor, &ffi_fn_name);
-    let ffi_fn_attrs = &fn_descriptor.attrs;
+    let ffi_fn_attrs = fn_descriptor
+        .attrs
+        .iter()
+        .copied()
+        .filter(|attr| !is_decarbonate_attr(attr) && !attr.path().is_ident("link_name"));
     let method_doc = &fn_descriptor.doc;
-    let visibility = if trait_name.is_none() {
+    let visibility = if trait_path.is_none() {
         quote! { pub }
     } else {
         quote! {}

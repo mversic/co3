@@ -4,6 +4,7 @@
 
 use manyhow::emit;
 use proc_macro2::Span;
+use quote::ToTokens;
 use syn::{
     Attribute, Ident, Path, Type, Visibility, parse_quote,
     visit::{Visit, visit_signature},
@@ -43,7 +44,7 @@ impl Arg {
 
         // TODO: Handle error properly
         if matches!(src_type, Type::Array(_)) {
-            unimplemented!("Arrays are not supported by C ABI. Use a pointer or struct wrapper");
+            unimplemented!();
         }
 
         parse_quote! {<#src_type as co3::ExternC>::CType}
@@ -152,7 +153,6 @@ struct FnVisitor<'ast, 'emitter> {
     fatal: bool,
     attrs: Vec<&'ast Attribute>,
     doc: Vec<&'ast Attribute>,
-    trait_name: Option<&'ast Path>,
     /// Resolved type of the `Self` type
     self_ty: Option<&'ast Path>,
 
@@ -179,7 +179,9 @@ impl<'ast> ImplDescriptor<'ast> {
     }
 
     pub fn from_foreign_impl(emitter: &mut Emitter, node: &'ast syn::ItemImpl) -> Option<Self> {
-        let mut impl_desc = Self::from_impl(emitter, node)?;
+        let mut visitor = ImplVisitor::new(emitter);
+        visitor.visit_item_impl(node);
+        let mut impl_desc = Self::from_visitor(visitor)?;
 
         impl_desc.fns.iter_mut().for_each(|fn_| {
             let mut arg_processor = ForeignArgProcessor {
@@ -216,23 +218,26 @@ impl<'ast> ImplDescriptor<'ast> {
     pub fn trait_name(&self) -> Option<&Ident> {
         self.trait_name.map(last_seg_ident)
     }
+
+    pub fn trait_symbol_name(&self) -> Option<String> {
+        self.trait_name.map(path_symbol_name)
+    }
 }
 
 impl<'ast> FnDescriptor<'ast> {
     pub fn from_impl_method(
         emitter: &mut Emitter,
         self_ty: &'ast Path,
-        trait_name: Option<&'ast Path>,
         node: &'ast syn::ImplItemFn,
     ) -> Option<Self> {
-        let mut visitor = FnVisitor::new(emitter, Some(self_ty), trait_name);
+        let mut visitor = FnVisitor::new(emitter, Some(self_ty));
 
         visitor.visit_impl_item_fn(node);
         FnDescriptor::from_visitor(visitor)
     }
 
     pub fn from_fn(emitter: &mut Emitter, node: &'ast syn::ItemFn) -> Option<Self> {
-        let mut visitor = FnVisitor::new(emitter, None, None);
+        let mut visitor = FnVisitor::new(emitter, None);
 
         visitor.visit_item_fn(node);
         Self::from_visitor(visitor)
@@ -257,6 +262,112 @@ impl<'ast> FnDescriptor<'ast> {
 
     pub fn self_ty_name(&self) -> Option<&Ident> {
         self.self_ty.as_ref().map(last_seg_ident)
+    }
+
+    pub fn self_ty_symbol_name(&self) -> Option<String> {
+        self.self_ty.as_ref().map(path_symbol_name)
+    }
+}
+
+pub(crate) fn path_symbol_name(path: &Path) -> String {
+    let Some(seg) = path.segments.last() else {
+        return String::from("Self");
+    };
+
+    let mut out = seg.ident.to_string();
+    if let syn::PathArguments::AngleBracketed(args) = &seg.arguments {
+        for arg in &args.args {
+            if let Some(arg_name) = generic_arg_symbol_name(arg) {
+                if !arg_name.is_empty() {
+                    out.push('_');
+                    out.push_str(&arg_name);
+                }
+            }
+        }
+    }
+
+    sanitize_symbol_component(&out)
+}
+
+fn generic_arg_symbol_name(arg: &syn::GenericArgument) -> Option<String> {
+    match arg {
+        syn::GenericArgument::Lifetime(_) => None,
+        syn::GenericArgument::Type(ty) => Some(type_symbol_name(ty)),
+        syn::GenericArgument::Const(expr) => Some(sanitize_symbol_component(
+            &expr.to_token_stream().to_string(),
+        )),
+        syn::GenericArgument::AssocType(assoc) => {
+            Some(format!("{}_{}", assoc.ident, type_symbol_name(&assoc.ty)))
+        }
+        syn::GenericArgument::AssocConst(assoc) => Some(format!(
+            "{}_{}",
+            assoc.ident,
+            sanitize_symbol_component(&assoc.value.to_token_stream().to_string())
+        )),
+        syn::GenericArgument::Constraint(constraint) => Some(constraint.ident.to_string()),
+        _ => Some(sanitize_symbol_component(
+            &arg.to_token_stream().to_string(),
+        )),
+    }
+}
+
+fn type_symbol_name(ty: &Type) -> String {
+    match ty {
+        Type::Path(type_path) => path_symbol_name(&type_path.path),
+        Type::Reference(reference) => {
+            let mutability = if reference.mutability.is_some() {
+                "mut_ref"
+            } else {
+                "ref"
+            };
+            format!("{mutability}_{}", type_symbol_name(&reference.elem))
+        }
+        Type::Slice(slice) => format!("slice_{}", type_symbol_name(&slice.elem)),
+        Type::Array(array) => format!(
+            "array_{}_{}",
+            type_symbol_name(&array.elem),
+            sanitize_symbol_component(&array.len.to_token_stream().to_string())
+        ),
+        Type::Ptr(ptr) => {
+            let mutability = if ptr.mutability.is_some() {
+                "mut_ptr"
+            } else {
+                "const_ptr"
+            };
+            format!("{mutability}_{}", type_symbol_name(&ptr.elem))
+        }
+        Type::Tuple(tuple) => {
+            if tuple.elems.is_empty() {
+                String::from("unit")
+            } else {
+                let items = tuple.elems.iter().map(type_symbol_name).collect::<Vec<_>>();
+                format!("tuple_{}", items.join("_"))
+            }
+        }
+        _ => sanitize_symbol_component(&ty.to_token_stream().to_string()),
+    }
+}
+
+fn sanitize_symbol_component(input: &str) -> String {
+    let mut out = String::with_capacity(input.len());
+    let mut prev_is_us = false;
+
+    for ch in input.chars() {
+        let keep = ch.is_ascii_alphanumeric() || ch == '_';
+        if keep {
+            out.push(ch);
+            prev_is_us = ch == '_';
+        } else if !prev_is_us {
+            out.push('_');
+            prev_is_us = true;
+        }
+    }
+
+    let out = out.trim_matches('_');
+    if out.is_empty() {
+        String::from("ty")
+    } else {
+        out.to_string()
     }
 }
 
@@ -296,17 +407,12 @@ impl<'ast, 'emitter> ImplVisitor<'ast, 'emitter> {
 }
 
 impl<'ast, 'emitter> FnVisitor<'ast, 'emitter> {
-    pub fn new(
-        emitter: &'emitter mut Emitter,
-        self_ty: Option<&'ast Path>,
-        trait_name: Option<&'ast Path>,
-    ) -> Self {
+    pub fn new(emitter: &'emitter mut Emitter, self_ty: Option<&'ast Path>) -> Self {
         Self {
             emitter,
             fatal: false,
             attrs: Vec::new(),
             doc: Vec::new(),
-            trait_name,
             self_ty,
 
             sig: None,
@@ -379,13 +485,7 @@ impl<'ast> Visit<'ast> for ImplVisitor<'ast, '_> {
 
         for item in &node.items {
             if let syn::ImplItem::Fn(method) = item {
-                // NOTE: private methods in inherent impl are skipped
-                if self.trait_name.is_none() && !matches!(method.vis, Visibility::Public(_)) {
-                    continue;
-                }
-                if let Some(desc) =
-                    FnDescriptor::from_impl_method(self.emitter, self_ty, self.trait_name, method)
-                {
+                if let Some(desc) = FnDescriptor::from_impl_method(self.emitter, self_ty, method) {
                     self.fns.push(desc);
                 }
             }
@@ -424,9 +524,7 @@ impl<'ast> Visit<'ast> for FnVisitor<'ast, '_> {
         self.visit_signature(&node.sig);
     }
     fn visit_visibility(&mut self, node: &'ast Visibility) {
-        if self.trait_name.is_none() && !matches!(node, Visibility::Public(_)) {
-            emit!(self.emitter, node, "Private methods should not be exported");
-        }
+        let _ = node;
     }
     fn visit_signature(&mut self, node: &'ast syn::Signature) {
         if node.constness.is_some() {
