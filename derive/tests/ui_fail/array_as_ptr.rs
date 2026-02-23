@@ -1,6 +1,13 @@
-#[co3::carbonate]
-pub fn array_arg(_arr: [u32; 2]) {}
+use co3::carbonate;
+
+#[carbonate(extern "C")]
+#[unsafe(no_mangle)]
+pub extern "C" fn array_arg(arr: [u32; 2]) -> [u32; 2] {
+    arr
+}
 
 fn main() {
-    __array_arg([12_u32, 42_u32]);
+    unsafe extern "C" {
+        fn array_arg(arr: [u32; 2]) -> [u32; 2];
+    }
 }

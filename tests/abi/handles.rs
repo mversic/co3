@@ -1,9 +1,9 @@
-use co3::external::ExternRef;
+use co3::{carbonate, decarbonate, extern_type, external::ExternRef};
 use webassembly_test::webassembly_test;
 
 use crate::{Custom, ExtraCustom};
 
-#[co3::extern_type(
+#[extern_type(
     Drop::drop = "abi_Drop_drop",
     Clone::clone = "abi_Clone_clone",
     Eq::eq = "abi_Eq_eq",
@@ -20,19 +20,19 @@ use crate::{Custom, ExtraCustom};
 pub struct Handle<T>;
 co3::handles! {1, Handle<bool>}
 
-#[co3::decarbonate(link_name = "abi_Handle_bool_new")]
+#[decarbonate(link_name = "abi_Handle_bool_new")]
 pub fn handle_new(id: u8) -> Handle<bool> {
-    unreachable!("replaced by co3::decarbonate")
+    unreachable!("replaced by decarbonate")
 }
 
-#[co3::decarbonate(link_name = "abi_Handle_bool_id")]
+#[decarbonate(link_name = "abi_Handle_bool_id")]
 pub fn handle_id(handle: ExternRef<'_, Handle<bool>>) -> u8 {
-    unreachable!("replaced by co3::decarbonate")
+    unreachable!("replaced by decarbonate")
 }
 
-#[co3::decarbonate(link_name = "roundtrip")]
+#[decarbonate(link_name = "roundtrip")]
 pub fn roundtrip(input: ExternRef<'_, Handle<bool>>) -> ExternRef<'_, Handle<bool>> {
-    unreachable!("replaced by co3::decarbonate")
+    unreachable!("replaced by decarbonate")
 }
 
 mod provider {
@@ -95,7 +95,7 @@ mod provider {
         }
     }
 
-    #[co3::carbonate]
+    #[carbonate(extern "C")]
     impl Handle<bool> {
         pub fn new(id: u8) -> Self {
             Self {
@@ -109,7 +109,7 @@ mod provider {
         }
     }
 
-    #[co3::carbonate]
+    #[carbonate(extern "C")]
     pub fn roundtrip(input: ExternRef<'_, Handle<bool>>) -> ExternRef<'_, Handle<bool>> {
         input
     }

@@ -1,4 +1,4 @@
-use co3::ExternC;
+use co3::{ExternC, carbonate};
 
 #[derive(Clone, ExternC)]
 pub struct NoReprStruct(String);
@@ -8,13 +8,13 @@ pub enum NoReprEnum {
     A(String),
 }
 
-#[co3::carbonate]
-pub fn return_no_repr_struct() -> Vec<NoReprStruct> {
+#[carbonate(extern "C")]
+pub extern "C" fn return_no_repr_struct() -> Vec<NoReprStruct> {
     unimplemented!()
 }
 
-#[co3::carbonate]
-pub fn return_no_repr_enum() -> Vec<NoReprEnum> {
+#[carbonate(extern "C")]
+pub extern "C" fn return_no_repr_enum() -> Vec<NoReprEnum> {
     unimplemented!()
 }
 

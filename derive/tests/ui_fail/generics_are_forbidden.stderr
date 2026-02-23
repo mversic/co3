@@ -1,0 +1,23 @@
+error: Type and const generics on impl blocks are not supported
+  --> tests/ui_fail/generics_are_forbidden.rs:18:5
+   |
+18 | impl<T> GenericHandle<'static, T, 12> {
+   |     ^^^
+
+error: Type and const generics on impl blocks are not supported
+  --> tests/ui_fail/generics_are_forbidden.rs:23:5
+   |
+23 | impl<const N: usize> GenericHandle<'static, u32, N> {
+   |     ^^^^^^^^^^^^^^^^
+
+error: Type and const generics on functions are not supported
+  --> tests/ui_fail/generics_are_forbidden.rs:33:32
+   |
+33 | pub extern "C" fn freestanding2<T>(v: T) -> T {
+   |                                ^^^
+
+error: Type and const generics on functions are not supported
+  --> tests/ui_fail/generics_are_forbidden.rs:38:32
+   |
+38 | pub extern "C" fn freestanding3<const N: usize>(v: [u32; N]) -> [u32; N] {
+   |                                ^^^^^^^^^^^^^^^^

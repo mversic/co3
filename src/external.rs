@@ -20,7 +20,7 @@ pub unsafe trait External: Sized {
     fn as_mut_ptr(&mut self) -> *mut Extern;
 }
 
-/// Wrapper around struct/enum opaque pointer. When wrapped with the [`co3::extern_type`] macro in
+/// Wrapper around struct/enum opaque pointer. When wrapped with the [`extern_type`] macro in
 /// the crate linking dynamically to some `cdylib` crate, it replaces struct/enum body definition
 #[repr(C)]
 pub struct Extern {

@@ -1,8 +1,8 @@
 error[E0277]: the trait bound `NoReprStruct: out_ptr::_::NonLocal0<NoReprStructStore<OwningStore<u8>>>` is not satisfied
-  --> tests/ui_fail/non_local_out_ptr.rs:12:35
+  --> tests/ui_fail/non_local_out_ptr.rs:12:46
    |
-12 | pub fn return_no_repr_struct() -> Vec<NoReprStruct> {
-   |                                   ^^^^^^^^^^^^^^^^^ unsatisfied trait bound
+12 | pub extern "C" fn return_no_repr_struct() -> Vec<NoReprStruct> {
+   |                                              ^^^^^^^^^^^^^^^^^ unsatisfied trait bound
    |
 help: the trait `out_ptr::_::NonLocal0<NoReprStructStore<OwningStore<u8>>>` is not implemented for `NoReprStruct`
   --> tests/ui_fail/non_local_out_ptr.rs:4:1
@@ -24,10 +24,10 @@ help: the trait `out_ptr::_::NonLocal0<NoReprStructStore<OwningStore<u8>>>` is n
    = note: required for `Vec<NoReprStruct>` to implement `OutPtrWrite`
 
 error[E0277]: the trait bound `NoReprEnum: out_ptr::_::NonLocal0<NoReprEnumStore<OwningStore<u8>>>` is not satisfied
-  --> tests/ui_fail/non_local_out_ptr.rs:17:33
+  --> tests/ui_fail/non_local_out_ptr.rs:17:44
    |
-17 | pub fn return_no_repr_enum() -> Vec<NoReprEnum> {
-   |                                 ^^^^^^^^^^^^^^^ unsatisfied trait bound
+17 | pub extern "C" fn return_no_repr_enum() -> Vec<NoReprEnum> {
+   |                                            ^^^^^^^^^^^^^^^ unsatisfied trait bound
    |
 help: the trait `out_ptr::_::NonLocal0<NoReprEnumStore<OwningStore<u8>>>` is not implemented for `NoReprEnum`
   --> tests/ui_fail/non_local_out_ptr.rs:7:1

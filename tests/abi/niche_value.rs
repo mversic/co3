@@ -11,7 +11,7 @@ pub enum Opaque {
 }
 
 // FIXME:
-//#[co3::extern_type]
+//#[extern_type]
 //pub enum Extern {
 //    A,
 //}

@@ -82,12 +82,6 @@ macro_rules! def_fns {
         }
     };
     ( @def: Clone: $( $other:ty ),+ $(,)? ) => {
-        /// FFI function equivalent of [`Clone::clone`]
-        ///
-        /// # Safety
-        ///
-        /// All of the given pointers must be valid and the given handle id must match the expected
-        /// pointer type
         #[unsafe(export_name = concat!(env!("CARGO_CRATE_NAME"), "_", "Clone_clone"))]
         unsafe extern "C" fn clone(
             handle_id: <$crate::handle::Id as $crate::ExternC>::CType,
@@ -113,12 +107,6 @@ macro_rules! def_fns {
         }
     };
     ( @def: Default: $( $other:ty ),+ $(,)? ) => {
-        /// FFI function equivalent of [`Default::default`]
-        ///
-        /// # Safety
-        ///
-        /// All of the given pointers must be valid and the given handle id must match the expected
-        /// pointer type
         #[unsafe(export_name = concat!(env!("CARGO_CRATE_NAME"), "_", "Default_default"))]
         unsafe extern "C" fn default(
             handle_id: <$crate::handle::Id as $crate::ExternC>::CType,
@@ -142,12 +130,6 @@ macro_rules! def_fns {
         }
     };
     ( @def: Eq: $( $other:ty ),+ $(,)? ) => {
-        /// FFI function equivalent of [`Eq::eq`]
-        ///
-        /// # Safety
-        ///
-        /// All of the given pointers must be valid and the given handle id must match the expected
-        /// pointer type
         #[unsafe(export_name = concat!(env!("CARGO_CRATE_NAME"), "_", "Eq_eq"))]
         unsafe extern "C" fn eq(
             handle_id: <$crate::handle::Id as $crate::ExternC>::CType,
@@ -183,12 +165,6 @@ macro_rules! def_fns {
         }
     };
     ( @def: Ord: $( $other:ty ),+ $(,)? ) => {
-        /// FFI function equivalent of [`Ord::cmp`]
-        ///
-        /// # Safety
-        ///
-        /// All of the given pointers must be valid and the given handle id must match the expected
-        /// pointer type
         #[unsafe(export_name = concat!(env!("CARGO_CRATE_NAME"), "_", "Ord_cmp"))]
         unsafe extern "C" fn ord(
             handle_id: <$crate::handle::Id as $crate::ExternC>::CType,
@@ -224,12 +200,6 @@ macro_rules! def_fns {
         }
     };
     ( @def: Drop: $( $other:ty ),+ $(,)? ) => {
-        /// FFI function equivalent of [`Drop::drop`]
-        ///
-        /// # Safety
-        ///
-        /// All of the given pointers must be valid and the given handle id must match the expected
-        /// pointer type
         #[unsafe(export_name = concat!(env!("CARGO_CRATE_NAME"), "_", "Drop_drop"))]
         unsafe extern "C" fn drop(
             handle_id: <$crate::handle::Id as $crate::ExternC>::CType,

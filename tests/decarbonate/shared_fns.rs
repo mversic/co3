@@ -1,15 +1,15 @@
-use co3::external::ExternRef;
+use co3::{decarbonate, extern_type, external::ExternRef};
 use webassembly_test::webassembly_test;
 
-#[co3::extern_type(link_crate = "decarbonate_")]
+#[extern_type(link_crate = "decarbonate_")]
 /// Struct without a repr attribute is opaque by default
 #[derive(Clone, PartialEq, Eq, PartialOrd, Ord)]
-// NOTE: Replaced by the [`co3::extern_type`] macro
+// NOTE: Replaced by the [`extern_type`] macro
 pub struct FfiStruct<T>;
 
-#[co3::decarbonate(link_name = "FfiStruct__new")]
+#[decarbonate(link_name = "FfiStruct__new")]
 pub fn ffi_struct_new(name: String) -> FfiStruct<bool> {
-    unreachable!("replaced by co3::decarbonate")
+    unreachable!("replaced by decarbonate")
 }
 
 #[test]

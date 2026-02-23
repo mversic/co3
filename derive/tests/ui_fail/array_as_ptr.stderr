@@ -1,13 +1,7 @@
 error: custom attribute panicked
- --> tests/ui_fail/array_as_ptr.rs:1:1
+ --> tests/ui_fail/array_as_ptr.rs:3:1
   |
-1 | #[co3::carbonate]
-  | ^^^^^^^^^^^^^^^^^
+3 | #[carbonate(extern "C")]
+  | ^^^^^^^^^^^^^^^^^^^^^^^^
   |
-  = help: message: not implemented: Arrays are not supported by C ABI. Use a pointer or struct wrapper
-
-error[E0425]: cannot find function `__array_arg` in this scope
- --> tests/ui_fail/array_as_ptr.rs:5:5
-  |
-5 |     __array_arg([12_u32, 42_u32]);
-  |     ^^^^^^^^^^^ not found in this scope
+  = help: message: not implemented

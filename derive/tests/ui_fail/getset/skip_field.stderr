@@ -1,5 +1,5 @@
 error[E0425]: cannot find function, tuple struct or tuple variant `FfiStruct__b` in this scope
-  --> tests/ui_fail/getset_skip_field.rs:41:9
+  --> tests/ui_fail/getset/skip_field.rs:41:9
    |
 17 | /     fn FfiStruct__a(
 18 | |         arg: <FfiStruct as ExternC>::CType,
@@ -11,7 +11,7 @@ error[E0425]: cannot find function, tuple struct or tuple variant `FfiStruct__b`
    |           ^^^^^^^^^^^^ help: a function with a similar name exists: `FfiStruct__a`
 
 error[E0425]: cannot find function, tuple struct or tuple variant `FfiStruct__set_b` in this scope
-  --> tests/ui_fail/getset_skip_field.rs:43:9
+  --> tests/ui_fail/getset/skip_field.rs:43:9
    |
 21 | /     fn FfiStruct__set_a(
 22 | |         arg: <FfiStruct as ExternC>::CType,

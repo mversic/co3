@@ -12,69 +12,69 @@ mod imported_abi;
 //#[repr(C)]
 //pub struct Robust(u64);
 //
-//#[co3::extern_type]
+//#[extern_type]
 //#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 //#[repr(transparent)]
 //pub struct Transparent((u32, u32));
 //
-//#[co3::decarbonate]
+//#[decarbonate]
 //impl Robust {
 //    pub fn take_ref(&self) -> &Self {
-//        unreachable!("replaced by co3::decarbonate")
+//        unreachable!("replaced by decarbonate")
 //    }
 //}
 //
-//#[co3::decarbonate]
+//#[decarbonate]
 //pub fn freestanding_returns_non_local(input: &u32) -> &u32 {
-//    unreachable!("replaced by co3::decarbonate")
+//    unreachable!("replaced by decarbonate")
 //}
 //
-//#[co3::decarbonate]
+//#[decarbonate]
 //pub fn freestanding_returns_local_ref(input: &(u32, u32)) -> (u32, u32) {
-//    unreachable!("replaced by co3::decarbonate")
+//    unreachable!("replaced by decarbonate")
 //}
 //
-//#[co3::decarbonate]
+//#[decarbonate]
 //pub fn freestanding_returns_local_slice(input: &[(u32, u32)]) -> Box<[(u32, u32)]> {
-//    unreachable!("replaced by co3::decarbonate")
+//    unreachable!("replaced by decarbonate")
 //}
 //
-//#[co3::decarbonate]
+//#[decarbonate]
 //pub fn freestanding_returns_boxed_slice(input: Box<[u32]>) -> Box<[u32]> {
-//    unreachable!("replaced by co3::decarbonate")
+//    unreachable!("replaced by decarbonate")
 //}
 //
-//#[co3::decarbonate]
+//#[decarbonate]
 //pub fn freestanding_returns_iterator(
 //    input: impl IntoIterator<Item = u32>,
 //) -> impl ExactSizeIterator<Item = u32> {
-//    unreachable!("replaced by co3::decarbonate")
+//    unreachable!("replaced by decarbonate")
 //}
 //
 //// FIXME: Write a test
-////#[co3::decarbonate]
+////#[decarbonate]
 ////pub fn freestanding_take_and_return_array(input: [(u32, u32); 2]) -> impl Into<[(u32, u32); 2]> {
-////    unreachable!("replaced by co3::decarbonate")
+////    unreachable!("replaced by decarbonate")
 ////}
 //
-//#[co3::decarbonate]
+//#[decarbonate]
 //pub fn freestanding_take_and_return_local_transparent_ref(input: &Transparent) -> Transparent {
-//    unreachable!("replaced by co3::decarbonate")
+//    unreachable!("replaced by decarbonate")
 //}
 //
-////#[co3::decarbonate]
+////#[decarbonate]
 ////pub fn freestanding_take_and_return_boxed_int(input: Box<u8>) -> Box<u8> {
-////    unreachable!("replaced by co3::decarbonate")
+////    unreachable!("replaced by decarbonate")
 ////}
 //
-//#[co3::decarbonate]
+//#[decarbonate]
 //pub fn freestanding_take_and_return_boxed_int_ref(input: &Box<u8>) -> &Box<u8> {
-//    unreachable!("replaced by co3::decarbonate")
+//    unreachable!("replaced by decarbonate")
 //}
 //
-//#[co3::decarbonate]
+//#[decarbonate]
 //pub fn freestanding_return_empty_tuple_result(flag: bool) -> Result<(), u8> {
-//    unreachable!("replaced by co3::decarbonate")
+//    unreachable!("replaced by decarbonate")
 //}
 //
 //#[test]

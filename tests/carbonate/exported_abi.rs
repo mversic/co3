@@ -1,14 +1,16 @@
 use std::mem::MaybeUninit;
 
-use co3::{ExternC, FfiReturn, out_ptr::OutPtrRead as _};
+use co3::{ExternC, FfiReturn, carbonate, out_ptr::OutPtrRead as _};
 use webassembly_test::webassembly_test;
 
-trait AmbiguousX<T> {
-    fn ambiguous() -> Ambiguous;
+trait AmbiguousX<T, const N: usize> {
+    type U;
+
+    fn ambiguous(a: &[Self::U; N]) -> Ambiguous;
 }
 
 trait AmbiguousY {
-    fn ambiguous() -> Ambiguous;
+    extern "C" fn ambiguous() -> Ambiguous;
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, ExternC)]
@@ -17,6 +19,7 @@ pub enum Ambiguous {
     AmbiguousX,
     AmbiguousY,
     Inherent,
+    Fn,
     None,
 }
 
@@ -24,46 +27,66 @@ pub enum Ambiguous {
 #[mineral(opaque)]
 pub(crate) struct OpaqueStruct<T>(T);
 
-#[co3::carbonate]
-impl AmbiguousX<u64> for OpaqueStruct<u64> {
-    fn ambiguous() -> Ambiguous {
+#[carbonate(extern "C")]
+impl AmbiguousX<u64, 3> for OpaqueStruct<u64> {
+    type U = u8;
+
+    fn ambiguous(_a: &[Self::U; 3]) -> Ambiguous {
         Ambiguous::AmbiguousX
     }
 }
 
-#[co3::carbonate]
-impl AmbiguousX<u32> for OpaqueStruct<u32> {
-    fn ambiguous() -> Ambiguous {
+#[carbonate(extern "Rust")]
+impl AmbiguousX<u32, 4> for OpaqueStruct<u32> {
+    type U = i8;
+
+    #[unsafe(export_name = "kita")]
+    fn ambiguous(_a: &[Self::U; 4]) -> Ambiguous {
         Ambiguous::AmbiguousX
     }
 }
 
-#[co3::carbonate]
+#[carbonate(extern "C")]
 impl AmbiguousY for OpaqueStruct<u64> {
-    fn ambiguous() -> Ambiguous {
+    #[unsafe(no_mangle)]
+    extern "C" fn ambiguous() -> Ambiguous {
         Ambiguous::AmbiguousY
     }
 }
 
-#[co3::carbonate]
+#[carbonate(extern "C")]
 impl AmbiguousY for OpaqueStruct<u32> {
-    fn ambiguous() -> Ambiguous {
+    #[carbonate(skip)]
+    extern "C" fn ambiguous() -> Ambiguous {
         Ambiguous::AmbiguousY
     }
 }
 
-#[co3::carbonate]
+#[carbonate(extern "Rust")]
 impl OpaqueStruct<u64> {
-    pub fn ambiguous() -> Ambiguous {
+    #[unsafe(export_name = "kita1")]
+    pub const unsafe extern "C" fn ambiguous() -> Ambiguous {
         Ambiguous::Inherent
     }
 }
 
-#[co3::carbonate]
+#[carbonate(extern "C")]
 impl OpaqueStruct<u32> {
     pub fn ambiguous() -> Ambiguous {
         Ambiguous::Inherent
     }
+}
+
+#[carbonate(extern "C")]
+#[unsafe(no_mangle)]
+pub const unsafe fn ambiguous1() -> Ambiguous {
+    Ambiguous::Fn
+}
+
+#[carbonate(extern "Rust")]
+#[unsafe(export_name = "kita2")]
+pub const unsafe extern "Rust" fn ambiguous2() -> Ambiguous {
+    Ambiguous::Fn
 }
 
 #[test]
@@ -73,9 +96,20 @@ fn exported_abi() {
 
     unsafe extern "C" {
         fn carbonate_OpaqueStruct_u32_ambiguous(output: *mut u8) -> FfiReturn;
-        fn carbonate_AmbiguousX_u32_OpaqueStruct_u32_ambiguous(output: *mut u8) -> FfiReturn;
-        fn carbonate_AmbiguousX_u64_OpaqueStruct_u64_ambiguous(output: *mut u8) -> FfiReturn;
-        fn carbonate_AmbiguousY_OpaqueStruct_u32_ambiguous(output: *mut u8) -> FfiReturn;
+
+        fn ambiguous(output: *mut u8) -> FfiReturn;
+        fn ambiguous1(output: *mut u8) -> FfiReturn;
+
+        fn carbonate_AmbiguousX_u64_3_OpaqueStruct_u64_ambiguous(
+            a: &[u8; 3],
+            output: *mut u8,
+        ) -> FfiReturn;
+    }
+
+    unsafe extern "Rust" {
+        fn kita(a: &[i8; 4]) -> Ambiguous;
+        fn kita1() -> Ambiguous;
+        fn kita2() -> Ambiguous;
     }
 
     unsafe {
@@ -88,23 +122,21 @@ fn exported_abi() {
 
         assert_eq!(
             FfiReturn::Ok,
-            carbonate_AmbiguousX_u32_OpaqueStruct_u32_ambiguous(output.as_mut_ptr())
+            carbonate_AmbiguousX_u64_3_OpaqueStruct_u64_ambiguous(&[12; 3], output.as_mut_ptr())
         );
         let ambiguous_x = Ambiguous::try_read_out(output.assume_init()).unwrap();
         assert_eq!(Ambiguous::AmbiguousX, ambiguous_x);
 
-        assert_eq!(
-            FfiReturn::Ok,
-            carbonate_AmbiguousX_u64_OpaqueStruct_u64_ambiguous(output.as_mut_ptr())
-        );
-        let ambiguous_x = Ambiguous::try_read_out(output.assume_init()).unwrap();
-        assert_eq!(Ambiguous::AmbiguousX, ambiguous_x);
+        assert_eq!(Ambiguous::AmbiguousX, kita(&[13; 4]));
+        assert_eq!(Ambiguous::Inherent, kita1());
+        assert_eq!(Ambiguous::Fn, kita2());
 
-        assert_eq!(
-            FfiReturn::Ok,
-            carbonate_AmbiguousY_OpaqueStruct_u32_ambiguous(output.as_mut_ptr())
-        );
-        let ambiguous_y = Ambiguous::try_read_out(output.assume_init()).unwrap();
-        assert_eq!(Ambiguous::AmbiguousY, ambiguous_y);
+        assert_eq!(FfiReturn::Ok, ambiguous1(output.as_mut_ptr()));
+        let custom_fn = Ambiguous::try_read_out(output.assume_init()).unwrap();
+        assert_eq!(Ambiguous::Fn, custom_fn);
+
+        assert_eq!(FfiReturn::Ok, ambiguous(output.as_mut_ptr()));
+        let custom_fn = Ambiguous::try_read_out(output.assume_init()).unwrap();
+        assert_eq!(Ambiguous::AmbiguousY, custom_fn);
     }
 }

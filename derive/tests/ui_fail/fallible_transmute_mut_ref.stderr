@@ -1,5 +1,0 @@
-error[E0601]: `main` function not found in crate `$CRATE`
-  --> tests/ui_fail/fallible_transmute_mut_ref.rs:24:13
-   |
-24 | fn kita() {}
-   |             ^ consider adding a `main` function to `$DIR/tests/ui_fail/fallible_transmute_mut_ref.rs`

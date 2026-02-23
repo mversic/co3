@@ -1,0 +1,11 @@
+error: Single-variant fieldless enum is a ZST. Annotate with #[co3::mineral(opaque)]?
+ --> tests/ui_fail/transparent_zst.rs:4:1
+  |
+4 | #[repr(transparent)]
+  | ^
+
+error: Unit struct is a ZST. Annotate with #[co3::mineral(opaque)]?
+  --> tests/ui_fail/transparent_zst.rs:10:1
+   |
+10 | #[repr(transparent)]
+   | ^

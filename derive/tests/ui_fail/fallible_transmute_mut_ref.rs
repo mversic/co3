@@ -1,4 +1,4 @@
-use co3::ExternC;
+use co3::{ExternC, carbonate};
 
 type WrapperInner = u32;
 
@@ -12,12 +12,12 @@ type WrapperInner = u32;
 #[repr(transparent)]
 pub struct Wrapper(WrapperInner);
 
-#[co3::carbonate]
-pub fn return_non_robust_ref_mut<'a>() -> &'a mut Wrapper {
+#[carbonate(extern  "C")]
+pub extern "C" fn return_non_robust_ref_mut<'a>() -> &'a mut Wrapper {
     unimplemented!()
 }
 
-#[co3::carbonate]
-pub fn take_non_robust_ref_mut(_ffi_struct: &mut Wrapper) {}
+#[carbonate(extern "C")]
+pub extern "C" fn take_non_robust_ref_mut(_ffi_struct: &mut Wrapper) {}
 
 fn main() {}

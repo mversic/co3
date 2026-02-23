@@ -1,6 +1,6 @@
 use std::{cmp::Ordering, mem::MaybeUninit};
 
-use co3::{Decode, Encode, ExternC, FfiReturn, def_fns, out_ptr::OutPtrRead};
+use co3::{Decode, Encode, ExternC, FfiReturn, carbonate, def_fns, out_ptr::OutPtrRead};
 use webassembly_test::webassembly_test;
 
 co3::handles! {FfiStruct1, FfiStruct2}
@@ -26,7 +26,7 @@ pub struct FfiStruct2 {
     name: String,
 }
 
-#[co3::carbonate]
+#[carbonate(extern "C")]
 impl FfiStruct1 {
     pub fn new(name: String) -> Self {
         Self { name }

@@ -6,7 +6,7 @@ use manyhow::emit;
 use proc_macro2::Span;
 use quote::ToTokens;
 use syn::{
-    Attribute, Ident, Path, Type, Visibility, parse_quote,
+    Attribute, Expr, Ident, Path, Type, Visibility, parse_quote,
     visit::{Visit, visit_signature},
     visit_mut::VisitMut,
 };
@@ -38,16 +38,6 @@ impl Arg {
     }
     pub fn src_type_resolved(&self) -> Type {
         resolve_type(self.self_ty.as_ref(), self.type_.clone())
-    }
-    pub fn ffi_type_resolved(&self) -> Type {
-        let src_type = resolve_type(self.self_ty.as_ref(), self.type_.clone());
-
-        // TODO: Handle error properly
-        if matches!(src_type, Type::Array(_)) {
-            unimplemented!();
-        }
-
-        parse_quote! {<#src_type as co3::ExternC>::CType}
     }
 }
 
@@ -111,6 +101,8 @@ pub struct ImplDescriptor<'ast> {
     pub trait_name: Option<&'ast Path>,
     /// Associated types
     pub associated_types: Vec<(&'ast Ident, &'ast Type)>,
+    /// Associated constants
+    pub associated_consts: Vec<(&'ast Ident, &'ast Type, &'ast Expr)>,
     pub generics: &'ast syn::Generics,
     /// Functions in the impl block
     pub fns: Vec<FnDescriptor<'ast>>,
@@ -145,6 +137,7 @@ struct ImplVisitor<'ast, 'emitter> {
     self_ty: Option<&'ast Path>,
     generics: Option<&'ast syn::Generics>,
     associated_types: Vec<(&'ast Ident, &'ast Type)>,
+    associated_consts: Vec<(&'ast Ident, &'ast Type, &'ast Expr)>,
     fns: Vec<FnDescriptor<'ast>>,
 }
 
@@ -211,16 +204,9 @@ impl<'ast> ImplDescriptor<'ast> {
             trait_name: visitor.trait_name,
             generics: visitor.generics.unwrap(),
             associated_types: visitor.associated_types,
+            associated_consts: visitor.associated_consts,
             fns: visitor.fns,
         })
-    }
-
-    pub fn trait_name(&self) -> Option<&Ident> {
-        self.trait_name.map(last_seg_ident)
-    }
-
-    pub fn trait_symbol_name(&self) -> Option<String> {
-        self.trait_name.map(path_symbol_name)
     }
 }
 
@@ -260,10 +246,6 @@ impl<'ast> FnDescriptor<'ast> {
         })
     }
 
-    pub fn self_ty_name(&self) -> Option<&Ident> {
-        self.self_ty.as_ref().map(last_seg_ident)
-    }
-
     pub fn self_ty_symbol_name(&self) -> Option<String> {
         self.self_ty.as_ref().map(path_symbol_name)
     }
@@ -277,11 +259,11 @@ pub(crate) fn path_symbol_name(path: &Path) -> String {
     let mut out = seg.ident.to_string();
     if let syn::PathArguments::AngleBracketed(args) = &seg.arguments {
         for arg in &args.args {
-            if let Some(arg_name) = generic_arg_symbol_name(arg) {
-                if !arg_name.is_empty() {
-                    out.push('_');
-                    out.push_str(&arg_name);
-                }
+            if let Some(arg_name) = generic_arg_symbol_name(arg)
+                && !arg_name.is_empty()
+            {
+                out.push('_');
+                out.push_str(&arg_name);
             }
         }
     }
@@ -381,6 +363,7 @@ impl<'ast, 'emitter> ImplVisitor<'ast, 'emitter> {
             self_ty: None,
             generics: None,
             associated_types: Vec::new(),
+            associated_consts: Vec::new(),
             fns: vec![],
         }
     }
@@ -426,6 +409,11 @@ impl<'ast, 'emitter> FnVisitor<'ast, 'emitter> {
     }
 
     fn add_input_arg(&mut self, src_type: &'ast Type) {
+        let resolved = resolve_type(self.self_ty, src_type.clone());
+        if matches!(resolved, Type::Array(_)) {
+            unimplemented!();
+        }
+
         let arg_name = self.curr_arg_name.take().cloned().unwrap_or_else(|| {
             // provide a dummy argument name so that codegen can work
             Ident::new(
@@ -459,6 +447,21 @@ impl<'ast> Visit<'ast> for ImplVisitor<'ast, '_> {
         self.generics = Some(node);
     }
     fn visit_item_impl(&mut self, node: &'ast syn::ItemImpl) {
+        let has_non_lifetime_generics = node
+            .generics
+            .params
+            .iter()
+            .any(|param| !matches!(param, syn::GenericParam::Lifetime(_)));
+        if has_non_lifetime_generics {
+            self.fatal = true;
+            emit!(
+                self.emitter,
+                node.generics,
+                "Type and const generics on impl blocks are not supported"
+            );
+            return;
+        }
+
         if node.unsafety.is_some() {
             emit!(self.emitter, node.unsafety, "Unsafe impl not supported");
         }
@@ -482,12 +485,21 @@ impl<'ast> Visit<'ast> for ImplVisitor<'ast, '_> {
                 }
                 _ => None,
             }));
+        self.associated_consts
+            .extend(node.items.iter().filter_map(|item| match item {
+                syn::ImplItem::Const(associated_const) => Some((
+                    &associated_const.ident,
+                    &associated_const.ty,
+                    &associated_const.expr,
+                )),
+                _ => None,
+            }));
 
         for item in &node.items {
-            if let syn::ImplItem::Fn(method) = item {
-                if let Some(desc) = FnDescriptor::from_impl_method(self.emitter, self_ty, method) {
-                    self.fns.push(desc);
-                }
+            if let syn::ImplItem::Fn(method) = item
+                && let Some(desc) = FnDescriptor::from_impl_method(self.emitter, self_ty, method)
+            {
+                self.fns.push(desc);
             }
         }
     }
@@ -502,9 +514,6 @@ impl<'ast> Visit<'ast> for FnVisitor<'ast, '_> {
         }
     }
 
-    fn visit_abi(&mut self, node: &'ast syn::Abi) {
-        emit!(self.emitter, node, "You shouldn't specify function ABI");
-    }
     fn visit_impl_item_fn(&mut self, node: &'ast syn::ImplItemFn) {
         for attr in &node.attrs {
             self.visit_attribute(attr);
@@ -527,32 +536,26 @@ impl<'ast> Visit<'ast> for FnVisitor<'ast, '_> {
         let _ = node;
     }
     fn visit_signature(&mut self, node: &'ast syn::Signature) {
-        if node.constness.is_some() {
+        let has_non_lifetime_generics = node
+            .generics
+            .params
+            .iter()
+            .any(|param| !matches!(param, syn::GenericParam::Lifetime(_)));
+        if has_non_lifetime_generics {
+            self.fatal = true;
             emit!(
                 self.emitter,
-                node.constness,
-                "Const functions not supported"
+                node.generics,
+                "Type and const generics on functions are not supported"
             );
+            return;
         }
+
         if node.asyncness.is_some() {
             emit!(
                 self.emitter,
                 node.asyncness,
                 "Async functions not supported"
-            );
-        }
-        if node.unsafety.is_some() {
-            emit!(
-                self.emitter,
-                node.unsafety,
-                "You shouldn't specify function unsafety"
-            );
-        }
-        if node.abi.is_some() {
-            emit!(
-                self.emitter,
-                node.abi,
-                "Extern fn declarations not supported"
             );
         }
         if node.variadic.is_some() {
@@ -567,9 +570,6 @@ impl<'ast> Visit<'ast> for FnVisitor<'ast, '_> {
     }
 
     fn visit_receiver(&mut self, node: &'ast syn::Receiver) {
-        for it in &node.attrs {
-            self.visit_attribute(it);
-        }
         if let Some((_, lifetime)) = &node.reference
             && lifetime.is_some()
         {
@@ -596,10 +596,6 @@ impl<'ast> Visit<'ast> for FnVisitor<'ast, '_> {
     }
 
     fn visit_pat_type(&mut self, node: &'ast syn::PatType) {
-        for it in &node.attrs {
-            self.visit_attribute(it);
-        }
-
         if let syn::Pat::Ident(ident) = &*node.pat {
             self.visit_pat_ident(ident);
         } else {
@@ -611,9 +607,6 @@ impl<'ast> Visit<'ast> for FnVisitor<'ast, '_> {
     }
 
     fn visit_pat_ident(&mut self, node: &'ast syn::PatIdent) {
-        for it in &node.attrs {
-            self.visit_attribute(it);
-        }
         if node.by_ref.is_some() {
             emit!(
                 self.emitter,

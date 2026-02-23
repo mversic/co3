@@ -77,7 +77,7 @@ fn built_in_symbol(
             emit!(
                 emitter,
                 item_name,
-                "Missing symbol mapping for `{trait_name}::{method_name}` in `co3::extern_type(...)`"
+                "Missing symbol mapping for `{trait_name}::{method_name}` in `extern_type(...)`"
             );
             let fallback = LitStr::new("__co3_missing_symbol__", item_name.span());
             quote!(#fallback)
@@ -570,12 +570,12 @@ pub fn wrap_method(fn_descriptor: &FnDescriptor, trait_path: Option<&Path>) -> T
     let signature = gen_wrapper_signature(fn_descriptor);
     let trait_symbol_name = trait_path.map(path_symbol_name);
     let ffi_fn_name = ffi_fn::gen_fn_name(fn_descriptor, trait_symbol_name.as_deref());
-    let method_body = gen_wrapper_method_body(fn_descriptor, &ffi_fn_name);
-    let ffi_fn_attrs = fn_descriptor
-        .attrs
-        .iter()
-        .copied()
-        .filter(|attr| !is_decarbonate_attr(attr) && !attr.path().is_ident("link_name"));
+    let method_body = gen_wrapper_method_body(fn_descriptor, &ffi_fn_name, None);
+    let ffi_fn_attrs = fn_descriptor.attrs.iter().copied().filter(|attr| {
+        !is_decarbonate_attr(attr)
+            && !attr.path().is_ident("link_name")
+            && !attr.path().is_ident("link")
+    });
     let method_doc = &fn_descriptor.doc;
     let visibility = if trait_path.is_none() {
         quote! { pub }
@@ -592,13 +592,107 @@ pub fn wrap_method(fn_descriptor: &FnDescriptor, trait_path: Option<&Path>) -> T
     }
 }
 
-fn gen_wrapper_method_body(fn_descriptor: &FnDescriptor, ffi_fn_name: &Ident) -> TokenStream {
+pub fn wrap_method_with_import(
+    fn_descriptor: &FnDescriptor,
+    trait_path: Option<&Path>,
+    import_crate_name: Option<&TokenStream>,
+    import_fn_name: Option<&LitStr>,
+    import_abi: Option<&syn::Abi>,
+) -> TokenStream {
+    let signature = gen_wrapper_signature(fn_descriptor);
+    let ffi_fn_name = fn_descriptor.sig.ident.clone();
+    let is_passthrough_abi = import_abi.is_some_and(|abi| {
+        abi.name
+            .as_ref()
+            .is_some_and(|name| matches!(name.value().as_str(), "Rust" | "C"))
+    });
+    let use_passthrough_shim = import_abi
+        .zip(fn_descriptor.sig.abi.as_ref())
+        .is_some_and(|(inner_abi, outer_abi)| is_passthrough_abi && inner_abi != outer_abi);
+    let method_body = if use_passthrough_shim {
+        let import_abi = import_abi.expect("checked by use_passthrough_shim");
+        let ffi_decl = ffi_fn::gen_inline_passthrough_declaration(
+            fn_descriptor,
+            trait_path,
+            import_crate_name,
+            import_fn_name,
+            import_abi,
+            &ffi_fn_name,
+        );
+        gen_passthrough_wrapper_method_body(fn_descriptor, &ffi_fn_name, Some(ffi_decl))
+    } else {
+        let ffi_decl = ffi_fn::gen_inline_declaration(
+            fn_descriptor,
+            trait_path,
+            import_crate_name,
+            import_fn_name,
+            &ffi_fn_name,
+        );
+        gen_wrapper_method_body(fn_descriptor, &ffi_fn_name, Some(ffi_decl))
+    };
+    let ffi_fn_attrs = fn_descriptor.attrs.iter().copied().filter(|attr| {
+        !is_decarbonate_attr(attr)
+            && !attr.path().is_ident("link_name")
+            && !attr.path().is_ident("link")
+    });
+    let method_doc = &fn_descriptor.doc;
+    let visibility = if trait_path.is_none() {
+        quote! { pub }
+    } else {
+        quote! {}
+    };
+
+    quote! {
+        #(#method_doc)*
+        #(#ffi_fn_attrs)*
+        #visibility #signature {
+            #method_body
+        }
+    }
+}
+
+fn gen_passthrough_wrapper_method_body(
+    fn_descriptor: &FnDescriptor,
+    ffi_fn_name: &Ident,
+    ffi_decl: Option<TokenStream>,
+) -> TokenStream {
+    let mut arg_names = Vec::new();
+    if let Some(receiver) = &fn_descriptor.receiver {
+        arg_names.push(receiver.name().clone());
+    }
+    arg_names.extend(
+        fn_descriptor
+            .input_args
+            .iter()
+            .map(|arg| arg.name().clone()),
+    );
+
+    let call = quote!(#ffi_fn_name(#(#arg_names),*));
+    let call_stmt = if fn_descriptor.output_arg.is_some() {
+        quote!(#call)
+    } else {
+        quote! { #call; }
+    };
+
+    quote! {
+        #ffi_decl
+        unsafe { #call_stmt }
+    }
+}
+
+fn gen_wrapper_method_body(
+    fn_descriptor: &FnDescriptor,
+    ffi_fn_name: &Ident,
+    ffi_decl: Option<TokenStream>,
+) -> TokenStream {
     let input_conversions = gen_input_conversion_stmts(fn_descriptor);
     let ffi_fn_call_stmt = gen_ffi_fn_call_stmt(fn_descriptor, ffi_fn_name);
     let store_sync_stmts = gen_store_sync_stmts(fn_descriptor);
     let return_stmt = gen_return_stmt(fn_descriptor);
 
     quote! {
+        #ffi_decl
+
         #input_conversions
 
         // SAFETY:

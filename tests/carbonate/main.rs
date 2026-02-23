@@ -62,7 +62,7 @@ mod exported_abi;
 //    c: U,
 //}
 //
-//#[co3::carbonate]
+//#[carbonate(extern "C")]
 //impl OpaqueStruct {
 //    pub fn new(name: Name) -> Self {
 //        Self {
@@ -108,100 +108,100 @@ mod exported_abi;
 //    }
 //}
 //
-//#[co3::carbonate]
+//#[carbonate(extern "C")]
 //pub fn freestanding_with_boxed_slice(item: Box<[u8]>) -> Box<[u8]> {
 //    item
 //}
 //
-//#[co3::carbonate]
+//#[carbonate(extern "C")]
 //pub fn freestanding_with_option(item: Option<u8>) -> Option<u8> {
 //    item
 //}
 //
 //// FIXME: Depends on the fix in disjoint_impls
-////#[co3::carbonate]
+////#[carbonate(extern "C")]
 ////pub fn freestanding_with_option_tuple(item: Option<(u32, u32)>) -> Option<(u32, u32)> {
 ////    item
 ////}
 //
-//#[co3::carbonate]
+//#[carbonate(extern "C")]
 //pub fn freestanding_with_option_with_niche_ref(item: &Option<bool>) -> &Option<bool> {
 //    item
 //}
 //
-//#[co3::carbonate]
+//#[carbonate(extern "C")]
 //pub fn freestanding_with_option_without_niche_ref(item: &Option<u8>) -> &Option<u8> {
 //    item
 //}
 //
-//#[co3::carbonate]
+//#[carbonate(extern "C")]
 //pub fn freestanding_with_primitive(byte: u8) -> u8 {
 //    byte
 //}
 //
-//#[co3::carbonate]
+//#[carbonate(extern "C")]
 //pub fn freestanding_with_fieldless_enum(enum_: FieldlessEnum) -> FieldlessEnum {
 //    enum_
 //}
 //
-//#[co3::carbonate]
+//#[carbonate(extern "C")]
 //pub fn freestanding_with_data_carrying_enum(enum_: DataCarryingEnum) -> DataCarryingEnum {
 //    enum_
 //}
 //
 //// FIXME: implement compile test
-////#[co3::carbonate]
+////#[carbonate(extern "C")]
 ////pub fn freestanding_with_array(arr: [u8; 1]) -> [u8; 1] {
 ////    arr
 ////}
 //
-//#[co3::carbonate]
+//#[carbonate(extern "C")]
 //pub fn freestanding_with_array_ref(arr: &[u8; 1]) -> &[u8; 1] {
 //    arr
 //}
 //
-//#[co3::carbonate]
+//#[carbonate(extern "C")]
 //pub fn freestanding_with_array_in_struct(arr: ([u8; 1],)) -> ([u8; 1],) {
 //    arr
 //}
 //
-//#[co3::carbonate]
+//#[carbonate(extern "C")]
 //pub fn freestanding_with_repr_c_struct(
 //    struct_: RobustReprCStruct<u32, i16>,
 //) -> RobustReprCStruct<u32, i16> {
 //    struct_
 //}
 //
-//#[co3::carbonate]
+//#[carbonate(extern "C")]
 //pub fn get_vec_of_boxed_opaques() -> Vec<Box<OpaqueStruct>> {
 //    vec![Box::new(get_new_struct())]
 //}
 //
-//#[co3::carbonate]
+//#[carbonate(extern "C")]
 //pub fn take_and_return_array_of_opaques(a: &[OpaqueStruct; 2]) -> &[OpaqueStruct; 2] {
 //    a
 //}
 //
-//#[co3::carbonate]
+//#[carbonate(extern "C")]
 //pub fn freestanding_with_nested_vec(_vec: Vec<Vec<Vec<u8>>>) {}
 //
 //#[cfg(feature = "non_robust_ref_mut")]
-//#[co3::carbonate]
+//#[carbonate(extern "C")]
 //pub fn take_non_robust_ref_mut(val: &mut str) -> &mut str {
 //    val
 //}
 //
-//#[co3::carbonate]
+//#[carbonate(extern "C")]
 //pub fn take_vec_ref(a: &Vec<u8>) {
 //    assert_eq!(a, &vec![1, 2])
 //}
 //
-//#[co3::carbonate]
+//#[carbonate(extern "C")]
 //pub fn take_tuple_ref(a: &(u8, u8)) -> &(u8, u8) {
 //    a
 //}
 //
-//#[co3::carbonate]
+//#[carbonate(extern "C")]
 //impl Target for OpaqueStruct {
 //    type Target = Option<Name>;
 //
@@ -210,7 +210,7 @@ mod exported_abi;
 //    }
 //}
 //
-//#[co3::carbonate]
+//#[carbonate(extern "C")]
 //pub fn reference_from_slice(a: &[u8]) -> &u8 {
 //    &a[0]
 //}

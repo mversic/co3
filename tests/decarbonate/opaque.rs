@@ -4,65 +4,65 @@
 //use webassembly_test::webassembly_test;
 //
 //
-//#[co3::extern_type]
+//#[extern_type]
 //#[derive(Clone, PartialEq, Eq)]
 //// NOTE: struct's body is replaced by co3!
 //pub struct Value;
 //
-//#[co3::extern_type]
+//#[extern_type]
 //#[derive(Clone, PartialEq, Eq)]
 //// NOTE: struct's body is replaced by co3!
 //pub struct OpaqueStruct;
 //
-//#[co3::decarbonate]
+//#[decarbonate]
 //impl Value {
 //    pub fn new(input: String) -> Self {
-//        unreachable!("replaced by co3::decarbonate")
+//        unreachable!("replaced by decarbonate")
 //    }
 //}
 //
-//#[co3::decarbonate]
+//#[decarbonate]
 //impl OpaqueStruct {
 //    pub fn new(name: u8) -> Box<Self> {
-//        unreachable!("replaced by co3::decarbonate")
+//        unreachable!("replaced by decarbonate")
 //    }
 //
 //    #[must_use]
 //    pub fn with_params(self, params: impl IntoIterator<Item = (u8, Value)>) -> OpaqueStruct {
-//        unreachable!("replaced by co3::decarbonate")
+//        unreachable!("replaced by decarbonate")
 //    }
 //
 //    pub fn get_param(&self, name: &u8) -> Option<ExternRef<'_, Value>> {
-//        unreachable!("replaced by co3::decarbonate")
+//        unreachable!("replaced by decarbonate")
 //    }
 //
 //    pub fn params(&self) -> impl ExactSizeIterator<Item = ExternRef<'_, Value>> {
-//        unreachable!("replaced by co3::decarbonate")
+//        unreachable!("replaced by decarbonate")
 //    }
 //
 //    pub fn fallible_int_output(flag: bool) -> Result<u8, &'static str> {
-//        unreachable!("replaced by co3::decarbonate")
+//        unreachable!("replaced by decarbonate")
 //    }
 //}
 //
-//#[co3::decarbonate]
+//#[decarbonate]
 //pub fn freestanding_returns_opaque_item(input: ExternRef<OpaqueStruct>) -> ExternRef<OpaqueStruct> {
-//    unreachable!("replaced by co3::decarbonate")
+//    unreachable!("replaced by decarbonate")
 //}
 //
-//#[co3::decarbonate]
+//#[decarbonate]
 //pub fn freestanding_returns_opaque_double_ref<'a, 'b>(
 //    input: &'b ExternRef<'a, OpaqueStruct>,
 //) -> &'b ExternRef<'a, OpaqueStruct>
 //where
 //    'a: 'b,
 //{
-//    unreachable!("replaced by co3::decarbonate")
+//    unreachable!("replaced by decarbonate")
 //}
 //
-//#[co3::decarbonate]
+//#[decarbonate]
 //pub fn some_fn(input: &[OpaqueStruct]) {
-//    unreachable!("replaced by co3::decarbonate")
+//    unreachable!("replaced by decarbonate")
 //}
 //
 //fn make_new_opaque(name: u8, params: BTreeMap<u8, Value>) -> OpaqueStruct {

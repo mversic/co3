@@ -1,12 +1,16 @@
-use co3::{ExternC, extern_c};
+use co3::{ExternC, carbonate, extern_, extern_C};
 use webassembly_test::webassembly_test;
 
-trait AmbiguousX<T> {
-    fn ambiguous() -> Ambiguous;
+trait AmbiguousX<T, const N: usize> {
+    //#[allow(unused)]
+    const K: bool;
+    type U;
+
+    fn ambiguous(a: &[Self::U; N]) -> Ambiguous;
 }
 
 trait AmbiguousY {
-    fn ambiguous() -> Ambiguous;
+    extern "C" fn ambiguous() -> Ambiguous;
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, ExternC)]
@@ -21,50 +25,49 @@ enum Ambiguous {
 #[repr(transparent)]
 struct MyType<T>(Box<T>);
 
-#[co3::decarbonate(link_crate = "decarbonate")]
-impl AmbiguousX<u32> for MyType<u32> {
-    fn ambiguous() -> Ambiguous {
-        unreachable!("replaced by co3::decarbonate")
+extern_! {
+    #![abi = "Rust"]
+    #![link(crate = "decarbonate")]
+
+    impl AmbiguousX<u32, 4> for MyType<u32> {
+        const K: bool = true;
+        type U = i8;
+
+        #[link_name = "kita"]
+        fn ambiguous(a: &[Self::U; 4]) -> Ambiguous;
     }
+
+    impl MyType<u64> {
+        #[link_name = "kita1"]
+        unsafe extern "C" fn ambiguous() -> MyType<u64>;
+    }
+
+    #[link_name = "kita2"]
+    pub unsafe extern "C" fn ambiguous2_imported() -> Ambiguous;
 }
 
-#[co3::decarbonate(link_crate = "overriden_by_link_name")]
-impl AmbiguousX<u64> for MyType<u64> {
-    #[co3::decarbonate(link_name = "decarbonate_AmbiguousX_u64_MyType_u64_ambiguous")]
-    fn ambiguous() -> Ambiguous {
-        unreachable!("replaced by co3::decarbonate")
-    }
-}
+extern_C! {
+    #![link(crate = "decarbonate")]
 
-extern_c! {
-    #[link_crate = "overriden_by_link_name"]
-    impl AmbiguousY for MyType<u32> {
-        #[link_name = "decarbonate_AmbiguousY_MyType_u32_ambiguous"]
-        fn ambiguous() -> Ambiguous;
+    impl AmbiguousX<u64, 3> for MyType<u64> {
+        const K: bool = false;
+        type U = u8;
+
+        fn ambiguous(a: &[Self::U; 3]) -> Ambiguous;
     }
 
-    #[link_crate = "decarbonate"]
     impl AmbiguousY for MyType<u64> {
-        fn ambiguous() -> Ambiguous;
+        #[link_name = "ambiguous"]
+        extern "C" fn ambiguous() -> Ambiguous;
     }
 
-    #[link_crate = "overriden_by_link_name"]
     impl MyType<u32> {
         #[link_name = "decarbonate_MyType_u32_ambiguous"]
         fn ambiguous() -> MyType<u32>;
     }
 
-    #[link_crate = "decarbonate"]
-    impl MyType<u64> {
-        fn ambiguous() -> MyType<u64>;
-    }
-
-    #[link_name = "decarbonate_ambiguous"]
-    fn ambiguous() -> MyType<u32>;
-
-    #[link_crate = "overriden_by_link_name"]
-    #[link_name = "decarbonate_AmbiguousX_u32_MyType_u32_ambiguous"]
-    fn duplicate_x() -> Ambiguous;
+    #[link_name = "ambiguous1"]
+    fn ambiguous1_imported() -> Ambiguous;
 }
 
 mod provider {
@@ -72,53 +75,72 @@ mod provider {
 
     #[derive(Clone, Copy, ExternC)]
     #[mineral(opaque)]
+    #[repr(transparent)]
     struct MyType<T>(T);
 
-    #[co3::carbonate]
-    impl AmbiguousX<u32> for MyType<u32> {
-        fn ambiguous() -> Ambiguous {
+    #[carbonate(extern "C")]
+    impl AmbiguousX<u64, 3> for MyType<u64> {
+        const K: bool = false;
+        type U = u8;
+
+        fn ambiguous(_a: &[Self::U; 3]) -> Ambiguous {
             Ambiguous::AmbiguousX
         }
     }
 
-    #[co3::carbonate]
-    impl AmbiguousX<u64> for MyType<u64> {
-        fn ambiguous() -> Ambiguous {
+    #[carbonate(extern "Rust")]
+    impl AmbiguousX<u32, 4> for MyType<u32> {
+        const K: bool = true;
+        type U = i8;
+
+        #[unsafe(export_name = "kita")]
+        fn ambiguous(_a: &[Self::U; 4]) -> Ambiguous {
             Ambiguous::AmbiguousX
         }
     }
 
-    #[co3::carbonate]
-    impl AmbiguousY for MyType<u32> {
-        fn ambiguous() -> Ambiguous {
-            Ambiguous::AmbiguousY
-        }
-    }
-
-    #[co3::carbonate]
+    #[carbonate(extern "C")]
     impl AmbiguousY for MyType<u64> {
-        fn ambiguous() -> Ambiguous {
+        #[unsafe(no_mangle)]
+        extern "C" fn ambiguous() -> Ambiguous {
             Ambiguous::AmbiguousY
         }
     }
 
-    #[co3::carbonate]
-    impl MyType<u32> {
-        pub fn ambiguous() -> MyType<u32> {
-            MyType(42)
+    #[carbonate(extern "C")]
+    impl AmbiguousY for MyType<u32> {
+        #[carbonate(skip)]
+        extern "C" fn ambiguous() -> Ambiguous {
+            Ambiguous::AmbiguousY
         }
     }
 
-    #[co3::carbonate]
+    #[carbonate(extern "Rust")]
     impl MyType<u64> {
-        pub fn ambiguous() -> MyType<u32> {
-            MyType(43)
+        #[unsafe(export_name = "kita1")]
+        #[expect(improper_ctypes_definitions)]
+        pub unsafe extern "C" fn ambiguous() -> Box<MyType<u64>> {
+            Box::new(MyType(42))
         }
     }
 
-    #[co3::carbonate]
-    pub fn ambiguous() -> MyType<u32> {
-        MyType(420)
+    #[carbonate(extern "C")]
+    impl MyType<u32> {
+        pub const fn ambiguous() -> MyType<u32> {
+            MyType(420)
+        }
+    }
+
+    #[carbonate(extern "C")]
+    #[unsafe(no_mangle)]
+    pub const fn ambiguous1() -> Ambiguous {
+        Ambiguous::Fn
+    }
+
+    #[carbonate(extern "Rust")]
+    #[unsafe(export_name = "kita2")]
+    pub const unsafe extern "Rust" fn ambiguous2() -> Ambiguous {
+        Ambiguous::Fn
     }
 }
 
@@ -127,26 +149,21 @@ mod provider {
 fn extern_abi() {
     assert_eq!(
         Ambiguous::AmbiguousX,
-        <MyType::<u32> as AmbiguousX<u32>>::ambiguous()
+        <MyType::<u64> as AmbiguousX<u64, 3>>::ambiguous(&[1_u8, 2, 3])
     );
     assert_eq!(
         Ambiguous::AmbiguousX,
-        <MyType::<u64> as AmbiguousX<u64>>::ambiguous()
+        <MyType::<u32> as AmbiguousX<u32, 4>>::ambiguous(&[1_i8, 2, 3, 4])
     );
 
-    assert_eq!(
-        Ambiguous::AmbiguousY,
-        <MyType::<u32> as AmbiguousY>::ambiguous()
-    );
     assert_eq!(
         Ambiguous::AmbiguousY,
         <MyType::<u64> as AmbiguousY>::ambiguous()
     );
 
-    assert_eq!(MyType(Box::new(42)), MyType::<u32>::ambiguous());
-    assert_eq!(MyType(Box::new(43)), MyType::<u64>::ambiguous());
+    assert_eq!(MyType(Box::new(420)), MyType::<u32>::ambiguous());
+    assert_eq!(MyType(Box::new(42)), unsafe { MyType::<u64>::ambiguous() });
 
-    assert_eq!(MyType(Box::new(420)), ambiguous());
-
-    assert_eq!(Ambiguous::AmbiguousX, duplicate_x());
+    assert_eq!(Ambiguous::Fn, ambiguous1_imported());
+    assert_eq!(Ambiguous::Fn, unsafe { ambiguous2_imported() });
 }

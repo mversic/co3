@@ -1,9 +1,9 @@
 //
-//#[co3::extern_type]
+//#[extern_type]
 //#[derive(Clone, PartialEq, Eq)]
 //pub struct Name;
 //
-//#[co3::extern_type]
+//#[extern_type]
 //#[derive(Clone, PartialEq, Eq, Setters, Getters, MutGetters)]
 //#[getset(get = "pub")]
 //#[mineral(opaque)]
@@ -15,17 +15,17 @@
 //    //name: Name,
 //}
 //
-//#[co3::decarbonate]
+//#[decarbonate]
 //impl Name {
 //    pub fn new(name: String) -> Self {
-//        unreachable!("replaced by co3::decarbonate")
+//        unreachable!("replaced by decarbonate")
 //    }
 //}
 //
-//#[co3::decarbonate]
+//#[decarbonate]
 //impl FfiStruct {
 //    pub fn new(name: String, id: u8) -> Self {
-//        unreachable!("replaced by co3::decarbonate")
+//        unreachable!("replaced by decarbonate")
 //    }
 //}
 //
