@@ -17,64 +17,64 @@ mod imported_abi;
 //#[repr(transparent)]
 //pub struct Transparent((u32, u32));
 //
-//#[decarbonate]
+//#[extern_C]
 //impl Robust {
 //    pub fn take_ref(&self) -> &Self {
-//        unreachable!("replaced by decarbonate")
+//        unreachable!("replaced by extern_C")
 //    }
 //}
 //
-//#[decarbonate]
+//#[extern_C]
 //pub fn freestanding_returns_non_local(input: &u32) -> &u32 {
-//    unreachable!("replaced by decarbonate")
+//    unreachable!("replaced by extern_C")
 //}
 //
-//#[decarbonate]
+//#[extern_C]
 //pub fn freestanding_returns_local_ref(input: &(u32, u32)) -> (u32, u32) {
-//    unreachable!("replaced by decarbonate")
+//    unreachable!("replaced by extern_C")
 //}
 //
-//#[decarbonate]
+//#[extern_C]
 //pub fn freestanding_returns_local_slice(input: &[(u32, u32)]) -> Box<[(u32, u32)]> {
-//    unreachable!("replaced by decarbonate")
+//    unreachable!("replaced by extern_C")
 //}
 //
-//#[decarbonate]
+//#[extern_C]
 //pub fn freestanding_returns_boxed_slice(input: Box<[u32]>) -> Box<[u32]> {
-//    unreachable!("replaced by decarbonate")
+//    unreachable!("replaced by extern_C")
 //}
 //
-//#[decarbonate]
+//#[extern_C]
 //pub fn freestanding_returns_iterator(
 //    input: impl IntoIterator<Item = u32>,
 //) -> impl ExactSizeIterator<Item = u32> {
-//    unreachable!("replaced by decarbonate")
+//    unreachable!("replaced by extern_C")
 //}
 //
 //// FIXME: Write a test
-////#[decarbonate]
+////#[extern_C]
 ////pub fn freestanding_take_and_return_array(input: [(u32, u32); 2]) -> impl Into<[(u32, u32); 2]> {
-////    unreachable!("replaced by decarbonate")
+////    unreachable!("replaced by extern_C")
 ////}
 //
-//#[decarbonate]
+//#[extern_C]
 //pub fn freestanding_take_and_return_local_transparent_ref(input: &Transparent) -> Transparent {
-//    unreachable!("replaced by decarbonate")
+//    unreachable!("replaced by extern_C")
 //}
 //
-////#[decarbonate]
+////#[extern_C]
 ////pub fn freestanding_take_and_return_boxed_int(input: Box<u8>) -> Box<u8> {
-////    unreachable!("replaced by decarbonate")
+////    unreachable!("replaced by extern_C")
 ////}
 //
-//#[decarbonate]
+//#[extern_C]
 //pub fn freestanding_take_and_return_boxed_int_ref(input: &Box<u8>) -> &Box<u8> {
-//    unreachable!("replaced by decarbonate")
+//    unreachable!("replaced by extern_C")
 //}
 //
-//#[decarbonate]
+//#[extern_C]
 //pub fn freestanding_return_empty_tuple_result(flag: bool) -> Result<(), u8> {
-//    unreachable!("replaced by decarbonate")
+//    unreachable!("replaced by extern_C")
 //}
 //
 //#[test]

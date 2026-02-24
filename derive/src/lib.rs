@@ -24,7 +24,7 @@ mod impl_visitor;
 mod utils;
 mod wrapper;
 
-const NO_EXTERN_MSG: &str = "specify ABI with `carbonate(extern \"...\"`)";
+const NO_EXTERN_MSG: &str = "specify ABI with `export(extern \"...\"`)";
 
 struct FfiItems(Vec<FfiTypeInput>);
 
@@ -462,17 +462,11 @@ pub fn shared(args: TokenStream, input: TokenStream) -> TokenStream {
 }
 
 #[derive(Clone, Default)]
-struct DecarbonateArgs {
-    link_prefix: Option<syn::LitStr>,
-    link_name: Option<syn::LitStr>,
-}
-
-#[derive(Clone, Default)]
 struct CarbonateArgs {
     export_abi: Option<syn::Abi>,
 }
 
-fn merge_carbonate_args(
+fn merge_export_args(
     emitter: &mut Emitter,
     into: &mut CarbonateArgs,
     attr: &syn::Attribute,
@@ -483,7 +477,7 @@ fn merge_carbonate_args(
             emit!(
                 emitter,
                 attr,
-                "`extern \"...\"` can only be provided once across carbonate attributes on the same item"
+                "`extern \"...\"` can only be provided once across export attributes on the same item"
             );
         } else {
             into.export_abi = Some(export_abi);
@@ -491,22 +485,15 @@ fn merge_carbonate_args(
     }
 }
 
-fn is_decarbonate_attr(attr: &syn::Attribute) -> bool {
+fn is_export_attr(attr: &syn::Attribute) -> bool {
     attr.path()
         .segments
         .last()
-        .is_some_and(|seg| seg.ident == "decarbonate")
+        .is_some_and(|seg| seg.ident == "export")
 }
 
-fn is_carbonate_attr(attr: &syn::Attribute) -> bool {
-    attr.path()
-        .segments
-        .last()
-        .is_some_and(|seg| seg.ident == "carbonate")
-}
-
-fn is_carbonate_skip_attr(attr: &syn::Attribute) -> bool {
-    if !is_carbonate_attr(attr) {
+fn is_export_skip_attr(attr: &syn::Attribute) -> bool {
+    if !is_export_attr(attr) {
         return false;
     }
 
@@ -514,20 +501,53 @@ fn is_carbonate_skip_attr(attr: &syn::Attribute) -> bool {
         .is_ok_and(|arg| arg == "skip")
 }
 
-fn validate_method_carbonate_attrs(emitter: &mut Emitter, attrs: &[&syn::Attribute]) {
+fn is_export_name_attr(attr: &syn::Attribute) -> bool {
+    if !is_export_attr(attr) {
+        return false;
+    }
+
+    let syn::Meta::List(meta_list) = &attr.meta else {
+        return false;
+    };
+
+    let Ok(metas) = meta_list.parse_args_with(
+        syn::punctuated::Punctuated::<syn::MetaNameValue, syn::Token![,]>::parse_terminated,
+    ) else {
+        return false;
+    };
+
+    if metas.len() != 1 {
+        return false;
+    }
+
+    let nv = &metas[0];
+    if !nv.path.is_ident("name") {
+        return false;
+    }
+
+    matches!(
+        nv.value,
+        syn::Expr::Lit(syn::ExprLit {
+            lit: syn::Lit::Str(_),
+            ..
+        })
+    )
+}
+
+fn validate_method_export_attrs(emitter: &mut Emitter, attrs: &[&syn::Attribute]) {
     for attr in attrs {
-        if is_carbonate_attr(attr) && !is_carbonate_skip_attr(attr) {
+        if is_export_attr(attr) && !is_export_skip_attr(attr) && !is_export_name_attr(attr) {
             emit!(
                 emitter,
                 attr,
-                "method-level `#[carbonate(...)]` is not supported, except `#[carbonate(skip)]`; specify ABI on the impl block"
+                "method-level `#[export(...)]` is not supported, except `#[export(skip)]`; specify ABI on the impl block"
             );
         }
     }
 }
 
-fn has_valid_carbonate_skip(emitter: &mut Emitter, attrs: &[&syn::Attribute]) -> bool {
-    let has_skip = attrs.iter().any(|attr| is_carbonate_skip_attr(attr));
+fn has_valid_export_skip(emitter: &mut Emitter, attrs: &[&syn::Attribute]) -> bool {
+    let has_skip = attrs.iter().any(|attr| is_export_skip_attr(attr));
     if !has_skip {
         return false;
     }
@@ -536,14 +556,14 @@ fn has_valid_carbonate_skip(emitter: &mut Emitter, attrs: &[&syn::Attribute]) ->
         emit!(
             emitter,
             conflicting_attr,
-            "`#[no_mangle]` attribute may not be used in combination with `#[carbonate(skip)]`"
+            "`#[no_mangle]` attribute may not be used in combination with `#[export(skip)]`"
         );
     }
     if let Some(conflicting_attr) = attrs.iter().find(|attr| is_unsafe_export_name_attr(attr)) {
         emit!(
             emitter,
             conflicting_attr,
-            "`#[export_name]` attribute may not be used in combination with `#[carbonate(skip)]`"
+            "`#[export_name]` attribute may not be used in combination with `#[export(skip)]`"
         );
     }
 
@@ -575,129 +595,6 @@ impl syn::parse::Parse for CarbonateArgs {
             export_abi: Some(export_abi),
         })
     }
-}
-
-fn merge_decarbonate_args(
-    emitter: &mut Emitter,
-    into: &mut DecarbonateArgs,
-    attr: &syn::Attribute,
-    parsed: DecarbonateArgs,
-) {
-    if let Some(link_prefix) = parsed.link_prefix {
-        if into.link_prefix.is_some() {
-            emit!(
-                emitter,
-                attr,
-                "`link(crate = \"...\")` can only be provided once across decarbonate attributes"
-            );
-        } else {
-            into.link_prefix = Some(link_prefix);
-        }
-    }
-
-    if let Some(link_name) = parsed.link_name {
-        if into.link_name.is_some() {
-            emit!(
-                emitter,
-                attr,
-                "`link_name` can only be provided once across decarbonate attributes"
-            );
-        } else {
-            into.link_name = Some(link_name);
-        }
-    }
-}
-
-impl syn::parse::Parse for DecarbonateArgs {
-    fn parse(input: syn::parse::ParseStream) -> syn::Result<Self> {
-        if input.is_empty() {
-            return Ok(Self::default());
-        }
-
-        let mut args = Self::default();
-
-        let metas = input.parse_terminated(syn::Meta::parse, syn::Token![,])?;
-        for meta in metas {
-            match meta {
-                syn::Meta::List(list) if list.path.is_ident("link") => {
-                    let pairs = list.parse_args_with(
-                        syn::punctuated::Punctuated::<syn::MetaNameValue, syn::Token![,]>::parse_terminated,
-                    )?;
-                    for pair in pairs {
-                        let Some(ident) = pair.path.get_ident() else {
-                            return Err(syn::Error::new_spanned(
-                                pair.path,
-                                "expected `name = \"...\"` or `crate = \"...\"`",
-                            ));
-                        };
-                        let syn::Expr::Lit(syn::ExprLit {
-                            lit: syn::Lit::Str(value),
-                            ..
-                        }) = pair.value
-                        else {
-                            return Err(syn::Error::new_spanned(
-                                pair,
-                                "expected string literal in `link(...)`",
-                            ));
-                        };
-                        if ident == "crate" {
-                            if args.link_prefix.replace(value).is_some() {
-                                return Err(syn::Error::new_spanned(
-                                    ident,
-                                    "`crate` can only be provided once in `link(...)`",
-                                ));
-                            }
-                        } else if ident == "name" {
-                            if args.link_name.replace(value).is_some() {
-                                return Err(syn::Error::new_spanned(
-                                    ident,
-                                    "`name` can only be provided once in `link(...)`",
-                                ));
-                            }
-                        } else {
-                            return Err(syn::Error::new_spanned(
-                                ident,
-                                "expected `name = \"...\"` or `crate = \"...\"`",
-                            ));
-                        }
-                    }
-                }
-                syn::Meta::NameValue(nv) if nv.path.is_ident("link_name") => {
-                    let syn::Expr::Lit(syn::ExprLit {
-                        lit: syn::Lit::Str(value),
-                        ..
-                    }) = nv.value
-                    else {
-                        return Err(syn::Error::new_spanned(
-                            nv,
-                            "expected string literal in `link_name = \"...\"`",
-                        ));
-                    };
-                    if args.link_name.replace(value).is_some() {
-                        return Err(syn::Error::new_spanned(
-                            nv.path,
-                            "`link_name` can only be provided once",
-                        ));
-                    }
-                }
-                other => {
-                    return Err(syn::Error::new_spanned(
-                        other,
-                        "expected `link(name = \"...\")`, `link(crate = \"...\")`, or `link_name = \"...\"`",
-                    ));
-                }
-            }
-        }
-
-        Ok(args)
-    }
-}
-
-fn decarbonate_import_prefix(args: &DecarbonateArgs) -> Option<TokenStream> {
-    if let Some(link_prefix) = &args.link_prefix {
-        return Some(quote!(concat!(#link_prefix, "_")));
-    }
-    None
 }
 
 #[derive(Default)]
@@ -888,8 +785,8 @@ fn strip_consumed_export_attrs(attrs: &mut Vec<syn::Attribute>) {
     attrs.retain(|attr| !is_consumed_export_attr(attr));
 }
 
-fn strip_carbonate_attrs(attrs: &mut Vec<syn::Attribute>) {
-    attrs.retain(|attr| !is_carbonate_attr(attr));
+fn strip_export_attrs(attrs: &mut Vec<syn::Attribute>) {
+    attrs.retain(|attr| !is_export_attr(attr));
 }
 
 fn attach_export_attr_if_absent(
@@ -1175,11 +1072,11 @@ pub fn extern_c_derive(input: TokenStream) -> TokenStream {
 /// ```rust
 /// use std::alloc::alloc;
 ///
-/// use co3::carbonate;
+/// use co3::export;
 /// use getset::Getters;
 ///
 /// // For a struct such as:
-/// #[carbonate(extern "C")]
+/// #[export(extern "C")]
 /// #[derive(co3::ExternC, Clone, Getters)]
 /// #[getset(get = "pub")]
 /// pub struct Foo {
@@ -1189,7 +1086,7 @@ pub fn extern_c_derive(input: TokenStream) -> TokenStream {
 ///     bar: Vec<u8>,
 /// }
 ///
-/// #[carbonate(extern "C")]
+/// #[export(extern "C")]
 /// impl Foo {
 ///     /// Construct new type
 ///     pub extern "C" fn new(id: u8) -> Self {
@@ -1236,9 +1133,9 @@ pub fn extern_c_derive(input: TokenStream) -> TokenStream {
 /// It assumes that the derive is imported and referred to by its original name.
 #[manyhow]
 #[proc_macro_attribute]
-pub fn carbonate(attr: TokenStream, item: TokenStream) -> TokenStream {
+pub fn export(attr: TokenStream, item: TokenStream) -> TokenStream {
     let mut emitter = Emitter::new();
-    let mut carbonate_args = match syn::parse2::<CarbonateArgs>(attr) {
+    let mut export_args = match syn::parse2::<CarbonateArgs>(attr) {
         Ok(args) => args,
         Err(err) => {
             let msg = err.to_string();
@@ -1255,42 +1152,38 @@ pub fn carbonate(attr: TokenStream, item: TokenStream) -> TokenStream {
     match &item {
         syn::Item::Impl(item_impl) => {
             for attr in &item_impl.attrs {
-                if is_carbonate_skip_attr(attr) {
+                if is_export_skip_attr(attr) {
                     emit!(
                         emitter,
                         attr,
-                        "`#[carbonate(skip)]` is only supported on impl methods"
+                        "`#[export(skip)]` is only supported on impl methods"
                     );
                     continue;
                 }
-                if !is_carbonate_attr(attr) {
+                if !is_export_attr(attr) {
                     continue;
                 }
                 match attr.parse_args::<CarbonateArgs>() {
-                    Ok(parsed) => {
-                        merge_carbonate_args(&mut emitter, &mut carbonate_args, attr, parsed)
-                    }
+                    Ok(parsed) => merge_export_args(&mut emitter, &mut export_args, attr, parsed),
                     Err(err) => emit!(emitter, err.span(), "{}", err),
                 }
             }
         }
         syn::Item::Fn(item_fn) => {
             for attr in &item_fn.attrs {
-                if is_carbonate_skip_attr(attr) {
+                if is_export_skip_attr(attr) {
                     emit!(
                         emitter,
                         attr,
-                        "`#[carbonate(skip)]` is only supported on impl methods"
+                        "`#[export(skip)]` is only supported on impl methods"
                     );
                     continue;
                 }
-                if !is_carbonate_attr(attr) {
+                if !is_export_attr(attr) {
                     continue;
                 }
                 match attr.parse_args::<CarbonateArgs>() {
-                    Ok(parsed) => {
-                        merge_carbonate_args(&mut emitter, &mut carbonate_args, attr, parsed)
-                    }
+                    Ok(parsed) => merge_export_args(&mut emitter, &mut export_args, attr, parsed),
                     Err(err) => emit!(emitter, err.span(), "{}", err),
                 }
             }
@@ -1301,7 +1194,7 @@ pub fn carbonate(attr: TokenStream, item: TokenStream) -> TokenStream {
     use syn::Item::*;
     let result = match item {
         Impl(mut item) => {
-            strip_carbonate_attrs(&mut item.attrs);
+            strip_export_attrs(&mut item.attrs);
             let Some(impl_descriptor) = ImplDescriptor::from_impl(&mut emitter, &item) else {
                 return emitter.finish_token_stream();
             };
@@ -1316,11 +1209,11 @@ pub fn carbonate(attr: TokenStream, item: TokenStream) -> TokenStream {
                 .fns
                 .iter()
                 .map(|fn_descriptor| {
-                    validate_method_carbonate_attrs(&mut emitter, &fn_descriptor.attrs);
-                    let export_abi = carbonate_args.export_abi.as_ref();
+                    validate_method_export_attrs(&mut emitter, &fn_descriptor.attrs);
+                    let export_abi = export_args.export_abi.as_ref();
 
                     let force_shim = export_abi.is_some_and(|abi| !is_rust_abi(Some(abi)));
-                    if has_valid_carbonate_skip(&mut emitter, &fn_descriptor.attrs) {
+                    if has_valid_export_skip(&mut emitter, &fn_descriptor.attrs) {
                         MethodAction::Skip
                     } else if force_shim || !is_rust_abi(fn_descriptor.sig.abi.as_ref()) {
                         MethodAction::ExternShim(ffi_fn::gen_definition(
@@ -1330,10 +1223,18 @@ pub fn carbonate(attr: TokenStream, item: TokenStream) -> TokenStream {
                             export_abi,
                         ))
                     } else {
-                        MethodAction::NonExternAttach(ffi_fn::gen_default_export_name_attr(
-                            fn_descriptor,
-                            impl_descriptor.trait_name,
-                        ))
+                        let export_attr = fn_descriptor
+                            .attrs
+                            .iter()
+                            .find_map(|attr| parse_unsafe_export_name_attr(attr))
+                            .map(|name| syn::parse_quote!(#[unsafe(export_name = #name)]))
+                            .or_else(|| {
+                                ffi_fn::gen_default_export_name_attr(
+                                    fn_descriptor,
+                                    impl_descriptor.trait_name,
+                                )
+                            });
+                        MethodAction::NonExternAttach(export_attr)
                     }
                 })
                 .collect();
@@ -1349,15 +1250,15 @@ pub fn carbonate(attr: TokenStream, item: TokenStream) -> TokenStream {
             {
                 match action {
                     MethodAction::Skip => {
-                        strip_carbonate_attrs(&mut method.attrs);
+                        strip_export_attrs(&mut method.attrs);
                     }
                     MethodAction::ExternShim(ffi_fn) => {
-                        strip_carbonate_attrs(&mut method.attrs);
+                        strip_export_attrs(&mut method.attrs);
                         strip_consumed_export_attrs(&mut method.attrs);
                         method.block.stmts.insert(0, syn::parse_quote! { #ffi_fn });
                     }
                     MethodAction::NonExternAttach(export_attr) => {
-                        strip_carbonate_attrs(&mut method.attrs);
+                        strip_export_attrs(&mut method.attrs);
                         attach_export_attr_if_absent(&mut method.attrs, export_attr);
                     }
                 }
@@ -1366,7 +1267,7 @@ pub fn carbonate(attr: TokenStream, item: TokenStream) -> TokenStream {
             quote! { #item }
         }
         Fn(mut item) => {
-            strip_carbonate_attrs(&mut item.attrs);
+            strip_export_attrs(&mut item.attrs);
             enum FnAction {
                 ExternShim(TokenStream),
                 NonExternAttach(Option<syn::Attribute>),
@@ -1376,7 +1277,7 @@ pub fn carbonate(attr: TokenStream, item: TokenStream) -> TokenStream {
                 let Some(fn_descriptor) = FnDescriptor::from_fn(&mut emitter, &item) else {
                     return emitter.finish_token_stream();
                 };
-                let force_shim = carbonate_args
+                let force_shim = export_args
                     .export_abi
                     .as_ref()
                     .is_some_and(|abi| !is_rust_abi(Some(abi)));
@@ -1386,7 +1287,7 @@ pub fn carbonate(attr: TokenStream, item: TokenStream) -> TokenStream {
                         &fn_descriptor,
                         None,
                         &Default::default(),
-                        carbonate_args.export_abi.as_ref(),
+                        export_args.export_abi.as_ref(),
                     ))
                 } else {
                     FnAction::NonExternAttach(ffi_fn::gen_default_export_name_attr(
@@ -1470,250 +1371,6 @@ pub fn carbonate(attr: TokenStream, item: TokenStream) -> TokenStream {
                 quote! { #input }
             }
         }
-        Enum(item) => quote! { #item },
-        Union(item) => quote! { #item },
-        item => {
-            emit!(emitter, item, "Item not supported");
-            quote!()
-        }
-    };
-
-    emitter.finish_token_stream_with(result)
-}
-
-/// Replace the function's body with a call to FFI function. Counterpart of [`carbonate`]
-///
-/// When placed on a structure, it integrates with [`getset`] to import derived getter/setter methods.
-///
-/// # Example:
-/// ```rust
-/// use co3::decarbonate;
-///
-/// #[decarbonate]
-/// pub fn return_first_elem_from_arr(arr: &[u8; 8]) -> &u8 {
-///     // The body of this function is replaced with something like the following:
-///     // let mut store = Default::default();
-///     // let arr = co3::Encode::encode(&arr, &mut store);
-///     // let output = MaybeUninit::uninit();
-///     //
-///     // let call_res = __return_first_elem_from_arr(arr, output.as_mut_ptr());
-///     // if co3::FfiReturn::Ok != call_res {
-///     //     panic!("Function call failed");
-///     // }
-///     //
-///     // co3::out_ptr::OutPtrRead::try_read_out(output.assume_init()).unwrap()
-/// }
-///
-/// /* The following functions will be declared:
-/// unsafe extern "C" {
-///     fn __return_first_elem_from_arr(arr: *const [u8; 8]) -> *const u8;
-/// } */
-/// ```
-///
-/// ## A note on `#[derive(...)]` limitations
-///
-/// This proc-macro crate parses the `#[derive(...)]` attributes.
-/// Due to technical limitations of proc macros, it does not have access to the resolved path of the macro, only to what is written in the derive.
-/// As such, it cannot support derives that are used through aliases, such as
-///
-/// ```ignore
-/// use getset::Getters as GettersAlias;
-/// #[derive(GettersAlias)]
-/// pub struct Hello {
-///     // ...
-/// }
-/// ```
-///
-/// It assumes that the derive is imported and referred to by its original name.
-///
-/// Optional arguments:
-/// - `#[decarbonate]` imports by the literal function name in the generated signature.
-/// - `#[decarbonate(link(crate = "crate"))]` uses `"crate_"` as symbol prefix.
-/// - `#[decarbonate(link_name = "symbol")]` sets an exact imported symbol.
-/// - Resolution is always `"{link_prefix_?}{fn_ident}"` unless `link_name` is set.
-#[manyhow]
-#[proc_macro_attribute]
-pub fn decarbonate(attr: TokenStream, item: TokenStream) -> TokenStream {
-    let mut args = match syn::parse2::<DecarbonateArgs>(attr) {
-        Err(err) => return err.to_compile_error(),
-        Ok(args) => args,
-    };
-
-    let item = match syn::parse2::<syn::Item>(item) {
-        Err(err) => return err.to_compile_error(),
-        Ok(item) => item,
-    };
-
-    let mut emitter = Emitter::new();
-
-    use syn::Item::*;
-    let result = match item {
-        Impl(item) => {
-            for attr in &item.attrs {
-                if !is_decarbonate_attr(attr) {
-                    continue;
-                }
-                match attr.parse_args::<DecarbonateArgs>() {
-                    Ok(parsed) => merge_decarbonate_args(&mut emitter, &mut args, attr, parsed),
-                    Err(err) => emit!(emitter, attr, "{}", err),
-                }
-            }
-
-            let import_prefix = decarbonate_import_prefix(&args);
-            if args.link_name.is_some() {
-                emit!(
-                    emitter,
-                    item,
-                    "Impl-level `decarbonate` does not support `link_name`; use method-level overrides"
-                );
-            }
-            let attrs: Vec<_> = item
-                .attrs
-                .iter()
-                .filter(|attr| !is_decarbonate_attr(attr))
-                .collect();
-
-            let Some(impl_desc) = ImplDescriptor::from_foreign_impl(&mut emitter, &item) else {
-                return emitter.finish_token_stream();
-            };
-            let wrapped_methods = impl_desc
-                .fns
-                .iter()
-                .map(|fn_| {
-                    let mut method_args = DecarbonateArgs::default();
-                    let mut method_link_name: Option<syn::LitStr> = None;
-
-                    for attr in &fn_.attrs {
-                        if is_decarbonate_attr(attr) {
-                            match attr.parse_args::<DecarbonateArgs>() {
-                                Ok(parsed) => {
-                                    merge_decarbonate_args(
-                                        &mut emitter,
-                                        &mut method_args,
-                                        attr,
-                                        parsed,
-                                    );
-                                }
-                                Err(err) => emit!(emitter, attr, "{}", err),
-                            }
-                            continue;
-                        }
-
-                        match parse_link_name_attr(attr) {
-                            Ok(Some(link_name)) => {
-                                if method_link_name.replace(link_name).is_some() {
-                                    emit!(
-                                        emitter,
-                                        attr,
-                                        "`link_name` can only be provided once per method"
-                                    );
-                                }
-                            }
-                            Ok(None) => {}
-                            Err(err) => emit!(emitter, attr, "{}", err),
-                        }
-                    }
-
-                    let method_exact = method_link_name.or(method_args.link_name.clone());
-                    let method_import_prefix = decarbonate_import_prefix(&method_args);
-                    let method_prefix = if method_exact.is_some() {
-                        None
-                    } else {
-                        method_import_prefix.as_ref().or(import_prefix.as_ref())
-                    };
-                    let method_import_name = method_exact.as_ref();
-                    wrapper::wrap_method_with_import(
-                        fn_,
-                        impl_desc.trait_name,
-                        method_prefix,
-                        method_import_name,
-                        None,
-                    )
-                })
-                .collect::<Vec<_>>();
-
-            let self_ty = &impl_desc.fns[0].self_ty;
-            let impl_trait_for = impl_desc
-                .trait_name
-                .map(|trait_name| quote! { #trait_name for });
-            let (associated_names, associated_types) = impl_desc.associated_types.iter().fold(
-                (Vec::new(), Vec::new()),
-                |(mut names, mut types), (name, ty)| {
-                    names.push(name);
-                    types.push(ty);
-                    (names, types)
-                },
-            );
-            let mut associated_const_names = Vec::new();
-            let mut associated_const_types = Vec::new();
-            let mut associated_const_values = Vec::new();
-            for (name, ty, value) in &impl_desc.associated_consts {
-                associated_const_names.push(name);
-                associated_const_types.push(ty);
-                associated_const_values.push(value);
-            }
-
-            quote! {
-                #(#attrs)*
-                impl #impl_trait_for #self_ty {
-                    #(type #associated_names = #associated_types;)*
-                    #(const #associated_const_names: #associated_const_types = #associated_const_values;)*
-                    #(#wrapped_methods)*
-                }
-            }
-        }
-        Fn(item) => {
-            for attr in &item.attrs {
-                if !is_decarbonate_attr(attr) {
-                    continue;
-                }
-                match attr.parse_args::<DecarbonateArgs>() {
-                    Ok(parsed) => merge_decarbonate_args(&mut emitter, &mut args, attr, parsed),
-                    Err(err) => emit!(emitter, attr, "{}", err),
-                }
-            }
-            let mut item_link_name: Option<syn::LitStr> = None;
-            for attr in &item.attrs {
-                match parse_link_name_attr(attr) {
-                    Ok(Some(link_name)) => {
-                        if item_link_name.replace(link_name).is_some() {
-                            emit!(
-                                emitter,
-                                attr,
-                                "`link_name` can only be provided once per function"
-                            );
-                        }
-                    }
-                    Ok(None) => {}
-                    Err(err) => emit!(emitter, attr, "{}", err),
-                }
-            }
-
-            let import_prefix = decarbonate_import_prefix(&args);
-            let import_name = item_link_name.as_ref().or(args.link_name.as_ref());
-            let import_prefix = if item_link_name.is_some() || args.link_name.is_some() {
-                None
-            } else {
-                import_prefix
-            };
-
-            let Some(fn_descriptor) = FnDescriptor::from_fn(&mut emitter, &item) else {
-                return emitter.finish_token_stream();
-            };
-
-            let wrapped_item = wrapper::wrap_method_with_import(
-                &fn_descriptor,
-                None,
-                import_prefix.as_ref(),
-                import_name,
-                None,
-            );
-
-            quote! {
-                #wrapped_item
-            }
-        }
-        Struct(item) => quote! { #item },
         Enum(item) => quote! { #item },
         Union(item) => quote! { #item },
         item => {
@@ -2213,6 +1870,7 @@ fn expand_extern_import_decls(
 
 #[manyhow]
 #[proc_macro]
+#[allow(non_snake_case)]
 pub fn extern_C(input: TokenStream) -> TokenStream {
     struct ExternCInput {
         attrs: Vec<syn::Attribute>,

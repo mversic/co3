@@ -1,8 +1,8 @@
-use co3::{ExternC, carbonate, extern_, extern_C};
+use co3::{ExternC, export, extern_, extern_C};
 use webassembly_test::webassembly_test;
 
 trait AmbiguousX<T, const N: usize> {
-    //#[allow(unused)]
+    #[expect(unused)]
     const K: bool;
     type U;
 
@@ -27,7 +27,7 @@ struct MyType<T>(Box<T>);
 
 extern_! {
     #![abi = "Rust"]
-    #![link(crate = "decarbonate")]
+    #![link(crate = "import")]
 
     impl AmbiguousX<u32, 4> for MyType<u32> {
         const K: bool = true;
@@ -47,7 +47,7 @@ extern_! {
 }
 
 extern_C! {
-    #![link(crate = "decarbonate")]
+    #![link(crate = "import")]
 
     impl AmbiguousX<u64, 3> for MyType<u64> {
         const K: bool = false;
@@ -62,7 +62,7 @@ extern_C! {
     }
 
     impl MyType<u32> {
-        #[link_name = "decarbonate_MyType_u32_ambiguous"]
+        #[link_name = "import_MyType_u32_ambiguous"]
         fn ambiguous() -> MyType<u32>;
     }
 
@@ -78,7 +78,7 @@ mod provider {
     #[repr(transparent)]
     struct MyType<T>(T);
 
-    #[carbonate(extern "C")]
+    #[export(extern "C")]
     impl AmbiguousX<u64, 3> for MyType<u64> {
         const K: bool = false;
         type U = u8;
@@ -88,7 +88,7 @@ mod provider {
         }
     }
 
-    #[carbonate(extern "Rust")]
+    #[export(extern "Rust")]
     impl AmbiguousX<u32, 4> for MyType<u32> {
         const K: bool = true;
         type U = i8;
@@ -99,7 +99,7 @@ mod provider {
         }
     }
 
-    #[carbonate(extern "C")]
+    #[export(extern "C")]
     impl AmbiguousY for MyType<u64> {
         #[unsafe(no_mangle)]
         extern "C" fn ambiguous() -> Ambiguous {
@@ -107,37 +107,36 @@ mod provider {
         }
     }
 
-    #[carbonate(extern "C")]
+    #[export(extern "C")]
     impl AmbiguousY for MyType<u32> {
-        #[carbonate(skip)]
+        #[export(skip)]
         extern "C" fn ambiguous() -> Ambiguous {
             Ambiguous::AmbiguousY
         }
     }
 
-    #[carbonate(extern "Rust")]
+    #[export(extern "Rust")]
     impl MyType<u64> {
         #[unsafe(export_name = "kita1")]
-        #[expect(improper_ctypes_definitions)]
         pub unsafe extern "C" fn ambiguous() -> Box<MyType<u64>> {
             Box::new(MyType(42))
         }
     }
 
-    #[carbonate(extern "C")]
+    #[export(extern "C")]
     impl MyType<u32> {
         pub const fn ambiguous() -> MyType<u32> {
             MyType(420)
         }
     }
 
-    #[carbonate(extern "C")]
+    #[export(extern "C")]
     #[unsafe(no_mangle)]
     pub const fn ambiguous1() -> Ambiguous {
         Ambiguous::Fn
     }
 
-    #[carbonate(extern "Rust")]
+    #[export(extern "Rust")]
     #[unsafe(export_name = "kita2")]
     pub const unsafe extern "Rust" fn ambiguous2() -> Ambiguous {
         Ambiguous::Fn

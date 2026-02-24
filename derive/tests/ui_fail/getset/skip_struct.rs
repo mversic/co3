@@ -1,9 +1,9 @@
 use std::mem::MaybeUninit;
 
-use co3::{Decode, Encode, ExternC, carbonate};
+use co3::{Decode, Encode, ExternC, export};
 use getset::{MutGetters, Setters};
 
-#[carbonate(extern "C")]
+#[export(extern "C")]
 #[derive(Clone, Setters, MutGetters, ExternC)]
 pub struct FfiStruct {
     #[getset(set = "pub", get_mut = "pub")]

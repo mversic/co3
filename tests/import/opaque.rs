@@ -14,55 +14,55 @@
 //// NOTE: struct's body is replaced by co3!
 //pub struct OpaqueStruct;
 //
-//#[decarbonate]
+//#[extern_C]
 //impl Value {
 //    pub fn new(input: String) -> Self {
-//        unreachable!("replaced by decarbonate")
+//        unreachable!("replaced by extern_C")
 //    }
 //}
 //
-//#[decarbonate]
+//#[extern_C]
 //impl OpaqueStruct {
 //    pub fn new(name: u8) -> Box<Self> {
-//        unreachable!("replaced by decarbonate")
+//        unreachable!("replaced by extern_C")
 //    }
 //
 //    #[must_use]
 //    pub fn with_params(self, params: impl IntoIterator<Item = (u8, Value)>) -> OpaqueStruct {
-//        unreachable!("replaced by decarbonate")
+//        unreachable!("replaced by extern_C")
 //    }
 //
 //    pub fn get_param(&self, name: &u8) -> Option<ExternRef<'_, Value>> {
-//        unreachable!("replaced by decarbonate")
+//        unreachable!("replaced by extern_C")
 //    }
 //
 //    pub fn params(&self) -> impl ExactSizeIterator<Item = ExternRef<'_, Value>> {
-//        unreachable!("replaced by decarbonate")
+//        unreachable!("replaced by extern_C")
 //    }
 //
 //    pub fn fallible_int_output(flag: bool) -> Result<u8, &'static str> {
-//        unreachable!("replaced by decarbonate")
+//        unreachable!("replaced by extern_C")
 //    }
 //}
 //
-//#[decarbonate]
+//#[extern_C]
 //pub fn freestanding_returns_opaque_item(input: ExternRef<OpaqueStruct>) -> ExternRef<OpaqueStruct> {
-//    unreachable!("replaced by decarbonate")
+//    unreachable!("replaced by extern_C")
 //}
 //
-//#[decarbonate]
+//#[extern_C]
 //pub fn freestanding_returns_opaque_double_ref<'a, 'b>(
 //    input: &'b ExternRef<'a, OpaqueStruct>,
 //) -> &'b ExternRef<'a, OpaqueStruct>
 //where
 //    'a: 'b,
 //{
-//    unreachable!("replaced by decarbonate")
+//    unreachable!("replaced by extern_C")
 //}
 //
-//#[decarbonate]
+//#[extern_C]
 //pub fn some_fn(input: &[OpaqueStruct]) {
-//    unreachable!("replaced by decarbonate")
+//    unreachable!("replaced by extern_C")
 //}
 //
 //fn make_new_opaque(name: u8, params: BTreeMap<u8, Value>) -> OpaqueStruct {

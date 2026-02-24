@@ -1,4 +1,4 @@
-use co3::{ExternC, carbonate, extern_, extern_C};
+use co3::{ExternC, export, extern_, extern_C};
 
 #[derive(ExternC)]
 pub struct Hello {
@@ -6,7 +6,7 @@ pub struct Hello {
     b: i32,
 }
 
-#[carbonate(extern "C")]
+#[export(extern "C")]
 impl Hello {
     #[export(name = "hello")]
     #[expect(improper_ctypes_definitions)]

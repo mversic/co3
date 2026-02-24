@@ -1,7 +1,7 @@
 use std::{alloc, marker::PhantomData, mem::MaybeUninit, num::NonZeroU64};
 
 use co3::{
-    COption, Decode, Encode, ExternC, FfiReturn, carbonate,
+    COption, Decode, Encode, ExternC, FfiReturn, export,
     out_ptr::OutPtrRead,
     slice::{CBoxedSlice, CSlice},
 };
@@ -47,33 +47,33 @@ pub struct TransparentStruct {
 #[repr(transparent)]
 pub struct RobustTargetTransparent([u8; 4]);
 
-#[carbonate(extern "C")]
+#[export(extern "C")]
 pub fn array_of_transparent(arr: &mut [TransparentStruct; 1]) -> &mut [TransparentStruct; 1] {
     arr
 }
 
-#[carbonate(extern "C")]
+#[export(extern "C")]
 pub fn transparent_with_niche(
     arr: Option<RobustTargetTransparent>,
 ) -> Option<RobustTargetTransparent> {
     arr
 }
 
-#[carbonate(extern "C")]
+#[export(extern "C")]
 pub fn transparent_without_niche(
     arr: Option<TransparentWithoutNiche>,
 ) -> Option<TransparentWithoutNiche> {
     arr
 }
 
-#[carbonate(extern "C")]
+#[export(extern "C")]
 pub fn transparent_with_inner_niche(
     arr: Option<GenericTransparentStruct<u32>>,
 ) -> Option<GenericTransparentStruct<u32>> {
     arr
 }
 
-#[carbonate(extern "C")]
+#[export(extern "C")]
 impl TransparentStruct {
     pub fn new(payload: GenericTransparentStruct<()>) -> Self {
         Self {
@@ -99,17 +99,17 @@ impl TransparentStruct {
     }
 }
 
-#[carbonate(extern "C")]
+#[export(extern "C")]
 pub fn self_to_self(value: TransparentStruct) -> TransparentStruct {
     value
 }
 
-#[carbonate(extern "C")]
+#[export(extern "C")]
 pub fn vec_to_vec(value: Vec<TransparentStruct>) -> Vec<TransparentStruct> {
     value
 }
 
-#[carbonate(extern "C")]
+#[export(extern "C")]
 pub fn slice_to_slice(value: &[TransparentStruct]) -> &[TransparentStruct] {
     value
 }

@@ -16,8 +16,7 @@ default = ["alloc", "owned-as-ref"]
 
 # Enable deriving `extern C` ABI. Macros made available are:
 # - `#derive(ExternC)`/`#[extern_type]`
-# - `#[carbonate]`/`#[decarbonate]`
-# - `extern_!`/`extern_c!`
+# - `#[export]`/`extern_C!`/`extern_!`
 derive = ["co3_derive"]
 
 # Implements conversion traits for types from the `alloc` crate (e.g. `Box<T>` or `Vec<T>`).
@@ -68,7 +67,7 @@ unstable-refs = []
 unsafe-optimizations = []
 
 # Enable integration with `getset` when deriving `extern C` ABI
-getset = ["derive", "co3_derive/getset"]
+# getset = ["derive", "co3_derive/getset"]
 
 [dependencies]
 co3_derive = { path = "derive", optional = true }
@@ -81,7 +80,7 @@ impls = "1.0.3"
 [dev-dependencies]
 static_assertions = "1.1.0"
 webassembly-test = "0.1.0"
-getset = "0.1.6"
+#getset = "0.1.6"
 
 [workspace]
 resolver = "2"
@@ -92,9 +91,9 @@ name = "abi"
 required-features = ["alloc", "derive"]
 
 [[test]]
-name = "carbonate"
+name = "export"
 required-features = ["alloc", "derive"]
 
 [[test]]
-name = "decarbonate"
+name = "import"
 required-features = ["alloc", "derive"]

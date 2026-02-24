@@ -510,11 +510,7 @@ pub fn wrap_impl_items(
     impl_desc: &ImplDescriptor,
     _import_crate_name: Option<&TokenStream>,
 ) -> TokenStream {
-    let impl_attrs = impl_desc
-        .attrs
-        .iter()
-        .copied()
-        .filter(|attr| !is_decarbonate_attr(attr));
+    let impl_attrs = impl_desc.attrs.iter().copied();
 
     if impl_desc.fns.is_empty() {
         return quote! {};
@@ -559,23 +555,16 @@ fn gen_wrapper_signature(fn_descriptor: &FnDescriptor) -> syn::Signature {
     signature
 }
 
-fn is_decarbonate_attr(attr: &syn::Attribute) -> bool {
-    attr.path()
-        .segments
-        .last()
-        .is_some_and(|seg| seg.ident == "decarbonate")
-}
-
 pub fn wrap_method(fn_descriptor: &FnDescriptor, trait_path: Option<&Path>) -> TokenStream {
     let signature = gen_wrapper_signature(fn_descriptor);
     let trait_symbol_name = trait_path.map(path_symbol_name);
     let ffi_fn_name = ffi_fn::gen_fn_name(fn_descriptor, trait_symbol_name.as_deref());
     let method_body = gen_wrapper_method_body(fn_descriptor, &ffi_fn_name, None);
-    let ffi_fn_attrs = fn_descriptor.attrs.iter().copied().filter(|attr| {
-        !is_decarbonate_attr(attr)
-            && !attr.path().is_ident("link_name")
-            && !attr.path().is_ident("link")
-    });
+    let ffi_fn_attrs = fn_descriptor
+        .attrs
+        .iter()
+        .copied()
+        .filter(|attr| !attr.path().is_ident("link_name") && !attr.path().is_ident("link"));
     let method_doc = &fn_descriptor.doc;
     let visibility = if trait_path.is_none() {
         quote! { pub }
@@ -630,11 +619,11 @@ pub fn wrap_method_with_import(
         );
         gen_wrapper_method_body(fn_descriptor, &ffi_fn_name, Some(ffi_decl))
     };
-    let ffi_fn_attrs = fn_descriptor.attrs.iter().copied().filter(|attr| {
-        !is_decarbonate_attr(attr)
-            && !attr.path().is_ident("link_name")
-            && !attr.path().is_ident("link")
-    });
+    let ffi_fn_attrs = fn_descriptor
+        .attrs
+        .iter()
+        .copied()
+        .filter(|attr| !attr.path().is_ident("link_name") && !attr.path().is_ident("link"));
     let method_doc = &fn_descriptor.doc;
     let visibility = if trait_path.is_none() {
         quote! { pub }

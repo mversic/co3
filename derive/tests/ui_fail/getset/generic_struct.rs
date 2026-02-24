@@ -1,7 +1,7 @@
-use co3::{ExternC, carbonate};
+use co3::{ExternC, export};
 use getset::Getters;
 
-#[carbonate(extern "C")]
+#[export(extern "C")]
 #[derive(Getters, ExternC)]
 #[getset(get = "pub")]
 pub struct FfiStruct<T> {

@@ -1,7 +1,7 @@
 error: custom attribute panicked
  --> tests/ui_fail/array_as_ptr.rs:3:1
   |
-3 | #[carbonate(extern "C")]
-  | ^^^^^^^^^^^^^^^^^^^^^^^^
+3 | #[export(extern "C")]
+  | ^^^^^^^^^^^^^^^^^^^^^
   |
   = help: message: not implemented

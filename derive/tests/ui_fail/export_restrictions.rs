@@ -1,4 +1,4 @@
-use co3::{ExternC, carbonate};
+use co3::{ExternC, export};
 
 trait Kita {
     extern "system" fn kita0(self);
@@ -9,42 +9,42 @@ trait Kita {
 #[derive(Clone, ExternC)]
 struct FfiStruct(u8);
 
-#[carbonate(extern "C")]
+#[export(extern "C")]
 impl Kita for FfiStruct {
-    #[carbonate]
+    #[export]
     fn kita0(self) {}
     #[unsafe(no_mangle)]
-    #[carbonate(skip)]
+    #[export(skip)]
     fn kita1(self) {}
-    #[carbonate(skip)]
+    #[export(skip)]
     #[unsafe(export_name = "kita")]
     extern "C" fn kita2(self) {}
 }
 
-#[carbonate(extern "C")]
+#[export(extern "C")]
 impl FfiStruct {
     #[unsafe(no_mangle)]
-    #[carbonate(skip)]
+    #[export(skip)]
     extern "C" fn kita1(self) {}
-    #[carbonate(skip)]
+    #[export(skip)]
     #[unsafe(export_name = "kita")]
     pub extern "C" fn kita2(self) {}
 }
 
-#[carbonate]
+#[export]
 impl FfiStruct {}
 
-#[carbonate(extern)]
+#[export(extern)]
 impl FfiStruct {}
 
-#[carbonate(extern "C")]
-#[carbonate(skip)]
+#[export(extern "C")]
+#[export(skip)]
 extern "C" fn kita1(_a: u32) {}
 
-#[carbonate(extern)]
+#[export(extern)]
 extern "C" fn kita3(_a: u32) {}
 
-#[carbonate]
+#[export]
 extern "C" fn kita4(_a: u32) {}
 
 fn main() {}

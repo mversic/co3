@@ -1,6 +1,6 @@
-use co3::carbonate;
+use co3::export;
 
-#[carbonate(extern "C")]
+#[export(extern "C")]
 #[unsafe(no_mangle)]
 pub extern "C" fn array_arg(arr: [u32; 2]) -> [u32; 2] {
     arr

@@ -15,17 +15,17 @@
 //    //name: Name,
 //}
 //
-//#[decarbonate]
+//#[extern_C]
 //impl Name {
 //    pub fn new(name: String) -> Self {
-//        unreachable!("replaced by decarbonate")
+//        unreachable!("replaced by extern_C")
 //    }
 //}
 //
-//#[decarbonate]
+//#[extern_C]
 //impl FfiStruct {
 //    pub fn new(name: String, id: u8) -> Self {
-//        unreachable!("replaced by decarbonate")
+//        unreachable!("replaced by extern_C")
 //    }
 //}
 //
