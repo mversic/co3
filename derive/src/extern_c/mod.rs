@@ -260,7 +260,7 @@ pub struct FfiTypeAttr {
 impl FromAttributes for FfiTypeAttr {
     fn from_attributes(attrs: &[Attribute]) -> darling::Result<Self> {
         let mut accumulator = darling::error::Accumulator::default();
-        let reprC_kind = accumulator
+        let repr_c_kind = accumulator
             .handle(parse_single_list_attr_opt(FFI_TYPE_ATTR, attrs))
             .flatten();
         let co3_kind = accumulator
@@ -276,13 +276,13 @@ impl FromAttributes for FfiTypeAttr {
             ));
         }
 
-        if reprC_kind.is_some() && co3_kind.is_some() {
+        if repr_c_kind.is_some() && co3_kind.is_some() {
             accumulator.push(darling::Error::custom(
                 "Use either #[reprC(...)] or #[co3(...)], not both",
             ));
         }
 
-        let kind_attr_kind = reprC_kind.or(co3_kind);
+        let kind_attr_kind = repr_c_kind.or(co3_kind);
         let kind = match (kind_attr_kind, opaque_attr) {
             (Some(_), Some(attr)) => {
                 accumulator.push(
@@ -309,21 +309,21 @@ pub struct FfiTypeFieldAttr {
 impl FromAttributes for FfiTypeFieldAttr {
     fn from_attributes(attrs: &[Attribute]) -> darling::Result<Self> {
         let mut accumulator = darling::error::Accumulator::default();
-        let reprC_kind = accumulator
+        let repr_c_kind = accumulator
             .handle(parse_single_list_attr_opt(FFI_TYPE_ATTR, attrs))
             .flatten();
         let co3_kind = accumulator
             .handle(parse_single_list_attr_opt(FFI_TYPE_ATTR_ALT, attrs))
             .flatten();
 
-        if reprC_kind.is_some() && co3_kind.is_some() {
+        if repr_c_kind.is_some() && co3_kind.is_some() {
             accumulator.push(darling::Error::custom(
                 "Use either #[reprC(...)] or #[co3(...)], not both",
             ));
         }
 
         accumulator.finish_with(Self {
-            kind: reprC_kind.or(co3_kind),
+            kind: repr_c_kind.or(co3_kind),
         })
     }
 }
@@ -341,8 +341,6 @@ pub struct FfiTypeInput {
     repr_attr: Repr,
     pub ffi_type_attr: FfiTypeAttr,
     pub span: Span,
-    /// The original `DeriveInput` this structure was parsed from
-    pub ast: syn::DeriveInput,
     #[cfg(feature = "getset")]
     pub getset_attr: GetSetStructAttrs,
 }
@@ -369,7 +367,6 @@ impl darling::FromDeriveInput for FfiTypeInput {
             repr_attr,
             ffi_type_attr,
             span,
-            ast: input.clone(),
             #[cfg(feature = "getset")]
             getset_attr,
         })

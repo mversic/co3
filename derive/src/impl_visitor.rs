@@ -17,6 +17,7 @@ pub struct Arg {
     self_ty: Option<Path>,
     name: Ident,
     type_: Type,
+    is_handle: bool,
 }
 
 impl Arg {
@@ -25,6 +26,20 @@ impl Arg {
             self_ty,
             name,
             type_,
+            is_handle: false,
+        }
+    }
+    pub fn new_with_handle(
+        self_ty: Option<Path>,
+        name: Ident,
+        type_: Type,
+        is_handle: bool,
+    ) -> Self {
+        Self {
+            self_ty,
+            name,
+            type_,
+            is_handle,
         }
     }
     pub fn name(&self) -> &Ident {
@@ -32,6 +47,9 @@ impl Arg {
     }
     pub fn src_type(&self) -> &Type {
         &self.type_
+    }
+    pub fn is_handle(&self) -> bool {
+        self.is_handle
     }
     pub fn src_type_is_empty_tuple(&self) -> bool {
         matches!(self.src_type_resolved(), Type::Tuple(syn::TypeTuple { ref elems, .. }) if elems.is_empty())
@@ -80,7 +98,7 @@ impl VisitMut for ForeignArgProcessor<'_> {
             }
             Type::Reference(ref_ty) if is_self_ty(&ref_ty.elem, self.self_ty) => {
                 *node = if ref_ty.mutability.is_some() {
-                    parse_quote!(co3::external::ExternMut<'_, Self>)
+                    parse_quote!(co3::external::ExternRefMut<'_, Self>)
                 } else {
                     parse_quote!(co3::external::ExternRef<'_, Self>)
                 };
@@ -95,8 +113,6 @@ impl VisitMut for ForeignArgProcessor<'_> {
 }
 
 pub struct ImplDescriptor<'ast> {
-    /// Attributes of the impl block
-    pub attrs: Vec<&'ast Attribute>,
     /// Trait name
     pub trait_name: Option<&'ast Path>,
     /// Associated types
@@ -130,8 +146,8 @@ pub struct FnDescriptor<'ast> {
 
 struct ImplVisitor<'ast, 'emitter> {
     emitter: &'emitter mut Emitter,
+    allow_non_lifetime_impl_generics: bool,
     fatal: bool,
-    attrs: Vec<&'ast Attribute>,
     trait_name: Option<&'ast Path>,
     /// Resolved type of the `Self` type
     self_ty: Option<&'ast Path>,
@@ -161,6 +177,7 @@ struct FnVisitor<'ast, 'emitter> {
 
     /// Name of the argument being visited
     curr_arg_name: Option<&'ast Ident>,
+    curr_arg_is_handle: bool,
 }
 
 impl<'ast> ImplDescriptor<'ast> {
@@ -171,12 +188,31 @@ impl<'ast> ImplDescriptor<'ast> {
         ImplDescriptor::from_visitor(visitor)
     }
 
+    pub fn from_impl_allow_generics(
+        emitter: &mut Emitter,
+        node: &'ast syn::ItemImpl,
+    ) -> Option<Self> {
+        let mut visitor = ImplVisitor::new_allow_generics(emitter);
+        visitor.visit_item_impl(node);
+
+        ImplDescriptor::from_visitor(visitor)
+    }
+
     pub fn from_foreign_impl(emitter: &mut Emitter, node: &'ast syn::ItemImpl) -> Option<Self> {
-        let mut visitor = ImplVisitor::new(emitter);
+        let mut visitor = ImplVisitor::new_allow_generics(emitter);
         visitor.visit_item_impl(node);
         let mut impl_desc = Self::from_visitor(visitor)?;
+        let is_drop_impl = impl_desc
+            .trait_name
+            .is_some_and(|trait_name| path_symbol_name(trait_name) == "Drop");
 
         impl_desc.fns.iter_mut().for_each(|fn_| {
+            if is_drop_impl
+                && fn_.sig.ident == "drop"
+                && let Some(receiver) = &mut fn_.receiver
+            {
+                receiver.is_handle = true;
+            }
             let mut arg_processor = ForeignArgProcessor {
                 self_ty: fn_.self_ty.as_ref(),
             };
@@ -200,7 +236,6 @@ impl<'ast> ImplDescriptor<'ast> {
             return None;
         }
         Some(Self {
-            attrs: visitor.attrs,
             trait_name: visitor.trait_name,
             generics: visitor.generics.unwrap(),
             associated_types: visitor.associated_types,
@@ -357,8 +392,22 @@ impl<'ast, 'emitter> ImplVisitor<'ast, 'emitter> {
     fn new(emitter: &'emitter mut Emitter) -> Self {
         Self {
             emitter,
+            allow_non_lifetime_impl_generics: false,
             fatal: false,
-            attrs: Vec::new(),
+            trait_name: None,
+            self_ty: None,
+            generics: None,
+            associated_types: Vec::new(),
+            associated_consts: Vec::new(),
+            fns: vec![],
+        }
+    }
+
+    fn new_allow_generics(emitter: &'emitter mut Emitter) -> Self {
+        Self {
+            emitter,
+            allow_non_lifetime_impl_generics: true,
+            fatal: false,
             trait_name: None,
             self_ty: None,
             generics: None,
@@ -405,6 +454,7 @@ impl<'ast, 'emitter> FnVisitor<'ast, 'emitter> {
             output_arg: None,
 
             curr_arg_name: None,
+            curr_arg_is_handle: false,
         }
     }
 
@@ -421,8 +471,13 @@ impl<'ast, 'emitter> FnVisitor<'ast, 'emitter> {
                 Span::call_site(),
             )
         });
-        self.input_args
-            .push(Arg::new(self.self_ty.cloned(), arg_name, src_type.clone()));
+        self.input_args.push(Arg::new_with_handle(
+            self.self_ty.cloned(),
+            arg_name,
+            src_type.clone(),
+            self.curr_arg_is_handle,
+        ));
+        self.curr_arg_is_handle = false;
     }
 
     fn add_output_arg(&mut self, src_type: &'ast Type) {
@@ -441,7 +496,7 @@ impl<'ast, 'emitter> FnVisitor<'ast, 'emitter> {
 
 impl<'ast> Visit<'ast> for ImplVisitor<'ast, '_> {
     fn visit_attribute(&mut self, node: &'ast syn::Attribute) {
-        self.attrs.push(node);
+        let _ = node;
     }
     fn visit_generics(&mut self, node: &'ast syn::Generics) {
         self.generics = Some(node);
@@ -452,7 +507,7 @@ impl<'ast> Visit<'ast> for ImplVisitor<'ast, '_> {
             .params
             .iter()
             .any(|param| !matches!(param, syn::GenericParam::Lifetime(_)));
-        if has_non_lifetime_generics {
+        if has_non_lifetime_generics && !self.allow_non_lifetime_impl_generics {
             self.fatal = true;
             emit!(
                 self.emitter,
@@ -592,10 +647,61 @@ impl<'ast> Visit<'ast> for FnVisitor<'ast, '_> {
         );
 
         let handle_name = Ident::new("__handle", Span::call_site());
-        self.receiver = Some(Arg::new(self.self_ty.cloned(), handle_name, src_type));
+        let is_handle = node
+            .attrs
+            .iter()
+            .any(|attr| attr.path().is_ident("dispatch"));
+        self.receiver = Some(Arg::new_with_handle(
+            self.self_ty.cloned(),
+            handle_name,
+            src_type,
+            is_handle,
+        ));
     }
 
     fn visit_pat_type(&mut self, node: &'ast syn::PatType) {
+        if let syn::Pat::Ident(ident) = &*node.pat
+            && ident.ident == "self"
+        {
+            let src_type: Option<Type> = match node.ty.as_ref() {
+                Type::Path(type_path)
+                    if type_path.qself.is_none() && type_path.path.is_ident("Self") =>
+                {
+                    Some(parse_quote! {Self})
+                }
+                Type::Reference(reference) => {
+                    if let Type::Path(type_path) = reference.elem.as_ref()
+                        && type_path.qself.is_none()
+                        && type_path.path.is_ident("Self")
+                    {
+                        if reference.mutability.is_some() {
+                            Some(parse_quote! {&mut Self})
+                        } else {
+                            Some(parse_quote! {&Self})
+                        }
+                    } else {
+                        None
+                    }
+                }
+                _ => None,
+            };
+
+            if let Some(src_type) = src_type {
+                let handle_name = Ident::new("__handle", Span::call_site());
+                let is_handle = node
+                    .attrs
+                    .iter()
+                    .any(|attr| attr.path().is_ident("dispatch"));
+                self.receiver = Some(Arg::new_with_handle(
+                    self.self_ty.cloned(),
+                    handle_name,
+                    src_type,
+                    is_handle,
+                ));
+                return;
+            }
+        }
+
         if let syn::Pat::Ident(ident) = &*node.pat {
             self.visit_pat_ident(ident);
         } else {
@@ -603,6 +709,10 @@ impl<'ast> Visit<'ast> for FnVisitor<'ast, '_> {
             // it's not an error (anymore)
         }
 
+        self.curr_arg_is_handle = node
+            .attrs
+            .iter()
+            .any(|attr| attr.path().is_ident("dispatch"));
         self.add_input_arg(&node.ty);
     }
 
@@ -726,8 +836,4 @@ impl VisitMut for TypeImplTraitResolver {
             *node = new_node;
         }
     }
-}
-
-fn last_seg_ident(path: &syn::Path) -> &Ident {
-    &path.segments.last().expect("Defined").ident
 }

@@ -29,6 +29,12 @@ extern_! {
     #![abi = "Rust"]
     #![link(crate = "import")]
 
+    type MyType2;
+
+    impl Drop for MyType2 {
+        fn drop(self: &mut Self);
+    }
+
     impl AmbiguousX<u32, 4> for MyType<u32> {
         const K: bool = true;
         type U = i8;
@@ -39,7 +45,7 @@ extern_! {
 
     impl MyType<u64> {
         #[link_name = "kita1"]
-        unsafe extern "C" fn ambiguous() -> MyType<u64>;
+        unsafe extern "C" fn ambiguous() -> Self;
     }
 
     #[link_name = "kita2"]
@@ -48,6 +54,10 @@ extern_! {
 
 extern_C! {
     #![link(crate = "import")]
+
+    impl MyType2 {
+        fn new() -> Self;
+    }
 
     impl AmbiguousX<u64, 3> for MyType<u64> {
         const K: bool = false;
@@ -63,7 +73,7 @@ extern_C! {
 
     impl MyType<u32> {
         #[link_name = "import_MyType_u32_ambiguous"]
-        fn ambiguous() -> MyType<u32>;
+        fn ambiguous() -> Self;
     }
 
     #[link_name = "ambiguous1"]
@@ -71,12 +81,35 @@ extern_C! {
 }
 
 mod provider {
+    use co3::export_C;
+
     use super::*;
 
     #[derive(Clone, Copy, ReprC)]
     #[repr(transparent)]
     #[reprC(opaque)]
     struct MyType<T>(T);
+
+    #[derive(ReprC)]
+    #[reprC(opaque)]
+    #[repr(transparent)]
+    enum MyType2 {
+        #[expect(dead_code)]
+        A(String),
+    }
+
+    export_C! {
+        impl Drop for MyType2 {
+            fn drop(&mut self);
+        }
+    }
+
+    #[export("C")]
+    impl MyType2 {
+        fn new() -> Self {
+            MyType2::A("KITA".to_owned())
+        }
+    }
 
     #[export("C")]
     impl AmbiguousX<u64, 3> for MyType<u64> {
@@ -118,15 +151,15 @@ mod provider {
     #[export("Rust")]
     impl MyType<u64> {
         #[unsafe(export_name = "kita1")]
-        pub unsafe extern "C" fn ambiguous() -> Box<MyType<u64>> {
-            Box::new(MyType(42))
+        pub unsafe extern "C" fn ambiguous() -> Box<Self> {
+            Box::new(Self(42))
         }
     }
 
     #[export("C")]
     impl MyType<u32> {
-        pub const fn ambiguous() -> MyType<u32> {
-            MyType(420)
+        pub const fn ambiguous() -> Self {
+            Self(420)
         }
     }
 
@@ -165,4 +198,8 @@ fn extern_abi() {
 
     assert_eq!(Ambiguous::Fn, ambiguous1_imported());
     assert_eq!(Ambiguous::Fn, unsafe { ambiguous2_imported() });
+
+    let my_type2 = MyType2::new();
+    let a = my_type2.0.as_ptr().cast::<String>();
+    assert_eq!("KITA", unsafe { &*a })
 }

@@ -7,8 +7,8 @@ use alloc::{boxed::Box, string::String, vec::Vec};
 use crate::VecCType;
 use crate::{
     ir::{ReprFamily, Transmuted},
-    reprC,
     niche::{Niche, NicheFamily, StableNiche, WithCustomNiche, WithStableNiche, WithoutNiche},
+    reprC,
     slice::{CSlice, CSliceMut},
     transmute::{CheckedTransmute, EncodeTransmuted},
 };

@@ -1,6 +1,6 @@
 use core::cmp::Ordering;
 
-use co3::{Encode, ExternC, ReprC};
+use co3::{Encode, ReprC, export_C, extern_C};
 use webassembly_test::webassembly_test;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, ReprC)]
@@ -10,11 +10,19 @@ pub enum Opaque {
     A,
 }
 
-// FIXME:
-//#[extern_type]
-//pub enum Extern {
-//    A,
-//}
+export_C! {
+    impl Drop for Opaque {
+        fn drop(&mut self);
+    }
+}
+
+extern_C! {
+    pub type Extern;
+
+    impl Drop for Extern {
+        fn drop(&mut self);
+    }
+}
 
 #[derive(Clone, Copy, ReprC)]
 #[allow(unused)]
@@ -351,7 +359,7 @@ fn verify_enum_niche_value() {
     assert_eq!(expected_ord, None::<Ordering>.encode(&mut ()));
 
     assert!(None::<Opaque>.encode(&mut ()).is_null());
-    //assert!(None::<Extern>.encode(&mut ()).is_null());
+    assert!(None::<Extern>.encode(&mut ()).is_null());
 
     #[cfg(not(target_family = "wasm"))]
     let expected_niche_enum_discriminant_u = 4_u8;

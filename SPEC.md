@@ -2,7 +2,7 @@
 
 ## 1. Design Goal
 
-`co3` is a Rust-side framework for exporting/importing C ABI functions by:
+`co3` is a Rust-side framework for _safely_ exporting/importing C ABI functions by:
 
 - Mapping Rust types to C-compatible types via `ReprC` derive macro.
 - Exporting functions and impl block methods via `export("ABI")` attribute.
@@ -13,16 +13,16 @@
 These guarantees define the contract of this library:
 
 1. **Native-Rust ergonomics**
-- Ergonomics of APIs and generated wrappers MUST remain idiomatic to Rust users.
-- FFI boundary mechanics SHOULD stay encapsulated in conversion traits and generated glue.
+- Ergonomics of APIs and generated wrappers **MUST** remain idiomatic to Rust users.
+- FFI boundary mechanics **SHOULD** stay encapsulated in conversion traits and generated glue.
 
 2. **Soundness-first FFI interoperability**
-- Soundness MUST NOT be weakened for performance in the default configuration.
+- Soundness **MUST NOT** be weakened for performance in the default configuration.
 - If preserving soundness requires additional validation, temporary storage, or cloning, that cost is accepted.
 
 3. **Zero-cost abstraction by default**
-- Zero-cost abstraction MUST be preserved unless it directly conflicts with the soundness guarantee.
-- Only explicit opt-in modes MAY prioritize performance by shifting soundness responsibility to the user.
+- Zero-cost abstraction **MUST** be preserved unless it directly conflicts with the soundness guarantee.
+- Only explicit opt-in modes **MAY** prioritize performance by shifting soundness responsibility to the user.
 
 ### 1.2 FFI Conversion Modes
 
@@ -37,7 +37,7 @@ Each mode makes explicit tradeoffs and is selected through compile-time configur
 2. **`unstable-refs` (opt-in)**
 - Enables additional reference conversion paths that rely on cloning the referent (e.g. `&(u8,)`).
 - Uses intermediate owned/cloned values and store synchronization for mutable writeback paths.
-- Pointer identity is not preserved and pointer equality for these types MUST NOT be relied on.
+- Pointer identity is not preserved and pointer equality for these types **MUST NOT** be relied on.
 
 3. **`unsafe-optimizations` (opt-in)**
 - Eliminates cloning in encode paths of mutable references to transmutable `Drop` types (e.g. `&mut Box<u32>`).
@@ -47,13 +47,14 @@ Each mode makes explicit tradeoffs and is selected through compile-time configur
 ## 2. Public API
 
 Public API constitutes user-facing macro entry points.
-Any conversion written manually against internal conversion traits of this crate **DOES NOT** constitute public API.
+Any generated glue code **MUST** remain private and **MUST NOT** leak into the public API.
+Any conversion written manually against traits of this crate **DOES NOT** constitute public API.
 
 ### 2.1 `ReprC` Derive Macro
 
 `#[derive(ReprC)]` derives implementations required to convert a type to a corresponding C-compatible companion type.
 A C-compatible companion type is a type with a defined C ABI and no trap representations, whose fields are themselves C-compatible companion types.
-The only exception is raw pointers: their referents are not required to have a C-compatible companion type (unline references, which require a valid referent).
+The only exception is raw pointers: their referents are not required to have a C-compatible companion type (unlike references, which require a valid referent).
 
 - By default, the derive defines a C-compatible companion type and conversions between the two types.
 - For `#[repr(C)]` types, representation requirements are checked recursively at compile time for all field types.
@@ -65,9 +66,9 @@ The only exception is raw pointers: their referents are not required to have a C
 
 ### 2.2 The `#[export("ABI")]` Attribute
 
-`#[export("ABI")]` generates Rust-inaccessible `extern "ABI"` companion functions and the symbols they will be exported under.
+`#[export("ABI")]` generates `extern "ABI"` companion functions and the symbols they will be exported under.
 An `extern "ABI"` companion function is a function which has an `ABI`-compatible signature with `ABI`-compatible companion argument/return types.
-The attribute **DOES NOT** modify the signature or behavior of the item it is attached to.
+The attribute **MUST NOT** modify the signature or behavior of the item it is attached to.
 
 - By default, the attribute mangles export names as: `{crate_name}_{TraitName}_{trait_generic_args}_{SelfTy}_{self_ty_generic_args}_{method}`.
 - `#[unsafe(no_mangle)]`/`#[unsafe(export_name = "...")]` override default name mangling with their own semantics.
@@ -76,10 +77,21 @@ The attribute **DOES NOT** modify the signature or behavior of the item it is at
 - `#[export(skip)]` on an impl method excludes that method from being processed by the attribute.
 - Although not marked as `unsafe`, a low risk of symbol collision UB still exists.
 
-### 2.3 The `extern_!` macro
+### 2.3 The `export_!` Macro
 
-`extern_!` declares Rust-inaccessible `extern "ABI"` companion functions that bodies of declared Rust code call into.
-The macro **DOES NOT** modify the signatures or behavior of declared Rust items.
+`export_!` is a powerful macro that provides a declaration-driven interface extending the behavior of `#[export("ABI")]`.
+The macro can generate `extern "ABI"` companion functions for externally defined functions or methods, including methods from derived trait impls.
+It can also generate `extern "ABI"` tag-based polymorphic dispatch functions which route the call to the corresponding concrete implementation.
+
+- `export_!` inherits the same constraints, eligibility, naming, and safety rules of `#[export("ABI")]`.
+- `export_C!` is a specialization of `export_!` with ABI fixed to `"C"` and is used for convenience.
+- `#[dispatch({param} = [Type1, ..., TypeN])]` declares concrete types used for polymorphic dispatch routing.
+- `#[id_pos({param}: {num})]` declares dispatch tag/id argument positions for generated polymorphic dispatch functions.
+
+### 2.4 The `extern_!` Macro
+
+`extern_!` declares extern types and `extern "ABI"` companion functions that bodies of declared Rust code call into.
+The macro **MUST NOT** modify the signatures or behavior of declared Rust items.
 
 - By default, the macro infers `link_name` as: `{crate_name}_{TraitName}_{trait_generic_args}_{SelfTy}_{self_ty_generic_args}_{method}`.
 - `extern_!` requires `#![abi = "..."]` that it applies to generated `extern "ABI"` companion function declarations.

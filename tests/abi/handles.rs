@@ -1,140 +1,205 @@
-use co3::{export, extern_C, extern_type, external::ExternRef};
+use co3::extern_C;
 use webassembly_test::webassembly_test;
 
-use crate::{Custom, ExtraCustom};
+trait Custom {
+    fn inc(self) -> Self;
+}
 
-#[extern_type(
-    Drop::drop = "abi_Drop_drop",
-    Clone::clone = "abi_Clone_clone",
-    Eq::eq = "abi_Eq_eq",
-    Ord::cmp = "abi_Ord_cmp",
-    Custom::inc = "abi_Custom_inc",
-    Custom::dec = "abi_Custom_dec",
-    Custom::touch = "abi_Custom_touch",
-    Custom::add_and_get = "abi_Custom_add_and_get",
-    Custom::seeded = "abi_Custom_seeded",
-    ExtraCustom::bump2 = "abi_ExtraCustom_bump2"
-)]
-#[derive(Clone, PartialEq, Eq, PartialOrd, Ord, Custom, ExtraCustom)]
-#[reprC(opaque)]
-pub struct Handle<T>;
-co3::handles! {1, Handle<bool>}
+co3::handles! {
+    Handle::<bool, u8> = 1,
+    Handle::<u8, bool>,
+}
 
 extern_C! {
-    #[link_name = "abi_Handle_bool_new"]
-    pub fn handle_new(id: u8) -> Handle<bool>;
+    type Handle<T, U>;
 
-    #[link_name = "abi_Handle_bool_id"]
-    pub fn handle_id(handle: ExternRef<'_, Handle<bool>>) -> u8;
+    #[dispatch]
+    impl<T, U> Drop for Handle<T, U> {
+        fn drop(&mut self);
+    }
 
-    #[link_name = "roundtrip"]
-    pub fn roundtrip(input: ExternRef<'_, Handle<bool>>) -> ExternRef<'_, Handle<bool>>;
+    #[dispatch(
+        T = [bool, u8],
+        U = [u8, bool]
+    )]
+    impl Handle<bool, u8> {
+        #[id_pos(Self: 1)]
+        #[link_name = "handle_as_ref"]
+        fn as_ref(&self) -> Result<&Self, u8>;
+    }
+
+    #[dispatch(
+        Self = [
+            Handle<bool, u8>,
+            Handle<u8, bool>
+        ]
+    )]
+    impl<T> Clone for T {
+        #[link_name = "abi_Clone_clone"]
+        fn clone(&self) -> Self;
+    }
+
+    #[dispatch(
+        Self = [
+            Handle<bool, u8>,
+            Handle<u8, bool>
+        ]
+    )]
+    impl<T> Default for T {
+        #[link_name = "default"]
+        #[id_pos(Self: 0)]
+        fn default() -> Self;
+    }
+
+    #[dispatch(
+        T = [Handle<bool, u8>],
+    )]
+    impl<T> PartialEq for T {
+        #[link_name = "abi_Eq_eq"]
+        fn eq(&self, other: &Self) -> bool;
+    }
+
+    #[dispatch(
+        T = [Handle<bool, u8>],
+        U = [Handle<u8, bool>]
+    )]
+    impl<T, U> PartialEq<U> for T {
+        #[link_name = "abi_Eq_eq_2"]
+        #[id_pos(Self: 1)]
+        fn eq(&self, other: &U) -> bool;
+    }
+
+    #[dispatch(
+        Self = [Handle<bool, u8>]
+    )]
+    impl<T> Custom for T {
+        #[link_name = "abi_Custom_inc"]
+        fn inc(self) -> Self;
+    }
 }
 
 mod provider {
     use core::marker::PhantomData;
 
+    use co3::{ReprC, export_C, handles};
+
     use super::Custom;
-    use crate::ExtraCustom;
-    use co3::{ExternC, ReprC, external::ExternRef};
 
-    co3::handles! {1, Handle<bool>}
-
-    co3::def_fns! {
-        Drop: { Handle<bool> },
-        Clone: { Handle<bool> },
-        Eq: { super::Handle<bool> },
-        Ord: { crate::handles::provider::Handle<bool> },
-        Custom: { Handle<bool> },
-        ExtraCustom: { Handle<bool> },
+    handles! {
+        Handle<bool, u8> = 1,
+        Handle<u8, bool>,
     }
 
-    #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, ReprC)]
+    #[derive(Debug, Default, Clone, PartialEq, Eq, ReprC)]
     #[reprC(opaque)]
-    pub struct Handle<T> {
+    pub struct Handle<T, U> {
         id: u8,
-        _marker: PhantomData<T>,
+        _marker: PhantomData<(T, U)>,
     }
 
-    impl<T> Custom for Handle<T> {
+    impl PartialEq<Handle<u8, bool>> for Handle<bool, u8> {
+        fn eq(&self, other: &Handle<u8, bool>) -> bool {
+            self.id == other.id
+        }
+    }
+
+    impl<T, U> Custom for Handle<T, U> {
         fn inc(mut self) -> Self {
             self.id += 1;
             self
         }
+    }
 
-        fn dec(mut self) -> Self {
-            self.id -= 1;
-            self
-        }
-
-        fn touch(&mut self) {
-            self.id = self.id.wrapping_add(1);
-        }
-
-        fn add_and_get(&mut self, inc: u8) -> u8 {
-            self.id = self.id.wrapping_add(inc);
-            self.id
-        }
-
-        fn seeded(id: u8) -> Self {
-            Self {
-                id,
-                _marker: PhantomData,
-            }
+    impl<T, U> Handle<T, U> {
+        fn as_ref(&self) -> Result<&Self, u8> {
+            Ok(self)
         }
     }
 
-    impl<T> ExtraCustom for Handle<T> {
-        fn bump2(mut self) -> Self {
-            self.id += 2;
-            self
-        }
-    }
-
-    #[export("C")]
-    impl Handle<bool> {
-        pub fn new(id: u8) -> Self {
-            Self {
-                id,
-                _marker: PhantomData,
-            }
+    export_C! {
+        #[dispatch(
+            Self = [Handle<bool, u8>, Handle<u8, bool>]
+        )]
+        #[unsafe(export_name = "drop")]
+        trait Drop {
+            fn drop(&mut self);
         }
 
-        pub fn id(&self) -> u8 {
-            self.id
+        #[dispatch(
+            T = [bool, u8],
+            U = [u8, bool]
+        )]
+        impl<T, U> Handle<T, U> {
+            #[id_pos(Self: 1)]
+            #[unsafe(export_name = "handle_as_ref")]
+            fn as_ref(&self) -> Result<&Self, u8>;
         }
-    }
 
-    #[export("C")]
-    pub fn roundtrip(input: ExternRef<'_, Handle<bool>>) -> ExternRef<'_, Handle<bool>> {
-        input
+        #[dispatch(
+            Self = [Handle<bool, u8>, Handle<u8, bool>]
+        )]
+        trait Clone {
+            #[unsafe(export_name = "abi_Clone_clone")]
+            fn clone(&self) -> Self;
+        }
+
+        #[dispatch(
+            Self = [Handle<bool, u8>, Handle<u8, bool>]
+        )]
+        trait Default {
+            #[unsafe(export_name = "default")]
+            fn default() -> Self;
+        }
+
+        #[dispatch(
+            Self = [Handle<bool, u8>]
+        )]
+        trait PartialEq {
+            #[id_pos(Self: 0)]
+            #[unsafe(export_name = "abi_Eq_eq")]
+            fn eq(&self, other: &Self) -> bool;
+        }
+
+        #[dispatch(
+            Self = [Handle<bool, u8>],
+            TU = [Handle<u8, bool>],
+        )]
+        trait PartialEq<TU> {
+            #[id_pos(Self: 1)]
+            #[unsafe(export_name = "abi_Eq_eq_2")]
+            fn eq(&self, other: &TU) -> bool;
+        }
+
+        #[dispatch(
+            Self = [Handle<bool, u8>]
+        )]
+        trait Custom {
+            #[unsafe(export_name = "abi_Custom_inc")]
+            fn inc(self) -> Self;
+        }
     }
 }
 
 #[test]
 #[webassembly_test]
-fn opaque_handle_cross_boundary() {
-    use crate::{Custom as _, ExtraCustom as _};
+fn opaque_handles() {
+    let handle: Handle<bool, u8> = Default::default();
+    let handle_ref = handle.as_ref().unwrap();
+    assert!(PartialEq::eq(&*handle_ref, &handle));
 
-    let handle = handle_new(41);
-    let handle = handle.inc();
-    let handle = handle.dec();
-    let handle = handle.bump2();
-    let mut handle = handle;
-    handle.touch();
-    let seen = handle.add_and_get(3);
-    let seeded = Handle::<bool>::seeded(5);
-    assert_eq!(47, handle_id(handle.as_ref()));
-    assert_eq!(47, seen);
-    assert_eq!(5, handle_id(seeded.as_ref()));
+    let cloned = Clone::clone(&handle);
+    assert!(PartialEq::eq(&handle, &cloned));
 
-    let mut direct = handle_new(10);
-    direct.touch();
-    assert_eq!(13, direct.add_and_get(2));
-    assert_eq!(7, handle_id(Handle::<bool>::seeded(7).as_ref()));
-    assert_eq!(11, handle_id(direct.bump2().as_ref()));
+    let other: Handle<u8, bool> = Default::default();
+    let other_cloned = Clone::clone(&other);
 
-    let handle_ref = roundtrip(handle.as_ref());
-    let cloned: Handle<bool> = Clone::clone(&handle_ref);
-    assert!(*handle_ref == cloned);
+    // Cross-type equality is exported separately and keyed by Self handle id.
+    assert!(PartialEq::<Handle<u8, bool>>::eq(&handle, &other));
+    assert!(PartialEq::<Handle<u8, bool>>::eq(&cloned, &other_cloned));
+
+    let incremented = Custom::inc(handle);
+    assert!(!PartialEq::<Handle<u8, bool>>::eq(&incremented, &other));
+
+    let incremented_cloned = Clone::clone(&incremented);
+    assert!(PartialEq::eq(&incremented, &incremented_cloned));
 }

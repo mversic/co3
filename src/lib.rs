@@ -56,7 +56,7 @@ pub mod ir;
 pub mod niche;
 pub mod option;
 pub mod out_ptr;
-pub mod primitives;
+mod primitives;
 pub mod result;
 pub mod slice;
 mod std_impls;

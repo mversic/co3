@@ -6,6 +6,7 @@ use crate::{
     impl_visitor::{Arg, FnDescriptor, path_symbol_name},
     is_unsafe_no_mangle_attr, parse_unsafe_export_name_attr,
     utils::{gen_resolve_type, gen_store_name},
+    wrapper::HandleIdSpec,
 };
 
 fn has_link_name_attr(attrs: &[&syn::Attribute]) -> bool {
@@ -43,7 +44,8 @@ pub fn gen_declaration(
 
     let ffi_fn_name = gen_fn_name(fn_descriptor, trait_symbol_name.as_deref());
     let ffi_fn_doc = gen_doc(fn_descriptor, trait_name);
-    let fn_signature = gen_fn_signature(&ffi_fn_name, fn_descriptor, impl_generics, trait_path);
+    let fn_signature =
+        gen_fn_signature(&ffi_fn_name, fn_descriptor, impl_generics, trait_path, &[]);
     let link_name = gen_link_name_attr(
         fn_descriptor,
         trait_symbol_name.as_deref(),
@@ -74,6 +76,7 @@ pub fn gen_inline_declaration(
     import_crate_name: Option<&TokenStream>,
     import_fn_name: Option<&LitStr>,
     ffi_fn_name: &Ident,
+    handle_id_specs: &[HandleIdSpec],
 ) -> TokenStream {
     let trait_name = trait_path.and_then(|path| path.segments.last().map(|seg| &seg.ident));
     let trait_symbol_name = trait_path.map(path_symbol_name);
@@ -81,8 +84,13 @@ pub fn gen_inline_declaration(
     let extern_block_attrs = gen_extern_block_attrs(&fn_descriptor.attrs);
 
     let ffi_fn_doc = gen_doc(fn_descriptor, trait_name);
-    let fn_signature =
-        gen_fn_signature(ffi_fn_name, fn_descriptor, &Default::default(), trait_path);
+    let fn_signature = gen_fn_signature(
+        ffi_fn_name,
+        fn_descriptor,
+        &Default::default(),
+        trait_path,
+        handle_id_specs,
+    );
     let link_name = gen_link_name_attr(
         fn_descriptor,
         trait_symbol_name.as_deref(),
@@ -114,6 +122,7 @@ pub fn gen_inline_passthrough_declaration(
     import_fn_name: Option<&LitStr>,
     import_abi: &syn::Abi,
     ffi_fn_name: &Ident,
+    handle_id_specs: &[HandleIdSpec],
 ) -> TokenStream {
     let trait_name = trait_path.and_then(|path| path.segments.last().map(|seg| &seg.ident));
     let trait_symbol_name = trait_path.map(path_symbol_name);
@@ -123,15 +132,16 @@ pub fn gen_inline_passthrough_declaration(
     let ffi_fn_doc = gen_doc(fn_descriptor, trait_name);
     let receiver = fn_descriptor.receiver.as_ref().map(|arg| {
         let arg_name = arg.name();
-        let arg_type = resolved_src_type(arg, fn_descriptor, trait_path);
+        let arg_type = declared_input_src_type(arg, fn_descriptor, trait_path);
         quote!(#arg_name: #arg_type)
     });
     let fn_args = fn_descriptor.input_args.iter().map(|arg| {
         let arg_name = arg.name();
-        let arg_type = resolved_src_type(arg, fn_descriptor, trait_path);
+        let arg_type = declared_input_src_type(arg, fn_descriptor, trait_path);
         quote!(#arg_name: #arg_type)
     });
-    let args: Vec<_> = receiver.into_iter().chain(fn_args).collect();
+    let mut args: Vec<_> = receiver.into_iter().chain(fn_args).collect();
+    inject_handle_id_decl_args(handle_id_specs, &mut args);
     let output = fn_descriptor
         .output_arg
         .as_ref()
@@ -213,7 +223,60 @@ pub fn gen_definition(
     }
 
     let ffi_fn_body = gen_body(fn_descriptor, trait_path);
-    let fn_signature = gen_fn_signature(&ffi_fn_name, fn_descriptor, impl_generics, trait_path);
+    let fn_signature =
+        gen_fn_signature(&ffi_fn_name, fn_descriptor, impl_generics, trait_path, &[]);
+    let is_exported_drop = trait_path.is_some_and(|path| path_symbol_name(path) == "Drop")
+        && fn_descriptor.sig.ident == "drop";
+    if is_exported_drop {
+        let Some(receiver) = fn_descriptor.receiver.as_ref() else {
+            return syn::Error::new_spanned(
+                &fn_descriptor.sig,
+                "Drop export requires a receiver argument",
+            )
+            .to_compile_error();
+        };
+        let Some(self_ty) = fn_descriptor.self_ty.as_ref() else {
+            return syn::Error::new_spanned(
+                &fn_descriptor.sig,
+                "Drop export requires a concrete self type",
+            )
+            .to_compile_error();
+        };
+        let receiver_name = receiver.name();
+        return quote! {
+            #(#ffi_fn_attrs)*
+            #[doc = #ffi_fn_doc]
+            #export_name
+            unsafe #ffi_abi #fn_signature {
+                let fn_ = || {
+                    let fn_body = || -> Result<(), co3::FfiReturn> {
+                        let __self: &mut #self_ty = unsafe {
+                            co3::Decode::decode(#receiver_name, &mut ())
+                        }.ok_or(co3::FfiReturn::TrapRepresentation)?;
+
+                        let __self_ptr: *mut #self_ty = __self as *mut #self_ty;
+                        unsafe { core::mem::drop(Box::from_raw(__self_ptr)); }
+
+                        Ok(())
+                    };
+
+                    if let Err(err) = fn_body() {
+                        return err;
+                    }
+
+                    co3::FfiReturn::Ok
+                };
+
+                match std::panic::catch_unwind(fn_) {
+                    Ok(res) => res,
+                    Err(_) => {
+                        // TODO: Implement error handling (https://github.com/hyperledger/iroha/issues/2252)
+                        co3::FfiReturn::UnrecoverableError
+                    },
+                }
+            }
+        };
+    }
 
     quote! {
         #(#ffi_fn_attrs)*
@@ -248,9 +311,7 @@ fn gen_passthrough_signature(
     trait_path: Option<&Path>,
     export_abi: &syn::Abi,
 ) -> TokenStream {
-    let constness = &fn_descriptor.sig.constness;
     let asyncness = &fn_descriptor.sig.asyncness;
-    let unsafety = &fn_descriptor.sig.unsafety;
     let where_clause = &impl_generics.where_clause;
 
     let receiver = fn_descriptor.receiver.as_ref().map(|arg| {
@@ -273,9 +334,8 @@ fn gen_passthrough_signature(
         .unwrap_or_default();
 
     quote! {
-        #constness #asyncness #unsafety #export_abi fn #ffi_fn_name #impl_generics (
-            #receiver
-            #(#fn_args),*
+        #asyncness unsafe #export_abi fn #ffi_fn_name #impl_generics (
+            #receiver #(#fn_args),*
         ) #output #where_clause
     }
 }
@@ -446,18 +506,6 @@ fn gen_non_shared_symbol_name(
     }
 }
 
-pub fn gen_fn_name(fn_descriptor: &FnDescriptor, trait_symbol_name: Option<&str>) -> Ident {
-    let method_name = format!("_{}", &fn_descriptor.sig.ident);
-    let self_ty_name = fn_descriptor.self_ty_symbol_name().unwrap_or_default();
-    let trait_name =
-        trait_symbol_name.map_or_else(Default::default, |trait_name| format!("_{trait_name}"));
-
-    Ident::new(
-        &format!("{trait_name}{self_ty_name}{method_name}"),
-        proc_macro2::Span::call_site(),
-    )
-}
-
 fn gen_doc(fn_descriptor: &FnDescriptor, trait_name: Option<&Ident>) -> String {
     let method_name = &fn_descriptor.sig.ident;
 
@@ -491,6 +539,7 @@ fn gen_fn_signature(
     fn_descriptor: &FnDescriptor,
     impl_generics: &syn::Generics,
     trait_path: Option<&Path>,
+    handle_id_specs: &[HandleIdSpec],
 ) -> TokenStream {
     let self_arg = fn_descriptor
         .receiver
@@ -502,6 +551,9 @@ fn gen_fn_signature(
         .iter()
         .map(|arg| gen_input_arg(arg, fn_descriptor, trait_path))
         .collect();
+    let mut input_args = self_arg;
+    input_args.extend(fn_args);
+    inject_handle_id_decl_args(handle_id_specs, &mut input_args);
     let output_arg =
         ffi_output_arg(fn_descriptor).map(|arg| gen_out_ptr_arg(arg, fn_descriptor, trait_path));
 
@@ -518,7 +570,7 @@ fn gen_fn_signature(
     let (impl_generics, _, where_clause) = generics.split_for_impl();
 
     quote! {
-        fn #ffi_fn_name #impl_generics (#(#self_arg,)* #(#fn_args,)* #output_arg) -> co3::FfiReturn #where_clause
+        fn #ffi_fn_name #impl_generics (#(#input_args,)* #output_arg) -> co3::FfiReturn #where_clause
     }
 }
 
@@ -528,10 +580,97 @@ fn gen_input_arg(
     trait_path: Option<&Path>,
 ) -> TokenStream {
     let arg_name = arg.name();
-    let src_type = resolved_src_type(arg, fn_descriptor, trait_path);
-    let arg_type: Type = syn::parse_quote!(<#src_type as co3::ExternC>::CType);
+    let src_type = declared_input_src_type(arg, fn_descriptor, trait_path);
+    let arg_type: Type = if arg.is_handle() {
+        if let Type::Reference(reference) = arg.src_type() {
+            if reference.mutability.is_some() {
+                syn::parse_quote!(*mut co3::external::Extern)
+            } else {
+                syn::parse_quote!(*const co3::external::Extern)
+            }
+        } else {
+            syn::parse_quote!(*mut co3::external::Extern)
+        }
+    } else {
+        syn::parse_quote!(<#src_type as co3::ExternC>::CType)
+    };
 
     quote! { #arg_name: #arg_type }
+}
+
+fn declared_input_src_type(
+    arg: &Arg,
+    fn_descriptor: &FnDescriptor,
+    trait_path: Option<&Path>,
+) -> Type {
+    resolved_src_type(arg, fn_descriptor, trait_path)
+}
+
+fn inject_handle_id_decl_args(handle_id_specs: &[HandleIdSpec], args: &mut Vec<TokenStream>) {
+    fn selector_base_name(selector: &Type) -> String {
+        if let Type::Path(type_path) = selector {
+            if type_path.qself.is_none() && type_path.path.is_ident("Self") {
+                return "self".to_string();
+            }
+            if let Some(seg) = type_path.path.segments.last() {
+                return seg.ident.to_string().to_lowercase();
+            }
+        }
+        "handle".to_string()
+    }
+
+    let mut inserts: Vec<(usize, usize, TokenStream)> = handle_id_specs
+        .iter()
+        .enumerate()
+        .map(|(order, spec)| {
+            let base = selector_base_name(&spec.selector);
+            let arg_name = Ident::new(
+                &format!("__{base}_handle_id"),
+                proc_macro2::Span::call_site(),
+            );
+            (
+                spec.at,
+                order,
+                quote!(#arg_name: <co3::handle::Id as co3::ExternC>::CType),
+            )
+        })
+        .collect();
+    inserts.sort_by(|(a_at, a_order, _), (b_at, b_order, _)| {
+        a_at.cmp(b_at).then(a_order.cmp(b_order))
+    });
+
+    if inserts.is_empty() {
+        return;
+    }
+
+    let real_args = core::mem::take(args);
+    let final_len = real_args.len() + inserts.len();
+    let mut slots: Vec<Option<TokenStream>> = vec![None; final_len];
+
+    for (at, _order, decl) in inserts {
+        let desired = core::cmp::min(at, final_len.saturating_sub(1));
+        let mut pos = desired;
+        while pos < final_len && slots[pos].is_some() {
+            pos += 1;
+        }
+        if pos == final_len {
+            pos = 0;
+            while pos < desired && slots[pos].is_some() {
+                pos += 1;
+            }
+        }
+        if pos < final_len {
+            slots[pos] = Some(decl);
+        }
+    }
+
+    let mut real_iter = real_args.into_iter();
+    for slot in &mut slots {
+        if slot.is_none() {
+            *slot = real_iter.next();
+        }
+    }
+    *args = slots.into_iter().flatten().collect();
 }
 
 fn gen_out_ptr_arg(

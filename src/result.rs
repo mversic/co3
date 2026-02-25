@@ -3,8 +3,8 @@
 use crate::{
     Decode, Encode, ExternC, ReprC,
     ir::ReprFamily,
-    reprC,
     niche::{Niche, NicheFamily},
+    reprC,
 };
 
 /// FFI-safe equivalent of [`core::result::Result`]

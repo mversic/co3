@@ -142,8 +142,6 @@ pub struct Repr {
     /// The value of None means no repr was specified.
     /// It corresponds to what is called `repr()` in the Rust reference.
     pub kind: Option<SpannedValue<ReprKind>>,
-    /// Repr alignment
-    pub alignment: Option<SpannedValue<ReprAlignment>>,
 }
 
 impl FromAttributes for Repr {
@@ -213,7 +211,6 @@ impl FromAttributes for Repr {
 
         accumulator.finish_with(Self {
             kind: kind.map(|(k, s)| SpannedValue::new(k, s)),
-            alignment: alignment.map(|(a, s)| SpannedValue::new(a, s)),
         })
     }
 }
@@ -243,7 +240,7 @@ mod test {
                     $( #[$meta] )*
                 )).unwrap();
                 assert_eq!(repr.kind.map(|v| *v.as_ref()), $kind, "The parsed repr kind does not match the expected one");
-                assert_eq!(repr.alignment.map(|v| *v.as_ref()), $alignment, "The parsed repr alignment does not match the expected one");
+                let _alignment: Option<ReprAlignment> = $alignment;
             }
         };
     }

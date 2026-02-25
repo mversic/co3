@@ -1,18 +1,87 @@
-use co3::{ReprC, export};
+use co3::{ReprC, export, export_, export_C};
+
+co3::handles! {
+    FfiStruct,
+}
+
+#[export]
+type NoExportType = u32;
+
+#[export]
+trait NoExportTrait {}
+
+#[export]
+enum NoExportEnum {}
+
+#[export]
+struct NoExportStruct {}
 
 trait Kita {
-    extern "system" fn kita0(self);
+    type T;
+
+    extern "system" fn kita0(self, a: &u8);
     extern "C" fn kita1(self);
     fn kita2(self);
 }
 
 #[derive(Clone, ReprC)]
-struct FfiStruct(u8);
+#[reprC(opaque)]
+enum FfiStruct {
+    A,
+    B,
+}
+
+export_! {}
+
+export_! {
+    #![abi = "Rust"]
+    #[dispatch]
+    fn kita();
+}
+
+#[export("C")]
+#[export(skip)]
+extern "C" fn kita1() {}
+
+#[export]
+extern "C" fn kita3() {}
+
+#[export]
+impl FfiStruct {}
+
+export_C! {
+    #[dispatch]
+    impl<T> Kita for Vec<T> {
+        fn kita2(self);
+    }
+}
+
+export_C! {
+    trait Kita {
+        #[dispatch]
+        fn kita2(self);
+    }
+}
+
+export_C! {
+    #[id_pos]
+    trait Kita {
+        fn kita2(self);
+    }
+}
+
+export_C! {
+    trait Kita {
+        fn kita2(self);
+    }
+}
 
 #[export("C")]
 impl Kita for FfiStruct {
+    type T = u32;
+
     #[export]
-    fn kita0(self) {}
+    fn kita0(self, _a: &u8) {}
     #[unsafe(no_mangle)]
     #[export(skip)]
     fn kita1(self) {}
@@ -23,6 +92,8 @@ impl Kita for FfiStruct {
 
 #[export("C")]
 impl FfiStruct {
+    fn kita(_a: *const u32) {}
+
     #[unsafe(no_mangle)]
     #[export(skip)]
     extern "C" fn kita1(self) {}
@@ -31,20 +102,58 @@ impl FfiStruct {
     pub extern "C" fn kita2(self) {}
 }
 
-#[export]
-impl FfiStruct {}
+export_C! {
+    #[unknown_attribute]
+    impl Clone for FfiStruct {
+        fn clone(&self) -> Self;
+    }
+}
 
-#[export]
-impl FfiStruct {}
+export_C! {
+    #[unknown_attribute]
+    fn kita3(_a: u32);
+}
 
-#[export("C")]
-#[export(skip)]
-extern "C" fn kita1(_a: u32) {}
+export_C! {
+    #[unsafe(no_mangle)]
+    impl Clone for FfiStruct {
+        fn clone(&self) -> Self;
+    }
+}
 
-#[export]
-extern "C" fn kita3(_a: u32) {}
+export_C! {
+    #[unsafe(export_name = "clone")]
+    impl Clone for FfiStruct {
+        fn clone(&self) -> Self;
+    }
+}
 
-#[export]
-extern "C" fn kita4(_a: u32) {}
+export_C! {
+    impl FfiStruct {
+        fn kita(a: &u32);
+    }
+}
+
+export_C! {
+    trait Kita {
+        type T;
+
+        fn kita2(self);
+    }
+}
+
+export_C! {
+    #[dispatch(Self = [FfiStruct])]
+    trait Kita {
+        #[id_pos(Self: 2)]
+        fn kita2(self);
+    }
+}
+
+export_C! {
+    trait Kita {
+        extern "system" fn kita0(self, a: &u8);
+    }
+}
 
 fn main() {}
