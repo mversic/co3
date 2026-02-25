@@ -1,6 +1,6 @@
 use co3::export;
 
-#[export(extern "C")]
+#[export("C")]
 #[unsafe(no_mangle)]
 pub extern "C" fn array_arg(arr: [u32; 2]) -> [u32; 2] {
     arr

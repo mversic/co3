@@ -1,20 +1,20 @@
 use std::mem::MaybeUninit;
 
-use co3::{Decode, Encode, ExternC, export};
+use co3::{Decode, Encode, ExternC, ReprC, export};
 use getset::Getters;
 use webassembly_test::webassembly_test;
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, ExternC)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, ReprC)]
 pub struct GenericFfiStruct<T>(T);
 
 #[cfg_attr(feature = "getset", export)]
-#[derive(Clone, Copy, Getters, ExternC)]
+#[derive(Clone, Copy, Getters, ReprC)]
 #[getset(get = "pub")]
 pub struct FfiStruct {
     inner: GenericFfiStruct<bool>,
 }
 
-#[export(extern "C")]
+#[export("C")]
 pub fn freestanding(input: GenericFfiStruct<String>) -> GenericFfiStruct<String> {
     input
 }

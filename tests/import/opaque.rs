@@ -164,13 +164,13 @@
 //
 //    co3::def_fns! { dealloc }
 //
-//    #[derive(Debug, Clone, PartialEq, Eq, ExternC)]
-//    #[mineral(opaque)]
+//    #[derive(Debug, Clone, PartialEq, Eq, ReprC)]
+//    #[repr_C(opaque)]
 //    #[repr(C)]
 //    pub struct ExternValue(pub String);
 //
-//    #[derive(Debug, PartialEq, Eq, ExternC)]
-//    #[mineral(opaque)]
+//    #[derive(Debug, PartialEq, Eq, ReprC)]
+//    #[repr_C(opaque)]
 //    #[repr(C)]
 //    pub struct ExternOpaqueStruct {
 //        pub name: Option<u8>,

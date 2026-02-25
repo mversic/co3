@@ -9,11 +9,11 @@ use webassembly_test::webassembly_test;
 
 co3::def_fns! { dealloc }
 
-#[derive(Clone, Copy, PartialEq, Eq, Debug, ExternC)]
+#[derive(Clone, Copy, PartialEq, Eq, Debug, ReprC)]
 #[repr(transparent)]
 pub struct TransparentWithoutNiche(u64);
 
-#[derive(Clone, Copy, PartialEq, Eq, Debug, ExternC)]
+#[derive(Clone, Copy, PartialEq, Eq, Debug, ReprC)]
 #[repr(transparent)]
 pub struct GenericTransparentStruct<P>(NonZeroU64, PhantomData<P>);
 
@@ -23,8 +23,8 @@ impl<P> GenericTransparentStruct<P> {
     }
 }
 
-#[derive(Clone, Copy, PartialEq, Eq, Debug, ExternC)]
-#[mineral(
+#[derive(Clone, Copy, PartialEq, Eq, Debug, ReprC)]
+#[repr_C(
     unsafe(is_valid = |target: &Self::Target|
         *target != GenericTransparentStruct::new(1)
     )
@@ -37,8 +37,8 @@ pub struct TransparentStruct {
     _zst3: PhantomData<String>,
 }
 
-#[derive(Clone, Copy, PartialEq, Eq, Debug, ExternC)]
-#[mineral(
+#[derive(Clone, Copy, PartialEq, Eq, Debug, ReprC)]
+#[repr_C(
     NICHE_VALUE = [0; 4],
     unsafe(is_valid = |target: &Self::Target|
         target.iter().all(|&x| x != 0)
@@ -47,33 +47,33 @@ pub struct TransparentStruct {
 #[repr(transparent)]
 pub struct RobustTargetTransparent([u8; 4]);
 
-#[export(extern "C")]
+#[export("C")]
 pub fn array_of_transparent(arr: &mut [TransparentStruct; 1]) -> &mut [TransparentStruct; 1] {
     arr
 }
 
-#[export(extern "C")]
+#[export("C")]
 pub fn transparent_with_niche(
     arr: Option<RobustTargetTransparent>,
 ) -> Option<RobustTargetTransparent> {
     arr
 }
 
-#[export(extern "C")]
+#[export("C")]
 pub fn transparent_without_niche(
     arr: Option<TransparentWithoutNiche>,
 ) -> Option<TransparentWithoutNiche> {
     arr
 }
 
-#[export(extern "C")]
+#[export("C")]
 pub fn transparent_with_inner_niche(
     arr: Option<GenericTransparentStruct<u32>>,
 ) -> Option<GenericTransparentStruct<u32>> {
     arr
 }
 
-#[export(extern "C")]
+#[export("C")]
 impl TransparentStruct {
     pub fn new(payload: GenericTransparentStruct<()>) -> Self {
         Self {
@@ -99,17 +99,17 @@ impl TransparentStruct {
     }
 }
 
-#[export(extern "C")]
+#[export("C")]
 pub fn self_to_self(value: TransparentStruct) -> TransparentStruct {
     value
 }
 
-#[export(extern "C")]
+#[export("C")]
 pub fn vec_to_vec(value: Vec<TransparentStruct>) -> Vec<TransparentStruct> {
     value
 }
 
-#[export(extern "C")]
+#[export("C")]
 pub fn slice_to_slice(value: &[TransparentStruct]) -> &[TransparentStruct] {
     value
 }

@@ -1,14 +1,14 @@
 use std::mem::MaybeUninit;
 
-use co3::{ExternC, export};
+use co3::{ExternC, ReprC, export};
 use getset::{Getters, MutGetters, Setters};
 use webassembly_test::webassembly_test;
 
-#[derive(Debug, Clone, PartialEq, Eq, ExternC)]
+#[derive(Debug, Clone, PartialEq, Eq, ReprC)]
 pub struct Name(String);
 
-#[derive(Clone, Setters, Getters, MutGetters, ExternC)]
-#[export(extern "C")]
+#[derive(Clone, Setters, Getters, MutGetters, ReprC)]
+#[export("C")]
 #[getset(get = "pub")]
 pub struct FfiStruct {
     #[getset(set = "pub", get_mut = "pub")]

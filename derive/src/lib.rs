@@ -24,7 +24,7 @@ mod impl_visitor;
 mod utils;
 mod wrapper;
 
-const NO_EXTERN_MSG: &str = "specify ABI with `export(extern \"...\"`)";
+const NO_EXPORT_ABI_MSG: &str = "specify ABI with `export(\"...\")`";
 
 struct FfiItems(Vec<FfiTypeInput>);
 
@@ -477,7 +477,7 @@ fn merge_export_args(
             emit!(
                 emitter,
                 attr,
-                "`extern \"...\"` can only be provided once across export attributes on the same item"
+                "`\"...\"` ABI can only be provided once across export attributes on the same item"
             );
         } else {
             into.export_abi = Some(export_abi);
@@ -580,16 +580,16 @@ fn is_rust_abi(abi: Option<&syn::Abi>) -> bool {
 impl syn::parse::Parse for CarbonateArgs {
     fn parse(input: syn::parse::ParseStream) -> syn::Result<Self> {
         if input.is_empty() {
-            return Err(input.error(NO_EXTERN_MSG));
+            return Err(input.error(NO_EXPORT_ABI_MSG));
         }
 
-        let export_abi: syn::Abi = input.parse()?;
-        if export_abi.name.is_none() {
-            return Err(input.error(NO_EXTERN_MSG));
-        }
+        let abi_name: syn::LitStr = input.parse()?;
         if !input.is_empty() {
-            return Err(input.error(NO_EXTERN_MSG));
+            return Err(input.error(NO_EXPORT_ABI_MSG));
         }
+
+        let export_abi = syn::parse2::<syn::Abi>(quote!(extern #abi_name))
+            .map_err(|_| syn::Error::new_spanned(abi_name, "invalid ABI"))?;
 
         Ok(Self {
             export_abi: Some(export_abi),
@@ -922,7 +922,8 @@ fn extern_type_impl(args: TokenStream, input: TokenStream) -> TokenStream {
                 let item = item.ast;
 
                 return quote! {
-                    #[derive(co3::ExternC)]
+                    use co3::ReprC;
+                    #[derive(ReprC)]
                     #item
                 };
             }
@@ -997,17 +998,17 @@ pub fn extern_type(args: TokenStream, input: TokenStream) -> TokenStream {
     extern_type_impl(args, input)
 }
 
-// TODO: mineral(`local`) is a workaround for https://github.com/rust-lang/rust/issues/48214
+// TODO: repr_C(`local`) is a workaround for https://github.com/rust-lang/rust/issues/48214
 // because some derived types cannot derive `NonLocal` othwerise. Should be removed in future
 /// Derive implementations of traits required to convert to and from an FFI-compatible type
 ///
 /// # Attributes
 ///
-/// * `#[mineral(opaque)]`
+/// * `#[repr_C(opaque)]`
 /// serialize the type as opaque. If automatically derived type doesn't work just
 /// attach this attribute and force the type to be serialized as opaque across FFI
 ///
-/// * `#[mineral(NICHE_VALUE = <expr>, unsafe(is_valid = |target| ...))]`
+/// * `#[repr_C(NICHE_VALUE = <expr>, unsafe(is_valid = |target| ...))]`
 /// customize [`co3::niche::Niche`] value and validation function for `#[repr(transparent)]` types.
 /// `NICHE_VALUE` can be ommitted in which case the implementation delegates to the wrapped type.
 ///
@@ -1015,9 +1016,9 @@ pub fn extern_type(args: TokenStream, input: TokenStream) -> TokenStream {
 ///
 /// `is_valid` must not return false positives
 ///
-/// Check [`co3::transmute::CheckedTransmute`] or [`co3::mineral`] for more details
+/// Check [`co3::transmute::CheckedTransmute`] or [`co3::repr_C`] for more details
 ///
-/// * `#[mineral(local)]`
+/// * `#[repr_C(local)]`
 /// marks the type as local, meaning it contains references to the local frame. If a type
 /// contains references to the local frame you won't be able to return it from an FFI function
 /// because the frame is destroyed on function return which would invalidate your type's references.
@@ -1026,11 +1027,11 @@ pub fn extern_type(args: TokenStream, input: TokenStream) -> TokenStream {
 ///
 /// NOTE: This attribute is likely to be removed in future versions
 ///
-/// * `#[mineral(unsafe(non_owning))]`
+/// * `#[repr_C(unsafe(non_owning))]`
 /// when a type contains a raw pointer (e.g. `*const T`/*mut T`) it's not possible to figure out
 /// whether it carries ownership of the data pointed to. Place this attribute on the field to
 /// indicate pointer doesn't own the data and is robust in the type. Alternatively, if the type
-/// is carrying ownership mark entire type as opaque with `#[mineral(opaque)]`. If the type
+/// is carrying ownership mark entire type as opaque with `#[repr_C(opaque)]`. If the type
 /// is not carrying ownership, but is not robust convert it into an equivalent [`co3::ReprC`]
 /// type that is validated when crossing the FFI boundary. It is also ok to mark non-owning,
 /// non-robust type as opaque
@@ -1049,7 +1050,7 @@ pub fn extern_type(args: TokenStream, input: TokenStream) -> TokenStream {
 ///
 /// It assumes that the derive is imported and referred to by its original name.
 #[manyhow]
-#[proc_macro_derive(ExternC, attributes(mineral))]
+#[proc_macro_derive(ReprC, attributes(repr_C))]
 pub fn extern_c_derive(input: TokenStream) -> TokenStream {
     let mut emitter = Emitter::new();
 
@@ -1072,12 +1073,12 @@ pub fn extern_c_derive(input: TokenStream) -> TokenStream {
 /// ```rust
 /// use std::alloc::alloc;
 ///
-/// use co3::export;
+/// use co3::{ReprC, export};
 /// use getset::Getters;
 ///
 /// // For a struct such as:
-/// #[export(extern "C")]
-/// #[derive(co3::ExternC, Clone, Getters)]
+/// #[export("C")]
+/// #[derive(ReprC, Clone, Getters)]
 /// #[getset(get = "pub")]
 /// pub struct Foo {
 ///     /// Id of the struct
@@ -1086,7 +1087,7 @@ pub fn extern_c_derive(input: TokenStream) -> TokenStream {
 ///     bar: Vec<u8>,
 /// }
 ///
-/// #[export(extern "C")]
+/// #[export("C")]
 /// impl Foo {
 ///     /// Construct new type
 ///     pub extern "C" fn new(id: u8) -> Self {

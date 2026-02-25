@@ -28,7 +28,7 @@ error: `#[export_name]` attribute may not be used in combination with `#[export(
 30 |     #[unsafe(export_name = "kita")]
    |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
-error: unexpected end of input, specify ABI with `export(extern "..."`)
+error: unexpected end of input, specify ABI with `export("...")`
   --> tests/ui_fail/export_restrictions.rs:34:1
    |
 34 | #[export]
@@ -36,11 +36,11 @@ error: unexpected end of input, specify ABI with `export(extern "..."`)
    |
    = note: this error originates in the attribute macro `export` (in Nightly builds, run with -Z macro-backtrace for more info)
 
-error: unexpected end of input, specify ABI with `export(extern "..."`)
+error: unexpected end of input, specify ABI with `export("...")`
   --> tests/ui_fail/export_restrictions.rs:37:1
    |
-37 | #[export(extern)]
-   | ^^^^^^^^^^^^^^^^^
+37 | #[export]
+   | ^^^^^^^^^
    |
    = note: this error originates in the attribute macro `export` (in Nightly builds, run with -Z macro-backtrace for more info)
 
@@ -50,15 +50,15 @@ error: `#[export(skip)]` is only supported on impl methods
 41 | #[export(skip)]
    | ^^^^^^^^^^^^^^^
 
-error: unexpected end of input, specify ABI with `export(extern "..."`)
+error: unexpected end of input, specify ABI with `export("...")`
   --> tests/ui_fail/export_restrictions.rs:44:1
    |
-44 | #[export(extern)]
-   | ^^^^^^^^^^^^^^^^^
+44 | #[export]
+   | ^^^^^^^^^
    |
    = note: this error originates in the attribute macro `export` (in Nightly builds, run with -Z macro-backtrace for more info)
 
-error: unexpected end of input, specify ABI with `export(extern "..."`)
+error: unexpected end of input, specify ABI with `export("...")`
   --> tests/ui_fail/export_restrictions.rs:47:1
    |
 47 | #[export]

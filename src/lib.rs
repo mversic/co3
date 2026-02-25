@@ -1740,7 +1740,7 @@ impl<R> Store for OpaqueMutSliceDecodeStore<R> {
 /// use co3::ReprC;
 ///
 /// // Always use a type alias for inner types of transparent items so that if you make
-/// // a change the unsafe code in [`co3::mineral!`] will not compile, thus preventing UB
+/// // a change the unsafe code in [`co3::repr_C!`] will not compile, thus preventing UB
 /// type NonNullInner<T> = *mut T;
 /// type WrapperInner = u32;
 ///
@@ -1754,12 +1754,12 @@ impl<R> Store for OpaqueMutSliceDecodeStore<R> {
 /// #[repr(C)]
 /// struct RobustStruct(u64, i32);
 ///
-/// co3::mineral! {
+/// co3::repr_C! {
 ///     // SAFETY: Type MUST NOT have traps
 ///     unsafe impl Robust for RobustStruct {}
 /// }
 ///
-/// co3::mineral! {
+/// co3::repr_C! {
 ///     // SAFETY: `Self::is_valid` must not return false posives
 ///     unsafe impl(T) Transparent for NonNull<T> where (T: Copy) {
 ///         type Target = NonNullInner<T>;
@@ -1773,14 +1773,14 @@ impl<R> Store for OpaqueMutSliceDecodeStore<R> {
 ///
 /// // If no validation function or niche value is given,
 /// // wrapper type delegates to the inner type
-/// co3::mineral! {
+/// co3::repr_C! {
 ///     unsafe impl Transparent for Wrapper {
 ///         type Target = WrapperInner;
 ///     }
 /// }
 /// ```
 #[macro_export]
-macro_rules! mineral {
+macro_rules! repr_C {
         (unsafe impl $(( $($params:tt)* ))? Robust for $self_ty:ty $(where ($($preds:tt)*))? {}) => {
             unsafe impl$(<$($params)*>)? $crate::ReprC for $self_ty $(where $($preds)*)? {}
 
@@ -1838,7 +1838,7 @@ macro_rules! mineral {
         (unsafe impl Transparent for $self_ty:ty $(where ( $($preds:tt)* ))? {
             type Target = $target:ty;
         }) => {
-            $crate::mineral! {
+            $crate::repr_C! {
                 @transparent [for<'_dummy>] [] $self_ty $([$($preds)*])? {
                     type Target = $target;
                     // NOTE: When delegating there is no trap representations in the immediate `Self::Target`
@@ -1850,7 +1850,7 @@ macro_rules! mineral {
         (unsafe impl ( $($params:tt)* ) Transparent for $self_ty:ty $(where ( $($preds:tt)* ))? {
             type Target = $target:ty;
         }) => {
-            $crate::mineral! {
+            $crate::repr_C! {
                 @transparent [] [<$($params)*>] $self_ty $([$($preds)*])? {
                     type Target = $target;
                     // NOTE: When delegating there is no trap representations in the immediate `Self::Target`
@@ -1865,7 +1865,7 @@ macro_rules! mineral {
             fn is_valid($target_var:ident: $target_ty:ty) -> $ret_val:ty
                 $block:block
         }) => {
-            $crate::mineral! {
+            $crate::repr_C! {
                 @transparent [for<'_dummy>] [] $self_ty $([$($preds)*])? {
                     type Target = $target;
                     fn is_valid($target_var: $target_ty) -> bool $block
@@ -1878,7 +1878,7 @@ macro_rules! mineral {
             fn is_valid($target_var:ident: $target_ty:ty) -> $ret_val:ty
                 $block:block
         }) => {
-            $crate::mineral! {
+            $crate::repr_C! {
                 @transparent [] [<$($params)*>] $self_ty $([$($preds)*])? {
                     type Target = $target;
                     fn is_valid($target_var: $target_ty) -> bool $block
@@ -1919,10 +1919,10 @@ macro_rules! mineral {
         };
     }
 
-mineral! {
+repr_C! {
     unsafe impl(R) Robust for *const R {}
 }
-mineral! {
+repr_C! {
     unsafe impl(R) Robust for *mut R {}
 }
 

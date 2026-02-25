@@ -1,6 +1,6 @@
 use std::mem::MaybeUninit;
 
-use co3::{ExternC, FfiReturn, export, out_ptr::OutPtrRead as _};
+use co3::{ExternC, FfiReturn, ReprC, export, out_ptr::OutPtrRead as _};
 use webassembly_test::webassembly_test;
 
 trait AmbiguousX<T, const N: usize> {
@@ -13,7 +13,7 @@ trait AmbiguousY {
     extern "C" fn ambiguous() -> Ambiguous;
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, ExternC)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, ReprC)]
 #[repr(u8)]
 pub enum Ambiguous {
     AmbiguousX,
@@ -23,11 +23,11 @@ pub enum Ambiguous {
     None,
 }
 
-#[derive(Clone, Copy, ExternC)]
-#[mineral(opaque)]
+#[derive(Clone, Copy, ReprC)]
+#[repr_C(opaque)]
 pub(crate) struct OpaqueStruct<T>(T);
 
-#[export(extern "C")]
+#[export("C")]
 impl AmbiguousX<u64, 3> for OpaqueStruct<u64> {
     type U = u8;
 
@@ -36,7 +36,7 @@ impl AmbiguousX<u64, 3> for OpaqueStruct<u64> {
     }
 }
 
-#[export(extern "Rust")]
+#[export("Rust")]
 impl AmbiguousX<u32, 4> for OpaqueStruct<u32> {
     type U = i8;
 
@@ -46,7 +46,7 @@ impl AmbiguousX<u32, 4> for OpaqueStruct<u32> {
     }
 }
 
-#[export(extern "C")]
+#[export("C")]
 impl AmbiguousY for OpaqueStruct<u64> {
     #[unsafe(no_mangle)]
     extern "C" fn ambiguous() -> Ambiguous {
@@ -54,7 +54,7 @@ impl AmbiguousY for OpaqueStruct<u64> {
     }
 }
 
-#[export(extern "C")]
+#[export("C")]
 impl AmbiguousY for OpaqueStruct<u32> {
     #[export(skip)]
     extern "C" fn ambiguous() -> Ambiguous {
@@ -62,7 +62,7 @@ impl AmbiguousY for OpaqueStruct<u32> {
     }
 }
 
-#[export(extern "Rust")]
+#[export("Rust")]
 impl OpaqueStruct<u64> {
     #[unsafe(export_name = "kita1")]
     pub const unsafe extern "C" fn ambiguous() -> Ambiguous {
@@ -70,20 +70,20 @@ impl OpaqueStruct<u64> {
     }
 }
 
-#[export(extern "C")]
+#[export("C")]
 impl OpaqueStruct<u32> {
     pub fn ambiguous() -> Ambiguous {
         Ambiguous::Inherent
     }
 }
 
-#[export(extern "C")]
+#[export("C")]
 #[unsafe(no_mangle)]
 pub const unsafe fn ambiguous1() -> Ambiguous {
     Ambiguous::Fn
 }
 
-#[export(extern "Rust")]
+#[export("Rust")]
 #[unsafe(export_name = "kita2")]
 pub const unsafe extern "Rust" fn ambiguous2() -> Ambiguous {
     Ambiguous::Fn

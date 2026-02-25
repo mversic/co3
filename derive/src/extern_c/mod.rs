@@ -45,11 +45,11 @@ enum FfiTypeToken {
 impl Display for FfiTypeToken {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         match self {
-            FfiTypeToken::UnsafeNonOwning => write!(f, "#[mineral(unsafe(non_owning))]"),
-            FfiTypeToken::Opaque => write!(f, "#[mineral(opaque)]"),
-            FfiTypeToken::Local => write!(f, "#[mineral(local)]"),
+            FfiTypeToken::UnsafeNonOwning => write!(f, "#[repr_C(unsafe(non_owning))]"),
+            FfiTypeToken::Opaque => write!(f, "#[repr_C(opaque)]"),
+            FfiTypeToken::Local => write!(f, "#[repr_C(local)]"),
             FfiTypeToken::Transparent(niche, is_valid) => {
-                write!(f, "#[mineral(")?;
+                write!(f, "#[repr_C(")?;
                 if let Some(niche) = niche {
                     write!(f, "NICHE_VALUE = {}, ", quote!(#niche))?;
                 }
@@ -200,7 +200,7 @@ impl syn::parse::Parse for SpannedFfiTypeToken {
     }
 }
 
-/// This represents an `#[mineral(...)]` attribute on a type
+/// This represents an `#[repr_C(...)]` attribute on a type
 #[derive(Debug, PartialEq, Eq, Clone)]
 pub enum FfiTypeKindAttribute {
     Transparent(Option<syn::Expr>, Box<syn::ExprClosure>),
@@ -228,7 +228,7 @@ impl syn::parse::Parse for FfiTypeKindAttribute {
     }
 }
 
-/// This represents an `#[mineral(...)]` attribute on a field
+/// This represents an `#[repr_C(...)]` attribute on a field
 #[derive(Debug, PartialEq, Eq, Copy, Clone)]
 pub enum FfiTypeKindFieldAttribute {
     UnsafeNonOwning,
@@ -250,7 +250,7 @@ impl syn::parse::Parse for FfiTypeKindFieldAttribute {
     }
 }
 
-const FFI_TYPE_ATTR: &str = "mineral";
+const FFI_TYPE_ATTR: &str = "repr_C";
 const FFI_TYPE_ATTR_ALT: &str = "co3";
 
 pub struct FfiTypeAttr {
@@ -260,7 +260,7 @@ pub struct FfiTypeAttr {
 impl FromAttributes for FfiTypeAttr {
     fn from_attributes(attrs: &[Attribute]) -> darling::Result<Self> {
         let mut accumulator = darling::error::Accumulator::default();
-        let mineral_kind = accumulator
+        let repr_C_kind = accumulator
             .handle(parse_single_list_attr_opt(FFI_TYPE_ATTR, attrs))
             .flatten();
         let co3_kind = accumulator
@@ -276,18 +276,18 @@ impl FromAttributes for FfiTypeAttr {
             ));
         }
 
-        if mineral_kind.is_some() && co3_kind.is_some() {
+        if repr_C_kind.is_some() && co3_kind.is_some() {
             accumulator.push(darling::Error::custom(
-                "Use either #[mineral(...)] or #[co3(...)], not both",
+                "Use either #[repr_C(...)] or #[co3(...)], not both",
             ));
         }
 
-        let kind_attr_kind = mineral_kind.or(co3_kind);
+        let kind_attr_kind = repr_C_kind.or(co3_kind);
         let kind = match (kind_attr_kind, opaque_attr) {
             (Some(_), Some(attr)) => {
                 accumulator.push(
                     darling::Error::custom(
-                        "Use either #[mineral(...)]/#[co3(...)] or #[opaque], not both",
+                        "Use either #[repr_C(...)]/#[co3(...)] or #[opaque], not both",
                     )
                     .with_span(attr),
                 );
@@ -309,21 +309,21 @@ pub struct FfiTypeFieldAttr {
 impl FromAttributes for FfiTypeFieldAttr {
     fn from_attributes(attrs: &[Attribute]) -> darling::Result<Self> {
         let mut accumulator = darling::error::Accumulator::default();
-        let mineral_kind = accumulator
+        let repr_C_kind = accumulator
             .handle(parse_single_list_attr_opt(FFI_TYPE_ATTR, attrs))
             .flatten();
         let co3_kind = accumulator
             .handle(parse_single_list_attr_opt(FFI_TYPE_ATTR_ALT, attrs))
             .flatten();
 
-        if mineral_kind.is_some() && co3_kind.is_some() {
+        if repr_C_kind.is_some() && co3_kind.is_some() {
             accumulator.push(darling::Error::custom(
-                "Use either #[mineral(...)] or #[co3(...)], not both",
+                "Use either #[repr_C(...)] or #[co3(...)], not both",
             ));
         }
 
         accumulator.finish_with(Self {
-            kind: mineral_kind.or(co3_kind),
+            kind: repr_C_kind.or(co3_kind),
         })
     }
 }
@@ -431,7 +431,7 @@ pub fn derive_extern_c(emitter: &mut Emitter, input: &syn::DeriveInput) -> Token
             emit!(
                 emitter,
                 &input.span,
-                "Unit struct is a ZST. Annotate with #[co3::mineral(opaque)]?",
+                "Unit struct is a ZST. Annotate with #[co3::repr_C(opaque)]?",
             );
         }
         darling::ast::Data::Enum(variants)
@@ -441,7 +441,7 @@ pub fn derive_extern_c(emitter: &mut Emitter, input: &syn::DeriveInput) -> Token
             emit!(
                 emitter,
                 &input.span,
-                "Single-variant fieldless enum is a ZST. Annotate with #[co3::mineral(opaque)]?",
+                "Single-variant fieldless enum is a ZST. Annotate with #[co3::repr_C(opaque)]?",
             );
         }
         darling::ast::Data::Struct(fields) => {
@@ -526,7 +526,7 @@ pub fn derive_extern_c(emitter: &mut Emitter, input: &syn::DeriveInput) -> Token
                     emit!(
                         emitter,
                         input.ident,
-                        "Uninhabited enum is a never type. Annotate with #[co3::mineral(opaque)]?"
+                        "Uninhabited enum is a never type. Annotate with #[co3::repr_C(opaque)]?"
                     );
 
                     quote! {}
@@ -692,7 +692,7 @@ fn verify_field_non_owning(emitter: &mut Emitter, field: &FfiTypeField) {
             emit!(
                 self.emitter,
                 node,
-                "Raw pointer found. If the pointer doesn't own the data, attach `#[mineral(unsafe(non_owning))` to the field. Otherwise, mark the entire type as opaque with `#[mineral(opaque)]`"
+                "Raw pointer found. If the pointer doesn't own the data, attach `#[repr_C(unsafe(non_owning))` to the field. Otherwise, mark the entire type as opaque with `#[repr_C(opaque)]`"
             );
         }
         fn visit_type_path(&mut self, node: &syn::TypePath) {
@@ -705,7 +705,7 @@ fn verify_field_non_owning(emitter: &mut Emitter, field: &FfiTypeField) {
                 emit!(
                     self.emitter,
                     node,
-                    "NonNull pointer found. If the pointer doesn't own the data, attach `#[mineral(unsafe(non_owning))` to the field. Otherwise, mark the entire type as opaque with `#[mineral(opaque)]`"
+                    "NonNull pointer found. If the pointer doesn't own the data, attach `#[repr_C(unsafe(non_owning))` to the field. Otherwise, mark the entire type as opaque with `#[repr_C(opaque)]`"
                 );
             }
 

@@ -1,4 +1,4 @@
-use co3::{ExternC, export};
+use co3::{ReprC, export};
 
 trait Kita {
     extern "system" fn kita0(self);
@@ -6,10 +6,10 @@ trait Kita {
     fn kita2(self);
 }
 
-#[derive(Clone, ExternC)]
+#[derive(Clone, ReprC)]
 struct FfiStruct(u8);
 
-#[export(extern "C")]
+#[export("C")]
 impl Kita for FfiStruct {
     #[export]
     fn kita0(self) {}
@@ -21,7 +21,7 @@ impl Kita for FfiStruct {
     extern "C" fn kita2(self) {}
 }
 
-#[export(extern "C")]
+#[export("C")]
 impl FfiStruct {
     #[unsafe(no_mangle)]
     #[export(skip)]
@@ -34,14 +34,14 @@ impl FfiStruct {
 #[export]
 impl FfiStruct {}
 
-#[export(extern)]
+#[export]
 impl FfiStruct {}
 
-#[export(extern "C")]
+#[export("C")]
 #[export(skip)]
 extern "C" fn kita1(_a: u32) {}
 
-#[export(extern)]
+#[export]
 extern "C" fn kita3(_a: u32) {}
 
 #[export]

@@ -4,7 +4,7 @@
 use alloc::boxed::Box;
 use core::slice;
 
-use crate::{ReprC, mineral};
+use crate::{ReprC, repr_C};
 
 type DeallocFn = unsafe extern "C" fn(*mut u8, usize, usize) -> crate::FfiReturn;
 
@@ -248,12 +248,12 @@ impl<C: ReprC> From<CBoxedSlice<C>> for CSliceMut<C> {
     }
 }
 
-mineral! {
+repr_C! {
     unsafe impl(T: ReprC) Robust for CSlice<T> {}
 }
-mineral! {
+repr_C! {
     unsafe impl(T: ReprC) Robust for CSliceMut<T> {}
 }
-mineral! {
+repr_C! {
     unsafe impl(T: ReprC) Robust for CBoxedSlice<T> {}
 }

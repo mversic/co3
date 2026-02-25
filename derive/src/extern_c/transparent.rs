@@ -26,7 +26,7 @@ pub(crate) fn derive_transparent_item(input: &FfiTypeInput) -> TokenStream {
     let name = &input.ident;
     let target = match &input.data {
         // TODO: We don't check to find which struct/enum field is not a ZST. It is just assumed that it is the first field.
-        // I think something can be done inside `co3::mineral!` through the use of disjoint_impls! or via macro attribute
+        // I think something can be done inside `co3::repr_C!` through the use of disjoint_impls! or via macro attribute
         darling::ast::Data::Struct(item) => item.fields.first().map(|first_field| &first_field.ty),
         darling::ast::Data::Enum(variants) => variants.first().and_then(|variant| {
             variant
@@ -66,7 +66,7 @@ pub(crate) fn derive_transparent_item(input: &FfiTypeInput) -> TokenStream {
     };
 
     quote! {
-        co3::mineral! {
+        co3::repr_C! {
             // SAFETY: `Self` and `Self::Target` are guaranteed to be transmutable, but the user
             // must make sure the provided validation function does not return false positives
             unsafe impl #params Transparent for #name #ty_generics where (#predicates) {

@@ -1,12 +1,12 @@
-use co3::{ExternC, export, extern_, extern_C};
+use co3::{ReprC, export, extern_, extern_C};
 
-#[derive(ExternC)]
+#[derive(ReprC)]
 pub struct Hello {
     a: i32,
     b: i32,
 }
 
-#[export(extern "C")]
+#[export("C")]
 impl Hello {
     #[export(name = "hello")]
     #[expect(improper_ctypes_definitions)]

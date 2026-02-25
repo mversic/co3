@@ -15,7 +15,7 @@ categories = ["development-tools::ffi"]
 default = ["alloc", "owned-as-ref"]
 
 # Enable deriving `extern C` ABI. Macros made available are:
-# - `#derive(ExternC)`/`#[extern_type]`
+# - `#derive(ReprC)`/`#[extern_type]`
 # - `#[export]`/`extern_C!`/`extern_!`
 derive = ["co3_derive"]
 

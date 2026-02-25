@@ -1,6 +1,6 @@
 use std::{cmp::Ordering, mem::MaybeUninit};
 
-use co3::{Decode, Encode, ExternC, FfiReturn, export, def_fns, out_ptr::OutPtrRead};
+use co3::{Decode, Encode, ExternC, FfiReturn, ReprC, def_fns, export, out_ptr::OutPtrRead};
 use webassembly_test::webassembly_test;
 
 co3::handles! {FfiStruct1, FfiStruct2}
@@ -13,20 +13,20 @@ def_fns! {
 }
 
 /// Struct without a repr attribute is opaque by default
-#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, ExternC)]
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, ReprC)]
 pub struct FfiStruct1 {
     name: String,
 }
 
-/// Struct with a repr attribute can be forced to become opaque with `#[mineral(opaque)]`
-#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, ExternC)]
-#[mineral(opaque)]
+/// Struct with a repr attribute can be forced to become opaque with `#[repr_C(opaque)]`
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, ReprC)]
+#[repr_C(opaque)]
 #[repr(C)]
 pub struct FfiStruct2 {
     name: String,
 }
 
-#[export(extern "C")]
+#[export("C")]
 impl FfiStruct1 {
     pub fn new(name: String) -> Self {
         Self { name }

@@ -20,8 +20,8 @@ help: consider removing the `?Sized` bound to make the type parameter `Sized`
 error[E0277]: the size for values of type `T` cannot be known at compilation time
  --> tests/ui_fail/unsized.rs:3:23
   |
-3 | #[derive(Clone, Copy, ExternC)]
-  |                       ^^^^^^^ doesn't have a size known at compile-time
+3 | #[derive(Clone, Copy, ReprC)]
+  |                       ^^^^^ doesn't have a size known at compile-time
 4 | #[repr(transparent)]
 5 | pub struct TransparentStruct<T: ?Sized>(T);
   |                              - this type parameter needs to be `Sized`
@@ -34,7 +34,7 @@ note: the requirement `TransparentStruct<T>: co3::_::ExternC0<Transmuted>` appea
   |           ----- in this trait
   |     const NICHE_VALUE: Self::CType;
   |           ^^^^^^^^^^^ this trait's associated const doesn't have the requirement `TransparentStruct<T>: co3::_::ExternC0<Transmuted>`
-  = note: this error originates in the macro `$crate::mineral` which comes from the expansion of the derive macro `ExternC` (in Nightly builds, run with -Z macro-backtrace for more info)
+  = note: this error originates in the macro `$crate::repr_C` which comes from the expansion of the derive macro `ReprC` (in Nightly builds, run with -Z macro-backtrace for more info)
 help: consider removing the `?Sized` bound to make the type parameter `Sized`
   |
 5 - pub struct TransparentStruct<T: ?Sized>(T);
@@ -147,8 +147,8 @@ help: consider removing the `?Sized` bound to make the type parameter `Sized`
 error[E0277]: the size for values of type `T` cannot be known at compilation time
   --> tests/ui_fail/unsized.rs:11:23
    |
-11 | #[derive(Clone, Copy, ExternC)]
-   |                       ^^^^^^^ doesn't have a size known at compile-time
+11 | #[derive(Clone, Copy, ReprC)]
+   |                       ^^^^^ doesn't have a size known at compile-time
 12 | pub struct NoReprCStruct<T: ?Sized>(T);
    |                          - this type parameter needs to be `Sized`
    |
@@ -162,7 +162,7 @@ note: required by a bound in `co3::ir::ReprFamily::Kind`
    |
    |         type Kind;
    |         ^^^^^^^^^^ required by this bound in `ReprFamily::Kind`
-   = note: this error originates in the derive macro `ExternC` (in Nightly builds, run with -Z macro-backtrace for more info)
+   = note: this error originates in the derive macro `ReprC` (in Nightly builds, run with -Z macro-backtrace for more info)
 help: consider removing the `?Sized` bound to make the type parameter `Sized`
    |
 12 - pub struct NoReprCStruct<T: ?Sized>(T);
@@ -172,15 +172,15 @@ help: consider removing the `?Sized` bound to make the type parameter `Sized`
 error[E0277]: the size for values of type `T` cannot be known at compilation time
  --> tests/ui_fail/unsized.rs:3:23
   |
-3 | #[derive(Clone, Copy, ExternC)]
-  |                       ^^^^^^^ doesn't have a size known at compile-time
+3 | #[derive(Clone, Copy, ReprC)]
+  |                       ^^^^^ doesn't have a size known at compile-time
 4 | #[repr(transparent)]
 5 | pub struct TransparentStruct<T: ?Sized>(T);
   |                              - this type parameter needs to be `Sized`
   |
   = note: required for `TransparentStruct<T>` to implement `co3::_::ExternC0<Transmuted>`
   = note: required for `TransparentStruct<T>` to implement `ExternC`
-  = note: this error originates in the macro `$crate::mineral` which comes from the expansion of the derive macro `ExternC` (in Nightly builds, run with -Z macro-backtrace for more info)
+  = note: this error originates in the macro `$crate::repr_C` which comes from the expansion of the derive macro `ReprC` (in Nightly builds, run with -Z macro-backtrace for more info)
 help: consider removing the `?Sized` bound to make the type parameter `Sized`
   |
 5 - pub struct TransparentStruct<T: ?Sized>(T);
@@ -190,14 +190,14 @@ help: consider removing the `?Sized` bound to make the type parameter `Sized`
 error[E0277]: the size for values of type `T` cannot be known at compilation time
  --> tests/ui_fail/unsized.rs:3:23
   |
-3 | #[derive(Clone, Copy, ExternC)]
-  |                       ^^^^^^^ doesn't have a size known at compile-time
+3 | #[derive(Clone, Copy, ReprC)]
+  |                       ^^^^^ doesn't have a size known at compile-time
 4 | #[repr(transparent)]
 5 | pub struct TransparentStruct<T: ?Sized>(T);
   |                              - this type parameter needs to be `Sized`
   |
   = note: required for `TransparentStruct<T>` to implement `co3::_::ExternC0<Transmuted>`
-  = note: this error originates in the macro `$crate::mineral` which comes from the expansion of the derive macro `ExternC` (in Nightly builds, run with -Z macro-backtrace for more info)
+  = note: this error originates in the macro `$crate::repr_C` which comes from the expansion of the derive macro `ReprC` (in Nightly builds, run with -Z macro-backtrace for more info)
 help: consider removing the `?Sized` bound to make the type parameter `Sized`
   |
 5 - pub struct TransparentStruct<T: ?Sized>(T);
@@ -207,8 +207,8 @@ help: consider removing the `?Sized` bound to make the type parameter `Sized`
 error[E0277]: the size for values of type `T` cannot be known at compilation time
   --> tests/ui_fail/unsized.rs:11:23
    |
-11 | #[derive(Clone, Copy, ExternC)]
-   |                       ^^^^^^^ doesn't have a size known at compile-time
+11 | #[derive(Clone, Copy, ReprC)]
+   |                       ^^^^^ doesn't have a size known at compile-time
 12 | pub struct NoReprCStruct<T: ?Sized>(T);
    |                          - this type parameter needs to be `Sized`
    |
@@ -217,7 +217,7 @@ note: required because it appears within the type `NoReprCStruct<T>`
    |
 12 | pub struct NoReprCStruct<T: ?Sized>(T);
    |            ^^^^^^^^^^^^^
-   = note: this error originates in the derive macro `ExternC` (in Nightly builds, run with -Z macro-backtrace for more info)
+   = note: this error originates in the derive macro `ReprC` (in Nightly builds, run with -Z macro-backtrace for more info)
 help: consider removing the `?Sized` bound to make the type parameter `Sized`
    |
 12 - pub struct NoReprCStruct<T: ?Sized>(T);

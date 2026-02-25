@@ -1,10 +1,10 @@
 use core::cmp::Ordering;
 
-use co3::{Encode, ExternC};
+use co3::{Encode, ExternC, ReprC};
 use webassembly_test::webassembly_test;
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, ExternC)]
-#[mineral(opaque)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, ReprC)]
+#[repr_C(opaque)]
 #[allow(unused)]
 pub enum Opaque {
     A,
@@ -16,7 +16,7 @@ pub enum Opaque {
 //    A,
 //}
 
-#[derive(Clone, Copy, ExternC)]
+#[derive(Clone, Copy, ReprC)]
 #[allow(unused)]
 #[repr(u8)]
 pub enum FieldlessUEnum {
@@ -26,7 +26,7 @@ pub enum FieldlessUEnum {
     Var4,
 }
 
-#[derive(Clone, Copy, ExternC)]
+#[derive(Clone, Copy, ReprC)]
 #[allow(unused)]
 #[repr(i8)]
 pub enum FieldlessIEnum {
@@ -36,7 +36,7 @@ pub enum FieldlessIEnum {
     Var4,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, ExternC)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, ReprC)]
 pub enum FieldlessNoReprEnum {
     A,
     B,
@@ -44,7 +44,7 @@ pub enum FieldlessNoReprEnum {
     D,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, ExternC)]
+#[derive(Debug, Clone, PartialEq, Eq, ReprC)]
 #[allow(unused)]
 #[repr(C, i8)]
 pub enum ReprCDataEnum<'a, T> {
@@ -54,7 +54,7 @@ pub enum ReprCDataEnum<'a, T> {
     D,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, ExternC)]
+#[derive(Debug, Clone, PartialEq, Eq, ReprC)]
 #[allow(unused)]
 #[repr(i8)]
 pub enum DataEnum<'a, T> {
@@ -64,7 +64,7 @@ pub enum DataEnum<'a, T> {
     D,
 }
 
-#[derive(Clone, Copy, ExternC)]
+#[derive(Clone, Copy, ReprC)]
 #[allow(unused)]
 #[repr(u16)]
 pub enum FieldlessLargeEnum {

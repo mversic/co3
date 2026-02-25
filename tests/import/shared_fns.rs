@@ -1,4 +1,4 @@
-use co3::{extern_C, extern_type, external::ExternRef};
+use co3::{ReprC, extern_C, extern_type, external::ExternRef};
 use webassembly_test::webassembly_test;
 
 #[extern_type(link_crate = "import_")]
@@ -39,8 +39,8 @@ mod ffi {
 
     co3::def_fns! { dealloc }
 
-    #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, ExternC)]
-    #[mineral(opaque)]
+    #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, ReprC)]
+    #[repr_C(opaque)]
     #[repr(C)]
     pub struct ExternFfiStruct(pub String);
 

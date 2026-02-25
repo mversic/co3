@@ -7,7 +7,7 @@ use alloc::{boxed::Box, string::String, vec::Vec};
 use crate::VecCType;
 use crate::{
     ir::{ReprFamily, Transmuted},
-    mineral,
+    repr_C,
     niche::{Niche, NicheFamily, StableNiche, WithCustomNiche, WithStableNiche, WithoutNiche},
     slice::{CSlice, CSliceMut},
     transmute::{CheckedTransmute, EncodeTransmuted},
@@ -15,7 +15,7 @@ use crate::{
 
 macro_rules! non_zero_derive {
     ($($ty:ty => $target:ty),+ $(,)?) => {$(
-        mineral! {
+        repr_C! {
             unsafe impl Transparent for $ty {
                 type Target = $target;
 
@@ -43,12 +43,12 @@ non_zero_derive! {
     core::num::NonZeroI128 => i128,
 }
 
-mineral! {
+repr_C! {
     unsafe impl(T,) Transparent for core::mem::ManuallyDrop<T> {
         type Target = T;
     }
 }
-mineral! {
+repr_C! {
     unsafe impl(T,) Transparent for core::cell::Cell<T> {
         type Target = T;
     }

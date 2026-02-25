@@ -1,39 +1,39 @@
 use co3::{ExternC, ReprC, transmute::CheckedTransmute};
 use static_assertions::assert_not_impl_any;
 
-#[derive(Debug, Clone, PartialEq, Eq, ExternC)]
+#[derive(Debug, Clone, PartialEq, Eq, ReprC)]
 pub struct NoReprStruct<T: ?Sized> {
     b: Box<T>,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, ExternC)]
+#[derive(Debug, Clone, PartialEq, Eq, ReprC)]
 pub enum NoReprEnum<T: ?Sized> {
     A(Box<T>),
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, ExternC)]
+#[derive(Debug, Clone, PartialEq, Eq, ReprC)]
 #[repr(C)]
 pub struct ReprCStruct<T: ?Sized> {
     b: Box<T>,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, ExternC)]
+#[derive(Debug, Clone, PartialEq, Eq, ReprC)]
 #[repr(u8)]
 pub enum ReprCEnum<T: ?Sized> {
     A(Box<T>),
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, ExternC)]
+#[derive(Debug, Clone, PartialEq, Eq, ReprC)]
 #[repr(C, u8)]
 pub enum ReprCDataEnum<T: ?Sized> {
     A(Box<T>),
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, ExternC)]
+#[derive(Debug, Clone, PartialEq, Eq, ReprC)]
 #[repr(transparent)]
 pub struct TransparentStruct<T: ?Sized>(Box<T>);
 
-#[derive(Debug, Clone, PartialEq, Eq, ExternC)]
+#[derive(Debug, Clone, PartialEq, Eq, ReprC)]
 #[repr(transparent)]
 pub enum TransparentEnum<T: ?Sized> {
     A(Box<T>),

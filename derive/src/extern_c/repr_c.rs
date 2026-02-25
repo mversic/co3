@@ -372,7 +372,7 @@ fn gen_repr_c_data_enum(
         }
 
         impl #impl_generics Copy for #repr_c_enum_name #ty_generics where #extern_c_bounds #predicates {}
-        co3::mineral! { unsafe impl(#params) Robust for #repr_c_enum_name #ty_generics where (#extern_c_bounds #predicates) {} }
+        co3::repr_C! { unsafe impl(#params) Robust for #repr_c_enum_name #ty_generics where (#extern_c_bounds #predicates) {} }
     };
 
     (repr_c_enum_name, repr_c_enum)
@@ -433,7 +433,7 @@ fn gen_repr_c_type<const IS_UNION: bool, const IS_PUBLIC: bool>(
         }
 
         impl #impl_generics Copy for #ident #ty_generics where #extern_c_bounds #predicates {}
-        co3::mineral! { unsafe impl(#params) Robust for #ident #ty_generics where (#extern_c_bounds #predicates) {} }
+        co3::repr_C! { unsafe impl(#params) Robust for #ident #ty_generics where (#extern_c_bounds #predicates) {} }
     }
 }
 

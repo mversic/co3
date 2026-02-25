@@ -1,4 +1,4 @@
-use co3::{ExternC, export, extern_, extern_C};
+use co3::{ExternC, ReprC, export, extern_, extern_C};
 use webassembly_test::webassembly_test;
 
 trait AmbiguousX<T, const N: usize> {
@@ -13,7 +13,7 @@ trait AmbiguousY {
     extern "C" fn ambiguous() -> Ambiguous;
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, ExternC)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, ReprC)]
 #[repr(u8)]
 enum Ambiguous {
     AmbiguousX,
@@ -21,7 +21,7 @@ enum Ambiguous {
     Fn,
 }
 
-#[derive(Debug, Clone, PartialEq, ExternC)]
+#[derive(Debug, Clone, PartialEq, ReprC)]
 #[repr(transparent)]
 struct MyType<T>(Box<T>);
 
@@ -73,12 +73,12 @@ extern_C! {
 mod provider {
     use super::*;
 
-    #[derive(Clone, Copy, ExternC)]
-    #[mineral(opaque)]
+    #[derive(Clone, Copy, ReprC)]
+    #[repr_C(opaque)]
     #[repr(transparent)]
     struct MyType<T>(T);
 
-    #[export(extern "C")]
+    #[export("C")]
     impl AmbiguousX<u64, 3> for MyType<u64> {
         const K: bool = false;
         type U = u8;
@@ -88,7 +88,7 @@ mod provider {
         }
     }
 
-    #[export(extern "Rust")]
+    #[export("Rust")]
     impl AmbiguousX<u32, 4> for MyType<u32> {
         const K: bool = true;
         type U = i8;
@@ -99,7 +99,7 @@ mod provider {
         }
     }
 
-    #[export(extern "C")]
+    #[export("C")]
     impl AmbiguousY for MyType<u64> {
         #[unsafe(no_mangle)]
         extern "C" fn ambiguous() -> Ambiguous {
@@ -107,7 +107,7 @@ mod provider {
         }
     }
 
-    #[export(extern "C")]
+    #[export("C")]
     impl AmbiguousY for MyType<u32> {
         #[export(skip)]
         extern "C" fn ambiguous() -> Ambiguous {
@@ -115,7 +115,7 @@ mod provider {
         }
     }
 
-    #[export(extern "Rust")]
+    #[export("Rust")]
     impl MyType<u64> {
         #[unsafe(export_name = "kita1")]
         pub unsafe extern "C" fn ambiguous() -> Box<MyType<u64>> {
@@ -123,20 +123,20 @@ mod provider {
         }
     }
 
-    #[export(extern "C")]
+    #[export("C")]
     impl MyType<u32> {
         pub const fn ambiguous() -> MyType<u32> {
             MyType(420)
         }
     }
 
-    #[export(extern "C")]
+    #[export("C")]
     #[unsafe(no_mangle)]
     pub const fn ambiguous1() -> Ambiguous {
         Ambiguous::Fn
     }
 
-    #[export(extern "Rust")]
+    #[export("Rust")]
     #[unsafe(export_name = "kita2")]
     pub const unsafe extern "Rust" fn ambiguous2() -> Ambiguous {
         Ambiguous::Fn

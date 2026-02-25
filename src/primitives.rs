@@ -146,7 +146,7 @@ mod wasm {
 /// * validity function must not return false positives
 macro_rules! fieldless_enum_derive {
     ( $src:ty => $dst:ty: {$niche_val:expr}: $validity_fn:expr ) => {
-        crate::mineral! {
+        crate::repr_C! {
             unsafe impl Transparent for $src {
                 type Target = $dst;
 
@@ -164,7 +164,7 @@ macro_rules! fieldless_enum_derive {
 /// Type must be a robust #[repr(C)]
 macro_rules! primitive_derive {
     ( $($primitive:ty),* $(,)? ) => { $(
-        crate::mineral! { unsafe impl Robust for $primitive {} } )*
+        crate::repr_C! { unsafe impl Robust for $primitive {} } )*
     };
 }
 

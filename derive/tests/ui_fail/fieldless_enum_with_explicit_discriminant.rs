@@ -1,6 +1,6 @@
-use co3::ExternC;
+use co3::ReprC;
 
-#[derive(ExternC)]
+#[derive(ReprC)]
 #[repr(u8)]
 pub enum EnumWithExplicitDiscriminant {
     A = 1,

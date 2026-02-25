@@ -1,17 +1,17 @@
-use co3::ExternC;
+use co3::ReprC;
 
-#[derive(ExternC)]
-#[mineral(opaque)]
+#[derive(ReprC)]
+#[repr_C(opaque)]
 pub enum FfiStruct1 {}
 
-#[derive(ExternC)]
+#[derive(ReprC)]
 pub enum FfiStruct2 {}
 
-#[derive(ExternC)]
+#[derive(ReprC)]
 #[repr(transparent)]
 pub enum FfiStruct3 {}
 
-#[derive(ExternC)]
+#[derive(ReprC)]
 #[repr(C)]
 pub enum FfiStruct4 {}
 

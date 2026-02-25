@@ -1,10 +1,10 @@
 use std::mem::MaybeUninit;
 
-use co3::{Decode, Encode, ExternC, export};
+use co3::{Decode, Encode, ExternC, ReprC, export};
 use getset::{Getters, Setters};
 
-#[export(extern "C")]
-#[derive(Clone, Setters, Getters, ExternC)]
+#[export("C")]
+#[derive(Clone, Setters, Getters, ReprC)]
 #[getset(get = "pub")]
 pub struct FfiStruct {
     #[getset(set = "pub")]

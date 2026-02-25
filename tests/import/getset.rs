@@ -6,7 +6,7 @@
 //#[extern_type]
 //#[derive(Clone, PartialEq, Eq, Setters, Getters, MutGetters)]
 //#[getset(get = "pub")]
-//#[mineral(opaque)]
+//#[repr_C(opaque)]
 //#[repr(C)]
 //pub struct FfiStruct {
 //    #[getset(set = "pub", get_mut = "pub")]
@@ -57,13 +57,13 @@
 //        Eq: {ExternName, ExternFfiStruct},
 //    }
 //
-//    #[derive(Debug, Clone, PartialEq, Eq, ExternC)]
-//    #[mineral(opaque)]
+//    #[derive(Debug, Clone, PartialEq, Eq, ReprC)]
+//    #[repr_C(opaque)]
 //    #[repr(C)]
 //    pub struct ExternName(String);
 //
-//    #[derive(Debug, Clone, PartialEq, Eq, ExternC)]
-//    #[mineral(opaque)]
+//    #[derive(Debug, Clone, PartialEq, Eq, ReprC)]
+//    #[repr_C(opaque)]
 //    #[repr(C)]
 //    pub struct ExternFfiStruct {
 //        id: u8,

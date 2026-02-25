@@ -1,8 +1,8 @@
-use co3::{ExternC, export};
+use co3::{ReprC, export};
 use getset::Getters;
 
-#[export(extern "C")]
-#[derive(Getters, ExternC)]
+#[export("C")]
+#[derive(Getters, ReprC)]
 #[getset(get = "pub")]
 pub struct FfiStruct<T> {
     inner: T,

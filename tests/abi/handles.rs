@@ -16,7 +16,7 @@ use crate::{Custom, ExtraCustom};
     ExtraCustom::bump2 = "abi_ExtraCustom_bump2"
 )]
 #[derive(Clone, PartialEq, Eq, PartialOrd, Ord, Custom, ExtraCustom)]
-#[mineral(opaque)]
+#[repr_C(opaque)]
 pub struct Handle<T>;
 co3::handles! {1, Handle<bool>}
 
@@ -36,7 +36,7 @@ mod provider {
 
     use super::Custom;
     use crate::ExtraCustom;
-    use co3::{ExternC, external::ExternRef};
+    use co3::{ExternC, ReprC, external::ExternRef};
 
     co3::handles! {1, Handle<bool>}
 
@@ -49,8 +49,8 @@ mod provider {
         ExtraCustom: { Handle<bool> },
     }
 
-    #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, ExternC)]
-    #[mineral(opaque)]
+    #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, ReprC)]
+    #[repr_C(opaque)]
     pub struct Handle<T> {
         id: u8,
         _marker: PhantomData<T>,
@@ -91,7 +91,7 @@ mod provider {
         }
     }
 
-    #[export(extern "C")]
+    #[export("C")]
     impl Handle<bool> {
         pub fn new(id: u8) -> Self {
             Self {
@@ -105,7 +105,7 @@ mod provider {
         }
     }
 
-    #[export(extern "C")]
+    #[export("C")]
     pub fn roundtrip(input: ExternRef<'_, Handle<bool>>) -> ExternRef<'_, Handle<bool>> {
         input
     }
