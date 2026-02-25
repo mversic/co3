@@ -922,8 +922,7 @@ fn extern_type_impl(args: TokenStream, input: TokenStream) -> TokenStream {
                 let item = item.ast;
 
                 return quote! {
-                    use co3::ReprC;
-                    #[derive(ReprC)]
+                    #[derive(co3::ReprC)]
                     #item
                 };
             }
@@ -1869,11 +1868,11 @@ fn expand_extern_import_decls(
     emitter.finish_token_stream_with(quote!(#(#out)*))
 }
 
-/// See `[unsafe_extern]`
+/// See `[extern_]`
 #[manyhow]
 #[proc_macro]
 #[allow(non_snake_case)]
-pub fn unsafe_extern_C(input: TokenStream) -> TokenStream {
+pub fn extern_C(input: TokenStream) -> TokenStream {
     struct ExternCInput {
         attrs: Vec<syn::Attribute>,
         decls: ExternCDecls,
@@ -1906,7 +1905,7 @@ pub fn unsafe_extern_C(input: TokenStream) -> TokenStream {
         .to_compile_error();
     }
 
-    unsafe_extern(
+    extern_(
         (quote! {
             #![abi = "C"]
             #original_input
@@ -1918,7 +1917,7 @@ pub fn unsafe_extern_C(input: TokenStream) -> TokenStream {
 
 #[manyhow]
 #[proc_macro]
-pub fn unsafe_extern(input: TokenStream) -> TokenStream {
+pub fn extern_(input: TokenStream) -> TokenStream {
     struct ExternInput {
         attrs: Vec<syn::Attribute>,
         decls: ExternCDecls,

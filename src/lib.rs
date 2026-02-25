@@ -1,5 +1,5 @@
 //! Structures and macros related to FFI and generation of FFI bindings. Any type that implements
-//! [`ExternC`] can be used in the FFI bindings generated with [`export`]/[`unsafe_extern_C!`]. It
+//! [`ExternC`] can be used in the FFI bindings generated with [`export`]/[`extern_C!`]. It
 //! is advisable to implement [`Ir`] and benefit from automatic implementation of [`ExternC`]
 #![no_std]
 

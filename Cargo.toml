@@ -16,7 +16,7 @@ default = ["alloc", "owned-as-ref"]
 
 # Enable deriving `extern C` ABI. Macros made available are:
 # - `#derive(ReprC)`/`#[extern_type]`
-# - `#[export]`/`unsafe_extern_C!`/`unsafe_extern!`
+# - `#[export]`/`extern_C!`/`extern_!`
 derive = ["co3_derive"]
 
 # Implements conversion traits for types from the `alloc` crate (e.g. `Box<T>` or `Vec<T>`).
