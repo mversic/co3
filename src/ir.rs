@@ -260,8 +260,8 @@ macro_rules! impl_fn_types {
 
         unsafe impl<$($arg: ReprC,)* R: ReprC> ReprC for Option<unsafe extern "C" fn($($arg),*) -> R> {}
         unsafe impl<$($arg: ReprC),*> ReprC for Option<unsafe extern "C" fn($($arg),*)> {}
-        //crate::repr_C! { impl<$($arg: ReprC,)* R: ReprC> Robust for Option<unsafe extern "C" fn($($arg),*) -> R> {} }
-        //crate::repr_C! { impl<$($arg: ReprC),*> Robust for Option<unsafe extern "C" fn($($arg),*)> {} }
+        //crate::reprC! { impl<$($arg: ReprC,)* R: ReprC> Robust for Option<unsafe extern "C" fn($($arg),*) -> R> {} }
+        //crate::reprC! { impl<$($arg: ReprC),*> Robust for Option<unsafe extern "C" fn($($arg),*)> {} }
         )*
     }
 }

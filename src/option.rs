@@ -1,6 +1,6 @@
 //! FFI-safe equivalent of [`core::option`] related functionality
 
-use crate::{FfiReturn, ReprC, repr_C};
+use crate::{FfiReturn, ReprC, reprC};
 
 /// FFI-safe equivalent of [`core::option::Option`] for [`crate::ir::Robust`] types
 #[derive(Debug, PartialEq, Eq, PartialOrd, Ord)]
@@ -66,6 +66,6 @@ impl<T: Copy> Clone for COption<T> {
     }
 }
 
-repr_C! {
+reprC! {
     unsafe impl(T: ReprC) Robust for COption<T> {}
 }

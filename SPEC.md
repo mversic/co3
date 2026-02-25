@@ -6,7 +6,7 @@
 
 - Mapping Rust types to FFI-safe types (`ExternC::CType`).
 - Converting values to/from those FFI types (`Encode`/`Decode`).
-- Generating extern functions (`carbonate`/`decarbonate` and derive macros).
+- Generating extern functions (`export`/`unsafe_extern_C!`/`unsafe_extern!` and derive macros).
 
 ### 1.1 Hard Guarantees
 

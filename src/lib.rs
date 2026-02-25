@@ -1,5 +1,5 @@
 //! Structures and macros related to FFI and generation of FFI bindings. Any type that implements
-//! [`ExternC`] can be used in the FFI bindings generated with [`export`]/[`extern_C!`]. It
+//! [`ExternC`] can be used in the FFI bindings generated with [`export`]/[`unsafe_extern_C!`]. It
 //! is advisable to implement [`Ir`] and benefit from automatic implementation of [`ExternC`]
 #![no_std]
 
@@ -1740,7 +1740,7 @@ impl<R> Store for OpaqueMutSliceDecodeStore<R> {
 /// use co3::ReprC;
 ///
 /// // Always use a type alias for inner types of transparent items so that if you make
-/// // a change the unsafe code in [`co3::repr_C!`] will not compile, thus preventing UB
+/// // a change the unsafe code in [`co3::reprC!`] will not compile, thus preventing UB
 /// type NonNullInner<T> = *mut T;
 /// type WrapperInner = u32;
 ///
@@ -1754,12 +1754,12 @@ impl<R> Store for OpaqueMutSliceDecodeStore<R> {
 /// #[repr(C)]
 /// struct RobustStruct(u64, i32);
 ///
-/// co3::repr_C! {
+/// co3::reprC! {
 ///     // SAFETY: Type MUST NOT have traps
 ///     unsafe impl Robust for RobustStruct {}
 /// }
 ///
-/// co3::repr_C! {
+/// co3::reprC! {
 ///     // SAFETY: `Self::is_valid` must not return false posives
 ///     unsafe impl(T) Transparent for NonNull<T> where (T: Copy) {
 ///         type Target = NonNullInner<T>;
@@ -1773,14 +1773,14 @@ impl<R> Store for OpaqueMutSliceDecodeStore<R> {
 ///
 /// // If no validation function or niche value is given,
 /// // wrapper type delegates to the inner type
-/// co3::repr_C! {
+/// co3::reprC! {
 ///     unsafe impl Transparent for Wrapper {
 ///         type Target = WrapperInner;
 ///     }
 /// }
 /// ```
 #[macro_export]
-macro_rules! repr_C {
+macro_rules! reprC {
         (unsafe impl $(( $($params:tt)* ))? Robust for $self_ty:ty $(where ($($preds:tt)*))? {}) => {
             unsafe impl$(<$($params)*>)? $crate::ReprC for $self_ty $(where $($preds)*)? {}
 
@@ -1838,7 +1838,7 @@ macro_rules! repr_C {
         (unsafe impl Transparent for $self_ty:ty $(where ( $($preds:tt)* ))? {
             type Target = $target:ty;
         }) => {
-            $crate::repr_C! {
+            $crate::reprC! {
                 @transparent [for<'_dummy>] [] $self_ty $([$($preds)*])? {
                     type Target = $target;
                     // NOTE: When delegating there is no trap representations in the immediate `Self::Target`
@@ -1850,7 +1850,7 @@ macro_rules! repr_C {
         (unsafe impl ( $($params:tt)* ) Transparent for $self_ty:ty $(where ( $($preds:tt)* ))? {
             type Target = $target:ty;
         }) => {
-            $crate::repr_C! {
+            $crate::reprC! {
                 @transparent [] [<$($params)*>] $self_ty $([$($preds)*])? {
                     type Target = $target;
                     // NOTE: When delegating there is no trap representations in the immediate `Self::Target`
@@ -1865,7 +1865,7 @@ macro_rules! repr_C {
             fn is_valid($target_var:ident: $target_ty:ty) -> $ret_val:ty
                 $block:block
         }) => {
-            $crate::repr_C! {
+            $crate::reprC! {
                 @transparent [for<'_dummy>] [] $self_ty $([$($preds)*])? {
                     type Target = $target;
                     fn is_valid($target_var: $target_ty) -> bool $block
@@ -1878,7 +1878,7 @@ macro_rules! repr_C {
             fn is_valid($target_var:ident: $target_ty:ty) -> $ret_val:ty
                 $block:block
         }) => {
-            $crate::repr_C! {
+            $crate::reprC! {
                 @transparent [] [<$($params)*>] $self_ty $([$($preds)*])? {
                     type Target = $target;
                     fn is_valid($target_var: $target_ty) -> bool $block
@@ -1919,10 +1919,10 @@ macro_rules! repr_C {
         };
     }
 
-repr_C! {
+reprC! {
     unsafe impl(R) Robust for *const R {}
 }
-repr_C! {
+reprC! {
     unsafe impl(R) Robust for *mut R {}
 }
 

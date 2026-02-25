@@ -16,7 +16,7 @@ use crate::{Custom, ExtraCustom};
     ExtraCustom::bump2 = "abi_ExtraCustom_bump2"
 )]
 #[derive(Clone, PartialEq, Eq, PartialOrd, Ord, Custom, ExtraCustom)]
-#[repr_C(opaque)]
+#[reprC(opaque)]
 pub struct Handle<T>;
 co3::handles! {1, Handle<bool>}
 
@@ -50,7 +50,7 @@ mod provider {
     }
 
     #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, ReprC)]
-    #[repr_C(opaque)]
+    #[reprC(opaque)]
     pub struct Handle<T> {
         id: u8,
         _marker: PhantomData<T>,

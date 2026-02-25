@@ -1,7 +1,7 @@
 use co3::ReprC;
 
 #[derive(ReprC)]
-#[repr_C(opaque)]
+#[reprC(opaque)]
 pub enum FfiStruct1 {}
 
 #[derive(ReprC)]

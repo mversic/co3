@@ -3,7 +3,7 @@
 use crate::{
     Decode, Encode, ExternC, ReprC,
     ir::ReprFamily,
-    repr_C,
+    reprC,
     niche::{Niche, NicheFamily},
 };
 
@@ -84,11 +84,11 @@ impl<T: Copy, E: Copy> Clone for CResultPayload<T, E> {
     }
 }
 
-repr_C! {
+reprC! {
     unsafe impl(T: ReprC, E: ReprC) Robust for CResult<T, E> {}
 }
 
-repr_C! {
+reprC! {
     unsafe impl(T: ReprC, E: ReprC) Robust for CResultPayload<T, E> {}
 }
 

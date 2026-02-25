@@ -1,7 +1,7 @@
 use co3::{ReprC, export};
 
 #[derive(ReprC)]
-#[repr_C(opaque)]
+#[reprC(opaque)]
 pub struct GenericHandle<'a, T, const N: usize>(&'a [T; N]);
 
 #[export("C")]

@@ -1,39 +1,39 @@
-use co3::{extern_, extern_C};
+use co3::{unsafe_extern, unsafe_extern_C};
 
-extern_! {}
+unsafe_extern! {}
 
-extern_! {
+unsafe_extern! {
     #![link(crate = "kita")]
 }
 
-extern_C! {
+unsafe_extern_C! {
     #![abi = "C"]
 }
 
-extern_! {
+unsafe_extern! {
     #![link_name = "kita"]
     #![abi = "kita"]
 }
 
-extern_! {
+unsafe_extern! {
     #![abi = "kita"]
 
     #[link(name = "kita")]
     fn kita();
 }
 
-extern_C! {
+unsafe_extern_C! {
     #![link_name = "kita"]
 }
 
-extern_! {
+unsafe_extern! {
     #![abi = "C"]
 
     #[link_crate = "kita"]
     fn kita();
 }
 
-extern_C! {
+unsafe_extern_C! {
     #[link_name = "kita"]
     impl Kita for u32 {}
 }

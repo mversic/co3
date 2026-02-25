@@ -1,4 +1,4 @@
-error: Uninhabited enum is a never type. Annotate with #[co3::repr_C(opaque)]?
+error: Uninhabited enum is a never type. Annotate with #[co3::reprC(opaque)]?
  --> tests/ui_fail/uninhabited_enum.rs:8:10
   |
 8 | pub enum FfiStruct2 {}

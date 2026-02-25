@@ -1,5 +1,7 @@
 //! Logic related to the conversion of primitives to and from FFI-compatible representation
 
+use crate::reprC;
+
 #[cfg(target_family = "wasm")]
 mod wasm {
     use alloc::{boxed::Box, vec::Vec};
@@ -146,7 +148,7 @@ mod wasm {
 /// * validity function must not return false positives
 macro_rules! fieldless_enum_derive {
     ( $src:ty => $dst:ty: {$niche_val:expr}: $validity_fn:expr ) => {
-        crate::repr_C! {
+        reprC! {
             unsafe impl Transparent for $src {
                 type Target = $dst;
 
@@ -164,7 +166,7 @@ macro_rules! fieldless_enum_derive {
 /// Type must be a robust #[repr(C)]
 macro_rules! primitive_derive {
     ( $($primitive:ty),* $(,)? ) => { $(
-        crate::repr_C! { unsafe impl Robust for $primitive {} } )*
+        reprC! { unsafe impl Robust for $primitive {} } )*
     };
 }
 

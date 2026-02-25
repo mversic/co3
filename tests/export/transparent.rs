@@ -24,7 +24,7 @@ impl<P> GenericTransparentStruct<P> {
 }
 
 #[derive(Clone, Copy, PartialEq, Eq, Debug, ReprC)]
-#[repr_C(
+#[reprC(
     unsafe(is_valid = |target: &Self::Target|
         *target != GenericTransparentStruct::new(1)
     )
@@ -38,7 +38,7 @@ pub struct TransparentStruct {
 }
 
 #[derive(Clone, Copy, PartialEq, Eq, Debug, ReprC)]
-#[repr_C(
+#[reprC(
     NICHE_VALUE = [0; 4],
     unsafe(is_valid = |target: &Self::Target|
         target.iter().all(|&x| x != 0)

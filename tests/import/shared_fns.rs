@@ -40,7 +40,7 @@ mod ffi {
     co3::def_fns! { dealloc }
 
     #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, ReprC)]
-    #[repr_C(opaque)]
+    #[reprC(opaque)]
     #[repr(C)]
     pub struct ExternFfiStruct(pub String);
 

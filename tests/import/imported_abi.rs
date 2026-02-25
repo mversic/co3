@@ -1,4 +1,4 @@
-use co3::{ExternC, ReprC, export, extern_, extern_C};
+use co3::{ReprC, export, unsafe_extern, unsafe_extern_C};
 use webassembly_test::webassembly_test;
 
 trait AmbiguousX<T, const N: usize> {
@@ -25,7 +25,7 @@ enum Ambiguous {
 #[repr(transparent)]
 struct MyType<T>(Box<T>);
 
-extern_! {
+unsafe_extern! {
     #![abi = "Rust"]
     #![link(crate = "import")]
 
@@ -46,7 +46,7 @@ extern_! {
     pub unsafe extern "C" fn ambiguous2_imported() -> Ambiguous;
 }
 
-extern_C! {
+unsafe_extern_C! {
     #![link(crate = "import")]
 
     impl AmbiguousX<u64, 3> for MyType<u64> {
@@ -74,8 +74,8 @@ mod provider {
     use super::*;
 
     #[derive(Clone, Copy, ReprC)]
-    #[repr_C(opaque)]
     #[repr(transparent)]
+    #[reprC(opaque)]
     struct MyType<T>(T);
 
     #[export("C")]

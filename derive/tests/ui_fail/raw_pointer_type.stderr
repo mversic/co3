@@ -1,22 +1,22 @@
-error: Raw pointer found. If the pointer doesn't own the data, attach `#[repr_C(unsafe(non_owning))` to the field. Otherwise, mark the entire type as opaque with `#[repr_C(opaque)]`
+error: Raw pointer found. If the pointer doesn't own the data, attach `#[reprC(unsafe(non_owning))` to the field. Otherwise, mark the entire type as opaque with `#[reprC(opaque)]`
  --> tests/ui_fail/raw_pointer_type.rs:7:23
   |
 7 | pub struct FfiStruct1(*mut u32, NonNull<u8>);
   |                       ^^^^^^^^
 
-error: NonNull pointer found. If the pointer doesn't own the data, attach `#[repr_C(unsafe(non_owning))` to the field. Otherwise, mark the entire type as opaque with `#[repr_C(opaque)]`
+error: NonNull pointer found. If the pointer doesn't own the data, attach `#[reprC(unsafe(non_owning))` to the field. Otherwise, mark the entire type as opaque with `#[reprC(opaque)]`
  --> tests/ui_fail/raw_pointer_type.rs:7:33
   |
 7 | pub struct FfiStruct1(*mut u32, NonNull<u8>);
   |                                 ^^^^^^^^^^^
 
-error: Raw pointer found. If the pointer doesn't own the data, attach `#[repr_C(unsafe(non_owning))` to the field. Otherwise, mark the entire type as opaque with `#[repr_C(opaque)]`
+error: Raw pointer found. If the pointer doesn't own the data, attach `#[reprC(unsafe(non_owning))` to the field. Otherwise, mark the entire type as opaque with `#[reprC(opaque)]`
   --> tests/ui_fail/raw_pointer_type.rs:13:7
    |
 13 |     B(*mut u32),
    |       ^^^^^^^^
 
-error: NonNull pointer found. If the pointer doesn't own the data, attach `#[repr_C(unsafe(non_owning))` to the field. Otherwise, mark the entire type as opaque with `#[repr_C(opaque)]`
+error: NonNull pointer found. If the pointer doesn't own the data, attach `#[reprC(unsafe(non_owning))` to the field. Otherwise, mark the entire type as opaque with `#[reprC(opaque)]`
   --> tests/ui_fail/raw_pointer_type.rs:14:7
    |
 14 |     C(NonNull<u8>),

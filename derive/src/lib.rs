@@ -998,17 +998,17 @@ pub fn extern_type(args: TokenStream, input: TokenStream) -> TokenStream {
     extern_type_impl(args, input)
 }
 
-// TODO: repr_C(`local`) is a workaround for https://github.com/rust-lang/rust/issues/48214
+// TODO: reprC(`local`) is a workaround for https://github.com/rust-lang/rust/issues/48214
 // because some derived types cannot derive `NonLocal` othwerise. Should be removed in future
 /// Derive implementations of traits required to convert to and from an FFI-compatible type
 ///
 /// # Attributes
 ///
-/// * `#[repr_C(opaque)]`
+/// * `#[reprC(opaque)]`
 /// serialize the type as opaque. If automatically derived type doesn't work just
 /// attach this attribute and force the type to be serialized as opaque across FFI
 ///
-/// * `#[repr_C(NICHE_VALUE = <expr>, unsafe(is_valid = |target| ...))]`
+/// * `#[reprC(NICHE_VALUE = <expr>, unsafe(is_valid = |target| ...))]`
 /// customize [`co3::niche::Niche`] value and validation function for `#[repr(transparent)]` types.
 /// `NICHE_VALUE` can be ommitted in which case the implementation delegates to the wrapped type.
 ///
@@ -1016,9 +1016,9 @@ pub fn extern_type(args: TokenStream, input: TokenStream) -> TokenStream {
 ///
 /// `is_valid` must not return false positives
 ///
-/// Check [`co3::transmute::CheckedTransmute`] or [`co3::repr_C`] for more details
+/// Check [`co3::transmute::CheckedTransmute`] or [`co3::reprC`] for more details
 ///
-/// * `#[repr_C(local)]`
+/// * `#[reprC(local)]`
 /// marks the type as local, meaning it contains references to the local frame. If a type
 /// contains references to the local frame you won't be able to return it from an FFI function
 /// because the frame is destroyed on function return which would invalidate your type's references.
@@ -1027,11 +1027,11 @@ pub fn extern_type(args: TokenStream, input: TokenStream) -> TokenStream {
 ///
 /// NOTE: This attribute is likely to be removed in future versions
 ///
-/// * `#[repr_C(unsafe(non_owning))]`
+/// * `#[reprC(unsafe(non_owning))]`
 /// when a type contains a raw pointer (e.g. `*const T`/*mut T`) it's not possible to figure out
 /// whether it carries ownership of the data pointed to. Place this attribute on the field to
 /// indicate pointer doesn't own the data and is robust in the type. Alternatively, if the type
-/// is carrying ownership mark entire type as opaque with `#[repr_C(opaque)]`. If the type
+/// is carrying ownership mark entire type as opaque with `#[reprC(opaque)]`. If the type
 /// is not carrying ownership, but is not robust convert it into an equivalent [`co3::ReprC`]
 /// type that is validated when crossing the FFI boundary. It is also ok to mark non-owning,
 /// non-robust type as opaque
@@ -1050,7 +1050,7 @@ pub fn extern_type(args: TokenStream, input: TokenStream) -> TokenStream {
 ///
 /// It assumes that the derive is imported and referred to by its original name.
 #[manyhow]
-#[proc_macro_derive(ReprC, attributes(repr_C))]
+#[proc_macro_derive(ReprC, attributes(reprC))]
 pub fn extern_c_derive(input: TokenStream) -> TokenStream {
     let mut emitter = Emitter::new();
 
@@ -1869,10 +1869,11 @@ fn expand_extern_import_decls(
     emitter.finish_token_stream_with(quote!(#(#out)*))
 }
 
+/// See `[unsafe_extern]`
 #[manyhow]
 #[proc_macro]
 #[allow(non_snake_case)]
-pub fn extern_C(input: TokenStream) -> TokenStream {
+pub fn unsafe_extern_C(input: TokenStream) -> TokenStream {
     struct ExternCInput {
         attrs: Vec<syn::Attribute>,
         decls: ExternCDecls,
@@ -1905,7 +1906,7 @@ pub fn extern_C(input: TokenStream) -> TokenStream {
         .to_compile_error();
     }
 
-    extern_(
+    unsafe_extern(
         (quote! {
             #![abi = "C"]
             #original_input
@@ -1917,7 +1918,7 @@ pub fn extern_C(input: TokenStream) -> TokenStream {
 
 #[manyhow]
 #[proc_macro]
-pub fn extern_(input: TokenStream) -> TokenStream {
+pub fn unsafe_extern(input: TokenStream) -> TokenStream {
     struct ExternInput {
         attrs: Vec<syn::Attribute>,
         decls: ExternCDecls,

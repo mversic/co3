@@ -1,4 +1,4 @@
-use co3::{ReprC, export, extern_, extern_C};
+use co3::{ReprC, export, unsafe_extern, unsafe_extern_C};
 
 #[derive(ReprC)]
 pub struct Hello {
@@ -15,7 +15,7 @@ impl Hello {
     }
 }
 
-extern_C! {
+unsafe_extern_C! {
     #![link(crate = "kita")]
 
     #[link_name = "hello"]
@@ -23,7 +23,7 @@ extern_C! {
     pub extern "C" fn hello2(a: Hello, b: Hello) -> i32;
 }
 
-extern_! {
+unsafe_extern! {
     #![link(crate = "kita")]
     #![abi = "kita"]
 
@@ -32,7 +32,7 @@ extern_! {
     pub extern "C" fn hello3(a: Hello, b: Hello) -> i32;
 }
 
-extern_! {
+unsafe_extern! {
     #![abi = "kita"]
     #![link(crate = "kita")]
 
@@ -41,7 +41,7 @@ extern_! {
     pub extern "C" fn hello4(a: Hello, b: Hello) -> i32;
 }
 
-extern_! {
+unsafe_extern! {
     #![abi = "kita"]
     #![link(crate = "kita")]
 
@@ -50,7 +50,7 @@ extern_! {
     pub extern "C" fn hello5(a: Hello, b: Hello) -> i32;
 }
 
-extern_! {
+unsafe_extern! {
     #![abi = "kita"]
     #![link(crate = "kita")]
 

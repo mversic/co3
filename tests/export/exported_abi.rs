@@ -1,6 +1,6 @@
 use std::mem::MaybeUninit;
 
-use co3::{ExternC, FfiReturn, ReprC, export, out_ptr::OutPtrRead as _};
+use co3::{FfiReturn, ReprC, export, out_ptr::OutPtrRead as _};
 use webassembly_test::webassembly_test;
 
 trait AmbiguousX<T, const N: usize> {
@@ -24,7 +24,7 @@ pub enum Ambiguous {
 }
 
 #[derive(Clone, Copy, ReprC)]
-#[repr_C(opaque)]
+#[reprC(opaque)]
 pub(crate) struct OpaqueStruct<T>(T);
 
 #[export("C")]

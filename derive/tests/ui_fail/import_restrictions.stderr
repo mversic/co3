@@ -1,30 +1,30 @@
 error: extern_! requires `#![abi = "..."]`
  --> tests/ui_fail/import_restrictions.rs:3:1
   |
-3 | extern_! {}
-  | ^^^^^^^^^^^
+3 | unsafe_extern! {}
+  | ^^^^^^^^^^^^^^^^^
   |
-  = note: this error originates in the macro `extern_` (in Nightly builds, run with -Z macro-backtrace for more info)
+  = note: this error originates in the macro `unsafe_extern` (in Nightly builds, run with -Z macro-backtrace for more info)
 
 error: extern_! requires `#![abi = "..."]`
  --> tests/ui_fail/import_restrictions.rs:5:1
   |
-5 | / extern_! {
+5 | / unsafe_extern! {
 6 | |     #![link(crate = "kita")]
 7 | | }
   | |_^
   |
-  = note: this error originates in the macro `extern_` (in Nightly builds, run with -Z macro-backtrace for more info)
+  = note: this error originates in the macro `unsafe_extern` (in Nightly builds, run with -Z macro-backtrace for more info)
 
 error: extern_C! does not support `#![abi = "..."]`
   --> tests/ui_fail/import_restrictions.rs:9:1
    |
- 9 | / extern_C! {
+ 9 | / unsafe_extern_C! {
 10 | |     #![abi = "C"]
 11 | | }
    | |_^
    |
-   = note: this error originates in the macro `extern_C` (in Nightly builds, run with -Z macro-backtrace for more info)
+   = note: this error originates in the macro `unsafe_extern_C` (in Nightly builds, run with -Z macro-backtrace for more info)
 
 error: `#![link_name = "..."]` is not supported
   --> tests/ui_fail/import_restrictions.rs:14:5

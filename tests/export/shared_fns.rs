@@ -18,9 +18,9 @@ pub struct FfiStruct1 {
     name: String,
 }
 
-/// Struct with a repr attribute can be forced to become opaque with `#[repr_C(opaque)]`
+/// Struct with a repr attribute can be forced to become opaque with `#[reprC(opaque)]`
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, ReprC)]
-#[repr_C(opaque)]
+#[reprC(opaque)]
 #[repr(C)]
 pub struct FfiStruct2 {
     name: String,

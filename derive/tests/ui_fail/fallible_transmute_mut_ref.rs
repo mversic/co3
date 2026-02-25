@@ -3,7 +3,7 @@ use co3::{ReprC, export};
 type WrapperInner = u32;
 
 #[derive(ReprC)]
-#[repr_C(
+#[reprC(
     NICHE_VALUE = 0,
     unsafe(is_valid = |target: &Self::Target|
         *target != 0

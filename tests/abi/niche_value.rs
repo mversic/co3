@@ -4,7 +4,7 @@ use co3::{Encode, ExternC, ReprC};
 use webassembly_test::webassembly_test;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, ReprC)]
-#[repr_C(opaque)]
+#[reprC(opaque)]
 #[allow(unused)]
 pub enum Opaque {
     A,

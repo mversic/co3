@@ -5,7 +5,7 @@ use alloc::vec::Vec;
 #[cfg(feature = "alloc")]
 use core::mem::ManuallyDrop;
 
-use crate::{ReprC, repr_C};
+use crate::{ReprC, reprC};
 
 /// Owned vector `Vec<C>` with a defined C ABI layout. Consists of a data pointer, a length, and a capacity.
 /// If the data pointer is set to `null`, the struct represents `Option<Vec<C>>`.
@@ -126,6 +126,6 @@ impl<C> CVec<C> {
     }
 }
 
-repr_C! {
+reprC! {
     unsafe impl(T: ReprC) Robust for CVec<T> {}
 }
