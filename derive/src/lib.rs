@@ -348,13 +348,6 @@ fn emit_export_skip_conflicts(emitter: &mut Emitter, attrs: &[&syn::Attribute]) 
     }
 }
 
-fn is_rust_abi(abi: Option<&syn::Abi>) -> bool {
-    match abi {
-        None => true,
-        Some(abi) => abi.name.as_ref().is_some_and(|name| name.value() == "Rust"),
-    }
-}
-
 struct ResolvedMethodExport {
     self_symbol: String,
     trait_symbol: Option<String>,
@@ -512,86 +505,6 @@ fn gen_selected_signature_method_export(
         };
     }
 
-    if is_rust_abi(Some(&abi)) {
-        let mut rust_params: Vec<TokenStream> = Vec::new();
-        let mut call_args: Vec<TokenStream> = Vec::new();
-        let mut target_arg_tys: Vec<TokenStream> = Vec::new();
-        if let Some(receiver) = sig.receiver() {
-            let receiver_rust_ty: syn::Type = if receiver.reference.is_none() {
-                self_ty.clone()
-            } else if receiver.mutability.is_some() {
-                syn::parse_quote!(&mut #self_ty)
-            } else {
-                syn::parse_quote!(&#self_ty)
-            };
-            let arg_name = format_ident!("receiver");
-            rust_params.push(quote!(#arg_name: #receiver_rust_ty));
-            target_arg_tys.push(quote!(#receiver_rust_ty));
-            call_args.push(quote!(#arg_name));
-        }
-
-        for input in &sig.inputs {
-            let syn::FnArg::Typed(arg) = input else {
-                continue;
-            };
-            let syn::Pat::Ident(pat_ident) = arg.pat.as_ref() else {
-                return syn::Error::new_spanned(
-                    &arg.pat,
-                    "method arguments in export declarations must use identifier patterns",
-                )
-                .to_compile_error();
-            };
-            let name = pat_ident.ident.clone();
-            let rust_ty = rewrite_self_type(arg.ty.as_ref(), self_ty);
-            rust_params.push(quote!(#name: #rust_ty));
-            target_arg_tys.push(quote!(#rust_ty));
-            call_args.push(quote!(#name));
-        }
-
-        let target_path = if let Some(trait_path) = &spec.trait_path {
-            quote!(<#self_ty as #trait_path>::#method)
-        } else {
-            quote!(<#self_ty>::#method)
-        };
-        let target_ret_ty = match &sig.output {
-            syn::ReturnType::Default => quote!(()),
-            syn::ReturnType::Type(_, ty) => {
-                let output_ty = rewrite_self_type(ty, self_ty);
-                quote!(#output_ty)
-            }
-        };
-        let target_abi = sig.abi.as_ref().map(|abi| quote!(#abi)).unwrap_or_default();
-        let target_unsafety = if sig.unsafety.is_some() {
-            quote!(unsafe)
-        } else {
-            quote!()
-        };
-        let target_ptr_ty =
-            quote!(#target_unsafety #target_abi fn(#(#target_arg_tys),*) -> #target_ret_ty);
-        let target_call = if sig.unsafety.is_some() {
-            quote!(unsafe { target(#(#call_args),*) })
-        } else {
-            quote!(target(#(#call_args),*))
-        };
-        let wrapper_output = match &sig.output {
-            syn::ReturnType::Default => quote!(),
-            syn::ReturnType::Type(_, ty) => {
-                let out_ty = rewrite_self_type(ty, self_ty);
-                quote!(-> #out_ty)
-            }
-        };
-
-        return quote! {
-            #[unsafe(export_name = #export_name)]
-            unsafe #abi fn #fn_name(
-                #(#rust_params),*
-            ) #wrapper_output {
-                let target: #target_ptr_ty = #target_path;
-                #target_call
-            }
-        };
-    }
-
     let mut decl_params: Vec<TokenStream> = Vec::new();
     let mut decode_stmts: Vec<TokenStream> = Vec::new();
     let mut sync_stmts: Vec<TokenStream> = Vec::new();
@@ -744,71 +657,6 @@ fn gen_selected_function_export(
     let abi = export_abi
         .cloned()
         .unwrap_or_else(|| syn::parse_quote!(extern "Rust"));
-    if is_rust_abi(Some(&abi)) {
-        let mut rust_params = Vec::new();
-        let mut call_args = Vec::new();
-        let mut target_arg_tys = Vec::new();
-        for input in &sig.inputs {
-            let syn::FnArg::Typed(arg) = input else {
-                return syn::Error::new_spanned(
-                    input,
-                    "methods with receivers are not supported in free-function export declarations",
-                )
-                .to_compile_error();
-            };
-            let syn::Pat::Ident(pat_ident) = arg.pat.as_ref() else {
-                return syn::Error::new_spanned(
-                    &arg.pat,
-                    "function arguments in export declarations must use identifier patterns",
-                )
-                .to_compile_error();
-            };
-            let name = pat_ident.ident.clone();
-            let ty = arg.ty.as_ref().clone();
-            rust_params.push(quote!(#name: #ty));
-            target_arg_tys.push(quote!(#ty));
-            call_args.push(quote!(#name));
-        }
-
-        let target_ret_ty = match &sig.output {
-            syn::ReturnType::Default => quote!(()),
-            syn::ReturnType::Type(_, ty) => {
-                let out_ty = ty.as_ref();
-                quote!(#out_ty)
-            }
-        };
-        let target_abi = sig.abi.as_ref().map(|abi| quote!(#abi)).unwrap_or_default();
-        let target_unsafety = if sig.unsafety.is_some() {
-            quote!(unsafe)
-        } else {
-            quote!()
-        };
-        let target_ptr_ty =
-            quote!(#target_unsafety #target_abi fn(#(#target_arg_tys),*) -> #target_ret_ty);
-        let target_call = if sig.unsafety.is_some() {
-            quote!(unsafe { target(#(#call_args),*) })
-        } else {
-            quote!(target(#(#call_args),*))
-        };
-        let wrapper_output = match &sig.output {
-            syn::ReturnType::Default => quote!(),
-            syn::ReturnType::Type(_, ty) => {
-                let out_ty = ty.as_ref();
-                quote!(-> #out_ty)
-            }
-        };
-
-        return quote! {
-            #[unsafe(export_name = #export_name)]
-            unsafe #abi fn #wrapper_name(
-                #(#rust_params),*
-            ) #wrapper_output {
-                let target: #target_ptr_ty = #fn_name_ident;
-                #target_call
-            }
-        };
-    }
-
     let mut decl_params = Vec::new();
     let mut decode_stmts = Vec::new();
     let mut sync_stmts = Vec::new();
@@ -1215,18 +1063,6 @@ fn strip_export_attrs(attrs: &mut Vec<syn::Attribute>) {
     attrs.retain(|attr| !is_export_attr(attr));
 }
 
-fn attach_export_attr_if_absent(
-    attrs: &mut Vec<syn::Attribute>,
-    export_attr: Option<syn::Attribute>,
-) {
-    if attrs.iter().any(is_consumed_export_attr) {
-        return;
-    }
-    if let Some(export_attr) = export_attr {
-        attrs.push(export_attr);
-    }
-}
-
 fn gen_export_link_prefix(link_prefix: syn::LitStr) -> TokenStream {
     let mut pref = link_prefix.value();
     if !pref.ends_with('_') {
@@ -1425,7 +1261,6 @@ pub fn export(attr: TokenStream, item: TokenStream) -> TokenStream {
             enum MethodAction {
                 Skip,
                 ExternShim(TokenStream),
-                NonExternAttach(Box<Option<syn::Attribute>>),
             }
 
             let method_actions: Vec<_> = impl_descriptor
@@ -1435,29 +1270,15 @@ pub fn export(attr: TokenStream, item: TokenStream) -> TokenStream {
                     validate_method_export_attrs(&mut emitter, &fn_descriptor.attrs);
                     let export_abi = export_args.export_abi.as_ref();
 
-                    let force_shim = export_abi.is_some_and(|abi| !is_rust_abi(Some(abi)));
                     if has_valid_export_skip(&mut emitter, &fn_descriptor.attrs) {
                         MethodAction::Skip
-                    } else if force_shim || !is_rust_abi(fn_descriptor.sig.abi.as_ref()) {
+                    } else {
                         MethodAction::ExternShim(ffi_fn::gen_definition(
                             fn_descriptor,
                             impl_descriptor.trait_name,
                             impl_descriptor.generics,
                             export_abi,
                         ))
-                    } else {
-                        let export_attr = fn_descriptor
-                            .attrs
-                            .iter()
-                            .find_map(|attr| parse_unsafe_export_name_attr(attr))
-                            .map(|name| syn::parse_quote!(#[unsafe(export_name = #name)]))
-                            .or_else(|| {
-                                ffi_fn::gen_default_export_name_attr(
-                                    fn_descriptor,
-                                    impl_descriptor.trait_name,
-                                )
-                            });
-                        MethodAction::NonExternAttach(Box::new(export_attr))
                     }
                 })
                 .collect();
@@ -1480,55 +1301,27 @@ pub fn export(attr: TokenStream, item: TokenStream) -> TokenStream {
                         strip_consumed_export_attrs(&mut method.attrs);
                         method.block.stmts.insert(0, syn::parse_quote! { #ffi_fn });
                     }
-                    MethodAction::NonExternAttach(export_attr) => {
-                        strip_export_attrs(&mut method.attrs);
-                        attach_export_attr_if_absent(&mut method.attrs, *export_attr);
-                    }
                 }
             }
 
             quote! { #item }
         }
         Fn(mut item) => {
-            enum FnAction {
-                ExternShim(TokenStream),
-                NonExternAttach(Box<Option<syn::Attribute>>),
-            }
-
-            let action = {
+            let ffi_shim = {
                 let Some(fn_descriptor) = FnDescriptor::from_fn(&mut emitter, &item) else {
                     return emitter.finish_token_stream();
                 };
-                let force_shim = export_args
-                    .export_abi
-                    .as_ref()
-                    .is_some_and(|abi| !is_rust_abi(Some(abi)));
-                let use_extern_shim = force_shim || !is_rust_abi(fn_descriptor.sig.abi.as_ref());
-                if use_extern_shim {
-                    FnAction::ExternShim(ffi_fn::gen_definition(
-                        &fn_descriptor,
-                        None,
-                        &Default::default(),
-                        export_args.export_abi.as_ref(),
-                    ))
-                } else {
-                    FnAction::NonExternAttach(Box::new(ffi_fn::gen_default_export_name_attr(
-                        &fn_descriptor,
-                        None,
-                    )))
-                }
+                ffi_fn::gen_definition(
+                    &fn_descriptor,
+                    None,
+                    &Default::default(),
+                    export_args.export_abi.as_ref(),
+                )
             };
 
             strip_export_attrs(&mut item.attrs);
-            match action {
-                FnAction::NonExternAttach(export_attr) => {
-                    attach_export_attr_if_absent(&mut item.attrs, *export_attr);
-                }
-                FnAction::ExternShim(ffi_fn) => {
-                    strip_consumed_export_attrs(&mut item.attrs);
-                    item.block.stmts.insert(0, syn::parse_quote! { #ffi_fn });
-                }
-            }
+            strip_consumed_export_attrs(&mut item.attrs);
+            item.block.stmts.insert(0, syn::parse_quote! { #ffi_shim });
 
             quote! { #item }
         }

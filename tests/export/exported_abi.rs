@@ -194,14 +194,17 @@ fn exported_abi() {
     }
 
     unsafe extern "Rust" {
-        fn kita(a: &[i8; 4]) -> Ambiguous;
-        fn kita1() -> Ambiguous;
-        fn kita2() -> Ambiguous;
+        fn kita(a: *const [i8; 4], out_ptr: *mut u8) -> FfiReturn;
+        fn kita1(out_ptr: *mut u8) -> FfiReturn;
+        fn kita2(out_ptr: *mut u8) -> FfiReturn;
 
         #[link_name = "export_Clone_NonOpaqueStruct_u8_clone"]
-        fn export_non_opaque_clone_u8(handle: &NonOpaqueStruct<u8>) -> NonOpaqueStruct<u8>;
+        fn export_non_opaque_clone_u8(handle: *const u8, out_ptr: *mut u8) -> FfiReturn;
         #[link_name = "clone"]
-        fn export_opaque_clone_u8(handle: &OpaqueStruct<u8>) -> OpaqueStruct<u8>;
+        fn export_opaque_clone_u8(
+            handle: *const NonNull<Extern>,
+            out_ptr: *mut NonNull<Extern>,
+        ) -> FfiReturn;
     }
 
     unsafe {
@@ -219,9 +222,20 @@ fn exported_abi() {
         let ambiguous_x = Ambiguous::try_read_out(output.assume_init()).unwrap();
         assert_eq!(Ambiguous::AmbiguousX, ambiguous_x);
 
-        assert_eq!(Ambiguous::AmbiguousX, kita(&[13; 4]));
-        assert_eq!(Ambiguous::Inherent, kita1());
-        assert_eq!(Ambiguous::Fn, kita2());
+        assert_eq!(
+            FfiReturn::Ok,
+            kita((&[13_i8; 4]).encode(&mut ()), output.as_mut_ptr())
+        );
+        let ambiguous_x = Ambiguous::try_read_out(output.assume_init()).unwrap();
+        assert_eq!(Ambiguous::AmbiguousX, ambiguous_x);
+
+        assert_eq!(FfiReturn::Ok, kita1(output.as_mut_ptr()));
+        let inherent = Ambiguous::try_read_out(output.assume_init()).unwrap();
+        assert_eq!(Ambiguous::Inherent, inherent);
+
+        assert_eq!(FfiReturn::Ok, kita2(output.as_mut_ptr()));
+        let custom_fn = Ambiguous::try_read_out(output.assume_init()).unwrap();
+        assert_eq!(Ambiguous::Fn, custom_fn);
 
         assert_eq!(FfiReturn::Ok, ambiguous1(output.as_mut_ptr()));
         let custom_fn = Ambiguous::try_read_out(output.assume_init()).unwrap();
@@ -253,7 +267,13 @@ fn exported_abi() {
             FfiReturn::Ok,
             export_opaque_clone_bool(opaque_bool_ptr.cast(), opaque_bool_clone_out.as_mut_ptr())
         );
-        assert_eq!(OpaqueStruct(11_u8), export_opaque_clone_u8(&opaque_u8));
+        let mut opaque_u8_clone_out = MaybeUninit::new(NonNull::dangling());
+        assert_eq!(
+            FfiReturn::Ok,
+            export_opaque_clone_u8(opaque_u8_ptr.cast(), opaque_u8_clone_out.as_mut_ptr(),)
+        );
+        let opaque_u8_clone = Box::from_raw(opaque_u8_clone_out.assume_init().as_ptr().cast());
+        assert_eq!(OpaqueStruct(11_u8), *opaque_u8_clone);
         let mut opaque_xor_out = MaybeUninit::new(NonNull::dangling());
         assert_eq!(
             FfiReturn::Ok,
@@ -279,10 +299,17 @@ fn exported_abi() {
                 non_opaque_bool_clone_out.as_mut_ptr(),
             )
         );
+        let mut non_opaque_u8_clone_out = MaybeUninit::new(171);
         assert_eq!(
-            NonOpaqueStruct::A(11_u8),
-            export_non_opaque_clone_u8(&non_opaque_u8)
+            FfiReturn::Ok,
+            export_non_opaque_clone_u8(
+                (&non_opaque_u8).encode(&mut ()),
+                non_opaque_u8_clone_out.as_mut_ptr(),
+            )
         );
+        let non_opaque_u8_clone =
+            NonOpaqueStruct::decode(non_opaque_u8_clone_out.assume_init(), &mut ()).unwrap();
+        assert_eq!(NonOpaqueStruct::A(11_u8), non_opaque_u8_clone);
 
         let non_opaque_bool_clone =
             NonOpaqueStruct::decode(non_opaque_bool_clone_out.assume_init(), &mut ()).unwrap();

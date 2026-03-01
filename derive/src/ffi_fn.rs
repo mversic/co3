@@ -34,6 +34,7 @@ pub fn gen_inline_declaration(
     trait_path: Option<&Path>,
     import_crate_name: Option<&TokenStream>,
     import_fn_name: Option<&LitStr>,
+    import_abi: &syn::Abi,
     ffi_fn_name: &Ident,
     handle_id_specs: &[HandleIdSpec],
 ) -> TokenStream {
@@ -65,77 +66,11 @@ pub fn gen_inline_declaration(
         }
     });
     quote! {
-        unsafe extern "C" {
-            #(#extern_block_attrs)*
-            #[doc = #ffi_fn_doc]
-            #link_name
-            #fn_signature;
-        }
-    }
-}
-
-pub fn gen_inline_passthrough_declaration(
-    fn_descriptor: &FnDescriptor,
-    trait_path: Option<&Path>,
-    import_crate_name: Option<&TokenStream>,
-    import_fn_name: Option<&LitStr>,
-    import_abi: &syn::Abi,
-    ffi_fn_name: &Ident,
-    handle_id_specs: &[HandleIdSpec],
-) -> TokenStream {
-    let trait_name = trait_path.and_then(|path| path.segments.last().map(|seg| &seg.ident));
-    let trait_symbol_name = trait_path.map(path_symbol_name);
-    let has_explicit_link_name = has_link_name_attr(&fn_descriptor.attrs);
-    let extern_block_attrs = gen_extern_block_attrs(&fn_descriptor.attrs);
-
-    let ffi_fn_doc = gen_doc(fn_descriptor, trait_name);
-    let receiver = fn_descriptor.receiver.as_ref().map(|arg| {
-        let arg_name = arg.name();
-        let arg_type = declared_input_src_type(arg, fn_descriptor, trait_path);
-        quote!(#arg_name: #arg_type)
-    });
-    let fn_args = fn_descriptor.input_args.iter().map(|arg| {
-        let arg_name = arg.name();
-        let arg_type = declared_input_src_type(arg, fn_descriptor, trait_path);
-        quote!(#arg_name: #arg_type)
-    });
-    let mut args: Vec<_> = receiver.into_iter().chain(fn_args).collect();
-    inject_handle_id_decl_args(handle_id_specs, &mut args);
-    let output = fn_descriptor
-        .output_arg
-        .as_ref()
-        .filter(|arg| !arg.src_type_is_empty_tuple())
-        .map(|arg| {
-            let ty = resolved_src_type(arg, fn_descriptor, trait_path);
-            quote!(-> #ty)
-        })
-        .unwrap_or_default();
-    let link_name = gen_link_name_attr(
-        fn_descriptor,
-        trait_symbol_name.as_deref(),
-        import_crate_name,
-        import_fn_name,
-    )
-    .unwrap_or_else(|| {
-        if fn_descriptor.self_ty.is_none() && trait_name.is_none() && !has_explicit_link_name {
-            let fn_name = &fn_descriptor.sig.ident;
-            quote! { #[link_name = stringify!(#fn_name)] }
-        } else {
-            quote! {}
-        }
-    });
-
-    let generics = &fn_descriptor.sig.generics;
-    let where_clause = &generics.where_clause;
-
-    quote! {
         unsafe #import_abi {
             #(#extern_block_attrs)*
             #[doc = #ffi_fn_doc]
             #link_name
-            fn #ffi_fn_name #generics (
-                #(#args),*
-            ) #output #where_clause;
+            #fn_signature;
         }
     }
 }
@@ -158,29 +93,6 @@ pub fn gen_definition(
         .cloned()
         .or_else(|| fn_descriptor.sig.abi.clone())
         .unwrap_or_else(|| syn::parse_quote!(extern "Rust"));
-    let use_passthrough_shim = export_abi
-        .zip(fn_descriptor.sig.abi.as_ref())
-        .is_some_and(|(override_abi, outer_abi)| override_abi != outer_abi);
-
-    if use_passthrough_shim {
-        let fn_signature = gen_passthrough_signature(
-            &ffi_fn_name,
-            fn_descriptor,
-            impl_generics,
-            trait_path,
-            &ffi_abi,
-        );
-        let fn_body = gen_passthrough_body(fn_descriptor, trait_path);
-        return quote! {
-            #(#ffi_fn_attrs)*
-            #[doc = #ffi_fn_doc]
-            #export_name
-            #fn_signature {
-                #fn_body
-            }
-        };
-    }
-
     let ffi_fn_body = gen_body(fn_descriptor, trait_path);
     let fn_signature =
         gen_fn_signature(&ffi_fn_name, fn_descriptor, impl_generics, trait_path, &[]);
@@ -261,87 +173,6 @@ pub fn gen_definition(
             }
         }
     }
-}
-
-fn gen_passthrough_signature(
-    ffi_fn_name: &Ident,
-    fn_descriptor: &FnDescriptor,
-    impl_generics: &syn::Generics,
-    trait_path: Option<&Path>,
-    export_abi: &syn::Abi,
-) -> TokenStream {
-    let asyncness = &fn_descriptor.sig.asyncness;
-    let where_clause = &impl_generics.where_clause;
-
-    let receiver = fn_descriptor.receiver.as_ref().map(|arg| {
-        let arg_name = arg.name();
-        let arg_type = resolved_src_type(arg, fn_descriptor, trait_path);
-        quote! { #arg_name: #arg_type }
-    });
-    let fn_args = fn_descriptor.input_args.iter().map(|arg| {
-        let arg_name = arg.name();
-        let arg_type = resolved_src_type(arg, fn_descriptor, trait_path);
-        quote! { #arg_name: #arg_type }
-    });
-    let output = fn_descriptor
-        .output_arg
-        .as_ref()
-        .map(|arg| {
-            let ty = resolved_src_type(arg, fn_descriptor, trait_path);
-            quote!(-> #ty)
-        })
-        .unwrap_or_default();
-
-    quote! {
-        #asyncness unsafe #export_abi fn #ffi_fn_name #impl_generics (
-            #receiver #(#fn_args),*
-        ) #output #where_clause
-    }
-}
-
-fn gen_passthrough_body(fn_descriptor: &FnDescriptor, trait_path: Option<&Path>) -> TokenStream {
-    let fn_name = &fn_descriptor.sig.ident;
-    let mut args: Vec<Ident> = Vec::new();
-    if let Some(receiver) = &fn_descriptor.receiver {
-        args.push(receiver.name().clone());
-    }
-    args.extend(
-        fn_descriptor
-            .input_args
-            .iter()
-            .map(|arg| arg.name().clone()),
-    );
-
-    let call = match (fn_descriptor.self_ty.as_ref(), trait_path) {
-        (Some(self_ty), Some(trait_path)) => {
-            quote!(<#self_ty as #trait_path>::#fn_name(#(#args),*))
-        }
-        (Some(self_ty), None) => quote!(<#self_ty>::#fn_name(#(#args),*)),
-        (None, None) => quote!(#fn_name(#(#args),*)),
-        (None, Some(_)) => unreachable!("trait path without self type"),
-    };
-
-    if fn_descriptor.output_arg.is_some() {
-        quote!(#call)
-    } else {
-        quote! {
-            #call;
-        }
-    }
-}
-
-pub fn gen_default_export_name_attr(
-    fn_descriptor: &FnDescriptor,
-    trait_path: Option<&Path>,
-) -> Option<syn::Attribute> {
-    let trait_symbol_name = trait_path.map(path_symbol_name);
-    gen_non_shared_symbol_name(
-        fn_descriptor,
-        trait_symbol_name.as_deref(),
-        &quote!(concat!(env!("CARGO_CRATE_NAME"), "_")),
-        None,
-    )
-    .map(|symbol| syn::parse_quote!(#[unsafe(export_name = #symbol)]))
 }
 
 fn gen_definition_fn_name(fn_descriptor: &FnDescriptor) -> Ident {

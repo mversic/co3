@@ -80,7 +80,7 @@ extern_C! {
 }
 
 mod provider {
-    use co3::export_C;
+    use co3::export_;
 
     use super::*;
 
@@ -97,7 +97,9 @@ mod provider {
         A(String),
     }
 
-    export_C! {
+    export_! {
+        #![abi = "Rust"]
+
         impl Drop for MyType2 {
             fn drop(&mut self);
         }

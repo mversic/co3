@@ -540,42 +540,17 @@ pub fn wrap_method_with_import(
 ) -> TokenStream {
     let signature = gen_wrapper_signature(fn_descriptor);
     let ffi_fn_name = fn_descriptor.sig.ident.clone();
-    let is_passthrough_abi = import_abi.is_some_and(|abi| {
-        abi.name
-            .as_ref()
-            .is_some_and(|name| matches!(name.value().as_str(), "Rust" | "C"))
-    });
-    let use_passthrough_shim = import_abi
-        .zip(fn_descriptor.sig.abi.as_ref())
-        .is_some_and(|(inner_abi, outer_abi)| is_passthrough_abi && inner_abi != outer_abi);
-    let method_body = if use_passthrough_shim {
-        let import_abi = import_abi.expect("checked by use_passthrough_shim");
-        let ffi_decl = ffi_fn::gen_inline_passthrough_declaration(
-            fn_descriptor,
-            trait_path,
-            import_crate_name,
-            import_fn_name,
-            import_abi,
-            &ffi_fn_name,
-            handle_id_specs,
-        );
-        gen_passthrough_wrapper_method_body(
-            fn_descriptor,
-            &ffi_fn_name,
-            Some(ffi_decl),
-            handle_id_specs,
-        )
-    } else {
-        let ffi_decl = ffi_fn::gen_inline_declaration(
-            fn_descriptor,
-            trait_path,
-            import_crate_name,
-            import_fn_name,
-            &ffi_fn_name,
-            handle_id_specs,
-        );
-        gen_wrapper_method_body(fn_descriptor, &ffi_fn_name, Some(ffi_decl), handle_id_specs)
-    };
+    let ffi_decl = ffi_fn::gen_inline_declaration(
+        fn_descriptor,
+        trait_path,
+        import_crate_name,
+        import_fn_name,
+        import_abi.expect("extern_! always sets import ABI"),
+        &ffi_fn_name,
+        handle_id_specs,
+    );
+    let method_body =
+        gen_wrapper_method_body(fn_descriptor, &ffi_fn_name, Some(ffi_decl), handle_id_specs);
     let ffi_fn_attrs = fn_descriptor.attrs.iter().copied().filter(|attr| {
         !attr.path().is_ident("link_name")
             && !attr.path().is_ident("link")
@@ -595,37 +570,6 @@ pub fn wrap_method_with_import(
         #visibility #signature {
             #method_body
         }
-    }
-}
-
-fn gen_passthrough_wrapper_method_body(
-    fn_descriptor: &FnDescriptor,
-    ffi_fn_name: &Ident,
-    ffi_decl: Option<TokenStream>,
-    handle_id_specs: &[HandleIdSpec],
-) -> TokenStream {
-    let mut arg_names: Vec<TokenStream> = Vec::new();
-    if let Some(receiver) = &fn_descriptor.receiver {
-        let arg_name = receiver.name().clone();
-        arg_names.push(quote!(#arg_name));
-    }
-    arg_names.extend(fn_descriptor.input_args.iter().map(|arg| {
-        let arg_name = arg.name().clone();
-        quote!(#arg_name)
-    }));
-
-    inject_handle_id_args(fn_descriptor, handle_id_specs, &mut arg_names);
-
-    let call = quote!(#ffi_fn_name(#(#arg_names),*));
-    let call_stmt = if fn_descriptor.output_arg.is_some() {
-        quote!(#call)
-    } else {
-        quote! { #call; }
-    };
-
-    quote! {
-        #ffi_decl
-        unsafe { #call_stmt }
     }
 }
 
