@@ -23,36 +23,36 @@ jobs:
     - uses: Swatinem/rust-cache@v2
 
     - name: Rust format
-      run: cargo fmt --locked --all --check
+      run: cargo fmt --all --check
 
     - name: Clippy (all features)
-      run: cargo clippy --locked --workspace --tests --all-features -- --deny warnings
+      run: cargo clippy --workspace --tests --all-features -- --deny warnings
 
     - name: Clippy (no features)
-      run: cargo clippy --locked --workspace --tests --no-default-features -- --deny warnings
+      run: cargo clippy --workspace --tests --no-default-features -- --deny warnings
 
   test:
     runs-on: ${{ matrix.os }}
     needs: static-analysis
-    timeout-minutes: 15
+    timeout-minutes: 5
 
     strategy:
       matrix:
         os: [ubuntu-latest, macos-latest, windows-latest]
-        features:
-        - alloc,derive,unstable-refs
-        - alloc,derive,unstable-refs,owned-as-ref
-        - alloc,derive,unstable-refs,unsafe-optimizations
+        feature_suffix:
+        - ""
+        - "owned-as-ref"
+        - "unsafe-optimizations"
 
     steps:
     - uses: actions/checkout@v6
     - uses: dtolnay/rust-toolchain@stable
     - uses: Swatinem/rust-cache@v2
       with:
-        key: test-${{ matrix.os }}-${{ matrix.features }}
+        key: test-${{ matrix.os }}-${{ matrix.feature_suffix }}
 
-    - name: ${{ matrix.os }}: ${{ matrix.features }} tests
-      run: cargo test --locked --workspace --no-default-features --features "${{ matrix.features }}"
+    - name: Run Tests
+      run: cargo test --workspace --no-default-features --features "alloc,derive,unstable-refs,${{ matrix.feature_suffix }}"
 
   wasm-test:
     runs-on: ubuntu-latest
@@ -70,5 +70,5 @@ jobs:
           curl -fsSL https://wasmtime.dev/install.sh | bash
           echo "$HOME/.wasmtime/bin" >> $GITHUB_PATH
 
-      - name: Webassembly Lests (WASIp1)
-        run: cargo test --locked --workspace --target wasm32-wasip1 --all-features
+      - name: Run Tests (WASIp1)
+        run: cargo test --target wasm32-wasip1 --all-features

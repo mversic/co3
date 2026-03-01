@@ -1119,7 +1119,7 @@ fn gen_export_link_prefix(link_prefix: syn::LitStr) -> TokenStream {
 /// use co3::ReprC as ReprCAlias;
 ///
 /// #[derive(ReprCAlias)]
-/// pub struct Hello {}
+/// pub struct Hello(u32);
 /// ```
 ///
 /// It assumes that the derive is imported and referred to by its original name.
@@ -1145,43 +1145,48 @@ pub fn extern_c_derive(input: TokenStream) -> TokenStream {
 /// ```rust
 /// use co3::{ReprC, export, export_C};
 ///
+/// trait MyTrait {
+///     fn foo();
+/// }
+///
 /// #[derive(ReprC, Clone)]
 /// #[repr(transparent)]
 /// pub struct Foo(u8);
+///
+/// #[export("C")]
+/// impl MyTrait for Foo {
+///     fn foo() {}
+/// }
 ///
 /// #[export("C")]
 /// impl Foo {
 ///     pub fn new(id: u8) -> Self {
 ///         Self(id)
 ///     }
+///
+///     #[export(skip)]
+///     pub fn new2(id: u8) -> Self {
+///         Self(id)
+///     }
 /// }
 ///
 /// #[export("C")]
-/// #[export(skip)]
 /// fn selected_only() -> Foo {
 ///     Foo::new(7)
 /// }
 ///
+/// fn selected_only2() -> Foo {
+///     Foo::new(7)
+/// }
+///
 /// export_C! {
-///     selected_only() -> Foo;
+///     impl Foo {
+///         pub fn new2(id: u8) -> Self;
+///     }
+///
+///     fn selected_only2() -> Foo;
 /// }
 /// ```
-///
-/// ## A note on `#[derive(...)]` limitations
-///
-/// This proc-macro crate parses the `#[derive(...)]` attributes.
-/// Due to technical limitations of proc macros, it does not have access to the resolved path of the macro, only to what is written in the derive.
-/// As such, it cannot support derives that are used through aliases, such as
-///
-/// ```ignore
-/// use co3::ReprC as ReprCAlias;
-/// #[derive(ReprCAlias)]
-/// pub struct Hello {
-///     // ...
-/// }
-/// ```
-///
-/// It assumes that the derive is imported and referred to by its original name.
 #[manyhow]
 #[proc_macro_attribute]
 pub fn export(attr: TokenStream, item: TokenStream) -> TokenStream {
@@ -1552,15 +1557,37 @@ fn parse_decl_target_header(header: TokenStream) -> syn::Result<(Option<syn::Pat
 
 struct DeclMethod {
     attrs: Vec<syn::Attribute>,
+    _vis: syn::Visibility,
     sig: syn::Signature,
 }
 
 impl syn::parse::Parse for DeclMethod {
     fn parse(input: syn::parse::ParseStream) -> syn::Result<Self> {
         let attrs = input.call(syn::Attribute::parse_outer)?;
+        let vis = input.parse::<syn::Visibility>()?;
         let sig = input.parse::<syn::Signature>()?;
         input.parse::<syn::Token![;]>()?;
-        Ok(Self { attrs, sig })
+        Ok(Self {
+            attrs,
+            _vis: vis,
+            sig,
+        })
+    }
+}
+
+struct DeclFunction {
+    _vis: syn::Visibility,
+    sig: syn::Signature,
+}
+
+impl syn::parse::Parse for DeclFunction {
+    fn parse(input: syn::parse::ParseStream) -> syn::Result<Self> {
+        // Use ForeignItemFn shape so visibility + semicolon declarations parse naturally.
+        let item = input.parse::<syn::ForeignItemFn>()?;
+        Ok(Self {
+            _vis: item.vis,
+            sig: item.sig,
+        })
     }
 }
 
@@ -1879,10 +1906,15 @@ fn parse_export_entries(input: syn::parse::ParseStream) -> syn::Result<Vec<Expor
             continue;
         }
 
-        if input.peek(syn::Token![fn]) || input.peek(syn::Token![unsafe]) {
-            let sig: syn::Signature = input.parse()?;
-            ensure_no_handle_arg_attrs(&sig)?;
-            input.parse::<syn::Token![;]>()?;
+        let is_fn_decl = {
+            let ahead = input.fork();
+            let _ = ahead.parse::<syn::Visibility>()?;
+            ahead.peek(syn::Token![fn]) || ahead.peek(syn::Token![unsafe])
+        };
+        if is_fn_decl {
+            let decl_fn = input.parse::<DeclFunction>()?;
+            ensure_no_handle_arg_attrs(&decl_fn.sig)?;
+            let sig = decl_fn.sig;
             if sig.receiver().is_some() {
                 return Err(syn::Error::new_spanned(
                     &sig,
@@ -2117,12 +2149,12 @@ struct ExternCFnDecl {
 
 impl syn::parse::Parse for ExternCFnDecl {
     fn parse(input: syn::parse::ParseStream) -> syn::Result<Self> {
-        let attrs = input.call(syn::Attribute::parse_outer)?;
-        let vis = input.parse::<syn::Visibility>()?;
-        let sig = input.parse::<syn::Signature>()?;
-        input.parse::<syn::Token![;]>()?;
-
-        Ok(Self { attrs, vis, sig })
+        let item = input.parse::<syn::ForeignItemFn>()?;
+        Ok(Self {
+            attrs: item.attrs,
+            vis: item.vis,
+            sig: item.sig,
+        })
     }
 }
 

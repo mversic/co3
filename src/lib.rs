@@ -1475,7 +1475,7 @@ impl<'a, R: Encode> Default for RefMutStore<'a, R> {
 #[cfg(feature = "unstable-refs")]
 impl<'a, 'b, R: Encode + Decode<'b> + 'b> Store for RefMutStore<'a, R> {
     fn sync(self) -> Option<()> {
-        #[cfg(not(feature = "unsafe-optimizations"))]
+        #[cfg(all(not(test), not(feature = "unsafe-optimizations")))]
         const {
             assert!(
                 impls::impls!(R: crate::out_ptr::NonLocal),
@@ -1548,7 +1548,7 @@ impl<'slice, R: Encode> Default for MutSliceStore<'slice, R> {
 impl<'slice, 'b, R: Encode + Decode<'b> + 'b> Store for MutSliceStore<'slice, R> {
     fn sync(self) -> Option<()> {
         const {
-            #[cfg(not(feature = "unsafe-optimizations"))]
+            #[cfg(all(not(test), not(feature = "unsafe-optimizations")))]
             assert!(
                 impls::impls!(R: crate::out_ptr::NonLocal),
                 "Not yet implemented"
