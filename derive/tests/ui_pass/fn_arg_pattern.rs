@@ -24,8 +24,7 @@ extern_C! {
 }
 
 extern_! {
-    #![link(crate = "kita")]
-    #![abi = "kita"]
+    #![abi = "C"]
 
     #[link_name = "hello"]
     #[expect(improper_ctypes_definitions)]
@@ -33,8 +32,7 @@ extern_! {
 }
 
 extern_! {
-    #![abi = "kita"]
-    #![link(crate = "kita")]
+    #![abi = "C"]
 
     #[link_name = "hello"]
     #[expect(improper_ctypes_definitions)]
@@ -42,8 +40,7 @@ extern_! {
 }
 
 extern_! {
-    #![abi = "kita"]
-    #![link(crate = "kita")]
+    #![abi = "C"]
 
     #[link_name = "hello"]
     #[expect(improper_ctypes_definitions)]
@@ -51,8 +48,7 @@ extern_! {
 }
 
 extern_! {
-    #![abi = "kita"]
-    #![link(crate = "kita")]
+    #![abi = "C"]
 
     #[link_name = "hello"]
     #[expect(improper_ctypes_definitions)]

@@ -1,5 +1,0 @@
-error: Generics on derived methods not supported
- --> tests/ui_fail/getset/generic_struct.rs:7:21
-  |
-7 | pub struct FfiStruct<T> {
-  |                     ^^^

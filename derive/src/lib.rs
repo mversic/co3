@@ -11,8 +11,6 @@ use quote::{format_ident, quote};
 use std::collections::{BTreeMap, BTreeSet};
 use wrapper::{ExternTypeLinkMode, HandleIdSpec};
 
-#[cfg(feature = "getset")]
-use crate::attr_parse::derive::Derive;
 use crate::{
     emitter::Emitter,
     extern_c::{FfiTypeInput, derive_extern_c},
@@ -23,8 +21,6 @@ mod attr_parse;
 mod emitter;
 mod extern_c;
 mod ffi_fn;
-#[cfg(feature = "getset")]
-mod getset_gen;
 mod handle;
 mod impl_visitor;
 mod utils;
@@ -1284,9 +1280,9 @@ fn gen_export_link_prefix(link_prefix: syn::LitStr) -> TokenStream {
 /// * the wrapping types's field of the pointer type must not carry ownership (it's non owning)
 ///
 /// ```
-/// use getset::Getters as GettersAlias;
+/// use co3::ReprC as ReprCAlias;
 ///
-/// #[derive(GettersAlias)]
+/// #[derive(ReprCAlias)]
 /// pub struct Hello {}
 /// ```
 ///
@@ -1342,8 +1338,8 @@ pub fn extern_c_derive(input: TokenStream) -> TokenStream {
 /// As such, it cannot support derives that are used through aliases, such as
 ///
 /// ```ignore
-/// use getset::Getters as GettersAlias;
-/// #[derive(GettersAlias)]
+/// use co3::ReprC as ReprCAlias;
+/// #[derive(ReprCAlias)]
 /// pub struct Hello {
 ///     // ...
 /// }
@@ -1429,7 +1425,7 @@ pub fn export(attr: TokenStream, item: TokenStream) -> TokenStream {
             enum MethodAction {
                 Skip,
                 ExternShim(TokenStream),
-                NonExternAttach(Option<syn::Attribute>),
+                NonExternAttach(Box<Option<syn::Attribute>>),
             }
 
             let method_actions: Vec<_> = impl_descriptor
@@ -1461,7 +1457,7 @@ pub fn export(attr: TokenStream, item: TokenStream) -> TokenStream {
                                     impl_descriptor.trait_name,
                                 )
                             });
-                        MethodAction::NonExternAttach(export_attr)
+                        MethodAction::NonExternAttach(Box::new(export_attr))
                     }
                 })
                 .collect();
@@ -1486,7 +1482,7 @@ pub fn export(attr: TokenStream, item: TokenStream) -> TokenStream {
                     }
                     MethodAction::NonExternAttach(export_attr) => {
                         strip_export_attrs(&mut method.attrs);
-                        attach_export_attr_if_absent(&mut method.attrs, export_attr);
+                        attach_export_attr_if_absent(&mut method.attrs, *export_attr);
                     }
                 }
             }
@@ -1496,7 +1492,7 @@ pub fn export(attr: TokenStream, item: TokenStream) -> TokenStream {
         Fn(mut item) => {
             enum FnAction {
                 ExternShim(TokenStream),
-                NonExternAttach(Option<syn::Attribute>),
+                NonExternAttach(Box<Option<syn::Attribute>>),
             }
 
             let action = {
@@ -1516,17 +1512,17 @@ pub fn export(attr: TokenStream, item: TokenStream) -> TokenStream {
                         export_args.export_abi.as_ref(),
                     ))
                 } else {
-                    FnAction::NonExternAttach(ffi_fn::gen_default_export_name_attr(
+                    FnAction::NonExternAttach(Box::new(ffi_fn::gen_default_export_name_attr(
                         &fn_descriptor,
                         None,
-                    ))
+                    )))
                 }
             };
 
             strip_export_attrs(&mut item.attrs);
             match action {
                 FnAction::NonExternAttach(export_attr) => {
-                    attach_export_attr_if_absent(&mut item.attrs, export_attr);
+                    attach_export_attr_if_absent(&mut item.attrs, *export_attr);
                 }
                 FnAction::ExternShim(ffi_fn) => {
                     strip_consumed_export_attrs(&mut item.attrs);
@@ -1905,13 +1901,13 @@ fn parse_export_entries(input: syn::parse::ParseStream) -> syn::Result<Vec<Expor
                         "`#[unsafe(export_name = \"...\")]` and `#[unsafe(no_mangle)]` are not supported on `impl` export entries; put them on methods",
                     ));
                 }
-                if let Some(map) = parse_entry_handle_map_attr(attr)? {
-                    if entry_handle_map.replace(map).is_some() {
-                        return Err(syn::Error::new_spanned(
-                            attr,
-                            "`dispatch` mapping can only be provided once per entry",
-                        ));
-                    }
+                if let Some(map) = parse_entry_handle_map_attr(attr)?
+                    && entry_handle_map.replace(map).is_some()
+                {
+                    return Err(syn::Error::new_spanned(
+                        attr,
+                        "`dispatch` mapping can only be provided once per entry",
+                    ));
                 }
                 if attr.path().is_ident("id_pos") {
                     return Err(syn::Error::new_spanned(
@@ -2005,13 +2001,13 @@ fn parse_export_entries(input: syn::parse::ParseStream) -> syn::Result<Vec<Expor
                         "`#[id_pos(...)]` is not supported on trait export entries; put it on trait methods",
                     ));
                 }
-                if let Some(map) = parse_entry_handle_map_attr(attr)? {
-                    if entry_handle_map.replace(map).is_some() {
-                        return Err(syn::Error::new_spanned(
-                            attr,
-                            "`handle` mapping can only be provided once per entry",
-                        ));
-                    }
+                if let Some(map) = parse_entry_handle_map_attr(attr)?
+                    && entry_handle_map.replace(map).is_some()
+                {
+                    return Err(syn::Error::new_spanned(
+                        attr,
+                        "`handle` mapping can only be provided once per entry",
+                    ));
                 }
             }
             for item in trait_item.items {
@@ -2422,16 +2418,6 @@ fn parse_inner_abi(attrs: &[syn::Attribute]) -> Result<Option<syn::Abi>, syn::Er
     Ok(abi)
 }
 
-fn with_default_abi(sig: &syn::Signature, default_abi: Option<&syn::Abi>) -> syn::Signature {
-    let mut sig = sig.clone();
-    if sig.abi.is_none()
-        && let Some(default_abi) = default_abi
-    {
-        sig.abi = Some(default_abi.clone());
-    }
-    sig
-}
-
 fn parse_inner_link_prefix(attrs: &[syn::Attribute]) -> Result<Option<syn::LitStr>, syn::Error> {
     let mut link_prefix = None;
     for attr in attrs {
@@ -2519,13 +2505,14 @@ fn validate_extern_decl_attrs(decls: &[ExternCDecl]) -> Result<(), syn::Error> {
                             "impl-level link attributes are not supported; use method-level `#[link_name = \"...\"]` or macro-level `#![link(...)]`",
                         ));
                     }
-                    if drop_trait_impl && attr.path().is_ident("dispatch") {
-                        if !is_bare_dispatch_attr(attr) {
-                            return Err(syn::Error::new_spanned(
-                                attr,
-                                "`impl Drop` only supports bare `#[dispatch]` (without type mappings)",
-                            ));
-                        }
+                    if drop_trait_impl
+                        && attr.path().is_ident("dispatch")
+                        && !is_bare_dispatch_attr(attr)
+                    {
+                        return Err(syn::Error::new_spanned(
+                            attr,
+                            "`impl Drop` only supports bare `#[dispatch]` (without type mappings)",
+                        ));
                     }
                 }
                 for item in &decl.items {
@@ -2776,9 +2763,9 @@ fn expand_extern_import_decls(
         if !impl_has_bare_dispatch {
             return false;
         }
-        if !impl_desc
+        if impl_desc
             .trait_name
-            .is_some_and(|trait_name| path_symbol_name(trait_name) == "Drop")
+            .is_none_or(|trait_name| path_symbol_name(trait_name) != "Drop")
         {
             return false;
         }
@@ -2854,9 +2841,7 @@ fn expand_extern_import_decls(
                 else {
                     return None;
                 };
-                let Some(arg) = variant_args.args.iter().nth(param_pos) else {
-                    return None;
-                };
+                let arg = variant_args.args.iter().nth(param_pos)?;
                 let syn::GenericArgument::Type(ty) = arg else {
                     return None;
                 };
@@ -3026,7 +3011,6 @@ fn expand_extern_import_decls(
     for decl in decls {
         match decl {
             ExternCDecl::Impl(decl) => {
-                let is_trait_target = matches!(decl.target, ExternCImplTarget::Trait(_, _));
                 let impl_dispatch_map = collect_impl_handle_map(&decl.attrs, &mut emitter);
                 let impl_has_bare_dispatch = has_bare_dispatch_marker(&decl.attrs);
                 let items = decl.items.iter().map(|item| match item {
@@ -3037,11 +3021,7 @@ fn expand_extern_import_decls(
                             .filter(|attr| parse_link_attr(attr).ok().flatten().is_none())
                             .collect();
                         let vis = &m.vis;
-                        let sig = if is_trait_target {
-                            m.sig.clone()
-                        } else {
-                            with_default_abi(&m.sig, Some(import_abi))
-                        };
+                        let sig = m.sig.clone();
                         quote! {
                             #(#module_attrs)*
                             #(#attrs)*
@@ -3249,7 +3229,7 @@ fn expand_extern_import_decls(
                     .filter(|attr| parse_link_attr(attr).ok().flatten().is_none())
                     .collect();
                 let vis = &decl.vis;
-                let sig = with_default_abi(&decl.sig, Some(import_abi));
+                let sig = decl.sig.clone();
                 let Some(item_fn) = emitter.handle(syn::parse2::<syn::ItemFn>(quote! {
                     #(#module_attrs)*
                     #(#fn_attrs)*

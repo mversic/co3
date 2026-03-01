@@ -333,24 +333,10 @@ pub enum FieldlessLargeEnum {
     Var256,
 }
 
-#[cfg(target_family = "wasm")]
-fn wasm_niche_value() {
-    assert_eq!(u32::MAX, None::<u8>.encode(&mut ()));
-    assert_eq!(i32::MAX, None::<i8>.encode(&mut ()));
-    assert_eq!(u32::MAX, None::<u16>.encode(&mut ()));
-    assert_eq!(i32::MAX, None::<i16>.encode(&mut ()));
-}
-
 #[test]
 fn verify_enum_niche_value() {
-    #[cfg(not(target_family = "wasm"))]
     let expected_bool = 2_u8;
-    #[cfg(target_family = "wasm")]
-    let expected_bool = 2_u32;
-    #[cfg(not(target_family = "wasm"))]
     let expected_ord = 2_i8;
-    #[cfg(target_family = "wasm")]
-    let expected_ord = 2_i32;
 
     assert_eq!(expected_bool, None::<bool>.encode(&mut ()));
     assert_eq!(expected_ord, None::<Ordering>.encode(&mut ()));
@@ -358,14 +344,8 @@ fn verify_enum_niche_value() {
     assert!(None::<Opaque>.encode(&mut ()).is_null());
     assert!(None::<Extern>.encode(&mut ()).is_null());
 
-    #[cfg(not(target_family = "wasm"))]
     let expected_niche_enum_discriminant_u = 4_u8;
-    #[cfg(target_family = "wasm")]
-    let expected_niche_enum_discriminant_u = 4_u32;
-    #[cfg(not(target_family = "wasm"))]
     let expected_niche_enum_discriminant_i = 4_i8;
-    #[cfg(target_family = "wasm")]
-    let expected_niche_enum_discriminant_i = 4_i32;
 
     assert_eq!(
         expected_niche_enum_discriminant_u,
@@ -400,10 +380,7 @@ fn verify_enum_niche_value() {
     assert_eq!(expected_niche_enum_discriminant_i, bytes[0]);
     assert!(bytes[1..].iter().all(|&byte| byte == 0));
 
-    #[cfg(not(target_family = "wasm"))]
     let expected_fieldless_large_enum = 256u16;
-    #[cfg(target_family = "wasm")]
-    let expected_fieldless_large_enum = 256u32;
 
     assert_eq!(
         expected_fieldless_large_enum,

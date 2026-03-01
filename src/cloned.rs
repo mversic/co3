@@ -49,7 +49,7 @@ impl<R, W: CloneFromWrapped<R>, const N: usize> CloneFromWrapped<[R; N]> for [W;
 
 disjoint_impls! {
     // FIXME: I'm not happy with the name anymore since it's implemented for all IR types
-    /// Decode helper for [`Cloned`] types.
+    /// [`Decode`] helper for [`Cloned`] types.
     ///
     /// Implementations of [`Decode`] for `&T`/`&mut T` where `T: Cloned` depend on decoding `T`,
     /// but decoding `T` may include ownership transfer in which case it must be decoded to
@@ -62,6 +62,11 @@ disjoint_impls! {
     /// [`decode_cloned`](Self::decode_cloned) is the method cloned containers/tuples call
     /// recursively for their elements.
     pub trait DecodeCloned<'d>: Decode<'d> {
+        /// Perform the conversion from [`Self::CType`] into [`Self`]
+        ///
+        /// # Safety
+        ///
+        /// - check [`Decode`]
         #[inline(always)]
         unsafe fn decode_cloned<'itm: 'd>(
             source: Self::CType,

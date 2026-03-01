@@ -67,8 +67,6 @@ unstable-refs = []
 # Use at your own discretion
 unsafe-optimizations = []
 
-# Enable integration with `getset` when deriving `extern C` ABI
-# getset = ["derive", "co3_derive/getset"]
 
 [dependencies]
 co3_derive = { path = "derive", optional = true }
@@ -80,7 +78,6 @@ impls = "1.0.3"
 
 [dev-dependencies]
 static_assertions = "1.1.0"
-#getset = "0.1.6"
 
 [workspace]
 resolver = "2"

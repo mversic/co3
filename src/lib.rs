@@ -28,7 +28,7 @@ use crate::{
         decode_cloned_option_without_niche,
     },
     ir::{Cloned, NonRobust, Opaque, ReprFamily, Robust, Transmuted},
-    niche::{Niche, NicheFamily, WithCustomNiche, WithNiche, WithoutNiche},
+    niche::{Niche, NicheFamily, WithCustomNiche, WithoutNiche},
     option::COption,
     slice::{CSlice, CSliceMut},
     transmute::{
@@ -533,7 +533,7 @@ disjoint_impls! {
     impl<
         'slice,
         R: CheckedTransmute<Target: ReprFamily<Kind = Robust> + ReprC + 'slice>
-            + NicheFamily<Kind: WithNiche>,
+            + NicheFamily<Kind: crate::niche::WithNiche>,
     > Encode for &'slice mut [R]
     where
         Self: ReprFamily<Kind = &'slice mut [Transmuted]>,
@@ -547,7 +547,7 @@ disjoint_impls! {
         #[cfg(feature = "unsafe-optimizations")]
         type Store = ();
 
-        fn encode<'itm>(self, store: &'itm mut Self::Store) -> Self::CType
+        fn encode<'itm>(self, #[allow(unused)] store: &'itm mut Self::Store) -> Self::CType
         where
             Self: 'itm,
         {
@@ -2134,7 +2134,7 @@ mod tests {
         let mut value = Some(inner);
         let value_mut_ref: &mut Option<u8> = &mut value;
         {
-            let mut store: Box<<&mut Option<u8> as Encode>::Store> = Box::new(Default::default());
+            let mut store = Box::default();
             let encoded = value_mut_ref.encode(&mut *store);
             unsafe {
                 *encoded = COption::Some(other);
@@ -2146,7 +2146,7 @@ mod tests {
         let mut slice = [Some(1u8)];
         let ref_mut: &mut [_] = &mut slice;
         {
-            let mut store: Box<<&mut [Option<u8>] as Encode>::Store> = Box::new(Default::default());
+            let mut store = Box::default();
             let encoded = ref_mut.encode(&mut *store);
             let c_slice = unsafe { encoded.into_rust().unwrap() };
             c_slice[0] = COption::Some(other);
@@ -2164,7 +2164,7 @@ mod tests {
         let c_ptr: *mut _ = &mut c_opt;
         let new_val: u8 = 42;
         {
-            let mut store: Box<<&mut Option<u8> as Decode>::Store> = Box::new(Default::default());
+            let mut store = Box::default();
             let decoded = unsafe { <&mut Option<u8>>::decode(c_ptr, &mut *store) }.unwrap();
             *decoded = Some(new_val);
             store.sync().unwrap();
@@ -2175,7 +2175,7 @@ mod tests {
         let c_slice = CSliceMut::from_slice(Some(&mut c_opts));
         let x: u8 = 10;
         {
-            let mut store: Box<<&mut [Option<u8>] as Decode>::Store> = Box::new(Default::default());
+            let mut store = Box::default();
             let decoded = unsafe { <&mut [Option<u8>]>::decode(c_slice, &mut *store) }.unwrap();
             decoded[0] = Some(x);
             store.sync().unwrap();
@@ -2199,7 +2199,7 @@ mod tests {
         let slice_ref: &mut [_] = &mut items;
         let mut other = Box::new(OpaqueData { value: 100 });
         {
-            let mut store = Box::new(Default::default());
+            let mut store = Box::default();
             let encoded = slice_ref.encode(&mut store);
             let c_slice = unsafe { encoded.into_rust().unwrap() };
             c_slice[0] = &mut *other;
@@ -2228,7 +2228,7 @@ mod tests {
         let c_slice = CSliceMut::from_slice(Some(&mut ptrs));
 
         {
-            let mut store = Box::new(Default::default());
+            let mut store = Box::default();
             let decoded = unsafe { <&mut [OpaqueData]>::decode(c_slice, &mut store) }.unwrap();
             decoded[0].value = 100;
             store.sync().unwrap();

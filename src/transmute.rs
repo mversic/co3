@@ -129,8 +129,7 @@ disjoint_impls! {
     ///
     /// # Safety
     ///
-    /// - `Self` and `Self::CType` must be mutually transmutable (this includes [`Drop`] semantics)
-    /// - `Self::is_valid` must not return false positives, i.e. return `true` for trap representations
+    /// - check [`CheckedTransmute`]
     pub unsafe trait FlatTransmute {
         type Target;
 
@@ -181,15 +180,15 @@ disjoint_impls! {
 }
 
 pub struct TransmutedRefMutStore<'a, R> {
-    target: Option<R>,
-    original: Option<&'a mut R>,
+    _target: Option<R>,
+    _original: Option<&'a mut R>,
 }
 
 impl<'slice, R> Default for TransmutedRefMutStore<'slice, R> {
     fn default() -> Self {
         Self {
-            target: None,
-            original: None,
+            _target: None,
+            _original: None,
         }
     }
 }
@@ -244,14 +243,14 @@ disjoint_impls! {
         #[cfg(feature = "unsafe-optimizations")]
         type Store = ();
 
-        fn encode_transmuted<'itm>(self, store: &'itm mut Self::Store) -> Self::Target
+        fn encode_transmuted<'itm>(self, _store: &'itm mut Self::Store) -> Self::Target
         where
             Self: 'itm,
         {
             #[cfg(not(feature = "unsafe-optimizations"))]
             let ctype: &mut R = {
-                let original: &mut R = store.original.insert(self);
-                store.target.insert(*original)
+                let original: &mut R = _store._original.insert(self);
+                _store._target.insert(*original)
             };
             #[cfg(feature = "unsafe-optimizations")]
             let ctype = self;
@@ -278,7 +277,7 @@ where
 {
     type Store = <Self::Target as crate::Encode>::Store;
 
-    fn encode_transmuted<'itm>(self, store: &'itm mut Self::Store) -> Self::Target
+    fn encode_transmuted<'itm>(self, _store: &'itm mut Self::Store) -> Self::Target
     where
         Self: 'itm,
     {
@@ -350,7 +349,7 @@ pub(super) fn transmute_into_target_boxed_slice<R: CheckedTransmute>(
     // SAFETY: Soundness is guaranteed by [`Transmute`]
     unsafe { Box::from_raw(core::ptr::slice_from_raw_parts_mut(ptr, len)) }
 }
-#[cfg(all(feature = "alloc", any(feature = "owned-as-ref")))]
+#[cfg(all(feature = "alloc", feature = "owned-as-ref"))]
 pub(super) fn transmute_from_target_boxed_slice<R: CheckedTransmute>(
     #[expect(clippy::boxed_local)] mut source: Box<[R::Target]>,
 ) -> Option<Box<[R]>> {

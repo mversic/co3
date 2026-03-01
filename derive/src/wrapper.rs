@@ -303,10 +303,6 @@ fn gen_shared_fns(
                     );
                 }
             },
-            #[cfg(feature = "getset")]
-            Derive::GetSet(_) => {
-                // handled by `getset_gen` module
-            }
             Derive::Other(derive) => {
                 let Some(trait_path) = emitter.handle(syn::parse_str::<syn::Path>(derive)) else {
                     emit!(emitter, name, "Invalid derive path `{}`", derive);
@@ -344,8 +340,6 @@ fn has_shared_derives(input: &FfiTypeInput) -> bool {
                 | RustcDerive::PartialOrd
                 | RustcDerive::Ord
         ),
-        #[cfg(feature = "getset")]
-        Derive::GetSet(_) => false,
         Derive::Other(_) => true,
     })
 }

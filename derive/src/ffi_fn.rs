@@ -29,47 +29,6 @@ fn prune_fn_definition_attributes<'a>(attrs: &[&'a syn::Attribute]) -> Vec<&'a s
     Vec::new()
 }
 
-#[cfg(feature = "getset")]
-pub fn gen_declaration(
-    impl_generics: &syn::Generics,
-    fn_descriptor: &FnDescriptor,
-    trait_path: Option<&Path>,
-    import_crate_name: Option<&TokenStream>,
-    import_fn_name: Option<&LitStr>,
-) -> TokenStream {
-    let trait_name = trait_path.and_then(|path| path.segments.last().map(|seg| &seg.ident));
-    let trait_symbol_name = trait_path.map(path_symbol_name);
-    let has_explicit_link_name = has_link_name_attr(&fn_descriptor.attrs);
-    let extern_block_attrs = gen_extern_block_attrs(&fn_descriptor.attrs);
-
-    let ffi_fn_name = gen_fn_name(fn_descriptor, trait_symbol_name.as_deref());
-    let ffi_fn_doc = gen_doc(fn_descriptor, trait_name);
-    let fn_signature =
-        gen_fn_signature(&ffi_fn_name, fn_descriptor, impl_generics, trait_path, &[]);
-    let link_name = gen_link_name_attr(
-        fn_descriptor,
-        trait_symbol_name.as_deref(),
-        import_crate_name,
-        import_fn_name,
-    )
-    .unwrap_or_else(|| {
-        if fn_descriptor.self_ty.is_none() && trait_name.is_none() && !has_explicit_link_name {
-            let fn_name = &fn_descriptor.sig.ident;
-            quote! { #[link_name = stringify!(#fn_name)] }
-        } else {
-            quote! {}
-        }
-    });
-    quote! {
-        unsafe extern "C" {
-            #(#extern_block_attrs)*
-            #[doc = #ffi_fn_doc]
-            #link_name
-            #fn_signature;
-        }
-    }
-}
-
 pub fn gen_inline_declaration(
     fn_descriptor: &FnDescriptor,
     trait_path: Option<&Path>,
@@ -390,11 +349,6 @@ fn gen_definition_fn_name(fn_descriptor: &FnDescriptor) -> Ident {
         &format!("_{}", fn_descriptor.sig.ident),
         proc_macro2::Span::call_site(),
     )
-}
-
-#[cfg(feature = "getset")]
-fn gen_fn_name(fn_descriptor: &FnDescriptor, _trait_symbol_name: Option<&str>) -> Ident {
-    gen_definition_fn_name(fn_descriptor)
 }
 
 fn gen_link_name_attr(

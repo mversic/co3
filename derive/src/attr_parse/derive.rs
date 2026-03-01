@@ -4,9 +4,6 @@ use darling::FromAttributes;
 use quote::ToTokens;
 use syn::{Attribute, Token, punctuated::Punctuated};
 
-#[cfg(feature = "getset")]
-use super::getset::GetSetDerive;
-
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum RustcDerive {
     Eq,
@@ -42,8 +39,6 @@ impl RustcDerive {
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub enum Derive {
     Rustc(RustcDerive),
-    #[cfg(feature = "getset")]
-    GetSet(GetSetDerive),
     Other(String),
 }
 
@@ -84,19 +79,7 @@ impl FromAttributes for DeriveAttrs {
                     let derive = if let Some(derive) = RustcDerive::try_from_path(&path) {
                         Derive::Rustc(derive)
                     } else {
-                        #[cfg(feature = "getset")]
-                        {
-                            if let Some(derive) = GetSetDerive::try_from_path(&path) {
-                                Derive::GetSet(derive)
-                            } else {
-                                Derive::Other(path.to_token_stream().to_string())
-                            }
-                        }
-
-                        #[cfg(not(feature = "getset"))]
-                        {
-                            Derive::Other(path.to_token_stream().to_string())
-                        }
+                        Derive::Other(path.to_token_stream().to_string())
                     };
 
                     // Funnily, rust allows the usage of the same derive multiple times
@@ -153,22 +136,6 @@ mod test {
                     RustcDerive::Default,
                     RustcDerive::Debug,
                 ].into_iter().map(Derive::Rustc).collect(),
-            }
-        );
-    }
-
-    #[test]
-    #[cfg(feature = "getset")]
-    fn derive_getset() {
-        assert_derive_ok!(
-            #[derive(Getters, Setters, MutGetters, CopyGetters)],
-            DeriveAttrs {
-                derives: vec![
-                    GetSetDerive::Getters,
-                    GetSetDerive::Setters,
-                    GetSetDerive::MutGetters,
-                    GetSetDerive::CopyGetters,
-                ].into_iter().map(Derive::GetSet).collect(),
             }
         );
     }

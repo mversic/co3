@@ -732,10 +732,11 @@ pub(crate) fn validate_handle_id_positions_for_sig(
 }
 
 fn selector_key_name(selector: &syn::Type) -> String {
-    if let syn::Type::Path(type_path) = selector {
-        if type_path.qself.is_none() && type_path.path.is_ident("Self") {
-            return "Self".to_string();
-        }
+    if let syn::Type::Path(type_path) = selector
+        && type_path.qself.is_none()
+        && type_path.path.is_ident("Self")
+    {
+        return "Self".to_string();
     }
     selector.to_token_stream().to_string()
 }

@@ -31,7 +31,7 @@ extern_! {
     type MyType2;
 
     impl Drop for MyType2 {
-        fn drop(self: &mut Self);
+        fn drop(&mut self);
     }
 
     impl AmbiguousX<u32, 4> for MyType<u32> {

@@ -292,11 +292,6 @@ mod tests {
             None::<ManuallyDrop<String>>.encode(&mut Default::default())
         );
 
-        #[cfg(not(target_family = "wasm"))]
-        let expected = 2_u8;
-        #[cfg(target_family = "wasm")]
-        let expected = 2_u32;
-
-        assert_eq!(expected, None::<ManuallyDrop<bool>>.encode(&mut ()));
+        assert_eq!(2_u8, None::<ManuallyDrop<bool>>.encode(&mut ()));
     }
 }

@@ -1,8 +1,4 @@
 mod imported_abi;
-
-
-//#[cfg(feature = "getset")]
-//mod getset;
 //mod opaque;
 
 //#[derive(Debug, Clone, Copy, PartialEq, Eq)]

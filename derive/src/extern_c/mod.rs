@@ -11,8 +11,6 @@ use syn::{
     visit::Visit,
 };
 
-#[cfg(feature = "getset")]
-use crate::attr_parse::getset::{DocAttrs, GetSetFieldAttrs, GetSetStructAttrs};
 use crate::{
     attr_parse::{
         derive::DeriveAttrs,
@@ -329,8 +327,6 @@ impl FromAttributes for FfiTypeFieldAttr {
 }
 
 pub type FfiTypeData = darling::ast::Data<SpannedValue<FfiTypeVariant>, FfiTypeField>;
-#[cfg(feature = "getset")]
-pub type FfiTypeFields = darling::ast::Fields<FfiTypeField>;
 
 pub struct FfiTypeInput {
     pub vis: syn::Visibility,
@@ -341,8 +337,6 @@ pub struct FfiTypeInput {
     repr_attr: Repr,
     pub ffi_type_attr: FfiTypeAttr,
     pub span: Span,
-    #[cfg(feature = "getset")]
-    pub getset_attr: GetSetStructAttrs,
 }
 
 impl darling::FromDeriveInput for FfiTypeInput {
@@ -355,8 +349,6 @@ impl darling::FromDeriveInput for FfiTypeInput {
         let repr_attr = Repr::from_attributes(&input.attrs)?;
         let ffi_type_attr = FfiTypeAttr::from_attributes(&input.attrs)?;
         let span = input.span();
-        #[cfg(feature = "getset")]
-        let getset_attr = GetSetStructAttrs::from_attributes(&input.attrs)?;
 
         Ok(FfiTypeInput {
             vis,
@@ -367,8 +359,6 @@ impl darling::FromDeriveInput for FfiTypeInput {
             repr_attr,
             ffi_type_attr,
             span,
-            #[cfg(feature = "getset")]
-            getset_attr,
         })
     }
 }
@@ -384,10 +374,6 @@ pub struct FfiTypeField {
     pub ffi_type_attr: FfiTypeFieldAttr,
     pub ident: Option<syn::Ident>,
     pub ty: syn::Type,
-    #[cfg(feature = "getset")]
-    pub doc_attrs: DocAttrs,
-    #[cfg(feature = "getset")]
-    pub getset_attr: GetSetFieldAttrs,
 }
 
 impl FromField for FfiTypeField {
@@ -395,18 +381,10 @@ impl FromField for FfiTypeField {
         let ty = field.ty.clone();
         let ffi_type_attr = FfiTypeFieldAttr::from_attributes(&field.attrs)?;
         let ident = field.ident.clone();
-        #[cfg(feature = "getset")]
-        let doc_attrs = DocAttrs::from_attributes(&field.attrs)?;
-        #[cfg(feature = "getset")]
-        let getset_attr = GetSetFieldAttrs::from_attributes(&field.attrs)?;
         Ok(Self {
             ty,
             ffi_type_attr,
             ident,
-            #[cfg(feature = "getset")]
-            doc_attrs,
-            #[cfg(feature = "getset")]
-            getset_attr,
         })
     }
 }

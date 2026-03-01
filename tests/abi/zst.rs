@@ -19,12 +19,14 @@ pub struct ReprCStruct<T: ?Sized> {
 
 #[derive(Debug, Clone, PartialEq, Eq, ReprC)]
 #[repr(u8)]
+#[allow(dead_code)]
 pub enum ReprCEnum<T: ?Sized> {
     A(Box<T>),
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, ReprC)]
 #[repr(C, u8)]
+#[allow(dead_code)]
 pub enum ReprCDataEnum<T: ?Sized> {
     A(Box<T>),
 }
@@ -35,6 +37,7 @@ pub struct TransparentStruct<T: ?Sized>(Box<T>);
 
 #[derive(Debug, Clone, PartialEq, Eq, ReprC)]
 #[repr(transparent)]
+#[allow(dead_code)]
 pub enum TransparentEnum<T: ?Sized> {
     A(Box<T>),
 }

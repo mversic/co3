@@ -1,17 +1,5 @@
-use std::{alloc, collections::BTreeMap, mem::MaybeUninit};
-
-use co3::{
-    Decode, Encode, ExternC, FfiReturn,
-    option::COption,
-    out_ptr::OutPtrRead,
-    slice::CBoxedSlice,
-    tuple::{CTuple1, CTuple2},
-};
-
 mod exported_abi;
 //mod generics;
-//#[cfg(feature = "getset")]
-//mod getset;
 //mod shared_fns;
 //mod transparent;
 
