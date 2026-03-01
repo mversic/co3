@@ -14,7 +14,7 @@ proc-macro = true
 [dependencies]
 syn = { version = "2.0.114", features = ["full", "extra-traits", "visit", "visit-mut"] }
 manyhow = { version = "0.11.4", features = ["darling"] }
-strum = { version = "0.27.2", features = ["derive"] }
+strum = { version = "0.28.0", features = ["derive"] }
 proc-macro2 = "1.0.105"
 # FIX: Bump to 0.21.1. It breaks some code
 darling = "0.20.10"
