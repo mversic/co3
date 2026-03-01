@@ -1,5 +1,4 @@
 use co3::{ReprC, export, extern_, extern_C};
-use webassembly_test::webassembly_test;
 
 trait AmbiguousX<T, const N: usize> {
     #[expect(unused)]
@@ -177,7 +176,6 @@ mod provider {
 }
 
 #[test]
-#[webassembly_test]
 fn extern_abi() {
     assert_eq!(
         Ambiguous::AmbiguousX,

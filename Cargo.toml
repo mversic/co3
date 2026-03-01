@@ -74,13 +74,12 @@ unsafe-optimizations = []
 co3_derive = { path = "derive", optional = true }
 
 derive_more = { version = "2.1.1", features = ["display"] }
-disjoint_impls = { path = "../disjoint_impls/" }
-#disjoint_impls = "1.3.7"
+#disjoint_impls = { path = "../disjoint_impls/" }
+disjoint_impls = "1.3.7"
 impls = "1.0.3"
 
 [dev-dependencies]
 static_assertions = "1.1.0"
-webassembly-test = "0.1.0"
 #getset = "0.1.6"
 
 [workspace]

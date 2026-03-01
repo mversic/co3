@@ -7,7 +7,6 @@ use co3::{
     slice::CBoxedSlice,
     tuple::{CTuple1, CTuple2},
 };
-use webassembly_test::webassembly_test;
 
 mod exported_abi;
 //mod generics;
@@ -254,7 +253,6 @@ mod exported_abi;
 //}
 //
 //#[test]
-//#[webassembly_test]
 //#[cfg(feature = "non_robust_ref_mut")]
 //fn non_robust_ref_mut() {
 //    use co3::slice::RawSliceMut;
@@ -276,7 +274,6 @@ mod exported_abi;
 //}
 //
 //#[test]
-//#[webassembly_test]
 //fn constructor() {
 //    let ffi_struct = get_new_struct();
 //    assert_eq!(Some(Name(String::from('X'))), ffi_struct.name);
@@ -284,7 +281,6 @@ mod exported_abi;
 //}
 //
 //#[test]
-//#[webassembly_test]
 //fn builder_method() {
 //    let ffi_struct = get_new_struct_with_params();
 //
@@ -296,7 +292,6 @@ mod exported_abi;
 //}
 //
 //#[test]
-//#[webassembly_test]
 //fn consume_self() {
 //    let ffi_struct = get_new_struct();
 //
@@ -309,7 +304,6 @@ mod exported_abi;
 //}
 //
 //#[test]
-//#[webassembly_test]
 //fn into_iter_item_impl_into() {
 //    let tokens = vec![
 //        Value(String::from("My omen")),
@@ -336,7 +330,6 @@ mod exported_abi;
 //}
 //
 //#[test]
-//#[webassembly_test]
 //fn mutate_opaque() {
 //    let param_name = Name(String::from("Nomen"));
 //    let mut ffi_struct = get_new_struct_with_params();
@@ -360,7 +353,6 @@ mod exported_abi;
 //}
 //
 //#[test]
-//#[webassembly_test]
 //fn return_option() {
 //    let ffi_struct = get_new_struct_with_params();
 //
@@ -390,7 +382,6 @@ mod exported_abi;
 //}
 //
 //#[test]
-//#[webassembly_test]
 //fn take_and_return_boxed_slice() {
 //    let input: Box<[u8]> = [12u8, 42u8].into();
 //    let mut output = MaybeUninit::new(CBoxedSlice::from_raw_parts(core::ptr::null_mut(), 0));
@@ -410,7 +401,6 @@ mod exported_abi;
 //}
 //
 //#[test]
-//#[webassembly_test]
 //fn take_and_return_option_without_niche() {
 //    let input = Some(42u8);
 //    let mut output = MaybeUninit::new(COption {
@@ -430,7 +420,6 @@ mod exported_abi;
 //}
 //
 //#[test]
-//#[webassembly_test]
 //fn take_and_return_option_with_tuple() {
 //    unimplemented!()
 //    //let input = Some(true);
@@ -455,7 +444,6 @@ mod exported_abi;
 //}
 //
 //#[test]
-//#[webassembly_test]
 //fn take_and_return_option_with_niche_ref() {
 //    //    let input = Some(true);
 //    //    let mut output = MaybeUninit::new(0);
@@ -479,7 +467,6 @@ mod exported_abi;
 //}
 //
 //#[test]
-//#[webassembly_test]
 //fn take_and_return_option_without_niche_ref() {
 //    #[cfg(not(target_family = "wasm"))]
 //    let input = Some(42u8);
@@ -508,7 +495,6 @@ mod exported_abi;
 //}
 //
 //#[test]
-//#[webassembly_test]
 //fn return_iterator() {
 //    let ffi_struct = get_new_struct_with_params();
 //    let mut out_params = MaybeUninit::new(CBoxedSlice::from_raw_parts(core::ptr::null_mut(), 0));
@@ -530,7 +516,6 @@ mod exported_abi;
 //}
 //
 //#[test]
-//#[webassembly_test]
 //fn return_result() {
 //    let mut output = MaybeUninit::new(0);
 //
@@ -549,7 +534,6 @@ mod exported_abi;
 //}
 //
 //#[test]
-//#[webassembly_test]
 //fn return_empty_tuple_result() {
 //    unsafe {
 //        assert_eq!(
@@ -564,7 +548,6 @@ mod exported_abi;
 //}
 //
 ////#[test]
-////#[webassembly_test]
 ////fn array_to_pointer() {
 ////    let array = [1_u8];
 ////    let mut store = Option::default();
@@ -585,7 +568,6 @@ mod exported_abi;
 ////}
 //
 //#[test]
-//#[webassembly_test]
 //fn take_and_return_array_ref() {
 //    let array = [1_u8];
 //    let ptr: *const [u8; 1] = (&array).encode(&mut ());
@@ -605,7 +587,6 @@ mod exported_abi;
 //}
 //
 //#[test]
-//#[webassembly_test]
 //fn array_in_struct() {
 //    let array = ([1_u8],);
 //    let ffi_arr: CTuple1<[u8; 1]> = array.encode(&mut ((),));
@@ -625,7 +606,6 @@ mod exported_abi;
 //}
 //
 //#[test]
-//#[webassembly_test]
 //fn repr_c_struct() {
 //    let struct_ = RobustReprCStruct { a: 42, b: 7, c: 12 };
 //    let mut output = MaybeUninit::new(RobustReprCStruct {
@@ -645,7 +625,6 @@ mod exported_abi;
 //}
 //
 //#[test]
-//#[webassembly_test]
 //fn primitive_conversion() {
 //    let byte: u8 = 1;
 //    let mut output = MaybeUninit::new(0);
@@ -661,7 +640,6 @@ mod exported_abi;
 //}
 //
 //#[test]
-//#[webassembly_test]
 //fn fieldless_enum_conversion() {
 //    let fieldless_enum = FieldlessEnum::A;
 //    let mut output = MaybeUninit::new(2);
@@ -678,7 +656,6 @@ mod exported_abi;
 //}
 //
 //#[test]
-//#[webassembly_test]
 //#[cfg(target_family = "wasm")]
 //fn primitive_conversion_failed() {
 //    let byte: u32 = u32::MAX;
@@ -695,7 +672,6 @@ mod exported_abi;
 //}
 //
 //#[test]
-//#[webassembly_test]
 //fn data_carrying_enum_conversion() {
 //    let data_carrying_enum = DataCarryingEnum::A(get_new_struct());
 //    let mut output = MaybeUninit::new(__co3__ReprCDataCarryingEnum {
@@ -719,7 +695,6 @@ mod exported_abi;
 //}
 //
 //#[test]
-//#[webassembly_test]
 //fn invoke_trait_method() {
 //    let ffi_struct = get_new_struct_with_params();
 //    let mut output = MaybeUninit::<*mut Name>::new(core::ptr::null_mut());
@@ -735,7 +710,6 @@ mod exported_abi;
 //}
 //
 //#[test]
-//#[webassembly_test]
 //fn nested_vec() {
 //    let vec: Vec<Vec<Vec<u8>>> = vec![];
 //
@@ -749,7 +723,6 @@ mod exported_abi;
 //}
 //
 //#[test]
-//#[webassembly_test]
 //fn return_vec_of_boxed_opaques() {
 //    let mut output = MaybeUninit::new(CBoxedSlice::from_raw_parts(core::ptr::null_mut(), 0));
 //
@@ -766,7 +739,6 @@ mod exported_abi;
 //}
 //
 //#[test]
-//#[webassembly_test]
 //fn array_of_opaques() {
 //    let input: [OpaqueStruct; 2] = [Default::default(), Default::default()];
 //    let mut output = MaybeUninit::new([core::ptr::null_mut(), core::ptr::null_mut()]);
@@ -784,7 +756,6 @@ mod exported_abi;
 //}
 //
 //#[test]
-//#[webassembly_test]
 //fn borrow_vec() {
 //    let a: Vec<u8> = vec![1, 2];
 //    let mut store = Default::default();
@@ -795,7 +766,6 @@ mod exported_abi;
 //}
 //
 //#[test]
-//#[webassembly_test]
 //fn return_reference_from_slice() {
 //    let a = vec![1, 2];
 //
@@ -813,7 +783,6 @@ mod exported_abi;
 //}
 //
 //#[test]
-//#[webassembly_test]
 //fn borrow_local() {
 //    let a = (1_u8, 2_u8);
 //

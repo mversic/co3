@@ -2,7 +2,6 @@ use std::mem::MaybeUninit;
 
 use co3::{ExternC, ReprC, export};
 use getset::{Getters, MutGetters, Setters};
-use webassembly_test::webassembly_test;
 
 #[derive(Debug, Clone, PartialEq, Eq, ReprC)]
 pub struct Name(String);
@@ -17,7 +16,6 @@ pub struct FfiStruct {
 }
 
 #[test]
-#[webassembly_test]
 fn export_getset_get() {
     let init_name = Name("Name".to_owned());
     let ffi_struct = &mut FfiStruct {

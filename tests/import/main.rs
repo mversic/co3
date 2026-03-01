@@ -1,6 +1,5 @@
 mod imported_abi;
 
-use webassembly_test::webassembly_test;
 
 //#[cfg(feature = "getset")]
 //mod getset;
@@ -76,7 +75,6 @@ use webassembly_test::webassembly_test;
 //}
 //
 //#[test]
-//#[webassembly_test]
 //fn take_and_return_robust_ref() {
 //    let input = Robust(420);
 //    let output: &Robust = input.take_ref();
@@ -84,7 +82,6 @@ use webassembly_test::webassembly_test;
 //}
 //
 //#[test]
-//#[webassembly_test]
 //fn take_and_return_non_local() {
 //    let input = 420;
 //    let output: &u32 = freestanding_returns_non_local(&input);
@@ -92,7 +89,6 @@ use webassembly_test::webassembly_test;
 //}
 //
 //#[test]
-//#[webassembly_test]
 //fn tuple_ref_is_coppied_when_returned() {
 //    let in_tuple = (420, 420);
 //    let out_tuple: (u32, u32) = freestanding_returns_local_ref(&in_tuple);
@@ -100,7 +96,6 @@ use webassembly_test::webassembly_test;
 //}
 //
 //#[test]
-//#[webassembly_test]
 //fn vec_of_tuples_is_coppied_when_returned() {
 //    let in_tuple = Box::from([(420_u32, 420_u32)]);
 //    let out_tuple: Box<[(u32, u32)]> = freestanding_returns_local_slice(&in_tuple);
@@ -108,7 +103,6 @@ use webassembly_test::webassembly_test;
 //}
 //
 //#[test]
-//#[webassembly_test]
 //fn boxed_slice_of_primitives() {
 //    let in_boxed_slice = vec![420_u32, 420_u32].into_boxed_slice();
 //    let out_boxed_slice: Box<[u32]> = freestanding_returns_boxed_slice(in_boxed_slice.clone());
@@ -116,7 +110,6 @@ use webassembly_test::webassembly_test;
 //}
 //
 //#[test]
-//#[webassembly_test]
 //fn return_iterator() {
 //    let input = vec![420_u32, 420_u32];
 //    let output = freestanding_returns_iterator(input.clone());
@@ -125,7 +118,6 @@ use webassembly_test::webassembly_test;
 //
 //// FIXME: Check previous comment
 ////#[test]
-////#[webassembly_test]
 ////fn take_and_return_array() {
 ////    let input = [(420, 420), (420, 420)];
 ////    let output: [(u32, u32); 2] = freestanding_take_and_return_array(input);
@@ -133,7 +125,6 @@ use webassembly_test::webassembly_test;
 ////}
 //
 //#[test]
-//#[webassembly_test]
 //fn take_and_return_transparent_local_ref() {
 //    let input = Transparent((420, 420));
 //    let output: Transparent = freestanding_take_and_return_local_transparent_ref(&input);
@@ -141,7 +132,6 @@ use webassembly_test::webassembly_test;
 //}
 //
 ////#[test]
-////#[webassembly_test]
 ////fn take_and_return_boxed_int() {
 ////    let input: Box<u8> = Box::new(42u8);
 ////    let output: Box<u8> = freestanding_take_and_return_boxed_int(input.clone());
@@ -149,7 +139,6 @@ use webassembly_test::webassembly_test;
 ////}
 //
 //#[test]
-//#[webassembly_test]
 //fn take_and_return_boxed_int_ref() {
 //    let input: Box<u8> = Box::new(42u8);
 //    let output: &Box<u8> = freestanding_take_and_return_boxed_int_ref(&input);
@@ -157,7 +146,6 @@ use webassembly_test::webassembly_test;
 //}
 //
 //#[test]
-//#[webassembly_test]
 //fn return_empty_tuple_result() {
 //    assert!(freestanding_return_empty_tuple_result(false).is_ok());
 //}

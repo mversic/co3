@@ -7,59 +7,68 @@ on:
     branches: [main]
 
 concurrency:
-  group: ${{ github.workflow }}-${{ github.ref }}
+  group: ${{ github.workflow }}-${{ github.head_ref || github.ref }}
   cancel-in-progress: true
 
 jobs:
   static-analysis:
     runs-on: ubuntu-latest
-
-    strategy:
-      matrix:
-        target: [system, wasm32]
+    timeout-minutes: 5
 
     steps:
     - uses: actions/checkout@v6
     - uses: dtolnay/rust-toolchain@stable
       with:
-        targets: wasm32-unknown-unknown
         components: rustfmt, clippy
     - uses: Swatinem/rust-cache@v2
-      with:
-        key: ${{ matrix.target }}
 
-    - name: Rust Format + Check + Lint
-      run: |
-        cargo fmt --all --check
+    - name: Rust format
+      run: cargo fmt --locked --all --check
 
-        if [ "${{ matrix.target }}" = "wasm32" ]; then
-          cargo clippy --workspace --tests --all-features --target wasm32-unknown-unknown
-        else
-          cargo clippy --workspace --tests --all-features
-        fi
+    - name: Clippy (all features)
+      run: cargo clippy --locked --workspace --tests --all-features -- --deny warnings
+
+    - name: Clippy (no features)
+      run: cargo clippy --locked --workspace --tests --no-default-features -- --deny warnings
 
   test:
-    runs-on: ubuntu-latest
+    runs-on: ${{ matrix.os }}
     needs: static-analysis
+    timeout-minutes: 15
 
     strategy:
       matrix:
-        target: [system, wasm32]
+        os: [ubuntu-latest, macos-latest, windows-latest]
+        features:
+        - alloc,derive,unstable-refs
+        - alloc,derive,unstable-refs,owned-as-ref
+        - alloc,derive,unstable-refs,unsafe-optimizations
 
     steps:
     - uses: actions/checkout@v6
     - uses: dtolnay/rust-toolchain@stable
-      with:
-        targets: wasm32-unknown-unknown
     - uses: Swatinem/rust-cache@v2
       with:
-        key: ${{ matrix.target }}
+        key: test-${{ matrix.os }}-${{ matrix.features }}
 
-    - name: Run tests
-      run: |
-        if [ "${{ matrix.target }}" = "wasm32" ]; then
-          cargo test --workspace --all-features --target wasm32-unknown-unknown
-        else
-          cargo test --workspace --all-features
-        fi
+    - name: ${{ matrix.os }}: ${{ matrix.features }} tests
+      run: cargo test --locked --workspace --no-default-features --features "${{ matrix.features }}"
 
+  wasm-test:
+    runs-on: ubuntu-latest
+    needs: static-analysis
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v6
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: wasm32-wasip1
+      - uses: Swatinem/rust-cache@v2
+
+      - name: Install wasmtime
+        run: |
+          curl -fsSL https://wasmtime.dev/install.sh | bash
+          echo "$HOME/.wasmtime/bin" >> $GITHUB_PATH
+
+      - name: Webassembly Lests (WASIp1)
+        run: cargo test --locked --workspace --target wasm32-wasip1 --all-features

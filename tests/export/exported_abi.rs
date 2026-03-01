@@ -4,7 +4,6 @@ use co3::{
     Decode as _, Encode as _, FfiReturn, ReprC, export, export_, export_C, external::Extern,
     out_ptr::OutPtrRead as _,
 };
-use webassembly_test::webassembly_test;
 
 trait AmbiguousX<T, const N: usize> {
     type U;
@@ -162,7 +161,6 @@ pub const unsafe extern "Rust" fn ambiguous2() -> Ambiguous {
 }
 
 #[test]
-#[webassembly_test]
 fn exported_abi() {
     let mut output = MaybeUninit::new(Ambiguous::None as _);
 

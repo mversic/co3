@@ -1,7 +1,6 @@
 use core::cmp::Ordering;
 
 use co3::{Encode, ReprC, export_C, extern_C};
-use webassembly_test::webassembly_test;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, ReprC)]
 #[reprC(opaque)]
@@ -335,7 +334,6 @@ pub enum FieldlessLargeEnum {
 }
 
 #[cfg(target_family = "wasm")]
-#[webassembly_test]
 fn wasm_niche_value() {
     assert_eq!(u32::MAX, None::<u8>.encode(&mut ()));
     assert_eq!(i32::MAX, None::<i8>.encode(&mut ()));
@@ -344,7 +342,6 @@ fn wasm_niche_value() {
 }
 
 #[test]
-#[webassembly_test]
 fn verify_enum_niche_value() {
     #[cfg(not(target_family = "wasm"))]
     let expected_bool = 2_u8;

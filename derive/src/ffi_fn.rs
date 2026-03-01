@@ -392,6 +392,11 @@ fn gen_definition_fn_name(fn_descriptor: &FnDescriptor) -> Ident {
     )
 }
 
+#[cfg(feature = "getset")]
+fn gen_fn_name(fn_descriptor: &FnDescriptor, _trait_symbol_name: Option<&str>) -> Ident {
+    gen_definition_fn_name(fn_descriptor)
+}
+
 fn gen_link_name_attr(
     fn_descriptor: &FnDescriptor,
     trait_symbol_name: Option<&str>,

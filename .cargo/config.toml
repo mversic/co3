@@ -1,2 +1,2 @@
-[target.wasm32-unknown-unknown]
-runner = "iroha_wasm_test_runner"
+[target.wasm32-wasip1]
+runner = "wasmtime run --dir=."

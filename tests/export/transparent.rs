@@ -5,7 +5,6 @@ use co3::{
     out_ptr::OutPtrRead,
     slice::{CBoxedSlice, CSlice},
 };
-use webassembly_test::webassembly_test;
 
 co3::def_fns! { dealloc }
 
@@ -115,7 +114,6 @@ pub fn slice_to_slice(value: &[TransparentStruct]) -> &[TransparentStruct] {
 }
 
 #[test]
-#[webassembly_test]
 fn take_and_return_transparent_array_ref() {
     let value = TransparentStruct::new(GenericTransparentStruct::new(42));
 
@@ -137,7 +135,6 @@ fn take_and_return_transparent_array_ref() {
 }
 
 #[test]
-#[webassembly_test]
 fn take_and_return_option_of_transparent_with_niche() {
     let value = Some(RobustTargetTransparent([1; 4]));
     let mut output = MaybeUninit::new([0u8; 4]);
@@ -156,7 +153,6 @@ fn take_and_return_option_of_transparent_with_niche() {
 }
 
 #[test]
-#[webassembly_test]
 fn take_and_return_option_of_transparent_without_niche() {
     let value = Some(TransparentWithoutNiche(42));
     let mut output: MaybeUninit<COption<u64>> = MaybeUninit::new(COption { tag: 1, payload: 0 });
@@ -175,7 +171,6 @@ fn take_and_return_option_of_transparent_without_niche() {
 }
 
 #[test]
-#[webassembly_test]
 fn take_and_return_option_of_transparent_with_inner_niche() {
     let value = Some(GenericTransparentStruct::<()>::new(42));
     let mut output: MaybeUninit<u64> = MaybeUninit::new(0);
@@ -194,7 +189,6 @@ fn take_and_return_option_of_transparent_with_inner_niche() {
 }
 
 #[test]
-#[webassembly_test]
 fn transparent_self_to_self() {
     let transparent_struct = TransparentStruct::new(GenericTransparentStruct::new(42));
     let mut output: MaybeUninit<u64> = MaybeUninit::new(0);
@@ -212,7 +206,6 @@ fn transparent_self_to_self() {
 }
 
 #[test]
-#[webassembly_test]
 fn transparent_vec_to_vec() {
     let transparent_struct_vec = vec![
         TransparentStruct::new(GenericTransparentStruct::new(1)),
@@ -240,7 +233,6 @@ fn transparent_vec_to_vec() {
 }
 
 #[test]
-#[webassembly_test]
 // False positive
 fn transparent_slice_to_slice() {
     let transparent_struct_slice = [
@@ -266,7 +258,6 @@ fn transparent_slice_to_slice() {
 }
 
 #[test]
-#[webassembly_test]
 fn transparent_method_consume() {
     let mut transparent_struct = TransparentStruct::new(GenericTransparentStruct::new(42));
     let payload = GenericTransparentStruct::new(24);
@@ -290,7 +281,6 @@ fn transparent_method_consume() {
 }
 
 #[test]
-#[webassembly_test]
 fn transparent_method_borrow() {
     let transparent_struct = TransparentStruct::new(GenericTransparentStruct::new(42));
     let mut output = MaybeUninit::new(core::ptr::null());

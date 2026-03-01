@@ -1,5 +1,4 @@
-use co3::extern_C;
-use webassembly_test::webassembly_test;
+use co3::{extern_C, external::ExternRef};
 
 trait Custom {
     fn inc(self) -> Self;
@@ -181,10 +180,9 @@ mod provider {
 }
 
 #[test]
-#[webassembly_test]
 fn opaque_handles() {
     let handle: Handle<bool, u8> = Default::default();
-    let handle_ref = handle.as_ref().unwrap();
+    let handle_ref: ExternRef<_> = handle.as_ref().unwrap();
     assert!(PartialEq::eq(&*handle_ref, &handle));
 
     let cloned = Clone::clone(&handle);
