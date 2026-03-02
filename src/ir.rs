@@ -4,7 +4,8 @@
 //! preferable to map it into IR by implementing [`Ir`]. This approach gives you
 //! automatic, correct, and zero-cost conversions from IR to the equivalent C type.
 #[cfg(feature = "alloc")]
-use alloc::{boxed::Box, vec::Vec};
+use alloc_crate::{boxed::Box, vec::Vec};
+
 use disjoint_impls::disjoint_impls;
 
 use crate::{
@@ -89,6 +90,7 @@ disjoint_impls! {
         type Kind = &'a mut R::Kind;
     }
 
+    // FIXME: Must be mapped to Box<T>, no? because of allocator
     #[cfg(feature = "alloc")]
     impl<R: ReprFamily<Kind = Robust>> ReprFamily for Box<R> {
         type Kind = Transmuted;

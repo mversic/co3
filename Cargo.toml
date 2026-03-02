@@ -12,7 +12,7 @@ keywords = ["FFI", "foreign", "dynamic", "linking", "ABI"]
 categories = ["development-tools::ffi"]
 
 [features]
-default = ["alloc", "owned-as-ref"]
+default = ["alloc"]
 
 # Enable deriving `extern C` ABI. Macros made available are:
 # - `#[derive(ReprC)]`
@@ -22,16 +22,6 @@ derive = ["co3_derive"]
 
 # Implements conversion traits for types from the `alloc` crate (e.g. `Box<T>` or `Vec<T>`).
 alloc = []
-
-# Encode (`Drop`) types as shared references instead of transferring ownership.
-#
-# With the notable exception of `Opaque` types which always carry ownership, this feature
-# prevents ownership transfer of dynamically allocated memory across FFI boundary.
-#
-# # Performance Considerations
-#
-# This feature introduces otherwise unnecessary clone on decode paths of `Drop` types
-owned-as-ref = []
 
 # Enables reference types that don't maintain stable position in memory:
 # - shared or mutable references to `Cloned` types (e.g. `&(u8,)`/`&mut (u8,)`)
@@ -72,7 +62,6 @@ unsafe-optimizations = []
 co3_derive = { path = "derive", optional = true }
 
 derive_more = { version = "2.1.1", features = ["display"] }
-#disjoint_impls = { path = "../disjoint_impls/" }
 disjoint_impls = "1.3.7"
 impls = "1.0.3"
 

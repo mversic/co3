@@ -590,22 +590,22 @@ where
 #[cfg(test)]
 mod tests {
     #[cfg(feature = "alloc")]
-    use alloc::{boxed::Box, vec::Vec};
+    use alloc_crate::{boxed::Box, vec::Vec};
     use core::num::NonZeroU8;
 
     use static_assertions::{assert_impl_all, assert_not_impl_any};
 
     use super::*;
     #[cfg(feature = "unstable-refs")]
-    use crate::slice::CSlice;
-    #[cfg(any(feature = "unstable-refs", feature = "alloc"))]
-    use crate::slice::CSliceMut;
+    use crate::slice::{CSlice, CSliceMut};
     use crate::{
         Decode, Encode,
+        boxed::{CBox, CBoxedSlice},
         ir::ReprFamily,
         niche::{StableNiche, WithStableNiche},
         option::COption,
         transmute::CheckedTransmute,
+        vec::CVec,
     };
 
     #[test]
@@ -634,7 +634,7 @@ mod tests {
         assert_impl_all!(Box<(u8, u8, u8)>:
             ReprFamily<Kind = Box<(u8, u8, u8)>>,
             NicheFamily<Kind = WithStableNiche>,
-            StableNiche<CType = *mut CTuple3<u8, u8, u8>>,
+            StableNiche<CType = CBox<CTuple3<u8, u8, u8>>>,
             Decode<'static>,
             Encode,
         );
@@ -654,7 +654,7 @@ mod tests {
         assert_impl_all!(Box<[(u8, u8, u8)]>:
             ReprFamily<Kind = Box<[(u8, u8, u8)]>>,
             NicheFamily<Kind = WithCustomNiche>,
-            Niche<CType = CSliceMut<CTuple3<u8, u8, u8>>>,
+            Niche<CType = CBoxedSlice<CTuple3<u8, u8, u8>>>,
             Decode<'static>,
             Encode,
         );
@@ -662,7 +662,7 @@ mod tests {
         assert_impl_all!(Vec<(u8, u8, u8)>:
             ReprFamily<Kind = Vec<(u8, u8, u8)>>,
             NicheFamily<Kind = WithCustomNiche>,
-            Niche<CType = CSliceMut<CTuple3<u8, u8, u8>>>,
+            Niche<CType = CVec<CTuple3<u8, u8, u8>>>,
             Decode<'static>,
             Encode,
         );
@@ -742,7 +742,7 @@ mod tests {
         assert_impl_all!(Box<(u8, NonZeroU8, bool)>:
             ReprFamily<Kind = Box<(u8, NonZeroU8, bool)>>,
             NicheFamily<Kind = WithStableNiche>,
-            StableNiche<CType = *mut CTuple3<u8, u8, u8>>,
+            StableNiche<CType = CBox<CTuple3<u8, u8, u8>>>,
             Decode<'static>,
             Encode,
         );
@@ -762,7 +762,7 @@ mod tests {
         assert_impl_all!(Box<[(u8, NonZeroU8, bool)]>:
             ReprFamily<Kind = Box<[(u8, NonZeroU8, bool)]>>,
             NicheFamily<Kind = WithCustomNiche>,
-            Niche<CType = CSliceMut<CTuple3<u8, u8, u8>>>,
+            Niche<CType = CBoxedSlice<CTuple3<u8, u8, u8>>>,
             Decode<'static>,
             Encode,
         );
@@ -770,7 +770,7 @@ mod tests {
         assert_impl_all!(Vec<(u8, NonZeroU8, bool)>:
             ReprFamily<Kind = Vec<(u8, NonZeroU8, bool)>>,
             NicheFamily<Kind = WithCustomNiche>,
-            Niche<CType = CSliceMut<CTuple3<u8, u8, u8>>>,
+            Niche<CType = CVec<CTuple3<u8, u8, u8>>>,
             Decode<'static>,
             Encode,
         );

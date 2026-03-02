@@ -1,18 +1,17 @@
+#[cfg(feature = "alloc")]
+use alloc_crate::{boxed::Box, vec::Vec};
+
 use super::*;
-#[cfg(all(feature = "alloc", feature = "owned-as-ref"))]
-use crate::transmute::{transmute_from_target_boxed_slice, transmute_from_target_vec};
-use crate::{COption, slice::CBoxedSlice};
+#[cfg(feature = "alloc")]
+use crate::{
+    boxed::CBoxedSlice,
+    transmute::{transmute_from_target_boxed_slice, transmute_from_target_vec},
+};
 use crate::{
     ir::Transmuted,
+    option::COption,
     transmute::{transmute_from_target_ref_slice, transmute_from_target_slice_mut},
 };
-#[cfg(feature = "alloc")]
-use alloc::{boxed::Box, vec::Vec};
-
-unsafe extern "C" {
-    #[link_name = concat!(env!("CARGO_CRATE_NAME"), "_dealloc")]
-    pub(crate) fn co3_dealloc(ptr: *mut u8, size: usize, align: usize) -> crate::FfiReturn;
-}
 
 disjoint_impls! {
     /// Marker trait indicating that [`Encode::encode`] doesn't return a reference to the store.
@@ -107,7 +106,7 @@ disjoint_impls! {
         type OutPtr = R::CType;
     }
 
-    #[cfg(all(feature = "alloc", feature = "owned-as-ref"))]
+    #[cfg(feature = "alloc")]
     impl<R: ExternC, S: Cloned> OutPtr for Box<R>
     where
         Self: ReprFamily<Kind = Box<S>>,
@@ -298,19 +297,20 @@ disjoint_impls! {
         }
     }
 
-    #[cfg(all(feature = "alloc", feature = "owned-as-ref"))]
+    #[cfg(feature = "alloc")]
     impl<R: Encode + NonLocal, S: Cloned> OutPtrWrite for Box<R>
     where
         Self: ReprFamily<Kind = Box<S>>,
     {
-        unsafe fn write_out(self, out_ptr: *mut Self::OutPtr) {
-            let mut store = Default::default();
-            let _ = self.encode(&mut store);
-            let output = store.ctype.unwrap();
+        unsafe fn write_out(self, _out_ptr: *mut Self::OutPtr) {
+            unimplemented!()
+            //let mut store = Default::default();
+            //let _ = self.encode(&mut store);
+            //let output = store.ctype.unwrap();
 
-            unsafe {
-                out_ptr.write(output);
-            }
+            //unsafe {
+            //    out_ptr.write(output);
+            //}
         }
     }
 
@@ -335,7 +335,7 @@ disjoint_impls! {
             let mut store = Default::default();
             let _ = self.encode(&mut store);
 
-            let output = CBoxedSlice::from_boxed_slice(store.0, co3_dealloc);
+            let output = CBoxedSlice::from_boxed_slice(store.0);
 
             unsafe {
                 out_ptr.write(output);
@@ -364,7 +364,7 @@ disjoint_impls! {
             let mut store = Default::default();
             let _ = self.encode(&mut store);
 
-            let output = CBoxedSlice::from_boxed_slice(store.ctypes, co3_dealloc);
+            let output = CBoxedSlice::from_boxed_slice(store.ctypes);
 
             unsafe {
                 out_ptr.write(output);
@@ -392,14 +392,6 @@ disjoint_impls! {
         Self: ReprFamily<Kind = Box<[Robust]>>,
     {
         unsafe fn write_out(self, out_ptr: *mut Self::OutPtr) {
-            #[cfg(all(feature = "alloc", feature = "owned-as-ref"))]
-            let output = {
-                let mut store = Default::default();
-                let _ = self.encode(&mut store);
-
-                CBoxedSlice::from_boxed_slice(store.0, co3_dealloc)
-            };
-            #[cfg(not(feature = "owned-as-ref"))]
             let output = self.encode(&mut ());
 
             unsafe {
@@ -413,14 +405,6 @@ disjoint_impls! {
         Self: ReprFamily<Kind = Box<[Opaque]>>,
     {
         unsafe fn write_out(self, out_ptr: *mut Self::OutPtr) {
-            #[cfg(all(feature = "alloc", feature = "owned-as-ref"))]
-            let output = {
-                let mut store = Default::default();
-                let _ = self.encode(&mut store);
-
-                CBoxedSlice::from_boxed_slice(store.0, co3_dealloc)
-            };
-            #[cfg(not(feature = "owned-as-ref"))]
             let output = self.encode(&mut ());
 
             unsafe {
@@ -447,15 +431,16 @@ disjoint_impls! {
     where
         Self: ReprFamily<Kind = Box<[S]>>,
     {
-        unsafe fn write_out(self, out_ptr: *mut Self::OutPtr) {
-            let mut store = Default::default();
-            let _ = self.encode(&mut store);
+        unsafe fn write_out(self, _out_ptr: *mut Self::OutPtr) {
+            unimplemented!()
+            //let mut store = Default::default();
+            //let _ = self.encode(&mut store);
 
-            let output = CBoxedSlice::from_boxed_slice(store.ctypes, co3_dealloc);
+            //let output = CBoxedSlice::from_boxed_slice(store.ctypes);
 
-            unsafe {
-                out_ptr.write(output);
-            }
+            //unsafe {
+            //    out_ptr.write(output);
+            //}
         }
     }
 
@@ -464,20 +449,13 @@ disjoint_impls! {
     where
         Self: ReprFamily<Kind = Vec<Robust>>,
     {
-        unsafe fn write_out(self, out_ptr: *mut Self::OutPtr) {
-            #[cfg(all(feature = "alloc", feature = "owned-as-ref"))]
-            let output = {
-                let mut store = Default::default();
-                let _ = self.encode(&mut store);
+        unsafe fn write_out(self, _out_ptr: *mut Self::OutPtr) {
+            unimplemented!()
+            //let output = self.encode(&mut ());
 
-                CBoxedSlice::from_boxed_slice(store.0, co3_dealloc)
-            };
-            #[cfg(not(feature = "owned-as-ref"))]
-            let output = self.encode(&mut ());
-
-            unsafe {
-                out_ptr.write(output);
-            }
+            //unsafe {
+            //    out_ptr.write(output);
+            //}
         }
     }
     #[cfg(feature = "alloc")]
@@ -485,20 +463,13 @@ disjoint_impls! {
     where
         Self: ReprFamily<Kind = Vec<Opaque>>,
     {
-        unsafe fn write_out(self, out_ptr: *mut Self::OutPtr) {
-            #[cfg(all(feature = "alloc", feature = "owned-as-ref"))]
-            let output = {
-                let mut store = Default::default();
-                let _ = self.encode(&mut store);
+        unsafe fn write_out(self, _out_ptr: *mut Self::OutPtr) {
+            unimplemented!()
+            //let output = self.encode(&mut ());
 
-                CBoxedSlice::from_boxed_slice(store.0, co3_dealloc)
-            };
-            #[cfg(not(feature = "owned-as-ref"))]
-            let output = self.encode(&mut ());
-
-            unsafe {
-                out_ptr.write(output);
-            }
+            //unsafe {
+            //    out_ptr.write(output);
+            //}
         }
     }
     #[cfg(feature = "alloc")]
@@ -520,13 +491,14 @@ disjoint_impls! {
     where
         Self: ReprFamily<Kind = Vec<S>>,
     {
-        unsafe fn write_out(self, out_ptr: *mut Self::OutPtr) {
-            let mut store = Default::default();
-            let _ = self.encode(&mut store);
+        unsafe fn write_out(self, _out_ptr: *mut Self::OutPtr) {
+            unimplemented!()
+            //let mut store = Default::default();
+            //let _ = self.encode(&mut store);
 
-            let output = CBoxedSlice::from_boxed_slice(store.ctypes, co3_dealloc);
+            //let output = CBoxedSlice::from_boxed_slice(store.ctypes);
 
-            unsafe { out_ptr.write(output); }
+            //unsafe { out_ptr.write(output); }
         }
     }
 
@@ -622,7 +594,7 @@ disjoint_impls! {
         }
     }
 
-    #[cfg(all(feature = "alloc", feature = "owned-as-ref"))]
+    #[cfg(feature = "alloc")]
     impl<'d, R: Decode<'d> + NonLocal + 'd, S: Cloned> OutPtrRead for Box<R>
     where
         Self: ReprFamily<Kind = Box<S>>,
@@ -668,14 +640,14 @@ disjoint_impls! {
         }
     }
 
-    #[cfg(all(feature = "alloc", feature = "owned-as-ref"))]
+    #[cfg(feature = "alloc")]
     impl<R: ReprC> OutPtrRead for Box<[R]>
     where
         Self: ReprFamily<Kind = Box<[Robust]>>,
     {
         unsafe fn try_read_out(out_ptr: Self::OutPtr) -> Option<Self> {
             unsafe {
-                let res = Decode::decode(out_ptr.into(), &mut ());
+                let res = Decode::decode(out_ptr, &mut ());
 
                 if !out_ptr.deallocate() {
                     return None;
@@ -685,7 +657,7 @@ disjoint_impls! {
             }
         }
     }
-    #[cfg(all(feature = "alloc", feature = "owned-as-ref"))]
+    #[cfg(feature = "alloc")]
     impl<R: CheckedTransmute> OutPtrRead for Box<[R]>
     where
         Self: ReprFamily<Kind = Box<[Transmuted]>>,
@@ -698,7 +670,7 @@ disjoint_impls! {
             }
         }
     }
-    #[cfg(all(feature = "alloc", feature = "owned-as-ref"))]
+    #[cfg(feature = "alloc")]
     impl<'d, R: ExternC + NonLocal + 'd, S: Cloned> OutPtrRead for Box<[R]>
     where
         Self: ReprFamily<Kind = Box<[S]>> + Decode<'d, CType = CSliceMut<<R as ExternC>::CType>>,
@@ -724,24 +696,25 @@ disjoint_impls! {
         }
     }
 
-    #[cfg(all(feature = "alloc", feature = "owned-as-ref"))]
+    #[cfg(feature = "alloc")]
     impl<R: ReprC> OutPtrRead for Vec<R>
     where
         Self: ReprFamily<Kind = Vec<Robust>>,
     {
-        unsafe fn try_read_out(out_ptr: Self::OutPtr) -> Option<Self> {
-            unsafe {
-                let res = Decode::decode(out_ptr.into(), &mut ());
+        unsafe fn try_read_out(_out_ptr: Self::OutPtr) -> Option<Self> {
+            unimplemented!()
+            //unsafe {
+            //    let res = Decode::decode(out_ptr.into(), &mut ());
 
-                if !out_ptr.deallocate() {
-                    return None;
-                }
+            //    if !out_ptr.deallocate() {
+            //        return None;
+            //    }
 
-                res
-            }
+            //    res
+            //}
         }
     }
-    #[cfg(all(feature = "alloc", feature = "owned-as-ref"))]
+    #[cfg(feature = "alloc")]
     impl<R: CheckedTransmute> OutPtrRead for Vec<R>
     where
         Self: ReprFamily<Kind = Vec<Transmuted>>,
@@ -754,7 +727,7 @@ disjoint_impls! {
             }
         }
     }
-    #[cfg(all(feature = "alloc", feature = "owned-as-ref"))]
+    #[cfg(feature = "alloc")]
     impl<'d, R: ExternC + NonLocal + 'd, S: Cloned> OutPtrRead for Vec<R>
     where
         Self: ReprFamily<Kind = Vec<S>> + Decode<'d, CType = CSliceMut<<R as ExternC>::CType>>,
@@ -826,39 +799,36 @@ disjoint_impls! {
     }
 }
 
-#[cfg(test)]
-mod tests {
-    #[cfg(all(feature = "alloc", not(feature = "owned-as-ref")))]
-    use static_assertions::assert_impl_all;
-    #[cfg(all(feature = "alloc", feature = "owned-as-ref"))]
-    use static_assertions::assert_not_impl_any;
-
-    use super::*;
-
-    #[test]
-    #[cfg(feature = "alloc")]
-    fn non_local_types() {
-        #[cfg(feature = "owned-as-ref")]
-        {
-            // FIXME:
-            //assert_not_impl_any!(Vec<u8>: OutPtrWrite);
-            assert_not_impl_any!(Option<Vec<u8>>: OutPtrWrite);
-            assert_not_impl_any!(&Vec<u8>: OutPtrWrite);
-            assert_not_impl_any!(&Option<Vec<u8>>: OutPtrWrite);
-        }
-
-        #[cfg(not(feature = "owned-as-ref"))]
-        {
-            assert_impl_all!(Vec<u8>: OutPtrWrite);
-            assert_impl_all!(Option<Vec<u8>>: OutPtrWrite);
-            assert_impl_all!(&Vec<u8>: OutPtrWrite);
-            assert_impl_all!(&Option<Vec<u8>>: OutPtrWrite);
-        }
-    }
-
-    // TODO:
-    //#[test]
-    //pub fn nested_owned() {
-    //    unimplemented!()
-    //}
-}
+//#[cfg(test)]
+//mod tests {
+//    #[cfg(feature = "alloc")]
+//    use static_assertions::assert_impl_all;
+//
+//    use super::*;
+//
+//    #[test]
+//    #[cfg(feature = "alloc")]
+//    fn non_local_types() {
+//        //#[cfg(feature = "owned-as-ref")]
+//        //{
+//        //    // FIXME:
+//        //    //assert_not_impl_any!(Vec<u8>: OutPtrWrite);
+//        //    assert_not_impl_any!(Option<Vec<u8>>: OutPtrWrite);
+//        //    assert_not_impl_any!(&Vec<u8>: OutPtrWrite);
+//        //    assert_not_impl_any!(&Option<Vec<u8>>: OutPtrWrite);
+//        //}
+//
+//        {
+//            assert_impl_all!(Vec<u8>: OutPtrWrite);
+//            assert_impl_all!(Option<Vec<u8>>: OutPtrWrite);
+//            assert_impl_all!(&Vec<u8>: OutPtrWrite);
+//            assert_impl_all!(&Option<Vec<u8>>: OutPtrWrite);
+//        }
+//    }
+//
+//    // TODO:
+//    //#[test]
+//    //pub fn nested_owned() {
+//    //    unimplemented!()
+//    //}
+//}

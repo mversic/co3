@@ -1,7 +1,6 @@
-use core::mem::ManuallyDrop;
-
 #[cfg(feature = "alloc")]
-use alloc::{boxed::Box, vec::Vec};
+use alloc_crate::{boxed::Box, vec::Vec};
+use core::mem::ManuallyDrop;
 
 use super::*;
 
@@ -182,7 +181,6 @@ disjoint_impls! {
         Self: ReprFamily<Kind = Box<[Robust]>>,
     {
         #[inline(always)]
-        #[cfg(not(feature = "owned-as-ref"))]
         unsafe fn decode_cloned<'itm: 'd>(
             source: Self::CType,
             store: &'itm mut Self::Store,
@@ -231,7 +229,7 @@ disjoint_impls! {
             store: &'itm mut Self::Store,
         ) -> Option<Self> {
             unsafe {
-                decode_cloned_collection(source, store, |item, substore| {
+                decode_cloned_boxed_slice(source, store, |item, substore| {
                     R::decode_cloned(item, substore)
                 })
             }
@@ -259,7 +257,6 @@ disjoint_impls! {
         Self: ReprFamily<Kind = Vec<Robust>>,
     {
         #[inline(always)]
-        #[cfg(not(feature = "owned-as-ref"))]
         unsafe fn decode_cloned<'itm: 'd>(
             source: Self::CType,
             store: &'itm mut Self::Store,
@@ -293,7 +290,7 @@ disjoint_impls! {
             store: &'itm mut Self::Store,
         ) -> Option<Self> {
             unsafe {
-                decode_cloned_collection(source, store, |item, substore| {
+                decode_cloned_vec(source, store, |item, substore| {
                     R::decode_cloned(item, substore)
                 })
             }
@@ -362,30 +359,25 @@ disjoint_impls! {
 
 #[cfg(feature = "alloc")]
 pub(super) unsafe fn decode_cloned_box_ptr<'d, R, C: ReprC, S, F>(
-    source: *mut C,
+    source: CBox<C>,
     store: &'d mut S,
     decoder: F,
 ) -> Option<Box<R>>
 where
     F: FnOnce(C, &'d mut S) -> Option<R>,
 {
-    if source.is_null() {
-        return None;
-    }
-
-    let source = unsafe { source.read() };
-    Some(Box::new(decoder(source, store)?))
+    let source = unsafe { source.into_rust() }?;
+    Some(Box::new(decoder(*source, store)?))
 }
 
 #[cfg(feature = "alloc")]
-pub(super) unsafe fn decode_cloned_collection<'d, R, C: ReprC, S: Default, F, Out>(
-    source: CSliceMut<C>,
+pub(super) unsafe fn decode_cloned_boxed_slice<'d, R, C: ReprC, S: Default, F>(
+    source: CBoxedSlice<C>,
     store: &'d mut DecodeStoreSlice<S>,
     mut decoder: F,
-) -> Option<Out>
+) -> Option<Box<[R]>>
 where
     F: FnMut(C, &'d mut S) -> Option<R>,
-    Out: FromIterator<R>,
 {
     let slice = unsafe { source.into_rust() }?;
 
@@ -396,8 +388,31 @@ where
     );
 
     slice
-        .iter()
-        .copied()
+        .into_iter()
+        .zip(&mut *store)
+        .map(|(item, substore)| decoder(item, substore))
+        .collect()
+}
+
+#[cfg(feature = "alloc")]
+pub(super) unsafe fn decode_cloned_vec<'d, R, C: ReprC, S: Default, F>(
+    source: CVec<C>,
+    store: &'d mut DecodeStoreSlice<S>,
+    mut decoder: F,
+) -> Option<Vec<R>>
+where
+    F: FnMut(C, &'d mut S) -> Option<R>,
+{
+    let slice = unsafe { source.into_rust() }?;
+
+    let store = store.0.insert(
+        core::iter::repeat_with(Default::default)
+            .take(slice.len())
+            .collect(),
+    );
+
+    slice
+        .into_iter()
         .zip(&mut *store)
         .map(|(item, substore)| decoder(item, substore))
         .collect()

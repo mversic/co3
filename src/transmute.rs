@@ -1,13 +1,12 @@
+#[cfg(feature = "alloc")]
+use alloc_crate::{boxed::Box, vec::Vec};
 use core::mem::ManuallyDrop;
 
-#[cfg(all(feature = "alloc", feature = "owned-as-ref"))]
-use alloc::{boxed::Box, vec::Vec};
 use disjoint_impls::disjoint_impls;
 
-use crate::ir::Opaque;
 use crate::{
     Encode, ReprC, Store, assert_arr_has_non_zero_len,
-    ir::{Cloned, NonRobust, ReprFamily, Robust, Transmuted},
+    ir::{Cloned, NonRobust, Opaque, ReprFamily, Robust, Transmuted},
     niche::{NicheFamily, StableNiche, WithNiche, WithoutNiche},
 };
 
@@ -338,7 +337,7 @@ pub(super) fn transmute_from_target<R: CheckedTransmute>(source: R::Target) -> O
     Some(ManuallyDrop::into_inner(unsafe { transmute_helper.source }))
 }
 
-#[cfg(all(feature = "alloc", feature = "owned-as-ref"))]
+#[cfg(feature = "alloc")]
 pub(super) fn transmute_into_target_boxed_slice<R: CheckedTransmute>(
     #[expect(clippy::boxed_local)] mut source: Box<[R]>,
 ) -> Box<[R::Target]> {
@@ -349,7 +348,7 @@ pub(super) fn transmute_into_target_boxed_slice<R: CheckedTransmute>(
     // SAFETY: Soundness is guaranteed by [`Transmute`]
     unsafe { Box::from_raw(core::ptr::slice_from_raw_parts_mut(ptr, len)) }
 }
-#[cfg(all(feature = "alloc", feature = "owned-as-ref"))]
+#[cfg(feature = "alloc")]
 pub(super) fn transmute_from_target_boxed_slice<R: CheckedTransmute>(
     #[expect(clippy::boxed_local)] mut source: Box<[R::Target]>,
 ) -> Option<Box<[R]>> {
@@ -407,7 +406,7 @@ pub(super) fn transmute_from_target_slice_mut<R: CheckedTransmute>(
     Some(unsafe { core::slice::from_raw_parts_mut(source.as_mut_ptr().cast(), source.len()) })
 }
 
-#[cfg(all(feature = "alloc", feature = "owned-as-ref"))]
+#[cfg(feature = "alloc")]
 pub(super) fn transmute_into_target_vec<R: CheckedTransmute>(source: Vec<R>) -> Vec<R::Target> {
     assert_size_and_allignment_match::<R>();
 
@@ -416,7 +415,7 @@ pub(super) fn transmute_into_target_vec<R: CheckedTransmute>(source: Vec<R>) -> 
     // SAFETY: Soundness is guaranteed by [`Transmute`]
     unsafe { Vec::from_raw_parts(vec.as_mut_ptr().cast(), vec.len(), vec.capacity()) }
 }
-#[cfg(all(feature = "alloc", feature = "owned-as-ref"))]
+#[cfg(feature = "alloc")]
 pub(super) fn transmute_from_target_vec<R: CheckedTransmute>(
     source: Vec<R::Target>,
 ) -> Option<Vec<R>> {
@@ -441,17 +440,17 @@ fn assert_size_and_allignment_match<R: CheckedTransmute>() {
 
 #[cfg(test)]
 mod tests {
-    #[cfg(feature = "alloc")]
-    use alloc::{boxed::Box, vec::Vec};
-
     use static_assertions::{assert_impl_all, assert_not_impl_any};
 
     use super::*;
+    #[cfg(feature = "alloc")]
+    use crate::boxed::CBoxedSlice;
     use crate::{
         Decode, Encode, ExternC,
         ir::{ReprFamily, Transmuted},
         niche::{Niche, NicheFamily, WithCustomNiche, WithStableNiche, WithoutNiche},
         slice::{CSlice, CSliceMut},
+        vec::CVec,
     };
 
     #[test]
@@ -503,7 +502,7 @@ mod tests {
         assert_impl_all!(Box<[bool]>:
             ReprFamily<Kind = Box<[Transmuted]>>,
             NicheFamily<Kind = WithCustomNiche>,
-            Niche<CType = CSliceMut<u8>>,
+            Niche<CType = CBoxedSlice<u8>>,
             Decode<'static>,
             Encode,
         );
@@ -511,7 +510,7 @@ mod tests {
         assert_impl_all!(Vec<bool>:
             ReprFamily<Kind = Vec<Transmuted>>,
             NicheFamily<Kind = WithCustomNiche>,
-            Niche<CType = CSliceMut<u8>>,
+            Niche<CType = CVec<u8>>,
             Decode<'static>,
             Encode,
         );
@@ -608,7 +607,7 @@ mod tests {
         assert_impl_all!(Box<[&u8]>:
             ReprFamily<Kind = Box<[Transmuted]>>,
             NicheFamily<Kind = WithCustomNiche>,
-            Niche<CType = CSliceMut<*const u8>>,
+            Niche<CType = CBoxedSlice<*const u8>>,
             Decode<'static>,
             Encode,
         );
@@ -616,7 +615,7 @@ mod tests {
         assert_impl_all!(Vec<&u8>:
             ReprFamily<Kind = Vec<Transmuted>>,
             NicheFamily<Kind = WithCustomNiche>,
-            Niche<CType = CSliceMut<*const u8>>,
+            Niche<CType = CVec<*const u8>>,
             Decode<'static>,
             Encode,
         );
@@ -713,7 +712,7 @@ mod tests {
         assert_impl_all!(Box<[&bool]>:
             ReprFamily<Kind = Box<[Transmuted]>>,
             NicheFamily<Kind = WithCustomNiche>,
-            Niche<CType = CSliceMut<*const u8>>,
+            Niche<CType = CBoxedSlice<*const u8>>,
             Decode<'static>,
             Encode,
         );
@@ -721,7 +720,7 @@ mod tests {
         assert_impl_all!(Vec<&bool>:
             ReprFamily<Kind = Vec<Transmuted>>,
             NicheFamily<Kind = WithCustomNiche>,
-            Niche<CType = CSliceMut<*const u8>>,
+            Niche<CType = CVec<*const u8>>,
             Decode<'static>,
             Encode,
         );
@@ -817,7 +816,7 @@ mod tests {
         assert_impl_all!(Box<[&mut u8]>:
             ReprFamily<Kind = Box<[Transmuted]>>,
             NicheFamily<Kind = WithCustomNiche>,
-            Niche<CType = CSliceMut<*mut u8>>,
+            Niche<CType = CBoxedSlice<*mut u8>>,
             Decode<'static>,
             Encode,
         );
@@ -825,7 +824,7 @@ mod tests {
         assert_impl_all!(Vec<&mut u8>:
             ReprFamily<Kind = Vec<Transmuted>>,
             NicheFamily<Kind = WithCustomNiche>,
-            Niche<CType = CSliceMut<*mut u8>>,
+            Niche<CType = CVec<*mut u8>>,
             Decode<'static>,
             Encode,
         );
@@ -920,14 +919,14 @@ mod tests {
         assert_impl_all!(Box<[&mut bool]>:
             ReprFamily<Kind = Box<[Transmuted]>>,
             NicheFamily<Kind = WithCustomNiche>,
-            Niche<CType = CSliceMut<*mut u8>>,
+            Niche<CType = CBoxedSlice<*mut u8>>,
             Decode<'static>,
         );
         #[cfg(feature = "alloc")]
         assert_impl_all!(Vec<&mut bool>:
             ReprFamily<Kind = Vec<Transmuted>>,
             NicheFamily<Kind = WithCustomNiche>,
-            Niche<CType = CSliceMut<*mut u8>>,
+            Niche<CType = CVec<*mut u8>>,
             Decode<'static>,
         );
         assert_impl_all!([&mut bool; 2]:

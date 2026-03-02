@@ -1,10 +1,10 @@
 use core::{cell::UnsafeCell, ptr::NonNull};
 
 #[cfg(feature = "alloc")]
-use alloc::{boxed::Box, string::String, vec::Vec};
+use alloc_crate::{boxed::Box, string::String, vec::Vec};
 
 #[cfg(feature = "alloc")]
-use crate::VecCType;
+use crate::{boxed::CBoxedSlice, vec::CVec};
 use crate::{
     ir::{ReprFamily, Transmuted},
     niche::{Niche, NicheFamily, StableNiche, WithCustomNiche, WithStableNiche, WithoutNiche},
@@ -13,6 +13,7 @@ use crate::{
     transmute::{CheckedTransmute, EncodeTransmuted},
 };
 
+// FIXME: Replace with NonZero<T>
 macro_rules! non_zero_derive {
     ($($ty:ty => $target:ty),+ $(,)?) => {$(
         reprC! {
@@ -164,11 +165,11 @@ impl Niche for &mut str {
 }
 #[cfg(feature = "alloc")]
 impl Niche for String {
-    const NICHE_VALUE: Self::CType = VecCType::none();
+    const NICHE_VALUE: Self::CType = CVec::none();
 }
 #[cfg(feature = "alloc")]
 impl Niche for Box<str> {
-    const NICHE_VALUE: Self::CType = VecCType::none();
+    const NICHE_VALUE: Self::CType = CBoxedSlice::none();
 }
 
 unsafe impl<R> EncodeTransmuted for UnsafeCell<R>
@@ -261,7 +262,7 @@ mod tests {
         assert_impl_all!(Box<[UnsafeCell<NonZeroU8>]>:
             ReprFamily<Kind = Box<[Transmuted]>>,
             NicheFamily<Kind = WithCustomNiche>,
-            Niche<CType = CSliceMut<u8>>,
+            Niche<CType = CBoxedSlice<u8>>,
             Decode<'static>,
             Encode,
         );
@@ -269,7 +270,7 @@ mod tests {
         assert_impl_all!(Vec<UnsafeCell<NonZeroU8>>:
             ReprFamily<Kind = Vec<Transmuted>>,
             NicheFamily<Kind = WithCustomNiche>,
-            Niche<CType = CSliceMut<u8>>,
+            Niche<CType = CVec<u8>>,
             Decode<'static>,
             Encode,
         );

@@ -1,17 +1,19 @@
 //! Logic related to the conversion of [`Option<T>`] to and from FFI-compatible representation
 
 #[cfg(feature = "alloc")]
-use alloc::boxed::Box;
-#[cfg(feature = "alloc")]
-use alloc::vec::Vec;
+use alloc_crate::{boxed::Box, vec::Vec};
+
 use disjoint_impls::disjoint_impls;
 
-#[cfg(feature = "alloc")]
-use crate::{BoxedSliceCType, VecCType};
 use crate::{
-    ExternC, ReprC, assert_arr_has_non_zero_len,
+    ExternC, assert_arr_has_non_zero_len,
     option::COption,
     slice::{CSlice, CSliceMut},
+};
+#[cfg(feature = "alloc")]
+use crate::{
+    boxed::{CBox, CBoxedSlice},
+    vec::CVec,
 };
 
 /// Marker trait for an [`NicheFamily`] type of a Rust type that has a niche value (stable or custom)
@@ -144,9 +146,9 @@ where
 #[cfg(feature = "alloc")]
 impl<R, C> Niche for Box<R>
 where
-    Self: ExternC<CType = *mut C>,
+    Self: ExternC<CType = CBox<C>>,
 {
-    const NICHE_VALUE: *mut C = core::ptr::null_mut();
+    const NICHE_VALUE: CBox<C> = CBox::none();
 }
 
 impl<R, C> Niche for &[R]
@@ -166,17 +168,17 @@ where
 #[cfg(feature = "alloc")]
 impl<R, C> Niche for Box<[R]>
 where
-    Self: ExternC<CType = BoxedSliceCType<C>>,
+    Self: ExternC<CType = CBoxedSlice<C>>,
 {
-    const NICHE_VALUE: Self::CType = BoxedSliceCType::none();
+    const NICHE_VALUE: Self::CType = CBoxedSlice::none();
 }
 
 #[cfg(feature = "alloc")]
 impl<R, C> Niche for Vec<R>
 where
-    Self: ExternC<CType = VecCType<C>>,
+    Self: ExternC<CType = CVec<C>>,
 {
-    const NICHE_VALUE: Self::CType = VecCType::none();
+    const NICHE_VALUE: Self::CType = CVec::none();
 }
 
 impl<R: Niche, const N: usize> Niche for [R; N]
@@ -189,7 +191,7 @@ where
     };
 }
 
-impl<R, C: ReprC> Niche for Option<R>
+impl<R, C> Niche for Option<R>
 where
     Self: ExternC<CType = COption<C>>,
 {
@@ -216,17 +218,13 @@ impl WithNiche for WithCustomNiche {}
 #[cfg(test)]
 mod tests {
     #[cfg(feature = "alloc")]
-    use alloc::string::String;
+    use alloc_crate::string::String;
     use core::{mem::ManuallyDrop, ptr::NonNull};
 
     use static_assertions::{assert_impl_all, assert_not_impl_any};
 
     use super::*;
-    use crate::{
-        Decode, Encode,
-        ir::ReprFamily,
-        slice::{CSlice, CSliceMut},
-    };
+    use crate::{Decode, Encode, ReprC, ir::ReprFamily, slice::CSlice};
 
     #[test]
     fn nested_option_niche_family() {
@@ -262,12 +260,12 @@ mod tests {
 
         #[cfg(feature = "alloc")]
         assert_eq!(
-            CSliceMut::<u8>::none(),
+            CVec::<u8>::none(),
             None::<String>.encode(&mut Default::default())
         );
         #[cfg(feature = "alloc")]
         assert_eq!(
-            CSliceMut::<u8>::none(),
+            CBoxedSlice::<u8>::none(),
             None::<Box<str>>.encode(&mut Default::default())
         );
 
@@ -288,7 +286,7 @@ mod tests {
         );
         #[cfg(feature = "alloc")]
         assert_eq!(
-            CSliceMut::<u8>::none(),
+            CVec::<u8>::none(),
             None::<ManuallyDrop<String>>.encode(&mut Default::default())
         );
 

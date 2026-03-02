@@ -1,22 +1,24 @@
 //! Logic related to the conversion of vectors to and from FFI-compatible representation
 
 #[cfg(feature = "alloc")]
-use alloc::vec::Vec;
+use alloc_crate::vec::Vec;
+
 #[cfg(feature = "alloc")]
-use core::mem::ManuallyDrop;
+use crate::alloc::Global;
+use crate::{ReprC, alloc::Allocator, reprC, slice::CSliceMut};
 
-use crate::{ReprC, reprC};
-
-/// Owned vector `Vec<C>` with a defined C ABI layout. Consists of a data pointer, a length, and a capacity.
+/// Owned vector `Vec<C>` with a defined C ABI layout and a deallocate function.
+///
 /// If the data pointer is set to `null`, the struct represents `Option<Vec<C>>`.
 #[repr(C)]
-pub struct CVec<C> {
+pub struct CVec<C, A: Allocator = Global> {
     data: *mut C,
     len: usize,
     cap: usize,
+    allocator: A,
 }
 
-impl<C> core::fmt::Debug for CVec<C> {
+impl<C, A: Allocator> core::fmt::Debug for CVec<C, A> {
     fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
         if self.data.is_null() {
             f.debug_struct(stringify!(CVec))
@@ -31,7 +33,7 @@ impl<C> core::fmt::Debug for CVec<C> {
         }
     }
 }
-impl<C> PartialEq for CVec<C> {
+impl<C, A: Allocator> PartialEq for CVec<C, A> {
     fn eq(&self, other: &Self) -> bool {
         match (self.data.is_null(), other.data.is_null()) {
             (true, true) => true,
@@ -46,13 +48,13 @@ impl<C> PartialEq for CVec<C> {
         }
     }
 }
-impl<C> Eq for CVec<C> {}
-impl<C> PartialOrd for CVec<C> {
+impl<C, A: Allocator> Eq for CVec<C, A> {}
+impl<C, A: Allocator> PartialOrd for CVec<C, A> {
     fn partial_cmp(&self, other: &Self) -> Option<core::cmp::Ordering> {
         Some(self.cmp(other))
     }
 }
-impl<C> Ord for CVec<C> {
+impl<C, A: Allocator> Ord for CVec<C, A> {
     fn cmp(&self, other: &Self) -> core::cmp::Ordering {
         use core::cmp::Ordering;
         match (self.data.is_null(), other.data.is_null()) {
@@ -78,45 +80,52 @@ impl<C> Ord for CVec<C> {
         }
     }
 }
-impl<C> Clone for CVec<C> {
+impl<C, A: Allocator> Clone for CVec<C, A> {
     fn clone(&self) -> Self {
         *self
     }
 }
-impl<C> Copy for CVec<C> {}
+impl<C, A: Allocator> Copy for CVec<C, A> {}
 
+#[cfg(feature = "alloc")]
 impl<C> CVec<C> {
+    /// Create [`Self`] from a [`Vec<T>`].
+    pub fn from_vec(source: Option<Vec<C>>) -> Self {
+        if let Some(vec) = source {
+            let mut vec = core::mem::ManuallyDrop::new(vec);
+
+            return Self {
+                data: vec.as_mut_ptr(),
+                len: vec.len(),
+                cap: vec.capacity(),
+                allocator: crate::alloc::Global,
+            };
+        }
+
+        Self::none()
+    }
+}
+
+impl<C, A: Allocator> CVec<C, A> {
     /// Set the vector's data pointer to null
     pub const fn none() -> Self {
         Self {
             data: core::ptr::null_mut(),
             len: 0,
             cap: 0,
+            // SAFETY: allocator will never be used
+            allocator: unsafe { core::mem::zeroed() },
         }
     }
+}
 
-    /// Create [`Self`] from a [`Vec<T>`].
-    #[cfg(feature = "alloc")]
-    pub fn from_vec(source: Option<Vec<C>>) -> Self {
-        if let Some(vec) = source {
-            let mut vec = ManuallyDrop::new(vec);
-
-            return Self {
-                data: vec.as_mut_ptr(),
-                len: vec.len(),
-                cap: vec.capacity(),
-            };
-        }
-
-        Self::none()
-    }
-
+#[cfg(feature = "alloc")]
+impl<C: ReprC, A: Allocator> CVec<C, A> {
     /// Convert [`Self`] into a vector. Return `None` if data pointer is null.
     ///
     /// # Safety
     ///
     /// Check [`Vec::from_raw_parts`]
-    #[cfg(feature = "alloc")]
     pub unsafe fn into_rust(self) -> Option<Vec<C>> {
         if self.data.is_null() {
             return None;
@@ -126,6 +135,12 @@ impl<C> CVec<C> {
     }
 }
 
+impl<C, A: Allocator> From<CVec<C, A>> for CSliceMut<C> {
+    fn from(vec: CVec<C, A>) -> Self {
+        Self::from_raw_parts_mut(vec.data, vec.len)
+    }
+}
+
 reprC! {
-    unsafe impl(T: ReprC) Robust for CVec<T> {}
+    unsafe impl(T: ReprC, A: Allocator) Robust for CVec<T, A> {}
 }
