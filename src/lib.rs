@@ -90,22 +90,31 @@ pub enum FfiReturn {
 /// Type implementing the trait must be a robust type with a guaranteed C ABI. Care must be taken
 /// not to dereference pointers whose referents don't implement `ReprC`; they are considered opaque
 // NOTE: Type is `Copy` to indicate that there can be no ownership transfer
-pub unsafe trait ReprC: Copy {}
+pub unsafe trait ReprC: Sized + Copy {}
 
 disjoint_impls! {
     /// A Rust type that has an `extern "C"` ABI
-    pub trait ExternC {
+    pub trait ExternC: Sized {
         /// The C-compatible representation of this Rust type.
         type CType: ReprC;
     }
 
-    impl<R: ReprFamily<Kind = Robust> + ReprC> ExternC for R {
+    impl<R: ReprC> ExternC for R
+    where
+       Self: ReprFamily<Kind = Robust>,
+    {
         type CType = Self;
     }
-    impl<R: ReprFamily<Kind = Opaque>> ExternC for R {
+    impl<R> ExternC for R
+    where
+       Self: ReprFamily<Kind = Opaque>,
+    {
         type CType = *mut Self;
     }
-    impl<R: ReprFamily<Kind = Transmuted> + CheckedTransmute<Target: ExternC>> ExternC for R {
+    impl<R: CheckedTransmute<Target: ExternC>> ExternC for R
+    where
+        Self: ReprFamily<Kind = Transmuted>,
+    {
         type CType = <R::Target as ExternC>::CType;
     }
 
@@ -143,7 +152,7 @@ disjoint_impls! {
     {
         type CType = CSlice<*const R>;
     }
-    impl<'slice, R: CheckedTransmute> ExternC for &'slice [R]
+    impl<'slice, R: CheckedTransmute<Target: Sized + 'slice>> ExternC for &'slice [R]
     where
         Self: ReprFamily<Kind = &'slice [Transmuted]>,
         &'slice [<R as CheckedTransmute>::Target]: ExternC,
@@ -169,7 +178,7 @@ disjoint_impls! {
     {
         type CType = CSliceMut<*mut R>;
     }
-    impl<'slice, R: CheckedTransmute> ExternC for &'slice mut [R]
+    impl<'slice, R: CheckedTransmute<Target: Sized + 'slice>> ExternC for &'slice mut [R]
     where
         Self: ReprFamily<Kind = &'slice mut [Transmuted]>,
         &'slice mut [<R as CheckedTransmute>::Target]: ExternC,
@@ -198,7 +207,7 @@ disjoint_impls! {
         type CType = CBoxedSlice<*mut R>;
     }
     #[cfg(feature = "alloc")]
-    impl<R: CheckedTransmute> ExternC for Box<[R]>
+    impl<R: CheckedTransmute<Target: Sized>> ExternC for Box<[R]>
     where
         Self: ReprFamily<Kind = Box<[Transmuted]>>,
         Box<[<R as CheckedTransmute>::Target]>: ExternC,
@@ -228,7 +237,7 @@ disjoint_impls! {
         type CType = CVec<*mut R>;
     }
     #[cfg(feature = "alloc")]
-    impl<R: CheckedTransmute> ExternC for Vec<R>
+    impl<R: CheckedTransmute<Target: Sized>> ExternC for Vec<R>
     where
         Self: ReprFamily<Kind = Vec<Transmuted>>,
         Vec<<R as CheckedTransmute>::Target>: ExternC,
@@ -289,7 +298,10 @@ disjoint_impls! {
             Self: 'itm;
     }
 
-    impl<R: ReprFamily<Kind = Robust> + ReprC> Encode for R {
+    impl<R: ReprC> Encode for R
+    where
+        Self: ReprFamily<Kind = Robust>,
+    {
         type Store = ();
 
         fn encode<'itm>(self, (): &mut ()) -> Self::CType
@@ -300,7 +312,10 @@ disjoint_impls! {
         }
     }
     #[cfg(feature = "alloc")]
-    impl<R: ReprFamily<Kind = Opaque>> Encode for R {
+    impl<R: ReprFamily<Kind = Opaque>> Encode for R
+    where
+        Self: ReprFamily<Kind = Opaque>,
+    {
         type Store = ();
 
         fn encode<'itm>(self, (): &mut ()) -> Self::CType
@@ -416,7 +431,7 @@ disjoint_impls! {
             CSlice::from_slice(Some(store.0.insert(ctypes)))
         }
     }
-    impl<'slice, R: CheckedTransmute> Encode for &'slice [R]
+    impl<'slice, R: CheckedTransmute<Target: Sized + 'slice>> Encode for &'slice [R]
     where
         Self: ReprFamily<Kind = &'slice [Transmuted]>,
         &'slice [<R as CheckedTransmute>::Target]: Encode,
@@ -488,7 +503,7 @@ disjoint_impls! {
             CSliceMut::from_slice(Some(store.ctypes.insert(ctypes)))
         }
     }
-    impl<'slice, R: CheckedTransmute<Target: ReprFamily<Kind: NonRobust> + 'slice>> Encode
+    impl<'slice, R: CheckedTransmute<Target: Sized + ReprFamily<Kind: NonRobust> + 'slice>> Encode
         for &'slice mut [R]
     where
         &'slice mut [<R as CheckedTransmute>::Target]: Encode,
@@ -623,7 +638,7 @@ disjoint_impls! {
         }
     }
     #[cfg(feature = "alloc")]
-    impl<R: CheckedTransmute> Encode for Box<[R]>
+    impl<R: CheckedTransmute<Target: Sized>> Encode for Box<[R]>
     where
         Box<[<R as CheckedTransmute>::Target]>: Encode,
         Self: ReprFamily<Kind = Box<[Transmuted]>>,
@@ -693,7 +708,7 @@ disjoint_impls! {
         }
     }
     #[cfg(feature = "alloc")]
-    impl<R: CheckedTransmute> Encode for Vec<R>
+    impl<R: CheckedTransmute<Target: Sized>> Encode for Vec<R>
     where
         Vec<<R as CheckedTransmute>::Target>: Encode,
         Self: ReprFamily<Kind = Vec<Transmuted>>,
@@ -809,7 +824,7 @@ disjoint_impls! {
 
 disjoint_impls! {
     /// Facilitates conversion into a Rust type from a corresponding C-compatible representation.
-    pub trait Decode<'d>: ExternC<CType: 'd> + Sized {
+    pub trait Decode<'d>: ExternC<CType: 'd> {
         /// Auxiliary storage used during conversion. If storage is not used, set the type to `()`.
         ///
         /// Use cases include:
@@ -915,7 +930,7 @@ disjoint_impls! {
         }
     }
 
-    impl<'slice, R: CheckedTransmute> Decode<'slice> for &'slice [R]
+    impl<'slice, R: CheckedTransmute<Target: Sized + 'slice>> Decode<'slice> for &'slice [R]
     where
         &'slice [<R as CheckedTransmute>::Target]: Decode<'slice>,
         Self: ReprFamily<Kind = &'slice [Transmuted]>,
@@ -997,7 +1012,7 @@ disjoint_impls! {
         }
     }
 
-    impl<'slice, R: CheckedTransmute> Decode<'slice> for &'slice mut [R]
+    impl<'slice, R: CheckedTransmute<Target: Sized + 'slice>> Decode<'slice> for &'slice mut [R]
     where
         &'slice mut [<R as CheckedTransmute>::Target]: Decode<'slice>,
         Self: ReprFamily<Kind = &'slice mut [Transmuted]>,
@@ -1082,7 +1097,7 @@ disjoint_impls! {
     }
 
     #[cfg(feature = "alloc")]
-    impl<'d, R: CheckedTransmute> Decode<'d> for Box<[R]>
+    impl<'d, R: CheckedTransmute<Target: Sized>> Decode<'d> for Box<[R]>
     where
         Box<[<R as CheckedTransmute>::Target]>: Decode<'d>,
         Self: ReprFamily<Kind = Box<[Transmuted]>>,
@@ -1144,7 +1159,7 @@ disjoint_impls! {
     }
 
     #[cfg(feature = "alloc")]
-    impl<'d, R: CheckedTransmute> Decode<'d> for Vec<R>
+    impl<'d, R: CheckedTransmute<Target: Sized>> Decode<'d> for Vec<R>
     where
         Vec<<R as CheckedTransmute>::Target>: Decode<'d>,
         Self: ReprFamily<Kind = Vec<Transmuted>>,
@@ -1567,7 +1582,7 @@ impl<'slice, 'b, R: Encode + Decode<'b> + 'b> Store for MutSliceStore<'slice, R>
     feature = "unstable-refs",
     not(feature = "unsafe-optimizations")
 ))]
-pub struct SliceMutTransmuteStore<'slice, R: CheckedTransmute> {
+pub struct SliceMutTransmuteStore<'slice, R: CheckedTransmute<Target: Sized>> {
     target: Option<Box<[R::Target]>>,
     original: Option<&'slice mut [R]>,
 }
@@ -1577,7 +1592,7 @@ pub struct SliceMutTransmuteStore<'slice, R: CheckedTransmute> {
     feature = "unstable-refs",
     not(feature = "unsafe-optimizations")
 ))]
-impl<'slice, R: CheckedTransmute> Default for SliceMutTransmuteStore<'slice, R> {
+impl<'slice, R: CheckedTransmute<Target: Sized>> Default for SliceMutTransmuteStore<'slice, R> {
     fn default() -> Self {
         Self {
             target: None,
@@ -1591,7 +1606,7 @@ impl<'slice, R: CheckedTransmute> Default for SliceMutTransmuteStore<'slice, R> 
     feature = "unstable-refs",
     not(feature = "unsafe-optimizations")
 ))]
-impl<'slice, R: CheckedTransmute> Store for SliceMutTransmuteStore<'slice, R> {
+impl<'slice, R: CheckedTransmute<Target: Sized>> Store for SliceMutTransmuteStore<'slice, R> {
     fn sync(self) -> Option<()> {
         if let (Some(borrows), Some(target)) = (self.original, self.target) {
             let target = crate::transmute::transmute_from_target_boxed_slice(target)?;

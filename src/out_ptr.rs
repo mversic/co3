@@ -90,7 +90,7 @@ disjoint_impls! {
     {
         type OutPtr = Self::CType;
     }
-    impl<R: CheckedTransmute> OutPtr for R
+    impl<R: CheckedTransmute<Target: Sized>> OutPtr for R
     where
         Self: ReprFamily<Kind = Transmuted>,
         <R as CheckedTransmute>::Target: OutPtr,
@@ -127,7 +127,7 @@ disjoint_impls! {
     {
         type OutPtr = CBoxedSlice<*const R>;
     }
-    impl<'slice, R: CheckedTransmute> OutPtr for &'slice [R]
+    impl<'slice, R: CheckedTransmute<Target: Sized + 'slice>> OutPtr for &'slice [R]
     where
         Self: ReprFamily<Kind = &'slice [Transmuted]>,
         &'slice [<R as CheckedTransmute>::Target]: OutPtr,
@@ -142,7 +142,7 @@ disjoint_impls! {
         type OutPtr = CBoxedSlice<R::CType>;
     }
 
-    impl<'slice, R: CheckedTransmute> OutPtr for &'slice mut [R]
+    impl<'slice, R: CheckedTransmute<Target: Sized + 'slice>> OutPtr for &'slice mut [R]
     where
         &'slice mut [<R as CheckedTransmute>::Target]: OutPtr,
         Self: ReprFamily<Kind = &'slice mut [Transmuted]>,
@@ -165,7 +165,7 @@ disjoint_impls! {
         type OutPtr = CBoxedSlice<*mut R>;
     }
     #[cfg(feature = "alloc")]
-    impl<R: CheckedTransmute> OutPtr for Box<[R]>
+    impl<R: CheckedTransmute<Target: Sized>> OutPtr for Box<[R]>
     where
         Self: ReprFamily<Kind = Box<[Transmuted]>>,
         Box<[<R as CheckedTransmute>::Target]>: OutPtr,
@@ -195,7 +195,7 @@ disjoint_impls! {
         type OutPtr = CBoxedSlice<*mut R>;
     }
     #[cfg(feature = "alloc")]
-    impl<R: CheckedTransmute> OutPtr for Vec<R>
+    impl<R: CheckedTransmute<Target: Sized>> OutPtr for Vec<R>
     where
         Self: ReprFamily<Kind = Vec<Transmuted>>,
         Vec<<R as CheckedTransmute>::Target>: OutPtr,
@@ -270,7 +270,7 @@ disjoint_impls! {
             }
         }
     }
-    impl<R: CheckedTransmute> OutPtrWrite for R
+    impl<R: CheckedTransmute<Target: Sized>> OutPtrWrite for R
     where
         Self: ReprFamily<Kind = Transmuted>,
         <R as CheckedTransmute>::Target: OutPtrWrite,
@@ -342,7 +342,7 @@ disjoint_impls! {
             }
         }
     }
-    impl<'slice, R: CheckedTransmute> OutPtrWrite for &'slice [R]
+    impl<'slice, R: CheckedTransmute<Target: Sized + 'slice>> OutPtrWrite for &'slice [R]
     where
         &'slice [<R as CheckedTransmute>::Target]: OutPtrWrite,
         Self: ReprFamily<Kind = &'slice [Transmuted]>,
@@ -372,7 +372,7 @@ disjoint_impls! {
         }
     }
 
-    impl<'slice, R: CheckedTransmute> OutPtrWrite for &'slice mut [R]
+    impl<'slice, R: CheckedTransmute<Target: Sized + 'slice>> OutPtrWrite for &'slice mut [R]
     where
         &'slice mut [<R as CheckedTransmute>::Target]: OutPtrWrite,
         Self: ReprFamily<Kind = &'slice mut [Transmuted]>,
@@ -413,7 +413,7 @@ disjoint_impls! {
         }
     }
     #[cfg(feature = "alloc")]
-    impl<R: CheckedTransmute> OutPtrWrite for Box<[R]>
+    impl<R: CheckedTransmute<Target: Sized>> OutPtrWrite for Box<[R]>
     where
         Self: ReprFamily<Kind = Box<[Transmuted]>>,
         Box<[<R as CheckedTransmute>::Target]>: OutPtrWrite,
@@ -473,7 +473,7 @@ disjoint_impls! {
         }
     }
     #[cfg(feature = "alloc")]
-    impl<R: CheckedTransmute> OutPtrWrite for Vec<R>
+    impl<R: CheckedTransmute<Target: Sized>> OutPtrWrite for Vec<R>
     where
         Vec<<R as CheckedTransmute>::Target>: OutPtrWrite,
         Self: ReprFamily<Kind = Vec<Transmuted>>,
@@ -582,7 +582,7 @@ disjoint_impls! {
             unsafe { Decode::decode(out_ptr, &mut ()) }
         }
     }
-    impl<R: CheckedTransmute> OutPtrRead for R
+    impl<R: CheckedTransmute<Target: Sized>> OutPtrRead for R
     where
         Self: ReprFamily<Kind = Transmuted>,
         <R as CheckedTransmute>::Target: OutPtrRead,
@@ -618,7 +618,7 @@ disjoint_impls! {
             unsafe { out_ptr.into_rust() }
         }
     }
-    impl<'d, R: CheckedTransmute> OutPtrRead for &'d [R]
+    impl<'d, R: CheckedTransmute<Target: Sized + 'd>> OutPtrRead for &'d [R]
     where
         &'d [<R as CheckedTransmute>::Target]: OutPtrRead,
         Self: ReprFamily<Kind = &'d [Transmuted]>,
@@ -629,7 +629,7 @@ disjoint_impls! {
         }
     }
 
-    impl<'d, R: CheckedTransmute> OutPtrRead for &'d mut [R]
+    impl<'d, R: CheckedTransmute<Target: Sized + 'd>> OutPtrRead for &'d mut [R]
     where
         &'d mut [<R as CheckedTransmute>::Target]: OutPtrRead,
         Self: ReprFamily<Kind = &'d mut [Transmuted]>,
@@ -658,7 +658,7 @@ disjoint_impls! {
         }
     }
     #[cfg(feature = "alloc")]
-    impl<R: CheckedTransmute> OutPtrRead for Box<[R]>
+    impl<R: CheckedTransmute<Target: Sized>> OutPtrRead for Box<[R]>
     where
         Self: ReprFamily<Kind = Box<[Transmuted]>>,
         Box<[<R as CheckedTransmute>::Target]>: OutPtrRead,
@@ -676,23 +676,24 @@ disjoint_impls! {
         Self: ReprFamily<Kind = Box<[S]>> + Decode<'d, CType = CSliceMut<<R as ExternC>::CType>>,
     {
         unsafe fn try_read_out(out_ptr: Self::OutPtr) -> Option<Self> {
-            let mut store = Default::default();
+            unimplemented!()
+            //let mut store = Default::default();
 
-            let store_ref = unsafe {
-                core::mem::transmute::<&mut <Self as Decode>::Store, &'d mut <Self as Decode>::Store>(
-                    &mut store,
-                )
-            };
+            //let store_ref = unsafe {
+            //    core::mem::transmute::<&mut <Self as Decode>::Store, &'d mut <Self as Decode>::Store>(
+            //        &mut store,
+            //    )
+            //};
 
-            unsafe {
-                let res = Decode::decode(out_ptr.into(), store_ref);
+            //unsafe {
+            //    let res = Decode::decode(out_ptr.into(), store_ref);
 
-                if !out_ptr.deallocate() {
-                    return None;
-                }
+            //    if !out_ptr.deallocate() {
+            //        return None;
+            //    }
 
-                res
-            }
+            //    res
+            //}
         }
     }
 
@@ -715,7 +716,7 @@ disjoint_impls! {
         }
     }
     #[cfg(feature = "alloc")]
-    impl<R: CheckedTransmute> OutPtrRead for Vec<R>
+    impl<R: CheckedTransmute<Target: Sized>> OutPtrRead for Vec<R>
     where
         Self: ReprFamily<Kind = Vec<Transmuted>>,
         Vec<<R as CheckedTransmute>::Target>: OutPtrRead,
@@ -733,23 +734,24 @@ disjoint_impls! {
         Self: ReprFamily<Kind = Vec<S>> + Decode<'d, CType = CSliceMut<<R as ExternC>::CType>>,
     {
         unsafe fn try_read_out(out_ptr: Self::OutPtr) -> Option<Self> {
-            let mut store = Default::default();
+            unimplemented!()
+            //let mut store = Default::default();
 
-            let store_ref = unsafe {
-                core::mem::transmute::<&mut <Self as Decode>::Store, &'d mut <Self as Decode>::Store>(
-                    &mut store,
-                )
-            };
+            //let store_ref = unsafe {
+            //    core::mem::transmute::<&mut <Self as Decode>::Store, &'d mut <Self as Decode>::Store>(
+            //        &mut store,
+            //    )
+            //};
 
-            unsafe {
-                let res = Decode::decode(out_ptr.into(), store_ref);
+            //unsafe {
+            //    let res = Decode::decode(out_ptr.into(), store_ref);
 
-                if !out_ptr.deallocate() {
-                    return None;
-                }
+            //    if !out_ptr.deallocate() {
+            //        return None;
+            //    }
 
-                res
-            }
+            //    res
+            //}
         }
     }
 

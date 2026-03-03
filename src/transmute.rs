@@ -5,9 +5,7 @@ use core::mem::ManuallyDrop;
 use disjoint_impls::disjoint_impls;
 
 use crate::{
-    Encode, ReprC, Store, assert_arr_has_non_zero_len,
-    ir::{Cloned, NonRobust, Opaque, ReprFamily, Robust, Transmuted},
-    niche::{NicheFamily, StableNiche, WithNiche, WithoutNiche},
+    Encode, ReprC, Store, assert_arr_has_non_zero_len, boxed::CBox, ir::{Cloned, NonRobust, Opaque, ReprFamily, Robust, Transmuted}, niche::{NicheFamily, StableNiche, WithNiche, WithoutNiche}
 };
 
 disjoint_impls! {
@@ -19,7 +17,7 @@ disjoint_impls! {
     /// - `Self::is_valid` must not return false positives, i.e. return `true` for trap representations
     pub unsafe trait CheckedTransmute {
         /// Type that [`Self`] can be transmuted into
-        type Target;
+        type Target: ?Sized;
 
         /// Called when transmuting [`Self::Target`] back into [`Self`] to check for trap representations.
         ///
@@ -79,20 +77,20 @@ disjoint_impls! {
 
     #[cfg(feature = "alloc")]
     unsafe impl<R: ReprFamily<Kind = Robust> + ReprC> CheckedTransmute for Box<R> {
-        type Target = *mut R;
+        type Target = CBox<R>;
 
         #[inline(always)]
         fn is_valid(target: &Self::Target) -> bool {
-            !target.is_null()
+            !target.is_none()
         }
     }
     #[cfg(feature = "alloc")]
     unsafe impl<R: ReprFamily<Kind = Opaque>> CheckedTransmute for Box<R> {
-        type Target = *mut R;
+        type Target = CBox<R>;
 
         #[inline(always)]
         fn is_valid(target: &Self::Target) -> bool {
-            !target.is_null()
+            !target.is_none()
         }
     }
     #[cfg(feature = "alloc")]
@@ -217,7 +215,7 @@ disjoint_impls! {
     /// # Safety
     ///
     /// The type must not carry a mutable reference to a non-robust type
-    pub unsafe trait EncodeTransmuted: CheckedTransmute + Sized {
+    pub unsafe trait EncodeTransmuted: CheckedTransmute<Target: Sized> + Sized {
         // TODO: Use default associated type when available
         // https://github.com/rust-lang/rust/issues/29661
         type Store: Store + Default;
@@ -296,7 +294,7 @@ where
     type Store = <Self::Target as crate::Encode>::Store;
 }
 
-unsafe impl<R: CheckedTransmute, const N: usize> CheckedTransmute for [R; N] {
+unsafe impl<R: CheckedTransmute<Target: Sized>, const N: usize> CheckedTransmute for [R; N] {
     type Target = [R::Target; N];
 
     #[inline(always)]
@@ -307,12 +305,12 @@ unsafe impl<R: CheckedTransmute, const N: usize> CheckedTransmute for [R; N] {
 }
 
 #[repr(C)]
-union TransmuteHelper<R: CheckedTransmute> {
+union TransmuteHelper<R: CheckedTransmute<Target: Sized>> {
     source: ManuallyDrop<R>,
     target: ManuallyDrop<R::Target>,
 }
 
-pub(crate) fn transmute_into_target<R: CheckedTransmute>(source: R) -> R::Target {
+pub(crate) fn transmute_into_target<R: CheckedTransmute<Target: Sized>>(source: R) -> R::Target {
     assert_size_and_allignment_match::<R>();
 
     let transmute_helper = TransmuteHelper {
@@ -322,7 +320,9 @@ pub(crate) fn transmute_into_target<R: CheckedTransmute>(source: R) -> R::Target
     // SAFETY: Soundness is guaranteed by [`Transmute`]
     ManuallyDrop::into_inner(unsafe { transmute_helper.target })
 }
-pub(super) fn transmute_from_target<R: CheckedTransmute>(source: R::Target) -> Option<R> {
+pub(super) fn transmute_from_target<R: CheckedTransmute<Target: Sized>>(
+    source: R::Target,
+) -> Option<R> {
     assert_size_and_allignment_match::<R>();
 
     if !R::is_valid(&source) {
@@ -338,7 +338,7 @@ pub(super) fn transmute_from_target<R: CheckedTransmute>(source: R::Target) -> O
 }
 
 #[cfg(feature = "alloc")]
-pub(super) fn transmute_into_target_boxed_slice<R: CheckedTransmute>(
+pub(super) fn transmute_into_target_boxed_slice<R: CheckedTransmute<Target: Sized>>(
     #[expect(clippy::boxed_local)] mut source: Box<[R]>,
 ) -> Box<[R::Target]> {
     assert_size_and_allignment_match::<R>();
@@ -349,7 +349,7 @@ pub(super) fn transmute_into_target_boxed_slice<R: CheckedTransmute>(
     unsafe { Box::from_raw(core::ptr::slice_from_raw_parts_mut(ptr, len)) }
 }
 #[cfg(feature = "alloc")]
-pub(super) fn transmute_from_target_boxed_slice<R: CheckedTransmute>(
+pub(super) fn transmute_from_target_boxed_slice<R: CheckedTransmute<Target: Sized>>(
     #[expect(clippy::boxed_local)] mut source: Box<[R::Target]>,
 ) -> Option<Box<[R]>> {
     assert_size_and_allignment_match::<R>();
@@ -367,14 +367,16 @@ pub(super) fn transmute_from_target_boxed_slice<R: CheckedTransmute>(
     })
 }
 
-pub(super) fn transmute_into_target_ref_slice<R: CheckedTransmute>(source: &[R]) -> &[R::Target] {
+pub(super) fn transmute_into_target_ref_slice<R: CheckedTransmute<Target: Sized>>(
+    source: &[R],
+) -> &[R::Target] {
     assert_size_and_allignment_match::<R>();
 
     let (ptr, len) = (source.as_ptr().cast(), source.len());
 
     unsafe { core::slice::from_raw_parts(ptr, len) }
 }
-pub(super) fn transmute_from_target_ref_slice<R: CheckedTransmute>(
+pub(super) fn transmute_from_target_ref_slice<R: CheckedTransmute<Target: Sized>>(
     source: &[R::Target],
 ) -> Option<&[R]> {
     assert_size_and_allignment_match::<R>();
@@ -387,7 +389,7 @@ pub(super) fn transmute_from_target_ref_slice<R: CheckedTransmute>(
     Some(unsafe { core::slice::from_raw_parts(source.as_ptr().cast(), source.len()) })
 }
 
-pub(super) fn transmute_into_target_slice_mut<R: CheckedTransmute>(
+pub(super) fn transmute_into_target_slice_mut<R: CheckedTransmute<Target: Sized>>(
     source: &mut [R],
 ) -> &mut [R::Target] {
     let (ptr, len) = (source.as_mut_ptr().cast(), source.len());
@@ -395,7 +397,7 @@ pub(super) fn transmute_into_target_slice_mut<R: CheckedTransmute>(
     // SAFETY: Soundness is guaranteed by [`Transmute`]
     unsafe { core::slice::from_raw_parts_mut(ptr, len) }
 }
-pub(super) fn transmute_from_target_slice_mut<R: CheckedTransmute>(
+pub(super) fn transmute_from_target_slice_mut<R: CheckedTransmute<Target: Sized>>(
     source: &mut [R::Target],
 ) -> Option<&mut [R]> {
     if !source.iter_mut().all(|item| R::is_valid(item)) {
@@ -407,7 +409,9 @@ pub(super) fn transmute_from_target_slice_mut<R: CheckedTransmute>(
 }
 
 #[cfg(feature = "alloc")]
-pub(super) fn transmute_into_target_vec<R: CheckedTransmute>(source: Vec<R>) -> Vec<R::Target> {
+pub(super) fn transmute_into_target_vec<R: CheckedTransmute<Target: Sized>>(
+    source: Vec<R>,
+) -> Vec<R::Target> {
     assert_size_and_allignment_match::<R>();
 
     let mut vec = ManuallyDrop::new(source);
@@ -416,7 +420,7 @@ pub(super) fn transmute_into_target_vec<R: CheckedTransmute>(source: Vec<R>) -> 
     unsafe { Vec::from_raw_parts(vec.as_mut_ptr().cast(), vec.len(), vec.capacity()) }
 }
 #[cfg(feature = "alloc")]
-pub(super) fn transmute_from_target_vec<R: CheckedTransmute>(
+pub(super) fn transmute_from_target_vec<R: CheckedTransmute<Target: Sized>>(
     source: Vec<R::Target>,
 ) -> Option<Vec<R>> {
     assert_size_and_allignment_match::<R>();
@@ -431,7 +435,7 @@ pub(super) fn transmute_from_target_vec<R: CheckedTransmute>(
     Some(unsafe { Vec::from_raw_parts(vec.as_mut_ptr().cast(), vec.len(), vec.capacity()) })
 }
 
-fn assert_size_and_allignment_match<R: CheckedTransmute>() {
+fn assert_size_and_allignment_match<R: CheckedTransmute<Target: Sized>>() {
     const {
         debug_assert!(core::mem::size_of::<R>() == core::mem::size_of::<R::Target>());
         debug_assert!(core::mem::align_of::<R>() == core::mem::align_of::<R::Target>());

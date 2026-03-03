@@ -128,11 +128,6 @@ impl<C> CSliceMut<C> {
 
         Self::none()
     }
-
-    /// Create a slice from a data pointer and a length.
-    pub(super) const fn from_raw_parts_mut(data: *mut C, len: usize) -> Self {
-        Self { data, len }
-    }
 }
 
 impl<C: ReprC> CSlice<C> {
@@ -168,8 +163,8 @@ impl<C: ReprC> CSliceMut<C> {
 }
 
 reprC! {
-    unsafe impl(T: ReprC) Robust for CSlice<T> {}
+    unsafe impl(C) Robust for CSlice<C> {}
 }
 reprC! {
-    unsafe impl(T: ReprC) Robust for CSliceMut<T> {}
+    unsafe impl(C) Robust for CSliceMut<C> {}
 }

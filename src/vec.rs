@@ -5,7 +5,7 @@ use alloc_crate::vec::Vec;
 
 #[cfg(feature = "alloc")]
 use crate::alloc::Global;
-use crate::{ReprC, alloc::Allocator, reprC, slice::CSliceMut};
+use crate::{ReprC, alloc::Allocator, reprC};
 
 /// Owned vector `Vec<C>` with a defined C ABI layout and a deallocate function.
 ///
@@ -135,12 +135,6 @@ impl<C: ReprC, A: Allocator> CVec<C, A> {
     }
 }
 
-impl<C, A: Allocator> From<CVec<C, A>> for CSliceMut<C> {
-    fn from(vec: CVec<C, A>) -> Self {
-        Self::from_raw_parts_mut(vec.data, vec.len)
-    }
-}
-
 reprC! {
-    unsafe impl(T: ReprC, A: Allocator) Robust for CVec<T, A> {}
+    unsafe impl(C, A: Allocator) Robust for CVec<C, A> {}
 }

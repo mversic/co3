@@ -4,6 +4,7 @@ use co3::{
     COption, Decode, Encode, ExternC, FfiReturn, export,
     out_ptr::OutPtrRead,
     slice::{CBoxedSlice, CSlice},
+    ReprC,
 };
 
 co3::def_fns! { dealloc }
@@ -45,6 +46,15 @@ pub struct TransparentStruct {
 )]
 #[repr(transparent)]
 pub struct RobustTargetTransparent([u8; 4]);
+
+#[derive(ReprC)]
+#[reprC(
+    unsafe(is_valid = |target: &Self::Target|
+        target.iter().all(|&x| x != 0)
+    )
+)]
+#[repr(transparent)]
+struct TransaprentDst([u32]);
 
 #[export("C")]
 pub fn array_of_transparent(arr: &mut [TransparentStruct; 1]) -> &mut [TransparentStruct; 1] {

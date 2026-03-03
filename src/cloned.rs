@@ -93,9 +93,8 @@ disjoint_impls! {
                 .map(CloneFromWrapped::clone_from_wrapped)
         }
     }
-    impl<'d, R: CheckedTransmute> DecodeCloned<'d> for R
+    impl<'d, R: CheckedTransmute<Target: DecodeCloned<'d>>> DecodeCloned<'d> for R
     where
-        <R as CheckedTransmute>::Target: DecodeCloned<'d>,
         Self: ReprFamily<Kind = Transmuted>,
     {
         #[inline(always)]
@@ -145,7 +144,7 @@ disjoint_impls! {
         Self: ReprFamily<Kind = &'slice [Opaque]>
     {
     }
-    impl<'slice, R: CheckedTransmute> DecodeCloned<'slice> for &'slice [R]
+    impl<'slice, R: CheckedTransmute<Target: Sized + 'slice>> DecodeCloned<'slice> for &'slice [R]
     where
         &'slice [<R as CheckedTransmute>::Target]: Decode<'slice>,
         Self: ReprFamily<Kind = &'slice [Transmuted]>,
@@ -204,7 +203,7 @@ disjoint_impls! {
         }
     }
     #[cfg(feature = "alloc")]
-    impl<'d, R: CheckedTransmute> DecodeCloned<'d> for Box<[R]>
+    impl<'d, R: CheckedTransmute<Target: Sized>> DecodeCloned<'d> for Box<[R]>
     where
         Box<[<R as CheckedTransmute>::Target]>: DecodeCloned<'d>,
         Self: ReprFamily<Kind = Box<[Transmuted]>>,
@@ -237,7 +236,7 @@ disjoint_impls! {
     }
 
     #[cfg(feature = "alloc")]
-    impl<'d, R: CheckedTransmute> DecodeCloned<'d> for Vec<R>
+    impl<'d, R: CheckedTransmute<Target: Sized>> DecodeCloned<'d> for Vec<R>
     where
         Vec<<R as CheckedTransmute>::Target>: DecodeCloned<'d>,
         Self: ReprFamily<Kind = Vec<Transmuted>>,

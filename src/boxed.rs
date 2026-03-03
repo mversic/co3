@@ -7,7 +7,7 @@ use alloc_crate::boxed::Box;
 
 #[cfg(feature = "alloc")]
 use crate::alloc::Global;
-use crate::{ReprC, alloc::Allocator, reprC, slice::CSliceMut};
+use crate::{ReprC, alloc::Allocator, reprC};
 
 /// Owned pointer `Box<C>` with a deallocate function.
 ///
@@ -151,6 +151,11 @@ impl<C, A: Allocator> CBox<C, A> {
             allocator: unsafe { core::mem::zeroed() },
         }
     }
+
+    /// Returns `true` if the option is a `None` value.
+    pub const fn is_none(&self) -> bool {
+        self.data.is_null()
+    }
 }
 
 #[cfg(feature = "alloc")]
@@ -233,16 +238,10 @@ impl<C: ReprC, A: Allocator> CBoxedSlice<C, A> {
     }
 }
 
-impl<C, A: Allocator> From<CBoxedSlice<C, A>> for CSliceMut<C> {
-    fn from(slice: CBoxedSlice<C, A>) -> Self {
-        Self::from_raw_parts_mut(slice.data, slice.len)
-    }
+reprC! {
+    unsafe impl(C, A: Allocator) Robust for CBox<C, A> {}
 }
 
 reprC! {
-    unsafe impl(T: ReprC, A: Allocator) Robust for CBox<T, A> {}
-}
-
-reprC! {
-    unsafe impl(T: ReprC, A: Allocator) Robust for CBoxedSlice<T, A> {}
+    unsafe impl(C, A: Allocator) Robust for CBoxedSlice<C, A> {}
 }
