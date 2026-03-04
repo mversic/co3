@@ -159,7 +159,7 @@ impl<C, A: Allocator> CBox<C, A> {
 }
 
 #[cfg(feature = "alloc")]
-impl<C: ReprC, A: Allocator> CBox<C, A> {
+impl<C: ReprC> CBox<C> {
     /// Convert [`Self`] into [`Box<C>`]. Returns `None` if pointer is null.
     ///
     /// # Safety
@@ -222,7 +222,7 @@ impl<C, A: Allocator> CBoxedSlice<C, A> {
 }
 
 #[cfg(feature = "alloc")]
-impl<C: ReprC, A: Allocator> CBoxedSlice<C, A> {
+impl<C: ReprC> CBoxedSlice<C> {
     /// Convert [`Self`] into a boxed slice. Return `None` if data pointer is null.
     /// Unlike [`Box::from_raw`], data pointer is allowed to be null.
     ///

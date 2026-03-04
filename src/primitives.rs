@@ -2,6 +2,7 @@
 
 use crate::reprC;
 
+// TODO: https://github.com/mversic/co3/issues/57
 //#[cfg(target_family = "wasm")]
 //mod wasm {
 //    use alloc::{boxed::Box, vec::Vec};
@@ -103,14 +104,14 @@ use crate::reprC;
 //                type Kind = NonWasmIntPrimitive;
 //            }
 //
-//            impl ExternC for $src {
+//            impl ExternC<false> for $src {
 //                type CType = $dst;
 //            }
 //            impl OutPtr for $src {
 //                type OutPtr = $src;
 //            }
 //
-//            impl Encode for $src {
+//            impl Encode<false> for $src {
 //                type Store = ();
 //
 //                fn encode<'itm>(self, (): &mut ()) -> Self::CType where Self: 'itm {
@@ -118,7 +119,7 @@ use crate::reprC;
 //                }
 //            }
 //
-//            impl Decode<'_> for $src {
+//            impl Decode<'_, false> for $src {
 //                type Store = ();
 //
 //                unsafe fn decode<'itm: 'd>(source: Self::CType, (): &mut ()) -> Option<Self> {
@@ -184,4 +185,6 @@ fieldless_enum_derive! {
 }
 
 primitive_derive! { u32, i32, u64, i64, u128, i128, f32, f64 }
+// TODO: https://github.com/mversic/co3/issues/57
+//#[cfg(not(target_family = "wasm"))]
 primitive_derive! { u8, i8, u16, i16 }

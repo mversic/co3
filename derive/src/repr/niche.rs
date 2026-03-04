@@ -4,7 +4,7 @@ use quote::{format_ident, quote};
 
 use crate::{
     attr_parse::repr::ReprPrimitive,
-    extern_c::{
+    repr::{
         FfiTypeField, FfiTypeVariant, is_type_parameterized,
         repr_c::{gen_extern_c_bounds, gen_repr_c_item_name, is_exhaustive_enum},
     },
@@ -114,6 +114,7 @@ pub fn gen_struct_niche_ir(
 
     quote! {
         impl #impl_generics co3::niche::Niche for #struct_name #ty_generics where
+            // FIXME: Both these bound seems redundant?
             Self: co3::ExternC<CType = #repr_c_struct_name #ty_generics>,
             #for_dummy #fields_tuple: co3::niche::Niche<CType = #c_fields_tuple>,
             #extern_c_bounds

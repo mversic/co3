@@ -1,7 +1,9 @@
 //! FFI-safe equivalent of [`core::result`] related functionality
 
 use crate::{
-    Decode, Encode, ExternC, ReprC,
+    Decode, Encode, ExternC, ReprC, Store,
+    borrow::Borrow,
+    cloned::DecodeCloned,
     ir::ReprFamily,
     niche::{Niche, NicheFamily},
     reprC,
@@ -9,26 +11,26 @@ use crate::{
 
 /// FFI-safe equivalent of [`core::result::Result`]
 #[repr(C)]
-pub struct CResult<T: Copy, E: Copy> {
-    tag: u8,
-    payload: CResultPayload<T, E>,
+pub union CResult<T: Copy, E: Copy> {
+    ok: CResultOk<T>,
+    err: CResultErr<E>,
+    // TODO: Consider using:
+    // ok: ManuallyDrop<CResultOk<T>>,
+    // err: ManuallyDrop<CResultErr<E>>,
 }
 
-/// Payload of [`CResult`]
 #[repr(C)]
-#[expect(non_snake_case)]
-union CResultPayload<T: Copy, E: Copy> {
-    Ok: T,
-    Err: E,
-}
+struct CResultOk<T>(u8, T);
+
+#[repr(C)]
+struct CResultErr<E>(u8, E);
 
 impl<T: Copy, E: Copy> CResult<T, E> {
     /// Construct the success value
     #[expect(non_snake_case)]
     pub const fn Ok(ok: T) -> Self {
         Self {
-            tag: 0,
-            payload: CResultPayload { Ok: ok },
+            ok: CResultOk(0, ok),
         }
     }
 
@@ -36,15 +38,13 @@ impl<T: Copy, E: Copy> CResult<T, E> {
     #[expect(non_snake_case)]
     pub const fn Err(err: E) -> Self {
         Self {
-            tag: 1,
-            payload: CResultPayload { Err: err },
+            err: CResultErr(1, err),
         }
     }
 
     pub(crate) const fn niche() -> Self {
         Self {
-            tag: 2,
-            payload: unsafe { core::mem::zeroed() },
+            ok: CResultOk(2, unsafe { core::mem::zeroed() }),
         }
     }
 }
@@ -62,9 +62,12 @@ impl<T: Copy, E: Copy> TryFrom<CResult<T, E>> for Result<T, E> {
     type Error = crate::FfiReturn;
 
     fn try_from(value: CResult<T, E>) -> Result<Self, Self::Error> {
-        match value.tag {
-            0 => Ok(Ok(unsafe { value.payload.Ok })),
-            1 => Ok(Err(unsafe { value.payload.Err })),
+        // SAFETY: Both variant structs have tag as the first field at offset 0
+        let tag = unsafe { core::ptr::from_ref(&value).cast::<u8>().read() };
+
+        match tag {
+            0 => Ok(Ok(unsafe { value.ok.1 })),
+            1 => Ok(Err(unsafe { value.err.1 })),
             _ => Err(crate::FfiReturn::TrapRepresentation),
         }
     }
@@ -77,8 +80,15 @@ impl<T: Copy, E: Copy> Clone for CResult<T, E> {
     }
 }
 
-impl<T: Copy, E: Copy> Copy for CResultPayload<T, E> {}
-impl<T: Copy, E: Copy> Clone for CResultPayload<T, E> {
+impl<T: Copy> Copy for CResultOk<T> {}
+impl<T: Copy> Clone for CResultOk<T> {
+    fn clone(&self) -> Self {
+        *self
+    }
+}
+
+impl<E: Copy> Copy for CResultErr<E> {}
+impl<E: Copy> Clone for CResultErr<E> {
     fn clone(&self) -> Self {
         *self
     }
@@ -88,11 +98,9 @@ reprC! {
     unsafe impl(T: ReprC, E: ReprC) Robust for CResult<T, E> {}
 }
 
-reprC! {
-    unsafe impl(T: ReprC, E: ReprC) Robust for CResultPayload<T, E> {}
-}
-
 impl<T, E> ReprFamily for Result<T, E> {
+    // FIXME: Result is transparent if one param is ZST
+    // https://github.com/mversic/co3/issues/34
     type Kind = Self;
 }
 
@@ -103,12 +111,37 @@ where
     type Kind = <(T, E) as NicheFamily>::Kind;
 }
 
+impl<T: ExternC, E: ExternC> ExternC for Result<T, E> {
+    type CType = CResult<T::CType, E::CType>;
+}
+
 impl<T: ExternC, E: ExternC> Niche for Result<T, E> {
     const NICHE_VALUE: Self::CType = CResult::niche();
 }
 
-impl<T: ExternC, E: ExternC> ExternC for Result<T, E> {
-    type CType = CResult<T::CType, E::CType>;
+impl<T: Borrow, E: Borrow> Borrow for Result<T, E> {
+    type Store = Option<Result<T::Store, E::Store>>;
+
+    type Borrowed<'itm>
+        = Result<T::Borrowed<'itm>, E::Borrowed<'itm>>
+    where
+        Self: 'itm;
+
+    fn borrow<'itm>(self, store: &'itm mut Self::Store) -> Self::Borrowed<'itm>
+    where
+        Self: 'itm,
+    {
+        match self {
+            Ok(ok) => {
+                let ok_store = store.insert(Ok(Default::default()));
+                Ok(ok.borrow(unsafe { ok_store.as_mut().unwrap_unchecked() }))
+            }
+            Err(err) => {
+                let err_store = store.insert(Err(Default::default()));
+                Err(err.borrow(unsafe { err_store.as_mut().unwrap_err_unchecked() }))
+            }
+        }
+    }
 }
 
 impl<T: Encode, E: Encode> Encode for Result<T, E> {
@@ -126,12 +159,51 @@ impl<T: Encode, E: Encode> Encode for Result<T, E> {
 }
 
 impl<'d, T: Decode<'d>, E: Decode<'d>> Decode<'d> for Result<T, E> {
-    type Store = (T::Store, E::Store);
+    type Store = Option<Result<T::Store, E::Store>>;
 
     unsafe fn decode<'itm: 'd>(source: Self::CType, store: &'itm mut Self::Store) -> Option<Self> {
-        match TryInto::<Result<_, _>>::try_into(source).ok()? {
-            Ok(ok) => Some(Ok(unsafe { T::decode(ok, &mut store.0)? })),
-            Err(err) => Some(Err(unsafe { E::decode(err, &mut store.1)? })),
+        let value = match TryInto::<Result<_, _>>::try_into(source).ok()? {
+            Ok(ok) => {
+                let ok_store = store.insert(Ok(Default::default()));
+                let ok_store = unsafe { ok_store.as_mut().unwrap_unchecked() };
+                Ok(unsafe { T::decode(ok, ok_store)? })
+            }
+            Err(err) => {
+                let err_store = store.insert(Err(Default::default()));
+                let err_store = unsafe { err_store.as_mut().unwrap_err_unchecked() };
+                Err(unsafe { E::decode(err, err_store)? })
+            }
+        };
+
+        Some(value)
+    }
+}
+
+impl<'d, T: DecodeCloned<'d>, E: DecodeCloned<'d>> DecodeCloned<'d> for Result<T, E> {
+    unsafe fn decode_cloned<'itm: 'd>(
+        source: Self::CType,
+        store: &'itm mut Self::Store,
+    ) -> Option<Self> {
+        let value = match TryInto::<Result<_, _>>::try_into(source).ok()? {
+            Ok(ok) => {
+                let ok_store = store.insert(Ok(Default::default()));
+                Ok(unsafe { T::decode_cloned(ok, ok_store.as_mut().unwrap_unchecked())? })
+            }
+            Err(err) => {
+                let err_store = store.insert(Err(Default::default()));
+                Err(unsafe { E::decode_cloned(err, err_store.as_mut().unwrap_err_unchecked())? })
+            }
+        };
+
+        Some(value)
+    }
+}
+
+impl<T: Store, E: Store> Store for Option<Result<T, E>> {
+    fn sync(self) -> Option<()> {
+        match self.unwrap() {
+            Ok(ok) => ok.sync(),
+            Err(err) => err.sync(),
         }
     }
 }

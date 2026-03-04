@@ -120,7 +120,7 @@ impl<C, A: Allocator> CVec<C, A> {
 }
 
 #[cfg(feature = "alloc")]
-impl<C: ReprC, A: Allocator> CVec<C, A> {
+impl<C: ReprC> CVec<C> {
     /// Convert [`Self`] into a vector. Return `None` if data pointer is null.
     ///
     /// # Safety

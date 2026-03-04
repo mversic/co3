@@ -17,7 +17,7 @@ use crate::{
         repr::{Repr, ReprKind},
     },
     emitter::Emitter,
-    extern_c::{
+    repr::{
         no_repr::{derive_no_repr_fieldless_enum, derive_opaque_item},
         repr_c::{
             derive_data_enum, derive_fieldless_enum, derive_repr_c_data_enum, derive_repr_c_struct,
@@ -508,7 +508,7 @@ pub fn derive_extern_c(emitter: &mut Emitter, input: &syn::DeriveInput) -> Token
                 }
                 darling::ast::Data::Enum(variants) => {
                     if variants.iter().all(|v| v.fields.fields.is_empty()) {
-                        derive_no_repr_fieldless_enum(&input.ident, variants)
+                        derive_no_repr_fieldless_enum(&input.ident, &input.generics, variants)
                     } else {
                         derive_no_repr_data_enum(&input.ident, &input.generics, variants, local)
                     }

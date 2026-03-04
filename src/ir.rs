@@ -202,6 +202,7 @@ disjoint_impls! {
         type Kind = Option<WithCustomNiche>;
     }
     // TODO: Make a test. I think the example type is &Box<u8>
+    // Should it become Cloned in this case?
     //#[cfg(any(feature = "owned_types", feature = "cloned_refs"))]
     //impl<R: ReprFamily<Kind: Cloned> + NicheFamily<Kind = WithStableNiche>> ReprFamily for Option<R> {
     //    type Kind = Option<WithCustomNiche>;
@@ -231,26 +232,27 @@ macro_rules! impl_fn_types {
         unsafe impl<$($arg: ReprC,)* R: ReprC> ReprC for unsafe extern "C" fn($($arg),*) -> R {}
         unsafe impl<$($arg: ReprC,)*> ReprC for unsafe extern "C" fn($($arg),*) {}
 
-        impl<$($arg: ReprC,)* R: ReprC> ReprFamily for unsafe extern "C" fn($($arg),*) -> R {
+        impl<$($arg,)* R> ReprFamily for unsafe extern "C" fn($($arg),*) -> R {
             type Kind = Self;
         }
-        //impl<$($arg: ReprC,)*> ReprFamily for unsafe extern "C" fn($($arg),*) {
+        //impl<$($arg),*> ReprFamily for unsafe extern "C" fn($($arg),*) {
         //    type Kind = Self;
         //}
+
         impl<$($arg: ReprC,)* R: ReprC> crate::ExternC for unsafe extern "C" fn($($arg),*) -> R {
             type CType = Self;
         }
         impl<$($arg: ReprC,)*> crate::ExternC for unsafe extern "C" fn($($arg),*) {
             type CType = Self;
         }
-        //impl<$($arg: ReprC,)* R: ReprC> crate::Encode for unsafe extern "C" fn($($arg),*) -> R {
+        //impl<const AS_REF: bool, $($arg: ReprC,)* R: ReprC> crate::Encode<false> for unsafe extern "C" fn($($arg),*) -> R {
         //    type Store = ();
 
         //    fn encode<'itm>(self, _: &mut ()) -> Self::CType where Self: 'itm {
         //        self
         //    }
         //}
-        impl<$($arg: ReprC,)*> crate::Encode for unsafe extern "C" fn($($arg),*) {
+        impl<$($arg: ReprC,)*> crate::Encode<false> for unsafe extern "C" fn($($arg),*) {
             type Store = ();
 
             #[inline(always)]

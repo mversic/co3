@@ -90,9 +90,6 @@ disjoint_impls! {
     impl<R: NicheFamily<Kind = WithStableNiche>> NicheFamily for Option<R> {
         type Kind = WithoutNiche;
     }
-    impl<R: NicheFamily<Kind = WithCustomNiche>> NicheFamily for Option<R> where Self: Niche {
-        type Kind = WithCustomNiche;
-    }
     // TODO: IMHO compiler should be able to resolve circular dependencies here, but it doesn't work for now so I've bounded previous with Niche
     // This issue could be of some help: https://github.com/mversic/co3/issues/33. This seems to be a limitation of the compiler known as
     // circular/cyclic resolution or (co)inductive cycle. The case shown here creates a cycle but only one solution is possible afaik
@@ -102,6 +99,10 @@ disjoint_impls! {
     //impl<R: NicheFamily<Kind = WithCustomNiche>> NicheFamily for Option<R> where Option<Self>: ReprFamily<Kind = Option<WithoutNiche>> {
     //    type Kind = WithoutNiche;
     //}
+    // FIXME: `Niche` could have been used. This will become a no-issue if previous is addressed
+    impl<R: NicheFamily<Kind = WithCustomNiche> + Niche> NicheFamily for Option<R> where Self: Niche {
+        type Kind = WithCustomNiche;
+    }
 }
 
 impl<R> NicheFamily for &R {
@@ -148,7 +149,7 @@ impl<R, C> Niche for Box<R>
 where
     Self: ExternC<CType = CBox<C>>,
 {
-    const NICHE_VALUE: CBox<C> = CBox::none();
+    const NICHE_VALUE: Self::CType = CBox::none();
 }
 
 impl<R, C> Niche for &[R]
@@ -233,20 +234,28 @@ mod tests {
             NicheFamily<Kind = WithCustomNiche>,
             Niche<CType = u8>,
             Decode<'static>,
-            Encode
+
+            Encode,
+
         );
         assert_impl_all!(Option<Option<bool>>:
             NicheFamily<Kind = WithCustomNiche>,
             ReprFamily<Kind = Option<WithCustomNiche>>,
             Niche<CType = u8>,
             Decode<'static>,
-            Encode
+
+            Encode,
+
         );
         // TODO: Depends on: https://github.com/mversic/co3/issues/33
-        //assert_impl_all!(Option<(u8, NonZeroU8)>: NicheFamily<Kind = WithoutNiche>, ReprFamily<Kind = Option<WithoutNiche>>, ExternC<CType = CTuple2<u8, u8>>);
+        //assert_impl_all!(Option<(u8, NonZeroU8)>:
+        //    NicheFamily<Kind = WithoutNiche>,
+        //    ReprFamily<Kind = Option<WithoutNiche>>,
+        //    ExternC<CType = CTuple2<u8, u8>>
+        //);
 
-        assert_not_impl_any!(Option<bool>: ReprC, StableNiche);
-        assert_not_impl_any!(Option<Option<bool>>: ReprC, StableNiche);
+        assert_not_impl_any!(Option<bool>: ReprC);
+        assert_not_impl_any!(Option<Option<bool>>: ReprC);
     }
 
     #[test]
@@ -279,11 +288,13 @@ mod tests {
             co3::slice::CSliceMut::<u8>::none(),
             None::<&mut str>.encode(&mut ())
         );
+
         #[cfg(feature = "alloc")]
         assert_eq!(
             core::ptr::null_mut(),
             None::<NonNull<String>>.encode(&mut ())
         );
+
         #[cfg(feature = "alloc")]
         assert_eq!(
             CVec::<u8>::none(),

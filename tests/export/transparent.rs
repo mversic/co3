@@ -139,7 +139,8 @@ fn take_and_return_transparent_array_ref() {
 
         assert_eq!(
             &[value; 1],
-            <&[TransparentStruct; 1]>::decode(output.assume_init(), &mut ()).unwrap()
+            <&[TransparentStruct; 1] as Decode>::decode(output.assume_init(), &mut ())
+                .unwrap()
         );
     }
 }
@@ -210,7 +211,7 @@ fn transparent_self_to_self() {
         );
         assert_eq!(
             Ok(transparent_struct),
-            TransparentStruct::decode(output.assume_init(), &mut ())
+            <TransparentStruct as Decode>::decode(output.assume_init(), &mut ())
         );
     }
 }
@@ -284,7 +285,8 @@ fn transparent_method_consume() {
             )
         );
         transparent_struct =
-            TransparentStruct::decode(output.assume_init(), &mut ()).expect("valid");
+            <TransparentStruct as Decode>::decode(output.assume_init(), &mut ())
+                .expect("valid");
 
         assert_eq!(transparent_struct.payload, payload);
     }
@@ -298,11 +300,14 @@ fn transparent_method_borrow() {
     unsafe {
         assert_eq!(
             FfiReturn::Ok,
-            TransparentStruct__payload((&transparent_struct).encode(&mut ()), output.as_mut_ptr())
+            TransparentStruct__payload(
+                (&transparent_struct).encode(&mut ()),
+                output.as_mut_ptr(),
+            )
         );
         assert_eq!(
             Ok(&transparent_struct.payload),
-            <&GenericTransparentStruct<_>>::decode(output.assume_init(), &mut ())
+            <&GenericTransparentStruct<_> as Decode>::decode(output.assume_init(), &mut ())
         );
     }
 }
@@ -322,7 +327,10 @@ fn transparent_method_borrow_mut() {
         );
         assert_eq!(
             Ok(&mut transparent_struct.payload),
-            <&mut GenericTransparentStruct<_>>::decode(output.assume_init(), &mut ())
+            <&mut GenericTransparentStruct<_> as Decode>::decode(
+                output.assume_init(),
+                &mut (),
+            )
         );
     }
 }

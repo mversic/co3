@@ -5,7 +5,7 @@ use syn::{Ident, visit::Visit};
 
 use crate::{
     attr_parse::repr::ReprPrimitive,
-    extern_c::{
+    repr::{
         FfiTypeField, FfiTypeVariant, is_type_parameterized,
         niche::{gen_enum_niche_ir, gen_struct_niche_ir},
         no_repr::variant_mapper,
@@ -208,8 +208,8 @@ pub(crate) fn derive_fieldless_enum(
             }
         }
 
-        unsafe impl co3::transmute::EncodeTransmuted for #enum_name {
-            type Store = <Self::Target as co3::Encode>::Store;
+        unsafe impl co3::transmute::EncodeTransmuted<false> for #enum_name {
+            type Store = <Self::Target as co3::Encode<false>>::Store;
         }
 
         #niche_ir
@@ -238,7 +238,7 @@ pub(super) fn gen_repr_c_struct(
         darling::ast::Style::Tuple => {
             let field_tys = fields.iter().map(|field| {
                 let field_ty = &field.ty;
-                quote! { pub <#field_ty as co3::ExternC>::CType }
+                quote! { <#field_ty as co3::ExternC>::CType }
             });
 
             quote! { #(#field_tys),* }
@@ -292,8 +292,8 @@ pub(super) fn gen_data_enum(
             |field| {
                 let field_ty = &field.ty;
                 quote! {
-                    pub tag: #repr,
-                    pub value: <#field_ty as co3::ExternC>::CType
+                    tag: #repr,
+                    value: <#field_ty as co3::ExternC>::CType
                 }
             },
         );
@@ -314,7 +314,7 @@ pub(super) fn gen_data_enum(
         .map(|(variant, ty_gen)| {
             let variant_name = &variant.ident;
             let variant_struct_name = gen_data_enum_variant_name(enum_name, variant_name);
-            quote! { pub #variant_name: #variant_struct_name #ty_gen }
+            quote! { #variant_name: #variant_struct_name #ty_gen }
         });
 
     let union_def = gen_repr_c_type::<true, true>(
@@ -469,7 +469,7 @@ fn gen_data_enum_payload(
         payload_name.clone(),
         generics,
         darling::ast::Style::Struct,
-        quote! { #(pub #field_names: #field_tys),* },
+        quote! { #(#field_names: #field_tys),* },
         &field_types,
     );
 
@@ -484,6 +484,7 @@ fn gen_transparent_impl<'a>(
     fields: impl IntoIterator<Item = &'a FfiTypeField>,
 ) -> TokenStream {
     let (impl_generics, ty_generics, where_clause) = generics.split_for_impl();
+
     let predicates = generics
         .where_clause
         .as_ref()
@@ -506,13 +507,13 @@ fn gen_transparent_impl<'a>(
             }
         }
 
-        unsafe impl #impl_generics co3::transmute::EncodeTransmuted for #item_name #ty_generics where
+        unsafe impl #impl_generics co3::transmute::EncodeTransmuted<false> for #item_name #ty_generics where
             // FIXME:
-            #target #ty_generics: co3::Encode,
+            #target #ty_generics: co3::Encode<false>,
             #flat_transmute_bounds
             #predicates
         {
-            type Store = <Self::Target as co3::Encode>::Store;
+            type Store = <Self::Target as co3::Encode<false>>::Store;
         }
     }
 }
@@ -629,7 +630,7 @@ impl<'a> Visit<'_> for UsedGenericsVisitor<'a> {
     }
 }
 
-pub fn filter_generics(field_types: &[&syn::Type], generics: &syn::Generics) -> syn::Generics {
+fn filter_generics(field_types: &[&syn::Type], generics: &syn::Generics) -> syn::Generics {
     let mut visitor = UsedGenericsVisitor::new(generics);
     for ty in field_types {
         visitor.visit_type(ty);

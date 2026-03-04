@@ -215,7 +215,8 @@ mod ffi {
             let mut handle = *Box::from_raw(handle);
             let mut store = Default::default();
 
-            let params: Vec<(u8, ExternValue)> = Decode::decode(params, &mut store).expect("Valid");
+            let params: Vec<(u8, ExternValue)> =
+                Decode::decode(params, &mut store).expect("Valid");
 
             handle.params = params.into_iter().collect();
             output.write(Box::into_raw(Box::new(handle)));

@@ -1,28 +1,29 @@
 //! Crate containing FFI related macro functionality
-use darling::FromDeriveInput;
-use handle::{
-    ExportPolySpec, gen_poly_export, infer_default_handle_id_specs, infer_poly_handle_id_specs,
-    parse_entry_handle_map_attr, parse_handle_id_attr, validate_handle_id_positions_for_sig,
-};
-use impl_visitor::{FnDescriptor, ImplDescriptor, path_symbol_name};
+use std::collections::{BTreeMap, BTreeSet};
+
+use darling::FromDeriveInput as _;
 use manyhow::{emit, manyhow};
 use proc_macro2::TokenStream;
 use quote::{format_ident, quote};
-use std::collections::{BTreeMap, BTreeSet};
-use wrapper::{ExternTypeLinkMode, HandleIdSpec};
 
 use crate::{
     emitter::Emitter,
-    extern_c::{FfiTypeInput, derive_extern_c},
+    handle::{
+        ExportPolySpec, gen_poly_export, infer_default_handle_id_specs, infer_poly_handle_id_specs,
+        parse_entry_handle_map_attr, parse_handle_id_attr, validate_handle_id_positions_for_sig,
+    },
     impl_visitor::Arg,
+    impl_visitor::{FnDescriptor, ImplDescriptor, path_symbol_name},
+    repr::{FfiTypeInput, derive_extern_c},
+    wrapper::{ExternTypeLinkMode, HandleIdSpec},
 };
 
 mod attr_parse;
 mod emitter;
-mod extern_c;
 mod ffi_fn;
 mod handle;
 mod impl_visitor;
+mod repr;
 mod utils;
 mod wrapper;
 

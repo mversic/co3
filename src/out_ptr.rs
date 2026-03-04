@@ -61,6 +61,8 @@ disjoint_impls! {
 pub unsafe trait Zst {}
 
 unsafe impl Zst for () {}
+unsafe impl<T: Zst> Zst for Option<T> {}
+unsafe impl<T: Zst, E: Zst> Zst for Result<T, E> {}
 unsafe impl<T: Zst, const N: usize> Zst for [T; N] {}
 // TODO: It's not possbile to implement for specific len yet: https://github.com/mversic/co3/issues/13
 //unsafe impl<T> Zst for [T; 0] {}
@@ -229,6 +231,7 @@ disjoint_impls! {
     {
         type OutPtr = COption<R::OutPtr>;
     }
+    // FIXME: using false as it makes no difference
     impl<R: Niche + OutPtr> OutPtr for Option<R>
     where
         Self: ReprFamily<Kind = Option<WithCustomNiche>>,
@@ -248,315 +251,315 @@ disjoint_impls! {
         unsafe fn write_out(self, out_ptr: *mut Self::OutPtr);
     }
 
-    impl<R: ReprC> OutPtrWrite for R
-    where
-        Self: ReprFamily<Kind = Robust>,
-    {
-        unsafe fn write_out(self, out_ptr: *mut Self::OutPtr) {
-            let ctype = self.encode(&mut ());
+    //impl<R: ReprC> OutPtrWrite for R
+    //where
+    //    Self: ReprFamily<Kind = Robust>,
+    //{
+    //    unsafe fn write_out(self, out_ptr: *mut Self::OutPtr) {
+    //        let ctype = self.encode(&mut ());
 
-            unsafe {
-                out_ptr.write(ctype);
-            }
-        }
-    }
-    #[cfg(feature = "alloc")]
-    impl<R: ReprFamily<Kind = Opaque>> OutPtrWrite for R {
-        unsafe fn write_out(self, out_ptr: *mut Self::OutPtr) {
-            let ctype = self.encode(&mut ());
+    //        unsafe {
+    //            out_ptr.write(ctype);
+    //        }
+    //    }
+    //}
+    //#[cfg(feature = "alloc")]
+    //impl<R: ReprFamily<Kind = Opaque>> OutPtrWrite for R {
+    //    unsafe fn write_out(self, out_ptr: *mut Self::OutPtr) {
+    //        let ctype = self.encode(&mut ());
 
-            unsafe {
-                out_ptr.write(ctype);
-            }
-        }
-    }
-    impl<R: CheckedTransmute<Target: Sized>> OutPtrWrite for R
-    where
-        Self: ReprFamily<Kind = Transmuted>,
-        <R as CheckedTransmute>::Target: OutPtrWrite,
-    {
-        unsafe fn write_out(self, out_ptr: *mut Self::OutPtr) {
-            let transmuted = transmute_into_target(self);
-            unsafe { OutPtrWrite::write_out(transmuted, out_ptr) }
-        }
-    }
+    //        unsafe {
+    //            out_ptr.write(ctype);
+    //        }
+    //    }
+    //}
+    //impl<R: CheckedTransmute<Target: Sized>> OutPtrWrite for R
+    //where
+    //    Self: ReprFamily<Kind = Transmuted>,
+    //    <R as CheckedTransmute>::Target: OutPtrWrite,
+    //{
+    //    unsafe fn write_out(self, out_ptr: *mut Self::OutPtr) {
+    //        let transmuted = transmute_into_target(self);
+    //        unsafe { OutPtrWrite::write_out(transmuted, out_ptr) }
+    //    }
+    //}
 
-    #[cfg(feature = "unstable-refs")]
-    impl<'itm, R: Encode + NonLocal + Clone, S: Cloned> OutPtrWrite for &'itm R
-    where
-        Self: ReprFamily<Kind = &'itm S>,
-    {
-        unsafe fn write_out(self, out_ptr: *mut Self::OutPtr) {
-            let mut store = Default::default();
-            let _ = self.encode(&mut store);
-            let output = store.ctype.unwrap();
+    //#[cfg(feature = "unstable-refs")]
+    //impl<'itm, R: Encode + NonLocal + Clone, S: Cloned> OutPtrWrite for &'itm R
+    //where
+    //    Self: ReprFamily<Kind = &'itm S>,
+    //{
+    //    unsafe fn write_out(self, out_ptr: *mut Self::OutPtr) {
+    //        let mut store = Default::default();
+    //        let _ = self.encode(&mut store);
+    //        let output = store.ctype.unwrap();
 
-            unsafe {
-                out_ptr.write(output);
-            }
-        }
-    }
+    //        unsafe {
+    //            out_ptr.write(output);
+    //        }
+    //    }
+    //}
 
-    #[cfg(feature = "alloc")]
-    impl<R: Encode + NonLocal, S: Cloned> OutPtrWrite for Box<R>
-    where
-        Self: ReprFamily<Kind = Box<S>>,
-    {
-        unsafe fn write_out(self, _out_ptr: *mut Self::OutPtr) {
-            unimplemented!()
-            //let mut store = Default::default();
-            //let _ = self.encode(&mut store);
-            //let output = store.ctype.unwrap();
+    //#[cfg(feature = "alloc")]
+    //impl<R: Encode + NonLocal, S: Cloned> OutPtrWrite for Box<R>
+    //where
+    //    Self: ReprFamily<Kind = Box<S>>,
+    //{
+    //    unsafe fn write_out(self, _out_ptr: *mut Self::OutPtr) {
+    //        unimplemented!()
+    //        //let mut store = Default::default();
+    //        //let _ = self.encode(&mut store);
+    //        //let output = store.ctype.unwrap();
 
-            //unsafe {
-            //    out_ptr.write(output);
-            //}
-        }
-    }
+    //        //unsafe {
+    //        //    out_ptr.write(output);
+    //        //}
+    //    }
+    //}
 
-    impl<'a, R: ReprC> OutPtrWrite for &'a [R]
-    where
-        Self: ReprFamily<Kind = &'a [Robust]>,
-    {
-        unsafe fn write_out(self, out_ptr: *mut Self::OutPtr) {
-            let ctypes = self.encode(&mut ());
+    //impl<'a, R: ReprC> OutPtrWrite for &'a [R]
+    //where
+    //    Self: ReprFamily<Kind = &'a [Robust]>,
+    //{
+    //    unsafe fn write_out(self, out_ptr: *mut Self::OutPtr) {
+    //        let ctypes = self.encode(&mut ());
 
-            unsafe {
-                out_ptr.write(ctypes);
-            }
-        }
-    }
-    #[cfg(all(feature = "alloc", feature = "unstable-refs"))]
-    impl<'a, R> OutPtrWrite for &'a [R]
-    where
-        Self: ReprFamily<Kind = &'a [Opaque]>,
-    {
-        unsafe fn write_out(self, out_ptr: *mut Self::OutPtr) {
-            let mut store = Default::default();
-            let _ = self.encode(&mut store);
+    //        unsafe {
+    //            out_ptr.write(ctypes);
+    //        }
+    //    }
+    //}
+    //#[cfg(all(feature = "alloc", feature = "unstable-refs"))]
+    //impl<'a, R> OutPtrWrite for &'a [R]
+    //where
+    //    Self: ReprFamily<Kind = &'a [Opaque]>,
+    //{
+    //    unsafe fn write_out(self, out_ptr: *mut Self::OutPtr) {
+    //        let mut store = Default::default();
+    //        let _ = self.encode(&mut store);
 
-            let output = CBoxedSlice::from_boxed_slice(store.0);
+    //        let output = CBoxedSlice::from_boxed_slice(store.0);
 
-            unsafe {
-                out_ptr.write(output);
-            }
-        }
-    }
-    impl<'slice, R: CheckedTransmute<Target: Sized + 'slice>> OutPtrWrite for &'slice [R]
-    where
-        &'slice [<R as CheckedTransmute>::Target]: OutPtrWrite,
-        Self: ReprFamily<Kind = &'slice [Transmuted]>,
-    {
-        unsafe fn write_out(self, out_ptr: *mut Self::OutPtr) {
-            let transmuted = transmute_into_target_ref_slice(self);
+    //        unsafe {
+    //            out_ptr.write(output);
+    //        }
+    //    }
+    //}
+    //impl<'slice, R: CheckedTransmute<Target: Sized + 'slice>> OutPtrWrite for &'slice [R]
+    //where
+    //    &'slice [<R as CheckedTransmute>::Target]: OutPtrWrite,
+    //    Self: ReprFamily<Kind = &'slice [Transmuted]>,
+    //{
+    //    unsafe fn write_out(self, out_ptr: *mut Self::OutPtr) {
+    //        let transmuted = transmute_into_target_ref_slice(self);
 
-            unsafe {
-                OutPtrWrite::write_out(transmuted, out_ptr);
-            }
-        }
-    }
-    #[cfg(feature = "unstable-refs")]
-    impl<'itm, R: Encode + NonLocal + Clone, S: Cloned> OutPtrWrite for &'itm [R]
-    where
-        Self: ReprFamily<Kind = &'itm [S]>,
-    {
-        unsafe fn write_out(self, out_ptr: *mut Self::OutPtr) {
-            let mut store = Default::default();
-            let _ = self.encode(&mut store);
+    //        unsafe {
+    //            OutPtrWrite::write_out(transmuted, out_ptr);
+    //        }
+    //    }
+    //}
+    //#[cfg(feature = "unstable-refs")]
+    //impl<'itm, R: Encode + NonLocal + Clone, S: Cloned> OutPtrWrite for &'itm [R]
+    //where
+    //    Self: ReprFamily<Kind = &'itm [S]>,
+    //{
+    //    unsafe fn write_out(self, out_ptr: *mut Self::OutPtr) {
+    //        let mut store = Default::default();
+    //        let _ = self.encode(&mut store);
 
-            let output = CBoxedSlice::from_boxed_slice(store.ctypes);
+    //        let output = CBoxedSlice::from_boxed_slice(store.ctypes);
 
-            unsafe {
-                out_ptr.write(output);
-            }
-        }
-    }
+    //        unsafe {
+    //            out_ptr.write(output);
+    //        }
+    //    }
+    //}
 
-    impl<'slice, R: CheckedTransmute<Target: Sized + 'slice>> OutPtrWrite for &'slice mut [R]
-    where
-        &'slice mut [<R as CheckedTransmute>::Target]: OutPtrWrite,
-        Self: ReprFamily<Kind = &'slice mut [Transmuted]>,
-    {
-        unsafe fn write_out(self, out_ptr: *mut Self::OutPtr) {
-            let transmuted = transmute_into_target_slice_mut(self);
+    //impl<'slice, R: CheckedTransmute<Target: Sized + 'slice>> OutPtrWrite for &'slice mut [R]
+    //where
+    //    &'slice mut [<R as CheckedTransmute>::Target]: OutPtrWrite,
+    //    Self: ReprFamily<Kind = &'slice mut [Transmuted]>,
+    //{
+    //    unsafe fn write_out(self, out_ptr: *mut Self::OutPtr) {
+    //        let transmuted = transmute_into_target_slice_mut(self);
 
-            unsafe {
-                OutPtrWrite::write_out(transmuted, out_ptr);
-            }
-        }
-    }
+    //        unsafe {
+    //            OutPtrWrite::write_out(transmuted, out_ptr);
+    //        }
+    //    }
+    //}
 
-    #[cfg(feature = "alloc")]
-    impl<R: ReprC> OutPtrWrite for Box<[R]>
-    where
-        Self: ReprFamily<Kind = Box<[Robust]>>,
-    {
-        unsafe fn write_out(self, out_ptr: *mut Self::OutPtr) {
-            let output = self.encode(&mut ());
+    //#[cfg(feature = "alloc")]
+    //impl<R: ReprC> OutPtrWrite for Box<[R]>
+    //where
+    //    Self: ReprFamily<Kind = Box<[Robust]>>,
+    //{
+    //    unsafe fn write_out(self, out_ptr: *mut Self::OutPtr) {
+    //        let output = self.encode(&mut ());
 
-            unsafe {
-                out_ptr.write(output);
-            }
-        }
-    }
-    #[cfg(feature = "alloc")]
-    impl<R> OutPtrWrite for Box<[R]>
-    where
-        Self: ReprFamily<Kind = Box<[Opaque]>>,
-    {
-        unsafe fn write_out(self, out_ptr: *mut Self::OutPtr) {
-            let output = self.encode(&mut ());
+    //        unsafe {
+    //            out_ptr.write(output);
+    //        }
+    //    }
+    //}
+    //#[cfg(feature = "alloc")]
+    //impl<R> OutPtrWrite for Box<[R]>
+    //where
+    //    Self: ReprFamily<Kind = Box<[Opaque]>>,
+    //{
+    //    unsafe fn write_out(self, out_ptr: *mut Self::OutPtr) {
+    //        let output = self.encode(&mut ());
 
-            unsafe {
-                out_ptr.write(output);
-            }
-        }
-    }
-    #[cfg(feature = "alloc")]
-    impl<R: CheckedTransmute<Target: Sized>> OutPtrWrite for Box<[R]>
-    where
-        Self: ReprFamily<Kind = Box<[Transmuted]>>,
-        Box<[<R as CheckedTransmute>::Target]>: OutPtrWrite,
-    {
-        unsafe fn write_out(self, out_ptr: *mut Self::OutPtr) {
-            let transmuted = transmute_into_target_boxed_slice(self);
+    //        unsafe {
+    //            out_ptr.write(output);
+    //        }
+    //    }
+    //}
+    //#[cfg(feature = "alloc")]
+    //impl<R: CheckedTransmute<Target: Sized>> OutPtrWrite for Box<[R]>
+    //where
+    //    Self: ReprFamily<Kind = Box<[Transmuted]>>,
+    //    Box<[<R as CheckedTransmute>::Target]>: OutPtrWrite,
+    //{
+    //    unsafe fn write_out(self, out_ptr: *mut Self::OutPtr) {
+    //        let transmuted = transmute_into_target_boxed_slice(self);
 
-            unsafe {
-                OutPtrWrite::write_out(transmuted, out_ptr);
-            }
-        }
-    }
-    #[cfg(feature = "alloc")]
-    impl<R: Encode + NonLocal, S: Cloned> OutPtrWrite for Box<[R]>
-    where
-        Self: ReprFamily<Kind = Box<[S]>>,
-    {
-        unsafe fn write_out(self, _out_ptr: *mut Self::OutPtr) {
-            unimplemented!()
-            //let mut store = Default::default();
-            //let _ = self.encode(&mut store);
+    //        unsafe {
+    //            OutPtrWrite::write_out(transmuted, out_ptr);
+    //        }
+    //    }
+    //}
+    //#[cfg(feature = "alloc")]
+    //impl<R: Encode + NonLocal, S: Cloned> OutPtrWrite for Box<[R]>
+    //where
+    //    Self: ReprFamily<Kind = Box<[S]>>,
+    //{
+    //    unsafe fn write_out(self, _out_ptr: *mut Self::OutPtr) {
+    //        unimplemented!()
+    //        //let mut store = Default::default();
+    //        //let _ = self.encode(&mut store);
 
-            //let output = CBoxedSlice::from_boxed_slice(store.ctypes);
+    //        //let output = CBoxedSlice::from_boxed_slice(store.ctypes);
 
-            //unsafe {
-            //    out_ptr.write(output);
-            //}
-        }
-    }
+    //        //unsafe {
+    //        //    out_ptr.write(output);
+    //        //}
+    //    }
+    //}
 
-    #[cfg(feature = "alloc")]
-    impl<R: ReprC> OutPtrWrite for Vec<R>
-    where
-        Self: ReprFamily<Kind = Vec<Robust>>,
-    {
-        unsafe fn write_out(self, _out_ptr: *mut Self::OutPtr) {
-            unimplemented!()
-            //let output = self.encode(&mut ());
+    //#[cfg(feature = "alloc")]
+    //impl<R: ReprC> OutPtrWrite for Vec<R>
+    //where
+    //    Self: ReprFamily<Kind = Vec<Robust>>,
+    //{
+    //    unsafe fn write_out(self, _out_ptr: *mut Self::OutPtr) {
+    //        unimplemented!()
+    //        //let output = self.encode(&mut ());
 
-            //unsafe {
-            //    out_ptr.write(output);
-            //}
-        }
-    }
-    #[cfg(feature = "alloc")]
-    impl<R> OutPtrWrite for Vec<R>
-    where
-        Self: ReprFamily<Kind = Vec<Opaque>>,
-    {
-        unsafe fn write_out(self, _out_ptr: *mut Self::OutPtr) {
-            unimplemented!()
-            //let output = self.encode(&mut ());
+    //        //unsafe {
+    //        //    out_ptr.write(output);
+    //        //}
+    //    }
+    //}
+    //#[cfg(feature = "alloc")]
+    //impl<R> OutPtrWrite for Vec<R>
+    //where
+    //    Self: ReprFamily<Kind = Vec<Opaque>>,
+    //{
+    //    unsafe fn write_out(self, _out_ptr: *mut Self::OutPtr) {
+    //        unimplemented!()
+    //        //let output = self.encode(&mut ());
 
-            //unsafe {
-            //    out_ptr.write(output);
-            //}
-        }
-    }
-    #[cfg(feature = "alloc")]
-    impl<R: CheckedTransmute<Target: Sized>> OutPtrWrite for Vec<R>
-    where
-        Vec<<R as CheckedTransmute>::Target>: OutPtrWrite,
-        Self: ReprFamily<Kind = Vec<Transmuted>>,
-    {
-        unsafe fn write_out(self, out_ptr: *mut Self::OutPtr) {
-            let transmuted = transmute_into_target_vec(self);
+    //        //unsafe {
+    //        //    out_ptr.write(output);
+    //        //}
+    //    }
+    //}
+    //#[cfg(feature = "alloc")]
+    //impl<R: CheckedTransmute<Target: Sized>> OutPtrWrite for Vec<R>
+    //where
+    //    Vec<<R as CheckedTransmute>::Target>: OutPtrWrite,
+    //    Self: ReprFamily<Kind = Vec<Transmuted>>,
+    //{
+    //    unsafe fn write_out(self, out_ptr: *mut Self::OutPtr) {
+    //        let transmuted = transmute_into_target_vec(self);
 
-            unsafe {
-                OutPtrWrite::write_out(transmuted, out_ptr);
-            }
-        }
-    }
-    #[cfg(feature = "alloc")]
-    impl<R: Encode + NonLocal, S: Cloned> OutPtrWrite for Vec<R>
-    where
-        Self: ReprFamily<Kind = Vec<S>>,
-    {
-        unsafe fn write_out(self, _out_ptr: *mut Self::OutPtr) {
-            unimplemented!()
-            //let mut store = Default::default();
-            //let _ = self.encode(&mut store);
+    //        unsafe {
+    //            OutPtrWrite::write_out(transmuted, out_ptr);
+    //        }
+    //    }
+    //}
+    //#[cfg(feature = "alloc")]
+    //impl<R: Encode + NonLocal, S: Cloned> OutPtrWrite for Vec<R>
+    //where
+    //    Self: ReprFamily<Kind = Vec<S>>,
+    //{
+    //    unsafe fn write_out(self, _out_ptr: *mut Self::OutPtr) {
+    //        unimplemented!()
+    //        //let mut store = Default::default();
+    //        //let _ = self.encode(&mut store);
 
-            //let output = CBoxedSlice::from_boxed_slice(store.ctypes);
+    //        //let output = CBoxedSlice::from_boxed_slice(store.ctypes);
 
-            //unsafe { out_ptr.write(output); }
-        }
-    }
+    //        //unsafe { out_ptr.write(output); }
+    //    }
+    //}
 
-    #[cfg(feature = "alloc")]
-    impl<R, const N: usize> OutPtrWrite for [R; N]
-    where
-        Self: ReprFamily<Kind = [Opaque; N]>,
-    {
-        unsafe fn write_out(self, out_ptr: *mut Self::OutPtr) {
-            assert_arr_has_non_zero_len::<N>();
-            let ctypes = self.encode(&mut ());
-            unsafe { out_ptr.write(ctypes); }
-        }
-    }
-    impl<R: Encode + NonLocal, S: Cloned, const N: usize> OutPtrWrite for [R; N]
-    where
-        Self: ReprFamily<Kind = [S; N]> + Encode,
-    {
-        unsafe fn write_out(self, out_ptr: *mut Self::OutPtr) {
-            assert_arr_has_non_zero_len::<N>();
+    //#[cfg(feature = "alloc")]
+    //impl<R, const N: usize> OutPtrWrite for [R; N]
+    //where
+    //    Self: ReprFamily<Kind = [Opaque; N]>,
+    //{
+    //    unsafe fn write_out(self, out_ptr: *mut Self::OutPtr) {
+    //        assert_arr_has_non_zero_len::<N>();
+    //        let ctypes = self.encode(&mut ());
+    //        unsafe { out_ptr.write(ctypes); }
+    //    }
+    //}
+    //impl<R: Encode + NonLocal, S: Cloned, const N: usize> OutPtrWrite for [R; N]
+    //where
+    //    Self: ReprFamily<Kind = [S; N]> + Encode,
+    //{
+    //    unsafe fn write_out(self, out_ptr: *mut Self::OutPtr) {
+    //        assert_arr_has_non_zero_len::<N>();
 
-            let mut store = Default::default();
-            let item = self.encode(&mut store);
+    //        let mut store = Default::default();
+    //        let item = self.encode(&mut store);
 
-            unsafe {
-                out_ptr.write(item);
-            }
-        }
-    }
+    //        unsafe {
+    //            out_ptr.write(item);
+    //        }
+    //    }
+    //}
 
-    impl<R: OutPtrWrite> OutPtrWrite for Option<R>
-    where
-        Self: ReprFamily<Kind = Option<WithoutNiche>>,
-    {
-        unsafe fn write_out(self, out_ptr: *mut Self::OutPtr) {
-            match self {
-                None => unsafe { out_ptr.write(COption::None()) },
-                Some(value) => unsafe {
-                    let mut value_out_ptr = core::mem::MaybeUninit::uninit();
-                    OutPtrWrite::write_out(value, value_out_ptr.as_mut_ptr());
-                    let value_out_ptr = value_out_ptr.assume_init();
+    //impl<R: OutPtrWrite> OutPtrWrite for Option<R>
+    //where
+    //    Self: ReprFamily<Kind = Option<WithoutNiche>>,
+    //{
+    //    unsafe fn write_out(self, out_ptr: *mut Self::OutPtr) {
+    //        match self {
+    //            None => unsafe { out_ptr.write(COption::None()) },
+    //            Some(value) => unsafe {
+    //                let mut value_out_ptr = core::mem::MaybeUninit::uninit();
+    //                OutPtrWrite::write_out(value, value_out_ptr.as_mut_ptr());
+    //                let value_out_ptr = value_out_ptr.assume_init();
 
-                    out_ptr.write(COption::Some(value_out_ptr));
-                },
-            }
-        }
-    }
-    impl<R: Niche + OutPtrWrite<OutPtr = <R as ExternC>::CType>> OutPtrWrite for Option<R>
-    where
-        Self: ReprFamily<Kind = Option<WithCustomNiche>>,
-    {
-        unsafe fn write_out(self, out_ptr: *mut Self::OutPtr) {
-            self.map_or_else(
-                || unsafe { out_ptr.write(R::NICHE_VALUE) },
-                |v| unsafe { OutPtrWrite::write_out(v, out_ptr) },
-            );
-        }
-    }
+    //                out_ptr.write(COption::Some(value_out_ptr));
+    //            },
+    //        }
+    //    }
+    //}
+    //impl<R: Niche + OutPtrWrite<OutPtr = <R as ExternC>::CType>> OutPtrWrite for Option<R>
+    //where
+    //    Self: ReprFamily<Kind = Option<WithCustomNiche>>,
+    //{
+    //    unsafe fn write_out(self, out_ptr: *mut Self::OutPtr) {
+    //        self.map_or_else(
+    //            || unsafe { out_ptr.write(R::NICHE_VALUE) },
+    //            |v| unsafe { OutPtrWrite::write_out(v, out_ptr) },
+    //        );
+    //    }
+    //}
 }
 
 disjoint_impls! {
@@ -574,231 +577,231 @@ disjoint_impls! {
         unsafe fn try_read_out(out_ptr: Self::OutPtr) -> Option<Self>;
     }
 
-    impl<R: ReprC> OutPtrRead for R
-    where
-        Self: ReprFamily<Kind = Robust>,
-    {
-        unsafe fn try_read_out(out_ptr: Self::OutPtr) -> Option<Self> {
-            unsafe { Decode::decode(out_ptr, &mut ()) }
-        }
-    }
-    impl<R: CheckedTransmute<Target: Sized>> OutPtrRead for R
-    where
-        Self: ReprFamily<Kind = Transmuted>,
-        <R as CheckedTransmute>::Target: OutPtrRead,
-    {
-        unsafe fn try_read_out(out_ptr: Self::OutPtr) -> Option<Self> {
-            unsafe {
-                OutPtrRead::try_read_out(out_ptr).and_then(|output| transmute_from_target(output))
-            }
-        }
-    }
+    //impl<R: ReprC> OutPtrRead for R
+    //where
+    //    Self: ReprFamily<Kind = Robust>,
+    //{
+    //    unsafe fn try_read_out(out_ptr: Self::OutPtr) -> Option<Self> {
+    //        unsafe { Decode::decode(out_ptr, &mut ()) }
+    //    }
+    //}
+    //impl<R: CheckedTransmute<Target: Sized>> OutPtrRead for R
+    //where
+    //    Self: ReprFamily<Kind = Transmuted>,
+    //    <R as CheckedTransmute>::Target: OutPtrRead,
+    //{
+    //    unsafe fn try_read_out(out_ptr: Self::OutPtr) -> Option<Self> {
+    //        unsafe {
+    //            OutPtrRead::try_read_out(out_ptr).and_then(|output| transmute_from_target(output))
+    //        }
+    //    }
+    //}
 
-    #[cfg(feature = "alloc")]
-    impl<'d, R: Decode<'d> + NonLocal + 'd, S: Cloned> OutPtrRead for Box<R>
-    where
-        Self: ReprFamily<Kind = Box<S>>,
-    {
-        unsafe fn try_read_out(out_ptr: Self::OutPtr) -> Option<Self> {
-            let mut store = Default::default();
+    //#[cfg(feature = "alloc")]
+    //impl<'d, R: Decode + NonLocal + 'd, S: Cloned> OutPtrRead for Box<R>
+    //where
+    //    Self: ReprFamily<Kind = Box<S>>,
+    //{
+    //    unsafe fn try_read_out(out_ptr: Self::OutPtr) -> Option<Self> {
+    //        let mut store = Default::default();
 
-            let store_ref = unsafe {
-                core::mem::transmute::<&mut R::Store, &'d mut R::Store>(&mut store)
-            };
+    //        let store_ref = unsafe {
+    //            core::mem::transmute::<&mut R::Store, &'d mut R::Store>(&mut store)
+    //        };
 
-            unsafe { Decode::decode(out_ptr, store_ref).map(Box::new) }
-        }
-    }
+    //        unsafe { Decode::decode(out_ptr, store_ref).map(Box::new) }
+    //    }
+    //}
 
-    impl<'a, R: ReprC> OutPtrRead for &'a [R]
-    where
-        Self: ReprFamily<Kind = &'a [Robust]>,
-    {
-        unsafe fn try_read_out(out_ptr: Self::OutPtr) -> Option<Self> {
-            unsafe { out_ptr.into_rust() }
-        }
-    }
-    impl<'d, R: CheckedTransmute<Target: Sized + 'd>> OutPtrRead for &'d [R]
-    where
-        &'d [<R as CheckedTransmute>::Target]: OutPtrRead,
-        Self: ReprFamily<Kind = &'d [Transmuted]>,
-    {
-        unsafe fn try_read_out(out_ptr: Self::OutPtr) -> Option<Self> {
-            unsafe { <&[R::Target]>::try_read_out(out_ptr) }
-                .and_then(|output| transmute_from_target_ref_slice(output))
-        }
-    }
+    //impl<'a, R: ReprC> OutPtrRead for &'a [R]
+    //where
+    //    Self: ReprFamily<Kind = &'a [Robust]>,
+    //{
+    //    unsafe fn try_read_out(out_ptr: Self::OutPtr) -> Option<Self> {
+    //        unsafe { out_ptr.into_rust() }
+    //    }
+    //}
+    //impl<'d, R: CheckedTransmute<Target: Sized + 'd>> OutPtrRead for &'d [R]
+    //where
+    //    &'d [<R as CheckedTransmute>::Target]: OutPtrRead,
+    //    Self: ReprFamily<Kind = &'d [Transmuted]>,
+    //{
+    //    unsafe fn try_read_out(out_ptr: Self::OutPtr) -> Option<Self> {
+    //        unsafe { <&[R::Target]>::try_read_out(out_ptr) }
+    //            .and_then(|output| transmute_from_target_ref_slice(output))
+    //    }
+    //}
 
-    impl<'d, R: CheckedTransmute<Target: Sized + 'd>> OutPtrRead for &'d mut [R]
-    where
-        &'d mut [<R as CheckedTransmute>::Target]: OutPtrRead,
-        Self: ReprFamily<Kind = &'d mut [Transmuted]>,
-    {
-        unsafe fn try_read_out(out_ptr: Self::OutPtr) -> Option<Self> {
-            unsafe { <&mut [R::Target]>::try_read_out(out_ptr) }
-                .and_then(|output| transmute_from_target_slice_mut(output))
-        }
-    }
+    //impl<'d, R: CheckedTransmute<Target: Sized + 'd>> OutPtrRead for &'d mut [R]
+    //where
+    //    &'d mut [<R as CheckedTransmute>::Target]: OutPtrRead,
+    //    Self: ReprFamily<Kind = &'d mut [Transmuted]>,
+    //{
+    //    unsafe fn try_read_out(out_ptr: Self::OutPtr) -> Option<Self> {
+    //        unsafe { <&mut [R::Target]>::try_read_out(out_ptr) }
+    //            .and_then(|output| transmute_from_target_slice_mut(output))
+    //    }
+    //}
 
-    #[cfg(feature = "alloc")]
-    impl<R: ReprC> OutPtrRead for Box<[R]>
-    where
-        Self: ReprFamily<Kind = Box<[Robust]>>,
-    {
-        unsafe fn try_read_out(out_ptr: Self::OutPtr) -> Option<Self> {
-            unsafe {
-                let res = Decode::decode(out_ptr, &mut ());
+    //#[cfg(feature = "alloc")]
+    //impl<R: ReprC> OutPtrRead for Box<[R]>
+    //where
+    //    Self: ReprFamily<Kind = Box<[Robust]>>,
+    //{
+    //    unsafe fn try_read_out(out_ptr: Self::OutPtr) -> Option<Self> {
+    //        unsafe {
+    //            let res = Decode::decode(out_ptr, &mut ());
 
-                if !out_ptr.deallocate() {
-                    return None;
-                }
+    //            if !out_ptr.deallocate() {
+    //                return None;
+    //            }
 
-                res
-            }
-        }
-    }
-    #[cfg(feature = "alloc")]
-    impl<R: CheckedTransmute<Target: Sized>> OutPtrRead for Box<[R]>
-    where
-        Self: ReprFamily<Kind = Box<[Transmuted]>>,
-        Box<[<R as CheckedTransmute>::Target]>: OutPtrRead,
-    {
-        unsafe fn try_read_out(out_ptr: Self::OutPtr) -> Option<Self> {
-            unsafe {
-                <Box<[R::Target]>>::try_read_out(out_ptr)
-                    .and_then(|output| transmute_from_target_boxed_slice(output))
-            }
-        }
-    }
-    #[cfg(feature = "alloc")]
-    impl<'d, R: ExternC + NonLocal + 'd, S: Cloned> OutPtrRead for Box<[R]>
-    where
-        Self: ReprFamily<Kind = Box<[S]>> + Decode<'d, CType = CSliceMut<<R as ExternC>::CType>>,
-    {
-        unsafe fn try_read_out(out_ptr: Self::OutPtr) -> Option<Self> {
-            unimplemented!()
-            //let mut store = Default::default();
+    //            res
+    //        }
+    //    }
+    //}
+    //#[cfg(feature = "alloc")]
+    //impl<R: CheckedTransmute<Target: Sized>> OutPtrRead for Box<[R]>
+    //where
+    //    Self: ReprFamily<Kind = Box<[Transmuted]>>,
+    //    Box<[<R as CheckedTransmute>::Target]>: OutPtrRead,
+    //{
+    //    unsafe fn try_read_out(out_ptr: Self::OutPtr) -> Option<Self> {
+    //        unsafe {
+    //            <Box<[R::Target]>>::try_read_out(out_ptr)
+    //                .and_then(|output| transmute_from_target_boxed_slice(output))
+    //        }
+    //    }
+    //}
+    //#[cfg(feature = "alloc")]
+    //impl<'d, R: ExternC + NonLocal + 'd, S: Cloned> OutPtrRead for Box<[R]>
+    //where
+    //    Self: ReprFamily<Kind = Box<[S]>> + Decode<'d, CType = CSliceMut<<R as ExternC>::CType>>,
+    //{
+    //    unsafe fn try_read_out(out_ptr: Self::OutPtr) -> Option<Self> {
+    //        unimplemented!()
+    //        //let mut store = Default::default();
 
-            //let store_ref = unsafe {
-            //    core::mem::transmute::<&mut <Self as Decode>::Store, &'d mut <Self as Decode>::Store>(
-            //        &mut store,
-            //    )
-            //};
+    //        //let store_ref = unsafe {
+    //        //    core::mem::transmute::<&mut <Self as Decode>::Store, &'d mut <Self as Decode>::Store>(
+    //        //        &mut store,
+    //        //    )
+    //        //};
 
-            //unsafe {
-            //    let res = Decode::decode(out_ptr.into(), store_ref);
+    //        //unsafe {
+    //        //    let res = Decode::decode(out_ptr.into(), store_ref);
 
-            //    if !out_ptr.deallocate() {
-            //        return None;
-            //    }
+    //        //    if !out_ptr.deallocate() {
+    //        //        return None;
+    //        //    }
 
-            //    res
-            //}
-        }
-    }
+    //        //    res
+    //        //}
+    //    }
+    //}
 
-    #[cfg(feature = "alloc")]
-    impl<R: ReprC> OutPtrRead for Vec<R>
-    where
-        Self: ReprFamily<Kind = Vec<Robust>>,
-    {
-        unsafe fn try_read_out(_out_ptr: Self::OutPtr) -> Option<Self> {
-            unimplemented!()
-            //unsafe {
-            //    let res = Decode::decode(out_ptr.into(), &mut ());
+    //#[cfg(feature = "alloc")]
+    //impl<R: ReprC> OutPtrRead for Vec<R>
+    //where
+    //    Self: ReprFamily<Kind = Vec<Robust>>,
+    //{
+    //    unsafe fn try_read_out(_out_ptr: Self::OutPtr) -> Option<Self> {
+    //        unimplemented!()
+    //        //unsafe {
+    //        //    let res = Decode::decode(out_ptr.into(), &mut ());
 
-            //    if !out_ptr.deallocate() {
-            //        return None;
-            //    }
+    //        //    if !out_ptr.deallocate() {
+    //        //        return None;
+    //        //    }
 
-            //    res
-            //}
-        }
-    }
-    #[cfg(feature = "alloc")]
-    impl<R: CheckedTransmute<Target: Sized>> OutPtrRead for Vec<R>
-    where
-        Self: ReprFamily<Kind = Vec<Transmuted>>,
-        Vec<<R as CheckedTransmute>::Target>: OutPtrRead,
-    {
-        unsafe fn try_read_out(out_ptr: Self::OutPtr) -> Option<Self> {
-            unsafe {
-                <Vec<R::Target>>::try_read_out(out_ptr)
-                    .and_then(|output| transmute_from_target_vec(output))
-            }
-        }
-    }
-    #[cfg(feature = "alloc")]
-    impl<'d, R: ExternC + NonLocal + 'd, S: Cloned> OutPtrRead for Vec<R>
-    where
-        Self: ReprFamily<Kind = Vec<S>> + Decode<'d, CType = CSliceMut<<R as ExternC>::CType>>,
-    {
-        unsafe fn try_read_out(out_ptr: Self::OutPtr) -> Option<Self> {
-            unimplemented!()
-            //let mut store = Default::default();
+    //        //    res
+    //        //}
+    //    }
+    //}
+    //#[cfg(feature = "alloc")]
+    //impl<R: CheckedTransmute<Target: Sized>> OutPtrRead for Vec<R>
+    //where
+    //    Self: ReprFamily<Kind = Vec<Transmuted>>,
+    //    Vec<<R as CheckedTransmute>::Target>: OutPtrRead,
+    //{
+    //    unsafe fn try_read_out(out_ptr: Self::OutPtr) -> Option<Self> {
+    //        unsafe {
+    //            <Vec<R::Target>>::try_read_out(out_ptr)
+    //                .and_then(|output| transmute_from_target_vec(output))
+    //        }
+    //    }
+    //}
+    //#[cfg(feature = "alloc")]
+    //impl<'d, R: ExternC + NonLocal + 'd, S: Cloned> OutPtrRead for Vec<R>
+    //where
+    //    Self: ReprFamily<Kind = Vec<S>> + Decode<'d, CType = CSliceMut<<R as ExternC>::CType>>,
+    //{
+    //    unsafe fn try_read_out(out_ptr: Self::OutPtr) -> Option<Self> {
+    //        unimplemented!()
+    //        //let mut store = Default::default();
 
-            //let store_ref = unsafe {
-            //    core::mem::transmute::<&mut <Self as Decode>::Store, &'d mut <Self as Decode>::Store>(
-            //        &mut store,
-            //    )
-            //};
+    //        //let store_ref = unsafe {
+    //        //    core::mem::transmute::<&mut <Self as Decode>::Store, &'d mut <Self as Decode>::Store>(
+    //        //        &mut store,
+    //        //    )
+    //        //};
 
-            //unsafe {
-            //    let res = Decode::decode(out_ptr.into(), store_ref);
+    //        //unsafe {
+    //        //    let res = Decode::decode(out_ptr.into(), store_ref);
 
-            //    if !out_ptr.deallocate() {
-            //        return None;
-            //    }
+    //        //    if !out_ptr.deallocate() {
+    //        //        return None;
+    //        //    }
 
-            //    res
-            //}
-        }
-    }
+    //        //    res
+    //        //}
+    //    }
+    //}
 
-    impl<'d, R: ExternC + NonLocal + 'd, S: Cloned, const N: usize> OutPtrRead for [R; N]
-    where
-        Self: ReprFamily<Kind = [S; N]> + Decode<'d>,
-    {
-        unsafe fn try_read_out(out_ptr: Self::OutPtr) -> Option<Self> {
-            assert_arr_has_non_zero_len::<N>();
-            let mut store = Default::default();
+    //impl<'d, R: ExternC + NonLocal + 'd, S: Cloned, const N: usize> OutPtrRead for [R; N]
+    //where
+    //    Self: ReprFamily<Kind = [S; N]> + Decode,
+    //{
+    //    unsafe fn try_read_out(out_ptr: Self::OutPtr) -> Option<Self> {
+    //        assert_arr_has_non_zero_len::<N>();
+    //        let mut store = Default::default();
 
-            let store_ref = unsafe {
-                core::mem::transmute::<&mut <Self as Decode>::Store, &'d mut <Self as Decode>::Store>(
-                    &mut store,
-                )
-            };
+    //        let store_ref = unsafe {
+    //            core::mem::transmute::<&mut <Self as Decode>::Store, &'d mut <Self as Decode>::Store>(
+    //                &mut store,
+    //            )
+    //        };
 
-            unsafe { Decode::decode(out_ptr, store_ref) }
-        }
-    }
+    //        unsafe { Decode::decode(out_ptr, store_ref) }
+    //    }
+    //}
 
-    impl<R: OutPtrRead> OutPtrRead for Option<R>
-    where
-        Self: ReprFamily<Kind = Option<WithoutNiche>>,
-    {
-        unsafe fn try_read_out(out_ptr: Self::OutPtr) -> Option<Self> {
-            let option = TryInto::<Option<_>>::try_into(out_ptr).ok()?;
-            match option {
-                Some(payload) => unsafe { R::try_read_out(payload) }.map(Some),
-                None => Some(None),
-            }
-        }
-    }
-    impl<R: Niche + OutPtrRead> OutPtrRead for Option<R>
-    where
-        Self: ReprFamily<Kind = Option<WithCustomNiche>>,
-        //<R as ExternC>::CType: PartialEq,
-    {
-        unsafe fn try_read_out(_out_ptr: Self::OutPtr) -> Option<Self> {
-            unimplemented!()
-            //if _out_ptr == R::NICHE_VALUE {
-            //    return Ok(None);
-            //}
+    //impl<R: OutPtrRead> OutPtrRead for Option<R>
+    //where
+    //    Self: ReprFamily<Kind = Option<WithoutNiche>>,
+    //{
+    //    unsafe fn try_read_out(out_ptr: Self::OutPtr) -> Option<Self> {
+    //        let option = TryInto::<Option<_>>::try_into(out_ptr).ok()?;
+    //        match option {
+    //            Some(payload) => unsafe { R::try_read_out(payload) }.map(Some),
+    //            None => Some(None),
+    //        }
+    //    }
+    //}
+    //impl<R: Niche + OutPtrRead> OutPtrRead for Option<R>
+    //where
+    //    Self: ReprFamily<Kind = Option<WithCustomNiche>>,
+    //    //<R as ExternC>::CType: PartialEq,
+    //{
+    //    unsafe fn try_read_out(_out_ptr: Self::OutPtr) -> Option<Self> {
+    //        unimplemented!()
+    //        //if _out_ptr == R::NICHE_VALUE {
+    //        //    return Ok(None);
+    //        //}
 
-            //unsafe { R::try_read_out(_out_ptr).map(Some) }
-        }
-    }
+    //        //unsafe { R::try_read_out(_out_ptr).map(Some) }
+    //    }
+    //}
 }
 
 //#[cfg(test)]

@@ -134,11 +134,7 @@ pub(crate) fn gen_poly_export(spec: &ExportPolySpec, export_abi: Option<&syn::Ab
                     &format!("__{base}_handle_id"),
                     proc_macro2::Span::call_site(),
                 );
-                (
-                    spec.at,
-                    order,
-                    quote!(#arg_name: <co3::handle::Id as co3::ExternC>::CType),
-                )
+                (spec.at, order, quote!(#arg_name: co3::handle::Id))
             })
             .collect();
         inserts.sort_by(|(a_at, a_order, _), (b_at, b_order, _)| {

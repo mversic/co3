@@ -6,9 +6,9 @@ use syn::{Ident, LitStr, Path, Type, visit_mut::VisitMut};
 use crate::{
     attr_parse::derive::{Derive, RustcDerive},
     emitter::Emitter,
-    extern_c::FfiTypeInput,
     ffi_fn,
     impl_visitor::{Arg, FnDescriptor, TypeImplTraitResolver},
+    repr::FfiTypeInput,
     utils::{gen_resolve_type, gen_store_name, unwrap_result_type},
 };
 
@@ -64,7 +64,7 @@ fn impl_clone_for_opaque(
                     unsafe extern "C" {
                         #[link_name = #link_name]
                         fn co3_clone(
-                            handle_id: <co3::handle::Id as co3::ExternC>::CType,
+                            handle_id: co3::handle::Id,
                             handle_ptr: *const co3::external::Extern,
                             out_ptr: *mut *mut co3::external::Extern,
                         ) -> co3::FfiReturn;
@@ -104,7 +104,7 @@ fn impl_default_for_opaque(
                     unsafe extern "C" {
                         #[link_name = #link_name]
                         fn co3_default(
-                            handle_id: <co3::handle::Id as co3::ExternC>::CType,
+                            handle_id: co3::handle::Id,
                             out_ptr: *mut *mut co3::external::Extern,
                         ) -> co3::FfiReturn;
                     }
@@ -146,7 +146,7 @@ fn impl_partial_eq_for_opaque(
                     unsafe extern "C" {
                         #[link_name = #link_name]
                         fn co3_eq(
-                            handle_id: <co3::handle::Id as co3::ExternC>::CType,
+                            handle_id: co3::handle::Id,
                             left_handle_ptr: *const co3::external::Extern,
                             right_handle_ptr: *const co3::external::Extern,
                             out_ptr: *mut u8,
@@ -199,7 +199,7 @@ fn impl_ord_for_opaque(
                     unsafe extern "C" {
                         #[link_name = #link_name]
                         fn co3_ord(
-                            handle_id: <co3::handle::Id as co3::ExternC>::CType,
+                            handle_id: co3::handle::Id,
                             left_handle_ptr: *const co3::external::Extern,
                             right_handle_ptr: *const co3::external::Extern,
                             out_ptr: *mut i8,
@@ -304,7 +304,8 @@ fn gen_shared_fns(
                 }
             },
             Derive::Other(derive) => {
-                let Some(trait_path) = emitter.handle(syn::parse_str::<syn::Path>(derive)) else {
+                let Some(trait_path) = emitter.handle(syn::parse_str::<syn::Path>(derive.as_str()))
+                else {
                     emit!(emitter, name, "Invalid derive path `{}`", derive);
                     continue;
                 };
@@ -392,7 +393,7 @@ pub fn wrap_as_opaque(
                         unsafe extern "C" {
                             #[link_name = #drop_link_name]
                             fn co3_drop(
-                                handle_id: <co3::handle::Id as co3::ExternC>::CType,
+                                handle_id: co3::handle::Id,
                                 handle_ptr: *mut co3::external::Extern,
                             ) -> co3::FfiReturn;
                         }
