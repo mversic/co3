@@ -2,9 +2,8 @@
 
 use crate::{
     Decode, Encode, ExternC, ReprC, Store,
-    borrow::Borrow,
+    borrow::DropFamily,
     cloned::DecodeCloned,
-    ir::ReprFamily,
     niche::{Niche, NicheFamily},
     reprC,
 };
@@ -98,10 +97,10 @@ reprC! {
     unsafe impl(T: ReprC, E: ReprC) Robust for CResult<T, E> {}
 }
 
-impl<T, E> ReprFamily for Result<T, E> {
+reprC! {
     // FIXME: Result is transparent if one param is ZST
     // https://github.com/mversic/co3/issues/34
-    type Kind = Self;
+    impl(T, E) Cloned for Result<T, E> {}
 }
 
 impl<T, E> NicheFamily for Result<T, E>
@@ -119,29 +118,13 @@ impl<T: ExternC, E: ExternC> Niche for Result<T, E> {
     const NICHE_VALUE: Self::CType = CResult::niche();
 }
 
-impl<T: Borrow, E: Borrow> Borrow for Result<T, E> {
-    type Store = Option<Result<T::Store, E::Store>>;
-
-    type Borrowed<'itm>
-        = Result<T::Borrowed<'itm>, E::Borrowed<'itm>>
-    where
-        Self: 'itm;
-
-    fn borrow<'itm>(self, store: &'itm mut Self::Store) -> Self::Borrowed<'itm>
-    where
-        Self: 'itm,
-    {
-        match self {
-            Ok(ok) => {
-                let ok_store = store.insert(Ok(Default::default()));
-                Ok(ok.borrow(unsafe { ok_store.as_mut().unwrap_unchecked() }))
-            }
-            Err(err) => {
-                let err_store = store.insert(Err(Default::default()));
-                Err(err.borrow(unsafe { err_store.as_mut().unwrap_err_unchecked() }))
-            }
-        }
-    }
+impl<T, E> DropFamily for Result<T, E>
+where
+    T: DropFamily,
+    E: DropFamily,
+    T::Kind: core::ops::Add<E::Kind>,
+{
+    type Kind = <T::Kind as core::ops::Add<E::Kind>>::Output;
 }
 
 impl<T: Encode, E: Encode> Encode for Result<T, E> {

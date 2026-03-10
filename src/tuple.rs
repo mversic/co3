@@ -60,11 +60,13 @@
 //! );
 //! ```
 
+use core::ops::Add;
+
 use crate::{
     ExternC, ReprC, Store,
+    borrow::{Borrow, DropFamily},
     cloned::DecodeCloned,
-    ir::Cloned,
-    niche::{Niche, NicheFamily, WithCustomNiche, WithNiche, WithoutNiche},
+    niche::{Niche, NicheFamily, WithNiche, WithoutNiche},
 };
 
 macro_rules! impl_tuple {
@@ -78,31 +80,12 @@ macro_rules! impl_tuple {
         #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, PartialOrd, Ord)]
         pub struct $ffi_ty<$($ty),+>($(pub $ty),+);
 
-        impl<$($ty),+> Cloned for ($($ty,)+) {}
-        impl<$($ty),+> crate::ir::ReprFamily for ($($ty,)+) {
-            type Kind = Self;
+        crate::reprC! {
+            impl($($ty),+) Cloned for ($($ty,)+) {}
         }
 
         impl<$($ty: ExternC),+> crate::ExternC for ($($ty,)+) {
             type CType = $ffi_ty<$($ty::CType),+>;
-        }
-
-        impl<$($ty: crate::borrow::Borrow),+> crate::borrow::Borrow for ($($ty,)+) {
-            type Store = ($( $ty::Store, )+);
-
-            type Borrowed<'itm>
-                = ($( $ty::Borrowed<'itm>, )+)
-            where
-                Self: 'itm;
-
-            #[expect(non_snake_case)]
-            fn borrow<'itm>(self, store: &'itm mut Self::Store) -> Self::Borrowed<'itm> where Self: 'itm {
-                impl_tuple! {@decl_priv_store $($ty),+}
-
-                let ($($ty,)+) = self;
-                let store: private_store::Store<$(<$ty as crate::borrow::Borrow>::Store),+> = store.into();
-                ($( $ty::borrow($ty, store.$ty), )+)
-            }
         }
 
         #[expect(non_snake_case)]
@@ -138,6 +121,25 @@ macro_rules! impl_tuple {
             unsafe fn try_read_out(source: Self::OutPtr) -> Option<Self> {
                 let $ffi_ty($($ty,)+) = source;
                 Some(unsafe {($( crate::out_ptr::OutPtrRead::try_read_out($ty)?, )+)})
+            }
+        }
+
+        impl<$($ty: Borrow),+> Borrow for ($($ty,)+) {
+            type Store = ($( $ty::Store, )+);
+
+            type Borrowed<'itm>
+                = ($( $ty::Borrowed<'itm>, )+)
+            where
+                Self: 'itm;
+
+            #[inline(always)]
+            #[expect(non_snake_case)]
+            fn borrow<'itm>(self, store: &'itm mut Self::Store) -> Self::Borrowed<'itm> where Self: 'itm {
+                impl_tuple! {@decl_priv_store $($ty),+}
+
+                let ($($ty,)+) = self;
+                let store: private_store::Store<$(<$ty as Borrow>::Store),+> = store.into();
+                ($( $ty::borrow($ty, store.$ty), )+)
             }
         }
 
@@ -240,32 +242,23 @@ impl<A: Niche> Niche for (A,) {
 
 disjoint_impls::disjoint_impls! {
     #[disjoint_impls(remote)]
-    pub trait Niche: ExternC {
+    trait Niche: ExternC {
         const NICHE_VALUE: Self::CType;
     }
 
-    impl<A, B> Niche for (A, B)
+    impl<A: Niche, B: ExternC> Niche for (A, B)
     where
-        A: NicheFamily<Kind: WithNiche> + Niche,
-        B: NicheFamily<Kind = WithoutNiche> + ExternC,
+        A: NicheFamily<Kind: WithNiche>,
     {
         const NICHE_VALUE: Self::CType = CTuple2(A::NICHE_VALUE, unsafe { core::mem::zeroed() });
     }
 
-    impl<A, B> Niche for (A, B)
+    impl<A: ExternC, B: Niche> Niche for (A, B)
     where
-        A: NicheFamily<Kind = WithoutNiche> + ExternC,
-        B: NicheFamily<Kind: WithNiche> + Niche,
+        A: NicheFamily<Kind = WithoutNiche>,
+        B: NicheFamily<Kind: WithNiche>,
     {
         const NICHE_VALUE: Self::CType = CTuple2(unsafe { core::mem::zeroed() }, B::NICHE_VALUE);
-    }
-
-    impl<A, B> Niche for (A, B)
-    where
-        A: NicheFamily<Kind: WithNiche> + Niche,
-        B: NicheFamily<Kind: WithNiche> + ExternC,
-    {
-        const NICHE_VALUE: Self::CType = CTuple2(A::NICHE_VALUE, unsafe { core::mem::zeroed() });
     }
 }
 
@@ -280,326 +273,96 @@ where
     );
 }
 
-impl<A: ExternC, B: ExternC, C: ExternC, D: ExternC> Niche for (A, B, C, D)
-where
-    ((A, B), (C, D)):
-        Niche<CType = CTuple2<<(A, B) as ExternC>::CType, <(C, D) as ExternC>::CType>>,
-{
-    const NICHE_VALUE: Self::CType = CTuple4(
-        <((A, B), (C, D))>::NICHE_VALUE.0.0,
-        <((A, B), (C, D))>::NICHE_VALUE.0.1,
-        <((A, B), (C, D))>::NICHE_VALUE.1.0,
-        <((A, B), (C, D))>::NICHE_VALUE.1.1,
-    );
+macro_rules! impl_tuple_niche_recursive {
+    ($(($($all:ident),+) => ($left:ty, $right:ty) : $ffi_ty:ident($($field:tt),+)),+ $(,)?) => {
+        $(
+            impl<$($all: ExternC),+> Niche for ($($all,)+)
+            where
+                ($left, $right): Niche<CType = CTuple2<<$left as ExternC>::CType, <$right as ExternC>::CType>>,
+            {
+                const NICHE_VALUE: Self::CType = $ffi_ty(
+                    $(<($left, $right)>::NICHE_VALUE.$field),+
+                );
+            }
+        )+
+    };
 }
 
-impl<A: ExternC, B: ExternC, C: ExternC, D: ExternC, E: ExternC> Niche for (A, B, C, D, E)
-where
-    ((A, B), (C, D, E)):
-        Niche<CType = CTuple2<<(A, B) as ExternC>::CType, <(C, D, E) as ExternC>::CType>>,
-{
-    const NICHE_VALUE: Self::CType = CTuple5(
-        <((A, B), (C, D, E))>::NICHE_VALUE.0.0,
-        <((A, B), (C, D, E))>::NICHE_VALUE.0.1,
-        <((A, B), (C, D, E))>::NICHE_VALUE.1.0,
-        <((A, B), (C, D, E))>::NICHE_VALUE.1.1,
-        <((A, B), (C, D, E))>::NICHE_VALUE.1.2,
-    );
+impl_tuple_niche_recursive! {
+    (A, B, C, D) => ((A, B), (C, D)) : CTuple4(0.0, 0.1, 1.0, 1.1),
+    (A, B, C, D, E) => ((A, B), (C, D, E)) : CTuple5(0.0, 0.1, 1.0, 1.1, 1.2),
+    (A, B, C, D, E, F) => ((A, B, C), (D, E, F)) : CTuple6(0.0, 0.1, 0.2, 1.0, 1.1, 1.2),
+    (A, B, C, D, E, F, G) => ((A, B, C), (D, E, F, G)) : CTuple7(0.0, 0.1, 0.2, 1.0, 1.1, 1.2, 1.3),
+    (A, B, C, D, E, F, G, H) => ((A, B, C, D), (E, F, G, H)) : CTuple8(0.0, 0.1, 0.2, 0.3, 1.0, 1.1, 1.2, 1.3),
+    (A, B, C, D, E, F, G, H, I) => ((A, B, C, D), (E, F, G, H, I)) : CTuple9(0.0, 0.1, 0.2, 0.3, 1.0, 1.1, 1.2, 1.3, 1.4),
+    (A, B, C, D, E, F, G, H, I, J) => ((A, B, C, D, E), (F, G, H, I, J)) : CTuple10(0.0, 0.1, 0.2, 0.3, 0.4, 1.0, 1.1, 1.2, 1.3, 1.4),
+    (A, B, C, D, E, F, G, H, I, J, K) => ((A, B, C, D, E), (F, G, H, I, J, K)) : CTuple11(0.0, 0.1, 0.2, 0.3, 0.4, 1.0, 1.1, 1.2, 1.3, 1.4, 1.5),
+    (A, B, C, D, E, F, G, H, I, J, K, L) => ((A, B, C, D, E, F), (G, H, I, J, K, L)) : CTuple12(0.0, 0.1, 0.2, 0.3, 0.4, 0.5, 1.0, 1.1, 1.2, 1.3, 1.4, 1.5)
 }
 
-impl<A: ExternC, B: ExternC, C: ExternC, D: ExternC, E: ExternC, F: ExternC> Niche
-    for (A, B, C, D, E, F)
-where
-    ((A, B, C), (D, E, F)):
-        Niche<CType = CTuple2<<(A, B, C) as ExternC>::CType, <(D, E, F) as ExternC>::CType>>,
-{
-    const NICHE_VALUE: Self::CType = CTuple6(
-        <((A, B, C), (D, E, F))>::NICHE_VALUE.0.0,
-        <((A, B, C), (D, E, F))>::NICHE_VALUE.0.1,
-        <((A, B, C), (D, E, F))>::NICHE_VALUE.0.2,
-        <((A, B, C), (D, E, F))>::NICHE_VALUE.1.0,
-        <((A, B, C), (D, E, F))>::NICHE_VALUE.1.1,
-        <((A, B, C), (D, E, F))>::NICHE_VALUE.1.2,
-    );
-}
-
-impl<A: ExternC, B: ExternC, C: ExternC, D: ExternC, E: ExternC, F: ExternC, G: ExternC> Niche
-    for (A, B, C, D, E, F, G)
-where
-    ((A, B, C), (D, E, F, G)):
-        Niche<CType = CTuple2<<(A, B, C) as ExternC>::CType, <(D, E, F, G) as ExternC>::CType>>,
-{
-    const NICHE_VALUE: Self::CType = CTuple7(
-        <((A, B, C), (D, E, F, G))>::NICHE_VALUE.0.0,
-        <((A, B, C), (D, E, F, G))>::NICHE_VALUE.0.1,
-        <((A, B, C), (D, E, F, G))>::NICHE_VALUE.0.2,
-        <((A, B, C), (D, E, F, G))>::NICHE_VALUE.1.0,
-        <((A, B, C), (D, E, F, G))>::NICHE_VALUE.1.1,
-        <((A, B, C), (D, E, F, G))>::NICHE_VALUE.1.2,
-        <((A, B, C), (D, E, F, G))>::NICHE_VALUE.1.3,
-    );
-}
-
-impl<A: ExternC, B: ExternC, C: ExternC, D: ExternC, E: ExternC, F: ExternC, G: ExternC, H: ExternC>
-    Niche for (A, B, C, D, E, F, G, H)
-where
-    ((A, B, C, D), (E, F, G, H)):
-        Niche<CType = CTuple2<<(A, B, C, D) as ExternC>::CType, <(E, F, G, H) as ExternC>::CType>>,
-{
-    const NICHE_VALUE: Self::CType = CTuple8(
-        <((A, B, C, D), (E, F, G, H))>::NICHE_VALUE.0.0,
-        <((A, B, C, D), (E, F, G, H))>::NICHE_VALUE.0.1,
-        <((A, B, C, D), (E, F, G, H))>::NICHE_VALUE.0.2,
-        <((A, B, C, D), (E, F, G, H))>::NICHE_VALUE.0.3,
-        <((A, B, C, D), (E, F, G, H))>::NICHE_VALUE.1.0,
-        <((A, B, C, D), (E, F, G, H))>::NICHE_VALUE.1.1,
-        <((A, B, C, D), (E, F, G, H))>::NICHE_VALUE.1.2,
-        <((A, B, C, D), (E, F, G, H))>::NICHE_VALUE.1.3,
-    );
-}
-
-impl<
-    A: ExternC,
-    B: ExternC,
-    C: ExternC,
-    D: ExternC,
-    E: ExternC,
-    F: ExternC,
-    G: ExternC,
-    H: ExternC,
-    I: ExternC,
-> Niche for (A, B, C, D, E, F, G, H, I)
-where
-    ((A, B, C, D), (E, F, G, H, I)): Niche<
-        CType = CTuple2<<(A, B, C, D) as ExternC>::CType, <(E, F, G, H, I) as ExternC>::CType>,
-    >,
-{
-    const NICHE_VALUE: Self::CType = CTuple9(
-        <((A, B, C, D), (E, F, G, H, I))>::NICHE_VALUE.0.0,
-        <((A, B, C, D), (E, F, G, H, I))>::NICHE_VALUE.0.1,
-        <((A, B, C, D), (E, F, G, H, I))>::NICHE_VALUE.0.2,
-        <((A, B, C, D), (E, F, G, H, I))>::NICHE_VALUE.0.3,
-        <((A, B, C, D), (E, F, G, H, I))>::NICHE_VALUE.1.0,
-        <((A, B, C, D), (E, F, G, H, I))>::NICHE_VALUE.1.1,
-        <((A, B, C, D), (E, F, G, H, I))>::NICHE_VALUE.1.2,
-        <((A, B, C, D), (E, F, G, H, I))>::NICHE_VALUE.1.3,
-        <((A, B, C, D), (E, F, G, H, I))>::NICHE_VALUE.1.4,
-    );
-}
-
-impl<
-    A: ExternC,
-    B: ExternC,
-    C: ExternC,
-    D: ExternC,
-    E: ExternC,
-    F: ExternC,
-    G: ExternC,
-    H: ExternC,
-    I: ExternC,
-    J: ExternC,
-> Niche for (A, B, C, D, E, F, G, H, I, J)
-where
-    ((A, B, C, D, E), (F, G, H, I, J)): Niche<
-        CType = CTuple2<<(A, B, C, D, E) as ExternC>::CType, <(F, G, H, I, J) as ExternC>::CType>,
-    >,
-{
-    const NICHE_VALUE: Self::CType = CTuple10(
-        <((A, B, C, D, E), (F, G, H, I, J))>::NICHE_VALUE.0.0,
-        <((A, B, C, D, E), (F, G, H, I, J))>::NICHE_VALUE.0.1,
-        <((A, B, C, D, E), (F, G, H, I, J))>::NICHE_VALUE.0.2,
-        <((A, B, C, D, E), (F, G, H, I, J))>::NICHE_VALUE.0.3,
-        <((A, B, C, D, E), (F, G, H, I, J))>::NICHE_VALUE.0.4,
-        <((A, B, C, D, E), (F, G, H, I, J))>::NICHE_VALUE.1.0,
-        <((A, B, C, D, E), (F, G, H, I, J))>::NICHE_VALUE.1.1,
-        <((A, B, C, D, E), (F, G, H, I, J))>::NICHE_VALUE.1.2,
-        <((A, B, C, D, E), (F, G, H, I, J))>::NICHE_VALUE.1.3,
-        <((A, B, C, D, E), (F, G, H, I, J))>::NICHE_VALUE.1.4,
-    );
-}
-
-impl<
-    A: ExternC,
-    B: ExternC,
-    C: ExternC,
-    D: ExternC,
-    E: ExternC,
-    F: ExternC,
-    G: ExternC,
-    H: ExternC,
-    I: ExternC,
-    J: ExternC,
-    K: ExternC,
-> Niche for (A, B, C, D, E, F, G, H, I, J, K)
-where
-    ((A, B, C, D, E), (F, G, H, I, J, K)): Niche<
-        CType = CTuple2<
-            <(A, B, C, D, E) as ExternC>::CType,
-            <(F, G, H, I, J, K) as ExternC>::CType,
-        >,
-    >,
-{
-    const NICHE_VALUE: Self::CType = CTuple11(
-        <((A, B, C, D, E), (F, G, H, I, J, K))>::NICHE_VALUE.0.0,
-        <((A, B, C, D, E), (F, G, H, I, J, K))>::NICHE_VALUE.0.1,
-        <((A, B, C, D, E), (F, G, H, I, J, K))>::NICHE_VALUE.0.2,
-        <((A, B, C, D, E), (F, G, H, I, J, K))>::NICHE_VALUE.0.3,
-        <((A, B, C, D, E), (F, G, H, I, J, K))>::NICHE_VALUE.0.4,
-        <((A, B, C, D, E), (F, G, H, I, J, K))>::NICHE_VALUE.1.0,
-        <((A, B, C, D, E), (F, G, H, I, J, K))>::NICHE_VALUE.1.1,
-        <((A, B, C, D, E), (F, G, H, I, J, K))>::NICHE_VALUE.1.2,
-        <((A, B, C, D, E), (F, G, H, I, J, K))>::NICHE_VALUE.1.3,
-        <((A, B, C, D, E), (F, G, H, I, J, K))>::NICHE_VALUE.1.4,
-        <((A, B, C, D, E), (F, G, H, I, J, K))>::NICHE_VALUE.1.5,
-    );
-}
-
-impl<
-    A: ExternC,
-    B: ExternC,
-    C: ExternC,
-    D: ExternC,
-    E: ExternC,
-    F: ExternC,
-    G: ExternC,
-    H: ExternC,
-    I: ExternC,
-    J: ExternC,
-    K: ExternC,
-    L: ExternC,
-> Niche for (A, B, C, D, E, F, G, H, I, J, K, L)
-where
-    ((A, B, C, D, E, F), (G, H, I, J, K, L)): Niche<
-        CType = CTuple2<
-            <(A, B, C, D, E, F) as ExternC>::CType,
-            <(G, H, I, J, K, L) as ExternC>::CType,
-        >,
-    >,
-{
-    const NICHE_VALUE: Self::CType = CTuple12(
-        <((A, B, C, D, E, F), (G, H, I, J, K, L))>::NICHE_VALUE.0.0,
-        <((A, B, C, D, E, F), (G, H, I, J, K, L))>::NICHE_VALUE.0.1,
-        <((A, B, C, D, E, F), (G, H, I, J, K, L))>::NICHE_VALUE.0.2,
-        <((A, B, C, D, E, F), (G, H, I, J, K, L))>::NICHE_VALUE.0.3,
-        <((A, B, C, D, E, F), (G, H, I, J, K, L))>::NICHE_VALUE.0.4,
-        <((A, B, C, D, E, F), (G, H, I, J, K, L))>::NICHE_VALUE.0.5,
-        <((A, B, C, D, E, F), (G, H, I, J, K, L))>::NICHE_VALUE.1.0,
-        <((A, B, C, D, E, F), (G, H, I, J, K, L))>::NICHE_VALUE.1.1,
-        <((A, B, C, D, E, F), (G, H, I, J, K, L))>::NICHE_VALUE.1.2,
-        <((A, B, C, D, E, F), (G, H, I, J, K, L))>::NICHE_VALUE.1.3,
-        <((A, B, C, D, E, F), (G, H, I, J, K, L))>::NICHE_VALUE.1.4,
-        <((A, B, C, D, E, F), (G, H, I, J, K, L))>::NICHE_VALUE.1.5,
-    );
+macro_rules! impl_tuple_family_recursive {
+    ($(($($all:ident),+) => $split:ty : $family:ident),+ $(,)?) => {
+        $(
+            impl<$($all),+> $family for ($($all,)+)
+            where
+                $split: $family,
+            {
+                type Kind = <$split as $family>::Kind;
+            }
+        )+
+    };
 }
 
 impl<A: NicheFamily> NicheFamily for (A,) {
     type Kind = A::Kind;
 }
 
-disjoint_impls::disjoint_impls! {
-    #[disjoint_impls(remote)]
-    pub trait NicheFamily {
-        type Kind;
-    }
-
-    impl<A, B> NicheFamily for (A, B)
-    where
-        A: NicheFamily<Kind = WithoutNiche>,
-        B: NicheFamily<Kind = WithoutNiche>,
-    {
-        type Kind = WithoutNiche;
-    }
-    impl<A, B> NicheFamily for (A, B)
-    where
-        A: NicheFamily<Kind: WithNiche>,
-        B: NicheFamily<Kind = WithoutNiche>,
-    {
-        type Kind = WithCustomNiche;
-    }
-    impl<A, B> NicheFamily for (A, B)
-    where
-        A: NicheFamily<Kind = WithoutNiche>,
-        B: NicheFamily<Kind: WithNiche>,
-    {
-        type Kind = WithCustomNiche;
-    }
-    impl<A, B> NicheFamily for (A, B)
-    where
-        A: NicheFamily<Kind: WithNiche>,
-        B: NicheFamily<Kind: WithNiche>,
-    {
-        type Kind = WithCustomNiche;
-    }
+impl<A: DropFamily> DropFamily for (A,) {
+    type Kind = A::Kind;
 }
 
-impl<A, B, C> NicheFamily for (A, B, C)
+impl<A, B> NicheFamily for (A, B)
 where
-    (A, (B, C)): NicheFamily,
+    A: NicheFamily,
+    B: NicheFamily,
+    A::Kind: Add<B::Kind>,
 {
-    type Kind = <(A, (B, C)) as NicheFamily>::Kind;
+    type Kind = <A::Kind as Add<B::Kind>>::Output;
 }
 
-impl<A, B, C, D> NicheFamily for (A, B, C, D)
+impl<A, B> DropFamily for (A, B)
 where
-    ((A, B), (C, D)): NicheFamily,
+    A: DropFamily,
+    B: DropFamily,
+    A::Kind: Add<B::Kind>,
 {
-    type Kind = <((A, B), (C, D)) as NicheFamily>::Kind;
+    type Kind = <A::Kind as Add<B::Kind>>::Output;
 }
 
-impl<A, B, C, D, E> NicheFamily for (A, B, C, D, E)
-where
-    ((A, B), (C, D, E)): NicheFamily,
-{
-    type Kind = <((A, B), (C, D, E)) as NicheFamily>::Kind;
+impl_tuple_family_recursive! {
+    (A, B, C) => (A, (B, C)) : NicheFamily,
+    (A, B, C, D) => ((A, B), (C, D)) : NicheFamily,
+    (A, B, C, D, E) => ((A, B), (C, D, E)) : NicheFamily,
+    (A, B, C, D, E, F) => ((A, B, C), (D, E, F)) : NicheFamily,
+    (A, B, C, D, E, F, G) => ((A, B, C), (D, E, F, G)) : NicheFamily,
+    (A, B, C, D, E, F, G, H) => ((A, B, C, D), (E, F, G, H)) : NicheFamily,
+    (A, B, C, D, E, F, G, H, I) => ((A, B, C, D), (E, F, G, H, I)) : NicheFamily,
+    (A, B, C, D, E, F, G, H, I, J) => ((A, B, C, D, E), (F, G, H, I, J)) : NicheFamily,
+    (A, B, C, D, E, F, G, H, I, J, K) => ((A, B, C, D, E), (F, G, H, I, J, K)) : NicheFamily,
+    (A, B, C, D, E, F, G, H, I, J, K, L) => ((A, B, C, D, E, F), (G, H, I, J, K, L)) : NicheFamily
 }
 
-impl<A, B, C, D, E, F> NicheFamily for (A, B, C, D, E, F)
-where
-    ((A, B, C), (D, E, F)): NicheFamily,
-{
-    type Kind = <((A, B, C), (D, E, F)) as NicheFamily>::Kind;
-}
-
-impl<A, B, C, D, E, F, G> NicheFamily for (A, B, C, D, E, F, G)
-where
-    ((A, B, C), (D, E, F, G)): NicheFamily,
-{
-    type Kind = <((A, B, C), (D, E, F, G)) as NicheFamily>::Kind;
-}
-
-impl<A, B, C, D, E, F, G, H> NicheFamily for (A, B, C, D, E, F, G, H)
-where
-    ((A, B, C, D), (E, F, G, H)): NicheFamily,
-{
-    type Kind = <((A, B, C, D), (E, F, G, H)) as NicheFamily>::Kind;
-}
-
-impl<A, B, C, D, E, F, G, H, I> NicheFamily for (A, B, C, D, E, F, G, H, I)
-where
-    ((A, B, C, D), (E, F, G, H, I)): NicheFamily,
-{
-    type Kind = <((A, B, C, D), (E, F, G, H, I)) as NicheFamily>::Kind;
-}
-
-impl<A, B, C, D, E, F, G, H, I, J> NicheFamily for (A, B, C, D, E, F, G, H, I, J)
-where
-    ((A, B, C, D, E), (F, G, H, I, J)): NicheFamily,
-{
-    type Kind = <((A, B, C, D, E), (F, G, H, I, J)) as NicheFamily>::Kind;
-}
-
-impl<A, B, C, D, E, F, G, H, I, J, K> NicheFamily for (A, B, C, D, E, F, G, H, I, J, K)
-where
-    ((A, B, C, D, E), (F, G, H, I, J, K)): NicheFamily,
-{
-    type Kind = <((A, B, C, D, E), (F, G, H, I, J, K)) as NicheFamily>::Kind;
-}
-
-impl<A, B, C, D, E, F, G, H, I, J, K, L> NicheFamily for (A, B, C, D, E, F, G, H, I, J, K, L)
-where
-    ((A, B, C, D, E, F), (G, H, I, J, K, L)): NicheFamily,
-{
-    type Kind = <((A, B, C, D, E, F), (G, H, I, J, K, L)) as NicheFamily>::Kind;
+impl_tuple_family_recursive! {
+    (A, B, C) => (A, (B, C)) : DropFamily,
+    (A, B, C, D) => ((A, B), (C, D)) : DropFamily,
+    (A, B, C, D, E) => ((A, B), (C, D, E)) : DropFamily,
+    (A, B, C, D, E, F) => ((A, B, C), (D, E, F)) : DropFamily,
+    (A, B, C, D, E, F, G) => ((A, B, C), (D, E, F, G)) : DropFamily,
+    (A, B, C, D, E, F, G, H) => ((A, B, C, D), (E, F, G, H)) : DropFamily,
+    (A, B, C, D, E, F, G, H, I) => ((A, B, C, D), (E, F, G, H, I)) : DropFamily,
+    (A, B, C, D, E, F, G, H, I, J) => ((A, B, C, D, E), (F, G, H, I, J)) : DropFamily,
+    (A, B, C, D, E, F, G, H, I, J, K) => ((A, B, C, D, E), (F, G, H, I, J, K)) : DropFamily,
+    (A, B, C, D, E, F, G, H, I, J, K, L) => ((A, B, C, D, E, F), (G, H, I, J, K, L)) : DropFamily
 }
 
 #[cfg(test)]
@@ -612,12 +375,12 @@ mod tests {
 
     use super::*;
     #[cfg(feature = "unstable-refs")]
-    use crate::slice::CSliceMut;
+    use crate::slice::{CSlice, CSliceMut};
     use crate::{
         Decode, Encode,
         boxed::{CBox, CBoxedSlice},
         ir::ReprFamily,
-        niche::{StableNiche, WithStableNiche},
+        niche::{StableNiche, WithCustomNiche, WithStableNiche},
         option::COption,
         vec::CVec,
     };

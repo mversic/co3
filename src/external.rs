@@ -1,6 +1,7 @@
 use core::{marker::PhantomData, ptr::NonNull};
 
 use crate::{
+    borrow::{Borrow, DropFamily, NoDrop},
     ir::{ReprFamily, Transmuted},
     niche::{Niche, NicheFamily, StableNiche, WithStableNiche},
     transmute::{CheckedTransmute, EncodeTransmuted},
@@ -44,6 +45,69 @@ pub struct ExternRef<'a, T>(NonNull<Extern>, PhantomData<&'a T>);
 #[repr(transparent)]
 pub struct ExternRefMut<'a, T>(NonNull<Extern>, PhantomData<&'a mut T>);
 
+macro_rules! impl_external_ref_common {
+    ($ty:ident, $target:ty, $niche:expr) => {
+        impl<R> ReprFamily for $ty<'_, R> {
+            type Kind = Transmuted;
+        }
+
+        impl<R> NicheFamily for $ty<'_, R> {
+            type Kind = WithStableNiche;
+        }
+
+        unsafe impl<R> CheckedTransmute for $ty<'_, R> {
+            type Target = $target;
+
+            #[inline(always)]
+            fn is_valid(target: &Self::Target) -> bool {
+                !target.is_null()
+            }
+        }
+
+        impl<R> Niche for $ty<'_, R> {
+            const NICHE_VALUE: Self::CType = $niche;
+        }
+
+        unsafe impl<R> StableNiche for $ty<'_, R> {}
+
+        impl<R> DropFamily for $ty<'_, R> {
+            type Kind = NoDrop;
+        }
+
+        impl<'a, R> Borrow for $ty<'a, R> {
+            type Store = ();
+
+            type Borrowed<'itm>
+                = Self
+            where
+                Self: 'itm;
+
+            fn borrow<'itm>(self, (): &'itm mut ()) -> Self::Borrowed<'itm>
+            where
+                Self: 'itm,
+            {
+                self
+            }
+        }
+
+        unsafe impl<R> EncodeTransmuted for $ty<'_, R>
+        where
+            Self: CheckedTransmute<Target: crate::Encode>,
+        {
+            type Store = <Self::Target as crate::Encode>::Store;
+        }
+
+        impl<T> core::ops::Deref for $ty<'_, T> {
+            type Target = T;
+
+            fn deref(&self) -> &Self::Target {
+                let ptr: *const _ = &self.0.as_ptr();
+                unsafe { &*(ptr.cast::<T>()) }
+            }
+        }
+    };
+}
+
 impl<T: External> ExternRef<'_, T> {
     pub fn new(inner: &T) -> Self {
         let value = unsafe { NonNull::new_unchecked(inner.as_ptr() as *mut _) };
@@ -60,24 +124,6 @@ impl<T: External> ExternRefMut<'_, T> {
     }
 }
 
-impl<T> core::ops::Deref for ExternRef<'_, T> {
-    type Target = T;
-
-    fn deref(&self) -> &Self::Target {
-        let ptr: *const _ = &self.0.as_ptr();
-        unsafe { &*(ptr.cast::<T>()) }
-    }
-}
-
-impl<T> core::ops::Deref for ExternRefMut<'_, T> {
-    type Target = T;
-
-    fn deref(&self) -> &Self::Target {
-        let ptr: *const _ = &self.0.as_ptr();
-        unsafe { &*(ptr.cast::<T>()) }
-    }
-}
-
 impl<T> core::ops::DerefMut for ExternRefMut<'_, T> {
     fn deref_mut(&mut self) -> &mut Self::Target {
         let ptr: *mut _ = &mut self.0.as_ptr();
@@ -85,56 +131,5 @@ impl<T> core::ops::DerefMut for ExternRefMut<'_, T> {
     }
 }
 
-impl<R> ReprFamily for ExternRef<'_, R> {
-    type Kind = Transmuted;
-}
-impl<R> ReprFamily for ExternRefMut<'_, R> {
-    type Kind = Transmuted;
-}
-
-impl<R> NicheFamily for ExternRef<'_, R> {
-    type Kind = WithStableNiche;
-}
-impl<R> NicheFamily for ExternRefMut<'_, R> {
-    type Kind = WithStableNiche;
-}
-
-unsafe impl<R> CheckedTransmute for ExternRef<'_, R> {
-    type Target = *const Extern;
-
-    #[inline(always)]
-    fn is_valid(target: &Self::Target) -> bool {
-        !target.is_null()
-    }
-}
-unsafe impl<R> CheckedTransmute for ExternRefMut<'_, R> {
-    type Target = *const Extern;
-
-    #[inline(always)]
-    fn is_valid(target: &Self::Target) -> bool {
-        !target.is_null()
-    }
-}
-
-impl<R> Niche for ExternRef<'_, R> {
-    const NICHE_VALUE: Self::CType = core::ptr::null();
-}
-impl<R> Niche for ExternRefMut<'_, R> {
-    const NICHE_VALUE: Self::CType = core::ptr::null_mut();
-}
-
-unsafe impl<R> StableNiche for ExternRef<'_, R> {}
-unsafe impl<R> StableNiche for ExternRefMut<'_, R> {}
-
-unsafe impl<R> EncodeTransmuted for ExternRef<'_, R>
-where
-    Self: CheckedTransmute<Target: crate::Encode>,
-{
-    type Store = <Self::Target as crate::Encode>::Store;
-}
-unsafe impl<R> EncodeTransmuted for ExternRefMut<'_, R>
-where
-    Self: CheckedTransmute<Target: crate::Encode>,
-{
-    type Store = <Self::Target as crate::Encode>::Store;
-}
+impl_external_ref_common!(ExternRef, *const Extern, core::ptr::null());
+impl_external_ref_common!(ExternRefMut, *mut Extern, core::ptr::null_mut());

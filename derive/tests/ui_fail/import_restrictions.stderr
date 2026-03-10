@@ -82,7 +82,13 @@ error: cannot find attribute `link_crate` in this scope
   --> tests/ui_fail/import_restrictions.rs:42:7
    |
 42 |     #[link_crate = "kita"]
-   |       ^^^^^^^^^^ help: a built-in attribute with a similar name exists: `link_name`
+   |       ^^^^^^^^^^
+   |
+help: a built-in attribute with a similar name exists
+   |
+42 -     #[link_crate = "kita"]
+42 +     #[link_name = "kita"]
+   |
 
 error[E0046]: not all trait items implemented, missing: `U`
   --> tests/ui_fail/import_restrictions.rs:57:1

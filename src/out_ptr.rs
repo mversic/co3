@@ -231,7 +231,6 @@ disjoint_impls! {
     {
         type OutPtr = COption<R::OutPtr>;
     }
-    // FIXME: using false as it makes no difference
     impl<R: Niche + OutPtr> OutPtr for Option<R>
     where
         Self: ReprFamily<Kind = Option<WithCustomNiche>>,
@@ -251,38 +250,38 @@ disjoint_impls! {
         unsafe fn write_out(self, out_ptr: *mut Self::OutPtr);
     }
 
-    //impl<R: ReprC> OutPtrWrite for R
-    //where
-    //    Self: ReprFamily<Kind = Robust>,
-    //{
-    //    unsafe fn write_out(self, out_ptr: *mut Self::OutPtr) {
-    //        let ctype = self.encode(&mut ());
+    impl<R: ReprC> OutPtrWrite for R
+    where
+        Self: ReprFamily<Kind = Robust>,
+    {
+        unsafe fn write_out(self, out_ptr: *mut Self::OutPtr) {
+            let ctype = self.encode(&mut ());
 
-    //        unsafe {
-    //            out_ptr.write(ctype);
-    //        }
-    //    }
-    //}
-    //#[cfg(feature = "alloc")]
-    //impl<R: ReprFamily<Kind = Opaque>> OutPtrWrite for R {
-    //    unsafe fn write_out(self, out_ptr: *mut Self::OutPtr) {
-    //        let ctype = self.encode(&mut ());
+            unsafe {
+                out_ptr.write(ctype);
+            }
+        }
+    }
+    #[cfg(feature = "alloc")]
+    impl<R: ReprFamily<Kind = Opaque>> OutPtrWrite for R {
+        unsafe fn write_out(self, out_ptr: *mut Self::OutPtr) {
+            let ctype = self.encode(&mut ());
 
-    //        unsafe {
-    //            out_ptr.write(ctype);
-    //        }
-    //    }
-    //}
-    //impl<R: CheckedTransmute<Target: Sized>> OutPtrWrite for R
-    //where
-    //    Self: ReprFamily<Kind = Transmuted>,
-    //    <R as CheckedTransmute>::Target: OutPtrWrite,
-    //{
-    //    unsafe fn write_out(self, out_ptr: *mut Self::OutPtr) {
-    //        let transmuted = transmute_into_target(self);
-    //        unsafe { OutPtrWrite::write_out(transmuted, out_ptr) }
-    //    }
-    //}
+            unsafe {
+                out_ptr.write(ctype);
+            }
+        }
+    }
+    impl<R: CheckedTransmute<Target: Sized>> OutPtrWrite for R
+    where
+        Self: ReprFamily<Kind = Transmuted>,
+        <R as CheckedTransmute>::Target: OutPtrWrite,
+    {
+        unsafe fn write_out(self, out_ptr: *mut Self::OutPtr) {
+            let transmuted = transmute_into_target(self);
+            unsafe { OutPtrWrite::write_out(transmuted, out_ptr) }
+        }
+    }
 
     //#[cfg(feature = "unstable-refs")]
     //impl<'itm, R: Encode + NonLocal + Clone, S: Cloned> OutPtrWrite for &'itm R
@@ -577,25 +576,34 @@ disjoint_impls! {
         unsafe fn try_read_out(out_ptr: Self::OutPtr) -> Option<Self>;
     }
 
-    //impl<R: ReprC> OutPtrRead for R
-    //where
-    //    Self: ReprFamily<Kind = Robust>,
-    //{
-    //    unsafe fn try_read_out(out_ptr: Self::OutPtr) -> Option<Self> {
-    //        unsafe { Decode::decode(out_ptr, &mut ()) }
-    //    }
-    //}
-    //impl<R: CheckedTransmute<Target: Sized>> OutPtrRead for R
-    //where
-    //    Self: ReprFamily<Kind = Transmuted>,
-    //    <R as CheckedTransmute>::Target: OutPtrRead,
-    //{
-    //    unsafe fn try_read_out(out_ptr: Self::OutPtr) -> Option<Self> {
-    //        unsafe {
-    //            OutPtrRead::try_read_out(out_ptr).and_then(|output| transmute_from_target(output))
-    //        }
-    //    }
-    //}
+    impl<R: ReprC> OutPtrRead for R
+    where
+        Self: ReprFamily<Kind = Robust>,
+    {
+        unsafe fn try_read_out(out_ptr: Self::OutPtr) -> Option<Self> {
+            unsafe { Decode::decode(out_ptr, &mut ()) }
+        }
+    }
+    #[cfg(feature = "alloc")]
+    impl<'d, R: 'd> OutPtrRead for R
+    where
+        Self: ReprFamily<Kind = Opaque>,
+    {
+        unsafe fn try_read_out(out_ptr: Self::OutPtr) -> Option<Self> {
+            unsafe { Decode::decode(out_ptr, &mut ()) }
+        }
+    }
+    impl<R: CheckedTransmute<Target: Sized>> OutPtrRead for R
+    where
+        Self: ReprFamily<Kind = Transmuted>,
+        <R as CheckedTransmute>::Target: OutPtrRead,
+    {
+        unsafe fn try_read_out(out_ptr: Self::OutPtr) -> Option<Self> {
+            unsafe {
+                OutPtrRead::try_read_out(out_ptr).and_then(|output| transmute_from_target(output))
+            }
+        }
+    }
 
     //#[cfg(feature = "alloc")]
     //impl<'d, R: Decode + NonLocal + 'd, S: Cloned> OutPtrRead for Box<R>

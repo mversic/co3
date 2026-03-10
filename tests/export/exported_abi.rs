@@ -308,15 +308,11 @@ fn exported_abi() {
             )
         );
         let non_opaque_u8_clone =
-            <NonOpaqueStruct<u8> as Decode>::decode(non_opaque_u8_clone_out.assume_init(), &mut ())
-                .unwrap();
+            NonOpaqueStruct::decode(non_opaque_u8_clone_out.assume_init(), &mut ()).unwrap();
         assert_eq!(NonOpaqueStruct::A(11_u8), non_opaque_u8_clone);
 
-        let non_opaque_bool_clone = <NonOpaqueStruct<bool> as Decode>::decode(
-            non_opaque_bool_clone_out.assume_init(),
-            &mut (),
-        )
-        .unwrap();
+        let non_opaque_bool_clone =
+            NonOpaqueStruct::decode(non_opaque_bool_clone_out.assume_init(), &mut ()).unwrap();
 
         assert_eq!(NonOpaqueStruct::A(true), non_opaque_bool_clone);
     }

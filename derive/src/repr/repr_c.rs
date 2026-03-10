@@ -174,9 +174,11 @@ pub(super) fn derive_data_enum(
 pub(crate) fn derive_fieldless_enum(
     repr: ReprPrimitive,
     enum_name: &Ident,
+    generics: &syn::Generics,
     variants: &[SpannedValue<FfiTypeVariant>],
 ) -> TokenStream {
-    let niche_ir = gen_enum_niche_ir(repr, enum_name, &syn::Generics::default(), variants);
+    let (impl_generics, ty_generics, where_clause) = generics.split_for_impl();
+    let niche_ir = gen_enum_niche_ir(repr, enum_name, generics, variants);
 
     let niche_value = proc_macro2::Literal::usize_unsuffixed(variants.len());
     let (target_arg, is_valid) = if is_exhaustive_enum(variants.len(), repr) {
@@ -194,12 +196,16 @@ pub(crate) fn derive_fieldless_enum(
         (quote! { target }, is_valid)
     };
 
+    let borrow_ir = gen_fieldless_enum_drop_ir(enum_name, generics);
+
     quote! {
-        impl co3::ir::ReprFamily for #enum_name {
+        impl #impl_generics co3::ir::ReprFamily for #enum_name #ty_generics #where_clause {
             type Kind = co3::ir::Transmuted;
         }
 
-        unsafe impl co3::transmute::CheckedTransmute for #enum_name {
+        #borrow_ir
+
+        unsafe #impl_generics impl co3::transmute::CheckedTransmute for #enum_name #ty_generics #where_clause {
             type Target = #repr;
 
             #[inline(always)]
@@ -208,12 +214,48 @@ pub(crate) fn derive_fieldless_enum(
             }
         }
 
-        unsafe impl co3::transmute::EncodeTransmuted<false> for #enum_name {
+        unsafe #impl_generics impl co3::transmute::EncodeTransmuted<false> for #enum_name #ty_generics #where_clause {
             type Store = <Self::Target as co3::Encode<false>>::Store;
         }
 
         #niche_ir
     }
+}
+
+pub(crate) fn gen_fieldless_enum_drop_ir(name: &Ident, generics: &syn::Generics) -> TokenStream {
+    let (impl_generics, ty_generics, where_clause) = generics.split_for_impl();
+    let drop_impl_assert = assert_drop_impl();
+
+    quote! {
+        impl #impl_generics co3::borrow::DropFamily for #name #ty_generics #where_clause {
+            type Kind = co3::borrow::NoDrop;
+        }
+
+        impl #impl_generics co3::borrow::Borrow for #name #ty_generics #where_clause {
+            type Store = ();
+
+            type Borrowed<'itm>
+                = Self
+            where
+                Self: 'itm;
+
+            #[inline(always)]
+            fn borrow<'itm>(self, (): &'itm mut ()) -> Self::Borrowed<'itm>
+            where
+                Self: 'itm,
+            {
+                #drop_impl_assert
+                self
+            }
+        }
+    }
+}
+
+pub(super) fn assert_drop_impl() -> TokenStream {
+    quote! { const {
+        // TODO: Add error message
+        assert!(co3::impls!(Self: !Drop));
+    }}
 }
 
 pub(super) fn gen_repr_c_struct(
@@ -490,12 +532,43 @@ fn gen_transparent_impl<'a>(
         .as_ref()
         .map(|where_clause| &where_clause.predicates);
 
-    let field_types = fields.into_iter().map(|f| &f.ty).collect::<Vec<_>>();
-    let flat_transmute_bounds = gen_flat_transmute_bounds(&field_types, generics);
+    let drop_impl_assert = assert_drop_impl();
+    let field_types = fields.into_iter().map(|f| &f.ty);
+    let flat_transmute_bounds = gen_flat_transmute_bounds(field_types, generics);
 
     quote! {
         impl #impl_generics co3::ir::ReprFamily for #item_name #ty_generics #where_clause {
             type Kind = co3::ir::Transmuted;
+        }
+
+        impl #impl_generics co3::borrow::DropFamily for #item_name #ty_generics
+        where
+            #flat_transmute_bounds
+            #predicates
+        {
+            type Kind = co3::borrow::NoDrop;
+        }
+
+        impl #impl_generics co3::borrow::Borrow for #item_name #ty_generics
+        where
+            #flat_transmute_bounds
+            #predicates
+        {
+            type Store = ();
+
+            type Borrowed<'itm>
+                = Self
+            where
+                Self: 'itm;
+
+            #[inline(always)]
+            fn borrow<'itm>(self, (): &'itm mut ()) -> Self::Borrowed<'itm>
+            where
+                Self: 'itm,
+            {
+                #drop_impl_assert
+                self
+            }
         }
 
         unsafe impl #impl_generics co3::transmute::CheckedTransmute for #item_name #ty_generics where #flat_transmute_bounds #predicates {
@@ -559,10 +632,11 @@ pub(super) fn gen_extern_c_bounds(fields: &[&syn::Type], generics: &syn::Generic
     quote! { #(#parameterized_field_types: co3::ExternC,)* }
 }
 
-fn gen_flat_transmute_bounds(fields: &[&syn::Type], generics: &syn::Generics) -> TokenStream {
-    let parameterized_field_types = fields
-        .iter()
-        .filter(|&ty| is_type_parameterized(ty, generics));
+fn gen_flat_transmute_bounds<'a>(
+    fields: impl Iterator<Item = &'a syn::Type>,
+    generics: &syn::Generics,
+) -> TokenStream {
+    let parameterized_field_types = fields.filter(|&ty| is_type_parameterized(ty, generics));
 
     quote! { #(
         #parameterized_field_types: co3::ExternC + co3::transmute::FlatTransmute<

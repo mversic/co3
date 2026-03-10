@@ -7,15 +7,19 @@
 extern crate alloc as alloc_crate;
 extern crate self as co3;
 
-use core::ops::{Deref, DerefMut};
-
 #[cfg(feature = "alloc")]
 use alloc_crate::{boxed::Box, vec::Vec};
+use core::ops::{Deref, DerefMut};
 
 #[cfg(feature = "derive")]
 pub use co3_derive::*;
 use derive_more::Display;
-use disjoint_impls::disjoint_impls;
+
+// TODO: I don't like having to reexport macros from other crates
+#[doc(hidden)]
+pub use disjoint_impls::disjoint_impls;
+#[doc(hidden)]
+pub use impls::impls;
 
 #[cfg(feature = "unstable-refs")]
 use crate::cloned::DecodeCloned;
@@ -1447,7 +1451,7 @@ impl<'a, 'b, R: Encode + Decode<'b> + 'b> Store for RefMutStore<'a, R> {
         #[cfg(all(not(test), not(feature = "unsafe-optimizations")))]
         const {
             assert!(
-                impls::impls!(R: crate::out_ptr::NonLocal),
+                co3::impls!(R: crate::out_ptr::NonLocal),
                 "Not yet implemented"
             );
         }
@@ -1540,7 +1544,7 @@ impl<'slice, 'b, R: Encode + Decode<'b> + 'b> Store for MutSliceStore<'slice, R>
         const {
             #[cfg(all(not(test), not(feature = "unsafe-optimizations")))]
             assert!(
-                impls::impls!(R: crate::out_ptr::NonLocal),
+                co3::impls!(R: crate::out_ptr::NonLocal),
                 "Not yet implemented"
             );
         }
@@ -1770,6 +1774,14 @@ impl<R> Store for OpaqueMutSliceDecodeStore<R> {
 /// ```
 #[macro_export]
 macro_rules! reprC {
+    (impl $(( $($params:tt)* ))? Cloned for $self_ty:ty $(where ($($preds:tt)*))? {}) => {
+        impl$(<$($params)*>)? $crate::ir::Cloned for $self_ty $(where $($preds)*)? {}
+
+        impl$(<$($params)*>)? $crate::ir::ReprFamily for $self_ty $(where $($preds)*)? {
+            type Kind = Self;
+        }
+    };
+
     (unsafe impl $(( $($params:tt)* ))? Robust for $self_ty:ty $(where ($($preds:tt)*))? {}) => {
         unsafe impl$(<$($params)*>)? $crate::ReprC for $self_ty $(where $($preds)*)? {}
 
@@ -1780,13 +1792,29 @@ macro_rules! reprC {
             type Kind = $crate::niche::WithoutNiche;
         }
 
-        // FIXME: it should better be implemented as blanket in borrow
         impl $(<$($params)*>)? $crate::borrow::Borrow for $self_ty $(where $($preds)*)? {
             type Borrowed<'_išč> = Self where Self: '_išč;
             type Store = ();
 
             fn borrow<'_išč>(self, (): &'_išč mut ()) -> Self::Borrowed<'_išč> where Self: '_išč {
                 self
+            }
+        }
+
+        impl $(<$($params)*>)? $crate::borrow::DropFamily for $self_ty $(where $($preds)*)? {
+            type Kind = $crate::borrow::NoDrop;
+        }
+    };
+
+    (unsafe impl $(())? Transparent for $self_ty:ty $(where ( $($preds:tt)* ))? {
+        type Target = $target:ty;
+    }) => {
+        $crate::reprC! {
+            @transparent [for<'_dummy>] [] $self_ty $([$($preds)*])? {
+                type Target = $target;
+                // NOTE: When delegating there is no trap representations in the immediate `Self::Target`
+                // Whether `Self::Target` itself has trap representations is not to be considered here
+                fn is_valid(_target: &Self::Target) -> bool { true }
             }
         }
     };
@@ -1801,17 +1829,19 @@ macro_rules! reprC {
             type Kind = $crate::ir::Transmuted;
         }
 
-        // SAFETY: `$ty` is transmutable into `$target` and `is_valid` doesn't return false positives
-        unsafe impl $(<$($params)*>)? $crate::transmute::CheckedTransmute for $self_ty $(where $($preds)*)? {
-            type Target = $target;
-
-            #[inline(always)]
-            fn is_valid($target_var: $target_ty) -> bool $block
+        impl $(<$($params)*>)? $crate::niche::NicheFamily for $self_ty $(where $($preds)*)? {
+            type Kind = $crate::niche::WithCustomNiche;
         }
 
-        impl <$($($params,)*)?> $crate::niche::Niche for $self_ty $(where $($preds)*)? {
+        $crate::reprC! {
+            @transparent_borrow [] [$($($params)*)?] $self_ty $([$($preds)*])? {
+                type Target = $target;
+            }
+        }
+
+        impl $(<$($params)*>)? $crate::niche::Niche for $self_ty $(where $($preds)*)? {
             const NICHE_VALUE: $niche_ty = {
-                assert!(impls::impls!
+                assert!($crate::impls!
                     // TODO: This introduces a dependency, can we do without?
                     // and it also adds checks for internal types like `NonZeroU8`
                     ($target: $crate::niche::NicheFamily<Kind = $crate::niche::WithoutNiche>),
@@ -1822,11 +1852,15 @@ macro_rules! reprC {
             };
         }
 
-        impl $(<$($params)*>)? $crate::niche::NicheFamily for $self_ty $(where $($preds)*)? {
-            type Kind = $crate::niche::WithCustomNiche;
+        // SAFETY: `$ty` is transmutable into `$target` and `is_valid` doesn't return false positives
+        unsafe impl $(<$($params)*>)? $crate::transmute::CheckedTransmute for $self_ty $(where $($preds)*)? {
+            type Target = $target;
+
+            #[inline(always)]
+            fn is_valid($target_var: $target_ty) -> bool $block
         }
 
-        unsafe impl $(<$($params)*>)? $crate::transmute::EncodeTransmuted for $self_ty
+        unsafe impl $(<$($params)*>)? $crate::transmute::EncodeTransmuted<false> for $self_ty
         where
             $target: $crate::Encode,
             $($($preds)*)?
@@ -1834,11 +1868,11 @@ macro_rules! reprC {
             type Store = <$target as $crate::Encode>::Store;
         }
     };
-    (unsafe impl Transparent for $self_ty:ty $(where ( $($preds:tt)* ))? {
+    (unsafe impl $(( $($params:tt)* ))? Transparent for $self_ty:ty $(where ( $($preds:tt)* ))? {
         type Target = $target:ty;
     }) => {
         $crate::reprC! {
-            @transparent [for<'_dummy>] [] $self_ty $([$($preds)*])? {
+            @transparent [] [$($($params)*)?] $self_ty $([$($preds)*])? {
                 type Target = $target;
                 // NOTE: When delegating there is no trap representations in the immediate `Self::Target`
                 // Whether `Self::Target` itself has trap representations is not to be considered here
@@ -1846,19 +1880,7 @@ macro_rules! reprC {
             }
         }
     };
-    (unsafe impl ( $($params:tt)* ) Transparent for $self_ty:ty $(where ( $($preds:tt)* ))? {
-        type Target = $target:ty;
-    }) => {
-        $crate::reprC! {
-            @transparent [] [$($params)*] $self_ty $([$($preds)*])? {
-                type Target = $target;
-                // NOTE: When delegating there is no trap representations in the immediate `Self::Target`
-                // Whether `Self::Target` itself has trap representations is not to be considered here
-                fn is_valid(_target: &Self::Target) -> bool { true }
-            }
-        }
-    };
-    (unsafe impl Transparent for $self_ty:ty $(where ( $($preds:tt)* ))? {
+    (unsafe impl $(())?  Transparent for $self_ty:ty $(where ( $($preds:tt)* ))? {
         type Target = $target:ty;
 
         fn is_valid($target_var:ident: $target_ty:ty) -> $ret_val:ty
@@ -1871,32 +1893,26 @@ macro_rules! reprC {
             }
         }
     };
-    (unsafe impl ( $($params:tt)* ) Transparent for $self_ty:ty $(where ( $($preds:tt)* ))? {
+    (unsafe impl $(( $($params:tt)* ))? Transparent for $self_ty:ty $(where ( $($preds:tt)* ))? {
         type Target = $target:ty;
 
         fn is_valid($target_var:ident: $target_ty:ty) -> $ret_val:ty
             $block:block
     }) => {
         $crate::reprC! {
-            @transparent [] [$($params)*] $self_ty $([$($preds)*])? {
+            @transparent [] [$($($params)*)?] $self_ty $([$($preds)*])? {
                 type Target = $target;
                 fn is_valid($target_var: $target_ty) -> bool $block
             }
         }
     };
+
     (@transparent [$($for_dummy:tt)*] [$($impl_generics:tt)*] $self_ty:ty $([$($preds:tt)*])? {
         type Target = $target:ty;
         fn is_valid($target_var:ident: $target_ty:ty) -> bool $block:block
     }) => {
         impl<$($impl_generics)*> $crate::ir::ReprFamily for $self_ty $(where $($preds)*)? {
             type Kind = $crate::ir::Transmuted;
-        }
-
-        unsafe impl<$($impl_generics)*> $crate::transmute::CheckedTransmute for $self_ty $(where $($preds)*)? {
-            type Target = $target;
-
-            #[inline(always)]
-            fn is_valid($target_var: $target_ty) -> bool $block
         }
 
         impl<$($impl_generics)*> $crate::niche::NicheFamily for $self_ty where
@@ -1906,26 +1922,115 @@ macro_rules! reprC {
             type Kind = <$target as $crate::niche::NicheFamily>::Kind;
         }
 
-        impl<$($impl_generics,)*> $crate::niche::Niche for $self_ty where
+        $crate::reprC! {
+            @transparent_borrow [$($for_dummy)*] [$($impl_generics)*] $self_ty $([$($preds)*])? {
+                type Target = $target;
+            }
+        }
+
+        impl<$($impl_generics)*> $crate::niche::Niche for $self_ty where
             $($for_dummy)* $target: $crate::niche::Niche,
             $($($preds)*)?
         {
             const NICHE_VALUE: <Self as $crate::ExternC>::CType = <$target as $crate::niche::Niche>::NICHE_VALUE;
         }
 
-        unsafe impl<$($impl_generics,)*> $crate::niche::StableNiche for $self_ty
+        unsafe impl<$($impl_generics)*> $crate::niche::StableNiche for $self_ty
         where
             $($for_dummy)* $target: $crate::niche::StableNiche,
             $($($preds)*)?
         {}
 
-        unsafe impl<$($impl_generics,)*> $crate::transmute::EncodeTransmuted for $self_ty
+        unsafe impl<$($impl_generics)*> $crate::transmute::CheckedTransmute for $self_ty $(where $($preds)*)? {
+            type Target = $target;
+
+            #[inline(always)]
+            fn is_valid($target_var: $target_ty) -> bool $block
+        }
+
+        unsafe impl<$($impl_generics)*> $crate::transmute::EncodeTransmuted<false> for $self_ty
         where
             $($for_dummy)* $target: $crate::Encode,
             $($($preds)*)?
         {
             type Store = <$target as $crate::Encode>::Store;
         }
+    };
+
+    (@transparent_borrow [$($for_dummy:tt)*] [$($impl_generics:tt)*] $self_ty:ty $([$($preds:tt)*])? {
+        type Target = $target:ty;
+    }) => {
+        impl<$($impl_generics)*> $crate::borrow::DropFamily for $self_ty
+        where
+            $($for_dummy)* $target: $crate::borrow::DropFamily,
+            $($($preds)*)?
+        {
+            type Kind = <$target as $crate::borrow::DropFamily>::Kind;
+        }
+
+        const _: () = {
+            use $crate::borrow::Borrow;
+
+            $crate::disjoint_impls! {
+                #[disjoint_impls(remote)]
+                // TODO: Make the trait private
+                pub trait Borrow: Sized {
+                    type Store: Default;
+
+                    type Borrowed<'itm>
+                    where
+                        Self: 'itm;
+
+                    fn borrow<'itm>(self, store: &'itm mut Self::Store) -> Self::Borrowed<'itm>
+                    where
+                        Self: 'itm;
+                }
+
+                impl<$($impl_generics)*> Borrow for $self_ty
+                where
+                    // TODO: '_dummy is not required on all impls
+                    for<'_dummy> Self: $crate::borrow::DropFamily<Kind = $crate::borrow::NoDrop>,
+                    $($($preds)*)?
+                {
+                    type Store = ();
+
+                    type Borrowed<'itm>
+                        = Self
+                    where
+                        Self: 'itm;
+
+                    #[inline(always)]
+                    fn borrow<'itm>(self, (): &mut ()) -> Self::Borrowed<'itm>
+                    where
+                        Self: 'itm,
+                    {
+                        self
+                    }
+                }
+                impl<$($impl_generics)*> Borrow for $self_ty
+                where
+                    // TODO: '_dummy is not required on all impls
+                    for<'_dummy> Self: $crate::borrow::DropFamily<Kind = $crate::borrow::NeedsDrop>,
+                    $($($preds)*)?
+                {
+                    // TODO: Wrapping in `Option` is not necessary if `Self: Default`
+                    type Store = Option<Self>;
+
+                    type Borrowed<'itm>
+                        = &'itm Self
+                    where
+                        Self: 'itm;
+
+                    #[inline(always)]
+                    fn borrow<'itm>(self, store: &'itm mut Self::Store) -> Self::Borrowed<'itm>
+                    where
+                        Self: 'itm,
+                    {
+                        store.insert(self)
+                    }
+                }
+            }
+        };
     };
 }
 

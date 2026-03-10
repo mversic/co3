@@ -485,7 +485,7 @@ pub fn derive_extern_c(emitter: &mut Emitter, input: &syn::DeriveInput) -> Token
         Some(ReprKind::Primitive(repr)) => {
             if let darling::ast::Data::Enum(variants) = &input.data {
                 if variants.iter().all(|v| v.fields.fields.is_empty()) {
-                    derive_fieldless_enum(*repr, &input.ident, variants)
+                    derive_fieldless_enum(*repr, &input.ident, &input.generics, variants)
                 } else {
                     derive_data_enum(*repr, &input.ident, &input.generics, variants)
                 }

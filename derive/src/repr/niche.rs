@@ -1,6 +1,6 @@
 use darling::util::SpannedValue;
-use proc_macro2::{Literal, TokenStream};
-use quote::{format_ident, quote};
+use proc_macro2::TokenStream;
+use quote::quote;
 
 use crate::{
     attr_parse::repr::ReprPrimitive,
@@ -8,73 +8,8 @@ use crate::{
         FfiTypeField, FfiTypeVariant, is_type_parameterized,
         repr_c::{gen_extern_c_bounds, gen_repr_c_item_name, is_exhaustive_enum},
     },
+    utils::build_type_tuple,
 };
-
-const MAX_ARITY: usize = 12;
-
-fn calculate_depth(n: usize) -> usize {
-    if n == 0 {
-        return 1;
-    }
-    let mut depth = 1;
-    let mut capacity = MAX_ARITY;
-    while capacity < n {
-        depth += 1;
-        capacity *= MAX_ARITY;
-    }
-    depth
-}
-
-fn build_tuple(types: &[&syn::Type]) -> (TokenStream, TokenStream, Vec<TokenStream>) {
-    let depth = calculate_depth(types.len());
-    build_tuple_at_depth(types, depth)
-}
-
-fn build_tuple_at_depth(
-    types: &[&syn::Type],
-    depth: usize,
-) -> (TokenStream, TokenStream, Vec<TokenStream>) {
-    if depth == 1 {
-        let c_types = types.iter().map(|ty| quote!(<#ty as co3::ExternC>::CType));
-        let accessors = (0..types.len())
-            .map(|i| {
-                let lit = Literal::usize_unsuffixed(i);
-                quote!(#lit)
-            })
-            .collect();
-
-        let c_tuple_ident = format_ident!("CTuple{}", types.len());
-        return (
-            quote!((#(#types,)*)),
-            quote!(co3::tuple::#c_tuple_ident<#(#c_types),*>),
-            accessors,
-        );
-    }
-
-    let chunk_size = MAX_ARITY.pow(depth as u32 - 1);
-    let mut sub_tuples = Vec::new();
-    let mut sub_c_tuples = Vec::new();
-    let mut all_accessors = Vec::new();
-
-    for (chunk_idx, chunk) in types.chunks(chunk_size).enumerate() {
-        let (sub_tuple, sub_c_tuple, sub_accessors) = build_tuple_at_depth(chunk, depth - 1);
-        sub_tuples.push(sub_tuple);
-        sub_c_tuples.push(sub_c_tuple);
-
-        let chunk_idx_lit = Literal::usize_unsuffixed(chunk_idx);
-        for accessor in sub_accessors {
-            all_accessors.push(quote!(#chunk_idx_lit.#accessor));
-        }
-    }
-
-    let c_tuple_ident = format_ident!("CTuple{}", sub_c_tuples.len());
-
-    (
-        quote!((#(#sub_tuples,)*)),
-        quote!(co3::tuple::#c_tuple_ident<#(#sub_c_tuples),*>),
-        all_accessors,
-    )
-}
 
 pub fn gen_struct_niche_ir(
     struct_name: &syn::Ident,
@@ -91,7 +26,7 @@ pub fn gen_struct_niche_ir(
 
     let repr_c_struct_name = gen_repr_c_item_name(struct_name);
     let extern_c_bounds = gen_extern_c_bounds(&types, generics);
-    let (fields_tuple, c_fields_tuple, accessors) = build_tuple(&types);
+    let (fields_tuple, c_fields_tuple, accessors) = build_type_tuple(&types);
     let is_parametrized = types.iter().any(|ty| is_type_parameterized(ty, generics));
     let niche_ir_bound = is_parametrized.then_some(quote! {
         #fields_tuple: co3::niche::NicheFamily,
@@ -113,18 +48,17 @@ pub fn gen_struct_niche_ir(
     };
 
     quote! {
+        impl #impl_generics co3::niche::NicheFamily for #struct_name #ty_generics where #niche_ir_bound #predicates {
+            type Kind = <#fields_tuple as co3::niche::NicheFamily>::Kind;
+        }
+
         impl #impl_generics co3::niche::Niche for #struct_name #ty_generics where
-            // FIXME: Both these bound seems redundant?
-            Self: co3::ExternC<CType = #repr_c_struct_name #ty_generics>,
             #for_dummy #fields_tuple: co3::niche::Niche<CType = #c_fields_tuple>,
+            Self: co3::ExternC<CType = #repr_c_struct_name #ty_generics>,
             #extern_c_bounds
             #predicates
         {
             const NICHE_VALUE: Self::CType = #niche_value;
-        }
-
-        impl #impl_generics co3::niche::NicheFamily for #struct_name #ty_generics where #niche_ir_bound #predicates {
-            type Kind = <#fields_tuple as co3::niche::NicheFamily>::Kind;
         }
     }
 }
@@ -193,7 +127,7 @@ mod tests {
     fn test_base_case_1_element() {
         let types = make_types(1);
         let refs: Vec<_> = types.iter().collect();
-        let (result, _, accessors) = build_tuple(&refs);
+        let (result, _, accessors) = build_type_tuple(&refs);
 
         let expected: syn::Type = syn::parse_quote! {
             (T0,)
@@ -212,7 +146,7 @@ mod tests {
     fn test_base_case_12_elements() {
         let types = make_types(12);
         let refs: Vec<_> = types.iter().collect();
-        let (result, _, accessors) = build_tuple(&refs);
+        let (result, _, accessors) = build_type_tuple(&refs);
 
         let expected: syn::Type = syn::parse_quote! {
             (T0, T1, T2, T3, T4, T5, T6, T7, T8, T9, T10, T11,)
@@ -245,7 +179,7 @@ mod tests {
     fn test_13_elements() {
         let types = make_types(13);
         let refs: Vec<_> = types.iter().collect();
-        let (result, _, accessors) = build_tuple(&refs);
+        let (result, _, accessors) = build_type_tuple(&refs);
 
         let expected: syn::Type = syn::parse_quote! {
             (
@@ -282,7 +216,7 @@ mod tests {
     fn test_24_elements() {
         let types = make_types(24);
         let refs: Vec<_> = types.iter().collect();
-        let (result, _, accessors) = build_tuple(&refs);
+        let (result, _, accessors) = build_type_tuple(&refs);
 
         let expected: syn::Type = syn::parse_quote! {
             (
@@ -330,7 +264,7 @@ mod tests {
     fn test_25_elements() {
         let types = make_types(25);
         let refs: Vec<_> = types.iter().collect();
-        let (result, _, accessors) = build_tuple(&refs);
+        let (result, _, accessors) = build_type_tuple(&refs);
 
         let expected: syn::Type = syn::parse_quote! {
             (
@@ -380,7 +314,7 @@ mod tests {
     fn test_36_elements() {
         let types = make_types(36);
         let refs: Vec<_> = types.iter().collect();
-        let (result, _, accessors) = build_tuple(&refs);
+        let (result, _, accessors) = build_type_tuple(&refs);
 
         let expected: syn::Type = syn::parse_quote! {
             (
@@ -441,7 +375,7 @@ mod tests {
     fn test_37_elements() {
         let types = make_types(37);
         let refs: Vec<_> = types.iter().collect();
-        let (result, _, accessors) = build_tuple(&refs);
+        let (result, _, accessors) = build_type_tuple(&refs);
 
         let expected: syn::Type = syn::parse_quote! {
             (
@@ -504,7 +438,7 @@ mod tests {
     fn test_144_elements() {
         let types = make_types(144);
         let refs: Vec<_> = types.iter().collect();
-        let (result, _, accessors) = build_tuple(&refs);
+        let (result, _, accessors) = build_type_tuple(&refs);
 
         let expected: syn::Type = syn::parse_quote! {
             (
@@ -683,7 +617,7 @@ mod tests {
     //fn test_145_elements() {
     //    let types = make_types(145);
     //    let refs: Vec<_> = types.iter().collect();
-    //    let (result, _, accessors) = build_tuple(&refs);
+    //    let (result, _, accessors) = build_type_tuple(&refs);
 
     //    let expected: syn::Type = syn::parse_quote! {
     //        (

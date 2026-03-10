@@ -11,7 +11,7 @@ def_fns! {
     Ord: {FfiStruct1, FfiStruct2}
 }
 
-/// Struct without a repr attribute is opaque by default
+/// Struct without a repr attribute is [`co3::Cloned`] by default
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, ReprC)]
 pub struct FfiStruct1 {
     name: String,

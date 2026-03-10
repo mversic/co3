@@ -1,5 +1,7 @@
 //! Logic related to the conversion of [`Option<T>`] to and from FFI-compatible representation
 
+use core::ops::Add;
+
 #[cfg(feature = "alloc")]
 use alloc_crate::{boxed::Box, vec::Vec};
 
@@ -99,8 +101,7 @@ disjoint_impls! {
     //impl<R: NicheFamily<Kind = WithCustomNiche>> NicheFamily for Option<R> where Option<Self>: ReprFamily<Kind = Option<WithoutNiche>> {
     //    type Kind = WithoutNiche;
     //}
-    // FIXME: `Niche` could have been used. This will become a no-issue if previous is addressed
-    impl<R: NicheFamily<Kind = WithCustomNiche> + Niche> NicheFamily for Option<R> where Self: Niche {
+    impl<R: NicheFamily<Kind = WithCustomNiche>> NicheFamily for Option<R> where Self: Niche {
         type Kind = WithCustomNiche;
     }
 }
@@ -215,6 +216,63 @@ unsafe impl<R> StableNiche for core::ptr::NonNull<R> {}
 
 impl WithNiche for WithStableNiche {}
 impl WithNiche for WithCustomNiche {}
+
+impl Add for WithoutNiche {
+    type Output = Self;
+
+    fn add(self, _: Self) -> Self::Output {
+        unreachable!()
+    }
+}
+impl<T: WithNiche> Add<T> for WithoutNiche {
+    type Output = WithCustomNiche;
+
+    fn add(self, _: T) -> Self::Output {
+        unreachable!()
+    }
+}
+impl Add<WithoutNiche> for WithCustomNiche {
+    type Output = Self;
+
+    fn add(self, _: WithoutNiche) -> Self::Output {
+        unreachable!()
+    }
+}
+impl Add<WithoutNiche> for WithStableNiche {
+    type Output = WithCustomNiche;
+
+    fn add(self, _: WithoutNiche) -> Self::Output {
+        unreachable!()
+    }
+}
+impl Add<WithCustomNiche> for WithStableNiche {
+    type Output = WithCustomNiche;
+
+    fn add(self, _: WithCustomNiche) -> Self::Output {
+        unreachable!()
+    }
+}
+impl Add for WithStableNiche {
+    type Output = WithCustomNiche;
+
+    fn add(self, _: Self) -> Self::Output {
+        unreachable!()
+    }
+}
+impl Add<WithStableNiche> for WithCustomNiche {
+    type Output = Self;
+
+    fn add(self, _: WithStableNiche) -> Self::Output {
+        unreachable!()
+    }
+}
+impl Add for WithCustomNiche {
+    type Output = Self;
+
+    fn add(self, _: Self) -> Self::Output {
+        unreachable!()
+    }
+}
 
 #[cfg(test)]
 mod tests {

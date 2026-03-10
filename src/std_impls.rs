@@ -2,15 +2,16 @@
 use alloc_crate::{boxed::Box, string::String, vec::Vec};
 use core::{cell::UnsafeCell, ptr::NonNull};
 
-#[cfg(feature = "alloc")]
-use crate::{boxed::CBoxedSlice, vec::CVec};
 use crate::{
+    borrow::{Borrow, DropFamily, NeedsDrop, NoDrop},
     ir::{ReprFamily, Transmuted},
     niche::{Niche, NicheFamily, StableNiche, WithCustomNiche, WithStableNiche, WithoutNiche},
     reprC,
     slice::{CSlice, CSliceMut},
-    transmute::CheckedTransmute,
+    transmute::{CheckedTransmute, EncodeTransmuted},
 };
+#[cfg(feature = "alloc")]
+use crate::{boxed::CBoxedSlice, vec::CVec};
 
 // FIXME: Replace with NonZero<T>
 macro_rules! non_zero_derive {
@@ -171,32 +172,98 @@ impl Niche for Box<str> {
     const NICHE_VALUE: Self::CType = CBoxedSlice::none();
 }
 
-//unsafe impl<R> EncodeTransmuted for UnsafeCell<R>
-//where
-//    Self: CheckedTransmute<Target: crate::Encode>,
-//{
-//    type Store = <Self::Target as crate::Encode>::Store;
-//}
-//unsafe impl<R> EncodeTransmuted for NonNull<R>
-//where
-//    Self: CheckedTransmute<Target: crate::Encode>,
-//{
-//    type Store = <Self::Target as crate::Encode>::Store;
-//}
-//unsafe impl EncodeTransmuted for &str {
-//    type Store = <Self::Target as crate::Encode>::Store;
-//}
-//unsafe impl EncodeTransmuted for &mut str {
-//    type Store = <Self::Target as crate::Encode>::Store;
-//}
+impl<T: DropFamily> DropFamily for UnsafeCell<T> {
+    type Kind = T::Kind;
+}
+impl<T> DropFamily for NonNull<T> {
+    type Kind = NoDrop;
+}
+#[cfg(feature = "alloc")]
+impl DropFamily for String {
+    type Kind = NeedsDrop;
+}
+
+impl<T> Borrow for NonNull<T> {
+    type Store = ();
+
+    type Borrowed<'itm>
+        = Self
+    where
+        Self: 'itm;
+
+    fn borrow<'itm>(self, (): &'itm mut ()) -> Self::Borrowed<'itm>
+    where
+        Self: 'itm,
+    {
+        self
+    }
+}
+
+impl DropFamily for str {
+    type Kind = NoDrop;
+}
+// FIXME: This should be covered by blanket
 //#[cfg(feature = "alloc")]
-//unsafe impl EncodeTransmuted for Box<str> {
-//    type Store = <Self::Target as crate::Encode>::Store;
+//impl Borrow for Box<str> {
+//    type Store = Option<Self>;
+//
+//    type Borrowed<'itm>
+//        = &'itm str
+//    where
+//        Self: 'itm;
+//
+//    fn borrow<'itm>(self, store: &'itm mut Self::Store) -> Self::Borrowed<'itm>
+//    where
+//        Self: 'itm,
+//    {
+//        store.insert(self)
+//    }
 //}
-//#[cfg(feature = "alloc")]
-//unsafe impl EncodeTransmuted for String {
-//    type Store = <Self::Target as crate::Encode>::Store;
-//}
+
+#[cfg(feature = "alloc")]
+impl Borrow for String {
+    type Store = Self;
+
+    type Borrowed<'itm>
+        = &'itm str
+    where
+        Self: 'itm;
+
+    fn borrow<'itm>(self, store: &'itm mut Self::Store) -> Self::Borrowed<'itm>
+    where
+        Self: 'itm,
+    {
+        *store = self;
+        store
+    }
+}
+
+unsafe impl<R> EncodeTransmuted for UnsafeCell<R>
+where
+    Self: CheckedTransmute<Target: crate::Encode>,
+{
+    type Store = <Self::Target as crate::Encode>::Store;
+}
+unsafe impl<R> EncodeTransmuted for NonNull<R>
+where
+    Self: CheckedTransmute<Target: crate::Encode>,
+{
+    type Store = <Self::Target as crate::Encode>::Store;
+}
+unsafe impl EncodeTransmuted for &str {
+    type Store = <Self::Target as crate::Encode>::Store;
+}
+unsafe impl EncodeTransmuted for &mut str {
+    type Store = <Self::Target as crate::Encode>::Store;
+}
+#[cfg(feature = "alloc")]
+unsafe impl EncodeTransmuted for Box<str> {
+    type Store = <Self::Target as crate::Encode>::Store;
+}
+#[cfg(feature = "alloc")]
+unsafe impl EncodeTransmuted for String {
+    type Store = <Self::Target as crate::Encode>::Store;
+}
 
 #[cfg(test)]
 mod tests {
@@ -211,6 +278,19 @@ mod tests {
         slice::{CSlice, CSliceMut},
         transmute::FlatTransmute,
     };
+
+    #[test]
+    fn str_is_supported() {
+        assert_impl_all!(&str:
+            ReprFamily<Kind = Transmuted>,
+            NicheFamily<Kind = WithCustomNiche>,
+            ExternC<CType = CSlice<u8>>,
+            Decode<'static>,
+            // FIXME:
+            //Encode,
+        );
+        // TODO: Add more assertions
+    }
 
     #[test]
     fn unsafe_cell_is_without_niche() {

@@ -14,9 +14,11 @@ use crate::{
         FfiTypeField, FfiTypeVariant, is_type_parameterized,
         niche::{gen_enum_niche_ir, gen_struct_niche_ir},
         repr_c::{
-            gen_data_enum, gen_data_enum_variant_name, gen_extern_c_bounds, gen_repr_c_struct,
+            assert_drop_impl, gen_data_enum, gen_data_enum_variant_name, gen_extern_c_bounds,
+            gen_fieldless_enum_drop_ir, gen_repr_c_struct,
         },
     },
+    utils::build_type_tuple,
 };
 
 pub(super) fn derive_opaque_item(name: &Ident, generics: &syn::Generics) -> TokenStream {
@@ -25,6 +27,27 @@ pub(super) fn derive_opaque_item(name: &Ident, generics: &syn::Generics) -> Toke
     quote! {
         impl #impl_generics co3::ir::ReprFamily for #name #ty_generics #where_clause {
             type Kind = co3::ir::Opaque;
+        }
+
+        impl #impl_generics co3::borrow::DropFamily for #name #ty_generics #where_clause {
+            type Kind = co3::borrow::NoDrop;
+        }
+
+        impl #impl_generics co3::borrow::Borrow for #name #ty_generics #where_clause {
+            type Store = ();
+
+            type Borrowed<'itm>
+                = Self
+            where
+                Self: 'itm;
+
+            #[inline(always)]
+            fn borrow<'itm>(self, (): &mut ()) -> Self::Borrowed<'itm>
+            where
+                Self: 'itm,
+            {
+                self
+            }
         }
 
         impl #impl_generics co3::niche::NicheFamily for #name #ty_generics #where_clause {
@@ -47,7 +70,6 @@ pub(super) fn derive_no_repr_struct(
 
     let (repr_c_struct_name, repr_c_struct) = gen_repr_c_struct(name, generics, fields);
     let (borrowed_struct_name, borrowed_struct) = gen_borrowed_struct(name, generics, fields);
-    let borrowed_struct_ty = gen_borrowed_type_use(&borrowed_struct_name, generics);
     let field_types = fields.iter().map(|f| &f.ty).collect::<Vec<_>>();
 
     let predicates = where_clause
@@ -65,7 +87,7 @@ pub(super) fn derive_no_repr_struct(
     });
     let field_ffi_stores = fields.iter().map(|field| {
         let ty = &field.ty;
-        quote! { <#ty as co3::Decode>::Store }
+        quote! { <#ty as co3::Decode<'_dšč>>::Store }
     });
 
     let basic_impls = gen_ir_impl(name, &repr_c_struct_name, &field_types, generics);
@@ -143,9 +165,9 @@ pub(super) fn derive_no_repr_struct(
 
     let params = &generics.params;
     let encode_bounds = gen_encode_bounds(&field_types, generics);
-    let borrow_bounds = gen_borrow_bounds(&field_types, generics);
     let decode_bounds = gen_decode_bounds(&field_types, generics);
     let decode_cloned_bounds = gen_decode_cloned_bounds(&field_types);
+    let drop_ir = gen_drop_ir(name, &field_types, generics, &borrow_store, &borrow_impl);
 
     let niche_ir = gen_struct_niche_ir(name, generics, fields);
     let non_locality =
@@ -158,27 +180,12 @@ pub(super) fn derive_no_repr_struct(
         #basic_impls
         #store_defs
         #niche_ir
+        #drop_ir
 
-        impl #impl_generics co3::borrow::Borrow for #name #ty_generics
-        where
-            #borrow_bounds
-            #predicates
-        {
-            type Store = #borrow_store;
-
-            type Borrowed<'_išč>
-                = #borrowed_struct_ty
-            where
-                Self: '_išč;
-
-            fn borrow<'_išč>(self, store: &'_išč mut Self::Store) -> Self::Borrowed<'_išč> where Self: '_išč {
-                #borrow_impl
-            }
-        }
         impl #impl_generics co3::Encode for #name #ty_generics where #encode_bounds #predicates {
             type Store = #rust_store;
 
-            fn encode<'_išč>(self, store: &'_išč mut Self::Store) -> <Self as co3::ExternC>::CType where Self: '_išč {
+            fn encode<'_išč>(self, store: &'_išč mut Self::Store) -> Self::CType where Self: '_išč {
                 #encode_impl
             }
         }
@@ -188,15 +195,16 @@ pub(super) fn derive_no_repr_struct(
         {
             type Store = #ffi_store;
 
-            unsafe fn decode<'_išč: '_dšč>(source: <Self as co3::ExternC>::CType, store: &'_išč mut Self::Store) -> Option<Self> {
+            unsafe fn decode<'_išč: '_dšč>(source: Self::CType, store: &'_išč mut Self::Store) -> Option<Self> {
                 #decode_impl
             }
         }
         impl<'_dšč, #params> co3::cloned::DecodeCloned<'_dšč> for #name #ty_generics where
+            #repr_c_struct_name #ty_generics: '_dšč,
             #decode_cloned_bounds
             #predicates
         {
-            unsafe fn decode_cloned<'_išč: '_dšč>(source: <Self as co3::ExternC>::CType, store: &'_išč mut Self::Store) -> Option<Self> {
+            unsafe fn decode_cloned<'_išč: '_dšč>(source: Self::CType, store: &'_išč mut Self::Store) -> Option<Self> {
                 #decode_cloned_impl
             }
         }
@@ -216,7 +224,6 @@ pub(super) fn derive_no_repr_data_enum(
     let (repr_c_enum_name, repr_c_enum) =
         gen_data_enum(enum_name, generics, inferred_repr, variants);
     let (borrowed_enum_name, borrowed_enum) = gen_borrowed_data_enum(enum_name, generics, variants);
-    let borrowed_enum_ty = gen_borrowed_type_use(&borrowed_enum_name, generics);
 
     let (impl_generics, ty_generics, where_clause) = generics.split_for_impl();
     let params = &generics.params;
@@ -248,7 +255,7 @@ pub(super) fn derive_no_repr_data_enum(
             || quote! { () },
             |field| {
                 let ty = &field.ty;
-                quote! { <#ty as co3::Decode<'_dšč, false>>::Store }
+                quote! { <#ty as co3::Decode<'_dšč>>::Store }
             },
         )
     });
@@ -315,7 +322,7 @@ pub(super) fn derive_no_repr_data_enum(
                     quote! {
                         #idx => {
                             let value = unsafe { source.#variant_name.value };
-                            unsafe { co3::Decode::<'_dšč, false>::decode(value, &mut store.#idx).map(Self::#variant_name) }
+                            unsafe { co3::Decode::<'_dšč>::decode(value, &mut store.#idx).map(Self::#variant_name) }
                         }
                     }
                 },
@@ -327,7 +334,7 @@ pub(super) fn derive_no_repr_data_enum(
                     quote! {
                         #idx => {
                             let value = unsafe { source.#variant_name.value };
-                            unsafe { co3::cloned::DecodeCloned::<'_dšč, false>::decode_cloned(value, &mut store.#idx).map(Self::#variant_name) }
+                            unsafe { co3::cloned::DecodeCloned::<'_dšč>::decode_cloned(value, &mut store.#idx).map(Self::#variant_name) }
                         }
                     }
                 },
@@ -356,9 +363,21 @@ pub(super) fn derive_no_repr_data_enum(
         .map(|where_clause| &where_clause.predicates);
 
     let encode_bounds = gen_encode_bounds(&field_types, generics);
-    let borrow_bounds = gen_borrow_bounds(&field_types, generics);
     let decode_bounds = gen_decode_bounds(&field_types, generics);
     let decode_cloned_bounds = gen_decode_cloned_bounds(&field_types);
+
+    let borrow_impl = quote! {
+        match self {
+            #(#variants_borrow,)*
+        }
+    };
+    let drop_ir = gen_drop_ir(
+        enum_name,
+        &field_types,
+        generics,
+        &borrow_store,
+        &borrow_impl,
+    );
 
     quote! {
         #borrowed_enum
@@ -367,37 +386,19 @@ pub(super) fn derive_no_repr_data_enum(
         #basic_impls
         #store_defs
         #niche_ir
-
-        impl #impl_generics co3::borrow::Borrow for #enum_name #ty_generics
-        where
-            #borrow_bounds
-            #predicates
-        {
-            type Store = #borrow_store;
-
-            type Borrowed<'_išč>
-                = #borrowed_enum_ty
-            where
-                Self: '_išč;
-
-            fn borrow<'_išč>(self, store: &'_išč mut Self::Store) -> Self::Borrowed<'_išč> where Self: '_išč {
-                match self {
-                    #(#variants_borrow,)*
-                }
-            }
-        }
+        #drop_ir
 
         impl #impl_generics co3::Encode for #enum_name #ty_generics where #encode_bounds #predicates {
             type Store = #rust_store;
 
-            fn encode<'_išč>(self, store: &'_išč mut Self::Store) -> <Self as co3::ExternC>::CType where Self: '_išč {
+            fn encode<'_išč>(self, store: &'_išč mut Self::Store) -> Self::CType where Self: '_išč {
                 match self {
                     #(#variants_encode,)*
                 }
             }
         }
 
-        impl<'_dšč, #params> co3::Decode<'_dšč, false> for #enum_name #ty_generics
+        impl<'_dšč, #params> co3::Decode<'_dšč> for #enum_name #ty_generics
         where
             #repr_c_enum_name #ty_generics: '_dšč,
             #decode_bounds
@@ -405,20 +406,20 @@ pub(super) fn derive_no_repr_data_enum(
         {
             type Store = #ffi_store;
 
-            unsafe fn decode<'_išč: '_dšč>(source: <Self as co3::ExternC>::CType, store: &'_išč mut Self::Store) -> Option<Self> {
+            unsafe fn decode<'_išč: '_dšč>(source: Self::CType, store: &'_išč mut Self::Store) -> Option<Self> {
                 match #decode_match_expr {
                     #(#variants_decode,)*
                     _ => None
                 }
             }
         }
-        impl<'_dšč, #params> co3::cloned::DecodeCloned<'_dšč, false> for #enum_name #ty_generics
+        impl<'_dšč, #params> co3::cloned::DecodeCloned<'_dšč> for #enum_name #ty_generics
         where
-            Self: co3::Decode<'_dšč, false>,
+            #repr_c_enum_name #ty_generics: '_dšč,
             #decode_cloned_bounds
             #predicates
         {
-            unsafe fn decode_cloned<'_išč: '_dšč>(source: <Self as co3::ExternC>::CType, store: &'_išč mut Self::Store) -> Option<Self> {
+            unsafe fn decode_cloned<'_išč: '_dšč>(source: Self::CType, store: &'_išč mut Self::Store) -> Option<Self> {
                 match #decode_match_expr {
                     #(#variants_decode_cloned,)*
                     _ => None
@@ -447,6 +448,7 @@ pub(super) fn derive_no_repr_fieldless_enum(
 
     let niche_ir = gen_enum_niche_ir(inferred_repr, enum_name, generics, variants);
 
+    let nodrop_borrow_ir = gen_fieldless_enum_drop_ir(enum_name, generics);
     let non_locality = gen_out_ptr_impls(
         enum_name,
         generics,
@@ -458,31 +460,20 @@ pub(super) fn derive_no_repr_fieldless_enum(
     quote! {
         #basic_impls
 
-        impl co3::borrow::Borrow for #enum_name {
+        #nodrop_borrow_ir
+
+        impl co3::Encode for #enum_name {
             type Store = ();
 
-            type Borrowed<'_išč>
-                = Self
-            where
-                Self: '_išč;
-
-            fn borrow<'_išč>(self, (): &'_išč mut ()) -> Self::Borrowed<'_išč> where Self: '_išč {
-                self
-            }
-        }
-
-        impl co3::Encode<false> for #enum_name {
-            type Store = ();
-
-            fn encode<'_išč>(self, (): &'_išč mut ()) -> <Self as co3::ExternC>::CType where Self: '_išč {
+            fn encode<'_išč>(self, (): &mut ()) -> Self::CType where Self: '_išč {
                 self as #inferred_repr
             }
         }
 
-        impl<'_dšč> co3::Decode<'_dšč, false> for #enum_name {
+        impl<'_dšč> co3::Decode<'_dšč> for #enum_name {
             type Store = ();
 
-            unsafe fn decode<'_išč: '_dšč>(source: <Self as co3::ExternC>::CType, (): &'_išč mut ()) -> Option<Self> {
+            unsafe fn decode<'_išč: '_dšč>(source: Self::CType, (): &mut ()) -> Option<Self> {
                 match source {
                     #(#variants_decode,)*
                     _ => None
@@ -490,7 +481,7 @@ pub(super) fn derive_no_repr_fieldless_enum(
             }
         }
 
-        impl<'_dšč> co3::cloned::DecodeCloned<'_dšč, false> for #enum_name {}
+        impl<'_dšč> co3::cloned::DecodeCloned<'_dšč> for #enum_name {}
 
         #niche_ir
         #non_locality
@@ -502,7 +493,30 @@ fn gen_borrow_store_type(name: &Ident, stores: impl Iterator<Item = TokenStream>
     quote! { #store_name<#(#stores),*> }
 }
 
-fn gen_borrowed_type_use(borrowed_name: &Ident, generics: &syn::Generics) -> TokenStream {
+fn gen_drop_ir(
+    name: &syn::Ident,
+    types: &[&syn::Type],
+    generics: &syn::Generics,
+    borrow_store: &TokenStream,
+    borrow_impl: &TokenStream,
+) -> TokenStream {
+    let (impl_generics, ty_generics, where_clause) = generics.split_for_impl();
+
+    let predicates = where_clause
+        .as_ref()
+        .map(|where_clause| &where_clause.predicates);
+
+    let (fields_tuple, _, _) = build_type_tuple(types);
+    let is_parametrized = types.iter().any(|ty| is_type_parameterized(ty, generics));
+    let drop_family_bound = is_parametrized.then_some(quote! {
+        #fields_tuple: co3::borrow::DropFamily,
+    });
+
+    let for_dummy = (!is_parametrized).then_some(quote! { for<'_dšč> });
+    let borrow_bounds = gen_borrow_bounds(types, generics, false);
+    let impl_drop_assert = assert_drop_impl();
+
+    let borrowed_name = gen_borrowed_name(name);
     let params = generics.params.iter().map(|param| match param {
         syn::GenericParam::Lifetime(param) => {
             let lifetime = &param.lifetime;
@@ -518,7 +532,79 @@ fn gen_borrowed_type_use(borrowed_name: &Ident, generics: &syn::Generics) -> Tok
         }
     });
 
-    quote! { #borrowed_name<'_išč, #(#params),*> }
+    quote! {
+        impl #impl_generics co3::borrow::DropFamily for #name #ty_generics
+        where
+            #drop_family_bound
+            #predicates
+        {
+            type Kind = <#fields_tuple as co3::borrow::DropFamily>::Kind;
+        }
+
+        const _: () = {
+            use co3::borrow::Borrow;
+
+            co3::disjoint_impls! {
+                #[disjoint_impls(remote)]
+                pub trait Borrow: Sized {
+                    type Store: Default;
+
+                    type Borrowed<'_išč>
+                    where
+                        Self: '_išč;
+
+                    fn borrow<'_išč>(self, store: &'_išč mut Self::Store) -> Self::Borrowed<'_išč>
+                    where
+                        Self: '_išč;
+                }
+
+                impl #impl_generics Borrow for #name #ty_generics
+                where
+                    #for_dummy Self: co3::borrow::DropFamily<Kind = co3::borrow::NoDrop>,
+                    #predicates
+                {
+                    type Store = ();
+
+                    type Borrowed<'_išč>
+                        = Self
+                    where
+                        Self: '_išč;
+
+                    #[inline(always)]
+                    fn borrow<'_išč>(self, (): &'_išč mut Self::Store) -> Self::Borrowed<'_išč>
+                    where
+                        Self: '_išč,
+                    {
+                        #impl_drop_assert
+                        self
+                    }
+                }
+
+                impl #impl_generics Borrow for #name #ty_generics
+                where
+                    #for_dummy Self: co3::borrow::DropFamily<Kind = co3::borrow::NeedsDrop>,
+                    #borrow_bounds
+                    #predicates
+                {
+                    type Store = #borrow_store;
+
+                    type Borrowed<'_išč>
+                        = #borrowed_name<'_išč, #(#params),*>
+                    where
+                        Self: '_išč;
+
+                    #[inline(always)]
+                    fn borrow<'_išč>(self, store: &'_išč mut Self::Store) -> Self::Borrowed<'_išč>
+                    where
+                        Self: '_išč,
+                    {
+                        #impl_drop_assert
+                        #borrow_impl
+                    }
+                }
+            }
+        };
+    }
 }
 
 fn gen_store_name(name: &syn::Ident) -> syn::Ident {
@@ -536,8 +622,13 @@ fn gen_borrowed_struct(
 ) -> (syn::Ident, TokenStream) {
     let (_, _, where_clause) = generics.split_for_impl();
     let params = &generics.params;
+    let predicates = where_clause
+        .as_ref()
+        .map(|where_clause| &where_clause.predicates);
 
     let borrowed_name = gen_borrowed_name(name);
+    let field_types = fields.iter().map(|field| &field.ty).collect::<Vec<_>>();
+    let borrow_bounds = gen_borrow_bounds(&field_types, generics, true);
     let field_types = fields.iter().map(|field| {
         let ty = &field.ty;
         quote! { <#ty as co3::borrow::Borrow>::Borrowed<'_išč> }
@@ -549,7 +640,11 @@ fn gen_borrowed_struct(
 
             quote! {
                 #[doc(hidden)]
-                pub struct #borrowed_name<'_išč, #params> #where_clause {
+                pub struct #borrowed_name<'_išč, #params>
+                where
+                    #borrow_bounds
+                    #predicates
+                {
                     #(#field_names: #field_types),*
                 }
             }
@@ -557,7 +652,11 @@ fn gen_borrowed_struct(
         Style::Tuple => {
             quote! {
                 #[doc(hidden)]
-                pub struct #borrowed_name<'_išč, #params>(#(#field_types),*) #where_clause;
+                pub struct #borrowed_name<'_išč, #params>(#(#field_types),*)
+                where
+                    #borrow_bounds
+                    #predicates
+                ;
             }
         }
         Style::Unit => unreachable!("ZSTs are not FFI safe"),
@@ -574,7 +673,17 @@ fn gen_borrowed_data_enum(
     let params = &generics.params;
 
     let (_, _, where_clause) = generics.split_for_impl();
+    let predicates = where_clause
+        .as_ref()
+        .map(|where_clause| &where_clause.predicates);
     let borrowed_name = gen_borrowed_name(enum_name);
+    let mut field_types = Vec::new();
+    for variant in variants {
+        for field in variant.fields.iter() {
+            field_types.push(&field.ty);
+        }
+    }
+    let borrow_bounds = gen_borrow_bounds(&field_types, generics, true);
     let variants = variants.iter().map(|variant| {
         let variant_name = &variant.ident;
         variant_mapper(
@@ -589,7 +698,11 @@ fn gen_borrowed_data_enum(
 
     let enum_ = quote! {
         #[doc(hidden)]
-        pub enum #borrowed_name<'_išč, #params> #where_clause {
+        pub enum #borrowed_name<'_išč, #params>
+        where
+            #borrow_bounds
+            #predicates
+        {
             #(#variants),*
         }
     };
@@ -679,17 +792,19 @@ pub fn gen_ir_impl(
     generics: &syn::Generics,
 ) -> TokenStream {
     let (impl_generics, ty_generics, where_clause) = generics.split_for_impl();
+    let _field_kinds = fields
+        .iter()
+        .map(|field| quote!(<#field as co3::ir::ReprFamily>::Kind));
 
     let extern_c_bounds = gen_extern_c_bounds(fields, generics);
+    let params = &generics.params;
     let predicates = where_clause
         .as_ref()
         .map(|where_clause| &where_clause.predicates);
 
     quote! {
-        impl #impl_generics co3::ir::Cloned for #type_name #ty_generics #where_clause {}
-
-        impl #impl_generics co3::ir::ReprFamily for #type_name #ty_generics #where_clause {
-            type Kind = Self;
+        co3::reprC! {
+            impl(#params) Cloned for #type_name #ty_generics #where_clause {}
         }
 
         impl #impl_generics co3::ExternC for #type_name #ty_generics where #extern_c_bounds #predicates {
@@ -752,12 +867,17 @@ pub(super) fn variant_mapper<T: Sized, F0: FnOnce() -> T, F1: FnOnce(&FfiTypeFie
 }
 
 // TODO: Maybe these bounds should use `for <'_dummy>` for concrete types?
-fn gen_borrow_bounds(fields: &[&syn::Type], generics: &syn::Generics) -> TokenStream {
+fn gen_borrow_bounds(
+    fields: &[&syn::Type],
+    generics: &syn::Generics,
+    add_lifetime: bool,
+) -> TokenStream {
     let parameterized_field_types = fields
         .iter()
         .filter(|ty| is_type_parameterized(ty, generics));
 
-    quote! { #(#parameterized_field_types: co3::borrow::Borrow,)* }
+    let lifetime = add_lifetime.then_some(quote!(+ '_išč));
+    quote! { #(#parameterized_field_types: co3::borrow::Borrow #lifetime,)* }
 }
 
 fn gen_encode_bounds(fields: &[&syn::Type], generics: &syn::Generics) -> TokenStream {
@@ -773,9 +893,9 @@ fn gen_decode_bounds(fields: &[&syn::Type], generics: &syn::Generics) -> TokenSt
         .iter()
         .filter(|ty| is_type_parameterized(ty, generics));
 
-    quote! { #(#parameterized_field_types: co3::Decode<'_dšč, false>,)* }
+    quote! { #(#parameterized_field_types: co3::Decode<'_dšč>,)* }
 }
 
 fn gen_decode_cloned_bounds(fields: &[&syn::Type]) -> TokenStream {
-    quote! { #(#fields: co3::cloned::DecodeCloned<'_dšč, false>,)* }
+    quote! { #(#fields: co3::cloned::DecodeCloned<'_dšč>,)* }
 }
