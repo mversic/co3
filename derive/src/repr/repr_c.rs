@@ -8,11 +8,11 @@ use crate::{
     repr::{
         FfiTypeField, FfiTypeVariant, is_type_parameterized,
         niche::{gen_enum_niche_ir, gen_struct_niche_ir},
-        no_repr::variant_mapper,
+        no_repr::{gen_data_enum_borrow_ir, gen_struct_borrow_ir, variant_mapper},
     },
 };
 
-pub(super) fn derive_repr_c_struct(
+pub(super) fn derive_repr_c_struct<const NEEDS_DROP: bool>(
     struct_name: &Ident,
     generics: &syn::Generics,
     fields: &darling::ast::Fields<FfiTypeField>,
@@ -56,15 +56,22 @@ pub(super) fn derive_repr_c_struct(
     );
 
     let niche_ir = gen_struct_niche_ir(struct_name, generics, fields);
+    let borrow_ir = gen_struct_borrow_ir::<NEEDS_DROP>(
+        Some(quote! { #[repr(C)] }),
+        struct_name,
+        generics,
+        fields,
+    );
 
     quote! {
         #repr_c_struct
         #transparent_impl
+        #borrow_ir
         #niche_ir
     }
 }
 
-pub(super) fn derive_repr_c_data_enum(
+pub(super) fn derive_repr_c_data_enum<const NEEDS_DROP: bool>(
     repr: ReprPrimitive,
     enum_name: &Ident,
     generics: &syn::Generics,
@@ -106,6 +113,12 @@ pub(super) fn derive_repr_c_data_enum(
 
     let fields = variants.iter().flat_map(|variant| variant.fields.iter());
     let niche_ir = gen_enum_niche_ir(repr, enum_name, generics, variants);
+    let borrow_ir = gen_data_enum_borrow_ir::<NEEDS_DROP>(
+        Some(quote! { #[repr(C, #repr)] }),
+        enum_name,
+        generics,
+        variants,
+    );
 
     let transparent_impl =
         gen_transparent_impl(enum_name, generics, &repr_c_enum_name, is_valid, fields);
@@ -114,10 +127,11 @@ pub(super) fn derive_repr_c_data_enum(
         #repr_c_enum
         #transparent_impl
         #niche_ir
+        #borrow_ir
     }
 }
 
-pub(super) fn derive_data_enum(
+pub(super) fn derive_data_enum<const NEEDS_DROP: bool>(
     repr: ReprPrimitive,
     enum_name: &Ident,
     generics: &syn::Generics,
@@ -163,10 +177,17 @@ pub(super) fn derive_data_enum(
     let niche_ir = gen_enum_niche_ir(repr, enum_name, generics, variants);
 
     let transparent_impl = gen_transparent_impl(enum_name, generics, &union_name, is_valid, fields);
+    let borrow_ir = gen_data_enum_borrow_ir::<NEEDS_DROP>(
+        Some(quote! { #[repr(#repr)] }),
+        enum_name,
+        generics,
+        variants,
+    );
 
     quote! {
         #union_and_helpers
         #transparent_impl
+        #borrow_ir
         #niche_ir
     }
 }
@@ -225,27 +246,31 @@ pub(crate) fn derive_fieldless_enum(
 pub(crate) fn gen_fieldless_enum_drop_ir(name: &Ident, generics: &syn::Generics) -> TokenStream {
     let (impl_generics, ty_generics, where_clause) = generics.split_for_impl();
     let drop_impl_assert = assert_drop_impl();
+    let params = &generics.params;
 
     quote! {
         impl #impl_generics co3::borrow::DropFamily for #name #ty_generics #where_clause {
             type Kind = co3::borrow::NoDrop;
         }
 
-        impl #impl_generics co3::borrow::Borrow for #name #ty_generics #where_clause {
+        impl<#params> co3::borrow::Borrow for #name #ty_generics #where_clause {
+            type Borrowed<'_išč> = Self
+            where
+                Self: '_išč;
+
             type Store = ();
 
-            type Borrowed<'itm>
-                = Self
-            where
-                Self: 'itm;
-
             #[inline(always)]
-            fn borrow<'itm>(self, (): &'itm mut ()) -> Self::Borrowed<'itm>
-            where
-                Self: 'itm,
-            {
+            fn borrow<'_išč>(self, (): &mut ()) -> Self::Borrowed<'_išč> where Self: '_išč {
                 #drop_impl_assert
                 self
+            }
+        }
+
+        impl<'_ršč, #params> co3::borrow::ToOwned<'_ršč> for #name #ty_generics #where_clause {
+            #[inline(always)]
+            fn to_owned(borrowed: Self::Borrowed<'_ršč>) -> Self {
+                borrowed
             }
         }
     }
@@ -532,7 +557,6 @@ fn gen_transparent_impl<'a>(
         .as_ref()
         .map(|where_clause| &where_clause.predicates);
 
-    let drop_impl_assert = assert_drop_impl();
     let field_types = fields.into_iter().map(|f| &f.ty);
     let flat_transmute_bounds = gen_flat_transmute_bounds(field_types, generics);
 
@@ -541,37 +565,11 @@ fn gen_transparent_impl<'a>(
             type Kind = co3::ir::Transmuted;
         }
 
-        impl #impl_generics co3::borrow::DropFamily for #item_name #ty_generics
+        unsafe impl #impl_generics co3::transmute::CheckedTransmute for #item_name #ty_generics
         where
             #flat_transmute_bounds
             #predicates
         {
-            type Kind = co3::borrow::NoDrop;
-        }
-
-        impl #impl_generics co3::borrow::Borrow for #item_name #ty_generics
-        where
-            #flat_transmute_bounds
-            #predicates
-        {
-            type Store = ();
-
-            type Borrowed<'itm>
-                = Self
-            where
-                Self: 'itm;
-
-            #[inline(always)]
-            fn borrow<'itm>(self, (): &'itm mut ()) -> Self::Borrowed<'itm>
-            where
-                Self: 'itm,
-            {
-                #drop_impl_assert
-                self
-            }
-        }
-
-        unsafe impl #impl_generics co3::transmute::CheckedTransmute for #item_name #ty_generics where #flat_transmute_bounds #predicates {
             type Target = #target #ty_generics;
 
             #[inline(always)]
@@ -706,21 +704,69 @@ impl<'a> Visit<'_> for UsedGenericsVisitor<'a> {
 
 fn filter_generics(field_types: &[&syn::Type], generics: &syn::Generics) -> syn::Generics {
     let mut visitor = UsedGenericsVisitor::new(generics);
+
     for ty in field_types {
         visitor.visit_type(ty);
     }
 
-    let mut filtered = generics.clone();
-    filtered.params = generics
-        .params
-        .iter()
-        .filter(|param| match param {
-            syn::GenericParam::Lifetime(lt) => visitor.used_lifetimes.contains(&lt.lifetime.ident),
-            syn::GenericParam::Type(tp) => visitor.used_type_params.contains(&tp.ident),
-            syn::GenericParam::Const(cp) => visitor.used_const_params.contains(&cp.ident),
-        })
-        .cloned()
-        .collect();
+    let mut filtered = syn::Generics {
+        params: generics
+            .params
+            .iter()
+            .filter(|param| match param {
+                syn::GenericParam::Lifetime(lt) => {
+                    visitor.used_lifetimes.contains(&lt.lifetime.ident)
+                }
+                syn::GenericParam::Type(tp) => visitor.used_type_params.contains(&tp.ident),
+                syn::GenericParam::Const(cp) => visitor.used_const_params.contains(&cp.ident),
+            })
+            .cloned()
+            .collect(),
+        ..Default::default()
+    };
+
+    if let Some(where_clause) = &generics.where_clause {
+        let retained_lifetimes = filtered
+            .lifetimes()
+            .map(|lt| lt.lifetime.ident.clone())
+            .collect::<std::collections::BTreeSet<_>>();
+        let retained_type_params = filtered
+            .type_params()
+            .map(|tp| tp.ident.clone())
+            .collect::<std::collections::BTreeSet<_>>();
+        let retained_const_params = filtered
+            .const_params()
+            .map(|cp| cp.ident.clone())
+            .collect::<std::collections::BTreeSet<_>>();
+
+        let predicates = where_clause
+            .predicates
+            .iter()
+            .filter(|predicate| {
+                let mut predicate_visitor = UsedGenericsVisitor::new(generics);
+                predicate_visitor.visit_where_predicate(predicate);
+
+                predicate_visitor
+                    .used_lifetimes
+                    .into_iter()
+                    .all(|ident| retained_lifetimes.contains(ident))
+                    && predicate_visitor
+                        .used_type_params
+                        .into_iter()
+                        .all(|ident| retained_type_params.contains(ident))
+                    && predicate_visitor
+                        .used_const_params
+                        .into_iter()
+                        .all(|ident| retained_const_params.contains(ident))
+            })
+            .cloned()
+            .collect::<syn::punctuated::Punctuated<_, syn::token::Comma>>();
+
+        filtered.where_clause = (!predicates.is_empty()).then_some(syn::WhereClause {
+            where_token: where_clause.where_token,
+            predicates,
+        });
+    }
 
     filtered
 }

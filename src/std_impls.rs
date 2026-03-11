@@ -1,9 +1,13 @@
 #[cfg(feature = "alloc")]
-use alloc_crate::{boxed::Box, string::String, vec::Vec};
+use alloc_crate::{
+    boxed::Box,
+    string::{String, ToString},
+    vec::Vec,
+};
 use core::{cell::UnsafeCell, ptr::NonNull};
 
 use crate::{
-    borrow::{Borrow, DropFamily, NeedsDrop, NoDrop},
+    borrow::{Borrow, DropFamily, NeedsDrop, NoDrop, ToOwned},
     ir::{ReprFamily, Transmuted},
     niche::{Niche, NicheFamily, StableNiche, WithCustomNiche, WithStableNiche, WithoutNiche},
     reprC,
@@ -61,16 +65,26 @@ impl<T> ReprFamily for UnsafeCell<T> {
 impl<T> ReprFamily for NonNull<T> {
     type Kind = Transmuted;
 }
-impl ReprFamily for &str {
-    type Kind = Transmuted;
+reprC! {
+    unsafe impl Transparent for str {
+        type Target = [u8];
+
+        fn is_valid(target: &Self::Target) -> bool {
+            core::str::from_utf8(target).is_ok()
+        }
+    }
 }
-impl ReprFamily for &mut str {
-    type Kind = Transmuted;
+
+impl NicheFamily for &str {
+    type Kind = WithCustomNiche;
 }
-#[cfg(feature = "alloc")]
-impl ReprFamily for Box<str> {
-    type Kind = Transmuted;
+impl NicheFamily for &mut str {
+    type Kind = WithCustomNiche;
 }
+impl NicheFamily for Box<str> {
+    type Kind = WithCustomNiche;
+}
+
 #[cfg(feature = "alloc")]
 impl ReprFamily for String {
     type Kind = Transmuted;
@@ -81,16 +95,6 @@ impl<T> NicheFamily for UnsafeCell<T> {
 }
 impl<T> NicheFamily for NonNull<T> {
     type Kind = WithStableNiche;
-}
-impl NicheFamily for &str {
-    type Kind = WithCustomNiche;
-}
-impl NicheFamily for &mut str {
-    type Kind = WithCustomNiche;
-}
-#[cfg(feature = "alloc")]
-impl NicheFamily for Box<str> {
-    type Kind = WithCustomNiche;
 }
 #[cfg(feature = "alloc")]
 impl NicheFamily for String {
@@ -113,35 +117,7 @@ unsafe impl<T> CheckedTransmute for NonNull<T> {
         !target.is_null()
     }
 }
-unsafe impl<'a> CheckedTransmute for &'a str {
-    type Target = &'a [u8];
 
-    #[inline(always)]
-    fn is_valid(target: &Self::Target) -> bool {
-        core::str::from_utf8(target).is_ok()
-    }
-}
-unsafe impl<'a> CheckedTransmute for &'a mut str {
-    // WARN: `core::str::as_bytes` uses transmute internally which means that
-    // even though it's a string slice it can be transmuted into byte slice.
-    type Target = &'a mut [u8];
-
-    #[inline(always)]
-    fn is_valid(target: &Self::Target) -> bool {
-        core::str::from_utf8(target).is_ok()
-    }
-}
-#[cfg(feature = "alloc")]
-unsafe impl CheckedTransmute for Box<str> {
-    // WARN: `core::str::as_bytes` uses transmute internally which means that
-    // even though it's a string slice it can be transmuted into byte slice.
-    type Target = Box<[u8]>;
-
-    #[inline(always)]
-    fn is_valid(target: &Self::Target) -> bool {
-        core::str::from_utf8(target).is_ok()
-    }
-}
 #[cfg(feature = "alloc")]
 unsafe impl CheckedTransmute for String {
     // WARN: This can be contested as it is nowhere documented that String is
@@ -157,19 +133,9 @@ unsafe impl CheckedTransmute for String {
 impl<T> Niche for NonNull<T> {
     const NICHE_VALUE: Self::CType = core::ptr::null_mut();
 }
-impl Niche for &str {
-    const NICHE_VALUE: Self::CType = CSlice::none();
-}
-impl Niche for &mut str {
-    const NICHE_VALUE: Self::CType = CSliceMut::none();
-}
 #[cfg(feature = "alloc")]
 impl Niche for String {
     const NICHE_VALUE: Self::CType = CVec::none();
-}
-#[cfg(feature = "alloc")]
-impl Niche for Box<str> {
-    const NICHE_VALUE: Self::CType = CBoxedSlice::none();
 }
 
 impl<T: DropFamily> DropFamily for UnsafeCell<T> {
@@ -184,14 +150,14 @@ impl DropFamily for String {
 }
 
 impl<T> Borrow for NonNull<T> {
-    type Store = ();
-
     type Borrowed<'itm>
         = Self
     where
         Self: 'itm;
 
-    fn borrow<'itm>(self, (): &'itm mut ()) -> Self::Borrowed<'itm>
+    type Store = ();
+
+    fn borrow<'itm>(self, (): &mut ()) -> Self::Borrowed<'itm>
     where
         Self: 'itm,
     {
@@ -199,35 +165,21 @@ impl<T> Borrow for NonNull<T> {
     }
 }
 
-impl DropFamily for str {
-    type Kind = NoDrop;
+impl<'r, T: 'r> ToOwned<'r> for NonNull<T> {
+    #[inline(always)]
+    fn to_owned(borrowed: Self::Borrowed<'r>) -> Self {
+        borrowed
+    }
 }
-// FIXME: This should be covered by blanket
-//#[cfg(feature = "alloc")]
-//impl Borrow for Box<str> {
-//    type Store = Option<Self>;
-//
-//    type Borrowed<'itm>
-//        = &'itm str
-//    where
-//        Self: 'itm;
-//
-//    fn borrow<'itm>(self, store: &'itm mut Self::Store) -> Self::Borrowed<'itm>
-//    where
-//        Self: 'itm,
-//    {
-//        store.insert(self)
-//    }
-//}
 
 #[cfg(feature = "alloc")]
 impl Borrow for String {
-    type Store = Self;
-
     type Borrowed<'itm>
         = &'itm str
     where
         Self: 'itm;
+
+    type Store = Self;
 
     fn borrow<'itm>(self, store: &'itm mut Self::Store) -> Self::Borrowed<'itm>
     where
@@ -235,6 +187,14 @@ impl Borrow for String {
     {
         *store = self;
         store
+    }
+}
+
+#[cfg(feature = "alloc")]
+impl<'r> ToOwned<'r> for String {
+    #[inline(always)]
+    fn to_owned(borrowed: Self::Borrowed<'r>) -> Self {
+        borrowed.to_string()
     }
 }
 
@@ -248,16 +208,6 @@ unsafe impl<R> EncodeTransmuted for NonNull<R>
 where
     Self: CheckedTransmute<Target: crate::Encode>,
 {
-    type Store = <Self::Target as crate::Encode>::Store;
-}
-unsafe impl EncodeTransmuted for &str {
-    type Store = <Self::Target as crate::Encode>::Store;
-}
-unsafe impl EncodeTransmuted for &mut str {
-    type Store = <Self::Target as crate::Encode>::Store;
-}
-#[cfg(feature = "alloc")]
-unsafe impl EncodeTransmuted for Box<str> {
     type Store = <Self::Target as crate::Encode>::Store;
 }
 #[cfg(feature = "alloc")]

@@ -28,6 +28,7 @@ pub enum NeedsDrop {}
 pub enum NoDrop {}
 
 disjoint_impls! {
+    // TODO: Remove this trait
     pub trait DropFamily {
         type Kind;
     }
@@ -58,27 +59,27 @@ disjoint_impls! {
 
 disjoint_impls! {
     // TODO: It seems silly to take Store just to put the owned value inside it
-    // It would make more sense to take a reference and require no tore
+    // It would make more sense to take a reference and require no store
     // A signature would look like this: `source` is either `&self` or `&mut self`
-    //pub trait Borrow: Sized {
-    //    type Source<'itm>;
-    //    type Borrowed<'itm>;
+    // pub trait Borrow: Sized {
+    //     type Source<'itm>;
+    //     type Borrowed<'itm>;
     //
-    //    fn borrow<'itm>(source: Self::Source<'itm>) -> Self::Borrowed<'itm>;
-    //}
+    //     fn borrow<'itm>(source: Self::Source<'itm>) -> Self::Borrowed<'itm>;
+    // }
     //
     // FIXME: Rename to PartialBorrow? also rename generated names in no_repr.rs
     pub trait Borrow: Sized {
+        type Borrowed<'itm>
+        where
+            Self: 'itm;
+
         type Store: Default;
 
         /// Target type
         ///
         /// `core::mem::needs_drop` SHOULD NOT return true for this type unless the type is
-        /// [`Opaque`] or [`Box<Opaque>`] or a [`CheckedTransmute`] chain that ends in either
-        type Borrowed<'itm>
-        where
-            Self: 'itm;
-
+        /// [`Opaque`] or [`Box<Opaque>`] or a [`CheckedTransmute`] chain that ends in either.
         fn borrow<'itm>(self, store: &'itm mut Self::Store) -> Self::Borrowed<'itm>
         where
             Self: 'itm;
@@ -89,15 +90,14 @@ disjoint_impls! {
     where
         Self: DropFamily<Kind = NoDrop>,
     {
-        type Store = ();
-
-        type Borrowed<'itm>
-            = Self
+        type Borrowed<'itm> = Self
         where
             Self: 'itm;
 
+        type Store = ();
+
         #[inline(always)]
-        fn borrow<'itm>(self, (): &'itm mut ()) -> Self::Borrowed<'itm>
+        fn borrow<'itm>(self, (): &mut ()) -> Self::Borrowed<'itm>
         where
             Self: 'itm,
         {
@@ -109,12 +109,13 @@ disjoint_impls! {
     where
         Self: DropFamily<Kind = NeedsDrop>,
     {
-        type Store = Option<Self>;
-
-        type Borrowed<'itm>
-            = &'itm R
+        type Borrowed<'itm> = &'itm R
         where
             Self: 'itm;
+
+        // NOTE: If Option<R> was used a potentially
+        // large value would be placed on the stack
+        type Store = Option<Self>;
 
         #[inline(always)]
         fn borrow<'itm>(self, store: &'itm mut Self::Store) -> Self::Borrowed<'itm>
@@ -127,33 +128,32 @@ disjoint_impls! {
 
     impl<R, const N: usize> Borrow for [R; N]
     where
-        Self: DropFamily<Kind = NoDrop>
+        Self: DropFamily<Kind = NoDrop>,
     {
-        type Store = ();
-
-        type Borrowed<'itm>
-            = Self
+        type Borrowed<'itm> = Self
         where
             Self: 'itm;
 
+        type Store = ();
+
         #[inline(always)]
-        fn borrow<'itm>(self, (): &'itm mut ()) -> Self::Borrowed<'itm>
+        fn borrow<'itm>(self, (): &mut ()) -> Self::Borrowed<'itm>
         where
             Self: 'itm,
         {
             self
         }
     }
-    impl<R: Borrow, const N: usize> Borrow for [R; N]
+    impl<R, const N: usize> Borrow for [R; N]
     where
-        Self: DropFamily<Kind = NeedsDrop>
+        R: Borrow,
+        Self: DropFamily<Kind = NeedsDrop>,
     {
-        type Store = ArrayBorrowStore<R::Store, N>;
-
-        type Borrowed<'itm>
-            = [R::Borrowed<'itm>; N]
+        type Borrowed<'itm> = [R::Borrowed<'itm>; N]
         where
             Self: 'itm;
+
+        type Store = ArrayBorrowStore<R::Store, N>;
 
         #[inline(always)]
         fn borrow<'itm>(self, store: &'itm mut Self::Store) -> Self::Borrowed<'itm>
@@ -175,53 +175,13 @@ disjoint_impls! {
 
     impl<R> Borrow for Option<R>
     where
-        Self: DropFamily<Kind = NoDrop>
+        Self: DropFamily<Kind = NoDrop>,
     {
+        type Borrowed<'itm> = Self
+        where
+            Self: 'itm;
+
         type Store = ();
-
-        type Borrowed<'itm>
-            = Self
-        where
-            Self: 'itm;
-
-        #[inline(always)]
-        fn borrow<'itm>(self, (): &'itm mut ()) -> Self::Borrowed<'itm>
-        where
-            Self: 'itm,
-        {
-            self
-        }
-    }
-    impl<R: Borrow> Borrow for Option<R>
-    where
-        Self: DropFamily<Kind = NeedsDrop>
-    {
-        type Store = R::Store;
-
-        type Borrowed<'itm>
-            = Option<R::Borrowed<'itm>>
-        where
-            Self: 'itm;
-
-        #[inline(always)]
-        fn borrow<'itm>(self, store: &'itm mut Self::Store) -> Self::Borrowed<'itm>
-        where
-            Self: 'itm,
-        {
-            self.map(|b| b.borrow(store))
-        }
-    }
-
-    impl<T, E> Borrow for Result<T, E>
-    where
-        Self: DropFamily<Kind = NoDrop>
-    {
-        type Store = ();
-
-        type Borrowed<'itm>
-            = Self
-        where
-            Self: 'itm;
 
         #[inline(always)]
         fn borrow<'itm>(self, (): &mut ()) -> Self::Borrowed<'itm>
@@ -231,16 +191,55 @@ disjoint_impls! {
             self
         }
     }
-    impl<T: Borrow, E: Borrow> Borrow for Result<T, E>
+    impl<R> Borrow for Option<R>
     where
-        Self: DropFamily<Kind = NeedsDrop>
+        R: Borrow,
+        Self: DropFamily<Kind = NeedsDrop>,
     {
-        type Store = Option<Result<T::Store, E::Store>>;
-
-        type Borrowed<'itm>
-            = Result<T::Borrowed<'itm>, E::Borrowed<'itm>>
+        type Borrowed<'itm> = Option<R::Borrowed<'itm>>
         where
             Self: 'itm;
+
+        type Store = R::Store;
+
+        #[inline(always)]
+        fn borrow<'itm>(self, store: &'itm mut Self::Store) -> Self::Borrowed<'itm>
+        where
+            Self: 'itm,
+        {
+            self.map(|value| value.borrow(store))
+        }
+    }
+
+    impl<T, E> Borrow for Result<T, E>
+    where
+        Self: DropFamily<Kind = NoDrop>,
+    {
+        type Borrowed<'itm> = Self
+        where
+            Self: 'itm;
+
+        type Store = ();
+
+        #[inline(always)]
+        fn borrow<'itm>(self, (): &mut ()) -> Self::Borrowed<'itm>
+        where
+            Self: 'itm,
+        {
+            self
+        }
+    }
+    impl<T, E> Borrow for Result<T, E>
+    where
+        T: Borrow,
+        E: Borrow,
+        Self: DropFamily<Kind = NeedsDrop>,
+    {
+        type Borrowed<'itm> = Result<T::Borrowed<'itm>, E::Borrowed<'itm>>
+        where
+            Self: 'itm;
+
+        type Store = Option<Result<T::Store, E::Store>>;
 
         #[inline(always)]
         fn borrow<'itm>(self, store: &'itm mut Self::Store) -> Self::Borrowed<'itm>
@@ -262,15 +261,15 @@ disjoint_impls! {
 
     impl<T> Borrow for UnsafeCell<T>
     where
-        Self: DropFamily<Kind = NoDrop>
+        Self: DropFamily<Kind = NoDrop>,
     {
-        type Store = ();
-
-        type Borrowed<'itm>
-            = Self
+        type Borrowed<'itm> = Self
         where
             Self: 'itm;
 
+        type Store = ();
+
+        #[inline(always)]
         fn borrow<'itm>(self, (): &mut ()) -> Self::Borrowed<'itm>
         where
             Self: 'itm,
@@ -280,20 +279,130 @@ disjoint_impls! {
     }
     impl<T> Borrow for UnsafeCell<T>
     where
-        Self: DropFamily<Kind = NeedsDrop>
+        T: Borrow,
+        Self: DropFamily<Kind = NeedsDrop>,
     {
-        type Store = Option<Self>;
-
-        type Borrowed<'itm>
-            = &'itm Self
+        type Borrowed<'itm> = UnsafeCell<T::Borrowed<'itm>>
         where
-            Self: 'itm;
+            Self: 'itm,
+            T: 'itm;
 
+        type Store = T::Store;
+
+        #[inline(always)]
         fn borrow<'itm>(self, store: &'itm mut Self::Store) -> Self::Borrowed<'itm>
         where
             Self: 'itm,
         {
-            store.insert(self)
+            UnsafeCell::new(self.into_inner().borrow(store))
+        }
+    }
+}
+
+// TODO: I hope that some day it'll be possible to join all NoDrop impls into one
+disjoint_impls! {
+    pub trait ToOwned<'r>: Borrow {
+        fn to_owned(borrowed: Self::Borrowed<'r>) -> Self;
+    }
+
+    #[cfg(feature = "alloc")]
+    impl<'r, R: 'r> ToOwned<'r> for Box<R>
+    where
+        Self: DropFamily<Kind = NoDrop>,
+    {
+        #[inline(always)]
+        fn to_owned(borrowed: Self::Borrowed<'r>) -> Self {
+            borrowed
+        }
+    }
+    #[cfg(feature = "alloc")]
+    impl<'r, R: Clone> ToOwned<'r> for Box<R>
+    where
+        Self: DropFamily<Kind = NeedsDrop>,
+    {
+        #[inline(always)]
+        fn to_owned(borrowed: Self::Borrowed<'r>) -> Self {
+            // TODO: I don't know how to make it work for ?Sized types
+            Box::new(borrowed.clone())
+        }
+    }
+
+    impl<'r, R: 'r, const N: usize> ToOwned<'r> for [R; N]
+    where
+        Self: DropFamily<Kind = NoDrop>,
+    {
+        #[inline(always)]
+        fn to_owned(borrowed: Self::Borrowed<'r>) -> Self {
+            borrowed
+        }
+    }
+    impl<'r, R: ToOwned<'r>, const N: usize> ToOwned<'r> for [R; N]
+    where
+        Self: DropFamily<Kind = NeedsDrop>,
+    {
+        #[inline(always)]
+        fn to_owned(borrowed: Self::Borrowed<'r>) -> Self {
+            borrowed.map(R::to_owned)
+        }
+    }
+
+    impl<'r, R: 'r> ToOwned<'r> for Option<R>
+    where
+        Self: DropFamily<Kind = NoDrop>,
+    {
+        #[inline(always)]
+        fn to_owned(borrowed: Self::Borrowed<'r>) -> Self {
+            borrowed
+        }
+    }
+    impl<'r, R: ToOwned<'r>> ToOwned<'r> for Option<R>
+    where
+        Self: DropFamily<Kind = NeedsDrop>,
+    {
+        #[inline(always)]
+        fn to_owned(borrowed: Self::Borrowed<'r>) -> Self {
+            borrowed.map(R::to_owned)
+        }
+    }
+
+    impl<'r, T: 'r, E: 'r> ToOwned<'r> for Result<T, E>
+    where
+        Self: DropFamily<Kind = NoDrop>,
+    {
+        #[inline(always)]
+        fn to_owned(borrowed: Self::Borrowed<'r>) -> Self {
+            borrowed
+        }
+    }
+    impl<'r, T: ToOwned<'r>, E: ToOwned<'r>> ToOwned<'r> for Result<T, E>
+    where
+        Self: DropFamily<Kind = NeedsDrop>,
+    {
+        #[inline(always)]
+        fn to_owned(borrowed: Self::Borrowed<'r>) -> Self {
+            match borrowed {
+                Ok(value) => Ok(T::to_owned(value)),
+                Err(err) => Err(E::to_owned(err)),
+            }
+        }
+    }
+
+    impl<'r, R: 'r> ToOwned<'r> for UnsafeCell<R>
+    where
+        Self: DropFamily<Kind = NoDrop>,
+    {
+        #[inline(always)]
+        fn to_owned(borrowed: Self::Borrowed<'r>) -> Self {
+            borrowed
+        }
+    }
+    impl<'r, R: ToOwned<'r>> ToOwned<'r> for UnsafeCell<R>
+    where
+        Self: DropFamily<Kind = NeedsDrop>,
+    {
+        #[inline(always)]
+        fn to_owned(borrowed: Self::Borrowed<'r>) -> Self {
+            UnsafeCell::new(R::to_owned(borrowed.into_inner()))
         }
     }
 }
@@ -330,15 +439,15 @@ impl<R: DropFamily> DropFamily for Option<R> {
 }
 
 impl<R: ?Sized> Borrow for &R {
-    type Store = ();
-
     type Borrowed<'itm>
         = Self
     where
         Self: 'itm;
 
+    type Store = ();
+
     #[inline(always)]
-    fn borrow<'itm>(self, (): &'itm mut ()) -> Self::Borrowed<'itm>
+    fn borrow<'itm>(self, (): &mut ()) -> Self::Borrowed<'itm>
     where
         Self: 'itm,
     {
@@ -347,15 +456,15 @@ impl<R: ?Sized> Borrow for &R {
 }
 
 impl<R: ?Sized> Borrow for &mut R {
-    type Store = ();
-
     type Borrowed<'itm>
         = Self
     where
         Self: 'itm;
 
+    type Store = ();
+
     #[inline(always)]
-    fn borrow<'itm>(self, (): &'itm mut ()) -> Self::Borrowed<'itm>
+    fn borrow<'itm>(self, (): &mut ()) -> Self::Borrowed<'itm>
     where
         Self: 'itm,
     {
@@ -363,14 +472,28 @@ impl<R: ?Sized> Borrow for &mut R {
     }
 }
 
+impl<'r, R: ?Sized> ToOwned<'r> for &'r R {
+    #[inline(always)]
+    fn to_owned(borrowed: Self::Borrowed<'r>) -> Self {
+        borrowed
+    }
+}
+
+impl<'r, R: ?Sized> ToOwned<'r> for &'r mut R {
+    #[inline(always)]
+    fn to_owned(borrowed: Self::Borrowed<'r>) -> Self {
+        borrowed
+    }
+}
+
 #[cfg(feature = "alloc")]
 impl<R> Borrow for Vec<R> {
-    type Store = Self;
-
     type Borrowed<'itm>
         = &'itm [R]
     where
         Self: 'itm;
+
+    type Store = Self;
 
     #[inline(always)]
     fn borrow<'itm>(self, store: &'itm mut Self::Store) -> Self::Borrowed<'itm>
@@ -379,6 +502,14 @@ impl<R> Borrow for Vec<R> {
     {
         *store = self;
         store
+    }
+}
+
+#[cfg(feature = "alloc")]
+impl<'r, R: Clone> ToOwned<'r> for Vec<R> {
+    #[inline(always)]
+    fn to_owned(borrowed: Self::Borrowed<'r>) -> Self {
+        borrowed.to_vec()
     }
 }
 
@@ -410,3 +541,5 @@ impl Add for NeedsDrop {
         unreachable!()
     }
 }
+
+pub trait SomeTrait {}

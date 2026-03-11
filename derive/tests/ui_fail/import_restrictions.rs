@@ -78,4 +78,21 @@ extern_C! {
     }
 }
 
+extern_C! {
+    type Handle<T>;
+
+    #[dispatch]
+    impl<T> Drop for Handle<T> {
+        fn drop(&mut self);
+    }
+
+    #[dispatch(
+        T = [Handle<u8>],
+        T = [Handle<i8>],
+    )]
+    impl<T> Clone for Handle<T> {
+        fn clone(&self) -> Self;
+    }
+}
+
 fn main() {}

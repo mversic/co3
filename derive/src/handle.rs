@@ -5,8 +5,9 @@ use quote::{ToTokens, format_ident, quote};
 use syn::visit_mut::VisitMut;
 
 use crate::{
+    OwnershipMode, effective_ownership_mode,
     impl_visitor::{FnDescriptor, path_symbol_name},
-    utils::unwrap_result_type,
+    utils::{SignatureLifetimeBuilder, unwrap_result_type},
     wrapper::HandleIdSpec,
 };
 
@@ -15,6 +16,7 @@ pub(crate) struct ExportPolySpec {
     pub(crate) trait_path: Option<syn::Path>,
     pub(crate) method: syn::Ident,
     pub(crate) decl_sig: syn::Signature,
+    pub(crate) ownership_mode: OwnershipMode,
     pub(crate) key_types: BTreeMap<String, Vec<syn::Type>>,
     pub(crate) handle_id_specs: Vec<HandleIdSpec>,
     pub(crate) unsafe_name: Option<syn::LitStr>,
@@ -123,6 +125,34 @@ pub(crate) fn gen_poly_export(spec: &ExportPolySpec, export_abi: Option<&syn::Ab
             }
         }
         "handle".to_string()
+    }
+    fn inject_missing_lifetimes(ty: &mut syn::Type, lifetime_name: &str) {
+        struct LifetimeInjector<'a> {
+            lifetime: &'a str,
+        }
+
+        impl VisitMut for LifetimeInjector<'_> {
+            fn visit_type_reference_mut(&mut self, node: &mut syn::TypeReference) {
+                if node.lifetime.is_none() {
+                    node.lifetime = Some(syn::Lifetime::new(
+                        &format!("'{}", self.lifetime),
+                        proc_macro2::Span::call_site(),
+                    ));
+                }
+                syn::visit_mut::visit_type_reference_mut(self, node);
+            }
+        }
+
+        VisitMut::visit_type_mut(
+            &mut LifetimeInjector {
+                lifetime: lifetime_name,
+            },
+            ty,
+        );
+    }
+    fn borrowed_body_src_type(mut ty: syn::Type) -> TokenStream {
+        inject_missing_lifetimes(&mut ty, "_");
+        quote!(<#ty as co3::borrow::Borrow>::Borrowed<'_>)
     }
     fn inject_handle_id_decl_args(handle_id_specs: &[HandleIdSpec], args: &mut Vec<TokenStream>) {
         let mut inserts: Vec<(usize, usize, TokenStream)> = handle_id_specs
@@ -246,6 +276,7 @@ pub(crate) fn gen_poly_export(spec: &ExportPolySpec, export_abi: Option<&syn::Ab
         name: syn::Ident,
         ty: syn::Type,
         is_handle: bool,
+        ownership_mode: OwnershipMode,
         is_receiver: bool,
         receiver_is_mut: bool,
     }
@@ -266,6 +297,7 @@ pub(crate) fn gen_poly_export(spec: &ExportPolySpec, export_abi: Option<&syn::Ab
                     ty: rust_ty,
                     is_handle: has_dispatch_attr(&receiver.attrs)
                         || spec.key_types.contains_key("Self"),
+                    ownership_mode: effective_ownership_mode(&receiver.attrs, spec.ownership_mode),
                     is_receiver: true,
                     receiver_is_mut: receiver.mutability.is_some(),
                 });
@@ -285,6 +317,7 @@ pub(crate) fn gen_poly_export(spec: &ExportPolySpec, export_abi: Option<&syn::Ab
                     ty: arg.ty.as_ref().clone(),
                     is_handle: has_dispatch_attr(&arg.attrs)
                         || spec.key_types.contains_key(&selector_key),
+                    ownership_mode: effective_ownership_mode(&arg.attrs, spec.ownership_mode),
                     is_receiver: false,
                     receiver_is_mut: false,
                 });
@@ -293,10 +326,14 @@ pub(crate) fn gen_poly_export(spec: &ExportPolySpec, export_abi: Option<&syn::Ab
     }
 
     let mut decl_params = Vec::<TokenStream>::new();
+    let mut lifetime_builder = SignatureLifetimeBuilder::new(&[&spec.decl_sig.generics]);
     for arg in &args {
         let arg_name = &arg.name;
         let ffi_ty: syn::Type = if arg.is_handle {
             handle_ffi_ty_from_rust(&arg.ty)
+        } else if arg.ownership_mode == OwnershipMode::Borrow {
+            let borrowed_ty = lifetime_builder.borrowed_src_type(arg.ty.clone());
+            syn::parse_quote!(<#borrowed_ty as co3::ExternC>::CType)
         } else {
             let ty = &arg.ty;
             syn::parse_quote!(<#ty as co3::ExternC>::CType)
@@ -304,7 +341,8 @@ pub(crate) fn gen_poly_export(spec: &ExportPolySpec, export_abi: Option<&syn::Ab
         decl_params.push(quote!(#arg_name: #ffi_ty));
     }
     inject_handle_id_decl_args(&handle_id_specs, &mut decl_params);
-
+    let (export_generics, export_where_clause) =
+        lifetime_builder.split_for_signature(&[&spec.decl_sig.generics]);
     let raw_output_ty = match &spec.decl_sig.output {
         syn::ReturnType::Default => None,
         syn::ReturnType::Type(_, ty) => Some((**ty).clone()),
@@ -381,11 +419,21 @@ pub(crate) fn gen_poly_export(spec: &ExportPolySpec, export_abi: Option<&syn::Ab
             } else {
                 quote!(#arg_name)
             };
-            decode_stmts.push(quote! {
-                let mut #store = Default::default();
-                let #arg_name: #rust_ty = unsafe { co3::Decode::decode(#decode_input, &mut #store) }
-                    .ok_or(co3::FfiReturn::TrapRepresentation)?;
-            });
+            if !arg.is_handle && arg.ownership_mode == OwnershipMode::Borrow {
+                let borrowed_ty = borrowed_body_src_type(rust_ty.clone());
+                decode_stmts.push(quote! {
+                    let mut #store = Default::default();
+                    let #arg_name: #borrowed_ty = unsafe { co3::Decode::decode(#decode_input, &mut #store) }
+                        .ok_or(co3::FfiReturn::TrapRepresentation)?;
+                    let #arg_name: #rust_ty = co3::borrow::ToOwned::to_owned(#arg_name);
+                });
+            } else {
+                decode_stmts.push(quote! {
+                    let mut #store = Default::default();
+                    let #arg_name: #rust_ty = unsafe { co3::Decode::decode(#decode_input, &mut #store) }
+                        .ok_or(co3::FfiReturn::TrapRepresentation)?;
+                });
+            }
             if !arg.is_handle {
                 sync_stmts.push(quote! {
                     co3::Store::sync(#store).ok_or(co3::FfiReturn::TrapRepresentation)?;
@@ -498,9 +546,9 @@ pub(crate) fn gen_poly_export(spec: &ExportPolySpec, export_abi: Option<&syn::Ab
 
     quote! {
         #[unsafe(export_name = #export_name)]
-        unsafe #abi fn #fn_name(
+        unsafe #abi fn #fn_name #export_generics (
             #(#decl_params),*
-        ) -> co3::FfiReturn {
+        ) -> co3::FfiReturn #export_where_clause {
             let fn_ = || {
                 let fn_body = || -> Result<(), co3::FfiReturn> {
                     let #self_handle_id_ident: co3::handle::Id = co3::Decode::decode(#self_handle_id_ident, &mut ())
@@ -778,7 +826,14 @@ pub(crate) fn parse_entry_handle_map_attr(
 
     let mut out = BTreeMap::new();
     for entry in entries {
-        out.insert(selector_key_name(&entry.selector), entry.types);
+        let key = selector_key_name(&entry.selector);
+        if out.contains_key(&key) {
+            return Err(syn::Error::new_spanned(
+                &entry.selector,
+                format!("selector `{key}` can only be specified once in `#[dispatch(...)]`"),
+            ));
+        }
+        out.insert(key, entry.types);
     }
     Ok(Some(out))
 }

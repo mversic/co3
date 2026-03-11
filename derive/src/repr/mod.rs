@@ -390,6 +390,13 @@ impl FromField for FfiTypeField {
 }
 
 pub fn derive_extern_c(emitter: &mut Emitter, input: &syn::DeriveInput) -> TokenStream {
+    derive_extern_c_internal::<true>(emitter, input)
+}
+
+pub(crate) fn derive_extern_c_internal<const NEEDS_DROP: bool>(
+    emitter: &mut Emitter,
+    input: &syn::DeriveInput,
+) -> TokenStream {
     let Some(mut input) = emitter.handle(FfiTypeInput::from_derive_input(input)) else {
         return quote!();
     };
@@ -462,7 +469,7 @@ pub fn derive_extern_c(emitter: &mut Emitter, input: &syn::DeriveInput) -> Token
         Some(ReprKind::Transparent) => derive_transparent_item(&input),
         Some(ReprKind::C(None)) => {
             if let darling::ast::Data::Struct(fields) = &input.data {
-                derive_repr_c_struct(&input.ident, &input.generics, fields)
+                derive_repr_c_struct::<NEEDS_DROP>(&input.ident, &input.generics, fields)
             } else {
                 emit!(
                     emitter,
@@ -477,7 +484,12 @@ pub fn derive_extern_c(emitter: &mut Emitter, input: &syn::DeriveInput) -> Token
             if let darling::ast::Data::Enum(variants) = &input.data
                 && variants.iter().any(|v| !v.fields.fields.is_empty())
             {
-                derive_repr_c_data_enum(*repr, &input.ident, &input.generics, variants)
+                derive_repr_c_data_enum::<NEEDS_DROP>(
+                    *repr,
+                    &input.ident,
+                    &input.generics,
+                    variants,
+                )
             } else {
                 quote! {}
             }
@@ -487,7 +499,7 @@ pub fn derive_extern_c(emitter: &mut Emitter, input: &syn::DeriveInput) -> Token
                 if variants.iter().all(|v| v.fields.fields.is_empty()) {
                     derive_fieldless_enum(*repr, &input.ident, &input.generics, variants)
                 } else {
-                    derive_data_enum(*repr, &input.ident, &input.generics, variants)
+                    derive_data_enum::<NEEDS_DROP>(*repr, &input.ident, &input.generics, variants)
                 }
             } else {
                 quote! {}
@@ -510,12 +522,20 @@ pub fn derive_extern_c(emitter: &mut Emitter, input: &syn::DeriveInput) -> Token
                     if variants.iter().all(|v| v.fields.fields.is_empty()) {
                         derive_no_repr_fieldless_enum(&input.ident, &input.generics, variants)
                     } else {
-                        derive_no_repr_data_enum(&input.ident, &input.generics, variants, local)
+                        derive_no_repr_data_enum::<NEEDS_DROP>(
+                            &input.ident,
+                            &input.generics,
+                            variants,
+                            local,
+                        )
                     }
                 }
-                darling::ast::Data::Struct(fields) => {
-                    derive_no_repr_struct(&input.ident, &input.generics, fields, local)
-                }
+                darling::ast::Data::Struct(fields) => derive_no_repr_struct::<NEEDS_DROP>(
+                    &input.ident,
+                    &input.generics,
+                    fields,
+                    local,
+                ),
             }
         }
     }

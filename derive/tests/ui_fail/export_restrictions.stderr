@@ -144,13 +144,13 @@ error: `#[unsafe(export_name = ...)]` attribute may not be used in combination w
 101 |     #[unsafe(export_name = "kita")]
     |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
-error: unsupported attribute in export entry; only `#[unsafe(export_name = "...")]` and `#[unsafe(no_mangle)]` are allowed
+error: unsupported attribute in export entry; only ownership attrs, `#[unsafe(export_name = "...")]`, and `#[unsafe(no_mangle)]` are allowed
    --> tests/ui_fail/export_restrictions.rs:106:5
     |
 106 |     #[unknown_attribute]
     |     ^^^^^^^^^^^^^^^^^^^^
 
-error: unsupported attribute in export entry; only `#[unsafe(export_name = "...")]` and `#[unsafe(no_mangle)]` are allowed
+error: unsupported attribute in export entry; only ownership attrs, `#[unsafe(export_name = "...")]`, and `#[unsafe(no_mangle)]` are allowed
    --> tests/ui_fail/export_restrictions.rs:113:5
     |
 113 |     #[unknown_attribute]
@@ -185,6 +185,12 @@ error: trait export entries require `#[dispatch(...)]` mapping
     |
 155 |         extern "system" fn kita0(self, a: &u8);
     |         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+error: `handle` mapping can only be provided once per entry
+   --> tests/ui_fail/export_restrictions.rs:161:5
+    |
+161 |     #[dispatch(Self = [u32])]
+    |     ^^^^^^^^^^^^^^^^^^^^^^^^^
 
 error[E0053]: method `kita0` has an incompatible type for trait
   --> tests/ui_fail/export_restrictions.rs:84:5

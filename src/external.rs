@@ -1,7 +1,7 @@
 use core::{marker::PhantomData, ptr::NonNull};
 
 use crate::{
-    borrow::{Borrow, DropFamily, NoDrop},
+    borrow::{Borrow, DropFamily, NoDrop, ToOwned},
     ir::{ReprFamily, Transmuted},
     niche::{Niche, NicheFamily, StableNiche, WithStableNiche},
     transmute::{CheckedTransmute, EncodeTransmuted},
@@ -74,19 +74,25 @@ macro_rules! impl_external_ref_common {
             type Kind = NoDrop;
         }
 
-        impl<'a, R> Borrow for $ty<'a, R> {
-            type Store = ();
-
+        impl<R> Borrow for $ty<'_, R> {
             type Borrowed<'itm>
                 = Self
             where
                 Self: 'itm;
 
-            fn borrow<'itm>(self, (): &'itm mut ()) -> Self::Borrowed<'itm>
+            type Store = ();
+
+            fn borrow<'itm>(self, (): &mut ()) -> Self::Borrowed<'itm>
             where
                 Self: 'itm,
             {
                 self
+            }
+        }
+
+        impl<'r, R> ToOwned<'r> for $ty<'r, R> {
+            fn to_owned(borrowed: Self::Borrowed<'r>) -> Self {
+                borrowed
             }
         }
 

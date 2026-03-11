@@ -4,6 +4,7 @@ use quote::quote;
 use syn::{Ident, LitStr, Path, Type, visit_mut::VisitMut};
 
 use crate::{
+    OwnershipMode,
     attr_parse::derive::{Derive, RustcDerive},
     emitter::Emitter,
     ffi_fn,
@@ -517,12 +518,16 @@ fn gen_wrapper_signature(fn_descriptor: &FnDescriptor) -> syn::Signature {
     struct HandleAttrStripper;
     impl VisitMut for HandleAttrStripper {
         fn visit_receiver_mut(&mut self, node: &mut syn::Receiver) {
-            node.attrs.retain(|attr| !attr.path().is_ident("dispatch"));
+            node.attrs.retain(|attr| {
+                !attr.path().is_ident("dispatch") && !attr.path().is_ident("__co3_move")
+            });
             syn::visit_mut::visit_receiver_mut(self, node);
         }
 
         fn visit_pat_type_mut(&mut self, node: &mut syn::PatType) {
-            node.attrs.retain(|attr| !attr.path().is_ident("dispatch"));
+            node.attrs.retain(|attr| {
+                !attr.path().is_ident("dispatch") && !attr.path().is_ident("__co3_move")
+            });
             syn::visit_mut::visit_pat_type_mut(self, node);
         }
     }
@@ -557,6 +562,7 @@ pub fn wrap_method_with_import(
             && !attr.path().is_ident("link")
             && !attr.path().is_ident("dispatch")
             && !attr.path().is_ident("id_pos")
+            && !attr.path().is_ident("__co3_move")
     });
     let method_doc = &fn_descriptor.doc;
     let visibility = if trait_path.is_none() {
@@ -653,11 +659,22 @@ fn gen_input_conversion_stmts(fn_descriptor: &FnDescriptor) -> TokenStream {
             Type::Path(syn::TypePath { qself: None, path }) if path.is_ident("Self")
         ) {
             let store_name = gen_store_name(arg_name);
-            stmts.extend(quote! {
-                let #arg_name = self;
-                let mut #store_name = Default::default();
-                let #arg_name = co3::Encode::encode(#arg_name, &mut #store_name);
-            });
+            if arg.ownership_mode() == OwnershipMode::Borrow {
+                let borrow_store_name = gen_borrow_store_name(arg_name);
+                stmts.extend(quote! {
+                    let #arg_name = self;
+                    let mut #borrow_store_name = Default::default();
+                    let #arg_name = co3::borrow::Borrow::borrow(#arg_name, &mut #borrow_store_name);
+                    let mut #store_name = Default::default();
+                    let #arg_name = co3::Encode::encode(#arg_name, &mut #store_name);
+                });
+            } else {
+                stmts.extend(quote! {
+                    let #arg_name = self;
+                    let mut #store_name = Default::default();
+                    let #arg_name = co3::Encode::encode(#arg_name, &mut #store_name);
+                });
+            }
         } else if let Some(processed) = process_self_type(arg_name, arg.src_type(), self_ty) {
             stmts.extend(quote! {let #arg_name = self;});
             stmts.extend(quote!(let #arg_name = #processed;));
@@ -770,11 +787,16 @@ fn gen_input_arg_src_to_ffi(arg: &Arg, self_ty: Option<&syn::Path>) -> TokenStre
     }
 
     let store_name = gen_store_name(arg_name);
-    if let Some(processed) = process_self_type(arg.name(), arg.src_type(), self_ty) {
+    let _ = self_ty;
+
+    if arg.ownership_mode() == OwnershipMode::Borrow {
+        let borrow_store_name = gen_borrow_store_name(arg_name);
         return quote! {
             #resolve_impl_trait
+            let mut #borrow_store_name = Default::default();
+            let #arg_name = co3::borrow::Borrow::borrow(#arg_name, &mut #borrow_store_name);
             let mut #store_name = Default::default();
-            let #arg_name = #processed;
+            let #arg_name = co3::Encode::encode(#arg_name, &mut #store_name);
         };
     }
 
@@ -783,6 +805,10 @@ fn gen_input_arg_src_to_ffi(arg: &Arg, self_ty: Option<&syn::Path>) -> TokenStre
         let mut #store_name = Default::default();
         let #arg_name = co3::Encode::encode(#arg_name, &mut #store_name);
     }
+}
+
+fn gen_borrow_store_name(name: &Ident) -> Ident {
+    Ident::new(&format!("{name}_borrow_store"), name.span())
 }
 
 fn injected_handle_id_expr(

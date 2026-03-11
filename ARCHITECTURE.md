@@ -64,7 +64,7 @@ The tables below specifies how composite types derive `ReprFamily::Kind`:
 | R::Kind | Self::Kind |
 | --- | --- |
 | `Transmuted` | `Transmuted` |
-| `Robust` | `Box<Robust>` |
+| `Robust` | `Transmuted` |
 | `Opaque` | `Transmuted` |
 | `Cloned` | `Box<R::Kind>` |
 

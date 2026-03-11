@@ -64,7 +64,7 @@ use core::ops::Add;
 
 use crate::{
     ExternC, ReprC, Store,
-    borrow::{Borrow, DropFamily},
+    borrow::{Borrow, DropFamily, ToOwned},
     cloned::DecodeCloned,
     niche::{Niche, NicheFamily, WithNiche, WithoutNiche},
 };
@@ -125,21 +125,30 @@ macro_rules! impl_tuple {
         }
 
         impl<$($ty: Borrow),+> Borrow for ($($ty,)+) {
-            type Store = ($( $ty::Store, )+);
-
-            type Borrowed<'itm>
-                = ($( $ty::Borrowed<'itm>, )+)
+            type Borrowed<'itm> = ($( $ty::Borrowed<'itm>, )+)
             where
                 Self: 'itm;
 
+            type Store = ($( $ty::Store, )+);
+
             #[inline(always)]
             #[expect(non_snake_case)]
-            fn borrow<'itm>(self, store: &'itm mut Self::Store) -> Self::Borrowed<'itm> where Self: 'itm {
+            fn borrow<'itm>(self, store: &'itm mut Self::Store) -> Self::Borrowed<'itm>
+            where
+                Self: 'itm,
+            {
                 impl_tuple! {@decl_priv_store $($ty),+}
 
                 let ($($ty,)+) = self;
                 let store: private_store::Store<$(<$ty as Borrow>::Store),+> = store.into();
                 ($( $ty::borrow($ty, store.$ty), )+)
+            }
+        }
+
+        impl<'r, $($ty: ToOwned<'r>),+> ToOwned<'r> for ($($ty,)+) {
+            #[expect(non_snake_case)]
+            fn to_owned(($($ty,)+): Self::Borrowed<'r>) -> Self {
+                ($( $ty::to_owned($ty), )+)
             }
         }
 

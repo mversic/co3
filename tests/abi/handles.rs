@@ -1,12 +1,13 @@
 use co3::{extern_C, external::ExternRef};
 
 trait Custom {
-    fn inc(self) -> Self;
+    fn inc(self, by: Vec<u32>) -> Self;
 }
 
 co3::handles! {
     Handle::<bool, u8> = 1,
-    Handle::<u8, bool>,
+    Handle::<bool, u32>,
+    Handle<u8, bool>,
 }
 
 extern_C! {
@@ -51,7 +52,7 @@ extern_C! {
     }
 
     #[dispatch(
-        T = [Handle<bool, u8>],
+        T = [Handle<bool, u8>, Handle<u8, bool>],
     )]
     impl<T> PartialEq for T {
         #[link_name = "abi_Eq_eq"]
@@ -72,8 +73,16 @@ extern_C! {
         Self = [Handle<bool, u8>]
     )]
     impl<T> Custom for T {
-        #[link_name = "abi_Custom_inc"]
-        fn inc(self) -> Self;
+        #[link_name = "custom_inc_as_ref"]
+        fn inc(self, by: Vec<u32>) -> Self;
+    }
+
+    #[dispatch(
+        Self = [Handle<u8, bool>]
+    )]
+    impl<T> Custom for T {
+        #[link_name = "custom_inc_move"]
+        fn inc(self, move by: Vec<u32>) -> Self;
     }
 }
 
@@ -85,7 +94,8 @@ mod provider {
     use super::Custom;
 
     handles! {
-        Handle<bool, u8> = 1,
+        Handle::<bool, u8> = 1,
+        Handle<bool, u32>,
         Handle<u8, bool>,
     }
 
@@ -103,8 +113,8 @@ mod provider {
     }
 
     impl<T, U> Custom for Handle<T, U> {
-        fn inc(mut self) -> Self {
-            self.id += 1;
+        fn inc(mut self, by: Vec<u32>) -> Self {
+            by.into_iter().for_each(|by| self.id += by as u8);
             self
         }
     }
@@ -173,8 +183,16 @@ mod provider {
             Self = [Handle<bool, u8>]
         )]
         trait Custom {
-            #[unsafe(export_name = "abi_Custom_inc")]
-            fn inc(self) -> Self;
+            #[unsafe(export_name = "custom_inc_as_ref")]
+            fn inc(self, by: Vec<u32>) -> Self;
+        }
+
+        #[dispatch(
+            Self = [Handle<u8, bool>]
+        )]
+        trait Custom {
+            #[unsafe(export_name = "custom_inc_move")]
+            fn inc(self, move by: Vec<u32>) -> Self;
         }
     }
 }
@@ -195,9 +213,15 @@ fn opaque_handles() {
     assert!(PartialEq::<Handle<u8, bool>>::eq(&handle, &other));
     assert!(PartialEq::<Handle<u8, bool>>::eq(&cloned, &other_cloned));
 
-    let incremented = Custom::inc(handle);
+    let incremented = Custom::inc(handle, vec![2]);
     assert!(!PartialEq::<Handle<u8, bool>>::eq(&incremented, &other));
 
     let incremented_cloned = Clone::clone(&incremented);
     assert!(PartialEq::eq(&incremented, &incremented_cloned));
+
+    let owned_handle: Handle<u8, bool> = Default::default();
+    let owned_incremented = Custom::inc(owned_handle, vec![2]);
+    let owned_incremented_cloned = Clone::clone(&owned_incremented);
+
+    assert!(PartialEq::eq(&owned_incremented, &owned_incremented_cloned));
 }

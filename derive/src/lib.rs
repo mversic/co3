@@ -3,7 +3,7 @@ use std::collections::{BTreeMap, BTreeSet};
 
 use darling::FromDeriveInput as _;
 use manyhow::{emit, manyhow};
-use proc_macro2::TokenStream;
+use proc_macro2::{Delimiter, Group, Span, TokenStream, TokenTree};
 use quote::{format_ident, quote};
 
 use crate::{
@@ -15,6 +15,7 @@ use crate::{
     impl_visitor::Arg,
     impl_visitor::{FnDescriptor, ImplDescriptor, path_symbol_name},
     repr::{FfiTypeInput, derive_extern_c},
+    utils::SignatureLifetimeBuilder,
     wrapper::{ExternTypeLinkMode, HandleIdSpec},
 };
 
@@ -28,6 +29,136 @@ mod utils;
 mod wrapper;
 
 const NO_EXPORT_ABI_MSG: &str = "specify ABI with `export(\"...\")`";
+const INTERNAL_MOVE_ATTR: &str = "__co3_move";
+
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub(crate) enum OwnershipMode {
+    #[default]
+    Borrow,
+    ByValue,
+}
+
+pub(crate) fn parse_ownership_mode(attrs: &[syn::Attribute]) -> Option<OwnershipMode> {
+    let mut mode = None;
+    for attr in attrs {
+        if attr.path().is_ident(INTERNAL_MOVE_ATTR) {
+            mode = Some(OwnershipMode::ByValue);
+        }
+    }
+
+    mode
+}
+
+pub(crate) fn effective_ownership_mode(
+    attrs: &[syn::Attribute],
+    inherited: OwnershipMode,
+) -> OwnershipMode {
+    parse_ownership_mode(attrs).unwrap_or(inherited)
+}
+
+pub(crate) fn validate_ownership_attrs(attrs: &[syn::Attribute]) -> Result<(), syn::Error> {
+    let _ = attrs;
+    Ok(())
+}
+
+pub(crate) fn is_ownership_attr(attr: &syn::Attribute) -> bool {
+    attr.path().is_ident(INTERNAL_MOVE_ATTR)
+}
+
+fn move_marker_attr() -> TokenStream {
+    let ident = syn::Ident::new(INTERNAL_MOVE_ATTR, Span::call_site());
+    quote!(#[#ident])
+}
+
+fn rewrite_move_param_group(stream: TokenStream) -> TokenStream {
+    let tokens: Vec<_> = stream.into_iter().collect();
+    let mut out = TokenStream::new();
+    let mut i = 0usize;
+    let mut at_arg_start = true;
+
+    while i < tokens.len() {
+        if at_arg_start {
+            while i + 1 < tokens.len() {
+                let TokenTree::Punct(punct) = &tokens[i] else {
+                    break;
+                };
+                let TokenTree::Group(group) = &tokens[i + 1] else {
+                    break;
+                };
+                if punct.as_char() != '#' || group.delimiter() != Delimiter::Bracket {
+                    break;
+                }
+
+                out.extend([tokens[i].clone(), tokens[i + 1].clone()]);
+                i += 2;
+            }
+
+            if let Some(TokenTree::Ident(ident)) = tokens.get(i)
+                && ident == "move"
+            {
+                out.extend(move_marker_attr());
+                i += 1;
+            }
+
+            at_arg_start = false;
+            continue;
+        }
+
+        let token = match tokens.get(i) {
+            Some(token) => token.clone(),
+            None => break,
+        };
+        i += 1;
+
+        match token {
+            TokenTree::Punct(ref punct) if punct.as_char() == ',' => {
+                at_arg_start = true;
+                out.extend([token]);
+            }
+            TokenTree::Group(group) => {
+                let rewritten = rewrite_move_syntax(group.stream());
+                let mut new_group = Group::new(group.delimiter(), rewritten);
+                new_group.set_span(group.span());
+                out.extend([TokenTree::Group(new_group)]);
+            }
+            other => out.extend([other]),
+        }
+    }
+
+    out
+}
+
+fn rewrite_move_syntax(input: TokenStream) -> TokenStream {
+    let mut out = TokenStream::new();
+    let mut awaiting_fn_params = false;
+
+    for token in input {
+        match token {
+            TokenTree::Ident(ident) if ident == "fn" => {
+                awaiting_fn_params = true;
+                out.extend([TokenTree::Ident(ident)]);
+            }
+            TokenTree::Group(group)
+                if awaiting_fn_params && group.delimiter() == Delimiter::Parenthesis =>
+            {
+                awaiting_fn_params = false;
+                let rewritten = rewrite_move_param_group(group.stream());
+                let mut new_group = Group::new(group.delimiter(), rewritten);
+                new_group.set_span(group.span());
+                out.extend([TokenTree::Group(new_group)]);
+            }
+            TokenTree::Group(group) => {
+                let rewritten = rewrite_move_syntax(group.stream());
+                let mut new_group = Group::new(group.delimiter(), rewritten);
+                new_group.set_span(group.span());
+                out.extend([TokenTree::Group(new_group)]);
+            }
+            other => out.extend([other]),
+        }
+    }
+
+    out
+}
 
 /// A test utility function that parses multiple attributes
 #[cfg(test)]
@@ -54,6 +185,7 @@ struct ExportMethodSpec {
     trait_path: Option<syn::Path>,
     method: syn::Ident,
     decl_sig: Option<syn::Signature>,
+    ownership_mode: OwnershipMode,
     unsafe_name: Option<syn::LitStr>,
     unsafe_no_mangle: bool,
 }
@@ -62,6 +194,7 @@ struct ExportMethodSpec {
 struct ExportFunctionSpec {
     fn_path: syn::Path,
     decl_sig: Option<syn::Signature>,
+    ownership_mode: OwnershipMode,
     unsafe_name: Option<syn::LitStr>,
     unsafe_no_mangle: bool,
 }
@@ -223,6 +356,7 @@ impl syn::parse::Parse for ExportMethodSpec {
             trait_path,
             method,
             decl_sig: None,
+            ownership_mode: OwnershipMode::Borrow,
             unsafe_name,
             unsafe_no_mangle,
         })
@@ -399,6 +533,36 @@ fn gen_method_export_name(spec: &ExportMethodSpec, resolved: &ResolvedMethodExpo
     }
 }
 
+fn inject_missing_lifetimes(ty: &mut syn::Type, lifetime_name: &str) {
+    struct LifetimeInjector<'a> {
+        lifetime: &'a str,
+    }
+
+    impl syn::visit_mut::VisitMut for LifetimeInjector<'_> {
+        fn visit_type_reference_mut(&mut self, node: &mut syn::TypeReference) {
+            if node.lifetime.is_none() {
+                node.lifetime = Some(syn::Lifetime::new(
+                    &format!("'{}", self.lifetime),
+                    proc_macro2::Span::call_site(),
+                ));
+            }
+            syn::visit_mut::visit_type_reference_mut(self, node);
+        }
+    }
+
+    syn::visit_mut::VisitMut::visit_type_mut(
+        &mut LifetimeInjector {
+            lifetime: lifetime_name,
+        },
+        ty,
+    );
+}
+
+fn borrowed_body_src_type(mut ty: syn::Type) -> TokenStream {
+    inject_missing_lifetimes(&mut ty, "_");
+    quote!(<#ty as co3::borrow::Borrow>::Borrowed<'_>)
+}
+
 fn gen_selected_export_fn_name(
     spec: &ExportMethodSpec,
     _resolved: &ResolvedMethodExport,
@@ -511,7 +675,7 @@ fn gen_selected_signature_method_export(
     let mut sync_stmts: Vec<TokenStream> = Vec::new();
     let mut call_args: Vec<TokenStream> = Vec::new();
     let mut target_arg_tys: Vec<TokenStream> = Vec::new();
-
+    let mut lifetime_builder = SignatureLifetimeBuilder::new(&[&sig.generics]);
     if let Some(receiver) = sig.receiver() {
         let receiver_rust_ty: syn::Type = if receiver.reference.is_none() {
             self_ty.clone()
@@ -520,13 +684,29 @@ fn gen_selected_signature_method_export(
         } else {
             syn::parse_quote!(&#self_ty)
         };
-        let receiver_ffi_ty = quote!(<#receiver_rust_ty as co3::ExternC>::CType);
+        let receiver_mode = effective_ownership_mode(&receiver.attrs, spec.ownership_mode);
+        let receiver_ffi_ty = if receiver_mode == OwnershipMode::Borrow {
+            let borrowed_ty = lifetime_builder.borrowed_src_type(receiver_rust_ty.clone());
+            quote!(<#borrowed_ty as co3::ExternC>::CType)
+        } else {
+            quote!(<#receiver_rust_ty as co3::ExternC>::CType)
+        };
         decl_params.push(quote!(receiver: #receiver_ffi_ty));
-        decode_stmts.push(quote! {
-            let mut receiver_store = Default::default();
-            let receiver: #receiver_rust_ty = unsafe { co3::Decode::decode(receiver, &mut receiver_store) }
-                .ok_or(co3::FfiReturn::TrapRepresentation)?;
-        });
+        if receiver_mode == OwnershipMode::Borrow {
+            let borrowed_ty = borrowed_body_src_type(receiver_rust_ty.clone());
+            decode_stmts.push(quote! {
+                let mut receiver_store = Default::default();
+                let receiver: #borrowed_ty = unsafe { co3::Decode::decode(receiver, &mut receiver_store) }
+                    .ok_or(co3::FfiReturn::TrapRepresentation)?;
+                let receiver: #receiver_rust_ty = co3::borrow::ToOwned::to_owned(receiver);
+            });
+        } else {
+            decode_stmts.push(quote! {
+                let mut receiver_store = Default::default();
+                let receiver: #receiver_rust_ty = unsafe { co3::Decode::decode(receiver, &mut receiver_store) }
+                    .ok_or(co3::FfiReturn::TrapRepresentation)?;
+            });
+        }
         target_arg_tys.push(quote!(#receiver_rust_ty));
         sync_stmts.push(quote! {
             co3::Store::sync(receiver_store).ok_or(co3::FfiReturn::TrapRepresentation)?;
@@ -547,14 +727,30 @@ fn gen_selected_signature_method_export(
         };
         let name = pat_ident.ident.clone();
         let rust_ty = rewrite_self_type(arg.ty.as_ref(), self_ty);
-        let ffi_ty = quote!(<#rust_ty as co3::ExternC>::CType);
+        let arg_mode = effective_ownership_mode(&arg.attrs, spec.ownership_mode);
+        let ffi_ty = if arg_mode == OwnershipMode::Borrow {
+            let borrowed_ty = lifetime_builder.borrowed_src_type(rust_ty.clone());
+            quote!(<#borrowed_ty as co3::ExternC>::CType)
+        } else {
+            quote!(<#rust_ty as co3::ExternC>::CType)
+        };
         let store = format_ident!("{name}_store");
         decl_params.push(quote!(#name: #ffi_ty));
-        decode_stmts.push(quote! {
-            let mut #store = Default::default();
-            let #name: #rust_ty = unsafe { co3::Decode::decode(#name, &mut #store) }
-                .ok_or(co3::FfiReturn::TrapRepresentation)?;
-        });
+        if arg_mode == OwnershipMode::Borrow {
+            let borrowed_ty = borrowed_body_src_type(rust_ty.clone());
+            decode_stmts.push(quote! {
+                let mut #store = Default::default();
+                let #name: #borrowed_ty = unsafe { co3::Decode::decode(#name, &mut #store) }
+                    .ok_or(co3::FfiReturn::TrapRepresentation)?;
+                let #name: #rust_ty = co3::borrow::ToOwned::to_owned(#name);
+            });
+        } else {
+            decode_stmts.push(quote! {
+                let mut #store = Default::default();
+                let #name: #rust_ty = unsafe { co3::Decode::decode(#name, &mut #store) }
+                    .ok_or(co3::FfiReturn::TrapRepresentation)?;
+            });
+        }
         target_arg_tys.push(quote!(#rust_ty));
         sync_stmts.push(quote! {
             co3::Store::sync(#store).ok_or(co3::FfiReturn::TrapRepresentation)?;
@@ -603,12 +799,13 @@ fn gen_selected_signature_method_export(
             }
         }
     };
-
+    let (export_generics, export_where_clause) =
+        lifetime_builder.split_for_signature(&[&sig.generics]);
     quote! {
         #[unsafe(export_name = #export_name)]
-        unsafe #abi fn #fn_name(
+        unsafe #abi fn #fn_name #export_generics (
             #(#decl_params),*
-        ) -> co3::FfiReturn {
+        ) -> co3::FfiReturn #export_where_clause {
             let fn_ = || {
                 let fn_body = || -> Result<(), co3::FfiReturn> {
                     #(#decode_stmts)*
@@ -663,6 +860,7 @@ fn gen_selected_function_export(
     let mut sync_stmts = Vec::new();
     let mut call_args = Vec::new();
     let mut target_arg_tys = Vec::new();
+    let mut lifetime_builder = SignatureLifetimeBuilder::new(&[&sig.generics]);
     for input in &sig.inputs {
         let syn::FnArg::Typed(arg) = input else {
             return syn::Error::new_spanned(
@@ -680,14 +878,27 @@ fn gen_selected_function_export(
         };
         let name = pat_ident.ident.clone();
         let ty = arg.ty.as_ref().clone();
+        let arg_mode = effective_ownership_mode(&arg.attrs, spec.ownership_mode);
         let store = format_ident!("{name}_store");
-        decl_params.push(quote!(#name: <#ty as co3::ExternC>::CType));
+        if arg_mode == OwnershipMode::Borrow {
+            let borrowed_ty = borrowed_body_src_type(ty.clone());
+            let decl_borrowed_ty = lifetime_builder.borrowed_src_type(ty.clone());
+            decl_params.push(quote!(#name: <#decl_borrowed_ty as co3::ExternC>::CType));
+            decode_stmts.push(quote! {
+                let mut #store = Default::default();
+                let #name: #borrowed_ty = unsafe { co3::Decode::decode(#name, &mut #store) }
+                    .ok_or(co3::FfiReturn::TrapRepresentation)?;
+                let #name: #ty = co3::borrow::ToOwned::to_owned(#name);
+            });
+        } else {
+            decl_params.push(quote!(#name: <#ty as co3::ExternC>::CType));
+            decode_stmts.push(quote! {
+                let mut #store = Default::default();
+                let #name: #ty = unsafe { co3::Decode::decode(#name, &mut #store) }
+                    .ok_or(co3::FfiReturn::TrapRepresentation)?;
+            });
+        }
         target_arg_tys.push(quote!(#ty));
-        decode_stmts.push(quote! {
-            let mut #store = Default::default();
-            let #name: #ty = unsafe { co3::Decode::decode(#name, &mut #store) }
-                .ok_or(co3::FfiReturn::TrapRepresentation)?;
-        });
         sync_stmts.push(quote! {
             co3::Store::sync(#store).ok_or(co3::FfiReturn::TrapRepresentation)?;
         });
@@ -731,12 +942,13 @@ fn gen_selected_function_export(
             }
         }
     };
-
+    let (export_generics, export_where_clause) =
+        lifetime_builder.split_for_signature(&[&sig.generics]);
     quote! {
         #[unsafe(export_name = #export_name)]
-        unsafe #abi fn #wrapper_name(
+        unsafe #abi fn #wrapper_name #export_generics (
             #(#decl_params),*
-        ) -> co3::FfiReturn {
+        ) -> co3::FfiReturn #export_where_clause {
             let fn_ = || {
                 let fn_body = || -> Result<(), co3::FfiReturn> {
                     #(#decode_stmts)*
@@ -1064,6 +1276,28 @@ fn strip_export_attrs(attrs: &mut Vec<syn::Attribute>) {
     attrs.retain(|attr| !is_export_attr(attr));
 }
 
+fn strip_ownership_attrs(attrs: &mut Vec<syn::Attribute>) {
+    attrs.retain(|attr| !is_ownership_attr(attr));
+}
+
+fn strip_signature_ownership_attrs(signature: &mut syn::Signature) {
+    struct OwnershipAttrStripper;
+
+    impl syn::visit_mut::VisitMut for OwnershipAttrStripper {
+        fn visit_receiver_mut(&mut self, node: &mut syn::Receiver) {
+            node.attrs.retain(|attr| !is_ownership_attr(attr));
+            syn::visit_mut::visit_receiver_mut(self, node);
+        }
+
+        fn visit_pat_type_mut(&mut self, node: &mut syn::PatType) {
+            node.attrs.retain(|attr| !is_ownership_attr(attr));
+            syn::visit_mut::visit_pat_type_mut(self, node);
+        }
+    }
+
+    syn::visit_mut::VisitMut::visit_signature_mut(&mut OwnershipAttrStripper, signature);
+}
+
 fn gen_export_link_prefix(link_prefix: syn::LitStr) -> TokenStream {
     let mut pref = link_prefix.value();
     if !pref.ends_with('_') {
@@ -1251,6 +1485,7 @@ pub fn export(attr: TokenStream, item: TokenStream) -> TokenStream {
     let result = match item {
         Impl(mut item) => {
             strip_export_attrs(&mut item.attrs);
+            strip_ownership_attrs(&mut item.attrs);
             let allow_non_lifetime_impl_generics_for_drop = item
                 .trait_
                 .as_ref()
@@ -1301,10 +1536,14 @@ pub fn export(attr: TokenStream, item: TokenStream) -> TokenStream {
                 match action {
                     MethodAction::Skip => {
                         strip_export_attrs(&mut method.attrs);
+                        strip_ownership_attrs(&mut method.attrs);
+                        strip_signature_ownership_attrs(&mut method.sig);
                     }
                     MethodAction::ExternShim(ffi_fn) => {
                         strip_export_attrs(&mut method.attrs);
+                        strip_ownership_attrs(&mut method.attrs);
                         strip_consumed_export_attrs(&mut method.attrs);
+                        strip_signature_ownership_attrs(&mut method.sig);
                         method.block.stmts.insert(0, syn::parse_quote! { #ffi_fn });
                     }
                 }
@@ -1326,7 +1565,9 @@ pub fn export(attr: TokenStream, item: TokenStream) -> TokenStream {
             };
 
             strip_export_attrs(&mut item.attrs);
+            strip_ownership_attrs(&mut item.attrs);
             strip_consumed_export_attrs(&mut item.attrs);
+            strip_signature_ownership_attrs(&mut item.sig);
             item.block.stmts.insert(0, syn::parse_quote! { #ffi_shim });
 
             quote! { #item }
@@ -1357,6 +1598,7 @@ pub fn export(attr: TokenStream, item: TokenStream) -> TokenStream {
         }
         Trait(mut item) => {
             strip_export_attrs(&mut item.attrs);
+            strip_ownership_attrs(&mut item.attrs);
             emit!(
                 emitter,
                 item,
@@ -1450,10 +1692,12 @@ fn apply_exports_entry_attrs(
                     ));
                 }
             }
+        } else if is_ownership_attr(attr) {
+            // consumed by ownership-mode parsing on the selected entry
         } else {
             return Err(syn::Error::new_spanned(
                 attr,
-                "unsupported attribute in export entry; only `#[unsafe(export_name = \"...\")]` and `#[unsafe(no_mangle)]` are allowed",
+                "unsupported attribute in export entry; only ownership attrs, `#[unsafe(export_name = \"...\")]`, and `#[unsafe(no_mangle)]` are allowed",
             ));
         }
     }
@@ -1577,17 +1821,21 @@ impl syn::parse::Parse for DeclMethod {
 }
 
 struct DeclFunction {
+    attrs: Vec<syn::Attribute>,
     _vis: syn::Visibility,
     sig: syn::Signature,
 }
 
 impl syn::parse::Parse for DeclFunction {
     fn parse(input: syn::parse::ParseStream) -> syn::Result<Self> {
-        // Use ForeignItemFn shape so visibility + semicolon declarations parse naturally.
-        let item = input.parse::<syn::ForeignItemFn>()?;
+        let attrs = input.call(syn::Attribute::parse_outer)?;
+        let vis = input.parse::<syn::Visibility>()?;
+        let sig = input.parse::<syn::Signature>()?;
+        input.parse::<syn::Token![;]>()?;
         Ok(Self {
-            _vis: item.vis,
-            sig: item.sig,
+            attrs,
+            _vis: vis,
+            sig,
         })
     }
 }
@@ -1701,6 +1949,18 @@ fn parse_export_entries(input: syn::parse::ParseStream) -> syn::Result<Vec<Expor
         }
         allowed.contains(&seg.ident.to_string())
     }
+    fn validate_sig_ownership_attrs(sig: &syn::Signature) -> syn::Result<()> {
+        if let Some(receiver) = sig.receiver() {
+            validate_ownership_attrs(&receiver.attrs)?;
+        }
+        for input in &sig.inputs {
+            let syn::FnArg::Typed(arg) = input else {
+                continue;
+            };
+            validate_ownership_attrs(&arg.attrs)?;
+        }
+        Ok(())
+    }
 
     let mut methods = Vec::new();
 
@@ -1713,6 +1973,7 @@ fn parse_export_entries(input: syn::parse::ParseStream) -> syn::Result<Vec<Expor
         }
 
         let entry_attrs = input.call(syn::Attribute::parse_outer)?;
+        validate_ownership_attrs(&entry_attrs)?;
         if input.peek(syn::Token![impl]) {
             let mut entry_handle_map: Option<BTreeMap<String, Vec<syn::Type>>> = None;
             for attr in &entry_attrs {
@@ -1749,8 +2010,14 @@ fn parse_export_entries(input: syn::parse::ParseStream) -> syn::Result<Vec<Expor
             syn::braced!(content in input);
             while !content.is_empty() {
                 let decl_method = content.parse::<DeclMethod>()?;
+                validate_ownership_attrs(&decl_method.attrs)?;
+                validate_sig_ownership_attrs(&decl_method.sig)?;
                 ensure_no_handle_arg_attrs(&decl_method.sig)?;
                 let method = decl_method.sig.ident.clone();
+                let mut combined_attrs = entry_attrs.clone();
+                combined_attrs.extend(decl_method.attrs.clone());
+                let ownership_mode =
+                    effective_ownership_mode(&combined_attrs, OwnershipMode::Borrow);
                 let mut entry = if let Some(key_types) = entry_handle_map.clone() {
                     let mut key_types = key_types;
                     if !key_types.contains_key("Self") {
@@ -1778,6 +2045,7 @@ fn parse_export_entries(input: syn::parse::ParseStream) -> syn::Result<Vec<Expor
                         trait_path: trait_path.clone(),
                         method,
                         decl_sig: decl_method.sig,
+                        ownership_mode,
                         key_types,
                         handle_id_specs: method_handle_id_specs,
                         unsafe_name: None,
@@ -1789,12 +2057,11 @@ fn parse_export_entries(input: syn::parse::ParseStream) -> syn::Result<Vec<Expor
                         trait_path: trait_path.clone(),
                         method,
                         decl_sig: Some(decl_method.sig),
+                        ownership_mode,
                         unsafe_name: None,
                         unsafe_no_mangle: false,
                     })
                 };
-                let mut combined_attrs = entry_attrs.clone();
-                combined_attrs.extend(decl_method.attrs);
                 apply_exports_entry_attrs(&mut entry, &combined_attrs)?;
                 methods.push(entry);
             }
@@ -1834,6 +2101,8 @@ fn parse_export_entries(input: syn::parse::ParseStream) -> syn::Result<Vec<Expor
             for item in trait_item.items {
                 match item {
                     syn::TraitItem::Fn(method_item) => {
+                        validate_ownership_attrs(&method_item.attrs)?;
+                        validate_sig_ownership_attrs(&method_item.sig)?;
                         if let Some(receiver) = method_item.sig.receiver()
                             && has_dispatch_arg_attr(&receiver.attrs)
                         {
@@ -1883,11 +2152,14 @@ fn parse_export_entries(input: syn::parse::ParseStream) -> syn::Result<Vec<Expor
                         let method = method_item.sig.ident.clone();
                         let mut combined_attrs = entry_attrs.clone();
                         combined_attrs.extend(method_item.attrs.clone());
+                        let ownership_mode =
+                            effective_ownership_mode(&combined_attrs, OwnershipMode::Borrow);
 
                         let mut entry = ExportEntrySpec::Poly(ExportPolySpec {
                             trait_path: Some(trait_path.clone()),
                             method,
                             decl_sig: method_item.sig.clone(),
+                            ownership_mode,
                             key_types,
                             handle_id_specs: method_handle_id_specs,
                             unsafe_name: None,
@@ -1914,6 +2186,8 @@ fn parse_export_entries(input: syn::parse::ParseStream) -> syn::Result<Vec<Expor
         };
         if is_fn_decl {
             let decl_fn = input.parse::<DeclFunction>()?;
+            validate_ownership_attrs(&decl_fn.attrs)?;
+            validate_sig_ownership_attrs(&decl_fn.sig)?;
             ensure_no_handle_arg_attrs(&decl_fn.sig)?;
             let sig = decl_fn.sig;
             if sig.receiver().is_some() {
@@ -1924,13 +2198,16 @@ fn parse_export_entries(input: syn::parse::ParseStream) -> syn::Result<Vec<Expor
             }
             let ident = sig.ident.clone();
             let fn_path: syn::Path = syn::parse_quote!(#ident);
+            let mut combined_attrs = entry_attrs.clone();
+            combined_attrs.extend(decl_fn.attrs);
             let mut entry = ExportEntrySpec::Function(ExportFunctionSpec {
                 fn_path,
                 decl_sig: Some(sig),
+                ownership_mode: effective_ownership_mode(&combined_attrs, OwnershipMode::Borrow),
                 unsafe_name: None,
                 unsafe_no_mangle: false,
             });
-            apply_exports_entry_attrs(&mut entry, &entry_attrs)?;
+            apply_exports_entry_attrs(&mut entry, &combined_attrs)?;
             methods.push(entry);
             continue;
         }
@@ -1980,6 +2257,7 @@ pub fn export_(input: TokenStream) -> TokenStream {
         }
     }
 
+    let input = rewrite_move_syntax(input);
     let input = match syn::parse2::<ExportInput>(input) {
         Ok(input) => input,
         Err(err) => return err.to_compile_error(),
@@ -2150,12 +2428,11 @@ struct ExternCFnDecl {
 
 impl syn::parse::Parse for ExternCFnDecl {
     fn parse(input: syn::parse::ParseStream) -> syn::Result<Self> {
-        let item = input.parse::<syn::ForeignItemFn>()?;
-        Ok(Self {
-            attrs: item.attrs,
-            vis: item.vis,
-            sig: item.sig,
-        })
+        let attrs = input.call(syn::Attribute::parse_outer)?;
+        let vis = input.parse::<syn::Visibility>()?;
+        let sig = input.parse::<syn::Signature>()?;
+        input.parse::<syn::Token![;]>()?;
+        Ok(Self { attrs, vis, sig })
     }
 }
 
@@ -2600,7 +2877,7 @@ fn expand_extern_import_decls(
     fn collect_impl_handle_map(
         attrs: &[syn::Attribute],
         emitter: &mut Emitter,
-    ) -> Option<BTreeMap<String, Vec<syn::Type>>> {
+    ) -> Result<Option<BTreeMap<String, Vec<syn::Type>>>, ()> {
         let mut out = None;
         for attr in attrs {
             match parse_entry_handle_map_attr(attr) {
@@ -2611,13 +2888,17 @@ fn expand_extern_import_decls(
                             attr,
                             "`handle` mapping can only be provided once per impl entry"
                         );
+                        return Err(());
                     }
                 }
                 Ok(None) => {}
-                Err(err) => emit!(emitter, attr, "{}", err),
+                Err(err) => {
+                    emit!(emitter, attr, "{}", err);
+                    return Err(());
+                }
             }
         }
-        out
+        Ok(out)
     }
     fn type_is_ident(ty: &syn::Type, ident: &syn::Ident) -> bool {
         let syn::Type::Path(type_path) = ty else {
@@ -2837,7 +3118,10 @@ fn expand_extern_import_decls(
     for decl in decls {
         match decl {
             ExternCDecl::Impl(decl) => {
-                let impl_dispatch_map = collect_impl_handle_map(&decl.attrs, &mut emitter);
+                let Ok(impl_dispatch_map) = collect_impl_handle_map(&decl.attrs, &mut emitter)
+                else {
+                    continue;
+                };
                 let impl_has_bare_dispatch = has_bare_dispatch_marker(&decl.attrs);
                 let items = decl.items.iter().map(|item| match item {
                     ExternCImplItemDecl::Method(m) => {
@@ -3125,8 +3409,8 @@ pub fn extern_C(input: TokenStream) -> TokenStream {
         }
     }
 
-    let original_input = input.clone();
-    let input = match syn::parse2::<ExternCInput>(input) {
+    let rewritten_input = rewrite_move_syntax(input);
+    let input = match syn::parse2::<ExternCInput>(rewritten_input.clone()) {
         Err(err) => return err.to_compile_error(),
         Ok(input) => input,
     };
@@ -3150,7 +3434,7 @@ pub fn extern_C(input: TokenStream) -> TokenStream {
     extern_(
         (quote! {
             #![abi = "C"]
-            #original_input
+            #rewritten_input
         })
         .into(),
     )
@@ -3173,6 +3457,7 @@ pub fn extern_(input: TokenStream) -> TokenStream {
         }
     }
 
+    let input = rewrite_move_syntax(input);
     let input = match syn::parse2::<ExternInput>(input) {
         Err(err) => return err.to_compile_error(),
         Ok(input) => input,

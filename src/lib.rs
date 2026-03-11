@@ -636,7 +636,7 @@ disjoint_impls! {
     {
         type Store = ();
 
-        fn encode<'itm>(self, (): &'itm mut ()) -> Self::CType
+        fn encode<'itm>(self, (): &mut ()) -> Self::CType
         where
             Self: 'itm,
         {
@@ -650,7 +650,7 @@ disjoint_impls! {
     {
         type Store = ();
 
-        fn encode<'itm>(self, (): &'itm mut ()) -> Self::CType
+        fn encode<'itm>(self, (): &mut ()) -> Self::CType
         where
             Self: 'itm,
         {
@@ -706,7 +706,7 @@ disjoint_impls! {
     {
         type Store = ();
 
-        fn encode<'itm>(self, (): &'itm mut ()) -> Self::CType
+        fn encode<'itm>(self, (): &mut ()) -> Self::CType
         where
             Self: 'itm,
         {
@@ -720,7 +720,7 @@ disjoint_impls! {
     {
         type Store = ();
 
-        fn encode<'itm>(self, (): &'itm mut ()) -> Self::CType
+        fn encode<'itm>(self, (): &mut ()) -> Self::CType
         where
             Self: 'itm,
         {
@@ -1788,21 +1788,39 @@ macro_rules! reprC {
         impl$(<$($params)*>)? $crate::ir::ReprFamily for $self_ty $(where $($preds)*)? {
             type Kind = $crate::ir::Robust;
         }
+
+        impl $(<$($params)*>)? $crate::borrow::DropFamily for $self_ty $(where $($preds)*)? {
+            type Kind = $crate::borrow::NoDrop;
+        }
+
         impl $(<$($params)*>)? $crate::niche::NicheFamily for $self_ty $(where $($preds)*)? {
             type Kind = $crate::niche::WithoutNiche;
         }
 
-        impl $(<$($params)*>)? $crate::borrow::Borrow for $self_ty $(where $($preds)*)? {
-            type Borrowed<'_išč> = Self where Self: '_išč;
+        impl<$($($params)*)?> $crate::borrow::Borrow for $self_ty where
+            $($($preds)*)?
+        {
+            type Borrowed<'_išč> = Self
+            where
+                Self: '_išč;
+
             type Store = ();
 
-            fn borrow<'_išč>(self, (): &'_išč mut ()) -> Self::Borrowed<'_išč> where Self: '_išč {
+            fn borrow<'_itm>(self, (): &mut ()) -> Self::Borrowed<'_itm>
+            where
+                Self: '_itm,
+            {
                 self
             }
         }
 
-        impl $(<$($params)*>)? $crate::borrow::DropFamily for $self_ty $(where $($preds)*)? {
-            type Kind = $crate::borrow::NoDrop;
+        impl<'_išč, $($($params)*)?> $crate::borrow::ToOwned<'_išč> for $self_ty where
+            Self: '_išč,
+            $($($preds)*)?
+        {
+            fn to_owned(borrowed: Self::Borrowed<'_išč>) -> Self {
+                borrowed
+            }
         }
     };
 
@@ -1810,7 +1828,7 @@ macro_rules! reprC {
         type Target = $target:ty;
     }) => {
         $crate::reprC! {
-            @transparent [for<'_dummy>] [] $self_ty $([$($preds)*])? {
+            @transparent_delegate_niche [for<'_dummy>] [] $self_ty $([$($preds)*])? {
                 type Target = $target;
                 // NOTE: When delegating there is no trap representations in the immediate `Self::Target`
                 // Whether `Self::Target` itself has trap representations is not to be considered here
@@ -1818,61 +1836,11 @@ macro_rules! reprC {
             }
         }
     };
-    (unsafe impl $(( $($params:tt)* ))? Transparent for $self_ty:ty $(where ( $($preds:tt)* ))? {
-        type Target = $target:ty;
-
-        const NICHE_VALUE: $niche_ty:ty = $niche_value:expr;
-        fn is_valid($target_var:ident: $target_ty:ty) -> $ret_val:ty
-            $block:block
-    }) => {
-        impl $(<$($params)*>)? $crate::ir::ReprFamily for $self_ty $(where $($preds)*)? {
-            type Kind = $crate::ir::Transmuted;
-        }
-
-        impl $(<$($params)*>)? $crate::niche::NicheFamily for $self_ty $(where $($preds)*)? {
-            type Kind = $crate::niche::WithCustomNiche;
-        }
-
-        $crate::reprC! {
-            @transparent_borrow [] [$($($params)*)?] $self_ty $([$($preds)*])? {
-                type Target = $target;
-            }
-        }
-
-        impl $(<$($params)*>)? $crate::niche::Niche for $self_ty $(where $($preds)*)? {
-            const NICHE_VALUE: $niche_ty = {
-                assert!($crate::impls!
-                    // TODO: This introduces a dependency, can we do without?
-                    // and it also adds checks for internal types like `NonZeroU8`
-                    ($target: $crate::niche::NicheFamily<Kind = $crate::niche::WithoutNiche>),
-                    "Transparent CAN'T define a custom niche if target has a niche"
-                );
-
-                $niche_value
-            };
-        }
-
-        // SAFETY: `$ty` is transmutable into `$target` and `is_valid` doesn't return false positives
-        unsafe impl $(<$($params)*>)? $crate::transmute::CheckedTransmute for $self_ty $(where $($preds)*)? {
-            type Target = $target;
-
-            #[inline(always)]
-            fn is_valid($target_var: $target_ty) -> bool $block
-        }
-
-        unsafe impl $(<$($params)*>)? $crate::transmute::EncodeTransmuted<false> for $self_ty
-        where
-            $target: $crate::Encode,
-            $($($preds)*)?
-        {
-            type Store = <$target as $crate::Encode>::Store;
-        }
-    };
-    (unsafe impl $(( $($params:tt)* ))? Transparent for $self_ty:ty $(where ( $($preds:tt)* ))? {
+    (unsafe impl $(( $($params:tt)+ ))? Transparent for $self_ty:ty $(where ( $($preds:tt)* ))? {
         type Target = $target:ty;
     }) => {
         $crate::reprC! {
-            @transparent [] [$($($params)*)?] $self_ty $([$($preds)*])? {
+            @transparent_delegate_niche [] [$($($params)+)?] $self_ty $([$($preds)*])? {
                 type Target = $target;
                 // NOTE: When delegating there is no trap representations in the immediate `Self::Target`
                 // Whether `Self::Target` itself has trap representations is not to be considered here
@@ -1880,6 +1848,7 @@ macro_rules! reprC {
             }
         }
     };
+
     (unsafe impl $(())?  Transparent for $self_ty:ty $(where ( $($preds:tt)* ))? {
         type Target = $target:ty;
 
@@ -1887,27 +1856,58 @@ macro_rules! reprC {
             $block:block
     }) => {
         $crate::reprC! {
-            @transparent [for<'_dummy>] [] $self_ty $([$($preds)*])? {
+            @transparent_delegate_niche [for<'_dummy>] [] $self_ty $([$($preds)*])? {
                 type Target = $target;
                 fn is_valid($target_var: $target_ty) -> bool $block
             }
         }
     };
-    (unsafe impl $(( $($params:tt)* ))? Transparent for $self_ty:ty $(where ( $($preds:tt)* ))? {
+    (unsafe impl ( $($params:tt)+ ) Transparent for $self_ty:ty $(where ( $($preds:tt)* ))? {
         type Target = $target:ty;
 
         fn is_valid($target_var:ident: $target_ty:ty) -> $ret_val:ty
             $block:block
     }) => {
         $crate::reprC! {
-            @transparent [] [$($($params)*)?] $self_ty $([$($preds)*])? {
+            @transparent_delegate_niche [] [$($($params)+)?] $self_ty $([$($preds)*])? {
                 type Target = $target;
                 fn is_valid($target_var: $target_ty) -> bool $block
             }
         }
     };
 
-    (@transparent [$($for_dummy:tt)*] [$($impl_generics:tt)*] $self_ty:ty $([$($preds:tt)*])? {
+    (unsafe impl $(())? Transparent for $self_ty:ty $(where ( $($preds:tt)* ))? {
+        type Target = $target:ty;
+
+        const NICHE_VALUE: $niche_ty:ty = $niche_value:expr;
+        fn is_valid($target_var:ident: $target_ty:ty) -> $ret_val:ty
+            $block:block
+    }) => {
+        $crate::reprC! {
+            @transparent_explicit_niche [for<'_dummy>] [] $self_ty $([$($preds)*])? {
+                type Target = $target;
+                const NICHE_VALUE: $niche_ty = $niche_value;
+                fn is_valid($target_var: $target_ty) -> bool $block
+            }
+        }
+    };
+    (unsafe impl ( $($params:tt)+ ) Transparent for $self_ty:ty $(where ( $($preds:tt)* ))? {
+        type Target = $target:ty;
+
+        const NICHE_VALUE: $niche_ty:ty = $niche_value:expr;
+        fn is_valid($target_var:ident: $target_ty:ty) -> $ret_val:ty
+            $block:block
+    }) => {
+        $crate::reprC! {
+            @transparent_explicit_niche [] [$($params)+] $self_ty $([$($preds)*])? {
+                type Target = $target;
+                const NICHE_VALUE: $niche_ty = $niche_value;
+                fn is_valid($target_var: $target_ty) -> bool $block
+            }
+        }
+    };
+
+    (@transparent_delegate_niche [$($for_dummy:tt)*] [$($impl_generics:tt)*] $self_ty:ty $([$($preds:tt)*])? {
         type Target = $target:ty;
         fn is_valid($target_var:ident: $target_ty:ty) -> bool $block:block
     }) => {
@@ -1928,8 +1928,10 @@ macro_rules! reprC {
             }
         }
 
+        #[allow(dead_code)]
         impl<$($impl_generics)*> $crate::niche::Niche for $self_ty where
             $($for_dummy)* $target: $crate::niche::Niche,
+            $($for_dummy)* Self: Sized,
             $($($preds)*)?
         {
             const NICHE_VALUE: <Self as $crate::ExternC>::CType = <$target as $crate::niche::Niche>::NICHE_VALUE;
@@ -1938,6 +1940,7 @@ macro_rules! reprC {
         unsafe impl<$($impl_generics)*> $crate::niche::StableNiche for $self_ty
         where
             $($for_dummy)* $target: $crate::niche::StableNiche,
+            $($for_dummy)* Self: Sized,
             $($($preds)*)?
         {}
 
@@ -1948,9 +1951,62 @@ macro_rules! reprC {
             fn is_valid($target_var: $target_ty) -> bool $block
         }
 
+        #[allow(dead_code)]
         unsafe impl<$($impl_generics)*> $crate::transmute::EncodeTransmuted<false> for $self_ty
         where
             $($for_dummy)* $target: $crate::Encode,
+            $($for_dummy)* Self: Sized,
+            $($($preds)*)?
+        {
+            type Store = <$target as $crate::Encode>::Store;
+        }
+    };
+
+    (@transparent_explicit_niche [$($for_dummy:tt)*] [$($impl_generics:tt)*] $self_ty:ty $([$($preds:tt)*])? {
+        type Target = $target:ty;
+        const NICHE_VALUE: $niche_ty:ty = $niche_value:expr;
+        fn is_valid($target_var:ident: $target_ty:ty) -> bool $block:block
+    }) => {
+        impl<$($impl_generics)*> $crate::ir::ReprFamily for $self_ty $(where $($preds)*)? {
+            type Kind = $crate::ir::Transmuted;
+        }
+
+        impl<$($impl_generics)*> $crate::niche::NicheFamily for $self_ty where $($($preds)*)? {
+            type Kind = $crate::niche::WithCustomNiche;
+        }
+
+        $crate::reprC! {
+            @transparent_borrow [$($for_dummy)*] [$($impl_generics)*] $self_ty $([$($preds)*])? {
+                type Target = $target;
+            }
+        }
+
+        #[allow(dead_code)]
+        impl<$($impl_generics)*> $crate::niche::Niche for $self_ty where $($($preds)*)? {
+            const NICHE_VALUE: $niche_ty = {
+                assert!($crate::impls!
+                    // TODO: This introduces a dependency, can we do without?
+                    // and it also adds checks for internal types like `NonZeroU8`
+                    ($target: $crate::niche::NicheFamily<Kind = $crate::niche::WithoutNiche>),
+                    "Transparent CAN'T define a custom niche if target has a niche"
+                );
+
+                $niche_value
+            };
+        }
+
+        // SAFETY: `$ty` is transmutable into `$target` and `is_valid` doesn't return false positives
+        unsafe impl<$($impl_generics)*> $crate::transmute::CheckedTransmute for $self_ty $(where $($preds)*)? {
+            type Target = $target;
+
+            #[inline(always)]
+            fn is_valid($target_var: $target_ty) -> bool $block
+        }
+
+        #[allow(dead_code)]
+        unsafe impl<$($impl_generics)*> $crate::transmute::EncodeTransmuted<false> for $self_ty
+        where
+            $target: $crate::Encode,
             $($($preds)*)?
         {
             type Store = <$target as $crate::Encode>::Store;
@@ -1962,71 +2018,101 @@ macro_rules! reprC {
     }) => {
         impl<$($impl_generics)*> $crate::borrow::DropFamily for $self_ty
         where
-            $($for_dummy)* $target: $crate::borrow::DropFamily,
+            $target: $crate::borrow::DropFamily,
             $($($preds)*)?
         {
             type Kind = <$target as $crate::borrow::DropFamily>::Kind;
         }
 
         const _: () = {
-            use $crate::borrow::Borrow;
+            use $crate::borrow::{Borrow, ToOwned};
 
             $crate::disjoint_impls! {
                 #[disjoint_impls(remote)]
-                // TODO: Make the trait private
                 pub trait Borrow: Sized {
-                    type Store: Default;
-
                     type Borrowed<'itm>
                     where
                         Self: 'itm;
+
+                    type Store: Default;
 
                     fn borrow<'itm>(self, store: &'itm mut Self::Store) -> Self::Borrowed<'itm>
                     where
                         Self: 'itm;
                 }
 
+                #[allow(unused)]
                 impl<$($impl_generics)*> Borrow for $self_ty
                 where
-                    // TODO: '_dummy is not required on all impls
-                    for<'_dummy> Self: $crate::borrow::DropFamily<Kind = $crate::borrow::NoDrop>,
+                    $($for_dummy)* Self: $crate::borrow::DropFamily<Kind = $crate::borrow::NoDrop> + Sized,
                     $($($preds)*)?
                 {
-                    type Store = ();
-
-                    type Borrowed<'itm>
-                        = Self
+                    type Borrowed<'itm> = Self
                     where
                         Self: 'itm;
+
+                    type Store = ();
 
                     #[inline(always)]
                     fn borrow<'itm>(self, (): &mut ()) -> Self::Borrowed<'itm>
                     where
                         Self: 'itm,
                     {
+                        const { assert!($crate::impls!(Self: !Drop)); }
                         self
                     }
                 }
+
+                #[allow(unused)]
                 impl<$($impl_generics)*> Borrow for $self_ty
                 where
-                    // TODO: '_dummy is not required on all impls
-                    for<'_dummy> Self: $crate::borrow::DropFamily<Kind = $crate::borrow::NeedsDrop>,
+                    $($for_dummy)* Self: $crate::borrow::DropFamily<Kind = $crate::borrow::NeedsDrop> + Sized,
                     $($($preds)*)?
                 {
-                    // TODO: Wrapping in `Option` is not necessary if `Self: Default`
-                    type Store = Option<Self>;
-
-                    type Borrowed<'itm>
-                        = &'itm Self
+                    type Borrowed<'itm> = &'itm Self
                     where
                         Self: 'itm;
+
+                    type Store = Option<Self>;
 
                     #[inline(always)]
                     fn borrow<'itm>(self, store: &'itm mut Self::Store) -> Self::Borrowed<'itm>
                     where
                         Self: 'itm,
                     {
+                        const { assert!($crate::impls!(Self: !Drop)); }
                         store.insert(self)
+                    }
+                }
+            }
+
+            $crate::disjoint_impls! {
+                #[disjoint_impls(remote)]
+                pub trait ToOwned<'_išč>: Borrow {
+                    fn to_owned(borrowed: Self::Borrowed<'_išč>) -> Self;
+                }
+
+                #[allow(dead_code)]
+                impl<'_išč, $($impl_generics)*> ToOwned<'_išč> for $self_ty
+                where
+                    $($for_dummy)* Self: $crate::borrow::DropFamily<Kind = $crate::borrow::NoDrop> + Sized + '_išč,
+                    $($($preds)*)?
+                {
+                    #[inline(always)]
+                    fn to_owned(borrowed: Self::Borrowed<'_išč>) -> Self {
+                        borrowed
+                    }
+                }
+
+                #[allow(dead_code)]
+                impl<'_išč, $($impl_generics)*> ToOwned<'_išč> for $self_ty
+                where
+                    $($for_dummy)* Self: $crate::borrow::DropFamily<Kind = $crate::borrow::NeedsDrop> + Clone + '_išč,
+                    $($($preds)*)?
+                {
+                    #[inline(always)]
+                    fn to_owned(borrowed: Self::Borrowed<'_išč>) -> Self {
+                        borrowed.clone()
                     }
                 }
             }

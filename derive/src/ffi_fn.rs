@@ -3,9 +3,10 @@ use quote::{ToTokens, quote};
 use syn::{Ident, LitStr, Path, Type, visit_mut::VisitMut};
 
 use crate::{
+    OwnershipMode,
     impl_visitor::{Arg, FnDescriptor, path_symbol_name},
     is_unsafe_no_mangle_attr, parse_unsafe_export_name_attr,
-    utils::{gen_resolve_type, gen_store_name},
+    utils::{SignatureLifetimeBuilder, gen_resolve_type, gen_store_name},
     wrapper::HandleIdSpec,
 };
 
@@ -50,6 +51,7 @@ pub fn gen_inline_declaration(
         &Default::default(),
         trait_path,
         handle_id_specs,
+        true,
     );
     let link_name = gen_link_name_attr(
         fn_descriptor,
@@ -94,8 +96,14 @@ pub fn gen_definition(
         .or_else(|| fn_descriptor.sig.abi.clone())
         .unwrap_or_else(|| syn::parse_quote!(extern "Rust"));
     let ffi_fn_body = gen_body(fn_descriptor, trait_path);
-    let fn_signature =
-        gen_fn_signature(&ffi_fn_name, fn_descriptor, impl_generics, trait_path, &[]);
+    let fn_signature = gen_fn_signature(
+        &ffi_fn_name,
+        fn_descriptor,
+        impl_generics,
+        trait_path,
+        &[],
+        true,
+    );
     let is_exported_drop = trait_path.is_some_and(|path| path_symbol_name(path) == "Drop")
         && fn_descriptor.sig.ident == "drop";
     if is_exported_drop {
@@ -330,32 +338,46 @@ fn gen_fn_signature(
     impl_generics: &syn::Generics,
     trait_path: Option<&Path>,
     handle_id_specs: &[HandleIdSpec],
+    use_named_borrowed_lifetime: bool,
 ) -> TokenStream {
-    let self_arg = fn_descriptor
-        .receiver
-        .as_ref()
-        .map(|arg| gen_input_arg(arg, fn_descriptor, trait_path))
-        .map_or_else(Vec::new, |self_arg| vec![self_arg]);
-    let fn_args: Vec<_> = fn_descriptor
-        .input_args
-        .iter()
-        .map(|arg| gen_input_arg(arg, fn_descriptor, trait_path))
-        .collect();
-    let mut input_args = self_arg;
-    input_args.extend(fn_args);
+    let fn_generics = &fn_descriptor.sig.generics;
+    let mut lifetime_builder = SignatureLifetimeBuilder::new(&[impl_generics, fn_generics]);
+    let mut input_args = Vec::new();
+    if let Some(arg) = fn_descriptor.receiver.as_ref() {
+        input_args.push(gen_input_arg(
+            arg,
+            fn_descriptor,
+            trait_path,
+            use_named_borrowed_lifetime,
+            &mut lifetime_builder,
+        ));
+    }
+    for arg in &fn_descriptor.input_args {
+        input_args.push(gen_input_arg(
+            arg,
+            fn_descriptor,
+            trait_path,
+            use_named_borrowed_lifetime,
+            &mut lifetime_builder,
+        ));
+    }
     inject_handle_id_decl_args(handle_id_specs, &mut input_args);
     let output_arg =
         ffi_output_arg(fn_descriptor).map(|arg| gen_out_ptr_arg(arg, fn_descriptor, trait_path));
 
-    let mut generics = impl_generics.clone();
-    let fn_generics = &fn_descriptor.sig.generics;
-    generics.params.extend(fn_generics.params.clone());
-    if let Some(fn_where_clause) = &fn_generics.where_clause {
+    let generics = if use_named_borrowed_lifetime {
+        lifetime_builder.build_generics(&[impl_generics, fn_generics])
+    } else {
+        let mut generics = impl_generics.clone();
+        generics.params.extend(fn_generics.params.clone());
+        if let Some(fn_where_clause) = &fn_generics.where_clause {
+            generics
+                .make_where_clause()
+                .predicates
+                .extend(fn_where_clause.predicates.clone());
+        }
         generics
-            .make_where_clause()
-            .predicates
-            .extend(fn_where_clause.predicates.clone());
-    }
+    };
 
     let (impl_generics, _, where_clause) = generics.split_for_impl();
 
@@ -368,21 +390,31 @@ fn gen_input_arg(
     arg: &Arg,
     fn_descriptor: &FnDescriptor,
     trait_path: Option<&Path>,
+    use_named_borrowed_lifetime: bool,
+    lifetime_builder: &mut SignatureLifetimeBuilder,
 ) -> TokenStream {
     let arg_name = arg.name();
     let src_type = declared_input_src_type(arg, fn_descriptor, trait_path);
-    let arg_type: Type = if arg.is_handle() {
+    let arg_type = if arg.is_handle() {
         if let Type::Reference(reference) = arg.src_type() {
             if reference.mutability.is_some() {
-                syn::parse_quote!(*mut co3::external::Extern)
+                quote!(*mut co3::external::Extern)
             } else {
-                syn::parse_quote!(*const co3::external::Extern)
+                quote!(*const co3::external::Extern)
             }
         } else {
-            syn::parse_quote!(*mut co3::external::Extern)
+            quote!(*mut co3::external::Extern)
         }
+    } else if arg.ownership_mode() == OwnershipMode::Borrow {
+        let borrowed_src_type = if use_named_borrowed_lifetime {
+            let src_type = declared_input_src_type(arg, fn_descriptor, trait_path);
+            lifetime_builder.borrowed_src_type(src_type)
+        } else {
+            borrowed_body_src_type(arg, fn_descriptor, trait_path)
+        };
+        quote!(<#borrowed_src_type as co3::ExternC>::CType)
     } else {
-        syn::parse_quote!(<#src_type as co3::ExternC>::CType)
+        quote!(<#src_type as co3::ExternC>::CType)
     };
 
     quote! { #arg_name: #arg_type }
@@ -524,12 +556,31 @@ pub fn gen_arg_ffi_to_src(
     let arg_name = arg.name();
     let src_type = resolved_src_type(arg, fn_descriptor, trait_path);
     let store_name = gen_store_name(arg_name);
+    if arg.ownership_mode() == OwnershipMode::Borrow {
+        let borrowed_src_type = borrowed_body_src_type(arg, fn_descriptor, trait_path);
+        return quote! {
+            let mut #store_name = Default::default();
+            let #arg_name: #borrowed_src_type = unsafe { co3::Decode::decode(#arg_name, &mut #store_name) }
+                .ok_or(co3::FfiReturn::TrapRepresentation)?;
+            let #arg_name: #src_type = co3::borrow::ToOwned::to_owned(#arg_name);
+        };
+    }
 
     quote! {
         let mut #store_name = Default::default();
         let #arg_name: #src_type = unsafe { co3::Decode::decode(#arg_name, &mut #store_name) }
             .ok_or(co3::FfiReturn::TrapRepresentation)?;
     }
+}
+
+fn borrowed_body_src_type(
+    arg: &Arg,
+    fn_descriptor: &FnDescriptor,
+    trait_path: Option<&Path>,
+) -> TokenStream {
+    let mut src_type = resolved_src_type(arg, fn_descriptor, trait_path);
+    inject_missing_lifetimes(&mut src_type, "_");
+    quote!(<#src_type as co3::borrow::Borrow>::Borrowed<'_>)
 }
 
 pub struct InjectColon;
@@ -677,6 +728,29 @@ fn qualify_trait_associated_types(
     Qualifier {
         self_ty,
         trait_path,
+    }
+    .visit_type_mut(ty);
+}
+
+fn inject_missing_lifetimes(ty: &mut Type, lifetime_name: &str) {
+    struct LifetimeInjector<'a> {
+        lifetime: &'a str,
+    }
+
+    impl VisitMut for LifetimeInjector<'_> {
+        fn visit_type_reference_mut(&mut self, i: &mut syn::TypeReference) {
+            if i.lifetime.is_none() {
+                i.lifetime = Some(syn::Lifetime::new(
+                    &format!("'{}", self.lifetime),
+                    proc_macro2::Span::call_site(),
+                ));
+            }
+            syn::visit_mut::visit_type_reference_mut(self, i);
+        }
+    }
+
+    LifetimeInjector {
+        lifetime: lifetime_name,
     }
     .visit_type_mut(ty);
 }

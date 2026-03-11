@@ -11,22 +11,32 @@ use syn::{
     visit_mut::VisitMut,
 };
 
-use crate::{emitter::Emitter, utils::unwrap_result_type, wrapper::is_self_ty};
+use crate::{
+    OwnershipMode, effective_ownership_mode, emitter::Emitter, parse_ownership_mode,
+    utils::unwrap_result_type, validate_ownership_attrs, wrapper::is_self_ty,
+};
 
 pub struct Arg {
     self_ty: Option<Path>,
     name: Ident,
     type_: Type,
     is_handle: bool,
+    ownership_mode: Option<OwnershipMode>,
 }
 
 impl Arg {
-    pub fn new(self_ty: Option<Path>, name: Ident, type_: Type) -> Self {
+    pub fn new(
+        self_ty: Option<Path>,
+        name: Ident,
+        type_: Type,
+        ownership_mode: Option<OwnershipMode>,
+    ) -> Self {
         Self {
             self_ty,
             name,
             type_,
             is_handle: false,
+            ownership_mode,
         }
     }
     pub fn new_with_handle(
@@ -34,12 +44,14 @@ impl Arg {
         name: Ident,
         type_: Type,
         is_handle: bool,
+        ownership_mode: Option<OwnershipMode>,
     ) -> Self {
         Self {
             self_ty,
             name,
             type_,
             is_handle,
+            ownership_mode,
         }
     }
     pub fn name(&self) -> &Ident {
@@ -50,6 +62,9 @@ impl Arg {
     }
     pub fn is_handle(&self) -> bool {
         self.is_handle
+    }
+    pub fn ownership_mode(&self) -> OwnershipMode {
+        self.ownership_mode.unwrap_or(OwnershipMode::Borrow)
     }
     pub fn src_type_is_empty_tuple(&self) -> bool {
         matches!(self.src_type_resolved(), Type::Tuple(syn::TypeTuple { ref elems, .. }) if elems.is_empty())
@@ -160,6 +175,7 @@ struct ImplVisitor<'ast, 'emitter> {
 struct FnVisitor<'ast, 'emitter> {
     emitter: &'emitter mut Emitter,
     fatal: bool,
+    inherited_ownership_mode: OwnershipMode,
     attrs: Vec<&'ast Attribute>,
     doc: Vec<&'ast Attribute>,
     /// Resolved type of the `Self` type
@@ -178,6 +194,7 @@ struct FnVisitor<'ast, 'emitter> {
     /// Name of the argument being visited
     curr_arg_name: Option<&'ast Ident>,
     curr_arg_is_handle: bool,
+    curr_arg_ownership_mode: Option<OwnershipMode>,
 }
 
 impl<'ast> ImplDescriptor<'ast> {
@@ -249,25 +266,45 @@ impl<'ast> FnDescriptor<'ast> {
     pub fn from_impl_method(
         emitter: &mut Emitter,
         self_ty: &'ast Path,
+        inherited_ownership_mode: OwnershipMode,
         node: &'ast syn::ImplItemFn,
     ) -> Option<Self> {
-        let mut visitor = FnVisitor::new(emitter, Some(self_ty));
+        let mut visitor = FnVisitor::new(emitter, Some(self_ty), inherited_ownership_mode);
 
         visitor.visit_impl_item_fn(node);
         FnDescriptor::from_visitor(visitor)
     }
 
     pub fn from_fn(emitter: &mut Emitter, node: &'ast syn::ItemFn) -> Option<Self> {
-        let mut visitor = FnVisitor::new(emitter, None);
+        let mut visitor = FnVisitor::new(emitter, None, OwnershipMode::Borrow);
 
         visitor.visit_item_fn(node);
         Self::from_visitor(visitor)
     }
 
-    fn from_visitor(visitor: FnVisitor<'ast, '_>) -> Option<Self> {
+    fn from_visitor(mut visitor: FnVisitor<'ast, '_>) -> Option<Self> {
         if visitor.fatal {
             return None;
         }
+        let fn_attrs = visitor
+            .attrs
+            .iter()
+            .map(|attr| (*attr).clone())
+            .collect::<Vec<_>>();
+        if let Err(err) = validate_ownership_attrs(&fn_attrs) {
+            emit!(visitor.emitter, err.span(), "{}", err);
+            return None;
+        }
+        let fn_ownership_mode =
+            effective_ownership_mode(&fn_attrs, visitor.inherited_ownership_mode);
+
+        if let Some(receiver) = &mut visitor.receiver {
+            receiver.ownership_mode = Some(receiver.ownership_mode.unwrap_or(fn_ownership_mode));
+        }
+        for arg in &mut visitor.input_args {
+            arg.ownership_mode = Some(arg.ownership_mode.unwrap_or(fn_ownership_mode));
+        }
+
         Some(Self {
             attrs: visitor.attrs,
             doc: visitor.doc,
@@ -439,10 +476,15 @@ impl<'ast, 'emitter> ImplVisitor<'ast, 'emitter> {
 }
 
 impl<'ast, 'emitter> FnVisitor<'ast, 'emitter> {
-    pub fn new(emitter: &'emitter mut Emitter, self_ty: Option<&'ast Path>) -> Self {
+    pub fn new(
+        emitter: &'emitter mut Emitter,
+        self_ty: Option<&'ast Path>,
+        inherited_ownership_mode: OwnershipMode,
+    ) -> Self {
         Self {
             emitter,
             fatal: false,
+            inherited_ownership_mode,
             attrs: Vec::new(),
             doc: Vec::new(),
             self_ty,
@@ -455,6 +497,7 @@ impl<'ast, 'emitter> FnVisitor<'ast, 'emitter> {
 
             curr_arg_name: None,
             curr_arg_is_handle: false,
+            curr_arg_ownership_mode: None,
         }
     }
 
@@ -476,6 +519,7 @@ impl<'ast, 'emitter> FnVisitor<'ast, 'emitter> {
             arg_name,
             src_type.clone(),
             self.curr_arg_is_handle,
+            self.curr_arg_ownership_mode.take(),
         ));
         self.curr_arg_is_handle = false;
     }
@@ -488,6 +532,7 @@ impl<'ast, 'emitter> FnVisitor<'ast, 'emitter> {
             self.self_ty.cloned(),
             Ident::new("__output", Span::call_site()),
             src_type.clone(),
+            Some(OwnershipMode::ByValue),
         );
 
         self.output_arg = Some(output_arg);
@@ -502,6 +547,9 @@ impl<'ast> Visit<'ast> for ImplVisitor<'ast, '_> {
         self.generics = Some(node);
     }
     fn visit_item_impl(&mut self, node: &'ast syn::ItemImpl) {
+        if let Err(err) = validate_ownership_attrs(&node.attrs) {
+            emit!(self.emitter, err.span(), "{}", err);
+        }
         let has_non_lifetime_generics = node
             .generics
             .params
@@ -552,7 +600,12 @@ impl<'ast> Visit<'ast> for ImplVisitor<'ast, '_> {
 
         for item in &node.items {
             if let syn::ImplItem::Fn(method) = item
-                && let Some(desc) = FnDescriptor::from_impl_method(self.emitter, self_ty, method)
+                && let Some(desc) = FnDescriptor::from_impl_method(
+                    self.emitter,
+                    self_ty,
+                    parse_ownership_mode(&node.attrs).unwrap_or(OwnershipMode::Borrow),
+                    method,
+                )
             {
                 self.fns.push(desc);
             }
@@ -625,6 +678,9 @@ impl<'ast> Visit<'ast> for FnVisitor<'ast, '_> {
     }
 
     fn visit_receiver(&mut self, node: &'ast syn::Receiver) {
+        if let Err(err) = validate_ownership_attrs(&node.attrs) {
+            emit!(self.emitter, err.span(), "{}", err);
+        }
         if let Some((_, lifetime)) = &node.reference
             && lifetime.is_some()
         {
@@ -656,10 +712,14 @@ impl<'ast> Visit<'ast> for FnVisitor<'ast, '_> {
             handle_name,
             src_type,
             is_handle,
+            parse_ownership_mode(&node.attrs),
         ));
     }
 
     fn visit_pat_type(&mut self, node: &'ast syn::PatType) {
+        if let Err(err) = validate_ownership_attrs(&node.attrs) {
+            emit!(self.emitter, err.span(), "{}", err);
+        }
         if let syn::Pat::Ident(ident) = &*node.pat
             && ident.ident == "self"
         {
@@ -697,6 +757,7 @@ impl<'ast> Visit<'ast> for FnVisitor<'ast, '_> {
                     handle_name,
                     src_type,
                     is_handle,
+                    parse_ownership_mode(&node.attrs),
                 ));
                 return;
             }
@@ -713,6 +774,7 @@ impl<'ast> Visit<'ast> for FnVisitor<'ast, '_> {
             .attrs
             .iter()
             .any(|attr| attr.path().is_ident("dispatch"));
+        self.curr_arg_ownership_mode = parse_ownership_mode(&node.attrs);
         self.add_input_arg(&node.ty);
     }
 

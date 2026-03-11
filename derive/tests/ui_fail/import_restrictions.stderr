@@ -78,6 +78,15 @@ error: `impl Drop` only supports bare `#[dispatch]` (without type mappings)
 75 |     #[dispatch(Self = [Opaque])]
    |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
+error: selector `T` can only be specified once in `#[dispatch(...)]`
+  --> tests/ui_fail/import_restrictions.rs:89:5
+   |
+89 | /     #[dispatch(
+90 | |         T = [Handle<u8>],
+91 | |         T = [Handle<i8>],
+92 | |     )]
+   | |______^
+
 error: cannot find attribute `link_crate` in this scope
   --> tests/ui_fail/import_restrictions.rs:42:7
    |

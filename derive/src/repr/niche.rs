@@ -32,7 +32,7 @@ pub fn gen_struct_niche_ir(
         #fields_tuple: co3::niche::NicheFamily,
     });
 
-    let for_dummy = (!is_parametrized).then_some(quote! { for<'_dšč> });
+    let for_dummy = (!is_parametrized).then_some(quote! { for<'_dummy> });
     let niche_field_values = accessors.iter().map(|accessor| {
         quote! { <#fields_tuple as co3::niche::Niche>::NICHE_VALUE.#accessor }
     });

@@ -1,14 +1,43 @@
-error[E0277]: the trait bound `NoReprStruct: out_ptr::_::NonLocal0<NoReprStructStore<()>>` is not satisfied
+error[E0277]: the trait bound `Vec<u8>: co3::_::Decode0<'_, Vec<Robust>>` is not satisfied
+ --> tests/ui_fail/non_local_out_ptr.rs:3:17
+  |
+3 | #[derive(Clone, ReprC)]
+  |                 ^^^^^ the trait `co3::_::Decode0<'_, Vec<Robust>>` is not implemented for `Vec<u8>`
+  |
+help: the trait `co3::_::Decode0<'_, Vec<Transmuted>>` is implemented for `Vec<R>`
+ --> $WORKSPACE/src/lib.rs
+  |
+  | /     impl<'d, R: CheckedTransmute<Target: Sized>> Decode<'d, false> for Vec<R>
+  | |     where
+  | |         Vec<<R as CheckedTransmute>::Target>: Decode<'d>,
+  | |         Self: ReprFamily<Kind = Vec<Transmuted>>,
+  | |_________________________________________________^
+  = note: required for `Vec<u8>` to implement `Decode<'_dšč>`
+  = note: this error originates in the derive macro `ReprC` (in Nightly builds, run with -Z macro-backtrace for more info)
+
+error[E0277]: the trait bound `Vec<u8>: co3::_::Decode0<'_, Vec<Robust>>` is not satisfied
+ --> tests/ui_fail/non_local_out_ptr.rs:6:17
+  |
+6 | #[derive(Clone, ReprC)]
+  |                 ^^^^^ the trait `co3::_::Decode0<'_, Vec<Robust>>` is not implemented for `Vec<u8>`
+  |
+help: the trait `co3::_::Decode0<'_, Vec<Transmuted>>` is implemented for `Vec<R>`
+ --> $WORKSPACE/src/lib.rs
+  |
+  | /     impl<'d, R: CheckedTransmute<Target: Sized>> Decode<'d, false> for Vec<R>
+  | |     where
+  | |         Vec<<R as CheckedTransmute>::Target>: Decode<'d>,
+  | |         Self: ReprFamily<Kind = Vec<Transmuted>>,
+  | |_________________________________________________^
+  = note: required for `Vec<u8>` to implement `Decode<'_dšč>`
+  = note: this error originates in the derive macro `ReprC` (in Nightly builds, run with -Z macro-backtrace for more info)
+
+error[E0277]: the trait bound `Vec<NoReprStruct>: OutPtrWrite` is not satisfied
   --> tests/ui_fail/non_local_out_ptr.rs:12:46
    |
 12 | pub extern "C" fn return_no_repr_struct() -> Vec<NoReprStruct> {
-   |                                              ^^^^^^^^^^^^^^^^^ unsatisfied trait bound
+   |                                              ^^^^^^^^^^^^^^^^^ the trait `out_ptr::_::OutPtrWrite0<Vec<NoReprStruct>>` is not implemented for `Vec<NoReprStruct>`
    |
-help: the trait `out_ptr::_::NonLocal0<NoReprStructStore<()>>` is not implemented for `NoReprStruct`
-  --> tests/ui_fail/non_local_out_ptr.rs:4:1
-   |
- 4 | pub struct NoReprStruct(String);
-   | ^^^^^^^^^^^^^^^^^^^^^^^
    = help: the following other types implement trait `OutPtrWrite`:
              (A, B)
              (A, B, C)
@@ -19,21 +48,14 @@ help: the trait `out_ptr::_::NonLocal0<NoReprStructStore<()>>` is not implemente
              (A, B, C, D, E, F, G, H)
              (A, B, C, D, E, F, G, H, I)
            and $N others
-   = note: required for `NoReprStruct` to implement `NonLocal`
-   = note: required for `Vec<NoReprStruct>` to implement `out_ptr::_::OutPtrWrite0<Vec<NoReprStruct>>`
    = note: required for `Vec<NoReprStruct>` to implement `OutPtrWrite`
 
-error[E0277]: the trait bound `NoReprEnum: out_ptr::_::NonLocal0<NoReprEnumStore<()>>` is not satisfied
+error[E0277]: the trait bound `Vec<NoReprEnum>: OutPtrWrite` is not satisfied
   --> tests/ui_fail/non_local_out_ptr.rs:17:44
    |
 17 | pub extern "C" fn return_no_repr_enum() -> Vec<NoReprEnum> {
-   |                                            ^^^^^^^^^^^^^^^ unsatisfied trait bound
+   |                                            ^^^^^^^^^^^^^^^ the trait `out_ptr::_::OutPtrWrite0<Vec<NoReprEnum>>` is not implemented for `Vec<NoReprEnum>`
    |
-help: the trait `out_ptr::_::NonLocal0<NoReprEnumStore<()>>` is not implemented for `NoReprEnum`
-  --> tests/ui_fail/non_local_out_ptr.rs:7:1
-   |
- 7 | pub enum NoReprEnum {
-   | ^^^^^^^^^^^^^^^^^^^
    = help: the following other types implement trait `OutPtrWrite`:
              (A, B)
              (A, B, C)
@@ -44,6 +66,4 @@ help: the trait `out_ptr::_::NonLocal0<NoReprEnumStore<()>>` is not implemented 
              (A, B, C, D, E, F, G, H)
              (A, B, C, D, E, F, G, H, I)
            and $N others
-   = note: required for `NoReprEnum` to implement `NonLocal`
-   = note: required for `Vec<NoReprEnum>` to implement `out_ptr::_::OutPtrWrite0<Vec<NoReprEnum>>`
    = note: required for `Vec<NoReprEnum>` to implement `OutPtrWrite`

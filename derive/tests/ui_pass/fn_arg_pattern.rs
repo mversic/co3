@@ -1,6 +1,6 @@
 use co3::{ReprC, export, extern_, extern_C};
 
-#[derive(ReprC)]
+#[derive(Clone, ReprC)]
 pub struct Hello {
     a: i32,
     b: i32,
@@ -10,7 +10,10 @@ pub struct Hello {
 impl Hello {
     #[export(name = "hello")]
     #[expect(improper_ctypes_definitions)]
-    pub extern "C" fn hello(Hello { a: a1, b: b1 }: Hello, Hello { a: a2, b: b2 }: Hello) -> i32 {
+    pub extern "C" fn hello(
+        Hello { a: a1, b: b1 }: Hello,
+        Hello { a: a2, b: b2 }: Hello,
+    ) -> i32 {
         a1 + b1 + a2 + b2
     }
 }
@@ -31,35 +34,10 @@ extern_! {
     pub extern "C" fn hello3(a: Hello, b: Hello) -> i32;
 }
 
-extern_! {
-    #![abi = "C"]
-
-    #[link_name = "hello"]
-    #[expect(improper_ctypes_definitions)]
-    pub extern "C" fn hello4(a: Hello, b: Hello) -> i32;
-}
-
-extern_! {
-    #![abi = "C"]
-
-    #[link_name = "hello"]
-    #[expect(improper_ctypes_definitions)]
-    pub extern "C" fn hello5(a: Hello, b: Hello) -> i32;
-}
-
-extern_! {
-    #![abi = "C"]
-
-    #[link_name = "hello"]
-    #[expect(improper_ctypes_definitions)]
-    pub extern "C" fn hello6(a: Hello, b: Hello) -> i32;
-}
-
 fn main() {
-    Hello::hello(Hello { a: 1, b: 2 }, Hello { a: 1, b: 2 });
-    hello2(Hello { a: 1, b: 2 }, Hello { a: 1, b: 2 });
-    hello3(Hello { a: 1, b: 2 }, Hello { a: 1, b: 2 });
-    hello4(Hello { a: 1, b: 2 }, Hello { a: 1, b: 2 });
-    hello5(Hello { a: 1, b: 2 }, Hello { a: 1, b: 2 });
-    hello6(Hello { a: 1, b: 2 }, Hello { a: 1, b: 2 });
+    let value = Hello { a: 1, b: 2 };
+    Hello::hello(value.clone(), value.clone());
+
+    hello2(value.clone(), value.clone());
+    hello3(value.clone(), value.clone());
 }

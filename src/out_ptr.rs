@@ -563,7 +563,7 @@ disjoint_impls! {
 
 disjoint_impls! {
     /// Facilitates reading from [`Self::OutPtr`] out-pointer.
-    pub trait OutPtrRead: OutPtr + Sized {
+    pub trait OutPtrRead: OutPtr {
         /// Read a rust value from the corresponding out-pointer
         ///
         /// # Errors

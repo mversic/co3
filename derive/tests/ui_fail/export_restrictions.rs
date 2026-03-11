@@ -146,13 +146,21 @@ export_C! {
     #[dispatch(Self = [FfiStruct])]
     trait Kita {
         #[id_pos(Self: 2)]
-        fn kita2(self);
+        fn kita1(self);
     }
 }
 
 export_C! {
     trait Kita {
         extern "system" fn kita0(self, a: &u8);
+    }
+}
+
+export_C! {
+    #[dispatch(Self = [FfiStruct])]
+    #[dispatch(Self = [u32])]
+    trait Kita {
+        fn kita1(self);
     }
 }
 
