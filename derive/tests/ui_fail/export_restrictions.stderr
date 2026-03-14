@@ -1,4 +1,4 @@
-error: unexpected end of input, specify ABI with `export("...")`
+error: unexpected end of input, specify ABI with `export("ABI")`
  --> tests/ui_fail/export_restrictions.rs:7:1
   |
 7 | #[export]
@@ -12,7 +12,7 @@ error: Item not supported
 8 | type NoExportType = u32;
   | ^^^^^^^^^^^^^^^^^^^^^^^^
 
-error: unexpected end of input, specify ABI with `export("...")`
+error: unexpected end of input, specify ABI with `export("ABI")`
   --> tests/ui_fail/export_restrictions.rs:10:1
    |
 10 | #[export]
@@ -26,7 +26,7 @@ error: `#[export]` is not supported on trait items; use `export_!`/`export_C!` w
 11 | trait NoExportTrait {}
    | ^^^^^^^^^^^^^^^^^^^^^^
 
-error: unexpected end of input, specify ABI with `export("...")`
+error: unexpected end of input, specify ABI with `export("ABI")`
   --> tests/ui_fail/export_restrictions.rs:13:1
    |
 13 | #[export]
@@ -40,7 +40,7 @@ error: `#[export]` is not supported on type items; use `export_!`/`export_C!`
 14 | enum NoExportEnum {}
    | ^^^^^^^^^^^^^^^^^^^^
 
-error: unexpected end of input, specify ABI with `export("...")`
+error: unexpected end of input, specify ABI with `export("ABI")`
   --> tests/ui_fail/export_restrictions.rs:16:1
    |
 16 | #[export]
@@ -62,7 +62,7 @@ error: export_! requires `#![abi = "..."]`
    |
    = note: this error originates in the macro `export_` (in Nightly builds, run with -Z macro-backtrace for more info)
 
-error: `dispatch`/`id_pos` attributes are only supported on polymorphic selector entries
+error: `dispatch`/`tag_pos` attributes are only supported on polymorphic selector entries
   --> tests/ui_fail/export_restrictions.rs:38:5
    |
 38 |     #[dispatch]
@@ -74,7 +74,7 @@ error: `#[export(skip)]` is only supported on impl methods
 43 | #[export(skip)]
    | ^^^^^^^^^^^^^^^
 
-error: unexpected end of input, specify ABI with `export("...")`
+error: unexpected end of input, specify ABI with `export("ABI")`
   --> tests/ui_fail/export_restrictions.rs:46:1
    |
 46 | #[export]
@@ -82,7 +82,7 @@ error: unexpected end of input, specify ABI with `export("...")`
    |
    = note: this error originates in the attribute macro `export` (in Nightly builds, run with -Z macro-backtrace for more info)
 
-error: unexpected end of input, specify ABI with `export("...")`
+error: unexpected end of input, specify ABI with `export("ABI")`
   --> tests/ui_fail/export_restrictions.rs:49:1
    |
 49 | #[export]
@@ -90,112 +90,106 @@ error: unexpected end of input, specify ABI with `export("...")`
    |
    = note: this error originates in the attribute macro `export` (in Nightly builds, run with -Z macro-backtrace for more info)
 
-error: `dispatch`/`id_pos` attributes are only supported on polymorphic selector entries
+error: `#[tag_pos(...)]` is not supported on trait export entries; put it on trait methods
   --> tests/ui_fail/export_restrictions.rs:53:5
    |
-53 |     #[dispatch]
-   |     ^^^^^^^^^^^
-
-error: method-level `#[dispatch(...)]` is not supported in trait export entries; use `#[dispatch(...)]` on the trait entry and `#[dispatch]` on method arguments
-  --> tests/ui_fail/export_restrictions.rs:61:9
-   |
-61 |         #[dispatch]
-   |         ^^^^^^^^^^^
-
-error: `#[id_pos(...)]` is not supported on trait export entries; put it on trait methods
-  --> tests/ui_fail/export_restrictions.rs:67:5
-   |
-67 |     #[id_pos]
-   |     ^^^^^^^^^
+53 |     #[tag_pos]
+   |     ^^^^^^^^^^
 
 error: trait export entries require `#[dispatch(...)]` mapping
-  --> tests/ui_fail/export_restrictions.rs:75:9
+  --> tests/ui_fail/export_restrictions.rs:61:9
    |
-75 |         fn kita2(self);
+61 |         fn kita2(self);
    |         ^^^^^^^^^^^^^^
 
-error: method-level `#[export(...)]` is not supported, except `#[export(skip)]`; specify ABI on the impl block
-  --> tests/ui_fail/export_restrictions.rs:83:5
+error: method-level `#[export(...)]` is not supported, except `#[export(skip)]`
+  --> tests/ui_fail/export_restrictions.rs:69:5
    |
-83 |     #[export]
+69 |     #[export]
    |     ^^^^^^^^^
 
 error: `#[unsafe(no_mangle)]` attribute may not be used in combination with `#[export(skip)]`
-  --> tests/ui_fail/export_restrictions.rs:85:5
+  --> tests/ui_fail/export_restrictions.rs:71:5
    |
-85 |     #[unsafe(no_mangle)]
+71 |     #[unsafe(no_mangle)]
    |     ^^^^^^^^^^^^^^^^^^^^
 
 error: `#[unsafe(export_name = ...)]` attribute may not be used in combination with `#[export(skip)]`
-  --> tests/ui_fail/export_restrictions.rs:89:5
+  --> tests/ui_fail/export_restrictions.rs:75:5
    |
-89 |     #[unsafe(export_name = "kita")]
+75 |     #[unsafe(export_name = "kita")]
    |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
 error: `#[unsafe(no_mangle)]` attribute may not be used in combination with `#[export(skip)]`
-  --> tests/ui_fail/export_restrictions.rs:97:5
+  --> tests/ui_fail/export_restrictions.rs:83:5
    |
-97 |     #[unsafe(no_mangle)]
+83 |     #[unsafe(no_mangle)]
    |     ^^^^^^^^^^^^^^^^^^^^
 
 error: `#[unsafe(export_name = ...)]` attribute may not be used in combination with `#[export(skip)]`
-   --> tests/ui_fail/export_restrictions.rs:101:5
-    |
-101 |     #[unsafe(export_name = "kita")]
-    |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  --> tests/ui_fail/export_restrictions.rs:87:5
+   |
+87 |     #[unsafe(export_name = "kita")]
+   |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
 error: unsupported attribute in export entry; only ownership attrs, `#[unsafe(export_name = "...")]`, and `#[unsafe(no_mangle)]` are allowed
-   --> tests/ui_fail/export_restrictions.rs:106:5
+  --> tests/ui_fail/export_restrictions.rs:92:5
+   |
+92 |     #[unknown_attribute]
+   |     ^^^^^^^^^^^^^^^^^^^^
+
+error: unsupported attribute in export entry; only ownership attrs, `#[unsafe(export_name = "...")]`, and `#[unsafe(no_mangle)]` are allowed
+  --> tests/ui_fail/export_restrictions.rs:99:5
+   |
+99 |     #[unknown_attribute]
+   |     ^^^^^^^^^^^^^^^^^^^^
+
+error: unsupported attribute in export entry; only ownership attrs, `#[unsafe(export_name = "...")]`, and `#[unsafe(no_mangle)]` are allowed
+   --> tests/ui_fail/export_restrictions.rs:104:5
     |
-106 |     #[unknown_attribute]
+104 |     #[unsafe(no_mangle)]
     |     ^^^^^^^^^^^^^^^^^^^^
 
 error: unsupported attribute in export entry; only ownership attrs, `#[unsafe(export_name = "...")]`, and `#[unsafe(no_mangle)]` are allowed
-   --> tests/ui_fail/export_restrictions.rs:113:5
+   --> tests/ui_fail/export_restrictions.rs:111:5
     |
-113 |     #[unknown_attribute]
-    |     ^^^^^^^^^^^^^^^^^^^^
-
-error: `#[unsafe(export_name = "...")]` and `#[unsafe(no_mangle)]` are not supported on `impl` export entries; put them on methods
-   --> tests/ui_fail/export_restrictions.rs:118:5
-    |
-118 |     #[unsafe(no_mangle)]
-    |     ^^^^^^^^^^^^^^^^^^^^
-
-error: `#[unsafe(export_name = "...")]` and `#[unsafe(no_mangle)]` are not supported on `impl` export entries; put them on methods
-   --> tests/ui_fail/export_restrictions.rs:125:5
-    |
-125 |     #[unsafe(export_name = "clone")]
+111 |     #[unsafe(export_name = "clone")]
     |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
 error: trait export entries only support method signatures; associated types, consts, and macros are not supported
-   --> tests/ui_fail/export_restrictions.rs:139:9
+   --> tests/ui_fail/export_restrictions.rs:119:9
     |
-139 |         type T;
+119 |         type T;
     |         ^^^^^^^
 
-error: id_pos position 2 is out of bounds for this signature; available positions are 0..=1
-   --> tests/ui_fail/export_restrictions.rs:148:18
+error: position 2 is out of bounds(max: 1)
+   --> tests/ui_fail/export_restrictions.rs:128:19
     |
-148 |         #[id_pos(Self: 2)]
-    |                  ^^^^
+128 |         #[tag_pos(Self: 2)]
+    |                   ^^^^
 
-error: trait export entries require `#[dispatch(...)]` mapping
-   --> tests/ui_fail/export_restrictions.rs:155:9
+error: selector `Self` can only be specified once in `#[dispatch(...)]`
+   --> tests/ui_fail/export_restrictions.rs:136:9
     |
-155 |         extern "system" fn kita0(self, a: &u8);
-    |         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+136 |         Self = [u32],
+    |         ^^^^
 
 error: `handle` mapping can only be provided once per entry
-   --> tests/ui_fail/export_restrictions.rs:161:5
+   --> tests/ui_fail/export_restrictions.rs:146:5
     |
-161 |     #[dispatch(Self = [u32])]
+146 |     #[dispatch(Self = [u32])]
     |     ^^^^^^^^^^^^^^^^^^^^^^^^^
 
+error: unsupported attribute in export entry; only ownership attrs, `#[unsafe(export_name = "...")]`, and `#[unsafe(no_mangle)]` are allowed
+   --> tests/ui_fail/export_restrictions.rs:153:5
+    |
+153 |     #[dispatch]
+    |     ^^^^^^^^^^^
+
 error[E0053]: method `kita0` has an incompatible type for trait
-  --> tests/ui_fail/export_restrictions.rs:84:5
+  --> tests/ui_fail/export_restrictions.rs:70:5
    |
-84 |     fn kita0(self, _a: &u8) {}
+70 |     fn kita0(self, _a: &u8) {}
    |     ^^^^^^^^^^^^^^^^^^^^^^^ expected "system" fn, found "Rust" fn
    |
 note: type in trait
@@ -207,9 +201,9 @@ note: type in trait
               found signature `fn(FfiStruct, &u8)`
 
 error[E0053]: method `kita1` has an incompatible type for trait
-  --> tests/ui_fail/export_restrictions.rs:87:5
+  --> tests/ui_fail/export_restrictions.rs:73:5
    |
-87 |     fn kita1(self) {}
+73 |     fn kita1(self) {}
    |     ^^^^^^^^^^^^^^ expected "C" fn, found "Rust" fn
    |
 note: type in trait
@@ -221,9 +215,9 @@ note: type in trait
               found signature `fn(FfiStruct)`
 
 error[E0053]: method `kita2` has an incompatible type for trait
-  --> tests/ui_fail/export_restrictions.rs:90:5
+  --> tests/ui_fail/export_restrictions.rs:76:5
    |
-90 |     extern "C" fn kita2(self) {}
+76 |     extern "C" fn kita2(self) {}
    |     ^^^^^^^^^^^^^^^^^^^^^^^^^ expected "Rust" fn, found "C" fn
    |
 note: type in trait
@@ -233,17 +227,3 @@ note: type in trait
    |     ^^^^^^^^^^^^^^^
    = note: expected signature `fn(FfiStruct)`
               found signature `extern "C" fn(FfiStruct)`
-
-error[E0308]: mismatched types
-   --> tests/ui_fail/export_restrictions.rs:131:1
-    |
-131 | / export_C! {
-132 | |     impl FfiStruct {
-133 | |         fn kita(a: &u32);
-134 | |     }
-135 | | }
-    | |_^ expected fn pointer, found fn item
-    |
-    = note: expected fn pointer `for<'a> fn(&'a u32)`
-                  found fn item `fn(*const u32) {FfiStruct::kita}`
-    = note: this error originates in the macro `export_C` (in Nightly builds, run with -Z macro-backtrace for more info)

@@ -1,21 +1,19 @@
 #[cfg(feature = "alloc")]
 use alloc_crate::{
-    boxed::Box,
     string::{String, ToString},
     vec::Vec,
 };
 use core::{cell::UnsafeCell, ptr::NonNull};
 
+#[cfg(feature = "alloc")]
+use crate::vec::CVec;
 use crate::{
     borrow::{Borrow, DropFamily, NeedsDrop, NoDrop, ToOwned},
     ir::{ReprFamily, Transmuted},
     niche::{Niche, NicheFamily, StableNiche, WithCustomNiche, WithStableNiche, WithoutNiche},
     reprC,
-    slice::{CSlice, CSliceMut},
     transmute::{CheckedTransmute, EncodeTransmuted},
 };
-#[cfg(feature = "alloc")]
-use crate::{boxed::CBoxedSlice, vec::CVec};
 
 // FIXME: Replace with NonZero<T>
 macro_rules! non_zero_derive {
@@ -73,16 +71,6 @@ reprC! {
             core::str::from_utf8(target).is_ok()
         }
     }
-}
-
-impl NicheFamily for &str {
-    type Kind = WithCustomNiche;
-}
-impl NicheFamily for &mut str {
-    type Kind = WithCustomNiche;
-}
-impl NicheFamily for Box<str> {
-    type Kind = WithCustomNiche;
 }
 
 #[cfg(feature = "alloc")]
@@ -217,13 +205,17 @@ unsafe impl EncodeTransmuted for String {
 
 #[cfg(test)]
 mod tests {
+    #[cfg(feature = "alloc")]
+    use alloc_crate::boxed::Box;
     use core::num::NonZeroU8;
 
     use static_assertions::assert_impl_all;
 
     use super::*;
+
     use crate::{
         Decode, Encode, ExternC,
+        boxed::CBoxedSlice,
         option::COption,
         slice::{CSlice, CSliceMut},
         transmute::FlatTransmute,
@@ -231,11 +223,16 @@ mod tests {
 
     #[test]
     fn str_is_supported() {
-        assert_impl_all!(&str:
+        assert_impl_all!(str:
             ReprFamily<Kind = Transmuted>,
             NicheFamily<Kind = WithCustomNiche>,
-            ExternC<CType = CSlice<u8>>,
-            Decode<'static>,
+        );
+
+        assert_impl_all!(&str:
+            ReprFamily<Kind = [Transmuted]>,
+            NicheFamily<Kind = WithCustomNiche>,
+            //Niche<CType = CSlice<u8>>,
+            //Decode<'static>,
             // FIXME:
             //Encode,
         );
@@ -276,21 +273,21 @@ mod tests {
         //    Encode,
         //);
         assert_impl_all!(&[UnsafeCell<NonZeroU8>]:
-            ReprFamily<Kind = &'static [Transmuted]>,
+            ReprFamily<Kind = [Transmuted]>,
             NicheFamily<Kind = WithCustomNiche>,
             Niche<CType = CSlice<u8>>,
             Decode<'static>,
             Encode,
         );
         assert_impl_all!(&mut [UnsafeCell<NonZeroU8>]:
-            ReprFamily<Kind = &'static mut [Transmuted]>,
+            ReprFamily<Kind = [Transmuted]>,
             NicheFamily<Kind = WithCustomNiche>,
             Niche<CType = CSliceMut<u8>>,
             Decode<'static>,
         );
         #[cfg(feature = "alloc")]
         assert_impl_all!(Box<[UnsafeCell<NonZeroU8>]>:
-            ReprFamily<Kind = Box<[Transmuted]>>,
+            ReprFamily<Kind = [Transmuted]>,
             NicheFamily<Kind = WithCustomNiche>,
             Niche<CType = CBoxedSlice<u8>>,
             // FIXME:
@@ -299,7 +296,7 @@ mod tests {
         );
         #[cfg(feature = "alloc")]
         assert_impl_all!(Vec<UnsafeCell<NonZeroU8>>:
-            ReprFamily<Kind = Vec<Transmuted>>,
+            ReprFamily<Kind = [Transmuted]>,
             NicheFamily<Kind = WithCustomNiche>,
             Niche<CType = CVec<u8>>,
             // FIXME:

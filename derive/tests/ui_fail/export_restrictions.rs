@@ -50,27 +50,6 @@ extern "C" fn kita3() {}
 impl FfiStruct {}
 
 export_C! {
-    #[dispatch]
-    impl<T> Kita for Vec<T> {
-        fn kita2(self);
-    }
-}
-
-export_C! {
-    trait Kita {
-        #[dispatch]
-        fn kita2(self);
-    }
-}
-
-export_C! {
-    #[id_pos]
-    trait Kita {
-        fn kita2(self);
-    }
-}
-
-export_C! {
     trait Kita {
         fn kita2(self);
     }
@@ -129,12 +108,6 @@ export_C! {
 }
 
 export_C! {
-    impl FfiStruct {
-        fn kita(a: &u32);
-    }
-}
-
-export_C! {
     trait Kita {
         type T;
 
@@ -143,24 +116,28 @@ export_C! {
 }
 
 export_C! {
-    #[dispatch(Self = [FfiStruct])]
+    #[dispatch(
+        Self = [FfiStruct],
+        Self = [u32],
+    )]
     trait Kita {
-        #[id_pos(Self: 2)]
         fn kita1(self);
     }
 }
 
-export_C! {
-    trait Kita {
-        extern "system" fn kita0(self, a: &u8);
-    }
-}
-
+// TODO: I think multiple entries can be allowed, but args can't be duplicated?
 export_C! {
     #[dispatch(Self = [FfiStruct])]
     #[dispatch(Self = [u32])]
     trait Kita {
         fn kita1(self);
+    }
+}
+
+export_C! {
+    #[dispatch]
+    impl Kita for u32 {
+        fn kita2(self);
     }
 }
 

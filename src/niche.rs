@@ -8,9 +8,7 @@ use alloc_crate::{boxed::Box, vec::Vec};
 use disjoint_impls::disjoint_impls;
 
 use crate::{
-    ExternC, assert_arr_has_non_zero_len,
-    option::COption,
-    slice::{CSlice, CSliceMut},
+    ExternC, assert_arr_has_non_zero_len, ir::ReprFamily, option::COption, slice::{CSlice, CSliceMut}
 };
 #[cfg(feature = "alloc")]
 use crate::{
@@ -55,13 +53,13 @@ pub trait Niche: ExternC {
 /// - the niche value must be congruent with what is guaranteed by the Rust compiler
 pub unsafe trait StableNiche: Niche {}
 
-// FIXME: Should we make this trait unsafe? Because if bool is marked as WithoutNiche, `&mut bool` will be transmuted and may produce UB
 disjoint_impls! {
     /// Niche kind of the type in the internal representation [IR](`crate::ir::Repr`)
     ///
     /// # Safety
     ///
     /// - if the type has `ReprFamily<Kind = Robust>` it must not be incorrectly marked as `WithoutNiche`
+    // FIXME: Should we make this trait unsafe? Because if bool is marked as WithoutNiche, `&mut bool` will be transmuted and may produce UB
     pub trait NicheFamily {
         /// The internal representation (i.e. type family) of the type
         ///
@@ -74,6 +72,68 @@ disjoint_impls! {
         /// - Otherwise, if `Self` has at least one trap, set [`NicheFamily::Kind`] to [`WithCustomNiche`].
         ///   `Option<T>` will be serialized into a [`T::CType`] with a manually set niche value
         type Kind;
+    }
+
+    // TODO: this should be valid , fix it upstream in disjoint_Impls
+    // impl<R: ReprFamily + ?Sized> NicheFamily for &R where Self: ReprFamily {
+    impl<R: ReprFamily<Kind = S1>, S1, S2> NicheFamily for &R
+    where
+        Self: ReprFamily<Kind = S2>
+    {
+        type Kind = WithStableNiche;
+    }
+    impl<R: ReprFamily<Kind = S> + ?Sized, S> NicheFamily for &R
+    where
+        Self: ReprFamily<Kind = [S]>,
+    {
+        type Kind = WithCustomNiche;
+    }
+    impl<R: ReprFamily<Kind = [S]> + ?Sized, S> NicheFamily for &R
+    where
+        Self: ReprFamily<Kind = S>
+    {
+        type Kind = WithCustomNiche;
+    }
+
+    impl<R: ReprFamily<Kind = S1>, S1, S2> NicheFamily for &mut R
+    where
+        Self: ReprFamily<Kind = S2>
+    {
+        type Kind = WithStableNiche;
+    }
+    impl<R: ReprFamily<Kind = S> + ?Sized, S> NicheFamily for &mut R
+    where
+        Self: ReprFamily<Kind = [S]>,
+    {
+        type Kind = WithCustomNiche;
+    }
+    impl<R: ReprFamily<Kind = [S]> + ?Sized, S> NicheFamily for &mut R
+    where
+        Self: ReprFamily<Kind = S>
+    {
+        type Kind = WithCustomNiche;
+    }
+
+    #[cfg(feature = "alloc")]
+    impl<R: ReprFamily<Kind = S1>, S1, S2> NicheFamily for Box<R>
+    where
+        Self: ReprFamily<Kind = S2>
+    {
+        type Kind = WithStableNiche;
+    }
+    #[cfg(feature = "alloc")]
+    impl<R: ReprFamily<Kind = S> + ?Sized, S> NicheFamily for Box<R>
+    where
+        Self: ReprFamily<Kind = [S]>,
+    {
+        type Kind = WithCustomNiche;
+    }
+    #[cfg(feature = "alloc")]
+    impl<R: ReprFamily<Kind = [S]> + ?Sized, S> NicheFamily for Box<R>
+    where
+        Self: ReprFamily<Kind = S>
+    {
+        type Kind = WithCustomNiche;
     }
 
     impl<R: NicheFamily<Kind = WithStableNiche>, const N: usize> NicheFamily for [R; N] {
@@ -106,26 +166,10 @@ disjoint_impls! {
     }
 }
 
-impl<R> NicheFamily for &R {
-    type Kind = WithStableNiche;
-}
-impl<R> NicheFamily for &mut R {
-    type Kind = WithStableNiche;
-}
-#[cfg(feature = "alloc")]
-impl<R> NicheFamily for Box<R> {
-    type Kind = WithStableNiche;
-}
-impl<R> NicheFamily for &[R] {
+impl<R> NicheFamily for [R] {
     type Kind = WithCustomNiche;
 }
-impl<R> NicheFamily for &mut [R] {
-    type Kind = WithCustomNiche;
-}
-#[cfg(feature = "alloc")]
-impl<R> NicheFamily for Box<[R]> {
-    type Kind = WithCustomNiche;
-}
+
 #[cfg(feature = "alloc")]
 impl<R> NicheFamily for Vec<R> {
     type Kind = WithCustomNiche;

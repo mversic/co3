@@ -6,107 +6,94 @@ error: extern_! requires `#![abi = "..."]`
    |
    = note: this error originates in the macro `extern_` (in Nightly builds, run with -Z macro-backtrace for more info)
 
-error: extern_! requires `#![abi = "..."]`
+error: extern_C! does not support `#![abi = "..."]`
   --> tests/ui_fail/import_restrictions.rs:15:1
    |
-15 | / extern_! {
-16 | |     #![link(crate = "kita")]
+15 | / extern_C! {
+16 | |     #![abi = "C"]
 17 | | }
    | |_^
    |
-   = note: this error originates in the macro `extern_` (in Nightly builds, run with -Z macro-backtrace for more info)
-
-error: extern_C! does not support `#![abi = "..."]`
-  --> tests/ui_fail/import_restrictions.rs:19:1
-   |
-19 | / extern_C! {
-20 | |     #![abi = "C"]
-21 | | }
-   | |_^
-   |
    = note: this error originates in the macro `extern_C` (in Nightly builds, run with -Z macro-backtrace for more info)
 
-error: `#![link_name = "..."]` is not supported
-  --> tests/ui_fail/import_restrictions.rs:24:5
+error: declaration-level `#[link(...)]` is not supported; use method-level `#[link_name = "..."]` or macro-level `#![link(...)]`
+  --> tests/ui_fail/import_restrictions.rs:22:5
    |
-24 |     #![link_name = "kita"]
+22 |     #[link(name = "kita")]
    |     ^^^^^^^^^^^^^^^^^^^^^^
 
-error: declaration-level `#[link(...)]` attributes are not supported; use `#![link(name = "...")]` or `#![link(crate = "...")]` on the macro block
-  --> tests/ui_fail/import_restrictions.rs:31:5
+error: declaration-level `#[link(...)]` is not supported; use method-level `#[link_name = "..."]` or macro-level `#![link(...)]`
+  --> tests/ui_fail/import_restrictions.rs:29:5
    |
-31 |     #[link(name = "kita")]
-   |     ^^^^^^^^^^^^^^^^^^^^^^
+29 |     #[link(crate = "kita")]
+   |     ^^^^^^^^^^^^^^^^^^^^^^^
 
-error: `#![link_name = "..."]` is not supported
-  --> tests/ui_fail/import_restrictions.rs:36:5
+error: impl-level `#[link(...)]` attributes are not supported; use method-level `#[link_name = "..."]` or macro-level `#![link(...)]`
+  --> tests/ui_fail/import_restrictions.rs:34:5
    |
-36 |     #![link_name = "kita"]
-   |     ^^^^^^^^^^^^^^^^^^^^^^
-
-error: impl-level link attributes are not supported; use method-level `#[link_name = "..."]` or macro-level `#![link(...)]`
-  --> tests/ui_fail/import_restrictions.rs:47:5
-   |
-47 |     #[link_name = "kita"]
+34 |     #[link_name = "kita"]
    |     ^^^^^^^^^^^^^^^^^^^^^
 
-error: extern impl declarations must include at least one method
-  --> tests/ui_fail/import_restrictions.rs:53:1
+error: type-level `#[link_name]` is not supported; use method-level `#[link_name = "..."]` or macro-level `#![link(...)]`
+  --> tests/ui_fail/import_restrictions.rs:43:5
    |
-53 | / extern_C! {
-54 | |     impl Kita for i32 {}
-55 | | }
-   | |_^
-   |
-   = note: this error originates in the macro `extern_C` (in Nightly builds, run with -Z macro-backtrace for more info)
-
-error: type-level `#[link_name]` is not supported; use method-level `#[link_name = "..."]` or macro-level `#![link(crate = "...")]`
-  --> tests/ui_fail/import_restrictions.rs:64:5
-   |
-64 |     #[link_name]
+43 |     #[link_name]
    |     ^^^^^^^^^^^^
 
 error: extern_C! type declarations must include a corresponding `impl Drop for Type { ... }` declaration
-  --> tests/ui_fail/import_restrictions.rs:69:10
+  --> tests/ui_fail/import_restrictions.rs:48:10
    |
-69 |     type Handle;
+48 |     type Handle;
    |          ^^^^^^
 
-error: `impl Drop` only supports bare `#[dispatch]` (without type mappings)
-  --> tests/ui_fail/import_restrictions.rs:75:5
+error: `#[dispatch]` is not supported on impl items; use impl-level instead
+  --> tests/ui_fail/import_restrictions.rs:53:9
    |
-75 |     #[dispatch(Self = [Opaque])]
-   |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+53 |         #[dispatch]
+   |         ^^^^^^^^^^^
+
+error: `impl Drop` only supports bare `#[dispatch]` (without type mappings)
+  --> tests/ui_fail/import_restrictions.rs:61:5
+   |
+61 |     #[dispatch()]
+   |     ^^^^^^^^^^^^^
 
 error: selector `T` can only be specified once in `#[dispatch(...)]`
-  --> tests/ui_fail/import_restrictions.rs:89:5
+  --> tests/ui_fail/import_restrictions.rs:77:9
    |
-89 | /     #[dispatch(
-90 | |         T = [Handle<u8>],
-91 | |         T = [Handle<i8>],
-92 | |     )]
-   | |______^
+77 |         T = [Handle<i8>],
+   |         ^
 
-error: cannot find attribute `link_crate` in this scope
-  --> tests/ui_fail/import_restrictions.rs:42:7
+error: trait declarations are not supported in `extern_!`/`extern_C!`; declare extern impls instead
+  --> tests/ui_fail/import_restrictions.rs:85:5
    |
-42 |     #[link_crate = "kita"]
-   |       ^^^^^^^^^^
-   |
-help: a built-in attribute with a similar name exists
-   |
-42 -     #[link_crate = "kita"]
-42 +     #[link_name = "kita"]
-   |
+85 | /     trait Kita {
+86 | |         fn kita(self);
+87 | |     }
+   | |_____^
 
-error[E0046]: not all trait items implemented, missing: `U`
-  --> tests/ui_fail/import_restrictions.rs:57:1
+error: generic extern impl parameter `T` requires `#[dispatch(T = [Type, ...])]` mapping
+  --> tests/ui_fail/import_restrictions.rs:90:1
    |
- 4 |       type U;
-   |       ------ `U` from trait
-...
-57 | / extern_C! {
-58 | |     impl Kita for i32 {
-   | |_____________________^ missing `U` in implementation
+90 | / extern_C! {
+91 | |     #[dispatch()]
+92 | |     impl<T> Kita for Box<T> {
+93 | |         fn kita(self);
+94 | |     }
+95 | | }
+   | |_^
    |
    = note: this error originates in the macro `extern_C` (in Nightly builds, run with -Z macro-backtrace for more info)
+
+error: dispatch selector `T` does not match any impl type parameter
+   --> tests/ui_fail/import_restrictions.rs:97:1
+    |
+ 97 | / extern_C! {
+ 98 | |     #[dispatch(
+ 99 | |         T = [u32],
+100 | |         U = [u8],
+...   |
+105 | | }
+    | |_^
+    |
+    = note: this error originates in the macro `extern_C` (in Nightly builds, run with -Z macro-backtrace for more info)

@@ -29,9 +29,10 @@ export_C! {
         T = [Opaque2],
     )]
     trait Custom<T> {
-        #[id_pos(Self: 1, T: 3)]
         #[unsafe(export_name = "kita1")]
-        fn kita1(&mut self, inc: &T) -> u8;
+        fn kita1(&mut self, self_id: Self::Id, inc: &T, inc_id: T::Id) -> u8 {
+            self::<self_id>.kita1(inc::<inc_id>)
+        }
     }
 }
 

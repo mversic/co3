@@ -99,7 +99,6 @@ pub unsafe trait ReprC: Sized + Copy {}
 
 disjoint_impls! {
     /// A Rust type that has an `extern "C"` ABI
-    // FIXME: Should we have a default value? if yes, true or false?
     pub trait ExternC: Sized {
         /// The C-compatible representation of this Rust type.
         type CType: ReprC;
@@ -115,7 +114,7 @@ disjoint_impls! {
     where
        Self: ReprFamily<Kind = Opaque>,
     {
-        type CType = *mut Self;
+        type CType = CBox<Self>;
     }
     impl<R: CheckedTransmute<Target: ExternC>> ExternC for R
     where
@@ -130,12 +129,76 @@ disjoint_impls! {
     {
         type CType = *const R::CType;
     }
+    impl<R: ReprC> ExternC for &[R]
+    where
+        Self: ReprFamily<Kind = [Robust]>,
+    {
+        type CType = CSlice<R>;
+    }
+    // FIXME:
+    //impl<R: ?Sized> ExternC for &R
+    //where
+    //    Self: ReprFamily<Kind = [Opaque]>,
+    //{
+    //    type CType = CSlice<R>;
+    //}
+    impl<R> ExternC for &[R]
+    where
+        Self: ReprFamily<Kind = [Opaque]>,
+    {
+        type CType = CSlice<*const R>;
+    }
+    impl<'slice, R: CheckedTransmute<Target: Sized + 'slice>> ExternC for &'slice [R]
+    where
+        &'slice [<R as CheckedTransmute>::Target]: ExternC,
+        Self: ReprFamily<Kind = [Transmuted]>,
+    {
+        type CType = <&'slice [R::Target] as ExternC>::CType;
+    }
+    impl<R: ExternC, S: Cloned> ExternC for &[R]
+    where
+        Self: ReprFamily<Kind = [S]>,
+    {
+        type CType = CSlice<R::CType>;
+    }
 
     impl<'a, R: ExternC, S: Cloned> ExternC for &'a mut R
     where
         Self: ReprFamily<Kind = &'a mut S>,
     {
         type CType = *mut R::CType;
+    }
+    impl<R: ReprC> ExternC for &mut [R]
+    where
+        Self: ReprFamily<Kind = [Robust]>,
+    {
+        type CType = CSliceMut<R>;
+    }
+    // FIXME:
+    //impl<R: ?Sized> ExternC for &mut R
+    //where
+    //    Self: ReprFamily<Kind = [Opaque]>,
+    //{
+    //    type CType = CSliceMut<R>;
+    //}
+    impl<R> ExternC for &mut [R]
+    where
+        Self: ReprFamily<Kind = [Opaque]>,
+    {
+        type CType = CSliceMut<*mut R>;
+    }
+    impl<'slice, R: CheckedTransmute<Target: Sized + 'slice>> ExternC for &'slice mut [R]
+    where
+        &'slice mut [<R as CheckedTransmute>::Target]: ExternC,
+        Self: ReprFamily<Kind = [Transmuted]>,
+    {
+        type CType = <&'slice mut [R::Target] as ExternC>::CType;
+    }
+    impl<R: ExternC, S: Cloned> ExternC for &mut [R]
+    where
+        Self: ReprFamily<Kind = [S]>,
+    {
+        type CType = CSliceMut<R::CType>;
     }
 
     #[cfg(feature = "alloc")]
@@ -145,77 +208,32 @@ disjoint_impls! {
     {
         type CType = CBox<R::CType>;
     }
-
-    impl<'a, R: ReprC> ExternC for &'a [R]
-    where
-        Self: ReprFamily<Kind = &'a [Robust]>,
-    {
-        type CType = CSlice<R>;
-    }
-    impl<'a, R> ExternC for &'a [R]
-    where
-        Self: ReprFamily<Kind = &'a [Opaque]>,
-    {
-        type CType = CSlice<*const R>;
-    }
-    impl<'slice, R: CheckedTransmute<Target: Sized + 'slice>> ExternC for &'slice [R]
-    where
-        &'slice [<R as CheckedTransmute>::Target]: ExternC,
-        Self: ReprFamily<Kind = &'slice [Transmuted]>,
-    {
-        type CType = <&'slice [R::Target] as ExternC>::CType;
-    }
-    impl<'a, R: ExternC, S: Cloned> ExternC for &'a [R]
-    where
-        Self: ReprFamily<Kind = &'a [S]>,
-    {
-        type CType = CSlice<R::CType>;
-    }
-
-    impl<'a, R: ReprC> ExternC for &'a mut [R]
-    where
-        Self: ReprFamily<Kind = &'a mut [Robust]>,
-    {
-        type CType = CSliceMut<R>;
-    }
-    impl<'slice, R> ExternC for &'slice mut [R]
-    where
-        Self: ReprFamily<Kind = &'slice mut [Opaque]>,
-    {
-        type CType = CSliceMut<*mut R>;
-    }
-    impl<'slice, R: CheckedTransmute<Target: Sized + 'slice>> ExternC for &'slice mut [R]
-    where
-        &'slice mut [<R as CheckedTransmute>::Target]: ExternC,
-        Self: ReprFamily<Kind = &'slice mut [Transmuted]>,
-    {
-        type CType = <&'slice mut [R::Target] as ExternC>::CType;
-    }
-    impl<'slice, R: ExternC, S: Cloned> ExternC for &'slice mut [R]
-    where
-        Self: ReprFamily<Kind = &'slice mut [S]>,
-    {
-        type CType = CSliceMut<R::CType>;
-    }
-
     #[cfg(feature = "alloc")]
     impl<R: ReprC> ExternC for Box<[R]>
     where
-        Self: ReprFamily<Kind = Box<[Robust]>>,
+        Self: ReprFamily<Kind = [Robust]>,
     {
         type CType = CBoxedSlice<R>;
     }
+    // FIXME: and others
+    //#[cfg(feature = "alloc")]
+    //impl<R: ?Sized> ExternC for Box<R>
+    //where
+    //    Self: ReprFamily<Kind = [Opaque]>,
+    //{
+    //    type CType = CBoxedSlice<R>;
+    //}
     #[cfg(feature = "alloc")]
     impl<R> ExternC for Box<[R]>
     where
-        Self: ReprFamily<Kind = Box<[Opaque]>>,
+        Self: ReprFamily<Kind = [Opaque]>,
     {
-        type CType = CBoxedSlice<*mut R>;
+        type CType = CBoxedSlice<CBox<R>>;
     }
     #[cfg(feature = "alloc")]
     impl<R: CheckedTransmute<Target: Sized>> ExternC for Box<[R]>
     where
-        Self: ReprFamily<Kind = Box<[Transmuted]>>,
+        Self: ReprFamily<Kind = [Transmuted]>,
         Box<[<R as CheckedTransmute>::Target]>: ExternC,
     {
         type CType = <Box<[R::Target]> as ExternC>::CType;
@@ -223,7 +241,7 @@ disjoint_impls! {
     #[cfg(feature = "alloc")]
     impl<R: ExternC, S: Cloned> ExternC for Box<[R]>
     where
-        Self: ReprFamily<Kind = Box<[S]>>,
+        Self: ReprFamily<Kind = [S]>,
     {
         type CType = CBoxedSlice<R::CType>;
     }
@@ -231,21 +249,21 @@ disjoint_impls! {
     #[cfg(feature = "alloc")]
     impl<R: ReprC> ExternC for Vec<R>
     where
-        Self: ReprFamily<Kind = Vec<Robust>>,
+        Self: ReprFamily<Kind = [Robust]>,
     {
         type CType = CVec<R>;
     }
     #[cfg(feature = "alloc")]
     impl<R> ExternC for Vec<R>
     where
-        Self: ReprFamily<Kind = Vec<Opaque>>,
+        Self: ReprFamily<Kind = [Opaque]>,
     {
-        type CType = CVec<*mut R>;
+        type CType = CVec<CBox<R>>;
     }
     #[cfg(feature = "alloc")]
     impl<R: CheckedTransmute<Target: Sized>> ExternC for Vec<R>
     where
-        Self: ReprFamily<Kind = Vec<Transmuted>>,
+        Self: ReprFamily<Kind = [Transmuted]>,
         Vec<<R as CheckedTransmute>::Target>: ExternC,
     {
         type CType = <Vec<R::Target> as ExternC>::CType;
@@ -253,20 +271,20 @@ disjoint_impls! {
     #[cfg(feature = "alloc")]
     impl<R: ExternC, S: Cloned> ExternC for Vec<R>
     where
-        Self: ReprFamily<Kind = Vec<S>>,
+        Self: ReprFamily<Kind = [S]>,
     {
         type CType = CVec<R::CType>;
     }
 
     impl<R, const N: usize> ExternC for [R; N]
     where
-        Self: ReprFamily<Kind = [Opaque; N]>,
+        Self: ReprFamily<Kind = [Opaque]>,
     {
-        type CType = [*mut R; N];
+        type CType = [CBox<R>; N];
     }
     impl<R: ExternC, S: Cloned, const N: usize> ExternC for [R; N]
     where
-        Self: ReprFamily<Kind = [S; N]>,
+        Self: ReprFamily<Kind = [S]>,
     {
         type CType = [R::CType; N];
     }
@@ -318,7 +336,7 @@ disjoint_impls! {
         }
     }
     #[cfg(feature = "alloc")]
-    impl<R: ReprFamily<Kind = Opaque>> Encode<false> for R
+    impl<R> Encode<false> for R
     where
         Self: ReprFamily<Kind = Opaque>,
     {
@@ -328,7 +346,7 @@ disjoint_impls! {
         where
             Self: 'itm,
         {
-            Box::into_raw(Box::new(self))
+            CBox::from_box(Some(Box::new(self)))
         }
     }
     impl<
@@ -375,42 +393,9 @@ disjoint_impls! {
             store.ctype.insert(value)
         }
     }
-
-    #[cfg(feature = "unstable-refs")]
-    impl<'a, 'b, R: Encode + Decode<'b, false> + Clone + 'b, S: Cloned> Encode<false> for &'a mut R
+    impl<R: ReprC> Encode<false> for &[R]
     where
-        Self: ReprFamily<Kind = &'a mut S>,
-    {
-        type Store = RefMutStore<'a, R>;
-
-        fn encode<'itm>(self, store: &'itm mut Self::Store) -> Self::CType
-        where
-            Self: 'itm,
-        {
-            let original = store.original.insert(self);
-            let ctype = original.clone().encode(&mut store.encode_store);
-            store.ctype.insert(ctype)
-        }
-    }
-
-    #[cfg(feature = "alloc")]
-    impl<R: Encode, S: Cloned> Encode<false> for Box<R>
-    where
-        Self: ReprFamily<Kind = Box<S>>,
-    {
-        type Store = R::Store;
-
-        fn encode<'itm>(self, store: &'itm mut Self::Store) -> Self::CType
-        where
-            Self: 'itm,
-        {
-            CBox::from_box(Some(Box::new((*self).encode(store))))
-        }
-    }
-
-    impl<'slice, R: ReprC> Encode<false> for &'slice [R]
-    where
-        Self: ReprFamily<Kind = &'slice [Robust]>,
+        Self: ReprFamily<Kind = [Robust]>,
     {
         type Store = ();
 
@@ -422,9 +407,9 @@ disjoint_impls! {
         }
     }
     #[cfg(all(feature = "alloc", feature = "unstable-refs"))]
-    impl<'slice, R> Encode<false> for &'slice [R]
+    impl<R> Encode<false> for &[R]
     where
-        Self: ReprFamily<Kind = &'slice [Opaque]>,
+        Self: ReprFamily<Kind = [Opaque]>,
     {
         type Store = OwningStore<*const R>;
 
@@ -438,8 +423,8 @@ disjoint_impls! {
     }
     impl<'slice, R: CheckedTransmute<Target: Sized + 'slice>> Encode<false> for &'slice [R]
     where
-        Self: ReprFamily<Kind = &'slice [Transmuted]>,
         &'slice [<R as CheckedTransmute>::Target]: Encode,
+        Self: ReprFamily<Kind = [Transmuted]>,
     {
         type Store = <&'slice [R::Target] as Encode>::Store;
 
@@ -451,9 +436,9 @@ disjoint_impls! {
         }
     }
     #[cfg(all(feature = "alloc", feature = "unstable-refs"))]
-    impl<'slice, R: Encode + Clone, S: Cloned> Encode<false> for &'slice [R]
+    impl<R: Encode + Clone, S: Cloned> Encode<false> for &[R]
     where
-        Self: ReprFamily<Kind = &'slice [S]>,
+        Self: ReprFamily<Kind = [S]>,
     {
         type Store = SliceStore<R::CType, R::Store>;
 
@@ -479,9 +464,25 @@ disjoint_impls! {
         }
     }
 
-    impl<'slice, R: ReprC> Encode<false> for &'slice mut [R]
+    #[cfg(feature = "unstable-refs")]
+    impl<'a, 'b, R: Encode + Decode<'b, false> + Clone + 'b, S: Cloned> Encode<false> for &'a mut R
     where
-        Self: ReprFamily<Kind = &'slice mut [Robust]>,
+        Self: ReprFamily<Kind = &'a mut S>,
+    {
+        type Store = RefMutStore<'a, R>;
+
+        fn encode<'itm>(self, store: &'itm mut Self::Store) -> Self::CType
+        where
+            Self: 'itm,
+        {
+            let original = store.original.insert(self);
+            let ctype = original.clone().encode(&mut store.encode_store);
+            store.ctype.insert(ctype)
+        }
+    }
+    impl<R: ReprC> Encode<false> for &mut [R]
+    where
+        Self: ReprFamily<Kind = [Robust]>,
     {
         type Store = ();
 
@@ -495,7 +496,7 @@ disjoint_impls! {
     #[cfg(all(feature = "alloc", feature = "unstable-refs"))]
     impl<'slice, R> Encode<false> for &'slice mut [R]
     where
-        Self: ReprFamily<Kind = &'slice mut [Opaque]>,
+        Self: ReprFamily<Kind = [Opaque]>,
     {
         type Store = OpaqueMutSliceEncodeStore<'slice, R>;
 
@@ -512,7 +513,7 @@ disjoint_impls! {
         for &'slice mut [R]
     where
         &'slice mut [<R as CheckedTransmute>::Target]: Encode,
-        Self: ReprFamily<Kind = &'slice mut [Transmuted]>,
+        Self: ReprFamily<Kind = [Transmuted]>,
     {
         type Store = <&'slice mut [R::Target] as Encode>::Store;
 
@@ -600,7 +601,7 @@ disjoint_impls! {
     #[cfg(all(feature = "alloc", feature = "unstable-refs"))]
     impl<'slice, 'b, R: Encode + Decode<'b, false> + Clone + 'b, S: Cloned> Encode<false> for &'slice mut [R]
     where
-        Self: ReprFamily<Kind = &'slice mut [S]>,
+        Self: ReprFamily<Kind = [S]>,
     {
         type Store = MutSliceStore<'slice, R>;
 
@@ -630,9 +631,23 @@ disjoint_impls! {
     }
 
     #[cfg(feature = "alloc")]
+    impl<R: Encode, S: Cloned> Encode<false> for Box<R>
+    where
+        Self: ReprFamily<Kind = Box<S>>,
+    {
+        type Store = R::Store;
+
+        fn encode<'itm>(self, store: &'itm mut Self::Store) -> Self::CType
+        where
+            Self: 'itm,
+        {
+            CBox::from_box(Some(Box::new((*self).encode(store))))
+        }
+    }
+    #[cfg(feature = "alloc")]
     impl<R: ReprC> Encode<false> for Box<[R]>
     where
-        Self: ReprFamily<Kind = Box<[Robust]>>,
+        Self: ReprFamily<Kind = [Robust]>,
     {
         type Store = ();
 
@@ -646,7 +661,7 @@ disjoint_impls! {
     #[cfg(feature = "alloc")]
     impl<R> Encode<false> for Box<[R]>
     where
-        Self: ReprFamily<Kind = Box<[Opaque]>>,
+        Self: ReprFamily<Kind = [Opaque]>,
     {
         type Store = ();
 
@@ -654,7 +669,10 @@ disjoint_impls! {
         where
             Self: 'itm,
         {
-            let ctypes = self.into_iter().map(Box::new).map(Box::into_raw).collect();
+            let ctypes = self
+                .into_iter()
+                .map(|item| CBox::from_box(Some(Box::new(item))))
+                .collect();
             CBoxedSlice::from_boxed_slice(Some(ctypes))
         }
     }
@@ -662,7 +680,7 @@ disjoint_impls! {
     impl<R: CheckedTransmute<Target: Sized>> Encode<false> for Box<[R]>
     where
         Box<[<R as CheckedTransmute>::Target]>: Encode,
-        Self: ReprFamily<Kind = Box<[Transmuted]>>,
+        Self: ReprFamily<Kind = [Transmuted]>,
     {
         type Store = <Box<[R::Target]> as Encode>::Store;
 
@@ -676,7 +694,7 @@ disjoint_impls! {
     #[cfg(feature = "alloc")]
     impl<R: Encode, S: Cloned> Encode<false> for Box<[R]>
     where
-        Self: ReprFamily<Kind = Box<[S]>>,
+        Self: ReprFamily<Kind = [S]>,
     {
         type Store = ClonedCollectionStore<R::Store>;
 
@@ -702,7 +720,7 @@ disjoint_impls! {
     #[cfg(feature = "alloc")]
     impl<R: ReprC> Encode<false> for Vec<R>
     where
-        Self: ReprFamily<Kind = Vec<Robust>>,
+        Self: ReprFamily<Kind = [Robust]>,
     {
         type Store = ();
 
@@ -716,7 +734,7 @@ disjoint_impls! {
     #[cfg(feature = "alloc")]
     impl<R> Encode<false> for Vec<R>
     where
-        Self: ReprFamily<Kind = Vec<Opaque>>,
+        Self: ReprFamily<Kind = [Opaque]>,
     {
         type Store = ();
 
@@ -724,7 +742,10 @@ disjoint_impls! {
         where
             Self: 'itm,
         {
-            let ctypes = self.into_iter().map(Box::new).map(Box::into_raw).collect();
+            let ctypes = self
+                .into_iter()
+                .map(|item| CBox::from_box(Some(Box::new(item))))
+                .collect();
             CVec::from_vec(Some(ctypes))
         }
     }
@@ -732,7 +753,7 @@ disjoint_impls! {
     impl<R: CheckedTransmute<Target: Sized>> Encode<false> for Vec<R>
     where
         Vec<<R as CheckedTransmute>::Target>: Encode,
-        Self: ReprFamily<Kind = Vec<Transmuted>>,
+        Self: ReprFamily<Kind = [Transmuted]>,
     {
         type Store = <Vec<R::Target> as Encode>::Store;
 
@@ -746,7 +767,7 @@ disjoint_impls! {
     #[cfg(feature = "alloc")]
     impl<R: Encode, S: Cloned> Encode<false> for Vec<R>
     where
-        Self: ReprFamily<Kind = Vec<S>>,
+        Self: ReprFamily<Kind = [S]>,
     {
         type Store = ClonedCollectionStore<R::Store>;
 
@@ -772,7 +793,7 @@ disjoint_impls! {
     #[cfg(feature = "alloc")]
     impl<R, const N: usize> Encode<false> for [R; N]
     where
-        Self: ReprFamily<Kind = [Opaque; N]>,
+        Self: ReprFamily<Kind = [Opaque]>,
     {
         type Store = ();
 
@@ -781,13 +802,13 @@ disjoint_impls! {
             Self: 'itm,
         {
             assert_arr_has_non_zero_len::<N>();
-            self.map(|item| Box::into_raw(Box::new(item)))
+            self.map(|item| CBox::from_box(Some(Box::new(item))))
         }
     }
 
     impl<R: Encode, S: Cloned, const N: usize> Encode<false> for [R; N]
     where
-        Self: ReprFamily<Kind = [S; N]>,
+        Self: ReprFamily<Kind = [S]>,
     {
         type Store = ArraySyncStore<R::Store, N>;
 
@@ -883,11 +904,7 @@ disjoint_impls! {
         type Store = ();
 
         unsafe fn decode<'itm: 'd>(source: Self::CType, (): &mut ()) -> Option<Self> {
-            if source.is_null() {
-                return None;
-            }
-
-            Some(*unsafe { Box::from_raw(source) })
+            Some(*unsafe { source.unopaque()? })
         }
     }
     impl<'d, R: CheckedTransmute<Target: Decode<'d>>> Decode<'d, false> for R
@@ -918,41 +935,9 @@ disjoint_impls! {
             Some(store.value.insert(value))
         }
     }
-
-    #[cfg(feature = "unstable-refs")]
-    impl<'d, R: DecodeCloned<'d> + Encode, S: Cloned> Decode<'d, false> for &'d mut R
-    where
-        Self: ReprFamily<Kind = &'d mut S>,
-    {
-        type Store = RefMutDecodeStore<R, <R as Decode<'d>>::Store>;
-
-        unsafe fn decode<'itm: 'd>(source: Self::CType, store: &'itm mut Self::Store) -> Option<Self> {
-            if source.is_null() {
-                return None;
-            }
-
-            let source = store.source.insert(source);
-            let source = unsafe { source.read() };
-
-            let value = unsafe { R::decode_cloned(source, &mut store.decode_store)? };
-            Some(store.value.insert(value))
-        }
-    }
-    //#[cfg(feature = "alloc")]
-    //impl<'d, R: Decode<'d>, S: Cloned> Decode<'d> for Box<R>
-    //where
-    //    Self: ReprFamily<Kind = Box<S>>,
-    //{
-    //    type Store = ();
-
-    //    unsafe fn decode<'itm: 'd>(source: Self::CType, store: &'itm mut Self::Store) -> Option<Self> {
-    //        unimplemented!()
-    //    }
-    //}
-
     impl<'slice, R: ReprC> Decode<'slice, false> for &'slice [R]
     where
-        Self: ReprFamily<Kind = &'slice [Robust]>,
+        Self: ReprFamily<Kind = [Robust]>,
     {
         type Store = ();
 
@@ -963,7 +948,7 @@ disjoint_impls! {
     #[cfg(all(feature = "alloc", feature = "unstable-refs"))]
     impl<'slice, R: Clone> Decode<'slice, false> for &'slice [R]
     where
-        Self: ReprFamily<Kind = &'slice [Opaque]>,
+        Self: ReprFamily<Kind = [Opaque]>,
     {
         type Store = OwningStore<R>;
 
@@ -990,7 +975,7 @@ disjoint_impls! {
     impl<'slice, R: CheckedTransmute<Target: Sized + 'slice>> Decode<'slice, false> for &'slice [R]
     where
         &'slice [<R as CheckedTransmute>::Target]: Decode<'slice>,
-        Self: ReprFamily<Kind = &'slice [Transmuted]>,
+        Self: ReprFamily<Kind = [Transmuted]>,
     {
         type Store = <&'slice [R::Target] as Decode<'slice>>::Store;
 
@@ -1004,7 +989,7 @@ disjoint_impls! {
     #[cfg(all(feature = "alloc", feature = "unstable-refs"))]
     impl<'slice, R: DecodeCloned<'slice>, S: Cloned> Decode<'slice, false> for &'slice [R]
     where
-        Self: ReprFamily<Kind = &'slice [S]>,
+        Self: ReprFamily<Kind = [S]>,
     {
         type Store = DecodeStoreSlicePair<R, R::Store>;
 
@@ -1032,9 +1017,28 @@ disjoint_impls! {
         }
     }
 
+    #[cfg(feature = "unstable-refs")]
+    impl<'d, R: DecodeCloned<'d> + Encode, S: Cloned> Decode<'d, false> for &'d mut R
+    where
+        Self: ReprFamily<Kind = &'d mut S>,
+    {
+        type Store = RefMutDecodeStore<R, <R as Decode<'d>>::Store>;
+
+        unsafe fn decode<'itm: 'd>(source: Self::CType, store: &'itm mut Self::Store) -> Option<Self> {
+            if source.is_null() {
+                return None;
+            }
+
+            let source = store.source.insert(source);
+            let source = unsafe { source.read() };
+
+            let value = unsafe { R::decode_cloned(source, &mut store.decode_store)? };
+            Some(store.value.insert(value))
+        }
+    }
     impl<'slice, R: ReprC> Decode<'slice, false> for &'slice mut [R]
     where
-        Self: ReprFamily<Kind = &'slice mut [Robust]>,
+        Self: ReprFamily<Kind = [Robust]>,
     {
         type Store = ();
 
@@ -1045,7 +1049,7 @@ disjoint_impls! {
     #[cfg(all(feature = "alloc", feature = "unstable-refs"))]
     impl<'slice, R: Clone> Decode<'slice, false> for &'slice mut [R]
     where
-        Self: ReprFamily<Kind = &'slice mut [Opaque]>,
+        Self: ReprFamily<Kind = [Opaque]>,
     {
         type Store = OpaqueMutSliceDecodeStore<R>;
 
@@ -1073,7 +1077,7 @@ disjoint_impls! {
     impl<'slice, R: CheckedTransmute<Target: Sized + 'slice>> Decode<'slice, false> for &'slice mut [R]
     where
         &'slice mut [<R as CheckedTransmute>::Target]: Decode<'slice>,
-        Self: ReprFamily<Kind = &'slice mut [Transmuted]>,
+        Self: ReprFamily<Kind = [Transmuted]>,
     {
         type Store = <&'slice mut [R::Target] as Decode<'slice>>::Store;
 
@@ -1087,7 +1091,7 @@ disjoint_impls! {
     #[cfg(feature = "unstable-refs")]
     impl<'slice, R: DecodeCloned<'slice> + Encode, S: Cloned> Decode<'slice, false> for &'slice mut [R]
     where
-        Self: ReprFamily<Kind = &'slice mut [S]>,
+        Self: ReprFamily<Kind = [S]>,
     {
         type Store = MutSliceDecodeStore<R, <R as Decode<'slice>>::Store>;
 
@@ -1117,6 +1121,17 @@ disjoint_impls! {
     }
 
     //#[cfg(feature = "alloc")]
+    //impl<'d, R: Decode<'d>, S: Cloned> Decode<'d> for Box<R>
+    //where
+    //    Self: ReprFamily<Kind = Box<S>>,
+    //{
+    //    type Store = ();
+
+    //    unsafe fn decode<'itm: 'd>(source: Self::CType, store: &'itm mut Self::Store) -> Option<Self> {
+    //        unimplemented!()
+    //    }
+    //}
+    //#[cfg(feature = "alloc")]
     //impl<'d, R: ReprC + 'd> Decode<'d> for Box<[R]>
     //where
     //    Self: ReprFamily<Kind = Box<[Robust]>>,
@@ -1142,7 +1157,7 @@ disjoint_impls! {
     impl<'d, R: CheckedTransmute<Target: Sized>> Decode<'d, false> for Box<[R]>
     where
         Box<[<R as CheckedTransmute>::Target]>: Decode<'d>,
-        Self: ReprFamily<Kind = Box<[Transmuted]>>,
+        Self: ReprFamily<Kind = [Transmuted]>,
     {
         type Store = <Box<[R::Target]> as Decode<'d>>::Store;
 
@@ -1168,7 +1183,7 @@ disjoint_impls! {
     //#[cfg(feature = "alloc")]
     //impl<'d, R: ReprC + 'd> Decode<'d> for Vec<R>
     //where
-    //    Self: ReprFamily<Kind = Vec<Robust>>,
+    //    Self: ReprFamily<Kind = [Robust]>,
     //{
     //    type Store = ();
 
@@ -1179,7 +1194,7 @@ disjoint_impls! {
     //#[cfg(feature = "alloc")]
     //impl<'d, R: 'd> Decode<'d> for Vec<R>
     //where
-    //    Self: ReprFamily<Kind = Vec<Opaque>>,
+    //    Self: ReprFamily<Kind = [Opaque]>,
     //{
     //    type Store = ();
 
@@ -1191,7 +1206,7 @@ disjoint_impls! {
     impl<'d, R: CheckedTransmute<Target: Sized>> Decode<'d, false> for Vec<R>
     where
         Vec<<R as CheckedTransmute>::Target>: Decode<'d>,
-        Self: ReprFamily<Kind = Vec<Transmuted>>,
+        Self: ReprFamily<Kind = [Transmuted]>,
     {
         type Store = <Vec<R::Target> as Decode<'d>>::Store;
 
@@ -1205,7 +1220,7 @@ disjoint_impls! {
     //#[cfg(feature = "alloc")]
     //impl<'d, R: Decode<'d>, S: Cloned> Decode<'d> for Vec<R>
     //where
-    //    Self: ReprFamily<Kind = Vec<S>>,
+    //    Self: ReprFamily<Kind = [S]>,
     //{
     //    type Store = ();
 
@@ -1217,23 +1232,33 @@ disjoint_impls! {
     #[cfg(feature = "alloc")]
     impl<'d, R: 'd, const N: usize> Decode<'d, false> for [R; N]
     where
-        Self: ReprFamily<Kind = [Opaque; N]>,
+        Self: ReprFamily<Kind = [Opaque]>,
     {
         type Store = ();
 
         unsafe fn decode<'itm: 'd>(source: Self::CType, (): &mut ()) -> Option<Self> {
+            use core::mem::MaybeUninit;
+
             assert_arr_has_non_zero_len::<N>();
 
-            if source.iter().any(|item| item.is_null()) {
+            if source.iter().any(CBox::is_none) {
                 return None;
             }
 
-            Some(source.map(|item| unsafe { *Box::from_raw(item) }))
+            let mut values = MaybeUninit::<[R; N]>::uninit();
+            let values_ptr = values.as_mut_ptr().cast::<R>();
+
+            for (idx, item) in source.into_iter().enumerate() {
+                let value = unsafe { *item.unopaque()? };
+                unsafe { values_ptr.add(idx).write(value) };
+            }
+
+            Some(unsafe { values.assume_init() })
         }
     }
     impl<'d, R: Decode<'d>, S: Cloned, const N: usize> Decode<'d, false> for [R; N]
     where
-        Self: ReprFamily<Kind = [S; N]>,
+        Self: ReprFamily<Kind = [S]>,
     {
         type Store = ArraySyncStore<R::Store, N>;
 
@@ -1789,6 +1814,10 @@ macro_rules! reprC {
             type Kind = $crate::ir::Robust;
         }
 
+        impl$(<$($params)*>)?  $crate::ir::SizeFamily for $self_ty where $($($preds)*)? {
+            type Kind = $crate::ir::Sized_;
+        }
+
         impl $(<$($params)*>)? $crate::borrow::DropFamily for $self_ty $(where $($preds)*)? {
             type Kind = $crate::borrow::NoDrop;
         }
@@ -1916,14 +1945,14 @@ macro_rules! reprC {
         }
 
         impl<$($impl_generics)*> $crate::niche::NicheFamily for $self_ty where
-            $($for_dummy)* $target: $crate::niche::NicheFamily,
+            $target: $crate::niche::NicheFamily,
             $($($preds)*)?
         {
             type Kind = <$target as $crate::niche::NicheFamily>::Kind;
         }
 
         $crate::reprC! {
-            @transparent_borrow [$($for_dummy)*] [$($impl_generics)*] $self_ty $([$($preds)*])? {
+            @transparent_common [$($for_dummy)*] [$($impl_generics)*] $self_ty $([$($preds)*])? {
                 type Target = $target;
             }
         }
@@ -1976,7 +2005,7 @@ macro_rules! reprC {
         }
 
         $crate::reprC! {
-            @transparent_borrow [$($for_dummy)*] [$($impl_generics)*] $self_ty $([$($preds)*])? {
+            @transparent_common [$($for_dummy)*] [$($impl_generics)*] $self_ty $([$($preds)*])? {
                 type Target = $target;
             }
         }
@@ -2013,9 +2042,16 @@ macro_rules! reprC {
         }
     };
 
-    (@transparent_borrow [$($for_dummy:tt)*] [$($impl_generics:tt)*] $self_ty:ty $([$($preds:tt)*])? {
+    (@transparent_common [$($for_dummy:tt)*] [$($impl_generics:tt)*] $self_ty:ty $([$($preds:tt)*])? {
         type Target = $target:ty;
     }) => {
+        impl<$($impl_generics)*> $crate::ir::SizeFamily for $self_ty where
+            $target: $crate::ir::SizeFamily,
+            $($($preds)*)?
+        {
+            type Kind = <$target as $crate::ir::SizeFamily>::Kind;
+        }
+
         impl<$($impl_generics)*> $crate::borrow::DropFamily for $self_ty
         where
             $target: $crate::borrow::DropFamily,
@@ -2175,14 +2211,14 @@ mod tests {
         //    Encode,
         //);
         assert_impl_all!(&[u8]:
-            ReprFamily<Kind = &'static [Robust]>,
+            ReprFamily<Kind = [Robust]>,
             NicheFamily<Kind = WithCustomNiche>,
             Niche<CType = CSlice<u8>>,
             Decode<'static>,
             Encode,
         );
         assert_impl_all!(&mut [u8]:
-            ReprFamily<Kind = &'static mut [Robust]>,
+            ReprFamily<Kind = [Robust]>,
             NicheFamily<Kind = WithCustomNiche>,
             Niche<CType = CSliceMut<u8>>,
             Decode<'static>,
@@ -2190,7 +2226,7 @@ mod tests {
         );
         #[cfg(feature = "alloc")]
         assert_impl_all!(Box<[u8]>:
-            ReprFamily<Kind = Box<[Robust]>>,
+            ReprFamily<Kind = [Robust]>,
             NicheFamily<Kind = WithCustomNiche>,
             Niche<CType = CBoxedSlice<u8>>,
             // FIXME:
@@ -2199,7 +2235,7 @@ mod tests {
         );
         #[cfg(feature = "alloc")]
         assert_impl_all!(Vec<u8>:
-            ReprFamily<Kind = Vec<Robust>>,
+            ReprFamily<Kind = [Robust]>,
             NicheFamily<Kind = WithCustomNiche>,
             Niche<CType = CVec<u8>>,
             // FIXME:
@@ -2255,14 +2291,14 @@ mod tests {
         //    Encode,
         //);
         assert_impl_all!(&[*const bool]:
-            ReprFamily<Kind = &'static [Robust]>,
+            ReprFamily<Kind = [Robust]>,
             NicheFamily<Kind = WithCustomNiche>,
             Niche<CType = CSlice<*const bool>>,
             Decode<'static>,
             Encode,
         );
         assert_impl_all!(&mut [*const bool]:
-            ReprFamily<Kind = &'static mut [Robust]>,
+            ReprFamily<Kind = [Robust]>,
             NicheFamily<Kind = WithCustomNiche>,
             Niche<CType = CSliceMut<*const bool>>,
             Decode<'static>,
@@ -2270,7 +2306,7 @@ mod tests {
         );
         #[cfg(feature = "alloc")]
         assert_impl_all!(Box<[*const bool]>:
-            ReprFamily<Kind = Box<[Robust]>>,
+            ReprFamily<Kind = [Robust]>,
             NicheFamily<Kind = WithCustomNiche>,
             Niche<CType = CBoxedSlice<*const bool>>,
             // FIXME:
@@ -2280,7 +2316,7 @@ mod tests {
         );
         #[cfg(feature = "alloc")]
         assert_impl_all!(Vec<*const bool>:
-            ReprFamily<Kind = Vec<Robust>>,
+            ReprFamily<Kind = [Robust]>,
             NicheFamily<Kind = WithCustomNiche>,
             Niche<CType = CVec<*const bool>>,
             // FIXME:

@@ -55,6 +55,13 @@ disjoint_impls! {
     {
         type Kind = NeedsDrop;
     }
+    #[cfg(feature = "alloc")]
+    impl<R: ?Sized, S> DropFamily for Box<R>
+    where
+        R: ReprFamily<Kind = [S]>,
+    {
+        type Kind = NeedsDrop;
+    }
 }
 
 disjoint_impls! {
@@ -407,22 +414,16 @@ disjoint_impls! {
     }
 }
 
+impl<R> DropFamily for [R] {
+    type Kind = NeedsDrop;
+}
+
 impl<R: ?Sized> DropFamily for &R {
     type Kind = NoDrop;
 }
 
 impl<R: ?Sized> DropFamily for &mut R {
     type Kind = NoDrop;
-}
-
-impl<R: DropFamily> DropFamily for [R] {
-    type Kind = R::Kind;
-}
-
-// FIXME: This should be covered by blanket IMO
-#[cfg(feature = "alloc")]
-impl<R> DropFamily for Box<[R]> {
-    type Kind = NeedsDrop;
 }
 
 #[cfg(feature = "alloc")]
@@ -542,4 +543,92 @@ impl Add for NeedsDrop {
     }
 }
 
-pub trait SomeTrait {}
+#[cfg(test)]
+mod tests {
+    #[cfg(feature = "alloc")]
+    use alloc_crate::{boxed::Box, string::String, vec::Vec};
+    use core::{cell::UnsafeCell, ptr::NonNull};
+
+    use static_assertions::assert_impl_all;
+
+    use super::*;
+    use crate::{
+        external::{ExternRef, ExternRefMut},
+        ir::Opaque,
+    };
+
+    struct OpaqueStruct;
+    struct ExternStruct;
+
+    impl ReprFamily for OpaqueStruct {
+        type Kind = Opaque;
+    }
+    impl ReprFamily for ExternStruct {
+        type Kind = Transmuted;
+    }
+
+    #[test]
+    fn references_are_no_drop() {
+        assert_impl_all!(&String: DropFamily<Kind = NoDrop>);
+        assert_impl_all!(&mut String: DropFamily<Kind = NoDrop>);
+
+        assert_impl_all!(&[String]: DropFamily<Kind = NoDrop>);
+        assert_impl_all!(&mut [String]: DropFamily<Kind = NoDrop>);
+
+        assert_impl_all!(&OpaqueStruct: DropFamily<Kind = NoDrop>);
+        assert_impl_all!(&mut OpaqueStruct: DropFamily<Kind = NoDrop>);
+
+        assert_impl_all!(&[OpaqueStruct]: DropFamily<Kind = NoDrop>);
+        assert_impl_all!(&mut [OpaqueStruct]: DropFamily<Kind = NoDrop>);
+
+        assert_impl_all!(ExternRef<'static, u8>: DropFamily<Kind = NoDrop>);
+        assert_impl_all!(ExternRefMut<'static, u8>: DropFamily<Kind = NoDrop>);
+    }
+
+    #[test]
+    #[cfg(feature = "alloc")]
+    fn alloc_needs_drop() {
+        assert_impl_all!([u8]: DropFamily<Kind = NeedsDrop>);
+        assert_impl_all!(Box<u8>: DropFamily<Kind = NeedsDrop>);
+        assert_impl_all!(Box<[u8]>: DropFamily<Kind = NeedsDrop>);
+        assert_impl_all!(Box<bool>: DropFamily<Kind = NeedsDrop>);
+        assert_impl_all!(Box<str>: DropFamily<Kind = NeedsDrop>);
+
+        assert_impl_all!(Vec<u8>: DropFamily<Kind = NeedsDrop>);
+        assert_impl_all!(String: DropFamily<Kind = NeedsDrop>);
+    }
+
+    #[test]
+    #[cfg(feature = "alloc")]
+    fn opaque_box_is_no_drop() {
+        assert_impl_all!(Box<OpaqueStruct>: DropFamily<Kind = NoDrop>);
+        assert_impl_all!(Box<&OpaqueStruct>: DropFamily<Kind = NeedsDrop>);
+        assert_impl_all!(Box<&mut OpaqueStruct>: DropFamily<Kind = NeedsDrop>);
+        assert_impl_all!(Box<&[OpaqueStruct]>: DropFamily<Kind = NeedsDrop>);
+        assert_impl_all!(Box<&mut [OpaqueStruct]>: DropFamily<Kind = NeedsDrop>);
+
+        // FIX: Extern types are very broken
+        //assert_impl_all!(Box<ExternStruct>: DropFamily<Kind = NoDrop>);
+        //assert_impl_all!(Box<&ExternStruct>: DropFamily<Kind = NeedsDrop>);
+        //assert_impl_all!(Box<&mut ExternStruct>: DropFamily<Kind = NeedsDrop>);
+        //assert_impl_all!(Box<&[ExternStruct]>: DropFamily<Kind = NeedsDrop>);
+        //assert_impl_all!(Box<&mut [ExternStruct]>: DropFamily<Kind = NeedsDrop>);
+        assert_impl_all!(Box<ExternRef<'static, u8>>: DropFamily<Kind = NeedsDrop>);
+        assert_impl_all!(Box<ExternRefMut<'static, u8>>: DropFamily<Kind = NeedsDrop>);
+    }
+
+    #[test]
+    fn containers_delegate_drop_family() {
+        assert_impl_all!([u8; 2]: DropFamily<Kind = NoDrop>);
+        assert_impl_all!([String; 2]: DropFamily<Kind = NeedsDrop>);
+
+        assert_impl_all!(Option<u8>: DropFamily<Kind = NoDrop>);
+        assert_impl_all!(Option<String>: DropFamily<Kind = NeedsDrop>);
+
+        assert_impl_all!(Result<u8, NonNull<u8>>: DropFamily<Kind = NoDrop>);
+        assert_impl_all!(Result<String, u8>: DropFamily<Kind = NeedsDrop>);
+
+        assert_impl_all!(UnsafeCell<u8>: DropFamily<Kind = NoDrop>);
+        assert_impl_all!(UnsafeCell<String>: DropFamily<Kind = NeedsDrop>);
+    }
+}

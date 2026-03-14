@@ -1,88 +1,79 @@
-use co3::{extern_C, external::ExternRef};
+use co3::{extern_C, external::ExternRef, handle::Handle};
 
 trait Custom {
     fn inc(self, by: Vec<u32>) -> Self;
 }
 
 co3::handles! {
-    Handle::<bool, u8> = 1,
-    Handle::<bool, u32>,
-    Handle<u8, bool>,
+    Opaque::<bool, u8> = 1,
+    Opaque::<bool, u32>,
+    Opaque<u8, bool>,
 }
 
 extern_C! {
-    type Handle<T, U>;
+    type Opaque<T, U>;
 
     #[dispatch]
-    impl<T, U> Drop for Handle<T, U> {
-        fn drop(&mut self);
-    }
-
-    #[dispatch(
-        T = [bool, u8],
-        U = [u8, bool]
-    )]
-    impl Handle<bool, u8> {
-        #[id_pos(Self: 1)]
-        #[link_name = "handle_as_ref"]
-        fn as_ref(&self) -> Result<&Self, u8>;
+    impl<T, U> Drop for Opaque<T, U> {
+        fn drop(self_id: Self::Id, &mut self);
     }
 
     #[dispatch(
         Self = [
-            Handle<bool, u8>,
-            Handle<u8, bool>
+            Opaque<bool, u8>,
+            Opaque<u8, bool>,
         ]
     )]
     impl<T> Clone for T {
         #[link_name = "abi_Clone_clone"]
-        fn clone(&self) -> Self;
+        fn clone(self_id: Self::Id, &self) -> Self;
     }
 
     #[dispatch(
         Self = [
-            Handle<bool, u8>,
-            Handle<u8, bool>
+            Opaque<bool, u8>,
+            Opaque<u8, bool>
         ]
     )]
     impl<T> Default for T {
         #[link_name = "default"]
-        #[id_pos(Self: 0)]
-        fn default() -> Self;
+        fn default(self_id: Self::Id) -> Self;
     }
 
     #[dispatch(
-        T = [Handle<bool, u8>, Handle<u8, bool>],
+        T = [
+            Opaque<bool, u8>,
+            Opaque<u8, bool>
+        ],
     )]
     impl<T> PartialEq for T {
         #[link_name = "abi_Eq_eq"]
-        fn eq(&self, other: &Self) -> bool;
+        fn eq(self_id: Self::Id, &self, other: &Self) -> bool;
     }
 
     #[dispatch(
-        T = [Handle<bool, u8>],
-        U = [Handle<u8, bool>]
+        T = [Opaque<bool, u8>],
+        U = [Opaque<u8, bool>]
     )]
     impl<T, U> PartialEq<U> for T {
         #[link_name = "abi_Eq_eq_2"]
-        #[id_pos(Self: 1)]
-        fn eq(&self, other: &U) -> bool;
+        fn eq(&self, self_id: Self::Id, other: &U) -> bool;
     }
 
     #[dispatch(
-        Self = [Handle<bool, u8>]
+        Self = [Opaque<bool, u8>]
     )]
     impl<T> Custom for T {
         #[link_name = "custom_inc_as_ref"]
-        fn inc(self, by: Vec<u32>) -> Self;
+        fn inc(self_id: Self::Id, self, by: Vec<u32>) -> Self;
     }
 
     #[dispatch(
-        Self = [Handle<u8, bool>]
+        Self = [Opaque<u8, bool>]
     )]
     impl<T> Custom for T {
         #[link_name = "custom_inc_move"]
-        fn inc(self, move by: Vec<u32>) -> Self;
+        fn inc(self_id: Self::Id, self, move by: Vec<u32>) -> Self;
     }
 }
 
@@ -94,32 +85,32 @@ mod provider {
     use super::Custom;
 
     handles! {
-        Handle::<bool, u8> = 1,
-        Handle<bool, u32>,
-        Handle<u8, bool>,
+        Opaque::<bool, u8> = 1,
+        Opaque<bool, u32>,
+        Opaque<u8, bool>,
     }
 
     #[derive(Debug, Default, Clone, PartialEq, Eq, ReprC)]
     #[reprC(opaque)]
-    pub struct Handle<T, U> {
+    pub struct Opaque<T, U> {
         id: u8,
         _marker: PhantomData<(T, U)>,
     }
 
-    impl PartialEq<Handle<u8, bool>> for Handle<bool, u8> {
-        fn eq(&self, other: &Handle<u8, bool>) -> bool {
+    impl PartialEq<Opaque<u8, bool>> for Opaque<bool, u8> {
+        fn eq(&self, other: &Opaque<u8, bool>) -> bool {
             self.id == other.id
         }
     }
 
-    impl<T, U> Custom for Handle<T, U> {
+    impl<T, U> Custom for Opaque<T, U> {
         fn inc(mut self, by: Vec<u32>) -> Self {
             by.into_iter().for_each(|by| self.id += by as u8);
             self
         }
     }
 
-    impl<T, U> Handle<T, U> {
+    impl<T, U> Opaque<T, U> {
         fn as_ref(&self) -> Result<&Self, u8> {
             Ok(self)
         }
@@ -127,99 +118,111 @@ mod provider {
 
     export_C! {
         #[dispatch(
-            Self = [Handle<bool, u8>, Handle<u8, bool>]
+            Self = [
+                Opaque<bool, u8>,
+                Opaque<u8, bool>,
+            ]
         )]
         #[unsafe(export_name = "drop")]
         trait Drop {
-            fn drop(&mut self);
+            fn drop(self_id: Self::Id, &mut self) {
+                // FIXME: This is quite incorrect I think?
+                let _ = self_id;
+            }
         }
 
         #[dispatch(
-            T = [bool, u8],
-            U = [u8, bool]
-        )]
-        impl<T, U> Handle<T, U> {
-            #[id_pos(Self: 1)]
-            #[unsafe(export_name = "handle_as_ref")]
-            fn as_ref(&self) -> Result<&Self, u8>;
-        }
-
-        #[dispatch(
-            Self = [Handle<bool, u8>, Handle<u8, bool>]
+            Self = [
+                Opaque<bool, u8>,
+                Opaque<u8, bool>,
+            ],
         )]
         trait Clone {
             #[unsafe(export_name = "abi_Clone_clone")]
-            fn clone(&self) -> Self;
+            fn clone(self_id: Self::Id, &self) -> Self {
+                self::<self_id>.clone()
+            }
         }
 
         #[dispatch(
-            Self = [Handle<bool, u8>, Handle<u8, bool>]
+            Self = [
+                Opaque<bool, u8>,
+                Opaque<u8, bool>,
+            ]
         )]
         trait Default {
             #[unsafe(export_name = "default")]
-            fn default() -> Self;
+            fn default(self_id: Self::Id) -> Self {
+                <Self::<self_id> as Default>::default()
+            }
         }
 
         #[dispatch(
-            Self = [Handle<bool, u8>]
+            Self = [Opaque<bool, u8>]
         )]
         trait PartialEq {
-            #[id_pos(Self: 0)]
             #[unsafe(export_name = "abi_Eq_eq")]
-            fn eq(&self, other: &Self) -> bool;
+            fn eq(self_id: Self::Id, &self, other: &Self) -> bool {
+                self::<self_id>.eq(other::<self_id>)
+            }
         }
 
         #[dispatch(
-            Self = [Handle<bool, u8>],
-            TU = [Handle<u8, bool>],
+            Self = [Opaque<bool, u8>],
+            TU = [Opaque<u8, bool>],
         )]
         trait PartialEq<TU> {
-            #[id_pos(Self: 1)]
             #[unsafe(export_name = "abi_Eq_eq_2")]
-            fn eq(&self, other: &TU) -> bool;
+            fn eq(&self, self_id: Self::Id, other_id: Self::Id, other: &TU) -> bool {
+                self::<self_id>.eq(other::<other_id>)
+            }
         }
 
         #[dispatch(
-            Self = [Handle<bool, u8>]
+            Self = [Opaque<bool, u8>]
         )]
         trait Custom {
             #[unsafe(export_name = "custom_inc_as_ref")]
-            fn inc(self, by: Vec<u32>) -> Self;
+            fn inc(self_id: Self::Id, self, by: Vec<u32>) -> Self {
+                self::<self_id>.inc(by)
+            }
         }
 
         #[dispatch(
-            Self = [Handle<u8, bool>]
+            Self = [Opaque<u8, bool>]
         )]
         trait Custom {
             #[unsafe(export_name = "custom_inc_move")]
-            fn inc(self, move by: Vec<u32>) -> Self;
+            fn inc(self_id: Self::Id, self, move by: Vec<u32>) -> Self {
+                self::<self_id>.inc(by)
+            }
         }
     }
 }
 
 #[test]
 fn opaque_handles() {
-    let handle: Handle<bool, u8> = Default::default();
+    let handle: Opaque<bool, u8> = Default::default();
     let handle_ref: ExternRef<_> = handle.as_ref().unwrap();
     assert!(PartialEq::eq(&*handle_ref, &handle));
 
     let cloned = Clone::clone(&handle);
     assert!(PartialEq::eq(&handle, &cloned));
 
-    let other: Handle<u8, bool> = Default::default();
+    let other: Opaque<u8, bool> = Default::default();
     let other_cloned = Clone::clone(&other);
 
     // Cross-type equality is exported separately and keyed by Self handle id.
-    assert!(PartialEq::<Handle<u8, bool>>::eq(&handle, &other));
-    assert!(PartialEq::<Handle<u8, bool>>::eq(&cloned, &other_cloned));
+    assert!(PartialEq::<Opaque<u8, bool>>::eq(&handle, &other));
+    assert!(PartialEq::<Opaque<u8, bool>>::eq(&cloned, &other_cloned));
 
     let incremented = Custom::inc(handle, vec![2]);
-    assert!(!PartialEq::<Handle<u8, bool>>::eq(&incremented, &other));
+    assert!(!PartialEq::<Opaque<u8, bool>>::eq(&incremented, &other));
 
     let incremented_cloned = Clone::clone(&incremented);
     assert!(PartialEq::eq(&incremented, &incremented_cloned));
 
-    let owned_handle: Handle<u8, bool> = Default::default();
+    let owned_handle: Opaque<u8, bool> = Default::default();
     let owned_incremented = Custom::inc(owned_handle, vec![2]);
     let owned_incremented_cloned = Clone::clone(&owned_incremented);
 

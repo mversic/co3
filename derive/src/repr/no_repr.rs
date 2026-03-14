@@ -26,33 +26,18 @@ use crate::{
 pub(super) fn derive_opaque_item(name: &Ident, generics: &syn::Generics) -> TokenStream {
     let (impl_generics, ty_generics, where_clause) = generics.split_for_impl();
     let params = &generics.params;
+    let impl_drop_assert = assert_drop_impl();
 
     let predicates = where_clause
         .as_ref()
         .map(|where_clause| &where_clause.predicates);
 
-    let for_dummy = generics
-        .params
-        .is_empty()
-        .then_some(quote! { for<'_dummy> });
-
-    quote! {
-        impl #impl_generics co3::ir::ReprFamily for #name #ty_generics #where_clause {
-            type Kind = co3::ir::Opaque;
+    let sized_impls = quote! {
+        impl #impl_generics co3::ir::SizeFamily for #name #ty_generics #where_clause {
+            type Kind = co3::ir::Sized_;
         }
 
-        impl #impl_generics co3::borrow::DropFamily for #name #ty_generics #where_clause {
-            type Kind = co3::borrow::NoDrop;
-        }
-
-        impl #impl_generics co3::niche::NicheFamily for #name #ty_generics #where_clause {
-            type Kind = co3::niche::WithCustomNiche;
-        }
-
-        impl #impl_generics co3::borrow::Borrow for #name #ty_generics where
-            #for_dummy Self: Sized,
-            #predicates
-        {
+        impl #impl_generics co3::borrow::Borrow for #name #ty_generics #where_clause {
             type Borrowed<'itm>
                 = Self
             where
@@ -69,10 +54,7 @@ pub(super) fn derive_opaque_item(name: &Ident, generics: &syn::Generics) -> Toke
             }
         }
 
-        impl<'_ršč, #params> co3::borrow::ToOwned<'_ršč> for #name #ty_generics where
-            #for_dummy Self: Sized + '_ršč,
-            #predicates
-        {
+        impl<'_ršč, #params> co3::borrow::ToOwned<'_ršč> for #name #ty_generics where Self: '_ršč, #predicates {
             #[inline(always)]
             fn to_owned(borrowed: Self::Borrowed<'_ršč>) -> Self {
                 borrowed
@@ -80,8 +62,24 @@ pub(super) fn derive_opaque_item(name: &Ident, generics: &syn::Generics) -> Toke
         }
 
         impl #impl_generics co3::niche::Niche for #name #ty_generics #where_clause {
-            const NICHE_VALUE: *mut Self = core::ptr::null_mut();
+            const NICHE_VALUE: co3::boxed::CBox<Self> = co3::boxed::CBox::none();
         }
+    };
+
+    quote! {
+        impl #impl_generics co3::ir::ReprFamily for #name #ty_generics #where_clause {
+            type Kind = co3::ir::Opaque;
+        }
+
+        impl #impl_generics co3::borrow::DropFamily for #name #ty_generics #where_clause {
+            type Kind = co3::borrow::NoDrop;
+        }
+
+        impl #impl_generics co3::niche::NicheFamily for #name #ty_generics #where_clause {
+            type Kind = co3::niche::WithCustomNiche;
+        }
+
+        #sized_impls
     }
 }
 

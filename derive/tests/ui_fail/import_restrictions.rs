@@ -12,17 +12,8 @@ enum Opaque {}
 
 extern_! {}
 
-extern_! {
-    #![link(crate = "kita")]
-}
-
 extern_C! {
     #![abi = "C"]
-}
-
-extern_! {
-    #![link_name = "kita"]
-    #![abi = "kita"]
 }
 
 extern_! {
@@ -32,14 +23,10 @@ extern_! {
     fn kita();
 }
 
-extern_C! {
-    #![link_name = "kita"]
-}
-
 extern_! {
     #![abi = "C"]
 
-    #[link_crate = "kita"]
+    #[link(crate = "kita")]
     fn kita();
 }
 
@@ -47,15 +34,7 @@ extern_C! {
     #[link_name = "kita"]
     impl Kita for u32 {
         type U = u32;
-    }
-}
 
-extern_C! {
-    impl Kita for i32 {}
-}
-
-extern_C! {
-    impl Kita for i32 {
         fn kita(self);
     }
 }
@@ -70,9 +49,16 @@ extern_C! {
 }
 
 extern_C! {
+    impl Kita for u32 {
+        #[dispatch]
+        fn kita(self);
+    }
+}
+
+extern_C! {
     type Handle;
 
-    #[dispatch(Self = [Opaque])]
+    #[dispatch()]
     impl<T> Drop for T {
         fn drop(&mut self);
     }
@@ -83,7 +69,7 @@ extern_C! {
 
     #[dispatch]
     impl<T> Drop for Handle<T> {
-        fn drop(&mut self);
+        fn drop(&mut self, self_id: Self::Id);
     }
 
     #[dispatch(
@@ -92,6 +78,29 @@ extern_C! {
     )]
     impl<T> Clone for Handle<T> {
         fn clone(&self) -> Self;
+    }
+}
+
+extern_C! {
+    trait Kita {
+        fn kita(self);
+    }
+}
+
+extern_C! {
+    #[dispatch()]
+    impl<T> Kita for Box<T> {
+        fn kita(self);
+    }
+}
+
+extern_C! {
+    #[dispatch(
+        T = [u32],
+        U = [u8],
+    )]
+    impl<U> Kita for U {
+        fn kita(self);
     }
 }
 

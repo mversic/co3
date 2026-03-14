@@ -62,7 +62,7 @@ use crate::reprC;
 //    where
 //        R: ReprFamily<Type = NonWasmIntPrimitive>,
 //    {
-//        type Kind = Vec<Robust>;
+//        type Kind = [Robust];
 //    }
 //    // FIXME: Check comment in `impl IrReprFamily for Robust`
 //    // This should be just: type `Arr<const N: usize> = Robust`;

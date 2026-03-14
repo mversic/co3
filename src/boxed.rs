@@ -129,6 +129,13 @@ impl<C, A: Allocator> Copy for CBoxedSlice<C, A> {}
 
 #[cfg(feature = "alloc")]
 impl<C> CBox<C> {
+    pub fn from_raw(raw: *mut C) -> Self {
+        Self {
+            data: raw,
+            allocator: Global,
+        }
+    }
+
     /// Create [`Self`] from a [`Box<C>`].
     pub fn from_box(source: Option<Box<C>>) -> Self {
         let Some(source) = source else {
@@ -139,6 +146,10 @@ impl<C> CBox<C> {
             data: Box::into_raw(source),
             allocator: Global,
         }
+    }
+
+    pub fn into_raw(boxed: Self) -> *mut C {
+        boxed.data
     }
 }
 
@@ -166,6 +177,13 @@ impl<C: ReprC> CBox<C> {
     ///
     /// Check [`Box::from_raw`].
     pub unsafe fn into_rust(self) -> Option<Box<C>> {
+        unsafe { self.unopaque() }
+    }
+}
+
+#[cfg(feature = "alloc")]
+impl<C> CBox<C> {
+    pub(super) unsafe fn unopaque(self) -> Option<Box<C>> {
         if self.data.is_null() {
             return None;
         }
