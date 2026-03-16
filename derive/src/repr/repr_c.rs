@@ -4,7 +4,7 @@ use quote::{ToTokens, quote};
 use syn::{Ident, visit::Visit};
 
 use crate::{
-    attr_parse::repr::ReprPrimitive,
+    attr::repr::ReprPrimitive,
     repr::{
         FfiTypeField, FfiTypeVariant, is_type_parameterized,
         niche::{gen_enum_niche_ir, gen_struct_niche_ir},

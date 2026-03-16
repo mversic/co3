@@ -5,8 +5,9 @@ use quote::{ToTokens, format_ident, quote};
 use syn::visit_mut::VisitMut;
 
 use crate::{
-    OwnershipMode, effective_ownership_mode,
+    OwnershipMode, handle_id_positions,
     impl_visitor::{FnDescriptor, path_symbol_name},
+    input_ownerships, ownership_mode_for_receiver, ownership_mode_for_type, receiver_ownership,
     utils::{SignatureLifetimeBuilder, unwrap_result_type},
     wrapper::HandleIdSpec,
 };
@@ -14,9 +15,10 @@ use crate::{
 #[derive(Clone)]
 pub(crate) struct ExportPolySpec {
     pub(crate) trait_path: Option<syn::Path>,
+    pub(crate) trait_generics: syn::Generics,
     pub(crate) method: syn::Ident,
     pub(crate) decl_sig: syn::Signature,
-    pub(crate) ownership_mode: OwnershipMode,
+    pub(crate) body: TokenStream,
     pub(crate) key_types: BTreeMap<String, Vec<syn::Type>>,
     pub(crate) handle_id_specs: Vec<HandleIdSpec>,
     pub(crate) unsafe_name: Option<syn::LitStr>,
@@ -104,8 +106,91 @@ pub(crate) fn gen_poly_export(spec: &ExportPolySpec, export_abi: Option<&syn::Ab
         Rewriter { selector_map }.visit_type_mut(&mut out);
         out
     }
-    fn handle_ffi_ty_from_rust(ty: &syn::Type) -> syn::Type {
-        if let syn::Type::Reference(reference) = ty {
+    fn rewrite_dispatch_body(
+        body: &TokenStream,
+        value_names: &std::collections::BTreeSet<String>,
+        selector_map: &BTreeMap<String, syn::Type>,
+    ) -> syn::Result<syn::Block> {
+        fn recurse(
+            tokens: TokenStream,
+            value_names: &std::collections::BTreeSet<String>,
+            selector_map: &BTreeMap<String, syn::Type>,
+        ) -> TokenStream {
+            let items = tokens.into_iter().collect::<Vec<_>>();
+            let mut out = TokenStream::new();
+            let mut idx = 0usize;
+            while idx < items.len() {
+                if idx + 4 < items.len()
+                    && let proc_macro2::TokenTree::Ident(base_ident) = &items[idx]
+                    && matches!(&items[idx + 1], proc_macro2::TokenTree::Punct(p) if p.as_char() == ':')
+                    && matches!(&items[idx + 2], proc_macro2::TokenTree::Punct(p) if p.as_char() == ':')
+                    && matches!(&items[idx + 3], proc_macro2::TokenTree::Punct(p) if p.as_char() == '<')
+                    && matches!(&items[idx + 4], proc_macro2::TokenTree::Ident(_))
+                {
+                    let mut end = idx + 5;
+                    let mut depth = 1usize;
+                    while end < items.len() {
+                        match &items[end] {
+                            proc_macro2::TokenTree::Punct(p) if p.as_char() == '<' => depth += 1,
+                            proc_macro2::TokenTree::Punct(p) if p.as_char() == '>' => {
+                                depth -= 1;
+                                if depth == 0 {
+                                    break;
+                                }
+                            }
+                            _ => {}
+                        }
+                        end += 1;
+                    }
+                    let base = base_ident.to_string();
+                    if end == idx + 5 {
+                        if value_names.contains(&base) {
+                            out.extend(core::iter::once(proc_macro2::TokenTree::Ident(
+                                base_ident.clone(),
+                            )));
+                            idx = end + 1;
+                            continue;
+                        }
+                        if let Some(replacement) = selector_map.get(&base) {
+                            out.extend(quote!(#replacement));
+                            idx = end + 1;
+                            continue;
+                        }
+                    }
+                }
+
+                let tt = match &items[idx] {
+                    proc_macro2::TokenTree::Group(group) => {
+                        let mut new_group = proc_macro2::Group::new(
+                            group.delimiter(),
+                            recurse(group.stream(), value_names, selector_map),
+                        );
+                        new_group.set_span(group.span());
+                        proc_macro2::TokenTree::Group(new_group)
+                    }
+                    other => other.clone(),
+                };
+                out.extend(core::iter::once(tt));
+                idx += 1;
+            }
+            out
+        }
+
+        let rewritten = recurse(body.clone(), value_names, selector_map);
+        syn::parse2(quote!({ #rewritten }))
+    }
+    fn handle_ffi_ty_from_rust(ty: &syn::Type, ownership_mode: OwnershipMode) -> syn::Type {
+        if ownership_mode == OwnershipMode::Borrow {
+            if let syn::Type::Reference(reference) = ty {
+                if reference.mutability.is_some() {
+                    syn::parse_quote!(*mut core::ffi::c_void)
+                } else {
+                    syn::parse_quote!(*const core::ffi::c_void)
+                }
+            } else {
+                syn::parse_quote!(*const core::ffi::c_void)
+            }
+        } else if let syn::Type::Reference(reference) = ty {
             if reference.mutability.is_some() {
                 syn::parse_quote!(*mut core::ffi::c_void)
             } else {
@@ -114,17 +199,6 @@ pub(crate) fn gen_poly_export(spec: &ExportPolySpec, export_abi: Option<&syn::Ab
         } else {
             syn::parse_quote!(*mut core::ffi::c_void)
         }
-    }
-    fn selector_base_name(selector: &syn::Type) -> String {
-        if let syn::Type::Path(type_path) = selector {
-            if type_path.qself.is_none() && type_path.path.is_ident("Self") {
-                return "self".to_string();
-            }
-            if let Some(seg) = type_path.path.segments.last() {
-                return seg.ident.to_string().to_lowercase();
-            }
-        }
-        "handle".to_string()
     }
     fn inject_missing_lifetimes(ty: &mut syn::Type, lifetime_name: &str) {
         struct LifetimeInjector<'a> {
@@ -159,11 +233,7 @@ pub(crate) fn gen_poly_export(spec: &ExportPolySpec, export_abi: Option<&syn::Ab
             .iter()
             .enumerate()
             .map(|(order, spec)| {
-                let base = selector_base_name(&spec.selector);
-                let arg_name = syn::Ident::new(
-                    &format!("__{base}_handle_id"),
-                    proc_macro2::Span::call_site(),
-                );
+                let arg_name = &spec.arg_name;
                 (spec.at, order, quote!(#arg_name: co3::handle::Id))
             })
             .collect();
@@ -211,18 +281,6 @@ pub(crate) fn gen_poly_export(spec: &ExportPolySpec, export_abi: Option<&syn::Ab
         .clone()
         .or_else(|| export_abi.cloned())
         .unwrap_or_else(|| syn::parse_quote!(extern "Rust"));
-    let fn_unsafety = spec.decl_sig.unsafety;
-    let target_fn_prefix = if let Some(method_abi) = &spec.decl_sig.abi {
-        if fn_unsafety.is_some() {
-            quote!(unsafe #method_abi fn)
-        } else {
-            quote!(#method_abi fn)
-        }
-    } else if fn_unsafety.is_some() {
-        quote!(unsafe fn)
-    } else {
-        quote!(fn)
-    };
     let fn_name = spec.method.clone();
     let export_name = gen_poly_export_name(spec);
     let Some(handle_types) = spec.key_types.get("Self") else {
@@ -239,38 +297,22 @@ pub(crate) fn gen_poly_export(spec: &ExportPolySpec, export_abi: Option<&syn::Ab
         )
         .to_compile_error();
     }
-    let handle_id_specs = if spec.handle_id_specs.is_empty() {
-        vec![HandleIdSpec {
-            selector: syn::parse_quote!(Self),
-            at: 0,
-        }]
-    } else {
-        spec.handle_id_specs.clone()
-    };
-    let self_handle_id_ident = {
-        let self_ty: syn::Type = syn::parse_quote!(Self);
-        let self_key = selector_key_name(&self_ty);
-        let mut found = None;
-        for id_spec in &handle_id_specs {
-            if selector_key_name(&id_spec.selector) == self_key {
-                let base = selector_base_name(&id_spec.selector);
-                found = Some(syn::Ident::new(
-                    &format!("__{base}_handle_id"),
-                    proc_macro2::Span::call_site(),
-                ));
-                break;
+    let handle_id_specs = spec.handle_id_specs.clone();
+    let mut seen_handle_id_names = std::collections::BTreeSet::<String>::new();
+    let handle_id_decode_stmts = handle_id_specs
+        .iter()
+        .filter_map(|spec| {
+            let key = spec.arg_name.to_string();
+            if !seen_handle_id_names.insert(key) {
+                return None;
             }
-        }
-        let Some(ident) = found else {
-            return syn::Error::new_spanned(
-                &spec.decl_sig,
-                "poly selector export requires `#[id_pos(Self: index)]` or an implicit Self handle id",
-            )
-            .to_compile_error();
-        };
-        ident
-    };
-
+            let arg_name = &spec.arg_name;
+            Some(quote! {
+                let #arg_name: co3::handle::Id = co3::Decode::decode(#arg_name, &mut ())
+                    .ok_or(co3::FfiReturn::TrapRepresentation)?;
+            })
+        })
+        .collect::<Vec<_>>();
     #[derive(Clone)]
     struct ArgInfo {
         name: syn::Ident,
@@ -279,9 +321,15 @@ pub(crate) fn gen_poly_export(spec: &ExportPolySpec, export_abi: Option<&syn::Ab
         ownership_mode: OwnershipMode,
         is_receiver: bool,
         receiver_is_mut: bool,
+        selector_key: Option<String>,
+    }
+
+    fn is_handle_id_arg(name: &syn::Ident, handle_id_specs: &[HandleIdSpec]) -> bool {
+        handle_id_specs.iter().any(|spec| spec.arg_name == *name)
     }
 
     let mut args = Vec::<ArgInfo>::new();
+    let mut typed_input_idx = 0usize;
     for input in &spec.decl_sig.inputs {
         match input {
             syn::FnArg::Receiver(receiver) => {
@@ -297,9 +345,11 @@ pub(crate) fn gen_poly_export(spec: &ExportPolySpec, export_abi: Option<&syn::Ab
                     ty: rust_ty,
                     is_handle: has_dispatch_attr(&receiver.attrs)
                         || spec.key_types.contains_key("Self"),
-                    ownership_mode: effective_ownership_mode(&receiver.attrs, spec.ownership_mode),
+                    ownership_mode: receiver_ownership(&spec.decl_sig)
+                        .unwrap_or_else(|| ownership_mode_for_receiver(receiver)),
                     is_receiver: true,
                     receiver_is_mut: receiver.mutability.is_some(),
+                    selector_key: Some("Self".to_string()),
                 });
             }
             syn::FnArg::Typed(arg) => {
@@ -317,20 +367,72 @@ pub(crate) fn gen_poly_export(spec: &ExportPolySpec, export_abi: Option<&syn::Ab
                     ty: arg.ty.as_ref().clone(),
                     is_handle: has_dispatch_attr(&arg.attrs)
                         || spec.key_types.contains_key(&selector_key),
-                    ownership_mode: effective_ownership_mode(&arg.attrs, spec.ownership_mode),
+                    ownership_mode: input_ownerships(&spec.decl_sig)
+                        .get(typed_input_idx)
+                        .copied()
+                        .unwrap_or_else(|| ownership_mode_for_type(arg.ty.as_ref())),
                     is_receiver: false,
                     receiver_is_mut: false,
+                    selector_key: if has_dispatch_attr(&arg.attrs)
+                        || spec.key_types.contains_key(&selector_key)
+                    {
+                        Some(selector_key)
+                    } else {
+                        None
+                    },
                 });
+                typed_input_idx += 1;
             }
         }
     }
 
-    let mut decl_params = Vec::<TokenStream>::new();
-    let mut lifetime_builder = SignatureLifetimeBuilder::new(&[&spec.decl_sig.generics]);
+    let mut expr_selector_map = BTreeMap::<String, String>::new();
+    let mut value_names = std::collections::BTreeSet::<String>::new();
+    if let Some(receiver) = args.iter().find(|arg| arg.is_receiver) {
+        expr_selector_map.insert("self".to_string(), receiver.selector_key.clone().unwrap());
+        value_names.insert("self".to_string());
+    }
     for arg in &args {
+        if !arg.is_receiver
+            && let Some(selector_key) = &arg.selector_key
+        {
+            expr_selector_map.insert(arg.name.to_string(), selector_key.clone());
+            value_names.insert(arg.name.to_string());
+        }
+    }
+    let mut id_selector_map = BTreeMap::<String, String>::new();
+    let mut selector_id_map = BTreeMap::<String, String>::new();
+    for handle_id_spec in &handle_id_specs {
+        let selector_key = selector_key_name(&handle_id_spec.selector);
+        id_selector_map.insert(handle_id_spec.arg_name.to_string(), selector_key.clone());
+        selector_id_map.insert(selector_key.clone(), handle_id_spec.arg_name.to_string());
+    }
+    let method = &spec.method;
+    let is_drop_poly = spec
+        .trait_path
+        .as_ref()
+        .is_some_and(|trait_path| path_symbol_name(trait_path) == "Drop")
+        && method == "drop";
+    let handle_id_spec_map = handle_id_specs
+        .iter()
+        .map(|spec| (spec.arg_name.to_string(), spec.arg_name.clone()))
+        .collect::<BTreeMap<_, _>>();
+    let id_idents = handle_id_specs
+        .iter()
+        .map(|spec| spec.arg_name.to_string())
+        .filter(|name| id_selector_map.contains_key(name))
+        .collect::<Vec<_>>();
+
+    let mut decl_params = Vec::<TokenStream>::new();
+    let mut lifetime_builder =
+        SignatureLifetimeBuilder::new(&[&spec.trait_generics, &spec.decl_sig.generics]);
+    for arg in &args {
+        if is_handle_id_arg(&arg.name, &handle_id_specs) {
+            continue;
+        }
         let arg_name = &arg.name;
         let ffi_ty: syn::Type = if arg.is_handle {
-            handle_ffi_ty_from_rust(&arg.ty)
+            handle_ffi_ty_from_rust(&arg.ty, arg.ownership_mode)
         } else if arg.ownership_mode == OwnershipMode::Borrow {
             let borrowed_ty = lifetime_builder.borrowed_src_type(arg.ty.clone());
             syn::parse_quote!(<#borrowed_ty as co3::ExternC>::CType)
@@ -342,7 +444,7 @@ pub(crate) fn gen_poly_export(spec: &ExportPolySpec, export_abi: Option<&syn::Ab
     }
     inject_handle_id_decl_args(&handle_id_specs, &mut decl_params);
     let (export_generics, export_where_clause) =
-        lifetime_builder.split_for_signature(&[&spec.decl_sig.generics]);
+        lifetime_builder.split_for_signature(&[&spec.trait_generics, &spec.decl_sig.generics]);
     let raw_output_ty = match &spec.decl_sig.output {
         syn::ReturnType::Default => None,
         syn::ReturnType::Type(_, ty) => Some((**ty).clone()),
@@ -363,52 +465,68 @@ pub(crate) fn gen_poly_export(spec: &ExportPolySpec, export_abi: Option<&syn::Ab
         }
     }
 
-    let method = &spec.method;
-    let is_drop_poly = spec
-        .trait_path
-        .as_ref()
-        .is_some_and(|trait_path| path_symbol_name(trait_path) == "Drop")
-        && method == "drop";
-
-    let match_arms = handle_types.iter().enumerate().map(|(arm_idx, handle_ty)| {
-        let mut selector_map = BTreeMap::<String, syn::Type>::new();
-        selector_map.insert("Self".to_string(), handle_ty.clone());
-        for (selector, types) in &spec.key_types {
-            if selector == "Self" {
-                continue;
-            }
-            if types.is_empty() {
-                return syn::Error::new_spanned(
-                    &spec.decl_sig,
-                    format!("selector `{selector}` has an empty handle list"),
-                )
-                .to_compile_error();
-            }
-            let selected = if types.len() == 1 {
-                types[0].clone()
-            } else if arm_idx < types.len() {
-                types[arm_idx].clone()
-            } else {
-                return syn::Error::new_spanned(
-                    &spec.decl_sig,
-                    format!(
-                        "selector `{selector}` provides {} entries but `Self` arm {} needs a matching entry",
-                        types.len(),
-                        arm_idx
-                    ),
-                )
-                .to_compile_error();
-            };
-            selector_map.insert(selector.clone(), selected);
+    let used_ids = id_idents
+        .iter()
+        .filter_map(|name| handle_id_spec_map.get(name).cloned())
+        .collect::<Vec<_>>();
+    fn enumerate_selector_maps(
+        ids: &[String],
+        id_selector_map: &BTreeMap<String, String>,
+        key_types: &BTreeMap<String, Vec<syn::Type>>,
+        idx: usize,
+        current: &mut BTreeMap<String, syn::Type>,
+        out: &mut Vec<BTreeMap<String, syn::Type>>,
+    ) -> syn::Result<()> {
+        if idx == ids.len() {
+            out.push(current.clone());
+            return Ok(());
         }
+        let id = &ids[idx];
+        let selector = id_selector_map
+            .get(id)
+            .expect("collected from the same map");
+        let types = key_types.get(selector).ok_or_else(|| {
+            syn::Error::new(
+                proc_macro2::Span::call_site(),
+                format!("missing dispatch mapping for selector `{selector}`"),
+            )
+        })?;
+        if types.is_empty() {
+            return Err(syn::Error::new(
+                proc_macro2::Span::call_site(),
+                format!("selector `{selector}` has an empty handle list"),
+            ));
+        }
+        for ty in types {
+            current.insert(selector.clone(), ty.clone());
+            enumerate_selector_maps(ids, id_selector_map, key_types, idx + 1, current, out)?;
+        }
+        current.remove(selector);
+        Ok(())
+    }
+    let mut selector_maps = Vec::new();
+    if let Err(err) = enumerate_selector_maps(
+        &id_idents,
+        &id_selector_map,
+        &spec.key_types,
+        0,
+        &mut BTreeMap::new(),
+        &mut selector_maps,
+    ) {
+        return err.to_compile_error();
+    }
+
+    let match_arms = selector_maps.into_iter().map(|selector_map| {
+        let handle_ty = selector_map.get("Self").cloned().unwrap_or_else(|| handle_types[0].clone());
 
         let mut decode_stmts = Vec::<TokenStream>::new();
         let mut sync_stmts = Vec::<TokenStream>::new();
-        let mut call_args = Vec::<TokenStream>::new();
-        let mut target_arg_tys = Vec::<TokenStream>::new();
 
         for arg in &args {
             if is_drop_poly {
+                continue;
+            }
+            if is_handle_id_arg(&arg.name, &handle_id_specs) {
                 continue;
             }
             let arg_name = &arg.name;
@@ -439,45 +557,33 @@ pub(crate) fn gen_poly_export(spec: &ExportPolySpec, export_abi: Option<&syn::Ab
                     co3::Store::sync(#store).ok_or(co3::FfiReturn::TrapRepresentation)?;
                 });
             }
-            target_arg_tys.push(quote!(#rust_ty));
-            call_args.push(quote!(#arg_name));
         }
-
-        let target_ret_ty = if let Some(out_ty) = &raw_output_ty {
-            let rewritten = rewrite_selectors_in_type(out_ty, &selector_map);
-            quote!(#rewritten)
-        } else {
-            quote!(())
-        };
-        let target_ptr_ty = quote!(#target_fn_prefix (#(#target_arg_tys),*) -> #target_ret_ty);
-        let target_path = if let Some(trait_path) = &spec.trait_path {
-            let rewritten_trait_ty: syn::Type = rewrite_selectors_in_type(
-                &syn::parse_quote!(#trait_path),
-                &selector_map,
-            );
-            let rewritten_trait_path = if let syn::Type::Path(type_path) = rewritten_trait_ty {
-                type_path.path
-            } else {
-                return syn::Error::new_spanned(
-                    trait_path,
-                    "failed to rewrite trait selector path",
-                )
-                .to_compile_error();
-            };
-            quote!(<#handle_ty as #rewritten_trait_path>::#method)
-        } else {
-            quote!(<#handle_ty>::#method)
+        let body = match rewrite_dispatch_body(
+            &spec.body,
+            &value_names,
+            &selector_map,
+        ) {
+            Ok(body) => body,
+            Err(err) => return err.to_compile_error(),
         };
 
         let output_write = if is_drop_poly {
-            if args.len() != 1 || !args[0].is_receiver || !args[0].is_handle || !args[0].receiver_is_mut {
+            let call_args_only = args
+                .iter()
+                .filter(|arg| !is_handle_id_arg(&arg.name, &handle_id_specs))
+                .collect::<Vec<_>>();
+            if call_args_only.len() != 1
+                || !call_args_only[0].is_receiver
+                || !call_args_only[0].is_handle
+                || !call_args_only[0].receiver_is_mut
+            {
                 return syn::Error::new_spanned(
                     &spec.decl_sig,
                     "Drop poly selector must be `Drop::drop(&mut self)`",
                 )
                 .to_compile_error();
             }
-            let arg_name = &args[0].name;
+            let arg_name = &call_args_only[0].name;
             quote! {
                 let __self_ptr = #arg_name as *mut #handle_ty;
                 unsafe {
@@ -495,16 +601,15 @@ pub(crate) fn gen_poly_export(spec: &ExportPolySpec, export_abi: Option<&syn::Ab
                     let rewritten_raw_output =
                         rewritten_raw_output.expect("present when output_is_result");
                     quote! {
-                        let output: #rewritten_raw_output = target(#(#call_args),*);
+                        let output: #rewritten_raw_output = #body;
                         let output = output.map_err(|_| co3::FfiReturn::ExecutionFail)?;
                     }
                 } else {
                     quote! {
-                        let output: #rewritten = target(#(#call_args),*);
+                        let output: #rewritten = #body;
                     }
                 };
                 quote! {
-                    let target: #target_ptr_ty = #target_path;
                     #output_capture
                     let out_ptr = out_ptr.cast::<<#rewritten as co3::ExternC>::CType>();
                     unsafe { <#rewritten as co3::out_ptr::OutPtrWrite>::write_out(output, out_ptr) };
@@ -514,29 +619,34 @@ pub(crate) fn gen_poly_export(spec: &ExportPolySpec, export_abi: Option<&syn::Ab
                     let rewritten_raw_output =
                         rewritten_raw_output.expect("present when output_is_result");
                     quote! {
-                        let output: #rewritten_raw_output = target(#(#call_args),*);
+                        let output: #rewritten_raw_output = #body;
                         let output = output.map_err(|_| co3::FfiReturn::ExecutionFail)?;
                     }
                 } else {
                     quote! {
-                        let output: #rewritten = target(#(#call_args),*);
+                        let output: #rewritten = #body;
                     }
                 };
                 quote! {
-                    let target: #target_ptr_ty = #target_path;
                     #output_capture
                     unsafe { <#rewritten as co3::out_ptr::OutPtrWrite>::write_out(output, out_ptr) };
                 }
             }
         } else {
             quote! {
-                let target: #target_ptr_ty = #target_path;
-                target(#(#call_args),*);
+                #body
             }
         };
 
+        let match_pattern = used_ids.iter().map(|ident| {
+            let selector_key = id_selector_map
+                .get(&ident.to_string())
+                .expect("collected from same map");
+            let selector_ty = selector_map.get(selector_key).expect("enumerated selector map");
+            quote!(<#selector_ty as co3::handle::Handle>::ID)
+        });
         quote! {
-            <#handle_ty as co3::handle::Handle>::ID => {
+            (#(#match_pattern),*) => {
                 #(#decode_stmts)*
                 #output_write
                 #(#sync_stmts)*
@@ -551,9 +661,8 @@ pub(crate) fn gen_poly_export(spec: &ExportPolySpec, export_abi: Option<&syn::Ab
         ) -> co3::FfiReturn #export_where_clause {
             let fn_ = || {
                 let fn_body = || -> Result<(), co3::FfiReturn> {
-                    let #self_handle_id_ident: co3::handle::Id = co3::Decode::decode(#self_handle_id_ident, &mut ())
-                        .ok_or(co3::FfiReturn::TrapRepresentation)?;
-                    match #self_handle_id_ident {
+                    #(#handle_id_decode_stmts)*
+                    match (#(#used_ids),*) {
                         #(#match_arms,)*
                         _ => return Err(co3::FfiReturn::UnknownHandle),
                     }
@@ -573,51 +682,89 @@ pub(crate) fn gen_poly_export(spec: &ExportPolySpec, export_abi: Option<&syn::Ab
     }
 }
 
-pub(crate) fn parse_handle_id_attr(
-    attr: &syn::Attribute,
-) -> Result<Option<Vec<HandleIdSpec>>, syn::Error> {
-    if !attr.path().is_ident("id_pos") {
-        return Ok(None);
-    }
-
-    struct HandleIdEntry {
-        selector: syn::Type,
-        at: usize,
-    }
-    impl syn::parse::Parse for HandleIdEntry {
-        fn parse(input: syn::parse::ParseStream) -> syn::Result<Self> {
-            let selector = input.parse::<syn::Type>()?;
-            input.parse::<syn::Token![:]>()?;
-            let at = input.parse::<syn::LitInt>()?.base10_parse::<usize>()?;
-            Ok(Self { selector, at })
-        }
-    }
-
-    let entries = attr.parse_args_with(
-        syn::punctuated::Punctuated::<HandleIdEntry, syn::Token![,]>::parse_terminated,
-    )?;
-    if entries.is_empty() {
-        return Err(syn::Error::new_spanned(
-            attr,
-            "expected at least one `Type: index` mapping",
+fn selector_from_handle_id_type(ty: &syn::Type, span: proc_macro2::Span) -> syn::Result<syn::Type> {
+    let syn::Type::Path(type_path) = ty else {
+        return Err(syn::Error::new(
+            span,
+            "arguments with `_id` suffix must use `<Selector>::ID`",
+        ));
+    };
+    let Some(last) = type_path.path.segments.last() else {
+        return Err(syn::Error::new(
+            span,
+            "arguments with `_id` suffix must use `<Selector>::ID`",
+        ));
+    };
+    if last.ident != "ID" {
+        return Err(syn::Error::new(
+            span,
+            "arguments with `_id` suffix must use `<Selector>::ID`",
         ));
     }
 
-    Ok(Some(
-        entries
-            .into_iter()
-            .map(|entry| HandleIdSpec {
-                selector: entry.selector,
-                at: entry.at,
-            })
-            .collect(),
-    ))
+    if let Some(qself) = &type_path.qself {
+        if let syn::Type::Path(selector_path) = qself.ty.as_ref() {
+            return Ok(syn::Type::Path(syn::TypePath {
+                qself: None,
+                path: selector_path.path.clone(),
+            }));
+        }
+        return Ok((*qself.ty).clone());
+    }
+
+    let mut selector_path = type_path.path.clone();
+    selector_path.segments.pop();
+    if selector_path.segments.is_empty() {
+        return Err(syn::Error::new(
+            span,
+            "arguments with `_id` suffix must use `<Selector>::ID`",
+        ));
+    }
+
+    Ok(syn::Type::Path(syn::TypePath {
+        qself: None,
+        path: selector_path,
+    }))
 }
 
-pub(crate) fn infer_default_handle_id_specs(
-    fn_descriptor: &FnDescriptor,
-    explicit: &[HandleIdSpec],
-) -> Vec<HandleIdSpec> {
+fn collect_explicit_handle_id_specs_from_sig(
+    sig: &syn::Signature,
+    _allowed_selectors: &std::collections::BTreeSet<String>,
+    handle_id_positions: Option<&std::collections::BTreeMap<String, usize>>,
+) -> syn::Result<Vec<HandleIdSpec>> {
+    let mut out = Vec::new();
+    let handle_id_positions = handle_id_positions.cloned().unwrap_or_default();
+    let marked_positions = handle_id_positions
+        .values()
+        .copied()
+        .collect::<std::collections::BTreeSet<_>>();
+
+    for (at, input) in sig.inputs.iter().enumerate() {
+        let syn::FnArg::Typed(arg) = input else {
+            continue;
+        };
+        let syn::Pat::Ident(pat_ident) = arg.pat.as_ref() else {
+            continue;
+        };
+        if !marked_positions.contains(&at) {
+            continue;
+        }
+        let selector = selector_from_handle_id_type(arg.ty.as_ref(), pat_ident.ident.span())?;
+
+        out.push(HandleIdSpec {
+            arg_name: pat_ident.ident.clone(),
+            selector,
+            at: handle_id_positions
+                .get(&pat_ident.ident.to_string())
+                .copied()
+                .unwrap_or(at),
+        });
+    }
+
+    Ok(out)
+}
+
+fn available_default_handle_selectors(fn_descriptor: &FnDescriptor) -> Vec<syn::Type> {
     let mut seen = std::collections::BTreeSet::<String>::new();
     let mut selectors = Vec::<syn::Type>::new();
     fn handle_selector_from_arg_type(ty: &syn::Type) -> syn::Type {
@@ -660,93 +807,7 @@ pub(crate) fn infer_default_handle_id_specs(
         }
     }
 
-    let inferred: Vec<HandleIdSpec> = selectors
-        .into_iter()
-        .enumerate()
-        .map(|(idx, selector)| HandleIdSpec { selector, at: idx })
-        .collect();
-
-    if explicit.is_empty() {
-        return inferred;
-    }
-
-    let mut merged = explicit.to_vec();
-    let explicit_keys = explicit
-        .iter()
-        .map(|spec| selector_key_name(&spec.selector))
-        .collect::<std::collections::BTreeSet<_>>();
-    for spec in inferred {
-        if !explicit_keys.contains(&selector_key_name(&spec.selector)) {
-            merged.push(spec);
-        }
-    }
-    merged
-}
-
-pub(crate) fn infer_poly_handle_id_specs(
-    sig: &syn::Signature,
-    key_types: &BTreeMap<String, Vec<syn::Type>>,
-    explicit: &[HandleIdSpec],
-) -> Vec<HandleIdSpec> {
-    fn has_dispatch_attr(attrs: &[syn::Attribute]) -> bool {
-        attrs.iter().any(|attr| attr.path().is_ident("dispatch"))
-    }
-    fn selector_from_arg_type(ty: &syn::Type) -> syn::Type {
-        if let syn::Type::Reference(reference) = ty {
-            return (*reference.elem).clone();
-        }
-        ty.clone()
-    }
-
-    let mut seen = std::collections::BTreeSet::<String>::new();
-    let mut selectors = Vec::<syn::Type>::new();
-
-    if let Some(receiver) = sig.receiver()
-        && (has_dispatch_attr(&receiver.attrs) || key_types.contains_key("Self"))
-    {
-        let self_ty: syn::Type = syn::parse_quote!(Self);
-        let key = self_ty.to_token_stream().to_string();
-        if seen.insert(key) {
-            selectors.push(self_ty);
-        }
-    }
-
-    for input in &sig.inputs {
-        let syn::FnArg::Typed(arg) = input else {
-            continue;
-        };
-        let selector = selector_from_arg_type(&arg.ty);
-        let selector_key = selector_key_name(&selector);
-        if !has_dispatch_attr(&arg.attrs) && !key_types.contains_key(&selector_key) {
-            continue;
-        }
-        let key = selector.to_token_stream().to_string();
-        if seen.insert(key) {
-            selectors.push(selector);
-        }
-    }
-
-    let inferred: Vec<HandleIdSpec> = selectors
-        .into_iter()
-        .enumerate()
-        .map(|(idx, selector)| HandleIdSpec { selector, at: idx })
-        .collect();
-
-    if explicit.is_empty() {
-        return inferred;
-    }
-
-    let mut merged = explicit.to_vec();
-    let explicit_keys = explicit
-        .iter()
-        .map(|spec| selector_key_name(&spec.selector))
-        .collect::<std::collections::BTreeSet<_>>();
-    for spec in inferred {
-        if !explicit_keys.contains(&selector_key_name(&spec.selector)) {
-            merged.push(spec);
-        }
-    }
-    merged
+    selectors
 }
 
 pub(crate) fn validate_handle_id_positions_for_sig(
@@ -765,24 +826,150 @@ pub(crate) fn validate_handle_id_positions_for_sig(
         if spec.at >= total_slots {
             return Err(syn::Error::new_spanned(
                 &spec.selector,
-                format!(
-                    "id_pos position {} is out of bounds for this signature; available positions are 0..={}",
-                    spec.at, max_index
-                ),
+                format!("position {} is out of bounds(max: {max_index})", spec.at),
             ));
         }
     }
     Ok(())
 }
 
-fn selector_key_name(selector: &syn::Type) -> String {
-    if let syn::Type::Path(type_path) = selector
-        && type_path.qself.is_none()
-        && type_path.path.is_ident("Self")
-    {
-        return "Self".to_string();
+pub(crate) mod dispatch {
+    use super::{
+        FnDescriptor, HandleIdSpec, available_default_handle_selectors,
+        collect_explicit_handle_id_specs_from_sig, parse_entry_handle_map_attr,
+        validate_handle_id_positions_for_sig,
+    };
+    use std::collections::{BTreeMap, BTreeSet};
+
+    pub(crate) fn parse_impl_dispatch_attrs(
+        attrs: &[syn::Attribute],
+    ) -> syn::Result<Option<BTreeMap<String, Vec<syn::Type>>>> {
+        let mut out = None;
+        for attr in attrs {
+            if let Some(map) = parse_entry_handle_map_attr(attr)?
+                && out.replace(map).is_some()
+            {
+                return Err(syn::Error::new_spanned(
+                    attr,
+                    "`dispatch` mapping can only be provided once per entry",
+                ));
+            }
+        }
+        Ok(out)
     }
-    selector.to_token_stream().to_string()
+
+    pub(crate) fn collect_explicit_handle_id_specs(
+        sig: &syn::Signature,
+        allowed_selectors: &BTreeSet<String>,
+        handle_id_positions: Option<&BTreeMap<String, usize>>,
+    ) -> syn::Result<Vec<HandleIdSpec>> {
+        collect_explicit_handle_id_specs_from_sig(sig, allowed_selectors, handle_id_positions)
+    }
+
+    pub(crate) fn resolve_poly_handle_id_specs_for_sig(
+        sig: &syn::Signature,
+        _attrs: &[syn::Attribute],
+        entry_explicit_handle_id_specs: &[HandleIdSpec],
+        key_types: &BTreeMap<String, Vec<syn::Type>>,
+    ) -> syn::Result<Vec<HandleIdSpec>> {
+        fn collect_poly_handle_id_specs(
+            sig: &syn::Signature,
+            handle_id_positions: &BTreeMap<String, usize>,
+            allowed_selectors: &BTreeSet<String>,
+        ) -> Vec<HandleIdSpec> {
+            let mut out = Vec::new();
+            let marked_positions = handle_id_positions
+                .values()
+                .copied()
+                .collect::<BTreeSet<_>>();
+            for (at, input) in sig.inputs.iter().enumerate() {
+                let syn::FnArg::Typed(arg) = input else {
+                    continue;
+                };
+                let syn::Pat::Ident(pat_ident) = arg.pat.as_ref() else {
+                    continue;
+                };
+                if !marked_positions.contains(&at) {
+                    continue;
+                }
+                let Ok(selector) =
+                    super::selector_from_handle_id_type(arg.ty.as_ref(), pat_ident.ident.span())
+                else {
+                    continue;
+                };
+                if !allowed_selectors.contains(&super::selector_key_name(&selector)) {
+                    continue;
+                }
+                out.push(HandleIdSpec {
+                    arg_name: pat_ident.ident.clone(),
+                    selector,
+                    at: handle_id_positions
+                        .get(&pat_ident.ident.to_string())
+                        .copied()
+                        .unwrap_or(at),
+                });
+            }
+            out
+        }
+        let mut explicit_handle_id_specs = entry_explicit_handle_id_specs.to_vec();
+        let allowed_selectors = key_types.keys().cloned().collect::<BTreeSet<_>>();
+        explicit_handle_id_specs.extend(collect_poly_handle_id_specs(
+            sig,
+            &super::handle_id_positions(sig),
+            &allowed_selectors,
+        ));
+        validate_handle_id_positions_for_sig(sig, &explicit_handle_id_specs)?;
+        Ok(explicit_handle_id_specs)
+    }
+
+    fn validate_default_handle_id_selectors(
+        available_selectors: &BTreeSet<String>,
+        selectors: impl IntoIterator<Item = String>,
+    ) -> syn::Result<()> {
+        for key in selectors {
+            if !available_selectors.contains(&key) {
+                return Err(syn::Error::new(
+                    proc_macro2::Span::call_site(),
+                    format!("selector `{key}` does not refer to a handle in this signature"),
+                ));
+            }
+        }
+        Ok(())
+    }
+
+    pub(crate) fn resolve_default_handle_id_specs_for_fn(
+        fn_: &FnDescriptor<'_>,
+        skip_defaults: bool,
+        impl_explicit_handle_id_specs: &[HandleIdSpec],
+        required_selectors: impl IntoIterator<Item = String>,
+    ) -> syn::Result<Vec<HandleIdSpec>> {
+        if skip_defaults {
+            return Ok(Vec::new());
+        }
+        let mut explicit_handle_id_specs = impl_explicit_handle_id_specs.to_vec();
+        let available_selectors = available_default_handle_selectors(fn_)
+            .into_iter()
+            .map(|selector| super::selector_key_name(&selector))
+            .collect::<BTreeSet<_>>();
+        explicit_handle_id_specs.extend(collect_explicit_handle_id_specs(
+            &fn_.sig,
+            &available_selectors,
+            Some(&super::handle_id_positions(&fn_.sig)),
+        )?);
+        validate_default_handle_id_selectors(&available_selectors, required_selectors)?;
+        validate_handle_id_positions_for_sig(&fn_.sig, &explicit_handle_id_specs)?;
+        Ok(explicit_handle_id_specs)
+    }
+}
+
+fn selector_key_name(selector: &syn::Type) -> String {
+    selector
+        .to_token_stream()
+        .to_string()
+        .trim()
+        .trim_end_matches(':')
+        .trim()
+        .to_string()
 }
 
 pub(crate) fn parse_entry_handle_map_attr(
@@ -818,10 +1005,8 @@ pub(crate) fn parse_entry_handle_map_attr(
         syn::punctuated::Punctuated::<HandleMapEntry, syn::Token![,]>::parse_terminated,
     )?;
     if entries.is_empty() {
-        return Err(syn::Error::new_spanned(
-            attr,
-            "expected at least one `Selector = [Type, ...]` mapping",
-        ));
+        // `#[dispatch()]` acts like a bare marker.
+        return Ok(None);
     }
 
     let mut out = BTreeMap::new();

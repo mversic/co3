@@ -12,7 +12,7 @@ use super::{FfiTypeInput, FfiTypeKindAttribute};
 pub(crate) fn derive_transparent_item(input: &FfiTypeInput) -> TokenStream {
     debug_assert_eq!(
         input.repr_attr.kind.as_deref().copied(),
-        Some(crate::attr_parse::repr::ReprKind::Transparent)
+        Some(crate::attr::repr::ReprKind::Transparent)
     );
 
     let (_, ty_generics, _) = input.generics.split_for_impl();

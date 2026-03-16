@@ -62,7 +62,6 @@ The only exception is raw pointers: their referents are not required to have a C
 - For `#[repr(transparent)]`, representation is delegated to the wrapped type (no companion type is defined).
 - `#[reprC(unsafe(is_valid = |target| ...))]` defines custom validity invariants for a `#[repr(transparent)]` type.
 - If a custom validity invariant is given, `#[reprC(NICHE_VALUE = <expr>)]` defines the trap value used in niche optimization.
-- `#[reprC(opaque)]` overrides all other behavior and requires the type to be passed behind a pointer (no companion type).
 
 ### 2.2 The `#[export("ABI")]` Attribute
 
@@ -85,8 +84,8 @@ It can also generate `extern "ABI"` tag-based polymorphic dispatch functions whi
 
 - `export_!` inherits the same constraints, eligibility, naming, and safety rules of `#[export("ABI")]`.
 - `export_C!` is a specialization of `export_!` with ABI fixed to `"C"` and is used for convenience.
+- `type Type;` declares export of an opaque type which doesn't have to have C-compatible representation
 - `#[dispatch({param} = [Type1, ..., TypeN])]` declares concrete types used for polymorphic dispatch routing.
-- `#[id_pos({param}: {num})]` declares dispatch tag/id argument positions for generated polymorphic dispatch functions.
 
 ### 2.4 The `extern_!` Macro
 
@@ -96,6 +95,7 @@ The macro **MUST NOT** modify the signatures or behavior of declared Rust items.
 - By default, the macro infers `link_name` as: `{crate_name}_{TraitName}_{trait_generic_args}_{SelfTy}_{self_ty_generic_args}_{method}`.
 - `extern_!` requires `#![abi = "..."]` that it applies to generated `extern "ABI"` companion function declarations.
 - `extern_C!` is a specialization of `extern_!` with ABI fixed to `"C"` and is used for convenience.
+- `type Type;` declares an opaque type which doesn't have to have C-compatible representation
 - `#![link(crate = "...")]` defines the crate name prefix for the inferred `link_name`.
 - `#[link_name = "..."]` overrides default name mangling with its own semantics.
 - Although not declared `unsafe`, using extern symbols always carries a risk of UB.

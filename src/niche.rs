@@ -8,7 +8,10 @@ use alloc_crate::{boxed::Box, vec::Vec};
 use disjoint_impls::disjoint_impls;
 
 use crate::{
-    ExternC, assert_arr_has_non_zero_len, ir::ReprFamily, option::COption, slice::{CSlice, CSliceMut}
+    ExternC, assert_arr_has_non_zero_len,
+    ir::ReprFamily,
+    option::COption,
+    slice::{CSlice, CSliceMut},
 };
 #[cfg(feature = "alloc")]
 use crate::{

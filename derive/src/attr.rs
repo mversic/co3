@@ -215,6 +215,10 @@ impl FromAttributes for Repr {
     }
 }
 
+pub mod repr {
+    pub use super::{Repr, ReprKind, ReprPrimitive};
+}
+
 #[cfg(test)]
 mod test {
     use darling::FromAttributes as _;
@@ -223,8 +227,20 @@ mod test {
 
     use super::{Repr, ReprAlignment, ReprKind, ReprPrimitive};
 
+    /// A test utility function that parses multiple attributes
+    fn parse_attributes(ts: TokenStream) -> Vec<syn::Attribute> {
+        struct Attributes(Vec<syn::Attribute>);
+        impl syn::parse::Parse for Attributes {
+            fn parse(input: syn::parse::ParseStream) -> syn::Result<Self> {
+                syn::Attribute::parse_outer(input).map(Attributes)
+            }
+        }
+
+        syn::parse2::<Attributes>(ts).unwrap().0
+    }
+
     fn parse_repr(attrs: TokenStream) -> darling::Result<Repr> {
-        let attrs = crate::parse_attributes(attrs);
+        let attrs = parse_attributes(attrs);
         Repr::from_attributes(&attrs)
     }
 

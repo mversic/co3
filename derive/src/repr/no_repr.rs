@@ -10,7 +10,7 @@ use quote::{format_ident, quote};
 use syn::{Ident, parse_quote, visit::Visit};
 
 use crate::{
-    attr_parse::repr::ReprPrimitive,
+    attr::repr::ReprPrimitive,
     emitter::Emitter,
     repr::{
         FfiTypeField, FfiTypeVariant, derive_extern_c_internal, is_type_parameterized,
@@ -22,66 +22,6 @@ use crate::{
     },
     utils::build_type_tuple,
 };
-
-pub(super) fn derive_opaque_item(name: &Ident, generics: &syn::Generics) -> TokenStream {
-    let (impl_generics, ty_generics, where_clause) = generics.split_for_impl();
-    let params = &generics.params;
-    let impl_drop_assert = assert_drop_impl();
-
-    let predicates = where_clause
-        .as_ref()
-        .map(|where_clause| &where_clause.predicates);
-
-    let sized_impls = quote! {
-        impl #impl_generics co3::ir::SizeFamily for #name #ty_generics #where_clause {
-            type Kind = co3::ir::Sized_;
-        }
-
-        impl #impl_generics co3::borrow::Borrow for #name #ty_generics #where_clause {
-            type Borrowed<'itm>
-                = Self
-            where
-                Self: 'itm;
-
-            type Store = ();
-
-            #[inline(always)]
-            fn borrow<'itm>(self, (): &mut ()) -> Self::Borrowed<'itm>
-            where
-                Self: 'itm,
-            {
-                self
-            }
-        }
-
-        impl<'_ršč, #params> co3::borrow::ToOwned<'_ršč> for #name #ty_generics where Self: '_ršč, #predicates {
-            #[inline(always)]
-            fn to_owned(borrowed: Self::Borrowed<'_ršč>) -> Self {
-                borrowed
-            }
-        }
-
-        impl #impl_generics co3::niche::Niche for #name #ty_generics #where_clause {
-            const NICHE_VALUE: co3::boxed::CBox<Self> = co3::boxed::CBox::none();
-        }
-    };
-
-    quote! {
-        impl #impl_generics co3::ir::ReprFamily for #name #ty_generics #where_clause {
-            type Kind = co3::ir::Opaque;
-        }
-
-        impl #impl_generics co3::borrow::DropFamily for #name #ty_generics #where_clause {
-            type Kind = co3::borrow::NoDrop;
-        }
-
-        impl #impl_generics co3::niche::NicheFamily for #name #ty_generics #where_clause {
-            type Kind = co3::niche::WithCustomNiche;
-        }
-
-        #sized_impls
-    }
-}
 
 pub(super) fn derive_no_repr_struct<const NEEDS_DROP: bool>(
     name: &Ident,

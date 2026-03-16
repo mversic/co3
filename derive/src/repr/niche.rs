@@ -3,7 +3,7 @@ use proc_macro2::TokenStream;
 use quote::quote;
 
 use crate::{
-    attr_parse::repr::ReprPrimitive,
+    attr::repr::ReprPrimitive,
     repr::{
         FfiTypeField, FfiTypeVariant, is_type_parameterized,
         repr_c::{gen_extern_c_bounds, gen_repr_c_item_name, is_exhaustive_enum},
