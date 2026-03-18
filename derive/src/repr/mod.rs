@@ -29,6 +29,8 @@ mod no_repr;
 mod repr_c;
 mod transparent;
 
+pub(crate) use repr_c::gen_sized_size_family;
+
 #[derive(Debug)]
 enum FfiTypeToken {
     Transparent(Option<syn::Expr>, Box<syn::ExprClosure>),

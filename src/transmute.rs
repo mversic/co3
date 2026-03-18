@@ -4,10 +4,11 @@ use core::mem::ManuallyDrop;
 
 use disjoint_impls::disjoint_impls;
 
+#[cfg(feature = "alloc")]
+use crate::boxed::CBox;
 use crate::{
-    Encode, ReprC, Store, assert_arr_has_non_zero_len,
-    boxed::CBox,
-    ir::{Cloned, NonRobust, Opaque, ReprFamily, Robust, Transmuted},
+    Dst, Encode, ReprC, Store, assert_arr_has_non_zero_len,
+    ir::{Cloned, NonRobust, Opaque, ReprFamily, Robust, SizeFamily, Sized_, Transmuted, UnSized},
     niche::{NicheFamily, StableNiche, WithNiche, WithStableNiche, WithoutNiche},
 };
 
@@ -26,6 +27,15 @@ disjoint_impls! {
         ///
         /// This function must never return false positives, i.e. return `true` for a trap representation.
         fn is_valid(target: &Self::Target) -> bool;
+    }
+
+    unsafe impl<'a, R: ReprFamily<Kind = Transmuted> + CheckedTransmute<Target: Sized>> CheckedTransmute for [R] {
+        type Target = [R::Target];
+
+        #[inline(always)]
+        fn is_valid(target: &Self::Target) -> bool {
+            target.iter().all(R::is_valid)
+        }
     }
 
     unsafe impl<R: ReprFamily<Kind = Robust> + ReprC> CheckedTransmute for &R {
@@ -106,7 +116,10 @@ disjoint_impls! {
         }
     }
 
-    unsafe impl<R: CheckedTransmute<Target: ReprFamily<Kind = Robust> + ReprC> + NicheFamily<Kind = WithStableNiche> + StableNiche> CheckedTransmute for Option<R> {
+    unsafe impl<R: NicheFamily<Kind = WithStableNiche> + StableNiche> CheckedTransmute for Option<R>
+    where
+        R: CheckedTransmute<Target: ReprFamily<Kind = Robust> + ReprC>,
+    {
         type Target = R::Target;
 
         #[inline(always)]
@@ -114,7 +127,10 @@ disjoint_impls! {
             true
         }
     }
-    unsafe impl<R: CheckedTransmute<Target: ReprFamily<Kind = Transmuted>> + NicheFamily<Kind = WithStableNiche> + StableNiche> CheckedTransmute for Option<R> {
+    unsafe impl<R: NicheFamily<Kind = WithStableNiche> + StableNiche> CheckedTransmute for Option<R>
+    where
+        R: CheckedTransmute<Target: ReprFamily<Kind = Transmuted> + Sized>,
+    {
         type Target = Option<R::Target>;
 
         #[inline(always)]
@@ -131,7 +147,7 @@ disjoint_impls! {
     ///
     /// - check [`CheckedTransmute`]
     pub unsafe trait FlatTransmute {
-        type Target;
+        type Target: ?Sized;
 
         /// Called when transmuting [`Self::Target`] back into [`Self`] to check for trap representations.
         ///
@@ -139,7 +155,10 @@ disjoint_impls! {
         fn is_valid(target: &Self::Target) -> bool;
     }
 
-    unsafe impl<R: ReprFamily<Kind = Robust>> FlatTransmute for R {
+    unsafe impl<R: ?Sized> FlatTransmute for R
+    where
+        Self: ReprFamily<Kind = Robust>,
+    {
         type Target = Self;
 
         #[inline(always)]
@@ -147,7 +166,10 @@ disjoint_impls! {
             true
         }
     }
-    unsafe impl<R: ReprFamily<Kind = Opaque>> FlatTransmute for R {
+    unsafe impl<R: ?Sized> FlatTransmute for R
+    where
+        Self: ReprFamily<Kind = Opaque>,
+    {
         type Target = Self;
 
         #[inline(always)]
@@ -155,7 +177,10 @@ disjoint_impls! {
             true
         }
     }
-    unsafe impl<R: ReprFamily<Kind: Cloned>> FlatTransmute for R {
+    unsafe impl<R: ?Sized> FlatTransmute for R
+    where
+        Self: ReprFamily<Kind: Cloned>,
+    {
         type Target = Self;
 
         #[inline(always)]
@@ -164,7 +189,10 @@ disjoint_impls! {
         }
     }
 
-    unsafe impl<R: ReprFamily<Kind = Transmuted> + CheckedTransmute<Target: FlatTransmute>> FlatTransmute for R {
+    unsafe impl<R: CheckedTransmute<Target: FlatTransmute + Sized>> FlatTransmute for R
+    where
+        Self: ReprFamily<Kind = Transmuted> + SizeFamily<Kind = Sized_>,
+    {
         type Target = <R::Target as FlatTransmute>::Target;
 
         #[inline(always)]
@@ -177,6 +205,22 @@ disjoint_impls! {
             <R as CheckedTransmute>::is_valid(unsafe { &*target_ptr })
         }
     }
+    unsafe impl<R: ?Sized + CheckedTransmute<Target: FlatTransmute<Target: Dst> + Dst>> FlatTransmute for R
+    where
+        Self: ReprFamily<Kind = Transmuted> + SizeFamily<Kind = UnSized>,
+    {
+        type Target = <R::Target as FlatTransmute>::Target;
+
+        #[inline(always)]
+        fn is_valid(target: &Self::Target) -> bool {
+            if !<R::Target as FlatTransmute>::is_valid(target) {
+                return false;
+            }
+
+            let target = unsafe { R::Target::from_raw_parts(target.as_ptr().cast(), target.len()) };
+            <R as CheckedTransmute>::is_valid(target)
+        }
+    }
 }
 
 pub struct TransmutedRefMutStore<'a, R> {
@@ -184,7 +228,7 @@ pub struct TransmutedRefMutStore<'a, R> {
     _original: Option<&'a mut R>,
 }
 
-impl<'slice, R> Default for TransmutedRefMutStore<'slice, R> {
+impl<'a, R> Default for TransmutedRefMutStore<'a, R> {
     fn default() -> Self {
         Self {
             _target: None,
@@ -340,75 +384,65 @@ pub(super) fn transmute_from_target<R: CheckedTransmute<Target: Sized>>(
     Some(ManuallyDrop::into_inner(unsafe { transmute_helper.source }))
 }
 
-#[cfg(feature = "alloc")]
-pub(super) fn transmute_into_target_boxed_slice<R: CheckedTransmute<Target: Sized>>(
-    #[expect(clippy::boxed_local)] mut source: Box<[R]>,
-) -> Box<[R::Target]> {
-    assert_size_and_allignment_match::<R>();
-
-    let (ptr, len) = (source.as_mut_ptr().cast(), source.len());
-
-    // SAFETY: Soundness is guaranteed by [`Transmute`]
-    unsafe { Box::from_raw(core::ptr::slice_from_raw_parts_mut(ptr, len)) }
+pub(super) fn transmute_into_target_ref_dst<R: ?Sized + Dst + CheckedTransmute<Target: Dst>>(
+    source: &R,
+) -> &R::Target {
+    let (ptr, len) = (source.as_ptr().cast(), source.len());
+    unsafe { R::Target::from_raw_parts(ptr, len) }
 }
-#[cfg(feature = "alloc")]
-pub(super) fn transmute_from_target_boxed_slice<R: CheckedTransmute<Target: Sized>>(
-    #[expect(clippy::boxed_local)] mut source: Box<[R::Target]>,
-) -> Option<Box<[R]>> {
-    assert_size_and_allignment_match::<R>();
-
-    if !source.iter().all(|item| R::is_valid(item)) {
+pub(super) fn transmute_from_target_ref_dst<R: ?Sized + Dst + CheckedTransmute<Target: Dst>>(
+    source: &R::Target,
+) -> Option<&R> {
+    if !R::is_valid(source) {
         return None;
     }
 
+    let (ptr, len) = (source.as_ptr().cast(), source.len());
+    Some(unsafe { R::from_raw_parts(ptr, len) })
+}
+
+pub(super) fn transmute_into_target_dst_mut<R: ?Sized + Dst + CheckedTransmute<Target: Dst>>(
+    source: &mut R,
+) -> &mut R::Target {
+    let (ptr, len) = (source.as_mut_ptr().cast(), source.len());
+    unsafe { R::Target::from_raw_parts_mut(ptr, len) }
+}
+pub(super) fn transmute_from_target_dst_mut<R: ?Sized + Dst + CheckedTransmute<Target: Dst>>(
+    source: &mut R::Target,
+) -> Option<&mut R> {
+    if !R::is_valid(source) {
+        return None;
+    }
+
+    let (ptr, len) = (source.as_mut_ptr().cast(), source.len());
+    Some(unsafe { R::from_raw_parts_mut(ptr, len) })
+}
+
+#[cfg(feature = "alloc")]
+pub(super) fn transmute_into_target_boxed_dst<R: ?Sized + Dst + CheckedTransmute<Target: Dst>>(
+    source: Box<R>,
+) -> Box<R::Target> {
+    let mut source = ManuallyDrop::new(source);
+    let (ptr, len) = (source.as_mut_ptr().cast(), source.len());
+    unsafe { Box::from_raw(R::Target::from_raw_parts_mut(ptr, len)) }
+}
+#[cfg(feature = "alloc")]
+pub(super) fn transmute_from_target_boxed_dst<R: ?Sized + Dst + CheckedTransmute<Target: Dst>>(
+    source: Box<R::Target>,
+) -> Option<Box<R>> {
+    if !R::is_valid(&source) {
+        return None;
+    }
+
+    let mut source = ManuallyDrop::new(source);
+
     // SAFETY: Soundness is guaranteed by [`Transmute`]
     Some(unsafe {
-        Box::from_raw(core::ptr::slice_from_raw_parts_mut(
+        Box::from_raw(R::from_raw_parts_mut(
             source.as_mut_ptr().cast(),
             source.len(),
         ))
     })
-}
-
-pub(super) fn transmute_into_target_ref_slice<R: CheckedTransmute<Target: Sized>>(
-    source: &[R],
-) -> &[R::Target] {
-    assert_size_and_allignment_match::<R>();
-
-    let (ptr, len) = (source.as_ptr().cast(), source.len());
-
-    unsafe { core::slice::from_raw_parts(ptr, len) }
-}
-pub(super) fn transmute_from_target_ref_slice<R: CheckedTransmute<Target: Sized>>(
-    source: &[R::Target],
-) -> Option<&[R]> {
-    assert_size_and_allignment_match::<R>();
-
-    if !source.iter().all(|item| R::is_valid(item)) {
-        return None;
-    }
-
-    // SAFETY: Soundness is guaranteed by [`Transmute`]
-    Some(unsafe { core::slice::from_raw_parts(source.as_ptr().cast(), source.len()) })
-}
-
-pub(super) fn transmute_into_target_slice_mut<R: CheckedTransmute<Target: Sized>>(
-    source: &mut [R],
-) -> &mut [R::Target] {
-    let (ptr, len) = (source.as_mut_ptr().cast(), source.len());
-
-    // SAFETY: Soundness is guaranteed by [`Transmute`]
-    unsafe { core::slice::from_raw_parts_mut(ptr, len) }
-}
-pub(super) fn transmute_from_target_slice_mut<R: CheckedTransmute<Target: Sized>>(
-    source: &mut [R::Target],
-) -> Option<&mut [R]> {
-    if !source.iter_mut().all(|item| R::is_valid(item)) {
-        return None;
-    }
-
-    // SAFETY: Soundness is guaranteed by [`Transmute`]
-    Some(unsafe { core::slice::from_raw_parts_mut(source.as_mut_ptr().cast(), source.len()) })
 }
 
 #[cfg(feature = "alloc")]
@@ -452,12 +486,13 @@ mod tests {
     use super::*;
     #[cfg(feature = "alloc")]
     use crate::boxed::CBoxedSlice;
+    #[cfg(feature = "alloc")]
+    use crate::vec::CVec;
     use crate::{
         Decode, Encode, ExternC,
         ir::{ReprFamily, Transmuted},
         niche::{Niche, NicheFamily, StableNiche, WithCustomNiche, WithStableNiche, WithoutNiche},
         slice::{CSlice, CSliceMut},
-        vec::CVec,
     };
 
     #[test]
@@ -492,14 +527,14 @@ mod tests {
         //    Encode,
         //);
         assert_impl_all!(&[bool]:
-            ReprFamily<Kind = [Transmuted]>,
+            ReprFamily<Kind = &'static Transmuted>,
             NicheFamily<Kind = WithCustomNiche>,
             Niche<CType = CSlice<u8>>,
             Decode<'static>,
             Encode,
         );
         assert_impl_all!(&mut [bool]:
-            ReprFamily<Kind = [Transmuted]>,
+            ReprFamily<Kind = &'static mut Transmuted>,
             NicheFamily<Kind = WithCustomNiche>,
             Niche<CType = CSliceMut<u8>>,
             Decode<'static>,
@@ -507,7 +542,7 @@ mod tests {
         );
         #[cfg(feature = "alloc")]
         assert_impl_all!(Box<[bool]>:
-            ReprFamily<Kind = [Transmuted]>,
+            ReprFamily<Kind = Box<Transmuted>>,
             NicheFamily<Kind = WithCustomNiche>,
             Niche<CType = CBoxedSlice<u8>>,
             // FIXME:
@@ -516,7 +551,7 @@ mod tests {
         );
         #[cfg(feature = "alloc")]
         assert_impl_all!(Vec<bool>:
-            ReprFamily<Kind = [Transmuted]>,
+            ReprFamily<Kind = Vec<Transmuted>>,
             NicheFamily<Kind = WithCustomNiche>,
             Niche<CType = CVec<u8>>,
             // FIXME:
@@ -586,21 +621,21 @@ mod tests {
         //    Encode,
         //);
         assert_impl_all!(&[&u8]:
-            ReprFamily<Kind = [Transmuted]>,
+            ReprFamily<Kind = &'static Transmuted>,
             NicheFamily<Kind = WithCustomNiche>,
             Niche<CType = CSlice<*const u8>>,
             Decode<'static>,
             Encode,
         );
         assert_impl_all!(&mut [&u8]:
-            ReprFamily<Kind = [Transmuted]>,
+            ReprFamily<Kind = &'static mut Transmuted>,
             NicheFamily<Kind = WithCustomNiche>,
             Niche<CType = CSliceMut<*const u8>>,
             Decode<'static>,
         );
         #[cfg(feature = "alloc")]
         assert_impl_all!(Box<[&u8]>:
-            ReprFamily<Kind = [Transmuted]>,
+            ReprFamily<Kind = Box<Transmuted>>,
             NicheFamily<Kind = WithCustomNiche>,
             Niche<CType = CBoxedSlice<*const u8>>,
             // FIXME:
@@ -609,7 +644,7 @@ mod tests {
         );
         #[cfg(feature = "alloc")]
         assert_impl_all!(Vec<&u8>:
-            ReprFamily<Kind = [Transmuted]>,
+            ReprFamily<Kind = Vec<Transmuted>>,
             NicheFamily<Kind = WithCustomNiche>,
             Niche<CType = CVec<*const u8>>,
             //Decode<'static>,
@@ -679,21 +714,21 @@ mod tests {
         //    Encode,
         //);
         assert_impl_all!(&[&bool]:
-            ReprFamily<Kind = [Transmuted]>,
+            ReprFamily<Kind = &'static Transmuted>,
             NicheFamily<Kind = WithCustomNiche>,
             Niche<CType = CSlice<*const u8>>,
             Decode<'static>,
             Encode,
         );
         assert_impl_all!(&mut [&bool]:
-            ReprFamily<Kind = [Transmuted]>,
+            ReprFamily<Kind = &'static mut Transmuted>,
             NicheFamily<Kind = WithCustomNiche>,
             Niche<CType = CSliceMut<*const u8>>,
             Decode<'static>,
         );
         #[cfg(feature = "alloc")]
         assert_impl_all!(Box<[&bool]>:
-            ReprFamily<Kind = [Transmuted]>,
+            ReprFamily<Kind = Box<Transmuted>>,
             NicheFamily<Kind = WithCustomNiche>,
             Niche<CType = CBoxedSlice<*const u8>>,
             // FIXME:
@@ -702,7 +737,7 @@ mod tests {
         );
         #[cfg(feature = "alloc")]
         assert_impl_all!(Vec<&bool>:
-            ReprFamily<Kind = [Transmuted]>,
+            ReprFamily<Kind = Vec<Transmuted>>,
             NicheFamily<Kind = WithCustomNiche>,
             Niche<CType = CVec<*const u8>>,
             // FIXME:
@@ -772,14 +807,14 @@ mod tests {
         //    Encode,
         //);
         assert_impl_all!(&[&mut u8]:
-            ReprFamily<Kind = [Transmuted]>,
+            ReprFamily<Kind = &'static Transmuted>,
             NicheFamily<Kind = WithCustomNiche>,
             Niche<CType = CSlice<*mut u8>>,
             Decode<'static>,
             Encode,
         );
         assert_impl_all!(&mut [&mut u8]:
-            ReprFamily<Kind = [Transmuted]>,
+            ReprFamily<Kind = &'static mut Transmuted>,
             NicheFamily<Kind = WithCustomNiche>,
             Niche<CType = CSliceMut<*mut u8>>,
             Decode<'static>,
@@ -787,7 +822,7 @@ mod tests {
         );
         #[cfg(feature = "alloc")]
         assert_impl_all!(Box<[&mut u8]>:
-            ReprFamily<Kind = [Transmuted]>,
+            ReprFamily<Kind = Box<Transmuted>>,
             NicheFamily<Kind = WithCustomNiche>,
             Niche<CType = CBoxedSlice<*mut u8>>,
             //FIXME:
@@ -796,7 +831,7 @@ mod tests {
         );
         #[cfg(feature = "alloc")]
         assert_impl_all!(Vec<&mut u8>:
-            ReprFamily<Kind = [Transmuted]>,
+            ReprFamily<Kind = Vec<Transmuted>>,
             NicheFamily<Kind = WithCustomNiche>,
             Niche<CType = CVec<*mut u8>>,
             //FIXME:
@@ -865,21 +900,21 @@ mod tests {
         //    Decode<'static>,
         //);
         assert_impl_all!(&[&mut bool]:
-            ReprFamily<Kind = [Transmuted]>,
+            ReprFamily<Kind = &'static Transmuted>,
             NicheFamily<Kind = WithCustomNiche>,
             Niche<CType = CSlice<*mut u8>>,
             Decode<'static>,
             Encode,
         );
         assert_impl_all!(&mut [&mut bool]:
-            ReprFamily<Kind = [Transmuted]>,
+            ReprFamily<Kind = &'static mut Transmuted>,
             NicheFamily<Kind = WithCustomNiche>,
             Niche<CType = CSliceMut<*mut u8>>,
             Decode<'static>,
         );
         #[cfg(feature = "alloc")]
         assert_impl_all!(Box<[&mut bool]>:
-            ReprFamily<Kind = [Transmuted]>,
+            ReprFamily<Kind = Box<Transmuted>>,
             NicheFamily<Kind = WithCustomNiche>,
             Niche<CType = CBoxedSlice<*mut u8>>,
             // FIXME:
@@ -887,7 +922,7 @@ mod tests {
         );
         #[cfg(feature = "alloc")]
         assert_impl_all!(Vec<&mut bool>:
-            ReprFamily<Kind = [Transmuted]>,
+            ReprFamily<Kind = Vec<Transmuted>>,
             NicheFamily<Kind = WithCustomNiche>,
             Niche<CType = CVec<*mut u8>>,
             // FIXME:

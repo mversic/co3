@@ -4,6 +4,7 @@ use crate::{
     Decode, Encode, ExternC, ReprC, Store,
     borrow::DropFamily,
     cloned::DecodeCloned,
+    ir::{SizeFamily, Sized_},
     niche::{Niche, NicheFamily},
     reprC,
 };
@@ -94,13 +95,13 @@ impl<E: Copy> Clone for CResultErr<E> {
 }
 
 reprC! {
-    unsafe impl(T: ReprC, E: ReprC) Robust for CResult<T, E> {}
+    unsafe impl(T: ReprC, E: ReprC) SizedRobust for CResult<T, E> {}
 }
 
 reprC! {
     // FIXME: Result is transparent if one param is ZST
     // https://github.com/mversic/co3/issues/34
-    impl(T, E) Cloned for Result<T, E> {}
+    impl(T, E) SizedCloned for Result<T, E> {}
 }
 
 impl<T, E> NicheFamily for Result<T, E>

@@ -41,87 +41,70 @@ where `ReprFamily::Kind` is assigned one of the categories below through a marke
 
 The tables below specifies how composite types derive `ReprFamily::Kind`:
 
-#### `&R`
+#### `[R]`
 
 | R::Kind | Self::Kind |
 | --- | --- |
+| `Robust` | `Robust` |
+| `Opaque` | `[Opaque]` |
 | `Transmuted` | `Transmuted` |
-| `Robust` | `Transmuted` |
-| `Opaque` | `Transmuted` |
-| `Cloned` | `&R::Kind`[1] |
+| `Cloned` | `[R::Kind]` |
+
+#### `&R`
+
+| R::Kind | Self::Kind (R: Sized) | Self::Kind (R: !Sized) |
+| --- | --- | --- |
+| `Robust` | `Transmuted` | `&Robust` |
+| `Opaque` | `Transmuted` | `&Opaque` |
+| `Transmuted` | `Transmuted` | `&Transmuted` |
+| `Cloned` | `&R::Kind`[1] | `&R::Kind`[1] |
 
 #### `&mut R`
 
-| R::Kind | Self::Kind |
-| --- | --- |
-| `Transmuted` | `Transmuted`[2] |
-| `Robust` | `Transmuted` |
-| `Opaque` | `Transmuted` |
-| `Cloned` | `&mut R::Kind`[1] |
+| R::Kind | Self::Kind (R: Sized) | Self::Kind (R: !Sized) |
+| --- | --- | --- |
+| `Robust` | `Transmuted` | `&mut Robust` |
+| `Opaque` | `Transmuted` | `&mut Opaque` |
+| `Transmuted` | `Transmuted` | `&mut Transmuted`[2] |
+| `Cloned` | `&mut R::Kind`[1] | `&mut R::Kind`[1] |
 
 #### `Box<R>`
 
-| R::Kind | Self::Kind |
-| --- | --- |
-| `Transmuted` | `Transmuted` |
-| `Robust` | `Transmuted` |
-| `Opaque` | `Transmuted` |
-| `Cloned` | `Box<R::Kind>` |
+| R::Kind | Self::Kind (R: Sized) | Self::Kind (R: !Sized) |
+| --- | --- | --- |
+| `Robust` | `Transmuted` | `Box<Robust>` |
+| `Opaque` | `Transmuted` | `Box<Opaque>` |
+| `Transmuted` | `Transmuted` | `Box<Transmuted>` |
+| `Cloned` | `Box<R::Kind>` | `Box<R::Kind>` |
 
-#### `&[R]`
-
-| R::Kind | Self::Kind |
-| --- | --- |
-| `Transmuted` | `&[Transmuted]` |
-| `Robust` | `&[Robust]` |
-| `Opaque` | `&[Opaque]`[1] |
-| `Cloned` | `&[R::Kind]`[1] |
-
-#### `&mut [R]`
-
-| R::Kind | Self::Kind |
-| --- | --- |
-| `Transmuted` | `&mut [Transmuted]` |
-| `Robust` | `&mut [Robust]` |
-| `Opaque` | `&mut [Opaque]`[1] |
-| `Cloned` | `&mut [R::Kind]`[1] |
-
-#### `Box<[R]>`
-
-| R::Kind | Self::Kind |
-| --- | --- |
-| `Transmuted` | `Box<[Transmuted]>` |
-| `Robust` | `Box<[Robust]>` |
-| `Opaque` | `Box<[Opaque]>` |
-| `Cloned` | `Box<[R::Kind]>` |
 
 #### `Vec<R>`
 
 | R::Kind | Self::Kind |
 | --- | --- |
-| `Transmuted` | `Vec<Transmuted>` |
 | `Robust` | `Vec<Robust>` |
-| `Opaque` | `Vec<Opaque>` |
+| `Opaque` | `Vec<Box<Opaque>>` |
+| `Transmuted` | `Vec<Transmuted>` |
 | `Cloned` | `Vec<R::Kind>` |
 
 #### `[R; N]`
 
 | R::Kind | Self::Kind |
 | --- | --- |
-| `Transmuted` | `Transmuted` |
 | `Robust` | `Robust` |
 | `Opaque` | `[Opaque; N]` |
+| `Transmuted` | `Transmuted` |
 | `Cloned` | `[R::Kind; N]` |
 
 #### `Option<R>`
 
 | R::Kind | \<R as NicheFamily\>::Kind | Self::Kind |
 | --- | --- | --- |
+| `Robust` | `-` | `Option<WithoutNiche>` |
+| `Opaque` | `-` | `Option<WithCustomNiche>` |
 | `Transmuted` | `WithoutNiche` | `Option<WithoutNiche>` |
 | `Transmuted` | `WithStableNiche` | `Transmuted` |
 | `Transmuted` | `WithCustomNiche` | `Option<WithCustomNiche>` |
-| `Robust` | `-` | `Option<WithoutNiche>` |
-| `Opaque` | `-` | `Option<WithCustomNiche>` |
 | `Cloned` | `WithoutNiche` | `Option<WithoutNiche>` |
 | `Cloned` | `WithCustomNiche` | `Option<WithCustomNiche>` |
 

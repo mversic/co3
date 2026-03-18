@@ -1,11 +1,12 @@
 //! Logic related to the conversion of vectors to and from FFI-compatible representation
 
-#[cfg(feature = "alloc")]
 use alloc_crate::vec::Vec;
 
-#[cfg(feature = "alloc")]
-use crate::alloc::Global;
-use crate::{ReprC, alloc::Allocator, reprC};
+use crate::{
+    ReprC,
+    alloc::{Allocator, Global},
+    reprC,
+};
 
 /// Owned vector `Vec<C>` with a defined C ABI layout and a deallocate function.
 ///
@@ -87,7 +88,6 @@ impl<C, A: Allocator> Clone for CVec<C, A> {
 }
 impl<C, A: Allocator> Copy for CVec<C, A> {}
 
-#[cfg(feature = "alloc")]
 impl<C> CVec<C> {
     /// Create [`Self`] from a [`Vec<T>`].
     pub fn from_vec(source: Option<Vec<C>>) -> Self {
@@ -119,7 +119,6 @@ impl<C, A: Allocator> CVec<C, A> {
     }
 }
 
-#[cfg(feature = "alloc")]
 impl<C: ReprC> CVec<C> {
     /// Convert [`Self`] into a vector. Return `None` if data pointer is null.
     ///
@@ -136,5 +135,5 @@ impl<C: ReprC> CVec<C> {
 }
 
 reprC! {
-    unsafe impl(C, A: Allocator) Robust for CVec<C, A> {}
+    unsafe impl(C, A: Allocator) SizedRobust for CVec<C, A> {}
 }

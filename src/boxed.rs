@@ -14,6 +14,9 @@ use crate::{ReprC, alloc::Allocator, reprC};
 /// If the data pointer is set to `null`, the struct represents `Option<Box<C>>`.
 #[repr(C)]
 pub struct CBox<C, A: Allocator = Global> {
+    #[cfg(test)]
+    pub(crate) data: *mut C,
+    #[cfg(not(test))]
     data: *mut C,
     allocator: A,
 }
@@ -257,9 +260,9 @@ impl<C: ReprC> CBoxedSlice<C> {
 }
 
 reprC! {
-    unsafe impl(C, A: Allocator) Robust for CBox<C, A> {}
+    unsafe impl(C, A: Allocator) SizedRobust for CBox<C, A> {}
 }
 
 reprC! {
-    unsafe impl(C, A: Allocator) Robust for CBoxedSlice<C, A> {}
+    unsafe impl(C, A: Allocator) SizedRobust for CBoxedSlice<C, A> {}
 }

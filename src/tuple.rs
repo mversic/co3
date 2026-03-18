@@ -66,6 +66,7 @@ use crate::{
     ExternC, ReprC, Store,
     borrow::{Borrow, DropFamily, ToOwned},
     cloned::DecodeCloned,
+    ir::SizeFamily,
     niche::{Niche, NicheFamily, WithNiche, WithoutNiche},
 };
 
@@ -82,6 +83,10 @@ macro_rules! impl_tuple {
 
         crate::reprC! {
             impl($($ty),+) Cloned for ($($ty,)+) {}
+        }
+
+        impl<$($ty: SizeFamily),+> SizeFamily for ($($ty,)+) {
+            type Kind = <impl_tuple!(@last_ty $($ty),+) as SizeFamily>::Kind;
         }
 
         impl<$($ty: ExternC),+> crate::ExternC for ($($ty,)+) {
@@ -228,6 +233,13 @@ macro_rules! impl_tuple {
                 }
             }
         }
+    };
+
+    ( @last_ty $last:ident ) => {
+        $last
+    };
+    ( @last_ty $head:ident, $( $tail:ident ),+ ) => {
+        impl_tuple!(@last_ty $( $tail ),+)
     };
 
 }
@@ -387,10 +399,13 @@ mod tests {
     use crate::slice::{CSlice, CSliceMut};
     use crate::{
         Decode, Encode,
-        boxed::{CBox, CBoxedSlice},
         ir::ReprFamily,
         niche::{StableNiche, WithCustomNiche, WithStableNiche},
         option::COption,
+    };
+    #[cfg(feature = "alloc")]
+    use crate::{
+        boxed::{CBox, CBoxedSlice},
         vec::CVec,
     };
 
@@ -427,19 +442,19 @@ mod tests {
         );
         #[cfg(feature = "unstable-refs")]
         assert_impl_all!(&[(u8, u8, u8)]:
-            ReprFamily<Kind = [(u8, u8, u8)]>,
+            ReprFamily<Kind = &'static [(u8, u8, u8)]>,
             NicheFamily<Kind = WithCustomNiche>,
             Niche<CType = CSlice<CTuple3<u8, u8, u8>>>,
         );
         #[cfg(feature = "unstable-refs")]
         assert_impl_all!(&mut [(u8, u8, u8)]:
-            ReprFamily<Kind = [(u8, u8, u8)]>,
+            ReprFamily<Kind = &'static mut [(u8, u8, u8)]>,
             NicheFamily<Kind = WithCustomNiche>,
             Niche<CType = CSliceMut<CTuple3<u8, u8, u8>>>,
         );
         #[cfg(feature = "alloc")]
         assert_impl_all!(Box<[(u8, u8, u8)]>:
-            ReprFamily<Kind = [(u8, u8, u8)]>,
+            ReprFamily<Kind = Box<[(u8, u8, u8)]>>,
             NicheFamily<Kind = WithCustomNiche>,
             Niche<CType = CBoxedSlice<CTuple3<u8, u8, u8>>>,
             // FIXME:
@@ -448,7 +463,7 @@ mod tests {
         );
         #[cfg(feature = "alloc")]
         assert_impl_all!(Vec<(u8, u8, u8)>:
-            ReprFamily<Kind = [(u8, u8, u8)]>,
+            ReprFamily<Kind = Vec<(u8, u8, u8)>>,
             NicheFamily<Kind = WithCustomNiche>,
             Niche<CType = CVec<CTuple3<u8, u8, u8>>>,
             // FIXME:
@@ -456,7 +471,7 @@ mod tests {
             Encode,
         );
         assert_impl_all!([(u8, u8, u8); 2]:
-            ReprFamily<Kind = [(u8, u8, u8)]>,
+            ReprFamily<Kind = [(u8, u8, u8); 2]>,
             NicheFamily<Kind = WithoutNiche>,
             ExternC<CType = [CTuple3<u8, u8, u8>; 2]>,
             Decode<'static>,
@@ -524,19 +539,19 @@ mod tests {
         );
         #[cfg(feature = "unstable-refs")]
         assert_impl_all!(&[(u8, NonZeroU8, bool)]:
-            ReprFamily<Kind = [(u8, NonZeroU8, bool)]>,
+            ReprFamily<Kind = &'static [(u8, NonZeroU8, bool)]>,
             NicheFamily<Kind = WithCustomNiche>,
             Niche<CType = CSlice<CTuple3<u8, u8, u8>>>,
         );
         #[cfg(feature = "unstable-refs")]
         assert_impl_all!(&mut [(u8, NonZeroU8, bool)]:
-            ReprFamily<Kind = [(u8, NonZeroU8, bool)]>,
+            ReprFamily<Kind = &'static mut [(u8, NonZeroU8, bool)]>,
             NicheFamily<Kind = WithCustomNiche>,
             Niche<CType = CSliceMut<CTuple3<u8, u8, u8>>>,
         );
         #[cfg(feature = "alloc")]
         assert_impl_all!(Box<[(u8, NonZeroU8, bool)]>:
-            ReprFamily<Kind = [(u8, NonZeroU8, bool)]>,
+            ReprFamily<Kind = Box<[(u8, NonZeroU8, bool)]>>,
             NicheFamily<Kind = WithCustomNiche>,
             Niche<CType = CBoxedSlice<CTuple3<u8, u8, u8>>>,
             // FIXME:
@@ -545,7 +560,7 @@ mod tests {
         );
         #[cfg(feature = "alloc")]
         assert_impl_all!(Vec<(u8, NonZeroU8, bool)>:
-            ReprFamily<Kind = [(u8, NonZeroU8, bool)]>,
+            ReprFamily<Kind = Vec<(u8, NonZeroU8, bool)>>,
             NicheFamily<Kind = WithCustomNiche>,
             Niche<CType = CVec<CTuple3<u8, u8, u8>>>,
             // FIXME:
@@ -553,7 +568,7 @@ mod tests {
             Encode,
         );
         assert_impl_all!([(u8, NonZeroU8, bool); 2]:
-            ReprFamily<Kind = [(u8, NonZeroU8, bool)]>,
+            ReprFamily<Kind = [(u8, NonZeroU8, bool); 2]>,
             NicheFamily<Kind = WithCustomNiche>,
             Niche<CType = [CTuple3<u8, u8, u8>; 2]>,
             Decode<'static>,

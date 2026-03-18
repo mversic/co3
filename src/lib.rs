@@ -9,7 +9,6 @@ extern crate self as co3;
 
 #[cfg(feature = "alloc")]
 use alloc_crate::{boxed::Box, vec::Vec};
-use core::ops::{Deref, DerefMut};
 
 #[cfg(feature = "derive")]
 pub use co3_derive::*;
@@ -29,8 +28,8 @@ use crate::transmute::EncodeTransmuted;
 use crate::{
     boxed::{CBox, CBoxedSlice},
     transmute::{
-        transmute_from_target_boxed_slice, transmute_from_target_vec,
-        transmute_into_target_boxed_slice, transmute_into_target_vec,
+        transmute_from_target_boxed_dst, transmute_from_target_vec,
+        transmute_into_target_boxed_dst, transmute_into_target_vec,
     },
     vec::CVec,
 };
@@ -39,20 +38,21 @@ use crate::{
         decode_cloned_array, decode_cloned_option_with_custom_niche,
         decode_cloned_option_without_niche,
     },
-    ir::{Cloned, NonRobust, Opaque, ReprFamily, Robust, Transmuted},
+    ir::{Cloned, NonRobust, Opaque, ReprFamily, Robust, SizeFamily, Sized_, Transmuted, UnSized},
     niche::{Niche, NicheFamily, WithCustomNiche, WithoutNiche},
     option::COption,
     slice::{CSlice, CSliceMut},
     transmute::{
-        CheckedTransmute, transmute_from_target, transmute_from_target_ref_slice,
-        transmute_from_target_slice_mut, transmute_into_target, transmute_into_target_ref_slice,
-        transmute_into_target_slice_mut,
+        CheckedTransmute, transmute_from_target, transmute_from_target_dst_mut,
+        transmute_from_target_ref_dst, transmute_into_target, transmute_into_target_dst_mut,
+        transmute_into_target_ref_dst,
     },
 };
 
 #[cfg(feature = "alloc")]
 pub mod alloc;
 pub mod borrow;
+#[cfg(feature = "alloc")]
 pub mod boxed;
 pub mod cloned;
 pub mod external;
@@ -67,6 +67,7 @@ pub mod slice;
 mod std_impls;
 pub mod transmute;
 pub mod tuple;
+#[cfg(feature = "alloc")]
 pub mod vec;
 
 /// Result of execution of an FFI function
@@ -97,6 +98,67 @@ pub enum FfiReturn {
 // NOTE: Type is `Copy` to indicate that there can be no ownership transfer
 pub unsafe trait ReprC: Sized + Copy {}
 
+pub trait Dst {
+    type Elem;
+
+    fn len(&self) -> usize;
+    fn as_ptr(&self) -> *const Self::Elem;
+    fn as_mut_ptr(&mut self) -> *mut Self::Elem;
+
+    unsafe fn from_raw_parts<'a>(data: *const Self::Elem, len: usize) -> &'a Self;
+    unsafe fn from_raw_parts_mut<'a>(data: *mut Self::Elem, len: usize) -> &'a mut Self;
+}
+
+impl<R> Dst for [R] {
+    type Elem = R;
+
+    fn len(&self) -> usize {
+        <[R]>::len(self)
+    }
+
+    fn as_ptr(&self) -> *const Self::Elem {
+        <[R]>::as_ptr(self)
+    }
+
+    fn as_mut_ptr(&mut self) -> *mut Self::Elem {
+        <[R]>::as_mut_ptr(self)
+    }
+
+    unsafe fn from_raw_parts<'a>(data: *const Self::Elem, len: usize) -> &'a Self {
+        unsafe { core::slice::from_raw_parts(data, len) }
+    }
+
+    unsafe fn from_raw_parts_mut<'a>(data: *mut Self::Elem, len: usize) -> &'a mut Self {
+        unsafe { core::slice::from_raw_parts_mut(data, len) }
+    }
+}
+
+impl Dst for str {
+    type Elem = u8;
+
+    fn len(&self) -> usize {
+        str::len(self)
+    }
+
+    fn as_ptr(&self) -> *const Self::Elem {
+        str::as_ptr(self)
+    }
+
+    fn as_mut_ptr(&mut self) -> *mut Self::Elem {
+        str::as_mut_ptr(self)
+    }
+
+    unsafe fn from_raw_parts<'a>(data: *const Self::Elem, len: usize) -> &'a Self {
+        let slice = unsafe { core::slice::from_raw_parts(data, len) };
+        unsafe { core::str::from_utf8_unchecked(slice) }
+    }
+
+    unsafe fn from_raw_parts_mut<'a>(data: *mut Self::Elem, len: usize) -> &'a mut Self {
+        let slice = unsafe { core::slice::from_raw_parts_mut(data, len) };
+        unsafe { core::str::from_utf8_unchecked_mut(slice) }
+    }
+}
+
 disjoint_impls! {
     /// A Rust type that has an `extern "C"` ABI
     pub trait ExternC: Sized {
@@ -110,6 +172,7 @@ disjoint_impls! {
     {
         type CType = Self;
     }
+    #[cfg(feature = "alloc")]
     impl<R> ExternC for R
     where
        Self: ReprFamily<Kind = Opaque>,
@@ -123,147 +186,124 @@ disjoint_impls! {
         type CType = <R::Target as ExternC>::CType;
     }
 
-    impl<'a, R: ExternC, S: Cloned> ExternC for &'a R
+    impl<'a, R: ?Sized + Dst<Elem: ReprC>> ExternC for &'a R
+    where
+        Self: ReprFamily<Kind = &'a Robust>,
+    {
+        type CType = CSlice<R::Elem>;
+    }
+    impl<'a, R: ?Sized + Dst> ExternC for &'a R
+    where
+        Self: ReprFamily<Kind = &'a Opaque>,
+    {
+        type CType = CSlice<R::Elem>;
+    }
+    impl<'a, R: ?Sized + CheckedTransmute> ExternC for &'a R
+    where
+        &'a <R as CheckedTransmute>::Target: ExternC,
+        Self: ReprFamily<Kind = &'a Transmuted>,
+    {
+        type CType = <&'a R::Target as ExternC>::CType;
+    }
+    impl<'a, R: ExternC, S: Cloned + 'a> ExternC for &'a R
     where
         Self: ReprFamily<Kind = &'a S>,
+        R: SizeFamily<Kind = Sized_>,
     {
         type CType = *const R::CType;
     }
-    impl<R: ReprC> ExternC for &[R]
+    impl<'a, R: ?Sized + Dst<Elem: ExternC>, S: Cloned + ?Sized + 'a> ExternC for &'a R
     where
-        Self: ReprFamily<Kind = [Robust]>,
+        Self: ReprFamily<Kind = &'a S>,
+        R: SizeFamily<Kind = UnSized>,
     {
-        type CType = CSlice<R>;
-    }
-    // FIXME:
-    //impl<R: ?Sized> ExternC for &R
-    //where
-    //    Self: ReprFamily<Kind = [Opaque]>,
-    //{
-    //    type CType = CSlice<R>;
-    //}
-    impl<R> ExternC for &[R]
-    where
-        Self: ReprFamily<Kind = [Opaque]>,
-    {
-        type CType = CSlice<*const R>;
-    }
-    impl<'slice, R: CheckedTransmute<Target: Sized + 'slice>> ExternC for &'slice [R]
-    where
-        &'slice [<R as CheckedTransmute>::Target]: ExternC,
-        Self: ReprFamily<Kind = [Transmuted]>,
-    {
-        type CType = <&'slice [R::Target] as ExternC>::CType;
-    }
-    impl<R: ExternC, S: Cloned> ExternC for &[R]
-    where
-        Self: ReprFamily<Kind = [S]>,
-    {
-        type CType = CSlice<R::CType>;
+        type CType = CSlice<<R::Elem as ExternC>::CType>;
     }
 
-    impl<'a, R: ExternC, S: Cloned> ExternC for &'a mut R
+    impl<'a, R: ?Sized + Dst<Elem: ReprC>> ExternC for &'a mut R
+    where
+        Self: ReprFamily<Kind = &'a mut Robust>,
+    {
+        type CType = CSliceMut<R::Elem>;
+    }
+    impl<'a, R: ?Sized + Dst> ExternC for &'a mut R
+    where
+        Self: ReprFamily<Kind = &'a mut Opaque>,
+    {
+        type CType = CSliceMut<R::Elem>;
+    }
+    impl<'a, R: ?Sized + CheckedTransmute> ExternC for &'a mut R
+    where
+        &'a mut <R as CheckedTransmute>::Target: ExternC,
+        Self: ReprFamily<Kind = &'a mut Transmuted>,
+    {
+        type CType = <&'a mut R::Target as ExternC>::CType;
+    }
+    impl<'a, R: ExternC, S: Cloned + 'a> ExternC for &'a mut R
     where
         Self: ReprFamily<Kind = &'a mut S>,
+        R: SizeFamily<Kind = Sized_>,
     {
         type CType = *mut R::CType;
     }
-    impl<R: ReprC> ExternC for &mut [R]
+    impl<'a, R: ?Sized + Dst<Elem: ExternC>, S: Cloned + ?Sized + 'a> ExternC for &'a mut R
     where
-        Self: ReprFamily<Kind = [Robust]>,
+        Self: ReprFamily<Kind = &'a mut S>,
+        R: SizeFamily<Kind = UnSized>,
     {
-        type CType = CSliceMut<R>;
-    }
-    // FIXME:
-    //impl<R: ?Sized> ExternC for &mut R
-    //where
-    //    Self: ReprFamily<Kind = [Opaque]>,
-    //{
-    //    type CType = CSliceMut<R>;
-    //}
-    impl<R> ExternC for &mut [R]
-    where
-        Self: ReprFamily<Kind = [Opaque]>,
-    {
-        type CType = CSliceMut<*mut R>;
-    }
-    impl<'slice, R: CheckedTransmute<Target: Sized + 'slice>> ExternC for &'slice mut [R]
-    where
-        &'slice mut [<R as CheckedTransmute>::Target]: ExternC,
-        Self: ReprFamily<Kind = [Transmuted]>,
-    {
-        type CType = <&'slice mut [R::Target] as ExternC>::CType;
-    }
-    impl<R: ExternC, S: Cloned> ExternC for &mut [R]
-    where
-        Self: ReprFamily<Kind = [S]>,
-    {
-        type CType = CSliceMut<R::CType>;
+        type CType = CSliceMut<<R::Elem as ExternC>::CType>;
     }
 
+    #[cfg(feature = "alloc")]
+    impl<R: ?Sized + Dst<Elem: ReprC>> ExternC for Box<R>
+    where
+        Self: ReprFamily<Kind = Box<Robust>>,
+    {
+        type CType = CBoxedSlice<R::Elem>;
+    }
+    #[cfg(feature = "alloc")]
+    impl<R: ?Sized + Dst> ExternC for Box<R>
+    where
+        Self: ReprFamily<Kind = Box<Opaque>>,
+    {
+        type CType = CBoxedSlice<R::Elem>;
+    }
+    #[cfg(feature = "alloc")]
+    impl<R: ?Sized + CheckedTransmute> ExternC for Box<R>
+    where
+        Box<<R as CheckedTransmute>::Target>: ExternC,
+        Self: ReprFamily<Kind = Box<Transmuted>>,
+    {
+        type CType = <Box<R::Target> as ExternC>::CType;
+    }
     #[cfg(feature = "alloc")]
     impl<R: ExternC, S: Cloned> ExternC for Box<R>
     where
         Self: ReprFamily<Kind = Box<S>>,
+        R: SizeFamily<Kind = Sized_>,
     {
         type CType = CBox<R::CType>;
     }
     #[cfg(feature = "alloc")]
-    impl<R: ReprC> ExternC for Box<[R]>
+    impl<R: ?Sized + Dst<Elem: ExternC>, S: Cloned + ?Sized> ExternC for Box<R>
     where
-        Self: ReprFamily<Kind = [Robust]>,
+        Self: ReprFamily<Kind = Box<S>>,
+        R: SizeFamily<Kind = UnSized>,
     {
-        type CType = CBoxedSlice<R>;
-    }
-    // FIXME: and others
-    //#[cfg(feature = "alloc")]
-    //impl<R: ?Sized> ExternC for Box<R>
-    //where
-    //    Self: ReprFamily<Kind = [Opaque]>,
-    //{
-    //    type CType = CBoxedSlice<R>;
-    //}
-    #[cfg(feature = "alloc")]
-    impl<R> ExternC for Box<[R]>
-    where
-        Self: ReprFamily<Kind = [Opaque]>,
-    {
-        type CType = CBoxedSlice<CBox<R>>;
-    }
-    #[cfg(feature = "alloc")]
-    impl<R: CheckedTransmute<Target: Sized>> ExternC for Box<[R]>
-    where
-        Self: ReprFamily<Kind = [Transmuted]>,
-        Box<[<R as CheckedTransmute>::Target]>: ExternC,
-    {
-        type CType = <Box<[R::Target]> as ExternC>::CType;
-    }
-    #[cfg(feature = "alloc")]
-    impl<R: ExternC, S: Cloned> ExternC for Box<[R]>
-    where
-        Self: ReprFamily<Kind = [S]>,
-    {
-        type CType = CBoxedSlice<R::CType>;
+        type CType = CBoxedSlice<<R::Elem as ExternC>::CType>;
     }
 
     #[cfg(feature = "alloc")]
     impl<R: ReprC> ExternC for Vec<R>
     where
-        Self: ReprFamily<Kind = [Robust]>,
+        Self: ReprFamily<Kind = Vec<Robust>>,
     {
         type CType = CVec<R>;
     }
     #[cfg(feature = "alloc")]
-    impl<R> ExternC for Vec<R>
-    where
-        Self: ReprFamily<Kind = [Opaque]>,
-    {
-        type CType = CVec<CBox<R>>;
-    }
-    #[cfg(feature = "alloc")]
     impl<R: CheckedTransmute<Target: Sized>> ExternC for Vec<R>
     where
-        Self: ReprFamily<Kind = [Transmuted]>,
+        Self: ReprFamily<Kind = Vec<Transmuted>>,
         Vec<<R as CheckedTransmute>::Target>: ExternC,
     {
         type CType = <Vec<R::Target> as ExternC>::CType;
@@ -271,20 +311,14 @@ disjoint_impls! {
     #[cfg(feature = "alloc")]
     impl<R: ExternC, S: Cloned> ExternC for Vec<R>
     where
-        Self: ReprFamily<Kind = [S]>,
+        Self: ReprFamily<Kind = Vec<S>>,
     {
         type CType = CVec<R::CType>;
     }
 
-    impl<R, const N: usize> ExternC for [R; N]
-    where
-        Self: ReprFamily<Kind = [Opaque]>,
-    {
-        type CType = [CBox<R>; N];
-    }
     impl<R: ExternC, S: Cloned, const N: usize> ExternC for [R; N]
     where
-        Self: ReprFamily<Kind = [S]>,
+        Self: ReprFamily<Kind = S>,
     {
         type CType = [R::CType; N];
     }
@@ -378,10 +412,55 @@ disjoint_impls! {
             }
         }
     }
+
+    impl<'a, R: ?Sized + Dst<Elem: ReprC>> Encode<false> for &'a R
+    where
+        Self: ReprFamily<Kind = &'a Robust>,
+    {
+        type Store = ();
+
+        fn encode<'itm>(self, (): &mut ()) -> Self::CType
+        where
+            Self: 'itm,
+        {
+            CSlice::from_slice(Some(unsafe {
+                core::slice::from_raw_parts(self.as_ptr(), self.len())
+            }))
+        }
+    }
+    //impl<'a, R: ?Sized + Dst> Encode<false> for &'a R
+    //where
+    //    Self: ReprFamily<Kind = &'a Opaque>,
+    //{
+    //    type Store = ();
+    //
+    //    fn encode<'itm>(self, store: &'itm mut Self::Store) -> Self::CType
+    //    where
+    //        Self: 'itm,
+    //    {
+    //        let ctypes = self.iter().map(core::ptr::from_ref).collect();
+    //        CSlice::from_slice(Some(store.0.insert(ctypes)))
+    //    }
+    //}
+    impl<'a, R: ?Sized + Dst + CheckedTransmute<Target: Dst + 'a>> Encode<false> for &'a R
+    where
+        &'a <R as CheckedTransmute>::Target: Encode,
+        Self: ReprFamily<Kind = &'a Transmuted>,
+    {
+        type Store = <&'a R::Target as Encode>::Store;
+
+        fn encode<'itm>(self, store: &'itm mut Self::Store) -> Self::CType
+        where
+            Self: 'itm,
+        {
+            transmute_into_target_ref_dst(self).encode(store)
+        }
+    }
     #[cfg(feature = "unstable-refs")]
-    impl<'a, R: Encode + Clone, S: Cloned> Encode<false> for &'a R
+    impl<'a, R: Encode + Clone, S: Cloned + 'a> Encode<false> for &'a R
     where
         Self: ReprFamily<Kind = &'a S>,
+        R: SizeFamily<Kind = Sized_>,
     {
         type Store = RefStore<R>;
 
@@ -393,67 +472,29 @@ disjoint_impls! {
             store.ctype.insert(value)
         }
     }
-    impl<R: ReprC> Encode<false> for &[R]
+    #[cfg(feature = "unstable-refs")]
+    impl<'a, R: ?Sized + Dst<Elem: Encode + Clone>, S: Cloned + ?Sized + 'a> Encode<false> for &'a R
     where
-        Self: ReprFamily<Kind = [Robust]>,
+        Self: ReprFamily<Kind = &'a S>,
+        R: SizeFamily<Kind = UnSized>,
     {
-        type Store = ();
-
-        fn encode<'itm>(self, (): &mut ()) -> Self::CType
-        where
-            Self: 'itm,
-        {
-            CSlice::from_slice(Some(self))
-        }
-    }
-    #[cfg(all(feature = "alloc", feature = "unstable-refs"))]
-    impl<R> Encode<false> for &[R]
-    where
-        Self: ReprFamily<Kind = [Opaque]>,
-    {
-        type Store = OwningStore<*const R>;
+        type Store = SliceStore<<R::Elem as ExternC>::CType, <R::Elem as Encode>::Store>;
 
         fn encode<'itm>(self, store: &'itm mut Self::Store) -> Self::CType
         where
             Self: 'itm,
         {
-            let ctypes = self.iter().map(core::ptr::from_ref).collect();
-            CSlice::from_slice(Some(store.0.insert(ctypes)))
-        }
-    }
-    impl<'slice, R: CheckedTransmute<Target: Sized + 'slice>> Encode<false> for &'slice [R]
-    where
-        &'slice [<R as CheckedTransmute>::Target]: Encode,
-        Self: ReprFamily<Kind = [Transmuted]>,
-    {
-        type Store = <&'slice [R::Target] as Encode>::Store;
+            let source = unsafe { core::slice::from_raw_parts(self.as_ptr(), self.len()) };
 
-        fn encode<'itm>(self, store: &'itm mut Self::Store) -> Self::CType
-        where
-            Self: 'itm,
-        {
-            transmute_into_target_ref_slice(self).encode(store)
-        }
-    }
-    #[cfg(all(feature = "alloc", feature = "unstable-refs"))]
-    impl<R: Encode + Clone, S: Cloned> Encode<false> for &[R]
-    where
-        Self: ReprFamily<Kind = [S]>,
-    {
-        type Store = SliceStore<R::CType, R::Store>;
-
-        fn encode<'itm>(self, store: &'itm mut Self::Store) -> Self::CType
-        where
-            Self: 'itm,
-        {
             let stores = store.stores.insert(
                 core::iter::repeat_with(Default::default)
-                    .take(self.len())
+                    .take(source.len())
                     .collect(),
             );
 
             let ctypes = store.ctypes.insert(
-                self.iter()
+                source
+                    .iter()
                     .cloned()
                     .zip(stores)
                     .map(|(item, store)| item.encode(store))
@@ -464,10 +505,55 @@ disjoint_impls! {
         }
     }
 
+    impl<'a, R: ?Sized + Dst<Elem: ReprC>> Encode<false> for &'a mut R
+    where
+        Self: ReprFamily<Kind = &'a mut Robust>,
+    {
+        type Store = ();
+
+        fn encode<'itm>(self, (): &mut ()) -> Self::CType
+        where
+            Self: 'itm,
+        {
+            CSliceMut::from_slice(Some(unsafe {
+                core::slice::from_raw_parts_mut(self.as_mut_ptr(), self.len())
+            }))
+        }
+    }
+    //impl<'a, R: ?Sized + Dst> Encode<false> for &'a mut R
+    //where
+    //    Self: ReprFamily<Kind = &'a mut Opaque>,
+    //{
+    //    type Store = ();
+    //
+    //    fn encode<'itm>(self, store: &'itm mut Self::Store) -> Self::CType
+    //    where
+    //        Self: 'itm,
+    //    {
+    //        let original = store.original.insert(self);
+    //        let ctypes = original.iter_mut().map(core::ptr::from_mut).collect();
+    //        CSliceMut::from_slice(Some(store.ctypes.insert(ctypes)))
+    //    }
+    //}
+    impl<'a, R: ?Sized + Dst + CheckedTransmute<Target: Dst + 'a>> Encode<false> for &'a mut R
+    where
+        &'a mut <R as CheckedTransmute>::Target: Encode,
+        Self: ReprFamily<Kind = &'a mut Transmuted>,
+    {
+        type Store = <&'a mut R::Target as Encode>::Store;
+
+        fn encode<'itm>(self, store: &mut Self::Store) -> Self::CType
+        where
+            Self: 'itm,
+        {
+            transmute_into_target_dst_mut(self).encode(store)
+        }
+    }
     #[cfg(feature = "unstable-refs")]
-    impl<'a, 'b, R: Encode + Decode<'b, false> + Clone + 'b, S: Cloned> Encode<false> for &'a mut R
+    impl<'a, R: Encode + Decode<'a, false> + Clone, S: Cloned + 'a> Encode<false> for &'a mut R
     where
         Self: ReprFamily<Kind = &'a mut S>,
+        R: SizeFamily<Kind = Sized_>,
     {
         type Store = RefMutStore<'a, R>;
 
@@ -480,136 +566,20 @@ disjoint_impls! {
             store.ctype.insert(ctype)
         }
     }
-    impl<R: ReprC> Encode<false> for &mut [R]
+    #[cfg(feature = "unstable-refs")]
+    impl<'a, R: ?Sized + Dst<Elem: Decode<'a> + Encode + Clone + 'a>, S: Cloned + ?Sized + 'a> Encode<false> for &'a mut R
     where
-        Self: ReprFamily<Kind = [Robust]>,
+        Self: ReprFamily<Kind = &'a mut S>,
+        R: SizeFamily<Kind = UnSized>,
     {
-        type Store = ();
-
-        fn encode<'itm>(self, (): &mut ()) -> Self::CType
-        where
-            Self: 'itm,
-        {
-            CSliceMut::from_slice(Some(self))
-        }
-    }
-    #[cfg(all(feature = "alloc", feature = "unstable-refs"))]
-    impl<'slice, R> Encode<false> for &'slice mut [R]
-    where
-        Self: ReprFamily<Kind = [Opaque]>,
-    {
-        type Store = OpaqueMutSliceEncodeStore<'slice, R>;
+        type Store = MutSliceStore<'a, R::Elem>;
 
         fn encode<'itm>(self, store: &'itm mut Self::Store) -> Self::CType
         where
             Self: 'itm,
         {
-            let original = store.original.insert(self);
-            let ctypes = original.iter_mut().map(core::ptr::from_mut).collect();
-            CSliceMut::from_slice(Some(store.ctypes.insert(ctypes)))
-        }
-    }
-    impl<'slice, R: CheckedTransmute<Target: Sized + 'slice>> Encode<false>
-        for &'slice mut [R]
-    where
-        &'slice mut [<R as CheckedTransmute>::Target]: Encode,
-        Self: ReprFamily<Kind = [Transmuted]>,
-    {
-        type Store = <&'slice mut [R::Target] as Encode>::Store;
-
-        fn encode<'itm>(self, store: &mut Self::Store) -> Self::CType
-        where
-            Self: 'itm,
-        {
-            transmute_into_target_slice_mut(self).encode(store)
-        }
-    }
-    // FIXME:
-    //impl<'slice, R: CheckedTransmute<Target: Sized + ReprFamily<Kind: NonRobust> + 'slice>> Encode<false>
-    //    for &'slice mut [R]
-    //where
-    //    &'slice mut [<R as CheckedTransmute>::Target]: Encode,
-    //    Self: ReprFamily<Kind = &'slice mut [Transmuted]>,
-    //{
-    //    type Store = <&'slice mut [R::Target] as Encode>::Store;
-
-    //    fn encode<'itm>(self, store: &mut Self::Store) -> Self::CType
-    //    where
-    //        Self: 'itm,
-    //    {
-    //        transmute_into_target_slice_mut(self).encode(store)
-    //    }
-    //}
-    //impl<
-    //    'slice,
-    //    R: CheckedTransmute<Target: ReprFamily<Kind = Robust> + ReprC + 'slice>
-    //        + NicheFamily<Kind = WithoutNiche>,
-    //> Encode<false> for &'slice mut [R]
-    //where
-    //    Self: ReprFamily<Kind = &'slice mut [Transmuted]>,
-    //{
-    //    type Store = ();
-
-    //    fn encode<'itm>(self, (): &mut ()) -> Self::CType
-    //    where
-    //        Self: 'itm,
-    //    {
-    //        Encode::encode(transmute_into_target_slice_mut(self), &mut ())
-    //    }
-    //}
-    //#[cfg(any(
-    //    feature = "unsafe-optimizations",
-    //    all(feature = "alloc", feature = "unstable-refs")
-    //))]
-    //impl<
-    //    'slice,
-    //    R: CheckedTransmute<Target: ReprFamily<Kind = Robust> + ReprC + 'slice>
-    //        + NicheFamily<Kind: crate::niche::WithNiche>,
-    //> Encode<false> for &'slice mut [R]
-    //where
-    //    Self: ReprFamily<Kind = &'slice mut [Transmuted]>,
-    //{
-    //    #[cfg(all(
-    //        feature = "alloc",
-    //        feature = "unstable-refs",
-    //        not(feature = "unsafe-optimizations")
-    //    ))]
-    //    type Store = SliceMutTransmuteStore<'slice, R>;
-    //    #[cfg(feature = "unsafe-optimizations")]
-    //    type Store = ();
-
-    //    fn encode<'itm>(self, #[allow(unused)] store: &'itm mut Self::Store) -> Self::CType
-    //    where
-    //        Self: 'itm,
-    //    {
-    //        #[cfg(all(
-    //            feature = "alloc",
-    //            feature = "unstable-refs",
-    //            not(feature = "unsafe-optimizations")
-    //        ))]
-    //        let ctypes: &mut [_] = {
-    //            let original: &mut [R] = store.original.insert(self);
-    //            let robust = transmute_into_target_slice_mut(original);
-    //            store.target.insert(robust.to_vec().into_boxed_slice())
-    //        };
-    //        #[cfg(feature = "unsafe-optimizations")]
-    //        let ctypes = transmute_into_target_slice_mut(self);
-
-    //        Encode::encode(ctypes, &mut ())
-    //    }
-    //}
-    #[cfg(all(feature = "alloc", feature = "unstable-refs"))]
-    impl<'slice, 'b, R: Encode + Decode<'b, false> + Clone + 'b, S: Cloned> Encode<false> for &'slice mut [R]
-    where
-        Self: ReprFamily<Kind = [S]>,
-    {
-        type Store = MutSliceStore<'slice, R>;
-
-        fn encode<'itm>(self, store: &'itm mut Self::Store) -> Self::CType
-        where
-            Self: 'itm,
-        {
-            let original = store.original.insert(self);
+            let source = unsafe { core::slice::from_raw_parts_mut(self.as_mut_ptr(), self.len()) };
+            let original = store.original.insert(source);
 
             let stores = store.stores.insert(
                 core::iter::repeat_with(Default::default)
@@ -631,9 +601,59 @@ disjoint_impls! {
     }
 
     #[cfg(feature = "alloc")]
+    impl<R: ?Sized + Dst<Elem: ReprC>> Encode<false> for Box<R>
+    where
+        Self: ReprFamily<Kind = Box<Robust>>,
+    {
+        type Store = ();
+
+        fn encode<'itm>(self, (): &mut ()) -> Self::CType
+        where
+            Self: 'itm,
+        {
+            let mut source = core::mem::ManuallyDrop::new(self);
+            let slice_ptr = core::ptr::slice_from_raw_parts_mut(source.as_mut_ptr(), source.len());
+            CBoxedSlice::from_boxed_slice(Some(unsafe { Box::from_raw(slice_ptr) }))
+        }
+    }
+    //#[cfg(feature = "alloc")]
+    //impl<R: ?Sized + Dst> Encode<false> for Box<R>
+    //where
+    //    Self: ReprFamily<Kind = Box<Opaque>>,
+    //{
+    //    type Store = ();
+    //
+    //    fn encode<'itm>(self, (): &mut ()) -> Self::CType
+    //    where
+    //        Self: 'itm,
+    //    {
+    //        let ctypes = self
+    //            .into_iter()
+    //            .map(|item| CBox::from_box(Some(Box::new(item))))
+    //            .collect();
+    //        CBoxedSlice::from_boxed_slice(Some(ctypes))
+    //    }
+    //}
+    #[cfg(feature = "alloc")]
+    impl<R: ?Sized + Dst + CheckedTransmute<Target: Dst>> Encode<false> for Box<R>
+    where
+        Box<<R as CheckedTransmute>::Target>: Encode,
+        Self: ReprFamily<Kind = Box<Transmuted>>,
+    {
+        type Store = <Box<R::Target> as Encode>::Store;
+
+        fn encode<'itm>(self, store: &'itm mut Self::Store) -> Self::CType
+        where
+            Self: 'itm,
+        {
+            transmute_into_target_boxed_dst(self).encode(store)
+        }
+    }
+    #[cfg(feature = "alloc")]
     impl<R: Encode, S: Cloned> Encode<false> for Box<R>
     where
         Self: ReprFamily<Kind = Box<S>>,
+        R: SizeFamily<Kind = Sized_>,
     {
         type Store = R::Store;
 
@@ -645,74 +665,31 @@ disjoint_impls! {
         }
     }
     #[cfg(feature = "alloc")]
-    impl<R: ReprC> Encode<false> for Box<[R]>
+    impl<R: ?Sized + Dst<Elem: Encode + Clone>, S: Cloned + ?Sized> Encode<false> for Box<R>
     where
-        Self: ReprFamily<Kind = [Robust]>,
+        Self: ReprFamily<Kind = Box<S>>,
+        R: SizeFamily<Kind = UnSized>,
     {
-        type Store = ();
-
-        fn encode<'itm>(self, (): &mut ()) -> Self::CType
-        where
-            Self: 'itm,
-        {
-            CBoxedSlice::from_boxed_slice(Some(self))
-        }
-    }
-    #[cfg(feature = "alloc")]
-    impl<R> Encode<false> for Box<[R]>
-    where
-        Self: ReprFamily<Kind = [Opaque]>,
-    {
-        type Store = ();
-
-        fn encode<'itm>(self, (): &mut ()) -> Self::CType
-        where
-            Self: 'itm,
-        {
-            let ctypes = self
-                .into_iter()
-                .map(|item| CBox::from_box(Some(Box::new(item))))
-                .collect();
-            CBoxedSlice::from_boxed_slice(Some(ctypes))
-        }
-    }
-    #[cfg(feature = "alloc")]
-    impl<R: CheckedTransmute<Target: Sized>> Encode<false> for Box<[R]>
-    where
-        Box<[<R as CheckedTransmute>::Target]>: Encode,
-        Self: ReprFamily<Kind = [Transmuted]>,
-    {
-        type Store = <Box<[R::Target]> as Encode>::Store;
+        type Store = ClonedCollectionStore<<R::Elem as Encode>::Store>;
 
         fn encode<'itm>(self, store: &'itm mut Self::Store) -> Self::CType
         where
             Self: 'itm,
         {
-            transmute_into_target_boxed_slice(self).encode(store)
-        }
-    }
-    #[cfg(feature = "alloc")]
-    impl<R: Encode, S: Cloned> Encode<false> for Box<[R]>
-    where
-        Self: ReprFamily<Kind = [S]>,
-    {
-        type Store = ClonedCollectionStore<R::Store>;
-
-        fn encode<'itm>(self, store: &'itm mut Self::Store) -> Self::CType
-        where
-            Self: 'itm,
-        {
+            let source = unsafe { core::slice::from_raw_parts(self.as_ptr(), self.len()) };
             let stores = store.0.insert(
                 core::iter::repeat_with(Default::default)
-                    .take(self.len())
+                    .take(source.len())
                     .collect(),
             );
 
             CBoxedSlice::from_boxed_slice(Some(
-                self.into_iter()
-                .zip(stores)
-                .map(|(item, store)| item.encode(store))
-                .collect()
+                source
+                    .iter()
+                    .cloned()
+                    .zip(stores)
+                    .map(|(item, store)| item.encode(store))
+                    .collect(),
             ))
         }
     }
@@ -720,7 +697,7 @@ disjoint_impls! {
     #[cfg(feature = "alloc")]
     impl<R: ReprC> Encode<false> for Vec<R>
     where
-        Self: ReprFamily<Kind = [Robust]>,
+        Self: ReprFamily<Kind = Vec<Robust>>,
     {
         type Store = ();
 
@@ -732,28 +709,10 @@ disjoint_impls! {
         }
     }
     #[cfg(feature = "alloc")]
-    impl<R> Encode<false> for Vec<R>
-    where
-        Self: ReprFamily<Kind = [Opaque]>,
-    {
-        type Store = ();
-
-        fn encode<'itm>(self, (): &mut ()) -> Self::CType
-        where
-            Self: 'itm,
-        {
-            let ctypes = self
-                .into_iter()
-                .map(|item| CBox::from_box(Some(Box::new(item))))
-                .collect();
-            CVec::from_vec(Some(ctypes))
-        }
-    }
-    #[cfg(feature = "alloc")]
     impl<R: CheckedTransmute<Target: Sized>> Encode<false> for Vec<R>
     where
         Vec<<R as CheckedTransmute>::Target>: Encode,
-        Self: ReprFamily<Kind = [Transmuted]>,
+        Self: ReprFamily<Kind = Vec<Transmuted>>,
     {
         type Store = <Vec<R::Target> as Encode>::Store;
 
@@ -767,7 +726,7 @@ disjoint_impls! {
     #[cfg(feature = "alloc")]
     impl<R: Encode, S: Cloned> Encode<false> for Vec<R>
     where
-        Self: ReprFamily<Kind = [S]>,
+        Self: ReprFamily<Kind = Vec<S>>,
     {
         type Store = ClonedCollectionStore<R::Store>;
 
@@ -781,34 +740,18 @@ disjoint_impls! {
                     .collect(),
             );
 
-            CVec::from_vec(Some(
-                self.into_iter()
-                    .zip(stores)
-                    .map(|(item, store)| item.encode(store))
-                    .collect(),
-            ))
-        }
-    }
+            let ctypes = self.into_iter()
+                .zip(stores)
+                .map(|(item, store)| item.encode(store))
+                .collect();
 
-    #[cfg(feature = "alloc")]
-    impl<R, const N: usize> Encode<false> for [R; N]
-    where
-        Self: ReprFamily<Kind = [Opaque]>,
-    {
-        type Store = ();
-
-        fn encode<'itm>(self, (): &mut ()) -> Self::CType
-        where
-            Self: 'itm,
-        {
-            assert_arr_has_non_zero_len::<N>();
-            self.map(|item| CBox::from_box(Some(Box::new(item))))
+            CVec::from_vec(Some(ctypes))
         }
     }
 
     impl<R: Encode, S: Cloned, const N: usize> Encode<false> for [R; N]
     where
-        Self: ReprFamily<Kind = [S]>,
+        Self: ReprFamily<Kind = S>,
     {
         type Store = ArraySyncStore<R::Store, N>;
 
@@ -918,10 +861,62 @@ disjoint_impls! {
         }
     }
 
+    impl<'d, R: ?Sized + Dst<Elem: ReprC + 'd>> Decode<'d, false> for &'d R
+    where
+        Self: ReprFamily<Kind = &'d Robust>,
+    {
+        type Store = ();
+
+        unsafe fn decode<'itm: 'd>(source: Self::CType, (): &mut ()) -> Option<Self> {
+            let source = unsafe { source.into_rust() }?;
+            Some(unsafe { R::from_raw_parts(source.as_ptr(), source.len()) })
+        }
+    }
+    //impl<'a, R: ?Sized + Dst> Decode<'a, false> for &'a R
+    //where
+    //    Self: ReprFamily<Kind = &'a Opaque>,
+    //{
+    //    type Store = ();
+
+    //    unsafe fn decode<'itm: 'a>(
+    //        source: Self::CType,
+    //        store: &'itm mut Self::Store,
+    //    ) -> Option<Self> {
+    //        let source = unsafe { source.into_rust() }?;
+
+    //        if source.iter().any(|item| item.is_null()) {
+    //            return None;
+    //        }
+
+    //        let store = store.0.insert(
+    //            source
+    //                .iter()
+    //                .map(|&item| unsafe { &*item }.clone())
+    //                .collect(),
+    //        );
+
+    //        Some(store)
+    //    }
+    //}
+    impl<'a, R: ?Sized + Dst + CheckedTransmute<Target: Dst + 'a>> Decode<'a, false> for &'a R
+    where
+        &'a <R as CheckedTransmute>::Target: Decode<'a>,
+        Self: ReprFamily<Kind = &'a Transmuted>,
+    {
+        type Store = <&'a R::Target as Decode<'a>>::Store;
+
+        unsafe fn decode<'itm: 'a>(
+            source: Self::CType,
+            store: &'itm mut Self::Store,
+        ) -> Option<Self> {
+            transmute_from_target_ref_dst(unsafe { <&R::Target>::decode(source, store)? })
+        }
+    }
     #[cfg(feature = "unstable-refs")]
-    impl<'d, R: DecodeCloned<'d>, S: Cloned> Decode<'d, false> for &'d R
+    impl<'d, R: DecodeCloned<'d>, S: Cloned + 'd> Decode<'d, false> for &'d R
     where
         Self: ReprFamily<Kind = &'d S>,
+        R: SizeFamily<Kind = Sized_>,
     {
         type Store = RefDecodeStore<R, R::Store>;
 
@@ -935,65 +930,15 @@ disjoint_impls! {
             Some(store.value.insert(value))
         }
     }
-    impl<'slice, R: ReprC> Decode<'slice, false> for &'slice [R]
+    #[cfg(feature = "unstable-refs")]
+    impl<'a, R: ?Sized + Dst<Elem: DecodeCloned<'a>>, S: Cloned + ?Sized + 'a> Decode<'a, false> for &'a R
     where
-        Self: ReprFamily<Kind = [Robust]>,
+        Self: ReprFamily<Kind = &'a S>,
+        R: SizeFamily<Kind = UnSized>,
     {
-        type Store = ();
+        type Store = DecodeStoreSlicePair<R::Elem, <R::Elem as Decode<'a>>::Store>;
 
-        unsafe fn decode<'itm: 'slice>(source: Self::CType, (): &mut ()) -> Option<Self> {
-            unsafe { source.into_rust() }
-        }
-    }
-    #[cfg(all(feature = "alloc", feature = "unstable-refs"))]
-    impl<'slice, R: Clone> Decode<'slice, false> for &'slice [R]
-    where
-        Self: ReprFamily<Kind = [Opaque]>,
-    {
-        type Store = OwningStore<R>;
-
-        unsafe fn decode<'itm: 'slice>(
-            source: Self::CType,
-            store: &'itm mut Self::Store,
-        ) -> Option<Self> {
-            let source = unsafe { source.into_rust() }?;
-
-            if source.iter().any(|item| item.is_null()) {
-                return None;
-            }
-
-            let store = store.0.insert(
-                source
-                    .iter()
-                    .map(|&item| unsafe { &*item }.clone())
-                    .collect(),
-            );
-
-            Some(store)
-        }
-    }
-    impl<'slice, R: CheckedTransmute<Target: Sized + 'slice>> Decode<'slice, false> for &'slice [R]
-    where
-        &'slice [<R as CheckedTransmute>::Target]: Decode<'slice>,
-        Self: ReprFamily<Kind = [Transmuted]>,
-    {
-        type Store = <&'slice [R::Target] as Decode<'slice>>::Store;
-
-        unsafe fn decode<'itm: 'slice>(
-            source: Self::CType,
-            store: &'itm mut Self::Store,
-        ) -> Option<Self> {
-            transmute_from_target_ref_slice(unsafe { <&[R::Target]>::decode(source, store)? })
-        }
-    }
-    #[cfg(all(feature = "alloc", feature = "unstable-refs"))]
-    impl<'slice, R: DecodeCloned<'slice>, S: Cloned> Decode<'slice, false> for &'slice [R]
-    where
-        Self: ReprFamily<Kind = [S]>,
-    {
-        type Store = DecodeStoreSlicePair<R, R::Store>;
-
-        unsafe fn decode<'itm: 'slice>(
+        unsafe fn decode<'itm: 'a>(
             source: Self::CType,
             store: &'itm mut Self::Store,
         ) -> Option<Self> {
@@ -1009,18 +954,71 @@ disjoint_impls! {
                 source
                     .iter()
                     .zip(stores)
-                    .map(|(&item, store)| unsafe { R::decode_cloned(item, store) })
+                    .map(|(&item, store)| unsafe { R::Elem::decode_cloned(item, store) })
                     .collect::<Option<_>>()?,
             );
 
-            Some(values)
+            Some(unsafe { R::from_raw_parts(values.as_ptr(), values.len()) })
         }
     }
 
+    impl<'d, R: ?Sized + Dst<Elem: ReprC + 'd>> Decode<'d, false> for &'d mut R
+    where
+        Self: ReprFamily<Kind = &'d mut Robust>,
+    {
+        type Store = ();
+
+        unsafe fn decode<'itm: 'd>(source: Self::CType, (): &mut ()) -> Option<Self> {
+            let source = unsafe { source.into_rust() }?;
+            Some(unsafe { R::from_raw_parts_mut(source.as_mut_ptr(), source.len()) })
+        }
+    }
+    //impl<'a, R: ?Sized + Dst> Decode<'a, false> for &'a mut R
+    //where
+    //    Self: ReprFamily<Kind = &'a mut Opaque>,
+    //{
+    //    type Store = ();
+
+    //    unsafe fn decode<'itm: 'a>(
+    //        source: Self::CType,
+    //        store: &'itm mut Self::Store,
+    //    ) -> Option<Self> {
+    //        let source: &mut CSliceMut<_> = store.source.insert(source);
+    //        let source: &mut [*mut R] = unsafe { source.into_rust()? };
+
+    //        if source.iter().any(|item| item.is_null()) {
+    //            return None;
+    //        }
+
+    //        let values = store.values.insert(
+    //            source
+    //                .iter()
+    //                .map(|&item| unsafe { &*item }.clone())
+    //                .collect(),
+    //        );
+
+    //        Some(values)
+    //    }
+    //}
+    impl<'a, R: ?Sized + Dst + CheckedTransmute<Target: Dst + 'a>> Decode<'a, false> for &'a mut R
+    where
+        &'a mut <R as CheckedTransmute>::Target: Decode<'a>,
+        Self: ReprFamily<Kind = &'a mut Transmuted>,
+    {
+        type Store = <&'a mut R::Target as Decode<'a>>::Store;
+
+        unsafe fn decode<'itm: 'a>(
+            source: Self::CType,
+            store: &'itm mut Self::Store,
+        ) -> Option<Self> {
+            transmute_from_target_dst_mut(unsafe { <&mut R::Target>::decode(source, store)? })
+        }
+    }
     #[cfg(feature = "unstable-refs")]
-    impl<'d, R: DecodeCloned<'d> + Encode, S: Cloned> Decode<'d, false> for &'d mut R
+    impl<'d, R: DecodeCloned<'d> + Encode, S: Cloned + 'd> Decode<'d, false> for &'d mut R
     where
         Self: ReprFamily<Kind = &'d mut S>,
+        R: SizeFamily<Kind = Sized_>,
     {
         type Store = RefMutDecodeStore<R, <R as Decode<'d>>::Store>;
 
@@ -1036,71 +1034,20 @@ disjoint_impls! {
             Some(store.value.insert(value))
         }
     }
-    impl<'slice, R: ReprC> Decode<'slice, false> for &'slice mut [R]
-    where
-        Self: ReprFamily<Kind = [Robust]>,
-    {
-        type Store = ();
-
-        unsafe fn decode<'itm: 'slice>(source: Self::CType, (): &mut ()) -> Option<Self> {
-            unsafe { source.into_rust() }
-        }
-    }
-    #[cfg(all(feature = "alloc", feature = "unstable-refs"))]
-    impl<'slice, R: Clone> Decode<'slice, false> for &'slice mut [R]
-    where
-        Self: ReprFamily<Kind = [Opaque]>,
-    {
-        type Store = OpaqueMutSliceDecodeStore<R>;
-
-        unsafe fn decode<'itm: 'slice>(
-            source: Self::CType,
-            store: &'itm mut Self::Store,
-        ) -> Option<Self> {
-            let source: &mut CSliceMut<_> = store.source.insert(source);
-            let source: &mut [*mut R] = unsafe { source.into_rust()? };
-
-            if source.iter().any(|item| item.is_null()) {
-                return None;
-            }
-
-            let values = store.values.insert(
-                source
-                    .iter()
-                    .map(|&item| unsafe { &*item }.clone())
-                    .collect(),
-            );
-
-            Some(values)
-        }
-    }
-    impl<'slice, R: CheckedTransmute<Target: Sized + 'slice>> Decode<'slice, false> for &'slice mut [R]
-    where
-        &'slice mut [<R as CheckedTransmute>::Target]: Decode<'slice>,
-        Self: ReprFamily<Kind = [Transmuted]>,
-    {
-        type Store = <&'slice mut [R::Target] as Decode<'slice>>::Store;
-
-        unsafe fn decode<'itm: 'slice>(
-            source: Self::CType,
-            store: &'itm mut Self::Store,
-        ) -> Option<Self> {
-            transmute_from_target_slice_mut(unsafe { <&mut [R::Target]>::decode(source, store)? })
-        }
-    }
     #[cfg(feature = "unstable-refs")]
-    impl<'slice, R: DecodeCloned<'slice> + Encode, S: Cloned> Decode<'slice, false> for &'slice mut [R]
+    impl<'a, R: ?Sized + Dst<Elem: DecodeCloned<'a> + Encode>, S: Cloned + ?Sized + 'a> Decode<'a, false> for &'a mut R
     where
-        Self: ReprFamily<Kind = [S]>,
+        Self: ReprFamily<Kind = &'a mut S>,
+        R: SizeFamily<Kind = UnSized>,
     {
-        type Store = MutSliceDecodeStore<R, <R as Decode<'slice>>::Store>;
+        type Store = MutSliceDecodeStore<R::Elem, <R::Elem as Decode<'a>>::Store>;
 
-        unsafe fn decode<'itm: 'slice>(
+        unsafe fn decode<'itm: 'a>(
             source: Self::CType,
             store: &'itm mut Self::Store,
         ) -> Option<Self> {
-            let source: &mut CSliceMut<_> = store.source.insert(source);
-            let source: &mut [_] = unsafe { source.into_rust() }?;
+            let source = store.source.insert(source);
+            let source = unsafe { source.into_rust() }?;
 
             let stores = store.stores.insert(
                 core::iter::repeat_with(Default::default)
@@ -1112,29 +1059,18 @@ disjoint_impls! {
                 source
                     .iter()
                     .zip(stores)
-                    .map(|(&item, store)| unsafe { R::decode_cloned(item, store) })
+                    .map(|(&item, store)| unsafe { R::Elem::decode_cloned(item, store) })
                     .collect::<Option<_>>()?,
             );
 
-            Some(values)
+            Some(unsafe { R::from_raw_parts_mut(values.as_mut_ptr(), values.len()) })
         }
     }
 
     //#[cfg(feature = "alloc")]
-    //impl<'d, R: Decode<'d>, S: Cloned> Decode<'d> for Box<R>
+    //impl<R: ?Sized + Dst<Elem: ReprC>> Decode<'_> for Box<R>
     //where
-    //    Self: ReprFamily<Kind = Box<S>>,
-    //{
-    //    type Store = ();
-
-    //    unsafe fn decode<'itm: 'd>(source: Self::CType, store: &'itm mut Self::Store) -> Option<Self> {
-    //        unimplemented!()
-    //    }
-    //}
-    //#[cfg(feature = "alloc")]
-    //impl<'d, R: ReprC + 'd> Decode<'d> for Box<[R]>
-    //where
-    //    Self: ReprFamily<Kind = Box<[Robust]>>,
+    //    Self: ReprFamily<Kind = Box<Robust>>,
     //{
     //    type Store = ();
 
@@ -1143,9 +1079,9 @@ disjoint_impls! {
     //    }
     //}
     //#[cfg(feature = "alloc")]
-    //impl<'d, R: 'd> Decode<'d> for Box<[R]>
+    //impl<'d, R: ?Sized> Decode<'d> for Box<R>
     //where
-    //    Self: ReprFamily<Kind = Box<[Opaque]>>,
+    //    Self: ReprFamily<Kind = Box<Opaque>>,
     //{
     //    type Store = ();
 
@@ -1154,24 +1090,37 @@ disjoint_impls! {
     //    }
     //}
     #[cfg(feature = "alloc")]
-    impl<'d, R: CheckedTransmute<Target: Sized>> Decode<'d, false> for Box<[R]>
+    impl<'d, R: ?Sized + Dst + CheckedTransmute<Target: Dst>> Decode<'d, false> for Box<R>
     where
-        Box<[<R as CheckedTransmute>::Target]>: Decode<'d>,
-        Self: ReprFamily<Kind = [Transmuted]>,
+        Box<<R as CheckedTransmute>::Target>: Decode<'d>,
+        Self: ReprFamily<Kind = Box<Transmuted>>,
     {
-        type Store = <Box<[R::Target]> as Decode<'d>>::Store;
+        type Store = <Box<R::Target> as Decode<'d>>::Store;
 
         unsafe fn decode<'itm: 'd>(source: Self::CType, store: &'itm mut Self::Store) -> Option<Self> {
             unsafe {
                 Decode::decode(source, store)
-                    .and_then(|output| transmute_from_target_boxed_slice(output))
+                    .and_then(|output| transmute_from_target_boxed_dst(output))
             }
         }
     }
     //#[cfg(feature = "alloc")]
-    //impl<'d, R: Decode<'d>, S: Cloned> Decode<'d> for Box<[R]>
+    //impl<'d, R: Decode<'d>, S: Cloned> Decode<'d> for Box<R>
     //where
-    //    Self: ReprFamily<Kind = Box<[S]>>,
+    //    Self: ReprFamily<Kind = Box<S>>,
+    //    R: SizeFamily<Kind = Sized_>,
+    //{
+    //    type Store = ();
+
+    //    unsafe fn decode<'itm: 'd>(source: Self::CType, store: &'itm mut Self::Store) -> Option<Self> {
+    //        unimplemented!()
+    //    }
+    //}
+    //#[cfg(feature = "alloc")]
+    //impl<'d, R: ?Sized + Dst<Elem: Decode<'d>>, S: Cloned> Decode<'d> for Box<R>
+    //where
+    //    Self: ReprFamily<Kind = Box<S>>,
+    //    R: SizeFamily<Kind = UnSized_>,
     //{
     //    type Store = DecodeStoreSlice<R::Store>;
 
@@ -1183,18 +1132,7 @@ disjoint_impls! {
     //#[cfg(feature = "alloc")]
     //impl<'d, R: ReprC + 'd> Decode<'d> for Vec<R>
     //where
-    //    Self: ReprFamily<Kind = [Robust]>,
-    //{
-    //    type Store = ();
-
-    //    unsafe fn decode<'itm: 'd>(source: Self::CType, (): &mut ()) -> Option<Self> {
-    //        unimplemented!()
-    //    }
-    //}
-    //#[cfg(feature = "alloc")]
-    //impl<'d, R: 'd> Decode<'d> for Vec<R>
-    //where
-    //    Self: ReprFamily<Kind = [Opaque]>,
+    //    Self: ReprFamily<Kind = Vec<Robust>>,
     //{
     //    type Store = ();
 
@@ -1206,7 +1144,7 @@ disjoint_impls! {
     impl<'d, R: CheckedTransmute<Target: Sized>> Decode<'d, false> for Vec<R>
     where
         Vec<<R as CheckedTransmute>::Target>: Decode<'d>,
-        Self: ReprFamily<Kind = [Transmuted]>,
+        Self: ReprFamily<Kind = Vec<Transmuted>>,
     {
         type Store = <Vec<R::Target> as Decode<'d>>::Store;
 
@@ -1218,9 +1156,9 @@ disjoint_impls! {
         }
     }
     //#[cfg(feature = "alloc")]
-    //impl<'d, R: Decode<'d>, S: Cloned> Decode<'d> for Vec<R>
+    //impl<'d, R: Decode<'d>, S: Cloned> Decode<'d, false> for Vec<R>
     //where
-    //    Self: ReprFamily<Kind = [S]>,
+    //    Self: ReprFamily<Kind = Vec<S>>,
     //{
     //    type Store = ();
 
@@ -1229,36 +1167,9 @@ disjoint_impls! {
     //    }
     //}
 
-    #[cfg(feature = "alloc")]
-    impl<'d, R: 'd, const N: usize> Decode<'d, false> for [R; N]
-    where
-        Self: ReprFamily<Kind = [Opaque]>,
-    {
-        type Store = ();
-
-        unsafe fn decode<'itm: 'd>(source: Self::CType, (): &mut ()) -> Option<Self> {
-            use core::mem::MaybeUninit;
-
-            assert_arr_has_non_zero_len::<N>();
-
-            if source.iter().any(CBox::is_none) {
-                return None;
-            }
-
-            let mut values = MaybeUninit::<[R; N]>::uninit();
-            let values_ptr = values.as_mut_ptr().cast::<R>();
-
-            for (idx, item) in source.into_iter().enumerate() {
-                let value = unsafe { *item.unopaque()? };
-                unsafe { values_ptr.add(idx).write(value) };
-            }
-
-            Some(unsafe { values.assume_init() })
-        }
-    }
     impl<'d, R: Decode<'d>, S: Cloned, const N: usize> Decode<'d, false> for [R; N]
     where
-        Self: ReprFamily<Kind = [S]>,
+        Self: ReprFamily<Kind = S>,
     {
         type Store = ArraySyncStore<R::Store, N>;
 
@@ -1279,9 +1190,10 @@ disjoint_impls! {
             })
         }
     }
-    impl<'d, R: Niche<CType: PartialEq> + Decode<'d>> Decode<'d, false> for Option<R>
+    impl<'d, R: Niche + Decode<'d>> Decode<'d, false> for Option<R>
     where
         Self: ReprFamily<Kind = Option<WithCustomNiche>>,
+        <R as ExternC>::CType: PartialEq,
     {
         type Store = <R as Decode<'d>>::Store;
 
@@ -1395,13 +1307,13 @@ impl<R, D: Store> Store for DecodeStoreSlicePair<R, D> {
     }
 }
 
-#[cfg(all(feature = "alloc", feature = "unstable-refs"))]
+#[cfg(feature = "unstable-refs")]
 pub struct OpaqueMutSliceEncodeStore<'a, R> {
     ctypes: Option<Box<[*mut R]>>,
     original: Option<&'a mut [R]>,
 }
 
-#[cfg(all(feature = "alloc", feature = "unstable-refs"))]
+#[cfg(feature = "unstable-refs")]
 impl<'a, R> Default for OpaqueMutSliceEncodeStore<'a, R> {
     fn default() -> Self {
         Self {
@@ -1411,7 +1323,7 @@ impl<'a, R> Default for OpaqueMutSliceEncodeStore<'a, R> {
     }
 }
 
-#[cfg(all(feature = "alloc", feature = "unstable-refs"))]
+#[cfg(feature = "unstable-refs")]
 impl<'a, R> Store for OpaqueMutSliceEncodeStore<'a, R> {
     fn sync(self) -> Option<()> {
         let ctypes = self.ctypes.unwrap();
@@ -1546,14 +1458,14 @@ impl<C, D: Store> Store for SliceStore<C, D> {
 }
 
 #[cfg(all(feature = "alloc", feature = "unstable-refs"))]
-pub struct MutSliceStore<'slice, R: Encode> {
+pub struct MutSliceStore<'a, R: Encode> {
     ctypes: Option<Box<[R::CType]>>,
     stores: Option<Box<[R::Store]>>,
-    original: Option<&'slice mut [R]>,
+    original: Option<&'a mut [R]>,
 }
 
 #[cfg(all(feature = "alloc", feature = "unstable-refs"))]
-impl<'slice, R: Encode> Default for MutSliceStore<'slice, R> {
+impl<'a, R: Encode> Default for MutSliceStore<'a, R> {
     fn default() -> Self {
         Self {
             ctypes: None,
@@ -1564,7 +1476,7 @@ impl<'slice, R: Encode> Default for MutSliceStore<'slice, R> {
 }
 
 #[cfg(all(feature = "alloc", feature = "unstable-refs"))]
-impl<'slice, 'b, R: Encode + Decode<'b> + 'b> Store for MutSliceStore<'slice, R> {
+impl<'a, 'b, R: Encode + Decode<'b> + 'b> Store for MutSliceStore<'a, R> {
     fn sync(self) -> Option<()> {
         const {
             #[cfg(all(not(test), not(feature = "unsafe-optimizations")))]
@@ -1597,9 +1509,9 @@ impl<'slice, 'b, R: Encode + Decode<'b> + 'b> Store for MutSliceStore<'slice, R>
     feature = "unstable-refs",
     not(feature = "unsafe-optimizations")
 ))]
-pub struct SliceMutTransmuteStore<'slice, R: CheckedTransmute<Target: Sized>> {
+pub struct SliceMutTransmuteStore<'a, R: CheckedTransmute<Target: Sized>> {
     target: Option<Box<[R::Target]>>,
-    original: Option<&'slice mut [R]>,
+    original: Option<&'a mut [R]>,
 }
 
 #[cfg(all(
@@ -1607,7 +1519,7 @@ pub struct SliceMutTransmuteStore<'slice, R: CheckedTransmute<Target: Sized>> {
     feature = "unstable-refs",
     not(feature = "unsafe-optimizations")
 ))]
-impl<'slice, R: CheckedTransmute<Target: Sized>> Default for SliceMutTransmuteStore<'slice, R> {
+impl<'a, R: CheckedTransmute<Target: Sized>> Default for SliceMutTransmuteStore<'a, R> {
     fn default() -> Self {
         Self {
             target: None,
@@ -1621,10 +1533,10 @@ impl<'slice, R: CheckedTransmute<Target: Sized>> Default for SliceMutTransmuteSt
     feature = "unstable-refs",
     not(feature = "unsafe-optimizations")
 ))]
-impl<'slice, R: CheckedTransmute<Target: Sized>> Store for SliceMutTransmuteStore<'slice, R> {
+impl<'a, R: CheckedTransmute<Target: Sized>> Store for SliceMutTransmuteStore<'a, R> {
     fn sync(self) -> Option<()> {
         if let (Some(borrows), Some(target)) = (self.original, self.target) {
-            let target = crate::transmute::transmute_from_target_boxed_slice(target)?;
+            let target = crate::transmute::transmute_from_target_boxed_dst(target)?;
 
             for (original, t) in borrows.iter_mut().zip(target) {
                 *original = t;
@@ -1742,35 +1654,32 @@ impl<R> Store for OpaqueMutSliceDecodeStore<R> {
     }
 }
 
-/// Macro for defining FFI types of a known category ([`Robust`] or [`CheckedTransmute`]).
+/// Macro for defining FFI types of a known category ([`Robust`], [`Transmuted`] or [`Cloned`]).
 ///
 /// The implementation for an FFI type of one of the categories incurs a lot of bloat that
 /// is reduced by the use of this macro
 ///
 /// # Safety
 ///
-/// * If the type is [`Robust`], it derives [`ReprC`]. Check safety invariants for [`ReprC`]
-/// * If the type is [`Transmuted`], it derives [`CheckedTransmute`]. Check safety invariants for [`CheckedTransmute`]
+/// * [`Robust`] derives [`ReprC`]. Check safety invariants for [`ReprC`]
+/// * [`Transmuted`] derives [`CheckedTransmute`]. Check safety invariants for [`CheckedTransmute`]
 ///
 /// # Example
 ///
 /// ```
-/// use co3::ReprC;
+/// use co3::reprC;
 ///
-/// // Always use a type alias for inner types of transparent items so that if you make
-/// // a change the unsafe code in [`co3::reprC!`] will not compile, thus preventing UB
-/// type NonNullInner<T> = *mut T;
-/// type WrapperInner = u32;
-///
-/// #[repr(transparent)]
-/// struct NonNull<T>(NonNullInner<T>);
-///
-/// #[repr(transparent)]
-/// struct Wrapper(WrapperInner);
-///
-/// #[derive(Clone, Copy)]
 /// #[repr(C)]
+/// #[derive(Clone, Copy)]
 /// struct RobustStruct(u64, i32);
+///
+/// #[repr(transparent)]
+/// struct MyPtr<T>(*mut T);
+///
+/// #[repr(transparent)]
+/// struct Wrapper(u32);
+///
+/// struct NoRepr<T: ?Sized>(u64, T);
 ///
 /// co3::reprC! {
 ///     // SAFETY: Type MUST NOT have traps
@@ -1779,8 +1688,8 @@ impl<R> Store for OpaqueMutSliceDecodeStore<R> {
 ///
 /// co3::reprC! {
 ///     // SAFETY: `Self::is_valid` must not return false posives
-///     unsafe impl(T) Transparent for NonNull<T> where (T: Copy) {
-///         type Target = NonNullInner<T>;
+///     unsafe impl(T) Transmuted for MyPtr<T> where (T: Copy) {
+///         type Target = *mut T;
 ///
 ///         const NICHE_VALUE: Self::CType = core::ptr::null_mut();
 ///         fn is_valid(target: &Self::Target) -> bool {
@@ -1792,84 +1701,304 @@ impl<R> Store for OpaqueMutSliceDecodeStore<R> {
 /// // If no validation function or niche value is given,
 /// // wrapper type delegates to the inner type
 /// co3::reprC! {
-///     unsafe impl Transparent for Wrapper {
-///         type Target = WrapperInner;
+///     unsafe impl Transmuted for Wrapper {
+///         type Target = u32;
 ///     }
+/// }
+///
+/// co3::reprC! {
+///     // To use this type one still has to implement
+///     // a suite of additional conversion traits
+///     impl(T: ?Sized) Cloned for NoRepr<T> {}
 /// }
 /// ```
 #[macro_export]
 macro_rules! reprC {
-    (impl $(( $($params:tt)* ))? Cloned for $self_ty:ty $(where ($($preds:tt)*))? {}) => {
-        impl$(<$($params)*>)? $crate::ir::Cloned for $self_ty $(where $($preds)*)? {}
+    (unsafe impl $(())? Robust for $self_ty:ty $(where ($($preds:tt)*))? {}) => {
+        $crate::reprC! { @robust_common [for<'_dummy> Self: Sized,] [] $self_ty $([$($preds)*])? }
+    };
 
-        impl$(<$($params)*>)? $crate::ir::ReprFamily for $self_ty $(where $($preds)*)? {
+    (unsafe impl ( $($params:tt)+ ) Robust for $self_ty:ty $(where ($($preds:tt)*))? {}) => {
+        $crate::reprC! { @robust_common [Self: Sized,] [$($params)+] $self_ty $([$($preds)*])? }
+    };
+
+    (unsafe impl $(( $($params:tt)+ ))? SizedRobust for $self_ty:ty $(where ($($preds:tt)*))? {}) => {
+        impl$(<$($params)+>)? $crate::ir::SizeFamily for $self_ty $(where $($preds)*)? {
+            type Kind = $crate::ir::Sized_;
+        }
+
+        $crate::reprC! { @robust_common [] [$($($params)+)?] $self_ty $([$($preds)*])? }
+    };
+
+    (@robust_common [$($sized_bound:tt)*] [$($impl_generics:tt)*] $self_ty:ty $([$($preds:tt)*])?) => {
+        impl<$($impl_generics)*> $crate::ir::ReprFamily for $self_ty $(where $($preds)*)? {
+            type Kind = $crate::ir::Robust;
+        }
+
+        impl<$($impl_generics)*> $crate::borrow::DropFamily for $self_ty $(where $($preds)*)? {
+            type Kind = $crate::borrow::NoDrop;
+        }
+
+        impl<$($impl_generics)*> $crate::niche::NicheFamily for $self_ty $(where $($preds)*)? {
+            type Kind = $crate::niche::WithoutNiche;
+        }
+
+        unsafe impl<$($impl_generics)*> $crate::ReprC for $self_ty where
+            $($sized_bound)*
+            $($preds)*
+        {}
+
+        $crate::reprC! { @no_drop_borrow_ir [$($sized_bound)*] [$($impl_generics)*] $self_ty $([$($preds)*])? }
+    };
+
+    (impl $(( $($params:tt)* ))? Cloned for $self_ty:ty $(where ($($preds:tt)*))? {}) => {
+        $crate::reprC! { @cloned_common [$($($params)*)?] $self_ty $([$($preds)*])? {} }
+    };
+
+    (impl $(( $($params:tt)* ))? SizedCloned for $self_ty:ty $(where ($($preds:tt)*))? {}) => {
+        impl$(<$($params)*>)?  $crate::ir::SizeFamily for $self_ty $(where $($preds)*)? {
+            type Kind = $crate::ir::Sized_;
+        }
+
+        $crate::reprC! { @cloned_common [$($($params)*)?] $self_ty $([$($preds)*])? {} }
+    };
+
+    (@cloned_common [$($params:tt)*] $self_ty:ty $([$($preds:tt)*])? {}) => {
+        impl<$($params)*> $crate::ir::Cloned for $self_ty $(where $($preds)*)? {}
+
+        impl<$($params)*> $crate::ir::ReprFamily for $self_ty $(where $($preds)*)? {
             type Kind = Self;
         }
     };
 
-    (unsafe impl $(( $($params:tt)* ))? Robust for $self_ty:ty $(where ($($preds:tt)*))? {}) => {
-        unsafe impl$(<$($params)*>)? $crate::ReprC for $self_ty $(where $($preds)*)? {}
-
-        impl$(<$($params)*>)? $crate::ir::ReprFamily for $self_ty $(where $($preds)*)? {
-            type Kind = $crate::ir::Robust;
+    (unsafe impl $(())? Transmuted for $self_ty:ty $(where ( $($preds:tt)* ))? {
+        type Target = $target:ty;
+    }) => {
+        impl $crate::ir::SizeFamily for $self_ty where $($($preds)*)? {
+            type Kind = <$target as $crate::ir::SizeFamily>::Kind;
         }
 
-        impl$(<$($params)*>)?  $crate::ir::SizeFamily for $self_ty where $($($preds)*)? {
+        $crate::reprC! {
+            @transmuted_delegate_niche_valid [for<'_dummy>] [Self: Sized,] [] $self_ty $([$($preds)*])? {
+                type Target = $target;
+            }
+        }
+
+        $crate::reprC! { @transmuted_delegate_borrow [for<'_dummy>] [] $self_ty $([$($preds)*])? }
+    };
+    (unsafe impl ( $($params:tt)+ ) Transmuted for $self_ty:ty $(where ( $($preds:tt)* ))? {
+        type Target = $target:ty;
+    }) => {
+        impl<$($params)*> $crate::ir::SizeFamily for $self_ty where
+            $target: $crate::ir::SizeFamily,
+            $($($preds)*)?
+        {
+            type Kind = <$target as $crate::ir::SizeFamily>::Kind;
+        }
+
+        $crate::reprC! {
+            @transmuted_delegate_niche_valid [] [Self: Sized,] [$($params)+] $self_ty $([$($preds)*])? {
+                type Target = $target;
+            }
+        }
+
+        $crate::reprC! { @transmuted_delegate_borrow [] [$($params)+] $self_ty $([$($preds)*])? }
+    };
+
+    (unsafe impl $(())? NoDropSizedTransmuted for $self_ty:ty $(where ( $($preds:tt)* ))? {
+        type Target = $target:ty;
+    }) => {
+        $crate::reprC! { @no_drop_sized_transmuted [] $self_ty $([$($preds)*])? {} }
+
+        $crate::reprC! {
+            @transmuted_delegate_niche_valid [for<'_dummy>] [] [] $self_ty $([$($preds)*])? {
+                type Target = $target;
+            }
+        }
+    };
+    (unsafe impl ( $($params:tt)+ ) NoDropSizedTransmuted for $self_ty:ty $(where ( $($preds:tt)* ))? {
+        type Target = $target:ty;
+    }) => {
+        $crate::reprC! { @no_drop_sized_transmuted [$($params)+] $self_ty $([$($preds)*])? {} }
+
+        $crate::reprC! {
+            @transmuted_delegate_niche_valid [] [] [$($params)+] $self_ty $([$($preds)*])? {
+                type Target = $target;
+            }
+        }
+    };
+
+    (unsafe impl $(())? Transmuted for $self_ty:ty $(where ( $($preds:tt)* ))? {
+        type Target = $target:ty;
+
+        fn is_valid($target_var:ident: $target_ty:ty) -> $ret_val:ty
+            $block:block
+    }) => {
+        impl $crate::ir::SizeFamily for $self_ty where $($($preds)*)? {
+            type Kind = <$target as $crate::ir::SizeFamily>::Kind;
+        }
+
+        $crate::reprC! {
+            @transmuted_delegate_niche_sized [for<'_dummy>] [Self: Sized,] [] $self_ty $([$($preds)*])? {
+                type Target = $target;
+                fn is_valid($target_var: $target_ty) -> bool $block
+            }
+        }
+
+        $crate::reprC! { @transmuted_delegate_borrow [for<'_dummy>] [] $self_ty $([$($preds)*])? }
+    };
+    (unsafe impl ( $($params:tt)+ ) Transmuted for $self_ty:ty $(where ( $($preds:tt)* ))? {
+        type Target = $target:ty;
+
+        fn is_valid($target_var:ident: $target_ty:ty) -> $ret_val:ty
+            $block:block
+    }) => {
+        impl<$($params)+> $crate::ir::SizeFamily for $self_ty where
+            $target: $crate::ir::SizeFamily,
+            $($($preds)*)?
+        {
+            type Kind = <$target as $crate::ir::SizeFamily>::Kind;
+        }
+
+        $crate::reprC! {
+            @transmuted_delegate_niche_sized [] [Self: Sized,] [$($params)+] $self_ty $([$($preds)*])? {
+                type Target = $target;
+                fn is_valid($target_var: $target_ty) -> bool $block
+            }
+        }
+
+        $crate::reprC! { @transmuted_delegate_borrow [] [$($params)+] $self_ty $([$($preds)*])? }
+    };
+
+    (unsafe impl $(())? NoDropSizedTransmuted for $self_ty:ty $(where ( $($preds:tt)* ))? {
+        type Target = $target:ty;
+
+        fn is_valid($target_var:ident: $target_ty:ty) -> $ret_val:ty
+            $block:block
+    }) => {
+        $crate::reprC! { @no_drop_sized_transmuted [] $self_ty $([$($preds)*])? {} }
+
+        $crate::reprC! {
+            @transmuted_delegate_niche_sized [for<'_dummy>] [] [] $self_ty $([$($preds)*])? {
+                type Target = $target;
+                fn is_valid($target_var: $target_ty) -> bool $block
+            }
+        }
+    };
+    (unsafe impl ( $($params:tt)+ ) NoDropSizedTransmuted for $self_ty:ty $(where ( $($preds:tt)* ))? {
+        type Target = $target:ty;
+
+        fn is_valid($target_var:ident: $target_ty:ty) -> $ret_val:ty
+            $block:block
+    }) => {
+        $crate::reprC! { @no_drop_sized_transmuted [$($params)+] $self_ty $([$($preds)*])? {} }
+
+        $crate::reprC! {
+            @transmuted_delegate_niche_sized [] [] [$($params)+] $self_ty $([$($preds)*])? {
+                type Target = $target;
+                fn is_valid($target_var: $target_ty) -> bool $block
+            }
+        }
+    };
+
+    (unsafe impl $(())? Transmuted for $self_ty:ty $(where ( $($preds:tt)* ))? {
+        type Target = $target:ty;
+
+        const NICHE_VALUE: $niche_ty:ty = $niche_value:expr;
+        fn is_valid($target_var:ident: $target_ty:ty) -> $ret_val:ty
+            $block:block
+    }) => {
+        impl $crate::ir::SizeFamily for $self_ty where $($($preds)*)? {
+            type Kind = <$target as $crate::ir::SizeFamily>::Kind;
+        }
+
+        $crate::reprC! {
+            @transmuted_explicit_niche [for<'_dummy>] [] [] $self_ty $([$($preds)*])? {
+                type Target = $target;
+                const NICHE_VALUE: $niche_ty = $niche_value;
+                fn is_valid($target_var: $target_ty) -> bool $block
+            }
+        }
+
+        $crate::reprC! { @transmuted_delegate_borrow [for<'_dummy>] [] $self_ty $([$($preds)*])? }
+    };
+    (unsafe impl ( $($params:tt)+ ) Transmuted for $self_ty:ty $(where ( $($preds:tt)* ))? {
+        type Target = $target:ty;
+
+        const NICHE_VALUE: $niche_ty:ty = $niche_value:expr;
+        fn is_valid($target_var:ident: $target_ty:ty) -> $ret_val:ty
+            $block:block
+    }) => {
+        impl<$($params)+> $crate::ir::SizeFamily for $self_ty where
+            $target: $crate::ir::SizeFamily,
+            $($($preds)*)?
+        {
+            type Kind = <$target as $crate::ir::SizeFamily>::Kind;
+        }
+
+        $crate::reprC! {
+            @transmuted_explicit_niche [] [] [$($params)+] $self_ty $([$($preds)*])? {
+                type Target = $target;
+                const NICHE_VALUE: $niche_ty = $niche_value;
+                fn is_valid($target_var: $target_ty) -> bool $block
+            }
+        }
+
+        $crate::reprC! { @transmuted_delegate_borrow [] [$($params)+] $self_ty $([$($preds)*])? }
+    };
+
+    (unsafe impl $(())? NoDropSizedTransmuted for $self_ty:ty $(where ( $($preds:tt)* ))? {
+        type Target = $target:ty;
+
+        const NICHE_VALUE: $niche_ty:ty = $niche_value:expr;
+        fn is_valid($target_var:ident: $target_ty:ty) -> $ret_val:ty
+            $block:block
+    }) => {
+        $crate::reprC! { @no_drop_sized_transmuted [] $self_ty $([$($preds)*])? {} }
+
+        $crate::reprC! {
+            @transmuted_explicit_niche [for<'_dummy>] [Self: Sized,] [] $self_ty $([$($preds)*])? {
+                type Target = $target;
+                const NICHE_VALUE: $niche_ty = $niche_value;
+                fn is_valid($target_var: $target_ty) -> bool $block
+            }
+        }
+    };
+    (unsafe impl ( $($params:tt)+ ) NoDropSizedTransmuted for $self_ty:ty $(where ( $($preds:tt)* ))? {
+        type Target = $target:ty;
+
+        const NICHE_VALUE: $niche_ty:ty = $niche_value:expr;
+        fn is_valid($target_var:ident: $target_ty:ty) -> $ret_val:ty
+            $block:block
+    }) => {
+        $crate::reprC! { @no_drop_sized_transmuted [$($params)+] $self_ty $([$($preds)*])? {} }
+
+        $crate::reprC! {
+            @transmuted_explicit_niche [] [Self: Sized,] [$($params)+] $self_ty $([$($preds)*])? {
+                type Target = $target;
+                const NICHE_VALUE: $niche_ty = $niche_value;
+                fn is_valid($target_var: $target_ty) -> bool $block
+            }
+        }
+    };
+
+    (@no_drop_sized_transmuted [$($impl_generics:tt)*] $self_ty:ty $([$($preds:tt)*])? {}) => {
+        impl<$($impl_generics)*> $crate::ir::SizeFamily for $self_ty where $($($preds)*)? {
             type Kind = $crate::ir::Sized_;
         }
 
-        impl $(<$($params)*>)? $crate::borrow::DropFamily for $self_ty $(where $($preds)*)? {
+        impl<$($impl_generics)*> $crate::borrow::DropFamily for $self_ty $(where $($preds)*)? {
             type Kind = $crate::borrow::NoDrop;
         }
 
-        impl $(<$($params)*>)? $crate::niche::NicheFamily for $self_ty $(where $($preds)*)? {
-            type Kind = $crate::niche::WithoutNiche;
-        }
-
-        impl<$($($params)*)?> $crate::borrow::Borrow for $self_ty where
-            $($($preds)*)?
-        {
-            type Borrowed<'_išč> = Self
-            where
-                Self: '_išč;
-
-            type Store = ();
-
-            fn borrow<'_itm>(self, (): &mut ()) -> Self::Borrowed<'_itm>
-            where
-                Self: '_itm,
-            {
-                self
-            }
-        }
-
-        impl<'_išč, $($($params)*)?> $crate::borrow::ToOwned<'_išč> for $self_ty where
-            Self: '_išč,
-            $($($preds)*)?
-        {
-            fn to_owned(borrowed: Self::Borrowed<'_išč>) -> Self {
-                borrowed
-            }
-        }
+        $crate::reprC! { @no_drop_borrow_ir [] [$($impl_generics)*] $self_ty $([$($preds)*])? }
     };
 
-    (unsafe impl $(())? Transparent for $self_ty:ty $(where ( $($preds:tt)* ))? {
+    (@transmuted_delegate_niche_valid [$($for_dummy:tt)*] [$($sized_bound:tt)*] [$($impl_generics:tt)*] $self_ty:ty $([$($preds:tt)*])? {
         type Target = $target:ty;
     }) => {
         $crate::reprC! {
-            @transparent_delegate_niche [for<'_dummy>] [] $self_ty $([$($preds)*])? {
-                type Target = $target;
-                // NOTE: When delegating there is no trap representations in the immediate `Self::Target`
-                // Whether `Self::Target` itself has trap representations is not to be considered here
-                fn is_valid(_target: &Self::Target) -> bool { true }
-            }
-        }
-    };
-    (unsafe impl $(( $($params:tt)+ ))? Transparent for $self_ty:ty $(where ( $($preds:tt)* ))? {
-        type Target = $target:ty;
-    }) => {
-        $crate::reprC! {
-            @transparent_delegate_niche [] [$($($params)+)?] $self_ty $([$($preds)*])? {
+            @transmuted_delegate_niche_sized [$($for_dummy)*] [$($sized_bound)*] [$($impl_generics)*] $self_ty $([$($preds)*])? {
                 type Target = $target;
                 // NOTE: When delegating there is no trap representations in the immediate `Self::Target`
                 // Whether `Self::Target` itself has trap representations is not to be considered here
@@ -1878,65 +2007,19 @@ macro_rules! reprC {
         }
     };
 
-    (unsafe impl $(())?  Transparent for $self_ty:ty $(where ( $($preds:tt)* ))? {
+    (@transmuted_delegate_niche_sized [$($for_dummy:tt)*] [$($sized_bound:tt)*] [$($impl_generics:tt)*] $self_ty:ty $([$($preds:tt)*])? {
         type Target = $target:ty;
-
-        fn is_valid($target_var:ident: $target_ty:ty) -> $ret_val:ty
-            $block:block
+        fn is_valid($target_var:ident: $target_ty:ty) -> bool $block:block
     }) => {
         $crate::reprC! {
-            @transparent_delegate_niche [for<'_dummy>] [] $self_ty $([$($preds)*])? {
-                type Target = $target;
-                fn is_valid($target_var: $target_ty) -> bool $block
-            }
-        }
-    };
-    (unsafe impl ( $($params:tt)+ ) Transparent for $self_ty:ty $(where ( $($preds:tt)* ))? {
-        type Target = $target:ty;
-
-        fn is_valid($target_var:ident: $target_ty:ty) -> $ret_val:ty
-            $block:block
-    }) => {
-        $crate::reprC! {
-            @transparent_delegate_niche [] [$($($params)+)?] $self_ty $([$($preds)*])? {
+            @transmuted_delegate_niche [$($for_dummy)*] [$($for_dummy)* $($sized_bound)*] [$($impl_generics)*] $self_ty $([$($preds)*])? {
                 type Target = $target;
                 fn is_valid($target_var: $target_ty) -> bool $block
             }
         }
     };
 
-    (unsafe impl $(())? Transparent for $self_ty:ty $(where ( $($preds:tt)* ))? {
-        type Target = $target:ty;
-
-        const NICHE_VALUE: $niche_ty:ty = $niche_value:expr;
-        fn is_valid($target_var:ident: $target_ty:ty) -> $ret_val:ty
-            $block:block
-    }) => {
-        $crate::reprC! {
-            @transparent_explicit_niche [for<'_dummy>] [] $self_ty $([$($preds)*])? {
-                type Target = $target;
-                const NICHE_VALUE: $niche_ty = $niche_value;
-                fn is_valid($target_var: $target_ty) -> bool $block
-            }
-        }
-    };
-    (unsafe impl ( $($params:tt)+ ) Transparent for $self_ty:ty $(where ( $($preds:tt)* ))? {
-        type Target = $target:ty;
-
-        const NICHE_VALUE: $niche_ty:ty = $niche_value:expr;
-        fn is_valid($target_var:ident: $target_ty:ty) -> $ret_val:ty
-            $block:block
-    }) => {
-        $crate::reprC! {
-            @transparent_explicit_niche [] [$($params)+] $self_ty $([$($preds)*])? {
-                type Target = $target;
-                const NICHE_VALUE: $niche_ty = $niche_value;
-                fn is_valid($target_var: $target_ty) -> bool $block
-            }
-        }
-    };
-
-    (@transparent_delegate_niche [$($for_dummy:tt)*] [$($impl_generics:tt)*] $self_ty:ty $([$($preds:tt)*])? {
+    (@transmuted_delegate_niche [$($for_dummy:tt)*] [$($sized_bound:tt)*] [$($impl_generics:tt)*] $self_ty:ty $([$($preds:tt)*])? {
         type Target = $target:ty;
         fn is_valid($target_var:ident: $target_ty:ty) -> bool $block:block
     }) => {
@@ -1952,15 +2035,15 @@ macro_rules! reprC {
         }
 
         $crate::reprC! {
-            @transparent_common [$($for_dummy)*] [$($impl_generics)*] $self_ty $([$($preds)*])? {
+            @transmuted_common [$($for_dummy)*] [$($sized_bound)*] [$($impl_generics)*] $self_ty $([$($preds)*])? {
                 type Target = $target;
+                fn is_valid($target_var: $target_ty) -> bool $block
             }
         }
 
-        #[allow(dead_code)]
         impl<$($impl_generics)*> $crate::niche::Niche for $self_ty where
             $($for_dummy)* $target: $crate::niche::Niche,
-            $($for_dummy)* Self: Sized,
+            $($sized_bound)*
             $($($preds)*)?
         {
             const NICHE_VALUE: <Self as $crate::ExternC>::CType = <$target as $crate::niche::Niche>::NICHE_VALUE;
@@ -1969,29 +2052,12 @@ macro_rules! reprC {
         unsafe impl<$($impl_generics)*> $crate::niche::StableNiche for $self_ty
         where
             $($for_dummy)* $target: $crate::niche::StableNiche,
-            $($for_dummy)* Self: Sized,
+            $($sized_bound)*
             $($($preds)*)?
         {}
-
-        unsafe impl<$($impl_generics)*> $crate::transmute::CheckedTransmute for $self_ty $(where $($preds)*)? {
-            type Target = $target;
-
-            #[inline(always)]
-            fn is_valid($target_var: $target_ty) -> bool $block
-        }
-
-        #[allow(dead_code)]
-        unsafe impl<$($impl_generics)*> $crate::transmute::EncodeTransmuted<false> for $self_ty
-        where
-            $($for_dummy)* $target: $crate::Encode,
-            $($for_dummy)* Self: Sized,
-            $($($preds)*)?
-        {
-            type Store = <$target as $crate::Encode>::Store;
-        }
     };
 
-    (@transparent_explicit_niche [$($for_dummy:tt)*] [$($impl_generics:tt)*] $self_ty:ty $([$($preds:tt)*])? {
+    (@transmuted_explicit_niche [$($for_dummy:tt)*] [$($sized_bound:tt)*] [$($impl_generics:tt)*] $self_ty:ty $([$($preds:tt)*])? {
         type Target = $target:ty;
         const NICHE_VALUE: $niche_ty:ty = $niche_value:expr;
         fn is_valid($target_var:ident: $target_ty:ty) -> bool $block:block
@@ -2000,31 +2066,41 @@ macro_rules! reprC {
             type Kind = $crate::ir::Transmuted;
         }
 
-        impl<$($impl_generics)*> $crate::niche::NicheFamily for $self_ty where $($($preds)*)? {
+        impl<$($impl_generics)*> $crate::niche::NicheFamily for $self_ty where
+            $($sized_bound)*
+            $($($preds)*)?
+        {
             type Kind = $crate::niche::WithCustomNiche;
         }
 
         $crate::reprC! {
-            @transparent_common [$($for_dummy)*] [$($impl_generics)*] $self_ty $([$($preds)*])? {
+            @transmuted_common [$($for_dummy)*] [$($sized_bound)*] [$($impl_generics)*] $self_ty $([$($preds)*])? {
                 type Target = $target;
+                fn is_valid($target_var: $target_ty) -> bool $block
             }
         }
 
-        #[allow(dead_code)]
-        impl<$($impl_generics)*> $crate::niche::Niche for $self_ty where $($($preds)*)? {
+        impl<$($impl_generics)*> $crate::niche::Niche for $self_ty where
+            $($sized_bound)*
+            $($($preds)*)?
+        {
             const NICHE_VALUE: $niche_ty = {
                 assert!($crate::impls!
                     // TODO: This introduces a dependency, can we do without?
                     // and it also adds checks for internal types like `NonZeroU8`
                     ($target: $crate::niche::NicheFamily<Kind = $crate::niche::WithoutNiche>),
-                    "Transparent CAN'T define a custom niche if target has a niche"
+                    "Transmuted CAN'T define a custom niche if target has a niche"
                 );
 
                 $niche_value
             };
         }
+    };
 
-        // SAFETY: `$ty` is transmutable into `$target` and `is_valid` doesn't return false positives
+    (@transmuted_common [$($for_dummy:tt)*] [$($sized_bound:tt)*] [$($impl_generics:tt)*] $self_ty:ty $([$($preds:tt)*])? {
+        type Target = $target:ty;
+        fn is_valid($target_var:ident: $target_ty:ty) -> bool $block:block
+    }) => {
         unsafe impl<$($impl_generics)*> $crate::transmute::CheckedTransmute for $self_ty $(where $($preds)*)? {
             type Target = $target;
 
@@ -2032,34 +2108,17 @@ macro_rules! reprC {
             fn is_valid($target_var: $target_ty) -> bool $block
         }
 
-        #[allow(dead_code)]
-        unsafe impl<$($impl_generics)*> $crate::transmute::EncodeTransmuted<false> for $self_ty
+        unsafe impl<$($impl_generics)*> $crate::transmute::EncodeTransmuted for $self_ty
         where
             $target: $crate::Encode,
+            $($sized_bound)*
             $($($preds)*)?
         {
             type Store = <$target as $crate::Encode>::Store;
         }
     };
 
-    (@transparent_common [$($for_dummy:tt)*] [$($impl_generics:tt)*] $self_ty:ty $([$($preds:tt)*])? {
-        type Target = $target:ty;
-    }) => {
-        impl<$($impl_generics)*> $crate::ir::SizeFamily for $self_ty where
-            $target: $crate::ir::SizeFamily,
-            $($($preds)*)?
-        {
-            type Kind = <$target as $crate::ir::SizeFamily>::Kind;
-        }
-
-        impl<$($impl_generics)*> $crate::borrow::DropFamily for $self_ty
-        where
-            $target: $crate::borrow::DropFamily,
-            $($($preds)*)?
-        {
-            type Kind = <$target as $crate::borrow::DropFamily>::Kind;
-        }
-
+    (@transmuted_delegate_borrow [$($for_dummy:tt)*] [$($impl_generics:tt)*] $self_ty:ty $([$($preds:tt)*])?) => {
         const _: () = {
             use $crate::borrow::{Borrow, ToOwned};
 
@@ -2077,7 +2136,6 @@ macro_rules! reprC {
                         Self: 'itm;
                 }
 
-                #[allow(unused)]
                 impl<$($impl_generics)*> Borrow for $self_ty
                 where
                     $($for_dummy)* Self: $crate::borrow::DropFamily<Kind = $crate::borrow::NoDrop> + Sized,
@@ -2099,7 +2157,6 @@ macro_rules! reprC {
                     }
                 }
 
-                #[allow(unused)]
                 impl<$($impl_generics)*> Borrow for $self_ty
                 where
                     $($for_dummy)* Self: $crate::borrow::DropFamily<Kind = $crate::borrow::NeedsDrop> + Sized,
@@ -2128,7 +2185,6 @@ macro_rules! reprC {
                     fn to_owned(borrowed: Self::Borrowed<'_išč>) -> Self;
                 }
 
-                #[allow(dead_code)]
                 impl<'_išč, $($impl_generics)*> ToOwned<'_išč> for $self_ty
                 where
                     $($for_dummy)* Self: $crate::borrow::DropFamily<Kind = $crate::borrow::NoDrop> + Sized + '_išč,
@@ -2136,31 +2192,68 @@ macro_rules! reprC {
                 {
                     #[inline(always)]
                     fn to_owned(borrowed: Self::Borrowed<'_išč>) -> Self {
+                        const { assert!($crate::impls!(Self: !Drop)); }
                         borrowed
                     }
                 }
 
-                #[allow(dead_code)]
                 impl<'_išč, $($impl_generics)*> ToOwned<'_išč> for $self_ty
                 where
+                    // FIXME: This bound is redundant for concrete types
+                    // like `u32`, but required for COption<T>
                     $($for_dummy)* Self: $crate::borrow::DropFamily<Kind = $crate::borrow::NeedsDrop> + Clone + '_išč,
                     $($($preds)*)?
                 {
                     #[inline(always)]
                     fn to_owned(borrowed: Self::Borrowed<'_išč>) -> Self {
+                        const { assert!($crate::impls!(Self: !Drop)); }
                         borrowed.clone()
                     }
                 }
             }
         };
     };
+
+    (@no_drop_borrow_ir [$($sized_bound:tt)*] [$($impl_generics:tt)*] $self_ty:ty $([$($preds:tt)*])?) => {
+        impl<$($impl_generics)*> $crate::borrow::Borrow for $self_ty where
+            $($sized_bound)*
+            $($($preds)*)?
+        {
+            type Borrowed<'_išč> = Self
+            where
+                Self: '_išč;
+
+            type Store = ();
+
+            fn borrow<'_itm>(self, (): &mut ()) -> Self::Borrowed<'_itm>
+            where
+                Self: '_itm,
+            {
+                const { assert!($crate::impls!(Self: !Drop)); }
+                self
+            }
+        }
+
+        impl<'_išč, $($impl_generics)*> $crate::borrow::ToOwned<'_išč> for $self_ty where
+            $($sized_bound)*
+            // FIXME: This bound is redundant for concrete types
+            // like `u32`, but required for COption<T>
+            Self: '_išč,
+            $($($preds)*)?
+        {
+            fn to_owned(borrowed: Self::Borrowed<'_išč>) -> Self {
+                const { assert!($crate::impls!(Self: !Drop)); }
+                borrowed
+            }
+        }
+    };
 }
 
 reprC! {
-    unsafe impl(R) Robust for *const R {}
+    unsafe impl(R) SizedRobust for *const R {}
 }
 reprC! {
-    unsafe impl(R) Robust for *mut R {}
+    unsafe impl(R) SizedRobust for *mut R {}
 }
 
 // SAFETY: Array is just a contiguous block of memory
@@ -2211,14 +2304,14 @@ mod tests {
         //    Encode,
         //);
         assert_impl_all!(&[u8]:
-            ReprFamily<Kind = [Robust]>,
+            ReprFamily<Kind = &'static Robust>,
             NicheFamily<Kind = WithCustomNiche>,
             Niche<CType = CSlice<u8>>,
             Decode<'static>,
             Encode,
         );
         assert_impl_all!(&mut [u8]:
-            ReprFamily<Kind = [Robust]>,
+            ReprFamily<Kind = &'static mut Robust>,
             NicheFamily<Kind = WithCustomNiche>,
             Niche<CType = CSliceMut<u8>>,
             Decode<'static>,
@@ -2226,7 +2319,7 @@ mod tests {
         );
         #[cfg(feature = "alloc")]
         assert_impl_all!(Box<[u8]>:
-            ReprFamily<Kind = [Robust]>,
+            ReprFamily<Kind = Box<Robust>>,
             NicheFamily<Kind = WithCustomNiche>,
             Niche<CType = CBoxedSlice<u8>>,
             // FIXME:
@@ -2235,7 +2328,7 @@ mod tests {
         );
         #[cfg(feature = "alloc")]
         assert_impl_all!(Vec<u8>:
-            ReprFamily<Kind = [Robust]>,
+            ReprFamily<Kind = Vec<Robust>>,
             NicheFamily<Kind = WithCustomNiche>,
             Niche<CType = CVec<u8>>,
             // FIXME:
@@ -2291,14 +2384,14 @@ mod tests {
         //    Encode,
         //);
         assert_impl_all!(&[*const bool]:
-            ReprFamily<Kind = [Robust]>,
+            ReprFamily<Kind = &'static Robust>,
             NicheFamily<Kind = WithCustomNiche>,
             Niche<CType = CSlice<*const bool>>,
             Decode<'static>,
             Encode,
         );
         assert_impl_all!(&mut [*const bool]:
-            ReprFamily<Kind = [Robust]>,
+            ReprFamily<Kind = &'static mut Robust>,
             NicheFamily<Kind = WithCustomNiche>,
             Niche<CType = CSliceMut<*const bool>>,
             Decode<'static>,
@@ -2306,7 +2399,7 @@ mod tests {
         );
         #[cfg(feature = "alloc")]
         assert_impl_all!(Box<[*const bool]>:
-            ReprFamily<Kind = [Robust]>,
+            ReprFamily<Kind = Box<Robust>>,
             NicheFamily<Kind = WithCustomNiche>,
             Niche<CType = CBoxedSlice<*const bool>>,
             // FIXME:
@@ -2316,7 +2409,7 @@ mod tests {
         );
         #[cfg(feature = "alloc")]
         assert_impl_all!(Vec<*const bool>:
-            ReprFamily<Kind = [Robust]>,
+            ReprFamily<Kind = Vec<Robust>>,
             NicheFamily<Kind = WithCustomNiche>,
             Niche<CType = CVec<*const bool>>,
             // FIXME:
@@ -2402,6 +2495,9 @@ mod tests {
             value: i32,
         }
 
+        impl SizeFamily for OpaqueData {
+            type Kind = Sized_;
+        }
         impl ReprFamily for OpaqueData {
             type Kind = Opaque;
         }
@@ -2413,7 +2509,7 @@ mod tests {
             let mut store = Box::default();
             let encoded = slice_ref.encode(&mut store);
             let c_slice = unsafe { encoded.into_rust().unwrap() };
-            c_slice[0] = &mut *other;
+            c_slice[0] = CBox::from_box(Some(other));
 
             store.sync().unwrap();
         }
@@ -2422,18 +2518,21 @@ mod tests {
 
     #[test]
     #[cfg(all(feature = "alloc", feature = "unstable-refs"))]
-    fn decode_opaque_mut_ref() {
+    fn decode_opaque_ref_mut_slice() {
         #[derive(Clone, PartialEq, Eq)]
         struct OpaqueData {
             value: i32,
         }
 
+        impl SizeFamily for OpaqueData {
+            type Kind = Sized_;
+        }
         impl ReprFamily for OpaqueData {
             type Kind = Opaque;
         }
 
-        let mut item1 = OpaqueData { value: 10 };
-        let mut ptrs: [*mut OpaqueData; 1] = [&mut item1];
+        let item = Box::new(OpaqueData { value: 10 });
+        let mut ptrs = [CBox::from_box(Some(item))];
         let c_slice = CSliceMut::from_slice(Some(&mut ptrs));
 
         {
@@ -2443,6 +2542,7 @@ mod tests {
             store.sync().unwrap();
         }
 
-        assert_eq!(item1.value, 100);
+        let updated = unsafe { &*ptrs[0].data };
+        assert_eq!(updated.value, 100);
     }
 }

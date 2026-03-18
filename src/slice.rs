@@ -163,8 +163,8 @@ impl<C: ReprC> CSliceMut<C> {
 }
 
 reprC! {
-    unsafe impl(C) Robust for CSlice<C> {}
+    unsafe impl(C) SizedRobust for CSlice<C> {}
 }
 reprC! {
-    unsafe impl(C) Robust for CSliceMut<C> {}
+    unsafe impl(C) SizedRobust for CSliceMut<C> {}
 }

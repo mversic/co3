@@ -30,7 +30,7 @@ impl<T> COption<T> {
         }
     }
 
-    pub(crate) const fn niche() -> Self {
+    pub(crate) const fn none() -> Self {
         Self {
             tag: 2,
             payload: unsafe { core::mem::zeroed() },
@@ -67,5 +67,5 @@ impl<T: Copy> Clone for COption<T> {
 }
 
 reprC! {
-    unsafe impl(T: ReprC) Robust for COption<T> {}
+    unsafe impl(T: ReprC) SizedRobust for COption<T> {}
 }

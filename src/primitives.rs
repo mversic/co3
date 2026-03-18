@@ -150,7 +150,7 @@ use crate::reprC;
 macro_rules! fieldless_enum_derive {
     ( $src:ty => $dst:ty: {$niche_val:expr}: $validity_fn:expr ) => {
         reprC! {
-            unsafe impl Transparent for $src {
+            unsafe impl NoDropSizedTransmuted for $src {
                 type Target = $dst;
 
                 const NICHE_VALUE: Self::CType = $niche_val;
@@ -167,7 +167,7 @@ macro_rules! fieldless_enum_derive {
 /// Type must be a robust #[repr(C)]
 macro_rules! primitive_derive {
     ( $($primitive:ty),* $(,)? ) => { $(
-        reprC! { unsafe impl Robust for $primitive {} } )*
+        reprC! { unsafe impl SizedRobust for $primitive {} } )*
     };
 }
 

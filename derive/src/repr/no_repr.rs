@@ -17,7 +17,8 @@ use crate::{
         niche::{gen_enum_niche_ir, gen_struct_niche_ir},
         repr_c::{
             assert_drop_impl, gen_data_enum, gen_data_enum_variant_name, gen_extern_c_bounds,
-            gen_fieldless_enum_drop_ir, gen_repr_c_struct,
+            gen_fieldless_enum_drop_ir, gen_repr_c_struct, gen_sized_size_family,
+            gen_struct_size_family,
         },
     },
     utils::build_type_tuple,
@@ -33,6 +34,7 @@ pub(super) fn derive_no_repr_struct<const NEEDS_DROP: bool>(
 
     let (repr_c_struct_name, repr_c_struct) = gen_repr_c_struct(name, generics, fields);
     let field_types = fields.iter().map(|f| &f.ty).collect::<Vec<_>>();
+    let size_family_impl = gen_struct_size_family(name, generics, &field_types);
 
     let predicates = where_clause
         .as_ref()
@@ -129,6 +131,7 @@ pub(super) fn derive_no_repr_struct<const NEEDS_DROP: bool>(
     quote! {
         #repr_c_struct
 
+        #size_family_impl
         #basic_impls
         #niche_ir
         #store_defs
@@ -172,6 +175,7 @@ pub(super) fn derive_no_repr_data_enum<const NEEDS_DROP: bool>(
     local: bool,
 ) -> TokenStream {
     let inferred_repr = infer_repr(variants.len());
+    let size_family_impl = gen_sized_size_family(enum_name, generics);
 
     let (repr_c_enum_name, repr_c_enum) =
         gen_data_enum(enum_name, generics, inferred_repr, variants);
@@ -302,6 +306,7 @@ pub(super) fn derive_no_repr_data_enum<const NEEDS_DROP: bool>(
     quote! {
         #repr_c_enum
 
+        #size_family_impl
         #basic_impls
         #niche_ir
         #store_defs
@@ -356,6 +361,7 @@ pub(super) fn derive_no_repr_fieldless_enum(
     variants: &[SpannedValue<FfiTypeVariant>],
 ) -> TokenStream {
     let inferred_repr = infer_repr(variants.len());
+    let size_family_impl = gen_sized_size_family(enum_name, generics);
 
     let basic_impls = gen_ir_impl(enum_name, &parse_quote!( #inferred_repr ), &[], generics);
 
@@ -377,6 +383,7 @@ pub(super) fn derive_no_repr_fieldless_enum(
     );
 
     quote! {
+        #size_family_impl
         #basic_impls
 
         #nodrop_borrow_ir

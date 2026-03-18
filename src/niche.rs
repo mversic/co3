@@ -9,7 +9,7 @@ use disjoint_impls::disjoint_impls;
 
 use crate::{
     ExternC, assert_arr_has_non_zero_len,
-    ir::ReprFamily,
+    ir::{SizeFamily, Sized_, UnSized},
     option::COption,
     slice::{CSlice, CSliceMut},
 };
@@ -37,14 +37,57 @@ pub enum WithCustomNiche {}
 /// Marker for a type that has no trap representations and therefore no niche value
 pub enum WithoutNiche {}
 
-/// Type that has a trap representation that can be used as a niche value.
-///
-/// # Example
-///
-/// [`Option<bool>`]     - will be serilized into one byte
-/// [`Option<*const T>`] - will take the size of the pointer
-pub trait Niche: ExternC {
-    const NICHE_VALUE: Self::CType;
+disjoint_impls! {
+    /// Type that has a trap representation that can be used as a niche value.
+    ///
+    /// # Example
+    ///
+    /// [`Option<bool>`]     - will be serilized into one byte
+    /// [`Option<*const T>`] - will take the size of the pointer
+    pub trait Niche: ExternC {
+        const NICHE_VALUE: Self::CType;
+    }
+
+    impl<R, C> Niche for &R
+    where
+        Self: ExternC<CType = *const C>,
+    {
+        const NICHE_VALUE: Self::CType = core::ptr::null();
+    }
+    impl<R: ?Sized, C> Niche for &R
+    where
+        Self: ExternC<CType = CSlice<C>>,
+    {
+        const NICHE_VALUE: Self::CType = CSlice::none();
+    }
+
+    impl<R, C> Niche for &mut R
+    where
+        Self: ExternC<CType = *mut C>,
+    {
+        const NICHE_VALUE: Self::CType = core::ptr::null_mut();
+    }
+    impl<R: ?Sized, C> Niche for &mut R
+    where
+        Self: ExternC<CType = CSliceMut<C>>,
+    {
+        const NICHE_VALUE: Self::CType = CSliceMut::none();
+    }
+
+    #[cfg(feature = "alloc")]
+    impl<R, C> Niche for Box<R>
+    where
+        Self: ExternC<CType = CBox<C>>,
+    {
+        const NICHE_VALUE: Self::CType = CBox::none();
+    }
+    #[cfg(feature = "alloc")]
+    impl<R: ?Sized, C> Niche for Box<R>
+    where
+        Self: ExternC<CType = CBoxedSlice<C>>,
+    {
+        const NICHE_VALUE: Self::CType = CBoxedSlice::none();
+    }
 }
 
 /// Type that has a compiler guaranteed [`Niche`] value (e.g. `Box<T>`)
@@ -77,76 +120,37 @@ disjoint_impls! {
         type Kind;
     }
 
-    // TODO: this should be valid , fix it upstream in disjoint_Impls
-    // impl<R: ReprFamily + ?Sized> NicheFamily for &R where Self: ReprFamily {
-    impl<R: ReprFamily<Kind = S1>, S1, S2> NicheFamily for &R
-    where
-        Self: ReprFamily<Kind = S2>
-    {
+    impl<R: SizeFamily<Kind = Sized_>> NicheFamily for &R {
         type Kind = WithStableNiche;
     }
-    impl<R: ReprFamily<Kind = S> + ?Sized, S> NicheFamily for &R
-    where
-        Self: ReprFamily<Kind = [S]>,
-    {
-        type Kind = WithCustomNiche;
-    }
-    impl<R: ReprFamily<Kind = [S]> + ?Sized, S> NicheFamily for &R
-    where
-        Self: ReprFamily<Kind = S>
-    {
+    impl<R: SizeFamily<Kind = UnSized> + ?Sized> NicheFamily for &R {
         type Kind = WithCustomNiche;
     }
 
-    impl<R: ReprFamily<Kind = S1>, S1, S2> NicheFamily for &mut R
-    where
-        Self: ReprFamily<Kind = S2>
-    {
+    impl<R: SizeFamily<Kind = Sized_>> NicheFamily for &mut R {
         type Kind = WithStableNiche;
     }
-    impl<R: ReprFamily<Kind = S> + ?Sized, S> NicheFamily for &mut R
-    where
-        Self: ReprFamily<Kind = [S]>,
-    {
-        type Kind = WithCustomNiche;
-    }
-    impl<R: ReprFamily<Kind = [S]> + ?Sized, S> NicheFamily for &mut R
-    where
-        Self: ReprFamily<Kind = S>
-    {
+    impl<R: SizeFamily<Kind = UnSized> + ?Sized> NicheFamily for &mut R {
         type Kind = WithCustomNiche;
     }
 
     #[cfg(feature = "alloc")]
-    impl<R: ReprFamily<Kind = S1>, S1, S2> NicheFamily for Box<R>
-    where
-        Self: ReprFamily<Kind = S2>
-    {
+    impl<R: SizeFamily<Kind = Sized_>> NicheFamily for Box<R> {
         type Kind = WithStableNiche;
     }
     #[cfg(feature = "alloc")]
-    impl<R: ReprFamily<Kind = S> + ?Sized, S> NicheFamily for Box<R>
-    where
-        Self: ReprFamily<Kind = [S]>,
-    {
-        type Kind = WithCustomNiche;
-    }
-    #[cfg(feature = "alloc")]
-    impl<R: ReprFamily<Kind = [S]> + ?Sized, S> NicheFamily for Box<R>
-    where
-        Self: ReprFamily<Kind = S>
-    {
+    impl<R: SizeFamily<Kind = UnSized> + ?Sized> NicheFamily for Box<R> {
         type Kind = WithCustomNiche;
     }
 
+    impl<R: NicheFamily<Kind = WithoutNiche>, const N: usize> NicheFamily for [R; N] {
+        type Kind = WithoutNiche;
+    }
     impl<R: NicheFamily<Kind = WithStableNiche>, const N: usize> NicheFamily for [R; N] {
         type Kind = WithCustomNiche;
     }
     impl<R: NicheFamily<Kind = WithCustomNiche>, const N: usize> NicheFamily for [R; N] {
         type Kind = WithCustomNiche;
-    }
-    impl<R: NicheFamily<Kind = WithoutNiche>, const N: usize> NicheFamily for [R; N] {
-        type Kind = WithoutNiche;
     }
 
     impl<R: NicheFamily<Kind = WithoutNiche>> NicheFamily for Option<R> {
@@ -178,50 +182,6 @@ impl<R> NicheFamily for Vec<R> {
     type Kind = WithCustomNiche;
 }
 
-impl<R, C> Niche for &R
-where
-    Self: ExternC<CType = *const C>,
-{
-    const NICHE_VALUE: *const C = core::ptr::null();
-}
-
-impl<R, C> Niche for &mut R
-where
-    Self: ExternC<CType = *mut C>,
-{
-    const NICHE_VALUE: *mut C = core::ptr::null_mut();
-}
-
-#[cfg(feature = "alloc")]
-impl<R, C> Niche for Box<R>
-where
-    Self: ExternC<CType = CBox<C>>,
-{
-    const NICHE_VALUE: Self::CType = CBox::none();
-}
-
-impl<R, C> Niche for &[R]
-where
-    Self: ExternC<CType = CSlice<C>>,
-{
-    const NICHE_VALUE: CSlice<C> = CSlice::none();
-}
-
-impl<R, C> Niche for &mut [R]
-where
-    Self: ExternC<CType = CSliceMut<C>>,
-{
-    const NICHE_VALUE: CSliceMut<C> = CSliceMut::none();
-}
-
-#[cfg(feature = "alloc")]
-impl<R, C> Niche for Box<[R]>
-where
-    Self: ExternC<CType = CBoxedSlice<C>>,
-{
-    const NICHE_VALUE: Self::CType = CBoxedSlice::none();
-}
-
 #[cfg(feature = "alloc")]
 impl<R, C> Niche for Vec<R>
 where
@@ -234,7 +194,7 @@ impl<R: Niche, const N: usize> Niche for [R; N]
 where
     Self: ExternC<CType = [R::CType; N]>,
 {
-    const NICHE_VALUE: [R::CType; N] = {
+    const NICHE_VALUE: Self::CType = {
         assert_arr_has_non_zero_len::<N>();
         [R::NICHE_VALUE; N]
     };
@@ -244,7 +204,7 @@ impl<R, C> Niche for Option<R>
 where
     Self: ExternC<CType = COption<C>>,
 {
-    const NICHE_VALUE: COption<C> = COption::niche();
+    const NICHE_VALUE: Self::CType = COption::none();
 }
 
 // TODO: Depends on: https://github.com/mversic/co3/issues/33

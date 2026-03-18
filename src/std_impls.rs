@@ -9,7 +9,7 @@ use core::{cell::UnsafeCell, ptr::NonNull};
 use crate::vec::CVec;
 use crate::{
     borrow::{Borrow, DropFamily, NeedsDrop, NoDrop, ToOwned},
-    ir::{ReprFamily, Transmuted},
+    ir::{ReprFamily, SizeFamily, Sized_, Transmuted},
     niche::{Niche, NicheFamily, StableNiche, WithCustomNiche, WithStableNiche, WithoutNiche},
     reprC,
     transmute::{CheckedTransmute, EncodeTransmuted},
@@ -19,7 +19,7 @@ use crate::{
 macro_rules! non_zero_derive {
     ($($ty:ty => $target:ty),+ $(,)?) => {$(
         reprC! {
-            unsafe impl Transparent for $ty {
+            unsafe impl NoDropSizedTransmuted for $ty {
                 type Target = <$target as $crate::ExternC>::CType;
 
                 const NICHE_VALUE: Self::CType = 0;
@@ -46,39 +46,87 @@ non_zero_derive! {
     core::num::NonZeroI128 => i128,
 }
 
+impl<T: ?Sized> DropFamily for core::mem::ManuallyDrop<T> {
+    type Kind = NoDrop;
+}
+
+impl<T: ?Sized> DropFamily for core::cell::Cell<T>
+where
+    Self: CheckedTransmute<Target: DropFamily>,
+{
+    type Kind = <<Self as CheckedTransmute>::Target as DropFamily>::Kind;
+}
+
 reprC! {
-    unsafe impl(T) Transparent for core::mem::ManuallyDrop<T> {
+    unsafe impl(T: ?Sized) Transmuted for core::mem::ManuallyDrop<T> {
         type Target = T;
     }
 }
 reprC! {
-    unsafe impl(T) Transparent for core::cell::Cell<T> {
-        type Target = T;
+    unsafe impl(T: ?Sized) Transmuted for core::cell::Cell<T> {
+        type Target = UnsafeCell<T>;
     }
 }
 
-impl<T> ReprFamily for UnsafeCell<T> {
+impl SizeFamily for str {
+    type Kind = <[u8] as SizeFamily>::Kind;
+}
+
+impl DropFamily for str {
+    type Kind = <[u8] as DropFamily>::Kind;
+}
+
+impl NicheFamily for str {
+    type Kind = <[u8] as NicheFamily>::Kind;
+}
+
+impl ReprFamily for str {
+    type Kind = Transmuted;
+}
+
+unsafe impl CheckedTransmute for str {
+    type Target = [u8];
+
+    #[inline(always)]
+    fn is_valid(target: &Self::Target) -> bool {
+        core::str::from_utf8(target).is_ok()
+    }
+}
+
+impl<T: ?Sized + SizeFamily> SizeFamily for UnsafeCell<T> {
+    type Kind = T::Kind;
+}
+impl<T> SizeFamily for NonNull<T> {
+    type Kind = Sized_;
+}
+#[cfg(feature = "alloc")]
+impl SizeFamily for String {
+    type Kind = Sized_;
+}
+
+impl<T: ?Sized> ReprFamily for UnsafeCell<T> {
     type Kind = Transmuted;
 }
 impl<T> ReprFamily for NonNull<T> {
     type Kind = Transmuted;
 }
-reprC! {
-    unsafe impl Transparent for str {
-        type Target = [u8];
-
-        fn is_valid(target: &Self::Target) -> bool {
-            core::str::from_utf8(target).is_ok()
-        }
-    }
-}
-
 #[cfg(feature = "alloc")]
 impl ReprFamily for String {
     type Kind = Transmuted;
 }
 
-impl<T> NicheFamily for UnsafeCell<T> {
+impl<T: ?Sized + DropFamily> DropFamily for UnsafeCell<T> {
+    type Kind = T::Kind;
+}
+impl<T> DropFamily for NonNull<T> {
+    type Kind = NoDrop;
+}
+#[cfg(feature = "alloc")]
+impl DropFamily for String {
+    type Kind = NeedsDrop;
+}
+
+impl<T: ?Sized> NicheFamily for UnsafeCell<T> {
     type Kind = WithoutNiche;
 }
 impl<T> NicheFamily for NonNull<T> {
@@ -89,7 +137,7 @@ impl NicheFamily for String {
     type Kind = WithCustomNiche;
 }
 
-unsafe impl<T> CheckedTransmute for UnsafeCell<T> {
+unsafe impl<T: ?Sized> CheckedTransmute for UnsafeCell<T> {
     type Target = T;
 
     #[inline(always)]
@@ -108,8 +156,9 @@ unsafe impl<T> CheckedTransmute for NonNull<T> {
 
 #[cfg(feature = "alloc")]
 unsafe impl CheckedTransmute for String {
-    // WARN: This can be contested as it is nowhere documented that String is
-    // actually transmutable into Vec<u8>, but implicitly it should be
+    // FIXME: String is not guaranteed to be transmutable into Vec<u8>
+    // Some trait is required that has as_ptr, len, cap methods which
+    // is what `Vec<Transmuted>` types depend on
     type Target = Vec<u8>;
 
     #[inline(always)]
@@ -124,17 +173,6 @@ impl<T> Niche for NonNull<T> {
 #[cfg(feature = "alloc")]
 impl Niche for String {
     const NICHE_VALUE: Self::CType = CVec::none();
-}
-
-impl<T: DropFamily> DropFamily for UnsafeCell<T> {
-    type Kind = T::Kind;
-}
-impl<T> DropFamily for NonNull<T> {
-    type Kind = NoDrop;
-}
-#[cfg(feature = "alloc")]
-impl DropFamily for String {
-    type Kind = NeedsDrop;
 }
 
 impl<T> Borrow for NonNull<T> {
@@ -152,14 +190,6 @@ impl<T> Borrow for NonNull<T> {
         self
     }
 }
-
-impl<'r, T: 'r> ToOwned<'r> for NonNull<T> {
-    #[inline(always)]
-    fn to_owned(borrowed: Self::Borrowed<'r>) -> Self {
-        borrowed
-    }
-}
-
 #[cfg(feature = "alloc")]
 impl Borrow for String {
     type Borrowed<'itm>
@@ -178,6 +208,12 @@ impl Borrow for String {
     }
 }
 
+impl<'r, T: 'r> ToOwned<'r> for NonNull<T> {
+    #[inline(always)]
+    fn to_owned(borrowed: Self::Borrowed<'r>) -> Self {
+        borrowed
+    }
+}
 #[cfg(feature = "alloc")]
 impl<'r> ToOwned<'r> for String {
     #[inline(always)]
@@ -213,9 +249,10 @@ mod tests {
 
     use super::*;
 
+    #[cfg(feature = "alloc")]
+    use crate::boxed::CBoxedSlice;
     use crate::{
         Decode, Encode, ExternC,
-        boxed::CBoxedSlice,
         option::COption,
         slice::{CSlice, CSliceMut},
         transmute::FlatTransmute,
@@ -229,7 +266,7 @@ mod tests {
         );
 
         assert_impl_all!(&str:
-            ReprFamily<Kind = [Transmuted]>,
+            ReprFamily<Kind = &'static Transmuted>,
             NicheFamily<Kind = WithCustomNiche>,
             //Niche<CType = CSlice<u8>>,
             //Decode<'static>,
@@ -273,21 +310,21 @@ mod tests {
         //    Encode,
         //);
         assert_impl_all!(&[UnsafeCell<NonZeroU8>]:
-            ReprFamily<Kind = [Transmuted]>,
+            ReprFamily<Kind = &'static Transmuted>,
             NicheFamily<Kind = WithCustomNiche>,
             Niche<CType = CSlice<u8>>,
             Decode<'static>,
             Encode,
         );
         assert_impl_all!(&mut [UnsafeCell<NonZeroU8>]:
-            ReprFamily<Kind = [Transmuted]>,
+            ReprFamily<Kind = &'static mut Transmuted>,
             NicheFamily<Kind = WithCustomNiche>,
             Niche<CType = CSliceMut<u8>>,
             Decode<'static>,
         );
         #[cfg(feature = "alloc")]
         assert_impl_all!(Box<[UnsafeCell<NonZeroU8>]>:
-            ReprFamily<Kind = [Transmuted]>,
+            ReprFamily<Kind = Box<Transmuted>>,
             NicheFamily<Kind = WithCustomNiche>,
             Niche<CType = CBoxedSlice<u8>>,
             // FIXME:
@@ -296,7 +333,7 @@ mod tests {
         );
         #[cfg(feature = "alloc")]
         assert_impl_all!(Vec<UnsafeCell<NonZeroU8>>:
-            ReprFamily<Kind = [Transmuted]>,
+            ReprFamily<Kind = Vec<Transmuted>>,
             NicheFamily<Kind = WithCustomNiche>,
             Niche<CType = CVec<u8>>,
             // FIXME:

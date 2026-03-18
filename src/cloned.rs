@@ -108,74 +108,68 @@ disjoint_impls! {
         }
     }
 
-    #[cfg(feature = "unstable-refs")]
-    impl<'d, R, S: Cloned> DecodeCloned<'d, false> for &'d R
+    impl<'d, R: ?Sized> DecodeCloned<'d, false> for &'d R
     where
-        Self: ReprFamily<Kind = &'d S> + Decode<'d, false>,
+        Self: ReprFamily<Kind = &'d Robust> + Decode<'d>
     {
     }
-    impl<'slice, R: ReprC> DecodeCloned<'slice, false> for &'slice [R] where
-        Self: ReprFamily<Kind = [Robust]>
-    {
-    }
-    #[cfg(all(feature = "alloc", feature = "unstable-refs"))]
-    impl<'slice, R: Clone> DecodeCloned<'slice, false> for &'slice [R] where
-        Self: ReprFamily<Kind = [Opaque]>
-    {
-    }
-    impl<'slice, R: CheckedTransmute<Target: Sized + 'slice>> DecodeCloned<'slice, false> for &'slice [R]
-    where
-        &'slice [<R as CheckedTransmute>::Target]: Decode<'slice, false>,
-        Self: ReprFamily<Kind = [Transmuted]>,
-    {
-    }
-    #[cfg(feature = "unstable-refs")]
-    impl<'slice, R, S: Cloned> DecodeCloned<'slice, false> for &'slice [R]
-    where
-        Self: ReprFamily<Kind = [S]> + Decode<'slice, false>,
-    {
-    }
-
-    #[cfg(feature = "unstable-refs")]
-    impl<'d, R, S: Cloned> DecodeCloned<'d, false> for &'d mut R
-    where
-        Self: ReprFamily<Kind = &'d mut S> + Decode<'d, false>,
-    {
-    }
-    #[cfg(all(feature = "alloc", feature = "unstable-refs"))]
-    impl<'slice, R: Clone> DecodeCloned<'slice, false> for &'slice mut [R] where
-        Self: ReprFamily<Kind = [Opaque]>
-    {
-    }
-    impl<'slice, R> DecodeCloned<'slice, false> for &'slice mut [R]
-    where
-        Self: ReprFamily<Kind = [Transmuted]> + Decode<'slice, false>
-    {
-    }
-    #[cfg(feature = "unstable-refs")]
-    impl<'slice, R, S: Cloned> DecodeCloned<'slice, false> for &'slice mut [R]
-    where
-        Self: ReprFamily<Kind = [S]> + Decode<'slice, false>,
-    {
-    }
-
-    //#[cfg(feature = "alloc")]
-    //impl<'d, R: DecodeCloned<'_, false>, S: Cloned> DecodeCloned<'d, false> for Box<R>
-    //where
-    //    Self: ReprFamily<Kind = Box<S>>,
+    //impl<'a, R: ?Sized> DecodeCloned<'a, false> for &'a R where
+    //    Self: ReprFamily<Kind = &'a Opaque> + Decode<'a>
     //{
-    //    #[inline(always)]
-    //    unsafe fn decode_cloned<'itm: 'd>(
-    //        source: Self::CType,
-    //        store: &'itm mut Self::Store,
-    //    ) -> Option<Self> {
-    //        unsafe { decode_cloned_box_ptr(source, store, |item, substore| R::decode_cloned(item, substore)) }
-    //    }
     //}
+    impl<'a, R: ?Sized> DecodeCloned<'a, false> for &'a R
+    where
+        Self: ReprFamily<Kind = &'a Transmuted> + Decode<'a>
+    {
+    }
+    #[cfg(feature = "unstable-refs")]
+    impl<'d, R, S: Cloned + 'd> DecodeCloned<'d, false> for &'d R
+    where
+        Self: ReprFamily<Kind = &'d S> + Decode<'d>,
+        R: SizeFamily<Kind = Sized_>,
+    {
+    }
+    #[cfg(feature = "unstable-refs")]
+    impl<'a, R: ?Sized, S: Cloned + ?Sized + 'a> DecodeCloned<'a, false> for &'a R
+    where
+        Self: ReprFamily<Kind = &'a S> + Decode<'a>,
+        R: SizeFamily<Kind = UnSized>,
+    {
+    }
+
+    impl<'d, R: ?Sized> DecodeCloned<'d, false> for &'d mut R
+    where
+        Self: ReprFamily<Kind = &'d mut Robust> + Decode<'d>
+    {
+    }
+    //impl<'a, R: ?Sized> DecodeCloned<'a, false> for &'a mut R where
+    //    Self: ReprFamily<Kind = &'a mut Opaque> + Decode<'a>
+    //{
+    //}
+    impl<'a, R: ?Sized> DecodeCloned<'a, false> for &'a mut R
+    where
+        Self: ReprFamily<Kind = &'a mut Transmuted> + Decode<'a>
+    {
+    }
+    #[cfg(feature = "unstable-refs")]
+    impl<'a, R, S: Cloned + 'a> DecodeCloned<'a, false> for &'a mut R
+    where
+        Self: ReprFamily<Kind = &'a mut S> + Decode<'a>,
+        R: SizeFamily<Kind = UnSized>,
+    {
+    }
+    #[cfg(feature = "unstable-refs")]
+    impl<'d, R: ?Sized, S: Cloned + ?Sized + 'd> DecodeCloned<'d, false> for &'d mut R
+    where
+        Self: ReprFamily<Kind = &'d mut S> + Decode<'d>,
+        R: SizeFamily<Kind = Sized_>,
+    {
+    }
+
     //#[cfg(feature = "alloc")]
-    //impl<'d, R: ReprC + 'd> DecodeCloned<'d, false> for Box<[R]>
+    //impl<R: ?Sized> DecodeCloned<'_, false> for Box<R>
     //where
-    //    Self: ReprFamily<Kind = Box<[Robust]>>,
+    //    Self: ReprFamily<Kind = Box<Robust>>,
     //{
     //    #[inline(always)]
     //    unsafe fn decode_cloned<'itm: 'd>(
@@ -186,11 +180,10 @@ disjoint_impls! {
     //            .map(CloneFromWrapped::clone_from_wrapped)
     //    }
     //}
-    #[cfg(feature = "alloc")]
     //#[cfg(feature = "alloc")]
-    //impl<'d, R: Clone + 'd> DecodeCloned<'d, false> for Box<[R]>
+    //impl<'d, R: ?Sized> DecodeCloned<'d, false> for Box<R>
     //where
-    //    Self: ReprFamily<Kind = Box<[Opaque]>>,
+    //    Self: ReprFamily<Kind = Box<Opaque>>,
     //{
     //    #[inline(always)]
     //    unsafe fn decode_cloned<'itm: 'd>(
@@ -202,25 +195,39 @@ disjoint_impls! {
     //    }
     //}
     #[cfg(feature = "alloc")]
-    #[cfg(feature = "alloc")]
-    impl<'d, R: CheckedTransmute<Target: Sized>> DecodeCloned<'d, false> for Box<[R]>
+    impl<'d, R: ?Sized + Dst + CheckedTransmute<Target: Dst>> DecodeCloned<'d, false> for Box<R>
     where
-        Box<[<R as CheckedTransmute>::Target]>: DecodeCloned<'d, false>,
-        Self: ReprFamily<Kind = [Transmuted]>,
+        Box<<R as CheckedTransmute>::Target>: DecodeCloned<'d, false>,
+        Self: ReprFamily<Kind = Box<Transmuted>>
     {
         #[inline(always)]
         unsafe fn decode_cloned<'itm: 'd>(
             source: Self::CType,
             store: &'itm mut Self::Store,
         ) -> Option<Self> {
-            unsafe { <Box<[R::Target]>>::decode_cloned(source, store) }
-                .and_then(transmute_from_target_boxed_slice)
+            unsafe { <Box<R::Target>>::decode_cloned(source, store) }
+                .and_then(transmute_from_target_boxed_dst)
         }
     }
     //#[cfg(feature = "alloc")]
-    //impl<'d, R: DecodeCloned<'_, false>, S: Cloned> DecodeCloned<'d, false> for Box<[R]>
+    //impl<'d, R, S: Cloned> DecodeCloned<'d, false> for Box<R>
     //where
-    //    Self: ReprFamily<Kind = Box<[S]>>,
+    //    Self: ReprFamily<Kind = Box<S>>,
+    //    R: SizeFamily<Kind = Sized_>,
+    //{
+    //    #[inline(always)]
+    //    unsafe fn decode_cloned<'itm: 'd>(
+    //        source: Self::CType,
+    //        store: &'itm mut Self::Store,
+    //    ) -> Option<Self> {
+    //        unsafe { decode_cloned_box_ptr(source, store, |item, substore| R::decode_cloned(item, substore)) }
+    //    }
+    //}
+    //#[cfg(feature = "alloc")]
+    //impl<'d, R: ?Sized, S: Cloned + ?Sized> DecodeCloned<'d, false> for Box<R>
+    //where
+    //    Self: ReprFamily<Kind = Box<S>>,
+    //    R: SizeFamily<Kind = UnSized>,
     //{
     //    #[inline(always)]
     //    unsafe fn decode_cloned<'itm: 'd>(
@@ -236,9 +243,9 @@ disjoint_impls! {
     //}
 
     //#[cfg(feature = "alloc")]
-    //impl<'d, R: ReprC + 'd> DecodeCloned<'d, false> for Vec<R>
+    //impl<'d, R> DecodeCloned<'d, false> for Vec<R>
     //where
-    //    Self: ReprFamily<Kind = [Robust]>,
+    //    Self: ReprFamily<Kind = Vec<Robust>>,
     //{
     //    #[inline(always)]
     //    unsafe fn decode_cloned<'itm: 'd>(
@@ -249,25 +256,11 @@ disjoint_impls! {
     //            .map(CloneFromWrapped::clone_from_wrapped)
     //    }
     //}
-    //#[cfg(feature = "alloc")]
-    //impl<'d, R: Clone + 'd> DecodeCloned<'d, false> for Vec<R>
-    //where
-    //    Self: ReprFamily<Kind = [Opaque]>,
-    //{
-    //    #[inline(always)]
-    //    unsafe fn decode_cloned<'itm: 'd>(
-    //        source: Self::CType,
-    //        store: &'itm mut Self::Store,
-    //    ) -> Option<Self> {
-    //        unsafe { Vec::<ManuallyDrop<R>>::decode(source, store) }
-    //            .map(CloneFromWrapped::clone_from_wrapped)
-    //    }
-    //}
     #[cfg(feature = "alloc")]
     impl<'d, R: CheckedTransmute<Target: Sized>> DecodeCloned<'d, false> for Vec<R>
     where
         Vec<<R as CheckedTransmute>::Target>: DecodeCloned<'d, false>,
-        Self: ReprFamily<Kind = [Transmuted]>,
+        Self: ReprFamily<Kind = Vec<Transmuted>>,
     {
         #[inline(always)]
         unsafe fn decode_cloned<'itm: 'd>(
@@ -281,7 +274,7 @@ disjoint_impls! {
     //#[cfg(feature = "alloc")]
     //impl<'d, R: DecodeCloned<'_, false>, S: Cloned> DecodeCloned<'d, false> for Vec<R>
     //where
-    //    Self: ReprFamily<Kind = [S]>,
+    //    Self: ReprFamily<Kind = Vec<S>>,
     //{
     //    #[inline(always)]
     //    unsafe fn decode_cloned<'itm: 'd>(
@@ -296,23 +289,9 @@ disjoint_impls! {
     //    }
     //}
 
-    #[cfg(feature = "alloc")]
-    impl<'d, R: Clone + 'd, const N: usize> DecodeCloned<'d, false> for [R; N]
-    where
-        Self: ReprFamily<Kind = [Opaque]>,
-    {
-        #[inline(always)]
-        unsafe fn decode_cloned<'itm: 'd>(
-            source: Self::CType,
-            store: &'itm mut Self::Store,
-        ) -> Option<Self> {
-            unsafe { <[ManuallyDrop<R>; N] as Decode<false>>::decode(source, store) }
-                .map(CloneFromWrapped::clone_from_wrapped)
-        }
-    }
     impl<'d, R: DecodeCloned<'d, false>, S: Cloned, const N: usize> DecodeCloned<'d, false> for [R; N]
     where
-        Self: ReprFamily<Kind = [S]>,
+        Self: ReprFamily<Kind = S>,
     {
         #[inline(always)]
         unsafe fn decode_cloned<'itm: 'd>(
@@ -340,9 +319,10 @@ disjoint_impls! {
         }
     }
 
-    impl<'d, R: Niche<CType: PartialEq> + DecodeCloned<'d, false>> DecodeCloned<'d, false> for Option<R>
+    impl<'d, R: Niche + DecodeCloned<'d, false>> DecodeCloned<'d, false> for Option<R>
     where
-        Self: ReprFamily<Kind = Option<WithCustomNiche>>
+        Self: ReprFamily<Kind = Option<WithCustomNiche>>,
+        <R as ExternC>::CType: PartialEq,
     {
         #[inline(always)]
         unsafe fn decode_cloned<'itm: 'd>(

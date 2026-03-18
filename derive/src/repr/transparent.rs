@@ -1,6 +1,8 @@
 use proc_macro2::TokenStream;
 use quote::quote;
 
+use crate::repr::repr_c::assert_drop_impl;
+
 use super::{FfiTypeInput, FfiTypeKindAttribute};
 
 /// Derives FFI type for transparent items.
@@ -15,13 +17,9 @@ pub(crate) fn derive_transparent_item(input: &FfiTypeInput) -> TokenStream {
         Some(crate::attr::repr::ReprKind::Transparent)
     );
 
-    let (_, ty_generics, _) = input.generics.split_for_impl();
     let params = &input.generics.params;
-    let predicates = input
-        .generics
-        .where_clause
-        .as_ref()
-        .map(|where_clause| &where_clause.predicates);
+    let (impl_generics, ty_generics, where_clause) = input.generics.split_for_impl();
+    let predicates = where_clause.map(|w| &w.predicates);
 
     let name = &input.ident;
     let target = match &input.data {
@@ -41,6 +39,7 @@ pub(crate) fn derive_transparent_item(input: &FfiTypeInput) -> TokenStream {
         return quote! {};
     };
 
+    let impl_drop_assert = assert_drop_impl();
     let custom_validation = if let Some(FfiTypeKindAttribute::Transparent(niche_value, is_valid)) =
         &input.ffi_type_attr.kind
     {
@@ -52,6 +51,7 @@ pub(crate) fn derive_transparent_item(input: &FfiTypeInput) -> TokenStream {
             #niche_value
 
             fn is_valid(target: &Self::Target) -> bool {
+                #impl_drop_assert
                 (#is_valid)(target)
             }
         }
@@ -59,11 +59,31 @@ pub(crate) fn derive_transparent_item(input: &FfiTypeInput) -> TokenStream {
         quote!()
     };
 
+    let drop_family_bound = if params.is_empty() {
+        quote!()
+    } else {
+        quote!(#target: co3::borrow::DropFamily)
+    };
+
+    let trait_ = if input.data.is_enum() {
+        quote!(NoDropSizedTransmuted)
+    } else {
+        quote!(Transmuted)
+    };
+
     quote! {
+        impl #impl_generics co3::borrow::DropFamily for #name #ty_generics
+        where
+            #drop_family_bound
+            #predicates
+        {
+            type Kind = <#target as co3::borrow::DropFamily>::Kind;
+        }
+
         co3::reprC! {
             // SAFETY: `Self` and `Self::Target` are guaranteed to be transmutable, but the user
             // must make sure the provided validation function does not return false positives
-            unsafe impl(#params) Transparent for #name #ty_generics where (#predicates) {
+            unsafe impl(#params) #trait_ for #name #ty_generics where (#predicates) {
                 type Target = #target;
 
                 #custom_validation

@@ -18,6 +18,8 @@ pub(super) fn derive_repr_c_struct<const NEEDS_DROP: bool>(
     fields: &darling::ast::Fields<FfiTypeField>,
 ) -> TokenStream {
     let (repr_c_struct_name, repr_c_struct) = gen_repr_c_struct(struct_name, generics, fields);
+    let field_types = fields.iter().map(|field| &field.ty).collect::<Vec<_>>();
+    let size_family_impl = gen_struct_size_family(struct_name, generics, &field_types);
 
     let is_valid = match fields.style {
         darling::ast::Style::Tuple => {
@@ -64,6 +66,7 @@ pub(super) fn derive_repr_c_struct<const NEEDS_DROP: bool>(
     );
 
     quote! {
+        #size_family_impl
         #repr_c_struct
         #transparent_impl
         #borrow_ir
@@ -77,6 +80,7 @@ pub(super) fn derive_repr_c_data_enum<const NEEDS_DROP: bool>(
     generics: &syn::Generics,
     variants: &[SpannedValue<FfiTypeVariant>],
 ) -> TokenStream {
+    let size_family_impl = gen_sized_size_family(enum_name, generics);
     let (repr_c_enum_name, repr_c_enum) = gen_repr_c_data_enum(enum_name, generics, repr, variants);
 
     let is_valid = {
@@ -124,6 +128,7 @@ pub(super) fn derive_repr_c_data_enum<const NEEDS_DROP: bool>(
         gen_transparent_impl(enum_name, generics, &repr_c_enum_name, is_valid, fields);
 
     quote! {
+        #size_family_impl
         #repr_c_enum
         #transparent_impl
         #niche_ir
@@ -137,6 +142,7 @@ pub(super) fn derive_data_enum<const NEEDS_DROP: bool>(
     generics: &syn::Generics,
     variants: &[SpannedValue<FfiTypeVariant>],
 ) -> TokenStream {
+    let size_family_impl = gen_sized_size_family(enum_name, generics);
     let (union_name, union_and_helpers) = gen_data_enum(enum_name, generics, repr, variants);
 
     let is_valid = {
@@ -185,6 +191,7 @@ pub(super) fn derive_data_enum<const NEEDS_DROP: bool>(
     );
 
     quote! {
+        #size_family_impl
         #union_and_helpers
         #transparent_impl
         #borrow_ir
@@ -199,6 +206,7 @@ pub(crate) fn derive_fieldless_enum(
     variants: &[SpannedValue<FfiTypeVariant>],
 ) -> TokenStream {
     let (impl_generics, ty_generics, where_clause) = generics.split_for_impl();
+    let size_family_impl = gen_sized_size_family(enum_name, generics);
     let niche_ir = gen_enum_niche_ir(repr, enum_name, generics, variants);
 
     let niche_value = proc_macro2::Literal::usize_unsuffixed(variants.len());
@@ -220,6 +228,7 @@ pub(crate) fn derive_fieldless_enum(
     let borrow_ir = gen_fieldless_enum_drop_ir(enum_name, generics);
 
     quote! {
+        #size_family_impl
         impl #impl_generics co3::ir::ReprFamily for #enum_name #ty_generics #where_clause {
             type Kind = co3::ir::Transmuted;
         }
@@ -313,6 +322,7 @@ pub(super) fn gen_repr_c_struct(
         darling::ast::Style::Unit => unreachable!("ZSTs are not FFI safe"),
     };
 
+    let size_family_impl = gen_struct_size_family(&repr_c_struct_name, generics, &field_types);
     let repr_c_struct = gen_repr_c_type::<false, true>(
         format!(" FFI-safe equivalent of [`{struct_name}`]"),
         repr_c_struct_name.clone(),
@@ -322,7 +332,41 @@ pub(super) fn gen_repr_c_struct(
         &field_types,
     );
 
-    (repr_c_struct_name, repr_c_struct)
+    (
+        repr_c_struct_name,
+        quote! { #repr_c_struct #size_family_impl },
+    )
+}
+
+pub(crate) fn gen_struct_size_family(
+    struct_name: &Ident,
+    generics: &syn::Generics,
+    field_types: &[&syn::Type],
+) -> TokenStream {
+    let kind = field_types.last().map_or_else(
+        || quote! { co3::ir::Sized_ },
+        |last_field| quote! { <#last_field as co3::ir::SizeFamily>::Kind },
+    );
+
+    gen_size_family(struct_name, generics, kind)
+}
+
+pub(crate) fn gen_sized_size_family(type_name: &Ident, generics: &syn::Generics) -> TokenStream {
+    gen_size_family(type_name, generics, quote! { co3::ir::Sized_ })
+}
+
+pub(crate) fn gen_size_family(
+    type_name: &Ident,
+    generics: &syn::Generics,
+    kind: TokenStream,
+) -> TokenStream {
+    let (impl_generics, ty_generics, where_clause) = generics.split_for_impl();
+
+    quote! {
+        impl #impl_generics co3::ir::SizeFamily for #type_name #ty_generics #where_clause {
+            type Kind = #kind;
+        }
+    }
 }
 
 pub(super) fn gen_data_enum(
@@ -365,14 +409,17 @@ pub(super) fn gen_data_enum(
             },
         );
 
-        variant_structs.push(gen_repr_c_type::<false, true>(
+        let size_family_impl = gen_sized_size_family(&variant_struct_name, &filtered_generics);
+        let struct_ = gen_repr_c_type::<false, true>(
             format!(" Variant struct for [`{enum_name}::{variant_name}`]"),
             variant_struct_name,
             &filtered_generics,
             darling::ast::Style::Struct,
             fields,
             &variant_field_types,
-        ));
+        );
+
+        variant_structs.push(quote! {#size_family_impl #struct_});
     }
 
     let union_fields = variants
@@ -393,8 +440,10 @@ pub(super) fn gen_data_enum(
         &all_field_types,
     );
 
+    let size_family_impl = gen_sized_size_family(&union_name, generics);
     let all_code = quote! {
         #(#variant_structs)*
+        #size_family_impl
         #union_def
     };
 
@@ -423,6 +472,7 @@ fn gen_repr_c_data_enum(
         }
     }
     let extern_c_bounds = gen_extern_c_bounds(&field_types, generics);
+    let size_family_impl = gen_sized_size_family(&repr_c_enum_name, generics);
 
     let repr_c_enum = quote! {
         #payload
@@ -440,6 +490,8 @@ fn gen_repr_c_data_enum(
 
         impl #impl_generics Copy for #repr_c_enum_name #ty_generics where #extern_c_bounds #predicates {}
         co3::reprC! { unsafe impl(#params) Robust for #repr_c_enum_name #ty_generics where (#extern_c_bounds #predicates) {} }
+
+        #size_family_impl
     };
 
     (repr_c_enum_name, repr_c_enum)
@@ -531,6 +583,7 @@ fn gen_data_enum_payload(
         )
     });
 
+    let size_family_impl = gen_sized_size_family(&repr_c_enum_name, generics);
     let payload = gen_repr_c_type::<true, false>(
         format!(" Payload of [`{repr_c_enum_name}`]"),
         payload_name.clone(),
@@ -540,7 +593,7 @@ fn gen_data_enum_payload(
         &field_types,
     );
 
-    (payload_name, payload)
+    (payload_name, quote! { #payload #size_family_impl })
 }
 
 fn gen_transparent_impl<'a>(
