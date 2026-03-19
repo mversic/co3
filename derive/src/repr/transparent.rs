@@ -65,20 +65,25 @@ pub(crate) fn derive_transparent_item(input: &FfiTypeInput) -> TokenStream {
         quote!(#target: co3::borrow::DropFamily)
     };
 
-    let trait_ = if input.data.is_enum() {
-        quote!(NoDropSizedTransmuted)
+    let (trait_, drop_family_impl) = if input.data.is_enum() {
+        (quote!(NoDropSizedTransmuted), quote!())
     } else {
-        quote!(Transmuted)
+        (
+            quote!(Transmuted),
+            quote! {
+                impl #impl_generics co3::borrow::DropFamily for #name #ty_generics
+                where
+                    #drop_family_bound
+                    #predicates
+                {
+                    type Kind = <#target as co3::borrow::DropFamily>::Kind;
+                }
+            },
+        )
     };
 
     quote! {
-        impl #impl_generics co3::borrow::DropFamily for #name #ty_generics
-        where
-            #drop_family_bound
-            #predicates
-        {
-            type Kind = <#target as co3::borrow::DropFamily>::Kind;
-        }
+        #drop_family_impl
 
         co3::reprC! {
             // SAFETY: `Self` and `Self::Target` are guaranteed to be transmutable, but the user

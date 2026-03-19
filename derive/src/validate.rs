@@ -1,509 +1,425 @@
-use std::collections::{BTreeMap, BTreeSet};
+use std::collections::BTreeSet;
 
-use proc_macro2::TokenStream;
-use quote::quote;
+use syn::{Error, Result, Type};
 
 use crate::{
-    handle::{self, parse_entry_handle_map_attr},
-    impl_visitor::path_symbol_name,
-    parse_link_attr, parse_link_name_attr,
+    ForeignItem,
+    dispatch::extract_dispatch_id,
+    find_dispatch_attr, has_unsafe_export_name,
+    utils::{dyn_dispatch_repr, has_non_lifetime_generics, is_drop_impl, is_type_erased},
 };
 
-pub(crate) fn validate_ownership_attrs(_attrs: &[syn::Attribute]) -> Result<(), syn::Error> {
+const GENERICS_ERR: &str = "Type and const generics on impls are not supported. Use `#[dispatch]`";
+
+fn unsupported_attr(attr: &syn::Attribute) -> Error {
+    Error::new_spanned(attr, "Attribute not supported in this position")
+}
+
+fn push_error(errors: &mut Option<Error>, err: Error) {
+    if let Some(errors) = errors {
+        errors.combine(err);
+    } else {
+        *errors = Some(err);
+    }
+}
+
+fn validate_export_fn_attrs(attrs: &[syn::Attribute]) -> Result<()> {
+    for attr in attrs {
+        if crate::generate::is_unsafe_no_mangle(attr) || has_unsafe_export_name(attr) {
+            continue;
+        }
+
+        return Err(unsupported_attr(attr));
+    }
+
     Ok(())
 }
 
-pub(crate) fn unsupported_export_entry_attr(attr: &syn::Attribute) -> syn::Error {
-    syn::Error::new_spanned(
-        attr,
-        "supported export entry attributes are `#[unsafe(export_name = \"...\")]`, `#[unsafe(no_mangle)]`, and `#[dispatch(...)]` on polymorphic trait entries",
-    )
+fn validate_no_dispatch_attrs(attrs: &[syn::Attribute], errors: &mut Option<Error>) {
+    for attr in attrs {
+        if attr.path().is_ident("dispatch") {
+            let err_msg = "`#[dispatch]` is only supported on impl blocks`";
+            push_error(errors, Error::new_spanned(attr, err_msg));
+        }
+    }
 }
 
-fn unsupported_export_impl_attr(attr: &syn::Attribute) -> syn::Error {
-    syn::Error::new_spanned(
-        attr,
-        "impl export entries do not support entry-level export attrs; place `#[unsafe(export_name = \"...\")]` or `#[unsafe(no_mangle)]` on methods instead",
-    )
-}
+fn ensure_no_handle_arg_attrs(sig: &syn::Signature) -> Result<()> {
+    let mut errors = None;
 
-pub(crate) fn ensure_no_handle_arg_attrs(sig: &syn::Signature) -> syn::Result<()> {
     for input in &sig.inputs {
         match input {
             syn::FnArg::Receiver(receiver) => {
-                for attr in &receiver.attrs {
-                    if attr.path().is_ident("dispatch") {
-                        return Err(syn::Error::new_spanned(
-                            attr,
-                            "`#[dispatch]` is only supported on `trait` export entries",
-                        ));
+                validate_no_dispatch_attrs(&receiver.attrs, &mut errors);
+            }
+            syn::FnArg::Typed(arg) => {
+                validate_no_dispatch_attrs(&arg.attrs, &mut errors);
+            }
+        }
+    }
+
+    if let Some(errors) = errors {
+        return Err(errors);
+    }
+
+    Ok(())
+}
+
+pub(crate) fn validate_export_decls(decls: &[ForeignItem]) -> Result<()> {
+    let mut errors = None;
+
+    if let Err(err) = validate_shared(decls) {
+        push_error(&mut errors, err);
+    }
+
+    for decl in decls {
+        match decl {
+            ForeignItem::Impl(impl_decl) => {
+                for item in &impl_decl.items {
+                    let syn::ImplItem::Fn(method) = item else {
+                        continue;
+                    };
+
+                    if let Err(err) = validate_export_fn_attrs(&method.attrs) {
+                        push_error(&mut errors, err);
                     }
                 }
             }
-            syn::FnArg::Typed(arg) => {
-                for attr in &arg.attrs {
-                    if attr.path().is_ident("dispatch") {
-                        return Err(syn::Error::new_spanned(
-                            attr,
-                            "`#[dispatch]` is only supported on `trait` export entries",
-                        ));
+            ForeignItem::Fn(decl_fn) => {
+                if let Err(err) = validate_export_fn_attrs(&decl_fn.attrs) {
+                    push_error(&mut errors, err);
+                }
+            }
+            ForeignItem::Type(decl) => {
+                for attr in &decl.ty.attrs {
+                    if !attr.path().is_ident("id") {
+                        push_error(&mut errors, unsupported_attr(attr));
                     }
                 }
             }
         }
     }
+
+    if let Some(errors) = errors {
+        return Err(errors);
+    }
+
     Ok(())
 }
 
-pub(crate) fn validate_sig_ownership_attrs(sig: &syn::Signature) -> syn::Result<()> {
-    if let Some(receiver) = sig.receiver() {
-        validate_ownership_attrs(&receiver.attrs)?;
+pub(crate) fn validate_extern_decls(decls: &[ForeignItem]) -> Result<()> {
+    let mut errors = None;
+
+    if let Err(err) = validate_shared(decls) {
+        push_error(&mut errors, err);
+    }
+
+    for decl in decls {
+        let ForeignItem::Impl(impl_) = decl else {
+            continue;
+        };
+
+        if !is_drop_impl(impl_) {
+            continue;
+        }
+
+        let Some(attr) = find_dispatch_attr(&impl_.attrs) else {
+            continue;
+        };
+
+        if !matches!(attr.meta, syn::Meta::Path(_)) {
+            let err_msg = "extern declared `impl Drop` only supports bare `#[dispatch]`";
+            push_error(&mut errors, Error::new_spanned(attr, err_msg));
+        }
+    }
+
+    if let Some(errors) = errors {
+        return Err(errors);
+    }
+
+    Ok(())
+}
+
+fn validate_shared(decls: &[ForeignItem]) -> Result<()> {
+    let mut errors = None;
+
+    for decl in decls {
+        match decl {
+            ForeignItem::Type(decl) => {
+                for attr in &decl.ty.attrs {
+                    if attr.path().is_ident("dispatch") {
+                        push_error(&mut errors, unsupported_attr(attr));
+                    }
+                }
+            }
+            ForeignItem::Fn(decl_fn) => {
+                if let Err(err) = validate_signature_shape(&decl_fn.sig) {
+                    push_error(&mut errors, err);
+                }
+                if let Err(err) = ensure_no_handle_arg_attrs(&decl_fn.sig) {
+                    push_error(&mut errors, err);
+                }
+
+                validate_no_dispatch_attrs(&decl_fn.attrs, &mut errors);
+            }
+            ForeignItem::Impl(impl_) => {
+                let is_dispatch_impl = find_dispatch_attr(&impl_.attrs).is_some();
+
+                for attr in &impl_.attrs {
+                    if !attr.path().is_ident("dispatch") {
+                        push_error(&mut errors, unsupported_attr(attr));
+                    }
+                }
+
+                if has_non_lifetime_generics(&impl_.generics) && !is_dispatch_impl {
+                    push_error(
+                        &mut errors,
+                        Error::new_spanned(&impl_.generics, GENERICS_ERR),
+                    );
+                }
+
+                if is_dispatch_impl
+                    && let Err(err) = validate_dispatch_impl_generics(&impl_.generics)
+                {
+                    push_error(&mut errors, err);
+                }
+
+                for item in &impl_.items {
+                    if let syn::ImplItem::Fn(method) = item {
+                        if is_drop_impl(impl_)
+                            && let Err(err) = validate_drop_method(method)
+                        {
+                            push_error(&mut errors, err);
+                        }
+
+                        if let Err(err) = ensure_no_handle_arg_attrs(&method.sig) {
+                            push_error(&mut errors, err);
+                        }
+                        if let Err(err) = validate_signature_shape(&method.sig) {
+                            push_error(&mut errors, err);
+                        }
+                        if is_dispatch_impl
+                            && let Err(err) =
+                                validate_dispatch_signature(
+                                    &impl_.generics,
+                                    &impl_.self_ty,
+                                    &method.sig,
+                                )
+                        {
+                            push_error(&mut errors, err);
+                        }
+
+                        validate_no_dispatch_attrs(&method.attrs, &mut errors);
+                    }
+                }
+            }
+        }
+    }
+
+    if let Some(errors) = errors {
+        return Err(errors);
+    }
+
+    Ok(())
+}
+
+fn validate_dispatch_impl_generics(generics: &syn::Generics) -> Result<()> {
+    let mut errors = None;
+
+    for param in &generics.params {
+        let syn::GenericParam::Type(param) = param else {
+            continue;
+        };
+
+        let Some(attr) = dyn_dispatch_attr(param) else {
+            let err_msg = "`#[dispatch]` impl type parameters must use `dyn(repr) T`";
+            push_error(&mut errors, Error::new_spanned(param, err_msg));
+            continue;
+        };
+
+        let Ok(repr) = dyn_dispatch_repr(attr) else {
+            continue;
+        };
+
+        if !is_allowed_dyn_dispatch_repr(&repr) {
+            let err_msg = "`dyn(repr)` repr must be one of `u8`, `i8`, `u16`, `i16`, `u32`, `i32`, `u64`, or `i64`";
+            push_error(&mut errors, Error::new_spanned(&repr, err_msg));
+        }
+    }
+
+    if let Some(errors) = errors {
+        return Err(errors);
+    }
+
+    Ok(())
+}
+
+fn validate_dispatch_signature(
+    generics: &syn::Generics,
+    self_ty: &syn::Type,
+    sig: &syn::Signature,
+) -> Result<()> {
+    let mut seen_dispatch_tys = BTreeSet::new();
+    let mut errors = None;
+
+    for input in &sig.inputs {
+        let syn::FnArg::Typed(arg) = input else {
+            continue;
+        };
+
+        let Some(param) = extract_dispatch_id(generics, self_ty, &arg.ty) else {
+            continue;
+        };
+
+        if !seen_dispatch_tys.insert(&param.ident) {
+            let err_msg = "duplicate handle ID";
+            push_error(&mut errors, Error::new_spanned(&arg.ty, err_msg));
+        }
+    }
+
+    if let syn::ReturnType::Type(_, output) = &sig.output
+        && extract_dispatch_id(generics, self_ty, output).is_some()
+    {
+        push_error(
+            &mut errors,
+            Error::new_spanned(output, "handle IDs are not allowed in return position"),
+        );
+    }
+
+    if let Some(errors) = errors {
+        return Err(errors);
+    }
+
+    Ok(())
+}
+
+fn validate_drop_method(method: &syn::ImplItemFn) -> Result<()> {
+    const ERR_MSG: &str = "`Drop` signature incorrect";
+
+    fn is_mut_self_ty(ty: &Type) -> bool {
+        matches!(ty, Type::Reference(reference) if reference.mutability.is_some())
+    }
+
+    fn is_self_id_ty(ty: &Type) -> bool {
+        match ty {
+            Type::Path(type_path) if type_path.qself.is_none() => {
+                let first_seg = type_path.path.segments.first();
+                let last_seg = type_path.path.segments.last();
+
+                type_path.path.segments.len() == 2
+                    && first_seg.is_some_and(|segment| segment.ident == "Self")
+                    && last_seg.is_some_and(|segment| segment.ident == "ID")
+            }
+            Type::Path(type_path) => {
+                let Some(qself) = &type_path.qself else {
+                    return false;
+                };
+                let Type::Path(self_ty) = qself.ty.as_ref() else {
+                    return false;
+                };
+                if self_ty.qself.is_some() || !self_ty.path.is_ident("Self") {
+                    return false;
+                }
+
+                let last_seg = type_path.path.segments.last();
+                if last_seg.is_none_or(|s| s.ident == "ID") {
+                    return false;
+                }
+
+                let segments = type_path
+                    .path
+                    .segments
+                    .iter()
+                    .take(type_path.path.segments.len().saturating_sub(1))
+                    .map(|segment| segment.ident.to_string())
+                    .collect::<Vec<_>>();
+
+                segments == ["Handle"] || segments == ["co3", "handle", "Handle"]
+            }
+            _ => false,
+        }
+    }
+
+    if method.sig.ident != "drop" {
+        return Err(Error::new_spanned(&method.sig.ident, ERR_MSG));
+    }
+    if !matches!(method.sig.output, syn::ReturnType::Default) {
+        return Err(Error::new_spanned(&method.sig.output, ERR_MSG));
+    }
+
+    match &method.sig.inputs.iter().collect::<Vec<_>>()[..] {
+        [syn::FnArg::Receiver(receiver)] if is_mut_self_ty(receiver.ty.as_ref()) => {
+            return Ok(());
+        }
+
+        [syn::FnArg::Receiver(receiver), syn::FnArg::Typed(arg)]
+        | [syn::FnArg::Typed(arg), syn::FnArg::Receiver(receiver)]
+            if is_mut_self_ty(receiver.ty.as_ref()) && is_self_id_ty(arg.ty.as_ref()) =>
+        {
+            return Ok(());
+        }
+
+        _ => {}
+    }
+
+    Err(Error::new_spanned(&method.sig.inputs, ERR_MSG))
+}
+
+fn validate_signature_shape(sig: &syn::Signature) -> Result<()> {
+    if has_non_lifetime_generics(&sig.generics) {
+        return Err(Error::new_spanned(&sig.generics, GENERICS_ERR));
+    }
+    if let Some(asyncness) = sig.asyncness {
+        return Err(Error::new_spanned(
+            asyncness,
+            "Async functions not supported",
+        ));
+    }
+    if let Some(variadic) = &sig.variadic {
+        return Err(Error::new_spanned(
+            variadic,
+            "Variadic arguments not supported",
+        ));
     }
     for input in &sig.inputs {
         let syn::FnArg::Typed(arg) = input else {
             continue;
         };
-        validate_ownership_attrs(&arg.attrs)?;
+
+        validate_pat_type_shape(arg)?;
     }
     Ok(())
 }
 
-pub(crate) fn validate_impl_dispatch_map(
-    item_impl: &syn::ItemImpl,
-    handle_map: Option<&BTreeMap<String, Vec<syn::Type>>>,
-    has_dispatch_attr: bool,
-    allow_empty_dispatch_marker: bool,
-    allow_concrete_self_dispatch: bool,
-) -> syn::Result<()> {
-    let type_params = item_impl
-        .generics
-        .params
-        .iter()
-        .filter_map(|param| match param {
-            syn::GenericParam::Type(param) => Some(param.ident.to_string()),
-            _ => None,
-        })
-        .collect::<BTreeSet<_>>();
-    if type_params.is_empty() {
-        if handle_map.is_none() {
-            return Ok(());
-        }
-        let handle_map = handle_map.expect("checked above");
-        if allow_concrete_self_dispatch && handle_map.keys().all(|selector| selector == "Self") {
-            return Ok(());
-        }
-        for selector in handle_map.keys() {
-            if selector != "Self" {
-                return Err(syn::Error::new_spanned(
-                    item_impl,
-                    format!(
-                        "dispatch selector `{selector}` does not match any impl type parameter"
-                    ),
-                ));
-            }
-        }
-        return Err(syn::Error::new_spanned(
-            item_impl,
-            "`#[dispatch(...)]` mappings on impl entries are only supported on polymorphic impls",
-        ));
-    }
+fn validate_pat_type_shape(arg: &syn::PatType) -> Result<()> {
+    let err_msg = "patterns aren't allowed in function declarations";
 
-    let Some(handle_map) = handle_map else {
-        if has_dispatch_attr && !allow_empty_dispatch_marker {
-            let first_param = item_impl
-                .generics
-                .params
-                .iter()
-                .find_map(|param| match param {
-                    syn::GenericParam::Type(param) => Some(&param.ident),
-                    _ => None,
-                });
-            if let Some(param) = first_param {
-                let self_maps_param = match item_impl.self_ty.as_ref() {
-                    syn::Type::Path(type_path) => {
-                        type_path.qself.is_none()
-                            && type_path.path.segments.len() == 1
-                            && type_path.path.segments[0].ident == *param
-                    }
-                    _ => false,
-                };
-                let msg = if self_maps_param {
-                    format!(
-                        "generic extern impl parameter `{}` requires `#[dispatch({} = [Type, ...])]` mapping or `Self` mapping when used as the self type",
-                        param, param
-                    )
-                } else {
-                    format!(
-                        "generic extern impl parameter `{}` requires `#[dispatch({} = [Type, ...])]` mapping",
-                        param, param
-                    )
-                };
-                return Err(syn::Error::new_spanned(param, msg));
+    match arg.pat.as_ref() {
+        syn::Pat::Ident(ident) => {
+            if ident.by_ref.is_some() && ident.mutability.is_some() && ident.subpat.is_some() {
+                return Err(Error::new_spanned(ident, err_msg));
             }
-            return Err(syn::Error::new_spanned(
-                item_impl,
-                "polymorphic impl `#[dispatch]` must map at least one type parameter or `Self`",
-            ));
+
+            Ok(())
         }
-        return Ok(());
+        _ => Err(Error::new_spanned(&arg.pat, err_msg)),
+    }
+}
+
+fn dyn_dispatch_attr(param: &syn::TypeParam) -> Option<&syn::Attribute> {
+    param.attrs.iter().find(|attr| is_type_erased(attr))
+}
+
+fn is_allowed_dyn_dispatch_repr(ty: &Type) -> bool {
+    let allowed_reprs = ["u8", "i8", "u16", "i16", "u32", "i32", "u64", "i64"];
+
+    let Type::Path(type_path) = ty else {
+        return false;
     };
-
-    for selector in handle_map.keys() {
-        if selector != "Self" && !type_params.contains(selector) {
-            return Err(syn::Error::new_spanned(
-                item_impl,
-                format!("dispatch selector `{selector}` does not match any impl type parameter"),
-            ));
-        }
+    if type_path.qself.is_some() {
+        return false;
     }
 
-    Ok(())
-}
-
-pub(crate) fn validate_inner_attrs(_attrs: &[syn::Attribute]) -> Result<(), syn::Error> {
-    Ok(())
-}
-
-fn validate_unique_link_name(attrs: &[syn::Attribute], what: &str) -> Result<(), syn::Error> {
-    let mut seen = false;
-    for attr in attrs {
-        if parse_link_name_attr(attr)?.is_none() {
-            continue;
-        }
-        if seen {
-            return Err(syn::Error::new_spanned(
-                attr,
-                format!("`link_name` can only be provided once per {what}"),
-            ));
-        }
-        seen = true;
-    }
-    Ok(())
-}
-
-pub(crate) fn validate_export_decl_attrs(decls: &[syn::Item]) -> Result<(), syn::Error> {
-    fn has_dispatch_arg_attr(attrs: &[syn::Attribute]) -> bool {
-        attrs.iter().any(|attr| attr.path().is_ident("dispatch"))
-    }
-    fn base_handle_selector_type(ty: &syn::Type) -> &syn::Type {
-        if let syn::Type::Reference(reference) = ty {
-            return &reference.elem;
-        }
-        ty
-    }
-    fn is_parametric_handle_selector(ty: &syn::Type, allowed: &BTreeSet<String>) -> bool {
-        let ty = base_handle_selector_type(ty);
-        let syn::Type::Path(type_path) = ty else {
-            return false;
-        };
-        if type_path.qself.is_some() || type_path.path.segments.len() != 1 {
-            return false;
-        }
-        let seg = &type_path.path.segments[0];
-        if !matches!(seg.arguments, syn::PathArguments::None) {
-            return false;
-        }
-        allowed.contains(&seg.ident.to_string())
-    }
-
-    for decl in decls {
-        match decl {
-            syn::Item::Impl(impl_decl) => {
-                validate_ownership_attrs(&impl_decl.attrs)?;
-                if let Some(attr) = impl_decl.attrs.first() {
-                    return Err(unsupported_export_impl_attr(attr));
-                }
-                for item in &impl_decl.items {
-                    let syn::ImplItem::Fn(method) = item else {
-                        continue;
-                    };
-                    validate_ownership_attrs(&method.attrs)?;
-                    validate_sig_ownership_attrs(&method.sig)?;
-                    ensure_no_handle_arg_attrs(&method.sig)?;
-                }
-            }
-            syn::Item::Trait(trait_item) => {
-                let mut entry_handle_map: Option<BTreeMap<String, Vec<syn::Type>>> = None;
-                for attr in &trait_item.attrs {
-                    if let Some(map) = parse_entry_handle_map_attr(attr)?
-                        && entry_handle_map.replace(map).is_some()
-                    {
-                        return Err(syn::Error::new_spanned(
-                            attr,
-                            "`handle` mapping can only be provided once per entry",
-                        ));
-                    }
-                }
-                for item in &trait_item.items {
-                    let syn::TraitItem::Fn(method_item) = item else {
-                        continue;
-                    };
-                    validate_ownership_attrs(&method_item.attrs)?;
-                    validate_sig_ownership_attrs(&method_item.sig)?;
-                    let Some(key_types) = entry_handle_map.clone() else {
-                        return Err(syn::Error::new_spanned(
-                            &method_item.sig,
-                            "trait export entries require `#[dispatch(...)]` mapping",
-                        ));
-                    };
-                    let allowed_handle_selectors = key_types
-                        .keys()
-                        .cloned()
-                        .chain(trait_item.generics.params.iter().filter_map(
-                            |generic| match generic {
-                                syn::GenericParam::Type(param) => Some(param.ident.to_string()),
-                                _ => None,
-                            },
-                        ))
-                        .collect::<BTreeSet<_>>();
-                    for input in &method_item.sig.inputs {
-                        let syn::FnArg::Typed(arg) = input else {
-                            continue;
-                        };
-                        if !has_dispatch_arg_attr(&arg.attrs) {
-                            continue;
-                        }
-                        if !is_parametric_handle_selector(&arg.ty, &allowed_handle_selectors) {
-                            return Err(syn::Error::new_spanned(
-                                &arg.ty,
-                                "in trait export entries, `#[dispatch]` arguments must use `Self` or a trait type parameter (for example `T`), not a concrete type",
-                            ));
-                        }
-                    }
-                }
-            }
-            syn::Item::Fn(decl_fn) => {
-                validate_ownership_attrs(&decl_fn.attrs)?;
-                validate_sig_ownership_attrs(&decl_fn.sig)?;
-                ensure_no_handle_arg_attrs(&decl_fn.sig)?;
-                if decl_fn.sig.receiver().is_some() {
-                    return Err(syn::Error::new_spanned(
-                        &decl_fn.sig,
-                        "free function export entries cannot declare a receiver",
-                    ));
-                }
-            }
-            syn::Item::Struct(decl) => {
-                for attr in &decl.attrs {
-                    return Err(unsupported_export_entry_attr(attr));
-                }
-            }
-            other => return Err(syn::Error::new_spanned(other, "item not supported")),
-        }
-    }
-
-    Ok(())
-}
-
-pub(crate) fn validate_extern_decl_attrs(decls: &[syn::Item]) -> Result<(), syn::Error> {
-    let suggestion = "use method-level `#[link_name = \"...\"]` or macro-level `#![link(...)]`";
-    let decl_level_link_error =
-        format!("declaration-level `#[link(...)]` is not supported; {suggestion}");
-
-    fn is_bare_dispatch_attr(attr: &syn::Attribute) -> bool {
-        attr.path().is_ident("dispatch") && matches!(attr.meta, syn::Meta::Path(_))
-    }
-    fn impl_trait_is_drop(trait_tokens: &TokenStream) -> bool {
-        let tokens: Vec<_> = trait_tokens.clone().into_iter().collect();
-        tokens
-            .last()
-            .is_some_and(|tt| matches!(tt, proc_macro2::TokenTree::Ident(ident) if ident == "Drop"))
-    }
-
-    for decl in decls {
-        match decl {
-            syn::Item::Fn(decl) => {
-                validate_unique_link_name(&decl.attrs, "function")?;
-                for attr in &decl.attrs {
-                    if parse_link_attr(attr)?.is_some() {
-                        return Err(syn::Error::new_spanned(attr, decl_level_link_error.clone()));
-                    }
-                }
-            }
-            syn::Item::Struct(decl) => {
-                for attr in &decl.attrs {
-                    if parse_link_attr(attr)?.is_some() {
-                        return Err(syn::Error::new_spanned(
-                            attr,
-                            "link attributes are only supported on imported function declarations",
-                        ));
-                    }
-
-                    if attr.path().is_ident("link_name") {
-                        return Err(syn::Error::new_spanned(
-                            attr,
-                            format!("type-level `#[link_name]` is not supported; {suggestion}"),
-                        ));
-                    }
-                }
-            }
-            syn::Item::Impl(decl) => {
-                let impl_dispatch_map = handle::dispatch::parse_impl_dispatch_attrs(&decl.attrs)?;
-                let impl_has_bare_dispatch = decl.attrs.iter().any(|attr| {
-                    if !attr.path().is_ident("dispatch") {
-                        return false;
-                    }
-                    match &attr.meta {
-                        syn::Meta::Path(_) => true,
-                        syn::Meta::List(list) => list.tokens.is_empty(),
-                        _ => false,
-                    }
-                });
-                let allow_empty_dispatch_marker = decl
-                    .trait_
-                    .as_ref()
-                    .is_some_and(|(_, trait_path, _)| impl_trait_is_drop(&quote!(#trait_path)))
-                    && impl_has_bare_dispatch;
-                validate_impl_dispatch_map(
-                    decl,
-                    impl_dispatch_map.as_ref(),
-                    impl_has_bare_dispatch,
-                    allow_empty_dispatch_marker,
-                    true,
-                )?;
-                let drop_trait_impl = matches!(
-                    &decl.trait_,
-                    Some((_, trait_path, _)) if impl_trait_is_drop(&quote!(#trait_path))
-                );
-                for attr in &decl.attrs {
-                    if parse_link_attr(attr)?.is_some() || attr.path().is_ident("link_name") {
-                        return Err(syn::Error::new_spanned(
-                            attr,
-                            format!(
-                                "impl-level `#[link(...)]` attributes are not supported; {suggestion}"
-                            ),
-                        ));
-                    }
-                    if drop_trait_impl
-                        && attr.path().is_ident("dispatch")
-                        && !is_bare_dispatch_attr(attr)
-                    {
-                        return Err(syn::Error::new_spanned(
-                            attr,
-                            "`impl Drop` only supports bare `#[dispatch]` (without type mappings)",
-                        ));
-                    }
-                }
-                for item in &decl.items {
-                    match item {
-                        syn::ImplItem::Fn(method) => {
-                            validate_unique_link_name(&method.attrs, "method")?;
-                            for attr in &method.attrs {
-                                if parse_link_attr(attr)?.is_some() {
-                                    return Err(syn::Error::new_spanned(
-                                        attr,
-                                        decl_level_link_error.clone(),
-                                    ));
-                                }
-                                if attr.path().is_ident("dispatch") {
-                                    return Err(syn::Error::new_spanned(
-                                        attr,
-                                        "`#[dispatch]` is not supported on impl items; use impl-level instead",
-                                    ));
-                                }
-                            }
-                        }
-                        syn::ImplItem::Type(assoc) => {
-                            for attr in &assoc.attrs {
-                                if parse_link_attr(attr)?.is_some()
-                                    || attr.path().is_ident("link_name")
-                                {
-                                    return Err(syn::Error::new_spanned(
-                                        attr,
-                                        "link attributes are only supported on imported function declarations",
-                                    ));
-                                }
-                            }
-                        }
-                        syn::ImplItem::Const(assoc) => {
-                            for attr in &assoc.attrs {
-                                if parse_link_attr(attr)?.is_some()
-                                    || attr.path().is_ident("link_name")
-                                {
-                                    return Err(syn::Error::new_spanned(
-                                        attr,
-                                        "link attributes are only supported on imported function declarations",
-                                    ));
-                                }
-                            }
-                        }
-                        other => {
-                            return Err(syn::Error::new_spanned(
-                                other,
-                                "only methods, associated types, and associated consts are supported in extern impl declarations",
-                            ));
-                        }
-                    }
-                }
-            }
-            other => {
-                return Err(syn::Error::new_spanned(
-                    other,
-                    "item not supported in `extern_!`/`extern_C!`",
-                ));
-            }
-        }
-    }
-    Ok(())
-}
-
-pub(crate) fn validate_extern_type_drop_requirements(
-    decls: &[syn::Item],
-) -> Result<(), syn::Error> {
-    fn type_ctor_ident(ty: &syn::Type) -> Option<&syn::Ident> {
-        let syn::Type::Path(type_path) = ty else {
-            return None;
-        };
-        type_path.path.segments.last().map(|seg| &seg.ident)
-    }
-
-    let mut declared_types: Vec<&syn::ItemStruct> = Vec::new();
-    for decl in decls {
-        if let syn::Item::Struct(ty_decl) = decl {
-            declared_types.push(ty_decl);
-        }
-    }
-    if declared_types.is_empty() {
-        return Ok(());
-    }
-
-    let mut drop_ctors = std::collections::BTreeSet::<String>::new();
-    for decl in decls {
-        let syn::Item::Impl(impl_decl) = decl else {
-            continue;
-        };
-        let Some((_, trait_path, _)) = &impl_decl.trait_ else {
-            continue;
-        };
-        if path_symbol_name(trait_path) != "Drop" {
-            continue;
-        }
-        let self_ty = impl_decl.self_ty.as_ref().clone();
-        let Some(ident) = type_ctor_ident(&self_ty) else {
-            continue;
-        };
-        drop_ctors.insert(ident.to_string());
-    }
-
-    for ty_decl in declared_types {
-        if !drop_ctors.contains(&ty_decl.ident.to_string()) {
-            return Err(syn::Error::new_spanned(
-                &ty_decl.ident,
-                "extern_C! type declarations must include a corresponding `impl Drop for Type { ... }` declaration",
-            ));
-        }
-    }
-
-    Ok(())
-}
-
-pub(crate) fn is_inner_special_attr(attr: &syn::Attribute) -> bool {
-    if attr.path().is_ident("abi") {
-        return true;
-    }
-
-    parse_link_attr(attr)
-        .ok()
-        .flatten()
-        .is_some_and(|parsed| parsed.link_crate.is_some())
+    let last_seg = type_path.path.segments.last();
+    last_seg.is_some_and(|s| allowed_reprs.contains(&s.ident.to_string().as_str()))
 }

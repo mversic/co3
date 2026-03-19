@@ -1,4 +1,4 @@
-use co3::{ReprC, export, extern_, extern_C};
+use co3::{ReprC, export, export_C, extern_, extern_C};
 
 trait AmbiguousX<T, const N: usize> {
     #[expect(unused)]
@@ -28,12 +28,6 @@ extern_! {
     #![abi = "Rust"]
     #![link(crate = "import")]
 
-    type MyType2;
-
-    impl Drop for MyType2 {
-        fn drop(&mut self);
-    }
-
     impl AmbiguousX<u32, 4> for MyType<u32> {
         const K: bool = true;
         type U = i8;
@@ -53,6 +47,12 @@ extern_! {
 
 extern_C! {
     #![link(crate = "import")]
+
+    type MyType2;
+
+    impl Drop for MyType2 {
+        fn drop(&mut self);
+    }
 
     impl MyType2 {
         fn new() -> Self;
@@ -84,21 +84,18 @@ mod provider {
 
     use super::*;
 
-    #[derive(Clone, Copy, ReprC)]
+    #[derive(Clone, Copy)]
     #[repr(transparent)]
-    #[reprC(opaque)]
     struct MyType<T>(T);
 
-    #[derive(ReprC)]
-    #[reprC(opaque)]
     #[repr(transparent)]
     enum MyType2 {
         #[expect(dead_code)]
         A(String),
     }
 
-    export_! {
-        #![abi = "Rust"]
+    export_C! {
+        type MyType2;
 
         impl Drop for MyType2 {
             fn drop(&mut self);
@@ -136,14 +133,6 @@ mod provider {
     #[export("C")]
     impl AmbiguousY for MyType<u64> {
         #[unsafe(no_mangle)]
-        extern "C" fn ambiguous() -> Ambiguous {
-            Ambiguous::AmbiguousY
-        }
-    }
-
-    #[export("C")]
-    impl AmbiguousY for MyType<u32> {
-        #[export(skip)]
         extern "C" fn ambiguous() -> Ambiguous {
             Ambiguous::AmbiguousY
         }

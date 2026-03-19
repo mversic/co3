@@ -1,12 +1,11 @@
 #[cfg(feature = "alloc")]
 use alloc_crate::{
+    boxed::Box,
     string::{String, ToString},
     vec::Vec,
 };
-use core::{cell::UnsafeCell, ptr::NonNull};
+use core::{cell::UnsafeCell, ffi::c_void, ptr::NonNull};
 
-#[cfg(feature = "alloc")]
-use crate::vec::CVec;
 use crate::{
     borrow::{Borrow, DropFamily, NeedsDrop, NoDrop, ToOwned},
     ir::{ReprFamily, SizeFamily, Sized_, Transmuted},
@@ -14,6 +13,8 @@ use crate::{
     reprC,
     transmute::{CheckedTransmute, EncodeTransmuted},
 };
+#[cfg(feature = "alloc")]
+use crate::{boxed::CBox, vec::CVec};
 
 // FIXME: Replace with NonZero<T>
 macro_rules! non_zero_derive {
@@ -65,6 +66,43 @@ reprC! {
 reprC! {
     unsafe impl(T: ?Sized) Transmuted for core::cell::Cell<T> {
         type Target = UnsafeCell<T>;
+    }
+}
+
+impl ReprFamily for &c_void {
+    type Kind = Transmuted;
+}
+impl ReprFamily for &mut c_void {
+    type Kind = Transmuted;
+}
+#[cfg(feature = "alloc")]
+impl ReprFamily for Box<c_void> {
+    type Kind = Transmuted;
+}
+
+unsafe impl CheckedTransmute for &c_void {
+    type Target = *const c_void;
+
+    #[inline(always)]
+    fn is_valid(target: &Self::Target) -> bool {
+        !target.is_null()
+    }
+}
+unsafe impl CheckedTransmute for &mut c_void {
+    type Target = *mut c_void;
+
+    #[inline(always)]
+    fn is_valid(target: &Self::Target) -> bool {
+        !target.is_null()
+    }
+}
+#[cfg(feature = "alloc")]
+unsafe impl CheckedTransmute for Box<c_void> {
+    type Target = CBox<c_void>;
+
+    #[inline(always)]
+    fn is_valid(target: &Self::Target) -> bool {
+        !target.is_none()
     }
 }
 

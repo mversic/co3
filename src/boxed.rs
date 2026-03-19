@@ -170,6 +170,13 @@ impl<C, A: Allocator> CBox<C, A> {
     pub const fn is_none(&self) -> bool {
         self.data.is_null()
     }
+
+    pub const fn cast<T>(self) -> CBox<T, A> {
+        CBox {
+            data: self.data.cast(),
+            allocator: self.allocator,
+        }
+    }
 }
 
 #[cfg(feature = "alloc")]

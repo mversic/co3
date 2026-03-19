@@ -322,7 +322,12 @@ pub(super) fn gen_repr_c_struct(
         darling::ast::Style::Unit => unreachable!("ZSTs are not FFI safe"),
     };
 
-    let size_family_impl = gen_struct_size_family(&repr_c_struct_name, generics, &field_types);
+    let size_family_impl = gen_struct_size_family_with_bounds(
+        &repr_c_struct_name,
+        generics,
+        &field_types,
+        gen_extern_c_bounds(&field_types, generics),
+    );
     let repr_c_struct = gen_repr_c_type::<false, true>(
         format!(" FFI-safe equivalent of [`{struct_name}`]"),
         repr_c_struct_name.clone(),
@@ -343,16 +348,57 @@ pub(crate) fn gen_struct_size_family(
     generics: &syn::Generics,
     field_types: &[&syn::Type],
 ) -> TokenStream {
-    let kind = field_types.last().map_or_else(
-        || quote! { co3::ir::Sized_ },
-        |last_field| quote! { <#last_field as co3::ir::SizeFamily>::Kind },
-    );
+    gen_struct_size_family_with_bounds(struct_name, generics, field_types, quote! {})
+}
 
-    gen_size_family(struct_name, generics, kind)
+pub(crate) fn gen_struct_size_family_with_bounds(
+    struct_name: &Ident,
+    generics: &syn::Generics,
+    field_types: &[&syn::Type],
+    extra_bounds: TokenStream,
+) -> TokenStream {
+    let (impl_generics, ty_generics, where_clause) = generics.split_for_impl();
+    let predicates = where_clause.as_ref().map(|w| &w.predicates);
+
+    let Some(last_field) = field_types.last() else {
+        return gen_size_family(struct_name, generics, quote! { co3::ir::Sized_ });
+    };
+    let last_field_bound = is_type_parameterized(last_field, generics)
+        .then_some(quote! { #last_field: co3::ir::SizeFamily, });
+
+    quote! {
+        impl #impl_generics co3::ir::SizeFamily for #struct_name #ty_generics
+        where
+            #extra_bounds
+            #last_field_bound
+            #predicates
+        {
+            type Kind = <#last_field as co3::ir::SizeFamily>::Kind;
+        }
+    }
 }
 
 pub(crate) fn gen_sized_size_family(type_name: &Ident, generics: &syn::Generics) -> TokenStream {
-    gen_size_family(type_name, generics, quote! { co3::ir::Sized_ })
+    gen_sized_size_family_with_bounds(type_name, generics, quote! {})
+}
+
+fn gen_sized_size_family_with_bounds(
+    type_name: &Ident,
+    generics: &syn::Generics,
+    extra_bounds: TokenStream,
+) -> TokenStream {
+    let (impl_generics, ty_generics, where_clause) = generics.split_for_impl();
+    let predicates = where_clause.as_ref().map(|w| &w.predicates);
+
+    quote! {
+        impl #impl_generics co3::ir::SizeFamily for #type_name #ty_generics
+        where
+            #extra_bounds
+            #predicates
+        {
+            type Kind = co3::ir::Sized_;
+        }
+    }
 }
 
 pub(crate) fn gen_size_family(
@@ -409,7 +455,11 @@ pub(super) fn gen_data_enum(
             },
         );
 
-        let size_family_impl = gen_sized_size_family(&variant_struct_name, &filtered_generics);
+        let size_family_impl = gen_sized_size_family_with_bounds(
+            &variant_struct_name,
+            &filtered_generics,
+            gen_extern_c_bounds(&variant_field_types, &filtered_generics),
+        );
         let struct_ = gen_repr_c_type::<false, true>(
             format!(" Variant struct for [`{enum_name}::{variant_name}`]"),
             variant_struct_name,
@@ -440,7 +490,11 @@ pub(super) fn gen_data_enum(
         &all_field_types,
     );
 
-    let size_family_impl = gen_sized_size_family(&union_name, generics);
+    let size_family_impl = gen_sized_size_family_with_bounds(
+        &union_name,
+        generics,
+        gen_extern_c_bounds(&all_field_types, generics),
+    );
     let all_code = quote! {
         #(#variant_structs)*
         #size_family_impl
@@ -472,7 +526,8 @@ fn gen_repr_c_data_enum(
         }
     }
     let extern_c_bounds = gen_extern_c_bounds(&field_types, generics);
-    let size_family_impl = gen_sized_size_family(&repr_c_enum_name, generics);
+    let size_family_impl =
+        gen_sized_size_family_with_bounds(&repr_c_enum_name, generics, extern_c_bounds.clone());
 
     let repr_c_enum = quote! {
         #payload
@@ -562,7 +617,6 @@ fn gen_data_enum_payload(
     variants: &[SpannedValue<FfiTypeVariant>],
 ) -> (syn::Ident, TokenStream) {
     let payload_name = gen_data_enum_payload_name(enum_name);
-    let repr_c_enum_name = gen_repr_c_item_name(enum_name);
 
     let mut field_types = Vec::new();
     for variant in variants {
@@ -583,9 +637,13 @@ fn gen_data_enum_payload(
         )
     });
 
-    let size_family_impl = gen_sized_size_family(&repr_c_enum_name, generics);
+    let size_family_impl = gen_sized_size_family_with_bounds(
+        &payload_name,
+        generics,
+        gen_extern_c_bounds(&field_types, generics),
+    );
     let payload = gen_repr_c_type::<true, false>(
-        format!(" Payload of [`{repr_c_enum_name}`]"),
+        format!(" Payload of [`{}`]", gen_repr_c_item_name(enum_name)),
         payload_name.clone(),
         generics,
         darling::ast::Style::Struct,

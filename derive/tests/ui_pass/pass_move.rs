@@ -4,7 +4,7 @@ use co3::{ReprC, export_C, extern_C};
 #[repr(C)]
 struct Value(Box<u32>);
 
-mod export {
+mod provider {
     use super::*;
 
     impl Value {
@@ -29,11 +29,16 @@ mod export {
 }
 
 extern_C! {
+    #![expect(unused_doc_comments)]
+    //! Documentation
+
     impl Value {
+        /// Documentation
         #[link_name = "transform"]
-        fn transform2(move self, other: &Value) -> Value;
+        fn transform2(move self: Self, other: &Value) -> Value;
     }
 
+    /// Documentation
     #[link_name = "combine"]
     fn combine(move input: &Value, move rhs: Value) -> Value;
 }

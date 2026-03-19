@@ -3,15 +3,8 @@ use alloc_crate::{boxed::Box, vec::Vec};
 
 use super::*;
 #[cfg(feature = "alloc")]
-use crate::{
-    boxed::{CBox, CBoxedSlice},
-    transmute::{transmute_from_target_boxed_dst, transmute_from_target_vec},
-};
-use crate::{
-    ir::Transmuted,
-    option::COption,
-    transmute::{transmute_from_target_dst_mut, transmute_from_target_ref_dst},
-};
+use crate::boxed::CBoxedSlice;
+use crate::{ir::Transmuted, option::COption};
 
 disjoint_impls! {
     /// Marker trait indicating that [`Encode::encode`] doesn't return a reference to the store.

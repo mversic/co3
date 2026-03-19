@@ -1,616 +1,393 @@
 use proc_macro2::TokenStream;
-use quote::quote;
-use syn::{Ident, LitStr, Path, Type, visit_mut::VisitMut};
+use quote::{format_ident, quote};
+use syn::{FnArg, ItemImpl, punctuated::Punctuated, visit_mut::VisitMut};
 
 use crate::{
-    OwnershipMode, ffi_fn,
-    impl_visitor::{Arg, FnDescriptor, TypeImplTraitResolver},
-    repr::FfiTypeInput,
-    utils::{gen_resolve_type, gen_store_name, unwrap_result_type},
+    dispatch::{extract_dispatch_id, gen_handle_erase_stmts, is_dispatch_id_arg},
+    ffi_fn::{self, boxed_array_ty, item_fn_input_ident, ownership_mode_for_arg},
+    generate::OwnershipMode,
+    is_link_name_attr,
+    utils::{gen_normalization_stmts, gen_store_name, is_type_erased, unwrap_result_type},
 };
 
-#[derive(Clone)]
-pub struct HandleIdSpec {
-    pub arg_name: syn::Ident,
-    pub selector: syn::Type,
-    pub at: usize,
-}
+fn strip_internal_arg_attrs(signature: &mut syn::Signature) {
+    struct InternalAttrStripper;
 
-fn is_handle_id_arg(name: &Ident, handle_id_specs: &[HandleIdSpec]) -> bool {
-    handle_id_specs.iter().any(|spec| spec.arg_name == *name)
-}
-
-pub fn wrap_as_opaque(input: FfiTypeInput) -> TokenStream {
-    let name = &input.ident;
-    let vis = &input.vis;
-    let (_, ty_generics, where_clause) = input.generics.split_for_impl();
-
-    let phantom_data_fields = input
-        .generics
-        .params
-        .iter()
-        .filter_map(|param| match param {
-            syn::GenericParam::Lifetime(param) => {
-                let lifetime = &param.lifetime;
-                Some(quote! { core::marker::PhantomData<&#lifetime ()> })
-            }
-            syn::GenericParam::Type(param) => {
-                let ident = &param.ident;
-                Some(quote! { core::marker::PhantomData<#ident> })
-            }
-            syn::GenericParam::Const(_) => None,
-        });
-
-    let impl_ffi = gen_impl_ffi(name, &input.generics);
-
-    quote! {
-        #[repr(transparent)]
-        #vis struct #name #ty_generics(core::ptr::NonNull<co3::external::Extern> #(, #phantom_data_fields)*) #where_clause;
-
-        #impl_ffi
-    }
-}
-
-fn gen_impl_ffi(name: &Ident, generics: &syn::Generics) -> TokenStream {
-    let (impl_generics, ty_generics, where_clause) = generics.split_for_impl();
-
-    let send_predicates: Vec<_> = generics
-        .type_params()
-        .map(|param| {
-            let ident = &param.ident;
-            quote! { #ident: Send }
-        })
-        .collect();
-    let sync_predicates: Vec<_> = generics
-        .type_params()
-        .map(|param| {
-            let ident = &param.ident;
-            quote! { #ident: Sync }
-        })
-        .collect();
-
-    let send_where = if send_predicates.is_empty() {
-        where_clause.map(|wc| quote!(#wc)).unwrap_or_default()
-    } else if let Some(wc) = where_clause {
-        quote!(#wc, #(#send_predicates),*)
-    } else {
-        quote!(where #(#send_predicates),*)
-    };
-
-    let sync_where = if sync_predicates.is_empty() {
-        where_clause.map(|wc| quote!(#wc)).unwrap_or_default()
-    } else if let Some(wc) = where_clause {
-        quote!(#wc, #(#sync_predicates),*)
-    } else {
-        quote!(where #(#sync_predicates),*)
-    };
-
-    quote! {
-        // SAFETY: The underlying data is unaliased, i.e. it is owned
-        unsafe impl #impl_generics Send for #name #ty_generics #send_where {}
-        // SAFETY: The underlying data is unaliased, i.e. it is owned
-        unsafe impl #impl_generics Sync for #name #ty_generics #sync_where {}
-
-        // SAFETY: Type is a thin wrapper around [`core::ptr::NonNull<co3::external::Extern>`]
-        unsafe impl #impl_generics co3::external::External for #name #ty_generics #where_clause {
-            fn as_ptr(&self) -> *const co3::external::Extern {
-                self.0.as_ptr() as *const _
-            }
-            fn as_mut_ptr(&mut self) -> *mut co3::external::Extern {
-                self.0.as_ptr()
-            }
-        }
-
-        impl #impl_generics #name #ty_generics #where_clause {
-            fn as_ref(&self) -> co3::external::ExternRef<'_, #name #ty_generics> {
-                co3::external::ExternRef::new(self)
-            }
-
-            fn as_mut(&mut self) -> co3::external::ExternRefMut<'_, #name #ty_generics> {
-                co3::external::ExternRefMut::new(self)
-            }
-        }
-
-        impl #impl_generics co3::ir::ReprFamily for #name #ty_generics #where_clause {
-            type Kind = co3::ir::Transmuted;
-        }
-
-        unsafe impl #impl_generics co3::transmute::CheckedTransmute for #name #ty_generics #where_clause {
-            type Target = *mut co3::external::Extern;
-
-            #[inline(always)]
-            fn is_valid(_: &Self::Target) -> bool {
-                // NOTE: Opaque types are never dereferenced
-                true
-            }
-        }
-        impl #impl_generics co3::niche::NicheFamily for #name #ty_generics #where_clause {
-            type Kind = co3::niche::WithStableNiche;
-        }
-
-        impl #impl_generics co3::niche::Niche for #name #ty_generics #where_clause {
-            const NICHE_VALUE: <Self as co3::ExternC>::CType = core::ptr::null_mut();
-        }
-
-        unsafe impl #impl_generics co3::niche::StableNiche for #name #ty_generics #where_clause {}
-    }
-}
-
-fn gen_wrapper_signature(
-    fn_descriptor: &FnDescriptor,
-    handle_id_specs: &[HandleIdSpec],
-) -> syn::Signature {
-    let mut signature = fn_descriptor.sig.clone();
-
-    let mut type_impl_trait_resolver = TypeImplTraitResolver;
-    type_impl_trait_resolver.visit_signature_mut(&mut signature);
-    struct HandleAttrStripper;
-    impl VisitMut for HandleAttrStripper {
+    impl VisitMut for InternalAttrStripper {
         fn visit_receiver_mut(&mut self, node: &mut syn::Receiver) {
-            node.attrs.retain(|attr| !attr.path().is_ident("dispatch"));
-            syn::visit_mut::visit_receiver_mut(self, node);
+            node.attrs.retain(|attr| !attr.path().is_ident("by_val"));
         }
 
         fn visit_pat_type_mut(&mut self, node: &mut syn::PatType) {
-            node.attrs.retain(|attr| !attr.path().is_ident("dispatch"));
-            syn::visit_mut::visit_pat_type_mut(self, node);
+            node.attrs.retain(|attr| !attr.path().is_ident("by_val"));
         }
     }
-    HandleAttrStripper.visit_signature_mut(&mut signature);
-    signature.inputs = signature
-        .inputs
-        .into_iter()
-        .filter(|arg| match arg {
-            syn::FnArg::Receiver(_) => true,
-            syn::FnArg::Typed(arg) => {
-                let syn::Pat::Ident(pat_ident) = arg.pat.as_ref() else {
-                    return true;
+
+    InternalAttrStripper.visit_signature_mut(signature);
+}
+
+pub fn wrap_fn_definition(
+    abi: &syn::Abi,
+    block_attrs: &[syn::Attribute],
+    mut item: syn::ItemFn,
+) -> TokenStream {
+    let vis = &item.vis;
+
+    let wrapper_attrs = item
+        .attrs
+        .iter()
+        .filter(|attr| !attr.path().is_ident("link_name"));
+
+    let mut wrapper_sig = item.sig.clone();
+    let wrapper_body = gen_wrapper_body(None, None, &item.sig);
+    strip_internal_arg_attrs(&mut wrapper_sig);
+
+    ffi_fn::normalize_fn_signature(&mut item.sig, None);
+    let decl = ffi_fn::gen_extern_fn_signature(None, item.sig);
+    let extern_fn_decl = gen_extern_decl(abi, block_attrs, &item.attrs, decl);
+
+    quote! {
+        #(#wrapper_attrs)*
+        #vis #wrapper_sig {
+            #extern_fn_decl
+            #wrapper_body
+        }
+    }
+}
+
+pub fn wrap_impl_definition(impl_: &ItemImpl) -> ItemImpl {
+    let ItemImpl {
+        attrs: impl_attrs,
+        defaultness,
+        unsafety,
+        generics,
+        trait_,
+        self_ty,
+        items,
+        ..
+    } = impl_;
+
+    let trait_ = trait_.as_ref().map(|(_, path, _)| path);
+    let methods = items.iter().map(|item| {
+        let syn::ImplItem::Fn(item) = item else {
+            return quote!(#item);
+        };
+
+        let mut sig = item.sig.clone();
+        let vis = &item.vis;
+
+        let wrapper_attrs = item
+            .attrs
+            .iter()
+            .filter(|attr| !attr.path().is_ident("link_name"));
+
+        let self_binding = sig
+            .inputs
+            .iter()
+            .any(|input| matches!(input, FnArg::Receiver(_)))
+            .then(|| quote! { let __co3_self = self; });
+
+        let id_assignments = sig
+            .inputs
+            .iter()
+            .filter_map(|input| {
+                let FnArg::Typed(syn::PatType { pat, ty, .. }) = input else {
+                    return None;
                 };
-                !is_handle_id_arg(&pat_ident.ident, handle_id_specs)
+
+                let ty = &extract_dispatch_id(generics, self_ty, ty)?.ident;
+                Some(quote! { let #pat = <#ty as co3::handle::Handle>::ID; })
+            })
+            .collect::<Vec<_>>();
+
+        let wrapper_body = gen_wrapper_body(Some(generics), Some(self_ty), &sig);
+
+        sig.inputs = sig
+            .inputs
+            .into_iter()
+            .filter_map(|input| (!is_dispatch_id_arg(generics, self_ty, &input)).then_some(input))
+            .collect();
+
+        strip_internal_arg_attrs(&mut sig);
+
+        quote! {
+            #(#wrapper_attrs)*
+            #vis #sig {
+                #(#id_assignments)*
+                #self_binding
+                #wrapper_body
             }
+        }
+    });
+
+    let mut generics = generics.clone();
+    strip_internal_generic_attrs(&mut generics);
+    let (impl_generics, _, where_clause) = generics.split_for_impl();
+    let impl_head = if let Some(trait_) = &trait_ {
+        quote!(impl #impl_generics #trait_ for #self_ty #where_clause)
+    } else {
+        quote!(impl #impl_generics #self_ty #where_clause)
+    };
+
+    syn::parse_quote! {
+        #(#impl_attrs)*
+        #defaultness #unsafety #impl_head {
+            #(#methods)*
+        }
+    }
+}
+
+pub(crate) fn gen_extern_decl(
+    abi: &syn::Abi,
+    block_attrs: &[syn::Attribute],
+    attrs: &[syn::Attribute],
+    decl: TokenStream,
+) -> TokenStream {
+    let decl_attrs = attrs.iter().filter(|attr| is_link_name_attr(attr));
+
+    quote! {
+        unsafe #abi {
+            #(#block_attrs)*
+            #(#decl_attrs)*
+            #decl;
+        }
+    }
+}
+
+fn gen_wrapper_body(
+    generics: Option<&syn::Generics>,
+    self_ty: Option<&syn::Type>,
+    sig: &syn::Signature,
+) -> TokenStream {
+    let handle_erase_stmts = generics
+        .zip(self_ty)
+        .map(|(generics, self_ty)| gen_handle_erase_stmts(generics, self_ty, sig))
+        .unwrap_or_default();
+
+    let input_convert = gen_input_conversion_stmts(&sig.inputs);
+    let output_init = gen_output_init_stmt(&sig.output);
+    let ffi_fn_call_stmt = gen_ffi_fn_call_stmt(sig);
+    let store_sync_stmts = gen_store_sync_stmts(&sig.inputs);
+
+    let sync_success_args: Vec<_> = (0..sig.inputs.len())
+        .map(|idx| {
+            let idx = syn::Index::from(idx);
+            quote! { u8::from(!__co3_sync_errors[#idx]) }
         })
         .collect();
 
-    signature
+    let sync_success_fmt = if sig.inputs.is_empty() {
+        "\n".to_owned()
+    } else {
+        let placeholders = core::iter::repeat_n("{}", sig.inputs.len())
+            .collect::<Vec<_>>()
+            .join(", ");
+
+        format!("\nArg Sync: ({placeholders})\n")
+    };
+
+    let body = if let syn::ReturnType::Type(_, output_ty) = &sig.output {
+        let fmt = format!("{sync_success_fmt}Out Read: {{}}\n");
+        let return_ = if unwrap_result_type(output_ty).is_some() {
+            quote!(Ok(__co3_out))
+        } else {
+            quote!(__co3_out)
+        };
+
+        let out_res = quote!(u8::from(core::option::Option::is_some(&__co3_out)));
+        let panic_sync_error = if sync_success_args.is_empty() {
+            quote! { panic!(#fmt, #out_res); }
+        } else {
+            quote! { panic!(#fmt, #(#sync_success_args),*, #out_res); }
+        };
+
+        quote! {
+            let __co3_sync_errors = #store_sync_stmts;
+
+            let __co3_out = unsafe { core::mem::MaybeUninit::assume_init(__co3_out) };
+            let __co3_out = unsafe { co3::out_ptr::OutPtrRead::try_read_out(__co3_out) };
+
+            let mut __co3_sync_errors_iter = core::iter::IntoIterator::into_iter(__co3_sync_errors);
+            if core::iter::Iterator::any(&mut __co3_sync_errors_iter, core::convert::identity)
+                || core::option::Option::is_none(&__co3_out)
+            {
+                #panic_sync_error
+            }
+
+            let __co3_out = unsafe { core::option::Option::unwrap_unchecked(__co3_out) };
+
+            #return_
+        }
+    } else {
+        let panic_sync_error = if sync_success_args.is_empty() {
+            quote! { panic!(#sync_success_fmt); }
+        } else {
+            quote! { panic!(#sync_success_fmt, #(#sync_success_args),*); }
+        };
+
+        quote! {
+            let __co3_sync_errors = #store_sync_stmts;
+
+            let mut __co3_sync_errors_iter = core::iter::IntoIterator::into_iter(__co3_sync_errors);
+            if core::iter::Iterator::any(&mut __co3_sync_errors_iter, core::convert::identity) {
+                #panic_sync_error
+            }
+        }
+    };
+
+    quote! {
+        #input_convert
+        #output_init
+
+        {
+            #(#handle_erase_stmts)*
+            #ffi_fn_call_stmt
+        }
+
+        #body
+    }
 }
 
-pub fn wrap_method_with_import(
-    fn_descriptor: &FnDescriptor,
-    trait_path: Option<&Path>,
-    import_crate_name: Option<&TokenStream>,
-    import_fn_name: Option<&LitStr>,
-    import_abi: Option<&syn::Abi>,
-    handle_id_specs: &[HandleIdSpec],
-) -> TokenStream {
-    let signature = gen_wrapper_signature(fn_descriptor, handle_id_specs);
-    let ffi_fn_name = fn_descriptor.sig.ident.clone();
-    let ffi_decl = ffi_fn::gen_inline_declaration(
-        fn_descriptor,
-        trait_path,
-        import_crate_name,
-        import_fn_name,
-        import_abi.expect("extern_! always sets import ABI"),
-        &ffi_fn_name,
-        handle_id_specs,
-    );
-    let method_body =
-        gen_wrapper_method_body(fn_descriptor, &ffi_fn_name, Some(ffi_decl), handle_id_specs);
-    let ffi_fn_attrs = fn_descriptor.attrs.iter().copied().filter(|attr| {
-        !attr.path().is_ident("link_name")
-            && !attr.path().is_ident("link")
-            && !attr.path().is_ident("dispatch")
-    });
-    let method_doc = &fn_descriptor.doc;
-    let visibility = if trait_path.is_none() {
-        quote! { pub }
+fn gen_store_sync_stmts(inputs: &Punctuated<FnArg, syn::Token![,]>) -> TokenStream {
+    let input_len = inputs.len();
+    let mut stmts = quote! {};
+
+    for (idx, input) in inputs.iter().enumerate() {
+        let arg_name = match input {
+            FnArg::Typed(arg) => item_fn_input_ident(&arg.pat).clone(),
+            FnArg::Receiver(_) => format_ident!("__co3_self"),
+        };
+
+        let store_name = gen_store_name(&arg_name);
+        stmts.extend(quote! {
+            if co3::Store::sync(#store_name).is_none() {
+                __co3_sync_errors[#idx] = true;
+            }
+        });
+    }
+
+    quote! {{
+        let mut __co3_sync_errors = [false; #input_len];
+        #stmts
+        __co3_sync_errors
+    }}
+}
+
+fn gen_input_conversion_stmts(inputs: &Punctuated<FnArg, syn::Token![,]>) -> TokenStream {
+    let mut stmts = quote! {};
+
+    for input in inputs {
+        let (attrs, arg_name, arg_ty) = match input {
+            FnArg::Typed(syn::PatType { attrs, pat, ty, .. }) => {
+                (attrs, item_fn_input_ident(pat).clone(), (**ty).clone())
+            }
+            FnArg::Receiver(receiver) => (
+                &receiver.attrs,
+                format_ident!("__co3_self"),
+                (*receiver.ty).clone(),
+            ),
+        };
+
+        let resolve_ty = gen_normalization_stmts(&arg_name, &arg_ty);
+        let store_name = gen_store_name(&arg_name);
+
+        stmts.extend(if ownership_mode_for_arg(attrs, &arg_ty) == OwnershipMode::Borrow {
+            if matches!(arg_ty, syn::Type::Array(_)) {
+                quote! {
+                    #resolve_ty
+                    let #arg_name = &#arg_name;
+                }
+            } else {
+                let borrow_store_name = format_ident!("__co3_{arg_name}_borrow_store");
+
+                quote! {
+                    #resolve_ty
+                    let mut #borrow_store_name = Default::default();
+                    let #arg_name = co3::borrow::Borrow::borrow(#arg_name, &mut #borrow_store_name);
+                }
+            }
+        } else {
+            if let Some(boxed_ty) = boxed_array_ty(&arg_ty) {
+                quote! {
+                    #resolve_ty
+                    let #arg_name: #boxed_ty = Box::new(#arg_name);
+                }
+            } else {
+                quote! { #resolve_ty }
+            }
+        });
+
+        stmts.extend(quote! {
+            let mut #store_name = Default::default();
+            let #arg_name = co3::Encode::encode(#arg_name, &mut #store_name);
+        });
+    }
+
+    stmts
+}
+
+fn gen_output_init_stmt(output: &syn::ReturnType) -> TokenStream {
+    let syn::ReturnType::Type(_, output) = output else {
+        return quote! {};
+    };
+
+    let output_ty = quote! {
+        core::mem::MaybeUninit<<#output as co3::ExternC>::CType>
+    };
+
+    quote! {
+        let mut __co3_out: #output_ty = core::mem::MaybeUninit::uninit();
+        let __co3_out_ptr = core::mem::MaybeUninit::as_mut_ptr(&mut __co3_out);
+    }
+}
+
+fn gen_ffi_fn_call_stmt(sig: &syn::Signature) -> TokenStream {
+    let mut arg_names: Vec<TokenStream> = Vec::new();
+
+    let fn_name = &sig.ident;
+    for input in &sig.inputs {
+        arg_names.push(if let FnArg::Typed(syn::PatType { pat, .. }) = input {
+            let arg_name = item_fn_input_ident(pat);
+            quote!(#arg_name)
+        } else {
+            quote!(__co3_self)
+        });
+    }
+
+    if matches!(sig.output, syn::ReturnType::Type(_, _)) {
+        arg_names.push(quote!(__co3_out_ptr));
+    }
+
+    let execution_fail_arm = if let syn::ReturnType::Type(_, output_ty) = &sig.output {
+        if unwrap_result_type(output_ty).is_some() {
+            quote! {
+                co3::FfiReturn::ExecutionFail => {
+                    // TODO: Implement error handling (https://github.com/hyperledger/iroha/issues/2252)
+                    unimplemented!("Error handling is not properly implemented yet");
+                }
+            }
+        } else {
+            quote! {}
+        }
     } else {
         quote! {}
     };
 
     quote! {
-        #(#method_doc)*
-        #(#ffi_fn_attrs)*
-        #visibility #signature {
-            #method_body
-        }
-    }
-}
+        let __co3_return: co3::FfiReturn = unsafe { #fn_name(#(#arg_names),*) };
 
-fn gen_wrapper_method_body(
-    fn_descriptor: &FnDescriptor,
-    ffi_fn_name: &Ident,
-    ffi_decl: Option<TokenStream>,
-    handle_id_specs: &[HandleIdSpec],
-) -> TokenStream {
-    let input_conversions = gen_input_conversion_stmts(fn_descriptor, handle_id_specs);
-    let ffi_fn_call_stmt = gen_ffi_fn_call_stmt(fn_descriptor, ffi_fn_name, handle_id_specs);
-    let store_sync_stmts = gen_store_sync_stmts(fn_descriptor, handle_id_specs);
-    let return_stmt = gen_return_stmt(fn_descriptor);
-
-    quote! {
-        #ffi_decl
-
-        #input_conversions
-
-        // SAFETY:
-        // 1. call to FFI function is safe, i.e. it's implementation is free from UBs.
-        // 2. out-pointer is initialized, i.e. MaybeUninit::assume_init() is not UB
-        unsafe {
-            #ffi_fn_call_stmt
-            #store_sync_stmts
-            #return_stmt
-        }
-    }
-}
-
-fn gen_store_sync_stmts(
-    fn_descriptor: &FnDescriptor,
-    handle_id_specs: &[HandleIdSpec],
-) -> TokenStream {
-    let mut stmts = quote! {};
-    if let Some(receiver) = &fn_descriptor.receiver
-        && !receiver.is_handle()
-        && matches!(
-            receiver.src_type(),
-            Type::Path(syn::TypePath { qself: None, path }) if path.is_ident("Self")
-        )
-    {
-        let store_name = gen_store_name(receiver.name());
-        let arg_name = receiver.name();
-        stmts.extend(quote! {
-            if co3::Store::sync(#store_name).is_none() {
-                panic!("failed to sync store for {}", stringify!(#arg_name));
-            }
-        });
-    }
-
-    for arg in &fn_descriptor.input_args {
-        if is_handle_id_arg(arg.name(), handle_id_specs) {
-            continue;
-        }
-        if arg.is_handle() {
-            continue;
-        }
-        let store_name = gen_store_name(arg.name());
-        let arg_name = arg.name();
-
-        stmts.extend(quote! {
-            if co3::Store::sync(#store_name).is_none() {
-                panic!("failed to sync store for {}", stringify!(#arg_name));
-            }
-        });
-    }
-
-    stmts
-}
-
-fn gen_input_conversion_stmts(
-    fn_descriptor: &FnDescriptor,
-    handle_id_specs: &[HandleIdSpec],
-) -> TokenStream {
-    let self_ty = fn_descriptor.self_ty.as_ref();
-
-    let mut stmts = quote! {};
-    if let Some(arg) = &fn_descriptor.receiver {
-        let arg_name = arg.name();
-
-        if arg.is_handle() {
-            let processed = process_handle_type(arg_name, arg.src_type())
-                .expect("handle conversion should always be defined");
-            stmts.extend(quote! {let #arg_name = self;});
-            stmts.extend(quote!(let #arg_name = #processed;));
-        } else if matches!(
-            arg.src_type(),
-            Type::Path(syn::TypePath { qself: None, path }) if path.is_ident("Self")
-        ) {
-            let store_name = gen_store_name(arg_name);
-            if arg.ownership_mode() == OwnershipMode::Borrow {
-                let borrow_store_name = gen_borrow_store_name(arg_name);
-                stmts.extend(quote! {
-                    let #arg_name = self;
-                    let mut #borrow_store_name = Default::default();
-                    let #arg_name = co3::borrow::Borrow::borrow(#arg_name, &mut #borrow_store_name);
-                    let mut #store_name = Default::default();
-                    let #arg_name = co3::Encode::encode(#arg_name, &mut #store_name);
-                });
-            } else {
-                stmts.extend(quote! {
-                    let #arg_name = self;
-                    let mut #store_name = Default::default();
-                    let #arg_name = co3::Encode::encode(#arg_name, &mut #store_name);
-                });
-            }
-        } else if let Some(processed) = process_self_type(arg_name, arg.src_type(), self_ty) {
-            stmts.extend(quote! {let #arg_name = self;});
-            stmts.extend(quote!(let #arg_name = #processed;));
-        } else {
-            stmts.extend(quote! {let #arg_name = co3::external::External::as_ptr(self);});
-        }
-    }
-    for arg in &fn_descriptor.input_args {
-        if is_handle_id_arg(arg.name(), handle_id_specs) {
-            continue;
-        }
-        stmts.extend(gen_input_arg_src_to_ffi(arg, self_ty));
-    }
-    if let Some(arg) = &fn_descriptor.output_arg {
-        let name = &arg.name();
-
-        if !arg.src_type_is_empty_tuple() {
-            stmts.extend(quote! {
-                let mut #name = core::mem::MaybeUninit::uninit();
-            });
-        }
-    }
-
-    stmts
-}
-
-fn process_self_type(
-    arg_name: &Ident,
-    ty: &Type,
-    self_ty: Option<&syn::Path>,
-) -> Option<TokenStream> {
-    if is_self_ty(ty, self_ty) {
-        return Some(quote! { core::mem::ManuallyDrop::new(#arg_name).0.as_ptr() });
-    }
-
-    match ty {
-        Type::Path(path_ty) => {
-            let last_seg = path_ty.path.segments.last().unwrap();
-
-            if last_seg.ident == "Box"
-                && let syn::PathArguments::AngleBracketed(bracketed) = &last_seg.arguments
-                && bracketed.args.len() == 1
-                && let syn::GenericArgument::Type(boxed) = &bracketed.args[0]
-                && let Some(processed) = process_self_type(arg_name, boxed, self_ty)
-            {
-                return Some(quote! {{
-                    let #arg_name = *#arg_name;
-                    #processed
-                }});
-            }
-
-            None
-        }
-        Type::Reference(ref_ty) => {
-            if !is_self_ty(&ref_ty.elem, self_ty) {
-                return process_self_type(arg_name, &ref_ty.elem, self_ty);
-            };
-
-            if ref_ty.mutability.is_none() {
-                Some(quote! { co3::external::External::as_ptr(#arg_name) })
-            } else {
-                Some(quote! { co3::external::External::as_mut_ptr(#arg_name) })
-            }
-        }
-        _ => None,
-    }
-}
-
-fn process_handle_type(arg_name: &Ident, ty: &Type) -> Option<TokenStream> {
-    match ty {
-        Type::Reference(ref_ty) => {
-            if ref_ty.mutability.is_some() {
-                Some(quote! { co3::external::External::as_mut_ptr(#arg_name) })
-            } else {
-                Some(quote! { co3::external::External::as_ptr(#arg_name) })
-            }
-        }
-        Type::Path(path_ty) => {
-            let last_seg = path_ty.path.segments.last()?;
-            if last_seg.ident == "ExternRefMut" {
-                return Some(quote! { co3::external::External::as_mut_ptr(#arg_name) });
-            }
-            if last_seg.ident == "ExternRef" {
-                return Some(
-                    quote! { co3::external::External::as_ptr(#arg_name) as *mut co3::external::Extern },
-                );
-            }
-            Some(quote! { core::mem::ManuallyDrop::new(#arg_name).0.as_ptr() })
-        }
-        _ => Some(quote! { core::mem::ManuallyDrop::new(#arg_name).0.as_ptr() }),
-    }
-}
-
-pub fn is_self_ty(ty: &Type, self_ty: Option<&syn::Path>) -> bool {
-    if let Type::Path(syn::TypePath { qself: None, path }) = ty {
-        return path.is_ident("Self") || self_ty.is_some_and(|self_ty| self_ty == path);
-    }
-
-    false
-}
-
-fn gen_input_arg_src_to_ffi(arg: &Arg, self_ty: Option<&syn::Path>) -> TokenStream {
-    let arg_name = arg.name();
-
-    let resolve_impl_trait = gen_resolve_type(arg);
-    if arg.is_handle() {
-        let processed = if arg.ownership_mode() == OwnershipMode::Borrow {
-            match arg.src_type() {
-                Type::Reference(_) => process_handle_type(arg.name(), arg.src_type())
-                    .expect("handle conversion should always be defined"),
-                _ => quote! { co3::external::External::as_ptr(#arg_name) },
-            }
-        } else {
-            process_handle_type(arg.name(), arg.src_type())
-                .expect("handle conversion should always be defined")
-        };
-        return quote! {
-            #resolve_impl_trait
-            let #arg_name = #processed;
-        };
-    }
-
-    let store_name = gen_store_name(arg_name);
-    let _ = self_ty;
-
-    if arg.ownership_mode() == OwnershipMode::Borrow {
-        let borrow_store_name = gen_borrow_store_name(arg_name);
-        if matches!(arg.src_type(), Type::Reference(_)) {
-            let owned_name = Ident::new(&format!("{arg_name}_owned"), arg_name.span());
-            return quote! {
-                #resolve_impl_trait
-                let #owned_name = core::clone::Clone::clone(#arg_name);
-                let mut #borrow_store_name = Default::default();
-                let #arg_name = co3::borrow::Borrow::borrow(#owned_name, &mut #borrow_store_name);
-                let mut #store_name = Default::default();
-                let #arg_name = co3::Encode::encode(#arg_name, &mut #store_name);
-            };
-        }
-        return quote! {
-            #resolve_impl_trait
-            let mut #borrow_store_name = Default::default();
-            let #arg_name = co3::borrow::Borrow::borrow(#arg_name, &mut #borrow_store_name);
-            let mut #store_name = Default::default();
-            let #arg_name = co3::Encode::encode(#arg_name, &mut #store_name);
-        };
-    }
-
-    quote! {
-        #resolve_impl_trait
-        let mut #store_name = Default::default();
-        let #arg_name = co3::Encode::encode(#arg_name, &mut #store_name);
-    }
-}
-
-fn gen_borrow_store_name(name: &Ident) -> Ident {
-    Ident::new(&format!("{name}_borrow_store"), name.span())
-}
-
-fn injected_handle_id_expr(
-    _fn_descriptor: &FnDescriptor,
-    spec: &HandleIdSpec,
-) -> Option<TokenStream> {
-    let selector = &spec.selector;
-    Some(quote! {
-        <#selector as co3::handle::Handle>::ID
-    })
-}
-
-fn inject_handle_id_args(
-    fn_descriptor: &FnDescriptor,
-    handle_id_specs: &[HandleIdSpec],
-    args: &mut Vec<TokenStream>,
-) {
-    let mut inserts: Vec<(usize, usize, TokenStream)> = handle_id_specs
-        .iter()
-        .enumerate()
-        .filter_map(|(order, spec)| {
-            injected_handle_id_expr(fn_descriptor, spec).map(|expr| (spec.at, order, expr))
-        })
-        .collect();
-    inserts.sort_by(|(a_at, a_order, _), (b_at, b_order, _)| {
-        a_at.cmp(b_at).then(a_order.cmp(b_order))
-    });
-
-    if inserts.is_empty() {
-        return;
-    }
-
-    let real_args = core::mem::take(args);
-    let final_len = real_args.len() + inserts.len();
-    let mut slots: Vec<Option<TokenStream>> = vec![None; final_len];
-
-    for (at, _order, expr) in inserts {
-        let desired = core::cmp::min(at, final_len.saturating_sub(1));
-        let mut pos = desired;
-        while pos < final_len && slots[pos].is_some() {
-            pos += 1;
-        }
-        if pos == final_len {
-            pos = 0;
-            while pos < desired && slots[pos].is_some() {
-                pos += 1;
-            }
-        }
-        if pos < final_len {
-            slots[pos] = Some(expr);
-        }
-    }
-
-    let mut real_iter = real_args.into_iter();
-    for slot in &mut slots {
-        if slot.is_none() {
-            *slot = real_iter.next();
-        }
-    }
-    *args = slots.into_iter().flatten().collect();
-}
-
-fn gen_ffi_fn_call_stmt(
-    fn_descriptor: &FnDescriptor,
-    ffi_fn_name: &Ident,
-    handle_id_specs: &[HandleIdSpec],
-) -> TokenStream {
-    let mut arg_names: Vec<TokenStream> = Vec::new();
-    if let Some(arg) = &fn_descriptor.receiver {
-        let arg_name = &arg.name();
-
-        arg_names.push(quote!(#arg_name));
-    }
-    for arg in &fn_descriptor.input_args {
-        if is_handle_id_arg(arg.name(), handle_id_specs) {
-            continue;
-        }
-        let arg_name = &arg.name();
-
-        arg_names.push(quote!(#arg_name));
-    }
-
-    inject_handle_id_args(fn_descriptor, handle_id_specs, &mut arg_names);
-
-    if let Some(arg) = &fn_descriptor.output_arg {
-        let arg_name = &arg.name();
-
-        if !arg.src_type_is_empty_tuple() {
-            arg_names.push(quote!(#arg_name.as_mut_ptr()));
-        }
-    }
-
-    let execution_fail_arm = fn_descriptor.output_arg.as_ref().map_or_else(
-        || quote! {},
-        |output| {
-            if unwrap_result_type(output.src_type()).is_some() {
-                quote! {
-                    co3::FfiReturn::ExecutionFail => {
-                        // TODO: Implement error handling (https://github.com/hyperledger/iroha/issues/2252)
-                        //return Err(Default::default());
-                        unimplemented!("Error handling is not properly implemented yet");
-                    }
-                }
-            } else {
-                quote! {}
-            }
-        },
-    );
-
-    quote! {
-        let __ffi_return = #ffi_fn_name(#(#arg_names),*);
-
-        match __ffi_return {
+        match __co3_return {
             co3::FfiReturn::Ok => {},
             #execution_fail_arm
-            _ => panic!(concat!(stringify!(#ffi_fn_name), " returned {}"), __ffi_return)
+            _ => panic!(concat!(stringify!(#fn_name), " returned {}"), __co3_return)
         }
     }
 }
 
-fn gen_return_stmt(fn_descriptor: &FnDescriptor) -> TokenStream {
-    fn_descriptor.output_arg.as_ref().map_or_else(|| quote! {}, |output| {
-        if output.src_type_is_empty_tuple() {
-            return quote! {Ok(())};
+fn strip_internal_generic_attrs(generics: &mut syn::Generics) {
+    for param in &mut generics.params {
+        if let syn::GenericParam::Type(param) = param {
+            param.attrs.retain(|attr| !is_type_erased(attr));
         }
-
-        let arg_name= output.name();
-
-        let return_stmt = unwrap_result_type(output.src_type())
-            .map_or_else(|| quote! {#arg_name}, |_| quote! { Ok(#arg_name) });
-
-        quote! {
-            let #arg_name = #arg_name.assume_init();
-            let #arg_name = co3::out_ptr::OutPtrRead::try_read_out(#arg_name).expect("Invalid out-pointer value returned");
-            #return_stmt
-        }
-    })
+    }
 }

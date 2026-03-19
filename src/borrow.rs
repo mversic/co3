@@ -97,12 +97,10 @@ disjoint_impls! {
     //     fn borrow<'itm>(source: Self::Source<'itm>) -> Self::Borrowed<'itm>;
     // }
     //
+    // TODO: Should I join Borrow and ToOwned?
     // FIXME: Rename to PartialBorrow? also rename generated names in no_repr.rs
     pub trait Borrow: Sized {
-        type Borrowed<'itm>
-        where
-            Self: 'itm;
-
+        type Borrowed<'itm> where Self: 'itm;
         type Store: Default;
 
         /// Target type

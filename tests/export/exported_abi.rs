@@ -29,7 +29,18 @@ pub enum Ambiguous {
     None,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub(crate) struct OpaqueStruct<T>(T);
+
+#[derive(Debug, Clone, Copy, PartialEq, ReprC)]
+#[repr(transparent)]
+pub enum NonOpaqueStruct<T> {
+    A(T),
+}
+
 export_C! {
+    type OpaqueStruct<T>;
+
     #[unsafe(no_mangle)]
     unsafe fn ambiguous1() -> Ambiguous;
 
@@ -79,16 +90,6 @@ export_! {
     }
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, ReprC)]
-#[reprC(opaque)]
-pub(crate) struct OpaqueStruct<T>(T);
-
-#[derive(Debug, Clone, Copy, PartialEq, ReprC)]
-#[repr(transparent)]
-pub enum NonOpaqueStruct<T> {
-    A(T),
-}
-
 #[export("C")]
 impl AmbiguousX<u64, 3> for OpaqueStruct<u64> {
     type U = u8;
@@ -116,14 +117,6 @@ impl AmbiguousY for OpaqueStruct<u64> {
     }
 }
 
-#[export("C")]
-impl AmbiguousY for OpaqueStruct<u32> {
-    #[export(skip)]
-    extern "C" fn ambiguous() -> Ambiguous {
-        Ambiguous::AmbiguousY
-    }
-}
-
 impl CustomExports for OpaqueStruct<u8> {
     fn xor(&self, by: u8) -> Self {
         OpaqueStruct(self.0 ^ by)
@@ -142,11 +135,6 @@ impl OpaqueStruct<u64> {
 impl OpaqueStruct<u32> {
     pub fn ambiguous() -> Ambiguous {
         Ambiguous::Inherent
-    }
-
-    #[export(skip)]
-    fn re_exported() -> Self {
-        OpaqueStruct(42)
     }
 }
 

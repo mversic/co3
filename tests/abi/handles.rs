@@ -11,69 +11,60 @@ co3::handles! {
 }
 
 extern_C! {
+    #![link(crate = "abi")]
+
     type Opaque<T, U>;
 
     #[dispatch]
     impl<T, U> Drop for Opaque<T, U> {
-        fn drop(self_id: Self::Id, &mut self);
+        #[link_name = "drop"]
+        fn drop(self_id: Self::ID, &mut self);
     }
 
     #[dispatch(
-        Self = [
-            Opaque<bool, u8>,
-            Opaque<u8, bool>,
-        ]
+        <bool, u8>,
+        <u8, bool>,
     )]
-    impl<T> Clone for T {
-        #[link_name = "abi_Clone_clone"]
-        fn clone(self_id: Self::Id, &self) -> Self;
+    impl<T, U> Clone for Opaque<T, U> {
+        fn clone(self_id: Self::ID, &self) -> Self;
     }
 
     #[dispatch(
-        Self = [
-            Opaque<bool, u8>,
-            Opaque<u8, bool>
-        ]
+        <u8, bool>,
+        <bool, u8>,
     )]
-    impl<T> Default for T {
+    impl<T, U> Default for Opaque<T, U> {
         #[link_name = "default"]
-        fn default(self_id: Self::Id) -> Self;
+        fn default(self_id: Self::ID) -> Self;
     }
 
     #[dispatch(
-        T = [
-            Opaque<bool, u8>,
-            Opaque<u8, bool>
-        ],
+        <bool, u8>,
+        <u8, bool>,
     )]
-    impl<T> PartialEq for T {
-        #[link_name = "abi_Eq_eq"]
-        fn eq(self_id: Self::Id, &self, other: &Self) -> bool;
+    impl<T, U> PartialEq for Opaque<T, U> {
+        fn eq(self_id: Self::ID, &self, other: &Self) -> bool;
     }
 
     #[dispatch(
-        T = [Opaque<bool, u8>],
-        U = [Opaque<u8, bool>]
+        <bool, u8>,
+        <u8, bool>,
     )]
-    impl<T, U> PartialEq<U> for T {
+    impl<T, U> PartialEq<U> for Opaque<T, U> {
         #[link_name = "abi_Eq_eq_2"]
-        fn eq(&self, self_id: Self::Id, other: &U) -> bool;
+        fn eq(&self, self_id: Self::ID, other_id: U::ID, other: &U) -> bool;
     }
 
-    #[dispatch(
-        Self = [Opaque<bool, u8>]
-    )]
-    impl<T> Custom for T {
+    #[dispatch]
+    impl Custom for Opaque<bool, u8> {
         #[link_name = "custom_inc_as_ref"]
-        fn inc(self_id: Self::Id, self, by: Vec<u32>) -> Self;
+        fn inc(self_id: Self::ID, self, by: Vec<u32>) -> Self;
     }
 
-    #[dispatch(
-        Self = [Opaque<u8, bool>]
-    )]
-    impl<T> Custom for T {
+    #[dispatch]
+    impl Custom for Opaque<u8, bool> {
         #[link_name = "custom_inc_move"]
-        fn inc(self_id: Self::Id, self, move by: Vec<u32>) -> Self;
+        fn inc(self_id: Self::ID, self, move by: Vec<u32>) -> Self;
     }
 }
 
@@ -90,8 +81,7 @@ mod provider {
         Opaque<u8, bool>,
     }
 
-    #[derive(Debug, Default, Clone, PartialEq, Eq, ReprC)]
-    #[reprC(opaque)]
+    #[derive(Debug, Default, Clone, PartialEq, Eq)]
     pub struct Opaque<T, U> {
         id: u8,
         _marker: PhantomData<(T, U)>,
@@ -117,83 +107,75 @@ mod provider {
     }
 
     export_C! {
+        pub type Opaque<T, U>;
+
         #[dispatch(
-            Self = [
-                Opaque<bool, u8>,
-                Opaque<u8, bool>,
-            ]
+            <bool, u8>,
+            <u8, bool>,
         )]
-        #[unsafe(export_name = "drop")]
-        trait Drop {
-            fn drop(self_id: Self::Id, &mut self) {
+        impl<T, U> Drop for Opaque<T, U> {
+            #[unsafe(export_name = "drop")]
+            fn drop(self_id: Self::ID, &mut self) {
                 // FIXME: This is quite incorrect I think?
                 let _ = self_id;
             }
         }
 
         #[dispatch(
-            Self = [
-                Opaque<bool, u8>,
-                Opaque<u8, bool>,
-            ],
+            <Opaque<bool, u8>>,
+            <Opaque<u8, bool>>,
         )]
-        trait Clone {
-            #[unsafe(export_name = "abi_Clone_clone")]
-            fn clone(self_id: Self::Id, &self) -> Self {
+        impl<T> Clone for T {
+            fn clone(self_id: Self::ID, &self) -> Self {
                 self::<self_id>.clone()
             }
         }
 
         #[dispatch(
-            Self = [
-                Opaque<bool, u8>,
-                Opaque<u8, bool>,
-            ]
+            <bool, u8>,
+            <u8, bool>,
         )]
-        trait Default {
+        impl<T, U> Default for Opaque<T, U> {
             #[unsafe(export_name = "default")]
-            fn default(self_id: Self::Id) -> Self {
+            fn default(self_id: Self::ID) -> Self {
                 <Self::<self_id> as Default>::default()
             }
         }
 
         #[dispatch(
-            Self = [Opaque<bool, u8>]
+            <Opaque<bool, u8>>,
         )]
-        trait PartialEq {
-            #[unsafe(export_name = "abi_Eq_eq")]
-            fn eq(self_id: Self::Id, &self, other: &Self) -> bool {
+        impl<T> PartialEq for T {
+            fn eq(self_id: Self::ID, &self, other: &Self) -> bool {
                 self::<self_id>.eq(other::<self_id>)
             }
         }
 
         #[dispatch(
-            Self = [Opaque<bool, u8>],
-            TU = [Opaque<u8, bool>],
+            <Opaque<bool, u8>,
+            Opaque<u8, bool>>,
         )]
-        trait PartialEq<TU> {
+        impl<T, TU> PartialEq<TU> for T {
             #[unsafe(export_name = "abi_Eq_eq_2")]
-            fn eq(&self, self_id: Self::Id, other_id: Self::Id, other: &TU) -> bool {
+            fn eq(&self, self_id: Self::ID, other_id: TU::ID, other: &TU) -> bool {
                 self::<self_id>.eq(other::<other_id>)
             }
         }
 
-        #[dispatch(
-            Self = [Opaque<bool, u8>]
-        )]
-        trait Custom {
+        #[dispatch]
+        impl Custom for Opaque<bool, u8> {
             #[unsafe(export_name = "custom_inc_as_ref")]
-            fn inc(self_id: Self::Id, self, by: Vec<u32>) -> Self {
+            fn inc(self_id: Self::ID, self, by: Vec<u32>) -> Self {
                 self::<self_id>.inc(by)
             }
         }
 
         #[dispatch(
-            Self = [Opaque<u8, bool>]
+            <Opaque<u8, bool>>,
         )]
-        trait Custom {
+        impl<T> Custom for T {
             #[unsafe(export_name = "custom_inc_move")]
-            fn inc(self_id: Self::Id, self, move by: Vec<u32>) -> Self {
+            fn inc(self_id: Self::ID, self, move by: Vec<u32>) -> Self {
                 self::<self_id>.inc(by)
             }
         }

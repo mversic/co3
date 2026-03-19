@@ -170,7 +170,7 @@ disjoint_impls! {
         type Kind = Transmuted;
     }
     #[cfg(feature = "alloc")]
-    impl<'a, R: ReprFamily<Kind = Opaque> + SizeFamily<Kind = UnSized> + ?Sized> ReprFamily for Box<R> {
+    impl<R: ReprFamily<Kind = Opaque> + SizeFamily<Kind = UnSized> + ?Sized> ReprFamily for Box<R> {
         type Kind = Box<Opaque>;
     }
     #[cfg(feature = "alloc")]
@@ -182,11 +182,11 @@ disjoint_impls! {
         type Kind = Box<Transmuted>;
     }
     #[cfg(feature = "alloc")]
-    impl<'a, R: ReprFamily<Kind: Cloned> + SizeFamily<Kind = Sized_>> ReprFamily for Box<R> {
+    impl<R: ReprFamily<Kind: Cloned> + SizeFamily<Kind = Sized_>> ReprFamily for Box<R> {
         type Kind = Box<<R as ReprFamily>::Kind>;
     }
     #[cfg(feature = "alloc")]
-    impl<'a, R: ReprFamily<Kind: Cloned> + SizeFamily<Kind = UnSized> + ?Sized> ReprFamily for Box<R> {
+    impl<R: ReprFamily<Kind: Cloned> + SizeFamily<Kind = UnSized> + ?Sized> ReprFamily for Box<R> {
         type Kind = Box<<R as ReprFamily>::Kind>;
     }
 
@@ -212,7 +212,6 @@ disjoint_impls! {
     impl<R: ReprFamily<Kind = Robust>, const N: usize> ReprFamily for [R; N] {
         type Kind = Robust;
     }
-    // FIXME: Shouldn't this somehow be made Cloned?
     impl<R: ReprFamily<Kind = Opaque>, const N: usize> ReprFamily for [R; N] {
         type Kind = [Opaque; N];
     }
@@ -321,4 +320,134 @@ impl_fn_types! {
     (A, B, C, D, E, F, G, H, I, J),
     (A, B, C, D, E, F, G, H, I, J, K),
     (A, B, C, D, E, F, G, H, I, J, K, L),
+}
+
+#[cfg(test)]
+mod tests {
+    use static_assertions::assert_impl_all;
+
+    use super::*;
+    use crate::{
+        Decode, Encode, ExternC,
+        niche::{Niche, WithStableNiche},
+    };
+    #[cfg(feature = "alloc")]
+    use crate::{
+        boxed::{CBox, CBoxedSlice},
+        vec::CVec,
+    };
+
+    #[test]
+    fn opaque_collections_are_cloned() {
+        #[derive(Clone, PartialEq, Eq)]
+        struct OpaqueData {
+            value: i32,
+        }
+
+        impl SizeFamily for OpaqueData {
+            type Kind = Sized_;
+        }
+        impl ReprFamily for OpaqueData {
+            type Kind = Opaque;
+        }
+        impl NicheFamily for OpaqueData {
+            type Kind = WithCustomNiche;
+        }
+        #[cfg(feature = "alloc")]
+        impl Niche for OpaqueData {
+            const NICHE_VALUE: Self::CType = CBox::none();
+        }
+
+        #[cfg(feature = "alloc")]
+        assert_impl_all!(OpaqueData:
+            ReprFamily<Kind = Opaque>,
+            NicheFamily<Kind = WithCustomNiche>,
+            Niche<CType = CBox<OpaqueData>>,
+            Decode<'static>,
+            Encode,
+        );
+
+        assert_impl_all!(&OpaqueData:
+            ReprFamily<Kind = Transmuted>,
+            NicheFamily<Kind = WithStableNiche>,
+            Niche<CType = *const OpaqueData>,
+            Decode<'static>,
+            Encode,
+        );
+
+        assert_impl_all!(&mut OpaqueData:
+            ReprFamily<Kind = Transmuted>,
+            NicheFamily<Kind = WithStableNiche>,
+            Niche<CType = *mut OpaqueData>,
+            Decode<'static>,
+            Encode,
+        );
+
+        // FIXME:
+        //#[cfg(feature = "alloc")]
+        //assert_impl_all!(Box<OpaqueData>:
+        //    ReprFamily<Kind = Transmuted>,
+        //    NicheFamily<Kind = WithStableNiche>,
+        //    Niche<CType = CBox<OpaqueData>>,
+        //    Decode<'static>,
+        //    Encode,
+        //);
+
+        //#[cfg(feature = "alloc")]
+        //assert_impl_all!(&[OpaqueData]:
+        //    ReprFamily<Kind = &'static [Opaque]>,
+        //    NicheFamily<Kind = WithCustomNiche>,
+        //    Niche<CType = CSlice<CBox<OpaqueData>>>,
+        //    Decode<'static>,
+        //    Encode,
+        //);
+
+        //#[cfg(feature = "alloc")]
+        //assert_impl_all!(&mut [OpaqueData]:
+        //    ReprFamily<Kind = &'static mut [Opaque]>,
+        //    NicheFamily<Kind = WithCustomNiche>,
+        //    Niche<CType = CSliceMut<CBox<OpaqueData>>>,
+        //    Decode<'static>,
+        //    Encode,
+        //);
+
+        #[cfg(feature = "alloc")]
+        assert_impl_all!(Box<[OpaqueData]>:
+            ReprFamily<Kind = Box<[Opaque]>>,
+            NicheFamily<Kind = WithCustomNiche>,
+            Niche<CType = CBoxedSlice<CBox<OpaqueData>>>,
+            // FIXME:
+            //Decode<'static>,
+            Encode,
+        );
+
+        #[cfg(feature = "alloc")]
+        assert_impl_all!(Vec<OpaqueData>:
+            ReprFamily<Kind = Vec<Box<Opaque>>>,
+            NicheFamily<Kind = WithCustomNiche>,
+            Niche<CType = CVec<CBox<OpaqueData>>>,
+            // FIXME:
+            //Decode<'static>,
+            Encode,
+        );
+
+        #[cfg(feature = "alloc")]
+        assert_impl_all!([OpaqueData; 2]:
+            ReprFamily<Kind = [Opaque; 2]>,
+            NicheFamily<Kind = WithCustomNiche>,
+            Niche<CType = [CBox<OpaqueData>; 2]>,
+            Decode<'static>,
+            Encode,
+        );
+
+        #[cfg(feature = "alloc")]
+        assert_impl_all!(Option<OpaqueData>:
+            ReprFamily<Kind = Option<WithCustomNiche>>,
+            // FIXME:
+            //NicheFamily<Kind = WithoutNiche>,
+            ExternC<CType = CBox<OpaqueData>>,
+            Decode<'static>,
+            Encode,
+        );
+    }
 }

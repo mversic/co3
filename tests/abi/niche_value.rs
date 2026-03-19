@@ -1,10 +1,9 @@
 use core::cmp::Ordering;
 
-use co3::{Encode, ReprC, export_C, extern_C};
+use co3::{Encode, ReprC, export, export_C, extern_C};
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, ReprC)]
-#[reprC(opaque)]
-#[allow(unused)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[export("C")]
 pub enum Opaque {
     A,
 }
@@ -19,6 +18,7 @@ extern_C! {
     pub type Extern;
 
     impl Drop for Extern {
+        #[link_name = "abi_Drop_Opaque_drop"]
         fn drop(&mut self);
     }
 }

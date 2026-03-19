@@ -38,8 +38,8 @@ use crate::{
         decode_cloned_array, decode_cloned_option_with_custom_niche,
         decode_cloned_option_without_niche,
     },
-    ir::{Cloned, NonRobust, Opaque, ReprFamily, Robust, SizeFamily, Sized_, Transmuted, UnSized},
-    niche::{Niche, NicheFamily, WithCustomNiche, WithoutNiche},
+    ir::{Cloned, Opaque, ReprFamily, Robust, SizeFamily, Sized_, Transmuted, UnSized},
+    niche::{Niche, WithCustomNiche, WithoutNiche},
     option::COption,
     slice::{CSlice, CSliceMut},
     transmute::{
@@ -344,7 +344,6 @@ disjoint_impls! {
         ///
         /// Use cases include:
         /// - Keeping the result of the conversion of references of [`Cloned`] types
-        /// - Keeping the reference alive while converting heap-allocated types
         /// - Storing mutable references that need to be updated in [`Store::sync`]
         ///
         /// Conceptually, serves a role similar to the "context" captured by a closure.
@@ -814,7 +813,6 @@ disjoint_impls! {
         ///
         /// Use cases include:
         /// - Storing the result of the conversion of references of [`Cloned`] types
-        /// - Keeping the reference alive while converting heap-allocated types
         /// - Storing mutable references that need to be updated in [`Store::sync`]
         ///
         /// Conceptually, serves a role similar to the "context" captured by a closure.
@@ -1504,49 +1502,6 @@ impl<'a, 'b, R: Encode + Decode<'b> + 'b> Store for MutSliceStore<'a, R> {
     }
 }
 
-#[cfg(all(
-    feature = "alloc",
-    feature = "unstable-refs",
-    not(feature = "unsafe-optimizations")
-))]
-pub struct SliceMutTransmuteStore<'a, R: CheckedTransmute<Target: Sized>> {
-    target: Option<Box<[R::Target]>>,
-    original: Option<&'a mut [R]>,
-}
-
-#[cfg(all(
-    feature = "alloc",
-    feature = "unstable-refs",
-    not(feature = "unsafe-optimizations")
-))]
-impl<'a, R: CheckedTransmute<Target: Sized>> Default for SliceMutTransmuteStore<'a, R> {
-    fn default() -> Self {
-        Self {
-            target: None,
-            original: None,
-        }
-    }
-}
-
-#[cfg(all(
-    feature = "alloc",
-    feature = "unstable-refs",
-    not(feature = "unsafe-optimizations")
-))]
-impl<'a, R: CheckedTransmute<Target: Sized>> Store for SliceMutTransmuteStore<'a, R> {
-    fn sync(self) -> Option<()> {
-        if let (Some(borrows), Some(target)) = (self.original, self.target) {
-            let target = crate::transmute::transmute_from_target_boxed_dst(target)?;
-
-            for (original, t) in borrows.iter_mut().zip(target) {
-                *original = t;
-            }
-        }
-
-        Some(())
-    }
-}
-
 pub struct ArraySyncStore<D, const N: usize>([D; N]);
 impl<D: Default, const N: usize> Default for ArraySyncStore<D, N> {
     fn default() -> Self {
@@ -1667,7 +1622,11 @@ impl<R> Store for OpaqueMutSliceDecodeStore<R> {
 /// # Example
 ///
 /// ```
-/// use co3::reprC;
+/// use co3::{
+///     borrow::{DropFamily, NeedsDrop, NoDrop},
+///     ir::{SizeFamily, UnSized, Sized_},
+///     reprC
+/// };
 ///
 /// #[repr(C)]
 /// #[derive(Clone, Copy)]
@@ -1698,7 +1657,7 @@ impl<R> Store for OpaqueMutSliceDecodeStore<R> {
 ///     }
 /// }
 ///
-/// // If no validation function or niche value is given,
+/// // If validation fn or niche value is given,
 /// // wrapper type delegates to the inner type
 /// co3::reprC! {
 ///     unsafe impl Transmuted for Wrapper {
@@ -1710,6 +1669,32 @@ impl<R> Store for OpaqueMutSliceDecodeStore<R> {
 ///     // To use this type one still has to implement
 ///     // a suite of additional conversion traits
 ///     impl(T: ?Sized) Cloned for NoRepr<T> {}
+/// }
+///
+///
+/// // Some extra glue that is required:
+///
+/// impl<T> Drop for MyPtr<T> {
+///     fn drop(&mut self) {
+///         unimplemented!("Do a cleanup")
+///     }
+/// }
+///
+/// impl SizeFamily for RobustStruct {
+///     type Kind = Sized_;
+/// }
+/// impl<T: ?Sized> SizeFamily for NoRepr<T> {
+///     type Kind = UnSized;
+/// }
+///
+/// impl<T> DropFamily for MyPtr<T> {
+///     type Kind = NeedsDrop;
+/// }
+/// impl DropFamily for Wrapper {
+///     type Kind = NoDrop;
+/// }
+/// impl<T: ?Sized> DropFamily for NoRepr<T> {
+///     type Kind = NoDrop;
 /// }
 /// ```
 #[macro_export]
@@ -1745,7 +1730,7 @@ macro_rules! reprC {
 
         unsafe impl<$($impl_generics)*> $crate::ReprC for $self_ty where
             $($sized_bound)*
-            $($preds)*
+            $($($preds)*)?
         {}
 
         $crate::reprC! { @no_drop_borrow_ir [$($sized_bound)*] [$($impl_generics)*] $self_ty $([$($preds)*])? }
@@ -1779,7 +1764,7 @@ macro_rules! reprC {
         }
 
         $crate::reprC! {
-            @transmuted_delegate_niche_valid [for<'_dummy>] [Self: Sized,] [] $self_ty $([$($preds)*])? {
+            @transmuted_delegate_niche_valid [for<'_dummy>] [for<'_dummy> Self: Sized,] [] $self_ty $([$($preds)*])? {
                 type Target = $target;
             }
         }
@@ -1839,7 +1824,7 @@ macro_rules! reprC {
         }
 
         $crate::reprC! {
-            @transmuted_delegate_niche_sized [for<'_dummy>] [Self: Sized,] [] $self_ty $([$($preds)*])? {
+            @transmuted_delegate_niche_sized [] [for<'_dummy> Self: Sized,] [] $self_ty $([$($preds)*])? {
                 type Target = $target;
                 fn is_valid($target_var: $target_ty) -> bool $block
             }
@@ -2012,7 +1997,7 @@ macro_rules! reprC {
         fn is_valid($target_var:ident: $target_ty:ty) -> bool $block:block
     }) => {
         $crate::reprC! {
-            @transmuted_delegate_niche [$($for_dummy)*] [$($for_dummy)* $($sized_bound)*] [$($impl_generics)*] $self_ty $([$($preds)*])? {
+            @transmuted_delegate_niche [$($for_dummy)*] [$($sized_bound)*] [$($impl_generics)*] $self_ty $([$($preds)*])? {
                 type Target = $target;
                 fn is_valid($target_var: $target_ty) -> bool $block
             }
@@ -2269,7 +2254,7 @@ mod tests {
     use static_assertions::assert_impl_all;
 
     use super::*;
-    use crate::niche::{Niche, StableNiche, WithStableNiche};
+    use crate::niche::{Niche, NicheFamily, StableNiche, WithStableNiche};
 
     #[test]
     fn robust_u8() {

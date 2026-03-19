@@ -91,16 +91,10 @@ impl Parse for SpannedReprToken {
                     (span, ReprToken::Alignment(ReprAlignment::Packed)),
                     after_token,
                 )),
-                "aligned" => {
-                    let Some((inside_of_group, group_span, after_group)) =
-                        after_token.group(Delimiter::Parenthesis)
-                    else {
-                        return Ok((
-                            (span, ReprToken::Alignment(ReprAlignment::Aligned(1))),
-                            after_token,
-                        ));
-                    };
-
+                "aligned"
+                    if let Some((inside_of_group, group_span, after_group)) =
+                        after_token.group(Delimiter::Parenthesis) =>
+                {
                     span = span.join(group_span.span()).unwrap_or(span);
                     let alignment = syn::parse2::<syn::LitInt>(inside_of_group.token_stream())
                         .and_then(|lit| lit.base10_parse::<u32>())
@@ -114,6 +108,10 @@ impl Parse for SpannedReprToken {
                         after_group,
                     ))
                 }
+                "aligned" => Ok((
+                    (span, ReprToken::Alignment(ReprAlignment::Aligned(1))),
+                    after_token,
+                )),
                 _ => Err(cursor.error("Unrecognized repr kind")),
             }
         })?;

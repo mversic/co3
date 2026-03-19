@@ -1,23 +1,76 @@
-error: Type and const generics on impl blocks are not supported
-  --> tests/ui_fail/generics_are_forbidden.rs:18:5
+error: Type and const generics on impls are not supported. Use `#[dispatch]`
+  --> tests/ui_fail/generics_are_forbidden.rs:30:5
    |
-18 | impl<T> GenericHandle<'static, T, 12> {
+30 | impl<T> GenericHandle<'static, T, 12> {
    |     ^^^
 
-error: Type and const generics on impl blocks are not supported
-  --> tests/ui_fail/generics_are_forbidden.rs:23:5
+error: Type and const generics on impls are not supported. Use `#[dispatch]`
+  --> tests/ui_fail/generics_are_forbidden.rs:35:5
    |
-23 | impl<const N: usize> GenericHandle<'static, u32, N> {
+35 | impl<const N: usize> GenericHandle<'static, u32, N> {
    |     ^^^^^^^^^^^^^^^^
 
-error: Type and const generics on functions are not supported
-  --> tests/ui_fail/generics_are_forbidden.rs:33:32
+error: Type and const generics on impls are not supported. Use `#[dispatch]`
+  --> tests/ui_fail/generics_are_forbidden.rs:45:26
    |
-33 | pub extern "C" fn freestanding2<T>(v: T) -> T {
-   |                                ^^^
+45 | pub extern "C" fn export2<T>(v: T) -> T {
+   |                          ^^^
 
-error: Type and const generics on functions are not supported
-  --> tests/ui_fail/generics_are_forbidden.rs:38:32
+error: Type and const generics on impls are not supported. Use `#[dispatch]`
+  --> tests/ui_fail/generics_are_forbidden.rs:50:26
    |
-38 | pub extern "C" fn freestanding3<const N: usize>(v: [u32; N]) -> [u32; N] {
-   |                                ^^^^^^^^^^^^^^^^
+50 | pub extern "C" fn export3<const N: usize>(v: [u32; N]) -> [u32; N] {
+   |                          ^^^^^^^^^^^^^^^^
+
+error: Type and const generics on impls are not supported. Use `#[dispatch]`
+  --> tests/ui_fail/generics_are_forbidden.rs:63:9
+   |
+63 |     impl<T> GenericHandle<'static, T, 12> {
+   |         ^^^
+
+error: Type and const generics on impls are not supported. Use `#[dispatch]`
+  --> tests/ui_fail/generics_are_forbidden.rs:66:9
+   |
+66 |     impl<const N: usize> GenericHandle<'static, u32, N> {
+   |         ^^^^^^^^^^^^^^^^
+
+error: Type and const generics on impls are not supported. Use `#[dispatch]`
+  --> tests/ui_fail/generics_are_forbidden.rs:71:30
+   |
+71 |     pub extern "C" fn extern2<T>(v: T) -> T;
+   |                              ^^^
+
+error: Type and const generics on impls are not supported. Use `#[dispatch]`
+  --> tests/ui_fail/generics_are_forbidden.rs:72:30
+   |
+72 |     pub extern "C" fn extern3<const N: usize>(v: [u32; N]) -> [u32; N];
+   |                              ^^^^^^^^^^^^^^^^
+
+error[E0623]: lifetime mismatch
+  --> tests/ui_fail/generics_are_forbidden.rs:9:1
+   |
+ 9 | / export_C! {
+10 | |     #[id(u32)]
+11 | |     pub type GenericHandle<'a, T, const N: usize>;
+...  |
+14 | |     impl<'a, U, const K: usize> Drop for GenericHandle<'a, U, K> {
+   | |                                          ----------------------- these two types are declared with different lifetimes...
+...  |
+17 | | }
+   | | ^
+   | |_|
+   |   ...but data from `self_id` flows into `__co3_self` here
+   |
+   = note: this error originates in the macro `export_C` (in Nightly builds, run with -Z macro-backtrace for more info)
+
+error[E0623]: lifetime mismatch
+  --> tests/ui_fail/generics_are_forbidden.rs:24:1
+   |
+24 | #[export("C")]
+   | ^^^^^^^^^^^^^^
+   | |
+   | ...but data from `__co3_self` flows into `__co3_self` here
+25 | impl<'a> GenericHandle<'a, u32, 12> {
+   |          -------------------------- these two types are declared with different lifetimes...
+   |
+   = note: this error originates in the attribute macro `export` (in Nightly builds, run with -Z macro-backtrace for more info)

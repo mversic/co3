@@ -9,7 +9,7 @@ pub enum NoReprEnum {
 }
 
 #[export("C")]
-pub extern "C" fn return_no_repr_struct() -> Vec<NoReprStruct> {
+pub fn return_no_repr_struct() -> Vec<NoReprStruct> {
     unimplemented!()
 }
 

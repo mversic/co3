@@ -4,7 +4,6 @@ use crate::{
     Decode, Encode, ExternC, ReprC, Store,
     borrow::DropFamily,
     cloned::DecodeCloned,
-    ir::{SizeFamily, Sized_},
     niche::{Niche, NicheFamily},
     reprC,
 };

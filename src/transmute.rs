@@ -29,7 +29,7 @@ disjoint_impls! {
         fn is_valid(target: &Self::Target) -> bool;
     }
 
-    unsafe impl<'a, R: ReprFamily<Kind = Transmuted> + CheckedTransmute<Target: Sized>> CheckedTransmute for [R] {
+    unsafe impl<R: ReprFamily<Kind = Transmuted> + CheckedTransmute<Target: Sized>> CheckedTransmute for [R] {
         type Target = [R::Target];
 
         #[inline(always)]

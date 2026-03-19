@@ -1,7 +1,49 @@
-use co3::{ReprC, export, export_, export_C};
+use co3::{export, export_, export_C};
 
 co3::handles! {
     FfiStruct,
+}
+
+trait Kita {
+    type T;
+
+    extern "C" fn kita1(self);
+}
+
+#[export("C")]
+#[derive(Clone)]
+enum FfiStruct {
+    A,
+    B,
+}
+
+export_! {}
+
+export_C! {
+    #![abi = "C"]
+}
+
+export_! {
+    #![abi = "Rust"]
+    #![abi = "C"]
+}
+
+export_C! {
+    trait Kita {
+        fn kita(self);
+    }
+}
+
+export_C! {
+    enum Kita {}
+}
+
+export_C! {
+    struct Kita {}
+}
+
+export_C! {
+    union Kita {}
 }
 
 #[export]
@@ -11,37 +53,10 @@ type NoExportType = u32;
 trait NoExportTrait {}
 
 #[export]
-enum NoExportEnum {}
-
-#[export]
 struct NoExportStruct {}
 
-trait Kita {
-    type T;
-
-    extern "system" fn kita0(self, a: &u8);
-    extern "C" fn kita1(self);
-    fn kita2(self);
-}
-
-#[derive(Clone, ReprC)]
-#[reprC(opaque)]
-enum FfiStruct {
-    A,
-    B,
-}
-
-export_! {}
-
-export_! {
-    #![abi = "Rust"]
-    #[dispatch]
-    fn kita();
-}
-
-#[export("C")]
-#[export(skip)]
-extern "C" fn kita1() {}
+#[export]
+enum NoExportEnum {}
 
 #[export]
 extern "C" fn kita3() {}
@@ -49,44 +64,8 @@ extern "C" fn kita3() {}
 #[export]
 impl FfiStruct {}
 
-export_C! {
-    trait Kita {
-        fn kita2(self);
-    }
-}
-
 #[export("C")]
-impl Kita for FfiStruct {
-    type T = u32;
-
-    #[export]
-    fn kita0(self, _a: &u8) {}
-    #[unsafe(no_mangle)]
-    #[export(skip)]
-    fn kita1(self) {}
-    #[export(skip)]
-    #[unsafe(export_name = "kita")]
-    extern "C" fn kita2(self) {}
-}
-
-#[export("C")]
-impl FfiStruct {
-    fn kita(_a: *const u32) {}
-
-    #[unsafe(no_mangle)]
-    #[export(skip)]
-    extern "C" fn kita1(self) {}
-    #[export(skip)]
-    #[unsafe(export_name = "kita")]
-    pub extern "C" fn kita2(self) {}
-}
-
-export_C! {
-    #[unknown_attribute]
-    impl Clone for FfiStruct {
-        fn clone(&self) -> Self;
-    }
-}
+struct NoExportStruct<T>(T);
 
 export_C! {
     #[unknown_attribute]
@@ -94,50 +73,61 @@ export_C! {
 }
 
 export_C! {
-    #[unsafe(no_mangle)]
+    #[some_attr]
+    type OpaqueType;
+}
+
+export_C! {
+    #[some_attr]
     impl Clone for FfiStruct {
         fn clone(&self) -> Self;
     }
 }
 
 export_C! {
-    #[unsafe(export_name = "clone")]
-    impl Clone for FfiStruct {
-        fn clone(&self) -> Self;
-    }
-}
-
-export_C! {
-    trait Kita {
-        type T;
-
-        fn kita2(self);
-    }
-}
-
-export_C! {
-    #[dispatch(
-        Self = [FfiStruct],
-        Self = [u32],
-    )]
-    trait Kita {
-        fn kita1(self);
-    }
-}
-
-// TODO: I think multiple entries can be allowed, but args can't be duplicated?
-export_C! {
-    #[dispatch(Self = [FfiStruct])]
-    #[dispatch(Self = [u32])]
-    trait Kita {
-        fn kita1(self);
+    impl Kita for u32 {
+        #[dispatch]
+        fn kita(self);
     }
 }
 
 export_C! {
     #[dispatch]
+    type OpaqueType;
+}
+
+export_C! {
     impl Kita for u32 {
-        fn kita2(self);
+        fn kita1(self) {}
+    }
+}
+
+export_C! {
+    fn kita1(a: u32) {}
+}
+
+export_C! {
+    fn kita1((a, b): (u32, u32));
+}
+
+export_C! {
+    type OpaqueType<T>;
+
+    #[dispatch]
+    impl Drop for OpaqueType {
+        fn drop(&mut self);
+    }
+
+    #[dispatch(<u32, u8>)]
+    impl<T> Clone for OpaqueType<T> {
+        fn clone(&self);
+    }
+}
+
+export_C! {
+    #[dispatch(<'a>)]
+    impl<'a> Kita<'a> {
+        fn drop(&mut self);
     }
 }
 

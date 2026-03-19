@@ -1,33 +1,5 @@
-error: Uninhabited enum is a never type. Annotate with #[co3::reprC(opaque)]?
- --> tests/ui_fail/uninhabited_enum.rs:8:10
+error: Uninhabited enum is a never type. You can declare it as an opaque type in `export_!` or `extern_!` with `type Foo;`
+ --> tests/ui_fail/uninhabited_enum.rs:7:10
   |
-8 | pub enum FfiStruct2 {}
+7 | pub enum FfiStruct2 {}
   |          ^^^^^^^^^^
-
-error: repr(C) on enums requires a primitive type (e.g., repr(C, u8))
-  --> tests/ui_fail/uninhabited_enum.rs:16:10
-   |
-16 | pub enum FfiStruct4 {}
-   |          ^^^^^^^^^^
-
-error[E0084]: unsupported representation for zero-variant enum
-  --> tests/ui_fail/uninhabited_enum.rs:11:8
-   |
-11 | #[repr(transparent)]
-   |        ^^^^^^^^^^^
-12 | pub enum FfiStruct3 {}
-   | ------------------- zero-variant enum
-
-error[E0731]: transparent enum needs exactly one variant, but has 0
-  --> tests/ui_fail/uninhabited_enum.rs:12:1
-   |
-12 | pub enum FfiStruct3 {}
-   | ^^^^^^^^^^^^^^^^^^^ needs exactly one variant, but has 0
-
-error[E0084]: unsupported representation for zero-variant enum
-  --> tests/ui_fail/uninhabited_enum.rs:15:8
-   |
-15 | #[repr(C)]
-   |        ^
-16 | pub enum FfiStruct4 {}
-   | ------------------- zero-variant enum

@@ -8,7 +8,7 @@ pub struct Hello {
 
 #[export("C")]
 impl Hello {
-    #[export(name = "hello")]
+    #[unsafe(export_name = "hello")]
     #[expect(improper_ctypes_definitions)]
     pub extern "C" fn hello(
         Hello { a: a1, b: b1 }: Hello,

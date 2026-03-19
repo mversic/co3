@@ -1,171 +1,21 @@
-use proc_macro2::TokenStream;
-use quote::{ToTokens, format_ident, quote};
-use syn::{Ident, LitStr, Path, Type, visit_mut::VisitMut};
+use proc_macro2::{Span, TokenStream};
+use quote::{format_ident, quote};
+use syn::{Ident, Path, Type, parse_quote, visit::Visit, visit_mut::VisitMut};
 
 use crate::{
-    OwnershipMode,
-    impl_visitor::{Arg, FnDescriptor, path_symbol_name},
-    is_unsafe_no_mangle, parse_unsafe_export_name,
-    utils::{SignatureLifetimeBuilder, gen_resolve_type, gen_store_name},
-    wrapper::HandleIdSpec,
+    generate::OwnershipMode,
+    utils::{TypeImplTraitResolver, gen_normalization_stmts, unwrap_result_type},
 };
 
-fn is_handle_id_arg(name: &Ident, handle_id_specs: &[HandleIdSpec]) -> bool {
-    handle_id_specs.iter().any(|spec| spec.arg_name == *name)
-}
-
-fn has_link_name_attr(attrs: &[&syn::Attribute]) -> bool {
-    attrs.iter().any(|attr| attr.path().is_ident("link_name"))
-}
-
-fn gen_extern_block_attrs(attrs: &[&syn::Attribute]) -> Vec<TokenStream> {
-    attrs
-        .iter()
-        .filter(|attr| attr.path().is_ident("link"))
-        .map(|attr| {
-            let meta = &attr.meta;
-            quote!(#![#meta])
-        })
-        .collect()
-}
-
-fn prune_fn_definition_attributes<'a>(attrs: &[&'a syn::Attribute]) -> Vec<&'a syn::Attribute> {
-    let _ = attrs;
-    Vec::new()
-}
-
-pub fn gen_inline_declaration(
-    fn_descriptor: &FnDescriptor,
-    trait_path: Option<&Path>,
-    import_crate_name: Option<&TokenStream>,
-    import_fn_name: Option<&LitStr>,
-    import_abi: &syn::Abi,
-    ffi_fn_name: &Ident,
-    handle_id_specs: &[HandleIdSpec],
+pub(crate) fn emit_extern_definition(
+    abi: &syn::Abi,
+    attrs: &[syn::Attribute],
+    fn_signature: TokenStream,
+    ffi_fn_body: TokenStream,
 ) -> TokenStream {
-    let trait_name = trait_path.and_then(|path| path.segments.last().map(|seg| &seg.ident));
-    let trait_symbol_name = trait_path.map(path_symbol_name);
-    let has_explicit_link_name = has_link_name_attr(&fn_descriptor.attrs);
-    let extern_block_attrs = gen_extern_block_attrs(&fn_descriptor.attrs);
-
-    let ffi_fn_doc = gen_doc(fn_descriptor, trait_name);
-    let fn_signature = gen_fn_signature(
-        ffi_fn_name,
-        fn_descriptor,
-        &Default::default(),
-        trait_path,
-        handle_id_specs,
-        true,
-    );
-    let link_name = gen_link_name_attr(
-        fn_descriptor,
-        trait_symbol_name.as_deref(),
-        import_crate_name,
-        import_fn_name,
-    )
-    .unwrap_or_else(|| {
-        if fn_descriptor.self_ty.is_none() && trait_name.is_none() && !has_explicit_link_name {
-            let fn_name = &fn_descriptor.sig.ident;
-            quote! { #[link_name = stringify!(#fn_name)] }
-        } else {
-            quote! {}
-        }
-    });
     quote! {
-        unsafe #import_abi {
-            #(#extern_block_attrs)*
-            #[doc = #ffi_fn_doc]
-            #link_name
-            #fn_signature;
-        }
-    }
-}
-
-pub fn gen_definition(
-    fn_descriptor: &FnDescriptor,
-    trait_path: Option<&Path>,
-    impl_generics: &syn::Generics,
-    export_abi: Option<&syn::Abi>,
-) -> TokenStream {
-    let trait_name = trait_path.and_then(|path| path.segments.last().map(|seg| &seg.ident));
-    let trait_symbol_name = trait_path.map(path_symbol_name);
-    let ffi_fn_attrs = prune_fn_definition_attributes(&fn_descriptor.attrs);
-
-    let ffi_fn_name = gen_definition_fn_name(fn_descriptor);
-    let ffi_fn_doc = gen_doc(fn_descriptor, trait_name);
-
-    let export_name = gen_export_name_attr(fn_descriptor, trait_symbol_name.as_deref());
-    let ffi_abi = export_abi
-        .cloned()
-        .or_else(|| fn_descriptor.sig.abi.clone())
-        .unwrap_or_else(|| syn::parse_quote!(extern "Rust"));
-    let ffi_fn_body = gen_body(fn_descriptor, trait_path);
-    let fn_signature = gen_fn_signature(
-        &ffi_fn_name,
-        fn_descriptor,
-        impl_generics,
-        trait_path,
-        &[],
-        true,
-    );
-    let is_exported_drop = trait_path.is_some_and(|path| path_symbol_name(path) == "Drop")
-        && fn_descriptor.sig.ident == "drop";
-    if is_exported_drop {
-        let Some(receiver) = fn_descriptor.receiver.as_ref() else {
-            return syn::Error::new_spanned(
-                &fn_descriptor.sig,
-                "Drop export requires a receiver argument",
-            )
-            .to_compile_error();
-        };
-        let Some(self_ty) = fn_descriptor.self_ty.as_ref() else {
-            return syn::Error::new_spanned(
-                &fn_descriptor.sig,
-                "Drop export requires a concrete self type",
-            )
-            .to_compile_error();
-        };
-        let receiver_name = receiver.name();
-        return quote! {
-            #(#ffi_fn_attrs)*
-            #[doc = #ffi_fn_doc]
-            #export_name
-            unsafe #ffi_abi #fn_signature {
-                let fn_ = || {
-                    let fn_body = || -> Result<(), co3::FfiReturn> {
-                        let __self: &mut #self_ty = unsafe {
-                            co3::Decode::decode(#receiver_name, &mut ())
-                        }.ok_or(co3::FfiReturn::TrapRepresentation)?;
-
-                        let __self_ptr: *mut #self_ty = __self as *mut #self_ty;
-                        unsafe { core::mem::drop(Box::from_raw(__self_ptr)); }
-
-                        Ok(())
-                    };
-
-                    if let Err(err) = fn_body() {
-                        return err;
-                    }
-
-                    co3::FfiReturn::Ok
-                };
-
-                match std::panic::catch_unwind(fn_) {
-                    Ok(res) => res,
-                    Err(_) => {
-                        // TODO: Implement error handling (https://github.com/hyperledger/iroha/issues/2252)
-                        co3::FfiReturn::UnrecoverableError
-                    },
-                }
-            }
-        };
-    }
-
-    quote! {
-        #(#ffi_fn_attrs)*
-        #[doc = #ffi_fn_doc]
-        #export_name
-        unsafe #ffi_abi #fn_signature {
+        #(#attrs)*
+        unsafe #abi #fn_signature {
             let fn_ = || {
                 let fn_body = || #ffi_fn_body;
 
@@ -187,618 +37,659 @@ pub fn gen_definition(
     }
 }
 
-fn gen_definition_fn_name(fn_descriptor: &FnDescriptor) -> Ident {
-    Ident::new(
-        &format!("_{}", fn_descriptor.sig.ident),
-        proc_macro2::Span::call_site(),
-    )
-}
+pub(crate) fn gen_definition_body(sig: syn::Signature, callee: TokenStream) -> TokenStream {
+    let fn_ty = signature_fn_pointer_type(&sig);
 
-fn gen_link_name_attr(
-    fn_descriptor: &FnDescriptor,
-    trait_symbol_name: Option<&str>,
-    import_crate_name: Option<&TokenStream>,
-    import_fn_name: Option<&LitStr>,
-) -> Option<TokenStream> {
-    if fn_descriptor.self_ty.is_none() && trait_symbol_name.is_none() {
-        let fn_name = import_fn_name.cloned().unwrap_or_else(|| {
-            LitStr::new(
-                &fn_descriptor.sig.ident.to_string(),
-                fn_descriptor.sig.ident.span(),
-            )
-        });
+    let inputs = &sig.inputs;
+    let output = &sig.output;
 
-        return match import_crate_name {
-            Some(crate_name) => Some(quote!(#[link_name = concat!(#crate_name, #fn_name)])),
-            None if import_fn_name.is_some() => Some(quote!(#[link_name = #fn_name])),
-            None => None,
-        };
-    }
+    let initialization_stmts = gen_signature_input_init_stmts(inputs);
+    let output_assignment = gen_signature_output_assignment_stmts(output);
+    let input_conversions = gen_signature_input_conversion_stmts(inputs);
+    let store_sync_stmts = gen_signature_store_sync_stmts(inputs.len());
 
-    if let Some(crate_name) = import_crate_name {
-        return gen_non_shared_symbol_name(
-            fn_descriptor,
-            trait_symbol_name,
-            crate_name,
-            import_fn_name,
-        )
-        .map(|symbol| quote!(#[link_name = #symbol]));
-    }
-
-    import_fn_name.map(|symbol| quote!(#[link_name = #symbol]))
-}
-
-fn gen_export_name_attr(
-    fn_descriptor: &FnDescriptor,
-    trait_symbol_name: Option<&str>,
-) -> Option<TokenStream> {
-    if let Some(name) = fn_descriptor
-        .attrs
+    let arg_names = inputs
         .iter()
-        .find_map(|attr| parse_unsafe_export_name(attr))
-    {
-        return Some(quote!(#[unsafe(export_name = #name)]));
-    }
-    if fn_descriptor
-        .attrs
-        .iter()
-        .any(|attr| is_unsafe_no_mangle(attr))
-    {
-        let name = LitStr::new(
-            &fn_descriptor.sig.ident.to_string(),
-            fn_descriptor.sig.ident.span(),
-        );
-        return Some(quote!(#[unsafe(export_name = #name)]));
-    }
-    gen_non_shared_symbol_name(
-        fn_descriptor,
-        trait_symbol_name,
-        &quote!(concat!(env!("CARGO_CRATE_NAME"), "_")),
-        None,
-    )
-    .map(|symbol| quote!(#[unsafe(export_name = #symbol)]))
-}
-
-fn gen_non_shared_symbol_name(
-    fn_descriptor: &FnDescriptor,
-    trait_symbol_name: Option<&str>,
-    crate_name: &TokenStream,
-    fn_name_override: Option<&LitStr>,
-) -> Option<TokenStream> {
-    let method_name = fn_name_override.cloned().unwrap_or_else(|| {
-        LitStr::new(
-            &fn_descriptor.sig.ident.to_string(),
-            fn_descriptor.sig.ident.span(),
-        )
-    });
-    if fn_descriptor.self_ty.is_none() && trait_symbol_name.is_none() {
-        return Some(quote! {
-            concat!(
-                #crate_name,
-                #method_name
-            )
-        });
-    }
-
-    let self_ty_name = LitStr::new(
-        &fn_descriptor.self_ty_symbol_name().unwrap_or_default(),
-        fn_descriptor.sig.ident.span(),
-    );
-    if let Some(trait_name) = trait_symbol_name {
-        let trait_name = LitStr::new(trait_name, fn_descriptor.sig.ident.span());
-        Some(quote! {
-            concat!(
-                #crate_name,
-                #trait_name,
-                "_",
-                #self_ty_name,
-                "_",
-                #method_name
-            )
+        .map(|arg| match arg {
+            syn::FnArg::Typed(arg) => item_fn_input_ident(&arg.pat).clone(),
+            syn::FnArg::Receiver(_) => format_ident!("__co3_self"),
         })
-    } else {
-        Some(quote! {
-            concat!(
-                #crate_name,
-                #self_ty_name,
-                "_",
-                #method_name
-            )
-        })
-    }
-}
-
-fn gen_doc(fn_descriptor: &FnDescriptor, trait_name: Option<&Ident>) -> String {
-    let method_name = &fn_descriptor.sig.ident;
-
-    let self_type = fn_descriptor
-        .self_ty
-        .as_ref()
-        .and_then(syn::Path::get_ident);
-
-    let path = self_type.map_or_else(
-        || method_name.to_string(),
-        |self_ty| {
-            trait_name.map_or_else(
-                || format!("{self_ty}::{method_name}"),
-                // NOTE: Fully-qualified syntax currently not supported
-                |trait_| format!("{trait_}::{method_name}"),
-            )
-        },
-    );
-
-    format!(
-        " FFI function equivalent of [`{path}`]\n \
-          \n \
-          # Safety\n \
-          \n \
-          All of the given pointers must be valid"
-    )
-}
-
-pub(crate) fn gen_fn_signature(
-    ffi_fn_name: &Ident,
-    fn_descriptor: &FnDescriptor,
-    impl_generics: &syn::Generics,
-    trait_path: Option<&Path>,
-    handle_id_specs: &[HandleIdSpec],
-    use_named_borrowed_lifetime: bool,
-) -> TokenStream {
-    let fn_generics = &fn_descriptor.sig.generics;
-    let mut lifetime_builder = SignatureLifetimeBuilder::new(&[impl_generics, fn_generics]);
-    let mut input_args = Vec::new();
-    if let Some(arg) = fn_descriptor.receiver.as_ref() {
-        input_args.push(gen_input_arg(
-            arg,
-            fn_descriptor,
-            trait_path,
-            use_named_borrowed_lifetime,
-            &mut lifetime_builder,
-        ));
-    }
-    for arg in &fn_descriptor.input_args {
-        if is_handle_id_arg(arg.name(), handle_id_specs) {
-            continue;
-        }
-        input_args.push(gen_input_arg(
-            arg,
-            fn_descriptor,
-            trait_path,
-            use_named_borrowed_lifetime,
-            &mut lifetime_builder,
-        ));
-    }
-    inject_handle_id_decl_args(handle_id_specs, &mut input_args);
-    let output_arg =
-        ffi_output_arg(fn_descriptor).map(|arg| gen_out_ptr_arg(arg, fn_descriptor, trait_path));
-
-    let generics = if use_named_borrowed_lifetime {
-        lifetime_builder.build_generics(&[impl_generics, fn_generics])
-    } else {
-        let mut generics = impl_generics.clone();
-        generics.params.extend(fn_generics.params.clone());
-        if let Some(fn_where_clause) = &fn_generics.where_clause {
-            generics
-                .make_where_clause()
-                .predicates
-                .extend(fn_where_clause.predicates.clone());
-        }
-        generics
-    };
-
-    let (impl_generics, _, where_clause) = generics.split_for_impl();
-
-    quote! {
-        fn #ffi_fn_name #impl_generics (#(#input_args,)* #output_arg) -> co3::FfiReturn #where_clause
-    }
-}
-
-fn gen_input_arg(
-    arg: &Arg,
-    fn_descriptor: &FnDescriptor,
-    trait_path: Option<&Path>,
-    use_named_borrowed_lifetime: bool,
-    lifetime_builder: &mut SignatureLifetimeBuilder,
-) -> TokenStream {
-    let arg_name = arg.name();
-    let src_type = declared_input_src_type(arg, fn_descriptor, trait_path);
-    let arg_type = if arg.is_handle() {
-        if arg.ownership_mode() == OwnershipMode::Borrow {
-            if let Type::Reference(reference) = arg.src_type() {
-                if reference.mutability.is_some() {
-                    quote!(*mut co3::external::Extern)
-                } else {
-                    quote!(*const co3::external::Extern)
-                }
-            } else {
-                quote!(*const co3::external::Extern)
-            }
-        } else if let Type::Reference(reference) = arg.src_type() {
-            if reference.mutability.is_some() {
-                quote!(*mut co3::external::Extern)
-            } else {
-                quote!(*const co3::external::Extern)
-            }
-        } else {
-            quote!(*mut co3::external::Extern)
-        }
-    } else if arg.ownership_mode() == OwnershipMode::Borrow {
-        let borrowed_src_type = if use_named_borrowed_lifetime {
-            let src_type =
-                borrowed_decl_src_type(&declared_input_src_type(arg, fn_descriptor, trait_path));
-            lifetime_builder.borrowed_src_type(src_type)
-        } else {
-            borrowed_body_src_type(arg, fn_descriptor, trait_path)
-        };
-        quote!(<#borrowed_src_type as co3::ExternC>::CType)
-    } else {
-        quote!(<#src_type as co3::ExternC>::CType)
-    };
-
-    quote! { #arg_name: #arg_type }
-}
-
-fn declared_input_src_type(
-    arg: &Arg,
-    fn_descriptor: &FnDescriptor,
-    trait_path: Option<&Path>,
-) -> Type {
-    resolved_src_type(arg, fn_descriptor, trait_path)
-}
-
-fn borrowed_decl_src_type(src_type: &Type) -> Type {
-    if let Type::Reference(reference) = src_type {
-        (*reference.elem).clone()
-    } else {
-        src_type.clone()
-    }
-}
-
-fn inject_handle_id_decl_args(handle_id_specs: &[HandleIdSpec], args: &mut Vec<TokenStream>) {
-    let mut inserts: Vec<(usize, usize, TokenStream)> = handle_id_specs
-        .iter()
-        .enumerate()
-        .map(|(order, spec)| {
-            let arg_name = &spec.arg_name;
-            (spec.at, order, quote!(#arg_name: co3::handle::Id))
-        })
-        .collect();
-    inserts.sort_by(|(a_at, a_order, _), (b_at, b_order, _)| {
-        a_at.cmp(b_at).then(a_order.cmp(b_order))
-    });
-
-    if inserts.is_empty() {
-        return;
-    }
-
-    let real_args = core::mem::take(args);
-    let final_len = real_args.len() + inserts.len();
-    let mut slots: Vec<Option<TokenStream>> = vec![None; final_len];
-
-    for (at, _order, decl) in inserts {
-        let desired = core::cmp::min(at, final_len.saturating_sub(1));
-        let mut pos = desired;
-        while pos < final_len && slots[pos].is_some() {
-            pos += 1;
-        }
-        if pos == final_len {
-            pos = 0;
-            while pos < desired && slots[pos].is_some() {
-                pos += 1;
-            }
-        }
-        if pos < final_len {
-            slots[pos] = Some(decl);
-        }
-    }
-
-    let mut real_iter = real_args.into_iter();
-    for slot in &mut slots {
-        if slot.is_none() {
-            *slot = real_iter.next();
-        }
-    }
-    *args = slots.into_iter().flatten().collect();
-}
-
-fn gen_out_ptr_arg(
-    arg: &Arg,
-    fn_descriptor: &FnDescriptor,
-    trait_path: Option<&Path>,
-) -> TokenStream {
-    let arg_name = arg.name();
-    let arg_type = resolved_src_type(arg, fn_descriptor, trait_path);
-    quote! { #arg_name: *mut <#arg_type as co3::out_ptr::OutPtr>::OutPtr }
-}
-
-fn gen_body(fn_descriptor: &FnDescriptor, trait_path: Option<&Path>) -> TokenStream {
-    let input_conversions = gen_input_conversion_stmts(fn_descriptor, trait_path, &[]);
-    let method_call_stmt = gen_method_call_stmt(fn_descriptor, trait_path, &[]);
-    let output_assignment = gen_output_assignment_stmts(fn_descriptor, trait_path);
-    let store_sync_stmts = gen_store_sync_stmts(fn_descriptor, &[]);
+        .collect::<Vec<_>>();
 
     quote! {{
+        #initialization_stmts
         #input_conversions
-        #method_call_stmt
+
+        // NOTE: Avoids signature drift
+        let __co3_fn: #fn_ty = #callee;
+        let mut __co3_call_error: Option<co3::FfiReturn> = None;
+
+        let (#(Some(#arg_names),)*) = __co3_input_values else {
+            let __co3_sync_errors = #store_sync_stmts;
+            return Err(co3::FfiReturn::TrapRepresentation);
+        };
+
+        let __co3_output = __co3_fn(
+            #(#arg_names),*
+        );
+
         #output_assignment
-        #store_sync_stmts
+
+        let __co3_sync_errors = #store_sync_stmts;
+        let mut __co3_sync_errors_iter = core::iter::IntoIterator::into_iter(__co3_sync_errors);
+        if core::iter::Iterator::any(&mut __co3_sync_errors_iter, core::convert::identity) {
+            return Err(co3::FfiReturn::TrapRepresentation);
+        }
+
+        if let Some(err) = __co3_call_error {
+            return Err(err);
+        }
 
         Ok(())
     }}
 }
 
-fn gen_store_sync_stmts(
-    fn_descriptor: &FnDescriptor,
-    handle_id_specs: &[HandleIdSpec],
-) -> TokenStream {
-    let mut stmts = quote! {};
+pub(crate) fn item_fn_input_ident(input: &syn::Pat) -> &Ident {
+    let syn::Pat::Ident(syn::PatIdent { ident, .. }) = input else {
+        unreachable!()
+    };
 
-    for arg in &fn_descriptor.input_args {
-        if is_handle_id_arg(arg.name(), handle_id_specs) {
-            continue;
-        }
-        let store_name = gen_store_name(arg.name());
+    ident
+}
+
+pub(crate) fn boxed_array_ty(ty: &Type) -> Option<Type> {
+    matches!(ty, Type::Array(_)).then(|| parse_quote!(Box<#ty>))
+}
+
+pub(crate) fn gen_signature_input_init_stmts<'a>(
+    inputs: impl IntoIterator<Item = &'a syn::FnArg>,
+) -> TokenStream {
+    let value_tys = inputs
+        .into_iter()
+        .map(|input| match input {
+            syn::FnArg::Receiver(receiver) => &*receiver.ty,
+            syn::FnArg::Typed(arg) => &*arg.ty,
+        })
+        .collect::<Vec<_>>();
+    let stores = value_tys
+        .iter()
+        .map(|ty| quote!(<<#ty as co3::Decode>::Store as core::default::Default>::default()));
+
+    quote! {
+        let mut __co3_input_values = (#(Option::<#value_tys>::default(),)*);
+        let mut __co3_input_stores = (#(#stores,)*);
+    }
+}
+
+pub(crate) fn gen_signature_input_conversion_stmts<'a>(
+    inputs: impl IntoIterator<Item = &'a syn::FnArg>,
+) -> TokenStream {
+    let inputs = inputs.into_iter().collect::<Vec<_>>();
+    let idxs = (0..inputs.len()).map(syn::Index::from);
+
+    let mut stmts = quote! {};
+    for (idx, input) in inputs.iter().enumerate() {
+        let idx = syn::Index::from(idx);
+
+        let (attrs, arg_name, arg_ty) = match input {
+            syn::FnArg::Receiver(receiver) => (
+                &receiver.attrs,
+                format_ident!("__co3_self"),
+                (*receiver.ty).clone(),
+            ),
+            syn::FnArg::Typed(arg) => {
+                let arg_name = item_fn_input_ident(&arg.pat);
+                let arg_ty = (*arg.ty).clone();
+                (&arg.attrs, arg_name.clone(), arg_ty)
+            }
+        };
+
+        // FIXME: If type alias T = [x; N] is used conversion of Array to Box or reference will not work
+        let (borrowed_ty, to_owned) = match ownership_mode_for_arg(attrs, &arg_ty) {
+            OwnershipMode::Borrow => {
+                if matches!(arg_ty, Type::Array(_)) {
+                    (quote!(&#arg_ty), quote!(Clone::clone(#arg_name)))
+                } else {
+                    (
+                        quote!(<#arg_ty as co3::borrow::Borrow>::Borrowed<'_>),
+                        quote!(co3::borrow::ToOwned::to_owned(#arg_name)),
+                    )
+                }
+            }
+            OwnershipMode::ByValue => {
+                if let Some(boxed_ty) = boxed_array_ty(&arg_ty) {
+                    (quote!(#boxed_ty), quote!(*#arg_name))
+                } else {
+                    (quote!(#arg_ty), quote!(#arg_name))
+                }
+            }
+        };
 
         stmts.extend(quote! {
-            co3::Store::sync(#store_name).ok_or(co3::FfiReturn::TrapRepresentation)?;
+            let #arg_name: Option<#borrowed_ty> = unsafe { co3::Decode::decode(#arg_name, &mut __co3_input_stores.#idx) };
+
+            if let Some(#arg_name) = #arg_name {
+                __co3_input_values.#idx = Some(#to_owned);
+            }
         });
     }
 
-    stmts
-}
-
-fn gen_input_conversion_stmts(
-    fn_descriptor: &FnDescriptor,
-    trait_path: Option<&Path>,
-    handle_id_specs: &[HandleIdSpec],
-) -> TokenStream {
-    let mut stmts = quote! {};
-
-    if let Some(arg) = &fn_descriptor.receiver {
-        stmts = gen_arg_ffi_to_src(arg, fn_descriptor, trait_path);
-    }
-
-    for arg in &fn_descriptor.input_args {
-        if is_handle_id_arg(arg.name(), handle_id_specs) {
-            continue;
-        }
-        stmts.extend(gen_arg_ffi_to_src(arg, fn_descriptor, trait_path));
-    }
-
-    stmts
-}
-
-pub fn gen_arg_ffi_to_src(
-    arg: &Arg,
-    fn_descriptor: &FnDescriptor,
-    trait_path: Option<&Path>,
-) -> TokenStream {
-    let arg_name = arg.name();
-    let src_type = resolved_src_type(arg, fn_descriptor, trait_path);
-    let store_name = gen_store_name(arg_name);
-    if arg.ownership_mode() == OwnershipMode::Borrow {
-        let borrowed_src_type = borrowed_body_src_type(arg, fn_descriptor, trait_path);
-        if let Type::Reference(reference) = &src_type {
-            let owned_name = format_ident!("{arg_name}_owned");
-            let owned_ty = &reference.elem;
-            if reference.mutability.is_some() {
-                return quote! {
-                    let mut #store_name = Default::default();
-                    let #arg_name: #borrowed_src_type = unsafe { co3::Decode::decode(#arg_name, &mut #store_name) }
-                        .ok_or(co3::FfiReturn::TrapRepresentation)?;
-                    let mut #owned_name: #owned_ty = co3::borrow::ToOwned::to_owned(#arg_name);
-                    let #arg_name: #src_type = &mut #owned_name;
-                };
-            }
-            return quote! {
-                let mut #store_name = Default::default();
-                let #arg_name: #borrowed_src_type = unsafe { co3::Decode::decode(#arg_name, &mut #store_name) }
-                    .ok_or(co3::FfiReturn::TrapRepresentation)?;
-                let #owned_name: #owned_ty = co3::borrow::ToOwned::to_owned(#arg_name);
-                let #arg_name: #src_type = &#owned_name;
-            };
-        }
-        return quote! {
-            let mut #store_name = Default::default();
-            let #arg_name: #borrowed_src_type = unsafe { co3::Decode::decode(#arg_name, &mut #store_name) }
-                .ok_or(co3::FfiReturn::TrapRepresentation)?;
-            let #arg_name: #src_type = co3::borrow::ToOwned::to_owned(#arg_name);
-        };
-    }
-
     quote! {
-        let mut #store_name = Default::default();
-        let #arg_name: #src_type = unsafe { co3::Decode::decode(#arg_name, &mut #store_name) }
-            .ok_or(co3::FfiReturn::TrapRepresentation)?;
+        #stmts
+
+        let __co3_input_present: [bool; _] = [
+            #(__co3_input_values.#idxs.is_some()),*
+        ];
     }
 }
 
-fn borrowed_body_src_type(
-    arg: &Arg,
-    fn_descriptor: &FnDescriptor,
-    trait_path: Option<&Path>,
-) -> TokenStream {
-    let mut src_type = borrowed_decl_src_type(&resolved_src_type(arg, fn_descriptor, trait_path));
-    inject_missing_lifetimes(&mut src_type, "_");
-    quote!(<#src_type as co3::borrow::Borrow>::Borrowed<'_>)
+fn signature_fn_pointer_type(sig: &syn::Signature) -> TokenStream {
+    let syn::Signature {
+        unsafety,
+        abi,
+        output,
+        inputs,
+        ..
+    } = sig;
+
+    let arg_tys = inputs.iter().map(|input| match input {
+        syn::FnArg::Receiver(syn::Receiver { ty, .. }) => ty,
+        syn::FnArg::Typed(syn::PatType { ty, .. }) => ty,
+    });
+
+    quote! { #unsafety #abi fn(#(#arg_tys),*) #output }
 }
 
-pub struct InjectColon;
-impl VisitMut for InjectColon {
-    fn visit_angle_bracketed_generic_arguments_mut(
-        &mut self,
-        i: &mut syn::AngleBracketedGenericArguments,
-    ) {
-        i.colon2_token = Some(syn::parse_quote!(::));
+fn gen_signature_output_assignment_stmts(ret_ty: &syn::ReturnType) -> TokenStream {
+    let output = format_ident!("__co3_output");
+
+    let syn::ReturnType::Type(_, ret_ty) = &ret_ty else {
+        return quote! {};
+    };
+
+    let normalize_output = gen_normalization_stmts(&output, ret_ty);
+    let (unwrap_result, ret_ty) = if let Some((ok, _)) = unwrap_result_type(ret_ty) {
+        (
+            quote! {
+                let Ok(__co3_output) = __co3_output else {
+                    __co3_call_error = Some(co3::FfiReturn::ExecutionFail);
+                };
+            },
+            ok,
+        )
+    } else {
+        (quote!(), &**ret_ty)
+    };
+    quote! {
+        #unwrap_result
+        #normalize_output
+
+        unsafe { <#ret_ty as co3::out_ptr::OutPtrWrite>::write_out(#output, __co3_out_ptr); }
     }
 }
 
-fn gen_method_call_stmt(
-    fn_descriptor: &FnDescriptor,
-    trait_path: Option<&Path>,
-    handle_id_specs: &[HandleIdSpec],
+pub(crate) fn gen_signature_store_sync_stmts(len: usize) -> TokenStream {
+    let idxs = (0..len).map(syn::Index::from);
+
+    quote! {{
+        let mut __co3_sync_errors = [false; #len]; #(
+
+        if __co3_input_present[#idxs] && co3::Store::sync(__co3_input_stores.#idxs).is_none() {
+            __co3_sync_errors[#idxs] = true;
+        })*
+
+        __co3_sync_errors
+    }}
+}
+
+fn gen_fn_definition_body(item: &syn::ItemFn) -> TokenStream {
+    let fn_name = &item.sig.ident;
+    gen_definition_body(item.sig.clone(), quote! { self::#fn_name })
+}
+
+fn gen_impl_fn_definition_body(item: &syn::ImplItemFn, impl_: &syn::ItemImpl) -> TokenStream {
+    let trait_ = impl_.trait_.as_ref().map(|(_, path, _)| path);
+    let self_ty = &impl_.self_ty;
+    let fn_name = &item.sig.ident;
+
+    let callee = if let Some(trait_) = trait_ {
+        quote!(<#self_ty as #trait_>::#fn_name)
+    } else {
+        quote!(<#self_ty>::#fn_name)
+    };
+
+    gen_definition_body(item.sig.clone(), callee)
+}
+
+pub fn gen_impl_definition(abi: &syn::Abi, mut impl_: syn::ItemImpl) -> TokenStream {
+    let self_ty = &impl_.self_ty;
+
+    impl_.items.iter_mut().for_each(|item| {
+        let syn::ImplItem::Fn(item) = item else {
+            return;
+        };
+
+        normalize_fn_signature(&mut item.sig, Some(self_ty));
+    });
+
+    let definitions = impl_.items.iter().filter_map(|item| {
+        let syn::ImplItem::Fn(item) = item else {
+            return None;
+        };
+
+        let fn_signature = gen_extern_fn_signature(Some(&impl_.generics), item.sig.clone());
+        let ffi_fn_body = gen_impl_fn_definition_body(item, &impl_);
+
+        Some(emit_extern_definition(
+            abi,
+            &item.attrs,
+            fn_signature,
+            ffi_fn_body,
+        ))
+    });
+
+    quote! { #(#definitions)* }
+}
+
+pub fn gen_fn_definition(abi: &syn::Abi, mut item: syn::ItemFn) -> TokenStream {
+    normalize_fn_signature(&mut item.sig, None);
+
+    let ffi_fn_body = gen_fn_definition_body(&item);
+    let fn_signature = gen_extern_fn_signature(None, item.sig);
+
+    emit_extern_definition(abi, &item.attrs, fn_signature, ffi_fn_body)
+}
+
+pub(crate) fn gen_extern_fn_signature(
+    impl_generics: Option<&syn::Generics>,
+    mut sig: syn::Signature,
 ) -> TokenStream {
-    let ident = &fn_descriptor.sig.ident;
-    let self_type = &fn_descriptor.self_ty;
+    fn merge_generics(impl_generics: &syn::Generics, fn_generics: &mut syn::Generics) {
+        let impl_lifetime_params = impl_generics
+            .params
+            .iter()
+            .filter(|param| matches!(param, syn::GenericParam::Lifetime(_)))
+            .cloned()
+            .collect::<Vec<_>>();
+        let impl_lifetime_predicates = impl_generics
+            .where_clause
+            .as_ref()
+            .into_iter()
+            .flat_map(|where_clause| where_clause.predicates.iter())
+            .filter(|predicate| matches!(predicate, syn::WherePredicate::Lifetime(_)))
+            .cloned()
+            .collect::<Vec<_>>();
 
-    let receiver = fn_descriptor.receiver.as_ref();
-    let self_arg_name = receiver.map_or_else(Vec::new, |arg| vec![arg.name().clone()]);
+        let mut params = syn::punctuated::Punctuated::new();
+        params.extend(impl_lifetime_params);
+        params.extend(fn_generics.params.clone());
+        fn_generics.params = params;
 
-    let fn_arg_names = fn_descriptor
-        .input_args
+        match (
+            &mut fn_generics.where_clause,
+            impl_lifetime_predicates.is_empty(),
+        ) {
+            (Some(sig_where), false) => {
+                sig_where.predicates.extend(impl_lifetime_predicates);
+            }
+            (None, false) => {
+                let mut where_clause = syn::WhereClause {
+                    where_token: Default::default(),
+                    predicates: Default::default(),
+                };
+                where_clause.predicates.extend(impl_lifetime_predicates);
+                fn_generics.where_clause = Some(where_clause);
+            }
+            _ => {}
+        }
+    }
+
+    explicitize_signature_lifetimes(&mut sig);
+    if let Some(impl_generics) = impl_generics {
+        merge_generics(impl_generics, &mut sig.generics);
+    }
+
+    let fn_name = &sig.ident;
+    let mut ffi_args = sig
+        .inputs
         .iter()
-        .filter(|arg| !is_handle_id_arg(arg.name(), handle_id_specs))
-        .map(Arg::name);
-    let self_ty = self_type.clone().map_or_else(
-        || quote!(),
-        |mut self_ty| {
-            let mut inject_colon = InjectColon;
-            inject_colon.visit_path_mut(&mut self_ty);
+        .enumerate()
+        .map(|(idx, input)| lower_signature_input_to_ffi_arg(&mut sig.generics, input, idx))
+        .collect::<Vec<_>>();
 
-            trait_path.as_ref().map_or_else(
-                || quote! {#self_ty::},
-                |trait_| quote! {<#self_ty as #trait_>::},
-            )
-        },
-    );
-    let method_call = quote! {#self_ty #ident(#(#self_arg_name,)* #(#fn_arg_names),*)};
+    let (impl_generics, _, where_clause) = sig.generics.split_for_impl();
+    if let Some(output_arg) = lower_signature_output_to_out_ptr(&sig.output) {
+        ffi_args.push(output_arg);
+    }
 
-    fn_descriptor.output_arg.as_ref().map_or_else(
-        || quote! {#method_call;},
-        |output_arg| {
-            let output_arg_name = &output_arg.name();
-
-            if output_arg.src_type_is_empty_tuple() {
-                return quote! { let #output_arg_name = #method_call; };
-            }
-
-            quote! {
-                let __out_ptr = #output_arg_name;
-                let #output_arg_name = #method_call;
-            }
-        },
-    )
+    quote! { fn #fn_name #impl_generics (#(#ffi_args),*) -> co3::FfiReturn #where_clause }
 }
 
-fn gen_output_assignment_stmts(
-    fn_descriptor: &FnDescriptor,
-    trait_path: Option<&Path>,
+fn explicitize_signature_lifetimes(sig: &mut syn::Signature) {
+    struct InputLifetimeCollector<'a> {
+        out_lifetime: Option<syn::Lifetime>,
+        generics: &'a mut syn::Generics,
+        multiple_lifetimes: bool,
+        is_self: bool,
+        next_idx: usize,
+    }
+
+    impl<'a> InputLifetimeCollector<'a> {
+        fn new(generics: &'a mut syn::Generics) -> Self {
+            Self {
+                generics,
+                next_idx: 0,
+                out_lifetime: None,
+                is_self: false,
+                multiple_lifetimes: false,
+            }
+        }
+
+        fn explicitize_lifetime(&mut self, lifetime: &mut Option<syn::Lifetime>) -> syn::Lifetime {
+            if let Some(lifetime) = lifetime
+                && lifetime.ident != "_"
+            {
+                return lifetime.clone();
+            }
+
+            let new_lifetime =
+                syn::Lifetime::new(&format!("'__co3_{}", self.next_idx), Span::call_site());
+
+            self.generics
+                .params
+                .push(syn::GenericParam::Lifetime(syn::LifetimeParam::new(
+                    new_lifetime.clone(),
+                )));
+
+            self.next_idx += 1;
+            lifetime.insert(new_lifetime).clone()
+        }
+
+        fn record_lifetime<const IS_SELF: bool>(&mut self, lifetime: syn::Lifetime) {
+            if self.out_lifetime.is_none() {
+                self.out_lifetime = Some(lifetime);
+                self.is_self = IS_SELF;
+            } else {
+                self.multiple_lifetimes = true;
+
+                if IS_SELF {
+                    self.out_lifetime = Some(lifetime);
+                    self.is_self = true;
+                } else if !self.is_self {
+                    self.out_lifetime = None;
+                }
+            }
+        }
+    }
+
+    impl VisitMut for InputLifetimeCollector<'_> {
+        fn visit_receiver_mut(&mut self, node: &mut syn::Receiver) {
+            syn::visit_mut::visit_receiver_mut(self, node);
+
+            if let Some((_, lifetime)) = &mut node.reference {
+                let l = self.explicitize_lifetime(lifetime);
+
+                self.record_lifetime::<true>(l);
+            }
+        }
+
+        fn visit_type_reference_mut(&mut self, node: &mut syn::TypeReference) {
+            syn::visit_mut::visit_type_reference_mut(self, node);
+            let l = self.explicitize_lifetime(&mut node.lifetime);
+
+            self.record_lifetime::<false>(l);
+        }
+    }
+
+    struct OutputLifetimeExplicator<'a> {
+        lifetime: &'a syn::Lifetime,
+    }
+
+    impl VisitMut for OutputLifetimeExplicator<'_> {
+        fn visit_type_reference_mut(&mut self, node: &mut syn::TypeReference) {
+            syn::visit_mut::visit_type_reference_mut(self, node);
+
+            if node.lifetime.is_none() || matches!(&node.lifetime, Some(l) if l.ident == "_") {
+                node.lifetime = Some(self.lifetime.clone());
+            }
+        }
+    }
+
+    let mut input_collector = InputLifetimeCollector::new(&mut sig.generics);
+
+    for input in &mut sig.inputs {
+        input_collector.visit_fn_arg_mut(input);
+    }
+
+    let output_lifetime = (!input_collector.multiple_lifetimes || input_collector.is_self)
+        .then_some(input_collector.out_lifetime)
+        .flatten();
+
+    if let syn::ReturnType::Type(_, output_ty) = &mut sig.output
+        && let Some(lifetime) = &output_lifetime
+    {
+        OutputLifetimeExplicator { lifetime }.visit_type_mut(output_ty);
+    }
+}
+
+fn lower_signature_input_to_ffi_arg(
+    generics: &mut syn::Generics,
+    input: &syn::FnArg,
+    arg_idx: usize,
 ) -> TokenStream {
-    fn_descriptor.output_arg.as_ref().map_or_else(
-        || quote! {},
-        |out_arg| {
-            let arg_name = out_arg.name();
-            let arg_type = resolved_src_type(out_arg, fn_descriptor, trait_path);
-            let resolve_impl_trait = gen_resolve_type(out_arg);
-
-            if out_arg.src_type_is_empty_tuple() {
-                return quote! { #resolve_impl_trait };
-            }
-
-            quote! {
-                #resolve_impl_trait
-                <#arg_type as co3::out_ptr::OutPtrWrite>::write_out(#arg_name, __out_ptr);
-            }
-        },
-    )
+    match input {
+        syn::FnArg::Receiver(receiver) => {
+            let arg_ty = (*receiver.ty).clone();
+            let ffi_ty = item_fn_input_arg_type(&receiver.attrs, &arg_ty, arg_idx, generics);
+            quote!(__co3_self: #ffi_ty)
+        }
+        syn::FnArg::Typed(syn::PatType { attrs, pat, ty, .. }) => {
+            let arg_ty = (**ty).clone();
+            let ffi_ty = item_fn_input_arg_type(attrs, &arg_ty, arg_idx, generics);
+            quote!( #pat: #ffi_ty)
+        }
+    }
 }
 
-fn ffi_output_arg<'ast>(fn_descriptor: &'ast FnDescriptor<'ast>) -> Option<&'ast Arg> {
-    fn_descriptor.output_arg.as_ref().and_then(|output_arg| {
-        if output_arg.src_type_is_empty_tuple() {
-            return None;
+fn lower_signature_output_to_out_ptr(return_type: &syn::ReturnType) -> Option<TokenStream> {
+    let syn::ReturnType::Type(_, return_type) = return_type else {
+        return None;
+    };
+
+    let return_type = unwrap_result_type(return_type).map_or(&**return_type, |(ok, _)| ok);
+    Some(quote! { __co3_out_ptr: *mut <#return_type as co3::out_ptr::OutPtr>::OutPtr })
+}
+
+fn item_fn_input_arg_type(
+    attrs: &[syn::Attribute],
+    arg_ty: &Type,
+    arg_idx: usize,
+    generics: &mut syn::Generics,
+) -> TokenStream {
+    let ownership_mode = ownership_mode_for_arg(attrs, arg_ty);
+
+    if ownership_mode == OwnershipMode::ByValue {
+        if let Some(boxed_ty) = boxed_array_ty(arg_ty) {
+            return quote!(<#boxed_ty as co3::ExternC>::CType);
+        }
+        return quote!(<#arg_ty as co3::ExternC>::CType);
+    }
+
+    if matches!(arg_ty, Type::Array(_)) {
+        let lifetime = synthetic_borrow_lifetime(arg_idx, generics);
+        let borrowed_ty: Type = parse_quote!(&#lifetime #arg_ty);
+        return quote!(<#borrowed_ty as co3::ExternC>::CType);
+    }
+
+    let lifetime = synthetic_borrow_lifetime(arg_idx, generics);
+    let borrowed_ty = quote!(<#arg_ty as co3::borrow::Borrow>::Borrowed<#lifetime>);
+
+    quote!(<#borrowed_ty as co3::ExternC>::CType)
+}
+
+fn synthetic_borrow_lifetime(arg_idx: usize, generics: &mut syn::Generics) -> syn::Lifetime {
+    let lifetime = syn::Lifetime::new(
+        &format!("'__co3_arg_{arg_idx}"),
+        proc_macro2::Span::call_site(),
+    );
+
+    generics
+        .params
+        .push(syn::GenericParam::Lifetime(syn::LifetimeParam::new(
+            lifetime.clone(),
+        )));
+
+    lifetime
+}
+
+pub(crate) fn normalize_fn_signature(sig: &mut syn::Signature, self_ty: Option<&Type>) {
+    TypeImplTraitResolver.visit_signature_mut(sig);
+
+    if let Some(self_ty) = self_ty {
+        SelfConcretizer { self_ty }.visit_signature_mut(sig);
+    }
+}
+
+fn is_copy_type(ty: &Type) -> bool {
+    struct CopyClassifier {
+        is_copy: bool,
+    }
+
+    impl CopyClassifier {
+        fn is_primitive_path(path: &syn::Path) -> bool {
+            const PRIMITIVES: [&str; 17] = [
+                "bool", "char", "str", "u8", "u16", "u32", "u64", "u128", "usize", "i8", "i16",
+                "i32", "i64", "i128", "isize", "f32", "f64",
+            ];
+
+            path.get_ident()
+                .is_some_and(|ident| PRIMITIVES.iter().any(|&primitive| ident == primitive))
+        }
+    }
+
+    impl Visit<'_> for CopyClassifier {
+        fn visit_type_reference(&mut self, _: &syn::TypeReference) {}
+        fn visit_type_ptr(&mut self, _: &syn::TypePtr) {}
+        fn visit_type_bare_fn(&mut self, _: &syn::TypeBareFn) {}
+        fn visit_type_never(&mut self, _: &syn::TypeNever) {}
+
+        fn visit_type_path(&mut self, node: &syn::TypePath) {
+            if node.qself.is_some() || !Self::is_primitive_path(&node.path) {
+                self.is_copy = false;
+            }
         }
 
-        if let Some(receiver) = &fn_descriptor.receiver
-            && receiver.name() == output_arg.name()
+        fn visit_type_tuple(&mut self, node: &syn::TypeTuple) {
+            for elem in &node.elems {
+                self.visit_type(elem);
+
+                if !self.is_copy {
+                    return;
+                }
+            }
+        }
+
+        fn visit_type_array(&mut self, node: &syn::TypeArray) {
+            self.visit_type(&node.elem);
+        }
+
+        fn visit_type_paren(&mut self, node: &syn::TypeParen) {
+            self.visit_type(&node.elem);
+        }
+
+        fn visit_type_group(&mut self, node: &syn::TypeGroup) {
+            self.visit_type(&node.elem);
+        }
+    }
+
+    let mut classifier = CopyClassifier { is_copy: true };
+    match ty {
+        Type::Reference(node) => classifier.visit_type_reference(node),
+        Type::Ptr(node) => classifier.visit_type_ptr(node),
+        Type::BareFn(node) => classifier.visit_type_bare_fn(node),
+        Type::Never(node) => classifier.visit_type_never(node),
+        Type::Path(node) => classifier.visit_type_path(node),
+        Type::Tuple(node) => classifier.visit_type_tuple(node),
+        Type::Array(node) => classifier.visit_type_array(node),
+        Type::Paren(node) => classifier.visit_type_paren(node),
+        Type::Group(node) => classifier.visit_type_group(node),
+        _ => classifier.is_copy = false,
+    }
+    classifier.is_copy
+}
+
+pub(crate) fn ownership_mode_for_arg(attrs: &[syn::Attribute], ty: &Type) -> OwnershipMode {
+    if attrs.iter().any(|attr| attr.path().is_ident("by_val")) {
+        return OwnershipMode::ByValue;
+    }
+
+    if matches!(ty, Type::Array(_)) {
+        return OwnershipMode::Borrow;
+    }
+
+    if is_copy_type(ty) {
+        return OwnershipMode::ByValue;
+    }
+
+    OwnershipMode::Borrow
+}
+
+pub(crate) struct SelfConcretizer<'a> {
+    pub(crate) self_ty: &'a Type,
+}
+
+fn qualify_self_path(self_ty: &Type, rest: &Path) -> Type {
+    if rest.segments.is_empty() {
+        return self_ty.clone();
+    }
+
+    if matches!(self_ty, Type::Path(type_path) if type_path.qself.is_none()) {
+        return parse_quote!(#self_ty::#rest);
+    }
+
+    parse_quote!(<#self_ty>::#rest)
+}
+
+fn is_self_path(node: &syn::TypePath) -> bool {
+    if node.qself.is_some() {
+        return false;
+    }
+    let Some(first) = node.path.segments.first() else {
+        return false;
+    };
+    if first.ident != "Self" {
+        return false;
+    }
+
+    true
+}
+
+impl VisitMut for SelfConcretizer<'_> {
+    fn visit_type_mut(&mut self, node: &mut Type) {
+        syn::visit_mut::visit_type_mut(self, node);
+
+        if let Type::Path(ty) = node
+            && is_self_path(ty)
         {
-            return None;
-        }
-
-        Some(output_arg)
-    })
-}
-
-fn resolved_src_type(arg: &Arg, fn_descriptor: &FnDescriptor, trait_path: Option<&Path>) -> Type {
-    let mut ty = arg.src_type_resolved();
-    qualify_trait_associated_types(&mut ty, fn_descriptor.self_ty.as_ref(), trait_path);
-    ty
-}
-
-fn qualify_trait_associated_types(
-    ty: &mut Type,
-    self_ty: Option<&Path>,
-    trait_path: Option<&Path>,
-) {
-    struct Qualifier<'a> {
-        self_ty: Option<&'a Path>,
-        trait_path: Option<&'a Path>,
-    }
-
-    impl VisitMut for Qualifier<'_> {
-        fn visit_type_path_mut(&mut self, i: &mut syn::TypePath) {
-            syn::visit_mut::visit_type_path_mut(self, i);
-            let (Some(self_ty), Some(trait_path)) = (self.self_ty, self.trait_path) else {
-                return;
-            };
-            if i.qself.is_some() {
-                return;
-            }
-            let self_len = self_ty.segments.len();
-            if i.path.segments.len() <= self_len {
-                return;
-            }
-            let mut prefix = syn::Path {
+            let mut rest = Path {
                 leading_colon: None,
                 segments: Default::default(),
             };
-            for seg in i.path.segments.iter().take(self_len) {
-                prefix.segments.push(seg.clone());
-            }
-            if prefix.to_token_stream().to_string() != self_ty.to_token_stream().to_string() {
-                return;
-            }
 
-            let mut rest = syn::Path {
-                leading_colon: None,
-                segments: Default::default(),
-            };
-            for seg in i.path.segments.iter().skip(self_len) {
-                rest.segments.push(seg.clone());
-            }
-            let qualified: Type = syn::parse_quote!(<#self_ty as #trait_path>::#rest);
-            if let Type::Path(tp) = qualified {
-                *i = tp;
-            }
+            rest.segments
+                .extend(ty.path.segments.iter().skip(1).cloned());
+
+            *node = qualify_self_path(self.self_ty, &rest);
         }
     }
+    fn visit_type_trait_object_mut(&mut self, node: &mut syn::TypeTraitObject) {
+        let self_ty = &self.self_ty;
 
-    Qualifier {
-        self_ty,
-        trait_path,
-    }
-    .visit_type_mut(ty);
-}
-
-fn inject_missing_lifetimes(ty: &mut Type, lifetime_name: &str) {
-    struct LifetimeInjector<'a> {
-        lifetime: &'a str,
-    }
-
-    impl VisitMut for LifetimeInjector<'_> {
-        fn visit_type_reference_mut(&mut self, i: &mut syn::TypeReference) {
-            if i.lifetime.is_none() {
-                i.lifetime = Some(syn::Lifetime::new(
-                    &format!("'{}", self.lifetime),
-                    proc_macro2::Span::call_site(),
-                ));
-            }
-            syn::visit_mut::visit_type_reference_mut(self, i);
+        let Some(handle) = node.bounds.first() else {
+            return;
+        };
+        if matches!(handle, syn::TypeParamBound::Trait(bound) if bound.path.is_ident("Self")) {
+            *node = parse_quote!(dyn #self_ty);
         }
     }
-
-    LifetimeInjector {
-        lifetime: lifetime_name,
-    }
-    .visit_type_mut(ty);
 }

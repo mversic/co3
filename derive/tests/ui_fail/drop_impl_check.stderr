@@ -1,0 +1,119 @@
+error: generic types must provide explicit `impl Drop` declaration
+  --> tests/ui_fail/drop_impl_check.rs:13:5
+   |
+13 |     type OpaqueType<T>;
+   |     ^^^^^^^^^^^^^^^^^^^
+
+error: generic types must provide explicit `impl Drop` declaration
+  --> tests/ui_fail/drop_impl_check.rs:17:5
+   |
+17 |     type ExternType<T>;
+   |     ^^^^^^^^^^^^^^^^^^^
+
+error: extern types must provide `#![link(crate = "...")]` or explicit `impl Drop`
+  --> tests/ui_fail/drop_impl_check.rs:21:5
+   |
+21 |     type ExternType;
+   |     ^^^^^^^^^^^^^^^^
+
+error: explicit `impl Drop` is only allowed for declared types
+  --> tests/ui_fail/drop_impl_check.rs:25:19
+   |
+25 |     impl Drop for OpaqueType {
+   |                   ^^^^^^^^^^
+
+error: explicit `impl Drop` is only allowed for declared types
+  --> tests/ui_fail/drop_impl_check.rs:33:19
+   |
+33 |     impl Drop for ExternType {
+   |                   ^^^^^^^^^^
+
+error[E0366]: `Drop` impls cannot be specialized
+  --> tests/ui_fail/drop_impl_check.rs:38:1
+   |
+38 | / export_C! {
+39 | |     type Export1<T>;
+40 | |
+41 | |     impl Drop for Export1<u32> {
+   | |______________________________^
+   |
+   = note: `u32` is not a generic parameter
+note: use the same sequence of generic lifetime, type and const parameters as the struct definition
+  --> tests/ui_fail/drop_impl_check.rs:38:1
+   |
+38 | / export_C! {
+39 | |     type Export1<T>;
+40 | |
+41 | |     impl Drop for Export1<u32> {
+...  |
+44 | | }
+   | |_^
+   = note: this error originates in the macro `export_C` (in Nightly builds, run with -Z macro-backtrace for more info)
+
+error[E0366]: `Drop` impls cannot be specialized
+  --> tests/ui_fail/drop_impl_check.rs:46:1
+   |
+46 | / extern_C! {
+47 | |     #![link(crate = "kita")]
+48 | |
+49 | |     type Extern1<T>;
+50 | |
+51 | |     impl Drop for Extern1<u32> {
+   | |______________________________^
+   |
+   = note: `u32` is not a generic parameter
+note: use the same sequence of generic lifetime, type and const parameters as the struct definition
+  --> tests/ui_fail/drop_impl_check.rs:46:1
+   |
+46 | / extern_C! {
+47 | |     #![link(crate = "kita")]
+48 | |
+49 | |     type Extern1<T>;
+   | |________________^
+   = note: this error originates in the macro `extern_C` (in Nightly builds, run with -Z macro-backtrace for more info)
+
+error[E0366]: `Drop` impls cannot be specialized
+  --> tests/ui_fail/drop_impl_check.rs:56:1
+   |
+56 | / export_C! {
+57 | |     #[id(u32)]
+58 | |     type Export2<T>;
+...  |
+61 | |     impl Drop for Export2<u32> {
+   | |______________________________^
+   |
+   = note: `u32` is not a generic parameter
+note: use the same sequence of generic lifetime, type and const parameters as the struct definition
+  --> tests/ui_fail/drop_impl_check.rs:56:1
+   |
+56 | / export_C! {
+57 | |     #[id(u32)]
+58 | |     type Export2<T>;
+...  |
+64 | | }
+   | |_^
+   = note: this error originates in the macro `export_C` (in Nightly builds, run with -Z macro-backtrace for more info)
+
+error[E0366]: `Drop` impls cannot be specialized
+  --> tests/ui_fail/drop_impl_check.rs:66:1
+   |
+66 | / extern_C! {
+67 | |     #![link(crate = "kita")]
+68 | |
+69 | |     #[id(u32)]
+...  |
+72 | |     #[dispatch]
+73 | |     impl Drop for Extern2<u32> {
+   | |______________________________^
+   |
+   = note: `u32` is not a generic parameter
+note: use the same sequence of generic lifetime, type and const parameters as the struct definition
+  --> tests/ui_fail/drop_impl_check.rs:66:1
+   |
+66 | / extern_C! {
+67 | |     #![link(crate = "kita")]
+68 | |
+69 | |     #[id(u32)]
+70 | |     type Extern2<T>;
+   | |________________^
+   = note: this error originates in the macro `extern_C` (in Nightly builds, run with -Z macro-backtrace for more info)

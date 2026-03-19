@@ -11,7 +11,6 @@ use syn::{Ident, parse_quote, visit::Visit};
 
 use crate::{
     attr::repr::ReprPrimitive,
-    emitter::Emitter,
     repr::{
         FfiTypeField, FfiTypeVariant, derive_extern_c_internal, is_type_parameterized,
         niche::{gen_enum_niche_ir, gen_struct_niche_ir},
@@ -1024,9 +1023,10 @@ fn gen_borrowed_data_enum(
 }
 
 fn derive_borrowed_helper(item: &syn::DeriveInput) -> TokenStream {
-    let mut emitter = Emitter::new();
-    let derived = derive_extern_c_internal::<false>(&mut emitter, item);
-    emitter.finish_token_stream_with(derived)
+    match derive_extern_c_internal::<false>(item) {
+        Ok(derived) => derived,
+        Err(err) => err.to_compile_error(),
+    }
 }
 
 fn gen_out_ptr_impls(
@@ -1209,20 +1209,12 @@ fn gen_to_owned_bounds(fields: &[&syn::Type], generics: &syn::Generics) -> Token
     quote! { #(#parameterized_field_types: co3::borrow::ToOwned<'_ršč>,)* }
 }
 
-fn gen_encode_bounds(fields: &[&syn::Type], generics: &syn::Generics) -> TokenStream {
-    let parameterized_field_types = fields
-        .iter()
-        .filter(|ty| is_type_parameterized(ty, generics));
-
-    quote! { #(#parameterized_field_types: co3::Encode<false>,)* }
+fn gen_encode_bounds(fields: &[&syn::Type], _generics: &syn::Generics) -> TokenStream {
+    quote! { #(#fields: co3::Encode<false>,)* }
 }
 
-fn gen_decode_bounds(fields: &[&syn::Type], generics: &syn::Generics) -> TokenStream {
-    let parameterized_field_types = fields
-        .iter()
-        .filter(|ty| is_type_parameterized(ty, generics));
-
-    quote! { #(#parameterized_field_types: co3::Decode<'_dšč>,)* }
+fn gen_decode_bounds(fields: &[&syn::Type], _generics: &syn::Generics) -> TokenStream {
+    quote! { #(#fields: co3::Decode<'_dšč>,)* }
 }
 
 fn gen_decode_cloned_bounds(fields: &[&syn::Type]) -> TokenStream {

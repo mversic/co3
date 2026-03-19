@@ -1,0 +1,43 @@
+error[E0308]: mismatched types
+  --> tests/ui_fail/signature_mismatch.rs:22:1
+   |
+22 | / export_C! {
+23 | |      fn kita(a: &Box<u32>);
+24 | | }
+   | |_^ expected fn pointer, found fn item
+   |
+   = note: expected fn pointer `for<'a> fn(&'a Box<u32>)`
+                 found fn item `for<'a> fn(&'a u32) {kita}`
+   = note: this error originates in the macro `export_C` (in Nightly builds, run with -Z macro-backtrace for more info)
+
+error[E0308]: mismatched types
+  --> tests/ui_fail/signature_mismatch.rs:26:1
+   |
+26 | / export_C! {
+27 | |     impl Kita for u32 {
+28 | |         fn kita2(a: &Box<u32>);
+29 | |     }
+30 | | }
+   | |_^ expected fn pointer, found fn item
+   |
+   = note: expected fn pointer `for<'a> fn(&'a Box<u32>)`
+                 found fn item `for<'a> fn(&'a u32) {<u32 as Kita>::kita2}`
+   = note: this error originates in the macro `export_C` (in Nightly builds, run with -Z macro-backtrace for more info)
+
+error[E0308]: mismatched types
+  --> tests/ui_fail/signature_mismatch.rs:42:17
+   |
+42 |         fn kita(self_id: Self::ID, self: Self) -> Self;
+   |            ---- ^^^^^^^ expected `u32`, found `u8`
+   |            |
+   |            arguments to this function are incorrect
+   |
+note: function defined here
+  --> tests/ui_fail/signature_mismatch.rs:42:12
+   |
+42 |         fn kita(self_id: Self::ID, self: Self) -> Self;
+   |            ^^^^ -------
+help: you can convert a `u8` to a `u32`
+   |
+42 |         fn kita(self_id.into(): Self::ID, self: Self) -> Self;
+   |                        +++++++

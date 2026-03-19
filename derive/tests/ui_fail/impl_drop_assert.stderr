@@ -16,7 +16,23 @@ error[E0080]: evaluation panicked: assertion failed: ::co3::impls!(Self : ! Drop
   --> tests/ui_fail/impl_drop_assert.rs:27:10
    |
 27 | #[derive(ReprC)]
-   |          ^^^^^ evaluation of `<TransparentEnumWithDrop as _::_::Borrow0<co3::borrow::NeedsDrop>>::borrow_šč::<'_>::{constant#0}` failed here
+   |          ^^^^^ evaluation of `<TransparentEnumWithDrop as co3::borrow::Borrow>::borrow::<'_>::{constant#0}` failed here
+   |
+   = note: this error originates in the macro `assert` which comes from the expansion of the derive macro `ReprC` (in Nightly builds, run with -Z macro-backtrace for more info)
+
+note: erroneous constant encountered
+  --> tests/ui_fail/impl_drop_assert.rs:27:10
+   |
+27 | #[derive(ReprC)]
+   |          ^^^^^
+   |
+   = note: this note originates in the macro `$crate::reprC` which comes from the expansion of the derive macro `ReprC` (in Nightly builds, run with -Z macro-backtrace for more info)
+
+error[E0080]: evaluation panicked: assertion failed: ::co3::impls!(Self : ! Drop)
+  --> tests/ui_fail/impl_drop_assert.rs:27:10
+   |
+27 | #[derive(ReprC)]
+   |          ^^^^^ evaluation of `<TransparentEnumWithDrop as co3::borrow::ToOwned<'_>>::to_owned::{constant#0}` failed here
    |
    = note: this error originates in the macro `assert` which comes from the expansion of the derive macro `ReprC` (in Nightly builds, run with -Z macro-backtrace for more info)
 
@@ -89,6 +105,22 @@ error[E0080]: evaluation panicked: assertion failed: ::co3::impls!(Self : ! Drop
    |
 99 | #[derive(ReprC)]
    |          ^^^^^ evaluation of `<TransparentStructWithDrop as _::_::Borrow0<co3::borrow::NoDrop>>::borrow_šč::<'_>::{constant#0}` failed here
+   |
+   = note: this error originates in the macro `assert` which comes from the expansion of the derive macro `ReprC` (in Nightly builds, run with -Z macro-backtrace for more info)
+
+note: erroneous constant encountered
+  --> tests/ui_fail/impl_drop_assert.rs:99:10
+   |
+99 | #[derive(ReprC)]
+   |          ^^^^^
+   |
+   = note: this note originates in the macro `$crate::reprC` which comes from the expansion of the derive macro `ReprC` (in Nightly builds, run with -Z macro-backtrace for more info)
+
+error[E0080]: evaluation panicked: assertion failed: ::co3::impls!(Self : ! Drop)
+  --> tests/ui_fail/impl_drop_assert.rs:99:10
+   |
+99 | #[derive(ReprC)]
+   |          ^^^^^ evaluation of `<TransparentStructWithDrop as _::_::ToOwned0<'_, co3::borrow::NoDrop>>::to_owned_šč::{constant#0}` failed here
    |
    = note: this error originates in the macro `assert` which comes from the expansion of the derive macro `ReprC` (in Nightly builds, run with -Z macro-backtrace for more info)
 
