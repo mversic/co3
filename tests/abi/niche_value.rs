@@ -1,14 +1,16 @@
 use core::cmp::Ordering;
 
-use co3::{Encode, ReprC, export, export_C, extern_C};
+use co3::{Encode, ReprC, export_C, extern_C};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-#[export("C")]
 pub enum Opaque {
+    #[allow(unused)]
     A,
 }
 
 export_C! {
+    type Opaque;
+
     impl Drop for Opaque {
         fn drop(&mut self);
     }
@@ -18,7 +20,7 @@ extern_C! {
     pub type Extern;
 
     impl Drop for Extern {
-        #[link_name = "abi_Drop_Opaque_drop"]
+        #[link_name = "abi__Drop__Opaque__drop"]
         fn drop(&mut self);
     }
 }
@@ -341,7 +343,7 @@ fn verify_enum_niche_value() {
     assert_eq!(expected_bool, None::<bool>.encode(&mut ()));
     assert_eq!(expected_ord, None::<Ordering>.encode(&mut ()));
 
-    assert!(None::<Opaque>.encode(&mut ()).is_null());
+    assert!(None::<Opaque>.encode(&mut ()).is_none());
     assert!(None::<Extern>.encode(&mut ()).is_null());
 
     let expected_niche_enum_discriminant_u = 4_u8;

@@ -1,18 +1,26 @@
-use co3::{export, export_C, extern_C, handles};
+use co3::{export, export_C, extern_C, handles, handle::HandleFamily};
+
+trait Trait {}
+struct Kita;
 
 pub struct GenericHandle<'a, T, const N: usize>(&'a [T; N]);
 
+impl HandleFamily for Kita {
+    type Kind = u32;
+}
+
 handles! {
     for<'a> GenericHandle<'a, u32, 23>,
+    Kita,
 }
 
 export_C! {
     #[id(u32)]
     pub type GenericHandle<'a, T, const N: usize>;
 
-    #[dispatch(<u32, 23>)]
-    impl<'a, U, const K: usize> Drop for GenericHandle<'a, U, K> {
-        fn drop(self_id: Self::ID, &mut dyn self);
+    #[dispatch(<Kita, 23>)]
+    impl<'a, dyn(u32) U, const K: usize> Drop for GenericHandle<'a, U, K> {
+        fn drop(&mut self);
     }
 }
 
@@ -51,6 +59,11 @@ pub extern "C" fn export3<const N: usize>(v: [u32; N]) -> [u32; N] {
     v
 }
 
+export_C! {
+    #[dispatch(<Kita, 23>)]
+    impl<'a, dyn(u32) U, const K: usize> Trait for GenericHandle<'a, U, K> {}
+}
+
 extern_C! {
     #![link(crate = "kita")]
 
@@ -70,7 +83,11 @@ extern_C! {
     pub extern "C" fn extern1<'a>(v: &'a u32) -> &'a u32;
     pub extern "C" fn extern2<T>(v: T) -> T;
     pub extern "C" fn extern3<const N: usize>(v: [u32; N]) -> [u32; N];
+
+    #[dispatch(<Kita, 23>)]
+    impl<'a, dyn(u32) U, const K: usize> Trait for GenericHandle<'a, U, K> {
+        fn drop(self_id: <dyn U>::ID, &mut self);
+    }
 }
 
-// FIXME: Check test output .stderr, there is an issue about lifetimes that shouldn't be there
 fn main() {}

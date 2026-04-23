@@ -20,9 +20,9 @@ extern_C! {
     type Opaque2;
 
     fn kita1(
+        inc_id: <Opaque2 as HandleFamily>::Kind,
         a_id: <Opaque1 as co3::handle::HandleFamily>::Kind,
         a: &mut Opaque1,
-        inc_id: <Opaque2 as HandleFamily>::Kind,
         inc: &Opaque2,
     ) -> u8;
 }
@@ -62,7 +62,7 @@ mod provider {
         #[dispatch(<Opaque2, Opaque1>)]
         impl<dyn(u8) T, dyn(u32) U> Custom<T> for U {
             #[unsafe(export_name = "this_crate__kita1")]
-            fn kita1(self_id: Self::ID, &mut self, inc_id: T::ID, inc: &T) -> u8;
+            fn kita1(&mut self, inc: &T) -> u8;
         }
     }
 }
@@ -71,5 +71,5 @@ fn main() {
     let mut value1 = Opaque1(NonNull::dangling());
     let value2 = Opaque2(NonNull::dangling());
 
-    let _ = kita1(Opaque1::ID, &mut value1, Opaque2::ID, &value2);
+    let _ = kita1(Opaque2::ID, Opaque1::ID, &mut value1, &value2);
 }

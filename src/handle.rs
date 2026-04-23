@@ -15,6 +15,12 @@ use crate::{
     transmute::CheckedTransmute,
 };
 
+pub trait HandleFamily {
+    // FIXME: Remove Store bound once we have no-store conversion traits
+    // Also should it be required that the type is `Copy`?
+    type Kind: Encode<Store = ()> + Copy;
+}
+
 /// Represents an opaque handle in an FFI context
 ///
 /// # Safety
@@ -26,11 +32,6 @@ pub unsafe trait Handle: HandleFamily {
     /// Unique identifier of the handle. Most commonly, it is
     /// used to facilitate generic monomorphization over FFI
     const ID: Self::Kind;
-}
-
-pub trait HandleFamily {
-    // FIXME: Remove Store bound once we have no-store conversion traits
-    type Kind: Encode<Store = ()>;
 }
 
 #[repr(transparent)]

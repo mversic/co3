@@ -18,6 +18,7 @@ use crate::{
             derive_data_enum, derive_fieldless_enum, derive_repr_c_data_enum, derive_repr_c_struct,
         },
     },
+    utils::push_error,
 };
 use no_repr::{derive_no_repr_data_enum, derive_no_repr_struct};
 use transparent::derive_transparent_item;
@@ -332,14 +333,6 @@ pub fn derive_extern_c(input: &syn::DeriveInput) -> syn::Result<TokenStream> {
 pub(crate) fn derive_extern_c_internal<const NEEDS_DROP: bool>(
     input: &syn::DeriveInput,
 ) -> syn::Result<TokenStream> {
-    fn push_error(errors: &mut Option<syn::Error>, err: syn::Error) {
-        if let Some(errors) = errors {
-            errors.combine(err);
-        } else {
-            *errors = Some(err);
-        }
-    }
-
     let mut errors = None::<syn::Error>;
     let mut input = FfiTypeInput::from_derive_input(input)
         .map_err(|err| syn::Error::new_spanned(input, err.to_string()))?;
@@ -616,14 +609,6 @@ pub fn is_type_parameterized(ty: &syn::Type, generics: &syn::Generics) -> bool {
 /// Verifies each field's pointer types are marked as non-owning
 fn verify_field_non_owning(errors: &mut Option<syn::Error>, field: &FfiTypeField) {
     use syn::visit::Visit;
-
-    fn push_error(errors: &mut Option<syn::Error>, err: syn::Error) {
-        if let Some(errors) = errors {
-            errors.combine(err);
-        } else {
-            *errors = Some(err);
-        }
-    }
 
     if field.ffi_type_attr.kind == Some(FfiTypeKindFieldAttribute::UnsafeNonOwning) {
         return;

@@ -1,27 +1,28 @@
 use co3::{export_C, extern_C, handles};
 
+trait Kita {}
+
 struct Export1<T>(T);
-struct Export2<T>(T);
-struct Export3<T>(T);
+
+impl<T> Kita for Export1<T> {}
 
 handles! {
-    Export2<u32>,
-    Extern2<u32>,
+    Export1<u32>,
 }
 
 export_C! {
+    #[id(u8)]
     type OpaqueType<T>;
 }
 
 extern_C! {
+    #[id(u8)]
     type ExternType<T>;
 }
 
-extern_C! {
-    type ExternType;
-}
-
 export_C! {
+    #![export(crate = "kita")]
+
     impl Drop for OpaqueType {
         fn drop(&mut self);
     }
@@ -35,31 +36,30 @@ extern_C! {
     }
 }
 
-export_C! {
-    type Export1<T>;
-
-    impl Drop for Export1<u32> {
-        fn drop(&mut self);
-    }
+extern_C! {
+    type ExternType;
 }
 
 extern_C! {
     #![link(crate = "kita")]
 
-    type Extern1<T>;
+    #[id(u32)]
+    type Extern1;
 
-    impl Drop for Extern1<u32> {
-        fn drop(&mut self);
+    #[dispatch(<Extern1>)]
+    impl<dyn(u32) T> Drop for T {
+        fn drop(&mut self, self_id: <dyn Self>::ID);
     }
 }
 
 export_C! {
     #[id(u32)]
-    type Export2<T>;
+    type Export1<T>;
 
-    #[dispatch]
-    impl Drop for Export2<u32> {
-        fn drop(self_id: Self::ID, &mut dyn self);
+    #[dispatch(<u32>)]
+    // TODO: These Drop impls could be allowed
+    impl<T> Drop for dyn Export1<T> where Self: Kita {
+        fn drop(&mut self);
     }
 }
 
@@ -70,8 +70,8 @@ extern_C! {
     type Extern2<T>;
 
     #[dispatch]
-    impl Drop for Extern2<u32> {
-        fn drop(self_id: Self::ID, &mut dyn self);
+    impl<T> Drop for dyn Extern2<T> where Self: Kita {
+        fn drop(&mut self, self_id: <dyn Self>::ID);
     }
 }
 

@@ -1,157 +1,163 @@
-error: missing `#![abi = "..."]`
-  --> tests/ui_fail/export_restrictions.rs:20:1
+error: item not supported
+  --> tests/ui_fail/export_restrictions.rs:14:5
    |
-20 | export_! {}
+14 |     #[export("C")]
+   |     ^
+
+error: missing `#![abi = "..."]`
+  --> tests/ui_fail/export_restrictions.rs:22:1
+   |
+22 | export_! {}
    | ^^^^^^^^^^^
    |
    = note: this error originates in the macro `export_` (in Nightly builds, run with -Z macro-backtrace for more info)
 
 error: Duplicate `#![abi = "..."]`
-  --> tests/ui_fail/export_restrictions.rs:23:5
+  --> tests/ui_fail/export_restrictions.rs:25:5
    |
-23 |     #![abi = "C"]
+25 |     #![abi = "C"]
    |     ^^^^^^^^^^^^^
 
 error: Duplicate `#![abi = "..."]`
-  --> tests/ui_fail/export_restrictions.rs:28:5
+  --> tests/ui_fail/export_restrictions.rs:30:5
    |
-28 |     #![abi = "C"]
+30 |     #![abi = "C"]
    |     ^^^^^^^^^^^^^
 
 error: item not supported
-  --> tests/ui_fail/export_restrictions.rs:32:5
+  --> tests/ui_fail/export_restrictions.rs:34:5
    |
-32 |     trait Kita {
+34 |     trait Kita {
    |     ^^^^^
 
 error: item not supported
-  --> tests/ui_fail/export_restrictions.rs:38:5
+  --> tests/ui_fail/export_restrictions.rs:40:5
    |
-38 |     enum Kita {}
+40 |     enum Kita {}
    |     ^^^^
 
 error: item not supported
-  --> tests/ui_fail/export_restrictions.rs:42:5
+  --> tests/ui_fail/export_restrictions.rs:44:5
    |
-42 |     struct Kita {}
+44 |     struct Kita {}
    |     ^^^^^^
 
 error: item not supported
-  --> tests/ui_fail/export_restrictions.rs:46:5
+  --> tests/ui_fail/export_restrictions.rs:48:5
    |
-46 |     union Kita {}
+48 |     union Kita {}
    |     ^^^^^
 
 error: expected ABI string literal, e.g. `#[export("C")]`
-  --> tests/ui_fail/export_restrictions.rs:49:1
+  --> tests/ui_fail/export_restrictions.rs:51:1
    |
-49 | #[export]
+51 | #[export]
    | ^^^^^^^^^
    |
    = note: this error originates in the attribute macro `export` (in Nightly builds, run with -Z macro-backtrace for more info)
 
 error: expected ABI string literal, e.g. `#[export("C")]`
-  --> tests/ui_fail/export_restrictions.rs:52:1
+  --> tests/ui_fail/export_restrictions.rs:54:1
    |
-52 | #[export]
+54 | #[export]
    | ^^^^^^^^^
    |
    = note: this error originates in the attribute macro `export` (in Nightly builds, run with -Z macro-backtrace for more info)
 
 error: expected ABI string literal, e.g. `#[export("C")]`
-  --> tests/ui_fail/export_restrictions.rs:55:1
+  --> tests/ui_fail/export_restrictions.rs:57:1
    |
-55 | #[export]
+57 | #[export]
    | ^^^^^^^^^
    |
    = note: this error originates in the attribute macro `export` (in Nightly builds, run with -Z macro-backtrace for more info)
 
 error: expected ABI string literal, e.g. `#[export("C")]`
-  --> tests/ui_fail/export_restrictions.rs:58:1
+  --> tests/ui_fail/export_restrictions.rs:60:1
    |
-58 | #[export]
+60 | #[export]
    | ^^^^^^^^^
    |
    = note: this error originates in the attribute macro `export` (in Nightly builds, run with -Z macro-backtrace for more info)
 
 error: expected ABI string literal, e.g. `#[export("C")]`
-  --> tests/ui_fail/export_restrictions.rs:61:1
+  --> tests/ui_fail/export_restrictions.rs:63:1
    |
-61 | #[export]
+63 | #[export]
    | ^^^^^^^^^
    |
    = note: this error originates in the attribute macro `export` (in Nightly builds, run with -Z macro-backtrace for more info)
 
 error: expected ABI string literal, e.g. `#[export("C")]`
-  --> tests/ui_fail/export_restrictions.rs:64:1
+  --> tests/ui_fail/export_restrictions.rs:66:1
    |
-64 | #[export]
+66 | #[export]
    | ^^^^^^^^^
    |
    = note: this error originates in the attribute macro `export` (in Nightly builds, run with -Z macro-backtrace for more info)
 
 error: generic types are not supported by `#[export]`; use `export_!`/`export_C!`
-  --> tests/ui_fail/export_restrictions.rs:68:22
+  --> tests/ui_fail/export_restrictions.rs:70:22
    |
-68 | struct NoExportStruct<T>(T);
+70 | struct NoExportStruct<T>(T);
    |                      ^^^
 
 error: Attribute not supported in this position
-  --> tests/ui_fail/export_restrictions.rs:71:5
+  --> tests/ui_fail/export_restrictions.rs:73:5
    |
-71 |     #[unknown_attribute]
+73 |     #[unknown_attribute]
    |     ^^^^^^^^^^^^^^^^^^^^
 
 error: Attribute not supported in this position
-  --> tests/ui_fail/export_restrictions.rs:76:5
+  --> tests/ui_fail/export_restrictions.rs:78:5
    |
-76 |     #[some_attr]
+78 |     #[some_attr]
    |     ^^^^^^^^^^^^
 
 error: Attribute not supported in this position
-  --> tests/ui_fail/export_restrictions.rs:81:5
+  --> tests/ui_fail/export_restrictions.rs:83:5
    |
-81 |     #[some_attr]
+83 |     #[some_attr]
    |     ^^^^^^^^^^^^
 
 error: `#[dispatch]` is only supported on impl blocks`
-  --> tests/ui_fail/export_restrictions.rs:89:9
+  --> tests/ui_fail/export_restrictions.rs:91:9
    |
-89 |         #[dispatch]
+91 |         #[dispatch]
    |         ^^^^^^^^^^^
 
 error: Attribute not supported in this position
-  --> tests/ui_fail/export_restrictions.rs:95:5
+  --> tests/ui_fail/export_restrictions.rs:91:9
    |
-95 |     #[dispatch]
+91 |         #[dispatch]
+   |         ^^^^^^^^^^^
+
+error: Attribute not supported in this position
+  --> tests/ui_fail/export_restrictions.rs:97:5
+   |
+97 |     #[dispatch]
    |     ^^^^^^^^^^^
 
 error: fn bodies are not allowed in declarations
-   --> tests/ui_fail/export_restrictions.rs:101:24
+   --> tests/ui_fail/export_restrictions.rs:103:24
     |
-101 |         fn kita1(self) {}
+103 |         fn kita1(self) {}
     |                        ^
 
 error: fn bodies are not allowed in declarations
-   --> tests/ui_fail/export_restrictions.rs:106:22
+   --> tests/ui_fail/export_restrictions.rs:108:22
     |
-106 |     fn kita1(a: u32) {}
+108 |     fn kita1(a: u32) {}
     |                      ^
 
 error: patterns aren't allowed in function declarations
-   --> tests/ui_fail/export_restrictions.rs:110:14
+   --> tests/ui_fail/export_restrictions.rs:112:14
     |
-110 |     fn kita1((a, b): (u32, u32));
+112 |     fn kita1((a, b): (u32, u32));
     |              ^^^^^^
 
 error: dispatch must provide 1 generic argument
-   --> tests/ui_fail/export_restrictions.rs:121:16
+   --> tests/ui_fail/export_restrictions.rs:124:16
     |
-121 |     #[dispatch(<u32, u8>)]
+124 |     #[dispatch(<u32, u8>)]
     |                ^^^^^^^^^
-
-error: lifetime arguments not required in dispatch
-   --> tests/ui_fail/export_restrictions.rs:128:17
-    |
-128 |     #[dispatch(<'a>)]
-    |                 ^^

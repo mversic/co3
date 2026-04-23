@@ -27,7 +27,7 @@ error[E0308]: mismatched types
 error[E0308]: mismatched types
   --> tests/ui_fail/signature_mismatch.rs:42:17
    |
-42 |         fn kita(self_id: Self::ID, self: Self) -> Self;
+42 |         fn kita(self_id: <dyn Self>::ID, self: Self) -> Self;
    |            ---- ^^^^^^^ expected `u32`, found `u8`
    |            |
    |            arguments to this function are incorrect
@@ -35,9 +35,27 @@ error[E0308]: mismatched types
 note: function defined here
   --> tests/ui_fail/signature_mismatch.rs:42:12
    |
-42 |         fn kita(self_id: Self::ID, self: Self) -> Self;
+42 |         fn kita(self_id: <dyn Self>::ID, self: Self) -> Self;
    |            ^^^^ -------
 help: you can convert a `u8` to a `u32`
    |
-42 |         fn kita(self_id.into(): Self::ID, self: Self) -> Self;
+42 |         fn kita(self_id.into(): <dyn Self>::ID, self: Self) -> Self;
    |                        +++++++
+
+error[E0308]: mismatched types
+  --> tests/ui_fail/signature_mismatch.rs:43:27
+   |
+43 |         fn kita2(a: &u32, self_id: <dyn T>::ID);
+   |            -----          ^^^^^^^ expected `u32`, found `u8`
+   |            |
+   |            arguments to this function are incorrect
+   |
+note: function defined here
+  --> tests/ui_fail/signature_mismatch.rs:43:12
+   |
+43 |         fn kita2(a: &u32, self_id: <dyn T>::ID);
+   |            ^^^^^          -------
+help: you can convert a `u8` to a `u32`
+   |
+43 |         fn kita2(a: &u32, self_id.into(): <dyn T>::ID);
+   |                                  +++++++

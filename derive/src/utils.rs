@@ -21,12 +21,16 @@ pub(crate) struct ImplTraitResolution {
 
 pub(crate) struct TypeImplTraitResolver;
 
-pub(crate) fn is_type_erased(attr: &Attribute) -> bool {
-    attr.path().is_ident("erased")
+pub(crate) fn push_error(errors: &mut Option<syn::Error>, err: syn::Error) {
+    if let Some(errors) = errors {
+        errors.combine(err);
+    } else {
+        *errors = Some(err);
+    }
 }
 
-pub(crate) fn dyn_dispatch_repr(attr: &Attribute) -> syn::Result<Type> {
-    attr.parse_args()
+pub(crate) fn is_type_erased(attr: &Attribute) -> bool {
+    attr.path().is_ident("erased")
 }
 
 pub(crate) fn gen_store_name(arg_name: &syn::Ident) -> syn::Ident {
@@ -314,19 +318,16 @@ pub fn unwrap_result_type(node: &Type) -> Option<(&Type, &Type)> {
         return None;
     }
 
-    let is_result_path = type_.path.is_ident("Result")
-        || type_
-            .path
-            .segments
-            .iter()
-            .map(|segment| segment.ident.to_string())
-            .eq(["core", "result", "Result"])
-        || type_
-            .path
-            .segments
-            .iter()
-            .map(|segment| segment.ident.to_string())
-            .eq(["std", "result", "Result"]);
+    let segments = type_
+        .path
+        .segments
+        .iter()
+        .map(|segment| segment.ident.to_string())
+        .collect::<Vec<_>>();
+
+    let is_result_path = segments == ["Result"]
+        || segments == ["core", "result", "Result"]
+        || segments == ["std", "result", "Result"];
 
     if !is_result_path {
         return None;

@@ -1,8 +1,15 @@
+use std::collections::{BTreeMap, BTreeSet};
+
 use proc_macro2::{Span, TokenStream};
 use quote::{format_ident, quote};
-use syn::{Ident, Path, Type, parse_quote, visit::Visit, visit_mut::VisitMut};
+use syn::{
+    Ident, Path, Type, parse_quote,
+    visit::{Visit, visit_type},
+    visit_mut::VisitMut,
+};
 
 use crate::{
+    dispatch::handle_id,
     generate::OwnershipMode,
     utils::{TypeImplTraitResolver, gen_normalization_stmts, unwrap_result_type},
 };
@@ -104,16 +111,30 @@ pub(crate) fn boxed_array_ty(ty: &Type) -> Option<Type> {
 pub(crate) fn gen_signature_input_init_stmts<'a>(
     inputs: impl IntoIterator<Item = &'a syn::FnArg>,
 ) -> TokenStream {
-    let value_tys = inputs
+    let (value_tys, decode_tys): (Vec<_>, Vec<_>) = inputs
         .into_iter()
-        .map(|input| match input {
-            syn::FnArg::Receiver(receiver) => &*receiver.ty,
-            syn::FnArg::Typed(arg) => &*arg.ty,
+        .map(|input| {
+            let (attrs, arg_ty) = match input {
+                syn::FnArg::Receiver(receiver) => (&receiver.attrs, &*receiver.ty),
+                syn::FnArg::Typed(arg) => (&arg.attrs, &*arg.ty),
+            };
+
+            let decode_ty = match ownership_mode_for_arg(attrs, arg_ty) {
+                OwnershipMode::Borrow if matches!(arg_ty, Type::Array(_)) => quote!(&#arg_ty),
+                OwnershipMode::Borrow => quote!(<#arg_ty as co3::borrow::Borrow>::Borrowed<'_>),
+                OwnershipMode::ByValue if let Some(boxed_ty) = boxed_array_ty(arg_ty) => {
+                    quote!(#boxed_ty)
+                }
+                OwnershipMode::ByValue => quote!(#arg_ty),
+            };
+
+            (quote!(#arg_ty), decode_ty)
         })
-        .collect::<Vec<_>>();
-    let stores = value_tys
-        .iter()
-        .map(|ty| quote!(<<#ty as co3::Decode>::Store as core::default::Default>::default()));
+        .unzip();
+
+    let stores = decode_tys.iter().map(|ty| {
+        quote! { <<#ty as co3::Decode>::Store as core::default::Default>::default() }
+    });
 
     quote! {
         let mut __co3_input_values = (#(Option::<#value_tys>::default(),)*);
@@ -146,23 +167,17 @@ pub(crate) fn gen_signature_input_conversion_stmts<'a>(
 
         // FIXME: If type alias T = [x; N] is used conversion of Array to Box or reference will not work
         let (borrowed_ty, to_owned) = match ownership_mode_for_arg(attrs, &arg_ty) {
-            OwnershipMode::Borrow => {
-                if matches!(arg_ty, Type::Array(_)) {
-                    (quote!(&#arg_ty), quote!(Clone::clone(#arg_name)))
-                } else {
-                    (
-                        quote!(<#arg_ty as co3::borrow::Borrow>::Borrowed<'_>),
-                        quote!(co3::borrow::ToOwned::to_owned(#arg_name)),
-                    )
-                }
+            OwnershipMode::Borrow if matches!(arg_ty, Type::Array(_)) => {
+                (quote!(&#arg_ty), quote!(Clone::clone(#arg_name)))
             }
-            OwnershipMode::ByValue => {
-                if let Some(boxed_ty) = boxed_array_ty(&arg_ty) {
-                    (quote!(#boxed_ty), quote!(*#arg_name))
-                } else {
-                    (quote!(#arg_ty), quote!(#arg_name))
-                }
+            OwnershipMode::Borrow => (
+                quote!(<#arg_ty as co3::borrow::Borrow>::Borrowed<'_>),
+                quote!(co3::borrow::ToOwned::to_owned(#arg_name)),
+            ),
+            OwnershipMode::ByValue if let Some(boxed_ty) = boxed_array_ty(&arg_ty) => {
+                (quote!(#boxed_ty), quote!(*#arg_name))
             }
+            OwnershipMode::ByValue => (quote!(#arg_ty), quote!(#arg_name)),
         };
 
         stmts.extend(quote! {
@@ -207,24 +222,33 @@ fn gen_signature_output_assignment_stmts(ret_ty: &syn::ReturnType) -> TokenStrea
         return quote! {};
     };
 
-    let normalize_output = gen_normalization_stmts(&output, ret_ty);
-    let (unwrap_result, ret_ty) = if let Some((ok, _)) = unwrap_result_type(ret_ty) {
-        (
-            quote! {
-                let Ok(__co3_output) = __co3_output else {
-                    __co3_call_error = Some(co3::FfiReturn::ExecutionFail);
-                };
-            },
-            ok,
-        )
-    } else {
-        (quote!(), &**ret_ty)
-    };
-    quote! {
-        #unwrap_result
-        #normalize_output
+    if let Some((ok, _)) = unwrap_result_type(ret_ty) {
+        let normalize_output = gen_normalization_stmts(&output, ok);
 
-        unsafe { <#ret_ty as co3::out_ptr::OutPtrWrite>::write_out(#output, __co3_out_ptr); }
+        quote! {
+            match __co3_output {
+                Ok(__co3_output) => {
+                    #normalize_output
+
+                    unsafe {
+                        <#ok as co3::out_ptr::OutPtrWrite>::write_out(#output, __co3_out_ptr);
+                    }
+                }
+                Err(_) => {
+                    __co3_call_error = Some(co3::FfiReturn::ExecutionFail);
+                }
+            }
+        }
+    } else {
+        let normalize_output = gen_normalization_stmts(&output, ret_ty);
+
+        quote! {
+            #normalize_output
+
+            unsafe {
+                <#ret_ty as co3::out_ptr::OutPtrWrite>::write_out(#output, __co3_out_ptr);
+            }
+        }
     }
 }
 
@@ -247,23 +271,10 @@ fn gen_fn_definition_body(item: &syn::ItemFn) -> TokenStream {
     gen_definition_body(item.sig.clone(), quote! { self::#fn_name })
 }
 
-fn gen_impl_fn_definition_body(item: &syn::ImplItemFn, impl_: &syn::ItemImpl) -> TokenStream {
-    let trait_ = impl_.trait_.as_ref().map(|(_, path, _)| path);
-    let self_ty = &impl_.self_ty;
-    let fn_name = &item.sig.ident;
-
-    let callee = if let Some(trait_) = trait_ {
-        quote!(<#self_ty as #trait_>::#fn_name)
-    } else {
-        quote!(<#self_ty>::#fn_name)
-    };
-
-    gen_definition_body(item.sig.clone(), callee)
-}
-
 pub fn gen_impl_definition(abi: &syn::Abi, mut impl_: syn::ItemImpl) -> TokenStream {
-    let self_ty = &impl_.self_ty;
+    let trait_ = impl_.trait_.as_ref().map(|(_, path, _)| path);
 
+    let self_ty = &impl_.self_ty;
     impl_.items.iter_mut().for_each(|item| {
         let syn::ImplItem::Fn(item) = item else {
             return;
@@ -272,13 +283,21 @@ pub fn gen_impl_definition(abi: &syn::Abi, mut impl_: syn::ItemImpl) -> TokenStr
         normalize_fn_signature(&mut item.sig, Some(self_ty));
     });
 
-    let definitions = impl_.items.iter().filter_map(|item| {
-        let syn::ImplItem::Fn(item) = item else {
+    let definitions = impl_.items.into_iter().filter_map(|item| {
+        let syn::ImplItem::Fn(mut item) = item else {
             return None;
         };
 
-        let fn_signature = gen_extern_fn_signature(Some(&impl_.generics), item.sig.clone());
-        let ffi_fn_body = gen_impl_fn_definition_body(item, &impl_);
+        let fn_name = &item.sig.ident;
+        let callee = if let Some(trait_) = trait_ {
+            quote!(<#self_ty as #trait_>::#fn_name)
+        } else {
+            quote!(<#self_ty>::#fn_name)
+        };
+
+        merge_generics(impl_.generics.clone(), &mut item.sig.generics);
+        let ffi_fn_body = gen_definition_body(item.sig.clone(), callee);
+        let fn_signature = gen_extern_fn_signature(item.sig.clone());
 
         Some(emit_extern_definition(
             abi,
@@ -291,63 +310,34 @@ pub fn gen_impl_definition(abi: &syn::Abi, mut impl_: syn::ItemImpl) -> TokenStr
     quote! { #(#definitions)* }
 }
 
+pub(crate) fn merge_generics(impl_generics: syn::Generics, fn_generics: &mut syn::Generics) {
+    fn_generics.params.extend(impl_generics.params);
+
+    if let Some(impl_where_clause) = impl_generics.where_clause {
+        fn_generics
+            .make_where_clause()
+            .predicates
+            .extend(impl_where_clause.predicates);
+    }
+}
+
 pub fn gen_fn_definition(abi: &syn::Abi, mut item: syn::ItemFn) -> TokenStream {
     normalize_fn_signature(&mut item.sig, None);
 
     let ffi_fn_body = gen_fn_definition_body(&item);
-    let fn_signature = gen_extern_fn_signature(None, item.sig);
+    let fn_signature = gen_extern_fn_signature(item.sig);
 
     emit_extern_definition(abi, &item.attrs, fn_signature, ffi_fn_body)
 }
 
-pub(crate) fn gen_extern_fn_signature(
-    impl_generics: Option<&syn::Generics>,
-    mut sig: syn::Signature,
-) -> TokenStream {
-    fn merge_generics(impl_generics: &syn::Generics, fn_generics: &mut syn::Generics) {
-        let impl_lifetime_params = impl_generics
-            .params
-            .iter()
-            .filter(|param| matches!(param, syn::GenericParam::Lifetime(_)))
-            .cloned()
-            .collect::<Vec<_>>();
-        let impl_lifetime_predicates = impl_generics
-            .where_clause
-            .as_ref()
-            .into_iter()
-            .flat_map(|where_clause| where_clause.predicates.iter())
-            .filter(|predicate| matches!(predicate, syn::WherePredicate::Lifetime(_)))
-            .cloned()
-            .collect::<Vec<_>>();
-
-        let mut params = syn::punctuated::Punctuated::new();
-        params.extend(impl_lifetime_params);
-        params.extend(fn_generics.params.clone());
-        fn_generics.params = params;
-
-        match (
-            &mut fn_generics.where_clause,
-            impl_lifetime_predicates.is_empty(),
-        ) {
-            (Some(sig_where), false) => {
-                sig_where.predicates.extend(impl_lifetime_predicates);
-            }
-            (None, false) => {
-                let mut where_clause = syn::WhereClause {
-                    where_token: Default::default(),
-                    predicates: Default::default(),
-                };
-                where_clause.predicates.extend(impl_lifetime_predicates);
-                fn_generics.where_clause = Some(where_clause);
-            }
-            _ => {}
-        }
-    }
-
+pub(crate) fn gen_extern_fn_signature(mut sig: syn::Signature) -> TokenStream {
     explicitize_signature_lifetimes(&mut sig);
-    if let Some(impl_generics) = impl_generics {
-        merge_generics(impl_generics, &mut sig.generics);
-    }
+    synthesize_lifetime_bounds(&mut sig);
+
+    sig.generics.params = core::mem::take(&mut sig.generics.params)
+        .into_iter()
+        .filter(|p| matches!(p, syn::GenericParam::Lifetime(_)))
+        .collect();
 
     let fn_name = &sig.ident;
     let mut ffi_args = sig
@@ -472,6 +462,50 @@ fn explicitize_signature_lifetimes(sig: &mut syn::Signature) {
     }
 }
 
+fn synthesize_lifetime_bounds(sig: &mut syn::Signature) {
+    #[derive(Default)]
+    struct LifetimeUseCollector<'a> {
+        bounds: BTreeMap<&'a syn::Lifetime, BTreeSet<&'a syn::Lifetime>>,
+        parent_lifetimes: Vec<&'a syn::Lifetime>,
+    }
+
+    impl<'a> syn::visit::Visit<'a> for LifetimeUseCollector<'a> {
+        fn visit_type_reference(&mut self, node: &'a syn::TypeReference) {
+            if let Some(lifetime) = &node.lifetime {
+                let parents = &self.parent_lifetimes;
+                self.bounds.entry(lifetime).or_default().extend(parents);
+
+                self.parent_lifetimes.push(lifetime);
+                visit_type(self, &node.elem);
+                self.parent_lifetimes.pop();
+            } else {
+                visit_type(self, &node.elem);
+            }
+        }
+
+        fn visit_lifetime(&mut self, node: &'a syn::Lifetime) {
+            let parents = &self.parent_lifetimes;
+            self.bounds.entry(node).or_default().extend(parents);
+        }
+    }
+
+    let mut lifetime_collector = LifetimeUseCollector::default();
+    lifetime_collector.visit_signature(sig);
+
+    let bounds = lifetime_collector
+        .bounds
+        .into_iter()
+        .map(|(k, v)| (k.clone(), v.into_iter().cloned().collect::<Vec<_>>()))
+        .collect::<Vec<_>>();
+
+    for (lhs, rhs) in bounds {
+        sig.generics
+            .make_where_clause()
+            .predicates
+            .push(parse_quote!(#lhs: #(#rhs)+*));
+    }
+}
+
 fn lower_signature_input_to_ffi_arg(
     generics: &mut syn::Generics,
     input: &syn::FnArg,
@@ -516,18 +550,23 @@ fn item_fn_input_arg_type(
     }
 
     if matches!(arg_ty, Type::Array(_)) {
-        let lifetime = synthetic_borrow_lifetime(arg_idx, generics);
+        let lifetime = synthetic_borrow_lifetime(generics, arg_ty, arg_idx);
+
         let borrowed_ty: Type = parse_quote!(&#lifetime #arg_ty);
         return quote!(<#borrowed_ty as co3::ExternC>::CType);
     }
 
-    let lifetime = synthetic_borrow_lifetime(arg_idx, generics);
+    let lifetime = synthetic_borrow_lifetime(generics, arg_ty, arg_idx);
     let borrowed_ty = quote!(<#arg_ty as co3::borrow::Borrow>::Borrowed<#lifetime>);
 
     quote!(<#borrowed_ty as co3::ExternC>::CType)
 }
 
-fn synthetic_borrow_lifetime(arg_idx: usize, generics: &mut syn::Generics) -> syn::Lifetime {
+fn synthetic_borrow_lifetime(
+    generics: &mut syn::Generics,
+    borrowed_ty: &Type,
+    arg_idx: usize,
+) -> syn::Lifetime {
     let lifetime = syn::Lifetime::new(
         &format!("'__co3_arg_{arg_idx}"),
         proc_macro2::Span::call_site(),
@@ -538,12 +577,22 @@ fn synthetic_borrow_lifetime(arg_idx: usize, generics: &mut syn::Generics) -> sy
         .push(syn::GenericParam::Lifetime(syn::LifetimeParam::new(
             lifetime.clone(),
         )));
+    generics
+        .make_where_clause()
+        .predicates
+        .push(parse_quote!(#borrowed_ty: #lifetime));
 
     lifetime
 }
 
 pub(crate) fn normalize_fn_signature(sig: &mut syn::Signature, self_ty: Option<&Type>) {
     TypeImplTraitResolver.visit_signature_mut(sig);
+
+    for input in &mut sig.inputs {
+        if let syn::FnArg::Receiver(syn::Receiver { attrs, ty, .. }) = input {
+            *input = parse_quote! { #(#attrs)* __co3_self: #ty }
+        }
+    }
 
     if let Some(self_ty) = self_ty {
         SelfConcretizer { self_ty }.visit_signature_mut(sig);
@@ -650,46 +699,30 @@ fn qualify_self_path(self_ty: &Type, rest: &Path) -> Type {
     parse_quote!(<#self_ty>::#rest)
 }
 
-fn is_self_path(node: &syn::TypePath) -> bool {
-    if node.qself.is_some() {
-        return false;
-    }
-    let Some(first) = node.path.segments.first() else {
-        return false;
-    };
-    if first.ident != "Self" {
-        return false;
-    }
-
-    true
-}
-
 impl VisitMut for SelfConcretizer<'_> {
     fn visit_type_mut(&mut self, node: &mut Type) {
         syn::visit_mut::visit_type_mut(self, node);
 
-        if let Type::Path(ty) = node
-            && is_self_path(ty)
-        {
-            let mut rest = Path {
-                leading_colon: None,
-                segments: Default::default(),
-            };
-
-            rest.segments
-                .extend(ty.path.segments.iter().skip(1).cloned());
-
-            *node = qualify_self_path(self.self_ty, &rest);
+        if handle_id(node).is_some() {
+            return;
         }
-    }
-    fn visit_type_trait_object_mut(&mut self, node: &mut syn::TypeTraitObject) {
-        let self_ty = &self.self_ty;
 
-        let Some(handle) = node.bounds.first() else {
+        let Type::Path(syn::TypePath { qself: None, path }) = node else {
             return;
         };
-        if matches!(handle, syn::TypeParamBound::Trait(bound) if bound.path.is_ident("Self")) {
-            *node = parse_quote!(dyn #self_ty);
+        let Some(first) = path.segments.first() else {
+            return;
+        };
+        if first.ident != "Self" {
+            return;
         }
+
+        let mut rest = Path {
+            leading_colon: None,
+            segments: Default::default(),
+        };
+
+        rest.segments.extend(path.segments.iter().skip(1).cloned());
+        *node = qualify_self_path(self.self_ty, &rest);
     }
 }

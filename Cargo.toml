@@ -18,7 +18,7 @@ default = ["alloc"]
 # - `#[derive(ReprC)]`
 # - `#[export("ABI")]`
 # - `extern_C!`/`extern_!`
-derive = ["co3_derive"]
+derive = ["co3-derive"]
 
 # Implements conversion traits for types from the `alloc` crate (e.g. `Box<T>` or `Vec<T>`).
 alloc = []
@@ -59,7 +59,7 @@ unsafe-optimizations = []
 
 
 [dependencies]
-co3_derive = { path = "derive", optional = true }
+co3-derive = { path = "derive", optional = true }
 
 # TODO: Should this get removed, it is not widely used
 derive_more = { version = "2.1.1", features = ["display"] }

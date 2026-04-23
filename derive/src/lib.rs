@@ -1,17 +1,24 @@
 //! Crate containing FFI related macro functionality
-use std::marker::PhantomData;
+use std::{collections::BTreeMap, marker::PhantomData};
 
 use manyhow::manyhow;
 use proc_macro2::TokenStream;
 use quote::{format_ident, quote};
-use syn::{Item, ItemFn, ItemImpl, LitStr, Path, Result, Type, punctuated::Punctuated};
+use syn::{
+    Attribute, ItemFn, ItemImpl, LitStr, Path, Result, Type, parse_quote, parse_quote_spanned,
+    punctuated::Punctuated, spanned::Spanned, visit_mut::VisitMut,
+};
 
 use crate::{
     dispatch::{find_dispatch_attr, parse_dispatch_attr, parse_handle_id_attr},
     generate::{emit_decl_exports, expand_extern_import_decls},
+    parse::ParsedForeignItem,
     repr::derive_extern_c,
-    utils::{has_non_lifetime_generics, is_drop_impl, path_symbol_name, type_symbol_name},
-    validate::{validate_export_decls, validate_extern_decls},
+    utils::{
+        has_non_lifetime_generics, is_drop_impl, is_type_erased, path_symbol_name, push_error,
+        type_symbol_name,
+    },
+    validate::{validate_dispatch_self_id, validate_export_decls, validate_extern_decls},
 };
 
 mod attr;
@@ -35,53 +42,57 @@ enum DropAttrKind {
 trait InputKind {
     const DROP_ATTR_KIND: DropAttrKind;
     const MISSING_DROP_ERR: Option<&'static str>;
+    const IS_EXTERN: bool;
 }
 
 impl InputKind for ExportBlock {
     const DROP_ATTR_KIND: DropAttrKind = DropAttrKind::ExportName;
     const MISSING_DROP_ERR: Option<&'static str> = None;
+    const IS_EXTERN: bool = false;
 }
 
 impl InputKind for ExternBlock {
     const DROP_ATTR_KIND: DropAttrKind = DropAttrKind::LinkName;
     const MISSING_DROP_ERR: Option<&'static str> =
         Some("extern types must provide `#![link(crate = \"...\")]` or explicit `impl Drop`");
+    const IS_EXTERN: bool = true;
 }
 
 struct Input<T> {
     abi: syn::Abi,
-    attrs: Vec<syn::Attribute>,
-    decls: Vec<DeclItem>,
+    attrs: Vec<Attribute>,
+    items: Vec<ForeignItem>,
 
     _kind: PhantomData<T>,
 }
 
-enum DeclItem {
-    Item(ForeignItem),
-    Dispatch(DispatchItem),
-}
-
 enum ForeignItem {
-    Fn(ItemFn),
-    Impl(ItemImpl),
     Type(ForeignItemType),
+    DynImpl(DynImpl),
+    Impl(ItemImpl),
+    Fn(ItemFn),
 }
 
-struct DispatchItem {
+struct DynImpl {
     impl_: ItemImpl,
-    self_ty_id_repr: Option<syn::Type>,
     args: Punctuated<syn::AngleBracketedGenericArguments, syn::Token![,]>,
 }
 
 struct ForeignItemType {
-    id: Option<Box<syn::Type>>,
     ty: syn::ForeignItemType,
+    id: Option<Box<syn::Type>>,
     drop: Option<DropImpl>,
+
+    dyn_self_impls: Vec<DynImpl>,
 }
 
 enum DropImpl {
+    /// Impl dispatched on `dyn Self`
+    DynSelfImpl(DynImpl),
+    /// Any other dispatch
+    DynImpl(DynImpl),
+    /// Concrete impl
     Impl(ItemImpl),
-    Dispatch(DispatchItem),
 }
 
 // TODO: reprC(`local`) is a workaround for https://github.com/rust-lang/rust/issues/48214
@@ -185,7 +196,9 @@ pub fn extern_C(input: TokenStream) -> Result<TokenStream> {
 fn export__(input: TokenStream) -> Result<TokenStream> {
     let input = syn::parse2::<Input<ExportBlock>>(input)?;
 
-    let Input { abi, decls, .. } = input;
+    let Input {
+        abi, items: decls, ..
+    } = input;
     Ok(emit_decl_exports(abi, decls))
 }
 
@@ -193,7 +206,10 @@ fn extern__(input: TokenStream) -> Result<TokenStream> {
     let input = syn::parse2::<Input<ExternBlock>>(input)?;
 
     let Input {
-        abi, attrs, decls, ..
+        abi,
+        attrs,
+        items: decls,
+        ..
     } = input;
 
     Ok(expand_extern_import_decls(abi, &attrs, decls))
@@ -256,9 +272,9 @@ pub fn export(attr: TokenStream, item: TokenStream) -> Result<TokenStream> {
 
     let ExportAttrArgs { abi, crate_name } = parse_export_attr(attr)?;
 
-    let mut item = syn::parse2::<Item>(item)?;
+    let mut item = syn::parse2::<syn::Item>(item)?;
     let result = match &mut item {
-        Item::Impl(item) => {
+        syn::Item::Impl(item) => {
             let attrs = take_forwarded_export_attrs(&mut item.attrs);
             let (impl_generics, _, where_clause) = item.generics.split_for_impl();
 
@@ -287,7 +303,7 @@ pub fn export(attr: TokenStream, item: TokenStream) -> Result<TokenStream> {
                 }
             }
         }
-        Item::Fn(item) => {
+        syn::Item::Fn(item) => {
             let attrs = take_forwarded_export_attrs(&mut item.attrs);
             let mut sig = item.sig.clone();
 
@@ -295,7 +311,7 @@ pub fn export(attr: TokenStream, item: TokenStream) -> Result<TokenStream> {
             ensure_export_arg_names(&mut sig);
             quote! { #(#attrs)* #vis #sig; }
         }
-        Item::Struct(item) => {
+        syn::Item::Struct(item) => {
             let item_id_ty = parse_handle_id_attr(&mut item.attrs)?.map(|ty| quote!(#[id(#ty)]));
 
             if !item.generics.params.is_empty() {
@@ -307,7 +323,7 @@ pub fn export(attr: TokenStream, item: TokenStream) -> Result<TokenStream> {
 
             quote! { #item_id_ty #vis type #ident; }
         }
-        Item::Enum(item) => {
+        syn::Item::Enum(item) => {
             let item_id_ty = parse_handle_id_attr(&mut item.attrs)?.map(|ty| quote!(#[id(#ty)]));
 
             if !item.generics.params.is_empty() {
@@ -319,7 +335,7 @@ pub fn export(attr: TokenStream, item: TokenStream) -> Result<TokenStream> {
 
             quote! { #item_id_ty #vis type #ident; }
         }
-        Item::Union(item) => {
+        syn::Item::Union(item) => {
             let item_id = parse_handle_id_attr(&mut item.attrs)?.map(|ty| quote!(#[id(#ty)]));
 
             if !item.generics.params.is_empty() {
@@ -352,22 +368,31 @@ pub fn export(attr: TokenStream, item: TokenStream) -> Result<TokenStream> {
 
 impl<T: InputKind> Input<T> {
     fn new(
-        mut attrs: Vec<syn::Attribute>,
+        mut attrs: Vec<Attribute>,
         crate_name: Option<LitStr>,
-        decls: Vec<ForeignItem>,
+        decls: Vec<ParsedForeignItem>,
     ) -> Result<Self> {
         let abi = parse_abi_attr(&mut attrs)?;
-        let mut decls = pack_type_drop_impls::<T>(crate_name, decls)?;
 
-        for item in &mut decls {
+        for item in &decls {
             match item {
-                ForeignItem::Type(ForeignItemType { id, ty, drop }) => {
+                ParsedForeignItem::Type(ForeignItemType {
+                    ty,
+                    id,
+                    dyn_self_impls,
+                    drop,
+                }) => {
                     ensure_single_dispatch_attr(&ty.attrs)?;
+
+                    for dispatch in dyn_self_impls {
+                        ensure_single_dispatch_attr(&dispatch.impl_.attrs)?;
+                    }
 
                     if let Some(drop) = drop {
                         let attrs = match drop {
+                            DropImpl::DynSelfImpl(dispatch) => &dispatch.impl_.attrs,
+                            DropImpl::DynImpl(dispatch) => &dispatch.impl_.attrs,
                             DropImpl::Impl(impl_) => &impl_.attrs,
-                            DropImpl::Dispatch(dispatch) => &dispatch.impl_.attrs,
                         };
 
                         ensure_single_dispatch_attr(attrs)?;
@@ -378,8 +403,8 @@ impl<T: InputKind> Input<T> {
                         return Err(syn::Error::new_spanned(ty, err_msg));
                     }
                 }
-                ForeignItem::Fn(ItemFn { attrs, .. })
-                | ForeignItem::Impl(ItemImpl { attrs, .. }) => {
+                ParsedForeignItem::Fn(ItemFn { attrs, .. })
+                | ParsedForeignItem::Impl(ItemImpl { attrs, .. }) => {
                     ensure_single_dispatch_attr(attrs)?;
                 }
             }
@@ -389,34 +414,81 @@ impl<T: InputKind> Input<T> {
             .into_iter()
             .map(|item| {
                 Ok(match item {
-                    ForeignItem::Impl(mut impl_) if find_dispatch_attr(&impl_.attrs).is_some() => {
-                        let args = parse_dispatch_attr(&impl_)?;
-                        let self_ty_id_repr = parse_self_ty_id_repr(&impl_.self_ty);
-                        impl_.attrs.retain(|attr| !attr.path().is_ident("dispatch"));
-                        DeclItem::Dispatch(DispatchItem {
-                            impl_,
-                            self_ty_id_repr,
-                            args,
-                        })
+                    ParsedForeignItem::Impl(mut impl_)
+                        if find_dispatch_attr(&impl_.attrs).is_some() =>
+                    {
+                        let args = if T::IS_EXTERN && is_drop_impl(&impl_) {
+                            Punctuated::<_, _>::default()
+                        } else {
+                            parse_dispatch_attr(&impl_)?
+                        };
+
+                        impl_.attrs.retain(|a| !a.path().is_ident("dispatch"));
+                        ForeignItem::DynImpl(DynImpl { impl_, args })
                     }
-                    item => DeclItem::Item(item),
+                    ParsedForeignItem::Type(item) => ForeignItem::Type(item),
+                    ParsedForeignItem::Impl(impl_) => ForeignItem::Impl(impl_),
+                    ParsedForeignItem::Fn(item) => ForeignItem::Fn(item),
                 })
             })
             .collect::<Result<Vec<_>>>()?;
 
+        let decls = pack_type_dispatch_impls::<T>(decls)?;
+        let mut items = pack_type_drop_impls(decls)?;
+        default_init::<T>(crate_name, &mut items)?;
+
         Ok(Self {
             abi,
             attrs,
-            decls,
+            items,
 
             _kind: PhantomData,
         })
     }
 }
 
+fn default_init<T: InputKind>(
+    crate_name: Option<syn::LitStr>,
+    items: &mut [ForeignItem],
+) -> Result<()> {
+    let mut errors = None;
+
+    for item in items {
+        match item {
+            ForeignItem::DynImpl(_) => {}
+            ForeignItem::Type(item) => {
+                if let Some(drop) = &item.drop {
+                    match drop {
+                        DropImpl::DynSelfImpl(_) => {}
+                        DropImpl::DynImpl(_) => {}
+                        DropImpl::Impl(_) => {}
+                    }
+
+                    continue;
+                }
+
+                if let Some(crate_name) = &crate_name {
+                    let impl_ =
+                        synthesize_default_drop_impl(T::DROP_ATTR_KIND, crate_name, &item.ty);
+                    item.drop = Some(DropImpl::Impl(impl_));
+                } else if let Some(err_msg) = T::MISSING_DROP_ERR {
+                    push_error(&mut errors, syn::Error::new_spanned(&item.ty, err_msg));
+                }
+            }
+            _ => {}
+        }
+    }
+
+    if let Some(errors) = errors {
+        return Err(errors);
+    }
+
+    Ok(())
+}
+
 impl syn::parse::Parse for Input<ExportBlock> {
     fn parse(input: syn::parse::ParseStream) -> Result<Self> {
-        let mut attrs = input.call(syn::Attribute::parse_inner)?;
+        let mut attrs = input.call(Attribute::parse_inner)?;
         let export_crate = parse_export_crate_attr(&mut attrs)?;
 
         for attr in &attrs {
@@ -430,10 +502,10 @@ impl syn::parse::Parse for Input<ExportBlock> {
 
         for item in &mut decls {
             match item {
-                ForeignItem::Fn(ItemFn { attrs, sig, .. }) => {
+                ParsedForeignItem::Fn(ItemFn { attrs, sig, .. }) => {
                     ensure_export_name_on_fn(attrs, &export_crate, &sig.ident);
                 }
-                ForeignItem::Impl(impl_) => {
+                ParsedForeignItem::Impl(impl_) => {
                     let trait_ = impl_.trait_.as_ref().map(|(_, path, _)| path);
                     let self_ty = &impl_.self_ty;
 
@@ -463,7 +535,7 @@ impl syn::parse::Parse for Input<ExportBlock> {
 
 impl syn::parse::Parse for Input<ExternBlock> {
     fn parse(input: syn::parse::ParseStream) -> Result<Self> {
-        let mut attrs = input.call(syn::Attribute::parse_inner)?;
+        let mut attrs = input.call(Attribute::parse_inner)?;
 
         let link_crate = parse_link_crate_attr(&mut attrs)?;
         let mut decls = ExternBlock::parse_items(input)?;
@@ -471,7 +543,7 @@ impl syn::parse::Parse for Input<ExternBlock> {
         let mut errors = None::<syn::Error>;
         for decl in &mut decls {
             match decl {
-                ForeignItem::Fn(ItemFn { attrs, sig, .. }) => {
+                ParsedForeignItem::Fn(ItemFn { attrs, sig, .. }) => {
                     let fn_name = &sig.ident;
 
                     if !attrs.iter().any(is_link_name_attr)
@@ -482,10 +554,10 @@ impl syn::parse::Parse for Input<ExternBlock> {
                             fn_name.span(),
                         );
 
-                        attrs.push(syn::parse_quote!(#[link_name = #link_name]));
+                        attrs.push(parse_quote!(#[link_name = #link_name]));
                     }
                 }
-                ForeignItem::Impl(impl_) => {
+                ParsedForeignItem::Impl(impl_) => {
                     for item in &mut impl_.items {
                         let trait_ = impl_.trait_.as_ref().map(|(_, path, _)| path);
                         let self_ty = type_symbol_name(&impl_.self_ty, &impl_.generics);
@@ -514,7 +586,7 @@ impl syn::parse::Parse for Input<ExternBlock> {
                                 )
                             };
 
-                            attrs.push(syn::parse_quote!(#[link_name = #link_name]));
+                            attrs.push(parse_quote!(#[link_name = #link_name]));
                         }
 
                         // FIXME: Consider that extern fn item imports are never mangled by the compiler!
@@ -546,7 +618,7 @@ impl syn::parse::Parse for Input<ExternBlock> {
     }
 }
 
-fn parse_abi_attr(attrs: &mut Vec<syn::Attribute>) -> Result<syn::Abi> {
+fn parse_abi_attr(attrs: &mut Vec<Attribute>) -> Result<syn::Abi> {
     let mut kept = Vec::with_capacity(attrs.len());
 
     let mut abi = None;
@@ -582,11 +654,11 @@ fn parse_abi_attr(attrs: &mut Vec<syn::Attribute>) -> Result<syn::Abi> {
     ))
 }
 
-fn parse_link_crate_attr(attrs: &mut Vec<syn::Attribute>) -> Result<Option<LitStr>> {
+fn parse_link_crate_attr(attrs: &mut Vec<Attribute>) -> Result<Option<LitStr>> {
     parse_named_crate_attr(attrs, "link")
 }
 
-fn parse_export_crate_attr(attrs: &mut Vec<syn::Attribute>) -> Result<LitStr> {
+fn parse_export_crate_attr(attrs: &mut Vec<Attribute>) -> Result<LitStr> {
     Ok(parse_named_crate_attr(attrs, "export")?.unwrap_or_else(|| {
         LitStr::new(
             &std::env::var("CARGO_CRATE_NAME").unwrap_or_else(|_| "co3".to_owned()),
@@ -595,10 +667,7 @@ fn parse_export_crate_attr(attrs: &mut Vec<syn::Attribute>) -> Result<LitStr> {
     }))
 }
 
-fn parse_named_crate_attr(
-    attrs: &mut Vec<syn::Attribute>,
-    attr_name: &str,
-) -> Result<Option<LitStr>> {
+fn parse_named_crate_attr(attrs: &mut Vec<Attribute>, attr_name: &str) -> Result<Option<LitStr>> {
     let mut kept = Vec::with_capacity(attrs.len());
 
     let mut crate_name = None;
@@ -655,14 +724,14 @@ fn parse_named_crate_attr(
         }
 
         let attr_ident = format_ident!("{attr_name}");
-        kept.push(syn::parse_quote!(#![#attr_ident(#kept_meta)]));
+        kept.push(parse_quote!(#![#attr_ident(#kept_meta)]));
     }
 
     *attrs = kept;
     Ok(crate_name)
 }
 
-fn is_link_name_attr(attr: &syn::Attribute) -> bool {
+fn is_link_name_attr(attr: &Attribute) -> bool {
     attr.path().is_ident("link_name")
 }
 
@@ -713,7 +782,7 @@ fn parse_export_attr(attr: TokenStream) -> Result<ExportAttrArgs> {
     syn::parse2::<ExportAttrArgs>(attr)
 }
 
-fn has_unsafe_export_name(attr: &syn::Attribute) -> bool {
+fn has_unsafe_export_name(attr: &Attribute) -> bool {
     if !attr.path().is_ident("unsafe") {
         return false;
     }
@@ -742,7 +811,7 @@ fn has_unsafe_export_name(attr: &syn::Attribute) -> bool {
     false
 }
 
-fn take_forwarded_export_attrs(attrs: &mut Vec<syn::Attribute>) -> Vec<syn::Attribute> {
+fn take_forwarded_export_attrs(attrs: &mut Vec<Attribute>) -> Vec<Attribute> {
     let mut forwarded = Vec::new();
 
     attrs.retain(|attr| {
@@ -760,104 +829,227 @@ fn take_forwarded_export_attrs(attrs: &mut Vec<syn::Attribute>) -> Vec<syn::Attr
     forwarded
 }
 
-fn pack_type_drop_impls<T: InputKind>(
-    crate_name: Option<LitStr>,
-    decls: Vec<ForeignItem>,
-) -> Result<Vec<ForeignItem>> {
-    let mut explicit_drops = std::collections::BTreeMap::<syn::Ident, DropImpl>::new();
-    let mut declared_drop_types = std::collections::BTreeSet::<syn::Ident>::new();
+fn pack_type_drop_impls(decls: Vec<ForeignItem>) -> Result<Vec<ForeignItem>> {
+    fn insert_drop(
+        explicit_drops: &mut BTreeMap<syn::Ident, DropImpl>,
+        errors: &mut Option<syn::Error>,
+        self_ty: syn::Ident,
+        drop_impl: DropImpl,
+    ) {
+        if let Some(prev) = explicit_drops.insert(self_ty, drop_impl) {
+            let impl_ = match prev {
+                DropImpl::DynSelfImpl(d) | DropImpl::DynImpl(d) => d.impl_,
+                DropImpl::Impl(impl_) => impl_,
+            };
+
+            let err_msg = "duplicate explicit `impl Drop` declaration";
+            push_error(errors, syn::Error::new_spanned(impl_.self_ty, err_msg));
+        }
+    }
+
+    fn self_ty_ident(impl_: &syn::ItemImpl) -> Option<syn::Ident> {
+        let Type::Path(syn::TypePath { qself: None, path }) = &*impl_.self_ty else {
+            return None;
+        };
+
+        if path.segments.len() > 1 {
+            return None;
+        }
+
+        path.segments.last().map(|seg| seg.ident.clone())
+    }
+
+    const UNKNOWN_DROP: &str = "explicit `impl Drop` is only allowed for declared types";
+
     let mut kept_decls = Vec::with_capacity(decls.len());
+    let mut explicit_drops = BTreeMap::new();
     let mut errors = None::<syn::Error>;
 
     for decl in decls {
         match decl {
-            ForeignItem::Impl(impl_) if is_drop_impl(&impl_) => {
-                let Type::Path(syn::TypePath { path, .. }) = &*impl_.self_ty else {
-                    continue;
-                };
-                let Some(ident) = path.segments.last().map(|seg| seg.ident.clone()) else {
-                    continue;
-                };
+            ForeignItem::Type(mut item) => {
+                let mut kept_dyn_self_impls = Vec::with_capacity(item.dyn_self_impls.len());
 
-                declared_drop_types.insert(ident.clone());
-                let drop_impl = match parse_drop_impl(impl_) {
-                    Ok(drop_impl) => drop_impl,
-                    Err(err) => {
-                        if let Some(errors) = &mut errors {
-                            errors.combine(err);
-                        } else {
-                            errors = Some(err);
-                        }
-                        continue;
-                    }
-                };
-
-                if let Some(prev) = explicit_drops.insert(ident, drop_impl) {
-                    let err_msg = "duplicate explicit `impl Drop` for type";
-                    let self_ty = match prev {
-                        DropImpl::Impl(impl_) => impl_.self_ty,
-                        DropImpl::Dispatch(dispatch) => dispatch.impl_.self_ty,
-                    };
-                    let err = syn::Error::new_spanned(self_ty, err_msg);
-
-                    if let Some(errors) = &mut errors {
-                        errors.combine(err);
+                let self_ty = &item.ty.ident;
+                for dyn_impl in item.dyn_self_impls {
+                    if is_drop_impl(&dyn_impl.impl_) {
+                        insert_drop(
+                            &mut explicit_drops,
+                            &mut errors,
+                            self_ty.clone(),
+                            DropImpl::DynSelfImpl(dyn_impl),
+                        );
                     } else {
-                        errors = Some(err);
+                        kept_dyn_self_impls.push(dyn_impl);
                     }
                 }
+
+                item.dyn_self_impls = kept_dyn_self_impls;
+                kept_decls.push(ForeignItem::Type(item));
             }
-            other => kept_decls.push(other),
+            ForeignItem::Impl(impl_) => {
+                if is_drop_impl(&impl_) {
+                    if let Some(self_ty) = self_ty_ident(&impl_) {
+                        insert_drop(
+                            &mut explicit_drops,
+                            &mut errors,
+                            self_ty,
+                            DropImpl::Impl(impl_),
+                        );
+                    } else {
+                        let err = syn::Error::new_spanned(&impl_.self_ty, UNKNOWN_DROP);
+                        push_error(&mut errors, err);
+                    }
+                } else {
+                    kept_decls.push(ForeignItem::Impl(impl_));
+                }
+            }
+            ForeignItem::DynImpl(dispatch) => {
+                if is_drop_impl(&dispatch.impl_) {
+                    if let Some(self_ty) = self_ty_ident(&dispatch.impl_) {
+                        insert_drop(
+                            &mut explicit_drops,
+                            &mut errors,
+                            self_ty,
+                            DropImpl::DynImpl(dispatch),
+                        );
+                    } else {
+                        let err = syn::Error::new_spanned(&dispatch.impl_.self_ty, UNKNOWN_DROP);
+                        push_error(&mut errors, err);
+                    }
+                } else {
+                    kept_decls.push(ForeignItem::DynImpl(dispatch));
+                }
+            }
+            ForeignItem::Fn(item) => kept_decls.push(ForeignItem::Fn(item)),
         }
     }
 
     for decl in &mut kept_decls {
-        if let ForeignItem::Type(item) = decl {
-            item.drop = explicit_drops.remove(&item.ty.ident);
+        let ForeignItem::Type(item) = decl else {
+            continue;
+        };
 
-            if item.drop.is_none() {
-                if has_non_lifetime_generics(&item.ty.generics)
-                    && !declared_drop_types.contains(&item.ty.ident)
-                {
-                    let err_msg = "generic types must provide explicit `impl Drop` declaration";
-                    let err = syn::Error::new_spanned(&item.ty, err_msg);
-
-                    if let Some(errors) = &mut errors {
-                        errors.combine(err);
-                    } else {
-                        errors = Some(err);
-                    }
-                } else if let Some(crate_name) = crate_name.as_ref() {
-                    item.drop = Some(DropImpl::Impl(synthesize_default_drop_impl(
-                        T::DROP_ATTR_KIND,
-                        crate_name,
-                        &item.ty,
-                    )));
-                } else if let Some(err_msg) = T::MISSING_DROP_ERR {
-                    let err = syn::Error::new_spanned(&item.ty, err_msg);
-
-                    if let Some(errors) = &mut errors {
-                        errors.combine(err);
-                    } else {
-                        errors = Some(err);
-                    }
-                }
-            }
+        item.drop = explicit_drops.remove(&item.ty.ident);
+        if item.drop.is_none() && has_non_lifetime_generics(&item.ty.generics) {
+            let err_msg = "generic types must provide explicit `impl Drop` declaration";
+            push_error(&mut errors, syn::Error::new_spanned(&item.ty, err_msg));
         }
     }
 
     for drop_impl in explicit_drops.into_values() {
-        let err_msg = "explicit `impl Drop` is only allowed for declared types";
         let self_ty = match drop_impl {
+            DropImpl::DynSelfImpl(dispatch) => dispatch.impl_.self_ty,
+            DropImpl::DynImpl(dispatch) => dispatch.impl_.self_ty,
             DropImpl::Impl(impl_) => impl_.self_ty,
-            DropImpl::Dispatch(dispatch) => dispatch.impl_.self_ty,
         };
-        let err = syn::Error::new_spanned(self_ty, err_msg);
 
-        if let Some(errors) = &mut errors {
-            errors.combine(err);
-        } else {
-            errors = Some(err);
+        push_error(&mut errors, syn::Error::new_spanned(self_ty, UNKNOWN_DROP));
+    }
+
+    if let Some(errors) = errors {
+        return Err(errors);
+    }
+
+    Ok(kept_decls)
+}
+
+pub(crate) fn trait_object_single_trait_bound(self_ty: &syn::Type) -> Option<&syn::TraitBound> {
+    use syn::TraitBoundModifier;
+
+    let syn::Type::TraitObject(trait_object) = self_ty else {
+        return None;
+    };
+
+    let bound = trait_object.bounds.first()?;
+    let syn::TypeParamBound::Trait(trait_bound) = bound else {
+        return None;
+    };
+    if trait_bound.modifier != TraitBoundModifier::None || trait_bound.lifetimes.is_some() {
+        return None;
+    }
+
+    Some(trait_bound)
+}
+
+fn pack_type_dispatch_impls<T: InputKind>(decls: Vec<ForeignItem>) -> Result<Vec<ForeignItem>> {
+    fn is_self_only_dyn_dispatch(impl_: &ItemImpl) -> bool {
+        trait_object_single_trait_bound(&impl_.self_ty).is_some()
+            && !impl_
+                .generics
+                .type_params()
+                .any(|param| param.attrs.iter().any(is_type_erased))
+    }
+
+    let mut type_dispatch = decls
+        .iter()
+        .filter_map(|decl| {
+            if let ForeignItem::Type(item) = decl {
+                Some((item.ty.ident.clone(), Vec::new()))
+            } else {
+                None
+            }
+        })
+        .collect::<BTreeMap<_, _>>();
+
+    let mut kept_decls = Vec::with_capacity(decls.len());
+    let mut errors = None::<syn::Error>;
+
+    for decl in decls {
+        let ForeignItem::DynImpl(mut dispatch) = decl else {
+            kept_decls.push(decl);
+            continue;
+        };
+
+        let Some(syn::TraitBound { path, .. }) =
+            trait_object_single_trait_bound(&dispatch.impl_.self_ty)
+        else {
+            kept_decls.push(ForeignItem::DynImpl(dispatch));
+            continue;
+        };
+        if path.segments.len() > 1 {
+            kept_decls.push(ForeignItem::DynImpl(dispatch));
+            continue;
+        }
+        let Some(ident) = path.segments.first().map(|seg| seg.ident.clone()) else {
+            kept_decls.push(ForeignItem::DynImpl(dispatch));
+            continue;
+        };
+        if !type_dispatch.contains_key(&ident) {
+            kept_decls.push(ForeignItem::DynImpl(dispatch));
+            continue;
+        }
+
+        *dispatch.impl_.self_ty = parse_quote!(#path);
+        normalize_self_handle_ids(&mut dispatch.impl_);
+
+        if T::IS_EXTERN
+            && let Err(err) = validate_dispatch_self_id(&dispatch.impl_)
+        {
+            push_error(&mut errors, err);
+        }
+
+        type_dispatch.entry(ident).or_default().push(dispatch);
+    }
+
+    for decl in &mut kept_decls {
+        let ForeignItem::Type(item) = decl else {
+            continue;
+        };
+
+        item.dyn_self_impls = type_dispatch.remove(&item.ty.ident).unwrap_or_default();
+    }
+
+    for decl in &kept_decls {
+        let ForeignItem::DynImpl(dispatch) = decl else {
+            continue;
+        };
+
+        if is_self_only_dyn_dispatch(&dispatch.impl_) {
+            let err_msg = "`dyn Self` is only supported for declared types";
+            let err = syn::Error::new_spanned(&dispatch.impl_.self_ty, err_msg);
+
+            push_error(&mut errors, err);
         }
     }
 
@@ -868,43 +1060,27 @@ fn pack_type_drop_impls<T: InputKind>(
     Ok(kept_decls)
 }
 
-fn parse_drop_impl(mut impl_: ItemImpl) -> Result<DropImpl> {
-    if find_dispatch_attr(&impl_.attrs).is_none() {
-        return Ok(DropImpl::Impl(impl_));
+fn normalize_self_handle_ids(impl_: &mut syn::ItemImpl) {
+    struct SelfHandleIdNormalizer {
+        self_ty: syn::Type,
     }
 
-    let args = parse_dispatch_attr(&impl_)?;
-    let self_ty_id_repr = parse_self_ty_id_repr(&impl_.self_ty);
-    impl_.attrs.retain(|attr| !attr.path().is_ident("dispatch"));
-    Ok(DropImpl::Dispatch(DispatchItem {
-        impl_,
-        self_ty_id_repr,
-        args,
-    }))
-}
+    impl VisitMut for SelfHandleIdNormalizer {
+        fn visit_type_mut(&mut self, node: &mut syn::Type) {
+            syn::visit_mut::visit_type_mut(self, node);
 
-fn parse_self_ty_id_repr(self_ty: &syn::Type) -> Option<syn::Type> {
-    let syn::Type::Paren(paren) = self_ty else {
-        return None;
-    };
-    let syn::Type::Path(type_path) = paren.elem.as_ref() else {
-        return None;
-    };
-    if type_path.qself.is_some() {
-        return None;
+            let self_ty = &self.self_ty;
+            if *node == parse_quote!(<dyn #self_ty>::ID) {
+                *node = parse_quote_spanned!(node.span()=> <dyn Self>::ID);
+            }
+        }
     }
 
-    let first = type_path.path.segments.first()?;
-    if first.ident != "dyn" {
-        return None;
-    }
-
-    let syn::PathArguments::Parenthesized(args) = &first.arguments else {
-        return None;
+    let mut normalizer = SelfHandleIdNormalizer {
+        self_ty: (*impl_.self_ty).clone(),
     };
 
-    let repr = args.inputs.first()?.clone();
-    (args.inputs.len() == 1).then_some(repr)
+    normalizer.visit_item_impl_mut(impl_);
 }
 
 fn synthesize_default_drop_impl(
@@ -919,18 +1095,18 @@ fn synthesize_default_drop_impl(
         &format!(
             "{}__{}__{}__drop",
             crate_name.value(),
-            path_symbol_name(&syn::parse_quote!(Drop), &Default::default()),
-            type_symbol_name(&syn::parse_quote!(#ident #ty_generics), &ty.generics),
+            path_symbol_name(&parse_quote!(Drop), &Default::default()),
+            type_symbol_name(&parse_quote!(#ident #ty_generics), &ty.generics),
         ),
         ident.span(),
     );
 
-    let name_attr: syn::Attribute = match attr_kind {
-        DropAttrKind::ExportName => syn::parse_quote!(#[unsafe(export_name = #symbol_name)]),
-        DropAttrKind::LinkName => syn::parse_quote!(#[link_name = #symbol_name]),
+    let name_attr: Attribute = match attr_kind {
+        DropAttrKind::ExportName => parse_quote!(#[unsafe(export_name = #symbol_name)]),
+        DropAttrKind::LinkName => parse_quote!(#[link_name = #symbol_name]),
     };
 
-    syn::parse_quote! {
+    parse_quote! {
         impl #impl_generics Drop for #ident #ty_generics #where_clause {
             #name_attr
             fn drop(&mut self) {}
@@ -938,8 +1114,7 @@ fn synthesize_default_drop_impl(
     }
 }
 
-
-fn ensure_single_dispatch_attr(attrs: &[syn::Attribute]) -> Result<()> {
+fn ensure_single_dispatch_attr(attrs: &[Attribute]) -> Result<()> {
     let mut dispatch_attrs = attrs.iter().filter(|attr| attr.path().is_ident("dispatch"));
 
     let mut errors = None::<syn::Error>;
@@ -964,11 +1139,7 @@ fn ensure_single_dispatch_attr(attrs: &[syn::Attribute]) -> Result<()> {
     Ok(())
 }
 
-fn ensure_export_name_on_fn(
-    attrs: &mut Vec<syn::Attribute>,
-    crate_name: &LitStr,
-    fn_name: &syn::Ident,
-) {
+fn ensure_export_name_on_fn(attrs: &mut Vec<Attribute>, crate_name: &LitStr, fn_name: &syn::Ident) {
     let has_export_name = attrs
         .iter()
         .any(|attr| generate::is_unsafe_no_mangle(attr) || has_unsafe_export_name(attr));
@@ -977,14 +1148,14 @@ fn ensure_export_name_on_fn(
         let crate_prefix = crate_name;
         let export_name = LitStr::new(&fn_name.to_string(), fn_name.span());
 
-        attrs.push(syn::parse_quote! {
+        attrs.push(parse_quote! {
             #[unsafe(export_name = concat!(#crate_prefix, "__", #export_name))]
         });
     }
 }
 
 fn ensure_export_name_on_impl_fn(
-    attrs: &mut Vec<syn::Attribute>,
+    attrs: &mut Vec<Attribute>,
     crate_name: &LitStr,
     trait_: Option<&Path>,
     self_ty: &Type,
@@ -1025,10 +1196,10 @@ fn ensure_export_name_on_impl_fn(
             );
             let default_export_name =
                 LitStr::new(&default_export_name, proc_macro2::Span::call_site());
-            quote!(concat!(#crate_prefix, "_", #default_export_name))
+            quote!(concat!(#crate_prefix, "__", #default_export_name))
         };
 
-        attrs.push(syn::parse_quote! {
+        attrs.push(parse_quote! {
             #[unsafe(export_name = #export_name)]
         });
     }
@@ -1044,7 +1215,7 @@ fn ensure_export_arg_names(sig: &mut syn::Signature) {
 
         let syn::Pat::Ident(ident) = &mut **pat else {
             let ident = format_ident!("arg{arg_idx}");
-            *pat = syn::parse_quote!(#ident);
+            *pat = parse_quote!(#ident);
             arg_idx += 1;
             continue;
         };

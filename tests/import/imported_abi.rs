@@ -1,4 +1,4 @@
-use co3::{ReprC, export, export_C, extern_, extern_C};
+use co3::{ReprC, export, extern_, extern_C};
 
 trait AmbiguousX<T, const N: usize> {
     #[expect(unused)]
@@ -22,7 +22,7 @@ enum Ambiguous {
 
 #[derive(Debug, Clone, PartialEq, ReprC)]
 #[repr(transparent)]
-struct MyType<T>(Box<T>);
+struct MyType<T>(T);
 
 extern_! {
     #![abi = "Rust"]
@@ -33,12 +33,12 @@ extern_! {
         type U = i8;
 
         #[link_name = "kita"]
-        fn ambiguous(a: &[Self::U; 4]) -> Ambiguous;
+        fn ambiguous(a: &[<Self as AmbiguousX<u32, 4>>::U; 4]) -> Ambiguous;
     }
 
     impl MyType<u64> {
         #[link_name = "kita1"]
-        unsafe extern "C" fn ambiguous() -> Self;
+        unsafe extern "C" fn ambiguous() -> Box<Self>;
     }
 
     #[link_name = "kita2"]
@@ -62,7 +62,7 @@ extern_C! {
         const K: bool = false;
         type U = u8;
 
-        fn ambiguous(a: &[Self::U; 3]) -> Ambiguous;
+        fn ambiguous(a: &[<Self as AmbiguousX<u64, 3>>::U; 3]) -> Ambiguous;
     }
 
     impl AmbiguousY for MyType<u64> {
@@ -71,7 +71,6 @@ extern_C! {
     }
 
     impl MyType<u32> {
-        #[link_name = "import_MyType_u32_ambiguous"]
         fn ambiguous() -> Self;
     }
 
@@ -80,11 +79,11 @@ extern_C! {
 }
 
 mod provider {
-    use co3::export_;
+    use co3::export_C;
 
     use super::*;
 
-    #[derive(Clone, Copy)]
+    #[derive(Clone, Copy, ReprC)]
     #[repr(transparent)]
     struct MyType<T>(T);
 
@@ -114,7 +113,7 @@ mod provider {
         const K: bool = false;
         type U = u8;
 
-        fn ambiguous(_a: &[Self::U; 3]) -> Ambiguous {
+        fn ambiguous(_a: &[<Self as AmbiguousX<u64, 3>>::U; 3]) -> Ambiguous {
             Ambiguous::AmbiguousX
         }
     }
@@ -125,7 +124,7 @@ mod provider {
         type U = i8;
 
         #[unsafe(export_name = "kita")]
-        fn ambiguous(_a: &[Self::U; 4]) -> Ambiguous {
+        fn ambiguous(_a: &[<Self as AmbiguousX<u32, 4>>::U; 4]) -> Ambiguous {
             Ambiguous::AmbiguousX
         }
     }
@@ -182,8 +181,8 @@ fn extern_abi() {
         <MyType::<u64> as AmbiguousY>::ambiguous()
     );
 
-    assert_eq!(MyType(Box::new(420)), MyType::<u32>::ambiguous());
-    assert_eq!(MyType(Box::new(42)), unsafe { MyType::<u64>::ambiguous() });
+    assert_eq!(MyType(420), MyType::<u32>::ambiguous());
+    assert_eq!(MyType(42), *unsafe { MyType::<u64>::ambiguous() });
 
     assert_eq!(Ambiguous::Fn, ambiguous1_imported());
     assert_eq!(Ambiguous::Fn, unsafe { ambiguous2_imported() });

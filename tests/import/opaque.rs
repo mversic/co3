@@ -158,13 +158,11 @@ mod ffi {
     co3::def_fns! { dealloc }
 
     #[derive(Debug, Clone, PartialEq, Eq)]
-    #[export("C")]
-    #[repr(C)]
+    #[export("C", crate = "import")]
     pub struct ExternValue(pub String);
 
     #[derive(Debug, PartialEq, Eq)]
-    #[export("C")]
-    #[repr(C)]
+    #[export("C", crate = "import")]
     pub struct ExternOpaqueStruct {
         pub name: Option<u8>,
         pub tokens: Vec<ExternValue>,

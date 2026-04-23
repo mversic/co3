@@ -10,11 +10,13 @@ trait Kita {
     extern "C" fn kita1(self);
 }
 
-#[export("C")]
-#[derive(Clone)]
-enum FfiStruct {
-    A,
-    B,
+export_C! {
+    #[export("C")]
+    #[derive(Clone)]
+    enum FfiStruct {
+        A,
+        B,
+    }
 }
 
 export_! {}
@@ -111,23 +113,17 @@ export_C! {
 }
 
 export_C! {
+    #[id(u32)]
     type OpaqueType<T>;
 
-    #[dispatch]
-    impl Drop for OpaqueType {
+    #[dispatch(<u32>)]
+    impl<T> Drop for dyn OpaqueType<T> {
         fn drop(&mut self);
     }
 
     #[dispatch(<u32, u8>)]
-    impl<T> Clone for OpaqueType<T> {
+    impl<dyn(u32) T> Clone for OpaqueType<T> {
         fn clone(&self);
-    }
-}
-
-export_C! {
-    #[dispatch(<'a>)]
-    impl<'a> Kita<'a> {
-        fn drop(&mut self);
     }
 }
 

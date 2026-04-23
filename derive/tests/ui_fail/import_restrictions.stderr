@@ -85,13 +85,7 @@ error: patterns aren't allowed in function declarations
    |              ^^^^^^
 
 error: dispatch must provide 1 generic argument
-  --> tests/ui_fail/import_restrictions.rs:98:16
+  --> tests/ui_fail/import_restrictions.rs:99:16
    |
-98 |     #[dispatch(<u8, i8>)]
+99 |     #[dispatch(<u8, i8>)]
    |                ^^^^^^^^
-
-error: lifetime arguments not required in dispatch
-   --> tests/ui_fail/import_restrictions.rs:107:17
-    |
-107 |     #[dispatch(<'a>)]
-    |                 ^^

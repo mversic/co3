@@ -3,7 +3,7 @@ use quote::{format_ident, quote};
 use syn::{FnArg, ItemImpl, punctuated::Punctuated, visit_mut::VisitMut};
 
 use crate::{
-    dispatch::{extract_dispatch_id, gen_handle_erase_stmts, is_dispatch_id_arg},
+    dispatch::{HandleId, gen_handle_erase_stmts, handle_id, is_handle_id_arg},
     ffi_fn::{self, boxed_array_ty, item_fn_input_ident, ownership_mode_for_arg},
     generate::OwnershipMode,
     is_link_name_attr,
@@ -39,11 +39,11 @@ pub fn wrap_fn_definition(
         .filter(|attr| !attr.path().is_ident("link_name"));
 
     let mut wrapper_sig = item.sig.clone();
-    let wrapper_body = gen_wrapper_body(None, None, &item.sig);
     strip_internal_arg_attrs(&mut wrapper_sig);
 
+    let wrapper_body = gen_wrapper_body(None, None, None, &item.sig);
     ffi_fn::normalize_fn_signature(&mut item.sig, None);
-    let decl = ffi_fn::gen_extern_fn_signature(None, item.sig);
+    let decl = ffi_fn::gen_extern_fn_signature(item.sig);
     let extern_fn_decl = gen_extern_decl(abi, block_attrs, &item.attrs, decl);
 
     quote! {
@@ -55,7 +55,7 @@ pub fn wrap_fn_definition(
     }
 }
 
-pub fn wrap_impl_definition(impl_: &ItemImpl) -> ItemImpl {
+pub fn wrap_impl_definition(impl_: &ItemImpl, self_id: Option<&syn::Type>) -> ItemImpl {
     let ItemImpl {
         attrs: impl_attrs,
         defaultness,
@@ -95,17 +95,21 @@ pub fn wrap_impl_definition(impl_: &ItemImpl) -> ItemImpl {
                     return None;
                 };
 
-                let ty = &extract_dispatch_id(generics, self_ty, ty)?.ident;
-                Some(quote! { let #pat = <#ty as co3::handle::Handle>::ID; })
+                let handle_ty = match handle_id(ty)? {
+                    HandleId::DynType(ty_param) => quote!(#ty_param),
+                    HandleId::DynSelf => quote!(#self_ty),
+                };
+
+                Some(quote! { let #pat = <#handle_ty as co3::handle::Handle>::ID; })
             })
             .collect::<Vec<_>>();
 
-        let wrapper_body = gen_wrapper_body(Some(generics), Some(self_ty), &sig);
+        let wrapper_body = gen_wrapper_body(Some(generics), self_id, Some(self_ty), &sig);
 
         sig.inputs = sig
             .inputs
             .into_iter()
-            .filter_map(|input| (!is_dispatch_id_arg(generics, self_ty, &input)).then_some(input))
+            .filter_map(|input| (!is_handle_id_arg(&input)).then_some(input))
             .collect();
 
         strip_internal_arg_attrs(&mut sig);
@@ -156,12 +160,13 @@ pub(crate) fn gen_extern_decl(
 
 fn gen_wrapper_body(
     generics: Option<&syn::Generics>,
+    self_id: Option<&syn::Type>,
     self_ty: Option<&syn::Type>,
     sig: &syn::Signature,
 ) -> TokenStream {
     let handle_erase_stmts = generics
         .zip(self_ty)
-        .map(|(generics, self_ty)| gen_handle_erase_stmts(generics, self_ty, sig))
+        .map(|(generics, self_ty)| gen_handle_erase_stmts(generics, self_id, self_ty, sig))
         .unwrap_or_default();
 
     let input_convert = gen_input_conversion_stmts(&sig.inputs);
@@ -291,13 +296,11 @@ fn gen_input_conversion_stmts(inputs: &Punctuated<FnArg, syn::Token![,]>) -> Tok
         let resolve_ty = gen_normalization_stmts(&arg_name, &arg_ty);
         let store_name = gen_store_name(&arg_name);
 
-        stmts.extend(if ownership_mode_for_arg(attrs, &arg_ty) == OwnershipMode::Borrow {
-            if matches!(arg_ty, syn::Type::Array(_)) {
-                quote! {
-                    #resolve_ty
-                    let #arg_name = &#arg_name;
-                }
-            } else {
+        stmts.extend(match ownership_mode_for_arg(attrs, &arg_ty) {
+            OwnershipMode::Borrow if matches!(arg_ty, syn::Type::Array(_)) => {
+                quote! { #resolve_ty let #arg_name = &#arg_name; }
+            }
+            OwnershipMode::Borrow => {
                 let borrow_store_name = format_ident!("__co3_{arg_name}_borrow_store");
 
                 quote! {
@@ -306,15 +309,10 @@ fn gen_input_conversion_stmts(inputs: &Punctuated<FnArg, syn::Token![,]>) -> Tok
                     let #arg_name = co3::borrow::Borrow::borrow(#arg_name, &mut #borrow_store_name);
                 }
             }
-        } else {
-            if let Some(boxed_ty) = boxed_array_ty(&arg_ty) {
-                quote! {
-                    #resolve_ty
-                    let #arg_name: #boxed_ty = Box::new(#arg_name);
-                }
-            } else {
-                quote! { #resolve_ty }
+            OwnershipMode::ByValue if let Some(boxed_ty) = boxed_array_ty(&arg_ty) => {
+                quote! { #resolve_ty let #arg_name: #boxed_ty = Box::new(#arg_name); }
             }
+            OwnershipMode::ByValue => quote! { #resolve_ty },
         });
 
         stmts.extend(quote! {
@@ -331,6 +329,7 @@ fn gen_output_init_stmt(output: &syn::ReturnType) -> TokenStream {
         return quote! {};
     };
 
+    let output = unwrap_result_type(output).map_or(&**output, |(ok, _)| ok);
     let output_ty = quote! {
         core::mem::MaybeUninit<<#output as co3::ExternC>::CType>
     };
@@ -384,7 +383,7 @@ fn gen_ffi_fn_call_stmt(sig: &syn::Signature) -> TokenStream {
     }
 }
 
-fn strip_internal_generic_attrs(generics: &mut syn::Generics) {
+pub(crate) fn strip_internal_generic_attrs(generics: &mut syn::Generics) {
     for param in &mut generics.params {
         if let syn::GenericParam::Type(param) = param {
             param.attrs.retain(|attr| !is_type_erased(attr));

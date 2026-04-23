@@ -54,8 +54,8 @@ extern_C! {
     #![link(crate = "kita")]
 
     #[dispatch]
-    impl<T> Kita for Box<T> {
-        fn kita(self);
+    impl<dyn(u32) T> Kita for Box<T> {
+        fn kita(self, id: <dyn T>::ID);
     }
 }
 
@@ -63,8 +63,8 @@ extern_C! {
     #![link(crate = "kita")]
 
     #[dispatch(<u32>)]
-    impl<U, T> Kita for (T, U) {
-        fn kita(self);
+    impl<dyn(u32) U, dyn(u8) T> Kita for (T, U) {
+        fn kita(self, t_id: <dyn T>::ID, u_id: <dyn U>::ID);
     }
 }
 
@@ -88,25 +88,17 @@ extern_C! {
 extern_C! {
     #![link(crate = "kita")]
 
+    #[id(u8)]
     type Handle<T>;
 
-    #[dispatch(<u32>)]
-    impl<T> Drop for Handle<T> {
-        fn drop(self_id: Self::ID, &mut dyn self);
+    #[dispatch]
+    impl<T> Drop for dyn Handle<T> {
+        fn drop(self_id: <dyn Self>::ID, &mut self);
     }
 
     #[dispatch(<u8, i8>)]
-    impl<T> Clone for Handle<T> {
-        fn clone(&self) -> Self;
-    }
-}
-
-extern_C! {
-    #![link(crate = "kita")]
-
-    #[dispatch(<'a>)]
-    impl<'a> Kita<'a> {
-        fn drop(&mut self);
+    impl<dyn(u8) T> Clone for Handle<T> {
+        fn clone(self_id: <dyn T>::ID, &self) -> Self;
     }
 }
 

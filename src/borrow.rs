@@ -573,14 +573,14 @@ mod tests {
     };
 
     struct OpaqueStruct;
-    struct ExternStruct;
+    //struct ExternStruct;
 
     impl ReprFamily for OpaqueStruct {
         type Kind = Opaque;
     }
-    impl ReprFamily for ExternStruct {
-        type Kind = Transmuted;
-    }
+    //impl ReprFamily for ExternStruct {
+    //    type Kind = Transmuted;
+    //}
 
     #[test]
     fn references_are_no_drop() {

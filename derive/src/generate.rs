@@ -1,14 +1,19 @@
 use proc_macro2::TokenStream;
-use quote::{format_ident, quote};
+use quote::quote;
 use syn::{FnArg, ImplItem, ImplItemFn, ItemImpl, punctuated::Punctuated, visit_mut::VisitMut};
 
 use crate::{
-    DeclItem, DispatchItem, DropImpl, ForeignItem, ForeignItemType,
+    DropImpl, DynImpl, ForeignItem, ForeignItemType,
     dispatch::{erase_handle_types, gen_dispatch_export},
-    ffi_fn::{self, emit_extern_definition, gen_extern_fn_signature, normalize_fn_signature},
+    ffi_fn::{
+        self, emit_extern_definition, gen_extern_fn_signature, merge_generics,
+        normalize_fn_signature,
+    },
     repr::gen_sized_size_family,
     utils::DispatchMonomorphizer,
-    wrapper::{gen_extern_decl, wrap_fn_definition, wrap_impl_definition},
+    wrapper::{
+        gen_extern_decl, strip_internal_generic_attrs, wrap_fn_definition, wrap_impl_definition,
+    },
 };
 
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
@@ -18,33 +23,45 @@ pub(crate) enum OwnershipMode {
     ByValue,
 }
 
-pub(crate) fn emit_decl_exports(abi: syn::Abi, decls: Vec<DeclItem>) -> TokenStream {
+pub(crate) fn emit_decl_exports(abi: syn::Abi, decls: Vec<ForeignItem>) -> TokenStream {
     let exports = decls.into_iter().map(|decl| match decl {
-        DeclItem::Item(ForeignItem::Type(ForeignItemType { id, ty, drop })) => {
-            let opaque = derive_opaque_item(id.map(|id| *id), ty.clone());
+        ForeignItem::Type(ForeignItemType {
+            ty,
+            id,
+            dyn_self_impls,
+            drop,
+        }) => {
+            let opaque = derive_opaque_item(id.as_deref(), ty.clone());
+
+            let dispatch = dyn_self_impls
+                .into_iter()
+                .map(|dispatch| gen_dispatch_export(&abi, dispatch, id.as_deref()));
 
             let drop_impl = drop.as_ref().map(|drop| match drop {
-                DropImpl::Dispatch(item) => &item.impl_,
+                DropImpl::DynSelfImpl(item) => &item.impl_,
+                DropImpl::DynImpl(item) => &item.impl_,
                 DropImpl::Impl(impl_) => impl_,
             });
 
-            let drop_impl_check = gen_drop_impl_check(&ty.ident, drop_impl.unwrap());
-
+            let drop_check = gen_drop_impl_check(&ty, drop_impl.unwrap());
             let drop = drop.map(|drop| match drop {
+                DropImpl::DynSelfImpl(item) => gen_dispatch_export(&abi, item, id.as_deref()),
+                DropImpl::DynImpl(item) => gen_dispatch_export(&abi, item, None),
                 DropImpl::Impl(impl_) => gen_drop_impl_definition(&abi, impl_),
-                DropImpl::Dispatch(item) => gen_dispatch_export(&abi, item),
             });
 
             quote! {
                 #opaque
-                #drop
 
-                #drop_impl_check
+                #drop
+                #drop_check
+
+                #(#dispatch)*
             }
         }
-        DeclItem::Item(ForeignItem::Fn(item)) => ffi_fn::gen_fn_definition(&abi, item),
-        DeclItem::Item(ForeignItem::Impl(impl_)) => ffi_fn::gen_impl_definition(&abi, impl_),
-        DeclItem::Dispatch(item) => gen_dispatch_export(&abi, item),
+        ForeignItem::Fn(item) => ffi_fn::gen_fn_definition(&abi, item),
+        ForeignItem::Impl(impl_) => ffi_fn::gen_impl_definition(&abi, impl_),
+        ForeignItem::DynImpl(item) => gen_dispatch_export(&abi, item, None),
     });
 
     quote! { #( const _: () = { #exports }; )* }
@@ -53,66 +70,123 @@ pub(crate) fn emit_decl_exports(abi: syn::Abi, decls: Vec<DeclItem>) -> TokenStr
 pub(crate) fn expand_extern_import_decls(
     abi: syn::Abi,
     attrs: &[syn::Attribute],
-    decls: Vec<DeclItem>,
+    decls: Vec<ForeignItem>,
 ) -> TokenStream {
+    fn expand_extern_dispatch_impl(
+        impl_: &ItemImpl,
+        args: &Punctuated<syn::AngleBracketedGenericArguments, syn::Token![,]>,
+    ) -> Vec<ItemImpl> {
+        if args.is_empty() {
+            return vec![impl_.clone()];
+        }
+
+        args.iter()
+            .map(|entry| {
+                let mut monomorphized = impl_.clone();
+                monomorphized.generics.params.clear();
+
+                DispatchMonomorphizer::new(&impl_.generics, entry)
+                    .visit_item_impl_mut(&mut monomorphized);
+
+                monomorphized
+            })
+            .collect()
+    }
+
+    fn gen_impl_extern_fn_decls(
+        abi: &syn::Abi,
+        attrs: &[syn::Attribute],
+        impl_: ItemImpl,
+        self_id: Option<&syn::Type>,
+        args: Option<&Punctuated<syn::AngleBracketedGenericArguments, syn::Token![,]>>,
+    ) -> Vec<TokenStream> {
+        let self_ty = &impl_.self_ty;
+
+        impl_
+            .items
+            .into_iter()
+            .filter_map(|item| {
+                let syn::ImplItem::Fn(mut item) = item else {
+                    return None;
+                };
+
+                normalize_fn_signature(&mut item.sig, Some(&impl_.self_ty));
+                merge_generics(impl_.generics.clone(), &mut item.sig.generics);
+
+                if let Some(args) = args {
+                    erase_handle_types(&impl_.generics, self_id, self_ty, &mut item.sig, args);
+                }
+
+                let decl = gen_extern_fn_signature(item.sig);
+                Some(gen_extern_decl(abi, attrs, &item.attrs, decl))
+            })
+            .collect()
+    }
+
+    fn expand_impl_import(
+        abi: &syn::Abi,
+        attrs: &[syn::Attribute],
+        impl_: ItemImpl,
+    ) -> TokenStream {
+        let import = wrap_impl_definition(&impl_, None);
+        let extern_decl = gen_impl_extern_fn_decls(abi, attrs, impl_, None, None);
+
+        quote! {
+            const _: () = {
+                #(#extern_decl)*
+                #import
+            };
+        }
+    }
+
+    fn expand_dispatch_import(
+        abi: &syn::Abi,
+        attrs: &[syn::Attribute],
+        self_id: Option<&syn::Type>,
+        dispatch: DynImpl,
+    ) -> TokenStream {
+        let DynImpl { impl_, args, .. } = dispatch;
+        let wrapped = wrap_impl_definition(&impl_, self_id);
+        let imports = expand_extern_dispatch_impl(&wrapped, &args);
+        let extern_decl = gen_impl_extern_fn_decls(abi, attrs, impl_, self_id, Some(&args));
+
+        quote! {
+            const _: () = {
+                #(#extern_decl)*
+                #(#imports)*
+            };
+        }
+    }
+
     let imports = decls.into_iter().map(|decl| match decl {
-        DeclItem::Item(ForeignItem::Type(ForeignItemType { id, ty, drop })) => {
+        ForeignItem::Type(ForeignItemType {
+            ty,
+            id,
+            dyn_self_impls,
+            drop,
+        }) => {
             let ty = wrap_extern_type_decl(id.as_deref(), ty);
 
+            let dispatch = dyn_self_impls
+                .into_iter()
+                .map(|dispatch| expand_dispatch_import(&abi, attrs, id.as_deref(), dispatch));
+
             let drop = drop.map(|drop| match drop {
-                DropImpl::Dispatch(dispatch) => {
-                    let DispatchItem { impl_, .. } = dispatch;
-
-                    if let Some(id_ty) = &id {
-                        expand_dispatch_drop_import(&abi, attrs, impl_, id_ty)
-                    } else {
-                        quote! {}
-                    }
+                DropImpl::DynSelfImpl(d) | DropImpl::DynImpl(d) => {
+                    expand_dispatch_drop_import(&abi, attrs, d.impl_, id.as_deref().unwrap())
                 }
-                DropImpl::Impl(impl_) => {
-                    let import = wrap_impl_definition(&impl_);
-                    let extern_decl = gen_impl_extern_fn_decls(&abi, attrs, impl_, None);
-
-                    quote! {
-                        const _: () = {
-                            #(#extern_decl)*
-                            #import
-                        };
-                    }
-                }
+                DropImpl::Impl(impl_) => expand_impl_import(&abi, attrs, impl_),
             });
 
             quote! {
                 #ty
                 #drop
+                #(#dispatch)*
             }
         }
-        DeclItem::Item(ForeignItem::Fn(item)) => wrap_fn_definition(&abi, attrs, item),
-        DeclItem::Item(ForeignItem::Impl(impl_)) => {
-            let import = wrap_impl_definition(&impl_);
-            let extern_decl = gen_impl_extern_fn_decls(&abi, attrs, impl_, None);
-
-            quote! {
-                const _: () = {
-                    #(#extern_decl)*
-                    #import
-                };
-            }
-        }
-        DeclItem::Dispatch(dispatch) => {
-            let DispatchItem { impl_, args, .. } = dispatch;
-            let wrapped = wrap_impl_definition(&impl_);
-
-            let imports = expand_extern_dispatch_impl(&wrapped, &args);
-            let extern_decl = gen_impl_extern_fn_decls(&abi, attrs, impl_, Some(&args));
-
-            quote! {
-                const _: () = {
-                    #(#extern_decl)*
-                    #(#imports)*
-                };
-            }
-        }
+        ForeignItem::Fn(item) => wrap_fn_definition(&abi, attrs, item),
+        ForeignItem::Impl(impl_) => expand_impl_import(&abi, attrs, impl_),
+        ForeignItem::DynImpl(dispatch) => expand_dispatch_import(&abi, attrs, None, dispatch),
     });
 
     quote! { #(#imports)* }
@@ -121,19 +195,10 @@ pub(crate) fn expand_extern_import_decls(
 fn gen_drop_impl_definition(abi: &syn::Abi, mut impl_: ItemImpl) -> TokenStream {
     let self_ty = &impl_.self_ty;
 
-    impl_.items.iter_mut().for_each(|item| {
-        let syn::ImplItem::Fn(item) = item else {
-            return;
-        };
-
-        normalize_fn_signature(&mut item.sig, Some(self_ty));
-    });
-
-    let syn::ImplItem::Fn(item) = impl_.items.first().unwrap() else {
+    let Some(syn::ImplItem::Fn(mut item)) = impl_.items.pop() else {
         unreachable!()
     };
 
-    let fn_signature = gen_extern_fn_signature(Some(&impl_.generics), item.sig.clone());
     let ffi_fn_body = quote! {{
         let __co3_self: &mut #self_ty = unsafe {
             co3::Decode::decode(__co3_self, &mut ())
@@ -144,11 +209,14 @@ fn gen_drop_impl_definition(abi: &syn::Abi, mut impl_: ItemImpl) -> TokenStream 
         Ok(())
     }};
 
+    normalize_fn_signature(&mut item.sig, Some(self_ty));
+    merge_generics(impl_.generics.clone(), &mut item.sig.generics);
+    let fn_signature = gen_extern_fn_signature(item.sig);
     emit_extern_definition(abi, &item.attrs, fn_signature, ffi_fn_body)
 }
 
 fn derive_opaque_item(
-    id: Option<syn::Type>,
+    id: Option<&syn::Type>,
     syn::ForeignItemType {
         attrs: _,
         ident,
@@ -161,9 +229,7 @@ fn derive_opaque_item(
     let params = &generics.params;
 
     let size_family_impl = gen_sized_size_family(&ident, &generics);
-    let handle_family_impl = id
-        .as_ref()
-        .and_then(|id| gen_handle_family_impl(id, &ident, &generics));
+    let handle_family_impl = id.and_then(|id| gen_handle_family_impl(id, &ident, &generics));
 
     // TODO: Implement ?Sized Opaque types
     let sized_impls = quote! {
@@ -240,14 +306,11 @@ fn expand_dispatch_drop_import(
         ..
     } = &impl_;
 
-    // FIXME: https://github.com/mversic/co3/issues/93
-    let handle_bound = quote! { Self: co3::handle::Handle };
-    let (impl_generics, _, where_clause) = generics.split_for_impl();
-    let where_clause = if let Some(where_clause) = where_clause {
-        quote! { #where_clause, #handle_bound }
-    } else {
-        quote! { where #handle_bound }
-    };
+    let (impl_generics, _, _) = generics.split_for_impl();
+    let predicates = generics
+        .where_clause
+        .as_ref()
+        .map(|where_clause| &where_clause.predicates);
 
     let ImplItem::Fn(ImplItemFn {
         attrs: wrapper_attrs,
@@ -271,12 +334,12 @@ fn expand_dispatch_drop_import(
         .filter_map(|arg| {
             if let FnArg::Typed(syn::PatType { pat, .. }) = arg {
                 Some(quote! {
-                    let __co3_id = co3::Encode::encode(<Self as co3::handle::Handle>::ID, &mut ());
-
-                    let #pat = unsafe {
-                        // FIXME: THIS IS HACKED: https://github.com/mversic/co3/issues/93
-                        core::ptr::read((&__co3_id as *const <<Self as co3::handle::HandleFamily>::Kind as co3::ExternC>::CType).cast::<#id_ty>())
-                    };
+                    let #pat: #id_ty = {
+                        // FIXME: https://github.com/mversic/co3/issues/93
+                        // Should it be required that HandleFamily::Kind: Copy
+                        let __co3_handle_id = <Self as co3::handle::Handle>::ID;
+                        unsafe { core::mem::transmute_copy(&__co3_handle_id)
+                    }};
                 })
             } else {
                 None
@@ -288,24 +351,26 @@ fn expand_dispatch_drop_import(
         .inputs
         .iter()
         .map(|arg| match arg {
-            FnArg::Receiver(_) => (
-                quote!(__co3_self: *mut core::ffi::c_void),
-                quote!(__co3_self),
-            ),
-            FnArg::Typed(syn::PatType { pat, .. }) => (quote!(#pat: #id_ty), quote!(#pat)),
+            FnArg::Receiver(_) => (quote!(*mut core::ffi::c_void), quote!(__co3_self)),
+            FnArg::Typed(syn::PatType { pat, .. }) => {
+                (quote!(<#id_ty as co3::ExternC>::CType), quote!(#pat))
+            }
         })
         .unzip();
 
     quote! {
         #(#impl_attrs)*
-        impl #impl_generics Drop for #self_ty #where_clause {
+        impl #impl_generics Drop for #self_ty where
+            Self: co3::handle::Handle,
+            #predicates
+        {
             #(#wrapper_attrs)*
             fn drop(&mut self) {
                 unsafe #abi {
                     #(#attrs)*
 
                     #link_name
-                    fn drop(#(#inputs),*) -> co3::FfiReturn;
+                    fn drop(#(#values: #inputs),*) -> co3::FfiReturn;
                 }
 
                 let __co3_self = self as *mut #self_ty as *mut core::ffi::c_void;
@@ -337,33 +402,19 @@ pub(crate) fn is_unsafe_no_mangle(attr: &syn::Attribute) -> bool {
     })
 }
 
-fn expand_extern_dispatch_impl(
-    impl_: &ItemImpl,
-    args: &Punctuated<syn::AngleBracketedGenericArguments, syn::Token![,]>,
-) -> Vec<ItemImpl> {
-    if args.is_empty() {
-        return vec![impl_.clone()];
-    }
+fn gen_drop_impl_check(item: &syn::ForeignItemType, impl_: &ItemImpl) -> TokenStream {
+    let mut impl_generics = impl_.generics.clone();
+    strip_internal_generic_attrs(&mut impl_generics);
 
-    args.iter()
-        .map(|entry| {
-            let mut monomorphized = impl_.clone();
-            monomorphized.generics.params.clear();
-
-            DispatchMonomorphizer::new(&impl_.generics, entry)
-                .visit_item_impl_mut(&mut monomorphized);
-
-            monomorphized
-        })
-        .collect()
-}
-
-fn gen_drop_impl_check(ident: &syn::Ident, impl_: &ItemImpl) -> TokenStream {
-    let (impl_generics, _, where_clause) = impl_.generics.split_for_impl();
+    let ident = &item.ident;
     let self_ty = &impl_.self_ty;
 
-    let decl_params = drop_check_decl_params(impl_);
-    let marker_fields = decl_params.iter().map(|param| match param {
+    let item_attrs = impl_
+        .attrs
+        .iter()
+        .filter(|attr| !attr.path().is_ident("dispatch"));
+
+    let marker_fields = item.generics.params.iter().map(|param| match param {
         syn::GenericParam::Lifetime(param) => {
             let lifetime = &param.lifetime;
             quote!(core::marker::PhantomData<&#lifetime ()>)
@@ -378,87 +429,17 @@ fn gen_drop_impl_check(ident: &syn::Ident, impl_: &ItemImpl) -> TokenStream {
         }
     });
 
-    let fields = quote!((#(#marker_fields),*););
-    let decl_generics = (!decl_params.is_empty()).then(|| quote!(<#decl_params>));
+    let (decl_generics, _, item_where_clause) = item.generics.split_for_impl();
+    let (impl_generics, _, where_clause) = impl_generics.split_for_impl();
 
-    quote! {
-        {
-            struct #ident #decl_generics #fields #where_clause
+    quote! {{
+        #(#item_attrs)*
+        struct #ident #decl_generics (#(#marker_fields),*) #item_where_clause;
 
-            impl #impl_generics Drop for #self_ty #where_clause {
-                fn drop(&mut self) {}
-            }
+        impl #impl_generics Drop for #self_ty #where_clause {
+            fn drop(&mut self) {}
         }
-    }
-}
-
-fn drop_check_decl_params(impl_: &ItemImpl) -> Punctuated<syn::GenericParam, syn::Token![,]> {
-    if !impl_.generics.params.is_empty() {
-        return impl_.generics.params.clone();
-    }
-
-    let syn::Type::Path(type_path) = impl_.self_ty.as_ref() else {
-        return Punctuated::new();
-    };
-    let Some(segment) = type_path.path.segments.last() else {
-        return Punctuated::new();
-    };
-
-    let syn::PathArguments::AngleBracketed(args) = &segment.arguments else {
-        return Punctuated::new();
-    };
-
-    let mut params = Punctuated::new();
-    for (idx, arg) in args.args.iter().enumerate() {
-        match arg {
-            syn::GenericArgument::Lifetime(_) => {
-                let lifetime =
-                    syn::Lifetime::new(&format!("'__co3_l{idx}"), proc_macro2::Span::call_site());
-                params.push(syn::parse_quote!(#lifetime));
-            }
-            syn::GenericArgument::Type(_) => {
-                let ident = format_ident!("__Co3T{idx}");
-                params.push(syn::parse_quote!(#ident));
-            }
-            syn::GenericArgument::Const(_) => {
-                let ident = format_ident!("__CO3_N{idx}");
-                params.push(syn::parse_quote!(const #ident: usize));
-            }
-            syn::GenericArgument::AssocType(_)
-            | syn::GenericArgument::AssocConst(_)
-            | syn::GenericArgument::Constraint(_) => {}
-            _ => {}
-        }
-    }
-
-    params
-}
-
-fn gen_impl_extern_fn_decls(
-    abi: &syn::Abi,
-    attrs: &[syn::Attribute],
-    impl_: ItemImpl,
-    args: Option<&Punctuated<syn::AngleBracketedGenericArguments, syn::Token![,]>>,
-) -> Vec<TokenStream> {
-    impl_
-        .items
-        .into_iter()
-        .filter_map(|item| {
-            let syn::ImplItem::Fn(item) = item else {
-                return None;
-            };
-
-            let mut sig = item.sig;
-            normalize_fn_signature(&mut sig, Some(&impl_.self_ty));
-
-            if let Some(args) = args {
-                erase_handle_types(&impl_.generics, &impl_.self_ty, &mut sig, args);
-            }
-
-            let decl = ffi_fn::gen_extern_fn_signature(Some(&impl_.generics), sig);
-            Some(gen_extern_decl(abi, attrs, &item.attrs, decl))
-        })
-        .collect()
+    }}
 }
 
 fn wrap_extern_type_decl(

@@ -392,7 +392,9 @@ mod tests {
     use alloc_crate::{boxed::Box, vec::Vec};
     use core::num::NonZeroU8;
 
-    use static_assertions::{assert_impl_all, assert_not_impl_any};
+    use static_assertions::assert_impl_all;
+    #[cfg(not(feature = "unstable-refs"))]
+    use static_assertions::assert_not_impl_any;
 
     use super::*;
     #[cfg(feature = "unstable-refs")]
