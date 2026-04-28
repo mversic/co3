@@ -1,7 +1,7 @@
 //! FFI-safe equivalent of [`core::result`] related functionality
 
 use crate::{
-    Decode, Encode, ExternC, ReprC, Store,
+    DecodeWithStore, EncodeWithStore, ExternC, ReprC, Store,
     borrow::DropFamily,
     cloned::DecodeCloned,
     niche::{Niche, NicheFamily},
@@ -127,7 +127,7 @@ where
     type Kind = <T::Kind as core::ops::Add<E::Kind>>::Output;
 }
 
-impl<T: Encode, E: Encode> Encode for Result<T, E> {
+impl<T: EncodeWithStore, E: EncodeWithStore> EncodeWithStore for Result<T, E> {
     type Store = (T::Store, E::Store);
 
     fn encode<'itm>(self, store: &'itm mut Self::Store) -> Self::CType
@@ -141,7 +141,7 @@ impl<T: Encode, E: Encode> Encode for Result<T, E> {
     }
 }
 
-impl<'d, T: Decode<'d>, E: Decode<'d>> Decode<'d> for Result<T, E> {
+impl<'d, T: DecodeWithStore<'d>, E: DecodeWithStore<'d>> DecodeWithStore<'d> for Result<T, E> {
     type Store = Option<Result<T::Store, E::Store>>;
 
     unsafe fn decode<'itm: 'd>(source: Self::CType, store: &'itm mut Self::Store) -> Option<Self> {

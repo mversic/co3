@@ -317,7 +317,7 @@ fn gen_input_conversion_stmts(inputs: &Punctuated<FnArg, syn::Token![,]>) -> Tok
 
         stmts.extend(quote! {
             let mut #store_name = Default::default();
-            let #arg_name = co3::Encode::encode(#arg_name, &mut #store_name);
+            let #arg_name = co3::EncodeWithStore::encode(#arg_name, &mut #store_name);
         });
     }
 

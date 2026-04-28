@@ -1,6 +1,6 @@
 use std::{cmp::Ordering, mem::MaybeUninit};
 
-use co3::{Decode, Encode, ExternC, FfiReturn, ReprC, def_fns, export, out_ptr::OutPtrRead};
+use co3::{DecodeWithStore, EncodeWithStore, ExternC, FfiReturn, ReprC, def_fns, export, out_ptr::OutPtrRead};
 
 co3::handles! {FfiStruct1, FfiStruct2}
 
@@ -58,7 +58,7 @@ fn export_shared_fns() {
                 cloned.as_mut_ptr().cast(),
             );
 
-            let cloned = Decode::decode(cloned.assume_init(), &mut ()).unwrap();
+            let cloned = DecodeWithStore::decode(cloned.assume_init(), &mut ()).unwrap();
             assert_eq!(*ffi_struct1, cloned);
 
             cloned

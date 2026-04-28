@@ -262,19 +262,19 @@ impl<'r> ToOwned<'r> for String {
 
 unsafe impl<R> EncodeTransmuted for UnsafeCell<R>
 where
-    Self: CheckedTransmute<Target: crate::Encode>,
+    Self: CheckedTransmute<Target: crate::EncodeWithStore>,
 {
-    type Store = <Self::Target as crate::Encode>::Store;
+    type Store = <Self::Target as crate::EncodeWithStore>::Store;
 }
 unsafe impl<R> EncodeTransmuted for NonNull<R>
 where
-    Self: CheckedTransmute<Target: crate::Encode>,
+    Self: CheckedTransmute<Target: crate::EncodeWithStore>,
 {
-    type Store = <Self::Target as crate::Encode>::Store;
+    type Store = <Self::Target as crate::EncodeWithStore>::Store;
 }
 #[cfg(feature = "alloc")]
 unsafe impl EncodeTransmuted for String {
-    type Store = <Self::Target as crate::Encode>::Store;
+    type Store = <Self::Target as crate::EncodeWithStore>::Store;
 }
 
 #[cfg(test)]
@@ -290,7 +290,7 @@ mod tests {
     #[cfg(feature = "alloc")]
     use crate::boxed::CBoxedSlice;
     use crate::{
-        Decode, Encode, ExternC,
+        DecodeWithStore, EncodeWithStore, ExternC,
         option::COption,
         slice::{CSlice, CSliceMut},
         transmute::FlatTransmute,
@@ -307,9 +307,9 @@ mod tests {
             ReprFamily<Kind = &'static Transmuted>,
             NicheFamily<Kind = WithCustomNiche>,
             //Niche<CType = CSlice<u8>>,
-            //Decode<'static>,
+            //DecodeWithStore<'static>,
             // FIXME:
-            //Encode,
+            //EncodeWithStore,
         );
         // TODO: Add more assertions
     }
@@ -321,22 +321,22 @@ mod tests {
             NicheFamily<Kind = WithoutNiche>,
             FlatTransmute<Target = u8>,
             ExternC<CType = u8>,
-            Decode<'static>,
+            DecodeWithStore<'static>,
             // FIXME:
-            //Encode,
+            //EncodeWithStore,
         );
         assert_impl_all!(&UnsafeCell<NonZeroU8>:
             ReprFamily<Kind = Transmuted>,
             NicheFamily<Kind = WithStableNiche>,
             StableNiche<CType = *const u8>,
-            Decode<'static>,
-            Encode,
+            DecodeWithStore<'static>,
+            EncodeWithStore,
         );
         assert_impl_all!(&mut UnsafeCell<NonZeroU8>:
             ReprFamily<Kind = Transmuted>,
             NicheFamily<Kind = WithStableNiche>,
             StableNiche<CType = *mut u8>,
-            Decode<'static>,
+            DecodeWithStore<'static>,
         );
         // FIXME:
         //#[cfg(feature = "alloc")]
@@ -344,21 +344,21 @@ mod tests {
         //    ReprFamily<Kind = Transmuted>,
         //    NicheFamily<Kind = WithStableNiche>,
         //    StableNiche<CType = *mut u8>,
-        //    Decode<'static>,
-        //    Encode,
+        //    DecodeWithStore<'static>,
+        //    EncodeWithStore,
         //);
         assert_impl_all!(&[UnsafeCell<NonZeroU8>]:
             ReprFamily<Kind = &'static Transmuted>,
             NicheFamily<Kind = WithCustomNiche>,
             Niche<CType = CSlice<u8>>,
-            Decode<'static>,
-            Encode,
+            DecodeWithStore<'static>,
+            EncodeWithStore,
         );
         assert_impl_all!(&mut [UnsafeCell<NonZeroU8>]:
             ReprFamily<Kind = &'static mut Transmuted>,
             NicheFamily<Kind = WithCustomNiche>,
             Niche<CType = CSliceMut<u8>>,
-            Decode<'static>,
+            DecodeWithStore<'static>,
         );
         #[cfg(feature = "alloc")]
         assert_impl_all!(Box<[UnsafeCell<NonZeroU8>]>:
@@ -366,8 +366,8 @@ mod tests {
             NicheFamily<Kind = WithCustomNiche>,
             Niche<CType = CBoxedSlice<u8>>,
             // FIXME:
-            //Decode<'static>,
-            Encode,
+            //DecodeWithStore<'static>,
+            EncodeWithStore,
         );
         #[cfg(feature = "alloc")]
         assert_impl_all!(Vec<UnsafeCell<NonZeroU8>>:
@@ -375,23 +375,23 @@ mod tests {
             NicheFamily<Kind = WithCustomNiche>,
             Niche<CType = CVec<u8>>,
             // FIXME:
-            //Decode<'static>,
-            Encode,
+            //DecodeWithStore<'static>,
+            EncodeWithStore,
         );
         assert_impl_all!([UnsafeCell<NonZeroU8>; 2]:
             ReprFamily<Kind = Transmuted>,
             NicheFamily<Kind = WithoutNiche>,
             ExternC<CType = [u8; 2]>,
-            Decode<'static>,
-            Encode,
+            DecodeWithStore<'static>,
+            EncodeWithStore,
         );
         assert_impl_all!(Option<UnsafeCell<NonZeroU8>>:
             ReprFamily<Kind = Option<WithoutNiche>>,
             NicheFamily<Kind = WithCustomNiche>,
             Niche<CType = COption<u8>>,
-            Decode<'static>,
+            DecodeWithStore<'static>,
             // FIXME:
-            //Encode,
+            //EncodeWithStore,
         );
 
         // FIXME:
@@ -399,21 +399,21 @@ mod tests {
         //    feature = "unsafe-optimizations",
         //    all(feature = "alloc", feature = "unstable-refs"),
         //))]
-        //assert_impl_all!(&mut UnsafeCell<NonZeroU8>: Encode);
+        //assert_impl_all!(&mut UnsafeCell<NonZeroU8>: EncodeWithStore);
         //#[cfg(any(
         //    feature = "unsafe-optimizations",
         //    all(feature = "alloc", feature = "unstable-refs"),
         //))]
-        //assert_impl_all!(&mut [UnsafeCell<NonZeroU8>]: Encode);
+        //assert_impl_all!(&mut [UnsafeCell<NonZeroU8>]: EncodeWithStore);
         //#[cfg(not(any(
         //    feature = "unsafe-optimizations",
         //    all(feature = "alloc", feature = "unstable-refs"),
         //)))]
-        //assert_not_impl_any!(&mut UnsafeCell<NonZeroU8>: Encode);
+        //assert_not_impl_any!(&mut UnsafeCell<NonZeroU8>: EncodeWithStore);
         //#[cfg(not(any(
         //    feature = "unsafe-optimizations",
         //    all(feature = "alloc", feature = "unstable-refs"),
         //)))]
-        //assert_not_impl_any!(&mut [UnsafeCell<NonZeroU8>]: Encode);
+        //assert_not_impl_any!(&mut [UnsafeCell<NonZeroU8>]: EncodeWithStore);
     }
 }

@@ -1,7 +1,7 @@
 use std::{alloc, marker::PhantomData, mem::MaybeUninit, num::NonZeroU64};
 
 use co3::{
-    COption, Decode, Encode, ExternC, FfiReturn, ReprC, export,
+    COption, DecodeWithStore, EncodeWithStore, ExternC, FfiReturn, ReprC, export,
     out_ptr::OutPtrRead,
     slice::{CBoxedSlice, CSlice},
 };
@@ -156,7 +156,7 @@ fn take_and_return_option_of_transparent_with_niche() {
 
         assert_eq!(
             value,
-            Decode::decode(output.assume_init(), &mut ()).unwrap()
+            DecodeWithStore::decode(output.assume_init(), &mut ()).unwrap()
         );
     }
 }
@@ -174,7 +174,7 @@ fn take_and_return_option_of_transparent_without_niche() {
 
         assert_eq!(
             value,
-            Decode::decode(output.assume_init(), &mut ()).unwrap()
+            DecodeWithStore::decode(output.assume_init(), &mut ()).unwrap()
         );
     }
 }
@@ -192,7 +192,7 @@ fn take_and_return_option_of_transparent_with_inner_niche() {
 
         assert_eq!(
             value,
-            Decode::decode(output.assume_init(), &mut ()).unwrap()
+            DecodeWithStore::decode(output.assume_init(), &mut ()).unwrap()
         );
     }
 }

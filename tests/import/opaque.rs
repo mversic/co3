@@ -142,7 +142,7 @@ mod ffi {
     use std::{alloc, collections::BTreeMap};
 
     use co3::{
-        Decode, Encode, ExternC, FfiReturn,
+        DecodeWithStore, EncodeWithStore, ExternC, FfiReturn,
         out_ptr::{OutPtr, OutPtrWrite},
         slice::RawSliceMut,
     };
@@ -191,7 +191,7 @@ mod ffi {
     ) -> FfiReturn {
         unsafe {
             let opaque = Box::new(ExternOpaqueStruct {
-                name: Some(Decode::decode(name, &mut ()).expect("Valid num")),
+                name: Some(DecodeWithStore::decode(name, &mut ()).expect("Valid num")),
                 tokens: vec![],
                 params: Default::default(),
             });

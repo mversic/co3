@@ -48,9 +48,9 @@ impl<R, W: CloneFromWrapped<R>, const N: usize> CloneFromWrapped<[R; N]> for [W;
 
 disjoint_impls! {
     // FIXME: I'm not happy with the name anymore since it's implemented for all IR types
-    /// [`Decode`] helper for [`Cloned`] types.
+    /// [`DecodeWithStore`] helper for [`Cloned`] types.
     ///
-    /// Implementations of [`Decode`] for `&T`/`&mut T` where `T: Cloned` depend on decoding `T`,
+    /// Implementations of [`DecodeWithStore`] for `&T`/`&mut T` where `T: Cloned` depend on decoding `T`,
     /// but decoding `T` may include ownership transfer in which case it must be decoded to
     /// [`ManuallyDrop<T>`]
     ///
@@ -60,36 +60,38 @@ disjoint_impls! {
     ///
     /// [`decode_cloned`](Self::decode_cloned) is the method cloned containers/tuples call
     /// recursively for their elements.
-    pub trait DecodeCloned<'d, const UNSAFE_OPTIMIZATIONS: bool = false>: Decode<'d, false> {
+    pub trait DecodeCloned<'d, const UNSAFE_OPTIMIZATIONS: bool = false>:
+        DecodeWithStore<'d, false>
+    {
         /// Perform the conversion from [`Self::CType`] into [`Self`]
         ///
         /// # Safety
         ///
-        /// - check [`Decode`]
+        /// - check [`DecodeWithStore`]
         #[inline(always)]
         unsafe fn decode_cloned<'itm: 'd>(
             source: Self::CType,
             store: &'itm mut Self::Store,
         ) -> Option<Self> {
-            unsafe { Decode::decode(source, store) }
+            unsafe { DecodeWithStore::decode(source, store) }
         }
     }
 
     impl<'d, R> DecodeCloned<'d, false> for R
     where
-        Self: ReprFamily<Kind = Robust> + Decode<'d, false>,
+        Self: ReprFamily<Kind = Robust> + DecodeWithStore<'d, false>,
     {}
     #[cfg(feature = "alloc")]
     impl<'d, R: Clone + 'd> DecodeCloned<'d, false> for R
     where
-        Self: ReprFamily<Kind = Opaque> + Decode<'d, false>,
+        Self: ReprFamily<Kind = Opaque> + DecodeWithStore<'d, false>,
     {
         #[inline(always)]
         unsafe fn decode_cloned<'itm: 'd>(
             source: Self::CType,
             store: &'itm mut Self::Store,
         ) -> Option<Self> {
-            unsafe { ManuallyDrop::<R>::decode(source, store) }
+            unsafe { <ManuallyDrop<R> as DecodeWithStore>::decode(source, store) }
                 .map(CloneFromWrapped::clone_from_wrapped)
         }
     }
@@ -110,7 +112,7 @@ disjoint_impls! {
 
     impl<'d, R: ?Sized> DecodeCloned<'d, false> for &'d R
     where
-        Self: ReprFamily<Kind = &'d Robust> + Decode<'d>
+        Self: ReprFamily<Kind = &'d Robust> + DecodeWithStore<'d>
     {
     }
     //impl<'a, R: ?Sized> DecodeCloned<'a, false> for &'a R where
@@ -119,27 +121,27 @@ disjoint_impls! {
     //}
     impl<'a, R: ?Sized> DecodeCloned<'a, false> for &'a R
     where
-        Self: ReprFamily<Kind = &'a Transmuted> + Decode<'a>
+        Self: ReprFamily<Kind = &'a Transmuted> + DecodeWithStore<'a>
     {
     }
     #[cfg(feature = "unstable-refs")]
     impl<'d, R, S: Cloned + 'd> DecodeCloned<'d, false> for &'d R
     where
-        Self: ReprFamily<Kind = &'d S> + Decode<'d>,
+        Self: ReprFamily<Kind = &'d S> + DecodeWithStore<'d>,
         R: SizeFamily<Kind = Sized_>,
     {
     }
     #[cfg(feature = "unstable-refs")]
     impl<'a, R: ?Sized, S: Cloned + ?Sized + 'a> DecodeCloned<'a, false> for &'a R
     where
-        Self: ReprFamily<Kind = &'a S> + Decode<'a>,
+        Self: ReprFamily<Kind = &'a S> + DecodeWithStore<'a>,
         R: SizeFamily<Kind = UnSized>,
     {
     }
 
     impl<'d, R: ?Sized> DecodeCloned<'d, false> for &'d mut R
     where
-        Self: ReprFamily<Kind = &'d mut Robust> + Decode<'d>
+        Self: ReprFamily<Kind = &'d mut Robust> + DecodeWithStore<'d>
     {
     }
     //impl<'a, R: ?Sized> DecodeCloned<'a, false> for &'a mut R where
@@ -148,20 +150,20 @@ disjoint_impls! {
     //}
     impl<'a, R: ?Sized> DecodeCloned<'a, false> for &'a mut R
     where
-        Self: ReprFamily<Kind = &'a mut Transmuted> + Decode<'a>
+        Self: ReprFamily<Kind = &'a mut Transmuted> + DecodeWithStore<'a>
     {
     }
     #[cfg(feature = "unstable-refs")]
     impl<'a, R, S: Cloned + 'a> DecodeCloned<'a, false> for &'a mut R
     where
-        Self: ReprFamily<Kind = &'a mut S> + Decode<'a>,
+        Self: ReprFamily<Kind = &'a mut S> + DecodeWithStore<'a>,
         R: SizeFamily<Kind = UnSized>,
     {
     }
     #[cfg(feature = "unstable-refs")]
     impl<'d, R: ?Sized, S: Cloned + ?Sized + 'd> DecodeCloned<'d, false> for &'d mut R
     where
-        Self: ReprFamily<Kind = &'d mut S> + Decode<'d>,
+        Self: ReprFamily<Kind = &'d mut S> + DecodeWithStore<'d>,
         R: SizeFamily<Kind = Sized_>,
     {
     }

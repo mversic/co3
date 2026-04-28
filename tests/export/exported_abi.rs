@@ -1,7 +1,7 @@
 use std::{mem::MaybeUninit, ptr::NonNull};
 
 use co3::{
-    Decode, Encode, FfiReturn, ReprC, export, export_, export_C, external::Extern,
+    DecodeWithStore, EncodeWithStore, FfiReturn, ReprC, export, export_, export_C, external::Extern,
     out_ptr::OutPtrRead as _,
 };
 

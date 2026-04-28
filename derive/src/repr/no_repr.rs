@@ -41,11 +41,11 @@ pub(super) fn derive_no_repr_struct<const NEEDS_DROP: bool>(
 
     let field_rust_stores = fields.iter().map(|field| {
         let ty = &field.ty;
-        quote! { <#ty as co3::Encode<false>>::Store }
+        quote! { <#ty as co3::EncodeWithStore<false>>::Store }
     });
     let field_ffi_stores = fields.iter().map(|field| {
         let ty = &field.ty;
-        quote! { <#ty as co3::Decode<'_dšč>>::Store }
+        quote! { <#ty as co3::DecodeWithStore<'_dšč>>::Store }
     });
 
     let basic_impls = gen_ir_impl(name, &repr_c_struct_name, &field_types, generics);
@@ -63,12 +63,12 @@ pub(super) fn derive_no_repr_struct<const NEEDS_DROP: bool>(
                     let Self { #(#field_names),* } = self;
 
                     #repr_c_struct_name {
-                        #(#field_names: co3::Encode::encode(#field_names, &mut store.#field_indices)),*
+                        #(#field_names: co3::EncodeWithStore::encode(#field_names, &mut store.#field_indices)),*
                     }
                 },
                 quote! {
                     Some(Self {
-                        #(#field_names: unsafe { co3::Decode::decode(source.#field_names, &mut store.#field_indices)? }),*
+                        #(#field_names: unsafe { co3::DecodeWithStore::decode(source.#field_names, &mut store.#field_indices)? }),*
                     })
                 },
                 quote! {
@@ -89,12 +89,12 @@ pub(super) fn derive_no_repr_struct<const NEEDS_DROP: bool>(
                     let Self(#(#field_vars),*) = self;
 
                     #repr_c_struct_name(
-                        #(co3::Encode::encode(#field_vars, &mut store.#field_indices)),*
+                        #(co3::EncodeWithStore::encode(#field_vars, &mut store.#field_indices)),*
                     )
                 },
                 quote! {
                     Some(Self(
-                        #(unsafe { co3::Decode::decode(source.#field_indices, &mut store.#field_indices)? }),*
+                        #(unsafe { co3::DecodeWithStore::decode(source.#field_indices, &mut store.#field_indices)? }),*
                     ))
                 },
                 quote! {
@@ -136,14 +136,14 @@ pub(super) fn derive_no_repr_struct<const NEEDS_DROP: bool>(
         #store_defs
         #borrow_ir
 
-        impl #impl_generics co3::Encode for #name #ty_generics where #encode_bounds #predicates {
+        impl #impl_generics co3::EncodeWithStore for #name #ty_generics where #encode_bounds #predicates {
             type Store = #rust_store;
 
             fn encode<'_išč>(self, store: &'_išč mut Self::Store) -> Self::CType where Self: '_išč {
                 #encode_impl
             }
         }
-        impl<#decode_params> co3::Decode<'_dšč> for #name #ty_generics where
+        impl<#decode_params> co3::DecodeWithStore<'_dšč> for #name #ty_generics where
             #repr_c_struct_name #ty_generics: '_dšč,
             #decode_bounds #predicates
         {
@@ -196,7 +196,7 @@ pub(super) fn derive_no_repr_data_enum<const NEEDS_DROP: bool>(
             || quote! { () },
             |field| {
                 let ty = &field.ty;
-                quote! { <#ty as co3::Encode<false>>::Store }
+                quote! { <#ty as co3::EncodeWithStore<false>>::Store }
             },
         )
     });
@@ -206,7 +206,7 @@ pub(super) fn derive_no_repr_data_enum<const NEEDS_DROP: bool>(
             || quote! { () },
             |field| {
                 let ty = &field.ty;
-                quote! { <#ty as co3::Decode<'_dšč>>::Store }
+                quote! { <#ty as co3::DecodeWithStore<'_dšč>>::Store }
             },
         )
     });
@@ -241,7 +241,7 @@ pub(super) fn derive_no_repr_data_enum<const NEEDS_DROP: bool>(
                         #repr_c_enum_name {
                             #variant_name: #variant_struct_name {
                                 tag: #idx,
-                                value: co3::Encode::encode(payload, &mut store.#idx)
+                                value: co3::EncodeWithStore::encode(payload, &mut store.#idx)
                             }
                         }
                     }
@@ -255,7 +255,7 @@ pub(super) fn derive_no_repr_data_enum<const NEEDS_DROP: bool>(
                     quote! {
                         #idx => {
                             let value = unsafe { source.#variant_name.value };
-                            unsafe { co3::Decode::<'_dšč>::decode(value, &mut store.#idx).map(Self::#variant_name) }
+                            unsafe { co3::DecodeWithStore::<'_dšč>::decode(value, &mut store.#idx).map(Self::#variant_name) }
                         }
                     }
                 },
@@ -311,7 +311,7 @@ pub(super) fn derive_no_repr_data_enum<const NEEDS_DROP: bool>(
         #store_defs
         #borrow_ir
 
-        impl #impl_generics co3::Encode for #enum_name #ty_generics where #encode_bounds #predicates {
+        impl #impl_generics co3::EncodeWithStore for #enum_name #ty_generics where #encode_bounds #predicates {
             type Store = #rust_store;
 
             fn encode<'_išč>(self, store: &'_išč mut Self::Store) -> Self::CType where Self: '_išč {
@@ -321,7 +321,7 @@ pub(super) fn derive_no_repr_data_enum<const NEEDS_DROP: bool>(
             }
         }
 
-        impl<#decode_params> co3::Decode<'_dšč> for #enum_name #ty_generics
+        impl<#decode_params> co3::DecodeWithStore<'_dšč> for #enum_name #ty_generics
         where
             #repr_c_enum_name #ty_generics: '_dšč,
             #decode_bounds
@@ -387,7 +387,7 @@ pub(super) fn derive_no_repr_fieldless_enum(
 
         #nodrop_borrow_ir
 
-        impl co3::Encode for #enum_name {
+        impl co3::EncodeWithStore for #enum_name {
             type Store = ();
 
             fn encode<'_išč>(self, (): &mut ()) -> Self::CType where Self: '_išč {
@@ -395,7 +395,7 @@ pub(super) fn derive_no_repr_fieldless_enum(
             }
         }
 
-        impl<'_dšč> co3::Decode<'_dšč> for #enum_name {
+        impl<'_dšč> co3::DecodeWithStore<'_dšč> for #enum_name {
             type Store = ();
 
             unsafe fn decode<'_išč: '_dšč>(source: Self::CType, (): &mut ()) -> Option<Self> {
@@ -1081,7 +1081,7 @@ fn gen_out_ptr_impls(
         //        //unsafe {
         //        //    // SAFETY: check `NonLocal` for guarantees
         //        //    let store_ref = &mut *(&mut store as *mut _);
-        //        //    co3::Decode::decode(out_ptr, store_ref)
+        //        //    co3::DecodeWithStore::decode(out_ptr, store_ref)
         //        //}
         //    }
         //}
@@ -1210,11 +1210,11 @@ fn gen_to_owned_bounds(fields: &[&syn::Type], generics: &syn::Generics) -> Token
 }
 
 fn gen_encode_bounds(fields: &[&syn::Type], _generics: &syn::Generics) -> TokenStream {
-    quote! { #(#fields: co3::Encode<false>,)* }
+    quote! { #(#fields: co3::EncodeWithStore<false>,)* }
 }
 
 fn gen_decode_bounds(fields: &[&syn::Type], _generics: &syn::Generics) -> TokenStream {
-    quote! { #(#fields: co3::Decode<'_dšč>,)* }
+    quote! { #(#fields: co3::DecodeWithStore<'_dšč>,)* }
 }
 
 fn gen_decode_cloned_bounds(fields: &[&syn::Type]) -> TokenStream {

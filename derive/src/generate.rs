@@ -201,7 +201,7 @@ fn gen_drop_impl_definition(abi: &syn::Abi, mut impl_: ItemImpl) -> TokenStream 
 
     let ffi_fn_body = quote! {{
         let __co3_self: &mut #self_ty = unsafe {
-            co3::Decode::decode(__co3_self, &mut ())
+            co3::DecodeWithStore::decode(__co3_self, &mut ())
         }.ok_or(co3::FfiReturn::TrapRepresentation)?;
 
         unsafe { core::ptr::drop_in_place(__co3_self as *mut _) };
@@ -531,7 +531,7 @@ fn wrap_extern_type_decl(
         }
 
         unsafe impl #impl_generics co3::transmute::EncodeTransmuted<false> for #ident #ty_generics #where_clause {
-            type Store = <Self::Target as co3::Encode>::Store;
+            type Store = <Self::Target as co3::EncodeWithStore>::Store;
         }
 
         impl #impl_generics co3::borrow::Borrow for #ident #ty_generics #where_clause {

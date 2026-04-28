@@ -19,7 +19,7 @@
 //! ```rust
 //! use core::mem::size_of;
 //!
-//! use co3::{option::COption, tuple::CTuple3, ExternC, Encode};
+//! use co3::{option::COption, tuple::CTuple3, ExternC, EncodeWithStore};
 //!
 //! type TupleWithNiche1<'a> = (u8, bool, &'a bool);
 //! type TupleWithNiche2<'a> = (u8, &'a bool, bool);
@@ -157,7 +157,7 @@ macro_rules! impl_tuple {
             }
         }
 
-        impl<$($ty: crate::Encode),+> crate::Encode for ($($ty,)+) {
+        impl<$($ty: crate::EncodeWithStore),+> crate::EncodeWithStore for ($($ty,)+) {
             type Store = ($( $ty::Store, )+);
 
             #[expect(non_snake_case)]
@@ -165,11 +165,11 @@ macro_rules! impl_tuple {
                 impl_tuple! {@decl_priv_store $($ty),+}
 
                 let ($($ty,)+) = self;
-                let store: private_store::Store<$(<$ty as crate::Encode>::Store),+> = store.into();
+                let store: private_store::Store<$(<$ty as crate::EncodeWithStore>::Store),+> = store.into();
                 $ffi_ty($( $ty::encode($ty, store.$ty), )+)
             }
         }
-        impl<'d, $($ty: crate::Decode<'d, false>),+> crate::Decode<'d, false> for ($($ty,)+) {
+        impl<'d, $($ty: crate::DecodeWithStore<'d, false>),+> crate::DecodeWithStore<'d, false> for ($($ty,)+) {
             type Store = ($( $ty::Store, )+);
 
             #[expect(non_snake_case)]
@@ -177,7 +177,7 @@ macro_rules! impl_tuple {
                 impl_tuple! {@decl_priv_store $($ty),+}
 
                 let $ffi_ty($($ty,)+) = source;
-                let store: private_store::Store<$(<$ty as crate::Decode<'d>>::Store),+> = store.into();
+                let store: private_store::Store<$(<$ty as crate::DecodeWithStore<'d>>::Store),+> = store.into();
                 Some(unsafe {($( $ty::decode($ty, store.$ty)?, )+)})
             }
         }
@@ -188,7 +188,7 @@ macro_rules! impl_tuple {
                 impl_tuple! {@decl_priv_store $($ty),+}
 
                 let $ffi_ty($($ty,)+) = source;
-                let store: private_store::Store<$(<$ty as crate::Decode<'d>>::Store),+> = store.into();
+                let store: private_store::Store<$(<$ty as crate::DecodeWithStore<'d>>::Store),+> = store.into();
                 Some(unsafe {($( $ty::decode_cloned($ty, store.$ty)?, )+)})
             }
         }
@@ -400,7 +400,7 @@ mod tests {
     #[cfg(feature = "unstable-refs")]
     use crate::slice::{CSlice, CSliceMut};
     use crate::{
-        Decode, Encode,
+        DecodeWithStore, EncodeWithStore,
         ir::ReprFamily,
         niche::{StableNiche, WithCustomNiche, WithStableNiche},
         option::COption,
@@ -417,8 +417,8 @@ mod tests {
             ReprFamily<Kind = (u8, u8, u8)>,
             NicheFamily<Kind = WithoutNiche>,
             ExternC<CType = CTuple3<u8, u8, u8>>,
-            Decode<'static>,
-            Encode,
+            DecodeWithStore<'static>,
+            EncodeWithStore,
         );
 
         #[cfg(feature = "unstable-refs")]
@@ -439,8 +439,8 @@ mod tests {
             NicheFamily<Kind = WithStableNiche>,
             StableNiche<CType = CBox<CTuple3<u8, u8, u8>>>,
             // FIXME:
-            //Decode<'static>,
-            Encode,
+            //DecodeWithStore<'static>,
+            EncodeWithStore,
         );
         #[cfg(feature = "unstable-refs")]
         assert_impl_all!(&[(u8, u8, u8)]:
@@ -460,8 +460,8 @@ mod tests {
             NicheFamily<Kind = WithCustomNiche>,
             Niche<CType = CBoxedSlice<CTuple3<u8, u8, u8>>>,
             // FIXME:
-            //Decode<'static>,
-            Encode,
+            //DecodeWithStore<'static>,
+            EncodeWithStore,
         );
         #[cfg(feature = "alloc")]
         assert_impl_all!(Vec<(u8, u8, u8)>:
@@ -469,40 +469,40 @@ mod tests {
             NicheFamily<Kind = WithCustomNiche>,
             Niche<CType = CVec<CTuple3<u8, u8, u8>>>,
             // FIXME:
-            //Decode<'static>,
-            Encode,
+            //DecodeWithStore<'static>,
+            EncodeWithStore,
         );
         assert_impl_all!([(u8, u8, u8); 2]:
             ReprFamily<Kind = [(u8, u8, u8); 2]>,
             NicheFamily<Kind = WithoutNiche>,
             ExternC<CType = [CTuple3<u8, u8, u8>; 2]>,
-            Decode<'static>,
-            Encode,
+            DecodeWithStore<'static>,
+            EncodeWithStore,
         );
         assert_impl_all!(Option<(u8, u8, u8)>:
             ReprFamily<Kind = Option<WithoutNiche>>,
             NicheFamily<Kind = WithCustomNiche>,
             Niche<CType = COption<CTuple3<u8, u8, u8>>>,
-            Decode<'static>,
-            Encode,
+            DecodeWithStore<'static>,
+            EncodeWithStore,
         );
 
         #[cfg(feature = "unstable-refs")]
-        assert_impl_all!(&(u8, u8, u8): Encode, Decode<'static>);
+        assert_impl_all!(&(u8, u8, u8): EncodeWithStore, DecodeWithStore<'static>);
         #[cfg(feature = "unstable-refs")]
-        assert_impl_all!(&[(u8, u8, u8)]: Encode, Decode<'static>);
+        assert_impl_all!(&[(u8, u8, u8)]: EncodeWithStore, DecodeWithStore<'static>);
         #[cfg(feature = "unstable-refs")]
-        assert_impl_all!(&mut (u8, u8, u8): Encode, Decode<'static>);
+        assert_impl_all!(&mut (u8, u8, u8): EncodeWithStore, DecodeWithStore<'static>);
         #[cfg(feature = "unstable-refs")]
-        assert_impl_all!(&mut [(u8, u8, u8)]: Encode, Decode<'static>);
+        assert_impl_all!(&mut [(u8, u8, u8)]: EncodeWithStore, DecodeWithStore<'static>);
         #[cfg(not(feature = "unstable-refs"))]
-        assert_not_impl_any!(&(u8, u8, u8): Encode, Decode<'static>);
+        assert_not_impl_any!(&(u8, u8, u8): EncodeWithStore, DecodeWithStore<'static>);
         #[cfg(not(feature = "unstable-refs"))]
-        assert_not_impl_any!(&[(u8, u8, u8)]: Encode, Decode<'static>);
+        assert_not_impl_any!(&[(u8, u8, u8)]: EncodeWithStore, DecodeWithStore<'static>);
         #[cfg(not(feature = "unstable-refs"))]
-        assert_not_impl_any!(&mut (u8, u8, u8): Encode, Decode<'static>);
+        assert_not_impl_any!(&mut (u8, u8, u8): EncodeWithStore, DecodeWithStore<'static>);
         #[cfg(not(feature = "unstable-refs"))]
-        assert_not_impl_any!(&mut [(u8, u8, u8)]: Encode, Decode<'static>);
+        assert_not_impl_any!(&mut [(u8, u8, u8)]: EncodeWithStore, DecodeWithStore<'static>);
     }
 
     #[test]
@@ -514,8 +514,8 @@ mod tests {
             ReprFamily<Kind = (u8, NonZeroU8, bool)>,
             NicheFamily<Kind = WithCustomNiche>,
             Niche<CType = CTuple3<u8, u8, u8>>,
-            Decode<'static>,
-            Encode,
+            DecodeWithStore<'static>,
+            EncodeWithStore,
         );
 
         #[cfg(feature = "unstable-refs")]
@@ -536,8 +536,8 @@ mod tests {
             NicheFamily<Kind = WithStableNiche>,
             StableNiche<CType = CBox<CTuple3<u8, u8, u8>>>,
             // FIXME:
-            //Decode<'static>,
-            Encode,
+            //DecodeWithStore<'static>,
+            EncodeWithStore,
         );
         #[cfg(feature = "unstable-refs")]
         assert_impl_all!(&[(u8, NonZeroU8, bool)]:
@@ -557,8 +557,8 @@ mod tests {
             NicheFamily<Kind = WithCustomNiche>,
             Niche<CType = CBoxedSlice<CTuple3<u8, u8, u8>>>,
             // FIXME:
-            //Decode<'static>,
-            Encode,
+            //DecodeWithStore<'static>,
+            EncodeWithStore,
         );
         #[cfg(feature = "alloc")]
         assert_impl_all!(Vec<(u8, NonZeroU8, bool)>:
@@ -566,40 +566,40 @@ mod tests {
             NicheFamily<Kind = WithCustomNiche>,
             Niche<CType = CVec<CTuple3<u8, u8, u8>>>,
             // FIXME:
-            //Decode<'static>,
-            Encode,
+            //DecodeWithStore<'static>,
+            EncodeWithStore,
         );
         assert_impl_all!([(u8, NonZeroU8, bool); 2]:
             ReprFamily<Kind = [(u8, NonZeroU8, bool); 2]>,
             NicheFamily<Kind = WithCustomNiche>,
             Niche<CType = [CTuple3<u8, u8, u8>; 2]>,
-            Decode<'static>,
-            Encode,
+            DecodeWithStore<'static>,
+            EncodeWithStore,
         );
         assert_impl_all!(Option<(u8, NonZeroU8, bool)>:
             ReprFamily<Kind = Option<WithCustomNiche>>,
-            Decode<'static>,
-            Encode,
+            DecodeWithStore<'static>,
+            EncodeWithStore,
             // TODO: Depends on: https://github.com/mversic/co3/issues/33
             //NicheFamily<Kind = WithCustomNiche>,
             //Niche<CType = CTuple3<u8, u8, u8>>,
         );
 
         #[cfg(feature = "unstable-refs")]
-        assert_impl_all!(&(u8, NonZeroU8, bool): Encode, Decode<'static>);
+        assert_impl_all!(&(u8, NonZeroU8, bool): EncodeWithStore, DecodeWithStore<'static>);
         #[cfg(feature = "unstable-refs")]
-        assert_impl_all!(&[(u8, NonZeroU8, bool)]: Encode, Decode<'static>);
+        assert_impl_all!(&[(u8, NonZeroU8, bool)]: EncodeWithStore, DecodeWithStore<'static>);
         #[cfg(feature = "unstable-refs")]
-        assert_impl_all!(&mut (u8, NonZeroU8, bool): Encode, Decode<'static>);
+        assert_impl_all!(&mut (u8, NonZeroU8, bool): EncodeWithStore, DecodeWithStore<'static>);
         #[cfg(feature = "unstable-refs")]
-        assert_impl_all!(&mut [(u8, NonZeroU8, bool)]: Encode, Decode<'static>);
+        assert_impl_all!(&mut [(u8, NonZeroU8, bool)]: EncodeWithStore, DecodeWithStore<'static>);
         #[cfg(not(feature = "unstable-refs"))]
-        assert_not_impl_any!(&(u8, NonZeroU8, bool): Encode, Decode<'static>);
+        assert_not_impl_any!(&(u8, NonZeroU8, bool): EncodeWithStore, DecodeWithStore<'static>);
         #[cfg(not(feature = "unstable-refs"))]
-        assert_not_impl_any!(&[(u8, NonZeroU8, bool)]: Encode, Decode<'static>);
+        assert_not_impl_any!(&[(u8, NonZeroU8, bool)]: EncodeWithStore, DecodeWithStore<'static>);
         #[cfg(not(feature = "unstable-refs"))]
-        assert_not_impl_any!(&mut (u8, NonZeroU8, bool): Encode, Decode<'static>);
+        assert_not_impl_any!(&mut (u8, NonZeroU8, bool): EncodeWithStore, DecodeWithStore<'static>);
         #[cfg(not(feature = "unstable-refs"))]
-        assert_not_impl_any!(&mut [(u8, NonZeroU8, bool)]: Encode, Decode<'static>);
+        assert_not_impl_any!(&mut [(u8, NonZeroU8, bool)]: EncodeWithStore, DecodeWithStore<'static>);
     }
 }

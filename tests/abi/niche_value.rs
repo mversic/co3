@@ -1,6 +1,6 @@
 use core::cmp::Ordering;
 
-use co3::{Encode, ReprC, export_C, extern_C};
+use co3::{EncodeWithStore, ReprC, export_C, extern_C};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Opaque {

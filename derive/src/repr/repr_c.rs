@@ -245,7 +245,7 @@ pub(crate) fn derive_fieldless_enum(
         }
 
         unsafe #impl_generics impl co3::transmute::EncodeTransmuted<false> for #enum_name #ty_generics #where_clause {
-            type Store = <Self::Target as co3::Encode<false>>::Store;
+            type Store = <Self::Target as co3::EncodeWithStore<false>>::Store;
         }
 
         #niche_ir
@@ -691,11 +691,11 @@ fn gen_transparent_impl<'a>(
 
         unsafe impl #impl_generics co3::transmute::EncodeTransmuted<false> for #item_name #ty_generics where
             // FIXME:
-            #target #ty_generics: co3::Encode<false>,
+            #target #ty_generics: co3::EncodeWithStore<false>,
             #flat_transmute_bounds
             #predicates
         {
-            type Store = <Self::Target as co3::Encode<false>>::Store;
+            type Store = <Self::Target as co3::EncodeWithStore<false>>::Store;
         }
     }
 }

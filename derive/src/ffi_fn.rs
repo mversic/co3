@@ -133,7 +133,7 @@ pub(crate) fn gen_signature_input_init_stmts<'a>(
         .unzip();
 
     let stores = decode_tys.iter().map(|ty| {
-        quote! { <<#ty as co3::Decode>::Store as core::default::Default>::default() }
+        quote! { <<#ty as co3::DecodeWithStore>::Store as core::default::Default>::default() }
     });
 
     quote! {
@@ -181,7 +181,7 @@ pub(crate) fn gen_signature_input_conversion_stmts<'a>(
         };
 
         stmts.extend(quote! {
-            let #arg_name: Option<#borrowed_ty> = unsafe { co3::Decode::decode(#arg_name, &mut __co3_input_stores.#idx) };
+            let #arg_name: Option<#borrowed_ty> = unsafe { co3::DecodeWithStore::decode(#arg_name, &mut __co3_input_stores.#idx) };
 
             if let Some(#arg_name) = #arg_name {
                 __co3_input_values.#idx = Some(#to_owned);

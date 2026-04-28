@@ -290,7 +290,7 @@ mod tests {
     use static_assertions::{assert_impl_all, assert_not_impl_any};
 
     use super::*;
-    use crate::{Decode, Encode, ReprC, ir::ReprFamily, slice::CSlice};
+    use crate::{DecodeWithStore, EncodeWithStore, ReprC, ir::ReprFamily, slice::CSlice};
 
     #[test]
     fn nested_option_niche_family() {
@@ -298,18 +298,18 @@ mod tests {
             ReprFamily<Kind = Option<WithCustomNiche>>,
             NicheFamily<Kind = WithCustomNiche>,
             Niche<CType = u8>,
-            Decode<'static>,
+            DecodeWithStore<'static>,
 
-            Encode,
+            EncodeWithStore,
 
         );
         assert_impl_all!(Option<Option<bool>>:
             NicheFamily<Kind = WithCustomNiche>,
             ReprFamily<Kind = Option<WithCustomNiche>>,
             Niche<CType = u8>,
-            Decode<'static>,
+            DecodeWithStore<'static>,
 
-            Encode,
+            EncodeWithStore,
 
         );
         // TODO: Depends on: https://github.com/mversic/co3/issues/33

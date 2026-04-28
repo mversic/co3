@@ -98,9 +98,9 @@ macro_rules! impl_external_ref_common {
 
         unsafe impl<R> EncodeTransmuted for $ty<'_, R>
         where
-            Self: CheckedTransmute<Target: crate::Encode>,
+            Self: CheckedTransmute<Target: crate::EncodeWithStore>,
         {
-            type Store = <Self::Target as crate::Encode>::Store;
+            type Store = <Self::Target as crate::EncodeWithStore>::Store;
         }
 
         impl<T> core::ops::Deref for $ty<'_, T> {

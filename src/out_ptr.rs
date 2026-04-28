@@ -7,7 +7,7 @@ use crate::boxed::CBoxedSlice;
 use crate::{ir::Transmuted, option::COption};
 
 disjoint_impls! {
-    /// Marker trait indicating that [`Encode::encode`] doesn't return a reference to the store.
+    /// Marker trait indicating that [`EncodeWithStore::encode`] doesn't return a reference to the store.
     /// This is useful to determine which(and how) types can be returned from an FFI function
     /// considering that, after return, local context is destroyed
     ///
@@ -30,16 +30,16 @@ disjoint_impls! {
     ///
     /// # Safety
     ///
-    /// Type must not make use of the store during conversion into [`ExternC::CType`] via [`Encode::encode`]
+    /// Type must not make use of the store during conversion into [`ExternC::CType`] via [`EncodeWithStore::encode`]
     pub unsafe trait NonLocal {}
 
-    unsafe impl<R> NonLocal for R where R: Encode<Store = ()> {}
+    unsafe impl<R> NonLocal for R where R: EncodeWithStore<Store = ()> {}
     #[cfg(feature = "alloc")]
-    unsafe impl<R, Z: Zst> NonLocal for R where R: Encode<Store = Box<[Z]>> {}
+    unsafe impl<R, Z: Zst> NonLocal for R where R: EncodeWithStore<Store = Box<[Z]>> {}
     #[cfg(feature = "alloc")]
-    unsafe impl<R, Z: Zst> NonLocal for R where R: Encode<Store = Vec<Z>> {}
-    unsafe impl<R, Z: Zst> NonLocal for R where R: Encode<Store = Option<Z>> {}
-    unsafe impl<R, Z: Zst, const N: usize> NonLocal for R where R: Encode<Store = [Z; N]> {}
+    unsafe impl<R, Z: Zst> NonLocal for R where R: EncodeWithStore<Store = Vec<Z>> {}
+    unsafe impl<R, Z: Zst> NonLocal for R where R: EncodeWithStore<Store = Option<Z>> {}
+    unsafe impl<R, Z: Zst, const N: usize> NonLocal for R where R: EncodeWithStore<Store = [Z; N]> {}
     // TODO: It's not possbile to implement for specific len yet: https://github.com/mversic/co3/issues/13
     //unsafe impl<R, T> NonLocal for R where R: Encode<Store = [T; 0]> {}
 }
@@ -243,7 +243,7 @@ disjoint_impls! {
         Self: ReprFamily<Kind = Robust>,
     {
         unsafe fn write_out(self, out_ptr: *mut Self::OutPtr) {
-            let ctype = self.encode(&mut ());
+            let ctype = EncodeWithStore::encode(self, &mut ());
 
             unsafe {
                 out_ptr.write(ctype);
@@ -253,7 +253,7 @@ disjoint_impls! {
     #[cfg(feature = "alloc")]
     impl<R: ReprFamily<Kind = Opaque>> OutPtrWrite for R {
         unsafe fn write_out(self, out_ptr: *mut Self::OutPtr) {
-            let ctype = self.encode(&mut ());
+            let ctype = EncodeWithStore::encode(self, &mut ());
 
             unsafe {
                 out_ptr.write(ctype);
@@ -530,11 +530,11 @@ disjoint_impls! {
         ///
         /// # Errors
         ///
-        /// Check [`Decode::decode`]
+        /// Check [`DecodeWithStore::decode`]
         ///
         /// # Safety
         ///
-        /// Check [`Decode::decode`]
+        /// Check [`DecodeWithStore::decode`]
         unsafe fn try_read_out(out_ptr: Self::OutPtr) -> Option<Self>;
     }
 
@@ -543,7 +543,7 @@ disjoint_impls! {
         Self: ReprFamily<Kind = Robust>,
     {
         unsafe fn try_read_out(out_ptr: Self::OutPtr) -> Option<Self> {
-            unsafe { Decode::decode(out_ptr, &mut ()) }
+            unsafe { <Self as DecodeWithStore>::decode(out_ptr, &mut ()) }
         }
     }
     #[cfg(feature = "alloc")]
@@ -552,7 +552,7 @@ disjoint_impls! {
         Self: ReprFamily<Kind = Opaque>,
     {
         unsafe fn try_read_out(out_ptr: Self::OutPtr) -> Option<Self> {
-            unsafe { Decode::decode(out_ptr, &mut ()) }
+            unsafe { <Self as DecodeWithStore>::decode(out_ptr, &mut ()) }
         }
     }
     impl<R: CheckedTransmute<Target: Sized>> OutPtrRead for R
@@ -579,7 +579,7 @@ disjoint_impls! {
     //            core::mem::transmute::<&mut R::Store, &'d mut R::Store>(&mut store)
     //        };
 
-    //        unsafe { Decode::decode(out_ptr, store_ref).map(Box::new) }
+    //        unsafe { DecodeWithStore::decode(out_ptr, store_ref).map(Box::new) }
     //    }
     //}
 
@@ -620,7 +620,7 @@ disjoint_impls! {
     //{
     //    unsafe fn try_read_out(out_ptr: Self::OutPtr) -> Option<Self> {
     //        unsafe {
-    //            let res = Decode::decode(out_ptr, &mut ());
+    //            let res = DecodeWithStore::decode(out_ptr, &mut ());
 
     //            if !out_ptr.deallocate() {
     //                return None;
@@ -659,7 +659,7 @@ disjoint_impls! {
     //        //};
 
     //        //unsafe {
-    //        //    let res = Decode::decode(out_ptr.into(), store_ref);
+    //        //    let res = DecodeWithStore::decode(out_ptr.into(), store_ref);
 
     //        //    if !out_ptr.deallocate() {
     //        //        return None;
@@ -678,7 +678,7 @@ disjoint_impls! {
     //    unsafe fn try_read_out(_out_ptr: Self::OutPtr) -> Option<Self> {
     //        unimplemented!()
     //        //unsafe {
-    //        //    let res = Decode::decode(out_ptr.into(), &mut ());
+    //        //    let res = DecodeWithStore::decode(out_ptr.into(), &mut ());
 
     //        //    if !out_ptr.deallocate() {
     //        //        return None;
@@ -717,7 +717,7 @@ disjoint_impls! {
     //        //};
 
     //        //unsafe {
-    //        //    let res = Decode::decode(out_ptr.into(), store_ref);
+    //        //    let res = DecodeWithStore::decode(out_ptr.into(), store_ref);
 
     //        //    if !out_ptr.deallocate() {
     //        //        return None;
@@ -742,7 +742,7 @@ disjoint_impls! {
     //            )
     //        };
 
-    //        unsafe { Decode::decode(out_ptr, store_ref) }
+    //        unsafe { DecodeWithStore::decode(out_ptr, store_ref) }
     //    }
     //}
 

@@ -289,7 +289,7 @@ macro_rules! impl_fn_types {
         //        self
         //    }
         //}
-        impl<$($arg: ReprC,)*> crate::Encode<false> for unsafe extern "C" fn($($arg),*) {
+        impl<$($arg: ReprC,)*> crate::EncodeWithStore<false> for unsafe extern "C" fn($($arg),*) {
             type Store = ();
 
             #[inline(always)]
@@ -328,7 +328,7 @@ mod tests {
 
     use super::*;
     use crate::{
-        Decode, Encode, ExternC,
+        DecodeWithStore, EncodeWithStore, ExternC,
         niche::{Niche, WithStableNiche},
     };
     #[cfg(feature = "alloc")]
@@ -363,24 +363,24 @@ mod tests {
             ReprFamily<Kind = Opaque>,
             NicheFamily<Kind = WithCustomNiche>,
             Niche<CType = CBox<OpaqueData>>,
-            Decode<'static>,
-            Encode,
+            DecodeWithStore<'static>,
+            EncodeWithStore,
         );
 
         assert_impl_all!(&OpaqueData:
             ReprFamily<Kind = Transmuted>,
             NicheFamily<Kind = WithStableNiche>,
             Niche<CType = *const OpaqueData>,
-            Decode<'static>,
-            Encode,
+            DecodeWithStore<'static>,
+            EncodeWithStore,
         );
 
         assert_impl_all!(&mut OpaqueData:
             ReprFamily<Kind = Transmuted>,
             NicheFamily<Kind = WithStableNiche>,
             Niche<CType = *mut OpaqueData>,
-            Decode<'static>,
-            Encode,
+            DecodeWithStore<'static>,
+            EncodeWithStore,
         );
 
         // FIXME:
@@ -418,7 +418,7 @@ mod tests {
             Niche<CType = CBoxedSlice<CBox<OpaqueData>>>,
             // FIXME:
             //Decode<'static>,
-            Encode,
+            EncodeWithStore,
         );
 
         #[cfg(feature = "alloc")]
@@ -428,7 +428,7 @@ mod tests {
             Niche<CType = CVec<CBox<OpaqueData>>>,
             // FIXME:
             //Decode<'static>,
-            Encode,
+            EncodeWithStore,
         );
 
         #[cfg(feature = "alloc")]
@@ -436,8 +436,8 @@ mod tests {
             ReprFamily<Kind = [Opaque; 2]>,
             NicheFamily<Kind = WithCustomNiche>,
             Niche<CType = [CBox<OpaqueData>; 2]>,
-            Decode<'static>,
-            Encode,
+            DecodeWithStore<'static>,
+            EncodeWithStore,
         );
 
         #[cfg(feature = "alloc")]
@@ -446,8 +446,8 @@ mod tests {
             // FIXME:
             //NicheFamily<Kind = WithoutNiche>,
             ExternC<CType = CBox<OpaqueData>>,
-            Decode<'static>,
-            Encode,
+            DecodeWithStore<'static>,
+            EncodeWithStore,
         );
     }
 }
