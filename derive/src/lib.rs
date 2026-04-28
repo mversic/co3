@@ -95,8 +95,8 @@ enum DropImpl {
     Impl(ItemImpl),
 }
 
-// TODO: reprC(`local`) is a workaround for https://github.com/rust-lang/rust/issues/48214
-// because some derived types cannot derive `NonLocal` othwerise. Should be removed in future
+// TODO: reprC(`local`) is a workaround for https://github.com/rust-lang/rust/issues/48214.
+// It should be removed once derived types no longer need that escape hatch.
 /// Derive implementations of traits required to convert to and from an FFI-compatible type
 ///
 /// # Attributes

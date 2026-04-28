@@ -210,7 +210,7 @@ fn gen_wrapper_body(
             let __co3_sync_errors = #store_sync_stmts;
 
             let __co3_out = unsafe { core::mem::MaybeUninit::assume_init(__co3_out) };
-            let __co3_out = unsafe { co3::out_ptr::OutPtrRead::try_read_out(__co3_out) };
+            let __co3_out = unsafe { co3::Decode::decode(__co3_out) };
 
             let mut __co3_sync_errors_iter = core::iter::IntoIterator::into_iter(__co3_sync_errors);
             if core::iter::Iterator::any(&mut __co3_sync_errors_iter, core::convert::identity)

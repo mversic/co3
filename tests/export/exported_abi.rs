@@ -1,9 +1,6 @@
 use std::{mem::MaybeUninit, ptr::NonNull};
 
-use co3::{
-    DecodeWithStore, EncodeWithStore, FfiReturn, ReprC, export, export_, export_C, external::Extern,
-    out_ptr::OutPtrRead as _,
-};
+use co3::{Decode, EncodeWithStore, FfiReturn, ReprC, export, export_, export_C, external::Extern};
 
 trait AmbiguousX<T, const N: usize> {
     type U;
@@ -222,37 +219,37 @@ fn exported_abi() {
             FfiReturn::Ok,
             export__OpaqueStructU32__ambiguous(output.as_mut_ptr())
         );
-        let inherent = Ambiguous::try_read_out(output.assume_init()).unwrap();
+        let inherent: Ambiguous = Decode::decode(output.assume_init()).unwrap();
         assert_eq!(Ambiguous::Inherent, inherent);
 
         assert_eq!(
             FfiReturn::Ok,
             export__AmbiguousX_u64_3__OpaqueStructU64__ambiguous(&[12; 3], output.as_mut_ptr())
         );
-        let ambiguous_x = Ambiguous::try_read_out(output.assume_init()).unwrap();
+        let ambiguous_x: Ambiguous = Decode::decode(output.assume_init()).unwrap();
         assert_eq!(Ambiguous::AmbiguousX, ambiguous_x);
 
         assert_eq!(
             FfiReturn::Ok,
             kita((&[13_i8; 4]).encode(&mut ()), output.as_mut_ptr())
         );
-        let ambiguous_x = Ambiguous::try_read_out(output.assume_init()).unwrap();
+        let ambiguous_x: Ambiguous = Decode::decode(output.assume_init()).unwrap();
         assert_eq!(Ambiguous::AmbiguousX, ambiguous_x);
 
         assert_eq!(FfiReturn::Ok, kita1(output.as_mut_ptr()));
-        let inherent = Ambiguous::try_read_out(output.assume_init()).unwrap();
+        let inherent: Ambiguous = Decode::decode(output.assume_init()).unwrap();
         assert_eq!(Ambiguous::Inherent, inherent);
 
         assert_eq!(FfiReturn::Ok, kita2(output.as_mut_ptr()));
-        let custom_fn = Ambiguous::try_read_out(output.assume_init()).unwrap();
+        let custom_fn: Ambiguous = Decode::decode(output.assume_init()).unwrap();
         assert_eq!(Ambiguous::Fn, custom_fn);
 
         assert_eq!(FfiReturn::Ok, ambiguous1(output.as_mut_ptr()));
-        let custom_fn = Ambiguous::try_read_out(output.assume_init()).unwrap();
+        let custom_fn: Ambiguous = Decode::decode(output.assume_init()).unwrap();
         assert_eq!(Ambiguous::Fn, custom_fn);
 
         assert_eq!(FfiReturn::Ok, ambiguous(output.as_mut_ptr()));
-        let custom_fn = Ambiguous::try_read_out(output.assume_init()).unwrap();
+        let custom_fn: Ambiguous = Decode::decode(output.assume_init()).unwrap();
         assert_eq!(Ambiguous::AmbiguousY, custom_fn);
     }
 
@@ -318,11 +315,12 @@ fn exported_abi() {
             )
         );
         let non_opaque_u8_clone =
-            NonOpaqueStruct::decode(non_opaque_u8_clone_out.assume_init(), &mut ()).unwrap();
+            <NonOpaqueStruct<u8> as Decode>::decode(non_opaque_u8_clone_out.assume_init()).unwrap();
         assert_eq!(NonOpaqueStruct::A(11_u8), non_opaque_u8_clone);
 
         let non_opaque_bool_clone =
-            NonOpaqueStruct::decode(non_opaque_bool_clone_out.assume_init(), &mut ()).unwrap();
+            <NonOpaqueStruct<bool> as Decode>::decode(non_opaque_bool_clone_out.assume_init())
+                .unwrap();
 
         assert_eq!(NonOpaqueStruct::A(true), non_opaque_bool_clone);
     }

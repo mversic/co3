@@ -37,16 +37,11 @@ use crate::{
     cloned::{
         decode_cloned_array, decode_cloned_option_with_custom_niche,
         decode_cloned_option_without_niche,
-    },
-    ir::{Cloned, Opaque, ReprFamily, Robust, SizeFamily, Sized_, Transmuted, UnSized},
-    niche::{Niche, WithCustomNiche, WithoutNiche},
-    option::COption,
-    slice::{CSlice, CSliceMut},
-    transmute::{
+    }, ir::{Cloned, Opaque, ReprFamily, Robust, SizeFamily, Sized_, Transmuted, UnSized}, niche::{Niche, WithCustomNiche, WithoutNiche}, option::COption, out_ptr::Zst, slice::{CSlice, CSliceMut}, transmute::{
         CheckedTransmute, transmute_from_target, transmute_from_target_dst_mut,
         transmute_from_target_ref_dst, transmute_into_target, transmute_into_target_dst_mut,
         transmute_into_target_ref_dst,
-    },
+    }
 };
 
 #[cfg(feature = "alloc")]
@@ -1212,17 +1207,39 @@ disjoint_impls! {
     }
 }
 
+/// Refer to [`EncodeWithStore`]
 pub trait Encode: EncodeWithStore {
     fn encode<'itm>(self) -> Self::CType
     where
         Self: 'itm;
 }
 
+/// Refer to [`DecodeWithStore`]
 pub trait Decode<'d>: DecodeWithStore<'d> {
     /// # Safety
     ///
     /// - All conversions from a pointer must ensure pointer validity beforehand
-    unsafe fn decode<'itm: 'd>(source: Self::CType, store: &'itm mut Self::Store) -> Option<Self>;
+    unsafe fn decode(source: Self::CType) -> Option<Self>;
+}
+
+impl<R: EncodeWithStore<Store = Z>, Z: Zst + Default> Encode for R {
+    fn encode<'itm>(self) -> Self::CType
+    where
+        Self: 'itm,
+    {
+        let mut store = Default::default();
+        <Self as EncodeWithStore>::encode(self, &mut store)
+    }
+}
+
+impl<'d, R, Z: Zst + Default> Decode<'d> for R
+where
+    R: for<'itm> DecodeWithStore<'itm, Store = Z>,
+{
+    unsafe fn decode(source: Self::CType) -> Option<Self> {
+        let mut store = Default::default();
+        unsafe { <Self as DecodeWithStore>::decode(source, &mut store) }
+    }
 }
 
 // TODO: Could the store just be synced on drop?

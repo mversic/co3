@@ -10,7 +10,7 @@ use crate::reprC;
 //    use crate::{
 //        Decode, Encode, ExternC,
 //        ir::{ReprFamily, Robust, Transmuted},
-//        out_ptr::{OutPtr, OutPtrRead, OutPtrWrite},
+//        out_ptr::{OutPtr, OutPtrWrite},
 //    };
 //
 //    /// Marker for an integer primitive type that is not recognized by the `WebAssembly`.
@@ -127,8 +127,8 @@ use crate::reprC;
 //                }
 //            }
 //
-//            impl OutPtrRead for $src {
-//                unsafe fn try_read_out(out_ptr: Self::OutPtr) -> Option<Self> {
+//            impl Decode<'_> for $src {
+//                unsafe fn decode(out_ptr: Self::OutPtr, _: &mut Self::Store) -> Option<Self> {
 //                    Some(out_ptr)
 //                }
 //            }

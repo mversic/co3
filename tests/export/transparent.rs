@@ -1,8 +1,7 @@
 use std::{alloc, marker::PhantomData, mem::MaybeUninit, num::NonZeroU64};
 
 use co3::{
-    COption, DecodeWithStore, EncodeWithStore, ExternC, FfiReturn, ReprC, export,
-    out_ptr::OutPtrRead,
+    COption, Decode, DecodeWithStore, EncodeWithStore, ExternC, FfiReturn, ReprC, export,
     slice::{CBoxedSlice, CSlice},
 };
 
@@ -138,7 +137,7 @@ fn take_and_return_transparent_array_ref() {
 
         assert_eq!(
             &[value; 1],
-            <&[TransparentStruct; 1]>::decode(output.assume_init(), &mut ()).unwrap()
+            <&[TransparentStruct; 1] as Decode>::decode(output.assume_init()).unwrap()
         );
     }
 }
@@ -209,7 +208,7 @@ fn transparent_self_to_self() {
         );
         assert_eq!(
             Ok(transparent_struct),
-            TransparentStruct::decode(output.assume_init(), &mut ())
+            <TransparentStruct as Decode>::decode(output.assume_init())
         );
     }
 }
@@ -236,7 +235,7 @@ fn transparent_vec_to_vec() {
 
         let output = output.assume_init();
         assert_eq!(output.len(), 3);
-        let vec = Vec::<TransparentStruct>::try_read_out(output).expect("Valid");
+        let vec: Vec<TransparentStruct> = Decode::decode(output).expect("Valid");
         assert_eq!(transparent_struct_vec, vec);
     }
 }
@@ -261,7 +260,7 @@ fn transparent_slice_to_slice() {
         );
 
         let output: &[TransparentStruct] =
-            OutPtrRead::try_read_out(output.assume_init()).expect("Invalid output");
+            Decode::decode(output.assume_init()).expect("Invalid output");
         assert_eq!(output, transparent_struct_slice);
     }
 }
@@ -283,7 +282,7 @@ fn transparent_method_consume() {
             )
         );
         transparent_struct =
-            TransparentStruct::decode(output.assume_init(), &mut ()).expect("valid");
+            <TransparentStruct as Decode>::decode(output.assume_init()).expect("valid");
 
         assert_eq!(transparent_struct.payload, payload);
     }
@@ -301,7 +300,7 @@ fn transparent_method_borrow() {
         );
         assert_eq!(
             Ok(&transparent_struct.payload),
-            <&GenericTransparentStruct<_>>::decode(output.assume_init(), &mut ())
+            <&GenericTransparentStruct<_> as Decode>::decode(output.assume_init())
         );
     }
 }
@@ -321,7 +320,7 @@ fn transparent_method_borrow_mut() {
         );
         assert_eq!(
             Ok(&mut transparent_struct.payload),
-            <&mut GenericTransparentStruct>::decode(output.assume_init(), &mut ())
+            <&mut GenericTransparentStruct as Decode>::decode(output.assume_init())
         );
     }
 }

@@ -1052,14 +1052,14 @@ fn gen_out_ptr_impls(
     quote! {
         //impl<#params> co3::out_ptr::OutPtr for #type_name #ty_generics
         //where
-        //    #for_dummy Self: co3::ExternC + co3::out_ptr::NonLocal,
+        //    #for_dummy Self: co3::ExternC,
         //    #predicates
         //{
         //    type OutPtr = Self::CType;
         //}
         //impl<#params> co3::out_ptr::OutPtrWrite for #type_name #ty_generics
         //where
-        //    #for_dummy Self: co3::Encode<false> + co3::out_ptr::OutPtr + co3::out_ptr::NonLocal,
+        //    #for_dummy Self: co3::Encode<false> + co3::out_ptr::OutPtr,
         //    #predicates
         //{
         //    unsafe fn write_out(self, out_ptr: *mut Self::OutPtr) {
@@ -1070,16 +1070,16 @@ fn gen_out_ptr_impls(
         //        //unsafe { out_ptr.write(encoded); }
         //    }
         //}
-        //impl<'_dšč, #params> co3::out_ptr::OutPtrRead for #type_name #ty_generics where
-        //    #for_dummy Self: co3::Decode<'_dšč, false> + co3::out_ptr::OutPtr + co3::out_ptr::NonLocal, #predicates
+        //impl<'_dšč, #params> co3::Decode<'_dšč, false> for #type_name #ty_generics where
+        //    #for_dummy Self: co3::Decode<'_dšč, false> + co3::out_ptr::OutPtr, #predicates
         //{
-        //    unsafe fn try_read_out(out_ptr: Self::OutPtr) -> Option<Self> {
+        //    unsafe fn decode(out_ptr: Self::OutPtr, _: &'_dšč mut Self::Store) -> Option<Self> {
         //        unimplemented!()
         //        // FIXME:
         //        //let mut store = Default::default();
 
         //        //unsafe {
-        //        //    // SAFETY: check `NonLocal` for guarantees
+        //        //    // SAFETY: output decoding must satisfy the type's `Decode` contract.
         //        //    let store_ref = &mut *(&mut store as *mut _);
         //        //    co3::DecodeWithStore::decode(out_ptr, store_ref)
         //        //}

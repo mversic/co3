@@ -121,14 +121,6 @@ macro_rules! impl_tuple {
                 }
             }
         }
-        impl<$($ty: crate::out_ptr::OutPtrRead),+> crate::out_ptr::OutPtrRead for ($($ty,)+) {
-            #[expect(non_snake_case)]
-            unsafe fn try_read_out(source: Self::OutPtr) -> Option<Self> {
-                let $ffi_ty($($ty,)+) = source;
-                Some(unsafe {($( crate::out_ptr::OutPtrRead::try_read_out($ty)?, )+)})
-            }
-        }
-
         impl<$($ty: Borrow),+> Borrow for ($($ty,)+) {
             type Borrowed<'itm> = ($( $ty::Borrowed<'itm>, )+)
             where
@@ -193,7 +185,6 @@ macro_rules! impl_tuple {
             }
         }
 
-        unsafe impl<$($ty: crate::out_ptr::NonLocal),+> crate::out_ptr::NonLocal for ($($ty,)+) {}
         unsafe impl<$($ty: crate::out_ptr::Zst),+> crate::out_ptr::Zst for ($($ty,)+) {}
 
         impl<$($ty),+> From<($( $ty, )+)> for $ffi_ty<$($ty),+> {

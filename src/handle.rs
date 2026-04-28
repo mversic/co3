@@ -6,7 +6,7 @@ use alloc_crate::boxed::Box;
 use disjoint_impls::disjoint_impls;
 
 use crate::{
-    EncodeWithStore, ExternC,
+    Encode, ExternC,
     borrow::Borrow,
     boxed::CBox,
     external::Extern,
@@ -16,9 +16,8 @@ use crate::{
 };
 
 pub trait HandleFamily {
-    // FIXME: Remove Store bound once we have no-store conversion traits
-    // Also should it be required that the type is `Copy`?
-    type Kind: EncodeWithStore<Store = ()> + Copy;
+    // FIXME: Should Copy be required?
+    type Kind: Encode + Copy;
 }
 
 /// Represents an opaque handle in an FFI context

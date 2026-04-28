@@ -256,7 +256,7 @@ mod exported_abi;
 //            __take_non_robust_ref_mut(ffi_type, output.as_mut_ptr())
 //        );
 //
-//        let output: &mut str = OutPtrRead::try_read_out(output.assume_init()).unwrap();
+//        let output: &mut str = Decode::decode(output.assume_init(), &mut ()).unwrap();
 //        assert_eq!(output, owned.as_mut());
 //    }
 //}
@@ -383,7 +383,7 @@ mod exported_abi;
 //
 //        let output = output.assume_init();
 //        assert_eq!(output.len(), 2);
-//        let boxed_slice = Box::<[u8]>::try_read_out(output).expect("Valid");
+//        let boxed_slice = Decode::decode(output, &mut ()).expect("Valid");
 //        assert_eq!(boxed_slice, [12u8, 42u8].into());
 //    }
 //}
@@ -403,7 +403,7 @@ mod exported_abi;
 //        );
 //
 //        let output = output.assume_init();
-//        assert_eq!(input, OutPtrRead::try_read_out(output).expect("Valid"));
+//        assert_eq!(input, Decode::decode(output, &mut ()).expect("Valid"));
 //    }
 //}
 //
@@ -426,7 +426,7 @@ mod exported_abi;
 //    //    let output = output.assume_init();
 //    //    assert_eq!(
 //    //        input,
-//    //        Option::<bool>::try_read_out(output).expect("Valid")
+//    //        Decode::decode(output, &mut ()).expect("Valid")
 //    //    );
 //    //}
 //}
@@ -449,7 +449,7 @@ mod exported_abi;
 //    //        let output = output.assume_init();
 //    //        assert_eq!(
 //    //            input,
-//    //            *Option<bool>::try_read_out(output).expect("Valid")
+//    //            *Decode::decode(output, &mut ()).expect("Valid")
 //    //        );
 //    //    }
 //}
@@ -478,7 +478,7 @@ mod exported_abi;
 //        );
 //
 //        let output = output.assume_init();
-//        assert_eq!(input, Option::<u8>::try_read_out(output).expect("Valid"));
+//        assert_eq!(input, Decode::decode(output, &mut ()).expect("Valid"));
 //    }
 //}
 //
@@ -495,7 +495,7 @@ mod exported_abi;
 //
 //        let out_params = out_params.assume_init();
 //        assert_eq!(out_params.len(), 2);
-//        let vec = Vec::<(&Name, &Value)>::try_read_out(out_params).expect("Valid");
+//        let vec = Decode::decode(out_params, &mut ()).expect("Valid");
 //
 //        let default_params = get_default_params();
 //        assert_eq!((&default_params[0].0, &default_params[0].1), vec[0]);
@@ -638,7 +638,7 @@ mod exported_abi;
 //            __freestanding_with_fieldless_enum(fieldless_enum.encode(&mut ()), output.as_mut_ptr())
 //        );
 //
-//        let ret_val = OutPtrRead::try_read_out(output.assume_init());
+//        let ret_val = Decode::decode(output.assume_init(), &mut ());
 //        assert_eq!(FieldlessEnum::A, ret_val.unwrap());
 //    }
 //}
@@ -677,7 +677,7 @@ mod exported_abi;
 //            )
 //        );
 //
-//        let ret_val = OutPtrRead::try_read_out(output.assume_init());
+//        let ret_val = Decode::decode(output.assume_init(), &mut ());
 //        assert_eq!(data_carrying_enum, ret_val.expect("Conversion failed"));
 //    }
 //}
@@ -721,7 +721,7 @@ mod exported_abi;
 //        );
 //        let output = output.assume_init();
 //        assert_eq!(output.len(), 1);
-//        let vec = Vec::<Box<OpaqueStruct>>::try_read_out(output).expect("Valid");
+//        let vec = Decode::decode(output, &mut ()).expect("Valid");
 //        assert_eq!(Box::new(get_new_struct()), vec[0]);
 //    }
 //}
@@ -765,7 +765,7 @@ mod exported_abi;
 //            __reference_from_slice(a.as_slice().encode(&mut ()), output.as_mut_ptr())
 //        );
 //
-//        let output = <&u8>::try_read_out(output.assume_init()).unwrap();
+//        let output = <&u8>::decode(output.assume_init(), &mut ()).unwrap();
 //        assert_eq!(output, &a[0]);
 //    }
 //}
@@ -784,7 +784,7 @@ mod exported_abi;
 //                __take_tuple_ref((&a).encode(&mut store), output.as_mut_ptr())
 //            );
 //
-//            OutPtrRead::try_read_out(output.assume_init()).expect("Valid")
+//            Decode::decode(output.assume_init(), &mut ()).expect("Valid")
 //        }
 //    };
 //
