@@ -2,9 +2,12 @@
 use alloc_crate::{boxed::Box, vec::Vec};
 
 use super::*;
-#[cfg(feature = "alloc")]
-use crate::boxed::CBoxedSlice;
-use crate::{ir::Transmuted, option::COption};
+use crate::{
+    dst::{ExternTypeLike, Sized_},
+    external::{ExternRef, ExternRefMut},
+    ir::Transmuted,
+    option::COption,
+};
 
 /// Marker for a ZST(zero-sized type)
 ///
@@ -54,7 +57,7 @@ disjoint_impls! {
         type OutPtr = <R::Target as OutPtr>::OutPtr;
     }
 
-    impl<'a, R: ?Sized + Dst<Elem: ReprC>> OutPtr for &'a R
+    impl<'a, R: ?Sized + DstFamily<Kind = SliceLike> + SliceDst<Elem: ReprC>> OutPtr for &'a R
     where
         Self: ReprFamily<Kind = &'a Robust>,
     {
@@ -70,18 +73,25 @@ disjoint_impls! {
     where
         &'a <R as CheckedTransmute>::Target: OutPtr,
         Self: ReprFamily<Kind = &'a Transmuted>,
+        R: DstFamily<Kind = SliceLike>,
     {
         type OutPtr = <&'a R::Target as OutPtr>::OutPtr;
     }
-    #[cfg(feature = "unstable-refs")]
+    impl<'a, R: CheckedTransmute> OutPtr for &'a R
+    where
+        Self: ReprFamily<Kind = &'a Transmuted>,
+        R: DstFamily<Kind = ExternTypeLike>,
+        ExternRef<'a, R>: OutPtr,
+    {
+        type OutPtr = <ExternRef<'a, R> as OutPtr>::OutPtr;
+    }
     impl<'a, R: ExternC, S: Cloned> OutPtr for &'a R
     where
         Self: ReprFamily<Kind = &'a S>,
-        R: SizeFamily<Kind = Sized_>,
+        R: DstFamily<Kind = Sized_>,
     {
         type OutPtr = R::CType;
     }
-    //#[cfg(feature = "unstable-refs")]
     //impl<'a, R: ?Sized, S: Cloned> OutPtr for &'a R
     //where
     //    Self: ReprFamily<Kind = &'a S>,
@@ -90,7 +100,7 @@ disjoint_impls! {
     //    type OutPtr = Self::CType;
     //}
 
-    impl<'a, R: ?Sized + Dst<Elem: ReprC>> OutPtr for &'a mut R
+    impl<'a, R: ?Sized + DstFamily<Kind = SliceLike> + SliceDst<Elem: ReprC>> OutPtr for &'a mut R
     where
         Self: ReprFamily<Kind = &'a mut Robust>,
     {
@@ -100,12 +110,21 @@ disjoint_impls! {
     where
         &'a mut <R as CheckedTransmute>::Target: OutPtr,
         Self: ReprFamily<Kind = &'a mut Transmuted>,
+        R: DstFamily<Kind = SliceLike>,
     {
         type OutPtr = <&'a mut R::Target as OutPtr>::OutPtr;
     }
+    impl<'a, R: CheckedTransmute> OutPtr for &'a mut R
+    where
+        Self: ReprFamily<Kind = &'a mut Transmuted>,
+        R: DstFamily<Kind = ExternTypeLike>,
+        ExternRefMut<'a, R>: OutPtr,
+    {
+        type OutPtr = <ExternRefMut<'a, R> as OutPtr>::OutPtr;
+    }
 
     #[cfg(feature = "alloc")]
-    impl<R: ?Sized + crate::Dst<Elem: ReprC>> OutPtr for Box<R>
+    impl<R: ?Sized + DstFamily<Kind = SliceLike> + SliceDst<Elem: ReprC>> OutPtr for Box<R>
     where
         Self: ReprFamily<Kind = Box<Robust>>,
     {
@@ -116,8 +135,17 @@ disjoint_impls! {
     where
         Box<<R as CheckedTransmute>::Target>: OutPtr,
         Self: ReprFamily<Kind = Box<Transmuted>>,
+        R: DstFamily<Kind = SliceLike>,
     {
         type OutPtr = <Box<R::Target> as OutPtr>::OutPtr;
+    }
+    #[cfg(feature = "alloc")]
+    impl<R: External + OutPtr> OutPtr for Box<R>
+    where
+        Self: ReprFamily<Kind = Box<Transmuted>>,
+        R: DstFamily<Kind = ExternTypeLike>,
+    {
+        type OutPtr = R::OutPtr;
     }
     //#[cfg(feature = "alloc")]
     //impl<R: ?Sized + Dst> OutPtr for Box<R>
@@ -130,7 +158,7 @@ disjoint_impls! {
     impl<R: ExternC, S: Cloned> OutPtr for Box<R>
     where
         Self: ReprFamily<Kind = Box<S>>,
-        R: SizeFamily<Kind = Sized_>,
+        R: DstFamily<Kind = Sized_>,
     {
         type OutPtr = R::CType;
     }
@@ -144,26 +172,12 @@ disjoint_impls! {
     //}
 
     #[cfg(feature = "alloc")]
-    impl<R: ReprC> OutPtr for Vec<R>
-    where
-        Self: ReprFamily<Kind = Vec<Robust>>,
-    {
-        type OutPtr = CBoxedSlice<R>;
-    }
-    #[cfg(feature = "alloc")]
-    impl<R: CheckedTransmute<Target: Sized>> OutPtr for Vec<R>
-    where
-        Self: ReprFamily<Kind = Vec<Transmuted>>,
-        Vec<<R as CheckedTransmute>::Target>: OutPtr,
-    {
-        type OutPtr = <Vec<R::Target> as OutPtr>::OutPtr;
-    }
-    #[cfg(feature = "alloc")]
-    impl<R: ExternC, S: Cloned> OutPtr for Vec<R>
+    impl<R, S> OutPtr for Vec<R>
     where
         Self: ReprFamily<Kind = Vec<S>>,
+        Box<[R]>: OutPtr,
     {
-        type OutPtr = CBoxedSlice<R::CType>;
+        type OutPtr = <Box<[R]> as OutPtr>::OutPtr;
     }
 
     impl<R: ExternC, S: Cloned, const N: usize> OutPtr for [R; N]
@@ -231,7 +245,6 @@ disjoint_impls! {
         }
     }
 
-    //#[cfg(feature = "unstable-refs")]
     //impl<'itm, R: Encode + Clone, S: Cloned> OutPtrWrite for &'itm R
     //where
     //    Self: ReprFamily<Kind = &'itm S>,
@@ -394,46 +407,13 @@ disjoint_impls! {
     //}
 
     //#[cfg(feature = "alloc")]
-    //impl<R: ReprC> OutPtrWrite for Vec<R>
-    //where
-    //    Self: ReprFamily<Kind = Vec<Robust>>,
-    //{
-    //    unsafe fn write_out(self, _out_ptr: *mut Self::OutPtr) {
-    //        unimplemented!()
-    //        //let output = self.encode(&mut ());
-
-    //        //unsafe {
-    //        //    out_ptr.write(output);
-    //        //}
-    //    }
-    //}
-    //#[cfg(feature = "alloc")]
-    //impl<R: CheckedTransmute<Target: Sized>> OutPtrWrite for Vec<R>
-    //where
-    //    Vec<<R as CheckedTransmute>::Target>: OutPtrWrite,
-    //    Self: ReprFamily<Kind = Vec<Transmuted>>,
-    //{
-    //    unsafe fn write_out(self, out_ptr: *mut Self::OutPtr) {
-    //        let transmuted = transmute_into_target_vec(self);
-
-    //        unsafe {
-    //            OutPtrWrite::write_out(transmuted, out_ptr);
-    //        }
-    //    }
-    //}
-    //#[cfg(feature = "alloc")]
-    //impl<R: Encode, S: Cloned> OutPtrWrite for Vec<R>
+    //impl<R, S> OutPtrWrite for Vec<R>
     //where
     //    Self: ReprFamily<Kind = Vec<S>>,
+    //    Box<[R]>: OutPtrWrite,
     //{
     //    unsafe fn write_out(self, _out_ptr: *mut Self::OutPtr) {
     //        unimplemented!()
-    //        //let mut store = Default::default();
-    //        //let _ = self.encode(&mut store);
-
-    //        //let output = CBoxedSlice::from_boxed_slice(store.ctypes);
-
-    //        //unsafe { out_ptr.write(output); }
     //    }
     //}
 

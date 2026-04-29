@@ -7,16 +7,13 @@ use alloc_crate::{boxed::Box, vec::Vec};
 
 use disjoint_impls::disjoint_impls;
 
+#[cfg(feature = "alloc")]
+use crate::boxed::{CBox, CBoxedSlice};
 use crate::{
     ExternC, assert_arr_has_non_zero_len,
-    ir::{SizeFamily, Sized_, UnSized},
+    dst::{DstFamily, ExternTypeLike, Sized_, UnSized},
     option::COption,
     slice::{CSlice, CSliceMut},
-};
-#[cfg(feature = "alloc")]
-use crate::{
-    boxed::{CBox, CBoxedSlice},
-    vec::CVec,
 };
 
 /// Marker trait for an [`NicheFamily`] type of a Rust type that has a niche value (stable or custom)
@@ -120,26 +117,36 @@ disjoint_impls! {
         type Kind;
     }
 
-    impl<R: SizeFamily<Kind = Sized_>> NicheFamily for &R {
+    impl<R: DstFamily<Kind = Sized_>> NicheFamily for &R {
         type Kind = WithStableNiche;
     }
-    impl<R: SizeFamily<Kind = UnSized> + ?Sized> NicheFamily for &R {
+    impl<R: DstFamily<Kind: UnSized> + ?Sized> NicheFamily for &R {
+        type Kind = WithCustomNiche;
+    }
+    impl<R: DstFamily<Kind = ExternTypeLike>> NicheFamily for &R {
         type Kind = WithCustomNiche;
     }
 
-    impl<R: SizeFamily<Kind = Sized_>> NicheFamily for &mut R {
+    impl<R: DstFamily<Kind = Sized_>> NicheFamily for &mut R {
         type Kind = WithStableNiche;
     }
-    impl<R: SizeFamily<Kind = UnSized> + ?Sized> NicheFamily for &mut R {
+    impl<R: DstFamily<Kind: UnSized> + ?Sized> NicheFamily for &mut R {
+        type Kind = WithCustomNiche;
+    }
+    impl<R: DstFamily<Kind = ExternTypeLike>> NicheFamily for &mut R {
         type Kind = WithCustomNiche;
     }
 
     #[cfg(feature = "alloc")]
-    impl<R: SizeFamily<Kind = Sized_>> NicheFamily for Box<R> {
+    impl<R: DstFamily<Kind = Sized_>> NicheFamily for Box<R> {
         type Kind = WithStableNiche;
     }
     #[cfg(feature = "alloc")]
-    impl<R: SizeFamily<Kind = UnSized> + ?Sized> NicheFamily for Box<R> {
+    impl<R: DstFamily<Kind: UnSized> + ?Sized> NicheFamily for Box<R> {
+        type Kind = WithCustomNiche;
+    }
+    #[cfg(feature = "alloc")]
+    impl<R: DstFamily<Kind = ExternTypeLike>> NicheFamily for Box<R> {
         type Kind = WithCustomNiche;
     }
 
@@ -185,9 +192,9 @@ impl<R> NicheFamily for Vec<R> {
 #[cfg(feature = "alloc")]
 impl<R, C> Niche for Vec<R>
 where
-    Self: ExternC<CType = CVec<C>>,
+    Self: ExternC<CType = CBoxedSlice<C>>,
 {
-    const NICHE_VALUE: Self::CType = CVec::none();
+    const NICHE_VALUE: Self::CType = CBoxedSlice::none();
 }
 
 impl<R: Niche, const N: usize> Niche for [R; N]
@@ -326,15 +333,12 @@ mod tests {
     #[test]
     fn niche_values() {
         assert_eq!(core::ptr::null::<u8>(), None::<&bool>.encode(&mut ()));
-        #[cfg(any(
-            feature = "unstable-refs",
-            all(feature = "alloc", feature = "unsafe-optimizations")
-        ))]
+        #[cfg(all(feature = "alloc", feature = "unsafe-optimizations"))]
         assert_eq!(core::ptr::null::<u8>(), None::<&mut bool>.encode(&mut ()));
 
         #[cfg(feature = "alloc")]
         assert_eq!(
-            CVec::<u8>::none(),
+            CBoxedSlice::<u8>::none(),
             None::<String>.encode(&mut Default::default())
         );
         #[cfg(feature = "alloc")]
@@ -345,10 +349,7 @@ mod tests {
 
         assert_eq!(CSlice::<u8>::none(), None::<&str>.encode(&mut ()));
 
-        #[cfg(any(
-            feature = "unstable-refs",
-            all(feature = "alloc", feature = "unsafe-optimizations")
-        ))]
+        #[cfg(all(feature = "alloc", feature = "unsafe-optimizations"))]
         assert_eq!(
             co3::slice::CSliceMut::<u8>::none(),
             None::<&mut str>.encode(&mut ())
@@ -362,7 +363,7 @@ mod tests {
 
         #[cfg(feature = "alloc")]
         assert_eq!(
-            CVec::<u8>::none(),
+            CBoxedSlice::<u8>::none(),
             None::<ManuallyDrop<String>>.encode(&mut Default::default())
         );
 

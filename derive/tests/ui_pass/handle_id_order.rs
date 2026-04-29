@@ -1,5 +1,3 @@
-use core::ptr::NonNull;
-
 use co3::{
     extern_C,
     handle::{Handle, HandleFamily},
@@ -19,9 +17,17 @@ extern_C! {
     #[id(u8)]
     type Opaque2;
 
+    impl Default for Opaque1 {
+        fn default() -> Self;
+    }
+
+    impl Default for Opaque2 {
+        fn default() -> Self;
+    }
+
     fn kita1(
         inc_id: <Opaque2 as HandleFamily>::Kind,
-        a_id: <Opaque1 as co3::handle::HandleFamily>::Kind,
+        a_id: <Opaque1 as HandleFamily>::Kind,
         a: &mut Opaque1,
         inc: &Opaque2,
     ) -> u8;
@@ -44,7 +50,21 @@ mod provider {
         Opaque2,
     }
 
-    impl<T: co3::handle::Handle> Custom<T> for Opaque1 {
+    #[export("C", crate = "this_crate")]
+    impl Default for Opaque1 {
+        fn default() -> Self {
+            Self
+        }
+    }
+
+    #[export("C", crate = "this_crate")]
+    impl Default for Opaque2 {
+        fn default() -> Self {
+            Self
+        }
+    }
+
+    impl<T> Custom<T> for Opaque1 {
         fn kita1(&mut self, _inc: &T) -> u8 {
             0
         }
@@ -68,8 +88,8 @@ mod provider {
 }
 
 fn main() {
-    let mut value1 = Opaque1(NonNull::dangling());
-    let value2 = Opaque2(NonNull::dangling());
+    let mut value1 = Opaque1::default();
+    let value2 = Opaque2::default();
 
     let _ = kita1(Opaque2::ID, Opaque1::ID, &mut value1, &value2);
 }

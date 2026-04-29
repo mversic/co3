@@ -23,23 +23,6 @@ derive = ["co3-derive"]
 # Implements conversion traits for types from the `alloc` crate (e.g. `Box<T>` or `Vec<T>`).
 alloc = []
 
-# Enables reference types that don't maintain stable position in memory:
-# - shared or mutable references to `Cloned` types (e.g. `&(u8,)`/`&mut (u8,)`)
-# - shared or mutable slices of `Opaque` types (e.g. `&[Opaque]`/`&mut [Opaque]`)
-# - `Transmuted` mutable references to non-robust types (e.g. `&mut bool`)
-#
-# # Performance Considerations
-#
-# This feature introduces the cost of cloning the referent on:
-# - decode paths of `Cloned` references and `Opaque` slices
-# - encode paths of `Cloned` and `Transmuted` references
-#
-# For `Transmuted` mutable references to non-robust types, the default behavior of encode paths uses
-# clone + validation to prevent accidental UB from trap values set by the callee. Alternatively,
-# these references can also be enabled through `unsafe-optimizations` which uses transmute-based
-# encoding thus eliminating the clone and keeping the memory position of the reference stable.
-unstable-refs = []
-
 # Enables transmute-based encoding for mutable references to:
 # - droppable transmuted types (e.g. `&mut Box<u32>`) where the callee can transfer ownership
 # - non-robust transmuted types (e.g. `&mut bool`) where the callee can set a trap value

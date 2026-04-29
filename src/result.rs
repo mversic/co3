@@ -1,9 +1,12 @@
 //! FFI-safe equivalent of [`core::result`] related functionality
 
+use core::ops::Add;
+
 use crate::{
     DecodeWithStore, EncodeWithStore, ExternC, ReprC, Store,
-    borrow::DropFamily,
+    borrow::{Borrow, DropFamily, ToOwned},
     cloned::DecodeCloned,
+    heapify::Heapify,
     niche::{Niche, NicheFamily},
     reprC,
 };
@@ -118,13 +121,8 @@ impl<T: ExternC, E: ExternC> Niche for Result<T, E> {
     const NICHE_VALUE: Self::CType = CResult::niche();
 }
 
-impl<T, E> DropFamily for Result<T, E>
-where
-    T: DropFamily,
-    E: DropFamily,
-    T::Kind: core::ops::Add<E::Kind>,
-{
-    type Kind = <T::Kind as core::ops::Add<E::Kind>>::Output;
+impl<T: DropFamily<Kind: Add<E::Kind>>, E: DropFamily> DropFamily for Result<T, E> {
+    type Kind = <T::Kind as Add<E::Kind>>::Output;
 }
 
 impl<T: EncodeWithStore, E: EncodeWithStore> EncodeWithStore for Result<T, E> {
@@ -137,6 +135,56 @@ impl<T: EncodeWithStore, E: EncodeWithStore> EncodeWithStore for Result<T, E> {
         match self {
             Ok(ok) => CResult::Ok(ok.encode(&mut store.0)),
             Err(err) => CResult::Err(err.encode(&mut store.1)),
+        }
+    }
+}
+
+impl<T: Heapify, E: Heapify> Heapify for Result<T, E> {
+    type Kind = Result<T::Kind, E::Kind>;
+
+    #[inline(always)]
+    fn heapify(self) -> Self::Kind {
+        match self {
+            Ok(value) => Ok(T::heapify(value)),
+            Err(err) => Err(E::heapify(err)),
+        }
+    }
+
+    #[inline(always)]
+    fn unheapify(kind: Self::Kind) -> Self {
+        match kind {
+            Ok(value) => Ok(T::unheapify(value)),
+            Err(err) => Err(E::unheapify(err)),
+        }
+    }
+}
+
+impl<T: Borrow<true>, E: Borrow<true>> Borrow<true> for Result<T, E> {
+    type Borrowed<'itm>
+        = Result<T::Borrowed<'itm>, E::Borrowed<'itm>>
+    where
+        Self: 'itm;
+
+    type Store = (T::Store, E::Store);
+
+    #[inline(always)]
+    fn borrow<'itm>(self, store: &'itm mut Self::Store) -> Self::Borrowed<'itm>
+    where
+        Self: 'itm,
+    {
+        match self {
+            Ok(value) => Ok(value.borrow(&mut store.0)),
+            Err(err) => Err(err.borrow(&mut store.1)),
+        }
+    }
+}
+
+impl<'r, T: ToOwned<'r, true>, E: ToOwned<'r, true>> ToOwned<'r, true> for Result<T, E> {
+    #[inline(always)]
+    fn to_owned(borrowed: Self::Borrowed<'r>) -> Self {
+        match borrowed {
+            Ok(value) => Ok(T::to_owned(value)),
+            Err(err) => Err(E::to_owned(err)),
         }
     }
 }

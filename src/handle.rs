@@ -1,22 +1,21 @@
 //! Utilities for defining opaque pointer handles and shared handle logic.
 
-use core::{ffi::c_void, marker::PhantomData};
+use core::ffi::c_void;
 
-use alloc_crate::boxed::Box;
-use disjoint_impls::disjoint_impls;
-
+#[cfg(feature = "alloc")]
+use crate::heapify::Heapify;
 use crate::{
     Encode, ExternC,
-    borrow::Borrow,
+    borrow::{Borrow, DropFamily, NoDrop},
     boxed::CBox,
-    external::Extern,
-    ir::{Opaque, ReprFamily, Transmuted},
+    dst::{DstFamily, Sized_},
+    ir::{ReprFamily, Transmuted},
     out_ptr::OutPtr,
     transmute::CheckedTransmute,
 };
 
 pub trait HandleFamily {
-    // FIXME: Should Copy be required?
+    // TODO: Should Copy be required?
     type Kind: Encode + Copy;
 }
 
@@ -34,7 +33,7 @@ pub unsafe trait Handle: HandleFamily {
 }
 
 #[repr(transparent)]
-pub struct Erased<R>(c_void, PhantomData<R>);
+pub struct Erased(c_void);
 
 /// Implements [`Handle`] for a list of types.
 ///
@@ -145,7 +144,19 @@ macro_rules! handles {
     };
 }
 
-unsafe impl<R> CheckedTransmute for Erased<R> {
+impl ReprFamily for Erased {
+    type Kind = Transmuted;
+}
+
+impl DstFamily for Erased {
+    type Kind = Sized_;
+}
+
+impl DropFamily for Erased {
+    type Kind = NoDrop;
+}
+
+unsafe impl CheckedTransmute for Erased {
     type Target = c_void;
 
     #[inline(always)]
@@ -154,106 +165,41 @@ unsafe impl<R> CheckedTransmute for Erased<R> {
     }
 }
 
-disjoint_impls! {
-    #[disjoint_impls(remote)]
-    pub trait ExternC: Sized {
-        type CType: crate::ReprC;
-    }
+impl ExternC for Erased {
+    type CType = CBox<c_void>;
+}
 
-    impl<R: ReprFamily<Kind = Opaque>> ExternC for Erased<R> {
-        type CType = CBox<c_void>;
-    }
+impl OutPtr for Erased {
+    type OutPtr = CBox<c_void>;
+}
 
-    impl<R: ReprFamily<Kind = Transmuted>> ExternC for Erased<R>
+impl<const IN_STRUCT: bool> Borrow<IN_STRUCT> for Erased {
+    type Borrowed<'itm>
+        = Self
     where
-        // FIXME: It's imprecise to say Extern types are just transmuted
-        // It poses a danger because any transmuted type can become erased
-        R: ExternC<CType = *mut Extern>,
-    {
-        type CType = *mut c_void;
-    }
-}
+        Self: 'itm;
 
-disjoint_impls! {
-    #[disjoint_impls(remote)]
-    pub trait Borrow: Sized {
-        type Borrowed<'itm> where Self: 'itm;
-        type Store: Default;
+    type Store = ();
 
-        fn borrow<'itm>(self, store: &'itm mut Self::Store) -> Self::Borrowed<'itm>
-        where
-            Self: 'itm;
-    }
-
-    impl<R: ReprFamily<Kind = Opaque>> Borrow for Erased<R> {
-        type Borrowed<'itm>
-            = Self
-        where
-            Self: 'itm;
-
-        type Store = ();
-
-        fn borrow<'itm>(self, _: &'itm mut ()) -> Self::Borrowed<'itm>
-        where
-            Self: 'itm,
-        {
-            self
-        }
-    }
-    impl<R: ReprFamily<Kind = Transmuted>> Borrow for Erased<R>
+    fn borrow<'itm>(self, (): &'itm mut ()) -> Self::Borrowed<'itm>
     where
-        // FIXME: It's imprecise to say Extern types are just transmuted
-        // It poses a danger because any transmuted type can become erased
-        R: ExternC<CType = *mut Extern>
+        Self: 'itm,
     {
-        type Borrowed<'itm>
-            = Self
-        where
-            Self: 'itm;
-
-        type Store = ();
-
-        fn borrow<'itm>(self, _: &'itm mut ()) -> Self::Borrowed<'itm>
-        where
-            Self: 'itm,
-        {
-            self
-        }
+        unimplemented!()
     }
 }
 
-disjoint_impls! {
-    #[disjoint_impls(remote)]
-    pub trait OutPtr: ExternC {
-        type OutPtr: co3::ReprC;
+#[cfg(feature = "alloc")]
+impl Heapify for Erased {
+    type Kind = Self;
+
+    #[inline(always)]
+    fn heapify(self) -> Self::Kind {
+        unimplemented!()
     }
 
-    impl<R: ReprFamily<Kind = Opaque>> OutPtr for Erased<R> {
-        type OutPtr = CBox<c_void>;
+    #[inline(always)]
+    fn unheapify(_: Self::Kind) -> Self {
+        unimplemented!()
     }
-
-    impl<R: ReprFamily<Kind = Transmuted>> OutPtr for Erased<R>
-    where
-        // FIXME: It's imprecise to say Extern types are just transmuted
-        // It poses a danger because any transmuted type can become erased
-        R: ExternC<CType = *mut Extern>
-    {
-        type OutPtr = *mut c_void;
-    }
-}
-
-impl<R> ReprFamily for Erased<R> {
-    type Kind = Transmuted;
-}
-
-impl<R> ReprFamily for &Erased<R> {
-    type Kind = Transmuted;
-}
-
-impl<R> ReprFamily for &mut Erased<R> {
-    type Kind = Transmuted;
-}
-
-impl<R> ReprFamily for Box<Erased<R>> {
-    type Kind = Transmuted;
 }

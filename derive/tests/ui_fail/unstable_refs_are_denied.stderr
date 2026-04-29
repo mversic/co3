@@ -1,0 +1,18 @@
+error[E0277]: the trait bound `RefDecodeStore<(u8,), ((),)>: Zst` is not satisfied
+ --> tests/ui_fail/unstable_refs_are_denied.rs:3:1
+  |
+3 | #[export("C")]
+  | ^^^^^^^^^^^^^^ the trait `Zst` is not implemented for `RefDecodeStore<(u8,), ((),)>`
+  |
+  = help: the following other types implement trait `Zst`:
+            ()
+            (A, B)
+            (A, B, C)
+            (A, B, C, D)
+            (A, B, C, D, E)
+            (A, B, C, D, E, F)
+            (A, B, C, D, E, F, G)
+            (A, B, C, D, E, F, G, H)
+          and $N others
+  = note: required for `&(u8,)` to implement `Decode<'_>`
+  = note: this error originates in the attribute macro `export` (in Nightly builds, run with -Z macro-backtrace for more info)

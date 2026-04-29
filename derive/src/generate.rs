@@ -1,6 +1,8 @@
 use proc_macro2::TokenStream;
 use quote::quote;
-use syn::{FnArg, ImplItem, ImplItemFn, ItemImpl, punctuated::Punctuated, visit_mut::VisitMut};
+use syn::{
+    FnArg, ImplItem, ImplItemFn, ItemImpl, parse_quote, punctuated::Punctuated, visit_mut::VisitMut,
+};
 
 use crate::{
     DropImpl, DynImpl, ForeignItem, ForeignItemType,
@@ -9,7 +11,7 @@ use crate::{
         self, emit_extern_definition, gen_extern_fn_signature, merge_generics,
         normalize_fn_signature,
     },
-    repr::gen_sized_size_family,
+    repr::gen_sized_family,
     utils::DispatchMonomorphizer,
     wrapper::{
         gen_extern_decl, strip_internal_generic_attrs, wrap_fn_definition, wrap_impl_definition,
@@ -21,6 +23,7 @@ pub(crate) enum OwnershipMode {
     #[default]
     Borrow,
     ByValue,
+    Copied,
 }
 
 pub(crate) fn emit_decl_exports(abi: syn::Abi, decls: Vec<ForeignItem>) -> TokenStream {
@@ -201,7 +204,7 @@ fn gen_drop_impl_definition(abi: &syn::Abi, mut impl_: ItemImpl) -> TokenStream 
 
     let ffi_fn_body = quote! {{
         let __co3_self: &mut #self_ty = unsafe {
-            co3::DecodeWithStore::decode(__co3_self, &mut ())
+            co3::Decode::decode(__co3_self)
         }.ok_or(co3::FfiReturn::TrapRepresentation)?;
 
         unsafe { core::ptr::drop_in_place(__co3_self as *mut _) };
@@ -225,19 +228,42 @@ fn derive_opaque_item(
     }: syn::ForeignItemType,
 ) -> TokenStream {
     let (impl_generics, ty_generics, where_clause) = generics.split_for_impl();
-    let predicates = where_clause.map(|w| &w.predicates);
-    let params = &generics.params;
 
-    let size_family_impl = gen_sized_size_family(&ident, &generics);
+    let mut params = generics.params.clone();
+    params.push(parse_quote!(const IN_STRUCT: bool));
+
+    let predicates = where_clause
+        .as_ref()
+        .map(|where_clause| &where_clause.predicates);
+
+    // FIXME: This type is not necessarily Sized
+    let size_family_impl = gen_sized_family(&ident, &generics);
     let handle_family_impl = id.and_then(|id| gen_handle_family_impl(id, &ident, &generics));
 
-    // TODO: Implement ?Sized Opaque types
-    let sized_impls = quote! {
+    quote! {
         #size_family_impl
+        #handle_family_impl
 
-        impl #impl_generics co3::borrow::Borrow for #ident #ty_generics #where_clause {
-            type Borrowed<'itm>
-                = Self
+        impl #impl_generics co3::ir::ReprFamily for #ident #ty_generics #where_clause {
+            type Kind = co3::ir::Opaque;
+        }
+
+        impl #impl_generics co3::heapify::Heapify for #ident #ty_generics #where_clause {
+            type Kind = Self;
+
+            #[inline(always)]
+            fn heapify(self) -> Self::Kind {
+                self
+            }
+
+            #[inline(always)]
+            fn unheapify(kind: Self::Kind) -> Self {
+                kind
+            }
+        }
+
+        impl<#params> co3::borrow::Borrow<IN_STRUCT> for #ident #ty_generics #where_clause {
+            type Borrowed<'itm> = Self
             where
                 Self: 'itm;
 
@@ -252,33 +278,12 @@ fn derive_opaque_item(
             }
         }
 
-        impl<'__co3_r, #params> co3::borrow::ToOwned<'__co3_r> for #ident #ty_generics where Self: '__co3_r, #predicates {
+        impl<'__co3_r, #params> co3::borrow::ToOwned<'__co3_r, IN_STRUCT> for #ident #ty_generics where Self: '__co3_r, #predicates {
             #[inline(always)]
-            fn to_owned(borrowed: Self::Borrowed<'__co3_r>) -> Self {
+            fn to_owned(borrowed: Self) -> Self {
                 borrowed
             }
         }
-
-        impl #impl_generics co3::niche::Niche for #ident #ty_generics #where_clause {
-            const NICHE_VALUE: co3::boxed::CBox<Self> = co3::boxed::CBox::none();
-        }
-    };
-
-    quote! {
-        impl #impl_generics co3::ir::ReprFamily for #ident #ty_generics #where_clause {
-            type Kind = co3::ir::Opaque;
-        }
-
-        unsafe impl #impl_generics co3::external::External for #ident #ty_generics #where_clause {
-            fn as_ptr(&self) -> *const co3::external::Extern {
-                (self as *const Self).cast()
-            }
-
-            fn as_mut_ptr(&mut self) -> *mut co3::external::Extern {
-                (self as *mut Self).cast()
-            }
-        }
-
         impl #impl_generics co3::borrow::DropFamily for #ident #ty_generics #where_clause {
             type Kind = co3::borrow::NoDrop;
         }
@@ -286,9 +291,9 @@ fn derive_opaque_item(
         impl #impl_generics co3::niche::NicheFamily for #ident #ty_generics #where_clause {
             type Kind = co3::niche::WithCustomNiche;
         }
-
-        #handle_family_impl
-        #sized_impls
+        impl #impl_generics co3::niche::Niche for #ident #ty_generics #where_clause {
+            const NICHE_VALUE: co3::boxed::CBox<Self> = co3::boxed::CBox::none();
+        }
     }
 }
 
@@ -460,11 +465,17 @@ fn wrap_extern_type_decl(
     }
 
     let (impl_generics, ty_generics, where_clause) = generics.split_for_impl();
+
+    let mut params = generics.params.clone();
+    params.push(parse_quote!(const IN_STRUCT: bool));
+
+    let predicates = where_clause
+        .as_ref()
+        .map(|where_clause| &where_clause.predicates);
+
     let handle_family_impl = id
         .as_ref()
         .and_then(|id| gen_handle_family_impl(id, &ident, &generics));
-    let predicates = where_clause.map(|w| &w.predicates);
-    let params = &generics.params;
 
     use syn::GenericParam::*;
     let phantom_data_fields = generics.params.iter().filter_map(|param| match param {
@@ -482,16 +493,26 @@ fn wrap_extern_type_decl(
     quote! {
         #(#attrs)*
         #[repr(transparent)]
-        // TODO: Should we use CBox<Extern>? NonNull has niche optimization attached tho
-        #vis struct #ident #impl_generics(core::ptr::NonNull<co3::external::Extern> #(, #phantom_data_fields)*) #where_clause;
+        #vis struct #ident #impl_generics #where_clause {
+            // TODO: Nomicon would have used `CBox<()>`. Note that `size_of::<c_void> == 1`
+            // https://doc.rust-lang.org/nomicon/ffi.html#representing-opaque-structs
+            data: co3::boxed::CBox<core::ffi::c_void>,
+            __marker: core::marker::PhantomData<(*mut u8, core::marker::PhantomPinned, #(#phantom_data_fields,)*)>,
+        }
 
-        unsafe impl #impl_generics co3::external::External for #ident #ty_generics #where_clause {
-            fn as_ptr(&self) -> *const co3::external::Extern {
-                self.0.as_ptr() as *const _
-            }
-            fn as_mut_ptr(&mut self) -> *mut co3::external::Extern {
-                self.0.as_ptr()
-            }
+        #handle_family_impl
+
+        impl #impl_generics co3::dst::DstFamily for #ident #ty_generics #where_clause {
+            type Kind = co3::dst::ExternTypeLike;
+        }
+        impl #impl_generics co3::ir::ReprFamily for #ident #ty_generics #where_clause {
+            type Kind = co3::ir::Transmuted;
+        }
+        impl #impl_generics co3::borrow::DropFamily for #ident #ty_generics #where_clause {
+            type Kind = co3::borrow::NoDrop;
+        }
+        impl #impl_generics co3::niche::NicheFamily for #ident #ty_generics #where_clause {
+            type Kind = co3::niche::WithStableNiche;
         }
 
         impl #impl_generics #ident #ty_generics #where_clause {
@@ -504,24 +525,17 @@ fn wrap_extern_type_decl(
             }
         }
 
-        #handle_family_impl
-
-        impl #impl_generics co3::ir::ReprFamily for #ident #ty_generics #where_clause {
-            type Kind = co3::ir::Transmuted;
-        }
-        impl #impl_generics co3::ir::SizeFamily for #ident #ty_generics #where_clause {
-            // FIXME: Likely it should be unsized. This probably means we'll need a custom IR type
-            type Kind = co3::ir::Sized_;
-        }
-        impl #impl_generics co3::borrow::DropFamily for #ident #ty_generics #where_clause {
-            type Kind = co3::borrow::NoDrop;
-        }
-        impl #impl_generics co3::niche::NicheFamily for #ident #ty_generics #where_clause {
-            type Kind = co3::niche::WithStableNiche;
+        unsafe impl #impl_generics co3::external::External for #ident #ty_generics #where_clause {
+            fn as_ptr(&self) -> *const core::ffi::c_void {
+                self.data.as_ptr()
+            }
+            fn as_mut_ptr(&mut self) -> *mut core::ffi::c_void {
+                self.data.as_mut_ptr()
+            }
         }
 
         unsafe impl #impl_generics co3::transmute::CheckedTransmute for #ident #ty_generics #where_clause {
-            type Target = *mut co3::external::Extern;
+            type Target = co3::boxed::CBox<core::ffi::c_void>;
 
             #[inline(always)]
             fn is_valid(_: &Self::Target) -> bool {
@@ -534,7 +548,21 @@ fn wrap_extern_type_decl(
             type Store = <Self::Target as co3::EncodeWithStore>::Store;
         }
 
-        impl #impl_generics co3::borrow::Borrow for #ident #ty_generics #where_clause {
+        impl #impl_generics co3::heapify::Heapify for #ident #ty_generics #where_clause {
+            type Kind = Self;
+
+            #[inline(always)]
+            fn heapify(self) -> Self::Kind {
+                self
+            }
+
+            #[inline(always)]
+            fn unheapify(kind: Self::Kind) -> Self {
+                kind
+            }
+        }
+
+        impl<#params> co3::borrow::Borrow<IN_STRUCT> for #ident #ty_generics #where_clause {
             type Borrowed<'itm> = Self
             where
                 Self: 'itm;
@@ -549,7 +577,11 @@ fn wrap_extern_type_decl(
                 self
             }
         }
-        impl<'__co3_r, #params> co3::borrow::ToOwned<'__co3_r> for #ident #ty_generics where Self: '__co3_r, #predicates {
+        impl<'__co3_r, #params> co3::borrow::ToOwned<'__co3_r, IN_STRUCT> for #ident #ty_generics
+        where
+            Self: '__co3_r,
+            #predicates
+        {
             #[inline(always)]
             fn to_owned(borrowed: Self::Borrowed<'__co3_r>) -> Self {
                 borrowed
@@ -557,7 +589,7 @@ fn wrap_extern_type_decl(
         }
 
         impl #impl_generics co3::niche::Niche for #ident #ty_generics #where_clause {
-            const NICHE_VALUE: <Self as co3::ExternC>::CType = core::ptr::null_mut();
+            const NICHE_VALUE: <Self as co3::ExternC>::CType = co3::boxed::CBox::none();
         }
 
         unsafe impl #impl_generics co3::niche::StableNiche for #ident #ty_generics #where_clause {}

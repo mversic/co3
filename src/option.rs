@@ -1,6 +1,10 @@
 //! FFI-safe equivalent of [`core::option`] related functionality
 
-use crate::{FfiReturn, ReprC, reprC};
+use crate::{
+    FfiReturn, ReprC,
+    borrow::{Borrow, DropFamily, ToOwned},
+    reprC,
+};
 
 /// FFI-safe equivalent of [`core::option::Option`] for [`crate::ir::Robust`] types
 #[derive(Debug, PartialEq, Eq, PartialOrd, Ord)]
@@ -35,6 +39,34 @@ impl<T> COption<T> {
             tag: 2,
             payload: unsafe { core::mem::zeroed() },
         }
+    }
+}
+
+impl<R: DropFamily> DropFamily for Option<R> {
+    type Kind = R::Kind;
+}
+
+impl<R: Borrow<true>> Borrow<true> for Option<R> {
+    type Borrowed<'itm>
+        = Option<R::Borrowed<'itm>>
+    where
+        Self: 'itm;
+
+    type Store = R::Store;
+
+    #[inline(always)]
+    fn borrow<'itm>(self, store: &'itm mut Self::Store) -> Self::Borrowed<'itm>
+    where
+        Self: 'itm,
+    {
+        self.map(|value| value.borrow(store))
+    }
+}
+
+impl<'r, R: ToOwned<'r, true>> ToOwned<'r, true> for Option<R> {
+    #[inline(always)]
+    fn to_owned(borrowed: Self::Borrowed<'r>) -> Self {
+        borrowed.map(R::to_owned)
     }
 }
 

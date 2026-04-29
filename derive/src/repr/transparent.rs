@@ -39,7 +39,7 @@ pub(crate) fn derive_transparent_item(input: &FfiTypeInput) -> TokenStream {
         return quote! {};
     };
 
-    let impl_drop_assert = assert_drop_impl();
+    let impl_drop_assert = assert_drop_impl(&input.generics, name);
     let custom_validation = if let Some(FfiTypeKindAttribute::Transparent(niche_value, is_valid)) =
         &input.ffi_type_attr.kind
     {

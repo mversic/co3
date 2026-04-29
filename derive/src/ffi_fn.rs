@@ -11,7 +11,9 @@ use syn::{
 use crate::{
     dispatch::handle_id,
     generate::OwnershipMode,
-    utils::{TypeImplTraitResolver, gen_normalization_stmts, unwrap_result_type},
+    utils::{
+        TypeImplTraitResolver, gen_normalization_stmts, unstable_refs_for_arg, unwrap_result_type,
+    },
 };
 
 pub(crate) fn emit_extern_definition(
@@ -104,14 +106,10 @@ pub(crate) fn item_fn_input_ident(input: &syn::Pat) -> &Ident {
     ident
 }
 
-pub(crate) fn boxed_array_ty(ty: &Type) -> Option<Type> {
-    matches!(ty, Type::Array(_)).then(|| parse_quote!(Box<#ty>))
-}
-
 pub(crate) fn gen_signature_input_init_stmts<'a>(
     inputs: impl IntoIterator<Item = &'a syn::FnArg>,
 ) -> TokenStream {
-    let (value_tys, decode_tys): (Vec<_>, Vec<_>) = inputs
+    let (value_tys, store_tys): (Vec<_>, Vec<_>) = inputs
         .into_iter()
         .map(|input| {
             let (attrs, arg_ty) = match input {
@@ -120,20 +118,27 @@ pub(crate) fn gen_signature_input_init_stmts<'a>(
             };
 
             let decode_ty = match ownership_mode_for_arg(attrs, arg_ty) {
-                OwnershipMode::Borrow if matches!(arg_ty, Type::Array(_)) => quote!(&#arg_ty),
-                OwnershipMode::Borrow => quote!(<#arg_ty as co3::borrow::Borrow>::Borrowed<'_>),
-                OwnershipMode::ByValue if let Some(boxed_ty) = boxed_array_ty(arg_ty) => {
-                    quote!(#boxed_ty)
+                OwnershipMode::Borrow => quote! {
+                    <#arg_ty as co3::borrow::Borrow<false>>::Borrowed<'_>
+                },
+                OwnershipMode::ByValue => {
+                    quote! { <#arg_ty as co3::heapify::Heapify>::Kind }
                 }
-                OwnershipMode::ByValue => quote!(#arg_ty),
+                OwnershipMode::Copied => quote! { #arg_ty },
             };
 
-            (quote!(#arg_ty), decode_ty)
+            let store_ty = if unstable_refs_for_arg(attrs) {
+                quote!(<#decode_ty as co3::DecodeWithStore>::Store)
+            } else {
+                quote!(())
+            };
+
+            (quote!(#arg_ty), store_ty)
         })
         .unzip();
 
-    let stores = decode_tys.iter().map(|ty| {
-        quote! { <<#ty as co3::DecodeWithStore>::Store as core::default::Default>::default() }
+    let stores = store_tys.iter().map(|ty| {
+        quote! { <#ty as core::default::Default>::default() }
     });
 
     quote! {
@@ -165,26 +170,29 @@ pub(crate) fn gen_signature_input_conversion_stmts<'a>(
             }
         };
 
-        // FIXME: If type alias T = [x; N] is used conversion of Array to Box or reference will not work
-        let (borrowed_ty, to_owned) = match ownership_mode_for_arg(attrs, &arg_ty) {
-            OwnershipMode::Borrow if matches!(arg_ty, Type::Array(_)) => {
-                (quote!(&#arg_ty), quote!(Clone::clone(#arg_name)))
-            }
+        let (borrowed_ty, owned) = match ownership_mode_for_arg(attrs, &arg_ty) {
             OwnershipMode::Borrow => (
-                quote!(<#arg_ty as co3::borrow::Borrow>::Borrowed<'_>),
-                quote!(co3::borrow::ToOwned::to_owned(#arg_name)),
+                quote! { <#arg_ty as co3::borrow::Borrow<false>>::Borrowed<'_> },
+                quote! { <#arg_ty as co3::borrow::ToOwned<false>>::to_owned(#arg_name) },
             ),
-            OwnershipMode::ByValue if let Some(boxed_ty) = boxed_array_ty(&arg_ty) => {
-                (quote!(#boxed_ty), quote!(*#arg_name))
-            }
-            OwnershipMode::ByValue => (quote!(#arg_ty), quote!(#arg_name)),
+            OwnershipMode::ByValue => (
+                quote! { <#arg_ty as co3::heapify::Heapify>::Kind },
+                quote! { co3::heapify::Heapify::unheapify(#arg_name) },
+            ),
+            OwnershipMode::Copied => (quote!(#arg_ty), quote!(#arg_name)),
+        };
+
+        let decode_stmt = if unstable_refs_for_arg(attrs) {
+            quote! { co3::DecodeWithStore::decode(#arg_name, &mut __co3_input_stores.#idx) }
+        } else {
+            quote! { co3::Decode::decode(#arg_name) }
         };
 
         stmts.extend(quote! {
-            let #arg_name: Option<#borrowed_ty> = unsafe { co3::DecodeWithStore::decode(#arg_name, &mut __co3_input_stores.#idx) };
+            let #arg_name: Option<#borrowed_ty> = unsafe { #decode_stmt };
 
             if let Some(#arg_name) = #arg_name {
-                __co3_input_values.#idx = Some(#to_owned);
+                __co3_input_values.#idx = Some(#owned);
             }
         });
     }
@@ -224,6 +232,7 @@ fn gen_signature_output_assignment_stmts(ret_ty: &syn::ReturnType) -> TokenStrea
 
     if let Some((ok, _)) = unwrap_result_type(ret_ty) {
         let normalize_output = gen_normalization_stmts(&output, ok);
+        let heapified_ok = quote! { <#ok as co3::heapify::Heapify>::Kind };
 
         quote! {
             match __co3_output {
@@ -231,7 +240,10 @@ fn gen_signature_output_assignment_stmts(ret_ty: &syn::ReturnType) -> TokenStrea
                     #normalize_output
 
                     unsafe {
-                        <#ok as co3::out_ptr::OutPtrWrite>::write_out(#output, __co3_out_ptr);
+                        <#heapified_ok as co3::out_ptr::OutPtrWrite>::write_out(
+                            <#ok as co3::heapify::Heapify>::heapify(#output),
+                            __co3_out_ptr,
+                        );
                     }
                 }
                 Err(_) => {
@@ -241,12 +253,16 @@ fn gen_signature_output_assignment_stmts(ret_ty: &syn::ReturnType) -> TokenStrea
         }
     } else {
         let normalize_output = gen_normalization_stmts(&output, ret_ty);
+        let heapified_ret = quote! { <#ret_ty as co3::heapify::Heapify>::Kind };
 
         quote! {
             #normalize_output
 
             unsafe {
-                <#ret_ty as co3::out_ptr::OutPtrWrite>::write_out(#output, __co3_out_ptr);
+                <#heapified_ret as co3::out_ptr::OutPtrWrite>::write_out(
+                    <#ret_ty as co3::heapify::Heapify>::heapify(#output),
+                    __co3_out_ptr
+                );
             }
         }
     }
@@ -530,8 +546,9 @@ fn lower_signature_output_to_out_ptr(return_type: &syn::ReturnType) -> Option<To
         return None;
     };
 
-    let return_type = unwrap_result_type(return_type).map_or(&**return_type, |(ok, _)| ok);
-    Some(quote! { __co3_out_ptr: *mut <#return_type as co3::out_ptr::OutPtr>::OutPtr })
+    let ret_ty = unwrap_result_type(return_type).map_or(&**return_type, |(ok, _)| ok);
+    let heapified_ty = quote! { <#ret_ty as co3::heapify::Heapify>::Kind };
+    Some(quote! { __co3_out_ptr: *mut <#heapified_ty as co3::out_ptr::OutPtr>::OutPtr })
 }
 
 fn item_fn_input_arg_type(
@@ -540,26 +557,19 @@ fn item_fn_input_arg_type(
     arg_idx: usize,
     generics: &mut syn::Generics,
 ) -> TokenStream {
-    let ownership_mode = ownership_mode_for_arg(attrs, arg_ty);
-
-    if ownership_mode == OwnershipMode::ByValue {
-        if let Some(boxed_ty) = boxed_array_ty(arg_ty) {
-            return quote!(<#boxed_ty as co3::ExternC>::CType);
-        }
-        return quote!(<#arg_ty as co3::ExternC>::CType);
-    }
-
-    if matches!(arg_ty, Type::Array(_)) {
-        let lifetime = synthetic_borrow_lifetime(generics, arg_ty, arg_idx);
-
-        let borrowed_ty: Type = parse_quote!(&#lifetime #arg_ty);
-        return quote!(<#borrowed_ty as co3::ExternC>::CType);
-    }
-
     let lifetime = synthetic_borrow_lifetime(generics, arg_ty, arg_idx);
-    let borrowed_ty = quote!(<#arg_ty as co3::borrow::Borrow>::Borrowed<#lifetime>);
 
-    quote!(<#borrowed_ty as co3::ExternC>::CType)
+    let ty = match ownership_mode_for_arg(attrs, arg_ty) {
+        OwnershipMode::Borrow => quote! {
+            <#arg_ty as co3::borrow::Borrow<false>>::Borrowed<#lifetime>
+        },
+        OwnershipMode::ByValue => {
+            quote! { <#arg_ty as co3::heapify::Heapify>::Kind }
+        }
+        OwnershipMode::Copied => quote! { #arg_ty },
+    };
+
+    quote!(<#ty as co3::ExternC>::CType)
 }
 
 fn synthetic_borrow_lifetime(
@@ -638,8 +648,8 @@ fn is_copy_type(ty: &Type) -> bool {
             }
         }
 
-        fn visit_type_array(&mut self, node: &syn::TypeArray) {
-            self.visit_type(&node.elem);
+        fn visit_type_array(&mut self, _: &syn::TypeArray) {
+            self.is_copy = false;
         }
 
         fn visit_type_paren(&mut self, node: &syn::TypeParen) {
@@ -672,12 +682,8 @@ pub(crate) fn ownership_mode_for_arg(attrs: &[syn::Attribute], ty: &Type) -> Own
         return OwnershipMode::ByValue;
     }
 
-    if matches!(ty, Type::Array(_)) {
-        return OwnershipMode::Borrow;
-    }
-
     if is_copy_type(ty) {
-        return OwnershipMode::ByValue;
+        return OwnershipMode::Copied;
     }
 
     OwnershipMode::Borrow

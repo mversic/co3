@@ -132,13 +132,6 @@ impl<C, A: Allocator> Copy for CBoxedSlice<C, A> {}
 
 #[cfg(feature = "alloc")]
 impl<C> CBox<C> {
-    pub fn from_raw(raw: *mut C) -> Self {
-        Self {
-            data: raw,
-            allocator: Global,
-        }
-    }
-
     /// Create [`Self`] from a [`Box<C>`].
     pub fn from_box(source: Option<Box<C>>) -> Self {
         let Some(source) = source else {
@@ -157,6 +150,14 @@ impl<C> CBox<C> {
 }
 
 impl<C, A: Allocator> CBox<C, A> {
+    pub const fn as_ptr(&self) -> *const C {
+        self.data
+    }
+
+    pub fn as_mut_ptr(&mut self) -> *mut C {
+        self.data
+    }
+
     /// Set the pointer to null.
     pub const fn none() -> Self {
         Self {

@@ -20,7 +20,7 @@ export_C! {
 
     #[dispatch(<Kita, 23>)]
     impl<'a, dyn(u32) U, const K: usize> Drop for GenericHandle<'a, U, K> {
-        fn drop(&mut self);
+        fn drop(#[unstable_refs] move &mut self);
     }
 }
 
@@ -31,7 +31,7 @@ impl GenericHandle<'static, u32, 12> {
 
 #[export("C")]
 impl<'a> GenericHandle<'a, u32, 12> {
-    pub fn export2(self) {}
+    pub fn export2(#[by_val] self) {}
 }
 
 #[export("C")]

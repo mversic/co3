@@ -160,6 +160,37 @@ pub fn repr_c_derive(item: syn::DeriveInput) -> Result<TokenStream> {
 }
 
 #[manyhow]
+#[proc_macro_attribute]
+#[allow(non_snake_case)]
+pub fn derive_ReprC(attr: TokenStream, item: TokenStream) -> Result<TokenStream> {
+    if !attr.is_empty() {
+        return Err(syn::Error::new_spanned(
+            attr,
+            "`#[derive_ReprC]` does not accept arguments",
+        ));
+    }
+
+    let item = syn::parse2::<syn::ItemTrait>(item)?;
+    let trait_name = &item.ident;
+    let (impl_generics, ty_generics, where_clause) = &item.generics.split_for_impl();
+
+    Ok(quote! {
+        #item
+
+        impl #impl_generics co3::dst::DstFamily for (dyn #trait_name #ty_generics) #where_clause {
+            type Kind = co3::dst::ExternTypeLike;
+        }
+
+        impl #impl_generics co3::ir::ReprFamily for (dyn #trait_name #ty_generics) #where_clause {
+            type Kind = co3::ir::Opaque;
+        }
+
+        //impl #impl_generics co3::dst::TraitObjectDst for (dyn #trait_name #ty_generics) #where_clause {
+        //}
+    })
+}
+
+#[manyhow]
 #[proc_macro]
 pub fn export_(input: TokenStream) -> Result<TokenStream> {
     export__(input)
@@ -268,49 +299,37 @@ fn extern__(input: TokenStream) -> Result<TokenStream> {
 #[manyhow]
 #[proc_macro_attribute]
 pub fn export(attr: TokenStream, item: TokenStream) -> Result<TokenStream> {
-    let generics_err = "generic types are not supported by `#[export]`; use `export_!`/`export_C!`";
+    fn take_forwarded_export_fn_attrs(attrs: &mut Vec<Attribute>) -> Vec<Attribute> {
+        let mut forwarded = Vec::new();
 
+        attrs.retain(|attr| {
+            if generate::is_unsafe_no_mangle(attr) || has_unsafe_export_name(attr) {
+                forwarded.push(attr.clone());
+                false
+            } else {
+                true
+            }
+        });
+
+        forwarded
+    }
+
+    fn strip_fn_arg_attrs(signature: &mut syn::Signature) {
+        for input in &mut signature.inputs {
+            let attrs = match input {
+                syn::FnArg::Receiver(node) => &mut node.attrs,
+                syn::FnArg::Typed(node) => &mut node.attrs,
+            };
+
+            attrs.retain(|a| !a.path().is_ident("by_val") && !a.path().is_ident("unstable_refs"));
+        }
+    }
+
+    let generics_err = "generic types are not supported by `#[export]`; use `export_!`/`export_C!`";
     let ExportAttrArgs { abi, crate_name } = parse_export_attr(attr)?;
 
     let mut item = syn::parse2::<syn::Item>(item)?;
     let result = match &mut item {
-        syn::Item::Impl(item) => {
-            let attrs = take_forwarded_export_attrs(&mut item.attrs);
-            let (impl_generics, _, where_clause) = item.generics.split_for_impl();
-
-            let defaultness = &item.defaultness;
-            let unsafety = &item.unsafety;
-            let self_ty = &item.self_ty;
-            let trait_ = item.trait_.as_ref().map(|(_, path, _)| quote!(#path for));
-
-            let items = item.items.iter_mut().filter_map(|item| {
-                let syn::ImplItem::Fn(method) = item else {
-                    return None;
-                };
-
-                let attrs = take_forwarded_export_attrs(&mut method.attrs);
-                let defaultness = &method.defaultness;
-                let mut sig = method.sig.clone();
-
-                ensure_export_arg_names(&mut sig);
-                Some(quote! { #(#attrs)* #defaultness #sig; })
-            });
-
-            quote! {
-                #(#attrs)*
-                #defaultness #unsafety impl #impl_generics #trait_ #self_ty #where_clause {
-                    #(#items)*
-                }
-            }
-        }
-        syn::Item::Fn(item) => {
-            let attrs = take_forwarded_export_attrs(&mut item.attrs);
-            let mut sig = item.sig.clone();
-
-            let vis = &item.vis;
-            ensure_export_arg_names(&mut sig);
-            quote! { #(#attrs)* #vis #sig; }
-        }
         syn::Item::Struct(item) => {
             let item_id_ty = parse_handle_id_attr(&mut item.attrs)?.map(|ty| quote!(#[id(#ty)]));
 
@@ -346,6 +365,67 @@ pub fn export(attr: TokenStream, item: TokenStream) -> Result<TokenStream> {
             let ident = &item.ident;
 
             quote! { #item_id #vis type #ident; }
+        }
+        syn::Item::Fn(item) => {
+            let attrs = take_forwarded_export_fn_attrs(&mut item.attrs);
+
+            let vis = &item.vis;
+
+            let mut sig = item.sig.clone();
+            ensure_export_arg_names(&mut sig);
+            strip_fn_arg_attrs(&mut item.sig);
+
+            quote! { #(#attrs)* #vis #sig; }
+        }
+        syn::Item::Impl(impl_) => {
+            let (impl_generics, _, where_clause) = impl_.generics.split_for_impl();
+
+            let mut attrs = Vec::new();
+            impl_.attrs.retain(|attr| {
+                if attr.path().is_ident("dispatch") {
+                    attrs.push(attr.clone());
+                    false
+                } else {
+                    true
+                }
+            });
+
+            let defaultness = &impl_.defaultness;
+            let unsafety = &impl_.unsafety;
+            let trait_ = impl_.trait_.as_ref().map(|(_, path, _)| quote!(#path for));
+            let self_ty = &impl_.self_ty;
+
+            let items = impl_.items.iter_mut().filter_map(|item| {
+                let syn::ImplItem::Fn(method) = item else {
+                    return None;
+                };
+
+                let attrs = take_forwarded_export_fn_attrs(&mut method.attrs);
+                let (defaultness, vis) = (&method.defaultness, &method.vis);
+
+                let mut sig = method.sig.clone();
+                ensure_export_arg_names(&mut sig);
+                strip_fn_arg_attrs(&mut method.sig);
+
+                Some(quote! { #(#attrs)* #vis #defaultness #sig; })
+            });
+
+            let item_impl = quote! {
+                #(#attrs)*
+                #defaultness #unsafety impl #impl_generics #trait_ #self_ty #where_clause {
+                    #(#items)*
+                }
+            };
+
+            for param in &mut impl_.generics.params {
+                let syn::GenericParam::Type(param) = param else {
+                    continue;
+                };
+
+                param.attrs.retain(|attr| !is_type_erased(attr));
+            }
+
+            item_impl
         }
         item => return Err(syn::Error::new_spanned(&*item, "Item not supported")),
     };
@@ -809,24 +889,6 @@ fn has_unsafe_export_name(attr: &Attribute) -> bool {
     }
 
     false
-}
-
-fn take_forwarded_export_attrs(attrs: &mut Vec<Attribute>) -> Vec<Attribute> {
-    let mut forwarded = Vec::new();
-
-    attrs.retain(|attr| {
-        if attr.path().is_ident("dispatch")
-            || generate::is_unsafe_no_mangle(attr)
-            || has_unsafe_export_name(attr)
-        {
-            forwarded.push(attr.clone());
-            false
-        } else {
-            true
-        }
-    });
-
-    forwarded
 }
 
 fn pack_type_drop_impls(decls: Vec<ForeignItem>) -> Result<Vec<ForeignItem>> {

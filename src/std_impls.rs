@@ -6,15 +6,18 @@ use alloc_crate::{
 };
 use core::{cell::UnsafeCell, ffi::c_void, ptr::NonNull};
 
+#[cfg(feature = "alloc")]
+use crate::boxed::{CBox, CBoxedSlice};
 use crate::{
+    ReprC,
     borrow::{Borrow, DropFamily, NeedsDrop, NoDrop, ToOwned},
-    ir::{ReprFamily, SizeFamily, Sized_, Transmuted},
+    dst::{DstFamily, Sized_},
+    heapify::Heapify,
+    ir::{ReprFamily, Transmuted},
     niche::{Niche, NicheFamily, StableNiche, WithCustomNiche, WithStableNiche, WithoutNiche},
     reprC,
     transmute::{CheckedTransmute, EncodeTransmuted},
 };
-#[cfg(feature = "alloc")]
-use crate::{boxed::CBox, vec::CVec};
 
 // FIXME: Replace with NonZero<T>
 macro_rules! non_zero_derive {
@@ -47,6 +50,57 @@ non_zero_derive! {
     core::num::NonZeroI128 => i128,
 }
 
+unsafe impl ReprC for () {}
+impl DstFamily for () {
+    type Kind = Sized_;
+}
+impl DropFamily for () {
+    type Kind = NoDrop;
+}
+impl NicheFamily for () {
+    type Kind = WithoutNiche;
+}
+//impl ReprFamily for () {
+//    type Kind = Robust;
+//}
+impl Heapify for () {
+    type Kind = Box<Self>;
+
+    #[inline(always)]
+    fn heapify(self) -> Self::Kind {
+        Box::new(self)
+    }
+
+    #[inline(always)]
+    fn unheapify(kind: Self::Kind) -> Self {
+        *kind
+    }
+}
+impl<const IN_STRUCT: bool> Borrow<IN_STRUCT> for () {
+    type Borrowed<'itm>
+        = &'itm Self
+    where
+        Self: 'itm;
+
+    type Store = ();
+
+    fn borrow<'itm>(self, (): &mut ()) -> Self::Borrowed<'itm>
+    where
+        Self: 'itm,
+    {
+        &()
+    }
+}
+impl<'r, const IN_STRUCT: bool> ToOwned<'r, IN_STRUCT> for () {
+    #[inline(always)]
+    fn to_owned(borrowed: Self::Borrowed<'r>) -> Self {
+        *borrowed
+    }
+}
+
+impl<T: ?Sized> DropFamily for core::marker::PhantomData<T> {
+    type Kind = NoDrop;
+}
 impl<T: ?Sized> DropFamily for core::mem::ManuallyDrop<T> {
     type Kind = NoDrop;
 }
@@ -58,6 +112,11 @@ where
     type Kind = <<Self as CheckedTransmute>::Target as DropFamily>::Kind;
 }
 
+//reprC! {
+//    unsafe impl(T: ?Sized) Transmuted for core::marker::PhantomData<T> {
+//        type Target = ();
+//    }
+//}
 reprC! {
     unsafe impl(T: ?Sized) Transmuted for core::mem::ManuallyDrop<T> {
         type Target = T;
@@ -106,14 +165,6 @@ unsafe impl CheckedTransmute for Box<c_void> {
     }
 }
 
-impl SizeFamily for str {
-    type Kind = <[u8] as SizeFamily>::Kind;
-}
-
-impl DropFamily for str {
-    type Kind = <[u8] as DropFamily>::Kind;
-}
-
 impl NicheFamily for str {
     type Kind = <[u8] as NicheFamily>::Kind;
 }
@@ -131,14 +182,14 @@ unsafe impl CheckedTransmute for str {
     }
 }
 
-impl<T: ?Sized + SizeFamily> SizeFamily for UnsafeCell<T> {
+impl<T: ?Sized + DstFamily> DstFamily for UnsafeCell<T> {
     type Kind = T::Kind;
 }
-impl<T> SizeFamily for NonNull<T> {
+impl<T> DstFamily for NonNull<T> {
     type Kind = Sized_;
 }
 #[cfg(feature = "alloc")]
-impl SizeFamily for String {
+impl DstFamily for String {
     type Kind = Sized_;
 }
 
@@ -210,10 +261,51 @@ impl<T> Niche for NonNull<T> {
 }
 #[cfg(feature = "alloc")]
 impl Niche for String {
-    const NICHE_VALUE: Self::CType = CVec::none();
+    const NICHE_VALUE: Self::CType = CBoxedSlice::none();
 }
 
-impl<T> Borrow for NonNull<T> {
+impl<T> Heapify for NonNull<T> {
+    type Kind = Self;
+
+    #[inline(always)]
+    fn heapify(self) -> Self::Kind {
+        self
+    }
+
+    #[inline(always)]
+    fn unheapify(kind: Self::Kind) -> Self {
+        kind
+    }
+}
+#[cfg(feature = "alloc")]
+impl Heapify for String {
+    type Kind = Self;
+
+    #[inline(always)]
+    fn heapify(self) -> Self::Kind {
+        self
+    }
+
+    #[inline(always)]
+    fn unheapify(kind: Self::Kind) -> Self {
+        kind
+    }
+}
+impl<T: Heapify> Heapify for UnsafeCell<T> {
+    type Kind = T::Kind;
+
+    #[inline(always)]
+    fn heapify(self) -> Self::Kind {
+        self.into_inner().heapify()
+    }
+
+    #[inline(always)]
+    fn unheapify(kind: Self::Kind) -> Self {
+        UnsafeCell::new(T::unheapify(kind))
+    }
+}
+
+impl<T, const IN_STRUCT: bool> Borrow<IN_STRUCT> for NonNull<T> {
     type Borrowed<'itm>
         = Self
     where
@@ -229,7 +321,7 @@ impl<T> Borrow for NonNull<T> {
     }
 }
 #[cfg(feature = "alloc")]
-impl Borrow for String {
+impl<const IN_STRUCT: bool> Borrow<IN_STRUCT> for String {
     type Borrowed<'itm>
         = &'itm str
     where
@@ -245,18 +337,42 @@ impl Borrow for String {
         store
     }
 }
+impl<T: Borrow<IN_STRUCT>, const IN_STRUCT: bool> Borrow<IN_STRUCT> for UnsafeCell<T> {
+    type Borrowed<'itm>
+        = T::Borrowed<'itm>
+    where
+        Self: 'itm;
 
-impl<'r, T: 'r> ToOwned<'r> for NonNull<T> {
+    type Store = T::Store;
+
+    #[inline(always)]
+    fn borrow<'itm>(self, store: &'itm mut Self::Store) -> Self::Borrowed<'itm>
+    where
+        Self: 'itm,
+    {
+        self.into_inner().borrow(store)
+    }
+}
+
+impl<'r, T: 'r, const IN_STRUCT: bool> ToOwned<'r, IN_STRUCT> for NonNull<T> {
     #[inline(always)]
     fn to_owned(borrowed: Self::Borrowed<'r>) -> Self {
         borrowed
     }
 }
 #[cfg(feature = "alloc")]
-impl<'r> ToOwned<'r> for String {
+impl<'r, const IN_STRUCT: bool> ToOwned<'r, IN_STRUCT> for String {
     #[inline(always)]
     fn to_owned(borrowed: Self::Borrowed<'r>) -> Self {
         borrowed.to_string()
+    }
+}
+impl<'r, R: ToOwned<'r, IN_STRUCT>, const IN_STRUCT: bool> ToOwned<'r, IN_STRUCT>
+    for UnsafeCell<R>
+{
+    #[inline(always)]
+    fn to_owned(borrowed: Self::Borrowed<'r>) -> Self {
+        UnsafeCell::new(ToOwned::to_owned(borrowed))
     }
 }
 
@@ -373,7 +489,7 @@ mod tests {
         assert_impl_all!(Vec<UnsafeCell<NonZeroU8>>:
             ReprFamily<Kind = Vec<Transmuted>>,
             NicheFamily<Kind = WithCustomNiche>,
-            Niche<CType = CVec<u8>>,
+            Niche<CType = CBoxedSlice<u8>>,
             // FIXME:
             //DecodeWithStore<'static>,
             EncodeWithStore,
@@ -397,22 +513,22 @@ mod tests {
         // FIXME:
         //#[cfg(any(
         //    feature = "unsafe-optimizations",
-        //    all(feature = "alloc", feature = "unstable-refs"),
+        //    feature = "alloc",
         //))]
         //assert_impl_all!(&mut UnsafeCell<NonZeroU8>: EncodeWithStore);
         //#[cfg(any(
         //    feature = "unsafe-optimizations",
-        //    all(feature = "alloc", feature = "unstable-refs"),
+        //    feature = "alloc",
         //))]
         //assert_impl_all!(&mut [UnsafeCell<NonZeroU8>]: EncodeWithStore);
         //#[cfg(not(any(
         //    feature = "unsafe-optimizations",
-        //    all(feature = "alloc", feature = "unstable-refs"),
+        //    feature = "alloc",
         //)))]
         //assert_not_impl_any!(&mut UnsafeCell<NonZeroU8>: EncodeWithStore);
         //#[cfg(not(any(
         //    feature = "unsafe-optimizations",
-        //    all(feature = "alloc", feature = "unstable-refs"),
+        //    feature = "alloc",
         //)))]
         //assert_not_impl_any!(&mut [UnsafeCell<NonZeroU8>]: EncodeWithStore);
     }

@@ -402,14 +402,18 @@ fn gen_handle_retype_stmts(
             continue;
         };
 
-        let (ty, erased_ty) = if ownership_mode_for_arg(attrs, ty) == OwnershipMode::Borrow {
-            (
-                quote! { <#ty as co3::borrow::Borrow>::Borrowed<'_> },
-                quote! { <#erased_ty as co3::borrow::Borrow>::Borrowed<'_> },
-            )
-        } else {
-            (quote! { #ty }, quote! { #erased_ty })
+        let (ty, erased_ty) = match ownership_mode_for_arg(attrs, ty) {
+            OwnershipMode::Borrow => (
+                quote! { <#ty as co3::borrow::Borrow<false>>::Borrowed<'_> },
+                quote! { <#erased_ty as co3::borrow::Borrow<false>>::Borrowed<'_> },
+            ),
+            OwnershipMode::ByValue => (
+                quote! { <#ty as co3::heapify::Heapify>::Kind },
+                quote! { <#erased_ty as co3::heapify::Heapify>::Kind },
+            ),
+            OwnershipMode::Copied => (quote! { #ty }, quote! { #erased_ty }),
         };
+
         let (src_ty, dst_ty) = match direction {
             RetypeDirection::Erase => (
                 quote! { <#ty as co3::ExternC>::CType },
@@ -424,10 +428,7 @@ fn gen_handle_retype_stmts(
         stmts.push(quote! {
             // FIXME: THIS IS EXTREMELY DANGEROUS!!! but I don't have time atm
             // Replace transmute with proper conversion or define an unsafe trait
-            let #arg_name = unsafe { core::mem::transmute::<
-                #src_ty,
-                #dst_ty
-            >(#arg_name) };
+            let #arg_name = unsafe { core::mem::transmute::<#src_ty, #dst_ty>(#arg_name) };
         });
     }
 
@@ -504,7 +505,7 @@ impl VisitMut for DynHandleEraser {
             self.was_erased = true;
 
             *node = parse_quote! {
-                co3::handle::Erased<#node>
+                co3::handle::Erased
             };
         }
     }

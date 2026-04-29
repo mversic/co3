@@ -29,6 +29,12 @@ pub(crate) fn push_error(errors: &mut Option<syn::Error>, err: syn::Error) {
     }
 }
 
+pub(crate) fn unstable_refs_for_arg(attrs: &[syn::Attribute]) -> bool {
+    attrs
+        .iter()
+        .any(|attr| attr.path().is_ident("unstable_refs"))
+}
+
 pub(crate) fn is_type_erased(attr: &Attribute) -> bool {
     attr.path().is_ident("erased")
 }

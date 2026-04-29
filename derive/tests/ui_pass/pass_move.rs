@@ -8,7 +8,7 @@ mod provider {
     use super::*;
 
     impl Value {
-        fn transform(self, other: &Value) -> Value {
+        fn transform(self, other: &Self) -> Self {
             Self(Box::new(*self.0 + *other.0))
         }
     }
@@ -20,7 +20,7 @@ mod provider {
     export_C! {
         impl Value {
             #[unsafe(export_name = "transform")]
-            fn transform(move self, move other: &Value) -> Value;
+            fn transform(move self, move other: &Self) -> Self;
         }
 
         #[unsafe(export_name = "combine")]
@@ -35,7 +35,7 @@ extern_C! {
     impl Value {
         /// Documentation
         #[link_name = "transform"]
-        fn transform2(move self: Self, other: &Value) -> Value;
+        fn transform2(move self: Self, other: &Self) -> Self;
     }
 
     /// Documentation

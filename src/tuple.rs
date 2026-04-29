@@ -66,7 +66,8 @@ use crate::{
     ExternC, ReprC, Store,
     borrow::{Borrow, DropFamily, ToOwned},
     cloned::DecodeCloned,
-    ir::SizeFamily,
+    dst::DstFamily,
+    heapify::Heapify,
     niche::{Niche, NicheFamily, WithNiche, WithoutNiche},
 };
 
@@ -85,9 +86,7 @@ macro_rules! impl_tuple {
             impl($($ty),+) Cloned for ($($ty,)+) {}
         }
 
-        impl<$($ty: SizeFamily),+> SizeFamily for ($($ty,)+) {
-            type Kind = <impl_tuple!(@last_ty $($ty),+) as SizeFamily>::Kind;
-        }
+        impl_tuple!(@dst ($($ty),+));
 
         impl<$($ty: ExternC),+> crate::ExternC for ($($ty,)+) {
             type CType = $ffi_ty<$($ty::CType),+>;
@@ -121,12 +120,28 @@ macro_rules! impl_tuple {
                 }
             }
         }
-        impl<$($ty: Borrow),+> Borrow for ($($ty,)+) {
-            type Borrowed<'itm> = ($( $ty::Borrowed<'itm>, )+)
+
+        impl<$($ty: Heapify),+> Heapify for ($($ty,)+) {
+            type Kind = ($( <$ty>::Kind, )+);
+
+            #[expect(non_snake_case)]
+            fn heapify(self) -> Self::Kind {
+                let ($($ty,)+) = self;
+                ($( <$ty>::heapify($ty), )+)
+            }
+
+            #[expect(non_snake_case)]
+            fn unheapify(($($ty,)+): Self::Kind) -> Self {
+                ($( <$ty>::unheapify($ty), )+)
+            }
+        }
+
+        impl<$($ty: Borrow<true>),+, const IN_STRUCT: bool> Borrow<IN_STRUCT> for ($($ty,)+) {
+            type Borrowed<'itm> = ($( <$ty as Borrow<true>>::Borrowed<'itm>, )+)
             where
                 Self: 'itm;
 
-            type Store = ($( $ty::Store, )+);
+            type Store = ($( <$ty as Borrow<true>>::Store, )+);
 
             #[inline(always)]
             #[expect(non_snake_case)]
@@ -137,15 +152,15 @@ macro_rules! impl_tuple {
                 impl_tuple! {@decl_priv_store $($ty),+}
 
                 let ($($ty,)+) = self;
-                let store: private_store::Store<$(<$ty as Borrow>::Store),+> = store.into();
-                ($( $ty::borrow($ty, store.$ty), )+)
+                let store: private_store::Store<$(<$ty as Borrow<true>>::Store),+> = store.into();
+                ($( <$ty as Borrow<true>>::borrow($ty, store.$ty), )+)
             }
         }
 
-        impl<'r, $($ty: ToOwned<'r>),+> ToOwned<'r> for ($($ty,)+) {
+        impl<'r, $($ty: ToOwned<'r, true>),+, const IN_STRUCT: bool> ToOwned<'r, IN_STRUCT> for ($($ty,)+) {
             #[expect(non_snake_case)]
             fn to_owned(($($ty,)+): Self::Borrowed<'r>) -> Self {
-                ($( $ty::to_owned($ty), )+)
+                ($( <$ty as ToOwned<'r, true>>::to_owned($ty), )+)
             }
         }
 
@@ -196,6 +211,20 @@ macro_rules! impl_tuple {
         }
     };
 
+    (@dst_split ($($head:ident,)*) $last:ident) => {
+        impl<$($head,)* $last: DstFamily> DstFamily for ($($head,)* $last,) {
+            type Kind = <$last as DstFamily>::Kind;
+        }
+    };
+
+    (@dst_split ($($head:ident,)*) $next:ident, $($tail:ident),+) => {
+        impl_tuple!(@dst_split ($($head,)* $next,) $($tail),+);
+    };
+
+    (@dst ($($ty:ident),+)) => {
+        impl_tuple!(@dst_split () $($ty),+);
+    };
+
     // NOTE: This is a trick to index tuples
     ( @decl_priv_store $( $ty:ident ),+) => {
         mod private_store {
@@ -225,14 +254,6 @@ macro_rules! impl_tuple {
             }
         }
     };
-
-    ( @last_ty $last:ident ) => {
-        $last
-    };
-    ( @last_ty $head:ident, $( $tail:ident ),+ ) => {
-        impl_tuple!(@last_ty $( $tail ),+)
-    };
-
 }
 
 impl_tuple! {(A) -> CTuple1}
@@ -333,21 +354,11 @@ impl<A: DropFamily> DropFamily for (A,) {
     type Kind = A::Kind;
 }
 
-impl<A, B> NicheFamily for (A, B)
-where
-    A: NicheFamily,
-    B: NicheFamily,
-    A::Kind: Add<B::Kind>,
-{
+impl<A: NicheFamily<Kind: Add<B::Kind>>, B: NicheFamily> NicheFamily for (A, B) {
     type Kind = <A::Kind as Add<B::Kind>>::Output;
 }
 
-impl<A, B> DropFamily for (A, B)
-where
-    A: DropFamily,
-    B: DropFamily,
-    A::Kind: Add<B::Kind>,
-{
+impl<A: DropFamily<Kind: Add<B::Kind>>, B: DropFamily> DropFamily for (A, B) {
     type Kind = <A::Kind as Add<B::Kind>>::Output;
 }
 
@@ -383,23 +394,16 @@ mod tests {
     use alloc_crate::{boxed::Box, vec::Vec};
     use core::num::NonZeroU8;
 
-    use static_assertions::assert_impl_all;
-    #[cfg(not(feature = "unstable-refs"))]
-    use static_assertions::assert_not_impl_any;
+    use static_assertions::{assert_impl_all, assert_not_impl_any};
 
     use super::*;
-    #[cfg(feature = "unstable-refs")]
-    use crate::slice::{CSlice, CSliceMut};
+    #[cfg(feature = "alloc")]
+    use crate::boxed::{CBox, CBoxedSlice};
     use crate::{
-        DecodeWithStore, EncodeWithStore,
+        CSlice, CSliceMut, Decode, DecodeWithStore, Encode, EncodeWithStore,
         ir::ReprFamily,
         niche::{StableNiche, WithCustomNiche, WithStableNiche},
         option::COption,
-    };
-    #[cfg(feature = "alloc")]
-    use crate::{
-        boxed::{CBox, CBoxedSlice},
-        vec::CVec,
     };
 
     #[test]
@@ -412,13 +416,11 @@ mod tests {
             EncodeWithStore,
         );
 
-        #[cfg(feature = "unstable-refs")]
         assert_impl_all!(&(u8, u8, u8):
             ReprFamily<Kind = &'static (u8, u8, u8)>,
             NicheFamily<Kind = WithStableNiche>,
             StableNiche<CType = *const CTuple3<u8, u8, u8>>,
         );
-        #[cfg(feature = "unstable-refs")]
         assert_impl_all!(&mut (u8, u8, u8):
             ReprFamily<Kind = &'static mut (u8, u8, u8)>,
             NicheFamily<Kind = WithStableNiche>,
@@ -433,13 +435,11 @@ mod tests {
             //DecodeWithStore<'static>,
             EncodeWithStore,
         );
-        #[cfg(feature = "unstable-refs")]
         assert_impl_all!(&[(u8, u8, u8)]:
             ReprFamily<Kind = &'static [(u8, u8, u8)]>,
             NicheFamily<Kind = WithCustomNiche>,
             Niche<CType = CSlice<CTuple3<u8, u8, u8>>>,
         );
-        #[cfg(feature = "unstable-refs")]
         assert_impl_all!(&mut [(u8, u8, u8)]:
             ReprFamily<Kind = &'static mut [(u8, u8, u8)]>,
             NicheFamily<Kind = WithCustomNiche>,
@@ -458,7 +458,7 @@ mod tests {
         assert_impl_all!(Vec<(u8, u8, u8)>:
             ReprFamily<Kind = Vec<(u8, u8, u8)>>,
             NicheFamily<Kind = WithCustomNiche>,
-            Niche<CType = CVec<CTuple3<u8, u8, u8>>>,
+            Niche<CType = CBoxedSlice<CTuple3<u8, u8, u8>>>,
             // FIXME:
             //DecodeWithStore<'static>,
             EncodeWithStore,
@@ -478,22 +478,15 @@ mod tests {
             EncodeWithStore,
         );
 
-        #[cfg(feature = "unstable-refs")]
         assert_impl_all!(&(u8, u8, u8): EncodeWithStore, DecodeWithStore<'static>);
-        #[cfg(feature = "unstable-refs")]
         assert_impl_all!(&[(u8, u8, u8)]: EncodeWithStore, DecodeWithStore<'static>);
-        #[cfg(feature = "unstable-refs")]
         assert_impl_all!(&mut (u8, u8, u8): EncodeWithStore, DecodeWithStore<'static>);
-        #[cfg(feature = "unstable-refs")]
         assert_impl_all!(&mut [(u8, u8, u8)]: EncodeWithStore, DecodeWithStore<'static>);
-        #[cfg(not(feature = "unstable-refs"))]
-        assert_not_impl_any!(&(u8, u8, u8): EncodeWithStore, DecodeWithStore<'static>);
-        #[cfg(not(feature = "unstable-refs"))]
-        assert_not_impl_any!(&[(u8, u8, u8)]: EncodeWithStore, DecodeWithStore<'static>);
-        #[cfg(not(feature = "unstable-refs"))]
-        assert_not_impl_any!(&mut (u8, u8, u8): EncodeWithStore, DecodeWithStore<'static>);
-        #[cfg(not(feature = "unstable-refs"))]
-        assert_not_impl_any!(&mut [(u8, u8, u8)]: EncodeWithStore, DecodeWithStore<'static>);
+
+        assert_not_impl_any!(&(u8, u8, u8): Encode, Decode<'static>);
+        assert_not_impl_any!(&[(u8, u8, u8)]: Encode, Decode<'static>);
+        assert_not_impl_any!(&mut (u8, u8, u8): Encode, Decode<'static>);
+        assert_not_impl_any!(&mut [(u8, u8, u8)]: Encode, Decode<'static>);
     }
 
     #[test]
@@ -509,13 +502,11 @@ mod tests {
             EncodeWithStore,
         );
 
-        #[cfg(feature = "unstable-refs")]
         assert_impl_all!(&(u8, NonZeroU8, bool):
             ReprFamily<Kind = &'static (u8, NonZeroU8, bool)>,
             NicheFamily<Kind = WithStableNiche>,
             StableNiche<CType = *const CTuple3<u8, u8, u8>>,
         );
-        #[cfg(feature = "unstable-refs")]
         assert_impl_all!(&mut (u8, NonZeroU8, bool):
             ReprFamily<Kind = &'static mut (u8, NonZeroU8, bool)>,
             NicheFamily<Kind = WithStableNiche>,
@@ -530,13 +521,11 @@ mod tests {
             //DecodeWithStore<'static>,
             EncodeWithStore,
         );
-        #[cfg(feature = "unstable-refs")]
         assert_impl_all!(&[(u8, NonZeroU8, bool)]:
             ReprFamily<Kind = &'static [(u8, NonZeroU8, bool)]>,
             NicheFamily<Kind = WithCustomNiche>,
             Niche<CType = CSlice<CTuple3<u8, u8, u8>>>,
         );
-        #[cfg(feature = "unstable-refs")]
         assert_impl_all!(&mut [(u8, NonZeroU8, bool)]:
             ReprFamily<Kind = &'static mut [(u8, NonZeroU8, bool)]>,
             NicheFamily<Kind = WithCustomNiche>,
@@ -555,7 +544,7 @@ mod tests {
         assert_impl_all!(Vec<(u8, NonZeroU8, bool)>:
             ReprFamily<Kind = Vec<(u8, NonZeroU8, bool)>>,
             NicheFamily<Kind = WithCustomNiche>,
-            Niche<CType = CVec<CTuple3<u8, u8, u8>>>,
+            Niche<CType = CBoxedSlice<CTuple3<u8, u8, u8>>>,
             // FIXME:
             //DecodeWithStore<'static>,
             EncodeWithStore,
@@ -576,21 +565,14 @@ mod tests {
             //Niche<CType = CTuple3<u8, u8, u8>>,
         );
 
-        #[cfg(feature = "unstable-refs")]
         assert_impl_all!(&(u8, NonZeroU8, bool): EncodeWithStore, DecodeWithStore<'static>);
-        #[cfg(feature = "unstable-refs")]
         assert_impl_all!(&[(u8, NonZeroU8, bool)]: EncodeWithStore, DecodeWithStore<'static>);
-        #[cfg(feature = "unstable-refs")]
         assert_impl_all!(&mut (u8, NonZeroU8, bool): EncodeWithStore, DecodeWithStore<'static>);
-        #[cfg(feature = "unstable-refs")]
         assert_impl_all!(&mut [(u8, NonZeroU8, bool)]: EncodeWithStore, DecodeWithStore<'static>);
-        #[cfg(not(feature = "unstable-refs"))]
-        assert_not_impl_any!(&(u8, NonZeroU8, bool): EncodeWithStore, DecodeWithStore<'static>);
-        #[cfg(not(feature = "unstable-refs"))]
-        assert_not_impl_any!(&[(u8, NonZeroU8, bool)]: EncodeWithStore, DecodeWithStore<'static>);
-        #[cfg(not(feature = "unstable-refs"))]
-        assert_not_impl_any!(&mut (u8, NonZeroU8, bool): EncodeWithStore, DecodeWithStore<'static>);
-        #[cfg(not(feature = "unstable-refs"))]
-        assert_not_impl_any!(&mut [(u8, NonZeroU8, bool)]: EncodeWithStore, DecodeWithStore<'static>);
+
+        assert_not_impl_any!(&(u8, NonZeroU8, bool): Encode, Decode<'static>);
+        assert_not_impl_any!(&[(u8, NonZeroU8, bool)]: Encode, Decode<'static>);
+        assert_not_impl_any!(&mut (u8, NonZeroU8, bool): Encode, Decode<'static>);
+        assert_not_impl_any!(&mut [(u8, NonZeroU8, bool)]: Encode, Decode<'static>);
     }
 }

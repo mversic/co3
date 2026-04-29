@@ -16,7 +16,7 @@ use crate::{
         niche::{gen_enum_niche_ir, gen_struct_niche_ir},
         repr_c::{
             assert_drop_impl, gen_data_enum, gen_data_enum_variant_name, gen_extern_c_bounds,
-            gen_fieldless_enum_drop_ir, gen_repr_c_struct, gen_sized_size_family,
+            gen_fieldless_enum_drop_ir, gen_repr_c_struct, gen_sized_family,
             gen_struct_size_family,
         },
     },
@@ -31,9 +31,14 @@ pub(super) fn derive_no_repr_struct<const NEEDS_DROP: bool>(
 ) -> TokenStream {
     let (impl_generics, ty_generics, where_clause) = generics.split_for_impl();
 
-    let (repr_c_struct_name, repr_c_struct) = gen_repr_c_struct(name, generics, fields);
+    let (repr_c_struct_name, repr_c_struct) =
+        gen_repr_c_struct::<NEEDS_DROP>(name, generics, fields);
     let field_types = fields.iter().map(|f| &f.ty).collect::<Vec<_>>();
-    let size_family_impl = gen_struct_size_family(name, generics, &field_types);
+    let size_family_impl = if NEEDS_DROP {
+        gen_struct_size_family(name, generics, &field_types)
+    } else {
+        gen_sized_family(name, generics)
+    };
 
     let predicates = where_clause
         .as_ref()
@@ -174,12 +179,13 @@ pub(super) fn derive_no_repr_data_enum<const NEEDS_DROP: bool>(
     local: bool,
 ) -> TokenStream {
     let inferred_repr = infer_repr(variants.len());
-    let size_family_impl = gen_sized_size_family(enum_name, generics);
+    let size_family_impl = gen_sized_family(enum_name, generics);
 
     let (repr_c_enum_name, repr_c_enum) =
         gen_data_enum(enum_name, generics, inferred_repr, variants);
 
     let (impl_generics, ty_generics, where_clause) = generics.split_for_impl();
+
     let params = &generics.params;
     let decode_params = if generics
         .lifetimes()
@@ -360,7 +366,7 @@ pub(super) fn derive_no_repr_fieldless_enum(
     variants: &[SpannedValue<FfiTypeVariant>],
 ) -> TokenStream {
     let inferred_repr = infer_repr(variants.len());
-    let size_family_impl = gen_sized_size_family(enum_name, generics);
+    let size_family_impl = gen_sized_family(enum_name, generics);
 
     let basic_impls = gen_ir_impl(enum_name, &parse_quote!( #inferred_repr ), &[], generics);
 
@@ -417,7 +423,7 @@ fn gen_borrow_store_type(name: &Ident, fields: &[&syn::Type]) -> TokenStream {
     let store_name = gen_store_name(name);
 
     let stores = fields.iter().map(|field| {
-        quote! { <#field as co3::borrow::Borrow>::Store }
+        quote! { <#field as co3::borrow::Borrow<true>>::Store }
     });
 
     quote! { #store_name<#(#stores),*> }
@@ -452,14 +458,14 @@ pub(super) fn gen_struct_borrow_ir<const NEEDS_DROP: bool>(
                     let Self { #(#field_names),* } = self;
 
                     #borrowed_struct_name {
-                        #(#field_names: co3::borrow::Borrow::borrow(#field_names, &mut store.#field_indices)),*
+                        #(#field_names: co3::borrow::Borrow::<true>::borrow(#field_names, &mut store.#field_indices)),*
                     }
                 },
                 quote! {
                     let #borrowed_struct_name { #(#field_names),* } = borrowed;
 
                     Self {
-                        #(#field_names: co3::borrow::ToOwned::to_owned(#field_names)),*
+                        #(#field_names: co3::borrow::ToOwned::<'_ršč, true>::to_owned(#field_names)),*
                     }
                 },
             )
@@ -475,28 +481,28 @@ pub(super) fn gen_struct_borrow_ir<const NEEDS_DROP: bool>(
                     let Self(#(#field_vars),*) = self;
 
                     #borrowed_struct_name(
-                        #(co3::borrow::Borrow::borrow(#field_vars, &mut store.#field_indices)),*
+                        #(co3::borrow::Borrow::<true>::borrow(#field_vars, &mut store.#field_indices)),*
                     )
                 },
                 quote! {
                     let #borrowed_struct_name(#(#field_vars),*) = borrowed;
 
                     Self(
-                        #(co3::borrow::ToOwned::to_owned(#field_vars)),*
+                        #(co3::borrow::ToOwned::<'_ršč, true>::to_owned(#field_vars)),*
                     )
                 },
             )
         }
         Style::Unit => unreachable!("ZSTs are not FFI safe"),
     };
-    let drop_ir = gen_drop_ir::<NEEDS_DROP>(
+    let drop_ir = NEEDS_DROP.then_some(gen_drop_ir(
         name,
         &field_types,
         generics,
         &borrow_store,
         &borrow_impl,
         &to_owned_impl,
-    );
+    ));
 
     quote! {
         #borrowed_struct
@@ -529,7 +535,7 @@ pub(super) fn gen_data_enum_borrow_ir<const NEEDS_DROP: bool>(
             |_| {
                 quote! {
                     Self::#variant_name(payload) => #borrowed_enum_name::#variant_name(
-                        co3::borrow::Borrow::borrow(payload, &mut store.#idx)
+                        co3::borrow::Borrow::<true>::borrow(payload, &mut store.#idx)
                     )
                 }
             },
@@ -540,7 +546,7 @@ pub(super) fn gen_data_enum_borrow_ir<const NEEDS_DROP: bool>(
             |_| {
                 quote! {
                     #borrowed_enum_name::#variant_name(payload) => {
-                        Self::#variant_name(co3::borrow::ToOwned::to_owned(payload))
+                        Self::#variant_name(co3::borrow::ToOwned::<'_ršč, true>::to_owned(payload))
                     }
                 }
             },
@@ -567,14 +573,14 @@ pub(super) fn gen_data_enum_borrow_ir<const NEEDS_DROP: bool>(
             #(#variants_to_owned,)*
         }
     };
-    let drop_ir = gen_drop_ir::<NEEDS_DROP>(
+    let drop_ir = NEEDS_DROP.then_some(gen_drop_ir(
         enum_name,
         &field_types,
         generics,
         &borrow_store,
         &borrow_impl,
         &to_owned_impl,
-    );
+    ));
 
     quote! {
         #borrowed_enum
@@ -583,7 +589,7 @@ pub(super) fn gen_data_enum_borrow_ir<const NEEDS_DROP: bool>(
     }
 }
 
-fn gen_drop_ir<const NEEDS_DROP: bool>(
+fn gen_drop_ir(
     name: &syn::Ident,
     types: &[&syn::Type],
     generics: &syn::Generics,
@@ -592,157 +598,29 @@ fn gen_drop_ir<const NEEDS_DROP: bool>(
     to_owned_impl: &TokenStream,
 ) -> TokenStream {
     let (impl_generics, ty_generics, where_clause) = generics.split_for_impl();
+
+    let mut params = generics.params.clone();
+    params.push(parse_quote!(const IN_STRUCT: bool));
+
     let predicates = where_clause
         .as_ref()
         .map(|where_clause| &where_clause.predicates);
 
+    let for_dummy = generics
+        .params
+        .is_empty()
+        .then_some(quote! { for<'_dummy> });
+
+    let impl_drop_assert = assert_drop_impl(generics, name);
     let (fields_tuple, _, _) = build_type_tuple(types);
     let borrow_view_bounds = gen_borrow_view_bounds(types, generics, false);
     let to_owned_bounds = gen_to_owned_bounds(types, generics);
-
-    if !NEEDS_DROP {
-        let no_drop_borrow = no_drop_borrow::<false>(name, generics);
-        let no_drop_to_owned = no_drop_to_owned::<false>(name, generics);
-
-        return quote! {
-            impl #impl_generics co3::borrow::DropFamily for #name #ty_generics where #predicates {
-                type Kind = co3::borrow::NoDrop;
-            }
-
-            #no_drop_borrow
-            #no_drop_to_owned
-        };
-    }
 
     let is_parametrized = types.iter().any(|ty| is_type_parameterized(ty, generics));
     let drop_family_bound = is_parametrized.then_some(quote! {
         #fields_tuple: co3::borrow::DropFamily,
     });
-
-    let no_drop_borrow = no_drop_borrow::<true>(name, generics);
-    let no_drop_to_owned = no_drop_to_owned::<true>(name, generics);
-    let needs_drop_borrow = needs_drop_borrow::<true>(
-        name,
-        generics,
-        &borrow_view_bounds,
-        borrow_store,
-        borrow_impl,
-    );
-    let needs_drop_to_owned =
-        needs_drop_to_owned::<true>(name, generics, &to_owned_bounds, to_owned_impl);
-
-    quote! {
-        impl #impl_generics co3::borrow::DropFamily for #name #ty_generics
-        where
-            #drop_family_bound
-            #predicates
-        {
-            type Kind = <#fields_tuple as co3::borrow::DropFamily>::Kind;
-        }
-
-        const _: () = {
-            use co3::borrow::{Borrow, ToOwned};
-
-            co3::disjoint_impls! {
-                #[disjoint_impls(remote)]
-                pub trait Borrow: Sized {
-                    type Borrowed<'_išč>
-                    where
-                        Self: '_išč;
-                    type Store: Default;
-
-                    fn borrow<'_išč>(self, store: &'_išč mut Self::Store) -> Self::Borrowed<'_išč>
-                    where
-                        Self: '_išč;
-                }
-
-                #needs_drop_borrow
-                #no_drop_borrow
-            }
-
-            co3::disjoint_impls! {
-                #[disjoint_impls(remote)]
-                pub trait ToOwned<'_ršč>: Borrow + Sized {
-                    fn to_owned(borrowed: Self::Borrowed<'_ršč>) -> Self;
-                }
-
-                #needs_drop_to_owned
-                #no_drop_to_owned
-            }
-        };
-    }
-}
-
-fn no_drop_borrow<const ADD_BOUND: bool>(
-    name: &syn::Ident,
-    generics: &syn::Generics,
-) -> TokenStream {
-    let (impl_generics, ty_generics, where_clause) = generics.split_for_impl();
-
-    let predicates = where_clause
-        .as_ref()
-        .map(|where_clause| &where_clause.predicates);
-
-    let impl_drop_assert = assert_drop_impl();
-    let for_dummy = generics
-        .params
-        .is_empty()
-        .then_some(quote! { for<'_dummy> });
-
-    let bound = ADD_BOUND.then_some(quote! {
-        #for_dummy Self: co3::borrow::DropFamily<Kind = co3::borrow::NoDrop>,
-    });
-    let borrow_trait = if ADD_BOUND {
-        quote! { Borrow }
-    } else {
-        quote! { co3::borrow::Borrow }
-    };
-
-    quote! {
-        impl #impl_generics #borrow_trait for #name #ty_generics
-        where
-            #bound
-            #for_dummy Self: Sized,
-            #predicates
-        {
-            type Borrowed<'_išč> = Self
-            where
-                Self: '_išč;
-
-            type Store = ();
-
-            #[inline(always)]
-            fn borrow<'_išč>(self, (): &mut ()) -> Self::Borrowed<'_išč>
-            where
-                Self: '_išč,
-            {
-                #impl_drop_assert
-                self
-            }
-        }
-    }
-}
-
-fn needs_drop_borrow<const ADD_BOUND: bool>(
-    name: &syn::Ident,
-    generics: &syn::Generics,
-    borrow_view_bounds: &TokenStream,
-    borrow_store: &TokenStream,
-    borrow_impl: &TokenStream,
-) -> TokenStream {
-    let (impl_generics, ty_generics, where_clause) = generics.split_for_impl();
-
-    let predicates = where_clause
-        .as_ref()
-        .map(|where_clause| &where_clause.predicates);
-
-    let for_dummy = generics
-        .params
-        .is_empty()
-        .then_some(quote! { for<'_dummy> });
-
     let borrowed_name = gen_borrowed_name(name);
-    let impl_drop_assert = assert_drop_impl();
     let generic_idents = generics.params.iter().map(|param| match param {
         syn::GenericParam::Lifetime(param) => {
             let lifetime = &param.lifetime;
@@ -758,14 +636,35 @@ fn needs_drop_borrow<const ADD_BOUND: bool>(
         }
     });
 
-    let bound = ADD_BOUND.then_some(quote! {
-        #for_dummy Self: co3::borrow::DropFamily<Kind = co3::borrow::NeedsDrop>,
-    });
-
     quote! {
-        impl #impl_generics Borrow for #name #ty_generics
+        impl #impl_generics co3::borrow::DropFamily for #name #ty_generics
         where
-            #bound
+            #drop_family_bound
+            #predicates
+        {
+            type Kind = <#fields_tuple as co3::borrow::DropFamily>::Kind;
+        }
+
+        impl #impl_generics co3::heapify::Heapify for #name #ty_generics
+        where
+            #for_dummy Self: Sized,
+            #predicates
+        {
+            type Kind = Self;
+
+            #[inline(always)]
+            fn heapify(self) -> Self::Kind {
+                self
+            }
+
+            #[inline(always)]
+            fn unheapify(kind: Self::Kind) -> Self {
+                kind
+            }
+        }
+
+        impl<#params> co3::borrow::Borrow<IN_STRUCT> for #name #ty_generics
+        where
             #for_dummy Self: Sized,
             #borrow_view_bounds
             #predicates
@@ -785,78 +684,11 @@ fn needs_drop_borrow<const ADD_BOUND: bool>(
                 #borrow_impl
             }
         }
-    }
-}
 
-fn no_drop_to_owned<const ADD_BOUND: bool>(
-    name: &syn::Ident,
-    generics: &syn::Generics,
-) -> TokenStream {
-    let (_, ty_generics, where_clause) = generics.split_for_impl();
-
-    let params = &generics.params;
-    let predicates = where_clause
-        .as_ref()
-        .map(|where_clause| &where_clause.predicates);
-
-    let for_dummy = generics
-        .params
-        .is_empty()
-        .then_some(quote! { for<'_dummy> });
-
-    let bound = ADD_BOUND.then_some(quote! {
-        #for_dummy Self: co3::borrow::DropFamily<Kind = co3::borrow::NoDrop>,
-    });
-
-    let to_owned_trait = if ADD_BOUND {
-        quote! { ToOwned<'_ršč> }
-    } else {
-        quote! { co3::borrow::ToOwned<'_ršč> }
-    };
-
-    quote! {
-        impl<'_ršč, #params> #to_owned_trait for #name #ty_generics
+        impl<'_ršč, #params> co3::borrow::ToOwned<'_ršč, IN_STRUCT> for #name #ty_generics
         where
-            #bound
             #for_dummy Self: Sized + '_ršč,
-            #predicates
-        {
-            #[inline(always)]
-            fn to_owned(borrowed: Self::Borrowed<'_ršč>) -> Self {
-                borrowed
-            }
-        }
-    }
-}
-
-fn needs_drop_to_owned<const ADD_BOUND: bool>(
-    name: &syn::Ident,
-    generics: &syn::Generics,
-    to_owned_bounds: &TokenStream,
-    to_owned_impl: &TokenStream,
-) -> TokenStream {
-    let (_, ty_generics, where_clause) = generics.split_for_impl();
-
-    let params = &generics.params;
-    let predicates = where_clause
-        .as_ref()
-        .map(|where_clause| &where_clause.predicates);
-
-    let for_dummy = generics
-        .params
-        .is_empty()
-        .then_some(quote! { for<'_dummy> });
-
-    let bound = ADD_BOUND.then_some(quote! {
-        #for_dummy Self: co3::borrow::DropFamily<Kind = co3::borrow::NeedsDrop>,
-    });
-
-    quote! {
-        impl<'_ršč, #params> ToOwned<'_ršč> for #name #ty_generics
-        where
-            #bound
             #to_owned_bounds
-            #for_dummy Self: Sized + '_ršč,
             #predicates
         {
             #[inline(always)]
@@ -872,7 +704,7 @@ fn gen_store_name(name: &syn::Ident) -> syn::Ident {
 }
 
 fn gen_borrowed_name(name: &Ident) -> Ident {
-    format_ident!("{name}Borrow")
+    format_ident!("{name}View")
 }
 
 fn borrowed_view_lifetime(ty: &syn::Type) -> Option<syn::Lifetime> {
@@ -902,7 +734,7 @@ fn borrowed_view_type(ty: &syn::Type) -> TokenStream {
         .map(|lifetime| quote!(#lifetime))
         .unwrap_or_else(|| quote!('_dšč));
 
-    quote! { <#ty as co3::borrow::Borrow>::Borrowed<#lifetime> }
+    quote! { <#ty as co3::borrow::Borrow<true>>::Borrowed<#lifetime> }
 }
 
 fn needs_borrow_lifetime_param(fields: &[&syn::Type]) -> bool {
@@ -915,8 +747,9 @@ fn gen_borrowed_struct(
     generics: &syn::Generics,
     fields: &Fields<FfiTypeField>,
 ) -> TokenStream {
-    let params = &generics.params;
     let (_, _, where_clause) = generics.split_for_impl();
+
+    let params = &generics.params;
     let predicates = where_clause
         .as_ref()
         .map(|where_clause| &where_clause.predicates);
@@ -975,8 +808,9 @@ fn gen_borrowed_data_enum(
     generics: &syn::Generics,
     variants: &[SpannedValue<FfiTypeVariant>],
 ) -> TokenStream {
-    let params = &generics.params;
     let (_, _, where_clause) = generics.split_for_impl();
+
+    let params = &generics.params;
     let predicates = where_clause
         .as_ref()
         .map(|where_clause| &where_clause.predicates);
@@ -1111,15 +945,13 @@ pub fn gen_ir_impl(
     generics: &syn::Generics,
 ) -> TokenStream {
     let (impl_generics, ty_generics, where_clause) = generics.split_for_impl();
-    let _field_kinds = fields
-        .iter()
-        .map(|field| quote!(<#field as co3::ir::ReprFamily>::Kind));
 
-    let extern_c_bounds = gen_extern_c_bounds(fields, generics);
     let params = &generics.params;
     let predicates = where_clause
         .as_ref()
         .map(|where_clause| &where_clause.predicates);
+
+    let extern_c_bounds = gen_extern_c_bounds(fields, generics);
 
     quote! {
         co3::reprC! {
@@ -1151,6 +983,11 @@ pub fn gen_custom_store_types(name: &Ident, field_types: &[&syn::Type]) -> Token
                     Self(#(<#store_params as Default>::default()),*)
                 }
             }
+
+            unsafe impl<#(#store_params),*> co3::out_ptr::Zst for #store_name<#(#store_params),*>
+            where
+                #(#store_params: co3::out_ptr::Zst,)*
+            {}
 
             impl<#(#store_params),*> co3::Store for #store_name<#(#store_params),*> where #(#store_params: co3::Store,)* {
                 fn sync(self) -> Option<()> {
@@ -1195,7 +1032,7 @@ fn gen_borrow_view_bounds(
                         .unwrap_or_default()
                 });
 
-            quote! { #ty: co3::borrow::Borrow #lifetime, }
+            quote! { #ty: co3::borrow::Borrow<true> #lifetime, }
         });
 
     quote! { #(#bounds)* }
@@ -1206,7 +1043,7 @@ fn gen_to_owned_bounds(fields: &[&syn::Type], generics: &syn::Generics) -> Token
         .iter()
         .filter(|ty| is_type_parameterized(ty, generics));
 
-    quote! { #(#parameterized_field_types: co3::borrow::ToOwned<'_ršč>,)* }
+    quote! { #(#parameterized_field_types: co3::borrow::ToOwned<'_ršč, true>,)* }
 }
 
 fn gen_encode_bounds(fields: &[&syn::Type], _generics: &syn::Generics) -> TokenStream {

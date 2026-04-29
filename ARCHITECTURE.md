@@ -108,8 +108,8 @@ The tables below specifies how composite types derive `ReprFamily::Kind`:
 | `Cloned` | `WithoutNiche` | `Option<WithoutNiche>` |
 | `Cloned` | `WithCustomNiche` | `Option<WithCustomNiche>` |
 
-- `[1]` - Conditional on `unstable-refs` feature.
-- `[2]` - For non-robust `R`, `Encode` path of `&mut R` is conditional on `unstable-refs` or `unsafe-optimizations` feature.
+- `[1]` - Conditional on `#[unstable-refs]`
+- `[2]` - For non-robust `R`, `Encode` path of `&mut R` is conditional on `#[unstable-refs]` or `unsafe-optimizations`
 
 ## 3. Niche Family
 

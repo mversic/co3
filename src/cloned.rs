@@ -3,6 +3,7 @@ use alloc_crate::{boxed::Box, vec::Vec};
 use core::mem::ManuallyDrop;
 
 use super::*;
+use crate::dst::Sized_;
 
 trait CloneFromWrapped<R> {
     fn clone_from_wrapped(self) -> R;
@@ -124,18 +125,16 @@ disjoint_impls! {
         Self: ReprFamily<Kind = &'a Transmuted> + DecodeWithStore<'a>
     {
     }
-    #[cfg(feature = "unstable-refs")]
     impl<'d, R, S: Cloned + 'd> DecodeCloned<'d, false> for &'d R
     where
         Self: ReprFamily<Kind = &'d S> + DecodeWithStore<'d>,
-        R: SizeFamily<Kind = Sized_>,
+        R: DstFamily<Kind = Sized_>,
     {
     }
-    #[cfg(feature = "unstable-refs")]
     impl<'a, R: ?Sized, S: Cloned + ?Sized + 'a> DecodeCloned<'a, false> for &'a R
     where
         Self: ReprFamily<Kind = &'a S> + DecodeWithStore<'a>,
-        R: SizeFamily<Kind = UnSized>,
+        R: DstFamily<Kind = SliceLike>,
     {
     }
 
@@ -153,18 +152,16 @@ disjoint_impls! {
         Self: ReprFamily<Kind = &'a mut Transmuted> + DecodeWithStore<'a>
     {
     }
-    #[cfg(feature = "unstable-refs")]
     impl<'a, R, S: Cloned + 'a> DecodeCloned<'a, false> for &'a mut R
     where
         Self: ReprFamily<Kind = &'a mut S> + DecodeWithStore<'a>,
-        R: SizeFamily<Kind = UnSized>,
+        R: DstFamily<Kind = SliceLike>,
     {
     }
-    #[cfg(feature = "unstable-refs")]
     impl<'d, R: ?Sized, S: Cloned + ?Sized + 'd> DecodeCloned<'d, false> for &'d mut R
     where
         Self: ReprFamily<Kind = &'d mut S> + DecodeWithStore<'d>,
-        R: SizeFamily<Kind = Sized_>,
+        R: DstFamily<Kind = Sized_>,
     {
     }
 
@@ -197,10 +194,11 @@ disjoint_impls! {
     //    }
     //}
     #[cfg(feature = "alloc")]
-    impl<'d, R: ?Sized + Dst + CheckedTransmute<Target: Dst>> DecodeCloned<'d, false> for Box<R>
+    impl<'d, R: ?Sized + SliceDst + CheckedTransmute<Target: SliceDst>> DecodeCloned<'d, false> for Box<R>
     where
         Box<<R as CheckedTransmute>::Target>: DecodeCloned<'d, false>,
-        Self: ReprFamily<Kind = Box<Transmuted>>
+        Self: ReprFamily<Kind = Box<Transmuted>>,
+        R: DstFamily<Kind = SliceLike>,
     {
         #[inline(always)]
         unsafe fn decode_cloned<'itm: 'd>(
@@ -244,52 +242,25 @@ disjoint_impls! {
     //    }
     //}
 
-    //#[cfg(feature = "alloc")]
-    //impl<'d, R> DecodeCloned<'d, false> for Vec<R>
-    //where
-    //    Self: ReprFamily<Kind = Vec<Robust>>,
-    //{
-    //    #[inline(always)]
-    //    unsafe fn decode_cloned<'itm: 'd>(
-    //        source: Self::CType,
-    //        store: &'itm mut Self::Store,
-    //    ) -> Option<Self> {
-    //        unsafe { ManuallyDrop::<Self>::decode(source, store) }
-    //            .map(CloneFromWrapped::clone_from_wrapped)
-    //    }
-    //}
     #[cfg(feature = "alloc")]
-    impl<'d, R: CheckedTransmute<Target: Sized>> DecodeCloned<'d, false> for Vec<R>
+    impl<'d, R, S> DecodeCloned<'d, false> for Vec<R>
     where
-        Vec<<R as CheckedTransmute>::Target>: DecodeCloned<'d, false>,
-        Self: ReprFamily<Kind = Vec<Transmuted>>,
+        Self: ReprFamily<Kind = Vec<S>>,
+        Box<[R]>: DecodeWithStore<'d>
     {
         #[inline(always)]
         unsafe fn decode_cloned<'itm: 'd>(
             source: Self::CType,
             store: &'itm mut Self::Store,
         ) -> Option<Self> {
-            unsafe { <Vec<R::Target>>::decode_cloned(source, store) }
-                .and_then(transmute_from_target_vec)
+            unimplemented!()
+            //unsafe {
+            //    decode_cloned_vec(source, store, |item, substore| {
+            //        R::decode_cloned(item, substore)
+            //    })
+            //}
         }
     }
-    //#[cfg(feature = "alloc")]
-    //impl<'d, R: DecodeCloned<'_, false>, S: Cloned> DecodeCloned<'d, false> for Vec<R>
-    //where
-    //    Self: ReprFamily<Kind = Vec<S>>,
-    //{
-    //    #[inline(always)]
-    //    unsafe fn decode_cloned<'itm: 'd>(
-    //        source: Self::CType,
-    //        store: &'itm mut Self::Store,
-    //    ) -> Option<Self> {
-    //        unsafe {
-    //            decode_cloned_vec(source, store, |item, substore| {
-    //                R::decode_cloned(item, substore)
-    //            })
-    //        }
-    //    }
-    //}
 
     impl<'d, R: DecodeCloned<'d, false>, S: Cloned, const N: usize> DecodeCloned<'d, false> for [R; N]
     where

@@ -38,7 +38,7 @@ extern_C! {
     type Opaque2;
 
     #[dispatch(<Opaque1>, <Opaque2>)]
-    impl<dyn(u32) T: co3::handle::Handle> Kita for T {
+    impl<dyn(u32) T> Kita for T {
         fn kita(self_id: <dyn Self>::ID, self: Self) -> Self;
         fn kita2(a: &u32, self_id: <dyn T>::ID);
     }

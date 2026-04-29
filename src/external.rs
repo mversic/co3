@@ -1,7 +1,8 @@
-use core::{marker::PhantomData, ptr::NonNull};
+use core::{ffi::c_void, marker::PhantomData, ptr::NonNull};
 
 use crate::{
     borrow::{Borrow, DropFamily, NoDrop, ToOwned},
+    heapify::Heapify,
     ir::{ReprFamily, Transmuted},
     niche::{Niche, NicheFamily, StableNiche, WithStableNiche},
     transmute::{CheckedTransmute, EncodeTransmuted},
@@ -12,38 +13,22 @@ use crate::{
 /// # Safety
 ///
 /// Implementors must guarantee that:
-/// - `Self` has the same representation as [`NonNull<Extern>`].
+/// - `Self` has the same representation as [`NonNull<c_void>`].
 pub unsafe trait External: Sized {
     /// Returns a shared opaque pointer.
-    fn as_ptr(&self) -> *const Extern;
+    fn as_ptr(&self) -> *const c_void;
 
     /// Returns a mutable opaque pointer.
-    fn as_mut_ptr(&mut self) -> *mut Extern;
-}
-
-/// Wrapper around struct/enum opaque pointer. When used through a type declaration in
-/// `extern_!`/`extern_C!` in the crate linking dynamically to some `cdylib` crate, it replaces
-/// the struct/enum body definition
-#[repr(C)]
-pub struct Extern {
-    __data: [u8; 0],
-
-    // Required for !Send & !Sync & !Unpin.
-    //
-    // - `*mut u8` is !Send & !Sync. It's wrapped in `PhantomData` not to affect alignment.
-    //
-    // - `PhantomPinned` is !Unpin. It's wrapped in `PhantomData` because
-    //   its memory representation is not guaranteed to be FFI-safe
-    __marker: PhantomData<(*mut u8, core::marker::PhantomPinned)>,
+    fn as_mut_ptr(&mut self) -> *mut c_void;
 }
 
 #[derive(Clone, Copy)]
 #[repr(transparent)]
-pub struct ExternRef<'a, T>(NonNull<Extern>, PhantomData<&'a T>);
+pub struct ExternRef<'a, T>(NonNull<c_void>, PhantomData<&'a T>);
 
 #[derive(Clone)]
 #[repr(transparent)]
-pub struct ExternRefMut<'a, T>(NonNull<Extern>, PhantomData<&'a mut T>);
+pub struct ExternRefMut<'a, T>(NonNull<c_void>, PhantomData<&'a mut T>);
 
 macro_rules! impl_external_ref_common {
     ($ty:ident, $target:ty, $niche:expr) => {
@@ -70,11 +55,29 @@ macro_rules! impl_external_ref_common {
 
         unsafe impl<R> StableNiche for $ty<'_, R> {}
 
+        impl<R> crate::dst::DstFamily for $ty<'_, R> {
+            type Kind = crate::dst::Sized_;
+        }
+
         impl<R> DropFamily for $ty<'_, R> {
             type Kind = NoDrop;
         }
 
-        impl<R> Borrow for $ty<'_, R> {
+        impl<R> Heapify for $ty<'_, R> {
+            type Kind = Self;
+
+            #[inline(always)]
+            fn heapify(self) -> Self::Kind {
+                self
+            }
+
+            #[inline(always)]
+            fn unheapify(kind: Self::Kind) -> Self {
+                kind
+            }
+        }
+
+        impl<R, const IN_STRUCT: bool> Borrow<IN_STRUCT> for $ty<'_, R> {
             type Borrowed<'itm>
                 = Self
             where
@@ -90,7 +93,7 @@ macro_rules! impl_external_ref_common {
             }
         }
 
-        impl<'r, R> ToOwned<'r> for $ty<'r, R> {
+        impl<'r, R, const IN_STRUCT: bool> ToOwned<'r, IN_STRUCT> for $ty<'r, R> {
             fn to_owned(borrowed: Self::Borrowed<'r>) -> Self {
                 borrowed
             }
@@ -137,5 +140,5 @@ impl<T> core::ops::DerefMut for ExternRefMut<'_, T> {
     }
 }
 
-impl_external_ref_common!(ExternRef, *const Extern, core::ptr::null());
-impl_external_ref_common!(ExternRefMut, *mut Extern, core::ptr::null_mut());
+impl_external_ref_common!(ExternRef, *const c_void, core::ptr::null());
+impl_external_ref_common!(ExternRefMut, *mut c_void, core::ptr::null_mut());

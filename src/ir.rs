@@ -9,7 +9,8 @@ use alloc_crate::{boxed::Box, vec::Vec};
 use disjoint_impls::disjoint_impls;
 
 use crate::{
-    ReprC,
+    FnArg, ReprC,
+    dst::{DstFamily, ExternTypeLike, Sized_, SliceLike, TraitObjectLike},
     niche::{NicheFamily, WithCustomNiche, WithStableNiche, WithoutNiche},
 };
 
@@ -33,36 +34,6 @@ pub(crate) trait NonRobust {}
 impl NonRobust for Transmuted {}
 impl NonRobust for Opaque {}
 impl<S: Cloned> NonRobust for S {}
-
-pub trait SizeFamily {
-    type Kind;
-}
-pub enum UnSized {}
-pub enum Sized_ {}
-
-impl<T> SizeFamily for [T] {
-    type Kind = UnSized;
-}
-impl<T: ?Sized> SizeFamily for &T {
-    type Kind = Sized_;
-}
-impl<T: ?Sized> SizeFamily for &mut T {
-    type Kind = Sized_;
-}
-#[cfg(feature = "alloc")]
-impl<T: ?Sized> SizeFamily for Box<T> {
-    type Kind = Sized_;
-}
-#[cfg(feature = "alloc")]
-impl<T> SizeFamily for Vec<T> {
-    type Kind = Sized_;
-}
-impl<T, const N: usize> SizeFamily for [T; N] {
-    type Kind = Sized_;
-}
-impl<T> SizeFamily for Option<T> {
-    type Kind = Sized_;
-}
 
 disjoint_impls! {
     /// Type that can be converted to and from an internal representation (IR).
@@ -107,86 +78,106 @@ disjoint_impls! {
         type Kind = [R::Kind];
     }
 
-    impl<R: ReprFamily<Kind = Robust> + SizeFamily<Kind = Sized_>> ReprFamily for &R {
+    impl<R: ReprFamily<Kind = Robust> + DstFamily<Kind = Sized_>> ReprFamily for &R {
         type Kind = Transmuted;
     }
-    impl<'a, R: ReprFamily<Kind = Robust> + SizeFamily<Kind = UnSized> + ?Sized> ReprFamily for &'a R {
+    impl<'a, R: ReprFamily<Kind = Robust> + DstFamily<Kind = SliceLike> + ?Sized> ReprFamily for &'a R {
         type Kind = &'a Robust;
     }
-    impl<R: ReprFamily<Kind = Opaque> + SizeFamily<Kind = Sized_>> ReprFamily for &R {
+    impl<R: ReprFamily<Kind = Opaque> + DstFamily<Kind = Sized_>> ReprFamily for &R {
         type Kind = Transmuted;
     }
-    impl<'a, R: ReprFamily<Kind = Opaque> + SizeFamily<Kind = UnSized> + ?Sized> ReprFamily for &'a R {
+    impl<'a, R: ReprFamily<Kind = Opaque> + DstFamily<Kind = SliceLike> + ?Sized> ReprFamily for &'a R {
         type Kind = &'a Opaque;
     }
-    impl<R: ReprFamily<Kind = Transmuted> + SizeFamily<Kind = Sized_>> ReprFamily for &R {
+    impl<'a, R: ReprFamily<Kind = Opaque> + DstFamily<Kind = TraitObjectLike> + ?Sized> ReprFamily for &'a R {
+        type Kind = &'a Opaque;
+    }
+    impl<R: ReprFamily<Kind = Transmuted> + DstFamily<Kind = Sized_>> ReprFamily for &R {
         type Kind = Transmuted;
     }
-    impl<'a, R: ReprFamily<Kind = Transmuted> + SizeFamily<Kind = UnSized> + ?Sized> ReprFamily for &'a R {
+    impl<'a, R: ReprFamily<Kind = Transmuted> + DstFamily<Kind = SliceLike> + ?Sized> ReprFamily for &'a R {
         type Kind = &'a Transmuted;
     }
-    impl<'a, R: ReprFamily<Kind: Cloned + 'a> + SizeFamily<Kind = Sized_>> ReprFamily for &'a R {
+    impl<'a, R: ReprFamily<Kind = Transmuted> + DstFamily<Kind = ExternTypeLike>> ReprFamily for &'a R {
+        type Kind = &'a Transmuted;
+    }
+    impl<'a, R: ReprFamily<Kind: Cloned + 'a> + DstFamily<Kind = Sized_>> ReprFamily for &'a R {
         type Kind = &'a <R as ReprFamily>::Kind;
     }
-    impl<'a, R: ReprFamily<Kind: Cloned + 'a> + SizeFamily<Kind = UnSized> + ?Sized> ReprFamily for &'a R {
+    impl<'a, R: ReprFamily<Kind: Cloned + 'a> + DstFamily<Kind = SliceLike> + ?Sized> ReprFamily for &'a R {
         type Kind = &'a <R as ReprFamily>::Kind;
     }
 
-    impl<R: ReprFamily<Kind = Robust> + SizeFamily<Kind = Sized_>> ReprFamily for &mut R {
+    impl<R: ReprFamily<Kind = Robust> + DstFamily<Kind = Sized_>> ReprFamily for &mut R {
         type Kind = Transmuted;
     }
-    impl<'a, R: ReprFamily<Kind = Robust> + SizeFamily<Kind = UnSized> + ?Sized> ReprFamily for &'a mut R {
+    impl<'a, R: ReprFamily<Kind = Robust> + DstFamily<Kind = SliceLike> + ?Sized> ReprFamily for &'a mut R {
         type Kind = &'a mut Robust;
     }
-    impl<R: ReprFamily<Kind = Opaque> + SizeFamily<Kind = Sized_>> ReprFamily for &mut R {
+    impl<R: ReprFamily<Kind = Opaque> + DstFamily<Kind = Sized_>> ReprFamily for &mut R {
         type Kind = Transmuted;
     }
-    impl<'a, R: ReprFamily<Kind = Opaque> + SizeFamily<Kind = UnSized> + ?Sized> ReprFamily for &'a mut R {
+    impl<'a, R: ReprFamily<Kind = Opaque> + DstFamily<Kind = SliceLike> + ?Sized> ReprFamily for &'a mut R {
         type Kind = &'a mut Opaque;
     }
-    impl<R: ReprFamily<Kind = Transmuted> + SizeFamily<Kind = Sized_>> ReprFamily for &mut R {
+    impl<'a, R: ReprFamily<Kind = Opaque> + DstFamily<Kind = TraitObjectLike> + ?Sized> ReprFamily for &'a mut R {
+        type Kind = &'a mut Opaque;
+    }
+    impl<R: ReprFamily<Kind = Transmuted> + DstFamily<Kind = Sized_>> ReprFamily for &mut R {
         type Kind = Transmuted;
     }
-    impl<'a, R: ReprFamily<Kind = Transmuted> + SizeFamily<Kind = UnSized> + ?Sized> ReprFamily for &'a mut R {
+    impl<'a, R: ReprFamily<Kind = Transmuted> + DstFamily<Kind = SliceLike> + ?Sized> ReprFamily for &'a mut R {
         type Kind = &'a mut Transmuted;
     }
-    impl<'a, R: ReprFamily<Kind: Cloned + 'a> + SizeFamily<Kind = Sized_>> ReprFamily for &'a mut R {
+    impl<'a, R: ReprFamily<Kind = Transmuted> + DstFamily<Kind = ExternTypeLike>> ReprFamily for &'a mut R {
+        type Kind = &'a mut Transmuted;
+    }
+    impl<'a, R: ReprFamily<Kind: Cloned + 'a> + DstFamily<Kind = Sized_>> ReprFamily for &'a mut R {
         type Kind = &'a mut <R as ReprFamily>::Kind;
     }
-    impl<'a, R: ReprFamily<Kind: Cloned + 'a> + SizeFamily<Kind = UnSized> + ?Sized> ReprFamily for &'a mut R {
+    impl<'a, R: ReprFamily<Kind: Cloned + 'a> + DstFamily<Kind = SliceLike> + ?Sized> ReprFamily for &'a mut R {
         type Kind = &'a mut <R as ReprFamily>::Kind;
     }
 
     #[cfg(feature = "alloc")]
-    impl<R: ReprFamily<Kind = Robust> + SizeFamily<Kind = Sized_>> ReprFamily for Box<R> {
+    impl<R: ReprFamily<Kind = Robust> + DstFamily<Kind = Sized_>> ReprFamily for Box<R> {
         type Kind = Transmuted;
     }
     #[cfg(feature = "alloc")]
-    impl<R: ReprFamily<Kind = Robust> + SizeFamily<Kind = UnSized> + ?Sized> ReprFamily for Box<R> {
+    impl<R: ReprFamily<Kind = Robust> + DstFamily<Kind = SliceLike> + ?Sized> ReprFamily for Box<R> {
         type Kind = Box<Robust>;
     }
     #[cfg(feature = "alloc")]
-    impl<R: ReprFamily<Kind = Opaque> + SizeFamily<Kind = Sized_>> ReprFamily for Box<R> {
+    impl<R: ReprFamily<Kind = Opaque> + DstFamily<Kind = Sized_>> ReprFamily for Box<R> {
         type Kind = Transmuted;
     }
     #[cfg(feature = "alloc")]
-    impl<R: ReprFamily<Kind = Opaque> + SizeFamily<Kind = UnSized> + ?Sized> ReprFamily for Box<R> {
+    impl<R: ReprFamily<Kind = Opaque> + DstFamily<Kind = SliceLike> + ?Sized> ReprFamily for Box<R> {
         type Kind = Box<Opaque>;
     }
     #[cfg(feature = "alloc")]
-    impl<R: ReprFamily<Kind = Transmuted> + SizeFamily<Kind = Sized_>> ReprFamily for Box<R> {
+    impl<R: ReprFamily<Kind = Opaque> + DstFamily<Kind = TraitObjectLike> + ?Sized> ReprFamily for Box<R> {
+        type Kind = Box<Opaque>;
+    }
+    #[cfg(feature = "alloc")]
+    impl<R: ReprFamily<Kind = Transmuted> + DstFamily<Kind = Sized_>> ReprFamily for Box<R> {
         type Kind = Transmuted;
     }
     #[cfg(feature = "alloc")]
-    impl<R: ReprFamily<Kind = Transmuted> + SizeFamily<Kind = UnSized> + ?Sized> ReprFamily for Box<R> {
+    impl<R: ReprFamily<Kind = Transmuted> + DstFamily<Kind = SliceLike> + ?Sized> ReprFamily for Box<R> {
         type Kind = Box<Transmuted>;
     }
     #[cfg(feature = "alloc")]
-    impl<R: ReprFamily<Kind: Cloned> + SizeFamily<Kind = Sized_>> ReprFamily for Box<R> {
+    impl<R: ReprFamily<Kind = Transmuted> + DstFamily<Kind = ExternTypeLike>> ReprFamily for Box<R> {
+        type Kind = Box<Transmuted>;
+    }
+    #[cfg(feature = "alloc")]
+    impl<R: ReprFamily<Kind: Cloned> + DstFamily<Kind = Sized_>> ReprFamily for Box<R> {
         type Kind = Box<<R as ReprFamily>::Kind>;
     }
     #[cfg(feature = "alloc")]
-    impl<R: ReprFamily<Kind: Cloned> + SizeFamily<Kind = UnSized> + ?Sized> ReprFamily for Box<R> {
+    impl<R: ReprFamily<Kind: Cloned> + DstFamily<Kind = SliceLike> + ?Sized> ReprFamily for Box<R> {
         type Kind = Box<<R as ReprFamily>::Kind>;
     }
 
@@ -196,9 +187,9 @@ disjoint_impls! {
     }
     #[cfg(feature = "alloc")]
     impl<R: ReprFamily<Kind = Opaque>> ReprFamily for Vec<R> {
-        // NOTE: I'm cheating the IR system here to get `Vec<S> where S: Cloned`
-        // because `Opaque` must go through the same path as `Cloned` types
-        type Kind = Vec<Box<Opaque>>;
+        // FIXME: Add a test to verify this type indeed works
+        // This should delegate to Box<[R]>
+        type Kind = Vec<Opaque>;
     }
     #[cfg(feature = "alloc")]
     impl<R: ReprFamily<Kind = Transmuted>> ReprFamily for Vec<R> {
@@ -266,8 +257,11 @@ macro_rules! impl_fn_types {
     ( $( ( $( $arg:ident ),* ) ),* $(,)? ) => {$(
         // FIXME: I'm not sure if arguments are required to be ReprC, what if fn pointer is opaque?
         // or should we create new function with argument conversion?
-        unsafe impl<$($arg: ReprC,)* R: ReprC> ReprC for unsafe extern "C" fn($($arg),*) -> R {}
-        unsafe impl<$($arg: ReprC,)*> ReprC for unsafe extern "C" fn($($arg),*) {}
+        unsafe impl<$($arg: FnArg,)* R: FnArg> ReprC for unsafe extern "C" fn($($arg),*) -> R {}
+        unsafe impl<$($arg: FnArg,)*> ReprC for unsafe extern "C" fn($($arg),*) {}
+
+        unsafe impl<$($arg: FnArg,)* R: FnArg> FnArg for unsafe extern "C" fn($($arg),*) -> R {}
+        unsafe impl<$($arg: FnArg,)*> FnArg for unsafe extern "C" fn($($arg),*) {}
 
         impl<$($arg,)* R> ReprFamily for unsafe extern "C" fn($($arg),*) -> R {
             type Kind = Self;
@@ -276,20 +270,20 @@ macro_rules! impl_fn_types {
         //    type Kind = Self;
         //}
 
-        impl<$($arg: ReprC,)* R: ReprC> crate::ExternC for unsafe extern "C" fn($($arg),*) -> R {
+        impl<$($arg: FnArg,)* R: FnArg> crate::ExternC for unsafe extern "C" fn($($arg),*) -> R {
             type CType = Self;
         }
-        impl<$($arg: ReprC,)*> crate::ExternC for unsafe extern "C" fn($($arg),*) {
+        impl<$($arg: FnArg,)*> crate::ExternC for unsafe extern "C" fn($($arg),*) {
             type CType = Self;
         }
-        //impl<const AS_REF: bool, $($arg: ReprC,)* R: ReprC> crate::Encode<false> for unsafe extern "C" fn($($arg),*) -> R {
+        //impl<const AS_REF: bool, $($arg: FnArg,)* R: FnArg> crate::Encode<false> for unsafe extern "C" fn($($arg),*) -> R {
         //    type Store = ();
 
         //    fn encode<'itm>(self, _: &mut ()) -> Self::CType where Self: 'itm {
         //        self
         //    }
         //}
-        impl<$($arg: ReprC,)*> crate::EncodeWithStore<false> for unsafe extern "C" fn($($arg),*) {
+        impl<$($arg: FnArg,)*> crate::EncodeWithStore<false> for unsafe extern "C" fn($($arg),*) {
             type Store = ();
 
             #[inline(always)]
@@ -298,10 +292,10 @@ macro_rules! impl_fn_types {
             }
         }
 
-        unsafe impl<$($arg: ReprC,)* R: ReprC> ReprC for Option<unsafe extern "C" fn($($arg),*) -> R> {}
-        unsafe impl<$($arg: ReprC),*> ReprC for Option<unsafe extern "C" fn($($arg),*)> {}
-        //crate::reprC! { impl<$($arg: ReprC,)* R: ReprC> Robust for Option<unsafe extern "C" fn($($arg),*) -> R> {} }
-        //crate::reprC! { impl<$($arg: ReprC),*> Robust for Option<unsafe extern "C" fn($($arg),*)> {} }
+        unsafe impl<$($arg: FnArg,)* R: FnArg> ReprC for Option<unsafe extern "C" fn($($arg),*) -> R> {}
+        //unsafe impl<$($arg: FnArg),*> ReprC for Option<unsafe extern "C" fn($($arg),*)> {}
+        //crate::reprC! { impl<$($arg: FnArg,)* R: FnArg> SizedRobust for Option<unsafe extern "C" fn($($arg),*) -> R> {} }
+        //crate::reprC! { impl<$($arg: FnArg),*> SizedRobust for Option<unsafe extern "C" fn($($arg),*)> {} }
         )*
     }
 }
@@ -327,14 +321,11 @@ mod tests {
     use static_assertions::assert_impl_all;
 
     use super::*;
+    #[cfg(feature = "alloc")]
+    use crate::boxed::{CBox, CBoxedSlice};
     use crate::{
         DecodeWithStore, EncodeWithStore, ExternC,
         niche::{Niche, WithStableNiche},
-    };
-    #[cfg(feature = "alloc")]
-    use crate::{
-        boxed::{CBox, CBoxedSlice},
-        vec::CVec,
     };
 
     #[test]
@@ -344,7 +335,7 @@ mod tests {
             value: i32,
         }
 
-        impl SizeFamily for OpaqueData {
+        impl DstFamily for OpaqueData {
             type Kind = Sized_;
         }
         impl ReprFamily for OpaqueData {
@@ -353,16 +344,11 @@ mod tests {
         impl NicheFamily for OpaqueData {
             type Kind = WithCustomNiche;
         }
-        #[cfg(feature = "alloc")]
-        impl Niche for OpaqueData {
-            const NICHE_VALUE: Self::CType = CBox::none();
-        }
 
         #[cfg(feature = "alloc")]
         assert_impl_all!(OpaqueData:
             ReprFamily<Kind = Opaque>,
             NicheFamily<Kind = WithCustomNiche>,
-            Niche<CType = CBox<OpaqueData>>,
             DecodeWithStore<'static>,
             EncodeWithStore,
         );
@@ -425,7 +411,7 @@ mod tests {
         assert_impl_all!(Vec<OpaqueData>:
             ReprFamily<Kind = Vec<Box<Opaque>>>,
             NicheFamily<Kind = WithCustomNiche>,
-            Niche<CType = CVec<CBox<OpaqueData>>>,
+            Niche<CType = CBoxedSlice<CBox<OpaqueData>>>,
             // FIXME:
             //Decode<'static>,
             EncodeWithStore,

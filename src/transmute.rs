@@ -7,8 +7,9 @@ use disjoint_impls::disjoint_impls;
 #[cfg(feature = "alloc")]
 use crate::boxed::CBox;
 use crate::{
-    Dst, EncodeWithStore, ReprC, Store, assert_arr_has_non_zero_len,
-    ir::{Cloned, NonRobust, Opaque, ReprFamily, Robust, SizeFamily, Sized_, Transmuted, UnSized},
+    DstFamily, EncodeWithStore, ReprC, Sized_, SliceDst, SliceLike, Store,
+    assert_arr_has_non_zero_len,
+    ir::{Cloned, NonRobust, Opaque, ReprFamily, Robust, Transmuted},
     niche::{NicheFamily, StableNiche, WithNiche, WithStableNiche, WithoutNiche},
 };
 
@@ -191,7 +192,7 @@ disjoint_impls! {
 
     unsafe impl<R: CheckedTransmute<Target: FlatTransmute + Sized>> FlatTransmute for R
     where
-        Self: ReprFamily<Kind = Transmuted> + SizeFamily<Kind = Sized_>,
+        Self: ReprFamily<Kind = Transmuted> + DstFamily<Kind = Sized_>,
     {
         type Target = <R::Target as FlatTransmute>::Target;
 
@@ -205,9 +206,9 @@ disjoint_impls! {
             <R as CheckedTransmute>::is_valid(unsafe { &*target_ptr })
         }
     }
-    unsafe impl<R: ?Sized + CheckedTransmute<Target: FlatTransmute<Target: Dst> + Dst>> FlatTransmute for R
+    unsafe impl<R: ?Sized + CheckedTransmute<Target: FlatTransmute<Target: SliceDst> + SliceDst>> FlatTransmute for R
     where
-        Self: ReprFamily<Kind = Transmuted> + SizeFamily<Kind = UnSized>,
+        Self: ReprFamily<Kind = Transmuted> + DstFamily<Kind = SliceLike>,
     {
         type Target = <R::Target as FlatTransmute>::Target;
 
@@ -357,7 +358,10 @@ union TransmuteHelper<R: CheckedTransmute<Target: Sized>> {
     target: ManuallyDrop<R::Target>,
 }
 
-pub(crate) fn transmute_into_target<R: CheckedTransmute<Target: Sized>>(source: R) -> R::Target {
+// TODO: this is only temporarily public
+// https://github.com/mversic/co3/issues/76
+#[doc(hidden)]
+pub fn transmute_into_target<R: CheckedTransmute<Target: Sized>>(source: R) -> R::Target {
     assert_size_and_allignment_match::<R>();
 
     let transmute_helper = TransmuteHelper {
@@ -367,9 +371,10 @@ pub(crate) fn transmute_into_target<R: CheckedTransmute<Target: Sized>>(source: 
     // SAFETY: Soundness is guaranteed by [`Transmute`]
     ManuallyDrop::into_inner(unsafe { transmute_helper.target })
 }
-pub(super) fn transmute_from_target<R: CheckedTransmute<Target: Sized>>(
-    source: R::Target,
-) -> Option<R> {
+// TODO: this is only temporarily public
+// https://github.com/mversic/co3/issues/76
+#[doc(hidden)]
+pub fn transmute_from_target<R: CheckedTransmute<Target: Sized>>(source: R::Target) -> Option<R> {
     assert_size_and_allignment_match::<R>();
 
     if !R::is_valid(&source) {
@@ -384,13 +389,17 @@ pub(super) fn transmute_from_target<R: CheckedTransmute<Target: Sized>>(
     Some(ManuallyDrop::into_inner(unsafe { transmute_helper.source }))
 }
 
-pub(super) fn transmute_into_target_ref_dst<R: ?Sized + Dst + CheckedTransmute<Target: Dst>>(
+pub(super) fn transmute_into_target_ref_dst<
+    R: ?Sized + SliceDst + CheckedTransmute<Target: SliceDst>,
+>(
     source: &R,
 ) -> &R::Target {
     let (ptr, len) = (source.as_ptr().cast(), source.len());
     unsafe { R::Target::from_raw_parts(ptr, len) }
 }
-pub(super) fn transmute_from_target_ref_dst<R: ?Sized + Dst + CheckedTransmute<Target: Dst>>(
+pub(super) fn transmute_from_target_ref_dst<
+    R: ?Sized + SliceDst + CheckedTransmute<Target: SliceDst>,
+>(
     source: &R::Target,
 ) -> Option<&R> {
     if !R::is_valid(source) {
@@ -401,13 +410,17 @@ pub(super) fn transmute_from_target_ref_dst<R: ?Sized + Dst + CheckedTransmute<T
     Some(unsafe { R::from_raw_parts(ptr, len) })
 }
 
-pub(super) fn transmute_into_target_dst_mut<R: ?Sized + Dst + CheckedTransmute<Target: Dst>>(
+pub(super) fn transmute_into_target_dst_mut<
+    R: ?Sized + SliceDst + CheckedTransmute<Target: SliceDst>,
+>(
     source: &mut R,
 ) -> &mut R::Target {
     let (ptr, len) = (source.as_mut_ptr().cast(), source.len());
     unsafe { R::Target::from_raw_parts_mut(ptr, len) }
 }
-pub(super) fn transmute_from_target_dst_mut<R: ?Sized + Dst + CheckedTransmute<Target: Dst>>(
+pub(super) fn transmute_from_target_dst_mut<
+    R: ?Sized + SliceDst + CheckedTransmute<Target: SliceDst>,
+>(
     source: &mut R::Target,
 ) -> Option<&mut R> {
     if !R::is_valid(source) {
@@ -419,7 +432,9 @@ pub(super) fn transmute_from_target_dst_mut<R: ?Sized + Dst + CheckedTransmute<T
 }
 
 #[cfg(feature = "alloc")]
-pub(super) fn transmute_into_target_boxed_dst<R: ?Sized + Dst + CheckedTransmute<Target: Dst>>(
+pub(super) fn transmute_into_target_boxed_dst<
+    R: ?Sized + SliceDst + CheckedTransmute<Target: SliceDst>,
+>(
     source: Box<R>,
 ) -> Box<R::Target> {
     let mut source = ManuallyDrop::new(source);
@@ -427,7 +442,9 @@ pub(super) fn transmute_into_target_boxed_dst<R: ?Sized + Dst + CheckedTransmute
     unsafe { Box::from_raw(R::Target::from_raw_parts_mut(ptr, len)) }
 }
 #[cfg(feature = "alloc")]
-pub(super) fn transmute_from_target_boxed_dst<R: ?Sized + Dst + CheckedTransmute<Target: Dst>>(
+pub(super) fn transmute_from_target_boxed_dst<
+    R: ?Sized + SliceDst + CheckedTransmute<Target: SliceDst>,
+>(
     source: Box<R::Target>,
 ) -> Option<Box<R>> {
     if !R::is_valid(&source) {
@@ -486,8 +503,6 @@ mod tests {
     use super::*;
     #[cfg(feature = "alloc")]
     use crate::boxed::CBoxedSlice;
-    #[cfg(feature = "alloc")]
-    use crate::vec::CVec;
     use crate::{
         DecodeWithStore, EncodeWithStore, ExternC,
         ir::{ReprFamily, Transmuted},
@@ -553,7 +568,7 @@ mod tests {
         assert_impl_all!(Vec<bool>:
             ReprFamily<Kind = Vec<Transmuted>>,
             NicheFamily<Kind = WithCustomNiche>,
-            Niche<CType = CVec<u8>>,
+            Niche<CType = CBoxedSlice<u8>>,
             // FIXME:
             //DecodeWithStore<'static>,
             EncodeWithStore,
@@ -574,15 +589,9 @@ mod tests {
         );
 
         // FIXME:
-        //#[cfg(any(
-        //    feature = "unsafe-optimizations",
-        //    all(feature = "alloc", feature = "unstable-refs"),
-        //))]
+        //#[cfg(any(feature = "unsafe-optimizations", feature = "alloc"))]
         //assert_impl_all!(&mut bool: EncodeWithStore);
-        //#[cfg(any(
-        //    feature = "unsafe-optimizations",
-        //    all(feature = "alloc", feature = "unstable-refs"),
-        //))]
+        //#[cfg(any(feature = "unsafe-optimizations", feature = "alloc"))]
         //assert_impl_all!(&mut [bool]: EncodeWithStore);
         //#[cfg(not(any(
         //    feature = "unsafe-optimizations",
@@ -646,7 +655,7 @@ mod tests {
         assert_impl_all!(Vec<&u8>:
             ReprFamily<Kind = Vec<Transmuted>>,
             NicheFamily<Kind = WithCustomNiche>,
-            Niche<CType = CVec<*const u8>>,
+            Niche<CType = CBoxedSlice<*const u8>>,
             //DecodeWithStore<'static>,
             EncodeWithStore,
         );
@@ -666,24 +675,18 @@ mod tests {
         );
 
         // FIXME:
-        //#[cfg(any(
-        //    feature = "unsafe-optimizations",
-        //    all(feature = "alloc", feature = "unstable-refs"),
-        //))]
+        //#[cfg(any(feature = "unsafe-optimizations", feature = "alloc"))]
         //assert_impl_all!(&mut &u8: EncodeWithStore);
-        //#[cfg(any(
-        //    feature = "unsafe-optimizations",
-        //    all(feature = "alloc", feature = "unstable-refs"),
-        //))]
+        //#[cfg(any(feature = "unsafe-optimizations", feature = "alloc"))]
         //assert_impl_all!(&mut [&u8]: EncodeWithStore);
         //#[cfg(not(any(
         //    feature = "unsafe-optimizations",
-        //    all(feature = "alloc", feature = "unstable-refs"),
+        //    feature = "alloc", feature = "unstable-refs"),
         //)))]
         //assert_not_impl_any!(&mut &u8: EncodeWithStore);
         //#[cfg(not(any(
         //    feature = "unsafe-optimizations",
-        //    all(feature = "alloc", feature = "unstable-refs"),
+        //    feature = "alloc", feature = "unstable-refs"),
         //)))]
         //assert_not_impl_any!(&mut [&u8]: EncodeWithStore);
     }
@@ -739,7 +742,7 @@ mod tests {
         assert_impl_all!(Vec<&bool>:
             ReprFamily<Kind = Vec<Transmuted>>,
             NicheFamily<Kind = WithCustomNiche>,
-            Niche<CType = CVec<*const u8>>,
+            Niche<CType = CBoxedSlice<*const u8>>,
             // FIXME:
             //DecodeWithStore<'static>,
             EncodeWithStore,
@@ -760,15 +763,9 @@ mod tests {
         );
 
         // FIXME:
-        //#[cfg(any(
-        //    feature = "unsafe-optimizations",
-        //    all(feature = "alloc", feature = "unstable-refs"),
-        //))]
+        //#[cfg(any(feature = "unsafe-optimizations", feature = "alloc"))]
         //assert_impl_all!(&mut &bool: EncodeWithStore);
-        //#[cfg(any(
-        //    feature = "unsafe-optimizations",
-        //    all(feature = "alloc", feature = "unstable-refs"),
-        //))]
+        //#[cfg(any(feature = "unsafe-optimizations", feature = "alloc")]
         //assert_impl_all!(&mut [&bool]: EncodeWithStore);
         //#[cfg(not(any(
         //    feature = "unsafe-optimizations",
@@ -833,7 +830,7 @@ mod tests {
         assert_impl_all!(Vec<&mut u8>:
             ReprFamily<Kind = Vec<Transmuted>>,
             NicheFamily<Kind = WithCustomNiche>,
-            Niche<CType = CVec<*mut u8>>,
+            Niche<CType = CBoxedSlice<*mut u8>>,
             //FIXME:
             //DecodeWithStore<'static>,
             EncodeWithStore,
@@ -854,24 +851,18 @@ mod tests {
         );
 
         // FIXME:
-        //#[cfg(any(
-        //    feature = "unsafe-optimizations",
-        //    all(feature = "alloc", feature = "unstable-refs"),
-        //))]
+        //#[cfg(any(feature = "unsafe-optimizations", feature = "alloc"))]
         //assert_impl_all!(&mut &mut u8: EncodeWithStore);
-        //#[cfg(any(
-        //    feature = "unsafe-optimizations",
-        //    all(feature = "alloc", feature = "unstable-refs"),
-        //))]
+        //#[cfg(any(feature = "unsafe-optimizations", feature = "alloc"))]
         //assert_impl_all!(&mut [&mut u8]: EncodeWithStore);
         //#[cfg(not(any(
         //    feature = "unsafe-optimizations",
-        //    all(feature = "alloc", feature = "unstable-refs"),
+        //    feature = "alloc", feature = "unstable-refs"),
         //)))]
         //assert_not_impl_any!(&mut &mut u8: EncodeWithStore);
         //#[cfg(not(any(
         //    feature = "unsafe-optimizations",
-        //    all(feature = "alloc", feature = "unstable-refs"),
+        //    feature = "alloc", feature = "unstable-refs"),
         //)))]
         //assert_not_impl_any!(&mut [&mut u8]: EncodeWithStore);
     }
@@ -924,7 +915,7 @@ mod tests {
         assert_impl_all!(Vec<&mut bool>:
             ReprFamily<Kind = Vec<Transmuted>>,
             NicheFamily<Kind = WithCustomNiche>,
-            Niche<CType = CVec<*mut u8>>,
+            Niche<CType = CBoxedSlice<*mut u8>>,
             // FIXME:
             //DecodeWithStore<'static>,
         );
@@ -941,35 +932,23 @@ mod tests {
             DecodeWithStore<'static>,
         );
 
-        #[cfg(any(
-            feature = "unsafe-optimizations",
-            all(feature = "alloc", feature = "unstable-refs"),
-        ))]
+        #[cfg(any(feature = "unsafe-optimizations", feature = "alloc"))]
         assert_impl_all!(&mut &mut bool: EncodeWithStore);
 
         //#[cfg(feature = "alloc")]
-        //#[cfg(any(feature = "unsafe-optimizations", feature = "unstable-refs"))]
+        //#[cfg(feature = "unsafe-optimizations")]
         //assert_impl_all!(Box<&mut bool>: EncodeWithStore);
-        #[cfg(any(
-            feature = "unsafe-optimizations",
-            all(feature = "alloc", feature = "unstable-refs"),
-        ))]
+        #[cfg(any(feature = "unsafe-optimizations", feature = "alloc"))]
         assert_impl_all!(&mut [&mut bool]: EncodeWithStore);
         #[cfg(feature = "alloc")]
-        #[cfg(any(feature = "unsafe-optimizations", feature = "unstable-refs"))]
+        #[cfg(feature = "unsafe-optimizations")]
         assert_impl_all!(Box<[&mut bool]>: EncodeWithStore);
         #[cfg(feature = "alloc")]
-        #[cfg(any(feature = "unsafe-optimizations", feature = "unstable-refs"))]
+        #[cfg(feature = "unsafe-optimizations")]
         assert_impl_all!(Vec<&mut bool>: EncodeWithStore);
-        #[cfg(any(
-            feature = "unsafe-optimizations",
-            all(feature = "alloc", feature = "unstable-refs"),
-        ))]
+        #[cfg(any(feature = "unsafe-optimizations", feature = "alloc"))]
         assert_impl_all!([&mut bool; 2]: EncodeWithStore);
-        #[cfg(any(
-            feature = "unsafe-optimizations",
-            all(feature = "alloc", feature = "unstable-refs"),
-        ))]
+        #[cfg(any(feature = "unsafe-optimizations", feature = "alloc"))]
         assert_impl_all!(Option<&mut bool>: EncodeWithStore);
         //#[cfg(not(any(
         //    feature = "unsafe-optimizations",
