@@ -11,8 +11,8 @@ use disjoint_impls::disjoint_impls;
 use crate::boxed::{CBox, CBoxedSlice};
 use crate::{
     ExternC, assert_arr_has_non_zero_len,
-    dst::{DstFamily, ExternTypeLike, Sized_, UnSized},
     option::COption,
+    size::{ExternTypeLike, SizeFamily, SizedType, SliceLike, TraitObjectLike, Uninhabited, Zst},
     slice::{CSlice, CSliceMut},
 };
 
@@ -117,36 +117,69 @@ disjoint_impls! {
         type Kind;
     }
 
-    impl<R: DstFamily<Kind = Sized_>> NicheFamily for &R {
+    // TODO: We could implement these via one trait? Trait can be Sized or Unsized/Dst
+    impl<R: SizeFamily<Kind = SizedType>> NicheFamily for &R {
         type Kind = WithStableNiche;
     }
-    impl<R: DstFamily<Kind: UnSized> + ?Sized> NicheFamily for &R {
+    impl<R: SizeFamily<Kind = Zst>> NicheFamily for &R {
+        type Kind = WithStableNiche;
+    }
+    impl<R: SizeFamily<Kind = Uninhabited>> NicheFamily for &R {
+        type Kind = WithStableNiche;
+    }
+    impl<R: SizeFamily<Kind = SliceLike> + ?Sized> NicheFamily for &R {
         type Kind = WithCustomNiche;
     }
-    impl<R: DstFamily<Kind = ExternTypeLike>> NicheFamily for &R {
+    impl<R: SizeFamily<Kind = TraitObjectLike> + ?Sized> NicheFamily for &R {
+        type Kind = WithCustomNiche;
+    }
+    // FIXME: This is wrong? I think the type has guaranteed niche because it's not actually ?Sized
+    // Extern types are somewhat of a mess
+    impl<R: SizeFamily<Kind = ExternTypeLike> + ?Sized> NicheFamily for &R {
         type Kind = WithCustomNiche;
     }
 
-    impl<R: DstFamily<Kind = Sized_>> NicheFamily for &mut R {
+    impl<R: SizeFamily<Kind = SizedType>> NicheFamily for &mut R {
         type Kind = WithStableNiche;
     }
-    impl<R: DstFamily<Kind: UnSized> + ?Sized> NicheFamily for &mut R {
+    impl<R: SizeFamily<Kind = Zst>> NicheFamily for &mut R {
+        type Kind = WithStableNiche;
+    }
+    impl<R: SizeFamily<Kind = Uninhabited>> NicheFamily for &mut R {
+        type Kind = WithStableNiche;
+    }
+    impl<R: SizeFamily<Kind = SliceLike> + ?Sized> NicheFamily for &mut R {
         type Kind = WithCustomNiche;
     }
-    impl<R: DstFamily<Kind = ExternTypeLike>> NicheFamily for &mut R {
+    impl<R: SizeFamily<Kind = TraitObjectLike> + ?Sized> NicheFamily for &mut R {
+        type Kind = WithCustomNiche;
+    }
+    impl<R: SizeFamily<Kind = ExternTypeLike> + ?Sized> NicheFamily for &mut R {
         type Kind = WithCustomNiche;
     }
 
     #[cfg(feature = "alloc")]
-    impl<R: DstFamily<Kind = Sized_>> NicheFamily for Box<R> {
+    impl<R: SizeFamily<Kind = SizedType>> NicheFamily for Box<R> {
         type Kind = WithStableNiche;
     }
     #[cfg(feature = "alloc")]
-    impl<R: DstFamily<Kind: UnSized> + ?Sized> NicheFamily for Box<R> {
+    impl<R: SizeFamily<Kind = Zst>> NicheFamily for Box<R> {
+        type Kind = WithStableNiche;
+    }
+    #[cfg(feature = "alloc")]
+    impl<R: SizeFamily<Kind = Uninhabited>> NicheFamily for Box<R> {
+        type Kind = WithStableNiche;
+    }
+    #[cfg(feature = "alloc")]
+    impl<R: SizeFamily<Kind = SliceLike> + ?Sized> NicheFamily for Box<R> {
         type Kind = WithCustomNiche;
     }
     #[cfg(feature = "alloc")]
-    impl<R: DstFamily<Kind = ExternTypeLike>> NicheFamily for Box<R> {
+    impl<R: SizeFamily<Kind = TraitObjectLike> + ?Sized> NicheFamily for Box<R> {
+        type Kind = WithCustomNiche;
+    }
+    #[cfg(feature = "alloc")]
+    impl<R: SizeFamily<Kind = ExternTypeLike> + ?Sized> NicheFamily for Box<R> {
         type Kind = WithCustomNiche;
     }
 
@@ -176,6 +209,13 @@ disjoint_impls! {
     //    type Kind = WithoutNiche;
     //}
     impl<R: NicheFamily<Kind = WithCustomNiche>> NicheFamily for Option<R> where Self: Niche {
+        type Kind = WithCustomNiche;
+    }
+
+    // TODO: implement others, take alignment into account
+    impl<R: NicheFamily<Kind: WithNiche>, E: NicheFamily<Kind: WithNiche>> NicheFamily
+        for Result<R, E>
+    {
         type Kind = WithCustomNiche;
     }
 }

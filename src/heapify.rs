@@ -2,7 +2,7 @@
 use alloc_crate::{boxed::Box, vec::Vec};
 use disjoint_impls::disjoint_impls;
 
-use crate::{ExternC, FnArg, niche::{NicheFamily, WithNiche, WithoutNiche}};
+use crate::niche::{NicheFamily, WithNiche, WithoutNiche};
 
 disjoint_impls! {
     pub trait Heapify: Sized {

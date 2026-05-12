@@ -31,12 +31,12 @@ use crate::{
         DecodeCloned, decode_cloned_array, decode_cloned_option_with_custom_niche,
         decode_cloned_option_without_niche,
     },
-    dst::{DstFamily, ExternTypeLike, Sized_, SliceDst, SliceLike},
     external::{ExternRef, ExternRefMut, External},
     ir::{Cloned, Opaque, ReprFamily, Robust, Transmuted},
     niche::{Niche, WithCustomNiche, WithoutNiche},
     option::COption,
     out_ptr::Zst,
+    size::{ExternTypeLike, SizeFamily, SizedType, SliceDst, SliceLike},
     slice::{CSlice, CSliceMut},
     transmute::{
         CheckedTransmute, transmute_from_target, transmute_from_target_dst_mut,
@@ -51,7 +51,6 @@ pub mod borrow;
 #[cfg(feature = "alloc")]
 pub mod boxed;
 pub mod cloned;
-pub mod dst;
 pub mod external;
 pub mod handle;
 pub mod heapify;
@@ -61,6 +60,7 @@ pub mod option;
 pub mod out_ptr;
 mod primitives;
 pub mod result;
+pub mod size;
 pub mod slice;
 mod std_impls;
 pub mod transmute;
@@ -114,7 +114,6 @@ disjoint_impls! {
     {
         type CType = Self;
     }
-    #[cfg(feature = "alloc")]
     impl<R> ExternC for R
     where
     Self: ReprFamily<Kind = Opaque>,
@@ -131,14 +130,14 @@ disjoint_impls! {
     impl<'a, R: ?Sized + SliceDst<Elem: ReprC>> ExternC for &'a R
     where
         Self: ReprFamily<Kind = &'a Robust>,
-        R: DstFamily<Kind = SliceLike>,
+        R: SizeFamily<Kind = SliceLike>,
     {
         type CType = CSlice<R::Elem>;
     }
     impl<'a, R: ?Sized + SliceDst> ExternC for &'a R
     where
         Self: ReprFamily<Kind = &'a Opaque>,
-        R: DstFamily<Kind = SliceLike>,
+        R: SizeFamily<Kind = SliceLike>,
     {
         type CType = CSlice<R::Elem>;
     }
@@ -146,14 +145,14 @@ disjoint_impls! {
     where
         &'a <R as CheckedTransmute>::Target: ExternC,
         Self: ReprFamily<Kind = &'a Transmuted>,
-        R: DstFamily<Kind = SliceLike>,
+        R: SizeFamily<Kind = SliceLike>,
     {
         type CType = <&'a R::Target as ExternC>::CType;
     }
     impl<'a, R> ExternC for &'a R
     where
         Self: ReprFamily<Kind = &'a Transmuted>,
-        R: DstFamily<Kind = ExternTypeLike>,
+        R: SizeFamily<Kind = ExternTypeLike>,
         ExternRef<'a, R>: ExternC,
     {
         type CType = <ExternRef<'a, R> as ExternC>::CType;
@@ -161,14 +160,14 @@ disjoint_impls! {
     impl<'a, R: ExternC, S: Cloned + 'a> ExternC for &'a R
     where
         Self: ReprFamily<Kind = &'a S>,
-        R: DstFamily<Kind = Sized_>,
+        R: SizeFamily<Kind = SizedType>,
     {
         type CType = *const R::CType;
     }
     impl<'a, R: ?Sized + SliceDst<Elem: ExternC>, S: Cloned + ?Sized + 'a> ExternC for &'a R
     where
         Self: ReprFamily<Kind = &'a S>,
-        R: DstFamily<Kind = SliceLike>,
+        R: SizeFamily<Kind = SliceLike>,
     {
         type CType = CSlice<<R::Elem as ExternC>::CType>;
     }
@@ -176,14 +175,14 @@ disjoint_impls! {
     impl<'a, R: ?Sized + SliceDst<Elem: ReprC>> ExternC for &'a mut R
     where
         Self: ReprFamily<Kind = &'a mut Robust>,
-        R: DstFamily<Kind = SliceLike>,
+        R: SizeFamily<Kind = SliceLike>,
     {
         type CType = CSliceMut<R::Elem>;
     }
     impl<'a, R: ?Sized + SliceDst> ExternC for &'a mut R
     where
         Self: ReprFamily<Kind = &'a mut Opaque>,
-        R: DstFamily<Kind = SliceLike>,
+        R: SizeFamily<Kind = SliceLike>,
     {
         type CType = CSliceMut<R::Elem>;
     }
@@ -191,14 +190,14 @@ disjoint_impls! {
     where
         &'a mut <R as CheckedTransmute>::Target: ExternC,
         Self: ReprFamily<Kind = &'a mut Transmuted>,
-        R: DstFamily<Kind = SliceLike>,
+        R: SizeFamily<Kind = SliceLike>,
     {
         type CType = <&'a mut R::Target as ExternC>::CType;
     }
     impl<'a, R> ExternC for &'a mut R
     where
         Self: ReprFamily<Kind = &'a mut Transmuted>,
-        R: DstFamily<Kind = ExternTypeLike>,
+        R: SizeFamily<Kind = ExternTypeLike>,
         ExternRefMut<'a, R>: ExternC,
     {
         type CType = <ExternRefMut<'a, R> as ExternC>::CType;
@@ -206,14 +205,14 @@ disjoint_impls! {
     impl<'a, R: ExternC, S: Cloned + 'a> ExternC for &'a mut R
     where
         Self: ReprFamily<Kind = &'a mut S>,
-        R: DstFamily<Kind = Sized_>,
+        R: SizeFamily<Kind = SizedType>,
     {
         type CType = *mut R::CType;
     }
     impl<'a, R: ?Sized + SliceDst<Elem: ExternC>, S: Cloned + ?Sized + 'a> ExternC for &'a mut R
     where
         Self: ReprFamily<Kind = &'a mut S>,
-        R: DstFamily<Kind = SliceLike>,
+        R: SizeFamily<Kind = SliceLike>,
     {
         type CType = CSliceMut<<R::Elem as ExternC>::CType>;
     }
@@ -222,7 +221,7 @@ disjoint_impls! {
     impl<R: ?Sized + SliceDst<Elem: ReprC>> ExternC for Box<R>
     where
         Self: ReprFamily<Kind = Box<Robust>>,
-        R: DstFamily<Kind = SliceLike>,
+        R: SizeFamily<Kind = SliceLike>,
     {
         type CType = CBoxedSlice<R::Elem>;
     }
@@ -230,7 +229,7 @@ disjoint_impls! {
     impl<R: ?Sized + SliceDst> ExternC for Box<R>
     where
         Self: ReprFamily<Kind = Box<Opaque>>,
-        R: DstFamily<Kind = SliceLike>,
+        R: SizeFamily<Kind = SliceLike>,
     {
         type CType = CBoxedSlice<R::Elem>;
     }
@@ -239,7 +238,7 @@ disjoint_impls! {
     where
         Box<<R as CheckedTransmute>::Target>: ExternC,
         Self: ReprFamily<Kind = Box<Transmuted>>,
-        R: DstFamily<Kind = SliceLike>,
+        R: SizeFamily<Kind = SliceLike>,
     {
         type CType = <Box<R::Target> as ExternC>::CType;
     }
@@ -247,7 +246,7 @@ disjoint_impls! {
     impl<R: External + ExternC> ExternC for Box<R>
     where
         Self: ReprFamily<Kind = Box<Transmuted>>,
-        R: DstFamily<Kind = ExternTypeLike>,
+        R: SizeFamily<Kind = ExternTypeLike>,
     {
         type CType = <R as ExternC>::CType;
     }
@@ -255,7 +254,7 @@ disjoint_impls! {
     impl<R: ExternC, S: Cloned> ExternC for Box<R>
     where
         Self: ReprFamily<Kind = Box<S>>,
-        R: DstFamily<Kind = Sized_>,
+        R: SizeFamily<Kind = SizedType>,
     {
         type CType = CBox<R::CType>;
     }
@@ -263,7 +262,7 @@ disjoint_impls! {
     impl<R: ?Sized + SliceDst<Elem: ExternC>, S: Cloned + ?Sized> ExternC for Box<R>
     where
         Self: ReprFamily<Kind = Box<S>>,
-        R: DstFamily<Kind = SliceLike>,
+        R: SizeFamily<Kind = SliceLike>,
     {
         type CType = CBoxedSlice<<R::Elem as ExternC>::CType>;
     }
@@ -376,7 +375,7 @@ disjoint_impls! {
     impl<'a, R: ?Sized + SliceDst<Elem: ReprC>> EncodeWithStore<false> for &'a R
     where
         Self: ReprFamily<Kind = &'a Robust>,
-        R: DstFamily<Kind = SliceLike>,
+        R: SizeFamily<Kind = SliceLike>,
     {
         type Store = ();
 
@@ -407,7 +406,7 @@ disjoint_impls! {
     where
         &'a <R as CheckedTransmute>::Target: EncodeWithStore,
         Self: ReprFamily<Kind = &'a Transmuted>,
-        R: DstFamily<Kind = SliceLike>,
+        R: SizeFamily<Kind = SliceLike>,
     {
         type Store = <&'a R::Target as EncodeWithStore>::Store;
 
@@ -421,7 +420,7 @@ disjoint_impls! {
     impl<'a, R: External> EncodeWithStore<false> for &'a R
     where
         Self: ReprFamily<Kind = &'a Transmuted>,
-        R: DstFamily<Kind = ExternTypeLike>,
+        R: SizeFamily<Kind = ExternTypeLike>,
         ExternRef<'a, R>: Encode,
     {
         type Store = ();
@@ -436,7 +435,7 @@ disjoint_impls! {
     impl<'a, R: EncodeWithStore + Clone, S: Cloned + 'a> EncodeWithStore<false> for &'a R
     where
         Self: ReprFamily<Kind = &'a S>,
-        R: DstFamily<Kind = Sized_>,
+        R: SizeFamily<Kind = SizedType>,
     {
         type Store = RefStore<R>;
 
@@ -451,7 +450,7 @@ disjoint_impls! {
     impl<'a, R: ?Sized + SliceDst<Elem: EncodeWithStore + Clone>, S: Cloned + ?Sized + 'a> EncodeWithStore<false> for &'a R
     where
         Self: ReprFamily<Kind = &'a S>,
-        R: DstFamily<Kind = SliceLike>,
+        R: SizeFamily<Kind = SliceLike>,
     {
         type Store = SliceStore<<R::Elem as ExternC>::CType, <R::Elem as EncodeWithStore>::Store>;
 
@@ -483,7 +482,7 @@ disjoint_impls! {
     impl<'a, R: ?Sized + SliceDst<Elem: ReprC>> EncodeWithStore<false> for &'a mut R
     where
         Self: ReprFamily<Kind = &'a mut Robust>,
-        R: DstFamily<Kind = SliceLike>,
+        R: SizeFamily<Kind = SliceLike>,
     {
         type Store = ();
 
@@ -515,7 +514,7 @@ disjoint_impls! {
     where
         &'a mut <R as CheckedTransmute>::Target: EncodeWithStore,
         Self: ReprFamily<Kind = &'a mut Transmuted>,
-        R: DstFamily<Kind = SliceLike>,
+        R: SizeFamily<Kind = SliceLike>,
     {
         type Store = <&'a mut R::Target as EncodeWithStore>::Store;
 
@@ -529,7 +528,7 @@ disjoint_impls! {
     impl<'a, R: External> EncodeWithStore<false> for &'a mut R
     where
         Self: ReprFamily<Kind = &'a mut Transmuted>,
-        R: DstFamily<Kind = ExternTypeLike>,
+        R: SizeFamily<Kind = ExternTypeLike>,
         ExternRefMut<'a, R>: Encode,
     {
         type Store = ();
@@ -544,7 +543,7 @@ disjoint_impls! {
     impl<'a, R: EncodeWithStore + DecodeWithStore<'a, false> + Clone, S: Cloned + 'a> EncodeWithStore<false> for &'a mut R
     where
         Self: ReprFamily<Kind = &'a mut S>,
-        R: DstFamily<Kind = Sized_>,
+        R: SizeFamily<Kind = SizedType>,
     {
         type Store = RefMutStore<'a, R>;
 
@@ -560,7 +559,7 @@ disjoint_impls! {
     impl<'a, R: ?Sized + SliceDst<Elem: DecodeWithStore<'a> + EncodeWithStore + Clone + 'a>, S: Cloned + ?Sized + 'a> EncodeWithStore<false> for &'a mut R
     where
         Self: ReprFamily<Kind = &'a mut S>,
-        R: DstFamily<Kind = SliceLike>,
+        R: SizeFamily<Kind = SliceLike>,
     {
         type Store = MutSliceStore<'a, R::Elem>;
 
@@ -594,7 +593,7 @@ disjoint_impls! {
     impl<R: ?Sized + SliceDst<Elem: ReprC>> EncodeWithStore<false> for Box<R>
     where
         Self: ReprFamily<Kind = Box<Robust>>,
-        R: DstFamily<Kind = SliceLike>,
+        R: SizeFamily<Kind = SliceLike>,
     {
         type Store = ();
 
@@ -630,7 +629,7 @@ disjoint_impls! {
     where
         Box<<R as CheckedTransmute>::Target>: EncodeWithStore,
         Self: ReprFamily<Kind = Box<Transmuted>>,
-        R: DstFamily<Kind = SliceLike>,
+        R: SizeFamily<Kind = SliceLike>,
     {
         type Store = <Box<R::Target> as EncodeWithStore>::Store;
 
@@ -645,7 +644,7 @@ disjoint_impls! {
     impl<R: External + Encode> EncodeWithStore<false> for Box<R>
     where
         Self: ReprFamily<Kind = Box<Transmuted>>,
-        R: DstFamily<Kind = ExternTypeLike>,
+        R: SizeFamily<Kind = ExternTypeLike>,
     {
         type Store = ();
 
@@ -660,7 +659,7 @@ disjoint_impls! {
     impl<R: EncodeWithStore, S: Cloned> EncodeWithStore<false> for Box<R>
     where
         Self: ReprFamily<Kind = Box<S>>,
-        R: DstFamily<Kind = Sized_>,
+        R: SizeFamily<Kind = SizedType>,
     {
         type Store = R::Store;
 
@@ -675,7 +674,7 @@ disjoint_impls! {
     impl<R: ?Sized + SliceDst<Elem: EncodeWithStore + Clone>, S: Cloned + ?Sized> EncodeWithStore<false> for Box<R>
     where
         Self: ReprFamily<Kind = Box<S>>,
-        R: DstFamily<Kind = SliceLike>,
+        R: SizeFamily<Kind = SliceLike>,
     {
         type Store = ClonedCollectionStore<<R::Elem as EncodeWithStore>::Store>;
 
@@ -831,7 +830,7 @@ disjoint_impls! {
     impl<'d, R: ?Sized + SliceDst<Elem: ReprC + 'd>> DecodeWithStore<'d, false> for &'d R
     where
         Self: ReprFamily<Kind = &'d Robust>,
-        R: DstFamily<Kind = SliceLike>,
+        R: SizeFamily<Kind = SliceLike>,
     {
         type Store = ();
 
@@ -870,7 +869,7 @@ disjoint_impls! {
     where
         &'a <R as CheckedTransmute>::Target: DecodeWithStore<'a>,
         Self: ReprFamily<Kind = &'a Transmuted>,
-        R: DstFamily<Kind = SliceLike>,
+        R: SizeFamily<Kind = SliceLike>,
     {
         type Store = <&'a R::Target as DecodeWithStore<'a>>::Store;
 
@@ -886,7 +885,7 @@ disjoint_impls! {
     impl<'d, R: DecodeCloned<'d>, S: Cloned + 'd> DecodeWithStore<'d, false> for &'d R
     where
         Self: ReprFamily<Kind = &'d S>,
-        R: DstFamily<Kind = Sized_>,
+        R: SizeFamily<Kind = SizedType>,
     {
         type Store = RefDecodeStore<R, R::Store>;
 
@@ -903,7 +902,7 @@ disjoint_impls! {
     impl<'a, R: ?Sized + SliceDst<Elem: DecodeCloned<'a>>, S: Cloned + ?Sized + 'a> DecodeWithStore<'a, false> for &'a R
     where
         Self: ReprFamily<Kind = &'a S>,
-        R: DstFamily<Kind = SliceLike>,
+        R: SizeFamily<Kind = SliceLike>,
     {
         type Store = DecodeStoreSlicePair<R::Elem, <R::Elem as DecodeWithStore<'a>>::Store>;
 
@@ -934,7 +933,7 @@ disjoint_impls! {
     impl<'d, R: ?Sized + SliceDst<Elem: ReprC + 'd>> DecodeWithStore<'d, false> for &'d mut R
     where
         Self: ReprFamily<Kind = &'d mut Robust>,
-        R: DstFamily<Kind = SliceLike>,
+        R: SizeFamily<Kind = SliceLike>,
     {
         type Store = ();
 
@@ -974,7 +973,7 @@ disjoint_impls! {
     where
         &'a mut <R as CheckedTransmute>::Target: DecodeWithStore<'a>,
         Self: ReprFamily<Kind = &'a mut Transmuted>,
-        R: DstFamily<Kind = SliceLike>,
+        R: SizeFamily<Kind = SliceLike>,
     {
         type Store = <&'a mut R::Target as DecodeWithStore<'a>>::Store;
 
@@ -990,7 +989,7 @@ disjoint_impls! {
     impl<'d, R: DecodeCloned<'d> + EncodeWithStore, S: Cloned + 'd> DecodeWithStore<'d, false> for &'d mut R
     where
         Self: ReprFamily<Kind = &'d mut S>,
-        R: DstFamily<Kind = Sized_>,
+        R: SizeFamily<Kind = SizedType>,
     {
         type Store = RefMutDecodeStore<R, <R as DecodeWithStore<'d>>::Store>;
 
@@ -1009,7 +1008,7 @@ disjoint_impls! {
     impl<'a, R: ?Sized + SliceDst<Elem: DecodeCloned<'a> + EncodeWithStore>, S: Cloned + ?Sized + 'a> DecodeWithStore<'a, false> for &'a mut R
     where
         Self: ReprFamily<Kind = &'a mut S>,
-        R: DstFamily<Kind = SliceLike>,
+        R: SizeFamily<Kind = SliceLike>,
     {
         type Store = MutSliceDecodeStore<R::Elem, <R::Elem as DecodeWithStore<'a>>::Store>;
 
@@ -1065,7 +1064,7 @@ disjoint_impls! {
     where
         Box<<R as CheckedTransmute>::Target>: DecodeWithStore<'d>,
         Self: ReprFamily<Kind = Box<Transmuted>>,
-        R: DstFamily<Kind = SliceLike>,
+        R: SizeFamily<Kind = SliceLike>,
     {
         type Store = <Box<R::Target> as DecodeWithStore<'d>>::Store;
 
@@ -1080,7 +1079,7 @@ disjoint_impls! {
     //impl<'d, R: DecodeWithStore<'d>, S: Cloned> DecodeWithStore<'d> for Box<R>
     //where
     //    Self: ReprFamily<Kind = Box<S>>,
-    //    R: SizeFamily<Kind = Sized_>,
+    //    R: SizeFamily<Kind = SizedType>,
     //{
     //    type Store = ();
 
@@ -1597,7 +1596,7 @@ impl<R> Store for OpaqueMutSliceDecodeStore<R> {
 /// ```
 /// use co3::{
 ///     borrow::{Borrow, ToOwned},
-///     ir::{DstFamily, Sized_},
+///     ir::{SizeFamily, SizedType},
 ///     reprC
 /// };
 ///
@@ -1653,10 +1652,10 @@ impl<R> Store for OpaqueMutSliceDecodeStore<R> {
 ///     }
 /// }
 ///
-/// impl DstFamily for RobustStruct {
-///     type Kind = Sized_;
+/// impl SizeFamily for RobustStruct {
+///     type Kind = SizedType;
 /// }
-/// impl<T: ?Sized + DstFamily> DstFamily for NoRepr<T> {
+/// impl<T: ?Sized + SizeFamily> SizeFamily for NoRepr<T> {
 ///     type Kind = T::Kind;
 /// }
 ///
@@ -1721,8 +1720,8 @@ macro_rules! reprC {
     (unsafe impl $(())? Transmuted for $self_ty:ty $(where ( $($preds:tt)* ))? {
         type Target = $target:ty;
     }) => {
-        impl $crate::dst::DstFamily for $self_ty where $($($preds)*)? {
-            type Kind = <$target as $crate::dst::DstFamily>::Kind;
+        impl $crate::size::SizeFamily for $self_ty where $($($preds)*)? {
+            type Kind = <$target as $crate::size::SizeFamily>::Kind;
         }
 
         $crate::reprC! {
@@ -1736,11 +1735,11 @@ macro_rules! reprC {
     (unsafe impl ( $($params:tt)+ ) Transmuted for $self_ty:ty $(where ( $($preds:tt)* ))? {
         type Target = $target:ty;
     }) => {
-        impl<$($params)*> $crate::dst::DstFamily for $self_ty where
-            $target: $crate::dst::DstFamily,
+        impl<$($params)*> $crate::size::SizeFamily for $self_ty where
+            $target: $crate::size::SizeFamily,
             $($($preds)*)?
         {
-            type Kind = <$target as $crate::dst::DstFamily>::Kind;
+            type Kind = <$target as $crate::size::SizeFamily>::Kind;
         }
 
         $crate::reprC! {
@@ -1781,8 +1780,8 @@ macro_rules! reprC {
         fn is_valid($target_var:ident: $target_ty:ty) -> $ret_val:ty
             $block:block
     }) => {
-        impl $crate::dst::DstFamily for $self_ty where $($($preds)*)? {
-            type Kind = <$target as $crate::dst::DstFamily>::Kind;
+        impl $crate::size::SizeFamily for $self_ty where $($($preds)*)? {
+            type Kind = <$target as $crate::size::SizeFamily>::Kind;
         }
 
         $crate::reprC! {
@@ -1800,11 +1799,11 @@ macro_rules! reprC {
         fn is_valid($target_var:ident: $target_ty:ty) -> $ret_val:ty
             $block:block
     }) => {
-        impl<$($params)+> $crate::dst::DstFamily for $self_ty where
-            $target: $crate::dst::DstFamily,
+        impl<$($params)+> $crate::size::SizeFamily for $self_ty where
+            $target: $crate::size::SizeFamily,
             $($($preds)*)?
         {
-            type Kind = <$target as $crate::dst::DstFamily>::Kind;
+            type Kind = <$target as $crate::size::SizeFamily>::Kind;
         }
 
         $crate::reprC! {
@@ -1855,8 +1854,8 @@ macro_rules! reprC {
         fn is_valid($target_var:ident: $target_ty:ty) -> $ret_val:ty
             $block:block
     }) => {
-        impl $crate::dst::DstFamily for $self_ty where $($($preds)*)? {
-            type Kind = <$target as $crate::dst::DstFamily>::Kind;
+        impl $crate::size::SizeFamily for $self_ty where $($($preds)*)? {
+            type Kind = <$target as $crate::size::SizeFamily>::Kind;
         }
 
         $crate::reprC! {
@@ -1876,11 +1875,11 @@ macro_rules! reprC {
         fn is_valid($target_var:ident: $target_ty:ty) -> $ret_val:ty
             $block:block
     }) => {
-        impl<$($params)+> $crate::dst::DstFamily for $self_ty where
-            $target: $crate::dst::DstFamily,
+        impl<$($params)+> $crate::size::SizeFamily for $self_ty where
+            $target: $crate::size::SizeFamily,
             $($($preds)*)?
         {
-            type Kind = <$target as $crate::dst::DstFamily>::Kind;
+            type Kind = <$target as $crate::size::SizeFamily>::Kind;
         }
 
         $crate::reprC! {
@@ -2206,8 +2205,8 @@ macro_rules! reprC {
     };
 
     (@assert_sized [$($impl_generics:tt)*] $self_ty:ty $([$($preds:tt)*])?) => {
-        impl<$($impl_generics)*> $crate::dst::DstFamily for $self_ty $(where $($preds)*)? {
-            type Kind = $crate::dst::Sized_;
+        impl<$($impl_generics)*> $crate::size::SizeFamily for $self_ty $(where $($preds)*)? {
+            type Kind = $crate::size::SizedType;
         }
 
         const _: () = {
@@ -2509,8 +2508,8 @@ mod tests {
             value: i32,
         }
 
-        impl DstFamily for OpaqueData {
-            type Kind = Sized_;
+        impl SizeFamily for OpaqueData {
+            type Kind = SizedType;
         }
         impl ReprFamily for OpaqueData {
             type Kind = Opaque;
@@ -2538,8 +2537,8 @@ mod tests {
             value: i32,
         }
 
-        impl DstFamily for OpaqueData {
-            type Kind = Sized_;
+        impl SizeFamily for OpaqueData {
+            type Kind = SizedType;
         }
         impl ReprFamily for OpaqueData {
             type Kind = Opaque;

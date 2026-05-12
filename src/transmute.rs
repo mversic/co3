@@ -1,5 +1,5 @@
 #[cfg(feature = "alloc")]
-use alloc_crate::{boxed::Box, vec::Vec};
+use alloc_crate::boxed::Box;
 use core::mem::ManuallyDrop;
 
 use disjoint_impls::disjoint_impls;
@@ -7,7 +7,7 @@ use disjoint_impls::disjoint_impls;
 #[cfg(feature = "alloc")]
 use crate::boxed::CBox;
 use crate::{
-    DstFamily, EncodeWithStore, ReprC, Sized_, SliceDst, SliceLike, Store,
+    EncodeWithStore, ReprC, SizeFamily, SizedType, SliceDst, SliceLike, Store,
     assert_arr_has_non_zero_len,
     ir::{Cloned, NonRobust, Opaque, ReprFamily, Robust, Transmuted},
     niche::{NicheFamily, StableNiche, WithNiche, WithStableNiche, WithoutNiche},
@@ -192,7 +192,7 @@ disjoint_impls! {
 
     unsafe impl<R: CheckedTransmute<Target: FlatTransmute + Sized>> FlatTransmute for R
     where
-        Self: ReprFamily<Kind = Transmuted> + DstFamily<Kind = Sized_>,
+        Self: ReprFamily<Kind = Transmuted> + SizeFamily<Kind = SizedType>,
     {
         type Target = <R::Target as FlatTransmute>::Target;
 
@@ -208,7 +208,7 @@ disjoint_impls! {
     }
     unsafe impl<R: ?Sized + CheckedTransmute<Target: FlatTransmute<Target: SliceDst> + SliceDst>> FlatTransmute for R
     where
-        Self: ReprFamily<Kind = Transmuted> + DstFamily<Kind = SliceLike>,
+        Self: ReprFamily<Kind = Transmuted> + SizeFamily<Kind = SliceLike>,
     {
         type Target = <R::Target as FlatTransmute>::Target;
 
@@ -462,33 +462,6 @@ pub(super) fn transmute_from_target_boxed_dst<
     })
 }
 
-#[cfg(feature = "alloc")]
-pub(super) fn transmute_into_target_vec<R: CheckedTransmute<Target: Sized>>(
-    source: Vec<R>,
-) -> Vec<R::Target> {
-    assert_size_and_allignment_match::<R>();
-
-    let mut vec = ManuallyDrop::new(source);
-
-    // SAFETY: Soundness is guaranteed by [`Transmute`]
-    unsafe { Vec::from_raw_parts(vec.as_mut_ptr().cast(), vec.len(), vec.capacity()) }
-}
-#[cfg(feature = "alloc")]
-pub(super) fn transmute_from_target_vec<R: CheckedTransmute<Target: Sized>>(
-    source: Vec<R::Target>,
-) -> Option<Vec<R>> {
-    assert_size_and_allignment_match::<R>();
-
-    if !source.iter().all(|item| R::is_valid(item)) {
-        return None;
-    }
-
-    let mut vec = ManuallyDrop::new(source);
-
-    // SAFETY: Soundness is guaranteed by [`Transmute`]
-    Some(unsafe { Vec::from_raw_parts(vec.as_mut_ptr().cast(), vec.len(), vec.capacity()) })
-}
-
 fn assert_size_and_allignment_match<R: CheckedTransmute<Target: Sized>>() {
     const {
         debug_assert!(core::mem::size_of::<R>() == core::mem::size_of::<R::Target>());
@@ -498,6 +471,8 @@ fn assert_size_and_allignment_match<R: CheckedTransmute<Target: Sized>>() {
 
 #[cfg(test)]
 mod tests {
+    use alloc_crate::vec::Vec;
+
     use static_assertions::assert_impl_all;
 
     use super::*;

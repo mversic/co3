@@ -11,11 +11,11 @@ use crate::boxed::{CBox, CBoxedSlice};
 use crate::{
     ReprC,
     borrow::{Borrow, ToOwned},
-    dst::{DstFamily, Sized_},
     heapify::Heapify,
     ir::{ReprFamily, Transmuted},
     niche::{Niche, NicheFamily, StableNiche, WithCustomNiche, WithStableNiche, WithoutNiche},
     reprC,
+    size::{SizeFamily, SizedType, Zst},
     transmute::{CheckedTransmute, EncodeTransmuted},
 };
 
@@ -51,8 +51,8 @@ non_zero_derive! {
 }
 
 unsafe impl ReprC for () {}
-impl DstFamily for () {
-    type Kind = Sized_;
+impl SizeFamily for () {
+    type Kind = Zst;
 }
 impl NicheFamily for () {
     type Kind = WithoutNiche;
@@ -118,6 +118,7 @@ impl ReprFamily for &c_void {
 impl ReprFamily for &mut c_void {
     type Kind = Transmuted;
 }
+
 #[cfg(feature = "alloc")]
 impl ReprFamily for Box<c_void> {
     type Kind = Transmuted;
@@ -166,15 +167,15 @@ unsafe impl CheckedTransmute for str {
     }
 }
 
-impl<T: ?Sized + DstFamily> DstFamily for UnsafeCell<T> {
+impl<T: ?Sized + SizeFamily> SizeFamily for UnsafeCell<T> {
     type Kind = T::Kind;
 }
-impl<T> DstFamily for NonNull<T> {
-    type Kind = Sized_;
+impl<T> SizeFamily for NonNull<T> {
+    type Kind = SizedType;
 }
 #[cfg(feature = "alloc")]
-impl DstFamily for String {
-    type Kind = Sized_;
+impl SizeFamily for String {
+    type Kind = SizedType;
 }
 
 impl<T: ?Sized> ReprFamily for UnsafeCell<T> {

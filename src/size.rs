@@ -1,18 +1,35 @@
 #[cfg(feature = "alloc")]
 use alloc_crate::{boxed::Box, vec::Vec};
+use disjoint_impls::disjoint_impls;
 
-pub enum Sized_ {}
+/// [`Sized`] type whose size is 0
+pub enum Zst {}
+/// Type that has a non-zero size
+pub enum SizedType {}
 pub enum SliceLike {}
 pub enum TraitObjectLike {}
 pub enum ExternTypeLike {}
 
-pub(crate) trait UnSized {}
+// TODO: Not used atm
+/// [`Zst`] type that has no valid values
+pub enum Uninhabited {}
 
-impl UnSized for SliceLike {}
-impl UnSized for TraitObjectLike {}
+disjoint_impls! {
+    pub trait SizeFamily {
+        type Kind;
+    }
 
-pub trait DstFamily {
-    type Kind;
+    impl<T: SizeFamily<Kind = Uninhabited>> SizeFamily for Option<T> {
+        type Kind = Zst;
+    }
+    impl<T: SizeFamily<Kind = Zst>> SizeFamily for Option<T> {
+        type Kind = SizedType;
+    }
+    impl<T: SizeFamily<Kind = SizedType>> SizeFamily for Option<T> {
+        type Kind = SizedType;
+    }
+
+    // TODO: Implement for Result
 }
 
 pub trait Dst {
@@ -36,30 +53,30 @@ impl<R> Dst for [R] {
     type Payload = Self;
 }
 
-impl<R> DstFamily for [R] {
+impl<R> SizeFamily for [R] {
     type Kind = SliceLike;
 }
 
-impl<T: ?Sized> DstFamily for &T {
-    type Kind = Sized_;
+impl<T: ?Sized> SizeFamily for &T {
+    type Kind = SizedType;
 }
 
-impl<T: ?Sized> DstFamily for &mut T {
-    type Kind = Sized_;
-}
-
-#[cfg(feature = "alloc")]
-impl<T: ?Sized> DstFamily for Box<T> {
-    type Kind = Sized_;
+impl<T: ?Sized> SizeFamily for &mut T {
+    type Kind = SizedType;
 }
 
 #[cfg(feature = "alloc")]
-impl<T> DstFamily for Vec<T> {
-    type Kind = Sized_;
+impl<T: ?Sized> SizeFamily for Box<T> {
+    type Kind = SizedType;
 }
 
-impl<T, const N: usize> DstFamily for [T; N] {
-    type Kind = Sized_;
+#[cfg(feature = "alloc")]
+impl<T> SizeFamily for Vec<T> {
+    type Kind = SizedType;
+}
+
+impl<T: SizeFamily, const N: usize> SizeFamily for [T; N] {
+    type Kind = T::Kind;
 }
 
 impl<R> SliceDst for [R] {
@@ -91,7 +108,7 @@ impl Dst for str {
     type Payload = Self;
 }
 
-impl DstFamily for str {
+impl SizeFamily for str {
     type Kind = SliceLike;
 }
 

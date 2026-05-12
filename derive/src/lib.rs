@@ -177,15 +177,15 @@ pub fn derive_ReprC(attr: TokenStream, item: TokenStream) -> Result<TokenStream>
     Ok(quote! {
         #item
 
-        impl #impl_generics co3::dst::DstFamily for (dyn #trait_name #ty_generics) #where_clause {
-            type Kind = co3::dst::ExternTypeLike;
+        impl #impl_generics co3::size::SizeFamily for (dyn #trait_name #ty_generics) #where_clause {
+            type Kind = co3::size::ExternTypeLike;
         }
 
         impl #impl_generics co3::ir::ReprFamily for (dyn #trait_name #ty_generics) #where_clause {
             type Kind = co3::ir::Opaque;
         }
 
-        //impl #impl_generics co3::dst::TraitObjectDst for (dyn #trait_name #ty_generics) #where_clause {
+        //impl #impl_generics co3::size::TraitObjectDst for (dyn #trait_name #ty_generics) #where_clause {
         //}
     })
 }

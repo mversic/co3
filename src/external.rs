@@ -55,8 +55,8 @@ macro_rules! impl_external_ref_common {
 
         unsafe impl<R> StableNiche for $ty<'_, R> {}
 
-        impl<R> crate::dst::DstFamily for $ty<'_, R> {
-            type Kind = crate::dst::Sized_;
+        impl<R> crate::size::SizeFamily for $ty<'_, R> {
+            type Kind = crate::size::SizedType;
         }
 
         impl<R> Heapify for $ty<'_, R> {

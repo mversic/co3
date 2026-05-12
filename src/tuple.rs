@@ -66,9 +66,9 @@ use crate::{
     ExternC, ReprC, Store,
     borrow::{Borrow, ToOwned},
     cloned::DecodeCloned,
-    dst::DstFamily,
     heapify::Heapify,
     niche::{Niche, NicheFamily, WithNiche, WithoutNiche},
+    size::SizeFamily,
 };
 
 macro_rules! impl_tuple {
@@ -212,8 +212,8 @@ macro_rules! impl_tuple {
     };
 
     (@dst_split ($($head:ident,)*) $last:ident) => {
-        impl<$($head,)* $last: DstFamily> DstFamily for ($($head,)* $last,) {
-            type Kind = <$last as DstFamily>::Kind;
+        impl<$($head,)* $last: SizeFamily> SizeFamily for ($($head,)* $last,) {
+            type Kind = <$last as SizeFamily>::Kind;
         }
     };
 

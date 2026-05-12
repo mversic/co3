@@ -1,10 +1,10 @@
-error[E0277]: the trait bound `RefDecodeStore<(u8,), ((),)>: Zst` is not satisfied
+error[E0277]: the trait bound `RefDecodeStore<(u8,), ((),)>: co3::out_ptr::Zst` is not satisfied
  --> tests/ui_fail/unstable_refs_are_denied.rs:3:1
   |
 3 | #[export("C")]
-  | ^^^^^^^^^^^^^^ the trait `Zst` is not implemented for `RefDecodeStore<(u8,), ((),)>`
+  | ^^^^^^^^^^^^^^ the trait `co3::out_ptr::Zst` is not implemented for `RefDecodeStore<(u8,), ((),)>`
   |
-  = help: the following other types implement trait `Zst`:
+  = help: the following other types implement trait `co3::out_ptr::Zst`:
             ()
             (A, B)
             (A, B, C)

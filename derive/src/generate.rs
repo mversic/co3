@@ -498,8 +498,8 @@ fn wrap_extern_type_decl(
 
         #handle_family_impl
 
-        impl #impl_generics co3::dst::DstFamily for #ident #ty_generics #where_clause {
-            type Kind = co3::dst::ExternTypeLike;
+        impl #impl_generics co3::size::SizeFamily for #ident #ty_generics #where_clause {
+            type Kind = co3::size::ExternTypeLike;
         }
         impl #impl_generics co3::ir::ReprFamily for #ident #ty_generics #where_clause {
             type Kind = co3::ir::Transmuted;

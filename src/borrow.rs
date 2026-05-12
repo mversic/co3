@@ -4,9 +4,9 @@ use alloc_crate::{boxed::Box, vec::Vec};
 use disjoint_impls::disjoint_impls;
 
 use crate::{
-    dst::{DstFamily, ExternTypeLike, Sized_, SliceLike, TraitObjectLike},
     ir::{Cloned, Opaque, ReprFamily, Robust, Transmuted},
     niche::{NicheFamily, WithNiche, WithoutNiche},
+    size::{ExternTypeLike, SizeFamily, SizedType, SliceLike, TraitObjectLike, Zst},
 };
 
 trait NonExternTypeLike {}
@@ -14,7 +14,8 @@ trait NonOpaqueOrTransmuted {}
 impl NonOpaqueOrTransmuted for Robust {}
 impl<S: Cloned> NonOpaqueOrTransmuted for S {}
 impl<S> NonOpaqueOrTransmuted for [S] {}
-impl NonExternTypeLike for Sized_ {}
+impl NonExternTypeLike for Zst {}
+impl NonExternTypeLike for SizedType {}
 impl NonExternTypeLike for SliceLike {}
 impl NonExternTypeLike for TraitObjectLike {}
 
@@ -80,7 +81,7 @@ disjoint_impls! {
     #[cfg(feature = "alloc")]
     impl<R, const IN_STRUCT: bool> Borrow<IN_STRUCT> for Box<R>
     where
-        R: ReprFamily<Kind = Transmuted> + DstFamily<Kind = ExternTypeLike>,
+        R: ReprFamily<Kind = Transmuted> + SizeFamily<Kind = ExternTypeLike>,
     {
         type Borrowed<'itm>
             = Self
@@ -100,7 +101,7 @@ disjoint_impls! {
     #[cfg(feature = "alloc")]
     impl<R: ?Sized, const IN_STRUCT: bool> Borrow<IN_STRUCT> for Box<R>
     where
-        R: ReprFamily<Kind = Transmuted> + DstFamily<Kind: NonExternTypeLike>,
+        R: ReprFamily<Kind = Transmuted> + SizeFamily<Kind: NonExternTypeLike>,
     {
         type Borrowed<'itm>
             = &'itm R
@@ -246,7 +247,7 @@ disjoint_impls! {
     #[cfg(feature = "alloc")]
     impl<'r, R: 'r, const IN_STRUCT: bool> ToOwned<'r, IN_STRUCT> for Box<R>
     where
-        R: ReprFamily<Kind = Transmuted> + DstFamily<Kind = ExternTypeLike>,
+        R: ReprFamily<Kind = Transmuted> + SizeFamily<Kind = ExternTypeLike>,
     {
         #[inline(always)]
         fn to_owned(borrowed: Self::Borrowed<'r>) -> Self {
@@ -257,7 +258,7 @@ disjoint_impls! {
     #[cfg(feature = "alloc")]
     impl<'r, R: Clone, const IN_STRUCT: bool> ToOwned<'r, IN_STRUCT> for Box<R>
     where
-        R: ReprFamily<Kind = Transmuted> + DstFamily<Kind: NonExternTypeLike>,
+        R: ReprFamily<Kind = Transmuted> + SizeFamily<Kind: NonExternTypeLike>,
     {
         #[inline(always)]
         fn to_owned(borrowed: Self::Borrowed<'r>) -> Self {

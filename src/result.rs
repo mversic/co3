@@ -5,7 +5,7 @@ use crate::{
     borrow::{Borrow, ToOwned},
     cloned::DecodeCloned,
     heapify::Heapify,
-    niche::{Niche, NicheFamily, WithCustomNiche, WithNiche},
+    niche::Niche,
     reprC,
 };
 
@@ -106,13 +106,6 @@ reprC! {
 
 impl<T: ExternC, E: ExternC> ExternC for Result<T, E> {
     type CType = CResult<T::CType, E::CType>;
-}
-
-// TODO: implement others, I think this requires DstFamily::Zst
-impl<R: NicheFamily<Kind: WithNiche>, E: NicheFamily<Kind: WithNiche>> NicheFamily
-    for Result<R, E>
-{
-    type Kind = WithCustomNiche;
 }
 
 impl<T: ExternC, E: ExternC> Niche for Result<T, E> {

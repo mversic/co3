@@ -3,7 +3,7 @@ use alloc_crate::{boxed::Box, vec::Vec};
 use core::mem::ManuallyDrop;
 
 use super::*;
-use crate::dst::Sized_;
+use crate::size::SizedType;
 
 trait CloneFromWrapped<R> {
     fn clone_from_wrapped(self) -> R;
@@ -47,6 +47,7 @@ impl<R, W: CloneFromWrapped<R>, const N: usize> CloneFromWrapped<[R; N]> for [W;
     }
 }
 
+// TODO: would it be possible to use Borrow trait to achieve the same result here?
 disjoint_impls! {
     // FIXME: I'm not happy with the name anymore since it's implemented for all IR types
     /// [`DecodeWithStore`] helper for [`Cloned`] types.
@@ -80,7 +81,7 @@ disjoint_impls! {
 
     impl<'d, R> DecodeCloned<'d, false> for R
     where
-        Self: ReprFamily<Kind = Robust> + DecodeWithStore<'d, false>,
+        Self: ReprFamily<Kind = Robust> + DecodeWithStore<'d>
     {}
     #[cfg(feature = "alloc")]
     impl<'d, R: Clone + 'd> DecodeCloned<'d, false> for R
@@ -128,13 +129,13 @@ disjoint_impls! {
     impl<'d, R, S: Cloned + 'd> DecodeCloned<'d, false> for &'d R
     where
         Self: ReprFamily<Kind = &'d S> + DecodeWithStore<'d>,
-        R: DstFamily<Kind = Sized_>,
+        R: SizeFamily<Kind = SizedType>,
     {
     }
     impl<'a, R: ?Sized, S: Cloned + ?Sized + 'a> DecodeCloned<'a, false> for &'a R
     where
         Self: ReprFamily<Kind = &'a S> + DecodeWithStore<'a>,
-        R: DstFamily<Kind = SliceLike>,
+        R: SizeFamily<Kind = SliceLike>,
     {
     }
 
@@ -155,13 +156,13 @@ disjoint_impls! {
     impl<'a, R, S: Cloned + 'a> DecodeCloned<'a, false> for &'a mut R
     where
         Self: ReprFamily<Kind = &'a mut S> + DecodeWithStore<'a>,
-        R: DstFamily<Kind = SliceLike>,
+        R: SizeFamily<Kind = SliceLike>,
     {
     }
     impl<'d, R: ?Sized, S: Cloned + ?Sized + 'd> DecodeCloned<'d, false> for &'d mut R
     where
         Self: ReprFamily<Kind = &'d mut S> + DecodeWithStore<'d>,
-        R: DstFamily<Kind = Sized_>,
+        R: SizeFamily<Kind = SizedType>,
     {
     }
 
@@ -198,7 +199,7 @@ disjoint_impls! {
     where
         Box<<R as CheckedTransmute>::Target>: DecodeCloned<'d, false>,
         Self: ReprFamily<Kind = Box<Transmuted>>,
-        R: DstFamily<Kind = SliceLike>,
+        R: SizeFamily<Kind = SliceLike>,
     {
         #[inline(always)]
         unsafe fn decode_cloned<'itm: 'd>(
@@ -213,7 +214,7 @@ disjoint_impls! {
     //impl<'d, R, S: Cloned> DecodeCloned<'d, false> for Box<R>
     //where
     //    Self: ReprFamily<Kind = Box<S>>,
-    //    R: SizeFamily<Kind = Sized_>,
+    //    R: SizeFamily<Kind = SizedType>,
     //{
     //    #[inline(always)]
     //    unsafe fn decode_cloned<'itm: 'd>(
@@ -250,15 +251,10 @@ disjoint_impls! {
     {
         #[inline(always)]
         unsafe fn decode_cloned<'itm: 'd>(
-            source: Self::CType,
-            store: &'itm mut Self::Store,
+            _: Self::CType,
+            _: &'itm mut Self::Store,
         ) -> Option<Self> {
             unimplemented!()
-            //unsafe {
-            //    decode_cloned_vec(source, store, |item, substore| {
-            //        R::decode_cloned(item, substore)
-            //    })
-            //}
         }
     }
 
@@ -332,30 +328,6 @@ pub(super) unsafe fn decode_cloned_boxed_slice<'d, R, C: ReprC, S: Default, F>(
     store: &'d mut DecodeStoreSlice<S>,
     mut decoder: F,
 ) -> Option<Box<[R]>>
-where
-    F: FnMut(C, &'d mut S) -> Option<R>,
-{
-    let slice = unsafe { source.into_rust() }?;
-
-    let store = store.0.insert(
-        core::iter::repeat_with(Default::default)
-            .take(slice.len())
-            .collect(),
-    );
-
-    slice
-        .iter()
-        .zip(&mut *store)
-        .map(|(&item, substore)| decoder(item, substore))
-        .collect()
-}
-
-#[cfg(feature = "alloc")]
-pub(super) unsafe fn decode_cloned_vec<'d, R, C: ReprC, S: Default, F>(
-    source: CSlice<C>,
-    store: &'d mut DecodeStoreSlice<S>,
-    mut decoder: F,
-) -> Option<Vec<R>>
 where
     F: FnMut(C, &'d mut S) -> Option<R>,
 {

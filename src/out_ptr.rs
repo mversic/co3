@@ -3,10 +3,10 @@ use alloc_crate::{boxed::Box, vec::Vec};
 
 use super::*;
 use crate::{
-    dst::{ExternTypeLike, Sized_},
     external::{ExternRef, ExternRefMut},
     ir::Transmuted,
     option::COption,
+    size::{ExternTypeLike, SizedType},
 };
 
 /// Marker for a ZST(zero-sized type)
@@ -42,7 +42,6 @@ disjoint_impls! {
     {
         type OutPtr = Self::CType;
     }
-    #[cfg(feature = "alloc")]
     impl<R> OutPtr for R
     where
         Self: ReprFamily<Kind = Opaque>,
@@ -57,7 +56,7 @@ disjoint_impls! {
         type OutPtr = <R::Target as OutPtr>::OutPtr;
     }
 
-    impl<'a, R: ?Sized + DstFamily<Kind = SliceLike> + SliceDst<Elem: ReprC>> OutPtr for &'a R
+    impl<'a, R: ?Sized + SizeFamily<Kind = SliceLike> + SliceDst<Elem: ReprC>> OutPtr for &'a R
     where
         Self: ReprFamily<Kind = &'a Robust>,
     {
@@ -73,14 +72,14 @@ disjoint_impls! {
     where
         &'a <R as CheckedTransmute>::Target: OutPtr,
         Self: ReprFamily<Kind = &'a Transmuted>,
-        R: DstFamily<Kind = SliceLike>,
+        R: SizeFamily<Kind = SliceLike>,
     {
         type OutPtr = <&'a R::Target as OutPtr>::OutPtr;
     }
     impl<'a, R: CheckedTransmute> OutPtr for &'a R
     where
         Self: ReprFamily<Kind = &'a Transmuted>,
-        R: DstFamily<Kind = ExternTypeLike>,
+        R: SizeFamily<Kind = ExternTypeLike>,
         ExternRef<'a, R>: OutPtr,
     {
         type OutPtr = <ExternRef<'a, R> as OutPtr>::OutPtr;
@@ -88,19 +87,19 @@ disjoint_impls! {
     impl<'a, R: ExternC, S: Cloned + 'a> OutPtr for &'a R
     where
         Self: ReprFamily<Kind = &'a S>,
-        R: DstFamily<Kind = Sized_>,
+        R: SizeFamily<Kind = SizedType>,
     {
         type OutPtr = R::CType;
     }
     impl<'a, R: ?Sized + SliceDst<Elem: OutPtr>, S: Cloned + ?Sized + 'a> OutPtr for &'a R
     where
         Self: ReprFamily<Kind = &'a S>,
-        R: DstFamily<Kind = SliceLike>,
+        R: SizeFamily<Kind = SliceLike>,
     {
         type OutPtr = CSlice<<R::Elem as OutPtr>::OutPtr>;
     }
 
-    impl<'a, R: ?Sized + DstFamily<Kind = SliceLike> + SliceDst<Elem: ReprC>> OutPtr for &'a mut R
+    impl<'a, R: ?Sized + SizeFamily<Kind = SliceLike> + SliceDst<Elem: ReprC>> OutPtr for &'a mut R
     where
         Self: ReprFamily<Kind = &'a mut Robust>,
     {
@@ -110,21 +109,21 @@ disjoint_impls! {
     where
         &'a mut <R as CheckedTransmute>::Target: OutPtr,
         Self: ReprFamily<Kind = &'a mut Transmuted>,
-        R: DstFamily<Kind = SliceLike>,
+        R: SizeFamily<Kind = SliceLike>,
     {
         type OutPtr = <&'a mut R::Target as OutPtr>::OutPtr;
     }
     impl<'a, R: CheckedTransmute> OutPtr for &'a mut R
     where
         Self: ReprFamily<Kind = &'a mut Transmuted>,
-        R: DstFamily<Kind = ExternTypeLike>,
+        R: SizeFamily<Kind = ExternTypeLike>,
         ExternRefMut<'a, R>: OutPtr,
     {
         type OutPtr = <ExternRefMut<'a, R> as OutPtr>::OutPtr;
     }
 
     #[cfg(feature = "alloc")]
-    impl<R: ?Sized + DstFamily<Kind = SliceLike> + SliceDst<Elem: ReprC>> OutPtr for Box<R>
+    impl<R: ?Sized + SizeFamily<Kind = SliceLike> + SliceDst<Elem: ReprC>> OutPtr for Box<R>
     where
         Self: ReprFamily<Kind = Box<Robust>>,
     {
@@ -135,7 +134,7 @@ disjoint_impls! {
     where
         Box<<R as CheckedTransmute>::Target>: OutPtr,
         Self: ReprFamily<Kind = Box<Transmuted>>,
-        R: DstFamily<Kind = SliceLike>,
+        R: SizeFamily<Kind = SliceLike>,
     {
         type OutPtr = <Box<R::Target> as OutPtr>::OutPtr;
     }
@@ -143,7 +142,7 @@ disjoint_impls! {
     impl<R: External + OutPtr> OutPtr for Box<R>
     where
         Self: ReprFamily<Kind = Box<Transmuted>>,
-        R: DstFamily<Kind = ExternTypeLike>,
+        R: SizeFamily<Kind = ExternTypeLike>,
     {
         type OutPtr = R::OutPtr;
     }
@@ -158,7 +157,7 @@ disjoint_impls! {
     impl<R: ExternC, S: Cloned> OutPtr for Box<R>
     where
         Self: ReprFamily<Kind = Box<S>>,
-        R: DstFamily<Kind = Sized_>,
+        R: SizeFamily<Kind = SizedType>,
     {
         type OutPtr = R::CType;
     }
@@ -166,7 +165,7 @@ disjoint_impls! {
     impl<R: ?Sized + SliceDst<Elem: OutPtr>, S: Cloned + ?Sized> OutPtr for Box<R>
     where
         Self: ReprFamily<Kind = Box<S>>,
-        R: DstFamily<Kind = SliceLike>,
+        R: SizeFamily<Kind = SliceLike>,
     {
         type OutPtr = CBoxedSlice<<R::Elem as OutPtr>::OutPtr>;
     }

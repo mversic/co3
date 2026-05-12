@@ -389,7 +389,6 @@ fn gen_struct_size_family_with_bounds(
     let predicates = where_clause
         .as_ref()
         .map(|where_clause| &where_clause.predicates);
-
     let Some(last_field) = field_types.last() else {
         return gen_sized_family_with_bounds(struct_name, generics, quote! {});
     };
@@ -398,19 +397,19 @@ fn gen_struct_size_family_with_bounds(
         (!is_type_parameterized(last_field, generics)).then_some(quote! { for<'_dummy> });
 
     quote! {
-        impl #impl_generics co3::dst::DstFamily for #struct_name #ty_generics
+        impl #impl_generics co3::size::SizeFamily for #struct_name #ty_generics
         where
-            #for_dummy #last_field: co3::dst::DstFamily,
+            #for_dummy #last_field: co3::size::SizeFamily,
             #extra_bounds
             #predicates
         {
-            type Kind = <#last_field as co3::dst::DstFamily>::Kind;
+            type Kind = <#last_field as co3::size::SizeFamily>::Kind;
         }
 
         // FIXME:
-        //impl #impl_generics co3::dst::Dst for #struct_name #ty_generics
+        //impl #impl_generics co3::size::Dst for #struct_name #ty_generics
         //where
-        //    #for_dummy #last_field: co3::dst::DstFamily,
+        //    #for_dummy #last_field: co3::size::SizeFamily,
         //    #extra_bounds
         //    #predicates
         //{
@@ -433,12 +432,12 @@ fn gen_sized_family_with_bounds(
     let predicates = where_clause.as_ref().map(|w| &w.predicates);
 
     quote! {
-        impl #impl_generics co3::dst::DstFamily for #type_name #ty_generics
+        impl #impl_generics co3::size::SizeFamily for #type_name #ty_generics
         where
             #extra_bounds
             #predicates
         {
-            type Kind = co3::dst::Sized_;
+            type Kind = co3::size::SizedType;
         }
     }
 }

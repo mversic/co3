@@ -8,9 +8,9 @@ use crate::{
     Encode, ExternC,
     borrow::Borrow,
     boxed::CBox,
-    dst::{DstFamily, Sized_},
     ir::{ReprFamily, Transmuted},
     out_ptr::OutPtr,
+    size::{SizeFamily, SizedType},
     transmute::CheckedTransmute,
 };
 
@@ -148,8 +148,9 @@ impl ReprFamily for Erased {
     type Kind = Transmuted;
 }
 
-impl DstFamily for Erased {
-    type Kind = Sized_;
+// TODO: What should be it's SizeFamily? isn't it ?Sized and must always be behind a pointer
+impl SizeFamily for Erased {
+    type Kind = SizedType;
 }
 
 unsafe impl CheckedTransmute for Erased {
