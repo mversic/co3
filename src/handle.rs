@@ -6,7 +6,7 @@ use core::ffi::c_void;
 use crate::heapify::Heapify;
 use crate::{
     Encode, ExternC,
-    borrow::{Borrow, DropFamily, NoDrop},
+    borrow::Borrow,
     boxed::CBox,
     dst::{DstFamily, Sized_},
     ir::{ReprFamily, Transmuted},
@@ -150,10 +150,6 @@ impl ReprFamily for Erased {
 
 impl DstFamily for Erased {
     type Kind = Sized_;
-}
-
-impl DropFamily for Erased {
-    type Kind = NoDrop;
 }
 
 unsafe impl CheckedTransmute for Erased {

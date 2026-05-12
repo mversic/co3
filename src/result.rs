@@ -1,13 +1,11 @@
 //! FFI-safe equivalent of [`core::result`] related functionality
 
-use core::ops::Add;
-
 use crate::{
     DecodeWithStore, EncodeWithStore, ExternC, ReprC, Store,
-    borrow::{Borrow, DropFamily, ToOwned},
+    borrow::{Borrow, ToOwned},
     cloned::DecodeCloned,
     heapify::Heapify,
-    niche::{Niche, NicheFamily},
+    niche::{Niche, NicheFamily, WithCustomNiche, WithNiche},
     reprC,
 };
 
@@ -106,23 +104,19 @@ reprC! {
     impl(T, E) SizedCloned for Result<T, E> {}
 }
 
-impl<T, E> NicheFamily for Result<T, E>
-where
-    (T, E): NicheFamily,
-{
-    type Kind = <(T, E) as NicheFamily>::Kind;
-}
-
 impl<T: ExternC, E: ExternC> ExternC for Result<T, E> {
     type CType = CResult<T::CType, E::CType>;
 }
 
-impl<T: ExternC, E: ExternC> Niche for Result<T, E> {
-    const NICHE_VALUE: Self::CType = CResult::niche();
+// TODO: implement others, I think this requires DstFamily::Zst
+impl<R: NicheFamily<Kind: WithNiche>, E: NicheFamily<Kind: WithNiche>> NicheFamily
+    for Result<R, E>
+{
+    type Kind = WithCustomNiche;
 }
 
-impl<T: DropFamily<Kind: Add<E::Kind>>, E: DropFamily> DropFamily for Result<T, E> {
-    type Kind = <T::Kind as Add<E::Kind>>::Output;
+impl<T: ExternC, E: ExternC> Niche for Result<T, E> {
+    const NICHE_VALUE: Self::CType = CResult::niche();
 }
 
 impl<T: EncodeWithStore, E: EncodeWithStore> EncodeWithStore for Result<T, E> {

@@ -1,7 +1,7 @@
 use core::{ffi::c_void, marker::PhantomData, ptr::NonNull};
 
 use crate::{
-    borrow::{Borrow, DropFamily, NoDrop, ToOwned},
+    borrow::{Borrow, ToOwned},
     heapify::Heapify,
     ir::{ReprFamily, Transmuted},
     niche::{Niche, NicheFamily, StableNiche, WithStableNiche},
@@ -57,10 +57,6 @@ macro_rules! impl_external_ref_common {
 
         impl<R> crate::dst::DstFamily for $ty<'_, R> {
             type Kind = crate::dst::Sized_;
-        }
-
-        impl<R> DropFamily for $ty<'_, R> {
-            type Kind = NoDrop;
         }
 
         impl<R> Heapify for $ty<'_, R> {

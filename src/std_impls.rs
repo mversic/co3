@@ -10,7 +10,7 @@ use core::{cell::UnsafeCell, ffi::c_void, ptr::NonNull};
 use crate::boxed::{CBox, CBoxedSlice};
 use crate::{
     ReprC,
-    borrow::{Borrow, DropFamily, NeedsDrop, NoDrop, ToOwned},
+    borrow::{Borrow, ToOwned},
     dst::{DstFamily, Sized_},
     heapify::Heapify,
     ir::{ReprFamily, Transmuted},
@@ -54,9 +54,6 @@ unsafe impl ReprC for () {}
 impl DstFamily for () {
     type Kind = Sized_;
 }
-impl DropFamily for () {
-    type Kind = NoDrop;
-}
 impl NicheFamily for () {
     type Kind = WithoutNiche;
 }
@@ -98,26 +95,13 @@ impl<'r, const IN_STRUCT: bool> ToOwned<'r, IN_STRUCT> for () {
     }
 }
 
-impl<T: ?Sized> DropFamily for core::marker::PhantomData<T> {
-    type Kind = NoDrop;
-}
-impl<T: ?Sized> DropFamily for core::mem::ManuallyDrop<T> {
-    type Kind = NoDrop;
-}
-
-impl<T: ?Sized> DropFamily for core::cell::Cell<T>
-where
-    Self: CheckedTransmute<Target: DropFamily>,
-{
-    type Kind = <<Self as CheckedTransmute>::Target as DropFamily>::Kind;
-}
-
 //reprC! {
 //    unsafe impl(T: ?Sized) Transmuted for core::marker::PhantomData<T> {
 //        type Target = ();
 //    }
 //}
 reprC! {
+    // FIXME: This is super wrong because it makes the type Drop
     unsafe impl(T: ?Sized) Transmuted for core::mem::ManuallyDrop<T> {
         type Target = T;
     }
@@ -202,17 +186,6 @@ impl<T> ReprFamily for NonNull<T> {
 #[cfg(feature = "alloc")]
 impl ReprFamily for String {
     type Kind = Transmuted;
-}
-
-impl<T: ?Sized + DropFamily> DropFamily for UnsafeCell<T> {
-    type Kind = T::Kind;
-}
-impl<T> DropFamily for NonNull<T> {
-    type Kind = NoDrop;
-}
-#[cfg(feature = "alloc")]
-impl DropFamily for String {
-    type Kind = NeedsDrop;
 }
 
 impl<T: ?Sized> NicheFamily for UnsafeCell<T> {

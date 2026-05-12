@@ -1,9 +1,7 @@
 //! FFI-safe equivalent of [`core::option`] related functionality
 
 use crate::{
-    FfiReturn, ReprC,
-    borrow::{Borrow, DropFamily, ToOwned},
-    reprC,
+    FfiReturn, ReprC, borrow::{Borrow, ToOwned}, dst::{DstFamily, Sized_}, reprC
 };
 
 /// FFI-safe equivalent of [`core::option::Option`] for [`crate::ir::Robust`] types
@@ -42,8 +40,8 @@ impl<T> COption<T> {
     }
 }
 
-impl<R: DropFamily> DropFamily for Option<R> {
-    type Kind = R::Kind;
+impl<T> DstFamily for Option<T> {
+    type Kind = Sized_;
 }
 
 impl<R: Borrow<true>> Borrow<true> for Option<R> {

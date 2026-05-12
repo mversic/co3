@@ -1,0 +1,1097 @@
+error[E0277]: the trait bound `UnsizedRobust: Copy` is not satisfied
+  --> tests/ui_fail/repr_c_restrictions.rs:18:33
+   |
+18 |     unsafe impl SizedRobust for UnsizedRobust {}
+   |                                 ^^^^^^^^^^^^^ unsatisfied trait bound
+   |
+help: the trait `Copy` is not implemented for `UnsizedRobust`
+  --> tests/ui_fail/repr_c_restrictions.rs:4:1
+   |
+ 4 | struct UnsizedRobust([u8]);
+   | ^^^^^^^^^^^^^^^^^^^^
+note: required by a bound in `ReprC`
+  --> $WORKSPACE/src/lib.rs
+   |
+   | pub unsafe trait ReprC: Sized + Copy {}
+   |                                 ^^^^ required by this bound in `ReprC`
+
+error[E0277]: the size for values of type `[u8]` cannot be known at compilation time
+  --> tests/ui_fail/repr_c_restrictions.rs:18:33
+   |
+18 |     unsafe impl SizedRobust for UnsizedRobust {}
+   |                                 ^^^^^^^^^^^^^ doesn't have a size known at compile-time
+   |
+   = help: within `UnsizedRobust`, the trait `Sized` is not implemented for `[u8]`
+note: required because it appears within the type `UnsizedRobust`
+  --> tests/ui_fail/repr_c_restrictions.rs:4:8
+   |
+ 4 | struct UnsizedRobust([u8]);
+   |        ^^^^^^^^^^^^^
+note: required by a bound in `ReprC`
+  --> $WORKSPACE/src/lib.rs
+   |
+   | pub unsafe trait ReprC: Sized + Copy {}
+   |                         ^^^^^ required by this bound in `ReprC`
+
+error[E0277]: the trait bound `UnsizedRobust: Copy` is not satisfied
+  --> tests/ui_fail/repr_c_restrictions.rs:18:33
+   |
+18 |     unsafe impl SizedRobust for UnsizedRobust {}
+   |                                 ^^^^^^^^^^^^^ unsatisfied trait bound
+   |
+help: the trait `ReprC` is not implemented for `UnsizedRobust`
+      but trait `ReprC` is implemented for it
+  --> tests/ui_fail/repr_c_restrictions.rs:17:1
+   |
+17 | / co3::reprC! {
+18 | |     unsafe impl SizedRobust for UnsizedRobust {}
+19 | | }
+   | |_^
+   = note: required for `UnsizedRobust` to implement `ReprC`
+note: required by a bound in `FnArg`
+  --> $WORKSPACE/src/lib.rs
+   |
+   | pub unsafe trait FnArg: ReprC {}
+   |                         ^^^^^ required by this bound in `FnArg`
+   = note: this error originates in the macro `$crate::reprC` which comes from the expansion of the macro `co3::reprC` (in Nightly builds, run with -Z macro-backtrace for more info)
+
+error[E0277]: the size for values of type `[u8]` cannot be known at compilation time
+  --> tests/ui_fail/repr_c_restrictions.rs:18:33
+   |
+18 |     unsafe impl SizedRobust for UnsizedRobust {}
+   |                                 ^^^^^^^^^^^^^ doesn't have a size known at compile-time
+   |
+   = help: within `UnsizedRobust`, the trait `Sized` is not implemented for `[u8]`
+help: the trait `ReprC` is not implemented for `UnsizedRobust`
+      but trait `ReprC` is implemented for it
+  --> tests/ui_fail/repr_c_restrictions.rs:17:1
+   |
+17 | / co3::reprC! {
+18 | |     unsafe impl SizedRobust for UnsizedRobust {}
+19 | | }
+   | |_^
+note: required because it appears within the type `UnsizedRobust`
+  --> tests/ui_fail/repr_c_restrictions.rs:4:8
+   |
+ 4 | struct UnsizedRobust([u8]);
+   |        ^^^^^^^^^^^^^
+   = note: required for `UnsizedRobust` to implement `ReprC`
+note: required by a bound in `FnArg`
+  --> $WORKSPACE/src/lib.rs
+   |
+   | pub unsafe trait FnArg: ReprC {}
+   |                         ^^^^^ required by this bound in `FnArg`
+   = note: this error originates in the macro `$crate::reprC` which comes from the expansion of the macro `co3::reprC` (in Nightly builds, run with -Z macro-backtrace for more info)
+
+error[E0277]: the size for values of type `[u8]` cannot be known at compilation time
+  --> tests/ui_fail/repr_c_restrictions.rs:17:1
+   |
+17 | / co3::reprC! {
+18 | |     unsafe impl SizedRobust for UnsizedRobust {}
+19 | | }
+   | |_^ doesn't have a size known at compile-time
+   |
+   = help: within `UnsizedRobust`, the trait `Sized` is not implemented for `[u8]`
+note: required because it appears within the type `UnsizedRobust`
+  --> tests/ui_fail/repr_c_restrictions.rs:4:8
+   |
+ 4 | struct UnsizedRobust([u8]);
+   |        ^^^^^^^^^^^^^
+note: required by a bound in `co3::heapify::Heapify::Kind`
+  --> $WORKSPACE/src/heapify.rs
+   |
+   |         type Kind; //: ExternC<CType: FnArg>;
+   |         ^^^^^^^^^^ required by this bound in `Heapify::Kind`
+   = note: this error originates in the macro `$crate::reprC` which comes from the expansion of the macro `co3::reprC` (in Nightly builds, run with -Z macro-backtrace for more info)
+
+error[E0277]: the size for values of type `[u8]` cannot be known at compilation time
+  --> tests/ui_fail/repr_c_restrictions.rs:17:1
+   |
+17 | / co3::reprC! {
+18 | |     unsafe impl SizedRobust for UnsizedRobust {}
+19 | | }
+   | |_^ doesn't have a size known at compile-time
+   |
+   = help: within `UnsizedRobust`, the trait `Sized` is not implemented for `[u8]`
+note: required because it appears within the type `UnsizedRobust`
+  --> tests/ui_fail/repr_c_restrictions.rs:4:8
+   |
+ 4 | struct UnsizedRobust([u8]);
+   |        ^^^^^^^^^^^^^
+note: required by a bound in `Heapify`
+  --> $WORKSPACE/src/heapify.rs
+   |
+   |     pub trait Heapify: Sized {
+   |                        ^^^^^ required by this bound in `Heapify`
+   = note: this error originates in the macro `$crate::reprC` which comes from the expansion of the macro `co3::reprC` (in Nightly builds, run with -Z macro-backtrace for more info)
+
+error[E0277]: the size for values of type `[u8]` cannot be known at compilation time
+  --> tests/ui_fail/repr_c_restrictions.rs:17:1
+   |
+17 | / co3::reprC! {
+18 | |     unsafe impl SizedRobust for UnsizedRobust {}
+19 | | }
+   | |_^ doesn't have a size known at compile-time
+   |
+   = help: within `UnsizedRobust`, the trait `Sized` is not implemented for `[u8]`
+note: required because it appears within the type `UnsizedRobust`
+  --> tests/ui_fail/repr_c_restrictions.rs:4:8
+   |
+ 4 | struct UnsizedRobust([u8]);
+   |        ^^^^^^^^^^^^^
+note: required by a bound in `Heapify`
+  --> $WORKSPACE/src/heapify.rs
+   |
+   |     pub trait Heapify: Sized {
+   |                        ^^^^^ required by this bound in `Heapify`
+   = note: this error originates in the macro `$crate::reprC` which comes from the expansion of the macro `co3::reprC` (in Nightly builds, run with -Z macro-backtrace for more info)
+
+error[E0277]: the size for values of type `[u8]` cannot be known at compilation time
+  --> tests/ui_fail/repr_c_restrictions.rs:18:33
+   |
+18 |     unsafe impl SizedRobust for UnsizedRobust {}
+   |                                 ^^^^^^^^^^^^^ doesn't have a size known at compile-time
+   |
+   = help: within `UnsizedRobust`, the trait `Sized` is not implemented for `[u8]`
+note: required because it appears within the type `UnsizedRobust`
+  --> tests/ui_fail/repr_c_restrictions.rs:4:8
+   |
+ 4 | struct UnsizedRobust([u8]);
+   |        ^^^^^^^^^^^^^
+note: required by a bound in `Heapify`
+  --> $WORKSPACE/src/heapify.rs
+   |
+   |     pub trait Heapify: Sized {
+   |                        ^^^^^ required by this bound in `Heapify`
+
+error[E0277]: the size for values of type `[u8]` cannot be known at compilation time
+  --> tests/ui_fail/repr_c_restrictions.rs:17:1
+   |
+17 | / co3::reprC! {
+18 | |     unsafe impl SizedRobust for UnsizedRobust {}
+19 | | }
+   | |_^ doesn't have a size known at compile-time
+   |
+   = help: within `UnsizedRobust`, the trait `Sized` is not implemented for `[u8]`
+note: required because it appears within the type `UnsizedRobust`
+  --> tests/ui_fail/repr_c_restrictions.rs:4:8
+   |
+ 4 | struct UnsizedRobust([u8]);
+   |        ^^^^^^^^^^^^^
+note: required by a bound in `co3::borrow::Borrow::Borrowed`
+  --> $WORKSPACE/src/borrow.rs
+   |
+   | /         type Borrowed<'itm> // FIXME: This bound is required: ExternC<CType: FnArg>
+   | |         where
+   | |             Self: 'itm;
+   | |_______________________^ required by this bound in `Borrow::Borrowed`
+   = note: this error originates in the macro `$crate::reprC` which comes from the expansion of the macro `co3::reprC` (in Nightly builds, run with -Z macro-backtrace for more info)
+
+error[E0277]: the size for values of type `[u8]` cannot be known at compilation time
+  --> tests/ui_fail/repr_c_restrictions.rs:17:1
+   |
+17 | / co3::reprC! {
+18 | |     unsafe impl SizedRobust for UnsizedRobust {}
+19 | | }
+   | |_^ doesn't have a size known at compile-time
+   |
+   = help: within `UnsizedRobust`, the trait `Sized` is not implemented for `[u8]`
+note: required because it appears within the type `UnsizedRobust`
+  --> tests/ui_fail/repr_c_restrictions.rs:4:8
+   |
+ 4 | struct UnsizedRobust([u8]);
+   |        ^^^^^^^^^^^^^
+note: required by a bound in `co3::borrow::Borrow`
+  --> $WORKSPACE/src/borrow.rs
+   |
+   |     pub trait Borrow<const IN_STRUCT: bool>: Sized {
+   |                                              ^^^^^ required by this bound in `Borrow`
+   = note: this error originates in the macro `$crate::reprC` which comes from the expansion of the macro `co3::reprC` (in Nightly builds, run with -Z macro-backtrace for more info)
+
+error[E0277]: the size for values of type `[u8]` cannot be known at compilation time
+  --> tests/ui_fail/repr_c_restrictions.rs:18:33
+   |
+18 |     unsafe impl SizedRobust for UnsizedRobust {}
+   |                                 ^^^^^^^^^^^^^ doesn't have a size known at compile-time
+   |
+   = help: within `UnsizedRobust`, the trait `Sized` is not implemented for `[u8]`
+note: required because it appears within the type `UnsizedRobust`
+  --> tests/ui_fail/repr_c_restrictions.rs:4:8
+   |
+ 4 | struct UnsizedRobust([u8]);
+   |        ^^^^^^^^^^^^^
+note: required by a bound in `co3::borrow::Borrow`
+  --> $WORKSPACE/src/borrow.rs
+   |
+   |     pub trait Borrow<const IN_STRUCT: bool>: Sized {
+   |                                              ^^^^^ required by this bound in `Borrow`
+
+error[E0277]: the size for values of type `[u8]` cannot be known at compilation time
+  --> tests/ui_fail/repr_c_restrictions.rs:17:1
+   |
+17 | / co3::reprC! {
+18 | |     unsafe impl SizedRobust for UnsizedRobust {}
+19 | | }
+   | |_^ doesn't have a size known at compile-time
+   |
+   = help: within `UnsizedRobust`, the trait `Sized` is not implemented for `[u8]`
+note: required because it appears within the type `UnsizedRobust`
+  --> tests/ui_fail/repr_c_restrictions.rs:4:8
+   |
+ 4 | struct UnsizedRobust([u8]);
+   |        ^^^^^^^^^^^^^
+note: required by a bound in `co3::borrow::Borrow`
+  --> $WORKSPACE/src/borrow.rs
+   |
+   |     pub trait Borrow<const IN_STRUCT: bool>: Sized {
+   |                                              ^^^^^ required by this bound in `Borrow`
+   = note: this error originates in the macro `$crate::reprC` which comes from the expansion of the macro `co3::reprC` (in Nightly builds, run with -Z macro-backtrace for more info)
+
+error[E0277]: the size for values of type `[u8]` cannot be known at compilation time
+  --> tests/ui_fail/repr_c_restrictions.rs:18:33
+   |
+18 |     unsafe impl SizedRobust for UnsizedRobust {}
+   |                                 ^^^^^^^^^^^^^ doesn't have a size known at compile-time
+   |
+   = help: within `UnsizedRobust`, the trait `Sized` is not implemented for `[u8]`
+help: the trait `co3::borrow::Borrow<IN_STRUCT>` is not implemented for `UnsizedRobust`
+      but trait `Borrow<IN_STRUCT>` is implemented for it
+  --> tests/ui_fail/repr_c_restrictions.rs:17:1
+   |
+17 | / co3::reprC! {
+18 | |     unsafe impl SizedRobust for UnsizedRobust {}
+19 | | }
+   | |_^
+note: required because it appears within the type `UnsizedRobust`
+  --> tests/ui_fail/repr_c_restrictions.rs:4:8
+   |
+ 4 | struct UnsizedRobust([u8]);
+   |        ^^^^^^^^^^^^^
+   = note: required for `UnsizedRobust` to implement `co3::borrow::Borrow<IN_STRUCT>`
+note: required by a bound in `co3::borrow::ToOwned`
+  --> $WORKSPACE/src/borrow.rs
+   |
+   |     pub trait ToOwned<'r, const IN_STRUCT: bool>: Borrow<IN_STRUCT> {
+   |                                                   ^^^^^^^^^^^^^^^^^ required by this bound in `ToOwned`
+   = note: this error originates in the macro `$crate::reprC` which comes from the expansion of the macro `co3::reprC` (in Nightly builds, run with -Z macro-backtrace for more info)
+
+error[E0277]: the size for values of type `[u8]` cannot be known at compilation time
+  --> tests/ui_fail/repr_c_restrictions.rs:25:1
+   |
+25 | / co3::reprC! {
+26 | |     unsafe impl NoDropSizedTransmuted for NoDropUnsizedTransmuted {
+27 | |         type Target = u8;
+...  |
+33 | | }
+   | |_^ doesn't have a size known at compile-time
+   |
+   = help: within `NoDropUnsizedTransmuted`, the trait `Sized` is not implemented for `[u8]`
+note: required because it appears within the type `NoDropUnsizedTransmuted`
+  --> tests/ui_fail/repr_c_restrictions.rs:7:8
+   |
+ 7 | struct NoDropUnsizedTransmuted([u8]);
+   |        ^^^^^^^^^^^^^^^^^^^^^^^
+note: required by a bound in `co3::heapify::Heapify::Kind`
+  --> $WORKSPACE/src/heapify.rs
+   |
+   |         type Kind; //: ExternC<CType: FnArg>;
+   |         ^^^^^^^^^^ required by this bound in `Heapify::Kind`
+   = note: this error originates in the macro `$crate::reprC` which comes from the expansion of the macro `co3::reprC` (in Nightly builds, run with -Z macro-backtrace for more info)
+
+error[E0277]: the size for values of type `[u8]` cannot be known at compilation time
+  --> tests/ui_fail/repr_c_restrictions.rs:25:1
+   |
+25 | / co3::reprC! {
+26 | |     unsafe impl NoDropSizedTransmuted for NoDropUnsizedTransmuted {
+27 | |         type Target = u8;
+...  |
+33 | | }
+   | |_^ doesn't have a size known at compile-time
+   |
+   = help: within `NoDropUnsizedTransmuted`, the trait `Sized` is not implemented for `[u8]`
+note: required because it appears within the type `NoDropUnsizedTransmuted`
+  --> tests/ui_fail/repr_c_restrictions.rs:7:8
+   |
+ 7 | struct NoDropUnsizedTransmuted([u8]);
+   |        ^^^^^^^^^^^^^^^^^^^^^^^
+note: required by a bound in `Heapify`
+  --> $WORKSPACE/src/heapify.rs
+   |
+   |     pub trait Heapify: Sized {
+   |                        ^^^^^ required by this bound in `Heapify`
+   = note: this error originates in the macro `$crate::reprC` which comes from the expansion of the macro `co3::reprC` (in Nightly builds, run with -Z macro-backtrace for more info)
+
+error[E0277]: the size for values of type `[u8]` cannot be known at compilation time
+  --> tests/ui_fail/repr_c_restrictions.rs:25:1
+   |
+25 | / co3::reprC! {
+26 | |     unsafe impl NoDropSizedTransmuted for NoDropUnsizedTransmuted {
+27 | |         type Target = u8;
+...  |
+33 | | }
+   | |_^ doesn't have a size known at compile-time
+   |
+   = help: within `NoDropUnsizedTransmuted`, the trait `Sized` is not implemented for `[u8]`
+note: required because it appears within the type `NoDropUnsizedTransmuted`
+  --> tests/ui_fail/repr_c_restrictions.rs:7:8
+   |
+ 7 | struct NoDropUnsizedTransmuted([u8]);
+   |        ^^^^^^^^^^^^^^^^^^^^^^^
+note: required by a bound in `Heapify`
+  --> $WORKSPACE/src/heapify.rs
+   |
+   |     pub trait Heapify: Sized {
+   |                        ^^^^^ required by this bound in `Heapify`
+   = note: this error originates in the macro `$crate::reprC` which comes from the expansion of the macro `co3::reprC` (in Nightly builds, run with -Z macro-backtrace for more info)
+
+error[E0277]: the size for values of type `[u8]` cannot be known at compilation time
+  --> tests/ui_fail/repr_c_restrictions.rs:26:43
+   |
+26 |     unsafe impl NoDropSizedTransmuted for NoDropUnsizedTransmuted {
+   |                                           ^^^^^^^^^^^^^^^^^^^^^^^ doesn't have a size known at compile-time
+   |
+   = help: within `NoDropUnsizedTransmuted`, the trait `Sized` is not implemented for `[u8]`
+note: required because it appears within the type `NoDropUnsizedTransmuted`
+  --> tests/ui_fail/repr_c_restrictions.rs:7:8
+   |
+ 7 | struct NoDropUnsizedTransmuted([u8]);
+   |        ^^^^^^^^^^^^^^^^^^^^^^^
+note: required by a bound in `Heapify`
+  --> $WORKSPACE/src/heapify.rs
+   |
+   |     pub trait Heapify: Sized {
+   |                        ^^^^^ required by this bound in `Heapify`
+
+error[E0277]: the size for values of type `[u8]` cannot be known at compilation time
+  --> tests/ui_fail/repr_c_restrictions.rs:25:1
+   |
+25 | / co3::reprC! {
+26 | |     unsafe impl NoDropSizedTransmuted for NoDropUnsizedTransmuted {
+27 | |         type Target = u8;
+...  |
+33 | | }
+   | |_^ doesn't have a size known at compile-time
+   |
+   = help: within `NoDropUnsizedTransmuted`, the trait `Sized` is not implemented for `[u8]`
+note: required because it appears within the type `NoDropUnsizedTransmuted`
+  --> tests/ui_fail/repr_c_restrictions.rs:7:8
+   |
+ 7 | struct NoDropUnsizedTransmuted([u8]);
+   |        ^^^^^^^^^^^^^^^^^^^^^^^
+note: required by a bound in `co3::borrow::Borrow::Borrowed`
+  --> $WORKSPACE/src/borrow.rs
+   |
+   | /         type Borrowed<'itm> // FIXME: This bound is required: ExternC<CType: FnArg>
+   | |         where
+   | |             Self: 'itm;
+   | |_______________________^ required by this bound in `Borrow::Borrowed`
+   = note: this error originates in the macro `$crate::reprC` which comes from the expansion of the macro `co3::reprC` (in Nightly builds, run with -Z macro-backtrace for more info)
+
+error[E0277]: the size for values of type `[u8]` cannot be known at compilation time
+  --> tests/ui_fail/repr_c_restrictions.rs:25:1
+   |
+25 | / co3::reprC! {
+26 | |     unsafe impl NoDropSizedTransmuted for NoDropUnsizedTransmuted {
+27 | |         type Target = u8;
+...  |
+33 | | }
+   | |_^ doesn't have a size known at compile-time
+   |
+   = help: within `NoDropUnsizedTransmuted`, the trait `Sized` is not implemented for `[u8]`
+note: required because it appears within the type `NoDropUnsizedTransmuted`
+  --> tests/ui_fail/repr_c_restrictions.rs:7:8
+   |
+ 7 | struct NoDropUnsizedTransmuted([u8]);
+   |        ^^^^^^^^^^^^^^^^^^^^^^^
+note: required by a bound in `co3::borrow::Borrow`
+  --> $WORKSPACE/src/borrow.rs
+   |
+   |     pub trait Borrow<const IN_STRUCT: bool>: Sized {
+   |                                              ^^^^^ required by this bound in `Borrow`
+   = note: this error originates in the macro `$crate::reprC` which comes from the expansion of the macro `co3::reprC` (in Nightly builds, run with -Z macro-backtrace for more info)
+
+error[E0277]: the size for values of type `[u8]` cannot be known at compilation time
+  --> tests/ui_fail/repr_c_restrictions.rs:26:43
+   |
+26 |     unsafe impl NoDropSizedTransmuted for NoDropUnsizedTransmuted {
+   |                                           ^^^^^^^^^^^^^^^^^^^^^^^ doesn't have a size known at compile-time
+   |
+   = help: within `NoDropUnsizedTransmuted`, the trait `Sized` is not implemented for `[u8]`
+note: required because it appears within the type `NoDropUnsizedTransmuted`
+  --> tests/ui_fail/repr_c_restrictions.rs:7:8
+   |
+ 7 | struct NoDropUnsizedTransmuted([u8]);
+   |        ^^^^^^^^^^^^^^^^^^^^^^^
+note: required by a bound in `co3::borrow::Borrow`
+  --> $WORKSPACE/src/borrow.rs
+   |
+   |     pub trait Borrow<const IN_STRUCT: bool>: Sized {
+   |                                              ^^^^^ required by this bound in `Borrow`
+
+error[E0277]: the size for values of type `[u8]` cannot be known at compilation time
+  --> tests/ui_fail/repr_c_restrictions.rs:25:1
+   |
+25 | / co3::reprC! {
+26 | |     unsafe impl NoDropSizedTransmuted for NoDropUnsizedTransmuted {
+27 | |         type Target = u8;
+...  |
+33 | | }
+   | |_^ doesn't have a size known at compile-time
+   |
+   = help: within `NoDropUnsizedTransmuted`, the trait `Sized` is not implemented for `[u8]`
+note: required because it appears within the type `NoDropUnsizedTransmuted`
+  --> tests/ui_fail/repr_c_restrictions.rs:7:8
+   |
+ 7 | struct NoDropUnsizedTransmuted([u8]);
+   |        ^^^^^^^^^^^^^^^^^^^^^^^
+note: required by a bound in `co3::borrow::Borrow`
+  --> $WORKSPACE/src/borrow.rs
+   |
+   |     pub trait Borrow<const IN_STRUCT: bool>: Sized {
+   |                                              ^^^^^ required by this bound in `Borrow`
+   = note: this error originates in the macro `$crate::reprC` which comes from the expansion of the macro `co3::reprC` (in Nightly builds, run with -Z macro-backtrace for more info)
+
+error[E0277]: the size for values of type `[u8]` cannot be known at compilation time
+  --> tests/ui_fail/repr_c_restrictions.rs:26:43
+   |
+26 |     unsafe impl NoDropSizedTransmuted for NoDropUnsizedTransmuted {
+   |                                           ^^^^^^^^^^^^^^^^^^^^^^^ doesn't have a size known at compile-time
+   |
+   = help: within `NoDropUnsizedTransmuted`, the trait `Sized` is not implemented for `[u8]`
+help: the trait `co3::borrow::Borrow<IN_STRUCT>` is not implemented for `NoDropUnsizedTransmuted`
+      but trait `Borrow<IN_STRUCT>` is implemented for it
+  --> tests/ui_fail/repr_c_restrictions.rs:25:1
+   |
+25 | / co3::reprC! {
+26 | |     unsafe impl NoDropSizedTransmuted for NoDropUnsizedTransmuted {
+27 | |         type Target = u8;
+...  |
+33 | | }
+   | |_^
+note: required because it appears within the type `NoDropUnsizedTransmuted`
+  --> tests/ui_fail/repr_c_restrictions.rs:7:8
+   |
+ 7 | struct NoDropUnsizedTransmuted([u8]);
+   |        ^^^^^^^^^^^^^^^^^^^^^^^
+   = note: required for `NoDropUnsizedTransmuted` to implement `co3::borrow::Borrow<IN_STRUCT>`
+note: required by a bound in `co3::borrow::ToOwned`
+  --> $WORKSPACE/src/borrow.rs
+   |
+   |     pub trait ToOwned<'r, const IN_STRUCT: bool>: Borrow<IN_STRUCT> {
+   |                                                   ^^^^^^^^^^^^^^^^^ required by this bound in `ToOwned`
+   = note: this error originates in the macro `$crate::reprC` which comes from the expansion of the macro `co3::reprC` (in Nightly builds, run with -Z macro-backtrace for more info)
+
+error[E0277]: the size for values of type `[u8]` cannot be known at compilation time
+  --> tests/ui_fail/repr_c_restrictions.rs:26:43
+   |
+26 |     unsafe impl NoDropSizedTransmuted for NoDropUnsizedTransmuted {
+   |                                           ^^^^^^^^^^^^^^^^^^^^^^^ doesn't have a size known at compile-time
+   |
+   = help: within `NoDropUnsizedTransmuted`, the trait `Sized` is not implemented for `[u8]`
+note: required because it appears within the type `NoDropUnsizedTransmuted`
+  --> tests/ui_fail/repr_c_restrictions.rs:7:8
+   |
+ 7 | struct NoDropUnsizedTransmuted([u8]);
+   |        ^^^^^^^^^^^^^^^^^^^^^^^
+note: required by a bound in `EncodeTransmuted`
+  --> $WORKSPACE/src/transmute.rs
+   |
+   |     pub unsafe trait EncodeTransmuted<const UNSAFE_OPTIMIZATIONS: bool = false>: CheckedTransmute<Target: Sized> + Sized {
+   |                                                                                                                    ^^^^^ required by this bound in `EncodeTransmuted`
+
+error[E0277]: the size for values of type `[u8]` cannot be known at compilation time
+  --> tests/ui_fail/repr_c_restrictions.rs:25:1
+   |
+25 | / co3::reprC! {
+26 | |     unsafe impl NoDropSizedTransmuted for NoDropUnsizedTransmuted {
+27 | |         type Target = u8;
+...  |
+33 | | }
+   | |_^ doesn't have a size known at compile-time
+   |
+   = help: within `NoDropUnsizedTransmuted`, the trait `Sized` is not implemented for `[u8]`
+   = help: the following other types implement trait `co3::ExternC`:
+             (A, B)
+             (A, B, C)
+             (A, B, C, D)
+             (A, B, C, D, E)
+             (A, B, C, D, E, F)
+             (A, B, C, D, E, F, G)
+             (A, B, C, D, E, F, G, H)
+             (A, B, C, D, E, F, G, H, I)
+           and $N others
+note: required because it appears within the type `NoDropUnsizedTransmuted`
+  --> tests/ui_fail/repr_c_restrictions.rs:7:8
+   |
+ 7 | struct NoDropUnsizedTransmuted([u8]);
+   |        ^^^^^^^^^^^^^^^^^^^^^^^
+   = note: required for `NoDropUnsizedTransmuted` to implement `co3::ExternC`
+note: the requirement `NoDropUnsizedTransmuted: co3::ExternC` appears on the `impl`'s associated constant `NICHE_VALUE` but not on the corresponding trait's associated constant
+  --> $WORKSPACE/src/niche.rs
+   |
+   |     pub trait Niche: ExternC {
+   |               ----- in this trait
+   |         const NICHE_VALUE: Self::CType;
+   |               ^^^^^^^^^^^ this trait's associated constant doesn't have the requirement `NoDropUnsizedTransmuted: co3::ExternC`
+   = note: this error originates in the macro `$crate::reprC` which comes from the expansion of the macro `co3::reprC` (in Nightly builds, run with -Z macro-backtrace for more info)
+
+error[E0277]: the size for values of type `[u8]` cannot be known at compilation time
+  --> tests/ui_fail/repr_c_restrictions.rs:26:43
+   |
+26 |     unsafe impl NoDropSizedTransmuted for NoDropUnsizedTransmuted {
+   |                                           ^^^^^^^^^^^^^^^^^^^^^^^ doesn't have a size known at compile-time
+   |
+   = help: within `NoDropUnsizedTransmuted`, the trait `Sized` is not implemented for `[u8]`
+   = help: the following other types implement trait `co3::ExternC`:
+             (A, B)
+             (A, B, C)
+             (A, B, C, D)
+             (A, B, C, D, E)
+             (A, B, C, D, E, F)
+             (A, B, C, D, E, F, G)
+             (A, B, C, D, E, F, G, H)
+             (A, B, C, D, E, F, G, H, I)
+           and $N others
+note: required because it appears within the type `NoDropUnsizedTransmuted`
+  --> tests/ui_fail/repr_c_restrictions.rs:7:8
+   |
+ 7 | struct NoDropUnsizedTransmuted([u8]);
+   |        ^^^^^^^^^^^^^^^^^^^^^^^
+   = note: required for `NoDropUnsizedTransmuted` to implement `co3::ExternC`
+note: required by a bound in `Niche`
+  --> $WORKSPACE/src/niche.rs
+   |
+   |     pub trait Niche: ExternC {
+   |                      ^^^^^^^ required by this bound in `Niche`
+
+error[E0277]: the size for values of type `[u8]` cannot be known at compilation time
+  --> tests/ui_fail/repr_c_restrictions.rs:26:43
+   |
+26 |     unsafe impl NoDropSizedTransmuted for NoDropUnsizedTransmuted {
+   |                                           ^^^^^^^^^^^^^^^^^^^^^^^ doesn't have a size known at compile-time
+   |
+   = help: within `NoDropUnsizedTransmuted`, the trait `Sized` is not implemented for `[u8]`
+help: the trait `Niche` is not implemented for `NoDropUnsizedTransmuted`
+      but trait `Niche` is implemented for it
+  --> tests/ui_fail/repr_c_restrictions.rs:25:1
+   |
+25 | / co3::reprC! {
+26 | |     unsafe impl NoDropSizedTransmuted for NoDropUnsizedTransmuted {
+27 | |         type Target = u8;
+...  |
+33 | | }
+   | |_^
+note: required because it appears within the type `NoDropUnsizedTransmuted`
+  --> tests/ui_fail/repr_c_restrictions.rs:7:8
+   |
+ 7 | struct NoDropUnsizedTransmuted([u8]);
+   |        ^^^^^^^^^^^^^^^^^^^^^^^
+   = note: required for `NoDropUnsizedTransmuted` to implement `co3::ExternC`
+   = note: required for `NoDropUnsizedTransmuted` to implement `Niche`
+note: required by a bound in `StableNiche`
+  --> $WORKSPACE/src/niche.rs
+   |
+   | pub unsafe trait StableNiche: Niche {}
+   |                               ^^^^^ required by this bound in `StableNiche`
+   = note: this error originates in the macro `$crate::reprC` which comes from the expansion of the macro `co3::reprC` (in Nightly builds, run with -Z macro-backtrace for more info)
+
+error[E0277]: the size for values of type `[u8]` cannot be known at compilation time
+  --> tests/ui_fail/repr_c_restrictions.rs:17:1
+   |
+17 | / co3::reprC! {
+18 | |     unsafe impl SizedRobust for UnsizedRobust {}
+19 | | }
+   | |_^ doesn't have a size known at compile-time
+   |
+   = help: within `UnsizedRobust`, the trait `Sized` is not implemented for `[u8]`
+note: required because it appears within the type `UnsizedRobust`
+  --> tests/ui_fail/repr_c_restrictions.rs:4:8
+   |
+ 4 | struct UnsizedRobust([u8]);
+   |        ^^^^^^^^^^^^^
+   = note: the return type of a function must have a statically known size
+   = note: this error originates in the macro `$crate::reprC` which comes from the expansion of the macro `co3::reprC` (in Nightly builds, run with -Z macro-backtrace for more info)
+
+error[E0277]: the size for values of type `[u8]` cannot be known at compilation time
+  --> tests/ui_fail/repr_c_restrictions.rs:17:1
+   |
+17 | / co3::reprC! {
+18 | |     unsafe impl SizedRobust for UnsizedRobust {}
+19 | | }
+   | |_^ doesn't have a size known at compile-time
+   |
+   = help: within `UnsizedRobust`, the trait `Sized` is not implemented for `[u8]`
+note: required because it appears within the type `UnsizedRobust`
+  --> tests/ui_fail/repr_c_restrictions.rs:4:8
+   |
+ 4 | struct UnsizedRobust([u8]);
+   |        ^^^^^^^^^^^^^
+   = note: the return type of a function must have a statically known size
+   = note: this error originates in the macro `$crate::reprC` which comes from the expansion of the macro `co3::reprC` (in Nightly builds, run with -Z macro-backtrace for more info)
+
+error[E0277]: the size for values of type `[u8]` cannot be known at compilation time
+  --> tests/ui_fail/repr_c_restrictions.rs:17:1
+   |
+17 | / co3::reprC! {
+18 | |     unsafe impl SizedRobust for UnsizedRobust {}
+19 | | }
+   | |_^ doesn't have a size known at compile-time
+   |
+   = help: within `UnsizedRobust`, the trait `Sized` is not implemented for `[u8]`
+note: required because it appears within the type `UnsizedRobust`
+  --> tests/ui_fail/repr_c_restrictions.rs:4:8
+   |
+ 4 | struct UnsizedRobust([u8]);
+   |        ^^^^^^^^^^^^^
+   = note: the return type of a function must have a statically known size
+   = note: this error originates in the macro `$crate::reprC` which comes from the expansion of the macro `co3::reprC` (in Nightly builds, run with -Z macro-backtrace for more info)
+
+error[E0277]: the size for values of type `[u8]` cannot be known at compilation time
+  --> tests/ui_fail/repr_c_restrictions.rs:17:1
+   |
+17 | / co3::reprC! {
+18 | |     unsafe impl SizedRobust for UnsizedRobust {}
+19 | | }
+   | |_^ doesn't have a size known at compile-time
+   |
+   = help: within `UnsizedRobust`, the trait `Sized` is not implemented for `[u8]`
+note: required because it appears within the type `UnsizedRobust`
+  --> tests/ui_fail/repr_c_restrictions.rs:4:8
+   |
+ 4 | struct UnsizedRobust([u8]);
+   |        ^^^^^^^^^^^^^
+   = note: the return type of a function must have a statically known size
+   = note: this error originates in the macro `$crate::reprC` which comes from the expansion of the macro `co3::reprC` (in Nightly builds, run with -Z macro-backtrace for more info)
+
+error[E0277]: the size for values of type `[u8]` cannot be known at compilation time
+  --> tests/ui_fail/repr_c_restrictions.rs:25:1
+   |
+25 | / co3::reprC! {
+26 | |     unsafe impl NoDropSizedTransmuted for NoDropUnsizedTransmuted {
+27 | |         type Target = u8;
+...  |
+33 | | }
+   | |_^ doesn't have a size known at compile-time
+   |
+   = help: within `NoDropUnsizedTransmuted`, the trait `Sized` is not implemented for `[u8]`
+note: required because it appears within the type `NoDropUnsizedTransmuted`
+  --> tests/ui_fail/repr_c_restrictions.rs:7:8
+   |
+ 7 | struct NoDropUnsizedTransmuted([u8]);
+   |        ^^^^^^^^^^^^^^^^^^^^^^^
+   = note: the return type of a function must have a statically known size
+   = note: this error originates in the macro `$crate::reprC` which comes from the expansion of the macro `co3::reprC` (in Nightly builds, run with -Z macro-backtrace for more info)
+
+error[E0277]: the size for values of type `[u8]` cannot be known at compilation time
+  --> tests/ui_fail/repr_c_restrictions.rs:25:1
+   |
+25 | / co3::reprC! {
+26 | |     unsafe impl NoDropSizedTransmuted for NoDropUnsizedTransmuted {
+27 | |         type Target = u8;
+...  |
+33 | | }
+   | |_^ doesn't have a size known at compile-time
+   |
+   = help: within `NoDropUnsizedTransmuted`, the trait `Sized` is not implemented for `[u8]`
+note: required because it appears within the type `NoDropUnsizedTransmuted`
+  --> tests/ui_fail/repr_c_restrictions.rs:7:8
+   |
+ 7 | struct NoDropUnsizedTransmuted([u8]);
+   |        ^^^^^^^^^^^^^^^^^^^^^^^
+   = note: the return type of a function must have a statically known size
+   = note: this error originates in the macro `$crate::reprC` which comes from the expansion of the macro `co3::reprC` (in Nightly builds, run with -Z macro-backtrace for more info)
+
+error[E0277]: the size for values of type `[u8]` cannot be known at compilation time
+  --> tests/ui_fail/repr_c_restrictions.rs:25:1
+   |
+25 | / co3::reprC! {
+26 | |     unsafe impl NoDropSizedTransmuted for NoDropUnsizedTransmuted {
+27 | |         type Target = u8;
+...  |
+33 | | }
+   | |_^ doesn't have a size known at compile-time
+   |
+   = help: within `NoDropUnsizedTransmuted`, the trait `Sized` is not implemented for `[u8]`
+note: required because it appears within the type `NoDropUnsizedTransmuted`
+  --> tests/ui_fail/repr_c_restrictions.rs:7:8
+   |
+ 7 | struct NoDropUnsizedTransmuted([u8]);
+   |        ^^^^^^^^^^^^^^^^^^^^^^^
+   = note: the return type of a function must have a statically known size
+   = note: this error originates in the macro `$crate::reprC` which comes from the expansion of the macro `co3::reprC` (in Nightly builds, run with -Z macro-backtrace for more info)
+
+error[E0277]: the size for values of type `[u8]` cannot be known at compilation time
+  --> tests/ui_fail/repr_c_restrictions.rs:25:1
+   |
+25 | / co3::reprC! {
+26 | |     unsafe impl NoDropSizedTransmuted for NoDropUnsizedTransmuted {
+27 | |         type Target = u8;
+...  |
+33 | | }
+   | |_^ doesn't have a size known at compile-time
+   |
+   = help: within `NoDropUnsizedTransmuted`, the trait `Sized` is not implemented for `[u8]`
+note: required because it appears within the type `NoDropUnsizedTransmuted`
+  --> tests/ui_fail/repr_c_restrictions.rs:7:8
+   |
+ 7 | struct NoDropUnsizedTransmuted([u8]);
+   |        ^^^^^^^^^^^^^^^^^^^^^^^
+   = note: the return type of a function must have a statically known size
+   = note: this error originates in the macro `$crate::reprC` which comes from the expansion of the macro `co3::reprC` (in Nightly builds, run with -Z macro-backtrace for more info)
+
+error[E0277]: the size for values of type `[u8]` cannot be known at compilation time
+  --> tests/ui_fail/repr_c_restrictions.rs:25:1
+   |
+25 | / co3::reprC! {
+26 | |     unsafe impl NoDropSizedTransmuted for NoDropUnsizedTransmuted {
+27 | |         type Target = u8;
+...  |
+33 | | }
+   | |_^ doesn't have a size known at compile-time
+   |
+   = help: within `NoDropUnsizedTransmuted`, the trait `Sized` is not implemented for `[u8]`
+note: required because it appears within the type `NoDropUnsizedTransmuted`
+  --> tests/ui_fail/repr_c_restrictions.rs:7:8
+   |
+ 7 | struct NoDropUnsizedTransmuted([u8]);
+   |        ^^^^^^^^^^^^^^^^^^^^^^^
+note: required by a bound in `co3::ExternC`
+  --> $WORKSPACE/src/lib.rs
+   |
+   |     pub trait ExternC: Sized {
+   |                        ^^^^^ required by this bound in `ExternC`
+   = note: this error originates in the macro `$crate::reprC` which comes from the expansion of the macro `co3::reprC` (in Nightly builds, run with -Z macro-backtrace for more info)
+
+error[E0277]: the size for values of type `[u8]` cannot be known at compilation time
+  --> tests/ui_fail/repr_c_restrictions.rs:17:1
+   |
+17 | / co3::reprC! {
+18 | |     unsafe impl SizedRobust for UnsizedRobust {}
+19 | | }
+   | |_^ doesn't have a size known at compile-time
+   |
+   = help: within `UnsizedRobust`, the trait `Sized` is not implemented for `[u8]`
+note: required because it appears within the type `UnsizedRobust`
+  --> tests/ui_fail/repr_c_restrictions.rs:4:8
+   |
+ 4 | struct UnsizedRobust([u8]);
+   |        ^^^^^^^^^^^^^
+note: required by an implicit `Sized` bound in `std::mem::size_of`
+  --> $RUST/core/src/mem/mod.rs
+   |
+   | pub const fn size_of<T>() -> usize {
+   |                      ^ required by the implicit `Sized` requirement on this type parameter in `size_of`
+   = note: this error originates in the macro `$crate::reprC` which comes from the expansion of the macro `co3::reprC` (in Nightly builds, run with -Z macro-backtrace for more info)
+
+error[E0277]: the size for values of type `[u8]` cannot be known at compilation time
+  --> tests/ui_fail/repr_c_restrictions.rs:17:1
+   |
+17 | / co3::reprC! {
+18 | |     unsafe impl SizedRobust for UnsizedRobust {}
+19 | | }
+   | |_^ doesn't have a size known at compile-time
+   |
+   = help: within `UnsizedRobust`, the trait `Sized` is not implemented for `[u8]`
+note: required because it appears within the type `UnsizedRobust`
+  --> tests/ui_fail/repr_c_restrictions.rs:4:8
+   |
+ 4 | struct UnsizedRobust([u8]);
+   |        ^^^^^^^^^^^^^
+   = note: this error originates in the macro `$crate::reprC` which comes from the expansion of the macro `co3::reprC` (in Nightly builds, run with -Z macro-backtrace for more info)
+help: function arguments must have a statically known size, borrowed types always have a known size
+  -->  $WORKSPACE/src/lib.rs
+   |
+   |             fn heapify(&self) -> Self::Kind {
+   |                        +
+
+error[E0277]: the size for values of type `[u8]` cannot be known at compilation time
+  --> tests/ui_fail/repr_c_restrictions.rs:17:1
+   |
+17 | / co3::reprC! {
+18 | |     unsafe impl SizedRobust for UnsizedRobust {}
+19 | | }
+   | |_^ doesn't have a size known at compile-time
+   |
+   = help: within `UnsizedRobust`, the trait `Sized` is not implemented for `[u8]`
+note: required because it appears within the type `UnsizedRobust`
+  --> tests/ui_fail/repr_c_restrictions.rs:4:8
+   |
+ 4 | struct UnsizedRobust([u8]);
+   |        ^^^^^^^^^^^^^
+   = note: this error originates in the macro `$crate::reprC` which comes from the expansion of the macro `co3::reprC` (in Nightly builds, run with -Z macro-backtrace for more info)
+help: function arguments must have a statically known size, borrowed types always have a known size
+  -->  $WORKSPACE/src/lib.rs
+   |
+   |             fn unheapify(kind: &Self::Kind) -> Self {
+   |                                +
+
+error[E0277]: the size for values of type `[u8]` cannot be known at compilation time
+  --> tests/ui_fail/repr_c_restrictions.rs:17:1
+   |
+17 | / co3::reprC! {
+18 | |     unsafe impl SizedRobust for UnsizedRobust {}
+19 | | }
+   | |_^ doesn't have a size known at compile-time
+   |
+   = help: within `UnsizedRobust`, the trait `Sized` is not implemented for `[u8]`
+note: required because it appears within the type `UnsizedRobust`
+  --> tests/ui_fail/repr_c_restrictions.rs:4:8
+   |
+ 4 | struct UnsizedRobust([u8]);
+   |        ^^^^^^^^^^^^^
+   = note: this error originates in the macro `$crate::reprC` which comes from the expansion of the macro `co3::reprC` (in Nightly builds, run with -Z macro-backtrace for more info)
+help: function arguments must have a statically known size, borrowed types always have a known size
+  -->  $WORKSPACE/src/lib.rs
+   |
+   |             fn borrow<'_itm>(&self, (): &mut ()) -> Self::Borrowed<'_itm>
+   |                              +
+
+error[E0277]: the size for values of type `[u8]` cannot be known at compilation time
+  --> tests/ui_fail/repr_c_restrictions.rs:17:1
+   |
+17 | / co3::reprC! {
+18 | |     unsafe impl SizedRobust for UnsizedRobust {}
+19 | | }
+   | |_^ doesn't have a size known at compile-time
+   |
+   = help: within `UnsizedRobust`, the trait `Sized` is not implemented for `[u8]`
+note: required because it appears within the type `UnsizedRobust`
+  --> tests/ui_fail/repr_c_restrictions.rs:4:8
+   |
+ 4 | struct UnsizedRobust([u8]);
+   |        ^^^^^^^^^^^^^
+   = note: this error originates in the macro `$crate::reprC` which comes from the expansion of the macro `co3::reprC` (in Nightly builds, run with -Z macro-backtrace for more info)
+help: function arguments must have a statically known size, borrowed types always have a known size
+  -->  $WORKSPACE/src/lib.rs
+   |
+   |             fn to_owned(borrowed: &Self::Borrowed<'_išč>) -> Self {
+   |                                   +
+
+error[E0277]: the size for values of type `[u8]` cannot be known at compilation time
+  --> tests/ui_fail/repr_c_restrictions.rs:25:1
+   |
+25 | / co3::reprC! {
+26 | |     unsafe impl NoDropSizedTransmuted for NoDropUnsizedTransmuted {
+27 | |         type Target = u8;
+...  |
+33 | | }
+   | |_^ doesn't have a size known at compile-time
+   |
+   = help: within `NoDropUnsizedTransmuted`, the trait `Sized` is not implemented for `[u8]`
+note: required because it appears within the type `NoDropUnsizedTransmuted`
+  --> tests/ui_fail/repr_c_restrictions.rs:7:8
+   |
+ 7 | struct NoDropUnsizedTransmuted([u8]);
+   |        ^^^^^^^^^^^^^^^^^^^^^^^
+   = note: this error originates in the macro `$crate::reprC` which comes from the expansion of the macro `co3::reprC` (in Nightly builds, run with -Z macro-backtrace for more info)
+help: function arguments must have a statically known size, borrowed types always have a known size
+  -->  $WORKSPACE/src/lib.rs
+   |
+   |             fn heapify(&self) -> Self::Kind {
+   |                        +
+
+error[E0277]: the size for values of type `[u8]` cannot be known at compilation time
+  --> tests/ui_fail/repr_c_restrictions.rs:25:1
+   |
+25 | / co3::reprC! {
+26 | |     unsafe impl NoDropSizedTransmuted for NoDropUnsizedTransmuted {
+27 | |         type Target = u8;
+...  |
+33 | | }
+   | |_^ doesn't have a size known at compile-time
+   |
+   = help: within `NoDropUnsizedTransmuted`, the trait `Sized` is not implemented for `[u8]`
+note: required because it appears within the type `NoDropUnsizedTransmuted`
+  --> tests/ui_fail/repr_c_restrictions.rs:7:8
+   |
+ 7 | struct NoDropUnsizedTransmuted([u8]);
+   |        ^^^^^^^^^^^^^^^^^^^^^^^
+   = note: this error originates in the macro `$crate::reprC` which comes from the expansion of the macro `co3::reprC` (in Nightly builds, run with -Z macro-backtrace for more info)
+help: function arguments must have a statically known size, borrowed types always have a known size
+  -->  $WORKSPACE/src/lib.rs
+   |
+   |             fn unheapify(kind: &Self::Kind) -> Self {
+   |                                +
+
+error[E0277]: the size for values of type `[u8]` cannot be known at compilation time
+  --> tests/ui_fail/repr_c_restrictions.rs:25:1
+   |
+25 | / co3::reprC! {
+26 | |     unsafe impl NoDropSizedTransmuted for NoDropUnsizedTransmuted {
+27 | |         type Target = u8;
+...  |
+33 | | }
+   | |_^ doesn't have a size known at compile-time
+   |
+   = help: within `NoDropUnsizedTransmuted`, the trait `Sized` is not implemented for `[u8]`
+note: required because it appears within the type `NoDropUnsizedTransmuted`
+  --> tests/ui_fail/repr_c_restrictions.rs:7:8
+   |
+ 7 | struct NoDropUnsizedTransmuted([u8]);
+   |        ^^^^^^^^^^^^^^^^^^^^^^^
+   = note: this error originates in the macro `$crate::reprC` which comes from the expansion of the macro `co3::reprC` (in Nightly builds, run with -Z macro-backtrace for more info)
+help: function arguments must have a statically known size, borrowed types always have a known size
+  -->  $WORKSPACE/src/lib.rs
+   |
+   |             fn borrow<'_itm>(&self, (): &mut ()) -> Self::Borrowed<'_itm>
+   |                              +
+
+error[E0277]: the size for values of type `[u8]` cannot be known at compilation time
+  --> tests/ui_fail/repr_c_restrictions.rs:25:1
+   |
+25 | / co3::reprC! {
+26 | |     unsafe impl NoDropSizedTransmuted for NoDropUnsizedTransmuted {
+27 | |         type Target = u8;
+...  |
+33 | | }
+   | |_^ doesn't have a size known at compile-time
+   |
+   = help: within `NoDropUnsizedTransmuted`, the trait `Sized` is not implemented for `[u8]`
+note: required because it appears within the type `NoDropUnsizedTransmuted`
+  --> tests/ui_fail/repr_c_restrictions.rs:7:8
+   |
+ 7 | struct NoDropUnsizedTransmuted([u8]);
+   |        ^^^^^^^^^^^^^^^^^^^^^^^
+   = note: this error originates in the macro `$crate::reprC` which comes from the expansion of the macro `co3::reprC` (in Nightly builds, run with -Z macro-backtrace for more info)
+help: function arguments must have a statically known size, borrowed types always have a known size
+  -->  $WORKSPACE/src/lib.rs
+   |
+   |             fn to_owned(borrowed: &Self::Borrowed<'_išč>) -> Self {
+   |                                   +
+
+error[E0277]: the size for values of type `[u8]` cannot be known at compilation time
+  --> tests/ui_fail/repr_c_restrictions.rs:25:1
+   |
+25 | / co3::reprC! {
+26 | |     unsafe impl NoDropSizedTransmuted for NoDropUnsizedTransmuted {
+27 | |         type Target = u8;
+...  |
+33 | | }
+   | |_^ doesn't have a size known at compile-time
+   |
+   = help: within `NoDropUnsizedTransmuted`, the trait `Sized` is not implemented for `[u8]`
+   = help: the following other types implement trait `co3::ExternC`:
+             (A, B)
+             (A, B, C)
+             (A, B, C, D)
+             (A, B, C, D, E)
+             (A, B, C, D, E, F)
+             (A, B, C, D, E, F, G)
+             (A, B, C, D, E, F, G, H)
+             (A, B, C, D, E, F, G, H, I)
+           and $N others
+note: required because it appears within the type `NoDropUnsizedTransmuted`
+  --> tests/ui_fail/repr_c_restrictions.rs:7:8
+   |
+ 7 | struct NoDropUnsizedTransmuted([u8]);
+   |        ^^^^^^^^^^^^^^^^^^^^^^^
+   = note: required for `NoDropUnsizedTransmuted` to implement `co3::ExternC`
+   = note: this error originates in the macro `$crate::reprC` which comes from the expansion of the macro `co3::reprC` (in Nightly builds, run with -Z macro-backtrace for more info)
+
+error[E0080]: evaluation panicked: `impl Robust`/`impl SizedRobust` doesn't support ZST types
+  --> tests/ui_fail/repr_c_restrictions.rs:13:1
+   |
+13 | / co3::reprC! {
+14 | |     unsafe impl Robust for Unit {}
+15 | | }
+   | |_^ evaluation of `<Unit as _::AssertNonZst>::assert_non_zst::{constant#0}` failed here
+   |
+   = note: this error originates in the macro `$crate::panic::panic_2021` which comes from the expansion of the macro `co3::reprC` (in Nightly builds, run with -Z macro-backtrace for more info)
+
+note: erroneous constant encountered
+  --> tests/ui_fail/repr_c_restrictions.rs:13:1
+   |
+13 | / co3::reprC! {
+14 | |     unsafe impl Robust for Unit {}
+15 | | }
+   | |_^
+   |
+   = note: this note originates in the macro `$crate::reprC` which comes from the expansion of the macro `co3::reprC` (in Nightly builds, run with -Z macro-backtrace for more info)
+
+error[E0080]: evaluation panicked: `impl XXX` doesn't support `?Sized` types. Use `impl SizedXXX` instead
+  --> tests/ui_fail/repr_c_restrictions.rs:17:1
+   |
+17 | / co3::reprC! {
+18 | |     unsafe impl SizedRobust for UnsizedRobust {}
+19 | | }
+   | |_^ evaluation of `<UnsizedRobust as _::AssertSized>::assert_sized::{constant#0}` failed here
+   |
+   = note: this error originates in the macro `$crate::panic::panic_2021` which comes from the expansion of the macro `co3::reprC` (in Nightly builds, run with -Z macro-backtrace for more info)
+
+note: erroneous constant encountered
+  --> tests/ui_fail/repr_c_restrictions.rs:17:1
+   |
+17 | / co3::reprC! {
+18 | |     unsafe impl SizedRobust for UnsizedRobust {}
+19 | | }
+   | |_^
+   |
+   = note: this note originates in the macro `$crate::reprC` which comes from the expansion of the macro `co3::reprC` (in Nightly builds, run with -Z macro-backtrace for more info)
+
+error[E0080]: evaluation panicked: `impl XXX` doesn't support `?Sized` types. Use `impl SizedXXX` instead
+  --> tests/ui_fail/repr_c_restrictions.rs:21:1
+   |
+21 | / co3::reprC! {
+22 | |     impl SizedCloned for UnsizedCloned {}
+23 | | }
+   | |_^ evaluation of `<UnsizedCloned as _::AssertSized>::assert_sized::{constant#0}` failed here
+   |
+   = note: this error originates in the macro `$crate::panic::panic_2021` which comes from the expansion of the macro `co3::reprC` (in Nightly builds, run with -Z macro-backtrace for more info)
+
+note: erroneous constant encountered
+  --> tests/ui_fail/repr_c_restrictions.rs:21:1
+   |
+21 | / co3::reprC! {
+22 | |     impl SizedCloned for UnsizedCloned {}
+23 | | }
+   | |_^
+   |
+   = note: this note originates in the macro `$crate::reprC` which comes from the expansion of the macro `co3::reprC` (in Nightly builds, run with -Z macro-backtrace for more info)
+
+error[E0080]: evaluation panicked: `impl XXX` doesn't support `?Sized` types. Use `impl SizedXXX` instead
+  --> tests/ui_fail/repr_c_restrictions.rs:25:1
+   |
+25 | / co3::reprC! {
+26 | |     unsafe impl NoDropSizedTransmuted for NoDropUnsizedTransmuted {
+27 | |         type Target = u8;
+...  |
+33 | | }
+   | |_^ evaluation of `<NoDropUnsizedTransmuted as _::AssertSized>::assert_sized::{constant#0}` failed here
+   |
+   = note: this error originates in the macro `$crate::panic::panic_2021` which comes from the expansion of the macro `co3::reprC` (in Nightly builds, run with -Z macro-backtrace for more info)
+
+note: erroneous constant encountered
+  --> tests/ui_fail/repr_c_restrictions.rs:25:1
+   |
+25 | / co3::reprC! {
+26 | |     unsafe impl NoDropSizedTransmuted for NoDropUnsizedTransmuted {
+27 | |         type Target = u8;
+...  |
+33 | | }
+   | |_^
+   |
+   = note: this note originates in the macro `$crate::reprC` which comes from the expansion of the macro `co3::reprC` (in Nightly builds, run with -Z macro-backtrace for more info)
+
+error[E0080]: evaluation panicked: assertion failed: !core::mem::needs_drop::<Self>()
+  --> tests/ui_fail/repr_c_restrictions.rs:35:1
+   |
+35 | / co3::reprC! {
+36 | |     unsafe impl NoDropSizedTransmuted for NeedsDropSizedTransmuted {
+37 | |         type Target = [u8];
+...  |
+43 | | }
+   | |_^ evaluation of `<NeedsDropSizedTransmuted as _::AssertNoDrop>::assert_no_drop::{constant#0}` failed here
+   |
+   = note: this error originates in the macro `assert` which comes from the expansion of the macro `co3::reprC` (in Nightly builds, run with -Z macro-backtrace for more info)
+
+note: erroneous constant encountered
+  --> tests/ui_fail/repr_c_restrictions.rs:35:1
+   |
+35 | / co3::reprC! {
+36 | |     unsafe impl NoDropSizedTransmuted for NeedsDropSizedTransmuted {
+37 | |         type Target = [u8];
+...  |
+43 | | }
+   | |_^
+   |
+   = note: this note originates in the macro `$crate::reprC` which comes from the expansion of the macro `co3::reprC` (in Nightly builds, run with -Z macro-backtrace for more info)

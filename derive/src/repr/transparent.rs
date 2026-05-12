@@ -18,7 +18,7 @@ pub(crate) fn derive_transparent_item(input: &FfiTypeInput) -> TokenStream {
     );
 
     let params = &input.generics.params;
-    let (impl_generics, ty_generics, where_clause) = input.generics.split_for_impl();
+    let (_, ty_generics, where_clause) = input.generics.split_for_impl();
     let predicates = where_clause.map(|w| &w.predicates);
 
     let name = &input.ident;
@@ -59,32 +59,13 @@ pub(crate) fn derive_transparent_item(input: &FfiTypeInput) -> TokenStream {
         quote!()
     };
 
-    let drop_family_bound = if params.is_empty() {
-        quote!()
+    let trait_ = if input.data.is_enum() {
+        quote!(NoDropSizedTransmuted)
     } else {
-        quote!(#target: co3::borrow::DropFamily)
-    };
-
-    let (trait_, drop_family_impl) = if input.data.is_enum() {
-        (quote!(NoDropSizedTransmuted), quote!())
-    } else {
-        (
-            quote!(Transmuted),
-            quote! {
-                impl #impl_generics co3::borrow::DropFamily for #name #ty_generics
-                where
-                    #drop_family_bound
-                    #predicates
-                {
-                    type Kind = <#target as co3::borrow::DropFamily>::Kind;
-                }
-            },
-        )
+        quote!(Transmuted)
     };
 
     quote! {
-        #drop_family_impl
-
         co3::reprC! {
             // SAFETY: `Self` and `Self::Target` are guaranteed to be transmutable, but the user
             // must make sure the provided validation function does not return false positives

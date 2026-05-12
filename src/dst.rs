@@ -62,10 +62,6 @@ impl<T, const N: usize> DstFamily for [T; N] {
     type Kind = Sized_;
 }
 
-impl<T> DstFamily for Option<T> {
-    type Kind = Sized_;
-}
-
 impl<R> SliceDst for [R] {
     type Elem = R;
 

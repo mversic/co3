@@ -85,20 +85,20 @@ disjoint_impls! {
     {
         type OutPtr = <ExternRef<'a, R> as OutPtr>::OutPtr;
     }
-    impl<'a, R: ExternC, S: Cloned> OutPtr for &'a R
+    impl<'a, R: ExternC, S: Cloned + 'a> OutPtr for &'a R
     where
         Self: ReprFamily<Kind = &'a S>,
         R: DstFamily<Kind = Sized_>,
     {
         type OutPtr = R::CType;
     }
-    //impl<'a, R: ?Sized, S: Cloned> OutPtr for &'a R
-    //where
-    //    Self: ReprFamily<Kind = &'a S>,
-    //    R: SizeFamily<Kind = UnSized>,
-    //{
-    //    type OutPtr = Self::CType;
-    //}
+    impl<'a, R: ?Sized + SliceDst<Elem: OutPtr>, S: Cloned + ?Sized + 'a> OutPtr for &'a R
+    where
+        Self: ReprFamily<Kind = &'a S>,
+        R: DstFamily<Kind = SliceLike>,
+    {
+        type OutPtr = CSlice<<R::Elem as OutPtr>::OutPtr>;
+    }
 
     impl<'a, R: ?Sized + DstFamily<Kind = SliceLike> + SliceDst<Elem: ReprC>> OutPtr for &'a mut R
     where
@@ -162,14 +162,14 @@ disjoint_impls! {
     {
         type OutPtr = R::CType;
     }
-    //#[cfg(feature = "alloc")]
-    //impl<R: ?Sized, S: Cloned> OutPtr for Box<R>
-    //where
-    //    Self: ReprFamily<Kind = Box<S>>,
-    //    R: SizeFamily<Kind = UnSized>,
-    //{
-    //    type OutPtr = CBoxedSlice<R::CType>;
-    //}
+    #[cfg(feature = "alloc")]
+    impl<R: ?Sized + SliceDst<Elem: OutPtr>, S: Cloned + ?Sized> OutPtr for Box<R>
+    where
+        Self: ReprFamily<Kind = Box<S>>,
+        R: DstFamily<Kind = SliceLike>,
+    {
+        type OutPtr = CBoxedSlice<<R::Elem as OutPtr>::OutPtr>;
+    }
 
     #[cfg(feature = "alloc")]
     impl<R, S> OutPtr for Vec<R>

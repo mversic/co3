@@ -2,11 +2,12 @@
 use alloc_crate::{boxed::Box, vec::Vec};
 use disjoint_impls::disjoint_impls;
 
-use crate::niche::{NicheFamily, WithNiche, WithoutNiche};
+use crate::{ExternC, FnArg, niche::{NicheFamily, WithNiche, WithoutNiche}};
 
 disjoint_impls! {
     pub trait Heapify: Sized {
-        type Kind;
+        // TODO: Add this bound on Borrow::Borrowed
+        type Kind; //: ExternC<CType: FnArg>;
 
         fn heapify(self) -> Self::Kind;
         fn unheapify(kind: Self::Kind) -> Self;

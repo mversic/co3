@@ -1596,7 +1596,7 @@ impl<R> Store for OpaqueMutSliceDecodeStore<R> {
 ///
 /// ```
 /// use co3::{
-///     borrow::{DropFamily, NeedsDrop, NoDrop},
+///     borrow::{Borrow, ToOwned},
 ///     ir::{DstFamily, Sized_},
 ///     reprC
 /// };
@@ -1660,40 +1660,28 @@ impl<R> Store for OpaqueMutSliceDecodeStore<R> {
 ///     type Kind = T::Kind;
 /// }
 ///
-/// impl<T> DropFamily for MyPtr<T> {
-///     type Kind = NeedsDrop;
-/// }
-/// impl DropFamily for Wrapper {
-///     type Kind = NoDrop;
-/// }
-/// impl<T: ?Sized> DropFamily for NoRepr<T> {
-///     type Kind = NoDrop;
-/// }
 /// ```
+#[doc(hidden)]
 #[macro_export]
 macro_rules! reprC {
     (unsafe impl $(())? Robust for $self_ty:ty $(where ($($preds:tt)*))? {}) => {
-        $crate::reprC! { @robust_common [for<'_dummy> Self: Sized,] [] $self_ty $([$($preds)*])? }
+        $crate::reprC! { @robust_common [for<'_dummy> Self: Copy,] [for<'_dummy> Self: Sized,] [] $self_ty $([$($preds)*])? }
     };
 
     (unsafe impl ( $($params:tt)+ ) Robust for $self_ty:ty $(where ($($preds:tt)*))? {}) => {
-        $crate::reprC! { @robust_common [Self: Sized,] [$($params)+] $self_ty $([$($preds)*])? }
+        $crate::reprC! { @robust_common [Self: Copy,] [Self: Sized,] [$($params)+] $self_ty $([$($preds)*])? }
     };
 
     (unsafe impl $(( $($params:tt)+ ))? SizedRobust for $self_ty:ty $(where ($($preds:tt)*))? {}) => {
         $crate::reprC! { @assert_sized [$($($params)+)?] $self_ty $([$($preds)*])? }
-        $crate::reprC! { @robust_common [] [$($($params)+)?] $self_ty $([$($preds)*])? }
+        $crate::reprC! { @robust_common [] [] [$($($params)+)?] $self_ty $([$($preds)*])? }
     };
 
-    (@robust_common [$($sized_bound:tt)*] [$($impl_generics:tt)*] $self_ty:ty $([$($preds:tt)*])?) => {
-        $crate::reprC! { @assert_non_zst [$($impl_generics)*] $self_ty $([$($preds)*])? }
+    (@robust_common [$($copy_bound:tt)*] [$($sized_bound:tt)*] [$($impl_generics:tt)*] $self_ty:ty $([$($preds:tt)*])?) => {
+        $crate::reprC! { @assert_non_zst [$($sized_bound)*] [$($impl_generics)*] $self_ty $([$($preds)*])? }
 
         impl<$($impl_generics)*> $crate::ir::ReprFamily for $self_ty $(where $($preds)*)? {
             type Kind = $crate::ir::Robust;
-        }
-
-        impl<$($impl_generics)*> $crate::borrow::DropFamily for $self_ty $(where $($preds)*)? {
-            type Kind = $crate::borrow::NoDrop;
         }
 
         impl<$($impl_generics)*> $crate::niche::NicheFamily for $self_ty $(where $($preds)*)? {
@@ -1701,12 +1689,12 @@ macro_rules! reprC {
         }
 
         unsafe impl<$($impl_generics)*> $crate::ReprC for $self_ty where
-            $($sized_bound)*
+            $($copy_bound)*
             $($($preds)*)?
         {}
 
         unsafe impl<$($impl_generics)*> $crate::FnArg for $self_ty where
-            $($sized_bound)*
+            $($copy_bound)*
             $($($preds)*)?
         {}
 
@@ -1945,10 +1933,6 @@ macro_rules! reprC {
         $crate::reprC! { @assert_sized [$($impl_generics)*] $self_ty $([$($preds)*])? }
         $crate::reprC! { @assert_no_drop [$($impl_generics)*] $self_ty $([$($preds)*])? }
 
-        impl<$($impl_generics)*> $crate::borrow::DropFamily for $self_ty $(where $($preds)*)? {
-            type Kind = $crate::borrow::NoDrop;
-        }
-
         $crate::reprC! { @no_drop_borrow_ir [] [$($impl_generics)*] $self_ty $([$($preds)*])? }
     };
 
@@ -2068,7 +2052,7 @@ macro_rules! reprC {
 
         unsafe impl<$($impl_generics)*> $crate::transmute::EncodeTransmuted for $self_ty
         where
-            $target: $crate::EncodeWithStore,
+            $($for_dummy)* $target: $crate::EncodeWithStore,
             $($sized_bound)*
             $($($preds)*)?
         {
@@ -2135,7 +2119,9 @@ macro_rules! reprC {
     };
 
     (@no_drop_borrow_ir [$($sized_bound:tt)*] [$($impl_generics:tt)*] $self_ty:ty $([$($preds:tt)*])?) => {
-        impl<$($impl_generics)*> $crate::heapify::Heapify for $self_ty $(where $($preds)*)? {
+        impl<$($impl_generics)*> $crate::heapify::Heapify for $self_ty where
+            $($sized_bound)*
+            $($($preds)*)? {
             type Kind = Self;
 
             #[inline(always)]
@@ -2190,26 +2176,28 @@ macro_rules! reprC {
             impl<$($impl_generics)*> AssertNoDrop for $self_ty $(where $($preds)*)? {
                 fn assert_no_drop() {
                     const {
-                        assert!($crate::impls!(Self: !Drop));
+                        // TODO: This is heuristic so it might
+                        // make sense to reintroduce `DropFamily`
+                        assert!(!core::mem::needs_drop::<Self>());
                     }
                 }
             }
         };
     };
 
-    (@assert_non_zst [$($impl_generics:tt)*] $self_ty:ty $([$($preds:tt)*])?) => {
+    (@assert_non_zst [$($sized_bound:tt)*] [$($impl_generics:tt)*] $self_ty:ty $([$($preds:tt)*])?) => {
         const _: () = {
             #[allow(dead_code)]
-            trait AssertNonZst: Sized {
+            trait AssertNonZst {
                 fn assert_non_zst();
             }
 
-            impl<$($impl_generics)*> AssertNonZst for $self_ty $(where $($preds)*)? {
+            impl<$($impl_generics)*> AssertNonZst for $self_ty where $($sized_bound)* $($($preds)*)? {
                 fn assert_non_zst() {
                     const {
                         assert!(
                             core::mem::size_of::<Self>() != 0,
-                            "`impl Robust` doesn't support ZST types. Use `impl ZstRobust` instead"
+                            "`impl Robust`/`impl SizedRobust` doesn't support ZST types"
                         );
                     }
                 }

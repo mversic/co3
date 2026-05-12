@@ -64,7 +64,7 @@ use core::ops::Add;
 
 use crate::{
     ExternC, ReprC, Store,
-    borrow::{Borrow, DropFamily, ToOwned},
+    borrow::{Borrow, ToOwned},
     cloned::DecodeCloned,
     dst::DstFamily,
     heapify::Heapify,
@@ -350,15 +350,7 @@ impl<A: NicheFamily> NicheFamily for (A,) {
     type Kind = A::Kind;
 }
 
-impl<A: DropFamily> DropFamily for (A,) {
-    type Kind = A::Kind;
-}
-
 impl<A: NicheFamily<Kind: Add<B::Kind>>, B: NicheFamily> NicheFamily for (A, B) {
-    type Kind = <A::Kind as Add<B::Kind>>::Output;
-}
-
-impl<A: DropFamily<Kind: Add<B::Kind>>, B: DropFamily> DropFamily for (A, B) {
     type Kind = <A::Kind as Add<B::Kind>>::Output;
 }
 
@@ -373,19 +365,6 @@ impl_tuple_family_recursive! {
     (A, B, C, D, E, F, G, H, I, J) => ((A, B, C, D, E), (F, G, H, I, J)) : NicheFamily,
     (A, B, C, D, E, F, G, H, I, J, K) => ((A, B, C, D, E), (F, G, H, I, J, K)) : NicheFamily,
     (A, B, C, D, E, F, G, H, I, J, K, L) => ((A, B, C, D, E, F), (G, H, I, J, K, L)) : NicheFamily
-}
-
-impl_tuple_family_recursive! {
-    (A, B, C) => (A, (B, C)) : DropFamily,
-    (A, B, C, D) => ((A, B), (C, D)) : DropFamily,
-    (A, B, C, D, E) => ((A, B), (C, D, E)) : DropFamily,
-    (A, B, C, D, E, F) => ((A, B, C), (D, E, F)) : DropFamily,
-    (A, B, C, D, E, F, G) => ((A, B, C), (D, E, F, G)) : DropFamily,
-    (A, B, C, D, E, F, G, H) => ((A, B, C, D), (E, F, G, H)) : DropFamily,
-    (A, B, C, D, E, F, G, H, I) => ((A, B, C, D), (E, F, G, H, I)) : DropFamily,
-    (A, B, C, D, E, F, G, H, I, J) => ((A, B, C, D, E), (F, G, H, I, J)) : DropFamily,
-    (A, B, C, D, E, F, G, H, I, J, K) => ((A, B, C, D, E), (F, G, H, I, J, K)) : DropFamily,
-    (A, B, C, D, E, F, G, H, I, J, K, L) => ((A, B, C, D, E, F), (G, H, I, J, K, L)) : DropFamily
 }
 
 #[cfg(test)]

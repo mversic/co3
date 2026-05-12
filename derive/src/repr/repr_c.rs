@@ -258,7 +258,7 @@ pub(crate) fn derive_fieldless_enum(
 }
 
 pub(crate) fn gen_fieldless_enum_drop_ir(name: &Ident, generics: &syn::Generics) -> TokenStream {
-    let (impl_generics, ty_generics, where_clause) = generics.split_for_impl();
+    let (_, ty_generics, where_clause) = generics.split_for_impl();
 
     let mut params = generics.params.clone();
     params.push(parse_quote!(const IN_STRUCT: bool));
@@ -266,10 +266,6 @@ pub(crate) fn gen_fieldless_enum_drop_ir(name: &Ident, generics: &syn::Generics)
     let drop_impl_assert = assert_drop_impl(generics, name);
 
     quote! {
-        impl #impl_generics co3::borrow::DropFamily for #name #ty_generics #where_clause {
-            type Kind = co3::borrow::NoDrop;
-        }
-
         impl<#params> co3::borrow::Borrow<IN_STRUCT> for #name #ty_generics #where_clause {
             type Borrowed<'_išč> = Self
             where

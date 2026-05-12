@@ -1,81 +1,29 @@
 #[cfg(feature = "alloc")]
 use alloc_crate::{boxed::Box, vec::Vec};
-use core::ops::Add;
 
 use disjoint_impls::disjoint_impls;
 
 use crate::{
-    dst::{DstFamily, ExternTypeLike, Sized_, SliceLike},
+    dst::{DstFamily, ExternTypeLike, Sized_, SliceLike, TraitObjectLike},
     ir::{Cloned, Opaque, ReprFamily, Robust, Transmuted},
     niche::{NicheFamily, WithNiche, WithoutNiche},
-    transmute::CheckedTransmute,
 };
 
-trait NonOpaqueOrTransparent {}
-impl NonOpaqueOrTransparent for Robust {}
-impl<S: Cloned> NonOpaqueOrTransparent for S {}
+trait NonExternTypeLike {}
+trait NonOpaqueOrTransmuted {}
+impl NonOpaqueOrTransmuted for Robust {}
+impl<S: Cloned> NonOpaqueOrTransmuted for S {}
+impl<S> NonOpaqueOrTransmuted for [S] {}
+impl NonExternTypeLike for Sized_ {}
+impl NonExternTypeLike for SliceLike {}
+impl NonExternTypeLike for TraitObjectLike {}
 
-/// This struct exists only because [arrays don't implement Default](https://github.com/rust-lang/rust/issues/61415)
+/// This struct exists only because [arrays don't yet implement Default](https://github.com/rust-lang/rust/issues/61415)
 pub struct ArrayBorrowStore<D, const N: usize>([D; N]);
 impl<D: Default, const N: usize> Default for ArrayBorrowStore<D, N> {
     #[inline(always)]
     fn default() -> Self {
         Self(core::array::from_fn(|_| D::default()))
-    }
-}
-
-pub enum NeedsDrop {}
-pub enum NoDrop {}
-
-disjoint_impls! {
-    pub trait DropFamily {
-        type Kind;
-    }
-
-    #[cfg(feature = "alloc")]
-    impl<R: ?Sized> DropFamily for Box<R>
-    where
-        R: ReprFamily<Kind = Opaque>,
-    {
-        // FIXME: I find this problematic because it's a lie that Borrow later depends on
-        type Kind = NoDrop;
-    }
-    #[cfg(feature = "alloc")]
-    impl<R> DropFamily for Box<R>
-    where
-        R: ReprFamily<Kind = Transmuted> + DstFamily<Kind = Sized_>,
-        Self: CheckedTransmute<Target: DropFamily>,
-    {
-        type Kind = <<Self as CheckedTransmute>::Target as DropFamily>::Kind;
-    }
-    #[cfg(feature = "alloc")]
-    impl<R: ?Sized + CheckedTransmute> DropFamily for Box<R>
-    where
-        R: ReprFamily<Kind = Transmuted> + DstFamily<Kind = SliceLike>,
-        Box<<R as CheckedTransmute>::Target>: DropFamily,
-    {
-        type Kind = <Box<R::Target> as DropFamily>::Kind;
-    }
-    #[cfg(feature = "alloc")]
-    impl<R> DropFamily for Box<R>
-    where
-        R: ReprFamily<Kind = Transmuted> + DstFamily<Kind = ExternTypeLike>,
-    {
-        type Kind = NoDrop;
-    }
-    #[cfg(feature = "alloc")]
-    impl<R: ?Sized> DropFamily for Box<R>
-    where
-        R: ReprFamily<Kind: NonOpaqueOrTransparent>,
-    {
-        type Kind = NeedsDrop;
-    }
-    #[cfg(feature = "alloc")]
-    impl<R: ?Sized, S: NonOpaqueOrTransparent> DropFamily for Box<R>
-    where
-        R: ReprFamily<Kind = [S]>,
-    {
-        type Kind = NeedsDrop;
     }
 }
 
@@ -92,7 +40,6 @@ disjoint_impls! {
     //
     // FIXME: Rename the trait
     // TODO: Should I join Borrow and ToOwned?
-    // TODO: I hope that some day it'll be possible to join all NoDrop impls into one
     // TODO: Should we allow default value IN_STRUCT = false?
     pub trait Borrow<const IN_STRUCT: bool>: Sized {
         /// Target type
@@ -113,7 +60,27 @@ disjoint_impls! {
     #[cfg(feature = "alloc")]
     impl<R: ?Sized, const IN_STRUCT: bool> Borrow<IN_STRUCT> for Box<R>
     where
-        Self: DropFamily<Kind = NoDrop>,
+        R: ReprFamily<Kind = Opaque>,
+    {
+        type Borrowed<'itm>
+            = Self
+        where
+            Self: 'itm;
+
+        type Store = ();
+
+        #[inline(always)]
+        fn borrow<'itm>(self, (): &mut ()) -> Self::Borrowed<'itm>
+        where
+            Self: 'itm,
+        {
+            self
+        }
+    }
+    #[cfg(feature = "alloc")]
+    impl<R, const IN_STRUCT: bool> Borrow<IN_STRUCT> for Box<R>
+    where
+        R: ReprFamily<Kind = Transmuted> + DstFamily<Kind = ExternTypeLike>,
     {
         type Borrowed<'itm>
             = Self
@@ -133,7 +100,29 @@ disjoint_impls! {
     #[cfg(feature = "alloc")]
     impl<R: ?Sized, const IN_STRUCT: bool> Borrow<IN_STRUCT> for Box<R>
     where
-        Self: DropFamily<Kind = NeedsDrop>,
+        R: ReprFamily<Kind = Transmuted> + DstFamily<Kind: NonExternTypeLike>,
+    {
+        type Borrowed<'itm>
+            = &'itm R
+        where
+            Self: 'itm;
+
+        // NOTE: If Option<R> was used a potentially
+        // large value would be placed on the stack
+        type Store = Option<Self>;
+
+        #[inline(always)]
+        fn borrow<'itm>(self, store: &'itm mut Self::Store) -> Self::Borrowed<'itm>
+        where
+            Self: 'itm,
+        {
+            store.insert(self)
+        }
+    }
+    #[cfg(feature = "alloc")]
+    impl<R: ?Sized, const IN_STRUCT: bool> Borrow<IN_STRUCT> for Box<R>
+    where
+        R: ReprFamily<Kind: NonOpaqueOrTransmuted>,
     {
         type Borrowed<'itm>
             = &'itm R
@@ -247,7 +236,7 @@ disjoint_impls! {
     #[cfg(feature = "alloc")]
     impl<'r, R: ?Sized + 'r, const IN_STRUCT: bool> ToOwned<'r, IN_STRUCT> for Box<R>
     where
-        Self: DropFamily<Kind = NoDrop>,
+        R: ReprFamily<Kind = Opaque>,
     {
         #[inline(always)]
         fn to_owned(borrowed: Self::Borrowed<'r>) -> Self {
@@ -255,9 +244,30 @@ disjoint_impls! {
         }
     }
     #[cfg(feature = "alloc")]
+    impl<'r, R: 'r, const IN_STRUCT: bool> ToOwned<'r, IN_STRUCT> for Box<R>
+    where
+        R: ReprFamily<Kind = Transmuted> + DstFamily<Kind = ExternTypeLike>,
+    {
+        #[inline(always)]
+        fn to_owned(borrowed: Self::Borrowed<'r>) -> Self {
+            borrowed
+        }
+    }
+    // TODO: This isn't working for Box<[T]> and the like
+    #[cfg(feature = "alloc")]
     impl<'r, R: Clone, const IN_STRUCT: bool> ToOwned<'r, IN_STRUCT> for Box<R>
     where
-        Self: DropFamily<Kind = NeedsDrop>,
+        R: ReprFamily<Kind = Transmuted> + DstFamily<Kind: NonExternTypeLike>,
+    {
+        #[inline(always)]
+        fn to_owned(borrowed: Self::Borrowed<'r>) -> Self {
+            Box::new(borrowed.clone())
+        }
+    }
+    #[cfg(feature = "alloc")]
+    impl<'r, R: Clone, const IN_STRUCT: bool> ToOwned<'r, IN_STRUCT> for Box<R>
+    where
+        R: ReprFamily<Kind: NonOpaqueOrTransmuted>,
     {
         #[inline(always)]
         fn to_owned(borrowed: Self::Borrowed<'r>) -> Self {
@@ -284,6 +294,7 @@ disjoint_impls! {
         }
     }
 
+    //FIXME:
     //impl<'r, R: ToOwned<'r, true>, E: ToOwned<'r, true>> ToOwned<'r, false> for Result<R, E>
     //where
     //    Self: NicheFamily<Kind = WithoutNiche>,
@@ -308,23 +319,6 @@ disjoint_impls! {
     //        }
     //    }
     //}
-}
-
-impl<R: ?Sized> DropFamily for &R {
-    type Kind = NoDrop;
-}
-
-impl<R: ?Sized> DropFamily for &mut R {
-    type Kind = NoDrop;
-}
-
-#[cfg(feature = "alloc")]
-impl<R> DropFamily for Vec<R> {
-    type Kind = NeedsDrop;
-}
-
-impl<R: DropFamily, const N: usize> DropFamily for [R; N] {
-    type Kind = R::Kind;
 }
 
 impl<R: ?Sized, const IN_STRUCT: bool> Borrow<IN_STRUCT> for &R {
@@ -459,131 +453,11 @@ impl<'r, R: ToOwned<'r, true>, const N: usize> ToOwned<'r, true> for [R; N] {
     }
 }
 
-impl Add for NoDrop {
-    type Output = Self;
-
-    fn add(self, _: Self) -> Self::Output {
-        unreachable!()
-    }
-}
-impl Add<NeedsDrop> for NoDrop {
-    type Output = NeedsDrop;
-
-    fn add(self, _: NeedsDrop) -> Self::Output {
-        unreachable!()
-    }
-}
-impl Add<NoDrop> for NeedsDrop {
-    type Output = NeedsDrop;
-
-    fn add(self, _: NoDrop) -> Self::Output {
-        unreachable!()
-    }
-}
-impl Add for NeedsDrop {
-    type Output = Self;
-
-    fn add(self, _: Self) -> Self::Output {
-        unreachable!()
-    }
-}
-
 #[cfg(test)]
 mod tests {
-    #[cfg(feature = "alloc")]
-    use alloc_crate::{boxed::Box, string::String, vec::Vec};
-    use core::{cell::UnsafeCell, num::NonZeroU8, ptr::NonNull};
-
-    use static_assertions::assert_impl_all;
+    use core::num::NonZeroU8;
 
     use super::*;
-    use crate::{
-        external::{ExternRef, ExternRefMut},
-        ir::Opaque,
-    };
-
-    struct OpaqueStruct;
-    //struct ExternStruct;
-
-    impl ReprFamily for OpaqueStruct {
-        type Kind = Opaque;
-    }
-    //impl ReprFamily for ExternStruct {
-    //    type Kind = Transmuted;
-    //}
-
-    #[test]
-    fn references_are_no_drop() {
-        #[cfg(feature = "alloc")]
-        assert_impl_all!(&String: DropFamily<Kind = NoDrop>);
-        #[cfg(feature = "alloc")]
-        assert_impl_all!(&mut String: DropFamily<Kind = NoDrop>);
-
-        #[cfg(feature = "alloc")]
-        assert_impl_all!(&[String]: DropFamily<Kind = NoDrop>);
-        #[cfg(feature = "alloc")]
-        assert_impl_all!(&mut [String]: DropFamily<Kind = NoDrop>);
-
-        assert_impl_all!(&OpaqueStruct: DropFamily<Kind = NoDrop>);
-        assert_impl_all!(&mut OpaqueStruct: DropFamily<Kind = NoDrop>);
-
-        assert_impl_all!(&[OpaqueStruct]: DropFamily<Kind = NoDrop>);
-        assert_impl_all!(&mut [OpaqueStruct]: DropFamily<Kind = NoDrop>);
-
-        assert_impl_all!(ExternRef<'static, u8>: DropFamily<Kind = NoDrop>);
-        assert_impl_all!(ExternRefMut<'static, u8>: DropFamily<Kind = NoDrop>);
-    }
-
-    #[test]
-    #[cfg(feature = "alloc")]
-    fn alloc_needs_drop() {
-        assert_impl_all!(Box<u8>: DropFamily<Kind = NeedsDrop>);
-        assert_impl_all!(Box<[u8]>: DropFamily<Kind = NeedsDrop>);
-        assert_impl_all!(Box<bool>: DropFamily<Kind = NeedsDrop>);
-        assert_impl_all!(Box<str>: DropFamily<Kind = NeedsDrop>);
-
-        assert_impl_all!(Vec<u8>: DropFamily<Kind = NeedsDrop>);
-        assert_impl_all!(String: DropFamily<Kind = NeedsDrop>);
-    }
-
-    // FIXME:
-    //#[test]
-    //#[cfg(feature = "alloc")]
-    //fn opaque_box_is_no_drop() {
-    //    assert_impl_all!(Box<OpaqueStruct>: DropFamily<Kind = NoDrop>);
-    //    assert_impl_all!(Box<&OpaqueStruct>: DropFamily<Kind = NeedsDrop>);
-    //    assert_impl_all!(Box<&mut OpaqueStruct>: DropFamily<Kind = NeedsDrop>);
-    //    assert_impl_all!(Box<&[OpaqueStruct]>: DropFamily<Kind = NeedsDrop>);
-    //    assert_impl_all!(Box<&mut [OpaqueStruct]>: DropFamily<Kind = NeedsDrop>);
-
-    //    // FIX: Extern types are very broken
-    //    //assert_impl_all!(Box<ExternStruct>: DropFamily<Kind = NoDrop>);
-    //    //assert_impl_all!(Box<&ExternStruct>: DropFamily<Kind = NeedsDrop>);
-    //    //assert_impl_all!(Box<&mut ExternStruct>: DropFamily<Kind = NeedsDrop>);
-    //    //assert_impl_all!(Box<&[ExternStruct]>: DropFamily<Kind = NeedsDrop>);
-    //    //assert_impl_all!(Box<&mut [ExternStruct]>: DropFamily<Kind = NeedsDrop>);
-    //    assert_impl_all!(Box<ExternRef<'static, u8>>: DropFamily<Kind = NeedsDrop>);
-    //    assert_impl_all!(Box<ExternRefMut<'static, u8>>: DropFamily<Kind = NeedsDrop>);
-    //}
-
-    #[test]
-    fn containers_delegate_drop_family() {
-        assert_impl_all!([u8; 2]: DropFamily<Kind = NoDrop>);
-        #[cfg(feature = "alloc")]
-        assert_impl_all!([String; 2]: DropFamily<Kind = NeedsDrop>);
-
-        assert_impl_all!(Option<u8>: DropFamily<Kind = NoDrop>);
-        #[cfg(feature = "alloc")]
-        assert_impl_all!(Option<String>: DropFamily<Kind = NeedsDrop>);
-
-        assert_impl_all!(Result<u8, NonNull<u8>>: DropFamily<Kind = NoDrop>);
-        #[cfg(feature = "alloc")]
-        assert_impl_all!(Result<String, u8>: DropFamily<Kind = NeedsDrop>);
-
-        assert_impl_all!(UnsafeCell<u8>: DropFamily<Kind = NoDrop>);
-        #[cfg(feature = "alloc")]
-        assert_impl_all!(UnsafeCell<String>: DropFamily<Kind = NeedsDrop>);
-    }
 
     #[test]
     fn array_borrow() {

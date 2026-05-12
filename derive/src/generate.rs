@@ -284,10 +284,6 @@ fn derive_opaque_item(
                 borrowed
             }
         }
-        impl #impl_generics co3::borrow::DropFamily for #ident #ty_generics #where_clause {
-            type Kind = co3::borrow::NoDrop;
-        }
-
         impl #impl_generics co3::niche::NicheFamily for #ident #ty_generics #where_clause {
             type Kind = co3::niche::WithCustomNiche;
         }
@@ -507,9 +503,6 @@ fn wrap_extern_type_decl(
         }
         impl #impl_generics co3::ir::ReprFamily for #ident #ty_generics #where_clause {
             type Kind = co3::ir::Transmuted;
-        }
-        impl #impl_generics co3::borrow::DropFamily for #ident #ty_generics #where_clause {
-            type Kind = co3::borrow::NoDrop;
         }
         impl #impl_generics co3::niche::NicheFamily for #ident #ty_generics #where_clause {
             type Kind = co3::niche::WithStableNiche;

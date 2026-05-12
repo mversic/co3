@@ -1,8 +1,8 @@
-error[E0277]: the trait bound `Vec<NoReprStruct>: OutPtrWrite` is not satisfied
-  --> tests/ui_fail/non_local_out_ptr.rs:12:35
+error[E0277]: the trait bound `Box<[NoReprStruct]>: OutPtrWrite` is not satisfied
+  --> tests/ui_fail/non_local_out_ptr.rs:11:1
    |
-12 | pub fn return_no_repr_struct() -> Vec<NoReprStruct> {
-   |                                   ^^^^^^^^^^^^^^^^^ the trait `out_ptr::_::OutPtrWrite0<Vec<NoReprStruct>>` is not implemented for `Vec<NoReprStruct>`
+11 | #[export("C")]
+   | ^^^^^^^^^^^^^^ the trait `out_ptr::_::OutPtrWrite0<Box<[NoReprStruct]>>` is not implemented for `Box<[NoReprStruct]>`
    |
    = help: the following other types implement trait `OutPtrWrite`:
              (A, B)
@@ -14,13 +14,14 @@ error[E0277]: the trait bound `Vec<NoReprStruct>: OutPtrWrite` is not satisfied
              (A, B, C, D, E, F, G, H)
              (A, B, C, D, E, F, G, H, I)
            and $N others
-   = note: required for `Vec<NoReprStruct>` to implement `OutPtrWrite`
+   = note: required for `Box<[NoReprStruct]>` to implement `OutPtrWrite`
+   = note: this error originates in the attribute macro `export` (in Nightly builds, run with -Z macro-backtrace for more info)
 
-error[E0277]: the trait bound `Vec<NoReprEnum>: OutPtrWrite` is not satisfied
-  --> tests/ui_fail/non_local_out_ptr.rs:17:44
+error[E0277]: the trait bound `Box<[NoReprEnum]>: OutPtrWrite` is not satisfied
+  --> tests/ui_fail/non_local_out_ptr.rs:16:1
    |
-17 | pub extern "C" fn return_no_repr_enum() -> Vec<NoReprEnum> {
-   |                                            ^^^^^^^^^^^^^^^ the trait `out_ptr::_::OutPtrWrite0<Vec<NoReprEnum>>` is not implemented for `Vec<NoReprEnum>`
+16 | #[export("C")]
+   | ^^^^^^^^^^^^^^ the trait `out_ptr::_::OutPtrWrite0<Box<[NoReprEnum]>>` is not implemented for `Box<[NoReprEnum]>`
    |
    = help: the following other types implement trait `OutPtrWrite`:
              (A, B)
@@ -32,4 +33,5 @@ error[E0277]: the trait bound `Vec<NoReprEnum>: OutPtrWrite` is not satisfied
              (A, B, C, D, E, F, G, H)
              (A, B, C, D, E, F, G, H, I)
            and $N others
-   = note: required for `Vec<NoReprEnum>` to implement `OutPtrWrite`
+   = note: required for `Box<[NoReprEnum]>` to implement `OutPtrWrite`
+   = note: this error originates in the attribute macro `export` (in Nightly builds, run with -Z macro-backtrace for more info)

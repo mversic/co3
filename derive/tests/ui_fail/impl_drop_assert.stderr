@@ -12,7 +12,23 @@ note: erroneous constant encountered
    |
    = note: this note originates in the derive macro `ReprC` (in Nightly builds, run with -Z macro-backtrace for more info)
 
-error[E0080]: evaluation panicked: assertion failed: ::co3::impls!(Self : ! Drop)
+error[E0080]: evaluation panicked: assertion failed: !core::mem::needs_drop::<Self>()
+  --> tests/ui_fail/impl_drop_assert.rs:21:10
+   |
+21 | #[derive(ReprC)]
+   |          ^^^^^ evaluation of `<TransparentEnumWithoutDrop as _::AssertNoDrop>::assert_no_drop::{constant#0}` failed here
+   |
+   = note: this error originates in the macro `assert` which comes from the expansion of the derive macro `ReprC` (in Nightly builds, run with -Z macro-backtrace for more info)
+
+note: erroneous constant encountered
+  --> tests/ui_fail/impl_drop_assert.rs:21:10
+   |
+21 | #[derive(ReprC)]
+   |          ^^^^^
+   |
+   = note: this note originates in the macro `$crate::reprC` which comes from the expansion of the derive macro `ReprC` (in Nightly builds, run with -Z macro-backtrace for more info)
+
+error[E0080]: evaluation panicked: assertion failed: !core::mem::needs_drop::<Self>()
   --> tests/ui_fail/impl_drop_assert.rs:27:10
    |
 27 | #[derive(ReprC)]
@@ -84,7 +100,7 @@ note: erroneous constant encountered
    |
    = note: this note originates in the derive macro `ReprC` (in Nightly builds, run with -Z macro-backtrace for more info)
 
-error[E0080]: evaluation panicked: assertion failed: ::co3::impls!(Self : ! Drop)
+error[E0080]: evaluation panicked: assertion failed: !core::mem::needs_drop::<Self>()
   --> tests/ui_fail/impl_drop_assert.rs:99:10
    |
 99 | #[derive(ReprC)]

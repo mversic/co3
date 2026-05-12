@@ -20,7 +20,6 @@ use crate::{
             gen_struct_size_family,
         },
     },
-    utils::build_type_tuple,
 };
 
 pub(super) fn derive_no_repr_struct<const NEEDS_DROP: bool>(
@@ -129,8 +128,7 @@ pub(super) fn derive_no_repr_struct<const NEEDS_DROP: bool>(
     let store_defs = (!NEEDS_DROP).then_some(gen_custom_store_types(name, &field_types));
 
     let niche_ir = gen_struct_niche_ir(name, generics, fields);
-    let non_locality =
-        (!local).then(|| gen_out_ptr_impls(name, generics, fields.iter().map(|f| f.ty.clone())));
+    let non_locality = (!local).then(|| gen_out_ptr_impls(name, generics));
 
     quote! {
         #repr_c_struct
@@ -280,15 +278,7 @@ pub(super) fn derive_no_repr_data_enum<const NEEDS_DROP: bool>(
             ));
     }
 
-    let non_locality = (!local).then(|| {
-        gen_out_ptr_impls(
-            enum_name,
-            generics,
-            variants.iter().filter_map(|variant| {
-                variant_mapper(variant, || None, |field| Some(field.ty.clone()))
-            }),
-        )
-    });
+    let non_locality = (!local).then(|| gen_out_ptr_impls(enum_name, generics));
 
     let niche_ir = gen_enum_niche_ir(inferred_repr, enum_name, generics, variants);
 
@@ -379,13 +369,7 @@ pub(super) fn derive_no_repr_fieldless_enum(
     let niche_ir = gen_enum_niche_ir(inferred_repr, enum_name, generics, variants);
 
     let nodrop_borrow_ir = gen_fieldless_enum_drop_ir(enum_name, generics);
-    let non_locality = gen_out_ptr_impls(
-        enum_name,
-        generics,
-        variants
-            .iter()
-            .filter_map(|variant| variant_mapper(variant, || None, |field| Some(field.ty.clone()))),
-    );
+    let non_locality = gen_out_ptr_impls(enum_name, generics);
 
     quote! {
         #size_family_impl
@@ -612,14 +596,8 @@ fn gen_drop_ir(
         .then_some(quote! { for<'_dummy> });
 
     let impl_drop_assert = assert_drop_impl(generics, name);
-    let (fields_tuple, _, _) = build_type_tuple(types);
     let borrow_view_bounds = gen_borrow_view_bounds(types, generics, false);
     let to_owned_bounds = gen_to_owned_bounds(types, generics);
-
-    let is_parametrized = types.iter().any(|ty| is_type_parameterized(ty, generics));
-    let drop_family_bound = is_parametrized.then_some(quote! {
-        #fields_tuple: co3::borrow::DropFamily,
-    });
     let borrowed_name = gen_borrowed_name(name);
     let generic_idents = generics.params.iter().map(|param| match param {
         syn::GenericParam::Lifetime(param) => {
@@ -637,14 +615,6 @@ fn gen_drop_ir(
     });
 
     quote! {
-        impl #impl_generics co3::borrow::DropFamily for #name #ty_generics
-        where
-            #drop_family_bound
-            #predicates
-        {
-            type Kind = <#fields_tuple as co3::borrow::DropFamily>::Kind;
-        }
-
         impl #impl_generics co3::heapify::Heapify for #name #ty_generics
         where
             #for_dummy Self: Sized,
@@ -863,60 +833,26 @@ fn derive_borrowed_helper(item: &syn::DeriveInput) -> TokenStream {
     }
 }
 
-fn gen_out_ptr_impls(
-    _type_name: &Ident,
-    generics: &syn::Generics,
-    types: impl IntoIterator<Item = syn::Type>,
-) -> TokenStream {
-    let (_, _ty_generics, where_clause) = generics.split_for_impl();
-    let _params = &generics.params;
-    let _predicates = where_clause
-        .as_ref()
-        .map(|where_clause| &where_clause.predicates);
-
-    let _for_dummy = if types
-        .into_iter()
-        .all(|ty| !is_type_parameterized(&ty, generics))
-    {
-        Some(quote! { for<'_dummy> })
-    } else {
-        None
-    };
+fn gen_out_ptr_impls(type_name: &Ident, generics: &syn::Generics) -> TokenStream {
+    let (impl_generics, ty_generics, where_clause) = generics.split_for_impl();
 
     quote! {
-        //impl<#params> co3::out_ptr::OutPtr for #type_name #ty_generics
+        impl #impl_generics co3::out_ptr::OutPtr for #type_name #ty_generics #where_clause {
+            type OutPtr = Self::CType;
+        }
+
+        // FIXME:
+        //impl #impl_generics co3::out_ptr::OutPtrWrite for #type_name #ty_generics
         //where
-        //    #for_dummy Self: co3::ExternC,
-        //    #predicates
-        //{
-        //    type OutPtr = Self::CType;
-        //}
-        //impl<#params> co3::out_ptr::OutPtrWrite for #type_name #ty_generics
-        //where
-        //    #for_dummy Self: co3::Encode<false> + co3::out_ptr::OutPtr,
+        //    #for_dummy Self: co3::EncodeWithStore<false> + co3::out_ptr::OutPtr,
+        //    <Self as co3::EncodeWithStore<false>>::Store: Default,
         //    #predicates
         //{
         //    unsafe fn write_out(self, out_ptr: *mut Self::OutPtr) {
-        //        unimplemented!()
-        //        // FIXME:
-        //        //let mut store = Default::default();
-        //        //let encoded = co3::Encode::encode(self, &mut store);
-        //        //unsafe { out_ptr.write(encoded); }
-        //    }
-        //}
-        //impl<'_dšč, #params> co3::Decode<'_dšč, false> for #type_name #ty_generics where
-        //    #for_dummy Self: co3::Decode<'_dšč, false> + co3::out_ptr::OutPtr, #predicates
-        //{
-        //    unsafe fn decode(out_ptr: Self::OutPtr, _: &'_dšč mut Self::Store) -> Option<Self> {
-        //        unimplemented!()
-        //        // FIXME:
-        //        //let mut store = Default::default();
+        //        let mut store = Default::default();
+        //        let encoded = co3::EncodeWithStore::encode(self, &mut store);
 
-        //        //unsafe {
-        //        //    // SAFETY: output decoding must satisfy the type's `Decode` contract.
-        //        //    let store_ref = &mut *(&mut store as *mut _);
-        //        //    co3::DecodeWithStore::decode(out_ptr, store_ref)
-        //        //}
+        //        unsafe { out_ptr.write(encoded); }
         //    }
         //}
     }
