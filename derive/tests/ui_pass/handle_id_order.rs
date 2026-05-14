@@ -15,13 +15,30 @@ extern_C! {
     #[id(u32)]
     type Opaque1;
     #[id(u8)]
+    #[derive(PartialEq)]
     type Opaque2;
 
-    impl Default for Opaque1 {
+    impl ToOwned for Opaque1 {
+        type Owned = OwnedOpaque1;
+
+        #[link_name = "this_crate__ToOwned__Box_Opaque1__to_owned"]
+        fn to_owned(&self) -> <Self as ToOwned>::Owned;
+    }
+
+    impl ToOwned for Opaque2 {
+        type Owned = OwnedOpaque2;
+
+        #[link_name = "this_crate__ToOwned__Box_Opaque2__to_owned"]
+        fn to_owned(&self) -> <Self as ToOwned>::Owned;
+    }
+
+    impl Default for OwnedOpaque1 {
+        #[link_name = "this_crate__Default__Box_Opaque1__default"]
         fn default() -> Self;
     }
 
-    impl Default for Opaque2 {
+    impl Default for OwnedOpaque2 {
+        #[link_name = "this_crate__Default__Box_Opaque2__default"]
         fn default() -> Self;
     }
 
@@ -41,8 +58,10 @@ mod provider {
     }
 
     #[export("C", crate = "this_crate")]
+    #[derive(Clone)]
     #[id(u32)]
     pub struct Opaque1;
+    #[derive(Clone)]
     pub struct Opaque2;
 
     handles! {
@@ -51,13 +70,13 @@ mod provider {
     }
 
     #[export("C", crate = "this_crate")]
-    impl Default for Opaque1 {
+    impl Default for Box<Opaque1> {
+        #[unsafe(export_name = "this_crate__Default__Box_Opaque1__default")]
         fn default() -> Self {
-            Self
+            Box::new(Opaque1)
         }
     }
 
-    #[export("C", crate = "this_crate")]
     impl Default for Opaque2 {
         fn default() -> Self {
             Self
@@ -71,12 +90,29 @@ mod provider {
     }
 
     export_C! {
+        #![export(crate = "this_crate")]
+
         #[id(u8)]
         type Opaque2;
 
         impl Drop for Opaque2 {
             #[unsafe(export_name = "this_crate__Drop__Opaque2__drop")]
             fn drop(&mut self);
+        }
+
+        impl Default for Box<Opaque2> {
+            #[unsafe(export_name = "this_crate__Default__Box_Opaque2__default")]
+            fn default() -> Self;
+        }
+
+        impl ToOwned for Box<Opaque1> {
+            #[unsafe(export_name = "this_crate__ToOwned__Box_Opaque1__to_owned")]
+            fn to_owned(&self) -> <Self as ToOwned>::Owned;
+        }
+
+        impl ToOwned for Box<Opaque2> {
+            #[unsafe(export_name = "this_crate__ToOwned__Box_Opaque2__to_owned")]
+            fn to_owned(&self) -> <Self as ToOwned>::Owned;
         }
 
         #[dispatch(<Opaque2, Opaque1>)]
@@ -88,8 +124,8 @@ mod provider {
 }
 
 fn main() {
-    let mut value1 = Opaque1::default();
-    let value2 = Opaque2::default();
+    let mut value1 = OwnedOpaque1::default();
+    let value2 = OwnedOpaque2::default();
 
     let _ = kita1(Opaque2::ID, Opaque1::ID, &mut value1, &value2);
 }

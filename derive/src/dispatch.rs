@@ -11,8 +11,7 @@ use crate::{
     DynImpl,
     ffi_fn::{
         emit_extern_definition, gen_definition_body, gen_extern_fn_signature,
-        gen_signature_input_conversion_stmts, gen_signature_input_init_stmts,
-        gen_signature_store_sync_stmts, merge_generics, normalize_fn_signature,
+        gen_input_decode_stmts, gen_store_sync_stmts, merge_generics, normalize_fn_signature,
         ownership_mode_for_arg,
     },
     generate::OwnershipMode,
@@ -172,30 +171,22 @@ pub(crate) fn gen_dispatch_export(
             })
             .unzip();
 
-        let dispatch_arms = gen_dispatch_arms(
-            generics, trait_, self_id, self_ty, &item.sig, drop_impl, &args,
-        )
-        .collect::<Vec<_>>();
+        let dispatch_arms =
+            gen_dispatch_arms(generics, trait_, self_ty, &item.sig, drop_impl, &args)
+                .collect::<Vec<_>>();
 
-        let id_initialization_stmts = gen_signature_input_init_stmts(&handle_ids);
-        let id_input_conversions = gen_signature_input_conversion_stmts(&handle_ids);
-        let id_store_sync = gen_signature_store_sync_stmts(handle_ids.len());
+        let decode_id_stmts = gen_input_decode_stmts(&handle_ids);
+        let sync_id_stores = gen_store_sync_stmts(handle_ids.len());
 
         let fn_body = quote! {{
-            #id_initialization_stmts
-            #id_input_conversions
-
-            let (#(Some(#id_arg_names),)*) = __co3_input_values else {
-                let __co3_sync_errors = #id_store_sync;
-                return Err(co3::FfiReturn::TrapRepresentation);
-            };
+            #decode_id_stmts
 
             let __co3_dispatch_result: Result<(), co3::FfiReturn> = match (#(#id_arg_names,)*) {
                 #(#dispatch_arms,)*
                 _ => Err(co3::FfiReturn::UnknownHandle),
             };
 
-            let __co3_sync_errors = #id_store_sync;
+            let __co3_sync_errors = #sync_id_stores;
             let mut __co3_sync_errors_iter = core::iter::IntoIterator::into_iter(__co3_sync_errors);
             if core::iter::Iterator::any(&mut __co3_sync_errors_iter, core::convert::identity) {
                 return Err(co3::FfiReturn::TrapRepresentation);
@@ -204,7 +195,7 @@ pub(crate) fn gen_dispatch_export(
             __co3_dispatch_result
         }};
 
-        erase_handle_types(generics, self_id, self_ty, &mut item.sig, &args);
+        erase_handle_types(generics, self_id, &mut item.sig, &args);
         let sig = gen_extern_fn_signature(item.sig);
         emit_extern_definition(abi, &item.attrs, sig, fn_body)
     });
@@ -238,13 +229,12 @@ fn synthesize_dispatch_handle_ids(self_id: Option<&syn::Type>, sig: &mut syn::Si
 fn gen_dispatch_arms(
     generics: &syn::Generics,
     trait_: Option<&syn::Path>,
-    self_id: Option<&syn::Type>,
     self_ty: &syn::Type,
     sig: &syn::Signature,
     drop_impl: bool,
     args: &Punctuated<syn::AngleBracketedGenericArguments, syn::Token![,]>,
 ) -> impl Iterator<Item = TokenStream> {
-    let derase_handle_stmts = gen_handle_derase_stmts(generics, self_id, self_ty, sig);
+    let derase_handle_stmts = gen_handle_retype_stmts(RetypeDirection::Derase, sig);
 
     let dispatch_id_params = sig
         .inputs
@@ -306,12 +296,9 @@ fn gen_dispatch_arms(
 pub(crate) fn erase_handle_types(
     generics: &syn::Generics,
     self_id: Option<&syn::Type>,
-    self_ty: &syn::Type,
     sig: &mut syn::Signature,
     args: &Punctuated<syn::AngleBracketedGenericArguments, syn::Token![,]>,
 ) {
-    let mut eraser = DynHandleEraser::new(generics, self_id, self_ty);
-
     let handle_ids = sig
         .inputs
         .iter()
@@ -338,13 +325,17 @@ pub(crate) fn erase_handle_types(
 
     for input in &mut sig.inputs {
         match input {
-            syn::FnArg::Receiver(receiver) => eraser.visit_type_mut(&mut receiver.ty),
-            syn::FnArg::Typed(syn::PatType { ty, .. }) => eraser.visit_type_mut(ty),
+            syn::FnArg::Receiver(receiver) => {
+                *receiver.ty = erase_handle(&receiver.ty);
+            }
+            syn::FnArg::Typed(syn::PatType { ty, .. }) => {
+                **ty = erase_handle(ty);
+            }
         }
     }
 
     if let syn::ReturnType::Type(_, ty) = &mut sig.output {
-        eraser.visit_type_mut(ty);
+        **ty = erase_handle(ty);
     }
 
     for (idx, lowered_ty) in handle_ids {
@@ -361,8 +352,6 @@ pub(crate) fn erase_handle_types(
 }
 
 pub(crate) fn gen_handle_erase_stmts(
-    generics: &syn::Generics,
-    self_id: Option<&syn::Type>,
     self_ty: &syn::Type,
     sig: &syn::Signature,
 ) -> Vec<TokenStream> {
@@ -370,25 +359,10 @@ pub(crate) fn gen_handle_erase_stmts(
 
     // TODO: I don't like to clone sig and normalize
     normalize_fn_signature(&mut sig, Some(self_ty));
-    gen_handle_retype_stmts(RetypeDirection::Erase, generics, self_id, self_ty, &sig)
+    gen_handle_retype_stmts(RetypeDirection::Erase, &sig)
 }
 
-fn gen_handle_derase_stmts(
-    generics: &syn::Generics,
-    self_id: Option<&syn::Type>,
-    self_ty: &syn::Type,
-    sig: &syn::Signature,
-) -> Vec<TokenStream> {
-    gen_handle_retype_stmts(RetypeDirection::Derase, generics, self_id, self_ty, sig)
-}
-
-fn gen_handle_retype_stmts(
-    direction: RetypeDirection,
-    generics: &syn::Generics,
-    self_id: Option<&syn::Type>,
-    self_ty: &syn::Type,
-    sig: &syn::Signature,
-) -> Vec<TokenStream> {
+fn gen_handle_retype_stmts(direction: RetypeDirection, sig: &syn::Signature) -> Vec<TokenStream> {
     let handles = sig.inputs.iter().filter(|input| !is_handle_id_arg(input));
 
     let mut stmts = vec![];
@@ -398,20 +372,14 @@ fn gen_handle_retype_stmts(
             syn::FnArg::Typed(syn::PatType { attrs, pat, ty, .. }) => (attrs, quote!(#pat), &**ty),
         };
 
-        let Some(erased_ty) = erase_handle(generics, self_id, self_ty, ty) else {
-            continue;
-        };
+        let erased_ty = erase_handle(ty);
 
-        let (ty, erased_ty) = match ownership_mode_for_arg(attrs, ty) {
+        let (ty, erased_ty) = match ownership_mode_for_arg(attrs) {
+            OwnershipMode::ByValue => (quote! { #ty }, quote! { #erased_ty }),
             OwnershipMode::Borrow => (
-                quote! { <#ty as co3::borrow::Borrow<false>>::Borrowed<'_> },
-                quote! { <#erased_ty as co3::borrow::Borrow<false>>::Borrowed<'_> },
+                quote! { <<#ty as co3::ExternC>::CType as co3::borrow::BorrowCast>::AsConst },
+                quote! { <<#erased_ty as co3::ExternC>::CType as co3::borrow::BorrowCast>::AsConst },
             ),
-            OwnershipMode::ByValue => (
-                quote! { <#ty as co3::heapify::Heapify>::Kind },
-                quote! { <#erased_ty as co3::heapify::Heapify>::Kind },
-            ),
-            OwnershipMode::Copied => (quote! { #ty }, quote! { #erased_ty }),
         };
 
         let (src_ty, dst_ty) = match direction {
@@ -426,9 +394,8 @@ fn gen_handle_retype_stmts(
         };
 
         stmts.push(quote! {
-            // FIXME: THIS IS EXTREMELY DANGEROUS!!! but I don't have time atm
-            // Replace transmute with proper conversion or define an unsafe trait
-            let #arg_name = unsafe { core::mem::transmute::<#src_ty, #dst_ty>(#arg_name) };
+            // FIXME: Correctness depends on the Erase trait implementation, verify it!!!
+            let #arg_name = unsafe { core::mem::transmute_copy::<#src_ty, #dst_ty>(&#arg_name) };
         });
     }
 
@@ -440,88 +407,29 @@ fn gen_handle_retype_stmts(
         .map(|(ok, _)| ok)
         .unwrap_or(output_ty);
 
-    let Some(erased_output_ty) = erase_handle(generics, self_id, self_ty, output_ty) else {
-        return stmts;
-    };
+    let erased_output_ty = erase_handle(output_ty);
 
-    let out_ptr_ty = match direction {
-        RetypeDirection::Erase => quote! { <#erased_output_ty as co3::out_ptr::OutPtr>::OutPtr },
-        RetypeDirection::Derase => quote! { <#output_ty as co3::out_ptr::OutPtr>::OutPtr },
+    let (src_out_ptr_ty, out_ptr_ty) = match direction {
+        RetypeDirection::Erase => (
+            quote! { <#output_ty as co3::out_ptr::OutPtr>::OutPtr },
+            quote! { <#erased_output_ty as co3::out_ptr::OutPtr>::OutPtr },
+        ),
+        RetypeDirection::Derase => (
+            quote! { <#erased_output_ty as co3::out_ptr::OutPtr>::OutPtr },
+            quote! { <#output_ty as co3::out_ptr::OutPtr>::OutPtr },
+        ),
     };
 
     stmts.push(quote! {
-        // FIXME: this is not as extremly dangerous but still very dubious
-        let __co3_out_ptr = __co3_out_ptr.cast::<#out_ptr_ty>();
+        // FIXME: Correctness depends on the Erase trait implementation, verify it!!!
+        let __co3_out_ptr = <*mut #src_out_ptr_ty>::cast::<#out_ptr_ty>(__co3_out_ptr);
     });
 
     stmts
 }
 
-struct DynHandleEraser {
-    erased: BTreeSet<syn::Ident>,
-    was_erased: bool,
-}
-
-impl DynHandleEraser {
-    fn new(generics: &syn::Generics, self_id: Option<&syn::Type>, self_ty: &syn::Type) -> Self {
-        let mut erased: BTreeSet<syn::Ident> = generics
-            .type_params()
-            .filter_map(|p| {
-                if p.attrs.iter().any(is_type_erased) {
-                    return Some(p.ident.clone());
-                }
-
-                None
-            })
-            .collect();
-
-        if erased.is_empty()
-            && self_id.is_some()
-            && let syn::Type::Path(syn::TypePath { qself: None, path }) = self_ty
-            && let Some(self_ty) = path.segments.first()
-        {
-            erased.insert(self_ty.ident.clone());
-        }
-
-        Self {
-            was_erased: false,
-            erased,
-        }
-    }
-}
-
-impl VisitMut for DynHandleEraser {
-    fn visit_type_mut(&mut self, node: &mut syn::Type) {
-        syn::visit_mut::visit_type_mut(self, node);
-
-        let syn::Type::Path(syn::TypePath { qself: None, path }) = node else {
-            return;
-        };
-        let Some(syn::PathSegment { ident, .. }) = path.segments.first() else {
-            return;
-        };
-
-        if self.erased.contains(ident) {
-            self.was_erased = true;
-
-            *node = parse_quote! {
-                co3::handle::Erased
-            };
-        }
-    }
-}
-
-fn erase_handle(
-    generics: &syn::Generics,
-    self_id: Option<&syn::Type>,
-    self_ty: &syn::Type,
-    ty: &syn::Type,
-) -> Option<syn::Type> {
-    let mut eraser = DynHandleEraser::new(generics, self_id, self_ty);
-
-    let mut new_ty = ty.clone();
-    eraser.visit_type_mut(&mut new_ty);
-    eraser.was_erased.then_some(new_ty)
+fn erase_handle(ty: &syn::Type) -> syn::Type {
+    parse_quote!(<#ty as co3::handle::Erase>::Erased)
 }
 
 pub(crate) fn parse_handle_id_attr(attrs: &mut Vec<syn::Attribute>) -> Result<Option<syn::Type>> {

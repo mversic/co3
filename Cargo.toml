@@ -23,24 +23,6 @@ derive = ["co3-derive"]
 # Implements conversion traits for types from the `alloc` crate (e.g. `Box<T>` or `Vec<T>`).
 alloc = []
 
-# Enables transmute-based encoding for mutable references to:
-# - droppable transmuted types (e.g. `&mut Box<u32>`) where the callee can transfer ownership
-# - non-robust transmuted types (e.g. `&mut bool`) where the callee can set a trap value
-#
-# Otherwise, the referent is cloned and validated before updating the reference, after calling the `extern "C"` function.
-#
-# # Safety
-#
-# When handing out mutable references to droppable types across FFI, it's possible for the callee
-# to modify the referent to store values requiring custom Drop logic (such as calling allocator)
-#
-# When handing out mutable references to non-robust types across FFI, it's possible for the callee
-# to modify the referent to store a trap representation thus causing UB.
-#
-# Use at your own discretion
-unsafe-optimizations = []
-
-
 [dependencies]
 co3-derive = { path = "derive", optional = true }
 

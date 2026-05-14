@@ -39,7 +39,7 @@ impl core::fmt::Display for AllocError {
 }
 
 impl Global {
-    #[inline]
+    #[inline(always)]
     fn alloc_impl(&self, layout: Layout, zeroed: bool) -> Result<NonNull<[u8]>, AllocError> {
         match layout.size() {
             0 => {
@@ -62,12 +62,12 @@ impl Global {
 
 unsafe impl Zst for Global {}
 unsafe impl Allocator for Global {
-    #[inline]
+    #[inline(always)]
     fn allocate(&self, layout: Layout) -> Result<NonNull<[u8]>, AllocError> {
         self.alloc_impl(layout, false)
     }
 
-    #[inline]
+    #[inline(always)]
     unsafe fn deallocate(&self, ptr: NonNull<u8>, layout: Layout) {
         if layout.size() != 0 {
             // SAFETY:

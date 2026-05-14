@@ -1,147 +1,11 @@
 //! Logic related to the conversion of primitives to and from FFI-compatible representation
 
-use crate::reprC;
-
-// TODO: https://github.com/mversic/co3/issues/57
-//#[cfg(target_family = "wasm")]
-//mod wasm {
-//    use alloc::{boxed::Box, vec::Vec};
-//
-//    use crate::{
-//        Decode, Encode, ExternC,
-//        ir::{ReprFamily, Robust, Transmuted},
-//        out_ptr::{OutPtr, OutPtrWrite},
-//    };
-//
-//    /// Marker for an integer primitive type that is not recognized by the `WebAssembly`.
-//    /// This struct is meant only to be used internally, i.e. there are no constructors.
-//    // NOTE: There are no blanket impls because it's meant to be used only on a specific set of types
-//    #[derive(Debug, Clone, Copy)]
-//    pub enum NonWasmIntPrimitive {}
-//
-//    impl<R> ReprFamily for &R
-//    where
-//        R: ReprFamily<Type = NonWasmIntPrimitive>,
-//    {
-//        type Kind = Transparent;
-//    }
-//    impl<R> ReprFamily for &mut R
-//    where
-//        R: ReprFamily<Type = NonWasmIntPrimitive>,
-//    {
-//        type Kind = Transparent;
-//    }
-//    impl<'itm, R> ReprFamily for &'itm [R]
-//    where
-//        R: ReprFamily<Type = NonWasmIntPrimitive>,
-//    {
-//        type Kind = &'itm [Robust];
-//    }
-//    impl<'itm, R> ReprFamily for &'itm mut [R]
-//    where
-//        R: ReprFamily<Type = NonWasmIntPrimitive>,
-//    {
-//        type Kind = &'itm mut [Transparent];
-//    }
-//    #[cfg(feature = "owned-as-ref")]
-//    impl<R> ReprFamily for Box<R>
-//    where
-//        R: ReprFamily<Type = NonWasmIntPrimitive>,
-//    {
-//        type Kind = Box<Robust>;
-//    }
-//    #[cfg(feature = "owned-as-ref")]
-//    impl<R> ReprFamily for Box<[R]>
-//    where
-//        R: ReprFamily<Type = NonWasmIntPrimitive>,
-//    {
-//        type Kind = Box<[Robust]>;
-//    }
-//    #[cfg(feature = "owned-as-ref")]
-//    impl<R> ReprFamily for Vec<R>
-//    where
-//        R: ReprFamily<Type = NonWasmIntPrimitive>,
-//    {
-//        type Kind = [Robust];
-//    }
-//    // FIXME: Check comment in `impl IrReprFamily for Robust`
-//    // This should be just: type `Arr<const N: usize> = Robust`;
-//    impl<R, const N: usize> ReprFamily for [R; N]
-//    where
-//        R: ReprFamily<Type = NonWasmIntPrimitive>,
-//    {
-//        type Kind = Robust;
-//    }
-//
-//    macro_rules! wasm_repr_impls {
-//        ( $($src:ty => $dst:ty),+ ) => {$(
-//            // FIXME: Should it be ReprC?
-//            // SAFETY: Even if it is not used in `wasm` API it is still a `ReprC` type
-//            unsafe impl $crate::ReprC for $src {}
-//
-//            impl $crate::niche::Niche for $src {
-//                const NICHE_VALUE: $dst = <$dst>::MAX;
-//            }
-//
-//            unsafe impl<'a> $crate::transmute::CheckedTransmute for &'a $src {
-//                type Target = &'a $dst;
-//
-//                fn is_valid(target: &Self::Target) -> bool {
-//                    unimplemented!()
-//                }
-//            }
-//            unsafe impl<'a> $crate::transmute::CheckedTransmute for &'a mut $src {
-//                type Target = &'a mut $dst;
-//
-//                fn is_valid(target: &Self::Target) -> bool {
-//                    unimplemented!()
-//                }
-//            }
-//
-//            unsafe impl Encodable for &$src {}
-//
-//            impl $crate::ir::ReprFamily for $src {
-//                type Kind = NonWasmIntPrimitive;
-//            }
-//
-//            impl ExternC<false> for $src {
-//                type CType = $dst;
-//            }
-//            impl OutPtr for $src {
-//                type OutPtr = $src;
-//            }
-//
-//            impl Encode<false> for $src {
-//                type Store = ();
-//
-//                fn encode<'itm>(self, (): &mut ()) -> Self::CType where Self: 'itm {
-//                    self as $dst
-//                }
-//            }
-//
-//            impl Decode<'_, false> for $src {
-//                type Store = ();
-//
-//                unsafe fn decode<'itm: 'd>(source: Self::CType, (): &mut ()) -> Option<Self> {
-//                    <$src>::try_from(source).ok()
-//                }
-//            }
-//
-//            impl Decode<'_> for $src {
-//                unsafe fn decode(out_ptr: Self::OutPtr, _: &mut Self::Store) -> Option<Self> {
-//                    Some(out_ptr)
-//                }
-//            }
-//            impl OutPtrWrite for $src {
-//                unsafe fn write_out(self, out_ptr: *mut Self::OutPtr) {
-//                    unsafe {out_ptr.write(self)}
-//                }
-//            })+
-//        };
-//    }
-//
-//    wasm_repr_impls! {u8 => u32, i8 => i32, u16 => u32, i16 => i32}
-//}
+use crate::{
+    CFnArg, CFnReturn, ReprC, ReprFamily,
+    borrow::{Borrow, BorrowCast, ToOwned},
+    reprC,
+    stored::SoftEncodeOwned,
+};
 
 /// # Safety
 ///
@@ -159,6 +23,30 @@ macro_rules! fieldless_enum_derive {
                 }
             }
         }
+
+        impl Borrow for $src {
+            type Borrowed<'itm>
+                = Self
+            where
+                Self: 'itm;
+
+            type Owner = ();
+
+            #[inline(always)]
+            fn borrow<'itm>(self, (): &mut ()) -> Self::Borrowed<'itm>
+            where
+                Self: 'itm,
+            {
+                self
+            }
+        }
+
+        impl<'itm> ToOwned<'itm> for $src {
+            #[inline(always)]
+            fn to_owned(source: Self::Borrowed<'itm>) -> Self {
+                source
+            }
+        }
     };
 }
 
@@ -167,24 +55,85 @@ macro_rules! fieldless_enum_derive {
 /// Type must be a robust #[repr(C)]
 macro_rules! primitive_derive {
     ( $($primitive:ty),* $(,)? ) => { $(
-        reprC! { unsafe impl SizedRobust for $primitive {} } )*
+        reprC! { unsafe impl SizedRobust for $primitive {} }
+
+        unsafe impl BorrowCast for $primitive {
+            type AsConst = Self;
+            type AsMut = Self;
+        })*
     };
 }
 
 fieldless_enum_derive! {
-    char => <u32 as crate::ExternC>::CType: {0x110000}:
+    char => u32: {0x110000}:
     |i: &Self::Target| char::from_u32(*i).is_some()
 }
 fieldless_enum_derive! {
-    bool => <u8 as crate::ExternC>::CType: {2}:
+    bool => u8: {2}:
     |i: &Self::Target| *i == 0 || *i == 1
 }
 fieldless_enum_derive! {
-    core::cmp::Ordering => <i8 as crate::ExternC>::CType: {2}:
+    core::cmp::Ordering => i8: {2}:
     |i: &Self::Target| *i == -1 || *i == 0 || *i == 1
 }
 
-primitive_derive! { u32, i32, u64, i64, u128, i128, f32, f64 }
-// TODO: https://github.com/mversic/co3/issues/57
-//#[cfg(not(target_family = "wasm"))]
-primitive_derive! { u8, i8, u16, i16 }
+primitive_derive! { usize, isize, u8, i8, u16, i16, u32, i32, u64, i64, u128, i128, f32, f64 }
+
+macro_rules! impl_fn_types {
+    ( $( ( $( $arg:ident ),* ) ),* $(,)? ) => {$(
+        // FIXME: I'm not sure if arguments are required to be ReprC, what if fn pointer is opaque?
+        // or should we create new function with argument conversion?
+        unsafe impl<$($arg: CFnArg,)* R: CFnReturn> ReprC for unsafe extern "C" fn($($arg),*) -> R {}
+
+        impl<$($arg,)* R> ReprFamily for unsafe extern "C" fn($($arg),*) -> R {
+            type Kind = Self;
+        }
+        //impl<$($arg),*> ReprFamily for unsafe extern "C" fn($($arg),*) {
+        //    type Kind = Self;
+        //}
+
+        impl<$($arg: CFnArg,)* R: CFnReturn> crate::ExternC for unsafe extern "C" fn($($arg),*) -> R {
+            type CType = Self;
+        }
+
+        unsafe impl<$($arg: CFnArg,)* R: CFnReturn> crate::handle::Erase for unsafe extern "C" fn($($arg),*) -> R {
+            type Erased = Self;
+        }
+        //impl<const AS_REF: bool, $($arg: CFnArg,)* R: CFnReturn> crate::Encode<false> for unsafe extern "C" fn($($arg),*) -> R {
+        //    type Store = ();
+
+        //    fn encode<'itm>(self, (): &mut ()) -> Self::CType where Self: 'itm {
+        //        self
+        //    }
+        //}
+        impl<$($arg: CFnArg,)* R: CFnReturn> SoftEncodeOwned for unsafe extern "C" fn($($arg),*) -> R {
+            type Store = ();
+
+            #[inline(always)]
+            fn encode<'itm>(self, (): &mut ()) -> Self::CType where Self: 'itm {
+                self
+            }
+        }
+        impl<$($arg: CFnArg,)* R: CFnReturn> crate::SoftEncode for unsafe extern "C" fn($($arg),*) -> R {}
+
+        unsafe impl<$($arg: CFnArg,)* R: CFnReturn> ReprC for Option<unsafe extern "C" fn($($arg),*) -> R> {}
+        //crate::reprC! { impl<$($arg: CFnArg,)* R: CFnReturn> SizedRobust for Option<unsafe extern "C" fn($($arg),*) -> R> {} }
+        )*
+    }
+}
+
+impl_fn_types! {
+    (),
+    (A),
+    (A, B),
+    (A, B, C),
+    (A, B, C, D),
+    (A, B, C, D, E),
+    (A, B, C, D, E, F),
+    (A, B, C, D, E, F, G),
+    (A, B, C, D, E, F, G, H),
+    (A, B, C, D, E, F, G, H, I),
+    (A, B, C, D, E, F, G, H, I, J),
+    (A, B, C, D, E, F, G, H, I, J, K),
+    (A, B, C, D, E, F, G, H, I, J, K, L),
+}

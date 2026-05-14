@@ -3,7 +3,8 @@ use std::collections::HashSet;
 use proc_macro2::TokenStream;
 use quote::quote;
 use syn::{
-    FnArg, GenericArgument, GenericParam, ItemFn, ItemImpl, PatType, Result, Type, TypePath,
+    FnArg, GenericArgument, GenericParam, ItemFn, ItemImpl, PatType, Result, Type, TypeParamBound,
+    TypePath,
     parse::{ParseStream, Parser},
     parse_quote, parse_quote_spanned,
     spanned::Spanned,
@@ -267,19 +268,41 @@ fn parse_fn_item(input: syn::parse::ParseStream) -> syn::Result<ItemFn> {
 }
 
 fn parse_impl_item(input: syn::parse::ParseStream) -> syn::Result<ItemImpl> {
+    fn is_maybe_sized_bound(bound: &TypeParamBound) -> bool {
+        matches!(
+            bound,
+            TypeParamBound::Trait(bound)
+                if matches!(&bound.modifier, syn::TraitBoundModifier::Maybe(_))
+        )
+    }
+
     fn rewrite_erased_param_bounds_to_where_clause(impl_: &mut ItemImpl) {
         let mut erased_bounds = Vec::<syn::WherePredicate>::new();
 
         for param in impl_.generics.type_params_mut() {
             let ident = &param.ident;
-            let bounds = &param.bounds;
 
             if !param.attrs.iter().any(crate::utils::is_type_erased) {
                 continue;
             }
 
-            erased_bounds.push(parse_quote!(#ident: #bounds));
-            param.bounds.clear();
+            let bounds = param
+                .bounds
+                .iter()
+                .filter(|bound| !is_maybe_sized_bound(bound))
+                .cloned()
+                .collect::<Vec<_>>();
+
+            param.bounds = param
+                .bounds
+                .iter()
+                .filter(|bound| is_maybe_sized_bound(bound))
+                .cloned()
+                .collect();
+
+            if !bounds.is_empty() {
+                erased_bounds.push(parse_quote!(#ident: #(#bounds)+*));
+            }
         }
 
         impl_

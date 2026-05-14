@@ -95,8 +95,6 @@ enum DropImpl {
     Impl(ItemImpl),
 }
 
-// TODO: reprC(`local`) is a workaround for https://github.com/rust-lang/rust/issues/48214.
-// It should be removed once derived types no longer need that escape hatch.
 /// Derive implementations of traits required to convert to and from an FFI-compatible type
 ///
 /// # Attributes
@@ -111,28 +109,6 @@ enum DropImpl {
 ///
 /// Check [`co3::transmute::CheckedTransmute`] or [`co3::reprC`] for more details
 ///
-/// * `#[reprC(local)]`
-/// marks the type as local, meaning it contains references to the local frame. If a type
-/// contains references to the local frame you won't be able to return it from an FFI function
-/// because the frame is destroyed on function return which would invalidate your type's references.
-///
-/// Only applicable to data-carrying enums.
-///
-/// NOTE: This attribute is likely to be removed in future versions
-///
-/// * `#[reprC(unsafe(non_owning))]`
-/// when a type contains a raw pointer (e.g. `*const T`/*mut T`) it's not possible to figure out
-/// whether it carries ownership of the data pointed to. Place this attribute on the field to
-/// indicate pointer doesn't own the data and is robust in the type. If the type
-/// is not carrying ownership, but is not robust convert it into an equivalent [`co3::ReprC`]
-/// type that is validated when crossing the FFI boundary. It is also ok to mark non-owning,
-/// non-robust type as opaque via `export_!`/`export_C!` or `extern_!`/`extern_C!` `type Foo;`
-///
-/// # Safety
-///
-/// * wrapping type must allow for all possible values of the pointer including `null` (it's robust)
-/// * the wrapping types's field of the pointer type must not carry ownership (it's non owning)
-///
 /// ```
 /// use co3::ReprC as ReprCAlias;
 ///
@@ -142,7 +118,7 @@ enum DropImpl {
 ///
 /// It assumes that the derive is imported and referred to by its original name.
 #[manyhow]
-#[proc_macro_derive(ReprC, attributes(reprC))]
+#[proc_macro_derive(ReprC, attributes(reprC, id))]
 pub fn repr_c_derive(item: syn::DeriveInput) -> Result<TokenStream> {
     if let Some(export_attr) = item.attrs.iter().find(|attr| {
         attr.path()
@@ -160,37 +136,6 @@ pub fn repr_c_derive(item: syn::DeriveInput) -> Result<TokenStream> {
 }
 
 #[manyhow]
-#[proc_macro_attribute]
-#[allow(non_snake_case)]
-pub fn derive_ReprC(attr: TokenStream, item: TokenStream) -> Result<TokenStream> {
-    if !attr.is_empty() {
-        return Err(syn::Error::new_spanned(
-            attr,
-            "`#[derive_ReprC]` does not accept arguments",
-        ));
-    }
-
-    let item = syn::parse2::<syn::ItemTrait>(item)?;
-    let trait_name = &item.ident;
-    let (impl_generics, ty_generics, where_clause) = &item.generics.split_for_impl();
-
-    Ok(quote! {
-        #item
-
-        impl #impl_generics co3::size::SizeFamily for (dyn #trait_name #ty_generics) #where_clause {
-            type Kind = co3::size::ExternTypeLike;
-        }
-
-        impl #impl_generics co3::ir::ReprFamily for (dyn #trait_name #ty_generics) #where_clause {
-            type Kind = co3::ir::Opaque;
-        }
-
-        //impl #impl_generics co3::size::TraitObjectDst for (dyn #trait_name #ty_generics) #where_clause {
-        //}
-    })
-}
-
-#[manyhow]
 #[proc_macro]
 pub fn export_(input: TokenStream) -> Result<TokenStream> {
     export__(input)
@@ -205,7 +150,7 @@ pub fn extern_(input: TokenStream) -> Result<TokenStream> {
 /// [`export_`] with abi set to `"C"`
 #[manyhow]
 #[proc_macro]
-#[allow(non_snake_case)]
+#[expect(non_snake_case)]
 pub fn export_C(input: TokenStream) -> Result<TokenStream> {
     export__(quote! {
         #![abi = "C"]
@@ -216,7 +161,7 @@ pub fn export_C(input: TokenStream) -> Result<TokenStream> {
 /// [`extern_`] with abi set to `"C"`
 #[manyhow]
 #[proc_macro]
-#[allow(non_snake_case)]
+#[expect(non_snake_case)]
 pub fn extern_C(input: TokenStream) -> Result<TokenStream> {
     extern__(quote! {
         #![abi = "C"]
@@ -321,7 +266,7 @@ pub fn export(attr: TokenStream, item: TokenStream) -> Result<TokenStream> {
                 syn::FnArg::Typed(node) => &mut node.attrs,
             };
 
-            attrs.retain(|a| !a.path().is_ident("by_val") && !a.path().is_ident("unstable_refs"));
+            attrs.retain(|a| !a.path().is_ident("by_val") && !a.path().is_ident("soft"));
         }
     }
 
@@ -333,38 +278,41 @@ pub fn export(attr: TokenStream, item: TokenStream) -> Result<TokenStream> {
         syn::Item::Struct(item) => {
             let item_id_ty = parse_handle_id_attr(&mut item.attrs)?.map(|ty| quote!(#[id(#ty)]));
 
-            if !item.generics.params.is_empty() {
+            if has_non_lifetime_generics(&item.generics) {
                 return Err(syn::Error::new_spanned(&item.generics, generics_err));
             }
 
             let vis = &item.vis;
             let ident = &item.ident;
+            let generics = &item.generics;
 
-            quote! { #item_id_ty #vis type #ident; }
+            quote! { #item_id_ty #vis type #ident #generics; }
         }
         syn::Item::Enum(item) => {
             let item_id_ty = parse_handle_id_attr(&mut item.attrs)?.map(|ty| quote!(#[id(#ty)]));
 
-            if !item.generics.params.is_empty() {
+            if has_non_lifetime_generics(&item.generics) {
                 return Err(syn::Error::new_spanned(&item.generics, generics_err));
             }
 
             let vis = &item.vis;
             let ident = &item.ident;
+            let generics = &item.generics;
 
-            quote! { #item_id_ty #vis type #ident; }
+            quote! { #item_id_ty #vis type #ident #generics; }
         }
         syn::Item::Union(item) => {
             let item_id = parse_handle_id_attr(&mut item.attrs)?.map(|ty| quote!(#[id(#ty)]));
 
-            if !item.generics.params.is_empty() {
+            if has_non_lifetime_generics(&item.generics) {
                 return Err(syn::Error::new_spanned(&item.generics, generics_err));
             }
 
             let vis = &item.vis;
             let ident = &item.ident;
+            let generics = &item.generics;
 
-            quote! { #item_id #vis type #ident; }
+            quote! { #item_id #vis type #ident #generics; }
         }
         syn::Item::Fn(item) => {
             let attrs = take_forwarded_export_fn_attrs(&mut item.attrs);
@@ -478,7 +426,13 @@ impl<T: InputKind> Input<T> {
                         ensure_single_dispatch_attr(attrs)?;
                     }
 
-                    if !ty.generics.params.is_empty() && id.is_none() {
+                    let has_non_lifetime_generics = ty
+                        .generics
+                        .params
+                        .iter()
+                        .any(|param| !matches!(param, syn::GenericParam::Lifetime(_)));
+
+                    if has_non_lifetime_generics && id.is_none() {
                         let err_msg = "Generic types must declare handle #[id(...)]";
                         return Err(syn::Error::new_spanned(ty, err_msg));
                     }

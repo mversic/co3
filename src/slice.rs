@@ -1,6 +1,6 @@
 //! Logic related to the conversion of slices to and from FFI-compatible representation
 
-use crate::{ReprC, reprC};
+use crate::{ReprC, borrow::BorrowCast, reprC};
 
 /// Immutable slice `&[C]` with a defined C ABI layout. Consists of a data pointer and a length.
 /// If the data pointer is set to `null`, the struct represents `Option<&[C]>`.
@@ -106,6 +106,19 @@ impl<C> CSlice<C> {
 
         Self::none()
     }
+
+    /// Create [`Self`] from a raw data pointer and slice metadata.
+    pub(crate) const fn from_raw_parts(data: *const C, len: usize) -> Self {
+        Self { data, len }
+    }
+
+    pub(crate) const fn as_ptr(&self) -> *const C {
+        self.data
+    }
+
+    pub(crate) const fn len(&self) -> usize {
+        self.len
+    }
 }
 
 impl<C> CSliceMut<C> {
@@ -127,6 +140,19 @@ impl<C> CSliceMut<C> {
         }
 
         Self::none()
+    }
+
+    /// Create [`Self`] from a raw data pointer and slice metadata.
+    pub(crate) const fn from_raw_parts_mut(data: *mut C, len: usize) -> Self {
+        Self { data, len }
+    }
+
+    pub(crate) fn as_mut_ptr(&mut self) -> *mut C {
+        self.data
+    }
+
+    pub(crate) const fn len(&self) -> usize {
+        self.len
     }
 }
 
@@ -163,8 +189,17 @@ impl<C: ReprC> CSliceMut<C> {
 }
 
 reprC! {
-    unsafe impl(C) SizedRobust for CSlice<C> {}
+    unsafe impl(C: ReprC) SizedRobust for CSlice<C> {}
 }
+unsafe impl<C: ReprC> BorrowCast for CSlice<C> {
+    type AsConst = Self;
+    type AsMut = Self;
+}
+
 reprC! {
-    unsafe impl(C) SizedRobust for CSliceMut<C> {}
+    unsafe impl(C: ReprC) SizedRobust for CSliceMut<C> {}
+}
+unsafe impl<C: ReprC> BorrowCast for CSliceMut<C> {
+    type AsConst = Self;
+    type AsMut = Self;
 }

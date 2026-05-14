@@ -1,6 +1,6 @@
 //! Logic related to the conversion of [`Option<T>`] to and from FFI-compatible representation
 
-use core::ops::Add;
+use core::{ops::Add, ptr::NonNull};
 
 #[cfg(feature = "alloc")]
 use alloc_crate::{boxed::Box, vec::Vec};
@@ -11,8 +11,8 @@ use disjoint_impls::disjoint_impls;
 use crate::boxed::{CBox, CBoxedSlice};
 use crate::{
     ExternC, assert_arr_has_non_zero_len,
-    option::COption,
-    size::{ExternTypeLike, SizeFamily, SizedType, SliceLike, TraitObjectLike, Uninhabited, Zst},
+    result::CResult,
+    size::{DynTraitLike, MetaSized, SizeFamily, SliceLike, Thin},
     slice::{CSlice, CSliceMut},
 };
 
@@ -20,7 +20,7 @@ use crate::{
 ///
 /// There are only 2 notable implementations of this trait:
 /// 1. [`Transmuted`] types have a single stable (compiler guaranteed) niche value (e.g. `&u32`)
-/// 2. [`Cloned`] types have a custom defined (by this crate) niche value (e.g. `[NonZeroU32; 2]`)
+/// 2. [`Stored`] types have a custom defined (by this crate) niche value (e.g. `[NonZeroU32; 2]`)
 pub(crate) trait WithNiche {}
 
 /// Marker for a type that has a single stable (compiler guaranteed) niche value (e.g. `&u32`).
@@ -41,7 +41,7 @@ disjoint_impls! {
     ///
     /// [`Option<bool>`]     - will be serilized into one byte
     /// [`Option<*const T>`] - will take the size of the pointer
-    pub trait Niche: ExternC {
+    pub trait Niche: ExternC<CType: Copy> {
         const NICHE_VALUE: Self::CType;
     }
 
@@ -85,6 +85,20 @@ disjoint_impls! {
     {
         const NICHE_VALUE: Self::CType = CBoxedSlice::none();
     }
+
+    impl<T, C> Niche for NonNull<T>
+    where
+        Self: ExternC<CType = *mut C>,
+    {
+        const NICHE_VALUE: Self::CType = core::ptr::null_mut();
+    }
+    // TODO: Support ?Sized
+    //impl<R: ?C> Niche for NonNull<R>
+    //where
+    //    Self: ExternC<CType = CBoxedSlice<C>>,
+    //{
+    //    const NICHE_VALUE: Self::CType = CBoxedSlice::none();
+    //}
 }
 
 /// Type that has a compiler guaranteed [`Niche`] value (e.g. `Box<T>`)
@@ -99,10 +113,8 @@ pub unsafe trait StableNiche: Niche {}
 disjoint_impls! {
     /// Niche kind of the type in the internal representation [IR](`crate::ir::Repr`)
     ///
-    /// # Safety
-    ///
-    /// - if the type has `ReprFamily<Kind = Robust>` it must not be incorrectly marked as `WithoutNiche`
     // FIXME: Should we make this trait unsafe? Because if bool is marked as WithoutNiche, `&mut bool` will be transmuted and may produce UB
+    // - if the type has [`crate::ir::ReprFamily<Kind = crate::ir::Robust>`] it must not be incorrectly marked as `WithoutNiche`
     pub trait NicheFamily {
         /// The internal representation (i.e. type family) of the type
         ///
@@ -110,86 +122,50 @@ disjoint_impls! {
         ///   `Option<T>` will be serialized as [`crate::option::COption`]
         ///
         /// - If `Self` has a compiler guaranteed niche value, set [`NicheFamily::Kind`] to [`WithStableNiche`].
-        ///   `Option<T>` will be blindly transmuted into underlying [`ReprC`] type
+        ///   `Option<T>` will be blindly transmuted into underlying [`crate::ReprC`] type
         ///
         /// - Otherwise, if `Self` has at least one trap, set [`NicheFamily::Kind`] to [`WithCustomNiche`].
         ///   `Option<T>` will be serialized into a [`T::CType`] with a manually set niche value
         type Kind;
     }
 
-    // TODO: We could implement these via one trait? Trait can be Sized or Unsized/Dst
-    impl<R: SizeFamily<Kind = SizedType>> NicheFamily for &R {
-        type Kind = WithStableNiche;
-    }
-    impl<R: SizeFamily<Kind = Zst>> NicheFamily for &R {
-        type Kind = WithStableNiche;
-    }
-    impl<R: SizeFamily<Kind = Uninhabited>> NicheFamily for &R {
-        type Kind = WithStableNiche;
-    }
-    impl<R: SizeFamily<Kind = SliceLike> + ?Sized> NicheFamily for &R {
+    impl<R: SizeFamily<Kind = MetaSized<SliceLike>> + ?Sized> NicheFamily for &R {
         type Kind = WithCustomNiche;
     }
-    impl<R: SizeFamily<Kind = TraitObjectLike> + ?Sized> NicheFamily for &R {
+    impl<R: SizeFamily<Kind = MetaSized<DynTraitLike>> + ?Sized> NicheFamily for &R {
         type Kind = WithCustomNiche;
     }
-    // FIXME: This is wrong? I think the type has guaranteed niche because it's not actually ?Sized
-    // Extern types are somewhat of a mess
-    impl<R: SizeFamily<Kind = ExternTypeLike> + ?Sized> NicheFamily for &R {
-        type Kind = WithCustomNiche;
+    impl<R: SizeFamily<Kind: Thin>> NicheFamily for &R {
+        type Kind = WithStableNiche;
     }
 
-    impl<R: SizeFamily<Kind = SizedType>> NicheFamily for &mut R {
-        type Kind = WithStableNiche;
-    }
-    impl<R: SizeFamily<Kind = Zst>> NicheFamily for &mut R {
-        type Kind = WithStableNiche;
-    }
-    impl<R: SizeFamily<Kind = Uninhabited>> NicheFamily for &mut R {
-        type Kind = WithStableNiche;
-    }
-    impl<R: SizeFamily<Kind = SliceLike> + ?Sized> NicheFamily for &mut R {
+    impl<R: SizeFamily<Kind = MetaSized<SliceLike>> + ?Sized> NicheFamily for &mut R {
         type Kind = WithCustomNiche;
     }
-    impl<R: SizeFamily<Kind = TraitObjectLike> + ?Sized> NicheFamily for &mut R {
+    impl<R: SizeFamily<Kind = MetaSized<DynTraitLike>> + ?Sized> NicheFamily for &mut R {
         type Kind = WithCustomNiche;
     }
-    impl<R: SizeFamily<Kind = ExternTypeLike> + ?Sized> NicheFamily for &mut R {
-        type Kind = WithCustomNiche;
+    impl<R: SizeFamily<Kind: Thin>> NicheFamily for &mut R {
+        type Kind = WithStableNiche;
     }
 
     #[cfg(feature = "alloc")]
-    impl<R: SizeFamily<Kind = SizedType>> NicheFamily for Box<R> {
-        type Kind = WithStableNiche;
-    }
-    #[cfg(feature = "alloc")]
-    impl<R: SizeFamily<Kind = Zst>> NicheFamily for Box<R> {
-        type Kind = WithStableNiche;
-    }
-    #[cfg(feature = "alloc")]
-    impl<R: SizeFamily<Kind = Uninhabited>> NicheFamily for Box<R> {
-        type Kind = WithStableNiche;
-    }
-    #[cfg(feature = "alloc")]
-    impl<R: SizeFamily<Kind = SliceLike> + ?Sized> NicheFamily for Box<R> {
+    impl<R: SizeFamily<Kind = MetaSized<SliceLike>> + ?Sized> NicheFamily for Box<R> {
         type Kind = WithCustomNiche;
     }
     #[cfg(feature = "alloc")]
-    impl<R: SizeFamily<Kind = TraitObjectLike> + ?Sized> NicheFamily for Box<R> {
+    impl<R: SizeFamily<Kind = MetaSized<DynTraitLike>> + ?Sized> NicheFamily for Box<R> {
         type Kind = WithCustomNiche;
     }
     #[cfg(feature = "alloc")]
-    impl<R: SizeFamily<Kind = ExternTypeLike> + ?Sized> NicheFamily for Box<R> {
-        type Kind = WithCustomNiche;
+    impl<R: SizeFamily<Kind: Thin>> NicheFamily for Box<R> {
+        type Kind = WithStableNiche;
     }
 
     impl<R: NicheFamily<Kind = WithoutNiche>, const N: usize> NicheFamily for [R; N] {
         type Kind = WithoutNiche;
     }
-    impl<R: NicheFamily<Kind = WithStableNiche>, const N: usize> NicheFamily for [R; N] {
-        type Kind = WithCustomNiche;
-    }
-    impl<R: NicheFamily<Kind = WithCustomNiche>, const N: usize> NicheFamily for [R; N] {
+    impl<R: NicheFamily<Kind: WithNiche>, const N: usize> NicheFamily for [R; N] {
         type Kind = WithCustomNiche;
     }
 
@@ -212,16 +188,10 @@ disjoint_impls! {
         type Kind = WithCustomNiche;
     }
 
-    // TODO: implement others, take alignment into account
-    impl<R: NicheFamily<Kind: WithNiche>, E: NicheFamily<Kind: WithNiche>> NicheFamily
-        for Result<R, E>
-    {
+    impl<R: NicheFamily<Kind = WithoutNiche>, E: NicheFamily<Kind = WithoutNiche>> NicheFamily for Result<R, E> {
         type Kind = WithCustomNiche;
     }
-}
-
-impl<R> NicheFamily for [R] {
-    type Kind = WithCustomNiche;
+    // TODO: Implement for niche optimized Results
 }
 
 #[cfg(feature = "alloc")]
@@ -247,13 +217,6 @@ where
     };
 }
 
-impl<R, C> Niche for Option<R>
-where
-    Self: ExternC<CType = COption<C>>,
-{
-    const NICHE_VALUE: Self::CType = COption::none();
-}
-
 // TODO: Depends on: https://github.com/mversic/co3/issues/33
 impl Niche for Option<bool> {
     const NICHE_VALUE: Self::CType = 3;
@@ -262,11 +225,20 @@ impl Niche for Option<Option<bool>> {
     const NICHE_VALUE: Self::CType = 4;
 }
 
-unsafe impl<R> StableNiche for &R where Self: Niche {}
-unsafe impl<R> StableNiche for &mut R where Self: Niche {}
+impl<T, E> Niche for Result<T, E>
+where
+    Self: ExternC<CType = CResult<T::CType, E::CType>>,
+    T: NicheFamily<Kind = crate::niche::WithoutNiche> + ExternC<CType: Copy>,
+    E: NicheFamily<Kind = crate::niche::WithoutNiche> + ExternC<CType: Copy>,
+{
+    const NICHE_VALUE: Self::CType = CResult::niche();
+}
+
+unsafe impl<R: ?Sized> StableNiche for &R where Self: Niche {}
+unsafe impl<R: ?Sized> StableNiche for &mut R where Self: Niche {}
 #[cfg(feature = "alloc")]
-unsafe impl<R> StableNiche for Box<R> where Self: Niche {}
-unsafe impl<R> StableNiche for core::ptr::NonNull<R> {}
+unsafe impl<R: ?Sized> StableNiche for Box<R> where Self: Niche {}
+unsafe impl<R> StableNiche for core::ptr::NonNull<R> where Self: Niche {}
 
 impl WithNiche for WithStableNiche {}
 impl WithNiche for WithCustomNiche {}
@@ -337,26 +309,26 @@ mod tests {
     use static_assertions::{assert_impl_all, assert_not_impl_any};
 
     use super::*;
-    use crate::{DecodeWithStore, EncodeWithStore, ReprC, ir::ReprFamily, slice::CSlice};
+    use crate::{ReprC, SoftDecode, SoftEncode, ir::ReprFamily, slice::CSlice};
 
     #[test]
     fn nested_option_niche_family() {
         assert_impl_all!(Option<bool>:
-            ReprFamily<Kind = Option<WithCustomNiche>>,
+            ReprFamily<Kind = Option<bool>>,
             NicheFamily<Kind = WithCustomNiche>,
             Niche<CType = u8>,
-            DecodeWithStore<'static>,
+            SoftDecode<'static>,
 
-            EncodeWithStore,
+            SoftEncode,
 
         );
         assert_impl_all!(Option<Option<bool>>:
             NicheFamily<Kind = WithCustomNiche>,
-            ReprFamily<Kind = Option<WithCustomNiche>>,
+            ReprFamily<Kind = Option<Option<bool>>>,
             Niche<CType = u8>,
-            DecodeWithStore<'static>,
+            SoftDecode<'static>,
 
-            EncodeWithStore,
+            SoftEncode,
 
         );
         // TODO: Depends on: https://github.com/mversic/co3/issues/33
@@ -373,7 +345,6 @@ mod tests {
     #[test]
     fn niche_values() {
         assert_eq!(core::ptr::null::<u8>(), None::<&bool>.encode(&mut ()));
-        #[cfg(all(feature = "alloc", feature = "unsafe-optimizations"))]
         assert_eq!(core::ptr::null::<u8>(), None::<&mut bool>.encode(&mut ()));
 
         #[cfg(feature = "alloc")]
@@ -389,7 +360,6 @@ mod tests {
 
         assert_eq!(CSlice::<u8>::none(), None::<&str>.encode(&mut ()));
 
-        #[cfg(all(feature = "alloc", feature = "unsafe-optimizations"))]
         assert_eq!(
             co3::slice::CSliceMut::<u8>::none(),
             None::<&mut str>.encode(&mut ())

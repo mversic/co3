@@ -29,10 +29,8 @@ pub(crate) fn push_error(errors: &mut Option<syn::Error>, err: syn::Error) {
     }
 }
 
-pub(crate) fn unstable_refs_for_arg(attrs: &[syn::Attribute]) -> bool {
-    attrs
-        .iter()
-        .any(|attr| attr.path().is_ident("unstable_refs"))
+pub(crate) fn soft_for_arg(attrs: &[syn::Attribute]) -> bool {
+    attrs.iter().any(|attr| attr.path().is_ident("soft"))
 }
 
 pub(crate) fn is_type_erased(attr: &Attribute) -> bool {
@@ -373,15 +371,27 @@ fn calculate_tuple_depth(n: usize) -> usize {
 
 pub fn build_type_tuple(types: &[&Type]) -> (TokenStream, TokenStream, Vec<TokenStream>) {
     let depth = calculate_tuple_depth(types.len());
-    build_type_tuple_at_depth(types, depth)
+    build_type_tuple_at_depth(types, depth, true)
+}
+
+pub fn build_extern_c_type_tuple(types: &[&Type]) -> (TokenStream, TokenStream, Vec<TokenStream>) {
+    let depth = calculate_tuple_depth(types.len());
+    build_type_tuple_at_depth(types, depth, false)
 }
 
 fn build_type_tuple_at_depth(
     types: &[&Type],
     depth: usize,
+    use_flat_transmute: bool,
 ) -> (TokenStream, TokenStream, Vec<TokenStream>) {
     if depth == 1 {
-        let c_types = types.iter().map(|ty| quote!(<#ty as co3::ExternC>::CType));
+        let c_types = types.iter().map(|ty| {
+            if use_flat_transmute {
+                quote!(<#ty as co3::transmute::FlatTransmute>::Target)
+            } else {
+                quote!(<#ty as co3::ExternC>::CType)
+            }
+        });
         let accessors = (0..types.len())
             .map(|i| {
                 let lit = Literal::usize_unsuffixed(i);
@@ -403,7 +413,8 @@ fn build_type_tuple_at_depth(
     let mut all_accessors = Vec::new();
 
     for (chunk_idx, chunk) in types.chunks(chunk_size).enumerate() {
-        let (sub_tuple, sub_c_tuple, sub_accessors) = build_type_tuple_at_depth(chunk, depth - 1);
+        let (sub_tuple, sub_c_tuple, sub_accessors) =
+            build_type_tuple_at_depth(chunk, depth - 1, use_flat_transmute);
         sub_tuples.push(sub_tuple);
         sub_c_tuples.push(sub_c_tuple);
 

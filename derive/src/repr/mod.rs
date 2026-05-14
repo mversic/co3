@@ -12,6 +12,7 @@ use syn::{
 
 use crate::{
     attr::repr::{Repr, ReprKind},
+    generate::gen_handle_family_impl,
     repr::{
         no_repr::derive_no_repr_fieldless_enum,
         repr_c::{
@@ -28,20 +29,14 @@ mod no_repr;
 mod repr_c;
 mod transparent;
 
-pub(crate) use repr_c::gen_sized_family;
-
 #[derive(Debug)]
 enum FfiTypeToken {
     Transparent(Option<syn::Expr>, Box<syn::ExprClosure>),
-    UnsafeNonOwning,
-    Local,
 }
 
 impl Display for FfiTypeToken {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         match self {
-            FfiTypeToken::UnsafeNonOwning => write!(f, "#[reprC(unsafe(non_owning))]"),
-            FfiTypeToken::Local => write!(f, "#[reprC(local)]"),
             FfiTypeToken::Transparent(niche, is_valid) => {
                 write!(f, "#[reprC(")?;
                 if let Some(niche) = niche {
@@ -71,16 +66,12 @@ impl syn::parse::Parse for SpannedFfiTypeToken {
         let mut span: Option<Span> = None;
         let mut niche_value = None;
         let mut is_valid = None;
-        let mut token = None;
 
         while !input.is_empty() {
             let ident: Ident = input.call(Ident::parse_any)?;
             join_span(&mut span, ident.span());
 
             match ident.to_string().as_str() {
-                "local" => {
-                    token = Some(FfiTypeToken::Local);
-                }
                 "unsafe" => {
                     if !input.peek(syn::token::Paren) {
                         return Err(syn::Error::new(
@@ -99,16 +90,6 @@ impl syn::parse::Parse for SpannedFfiTypeToken {
                     let inner_str = inner_ident.to_string();
 
                     match inner_str.as_str() {
-                        "non_owning" => {
-                            if !content.is_empty() {
-                                return Err(syn::Error::new(
-                                    content.span(),
-                                    "`unsafe(non_owning) should contain only one identifier",
-                                ));
-                            }
-
-                            token = Some(FfiTypeToken::UnsafeNonOwning);
-                        }
                         "is_valid" => {
                             content.parse::<syn::Token![=]>()?;
                             let closure: syn::ExprClosure = content.parse()?;
@@ -162,17 +143,6 @@ impl syn::parse::Parse for SpannedFfiTypeToken {
 
         let span = span.unwrap_or_else(Span::call_site);
 
-        if let Some(token) = token {
-            if is_valid.is_some() || niche_value.is_some() {
-                return Err(syn::Error::new(
-                    span,
-                    "unexpected tokens after ffi type kind",
-                ));
-            }
-
-            return Ok(Self { span, token });
-        }
-
         let Some(is_valid) = is_valid else {
             if niche_value.is_some() {
                 return Err(syn::Error::new(
@@ -195,47 +165,17 @@ impl syn::parse::Parse for SpannedFfiTypeToken {
 #[derive(Debug, PartialEq, Eq, Clone)]
 pub enum FfiTypeKindAttribute {
     Transparent(Option<syn::Expr>, Box<syn::ExprClosure>),
-    Local,
 }
 
 impl syn::parse::Parse for FfiTypeKindAttribute {
     fn parse(input: ParseStream) -> syn::Result<Self> {
-        input.call(SpannedFfiTypeToken::parse).and_then(|token| {
-            Ok(match token.token {
+        input
+            .call(SpannedFfiTypeToken::parse)
+            .map(|token| match token.token {
                 FfiTypeToken::Transparent(niche_value, is_valid) => {
                     FfiTypeKindAttribute::Transparent(niche_value, is_valid)
                 }
-                FfiTypeToken::Local => FfiTypeKindAttribute::Local,
-                other => {
-                    return Err(syn::Error::new(
-                        token.span,
-                        format!("`{other}` cannot be used on a type"),
-                    ));
-                }
             })
-        })
-    }
-}
-
-/// This represents an `#[reprC(...)]` attribute on a field
-#[derive(Debug, PartialEq, Eq, Copy, Clone)]
-pub enum FfiTypeKindFieldAttribute {
-    UnsafeNonOwning,
-}
-
-impl syn::parse::Parse for FfiTypeKindFieldAttribute {
-    fn parse(input: ParseStream) -> syn::Result<Self> {
-        input.call(SpannedFfiTypeToken::parse).and_then(|token| {
-            Ok(match token.token {
-                FfiTypeToken::UnsafeNonOwning => FfiTypeKindFieldAttribute::UnsafeNonOwning,
-                other => {
-                    return Err(syn::Error::new(
-                        token.span,
-                        format!("`{other}` cannot be used on a field"),
-                    ));
-                }
-            })
-        })
     }
 }
 
@@ -255,26 +195,14 @@ impl FromAttributes for FfiTypeAttr {
     }
 }
 
-pub struct FfiTypeFieldAttr {
-    kind: Option<FfiTypeKindFieldAttribute>,
-}
-
-impl FromAttributes for FfiTypeFieldAttr {
-    fn from_attributes(attrs: &[Attribute]) -> darling::Result<Self> {
-        let mut accumulator = darling::error::Accumulator::default();
-        let repr_c_kind = accumulator
-            .handle(parse_single_list_attr_opt(FFI_TYPE_ATTR, attrs))
-            .flatten();
-        accumulator.finish_with(Self { kind: repr_c_kind })
-    }
-}
-
 pub type FfiTypeData = darling::ast::Data<SpannedValue<FfiTypeVariant>, FfiTypeField>;
 
 pub struct FfiTypeInput {
     pub ident: syn::Ident,
+    pub vis: syn::Visibility,
     pub generics: syn::Generics,
     pub data: FfiTypeData,
+    pub handle_id: Option<syn::Type>,
     repr_attr: Repr,
     pub ffi_type_attr: FfiTypeAttr,
     pub span: Span,
@@ -283,16 +211,20 @@ pub struct FfiTypeInput {
 impl darling::FromDeriveInput for FfiTypeInput {
     fn from_derive_input(input: &syn::DeriveInput) -> darling::Result<Self> {
         let ident = input.ident.clone();
+        let vis = input.vis.clone();
         let generics = input.generics.clone();
         let data = darling::ast::Data::try_from(&input.data)?;
+        let handle_id = parse_single_list_attr_opt::<syn::Type>("id", &input.attrs)?;
         let repr_attr = Repr::from_attributes(&input.attrs)?;
         let ffi_type_attr = FfiTypeAttr::from_attributes(&input.attrs)?;
         let span = input.span();
 
         Ok(FfiTypeInput {
             ident,
+            vis,
             generics,
             data,
+            handle_id,
             repr_attr,
             ffi_type_attr,
             span,
@@ -308,7 +240,6 @@ pub struct FfiTypeVariant {
 }
 
 pub struct FfiTypeField {
-    pub ffi_type_attr: FfiTypeFieldAttr,
     pub ident: Option<syn::Ident>,
     pub ty: syn::Type,
 }
@@ -316,21 +247,23 @@ pub struct FfiTypeField {
 impl FromField for FfiTypeField {
     fn from_field(field: &Field) -> darling::Result<Self> {
         let ty = field.ty.clone();
-        let ffi_type_attr = FfiTypeFieldAttr::from_attributes(&field.attrs)?;
+        let mut accumulator = darling::error::Accumulator::default();
+        if let Some(attr) = find_single_attr_opt(&mut accumulator, FFI_TYPE_ATTR, &field.attrs) {
+            accumulator.push(
+                darling::Error::custom("`#[reprC(...)]` is not supported on fields")
+                    .with_span(&attr.meta),
+            );
+        }
         let ident = field.ident.clone();
-        Ok(Self {
-            ty,
-            ffi_type_attr,
-            ident,
-        })
+        accumulator.finish_with(Self { ty, ident })
     }
 }
 
 pub fn derive_extern_c(input: &syn::DeriveInput) -> syn::Result<TokenStream> {
-    derive_extern_c_internal::<true>(input)
+    derive_extern_c_internal::<false>(input)
 }
 
-pub(crate) fn derive_extern_c_internal<const NEEDS_DROP: bool>(
+pub(crate) fn derive_extern_c_internal<const IS_VIEW: bool>(
     input: &syn::DeriveInput,
 ) -> syn::Result<TokenStream> {
     let mut errors = None::<syn::Error>;
@@ -362,13 +295,19 @@ pub(crate) fn derive_extern_c_internal<const NEEDS_DROP: bool>(
                 ),
             );
         }
-        darling::ast::Data::Struct(fields) => {
-            for field in fields.iter() {
-                verify_field_non_owning(&mut errors, field);
-            }
-        }
+        darling::ast::Data::Struct(_) => {}
         darling::ast::Data::Enum(variants) => {
-            verify_variants_non_owning(&mut errors, variants);
+            if variants.iter().all(|v| v.fields.fields.is_empty())
+                && matches!(input.ffi_type_attr.kind, Some(FfiTypeKindAttribute::Transparent(_, _)))
+            {
+                push_error(
+                    &mut errors,
+                    syn::Error::new_spanned(
+                        &input.ident,
+                        "`NICHE_VALUE` and custom `is_valid` are not supported on fieldless enums",
+                    ),
+                );
+            }
 
             for variant in variants {
                 if variant.discriminant.is_some() {
@@ -403,17 +342,18 @@ pub(crate) fn derive_extern_c_internal<const NEEDS_DROP: bool>(
     input.generics.make_where_clause();
     let tokens = match input.repr_attr.kind.as_deref() {
         Some(ReprKind::Transparent) => derive_transparent_item(&input),
-        Some(ReprKind::C(None)) if let darling::ast::Data::Struct(fields) = &input.data => {
-            derive_repr_c_struct::<NEEDS_DROP>(&input.ident, &input.generics, fields)
+        Some(ReprKind::C(None)) if let darling::ast::Data::Struct(fields) = input.data => {
+            derive_repr_c_struct::<IS_VIEW>(
+                &input.ident,
+                &input.vis,
+                &input.generics,
+                &fields,
+                input.ffi_type_attr.kind.as_ref(),
+            )
         }
         Some(ReprKind::C(None)) => {
-            push_error(
-                &mut errors,
-                syn::Error::new_spanned(
-                    &input.ident,
-                    "repr(C) on enums requires a primitive type (e.g., repr(C, u8))",
-                ),
-            );
+            let err_msg = "repr(C) on enums requires a primitive type (e.g., repr(C, u8))";
+            push_error(&mut errors, syn::Error::new_spanned(&input.ident, err_msg));
 
             quote! {}
         }
@@ -421,58 +361,74 @@ pub(crate) fn derive_extern_c_internal<const NEEDS_DROP: bool>(
             if let darling::ast::Data::Enum(variants) = &input.data
                 && variants.iter().any(|v| !v.fields.fields.is_empty()) =>
         {
-            derive_repr_c_data_enum::<NEEDS_DROP>(*repr, &input.ident, &input.generics, variants)
+            derive_repr_c_data_enum::<IS_VIEW>(
+                *repr,
+                &input.ident,
+                &input.vis,
+                &input.generics,
+                variants,
+                input.ffi_type_attr.kind.as_ref(),
+            )
         }
         Some(ReprKind::C(Some(_))) => quote! {},
         Some(ReprKind::Primitive(repr)) if let darling::ast::Data::Enum(variants) = &input.data => {
             if variants.iter().all(|v| v.fields.fields.is_empty()) {
                 derive_fieldless_enum(*repr, &input.ident, &input.generics, variants)
             } else {
-                derive_data_enum::<NEEDS_DROP>(*repr, &input.ident, &input.generics, variants)
+                derive_data_enum::<IS_VIEW>(
+                    *repr,
+                    &input.ident,
+                    &input.vis,
+                    &input.generics,
+                    variants,
+                    input.ffi_type_attr.kind.as_ref(),
+                )
             }
         }
         Some(ReprKind::Primitive(_)) => quote! {},
-        None => {
-            let local = input.ffi_type_attr.kind == Some(FfiTypeKindAttribute::Local);
+        None => match &input.data {
+            darling::ast::Data::Enum(variants) if variants.is_empty() => {
+                push_error(
+                    &mut errors,
+                    syn::Error::new_spanned(
+                        &input.ident,
+                        "Uninhabited enum is a never type. You can declare it as an opaque type in `export_!` or `extern_!` with `type Foo;`",
+                    ),
+                );
 
-            match &input.data {
-                darling::ast::Data::Enum(variants) if variants.is_empty() => {
-                    push_error(
-                        &mut errors,
-                        syn::Error::new_spanned(
-                            &input.ident,
-                            "Uninhabited enum is a never type. You can declare it as an opaque type in `export_!` or `extern_!` with `type Foo;`",
-                        ),
-                    );
-
-                    quote! {}
-                }
-                darling::ast::Data::Enum(variants) => {
-                    if variants.iter().all(|v| v.fields.fields.is_empty()) {
-                        derive_no_repr_fieldless_enum(&input.ident, &input.generics, variants)
-                    } else {
-                        derive_no_repr_data_enum::<NEEDS_DROP>(
-                            &input.ident,
-                            &input.generics,
-                            variants,
-                            local,
-                        )
-                    }
-                }
-                darling::ast::Data::Struct(fields) => derive_no_repr_struct::<NEEDS_DROP>(
-                    &input.ident,
-                    &input.generics,
-                    fields,
-                    local,
-                ),
+                quote! {}
             }
-        }
+            darling::ast::Data::Enum(variants) => {
+                if variants.iter().all(|v| v.fields.fields.is_empty()) {
+                    derive_no_repr_fieldless_enum(&input.ident, &input.generics, variants)
+                } else {
+                    derive_no_repr_data_enum::<IS_VIEW>(
+                        &input.ident,
+                        &input.vis,
+                        &input.generics,
+                        variants,
+                    )
+                }
+            }
+            darling::ast::Data::Struct(fields) => {
+                derive_no_repr_struct::<IS_VIEW>(&input.ident, &input.vis, &input.generics, fields)
+            }
+        },
     };
 
     if let Some(errors) = errors {
         Err(errors)
     } else {
-        Ok(tokens)
+        let handle_family_impl = input
+            .handle_id
+            .as_ref()
+            .map(|id| gen_handle_family_impl(&input.ident, &input.generics, id));
+
+        Ok(quote! {
+            #handle_family_impl
+
+            #tokens
+        })
     }
 }
 
@@ -604,61 +560,50 @@ pub fn is_type_parameterized(ty: &syn::Type, generics: &syn::Generics) -> bool {
     visitor.is_generic
 }
 
-// NOTE: Except for the raw pointers there should be no other type
-// that is at the same time Robust and also transfers ownership
-/// Verifies each field's pointer types are marked as non-owning
-fn verify_field_non_owning(errors: &mut Option<syn::Error>, field: &FfiTypeField) {
-    use syn::visit::Visit;
+pub(crate) fn gen_struct_size_family(
+    struct_name: &Ident,
+    generics: &syn::Generics,
+    field_types: &[&syn::Type],
+    extra_bounds: TokenStream,
+) -> TokenStream {
+    let (impl_generics, ty_generics, where_clause) = generics.split_for_impl();
+    let predicates = where_clause.as_ref().map(|w| &w.predicates);
 
-    if field.ffi_type_attr.kind == Some(FfiTypeKindFieldAttribute::UnsafeNonOwning) {
-        return;
-    }
+    let Some(last_field) = field_types.last() else {
+        return gen_sized_family(struct_name, generics, quote! {});
+    };
 
-    struct PtrVisitor<'a> {
-        errors: &'a mut Option<syn::Error>,
-    }
-    impl Visit<'_> for PtrVisitor<'_> {
-        fn visit_type_ptr(&mut self, node: &syn::TypePtr) {
-            push_error(
-                self.errors,
-                syn::Error::new_spanned(
-                    node,
-                    "Raw pointer found. If the pointer doesn't own the data, attach `#[reprC(unsafe(non_owning))` to the field. Otherwise, declare the type as an opaque FFI type in an `export_!` or `extern_!` with `type Foo;`",
-                ),
-            );
-        }
-        fn visit_type_path(&mut self, node: &syn::TypePath) {
-            if node
-                .path
-                .segments
-                .last()
-                .is_some_and(|segment| segment.ident == "NonNull")
-            {
-                push_error(
-                    self.errors,
-                    syn::Error::new_spanned(
-                        node,
-                        "NonNull pointer found. If the pointer doesn't own the data, attach `#[reprC(unsafe(non_owning))` to the field. Otherwise, declare the type as an opaque FFI type in an `export_!` or `extern_!` with `type Foo;`",
-                    ),
-                );
-            }
+    let last_field_bound = is_type_parameterized(last_field, generics).then_some(quote! {
+        #last_field: co3::size::SizeFamily,
+    });
 
-            syn::visit::visit_type_path(self, node);
+    quote! {
+        impl #impl_generics co3::size::SizeFamily for #struct_name #ty_generics
+        where
+            #last_field_bound
+            #extra_bounds
+            #predicates
+        {
+            type Kind = <#last_field as co3::size::SizeFamily>::Kind;
         }
     }
-
-    let mut ptr_visitor = PtrVisitor { errors };
-    ptr_visitor.visit_type(&field.ty);
 }
 
-/// Verifies each field in enum variants are non-owning
-fn verify_variants_non_owning(
-    errors: &mut Option<syn::Error>,
-    variants: &[SpannedValue<FfiTypeVariant>],
-) {
-    for variant in variants {
-        for field in variant.fields.iter() {
-            verify_field_non_owning(errors, field);
+pub(super) fn gen_sized_family(
+    type_name: &Ident,
+    generics: &syn::Generics,
+    extra_bounds: TokenStream,
+) -> TokenStream {
+    let (impl_generics, ty_generics, where_clause) = generics.split_for_impl();
+    let predicates = where_clause.as_ref().map(|w| &w.predicates);
+
+    quote! {
+        impl #impl_generics co3::size::SizeFamily for #type_name #ty_generics
+        where
+            #extra_bounds
+            #predicates
+        {
+            type Kind = co3::size::SizedType;
         }
     }
 }

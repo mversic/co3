@@ -20,28 +20,28 @@ export_C! {
 
     #[dispatch(<Kita, 23>)]
     impl<'a, dyn(u32) U, const K: usize> Drop for GenericHandle<'a, U, K> {
-        fn drop(#[unstable_refs] move &mut self);
+        fn drop(#[soft] move &mut self);
     }
 }
 
 #[export("C")]
 impl GenericHandle<'static, u32, 12> {
-    pub fn export1<'a>(self) {}
+    pub fn export1<'a>(&self) {}
 }
 
 #[export("C")]
 impl<'a> GenericHandle<'a, u32, 12> {
-    pub fn export2(#[by_val] self) {}
+    pub fn export2(#[by_val] &self) {}
 }
 
 #[export("C")]
 impl<T> GenericHandle<'static, T, 12> {
-    pub fn export3(self) {}
+    pub fn export3(&self) {}
 }
 
 #[export("C")]
 impl<const N: usize> GenericHandle<'static, u32, N> {
-    pub fn handle3(self) {}
+    pub fn handle3(&self) {}
 }
 
 #[export("C")]
@@ -68,16 +68,16 @@ extern_C! {
     #![link(crate = "kita")]
 
     impl GenericHandle<'static, u32, 12> {
-        pub fn extern1<'a>(self);
+        pub fn extern1<'a>(&self);
     }
     impl<'a> GenericHandle<'a, u32, 12> {
-        pub fn extern2(self);
+        pub fn extern2(&self);
     }
     impl<T> GenericHandle<'static, T, 12> {
-        pub fn extern3(self);
+        pub fn extern3(&self);
     }
     impl<const N: usize> GenericHandle<'static, u32, N> {
-        pub fn handle3(self);
+        pub fn handle3(&self);
     }
 
     pub extern "C" fn extern1<'a>(v: &'a u32) -> &'a u32;

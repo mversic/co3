@@ -18,13 +18,13 @@ impl Drop for PrimitiveEnumWithDrop {
     fn drop(&mut self) {}
 }
 
-#[derive(ReprC)]
+#[derive(Clone, ReprC)]
 #[repr(transparent)]
 enum TransparentEnumWithoutDrop {
     A(String),
 }
 
-#[derive(ReprC)]
+#[derive(Clone, ReprC)]
 #[repr(transparent)]
 enum TransparentEnumWithDrop {
     A(String),
@@ -92,11 +92,11 @@ impl Drop for ReprCStructWithDrop {
     fn drop(&mut self) {}
 }
 
-#[derive(ReprC)]
+#[derive(Clone, ReprC)]
 #[repr(transparent)]
 struct TransparentStructWithoutDrop(u8);
 
-#[derive(ReprC)]
+#[derive(Clone, ReprC)]
 #[repr(transparent)]
 struct TransparentStructWithDrop(u8);
 

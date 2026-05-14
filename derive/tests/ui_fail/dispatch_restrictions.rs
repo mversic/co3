@@ -6,8 +6,17 @@ trait Kita {
     fn kita(self) -> u32;
 }
 
-struct Exported<T>(T);
+trait RefKita {
+    fn kita(&self) -> u32;
+}
 
+impl<T: Kita> RefKita for T {
+    fn kita(&self) -> u32 {
+        unimplemented!()
+    }
+}
+
+struct Exported<T>(T);
 impl Kita for Exported<u32> {
     fn kita(self) -> u32 {
         unimplemented!()
@@ -175,8 +184,8 @@ export_C! {
     }
 
     #[dispatch(<Exported<u32>>)]
-    impl<dyn(u8) T: Unimplemented> Kita for T where i32: Unimplemented {
-        fn kita(self) -> u32;
+    impl<dyn(u8) T: Unimplemented> RefKita for T where i32: Unimplemented {
+        fn kita(&self) -> u32;
     }
 }
 
@@ -191,9 +200,9 @@ extern_C! {
     }
 
     #[dispatch(<Externed<u32>>)]
-    impl<dyn(u64) T: Unimplemented> Kita for T where i32: Unimplemented {
+    impl<dyn(u64) T: Unimplemented> RefKita for T where i32: Unimplemented {
         #[link_name = "kita"]
-        fn kita(self, self_id: <dyn Self>::ID) -> u32;
+        fn kita(&self, self_id: <dyn Self>::ID) -> u32;
     }
 }
 

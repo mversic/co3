@@ -1,23 +1,18 @@
 //! Logic related to the conversion of boxed values to and from FFI-compatible representation.
 
+use alloc_crate::boxed::Box;
 use core::ptr::NonNull;
 
-#[cfg(feature = "alloc")]
-use alloc_crate::boxed::Box;
-
-#[cfg(feature = "alloc")]
 use crate::alloc::Global;
-use crate::{ReprC, alloc::Allocator, reprC};
+use crate::slice::{CSlice, CSliceMut};
+use crate::{ReprC, alloc::Allocator, borrow::BorrowCast, reprC};
 
 /// Owned pointer `Box<C>` with a deallocate function.
 ///
 /// If the data pointer is set to `null`, the struct represents `Option<Box<C>>`.
 #[repr(C)]
 pub struct CBox<C, A: Allocator = Global> {
-    #[cfg(test)]
     pub(crate) data: *mut C,
-    #[cfg(not(test))]
-    data: *mut C,
     allocator: A,
 }
 
@@ -130,7 +125,6 @@ impl<C, A: Allocator> Clone for CBoxedSlice<C, A> {
 impl<C, A: Allocator> Copy for CBox<C, A> {}
 impl<C, A: Allocator> Copy for CBoxedSlice<C, A> {}
 
-#[cfg(feature = "alloc")]
 impl<C> CBox<C> {
     /// Create [`Self`] from a [`Box<C>`].
     pub fn from_box(source: Option<Box<C>>) -> Self {
@@ -158,6 +152,10 @@ impl<C, A: Allocator> CBox<C, A> {
         self.data
     }
 
+    pub(crate) unsafe fn read(self) -> C {
+        unsafe { self.data.read() }
+    }
+
     /// Set the pointer to null.
     pub const fn none() -> Self {
         Self {
@@ -180,7 +178,6 @@ impl<C, A: Allocator> CBox<C, A> {
     }
 }
 
-#[cfg(feature = "alloc")]
 impl<C: ReprC> CBox<C> {
     /// Convert [`Self`] into [`Box<C>`]. Returns `None` if pointer is null.
     ///
@@ -188,13 +185,6 @@ impl<C: ReprC> CBox<C> {
     ///
     /// Check [`Box::from_raw`].
     pub unsafe fn into_rust(self) -> Option<Box<C>> {
-        unsafe { self.unopaque() }
-    }
-}
-
-#[cfg(feature = "alloc")]
-impl<C> CBox<C> {
-    pub(super) unsafe fn unopaque(self) -> Option<Box<C>> {
         if self.data.is_null() {
             return None;
         }
@@ -203,7 +193,6 @@ impl<C> CBox<C> {
     }
 }
 
-#[cfg(feature = "alloc")]
 impl<C> CBoxedSlice<C> {
     /// Create [`Self`] from a [`Box<[T]>`]
     pub fn from_boxed_slice(source: Option<Box<[C]>>) -> Self {
@@ -219,6 +208,15 @@ impl<C> CBoxedSlice<C> {
             allocator: Global,
         }
     }
+
+    /// Create [`Self`] from a raw data pointer and slice metadata.
+    pub(crate) const fn from_raw_parts(data: NonNull<C>, len: usize) -> Self {
+        Self {
+            data: data.as_ptr(),
+            len,
+            allocator: Global,
+        }
+    }
 }
 
 impl<C, A: Allocator> CBoxedSlice<C, A> {
@@ -230,6 +228,14 @@ impl<C, A: Allocator> CBoxedSlice<C, A> {
             // SAFETY: allocator will never be used
             allocator: unsafe { core::mem::zeroed() },
         }
+    }
+
+    pub(crate) const fn len(&self) -> usize {
+        self.len
+    }
+
+    pub(crate) fn into_non_null(self) -> Option<NonNull<C>> {
+        NonNull::new(self.data)
     }
 
     pub(crate) unsafe fn deallocate(&self) -> bool {
@@ -250,7 +256,6 @@ impl<C, A: Allocator> CBoxedSlice<C, A> {
     }
 }
 
-#[cfg(feature = "alloc")]
 impl<C: ReprC> CBoxedSlice<C> {
     /// Convert [`Self`] into a boxed slice. Return `None` if data pointer is null.
     /// Unlike [`Box::from_raw`], data pointer is allowed to be null.
@@ -268,9 +273,19 @@ impl<C: ReprC> CBoxedSlice<C> {
 }
 
 reprC! {
-    unsafe impl(C, A: Allocator) SizedRobust for CBox<C, A> {}
+    unsafe impl(C: ReprC, A: Allocator) SizedRobust for CBox<C, A> {}
 }
 
 reprC! {
-    unsafe impl(C, A: Allocator) SizedRobust for CBoxedSlice<C, A> {}
+    unsafe impl(C: ReprC, A: Allocator) SizedRobust for CBoxedSlice<C, A> {}
+}
+
+unsafe impl<C: ReprC, A: Allocator> BorrowCast for CBox<C, A> {
+    type AsConst = *const C;
+    type AsMut = *mut C;
+}
+
+unsafe impl<C: ReprC, A: Allocator> BorrowCast for CBoxedSlice<C, A> {
+    type AsConst = CSlice<C>;
+    type AsMut = CSliceMut<C>;
 }

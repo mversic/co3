@@ -18,8 +18,12 @@ fn unsupported_attr(attr: &syn::Attribute) -> Error {
 }
 
 fn handle_id<'a>(ty: &'a syn::Type, self_ty: &syn::Type) -> Option<HandleId<'a>> {
-    if let Type::Path(ty) = ty
-        && ty.qself.as_ref().is_some_and(|q| &*q.ty == self_ty)
+    if let Type::Path(syn::TypePath { path, qself }) = ty
+        && path.segments.len() == 1
+        && path.segments.first().unwrap().ident == "ID"
+        && qself.as_ref().is_some_and(|syn::QSelf { ty, .. }| {
+            matches!(&**ty, Type::TraitObject(_)) && &**ty == self_ty
+        })
     {
         return Some(HandleId::DynSelf);
     }

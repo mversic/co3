@@ -1,334 +1,122 @@
 #[cfg(feature = "alloc")]
-use alloc_crate::{boxed::Box, vec::Vec};
-
-use disjoint_impls::disjoint_impls;
+use alloc_crate::{borrow::ToOwned as StdToOwned, boxed::Box, string::String, vec::Vec};
+use core::{cell::UnsafeCell, ptr::NonNull};
 
 use crate::{
-    ir::{Cloned, Opaque, ReprFamily, Robust, Transmuted},
-    niche::{NicheFamily, WithNiche, WithoutNiche},
-    size::{ExternTypeLike, SizeFamily, SizedType, SliceLike, TraitObjectLike, Zst},
+    ReprC,
+    size::{DynTraitLike, MetaSized, SizeFamily, SliceLike},
+    stored::ArrayStore,
 };
 
-trait NonExternTypeLike {}
-trait NonOpaqueOrTransmuted {}
-impl NonOpaqueOrTransmuted for Robust {}
-impl<S: Cloned> NonOpaqueOrTransmuted for S {}
-impl<S> NonOpaqueOrTransmuted for [S] {}
-impl NonExternTypeLike for Zst {}
-impl NonExternTypeLike for SizedType {}
-impl NonExternTypeLike for SliceLike {}
-impl NonExternTypeLike for TraitObjectLike {}
+pub(crate) trait NonExternTypeLike {}
+impl NonExternTypeLike for MetaSized<SliceLike> {}
+impl NonExternTypeLike for MetaSized<DynTraitLike> {}
+impl<S> NonExternTypeLike for crate::size::Sized<S> {}
 
-/// This struct exists only because [arrays don't yet implement Default](https://github.com/rust-lang/rust/issues/61415)
-pub struct ArrayBorrowStore<D, const N: usize>([D; N]);
-impl<D: Default, const N: usize> Default for ArrayBorrowStore<D, N> {
+/// A layout-compatible borrowed view of a robust C representation.
+///
+/// # Safety
+///
+/// - only owned to borrowed pointer casting is allowed
+// TODO: Stupid trait with a stupid name and stupid bounds
+pub unsafe trait BorrowCast: ReprC + Sized {
+    type AsConst: ReprC;
+    type AsMut: ReprC;
+}
+
+#[inline(always)]
+pub fn borrow_cast<C: BorrowCast>(source: C) -> C::AsConst {
+    unsafe { core::mem::transmute_copy(&source) }
+}
+
+#[inline(always)]
+pub fn borrow_cast_mut<C: BorrowCast>(source: C) -> C::AsMut {
+    unsafe { core::mem::transmute_copy(&source) }
+}
+
+/// A trait for structurally borrowing data.
+///
+/// It should hold that `<T::CType as BorrowCast>::AsConst == <T::Borrowed as ExternC>::CType`
+pub trait Borrow: Sized {
+    type Borrowed<'itm>
+    where
+        Self: 'itm;
+
+    type Owner: Default;
+    fn borrow<'itm>(self, store: &'itm mut Self::Owner) -> Self::Borrowed<'itm>
+    where
+        Self: 'itm;
+}
+// TODO: Join the 2 traits?
+pub trait ToOwned<'itm>: Borrow {
+    fn to_owned(source: Self::Borrowed<'itm>) -> Self;
+}
+
+impl<R: Borrow> Borrow for Option<R> {
+    type Borrowed<'itm>
+        = Option<R::Borrowed<'itm>>
+    where
+        Self: 'itm;
+
+    type Owner = R::Owner;
+
     #[inline(always)]
-    fn default() -> Self {
-        Self(core::array::from_fn(|_| D::default()))
+    fn borrow<'itm>(self, store: &'itm mut Self::Owner) -> Self::Borrowed<'itm>
+    where
+        Self: 'itm,
+    {
+        self.map(|value| value.borrow(store))
+    }
+}
+impl<'itm, R: ToOwned<'itm>> ToOwned<'itm> for Option<R> {
+    #[inline(always)]
+    fn to_owned(source: Self::Borrowed<'itm>) -> Self {
+        source.map(R::to_owned)
     }
 }
 
-disjoint_impls! {
-    // TODO: It seems silly to take Store just to put the owned value inside it
-    // It would make more sense to take a reference and require no store
-    // A signature would look like this: `source` is either `&self` or `&mut self`
-    // pub trait Borrow: Sized {
-    //     type Source<'itm>;
-    //     type Borrowed<'itm>;
-    //
-    //     fn borrow<'itm>(source: Self::Source<'itm>) -> Self::Borrowed<'itm>;
-    // }
-    //
-    // FIXME: Rename the trait
-    // TODO: Should I join Borrow and ToOwned?
-    // TODO: Should we allow default value IN_STRUCT = false?
-    pub trait Borrow<const IN_STRUCT: bool>: Sized {
-        /// Target type
-        ///
-        /// `core::mem::needs_drop` SHOULD NOT return true for this type unless the type is
-        /// [`Box<Opaque>`] or a [`CheckedTransmute`] chain that ends with [`Box<Opaque>`].
-        type Borrowed<'itm> // FIXME: This bound is required: ExternC<CType: FnArg>
-        where
-            Self: 'itm;
-
-        type Store: Default;
-
-        fn borrow<'itm>(self, store: &'itm mut Self::Store) -> Self::Borrowed<'itm>
-        where
-            Self: 'itm;
-    }
-
-    #[cfg(feature = "alloc")]
-    impl<R: ?Sized, const IN_STRUCT: bool> Borrow<IN_STRUCT> for Box<R>
+impl<T: Borrow, E: Borrow> Borrow for Result<T, E> {
+    type Borrowed<'itm>
+        = Result<T::Borrowed<'itm>, E::Borrowed<'itm>>
     where
-        R: ReprFamily<Kind = Opaque>,
+        Self: 'itm;
+
+    type Owner = Option<Result<T::Owner, E::Owner>>;
+
+    #[inline(always)]
+    fn borrow<'itm>(self, store: &'itm mut Self::Owner) -> Self::Borrowed<'itm>
+    where
+        Self: 'itm,
     {
-        type Borrowed<'itm>
-            = Self
-        where
-            Self: 'itm;
-
-        type Store = ();
-
-        #[inline(always)]
-        fn borrow<'itm>(self, (): &mut ()) -> Self::Borrowed<'itm>
-        where
-            Self: 'itm,
-        {
-            self
+        match self {
+            Ok(value) => {
+                let ok_store = store.insert(Ok(Default::default())).as_mut();
+                Ok(value.borrow(unsafe { ok_store.unwrap_unchecked() }))
+            }
+            Err(err) => {
+                let err_store = store.insert(Err(Default::default())).as_mut();
+                Err(err.borrow(unsafe { err_store.unwrap_err_unchecked() }))
+            }
         }
     }
-    #[cfg(feature = "alloc")]
-    impl<R, const IN_STRUCT: bool> Borrow<IN_STRUCT> for Box<R>
-    where
-        R: ReprFamily<Kind = Transmuted> + SizeFamily<Kind = ExternTypeLike>,
-    {
-        type Borrowed<'itm>
-            = Self
-        where
-            Self: 'itm;
-
-        type Store = ();
-
-        #[inline(always)]
-        fn borrow<'itm>(self, (): &mut ()) -> Self::Borrowed<'itm>
-        where
-            Self: 'itm,
-        {
-            self
+}
+impl<'itm, T: ToOwned<'itm>, E: ToOwned<'itm>> ToOwned<'itm> for Result<T, E> {
+    #[inline(always)]
+    fn to_owned(source: Self::Borrowed<'itm>) -> Self {
+        match source {
+            Ok(value) => Ok(T::to_owned(value)),
+            Err(err) => Err(E::to_owned(err)),
         }
     }
-    #[cfg(feature = "alloc")]
-    impl<R: ?Sized, const IN_STRUCT: bool> Borrow<IN_STRUCT> for Box<R>
-    where
-        R: ReprFamily<Kind = Transmuted> + SizeFamily<Kind: NonExternTypeLike>,
-    {
-        type Borrowed<'itm>
-            = &'itm R
-        where
-            Self: 'itm;
-
-        // NOTE: If Option<R> was used a potentially
-        // large value would be placed on the stack
-        type Store = Option<Self>;
-
-        #[inline(always)]
-        fn borrow<'itm>(self, store: &'itm mut Self::Store) -> Self::Borrowed<'itm>
-        where
-            Self: 'itm,
-        {
-            store.insert(self)
-        }
-    }
-    #[cfg(feature = "alloc")]
-    impl<R: ?Sized, const IN_STRUCT: bool> Borrow<IN_STRUCT> for Box<R>
-    where
-        R: ReprFamily<Kind: NonOpaqueOrTransmuted>,
-    {
-        type Borrowed<'itm>
-            = &'itm R
-        where
-            Self: 'itm;
-
-        // NOTE: If Option<R> was used a potentially
-        // large value would be placed on the stack
-        type Store = Option<Self>;
-
-        #[inline(always)]
-        fn borrow<'itm>(self, store: &'itm mut Self::Store) -> Self::Borrowed<'itm>
-        where
-            Self: 'itm,
-        {
-            store.insert(self)
-        }
-    }
-
-    impl<R: Borrow<true>> Borrow<false> for Option<R>
-    where
-        R: NicheFamily<Kind = WithoutNiche>,
-    {
-        type Borrowed<'itm>
-            = Option<R::Borrowed<'itm>>
-        where
-            Self: 'itm;
-
-        type Store = R::Store;
-
-        #[inline(always)]
-        fn borrow<'itm>(self, store: &'itm mut Self::Store) -> Self::Borrowed<'itm>
-        where
-            Self: 'itm,
-        {
-            self.map(|value| value.borrow(store))
-        }
-    }
-    impl<R: Borrow<false>> Borrow<false> for Option<R>
-    where
-        R: NicheFamily<Kind: WithNiche>,
-    {
-        type Borrowed<'itm>
-            = Option<R::Borrowed<'itm>>
-        where
-            Self: 'itm;
-
-        type Store = R::Store;
-
-        #[inline(always)]
-        fn borrow<'itm>(self, store: &'itm mut Self::Store) -> Self::Borrowed<'itm>
-        where
-            Self: 'itm,
-        {
-            self.map(|value| value.borrow(store))
-        }
-    }
-
-    // FIXME:
-    //impl<R: Borrow<true>, E: Borrow<true>> Borrow<false> for Result<R, E>
-    //where
-    //    Self: NicheFamily<Kind = WithoutNiche>,
-    //{
-    //    type Borrowed<'itm>
-    //        = Result<R::Borrowed<'itm>, E::Borrowed<'itm>>
-    //    where
-    //        Self: 'itm;
-
-    //    type Store = (R::Store, E::Store);
-
-    //    #[inline(always)]
-    //    fn borrow<'itm>(self, store: &'itm mut Self::Store) -> Self::Borrowed<'itm>
-    //    where
-    //        Self: 'itm,
-    //    {
-    //        match self {
-    //            Ok(value) => Ok(value.borrow(&mut store.0)),
-    //            Err(err) => Err(err.borrow(&mut store.1)),
-    //        }
-    //    }
-    //}
-    //impl<R: Borrow<false>, E: Borrow<false>> Borrow<false> for Result<R, E>
-    //where
-    //    Self: NicheFamily<Kind: WithNiche>,
-    //{
-    //    type Borrowed<'itm>
-    //        = Result<R::Borrowed<'itm>, E::Borrowed<'itm>>
-    //    where
-    //        Self: 'itm;
-
-    //    type Store = (R::Store, E::Store);
-
-    //    #[inline(always)]
-    //    fn borrow<'itm>(self, store: &'itm mut Self::Store) -> Self::Borrowed<'itm>
-    //    where
-    //        Self: 'itm,
-    //    {
-    //        match self {
-    //            Ok(value) => Ok(value.borrow(&mut store.0)),
-    //            Err(err) => Err(err.borrow(&mut store.1)),
-    //        }
-    //    }
-    //}
 }
 
-disjoint_impls! {
-    pub trait ToOwned<'r, const IN_STRUCT: bool>: Borrow<IN_STRUCT> {
-        fn to_owned(borrowed: Self::Borrowed<'r>) -> Self;
-    }
-
-    #[cfg(feature = "alloc")]
-    impl<'r, R: ?Sized + 'r, const IN_STRUCT: bool> ToOwned<'r, IN_STRUCT> for Box<R>
-    where
-        R: ReprFamily<Kind = Opaque>,
-    {
-        #[inline(always)]
-        fn to_owned(borrowed: Self::Borrowed<'r>) -> Self {
-            borrowed
-        }
-    }
-    #[cfg(feature = "alloc")]
-    impl<'r, R: 'r, const IN_STRUCT: bool> ToOwned<'r, IN_STRUCT> for Box<R>
-    where
-        R: ReprFamily<Kind = Transmuted> + SizeFamily<Kind = ExternTypeLike>,
-    {
-        #[inline(always)]
-        fn to_owned(borrowed: Self::Borrowed<'r>) -> Self {
-            borrowed
-        }
-    }
-    // TODO: This isn't working for Box<[T]> and the like
-    #[cfg(feature = "alloc")]
-    impl<'r, R: Clone, const IN_STRUCT: bool> ToOwned<'r, IN_STRUCT> for Box<R>
-    where
-        R: ReprFamily<Kind = Transmuted> + SizeFamily<Kind: NonExternTypeLike>,
-    {
-        #[inline(always)]
-        fn to_owned(borrowed: Self::Borrowed<'r>) -> Self {
-            Box::new(borrowed.clone())
-        }
-    }
-    #[cfg(feature = "alloc")]
-    impl<'r, R: Clone, const IN_STRUCT: bool> ToOwned<'r, IN_STRUCT> for Box<R>
-    where
-        R: ReprFamily<Kind: NonOpaqueOrTransmuted>,
-    {
-        #[inline(always)]
-        fn to_owned(borrowed: Self::Borrowed<'r>) -> Self {
-            Box::new(borrowed.clone())
-        }
-    }
-
-    impl<'r, R: ToOwned<'r, true>> ToOwned<'r, false> for Option<R>
-    where
-        R: NicheFamily<Kind = WithoutNiche>,
-    {
-        #[inline(always)]
-        fn to_owned(borrowed: Self::Borrowed<'r>) -> Self {
-            borrowed.map(R::to_owned)
-        }
-    }
-    impl<'r, R: ToOwned<'r, false> + Clone> ToOwned<'r, false> for Option<R>
-    where
-        R: NicheFamily<Kind: WithNiche>,
-    {
-        #[inline(always)]
-        fn to_owned(borrowed: Self::Borrowed<'r>) -> Self {
-            borrowed.map(R::to_owned)
-        }
-    }
-
-    //FIXME:
-    //impl<'r, R: ToOwned<'r, true>, E: ToOwned<'r, true>> ToOwned<'r, false> for Result<R, E>
-    //where
-    //    Self: NicheFamily<Kind = WithoutNiche>,
-    //{
-    //    #[inline(always)]
-    //    fn to_owned(borrowed: Self::Borrowed<'r>) -> Self {
-    //        match borrowed {
-    //            Ok(value) => Ok(R::to_owned(value)),
-    //            Err(err) => Err(E::to_owned(err)),
-    //        }
-    //    }
-    //}
-    //impl<'r, R: ToOwned<'r, false>, E: ToOwned<'r, false>> ToOwned<'r, false> for Result<R, E>
-    //where
-    //    Self: NicheFamily<Kind: WithNiche>,
-    //{
-    //    #[inline(always)]
-    //    fn to_owned(borrowed: Self::Borrowed<'r>) -> Self {
-    //        match borrowed {
-    //            Ok(value) => Ok(R::to_owned(value)),
-    //            Err(err) => Err(E::to_owned(err)),
-    //        }
-    //    }
-    //}
-}
-
-impl<R: ?Sized, const IN_STRUCT: bool> Borrow<IN_STRUCT> for &R {
+impl<R: ?Sized> Borrow for &R {
     type Borrowed<'itm>
         = Self
     where
         Self: 'itm;
 
-    type Store = ();
+    type Owner = ();
 
     #[inline(always)]
     fn borrow<'itm>(self, (): &mut ()) -> Self::Borrowed<'itm>
@@ -338,14 +126,20 @@ impl<R: ?Sized, const IN_STRUCT: bool> Borrow<IN_STRUCT> for &R {
         self
     }
 }
+impl<'itm, 'a: 'itm, R: ?Sized> ToOwned<'itm> for &'a R {
+    #[inline(always)]
+    fn to_owned(source: Self::Borrowed<'itm>) -> Self {
+        source
+    }
+}
 
-impl<R: ?Sized, const IN_STRUCT: bool> Borrow<IN_STRUCT> for &mut R {
+impl<R: ?Sized> Borrow for &mut R {
     type Borrowed<'itm>
         = Self
     where
         Self: 'itm;
 
-    type Store = ();
+    type Owner = ();
 
     #[inline(always)]
     fn borrow<'itm>(self, (): &mut ()) -> Self::Borrowed<'itm>
@@ -353,53 +147,155 @@ impl<R: ?Sized, const IN_STRUCT: bool> Borrow<IN_STRUCT> for &mut R {
         Self: 'itm,
     {
         self
+    }
+}
+impl<'itm, 'a: 'itm, R: ?Sized> ToOwned<'itm> for &'a mut R {
+    #[inline(always)]
+    fn to_owned(source: Self::Borrowed<'itm>) -> Self {
+        source
     }
 }
 
 #[cfg(feature = "alloc")]
-impl<R, const IN_STRUCT: bool> Borrow<IN_STRUCT> for Vec<R> {
+// NOTE: extern types cannot be borrowed, only moved
+// TODO: But maybe the bound of NonExternTypeLike is not required
+impl<R: SizeFamily<Kind: NonExternTypeLike> + ?Sized> Borrow for Box<R> {
     type Borrowed<'itm>
-        = &'itm Self
+        = &'itm R
     where
         Self: 'itm;
 
-    type Store = Option<Self>;
+    // NOTE: If Option<R> was used a potentially
+    // large value would be placed on the stack
+    type Owner = Option<Self>;
 
     #[inline(always)]
-    fn borrow<'itm>(self, store: &'itm mut Self::Store) -> Self::Borrowed<'itm>
+    fn borrow<'itm>(self, store: &'itm mut Self::Owner) -> Self::Borrowed<'itm>
     where
         Self: 'itm,
     {
         store.insert(self)
     }
 }
+#[cfg(feature = "alloc")]
+impl<'itm, R: SizeFamily<Kind: NonExternTypeLike> + StdToOwned + ?Sized> ToOwned<'itm> for Box<R>
+where
+    R::Owned: Into<Self>,
+{
+    #[inline(always)]
+    fn to_owned(source: Self::Borrowed<'itm>) -> Self {
+        StdToOwned::to_owned(source).into()
+    }
+}
 
-impl<R, const N: usize> Borrow<false> for [R; N] {
+#[cfg(feature = "alloc")]
+impl<R> Borrow for Vec<R> {
     type Borrowed<'itm>
-        = &'itm Self
+        = &'itm [R]
     where
         Self: 'itm;
 
-    type Store = Option<Self>;
+    type Owner = Self;
 
     #[inline(always)]
-    fn borrow<'itm>(self, store: &'itm mut Self::Store) -> Self::Borrowed<'itm>
+    fn borrow<'itm>(self, store: &'itm mut Self::Owner) -> Self::Borrowed<'itm>
     where
         Self: 'itm,
     {
-        store.insert(self)
+        *store = self;
+        store
     }
 }
-impl<R: Borrow<true>, const N: usize> Borrow<true> for [R; N] {
+#[cfg(feature = "alloc")]
+impl<'itm, R: Clone> ToOwned<'itm> for Vec<R> {
+    #[inline(always)]
+    fn to_owned(source: Self::Borrowed<'itm>) -> Self {
+        source.to_vec()
+    }
+}
+
+#[cfg(feature = "alloc")]
+impl Borrow for String {
+    type Borrowed<'itm>
+        = &'itm str
+    where
+        Self: 'itm;
+
+    type Owner = Self;
+
+    #[inline(always)]
+    fn borrow<'itm>(self, store: &'itm mut Self::Owner) -> Self::Borrowed<'itm>
+    where
+        Self: 'itm,
+    {
+        *store = self;
+        store
+    }
+}
+#[cfg(feature = "alloc")]
+impl<'itm> ToOwned<'itm> for String {
+    #[inline(always)]
+    fn to_owned(source: Self::Borrowed<'itm>) -> Self {
+        source.into()
+    }
+}
+
+impl<T> Borrow for NonNull<T> {
+    type Borrowed<'itm>
+        = Self
+    where
+        Self: 'itm;
+
+    type Owner = ();
+
+    #[inline(always)]
+    fn borrow<'itm>(self, (): &mut ()) -> Self::Borrowed<'itm>
+    where
+        Self: 'itm,
+    {
+        self
+    }
+}
+impl<'itm, T: 'itm> ToOwned<'itm> for NonNull<T> {
+    #[inline(always)]
+    fn to_owned(source: Self::Borrowed<'itm>) -> Self {
+        source
+    }
+}
+
+impl<T: Borrow> Borrow for UnsafeCell<T> {
+    type Borrowed<'itm>
+        = T::Borrowed<'itm>
+    where
+        Self: 'itm;
+
+    type Owner = T::Owner;
+
+    #[inline(always)]
+    fn borrow<'itm>(self, store: &'itm mut Self::Owner) -> Self::Borrowed<'itm>
+    where
+        Self: 'itm,
+    {
+        self.into_inner().borrow(store)
+    }
+}
+impl<'itm, T: ToOwned<'itm>> ToOwned<'itm> for UnsafeCell<T> {
+    #[inline(always)]
+    fn to_owned(source: Self::Borrowed<'itm>) -> Self {
+        UnsafeCell::new(T::to_owned(source))
+    }
+}
+
+impl<R: Borrow, const N: usize> Borrow for [R; N] {
     type Borrowed<'itm>
         = [R::Borrowed<'itm>; N]
     where
         Self: 'itm;
 
-    type Store = ArrayBorrowStore<R::Store, N>;
+    type Owner = ArrayStore<R::Owner, N>;
 
     #[inline(always)]
-    fn borrow<'itm>(self, store: &'itm mut Self::Store) -> Self::Borrowed<'itm>
+    fn borrow<'itm>(self, store: &'itm mut Self::Owner) -> Self::Borrowed<'itm>
     where
         Self: 'itm,
     {
@@ -418,62 +314,25 @@ impl<R: Borrow<true>, const N: usize> Borrow<true> for [R; N] {
         }
     }
 }
-
-impl<'r, R: ?Sized, const IN_STRUCT: bool> ToOwned<'r, IN_STRUCT> for &'r R {
+impl<'itm, R: ToOwned<'itm>, const N: usize> ToOwned<'itm> for [R; N] {
     #[inline(always)]
-    fn to_owned(borrowed: Self::Borrowed<'r>) -> Self {
-        borrowed
+    fn to_owned(source: Self::Borrowed<'itm>) -> Self {
+        source.map(R::to_owned)
     }
 }
 
-impl<'r, R: ?Sized, const IN_STRUCT: bool> ToOwned<'r, IN_STRUCT> for &'r mut R {
+impl Borrow for () {
+    type Borrowed<'itm>
+        = Self
+    where
+        Self: 'itm;
+
+    type Owner = ();
+
     #[inline(always)]
-    fn to_owned(borrowed: Self::Borrowed<'r>) -> Self {
-        borrowed
-    }
+    fn borrow<'itm>(self, (): &mut ()) -> Self::Borrowed<'itm> {}
 }
-
-#[cfg(feature = "alloc")]
-impl<'r, R: Clone, const IN_STRUCT: bool> ToOwned<'r, IN_STRUCT> for Vec<R> {
+impl<'itm> ToOwned<'itm> for () {
     #[inline(always)]
-    fn to_owned(borrowed: Self::Borrowed<'r>) -> Self {
-        borrowed.clone()
-    }
-}
-
-impl<'r, R: Clone, const N: usize> ToOwned<'r, false> for [R; N] {
-    #[inline(always)]
-    fn to_owned(borrowed: Self::Borrowed<'r>) -> Self {
-        borrowed.clone()
-    }
-}
-impl<'r, R: ToOwned<'r, true>, const N: usize> ToOwned<'r, true> for [R; N] {
-    #[inline(always)]
-    fn to_owned(borrowed: Self::Borrowed<'r>) -> Self {
-        borrowed.map(R::to_owned)
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use core::num::NonZeroU8;
-
-    use super::*;
-
-    #[test]
-    fn array_borrow() {
-        let _: Option<<[u8; 2] as Borrow<false>>::Borrowed<'_>> = None::<&[u8; 2]>;
-        let _: Option<<[NonZeroU8; 2] as Borrow<false>>::Borrowed<'_>> = None::<&[NonZeroU8; 2]>;
-
-        let _: Option<<[u8; 2] as Borrow<true>>::Borrowed<'_>> = None::<[u8; 2]>;
-        let _: Option<<[NonZeroU8; 2] as Borrow<true>>::Borrowed<'_>> = None::<[NonZeroU8; 2]>;
-
-        let _: Option<<Option<[u8; 2]> as Borrow<false>>::Borrowed<'_>> = None::<Option<[u8; 2]>>;
-        let _: Option<<Option<[NonZeroU8; 2]> as Borrow<false>>::Borrowed<'_>> =
-            None::<Option<&[NonZeroU8; 2]>>;
-
-        let _: Option<<Option<[u8; 2]> as Borrow<true>>::Borrowed<'_>> = None::<Option<[u8; 2]>>;
-        let _: Option<<Option<[NonZeroU8; 2]> as Borrow<true>>::Borrowed<'_>> =
-            None::<Option<[NonZeroU8; 2]>>;
-    }
+    fn to_owned(_: ()) -> Self {}
 }

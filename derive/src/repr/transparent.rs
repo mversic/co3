@@ -1,7 +1,7 @@
 use proc_macro2::TokenStream;
 use quote::quote;
 
-use crate::repr::repr_c::assert_drop_impl;
+use crate::repr::repr_c::{assert_no_drop, custom_is_valid};
 
 use super::{FfiTypeInput, FfiTypeKindAttribute};
 
@@ -39,33 +39,35 @@ pub(crate) fn derive_transparent_item(input: &FfiTypeInput) -> TokenStream {
         return quote! {};
     };
 
-    let impl_drop_assert = assert_drop_impl(&input.generics, name);
-    let custom_validation = if let Some(FfiTypeKindAttribute::Transparent(niche_value, is_valid)) =
+    let custom_validation = if let Some(FfiTypeKindAttribute::Transparent(niche_value, _)) =
         &input.ffi_type_attr.kind
     {
         let niche_value = niche_value.as_ref().map(|value| {
             quote! { const NICHE_VALUE: <Self as co3::ExternC>::CType = #value; }
         });
+        let is_valid = custom_is_valid(input.ffi_type_attr.kind.as_ref()).unwrap();
 
         quote! {
             #niche_value
 
             fn is_valid(target: &Self::Target) -> bool {
-                #impl_drop_assert
-                (#is_valid)(target)
+                #is_valid
             }
         }
     } else {
         quote!()
     };
 
-    let trait_ = if input.data.is_enum() {
-        quote!(NoDropSizedTransmuted)
+    let impl_drop_assert = assert_no_drop(&input.generics, name);
+    let (trait_, impl_drop_assert) = if input.data.is_enum() {
+        (quote!(NoDropSizedTransmuted), quote! {})
     } else {
-        quote!(Transmuted)
+        (quote!(Transmuted), impl_drop_assert)
     };
 
     quote! {
+        #impl_drop_assert
+
         co3::reprC! {
             // SAFETY: `Self` and `Self::Target` are guaranteed to be transmutable, but the user
             // must make sure the provided validation function does not return false positives
@@ -73,6 +75,39 @@ pub(crate) fn derive_transparent_item(input: &FfiTypeInput) -> TokenStream {
                 type Target = #target;
 
                 #custom_validation
+            }
+        }
+
+        // FIXME: This is the poorest default implementation
+        // Transparent types should delegate to the inner type
+        impl<#params> co3::borrow::Borrow for #name #ty_generics #where_clause
+        where
+            Self: Sized,
+        {
+            type Borrowed<'itm>
+                = &'itm Self
+            where
+                Self: 'itm;
+
+            type Owner = Option<Self>;
+
+            #[inline(always)]
+            fn borrow<'itm>(self, store: &'itm mut Self::Owner) -> Self::Borrowed<'itm>
+            where
+                Self: 'itm,
+            {
+                store.insert(self)
+            }
+        }
+
+        impl<'itm, #params> co3::borrow::ToOwned<'itm> for #name #ty_generics
+        where
+            Self: Clone,
+            #predicates
+        {
+            #[inline(always)]
+            fn to_owned(source: Self::Borrowed<'itm>) -> Self {
+                (*source).clone()
             }
         }
     }

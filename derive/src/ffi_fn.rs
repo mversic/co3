@@ -11,9 +11,7 @@ use syn::{
 use crate::{
     dispatch::handle_id,
     generate::OwnershipMode,
-    utils::{
-        TypeImplTraitResolver, gen_normalization_stmts, unstable_refs_for_arg, unwrap_result_type,
-    },
+    utils::{TypeImplTraitResolver, gen_normalization_stmts, soft_for_arg, unwrap_result_type},
 };
 
 pub(crate) fn emit_extern_definition(
@@ -52,10 +50,9 @@ pub(crate) fn gen_definition_body(sig: syn::Signature, callee: TokenStream) -> T
     let inputs = &sig.inputs;
     let output = &sig.output;
 
-    let initialization_stmts = gen_signature_input_init_stmts(inputs);
-    let output_assignment = gen_signature_output_assignment_stmts(output);
-    let input_conversions = gen_signature_input_conversion_stmts(inputs);
-    let store_sync_stmts = gen_signature_store_sync_stmts(inputs.len());
+    let decode_input_stmts = gen_input_decode_stmts(inputs);
+    let output_assignment = gen_output_encode_stmt(output);
+    let store_sync_stmts = gen_store_sync_stmts(inputs.len());
 
     let arg_names = inputs
         .iter()
@@ -66,17 +63,12 @@ pub(crate) fn gen_definition_body(sig: syn::Signature, callee: TokenStream) -> T
         .collect::<Vec<_>>();
 
     quote! {{
-        #initialization_stmts
-        #input_conversions
+        #decode_input_stmts
+
+        let mut __co3_call_error = false;
 
         // NOTE: Avoids signature drift
         let __co3_fn: #fn_ty = #callee;
-        let mut __co3_call_error: Option<co3::FfiReturn> = None;
-
-        let (#(Some(#arg_names),)*) = __co3_input_values else {
-            let __co3_sync_errors = #store_sync_stmts;
-            return Err(co3::FfiReturn::TrapRepresentation);
-        };
 
         let __co3_output = __co3_fn(
             #(#arg_names),*
@@ -90,8 +82,8 @@ pub(crate) fn gen_definition_body(sig: syn::Signature, callee: TokenStream) -> T
             return Err(co3::FfiReturn::TrapRepresentation);
         }
 
-        if let Some(err) = __co3_call_error {
-            return Err(err);
+        if __co3_call_error {
+            return Err(co3::FfiReturn::ExecutionFail);
         }
 
         Ok(())
@@ -106,54 +98,26 @@ pub(crate) fn item_fn_input_ident(input: &syn::Pat) -> &Ident {
     ident
 }
 
-pub(crate) fn gen_signature_input_init_stmts<'a>(
-    inputs: impl IntoIterator<Item = &'a syn::FnArg>,
-) -> TokenStream {
-    let (value_tys, store_tys): (Vec<_>, Vec<_>) = inputs
-        .into_iter()
-        .map(|input| {
-            let (attrs, arg_ty) = match input {
-                syn::FnArg::Receiver(receiver) => (&receiver.attrs, &*receiver.ty),
-                syn::FnArg::Typed(arg) => (&arg.attrs, &*arg.ty),
-            };
-
-            let decode_ty = match ownership_mode_for_arg(attrs, arg_ty) {
-                OwnershipMode::Borrow => quote! {
-                    <#arg_ty as co3::borrow::Borrow<false>>::Borrowed<'_>
-                },
-                OwnershipMode::ByValue => {
-                    quote! { <#arg_ty as co3::heapify::Heapify>::Kind }
-                }
-                OwnershipMode::Copied => quote! { #arg_ty },
-            };
-
-            let store_ty = if unstable_refs_for_arg(attrs) {
-                quote!(<#decode_ty as co3::DecodeWithStore>::Store)
-            } else {
-                quote!(())
-            };
-
-            (quote!(#arg_ty), store_ty)
-        })
-        .unzip();
-
-    let stores = store_tys.iter().map(|ty| {
-        quote! { <#ty as core::default::Default>::default() }
-    });
-
-    quote! {
-        let mut __co3_input_values = (#(Option::<#value_tys>::default(),)*);
-        let mut __co3_input_stores = (#(#stores,)*);
-    }
-}
-
-pub(crate) fn gen_signature_input_conversion_stmts<'a>(
+pub(crate) fn gen_input_decode_stmts<'a>(
     inputs: impl IntoIterator<Item = &'a syn::FnArg>,
 ) -> TokenStream {
     let inputs = inputs.into_iter().collect::<Vec<_>>();
-    let idxs = (0..inputs.len()).map(syn::Index::from);
 
     let mut stmts = quote! {};
+    let arg_names = inputs
+        .iter()
+        .map(|arg| match arg {
+            syn::FnArg::Typed(arg) => item_fn_input_ident(&arg.pat).clone(),
+            syn::FnArg::Receiver(_) => format_ident!("__co3_self"),
+        })
+        .collect::<Vec<_>>();
+
+    let store_sync_stmts = gen_store_sync_stmts(inputs.len());
+
+    let mut value_tys = Vec::with_capacity(inputs.len());
+    let mut store_tys = Vec::with_capacity(inputs.len());
+
+    let mut value_present = Vec::new();
     for (idx, input) in inputs.iter().enumerate() {
         let idx = syn::Index::from(idx);
 
@@ -170,39 +134,59 @@ pub(crate) fn gen_signature_input_conversion_stmts<'a>(
             }
         };
 
-        let (borrowed_ty, owned) = match ownership_mode_for_arg(attrs, &arg_ty) {
-            OwnershipMode::Borrow => (
-                quote! { <#arg_ty as co3::borrow::Borrow<false>>::Borrowed<'_> },
-                quote! { <#arg_ty as co3::borrow::ToOwned<false>>::to_owned(#arg_name) },
-            ),
-            OwnershipMode::ByValue => (
-                quote! { <#arg_ty as co3::heapify::Heapify>::Kind },
-                quote! { co3::heapify::Heapify::unheapify(#arg_name) },
-            ),
-            OwnershipMode::Copied => (quote!(#arg_ty), quote!(#arg_name)),
+        let decode_ty = match ownership_mode_for_arg(attrs) {
+            OwnershipMode::ByValue => quote!(#arg_ty),
+            OwnershipMode::Borrow => quote! {
+                <#arg_ty as co3::borrow::Borrow>::Borrowed<'_>
+            },
         };
 
-        let decode_stmt = if unstable_refs_for_arg(attrs) {
-            quote! { co3::DecodeWithStore::decode(#arg_name, &mut __co3_input_stores.#idx) }
+        let decode_call = if soft_for_arg(attrs) {
+            quote! { co3::SoftDecode::decode(#arg_name, &mut __co3_input_stores.#idx) }
         } else {
             quote! { co3::Decode::decode(#arg_name) }
         };
 
+        let to_owned = match ownership_mode_for_arg(attrs) {
+            OwnershipMode::ByValue => quote!(#arg_name),
+            OwnershipMode::Borrow => quote! {
+                #arg_name.map(co3::borrow::ToOwned::to_owned)
+            },
+        };
+
         stmts.extend(quote! {
-            let #arg_name: Option<#borrowed_ty> = unsafe { #decode_stmt };
+            let #arg_name: Option<#decode_ty> = unsafe { #decode_call };
+            let #arg_name: Option<#arg_ty> = #to_owned;
 
             if let Some(#arg_name) = #arg_name {
-                __co3_input_values.#idx = Some(#owned);
+                __co3_input_values.#idx = Some(#arg_name);
             }
         });
+
+        value_tys.push(arg_ty);
+        store_tys.push(if soft_for_arg(attrs) {
+            quote!(<#decode_ty as co3::stored::SoftDecodeOwned<'_>>::Store)
+        } else {
+            quote!(())
+        });
+
+        value_present.push(quote! { __co3_input_values.#idx.is_some() });
     }
 
     quote! {
+        let mut __co3_input_values = (#(<Option<#value_tys> as core::default::Default>::default(),)*);
+        let mut __co3_input_stores = (#(<#store_tys as core::default::Default>::default(),)*);
+
         #stmts
 
         let __co3_input_present: [bool; _] = [
-            #(__co3_input_values.#idxs.is_some()),*
+            #(#value_present),*
         ];
+
+        let (#(Some(#arg_names),)*) = __co3_input_values else {
+            let __co3_sync_errors = #store_sync_stmts;
+            return Err(co3::FfiReturn::TrapRepresentation);
+        };
     }
 }
 
@@ -223,7 +207,7 @@ fn signature_fn_pointer_type(sig: &syn::Signature) -> TokenStream {
     quote! { #unsafety #abi fn(#(#arg_tys),*) #output }
 }
 
-fn gen_signature_output_assignment_stmts(ret_ty: &syn::ReturnType) -> TokenStream {
+fn gen_output_encode_stmt(ret_ty: &syn::ReturnType) -> TokenStream {
     let output = format_ident!("__co3_output");
 
     let syn::ReturnType::Type(_, ret_ty) = &ret_ty else {
@@ -232,7 +216,6 @@ fn gen_signature_output_assignment_stmts(ret_ty: &syn::ReturnType) -> TokenStrea
 
     if let Some((ok, _)) = unwrap_result_type(ret_ty) {
         let normalize_output = gen_normalization_stmts(&output, ok);
-        let heapified_ok = quote! { <#ok as co3::heapify::Heapify>::Kind };
 
         quote! {
             match __co3_output {
@@ -240,27 +223,26 @@ fn gen_signature_output_assignment_stmts(ret_ty: &syn::ReturnType) -> TokenStrea
                     #normalize_output
 
                     unsafe {
-                        <#heapified_ok as co3::out_ptr::OutPtrWrite>::write_out(
-                            <#ok as co3::heapify::Heapify>::heapify(#output),
+                        <#ok as co3::out_ptr::OutPtrWrite>::write_out(
+                            #output,
                             __co3_out_ptr,
                         );
                     }
                 }
                 Err(_) => {
-                    __co3_call_error = Some(co3::FfiReturn::ExecutionFail);
+                    __co3_call_error = true;
                 }
             }
         }
     } else {
         let normalize_output = gen_normalization_stmts(&output, ret_ty);
-        let heapified_ret = quote! { <#ret_ty as co3::heapify::Heapify>::Kind };
 
         quote! {
             #normalize_output
 
             unsafe {
-                <#heapified_ret as co3::out_ptr::OutPtrWrite>::write_out(
-                    <#ret_ty as co3::heapify::Heapify>::heapify(#output),
+                <#ret_ty as co3::out_ptr::OutPtrWrite>::write_out(
+                    #output,
                     __co3_out_ptr
                 );
             }
@@ -268,13 +250,13 @@ fn gen_signature_output_assignment_stmts(ret_ty: &syn::ReturnType) -> TokenStrea
     }
 }
 
-pub(crate) fn gen_signature_store_sync_stmts(len: usize) -> TokenStream {
+pub(crate) fn gen_store_sync_stmts(len: usize) -> TokenStream {
     let idxs = (0..len).map(syn::Index::from);
 
     quote! {{
         let mut __co3_sync_errors = [false; #len]; #(
 
-        if __co3_input_present[#idxs] && co3::Store::sync(__co3_input_stores.#idxs).is_none() {
+        if __co3_input_present[#idxs] && co3::stored::Store::sync(__co3_input_stores.#idxs).is_none() {
             __co3_sync_errors[#idxs] = true;
         })*
 
@@ -350,25 +332,69 @@ pub(crate) fn gen_extern_fn_signature(mut sig: syn::Signature) -> TokenStream {
     explicitize_signature_lifetimes(&mut sig);
     synthesize_lifetime_bounds(&mut sig);
 
+    lower_signature_inputs(&mut sig);
+    lower_signature_output(&mut sig);
+
     sig.generics.params = core::mem::take(&mut sig.generics.params)
         .into_iter()
         .filter(|p| matches!(p, syn::GenericParam::Lifetime(_)))
         .collect();
 
-    let fn_name = &sig.ident;
-    let mut ffi_args = sig
-        .inputs
-        .iter()
-        .enumerate()
-        .map(|(idx, input)| lower_signature_input_to_ffi_arg(&mut sig.generics, input, idx))
-        .collect::<Vec<_>>();
+    sig.constness = None;
+    sig.asyncness = None;
+    sig.unsafety = None;
+    sig.abi = None;
 
-    let (impl_generics, _, where_clause) = sig.generics.split_for_impl();
-    if let Some(output_arg) = lower_signature_output_to_out_ptr(&sig.output) {
-        ffi_args.push(output_arg);
-    }
+    quote! { #sig }
+}
 
-    quote! { fn #fn_name #impl_generics (#(#ffi_args),*) -> co3::FfiReturn #where_clause }
+fn lower_signature_inputs(sig: &mut syn::Signature) {
+    sig.inputs = core::mem::take(&mut sig.inputs)
+        .into_iter()
+        .map(|input| lower_signature_input(&mut sig.generics, input))
+        .collect();
+}
+
+fn lower_signature_input(generics: &mut syn::Generics, input: syn::FnArg) -> syn::FnArg {
+    let (pat, attrs, arg_ty) = match input {
+        syn::FnArg::Receiver(receiver) => {
+            let arg_ty = *receiver.ty;
+            (quote!(__co3_self), receiver.attrs, arg_ty)
+        }
+        syn::FnArg::Typed(arg) => {
+            let syn::PatType { attrs, pat, ty, .. } = arg;
+            (quote!(#pat), attrs, *ty)
+        }
+    };
+
+    let ffi_ty = item_fn_input_arg_type(&attrs, &arg_ty);
+
+    generics
+        .make_where_clause()
+        .predicates
+        .push(parse_quote!(#ffi_ty: co3::CFnArg));
+
+    parse_quote!(#pat: #ffi_ty)
+}
+
+fn lower_signature_output(sig: &mut syn::Signature) {
+    let return_type = core::mem::replace(&mut sig.output, parse_quote!(-> co3::FfiReturn));
+
+    let syn::ReturnType::Type(_, return_type) = return_type else {
+        return;
+    };
+
+    let ret_ty = unwrap_result_type(&return_type).map_or(&*return_type, |(ok, _)| ok);
+    let output_ty = quote! { <#ret_ty as co3::out_ptr::OutPtr>::OutPtr };
+
+    sig.generics
+        .make_where_clause()
+        .predicates
+        // TODO: Should look for &mut instead of raw ptr?
+        .push(parse_quote!(*mut #output_ty: co3::CFnReturn));
+
+    sig.inputs
+        .push(parse_quote! { __co3_out_ptr: *mut #output_ty });
 }
 
 fn explicitize_signature_lifetimes(sig: &mut syn::Signature) {
@@ -477,7 +503,6 @@ fn explicitize_signature_lifetimes(sig: &mut syn::Signature) {
         OutputLifetimeExplicator { lifetime }.visit_type_mut(output_ty);
     }
 }
-
 fn synthesize_lifetime_bounds(sig: &mut syn::Signature) {
     #[derive(Default)]
     struct LifetimeUseCollector<'a> {
@@ -522,77 +547,13 @@ fn synthesize_lifetime_bounds(sig: &mut syn::Signature) {
     }
 }
 
-fn lower_signature_input_to_ffi_arg(
-    generics: &mut syn::Generics,
-    input: &syn::FnArg,
-    arg_idx: usize,
-) -> TokenStream {
-    match input {
-        syn::FnArg::Receiver(receiver) => {
-            let arg_ty = (*receiver.ty).clone();
-            let ffi_ty = item_fn_input_arg_type(&receiver.attrs, &arg_ty, arg_idx, generics);
-            quote!(__co3_self: #ffi_ty)
-        }
-        syn::FnArg::Typed(syn::PatType { attrs, pat, ty, .. }) => {
-            let arg_ty = (**ty).clone();
-            let ffi_ty = item_fn_input_arg_type(attrs, &arg_ty, arg_idx, generics);
-            quote!( #pat: #ffi_ty)
-        }
+fn item_fn_input_arg_type(attrs: &[syn::Attribute], arg_ty: &Type) -> TokenStream {
+    let c_type = quote! { <#arg_ty as co3::ExternC>::CType };
+
+    match ownership_mode_for_arg(attrs) {
+        OwnershipMode::ByValue => quote! { #c_type },
+        OwnershipMode::Borrow => quote! { <#c_type as co3::borrow::BorrowCast>::AsConst },
     }
-}
-
-fn lower_signature_output_to_out_ptr(return_type: &syn::ReturnType) -> Option<TokenStream> {
-    let syn::ReturnType::Type(_, return_type) = return_type else {
-        return None;
-    };
-
-    let ret_ty = unwrap_result_type(return_type).map_or(&**return_type, |(ok, _)| ok);
-    let heapified_ty = quote! { <#ret_ty as co3::heapify::Heapify>::Kind };
-    Some(quote! { __co3_out_ptr: *mut <#heapified_ty as co3::out_ptr::OutPtr>::OutPtr })
-}
-
-fn item_fn_input_arg_type(
-    attrs: &[syn::Attribute],
-    arg_ty: &Type,
-    arg_idx: usize,
-    generics: &mut syn::Generics,
-) -> TokenStream {
-    let lifetime = synthetic_borrow_lifetime(generics, arg_ty, arg_idx);
-
-    let ty = match ownership_mode_for_arg(attrs, arg_ty) {
-        OwnershipMode::Borrow => quote! {
-            <#arg_ty as co3::borrow::Borrow<false>>::Borrowed<#lifetime>
-        },
-        OwnershipMode::ByValue => {
-            quote! { <#arg_ty as co3::heapify::Heapify>::Kind }
-        }
-        OwnershipMode::Copied => quote! { #arg_ty },
-    };
-
-    quote!(<#ty as co3::ExternC>::CType)
-}
-
-fn synthetic_borrow_lifetime(
-    generics: &mut syn::Generics,
-    borrowed_ty: &Type,
-    arg_idx: usize,
-) -> syn::Lifetime {
-    let lifetime = syn::Lifetime::new(
-        &format!("'__co3_arg_{arg_idx}"),
-        proc_macro2::Span::call_site(),
-    );
-
-    generics
-        .params
-        .push(syn::GenericParam::Lifetime(syn::LifetimeParam::new(
-            lifetime.clone(),
-        )));
-    generics
-        .make_where_clause()
-        .predicates
-        .push(parse_quote!(#borrowed_ty: #lifetime));
-
-    lifetime
 }
 
 pub(crate) fn normalize_fn_signature(sig: &mut syn::Signature, self_ty: Option<&Type>) {
@@ -609,81 +570,9 @@ pub(crate) fn normalize_fn_signature(sig: &mut syn::Signature, self_ty: Option<&
     }
 }
 
-fn is_copy_type(ty: &Type) -> bool {
-    struct CopyClassifier {
-        is_copy: bool,
-    }
-
-    impl CopyClassifier {
-        fn is_primitive_path(path: &syn::Path) -> bool {
-            const PRIMITIVES: [&str; 17] = [
-                "bool", "char", "str", "u8", "u16", "u32", "u64", "u128", "usize", "i8", "i16",
-                "i32", "i64", "i128", "isize", "f32", "f64",
-            ];
-
-            path.get_ident()
-                .is_some_and(|ident| PRIMITIVES.iter().any(|&primitive| ident == primitive))
-        }
-    }
-
-    impl Visit<'_> for CopyClassifier {
-        fn visit_type_reference(&mut self, _: &syn::TypeReference) {}
-        fn visit_type_ptr(&mut self, _: &syn::TypePtr) {}
-        fn visit_type_bare_fn(&mut self, _: &syn::TypeBareFn) {}
-        fn visit_type_never(&mut self, _: &syn::TypeNever) {}
-
-        fn visit_type_path(&mut self, node: &syn::TypePath) {
-            if node.qself.is_some() || !Self::is_primitive_path(&node.path) {
-                self.is_copy = false;
-            }
-        }
-
-        fn visit_type_tuple(&mut self, node: &syn::TypeTuple) {
-            for elem in &node.elems {
-                self.visit_type(elem);
-
-                if !self.is_copy {
-                    return;
-                }
-            }
-        }
-
-        fn visit_type_array(&mut self, _: &syn::TypeArray) {
-            self.is_copy = false;
-        }
-
-        fn visit_type_paren(&mut self, node: &syn::TypeParen) {
-            self.visit_type(&node.elem);
-        }
-
-        fn visit_type_group(&mut self, node: &syn::TypeGroup) {
-            self.visit_type(&node.elem);
-        }
-    }
-
-    let mut classifier = CopyClassifier { is_copy: true };
-    match ty {
-        Type::Reference(node) => classifier.visit_type_reference(node),
-        Type::Ptr(node) => classifier.visit_type_ptr(node),
-        Type::BareFn(node) => classifier.visit_type_bare_fn(node),
-        Type::Never(node) => classifier.visit_type_never(node),
-        Type::Path(node) => classifier.visit_type_path(node),
-        Type::Tuple(node) => classifier.visit_type_tuple(node),
-        Type::Array(node) => classifier.visit_type_array(node),
-        Type::Paren(node) => classifier.visit_type_paren(node),
-        Type::Group(node) => classifier.visit_type_group(node),
-        _ => classifier.is_copy = false,
-    }
-    classifier.is_copy
-}
-
-pub(crate) fn ownership_mode_for_arg(attrs: &[syn::Attribute], ty: &Type) -> OwnershipMode {
+pub(crate) fn ownership_mode_for_arg(attrs: &[syn::Attribute]) -> OwnershipMode {
     if attrs.iter().any(|attr| attr.path().is_ident("by_val")) {
         return OwnershipMode::ByValue;
-    }
-
-    if is_copy_type(ty) {
-        return OwnershipMode::Copied;
     }
 
     OwnershipMode::Borrow

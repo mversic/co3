@@ -1,0 +1,5 @@
+error: `NICHE_VALUE` and custom `is_valid` are not supported on fieldless enums
+ --> tests/ui_fail/fieldless_enum_custom_niche.rs:9:10
+  |
+9 | pub enum PrimitiveFieldless {
+  |          ^^^^^^^^^^^^^^^^^^

@@ -7,10 +7,7 @@ use crate::{
     ffi_fn::{self, item_fn_input_ident, ownership_mode_for_arg},
     generate::OwnershipMode,
     is_link_name_attr,
-    utils::{
-        gen_normalization_stmts, gen_store_name, is_type_erased, unstable_refs_for_arg,
-        unwrap_result_type,
-    },
+    utils::{gen_normalization_stmts, gen_store_name, soft_for_arg, unwrap_result_type},
 };
 
 fn strip_internal_arg_attrs(signature: &mut syn::Signature) {
@@ -18,15 +15,13 @@ fn strip_internal_arg_attrs(signature: &mut syn::Signature) {
 
     impl VisitMut for InternalAttrStripper {
         fn visit_receiver_mut(&mut self, node: &mut syn::Receiver) {
-            node.attrs.retain(|attr| {
-                !attr.path().is_ident("by_val") && !attr.path().is_ident("unstable_refs")
-            });
+            node.attrs
+                .retain(|attr| !attr.path().is_ident("by_val") && !attr.path().is_ident("soft"));
         }
 
         fn visit_pat_type_mut(&mut self, node: &mut syn::PatType) {
-            node.attrs.retain(|attr| {
-                !attr.path().is_ident("by_val") && !attr.path().is_ident("unstable_refs")
-            });
+            node.attrs
+                .retain(|attr| !attr.path().is_ident("by_val") && !attr.path().is_ident("soft"));
         }
     }
 
@@ -48,7 +43,7 @@ pub fn wrap_fn_definition(
     let mut wrapper_sig = item.sig.clone();
     strip_internal_arg_attrs(&mut wrapper_sig);
 
-    let wrapper_body = gen_wrapper_body(None, None, None, &item.sig);
+    let wrapper_body = gen_wrapper_body::<false>(None, &item.sig);
     ffi_fn::normalize_fn_signature(&mut item.sig, None);
     let decl = ffi_fn::gen_extern_fn_signature(item.sig);
     let extern_fn_decl = gen_extern_decl(abi, block_attrs, &item.attrs, decl);
@@ -62,7 +57,7 @@ pub fn wrap_fn_definition(
     }
 }
 
-pub fn wrap_impl_definition(impl_: &ItemImpl, self_id: Option<&syn::Type>) -> ItemImpl {
+pub fn wrap_impl_definition<const DISPATCHED: bool>(impl_: &ItemImpl) -> ItemImpl {
     let ItemImpl {
         attrs: impl_attrs,
         defaultness,
@@ -111,7 +106,7 @@ pub fn wrap_impl_definition(impl_: &ItemImpl, self_id: Option<&syn::Type>) -> It
             })
             .collect::<Vec<_>>();
 
-        let wrapper_body = gen_wrapper_body(Some(generics), self_id, Some(self_ty), &sig);
+        let wrapper_body = gen_wrapper_body::<DISPATCHED>(Some(self_ty), &sig);
 
         sig.inputs = sig
             .inputs
@@ -135,14 +130,14 @@ pub fn wrap_impl_definition(impl_: &ItemImpl, self_id: Option<&syn::Type>) -> It
     strip_internal_generic_attrs(&mut generics);
     let (impl_generics, _, where_clause) = generics.split_for_impl();
     let impl_head = if let Some(trait_) = &trait_ {
-        quote!(impl #impl_generics #trait_ for #self_ty #where_clause)
+        quote!(#trait_ for)
     } else {
-        quote!(impl #impl_generics #self_ty #where_clause)
+        quote!()
     };
 
     syn::parse_quote! {
         #(#impl_attrs)*
-        #defaultness #unsafety #impl_head {
+        #defaultness #unsafety impl #impl_generics #impl_head #self_ty #where_clause {
             #(#methods)*
         }
     }
@@ -159,22 +154,24 @@ pub(crate) fn gen_extern_decl(
     quote! {
         unsafe #abi {
             #(#block_attrs)*
+
             #(#decl_attrs)*
             #decl;
         }
     }
 }
 
-fn gen_wrapper_body(
-    generics: Option<&syn::Generics>,
-    self_id: Option<&syn::Type>,
+fn gen_wrapper_body<const DISPATCHED: bool>(
     self_ty: Option<&syn::Type>,
     sig: &syn::Signature,
 ) -> TokenStream {
-    let handle_erase_stmts = generics
-        .zip(self_ty)
-        .map(|(generics, self_ty)| gen_handle_erase_stmts(generics, self_id, self_ty, sig))
-        .unwrap_or_default();
+    let handle_erase_stmts = if DISPATCHED {
+        self_ty
+            .map(|self_ty| gen_handle_erase_stmts(self_ty, sig))
+            .unwrap_or_default()
+    } else {
+        Default::default()
+    };
 
     let input_convert = gen_input_conversion_stmts(&sig.inputs);
     let output_init = gen_output_init_stmt(&sig.output);
@@ -201,10 +198,10 @@ fn gen_wrapper_body(
     let body = if let syn::ReturnType::Type(_, output_ty) = &sig.output {
         let fmt = format!("{sync_success_fmt}Out Read: {{}}\n");
 
-        let return_ = if unwrap_result_type(output_ty).is_some() {
-            quote!(Ok(__co3_out))
+        let (decode_ty, return_) = if let Some((ok, _)) = unwrap_result_type(output_ty) {
+            (quote!(#ok), quote!(Ok(__co3_out)))
         } else {
-            quote!(__co3_out)
+            (quote!(#output_ty), quote!(__co3_out))
         };
 
         let out_res = quote!(u8::from(core::option::Option::is_some(&__co3_out)));
@@ -218,8 +215,7 @@ fn gen_wrapper_body(
             let __co3_sync_errors = #store_sync_stmts;
 
             let __co3_out = unsafe { core::mem::MaybeUninit::assume_init(__co3_out) };
-            let __co3_out: Option<<#output_ty as co3::heapify::Heapify>::Kind> =
-                unsafe { co3::Decode::decode(__co3_out) };
+            let __co3_out: Option<#decode_ty> = unsafe { co3::Decode::decode(__co3_out) };
 
             let mut __co3_sync_errors_iter = core::iter::IntoIterator::into_iter(__co3_sync_errors);
             if core::iter::Iterator::any(&mut __co3_sync_errors_iter, core::convert::identity)
@@ -229,7 +225,7 @@ fn gen_wrapper_body(
             }
 
             let __co3_out = unsafe { core::option::Option::unwrap_unchecked(__co3_out) };
-            let __co3_out = <#output_ty as co3::heapify::Heapify>::unheapify(__co3_out);
+            let __co3_out = __co3_out;
 
             #return_
         }
@@ -265,25 +261,29 @@ fn gen_wrapper_body(
 
 fn gen_store_sync_stmts(inputs: &Punctuated<FnArg, syn::Token![,]>) -> TokenStream {
     let input_len = inputs.len();
-    let mut stmts = quote! {};
+    let mut store_sync_stmts = quote! {};
 
     for (idx, input) in inputs.iter().enumerate() {
-        let arg_name = match input {
-            FnArg::Typed(arg) => item_fn_input_ident(&arg.pat).clone(),
-            FnArg::Receiver(_) => format_ident!("__co3_self"),
+        let (attrs, arg_name) = match input {
+            FnArg::Typed(arg) => (&arg.attrs, item_fn_input_ident(&arg.pat).clone()),
+            FnArg::Receiver(receiver) => (&receiver.attrs, format_ident!("__co3_self")),
         };
 
-        let store_name = gen_store_name(&arg_name);
-        stmts.extend(quote! {
-            if co3::Store::sync(#store_name).is_none() {
-                __co3_sync_errors[#idx] = true;
-            }
-        });
+        if soft_for_arg(attrs) {
+            let store_name = gen_store_name(&arg_name);
+
+            store_sync_stmts.extend(quote! {
+                if co3::stored::Store::sync(#store_name).is_none() {
+                    __co3_sync_errors[#idx] = true;
+                }
+            });
+        }
     }
 
     quote! {{
         let mut __co3_sync_errors = [false; #input_len];
-        #stmts
+
+        #store_sync_stmts
         __co3_sync_errors
     }}
 }
@@ -303,33 +303,30 @@ fn gen_input_conversion_stmts(inputs: &Punctuated<FnArg, syn::Token![,]>) -> Tok
             ),
         };
 
-        stmts.extend(gen_normalization_stmts(&arg_name, &arg_ty));
-        stmts.extend(match ownership_mode_for_arg(attrs, &arg_ty) {
-            OwnershipMode::Borrow => {
-                let borrow_store_name = format_ident!("__co3_{arg_name}_borrow_store");
-
-                quote! {
-                    let mut #borrow_store_name = Default::default();
-                    let #arg_name = co3::borrow::Borrow::<false>::borrow(#arg_name, &mut #borrow_store_name);
-                }
-            }
-            OwnershipMode::ByValue => quote! {
-                let #arg_name = <#arg_ty as co3::heapify::Heapify>::heapify(#arg_name);
-            },
-            OwnershipMode::Copied => quote! {},
-        });
-
         let store_name = gen_store_name(&arg_name);
-        stmts.extend(if unstable_refs_for_arg(attrs) {
+        stmts.extend(gen_normalization_stmts(&arg_name, &arg_ty));
+        if OwnershipMode::Borrow == ownership_mode_for_arg(attrs) {
+            let owner_name = format_ident!("__co3_{arg_name}_owner");
+
+            stmts.extend(quote! {
+                let mut #owner_name = Default::default();
+
+                let #arg_name = co3::borrow::Borrow::borrow(
+                    #arg_name, &mut #owner_name
+                );
+            });
+        }
+
+        stmts.extend(if soft_for_arg(attrs) {
             quote! {
                 let mut #store_name = Default::default();
-                let #arg_name = co3::EncodeWithStore::encode(#arg_name, &mut #store_name);
+
+                let #arg_name = co3::SoftEncode::encode(
+                    #arg_name, &mut #store_name
+                );
             }
         } else {
-            quote! {
-                let #store_name = ();
-                let #arg_name = co3::Encode::encode(#arg_name);
-            }
+            quote! { let #arg_name = co3::Encode::encode(#arg_name); }
         });
     }
 
@@ -342,7 +339,6 @@ fn gen_output_init_stmt(output: &syn::ReturnType) -> TokenStream {
     };
 
     let output = unwrap_result_type(output).map_or(&**output, |(ok, _)| ok);
-    let output = quote! { <#output as co3::heapify::Heapify>::Kind };
     let output_ty = quote!(core::mem::MaybeUninit<<#output as co3::ExternC>::CType>);
 
     quote! {
@@ -397,7 +393,9 @@ fn gen_ffi_fn_call_stmt(sig: &syn::Signature) -> TokenStream {
 pub(crate) fn strip_internal_generic_attrs(generics: &mut syn::Generics) {
     for param in &mut generics.params {
         if let syn::GenericParam::Type(param) = param {
-            param.attrs.retain(|attr| !is_type_erased(attr));
+            param
+                .attrs
+                .retain(|attr| !crate::utils::is_type_erased(attr));
         }
     }
 }

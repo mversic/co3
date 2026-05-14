@@ -1,4 +1,4 @@
-use co3::{ReprC, export};
+use co3::{ReprC, extern_C};
 
 #[derive(Clone, ReprC)]
 pub struct NoReprStruct(String);
@@ -8,14 +8,25 @@ pub enum NoReprEnum {
     A(String),
 }
 
-#[export("C")]
-pub fn return_no_repr_struct() -> Vec<NoReprStruct> {
-    unimplemented!()
+extern_C! {
+    pub fn return_no_repr_struct() -> Vec<NoReprStruct>;
+    pub extern "C" fn return_no_repr_enum() -> Vec<NoReprEnum>;
 }
 
-#[export("C")]
-pub extern "C" fn return_no_repr_enum() -> Vec<NoReprEnum> {
-    unimplemented!()
+mod provider {
+    use co3::export;
+
+    use super::*;
+
+    #[export("C")]
+    pub fn return_no_repr_struct() -> Vec<NoReprStruct> {
+        unimplemented!()
+    }
+
+    #[export("C")]
+    pub extern "C" fn return_no_repr_enum() -> Vec<NoReprEnum> {
+        unimplemented!()
+    }
 }
 
 fn main() {}

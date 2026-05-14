@@ -1,20 +1,14 @@
 error: explicit `<dyn Type>::ID` is only supported in extern declarations
-  --> tests/ui_fail/dispatch_restrictions.rs:25:32
+  --> tests/ui_fail/dispatch_restrictions.rs:34:32
    |
-25 |         fn kita(self, self_id: <dyn T>::ID) -> u32;
+34 |         fn kita(self, self_id: <dyn T>::ID) -> u32;
    |                                ^^^^^^^^^^^
 
 error: missing explicit handle IDs: `<dyn T>::ID`
-  --> tests/ui_fail/dispatch_restrictions.rs:35:17
+  --> tests/ui_fail/dispatch_restrictions.rs:44:17
    |
-35 |         fn kita(&self) -> u32;
+44 |         fn kita(&self) -> u32;
    |                 ^
-
-error: `dyn(repr)` repr must be one of u8, i8, u16, i16, u32, i32, u64, i64
-  --> tests/ui_fail/dispatch_restrictions.rs:41:14
-   |
-41 |     impl<dyn(String) T> Kita for T {
-   |              ^^^^^^
 
 error: `dyn(repr)` repr must be one of u8, i8, u16, i16, u32, i32, u64, i64
   --> tests/ui_fail/dispatch_restrictions.rs:50:14
@@ -22,11 +16,11 @@ error: `dyn(repr)` repr must be one of u8, i8, u16, i16, u32, i32, u64, i64
 50 |     impl<dyn(String) T> Kita for T {
    |              ^^^^^^
 
-error: lifetime arguments not required in dispatch
-  --> tests/ui_fail/dispatch_restrictions.rs:57:17
+error: `dyn(repr)` repr must be one of u8, i8, u16, i16, u32, i32, u64, i64
+  --> tests/ui_fail/dispatch_restrictions.rs:59:14
    |
-57 |     #[dispatch(<'a, u32>)]
-   |                 ^^
+59 |     impl<dyn(String) T> Kita for T {
+   |              ^^^^^^
 
 error: lifetime arguments not required in dispatch
   --> tests/ui_fail/dispatch_restrictions.rs:66:17
@@ -34,47 +28,47 @@ error: lifetime arguments not required in dispatch
 66 |     #[dispatch(<'a, u32>)]
    |                 ^^
 
-error: `#[dispatch]` requires at least one `dyn Type` or `dyn Self`
-  --> tests/ui_fail/dispatch_restrictions.rs:74:22
+error: lifetime arguments not required in dispatch
+  --> tests/ui_fail/dispatch_restrictions.rs:75:17
    |
-74 |     impl<T> Kita for T {
+75 |     #[dispatch(<'a, u32>)]
+   |                 ^^
+
+error: `#[dispatch]` requires at least one `dyn Type` or `dyn Self`
+  --> tests/ui_fail/dispatch_restrictions.rs:83:22
+   |
+83 |     impl<T> Kita for T {
    |                      ^
 
 error: `#[dispatch]` requires at least one `dyn Type` or `dyn Self`
-  --> tests/ui_fail/dispatch_restrictions.rs:81:22
+  --> tests/ui_fail/dispatch_restrictions.rs:90:22
    |
-81 |     impl<T> Kita for T {
+90 |     impl<T> Kita for T {
    |                      ^
 
 error: `#[dispatch]` impl type parameters must use `dyn(id_repr) T`
-  --> tests/ui_fail/dispatch_restrictions.rs:89:10
+  --> tests/ui_fail/dispatch_restrictions.rs:98:10
    |
-89 |     impl<dyn T> Kita for T {
+98 |     impl<dyn T> Kita for T {
    |          ^^^
 
 error: `#[dispatch]` impl type parameters must use `dyn(id_repr) T`
-  --> tests/ui_fail/dispatch_restrictions.rs:96:10
-   |
-96 |     impl<dyn T> Kita for T {
-   |          ^^^
+   --> tests/ui_fail/dispatch_restrictions.rs:105:10
+    |
+105 |     impl<dyn T> Kita for T {
+    |          ^^^
 
 error: blanket `dyn T` is not supported; declare `<dyn T> instead
-   --> tests/ui_fail/dispatch_restrictions.rs:104:22
+   --> tests/ui_fail/dispatch_restrictions.rs:113:22
     |
-104 |     impl<T> Kita for dyn T {
+113 |     impl<T> Kita for dyn T {
     |                      ^^^^^
 
 error: blanket `dyn T` is not supported; declare `<dyn T> instead
-   --> tests/ui_fail/dispatch_restrictions.rs:111:22
+   --> tests/ui_fail/dispatch_restrictions.rs:120:22
     |
-111 |     impl<T> Kita for dyn T {
+120 |     impl<T> Kita for dyn T {
     |                      ^^^^^
-
-error: `dyn Self` is only supported on generic `Self`
-   --> tests/ui_fail/dispatch_restrictions.rs:119:22
-    |
-119 |     impl<T> Kita for dyn u32 {
-    |                      ^^^^^^^
 
 error: `dyn Self` is only supported on generic `Self`
    --> tests/ui_fail/dispatch_restrictions.rs:128:22
@@ -82,11 +76,11 @@ error: `dyn Self` is only supported on generic `Self`
 128 |     impl<T> Kita for dyn u32 {
     |                      ^^^^^^^
 
-error: `dyn Self` is only supported for declared types
-   --> tests/ui_fail/dispatch_restrictions.rs:136:22
+error: `dyn Self` is only supported on generic `Self`
+   --> tests/ui_fail/dispatch_restrictions.rs:137:22
     |
-136 |     impl<T> Kita for dyn Option<T> {
-    |                      ^^^^^^^^^^^^^
+137 |     impl<T> Kita for dyn u32 {
+    |                      ^^^^^^^
 
 error: `dyn Self` is only supported for declared types
    --> tests/ui_fail/dispatch_restrictions.rs:145:22
@@ -94,96 +88,98 @@ error: `dyn Self` is only supported for declared types
 145 |     impl<T> Kita for dyn Option<T> {
     |                      ^^^^^^^^^^^^^
 
-error: `<dyn Type>::ID` is not allowed in return position
-   --> tests/ui_fail/dispatch_restrictions.rs:155:51
+error: `dyn Self` is only supported for declared types
+   --> tests/ui_fail/dispatch_restrictions.rs:154:22
     |
-155 |         fn kita(self, self_id: <dyn Self>::ID) -> <dyn T>::ID;
+154 |     impl<T> Kita for dyn Option<T> {
+    |                      ^^^^^^^^^^^^^
+
+error: `<dyn Type>::ID` is not allowed in return position
+   --> tests/ui_fail/dispatch_restrictions.rs:164:51
+    |
+164 |         fn kita(self, self_id: <dyn Self>::ID) -> <dyn T>::ID;
     |                                                   ^^^^^^^^^^^
 
 error: `<dyn Type>::ID` is only allowed as a top-level function argument
-   --> tests/ui_fail/dispatch_restrictions.rs:164:33
+   --> tests/ui_fail/dispatch_restrictions.rs:173:33
     |
-164 |         fn kita(self, self_id: (<dyn Self>::ID,)) -> u32;
+173 |         fn kita(self, self_id: (<dyn Self>::ID,)) -> u32;
     |                                 ^
 
 error: missing explicit handle IDs: `<dyn T>::ID`
-   --> tests/ui_fail/dispatch_restrictions.rs:160:1
+   --> tests/ui_fail/dispatch_restrictions.rs:169:1
     |
-160 | / extern_C! {
-161 | |     #[dispatch(<u32>)]
-162 | |     impl<dyn(u64) T> Kita for T {
-163 | |         #[link_name = "kita"]
+169 | / extern_C! {
+170 | |     #[dispatch(<u32>)]
+171 | |     impl<dyn(u64) T> Kita for T {
+172 | |         #[link_name = "kita"]
 ...   |
-166 | | }
+175 | | }
     | |_^
     |
     = note: this error originates in the macro `extern_C` (in Nightly builds, run with -Z macro-backtrace for more info)
 
 error[E0277]: the trait bound `Exported<u32>: Unimplemented` is not satisfied
-   --> tests/ui_fail/dispatch_restrictions.rs:177:17
+   --> tests/ui_fail/dispatch_restrictions.rs:186:17
     |
-177 |       #[dispatch(<Exported<u32>>)]
+186 |       #[dispatch(<Exported<u32>>)]
     |  _________________^
-178 | |     impl<dyn(u8) T: Unimplemented> Kita for T where i32: Unimplemented {
+187 | |     impl<dyn(u8) T: Unimplemented> RefKita for T where i32: Unimplemented {
     | |_________________________________^ unsatisfied trait bound
     |
 help: the trait `Unimplemented` is not implemented for `Exported<u32>`
-   --> tests/ui_fail/dispatch_restrictions.rs:9:1
+   --> tests/ui_fail/dispatch_restrictions.rs:19:1
     |
-  9 | struct Exported<T>(T);
+ 19 | struct Exported<T>(T);
     | ^^^^^^^^^^^^^^^^^^
 help: this trait has no implementations, consider adding one
    --> tests/ui_fail/dispatch_restrictions.rs:3:1
     |
   3 | pub trait Unimplemented {}
     | ^^^^^^^^^^^^^^^^^^^^^^^
-    = help: see issue #48214
 
 error[E0277]: the trait bound `i32: Unimplemented` is not satisfied
-   --> tests/ui_fail/dispatch_restrictions.rs:178:53
+   --> tests/ui_fail/dispatch_restrictions.rs:187:56
     |
-178 |     impl<dyn(u8) T: Unimplemented> Kita for T where i32: Unimplemented {
-    |                                                     ^^^^^^^^^^^^^^^^^^ the trait `Unimplemented` is not implemented for `i32`
+187 |     impl<dyn(u8) T: Unimplemented> RefKita for T where i32: Unimplemented {
+    |                                                        ^^^^^^^^^^^^^^^^^^ the trait `Unimplemented` is not implemented for `i32`
     |
 help: this trait has no implementations, consider adding one
    --> tests/ui_fail/dispatch_restrictions.rs:3:1
     |
   3 | pub trait Unimplemented {}
     | ^^^^^^^^^^^^^^^^^^^^^^^
-    = help: see issue #48214
 
 error[E0277]: the trait bound `Externed<u32>: Unimplemented` is not satisfied
-   --> tests/ui_fail/dispatch_restrictions.rs:193:17
+   --> tests/ui_fail/dispatch_restrictions.rs:202:17
     |
-193 |       #[dispatch(<Externed<u32>>)]
+202 |       #[dispatch(<Externed<u32>>)]
     |  _________________^
-194 | |     impl<dyn(u64) T: Unimplemented> Kita for T where i32: Unimplemented {
+203 | |     impl<dyn(u64) T: Unimplemented> RefKita for T where i32: Unimplemented {
     | |__________________________________^ unsatisfied trait bound
     |
 help: the trait `Unimplemented` is not implemented for `Externed<u32>`
-   --> tests/ui_fail/dispatch_restrictions.rs:183:1
+   --> tests/ui_fail/dispatch_restrictions.rs:192:1
     |
-183 | / extern_C! {
-184 | |     #[id(u64)]
-185 | |     type Externed<T>;
+192 | / extern_C! {
+193 | |     #[id(u64)]
+194 | |     type Externed<T>;
     | |_________________^
 help: this trait has no implementations, consider adding one
    --> tests/ui_fail/dispatch_restrictions.rs:3:1
     |
   3 | pub trait Unimplemented {}
     | ^^^^^^^^^^^^^^^^^^^^^^^
-    = help: see issue #48214
     = note: this error originates in the macro `extern_C` (in Nightly builds, run with -Z macro-backtrace for more info)
 
 error[E0277]: the trait bound `i32: Unimplemented` is not satisfied
-   --> tests/ui_fail/dispatch_restrictions.rs:194:54
+   --> tests/ui_fail/dispatch_restrictions.rs:203:57
     |
-194 |     impl<dyn(u64) T: Unimplemented> Kita for T where i32: Unimplemented {
-    |                                                      ^^^^^^^^^^^^^^^^^^ the trait `Unimplemented` is not implemented for `i32`
+203 |     impl<dyn(u64) T: Unimplemented> RefKita for T where i32: Unimplemented {
+    |                                                         ^^^^^^^^^^^^^^^^^^ the trait `Unimplemented` is not implemented for `i32`
     |
 help: this trait has no implementations, consider adding one
    --> tests/ui_fail/dispatch_restrictions.rs:3:1
     |
   3 | pub trait Unimplemented {}
     | ^^^^^^^^^^^^^^^^^^^^^^^
-    = help: see issue #48214

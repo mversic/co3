@@ -1,29 +1,42 @@
-error[E0277]: the trait bound `Box<[NoReprStruct]>: OutPtrWrite` is not satisfied
+error[E0277]: the trait bound `Vec<NoReprStruct>: SoftDecode<'_>` is not satisfied
   --> tests/ui_fail/non_local_out_ptr.rs:11:1
    |
-11 | #[export("C")]
-   | ^^^^^^^^^^^^^^ the trait `out_ptr::_::OutPtrWrite0<Box<[NoReprStruct]>>` is not implemented for `Box<[NoReprStruct]>`
+11 | / extern_C! {
+12 | |     pub fn return_no_repr_struct() -> Vec<NoReprStruct>;
+13 | |     pub extern "C" fn return_no_repr_enum() -> Vec<NoReprEnum>;
+14 | | }
+   | |_^ the trait `SoftDecode<'_>` is not implemented for `Vec<NoReprStruct>`
    |
-   = help: the following other types implement trait `OutPtrWrite`:
-             (A, B)
-             (A, B, C)
-             (A, B, C, D)
-             (A, B, C, D, E)
-             (A, B, C, D, E, F)
-             (A, B, C, D, E, F, G)
-             (A, B, C, D, E, F, G, H)
-             (A, B, C, D, E, F, G, H, I)
-           and $N others
-   = note: required for `Box<[NoReprStruct]>` to implement `OutPtrWrite`
-   = note: this error originates in the attribute macro `export` (in Nightly builds, run with -Z macro-backtrace for more info)
+help: the trait `SoftDecode<'_>` is implemented for `Vec<R>`
+  --> $WORKSPACE/src/lib.rs
+   |
+   | / impl<'d, R> SoftDecode<'d> for Vec<R>
+   | | where
+   | |     Self: SoftDecodeOwned<'d, Store = <Box<[R]> as SoftDecodeOwned<'d>>::Store>,
+   | |     Self: ExternC<CType = <Box<[R]> as ExternC>::CType>,
+   | |     Box<[R]>: SoftDecode<'d>,
+   | |_____________________________^
+note: required by a bound in `co3::Decode::decode`
+  --> $WORKSPACE/src/lib.rs
+   |
+   | pub trait Decode<'d>: SoftDecode<'d> {
+   |                       ^^^^^^^^^^^^^^ required by this bound in `Decode::decode`
+...
+   |     unsafe fn decode(source: Self::CType) -> Option<Self>;
+   |               ------ required by a bound in this associated function
+   = note: this error originates in the macro `extern_C` (in Nightly builds, run with -Z macro-backtrace for more info)
 
-error[E0277]: the trait bound `Box<[NoReprEnum]>: OutPtrWrite` is not satisfied
-  --> tests/ui_fail/non_local_out_ptr.rs:16:1
+error[E0277]: the trait bound `Box<[NoReprStructStore<()>]>: co3::out_ptr::Zst` is not satisfied
+  --> tests/ui_fail/non_local_out_ptr.rs:11:1
    |
-16 | #[export("C")]
-   | ^^^^^^^^^^^^^^ the trait `out_ptr::_::OutPtrWrite0<Box<[NoReprEnum]>>` is not implemented for `Box<[NoReprEnum]>`
+11 | / extern_C! {
+12 | |     pub fn return_no_repr_struct() -> Vec<NoReprStruct>;
+13 | |     pub extern "C" fn return_no_repr_enum() -> Vec<NoReprEnum>;
+14 | | }
+   | |_^ the trait `co3::out_ptr::Zst` is not implemented for `Box<[NoReprStructStore<()>]>`
    |
-   = help: the following other types implement trait `OutPtrWrite`:
+   = help: the following other types implement trait `co3::out_ptr::Zst`:
+             ()
              (A, B)
              (A, B, C)
              (A, B, C, D)
@@ -31,7 +44,56 @@ error[E0277]: the trait bound `Box<[NoReprEnum]>: OutPtrWrite` is not satisfied
              (A, B, C, D, E, F)
              (A, B, C, D, E, F, G)
              (A, B, C, D, E, F, G, H)
-             (A, B, C, D, E, F, G, H, I)
            and $N others
-   = note: required for `Box<[NoReprEnum]>` to implement `OutPtrWrite`
-   = note: this error originates in the attribute macro `export` (in Nightly builds, run with -Z macro-backtrace for more info)
+   = note: required for `Vec<NoReprStruct>` to implement `Decode<'_>`
+   = note: this error originates in the macro `extern_C` (in Nightly builds, run with -Z macro-backtrace for more info)
+
+error[E0277]: the trait bound `Vec<NoReprEnum>: SoftDecode<'_>` is not satisfied
+  --> tests/ui_fail/non_local_out_ptr.rs:11:1
+   |
+11 | / extern_C! {
+12 | |     pub fn return_no_repr_struct() -> Vec<NoReprStruct>;
+13 | |     pub extern "C" fn return_no_repr_enum() -> Vec<NoReprEnum>;
+14 | | }
+   | |_^ the trait `SoftDecode<'_>` is not implemented for `Vec<NoReprEnum>`
+   |
+help: the trait `SoftDecode<'_>` is implemented for `Vec<R>`
+  --> $WORKSPACE/src/lib.rs
+   |
+   | / impl<'d, R> SoftDecode<'d> for Vec<R>
+   | | where
+   | |     Self: SoftDecodeOwned<'d, Store = <Box<[R]> as SoftDecodeOwned<'d>>::Store>,
+   | |     Self: ExternC<CType = <Box<[R]> as ExternC>::CType>,
+   | |     Box<[R]>: SoftDecode<'d>,
+   | |_____________________________^
+note: required by a bound in `co3::Decode::decode`
+  --> $WORKSPACE/src/lib.rs
+   |
+   | pub trait Decode<'d>: SoftDecode<'d> {
+   |                       ^^^^^^^^^^^^^^ required by this bound in `Decode::decode`
+...
+   |     unsafe fn decode(source: Self::CType) -> Option<Self>;
+   |               ------ required by a bound in this associated function
+   = note: this error originates in the macro `extern_C` (in Nightly builds, run with -Z macro-backtrace for more info)
+
+error[E0277]: the trait bound `Box<[NoReprEnumStore<()>]>: co3::out_ptr::Zst` is not satisfied
+  --> tests/ui_fail/non_local_out_ptr.rs:11:1
+   |
+11 | / extern_C! {
+12 | |     pub fn return_no_repr_struct() -> Vec<NoReprStruct>;
+13 | |     pub extern "C" fn return_no_repr_enum() -> Vec<NoReprEnum>;
+14 | | }
+   | |_^ the trait `co3::out_ptr::Zst` is not implemented for `Box<[NoReprEnumStore<()>]>`
+   |
+   = help: the following other types implement trait `co3::out_ptr::Zst`:
+             ()
+             (A, B)
+             (A, B, C)
+             (A, B, C, D)
+             (A, B, C, D, E)
+             (A, B, C, D, E, F)
+             (A, B, C, D, E, F, G)
+             (A, B, C, D, E, F, G, H)
+           and $N others
+   = note: required for `Vec<NoReprEnum>` to implement `Decode<'_>`
+   = note: this error originates in the macro `extern_C` (in Nightly builds, run with -Z macro-backtrace for more info)

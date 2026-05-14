@@ -1,0 +1,415 @@
+error[E0277]: the trait bound `[u8; 2]: CFnArg` is not satisfied
+  --> tests/ui_fail/disallowed_types.rs:31:5
+   |
+31 | /     export_C! {
+32 | |         type MyType;
+33 | |
+34 | |         impl ToOwned for Box<MyType> {
+...  |
+41 | |         pub extern "C" fn disallowed_opaque_types(move arg1: Box<MyType>, arg2: Box<MyType>);
+42 | |     }
+   | |_____^ the trait `CFnArg` is not implemented for `[u8; 2]`
+   |
+   = help: the following other types implement trait `CFnArg`:
+             *const R
+             *mut R
+             CBox<C, A>
+             CBoxedSlice<C, A>
+             COption<T>
+             COwnedMyType
+             CResult<T, E>
+             CSlice<C>
+           and $N others
+   = note: this error originates in the macro `export_C` (in Nightly builds, run with -Z macro-backtrace for more info)
+
+error[E0277]: the trait bound `(): CFnArg` is not satisfied
+  --> tests/ui_fail/disallowed_types.rs:31:5
+   |
+31 | /     export_C! {
+32 | |         type MyType;
+33 | |
+34 | |         impl ToOwned for Box<MyType> {
+...  |
+41 | |         pub extern "C" fn disallowed_opaque_types(move arg1: Box<MyType>, arg2: Box<MyType>);
+42 | |     }
+   | |_____^ the trait `CFnArg` is not implemented for `()`
+   |
+   = help: the following other types implement trait `CFnArg`:
+             *const R
+             *mut R
+             CBox<C, A>
+             CBoxedSlice<C, A>
+             COption<T>
+             COwnedMyType
+             CResult<T, E>
+             CSlice<C>
+           and $N others
+   = note: this error originates in the macro `export_C` (in Nightly builds, run with -Z macro-backtrace for more info)
+
+error[E0277]: the trait bound `[u8; 2]: CFnReturn` is not satisfied
+  --> tests/ui_fail/disallowed_types.rs:31:5
+   |
+31 | /     export_C! {
+32 | |         type MyType;
+33 | |
+34 | |         impl ToOwned for Box<MyType> {
+...  |
+41 | |         pub extern "C" fn disallowed_opaque_types(move arg1: Box<MyType>, arg2: Box<MyType>);
+42 | |     }
+   | |_____^ the trait `CFnArg` is not implemented for `[u8; 2]`
+   |
+   = help: the following other types implement trait `CFnArg`:
+             *const R
+             *mut R
+             CBox<C, A>
+             CBoxedSlice<C, A>
+             COption<T>
+             COwnedMyType
+             CResult<T, E>
+             CSlice<C>
+           and $N others
+   = note: required for `[u8; 2]` to implement `CFnReturn`
+   = note: required for `[u8; 2]` to implement `OutPtr`
+   = note: this error originates in the macro `export_C` (in Nightly builds, run with -Z macro-backtrace for more info)
+
+error[E0277]: the trait bound `[u8; 2]: CFnArg` is not satisfied
+  --> tests/ui_fail/disallowed_types.rs:45:1
+   |
+45 | / extern_C! {
+46 | |     #![link(crate = "kita")]
+47 | |
+48 | |     type MyType;
+...  |
+59 | |     pub extern "C" fn disallowed_opaque_types(move arg1: OwnedMyType, arg2: OwnedMyType);
+60 | | }
+   | |_^ the trait `CFnArg` is not implemented for `[u8; 2]`
+   |
+   = help: the following other types implement trait `CFnArg`:
+             *const R
+             *mut R
+             CBox<C, A>
+             CBoxedSlice<C, A>
+             COption<T>
+             COwnedMyType
+             CResult<T, E>
+             CSlice<C>
+           and $N others
+   = note: this error originates in the macro `extern_C` (in Nightly builds, run with -Z macro-backtrace for more info)
+
+error[E0277]: the trait bound `(): CFnArg` is not satisfied
+  --> tests/ui_fail/disallowed_types.rs:45:1
+   |
+45 | / extern_C! {
+46 | |     #![link(crate = "kita")]
+47 | |
+48 | |     type MyType;
+...  |
+59 | |     pub extern "C" fn disallowed_opaque_types(move arg1: OwnedMyType, arg2: OwnedMyType);
+60 | | }
+   | |_^ the trait `CFnArg` is not implemented for `()`
+   |
+   = help: the following other types implement trait `CFnArg`:
+             *const R
+             *mut R
+             CBox<C, A>
+             CBoxedSlice<C, A>
+             COption<T>
+             COwnedMyType
+             CResult<T, E>
+             CSlice<C>
+           and $N others
+   = note: this error originates in the macro `extern_C` (in Nightly builds, run with -Z macro-backtrace for more info)
+
+error[E0277]: the trait bound `[u8; 2]: CFnReturn` is not satisfied
+  --> tests/ui_fail/disallowed_types.rs:45:1
+   |
+45 | / extern_C! {
+46 | |     #![link(crate = "kita")]
+47 | |
+48 | |     type MyType;
+...  |
+59 | |     pub extern "C" fn disallowed_opaque_types(move arg1: OwnedMyType, arg2: OwnedMyType);
+60 | | }
+   | |_^ the trait `CFnArg` is not implemented for `[u8; 2]`
+   |
+   = help: the following other types implement trait `CFnArg`:
+             *const R
+             *mut R
+             CBox<C, A>
+             CBoxedSlice<C, A>
+             COption<T>
+             COwnedMyType
+             CResult<T, E>
+             CSlice<C>
+           and $N others
+   = note: required for `[u8; 2]` to implement `CFnReturn`
+   = note: required for `[u8; 2]` to implement `OutPtr`
+   = note: this error originates in the macro `extern_C` (in Nightly builds, run with -Z macro-backtrace for more info)
+
+error[E0283]: type annotations needed: cannot satisfy `(): CFnReturn`
+  --> tests/ui_fail/disallowed_types.rs:31:5
+   |
+31 | /     export_C! {
+32 | |         type MyType;
+33 | |
+34 | |         impl ToOwned for Box<MyType> {
+...  |
+41 | |         pub extern "C" fn disallowed_opaque_types(move arg1: Box<MyType>, arg2: Box<MyType>);
+42 | |     }
+   | |_____^
+   |
+note: multiple `impl`s or `where` clauses satisfying `(): CFnReturn` found
+  --> tests/ui_fail/disallowed_types.rs:31:5
+   |
+31 | /     export_C! {
+32 | |         type MyType;
+33 | |
+34 | |         impl ToOwned for Box<MyType> {
+...  |
+41 | |         pub extern "C" fn disallowed_opaque_types(move arg1: Box<MyType>, arg2: Box<MyType>);
+42 | |     }
+   | |_____^
+   = note: and more `impl`s found in the following crates: `co3`:
+           - impl CFnReturn for ();
+           - impl<T> CFnReturn for T
+             where T: CFnArg;
+   = note: required for `()` to implement `OutPtr`
+   = note: this error originates in the macro `export_C` (in Nightly builds, run with -Z macro-backtrace for more info)
+
+error[E0277]: the trait bound `(): CFnArg` is not satisfied
+  --> tests/ui_fail/disallowed_types.rs:31:5
+   |
+31 | /     export_C! {
+32 | |         type MyType;
+33 | |
+34 | |         impl ToOwned for Box<MyType> {
+...  |
+41 | |         pub extern "C" fn disallowed_opaque_types(move arg1: Box<MyType>, arg2: Box<MyType>);
+42 | |     }
+   | |_____^ the trait `CFnArg` is not implemented for `()`
+   |
+   = help: the following other types implement trait `CFnArg`:
+             *const R
+             *mut R
+             CBox<C, A>
+             CBoxedSlice<C, A>
+             COption<T>
+             COwnedMyType
+             CResult<T, E>
+             CSlice<C>
+           and $N others
+note: required by a bound in `provider::_::disallowed_types_by_val`
+  --> tests/ui_fail/disallowed_types.rs:31:5
+   |
+31 | /     export_C! {
+32 | |         type MyType;
+33 | |
+34 | |         impl ToOwned for Box<MyType> {
+...  |
+41 | |         pub extern "C" fn disallowed_opaque_types(move arg1: Box<MyType>, arg2: Box<MyType>);
+42 | |     }
+   | |_____^ required by this bound in `disallowed_types_by_val`
+   = note: this error originates in the macro `export_C` (in Nightly builds, run with -Z macro-backtrace for more info)
+
+error[E0277]: the trait bound `ExternTypeLike: co3::borrow::NonExternTypeLike` is not satisfied
+  --> tests/ui_fail/disallowed_types.rs:31:5
+   |
+31 | /     export_C! {
+32 | |         type MyType;
+33 | |
+34 | |         impl ToOwned for Box<MyType> {
+...  |
+41 | |         pub extern "C" fn disallowed_opaque_types(move arg1: Box<MyType>, arg2: Box<MyType>);
+42 | |     }
+   | |_____^ the trait `co3::borrow::NonExternTypeLike` is not implemented for `ExternTypeLike`
+   |
+help: the following other types implement trait `co3::borrow::NonExternTypeLike`
+  --> $WORKSPACE/src/borrow.rs
+   |
+   | impl NonExternTypeLike for MetaSized<SliceLike> {}
+   | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ `co3::size::MetaSized<SliceLike>`
+   | impl NonExternTypeLike for MetaSized<DynTraitLike> {}
+   | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ `co3::size::MetaSized<DynTraitLike>`
+   | impl<S> NonExternTypeLike for crate::size::Sized<S> {}
+   | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ `co3::size::Sized<S>`
+   = note: required for `Box<provider::MyType>` to implement `co3::borrow::Borrow`
+   = note: this error originates in the macro `export_C` (in Nightly builds, run with -Z macro-backtrace for more info)
+
+error[E0277]: the trait bound `(): CFnArg` is not satisfied
+  --> tests/ui_fail/disallowed_types.rs:57:47
+   |
+57 |     pub extern "C" fn disallowed_types_by_ref(arg1: (), arg2: [u8; 2]) -> ();
+   |                       ----------------------- ^^^^ the trait `CFnArg` is not implemented for `()`
+   |                       |
+   |                       required by a bound introduced by this call
+   |
+   = help: the following other types implement trait `CFnArg`:
+             *const R
+             *mut R
+             CBox<C, A>
+             CBoxedSlice<C, A>
+             COption<T>
+             COwnedMyType
+             CResult<T, E>
+             CSlice<C>
+           and $N others
+note: required by a bound in `disallowed_types_by_ref::disallowed_types_by_ref`
+  --> tests/ui_fail/disallowed_types.rs:45:1
+   |
+45 | / extern_C! {
+46 | |     #![link(crate = "kita")]
+47 | |
+48 | |     type MyType;
+...  |
+59 | |     pub extern "C" fn disallowed_opaque_types(move arg1: OwnedMyType, arg2: OwnedMyType);
+60 | | }
+   | |_^ required by this bound in `disallowed_types_by_ref`
+   = note: this error originates in the macro `extern_C` (in Nightly builds, run with -Z macro-backtrace for more info)
+
+error[E0277]: the trait bound `[u8; 2]: CFnArg` is not satisfied
+  --> tests/ui_fail/disallowed_types.rs:57:57
+   |
+57 |     pub extern "C" fn disallowed_types_by_ref(arg1: (), arg2: [u8; 2]) -> ();
+   |                       -----------------------           ^^^^ the trait `CFnArg` is not implemented for `[u8; 2]`
+   |                       |
+   |                       required by a bound introduced by this call
+   |
+   = help: the following other types implement trait `CFnArg`:
+             *const R
+             *mut R
+             CBox<C, A>
+             CBoxedSlice<C, A>
+             COption<T>
+             COwnedMyType
+             CResult<T, E>
+             CSlice<C>
+           and $N others
+note: required by a bound in `disallowed_types_by_ref::disallowed_types_by_ref`
+  --> tests/ui_fail/disallowed_types.rs:45:1
+   |
+45 | / extern_C! {
+46 | |     #![link(crate = "kita")]
+47 | |
+48 | |     type MyType;
+...  |
+59 | |     pub extern "C" fn disallowed_opaque_types(move arg1: OwnedMyType, arg2: OwnedMyType);
+60 | | }
+   | |_^ required by this bound in `disallowed_types_by_ref`
+   = note: this error originates in the macro `extern_C` (in Nightly builds, run with -Z macro-backtrace for more info)
+
+error[E0277]: the trait bound `(): CFnArg` is not satisfied
+  --> tests/ui_fail/disallowed_types.rs:58:52
+   |
+58 |     pub extern "C" fn disallowed_types_by_val(move arg1: (), move arg2: [u8; 2]) -> [u8; 2];
+   |                       -----------------------      ^^^^ the trait `CFnArg` is not implemented for `()`
+   |                       |
+   |                       required by a bound introduced by this call
+   |
+   = help: the following other types implement trait `CFnArg`:
+             *const R
+             *mut R
+             CBox<C, A>
+             CBoxedSlice<C, A>
+             COption<T>
+             COwnedMyType
+             CResult<T, E>
+             CSlice<C>
+           and $N others
+note: required by a bound in `disallowed_types_by_val::disallowed_types_by_val`
+  --> tests/ui_fail/disallowed_types.rs:45:1
+   |
+45 | / extern_C! {
+46 | |     #![link(crate = "kita")]
+47 | |
+48 | |     type MyType;
+...  |
+59 | |     pub extern "C" fn disallowed_opaque_types(move arg1: OwnedMyType, arg2: OwnedMyType);
+60 | | }
+   | |_^ required by this bound in `disallowed_types_by_val`
+   = note: this error originates in the macro `extern_C` (in Nightly builds, run with -Z macro-backtrace for more info)
+
+error[E0277]: the trait bound `[u8; 2]: CFnArg` is not satisfied
+  --> tests/ui_fail/disallowed_types.rs:58:67
+   |
+58 |     pub extern "C" fn disallowed_types_by_val(move arg1: (), move arg2: [u8; 2]) -> [u8; 2];
+   |                       -----------------------                     ^^^^ the trait `CFnArg` is not implemented for `[u8; 2]`
+   |                       |
+   |                       required by a bound introduced by this call
+   |
+   = help: the following other types implement trait `CFnArg`:
+             *const R
+             *mut R
+             CBox<C, A>
+             CBoxedSlice<C, A>
+             COption<T>
+             COwnedMyType
+             CResult<T, E>
+             CSlice<C>
+           and $N others
+note: required by a bound in `disallowed_types_by_val::disallowed_types_by_val`
+  --> tests/ui_fail/disallowed_types.rs:45:1
+   |
+45 | / extern_C! {
+46 | |     #![link(crate = "kita")]
+47 | |
+48 | |     type MyType;
+...  |
+59 | |     pub extern "C" fn disallowed_opaque_types(move arg1: OwnedMyType, arg2: OwnedMyType);
+60 | | }
+   | |_^ required by this bound in `disallowed_types_by_val`
+   = note: this error originates in the macro `extern_C` (in Nightly builds, run with -Z macro-backtrace for more info)
+
+error[E0277]: the trait bound `OwnedMyType: co3::borrow::Borrow` is not satisfied
+  --> tests/ui_fail/disallowed_types.rs:59:71
+   |
+45 | / extern_C! {
+46 | |     #![link(crate = "kita")]
+47 | |
+48 | |     type MyType;
+...  |
+59 | |     pub extern "C" fn disallowed_opaque_types(move arg1: OwnedMyType, arg2: OwnedMyType);
+   | |                                                                       ^^^^ the trait `co3::borrow::Borrow` is not implemented for `OwnedMyType`
+60 | | }
+   | |_- required by a bound introduced by this call
+   |
+help: consider borrowing here
+   |
+59 |     pub extern "C" fn disallowed_opaque_types(move arg1: OwnedMyType, &arg2: OwnedMyType);
+   |                                                                       +
+59 |     pub extern "C" fn disallowed_opaque_types(move arg1: OwnedMyType, &mut arg2: OwnedMyType);
+   |                                                                       ++++
+
+error[E0277]: the trait bound `OwnedMyType: co3::borrow::Borrow` is not satisfied
+  --> tests/ui_fail/disallowed_types.rs:45:1
+   |
+45 | / extern_C! {
+46 | |     #![link(crate = "kita")]
+47 | |
+48 | |     type MyType;
+...  |
+59 | |     pub extern "C" fn disallowed_opaque_types(move arg1: OwnedMyType, arg2: OwnedMyType);
+60 | | }
+   | |_^ unsatisfied trait bound
+   |
+help: the trait `co3::borrow::Borrow` is not implemented for `OwnedMyType`
+  --> tests/ui_fail/disallowed_types.rs:45:1
+   |
+45 | / extern_C! {
+46 | |     #![link(crate = "kita")]
+47 | |
+48 | |     type MyType;
+...  |
+59 | |     pub extern "C" fn disallowed_opaque_types(move arg1: OwnedMyType, arg2: OwnedMyType);
+60 | | }
+   | |_^
+   = help: the following other types implement trait `co3::borrow::Borrow`:
+             &R
+             &mut R
+             ()
+             (A, B)
+             (A, B, C)
+             (A, B, C, D)
+             (A, B, C, D, E)
+             (A, B, C, D, E, F)
+           and $N others
+   = note: this error originates in the macro `extern_C` (in Nightly builds, run with -Z macro-backtrace for more info)
