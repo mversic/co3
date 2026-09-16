@@ -658,7 +658,7 @@ fn gen_robust_impls<const ADD_COPY: bool>(
     let for_dummy = (generics.type_params().count() == 0).then_some(quote! { for<'_dummy> });
 
     let type_spec_bound = (!ADD_COPY).then(|| {
-        quote! { #for_dummy Self: co3::rust_spec::RustSpec<Size = co3::rust_spec::size::Sized<co3::rust_spec::Gt<rust_spec::Zero>>>, }
+        quote! { #for_dummy Self: co3::rust_spec::RustSpec<Size = co3::rust_spec::size::Sized<co3::rust_spec::Gt<co3::rust_spec::Zero>>>, }
     });
 
     quote! {

@@ -3,14 +3,16 @@
 //! # Example
 //!
 //! ```rust
-//! #![cfg(not(feature = "import"))]
+//! #[cfg(not(feature = "import"))]
 //! struct Local(u8);
+//!
+//! #[cfg(not(feature = "import"))]
+//! fn make_local() -> Box<Local> { Box::new(Local(0)) }
 //!
 //! #[cfg(not(feature = "import"))]
 //! type LocalType = Box<Local>;
 //! #[cfg(feature = "import")]
 //! type LocalType = OwnedLocal;
-//!
 //! co3::ffi! {
 //!     #![cfg_attr(not(feature = "import"), unsafe(export("C")))]
 //!     #![cfg_attr(feature = "import", unsafe(extern("C")))]
@@ -19,8 +21,9 @@
 //!
 //!     type Local;
 //!
-//!     fn make_local() -> LocalType;
+//!     move fn make_local() -> LocalType;
 //! }
+//! # fn main() {}
 //! ```
 use std::collections::{BTreeMap, BTreeSet, HashMap};
 
@@ -412,11 +415,11 @@ impl DispatchGroups {
 /// # Example
 ///
 /// ```rust
-/// use co3::ReprC
-/// use rust_spec::RustSpec;
+/// use co3::{ReprC, rust_spec::RustSpec};
 ///
 /// #[derive(RustSpec, ReprC)]
 /// pub struct Hello(u32);
+/// # fn main() {}
 /// ```
 #[manyhow]
 // FIXME: It's totally weird that `tag` is part of ReprC
@@ -482,6 +485,7 @@ pub fn tag_derive(item: syn::DeriveInput) -> Result<TokenStream> {
 ///         fn increment(&mut self, by: Value);
 ///     }
 /// }
+/// # fn main() {}
 /// ```
 ///
 /// # Export from Rust
@@ -499,7 +503,7 @@ pub fn tag_derive(item: syn::DeriveInput) -> Result<TokenStream> {
 ///
 /// #[cfg(not(feature = "import"))]
 /// impl core::ops::AddAssign<u32> for CounterHandle {
-///     fn add_assign(self, rhs: u32) {
+///     fn add_assign(&mut self, rhs: u32) {
 ///         self.0 += rhs;
 ///     }
 /// }
@@ -517,26 +521,8 @@ pub fn tag_derive(item: syn::DeriveInput) -> Result<TokenStream> {
 ///
 ///     fn increment(value: &mut CounterHandle);
 /// }
+/// # fn main() {}
 /// ```
-///
-/// # Opaque type variance
-///
-/// Lifetime and type parameters of declared opaque types are invariant by default. A lifetime
-/// parameter can explicitly be declared covariant with `#[unsafe(covariant(...))]`:
-///
-/// ```rust,ignore
-/// use co3::ffi;
-///
-/// ffi! {
-///     #![unsafe(extern("C"))]
-///
-///     #[unsafe(covariant('parent))]
-///     type Child<'parent, T>;
-/// }
-/// ```
-///
-/// The attribute is unsafe because it asserts that the provider's real type is covariant over every
-/// listed lifetime. Type parameters cannot be listed and remain invariant.
 ///
 /// # Naming convention
 ///
@@ -578,6 +564,7 @@ pub fn tag_derive(item: syn::DeriveInput) -> Result<TokenStream> {
 ///         fn add(&self, left: u32, right: u32) -> u32;
 ///     }
 /// }
+/// # fn main() {}
 /// ```
 ///
 /// # Static parameter interpolation
@@ -607,6 +594,7 @@ pub fn tag_derive(item: syn::DeriveInput) -> Result<TokenStream> {
 ///     where
 ///         use<T> @ (<SQLCHAR> | <SQLWCHAR>);
 /// }
+/// # fn main() {}
 /// ```
 ///
 /// This synthesizes 2 function imports: `convert_A` and `convert_W`. Primitive types have stable
@@ -638,7 +626,13 @@ pub fn tag_derive(item: syn::DeriveInput) -> Result<TokenStream> {
 ///
 /// #[derive(RustSpec, Tag, ReprC)]
 /// #[tag(u8, unsafe(1))]
+/// #[repr(transparent)]
 /// struct LocalCounter(u16);
+///
+/// #[derive(RustSpec, Tag, ReprC)]
+/// #[tag(u8, unsafe(2))]
+/// #[repr(transparent)]
+/// struct RemoteCounter(u16);
 ///
 /// trait Counter {
 ///     fn increment(&mut self, by: u8);
@@ -662,11 +656,15 @@ pub fn tag_derive(item: syn::DeriveInput) -> Result<TokenStream> {
 ///     #[tag(u8)]
 ///     type CounterHandle<T>;
 ///
+///     impl<T> Drop for CounterHandle<T> {
+///         fn drop(&mut self);
+///     }
+///
 ///     // Declare `T` as tag dispatched
 ///     impl<dyn(u8) T = u16> Counter for T
 ///     where
-///         // Select the set of concrete instantiations of tyep parameter `T`
-///         use<T> @ (<LocalCounter> | <CounterHandle<i16>> | <CounterHandle<u16>>)
+///         // Select concrete types with the shared `u16` ABI representation.
+///         use<T> @ (<LocalCounter> | <RemoteCounter>)
 ///     {
 ///         // Make the tag-carrying argument position explicit.
 ///         fn increment(t_tag: <dyn T>::TAG, &mut self, by: u8);
@@ -680,6 +678,7 @@ pub fn tag_derive(item: syn::DeriveInput) -> Result<TokenStream> {
 ///         fn reset(self_tag: <dyn Self>::TAG, &mut self);
 ///     }
 /// }
+/// # fn main() {}
 /// ```
 ///
 /// # Ownership transfer
@@ -703,7 +702,7 @@ pub fn tag_derive(item: syn::DeriveInput) -> Result<TokenStream> {
 /// }
 ///
 /// fn clone_into(input: Vec<u8>) {
-///     input
+///     drop(input);
 /// }
 ///
 /// ffi! {
@@ -715,6 +714,7 @@ pub fn tag_derive(item: syn::DeriveInput) -> Result<TokenStream> {
 ///     // `input` is passed by reference
 ///     fn clone_into(input: Vec<u8>);
 /// }
+/// # fn main() {}
 /// ```
 /// # Soft references
 ///
@@ -733,7 +733,7 @@ pub fn tag_derive(item: syn::DeriveInput) -> Result<TokenStream> {
 /// use co3::ffi;
 ///
 /// fn increment(value: (&(u8, u32), u32)) -> u8 {
-///     value.0 + 1
+///     value.0.0 + 1
 /// }
 ///
 /// ffi! {
@@ -741,6 +741,7 @@ pub fn tag_derive(item: syn::DeriveInput) -> Result<TokenStream> {
 ///
 ///     fn increment(#[soft] value: (&(u8, u32), u32)) -> u8;
 /// }
+/// # fn main() {}
 /// ```
 ///
 /// # Unpacking at the ABI boundary
@@ -799,7 +800,31 @@ pub fn tag_derive(item: syn::DeriveInput) -> Result<TokenStream> {
 ///
 ///     fn check_panic(value: u8) -> u32;
 /// }
+/// # fn main() {}
 /// ```
+///
+/// # Opaque type variance
+///
+/// Lifetime and type parameters of declared opaque types are invariant by default. A lifetime
+/// parameter can explicitly be declared covariant with `#[unsafe(covariant(...))]`:
+///
+/// ```rust
+/// use co3::ffi;
+///
+/// ffi! {
+///     #![unsafe(extern("C"))]
+///
+///     #[unsafe(covariant('parent))]
+///     type Child<'parent, T>;
+///
+///     impl<'parent, T> Drop for Child<'parent, T> {
+///         fn drop(&mut self);
+///     }
+/// }
+/// ```
+///
+/// The attribute is unsafe because it asserts that the provider's real type is covariant over every
+/// listed lifetime. Type parameters cannot be listed and remain invariant.
 #[manyhow]
 #[proc_macro]
 pub fn ffi(input: TokenStream) -> Result<TokenStream> {

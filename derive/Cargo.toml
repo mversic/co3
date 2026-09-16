@@ -21,3 +21,6 @@ proc-macro-crate = "3.5.0"
 proc-macro2 = "1.0.107"
 manyhow = "0.13.0"
 quote = "1.0.47"
+
+[dev-dependencies]
+co3 = { path = ".." }

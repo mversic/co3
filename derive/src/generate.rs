@@ -1188,7 +1188,7 @@ pub(crate) fn expand_export_decls(
                 ident,
                 &ty.generics,
                 // TODO: This is not correct, but I don't think it matters whether it's ZST or not
-                quote! { co3::rust_spec::size::Sized<co3::rust_spec::Gt<rust_spec::Zero>> },
+                quote! { co3::rust_spec::size::Sized<co3::rust_spec::Gt<co3::rust_spec::Zero>> },
                 quote! { co3::rust_spec::niche::WithoutNiche },
             );
             let tag_impl = id_value
@@ -2588,7 +2588,7 @@ fn gen_owned_repr_c_impls(ident: &syn::Ident, generics: &syn::Generics) -> Token
 
         unsafe impl #impl_generics co3::rust_spec::RustSpec for #owned_repr_c_name #ty_generics #where_clause {
             type Layout = co3::rust_spec::Stable;
-            type Size = co3::rust_spec::size::Sized<co3::rust_spec::Gt<rust_spec::Zero>>;
+            type Size = co3::rust_spec::size::Sized<co3::rust_spec::Gt<co3::rust_spec::Zero>>;
             type Alignment = <usize as co3::rust_spec::RustSpec>::Alignment;
             type Trap = co3::rust_spec::layout::Robust;
             type Niche = co3::rust_spec::niche::WithoutNiche;
@@ -2662,7 +2662,7 @@ fn gen_owned_extern_type_impls(
     quote! {
         unsafe impl #impl_generics co3::rust_spec::RustSpec for #owned_ident #ty_generics #where_clause {
             type Layout = co3::rust_spec::Stable;
-            type Size = co3::rust_spec::size::Sized<co3::rust_spec::Gt<rust_spec::Zero>>;
+            type Size = co3::rust_spec::size::Sized<co3::rust_spec::Gt<co3::rust_spec::Zero>>;
             type Alignment = <usize as co3::rust_spec::RustSpec>::Alignment;
             type Trap = co3::rust_spec::layout::NonRobust;
             type Niche = co3::rust_spec::niche::WithNiche<co3::rust_spec::Stable>;
