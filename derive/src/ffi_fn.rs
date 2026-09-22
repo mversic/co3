@@ -18,7 +18,7 @@ use crate::{
     generate::OwnershipMode,
     parse::FailureMode,
     symbol_name_value,
-    utils::{is_drop_impl, soft_for_arg},
+    utils::{cfg_attrs, is_drop_impl, soft_for_arg},
 };
 
 fn export_definition_attrs(attrs: &[syn::Attribute]) -> TokenStream {
@@ -112,6 +112,9 @@ pub(crate) fn emit_extern_definition(
     ffi_fn_body: TokenStream,
 ) -> TokenStream {
     let attrs = export_definition_attrs(attrs);
+    let signature: syn::Signature =
+        syn::parse2(fn_signature.clone()).expect("generated FFI signature must parse");
+    let abi_assertions = gen_abi_assertions(&signature);
 
     let error_handler = match failure_mode {
         FailureMode::Panic => gen_failure_panic(quote!(err)),
@@ -121,6 +124,7 @@ pub(crate) fn emit_extern_definition(
     quote! {
         #attrs
         unsafe #abi #fn_signature {
+            #abi_assertions
             let fn_body = || #ffi_fn_body;
 
             match fn_body() {
@@ -128,6 +132,35 @@ pub(crate) fn emit_extern_definition(
                 Err(err) => #error_handler,
             }
         }
+    }
+}
+
+pub(crate) fn gen_abi_assertions(sig: &syn::Signature) -> TokenStream {
+    let arguments = sig.inputs.iter().map(|input| {
+        let (attrs, mut ty) = match input {
+            syn::FnArg::Typed(arg) => (&arg.attrs, arg.ty.as_ref().clone()),
+            syn::FnArg::Receiver(receiver) => {
+                (&receiver.attrs, crate::utils::receiver_ty(receiver))
+            }
+        };
+        StaticLifetimeNormalizer.visit_type_mut(&mut ty);
+        let cfg = cfg_attrs(attrs);
+        quote! {
+            #(#cfg)*
+            const {
+                assert!(co3::impls!(#ty: co3::CFnArg), "co3 FFI argument must implement CFnArg");
+            };
+        }
+    });
+    let mut return_ty: syn::Type = fn_return_ty(sig)
+        .cloned()
+        .unwrap_or_else(|| parse_quote!(()));
+    StaticLifetimeNormalizer.visit_type_mut(&mut return_ty);
+    quote! {
+        #(#arguments)*
+        const {
+            assert!(co3::impls!(#return_ty: co3::CFnReturn), "co3 FFI return must implement CFnReturn");
+        };
     }
 }
 
@@ -145,13 +178,14 @@ pub(crate) fn gen_definition_body(
     let sync_error = gen_sync_error(failure_mode);
     let sync_check = gen_sync_check(store_sync_stmts, sync_error);
 
-    let arg_names = inputs
-        .iter()
-        .map(|arg| match arg {
-            syn::FnArg::Typed(arg) => item_fn_input_ident(&arg.pat).clone(),
-            syn::FnArg::Receiver(_) => format_ident!("__co3_self"),
-        })
-        .collect::<Vec<_>>();
+    let arg_names = inputs.iter().map(|arg| {
+        let (attrs, name) = match arg {
+            syn::FnArg::Typed(arg) => (&arg.attrs, item_fn_input_ident(&arg.pat).clone()),
+            syn::FnArg::Receiver(arg) => (&arg.attrs, format_ident!("__co3_self")),
+        };
+        let cfg = cfg_attrs(attrs);
+        quote!(#(#cfg)* #name)
+    });
 
     let return_borrow_check = if let Some(return_ty) = &return_ty {
         gen_return_borrow_check(return_ty, fn_by_val)
@@ -528,6 +562,20 @@ pub(crate) fn unpack_arg_names(arg_name: &Ident) -> (Ident, Ident) {
     )
 }
 
+fn parameter_cfg(attrs: &[syn::Attribute]) -> Option<(TokenStream, TokenStream)> {
+    let predicates = attrs
+        .iter()
+        .filter(|attr| attr.path().is_ident("cfg"))
+        .map(|attr| attr.parse_args::<syn::Meta>().expect("valid cfg predicate"))
+        .collect::<Vec<_>>();
+    (!predicates.is_empty()).then(|| {
+        (
+            quote!(#[cfg(all(#(#predicates),*))]),
+            quote!(#[cfg(not(all(#(#predicates),*)))]),
+        )
+    })
+}
+
 pub(crate) fn gen_input_decode_stmts<'a>(
     inputs: impl IntoIterator<Item = &'a syn::FnArg>,
     failure_mode: FailureMode,
@@ -535,19 +583,12 @@ pub(crate) fn gen_input_decode_stmts<'a>(
     let inputs = inputs.into_iter().collect::<Vec<_>>();
 
     let mut stmts = quote! {};
-    let arg_names = inputs
-        .iter()
-        .map(|arg| match arg {
-            syn::FnArg::Typed(arg) => item_fn_input_ident(&arg.pat).clone(),
-            syn::FnArg::Receiver(_) => format_ident!("__co3_self"),
-        })
-        .collect::<Vec<_>>();
+    let mut value_initializers = Vec::with_capacity(inputs.len());
+    let mut store_initializers = Vec::with_capacity(inputs.len());
+    let mut bindings = Vec::with_capacity(inputs.len());
 
     let store_sync_stmts = gen_store_sync_stmts(inputs.len());
     let decode_error = gen_decode_error(failure_mode);
-
-    let mut value_tys = Vec::with_capacity(inputs.len());
-    let mut store_tys = Vec::with_capacity(inputs.len());
 
     let mut value_present = Vec::new();
     for (idx, input) in inputs.iter().enumerate() {
@@ -566,6 +607,13 @@ pub(crate) fn gen_input_decode_stmts<'a>(
             }
         };
 
+        let cfg = parameter_cfg(attrs);
+        let enabled = cfg.as_ref().map(|(enabled, _)| enabled);
+        let disabled = cfg.as_ref().map(|(_, disabled)| disabled);
+        // Keep an inactive slot so every generated tuple index remains stable.
+        let inactive_value = disabled.map(|disabled| quote!(#disabled Some(()),));
+        let inactive_store = disabled.map(|disabled| quote!(#disabled (),));
+
         let decode_ty = borrowed_arg_ty(attrs, &arg_ty);
         let decode_arg = quote! { #arg_name };
 
@@ -583,27 +631,41 @@ pub(crate) fn gen_input_decode_stmts<'a>(
         };
 
         stmts.extend(quote! {
+            #enabled
             let #arg_name: Option<#decode_ty> = unsafe { #decode_call };
+            #enabled
             let #arg_name: Option<#arg_ty> = #from_borrow;
 
+            #enabled
             if let Some(#arg_name) = #arg_name {
                 __co3_input_values.#idx = Some(#arg_name);
             }
         });
 
-        value_tys.push(arg_ty);
-        store_tys.push(if soft_for_arg(attrs) {
+        value_initializers.push(quote!(#enabled <Option<#arg_ty> as core::default::Default>::default(), #inactive_value));
+        let store_ty = if soft_for_arg(attrs) {
             quote!(<#decode_ty as co3::stored::DecodeOwned<'_>>::Store)
         } else {
             quote!(())
+        };
+        store_initializers.push(
+            quote!(#enabled <#store_ty as core::default::Default>::default(), #inactive_store),
+        );
+
+        bindings.push(quote! {
+            #enabled
+            let Some(#arg_name) = __co3_input_values.#idx else {
+                let __co3_sync_errors = #store_sync_stmts;
+                #decode_error
+            };
         });
 
         value_present.push(quote! { __co3_input_values.#idx.is_some() });
     }
 
     quote! {
-        let mut __co3_input_values = (#(<Option<#value_tys> as core::default::Default>::default(),)*);
-        let mut __co3_input_stores = (#(<#store_tys as core::default::Default>::default(),)*);
+        let mut __co3_input_values = (#(#value_initializers)*);
+        let mut __co3_input_stores = (#(#store_initializers)*);
 
         #stmts
 
@@ -611,10 +673,7 @@ pub(crate) fn gen_input_decode_stmts<'a>(
             #(#value_present),*
         ];
 
-        let (#(Some(#arg_names),)*) = __co3_input_values else {
-            let __co3_sync_errors = #store_sync_stmts;
-            #decode_error
-        };
+        #(#bindings)*
     }
 }
 
@@ -636,9 +695,13 @@ pub(crate) fn gen_fn_signature_drift_check(
     let arg_tys = inputs.iter().map(|input| match input {
         syn::FnArg::Receiver(receiver) => {
             let ty = crate::utils::receiver_ty(receiver);
-            quote!(#ty)
+            let cfg = cfg_attrs(&receiver.attrs);
+            quote!(#(#cfg)* #ty)
         }
-        syn::FnArg::Typed(syn::PatType { ty, .. }) => quote!(#ty),
+        syn::FnArg::Typed(syn::PatType { attrs, ty, .. }) => {
+            let cfg = cfg_attrs(attrs);
+            quote!(#(#cfg)* #ty)
+        }
     });
 
     let fn_ty = quote! { #safety #abi fn(#(#arg_tys),*) #output };
@@ -839,11 +902,11 @@ pub(crate) fn lower_extern_fn_signature(
 fn lower_signature_inputs(sig: &mut syn::Signature) {
     sig.inputs = core::mem::take(&mut sig.inputs)
         .into_iter()
-        .flat_map(|input| lower_signature_input(&mut sig.generics, input))
+        .flat_map(lower_signature_input)
         .collect();
 }
 
-fn lower_signature_input(generics: &mut syn::Generics, input: syn::FnArg) -> Vec<syn::FnArg> {
+fn lower_signature_input(input: syn::FnArg) -> Vec<syn::FnArg> {
     let (pat, attrs, arg_ty) = match input {
         syn::FnArg::Receiver(receiver) => {
             let arg_ty = crate::utils::receiver_ty(&receiver);
@@ -855,6 +918,8 @@ fn lower_signature_input(generics: &mut syn::Generics, input: syn::FnArg) -> Vec
         }
     };
 
+    let cfg = cfg_attrs(&attrs).collect::<Vec<_>>();
+
     if is_unpack_arg(&attrs) {
         let arg_name = item_fn_input_ident(&pat);
         let (data_name, metadata_name) = unpack_arg_names(arg_name);
@@ -862,29 +927,15 @@ fn lower_signature_input(generics: &mut syn::Generics, input: syn::FnArg) -> Vec
             unpack_abi_parts(&attrs, &arg_ty).expect("validated #[unpack] attribute");
         let (part1_ty, part2_ty) = (source_part1_ty, source_part2_ty);
 
-        generics
-            .make_where_clause()
-            .predicates
-            .push(parse_quote!(#part1_ty: co3::CFnArg));
-        generics
-            .make_where_clause()
-            .predicates
-            .push(parse_quote!(#part2_ty: co3::CFnArg));
-
         return vec![
-            parse_quote!(#data_name: #part1_ty),
-            parse_quote!(#metadata_name: #part2_ty),
+            parse_quote!(#(#cfg)* #data_name: #part1_ty),
+            parse_quote!(#(#cfg)* #metadata_name: #part2_ty),
         ];
     }
 
     let ffi_ty = item_fn_input_arg_type(&attrs, &arg_ty);
 
-    generics
-        .make_where_clause()
-        .predicates
-        .push(parse_quote!(#ffi_ty: co3::CFnArg));
-
-    vec![parse_quote!(#pat: #ffi_ty)]
+    vec![parse_quote!(#(#cfg)* #pat: #ffi_ty)]
 }
 
 fn lower_signature_output(sig: &mut syn::Signature) {
@@ -897,13 +948,6 @@ fn lower_signature_output(sig: &mut syn::Signature) {
 
     let lowered_return_type = item_fn_output_type(&return_type);
     sig.output = parse_quote!(-> #lowered_return_type);
-
-    sig.generics
-        .make_where_clause()
-        .predicates
-        .push(parse_quote! {
-            #lowered_return_type: co3::CFnReturn
-        });
 }
 
 pub(crate) fn explicitize_signature_lifetimes(sig: &mut syn::Signature) {

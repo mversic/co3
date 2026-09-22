@@ -22,7 +22,7 @@ use crate::{
         soft_for_arg, strip_internal_generic_param,
     },
     wrapper::{
-        gen_extern_decl, gen_owned_drop_wrapper_body, gen_wrapper_body,
+        gen_decl_abi_assertions, gen_extern_decl, gen_owned_drop_wrapper_body, gen_wrapper_body,
         gen_wrapper_body_with_callee, strip_internal_arg_attrs, wrap_fn_definition,
         wrap_impl_definition,
     },
@@ -878,6 +878,7 @@ struct DispatchImportParts {
     id_assignments: Vec<TokenStream>,
     wrapper_body: TokenStream,
     extern_decl: TokenStream,
+    abi_assertions: TokenStream,
 }
 
 fn gen_dispatch_import_wrapper_body(
@@ -887,6 +888,7 @@ fn gen_dispatch_import_wrapper_body(
         id_assignments,
         wrapper_body,
         extern_decl,
+        abi_assertions,
         ..
     }: &DispatchImportParts,
     self_binding: TokenStream,
@@ -898,6 +900,7 @@ fn gen_dispatch_import_wrapper_body(
         #id_checks
         #layout_checks
         #extern_decl
+        #abi_assertions
         #(#id_assignments)*
         #self_binding
         #wrapper_body
@@ -1024,6 +1027,7 @@ fn prepare_dispatch_import(
         id_assignments: Vec::new(),
         wrapper_body,
         extern_decl: TokenStream::new(),
+        abi_assertions: TokenStream::new(),
     }
 }
 
@@ -1091,6 +1095,7 @@ fn prepare_dynamic_dispatch_import(
     erase_dispatch_signature(&dispatch_generics, receiver, &mut extern_sig);
     strip_dispatch_params(&mut extern_sig.generics);
     let decl = gen_extern_fn_signature(extern_sig, failure_mode);
+    let abi_assertions = gen_decl_abi_assertions(&decl);
 
     DispatchImportParts {
         set,
@@ -1104,6 +1109,7 @@ fn prepare_dynamic_dispatch_import(
         id_assignments,
         wrapper_body,
         extern_decl: gen_extern_decl(abi, block_attrs, fn_attrs, decl),
+        abi_assertions,
     }
 }
 
@@ -1292,7 +1298,7 @@ fn synthesize_impl_extern_decls(
     declared_self: bool,
     selection: Option<&[crate::DispatchSelection<'_>]>,
     symbol_fragments: &std::collections::BTreeMap<String, syn::LitStr>,
-) -> Vec<TokenStream> {
+) -> Vec<(syn::Ident, TokenStream, TokenStream)> {
     let dispatch_generics = impl_.generics.clone();
     let receiver =
         crate::dispatch::DispatchReceiver::for_impl(&impl_.self_ty, &impl_.self_ty, self_id);
@@ -1347,15 +1353,36 @@ fn synthesize_impl_extern_decls(
                 DispatchMonomorphizer::for_static_dispatch_group(&dispatch_generics, selection)
                     .interpolate_symbol_attrs(&mut item.attrs, symbol_fragments);
             }
+            let method_name = item.sig.ident.clone();
             let decl = gen_extern_fn_signature(item.sig, failure_mode);
+            let abi_assertions = gen_decl_abi_assertions(&decl);
             let extern_decl = gen_extern_decl(abi, attrs, &item.attrs, decl);
 
-            Some(quote! {
-                #erased_layout_checks
-                #extern_decl
-            })
+            Some((
+                method_name,
+                quote! {
+                    #erased_layout_checks
+                    #extern_decl
+                },
+                abi_assertions,
+            ))
         })
         .collect()
+}
+
+fn attach_impl_abi_assertions(
+    wrapper: &mut ItemImpl,
+    extern_decls: &[(syn::Ident, TokenStream, TokenStream)],
+) {
+    for item in &mut wrapper.items {
+        let ImplItem::Fn(method) = item else { continue };
+        for (name, _, assertions) in extern_decls {
+            if method.sig.ident == *name {
+                let block: syn::Block = syn::parse_quote!({ #assertions });
+                method.block.stmts.splice(0..0, block.stmts);
+            }
+        }
+    }
 }
 
 pub(crate) fn expand_extern_decls(
@@ -1375,7 +1402,7 @@ pub(crate) fn expand_extern_decls(
         symbol_fragments: &std::collections::BTreeMap<String, syn::LitStr>,
     ) -> TokenStream {
         let co3 = co3_path();
-        let import = wrap_impl_definition::<false>(failure_mode, &impl_, declared_self);
+        let mut import = wrap_impl_definition::<false>(failure_mode, &impl_, declared_self);
         let extern_decl = synthesize_impl_extern_decls(
             abi,
             failure_mode,
@@ -1387,6 +1414,8 @@ pub(crate) fn expand_extern_decls(
             None,
             symbol_fragments,
         );
+        attach_impl_abi_assertions(&mut import, &extern_decl);
+        let extern_decl = extern_decl.iter().map(|(_, decl, _)| decl);
 
         quote! {
             const _: () = {
@@ -1429,6 +1458,7 @@ pub(crate) fn expand_extern_decls(
                 symbol_fragments,
             );
             let mut concrete_wrapper = wrapper_impl.clone();
+            attach_impl_abi_assertions(&mut concrete_wrapper, &extern_decls);
             DispatchMonomorphizer::for_dispatch_group(&source_impl.generics, selections)
                 .visit_item_impl_mut(&mut concrete_wrapper);
             concrete_wrapper.generics.params =
@@ -1440,9 +1470,10 @@ pub(crate) fn expand_extern_decls(
                         syn::GenericParam::Const(param) => !args.contains_param(&param.ident),
                     })
                     .collect();
+            let extern_decl_tokens = extern_decls.iter().map(|(_, decl, _)| decl);
             imports.push(quote! {
                 const _: () = {
-                    #(#extern_decls)*
+                    #(#extern_decl_tokens)*
                     #concrete_wrapper
                 };
             });
@@ -2215,12 +2246,14 @@ fn expand_dispatch_drop_import(
         generics,
         declared_self,
     );
+    let abi_assertions = extern_decls.iter().map(|(_, _, assertions)| assertions);
+    let extern_decl_tokens = extern_decls.iter().map(|(_, decl, _)| decl);
     let co3 = co3_path();
 
     quote! {
         const _: () = {
             use #co3 as co3;
-            #(#extern_decls)*
+            #(#extern_decl_tokens)*
 
             #(#impl_attrs)*
             impl #impl_generics Drop for #owned_self_ty where
@@ -2229,6 +2262,7 @@ fn expand_dispatch_drop_import(
             {
                 #(#wrapper_attrs)*
                 fn drop(&mut self) {
+                    #(#abi_assertions)*
                     #(#selector_assignments)*
                     #body
                 }
@@ -2291,17 +2325,20 @@ fn expand_plain_drop_import(
     }
     .visit_generics_mut(&mut wrapper_generics);
     let (impl_generics, _, where_clause) = wrapper_generics.split_for_impl();
+    let abi_assertions = extern_decls.iter().map(|(_, _, assertions)| assertions);
+    let extern_decl_tokens = extern_decls.iter().map(|(_, decl, _)| decl);
     let co3 = co3_path();
 
     quote! {
         const _: () = {
             use #co3 as co3;
-            #(#extern_decls)*
+            #(#extern_decl_tokens)*
 
             #(#impl_attrs)*
             impl #impl_generics Drop for #owned_self_ty #where_clause {
                 #(#wrapper_attrs)*
                 fn drop(&mut self) {
+                    #(#abi_assertions)*
                     #body
                 }
             }

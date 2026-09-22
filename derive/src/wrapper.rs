@@ -67,6 +67,7 @@ pub(crate) fn wrap_fn_definition(
 
     ffi_fn::normalize_fn_signature(&mut item.sig, None);
     let decl = ffi_fn::gen_extern_fn_signature(item.sig, failure_mode);
+    let abi_assertions = gen_decl_abi_assertions(&decl);
     let extern_fn_decl = gen_extern_decl(abi, block_attrs, &item.attrs, decl);
 
     quote! {
@@ -74,6 +75,7 @@ pub(crate) fn wrap_fn_definition(
         #vis #wrapper_sig {
             use #co3 as co3;
             #extern_fn_decl
+            #abi_assertions
             #wrapper_body
         }
     }
@@ -276,11 +278,16 @@ pub(crate) fn gen_extern_decl(
     quote! {
         unsafe #abi {
             #(#block_attrs)*
-
             #(#decl_attrs)*
             #decl;
         }
     }
+}
+
+pub(crate) fn gen_decl_abi_assertions(decl: &TokenStream) -> TokenStream {
+    let sig: syn::Signature =
+        syn::parse2(decl.clone()).expect("generated FFI declaration must parse");
+    ffi_fn::gen_abi_assertions(&sig)
 }
 
 pub(crate) fn gen_wrapper_body<const DISPATCHED: bool>(
@@ -411,7 +418,8 @@ fn gen_single_unpack_input_stmts(
             FailureMode::Panic => quote! { #conversion.unwrap_or_else(|_| panic!("co3 generated FFI unpack conversion failure")) },
             FailureMode::Error => quote! { #conversion.map_err(|_| co3::Error::trap_value())? },
         };
-        Some(quote!(let #arg_name = #conversion;))
+        let cfg = crate::utils::cfg_attrs(attrs);
+        Some(quote!(#(#cfg)* let #arg_name = #conversion;))
     });
     quote!(#(#stmts)*)
 }
@@ -498,8 +506,10 @@ fn gen_store_sync_stmts(inputs: &Punctuated<FnArg, syn::Token![,]>) -> TokenStre
 
         if soft_for_arg(attrs) {
             let store_name = gen_store_name(&arg_name);
+            let cfg = crate::utils::cfg_attrs(attrs);
 
             store_sync_stmts.extend(quote! {
+                #(#cfg)*
                 if co3::stored::Store::sync(#store_name).is_none() {
                     __co3_sync_errors[#idx] = true;
                 }
@@ -529,11 +539,13 @@ fn gen_input_conversion_stmts(inputs: &Punctuated<FnArg, syn::Token![,]>) -> Tok
                 (&receiver.attrs, format_ident!("__co3_self"), &receiver_ty)
             }
         };
+        let cfg = crate::utils::cfg_attrs(attrs).collect::<Vec<_>>();
 
         if let Some(inner_ty) =
             ffi_fn::inferred_unpack_option_inner(attrs, ty).expect("validated #[unpack] attribute")
         {
             stmts.extend(quote! {
+                #(#cfg)*
                 let #arg_name: core::option::Option<#inner_ty> = #arg_name;
             });
         }
@@ -543,8 +555,10 @@ fn gen_input_conversion_stmts(inputs: &Punctuated<FnArg, syn::Token![,]>) -> Tok
             let owner_name = format_ident!("__co3_{arg_name}_owner");
 
             stmts.extend(quote! {
+                #(#cfg)*
                 let mut #owner_name = Default::default();
 
+                #(#cfg)*
                 let #arg_name = co3::borrow::Borrow::borrow(
                     #arg_name, &mut #owner_name
                 );
@@ -553,14 +567,16 @@ fn gen_input_conversion_stmts(inputs: &Punctuated<FnArg, syn::Token![,]>) -> Tok
 
         stmts.extend(if soft_for_arg(attrs) {
             quote! {
+                #(#cfg)*
                 let mut #store_name = Default::default();
 
+                #(#cfg)*
                 let #arg_name = co3::soft_encode(
                     #arg_name, &mut #store_name
                 );
             }
         } else {
-            quote! { let #arg_name = co3::encode(#arg_name); }
+            quote! { #(#cfg)* let #arg_name = co3::encode(#arg_name); }
         });
     }
 
@@ -620,7 +636,11 @@ fn gen_unpack_input_stmts(
                 &abi2_ty,
                 part2.abi.is_some(),
             );
+            let cfg = crate::utils::cfg_attrs(attrs).collect::<Vec<_>>();
+            let erase1 = (!erase1.is_empty()).then(|| quote!(#(#cfg)* #erase1));
+            let erase2 = (!erase2.is_empty()).then(|| quote!(#(#cfg)* #erase2));
             Some(quote! {
+                #(#cfg)*
                 let (#data_name, #metadata_name) = #conversion;
                 #erase1
                 #erase2
@@ -649,14 +669,18 @@ fn gen_unpack_erase_stmt(
 
 fn gen_ffi_fn_call(sig: &syn::Signature, callee: &TokenStream) -> TokenStream {
     let arg_names = sig.inputs.iter().map(|input| match input {
-        FnArg::Receiver(_) => quote!(__co3_self),
+        FnArg::Receiver(receiver) => {
+            let cfg = crate::utils::cfg_attrs(&receiver.attrs);
+            quote!(#(#cfg)* __co3_self)
+        }
         FnArg::Typed(syn::PatType { attrs, pat, .. }) => {
             let arg_name = item_fn_input_ident(pat);
+            let cfg = crate::utils::cfg_attrs(attrs).collect::<Vec<_>>();
             if is_unpack_arg(attrs) {
                 let (data_name, metadata_name) = unpack_arg_names(arg_name);
-                quote!(#data_name, #metadata_name)
+                quote!(#(#cfg)* #data_name, #(#cfg)* #metadata_name)
             } else {
-                quote!(#arg_name)
+                quote!(#(#cfg)* #arg_name)
             }
         }
     });
