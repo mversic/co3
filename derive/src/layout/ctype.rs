@@ -664,6 +664,9 @@ fn gen_robust_impls<const ADD_COPY: bool>(
 ) -> TokenStream {
     let co3 = co3_path();
     let (impl_generics, ty_generics, where_clause) = generics.split_for_impl();
+    let mut c_fn_generics = generics.clone();
+    c_fn_generics.params.insert(0, parse_quote!(__Co3Abi));
+    let (c_fn_impl_generics, _, _) = c_fn_generics.split_for_impl();
     let predicates = where_clause.as_ref().map(|w| &w.predicates);
 
     let copy_bounds = gen_copy_bounds::<ADD_COPY>(generics, fields);
@@ -678,7 +681,13 @@ fn gen_robust_impls<const ADD_COPY: bool>(
     quote! {
         unsafe impl #impl_generics #co3::ReprC for #ident #ty_generics #where_clause {}
 
-        unsafe impl #impl_generics #co3::CFnArg for #ident #ty_generics
+        unsafe impl #c_fn_impl_generics #co3::CFnArg<__Co3Abi> for #ident #ty_generics
+        where
+            #type_spec_bound
+            #(#copy_bounds,)*
+            #predicates
+        {}
+        unsafe impl #c_fn_impl_generics #co3::CFnReturn<__Co3Abi> for #ident #ty_generics
         where
             #type_spec_bound
             #(#copy_bounds,)*
@@ -891,13 +900,25 @@ pub(super) fn gen_identity_repr_c_impls(
     fields: &[&syn::Type],
 ) -> TokenStream {
     let (impl_generics, ty_generics, where_clause) = generics.split_for_impl();
+    let mut c_fn_generics = generics.clone();
+    c_fn_generics.params.insert(0, parse_quote!(__Co3Abi));
+    let (c_fn_impl_generics, _, _) = c_fn_generics.split_for_impl();
     let predicates = where_clause.as_ref().map(|clause| &clause.predicates);
     let codec_impls = gen_identity_codec_impls::<false>(ident, generics, fields, false);
 
     quote! {
         unsafe impl #impl_generics co3::ReprC for #ident #ty_generics #where_clause {}
 
-        unsafe impl #impl_generics co3::CFnArg for #ident #ty_generics
+        unsafe impl #c_fn_impl_generics co3::CFnArg<__Co3Abi> for #ident #ty_generics
+        where
+            for<'_dummy> Self: Copy + co3::rust_spec::RustSpec<
+                Size = co3::rust_spec::size::Sized<
+                    co3::rust_spec::Gt<co3::rust_spec::Zero>
+                >
+            >,
+            #predicates
+        {}
+        unsafe impl #c_fn_impl_generics co3::CFnReturn<__Co3Abi> for #ident #ty_generics
         where
             for<'_dummy> Self: Copy + co3::rust_spec::RustSpec<
                 Size = co3::rust_spec::size::Sized<

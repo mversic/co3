@@ -64,8 +64,8 @@ pub enum FieldlessTransparentEnum {
 #[repr(transparent)]
 pub struct UnitTransparentStruct;
 
-fn require_arg<T: CFnArg>() {}
-fn require_return<T: CFnReturn>() {}
+fn require_arg<T: CFnArg<co3::abi::C>>() {}
+fn require_return<T: CFnReturn<co3::abi::C>>() {}
 
 fn main() {
     require_arg::<<ZeroLenArrayZst as ExternC>::CType>();

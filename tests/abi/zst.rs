@@ -61,11 +61,11 @@ fn boxed_zst_traits() {
 
             assert_impl_all!($ctype:
                 ReprC,
-                CFnArg,
-                CFnReturn,
+                CFnArg<co3::abi::C>,
+                CFnReturn<co3::abi::C>,
             );
 
-            assert_not_impl_any!($ty: ReprC, CFnArg, CFnReturn);
+            assert_not_impl_any!($ty: ReprC, CFnArg<co3::abi::C>, CFnReturn<co3::abi::C>);
         };
     }
 

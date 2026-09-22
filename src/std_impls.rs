@@ -137,7 +137,7 @@ unsafe impl CheckedTransmute for () {
 }
 
 unsafe impl ReprC for () {}
-unsafe impl CFnReturn for () {}
+unsafe impl<Abi> CFnReturn<Abi> for () {}
 unsafe impl BorrowCast for () {
     type AsConst = Self;
 }
@@ -522,7 +522,8 @@ unsafe impl<T: CheckedTransmute<CType: Sized>> CheckedTransmute for MaybeUninit<
 }
 
 unsafe impl<T: ReprC> ReprC for MaybeUninit<T> {}
-unsafe impl<T: CFnArg> CFnArg for MaybeUninit<T> {}
+unsafe impl<T: CFnArg<Abi>, Abi> CFnArg<Abi> for MaybeUninit<T> {}
+unsafe impl<T: CFnReturn<Abi>, Abi> CFnReturn<Abi> for MaybeUninit<T> {}
 
 unsafe impl<T: ReprC> BorrowCast for MaybeUninit<T> {
     type AsConst = Self;
@@ -611,20 +612,22 @@ mod tests {
     #[cfg(feature = "alloc")]
     use crate::boxed::{CBox, CBoxedSlice};
     use crate::{
-        CFnArg, Decode, Encode,
+        CFnArg, CFnReturn, Decode, Encode,
         option::ReprCOption,
         slice::{CSlice, CSliceMut},
     };
 
     #[test]
     fn maybe_uninit_lowers_without_validating_or_encoding_the_inner_value() {
+        struct OtherAbi;
+
         assert_impl_all!(MaybeUninit<bool>:
             ExternC<CType = MaybeUninit<u8>>,
             CheckedTransmute,
             Decode<'static>,
             Encode,
         );
-        assert_impl_all!(MaybeUninit<u8>: ReprC, CFnArg);
+        assert_impl_all!(MaybeUninit<u8>: ReprC, CFnArg<crate::abi::C>, CFnArg<OtherAbi>, CFnReturn<OtherAbi>);
 
         let source = MaybeUninit::new(2_u8);
         assert!(unsafe { <MaybeUninit<bool> as CheckedTransmute>::is_valid(&source) });

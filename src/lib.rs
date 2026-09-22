@@ -537,21 +537,52 @@ pub trait Error {
 /// Type implementing the trait must have a guaranteed C ABI and no trap representations.
 pub unsafe trait ReprC {}
 
-/// `ReprC` type that is allowed as a C function argument.
+/// ABI marker types used by [`CFnArg`] and [`CFnReturn`].
+pub mod abi {
+    macro_rules! markers {
+        ($($name:ident),* $(,)?) => { $(
+            #[doc = concat!("The `", stringify!($name), "` calling convention.")]
+            pub enum $name {}
+        )* };
+    }
+
+    markers!(
+        Rust,
+        C,
+        CUnwind,
+        System,
+        SystemUnwind,
+        Cdecl,
+        CdeclUnwind,
+        Stdcall,
+        StdcallUnwind,
+        Fastcall,
+        FastcallUnwind,
+        Thiscall,
+        ThiscallUnwind,
+        Sysv64,
+        Sysv64Unwind,
+        Win64,
+        Win64Unwind,
+        Aapcs,
+        AapcsUnwind,
+        Efiapi,
+    );
+}
+
+/// `ReprC` type that is allowed as a C function argument for `Abi`.
 ///
 /// # Safety
 ///
 /// Type must be allowed as a C function argument type.
-pub unsafe trait CFnArg: ReprC + Copy {}
+pub unsafe trait CFnArg<Abi>: ReprC + Copy {}
 
-/// `ReprC` type that is allowed as a C function return value.
+/// `ReprC` type that is allowed as a C function return value for `Abi`.
 ///
 /// # Safety
 ///
 /// Type must be allowed as a C function return type.
-pub unsafe trait CFnReturn: ReprC + Copy {}
-
-unsafe impl<T: CFnArg> CFnReturn for T {}
+pub unsafe trait CFnReturn<Abi>: ReprC + Copy {}
 
 disjoint_impls! {
     /// A Rust type that has an `extern "C"` ABI

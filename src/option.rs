@@ -4,7 +4,7 @@ use core::mem::MaybeUninit;
 use rust_spec::{RustSpec, niche::WithoutNiche};
 
 use crate::{
-    CFnArg, Decode, Encode, ExternC, ReprC,
+    CFnArg, CFnReturn, Decode, Encode, ExternC, ReprC,
     borrow::{Borrow, BorrowCast, BorrowCastMut, FromBorrow},
     stored::{DecodeOwned, EmptyStore, EncodeOwned},
     transmute::CheckedTransmute,
@@ -231,7 +231,8 @@ unsafe impl<T: CheckedTransmute<CType: Copy>> CheckedTransmute for ReprCOption<T
 }
 
 unsafe impl<T: ReprC> ReprC for ReprCOption<T> {}
-unsafe impl<T: ReprC + Copy> CFnArg for ReprCOption<T> {}
+unsafe impl<T: ReprC + Copy, Abi> CFnArg<Abi> for ReprCOption<T> {}
+unsafe impl<T: ReprC + Copy, Abi> CFnReturn<Abi> for ReprCOption<T> {}
 
 unsafe impl<T: BorrowCast<AsConst: Copy> + Copy> BorrowCast for ReprCOption<T> {
     type AsConst = ReprCOption<T::AsConst>;
