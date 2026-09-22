@@ -4,35 +4,35 @@
 [<img alt="docs.rs" src="https://img.shields.io/badge/docs.rs-co3-66c2a5?style=for-the-badge&labelColor=555555&logo=docs.rs" height="20">](https://docs.rs/co3)
 [<img alt="CI" src="https://img.shields.io/github/actions/workflow/status/mversic/co3/main.yaml?style=for-the-badge&label=CI" height="20">](https://github.com/mversic/co3/actions/workflows/main.yaml)
 
-Given correct declarations, _safely_ export and/or import FFI bindings:
+_Safely_ export and/or import FFI bindings:
 
 1. **Native-Rust ergonomics**
 
    - ergonomics of APIs and generated wrappers are idiomatic to Rust users.
    - FFI boundary mechanics are zero-cost abstracted yet remain configurable.
-   - Except for statics, export declarations can also be used for imports.
+   - Except for statics, **export declarations can also be used for imports**.
 
 2. **Soundness-first FFI interoperability**
 
-   - soundness is never weakened for the sake of performance or memory footprint in the default configuration.
+   - **Soundness is never relaxed** for performance or memory footprint in the default configuration.
    - if preserving soundness requires additional validation, temporary storage, or cloning, that cost is accepted.
    - only explicit opt-in modes prioritize performance by explicitly shifting soundness responsibility to the user.
 
 # Why Bother?
 
-Ain't nobody got time for this, just give me a tldr. Ok, but don't take the following claims as a form of hubris:
+Ain't nobody got time for this, just give me a tldr:
 
-1. You won't find anything remotely as **useful, safe or as expressive** as `CO3`
+1. You won't find anything quite as **ergonomic and expressive yet safe**
 
-   - which crate allows using **native Rust types**? the ones claiming so still require wrappers
+   - which crate allows using **native Rust types**? Those claiming so still require wrappers
    - while many claim expressivity, have you ever seen a **runtime tagged-dispatch** in Rust?
 
-2. If you're exporting FFI from a Rust crate, `CO3` is, **by far, the easiest way** to do so
+2. If you're exporting FFI from _Rust_, `CO3` makes it **unbelievably easy**
 
    - `CO3` aims to make the complex process of FFI generation completely painless
    - literally, just write down the export declarations as if writing native `Rust`
 
-3. Although recent on the market, `CO3` is already **incredibly feature rich and well tested**
+3. Although recent, `CO3` is already **incredibly feature rich and well tested**
 
    - the initial release of `CO3` required it reached feature parity with the ecosystem
    - which crate allows you to use **generics in FFI or custom DSTs**? yes, `CO3` does

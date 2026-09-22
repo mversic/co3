@@ -2,7 +2,7 @@
 members = ["derive"]
 
 [workspace.package]
-version = "0.4.0"
+version = "0.4.1"
 edition = "2024"
 license = "Apache-2.0"
 authors = ["Marin Veršić <marin.versic101@gmail.com>"]
@@ -35,7 +35,7 @@ allocator-api = ["alloc"]
 default = ["alloc", "derive"]
 
 [dependencies]
-co3-derive = { version = "0.4.0", path = "derive", optional = true }
+co3-derive = { version = "0.4.1", path = "derive", optional = true }
 
 rust-spec = { version = "0.3.1", default-features = false, features = ["derive"] }
 disjoint_impls = "1.4.1"

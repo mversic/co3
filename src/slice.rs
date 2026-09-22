@@ -181,7 +181,10 @@ impl<C> CSlice<C> {
     }
 
     /// Create [`Self`] from a raw data pointer and slice metadata.
-    pub(crate) const fn from_raw_parts(data: *const C, len: usize) -> Self {
+    ///
+    /// Before decoding this carrier into a Rust reference, the caller must
+    /// ensure the pointer and length describe a valid initialized slice.
+    pub const fn from_raw_parts(data: *const C, len: usize) -> Self {
         Self { data, len }
     }
 
@@ -215,7 +218,11 @@ impl<C> CSliceMut<C> {
     }
 
     /// Create [`Self`] from a raw data pointer and slice metadata.
-    pub(crate) const fn from_raw_parts_mut(data: *mut C, len: usize) -> Self {
+    ///
+    /// Before decoding this carrier into a Rust mutable reference, the caller
+    /// must ensure the pointer and length describe a valid initialized slice
+    /// with exclusive access.
+    pub const fn from_raw_parts_mut(data: *mut C, len: usize) -> Self {
         Self { data, len }
     }
 
