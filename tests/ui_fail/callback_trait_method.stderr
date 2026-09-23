@@ -1,0 +1,12 @@
+error[E0407]: method `next_raw` is not a member of trait `Counter`
+  --> tests/ui_fail/callback_trait_method.rs:9:1
+   |
+ 9 | / ffi! {
+10 | |     #![unsafe(extern("C"))]
+11 | |
+12 | |     impl Counter for u8 {
+...  |
+15 | | }
+   | |_^ not a member of trait `Counter`
+   |
+   = note: this error originates in the macro `ffi` (in Nightly builds, run with -Z macro-backtrace for more info)

@@ -50,6 +50,7 @@ use crate::{
 };
 
 mod abi_retype;
+mod callback;
 mod cfg_attr;
 mod dispatch;
 mod ffi_fn;
@@ -482,7 +483,18 @@ pub fn ffi(input: TokenStream) -> Result<TokenStream> {
             items,
         } = ParsedInput::parse(input)?;
 
-        let items = normalize_items(items)?;
+        let (items, callbacks) = normalize_items(items)?;
+        if kind == DeclKind::Extern {
+            validate_raw_import_moves(&items, &callbacks)?;
+        }
+        if kind == DeclKind::Export
+            && let Some(callback) = callbacks.first()
+        {
+            return Err(syn::Error::new_spanned(
+                &callback.sig.ident,
+                "raw function declarations are only allowed in `ffi!` extern blocks",
+            ));
+        }
         let mut items = pack_items(items)?;
         validate_items(kind, &attrs, &items)?;
         synthesize_items(&symbol_prefix, &mut items)?;
@@ -497,6 +509,7 @@ pub fn ffi(input: TokenStream) -> Result<TokenStream> {
                 failure_mode,
                 &attrs,
                 items,
+                callbacks,
                 &symbol_fragments,
             ),
         });
@@ -510,8 +523,144 @@ pub fn ffi(input: TokenStream) -> Result<TokenStream> {
     ))
 }
 
-fn normalize_items(items: Vec<ParsedItem>) -> Result<Vec<ForeignItem>> {
-    items.into_iter().map(ParsedItem::normalize).collect()
+fn normalize_items(items: Vec<ParsedItem>) -> Result<(Vec<ForeignItem>, Vec<parse::CallbackDecl>)> {
+    let mut foreign_items = Vec::new();
+    let mut callbacks = Vec::new();
+    for item in items {
+        match item {
+            ParsedItem::Callback(callback) => callbacks.push(callback),
+            ParsedItem::Impl(mut item) => {
+                let self_ty = item.self_ty.clone();
+                let trait_path = item.trait_.as_ref().map(|(path, _)| path.clone());
+                let mut impl_items = Vec::new();
+                for impl_item in core::mem::take(&mut item.items) {
+                    let syn::ImplItem::Fn(mut method) = impl_item else {
+                        impl_items.push(impl_item);
+                        continue;
+                    };
+                    let marker = method
+                        .attrs
+                        .iter()
+                        .position(|attr| attr.path().is_ident("raw"));
+                    let Some(marker) = marker else {
+                        impl_items.push(syn::ImplItem::Fn(method));
+                        continue;
+                    };
+                    method.attrs.remove(marker);
+                    let method_name = &method.sig.ident;
+                    let callee = if let Some(trait_path) = &trait_path {
+                        quote!(<#self_ty as #trait_path>::#method_name)
+                    } else {
+                        quote!(<#self_ty>::#method_name)
+                    };
+                    let mut sig = method.sig;
+                    if let Some(syn::FnArg::Receiver(receiver)) = sig.inputs.first() {
+                        let mut receiver_ty = crate::utils::receiver_ty(receiver);
+                        crate::ffi_fn::SelfConcretizer { self_ty: &self_ty }
+                            .visit_type_mut(&mut receiver_ty);
+                        let attrs = &receiver.attrs;
+                        let receiver_arg: syn::FnArg =
+                            parse_quote!(#(#attrs)* __co3_self: #receiver_ty);
+                        sig.inputs[0] = receiver_arg;
+                    }
+                    crate::ffi_fn::SelfConcretizer { self_ty: &self_ty }
+                        .visit_signature_mut(&mut sig);
+                    callbacks.push(parse::CallbackDecl {
+                        attrs: method.attrs,
+                        vis: method.vis,
+                        callee,
+                        sig,
+                        owner: Some(parse::CallbackOwner {
+                            attrs: crate::utils::cfg_attrs(&item.attrs).cloned().collect(),
+                            generics: item.generics.clone(),
+                            trait_path: trait_path.clone(),
+                            self_ty: self_ty.clone(),
+                        }),
+                    });
+                }
+                item.items = impl_items;
+                if !item.items.is_empty() {
+                    foreign_items.push(ParsedItem::Impl(item).normalize()?);
+                }
+            }
+            item => foreign_items.push(item.normalize()?),
+        }
+    }
+    Ok((foreign_items, callbacks))
+}
+
+fn validate_raw_import_moves(
+    items: &[ForeignItem],
+    callbacks: &[parse::CallbackDecl],
+) -> Result<()> {
+    fn argument_attrs(sig: &syn::Signature) -> impl Iterator<Item = &[Attribute]> {
+        sig.inputs.iter().map(|input| match input {
+            syn::FnArg::Receiver(receiver) => receiver.attrs.as_slice(),
+            syn::FnArg::Typed(arg) => arg.attrs.as_slice(),
+        })
+    }
+
+    fn has_move(attrs: &[Attribute]) -> bool {
+        attrs.iter().any(ffi_fn::is_by_val_attr)
+    }
+
+    for callback in callbacks {
+        let imported = items.iter().find_map(|item| match (item, &callback.owner) {
+            (ForeignItem::Fn(imported), None)
+                if imported.sig.ident == callback.sig.ident =>
+            {
+                Some((&imported.attrs, &imported.sig))
+            }
+            (ForeignItem::Impl(imported), Some(owner))
+                if {
+                    let imported_self_ty = &imported.self_ty;
+                    let owner_self_ty = &owner.self_ty;
+                    quote!(#imported_self_ty).to_string() == quote!(#owner_self_ty).to_string()
+                        && imported
+                            .trait_
+                            .as_ref()
+                            .map(|(path, _)| quote!(#path).to_string())
+                            == owner
+                                .trait_path
+                                .as_ref()
+                                .map(|path| quote!(#path).to_string())
+                } =>
+            {
+                imported.items.iter().find_map(|item| {
+                    let syn::ImplItem::Fn(method) = item else {
+                        return None;
+                    };
+                    (method.sig.ident == callback.sig.ident)
+                        .then_some((&method.attrs, &method.sig))
+                })
+            }
+            _ => None,
+        });
+        let Some((import_attrs, import_sig)) = imported else {
+            continue;
+        };
+
+        if has_move(&callback.attrs) != has_move(import_attrs) {
+            return Err(syn::Error::new_spanned(
+                &callback.sig.ident,
+                "raw callback and imported declaration must use the same `move fn` qualifier",
+            ));
+        }
+
+        for (index, (raw_attrs, import_attrs)) in argument_attrs(&callback.sig)
+            .zip(argument_attrs(import_sig))
+            .enumerate()
+        {
+            if has_move(raw_attrs) != has_move(import_attrs) {
+                return Err(syn::Error::new_spanned(
+                    &callback.sig.inputs[index],
+                    "raw callback and imported declaration must use the same `move` qualifier for each argument",
+                ));
+            }
+        }
+    }
+
+    Ok(())
 }
 
 fn pack_items(items: Vec<ForeignItem>) -> Result<Vec<ForeignItem>> {

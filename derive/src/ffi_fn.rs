@@ -18,7 +18,7 @@ use crate::{
     generate::OwnershipMode,
     parse::FailureMode,
     symbol_name_value,
-    utils::{cfg_attrs, is_drop_impl, soft_for_arg},
+    utils::{cfg_attrs, co3_path, is_drop_impl, soft_for_arg},
 };
 
 fn export_definition_attrs(attrs: &[syn::Attribute]) -> TokenStream {
@@ -910,10 +910,11 @@ pub(crate) fn lower_extern_fn_signature(
     if let syn::ReturnType::Type(_, return_type) = &sig.output
         && matches!(failure_mode, FailureMode::Error)
     {
+        let co3 = co3_path();
         sig.generics
             .make_where_clause()
             .predicates
-            .push(parse_quote!(#return_type: co3::Error));
+            .push(parse_quote!(#return_type: #co3::Error));
     }
 
     explicitize_signature_lifetimes(&mut sig);

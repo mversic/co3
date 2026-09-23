@@ -1,0 +1,5 @@
+error: raw function declarations are only allowed in `ffi!` extern blocks
+ --> tests/ui_fail/callback_export.rs:8:12
+  |
+8 |     raw fn local_function();
+  |            ^^^^^^^^^^^^^^

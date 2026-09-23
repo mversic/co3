@@ -22,6 +22,7 @@ use crate::{
 const FN_BODIES_NOT_ALLOWED_MSG: &str = "fn bodies are not allowed in declarations";
 const ITEM_NOT_SUPPORTED_MSG: &str = "item not supported";
 const EXPECTED_FEATURE_NAME_MSG: &str = "Expected feature name in `#![feature(...)]`";
+const RAW_IMPL_ITEM_ATTR: &str = "raw";
 pub(crate) struct ParsedInput {
     pub(crate) kind: DeclKind,
     pub(crate) abi: syn::Abi,
@@ -55,6 +56,22 @@ pub(crate) enum ParsedItem {
     Static(Co3Static),
     Impl(ItemImpl),
     Fn(ItemFn),
+    Callback(CallbackDecl),
+}
+
+pub(crate) struct CallbackDecl {
+    pub(crate) attrs: Vec<Attribute>,
+    pub(crate) vis: syn::Visibility,
+    pub(crate) callee: TokenStream,
+    pub(crate) sig: syn::Signature,
+    pub(crate) owner: Option<CallbackOwner>,
+}
+
+pub(crate) struct CallbackOwner {
+    pub(crate) attrs: Vec<Attribute>,
+    pub(crate) generics: syn::Generics,
+    pub(crate) trait_path: Option<syn::Path>,
+    pub(crate) self_ty: Box<Type>,
 }
 
 struct ConstGenericArgNormalizer {
@@ -105,6 +122,9 @@ impl syn::parse::Parse for ParsedItem {
         if ahead.peek(syn::Token![static]) {
             return Ok(Self::Static(parse_static_item(input)?));
         }
+        if ahead.peek(syn::Ident) && ahead.parse::<syn::Ident>()? == "raw" {
+            return Ok(Self::Callback(parse_callback_item(input)?));
+        }
         if is_fn_head(&ahead)? {
             return Ok(Self::Fn(parse_fn_item(input)?));
         }
@@ -131,8 +151,34 @@ impl ParsedItem {
             Self::Static(item) => Ok(ForeignItem::Static(item)),
             Self::Impl(item) => normalize_impl(item).map(ForeignItem::Impl),
             Self::Fn(item) => normalize_fn(item).map(ForeignItem::Fn),
+            Self::Callback(item) => Err(syn::Error::new_spanned(
+                item.sig.ident,
+                "raw function declarations must be collected before normalization",
+            )),
         }
     }
+}
+
+fn parse_callback_item(input: ParseStream) -> Result<CallbackDecl> {
+    let mut attrs = input.call(Attribute::parse_outer)?;
+    let vis = input.parse::<syn::Visibility>()?;
+    let keyword = input.parse::<syn::Ident>()?;
+    debug_assert_eq!(keyword, "raw");
+
+    let sig = parse_signature(input, &mut attrs)?;
+    if input.peek(syn::token::Brace) {
+        return Err(input.error(FN_BODIES_NOT_ALLOWED_MSG));
+    }
+    input.parse::<syn::Token![;]>()?;
+
+    let ident = &sig.ident;
+    Ok(CallbackDecl {
+        attrs,
+        vis,
+        callee: quote!(#ident),
+        sig,
+        owner: None,
+    })
 }
 
 fn normalize_impl(mut item: ItemImpl) -> Result<crate::Co3Impl> {
@@ -1460,6 +1506,18 @@ fn parse_impl_item(input: syn::parse::ParseStream) -> syn::Result<ItemImpl> {
             let mut attrs = input.call(syn::Attribute::parse_outer)?;
             let vis = input.parse::<syn::Visibility>()?;
             let ahead = input.fork();
+            if ahead.peek(syn::Ident) && ahead.parse::<syn::Ident>()? == "raw" {
+                let _: syn::Ident = input.parse()?;
+                let sig = parse_signature(input, &mut attrs)?;
+                if input.peek(syn::token::Brace) {
+                    return Err(input.error(FN_BODIES_NOT_ALLOWED_MSG));
+                }
+                input.parse::<syn::Token![;]>()?;
+                let marker = Ident::new(RAW_IMPL_ITEM_ATTR, proc_macro2::Span::call_site());
+                attrs.push(parse_quote!(#[#marker]));
+                out.extend(quote!(#(#attrs)* #vis #sig {}));
+                continue;
+            }
             if ahead.peek(syn::Token![type]) {
                 let item = input.parse::<syn::ImplItemType>()?;
                 out.extend(quote!(#(#attrs)* #vis #item));

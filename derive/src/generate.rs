@@ -1290,6 +1290,53 @@ pub(crate) fn expand_export_decls(
     quote! { #(#exports)* }
 }
 
+fn gen_callback_companions(
+    abi: &syn::Abi,
+    failure_mode: FailureMode,
+    callbacks: Vec<crate::parse::CallbackDecl>,
+) -> Vec<TokenStream> {
+    let abi_name = abi
+        .name
+        .as_ref()
+        .expect("ffi declaration must specify an ABI");
+    callbacks
+        .into_iter()
+        .map(|callback| {
+            let owner = callback.owner;
+            let item = syn::ItemFn {
+                attrs: callback.attrs,
+                vis: callback.vis,
+                modifiers: Default::default(),
+                sig: callback.sig,
+                block: Box::new(syn::parse_quote!({})),
+            };
+            let companion = match crate::callback::expand_companion(
+                abi_name,
+                failure_mode,
+                &item,
+                callback.callee,
+            ) {
+                Ok(companion) => companion,
+                Err(error) => return error.to_compile_error(),
+            };
+            if let Some(owner) = owner {
+                let attrs = owner.attrs;
+                let self_ty = owner.self_ty;
+                let trait_impl = owner.trait_path.map(|trait_path| quote!(#trait_path for));
+                let (impl_generics, _, where_clause) = owner.generics.split_for_impl();
+                quote! {
+                    #(#attrs)*
+                    impl #impl_generics #trait_impl #self_ty #where_clause {
+                        #companion
+                    }
+                }
+            } else {
+                companion
+            }
+        })
+        .collect()
+}
+
 #[expect(clippy::too_many_arguments)]
 fn synthesize_impl_extern_decls(
     abi: &syn::Abi,
@@ -1394,8 +1441,10 @@ pub(crate) fn expand_extern_decls(
     failure_mode: FailureMode,
     attrs: &[syn::Attribute],
     decls: Vec<ForeignItem>,
+    callbacks: Vec<crate::parse::CallbackDecl>,
     symbol_fragments: &std::collections::BTreeMap<String, syn::LitStr>,
 ) -> TokenStream {
+    let callback_companions = gen_callback_companions(&abi, failure_mode, callbacks);
     fn expand_impl_import(
         abi: &syn::Abi,
         failure_mode: FailureMode,
@@ -2036,7 +2085,7 @@ pub(crate) fn expand_extern_decls(
         ForeignItem::Static(item) => crate::statics::gen_extern_static(&abi, attrs, item),
     });
 
-    quote! { #(#imports)* }
+    quote! { #(#callback_companions)* #(#imports)* }
 }
 
 pub(crate) fn gen_tag_family_impl(

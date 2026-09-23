@@ -1,0 +1,5 @@
+error: raw callback and imported declaration must use the same `move fn` qualifier
+ --> tests/ui_fail/raw_import_move_fn_mismatch.rs:6:17
+  |
+6 |     raw move fn transform(value: u8) -> u8;
+  |                 ^^^^^^^^^
