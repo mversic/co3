@@ -1,5 +1,6 @@
 use std::collections::{BTreeMap, BTreeSet};
 
+use quote::ToTokens;
 use syn::{Attribute, Error, Expr, Result, Type, visit::Visit};
 
 use crate::{
@@ -694,8 +695,20 @@ fn validate_export_static(item: &Co3Static) -> Result<()> {
 }
 
 fn validate_export_fn(item: &crate::Co3Fn) -> Result<()> {
+    validate_export_visibility(&item.item.vis, &item.item.sig.ident)?;
     validate_unpack_export(&item.sig)?;
     validate_export_fn_attrs(&item.attrs)
+}
+
+fn validate_export_visibility(vis: &syn::Visibility, item: &impl ToTokens) -> Result<()> {
+    if matches!(vis, syn::Visibility::Inherited) {
+        Ok(())
+    } else {
+        Err(Error::new_spanned(
+            item,
+            "visibility qualifiers are not allowed on functions or methods in `ffi!` export blocks",
+        ))
+    }
 }
 
 fn validate_export_type(item: &crate::ForeignItemType) -> Result<()> {
@@ -721,6 +734,9 @@ fn validate_export_impl(
         let syn::ImplItem::Fn(method) = item else {
             continue;
         };
+        if let Err(err) = validate_export_visibility(&method.vis, &method.sig.ident) {
+            push_error(&mut errors, err);
+        }
         if drop_impl && !matches!(method.sig.output, syn::ReturnType::Default) {
             let err_msg = "returning `Drop::drop` is supported only in extern declarations";
             push_error(&mut errors, Error::new_spanned(&method.sig.output, err_msg));

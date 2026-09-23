@@ -286,7 +286,7 @@ error[E0080]: evaluation panicked: co3 FFI argument must implement CFnArg
 73 | /     ffi! {
 74 | |         #![unsafe(export("C"))]
 75 | |
-76 | |         pub extern "C" fn disallowed_args_by_ref(arg1: (), arg2: [u8; 2]);
+76 | |         extern "C" fn disallowed_args_by_ref(arg1: (), arg2: [u8; 2]);
 77 | |     }
    | |_____^ evaluation of `provider::_::disallowed_args_by_ref::{constant#1}` failed here
 
@@ -296,7 +296,7 @@ note: erroneous constant encountered
 73 | /     ffi! {
 74 | |         #![unsafe(export("C"))]
 75 | |
-76 | |         pub extern "C" fn disallowed_args_by_ref(arg1: (), arg2: [u8; 2]);
+76 | |         extern "C" fn disallowed_args_by_ref(arg1: (), arg2: [u8; 2]);
 77 | |     }
    | |_____^
    |
@@ -308,7 +308,7 @@ error[E0080]: evaluation panicked: co3 FFI argument must implement CFnArg
 73 | /     ffi! {
 74 | |         #![unsafe(export("C"))]
 75 | |
-76 | |         pub extern "C" fn disallowed_args_by_ref(arg1: (), arg2: [u8; 2]);
+76 | |         extern "C" fn disallowed_args_by_ref(arg1: (), arg2: [u8; 2]);
 77 | |     }
    | |_____^ evaluation of `provider::_::disallowed_args_by_ref::{constant#2}` failed here
 
@@ -318,7 +318,7 @@ error[E0080]: evaluation panicked: co3 FFI argument must implement CFnArg
 78 | /     ffi! {
 79 | |         #![unsafe(export("C"))]
 80 | |
-81 | |         pub extern "C" fn disallowed_args_by_val(move arg1: (), move arg2: [u8; 2]);
+81 | |         extern "C" fn disallowed_args_by_val(move arg1: (), move arg2: [u8; 2]);
 82 | |     }
    | |_____^ evaluation of `provider::_::disallowed_args_by_val::{constant#1}` failed here
 
@@ -328,7 +328,7 @@ note: erroneous constant encountered
 78 | /     ffi! {
 79 | |         #![unsafe(export("C"))]
 80 | |
-81 | |         pub extern "C" fn disallowed_args_by_val(move arg1: (), move arg2: [u8; 2]);
+81 | |         extern "C" fn disallowed_args_by_val(move arg1: (), move arg2: [u8; 2]);
 82 | |     }
    | |_____^
    |
@@ -340,7 +340,7 @@ error[E0080]: evaluation panicked: co3 FFI argument must implement CFnArg
 78 | /     ffi! {
 79 | |         #![unsafe(export("C"))]
 80 | |
-81 | |         pub extern "C" fn disallowed_args_by_val(move arg1: (), move arg2: [u8; 2]);
+81 | |         extern "C" fn disallowed_args_by_val(move arg1: (), move arg2: [u8; 2]);
 82 | |     }
    | |_____^ evaluation of `provider::_::disallowed_args_by_val::{constant#2}` failed here
 
@@ -350,7 +350,7 @@ error[E0080]: evaluation panicked: co3 FFI return must implement CFnReturn
 84 | /     ffi! {
 85 | |         #![unsafe(export("C"))]
 86 | |
-87 | |         pub extern "C" fn disallowed_return1() -> [u8; 2];
+87 | |         extern "C" fn disallowed_return1() -> [u8; 2];
 88 | |     }
    | |_____^ evaluation of `provider::_::disallowed_return1::{constant#1}` failed here
 
@@ -360,7 +360,7 @@ note: erroneous constant encountered
 84 | /     ffi! {
 85 | |         #![unsafe(export("C"))]
 86 | |
-87 | |         pub extern "C" fn disallowed_return1() -> [u8; 2];
+87 | |         extern "C" fn disallowed_return1() -> [u8; 2];
 88 | |     }
    | |_____^
    |
@@ -372,7 +372,7 @@ error[E0080]: evaluation panicked: Use `move fn` to transfer ownership
 89 | /     ffi! {
 90 | |         #![unsafe(export("C"))]
 91 | |
-92 | |         pub extern "C" fn disallowed_return2() -> Box<[u8]>;
+92 | |         extern "C" fn disallowed_return2() -> Box<[u8]>;
 93 | |     }
    | |_____^ evaluation of `provider::_::disallowed_return2::{closure#0}::{constant#0}` failed here
 
@@ -382,7 +382,7 @@ note: erroneous constant encountered
 89 | /     ffi! {
 90 | |         #![unsafe(export("C"))]
 91 | |
-92 | |         pub extern "C" fn disallowed_return2() -> Box<[u8]>;
+92 | |         extern "C" fn disallowed_return2() -> Box<[u8]>;
 93 | |     }
    | |_____^
    |
@@ -394,7 +394,7 @@ error[E0080]: evaluation panicked: Use `move fn` to transfer ownership
 100 | /     ffi! {
 101 | |         #![unsafe(export("C"))]
 102 | |
-103 | |         pub extern "C" fn disallowed_opaque_return() -> Box<OpaqueZst>;
+103 | |         extern "C" fn disallowed_opaque_return() -> Box<OpaqueZst>;
 104 | |     }
     | |_____^ evaluation of `provider::_::disallowed_opaque_return::{closure#0}::{constant#0}` failed here
 
@@ -404,7 +404,7 @@ note: erroneous constant encountered
 100 | /     ffi! {
 101 | |         #![unsafe(export("C"))]
 102 | |
-103 | |         pub extern "C" fn disallowed_opaque_return() -> Box<OpaqueZst>;
+103 | |         extern "C" fn disallowed_opaque_return() -> Box<OpaqueZst>;
 104 | |     }
     | |_____^
     |

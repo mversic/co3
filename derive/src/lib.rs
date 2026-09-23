@@ -483,7 +483,7 @@ pub fn ffi(input: TokenStream) -> Result<TokenStream> {
             items,
         } = ParsedInput::parse(input)?;
 
-        let (items, callbacks) = normalize_items(items)?;
+        let (items, callbacks, aliases) = normalize_items(items)?;
         if kind == DeclKind::Extern {
             validate_raw_import_moves(&items, &callbacks)?;
         }
@@ -499,7 +499,8 @@ pub fn ffi(input: TokenStream) -> Result<TokenStream> {
         validate_items(kind, &attrs, &items)?;
         synthesize_items(&symbol_prefix, &mut items)?;
 
-        return Ok(match kind {
+        let aliases = expand_type_aliases(aliases, &abi, failure_mode)?;
+        let declarations = match kind {
             DeclKind::Export => {
                 expand_export_decls(abi, features, failure_mode, items, &symbol_fragments)
             }
@@ -512,7 +513,8 @@ pub fn ffi(input: TokenStream) -> Result<TokenStream> {
                 callbacks,
                 &symbol_fragments,
             ),
-        });
+        };
+        return Ok(quote!(#aliases #declarations));
     }
 
     let co3 = co3_path();
@@ -523,12 +525,20 @@ pub fn ffi(input: TokenStream) -> Result<TokenStream> {
     ))
 }
 
-fn normalize_items(items: Vec<ParsedItem>) -> Result<(Vec<ForeignItem>, Vec<parse::CallbackDecl>)> {
+fn normalize_items(
+    items: Vec<ParsedItem>,
+) -> Result<(
+    Vec<ForeignItem>,
+    Vec<parse::CallbackDecl>,
+    Vec<parse::TypeAlias>,
+)> {
     let mut foreign_items = Vec::new();
     let mut callbacks = Vec::new();
+    let mut aliases = Vec::new();
     for item in items {
         match item {
             ParsedItem::Callback(callback) => callbacks.push(callback),
+            ParsedItem::Alias(alias) => aliases.push(alias),
             ParsedItem::Impl(mut item) => {
                 let self_ty = item.self_ty.clone();
                 let trait_path = item.trait_.as_ref().map(|(path, _)| path.clone());
@@ -586,7 +596,69 @@ fn normalize_items(items: Vec<ParsedItem>) -> Result<(Vec<ForeignItem>, Vec<pars
             item => foreign_items.push(item.normalize()?),
         }
     }
-    Ok((foreign_items, callbacks))
+    Ok((foreign_items, callbacks, aliases))
+}
+
+fn expand_type_aliases(
+    aliases: Vec<parse::TypeAlias>,
+    abi: &syn::Abi,
+    failure_mode: parse::FailureMode,
+) -> Result<TokenStream> {
+    let aliases = aliases
+        .into_iter()
+        .map(|alias| match alias {
+        parse::TypeAlias::Rust(item) => Ok(quote!(#item)),
+        parse::TypeAlias::RawFunction {
+            attrs,
+            vis,
+            ident,
+            generics,
+            sig,
+            move_fn,
+        } => {
+            if sig.asyncness.is_some()
+                || matches!(sig.safety, syn::Safety::Unsafe(_))
+                || sig.variadic.is_some()
+                || !sig.generics.params.is_empty()
+                || sig
+                    .generics
+                    .where_clause
+                    .as_ref()
+                    .is_some_and(|clause| !clause.predicates.is_empty())
+                || sig.inputs.len() > 12
+            {
+                return Err(syn::Error::new_spanned(
+                    sig,
+                    "raw callback type aliases require a safe, synchronous, non-generic function with at most 12 arguments",
+                ));
+            }
+            if generics
+                .params
+                .iter()
+                .any(|param| !matches!(param, syn::GenericParam::Lifetime(_)))
+            {
+                return Err(syn::Error::new_spanned(
+                    &generics,
+                    "raw function pointer type aliases cannot have type or const parameters",
+                ));
+            }
+            let (raw_sig, raw_fn_type) =
+                callback::lower_callback_fn_type(sig, abi, failure_mode, move_fn)?;
+            let co3 = co3_path();
+            let cfg = crate::utils::cfg_attrs(&attrs);
+            let assertions = ffi_fn::gen_abi_assertions(&raw_sig, abi);
+            Ok(quote! {
+                #(#attrs)* #vis type #ident #generics = #raw_fn_type;
+                #(#cfg)*
+                const _: () = {
+                    use #co3 as co3;
+                    #assertions
+                };
+            })
+        }
+    })
+        .collect::<Result<Vec<_>>>()?;
+    Ok(quote!(#(#aliases)*))
 }
 
 fn validate_raw_import_moves(
@@ -606,9 +678,7 @@ fn validate_raw_import_moves(
 
     for callback in callbacks {
         let imported = items.iter().find_map(|item| match (item, &callback.owner) {
-            (ForeignItem::Fn(imported), None)
-                if imported.sig.ident == callback.sig.ident =>
-            {
+            (ForeignItem::Fn(imported), None) if imported.sig.ident == callback.sig.ident => {
                 Some((&imported.attrs, &imported.sig))
             }
             (ForeignItem::Impl(imported), Some(owner))
@@ -630,8 +700,7 @@ fn validate_raw_import_moves(
                     let syn::ImplItem::Fn(method) = item else {
                         return None;
                     };
-                    (method.sig.ident == callback.sig.ident)
-                        .then_some((&method.attrs, &method.sig))
+                    (method.sig.ident == callback.sig.ident).then_some((&method.attrs, &method.sig))
                 })
             }
             _ => None,

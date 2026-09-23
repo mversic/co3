@@ -18,7 +18,7 @@ ffi! {
 
     impl Hello {
         #[symbol_name = "hello"]
-        pub extern "C" fn hello(a: Hello, b: Hello) -> i32;
+        extern "C" fn hello(a: Hello, b: Hello) -> i32;
     }
 }
 

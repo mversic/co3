@@ -4,8 +4,8 @@ error[E0277]: the trait bound `RefSizedDecodeStore<(u8,), ((),)>: co3::stored::E
 11 | /     ffi! {
 12 | |         #![unsafe(export("C"))]
 13 | |
-14 | |         pub fn by_ref_is_allowed(#[soft] arg1: &(u8,), #[soft] arg2: Vec<(u8,)>) -> u8;
-15 | |         pub fn by_val_is_denied(arg1: &(u8,), #[soft] move arg2: Vec<(u8,)>) -> u8;
+14 | |         fn by_ref_is_allowed(#[soft] arg1: &(u8,), #[soft] arg2: Vec<(u8,)>) -> u8;
+15 | |         fn by_val_is_denied(arg1: &(u8,), #[soft] move arg2: Vec<(u8,)>) -> u8;
 16 | |     }
    | |_____^ the trait `co3::stored::EmptyStore` is not implemented for `RefSizedDecodeStore<(u8,), ((),)>`
    |
@@ -32,8 +32,8 @@ error[E0271]: type mismatch resolving `<[(u8,)] as RustSpec>::Layout == Stable`
 11 | /     ffi! {
 12 | |         #![unsafe(export("C"))]
 13 | |
-14 | |         pub fn by_ref_is_allowed(#[soft] arg1: &(u8,), #[soft] arg2: Vec<(u8,)>) -> u8;
-15 | |         pub fn by_val_is_denied(arg1: &(u8,), #[soft] move arg2: Vec<(u8,)>) -> u8;
+14 | |         fn by_ref_is_allowed(#[soft] arg1: &(u8,), #[soft] arg2: Vec<(u8,)>) -> u8;
+15 | |         fn by_val_is_denied(arg1: &(u8,), #[soft] move arg2: Vec<(u8,)>) -> u8;
 16 | |     }
    | |_____^ expected `Stable`, found `Unstable`
    |

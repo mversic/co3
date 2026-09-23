@@ -36,7 +36,7 @@ ffi! {
         use<T> @ <Opaque>,
     {
         #[symbol_name = "ping"]
-        pub fn ping2(
+        fn ping2(
             t_id: <dyn T>::TAG,
             move self,
             #[soft] inc: &TransparentCTuple1<Opaque>,

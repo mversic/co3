@@ -1,10 +1,13 @@
 use co3::{ReprC, ffi, rust_spec::RustSpec};
-type CCallback = extern "C" fn(Value, Value) -> Value;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, RustSpec, ReprC)]
 #[reprC(identity)]
 #[repr(C)]
 struct Value(u8);
+
+mod raw {
+    pub(super) type Existing = super::CCallback;
+}
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, RustSpec, ReprC)]
 struct RustValue(u8);
@@ -43,9 +46,24 @@ fn sum_native(left: Value, right: Value) -> Value {
     Value(left.0 + right.0)
 }
 
+fn return_owned(value: Box<Value>) -> Box<Value> {
+    value
+}
+
+fn borrow_rust_value(value: RustValue) -> RustValue {
+    value
+}
+
+extern "C" fn borrowed_return() -> *const Value {
+    core::ptr::null()
+}
+
 ffi! {
     #![unsafe(export("C"))]
     #![symbol_prefix = "abi_c_callback"]
+
+    type CCallback = raw fn(Value, Value) -> Value;
+    type PathAlias = raw::Existing;
 
     fn apply_callback(callback: CCallback, left: Value, right: Value) -> Value;
     fn apply_optional_callback(callback: Option<CCallback>, value: Value) -> Value;
@@ -60,8 +78,10 @@ mod imported {
         #![unsafe(extern("C"))]
         #![symbol_prefix = "abi_c_callback"]
 
-        pub fn apply_callback(callback: super::CCallback, left: Value, right: Value) -> Value;
-        pub fn apply_optional_callback(callback: Option<super::CCallback>, value: Value) -> Value;
+        type CCallback = raw fn(Value, Value) -> Value;
+
+        pub fn apply_callback(callback: CCallback, left: Value, right: Value) -> Value;
+        pub fn apply_optional_callback(callback: Option<CCallback>, value: Value) -> Value;
 
     }
 }
@@ -69,7 +89,13 @@ mod imported {
 ffi! {
     #![unsafe(extern("C"))]
 
-    raw fn double_rust(value: RustValue) -> RustValue;
+    type BorrowedReturn = raw fn() -> Box<Value>;
+    type BorrowedRustValue = raw fn(RustValue) -> RustValue;
+    type OwnedTransform = raw move fn(move Box<Value>) -> Box<Value>;
+
+    raw fn borrow_rust_value(value: RustValue) -> RustValue;
+    raw move fn return_owned(move value: Box<Value>) -> Box<Value>;
+    raw move fn double_rust(value: RustValue) -> RustValue;
     pub raw fn sum_native(left: Value, right: Value) -> Value;
 
     impl Echo for Value {
@@ -77,12 +103,21 @@ ffi! {
     }
 
     impl RustValue {
-        pub raw fn scaled(#[soft] &self, factor: u8) -> RustValue;
+        pub raw move fn scaled(#[soft] &self, factor: u8) -> RustValue;
     }
 }
 
 #[test]
 fn c_callback_crosses_export_and_import() {
+    let _: BorrowedReturn = borrowed_return;
+    let _: BorrowedRustValue = borrow_rust_value_raw;
+    let _: OwnedTransform = return_owned_raw;
+    let result = return_owned_raw(co3::encode(Box::new(Value(42))));
+    assert_eq!(
+        unsafe { co3::decode::<Box<Value>>(result) },
+        Some(Box::new(Value(42)))
+    );
+    let _: PathAlias = sum_pair;
     fn assert_existing_fn_pointer_impls<T: co3::ExternC + co3::Encode + co3::Decode<'static>>(
         _: T,
     ) {

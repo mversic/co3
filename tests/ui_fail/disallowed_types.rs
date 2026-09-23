@@ -73,34 +73,34 @@ mod provider {
     ffi! {
         #![unsafe(export("C"))]
 
-        pub extern "C" fn disallowed_args_by_ref(arg1: (), arg2: [u8; 2]);
+        extern "C" fn disallowed_args_by_ref(arg1: (), arg2: [u8; 2]);
     }
     ffi! {
         #![unsafe(export("C"))]
 
-        pub extern "C" fn disallowed_args_by_val(move arg1: (), move arg2: [u8; 2]);
-    }
-
-    ffi! {
-        #![unsafe(export("C"))]
-
-        pub extern "C" fn disallowed_return1() -> [u8; 2];
-    }
-    ffi! {
-        #![unsafe(export("C"))]
-
-        pub extern "C" fn disallowed_return2() -> Box<[u8]>;
+        extern "C" fn disallowed_args_by_val(move arg1: (), move arg2: [u8; 2]);
     }
 
     ffi! {
         #![unsafe(export("C"))]
 
-        pub extern "C" fn disallowed_opaque_args(arg1: Box<OpaqueZst>);
+        extern "C" fn disallowed_return1() -> [u8; 2];
     }
     ffi! {
         #![unsafe(export("C"))]
 
-        pub extern "C" fn disallowed_opaque_return() -> Box<OpaqueZst>;
+        extern "C" fn disallowed_return2() -> Box<[u8]>;
+    }
+
+    ffi! {
+        #![unsafe(export("C"))]
+
+        extern "C" fn disallowed_opaque_args(arg1: Box<OpaqueZst>);
+    }
+    ffi! {
+        #![unsafe(export("C"))]
+
+        extern "C" fn disallowed_opaque_return() -> Box<OpaqueZst>;
     }
 
     ffi! {

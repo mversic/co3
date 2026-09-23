@@ -427,8 +427,8 @@
 //! # Raw Functions
 //!
 //! A `raw` import declaration synthesizes a C-compatible function under the name `{fn_name}_raw`.
-//! Raw function decodes inputs, calls the `Rust` function, encodes the output and returns. The
-//! following example showcases how this helps with callbacks:
+//! The raw function decodes inputs, calls the Rust function, encodes the output and returns. The
+//! following example shows how this helps with callbacks:
 //!
 //! ```rust
 //! use co3::{ExternC, ReprC, ffi, rust_spec::RustSpec};
@@ -438,9 +438,6 @@
 //!
 //! # #[unsafe(export_name = "doc_register_method_callback")]
 //! # extern "C" fn method_callback_receiver(_: MethodCallback) {}
-//!
-//! type Callback = extern "C" fn(u8) -> <Value as ExternC>::CType;
-//! type MethodCallback = extern "C" fn(*const CValue) -> CValue;
 //!
 //! #[derive(RustSpec, ReprC)]
 //! #[repr(transparent)]
@@ -454,12 +451,15 @@
 //! }
 //!
 //! // If you have an existing function
-//! fn increment(value: u8) -> Value {
-//!     Value(value + 1)
+//! fn increment(value: Box<u8>) -> Value {
+//!     Value(*value + 1)
 //! }
 //!
 //! ffi! {
 //!     #![unsafe(extern("C"))]
+//!
+//!     type Callback = raw fn(move Box<u8>) -> Value;
+//!     type MethodCallback = raw fn(&Value) -> Value;
 //!
 //!     impl Value {
 //!         // Synthesize its C companion method:
@@ -468,8 +468,8 @@
 //!     }
 //!
 //!     // Synthesize its C companion function:
-//!     //    extern "C" fn increment(value: u8) -> CValue;
-//!     raw fn increment(value: u8) -> Value;
+//!     //    extern "C" fn increment(value: CBox<u8>) -> CValue;
+//!     raw fn increment(move value: Box<u8>) -> Value;
 //!
 //!     #[symbol_name = "doc_register_callback"]
 //!     fn register_callback(callback: Callback);

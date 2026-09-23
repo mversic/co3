@@ -202,6 +202,33 @@ pub(crate) fn gen_definition_body(
     fn_by_val: bool,
     failure_mode: FailureMode,
 ) -> TokenStream {
+    gen_definition_body_with_output(sig, callee, fn_by_val, failure_mode, false)
+}
+
+pub(crate) fn gen_raw_definition_body(
+    sig: syn::Signature,
+    callee: TokenStream,
+    fn_by_val: bool,
+    failure_mode: FailureMode,
+) -> TokenStream {
+    gen_definition_body_with_output(sig, callee, fn_by_val, failure_mode, !fn_by_val)
+}
+
+pub(crate) fn gen_abi_return_encode(value: TokenStream, borrow_output: bool) -> TokenStream {
+    if borrow_output {
+        quote!(co3::borrow::borrow_cast(co3::encode(#value)))
+    } else {
+        quote!(co3::encode(#value))
+    }
+}
+
+fn gen_definition_body_with_output(
+    sig: syn::Signature,
+    callee: TokenStream,
+    fn_by_val: bool,
+    failure_mode: FailureMode,
+    borrow_output: bool,
+) -> TokenStream {
     let inputs = &sig.inputs;
     let return_ty = fn_return_ty(&sig);
 
@@ -224,11 +251,12 @@ pub(crate) fn gen_definition_body(
     } else {
         quote! {}
     };
+    let encoded_output = gen_abi_return_encode(quote!(__co3_output), borrow_output);
     let output = match failure_mode {
-        FailureMode::Panic => quote! { Ok::<_, ()>(co3::encode(__co3_output)) },
+        FailureMode::Panic => quote! { Ok::<_, ()>(#encoded_output) },
         FailureMode::Error => match return_ty {
-            Some(return_ty) => quote! { Ok::<_, #return_ty>(co3::encode(__co3_output)) },
-            None => quote! { Ok(co3::encode(__co3_output)) },
+            Some(return_ty) => quote! { Ok::<_, #return_ty>(#encoded_output) },
+            None => quote! { Ok(#encoded_output) },
         },
     };
 
@@ -929,6 +957,19 @@ pub(crate) fn lower_extern_fn_signature(
     sig.safety = syn::Safety::Default;
     sig.abi = None;
 
+    sig
+}
+
+pub(crate) fn lower_raw_fn_signature(
+    sig: syn::Signature,
+    failure_mode: FailureMode,
+    move_fn: bool,
+) -> syn::Signature {
+    let mut sig = lower_extern_fn_signature(sig, failure_mode);
+    if !move_fn && let syn::ReturnType::Type(_, return_ty) = &mut sig.output {
+        let c_type = return_ty.as_ref();
+        *return_ty = Box::new(parse_quote!(<#c_type as co3::borrow::BorrowCast>::AsConst));
+    }
     sig
 }
 

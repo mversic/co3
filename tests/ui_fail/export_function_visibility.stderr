@@ -1,0 +1,11 @@
+error: visibility qualifiers are not allowed on functions or methods in `ffi!` export blocks
+  --> tests/ui_fail/export_function_visibility.rs:14:12
+   |
+14 |     pub fn exported();
+   |            ^^^^^^^^
+
+error: visibility qualifiers are not allowed on functions or methods in `ffi!` export blocks
+  --> tests/ui_fail/export_function_visibility.rs:17:16
+   |
+17 |         pub fn method();
+   |                ^^^^^^

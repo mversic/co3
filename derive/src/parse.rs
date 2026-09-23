@@ -1,7 +1,7 @@
 use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
 
 use proc_macro2::{Delimiter, Group, Ident, TokenStream, TokenTree};
-use quote::{quote, quote_spanned};
+use quote::{format_ident, quote, quote_spanned};
 use syn::{
     Attribute, Error, FnArg, GenericArgument, GenericParam, ItemFn, ItemImpl, LitStr, PatType,
     Result, Type, TypePath,
@@ -53,10 +53,47 @@ struct FfiBody {
 
 pub(crate) enum ParsedItem {
     Type(syn::ForeignItemType),
+    Alias(TypeAlias),
     Static(Co3Static),
     Impl(ItemImpl),
     Fn(ItemFn),
     Callback(CallbackDecl),
+}
+
+pub(crate) enum TypeAlias {
+    Rust(syn::ItemType),
+    RawFunction {
+        attrs: Vec<Attribute>,
+        vis: syn::Visibility,
+        ident: syn::Ident,
+        generics: syn::Generics,
+        sig: syn::Signature,
+        move_fn: bool,
+    },
+}
+
+struct RawFnTypeArg {
+    by_val: bool,
+    ty: Type,
+}
+
+impl Parse for RawFnTypeArg {
+    fn parse(input: ParseStream) -> syn::Result<Self> {
+        let by_val = input.peek(syn::Token![move]);
+        if by_val {
+            input.parse::<syn::Token![move]>()?;
+        }
+        let ty = input.parse::<Type>()?;
+        Ok(Self { by_val, ty })
+    }
+}
+
+struct RawFnTypeArgs(Punctuated<RawFnTypeArg, syn::Token![,]>);
+
+impl Parse for RawFnTypeArgs {
+    fn parse(input: ParseStream) -> syn::Result<Self> {
+        Ok(Self(Punctuated::parse_terminated(input)?))
+    }
 }
 
 pub(crate) struct CallbackDecl {
@@ -114,6 +151,8 @@ impl syn::parse::Parse for ParsedItem {
         if ahead.peek(syn::Token![type]) {
             let ty = if contains_dispatch_predicate(input)? {
                 parse_type_item(input)?
+            } else if is_type_alias(input)? {
+                return Ok(Self::Alias(parse_type_alias(input)?));
             } else {
                 input.parse::<syn::ForeignItemType>()?
             };
@@ -148,6 +187,7 @@ impl ParsedItem {
                     self_impls: Vec::new(),
                 }))
             }
+            Self::Alias(_) => unreachable!("type aliases are emitted separately"),
             Self::Static(item) => Ok(ForeignItem::Static(item)),
             Self::Impl(item) => normalize_impl(item).map(ForeignItem::Impl),
             Self::Fn(item) => normalize_fn(item).map(ForeignItem::Fn),
@@ -156,6 +196,122 @@ impl ParsedItem {
                 "raw function declarations must be collected before normalization",
             )),
         }
+    }
+}
+
+fn is_type_alias(input: ParseStream) -> syn::Result<bool> {
+    let fork = input.fork();
+    let _ = fork.call(Attribute::parse_outer)?;
+    let _ = fork.parse::<syn::Visibility>()?;
+    fork.parse::<syn::Token![type]>()?;
+    let mut angle_depth = 0usize;
+    while !fork.is_empty() && !fork.peek(syn::Token![;]) {
+        let token = fork.parse::<TokenTree>()?;
+        match &token {
+            TokenTree::Punct(punct) if punct.as_char() == '<' => angle_depth += 1,
+            TokenTree::Punct(punct) if punct.as_char() == '>' => {
+                angle_depth = angle_depth.saturating_sub(1)
+            }
+            TokenTree::Punct(punct) if punct.as_char() == '=' && angle_depth == 0 => {
+                return Ok(true);
+            }
+            _ => {}
+        }
+    }
+    Ok(false)
+}
+
+fn parse_type_alias(input: ParseStream) -> syn::Result<TypeAlias> {
+    let probe = input.fork();
+    let _ = probe.call(Attribute::parse_outer)?;
+    let _ = probe.parse::<syn::Visibility>()?;
+    probe.parse::<syn::Token![type]>()?;
+    let _ = probe.parse::<syn::Ident>()?;
+    let _ = parse_optional_generics(&probe)?;
+    probe.parse::<syn::Token![=]>()?;
+    if !is_raw_function_type(&probe)? {
+        return input.parse::<syn::ItemType>().map(TypeAlias::Rust);
+    }
+
+    let attrs = input.call(Attribute::parse_outer)?;
+    let vis = input.parse::<syn::Visibility>()?;
+    input.parse::<syn::Token![type]>()?;
+    let ident = input.parse::<syn::Ident>()?;
+    let generics = parse_optional_generics(input)?;
+    input.parse::<syn::Token![=]>()?;
+
+    input.parse::<syn::Ident>()?;
+    let mut raw_sig = TokenStream::new();
+    while !input.is_empty() && !input.peek(syn::Token![;]) {
+        raw_sig.extend(core::iter::once(input.parse::<TokenTree>()?));
+    }
+    let mut signature_tokens = TokenStream::new();
+    let mut saw_fn = false;
+    let mut raw_sig = raw_sig.into_iter();
+    while let Some(token) = raw_sig.next() {
+        let is_fn = !saw_fn && matches!(&token, TokenTree::Ident(ident) if ident == "fn");
+        signature_tokens.extend(core::iter::once(token));
+        if is_fn {
+            signature_tokens.extend(quote!(__co3_callback_type));
+            let Some(TokenTree::Group(args)) = raw_sig.next() else {
+                return Err(input.error("expected argument types in raw function type alias"));
+            };
+            if args.delimiter() != Delimiter::Parenthesis {
+                return Err(syn::Error::new(
+                    args.span(),
+                    "expected callback argument list",
+                ));
+            }
+            let RawFnTypeArgs(args_list) = syn::parse2(args.stream())?;
+            let converted = args_list.into_iter().enumerate().map(|(index, arg)| {
+                let name = format_ident!("__co3_arg_{index}");
+                let by_val = arg.by_val.then(|| quote!(move));
+                let ty = arg.ty;
+                quote!(#by_val #name: #ty)
+            });
+            let mut converted_group = Group::new(Delimiter::Parenthesis, quote!(#(#converted),*));
+            converted_group.set_span(args.span());
+            signature_tokens.extend(core::iter::once(TokenTree::Group(converted_group)));
+            saw_fn = true;
+            continue;
+        }
+    }
+    signature_tokens.extend(quote!(;));
+    if !saw_fn {
+        return Err(input.error("expected `fn` after `raw` in callback type alias"));
+    }
+    let mut fn_attrs = Vec::new();
+    let parser = |input: ParseStream| {
+        let signature = parse_signature(input, &mut fn_attrs)?;
+        input.parse::<syn::Token![;]>()?;
+        Ok(signature)
+    };
+    let signature = parser.parse2(signature_tokens)?;
+    input.parse::<syn::Token![;]>()?;
+    Ok(TypeAlias::RawFunction {
+        attrs,
+        vis,
+        ident,
+        generics,
+        sig: signature,
+        move_fn: fn_attrs.iter().any(crate::ffi_fn::is_by_val_attr),
+    })
+}
+
+fn is_raw_function_type(input: ParseStream) -> syn::Result<bool> {
+    if !input.peek(syn::Ident) || input.fork().parse::<syn::Ident>()? != "raw" {
+        return Ok(false);
+    }
+    let fork = input.fork();
+    fork.parse::<syn::Ident>()?;
+    is_fn_head(&fork)
+}
+
+fn parse_optional_generics(input: ParseStream) -> syn::Result<syn::Generics> {
+    if input.peek(syn::Token![<]) {
+        input.parse()
+    } else {
+        Ok(syn::Generics::default())
     }
 }
 

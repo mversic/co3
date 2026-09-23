@@ -1,5 +1,6 @@
 use proc_macro2::TokenStream;
 use quote::{format_ident, quote};
+use syn::visit_mut::VisitMut;
 use syn::{Error, ItemFn, LitStr, Result, parse_quote};
 
 use crate::{
@@ -49,25 +50,21 @@ pub(crate) fn expand_companion(
         }
     }
 
+    let fn_by_val = item.attrs.iter().any(ffi_fn::is_by_val_attr);
     let abi: syn::Abi = parse_quote!(extern #abi_name);
-    let mut raw_sig = ffi_fn::lower_extern_fn_signature(item.sig.clone(), failure_mode);
+    let mut raw_sig = ffi_fn::lower_raw_fn_signature(item.sig.clone(), failure_mode, fn_by_val);
     raw_sig.ident = format_ident!("{}_raw", item.sig.ident);
     let assertions = gen_abi_assertions(&raw_sig, &abi);
     let callee: syn::Expr = syn::parse2(callee)?;
     let signature_check = ffi_fn::gen_fn_signature_drift_check(item.sig.clone(), callee.clone());
-    let fn_by_val = item.attrs.iter().any(ffi_fn::is_by_val_attr);
-    let body = ffi_fn::gen_definition_body(
-        item.sig.clone(),
-        quote!(#callee),
-        fn_by_val,
-        failure_mode,
-    );
+    let body =
+        ffi_fn::gen_raw_definition_body(item.sig.clone(), quote!(#callee), fn_by_val, failure_mode);
     let vis = &item.vis;
     let cfg = cfg_attrs(&item.attrs);
     let co3 = co3_path();
     let error_handler = match failure_mode {
         FailureMode::Panic => ffi_fn::gen_failure_panic(quote!(err)),
-        FailureMode::Error => quote!(co3::encode(err)),
+        FailureMode::Error => ffi_fn::gen_abi_return_encode(quote!(err), !fn_by_val),
     };
 
     Ok(quote! {
@@ -83,4 +80,58 @@ pub(crate) fn expand_companion(
             }
         }
     })
+}
+
+pub(crate) fn lower_callback_fn_type(
+    sig: syn::Signature,
+    abi: &syn::Abi,
+    failure_mode: FailureMode,
+    move_fn: bool,
+) -> Result<(syn::Signature, syn::Type)> {
+    let mut type_sig = ffi_fn::lower_raw_fn_signature(sig, failure_mode, move_fn);
+    let lowered_sig = type_sig.clone();
+    let replacements = type_sig
+        .generics
+        .lifetimes()
+        .enumerate()
+        .map(|(index, param)| {
+            (
+                param.lifetime.ident.to_string(),
+                syn::Lifetime::new(
+                    &format!("'__co3_callback_type_{index}"),
+                    proc_macro2::Span::call_site(),
+                ),
+            )
+        })
+        .collect::<Vec<_>>();
+    struct RenameLifetimes(Vec<(String, syn::Lifetime)>);
+    impl VisitMut for RenameLifetimes {
+        fn visit_lifetime_mut(&mut self, lifetime: &mut syn::Lifetime) {
+            if let Some((_, replacement)) = self
+                .0
+                .iter()
+                .find(|(ident, _)| ident == &lifetime.ident.to_string())
+            {
+                *lifetime = replacement.clone();
+            }
+        }
+    }
+    RenameLifetimes(replacements).visit_signature_mut(&mut type_sig);
+    let callback_lifetimes = type_sig
+        .generics
+        .lifetimes()
+        .map(|param| &param.lifetime)
+        .collect::<Vec<_>>();
+    let binder = (!callback_lifetimes.is_empty()).then(|| quote!(for<#(#callback_lifetimes),*>));
+    let inputs = type_sig.inputs.iter().map(|input| {
+        let syn::FnArg::Typed(arg) = input else {
+            unreachable!("normalized callback signature has typed arguments")
+        };
+        let cfg = cfg_attrs(&arg.attrs).collect::<Vec<_>>();
+        let ty = &arg.ty;
+        quote!(#(#cfg)* #ty)
+    });
+    let output = &type_sig.output;
+    let callback_type = syn::parse2(quote!(#binder #abi fn(#(#inputs),*) #output))?;
+    Ok((lowered_sig, callback_type))
 }
