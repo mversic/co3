@@ -78,7 +78,7 @@ mod provider {
     ffi! {
         #![unsafe(export("C"))]
 
-        extern "C" fn disallowed_args_by_val(move arg1: (), move arg2: [u8; 2]);
+        extern "C" fn disallowed_args_by_val(arg1: move (), arg2: move [u8; 2]);
     }
 
     ffi! {
@@ -142,7 +142,7 @@ ffi! {
         type Owned = OwnedMyType;
 
         #[symbol_name = "my_type_new"]
-        move fn to_owned(&self) -> <Self as ToOwned>::Owned;
+        fn to_owned(&self) -> move <Self as ToOwned>::Owned;
     }
 }
 
@@ -159,7 +159,7 @@ ffi! {
 
     #![symbol_prefix = "kita"]
 
-    pub extern "C" fn disallowed_args_by_val(move arg1: (), move arg2: [u8; 2]);
+    pub extern "C" fn disallowed_args_by_val(arg1: move (), arg2: move [u8; 2]);
 }
 
 ffi! {

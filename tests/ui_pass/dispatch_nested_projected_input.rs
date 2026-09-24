@@ -29,7 +29,7 @@ ffi! {
     }
 
     fn nested_projected_input<'src, dyn(TagKind) H: Family, V: Version>(
-        move source: Option<&'src H::Source>,
+        source: move Option<&'src H::Source>,
         output_handle: &mut MaybeUninit<H::Owned>,
     )
     where

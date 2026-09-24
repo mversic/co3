@@ -16,17 +16,17 @@ ffi! {
     }
 
     impl Value {
-        move fn new(move input: String) -> OwnedValue;
+        fn new(input: move String) -> move OwnedValue;
         fn len(&self) -> usize;
     }
 
     impl Clone for OwnedValue {
         #[symbol_name = "import_opaque_value_clone"]
-        move fn clone(&self) -> Self;
+        fn clone(&self) -> move Self;
     }
 
     impl OpaqueStruct {
-        move fn new(name: u8) -> OwnedOpaqueStruct;
+        fn new(name: u8) -> move OwnedOpaqueStruct;
         fn name(&self) -> u8;
         fn identity(&self) -> &Self;
         fn value_len(&self, value: &Value) -> usize;
@@ -68,17 +68,17 @@ mod provider {
         }
 
         impl Value {
-            move fn new(move input: String) -> Box<Self>;
+            fn new(input: move String) -> move Box<Self>;
             fn len(&self) -> usize;
         }
 
         impl Clone for Box<Value> {
             #[symbol_name = "import_opaque_value_clone"]
-            move fn clone(&self) -> Self;
+            fn clone(&self) -> move Self;
         }
 
         impl OpaqueStruct {
-            move fn new(name: u8) -> Box<Self>;
+            fn new(name: u8) -> move Box<Self>;
             fn name(&self) -> u8;
             fn identity(&self) -> &Self;
             fn value_len(&self, value: &Value) -> usize;

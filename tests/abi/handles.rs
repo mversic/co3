@@ -34,17 +34,17 @@ ffi! {
 
     impl Default for OwnedOpaque<bool, u8> {
         #[symbol_name = "handles_default_bool_u8"]
-        move fn default() -> Self;
+        fn default() -> move Self;
     }
 
     impl Default for OwnedOpaque<u8, bool> {
         #[symbol_name = "handles_default_u8_bool"]
-        move fn default() -> Self;
+        fn default() -> move Self;
     }
 
     impl Clone for OwnedOpaque<bool, u8> {
         #[symbol_name = "handles_clone_bool_u8"]
-        move fn clone(&self) -> Self;
+        fn clone(&self) -> move Self;
     }
 
     impl<dyn(u8) T> PartialEq for T
@@ -162,17 +162,17 @@ mod provider {
 
         impl Default for Box<Opaque<bool, u8>> {
             #[symbol_name = "handles_default_bool_u8"]
-            move fn default() -> Self;
+            fn default() -> move Self;
         }
 
         impl Default for Box<Opaque<u8, bool>> {
             #[symbol_name = "handles_default_u8_bool"]
-            move fn default() -> Self;
+            fn default() -> move Self;
         }
 
         impl Clone for Box<Opaque<bool, u8>> {
             #[symbol_name = "handles_clone_bool_u8"]
-            move fn clone(&self) -> Self;
+            fn clone(&self) -> move Self;
         }
 
         impl<dyn(u8) T> PartialEq for T

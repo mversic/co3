@@ -33,7 +33,7 @@ ffi! {
     where
         V: Version,
     {
-        fn set_attr<dyn(u8) A: Attribute = u8>(&self, move attr: A)
+        fn set_attr<dyn(u8) A: Attribute = u8>(&self, attr: move A)
         where
             use<A> @ <Attr>;
     }

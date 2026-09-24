@@ -1,11 +1,11 @@
 error[E0080]: evaluation panicked: ABI retype size mismatch
   --> tests/ui_fail/dispatch_default_erasure_layout.rs:12:53
    |
-12 |     fn layout_mismatch<dyn(u8) T = u16>(move value: T)
+12 |     fn layout_mismatch<dyn(u8) T = u16>(value: move T)
    |                                                     ^ evaluation of `layout_mismatch::{constant#0}::{constant#0}` failed here
 
 note: erroneous constant encountered
   --> tests/ui_fail/dispatch_default_erasure_layout.rs:12:53
    |
-12 |     fn layout_mismatch<dyn(u8) T = u16>(move value: T)
+12 |     fn layout_mismatch<dyn(u8) T = u16>(value: move T)
    |                                                     ^

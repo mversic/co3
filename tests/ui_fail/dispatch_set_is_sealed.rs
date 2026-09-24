@@ -14,20 +14,20 @@ ffi! {
     #![unsafe(extern("C"))]
 
     impl First {
-        fn sealed1<T>(move value: T)
+        fn sealed1<T>(value: move T)
         where
             use<T> @ <Self>;
 
-        fn sealed2<T>(move value: T)
+        fn sealed2<T>(value: move T)
         where
             use<T> @ <Self>;
     }
 
-    pub fn sealed1<T>(move value: T)
+    pub fn sealed1<T>(value: move T)
     where
         use<T> @ <First>;
 
-    pub fn sealed2<T>(move value: T)
+    pub fn sealed2<T>(value: move T)
     where
         use<T> @ <First>;
 }

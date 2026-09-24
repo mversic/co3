@@ -9,7 +9,7 @@ ffi! {
     #![unsafe(extern("C"))]
 
     #[symbol_name = "layout_mismatch"]
-    fn layout_mismatch<dyn(u8) T = u16>(move value: T)
+    fn layout_mismatch<dyn(u8) T = u16>(value: move T)
     where
         use<T> @ <Value>;
 }

@@ -5,7 +5,7 @@ error[E0080]: evaluation panicked: co3 FFI argument must implement CFnArg
 4 | |     #![unsafe(extern("C"))]
 5 | |
 6 | |     type BadArg = raw fn(move [u8; 2]);
-7 | |     type BadReturn = raw move fn() -> [u8; 2];
+7 | |     type BadReturn = raw fn() -> move [u8; 2];
 8 | | }
   | |_^ evaluation of `_::{constant#0}` failed here
 
@@ -16,7 +16,7 @@ note: erroneous constant encountered
 4 | |     #![unsafe(extern("C"))]
 5 | |
 6 | |     type BadArg = raw fn(move [u8; 2]);
-7 | |     type BadReturn = raw move fn() -> [u8; 2];
+7 | |     type BadReturn = raw fn() -> move [u8; 2];
 8 | | }
   | |_^
   |
@@ -29,6 +29,6 @@ error[E0080]: evaluation panicked: co3 FFI return must implement CFnReturn
 4 | |     #![unsafe(extern("C"))]
 5 | |
 6 | |     type BadArg = raw fn(move [u8; 2]);
-7 | |     type BadReturn = raw move fn() -> [u8; 2];
+7 | |     type BadReturn = raw fn() -> move [u8; 2];
 8 | | }
   | |_^ evaluation of `_::{constant#0}` failed here

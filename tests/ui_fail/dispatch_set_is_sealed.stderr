@@ -105,8 +105,8 @@ error[E0308]: mismatched types
 note: associated function defined here
   --> tests/ui_fail/dispatch_set_is_sealed.rs:17:12
    |
-17 |         fn sealed1<T>(move value: T)
-   |            ^^^^^^^         --------
+17 |         fn sealed1<T>(value: move T)
+   |            ^^^^^^^    -------------
 
 error[E0308]: mismatched types
   --> tests/ui_fail/dispatch_set_is_sealed.rs:47:13
@@ -119,5 +119,5 @@ error[E0308]: mismatched types
 note: function defined here
   --> tests/ui_fail/dispatch_set_is_sealed.rs:26:12
    |
-26 |     pub fn sealed1<T>(move value: T)
-   |            ^^^^^^^         --------
+26 |     pub fn sealed1<T>(value: move T)
+   |            ^^^^^^^    -------------

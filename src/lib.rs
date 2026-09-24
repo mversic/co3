@@ -273,7 +273,7 @@
 //!    #![unsafe(export("C"))]
 //!
 //!    // `input` and the return both transfer ownership
-//!    move fn passthrough(move input: Vec<u8>) -> Vec<u8>;
+//!    fn passthrough(input: move Vec<u8>) -> move Vec<u8>;
 //!
 //!    // `input` is passed by reference
 //!    fn clone_into(input: Vec<u8>);
@@ -432,10 +432,10 @@
 //!
 //! ```rust
 //! use co3::{ExternC, ReprC, ffi, rust_spec::RustSpec};
-//!
+//! #
 //! # #[unsafe(export_name = "doc_register_callback")]
 //! # extern "C" fn callback_receiver(_: Callback) {}
-//!
+//! #
 //! # #[unsafe(export_name = "doc_register_method_callback")]
 //! # extern "C" fn method_callback_receiver(_: MethodCallback) {}
 //!
@@ -469,7 +469,7 @@
 //!
 //!     // Synthesize its C companion function:
 //!     //    extern "C" fn increment(value: CBox<u8>) -> CValue;
-//!     raw fn increment(move value: Box<u8>) -> Value;
+//!     raw fn increment(value: move Box<u8>) -> Value;
 //!
 //!     #[symbol_name = "doc_register_callback"]
 //!     fn register_callback(callback: Callback);

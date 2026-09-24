@@ -28,7 +28,7 @@ ffi! {
     where
         use<T> @ <Opaque>,
     {
-        move fn new(t_id: <dyn T>::TAG) -> Self;
+        fn new(t_id: <dyn T>::TAG) -> move Self;
     }
 
     impl<dyn(u8) T: ToOwned = u8> Value<T>
@@ -38,12 +38,12 @@ ffi! {
         #[symbol_name = "ping"]
         fn ping2(
             t_id: <dyn T>::TAG,
-            move self,
+            self: move Self,
             #[soft] inc: &TransparentCTuple1<Opaque>,
         ) -> u8;
     }
 
-    fn combine(move lhs: Value<u32>, #[soft] rhs: &(u8,)) -> u8;
+    fn combine(lhs: move Value<u32>, #[soft] rhs: &(u8,)) -> u8;
 }
 
 mod provider {
@@ -95,11 +95,11 @@ mod provider {
 
         impl Default for Box<Opaque> {
             #[symbol_name = "kita__Default__OwnedOpaque__default"]
-            move fn default() -> Self;
+            fn default() -> move Self;
         }
 
         impl ToOwned for Box<Opaque> {
-            move fn to_owned(&self) -> <Self as ToOwned>::Owned;
+            fn to_owned(&self) -> move <Self as ToOwned>::Owned;
         }
 
         impl<dyn(u8) T: Add<Output = u8> + ToOwned<Owned = T> + ?Sized = u8> Value<T>
@@ -107,7 +107,7 @@ mod provider {
             Box<T>: Default,
             use<T> @ <Opaque>,
         {
-            move fn new() -> Self;
+            fn new() -> move Self;
         }
 
         impl<
@@ -118,10 +118,10 @@ mod provider {
             use<T> @ <Opaque>,
         {
             #[symbol_name = "ping"]
-            fn ping(move self, #[soft] inc: &TransparentCTuple1<Opaque>) -> u8;
+            fn ping(self: move Self, #[soft] inc: &TransparentCTuple1<Opaque>) -> u8;
         }
 
-        fn combine(move lhs: Value<u32>, #[soft] rhs: &(u8,)) -> u8;
+        fn combine(lhs: move Value<u32>, #[soft] rhs: &(u8,)) -> u8;
     }
 }
 

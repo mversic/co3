@@ -43,7 +43,7 @@ ffi! {
     }
 
     fn self_to_self(value: TransparentStruct) -> TransparentStruct;
-    move fn vec_to_vec(move value: Vec<TransparentStruct>) -> Vec<TransparentStruct>;
+    fn vec_to_vec(value: move Vec<TransparentStruct>) -> move Vec<TransparentStruct>;
     fn slice_to_slice(value: &[TransparentStruct]) -> &[TransparentStruct];
 }
 

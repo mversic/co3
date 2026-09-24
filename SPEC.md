@@ -28,8 +28,8 @@ These guarantees define the contract of this library:
 Conversion modes define how values cross the FFI boundary, including ownership behavior, pointer-identity semantics, and validation strictness.
 Each mode makes explicit tradeoffs and is selected through compile-time configuration:
 
-1. **`move` (opt-in, on fn arguments or as `move fn`)**
-- `Drop` types are borrowed instead of transferring ownership unless argument/return is `move`d
+1. **`move` (opt-in, on fn argument and return types)**
+- `Drop` types are borrowed instead of transferring ownership unless the argument/return is `move`d
 - Owned backing storage is kept alive in a type-specific store while exposing borrowed FFI views.
 - `move` removes the cost of cloning owned types in decode paths that is incurred by default.
 

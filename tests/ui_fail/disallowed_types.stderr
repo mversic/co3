@@ -256,7 +256,7 @@ error[E0080]: evaluation panicked: ffi static `String` must have a stable, non-z
 220 | | }
     | |_^ evaluation of `_` failed here
 
-error[E0080]: evaluation panicked: Use `move fn` to transfer ownership
+error[E0080]: evaluation panicked: Mark the return type with `move` to transfer ownership
   --> tests/ui_fail/disallowed_types.rs:62:5
    |
 62 | /     ffi! {
@@ -318,7 +318,7 @@ error[E0080]: evaluation panicked: co3 FFI argument must implement CFnArg
 78 | /     ffi! {
 79 | |         #![unsafe(export("C"))]
 80 | |
-81 | |         extern "C" fn disallowed_args_by_val(move arg1: (), move arg2: [u8; 2]);
+81 | |         extern "C" fn disallowed_args_by_val(arg1: move (), arg2: move [u8; 2]);
 82 | |     }
    | |_____^ evaluation of `provider::_::disallowed_args_by_val::{constant#1}` failed here
 
@@ -328,7 +328,7 @@ note: erroneous constant encountered
 78 | /     ffi! {
 79 | |         #![unsafe(export("C"))]
 80 | |
-81 | |         extern "C" fn disallowed_args_by_val(move arg1: (), move arg2: [u8; 2]);
+81 | |         extern "C" fn disallowed_args_by_val(arg1: move (), arg2: move [u8; 2]);
 82 | |     }
    | |_____^
    |
@@ -340,7 +340,7 @@ error[E0080]: evaluation panicked: co3 FFI argument must implement CFnArg
 78 | /     ffi! {
 79 | |         #![unsafe(export("C"))]
 80 | |
-81 | |         extern "C" fn disallowed_args_by_val(move arg1: (), move arg2: [u8; 2]);
+81 | |         extern "C" fn disallowed_args_by_val(arg1: move (), arg2: move [u8; 2]);
 82 | |     }
    | |_____^ evaluation of `provider::_::disallowed_args_by_val::{constant#2}` failed here
 
@@ -366,7 +366,7 @@ note: erroneous constant encountered
    |
    = note: this note originates in the macro `ffi` (in Nightly builds, run with -Z macro-backtrace for more info)
 
-error[E0080]: evaluation panicked: Use `move fn` to transfer ownership
+error[E0080]: evaluation panicked: Mark the return type with `move` to transfer ownership
   --> tests/ui_fail/disallowed_types.rs:89:5
    |
 89 | /     ffi! {
@@ -388,7 +388,7 @@ note: erroneous constant encountered
    |
    = note: this note originates in the macro `ffi` (in Nightly builds, run with -Z macro-backtrace for more info)
 
-error[E0080]: evaluation panicked: Use `move fn` to transfer ownership
+error[E0080]: evaluation panicked: Mark the return type with `move` to transfer ownership
    --> tests/ui_fail/disallowed_types.rs:100:5
     |
 100 | /     ffi! {
@@ -456,7 +456,7 @@ error[E0080]: evaluation panicked: co3 FFI argument must implement CFnArg
 159 | |
 160 | |     #![symbol_prefix = "kita"]
 161 | |
-162 | |     pub extern "C" fn disallowed_args_by_val(move arg1: (), move arg2: [u8; 2]);
+162 | |     pub extern "C" fn disallowed_args_by_val(arg1: move (), arg2: move [u8; 2]);
 163 | | }
     | |_^ evaluation of `disallowed_args_by_val::{constant#1}` failed here
 
@@ -468,7 +468,7 @@ note: erroneous constant encountered
 159 | |
 160 | |     #![symbol_prefix = "kita"]
 161 | |
-162 | |     pub extern "C" fn disallowed_args_by_val(move arg1: (), move arg2: [u8; 2]);
+162 | |     pub extern "C" fn disallowed_args_by_val(arg1: move (), arg2: move [u8; 2]);
 163 | | }
     | |_^
     |
@@ -482,7 +482,7 @@ error[E0080]: evaluation panicked: co3 FFI argument must implement CFnArg
 159 | |
 160 | |     #![symbol_prefix = "kita"]
 161 | |
-162 | |     pub extern "C" fn disallowed_args_by_val(move arg1: (), move arg2: [u8; 2]);
+162 | |     pub extern "C" fn disallowed_args_by_val(arg1: move (), arg2: move [u8; 2]);
 163 | | }
     | |_^ evaluation of `disallowed_args_by_val::{constant#2}` failed here
 
@@ -508,7 +508,7 @@ note: erroneous constant encountered
     |
     = note: this note originates in the macro `ffi` (in Nightly builds, run with -Z macro-backtrace for more info)
 
-error[E0080]: evaluation panicked: Use `move fn` to transfer ownership
+error[E0080]: evaluation panicked: Mark the return type with `move` to transfer ownership
    --> tests/ui_fail/disallowed_types.rs:170:1
     |
 170 | / ffi! {
@@ -530,7 +530,7 @@ note: erroneous constant encountered
     |
     = note: this note originates in the macro `ffi` (in Nightly builds, run with -Z macro-backtrace for more info)
 
-error[E0080]: evaluation panicked: Use `move fn` to transfer ownership
+error[E0080]: evaluation panicked: Mark the return type with `move` to transfer ownership
    --> tests/ui_fail/disallowed_types.rs:183:1
     |
 183 | / ffi! {

@@ -22,11 +22,11 @@ mod provider {
 
         impl Value {
             #[symbol_name = "transform"]
-            move fn transform(move self, move other: &Self) -> Self;
+            fn transform(self: move Self, other: move &Self) -> move Self;
         }
 
         #[symbol_name = "combine"]
-        move fn combine(input: &Value, move rhs: Value) -> Value;
+        fn combine(input: &Value, rhs: move Value) -> move Value;
     }
 }
 
@@ -37,12 +37,12 @@ ffi! {
     impl Value {
         /// Documentation
         #[symbol_name = "transform"]
-        move fn transform2(move self: Self, other: &Self) -> Self;
+        fn transform2(self: move Self, other: &Self) -> move Self;
     }
 
 /// Documentation
 #[symbol_name = "combine"]
-move fn combine(input: &Value, move rhs: Value) -> Value;
+fn combine(input: &Value, rhs: move Value) -> move Value;
 }
 
 fn main() {

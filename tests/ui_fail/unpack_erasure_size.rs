@@ -20,7 +20,7 @@ ffi! {
 
     fn size_mismatch(
         #[unpack(u8, Logical => u32)]
-        move value: Value,
+        value: move Value,
     );
 }
 

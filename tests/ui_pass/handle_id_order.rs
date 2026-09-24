@@ -18,24 +18,24 @@ ffi! {
         type Owned = OwnedOpaque1;
 
         #[symbol_name = "this_crate__ToOwned__Box_Opaque1__to_owned"]
-        move fn to_owned(&self) -> <Self as ToOwned>::Owned;
+        fn to_owned(&self) -> move <Self as ToOwned>::Owned;
     }
 
     impl ToOwned for Opaque2 {
         type Owned = OwnedOpaque2;
 
         #[symbol_name = "this_crate__ToOwned__Box_Opaque2__to_owned"]
-        move fn to_owned(&self) -> <Self as ToOwned>::Owned;
+        fn to_owned(&self) -> move <Self as ToOwned>::Owned;
     }
 
     impl Default for OwnedOpaque1 {
         #[symbol_name = "this_crate__Default__Box_Opaque1__default"]
-        move fn default() -> Self;
+        fn default() -> move Self;
     }
 
     impl Default for OwnedOpaque2 {
         #[symbol_name = "this_crate__Default__Box_Opaque2__default"]
-        move fn default() -> Self;
+        fn default() -> move Self;
     }
 
     fn kita1(
@@ -88,7 +88,7 @@ mod provider {
 
         impl Default for Box<Opaque1> {
             #[symbol_name = "this_crate__Default__Box_Opaque1__default"]
-            move fn default() -> Self;
+            fn default() -> move Self;
         }
 
         impl Drop for Opaque2 {
@@ -98,17 +98,17 @@ mod provider {
 
         impl Default for Box<Opaque2> {
             #[symbol_name = "this_crate__Default__Box_Opaque2__default"]
-            move fn default() -> Self;
+            fn default() -> move Self;
         }
 
         impl ToOwned for Box<Opaque1> {
             #[symbol_name = "this_crate__ToOwned__Box_Opaque1__to_owned"]
-            move fn to_owned(&self) -> <Self as ToOwned>::Owned;
+            fn to_owned(&self) -> move <Self as ToOwned>::Owned;
         }
 
         impl ToOwned for Box<Opaque2> {
             #[symbol_name = "this_crate__ToOwned__Box_Opaque2__to_owned"]
-            move fn to_owned(&self) -> <Self as ToOwned>::Owned;
+            fn to_owned(&self) -> move <Self as ToOwned>::Owned;
         }
 
         impl<dyn(u8) T, dyn(u32) U> Custom<T> for U

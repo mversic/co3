@@ -61,31 +61,31 @@ ffi! {
     unsafe fn ambiguous1() -> Ambiguous;
 
     impl OpaqueStructU32 {
-        move fn re_exported() -> Box<Self>;
+        fn re_exported() -> move Box<Self>;
     }
 
     impl CustomExports for OpaqueStructU8 {
         #[symbol_name = "xor_u8"]
-        move fn xor(&self, by: u8) -> Box<Self>;
+        fn xor(&self, by: u8) -> move Box<Self>;
     }
 
     impl Clone for Box<OpaqueStructBool> {
         #[symbol_name = "cclone"]
-        move fn clone(&self) -> Self;
+        fn clone(&self) -> move Self;
     }
 
     impl Clone for Box<OpaqueStructI32> {
         #[symbol_name = "lclone"]
-        move fn clone(&self) -> Self;
+        fn clone(&self) -> move Self;
     }
 
     impl Clone for self::NonOpaqueStruct<bool> {
         #[symbol_name = "nclone"]
-        move fn clone(&self) -> Self;
+        fn clone(&self) -> move Self;
     }
 
     impl Clone for NonOpaqueStruct<i32> {
-        move fn clone(&self) -> Self;
+        fn clone(&self) -> move Self;
     }
 
     impl AmbiguousX<u64, 3> for OpaqueStructU64 {
@@ -108,15 +108,15 @@ ffi! {
 
     impl Clone for Box<OpaqueStructU8> {
         #[symbol_name = "clone"]
-        move fn clone(&self) -> Self;
+        fn clone(&self) -> move Self;
     }
 
     impl Clone for NonOpaqueStruct<u8> {
-        move fn clone(&self) -> Self;
+        fn clone(&self) -> move Self;
     }
 
     impl Clone for NonOpaqueStruct<i8> {
-        move fn clone(&self) -> Self;
+        fn clone(&self) -> move Self;
     }
 
     impl AmbiguousX<u32, 4> for OpaqueStructU32 {

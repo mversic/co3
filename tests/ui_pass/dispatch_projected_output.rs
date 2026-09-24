@@ -18,13 +18,13 @@ ffi! {
     impl ToOwned for First {
         type Owned = OwnedFirst;
 
-        move fn to_owned(&self) -> <Self as ToOwned>::Owned;
+        fn to_owned(&self) -> move <Self as ToOwned>::Owned;
     }
 
     impl ToOwned for Second {
         type Owned = OwnedSecond;
 
-        move fn to_owned(&self) -> <Self as ToOwned>::Owned;
+        fn to_owned(&self) -> move <Self as ToOwned>::Owned;
     }
 
     impl<dyn(u8) T: ToOwned> Projected for T
@@ -33,7 +33,7 @@ ffi! {
     {
         type Output = <T as ToOwned>::Owned;
 
-        move fn projected(&self) -> Vec<<Self as Projected>::Output>;
+        fn projected(&self) -> move Vec<<Self as Projected>::Output>;
     }
 }
 

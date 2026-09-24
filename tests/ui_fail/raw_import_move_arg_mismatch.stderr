@@ -1,5 +1,5 @@
 error: raw callback and imported declaration must use the same `move` qualifier for each argument
- --> tests/ui_fail/raw_import_move_arg_mismatch.rs:6:22
+ --> tests/ui_fail/raw_import_move_arg_mismatch.rs:6:29
   |
-6 |     raw fn transform(move value: u8);
-  |                      ^^^^^^^^^^^^^^
+6 |     raw fn transform(value: move u8);
+  |                             ^^^^^^^

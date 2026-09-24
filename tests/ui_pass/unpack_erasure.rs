@@ -76,18 +76,18 @@ ffi! {
 
     #[symbol_name = "projected"]
     fn projected<dyn(u8) A: Prop>(
-        move attribute: <dyn A>::TAG,
+        attribute: move <dyn A>::TAG,
         #[unpack(u32, AttrLength<<A as Prop>::DefinedBy> => u16)]
-        move value: Parts<<A as Prop>::DefinedBy>,
+        value: move Parts<<A as Prop>::DefinedBy>,
     )
     where
         use<A> @ <Attribute>;
 
     #[symbol_name = "projected_try"]
     fn projected_try<dyn(u8) A: Prop>(
-        move attribute: <dyn A>::TAG,
+        attribute: move <dyn A>::TAG,
         #[unpack(u32, AttrLength<<A as Prop>::DefinedBy> => u16)]
-        move value: Parts<<A as Prop>::DefinedBy>,
+        value: move Parts<<A as Prop>::DefinedBy>,
     )
     where
         use<A> @ <Attribute>;
@@ -95,7 +95,7 @@ ffi! {
     #[symbol_name = "both_parts"]
     fn both_parts(
         #[unpack(AttrPointer<OdbcDefined> => u32, AttrLength<OdbcDefined> => u16)]
-        move value: Parts<OdbcDefined>,
+        value: move Parts<OdbcDefined>,
     );
 }
 

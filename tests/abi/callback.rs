@@ -65,8 +65,8 @@ ffi! {
     type CCallback = raw fn(Value, Value) -> Value;
     type PathAlias = raw::Existing;
 
-    fn apply_callback(callback: CCallback, left: Value, right: Value) -> Value;
-    fn apply_optional_callback(callback: Option<CCallback>, value: Value) -> Value;
+   fn apply_callback(callback: CCallback, left: Value, right: Value) -> Value;
+   fn apply_optional_callback(callback: Option<CCallback>, value: Value) -> Value;
 }
 
 mod imported {
@@ -91,11 +91,11 @@ ffi! {
 
     type BorrowedReturn = raw fn() -> Box<Value>;
     type BorrowedRustValue = raw fn(RustValue) -> RustValue;
-    type OwnedTransform = raw move fn(move Box<Value>) -> Box<Value>;
+    type OwnedTransform = raw fn(move Box<Value>) -> move Box<Value>;
 
     raw fn borrow_rust_value(value: RustValue) -> RustValue;
-    raw move fn return_owned(move value: Box<Value>) -> Box<Value>;
-    raw move fn double_rust(value: RustValue) -> RustValue;
+    raw fn return_owned(value: move Box<Value>) -> move Box<Value>;
+    raw fn double_rust(value: RustValue) -> move RustValue;
     pub raw fn sum_native(left: Value, right: Value) -> Value;
 
     impl Echo for Value {
@@ -103,7 +103,7 @@ ffi! {
     }
 
     impl RustValue {
-        pub raw move fn scaled(#[soft] &self, factor: u8) -> RustValue;
+        pub raw fn scaled(#[soft] &self, factor: u8) -> move RustValue;
     }
 }
 

@@ -67,7 +67,7 @@ pub(crate) enum TypeAlias {
         vis: syn::Visibility,
         ident: syn::Ident,
         generics: syn::Generics,
-        sig: syn::Signature,
+        sig: Box<syn::Signature>,
         move_fn: bool,
     },
 }
@@ -267,7 +267,7 @@ fn parse_type_alias(input: ParseStream) -> syn::Result<TypeAlias> {
                 let name = format_ident!("__co3_arg_{index}");
                 let by_val = arg.by_val.then(|| quote!(move));
                 let ty = arg.ty;
-                quote!(#by_val #name: #ty)
+                quote!(#name: #by_val #ty)
             });
             let mut converted_group = Group::new(Delimiter::Parenthesis, quote!(#(#converted),*));
             converted_group.set_span(args.span());
@@ -293,7 +293,7 @@ fn parse_type_alias(input: ParseStream) -> syn::Result<TypeAlias> {
         vis,
         ident,
         generics,
-        sig: signature,
+        sig: Box::new(signature),
         move_fn: fn_attrs.iter().any(crate::ffi_fn::is_by_val_attr),
     })
 }
@@ -1199,8 +1199,6 @@ fn is_fn_head(input: syn::parse::ParseStream) -> syn::Result<bool> {
     let _ = ahead.parse::<Option<syn::Token![async]>>()?;
     let _ = ahead.parse::<Option<syn::Token![unsafe]>>()?;
     let _ = ahead.parse::<Option<syn::Abi>>()?;
-    let _ = ahead.parse::<Option<syn::Token![move]>>()?;
-
     Ok(ahead.peek(syn::Token![fn]))
 }
 
@@ -1432,7 +1430,6 @@ impl PreprocessedArg {
     fn parse_with(input: syn::parse::ParseStream) -> syn::Result<Self> {
         let attrs = input.call(syn::Attribute::parse_outer)?;
         let mut merged_attrs = attrs;
-        let _ = parse_move_by_val(input, &mut merged_attrs)?;
 
         let receiver = if input.peek(syn::Token![&]) {
             let ahead = input.fork();
@@ -1475,6 +1472,7 @@ impl PreprocessedArg {
             if ahead.peek(syn::Token![:]) {
                 input.parse::<syn::Token![self]>()?;
                 input.parse::<syn::Token![:]>()?;
+                let _ = parse_move_by_val(input, &mut merged_attrs)?;
                 let ty = input.parse::<Type>()?;
                 return Ok(Self {
                     tokens: quote! { #(#merged_attrs)* __co3_self: #ty },
@@ -1484,6 +1482,7 @@ impl PreprocessedArg {
 
         let pat = syn::Pat::parse_single(input)?;
         let colon_token = input.parse::<syn::Token![:]>()?;
+        let _ = parse_move_by_val(input, &mut merged_attrs)?;
         let ty = input.parse::<Type>()?;
         let arg = PatType {
             attrs: merged_attrs,
@@ -1519,26 +1518,13 @@ fn preprocess_signature_tokens(
     let mut rewritten = Vec::new();
     let mut saw_inputs = false;
     let mut saw_fn = false;
-    let mut by_val = false;
     let mut angle_depth = 0usize;
-    let mut signature_tokens = signature_tokens.into_iter().peekable();
-    while let Some(tt) = signature_tokens.next() {
-        if !saw_fn && let proc_macro2::TokenTree::Ident(ident) = &tt {
-            if ident == "move"
-                && signature_tokens.peek().is_some_and(
-                    |next| matches!(next, proc_macro2::TokenTree::Ident(next) if next == "fn"),
-                )
-            {
-                if by_val {
-                    return Err(syn::Error::new(ident.span(), "duplicate `move fn`"));
-                }
-                by_val = true;
-                push_by_val(attrs, ident.span());
-                continue;
-            }
-            if ident == "fn" {
-                saw_fn = true;
-            }
+    for tt in signature_tokens {
+        if !saw_fn
+            && let proc_macro2::TokenTree::Ident(ident) = &tt
+            && ident == "fn"
+        {
+            saw_fn = true;
         }
         if let proc_macro2::TokenTree::Punct(punct) = &tt {
             match punct.as_char() {
@@ -1564,7 +1550,30 @@ fn preprocess_signature_tokens(
         rewritten.push(tt);
     }
 
-    Ok(rewritten.into_iter().collect())
+    // In an FFI declaration, `move` on the return type selects ownership transfer.
+    let mut rewritten = rewritten.into_iter().peekable();
+    let mut output = Vec::new();
+    let mut saw_return_type = false;
+    while let Some(token) = rewritten.next() {
+        output.push(token.clone());
+        if saw_inputs
+            && !saw_return_type
+            && matches!(&token, proc_macro2::TokenTree::Punct(punct) if punct.as_char() == '-')
+            && rewritten.peek().is_some_and(|next| matches!(next, proc_macro2::TokenTree::Punct(punct) if punct.as_char() == '>'))
+        {
+            saw_return_type = true;
+            output.push(rewritten.next().expect("peeked arrow token"));
+            if let Some(proc_macro2::TokenTree::Ident(ident)) = rewritten.peek()
+                && ident == "move"
+            {
+                let span = ident.span();
+                rewritten.next();
+                push_by_val(attrs, span);
+            }
+        }
+    }
+
+    Ok(output.into_iter().collect())
 }
 
 fn parse_signature(
@@ -1850,7 +1859,7 @@ mod tests {
 
     #[test]
     fn parses_move_self_receiver() {
-        let impl_ = "impl Value { fn name(move self); }";
+        let impl_ = "impl Value { fn name(self: move Self); }";
         let item = Parser::parse_str(parse_impl_item, impl_).unwrap();
 
         let syn::ImplItem::Fn(method) = &item.items[0] else {
@@ -1869,8 +1878,8 @@ mod tests {
     }
 
     #[test]
-    fn parses_move_fn_return() {
-        let item = Parser::parse_str(parse_fn_item, "move fn name() -> Value;").unwrap();
+    fn parses_move_return_type() {
+        let item = Parser::parse_str(parse_fn_item, "fn name() -> move Value;").unwrap();
 
         assert!(item.attrs.iter().any(|attr| attr.path().is_ident("by_val")));
     }
@@ -1915,10 +1924,10 @@ mod tests {
     }
 
     #[test]
-    fn parses_qualified_move_fn_return() {
+    fn parses_qualified_move_return_type() {
         let item = Parser::parse_str(
             parse_fn_item,
-            "unsafe extern \"C\" move fn name() -> Value;",
+            "unsafe extern \"C\" fn name() -> move Value;",
         )
         .unwrap();
 

@@ -107,7 +107,7 @@ co3::ffi! {
             &self,
             attribute: <dyn A>::TAG,
             #[unpack(u32, i32)]
-            move value1: <A as EnvAttr>::Value,
+            value1: move <A as EnvAttr>::Value,
             #[unpack(u32, i32)]
             value2: <A as EnvAttr>::Value,
             string_length: &mut i32,
@@ -144,7 +144,7 @@ co3::ffi! {
         fn get_attr0(&self);
         fn get_attr1(a: &Self);
         fn get_attr2(self: Box<Self>);
-        fn get_attr3<dyn(u32) T = u32>(&self, move one: T)
+        fn get_attr3<dyn(u32) T = u32>(&self, one: move T)
         where
             use<T> @ <SQLHENV2>;
     }

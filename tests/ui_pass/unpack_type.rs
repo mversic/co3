@@ -115,7 +115,7 @@ ffi! {
     fn unpack_len(#[unpack(_, _)] values: &[u32]) -> usize;
 
     #[symbol_name = "unpack_convert"]
-    fn unpack_convert(#[unpack(u32, i32)] move value: PairParts) -> u32;
+    fn unpack_convert(#[unpack(u32, i32)] value: move PairParts) -> u32;
 
     fn unary_inferred(#[unpack(_)] value: u32);
 
@@ -126,14 +126,14 @@ ffi! {
     fn optional_slice_mut_len(#[unpack(_, usize)] values: Option<&mut [u32]>) -> usize;
 
     fn borrowed_box(#[unpack(*const u32, usize)] value: Box<[u32]>);
-    fn moved_box(#[unpack(_, _)] move value: Box<[u32]>);
-    fn optional_moved_box(#[unpack(_, _)] move value: Option<Box<[u32]>>);
+    fn moved_box(#[unpack(_, _)] value: move Box<[u32]>);
+    fn optional_moved_box(#[unpack(_, _)] value: move Option<Box<[u32]>>);
     fn parenthesized_ref(#[unpack(_, _)] value: (&[u32]));
-    fn parenthesized_tuple(#[unpack(_, _)] move value: ((u8, u16)));
+    fn parenthesized_tuple(#[unpack(_, _)] value: move ((u8, u16)));
 
     #[symbol_name = "static_unpack_{C}"]
     fn static_unpack<C>(
-        #[unpack(_, _)] move value: (C, u8),
+        #[unpack(_, _)] value: move (C, u8),
     )
     where
         use<C> @ (<u8> | <u16>);

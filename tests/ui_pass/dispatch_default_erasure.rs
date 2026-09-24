@@ -29,12 +29,12 @@ ffi! {
     #![unsafe(extern("C"))]
 
     #[symbol_name = "erased"]
-    fn erased<dyn(u8) T = u16>(move value: T)
+    fn erased<dyn(u8) T = u16>(value: move T)
     where
         use<T> @ <Value>;
 
     #[symbol_name = "unpack_wins"]
-    fn unpack_wins<dyn(u8) T = (u16, u16)>(#[unpack(u16, u16)] move value: T)
+    fn unpack_wins<dyn(u8) T = (u16, u16)>(#[unpack(u16, u16)] value: move T)
     where
         use<T> @ <Pair>;
 }

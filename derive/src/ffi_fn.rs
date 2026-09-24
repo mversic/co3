@@ -311,7 +311,7 @@ pub(crate) fn gen_return_borrow_check(return_ty: &syn::Type, fn_by_val: bool) ->
         const {
             assert!(
                 co3::impls!(#return_ty: co3::borrow::Borrow<Owner: co3::stored::EmptyStore>),
-                "Use `move fn` to transfer ownership",
+                "Mark the return type with `move` to transfer ownership",
             );
         }
     }
@@ -968,7 +968,7 @@ pub(crate) fn lower_raw_fn_signature(
     let mut sig = lower_extern_fn_signature(sig, failure_mode);
     if !move_fn && let syn::ReturnType::Type(_, return_ty) = &mut sig.output {
         let c_type = return_ty.as_ref();
-        *return_ty = Box::new(parse_quote!(<#c_type as co3::borrow::BorrowCast>::AsConst));
+        **return_ty = parse_quote!(<#c_type as co3::borrow::BorrowCast>::AsConst);
     }
     sig
 }

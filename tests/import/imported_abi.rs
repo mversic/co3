@@ -39,7 +39,7 @@ ffi! {
 
     impl MyType<u64> {
         #[symbol_name = "kita1"]
-        unsafe extern "C" move fn ambiguous() -> Box<Self>;
+        unsafe extern "C" fn ambiguous() -> move Box<Self>;
     }
 
     #[symbol_name = "kita2"]
@@ -58,7 +58,7 @@ ffi! {
     }
 
     impl MyType2 {
-        move fn new() -> OwnedMyType2;
+        fn new() -> move OwnedMyType2;
     }
 
     impl AmbiguousX<u64, 3> for MyType<u64> {
@@ -106,7 +106,7 @@ mod provider {
         }
 
         impl MyType2 {
-            move fn new() -> Box<Self>;
+            fn new() -> move Box<Self>;
         }
 
         impl AmbiguousX<u64, 3> for MyType<u64> {
@@ -140,7 +140,7 @@ mod provider {
 
         impl MyType<u64> {
             #[symbol_name = "kita1"]
-            unsafe extern "C" move fn ambiguous() -> Box<Self>;
+            unsafe extern "C" fn ambiguous() -> move Box<Self>;
         }
 
         #[symbol_name = "kita2"]

@@ -8,7 +8,7 @@ ffi! {
 
     impl<'a> Default for OwnedOpaque<'a> {
         #[symbol_name = "kita__Default__Box_Opaque__default"]
-        move fn default() -> Self;
+        fn default() -> move Self;
     }
 
     impl Opaque<'_> {
@@ -42,7 +42,7 @@ mod provider {
         // This is a special case where reference is materialized
         impl<'a> Default for Box<Opaque<'a>> {
             #[symbol_name = "kita__Default__Box_Opaque__default"]
-            move fn default() -> Self;
+            fn default() -> move Self;
         }
 
         impl Opaque<'_> {

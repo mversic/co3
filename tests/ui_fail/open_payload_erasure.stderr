@@ -1,5 +1,5 @@
 error: ABI-erased runtime parameters must be constrained by a `use` predicate
  --> tests/ui_fail/open_payload_erasure.rs:6:23
   |
-6 |     fn erased<dyn(u8) T = u32>(move value: T);
+6 |     fn erased<dyn(u8) T = u32>(value: move T);
   |                       ^

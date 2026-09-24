@@ -1,0 +1,5 @@
+error: raw callback type aliases inherit their ABI from the enclosing `ffi!` declaration
+ --> tests/ui_fail/raw_alias_explicit_abi.rs:6:28
+  |
+6 |     type ExplicitAbi = raw extern "C" fn(u8);
+  |                            ^^^^^^^^^^

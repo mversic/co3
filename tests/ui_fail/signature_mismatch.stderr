@@ -45,22 +45,22 @@ error[E0308]: mismatched types
    = note: this error originates in the macro `ffi` (in Nightly builds, run with -Z macro-backtrace for more info)
 
 error[E0308]: mismatched types
-  --> tests/ui_fail/signature_mismatch.rs:75:22
-   |
-75 |         move fn kita(self_id: <dyn Self>::TAG, self: &Self) -> Vec<<Self as Kita>::MySelf>;
-   |                 ---- ^^^^^^^ expected `u32`, found `u8`
-   |                 |
-   |                 arguments to this function are incorrect
-   |
-note: function defined here
   --> tests/ui_fail/signature_mismatch.rs:75:17
    |
-75 |         move fn kita(self_id: <dyn Self>::TAG, self: &Self) -> Vec<<Self as Kita>::MySelf>;
-   |                 ^^^^ -------
+75 |         fn kita(self_id: <dyn Self>::TAG, self: &Self) -> move Vec<<Self as Kita>::MySelf>;
+   |            ---- ^^^^^^^ expected `u32`, found `u8`
+   |            |
+   |            arguments to this function are incorrect
+   |
+note: function defined here
+  --> tests/ui_fail/signature_mismatch.rs:75:12
+   |
+75 |         fn kita(self_id: <dyn Self>::TAG, self: &Self) -> move Vec<<Self as Kita>::MySelf>;
+   |            ^^^^ -------
 help: you can convert a `u8` to a `u32`
    |
-75 |         move fn kita(self_id.into(): <dyn Self>::TAG, self: &Self) -> Vec<<Self as Kita>::MySelf>;
-   |                             +++++++
+75 |         fn kita(self_id.into(): <dyn Self>::TAG, self: &Self) -> move Vec<<Self as Kita>::MySelf>;
+   |                        +++++++
 
 error[E0308]: mismatched types
   --> tests/ui_fail/signature_mismatch.rs:76:27

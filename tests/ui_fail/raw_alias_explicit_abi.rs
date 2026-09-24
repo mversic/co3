@@ -3,7 +3,7 @@ use co3::ffi;
 ffi! {
     #![unsafe(extern("C"))]
 
-    fn erased<dyn(u8) T = u32>(value: move T);
+    type ExplicitAbi = raw extern "C" fn(u8);
 }
 
 fn main() {}

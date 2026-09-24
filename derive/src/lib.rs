@@ -22,7 +22,7 @@
 //!
 //!     type Local;
 //!
-//!     move fn make_local() -> LocalType;
+//!     fn make_local() -> move LocalType;
 //! }
 //! # fn main() {}
 //! ```
@@ -616,6 +616,12 @@ fn expand_type_aliases(
             sig,
             move_fn,
         } => {
+            if let Some(abi) = &sig.abi {
+                return Err(syn::Error::new_spanned(
+                    abi,
+                    "raw callback type aliases inherit their ABI from the enclosing `ffi!` declaration",
+                ));
+            }
             if sig.asyncness.is_some()
                 || matches!(sig.safety, syn::Safety::Unsafe(_))
                 || sig.variadic.is_some()
@@ -643,7 +649,7 @@ fn expand_type_aliases(
                 ));
             }
             let (raw_sig, raw_fn_type) =
-                callback::lower_callback_fn_type(sig, abi, failure_mode, move_fn)?;
+                callback::lower_callback_fn_type(*sig, abi, failure_mode, move_fn)?;
             let co3 = co3_path();
             let cfg = crate::utils::cfg_attrs(&attrs);
             let assertions = ffi_fn::gen_abi_assertions(&raw_sig, abi);
@@ -712,7 +718,7 @@ fn validate_raw_import_moves(
         if has_move(&callback.attrs) != has_move(import_attrs) {
             return Err(syn::Error::new_spanned(
                 &callback.sig.ident,
-                "raw callback and imported declaration must use the same `move fn` qualifier",
+                "raw callback and imported declaration must use the same `move` return qualifier",
             ));
         }
 

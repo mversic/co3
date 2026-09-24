@@ -9,7 +9,7 @@ struct Value;
 ffi! {
     #![unsafe(extern("C"))]
 
-    fn nested<dyn(u8) T = u16>(move value: Wrapper<T>)
+    fn nested<dyn(u8) T = u16>(value: move Wrapper<T>)
     where
         use<T> @ <Value>;
 }

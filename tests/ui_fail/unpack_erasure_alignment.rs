@@ -20,7 +20,7 @@ ffi! {
 
     fn alignment_mismatch(
         #[unpack(u8, u64 => Abi)]
-        move value: Value,
+        value: move Value,
     );
 }
 

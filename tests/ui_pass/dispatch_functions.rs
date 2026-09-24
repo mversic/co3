@@ -97,17 +97,17 @@ mod provider {
         #![unsafe(export("C"))]
         #![symbol_prefix = "function_dispatch"]
 
-        fn dispatch_fn<dyn(u8) T: ByteValue = u8>(move value: T) -> u8
+        fn dispatch_fn<dyn(u8) T: ByteValue = u8>(value: move T) -> u8
         where
             use<T> @ (<First> | <Second>);
 
-        move fn dispatch_echo<dyn(u8) T: ByteValue = u8>(move value: T) -> T
+        fn dispatch_echo<dyn(u8) T: ByteValue = u8>(value: move T) -> move T
         where
             use<T> @ (<First> | <Second>);
 
         fn dispatch_pair<dyn(u8) T: ByteValue = u8, dyn(u8) U: ByteValue = u8>(
             left: T,
-            move right: U,
+            right: move U,
         ) -> u8
         where
             use<T, U> @ (<First, Second> | <Second, First>);
@@ -127,7 +127,7 @@ mod provider {
 
         impl ProviderHost {
             #[symbol_name = "function_dispatch_method"]
-            fn dispatch_method<dyn(u8) T: ByteValue = u8>(&self, move value: T) -> u8
+            fn dispatch_method<dyn(u8) T: ByteValue = u8>(&self, value: move T) -> u8
             where
                 use<T> @ (<First> | <Second>);
         }
@@ -137,7 +137,7 @@ mod provider {
             use<T> @ (<First> | <Second>)
         {
             #[symbol_name = "function_dispatch_generic_method"]
-            fn dispatch_generic_method<dyn(u8) U: ByteValue = u8>(&self, move value: U) -> u8
+            fn dispatch_generic_method<dyn(u8) U: ByteValue = u8>(&self, value: move U) -> u8
             where
                 use<U> @ (<First> | <Second>);
         }
@@ -148,17 +148,17 @@ ffi! {
     #![unsafe(extern("C"))]
     #![symbol_prefix = "function_dispatch"]
 
-    pub fn dispatch_fn<dyn(u8) T: ByteValue = u8>(move value: T) -> u8
+    pub fn dispatch_fn<dyn(u8) T: ByteValue = u8>(value: move T) -> u8
     where
         use<T> @ (<First> | <Second>);
 
-    pub move fn dispatch_echo<dyn(u8) T: ByteValue = u8>(move value: T) -> T
+    pub fn dispatch_echo<dyn(u8) T: ByteValue = u8>(value: move T) -> move T
     where
         use<T> @ (<First> | <Second>);
 
     pub fn dispatch_pair<dyn(u8) T: ByteValue = u8, dyn(u8) U: ByteValue = u8>(
         left: T,
-        move right: U,
+        right: move U,
     ) -> u8
     where
         use<T, U> @ (<First, Second> | <Second, First>);
@@ -178,7 +178,7 @@ ffi! {
 
     impl Host {
         #[symbol_name = "function_dispatch_method"]
-        pub fn dispatch_method<dyn(u8) T: ByteValue = u8>(&self, move value: T) -> u8
+        pub fn dispatch_method<dyn(u8) T: ByteValue = u8>(&self, value: move T) -> u8
         where
             use<T> @ (<First> | <Second>);
     }
@@ -188,7 +188,7 @@ ffi! {
         use<T> @ (<First> | <Second>)
     {
         #[symbol_name = "function_dispatch_generic_method"]
-        pub fn dispatch_generic_method<dyn(u8) U: ByteValue = u8>(&self, move value: U) -> u8
+        pub fn dispatch_generic_method<dyn(u8) U: ByteValue = u8>(&self, value: move U) -> u8
         where
             use<U> @ (<First> | <Second>);
     }

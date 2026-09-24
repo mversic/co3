@@ -5,7 +5,7 @@ error[E0277]: the trait bound `RefSizedDecodeStore<(u8,), ((),)>: co3::stored::E
 12 | |         #![unsafe(export("C"))]
 13 | |
 14 | |         fn by_ref_is_allowed(#[soft] arg1: &(u8,), #[soft] arg2: Vec<(u8,)>) -> u8;
-15 | |         fn by_val_is_denied(arg1: &(u8,), #[soft] move arg2: Vec<(u8,)>) -> u8;
+15 | |         fn by_val_is_denied(arg1: &(u8,), #[soft] arg2: move Vec<(u8,)>) -> u8;
 16 | |     }
    | |_____^ the trait `co3::stored::EmptyStore` is not implemented for `RefSizedDecodeStore<(u8,), ((),)>`
    |
@@ -33,7 +33,7 @@ error[E0271]: type mismatch resolving `<[(u8,)] as RustSpec>::Layout == Stable`
 12 | |         #![unsafe(export("C"))]
 13 | |
 14 | |         fn by_ref_is_allowed(#[soft] arg1: &(u8,), #[soft] arg2: Vec<(u8,)>) -> u8;
-15 | |         fn by_val_is_denied(arg1: &(u8,), #[soft] move arg2: Vec<(u8,)>) -> u8;
+15 | |         fn by_val_is_denied(arg1: &(u8,), #[soft] arg2: move Vec<(u8,)>) -> u8;
 16 | |     }
    | |_____^ expected `Stable`, found `Unstable`
    |
@@ -55,7 +55,7 @@ error[E0277]: the trait bound `RefSizedEncodeStore<(u8,)>: co3::stored::EmptySto
 25 | |     #![unsafe(extern("C"))]
 26 | |
 27 | |     pub extern "C" fn by_ref_is_allowed(#[soft] arg1: &(u8,), #[soft] arg2: Vec<(u8,)>) -> u8;
-28 | |     pub extern "C" fn by_val_is_denied(arg1: &(u8,), #[soft] move arg2: Vec<(u8,)>) -> u8;
+28 | |     pub extern "C" fn by_val_is_denied(arg1: &(u8,), #[soft] arg2: move Vec<(u8,)>) -> u8;
    | |                                        ^^^^ the trait `co3::stored::EmptyStore` is not implemented for `RefSizedEncodeStore<(u8,)>`
 29 | | }
    | |_- required by a bound introduced by this call
@@ -77,14 +77,14 @@ note: required by a bound in `encode`
    |                                ^^^^^^^^^^ required by this bound in `encode`
 
 error[E0271]: type mismatch resolving `<[(u8,)] as RustSpec>::Layout == Stable`
-  --> tests/ui_fail/soft_refs_are_denied.rs:28:67
+  --> tests/ui_fail/soft_refs_are_denied.rs:28:62
    |
 24 | / ffi! {
 25 | |     #![unsafe(extern("C"))]
 26 | |
 27 | |     pub extern "C" fn by_ref_is_allowed(#[soft] arg1: &(u8,), #[soft] arg2: Vec<(u8,)>) -> u8;
-28 | |     pub extern "C" fn by_val_is_denied(arg1: &(u8,), #[soft] move arg2: Vec<(u8,)>) -> u8;
-   | |                                                                   ^^^^ expected `Stable`, found `Unstable`
+28 | |     pub extern "C" fn by_val_is_denied(arg1: &(u8,), #[soft] arg2: move Vec<(u8,)>) -> u8;
+   | |                                                              ^^^^ expected `Stable`, found `Unstable`
 29 | | }
    | |_- required by a bound introduced by this call
    |

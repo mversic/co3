@@ -1,5 +1,5 @@
 error: ABI-erased type parameters cannot be used through named wrappers or associated projections
   --> tests/ui_fail/dispatch_nested_default_erasure.rs:12:44
    |
-12 |     fn nested<dyn(u8) T = u16>(move value: Wrapper<T>)
+12 |     fn nested<dyn(u8) T = u16>(value: move Wrapper<T>)
    |                                            ^^^^^^^^^^
