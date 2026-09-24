@@ -28,7 +28,7 @@ static_assertions::assert_type_eq_all!(<Integer as ExternC>::CType, Integer);
 static_assertions::assert_type_eq_all!(<NonCopy as ExternC>::CType, NonCopy);
 static_assertions::assert_type_eq_all!(<Generic<u32> as ExternC>::CType, Generic<u32>);
 static_assertions::assert_impl_all!(NonCopy: co3::Encode);
-static_assertions::assert_not_impl_any!(NonCopy: CFnArg<co3::abi::C>);
+static_assertions::assert_not_impl_any!(NonCopy: CFnArg);
 static_assertions::assert_not_impl_any!(Generic<bool>: ExternC);
 
 ffi! {

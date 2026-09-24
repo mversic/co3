@@ -201,11 +201,11 @@ macro_rules! impl_tuple {
         impl<'d, $($ty: Decode<'d, CType: Copy>),*> Decode<'d> for ($($ty,)*) {}
         impl<'d, $($ty: Decode<'d, CType: Copy>),*> Decode<'d> for $ffi_ty<$($ty),*> {}
 
-        unsafe impl<Abi, $($ty: ReprC + Copy),*> CFnArg<Abi> for $ffi_ty<$($ty),*>
+        unsafe impl<$($ty: ReprC + Copy),*> CFnArg for $ffi_ty<$($ty),*>
         where
             Self: RustSpec<Size = rust_spec::size::Sized<rust_spec::Gt<rust_spec::Zero>>>,
         {}
-        unsafe impl<Abi, $($ty: ReprC + Copy),*> CFnReturn<Abi> for $ffi_ty<$($ty),*>
+        unsafe impl<$($ty: ReprC + Copy),*> CFnReturn for $ffi_ty<$($ty),*>
         where
             Self: RustSpec<Size = rust_spec::size::Sized<rust_spec::Gt<rust_spec::Zero>>>,
         {}

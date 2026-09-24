@@ -312,8 +312,8 @@ unsafe impl<T: CheckedTransmute<CType: Copy> + Copy, E: CheckedTransmute<CType: 
 }
 
 unsafe impl<T: ReprC + Copy, E: ReprC + Copy> ReprC for ReprCResult<T, E> {}
-unsafe impl<T: ReprC + Copy, E: ReprC + Copy, Abi> CFnArg<Abi> for ReprCResult<T, E> {}
-unsafe impl<T: ReprC + Copy, E: ReprC + Copy, Abi> CFnReturn<Abi> for ReprCResult<T, E> {}
+unsafe impl<T: ReprC + Copy, E: ReprC + Copy> CFnArg for ReprCResult<T, E> {}
+unsafe impl<T: ReprC + Copy, E: ReprC + Copy> CFnReturn for ReprCResult<T, E> {}
 
 unsafe impl<T: BorrowCast<AsConst: Copy> + Copy, E: BorrowCast<AsConst: Copy> + Copy> BorrowCast
     for ReprCResult<T, E>

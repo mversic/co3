@@ -672,7 +672,6 @@ fn prepare_dispatch_wrapper_sig(
     dispatch_generics: &syn::Generics,
     static_dispatch: Option<&DispatchGroups>,
     co3: &TokenStream,
-    abi: &syn::Abi,
 ) -> syn::Signature {
     let mut wrapper_sig = prepare_dispatch_forwarding_sig(sig);
 
@@ -690,7 +689,6 @@ fn prepare_dispatch_wrapper_sig(
         .map(|param| param.ident.clone())
         .collect::<Vec<_>>();
     let parameter_detector = ParamUseDetector::new(parameter_idents.iter());
-    let abi = ffi_fn::abi_marker(abi);
     let where_clause = wrapper_sig.generics.make_where_clause();
 
     for ident in &dispatch_tys {
@@ -732,7 +730,7 @@ fn prepare_dispatch_wrapper_sig(
                 .push(syn::parse_quote!(#target_ty: #co3::ExternC));
             where_clause
                 .predicates
-                .push(syn::parse_quote!(#target_part: #co3::CFnArg<#abi>));
+                .push(syn::parse_quote!(#target_part: #co3::CFnArg));
         }
         let parameterized_unpack =
             ffi_fn::is_unpack_arg(attrs) && parameter_detector.type_mentions_param(ty);
@@ -746,26 +744,26 @@ fn prepare_dispatch_wrapper_sig(
                 ffi_fn::unpack_abi_parts(attrs, ty).expect("validated #[unpack] attribute");
             if matches!(part1, syn::Type::Infer(_)) {
                 where_clause.predicates.push(syn::parse_quote!(
-                    #source_part1: #co3::CFnArg<#abi>
+                    #source_part1: #co3::CFnArg
                 ));
             } else {
                 where_clause
                     .predicates
                     .push(syn::parse_quote!(#part1: #co3::ExternC));
                 where_clause.predicates.push(syn::parse_quote!(
-                    <#part1 as #co3::ExternC>::CType: #co3::CFnArg<#abi>
+                    <#part1 as #co3::ExternC>::CType: #co3::CFnArg
                 ));
             }
             if matches!(part2, syn::Type::Infer(_)) {
                 where_clause.predicates.push(syn::parse_quote!(
-                    #source_part2: #co3::CFnArg<#abi>
+                    #source_part2: #co3::CFnArg
                 ));
             } else {
                 where_clause
                     .predicates
                     .push(syn::parse_quote!(#part2: #co3::ExternC));
                 where_clause.predicates.push(syn::parse_quote!(
-                    <#part2 as #co3::ExternC>::CType: #co3::CFnArg<#abi>
+                    <#part2 as #co3::ExternC>::CType: #co3::CFnArg
                 ));
             }
             let unpack_trait = quote!(#co3::slice::Unpack2<#source_part1, #source_part2>);
@@ -783,10 +781,10 @@ fn prepare_dispatch_wrapper_sig(
             where_clause.predicates.push(unpack_bound);
             where_clause
                 .predicates
-                .push(syn::parse_quote!(#abi_part1: #co3::CFnArg<#abi>));
+                .push(syn::parse_quote!(#abi_part1: #co3::CFnArg));
             where_clause
                 .predicates
-                .push(syn::parse_quote!(#abi_part2: #co3::CFnArg<#abi>));
+                .push(syn::parse_quote!(#abi_part2: #co3::CFnArg));
         }
         if crate::dispatch::tag_id(ty).is_none()
             && (detector.type_mentions_param(ty) || parameterized_unpack)
@@ -968,7 +966,6 @@ fn prepare_dispatch_import(
         &dispatch_generics,
         Some(dispatch_args),
         &co3,
-        abi,
     );
     let mut wrapper_sig = delegate_sig.clone();
     wrapper_sig.generics.make_where_clause().predicates.insert(
@@ -1056,7 +1053,7 @@ fn prepare_dynamic_dispatch_import(
     let dispatch_generics = combine_dispatch_generics(impl_generics, &wrapper_source_sig.generics);
     let co3 = co3_path();
     let mut wrapper_sig =
-        prepare_dispatch_wrapper_sig(&wrapper_source_sig, &dispatch_generics, None, &co3, abi);
+        prepare_dispatch_wrapper_sig(&wrapper_source_sig, &dispatch_generics, None, &co3);
     let trait_args = dispatch_trait_args(&dispatch_generics);
     let dispatch_set_path = quote!(#module_name::#set_name);
     wrapper_sig.generics.make_where_clause().predicates.insert(
@@ -1098,7 +1095,7 @@ fn prepare_dynamic_dispatch_import(
     erase_dispatch_signature(&dispatch_generics, receiver, &mut extern_sig);
     strip_dispatch_params(&mut extern_sig.generics);
     let decl = gen_extern_fn_signature(extern_sig, failure_mode);
-    let abi_assertions = gen_decl_abi_assertions(&decl, abi);
+    let abi_assertions = gen_decl_abi_assertions(&decl);
 
     DispatchImportParts {
         set,
@@ -1303,6 +1300,7 @@ fn gen_callback_companions(
         .into_iter()
         .map(|callback| {
             let owner = callback.owner;
+            let raw_abi = callback.raw_abi.as_ref().unwrap_or(abi_name);
             let item = syn::ItemFn {
                 attrs: callback.attrs,
                 vis: callback.vis,
@@ -1311,7 +1309,7 @@ fn gen_callback_companions(
                 block: Box::new(syn::parse_quote!({})),
             };
             let companion = match crate::callback::expand_companion(
-                abi_name,
+                raw_abi,
                 failure_mode,
                 &item,
                 callback.callee,
@@ -1405,7 +1403,7 @@ fn synthesize_impl_extern_decls(
             }
             let method_name = item.sig.ident.clone();
             let decl = gen_extern_fn_signature(item.sig, failure_mode);
-            let abi_assertions = gen_decl_abi_assertions(&decl, abi);
+            let abi_assertions = gen_decl_abi_assertions(&decl);
             let extern_decl = gen_extern_decl(abi, attrs, &item.attrs, decl);
 
             Some((
@@ -2659,9 +2657,6 @@ fn gen_extern_type_impls(
 fn gen_owned_repr_c_impls(ident: &syn::Ident, generics: &syn::Generics) -> TokenStream {
     let co3 = co3_path();
     let (impl_generics, ty_generics, where_clause) = generics.split_for_impl();
-    let mut c_fn_generics = generics.clone();
-    c_fn_generics.params.insert(0, syn::parse_quote!(__Co3Abi));
-    let (c_fn_impl_generics, _, _) = c_fn_generics.split_for_impl();
     let mut decode_generics = generics.clone();
     decode_generics.params.insert(0, syn::parse_quote!('d));
     let (decode_impl_generics, _, _) = decode_generics.split_for_impl();
@@ -2723,8 +2718,8 @@ fn gen_owned_repr_c_impls(ident: &syn::Ident, generics: &syn::Generics) -> Token
         }
 
         unsafe impl #impl_generics #co3::ReprC for #owned_repr_c_name #ty_generics #where_clause {}
-        unsafe impl #c_fn_impl_generics #co3::CFnArg<__Co3Abi> for #owned_repr_c_name #ty_generics #where_clause {}
-        unsafe impl #c_fn_impl_generics #co3::CFnReturn<__Co3Abi> for #owned_repr_c_name #ty_generics #where_clause {}
+        unsafe impl #impl_generics #co3::CFnArg for #owned_repr_c_name #ty_generics #where_clause {}
+        unsafe impl #impl_generics #co3::CFnReturn for #owned_repr_c_name #ty_generics #where_clause {}
 
         unsafe impl #impl_generics #co3::borrow::BorrowCast for #owned_repr_c_name #ty_generics #where_clause {
             type AsConst = *const #ident #ty_generics;

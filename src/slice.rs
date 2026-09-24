@@ -298,8 +298,8 @@ macro_rules! impl_slice_carrier {
         }
 
         unsafe impl<C: ReprC> ReprC for $ty<C> {}
-        unsafe impl<C: ReprC, Abi> CFnArg<Abi> for $ty<C> {}
-        unsafe impl<C: ReprC, Abi> CFnReturn<Abi> for $ty<C> {}
+        unsafe impl<C: ReprC> CFnArg for $ty<C> {}
+        unsafe impl<C: ReprC> CFnReturn for $ty<C> {}
         unsafe impl<C: ReprC> BorrowCast for $ty<C> {
             type AsConst = Self;
         }

@@ -372,7 +372,7 @@
 //! Function pointer parameters are not converted by [`ffi!`] which limits the available signatures:
 //!
 //! ```rust
-//! use co3::{ReprC, ffi, rust_spec::RustSpec};
+//! use co3::{ops::CFn2, ReprC, ffi, rust_spec::RustSpec};
 //!
 //! #[derive(Clone, Copy, RustSpec, ReprC)]
 //! // Without `#[reprC(identity)]`, `ReprC` derive produces `CValue`, in which case you'd
@@ -382,10 +382,12 @@
 //! struct Value(u8);
 //!
 //! // Fn pointer **MUST BE** C-compatible in itself
-//! type Callback = extern "C" fn(Value, u8) -> Value;
+//! type Callback = unsafe extern "C" fn(Value, u8) -> Value;
 //!
 //! fn apply_callback(callback: Callback, value: Value) -> Value {
-//!     callback(value, 1)
+//!     // `.call` encodes the Rust arguments and decodes the callback's return value.
+//!     // Use `.soft_call` when any of the input arguments requires a non-empty store.
+//!     unsafe { callback.call(value, 1_u8) }.expect("callback returned an invalid Value")
 //! }
 //!
 //! ffi! {
@@ -396,7 +398,7 @@
 //! # fn main() {}
 //! ```
 //!
-//! Otherwise, perform the conversion manually:
+//! Otherwise, perform the conversion manually (not advised):
 //!
 //! ```rust
 //! use co3::{ReprC, ffi, rust_spec::RustSpec};
@@ -427,8 +429,7 @@
 //! # Raw Functions
 //!
 //! A `raw` import declaration synthesizes a C-compatible function under the name `{fn_name}_raw`.
-//! The raw function decodes inputs, calls the Rust function, encodes the output and returns. The
-//! following example shows how this helps with callbacks:
+//! The following example shows how this helps with callbacks:
 //!
 //! ```rust
 //! use co3::{ExternC, ReprC, ffi, rust_spec::RustSpec};
@@ -458,13 +459,18 @@
 //! ffi! {
 //!     #![unsafe(extern("C"))]
 //!
+//!     // A raw fn type alias supports move semantics and produces:
+//!     //    type Callback = extern "C" fn(CBox<u8>) -> CValue;
 //!     type Callback = raw fn(move Box<u8>) -> Value;
-//!     type MethodCallback = raw fn(&Value) -> Value;
+//!
+//!     // A raw fn type alias also supports declaring a custom ABI:
+//!     //    type Callback = extern "system" fn(*const CValue) -> CValue;
+//!     type MethodCallback = raw "system" fn(&Value) -> Value;
 //!
 //!     impl Value {
 //!         // Synthesize its C companion method:
 //!         //    extern "C" fn doubled(_self: *const CValue) -> CValue;
-//!         raw fn doubled(&self) -> Value;
+//!         raw "system" fn doubled(&self) -> Value;
 //!     }
 //!
 //!     // Synthesize its C companion function:
@@ -546,6 +552,7 @@ pub mod cell;
 pub mod either;
 mod ffi;
 pub mod niche;
+pub mod ops;
 pub mod option;
 mod primitives;
 pub mod result;
@@ -594,52 +601,19 @@ pub trait Error {
 /// Type implementing the trait must have a guaranteed C ABI and no trap representations.
 pub unsafe trait ReprC {}
 
-/// ABI marker types used by [`CFnArg`] and [`CFnReturn`].
-pub mod abi {
-    macro_rules! markers {
-        ($($name:ident),* $(,)?) => { $(
-            #[doc = concat!("The `", stringify!($name), "` calling convention.")]
-            pub enum $name {}
-        )* };
-    }
-
-    markers!(
-        Rust,
-        C,
-        CUnwind,
-        System,
-        SystemUnwind,
-        Cdecl,
-        CdeclUnwind,
-        Stdcall,
-        StdcallUnwind,
-        Fastcall,
-        FastcallUnwind,
-        Thiscall,
-        ThiscallUnwind,
-        Sysv64,
-        Sysv64Unwind,
-        Win64,
-        Win64Unwind,
-        Aapcs,
-        AapcsUnwind,
-        Efiapi,
-    );
-}
-
-/// `ReprC` type that is allowed as a C function argument for `Abi`.
+/// `ReprC` type that is allowed as a foreign function argument.
 ///
 /// # Safety
 ///
-/// Type must be allowed as a C function argument type.
-pub unsafe trait CFnArg<Abi>: ReprC + Copy {}
+/// Type must be allowed as a foreign function argument type.
+pub unsafe trait CFnArg: ReprC + Copy {}
 
-/// `ReprC` type that is allowed as a C function return value for `Abi`.
+/// `ReprC` type that is allowed as a foreign function return value.
 ///
 /// # Safety
 ///
-/// Type must be allowed as a C function return type.
-pub unsafe trait CFnReturn<Abi>: ReprC + Copy {}
+/// Type must be allowed as a foreign function return type.
+pub unsafe trait CFnReturn: ReprC + Copy {}
 
 disjoint_impls! {
     /// A Rust type that has an `extern "C"` ABI

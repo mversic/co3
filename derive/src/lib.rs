@@ -556,7 +556,18 @@ fn normalize_items(
                         impl_items.push(syn::ImplItem::Fn(method));
                         continue;
                     };
-                    method.attrs.remove(marker);
+                    let raw_marker = method.attrs.remove(marker);
+                    let raw_abi = match raw_marker.meta {
+                        syn::Meta::Path(_) => None,
+                        syn::Meta::NameValue(meta) => match meta.value {
+                            syn::Expr::Lit(syn::ExprLit {
+                                lit: syn::Lit::Str(raw_abi),
+                                ..
+                            }) => Some(raw_abi),
+                            _ => unreachable!("raw ABI marker must contain a string"),
+                        },
+                        _ => unreachable!("raw ABI marker must be a path or string value"),
+                    };
                     let method_name = &method.sig.ident;
                     let callee = if let Some(trait_path) = &trait_path {
                         quote!(<#self_ty as #trait_path>::#method_name)
@@ -578,6 +589,7 @@ fn normalize_items(
                     callbacks.push(parse::CallbackDecl {
                         attrs: method.attrs,
                         vis: method.vis,
+                        raw_abi,
                         callee,
                         sig,
                         owner: Some(parse::CallbackOwner {
@@ -613,13 +625,14 @@ fn expand_type_aliases(
             vis,
             ident,
             generics,
+            raw_abi,
             sig,
             move_fn,
         } => {
             if let Some(abi) = &sig.abi {
                 return Err(syn::Error::new_spanned(
                     abi,
-                    "raw callback type aliases inherit their ABI from the enclosing `ffi!` declaration",
+                    "raw callback type aliases specify their ABI after `raw`, not with `extern`",
                 ));
             }
             if sig.asyncness.is_some()
@@ -648,11 +661,15 @@ fn expand_type_aliases(
                     "raw function pointer type aliases cannot have type or const parameters",
                 ));
             }
+            let callback_abi = raw_abi
+                .map(|name| syn::parse2(quote!(extern #name)))
+                .transpose()?
+                .unwrap_or_else(|| abi.clone());
             let (raw_sig, raw_fn_type) =
-                callback::lower_callback_fn_type(*sig, abi, failure_mode, move_fn)?;
+                callback::lower_callback_fn_type(*sig, &callback_abi, failure_mode, move_fn)?;
             let co3 = co3_path();
             let cfg = crate::utils::cfg_attrs(&attrs);
-            let assertions = ffi_fn::gen_abi_assertions(&raw_sig, abi);
+            let assertions = ffi_fn::gen_abi_assertions(&raw_sig);
             Ok(quote! {
                 #(#attrs)* #vis type #ident #generics = #raw_fn_type;
                 #(#cfg)*

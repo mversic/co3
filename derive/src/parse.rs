@@ -67,6 +67,7 @@ pub(crate) enum TypeAlias {
         vis: syn::Visibility,
         ident: syn::Ident,
         generics: syn::Generics,
+        raw_abi: Option<LitStr>,
         sig: Box<syn::Signature>,
         move_fn: bool,
     },
@@ -99,6 +100,7 @@ impl Parse for RawFnTypeArgs {
 pub(crate) struct CallbackDecl {
     pub(crate) attrs: Vec<Attribute>,
     pub(crate) vis: syn::Visibility,
+    pub(crate) raw_abi: Option<LitStr>,
     pub(crate) callee: TokenStream,
     pub(crate) sig: syn::Signature,
     pub(crate) owner: Option<CallbackOwner>,
@@ -241,6 +243,7 @@ fn parse_type_alias(input: ParseStream) -> syn::Result<TypeAlias> {
     input.parse::<syn::Token![=]>()?;
 
     input.parse::<syn::Ident>()?;
+    let raw_abi = input.peek(LitStr).then(|| input.parse()).transpose()?;
     let mut raw_sig = TokenStream::new();
     while !input.is_empty() && !input.peek(syn::Token![;]) {
         raw_sig.extend(core::iter::once(input.parse::<TokenTree>()?));
@@ -293,6 +296,7 @@ fn parse_type_alias(input: ParseStream) -> syn::Result<TypeAlias> {
         vis,
         ident,
         generics,
+        raw_abi,
         sig: Box::new(signature),
         move_fn: fn_attrs.iter().any(crate::ffi_fn::is_by_val_attr),
     })
@@ -304,6 +308,9 @@ fn is_raw_function_type(input: ParseStream) -> syn::Result<bool> {
     }
     let fork = input.fork();
     fork.parse::<syn::Ident>()?;
+    if fork.peek(LitStr) {
+        fork.parse::<LitStr>()?;
+    }
     is_fn_head(&fork)
 }
 
@@ -320,6 +327,7 @@ fn parse_callback_item(input: ParseStream) -> Result<CallbackDecl> {
     let vis = input.parse::<syn::Visibility>()?;
     let keyword = input.parse::<syn::Ident>()?;
     debug_assert_eq!(keyword, "raw");
+    let raw_abi = input.peek(LitStr).then(|| input.parse()).transpose()?;
 
     let sig = parse_signature(input, &mut attrs)?;
     if input.peek(syn::token::Brace) {
@@ -331,6 +339,7 @@ fn parse_callback_item(input: ParseStream) -> Result<CallbackDecl> {
     Ok(CallbackDecl {
         attrs,
         vis,
+        raw_abi,
         callee: quote!(#ident),
         sig,
         owner: None,
@@ -1673,13 +1682,20 @@ fn parse_impl_item(input: syn::parse::ParseStream) -> syn::Result<ItemImpl> {
             let ahead = input.fork();
             if ahead.peek(syn::Ident) && ahead.parse::<syn::Ident>()? == "raw" {
                 let _: syn::Ident = input.parse()?;
+                let raw_abi = input
+                    .peek(LitStr)
+                    .then(|| input.parse::<LitStr>())
+                    .transpose()?;
                 let sig = parse_signature(input, &mut attrs)?;
                 if input.peek(syn::token::Brace) {
                     return Err(input.error(FN_BODIES_NOT_ALLOWED_MSG));
                 }
                 input.parse::<syn::Token![;]>()?;
                 let marker = Ident::new(RAW_IMPL_ITEM_ATTR, proc_macro2::Span::call_site());
-                attrs.push(parse_quote!(#[#marker]));
+                attrs.push(match raw_abi {
+                    Some(raw_abi) => parse_quote!(#[#marker = #raw_abi]),
+                    None => parse_quote!(#[#marker]),
+                });
                 out.extend(quote!(#(#attrs)* #vis #sig {}));
                 continue;
             }

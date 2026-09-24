@@ -1,0 +1,5 @@
+error[E0599]: no method named `call` found for fn pointer `extern "C" fn(u8) -> u8` in the current scope
+ --> tests/ui_fail/safe_fn_pointer_ops.rs:9:43
+  |
+9 |     let _: Option<u8> = unsafe { callback.call(1_u8) };
+  |                                           ^^^^ method not found in `extern "C" fn(u8) -> u8`

@@ -53,8 +53,10 @@ pub(crate) fn expand_companion(
     let fn_by_val = item.attrs.iter().any(ffi_fn::is_by_val_attr);
     let abi: syn::Abi = parse_quote!(extern #abi_name);
     let mut raw_sig = ffi_fn::lower_raw_fn_signature(item.sig.clone(), failure_mode, fn_by_val);
+    raw_sig.safety = syn::Safety::Unsafe(Default::default());
+    raw_sig.abi = Some(abi);
     raw_sig.ident = format_ident!("{}_raw", item.sig.ident);
-    let assertions = gen_abi_assertions(&raw_sig, &abi);
+    let assertions = gen_abi_assertions(&raw_sig);
     let callee: syn::Expr = syn::parse2(callee)?;
     let signature_check = ffi_fn::gen_fn_signature_drift_check(item.sig.clone(), callee.clone());
     let body =
@@ -69,7 +71,12 @@ pub(crate) fn expand_companion(
 
     Ok(quote! {
         #(#cfg)*
-        #vis #abi #raw_sig {
+        #[doc = "C-compatible companion of the declared Rust function."]
+        #[doc = ""]
+        #[doc = "# Safety"]
+        #[doc = ""]
+        #[doc = "The caller must uphold the safety requirements of `co3::decode` or `co3::soft_decode` for each argument, as applicable."]
+        #vis #raw_sig {
             use #co3 as co3;
             #assertions
             #signature_check
@@ -132,6 +139,6 @@ pub(crate) fn lower_callback_fn_type(
         quote!(#(#cfg)* #ty)
     });
     let output = &type_sig.output;
-    let callback_type = syn::parse2(quote!(#binder #abi fn(#(#inputs),*) #output))?;
+    let callback_type = syn::parse2(quote!(#binder unsafe #abi fn(#(#inputs),*) #output))?;
     Ok((lowered_sig, callback_type))
 }

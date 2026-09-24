@@ -114,7 +114,7 @@ pub(crate) fn emit_extern_definition(
     let attrs = export_definition_attrs(attrs);
     let signature: syn::Signature =
         syn::parse2(fn_signature.clone()).expect("generated FFI signature must parse");
-    let abi_assertions = gen_abi_assertions(&signature, abi);
+    let abi_assertions = gen_abi_assertions(&signature);
 
     let error_handler = match failure_mode {
         FailureMode::Panic => gen_failure_panic(quote!(err)),
@@ -135,39 +135,7 @@ pub(crate) fn emit_extern_definition(
     }
 }
 
-pub(crate) fn abi_marker(abi: &syn::Abi) -> TokenStream {
-    let name = abi
-        .name
-        .as_ref()
-        .expect("an ffi! declaration must specify an ABI")
-        .value();
-    match name.as_str() {
-        "Rust" => quote!(co3::abi::Rust),
-        "C" => quote!(co3::abi::C),
-        "C-unwind" => quote!(co3::abi::CUnwind),
-        "system" => quote!(co3::abi::System),
-        "system-unwind" => quote!(co3::abi::SystemUnwind),
-        "cdecl" => quote!(co3::abi::Cdecl),
-        "cdecl-unwind" => quote!(co3::abi::CdeclUnwind),
-        "stdcall" => quote!(co3::abi::Stdcall),
-        "stdcall-unwind" => quote!(co3::abi::StdcallUnwind),
-        "fastcall" => quote!(co3::abi::Fastcall),
-        "fastcall-unwind" => quote!(co3::abi::FastcallUnwind),
-        "thiscall" => quote!(co3::abi::Thiscall),
-        "thiscall-unwind" => quote!(co3::abi::ThiscallUnwind),
-        "sysv64" => quote!(co3::abi::Sysv64),
-        "sysv64-unwind" => quote!(co3::abi::Sysv64Unwind),
-        "win64" => quote!(co3::abi::Win64),
-        "win64-unwind" => quote!(co3::abi::Win64Unwind),
-        "aapcs" => quote!(co3::abi::Aapcs),
-        "aapcs-unwind" => quote!(co3::abi::AapcsUnwind),
-        "efiapi" => quote!(co3::abi::Efiapi),
-        _ => panic!("unsupported FFI ABI `{name}`"),
-    }
-}
-
-pub(crate) fn gen_abi_assertions(sig: &syn::Signature, abi: &syn::Abi) -> TokenStream {
-    let abi = abi_marker(abi);
+pub(crate) fn gen_abi_assertions(sig: &syn::Signature) -> TokenStream {
     let arguments = sig.inputs.iter().map(|input| {
         let (attrs, mut ty) = match input {
             syn::FnArg::Typed(arg) => (&arg.attrs, arg.ty.as_ref().clone()),
@@ -180,7 +148,7 @@ pub(crate) fn gen_abi_assertions(sig: &syn::Signature, abi: &syn::Abi) -> TokenS
         quote! {
             #(#cfg)*
             const {
-                assert!(co3::impls!(#ty: co3::CFnArg<#abi>), "co3 FFI argument must implement CFnArg");
+                assert!(co3::impls!(#ty: co3::CFnArg), "co3 FFI argument must implement CFnArg");
             };
         }
     });
@@ -191,7 +159,7 @@ pub(crate) fn gen_abi_assertions(sig: &syn::Signature, abi: &syn::Abi) -> TokenS
     quote! {
         #(#arguments)*
         const {
-            assert!(co3::impls!(#return_ty: co3::CFnReturn<#abi>), "co3 FFI return must implement CFnReturn");
+            assert!(co3::impls!(#return_ty: co3::CFnReturn), "co3 FFI return must implement CFnReturn");
         };
     }
 }

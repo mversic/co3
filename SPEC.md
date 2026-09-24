@@ -45,7 +45,7 @@ Each mode makes explicit tradeoffs and is selected through compile-time configur
 
 ## 2. Public API
 
-Public API constitutes user-facing macros only (not the public trait and type exports).
+Public API constitutes user-facing macros and the `ops::CFn0` through `ops::CFn12` traits.
 Any generated glue code **MUST** remain private and **MUST NOT** leak into the public API.
 Any conversion written manually against traits of this crate **DOES NOT** constitute public API.
 
@@ -70,7 +70,8 @@ It must always start with a declaration of direction and ABI (e.g. `#![unsafe(ex
 - `#[tag(TagTy)]` on a type declaration defines its tag type; `#[tag(TagTy, unsafe(val))]` also assigns its tag value.
 - `where use<T, ...> @ (<Type1> | ...)` opts into a kind of polymorphic dispatch where concrete types are known at compile time but erased at runtime.
 - `#[unpack(_, _)]` on an imported function argument unpacks the compound type into two funcion arguments (facilitates useing `&[T]` in legacy APIs).
-- `raw fn name(...) -> RetTy;` import declarations generate a C-compatible companion function named `name_raw`
+- `raw fn name(...) -> RetTy;` declarations generate a C-compatible companion function named `name_raw` using the enclosing declaration ABI.
+- `raw "ABI" fn` overrides the companion ABI. An `extern "ABI"` on the same declaration describes the wrapped function's ABI.
 - Using the `ffi` macro always carries a risk of UB as it relies on the correct user-provided argument types and lifetimes in the ABI.
 
 ### 2.2. `#[derive(ReprC)]`

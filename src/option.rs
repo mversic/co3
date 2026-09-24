@@ -231,8 +231,8 @@ unsafe impl<T: CheckedTransmute<CType: Copy>> CheckedTransmute for ReprCOption<T
 }
 
 unsafe impl<T: ReprC> ReprC for ReprCOption<T> {}
-unsafe impl<T: ReprC + Copy, Abi> CFnArg<Abi> for ReprCOption<T> {}
-unsafe impl<T: ReprC + Copy, Abi> CFnReturn<Abi> for ReprCOption<T> {}
+unsafe impl<T: ReprC + Copy> CFnArg for ReprCOption<T> {}
+unsafe impl<T: ReprC + Copy> CFnReturn for ReprCOption<T> {}
 
 unsafe impl<T: BorrowCast<AsConst: Copy> + Copy> BorrowCast for ReprCOption<T> {
     type AsConst = ReprCOption<T::AsConst>;

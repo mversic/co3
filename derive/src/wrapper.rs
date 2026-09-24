@@ -67,7 +67,7 @@ pub(crate) fn wrap_fn_definition(
 
     ffi_fn::normalize_fn_signature(&mut item.sig, None);
     let decl = ffi_fn::gen_extern_fn_signature(item.sig, failure_mode);
-    let abi_assertions = gen_decl_abi_assertions(&decl, abi);
+    let abi_assertions = gen_decl_abi_assertions(&decl);
     let extern_fn_decl = gen_extern_decl(abi, block_attrs, &item.attrs, decl);
 
     quote! {
@@ -284,10 +284,10 @@ pub(crate) fn gen_extern_decl(
     }
 }
 
-pub(crate) fn gen_decl_abi_assertions(decl: &TokenStream, abi: &syn::Abi) -> TokenStream {
+pub(crate) fn gen_decl_abi_assertions(decl: &TokenStream) -> TokenStream {
     let sig: syn::Signature =
         syn::parse2(decl.clone()).expect("generated FFI declaration must parse");
-    ffi_fn::gen_abi_assertions(&sig, abi)
+    ffi_fn::gen_abi_assertions(&sig)
 }
 
 pub(crate) fn gen_wrapper_body<const DISPATCHED: bool>(

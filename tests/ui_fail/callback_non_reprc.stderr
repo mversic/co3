@@ -1,4 +1,4 @@
-error[E0277]: the trait bound `NotReprC: CFnArg<C>` is not satisfied
+error[E0277]: the trait bound `NotReprC: CFnArg` is not satisfied
   --> tests/ui_fail/callback_non_reprc.rs:10:1
    |
 10 | / ffi! {
@@ -9,25 +9,25 @@ error[E0277]: the trait bound `NotReprC: CFnArg<C>` is not satisfied
 15 | | }
    | |_^ unsatisfied trait bound
    |
-help: the trait `CFnArg<C>` is not implemented for `NotReprC`
+help: the trait `CFnArg` is not implemented for `NotReprC`
   --> tests/ui_fail/callback_non_reprc.rs:5:1
    |
  5 | struct NotReprC(u8);
    | ^^^^^^^^^^^^^^^
-   = help: the following other types implement trait `CFnArg<Abi>`:
-             Option<extern "C" fn() -> R>
-             Option<extern "C" fn(A) -> R>
-             Option<extern "C" fn(A, B) -> R>
-             Option<extern "C" fn(A, B, C) -> R>
-             Option<extern "C" fn(A, B, C, D) -> R>
-             Option<extern "C" fn(A, B, C, D, E) -> R>
-             Option<extern "C" fn(A, B, C, D, E, F) -> R>
-             Option<extern "C" fn(A, B, C, D, E, F, G) -> R>
+   = help: the following other types implement trait `CFnArg`:
+             *const R
+             *mut R
+             CBox<C>
+             CBoxedSlice<C>
+             CNotReprC
+             CNotReprCConstView
+             CNotReprCMutView
+             CSlice<C>
            and $N others
    = note: required for `extern "C" fn(NotReprC)` to implement `co3::ExternC`
    = note: this error originates in the macro `ffi` (in Nightly builds, run with -Z macro-backtrace for more info)
 
-error[E0277]: the trait bound `NotReprC: CFnReturn<C>` is not satisfied
+error[E0277]: the trait bound `NotReprC: CFnReturn` is not satisfied
   --> tests/ui_fail/callback_non_reprc.rs:10:1
    |
 10 | / ffi! {
@@ -38,20 +38,20 @@ error[E0277]: the trait bound `NotReprC: CFnReturn<C>` is not satisfied
 15 | | }
    | |_^ unsatisfied trait bound
    |
-help: the trait `CFnReturn<C>` is not implemented for `NotReprC`
+help: the trait `CFnReturn` is not implemented for `NotReprC`
   --> tests/ui_fail/callback_non_reprc.rs:5:1
    |
  5 | struct NotReprC(u8);
    | ^^^^^^^^^^^^^^^
-   = help: the following other types implement trait `CFnReturn<Abi>`:
-             Option<extern "C" fn() -> R>
-             Option<extern "C" fn(A) -> R>
-             Option<extern "C" fn(A, B) -> R>
-             Option<extern "C" fn(A, B, C) -> R>
-             Option<extern "C" fn(A, B, C, D) -> R>
-             Option<extern "C" fn(A, B, C, D, E) -> R>
-             Option<extern "C" fn(A, B, C, D, E, F) -> R>
-             Option<extern "C" fn(A, B, C, D, E, F, G) -> R>
+   = help: the following other types implement trait `CFnReturn`:
+             ()
+             *const R
+             *mut R
+             CBox<C>
+             CBoxedSlice<C>
+             CNotReprC
+             CNotReprCConstView
+             CNotReprCMutView
            and $N others
    = note: required for `extern "C" fn() -> NotReprC` to implement `co3::ExternC`
    = note: this error originates in the macro `ffi` (in Nightly builds, run with -Z macro-backtrace for more info)

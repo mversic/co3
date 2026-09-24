@@ -73,8 +73,8 @@ macro_rules! primitive_derive {
         }
 
         unsafe impl ReprC for $primitive {}
-        unsafe impl<Abi> CFnArg<Abi> for $primitive {}
-        unsafe impl<Abi> CFnReturn<Abi> for $primitive {}
+        unsafe impl CFnArg for $primitive {}
+        unsafe impl CFnReturn for $primitive {}
 
         unsafe impl BorrowCast for $primitive {
             type AsConst = Self;
@@ -144,8 +144,8 @@ macro_rules! raw_pointer_derive {
         }
 
         unsafe impl<R: ReprC + ?Sized> ReprC for *$mutability R {}
-        unsafe impl<R: ReprC, Abi> CFnArg<Abi> for *$mutability R {}
-        unsafe impl<R: ReprC, Abi> CFnReturn<Abi> for *$mutability R {}
+        unsafe impl<R: ReprC> CFnArg for *$mutability R {}
+        unsafe impl<R: ReprC> CFnReturn for *$mutability R {}
 
         unsafe impl<R: ReprC + ?Sized> BorrowCast for *$mutability R {
             type AsConst = Self;
@@ -160,100 +160,100 @@ macro_rules! raw_pointer_derive {
 macro_rules! impl_fn_types {
     ( $( ( $( $arg:ident ),* ) ),* $(,)? ) => {
         $(
-            impl_fn_types!(@abi crate::abi::C, "C"; $($arg),*);
-            impl_fn_types!(@abi crate::abi::CUnwind, "C-unwind"; $($arg),*);
-            impl_fn_types!(@abi crate::abi::System, "system"; $($arg),*);
-            impl_fn_types!(@abi crate::abi::SystemUnwind, "system-unwind"; $($arg),*);
+            impl_fn_types!(@abi "C"; $($arg),*);
+            impl_fn_types!(@abi "C-unwind"; $($arg),*);
+            impl_fn_types!(@abi "system"; $($arg),*);
+            impl_fn_types!(@abi "system-unwind"; $($arg),*);
             #[cfg(target_arch = "x86")]
-            impl_fn_types!(@abi crate::abi::Cdecl, "cdecl"; $($arg),*);
+            impl_fn_types!(@abi "cdecl"; $($arg),*);
             #[cfg(target_arch = "x86")]
-            impl_fn_types!(@abi crate::abi::CdeclUnwind, "cdecl-unwind"; $($arg),*);
+            impl_fn_types!(@abi "cdecl-unwind"; $($arg),*);
             #[cfg(target_arch = "x86")]
-            impl_fn_types!(@abi crate::abi::Stdcall, "stdcall"; $($arg),*);
+            impl_fn_types!(@abi "stdcall"; $($arg),*);
             #[cfg(target_arch = "x86")]
-            impl_fn_types!(@abi crate::abi::StdcallUnwind, "stdcall-unwind"; $($arg),*);
+            impl_fn_types!(@abi "stdcall-unwind"; $($arg),*);
             #[cfg(target_arch = "x86")]
-            impl_fn_types!(@abi crate::abi::Fastcall, "fastcall"; $($arg),*);
+            impl_fn_types!(@abi "fastcall"; $($arg),*);
             #[cfg(target_arch = "x86")]
-            impl_fn_types!(@abi crate::abi::FastcallUnwind, "fastcall-unwind"; $($arg),*);
+            impl_fn_types!(@abi "fastcall-unwind"; $($arg),*);
             #[cfg(target_arch = "x86")]
-            impl_fn_types!(@abi crate::abi::Thiscall, "thiscall"; $($arg),*);
+            impl_fn_types!(@abi "thiscall"; $($arg),*);
             #[cfg(target_arch = "x86")]
-            impl_fn_types!(@abi crate::abi::ThiscallUnwind, "thiscall-unwind"; $($arg),*);
+            impl_fn_types!(@abi "thiscall-unwind"; $($arg),*);
             #[cfg(target_arch = "x86_64")]
-            impl_fn_types!(@abi crate::abi::Sysv64, "sysv64"; $($arg),*);
+            impl_fn_types!(@abi "sysv64"; $($arg),*);
             #[cfg(target_arch = "x86_64")]
-            impl_fn_types!(@abi crate::abi::Sysv64Unwind, "sysv64-unwind"; $($arg),*);
+            impl_fn_types!(@abi "sysv64-unwind"; $($arg),*);
             #[cfg(target_arch = "x86_64")]
-            impl_fn_types!(@abi crate::abi::Win64, "win64"; $($arg),*);
+            impl_fn_types!(@abi "win64"; $($arg),*);
             #[cfg(target_arch = "x86_64")]
-            impl_fn_types!(@abi crate::abi::Win64Unwind, "win64-unwind"; $($arg),*);
+            impl_fn_types!(@abi "win64-unwind"; $($arg),*);
             #[cfg(target_arch = "arm")]
-            impl_fn_types!(@abi crate::abi::Aapcs, "aapcs"; $($arg),*);
+            impl_fn_types!(@abi "aapcs"; $($arg),*);
             #[cfg(target_arch = "arm")]
-            impl_fn_types!(@abi crate::abi::AapcsUnwind, "aapcs-unwind"; $($arg),*);
+            impl_fn_types!(@abi "aapcs-unwind"; $($arg),*);
             #[cfg(any(target_arch = "x86", target_arch = "x86_64", target_arch = "arm", target_arch = "aarch64"))]
-            impl_fn_types!(@abi crate::abi::Efiapi, "efiapi"; $($arg),*);
+            impl_fn_types!(@abi "efiapi"; $($arg),*);
         )*
     };
-    (@abi $marker:path, $abi:literal; $($arg:ident),*) => {
-        impl_fn_types!(@impl [$($arg),*] $marker, extern $abi fn($($arg),*) -> R);
-        impl_fn_types!(@impl [$($arg),*] $marker, unsafe extern $abi fn($($arg),*) -> R);
+    (@abi $abi:literal; $($arg:ident),*) => {
+        impl_fn_types!(@impl [$($arg),*] extern $abi fn($($arg),*) -> R);
+        impl_fn_types!(@impl [$($arg),*] unsafe extern $abi fn($($arg),*) -> R);
     };
-    (@impl [$($arg:ident),*] $marker:path, $fn_type:ty) => {
+    (@impl [$($arg:ident),*] $fn_type:ty) => {
         // A function pointer cannot be null, so use its nullable form at the ABI
         // boundary and reject null before constructing the Rust pointer.
-        unsafe impl<$($arg: CFnArg<$marker>,)* R: CFnReturn<$marker>> Borrow for $fn_type
+        unsafe impl<$($arg: CFnArg,)* R: CFnReturn> Borrow for $fn_type
         where $fn_type: rust_spec::RustSpec<Layout = rust_spec::Stable> {
             type Borrowed<'itm> = Self where Self: 'itm;
             type Owner = ();
             fn borrow<'itm>(self, (): &mut ()) -> Self::Borrowed<'itm>
             where Self: 'itm { self }
         }
-        impl<'itm, $($arg: CFnArg<$marker>,)* R: CFnReturn<$marker>> FromBorrow<'itm> for $fn_type
+        impl<'itm, $($arg: CFnArg,)* R: CFnReturn> FromBorrow<'itm> for $fn_type
         where $fn_type: rust_spec::RustSpec<Layout = rust_spec::Stable> {
             fn from_borrow(source: Self) -> Self { source }
         }
-        impl<$($arg: CFnArg<$marker>,)* R: CFnReturn<$marker>> ExternC for $fn_type
+        impl<$($arg: CFnArg,)* R: CFnReturn> ExternC for $fn_type
         where $fn_type: rust_spec::RustSpec<Layout = rust_spec::Stable> {
             type CType = Option<Self>;
         }
-        unsafe impl<$($arg: CFnArg<$marker>,)* R: CFnReturn<$marker>> EncodeOwned for $fn_type
+        unsafe impl<$($arg: CFnArg,)* R: CFnReturn> EncodeOwned for $fn_type
         where $fn_type: rust_spec::RustSpec<Layout = rust_spec::Stable> {
             type Store = ();
             fn soft_encode<'itm>(self, (): &mut ()) -> Self::CType
             where Self: 'itm { Some(self) }
         }
-        unsafe impl<'d, $($arg: CFnArg<$marker>,)* R: CFnReturn<$marker>> DecodeOwned<'d> for $fn_type
+        unsafe impl<'d, $($arg: CFnArg,)* R: CFnReturn> DecodeOwned<'d> for $fn_type
         where $fn_type: rust_spec::RustSpec<Layout = rust_spec::Stable> {
             type Store = ();
             unsafe fn soft_decode<'itm: 'd>(source: Self::CType, (): &mut ()) -> Option<Self> {
                 source
             }
         }
-        impl<$($arg: CFnArg<$marker>,)* R: CFnReturn<$marker>> Encode for $fn_type
+        impl<$($arg: CFnArg,)* R: CFnReturn> Encode for $fn_type
         where $fn_type: rust_spec::RustSpec<Layout = rust_spec::Stable> {}
-        impl<$($arg: CFnArg<$marker>,)* R: CFnReturn<$marker>> Decode<'_> for $fn_type
+        impl<$($arg: CFnArg,)* R: CFnReturn> Decode<'_> for $fn_type
         where $fn_type: rust_spec::RustSpec<Layout = rust_spec::Stable> {}
-        impl<$($arg: CFnArg<$marker>,)* R: CFnReturn<$marker>> Niche for $fn_type
+        impl<$($arg: CFnArg,)* R: CFnReturn> Niche for $fn_type
         where $fn_type: rust_spec::RustSpec<Layout = rust_spec::Stable> {
             const NICHE_VALUE: Self::CType = None;
         }
-        unsafe impl<$($arg: CFnArg<$marker>,)* R: CFnReturn<$marker>> CheckedTransmute for $fn_type
+        unsafe impl<$($arg: CFnArg,)* R: CFnReturn> CheckedTransmute for $fn_type
         where $fn_type: rust_spec::RustSpec<Layout = rust_spec::Stable> {
             unsafe fn is_valid(target: &Self::CType) -> bool { target.is_some() }
         }
-        unsafe impl<$($arg: CFnArg<$marker>,)* R: CFnReturn<$marker>> ReprC for Option<$fn_type>
+        unsafe impl<$($arg: CFnArg,)* R: CFnReturn> ReprC for Option<$fn_type>
         where $fn_type: rust_spec::RustSpec<Layout = rust_spec::Stable> {}
-        unsafe impl<$($arg: CFnArg<$marker>,)* R: CFnReturn<$marker>> CFnArg<$marker> for Option<$fn_type>
+        unsafe impl<$($arg: CFnArg,)* R: CFnReturn> CFnArg for Option<$fn_type>
         where $fn_type: rust_spec::RustSpec<Layout = rust_spec::Stable> {}
-        unsafe impl<$($arg: CFnArg<$marker>,)* R: CFnReturn<$marker>> CFnReturn<$marker> for Option<$fn_type>
+        unsafe impl<$($arg: CFnArg,)* R: CFnReturn> CFnReturn for Option<$fn_type>
         where $fn_type: rust_spec::RustSpec<Layout = rust_spec::Stable> {}
-        unsafe impl<$($arg: CFnArg<$marker>,)* R: CFnReturn<$marker>> BorrowCast for Option<$fn_type>
+        unsafe impl<$($arg: CFnArg,)* R: CFnReturn> BorrowCast for Option<$fn_type>
         where $fn_type: rust_spec::RustSpec<Layout = rust_spec::Stable> {
             type AsConst = Self;
         }
-        unsafe impl<$($arg: CFnArg<$marker>,)* R: CFnReturn<$marker>> BorrowCastMut for Option<$fn_type>
+        unsafe impl<$($arg: CFnArg,)* R: CFnReturn> BorrowCastMut for Option<$fn_type>
         where $fn_type: rust_spec::RustSpec<Layout = rust_spec::Stable> {
             type AsMut = Self;
         }
@@ -477,10 +477,10 @@ mod tests {
         }
 
         assert_impl_all!(Callback: ExternC<CType = Option<Callback>>, Encode, Decode<'static>, Niche);
-        assert_impl_all!(Option<Callback>: ReprC, CFnArg<crate::abi::C>, Encode, Decode<'static>);
+        assert_impl_all!(Option<Callback>: ReprC, CFnArg, Encode, Decode<'static>);
 
         type SystemCallback = extern "system" fn(u8) -> u8;
-        assert_impl_all!(Option<SystemCallback>: CFnArg<crate::abi::System>);
+        assert_impl_all!(Option<SystemCallback>: CFnArg);
 
         let encoded = increment as Callback;
         let encoded = encoded.soft_encode(&mut ());
