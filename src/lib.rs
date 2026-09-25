@@ -1,14 +1,14 @@
 //! _Rust-native declarations_ for importing and exporting C ABI interfaces.
 //!
 //! **[`ffi!`] is the main entry point.** It generates ABI-facing wrappers and conversion glue for
-//! statics, functions, impl blocks, and opaque types. Each block can either _export_ declarations
+//! functions, impl blocks, opaque types, and imported statics. Blocks either _export_ declarations
 //! from Rust with `#![unsafe(export("ABI"))]` or _import_ them from a foreign library with
 //! `#![unsafe(extern("ABI"))]`.
 //!
 //! **[`ReprC`] derive generates the C-compatbile type and the corresponding conversions.** Value
 //! representations are checked for traps, including pointees, and ownership transfer is _opt-in_.
 //!
-//! Except for statics, **export declarations are interchangeable with import declarations**.
+//! **Export declarations are completely interchangeable with import declarations**.
 //!
 //! # Safety
 //!

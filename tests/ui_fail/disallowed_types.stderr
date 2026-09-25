@@ -1,60 +1,12 @@
-error[E0277]: `*mut u8` cannot be shared between threads safely
-   --> tests/ui_fail/disallowed_types.rs:127:5
-    |
-127 | /     ffi! {
-128 | |         #![unsafe(export("C"))]
-129 | |
-130 | |         static UNSTABLE_STATIC: String = String::new();
-131 | |         static mut NON_C_STATIC: StableButNotCStatic = StableButNotCStatic(0);
-132 | |     }
-    | |_____^ `*mut u8` cannot be shared between threads safely
-    |
-    = help: within `CBoxedSlice<u8>`, the trait `Sync` is not implemented for `*mut u8`
-note: required because it appears within the type `CBoxedSlice<u8>`
-   --> src/boxed.rs
-    |
-    | pub struct CBoxedSlice<C> {
-    |            ^^^^^^^^^^^
-    = note: shared static variables must have a type that implements `Sync`
-    = note: this error originates in the macro `ffi` (in Nightly builds, run with -Z macro-backtrace for more info)
-
 error[E0277]: the trait bound `StableButNotCStatic: co3::ExternC` is not satisfied
-   --> tests/ui_fail/disallowed_types.rs:127:5
+   --> tests/ui_fail/disallowed_types.rs:209:1
     |
-127 | /     ffi! {
-128 | |         #![unsafe(export("C"))]
-129 | |
-130 | |         static UNSTABLE_STATIC: String = String::new();
-131 | |         static mut NON_C_STATIC: StableButNotCStatic = StableButNotCStatic(0);
-132 | |     }
-    | |_____^ unsatisfied trait bound
-    |
-help: the trait `co3::ExternC` is not implemented for `StableButNotCStatic`
-   --> tests/ui_fail/disallowed_types.rs:25:1
-    |
- 25 | struct StableButNotCStatic(u32);
-    | ^^^^^^^^^^^^^^^^^^^^^^^^^^
-    = help: the following other types implement trait `co3::ExternC`:
-              &'_lšč0 _TŠČ0
-              &'_lšč0 mut _TŠČ0
-              ()
-              (A, B)
-              (A, B, C)
-              (A, B, C, D)
-              (A, B, C, D, E)
-              (A, B, C, D, E, F)
-            and $N others
-    = note: this error originates in the macro `ffi` (in Nightly builds, run with -Z macro-backtrace for more info)
-
-error[E0277]: the trait bound `StableButNotCStatic: co3::ExternC` is not satisfied
-   --> tests/ui_fail/disallowed_types.rs:215:1
-    |
-215 | / ffi! {
-216 | |     #![unsafe(extern("C"))]
-217 | |
-218 | |     static UNSTABLE_STATIC: String;
-219 | |     static mut NON_C_STATIC: StableButNotCStatic;
-220 | | }
+209 | / ffi! {
+210 | |     #![unsafe(extern("C"))]
+211 | |
+212 | |     static UNSTABLE_STATIC: String;
+213 | |     static mut NON_C_STATIC: StableButNotCStatic;
+214 | | }
     | |_^ unsatisfied trait bound
     |
 help: the trait `co3::ExternC` is not implemented for `StableButNotCStatic`
@@ -109,105 +61,46 @@ note: erroneous constant encountered
 119 |         impl<dyn(usize) T = Array2> Dispatch for T
     |                                                  ^
 
-error[E0080]: evaluation panicked: ffi static `String` must have a stable, non-zero layout
-   --> tests/ui_fail/disallowed_types.rs:127:5
-    |
-127 | /     ffi! {
-128 | |         #![unsafe(export("C"))]
-129 | |
-130 | |         static UNSTABLE_STATIC: String = String::new();
-131 | |         static mut NON_C_STATIC: StableButNotCStatic = StableButNotCStatic(0);
-132 | |     }
-    | |_____^ evaluation of `provider::_` failed here
-
-error[E0512]: cannot transmute between types of different sizes, or dependently-sized types
-   --> tests/ui_fail/disallowed_types.rs:127:5
-    |
-127 | /     ffi! {
-128 | |         #![unsafe(export("C"))]
-129 | |
-130 | |         static UNSTABLE_STATIC: String = String::new();
-131 | |         static mut NON_C_STATIC: StableButNotCStatic = StableButNotCStatic(0);
-132 | |     }
-    | |_____^
-    |
-    = note: source type: `String` (192 bits)
-    = note: target type: `CBoxedSlice<u8>` (128 bits)
-    = note: this error originates in the macro `ffi` (in Nightly builds, run with -Z macro-backtrace for more info)
-
-error[E0080]: evaluation panicked: ffi static `StableButNotCStatic` must support checked transmutation
-   --> tests/ui_fail/disallowed_types.rs:127:5
-    |
-127 | /     ffi! {
-128 | |         #![unsafe(export("C"))]
-129 | |
-130 | |         static UNSTABLE_STATIC: String = String::new();
-131 | |         static mut NON_C_STATIC: StableButNotCStatic = StableButNotCStatic(0);
-132 | |     }
-    | |_____^ evaluation of `provider::_` failed here
-
-error[E0277]: the trait bound `StableButNotCStatic: CheckedTransmute` is not satisfied
-   --> tests/ui_fail/disallowed_types.rs:131:34
-    |
-131 |         static mut NON_C_STATIC: StableButNotCStatic = StableButNotCStatic(0);
-    |                                  ^^^^^^^^^^^^^^^^^^^ unsatisfied trait bound
-    |
-help: the trait `CheckedTransmute` is not implemented for `StableButNotCStatic`
-   --> tests/ui_fail/disallowed_types.rs:25:1
-    |
- 25 | struct StableButNotCStatic(u32);
-    | ^^^^^^^^^^^^^^^^^^^^^^^^^^
-    = help: the following other types implement trait `CheckedTransmute`:
-              &R
-              &mut R
-              ()
-              *const R
-              *mut R
-              Box<R>
-              CArray
-              CArray2
-            and $N others
-
 error[E0277]: the trait bound `OwnedMyType: co3::borrow::Borrow` is not satisfied
-   --> tests/ui_fail/disallowed_types.rs:181:46
+   --> tests/ui_fail/disallowed_types.rs:175:46
     |
-176 | / ffi! {
-177 | |     #![unsafe(extern("C"))]
-178 | |
-179 | |     #![symbol_prefix = "kita"]
-180 | |
-181 | |     pub extern "C" fn disallowed_opaque_args(arg1: OwnedMyType);
+170 | / ffi! {
+171 | |     #![unsafe(extern("C"))]
+172 | |
+173 | |     #![symbol_prefix = "kita"]
+174 | |
+175 | |     pub extern "C" fn disallowed_opaque_args(arg1: OwnedMyType);
     | |                                              ^^^^ the trait `co3::borrow::Borrow` is not implemented for `OwnedMyType`
-182 | | }
+176 | | }
     | |_- required by a bound introduced by this call
     |
 help: consider borrowing here
     |
-181 |     pub extern "C" fn disallowed_opaque_args(&arg1: OwnedMyType);
+175 |     pub extern "C" fn disallowed_opaque_args(&arg1: OwnedMyType);
     |                                              +
-181 |     pub extern "C" fn disallowed_opaque_args(&mut arg1: OwnedMyType);
+175 |     pub extern "C" fn disallowed_opaque_args(&mut arg1: OwnedMyType);
     |                                              ++++
 
 error[E0277]: the trait bound `OwnedMyType: co3::borrow::Borrow` is not satisfied
-   --> tests/ui_fail/disallowed_types.rs:176:1
+   --> tests/ui_fail/disallowed_types.rs:170:1
     |
-176 | / ffi! {
-177 | |     #![unsafe(extern("C"))]
-178 | |
-179 | |     #![symbol_prefix = "kita"]
-180 | |
-181 | |     pub extern "C" fn disallowed_opaque_args(arg1: OwnedMyType);
-182 | | }
+170 | / ffi! {
+171 | |     #![unsafe(extern("C"))]
+172 | |
+173 | |     #![symbol_prefix = "kita"]
+174 | |
+175 | |     pub extern "C" fn disallowed_opaque_args(arg1: OwnedMyType);
+176 | | }
     | |_^ unsatisfied trait bound
     |
 help: the trait `co3::borrow::Borrow` is not implemented for `OwnedMyType`
-   --> tests/ui_fail/disallowed_types.rs:135:1
+   --> tests/ui_fail/disallowed_types.rs:129:1
     |
-135 | / ffi! {
-136 | |     #![unsafe(extern("C"))]
-137 | |     #![symbol_prefix = "kita"]
+129 | / ffi! {
+130 | |     #![unsafe(extern("C"))]
+131 | |     #![symbol_prefix = "kita"]
 ...   |
-147 | | }
+141 | | }
     | |_^
     = help: the following other types implement trait `co3::borrow::Borrow`:
               &R
@@ -222,38 +115,38 @@ help: the trait `co3::borrow::Borrow` is not implemented for `OwnedMyType`
     = note: this error originates in the macro `ffi` (in Nightly builds, run with -Z macro-backtrace for more info)
 
 error[E0080]: evaluation panicked: ABI retype size mismatch
-   --> tests/ui_fail/disallowed_types.rs:194:46
+   --> tests/ui_fail/disallowed_types.rs:188:46
     |
-194 |     impl<dyn(usize) T = Handle> Dispatch for T
+188 |     impl<dyn(usize) T = Handle> Dispatch for T
     |                                              ^ evaluation of `_::_::{constant#0}::{constant#0}` failed here
 
 note: erroneous constant encountered
-   --> tests/ui_fail/disallowed_types.rs:194:46
+   --> tests/ui_fail/disallowed_types.rs:188:46
     |
-194 |     impl<dyn(usize) T = Handle> Dispatch for T
+188 |     impl<dyn(usize) T = Handle> Dispatch for T
     |                                              ^
 
 error[E0080]: evaluation panicked: ABI retype alignment mismatch
-   --> tests/ui_fail/disallowed_types.rs:207:47
+   --> tests/ui_fail/disallowed_types.rs:201:47
     |
-207 |     impl<dyn(usize) T = Handle2> Dispatch for T
+201 |     impl<dyn(usize) T = Handle2> Dispatch for T
     |                                               ^ evaluation of `_::_::{constant#0}::{constant#0}` failed here
 
 note: erroneous constant encountered
-   --> tests/ui_fail/disallowed_types.rs:207:47
+   --> tests/ui_fail/disallowed_types.rs:201:47
     |
-207 |     impl<dyn(usize) T = Handle2> Dispatch for T
+201 |     impl<dyn(usize) T = Handle2> Dispatch for T
     |                                               ^
 
 error[E0080]: evaluation panicked: ffi static `String` must have a stable, non-zero layout
-   --> tests/ui_fail/disallowed_types.rs:215:1
+   --> tests/ui_fail/disallowed_types.rs:209:1
     |
-215 | / ffi! {
-216 | |     #![unsafe(extern("C"))]
-217 | |
-218 | |     static UNSTABLE_STATIC: String;
-219 | |     static mut NON_C_STATIC: StableButNotCStatic;
-220 | | }
+209 | / ffi! {
+210 | |     #![unsafe(extern("C"))]
+211 | |
+212 | |     static UNSTABLE_STATIC: String;
+213 | |     static mut NON_C_STATIC: StableButNotCStatic;
+214 | | }
     | |_^ evaluation of `_` failed here
 
 error[E0080]: evaluation panicked: Mark the return type with `move` to transfer ownership
@@ -411,143 +304,143 @@ note: erroneous constant encountered
     = note: this note originates in the macro `ffi` (in Nightly builds, run with -Z macro-backtrace for more info)
 
 error[E0080]: evaluation panicked: co3 FFI argument must implement CFnArg
-   --> tests/ui_fail/disallowed_types.rs:149:1
+   --> tests/ui_fail/disallowed_types.rs:143:1
     |
-149 | / ffi! {
-150 | |     #![unsafe(extern("C"))]
-151 | |
-152 | |     #![symbol_prefix = "kita"]
-153 | |
-154 | |     pub extern "C" fn disallowed_args_by_ref(arg1: (), arg2: [u8; 2]);
-155 | | }
+143 | / ffi! {
+144 | |     #![unsafe(extern("C"))]
+145 | |
+146 | |     #![symbol_prefix = "kita"]
+147 | |
+148 | |     pub extern "C" fn disallowed_args_by_ref(arg1: (), arg2: [u8; 2]);
+149 | | }
     | |_^ evaluation of `disallowed_args_by_ref::{constant#1}` failed here
 
 note: erroneous constant encountered
-   --> tests/ui_fail/disallowed_types.rs:149:1
+   --> tests/ui_fail/disallowed_types.rs:143:1
     |
-149 | / ffi! {
-150 | |     #![unsafe(extern("C"))]
-151 | |
-152 | |     #![symbol_prefix = "kita"]
-153 | |
-154 | |     pub extern "C" fn disallowed_args_by_ref(arg1: (), arg2: [u8; 2]);
-155 | | }
+143 | / ffi! {
+144 | |     #![unsafe(extern("C"))]
+145 | |
+146 | |     #![symbol_prefix = "kita"]
+147 | |
+148 | |     pub extern "C" fn disallowed_args_by_ref(arg1: (), arg2: [u8; 2]);
+149 | | }
     | |_^
     |
     = note: this note originates in the macro `ffi` (in Nightly builds, run with -Z macro-backtrace for more info)
 
 error[E0080]: evaluation panicked: co3 FFI argument must implement CFnArg
-   --> tests/ui_fail/disallowed_types.rs:149:1
+   --> tests/ui_fail/disallowed_types.rs:143:1
     |
-149 | / ffi! {
-150 | |     #![unsafe(extern("C"))]
-151 | |
-152 | |     #![symbol_prefix = "kita"]
-153 | |
-154 | |     pub extern "C" fn disallowed_args_by_ref(arg1: (), arg2: [u8; 2]);
-155 | | }
+143 | / ffi! {
+144 | |     #![unsafe(extern("C"))]
+145 | |
+146 | |     #![symbol_prefix = "kita"]
+147 | |
+148 | |     pub extern "C" fn disallowed_args_by_ref(arg1: (), arg2: [u8; 2]);
+149 | | }
     | |_^ evaluation of `disallowed_args_by_ref::{constant#2}` failed here
 
 error[E0080]: evaluation panicked: co3 FFI argument must implement CFnArg
-   --> tests/ui_fail/disallowed_types.rs:157:1
+   --> tests/ui_fail/disallowed_types.rs:151:1
     |
-157 | / ffi! {
-158 | |     #![unsafe(extern("C"))]
-159 | |
-160 | |     #![symbol_prefix = "kita"]
-161 | |
-162 | |     pub extern "C" fn disallowed_args_by_val(arg1: move (), arg2: move [u8; 2]);
-163 | | }
+151 | / ffi! {
+152 | |     #![unsafe(extern("C"))]
+153 | |
+154 | |     #![symbol_prefix = "kita"]
+155 | |
+156 | |     pub extern "C" fn disallowed_args_by_val(arg1: move (), arg2: move [u8; 2]);
+157 | | }
     | |_^ evaluation of `disallowed_args_by_val::{constant#1}` failed here
 
 note: erroneous constant encountered
-   --> tests/ui_fail/disallowed_types.rs:157:1
+   --> tests/ui_fail/disallowed_types.rs:151:1
     |
-157 | / ffi! {
-158 | |     #![unsafe(extern("C"))]
-159 | |
-160 | |     #![symbol_prefix = "kita"]
-161 | |
-162 | |     pub extern "C" fn disallowed_args_by_val(arg1: move (), arg2: move [u8; 2]);
-163 | | }
+151 | / ffi! {
+152 | |     #![unsafe(extern("C"))]
+153 | |
+154 | |     #![symbol_prefix = "kita"]
+155 | |
+156 | |     pub extern "C" fn disallowed_args_by_val(arg1: move (), arg2: move [u8; 2]);
+157 | | }
     | |_^
     |
     = note: this note originates in the macro `ffi` (in Nightly builds, run with -Z macro-backtrace for more info)
 
 error[E0080]: evaluation panicked: co3 FFI argument must implement CFnArg
-   --> tests/ui_fail/disallowed_types.rs:157:1
+   --> tests/ui_fail/disallowed_types.rs:151:1
     |
-157 | / ffi! {
-158 | |     #![unsafe(extern("C"))]
-159 | |
-160 | |     #![symbol_prefix = "kita"]
-161 | |
-162 | |     pub extern "C" fn disallowed_args_by_val(arg1: move (), arg2: move [u8; 2]);
-163 | | }
+151 | / ffi! {
+152 | |     #![unsafe(extern("C"))]
+153 | |
+154 | |     #![symbol_prefix = "kita"]
+155 | |
+156 | |     pub extern "C" fn disallowed_args_by_val(arg1: move (), arg2: move [u8; 2]);
+157 | | }
     | |_^ evaluation of `disallowed_args_by_val::{constant#2}` failed here
 
 error[E0080]: evaluation panicked: co3 FFI return must implement CFnReturn
-   --> tests/ui_fail/disallowed_types.rs:165:1
+   --> tests/ui_fail/disallowed_types.rs:159:1
     |
-165 | / ffi! {
-166 | |     #![unsafe(extern("C"))]
-167 | |
-168 | |     pub extern "C" fn disallowed_return1() -> [u8; 2];
-169 | | }
+159 | / ffi! {
+160 | |     #![unsafe(extern("C"))]
+161 | |
+162 | |     pub extern "C" fn disallowed_return1() -> [u8; 2];
+163 | | }
     | |_^ evaluation of `disallowed_return1::{constant#1}` failed here
 
 note: erroneous constant encountered
-   --> tests/ui_fail/disallowed_types.rs:165:1
+   --> tests/ui_fail/disallowed_types.rs:159:1
     |
-165 | / ffi! {
-166 | |     #![unsafe(extern("C"))]
-167 | |
-168 | |     pub extern "C" fn disallowed_return1() -> [u8; 2];
-169 | | }
+159 | / ffi! {
+160 | |     #![unsafe(extern("C"))]
+161 | |
+162 | |     pub extern "C" fn disallowed_return1() -> [u8; 2];
+163 | | }
     | |_^
     |
     = note: this note originates in the macro `ffi` (in Nightly builds, run with -Z macro-backtrace for more info)
 
 error[E0080]: evaluation panicked: Mark the return type with `move` to transfer ownership
-   --> tests/ui_fail/disallowed_types.rs:170:1
+   --> tests/ui_fail/disallowed_types.rs:164:1
     |
-170 | / ffi! {
-171 | |     #![unsafe(extern("C"))]
-172 | |
-173 | |     pub extern "C" fn disallowed_return2() -> Box<[u8]>;
-174 | | }
+164 | / ffi! {
+165 | |     #![unsafe(extern("C"))]
+166 | |
+167 | |     pub extern "C" fn disallowed_return2() -> Box<[u8]>;
+168 | | }
     | |_^ evaluation of `disallowed_return2::{constant#1}` failed here
 
 note: erroneous constant encountered
-   --> tests/ui_fail/disallowed_types.rs:170:1
+   --> tests/ui_fail/disallowed_types.rs:164:1
     |
-170 | / ffi! {
-171 | |     #![unsafe(extern("C"))]
-172 | |
-173 | |     pub extern "C" fn disallowed_return2() -> Box<[u8]>;
-174 | | }
+164 | / ffi! {
+165 | |     #![unsafe(extern("C"))]
+166 | |
+167 | |     pub extern "C" fn disallowed_return2() -> Box<[u8]>;
+168 | | }
     | |_^
     |
     = note: this note originates in the macro `ffi` (in Nightly builds, run with -Z macro-backtrace for more info)
 
 error[E0080]: evaluation panicked: Mark the return type with `move` to transfer ownership
-   --> tests/ui_fail/disallowed_types.rs:183:1
+   --> tests/ui_fail/disallowed_types.rs:177:1
     |
-183 | / ffi! {
-184 | |     #![unsafe(extern("C"))]
-185 | |
-186 | |     pub extern "C" fn disallowed_opaque_return() -> OwnedMyType;
-187 | | }
+177 | / ffi! {
+178 | |     #![unsafe(extern("C"))]
+179 | |
+180 | |     pub extern "C" fn disallowed_opaque_return() -> OwnedMyType;
+181 | | }
     | |_^ evaluation of `disallowed_opaque_return::{constant#1}` failed here
 
 note: erroneous constant encountered
-   --> tests/ui_fail/disallowed_types.rs:183:1
+   --> tests/ui_fail/disallowed_types.rs:177:1
     |
-183 | / ffi! {
-184 | |     #![unsafe(extern("C"))]
-185 | |
-186 | |     pub extern "C" fn disallowed_opaque_return() -> OwnedMyType;
-187 | | }
+177 | / ffi! {
+178 | |     #![unsafe(extern("C"))]
+179 | |
+180 | |     pub extern "C" fn disallowed_opaque_return() -> OwnedMyType;
+181 | | }
     | |_^
     |
     = note: this note originates in the macro `ffi` (in Nightly builds, run with -Z macro-backtrace for more info)

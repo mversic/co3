@@ -1,13 +1,7 @@
-use co3::ffi;
-
-ffi! {
-    #![unsafe(export("C"))]
-    #![symbol_prefix = "static"]
-
-    pub static VERSION: u32 = 1;
-    #[symbol_name = "static_test_flags"]
-    pub static mut FLAGS: u32 = 0;
-}
+#[unsafe(export_name = "static__VERSION")]
+pub static VERSION: <u32 as co3::ExternC>::CType = 1;
+#[unsafe(export_name = "static_test_flags")]
+pub static mut FLAGS: <u32 as co3::ExternC>::CType = 0;
 
 mod imported {
     use co3::ffi;
@@ -23,14 +17,12 @@ mod imported {
 }
 
 fn main() {
-    let _ = VERSION.get();
-    let _ = VERSION.read();
+    let _ = VERSION;
     let _ = imported::VERSION.get();
     let _ = imported::VERSION.read();
     let _ = unsafe { imported::VERSION.get_unchecked() };
-    let _ = unsafe { FLAGS.read() };
-    unsafe { FLAGS.set(1) };
-    let _ = unsafe { FLAGS.take() };
+    let _ = unsafe { FLAGS };
+    unsafe { FLAGS = 1 };
     let _ = unsafe { imported::FLAGS.read() };
     unsafe { imported::FLAGS.set(1) };
     let _ = unsafe { imported::FLAGS.take() };

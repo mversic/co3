@@ -680,18 +680,10 @@ fn validate_impls(
 }
 
 fn validate_export_static(item: &Co3Static) -> Result<()> {
-    for attr in &item.attrs {
-        if !is_symbol_name_attr(attr) && !is_cfg_attr(attr) && !is_doc_attr(attr) {
-            return Err(unsupported_attr(attr));
-        }
-    }
-    item.expr.as_ref().map_or_else(
-        || {
-            let err_msg = "export static declarations require an initializer";
-            Err(Error::new_spanned(&item.ident, err_msg))
-        },
-        |_| Ok(()),
-    )
+    Err(Error::new_spanned(
+        &item.ident,
+        "static items are not supported in `ffi!` export blocks; define the static in Rust with a matching exported symbol",
+    ))
 }
 
 fn validate_export_fn(item: &crate::Co3Fn) -> Result<()> {

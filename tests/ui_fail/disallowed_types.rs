@@ -124,12 +124,6 @@ mod provider {
         }
     }
 
-    ffi! {
-        #![unsafe(export("C"))]
-
-        static UNSTABLE_STATIC: String = String::new();
-        static mut NON_C_STATIC: StableButNotCStatic = StableButNotCStatic(0);
-    }
 }
 
 ffi! {

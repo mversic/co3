@@ -11,21 +11,8 @@ fn static_wrapper_ident(ident: &syn::Ident) -> syn::Ident {
     format_ident!("__Co3Static_{ident}")
 }
 
-fn gen_static_assert(ty: &syn::Type, checked_transmute: bool) -> TokenStream {
+fn gen_static_assert(ty: &syn::Type) -> TokenStream {
     let co3 = co3_path();
-
-    let checked_transmute = checked_transmute.then(|| {
-        quote! {
-            assert!(
-                #co3::impls!(#ty: #co3::transmute::CheckedTransmute),
-                concat!(
-                    "ffi static `",
-                    stringify!(#ty),
-                    "` must support checked transmutation"
-                )
-            );
-        }
-    });
 
     quote! {
         const _: () = {
@@ -40,8 +27,6 @@ fn gen_static_assert(ty: &syn::Type, checked_transmute: bool) -> TokenStream {
                     "` must have a stable, non-zero layout"
                 )
             );
-
-            #checked_transmute
         };
     }
 }
@@ -81,112 +66,6 @@ fn wrapper_definition(
     };
 
     (wrapper_ident, definition, value)
-}
-
-fn gen_export_wrapper(
-    vis: &syn::Visibility,
-    ident: &syn::Ident,
-    ty: &syn::Type,
-    raw_ident: &syn::Ident,
-    mutable: bool,
-) -> TokenStream {
-    let (wrapper_ident, definition, value) = wrapper_definition(vis, ident, ty, mutable);
-
-    let co3 = co3_path();
-    let (deref, get) = (!mutable)
-        .then(|| {
-            (
-                quote! {
-                    impl core::ops::Deref for #wrapper_ident
-                    where
-                        #ty: Sync,
-                    {
-                        type Target = #ty;
-
-                        #[inline]
-                        fn deref(&self) -> &Self::Target {
-                            unsafe { &*(&#raw_ident as *const _ as *const #ty) }
-                        }
-                    }
-                },
-                quote! {
-                    #[inline]
-                    pub fn get(&self) -> &#ty
-                    where
-                        #ty: Sync,
-                    {
-                        unsafe { &*(&#raw_ident as *const _ as *const #ty) }
-                    }
-                },
-            )
-        })
-        .unzip();
-
-    let read = if mutable {
-        quote! {
-            #[inline]
-            pub unsafe fn read(&self) -> Option<#ty>
-            where for<'_dummy> #ty: core::clone::Clone,
-            {
-                if !unsafe {
-                    <#ty as #co3::transmute::CheckedTransmute>::is_valid(
-                        &*core::ptr::addr_of!(#raw_ident),
-                    )
-                } {
-                    return None;
-                }
-
-                Some(unsafe { (&*(core::ptr::addr_of!(#raw_ident) as *const #ty)).clone() })
-            }
-        }
-    } else {
-        quote! {
-            #[inline]
-            pub fn read(&self) -> #ty
-            where for<'_dummy> #ty: core::clone::Clone,
-            {
-                unsafe { (&*(&#raw_ident as *const _ as *const #ty)).clone() }
-            }
-        }
-    };
-    let mutable_methods = mutable.then(|| quote! {
-        #[allow(clippy::useless_transmute)]
-        #[inline]
-        pub unsafe fn set(&self, value: #ty) {
-            let value = unsafe { core::mem::transmute::<#ty, _>(value) };
-            unsafe { core::ptr::write(core::ptr::addr_of_mut!(#raw_ident), value); }
-        }
-
-        #[allow(clippy::useless_transmute)]
-        #[inline]
-        pub unsafe fn take(&self) -> Option<#ty>
-        where for<'_dummy> #ty: core::default::Default,
-        {
-            if !unsafe {
-                <#ty as #co3::transmute::CheckedTransmute>::is_valid(
-                    &*core::ptr::addr_of!(#raw_ident),
-                )
-            } {
-                return None;
-            }
-            let replacement = unsafe {
-                core::mem::transmute::<#ty, _>(<#ty as core::default::Default>::default())
-            };
-            let old = unsafe { core::ptr::replace(core::ptr::addr_of_mut!(#raw_ident), replacement) };
-            Some(unsafe { core::mem::transmute::<_, #ty>(old) })
-        }
-    });
-
-    quote! {
-        #definition
-        #deref
-        impl #wrapper_ident {
-            #get
-            #read
-            #mutable_methods
-        }
-        #value
-    }
 }
 
 fn gen_import_wrapper(
@@ -317,51 +196,6 @@ fn gen_import_wrapper(
     }
 }
 
-pub(crate) fn gen_export_static(item: Co3Static) -> TokenStream {
-    let co3 = co3_path();
-    let Co3Static {
-        attrs,
-        vis,
-        static_token,
-        mutability,
-        ident,
-        ty,
-        expr,
-    } = item;
-
-    let expr = expr.unwrap();
-    let raw_ident = static_raw_ident(&ident);
-
-    let mutable = !matches!(mutability, syn::StaticMutability::None);
-    let cfg_attrs = cfg_attrs(&attrs)
-        .map(|attr| quote!(#attr))
-        .collect::<Vec<_>>();
-    let attrs = attrs.iter().map(|attr| {
-        if let Some(value) = symbol_name_value(attr) {
-            quote!(#[unsafe(export_name = #value)])
-        } else {
-            quote!(#attr)
-        }
-    });
-
-    let static_assert = gen_static_assert(&ty, true);
-    let wrapper = gen_export_wrapper(&vis, &ident, &ty, &raw_ident, mutable);
-
-    quote! {
-        #(#cfg_attrs)*
-        #static_assert
-
-        #(#cfg_attrs)*
-        #wrapper
-
-        #(#cfg_attrs)*
-        #(#attrs)*
-        #[allow(clippy::useless_transmute)]
-        #static_token #mutability #raw_ident: <#ty as #co3::ExternC>::CType =
-            unsafe { core::mem::transmute::<#ty, _>(#expr) };
-    }
-}
-
 pub(crate) fn gen_extern_static(
     abi: &syn::Abi,
     block_attrs: &[syn::Attribute],
@@ -392,7 +226,7 @@ pub(crate) fn gen_extern_static(
         .iter()
         .filter(|attr| symbol_name_value(attr).is_none());
 
-    let static_assert = gen_static_assert(&ty, false);
+    let static_assert = gen_static_assert(&ty);
     let mutable = !matches!(mutability, syn::StaticMutability::None);
     let wrapper = gen_import_wrapper(&vis, &ident, &ty, &raw_ident, mutable);
 

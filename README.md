@@ -10,7 +10,7 @@ _Safely_ export and/or import FFI bindings:
 
    - ergonomics of APIs and generated wrappers are idiomatic to Rust users.
    - FFI boundary mechanics are zero-cost abstracted yet remain configurable.
-   - Except for statics, **export declarations can also be used for imports**.
+   - **Export declarations are completely interchangeable with import declarations**
 
 2. **Soundness-first FFI interoperability**
 

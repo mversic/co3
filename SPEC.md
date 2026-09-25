@@ -51,7 +51,7 @@ Any conversion written manually against traits of this crate **DOES NOT** consti
 
 ### 2.1. `ffi!`
 
-`ffi!` is a fn-like macro that enables writing export/extern declarations of types, statics, methods and impl blocks.
+`ffi!` is a fn-like macro that enables writing export/extern declarations of types, methods and impl blocks, and extern declarations of statics.
 It must always start with a declaration of direction and ABI (e.g. `#![unsafe(export("system"))]`/`#![unsafe(extern("system"))]`).
 
 - `#[cfg]` and `#[cfg_attr]` are fully supported in all attribute positions inside the `ffi` macro.
