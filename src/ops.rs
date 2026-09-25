@@ -1,14 +1,14 @@
 //! Operators
 
 use crate::{
-    CFnArg, CFnReturn, Decode, Encode, ReprC,
+    CFnArg, CFnReturn, CType, Decode, Encode,
     stored::{EmptyStore, Store},
 };
 
 macro_rules! define_fn_trait {
     ($name:ident, $arity:tt; $( $arg_ty:ident : $carg:ident : $arg:ident : $c_ty:ident ),* $(,)?) => {
         #[doc = concat!("The _C fn_ call operator of arity ", stringify!($arity), " that accepts Rust values.")]
-        pub trait $name: Copy where Option<Self>: ReprC { $(
+        pub trait $name: Copy where Option<Self>: CType { $(
 
             #[doc = concat!("The ABI type of argument `", stringify!($arg), "`.")]
             type $carg: CFnArg;)*
@@ -53,7 +53,7 @@ macro_rules! define_fn_trait {
 macro_rules! impl_fn_pointer {
     ($trait:ident; $abi:literal; $( $arg_ty:ident : $carg:ident : $arg:ident : $c_ty:ident ),* $(,)?) => {
         impl<$( $c_ty: CFnArg, )* U: CFnReturn> $trait for unsafe extern $abi fn($( $c_ty ),*) -> U
-        where Option<Self>: ReprC
+        where Option<Self>: CType
         { $(
             type $carg = $c_ty; )*
             type Output = U;

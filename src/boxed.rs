@@ -5,7 +5,7 @@ use core::ptr::NonNull;
 use rust_spec::RustSpec;
 
 use crate::{
-    CFnArg, CFnReturn, Decode, Encode, ExternC, ReprC,
+    CFnArg, CFnReturn, CType, Decode, Encode, ReprC,
     borrow::{Borrow, BorrowCast, BorrowCastMut, FromBorrow},
     slice::{CSlice, CSliceMut, Unpack2},
     stored::{DecodeOwned, EncodeOwned},
@@ -241,10 +241,10 @@ macro_rules! impl_boxed_carrier {
             }
         }
 
-        impl<C: ReprC> ExternC for $ty<C> {
+        impl<C: CType> ReprC for $ty<C> {
             type CType = Self;
         }
-        unsafe impl<C: ReprC> EncodeOwned for $ty<C> {
+        unsafe impl<C: CType> EncodeOwned for $ty<C> {
             type Store = ();
 
             #[inline(always)]
@@ -255,7 +255,7 @@ macro_rules! impl_boxed_carrier {
                 self
             }
         }
-        unsafe impl<'d, C: ReprC> DecodeOwned<'d> for $ty<C> {
+        unsafe impl<'d, C: CType> DecodeOwned<'d> for $ty<C> {
             type Store = ();
 
             #[inline(always)]
@@ -264,42 +264,42 @@ macro_rules! impl_boxed_carrier {
             }
         }
 
-        impl<C: ReprC> Encode for $ty<C> {}
-        impl<'d, C: ReprC> Decode<'d> for $ty<C> {}
+        impl<C: CType> Encode for $ty<C> {}
+        impl<'d, C: CType> Decode<'d> for $ty<C> {}
 
-        unsafe impl<C: ReprC> CheckedTransmute for $ty<C> {
+        unsafe impl<C: CType> CheckedTransmute for $ty<C> {
             #[inline(always)]
             unsafe fn is_valid(_: &Self::CType) -> bool {
                 true
             }
         }
 
-        unsafe impl<C: ReprC> ReprC for $ty<C> {}
-        unsafe impl<C: ReprC> CFnArg for $ty<C> {}
-        unsafe impl<C: ReprC> CFnReturn for $ty<C> {}
+        unsafe impl<C: CType> CType for $ty<C> {}
+        unsafe impl<C: CType> CFnArg for $ty<C> {}
+        unsafe impl<C: CType> CFnReturn for $ty<C> {}
     };
 }
 
 impl_boxed_carrier! { CBox }
 impl_boxed_carrier! { CBoxedSlice }
 
-unsafe impl<C: ReprC> BorrowCast for CBox<C> {
+unsafe impl<C: CType> BorrowCast for CBox<C> {
     type AsConst = *const C;
 }
-unsafe impl<C: ReprC> BorrowCastMut for CBox<C> {
+unsafe impl<C: CType> BorrowCastMut for CBox<C> {
     type AsMut = *mut C;
 }
 
-unsafe impl<C: ReprC> BorrowCast for CBoxedSlice<C> {
+unsafe impl<C: CType> BorrowCast for CBoxedSlice<C> {
     type AsConst = CSlice<C>;
 }
-unsafe impl<C: ReprC> BorrowCastMut for CBoxedSlice<C> {
+unsafe impl<C: CType> BorrowCastMut for CBoxedSlice<C> {
     type AsMut = CSliceMut<C>;
 }
 
-impl<R: ?Sized, C: ReprC, K: ReprC, U: ReprC> Unpack2<K, U> for Box<R>
+impl<R: ?Sized, C: CType, K: CType, U: CType> Unpack2<K, U> for Box<R>
 where
-    Self: ExternC<CType = CBoxedSlice<C>>,
+    Self: ReprC<CType = CBoxedSlice<C>>,
     CBox<C>: Into<K>,
     usize: TryInto<U>,
 {

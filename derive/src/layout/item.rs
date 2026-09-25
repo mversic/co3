@@ -54,7 +54,7 @@ pub(super) fn derive_item(
             identity_generics
                 .make_where_clause()
                 .predicates
-                .push(parse_quote!(#field: co3::ReprC));
+                .push(parse_quote!(#field: co3::CType));
         }
 
         let repr_c_impls = gen_identity_repr_c_impls(name, &identity_generics, &fields);
@@ -951,7 +951,7 @@ pub(super) fn derive_fieldless_enum(
         #niche_impl
         #borrow_impls
 
-        impl #impl_generics co3::ExternC for #name #ty_generics #where_clause {
+        impl #impl_generics co3::ReprC for #name #ty_generics #where_clause {
             type CType = #ctype_ty;
         }
         unsafe impl #impl_generics co3::stored::EncodeOwned for #name #ty_generics #where_clause {
@@ -1153,7 +1153,7 @@ fn gen_codec_impls<const ADD_COPY: bool>(
     };
 
     quote! {
-        impl #impl_generics co3::ExternC for #name #ty_generics where
+        impl #impl_generics co3::ReprC for #name #ty_generics where
             #(#borrow_cast_bounds,)*
             #(#extern_c_bounds,)*
             #predicates
@@ -1283,7 +1283,7 @@ fn gen_borrow_cast_view_bounds<const ADD_COPY: bool>(
                 quote! { <AsConst: Sized> + Sized }
             };
 
-            quote! { #ty: co3::ExternC<CType: co3::borrow::BorrowCast #ctype_bound> }
+            quote! { #ty: co3::ReprC<CType: co3::borrow::BorrowCast #ctype_bound> }
         })
         .collect::<Vec<_>>();
 
@@ -1291,8 +1291,7 @@ fn gen_borrow_cast_view_bounds<const ADD_COPY: bool>(
         let last = borrow_ty(last);
         if is_type_parametrized(last, generics) {
             let ctype_bound = ADD_COPY.then(|| quote! { <AsConst: Copy> + Copy });
-            predicates
-                .push(quote!(#last: co3::ExternC<CType: co3::borrow::BorrowCast #ctype_bound>));
+            predicates.push(quote!(#last: co3::ReprC<CType: co3::borrow::BorrowCast #ctype_bound>));
         }
     }
 

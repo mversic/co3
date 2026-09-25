@@ -4,7 +4,7 @@ use core::{mem::MaybeUninit, ops::Add};
 use rust_spec::{RustSpec, niche::WithoutNiche};
 
 use crate::{
-    CFnArg, CFnReturn, Decode, Encode, ExternC, ReprC,
+    CFnArg, CFnReturn, CType, Decode, Encode, ReprC,
     borrow::{Borrow, BorrowCast, BorrowCastMut, FromBorrow},
     stored::{DecodeOwned, EmptyStore, EncodeOwned},
     transmute::CheckedTransmute,
@@ -226,7 +226,7 @@ where
     }
 }
 
-impl<T: ExternC<CType: Copy> + Copy, E: ExternC<CType: Copy> + Copy> ExternC for ReprCResult<T, E> {
+impl<T: ReprC<CType: Copy> + Copy, E: ReprC<CType: Copy> + Copy> ReprC for ReprCResult<T, E> {
     type CType = ReprCResult<T::CType, E::CType>;
 }
 unsafe impl<T: EncodeOwned<CType: Copy> + Copy, E: EncodeOwned<CType: Copy> + Copy> EncodeOwned
@@ -311,9 +311,9 @@ unsafe impl<T: CheckedTransmute<CType: Copy> + Copy, E: CheckedTransmute<CType: 
     }
 }
 
-unsafe impl<T: ReprC + Copy, E: ReprC + Copy> ReprC for ReprCResult<T, E> {}
-unsafe impl<T: ReprC + Copy, E: ReprC + Copy> CFnArg for ReprCResult<T, E> {}
-unsafe impl<T: ReprC + Copy, E: ReprC + Copy> CFnReturn for ReprCResult<T, E> {}
+unsafe impl<T: CType + Copy, E: CType + Copy> CType for ReprCResult<T, E> {}
+unsafe impl<T: CType + Copy, E: CType + Copy> CFnArg for ReprCResult<T, E> {}
+unsafe impl<T: CType + Copy, E: CType + Copy> CFnReturn for ReprCResult<T, E> {}
 
 unsafe impl<T: BorrowCast<AsConst: Copy> + Copy, E: BorrowCast<AsConst: Copy> + Copy> BorrowCast
     for ReprCResult<T, E>

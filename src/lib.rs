@@ -5,7 +5,7 @@
 //! from Rust with `#![unsafe(export("ABI"))]` or _import_ them from a foreign library with
 //! `#![unsafe(extern("ABI"))]`.
 //!
-//! **[`ReprC`] derive generates the C-compatbile type and the corresponding conversions.** Value
+//! **[`ReprC`] derive generates the C-compatible type and the corresponding conversions.** Value
 //! representations are checked for traps, including pointees, and ownership transfer is _opt-in_.
 //!
 //! **Export declarations are completely interchangeable with import declarations**.
@@ -375,9 +375,9 @@
 //! use co3::{ops::CFn2, ReprC, ffi, rust_spec::RustSpec};
 //!
 //! #[derive(Clone, Copy, RustSpec, ReprC)]
-//! // Without `#[reprC(identity)]`, `ReprC` derive produces `CValue`, in which case you'd
-//! // have to use that type (or `<Value as ExternC>::CType`) in your callback instead
-//! #[reprC(identity)]
+//! // Without `#[repr_c(identity)]`, `ReprC` derive produces `CValue`, in which case you'd
+//! // have to use that type (or `<Value as ReprC>::CType`) in your callback instead
+//! #[repr_c(identity)]
 //! #[repr(transparent)]
 //! struct Value(u8);
 //!
@@ -406,7 +406,7 @@
 //! #[derive(Clone, Copy, RustSpec, ReprC)]
 //! struct Value(u8);
 //!
-//! type Callback = extern "C" fn(CValue, u8) -> <Value as co3::ExternC>::CType;
+//! type Callback = extern "C" fn(CValue, u8) -> <Value as co3::ReprC>::CType;
 //!
 //! fn apply_callback(callback: Callback, value: Value) -> Value {
 //!     // If the type contains soft references use:
@@ -432,7 +432,7 @@
 //! The following example shows how this helps with callbacks:
 //!
 //! ```rust
-//! use co3::{ExternC, ReprC, ffi, rust_spec::RustSpec};
+//! use co3::{ReprC, ffi, rust_spec::RustSpec};
 //! #
 //! # #[unsafe(export_name = "doc_register_callback")]
 //! # extern "C" fn callback_receiver(_: Callback) {}
@@ -594,101 +594,101 @@ pub trait Error {
 /// Robust type that conforms to C ABI and can be safely shared across FFI boundaries.
 ///
 /// Note that, for raw pointers, ABI compatibility of referent is not guaranteed. Dereferencing
-/// opaque/extern type pointers which don't also implement `ReprC` is very likely to cause UB.
+/// opaque/extern type pointers which don't also implement `CType` is very likely to cause UB.
 ///
 /// # Safety
 ///
 /// Type implementing the trait must have a guaranteed C ABI and no trap representations.
-pub unsafe trait ReprC {}
+pub unsafe trait CType {}
 
-/// `ReprC` type that is allowed as a foreign function argument.
+/// `C` type that is allowed as a foreign function argument.
 ///
 /// # Safety
 ///
 /// Type must be allowed as a foreign function argument type.
-pub unsafe trait CFnArg: ReprC + Copy {}
+pub unsafe trait CFnArg: CType + Copy {}
 
-/// `ReprC` type that is allowed as a foreign function return value.
+/// `C` type that is allowed as a foreign function return value.
 ///
 /// # Safety
 ///
 /// Type must be allowed as a foreign function return type.
-pub unsafe trait CFnReturn: ReprC + Copy {}
+pub unsafe trait CFnReturn: CType + Copy {}
 
 disjoint_impls! {
-    /// A Rust type that has an `extern "C"` ABI
-    pub trait ExternC {
+    /// A Rust type that has a C-compatible companion type
+    pub trait ReprC {
         /// The C-compatible representation of this Rust type.
-        type CType: ReprC + ?Sized;
+        type CType: CType + ?Sized;
     }
 
-    impl<R: ExternC + ?Sized> ExternC for &R
+    impl<R: ReprC + ?Sized> ReprC for &R
     where
         R: RustSpec<Size: Thin, Mutability = Exclusive>,
     {
         type CType = *const R::CType;
     }
-    impl<R: ExternC + ?Sized> ExternC for &R
+    impl<R: ReprC + ?Sized> ReprC for &R
     where
         R: RustSpec<Size: Thin, Mutability = Interior>,
     {
         type CType = *mut R::CType;
     }
-    impl<R: Wide<Data: ExternC, Metadata = usize> + ?Sized> ExternC for &R
+    impl<R: Wide<Data: ReprC, Metadata = usize> + ?Sized> ReprC for &R
     where
         R: RustSpec<Size = MetaSized<SliceLike>, Mutability = Exclusive>,
-        <<R as Wide>::Data as ExternC>::CType: Sized,
+        <<R as Wide>::Data as ReprC>::CType: Sized,
     {
-        type CType = CSlice<<R::Data as ExternC>::CType>;
+        type CType = CSlice<<R::Data as ReprC>::CType>;
     }
-    impl<R: Wide<Data: ExternC, Metadata = usize> + ?Sized> ExternC for &R
+    impl<R: Wide<Data: ReprC, Metadata = usize> + ?Sized> ReprC for &R
     where
         R: RustSpec<Size = MetaSized<SliceLike>, Mutability = Interior>,
-        <<R as Wide>::Data as ExternC>::CType: Sized,
+        <<R as Wide>::Data as ReprC>::CType: Sized,
     {
-        type CType = CSliceMut<<R::Data as ExternC>::CType>;
+        type CType = CSliceMut<<R::Data as ReprC>::CType>;
     }
 
-    impl<R: ExternC + ?Sized> ExternC for &mut R
+    impl<R: ReprC + ?Sized> ReprC for &mut R
     where
         R: RustSpec<Size: Thin>,
     {
         type CType = *mut R::CType;
     }
-    impl<R: Wide<Data: ExternC, Metadata = usize> + ?Sized> ExternC for &mut R
+    impl<R: Wide<Data: ReprC, Metadata = usize> + ?Sized> ReprC for &mut R
     where
         R: RustSpec<Size = MetaSized<SliceLike>>,
-        <<R as Wide>::Data as ExternC>::CType: Sized,
+        <<R as Wide>::Data as ReprC>::CType: Sized,
     {
-        type CType = CSliceMut<<R::Data as ExternC>::CType>;
+        type CType = CSliceMut<<R::Data as ReprC>::CType>;
     }
 
     #[cfg(feature = "alloc")]
-    impl<R: ExternC, S: SizedKind> ExternC for Box<R>
+    impl<R: ReprC, S: SizedKind> ReprC for Box<R>
     where
         R: RustSpec<Size = rust_spec::size::Sized<S>>,
-        <R as ExternC>::CType: Sized,
+        <R as ReprC>::CType: Sized,
     {
         type CType = CBox<R::CType>;
     }
     #[cfg(feature = "alloc")]
-    impl<R: ?Sized> ExternC for Box<R>
+    impl<R: ?Sized> ReprC for Box<R>
     where
         R: RustSpec<Size = MetaSized<SliceLike>>,
-        R: Wide<Data: ExternC, Metadata = usize>,
-        <<R as Wide>::Data as ExternC>::CType: Sized,
+        R: Wide<Data: ReprC, Metadata = usize>,
+        <<R as Wide>::Data as ReprC>::CType: Sized,
     {
-        type CType = CBoxedSlice<<R::Data as ExternC>::CType>;
+        type CType = CBoxedSlice<<R::Data as ReprC>::CType>;
     }
 
-    impl<R: ExternC> ExternC for Option<R>
+    impl<R: ReprC> ReprC for Option<R>
     where
         R: RustSpec<Niche = WithoutNiche>,
-        <R as ExternC>::CType: Sized,
+        <R as ReprC>::CType: Sized,
     {
         type CType = ReprCOption<R::CType>;
     }
-    impl<R: ExternC, N: NicheStabilityKind> ExternC for Option<R>
+    impl<R: ReprC, N: NicheStabilityKind> ReprC for Option<R>
     where
         R: RustSpec<Niche = WithNiche<N>>,
     {
@@ -696,49 +696,49 @@ disjoint_impls! {
     }
 
     // TODO: The next 3 impls are the same
-    impl<R: ExternC, E: ExternC, K: SizedKind> ExternC for Result<R, E>
+    impl<R: ReprC, E: ReprC, K: SizedKind> ReprC for Result<R, E>
     where
         R: RustSpec<Size = rust_spec::size::Sized<K>>,
         E: RustSpec<Size = rust_spec::size::Sized<K>>,
         // TODO: There is an error in disjoint_impls! that doesn't allow to use
         // `Extern<CType: Copy>` constraint. Fix that! Check other Result sites
-        <R as ExternC>::CType: Copy,
-        <E as ExternC>::CType: Copy,
+        <R as ReprC>::CType: Copy,
+        <E as ReprC>::CType: Copy,
     {
         type CType = ReprCResult<R::CType, E::CType>;
     }
-    impl<R: ExternC, E: ExternC, N: NicheStabilityKind> ExternC for Result<R, E>
+    impl<R: ReprC, E: ReprC, N: NicheStabilityKind> ReprC for Result<R, E>
     where
         R: RustSpec<Size = rust_spec::size::Sized<rust_spec::Gt<rust_spec::Zero>>, Niche = WithNiche<N>>,
         E: RustSpec<
             Size = rust_spec::size::Sized<Zero>,
             Alignment = rust_spec::Gt<rust_spec::One>,
         >,
-        <R as ExternC>::CType: Copy,
-        <E as ExternC>::CType: Copy,
+        <R as ReprC>::CType: Copy,
+        <E as ReprC>::CType: Copy,
     {
         type CType = ReprCResult<R::CType, E::CType>;
     }
-    impl<R: ExternC, E: ExternC, N: NicheStabilityKind> ExternC for Result<R, E>
+    impl<R: ReprC, E: ReprC, N: NicheStabilityKind> ReprC for Result<R, E>
     where
         R: RustSpec<
             Size = rust_spec::size::Sized<Zero>,
             Alignment = rust_spec::Gt<rust_spec::One>,
         >,
         E: RustSpec<Size = rust_spec::size::Sized<rust_spec::Gt<rust_spec::Zero>>, Niche = WithNiche<N>>,
-        <R as ExternC>::CType: Copy,
-        <E as ExternC>::CType: Copy,
+        <R as ReprC>::CType: Copy,
+        <E as ReprC>::CType: Copy,
     {
         type CType = ReprCResult<R::CType, E::CType>;
     }
-    impl<R: ExternC, E, N: NicheStabilityKind> ExternC for Result<R, E>
+    impl<R: ReprC, E, N: NicheStabilityKind> ReprC for Result<R, E>
     where
         R: RustSpec<Size = rust_spec::size::Sized<rust_spec::Gt<rust_spec::Zero>>, Niche = WithNiche<N>>,
         E: RustSpec<Size = rust_spec::size::Sized<Zero>, Alignment = One>,
     {
         type CType = R::CType;
     }
-    impl<R, E: ExternC, N: NicheStabilityKind> ExternC for Result<R, E>
+    impl<R, E: ReprC, N: NicheStabilityKind> ReprC for Result<R, E>
     where
         R: RustSpec<Size = rust_spec::size::Sized<Zero>, Alignment = One>,
         E: RustSpec<Size = rust_spec::size::Sized<rust_spec::Gt<rust_spec::Zero>>, Niche = WithNiche<N>>,
@@ -797,19 +797,19 @@ impl<'d, R: Decode<'d>> Decode<'d> for Option<R> where Self: DecodeOwned<'d> {}
 impl<R: Encode, E: Encode> Encode for Result<R, E> where Self: EncodeOwned {}
 impl<'d, R: Decode<'d>, E: Decode<'d>> Decode<'d> for Result<R, E> where Self: DecodeOwned<'d> {}
 
-/// Perform the conversion from `T` into [`ExternC::CType`] using external storage.
+/// Perform the conversion from `T` into [`ReprC::CType`] using external storage.
 ///
 /// Prefer using [`encode`] whenever possible
 pub fn soft_encode<T: Encode>(item: T, store: &mut T::Store) -> T::CType {
     item.soft_encode(store)
 }
 
-/// Perform the conversion from `T` into [`ExternC::CType`].
+/// Perform the conversion from `T` into [`ReprC::CType`].
 pub fn encode<T: Encode<Store: EmptyStore>>(item: T) -> T::CType {
     stored::encode_owned(item)
 }
 
-/// Perform the conversion from [`T::CType`](ExternC::CType) into `T` using external storage.
+/// Perform the conversion from [`T::CType`](ReprC::CType) into `T` using external storage.
 ///
 /// Prefer using [`decode`] whenever possible
 ///
@@ -823,7 +823,7 @@ pub unsafe fn soft_decode<'d, T: Decode<'d>>(
     unsafe { T::soft_decode(source, store) }
 }
 
-/// Perform the conversion from [`T::CType`](ExternC::CType) into `T`.
+/// Perform the conversion from [`T::CType`](ReprC::CType) into `T`.
 ///
 /// # Safety
 ///
@@ -833,7 +833,7 @@ pub unsafe fn decode<'d, T: Decode<'d, Store: EmptyStore> + 'd>(source: T::CType
 }
 
 #[cfg(feature = "alloc")]
-impl<R: ExternC<CType: Sized>> ExternC for Vec<R> {
+impl<R: ReprC<CType: Sized>> ReprC for Vec<R> {
     type CType = CBoxedSlice<R::CType>;
 }
 

@@ -1,18 +1,18 @@
-use co3::ReprC;
+use co3::{CType, ReprC};
 
 #[derive(ReprC)]
-#[reprC(identity)]
+#[repr_c(identity)]
 struct MissingRepr(i32);
 
 #[derive(ReprC)]
-#[reprC(identity)]
+#[repr_c(identity)]
 #[repr(u8)]
 enum Enum {
     Value,
 }
 
 #[derive(ReprC)]
-#[reprC(identity)]
+#[repr_c(identity)]
 #[repr(C)]
 struct NonRobust(bool);
 

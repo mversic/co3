@@ -1,6 +1,6 @@
 #![allow(unused_parens)]
 
-use co3::{ReprC, ffi, rust_spec::RustSpec, slice::Unpack2};
+use co3::{ReprC, CType, ffi, rust_spec::RustSpec, slice::Unpack2};
 
 trait ExportUnpackLen {
     fn export_trait_unpack_len(&self, _: *const u32, len: usize) -> usize;

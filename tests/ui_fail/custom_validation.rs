@@ -1,9 +1,9 @@
-use co3::{ReprC, rust_spec::RustSpec};
+use co3::{ReprC, CType, rust_spec::RustSpec};
 
 #[derive(RustSpec, ReprC)]
-#[reprC(is_valid = |a| *a != 42)]
+#[repr_c(is_valid = |a| *a != 42)]
 #[rust_spec(with_custom_niche)]
-#[reprC(NICHE_VALUE = Self::CType {
+#[repr_c(NICHE_VALUE = Self::CType {
     field: 42
 })]
 pub struct CustomStructValid {
@@ -12,49 +12,49 @@ pub struct CustomStructValid {
 
 #[derive(RustSpec, ReprC)]
 pub enum CustomEnumValid {
-    #[reprC(is_valid = |a| *a != 0)]
+    #[repr_c(is_valid = |a| *a != 0)]
     A(u32),
     B,
 }
 
 #[derive(ReprC)]
 pub struct CustomStructNotValid {
-    #[reprC(is_valid = |a| *a != 0)]
+    #[repr_c(is_valid = |a| *a != 0)]
     field: u32,
 }
 
 #[derive(ReprC)]
-#[reprC(NICHE_VALUE = 42)]
+#[repr_c(NICHE_VALUE = 42)]
 pub enum CustomEnum1 {
     A(u32),
     B,
 }
 
 #[derive(ReprC)]
-#[reprC(is_valid = |a| *a != 0)]
+#[repr_c(is_valid = |a| *a != 0)]
 pub enum CustomEnum2 {
     A(u32),
     B,
 }
 
 #[derive(ReprC)]
-#[reprC(is_valid = |a| *a != 0)]
+#[repr_c(is_valid = |a| *a != 0)]
 pub union CustomUnion1 {
     a: u32,
 }
 
 #[derive(ReprC)]
-#[reprC(is_valid = |a| *a != 0)]
+#[repr_c(is_valid = |a| *a != 0)]
 pub union CustomUnion2 {
     a: u32,
 }
 
 #[derive(ReprC)]
-#[reprC(NICHE_VALUE = unsafe { core::mem::zeroed() })]
+#[repr_c(NICHE_VALUE = unsafe { core::mem::zeroed() })]
 pub struct Parametrized<T: ?Sized>(T);
 
 #[derive(ReprC)]
-#[reprC(NICHE_VALUE = unsafe { core::mem::zeroed() })]
+#[repr_c(NICHE_VALUE = unsafe { core::mem::zeroed() })]
 pub struct UnsizedSlice<T>([T]);
 
 fn unsized_niches_cannot_be_used() {

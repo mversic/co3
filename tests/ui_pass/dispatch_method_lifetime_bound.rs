@@ -1,5 +1,5 @@
-use co3::{
-    Tag, ReprC, ffi,
+use co3::{ReprC,
+    Tag, CType, ffi,
     tag::{Tagged, TagFamily},
 };
 use co3::rust_spec::RustSpec;

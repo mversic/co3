@@ -1,4 +1,4 @@
-use co3::{ExternC, ReprC, rust_spec::RustSpec};
+use co3::{ReprC, CType, rust_spec::RustSpec};
 
 #[derive(Clone, Copy, RustSpec, ReprC)]
 #[repr(transparent)]
@@ -24,20 +24,20 @@ enum ImplicitTransparentTupleEnum {
 }
 
 const _: () = assert!(
-    core::mem::size_of::<<TransparentTupleEnum as ExternC>::CType>() == core::mem::size_of::<u8>()
+    core::mem::size_of::<<TransparentTupleEnum as ReprC>::CType>() == core::mem::size_of::<u8>()
 );
 
 const _: () = assert!(
-    core::mem::size_of::<<TransparentNamedEnum as ExternC>::CType>() == core::mem::size_of::<u8>()
+    core::mem::size_of::<<TransparentNamedEnum as ReprC>::CType>() == core::mem::size_of::<u8>()
 );
 
 const _: () = assert!(
-    core::mem::size_of::<<TransparentMultipleFieldsEnum as ExternC>::CType>()
+    core::mem::size_of::<<TransparentMultipleFieldsEnum as ReprC>::CType>()
         == core::mem::size_of::<u8>()
 );
 
 const _: () = assert!(
-    core::mem::size_of::<<ImplicitTransparentTupleEnum as ExternC>::CType>()
+    core::mem::size_of::<<ImplicitTransparentTupleEnum as ReprC>::CType>()
         == core::mem::size_of::<u8>()
 );
 

@@ -1,20 +1,20 @@
 use core::{marker::PhantomData, num::NonZeroU8};
 
-use co3::ReprC;
+use co3::{CType, ReprC};
 use co3::rust_spec::RustSpec;
 
 #[derive(RustSpec, ReprC)]
 #[rust_spec(with_custom_niche)]
-#[reprC(NICHE_VALUE = unsafe { core::mem::zeroed() })]
+#[repr_c(NICHE_VALUE = unsafe { core::mem::zeroed() })]
 struct Valid<T>(u8, PhantomData<T>);
 
 #[derive(RustSpec, ReprC)]
-#[reprC(NICHE_VALUE = unsafe { core::mem::zeroed() })]
+#[repr_c(NICHE_VALUE = unsafe { core::mem::zeroed() })]
 struct MissingCustomNiche<T>(u8, PhantomData<T>);
 
 #[derive(RustSpec, ReprC)]
 #[rust_spec(with_custom_niche)]
-#[reprC(NICHE_VALUE = unsafe { core::mem::zeroed() })]
+#[repr_c(NICHE_VALUE = unsafe { core::mem::zeroed() })]
 struct OverridesInferredNiche<T>(NonZeroU8, PhantomData<T>);
 
 static_assertions::assert_impl_all!(Valid<()>: co3::niche::Niche);

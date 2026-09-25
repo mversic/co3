@@ -1,4 +1,4 @@
-error[E0277]: the trait bound `StableButNotCStatic: co3::ExternC` is not satisfied
+error[E0277]: the trait bound `StableButNotCStatic: co3::ReprC` is not satisfied
    --> tests/ui_fail/disallowed_types.rs:209:1
     |
 209 | / ffi! {
@@ -9,12 +9,12 @@ error[E0277]: the trait bound `StableButNotCStatic: co3::ExternC` is not satisfi
 214 | | }
     | |_^ unsatisfied trait bound
     |
-help: the trait `co3::ExternC` is not implemented for `StableButNotCStatic`
+help: the trait `co3::ReprC` is not implemented for `StableButNotCStatic`
    --> tests/ui_fail/disallowed_types.rs:25:1
     |
  25 | struct StableButNotCStatic(u32);
     | ^^^^^^^^^^^^^^^^^^^^^^^^^^
-    = help: the following other types implement trait `co3::ExternC`:
+    = help: the following other types implement trait `co3::ReprC`:
               &'_lšč0 _TŠČ0
               &'_lšč0 mut _TŠČ0
               ()

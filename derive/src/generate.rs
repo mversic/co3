@@ -713,7 +713,7 @@ fn prepare_dispatch_wrapper_sig(
         if let Some(target_ty) =
             ffi_fn::single_unpack_part(attrs, ty).expect("validated one-part unpack attribute")
         {
-            let target_part = quote!(<#target_ty as #co3::ExternC>::CType);
+            let target_part = quote!(<#target_ty as #co3::ReprC>::CType);
             let unpack_trait = quote!(#co3::slice::Unpack<#target_part>);
             let unpack_bound =
                 if ffi_fn::ownership_mode_for_arg(attrs, ty) == OwnershipMode::ByValue {
@@ -727,7 +727,7 @@ fn prepare_dispatch_wrapper_sig(
             where_clause.predicates.push(unpack_bound);
             where_clause
                 .predicates
-                .push(syn::parse_quote!(#target_ty: #co3::ExternC));
+                .push(syn::parse_quote!(#target_ty: #co3::ReprC));
             where_clause
                 .predicates
                 .push(syn::parse_quote!(#target_part: #co3::CFnArg));
@@ -749,9 +749,9 @@ fn prepare_dispatch_wrapper_sig(
             } else {
                 where_clause
                     .predicates
-                    .push(syn::parse_quote!(#part1: #co3::ExternC));
+                    .push(syn::parse_quote!(#part1: #co3::ReprC));
                 where_clause.predicates.push(syn::parse_quote!(
-                    <#part1 as #co3::ExternC>::CType: #co3::CFnArg
+                    <#part1 as #co3::ReprC>::CType: #co3::CFnArg
                 ));
             }
             if matches!(part2, syn::Type::Infer(_)) {
@@ -761,9 +761,9 @@ fn prepare_dispatch_wrapper_sig(
             } else {
                 where_clause
                     .predicates
-                    .push(syn::parse_quote!(#part2: #co3::ExternC));
+                    .push(syn::parse_quote!(#part2: #co3::ReprC));
                 where_clause.predicates.push(syn::parse_quote!(
-                    <#part2 as #co3::ExternC>::CType: #co3::CFnArg
+                    <#part2 as #co3::ReprC>::CType: #co3::CFnArg
                 ));
             }
             let unpack_trait = quote!(#co3::slice::Unpack2<#source_part1, #source_part2>);
@@ -799,22 +799,22 @@ fn prepare_dispatch_wrapper_sig(
             } else {
                 where_clause
                     .predicates
-                    .push(syn::parse_quote!(#ty: #co3::ExternC + #co3::borrow::Borrow));
+                    .push(syn::parse_quote!(#ty: #co3::ReprC + #co3::borrow::Borrow));
                 where_clause.predicates.push(syn::parse_quote!(
-                    <#ty as #co3::ExternC>::CType: #co3::borrow::BorrowCast<AsConst: Sized>
+                    <#ty as #co3::ReprC>::CType: #co3::borrow::BorrowCast<AsConst: Sized>
                 ));
                 let bound = if soft_for_arg(attrs) {
                     syn::parse_quote!(
                         for<'__co3_borrow> <#ty as #co3::borrow::Borrow>::Borrowed<'__co3_borrow>:
                             #co3::Encode<
-                                CType = <<#ty as #co3::ExternC>::CType as #co3::borrow::BorrowCast>::AsConst,
+                                CType = <<#ty as #co3::ReprC>::CType as #co3::borrow::BorrowCast>::AsConst,
                             >
                     )
                 } else {
                     syn::parse_quote!(
                         for<'__co3_borrow> <#ty as #co3::borrow::Borrow>::Borrowed<'__co3_borrow>:
                             #co3::Encode<
-                                CType = <<#ty as #co3::ExternC>::CType as #co3::borrow::BorrowCast>::AsConst,
+                                CType = <<#ty as #co3::ReprC>::CType as #co3::borrow::BorrowCast>::AsConst,
                                 Store: #co3::stored::EmptyStore,
                             >
                     )
@@ -2684,7 +2684,7 @@ fn gen_owned_repr_c_impls(ident: &syn::Ident, generics: &syn::Generics) -> Token
             type __IndirectTrap = #co3::rust_spec::layout::Robust;
         }
 
-        impl #impl_generics #co3::ExternC for #owned_repr_c_name #ty_generics #where_clause {
+        impl #impl_generics #co3::ReprC for #owned_repr_c_name #ty_generics #where_clause {
             type CType = Self;
         }
         unsafe impl #impl_generics #co3::stored::EncodeOwned for #owned_repr_c_name #ty_generics #where_clause {
@@ -2717,7 +2717,7 @@ fn gen_owned_repr_c_impls(ident: &syn::Ident, generics: &syn::Generics) -> Token
             }
         }
 
-        unsafe impl #impl_generics #co3::ReprC for #owned_repr_c_name #ty_generics #where_clause {}
+        unsafe impl #impl_generics #co3::CType for #owned_repr_c_name #ty_generics #where_clause {}
         unsafe impl #impl_generics #co3::CFnArg for #owned_repr_c_name #ty_generics #where_clause {}
         unsafe impl #impl_generics #co3::CFnReturn for #owned_repr_c_name #ty_generics #where_clause {}
 
@@ -2773,7 +2773,7 @@ fn gen_owned_extern_type_impls(
             }
         }
 
-        impl #impl_generics #co3::ExternC for #owned_ident #ty_generics #where_clause {
+        impl #impl_generics #co3::ReprC for #owned_ident #ty_generics #where_clause {
             type CType = #owned_repr_c_name #ty_generics;
         }
         impl #impl_generics core::cmp::PartialEq for #owned_repr_c_name #ty_generics #where_clause {
@@ -2869,7 +2869,7 @@ fn derive_opaque_item(
             type __IndirectTrap = co3::rust_spec::layout::Robust;
         }
 
-        unsafe impl #impl_generics co3::ReprC for #ident #ty_generics #where_clause {}
+        unsafe impl #impl_generics co3::CType for #ident #ty_generics #where_clause {}
 
         unsafe impl #impl_generics co3::transmute::CheckedTransmute for #ident #ty_generics #where_clause {
             #[inline(always)]
@@ -2878,7 +2878,7 @@ fn derive_opaque_item(
             }
         }
 
-        impl #impl_generics co3::ExternC for #ident #ty_generics #where_clause {
+        impl #impl_generics co3::ReprC for #ident #ty_generics #where_clause {
             type CType = Self;
         }
     }

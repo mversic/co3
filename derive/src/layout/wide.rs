@@ -163,7 +163,7 @@ fn gen_data_def(input: &syn::DeriveInput, fields: &syn::Fields) -> TokenStream {
 
     quote! {
         #[derive(#(#derives, )* co3::rust_spec::RustSpec, co3::ReprC)]
-        #[reprC(__wide_data)]
+        #[repr_c(__wide_data)]
         #(#attrs)*
         #vis struct #name #impl_generics #suffix
     }

@@ -433,7 +433,7 @@ pub(crate) fn unpack_logical_parts(
 
 fn abi_unpack_part(arg_ty: &Type, part: UnpackPart, position: u8) -> syn::Result<Type> {
     match part.abi {
-        Some(abi) => Ok(parse_quote!(<#abi as co3::ExternC>::CType)),
+        Some(abi) => Ok(parse_quote!(<#abi as co3::ReprC>::CType)),
         None => logical_unpack_part(arg_ty, &part.logical, position),
     }
 }
@@ -442,7 +442,7 @@ fn logical_unpack_part(arg_ty: &Type, part: &Type, position: u8) -> syn::Result<
     if matches!(part, Type::Infer(_)) {
         inferred_unpack_part(arg_ty, position)
     } else {
-        Ok(parse_quote!(<#part as co3::ExternC>::CType))
+        Ok(parse_quote!(<#part as co3::ReprC>::CType))
     }
 }
 
@@ -465,15 +465,15 @@ fn inferred_non_option_unpack_part(arg_ty: &Type, part: u8) -> syn::Result<Type>
 
     if let Some((part1, part2)) = tuple_parts(arg_ty) {
         return Ok(if part == 1 {
-            parse_quote!(<#part1 as co3::ExternC>::CType)
+            parse_quote!(<#part1 as co3::ReprC>::CType)
         } else {
-            parse_quote!(<#part2 as co3::ExternC>::CType)
+            parse_quote!(<#part2 as co3::ReprC>::CType)
         });
     }
 
     if let Some(wide_ty) = boxed_wide_type(arg_ty) {
         return Ok(if part == 1 {
-            parse_quote!(co3::boxed::CBox<<<#wide_ty as co3::wide::Wide>::Data as co3::ExternC>::CType>)
+            parse_quote!(co3::boxed::CBox<<<#wide_ty as co3::wide::Wide>::Data as co3::ReprC>::CType>)
         } else {
             parse_quote!(<#wide_ty as co3::wide::Wide>::Metadata)
         });
@@ -483,9 +483,9 @@ fn inferred_non_option_unpack_part(arg_ty: &Type, part: u8) -> syn::Result<Type>
         let wide_ty = &reference.elem;
         return Ok(if part == 1 {
             if reference.mutability.is_some() {
-                parse_quote!(*mut <<#wide_ty as co3::wide::Wide>::Data as co3::ExternC>::CType)
+                parse_quote!(*mut <<#wide_ty as co3::wide::Wide>::Data as co3::ReprC>::CType)
             } else {
-                parse_quote!(*const <<#wide_ty as co3::wide::Wide>::Data as co3::ExternC>::CType)
+                parse_quote!(*const <<#wide_ty as co3::wide::Wide>::Data as co3::ReprC>::CType)
             }
         } else {
             parse_quote!(<#wide_ty as co3::wide::Wide>::Metadata)
@@ -1210,7 +1210,7 @@ fn synthesize_lifetime_bounds(sig: &mut syn::Signature) {
 }
 
 pub(crate) fn item_fn_input_arg_type(attrs: &[syn::Attribute], arg_ty: &Type) -> TokenStream {
-    let c_type = quote! { <#arg_ty as co3::ExternC>::CType };
+    let c_type = quote! { <#arg_ty as co3::ReprC>::CType };
 
     match ownership_mode_for_arg(attrs, arg_ty) {
         OwnershipMode::ByValue => quote! { #c_type },
@@ -1221,7 +1221,7 @@ pub(crate) fn item_fn_input_arg_type(attrs: &[syn::Attribute], arg_ty: &Type) ->
 }
 
 pub(crate) fn item_fn_output_type(return_ty: &Type) -> Type {
-    parse_quote!(<#return_ty as co3::ExternC>::CType)
+    parse_quote!(<#return_ty as co3::ReprC>::CType)
 }
 
 pub(crate) fn normalize_fn_signature(sig: &mut syn::Signature, self_ty: Option<&Type>) {
@@ -1476,12 +1476,12 @@ mod tests {
     fn does_not_synthesize_bounds_from_projections() {
         let sig = with_synthesized_lifetime_bounds(parse_quote!(
             fn f<'a, 'b>(
-                x: <&'a <Foo as ExternC>::CType<'b> as BorrowCast>::AsConst
+                x: <&'a <Foo as ReprC>::CType<'b> as BorrowCast>::AsConst
             )
         ));
         let expected: syn::Signature = parse_quote!(
             fn f<'a, 'b>(
-                x: <&'a <Foo as ExternC>::CType<'b> as BorrowCast>::AsConst
+                x: <&'a <Foo as ReprC>::CType<'b> as BorrowCast>::AsConst
             )
         );
 

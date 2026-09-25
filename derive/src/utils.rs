@@ -151,7 +151,7 @@ pub fn build_extern_c_type_tuple(types: &[&Type]) -> (TokenStream, TokenStream, 
     let mut nodes = types
         .chunks(MAX_TUPLE_ARITY)
         .map(|chunk| {
-            let c_types = chunk.iter().map(|ty| quote!(<#ty as co3::ExternC>::CType));
+            let c_types = chunk.iter().map(|ty| quote!(<#ty as co3::ReprC>::CType));
             let accessors = (0..chunk.len())
                 .map(|index| {
                     let index = Literal::usize_unsuffixed(index);

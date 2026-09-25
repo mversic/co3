@@ -45,7 +45,7 @@ Each mode makes explicit tradeoffs and is selected through compile-time configur
 
 ## 2. Public API
 
-Public API constitutes user-facing macros and the `ops::CFn0` through `ops::CFn12` traits.
+Public API constitutes user-facing macros (namely `#[derive(ReprC)]` and `ffi!`).
 Any generated glue code **MUST** remain private and **MUST NOT** leak into the public API.
 Any conversion written manually against traits of this crate **DOES NOT** constitute public API.
 
@@ -80,10 +80,10 @@ It must always start with a declaration of direction and ABI (e.g. `#![unsafe(ex
 A C-compatible companion type is a type with a defined C ABI and no trap representations, whose fields are themselves C-compatible companion types.
 
 - By default, the derive defines a C-compatible companion type and conversions between the two types.
-- `#[reprC(identity)]` uses a `#[repr(C)]` or `#[repr(transparent)]` struct directly as its companion.
+- `#[repr_c(identity)]` uses a `#[repr(C)]` or `#[repr(transparent)]` struct directly as its companion.
 - Conversion of types with explicit representation (i.e. `#[repr(C)]`/`repr(transmute)`) are optimized.
-- `#[reprC(is_valid = |field0, ...| {...})]` provides additional validity invariant of a struct/variant.
-- `#[reprC(NICHE_VALUE = <expr>)]` defines the struct's trap value that is used for niche optimization.
+- `#[repr_c(is_valid = |field0, ...| {...})]` provides additional validity invariant of a struct/variant.
+- `#[repr_c(NICHE_VALUE = <expr>)]` defines the struct's trap value that is used for niche optimization.
 
 ## 3. Tagged Dispatch
 

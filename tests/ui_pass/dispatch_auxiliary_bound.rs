@@ -1,4 +1,4 @@
-use co3::{Tag, ReprC, ffi, rust_spec::RustSpec};
+use co3::{ReprC, Tag, CType, ffi, rust_spec::RustSpec};
 
 trait Version {
     type Previous: Version;

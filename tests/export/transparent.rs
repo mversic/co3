@@ -5,12 +5,12 @@ use co3::{
 };
 
 #[derive(Clone, Copy, PartialEq, Eq, Debug, RustSpec, ReprC)]
-#[reprC(identity)]
+#[repr_c(identity)]
 #[repr(transparent)]
 pub struct TransparentWithoutNiche(u64);
 
 #[derive(Clone, Copy, PartialEq, Eq, Debug, RustSpec, ReprC)]
-#[reprC(identity)]
+#[repr_c(identity)]
 #[repr(transparent)]
 pub struct GenericTransparentStruct<P>(u64, PhantomData<P>);
 
@@ -21,7 +21,7 @@ impl<P> GenericTransparentStruct<P> {
 }
 
 #[derive(Clone, Copy, PartialEq, Eq, Debug, RustSpec, ReprC)]
-#[reprC(identity)]
+#[repr_c(identity)]
 #[repr(transparent)]
 pub struct TransparentStruct {
     payload: GenericTransparentStruct<()>,

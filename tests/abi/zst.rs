@@ -1,5 +1,5 @@
 use co3::{
-    CFnArg, CFnReturn, Decode, Encode, ExternC, ReprC, rust_spec::RustSpec,
+    CFnArg, CFnReturn, CType, Decode, Encode, ReprC, rust_spec::RustSpec,
     transmute::CheckedTransmute,
 };
 use static_assertions::{assert_impl_all, assert_not_impl_any};
@@ -42,13 +42,13 @@ pub enum TransparentEnum<T: ?Sized> {
     A(Box<T>),
 }
 
-type CNoReprStructZst = <NoReprStruct<()> as ExternC>::CType;
-type CNoReprEnumZst = <NoReprEnum<()> as ExternC>::CType;
-type CReprCStructZst = <ReprCStruct<()> as ExternC>::CType;
-type CReprCEnumZst = <ReprCEnum<()> as ExternC>::CType;
-type CReprCDataEnumZst = <ReprCDataEnum<()> as ExternC>::CType;
-type CTransparentStructZst = <TransparentStruct<()> as ExternC>::CType;
-type CTransparentEnumZst = <TransparentEnum<()> as ExternC>::CType;
+type CNoReprStructZst = <NoReprStruct<()> as ReprC>::CType;
+type CNoReprEnumZst = <NoReprEnum<()> as ReprC>::CType;
+type CReprCStructZst = <ReprCStruct<()> as ReprC>::CType;
+type CReprCEnumZst = <ReprCEnum<()> as ReprC>::CType;
+type CReprCDataEnumZst = <ReprCDataEnum<()> as ReprC>::CType;
+type CTransparentStructZst = <TransparentStruct<()> as ReprC>::CType;
+type CTransparentEnumZst = <TransparentEnum<()> as ReprC>::CType;
 
 #[test]
 fn boxed_zst_traits() {
@@ -60,12 +60,12 @@ fn boxed_zst_traits() {
             );
 
             assert_impl_all!($ctype:
-                ReprC,
+                CType,
                 CFnArg,
                 CFnReturn,
             );
 
-            assert_not_impl_any!($ty: ReprC, CFnArg, CFnReturn);
+            assert_not_impl_any!($ty: CType, CFnArg, CFnReturn);
         };
     }
 

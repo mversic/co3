@@ -2,16 +2,16 @@
 use rust_spec::RustSpec;
 
 use crate::{
-    CFnArg, CFnReturn, Decode, Encode, ExternC, ReprC,
+    CFnArg, CFnReturn, CType, Decode, Encode, ReprC,
     borrow::{Borrow, BorrowCast, BorrowCastMut, FromBorrow},
     stored::{DecodeOwned, EncodeOwned},
     transmute::CheckedTransmute,
 };
 
 /// Fallibly converts a C-compatible representation into one ABI argument.
-pub trait Unpack<Part>: ExternC<CType: Sized>
+pub trait Unpack<Part>: ReprC<CType: Sized>
 where
-    Part: ReprC,
+    Part: CType,
 {
     /// Error returned when the ABI argument cannot be produced.
     type Error;
@@ -20,9 +20,9 @@ where
     fn unpack(value: Self::CType) -> Result<Part, Self::Error>;
 }
 
-impl<T, Part: ReprC + TryFrom<Self::CType>> Unpack<Part> for T
+impl<T, Part: CType + TryFrom<Self::CType>> Unpack<Part> for T
 where
-    Self: ExternC<CType: Sized>,
+    Self: ReprC<CType: Sized>,
 {
     type Error = <Part as TryFrom<Self::CType>>::Error;
 
@@ -36,7 +36,7 @@ where
 ///
 /// This is used by `#[unpack(T1, T2)]` in [`crate::ffi!`] declarations.
 /// Fallibly unpacks a C-compatible representation as two ABI arguments.
-pub trait Unpack2<Part1: ReprC, Part2: ReprC>: ExternC<CType: Sized> {
+pub trait Unpack2<Part1: CType, Part2: CType>: ReprC<CType: Sized> {
     /// Error returned when either constituent cannot be produced.
     type Error;
 
@@ -44,9 +44,9 @@ pub trait Unpack2<Part1: ReprC, Part2: ReprC>: ExternC<CType: Sized> {
     fn unpack(value: Self::CType) -> Result<(Part1, Part2), Self::Error>;
 }
 
-impl<T: Unpack2<Part1, Part2>, Part1: ReprC, Part2: ReprC> Unpack2<Part1, Part2> for Option<T>
+impl<T: Unpack2<Part1, Part2>, Part1: CType, Part2: CType> Unpack2<Part1, Part2> for Option<T>
 where
-    Self: ExternC<CType = T::CType>,
+    Self: ReprC<CType = T::CType>,
 {
     type Error = T::Error;
 
@@ -58,7 +58,7 @@ where
 
 macro_rules! impl_unpack2_for_transparent_wrapper {
     ($($wrapper:ty),+ $(,)?) => {$(
-        impl<T: ?Sized, Part1: ReprC, Part2: ReprC> Unpack2<Part1, Part2> for $wrapper
+        impl<T: ?Sized, Part1: CType, Part2: CType> Unpack2<Part1, Part2> for $wrapper
         where
             T: Unpack2<Part1, Part2>,
         {
@@ -264,10 +264,10 @@ macro_rules! impl_slice_carrier {
             }
         }
 
-        impl<C: ReprC> ExternC for $ty<C> {
+        impl<C: CType> ReprC for $ty<C> {
             type CType = Self;
         }
-        unsafe impl<C: ReprC> EncodeOwned for $ty<C> {
+        unsafe impl<C: CType> EncodeOwned for $ty<C> {
             type Store = ();
 
             #[inline(always)]
@@ -278,7 +278,7 @@ macro_rules! impl_slice_carrier {
                 self
             }
         }
-        unsafe impl<'d, C: ReprC> DecodeOwned<'d> for $ty<C> {
+        unsafe impl<'d, C: CType> DecodeOwned<'d> for $ty<C> {
             type Store = ();
 
             #[inline(always)]
@@ -287,23 +287,23 @@ macro_rules! impl_slice_carrier {
             }
         }
 
-        impl<C: ReprC> Encode for $ty<C> {}
-        impl<'d, C: ReprC> Decode<'d> for $ty<C> {}
+        impl<C: CType> Encode for $ty<C> {}
+        impl<'d, C: CType> Decode<'d> for $ty<C> {}
 
-        unsafe impl<C: ReprC> CheckedTransmute for $ty<C> {
+        unsafe impl<C: CType> CheckedTransmute for $ty<C> {
             #[inline(always)]
             unsafe fn is_valid(_: &Self::CType) -> bool {
                 true
             }
         }
 
-        unsafe impl<C: ReprC> ReprC for $ty<C> {}
-        unsafe impl<C: ReprC> CFnArg for $ty<C> {}
-        unsafe impl<C: ReprC> CFnReturn for $ty<C> {}
-        unsafe impl<C: ReprC> BorrowCast for $ty<C> {
+        unsafe impl<C: CType> CType for $ty<C> {}
+        unsafe impl<C: CType> CFnArg for $ty<C> {}
+        unsafe impl<C: CType> CFnReturn for $ty<C> {}
+        unsafe impl<C: CType> BorrowCast for $ty<C> {
             type AsConst = Self;
         }
-        unsafe impl<C: ReprC> BorrowCastMut for $ty<C> {
+        unsafe impl<C: CType> BorrowCastMut for $ty<C> {
             type AsMut = Self;
         }
     };
@@ -312,9 +312,9 @@ macro_rules! impl_slice_carrier {
 impl_slice_carrier! { CSlice }
 impl_slice_carrier! { CSliceMut }
 
-impl<R: ?Sized, C: ReprC, U: ReprC> Unpack2<*const C, U> for &R
+impl<R: ?Sized, C: CType, U: CType> Unpack2<*const C, U> for &R
 where
-    Self: ExternC<CType = CSlice<C>>,
+    Self: ReprC<CType = CSlice<C>>,
     usize: TryInto<U>,
 {
     type Error = <usize as TryInto<U>>::Error;
@@ -325,9 +325,9 @@ where
     }
 }
 
-impl<R: ?Sized, C: ReprC, U: ReprC> Unpack2<*mut C, U> for &R
+impl<R: ?Sized, C: CType, U: CType> Unpack2<*mut C, U> for &R
 where
-    Self: ExternC<CType = CSliceMut<C>>,
+    Self: ReprC<CType = CSliceMut<C>>,
     usize: TryInto<U>,
 {
     type Error = <usize as TryInto<U>>::Error;
@@ -338,9 +338,9 @@ where
     }
 }
 
-impl<R: ?Sized, C: ReprC, U: ReprC> Unpack2<*mut C, U> for &mut R
+impl<R: ?Sized, C: CType, U: CType> Unpack2<*mut C, U> for &mut R
 where
-    Self: ExternC<CType = CSliceMut<C>>,
+    Self: ReprC<CType = CSliceMut<C>>,
     usize: TryInto<U>,
 {
     type Error = <usize as TryInto<U>>::Error;

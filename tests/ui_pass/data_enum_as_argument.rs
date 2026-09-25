@@ -11,7 +11,7 @@
 //! borrowed data, which is the shape that motivated the impl: configuration
 //! that belongs to exactly one of several backends.
 
-use co3::{ReprC, ffi, rust_spec::RustSpec};
+use co3::{ReprC, CType, ffi, rust_spec::RustSpec};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, RustSpec, ReprC)]
 pub enum Backend<'a> {

@@ -9,7 +9,7 @@ use core::{
 };
 
 use crate::{
-    CFnArg, CFnReturn, Decode, Encode, ExternC, ReprC,
+    CFnArg, CFnReturn, CType, Decode, Encode, ReprC,
     borrow::{Borrow, BorrowCast, BorrowCastMut, FromBorrow},
     niche::Niche,
     stored::{DecodeOwned, EmptyStore, EncodeOwned},
@@ -43,7 +43,7 @@ macro_rules! non_zero_derive {
             }
         }
 
-        impl ExternC for NonZero<$primitive> {
+        impl ReprC for NonZero<$primitive> {
             type CType = $primitive;
         }
         unsafe impl EncodeOwned for NonZero<$primitive> {
@@ -103,7 +103,7 @@ impl<'itm> FromBorrow<'itm> for () {
     fn from_borrow(_: ()) -> Self {}
 }
 
-impl ExternC for () {
+impl ReprC for () {
     type CType = Self;
 }
 unsafe impl EncodeOwned for () {
@@ -136,7 +136,7 @@ unsafe impl CheckedTransmute for () {
     }
 }
 
-unsafe impl ReprC for () {}
+unsafe impl CType for () {}
 unsafe impl CFnReturn for () {}
 unsafe impl BorrowCast for () {
     type AsConst = Self;
@@ -170,7 +170,7 @@ impl<'itm, T: ?Sized + 'itm> FromBorrow<'itm> for PhantomData<T> {
     }
 }
 
-impl<T: ?Sized> ExternC for PhantomData<T> {
+impl<T: ?Sized> ReprC for PhantomData<T> {
     type CType = Self;
 }
 unsafe impl<T: ?Sized> CheckedTransmute for PhantomData<T> {
@@ -202,7 +202,7 @@ unsafe impl<'d, T: ?Sized> DecodeOwned<'d> for PhantomData<T> {
 impl<T: ?Sized> Encode for PhantomData<T> {}
 impl<T: ?Sized> Decode<'_> for PhantomData<T> {}
 
-unsafe impl<T: ?Sized> ReprC for PhantomData<T> {}
+unsafe impl<T: ?Sized> CType for PhantomData<T> {}
 unsafe impl<T: ?Sized> BorrowCast for PhantomData<T> {
     type AsConst = Self;
 }
@@ -233,11 +233,11 @@ impl<'itm, T: ?Sized + 'itm> FromBorrow<'itm> for NonNull<T> {
     }
 }
 
-impl<T: ReprC + ?Sized> ExternC for NonNull<T> {
+impl<T: CType + ?Sized> ReprC for NonNull<T> {
     // TODO: afaik the pointer is not necessarily mutable just non-null
-    type CType = <*mut T as ExternC>::CType;
+    type CType = <*mut T as ReprC>::CType;
 }
-unsafe impl<T: ReprC + ?Sized> EncodeOwned for NonNull<T> {
+unsafe impl<T: CType + ?Sized> EncodeOwned for NonNull<T> {
     type Store = <*mut T as EncodeOwned>::Store;
 
     #[inline(always)]
@@ -248,7 +248,7 @@ unsafe impl<T: ReprC + ?Sized> EncodeOwned for NonNull<T> {
         self.as_ptr().soft_encode(store)
     }
 }
-unsafe impl<'d, T: ReprC + ?Sized> DecodeOwned<'d> for NonNull<T> {
+unsafe impl<'d, T: CType + ?Sized> DecodeOwned<'d> for NonNull<T> {
     type Store = <*mut T as DecodeOwned<'d>>::Store;
 
     #[inline(always)]
@@ -261,10 +261,10 @@ unsafe impl<'d, T: ReprC + ?Sized> DecodeOwned<'d> for NonNull<T> {
     }
 }
 
-impl<T: ReprC + ?Sized> Encode for NonNull<T> {}
-impl<T: ReprC + ?Sized> Decode<'_> for NonNull<T> {}
+impl<T: CType + ?Sized> Encode for NonNull<T> {}
+impl<T: CType + ?Sized> Decode<'_> for NonNull<T> {}
 
-unsafe impl<T: ReprC + ?Sized> CheckedTransmute for NonNull<T> {
+unsafe impl<T: CType + ?Sized> CheckedTransmute for NonNull<T> {
     #[inline(always)]
     unsafe fn is_valid(target: &Self::CType) -> bool {
         !target.is_null()
@@ -276,7 +276,7 @@ impl Owned for str {
     type Owned = String;
 }
 
-impl ExternC for str {
+impl ReprC for str {
     type CType = [u8];
 }
 
@@ -307,8 +307,8 @@ impl<'itm> FromBorrow<'itm> for String {
 }
 
 #[cfg(feature = "alloc")]
-impl ExternC for String {
-    type CType = <Vec<u8> as ExternC>::CType;
+impl ReprC for String {
+    type CType = <Vec<u8> as ReprC>::CType;
 }
 #[cfg(feature = "alloc")]
 unsafe impl EncodeOwned for String {
@@ -366,7 +366,7 @@ impl<'itm, T: FromBorrow<'itm>> FromBorrow<'itm> for UnsafeCell<T> {
     }
 }
 
-impl<R: ExternC + ?Sized> ExternC for UnsafeCell<R> {
+impl<R: ReprC + ?Sized> ReprC for UnsafeCell<R> {
     type CType = R::CType;
 }
 unsafe impl<R: EncodeOwned<CType: Copy>> EncodeOwned for UnsafeCell<R> {
@@ -427,7 +427,7 @@ impl<'itm, T: FromBorrow<'itm>> FromBorrow<'itm> for Cell<T> {
     }
 }
 
-impl<R: ExternC + ?Sized> ExternC for Cell<R> {
+impl<R: ReprC + ?Sized> ReprC for Cell<R> {
     type CType = R::CType;
 }
 unsafe impl<R: EncodeOwned<CType: Copy>> EncodeOwned for Cell<R> {
@@ -488,7 +488,7 @@ impl<'itm, T: 'itm> FromBorrow<'itm> for MaybeUninit<T> {
     }
 }
 
-impl<T: CheckedTransmute<CType: Sized>> ExternC for MaybeUninit<T> {
+impl<T: CheckedTransmute<CType: Sized>> ReprC for MaybeUninit<T> {
     type CType = MaybeUninit<T::CType>;
 }
 unsafe impl<T: CheckedTransmute<CType: Sized>> EncodeOwned for MaybeUninit<T> {
@@ -521,14 +521,14 @@ unsafe impl<T: CheckedTransmute<CType: Sized>> CheckedTransmute for MaybeUninit<
     }
 }
 
-unsafe impl<T: ReprC> ReprC for MaybeUninit<T> {}
+unsafe impl<T: CType> CType for MaybeUninit<T> {}
 unsafe impl<T: CFnArg> CFnArg for MaybeUninit<T> {}
 unsafe impl<T: CFnReturn> CFnReturn for MaybeUninit<T> {}
 
-unsafe impl<T: ReprC> BorrowCast for MaybeUninit<T> {
+unsafe impl<T: CType> BorrowCast for MaybeUninit<T> {
     type AsConst = Self;
 }
-unsafe impl<T: ReprC> BorrowCastMut for MaybeUninit<T> {
+unsafe impl<T: CType> BorrowCastMut for MaybeUninit<T> {
     type AsMut = Self;
 }
 
@@ -557,7 +557,7 @@ impl<'itm, T: FromBorrow<'itm>> FromBorrow<'itm> for ManuallyDrop<T> {
     }
 }
 
-impl<T: ExternC + ?Sized> ExternC for ManuallyDrop<T> {
+impl<T: ReprC + ?Sized> ReprC for ManuallyDrop<T> {
     type CType = T::CType;
 }
 // FIXME: I think t's not ok to get owned type and encode it
@@ -620,12 +620,12 @@ mod tests {
     #[test]
     fn maybe_uninit_lowers_without_validating_or_encoding_the_inner_value() {
         assert_impl_all!(MaybeUninit<bool>:
-            ExternC<CType = MaybeUninit<u8>>,
+            ReprC<CType = MaybeUninit<u8>>,
             CheckedTransmute,
             Decode<'static>,
             Encode,
         );
-        assert_impl_all!(MaybeUninit<u8>: ReprC, CFnArg, CFnReturn);
+        assert_impl_all!(MaybeUninit<u8>: CType, CFnArg, CFnReturn);
 
         let source = MaybeUninit::new(2_u8);
         assert!(unsafe { <MaybeUninit<bool> as CheckedTransmute>::is_valid(&source) });
@@ -640,7 +640,7 @@ mod tests {
     //#[test]
     //fn manually_drop_inner_without_drop() {
     //    assert_impl_all!(ManuallyDrop<u8>:
-    //        ExternC<CType = u8>,
+    //        ReprC<CType = u8>,
     //        Decode<'static>,
     //        Encode,
     //    );
@@ -685,7 +685,7 @@ mod tests {
     //        Encode,
     //    );
     //    assert_impl_all!([ManuallyDrop<u8>; 2]:
-    //        ExternC<CType = [u8; 2]>,
+    //        ReprC<CType = [u8; 2]>,
     //        Decode<'static>,
     //        Encode,
     //    );
@@ -695,7 +695,7 @@ mod tests {
     //        Encode,
     //    );
 
-    //    assert_not_impl_any!(ManuallyDrop<u8>: ReprC);
+    //    assert_not_impl_any!(ManuallyDrop<u8>: CType);
     //}
 
     //#[test]
@@ -749,11 +749,11 @@ mod tests {
     //    );
     //    assert_impl_all!(Option<ManuallyDrop<String>>:
     //        //Niche<CType = CBoxedSlice<u8>>,
-    //        ExternC<CType = CBoxedSlice<u8>>,
+    //        ReprC<CType = CBoxedSlice<u8>>,
     //        Decode<'static>,
     //        Encode,
     //    );
-    //    assert_not_impl_any!(ManuallyDrop<String>: ReprC);
+    //    assert_not_impl_any!(ManuallyDrop<String>: CType);
 
     //    #[cfg(feature = "alloc")]
     //    assert_not_impl_any!(Box<[ManuallyDrop<String>]>: Encode, Decode<'static>);
@@ -808,7 +808,7 @@ mod tests {
     #[test]
     fn robust_unsafe_cell() {
         assert_impl_all!(UnsafeCell<u8>:
-            ExternC<CType = u8>,
+            ReprC<CType = u8>,
             Decode<'static>,
             Encode,
         );
@@ -851,7 +851,7 @@ mod tests {
             Encode,
         );
         assert_impl_all!([UnsafeCell<u8>; 2]:
-            ExternC<CType = [u8; 2]>,
+            ReprC<CType = [u8; 2]>,
             Decode<'static>,
             Encode,
         );
@@ -861,13 +861,13 @@ mod tests {
             Encode,
         );
 
-        assert_not_impl_any!(UnsafeCell<u8>: ReprC);
+        assert_not_impl_any!(UnsafeCell<u8>: CType);
     }
 
     #[test]
     fn non_robust_unsafe_cell() {
         assert_impl_all!(UnsafeCell<NonZero<u8>>:
-            ExternC<CType = u8>,
+            ReprC<CType = u8>,
             Decode<'static>,
             Encode,
         );
@@ -908,7 +908,7 @@ mod tests {
             Encode,
         );
         assert_impl_all!([UnsafeCell<NonZero<u8>>; 2]:
-            ExternC<CType = [u8; 2]>,
+            ReprC<CType = [u8; 2]>,
             Decode<'static>,
             Encode,
         );
@@ -918,6 +918,6 @@ mod tests {
             Encode,
         );
 
-        assert_not_impl_any!(UnsafeCell<NonZero<u8>>: ReprC);
+        assert_not_impl_any!(UnsafeCell<NonZero<u8>>: CType);
     }
 }

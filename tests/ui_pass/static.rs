@@ -1,7 +1,7 @@
 #[unsafe(export_name = "static__VERSION")]
-pub static VERSION: <u32 as co3::ExternC>::CType = 1;
+pub static VERSION: <u32 as co3::ReprC>::CType = 1;
 #[unsafe(export_name = "static_test_flags")]
-pub static mut FLAGS: <u32 as co3::ExternC>::CType = 0;
+pub static mut FLAGS: <u32 as co3::ReprC>::CType = 0;
 
 mod imported {
     use co3::ffi;

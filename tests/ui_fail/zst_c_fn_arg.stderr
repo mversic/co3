@@ -1,7 +1,7 @@
 error[E0271]: type mismatch resolving `<CZeroLenArrayZst as RustSpec>::Size == Sized<Gt<Zero>>`
   --> tests/ui_fail/zst_c_fn_arg.rs:71:19
    |
-71 |     require_arg::<<ZeroLenArrayZst as ExternC>::CType>();
+71 |     require_arg::<<ZeroLenArrayZst as ReprC>::CType>();
    |                   ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ type mismatch resolving `<CZeroLenArrayZst as RustSpec>::Size == Sized<Gt<Zero>>`
    |
 note: expected this to be `rust_spec::size::Sized<Gt<rust_spec::Zero>>`
@@ -29,7 +29,7 @@ note: required by a bound in `require_arg`
 error[E0271]: type mismatch resolving `<CZeroLenArrayZst as RustSpec>::Size == Sized<Gt<Zero>>`
   --> tests/ui_fail/zst_c_fn_arg.rs:72:22
    |
-72 |     require_return::<<ZeroLenArrayZst as ExternC>::CType>();
+72 |     require_return::<<ZeroLenArrayZst as ReprC>::CType>();
    |                      ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ type mismatch resolving `<CZeroLenArrayZst as RustSpec>::Size == Sized<Gt<Zero>>`
    |
 note: expected this to be `rust_spec::size::Sized<Gt<rust_spec::Zero>>`
@@ -57,7 +57,7 @@ note: required by a bound in `require_return`
 error[E0271]: type mismatch resolving `<CReprCZst as RustSpec>::Size == Sized<Gt<Zero>>`
   --> tests/ui_fail/zst_c_fn_arg.rs:74:19
    |
-74 |     require_arg::<<ReprCZst as ExternC>::CType>();
+74 |     require_arg::<<ReprCZst as ReprC>::CType>();
    |                   ^^^^^^^^^^^^^^^^^^^^^^^^^^^^ type mismatch resolving `<CReprCZst as RustSpec>::Size == Sized<Gt<Zero>>`
    |
 note: expected this to be `rust_spec::size::Sized<Gt<rust_spec::Zero>>`
@@ -85,7 +85,7 @@ note: required by a bound in `require_arg`
 error[E0271]: type mismatch resolving `<CReprCZst as RustSpec>::Size == Sized<Gt<Zero>>`
   --> tests/ui_fail/zst_c_fn_arg.rs:75:22
    |
-75 |     require_return::<<ReprCZst as ExternC>::CType>();
+75 |     require_return::<<ReprCZst as ReprC>::CType>();
    |                      ^^^^^^^^^^^^^^^^^^^^^^^^^^^^ type mismatch resolving `<CReprCZst as RustSpec>::Size == Sized<Gt<Zero>>`
    |
 note: expected this to be `rust_spec::size::Sized<Gt<rust_spec::Zero>>`
@@ -113,7 +113,7 @@ note: required by a bound in `require_return`
 error[E0271]: type mismatch resolving `<CTransparentZst as RustSpec>::Size == Sized<Gt<Zero>>`
   --> tests/ui_fail/zst_c_fn_arg.rs:77:19
    |
-77 |     require_arg::<<TransparentZst as ExternC>::CType>();
+77 |     require_arg::<<TransparentZst as ReprC>::CType>();
    |                   ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ type mismatch resolving `<CTransparentZst as RustSpec>::Size == Sized<Gt<Zero>>`
    |
 note: expected this to be `rust_spec::size::Sized<Gt<rust_spec::Zero>>`
@@ -141,7 +141,7 @@ note: required by a bound in `require_arg`
 error[E0271]: type mismatch resolving `<CTransparentZst as RustSpec>::Size == Sized<Gt<Zero>>`
   --> tests/ui_fail/zst_c_fn_arg.rs:78:22
    |
-78 |     require_return::<<TransparentZst as ExternC>::CType>();
+78 |     require_return::<<TransparentZst as ReprC>::CType>();
    |                      ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ type mismatch resolving `<CTransparentZst as RustSpec>::Size == Sized<Gt<Zero>>`
    |
 note: expected this to be `rust_spec::size::Sized<Gt<rust_spec::Zero>>`
@@ -169,7 +169,7 @@ note: required by a bound in `require_return`
 error[E0271]: type mismatch resolving `<CNoReprZst as RustSpec>::Size == Sized<Gt<Zero>>`
   --> tests/ui_fail/zst_c_fn_arg.rs:80:19
    |
-80 |     require_arg::<<NoReprZst as ExternC>::CType>();
+80 |     require_arg::<<NoReprZst as ReprC>::CType>();
    |                   ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ type mismatch resolving `<CNoReprZst as RustSpec>::Size == Sized<Gt<Zero>>`
    |
 note: expected this to be `rust_spec::size::Sized<Gt<rust_spec::Zero>>`
@@ -197,7 +197,7 @@ note: required by a bound in `require_arg`
 error[E0271]: type mismatch resolving `<CNoReprZst as RustSpec>::Size == Sized<Gt<Zero>>`
   --> tests/ui_fail/zst_c_fn_arg.rs:81:22
    |
-81 |     require_return::<<NoReprZst as ExternC>::CType>();
+81 |     require_return::<<NoReprZst as ReprC>::CType>();
    |                      ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ type mismatch resolving `<CNoReprZst as RustSpec>::Size == Sized<Gt<Zero>>`
    |
 note: expected this to be `rust_spec::size::Sized<Gt<rust_spec::Zero>>`
@@ -225,7 +225,7 @@ note: required by a bound in `require_return`
 error[E0271]: type mismatch resolving `<CParamReprCZst<()> as RustSpec>::Size == Sized<Gt<Zero>>`
   --> tests/ui_fail/zst_c_fn_arg.rs:83:19
    |
-83 |     require_arg::<<ParamReprCZst<()> as ExternC>::CType>();
+83 |     require_arg::<<ParamReprCZst<()> as ReprC>::CType>();
    |                   ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ type mismatch resolving `<CParamReprCZst<()> as RustSpec>::Size == Sized<Gt<Zero>>`
    |
 note: expected this to be `rust_spec::size::Sized<Gt<rust_spec::Zero>>`
@@ -254,7 +254,7 @@ note: required by a bound in `require_arg`
 error[E0271]: type mismatch resolving `<CParamReprCZst<()> as RustSpec>::Size == Sized<Gt<Zero>>`
   --> tests/ui_fail/zst_c_fn_arg.rs:84:22
    |
-84 |     require_return::<<ParamReprCZst<()> as ExternC>::CType>();
+84 |     require_return::<<ParamReprCZst<()> as ReprC>::CType>();
    |                      ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ type mismatch resolving `<CParamReprCZst<()> as RustSpec>::Size == Sized<Gt<Zero>>`
    |
 note: expected this to be `rust_spec::size::Sized<Gt<rust_spec::Zero>>`
@@ -283,7 +283,7 @@ note: required by a bound in `require_return`
 error[E0271]: type mismatch resolving `<CParamTransparentZst<()> as RustSpec>::Size == Sized<Gt<Zero>>`
   --> tests/ui_fail/zst_c_fn_arg.rs:86:19
    |
-86 |     require_arg::<<ParamTransparentZst<()> as ExternC>::CType>();
+86 |     require_arg::<<ParamTransparentZst<()> as ReprC>::CType>();
    |                   ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ type mismatch resolving `<CParamTransparentZst<()> as RustSpec>::Size == Sized<Gt<Zero>>`
    |
 note: expected this to be `rust_spec::size::Sized<Gt<rust_spec::Zero>>`
@@ -312,7 +312,7 @@ note: required by a bound in `require_arg`
 error[E0271]: type mismatch resolving `<CParamTransparentZst<()> as RustSpec>::Size == Sized<Gt<Zero>>`
   --> tests/ui_fail/zst_c_fn_arg.rs:87:22
    |
-87 |     require_return::<<ParamTransparentZst<()> as ExternC>::CType>();
+87 |     require_return::<<ParamTransparentZst<()> as ReprC>::CType>();
    |                      ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ type mismatch resolving `<CParamTransparentZst<()> as RustSpec>::Size == Sized<Gt<Zero>>`
    |
 note: expected this to be `rust_spec::size::Sized<Gt<rust_spec::Zero>>`
@@ -341,7 +341,7 @@ note: required by a bound in `require_return`
 error[E0271]: type mismatch resolving `<CParamNoReprZst<()> as RustSpec>::Size == Sized<Gt<Zero>>`
   --> tests/ui_fail/zst_c_fn_arg.rs:89:19
    |
-89 |     require_arg::<<ParamNoReprZst<()> as ExternC>::CType>();
+89 |     require_arg::<<ParamNoReprZst<()> as ReprC>::CType>();
    |                   ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ type mismatch resolving `<CParamNoReprZst<()> as RustSpec>::Size == Sized<Gt<Zero>>`
    |
 note: expected this to be `rust_spec::size::Sized<Gt<rust_spec::Zero>>`
@@ -370,7 +370,7 @@ note: required by a bound in `require_arg`
 error[E0271]: type mismatch resolving `<CParamNoReprZst<()> as RustSpec>::Size == Sized<Gt<Zero>>`
   --> tests/ui_fail/zst_c_fn_arg.rs:90:22
    |
-90 |     require_return::<<ParamNoReprZst<()> as ExternC>::CType>();
+90 |     require_return::<<ParamNoReprZst<()> as ReprC>::CType>();
    |                      ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ type mismatch resolving `<CParamNoReprZst<()> as RustSpec>::Size == Sized<Gt<Zero>>`
    |
 note: expected this to be `rust_spec::size::Sized<Gt<rust_spec::Zero>>`
@@ -399,7 +399,7 @@ note: required by a bound in `require_return`
 error[E0271]: type mismatch resolving `<CParamFieldlessEnum as RustSpec>::Size == Sized<Gt<Zero>>`
   --> tests/ui_fail/zst_c_fn_arg.rs:98:19
    |
-98 |     require_arg::<<ParamFieldlessEnum as ExternC>::CType>();
+98 |     require_arg::<<ParamFieldlessEnum as ReprC>::CType>();
    |                   ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ type mismatch resolving `<CParamFieldlessEnum as RustSpec>::Size == Sized<Gt<Zero>>`
    |
 note: expected this to be `rust_spec::size::Sized<Gt<rust_spec::Zero>>`
@@ -427,7 +427,7 @@ note: required by a bound in `require_arg`
 error[E0271]: type mismatch resolving `<CParamFieldlessEnum as RustSpec>::Size == Sized<Gt<Zero>>`
   --> tests/ui_fail/zst_c_fn_arg.rs:99:22
    |
-99 |     require_return::<<ParamFieldlessEnum as ExternC>::CType>();
+99 |     require_return::<<ParamFieldlessEnum as ReprC>::CType>();
    |                      ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ type mismatch resolving `<CParamFieldlessEnum as RustSpec>::Size == Sized<Gt<Zero>>`
    |
 note: expected this to be `rust_spec::size::Sized<Gt<rust_spec::Zero>>`

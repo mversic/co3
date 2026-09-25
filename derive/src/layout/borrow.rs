@@ -34,7 +34,7 @@ pub(super) fn gen_item_view(
         let owner_name = &input.ident;
         let (_, owner_ty_generics, _) = input.generics.split_for_impl();
         quote! {
-            #[reprC(NICHE_VALUE = co3::borrow::borrow_cast(
+            #[repr_c(NICHE_VALUE = co3::borrow::borrow_cast(
                 <#owner_name #owner_ty_generics as co3::niche::Niche>::NICHE_VALUE
             ))]
         }
@@ -42,7 +42,7 @@ pub(super) fn gen_item_view(
 
     quote! {
         #[derive(co3::rust_spec::RustSpec, co3::ReprC)]
-        #[reprC(view)]
+        #[repr_c(view)]
         #inherited_niche
         #[doc(hidden)]
         #view_def
@@ -363,14 +363,14 @@ fn rewrite_view_repr_c_attrs(
     is_valid: Option<&syn::ExprClosure>,
     fields: &syn::Fields,
 ) {
-    attrs.retain(|a| !a.path().is_ident("reprC"));
+    attrs.retain(|a| !a.path().is_ident("repr_c"));
     if is_valid.is_none() {
         return;
     }
 
     if let Some(is_valid) = is_valid {
         let view_is_valid = gen_view_is_valid_attr(is_valid, fields);
-        attrs.push(parse_quote! { #[reprC(is_valid = #view_is_valid)] });
+        attrs.push(parse_quote! { #[repr_c(is_valid = #view_is_valid)] });
     }
 }
 
@@ -510,8 +510,8 @@ pub fn gen_borrow_cast_eq_bounds(fields: &[&syn::Type]) -> TokenStream {
         };
 
         Some(quote! {
-            #borrowed_ty: co3::ExternC<
-                CType = <<#ty as co3::ExternC>::CType as co3::borrow::BorrowCast>::AsConst
+            #borrowed_ty: co3::ReprC<
+                CType = <<#ty as co3::ReprC>::CType as co3::borrow::BorrowCast>::AsConst
             >
         })
     });

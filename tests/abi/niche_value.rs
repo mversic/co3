@@ -5,7 +5,7 @@ use co3::{ReprC, encode, ffi, option::ReprCOption, rust_spec::RustSpec, soft_dec
 #[derive(Clone, Copy, PartialEq, Eq, RustSpec, ReprC)]
 #[repr(transparent)]
 #[rust_spec(with_custom_niche)]
-#[reprC(NICHE_VALUE = COverlappingCustomNiche(1))]
+#[repr_c(NICHE_VALUE = COverlappingCustomNiche(1))]
 struct OverlappingCustomNiche(u8);
 
 #[test]
@@ -440,7 +440,7 @@ fn fieldless_enum_explicit_discriminants_round_trip() {
 #[test]
 fn usize_repr_enums_round_trip() {
     const _: () = assert!(
-        core::mem::size_of::<<FieldlessUsizeEnum as co3::ExternC>::CType>()
+        core::mem::size_of::<<FieldlessUsizeEnum as co3::ReprC>::CType>()
             == core::mem::size_of::<usize>()
     );
 

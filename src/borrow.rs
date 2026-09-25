@@ -7,7 +7,7 @@ use rust_spec::{
     size::{MetaSized, MetadataKind, SizedKind},
 };
 
-use crate::{ReprC, stored::ArrayStore};
+use crate::{CType, stored::ArrayStore};
 
 // TODO: Remove this once extern types are stable
 // https://github.com/rust-lang/rust/issues/43467
@@ -24,8 +24,8 @@ impl<K: SizedKind> NonExternTypeLike for rust_spec::size::Sized<K> {}
 ///
 /// - only owned to borrowed const pointer casting is allowed
 // TODO: Stupid trait with a stupid name
-pub unsafe trait BorrowCast: ReprC {
-    type AsConst: ReprC + ?Sized;
+pub unsafe trait BorrowCast: CType {
+    type AsConst: CType + ?Sized;
 }
 
 /// A layout-compatible mutably borrowed view of a robust C representation.
@@ -33,8 +33,8 @@ pub unsafe trait BorrowCast: ReprC {
 /// # Safety
 ///
 /// - only owned to borrowed mut pointer casting is allowed
-pub unsafe trait BorrowCastMut: ReprC {
-    type AsMut: ReprC + ?Sized;
+pub unsafe trait BorrowCastMut: CType {
+    type AsMut: CType + ?Sized;
 }
 
 #[inline(always)]
@@ -49,7 +49,7 @@ pub const fn borrow_cast_mut<C: BorrowCastMut<AsMut: Copy> + Copy>(source: C) ->
 
 /// A trait for structurally borrowing data.
 ///
-/// It should hold that `<T::CType as BorrowCast>::AsConst == <T::Borrowed as ExternC>::CType`
+/// It should hold that `<T::CType as BorrowCast>::AsConst == <T::Borrowed as ReprC>::CType`
 ///
 /// # Safety
 ///

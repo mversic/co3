@@ -1,4 +1,4 @@
-use co3::{ReprC, ffi, rust_spec::RustSpec, slice::Unpack2};
+use co3::{ReprC, CType, ffi, rust_spec::RustSpec, slice::Unpack2};
 
 #[derive(RustSpec, ReprC)]
 #[repr(C)]

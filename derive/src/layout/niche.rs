@@ -30,8 +30,8 @@ pub fn gen_view_niche_ir(view_name: &syn::Ident, generics: &syn::Generics) -> To
     quote! {
         impl #impl_generics co3::niche::Niche for #view_name #view_ty_generics where
             #owner_ty: co3::niche::Niche,
-            <#owner_ty as co3::ExternC>::CType: co3::borrow::BorrowCast<
-                AsConst = <Self as co3::ExternC>::CType
+            <#owner_ty as co3::ReprC>::CType: co3::borrow::BorrowCast<
+                AsConst = <Self as co3::ReprC>::CType
             >,
             #predicates
         {
@@ -206,7 +206,7 @@ pub fn gen_enum_niche_ir(
     let self_bounds = generics
         .params
         .is_empty()
-        .then(|| quote! { Self: co3::ExternC<CType: Copy>, });
+        .then(|| quote! { Self: co3::ReprC<CType: Copy>, });
 
     quote! {
         impl #impl_generics co3::niche::Niche for #enum_name #ty_generics where
@@ -214,7 +214,7 @@ pub fn gen_enum_niche_ir(
             #self_bounds
             #predicates
         {
-            const NICHE_VALUE: <Self as co3::ExternC>::CType = #niche_value;
+            const NICHE_VALUE: <Self as co3::ReprC>::CType = #niche_value;
         }
     }
 }
@@ -354,7 +354,7 @@ mod tests {
                 let ident = &source.path.segments.last().expect("source type path").ident;
                 assert_eq!(format!("T{index}"), ident.to_string());
                 assert_eq!(
-                    ["co3", "ExternC", "CType"],
+                    ["co3", "ReprC", "CType"],
                     ty.path
                         .segments
                         .iter()

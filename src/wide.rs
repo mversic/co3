@@ -66,8 +66,8 @@ pub trait Wide {
 
 macro_rules! impl_wide_for_transparent_wrapper {
     ($($wrapper:ident),+ $(,)?) => {$(
-        // TODO: It's super weird that we require Wide::Data: ExternC here
-        impl<R: Wide<Data: crate::ExternC> + ?Sized> Wide for $wrapper<R> {
+        // TODO: It's super weird that we require Wide::Data: ReprC here
+        impl<R: Wide<Data: crate::ReprC> + ?Sized> Wide for $wrapper<R> {
             type Data = R::Data;
             type Metadata = R::Metadata;
 

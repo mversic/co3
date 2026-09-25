@@ -1,7 +1,7 @@
-use co3::{CFnArg, ExternC, ReprC, ffi, rust_spec::RustSpec};
+use co3::{CFnArg, ReprC, CType, ffi, rust_spec::RustSpec};
 
 #[derive(Clone, Copy, RustSpec, ReprC)]
-#[reprC(identity)]
+#[repr_c(identity)]
 #[repr(C)]
 struct Integer(i32);
 
@@ -11,7 +11,7 @@ struct IntegerData;
 struct CIntegerData;
 
 #[derive(RustSpec, ReprC)]
-#[reprC(identity)]
+#[repr_c(identity)]
 #[repr(C)]
 struct NonCopy(i32);
 
@@ -20,16 +20,16 @@ struct NonCopyData;
 struct CNonCopyData;
 
 #[derive(Clone, Copy, RustSpec, ReprC)]
-#[reprC(identity)]
+#[repr_c(identity)]
 #[repr(transparent)]
 struct Generic<T>(T);
 
-static_assertions::assert_type_eq_all!(<Integer as ExternC>::CType, Integer);
-static_assertions::assert_type_eq_all!(<NonCopy as ExternC>::CType, NonCopy);
-static_assertions::assert_type_eq_all!(<Generic<u32> as ExternC>::CType, Generic<u32>);
+static_assertions::assert_type_eq_all!(<Integer as ReprC>::CType, Integer);
+static_assertions::assert_type_eq_all!(<NonCopy as ReprC>::CType, NonCopy);
+static_assertions::assert_type_eq_all!(<Generic<u32> as ReprC>::CType, Generic<u32>);
 static_assertions::assert_impl_all!(NonCopy: co3::Encode);
 static_assertions::assert_not_impl_any!(NonCopy: CFnArg);
-static_assertions::assert_not_impl_any!(Generic<bool>: ExternC);
+static_assertions::assert_not_impl_any!(Generic<bool>: ReprC);
 
 ffi! {
     #![unsafe(export("C"))]

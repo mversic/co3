@@ -7,7 +7,7 @@ use core::cmp::Ordering;
 #[cfg(feature = "alloc")]
 use crate::stored::Owned;
 use crate::{
-    CFnArg, CFnReturn, Decode, Encode, ExternC, ReprC, assert_arr_has_non_zero_len,
+    CFnArg, CFnReturn, CType, Decode, Encode, ReprC, assert_arr_has_non_zero_len,
     borrow::{Borrow, BorrowCast, BorrowCastMut, FromBorrow},
     niche::Niche,
     stored::{ArrayStore, DecodeOwned, EmptyStore, EncodeOwned},
@@ -39,7 +39,7 @@ macro_rules! primitive_derive {
             }
         }
 
-        impl ExternC for $primitive {
+        impl ReprC for $primitive {
             type CType = Self;
         }
         unsafe impl EncodeOwned for $primitive {
@@ -72,7 +72,7 @@ macro_rules! primitive_derive {
             }
         }
 
-        unsafe impl ReprC for $primitive {}
+        unsafe impl CType for $primitive {}
         unsafe impl CFnArg for $primitive {}
         unsafe impl CFnReturn for $primitive {}
 
@@ -110,10 +110,10 @@ macro_rules! raw_pointer_derive {
             }
         }
 
-        impl<R: ReprC + ?Sized> ExternC for *$mutability R {
+        impl<R: CType + ?Sized> ReprC for *$mutability R {
             type CType = Self;
         }
-        unsafe impl<R: ReprC + ?Sized> EncodeOwned for *$mutability R {
+        unsafe impl<R: CType + ?Sized> EncodeOwned for *$mutability R {
             type Store = ();
 
             #[inline(always)]
@@ -124,7 +124,7 @@ macro_rules! raw_pointer_derive {
                 self
             }
         }
-        unsafe impl<'d, R: ReprC + ?Sized> DecodeOwned<'d> for *$mutability R {
+        unsafe impl<'d, R: CType + ?Sized> DecodeOwned<'d> for *$mutability R {
             type Store = ();
 
             #[inline(always)]
@@ -133,24 +133,24 @@ macro_rules! raw_pointer_derive {
             }
         }
 
-        impl<R: ReprC + ?Sized> Encode for *$mutability R {}
-        impl<R: ReprC + ?Sized> Decode<'_> for *$mutability R {}
+        impl<R: CType + ?Sized> Encode for *$mutability R {}
+        impl<R: CType + ?Sized> Decode<'_> for *$mutability R {}
 
-        unsafe impl<R: ReprC + ?Sized> CheckedTransmute for *$mutability R {
+        unsafe impl<R: CType + ?Sized> CheckedTransmute for *$mutability R {
             #[inline(always)]
             unsafe fn is_valid(_: &Self::CType) -> bool {
                 true
             }
         }
 
-        unsafe impl<R: ReprC + ?Sized> ReprC for *$mutability R {}
-        unsafe impl<R: ReprC> CFnArg for *$mutability R {}
-        unsafe impl<R: ReprC> CFnReturn for *$mutability R {}
+        unsafe impl<R: CType + ?Sized> CType for *$mutability R {}
+        unsafe impl<R: CType> CFnArg for *$mutability R {}
+        unsafe impl<R: CType> CFnReturn for *$mutability R {}
 
-        unsafe impl<R: ReprC + ?Sized> BorrowCast for *$mutability R {
+        unsafe impl<R: CType + ?Sized> BorrowCast for *$mutability R {
             type AsConst = Self;
         }
-        unsafe impl<R: ReprC + ?Sized> BorrowCastMut for *$mutability R {
+        unsafe impl<R: CType + ?Sized> BorrowCastMut for *$mutability R {
             type AsMut = Self;
         }
 
@@ -214,7 +214,7 @@ macro_rules! impl_fn_types {
         where $fn_type: rust_spec::RustSpec<Layout = rust_spec::Stable> {
             fn from_borrow(source: Self) -> Self { source }
         }
-        impl<$($arg: CFnArg,)* R: CFnReturn> ExternC for $fn_type
+        impl<$($arg: CFnArg,)* R: CFnReturn> ReprC for $fn_type
         where $fn_type: rust_spec::RustSpec<Layout = rust_spec::Stable> {
             type CType = Option<Self>;
         }
@@ -243,7 +243,7 @@ macro_rules! impl_fn_types {
         where $fn_type: rust_spec::RustSpec<Layout = rust_spec::Stable> {
             unsafe fn is_valid(target: &Self::CType) -> bool { target.is_some() }
         }
-        unsafe impl<$($arg: CFnArg,)* R: CFnReturn> ReprC for Option<$fn_type>
+        unsafe impl<$($arg: CFnArg,)* R: CFnReturn> CType for Option<$fn_type>
         where $fn_type: rust_spec::RustSpec<Layout = rust_spec::Stable> {}
         unsafe impl<$($arg: CFnArg,)* R: CFnReturn> CFnArg for Option<$fn_type>
         where $fn_type: rust_spec::RustSpec<Layout = rust_spec::Stable> {}
@@ -292,7 +292,7 @@ macro_rules! fieldless_enum_derive {
             }
         }
 
-        impl ExternC for $src {
+        impl ReprC for $src {
             type CType = $dst;
         }
         unsafe impl EncodeOwned for $src {
@@ -348,9 +348,9 @@ impl<R> Owned for [R] {
     type Owned = Vec<R>;
 }
 
-unsafe impl<R: ReprC> ReprC for [R] {}
+unsafe impl<R: CType> CType for [R] {}
 
-impl<R: ExternC<CType: Sized>> ExternC for [R] {
+impl<R: ReprC<CType: Sized>> ReprC for [R] {
     type CType = [R::CType];
 }
 unsafe impl<R: BorrowCast<AsConst: Copy>> BorrowCast for [R] {
@@ -360,7 +360,7 @@ unsafe impl<R: BorrowCastMut<AsMut: Copy>> BorrowCastMut for [R] {
     type AsMut = [R::AsMut];
 }
 
-impl<R: ExternC<CType: Sized>, const N: usize> ExternC for [R; N] {
+impl<R: ReprC<CType: Sized>, const N: usize> ReprC for [R; N] {
     type CType = [R::CType; N];
 }
 unsafe impl<R: EncodeOwned<CType: Copy>, const N: usize> EncodeOwned for [R; N] {
@@ -405,7 +405,7 @@ unsafe impl<'d, R: DecodeOwned<'d, CType: Copy>, const N: usize> DecodeOwned<'d>
     }
 }
 
-unsafe impl<R: ReprC, const N: usize> ReprC for [R; N] {}
+unsafe impl<R: CType, const N: usize> CType for [R; N] {}
 
 unsafe impl<R: BorrowCast<AsConst: Copy> + Copy, const N: usize> BorrowCast for [R; N] {
     type AsConst = [R::AsConst; N];
@@ -476,8 +476,8 @@ mod tests {
             value + 1
         }
 
-        assert_impl_all!(Callback: ExternC<CType = Option<Callback>>, Encode, Decode<'static>, Niche);
-        assert_impl_all!(Option<Callback>: ReprC, CFnArg, Encode, Decode<'static>);
+        assert_impl_all!(Callback: ReprC<CType = Option<Callback>>, Encode, Decode<'static>, Niche);
+        assert_impl_all!(Option<Callback>: CType, CFnArg, Encode, Decode<'static>);
 
         type SystemCallback = extern "system" fn(u8) -> u8;
         assert_impl_all!(Option<SystemCallback>: CFnArg);
@@ -490,20 +490,20 @@ mod tests {
         assert!(Option::<Callback>::None.soft_encode(&mut ()).is_none());
 
         type VoidCallback = extern "C" fn();
-        assert_impl_all!(VoidCallback: ExternC, Encode, Decode<'static>);
-        assert_impl_all!(unsafe extern "C" fn(u8) -> u8: ExternC, Encode, Decode<'static>);
-        assert_not_impl_any!(fn(u8) -> u8: ExternC, Encode, Decode<'static>);
-        assert_not_impl_any!(extern "C" fn(bool) -> u8: ExternC, Encode, Decode<'static>);
-        assert_not_impl_any!(extern "C" fn((u8,)) -> u8: ExternC, Encode, Decode<'static>);
+        assert_impl_all!(VoidCallback: ReprC, Encode, Decode<'static>);
+        assert_impl_all!(unsafe extern "C" fn(u8) -> u8: ReprC, Encode, Decode<'static>);
+        assert_not_impl_any!(fn(u8) -> u8: ReprC, Encode, Decode<'static>);
+        assert_not_impl_any!(extern "C" fn(bool) -> u8: ReprC, Encode, Decode<'static>);
+        assert_not_impl_any!(extern "C" fn((u8,)) -> u8: ReprC, Encode, Decode<'static>);
     }
 
     #[test]
     fn robust_u8() {
         assert_impl_all!(u8:
-            ExternC<CType = u8>,
+            ReprC<CType = u8>,
             Decode<'static>,
             Encode,
-            ReprC,
+            CType,
         );
         assert_impl_all!(&u8:
             Niche<CType = *const u8>,
@@ -546,7 +546,7 @@ mod tests {
         assert_impl_all!([u8; 2]:
             Decode<'static>,
             Encode,
-            ReprC,
+            CType,
         );
         assert_impl_all!(Option<u8>:
             Niche<CType = ReprCOption<u8>>,

@@ -410,7 +410,7 @@ fn gen_single_unpack_input_stmts(
         let target_ty = ffi_fn::single_unpack_part(attrs, ty)
             .expect("validated one-part unpack attribute")
             .expect("one-part unpack attribute was found");
-        let part_ty = quote!(<#target_ty as co3::ExternC>::CType);
+        let part_ty = quote!(<#target_ty as co3::ReprC>::CType);
         let conversion = quote! {
             <#unpack_ty as co3::slice::Unpack<#part_ty>>::unpack(#arg_name)
         };

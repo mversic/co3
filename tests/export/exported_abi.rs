@@ -191,37 +191,37 @@ pub const unsafe extern "Rust" fn ambiguous2() -> Ambiguous {
 #[test]
 fn exported_abi() {
     unsafe extern "C" {
-        fn export__OpaqueStructU32__ambiguous() -> <Ambiguous as co3::ExternC>::CType;
+        fn export__OpaqueStructU32__ambiguous() -> <Ambiguous as co3::ReprC>::CType;
 
-        fn ambiguous() -> <Ambiguous as co3::ExternC>::CType;
-        fn ambiguous1() -> <Ambiguous as co3::ExternC>::CType;
+        fn ambiguous() -> <Ambiguous as co3::ReprC>::CType;
+        fn ambiguous1() -> <Ambiguous as co3::ReprC>::CType;
 
         #[link_name = "cclone"]
         fn export_opaque_clone_bool(handle: *const c_void) -> *mut c_void;
         #[link_name = "nclone"]
         fn export_non_opaque_clone_bool(
-            handle_ptr: *const <NonOpaqueStruct<bool> as co3::ExternC>::CType,
-        ) -> <NonOpaqueStruct<bool> as co3::ExternC>::CType;
+            handle_ptr: *const <NonOpaqueStruct<bool> as co3::ReprC>::CType,
+        ) -> <NonOpaqueStruct<bool> as co3::ReprC>::CType;
         #[link_name = "xor_u8"]
         fn export_opaque_xor_u8(handle_ptr: *const c_void, by: u8) -> *mut c_void;
 
         fn export__AmbiguousX_u64_3__OpaqueStructU64__ambiguous(
             a: &[u8; 3],
-        ) -> <Ambiguous as co3::ExternC>::CType;
+        ) -> <Ambiguous as co3::ReprC>::CType;
 
         #[link_name = "export__OpaqueStructU32__re_exported"]
         fn re_exported() -> *mut c_void;
     }
 
     unsafe extern "Rust" {
-        fn kita(a: *const [i8; 4]) -> <Ambiguous as co3::ExternC>::CType;
-        fn kita1() -> <Ambiguous as co3::ExternC>::CType;
-        fn kita2() -> <Ambiguous as co3::ExternC>::CType;
+        fn kita(a: *const [i8; 4]) -> <Ambiguous as co3::ReprC>::CType;
+        fn kita1() -> <Ambiguous as co3::ReprC>::CType;
+        fn kita2() -> <Ambiguous as co3::ReprC>::CType;
 
         #[link_name = "export__Clone__NonOpaqueStruct_u8__clone"]
         fn export_non_opaque_clone_u8(
-            handle: *const <NonOpaqueStruct<u8> as co3::ExternC>::CType,
-        ) -> <NonOpaqueStruct<u8> as co3::ExternC>::CType;
+            handle: *const <NonOpaqueStruct<u8> as co3::ReprC>::CType,
+        ) -> <NonOpaqueStruct<u8> as co3::ReprC>::CType;
         #[link_name = "clone"]
         fn export_opaque_clone_u8(handle: *const c_void) -> *mut c_void;
     }

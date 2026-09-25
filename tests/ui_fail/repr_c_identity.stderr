@@ -10,13 +10,13 @@ error: `identity` is only supported on structs
 10 | enum Enum {
    |      ^^^^
 
-error[E0277]: the trait bound `bool: ReprC` is not satisfied
+error[E0277]: the trait bound `bool: CType` is not satisfied
   --> tests/ui_fail/repr_c_identity.rs:14:10
    |
 14 | #[derive(ReprC)]
-   |          ^^^^^ the trait `ReprC` is not implemented for `bool`
+   |          ^^^^^ the trait `CType` is not implemented for `bool`
    |
-   = help: the following other types implement trait `ReprC`:
+   = help: the following other types implement trait `CType`:
              ()
              *const R
              *mut R

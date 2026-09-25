@@ -19,23 +19,23 @@
 //! ```rust
 //! use core::mem::size_of;
 //!
-//! use co3::{encode, option::ReprCOption, tuple::ReprCTuple3, ExternC};
+//! use co3::{encode, option::ReprCOption, tuple::ReprCTuple3, ReprC};
 //!
 //! type TupleWithNiche1<'a> = (u8, bool, &'a bool);
 //! type TupleWithNiche2<'a> = (u8, &'a bool, bool);
 //! type TupleWithoutNiche = (u64, u32, u8);
 //!
 //! assert_eq!(
-//!     size_of::<<TupleWithNiche1 as ExternC>::CType>(),
-//!     size_of::<<Option::<TupleWithNiche1> as ExternC>::CType>()
+//!     size_of::<<TupleWithNiche1 as ReprC>::CType>(),
+//!     size_of::<<Option::<TupleWithNiche1> as ReprC>::CType>()
 //! );
 //! assert_eq!(
-//!     size_of::<<TupleWithNiche2 as ExternC>::CType>(),
-//!     size_of::<<Option::<TupleWithNiche2> as ExternC>::CType>());
+//!     size_of::<<TupleWithNiche2 as ReprC>::CType>(),
+//!     size_of::<<Option::<TupleWithNiche2> as ReprC>::CType>());
 //!
 //! assert_eq!(
-//!     8 + size_of::<<TupleWithoutNiche as ExternC>::CType>(),
-//!     size_of::<<Option::<TupleWithoutNiche> as ExternC>::CType>()
+//!     8 + size_of::<<TupleWithoutNiche as ReprC>::CType>(),
+//!     size_of::<<Option::<TupleWithoutNiche> as ReprC>::CType>()
 //! );
 //!
 //! let none_value_1: Option<TupleWithNiche1> = None;
@@ -55,7 +55,7 @@ use rust_spec::{
 };
 
 use crate::{
-    CFnArg, CFnReturn, Decode, Encode, ExternC, ReprC, Store,
+    CFnArg, CFnReturn, CType, Decode, Encode, ReprC, Store,
     borrow::{Borrow, BorrowCast, BorrowCastMut, FromBorrow},
     niche::Niche,
     slice::Unpack2,
@@ -201,11 +201,11 @@ macro_rules! impl_tuple {
         impl<'d, $($ty: Decode<'d, CType: Copy>),*> Decode<'d> for ($($ty,)*) {}
         impl<'d, $($ty: Decode<'d, CType: Copy>),*> Decode<'d> for $ffi_ty<$($ty),*> {}
 
-        unsafe impl<$($ty: ReprC + Copy),*> CFnArg for $ffi_ty<$($ty),*>
+        unsafe impl<$($ty: CType + Copy),*> CFnArg for $ffi_ty<$($ty),*>
         where
             Self: RustSpec<Size = rust_spec::size::Sized<rust_spec::Gt<rust_spec::Zero>>>,
         {}
-        unsafe impl<$($ty: ReprC + Copy),*> CFnReturn for $ffi_ty<$($ty),*>
+        unsafe impl<$($ty: CType + Copy),*> CFnReturn for $ffi_ty<$($ty),*>
         where
             Self: RustSpec<Size = rust_spec::size::Sized<rust_spec::Gt<rust_spec::Zero>>>,
         {}
@@ -229,10 +229,10 @@ macro_rules! impl_tuple {
         #[derive(RustSpec, Debug, Clone, Copy, Default, PartialEq, Eq, PartialOrd, Ord, Hash)]
         pub struct $ffi_ty<$($head,)* $last: ?Sized>($(pub $head,)* pub $last);
 
-        impl<$($head: ExternC<CType: Sized>,)* $last: ExternC + ?Sized> ExternC for ($($head,)* $last,) {
+        impl<$($head: ReprC<CType: Sized>,)* $last: ReprC + ?Sized> ReprC for ($($head,)* $last,) {
             type CType = $ffi_ty<$($head::CType,)* $last::CType>;
         }
-        impl<$($head: ExternC<CType: Sized>,)* $last: ExternC + ?Sized> ExternC for $ffi_ty<$($head,)* $last> {
+        impl<$($head: ReprC<CType: Sized>,)* $last: ReprC + ?Sized> ReprC for $ffi_ty<$($head,)* $last> {
             type CType = $ffi_ty<$($head::CType,)* $last::CType>;
         }
 
@@ -253,7 +253,7 @@ macro_rules! impl_tuple {
             type AsMut = $ffi_ty<$($head::AsMut,)* $last::AsMut>;
         }
 
-        unsafe impl<$($head: ReprC,)* $last: ReprC + ?Sized> ReprC for $ffi_ty<$($head,)* $last> {}
+        unsafe impl<$($head: CType,)* $last: CType + ?Sized> CType for $ffi_ty<$($head,)* $last> {}
 
         unsafe impl<$($head: crate::stored::EmptyStore,)* $last: crate::stored::EmptyStore> crate::stored::EmptyStore for ($($head,)* $last,) {}
         unsafe impl<$($head: crate::stored::EmptyStore,)* $last: crate::stored::EmptyStore> crate::stored::EmptyStore for $ffi_ty<$($head,)* $last> {}
@@ -292,9 +292,9 @@ impl_tuple! {(A, B, C, D, E, F, G, H, I, J) -> ReprCTuple10}
 impl_tuple! {(A, B, C, D, E, F, G, H, I, J, K) -> ReprCTuple11}
 impl_tuple! {(A, B, C, D, E, F, G, H, I, J, K, L) -> ReprCTuple12}
 
-impl<A, B, Part1: ReprC, Part2: ReprC> Unpack2<Part1, Part2> for (A, B)
+impl<A, B, Part1: CType, Part2: CType> Unpack2<Part1, Part2> for (A, B)
 where
-    Self: ExternC<CType = ReprCTuple2<Part1, Part2>>,
+    Self: ReprC<CType = ReprCTuple2<Part1, Part2>>,
 {
     type Error = core::convert::Infallible;
 
@@ -310,18 +310,18 @@ impl<A: Niche> Niche for (A,) {
 
 disjoint_impls! {
     #[disjoint_impls(remote)]
-    trait Niche: ExternC<CType: Copy> + Sized {
+    trait Niche: ReprC<CType: Copy> + Sized {
         const NICHE_VALUE: Self::CType;
     }
 
-    impl<A: Niche<CType: Copy>, B: ExternC<CType: Copy>, N: NicheStabilityKind> Niche for (A, B)
+    impl<A: Niche<CType: Copy>, B: ReprC<CType: Copy>, N: NicheStabilityKind> Niche for (A, B)
     where
         A: RustSpec<Niche = WithNiche<N>>,
     {
         const NICHE_VALUE: Self::CType = ReprCTuple2(A::NICHE_VALUE, unsafe { core::mem::zeroed() });
     }
 
-    impl<A: ExternC<CType: Copy>, B: Niche<CType: Copy>, N: NicheStabilityKind> Niche for (A, B)
+    impl<A: ReprC<CType: Copy>, B: Niche<CType: Copy>, N: NicheStabilityKind> Niche for (A, B)
     where
         A: RustSpec<Niche = WithoutNiche>,
         B: RustSpec<Niche = WithNiche<N>>,
@@ -330,9 +330,9 @@ disjoint_impls! {
     }
 }
 
-impl<A: ExternC<CType: Copy>, B: ExternC<CType: Copy>, C: ExternC<CType: Copy>> Niche for (A, B, C)
+impl<A: ReprC<CType: Copy>, B: ReprC<CType: Copy>, C: ReprC<CType: Copy>> Niche for (A, B, C)
 where
-    (A, (B, C)): Niche<CType = ReprCTuple2<A::CType, <(B, C) as ExternC>::CType>>,
+    (A, (B, C)): Niche<CType = ReprCTuple2<A::CType, <(B, C) as ReprC>::CType>>,
 {
     const NICHE_VALUE: Self::CType = ReprCTuple3(
         <(A, (B, C))>::NICHE_VALUE.0,
@@ -344,9 +344,9 @@ where
 macro_rules! impl_tuple_niche_recursive {
     ($(($($all:ident),+) => ($left:ty, $right:ty) : $ffi_ty:ident($($field:tt),+)),+ $(,)?) => {
         $(
-            impl<$($all: ExternC<CType: Copy>),+> Niche for ($($all,)+)
+            impl<$($all: ReprC<CType: Copy>),+> Niche for ($($all,)+)
             where
-                ($left, $right): Niche<CType = ReprCTuple2<<$left as ExternC>::CType, <$right as ExternC>::CType>>,
+                ($left, $right): Niche<CType = ReprCTuple2<<$left as ReprC>::CType, <$right as ReprC>::CType>>,
             {
                 const NICHE_VALUE: Self::CType = $ffi_ty(
                     $(<($left, $right)>::NICHE_VALUE.$field),+
@@ -404,7 +404,7 @@ mod tests {
     #[test]
     fn stored_tuple_3_without_niche() {
         assert_impl_all!((u8, u8, u8):
-            ExternC<CType = ReprCTuple3<u8, u8, u8>>,
+            ReprC<CType = ReprCTuple3<u8, u8, u8>>,
             Decode<'static>,
             Encode,
         );
@@ -445,7 +445,7 @@ mod tests {
             EncodeOwned,
         );
         assert_impl_all!([(u8, u8, u8); 2]:
-            ExternC<CType = [ReprCTuple3<u8, u8, u8>; 2]>,
+            ReprC<CType = [ReprCTuple3<u8, u8, u8>; 2]>,
             Decode<'static>,
             Encode,
         );

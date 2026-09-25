@@ -5,18 +5,18 @@ use core::ffi::{CStr, c_char, c_void};
 #[cfg(feature = "alloc")]
 use alloc::ffi::CString;
 
+use crate::{
+    CType, ReprC,
+    borrow::{Borrow, BorrowCast, BorrowCastMut, FromBorrow},
+    transmute::CheckedTransmute,
+    wide::Wide,
+};
 #[cfg(feature = "alloc")]
 use crate::{
     Decode, Encode,
     boxed::CBoxedSlice,
     niche::Niche,
     stored::{DecodeOwned, EncodeOwned, Store},
-};
-use crate::{
-    ExternC, ReprC,
-    borrow::{Borrow, BorrowCast, BorrowCastMut, FromBorrow},
-    transmute::CheckedTransmute,
-    wide::Wide,
 };
 
 unsafe impl Borrow for c_void {
@@ -38,10 +38,10 @@ impl<'itm> FromBorrow<'itm> for c_void {
         source
     }
 }
-impl ExternC for c_void {
+impl ReprC for c_void {
     type CType = Self;
 }
-unsafe impl ReprC for c_void {}
+unsafe impl CType for c_void {}
 unsafe impl BorrowCast for c_void {
     type AsConst = Self;
 }
@@ -49,10 +49,9 @@ unsafe impl BorrowCastMut for c_void {
     type AsMut = Self;
 }
 
-impl ExternC for CStr {
+impl ReprC for CStr {
     type CType = [c_char];
 }
-unsafe impl ReprC for CStr {}
 unsafe impl CheckedTransmute for CStr {
     unsafe fn is_valid(value: &[c_char]) -> bool {
         value.last() == Some(&0)
@@ -61,13 +60,6 @@ unsafe impl CheckedTransmute for CStr {
                 .all(|&c| c != 0)
     }
 }
-unsafe impl BorrowCast for CStr {
-    type AsConst = CStr;
-}
-unsafe impl BorrowCastMut for CStr {
-    type AsMut = CStr;
-}
-
 impl Wide for CStr {
     type Data = c_char;
     type Metadata = usize;
@@ -119,7 +111,7 @@ impl Wide for CStr {
 }
 
 #[cfg(feature = "alloc")]
-impl ExternC for CString {
+impl ReprC for CString {
     type CType = CBoxedSlice<c_char>;
 }
 

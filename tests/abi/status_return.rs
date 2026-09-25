@@ -1,6 +1,6 @@
 use core::num::NonZeroU8;
 
-use co3::{Error, ExternC, ReprC, ffi, rust_spec::RustSpec};
+use co3::{Error, ReprC, CType, ffi, rust_spec::RustSpec};
 
 #[derive(Debug, PartialEq, Eq, RustSpec, ReprC)]
 #[repr(u8)]
@@ -42,7 +42,7 @@ ffi! {
 }
 
 #[unsafe(export_name = "kita_failure__extern_error_invalid_return")]
-unsafe extern "C" fn extern_error_invalid_return() -> <CustomStatus as ExternC>::CType {
+unsafe extern "C" fn extern_error_invalid_return() -> <CustomStatus as ReprC>::CType {
     7
 }
 
@@ -60,10 +60,10 @@ mod import {
 
 unsafe extern "C" {
     #[link_name = "kita_failure__export_error_input"]
-    fn export_error_input_raw(value: u8) -> <CustomStatus as ExternC>::CType;
+    fn export_error_input_raw(value: u8) -> <CustomStatus as ReprC>::CType;
 }
 
-fn decode_status(source: <CustomStatus as ExternC>::CType) -> CustomStatus {
+fn decode_status(source: <CustomStatus as ReprC>::CType) -> CustomStatus {
     unsafe { co3::decode(source) }.expect("status should decode")
 }
 

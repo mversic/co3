@@ -6,7 +6,7 @@ use rust_spec::{RustSpec, Stable, mutability::Exclusive, niche::WithNiche, size:
 
 #[cfg(feature = "alloc")]
 use crate::boxed::CBox;
-use crate::{ExternC, assert_arr_has_non_zero_len};
+use crate::{ReprC, assert_arr_has_non_zero_len};
 
 disjoint_impls! {
     /// Type that can be **safely transmuted** into its C representation.
@@ -15,8 +15,8 @@ disjoint_impls! {
     ///
     /// - `Self` and `Self::CType` must be mutually transmutable (this includes [`Drop`] semantics)
     /// - `Self::is_valid` must not return false negatives, i.e. return `true` for trap representations
-    pub unsafe trait CheckedTransmute: ExternC {
-        /// Called when transmuting an [`ExternC::CType`] back into [`Self`] to check for trap representations.
+    pub unsafe trait CheckedTransmute: ReprC {
+        /// Called when transmuting an [`ReprC::CType`] back into [`Self`] to check for trap representations.
         ///
         /// This function must never return false negatives, i.e. return `true` for a trap representation.
         ///
@@ -57,7 +57,7 @@ disjoint_impls! {
 // NOTE: It is UB to transmute between `UnsafeCell<T>` and `T`
 unsafe impl<R: CheckedTransmute + RustSpec<Mutability = Exclusive> + ?Sized> CheckedTransmute for &R
 where
-    Self: ExternC<CType: Copy>,
+    Self: ReprC<CType: Copy>,
 {
     #[inline(always)]
     unsafe fn is_valid(target: &Self::CType) -> bool {
@@ -77,7 +77,7 @@ where
 // If layout is Stable<Robust> then also consider how it affects Box<&mut R>
 unsafe impl<R: CheckedTransmute + ?Sized> CheckedTransmute for &mut R
 where
-    Self: ExternC<CType = *mut R::CType>,
+    Self: ReprC<CType = *mut R::CType>,
 {
     #[inline(always)]
     unsafe fn is_valid(target: &Self::CType) -> bool {
@@ -92,7 +92,7 @@ where
 #[cfg(feature = "alloc")]
 unsafe impl<R: CheckedTransmute<CType: Sized>> CheckedTransmute for Box<R>
 where
-    Self: ExternC<CType = CBox<R::CType>>,
+    Self: ReprC<CType = CBox<R::CType>>,
 {
     #[inline(always)]
     unsafe fn is_valid(target: &Self::CType) -> bool {
@@ -142,7 +142,7 @@ unsafe impl CheckedTransmute for str {
 unsafe impl<R: CheckedTransmute<CType: Copy>> CheckedTransmute for Option<R>
 where
     R: RustSpec<Niche = WithNiche<Stable>>,
-    Self: ExternC<CType = R::CType>,
+    Self: ReprC<CType = R::CType>,
 {
     #[inline(always)]
     unsafe fn is_valid(target: &Self::CType) -> bool {
@@ -169,7 +169,7 @@ mod tests {
     #[cfg(feature = "alloc")]
     use crate::boxed::CBoxedSlice;
     use crate::{
-        Decode, Encode, ReprC,
+        CType, Decode, Encode,
         niche::Niche,
         slice::{CSlice, CSliceMut},
     };
@@ -277,12 +277,12 @@ mod tests {
             Encode,
         );
         assert_impl_all!(Option<&u8>:
-            ExternC<CType = *const u8>,
+            ReprC<CType = *const u8>,
             Decode<'static>,
             Encode,
         );
 
-        assert_not_impl_any!(Option<&u8>: ReprC);
+        assert_not_impl_any!(Option<&u8>: CType);
     }
 
     #[test]
@@ -332,7 +332,7 @@ mod tests {
             Encode,
         );
         assert_impl_all!(Option<&bool>:
-            ExternC<CType = *const u8>,
+            ReprC<CType = *const u8>,
             Decode<'static>,
             Encode,
         );
@@ -382,12 +382,12 @@ mod tests {
             Encode,
         );
         assert_impl_all!(Option<&mut u8>:
-            ExternC<CType = *mut u8>,
+            ReprC<CType = *mut u8>,
             Decode<'static>,
             Encode,
         );
 
-        assert_not_impl_any!(Option<&mut u8>: ReprC);
+        assert_not_impl_any!(Option<&mut u8>: CType);
     }
 
     #[test]
@@ -434,7 +434,7 @@ mod tests {
             Encode
         );
         assert_impl_all!(Option<&mut bool>:
-            ExternC<CType = *mut u8>,
+            ReprC<CType = *mut u8>,
             Decode<'static>,
             Encode
         );

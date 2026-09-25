@@ -1,5 +1,5 @@
 use co3::{
-    ExternC, ReprC,
+    ReprC, CType,
     ffi,
 };
 use co3::rust_spec::RustSpec;
@@ -10,7 +10,7 @@ enum State {
     Connected,
 }
 
-type StateCType = <State as ExternC>::CType;
+type StateCType = <State as ReprC>::CType;
 
 #[derive(Clone, Copy, RustSpec, ReprC)]
 struct Status {

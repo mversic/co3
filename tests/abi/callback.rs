@@ -1,17 +1,17 @@
 use co3::{
-    ReprC, ffi,
+    CType, ReprC, ffi,
     ops::{CFn0, CFn1, CFn2, CFn12},
     option::ReprCOption,
     rust_spec::RustSpec,
 };
 
 #[derive(Clone, Copy, RustSpec, ReprC)]
-#[reprC(identity)]
+#[repr_c(identity)]
 #[repr(C)]
 struct StructWithCallback(Option<unsafe extern "C" fn(*const u32) -> u32>);
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, RustSpec, ReprC)]
-#[reprC(identity)]
+#[repr_c(identity)]
 #[repr(C)]
 struct Value(u8);
 
@@ -171,7 +171,7 @@ fn zero_argument_callback_decodes_result() {
 fn stored_c_callback_accepts_rust_reference() {
     fn assert_first_arg<T: CFn1<Arg1 = *const u32>>()
     where
-        Option<T>: ReprC,
+        Option<T>: CType,
     {
     }
     assert_first_arg::<unsafe extern "C" fn(*const u32) -> u32>();
@@ -214,7 +214,7 @@ fn soft_call_synchronizes_mutable_argument() {
 fn multi_argument_callbacks_encode_each_argument() {
     fn assert_two_args<T: CFn2<Arg1 = *const u32, Arg2 = u32>>()
     where
-        Option<T>: ReprC,
+        Option<T>: CType,
     {
     }
     assert_two_args::<unsafe extern "C" fn(*const u32, u32) -> u32>();
@@ -257,10 +257,7 @@ fn c_callback_crosses_export_and_import() {
         Some(Box::new(Value(42)))
     );
     let _: PathAlias = sum_pair;
-    fn assert_existing_fn_pointer_impls<T: co3::ExternC + co3::Encode + co3::Decode<'static>>(
-        _: T,
-    ) {
-    }
+    fn assert_existing_fn_pointer_impls<T: co3::ReprC + co3::Encode + co3::Decode<'static>>(_: T) {}
     assert_existing_fn_pointer_impls(sum_native_raw as CCallback);
     let raw_value = co3::borrow::borrow_cast(co3::encode(RustValue(21)));
     let raw_result = unsafe { double_rust_raw(raw_value) };

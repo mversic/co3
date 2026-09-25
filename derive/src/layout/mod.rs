@@ -15,7 +15,7 @@ mod item;
 mod niche;
 mod wide;
 
-const FFI_TYPE_ATTR: &str = "reprC";
+const FFI_TYPE_ATTR: &str = "repr_c";
 
 #[derive(Default)]
 pub(super) struct ReprCAttrs {
@@ -100,7 +100,7 @@ fn parse_repr_c_attrs(attrs: &[Attribute]) -> syn::Result<ReprCAttrs> {
             attrs
                 .iter()
                 .find(|attr| attr.path().is_ident(FFI_TYPE_ATTR))
-                .expect("reprC attr was found"),
+                .expect("repr_c attr was found"),
             "expected ffi type kind",
         ));
     }

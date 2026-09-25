@@ -20,7 +20,7 @@ fn lowered_field_ty(field_ty: &syn::Type) -> TokenStream {
         return quote!(#field_ty);
     }
 
-    quote!(<#field_ty as co3::ExternC>::CType)
+    quote!(<#field_ty as co3::ReprC>::CType)
 }
 
 /// Generates the C carrier for a fieldless enum. Unlike a data enum's C
@@ -263,9 +263,9 @@ fn gen_ctype_wide_impl(
     let source_data_ctype_bounds = gen_data_ctype_bounds(source_fields, source_generics);
     let source_data_ty = data_bound_ty(&source_last.ty, true);
     let source_data_ctype_sized_bound = if is_type_parametrized(&source_data_ty, source_generics) {
-        quote!(#source_data_ty: co3::ExternC<CType: Sized>)
+        quote!(#source_data_ty: co3::ReprC<CType: Sized>)
     } else {
-        quote!(for<'__dummy> #source_data_ty: co3::ExternC<CType: Sized>)
+        quote!(for<'__dummy> #source_data_ty: co3::ReprC<CType: Sized>)
     };
 
     let for_dummy = (ctype.generics.type_params().count() == 0).then_some(quote! {
@@ -274,13 +274,13 @@ fn gen_ctype_wide_impl(
 
     let data_bound = (!is_transparent).then(|| {
         quote! {
-            #for_dummy #data_name #ty_generics: co3::ExternC<CType = #data_ctype_name #ty_generics>,
+            #for_dummy #data_name #ty_generics: co3::ReprC<CType = #data_ctype_name #ty_generics>,
         }
     });
     let data_ty = if is_transparent {
-        quote!(<<#source_field_ty as co3::wide::Wide>::Data as co3::ExternC>::CType)
+        quote!(<<#source_field_ty as co3::wide::Wide>::Data as co3::ReprC>::CType)
     } else {
-        quote!(<#data_name #ty_generics as co3::ExternC>::CType)
+        quote!(<#data_name #ty_generics as co3::ReprC>::CType)
     };
 
     quote! {
@@ -676,7 +676,7 @@ fn gen_robust_impls<const ADD_COPY: bool>(
     });
 
     quote! {
-        unsafe impl #impl_generics #co3::ReprC for #ident #ty_generics #where_clause {}
+        unsafe impl #impl_generics #co3::CType for #ident #ty_generics #where_clause {}
 
         unsafe impl #impl_generics #co3::CFnArg for #ident #ty_generics
         where
@@ -840,7 +840,7 @@ fn gen_identity_codec_impls<const ADD_COPY: bool>(
     let sized_bound = (!require_copy).then(|| quote!(for<'_dummy> Self: Sized,));
 
     quote! {
-        impl #impl_generics co3::ExternC for #ident #ty_generics
+        impl #impl_generics co3::ReprC for #ident #ty_generics
         where
             #predicates
         {
@@ -901,7 +901,7 @@ pub(super) fn gen_identity_repr_c_impls(
     let codec_impls = gen_identity_codec_impls::<false>(ident, generics, fields, false);
 
     quote! {
-        unsafe impl #impl_generics co3::ReprC for #ident #ty_generics #where_clause {}
+        unsafe impl #impl_generics co3::CType for #ident #ty_generics #where_clause {}
 
         unsafe impl #impl_generics co3::CFnArg for #ident #ty_generics
         where
@@ -1350,9 +1350,9 @@ pub(super) fn gen_extern_c_bounds_for_ctype<const ADD_COPY: bool>(
         }
 
         if is_type_parametrized(ty, generics) {
-            vec![parse_quote! { #ty: co3::ExternC #ctype_bound }]
+            vec![parse_quote! { #ty: co3::ReprC #ctype_bound }]
         } else {
-            gen_hrtb_projection_bounds(ty, generics, quote! { co3::ExternC #ctype_bound })
+            gen_hrtb_projection_bounds(ty, generics, quote! { co3::ReprC #ctype_bound })
         }
     };
 

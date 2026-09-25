@@ -80,7 +80,7 @@ fn gen_import_wrapper(
     let co3 = co3_path();
     let decode_bounds = quote! {
         for<'_dummy> #ty: #co3::Decode<'_dummy, Store: #co3::stored::EmptyStore>,
-        <#ty as #co3::ExternC>::CType: Copy,
+        <#ty as #co3::ReprC>::CType: Copy,
     };
 
     let soft_read = if mutable {
@@ -92,7 +92,7 @@ fn gen_import_wrapper(
             ) -> Option<#ty>
             where
                 for<'_dummy> #ty: #co3::Decode<'__co3_static_d>,
-                <#ty as #co3::ExternC>::CType: Copy,
+                <#ty as #co3::ReprC>::CType: Copy,
             {
                 let source = unsafe { core::ptr::read(core::ptr::addr_of!(#raw_ident)) };
                 unsafe { #co3::soft_decode::<#ty>(source, store) }
@@ -107,7 +107,7 @@ fn gen_import_wrapper(
             ) -> Option<#ty>
             where
                 for<'_dummy> #ty: #co3::Decode<'__co3_static_d>,
-                <#ty as #co3::ExternC>::CType: Copy,
+                <#ty as #co3::ReprC>::CType: Copy,
             {
                 let source = unsafe { #raw_ident };
                 unsafe { #co3::soft_decode::<#ty>(source, store) }
@@ -243,7 +243,7 @@ pub(crate) fn gen_extern_static(
 
             #(#attrs)*
             #(#link_attrs)*
-            #static_token #mutability #raw_ident: <#ty as #co3::ExternC>::CType;
+            #static_token #mutability #raw_ident: <#ty as #co3::ReprC>::CType;
         }
     }
 }

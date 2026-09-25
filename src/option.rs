@@ -4,13 +4,13 @@ use core::mem::MaybeUninit;
 use rust_spec::{RustSpec, niche::WithoutNiche};
 
 use crate::{
-    CFnArg, CFnReturn, Decode, Encode, ExternC, ReprC,
+    CFnArg, CFnReturn, CType, Decode, Encode, ReprC,
     borrow::{Borrow, BorrowCast, BorrowCastMut, FromBorrow},
     stored::{DecodeOwned, EmptyStore, EncodeOwned},
     transmute::CheckedTransmute,
 };
 
-/// FFI-safe equivalent of [`core::option::Option`] for [`crate::ReprC`] types
+/// FFI-safe equivalent of [`core::option::Option`]
 #[repr(C)]
 pub struct ReprCOption<T> {
     tag: u8,
@@ -179,7 +179,7 @@ impl<'itm, T: FromBorrow<'itm>> FromBorrow<'itm> for ReprCOption<T> {
     }
 }
 
-impl<T: ExternC<CType: Sized>> ExternC for ReprCOption<T> {
+impl<T: ReprC<CType: Sized>> ReprC for ReprCOption<T> {
     type CType = ReprCOption<T::CType>;
 }
 unsafe impl<T: EncodeOwned<CType: Copy>> EncodeOwned for ReprCOption<T> {
@@ -230,9 +230,9 @@ unsafe impl<T: CheckedTransmute<CType: Copy>> CheckedTransmute for ReprCOption<T
     }
 }
 
-unsafe impl<T: ReprC> ReprC for ReprCOption<T> {}
-unsafe impl<T: ReprC + Copy> CFnArg for ReprCOption<T> {}
-unsafe impl<T: ReprC + Copy> CFnReturn for ReprCOption<T> {}
+unsafe impl<T: CType> CType for ReprCOption<T> {}
+unsafe impl<T: CType + Copy> CFnArg for ReprCOption<T> {}
+unsafe impl<T: CType + Copy> CFnReturn for ReprCOption<T> {}
 
 unsafe impl<T: BorrowCast<AsConst: Copy> + Copy> BorrowCast for ReprCOption<T> {
     type AsConst = ReprCOption<T::AsConst>;
