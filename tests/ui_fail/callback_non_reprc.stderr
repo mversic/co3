@@ -24,7 +24,7 @@ help: the trait `CFnArg` is not implemented for `NotReprC`
              CNotReprCMutView
              CSlice<C>
            and $N others
-   = note: required for `extern "C" fn(NotReprC)` to implement `co3::ReprC`
+   = note: required for `extern "C" fn(NotReprC)` to implement `ReprC`
    = note: this error originates in the macro `ffi` (in Nightly builds, run with -Z macro-backtrace for more info)
 
 error[E0277]: the trait bound `NotReprC: CFnReturn` is not satisfied
@@ -53,7 +53,7 @@ help: the trait `CFnReturn` is not implemented for `NotReprC`
              CNotReprCConstView
              CNotReprCMutView
            and $N others
-   = note: required for `extern "C" fn() -> NotReprC` to implement `co3::ReprC`
+   = note: required for `extern "C" fn() -> NotReprC` to implement `ReprC`
    = note: this error originates in the macro `ffi` (in Nightly builds, run with -Z macro-backtrace for more info)
 
 error[E0277]: the trait bound `extern "C" fn(NotReprC): co3::borrow::Borrow` is not satisfied

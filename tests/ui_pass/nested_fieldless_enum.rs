@@ -1,5 +1,5 @@
 use co3::{
-    ReprC, CType,
+    ReprC,
     ffi,
 };
 use co3::rust_spec::RustSpec;

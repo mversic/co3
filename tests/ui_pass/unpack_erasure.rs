@@ -1,6 +1,6 @@
 use core::marker::PhantomData;
 
-use co3::{ReprC, CType, Tag, encode, ffi, rust_spec::RustSpec, slice::Unpack2};
+use co3::{ReprC, Tag, encode, ffi, rust_spec::RustSpec, slice::Unpack2};
 
 trait Prop {
     type DefinedBy;

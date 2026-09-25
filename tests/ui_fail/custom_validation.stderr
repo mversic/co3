@@ -2,7 +2,7 @@ error: `is_valid` is only supported on structs or enum variants
   --> tests/ui_fail/custom_validation.rs:22:5
    |
 22 |     #[repr_c(is_valid = |a| *a != 0)]
-   |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+   |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
 error: `NICHE_VALUE` is only supported on structs
   --> tests/ui_fail/custom_validation.rs:28:10
@@ -34,76 +34,76 @@ error: Unions are not supported
 50 | | }
    | |_^
 
-error[E0277]: the trait bound `T: co3::ReprC` is not satisfied
+error[E0277]: the trait bound `T: ReprC` is not satisfied
   --> tests/ui_fail/custom_validation.rs:52:10
    |
 52 | #[derive(ReprC)]
-   |          ^^^^^ the trait `co3::ReprC` is not implemented for `T`
+   |          ^^^^^ the trait `ReprC` is not implemented for `T`
    |
-note: required for `ParametrizedView<'_dšč, T>` to implement `co3::ReprC`
+note: required for `ParametrizedView<'_dšč, T>` to implement `ReprC`
   --> tests/ui_fail/custom_validation.rs:52:10
    |
 52 | #[derive(ReprC)]
-   |          ^^^^^ type parameter would need to implement `co3::ReprC`
-   = help: consider manually implementing `co3::ReprC` to avoid undesired bounds
+   |          ^^^^^ type parameter would need to implement `ReprC`
+   = help: consider manually implementing `ReprC` to avoid undesired bounds
    = note: this error originates in the derive macro `co3::ReprC` which comes from the expansion of the derive macro `ReprC` (in Nightly builds, run with -Z macro-backtrace for more info)
 help: consider further restricting type parameter `T` with trait `ReprC`
    |
 54 | pub struct Parametrized<T: ?Sized + co3::ReprC>(T);
-   |                                   ++++++++++++++
+   |                                   ++++++++++++
 
-error[E0277]: the trait bound `T: co3::ReprC` is not satisfied
+error[E0277]: the trait bound `T: ReprC` is not satisfied
   --> tests/ui_fail/custom_validation.rs:52:10
    |
 52 | #[derive(ReprC)]
-   |          ^^^^^ the trait `co3::ReprC` is not implemented for `T`
+   |          ^^^^^ the trait `ReprC` is not implemented for `T`
    |
-note: required for `ParametrizedView<'_dšč, T>` to implement `co3::ReprC`
+note: required for `ParametrizedView<'_dšč, T>` to implement `ReprC`
   --> tests/ui_fail/custom_validation.rs:52:10
    |
 52 | #[derive(ReprC)]
-   |          ^^^^^ type parameter would need to implement `co3::ReprC`
-   = help: consider manually implementing `co3::ReprC` to avoid undesired bounds
-note: the requirement `ParametrizedView<'_dšč, T>: co3::ReprC` appears on the `impl`'s associated constant `NICHE_VALUE` but not on the corresponding trait's associated constant
+   |          ^^^^^ type parameter would need to implement `ReprC`
+   = help: consider manually implementing `ReprC` to avoid undesired bounds
+note: the requirement `ParametrizedView<'_dšč, T>: ReprC` appears on the `impl`'s associated constant `NICHE_VALUE` but not on the corresponding trait's associated constant
   --> src/niche.rs
    |
    |     pub trait Niche: ReprC<CType: Copy> + Sized {
    |               ----- in this trait
    |         const NICHE_VALUE: Self::CType;
-   |               ^^^^^^^^^^^ this trait's associated constant doesn't have the requirement `ParametrizedView<'_dšč, T>: co3::ReprC`
+   |               ^^^^^^^^^^^ this trait's associated constant doesn't have the requirement `ParametrizedView<'_dšč, T>: ReprC`
    = note: this error originates in the derive macro `co3::ReprC` which comes from the expansion of the derive macro `ReprC` (in Nightly builds, run with -Z macro-backtrace for more info)
 help: consider further restricting type parameter `T` with trait `ReprC`
    |
 54 | pub struct Parametrized<T: ?Sized + co3::ReprC>(T);
-   |                                   ++++++++++++++
+   |                                   ++++++++++++
 
-error[E0277]: the trait bound `T: co3::ReprC` is not satisfied
+error[E0277]: the trait bound `T: ReprC` is not satisfied
   --> tests/ui_fail/custom_validation.rs:56:10
    |
 56 | #[derive(ReprC)]
-   |          ^^^^^ the trait `co3::ReprC` is not implemented for `T`
+   |          ^^^^^ the trait `ReprC` is not implemented for `T`
    |
-   = note: required for `[T]` to implement `co3::ReprC`
+   = note: required for `[T]` to implement `ReprC`
    = note: 1 redundant requirement hidden
-   = note: required for `UnsizedSliceView<'_dšč, T>` to implement `co3::ReprC`
+   = note: required for `UnsizedSliceView<'_dšč, T>` to implement `ReprC`
    = note: this error originates in the derive macro `co3::ReprC` (in Nightly builds, run with -Z macro-backtrace for more info)
 
-error[E0277]: the trait bound `T: co3::ReprC` is not satisfied
+error[E0277]: the trait bound `T: ReprC` is not satisfied
   --> tests/ui_fail/custom_validation.rs:56:10
    |
 56 | #[derive(ReprC)]
-   |          ^^^^^ the trait `co3::ReprC` is not implemented for `T`
+   |          ^^^^^ the trait `ReprC` is not implemented for `T`
    |
-   = note: required for `[T]` to implement `co3::ReprC`
+   = note: required for `[T]` to implement `ReprC`
    = note: 1 redundant requirement hidden
-   = note: required for `UnsizedSliceView<'_dšč, T>` to implement `co3::ReprC`
-note: the requirement `UnsizedSliceView<'_dšč, T>: co3::ReprC` appears on the `impl`'s associated constant `NICHE_VALUE` but not on the corresponding trait's associated constant
+   = note: required for `UnsizedSliceView<'_dšč, T>` to implement `ReprC`
+note: the requirement `UnsizedSliceView<'_dšč, T>: ReprC` appears on the `impl`'s associated constant `NICHE_VALUE` but not on the corresponding trait's associated constant
   --> src/niche.rs
    |
    |     pub trait Niche: ReprC<CType: Copy> + Sized {
    |               ----- in this trait
    |         const NICHE_VALUE: Self::CType;
-   |               ^^^^^^^^^^^ this trait's associated constant doesn't have the requirement `UnsizedSliceView<'_dšč, T>: co3::ReprC`
+   |               ^^^^^^^^^^^ this trait's associated constant doesn't have the requirement `UnsizedSliceView<'_dšč, T>: ReprC`
    = note: this error originates in the derive macro `co3::ReprC` (in Nightly builds, run with -Z macro-backtrace for more info)
 
 error[E0277]: the trait bound `[T]: Copy` is not satisfied
@@ -126,7 +126,7 @@ note: required by a bound in `Niche`
   --> src/niche.rs
    |
    |     pub trait Niche: ReprC<CType: Copy> + Sized {
-   |                                     ^^^^ required by this bound in `Niche`
+   |                                   ^^^^ required by this bound in `Niche`
    = note: this error originates in the derive macro `co3::ReprC` which comes from the expansion of the derive macro `ReprC` (in Nightly builds, run with -Z macro-backtrace for more info)
 
 error[E0277]: the trait bound `[_]: Copy` is not satisfied

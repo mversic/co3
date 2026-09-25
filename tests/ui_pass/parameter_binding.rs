@@ -1,6 +1,6 @@
 use core::marker::PhantomData;
 
-use co3::{ReprC, Tag, CType, ffi, rust_spec::RustSpec};
+use co3::{ReprC, Tag, ffi, rust_spec::RustSpec};
 
 #[derive(Tag, RustSpec, ReprC)]
 #[tag(u8, unsafe(1))]

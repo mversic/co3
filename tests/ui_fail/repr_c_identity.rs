@@ -1,4 +1,4 @@
-use co3::{CType, ReprC};
+use co3::ReprC;
 
 #[derive(ReprC)]
 #[repr_c(identity)]

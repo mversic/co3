@@ -52,7 +52,7 @@ pub(crate) fn validate_export_decls(items: &[crate::ForeignItem]) -> Result<()> 
             push_error(&mut errors, err);
         }
     }
-    if let Err(err) = validate_impls(items, |impl_| validate_export_impl(impl_, &declared_types)) {
+    if let Err(err) = validate_impls(items, validate_export_impl) {
         push_error(&mut errors, err);
     }
     errors.map_or(Ok(()), Err)
@@ -689,7 +689,8 @@ fn validate_export_static(item: &Co3Static) -> Result<()> {
 fn validate_export_fn(item: &crate::Co3Fn) -> Result<()> {
     validate_export_visibility(&item.item.vis, &item.item.sig.ident)?;
     validate_unpack_export(&item.sig)?;
-    validate_export_fn_attrs(&item.attrs)
+    validate_export_fn_attrs(&item.attrs)?;
+    reject_explicit_dispatch_ids(&item.sig)
 }
 
 fn validate_export_visibility(vis: &syn::Visibility, item: &impl ToTokens) -> Result<()> {
@@ -716,10 +717,7 @@ fn validate_export_type(item: &crate::ForeignItemType) -> Result<()> {
     Ok(())
 }
 
-fn validate_export_impl(
-    impl_: &crate::Co3Impl,
-    declared_types: &BTreeSet<syn::Ident>,
-) -> Result<()> {
+fn validate_export_impl(impl_: &crate::Co3Impl) -> Result<()> {
     let mut errors = None;
     let drop_impl = is_drop_impl(&impl_.item);
     for item in &impl_.items {
@@ -739,9 +737,7 @@ fn validate_export_impl(
         if let Err(err) = validate_export_fn_attrs(&method.attrs) {
             push_error(&mut errors, err);
         }
-        if !is_direct_declared_type(&impl_.self_ty, declared_types)
-            && let Err(err) = reject_explicit_dispatch_ids(&method.sig)
-        {
+        if let Err(err) = reject_explicit_dispatch_ids(&method.sig) {
             push_error(&mut errors, err);
         }
         if let Err(err) = validate_export_receiver_position(&method.sig) {

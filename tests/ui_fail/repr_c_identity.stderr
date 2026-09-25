@@ -24,6 +24,6 @@ error[E0277]: the trait bound `bool: CType` is not satisfied
              CBoxedSlice<C>
              CSlice<C>
              CSliceMut<C>
-             CStr
+             MaybeUninit<T>
            and $N others
    = note: this error originates in the derive macro `ReprC` (in Nightly builds, run with -Z macro-backtrace for more info)

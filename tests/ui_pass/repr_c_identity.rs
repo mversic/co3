@@ -1,4 +1,4 @@
-use co3::{CFnArg, ReprC, CType, ffi, rust_spec::RustSpec};
+use co3::{CFnArg, ReprC, ffi, rust_spec::RustSpec};
 
 #[derive(Clone, Copy, RustSpec, ReprC)]
 #[repr_c(identity)]

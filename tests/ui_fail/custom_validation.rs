@@ -1,4 +1,4 @@
-use co3::{ReprC, CType, rust_spec::RustSpec};
+use co3::{ReprC, rust_spec::RustSpec};
 
 #[derive(RustSpec, ReprC)]
 #[repr_c(is_valid = |a| *a != 42)]

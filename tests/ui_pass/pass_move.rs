@@ -1,4 +1,4 @@
-use co3::{ReprC, CType, ffi, rust_spec::RustSpec};
+use co3::{ReprC, ffi, rust_spec::RustSpec};
 
 #[derive(Clone, Debug, PartialEq, Eq, RustSpec, ReprC)]
 #[repr(C)]

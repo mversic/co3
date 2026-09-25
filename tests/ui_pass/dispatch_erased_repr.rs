@@ -1,4 +1,4 @@
-use co3::{ReprC, Tag, CType, ffi, rust_spec::RustSpec};
+use co3::{ReprC, Tag, ffi, rust_spec::RustSpec};
 
 trait Attribute {}
 

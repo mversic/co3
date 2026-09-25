@@ -1,4 +1,4 @@
-use co3::{CType, ReprC};
+use co3::ReprC;
 use co3::rust_spec::RustSpec;
 
 #[derive(RustSpec, ReprC)]

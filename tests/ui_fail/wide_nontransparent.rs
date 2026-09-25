@@ -1,4 +1,4 @@
-use co3::{ReprC, CType, rust_spec::RustSpec, wide::Wide};
+use co3::{ReprC, rust_spec::RustSpec, wide::Wide};
 
 type Bytes = [u8];
 

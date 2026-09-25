@@ -120,6 +120,12 @@ error: tagged-dispatch predicates are not allowed in this position
 174 |         use<T> @ <>;
     |         ^^^
 
+error: explicit `<dyn Type>::TAG` is only supported in extern declarations
+   --> tests/ui_fail/export_restrictions.rs:180:26
+    |
+180 |         fn drop(self_id: <dyn Self>::TAG, &mut self);
+    |                          ^
+
 error: an exported method receiver must be the first non-tag argument
    --> tests/ui_fail/export_restrictions.rs:188:31
     |

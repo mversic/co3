@@ -1,4 +1,4 @@
-use co3::{ReprC, CType, ffi, rust_spec::RustSpec};
+use co3::{ReprC, ffi, rust_spec::RustSpec};
 
 extern "system" fn system_source(value: u8) -> u8 {
     value + 1

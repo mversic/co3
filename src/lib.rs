@@ -170,10 +170,10 @@
 //!
 //! Tagged dispatch is a dynamic dispatch over a closed set of concrete implementations commonly used
 //! in C APIs. The concrete type is erased at the FFI boundary and carried as a shared representation
-//! accompanied by a tag that identifies the concrete implementation to invoke. The tag position is
-//! inferred at the start of the function parameter list but can also be specified explicitly. Every
-//! tag-dispatched concrete instantiation is compile-time checked to have a C-compatible representation
-//! with the same size and alignment of the declared shared ABI type.
+//! accompanied by a tag that identifies the concrete implementation to invoke. By default, tags are
+//! injected at the start of the function argument list but import declarations can place it explicitly
+//! with `<dyn T>::TAG`. Every tag-dispatched concrete instantiation is compile-time checked to have
+//! a C-compatible representation with the same size and alignment of the declared shared ABI type.
 //!
 //! In the following example:
 //! - `T` is a tag-dispatched type parameter

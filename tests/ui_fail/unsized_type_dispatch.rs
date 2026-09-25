@@ -1,6 +1,6 @@
 use core::{borrow::Borrow, ffi::c_void};
 
-use co3::{ReprC, Tag, CType, ffi, rust_spec::RustSpec};
+use co3::{ReprC, Tag, ffi, rust_spec::RustSpec};
 
 #[derive(RustSpec, ReprC, Tag)]
 #[tag(u8)]
