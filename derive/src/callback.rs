@@ -1,63 +1,50 @@
 use proc_macro2::TokenStream;
 use quote::{format_ident, quote};
+use syn::visit::Visit;
 use syn::visit_mut::VisitMut;
-use syn::{Error, ItemFn, LitStr, Result, parse_quote};
+use syn::{ItemFn, Result, parse_quote};
 
 use crate::{
-    ffi_fn::{self, gen_abi_assertions},
+    ffi_fn,
     parse::FailureMode,
-    utils::{cfg_attrs, co3_path},
+    utils::{ParamUseDetector, cfg_attrs, co3_path, soft_for_arg},
 };
 
 pub(crate) fn expand_companion(
-    abi_name: &LitStr,
     failure_mode: FailureMode,
     item: &ItemFn,
     callee: TokenStream,
+    impl_generics: Option<&syn::Generics>,
 ) -> Result<TokenStream> {
-    if item.sig.asyncness.is_some()
-        || matches!(item.sig.safety, syn::Safety::Unsafe(_))
-        || item.sig.variadic.is_some()
-        || item.sig.inputs.len() > 12
-        || !item.sig.generics.params.is_empty()
-        || item
-            .sig
-            .generics
-            .where_clause
-            .as_ref()
-            .is_some_and(|clause| !clause.predicates.is_empty())
-    {
-        return Err(Error::new_spanned(
-            &item.sig,
-            "raw function declarations require a safe, synchronous, non-generic function with at most 12 arguments",
-        ));
-    }
-    for (index, input) in item.sig.inputs.iter().enumerate() {
-        let syn::FnArg::Typed(arg) = input else {
-            if index == 0 {
-                continue;
-            }
-            return Err(Error::new_spanned(
-                input,
-                "raw function receiver must be first",
-            ));
-        };
-        if !matches!(arg.pat.as_ref(), syn::Pat::Ident(_)) {
-            return Err(Error::new_spanned(
-                &arg.pat,
-                "raw function parameters must be identifiers",
-            ));
-        }
-    }
-
     let fn_by_val = item.attrs.iter().any(ffi_fn::is_by_val_attr);
-    let abi: syn::Abi = parse_quote!(extern #abi_name);
+    let abi = parse_quote!(extern "C");
     let mut raw_sig = ffi_fn::lower_raw_fn_signature(item.sig.clone(), failure_mode, fn_by_val);
     raw_sig.safety = syn::Safety::Unsafe(Default::default());
     raw_sig.abi = Some(abi);
     raw_sig.ident = format_ident!("{}_raw", item.sig.ident);
-    let assertions = gen_abi_assertions(&raw_sig);
-    let callee: syn::Expr = syn::parse2(callee)?;
+    add_generic_companion_bounds(&mut raw_sig, &item.sig, impl_generics, fn_by_val);
+    let generic_args = item
+        .sig
+        .generics
+        .params
+        .iter()
+        .filter_map(|param| match param {
+            syn::GenericParam::Type(param) => {
+                let ident = &param.ident;
+                Some(quote!(#ident))
+            }
+            syn::GenericParam::Const(param) => {
+                let ident = &param.ident;
+                Some(quote!(#ident))
+            }
+            syn::GenericParam::Lifetime(_) => None,
+        })
+        .collect::<Vec<_>>();
+    let callee: syn::Expr = if generic_args.is_empty() {
+        syn::parse2(callee)?
+    } else {
+        syn::parse2(quote!(#callee::<#(#generic_args),*>))?
+    };
     let signature_check = ffi_fn::gen_fn_signature_drift_check(item.sig.clone(), callee.clone());
     let body =
         ffi_fn::gen_raw_definition_body(item.sig.clone(), quote!(#callee), fn_by_val, failure_mode);
@@ -71,14 +58,13 @@ pub(crate) fn expand_companion(
 
     Ok(quote! {
         #(#cfg)*
-        #[doc = "C-compatible companion of the declared Rust function."]
+        #[doc = "Companion of the declared Rust function with lowered argument and return types."]
         #[doc = ""]
         #[doc = "# Safety"]
         #[doc = ""]
         #[doc = "The caller must uphold the safety requirements of `co3::decode` or `co3::soft_decode` for each argument, as applicable."]
         #vis #raw_sig {
             use #co3 as co3;
-            #assertions
             #signature_check
             let __co3_raw_body = || #body;
             match __co3_raw_body() {
@@ -89,14 +75,117 @@ pub(crate) fn expand_companion(
     })
 }
 
+fn add_generic_companion_bounds(
+    raw_sig: &mut syn::Signature,
+    source_sig: &syn::Signature,
+    impl_generics: Option<&syn::Generics>,
+    fn_by_val: bool,
+) {
+    let generic_idents = source_sig
+        .generics
+        .type_params()
+        .chain(
+            impl_generics
+                .into_iter()
+                .flat_map(syn::Generics::type_params),
+        )
+        .map(|param| &param.ident)
+        .collect::<Vec<_>>();
+    if generic_idents.is_empty() {
+        return;
+    }
+    let detector = ParamUseDetector::new(generic_idents);
+    struct Lifetimes(Vec<syn::Lifetime>);
+    impl<'ast> Visit<'ast> for Lifetimes {
+        fn visit_lifetime(&mut self, lifetime: &'ast syn::Lifetime) {
+            if !self.0.iter().any(|existing| existing == lifetime) {
+                self.0.push(lifetime.clone());
+            }
+        }
+    }
+    let mut predicates = Vec::<syn::WherePredicate>::new();
+    for input in &source_sig.inputs {
+        let syn::FnArg::Typed(arg) = input else {
+            continue;
+        };
+        let ty = arg.ty.as_ref();
+        if !detector.type_mentions_param(ty) {
+            continue;
+        }
+        predicates.push(parse_quote!(#ty: co3::ReprC));
+        let mut lifetimes = Lifetimes(Vec::new());
+        lifetimes.visit_type(ty);
+        let decode_lifetime = (lifetimes.0.len() == 1).then(|| lifetimes.0.remove(0));
+        if ffi_fn::ownership_mode_for_arg(&arg.attrs, ty) == crate::generate::OwnershipMode::ByValue
+        {
+            if let Some(lifetime) = decode_lifetime {
+                if soft_for_arg(&arg.attrs) {
+                    predicates.push(parse_quote!(#ty: co3::Decode<#lifetime>));
+                } else {
+                    predicates.push(parse_quote!(
+                        #ty: co3::Decode<#lifetime, Store: co3::stored::EmptyStore>
+                    ));
+                }
+            } else if soft_for_arg(&arg.attrs) {
+                predicates.push(parse_quote!(for<'__co3_d> #ty: co3::Decode<'__co3_d>));
+            } else {
+                predicates.push(parse_quote!(
+                    for<'__co3_d> #ty: co3::Decode<'__co3_d, Store: co3::stored::EmptyStore>
+                ));
+            }
+        } else {
+            predicates.push(parse_quote!(#ty: co3::borrow::Borrow));
+            predicates.push(parse_quote!(
+                <#ty as co3::ReprC>::CType: co3::borrow::BorrowCast
+            ));
+            predicates.push(parse_quote!(for<'__co3_d> #ty: co3::borrow::FromBorrow<'__co3_d>));
+            if soft_for_arg(&arg.attrs) {
+                predicates.push(parse_quote!(
+                    for<'__co3_d> <#ty as co3::borrow::Borrow>::Borrowed<'__co3_d>:
+                        co3::Decode<
+                            '__co3_d,
+                            CType = <<#ty as co3::ReprC>::CType as co3::borrow::BorrowCast>::AsConst,
+                        >
+                ));
+            } else {
+                predicates.push(parse_quote!(
+                    for<'__co3_d> <#ty as co3::borrow::Borrow>::Borrowed<'__co3_d>:
+                        co3::Decode<
+                            '__co3_d,
+                            CType = <<#ty as co3::ReprC>::CType as co3::borrow::BorrowCast>::AsConst,
+                            Store: co3::stored::EmptyStore,
+                        >
+                ));
+            }
+        }
+    }
+    if let syn::ReturnType::Type(_, ty) = &source_sig.output
+        && detector.type_mentions_param(ty)
+    {
+        predicates.push(parse_quote!(#ty: co3::Encode<Store: co3::stored::EmptyStore>));
+        if !fn_by_val {
+            predicates.push(parse_quote!(
+                <#ty as co3::ReprC>::CType: co3::borrow::BorrowCast
+            ));
+            predicates.push(parse_quote!(
+                #ty: co3::borrow::Borrow<Owner: co3::stored::EmptyStore>
+            ));
+        }
+    }
+    raw_sig
+        .generics
+        .make_where_clause()
+        .predicates
+        .extend(predicates);
+}
+
 pub(crate) fn lower_callback_fn_type(
     sig: syn::Signature,
     abi: &syn::Abi,
     failure_mode: FailureMode,
     move_fn: bool,
-) -> Result<(syn::Signature, syn::Type)> {
+) -> Result<syn::Type> {
     let mut type_sig = ffi_fn::lower_raw_fn_signature(sig, failure_mode, move_fn);
-    let lowered_sig = type_sig.clone();
     let replacements = type_sig
         .generics
         .lifetimes()
@@ -140,5 +229,5 @@ pub(crate) fn lower_callback_fn_type(
     });
     let output = &type_sig.output;
     let callback_type = syn::parse2(quote!(#binder unsafe #abi fn(#(#inputs),*) #output))?;
-    Ok((lowered_sig, callback_type))
+    Ok(callback_type)
 }

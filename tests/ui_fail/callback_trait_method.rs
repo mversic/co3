@@ -1,4 +1,4 @@
-use co3::ffi;
+use co3::raw;
 
 trait Counter: Sized {
     fn next(self) -> Self {
@@ -6,11 +6,9 @@ trait Counter: Sized {
     }
 }
 
-ffi! {
-    #![unsafe(extern("C"))]
-
+raw! {
     impl Counter for u8 {
-        raw fn next(self) -> u8;
+        fn next(self) -> u8;
     }
 }
 

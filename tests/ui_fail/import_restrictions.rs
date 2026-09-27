@@ -14,7 +14,7 @@ ffi! {
 }
 
 ffi! {
-    #![unsafe(extern("Rust"))]
+    #![unsafe(extern("system"))]
     #![unsafe(extern("C"))]
 }
 

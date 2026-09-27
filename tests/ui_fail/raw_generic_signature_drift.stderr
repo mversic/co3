@@ -1,0 +1,11 @@
+error[E0308]: mismatched types
+ --> tests/ui_fail/raw_generic_signature_drift.rs:8:5
+  |
+7 | / raw! {
+8 | |     fn source<T>(value: move T) -> move T;
+  | |     ^^ expected "Rust" fn, found "system" fn
+9 | | }
+  | |_- expected due to this
+  |
+  = note: expected fn pointer `fn(T) -> T`
+                found fn item `extern "system" fn(T) -> T {source::<T>}`

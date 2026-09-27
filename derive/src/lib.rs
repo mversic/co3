@@ -39,14 +39,17 @@ use syn::{
 use crate::{
     cfg_attr::{emit_macro_invocations, expand as expand_cfg_attr},
     dispatch::synthesize_dispatch_tag_ids,
-    generate::{expand_export_decls, expand_extern_decls},
+    generate::{expand_export_decls, expand_extern_decls, gen_raw_companions},
     layout::derive_repr_c,
-    parse::{ParsedInput, ParsedItem},
+    parse::{ParsedInput, ParsedItem, ParsedRawInput},
     utils::{
         co3_path, has_non_lifetime_generics, is_drop_impl, path_symbol_name, push_error,
         type_symbol_name,
     },
-    validate::{validate_export_attrs, validate_export_decls, validate_extern_decls},
+    validate::{
+        validate_export_attrs, validate_export_decls, validate_extern_decls,
+        validate_raw_companions,
+    },
 };
 
 mod abi_retype;
@@ -69,11 +72,39 @@ pub(crate) enum DeclKind {
     Extern,
 }
 
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub(crate) enum ImportMode {
+    #[default]
+    Regular,
+    Raw,
+}
+
+#[derive(Clone)]
 pub(crate) enum ForeignItem {
     Type(ForeignItemType),
     Static(Co3Static),
     Impl(Co3Impl),
     Fn(Co3Fn),
+}
+
+enum NormalizedItem {
+    Foreign(ForeignItem),
+    Raw(parse::RawFnDecl),
+}
+
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum NormalizationMode {
+    Ffi,
+    Raw,
+}
+
+impl NormalizationMode {
+    fn macro_name(self) -> &'static str {
+        match self {
+            Self::Ffi => "ffi!",
+            Self::Raw => "raw!",
+        }
+    }
 }
 
 #[derive(Clone)]
@@ -101,6 +132,7 @@ pub(crate) struct Co3Static {
 #[derive(Clone)]
 struct Co3Impl {
     item: ItemImpl,
+    import_mode: ImportMode,
 
     dispatch_args: DispatchGroups,
 
@@ -110,6 +142,7 @@ struct Co3Impl {
 #[derive(Clone)]
 struct Co3Fn {
     item: ItemFn,
+    import_mode: ImportMode,
     dispatch_args: DispatchGroups,
 }
 
@@ -127,6 +160,7 @@ impl Co3Impl {
     fn new(item: ItemImpl) -> Self {
         Self {
             item,
+            import_mode: ImportMode::Regular,
             dispatch_args: DispatchGroups::default(),
             method_dispatch_args: HashMap::default(),
         }
@@ -483,23 +517,62 @@ pub fn ffi(input: TokenStream) -> Result<TokenStream> {
             items,
         } = ParsedInput::parse(input)?;
 
-        let (items, callbacks, aliases) = normalize_items(items)?;
-        if kind == DeclKind::Extern {
-            validate_raw_import_moves(&items, &callbacks)?;
-        }
-        if kind == DeclKind::Export
-            && let Some(callback) = callbacks.first()
+        if let Some(name) = &abi.name
+            && name.value() == "Rust"
         {
             return Err(syn::Error::new_spanned(
-                &callback.sig.ident,
-                "raw function declarations are only allowed in `ffi!` extern blocks",
+                name,
+                "`ffi!` blocks require a non-Rust ABI",
             ));
         }
-        let mut items = pack_items(items)?;
+
+        let (normalized, aliases) = normalize_items(items, NormalizationMode::Ffi)?;
+        for item in &normalized {
+            let NormalizedItem::Foreign(item) = item else {
+                continue;
+            };
+            let check = |sig: &syn::Signature| -> Result<()> {
+                if kind == DeclKind::Export {
+                    return Err(syn::Error::new_spanned(
+                        &sig.ident,
+                        "raw function declarations are not allowed in `ffi!` export blocks; use `raw!` to generate companions",
+                    ));
+                }
+                if let Some(raw_abi) = &sig.abi {
+                    return Err(syn::Error::new_spanned(
+                        raw_abi,
+                        format!(
+                            "raw imports use the `ffi!` block ABI (`{}`); write `raw fn` without `extern \"ABI\"`",
+                            abi.name.as_ref().expect("block ABI is named").value(),
+                        ),
+                    ));
+                }
+                Ok(())
+            };
+            match item {
+                ForeignItem::Fn(item) if item.import_mode == ImportMode::Raw => {
+                    check(&item.sig)?;
+                }
+                ForeignItem::Impl(item) if item.import_mode == ImportMode::Raw => {
+                    for method in &item.items {
+                        if let syn::ImplItem::Fn(method) = method {
+                            check(&method.sig)?;
+                        }
+                    }
+                }
+                _ => {}
+            }
+        }
+        let normalized = pack_normalized_items(normalized)?;
+        let (mut items, raw_decls) = partition_items(normalized);
+        debug_assert!(raw_decls.is_empty());
         validate_items(kind, &attrs, &items)?;
         synthesize_items(&symbol_prefix, &mut items)?;
 
-        let aliases = expand_type_aliases(aliases, &abi, failure_mode)?;
+        let aliases = expand_type_aliases(aliases, failure_mode)?;
+        if kind == DeclKind::Extern {
+            validate_raw_import_names(&items)?;
+        }
         let declarations = match kind {
             DeclKind::Export => {
                 expand_export_decls(abi, features, failure_mode, items, &symbol_fragments)
@@ -510,7 +583,6 @@ pub fn ffi(input: TokenStream) -> Result<TokenStream> {
                 failure_mode,
                 &attrs,
                 items,
-                callbacks,
                 &symbol_fragments,
             ),
         };
@@ -525,24 +597,120 @@ pub fn ffi(input: TokenStream) -> Result<TokenStream> {
     ))
 }
 
+/// Generate lowered function companions from existing functions.
+///
+/// Companion declarations name existing functions and generate `extern "C"` functions.
+/// Their argument and return ABI traits are checked when used through CO3's FFI machinery.
+#[manyhow]
+#[proc_macro]
+pub fn raw(input: TokenStream) -> Result<TokenStream> {
+    let cfg_attr_variants = expand_cfg_attr(input.clone())?;
+    if cfg_attr_variants.len() != 1 {
+        let co3 = co3_path();
+        return Ok(emit_macro_invocations(
+            quote!(#co3::raw),
+            TokenStream::new(),
+            cfg_attr_variants,
+        ));
+    }
+
+    let ParsedRawInput {
+        failure_mode,
+        items,
+    } = ParsedRawInput::parse(input)?;
+    for item in &items {
+        match item {
+            ParsedItem::Fn(_) => {}
+            ParsedItem::Impl(impl_) => {
+                if utils::has_runtime_dispatch(&impl_.generics)
+                    || impl_
+                        .attrs
+                        .iter()
+                        .any(|attr| attr.path().is_ident("erased"))
+                {
+                    return Err(syn::Error::new_spanned(
+                        &impl_.self_ty,
+                        "tagged dispatch in `raw!` is not yet supported",
+                    ));
+                }
+            }
+            ParsedItem::Alias(alias) => {
+                let ident = match alias {
+                    parse::TypeAlias::Rust(alias) => &alias.ident,
+                    parse::TypeAlias::RawFunction { ident, .. } => ident,
+                };
+                return Err(syn::Error::new_spanned(
+                    ident,
+                    "type aliases are not allowed in `raw!`; use a Rust alias or declare a raw alias in `ffi!`",
+                ));
+            }
+            ParsedItem::Raw(raw_decl) => {
+                return Err(syn::Error::new_spanned(
+                    &raw_decl.sig.ident,
+                    "omit `raw` on `raw!` companion declarations",
+                ));
+            }
+            _ => {
+                return Err(syn::Error::new(
+                    proc_macro2::Span::call_site(),
+                    "`raw!` only supports function declarations and impl blocks",
+                ));
+            }
+        }
+    }
+    let (normalized, aliases) = normalize_items(items, NormalizationMode::Raw)?;
+    let (foreign_items, raw_decls) = partition_items(normalized);
+    if !foreign_items.is_empty() {
+        return Err(syn::Error::new(
+            proc_macro2::Span::call_site(),
+            "`raw!` impl blocks may only contain function declarations",
+        ));
+    }
+    validate_raw_companions(&raw_decls)?;
+    debug_assert!(aliases.is_empty());
+    let companions = gen_raw_companions(failure_mode, raw_decls);
+    Ok(quote!(#(#companions)*))
+}
+
 fn normalize_items(
     items: Vec<ParsedItem>,
-) -> Result<(
-    Vec<ForeignItem>,
-    Vec<parse::CallbackDecl>,
-    Vec<parse::TypeAlias>,
-)> {
-    let mut foreign_items = Vec::new();
-    let mut callbacks = Vec::new();
+    mode: NormalizationMode,
+) -> Result<(Vec<NormalizedItem>, Vec<parse::TypeAlias>)> {
+    let mut normalized = Vec::new();
     let mut aliases = Vec::new();
     for item in items {
         match item {
-            ParsedItem::Callback(callback) => callbacks.push(callback),
+            ParsedItem::Raw(raw_decl) if mode == NormalizationMode::Ffi => {
+                let item = ItemFn {
+                    attrs: raw_decl.attrs,
+                    vis: raw_decl.vis,
+                    modifiers: Default::default(),
+                    sig: raw_decl.sig,
+                    block: Box::new(parse_quote!({})),
+                };
+                let ForeignItem::Fn(mut item) = ParsedItem::Fn(item).normalize()? else {
+                    unreachable!("function declaration normalizes to a function")
+                };
+                item.import_mode = ImportMode::Raw;
+                normalized.push(NormalizedItem::Foreign(ForeignItem::Fn(item)));
+            }
+            ParsedItem::Raw(raw_decl) => normalized.push(NormalizedItem::Raw(raw_decl)),
             ParsedItem::Alias(alias) => aliases.push(alias),
+            ParsedItem::Fn(item) if mode == NormalizationMode::Raw => {
+                let ident = &item.sig.ident;
+                normalized.push(NormalizedItem::Raw(parse::RawFnDecl {
+                    attrs: item.attrs,
+                    vis: item.vis,
+                    callee: quote!(#ident),
+                    sig: item.sig,
+                    owner: None,
+                }));
+            }
             ParsedItem::Impl(mut item) => {
                 let self_ty = item.self_ty.clone();
                 let trait_path = item.trait_.as_ref().map(|(path, _)| path.clone());
                 let mut impl_items = Vec::new();
+                let mut raw_impl_items = Vec::new();
                 for impl_item in core::mem::take(&mut item.items) {
                     let syn::ImplItem::Fn(mut method) = impl_item else {
                         impl_items.push(impl_item);
@@ -552,22 +720,19 @@ fn normalize_items(
                         .attrs
                         .iter()
                         .position(|attr| attr.path().is_ident("raw"));
-                    let Some(marker) = marker else {
+                    if mode == NormalizationMode::Raw {
+                        if let Some(marker) = marker {
+                            return Err(syn::Error::new_spanned(
+                                &method.attrs[marker],
+                                "omit `raw` on `raw!` companion declarations",
+                            ));
+                        }
+                    } else if let Some(marker) = marker {
+                        method.attrs.remove(marker);
+                    } else {
                         impl_items.push(syn::ImplItem::Fn(method));
                         continue;
-                    };
-                    let raw_marker = method.attrs.remove(marker);
-                    let raw_abi = match raw_marker.meta {
-                        syn::Meta::Path(_) => None,
-                        syn::Meta::NameValue(meta) => match meta.value {
-                            syn::Expr::Lit(syn::ExprLit {
-                                lit: syn::Lit::Str(raw_abi),
-                                ..
-                            }) => Some(raw_abi),
-                            _ => unreachable!("raw ABI marker must contain a string"),
-                        },
-                        _ => unreachable!("raw ABI marker must be a path or string value"),
-                    };
+                    }
                     let method_name = &method.sig.ident;
                     let callee = if let Some(trait_path) = &trait_path {
                         quote!(<#self_ty as #trait_path>::#method_name)
@@ -586,34 +751,100 @@ fn normalize_items(
                     }
                     crate::ffi_fn::SelfConcretizer { self_ty: &self_ty }
                         .visit_signature_mut(&mut sig);
-                    callbacks.push(parse::CallbackDecl {
-                        attrs: method.attrs,
-                        vis: method.vis,
-                        raw_abi,
-                        callee,
-                        sig,
-                        owner: Some(parse::CallbackOwner {
-                            attrs: crate::utils::cfg_attrs(&item.attrs).cloned().collect(),
-                            generics: item.generics.clone(),
-                            trait_path: trait_path.clone(),
-                            self_ty: self_ty.clone(),
-                        }),
-                    });
+                    if mode == NormalizationMode::Ffi {
+                        method.sig = sig;
+                        raw_impl_items.push(syn::ImplItem::Fn(method));
+                    } else {
+                        normalized.push(NormalizedItem::Raw(parse::RawFnDecl {
+                            attrs: method.attrs,
+                            vis: method.vis,
+                            callee,
+                            sig,
+                            owner: Some(parse::RawFnOwner {
+                                attrs: crate::utils::cfg_attrs(&item.attrs).cloned().collect(),
+                                generics: item.generics.clone(),
+                                trait_path: trait_path.clone(),
+                                self_ty: self_ty.clone(),
+                            }),
+                        }));
+                    }
+                }
+                if !raw_impl_items.is_empty() {
+                    let mut raw_impl = item.clone();
+                    raw_impl.items = raw_impl_items;
+                    let ForeignItem::Impl(mut raw_impl) = ParsedItem::Impl(raw_impl).normalize()?
+                    else {
+                        unreachable!("impl declaration normalizes to an impl")
+                    };
+                    raw_impl.import_mode = ImportMode::Raw;
+                    normalized.push(NormalizedItem::Foreign(ForeignItem::Impl(raw_impl)));
                 }
                 item.items = impl_items;
                 if !item.items.is_empty() {
-                    foreign_items.push(ParsedItem::Impl(item).normalize()?);
+                    normalized.push(NormalizedItem::Foreign(ParsedItem::Impl(item).normalize()?));
                 }
             }
-            item => foreign_items.push(item.normalize()?),
+            item => normalized.push(NormalizedItem::Foreign(item.normalize()?)),
         }
     }
-    Ok((foreign_items, callbacks, aliases))
+    reject_implicit_extern_abi(&normalized, mode.macro_name())?;
+    Ok((normalized, aliases))
+}
+
+fn partition_items(items: Vec<NormalizedItem>) -> (Vec<ForeignItem>, Vec<parse::RawFnDecl>) {
+    let mut foreign = Vec::new();
+    let mut raw = Vec::new();
+    for item in items {
+        match item {
+            NormalizedItem::Foreign(item) => foreign.push(item),
+            NormalizedItem::Raw(item) => raw.push(item),
+        }
+    }
+    (foreign, raw)
+}
+
+fn pack_normalized_items(items: Vec<NormalizedItem>) -> Result<Vec<NormalizedItem>> {
+    let (foreign, raw) = partition_items(items);
+    let mut items = pack_items(foreign)?
+        .into_iter()
+        .map(NormalizedItem::Foreign)
+        .collect::<Vec<_>>();
+    items.extend(raw.into_iter().map(NormalizedItem::Raw));
+    Ok(items)
+}
+
+fn reject_implicit_extern_abi(items: &[NormalizedItem], macro_name: &str) -> Result<()> {
+    fn check(sig: &syn::Signature, macro_name: &str) -> Result<()> {
+        if let Some(abi) = &sig.abi
+            && abi.name.is_none()
+        {
+            return Err(syn::Error::new_spanned(
+                abi,
+                format!("`extern fn` declarations inside `{macro_name}` require an explicit ABI"),
+            ));
+        }
+        Ok(())
+    }
+
+    for item in items {
+        match item {
+            NormalizedItem::Foreign(ForeignItem::Fn(item)) => check(&item.item.sig, macro_name)?,
+            NormalizedItem::Foreign(ForeignItem::Impl(item)) => {
+                for impl_item in &item.item.items {
+                    if let syn::ImplItem::Fn(method) = impl_item {
+                        check(&method.sig, macro_name)?;
+                    }
+                }
+            }
+            NormalizedItem::Raw(raw_decl) => check(&raw_decl.sig, macro_name)?,
+            NormalizedItem::Foreign(ForeignItem::Type(_) | ForeignItem::Static(_)) => {}
+        }
+    }
+    Ok(())
 }
 
 fn expand_type_aliases(
     aliases: Vec<parse::TypeAlias>,
-    abi: &syn::Abi,
     failure_mode: parse::FailureMode,
 ) -> Result<TokenStream> {
     let aliases = aliases
@@ -625,16 +856,22 @@ fn expand_type_aliases(
             vis,
             ident,
             generics,
-            raw_abi,
             sig,
             move_fn,
         } => {
-            if let Some(abi) = &sig.abi {
+            let Some(abi) = &sig.abi else {
                 return Err(syn::Error::new_spanned(
-                    abi,
-                    "raw callback type aliases specify their ABI after `raw`, not with `extern`",
+                    &ident,
+                    "raw function pointer aliases require `raw extern \"ABI\" fn`; specify the pointer's ABI explicitly",
                 ));
+            };
+            let Some(name) = &abi.name else {
+                return Err(syn::Error::new_spanned(abi, "`extern fn` requires an explicit ABI"));
+            };
+            if name.value() == "Rust" {
+                return Err(syn::Error::new_spanned(abi, "raw function pointer aliases cannot use the Rust ABI"));
             }
+            let abi = abi.clone();
             if sig.asyncness.is_some()
                 || matches!(sig.safety, syn::Safety::Unsafe(_))
                 || sig.variadic.is_some()
@@ -648,35 +885,12 @@ fn expand_type_aliases(
             {
                 return Err(syn::Error::new_spanned(
                     sig,
-                    "raw callback type aliases require a safe, synchronous, non-generic function with at most 12 arguments",
+                    "raw function pointer aliases require a safe, synchronous, non-generic function with at most 12 arguments",
                 ));
             }
-            if generics
-                .params
-                .iter()
-                .any(|param| !matches!(param, syn::GenericParam::Lifetime(_)))
-            {
-                return Err(syn::Error::new_spanned(
-                    &generics,
-                    "raw function pointer type aliases cannot have type or const parameters",
-                ));
-            }
-            let callback_abi = raw_abi
-                .map(|name| syn::parse2(quote!(extern #name)))
-                .transpose()?
-                .unwrap_or_else(|| abi.clone());
-            let (raw_sig, raw_fn_type) =
-                callback::lower_callback_fn_type(*sig, &callback_abi, failure_mode, move_fn)?;
-            let co3 = co3_path();
-            let cfg = crate::utils::cfg_attrs(&attrs);
-            let assertions = ffi_fn::gen_abi_assertions(&raw_sig);
+            let raw_fn_type = callback::lower_callback_fn_type(*sig, &abi, failure_mode, move_fn)?;
             Ok(quote! {
                 #(#attrs)* #vis type #ident #generics = #raw_fn_type;
-                #(#cfg)*
-                const _: () = {
-                    use #co3 as co3;
-                    #assertions
-                };
             })
         }
     })
@@ -684,74 +898,61 @@ fn expand_type_aliases(
     Ok(quote!(#(#aliases)*))
 }
 
-fn validate_raw_import_moves(
-    items: &[ForeignItem],
-    callbacks: &[parse::CallbackDecl],
-) -> Result<()> {
-    fn argument_attrs(sig: &syn::Signature) -> impl Iterator<Item = &[Attribute]> {
-        sig.inputs.iter().map(|input| match input {
-            syn::FnArg::Receiver(receiver) => receiver.attrs.as_slice(),
-            syn::FnArg::Typed(arg) => arg.attrs.as_slice(),
+fn validate_raw_import_names(items: &[ForeignItem]) -> Result<()> {
+    let collision = |name: &syn::Ident| {
+        syn::Error::new_spanned(
+            name,
+            "raw and Rust imports need distinct Rust names; use `#[symbol_name = \"...\"]` to bind them to the same foreign symbol",
+        )
+    };
+    let impls = items
+        .iter()
+        .flat_map(|item| match item {
+            ForeignItem::Impl(impl_) => vec![impl_],
+            ForeignItem::Type(ty) => ty.self_impls.iter().collect(),
+            _ => Vec::new(),
         })
-    }
-
-    fn has_move(attrs: &[Attribute]) -> bool {
-        attrs.iter().any(ffi_fn::is_by_val_attr)
-    }
-
-    for callback in callbacks {
-        let imported = items.iter().find_map(|item| match (item, &callback.owner) {
-            (ForeignItem::Fn(imported), None) if imported.sig.ident == callback.sig.ident => {
-                Some((&imported.attrs, &imported.sig))
+        .collect::<Vec<_>>();
+    for item in items {
+        match item {
+            ForeignItem::Fn(raw) if raw.import_mode == ImportMode::Raw => {
+                if items.iter().any(|candidate| {
+                    matches!(candidate, ForeignItem::Fn(regular)
+                        if regular.import_mode == ImportMode::Regular && regular.sig.ident == raw.sig.ident)
+                }) {
+                    return Err(collision(&raw.sig.ident));
+                }
             }
-            (ForeignItem::Impl(imported), Some(owner))
-                if {
-                    let imported_self_ty = &imported.self_ty;
-                    let owner_self_ty = &owner.self_ty;
-                    quote!(#imported_self_ty).to_string() == quote!(#owner_self_ty).to_string()
-                        && imported
-                            .trait_
-                            .as_ref()
-                            .map(|(path, _)| quote!(#path).to_string())
-                            == owner
-                                .trait_path
-                                .as_ref()
-                                .map(|path| quote!(#path).to_string())
-                } =>
-            {
-                imported.items.iter().find_map(|item| {
-                    let syn::ImplItem::Fn(method) = item else {
-                        return None;
-                    };
-                    (method.sig.ident == callback.sig.ident).then_some((&method.attrs, &method.sig))
-                })
-            }
-            _ => None,
-        });
-        let Some((import_attrs, import_sig)) = imported else {
-            continue;
-        };
-
-        if has_move(&callback.attrs) != has_move(import_attrs) {
-            return Err(syn::Error::new_spanned(
-                &callback.sig.ident,
-                "raw callback and imported declaration must use the same `move` return qualifier",
-            ));
+            _ => {}
         }
-
-        for (index, (raw_attrs, import_attrs)) in argument_attrs(&callback.sig)
-            .zip(argument_attrs(import_sig))
-            .enumerate()
-        {
-            if has_move(raw_attrs) != has_move(import_attrs) {
-                return Err(syn::Error::new_spanned(
-                    &callback.sig.inputs[index],
-                    "raw callback and imported declaration must use the same `move` qualifier for each argument",
-                ));
+    }
+    for raw in impls
+        .iter()
+        .filter(|impl_| impl_.import_mode == ImportMode::Raw)
+    {
+        let raw_self = &raw.self_ty;
+        let raw_trait = raw
+            .trait_
+            .as_ref()
+            .map(|(path, _)| quote!(#path).to_string());
+        for method in &raw.items {
+            let syn::ImplItem::Fn(method) = method else {
+                continue;
+            };
+            if impls.iter().any(|regular| {
+                let regular_self = &regular.self_ty;
+                regular.import_mode == ImportMode::Regular
+                    && quote!(#regular_self).to_string() == quote!(#raw_self).to_string()
+                    && regular.trait_.as_ref().map(|(path, _)| quote!(#path).to_string())
+                        == raw_trait
+                    && regular.items.iter().any(|item| {
+                        matches!(item, syn::ImplItem::Fn(other) if other.sig.ident == method.sig.ident)
+                    })
+            }) {
+                return Err(collision(&method.sig.ident));
             }
         }
     }
-
     Ok(())
 }
 

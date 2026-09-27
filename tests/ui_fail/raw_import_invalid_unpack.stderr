@@ -1,0 +1,11 @@
+error: #[unpack] expects exactly two parts
+ --> tests/ui_fail/raw_import_invalid_unpack.rs:8:26
+  |
+8 |     raw fn missing_parts(#[unpack] value: (u8, u8));
+  |                          ^^^^^^^^^
+
+error: #[unpack] expects exactly two parts
+  --> tests/ui_fail/raw_import_invalid_unpack.rs:11:37
+   |
+11 |         raw fn missing_method_parts(#[unpack] value: (u8, u8));
+   |                                     ^^^^^^^^^

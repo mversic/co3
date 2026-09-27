@@ -1,5 +1,0 @@
-error: raw callback type aliases specify their ABI after `raw`, not with `extern`
- --> tests/ui_fail/raw_alias_explicit_abi.rs:6:28
-  |
-6 |     type ExplicitAbi = raw extern "C" fn(u8);
-  |                            ^^^^^^^^^^

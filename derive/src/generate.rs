@@ -8,7 +8,8 @@ use crate::{
     Co3Fn, Co3Impl, DispatchGroups, ForeignItem, ForeignItemType, co3_path,
     dispatch::{
         StaticLifetimeNormalizer, erase_dispatch_signature, gen_dispatch_erased_layout_checks,
-        gen_dispatch_export, gen_dispatch_fn_export, gen_tag_id_type_checks,
+        gen_dispatch_export, gen_dispatch_fn_export, gen_retype, gen_tag_erase_stmts,
+        gen_tag_id_type_checks,
     },
     ffi_fn::{
         self, gen_extern_fn_signature, merge_generics, normalize_fn_signature,
@@ -77,6 +78,7 @@ fn split_dyn_methods(mut impl_: Co3Impl) -> (Co3Impl, Vec<Co3Impl>) {
         method_impl.items = vec![syn::ImplItem::Fn(method)];
         dispatched.push(Co3Impl {
             item: method_impl,
+            import_mode: impl_.import_mode,
             dispatch_args: impl_dispatch_args.combined_with(&method_dispatch_args),
             method_dispatch_args: Default::default(),
         });
@@ -448,6 +450,7 @@ fn dispatch_module_name(self_ty: &syn::Type, method: &syn::Ident) -> syn::Ident 
 }
 
 struct DispatchSetDelegate<'a> {
+    raw: bool,
     abi: &'a syn::Abi,
     block_attrs: &'a [syn::Attribute],
     fn_attrs: &'a [syn::Attribute],
@@ -459,6 +462,122 @@ struct DispatchSetDelegate<'a> {
     dispatch_generics: &'a syn::Generics,
     declared_self: bool,
     symbol_fragments: &'a std::collections::BTreeMap<String, syn::LitStr>,
+}
+
+fn raw_dispatch_wrapper_sig(
+    sig: &syn::Signature,
+    dispatch_generics: &syn::Generics,
+    failure_mode: FailureMode,
+    fn_by_val: bool,
+    abi: &syn::Abi,
+) -> syn::Signature {
+    let co3 = co3_path();
+    let mut bounded = prepare_dispatch_forwarding_sig(sig);
+    for ident in dispatch_type_idents(dispatch_generics) {
+        let id_repr = dispatch_generics
+            .type_params()
+            .find(|param| param.ident == ident)
+            .and_then(erased_id_repr)
+            .expect("dispatch type has a tag representation");
+        let where_clause = bounded.generics.make_where_clause();
+        where_clause
+            .predicates
+            .push(syn::parse_quote!(#ident: #co3::tag::Tagged));
+        where_clause.predicates.push(syn::parse_quote!(
+            <#ident as #co3::tag::TagFamily>::Kind:
+                #co3::Encode<CType = #id_repr, Store: #co3::stored::EmptyStore>
+        ));
+    }
+    let mut source = sig.clone();
+    source.inputs = source
+        .inputs
+        .into_iter()
+        .filter(|input| !crate::dispatch::is_tag_id_arg(input))
+        .collect();
+    let mut raw = ffi_fn::lower_raw_fn_signature(source, failure_mode, fn_by_val);
+    raw.generics.where_clause = bounded.generics.where_clause;
+    raw.generics
+        .type_params_mut()
+        .for_each(strip_internal_generic_param);
+    let generic_idents = dispatch_generics
+        .type_params()
+        .map(|param| param.ident.clone())
+        .collect::<Vec<_>>();
+    let detector = ParamUseDetector::new(generic_idents.iter());
+    let where_clause = raw.generics.make_where_clause();
+    for ident in &generic_idents {
+        let used = raw.inputs.iter().any(|input| match input {
+            FnArg::Typed(arg) => ParamUseDetector::new([ident]).type_mentions_param(&arg.ty),
+            FnArg::Receiver(_) => false,
+        }) || matches!(&raw.output, syn::ReturnType::Type(_, ty) if ParamUseDetector::new([ident]).type_mentions_param(ty));
+        if used {
+            where_clause
+                .predicates
+                .push(syn::parse_quote!(#ident: #co3::ReprC));
+        }
+    }
+    for input in &raw.inputs {
+        let FnArg::Typed(arg) = input else { continue };
+        if detector.type_mentions_param(&arg.ty) {
+            let ty = &arg.ty;
+            where_clause.predicates.push(syn::parse_quote!(#ty: Sized));
+        }
+    }
+    if let syn::ReturnType::Type(_, ty) = &raw.output
+        && detector.type_mentions_param(ty)
+    {
+        where_clause.predicates.push(syn::parse_quote!(#ty: Sized));
+    }
+    raw.safety = syn::Safety::Unsafe(Default::default());
+    raw.abi = Some(abi.clone());
+    raw
+}
+
+fn raw_dispatch_call(
+    source_sig: &syn::Signature,
+    wrapper_sig: &syn::Signature,
+    extern_sig: &syn::Signature,
+    dispatch_generics: &syn::Generics,
+    self_ty: Option<&syn::Type>,
+    callee: TokenStream,
+) -> TokenStream {
+    let dummy_self: syn::Type = syn::parse_quote!(());
+    let encoded_tags = source_sig.inputs.iter().filter_map(|input| {
+        let FnArg::Typed(arg) = input else {
+            return None;
+        };
+        if !crate::dispatch::is_tag_id_arg(input) {
+            return None;
+        }
+        let ident = ffi_fn::item_fn_input_ident(&arg.pat);
+        Some(quote!(let #ident = co3::encode(#ident);))
+    });
+    let erased = gen_tag_erase_stmts(
+        self_ty.unwrap_or(&dummy_self),
+        dispatch_generics,
+        false,
+        source_sig,
+    );
+    let args = extern_sig.inputs.iter().map(|input| match input {
+        FnArg::Typed(arg) => {
+            let ident = ffi_fn::item_fn_input_ident(&arg.pat);
+            quote!(#ident)
+        }
+        FnArg::Receiver(_) => quote!(__co3_self),
+    });
+    let call = quote!(unsafe { #callee(#(#args),*) });
+    let output = match (&extern_sig.output, &wrapper_sig.output) {
+        (syn::ReturnType::Type(_, source), syn::ReturnType::Type(_, target)) => {
+            gen_retype(&quote!(__co3_result), source, target)
+        }
+        _ => quote!(__co3_result),
+    };
+    quote! {
+        #(#encoded_tags)*
+        #(#erased)*
+        let __co3_result = #call;
+        #output
+    }
 }
 
 fn dispatch_delegate_sig(
@@ -602,6 +721,7 @@ fn gen_dispatch_set(
                 monomorphizer.interpolate_symbol_attrs(&mut attrs, delegate.symbol_fragments);
                 let extern_decl =
                     gen_extern_decl(delegate.abi, delegate.block_attrs, &attrs, quote!(#raw_sig));
+                let abi_assertions = gen_decl_abi_assertions(&quote!(#raw_sig));
 
                 // Generate conversion and erasure while the dispatch
                 // parameters are still visible, then monomorphize the whole
@@ -614,19 +734,31 @@ fn gen_dispatch_set(
                 );
                 let id_assignments = dispatch_id_assignments(delegate.source_sig, delegate.self_ty);
                 let dummy_self_ty = syn::parse_quote!(());
-                let wrapper_body = gen_wrapper_body_with_callee::<true>(
-                    delegate.failure_mode,
-                    delegate.fn_attrs.iter().any(ffi_fn::is_by_val_attr),
-                    Some(delegate.self_ty.unwrap_or(&dummy_self_ty)),
-                    Some(delegate.dispatch_generics),
-                    delegate.declared_self,
-                    delegate.source_sig,
-                    quote!(__co3_raw),
-                );
+                let wrapper_body = if delegate.raw {
+                    raw_dispatch_call(
+                        delegate.source_sig,
+                        delegate.wrapper_sig,
+                        delegate.raw_sig,
+                        delegate.dispatch_generics,
+                        delegate.self_ty,
+                        quote!(__co3_raw),
+                    )
+                } else {
+                    gen_wrapper_body_with_callee::<true>(
+                        delegate.failure_mode,
+                        delegate.fn_attrs.iter().any(ffi_fn::is_by_val_attr),
+                        Some(delegate.self_ty.unwrap_or(&dummy_self_ty)),
+                        Some(delegate.dispatch_generics),
+                        delegate.declared_self,
+                        delegate.source_sig,
+                        quote!(__co3_raw),
+                    )
+                };
                 let co3 = co3_path();
                 let method_tokens = quote! {
                     #sig {
                         use #co3 as co3;
+                        #abi_assertions
                         #extern_decl
                         #(#id_assignments)*
                         #wrapper_body
@@ -665,6 +797,24 @@ fn gen_dispatch_set(
         }
         #(#impls)*
     }
+}
+
+fn concretize_selected_impl(
+    source_generics: &syn::Generics,
+    args: &DispatchGroups,
+    selections: &[crate::DispatchSelection<'_>],
+    wrapper: &mut ItemImpl,
+) {
+    DispatchMonomorphizer::for_dispatch_group(source_generics, selections)
+        .visit_item_impl_mut(wrapper);
+    wrapper.generics.params = core::mem::take(&mut wrapper.generics.params)
+        .into_iter()
+        .filter(|param| match param {
+            syn::GenericParam::Lifetime(_) => true,
+            syn::GenericParam::Type(param) => !args.contains_param(&param.ident),
+            syn::GenericParam::Const(param) => !args.contains_param(&param.ident),
+        })
+        .collect();
 }
 
 fn prepare_dispatch_wrapper_sig(
@@ -730,7 +880,7 @@ fn prepare_dispatch_wrapper_sig(
                 .push(syn::parse_quote!(#target_ty: #co3::ReprC));
             where_clause
                 .predicates
-                .push(syn::parse_quote!(#target_part: #co3::CFnArg));
+                .push(syn::parse_quote!(#target_part: #co3::CType + Sized));
         }
         let parameterized_unpack =
             ffi_fn::is_unpack_arg(attrs) && parameter_detector.type_mentions_param(ty);
@@ -744,26 +894,26 @@ fn prepare_dispatch_wrapper_sig(
                 ffi_fn::unpack_abi_parts(attrs, ty).expect("validated #[unpack] attribute");
             if matches!(part1, syn::Type::Infer(_)) {
                 where_clause.predicates.push(syn::parse_quote!(
-                    #source_part1: #co3::CFnArg
+                    #source_part1: #co3::CType + Sized
                 ));
             } else {
                 where_clause
                     .predicates
                     .push(syn::parse_quote!(#part1: #co3::ReprC));
                 where_clause.predicates.push(syn::parse_quote!(
-                    <#part1 as #co3::ReprC>::CType: #co3::CFnArg
+                    <#part1 as #co3::ReprC>::CType: #co3::CType + Sized
                 ));
             }
             if matches!(part2, syn::Type::Infer(_)) {
                 where_clause.predicates.push(syn::parse_quote!(
-                    #source_part2: #co3::CFnArg
+                    #source_part2: #co3::CType + Sized
                 ));
             } else {
                 where_clause
                     .predicates
                     .push(syn::parse_quote!(#part2: #co3::ReprC));
                 where_clause.predicates.push(syn::parse_quote!(
-                    <#part2 as #co3::ReprC>::CType: #co3::CFnArg
+                    <#part2 as #co3::ReprC>::CType: #co3::CType + Sized
                 ));
             }
             let unpack_trait = quote!(#co3::slice::Unpack2<#source_part1, #source_part2>);
@@ -781,10 +931,10 @@ fn prepare_dispatch_wrapper_sig(
             where_clause.predicates.push(unpack_bound);
             where_clause
                 .predicates
-                .push(syn::parse_quote!(#abi_part1: #co3::CFnArg));
+                .push(syn::parse_quote!(#abi_part1: #co3::CType + Sized));
             where_clause
                 .predicates
-                .push(syn::parse_quote!(#abi_part2: #co3::CFnArg));
+                .push(syn::parse_quote!(#abi_part2: #co3::CType + Sized));
         }
         if crate::dispatch::tag_id(ty).is_none()
             && (detector.type_mentions_param(ty) || parameterized_unpack)
@@ -881,6 +1031,58 @@ struct DispatchImportParts {
     abi_assertions: TokenStream,
 }
 
+struct DispatchImportContext<'a> {
+    abi: &'a syn::Abi,
+    failure_mode: FailureMode,
+    block_attrs: &'a [syn::Attribute],
+    fn_attrs: &'a [syn::Attribute],
+    sig: &'a syn::Signature,
+    args: &'a DispatchGroups,
+    self_ty: Option<&'a syn::Type>,
+    impl_generics: Option<&'a syn::Generics>,
+    declared_self: bool,
+    self_id: Option<&'a syn::Type>,
+    raw: bool,
+}
+
+#[derive(Clone, Copy)]
+enum DispatchImportMode<'a> {
+    Static(&'a std::collections::BTreeMap<String, syn::LitStr>),
+    Dynamic,
+}
+
+fn emit_import_dispatch_items(
+    module_name: &syn::Ident,
+    fn_attrs: &[syn::Attribute],
+    vis: &syn::Visibility,
+    wrapper_sig: &syn::Signature,
+    parts: &DispatchImportParts,
+    self_binding: TokenStream,
+    module_cfg: bool,
+) -> (TokenStream, TokenStream) {
+    let wrapper_attrs = fn_attrs
+        .iter()
+        .filter(|attr| !crate::is_symbol_name_attr(attr) && !ffi_fn::is_by_val_attr(attr));
+    let wrapper_body = gen_dispatch_import_wrapper_body(parts, self_binding);
+    let module = gen_dispatch_import_module(module_name, parts, TokenStream::new());
+    let module_attrs = (module_cfg && !module.is_empty())
+        .then(|| cfg_attrs(fn_attrs))
+        .into_iter()
+        .flatten();
+    (
+        quote! {
+            #(#module_attrs)*
+            #module
+        },
+        quote! {
+            #(#wrapper_attrs)*
+            #vis #wrapper_sig {
+                #wrapper_body
+            }
+        },
+    )
+}
+
 fn gen_dispatch_import_wrapper_body(
     DispatchImportParts {
         id_checks,
@@ -927,56 +1129,65 @@ fn gen_dispatch_import_module(
     }
 }
 
-#[expect(clippy::too_many_arguments)]
 fn prepare_dispatch_import(
-    abi: &syn::Abi,
-    failure_mode: FailureMode,
-    block_attrs: &[syn::Attribute],
-    fn_attrs: &[syn::Attribute],
-    sig: &syn::Signature,
-    dispatch_args: &DispatchGroups,
+    context: DispatchImportContext<'_>,
     set_name: &syn::Ident,
-    enclosing_module: Option<&syn::Ident>,
-    self_ty: Option<&syn::Type>,
-    impl_generics: Option<&syn::Generics>,
-    declared_self: bool,
-    self_id: Option<&syn::Type>,
-    symbol_fragments: &std::collections::BTreeMap<String, syn::LitStr>,
+    module_name: &syn::Ident,
+    mode: DispatchImportMode<'_>,
 ) -> DispatchImportParts {
-    // Dynamic parameters remain generic in the wrapper. Explicit source lifetimes are shared
-    // with the dispatch set; raw-signature normalization and additional anonymous dispatch
-    // lifetimes belong only to the extern declaration synthesized below.
-    let mut wrapper_source_sig = sig.clone();
+    let mut wrapper_source_sig = context.sig.clone();
     ffi_fn::explicitize_signature_lifetimes(&mut wrapper_source_sig);
-    let dispatch_generics = combine_dispatch_generics(impl_generics, &wrapper_source_sig.generics);
-    let mut extern_sig = sig.clone();
-    normalize_fn_signature(&mut extern_sig, self_ty);
-    let mut extern_args = dispatch_args.clone();
-    extern_args.inject_unnamed_lifetimes(&mut extern_sig.generics);
-    let mut extern_generics = extern_sig.generics.clone();
-    if let Some(impl_generics) = impl_generics {
-        merge_generics(impl_generics.clone(), &mut extern_generics);
+    let mut args = context.args.clone();
+    if matches!(mode, DispatchImportMode::Dynamic) {
+        args.inject_unnamed_lifetimes(&mut wrapper_source_sig.generics);
     }
-    let trait_args = dispatch_trait_args(&dispatch_generics);
-    let dispatch_set_path =
-        enclosing_module.map_or_else(|| quote!(#set_name), |module| quote!(#module::#set_name));
+    let dispatch_generics =
+        combine_dispatch_generics(context.impl_generics, &wrapper_source_sig.generics);
     let co3 = co3_path();
-    let delegate_sig = prepare_dispatch_wrapper_sig(
-        &wrapper_source_sig,
-        &dispatch_generics,
-        Some(dispatch_args),
-        &co3,
-    );
+    let delegate_sig = if context.raw {
+        raw_dispatch_wrapper_sig(
+            &wrapper_source_sig,
+            &dispatch_generics,
+            context.failure_mode,
+            context.fn_attrs.iter().any(ffi_fn::is_by_val_attr),
+            context.abi,
+        )
+    } else {
+        prepare_dispatch_wrapper_sig(
+            &wrapper_source_sig,
+            &dispatch_generics,
+            matches!(mode, DispatchImportMode::Static(_)).then_some(context.args),
+            &co3,
+        )
+    };
+    let dispatch_set_path = quote!(#module_name::#set_name);
+    let trait_args = dispatch_trait_args(&dispatch_generics);
     let mut wrapper_sig = delegate_sig.clone();
     wrapper_sig.generics.make_where_clause().predicates.insert(
         0,
         dispatch_membership_bound(&dispatch_set_path, &trait_args),
     );
-    if let Some(impl_generics) = impl_generics {
-        // The normalized receiver no longer records that it came from an impl, but a
-        // nested foreign item still must bind every outer lifetime it mentions. Type
-        // and const parameters remain excluded: they are irrelevant after ABI erasure
-        // and foreign functions cannot be generic over them.
+
+    let mut extern_sig = if matches!(mode, DispatchImportMode::Static(_)) {
+        context.sig.clone()
+    } else {
+        wrapper_source_sig.clone()
+    };
+    normalize_fn_signature(&mut extern_sig, context.self_ty);
+    let extern_generics = if matches!(mode, DispatchImportMode::Static(_)) {
+        let mut extern_args = context.args.clone();
+        extern_args.inject_unnamed_lifetimes(&mut extern_sig.generics);
+        let mut generics = extern_sig.generics.clone();
+        if let Some(impl_generics) = context.impl_generics {
+            merge_generics(impl_generics.clone(), &mut generics);
+        }
+        generics
+    } else {
+        dispatch_generics.clone()
+    };
+    if let Some(impl_generics) = context.impl_generics {
+        // A nested foreign declaration retains outer lifetime binders after
+        // its receiver is normalized and its type parameters are erased.
         ffi_fn::merge_impl_generics_for_raw_decl(
             impl_generics.clone(),
             false,
@@ -984,132 +1195,140 @@ fn prepare_dispatch_import(
         );
     }
     strip_erased_param_predicates(&extern_generics, &mut extern_sig.generics);
-    let receiver = self_ty.map_or(crate::dispatch::DispatchReceiver::None, |ty| {
-        if declared_self {
-            crate::dispatch::DispatchReceiver::DynSelf { ty, id: self_id }
-        } else {
-            crate::dispatch::DispatchReceiver::Impl { ty, id: None }
-        }
-    });
+    let receiver = context
+        .self_ty
+        .map_or(crate::dispatch::DispatchReceiver::None, |ty| {
+            if context.declared_self {
+                crate::dispatch::DispatchReceiver::DynSelf {
+                    ty,
+                    id: context.self_id,
+                }
+            } else {
+                crate::dispatch::DispatchReceiver::Impl { ty, id: None }
+            }
+        });
     erase_dispatch_signature(&extern_generics, receiver, &mut extern_sig);
     strip_dispatch_params(&mut extern_sig.generics);
-    let raw_sig = ffi_fn::lower_extern_fn_signature(extern_sig, failure_mode);
-    let sealed_module = format_ident!("sealed");
-    let delegate_name = &wrapper_source_sig.ident;
-    let delegate_callee = quote!(<() as #dispatch_set_path<#trait_args>>::#delegate_name);
-    let wrapper_args = dispatch_source_arg_names(&wrapper_source_sig);
-    let wrapper_body = quote!(#delegate_callee(#(#wrapper_args),*));
-    let delegate = DispatchSetDelegate {
+
+    let DispatchImportContext {
         abi,
+        failure_mode,
         block_attrs,
         fn_attrs,
-        failure_mode,
-        source_sig: &wrapper_source_sig,
-        wrapper_sig: &delegate_sig,
-        raw_sig: &raw_sig,
+        sig,
+        args: dispatch_args,
         self_ty,
-        dispatch_generics: &dispatch_generics,
         declared_self,
-        symbol_fragments,
-    };
-
-    DispatchImportParts {
-        set: gen_dispatch_set(
-            set_name,
-            &sealed_module,
-            &dispatch_generics,
-            dispatch_args,
-            Some(&delegate),
-        ),
-        id_checks: gen_tag_id_type_checks(&dispatch_generics, dispatch_args),
-        layout_checks: gen_dispatch_erased_layout_checks(&dispatch_generics, sig, dispatch_args),
-        wrapper_sig,
-        id_assignments: Vec::new(),
-        wrapper_body,
-        extern_decl: TokenStream::new(),
-        abi_assertions: TokenStream::new(),
-    }
-}
-
-#[expect(clippy::too_many_arguments)]
-fn prepare_dynamic_dispatch_import(
-    abi: &syn::Abi,
-    failure_mode: FailureMode,
-    block_attrs: &[syn::Attribute],
-    fn_attrs: &[syn::Attribute],
-    sig: &syn::Signature,
-    dispatch_args: &DispatchGroups,
-    self_ty: Option<&syn::Type>,
-    impl_generics: Option<&syn::Generics>,
-    declared_self: bool,
-    self_id: Option<&syn::Type>,
-    set_name: &syn::Ident,
-    module_name: &syn::Ident,
-) -> DispatchImportParts {
-    let mut wrapper_source_sig = sig.clone();
-    ffi_fn::explicitize_signature_lifetimes(&mut wrapper_source_sig);
-    let mut args = dispatch_args.clone();
-    args.inject_unnamed_lifetimes(&mut wrapper_source_sig.generics);
-    let dispatch_generics = combine_dispatch_generics(impl_generics, &wrapper_source_sig.generics);
-    let co3 = co3_path();
-    let mut wrapper_sig =
-        prepare_dispatch_wrapper_sig(&wrapper_source_sig, &dispatch_generics, None, &co3);
-    let trait_args = dispatch_trait_args(&dispatch_generics);
-    let dispatch_set_path = quote!(#module_name::#set_name);
-    wrapper_sig.generics.make_where_clause().predicates.insert(
-        0,
-        dispatch_membership_bound(&dispatch_set_path, &trait_args),
-    );
+        raw,
+        ..
+    } = context;
     let sealed_module = format_ident!("sealed");
-    let set = gen_dispatch_set(set_name, &sealed_module, &dispatch_generics, &args, None);
-    let id_assignments = dispatch_id_assignments(&wrapper_source_sig, self_ty);
-    let dummy_self_ty = syn::parse_quote!(());
-    let wrapper_body = gen_wrapper_body::<true>(
-        failure_mode,
-        fn_attrs.iter().any(ffi_fn::is_by_val_attr),
-        Some(self_ty.unwrap_or(&dummy_self_ty)),
-        Some(&dispatch_generics),
-        declared_self,
-        &wrapper_source_sig,
-    );
+    match mode {
+        DispatchImportMode::Static(symbol_fragments) => {
+            let trait_args = dispatch_trait_args(&dispatch_generics);
+            let raw_sig = if raw {
+                ffi_fn::lower_raw_fn_signature(
+                    extern_sig,
+                    failure_mode,
+                    fn_attrs.iter().any(ffi_fn::is_by_val_attr),
+                )
+            } else {
+                ffi_fn::lower_extern_fn_signature(extern_sig, failure_mode)
+            };
+            let delegate_name = &wrapper_source_sig.ident;
+            let delegate_callee = quote!(<() as #dispatch_set_path<#trait_args>>::#delegate_name);
+            let wrapper_args = dispatch_source_arg_names(&wrapper_source_sig);
+            let wrapper_body = quote!(#delegate_callee(#(#wrapper_args),*));
+            let delegate = DispatchSetDelegate {
+                raw,
+                abi,
+                block_attrs,
+                fn_attrs,
+                failure_mode,
+                source_sig: &wrapper_source_sig,
+                wrapper_sig: &delegate_sig,
+                raw_sig: &raw_sig,
+                self_ty,
+                dispatch_generics: &dispatch_generics,
+                declared_self,
+                symbol_fragments,
+            };
 
-    let mut extern_sig = wrapper_source_sig.clone();
-    normalize_fn_signature(&mut extern_sig, self_ty);
-    if let Some(impl_generics) = impl_generics {
-        // See `prepare_dispatch_import`: raw foreign declarations retain only
-        // outer lifetime binders after receiver normalization and ABI erasure.
-        ffi_fn::merge_impl_generics_for_raw_decl(
-            impl_generics.clone(),
-            false,
-            &mut extern_sig.generics,
-        );
-    }
-    strip_erased_param_predicates(&dispatch_generics, &mut extern_sig.generics);
-    let receiver = self_ty.map_or(crate::dispatch::DispatchReceiver::None, |ty| {
-        if declared_self {
-            crate::dispatch::DispatchReceiver::DynSelf { ty, id: self_id }
-        } else {
-            crate::dispatch::DispatchReceiver::Impl { ty, id: None }
+            DispatchImportParts {
+                set: gen_dispatch_set(
+                    set_name,
+                    &sealed_module,
+                    &dispatch_generics,
+                    dispatch_args,
+                    Some(&delegate),
+                ),
+                id_checks: gen_tag_id_type_checks(&dispatch_generics, dispatch_args),
+                layout_checks: gen_dispatch_erased_layout_checks(
+                    &dispatch_generics,
+                    sig,
+                    dispatch_args,
+                ),
+                wrapper_sig,
+                id_assignments: Vec::new(),
+                wrapper_body,
+                extern_decl: TokenStream::new(),
+                abi_assertions: TokenStream::new(),
+            }
         }
-    });
-    erase_dispatch_signature(&dispatch_generics, receiver, &mut extern_sig);
-    strip_dispatch_params(&mut extern_sig.generics);
-    let decl = gen_extern_fn_signature(extern_sig, failure_mode);
-    let abi_assertions = gen_decl_abi_assertions(&decl);
+        DispatchImportMode::Dynamic => {
+            let set = gen_dispatch_set(set_name, &sealed_module, &dispatch_generics, &args, None);
+            let id_assignments = dispatch_id_assignments(&wrapper_source_sig, self_ty);
+            let dummy_self_ty = syn::parse_quote!(());
+            let wrapper_body = (!raw).then(|| {
+                gen_wrapper_body::<true>(
+                    failure_mode,
+                    fn_attrs.iter().any(ffi_fn::is_by_val_attr),
+                    Some(self_ty.unwrap_or(&dummy_self_ty)),
+                    Some(&dispatch_generics),
+                    declared_self,
+                    &wrapper_source_sig,
+                )
+            });
+            let decl = if raw {
+                let mut decl = ffi_fn::lower_raw_fn_signature(
+                    extern_sig,
+                    failure_mode,
+                    fn_attrs.iter().any(ffi_fn::is_by_val_attr),
+                );
+                decl.ident = format_ident!("__co3_raw");
+                decl
+            } else {
+                ffi_fn::lower_extern_fn_signature(extern_sig, failure_mode)
+            };
+            let abi_assertions = gen_decl_abi_assertions(&quote!(#decl));
+            let wrapper_body = if raw {
+                raw_dispatch_call(
+                    &wrapper_source_sig,
+                    &wrapper_sig,
+                    &decl,
+                    &dispatch_generics,
+                    self_ty,
+                    quote!(__co3_raw),
+                )
+            } else {
+                wrapper_body.expect("ordinary dispatch has a wrapper body")
+            };
 
-    DispatchImportParts {
-        set,
-        id_checks: gen_tag_id_type_checks(&dispatch_generics, &args),
-        layout_checks: gen_dispatch_erased_layout_checks(
-            &dispatch_generics,
-            &wrapper_source_sig,
-            &args,
-        ),
-        wrapper_sig,
-        id_assignments,
-        wrapper_body,
-        extern_decl: gen_extern_decl(abi, block_attrs, fn_attrs, decl),
-        abi_assertions,
+            DispatchImportParts {
+                set,
+                id_checks: gen_tag_id_type_checks(&dispatch_generics, &args),
+                layout_checks: gen_dispatch_erased_layout_checks(
+                    &dispatch_generics,
+                    &wrapper_source_sig,
+                    &args,
+                ),
+                wrapper_sig,
+                id_assignments,
+                wrapper_body,
+                extern_decl: gen_extern_decl(abi, block_attrs, fn_attrs, quote!(#decl)),
+                abi_assertions,
+            }
+        }
     }
 }
 
@@ -1287,32 +1506,26 @@ pub(crate) fn expand_export_decls(
     quote! { #(#exports)* }
 }
 
-fn gen_callback_companions(
-    abi: &syn::Abi,
+pub(crate) fn gen_raw_companions(
     failure_mode: FailureMode,
-    callbacks: Vec<crate::parse::CallbackDecl>,
+    raw_decls: Vec<crate::parse::RawFnDecl>,
 ) -> Vec<TokenStream> {
-    let abi_name = abi
-        .name
-        .as_ref()
-        .expect("ffi declaration must specify an ABI");
-    callbacks
+    raw_decls
         .into_iter()
-        .map(|callback| {
-            let owner = callback.owner;
-            let raw_abi = callback.raw_abi.as_ref().unwrap_or(abi_name);
+        .map(|raw_decl| {
+            let owner = raw_decl.owner;
             let item = syn::ItemFn {
-                attrs: callback.attrs,
-                vis: callback.vis,
+                attrs: raw_decl.attrs,
+                vis: raw_decl.vis,
                 modifiers: Default::default(),
-                sig: callback.sig,
+                sig: raw_decl.sig,
                 block: Box::new(syn::parse_quote!({})),
             };
             let companion = match crate::callback::expand_companion(
-                raw_abi,
                 failure_mode,
                 &item,
-                callback.callee,
+                raw_decl.callee,
+                owner.as_ref().map(|owner| &owner.generics),
             ) {
                 Ok(companion) => companion,
                 Err(error) => return error.to_compile_error(),
@@ -1339,6 +1552,7 @@ fn gen_callback_companions(
 fn synthesize_impl_extern_decls(
     abi: &syn::Abi,
     failure_mode: FailureMode,
+    import_mode: crate::ImportMode,
     attrs: &[syn::Attribute],
     impl_: ItemImpl,
     self_id: Option<&syn::Type>,
@@ -1363,7 +1577,9 @@ fn synthesize_impl_extern_decls(
                 .inputs
                 .iter()
                 .any(|input| matches!(input, FnArg::Receiver(_)));
-            normalize_fn_signature(&mut item.sig, Some(&impl_.self_ty));
+            if import_mode == crate::ImportMode::Regular {
+                normalize_fn_signature(&mut item.sig, Some(&impl_.self_ty));
+            }
             if declared_self {
                 erase_dispatch_signature(
                     &syn::Generics::default(),
@@ -1402,7 +1618,14 @@ fn synthesize_impl_extern_decls(
                     .interpolate_symbol_attrs(&mut item.attrs, symbol_fragments);
             }
             let method_name = item.sig.ident.clone();
-            let decl = gen_extern_fn_signature(item.sig, failure_mode);
+            let decl = if import_mode == crate::ImportMode::Raw {
+                item.sig.abi = None;
+                item.sig.safety = syn::Safety::Default;
+                let sig = item.sig;
+                quote!(#sig)
+            } else {
+                gen_extern_fn_signature(item.sig, failure_mode)
+            };
             let abi_assertions = gen_decl_abi_assertions(&decl);
             let extern_decl = gen_extern_decl(abi, attrs, &item.attrs, decl);
 
@@ -1439,23 +1662,42 @@ pub(crate) fn expand_extern_decls(
     failure_mode: FailureMode,
     attrs: &[syn::Attribute],
     decls: Vec<ForeignItem>,
-    callbacks: Vec<crate::parse::CallbackDecl>,
     symbol_fragments: &std::collections::BTreeMap<String, syn::LitStr>,
 ) -> TokenStream {
-    let callback_companions = gen_callback_companions(&abi, failure_mode, callbacks);
     fn expand_impl_import(
         abi: &syn::Abi,
         failure_mode: FailureMode,
+        import_mode: crate::ImportMode,
         attrs: &[syn::Attribute],
-        impl_: ItemImpl,
+        mut impl_: ItemImpl,
         declared_self: bool,
         symbol_fragments: &std::collections::BTreeMap<String, syn::LitStr>,
     ) -> TokenStream {
         let co3 = co3_path();
-        let mut import = wrap_impl_definition::<false>(failure_mode, &impl_, declared_self);
+        if import_mode == crate::ImportMode::Raw {
+            // The forwarding method and the foreign declaration both consume this
+            // lowered signature. Keep ABI and safety on the method only.
+            let self_ty = impl_.self_ty.clone();
+            for item in &mut impl_.items {
+                let syn::ImplItem::Fn(method) = item else {
+                    continue;
+                };
+                normalize_fn_signature(&mut method.sig, Some(&self_ty));
+                method.sig = ffi_fn::lower_raw_fn_signature(
+                    method.sig.clone(),
+                    failure_mode,
+                    method.attrs.iter().any(ffi_fn::is_by_val_attr),
+                );
+                method.sig.abi = Some(abi.clone());
+                method.sig.safety = syn::Safety::Unsafe(Default::default());
+            }
+        }
+        let mut import =
+            wrap_impl_definition::<false>(failure_mode, import_mode, &impl_, declared_self);
         let extern_decl = synthesize_impl_extern_decls(
             abi,
             failure_mode,
+            import_mode,
             attrs,
             impl_,
             None,
@@ -1480,6 +1722,7 @@ pub(crate) fn expand_extern_decls(
     fn synthesize_dispatched_impl_imports(
         abi: &syn::Abi,
         failure_mode: FailureMode,
+        import_mode: crate::ImportMode,
         attrs: &[syn::Attribute],
         source_impl: &ItemImpl,
         args: &DispatchGroups,
@@ -1491,36 +1734,107 @@ pub(crate) fn expand_extern_decls(
         if declared_self {
             materialize_dyn_self_receiver(&mut wrapper_source);
         }
-        let wrapper_impl =
-            wrap_impl_definition::<true>(failure_mode, &wrapper_source, declared_self);
+        let wrapper_impl = (import_mode == crate::ImportMode::Regular).then(|| {
+            wrap_impl_definition::<true>(
+                failure_mode,
+                crate::ImportMode::Regular,
+                &wrapper_source,
+                declared_self,
+            )
+        });
 
         let mut imports = Vec::new();
         args.for_each_combination(|selections| {
-            let extern_decls = synthesize_impl_extern_decls(
-                abi,
-                failure_mode,
-                attrs,
-                source_impl.clone(),
-                self_id,
-                Some(args),
-                false,
-                Some(selections),
-                symbol_fragments,
-            );
-            let mut concrete_wrapper = wrapper_impl.clone();
-            attach_impl_abi_assertions(&mut concrete_wrapper, &extern_decls);
-            DispatchMonomorphizer::for_dispatch_group(&source_impl.generics, selections)
-                .visit_item_impl_mut(&mut concrete_wrapper);
-            concrete_wrapper.generics.params =
-                core::mem::take(&mut concrete_wrapper.generics.params)
+            let (mut concrete_wrapper, extern_decl_tokens) = if import_mode
+                == crate::ImportMode::Raw
+            {
+                let mut concrete_wrapper = wrapper_source.clone();
+                let self_ty = source_impl.self_ty.clone();
+                let impl_generics = source_impl.generics.clone();
+                for item in &mut concrete_wrapper.items {
+                    let syn::ImplItem::Fn(method) = item else {
+                        continue;
+                    };
+                    DispatchMonomorphizer::for_static_dispatch_group(
+                        &source_impl.generics,
+                        selections,
+                    )
+                    .interpolate_symbol_attrs(&mut method.attrs, symbol_fragments);
+                    let module_name = dispatch_module_name(&self_ty, &method.sig.ident);
+                    let set_name = dispatch_set_name();
+                    let parts = prepare_dispatch_import(
+                        DispatchImportContext {
+                            abi,
+                            failure_mode,
+                            block_attrs: attrs,
+                            fn_attrs: &method.attrs,
+                            sig: &method.sig,
+                            args,
+                            self_ty: Some(&self_ty),
+                            impl_generics: Some(&impl_generics),
+                            declared_self,
+                            self_id,
+                            raw: true,
+                        },
+                        &set_name,
+                        &module_name,
+                        DispatchImportMode::Dynamic,
+                    );
+                    let mut wrapper_sig = parts.wrapper_sig.clone();
+                    // Impl-level selection creates a concrete trait impl. A
+                    // dispatch-set bound on its method would make that impl
+                    // stricter than the trait declaration.
+                    wrapper_sig.generics.where_clause = method.sig.generics.where_clause.clone();
+                    let self_binding = method
+                        .sig
+                        .inputs
+                        .iter()
+                        .any(|input| matches!(input, FnArg::Receiver(_)))
+                        .then(|| quote!(let __co3_self = self;))
+                        .unwrap_or_default();
+                    let (_, wrapper_fn) = emit_import_dispatch_items(
+                        &module_name,
+                        &method.attrs,
+                        &method.vis,
+                        &wrapper_sig,
+                        &parts,
+                        self_binding,
+                        false,
+                    );
+                    *method = syn::parse2(wrapper_fn)
+                        .expect("generated dispatch wrapper must be a valid method");
+                }
+                (concrete_wrapper, Vec::new())
+            } else {
+                let extern_decls = synthesize_impl_extern_decls(
+                    abi,
+                    failure_mode,
+                    crate::ImportMode::Regular,
+                    attrs,
+                    source_impl.clone(),
+                    self_id,
+                    Some(args),
+                    false,
+                    Some(selections),
+                    symbol_fragments,
+                );
+                let mut concrete_wrapper = wrapper_impl
+                    .as_ref()
+                    .expect("regular imports have a wrapper")
+                    .clone();
+                attach_impl_abi_assertions(&mut concrete_wrapper, &extern_decls);
+                let extern_decl_tokens = extern_decls
                     .into_iter()
-                    .filter(|param| match param {
-                        syn::GenericParam::Lifetime(_) => true,
-                        syn::GenericParam::Type(param) => !args.contains_param(&param.ident),
-                        syn::GenericParam::Const(param) => !args.contains_param(&param.ident),
-                    })
-                    .collect();
-            let extern_decl_tokens = extern_decls.iter().map(|(_, decl, _)| decl);
+                    .map(|(_, decl, _)| decl)
+                    .collect::<Vec<_>>();
+                (concrete_wrapper, extern_decl_tokens)
+            };
+            concretize_selected_impl(
+                &source_impl.generics,
+                args,
+                selections,
+                &mut concrete_wrapper,
+            );
             imports.push(quote! {
                 const _: () = {
                     #(#extern_decl_tokens)*
@@ -1543,6 +1857,7 @@ pub(crate) fn expand_extern_decls(
     ) -> TokenStream {
         let Co3Impl {
             item: mut impl_,
+            import_mode,
             dispatch_args,
             ..
         } = dispatch;
@@ -1586,6 +1901,7 @@ pub(crate) fn expand_extern_decls(
         let imports = synthesize_dispatched_impl_imports(
             abi,
             failure_mode,
+            import_mode,
             attrs,
             &impl_,
             &args,
@@ -1613,6 +1929,7 @@ pub(crate) fn expand_extern_decls(
         symbol_fragments: &std::collections::BTreeMap<String, syn::LitStr>,
         declared_types: &BTreeSet<syn::Ident>,
     ) -> TokenStream {
+        let raw = dispatch.import_mode == crate::ImportMode::Raw;
         let has_static_bindings =
             !crate::validate::fn_static_binding_params(&dispatch, declared_types).is_empty();
         let args = core::mem::take(&mut dispatch.dispatch_args);
@@ -1622,60 +1939,40 @@ pub(crate) fn expand_extern_decls(
             vis,
             ..
         } = &mut *dispatch;
-        let dispatch_set = dispatch_set_name();
         let module_name = sig.ident.clone();
-        let parts = if has_static_bindings {
-            prepare_dispatch_import(
-                abi,
-                failure_mode,
-                attrs,
-                fn_attrs,
-                sig,
-                &args,
-                &dispatch_set,
-                Some(&module_name),
-                None,
-                None,
-                false,
-                None,
-                symbol_fragments,
-            )
-        } else {
-            prepare_dynamic_dispatch_import(
-                abi,
-                failure_mode,
-                attrs,
-                fn_attrs,
-                sig,
-                &args,
-                None,
-                None,
-                false,
-                None,
-                &dispatch_set,
-                &module_name,
-            )
+        let context = DispatchImportContext {
+            abi,
+            failure_mode,
+            block_attrs: attrs,
+            fn_attrs,
+            sig,
+            args: &args,
+            self_ty: None,
+            impl_generics: None,
+            declared_self: false,
+            self_id: None,
+            raw,
         };
-        let wrapper_attrs = fn_attrs
-            .iter()
-            .filter(|attr| !crate::is_symbol_name_attr(attr) && !ffi_fn::is_by_val_attr(attr));
-        let vis = &*vis;
-        let wrapper_sig = &parts.wrapper_sig;
-        let wrapper_body = gen_dispatch_import_wrapper_body(&parts, TokenStream::new());
-        let module = gen_dispatch_import_module(&module_name, &parts, TokenStream::new());
-        let module_attrs = (!module.is_empty())
-            .then(|| cfg_attrs(fn_attrs))
-            .into_iter()
-            .flatten();
+        let dispatch_set = dispatch_set_name();
+        let mode = if has_static_bindings {
+            DispatchImportMode::Static(symbol_fragments)
+        } else {
+            DispatchImportMode::Dynamic
+        };
+        let parts = prepare_dispatch_import(context, &dispatch_set, &module_name, mode);
+        let (module, wrapper) = emit_import_dispatch_items(
+            &module_name,
+            fn_attrs,
+            vis,
+            &parts.wrapper_sig,
+            &parts,
+            TokenStream::new(),
+            true,
+        );
 
         quote! {
-            #(#module_attrs)*
             #module
-
-            #(#wrapper_attrs)*
-            #vis #wrapper_sig {
-                #wrapper_body
-            }
+            #wrapper
         }
     }
 
@@ -1690,6 +1987,7 @@ pub(crate) fn expand_extern_decls(
         symbol_fragments: &std::collections::BTreeMap<String, syn::LitStr>,
         declared_types: &BTreeSet<syn::Ident>,
     ) -> TokenStream {
+        let raw = dispatch.import_mode == crate::ImportMode::Raw;
         let syn::ImplItem::Fn(mut method) = dispatch.items.pop().unwrap() else {
             unreachable!()
         };
@@ -1741,45 +2039,27 @@ pub(crate) fn expand_extern_decls(
             materialize_dyn_self_receiver(&mut dispatch.item);
         }
         let self_ty = &dispatch.self_ty;
-        let dispatch_set = dispatch_set_name();
         let module_name = dispatch_module_name(self_ty, &method.sig.ident);
-        let parts = if has_static_bindings {
-            prepare_dispatch_import(
-                abi,
-                failure_mode,
-                attrs,
-                &method.attrs,
-                &method.sig,
-                &args,
-                &dispatch_set,
-                Some(&module_name),
-                Some(self_ty),
-                Some(&dispatch.generics),
-                declared_self,
-                self_id,
-                symbol_fragments,
-            )
-        } else {
-            prepare_dynamic_dispatch_import(
-                abi,
-                failure_mode,
-                attrs,
-                &method.attrs,
-                &method.sig,
-                &args,
-                Some(self_ty),
-                Some(&dispatch.generics),
-                declared_self,
-                self_id,
-                &dispatch_set,
-                &module_name,
-            )
+        let context = DispatchImportContext {
+            abi,
+            failure_mode,
+            block_attrs: attrs,
+            fn_attrs: &method.attrs,
+            sig: &method.sig,
+            args: &args,
+            self_ty: Some(self_ty),
+            impl_generics: Some(&dispatch.generics),
+            declared_self,
+            self_id,
+            raw,
         };
-        let wrapper_attrs = method
-            .attrs
-            .iter()
-            .filter(|attr| !crate::is_symbol_name_attr(attr) && !ffi_fn::is_by_val_attr(attr));
-        let vis = &method.vis;
+        let dispatch_set = dispatch_set_name();
+        let mode = if has_static_bindings {
+            DispatchImportMode::Static(symbol_fragments)
+        } else {
+            DispatchImportMode::Dynamic
+        };
+        let parts = prepare_dispatch_import(context, &dispatch_set, &module_name, mode);
         let self_binding = method
             .sig
             .inputs
@@ -1817,27 +2097,29 @@ pub(crate) fn expand_extern_decls(
             let receiver = inputs.remove(position);
             wrapper_sig.inputs = core::iter::once(receiver).chain(inputs).collect();
         }
-        let wrapper_sig = &wrapper_sig;
-        let wrapper_body =
-            gen_dispatch_import_wrapper_body(&parts, self_binding.unwrap_or_default());
-
-        let module = gen_dispatch_import_module(&module_name, &parts, TokenStream::new());
+        let (module, wrapper_fn) = emit_import_dispatch_items(
+            &module_name,
+            &method.attrs,
+            &method.vis,
+            &wrapper_sig,
+            &parts,
+            self_binding.unwrap_or_default(),
+            false,
+        );
 
         if materialize_bare_receiver {
             let wrapper: ItemImpl = syn::parse2(quote! {
                 #(#impl_attrs)*
                 #[allow(unused_braces)]
                 #defaultness #unsafety impl #impl_generics #trait_ #self_ty #where_clause {
-                    #(#wrapper_attrs)*
-                    #vis #wrapper_sig {
-                        #wrapper_body
-                    }
+                    #wrapper_fn
                 }
             })
             .expect("generated dispatch wrapper must be a valid impl");
             let wrappers = materialize_dispatch_impl_bindings(
                 Co3Impl {
                     item: wrapper,
+                    import_mode: dispatch.import_mode,
                     dispatch_args: args,
                     method_dispatch_args: Default::default(),
                 },
@@ -1858,10 +2140,7 @@ pub(crate) fn expand_extern_decls(
             #(#impl_attrs)*
             #[allow(unused_braces)]
             #defaultness #unsafety impl #impl_generics #trait_ #self_ty #where_clause {
-                #(#wrapper_attrs)*
-                #vis #wrapper_sig {
-                    #wrapper_body
-                }
+                #wrapper_fn
             }
         }
     }
@@ -1890,6 +2169,7 @@ pub(crate) fn expand_extern_decls(
                 method_impl.items = vec![syn::ImplItem::Fn(method)];
                 methods.push(Co3Impl {
                     item: method_impl,
+                    import_mode: plain.import_mode,
                     dispatch_args: plain.dispatch_args.clone(),
                     method_dispatch_args: Default::default(),
                 });
@@ -1919,6 +2199,7 @@ pub(crate) fn expand_extern_decls(
                     expand_impl_import(
                         abi,
                         failure_mode,
+                        descriptor.import_mode,
                         attrs,
                         descriptor.item,
                         declared_self,
@@ -1937,6 +2218,24 @@ pub(crate) fn expand_extern_decls(
                     method.dispatch_args.contains_param(&param.ident)
                 }
             });
+            if binds_impl_parameter && method.trait_.is_none() {
+                let descriptors =
+                    monomorphize_static_impl_bindings(method, symbol_fragments, declared_types);
+                let imports = descriptors.into_iter().map(|descriptor| {
+                    let import = expand_dispatch_method_import(
+                        abi,
+                        failure_mode,
+                        attrs,
+                        descriptor,
+                        declared_self,
+                        type_id,
+                        symbol_fragments,
+                        declared_types,
+                    );
+                    quote!(const _: () = { #import };)
+                });
+                return quote!(#(#imports)*);
+            }
             if binds_impl_parameter && method.trait_.is_some() {
                 let self_id = dyn_self.then_some(type_id).flatten();
                 let descriptors = monomorphize_static_impl_bindings(
@@ -1945,15 +2244,17 @@ pub(crate) fn expand_extern_decls(
                     declared_types,
                 );
                 let imports = descriptors.into_iter().map(|descriptor| {
-                    synthesize_impl_dispatch_import(
+                    let import = expand_dispatch_method_import(
                         abi,
                         failure_mode,
                         attrs,
-                        self_id,
                         descriptor,
                         declared_self,
+                        self_id,
                         symbol_fragments,
-                    )
+                        declared_types,
+                    );
+                    quote!(const _: () = { #import };)
                 });
                 quote!(#(#imports)*)
             } else {
@@ -2067,7 +2368,7 @@ pub(crate) fn expand_extern_decls(
                     &declared_types,
                 )
             } else {
-                wrap_fn_definition(&abi, failure_mode, attrs, item.item)
+                wrap_fn_definition(&abi, failure_mode, attrs, item.import_mode, item.item)
             }
         }
         ForeignItem::Impl(impl_) => expand_import_impl(
@@ -2083,7 +2384,7 @@ pub(crate) fn expand_extern_decls(
         ForeignItem::Static(item) => crate::statics::gen_extern_static(&abi, attrs, item),
     });
 
-    quote! { #(#callback_companions)* #(#imports)* }
+    quote! { #(#imports)* }
 }
 
 pub(crate) fn gen_tag_family_impl(
@@ -2209,6 +2510,7 @@ fn expand_dispatch_drop_import(
     let extern_decls = synthesize_impl_extern_decls(
         abi,
         failure_mode,
+        crate::ImportMode::Regular,
         attrs,
         source_impl.clone(),
         declared_id_ty,
@@ -2333,6 +2635,7 @@ fn expand_plain_drop_import(
     let extern_decls = synthesize_impl_extern_decls(
         abi,
         failure_mode,
+        crate::ImportMode::Regular,
         attrs,
         impl_.clone(),
         None,

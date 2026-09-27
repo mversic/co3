@@ -201,8 +201,6 @@ macro_rules! impl_fn_types {
         impl_fn_types!(@impl [$($arg),*] unsafe extern $abi fn($($arg),*) -> R);
     };
     (@impl [$($arg:ident),*] $fn_type:ty) => {
-        // A function pointer cannot be null, so use its nullable form at the ABI
-        // boundary and reject null before constructing the Rust pointer.
         unsafe impl<$($arg: CFnArg,)* R: CFnReturn> Borrow for $fn_type
         where $fn_type: rust_spec::RustSpec<Layout = rust_spec::Stable> {
             type Borrowed<'itm> = Self where Self: 'itm;
@@ -493,8 +491,27 @@ mod tests {
         assert_impl_all!(VoidCallback: ReprC, Encode, Decode<'static>);
         assert_impl_all!(unsafe extern "C" fn(u8) -> u8: ReprC, Encode, Decode<'static>);
         assert_not_impl_any!(fn(u8) -> u8: ReprC, Encode, Decode<'static>);
-        assert_not_impl_any!(extern "C" fn(bool) -> u8: ReprC, Encode, Decode<'static>);
-        assert_not_impl_any!(extern "C" fn((u8,)) -> u8: ReprC, Encode, Decode<'static>);
+        assert_not_impl_any!(unsafe fn(bool) -> u8: ReprC);
+
+        type BoolCallback = extern "C" fn(bool) -> u8;
+        assert_not_impl_any!(BoolCallback: ReprC, Encode, Decode<'static>);
+
+        #[allow(improper_ctypes_definitions)]
+        type TupleCallback = extern "C" fn((u8,)) -> u8;
+        assert_not_impl_any!(TupleCallback: ReprC, Encode, Decode<'static>);
+
+        #[allow(improper_ctypes_definitions)]
+        type SystemCallbackWithRustTypes = unsafe extern "system" fn(bool) -> (u8,);
+        assert_not_impl_any!(SystemCallbackWithRustTypes: ReprC, Encode, Decode<'static>);
+
+        #[cfg(feature = "alloc")]
+        {
+            assert_not_impl_any!(extern "C" fn(Box<u8>) -> (): ReprC);
+            assert_not_impl_any!(extern "C" fn() -> Box<u8>: ReprC);
+            assert_not_impl_any!(fn(Box<u8>) -> u8: ReprC);
+            type OwnedCallback = extern "C" fn(CBox<u8>) -> CBox<u8>;
+            assert_impl_all!(OwnedCallback: ReprC<CType = Option<OwnedCallback>>, Encode, Decode<'static>);
+        }
     }
 
     #[test]

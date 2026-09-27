@@ -2,6 +2,7 @@ use co3::{
     CType, ReprC, ffi,
     ops::{CFn0, CFn1, CFn2, CFn12},
     option::ReprCOption,
+    raw,
     rust_spec::RustSpec,
 };
 
@@ -35,6 +36,8 @@ trait Echo: Sized {
 mod raw {
     pub(super) type Existing = super::CCallback;
 }
+
+type CompanionPathAlias = raw::Existing;
 
 unsafe extern "C" fn increment_pointer(value: *const u32) -> u32 {
     (unsafe { *value }) + 1
@@ -100,6 +103,16 @@ fn sum_native(left: Value, right: Value) -> Value {
     Value(left.0 + right.0)
 }
 
+#[unsafe(export_name = "abi_c_callback_raw_method")]
+extern "C" fn add_values(left: Value, right: Value) -> Value {
+    Value(left.0 + right.0)
+}
+
+#[unsafe(export_name = "abi_system_callback")]
+extern "system" fn add_system_values(left: Value, right: Value) -> Value {
+    Value(left.0 + right.0)
+}
+
 fn return_owned(value: Box<Value>) -> Box<Value> {
     value
 }
@@ -116,11 +129,47 @@ ffi! {
     #![unsafe(export("C"))]
     #![symbol_prefix = "abi_c_callback"]
 
-    type CCallback = raw fn(Value, Value) -> Value;
+    type CCallback = raw extern "C" fn(Value, Value) -> Value;
     type PathAlias = raw::Existing;
 
     fn apply_callback(callback: CCallback, left: Value, right: Value) -> Value;
     fn apply_optional_callback(callback: Option<CCallback>, value: Value) -> Value;
+}
+
+mod exported_raw_import {
+    use co3::ffi;
+
+    use super::*;
+
+    ffi! {
+        #![unsafe(extern("C"))]
+        #![symbol_prefix = "abi_c_callback_exported_raw"]
+
+        pub fn sum_native(left: Value, right: Value) -> Value;
+        #[symbol_name = "abi_c_callback_exported_raw__sum_native"]
+        pub raw fn sum_native_raw(left: Value, right: Value) -> Value;
+    }
+}
+
+mod system_wrapped_raw_import {
+    use co3::ffi;
+
+    use super::*;
+
+    ffi! {
+        #![unsafe(extern("system"))]
+        #![symbol_prefix = "abi_system_callback"]
+
+        #[symbol_name = "abi_system_callback"]
+        pub raw fn sum_native(left: Value, right: Value) -> Value;
+    }
+}
+
+ffi! {
+    #![unsafe(export("C"))]
+    #![symbol_prefix = "abi_c_callback_exported_raw"]
+
+    fn sum_native(left: Value, right: Value) -> Value;
 }
 
 mod imported {
@@ -132,31 +181,58 @@ mod imported {
         #![unsafe(extern("C"))]
         #![symbol_prefix = "abi_c_callback"]
 
-        type CCallback = raw fn(Value, Value) -> Value;
+        type CCallback = raw extern "C" fn(Value, Value) -> Value;
 
         pub fn apply_callback(callback: CCallback, left: Value, right: Value) -> Value;
+        #[symbol_name = "abi_c_callback__apply_callback"]
+        pub raw fn apply_callback_raw(callback: CCallback, left: Value, right: Value) -> Value;
         pub fn apply_optional_callback(callback: Option<CCallback>, value: Value) -> Value;
+    }
+}
+
+mod raw_only {
+    use co3::ffi;
+
+    use super::*;
+
+    ffi! {
+        #![unsafe(extern("C"))]
+        #![symbol_prefix = "abi_c_callback"]
+
+        pub raw fn apply_callback(callback: CCallback, left: Value, right: Value) -> Value;
     }
 }
 
 ffi! {
     #![unsafe(extern("C"))]
 
-    type BorrowedReturn = raw fn() -> Box<Value>;
-    type BorrowedRustValue = raw fn(RustValue) -> RustValue;
-    type OwnedTransform = raw fn(move Box<Value>) -> move Box<Value>;
+    impl Value {
+        #[symbol_name = "abi_c_callback_raw_method"]
+        pub raw fn add_raw(self, other: Value) -> Value;
+    }
+}
 
-    raw fn borrow_rust_value(value: RustValue) -> RustValue;
-    raw fn return_owned(value: move Box<Value>) -> move Box<Value>;
-    raw fn double_rust(value: RustValue) -> move RustValue;
-    pub raw fn sum_native(left: Value, right: Value) -> Value;
+ffi! {
+    #![unsafe(extern("C"))]
+
+    type BorrowedReturn = raw extern "C" fn() -> Box<Value>;
+    type BorrowedRustValue = raw extern "C" fn(RustValue) -> RustValue;
+    type OwnedTransform = raw extern "C" fn(move Box<Value>) -> move Box<Value>;
+    type CompanionCallback = raw extern "C" fn(Value, Value) -> Value;
+}
+
+raw! {
+    fn borrow_rust_value(value: RustValue) -> RustValue;
+    fn return_owned(value: move Box<Value>) -> move Box<Value>;
+    fn double_rust(value: RustValue) -> move RustValue;
+    pub fn sum_native(left: Value, right: Value) -> Value;
 
     impl Echo for Value {
-        raw fn echo(self) -> Value;
+        fn echo(self) -> Value;
     }
 
     impl RustValue {
-        pub raw fn scaled(#[soft] &self, factor: u8) -> move RustValue;
+        pub fn scaled(#[soft] &self, factor: u8) -> move RustValue;
     }
 }
 
@@ -248,6 +324,8 @@ fn multi_argument_callbacks_encode_each_argument() {
 
 #[test]
 fn c_callback_crosses_export_and_import() {
+    let _: CompanionCallback = sum_pair;
+    let _: CompanionPathAlias = sum_pair;
     let _: BorrowedReturn = borrowed_return;
     let _: BorrowedRustValue = borrow_rust_value_raw;
     let _: OwnedTransform = return_owned_raw;
@@ -274,6 +352,26 @@ fn c_callback_crosses_export_and_import() {
     assert_eq!(unsafe { <Value as Echo>::echo_raw(Value(42)) }, Value(42));
     assert_eq!(
         imported::apply_callback(sum_pair, Value(19), Value(23)),
+        Value(42)
+    );
+    assert_eq!(
+        unsafe { imported::apply_callback_raw(Some(sum_pair), Value(19), Value(23)) },
+        Value(42)
+    );
+    assert_eq!(
+        unsafe { raw_only::apply_callback(Some(sum_pair), Value(19), Value(23)) },
+        Value(42)
+    );
+    assert_eq!(unsafe { Value::add_raw(Value(19), Value(23)) }, Value(42));
+    let system_raw: unsafe extern "system" fn(Value, Value) -> Value =
+        system_wrapped_raw_import::sum_native;
+    assert_eq!(unsafe { system_raw(Value(19), Value(23)) }, Value(42));
+    assert_eq!(
+        exported_raw_import::sum_native(Value(19), Value(23)),
+        Value(42)
+    );
+    assert_eq!(
+        unsafe { exported_raw_import::sum_native_raw(Value(19), Value(23)) },
         Value(42)
     );
     assert_eq!(

@@ -1,0 +1,5 @@
+error: unconstrained generic parameter
+ --> tests/ui_fail/raw_unconstrained_generic.rs:6:26
+  |
+6 |     raw fn unconstrained<T>(value: move T);
+  |                          ^

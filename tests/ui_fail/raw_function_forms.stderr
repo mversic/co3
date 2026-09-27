@@ -1,0 +1,23 @@
+error: omit `raw` on `raw!` companion declarations
+ --> tests/ui_fail/raw_function_forms.rs:6:12
+  |
+6 |     raw fn existing();
+  |            ^^^^^^^^
+
+error: omit `raw` on `raw!` companion declarations
+  --> tests/ui_fail/raw_function_forms.rs:9:1
+   |
+ 9 | / raw! {
+10 | |     impl Value {
+11 | |         raw fn method(self);
+12 | |     }
+13 | | }
+   | |_^
+   |
+   = note: this error originates in the macro `raw` (in Nightly builds, run with -Z macro-backtrace for more info)
+
+error: raw function declarations require a safe, synchronous function with at most 12 arguments
+  --> tests/ui_fail/raw_function_forms.rs:16:5
+   |
+16 |     unsafe extern "system" fn existing();
+   |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^

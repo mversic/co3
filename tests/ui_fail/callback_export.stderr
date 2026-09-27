@@ -1,4 +1,4 @@
-error: raw function declarations are only allowed in `ffi!` extern blocks
+error: raw function declarations are not allowed in `ffi!` export blocks; use `raw!` to generate companions
  --> tests/ui_fail/callback_export.rs:8:12
   |
 8 |     raw fn local_function();

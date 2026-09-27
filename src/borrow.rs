@@ -66,7 +66,9 @@ pub unsafe trait Borrow: Sized {
         Self: 'itm;
 }
 // TODO: Join the 2 traits?
+/// Reverse operation of [`Borrow`]
 pub trait FromBorrow<'itm>: Borrow {
+    /// Construct owned form from [`Borrow::Borrowed`]
     fn from_borrow(source: Self::Borrowed<'itm>) -> Self;
 }
 

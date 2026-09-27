@@ -1,5 +1,5 @@
-error[E0277]: the trait bound `NotReprC: CFnArg` is not satisfied
-  --> tests/ui_fail/callback_non_reprc.rs:10:1
+error[E0277]: the trait bound `CallbackValue: CFnArg` is not satisfied
+  --> tests/ui_fail/callback_requires_companion.rs:10:1
    |
 10 | / ffi! {
 11 | |     #![unsafe(extern("C"))]
@@ -9,26 +9,26 @@ error[E0277]: the trait bound `NotReprC: CFnArg` is not satisfied
 15 | | }
    | |_^ unsatisfied trait bound
    |
-help: the trait `CFnArg` is not implemented for `NotReprC`
-  --> tests/ui_fail/callback_non_reprc.rs:5:1
+help: the trait `CFnArg` is not implemented for `CallbackValue`
+  --> tests/ui_fail/callback_requires_companion.rs:5:1
    |
- 5 | struct NotReprC(u8);
-   | ^^^^^^^^^^^^^^^
+ 5 | struct CallbackValue(u8);
+   | ^^^^^^^^^^^^^^^^^^^^
    = help: the following other types implement trait `CFnArg`:
              *const R
              *mut R
              CBox<C>
              CBoxedSlice<C>
-             CNotReprC
-             CNotReprCConstView
-             CNotReprCMutView
+             CCallbackValue
+             CCallbackValueConstView
+             CCallbackValueMutView
              CSlice<C>
            and $N others
-   = note: required for `extern "C" fn(NotReprC)` to implement `ReprC`
+   = note: required for `extern "C" fn(CallbackValue)` to implement `ReprC`
    = note: this error originates in the macro `ffi` (in Nightly builds, run with -Z macro-backtrace for more info)
 
-error[E0277]: the trait bound `NotReprC: CFnReturn` is not satisfied
-  --> tests/ui_fail/callback_non_reprc.rs:10:1
+error[E0277]: the trait bound `CallbackValue: CFnReturn` is not satisfied
+  --> tests/ui_fail/callback_requires_companion.rs:10:1
    |
 10 | / ffi! {
 11 | |     #![unsafe(extern("C"))]
@@ -38,37 +38,37 @@ error[E0277]: the trait bound `NotReprC: CFnReturn` is not satisfied
 15 | | }
    | |_^ unsatisfied trait bound
    |
-help: the trait `CFnReturn` is not implemented for `NotReprC`
-  --> tests/ui_fail/callback_non_reprc.rs:5:1
+help: the trait `CFnReturn` is not implemented for `CallbackValue`
+  --> tests/ui_fail/callback_requires_companion.rs:5:1
    |
- 5 | struct NotReprC(u8);
-   | ^^^^^^^^^^^^^^^
+ 5 | struct CallbackValue(u8);
+   | ^^^^^^^^^^^^^^^^^^^^
    = help: the following other types implement trait `CFnReturn`:
              ()
              *const R
              *mut R
              CBox<C>
              CBoxedSlice<C>
-             CNotReprC
-             CNotReprCConstView
-             CNotReprCMutView
+             CCallbackValue
+             CCallbackValueConstView
+             CCallbackValueMutView
            and $N others
-   = note: required for `extern "C" fn() -> NotReprC` to implement `ReprC`
+   = note: required for `extern "C" fn() -> CallbackValue` to implement `ReprC`
    = note: this error originates in the macro `ffi` (in Nightly builds, run with -Z macro-backtrace for more info)
 
-error[E0277]: the trait bound `extern "C" fn(NotReprC): co3::borrow::Borrow` is not satisfied
-  --> tests/ui_fail/callback_non_reprc.rs:13:35
+error[E0277]: the trait bound `extern "C" fn(CallbackValue): co3::borrow::Borrow` is not satisfied
+  --> tests/ui_fail/callback_requires_companion.rs:13:35
    |
 10 | / ffi! {
 11 | |     #![unsafe(extern("C"))]
 12 | |
 13 | |     fn callback_with_bad_argument(callback: BadArgument);
-   | |                                   ^^^^^^^^ the trait `co3::borrow::Borrow` is not implemented for `extern "C" fn(NotReprC)`
+   | |                                   ^^^^^^^^ the trait `co3::borrow::Borrow` is not implemented for `extern "C" fn(CallbackValue)`
 14 | |     fn callback_with_bad_return(callback: BadReturn);
 15 | | }
    | |_- required by a bound introduced by this call
    |
-   = note: required for `extern "C" fn(NotReprC)` to implement `co3::borrow::Borrow`
+   = note: required for `extern "C" fn(CallbackValue)` to implement `co3::borrow::Borrow`
 help: consider borrowing here
    |
 13 |     fn callback_with_bad_argument(&callback: BadArgument);
@@ -76,19 +76,19 @@ help: consider borrowing here
 13 |     fn callback_with_bad_argument(&mut callback: BadArgument);
    |                                   ++++
 
-error[E0277]: the trait bound `extern "C" fn() -> NotReprC: co3::borrow::Borrow` is not satisfied
-  --> tests/ui_fail/callback_non_reprc.rs:14:33
+error[E0277]: the trait bound `extern "C" fn() -> CallbackValue: co3::borrow::Borrow` is not satisfied
+  --> tests/ui_fail/callback_requires_companion.rs:14:33
    |
 10 | / ffi! {
 11 | |     #![unsafe(extern("C"))]
 12 | |
 13 | |     fn callback_with_bad_argument(callback: BadArgument);
 14 | |     fn callback_with_bad_return(callback: BadReturn);
-   | |                                 ^^^^^^^^ the trait `co3::borrow::Borrow` is not implemented for `extern "C" fn() -> NotReprC`
+   | |                                 ^^^^^^^^ the trait `co3::borrow::Borrow` is not implemented for `extern "C" fn() -> CallbackValue`
 15 | | }
    | |_- required by a bound introduced by this call
    |
-   = note: required for `extern "C" fn() -> NotReprC` to implement `co3::borrow::Borrow`
+   = note: required for `extern "C" fn() -> CallbackValue` to implement `co3::borrow::Borrow`
 help: consider borrowing here
    |
 14 |     fn callback_with_bad_return(&callback: BadReturn);

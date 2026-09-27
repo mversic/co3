@@ -1,0 +1,5 @@
+error: raw and Rust imports need distinct Rust names; use `#[symbol_name = "..."]` to bind them to the same foreign symbol
+ --> tests/ui_fail/raw_import_name_collision.rs:7:12
+  |
+7 |     raw fn foreign(value: u8) -> u8;
+  |            ^^^^^^^

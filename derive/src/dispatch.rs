@@ -983,7 +983,11 @@ fn erase_dyn_self_type(self_ty: &syn::Type, ty: &syn::Type) -> syn::Type {
     erased
 }
 
-fn gen_retype(arg_name: &TokenStream, source_ty: &syn::Type, target_ty: &syn::Type) -> TokenStream {
+pub(crate) fn gen_retype(
+    arg_name: &TokenStream,
+    source_ty: &syn::Type,
+    target_ty: &syn::Type,
+) -> TokenStream {
     crate::abi_retype::gen_retype_after_check(arg_name.clone(), source_ty, target_ty)
 }
 

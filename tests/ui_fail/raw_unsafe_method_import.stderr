@@ -1,0 +1,5 @@
+error: raw function declarations require a safe, synchronous function with at most 12 arguments
+ --> tests/ui_fail/raw_unsafe_method_import.rs:9:13
+  |
+9 |         raw unsafe fn target();
+  |             ^^^^^^^^^^^^^^^^^^

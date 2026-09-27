@@ -1,0 +1,11 @@
+error: `ffi!` blocks require a non-Rust ABI
+ --> tests/ui_fail/ffi_rust_block.rs:4:22
+  |
+4 |     #![unsafe(export("Rust"))]
+  |                      ^^^^^^
+
+error: `ffi!` blocks require a non-Rust ABI
+ --> tests/ui_fail/ffi_rust_block.rs:8:22
+  |
+8 |     #![unsafe(extern("Rust"))]
+  |                      ^^^^^^

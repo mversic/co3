@@ -60,6 +60,22 @@ pub(crate) fn validate_export_decls(items: &[crate::ForeignItem]) -> Result<()> 
 
 pub(crate) fn validate_extern_decls(items: &[crate::ForeignItem]) -> Result<()> {
     let mut errors = None;
+    for item in items {
+        match item {
+            crate::ForeignItem::Fn(item) if item.import_mode == crate::ImportMode::Raw => {
+                if let Err(err) = validate_raw_signature(&item.sig) {
+                    push_error(&mut errors, err);
+                }
+            }
+            crate::ForeignItem::Impl(item) => validate_raw_import_impl(item, &mut errors),
+            crate::ForeignItem::Type(item) => {
+                for impl_ in &item.self_impls {
+                    validate_raw_import_impl(impl_, &mut errors);
+                }
+            }
+            _ => {}
+        }
+    }
     if let Err(err) = validate_shared(items, true) {
         push_error(&mut errors, err);
     }
@@ -81,6 +97,86 @@ pub(crate) fn validate_extern_decls(items: &[crate::ForeignItem]) -> Result<()> 
         push_error(&mut errors, err);
     }
     errors.map_or(Ok(()), Err)
+}
+
+fn validate_raw_import_impl(impl_: &crate::Co3Impl, errors: &mut Option<Error>) {
+    if impl_.import_mode != crate::ImportMode::Raw {
+        return;
+    }
+    for method in &impl_.items {
+        if let syn::ImplItem::Fn(method) = method
+            && let Err(err) = validate_raw_signature(&method.sig)
+        {
+            push_error(errors, err);
+        }
+    }
+}
+
+pub(crate) fn validate_raw_signature(sig: &syn::Signature) -> Result<()> {
+    if sig.asyncness.is_some()
+        || matches!(sig.safety, syn::Safety::Unsafe(_))
+        || sig.variadic.is_some()
+        || sig.inputs.len() > 12
+    {
+        return Err(Error::new_spanned(
+            sig,
+            "raw function declarations require a safe, synchronous function with at most 12 arguments",
+        ));
+    }
+    for (index, input) in sig.inputs.iter().enumerate() {
+        let syn::FnArg::Typed(arg) = input else {
+            if index == 0 {
+                continue;
+            }
+            return Err(Error::new_spanned(input, "function receiver must be first"));
+        };
+        if !matches!(arg.pat.as_ref(), syn::Pat::Ident(_)) {
+            return Err(Error::new_spanned(
+                &arg.pat,
+                "function parameters must be identifiers",
+            ));
+        }
+    }
+    Ok(())
+}
+
+pub(crate) fn validate_raw_companions(raw_decls: &[crate::parse::RawFnDecl]) -> Result<()> {
+    for raw_decl in raw_decls {
+        validate_raw_signature(&raw_decl.sig)?;
+        if let Some(attr) = raw_decl.attrs.iter().find(|attr| is_symbol_name_attr(attr)) {
+            return Err(Error::new_spanned(
+                attr,
+                "companion functions do not have foreign symbol names",
+            ));
+        }
+        for input in &raw_decl.sig.inputs {
+            if let syn::FnArg::Typed(arg) = input
+                && let Some(attr) = arg.attrs.iter().find(|attr| is_unpack_attr(attr))
+            {
+                return Err(Error::new_spanned(
+                    attr,
+                    "#[unpack] is only supported on `ffi!` imports",
+                ));
+            }
+        }
+        if has_runtime_dispatch(&raw_decl.sig.generics)
+            || raw_decl
+                .owner
+                .as_ref()
+                .is_some_and(|owner| has_runtime_dispatch(&owner.generics))
+            || raw_decl
+                .attrs
+                .iter()
+                .any(|attr| attr.path().is_ident("erased"))
+        {
+            return Err(Error::new_spanned(
+                &raw_decl.sig,
+                "tagged dispatch in `raw!` is not yet supported",
+            ));
+        }
+        validate_soft_lifetimes(&raw_decl.sig)?;
+    }
+    Ok(())
 }
 
 fn validate_export_type_ids(items: &[crate::ForeignItem]) -> Result<()> {

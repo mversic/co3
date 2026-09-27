@@ -1,0 +1,9 @@
+error: expected `#![unsafe(export("..."))]` or `#![unsafe(extern("..."))]`
+ --> tests/ui_fail/companion_unsafe_header.rs:3:1
+  |
+3 | / ffi! {
+4 | |     #![unsafe(companion("C"))]
+5 | | }
+  | |_^
+  |
+  = note: this error originates in the macro `ffi` (in Nightly builds, run with -Z macro-backtrace for more info)

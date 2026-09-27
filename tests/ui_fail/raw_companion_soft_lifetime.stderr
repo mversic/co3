@@ -1,0 +1,5 @@
+error: explicit lifetimes are not allowed in a `#[soft]` argument
+ --> tests/ui_fail/raw_companion_soft_lifetime.rs:8:37
+  |
+8 |     fn borrowed<'a>(#[soft] value: &'a str);
+  |                                     ^^

@@ -2,10 +2,10 @@ use co3::{ReprC, ffi, rust_spec::RustSpec};
 
 #[derive(RustSpec, ReprC)]
 #[repr(transparent)]
-struct NotReprC(u8);
+struct CallbackValue(u8);
 
-type BadArgument = extern "C" fn(NotReprC);
-type BadReturn = extern "C" fn() -> NotReprC;
+type BadArgument = extern "C" fn(CallbackValue);
+type BadReturn = extern "C" fn() -> CallbackValue;
 
 ffi! {
     #![unsafe(extern("C"))]

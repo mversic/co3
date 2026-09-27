@@ -25,7 +25,7 @@ enum Ambiguous {
 struct MyType<T>(T);
 
 ffi! {
-    #![unsafe(extern("Rust"))]
+    #![unsafe(extern("C"))]
 
     #![symbol_prefix = "import"]
 
@@ -129,7 +129,7 @@ mod provider {
     }
 
     ffi! {
-        #![unsafe(export("Rust"))]
+        #![unsafe(export("C"))]
 
         impl AmbiguousX<u32, 4> for MyType<u32> {
             const K: bool = true;

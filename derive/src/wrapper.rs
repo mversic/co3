@@ -3,6 +3,7 @@ use quote::{format_ident, quote};
 use syn::{FnArg, ItemImpl, punctuated::Punctuated, visit_mut::VisitMut};
 
 use crate::{
+    ImportMode,
     dispatch::{TagId, gen_return_derase_expr, gen_tag_erase_stmts, is_tag_id_arg, tag_id},
     ffi_fn::{
         self, gen_return_borrow_check, gen_soft_sync_error_value, gen_trap_value, is_by_val_attr,
@@ -12,7 +13,10 @@ use crate::{
     is_symbol_name_attr,
     parse::FailureMode,
     symbol_name_value,
-    utils::{co3_path, gen_store_name, is_drop_impl, soft_for_arg, strip_internal_generic_param},
+    utils::{
+        cfg_attrs, co3_path, gen_store_name, is_drop_impl, soft_for_arg,
+        strip_internal_generic_param,
+    },
 };
 
 pub(crate) fn strip_internal_arg_attrs(signature: &mut syn::Signature) {
@@ -43,8 +47,37 @@ pub(crate) fn wrap_fn_definition(
     abi: &syn::Abi,
     failure_mode: FailureMode,
     block_attrs: &[syn::Attribute],
+    import_mode: ImportMode,
     mut item: syn::ItemFn,
 ) -> TokenStream {
+    if import_mode == ImportMode::Raw {
+        let raw_sig = ffi_fn::lower_raw_fn_signature(
+            item.sig.clone(),
+            failure_mode,
+            item.attrs.iter().any(is_by_val_attr),
+        );
+        let cfg = cfg_attrs(&item.attrs).collect::<Vec<_>>();
+        let doc = item.attrs.iter().filter(|attr| attr.path().is_ident("doc"));
+        let co3 = co3_path();
+        let vis = &item.vis;
+        let assertions = ffi_fn::gen_abi_assertions(&raw_sig);
+        let module_name = format_ident!("__co3_raw_import_{}", item.sig.ident);
+        let raw_name = &raw_sig.ident;
+        let extern_decl = gen_extern_decl(abi, block_attrs, &item.attrs, quote!(pub #raw_sig));
+        return quote! {
+            #(#cfg)*
+            #[doc(hidden)]
+            mod #module_name {
+                use super::*;
+                use #co3 as co3;
+                #extern_decl
+                const _: () = { #assertions };
+            }
+            #(#cfg)*
+            #(#doc)*
+            #vis use #module_name::#raw_name;
+        };
+    }
     let vis = &item.vis;
 
     let wrapper_attrs = item
@@ -83,6 +116,7 @@ pub(crate) fn wrap_fn_definition(
 
 pub fn wrap_impl_definition<const DISPATCHED: bool>(
     failure_mode: FailureMode,
+    import_mode: ImportMode,
     impl_: &ItemImpl,
     erase_declared_receiver: bool,
 ) -> ItemImpl {
@@ -118,13 +152,24 @@ pub fn wrap_impl_definition<const DISPATCHED: bool>(
             sig.output = syn::ReturnType::Default;
             wrapper_item.sig.output = syn::ReturnType::Default;
         }
-        let body = gen_impl_wrapper_body::<DISPATCHED>(
-            failure_mode,
-            &wrapper_item,
-            self_ty,
-            generics,
-            erase_declared_receiver,
-        );
+        let body = if import_mode == ImportMode::Raw {
+            let name = &sig.ident;
+            let args = sig.inputs.iter().filter_map(|input| {
+                let FnArg::Typed(arg) = input else {
+                    return None;
+                };
+                Some(&arg.pat)
+            });
+            quote!(unsafe { #name(#(#args),*) })
+        } else {
+            gen_impl_wrapper_body::<DISPATCHED>(
+                failure_mode,
+                &wrapper_item,
+                self_ty,
+                generics,
+                erase_declared_receiver,
+            )
+        };
 
         sig.inputs = if DISPATCHED {
             sig.inputs

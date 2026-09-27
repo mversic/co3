@@ -1,4 +1,4 @@
-error: raw function declarations require a safe, synchronous, non-generic function with at most 12 arguments
+error: raw function declarations require a safe, synchronous function with at most 12 arguments
  --> tests/ui_fail/raw_unsafe_import.rs:8:9
   |
 8 |     raw unsafe fn target();

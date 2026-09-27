@@ -975,6 +975,13 @@ fn lower_signature_input(input: syn::FnArg) -> Vec<syn::FnArg> {
         ];
     }
 
+    if let Some(target_ty) = single_unpack_part(&attrs, &arg_ty)
+        .expect("validated one-part unpack attribute")
+    {
+        let ffi_ty = quote!(<#target_ty as co3::ReprC>::CType);
+        return vec![parse_quote!(#(#cfg)* #pat: #ffi_ty)];
+    }
+
     let ffi_ty = item_fn_input_arg_type(&attrs, &arg_ty);
 
     vec![parse_quote!(#(#cfg)* #pat: #ffi_ty)]

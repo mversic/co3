@@ -104,7 +104,7 @@ ffi! {
 }
 
 ffi! {
-    #![unsafe(export("Rust"))]
+    #![unsafe(export("C"))]
 
     impl Clone for Box<OpaqueStructU8> {
         #[symbol_name = "clone"]

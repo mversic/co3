@@ -6,7 +6,7 @@ use rust_spec::RustSpec;
 
 use crate::{
     CFnArg, CFnReturn, CType, Decode, Encode, ReprC,
-    borrow::{Borrow, BorrowCast, BorrowCastMut, FromBorrow},
+    borrow::{BorrowCast, BorrowCastMut},
     slice::{CSlice, CSliceMut, Unpack2},
     stored::{DecodeOwned, EncodeOwned},
     transmute::CheckedTransmute,
@@ -218,29 +218,6 @@ impl<C> CBoxedSlice<C> {
 
 macro_rules! impl_boxed_carrier {
     ($ty:ident) => {
-        unsafe impl<C> Borrow for $ty<C> {
-            type Borrowed<'itm>
-                = Self
-            where
-                Self: 'itm;
-
-            type Owner = ();
-
-            #[inline(always)]
-            fn borrow<'itm>(self, (): &mut ()) -> Self::Borrowed<'itm>
-            where
-                Self: 'itm,
-            {
-                self
-            }
-        }
-        impl<'itm, C> FromBorrow<'itm> for $ty<C> {
-            #[inline(always)]
-            fn from_borrow(source: Self) -> Self {
-                source
-            }
-        }
-
         impl<C: CType> ReprC for $ty<C> {
             type CType = Self;
         }

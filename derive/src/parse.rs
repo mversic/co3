@@ -34,6 +34,11 @@ pub(crate) struct ParsedInput {
     pub(crate) items: Vec<ParsedItem>,
 }
 
+pub(crate) struct ParsedRawInput {
+    pub(crate) failure_mode: FailureMode,
+    pub(crate) items: Vec<ParsedItem>,
+}
+
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub(crate) struct MacroFeatures {
     pub(crate) extern_types: bool,
@@ -57,7 +62,7 @@ pub(crate) enum ParsedItem {
     Static(Co3Static),
     Impl(ItemImpl),
     Fn(ItemFn),
-    Callback(CallbackDecl),
+    Raw(RawFnDecl),
 }
 
 pub(crate) enum TypeAlias {
@@ -67,7 +72,6 @@ pub(crate) enum TypeAlias {
         vis: syn::Visibility,
         ident: syn::Ident,
         generics: syn::Generics,
-        raw_abi: Option<LitStr>,
         sig: Box<syn::Signature>,
         move_fn: bool,
     },
@@ -97,16 +101,15 @@ impl Parse for RawFnTypeArgs {
     }
 }
 
-pub(crate) struct CallbackDecl {
+pub(crate) struct RawFnDecl {
     pub(crate) attrs: Vec<Attribute>,
     pub(crate) vis: syn::Visibility,
-    pub(crate) raw_abi: Option<LitStr>,
     pub(crate) callee: TokenStream,
     pub(crate) sig: syn::Signature,
-    pub(crate) owner: Option<CallbackOwner>,
+    pub(crate) owner: Option<RawFnOwner>,
 }
 
-pub(crate) struct CallbackOwner {
+pub(crate) struct RawFnOwner {
     pub(crate) attrs: Vec<Attribute>,
     pub(crate) generics: syn::Generics,
     pub(crate) trait_path: Option<syn::Path>,
@@ -164,7 +167,7 @@ impl syn::parse::Parse for ParsedItem {
             return Ok(Self::Static(parse_static_item(input)?));
         }
         if ahead.peek(syn::Ident) && ahead.parse::<syn::Ident>()? == "raw" {
-            return Ok(Self::Callback(parse_callback_item(input)?));
+            return Ok(Self::Raw(parse_raw_fn_item(input)?));
         }
         if is_fn_head(&ahead)? {
             return Ok(Self::Fn(parse_fn_item(input)?));
@@ -193,7 +196,7 @@ impl ParsedItem {
             Self::Static(item) => Ok(ForeignItem::Static(item)),
             Self::Impl(item) => normalize_impl(item).map(ForeignItem::Impl),
             Self::Fn(item) => normalize_fn(item).map(ForeignItem::Fn),
-            Self::Callback(item) => Err(syn::Error::new_spanned(
+            Self::Raw(item) => Err(syn::Error::new_spanned(
                 item.sig.ident,
                 "raw function declarations must be collected before normalization",
             )),
@@ -243,7 +246,6 @@ fn parse_type_alias(input: ParseStream) -> syn::Result<TypeAlias> {
     input.parse::<syn::Token![=]>()?;
 
     input.parse::<syn::Ident>()?;
-    let raw_abi = input.peek(LitStr).then(|| input.parse()).transpose()?;
     let mut raw_sig = TokenStream::new();
     while !input.is_empty() && !input.peek(syn::Token![;]) {
         raw_sig.extend(core::iter::once(input.parse::<TokenTree>()?));
@@ -262,7 +264,7 @@ fn parse_type_alias(input: ParseStream) -> syn::Result<TypeAlias> {
             if args.delimiter() != Delimiter::Parenthesis {
                 return Err(syn::Error::new(
                     args.span(),
-                    "expected callback argument list",
+                    "expected raw function argument list",
                 ));
             }
             let RawFnTypeArgs(args_list) = syn::parse2(args.stream())?;
@@ -281,7 +283,7 @@ fn parse_type_alias(input: ParseStream) -> syn::Result<TypeAlias> {
     }
     signature_tokens.extend(quote!(;));
     if !saw_fn {
-        return Err(input.error("expected `fn` after `raw` in callback type alias"));
+        return Err(input.error("expected `fn` after `raw` in raw function type alias"));
     }
     let mut fn_attrs = Vec::new();
     let parser = |input: ParseStream| {
@@ -296,7 +298,6 @@ fn parse_type_alias(input: ParseStream) -> syn::Result<TypeAlias> {
         vis,
         ident,
         generics,
-        raw_abi,
         sig: Box::new(signature),
         move_fn: fn_attrs.iter().any(crate::ffi_fn::is_by_val_attr),
     })
@@ -308,9 +309,6 @@ fn is_raw_function_type(input: ParseStream) -> syn::Result<bool> {
     }
     let fork = input.fork();
     fork.parse::<syn::Ident>()?;
-    if fork.peek(LitStr) {
-        fork.parse::<LitStr>()?;
-    }
     is_fn_head(&fork)
 }
 
@@ -322,13 +320,11 @@ fn parse_optional_generics(input: ParseStream) -> syn::Result<syn::Generics> {
     }
 }
 
-fn parse_callback_item(input: ParseStream) -> Result<CallbackDecl> {
+fn parse_raw_fn_item(input: ParseStream) -> Result<RawFnDecl> {
     let mut attrs = input.call(Attribute::parse_outer)?;
     let vis = input.parse::<syn::Visibility>()?;
     let keyword = input.parse::<syn::Ident>()?;
     debug_assert_eq!(keyword, "raw");
-    let raw_abi = input.peek(LitStr).then(|| input.parse()).transpose()?;
-
     let sig = parse_signature(input, &mut attrs)?;
     if input.peek(syn::token::Brace) {
         return Err(input.error(FN_BODIES_NOT_ALLOWED_MSG));
@@ -336,10 +332,9 @@ fn parse_callback_item(input: ParseStream) -> Result<CallbackDecl> {
     input.parse::<syn::Token![;]>()?;
 
     let ident = &sig.ident;
-    Ok(CallbackDecl {
+    Ok(RawFnDecl {
         attrs,
         vis,
-        raw_abi,
         callee: quote!(#ident),
         sig,
         owner: None,
@@ -377,6 +372,7 @@ fn normalize_impl(mut item: ItemImpl) -> Result<crate::Co3Impl> {
 
     Ok(crate::Co3Impl {
         item,
+        import_mode: crate::ImportMode::Regular,
         dispatch_args,
         method_dispatch_args,
     })
@@ -391,6 +387,7 @@ fn normalize_fn(mut item: ItemFn) -> Result<crate::Co3Fn> {
 
     Ok(crate::Co3Fn {
         item,
+        import_mode: crate::ImportMode::Regular,
         dispatch_args,
     })
 }
@@ -502,6 +499,23 @@ impl ParsedInput {
             features,
             failure_mode,
             attrs,
+            items,
+        })
+    }
+}
+
+impl ParsedRawInput {
+    pub(crate) fn parse(tokens: TokenStream) -> Result<Self> {
+        let FfiBody { mut attrs, items } = parse_ffi_body(tokens)?;
+        let failure_mode = parse_failure_attr(&mut attrs)?;
+        if let Some(attr) = attrs.first() {
+            return Err(syn::Error::new_spanned(
+                attr,
+                "unsupported `raw!` block attribute",
+            ));
+        }
+        Ok(Self {
+            failure_mode,
             items,
         })
     }
@@ -1682,20 +1696,13 @@ fn parse_impl_item(input: syn::parse::ParseStream) -> syn::Result<ItemImpl> {
             let ahead = input.fork();
             if ahead.peek(syn::Ident) && ahead.parse::<syn::Ident>()? == "raw" {
                 let _: syn::Ident = input.parse()?;
-                let raw_abi = input
-                    .peek(LitStr)
-                    .then(|| input.parse::<LitStr>())
-                    .transpose()?;
                 let sig = parse_signature(input, &mut attrs)?;
                 if input.peek(syn::token::Brace) {
                     return Err(input.error(FN_BODIES_NOT_ALLOWED_MSG));
                 }
                 input.parse::<syn::Token![;]>()?;
                 let marker = Ident::new(RAW_IMPL_ITEM_ATTR, proc_macro2::Span::call_site());
-                attrs.push(match raw_abi {
-                    Some(raw_abi) => parse_quote!(#[#marker = #raw_abi]),
-                    None => parse_quote!(#[#marker]),
-                });
+                attrs.push(parse_quote!(#[#marker]));
                 out.extend(quote!(#(#attrs)* #vis #sig {}));
                 continue;
             }
