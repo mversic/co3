@@ -36,6 +36,11 @@ ffi! {
 mod imported {
     use super::*;
 
+    trait Selected<const N: usize> {
+        fn first(&self);
+        fn second(&self);
+    }
+
     #[derive(RustSpec, ReprC)]
     #[repr(transparent)]
     struct Host<const N: usize>(u32, PhantomData<[u32; N]>);
@@ -54,6 +59,30 @@ mod imported {
         {
             #[symbol_name = "const_method_{N}"]
             pub fn method(&self);
+
+            #[symbol_name = "const_other_method_{N}"]
+            pub fn other_method(&self);
+
+            #[symbol_name = "const_selected_method_{N}_{M}"]
+            pub fn selected_method<const M: usize>()
+            where
+                use<M> @ (<1> | <2>);
+
+            #[symbol_name = "const_dependent_method_{N}_{M}"]
+            pub fn dependent_method<const M: usize>()
+            where
+                use<M> @ <{ N }>;
+        }
+
+        impl<const N: usize> Selected<N> for Host<N>
+        where
+            use<N> @ (<1> | <2>),
+        {
+            #[symbol_name = "const_selected_first_{N}"]
+            fn first(&self);
+
+            #[symbol_name = "const_selected_second_{N}"]
+            fn second(&self);
         }
 
         impl Host<1> {

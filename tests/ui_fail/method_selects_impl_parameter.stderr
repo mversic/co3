@@ -1,0 +1,11 @@
+error: dispatch parameter is not declared on this item
+  --> tests/ui_fail/method_selects_impl_parameter.rs:16:17
+   |
+16 |             use<N> @ <1>;
+   |                 ^
+
+error: dispatch parameter is not declared on this item
+  --> tests/ui_fail/method_selects_impl_parameter.rs:20:17
+   |
+20 |             use<N> @ <2>;
+   |                 ^

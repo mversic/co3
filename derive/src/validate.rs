@@ -1036,10 +1036,6 @@ fn validate_shared_impl(impl_: &crate::Co3Impl, validate_unpacks: bool) -> Resul
         if let Err(err) = ensure_no_tag_arg_attrs(sig) {
             push_error(&mut errors, err);
         }
-        if impl_.trait_.is_some() && has_non_lifetime_generics(&sig.generics) {
-            let err_msg = "trait methods cannot have generic type or const parameters";
-            push_error(&mut errors, Error::new_spanned(&sig.generics, err_msg));
-        }
         if let Err(err) = validate_signature_shape(sig) {
             push_error(&mut errors, err);
         }

@@ -1,0 +1,61 @@
+error[E0080]: evaluation panicked: exported associated constant differs from its declaration
+  --> tests/ui_fail/export_associated_const_mismatch.rs:12:5
+   |
+12 | /     ffi! {
+13 | |         #![unsafe(export("C"))]
+14 | |
+15 | |         impl Host {
+...  |
+18 | |     }
+   | |_____^ evaluation of `concrete::_::_` failed here
+
+error[E0080]: evaluation panicked: exported associated constant differs from its declaration
+  --> tests/ui_fail/export_associated_const_mismatch.rs:38:5
+   |
+38 | /     ffi! {
+39 | |         #![unsafe(export("C"))]
+40 | |
+41 | |         impl<T> Value for Host<T>
+...  |
+47 | |     }
+   | |_____^ evaluation of `static_selection::_::_` failed here
+
+error[E0080]: evaluation panicked: exported associated constant differs from its declaration
+  --> tests/ui_fail/export_associated_const_mismatch.rs:75:5
+   |
+75 | /     ffi! {
+76 | |         #![unsafe(export("C"))]
+77 | |
+78 | |         impl<dyn(u8) T> Value for Host<T>
+...  |
+84 | |     }
+   | |_____^ evaluation of `runtime_selection::_::_` failed here
+
+error[E0015]: cannot call non-const operator in constants
+   --> tests/ui_fail/export_associated_const_mismatch.rs:99:5
+    |
+ 99 | /     ffi! {
+100 | |         #![unsafe(export("C"))]
+101 | |
+102 | |         impl Host {
+...   |
+105 | |     }
+    | |_____^
+    |
+note: impl defined here, but it is not `const`
+   --> tests/ui_fail/export_associated_const_mismatch.rs:90:14
+    |
+ 90 |     #[derive(PartialEq)]
+    |              ^^^^^^^^^
+    = note: calls in constants are limited to constant functions, tuple structs and tuple variants
+
+error[E0080]: evaluation panicked: exported associated constant differs from its declaration
+   --> tests/ui_fail/export_associated_const_mismatch.rs:121:5
+    |
+121 | /     ffi! {
+122 | |         #![unsafe(export("C"))]
+123 | |
+124 | |         impl<const N: usize> Value for Host<N>
+...   |
+130 | |     }
+    | |_____^ evaluation of `const_generic_selection::_::_` failed here

@@ -238,7 +238,7 @@ raw! {
 
 #[test]
 fn zero_argument_callback_decodes_result() {
-    let callback: unsafe extern "C" fn() -> u32 = return_forty_two;
+    let callback: unsafe extern "C" fn() -> _ = return_forty_two;
     let result: Option<u32> = unsafe { callback.call() };
     assert_eq!(result, Some(42));
 }
@@ -257,18 +257,18 @@ fn stored_c_callback_accepts_rust_reference() {
     let result: Option<u32> = unsafe { callback.0.unwrap().call(&value) };
     assert_eq!(result, Some(42));
 
-    let void_callback: unsafe extern "C" fn(*const u32) = ignore_pointer;
+    let void_callback: unsafe extern "C" fn(_) = ignore_pointer;
     let result: Option<()> = unsafe { void_callback.call(&value) };
     assert_eq!(result, Some(()));
 
-    let system_callback: unsafe extern "system" fn(*const u32) -> u32 = increment_system;
+    let system_callback: unsafe extern "system" fn(_) -> _ = increment_system;
     let result: Option<u32> = unsafe { system_callback.call(&value) };
     assert_eq!(result, Some(43));
 }
 
 #[test]
 fn callback_returns_rust_reference() {
-    let callback: unsafe extern "C" fn(*const u32) -> *const u32 = return_pointer;
+    let callback: unsafe extern "C" fn(_) -> _ = return_pointer;
     let value = 42_u32;
     let result: Option<&u32> = unsafe { callback.call(&value) };
 
@@ -277,7 +277,7 @@ fn callback_returns_rust_reference() {
 
 #[test]
 fn soft_call_synchronizes_mutable_argument() {
-    let callback: unsafe extern "C" fn(*mut ReprCOption<u8>) -> u32 = update_option;
+    let callback: unsafe extern "C" fn(_) -> _ = update_option;
     let mut value = Some(1_u8);
 
     let result: Option<u32> = unsafe { callback.soft_call(&mut value) };
@@ -296,24 +296,11 @@ fn multi_argument_callbacks_encode_each_argument() {
     assert_two_args::<unsafe extern "C" fn(*const u32, u32) -> u32>();
 
     let value = 40_u32;
-    let callback: unsafe extern "C" fn(*const u32, u32) -> u32 = add_from_pointer;
+    let callback: unsafe extern "C" fn(_, _) -> _ = add_from_pointer;
     let result: Option<u32> = unsafe { callback.call(&value, 2_u32) };
     assert_eq!(result, Some(42));
 
-    let callback: unsafe extern "C" fn(
-        u32,
-        u32,
-        u32,
-        u32,
-        u32,
-        u32,
-        u32,
-        u32,
-        u32,
-        u32,
-        u32,
-        u32,
-    ) -> u32 = sum_twelve;
+    let callback: unsafe extern "C" fn(_, _, _, _, _, _, _, _, _, _, _, _) -> _ = sum_twelve;
     let result: Option<u32> = unsafe {
         callback.call(
             1_u32, 2_u32, 3_u32, 4_u32, 5_u32, 6_u32, 7_u32, 8_u32, 9_u32, 10_u32, 11_u32, 12_u32,

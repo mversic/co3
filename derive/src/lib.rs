@@ -214,6 +214,16 @@ impl DispatchGroups {
             .any(|params| params.iter().any(|candidate| candidate == param))
     }
 
+    pub(crate) fn visit_targets_mut(&mut self, mut visit: impl FnMut(&mut syn::GenericArgument)) {
+        for targets in self.groups.values_mut() {
+            for target in targets {
+                for argument in &mut target.args {
+                    visit(argument);
+                }
+            }
+        }
+    }
+
     pub(crate) fn concretize_self(&mut self, self_ty: &syn::Type) {
         let mut concretizer = crate::ffi_fn::SelfConcretizer { self_ty };
         for targets in self.groups.values_mut() {
@@ -597,10 +607,34 @@ pub fn ffi(input: TokenStream) -> Result<TokenStream> {
     ))
 }
 
-/// Generate lowered function companions from existing functions.
+/// Generate C-compatbile companions from existing functions.
 ///
-/// Companion declarations name existing functions and generate `extern "C"` functions.
-/// Their argument and return ABI traits are checked when used through CO3's FFI machinery.
+/// Companion declarations name existing functions and generate `extern "C"` functions. Each
+/// declaration produces an `unsafe` function named `{name}_raw` where `name` is the name of the
+/// existing function. The arguments and the return type of the generated function are lowered into
+/// their C-compatbile forms
+///
+/// # Example
+///
+/// ```rust
+/// use co3::ops::CFn1;
+///
+/// fn increment(value: Box<u8>) -> u8 {
+///     *value + 1
+/// }
+///
+/// co3::raw! {
+///     pub fn increment(value: move Box<u8>) -> u8;
+/// }
+///
+/// // Coerce fn item into fn pointer to use `CFn1::call`
+/// let companion: unsafe extern "C" fn(_) -> _ = increment_raw;
+///
+/// // Companion fn pointer call accepts regular Rust types via `CFn1::call`
+/// let result: u8 = unsafe { companion.call(Box::new(41_u8)) }.unwrap();
+///
+/// assert_eq!(result, 42);
+/// ```
 #[manyhow]
 #[proc_macro]
 pub fn raw(input: TokenStream) -> Result<TokenStream> {

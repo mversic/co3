@@ -2,7 +2,7 @@
 
 ## 1. Design Goal
 
-`co3` is a Rust-side framework for _safely_ exporting/importing C ABI functions by:
+`co3` is a Rust-side framework for _safely_ exporting/importing functions across FFI boundary by:
 
 - Mapping Rust types to C-compatible types via `ReprC` derive macro.
 - Writing export/extern FFI declarations via `ffi!` fn-like macro.
@@ -38,21 +38,33 @@ Each mode makes explicit tradeoffs and is selected through compile-time configur
 - Uses intermediate owned/cloned values and store synchronization for mutable writeback paths.
 - Pointer identity is not preserved and pointer equality for these types **MUST NOT** be relied on.
 
-3. **Tagged dispatch (opt-in, on impl blocks, free functions, and inherent methods)**
+3. **Tagged dispatch (opt-in, on impl blocks, free functions, and methods)**
 - Enables tagged generic dispatch where type's C-compatible representation is erased into a shared type and reinterpreted back via the tag value.
 - Dispatched generics are defined by `<dyn({TagTy}) T = {ErasedTy}>` where `ErasedTy::CType` constrains size and alignment of erased types.
 - A `use<T, ...> @ (<Param1> | ...)` where predicate declares the concrete types dispatched that have a tag value (use `#[tag(Type, unsafe(Val))]`).
 
 ## 2. Public API
 
-Public API constitutes user-facing macros (namely `#[derive(ReprC)]` and `ffi!`).
+Public API constitutes user-facing macros (namely `#[derive(ReprC)]`, `ffi!`, and `raw!`) and companion structs.
 Any generated glue code **MUST** remain private and **MUST NOT** leak into the public API.
 Any conversion written manually against traits of this crate **DOES NOT** constitute public API.
 
-### 2.1. `ffi!`
+### 2.1. `#[derive(ReprC)]`
+
+`#[derive(ReprC)]` derives implementations required to convert a type to a corresponding generated C-compatible companion type.
+A C-compatible companion type has a defined foreign representation and no trap representations, and its fields are themselves C-compatible companion types. Function pointers may retain a non-C calling convention.
+
+- By default, the derive defines a C-compatible companion type and conversions between the two types.
+- Function pointers implement `ReprC` only when they already use a supported non-Rust ABI and each argument implements `CFnArg` and the return implements `CFnReturn`. Their `CType` is `Option<Self>` so null is representable, and they support identity `Encode`/`Decode`. Rust-ABI pointers and foreign-ABI pointers with arguments or returns that require lowering do not implement `ReprC`; `raw extern "ABI" fn` aliases can declare lowered pointer types explicitly.
+- `#[repr_c(identity)]` uses a `#[repr(C)]` or `#[repr(transparent)]` struct directly as its companion.
+- Conversion of types with explicit representation (i.e. `#[repr(C)]`/`repr(transmute)`) are optimized.
+- `#[repr_c(is_valid = |field0, ...| {...})]` provides additional validity invariant of a struct/variant.
+- `#[repr_c(NICHE_VALUE = <expr>)]` defines the struct's trap value that is used for niche optimization.
+
+### 2.2. `ffi!`
 
 `ffi!` is a fn-like macro that enables writing export/extern declarations of types, methods and impl blocks, and extern declarations of statics.
-It must always start with a declaration of direction and ABI (e.g. `#![unsafe(export("system"))]`/`#![unsafe(extern("system"))]`).
+It must always start with a declaration of direction and ABI (e.g. `#![unsafe(export("system"))]` or `#![unsafe(extern("system"))]`).
 
 - `#[cfg]` and `#[cfg_attr]` are fully supported in all attribute positions inside the `ffi` macro.
 - `#![unsafe(export("ABI"))]` creates export declarations with the given ABI. The declared items must exist and be resolvable.
@@ -70,20 +82,18 @@ It must always start with a declaration of direction and ABI (e.g. `#![unsafe(ex
 - `#[tag(TagTy)]` on a type declaration defines its tag type; `#[tag(TagTy, unsafe(val))]` also assigns its tag value.
 - `where use<T, ...> @ (<Type1> | ...)` opts into a kind of polymorphic dispatch where concrete types are known at compile time but erased at runtime.
 - `#[unpack(_, _)]` on an imported function argument unpacks the compound type into two funcion arguments (facilitates useing `&[T]` in legacy APIs).
-- `raw fn name(...) -> RetTy;` declarations generate a C-compatible companion function named `name_raw` using the enclosing declaration ABI.
-- `raw "ABI" fn` overrides the companion ABI. An `extern "ABI"` on the same declaration describes the wrapped function's ABI.
+- type aliases are supported and allow using the `raw fn` pointer syntax which inclues argument and output value explicit `move` semantics.
 - Using the `ffi` macro always carries a risk of UB as it relies on the correct user-provided argument types and lifetimes in the ABI.
 
-### 2.2. `#[derive(ReprC)]`
+### 2.3. `raw!`
 
-`#[derive(ReprC)]` derives implementations required to convert a type to a corresponding generated C-compatible companion type.
-A C-compatible companion type is a type with a defined C ABI and no trap representations, whose fields are themselves C-compatible companion types.
+`raw!` generates `extern "C"` companion functions for existing functions with lowered argument and return representations. It accepts function and method declarations:
 
-- By default, the derive defines a C-compatible companion type and conversions between the two types.
-- `#[repr_c(identity)]` uses a `#[repr(C)]` or `#[repr(transparent)]` struct directly as its companion.
-- Conversion of types with explicit representation (i.e. `#[repr(C)]`/`repr(transmute)`) are optimized.
-- `#[repr_c(is_valid = |field0, ...| {...})]` provides additional validity invariant of a struct/variant.
-- `#[repr_c(NICHE_VALUE = <expr>)]` defines the struct's trap value that is used for niche optimization.
+- `#[cfg]` and `#[cfg_attr]` are fully supported in all attribute positions inside the `ffi` macro.
+- the macro supports both `#[soft]` and `move` semantics with constraints matching the `ffi!` macro.
+- each declaration generates a C-compatible companion function lowered argument and output types.
+- A companion declaration generates an unsafe fn `name_raw` from an existing fn named `name`.
+- `#![failure = "panic" | "error"]` controls companion failure behavior, as in `ffi!`.
 
 ## 3. Tagged Dispatch
 

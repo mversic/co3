@@ -1,0 +1,199 @@
+error[E0576]: cannot find associated type `Other` in trait `Assoc`
+   --> tests/ui_fail/export_associated_type_mismatch.rs:299:18
+    |
+286 |         type Item;
+    |         ---------- associated type `Item` defined here
+...
+299 |             type Other = u8;
+    |                  ^^^^^ not found in `Assoc`
+    |
+help: maybe you meant this associated type
+    |
+299 -             type Other = u8;
+299 +             type Item = u8;
+    |
+
+error[E0308]: mismatched types
+  --> tests/ui_fail/export_associated_type_mismatch.rs:16:5
+   |
+16 | /     ffi! {
+17 | |         #![unsafe(export("C"))]
+18 | |
+19 | |         impl Assoc for Host {
+...  |
+22 | |     }
+   | |_____^ expected `PhantomData<*mut u8>`, found `PhantomData<*mut u16>`
+   |
+   = note: expected struct `PhantomData<*mut u8>`
+              found struct `PhantomData<*mut u16>`
+   = note: this error originates in the macro `ffi` (in Nightly builds, run with -Z macro-backtrace for more info)
+
+error[E0308]: mismatched types
+  --> tests/ui_fail/export_associated_type_mismatch.rs:42:5
+   |
+42 | /     ffi! {
+43 | |         #![unsafe(export("C"))]
+44 | |
+45 | |         impl<T> Assoc for Host<T>
+...  |
+51 | |     }
+   | |_____^ expected `PhantomData<*mut u8>`, found `PhantomData<*mut u16>`
+   |
+   = note: expected struct `PhantomData<*mut u8>`
+              found struct `PhantomData<*mut u16>`
+   = note: this error originates in the macro `ffi` (in Nightly builds, run with -Z macro-backtrace for more info)
+
+error[E0308]: mismatched types
+  --> tests/ui_fail/export_associated_type_mismatch.rs:79:5
+   |
+79 | /     ffi! {
+80 | |         #![unsafe(export("C"))]
+81 | |
+82 | |         impl<dyn(u8) T> Assoc for Host<T>
+...  |
+88 | |     }
+   | |_____^ expected `PhantomData<*mut Second>`, found `PhantomData<*mut First>`
+   |
+   = note: expected struct `PhantomData<*mut Second>`
+              found struct `PhantomData<*mut First>`
+   = note: this error originates in the macro `ffi` (in Nightly builds, run with -Z macro-backtrace for more info)
+
+error[E0308]: mismatched types
+   --> tests/ui_fail/export_associated_type_mismatch.rs:104:5
+    |
+104 | /     ffi! {
+105 | |         #![unsafe(export("C"))]
+106 | |
+107 | |         impl Assoc for Host {
+...   |
+110 | |     }
+    | |_____^ expected `PhantomData<*mut (T, u8)>`, found `PhantomData<*mut (T, u16)>`
+    |
+    = note: expected struct `PhantomData<*mut (T, u8)>`
+               found struct `PhantomData<*mut (T, u16)>`
+    = note: this error originates in the macro `ffi` (in Nightly builds, run with -Z macro-backtrace for more info)
+
+error[E0308]: mismatched types
+   --> tests/ui_fail/export_associated_type_mismatch.rs:150:5
+    |
+150 | /     ffi! {
+151 | |         #![unsafe(export("C"))]
+152 | |
+153 | |         impl Assoc for Host {
+...   |
+156 | |     }
+    | |_____^ expected `PhantomData<*mut [u8; N]>`, found `PhantomData<*mut [u16; N]>`
+    |
+    = note: expected struct `PhantomData<*mut [u8; N]>`
+               found struct `PhantomData<*mut [u16; N]>`
+    = note: this error originates in the macro `ffi` (in Nightly builds, run with -Z macro-backtrace for more info)
+
+error[E0308]: mismatched types
+   --> tests/ui_fail/export_associated_type_mismatch.rs:179:5
+    |
+179 | /     ffi! {
+180 | |         #![unsafe(export("C"))]
+181 | |
+182 | |         impl Assoc for Host {
+...   |
+186 | |     }
+    | |_____^ expected `PhantomData<*mut (T, u8)>`, found `PhantomData<*mut (T, u16)>`
+    |
+    = note: expected struct `PhantomData<*mut (T, u8)>`
+               found struct `PhantomData<*mut (T, u16)>`
+    = note: this error originates in the macro `ffi` (in Nightly builds, run with -Z macro-backtrace for more info)
+
+error[E0308]: mismatched types
+   --> tests/ui_fail/export_associated_type_mismatch.rs:204:5
+    |
+204 | /     ffi! {
+205 | |         #![unsafe(export("C"))]
+206 | |
+207 | |         impl Assoc for Host {
+...   |
+211 | |     }
+    | |_____^ expected `PhantomData<*mut u8>`, found `PhantomData<*mut u16>`
+    |
+    = note: expected struct `PhantomData<*mut u8>`
+               found struct `PhantomData<*mut u16>`
+    = note: this error originates in the macro `ffi` (in Nightly builds, run with -Z macro-backtrace for more info)
+
+error[E0308]: mismatched types
+   --> tests/ui_fail/export_associated_type_mismatch.rs:231:5
+    |
+231 | /     ffi! {
+232 | |         #![unsafe(export("C"))]
+233 | |
+234 | |         impl Assoc for Host {
+...   |
+239 | |     }
+    | |_____^ expected `PhantomData<*mut u8>`, found `PhantomData<*mut u16>`
+    |
+    = note: expected struct `PhantomData<*mut u8>`
+               found struct `PhantomData<*mut u16>`
+    = note: this error originates in the macro `ffi` (in Nightly builds, run with -Z macro-backtrace for more info)
+
+error[E0308]: mismatched types
+   --> tests/ui_fail/export_associated_type_mismatch.rs:231:5
+    |
+231 | /     ffi! {
+232 | |         #![unsafe(export("C"))]
+233 | |
+234 | |         impl Assoc for Host {
+...   |
+239 | |     }
+    | |_____^ expected `PhantomData<*mut Option<u8>>`, found `PhantomData<*mut Option<u16>>`
+    |
+    = note: expected struct `PhantomData<*mut Option<u8>>`
+               found struct `PhantomData<*mut Option<u16>>`
+    = note: this error originates in the macro `ffi` (in Nightly builds, run with -Z macro-backtrace for more info)
+
+error[E0308]: mismatched types
+   --> tests/ui_fail/export_associated_type_mismatch.rs:255:5
+    |
+255 | /     ffi! {
+256 | |         #![unsafe(export("C"))]
+257 | |
+258 | |         impl Assoc for Host {
+...   |
+261 | |     }
+    | |_____^ expected `PhantomData<*mut str>`, found `PhantomData<*mut [u8]>`
+    |
+    = note: expected struct `PhantomData<*mut str>`
+               found struct `PhantomData<*mut [u8]>`
+    = note: this error originates in the macro `ffi` (in Nightly builds, run with -Z macro-backtrace for more info)
+
+error[E0277]: the trait bound `missing_impl::Host: missing_impl::Assoc` is not satisfied
+   --> tests/ui_fail/export_associated_type_mismatch.rs:276:24
+    |
+276 |         impl Assoc for Host {
+    |                        ^^^^ unsatisfied trait bound
+    |
+help: the trait `missing_impl::Assoc` is not implemented for `missing_impl::Host`
+   --> tests/ui_fail/export_associated_type_mismatch.rs:271:5
+    |
+271 |     struct Host;
+    |     ^^^^^^^^^^^
+help: this trait has no implementations, consider adding one
+   --> tests/ui_fail/export_associated_type_mismatch.rs:267:5
+    |
+267 |     trait Assoc {
+    |     ^^^^^^^^^^^
+
+error: lifetime may not live long enough
+   --> tests/ui_fail/export_associated_type_mismatch.rs:128:5
+    |
+128 | /     ffi! {
+129 | |         #![unsafe(export("C"))]
+130 | |
+131 | |         impl Assoc for Host {
+132 | |             type Item<'a> = &'a u8;
+    | |                       -- lifetime `'a` defined here
+133 | |         }
+134 | |     }
+    | |_____^ type annotation requires that `'a` must outlive `'static`
+    |
+    = note: requirement occurs because of a mutable pointer to `&u8`
+    = note: mutable pointers are invariant over their type parameter
+    = help: see <https://doc.rust-lang.org/nomicon/subtyping.html> for more information about variance
+    = note: this error originates in the macro `ffi` (in Nightly builds, run with -Z macro-backtrace for more info)

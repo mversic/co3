@@ -59,7 +59,8 @@ fn combine_dispatch_generics(
     combined
 }
 
-fn split_dyn_methods(mut impl_: Co3Impl) -> (Co3Impl, Vec<Co3Impl>) {
+/// Separate methods with their own dispatch from methods using only impl-level dispatch.
+fn partition_method_dispatch(mut impl_: Co3Impl) -> (Co3Impl, Vec<Co3Impl>) {
     let impl_dispatch_args = impl_.dispatch_args.clone();
     let mut plain_items = Vec::new();
     let mut dispatched = Vec::new();
@@ -211,10 +212,15 @@ fn monomorphize_static_impl_bindings(
         .into_iter()
         .map(|(static_args, dynamic_args)| {
             let mut binding = dispatch.clone();
+            let mut dynamic_args = dynamic_args;
             static_args.for_each_combination(|selections| {
                 let mut monomorphizer =
                     DispatchMonomorphizer::for_static_dispatch_group(&generics, selections);
                 monomorphizer.visit_item_impl_mut(&mut binding.item);
+                dynamic_args.visit_targets_mut(|arg| monomorphizer.visit_generic_argument_mut(arg));
+                for groups in binding.method_dispatch_args.values_mut() {
+                    groups.visit_targets_mut(|arg| monomorphizer.visit_generic_argument_mut(arg));
+                }
                 for item in &mut binding.item.items {
                     let syn::ImplItem::Fn(method) = item else {
                         continue;
@@ -304,28 +310,6 @@ fn monomorphize_static_fn_bindings(
         .collect()
 }
 
-fn materialize_dispatch_impl_bindings(dispatch: Co3Impl, receiver: &syn::Ident) -> Vec<Co3Impl> {
-    let generics = dispatch.generics.clone();
-    let dispatch_args = dispatch.dispatch_args.bindings_for(receiver);
-    let mut bindings = Vec::new();
-    dispatch_args.for_each_combination(|selections| {
-        let mut binding = dispatch.clone();
-        DispatchMonomorphizer::for_dispatch_group(&generics, selections)
-            .visit_item_impl_mut(&mut binding.item);
-        binding.item.generics.params = core::mem::take(&mut binding.item.generics.params)
-            .into_iter()
-            .filter(|param| match param {
-                syn::GenericParam::Lifetime(_) => true,
-                syn::GenericParam::Type(param) => !dispatch_args.contains_param(&param.ident),
-                syn::GenericParam::Const(param) => !dispatch_args.contains_param(&param.ident),
-            })
-            .collect();
-        binding.dispatch_args = DispatchGroups::default();
-        bindings.push(binding);
-    });
-    bindings
-}
-
 fn materialize_dyn_self_receiver(impl_: &mut ItemImpl) {
     let Some(bound) = crate::trait_object_single_trait_bound(&impl_.self_ty) else {
         return;
@@ -342,6 +326,157 @@ fn materialize_declared_dyn_self(impl_: &mut ItemImpl, declared_self: bool) -> b
     dyn_self
 }
 
+struct ExportAssociatedSelfConcretizer<'a> {
+    self_ty: &'a syn::Type,
+    trait_path: Option<&'a syn::Path>,
+}
+
+impl VisitMut for ExportAssociatedSelfConcretizer<'_> {
+    fn visit_type_mut(&mut self, ty: &mut syn::Type) {
+        syn::visit_mut::visit_type_mut(self, ty);
+        let syn::Type::Path(syn::TypePath {
+            qself: None, path, ..
+        }) = ty
+        else {
+            return;
+        };
+        if !path
+            .segments
+            .first()
+            .is_some_and(|segment| segment.ident == "Self")
+        {
+            return;
+        }
+        if path.segments.len() == 1 {
+            *ty = self.self_ty.clone();
+            return;
+        }
+        let mut rest = syn::Path {
+            leading_colon: None,
+            segments: Default::default(),
+        };
+        rest.segments.extend(path.segments.iter().skip(1).cloned());
+        let self_ty = self.self_ty;
+        *ty = if let Some(trait_path) = self.trait_path {
+            syn::parse_quote!(<#self_ty as #trait_path>::#rest)
+        } else {
+            syn::parse_quote!(<#self_ty>::#rest)
+        };
+    }
+
+    fn visit_expr_path_mut(&mut self, expr: &mut syn::ExprPath) {
+        syn::visit_mut::visit_expr_path_mut(self, expr);
+        if expr.qself.is_some()
+            || !expr
+                .path
+                .segments
+                .first()
+                .is_some_and(|segment| segment.ident == "Self")
+        {
+            return;
+        }
+        let mut rest = syn::Path {
+            leading_colon: None,
+            segments: Default::default(),
+        };
+        rest.segments
+            .extend(expr.path.segments.iter().skip(1).cloned());
+        let self_ty = self.self_ty;
+        *expr = if let Some(trait_path) = self.trait_path {
+            syn::parse_quote!(<#self_ty as #trait_path>::#rest)
+        } else {
+            syn::parse_quote!(<#self_ty>::#rest)
+        };
+    }
+}
+
+fn gen_export_associated_item_checks(dispatch: &Co3Impl) -> TokenStream {
+    if !dispatch
+        .items
+        .iter()
+        .any(|item| matches!(item, ImplItem::Type(_) | ImplItem::Const(_)))
+    {
+        return TokenStream::new();
+    }
+
+    let mut checks = Vec::new();
+    dispatch.dispatch_args.for_each_combination(|selections| {
+        let mut selected = dispatch.item.clone();
+        concretize_selected_impl(
+            &dispatch.generics,
+            &dispatch.dispatch_args,
+            selections,
+            &mut selected,
+        );
+        let self_ty = &selected.self_ty;
+        let trait_path = selected.trait_.as_ref().map(|(path, _)| path);
+        let impl_attrs = cfg_attrs(&selected.attrs).collect::<Vec<_>>();
+        for item in &selected.items {
+            let mut concretizer = ExportAssociatedSelfConcretizer {
+                self_ty,
+                trait_path,
+            };
+            match item {
+                ImplItem::Type(item) => {
+                    let ident = &item.ident;
+                    let mut declared = item.ty.clone();
+                    concretizer.visit_type_mut(&mut declared);
+                    let mut generics =
+                        combine_dispatch_generics(Some(&selected.generics), &item.generics);
+                    concretizer.visit_generics_mut(&mut generics);
+                    generics
+                        .type_params_mut()
+                        .for_each(strip_internal_generic_param);
+                    let (fn_generics, _, where_clause) = generics.split_for_impl();
+                    let assoc_args = dispatch_trait_args(&item.generics);
+                    let assoc_args = (!assoc_args.is_empty()).then(|| quote!(<#assoc_args>));
+                    let actual = if let Some(trait_path) = trait_path {
+                        quote!(<#self_ty as #trait_path>::#ident #assoc_args)
+                    } else {
+                        quote!(<#self_ty>::#ident #assoc_args)
+                    };
+                    let item_attrs = cfg_attrs(&item.attrs);
+                    checks.push(quote! {
+                        #(#impl_attrs)*
+                        #(#item_attrs)*
+                        const _: () = {
+                            fn __co3_check_associated_type #fn_generics () #where_clause {
+                                let _: ::core::marker::PhantomData<*mut #declared> =
+                                    ::core::marker::PhantomData::<*mut #actual>;
+                            }
+                        };
+                    });
+                }
+                ImplItem::Const(item) => {
+                    let ident = &item.ident;
+                    let mut ty = item.ty.clone();
+                    let mut declared = item.expr.clone();
+                    concretizer.visit_type_mut(&mut ty);
+                    concretizer.visit_expr_mut(&mut declared);
+                    let actual = if let Some(trait_path) = trait_path {
+                        quote!(<#self_ty as #trait_path>::#ident)
+                    } else {
+                        quote!(<#self_ty>::#ident)
+                    };
+                    let item_attrs = cfg_attrs(&item.attrs);
+                    checks.push(quote! {
+                        #(#impl_attrs)*
+                        #(#item_attrs)*
+                        const _: () = {
+                            let declared: #ty = #declared;
+                            let actual: #ty = #actual;
+                            assert!(actual == declared, "exported associated constant differs from its declaration");
+                        };
+                    });
+                }
+                _ => {}
+            }
+        }
+    });
+
+    quote!(#(#checks)*)
+}
+
 fn gen_export_impl(
     abi: &syn::Abi,
     failure_mode: FailureMode,
@@ -351,7 +486,7 @@ fn gen_export_impl(
     symbol_fragments: &std::collections::BTreeMap<String, syn::LitStr>,
     declared_types: &BTreeSet<syn::Ident>,
 ) -> TokenStream {
-    let (plain, methods) = split_dyn_methods(impl_);
+    let (plain, methods) = partition_method_dispatch(impl_);
     let descriptors = core::iter::once(plain)
         .chain(methods.into_iter().map(lift_dispatch_method))
         .flat_map(split_impl_methods)
@@ -362,13 +497,16 @@ fn gen_export_impl(
                 .map(move |descriptor| (descriptor, dyn_self))
         });
     let definitions = descriptors.map(|(descriptor, dyn_self)| {
+        let associated_item_checks = gen_export_associated_item_checks(&descriptor);
         if descriptor.items.is_empty() {
             TokenStream::new()
         } else if !descriptor.dispatch_args.is_empty() || dyn_self {
             let self_id = dyn_self.then_some(type_id).flatten();
-            gen_dispatch_export(abi, failure_mode, descriptor, self_id, dyn_self)
+            let export = gen_dispatch_export(abi, failure_mode, descriptor, self_id, dyn_self);
+            quote!(#associated_item_checks #export)
         } else {
-            ffi_fn::gen_impl_definition(abi, failure_mode, descriptor.item)
+            let export = ffi_fn::gen_impl_definition(abi, failure_mode, descriptor.item);
+            quote!(#associated_item_checks #export)
         }
     });
 
@@ -381,16 +519,6 @@ fn dispatch_type_idents(generics: &syn::Generics) -> Vec<syn::Ident> {
         .filter(|param| param.attrs.iter().any(is_type_erased))
         .map(|param| param.ident.clone())
         .collect()
-}
-
-fn has_static_dispatch(generics: &syn::Generics, args: &DispatchGroups) -> bool {
-    generics.params.iter().any(|param| match param {
-        syn::GenericParam::Lifetime(_) => false,
-        syn::GenericParam::Type(param) => {
-            !param.attrs.iter().any(is_type_erased) && args.contains_param(&param.ident)
-        }
-        syn::GenericParam::Const(param) => args.contains_param(&param.ident),
-    })
 }
 
 /// Builds the dispatch-set generic arguments in source declaration order.
@@ -1672,8 +1800,7 @@ pub(crate) fn expand_extern_decls(
         mut impl_: ItemImpl,
         declared_self: bool,
         symbol_fragments: &std::collections::BTreeMap<String, syn::LitStr>,
-    ) -> TokenStream {
-        let co3 = co3_path();
+    ) -> (TokenStream, ItemImpl) {
         if import_mode == crate::ImportMode::Raw {
             // The forwarding method and the foreign declaration both consume this
             // lowered signature. Keep ABI and safety on the method only.
@@ -1709,13 +1836,7 @@ pub(crate) fn expand_extern_decls(
         attach_impl_abi_assertions(&mut import, &extern_decl);
         let extern_decl = extern_decl.iter().map(|(_, decl, _)| decl);
 
-        quote! {
-            const _: () = {
-                use #co3 as co3;
-                #(#extern_decl)*
-                #import
-            };
-        }
+        (quote!(#(#extern_decl)*), import)
     }
 
     #[expect(clippy::too_many_arguments)]
@@ -1729,7 +1850,7 @@ pub(crate) fn expand_extern_decls(
         self_id: Option<&syn::Type>,
         declared_self: bool,
         symbol_fragments: &std::collections::BTreeMap<String, syn::LitStr>,
-    ) -> TokenStream {
+    ) -> Vec<(TokenStream, ItemImpl)> {
         let mut wrapper_source = source_impl.clone();
         if declared_self {
             materialize_dyn_self_receiver(&mut wrapper_source);
@@ -1835,15 +1956,10 @@ pub(crate) fn expand_extern_decls(
                 selections,
                 &mut concrete_wrapper,
             );
-            imports.push(quote! {
-                const _: () = {
-                    #(#extern_decl_tokens)*
-                    #concrete_wrapper
-                };
-            });
+            imports.push((quote!(#(#extern_decl_tokens)*), concrete_wrapper));
         });
 
-        quote!(#(#imports)*)
+        imports
     }
 
     fn synthesize_impl_dispatch_import(
@@ -1854,7 +1970,7 @@ pub(crate) fn expand_extern_decls(
         dispatch: Co3Impl,
         declared_self: bool,
         symbol_fragments: &std::collections::BTreeMap<String, syn::LitStr>,
-    ) -> TokenStream {
+    ) -> (TokenStream, Vec<(TokenStream, ItemImpl)>) {
         let Co3Impl {
             item: mut impl_,
             import_mode,
@@ -1909,16 +2025,7 @@ pub(crate) fn expand_extern_decls(
             declared_self,
             symbol_fragments,
         );
-        let co3 = co3_path();
-
-        quote! {
-            const _: () = {
-                use #co3 as co3;
-                #checks
-
-                #imports
-            };
-        }
+        (checks, imports)
     }
 
     fn expand_dispatch_fn_import(
@@ -1982,11 +2089,12 @@ pub(crate) fn expand_extern_decls(
         failure_mode: FailureMode,
         attrs: &[syn::Attribute],
         mut dispatch: Co3Impl,
+        impl_dispatch_args: &DispatchGroups,
         declared_self: bool,
         self_id: Option<&syn::Type>,
         symbol_fragments: &std::collections::BTreeMap<String, syn::LitStr>,
         declared_types: &BTreeSet<syn::Ident>,
-    ) -> TokenStream {
+    ) -> (TokenStream, Vec<ItemImpl>) {
         let raw = dispatch.import_mode == crate::ImportMode::Raw;
         let syn::ImplItem::Fn(mut method) = dispatch.items.pop().unwrap() else {
             unreachable!()
@@ -1996,45 +2104,43 @@ pub(crate) fn expand_extern_decls(
                 .is_empty();
         let args = core::mem::take(&mut dispatch.dispatch_args);
 
-        // A bare type parameter is not a nominal type, so Rust rejects an
-        // inherent `impl<H> H`. Remember when the wrapper must be materialized
-        // for the receiver's closed dispatch selections instead. Auxiliary
-        // parameters used by those selections remain on the impl because the
-        // concrete receiver type still depends on them.
-        let materialized_receiver = (dispatch.trait_.is_none())
-            .then(|| match dispatch.self_ty.as_ref() {
-                syn::Type::Path(path) if path.qself.is_none() => path.path.get_ident(),
-                _ => None,
-            })
-            .flatten()
-            .filter(|receiver| {
-                args.contains_param(receiver)
-                    && dispatch.generics.type_params().any(|param| {
-                        param.ident == **receiver && param.attrs.iter().any(is_type_erased)
-                    })
-            })
-            .cloned();
-        let retained_impl_params = materialized_receiver
-            .iter()
-            .flat_map(|receiver| {
-                dispatch.generics.params.iter().filter_map(|param| {
-                    let ident = match param {
-                        syn::GenericParam::Type(param) => &param.ident,
-                        syn::GenericParam::Const(param) => &param.ident,
-                        syn::GenericParam::Lifetime(_) => return None,
-                    };
-                    let detector = ParamUseDetector::new([ident]);
-                    args.groups()
-                        .filter(|(params, _)| params.contains(receiver))
-                        .flat_map(|(_, targets)| targets)
-                        .flat_map(|target| &target.args)
-                        .any(|arg| detector.generic_arg_mentions_param(arg))
-                        .then(|| ident.clone())
-                })
-            })
-            .collect::<BTreeSet<_>>();
+        // A selected impl parameter can introduce another parameter into the
+        // concrete self or trait type. Keep that dependency on the impl.
+        let mut retained_impl_params = BTreeSet::new();
+        for param in &dispatch.generics.params {
+            let selected = match param {
+                syn::GenericParam::Type(param) => &param.ident,
+                syn::GenericParam::Const(param) => &param.ident,
+                syn::GenericParam::Lifetime(_) => continue,
+            };
+            let detector = ParamUseDetector::new([selected]);
+            let in_identity = detector.type_mentions_param(&dispatch.self_ty)
+                || dispatch
+                    .trait_
+                    .as_ref()
+                    .is_some_and(|(path, _)| detector.path_mentions_param(path));
+            if !in_identity || !impl_dispatch_args.contains_param(selected) {
+                continue;
+            }
+            let bindings = impl_dispatch_args.bindings_for(selected);
+            for candidate in &dispatch.generics.params {
+                let ident = match candidate {
+                    syn::GenericParam::Type(param) => &param.ident,
+                    syn::GenericParam::Const(param) => &param.ident,
+                    syn::GenericParam::Lifetime(_) => continue,
+                };
+                let detector = ParamUseDetector::new([ident]);
+                if bindings
+                    .groups()
+                    .flat_map(|(_, targets)| targets)
+                    .flat_map(|target| &target.args)
+                    .any(|arg| detector.generic_arg_mentions_param(arg))
+                {
+                    retained_impl_params.insert(ident.clone());
+                }
+            }
+        }
         move_method_only_impl_params(&mut dispatch.item, &mut method, &retained_impl_params);
-        let materialize_bare_receiver = materialized_receiver.is_some();
         if declared_self {
             materialize_dyn_self_receiver(&mut dispatch.item);
         }
@@ -2107,42 +2213,27 @@ pub(crate) fn expand_extern_decls(
             false,
         );
 
-        if materialize_bare_receiver {
-            let wrapper: ItemImpl = syn::parse2(quote! {
-                #(#impl_attrs)*
-                #[allow(unused_braces)]
-                #defaultness #unsafety impl #impl_generics #trait_ #self_ty #where_clause {
-                    #wrapper_fn
-                }
-            })
-            .expect("generated dispatch wrapper must be a valid impl");
-            let wrappers = materialize_dispatch_impl_bindings(
-                Co3Impl {
-                    item: wrapper,
-                    import_mode: dispatch.import_mode,
-                    dispatch_args: args,
-                    method_dispatch_args: Default::default(),
-                },
-                materialized_receiver.as_ref().unwrap(),
-            )
-            .into_iter()
-            .map(|wrapper| wrapper.item);
-
-            return quote! {
-                #module
-                #(#wrappers)*
-            };
-        }
-
-        quote! {
-            #module
-
+        let wrapper: ItemImpl = syn::parse2(quote! {
             #(#impl_attrs)*
             #[allow(unused_braces)]
             #defaultness #unsafety impl #impl_generics #trait_ #self_ty #where_clause {
                 #wrapper_fn
             }
-        }
+        })
+        .expect("generated dispatch wrapper must be a valid impl");
+        let mut wrappers = Vec::new();
+        impl_dispatch_args.for_each_combination(|selections| {
+            let mut selected = wrapper.clone();
+            concretize_selected_impl(
+                &dispatch.generics,
+                impl_dispatch_args,
+                selections,
+                &mut selected,
+            );
+            wrappers.push(selected);
+        });
+
+        (module, wrappers)
     }
 
     #[expect(clippy::too_many_arguments)]
@@ -2156,122 +2247,97 @@ pub(crate) fn expand_extern_decls(
         symbol_fragments: &std::collections::BTreeMap<String, syn::LitStr>,
         declared_types: &BTreeSet<syn::Ident>,
     ) -> TokenStream {
-        let (mut plain, mut methods) = split_dyn_methods(impl_);
-        let dyn_self = declared_self && trait_object_single_trait_bound(&plain.self_ty).is_some();
-        if plain.trait_.is_none() && has_static_dispatch(&plain.generics, &plain.dispatch_args) {
-            let mut retained = Vec::new();
-            for item in core::mem::take(&mut plain.item.items) {
-                let syn::ImplItem::Fn(method) = item else {
-                    retained.push(item);
-                    continue;
-                };
-                let mut method_impl = plain.item.clone();
-                method_impl.items = vec![syn::ImplItem::Fn(method)];
-                methods.push(Co3Impl {
-                    item: method_impl,
-                    import_mode: plain.import_mode,
-                    dispatch_args: plain.dispatch_args.clone(),
-                    method_dispatch_args: Default::default(),
-                });
-            }
-            plain.item.items = retained;
-        }
-        let plain = monomorphize_static_impl_bindings(plain, symbol_fragments, declared_types)
-            .into_iter()
-            .map(|descriptor| {
-                if descriptor.items.is_empty() {
-                    TokenStream::new()
-                } else if !descriptor.dispatch_args.is_empty()
-                    || has_runtime_dispatch(&descriptor.generics)
-                    || dyn_self
-                {
-                    let self_id = dyn_self.then_some(type_id).flatten();
-                    synthesize_impl_dispatch_import(
-                        abi,
-                        failure_mode,
-                        attrs,
-                        self_id,
-                        descriptor,
-                        declared_self,
-                        symbol_fragments,
-                    )
-                } else {
-                    expand_impl_import(
-                        abi,
-                        failure_mode,
-                        descriptor.import_mode,
-                        attrs,
-                        descriptor.item,
-                        declared_self,
-                        symbol_fragments,
-                    )
-                }
-            });
-        let methods = methods.into_iter().map(|method| {
-            let binds_impl_parameter = method.generics.params.iter().any(|param| match param {
-                syn::GenericParam::Lifetime(_) => false,
-                syn::GenericParam::Type(param) => {
-                    !param.attrs.iter().any(is_type_erased)
-                        && method.dispatch_args.contains_param(&param.ident)
-                }
-                syn::GenericParam::Const(param) => {
-                    method.dispatch_args.contains_param(&param.ident)
-                }
-            });
-            if binds_impl_parameter && method.trait_.is_none() {
-                let descriptors =
-                    monomorphize_static_impl_bindings(method, symbol_fragments, declared_types);
-                let imports = descriptors.into_iter().map(|descriptor| {
-                    let import = expand_dispatch_method_import(
-                        abi,
-                        failure_mode,
-                        attrs,
-                        descriptor,
-                        declared_self,
-                        type_id,
-                        symbol_fragments,
-                        declared_types,
-                    );
-                    quote!(const _: () = { #import };)
-                });
-                return quote!(#(#imports)*);
-            }
-            if binds_impl_parameter && method.trait_.is_some() {
-                let self_id = dyn_self.then_some(type_id).flatten();
-                let descriptors = monomorphize_static_impl_bindings(
-                    lift_dispatch_method(method),
+        let source_generic_count = impl_.generics.params.len();
+        let descriptors =
+            monomorphize_static_impl_bindings(impl_, symbol_fragments, declared_types);
+        let imports = descriptors.into_iter().map(|descriptor| {
+            let selected_static_impl = descriptor.generics.params.len() < source_generic_count;
+            let (plain, methods) = partition_method_dispatch(descriptor);
+            let dyn_self =
+                declared_self && trait_object_single_trait_bound(&plain.self_ty).is_some();
+            let impl_dispatch_args = plain.dispatch_args.clone();
+            let self_id = dyn_self.then_some(type_id).flatten();
+            let dispatched_impl =
+                !impl_dispatch_args.is_empty() || has_runtime_dispatch(&plain.generics) || dyn_self;
+            let (checks, mut selected_imports) = if plain.items.is_empty() {
+                (TokenStream::new(), Vec::new())
+            } else if dispatched_impl {
+                synthesize_impl_dispatch_import(
+                    abi,
+                    failure_mode,
+                    attrs,
+                    self_id,
+                    plain,
+                    declared_self,
                     symbol_fragments,
-                    declared_types,
-                );
-                let imports = descriptors.into_iter().map(|descriptor| {
-                    let import = expand_dispatch_method_import(
+                )
+            } else {
+                (
+                    TokenStream::new(),
+                    vec![expand_impl_import(
                         abi,
                         failure_mode,
+                        plain.import_mode,
                         attrs,
-                        descriptor,
+                        plain.item,
                         declared_self,
-                        self_id,
                         symbol_fragments,
-                        declared_types,
-                    );
-                    quote!(const _: () = { #import };)
-                });
-                quote!(#(#imports)*)
-            } else {
-                expand_dispatch_method_import(
+                    )],
+                )
+            };
+
+            let mut modules = Vec::new();
+            for method in methods {
+                let (module, wrappers) = expand_dispatch_method_import(
                     abi,
                     failure_mode,
                     attrs,
                     method,
+                    &impl_dispatch_args,
                     declared_self,
-                    type_id,
+                    self_id,
                     symbol_fragments,
                     declared_types,
-                )
+                );
+                modules.push(module);
+                if selected_imports.is_empty() {
+                    selected_imports = wrappers
+                        .into_iter()
+                        .map(|wrapper| (TokenStream::new(), wrapper))
+                        .collect();
+                } else {
+                    assert_eq!(
+                        selected_imports.len(),
+                        wrappers.len(),
+                        "each selected impl must receive every dispatched method"
+                    );
+                    for ((_, selected_wrapper), mut wrapper) in
+                        selected_imports.iter_mut().zip(wrappers)
+                    {
+                        selected_wrapper.items.append(&mut wrapper.items);
+                    }
+                }
+            }
+            let co3 = co3_path();
+            let groups = selected_imports.into_iter().map(|(extern_decls, wrapper)| {
+                quote! { const _: () = { use #co3 as co3; #extern_decls #wrapper }; }
+            });
+            let output = if dispatched_impl {
+                quote! {
+                    #(#modules)*
+                    const _: () = { use #co3 as co3; #checks #(#groups)* };
+                }
+            } else {
+                quote!(#(#modules)* #(#groups)*)
+            };
+            if selected_static_impl && !modules.is_empty() {
+                quote!(const _: () = { #output };)
+            } else {
+                output
             }
         });
 
-        quote!(#(#plain)* #(#methods)*)
+        quote!(#(#imports)*)
     }
 
     let declared_types = decls

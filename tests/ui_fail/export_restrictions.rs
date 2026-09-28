@@ -84,16 +84,6 @@ ffi! {
     #![unsafe(export("C"))]
 
     impl Kita for u32 {
-        fn kita<T>(self)
-        where
-            use<T> @ <u32>;
-    }
-}
-
-ffi! {
-    #![unsafe(export("C"))]
-
-    impl Kita for u32 {
         fn kita1(self) {}
     }
 }

@@ -72,68 +72,62 @@ error: Attribute not supported in this position
 77 |     #[some_attr]
    |     ^^^^^^^^^^^^
 
-error: trait methods cannot have generic type or const parameters
-  --> tests/ui_fail/export_restrictions.rs:87:16
-   |
-87 |         fn kita<T>(self)
-   |                ^^^
-
 error: fn bodies are not allowed in declarations
-  --> tests/ui_fail/export_restrictions.rs:97:24
+  --> tests/ui_fail/export_restrictions.rs:87:24
    |
-97 |         fn kita1(self) {}
+87 |         fn kita1(self) {}
    |                        ^
 
 error: fn bodies are not allowed in declarations
-   --> tests/ui_fail/export_restrictions.rs:104:22
-    |
-104 |     fn kita1(a: u32) {}
-    |                      ^
+  --> tests/ui_fail/export_restrictions.rs:94:22
+   |
+94 |     fn kita1(a: u32) {}
+   |                      ^
 
 error: patterns aren't allowed in function declarations
-   --> tests/ui_fail/export_restrictions.rs:110:14
+   --> tests/ui_fail/export_restrictions.rs:100:14
     |
-110 |     fn kita1((a, b): (u32, u32));
+100 |     fn kita1((a, b): (u32, u32));
     |              ^^^^^^
 
 error: expected 1 concrete generic argument(s)
-   --> tests/ui_fail/export_restrictions.rs:128:18
+   --> tests/ui_fail/export_restrictions.rs:118:18
     |
-128 |         use<T> @ <>
+118 |         use<T> @ <>
     |                  ^^
 
 error: expected 1 concrete generic argument(s)
-   --> tests/ui_fail/export_restrictions.rs:149:18
+   --> tests/ui_fail/export_restrictions.rs:139:18
     |
-149 |         use<T> @ <u32, u8>,
+139 |         use<T> @ <u32, u8>,
     |                  ^^^^^^^^^
 
 error: parameterized types require an explicit Drop declaration
-   --> tests/ui_fail/export_restrictions.rs:158:5
+   --> tests/ui_fail/export_restrictions.rs:148:5
     |
-158 |     type GenericExport<T>;
+148 |     type GenericExport<T>;
     |     ^^^^^^^^^^^^^^^^^^^^^^
 
 error: tagged-dispatch predicates are not allowed in this position
-   --> tests/ui_fail/export_restrictions.rs:174:9
+   --> tests/ui_fail/export_restrictions.rs:164:9
     |
-174 |         use<T> @ <>;
+164 |         use<T> @ <>;
     |         ^^^
 
 error: explicit `<dyn Type>::TAG` is only supported in extern declarations
-   --> tests/ui_fail/export_restrictions.rs:180:26
+   --> tests/ui_fail/export_restrictions.rs:170:26
     |
-180 |         fn drop(self_id: <dyn Self>::TAG, &mut self);
+170 |         fn drop(self_id: <dyn Self>::TAG, &mut self);
     |                          ^
 
 error: an exported method receiver must be the first non-tag argument
-   --> tests/ui_fail/export_restrictions.rs:188:31
+   --> tests/ui_fail/export_restrictions.rs:178:31
     |
-188 |         fn method(value: u32, &self);
+178 |         fn method(value: u32, &self);
     |                               ^
 
 error: parameterized exported types must not specify a tag value
-   --> tests/ui_fail/export_restrictions.rs:195:23
+   --> tests/ui_fail/export_restrictions.rs:185:23
     |
-195 |     #[tag(u32, unsafe(0))]
+185 |     #[tag(u32, unsafe(0))]
     |                       ^

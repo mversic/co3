@@ -62,18 +62,6 @@ ffi! {
 
     #![symbol_prefix = "kita"]
 
-    impl Kita for u32 {
-        fn kita<T>(self)
-        where
-            use<T> @ <u32>;
-    }
-}
-
-ffi! {
-    #![unsafe(extern("C"))]
-
-    #![symbol_prefix = "kita"]
-
     impl<dyn(u32) U, dyn(u8) T> Kita for (T, U)
     where
         use<U, T> @ <u32>,

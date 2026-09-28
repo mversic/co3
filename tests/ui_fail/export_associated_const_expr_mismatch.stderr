@@ -1,0 +1,10 @@
+error[E0080]: evaluation panicked: exported associated constant differs from its declaration
+  --> tests/ui_fail/export_associated_const_expr_mismatch.rs:13:1
+   |
+13 | / ffi! {
+14 | |     #![unsafe(export("C"))]
+15 | |
+16 | |     impl<const N: usize> Value for Host<N>
+...  |
+22 | | }
+   | |_^ evaluation of `_::_` failed here
