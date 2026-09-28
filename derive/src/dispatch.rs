@@ -11,7 +11,7 @@ use crate::{
     Co3Fn, Co3Impl, DispatchGroups,
     ffi_fn::{
         self, emit_extern_definition, gen_definition_body, gen_drop_definition_body,
-        gen_failure_panic, gen_fn_signature_drift_check, gen_input_decode_stmts,
+        gen_failure_panic, gen_static_fn_signature_drift_check, gen_input_decode_stmts,
         gen_store_sync_stmts, gen_sync_check, gen_sync_error, gen_unknown_tag_error, is_unpack_arg,
         item_fn_input_arg_type, item_fn_output_type, merge_generics, normalize_fn_signature,
         strip_dispatch_params,
@@ -471,7 +471,7 @@ pub(crate) fn gen_tag_id_type_checks(
             };
             DispatchMonomorphizer::for_dispatch_group(generics, selections)
                 .visit_generic_argument_mut(&mut ty);
-            StaticLifetimeNormalizer.visit_generic_argument_mut(&mut ty);
+            StaticLifetimeNormalizer::default().visit_generic_argument_mut(&mut ty);
             if auxiliary_detector.generic_arg_mentions_param(&ty) {
                 return;
             }
@@ -596,18 +596,68 @@ fn dispatch_layout_checks(
     pairs
         .into_iter()
         .map(|((mut concrete_ty, mut erased_ty), span)| {
-            StaticLifetimeNormalizer.visit_type_mut(&mut concrete_ty);
-            StaticLifetimeNormalizer.visit_type_mut(&mut erased_ty);
+            StaticLifetimeNormalizer::default().visit_type_mut(&mut concrete_ty);
+            StaticLifetimeNormalizer::default().visit_type_mut(&mut erased_ty);
 
             crate::abi_retype::gen_forced_assertion(&concrete_ty, &erased_ty, span)
         })
         .collect()
 }
 
-pub(crate) struct StaticLifetimeNormalizer;
+/// Replaces free lifetimes with `'static` while preserving higher-ranked binders.
+#[derive(Default)]
+pub(crate) struct StaticLifetimeNormalizer {
+    bound: Vec<syn::Ident>,
+}
+
+impl StaticLifetimeNormalizer {
+    fn with_binders(
+        &mut self,
+        lifetimes: Option<&syn::BoundLifetimes>,
+        visit: impl FnOnce(&mut Self),
+    ) {
+        let previous_len = self.bound.len();
+        self.bound
+            .extend(lifetimes.into_iter().flat_map(|lifetimes| {
+                lifetimes.lifetimes.iter().filter_map(|param| match param {
+                    syn::GenericParam::Lifetime(param) => Some(param.lifetime.ident.clone()),
+                    _ => None,
+                })
+            }));
+        visit(self);
+        self.bound.truncate(previous_len);
+    }
+}
+
 impl VisitMut for StaticLifetimeNormalizer {
+    // The enclosing visitor records these names before traversing their scope.
+    fn visit_bound_lifetimes_mut(&mut self, _: &mut syn::BoundLifetimes) {}
+
     fn visit_lifetime_mut(&mut self, node: &mut syn::Lifetime) {
-        *node = syn::Lifetime::new("'static", node.span());
+        if !self.bound.contains(&node.ident) {
+            *node = syn::Lifetime::new("'static", node.span());
+        }
+    }
+
+    fn visit_type_fn_ptr_mut(&mut self, node: &mut syn::TypeFnPtr) {
+        let lifetimes = node.lifetimes.clone();
+        self.with_binders(lifetimes.as_ref(), |this| {
+            syn::visit_mut::visit_type_fn_ptr_mut(this, node);
+        });
+    }
+
+    fn visit_trait_bound_mut(&mut self, node: &mut syn::TraitBound) {
+        let lifetimes = node.lifetimes.clone();
+        self.with_binders(lifetimes.as_ref(), |this| {
+            syn::visit_mut::visit_trait_bound_mut(this, node);
+        });
+    }
+
+    fn visit_predicate_type_mut(&mut self, node: &mut syn::PredicateType) {
+        let lifetimes = node.lifetimes.clone();
+        self.with_binders(lifetimes.as_ref(), |this| {
+            syn::visit_mut::visit_predicate_type_mut(this, node);
+        });
     }
 }
 
@@ -727,7 +777,7 @@ fn synthesize_dispatch_arms(
 
         monomorphizer.visit_expr_mut(&mut check_callee);
         let signature_check = (!drop_impl)
-            .then(|| gen_fn_signature_drift_check(arm_sig.clone(), check_callee.clone()));
+            .then(|| gen_static_fn_signature_drift_check(arm_sig.clone(), check_callee.clone()));
         let arm_body = if drop_impl {
             gen_drop_definition_body(&arm_sig, failure_mode)
         } else {
@@ -1494,6 +1544,39 @@ fn inject_predicate_unnamed_lifetimes(
     push_universal_lifetimes(predicate, named.universal_lifetimes);
 
     named.entry
+}
+
+#[cfg(test)]
+mod static_lifetime_normalizer_tests {
+    use super::*;
+
+    #[test]
+    fn preserves_higher_ranked_lifetimes_and_normalizes_free_lifetimes() {
+        let mut fn_ptr: syn::Type = syn::parse_quote!(
+            for<'a> fn(&'a u8, &'outer u8, for<'b> fn(&'b u8, &'a u8, &'outer u8))
+        );
+        StaticLifetimeNormalizer::default().visit_type_mut(&mut fn_ptr);
+        assert_eq!(
+            quote!(#fn_ptr).to_string(),
+            quote!(for<'a> fn(&'a u8, &'static u8, for<'b> fn(&'b u8, &'a u8, &'static u8)))
+                .to_string()
+        );
+
+        let mut trait_object: syn::Type = syn::parse_quote!(dyn for<'a> Trait<&'a u8, &'outer u8>);
+        StaticLifetimeNormalizer::default().visit_type_mut(&mut trait_object);
+        assert_eq!(
+            quote!(#trait_object).to_string(),
+            quote!(dyn for<'a> Trait<&'a u8, &'static u8>).to_string()
+        );
+
+        let mut predicate: syn::WherePredicate =
+            syn::parse_quote!(for<'a> &'a u8: Trait<&'outer u8>);
+        StaticLifetimeNormalizer::default().visit_where_predicate_mut(&mut predicate);
+        assert_eq!(
+            quote!(#predicate).to_string(),
+            quote!(for<'a> &'a u8: Trait<&'static u8>).to_string()
+        );
+    }
 }
 
 #[cfg(test)]

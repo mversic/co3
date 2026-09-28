@@ -1,12 +1,15 @@
 //! _Rust-native declarations_ for importing and exporting C ABI interfaces.
 //!
+//! **[`ReprC`] derive generates the C-compatible type and the corresponding conversions.** Value
+//! representations are checked for traps, including pointees, and ownership transfer is _opt-in_.
+//!
 //! **[`ffi!`] is the main entry point.** It generates ABI-facing wrappers and conversion glue for
 //! functions, impl blocks, opaque types, and imported statics. Blocks either _export_ declarations
 //! from Rust with `#![unsafe(export("ABI"))]` or _import_ them from a foreign library with
 //! `#![unsafe(extern("ABI"))]`.
 //!
-//! **[`ReprC`] derive generates the C-compatible type and the corresponding conversions.** Value
-//! representations are checked for traps, including pointees, and ownership transfer is _opt-in_.
+//! **[`raw!`] generates C-compatible companions** from existing Rust function declarations. The
+//! generated functions are named with `_raw` suffix, are unsafe and take C-type arguments/output.
 //!
 //! **Export declarations are completely interchangeable with import declarations**.
 //!
@@ -385,8 +388,8 @@
 //! type Callback = unsafe extern "C" fn(Value, u8) -> Value;
 //!
 //! fn apply_callback(callback: Callback, value: Value) -> Value {
-//!     // `.call` encodes the Rust arguments and decodes the callback's return value.
-//!     // Use `.soft_call` when any of the input arguments requires a non-empty store.
+//!     // `CFn2::call` encodes the Rust arguments and decodes the callback's return value.
+//!     // Use `CFn2::soft_call` when any of the input arguments requires a non-empty store.
 //!     unsafe { callback.call(value, 1_u8) }.expect("callback returned an invalid Value")
 //! }
 //!
@@ -406,20 +409,18 @@
 //! #[derive(Clone, Copy, RustSpec, ReprC)]
 //! struct Value(u8);
 //!
-//! type Callback = extern "C" fn(CValue, u8) -> <Value as co3::ReprC>::CType;
-//!
 //! fn apply_callback(callback: Callback, value: Value) -> Value {
-//!     // If the type contains soft references use:
-//!     //     let mut store = Default::default();
-//!     //     co3::soft_encode(value, &mut store)
 //!     let value = co3::encode(value);
-//!     let output = callback(value, 1);
 //!
+//!     let output = unsafe { callback(value, 1) };
 //!     unsafe { co3::decode(output) }.unwrap()
 //! }
 //!
 //! ffi! {
 //!     #![unsafe(export("C"))]
+//!
+//!     // Check later section on `raw` function pointers
+//!     type Callback = raw extern "C" fn(move Value, u8) -> move Value;
 //!
 //!     fn apply_callback(callback: Callback, value: Value) -> Value;
 //! }
@@ -428,11 +429,16 @@
 //!
 //! # Raw Functions
 //!
-//! A `raw` import declaration synthesizes a C-compatible function under the name `{fn_name}_raw`.
-//! The following example shows how this helps with callbacks:
+//! Raw function is a function whose arguments and output are lowered `C` types of declared.
+//!
+//! Raw functions are either imported through `ffi!` or generated using `raw!` macro where each
+//! `fn` declaration generates a corresponding `extern "C" {fn_name}_raw` companion function from
+//! an already existing function.
+//!
+//! They are mostly useful when using callback functions.
 //!
 //! ```rust
-//! use co3::{ReprC, ffi, rust_spec::RustSpec};
+//! use co3::{ReprC, ffi, raw, rust_spec::RustSpec};
 //! #
 //! # #[unsafe(export_name = "doc_register_callback")]
 //! # extern "C" fn callback_receiver(_: Callback) {}
@@ -456,26 +462,21 @@
 //!     Value(*value + 1)
 //! }
 //!
+//! raw! {
+//!     // The generated companion uses the C calling convention.
+//!     fn increment(value: move Box<u8>) -> Value;
+//!
+//!     impl Value {
+//!         // Synthesize its C ABI companion method.
+//!         fn doubled(&self) -> Value;
+//!     }
+//! }
+//!
 //! ffi! {
 //!     #![unsafe(extern("C"))]
 //!
-//!     // A raw fn type alias supports move semantics and produces:
-//!     //    type Callback = extern "C" fn(CBox<u8>) -> CValue;
-//!     type Callback = raw fn(move Box<u8>) -> Value;
-//!
-//!     // A raw fn type alias also supports declaring a custom ABI:
-//!     //    type Callback = extern "system" fn(*const CValue) -> CValue;
-//!     type MethodCallback = raw "system" fn(&Value) -> Value;
-//!
-//!     impl Value {
-//!         // Synthesize its C companion method:
-//!         //    extern "C" fn doubled(_self: *const CValue) -> CValue;
-//!         raw "system" fn doubled(&self) -> Value;
-//!     }
-//!
-//!     // Synthesize its C companion function:
-//!     //    extern "C" fn increment(value: CBox<u8>) -> CValue;
-//!     raw fn increment(value: move Box<u8>) -> Value;
+//!     type Callback = raw extern "C" fn(move Box<u8>) -> Value;
+//!     type MethodCallback = raw extern "C" fn(&Value) -> Value;
 //!
 //!     #[symbol_name = "doc_register_callback"]
 //!     fn register_callback(callback: Callback);
@@ -591,14 +592,14 @@ pub trait Error {
     fn soft_sync_error() -> Self;
 }
 
-/// Robust type that conforms to C ABI and can be safely shared across FFI boundaries.
+/// Robust type with a C-compatible value representation that can cross FFI boundaries.
 ///
 /// Note that, for raw pointers, ABI compatibility of referent is not guaranteed. Dereferencing
 /// opaque/extern type pointers which don't also implement `CType` is very likely to cause UB.
 ///
 /// # Safety
 ///
-/// Type implementing the trait must have a guaranteed C ABI and no trap representations.
+/// Type implementing the trait must have a defined C-compatible value representation and no trap representations.
 pub unsafe trait CType {}
 
 /// `C` type that is allowed as a foreign function argument.
@@ -616,7 +617,7 @@ pub unsafe trait CFnArg: CType + Copy {}
 pub unsafe trait CFnReturn: CType + Copy {}
 
 disjoint_impls! {
-    /// A Rust type that has a C-compatible companion type
+    /// A Rust type that has a C-compatible companion type.
     pub trait ReprC {
         /// The C-compatible representation of this Rust type.
         type CType: CType + ?Sized;

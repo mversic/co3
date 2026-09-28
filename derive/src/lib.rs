@@ -949,14 +949,15 @@ fn validate_raw_import_names(items: &[ForeignItem]) -> Result<()> {
         .collect::<Vec<_>>();
     for item in items {
         match item {
-            ForeignItem::Fn(raw) if raw.import_mode == ImportMode::Raw => {
-                if items.iter().any(|candidate| {
+            ForeignItem::Fn(raw)
+                if raw.import_mode == ImportMode::Raw
+                    && items.iter().any(|candidate| {
                     matches!(candidate, ForeignItem::Fn(regular)
                         if regular.import_mode == ImportMode::Regular && regular.sig.ident == raw.sig.ident)
-                }) {
-                    return Err(collision(&raw.sig.ident));
+                    }) =>
+            {
+                return Err(collision(&raw.sig.ident));
                 }
-            }
             _ => {}
         }
     }

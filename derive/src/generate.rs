@@ -1906,13 +1906,16 @@ pub(crate) fn expand_extern_decls(
                     // dispatch-set bound on its method would make that impl
                     // stricter than the trait declaration.
                     wrapper_sig.generics.where_clause = method.sig.generics.where_clause.clone();
-                    let self_binding = method
+                    let self_binding = if method
                         .sig
                         .inputs
                         .iter()
                         .any(|input| matches!(input, FnArg::Receiver(_)))
-                        .then(|| quote!(let __co3_self = self;))
-                        .unwrap_or_default();
+                    {
+                        quote!(let __co3_self = self;)
+                    } else {
+                        Default::default()
+                    };
                     let (_, wrapper_fn) = emit_import_dispatch_items(
                         &module_name,
                         &method.attrs,
@@ -2538,7 +2541,7 @@ fn gen_dispatch_helper(generics: &syn::Generics, args: &DispatchGroups) -> Optio
                     .find(|generic| generic.ident == *param)
                     .filter(|generic| generic.attrs.iter().any(is_type_erased))?;
                 let mut arg = arg.clone();
-                StaticLifetimeNormalizer.visit_generic_argument_mut(&mut arg);
+                StaticLifetimeNormalizer::default().visit_generic_argument_mut(&mut arg);
                 Some(quote!(#arg))
             });
 

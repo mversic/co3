@@ -89,7 +89,7 @@ It must always start with a declaration of direction and ABI (e.g. `#![unsafe(ex
 
 `raw!` generates `extern "C"` companion functions for existing functions with lowered argument and return representations. It accepts function and method declarations:
 
-- `#[cfg]` and `#[cfg_attr]` are fully supported in all attribute positions inside the `ffi` macro.
+- `#[cfg]` and `#[cfg_attr]` are fully supported in all attribute positions inside the `raw` macro.
 - the macro supports both `#[soft]` and `move` semantics with constraints matching the `ffi!` macro.
 - each declaration generates a C-compatible companion function lowered argument and output types.
 - A companion declaration generates an unsafe fn `name_raw` from an existing fn named `name`.

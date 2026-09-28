@@ -143,7 +143,7 @@ pub(crate) fn gen_abi_assertions(sig: &syn::Signature) -> TokenStream {
                 (&receiver.attrs, crate::utils::receiver_ty(receiver))
             }
         };
-        StaticLifetimeNormalizer.visit_type_mut(&mut ty);
+        StaticLifetimeNormalizer::default().visit_type_mut(&mut ty);
         let cfg = cfg_attrs(attrs);
         quote! {
             #(#cfg)*
@@ -155,7 +155,7 @@ pub(crate) fn gen_abi_assertions(sig: &syn::Signature) -> TokenStream {
     let mut return_ty: syn::Type = fn_return_ty(sig)
         .cloned()
         .unwrap_or_else(|| parse_quote!(()));
-    StaticLifetimeNormalizer.visit_type_mut(&mut return_ty);
+    StaticLifetimeNormalizer::default().visit_type_mut(&mut return_ty);
     quote! {
         #(#arguments)*
         const {
@@ -705,13 +705,17 @@ pub(crate) fn gen_input_decode_stmts<'a>(
     }
 }
 
-pub(crate) fn gen_fn_signature_drift_check(
+pub(crate) fn gen_static_fn_signature_drift_check(
     mut sig: syn::Signature,
     mut callee: syn::Expr,
 ) -> TokenStream {
-    StaticLifetimeNormalizer.visit_signature_mut(&mut sig);
-    StaticLifetimeNormalizer.visit_expr_mut(&mut callee);
+    StaticLifetimeNormalizer::default().visit_signature_mut(&mut sig);
+    StaticLifetimeNormalizer::default().visit_expr_mut(&mut callee);
 
+    gen_fn_signature_drift_check(sig, callee)
+}
+
+pub(crate) fn gen_fn_signature_drift_check(sig: syn::Signature, callee: syn::Expr) -> TokenStream {
     let syn::Signature {
         safety,
         abi,
@@ -759,7 +763,7 @@ fn gen_fn_definition_body(
     callee: syn::Expr,
 ) -> TokenStream {
     let fn_by_val = item.attrs.iter().any(is_by_val_attr);
-    let signature_check = gen_fn_signature_drift_check(item.sig.clone(), callee.clone());
+    let signature_check = gen_static_fn_signature_drift_check(item.sig.clone(), callee.clone());
     let body = gen_definition_body(item.sig.clone(), quote!(#callee), fn_by_val, failure_mode);
 
     quote! {{
@@ -805,7 +809,8 @@ pub fn gen_impl_definition(
         let fn_signature = gen_extern_fn_signature(item.sig.clone(), failure_mode);
         let signature_drift_check =
             // NOTE: `Drop::drop` has a fixed signature enforced by `validate_drop_impl`
-            (!drop_impl).then(|| gen_fn_signature_drift_check(item.sig.clone(), check_callee));
+            (!drop_impl)
+                .then(|| gen_static_fn_signature_drift_check(item.sig.clone(), check_callee));
         let body = if drop_impl {
             gen_drop_definition_body(&item.sig, failure_mode)
         } else {

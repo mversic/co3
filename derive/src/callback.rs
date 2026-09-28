@@ -165,7 +165,10 @@ fn add_generic_companion_bounds(
         predicates.push(parse_quote!(#ty: co3::Encode<Store: co3::stored::EmptyStore>));
         if !fn_by_val {
             predicates.push(parse_quote!(
-                <#ty as co3::ReprC>::CType: co3::borrow::BorrowCast
+                <#ty as co3::ReprC>::CType: co3::borrow::BorrowCast + Copy
+            ));
+            predicates.push(parse_quote!(
+                <<#ty as co3::ReprC>::CType as co3::borrow::BorrowCast>::AsConst: Copy
             ));
             predicates.push(parse_quote!(
                 #ty: co3::borrow::Borrow<Owner: co3::stored::EmptyStore>
