@@ -59,22 +59,6 @@ pub(crate) fn validate_export_decls(items: &[crate::ForeignItem]) -> Result<()> 
 
 pub(crate) fn validate_extern_decls(items: &[crate::ForeignItem]) -> Result<()> {
     let mut errors = None;
-    for item in items {
-        match item {
-            crate::ForeignItem::Fn(item) if item.import_mode == crate::ImportMode::Raw => {
-                if let Err(err) = validate_raw_signature(&item.sig) {
-                    push_error(&mut errors, err);
-                }
-            }
-            crate::ForeignItem::Impl(item) => validate_raw_import_impl(item, &mut errors),
-            crate::ForeignItem::Type(item) => {
-                for impl_ in &item.self_impls {
-                    validate_raw_import_impl(impl_, &mut errors);
-                }
-            }
-            _ => {}
-        }
-    }
     if let Err(err) = validate_shared(items, true) {
         push_error(&mut errors, err);
     }
@@ -98,17 +82,18 @@ pub(crate) fn validate_extern_decls(items: &[crate::ForeignItem]) -> Result<()> 
     errors.map_or(Ok(()), Err)
 }
 
-fn validate_raw_import_impl(impl_: &crate::Co3Impl, errors: &mut Option<Error>) {
-    if impl_.import_mode != crate::ImportMode::Raw {
-        return;
+pub(crate) fn validate_ffi_raw_signature(sig: &syn::Signature, abi: &syn::Abi) -> Result<()> {
+    validate_raw_signature(sig)?;
+    if let Some(raw_abi) = &sig.abi {
+        return Err(Error::new_spanned(
+            raw_abi,
+            format!(
+                "raw declarations use the `ffi!` block ABI (`{}`); write `raw fn` without `extern \"ABI\"`",
+                abi.name.as_ref().expect("block ABI is named").value(),
+            ),
+        ));
     }
-    for method in &impl_.items {
-        if let syn::ImplItem::Fn(method) = method
-            && let Err(err) = validate_raw_signature(&method.sig)
-        {
-            push_error(errors, err);
-        }
-    }
+    Ok(())
 }
 
 pub(crate) fn validate_raw_signature(sig: &syn::Signature) -> Result<()> {

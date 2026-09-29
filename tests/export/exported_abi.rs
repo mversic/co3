@@ -184,7 +184,7 @@ pub const unsafe fn ambiguous1() -> Ambiguous {
     Ambiguous::Fn
 }
 
-pub const unsafe extern "Rust" fn ambiguous2() -> Ambiguous {
+pub const unsafe extern "C" fn ambiguous2() -> Ambiguous {
     Ambiguous::Fn
 }
 
@@ -213,7 +213,7 @@ fn exported_abi() {
         fn re_exported() -> *mut c_void;
     }
 
-    unsafe extern "Rust" {
+    unsafe extern "C" {
         fn kita(a: *const [i8; 4]) -> <Ambiguous as co3::ReprC>::CType;
         fn kita1() -> <Ambiguous as co3::ReprC>::CType;
         fn kita2() -> <Ambiguous as co3::ReprC>::CType;

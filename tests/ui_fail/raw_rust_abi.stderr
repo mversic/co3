@@ -1,4 +1,4 @@
-error: raw imports use the `ffi!` block ABI (`C`); write `raw fn` without `extern "ABI"`
+error: raw declarations use the `ffi!` block ABI (`C`); write `raw fn` without `extern "ABI"`
  --> tests/ui_fail/raw_rust_abi.rs:5:9
   |
 5 |     raw extern "Rust" fn imported();

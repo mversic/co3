@@ -536,37 +536,8 @@ pub fn ffi(input: TokenStream) -> Result<TokenStream> {
             ));
         }
 
-        let (normalized, aliases) = normalize_items(items, NormalizationMode::Ffi(kind))?;
-        for item in &normalized {
-            let NormalizedItem::Foreign(item) = item else {
-                continue;
-            };
-            let check = |sig: &syn::Signature| -> Result<()> {
-                if let Some(raw_abi) = &sig.abi {
-                    return Err(syn::Error::new_spanned(
-                        raw_abi,
-                        format!(
-                            "raw imports use the `ffi!` block ABI (`{}`); write `raw fn` without `extern \"ABI\"`",
-                            abi.name.as_ref().expect("block ABI is named").value(),
-                        ),
-                    ));
-                }
-                Ok(())
-            };
-            match item {
-                ForeignItem::Fn(item) if item.import_mode == ImportMode::Raw => {
-                    check(&item.sig)?;
-                }
-                ForeignItem::Impl(item) if item.import_mode == ImportMode::Raw => {
-                    for method in &item.items {
-                        if let syn::ImplItem::Fn(method) = method {
-                            check(&method.sig)?;
-                        }
-                    }
-                }
-                _ => {}
-            }
-        }
+        let (normalized, aliases) =
+            normalize_items(items, NormalizationMode::Ffi(kind), Some(&abi))?;
         let normalized = pack_normalized_items(normalized)?;
         let (mut items, raw_decls) = partition_items(normalized);
         debug_assert!(raw_decls.is_empty());
@@ -686,7 +657,7 @@ pub fn raw(input: TokenStream) -> Result<TokenStream> {
             }
         }
     }
-    let (normalized, aliases) = normalize_items(items, NormalizationMode::Raw)?;
+    let (normalized, aliases) = normalize_items(items, NormalizationMode::Raw, None)?;
     let (foreign_items, raw_decls) = partition_items(normalized);
     if !foreign_items.is_empty() {
         return Err(syn::Error::new(
@@ -703,12 +674,14 @@ pub fn raw(input: TokenStream) -> Result<TokenStream> {
 fn normalize_items(
     items: Vec<ParsedItem>,
     mode: NormalizationMode,
+    abi: Option<&syn::Abi>,
 ) -> Result<(Vec<NormalizedItem>, Vec<parse::TypeAlias>)> {
     let mut normalized = Vec::new();
     let mut aliases = Vec::new();
     for item in items {
         match item {
             ParsedItem::Raw(raw_decl) if matches!(mode, NormalizationMode::Ffi(_)) => {
+                validate::validate_ffi_raw_signature(&raw_decl.sig, abi.expect("ffi ABI"))?;
                 let item = ItemFn {
                     attrs: raw_decl.attrs,
                     vis: raw_decl.vis,
@@ -759,6 +732,7 @@ fn normalize_items(
                         }
                     } else if let Some(marker) = marker {
                         method.attrs.remove(marker);
+                        validate::validate_ffi_raw_signature(&method.sig, abi.expect("ffi ABI"))?;
                         if mode == NormalizationMode::Ffi(DeclKind::Export) {
                             impl_items.push(syn::ImplItem::Fn(method));
                             continue;
