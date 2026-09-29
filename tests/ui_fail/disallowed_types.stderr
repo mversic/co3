@@ -114,6 +114,91 @@ help: the trait `co3::borrow::Borrow` is not implemented for `OwnedMyType`
             and $N others
     = note: this error originates in the macro `ffi` (in Nightly builds, run with -Z macro-backtrace for more info)
 
+error[E0277]: the trait bound `OwnedMyType: co3::borrow::Borrow` is not satisfied
+   --> tests/ui_fail/disallowed_types.rs:180:53
+    |
+180 |     pub extern "C" fn disallowed_opaque_return() -> OwnedMyType;
+    |                                                     ^^^^^^^^^^^ unsatisfied trait bound
+    |
+help: the trait `co3::borrow::Borrow` is not implemented for `OwnedMyType`
+   --> tests/ui_fail/disallowed_types.rs:129:1
+    |
+129 | / ffi! {
+130 | |     #![unsafe(extern("C"))]
+131 | |     #![symbol_prefix = "kita"]
+...   |
+141 | | }
+    | |_^
+    = help: the following other types implement trait `co3::borrow::Borrow`:
+              &R
+              &mut R
+              ()
+              (A, B)
+              (A, B, C)
+              (A, B, C, D)
+              (A, B, C, D, E)
+              (A, B, C, D, E, F)
+            and $N others
+    = note: this error originates in the macro `ffi` (in Nightly builds, run with -Z macro-backtrace for more info)
+
+error[E0277]: the trait bound `OwnedMyType: FromBorrow<'_>` is not satisfied
+   --> tests/ui_fail/disallowed_types.rs:180:53
+    |
+180 |     pub extern "C" fn disallowed_opaque_return() -> OwnedMyType;
+    |                                                     ^^^^^^^^^^^ unsatisfied trait bound
+    |
+help: the trait `FromBorrow<'_>` is not implemented for `OwnedMyType`
+   --> tests/ui_fail/disallowed_types.rs:129:1
+    |
+129 | / ffi! {
+130 | |     #![unsafe(extern("C"))]
+131 | |     #![symbol_prefix = "kita"]
+...   |
+141 | | }
+    | |_^
+    = help: the following other types implement trait `FromBorrow<'itm>`:
+              `&'a R` implements `FromBorrow<'itm>`
+              `&'a mut R` implements `FromBorrow<'itm>`
+              `()` implements `FromBorrow<'itm>`
+              `(A, B)` implements `FromBorrow<'itm>`
+              `(A, B, C)` implements `FromBorrow<'itm>`
+              `(A, B, C, D)` implements `FromBorrow<'itm>`
+              `(A, B, C, D, E)` implements `FromBorrow<'itm>`
+              `(A, B, C, D, E, F)` implements `FromBorrow<'itm>`
+            and $N others
+    = note: this error originates in the macro `ffi` (in Nightly builds, run with -Z macro-backtrace for more info)
+
+error[E0277]: the trait bound `OwnedMyType: FromBorrow<'_>` is not satisfied
+   --> tests/ui_fail/disallowed_types.rs:177:1
+    |
+177 | / ffi! {
+178 | |     #![unsafe(extern("C"))]
+179 | |
+180 | |     pub extern "C" fn disallowed_opaque_return() -> OwnedMyType;
+181 | | }
+    | |_^ unsatisfied trait bound
+    |
+help: the trait `FromBorrow<'_>` is not implemented for `OwnedMyType`
+   --> tests/ui_fail/disallowed_types.rs:129:1
+    |
+129 | / ffi! {
+130 | |     #![unsafe(extern("C"))]
+131 | |     #![symbol_prefix = "kita"]
+...   |
+141 | | }
+    | |_^
+    = help: the following other types implement trait `FromBorrow<'itm>`:
+              `&'a R` implements `FromBorrow<'itm>`
+              `&'a mut R` implements `FromBorrow<'itm>`
+              `()` implements `FromBorrow<'itm>`
+              `(A, B)` implements `FromBorrow<'itm>`
+              `(A, B, C)` implements `FromBorrow<'itm>`
+              `(A, B, C, D)` implements `FromBorrow<'itm>`
+              `(A, B, C, D, E)` implements `FromBorrow<'itm>`
+              `(A, B, C, D, E, F)` implements `FromBorrow<'itm>`
+            and $N others
+    = note: this error originates in the macro `ffi` (in Nightly builds, run with -Z macro-backtrace for more info)
+
 error[E0080]: evaluation panicked: ABI retype size mismatch
    --> tests/ui_fail/disallowed_types.rs:188:46
     |
@@ -158,7 +243,7 @@ error[E0080]: evaluation panicked: Mark the return type with `move` to transfer 
 65 | |         type OpaqueZst;
 ...  |
 71 | |     }
-   | |_____^ evaluation of `provider::_::_::to_owned::<'_>::{closure#0}::{constant#0}` failed here
+   | |_____^ evaluation of `provider::_::_::to_owned_raw::<'_>::{closure#0}::{constant#0}` failed here
 
 note: erroneous constant encountered
   --> tests/ui_fail/disallowed_types.rs:62:5
@@ -181,7 +266,7 @@ error[E0080]: evaluation panicked: co3 FFI argument must implement CFnArg
 75 | |
 76 | |         extern "C" fn disallowed_args_by_ref(arg1: (), arg2: [u8; 2]);
 77 | |     }
-   | |_____^ evaluation of `provider::_::disallowed_args_by_ref::{constant#1}` failed here
+   | |_____^ evaluation of `provider::_::_::disallowed_args_by_ref_raw::{constant#1}` failed here
 
 note: erroneous constant encountered
   --> tests/ui_fail/disallowed_types.rs:73:5
@@ -203,7 +288,7 @@ error[E0080]: evaluation panicked: co3 FFI argument must implement CFnArg
 75 | |
 76 | |         extern "C" fn disallowed_args_by_ref(arg1: (), arg2: [u8; 2]);
 77 | |     }
-   | |_____^ evaluation of `provider::_::disallowed_args_by_ref::{constant#2}` failed here
+   | |_____^ evaluation of `provider::_::_::disallowed_args_by_ref_raw::{constant#2}` failed here
 
 error[E0080]: evaluation panicked: co3 FFI argument must implement CFnArg
   --> tests/ui_fail/disallowed_types.rs:78:5
@@ -213,7 +298,7 @@ error[E0080]: evaluation panicked: co3 FFI argument must implement CFnArg
 80 | |
 81 | |         extern "C" fn disallowed_args_by_val(arg1: move (), arg2: move [u8; 2]);
 82 | |     }
-   | |_____^ evaluation of `provider::_::disallowed_args_by_val::{constant#1}` failed here
+   | |_____^ evaluation of `provider::_::_::disallowed_args_by_val_raw::{constant#1}` failed here
 
 note: erroneous constant encountered
   --> tests/ui_fail/disallowed_types.rs:78:5
@@ -235,7 +320,7 @@ error[E0080]: evaluation panicked: co3 FFI argument must implement CFnArg
 80 | |
 81 | |         extern "C" fn disallowed_args_by_val(arg1: move (), arg2: move [u8; 2]);
 82 | |     }
-   | |_____^ evaluation of `provider::_::disallowed_args_by_val::{constant#2}` failed here
+   | |_____^ evaluation of `provider::_::_::disallowed_args_by_val_raw::{constant#2}` failed here
 
 error[E0080]: evaluation panicked: co3 FFI return must implement CFnReturn
   --> tests/ui_fail/disallowed_types.rs:84:5
@@ -245,7 +330,7 @@ error[E0080]: evaluation panicked: co3 FFI return must implement CFnReturn
 86 | |
 87 | |         extern "C" fn disallowed_return1() -> [u8; 2];
 88 | |     }
-   | |_____^ evaluation of `provider::_::disallowed_return1::{constant#1}` failed here
+   | |_____^ evaluation of `provider::_::_::disallowed_return1_raw::{constant#1}` failed here
 
 note: erroneous constant encountered
   --> tests/ui_fail/disallowed_types.rs:84:5
@@ -267,7 +352,7 @@ error[E0080]: evaluation panicked: Mark the return type with `move` to transfer 
 91 | |
 92 | |         extern "C" fn disallowed_return2() -> Box<[u8]>;
 93 | |     }
-   | |_____^ evaluation of `provider::_::disallowed_return2::{closure#0}::{constant#0}` failed here
+   | |_____^ evaluation of `provider::_::_::disallowed_return2_raw::{closure#0}::{constant#0}` failed here
 
 note: erroneous constant encountered
   --> tests/ui_fail/disallowed_types.rs:89:5
@@ -289,7 +374,7 @@ error[E0080]: evaluation panicked: Mark the return type with `move` to transfer 
 102 | |
 103 | |         extern "C" fn disallowed_opaque_return() -> Box<OpaqueZst>;
 104 | |     }
-    | |_____^ evaluation of `provider::_::disallowed_opaque_return::{closure#0}::{constant#0}` failed here
+    | |_____^ evaluation of `provider::_::_::disallowed_opaque_return_raw::{closure#0}::{constant#0}` failed here
 
 note: erroneous constant encountered
    --> tests/ui_fail/disallowed_types.rs:100:5
@@ -419,28 +504,6 @@ note: erroneous constant encountered
 166 | |
 167 | |     pub extern "C" fn disallowed_return2() -> Box<[u8]>;
 168 | | }
-    | |_^
-    |
-    = note: this note originates in the macro `ffi` (in Nightly builds, run with -Z macro-backtrace for more info)
-
-error[E0080]: evaluation panicked: Mark the return type with `move` to transfer ownership
-   --> tests/ui_fail/disallowed_types.rs:177:1
-    |
-177 | / ffi! {
-178 | |     #![unsafe(extern("C"))]
-179 | |
-180 | |     pub extern "C" fn disallowed_opaque_return() -> OwnedMyType;
-181 | | }
-    | |_^ evaluation of `disallowed_opaque_return::{constant#1}` failed here
-
-note: erroneous constant encountered
-   --> tests/ui_fail/disallowed_types.rs:177:1
-    |
-177 | / ffi! {
-178 | |     #![unsafe(extern("C"))]
-179 | |
-180 | |     pub extern "C" fn disallowed_opaque_return() -> OwnedMyType;
-181 | | }
     | |_^
     |
     = note: this note originates in the macro `ffi` (in Nightly builds, run with -Z macro-backtrace for more info)

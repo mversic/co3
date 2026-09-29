@@ -622,7 +622,7 @@ fn raw_dispatch_wrapper_sig(
         .into_iter()
         .filter(|input| !crate::dispatch::is_tag_id_arg(input))
         .collect();
-    let mut raw = ffi_fn::lower_raw_fn_signature(source, failure_mode, fn_by_val);
+    let mut raw = ffi_fn::lower_abi_fn_signature(source, failure_mode, fn_by_val);
     raw.generics.where_clause = bounded.generics.where_clause;
     raw.generics
         .type_params_mut()
@@ -1354,15 +1354,11 @@ fn prepare_dispatch_import(
     match mode {
         DispatchImportMode::Static(symbol_fragments) => {
             let trait_args = dispatch_trait_args(&dispatch_generics);
-            let raw_sig = if raw {
-                ffi_fn::lower_raw_fn_signature(
-                    extern_sig,
-                    failure_mode,
-                    fn_attrs.iter().any(ffi_fn::is_by_val_attr),
-                )
-            } else {
-                ffi_fn::lower_extern_fn_signature(extern_sig, failure_mode)
-            };
+            let raw_sig = ffi_fn::lower_abi_fn_signature(
+                extern_sig,
+                failure_mode,
+                fn_attrs.iter().any(ffi_fn::is_by_val_attr),
+            );
             let delegate_name = &wrapper_source_sig.ident;
             let delegate_callee = quote!(<() as #dispatch_set_path<#trait_args>>::#delegate_name);
             let wrapper_args = dispatch_source_arg_names(&wrapper_source_sig);
@@ -1417,17 +1413,14 @@ fn prepare_dispatch_import(
                     &wrapper_source_sig,
                 )
             });
-            let decl = if raw {
-                let mut decl = ffi_fn::lower_raw_fn_signature(
-                    extern_sig,
-                    failure_mode,
-                    fn_attrs.iter().any(ffi_fn::is_by_val_attr),
-                );
+            let mut decl = ffi_fn::lower_abi_fn_signature(
+                extern_sig,
+                failure_mode,
+                fn_attrs.iter().any(ffi_fn::is_by_val_attr),
+            );
+            if raw {
                 decl.ident = format_ident!("__co3_raw");
-                decl
-            } else {
-                ffi_fn::lower_extern_fn_signature(extern_sig, failure_mode)
-            };
+            }
             let abi_assertions = gen_decl_abi_assertions(&quote!(#decl));
             let wrapper_body = if raw {
                 raw_dispatch_call(
@@ -1597,21 +1590,15 @@ pub(crate) fn expand_export_decls(
             normalize_fn_signature(&mut item.sig, None);
             let bindings =
                 monomorphize_static_fn_bindings(item, symbol_fragments, &declared_types);
-            let has_multiple_bindings = bindings.len() > 1;
             let definitions = bindings
                 .into_iter()
-                .enumerate()
-                .map(|(index, (mut binding, callee))| {
-                    if has_multiple_bindings {
-                        let source_name = &binding.sig.ident;
-                        binding.sig.ident = format_ident!("__co3_export_{source_name}_{index}");
-                    }
-
-                    if binding.dispatch_args.is_empty() {
+                .map(|(binding, callee)| {
+                    let definition = if binding.dispatch_args.is_empty() {
                         ffi_fn::gen_fn_definition(&abi, failure_mode, binding.item, callee)
                     } else {
                         gen_dispatch_fn_export(&abi, failure_mode, binding, callee)
-                    }
+                    };
+                    quote!(const _: () = { #definition };)
                 });
             quote!(#(#definitions)*)
         }
@@ -1641,28 +1628,41 @@ pub(crate) fn gen_raw_companions(
     raw_decls
         .into_iter()
         .map(|raw_decl| {
-            let owner = raw_decl.owner;
-            let item = syn::ItemFn {
-                attrs: raw_decl.attrs,
-                vis: raw_decl.vis,
-                modifiers: Default::default(),
-                sig: raw_decl.sig,
-                block: Box::new(syn::parse_quote!({})),
+            let dispatched = !raw_decl.dispatch_args.is_empty()
+                || crate::utils::has_runtime_dispatch(&raw_decl.sig.generics)
+                || raw_decl
+                    .owner
+                    .as_ref()
+                    .is_some_and(|owner| crate::utils::has_runtime_dispatch(&owner.generics));
+            let companion = if dispatched {
+                crate::dispatch::gen_raw_dispatch_companion(failure_mode, &raw_decl)
+            } else {
+                let item = syn::ItemFn {
+                    attrs: raw_decl.attrs.clone(),
+                    vis: raw_decl.vis.clone(),
+                    modifiers: Default::default(),
+                    sig: raw_decl.sig.clone(),
+                    block: Box::new(syn::parse_quote!({})),
+                };
+                match crate::callback::expand_companion(
+                    failure_mode,
+                    &item,
+                    raw_decl.callee.clone(),
+                    raw_decl.owner.as_ref().map(|owner| &owner.generics),
+                ) {
+                    Ok(companion) => companion,
+                    Err(error) => return error.to_compile_error(),
+                }
             };
-            let companion = match crate::callback::expand_companion(
-                failure_mode,
-                &item,
-                raw_decl.callee,
-                owner.as_ref().map(|owner| &owner.generics),
-            ) {
-                Ok(companion) => companion,
-                Err(error) => return error.to_compile_error(),
-            };
-            if let Some(owner) = owner {
+            if let Some(owner) = raw_decl.owner {
                 let attrs = owner.attrs;
                 let self_ty = owner.self_ty;
                 let trait_impl = owner.trait_path.map(|trait_path| quote!(#trait_path for));
-                let (impl_generics, _, where_clause) = owner.generics.split_for_impl();
+                let mut owner_generics = owner.generics;
+                owner_generics
+                    .type_params_mut()
+                    .for_each(strip_internal_generic_param);
+                let (impl_generics, _, where_clause) = owner_generics.split_for_impl();
                 quote! {
                     #(#attrs)*
                     impl #impl_generics #trait_impl #self_ty #where_clause {
@@ -1752,7 +1752,11 @@ fn synthesize_impl_extern_decls(
                 let sig = item.sig;
                 quote!(#sig)
             } else {
-                gen_extern_fn_signature(item.sig, failure_mode)
+                gen_extern_fn_signature(
+                    item.sig,
+                    failure_mode,
+                    item.attrs.iter().any(ffi_fn::is_by_val_attr),
+                )
             };
             let abi_assertions = gen_decl_abi_assertions(&decl);
             let extern_decl = gen_extern_decl(abi, attrs, &item.attrs, decl);
@@ -1811,7 +1815,7 @@ pub(crate) fn expand_extern_decls(
                 };
                 let wrapper_abi = method.sig.abi.clone().unwrap_or_else(|| abi.clone());
                 normalize_fn_signature(&mut method.sig, Some(&self_ty));
-                method.sig = ffi_fn::lower_raw_fn_signature(
+                method.sig = ffi_fn::lower_abi_fn_signature(
                     method.sig.clone(),
                     failure_mode,
                     method.attrs.iter().any(ffi_fn::is_by_val_attr),

@@ -111,23 +111,52 @@ pub(crate) fn emit_extern_definition(
     fn_signature: TokenStream,
     ffi_fn_body: TokenStream,
 ) -> TokenStream {
+    let fn_by_val = attrs.iter().any(is_by_val_attr);
     let attrs = export_definition_attrs(attrs);
-    let signature: syn::Signature =
+    let mut signature: syn::Signature =
         syn::parse2(fn_signature.clone()).expect("generated FFI signature must parse");
     let abi_assertions = gen_abi_assertions(&signature);
+    signature.ident = raw_definition_name(&signature.ident);
+    signature.safety = syn::Safety::Unsafe(Default::default());
+    signature.abi = Some(abi.clone());
 
+    emit_abi_function(
+        failure_mode,
+        attrs,
+        quote!(),
+        &signature,
+        abi_assertions,
+        ffi_fn_body,
+        fn_by_val,
+    )
+}
+
+pub(crate) fn raw_definition_name(name: &Ident) -> Ident {
+    format_ident!("{name}_raw")
+}
+
+#[expect(clippy::too_many_arguments)]
+pub(crate) fn emit_abi_function(
+    failure_mode: FailureMode,
+    attrs: TokenStream,
+    vis: TokenStream,
+    signature: &syn::Signature,
+    setup: TokenStream,
+    body: TokenStream,
+    fn_by_val: bool,
+) -> TokenStream {
     let error_handler = match failure_mode {
         FailureMode::Panic => gen_failure_panic(quote!(err)),
-        FailureMode::Error => quote! { co3::encode(err) },
+        FailureMode::Error => gen_abi_return_encode(quote!(err), !fn_by_val),
     };
 
     quote! {
         #attrs
-        unsafe #abi #fn_signature {
-            #abi_assertions
-            let fn_body = || #ffi_fn_body;
+        #vis #signature {
+            #setup
+            let __co3_abi_body = || #body;
 
-            match fn_body() {
+            match __co3_abi_body() {
                 Ok(value) => value,
                 Err(err) => #error_handler,
             }
@@ -170,33 +199,6 @@ pub(crate) fn gen_definition_body(
     fn_by_val: bool,
     failure_mode: FailureMode,
 ) -> TokenStream {
-    gen_definition_body_with_output(sig, callee, fn_by_val, failure_mode, false)
-}
-
-pub(crate) fn gen_raw_definition_body(
-    sig: syn::Signature,
-    callee: TokenStream,
-    fn_by_val: bool,
-    failure_mode: FailureMode,
-) -> TokenStream {
-    gen_definition_body_with_output(sig, callee, fn_by_val, failure_mode, !fn_by_val)
-}
-
-pub(crate) fn gen_abi_return_encode(value: TokenStream, borrow_output: bool) -> TokenStream {
-    if borrow_output {
-        quote!(co3::borrow::borrow_cast(co3::encode(#value)))
-    } else {
-        quote!(co3::encode(#value))
-    }
-}
-
-fn gen_definition_body_with_output(
-    sig: syn::Signature,
-    callee: TokenStream,
-    fn_by_val: bool,
-    failure_mode: FailureMode,
-    borrow_output: bool,
-) -> TokenStream {
     let inputs = &sig.inputs;
     let return_ty = fn_return_ty(&sig);
 
@@ -219,7 +221,7 @@ fn gen_definition_body_with_output(
     } else {
         quote! {}
     };
-    let encoded_output = gen_abi_return_encode(quote!(__co3_output), borrow_output);
+    let encoded_output = gen_abi_return_encode(quote!(__co3_output), !fn_by_val);
     let output = match failure_mode {
         FailureMode::Panic => quote! { Ok::<_, ()>(#encoded_output) },
         FailureMode::Error => match return_ty {
@@ -240,6 +242,14 @@ fn gen_definition_body_with_output(
 
         #output
     }}
+}
+
+pub(crate) fn gen_abi_return_encode(value: TokenStream, borrow_output: bool) -> TokenStream {
+    if borrow_output {
+        quote!(co3::borrow::borrow_cast(co3::encode(#value)))
+    } else {
+        quote!(co3::encode(#value))
+    }
 }
 
 pub(crate) fn gen_drop_definition_body(
@@ -806,7 +816,7 @@ pub fn gen_impl_definition(
         let check_callee = callee.clone();
 
         let fn_by_val = item.attrs.iter().any(is_by_val_attr);
-        let fn_signature = gen_extern_fn_signature(item.sig.clone(), failure_mode);
+        let fn_signature = gen_extern_fn_signature(item.sig.clone(), failure_mode, fn_by_val);
         let signature_drift_check =
             // NOTE: `Drop::drop` has a fixed signature enforced by `validate_drop_impl`
             (!drop_impl)
@@ -891,7 +901,8 @@ pub fn gen_fn_definition(
     normalize_fn_signature(&mut item.sig, None);
 
     let ffi_fn_body = gen_fn_definition_body(&item, failure_mode, callee);
-    let fn_signature = gen_extern_fn_signature(item.sig, failure_mode);
+    let fn_by_val = item.attrs.iter().any(is_by_val_attr);
+    let fn_signature = gen_extern_fn_signature(item.sig, failure_mode, fn_by_val);
 
     emit_extern_definition(abi, &item.attrs, failure_mode, fn_signature, ffi_fn_body)
 }
@@ -899,8 +910,9 @@ pub fn gen_fn_definition(
 pub(crate) fn gen_extern_fn_signature(
     sig: syn::Signature,
     failure_mode: FailureMode,
+    fn_by_val: bool,
 ) -> TokenStream {
-    let sig = lower_extern_fn_signature(sig, failure_mode);
+    let sig = lower_abi_fn_signature(sig, failure_mode, fn_by_val);
     quote! { #sig }
 }
 
@@ -933,7 +945,7 @@ pub(crate) fn lower_extern_fn_signature(
     sig
 }
 
-pub(crate) fn lower_raw_fn_signature(
+pub(crate) fn lower_abi_fn_signature(
     sig: syn::Signature,
     failure_mode: FailureMode,
     move_fn: bool,
@@ -1386,6 +1398,30 @@ impl VisitMut for SelfConcretizer<'_> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn exported_definition_has_private_raw_name_and_explicit_symbol() {
+        let abi: syn::Abi = parse_quote!(extern "C");
+        let attrs = vec![parse_quote!(#[symbol_name = "public_symbol"])];
+        let definition = emit_extern_definition(
+            &abi,
+            &attrs,
+            FailureMode::Panic,
+            quote!(fn example(value: u8) -> u8),
+            quote!(Ok::<_, ()>(value)),
+        );
+        let item: syn::ItemFn = syn::parse2(definition).unwrap();
+
+        assert_eq!(item.sig.ident, "example_raw");
+        assert!(matches!(item.vis, syn::Visibility::Inherited));
+        assert!(item.attrs.iter().any(|attr| {
+            let syn::Meta::List(list) = &attr.meta else {
+                return false;
+            };
+            list.path.is_ident("unsafe")
+                && list.tokens.to_string() == "export_name = \"public_symbol\""
+        }));
+    }
 
     fn explicitized(mut sig: syn::Signature) -> syn::Signature {
         explicitize_signature_lifetimes(&mut sig);

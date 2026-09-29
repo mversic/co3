@@ -107,6 +107,7 @@ pub(crate) struct RawFnDecl {
     pub(crate) callee: TokenStream,
     pub(crate) sig: syn::Signature,
     pub(crate) owner: Option<RawFnOwner>,
+    pub(crate) dispatch_args: crate::DispatchGroups,
 }
 
 pub(crate) struct RawFnOwner {
@@ -338,6 +339,7 @@ fn parse_raw_fn_item(input: ParseStream) -> Result<RawFnDecl> {
         callee: quote!(#ident),
         sig,
         owner: None,
+        dispatch_args: Default::default(),
     })
 }
 

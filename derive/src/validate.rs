@@ -174,23 +174,59 @@ pub(crate) fn validate_raw_companions(raw_decls: &[crate::parse::RawFnDecl]) -> 
                 ));
             }
         }
-        if has_runtime_dispatch(&raw_decl.sig.generics)
-            || raw_decl
-                .owner
-                .as_ref()
-                .is_some_and(|owner| has_runtime_dispatch(&owner.generics))
-            || raw_decl
-                .attrs
-                .iter()
-                .any(|attr| attr.path().is_ident("erased"))
-        {
-            return Err(Error::new_spanned(
-                &raw_decl.sig,
-                "tagged dispatch in `raw!` is not yet supported",
-            ));
-        }
+        validate_raw_dispatch(raw_decl)?;
         validate_soft_lifetimes(&raw_decl.sig)?;
     }
+    Ok(())
+}
+
+fn validate_raw_dispatch(raw_decl: &crate::parse::RawFnDecl) -> Result<()> {
+    let mut generics = raw_decl.sig.generics.clone();
+    if let Some(owner) = &raw_decl.owner {
+        crate::ffi_fn::merge_generics(owner.generics.clone(), &mut generics);
+    }
+    let dynamic = generics
+        .type_params()
+        .filter(|param| param.attrs.iter().any(is_type_erased))
+        .map(|param| &param.ident)
+        .collect::<BTreeSet<_>>();
+    let dispatch = &raw_decl.dispatch_args;
+    if dynamic.is_empty() && dispatch.is_empty() {
+        return Ok(());
+    }
+    if dynamic.is_empty() {
+        return Err(Error::new_spanned(
+            &raw_decl.sig.ident,
+            "`raw!` use predicates require a runtime-dispatched type parameter",
+        ));
+    }
+    for (params, _) in dispatch.groups() {
+        for param in params {
+            if !dynamic.contains(param) {
+                return Err(Error::new_spanned(
+                    param,
+                    "`raw!` use predicates may only select runtime-dispatched type parameters",
+                ));
+            }
+        }
+    }
+    for param in &dynamic {
+        if !dispatch.contains_param(param) {
+            return Err(Error::new_spanned(
+                param,
+                "runtime-dispatched `raw!` parameters require a `use` predicate",
+            ));
+        }
+    }
+    validate_callable_parameter_usage(&generics, dispatch, &raw_decl.sig, &BTreeSet::new())?;
+    validate_callable_parameter_bounds(&generics, dispatch, &raw_decl.sig, &BTreeSet::new(), true)?;
+    validate_dispatch_param_positions(
+        generics
+            .type_params()
+            .filter(|param| dynamic.contains(&param.ident)),
+        &raw_decl.sig,
+    )?;
+    reject_explicit_dispatch_ids(&raw_decl.sig)?;
     Ok(())
 }
 

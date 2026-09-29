@@ -52,7 +52,7 @@ pub(crate) fn wrap_fn_definition(
 ) -> TokenStream {
     if import_mode == ImportMode::Raw {
         let wrapper_abi = item.sig.abi.clone().unwrap_or_else(|| abi.clone());
-        let raw_sig = ffi_fn::lower_raw_fn_signature(
+        let raw_sig = ffi_fn::lower_abi_fn_signature(
             item.sig.clone(),
             failure_mode,
             item.attrs.iter().any(is_by_val_attr),
@@ -111,7 +111,11 @@ pub(crate) fn wrap_fn_definition(
     let co3 = co3_path();
 
     ffi_fn::normalize_fn_signature(&mut item.sig, None);
-    let decl = ffi_fn::gen_extern_fn_signature(item.sig, failure_mode);
+    let decl = ffi_fn::gen_extern_fn_signature(
+        item.sig,
+        failure_mode,
+        item.attrs.iter().any(is_by_val_attr),
+    );
     let abi_assertions = gen_decl_abi_assertions(&decl);
     let extern_fn_decl = gen_extern_decl(abi, block_attrs, &item.attrs, decl);
 
@@ -403,9 +407,21 @@ pub(crate) fn gen_wrapper_body_with_callee<const DISPATCHED: bool>(
 
     let ffi_fn_call = gen_ffi_fn_call(sig, &callee);
     if let syn::ReturnType::Type(_, output_ty) = &sig.output {
-        let return_derase = gen_return_derase::<DISPATCHED>(self_ty, dispatch_generics, output_ty);
+        let return_derase =
+            gen_return_derase::<DISPATCHED>(self_ty, dispatch_generics, output_ty, fn_by_val);
         let return_borrow_check = gen_return_borrow_check(output_ty, fn_by_val);
         let decode_error = gen_return_decode_error(failure_mode, output_ty);
+        let decode_output = if fn_by_val {
+            quote! {
+                let __co3_out: Option<#output_ty> = unsafe { co3::decode(__co3_out) };
+            }
+        } else {
+            quote! {
+                let __co3_out: Option<<#output_ty as co3::borrow::Borrow>::Borrowed<'_>> =
+                    unsafe { co3::decode(__co3_out) };
+                let __co3_out = __co3_out.map(<#output_ty as co3::borrow::FromBorrow>::from_borrow);
+            }
+        };
 
         return quote! {
             #return_borrow_check
@@ -421,14 +437,8 @@ pub(crate) fn gen_wrapper_body_with_callee<const DISPATCHED: bool>(
 
             #sync_check
             let __co3_out = #return_derase;
-            let __co3_out: Option<#output_ty> = unsafe {
-                co3::decode(__co3_out)
-            };
-
-            let Some(__co3_out) = __co3_out else {
-                #decode_error
-            };
-
+            #decode_output
+            let Some(__co3_out) = __co3_out else { #decode_error };
             __co3_out
         };
     }
@@ -536,6 +546,7 @@ fn gen_return_derase<const DISPATCHED: bool>(
     self_ty: Option<&syn::Type>,
     dispatch_generics: Option<&syn::Generics>,
     output_ty: &syn::Type,
+    fn_by_val: bool,
 ) -> TokenStream {
     if !DISPATCHED {
         return quote!(__co3_out);
@@ -546,7 +557,7 @@ fn gen_return_derase<const DISPATCHED: bool>(
         .map(|(self_ty, generics)| {
             let mut output_ty = output_ty.clone();
             ffi_fn::SelfConcretizer { self_ty }.visit_type_mut(&mut output_ty);
-            gen_return_derase_expr(generics, &output_ty, quote!(__co3_out))
+            gen_return_derase_expr(generics, &output_ty, quote!(__co3_out), fn_by_val)
         })
         .unwrap_or_else(|| quote!(__co3_out))
 }

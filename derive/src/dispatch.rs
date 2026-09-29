@@ -91,6 +91,7 @@ pub(crate) fn gen_dispatch_fn_export(
         &item.attrs,
         &callee,
         false,
+        DispatchEmission::Export,
     );
 
     quote! {
@@ -98,6 +99,57 @@ pub(crate) fn gen_dispatch_fn_export(
             #definition
         };
     }
+}
+
+#[derive(Clone, Copy)]
+enum DispatchEmission<'a> {
+    Export,
+    Companion(&'a syn::Visibility),
+}
+
+pub(crate) fn gen_raw_dispatch_companion(
+    failure_mode: FailureMode,
+    raw_decl: &crate::parse::RawFnDecl,
+) -> TokenStream {
+    let attrs = &raw_decl.attrs;
+    let vis = &raw_decl.vis;
+    let mut sig = raw_decl.sig.clone();
+    let owner = raw_decl.owner.as_ref();
+    let callee: syn::Expr = match syn::parse2(raw_decl.callee.clone()) {
+        Ok(callee) => callee,
+        Err(error) => return error.to_compile_error(),
+    };
+    let method_params = sig
+        .generics
+        .type_params()
+        .map(|param| param.ident.clone())
+        .collect::<Vec<_>>();
+    let owner_ty = owner.map(|owner| owner.self_ty.as_ref());
+    if let Some(owner) = owner {
+        ffi_fn::merge_generics(owner.generics.clone(), &mut sig.generics);
+    }
+    let generics = sig.generics.clone();
+    ffi_fn::normalize_fn_signature(&mut sig, owner_ty);
+    synthesize_dispatch_tag_ids(None, &generics, &mut sig.inputs);
+    sig.ident = ffi_fn::raw_definition_name(&sig.ident);
+    let abi: syn::Abi = parse_quote!(extern "C");
+    let definition = synthesize_dispatch_export_fn(
+        &abi,
+        failure_mode,
+        &generics,
+        &method_params,
+        owner_ty.map_or(DispatchReceiver::None, |ty| DispatchReceiver::Impl {
+            ty,
+            id: None,
+        }),
+        &raw_decl.dispatch_args,
+        sig,
+        attrs,
+        &callee,
+        false,
+        DispatchEmission::Companion(vis),
+    );
+    definition
 }
 
 #[derive(Clone, Copy)]
@@ -332,6 +384,7 @@ pub(crate) fn gen_dispatch_export(
             &item.attrs,
             &callee,
             drop_impl,
+            DispatchEmission::Export,
         );
 
         quote! { #definition }
@@ -357,6 +410,7 @@ fn synthesize_dispatch_export_fn(
     attrs: &[syn::Attribute],
     callee: &syn::Expr,
     drop_impl: bool,
+    emission: DispatchEmission<'_>,
 ) -> TokenStream {
     let layout_checks = gen_dispatch_erased_layout_checks(generics, &sig, dispatch_args);
 
@@ -419,12 +473,31 @@ fn synthesize_dispatch_export_fn(
     }};
 
     erase_dispatch_signature(generics, receiver, &mut sig);
-    let sig = ffi_fn::gen_extern_fn_signature(sig, failure_mode);
-    let definition = emit_extern_definition(abi, attrs, failure_mode, sig, fn_body);
+    let lowered_sig = ffi_fn::lower_abi_fn_signature(sig, failure_mode, fn_by_val);
+    let definition = match emission {
+        DispatchEmission::Export => {
+            emit_extern_definition(abi, attrs, failure_mode, quote!(#lowered_sig), fn_body)
+        }
+        DispatchEmission::Companion(vis) => {
+            let mut sig = lowered_sig;
+            sig.safety = syn::Safety::Unsafe(Default::default());
+            sig.abi = Some(abi.clone());
+            let checks = ffi_fn::gen_abi_assertions(&sig);
+            crate::callback::emit_companion(
+                failure_mode,
+                attrs,
+                vis,
+                sig,
+                quote!(#layout_checks #checks),
+                fn_body,
+                fn_by_val,
+            )
+        }
+    };
 
-    quote! {
-        #layout_checks
-        #definition
+    match emission {
+        DispatchEmission::Export => quote! { #layout_checks #definition },
+        DispatchEmission::Companion(_) => definition,
     }
 }
 
@@ -789,6 +862,14 @@ fn synthesize_dispatch_arms(
 
             let erased_ty =
                 ErasedParamReplacer::new(generics).replace(item_fn_output_type(output_ty));
+            let (concrete_ty, erased_ty) = if fn_by_val {
+                (concrete_ty, erased_ty)
+            } else {
+                (
+                    parse_quote!(<#concrete_ty as co3::borrow::BorrowCast>::AsConst),
+                    parse_quote!(<#erased_ty as co3::borrow::BorrowCast>::AsConst),
+                )
+            };
             let erased_out = gen_retype(&quote!(__co3_arm_out), &concrete_ty, &erased_ty);
 
             let erased_err = match failure_mode {
@@ -798,10 +879,12 @@ fn synthesize_dispatch_arms(
                 }
                 FailureMode::Error => {
                     let erased_err = gen_retype(&quote!(__co3_arm_err), &concrete_ty, &erased_ty);
+                    let encoded_err =
+                        ffi_fn::gen_abi_return_encode(quote!(__co3_arm_err), !fn_by_val);
 
                     quote! {
                         Err(__co3_arm_err) => {
-                            let __co3_arm_err = co3::encode(__co3_arm_err);
+                            let __co3_arm_err = #encoded_err;
                             Ok(#erased_err)
                         },
                     }
@@ -1065,10 +1148,20 @@ pub(crate) fn gen_return_derase_expr(
     generics: &syn::Generics,
     output_ty: &syn::Type,
     value: TokenStream,
+    fn_by_val: bool,
 ) -> TokenStream {
     let concrete_ty = item_fn_output_type(output_ty);
     let erased_output_ty = ErasedParamReplacer::new(generics).replace(output_ty.clone());
     let erased_ty = item_fn_output_type(&erased_output_ty);
+
+    let (concrete_ty, erased_ty) = if fn_by_val {
+        (concrete_ty, erased_ty)
+    } else {
+        (
+            parse_quote!(<#concrete_ty as co3::borrow::BorrowCast>::AsConst),
+            parse_quote!(<#erased_ty as co3::borrow::BorrowCast>::AsConst),
+        )
+    };
 
     gen_retype(&value, &erased_ty, &concrete_ty)
 }

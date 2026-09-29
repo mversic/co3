@@ -619,19 +619,7 @@ pub fn raw(input: TokenStream) -> Result<TokenStream> {
     for item in &items {
         match item {
             ParsedItem::Fn(_) => {}
-            ParsedItem::Impl(impl_) => {
-                if utils::has_runtime_dispatch(&impl_.generics)
-                    || impl_
-                        .attrs
-                        .iter()
-                        .any(|attr| attr.path().is_ident("erased"))
-                {
-                    return Err(syn::Error::new_spanned(
-                        &impl_.self_ty,
-                        "tagged dispatch in `raw!` is not yet supported",
-                    ));
-                }
-            }
+            ParsedItem::Impl(_) => {}
             ParsedItem::Alias(alias) => {
                 let ident = match alias {
                     parse::TypeAlias::Rust(alias) => &alias.ident,
@@ -698,6 +686,9 @@ fn normalize_items(
             ParsedItem::Raw(raw_decl) => normalized.push(NormalizedItem::Raw(raw_decl)),
             ParsedItem::Alias(alias) => aliases.push(alias),
             ParsedItem::Fn(item) if mode == NormalizationMode::Raw => {
+                let ForeignItem::Fn(parsed) = ParsedItem::Fn(item.clone()).normalize()? else {
+                    unreachable!("function declaration normalizes to a function")
+                };
                 let ident = &item.sig.ident;
                 normalized.push(NormalizedItem::Raw(parse::RawFnDecl {
                     attrs: item.attrs,
@@ -705,9 +696,19 @@ fn normalize_items(
                     callee: quote!(#ident),
                     sig: item.sig,
                     owner: None,
+                    dispatch_args: parsed.dispatch_args,
                 }));
             }
             ParsedItem::Impl(mut item) => {
+                let raw_dispatch = if mode == NormalizationMode::Raw {
+                    let ForeignItem::Impl(parsed) = ParsedItem::Impl(item.clone()).normalize()?
+                    else {
+                        unreachable!("impl declaration normalizes to an impl")
+                    };
+                    Some(parsed)
+                } else {
+                    None
+                };
                 let self_ty = item.self_ty.clone();
                 let trait_path = item.trait_.as_ref().map(|(path, _)| path.clone());
                 let mut impl_items = Vec::new();
@@ -739,7 +740,7 @@ fn normalize_items(
                         impl_items.push(syn::ImplItem::Fn(method));
                         continue;
                     }
-                    let method_name = &method.sig.ident;
+                    let method_name = method.sig.ident.clone();
                     let callee = if let Some(trait_path) = &trait_path {
                         quote!(<#self_ty as #trait_path>::#method_name)
                     } else {
@@ -772,6 +773,17 @@ fn normalize_items(
                                 trait_path: trait_path.clone(),
                                 self_ty: self_ty.clone(),
                             }),
+                            dispatch_args: raw_dispatch.as_ref().map_or_else(
+                                DispatchGroups::default,
+                                |parsed| {
+                                    parsed.dispatch_args.combined_with(
+                                        parsed
+                                            .method_dispatch_args
+                                            .get(&method_name)
+                                            .unwrap_or(&DispatchGroups::default()),
+                                    )
+                                },
+                            ),
                         }));
                     }
                 }

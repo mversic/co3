@@ -1,0 +1,34 @@
+error[E0308]: mismatched types
+  --> tests/ui_fail/raw_tagged_signature_drift.rs:14:5
+   |
+13 | / raw! {
+14 | |     fn source<dyn(u8) T = u8>(value: move T) -> u8
+   | |     ^^ expected fn pointer, found fn item
+15 | |     where use<T> @ <First>;
+16 | | }
+   | |_- expected due to this
+   |
+   = note: expected fn pointer `fn(First) -> u8`
+                 found fn item `fn(First) -> First {source::<First>}`
+
+error[E0308]: mismatched types
+  --> tests/ui_fail/raw_tagged_signature_drift.rs:13:1
+   |
+13 | / raw! {
+14 | |     fn source<dyn(u8) T = u8>(value: move T) -> u8
+15 | |     where use<T> @ <First>;
+16 | | }
+   | | ^
+   | | |
+   | | expected `&u8`, found `&First`
+   | |_arguments to this function are incorrect
+   |   this return type influences the call expression's return type
+   |
+   = note: expected reference `&u8`
+              found reference `&First`
+note: function defined here
+  --> $RUST/core/src/mem/mod.rs
+   |
+   | pub const unsafe fn transmute_copy<Src, Dst>(src: &Src) -> Dst {
+   |                     ^^^^^^^^^^^^^^
+   = note: this error originates in the macro `raw` (in Nightly builds, run with -Z macro-backtrace for more info)

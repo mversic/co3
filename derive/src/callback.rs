@@ -1,5 +1,5 @@
 use proc_macro2::TokenStream;
-use quote::{format_ident, quote};
+use quote::quote;
 use syn::visit::Visit;
 use syn::visit_mut::VisitMut;
 use syn::{ItemFn, Result, parse_quote};
@@ -18,10 +18,10 @@ pub(crate) fn expand_companion(
 ) -> Result<TokenStream> {
     let fn_by_val = item.attrs.iter().any(ffi_fn::is_by_val_attr);
     let abi = parse_quote!(extern "C");
-    let mut raw_sig = ffi_fn::lower_raw_fn_signature(item.sig.clone(), failure_mode, fn_by_val);
+    let mut raw_sig = ffi_fn::lower_abi_fn_signature(item.sig.clone(), failure_mode, fn_by_val);
     raw_sig.safety = syn::Safety::Unsafe(Default::default());
     raw_sig.abi = Some(abi);
-    raw_sig.ident = format_ident!("{}_raw", item.sig.ident);
+    raw_sig.ident = ffi_fn::raw_definition_name(&item.sig.ident);
     add_generic_companion_bounds(&mut raw_sig, &item.sig, impl_generics, fn_by_val);
     let generic_args = item
         .sig
@@ -47,32 +47,46 @@ pub(crate) fn expand_companion(
     };
     let signature_check = ffi_fn::gen_fn_signature_drift_check(item.sig.clone(), callee.clone());
     let body =
-        ffi_fn::gen_raw_definition_body(item.sig.clone(), quote!(#callee), fn_by_val, failure_mode);
-    let vis = &item.vis;
-    let cfg = cfg_attrs(&item.attrs);
-    let co3 = co3_path();
-    let error_handler = match failure_mode {
-        FailureMode::Panic => ffi_fn::gen_failure_panic(quote!(err)),
-        FailureMode::Error => ffi_fn::gen_abi_return_encode(quote!(err), !fn_by_val),
-    };
+        ffi_fn::gen_definition_body(item.sig.clone(), quote!(#callee), fn_by_val, failure_mode);
+    Ok(emit_companion(
+        failure_mode,
+        &item.attrs,
+        &item.vis,
+        raw_sig,
+        signature_check,
+        body,
+        fn_by_val,
+    ))
+}
 
-    Ok(quote! {
+pub(crate) fn emit_companion(
+    failure_mode: FailureMode,
+    attrs: &[syn::Attribute],
+    vis: &syn::Visibility,
+    sig: syn::Signature,
+    setup: TokenStream,
+    body: TokenStream,
+    fn_by_val: bool,
+) -> TokenStream {
+    let cfg = cfg_attrs(attrs);
+    let co3 = co3_path();
+    let attrs = quote! {
         #(#cfg)*
         #[doc = "Companion of the declared Rust function with lowered argument and return types."]
         #[doc = ""]
         #[doc = "# Safety"]
         #[doc = ""]
         #[doc = "The caller must uphold the safety requirements of `co3::decode` or `co3::soft_decode` for each argument, as applicable."]
-        #vis #raw_sig {
-            use #co3 as co3;
-            #signature_check
-            let __co3_raw_body = || #body;
-            match __co3_raw_body() {
-                Ok(value) => value,
-                Err(err) => #error_handler,
-            }
-        }
-    })
+    };
+    ffi_fn::emit_abi_function(
+        failure_mode,
+        attrs,
+        quote!(#vis),
+        &sig,
+        quote!(use #co3 as co3; #setup),
+        body,
+        fn_by_val,
+    )
 }
 
 fn add_generic_companion_bounds(
@@ -188,7 +202,7 @@ pub(crate) fn lower_callback_fn_type(
     failure_mode: FailureMode,
     move_fn: bool,
 ) -> Result<syn::Type> {
-    let mut type_sig = ffi_fn::lower_raw_fn_signature(sig, failure_mode, move_fn);
+    let mut type_sig = ffi_fn::lower_abi_fn_signature(sig, failure_mode, move_fn);
     let replacements = type_sig
         .generics
         .lifetimes()

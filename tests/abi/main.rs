@@ -4,6 +4,7 @@ mod cfg_args;
 mod handles;
 mod niche_value;
 mod raw_selected;
+mod raw_tagged_dispatch;
 mod raw_wrapper_abi;
 mod statics;
 mod status_return;

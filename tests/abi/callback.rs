@@ -134,6 +134,26 @@ ffi! {
 
     fn apply_callback(callback: CCallback, left: Value, right: Value) -> Value;
     fn apply_optional_callback(callback: Option<CCallback>, value: Value) -> Value;
+    #[symbol_name = "abi_borrowed_value"]
+    fn borrow_rust_value(value: RustValue) -> RustValue;
+}
+
+mod borrowed_export_import {
+    use super::*;
+
+    ffi! {
+        #![unsafe(extern("C"))]
+        #![symbol_prefix = "abi_c_callback"]
+
+        #[symbol_name = "abi_borrowed_value"]
+        pub fn borrow_rust_value(value: RustValue) -> RustValue;
+    }
+}
+
+#[test]
+fn borrowed_return_round_trips_through_custom_symbol() {
+    let input = RustValue(7);
+    assert_eq!(borrowed_export_import::borrow_rust_value(input), input);
 }
 
 mod exported_raw_import {

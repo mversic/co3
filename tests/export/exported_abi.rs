@@ -184,7 +184,7 @@ pub const unsafe fn ambiguous1() -> Ambiguous {
     Ambiguous::Fn
 }
 
-pub const unsafe extern "C" fn ambiguous2() -> Ambiguous {
+pub const unsafe extern "Rust" fn ambiguous2() -> Ambiguous {
     Ambiguous::Fn
 }
 

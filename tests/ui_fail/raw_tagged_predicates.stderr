@@ -1,0 +1,17 @@
+error: `raw!` use predicates require a runtime-dispatched type parameter
+ --> tests/ui_fail/raw_tagged_predicates.rs:6:8
+  |
+6 |     fn selected<T>(value: move T) where use<T> @ <u8>;
+  |        ^^^^^^^^
+
+error: runtime-dispatched `raw!` parameters require a `use` predicate
+  --> tests/ui_fail/raw_tagged_predicates.rs:10:25
+   |
+10 |     fn selected<dyn(u8) T = u8>(value: move T);
+   |                         ^
+
+error: `raw!` use predicates may only select runtime-dispatched type parameters
+  --> tests/ui_fail/raw_tagged_predicates.rs:15:30
+   |
+15 |     where use<T> @ <u8>, use<U> @ <u8>;
+   |                              ^
