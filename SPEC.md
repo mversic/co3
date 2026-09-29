@@ -52,10 +52,9 @@ Any conversion written manually against traits of this crate **DOES NOT** consti
 ### 2.1. `#[derive(ReprC)]`
 
 `#[derive(ReprC)]` derives implementations required to convert a type to a corresponding generated C-compatible companion type.
-A C-compatible companion type has a defined foreign representation and no trap representations, and its fields are themselves C-compatible companion types. Function pointers may retain a non-C calling convention.
+A C-compatible companion type has a defined foreign representation and no trap representations, and its fields are themselves C-compatible companion types.
 
 - By default, the derive defines a C-compatible companion type and conversions between the two types.
-- Function pointers implement `ReprC` only when they already use a supported non-Rust ABI and each argument implements `CFnArg` and the return implements `CFnReturn`. Their `CType` is `Option<Self>` so null is representable, and they support identity `Encode`/`Decode`. Rust-ABI pointers and foreign-ABI pointers with arguments or returns that require lowering do not implement `ReprC`; `raw extern "ABI" fn` aliases can declare lowered pointer types explicitly.
 - `#[repr_c(identity)]` uses a `#[repr(C)]` or `#[repr(transparent)]` struct directly as its companion.
 - Conversion of types with explicit representation (i.e. `#[repr(C)]`/`repr(transmute)`) are optimized.
 - `#[repr_c(is_valid = |field0, ...| {...})]` provides additional validity invariant of a struct/variant.
@@ -83,7 +82,7 @@ It must always start with a declaration of direction and ABI (e.g. `#![unsafe(ex
 - `#[tag(TagTy)]` on a type declaration defines its tag type; `#[tag(TagTy, unsafe(val))]` also assigns its tag value.
 - `where use<T, ...> @ (<Type1> | ...)` opts into a kind of polymorphic dispatch where concrete types are known at compile time but erased at runtime.
 - `#[unpack(_, _)]` on an imported function argument unpacks the compound type into two funcion arguments (facilitates useing `&[T]` in legacy APIs).
-- type aliases are supported and allow using the `raw fn` pointer syntax which inclues argument and output value explicit `move` semantics.
+- A `type Name = T;` alias produces a lowered form of the declared type through `ReprC::CType` or `raw` function syntactical lowering.
 - Using the `ffi` macro always carries a risk of UB as it relies on the correct user-provided argument types and lifetimes in the ABI.
 
 ### 2.3. `raw!`

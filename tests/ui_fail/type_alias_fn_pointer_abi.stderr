@@ -1,35 +1,23 @@
-error: function pointers in `ffi!` type aliases require an explicit non-Rust ABI
- --> tests/ui_fail/type_alias_fn_pointer_abi.rs:5:17
+error: function pointers in `ffi!` require an explicit non-Rust `extern "ABI"`
+ --> tests/ui_fail/type_alias_fn_pointer_abi.rs:5:41
   |
-5 |     type Bare = fn(u8);
-  |                 ^^
+5 |     type NestedBare = raw extern "C" fn(fn(u8));
+  |                                         ^^
 
-error: function pointers in `ffi!` type aliases require an explicit non-Rust ABI
-  --> tests/ui_fail/type_alias_fn_pointer_abi.rs:10:21
+error: function pointers in `ffi!` cannot use the Rust ABI
+  --> tests/ui_fail/type_alias_fn_pointer_abi.rs:10:46
    |
-10 |     type Implicit = extern fn(u8);
-   |                     ^^^^^^
+10 |     type NestedRust = raw extern "C" fn() -> extern "Rust" fn(u8);
+   |                                              ^^^^^^^^^^^^^
 
-error: function pointers in `ffi!` type aliases require an explicit non-Rust ABI
-  --> tests/ui_fail/type_alias_fn_pointer_abi.rs:15:17
+error: function pointers in `ffi!` require an explicit non-Rust `extern "ABI"`
+  --> tests/ui_fail/type_alias_fn_pointer_abi.rs:15:49
    |
-15 |     type Rust = extern "Rust" fn(u8);
-   |                 ^^^^^^^^^^^^^
+15 |     type CompositeBare = (u8, raw extern "C" fn(fn(u8)));
+   |                                                 ^^
 
-error: function pointers in `ffi!` type aliases require an explicit non-Rust ABI
-  --> tests/ui_fail/type_alias_fn_pointer_abi.rs:20:26
+error: raw function pointer aliases cannot use the Rust ABI
+  --> tests/ui_fail/type_alias_fn_pointer_abi.rs:20:35
    |
-20 |     type Nested = Option<fn(u8)>;
-   |                          ^^
-
-error: function pointers in `ffi!` type aliases require an explicit non-Rust ABI
-  --> tests/ui_fail/type_alias_fn_pointer_abi.rs:25:30
-   |
-25 |     type NestedRust = Option<extern "Rust" fn(u8)>;
-   |                              ^^^^^^^^^^^^^
-
-error: function pointers in `ffi!` type aliases require an explicit non-Rust ABI
-  --> tests/ui_fail/type_alias_fn_pointer_abi.rs:30:40
-   |
-30 |     type RawNested = raw extern "C" fn(fn(u8));
-   |                                        ^^
+20 |     type CompositeRust = (u8, raw extern "Rust" fn(u8));
+   |                                   ^^^^^^^^^^^^^

@@ -6,14 +6,6 @@ struct Host;
 
 trait Selected: co3::tag::Tagged<Kind = u8> + Sized {
     fn plain();
-
-    fn first<T>()
-    where
-        (): h_first::DispatchSet<Self, T>;
-
-    fn second<T>()
-    where
-        (): h_second::DispatchSet<Self, T>;
 }
 
 ffi! {
@@ -24,16 +16,6 @@ ffi! {
         use<H> @ <Host>,
     {
         fn plain();
-
-        #[symbol_name = "first_{T}"]
-        fn first<T>()
-        where
-            use<T> @ <u8>;
-
-        #[symbol_name = "second_{T}"]
-        fn second<T>()
-        where
-            use<T> @ <u16>;
     }
 
     impl<dyn(u8) H> H
@@ -55,6 +37,6 @@ ffi! {
 }
 
 fn main() {
-    let _ = <Host as Selected>::first::<u8>;
-    let _ = <Host as Selected>::second::<u16>;
+    let _ = Host::inherent_first::<u8>;
+    let _ = Host::inherent_second::<u16>;
 }

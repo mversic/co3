@@ -17,7 +17,7 @@ fn gen_static_assert(ty: &syn::Type) -> TokenStream {
     quote! {
         const _: () = {
             assert!(
-                #co3::impls!(#ty: #co3::rust_spec::RustSpec<
+                #co3::impls!((#ty): #co3::rust_spec::RustSpec<
                     Layout = #co3::rust_spec::Stable,
                     Size = #co3::rust_spec::size::Sized<#co3::rust_spec::Gt<#co3::rust_spec::Zero>>
                 >),
@@ -134,9 +134,24 @@ fn gen_import_wrapper(
     let (wrapper_ident, definition, value) = wrapper_definition(vis, ident, ty, mutable);
 
     let co3 = co3_path();
-    let decode_bounds = quote! {
-        for<'_dummy> #ty: #co3::Decode<'_dummy, Store: #co3::stored::EmptyStore>,
-        <#ty as #co3::ReprC>::CType: Copy,
+    // A concrete lifetime lets rustc resolve the function pointer's DecodeOwned
+    // store before checking the EmptyStore bound.
+    let (decode_bounds, decode) = if matches!(ty, syn::Type::FnPtr(_)) {
+        (
+            quote! {
+                #ty: #co3::Decode<'static, Store: #co3::stored::EmptyStore>,
+                <#ty as #co3::ReprC>::CType: Copy,
+            },
+            quote!(#co3::decode::<'static, #ty>(source)),
+        )
+    } else {
+        (
+            quote! {
+                for<'_dummy> #ty: #co3::Decode<'_dummy, Store: #co3::stored::EmptyStore>,
+                <#ty as #co3::ReprC>::CType: Copy,
+            },
+            quote!(#co3::decode::<#ty>(source)),
+        )
     };
 
     let soft_read = if mutable {
@@ -178,7 +193,7 @@ fn gen_import_wrapper(
             where #decode_bounds
             {
                 let source = unsafe { core::ptr::read(core::ptr::addr_of!(#raw_ident)) };
-                unsafe { #co3::decode::<#ty>(source) }
+                unsafe { #decode }
             }
         }
     } else {
@@ -188,7 +203,7 @@ fn gen_import_wrapper(
             where #decode_bounds
             {
                 let source = unsafe { #raw_ident };
-                unsafe { #co3::decode::<#ty>(source) }
+                unsafe { #decode }
             }
         }
     };

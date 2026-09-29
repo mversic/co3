@@ -1,5 +1,0 @@
-error: raw function pointer aliases require `raw extern "ABI" fn`; specify the pointer's ABI explicitly
- --> tests/ui_fail/raw_missing_abi.rs:5:10
-  |
-5 |     type Alias = raw fn();
-  |          ^^^^^

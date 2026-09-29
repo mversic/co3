@@ -1,0 +1,17 @@
+error: trait method generic parameters are not supported in `ffi!`
+  --> tests/ui_fail/trait_method_generics.rs:15:21
+   |
+15 |         fn lifetime<'a>(&'a self);
+   |                     ^^
+
+error: trait method generic parameters are not supported in `ffi!`
+  --> tests/ui_fail/trait_method_generics.rs:16:18
+   |
+16 |         fn typed<T>(&self);
+   |                  ^
+
+error: trait method generic parameters are not supported in `ffi!`
+  --> tests/ui_fail/trait_method_generics.rs:17:18
+   |
+17 |         fn konst<const N: usize>(&self);
+   |                  ^^^^^^^^^^^^^^

@@ -1,14 +1,220 @@
 use proc_macro2::TokenStream;
-use quote::quote;
+use quote::{format_ident, quote};
 use syn::visit::Visit;
 use syn::visit_mut::VisitMut;
 use syn::{ItemFn, Result, parse_quote};
 
 use crate::{
     ffi_fn,
-    parse::FailureMode,
+    parse::{self, FailureMode},
     utils::{ParamUseDetector, cfg_attrs, co3_path, soft_for_arg},
 };
+
+pub(crate) fn lower_fn_pointer_type(
+    pointer: &syn::TypeFnPtr,
+    failure_mode: FailureMode,
+) -> Result<syn::Type> {
+    let abi = match &pointer.abi {
+        None => {
+            return Err(syn::Error::new_spanned(
+                pointer.fn_token,
+                "function pointers in `ffi!` require an explicit non-Rust `extern \"ABI\"`",
+            ));
+        }
+        Some(abi) if abi.name.is_none() => {
+            return Err(syn::Error::new_spanned(
+                abi,
+                "function pointers in `ffi!` require an explicit non-Rust `extern \"ABI\"`",
+            ));
+        }
+        Some(abi) if abi.name.as_ref().is_some_and(|name| name.value() == "Rust") => {
+            return Err(syn::Error::new_spanned(
+                abi,
+                "function pointers in `ffi!` cannot use the Rust ABI",
+            ));
+        }
+        Some(abi) => abi.clone(),
+    };
+    if pointer.variadic.is_some() || pointer.inputs.len() > 12 {
+        return Err(syn::Error::new_spanned(
+            pointer,
+            "function pointers require a non-variadic signature with at most 12 arguments",
+        ));
+    }
+    let mut sig: syn::Signature = syn::parse_quote!(fn __co3_callback_type());
+    if let Some(lifetimes) = &pointer.lifetimes {
+        sig.generics.params = lifetimes.lifetimes.clone();
+        sig.generics.lt_token = Some(Default::default());
+        sig.generics.gt_token = Some(Default::default());
+    }
+    sig.inputs = pointer
+        .inputs
+        .iter()
+        .enumerate()
+        .map(|(index, arg)| -> syn::FnArg {
+            let name = format_ident!("__co3_arg_{index}");
+            let attrs = &arg.attrs;
+            let ty = &arg.ty;
+            syn::parse_quote!(#(#attrs)* #name: #ty)
+        })
+        .collect();
+    sig.output = pointer.output.clone();
+    lower_nested_fn_pointers(&mut sig, failure_mode)?;
+    lower_callback_fn_type(sig, &abi, failure_mode, false)
+}
+
+pub(crate) fn lower_fn_pointers_in_type(
+    ty: &mut syn::Type,
+    failure_mode: FailureMode,
+) -> Result<()> {
+    struct Lowerer {
+        failure_mode: FailureMode,
+        error: Option<syn::Error>,
+    }
+
+    impl VisitMut for Lowerer {
+        fn visit_type_mut(&mut self, ty: &mut syn::Type) {
+            if self.error.is_some() {
+                return;
+            }
+            if let syn::Type::FnPtr(pointer) = ty {
+                match lower_fn_pointer_type(pointer, self.failure_mode) {
+                    Ok(lowered) => *ty = lowered,
+                    Err(error) => self.error = Some(error),
+                }
+            }
+        }
+    }
+
+    let mut lowerer = Lowerer {
+        failure_mode,
+        error: None,
+    };
+    lowerer.visit_type_mut(ty);
+    lowerer.error.map_or(Ok(()), Err)
+}
+
+pub(crate) fn lower_nested_fn_pointers(
+    sig: &mut syn::Signature,
+    failure_mode: FailureMode,
+) -> Result<()> {
+    for input in &mut sig.inputs {
+        if let syn::FnArg::Typed(arg) = input {
+            lower_fn_pointers_in_type(&mut arg.ty, failure_mode)?;
+        }
+    }
+    if let syn::ReturnType::Type(_, ty) = &mut sig.output {
+        lower_fn_pointers_in_type(ty, failure_mode)?;
+    }
+    Ok(())
+}
+
+pub(crate) fn lower_raw_alias_signature(
+    mut sig: syn::Signature,
+    move_fn: bool,
+    failure_mode: FailureMode,
+    block_abi: &syn::Abi,
+) -> Result<syn::Type> {
+    let abi = sig.abi.get_or_insert_with(|| block_abi.clone());
+    let Some(name) = &abi.name else {
+        return Err(syn::Error::new_spanned(
+            abi,
+            "`extern fn` requires an explicit ABI",
+        ));
+    };
+    if name.value() == "Rust" {
+        return Err(syn::Error::new_spanned(
+            abi,
+            "raw function pointer aliases cannot use the Rust ABI",
+        ));
+    }
+    let abi = abi.clone();
+    if sig.asyncness.is_some()
+        || matches!(sig.safety, syn::Safety::Unsafe(_))
+        || sig.variadic.is_some()
+        || !sig.generics.params.is_empty()
+        || sig
+            .generics
+            .where_clause
+            .as_ref()
+            .is_some_and(|clause| !clause.predicates.is_empty())
+        || sig.inputs.len() > 12
+    {
+        return Err(syn::Error::new_spanned(
+            sig,
+            "raw function pointers require a safe, synchronous, non-generic function with at most 12 arguments",
+        ));
+    }
+    lower_raw_fn_types_in_signature(&mut sig, failure_mode, block_abi)?;
+    lower_nested_fn_pointers(&mut sig, failure_mode)?;
+    lower_callback_fn_type(sig, &abi, failure_mode, move_fn)
+}
+
+struct RawTypeLowerer<'a> {
+    failure_mode: FailureMode,
+    block_abi: &'a syn::Abi,
+    error: Option<syn::Error>,
+}
+
+impl VisitMut for RawTypeLowerer<'_> {
+    fn visit_type_mut(&mut self, ty: &mut syn::Type) {
+        if self.error.is_some() {
+            return;
+        }
+        if let syn::Type::Macro(mac) = ty
+            && mac.mac.path.is_ident(parse::RAW_FN_TYPE_MACRO)
+        {
+            let lowered = parse::parse_raw_function_type(mac.mac.tokens.clone()).and_then(
+                |(sig, move_fn)| {
+                    lower_raw_alias_signature(sig, move_fn, self.failure_mode, self.block_abi)
+                },
+            );
+            match lowered {
+                Ok(lowered) => *ty = lowered,
+                Err(error) => self.error = Some(error),
+            }
+        } else {
+            syn::visit_mut::visit_type_mut(self, ty);
+        }
+    }
+}
+
+pub(crate) fn lower_raw_fn_types_in_signature(
+    sig: &mut syn::Signature,
+    failure_mode: FailureMode,
+    block_abi: &syn::Abi,
+) -> Result<()> {
+    let mut lowerer = RawTypeLowerer {
+        failure_mode,
+        block_abi,
+        error: None,
+    };
+    lowerer.visit_signature_mut(sig);
+    lowerer.error.map_or(Ok(()), Err)
+}
+
+pub(crate) fn lower_raw_fn_types_in_items(
+    items: &mut [parse::ParsedItem],
+    failure_mode: FailureMode,
+    block_abi: &syn::Abi,
+) -> Result<()> {
+    let mut lowerer = RawTypeLowerer {
+        failure_mode,
+        block_abi,
+        error: None,
+    };
+    for item in items {
+        match item {
+            parse::ParsedItem::Fn(item) => lowerer.visit_item_fn_mut(item),
+            parse::ParsedItem::Raw(item) => lowerer.visit_signature_mut(&mut item.sig),
+            parse::ParsedItem::Static(item) => lowerer.visit_type_mut(&mut item.ty),
+            parse::ParsedItem::Impl(item) => lowerer.visit_item_impl_mut(item),
+            parse::ParsedItem::Type(item) => lowerer.visit_foreign_item_type_mut(item),
+            parse::ParsedItem::Alias(alias) => lowerer.visit_item_type_mut(&mut alias.item),
+        }
+    }
+    lowerer.error.map_or(Ok(()), Err)
+}
 
 pub(crate) fn expand_companion(
     failure_mode: FailureMode,

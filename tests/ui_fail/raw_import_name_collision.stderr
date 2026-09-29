@@ -1,5 +1,27 @@
-error: raw and Rust imports need distinct Rust names; use `#[symbol_name = "..."]` to bind them to the same foreign symbol
- --> tests/ui_fail/raw_import_name_collision.rs:7:12
+error[E0428]: the name `foreign` is defined multiple times
+ --> tests/ui_fail/raw_import_name_collision.rs:3:1
   |
-7 |     raw fn foreign(value: u8) -> u8;
-  |            ^^^^^^^
+3 | ffi! {
+  | ^^^^
+  | |
+  | `foreign` redefined here
+  | previous definition of the value `foreign` here
+  |
+  = note: `foreign` must be defined only once in the value namespace of this module
+  = note: this error originates in the macro `ffi` (in Nightly builds, run with -Z macro-backtrace for more info)
+
+error[E0592]: duplicate definitions with name `method`
+  --> tests/ui_fail/raw_import_name_collision.rs:12:1
+   |
+12 | / ffi! {
+13 | |     #![unsafe(extern("C"))]
+14 | |
+15 | |     impl Api {
+...  |
+19 | | }
+   | | ^
+   | | |
+   | |_duplicate definitions for `method`
+   |   other definition for `method`
+   |
+   = note: this error originates in the macro `ffi` (in Nightly builds, run with -Z macro-backtrace for more info)

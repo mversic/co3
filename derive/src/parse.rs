@@ -23,6 +23,92 @@ const FN_BODIES_NOT_ALLOWED_MSG: &str = "fn bodies are not allowed in declaratio
 const ITEM_NOT_SUPPORTED_MSG: &str = "item not supported";
 const EXPECTED_FEATURE_NAME_MSG: &str = "Expected feature name in `#![feature(...)]`";
 const RAW_IMPL_ITEM_ATTR: &str = "raw";
+pub(crate) const RAW_FN_TYPE_MACRO: &str = "__co3_raw_fn_type";
+
+// Syn cannot parse `raw fn` as a Type. Keep the original syntax inside a type
+// macro so the surrounding type can be parsed normally, even when nested.
+fn mark_raw_fn_types(tokens: TokenStream) -> TokenStream {
+    let (marked, changed) = mark_raw_fn_types_inner(tokens.clone());
+    if changed { marked } else { tokens }
+}
+
+fn mark_raw_fn_types_inner(tokens: TokenStream) -> (TokenStream, bool) {
+    let tokens = tokens.into_iter().collect::<Vec<_>>();
+    let mut output = TokenStream::new();
+    let mut index = 0;
+    let mut changed = false;
+    while index < tokens.len() {
+        if matches!(&tokens[index], TokenTree::Ident(_))
+            && matches!(tokens.get(index + 1), Some(TokenTree::Punct(punct)) if punct.as_char() == '!')
+            && matches!(tokens.get(index + 2), Some(TokenTree::Group(_)))
+        {
+            // Macro arguments belong to the invoked macro, including tokens
+            // that resemble `raw fn` types.
+            output.extend(tokens[index..index + 3].iter().cloned());
+            index += 3;
+            continue;
+        }
+        let is_fn = |at| {
+            matches!(tokens.get(at), Some(TokenTree::Ident(ident)) if ident == "fn")
+                && matches!(tokens.get(at + 1), Some(TokenTree::Group(group)) if group.delimiter() == Delimiter::Parenthesis)
+        };
+        let is_raw_fn = matches!(&tokens[index], TokenTree::Ident(ident) if ident == "raw")
+            && (is_fn(index + 1)
+                || (matches!(tokens.get(index + 1), Some(TokenTree::Ident(ident)) if ident == "extern")
+                    && matches!(tokens.get(index + 2), Some(TokenTree::Literal(_)))
+                    && is_fn(index + 3)));
+        if is_raw_fn {
+            let start = index;
+            index += 1;
+            let mut angle_depth = 0usize;
+            while index < tokens.len() {
+                match &tokens[index] {
+                    TokenTree::Punct(punct) if punct.as_char() == '<' => angle_depth += 1,
+                    TokenTree::Punct(punct) if punct.as_char() == '>' => {
+                        let arrow = index > start
+                            && matches!(&tokens[index - 1], TokenTree::Punct(prev) if prev.as_char() == '-');
+                        if !arrow {
+                            if angle_depth == 0 {
+                                break;
+                            }
+                            angle_depth -= 1;
+                        }
+                    }
+                    TokenTree::Punct(punct)
+                        if angle_depth == 0 && matches!(punct.as_char(), ',' | ';') =>
+                    {
+                        break;
+                    }
+                    _ => {}
+                }
+                index += 1;
+            }
+            let inner = mark_raw_fn_types(tokens[start + 1..index].iter().cloned().collect());
+            // The leading `raw` is deliberately left unmarked by processing only
+            // its following tokens; nested signatures are still marked below.
+            let marker = format_ident!("{RAW_FN_TYPE_MACRO}");
+            output.extend(quote!(#marker!(raw #inner)));
+            changed = true;
+            continue;
+        }
+        match &tokens[index] {
+            TokenTree::Group(group) => {
+                let (stream, group_changed) = mark_raw_fn_types_inner(group.stream());
+                if group_changed {
+                    let mut rebuilt = Group::new(group.delimiter(), stream);
+                    rebuilt.set_span(group.span());
+                    output.extend([TokenTree::Group(rebuilt)]);
+                    changed = true;
+                } else {
+                    output.extend([TokenTree::Group(group.clone())]);
+                }
+            }
+            token => output.extend([token.clone()]),
+        }
+        index += 1;
+    }
+    (output, changed)
+}
 pub(crate) struct ParsedInput {
     pub(crate) kind: DeclKind,
     pub(crate) abi: syn::Abi,
@@ -58,23 +144,16 @@ struct FfiBody {
 
 pub(crate) enum ParsedItem {
     Type(syn::ForeignItemType),
-    Alias(TypeAlias),
+    Raw(Box<RawFnDecl>),
+    Alias(ParsedAlias),
     Static(Co3Static),
     Impl(ItemImpl),
     Fn(ItemFn),
-    Raw(RawFnDecl),
 }
 
-pub(crate) enum TypeAlias {
-    Rust(syn::ItemType),
-    RawFunction {
-        attrs: Vec<Attribute>,
-        vis: syn::Visibility,
-        ident: syn::Ident,
-        generics: syn::Generics,
-        sig: Box<syn::Signature>,
-        move_fn: bool,
-    },
+pub(crate) struct ParsedAlias {
+    pub(crate) item: syn::ItemType,
+    pub(crate) raw_root: bool,
 }
 
 struct RawFnTypeArg {
@@ -168,7 +247,7 @@ impl syn::parse::Parse for ParsedItem {
             return Ok(Self::Static(parse_static_item(input)?));
         }
         if ahead.peek(syn::Ident) && ahead.parse::<syn::Ident>()? == "raw" {
-            return Ok(Self::Raw(parse_raw_fn_item(input)?));
+            return Ok(Self::Raw(Box::new(parse_raw_fn_item(input)?)));
         }
         if is_fn_head(&ahead)? {
             return Ok(Self::Fn(parse_fn_item(input)?));
@@ -227,40 +306,43 @@ fn is_type_alias(input: ParseStream) -> syn::Result<bool> {
     Ok(false)
 }
 
-fn parse_type_alias(input: ParseStream) -> syn::Result<TypeAlias> {
-    let probe = input.fork();
-    let _ = probe.call(Attribute::parse_outer)?;
-    let _ = probe.parse::<syn::Visibility>()?;
-    probe.parse::<syn::Token![type]>()?;
-    let _ = probe.parse::<syn::Ident>()?;
-    let _ = parse_optional_generics(&probe)?;
-    probe.parse::<syn::Token![=]>()?;
-    if !is_raw_function_type(&probe)? {
-        return input.parse::<syn::ItemType>().map(TypeAlias::Rust);
+fn parse_type_alias(input: ParseStream) -> syn::Result<ParsedAlias> {
+    let mut tokens = TokenStream::new();
+    loop {
+        let token = input.parse::<TokenTree>()?;
+        let end = matches!(&token, TokenTree::Punct(punct) if punct.as_char() == ';');
+        tokens.extend([token]);
+        if end {
+            break;
+        }
     }
+    let item: syn::ItemType = syn::parse2(mark_raw_fn_types(tokens))?;
+    let raw_root =
+        matches!(item.ty.as_ref(), Type::Macro(mac) if mac.mac.path.is_ident(RAW_FN_TYPE_MACRO));
+    Ok(ParsedAlias { item, raw_root })
+}
 
-    let attrs = input.call(Attribute::parse_outer)?;
-    let vis = input.parse::<syn::Visibility>()?;
-    input.parse::<syn::Token![type]>()?;
-    let ident = input.parse::<syn::Ident>()?;
-    let generics = parse_optional_generics(input)?;
-    input.parse::<syn::Token![=]>()?;
-
-    input.parse::<syn::Ident>()?;
-    let mut raw_sig = TokenStream::new();
-    while !input.is_empty() && !input.peek(syn::Token![;]) {
-        raw_sig.extend(core::iter::once(input.parse::<TokenTree>()?));
+pub(crate) fn parse_raw_function_type(tokens: TokenStream) -> Result<(syn::Signature, bool)> {
+    let source = tokens.clone();
+    let mut raw_sig = tokens.into_iter();
+    let Some(TokenTree::Ident(raw)) = raw_sig.next() else {
+        return Err(syn::Error::new_spanned(source, "expected `raw fn`"));
+    };
+    if raw != "raw" {
+        return Err(syn::Error::new_spanned(raw, "expected `raw fn`"));
     }
     let mut signature_tokens = TokenStream::new();
     let mut saw_fn = false;
-    let mut raw_sig = raw_sig.into_iter();
     while let Some(token) = raw_sig.next() {
         let is_fn = !saw_fn && matches!(&token, TokenTree::Ident(ident) if ident == "fn");
         signature_tokens.extend(core::iter::once(token));
         if is_fn {
             signature_tokens.extend(quote!(__co3_callback_type));
             let Some(TokenTree::Group(args)) = raw_sig.next() else {
-                return Err(input.error("expected argument types in raw function type alias"));
+                return Err(syn::Error::new_spanned(
+                    &signature_tokens,
+                    "expected argument types in raw function pointer",
+                ));
             };
             if args.delimiter() != Delimiter::Parenthesis {
                 return Err(syn::Error::new(
@@ -282,10 +364,13 @@ fn parse_type_alias(input: ParseStream) -> syn::Result<TypeAlias> {
             continue;
         }
     }
-    signature_tokens.extend(quote!(;));
     if !saw_fn {
-        return Err(input.error("expected `fn` after `raw` in raw function type alias"));
+        return Err(syn::Error::new_spanned(
+            signature_tokens,
+            "expected `fn` after `raw`",
+        ));
     }
+    signature_tokens.extend(quote!(;));
     let mut fn_attrs = Vec::new();
     let parser = |input: ParseStream| {
         let signature = parse_signature(input, &mut fn_attrs)?;
@@ -293,32 +378,10 @@ fn parse_type_alias(input: ParseStream) -> syn::Result<TypeAlias> {
         Ok(signature)
     };
     let signature = parser.parse2(signature_tokens)?;
-    input.parse::<syn::Token![;]>()?;
-    Ok(TypeAlias::RawFunction {
-        attrs,
-        vis,
-        ident,
-        generics,
-        sig: Box::new(signature),
-        move_fn: fn_attrs.iter().any(crate::ffi_fn::is_by_val_attr),
-    })
-}
-
-fn is_raw_function_type(input: ParseStream) -> syn::Result<bool> {
-    if !input.peek(syn::Ident) || input.fork().parse::<syn::Ident>()? != "raw" {
-        return Ok(false);
-    }
-    let fork = input.fork();
-    fork.parse::<syn::Ident>()?;
-    is_fn_head(&fork)
-}
-
-fn parse_optional_generics(input: ParseStream) -> syn::Result<syn::Generics> {
-    if input.peek(syn::Token![<]) {
-        input.parse()
-    } else {
-        Ok(syn::Generics::default())
-    }
+    Ok((
+        signature,
+        fn_attrs.iter().any(crate::ffi_fn::is_by_val_attr),
+    ))
 }
 
 fn parse_raw_fn_item(input: ParseStream) -> Result<RawFnDecl> {
@@ -484,7 +547,7 @@ fn parse_items(input: ParseStream) -> Result<Vec<ParsedItem>> {
 
 impl ParsedInput {
     pub(crate) fn parse(tokens: TokenStream) -> Result<Self> {
-        let FfiBody { mut attrs, items } = parse_ffi_body(tokens)?;
+        let FfiBody { mut attrs, items } = parse_ffi_body(mark_raw_fn_types(tokens))?;
         let (kind, abi) = take_decl_attr(&mut attrs)?;
         let symbol_prefix =
             parse_symbol_prefix_attr(&mut attrs)?.unwrap_or_else(default_symbol_prefix);

@@ -133,7 +133,7 @@ pub(crate) fn gen_raw_dispatch_companion(
     synthesize_dispatch_tag_ids(None, &generics, &mut sig.inputs);
     sig.ident = ffi_fn::raw_definition_name(&sig.ident);
     let abi: syn::Abi = parse_quote!(extern "C");
-    let definition = synthesize_dispatch_export_fn(
+    synthesize_dispatch_export_fn(
         &abi,
         failure_mode,
         &generics,
@@ -148,8 +148,7 @@ pub(crate) fn gen_raw_dispatch_companion(
         &callee,
         false,
         DispatchEmission::Companion(vis),
-    );
-    definition
+    )
 }
 
 #[derive(Clone, Copy)]

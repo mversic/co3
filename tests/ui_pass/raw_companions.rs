@@ -49,9 +49,10 @@ raw! {
     }
 }
 
+type OrdinaryAlias<T> = Option<T>;
+
 co3::ffi! {
     #![unsafe(export("C"))]
-    type OrdinaryAlias<T> = Option<T>;
     type SystemCallback = raw extern "system" fn(u8) -> u8;
 }
 

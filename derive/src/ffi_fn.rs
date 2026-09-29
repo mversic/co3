@@ -135,7 +135,6 @@ pub(crate) fn raw_definition_name(name: &Ident) -> Ident {
     format_ident!("{name}_raw")
 }
 
-#[expect(clippy::too_many_arguments)]
 pub(crate) fn emit_abi_function(
     failure_mode: FailureMode,
     attrs: TokenStream,
@@ -188,7 +187,7 @@ pub(crate) fn gen_abi_assertions(sig: &syn::Signature) -> TokenStream {
     quote! {
         #(#arguments)*
         const {
-            assert!(co3::impls!(#return_ty: co3::CFnReturn), "co3 FFI return must implement CFnReturn");
+            assert!(co3::impls!((#return_ty): co3::CFnReturn), "co3 FFI return must implement CFnReturn");
         };
     }
 }
@@ -288,7 +287,7 @@ pub(crate) fn gen_return_borrow_check(return_ty: &syn::Type, fn_by_val: bool) ->
     quote! {
         const {
             assert!(
-                co3::impls!(#return_ty: co3::borrow::Borrow<Owner: co3::stored::EmptyStore>),
+                co3::impls!((#return_ty): co3::borrow::Borrow<Owner: co3::stored::EmptyStore>),
                 "Mark the return type with `move` to transfer ownership",
             );
         }

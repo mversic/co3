@@ -41,7 +41,7 @@ use crate::{
     dispatch::synthesize_dispatch_tag_ids,
     generate::{expand_export_decls, expand_extern_decls, gen_raw_companions},
     layout::derive_repr_c,
-    parse::{ParsedInput, ParsedItem, ParsedRawInput},
+    parse::{ParsedAlias, ParsedInput, ParsedItem, ParsedRawInput},
     utils::{
         co3_path, has_non_lifetime_generics, is_drop_impl, path_symbol_name, push_error,
         type_symbol_name,
@@ -524,7 +524,7 @@ pub fn ffi(input: TokenStream) -> Result<TokenStream> {
             failure_mode,
             symbol_fragments,
             attrs,
-            items,
+            mut items,
         } = ParsedInput::parse(input)?;
 
         if let Some(name) = &abi.name
@@ -536,6 +536,7 @@ pub fn ffi(input: TokenStream) -> Result<TokenStream> {
             ));
         }
 
+        callback::lower_raw_fn_types_in_items(&mut items, failure_mode, &abi)?;
         let (normalized, aliases) = normalize_items(items, NormalizationMode::Ffi(kind))?;
         let normalized = pack_normalized_items(normalized)?;
         let (mut items, raw_decls) = partition_items(normalized);
@@ -543,10 +544,7 @@ pub fn ffi(input: TokenStream) -> Result<TokenStream> {
         validate_items(kind, &attrs, &items)?;
         synthesize_items(&symbol_prefix, &mut items)?;
 
-        let aliases = expand_type_aliases(aliases, failure_mode)?;
-        if kind == DeclKind::Extern {
-            validate_raw_import_names(&items)?;
-        }
+        let aliases = expand_type_aliases(aliases);
         let declarations = match kind {
             DeclKind::Export => {
                 expand_export_decls(abi, features, failure_mode, items, &symbol_fragments)
@@ -621,12 +619,8 @@ pub fn raw(input: TokenStream) -> Result<TokenStream> {
             ParsedItem::Fn(_) => {}
             ParsedItem::Impl(_) => {}
             ParsedItem::Alias(alias) => {
-                let ident = match alias {
-                    parse::TypeAlias::Rust(alias) => &alias.ident,
-                    parse::TypeAlias::RawFunction { ident, .. } => ident,
-                };
                 return Err(syn::Error::new_spanned(
-                    ident,
+                    &alias.item.ident,
                     "type aliases are not allowed in `raw!`; use a Rust alias or declare a raw alias in `ffi!`",
                 ));
             }
@@ -661,7 +655,7 @@ pub fn raw(input: TokenStream) -> Result<TokenStream> {
 fn normalize_items(
     items: Vec<ParsedItem>,
     mode: NormalizationMode,
-) -> Result<(Vec<NormalizedItem>, Vec<parse::TypeAlias>)> {
+) -> Result<(Vec<NormalizedItem>, Vec<ParsedAlias>)> {
     let mut normalized = Vec::new();
     let mut aliases = Vec::new();
     for item in items {
@@ -683,7 +677,7 @@ fn normalize_items(
                 }
                 normalized.push(NormalizedItem::Foreign(ForeignItem::Fn(item)));
             }
-            ParsedItem::Raw(raw_decl) => normalized.push(NormalizedItem::Raw(raw_decl)),
+            ParsedItem::Raw(raw_decl) => normalized.push(NormalizedItem::Raw(*raw_decl)),
             ParsedItem::Alias(alias) => aliases.push(alias),
             ParsedItem::Fn(item) if mode == NormalizationMode::Raw => {
                 let ForeignItem::Fn(parsed) = ParsedItem::Fn(item.clone()).normalize()? else {
@@ -861,122 +855,19 @@ fn reject_implicit_extern_abi(items: &[NormalizedItem], macro_name: &str) -> Res
     Ok(())
 }
 
-fn expand_type_aliases(
-    aliases: Vec<parse::TypeAlias>,
-    failure_mode: parse::FailureMode,
-) -> Result<TokenStream> {
-    let aliases = aliases
-        .into_iter()
-        .map(|alias| match alias {
-        parse::TypeAlias::Rust(item) => {
-            validate::validate_type_alias_fn_pointer_abis(&item)?;
-            Ok(quote!(#item))
-        }
-        parse::TypeAlias::RawFunction {
-            attrs,
-            vis,
-            ident,
-            generics,
-            sig,
-            move_fn,
-        } => {
-            validate::validate_raw_alias_nested_fn_pointer_abis(&sig)?;
-            let Some(abi) = &sig.abi else {
-                return Err(syn::Error::new_spanned(
-                    &ident,
-                    "raw function pointer aliases require `raw extern \"ABI\" fn`; specify the pointer's ABI explicitly",
-                ));
-            };
-            let Some(name) = &abi.name else {
-                return Err(syn::Error::new_spanned(abi, "`extern fn` requires an explicit ABI"));
-            };
-            if name.value() == "Rust" {
-                return Err(syn::Error::new_spanned(abi, "raw function pointer aliases cannot use the Rust ABI"));
-            }
-            let abi = abi.clone();
-            if sig.asyncness.is_some()
-                || matches!(sig.safety, syn::Safety::Unsafe(_))
-                || sig.variadic.is_some()
-                || !sig.generics.params.is_empty()
-                || sig
-                    .generics
-                    .where_clause
-                    .as_ref()
-                    .is_some_and(|clause| !clause.predicates.is_empty())
-                || sig.inputs.len() > 12
-            {
-                return Err(syn::Error::new_spanned(
-                    sig,
-                    "raw function pointer aliases require a safe, synchronous, non-generic function with at most 12 arguments",
-                ));
-            }
-            let raw_fn_type = callback::lower_callback_fn_type(*sig, &abi, failure_mode, move_fn)?;
-            Ok(quote! {
-                #(#attrs)* #vis type #ident #generics = #raw_fn_type;
-            })
-        }
-    })
-        .collect::<Result<Vec<_>>>()?;
-    Ok(quote!(#(#aliases)*))
+fn expand_type_aliases(aliases: Vec<ParsedAlias>) -> TokenStream {
+    let aliases = aliases.into_iter().map(expand_abi_type_alias);
+    quote!(#(#aliases)*)
 }
 
-fn validate_raw_import_names(items: &[ForeignItem]) -> Result<()> {
-    let collision = |name: &syn::Ident| {
-        syn::Error::new_spanned(
-            name,
-            "raw and Rust imports need distinct Rust names; use `#[symbol_name = \"...\"]` to bind them to the same foreign symbol",
-        )
-    };
-    let impls = items
-        .iter()
-        .flat_map(|item| match item {
-            ForeignItem::Impl(impl_) => vec![impl_],
-            ForeignItem::Type(ty) => ty.self_impls.iter().collect(),
-            _ => Vec::new(),
-        })
-        .collect::<Vec<_>>();
-    for item in items {
-        match item {
-            ForeignItem::Fn(raw)
-                if raw.import_mode == ImportMode::Raw
-                    && items.iter().any(|candidate| {
-                    matches!(candidate, ForeignItem::Fn(regular)
-                        if regular.import_mode == ImportMode::Regular && regular.sig.ident == raw.sig.ident)
-                    }) =>
-            {
-                return Err(collision(&raw.sig.ident));
-                }
-            _ => {}
-        }
+fn expand_abi_type_alias(ParsedAlias { mut item, raw_root }: ParsedAlias) -> TokenStream {
+    if raw_root {
+        return quote!(#item);
     }
-    for raw in impls
-        .iter()
-        .filter(|impl_| impl_.import_mode == ImportMode::Raw)
-    {
-        let raw_self = &raw.self_ty;
-        let raw_trait = raw
-            .trait_
-            .as_ref()
-            .map(|(path, _)| quote!(#path).to_string());
-        for method in &raw.items {
-            let syn::ImplItem::Fn(method) = method else {
-                continue;
-            };
-            if impls.iter().any(|regular| {
-                let regular_self = &regular.self_ty;
-                regular.import_mode == ImportMode::Regular
-                    && quote!(#regular_self).to_string() == quote!(#raw_self).to_string()
-                    && regular.trait_.as_ref().map(|(path, _)| quote!(#path).to_string())
-                        == raw_trait
-                    && regular.items.iter().any(|item| {
-                        matches!(item, syn::ImplItem::Fn(other) if other.sig.ident == method.sig.ident)
-                    })
-            }) {
-                return Err(collision(&method.sig.ident));
-            }
-        }
-    }
-    Ok(())
+    let co3 = co3_path();
+    let source = &item.ty;
+    *item.ty = parse_quote!(<#source as #co3::ReprC>::CType);
+    quote!(#item)
 }
 
 fn pack_items(items: Vec<ForeignItem>) -> Result<Vec<ForeignItem>> {

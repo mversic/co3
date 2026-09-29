@@ -130,7 +130,6 @@ ffi! {
     #![symbol_prefix = "abi_c_callback"]
 
     type CCallback = raw extern "C" fn(Value, Value) -> Value;
-    type PathAlias = raw::Existing;
 
     fn apply_callback(callback: CCallback, left: Value, right: Value) -> Value;
     fn apply_optional_callback(callback: Option<CCallback>, value: Value) -> Value;
@@ -341,7 +340,6 @@ fn c_callback_crosses_export_and_import() {
         unsafe { co3::decode::<Box<Value>>(result) },
         Some(Box::new(Value(42)))
     );
-    let _: PathAlias = sum_pair;
     fn assert_existing_fn_pointer_impls<T: co3::ReprC + co3::Encode + co3::Decode<'static>>(_: T) {}
     assert_existing_fn_pointer_impls(sum_native_raw as CCallback);
     let raw_value = co3::borrow::borrow_cast(co3::encode(RustValue(21)));

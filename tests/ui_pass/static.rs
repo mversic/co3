@@ -1,17 +1,19 @@
 use co3::ffi;
 
 #[unsafe(export_name = "static__VERSION")]
-pub static VERSION: <u32 as co3::ReprC>::CType = 1;
+pub static VERSION: StaticAbi = 1;
 #[unsafe(export_name = "static_test_flags")]
-pub static mut FLAGS: <u32 as co3::ReprC>::CType = 0;
+pub static mut FLAGS: StaticAbi = 1;
 
 ffi! {
     #![unsafe(export("C"))]
     #![symbol_prefix = "static"]
 
-    pub static VERSION: u32;
+    type StaticAbi = core::num::NonZeroU8;
+
+    pub static VERSION: core::num::NonZeroU8;
     #[symbol_name = "static_test_flags"]
-    pub static mut FLAGS: u32;
+    pub static mut FLAGS: core::num::NonZeroU8;
 }
 
 mod imported {
@@ -21,9 +23,9 @@ mod imported {
         #![unsafe(extern("C"))]
         #![symbol_prefix = "static"]
 
-        pub static VERSION: u32;
+        pub static VERSION: core::num::NonZeroU8;
         #[symbol_name = "static_test_flags"]
-        pub static mut FLAGS: u32;
+        pub static mut FLAGS: core::num::NonZeroU8;
     }
 }
 
@@ -35,6 +37,5 @@ fn main() {
     let _ = unsafe { FLAGS };
     unsafe { FLAGS = 1 };
     let _ = unsafe { imported::FLAGS.read() };
-    unsafe { imported::FLAGS.set(1) };
-    let _ = unsafe { imported::FLAGS.take() };
+    unsafe { imported::FLAGS.set(core::num::NonZeroU8::new(1).unwrap()) };
 }
