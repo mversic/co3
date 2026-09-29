@@ -1,0 +1,35 @@
+error: function pointers in `ffi!` type aliases require an explicit non-Rust ABI
+ --> tests/ui_fail/type_alias_fn_pointer_abi.rs:5:17
+  |
+5 |     type Bare = fn(u8);
+  |                 ^^
+
+error: function pointers in `ffi!` type aliases require an explicit non-Rust ABI
+  --> tests/ui_fail/type_alias_fn_pointer_abi.rs:10:21
+   |
+10 |     type Implicit = extern fn(u8);
+   |                     ^^^^^^
+
+error: function pointers in `ffi!` type aliases require an explicit non-Rust ABI
+  --> tests/ui_fail/type_alias_fn_pointer_abi.rs:15:17
+   |
+15 |     type Rust = extern "Rust" fn(u8);
+   |                 ^^^^^^^^^^^^^
+
+error: function pointers in `ffi!` type aliases require an explicit non-Rust ABI
+  --> tests/ui_fail/type_alias_fn_pointer_abi.rs:20:26
+   |
+20 |     type Nested = Option<fn(u8)>;
+   |                          ^^
+
+error: function pointers in `ffi!` type aliases require an explicit non-Rust ABI
+  --> tests/ui_fail/type_alias_fn_pointer_abi.rs:25:30
+   |
+25 |     type NestedRust = Option<extern "Rust" fn(u8)>;
+   |                              ^^^^^^^^^^^^^
+
+error: function pointers in `ffi!` type aliases require an explicit non-Rust ABI
+  --> tests/ui_fail/type_alias_fn_pointer_abi.rs:30:40
+   |
+30 |     type RawNested = raw extern "C" fn(fn(u8));
+   |                                        ^^

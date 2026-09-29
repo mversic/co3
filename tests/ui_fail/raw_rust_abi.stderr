@@ -1,17 +1,5 @@
-error: raw declarations use the `ffi!` block ABI (`C`); write `raw fn` without `extern "ABI"`
- --> tests/ui_fail/raw_rust_abi.rs:5:9
+error: raw function pointer aliases cannot use the Rust ABI
+ --> tests/ui_fail/raw_rust_abi.rs:5:22
   |
-5 |     raw extern "Rust" fn imported();
-  |         ^^^^^^^^^^^^^
-
-error: raw function pointer aliases cannot use the Rust ABI
-  --> tests/ui_fail/raw_rust_abi.rs:10:22
-   |
-10 |     type Alias = raw extern "Rust" fn();
-   |                      ^^^^^^^^^^^^^
-
-error: raw function pointer aliases cannot use the Rust ABI
-  --> tests/ui_fail/raw_rust_abi.rs:15:25
-   |
-15 |     type Callback = raw extern "Rust" fn();
-   |                         ^^^^^^^^^^^^^
+5 |     type Alias = raw extern "Rust" fn();
+  |                      ^^^^^^^^^^^^^

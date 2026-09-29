@@ -2,6 +2,10 @@ use co3::ffi;
 
 fn local_function() {}
 
+extern "system" fn local_system(value: u8) -> u8 {
+    value
+}
+
 struct Local(u8);
 
 impl Local {
@@ -12,6 +16,7 @@ ffi! {
     #![unsafe(export("C"))]
 
     raw fn local_function();
+    raw extern "system" fn local_system(value: u8) -> u8;
 
     type Local;
 

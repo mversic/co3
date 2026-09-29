@@ -1,6 +1,6 @@
 use core::num::NonZeroU8;
 
-use co3::{Error, ReprC, CType, ffi, rust_spec::RustSpec};
+use co3::{Error, ReprC, ffi, rust_spec::RustSpec};
 
 #[derive(Debug, PartialEq, Eq, RustSpec, ReprC)]
 #[repr(u8)]
@@ -43,7 +43,7 @@ ffi! {
 
 #[unsafe(export_name = "kita_failure__extern_error_invalid_return")]
 unsafe extern "C" fn extern_error_invalid_return() -> <CustomStatus as ReprC>::CType {
-    7
+    CCustomStatus(7)
 }
 
 mod import {

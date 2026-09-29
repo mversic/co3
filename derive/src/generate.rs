@@ -657,7 +657,7 @@ fn raw_dispatch_wrapper_sig(
         where_clause.predicates.push(syn::parse_quote!(#ty: Sized));
     }
     raw.safety = syn::Safety::Unsafe(Default::default());
-    raw.abi = Some(abi.clone());
+    raw.abi = Some(sig.abi.clone().unwrap_or_else(|| abi.clone()));
     raw
 }
 
@@ -1809,13 +1809,14 @@ pub(crate) fn expand_extern_decls(
                 let syn::ImplItem::Fn(method) = item else {
                     continue;
                 };
+                let wrapper_abi = method.sig.abi.clone().unwrap_or_else(|| abi.clone());
                 normalize_fn_signature(&mut method.sig, Some(&self_ty));
                 method.sig = ffi_fn::lower_raw_fn_signature(
                     method.sig.clone(),
                     failure_mode,
                     method.attrs.iter().any(ffi_fn::is_by_val_attr),
                 );
-                method.sig.abi = Some(abi.clone());
+                method.sig.abi = Some(wrapper_abi);
                 method.sig.safety = syn::Safety::Unsafe(Default::default());
             }
         }

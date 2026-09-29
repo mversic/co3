@@ -17,20 +17,8 @@ ffi! {
 
 ffi! {
     #![unsafe(export("C"))]
-    raw extern "C" fn explicit_abi();
-}
-
-ffi! {
-    #![unsafe(export("C"))]
     impl Host {
         raw unsafe fn unsafe_method(&self);
-    }
-}
-
-ffi! {
-    #![unsafe(export("C"))]
-    impl Host {
-        raw extern "C" fn explicit_method(&self);
     }
 }
 

@@ -51,6 +51,7 @@ pub(crate) fn wrap_fn_definition(
     mut item: syn::ItemFn,
 ) -> TokenStream {
     if import_mode == ImportMode::Raw {
+        let wrapper_abi = item.sig.abi.clone().unwrap_or_else(|| abi.clone());
         let raw_sig = ffi_fn::lower_raw_fn_signature(
             item.sig.clone(),
             failure_mode,
@@ -64,6 +65,15 @@ pub(crate) fn wrap_fn_definition(
         let module_name = format_ident!("__co3_raw_import_{}", item.sig.ident);
         let raw_name = &raw_sig.ident;
         let extern_decl = gen_extern_decl(abi, block_attrs, &item.attrs, quote!(pub #raw_sig));
+        let mut wrapper_sig = raw_sig.clone();
+        wrapper_sig.abi = Some(wrapper_abi);
+        wrapper_sig.safety = syn::Safety::Unsafe(Default::default());
+        let args = raw_sig.inputs.iter().filter_map(|input| {
+            let syn::FnArg::Typed(arg) = input else {
+                return None;
+            };
+            Some(&arg.pat)
+        });
         return quote! {
             #(#cfg)*
             #[doc(hidden)]
@@ -75,7 +85,9 @@ pub(crate) fn wrap_fn_definition(
             }
             #(#cfg)*
             #(#doc)*
-            #vis use #module_name::#raw_name;
+            #vis #wrapper_sig {
+                unsafe { #module_name::#raw_name(#(#args),*) }
+            }
         };
     }
     let vis = &item.vis;

@@ -1,6 +1,6 @@
 use std::num::NonZeroU8;
 
-use co3::{ReprC, CType, rust_spec::RustSpec, wide::Wide};
+use co3::{ReprC, rust_spec::RustSpec, wide::Wide};
 use static_assertions::assert_impl_all;
 
 #[repr(transparent)]

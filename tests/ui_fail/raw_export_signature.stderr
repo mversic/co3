@@ -14,20 +14,8 @@ error: raw function declarations require a safe, synchronous function with at mo
 15 | |     );
    | |_____^
 
-error: raw declarations use the `ffi!` block ABI (`C`); write `raw fn` without `extern "ABI"`
-  --> tests/ui_fail/raw_export_signature.rs:20:9
-   |
-20 |     raw extern "C" fn explicit_abi();
-   |         ^^^^^^^^^^
-
 error: raw function declarations require a safe, synchronous function with at most 12 arguments
-  --> tests/ui_fail/raw_export_signature.rs:26:13
+  --> tests/ui_fail/raw_export_signature.rs:21:13
    |
-26 |         raw unsafe fn unsafe_method(&self);
+21 |         raw unsafe fn unsafe_method(&self);
    |             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-
-error: raw declarations use the `ffi!` block ABI (`C`); write `raw fn` without `extern "ABI"`
-  --> tests/ui_fail/raw_export_signature.rs:33:13
-   |
-33 |         raw extern "C" fn explicit_method(&self);
-   |             ^^^^^^^^^^

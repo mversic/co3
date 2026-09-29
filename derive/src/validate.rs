@@ -82,20 +82,6 @@ pub(crate) fn validate_extern_decls(items: &[crate::ForeignItem]) -> Result<()> 
     errors.map_or(Ok(()), Err)
 }
 
-pub(crate) fn validate_ffi_raw_signature(sig: &syn::Signature, abi: &syn::Abi) -> Result<()> {
-    validate_raw_signature(sig)?;
-    if let Some(raw_abi) = &sig.abi {
-        return Err(Error::new_spanned(
-            raw_abi,
-            format!(
-                "raw declarations use the `ffi!` block ABI (`{}`); write `raw fn` without `extern \"ABI\"`",
-                abi.name.as_ref().expect("block ABI is named").value(),
-            ),
-        ));
-    }
-    Ok(())
-}
-
 pub(crate) fn validate_raw_signature(sig: &syn::Signature) -> Result<()> {
     if sig.asyncness.is_some()
         || matches!(sig.safety, syn::Safety::Unsafe(_))
@@ -131,6 +117,42 @@ pub(crate) fn validate_raw_signature(sig: &syn::Signature) -> Result<()> {
         }
     }
     Ok(())
+}
+
+struct TypeAliasFnPointerValidator(Option<Error>);
+
+impl<'ast> Visit<'ast> for TypeAliasFnPointerValidator {
+    fn visit_type_fn_ptr(&mut self, pointer: &'ast syn::TypeFnPtr) {
+        let error = match &pointer.abi {
+            None => Some(Error::new_spanned(
+                pointer.fn_token,
+                "function pointers in `ffi!` type aliases require an explicit non-Rust ABI",
+            )),
+            Some(abi) if abi.name.as_ref().is_none_or(|name| name.value() == "Rust") => {
+                Some(Error::new_spanned(
+                    abi,
+                    "function pointers in `ffi!` type aliases require an explicit non-Rust ABI",
+                ))
+            }
+            Some(_) => None,
+        };
+        if let Some(error) = error {
+            push_error(&mut self.0, error);
+        }
+        syn::visit::visit_type_fn_ptr(self, pointer);
+    }
+}
+
+pub(crate) fn validate_type_alias_fn_pointer_abis(alias: &syn::ItemType) -> Result<()> {
+    let mut validator = TypeAliasFnPointerValidator(None);
+    validator.visit_item_type(alias);
+    validator.0.map_or(Ok(()), Err)
+}
+
+pub(crate) fn validate_raw_alias_nested_fn_pointer_abis(sig: &syn::Signature) -> Result<()> {
+    let mut validator = TypeAliasFnPointerValidator(None);
+    validator.visit_signature(sig);
+    validator.0.map_or(Ok(()), Err)
 }
 
 pub(crate) fn validate_raw_companions(raw_decls: &[crate::parse::RawFnDecl]) -> Result<()> {

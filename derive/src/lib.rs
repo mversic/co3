@@ -536,8 +536,7 @@ pub fn ffi(input: TokenStream) -> Result<TokenStream> {
             ));
         }
 
-        let (normalized, aliases) =
-            normalize_items(items, NormalizationMode::Ffi(kind), Some(&abi))?;
+        let (normalized, aliases) = normalize_items(items, NormalizationMode::Ffi(kind))?;
         let normalized = pack_normalized_items(normalized)?;
         let (mut items, raw_decls) = partition_items(normalized);
         debug_assert!(raw_decls.is_empty());
@@ -657,7 +656,7 @@ pub fn raw(input: TokenStream) -> Result<TokenStream> {
             }
         }
     }
-    let (normalized, aliases) = normalize_items(items, NormalizationMode::Raw, None)?;
+    let (normalized, aliases) = normalize_items(items, NormalizationMode::Raw)?;
     let (foreign_items, raw_decls) = partition_items(normalized);
     if !foreign_items.is_empty() {
         return Err(syn::Error::new(
@@ -674,14 +673,13 @@ pub fn raw(input: TokenStream) -> Result<TokenStream> {
 fn normalize_items(
     items: Vec<ParsedItem>,
     mode: NormalizationMode,
-    abi: Option<&syn::Abi>,
 ) -> Result<(Vec<NormalizedItem>, Vec<parse::TypeAlias>)> {
     let mut normalized = Vec::new();
     let mut aliases = Vec::new();
     for item in items {
         match item {
             ParsedItem::Raw(raw_decl) if matches!(mode, NormalizationMode::Ffi(_)) => {
-                validate::validate_ffi_raw_signature(&raw_decl.sig, abi.expect("ffi ABI"))?;
+                validate::validate_raw_signature(&raw_decl.sig)?;
                 let item = ItemFn {
                     attrs: raw_decl.attrs,
                     vis: raw_decl.vis,
@@ -732,7 +730,7 @@ fn normalize_items(
                         }
                     } else if let Some(marker) = marker {
                         method.attrs.remove(marker);
-                        validate::validate_ffi_raw_signature(&method.sig, abi.expect("ffi ABI"))?;
+                        validate::validate_raw_signature(&method.sig)?;
                         if mode == NormalizationMode::Ffi(DeclKind::Export) {
                             impl_items.push(syn::ImplItem::Fn(method));
                             continue;
@@ -858,7 +856,10 @@ fn expand_type_aliases(
     let aliases = aliases
         .into_iter()
         .map(|alias| match alias {
-        parse::TypeAlias::Rust(item) => Ok(quote!(#item)),
+        parse::TypeAlias::Rust(item) => {
+            validate::validate_type_alias_fn_pointer_abis(&item)?;
+            Ok(quote!(#item))
+        }
         parse::TypeAlias::RawFunction {
             attrs,
             vis,
@@ -867,6 +868,7 @@ fn expand_type_aliases(
             sig,
             move_fn,
         } => {
+            validate::validate_raw_alias_nested_fn_pointer_abis(&sig)?;
             let Some(abi) = &sig.abi else {
                 return Err(syn::Error::new_spanned(
                     &ident,
