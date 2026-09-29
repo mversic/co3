@@ -16,6 +16,11 @@ struct First(u8);
 #[repr(transparent)]
 struct Second(u8);
 
+#[derive(Clone, Copy, ReprC, RustSpec, Tag)]
+#[tag(u8, unsafe(4))]
+#[repr(transparent)]
+struct Third(u8);
+
 #[derive(Tag)]
 #[tag(u8, unsafe(3))]
 struct TagOnly;
@@ -118,7 +123,7 @@ ffi! {
     #[symbol_name = "raw_dispatch_dynamic"]
     pub raw fn dynamic<dyn(u8) T = u8>(value: move T) -> move T
     where
-        use<T> @ (<First> | <Second>);
+        use<T> @ (<First> | <Second> | <Third>);
 
     #[symbol_name = "raw_dispatch_static_{T}"]
     pub raw fn static_value<T>(value: move T) -> move T
@@ -197,6 +202,9 @@ fn main() {
 
     assert_eq!(unsafe { dynamic::<First>(First(3)) }.0, 4);
     assert_eq!(unsafe { dynamic::<Second>(Second(3)) }.0, 5);
+    let lowered = co3::encode(Third(3));
+    let result = unsafe { dynamic::<Third>(lowered) };
+    assert_eq!(unsafe { co3::decode::<Third>(result) }.unwrap().0, 7);
     assert_eq!(unsafe { static_value::<u8>(3) }, 4);
     assert_eq!(unsafe { static_value::<u16>(3) }, 5);
 

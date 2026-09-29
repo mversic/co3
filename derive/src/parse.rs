@@ -1122,7 +1122,10 @@ pub(crate) fn parse_opaque_type_attrs(
             continue;
         }
 
-        if !attr.path().is_ident("covariant") && !attr.path().is_ident("unsafe") {
+        if attr.path().is_ident("unsafe") {
+            return Err(unsupported_attr(&attr));
+        }
+        if !attr.path().is_ident("covariant") {
             kept.push(attr);
             continue;
         }
@@ -1131,25 +1134,12 @@ pub(crate) fn parse_opaque_type_attrs(
             return Err(unsupported_attr(&attr));
         };
 
-        let list = if list.path.is_ident("unsafe") {
-            let nested = syn::parse2::<syn::Meta>(list.tokens.clone())
-                .map_err(|_| unsupported_attr(&attr))?;
-            let syn::Meta::List(nested) = nested else {
-                return Err(unsupported_attr(&attr));
-            };
-            nested
-        } else {
-            return Err(unsupported_attr(&attr));
-        };
-
         if list.path.is_ident("covariant") {
             let lifetimes = list
                 .parse_args_with(
                     syn::punctuated::Punctuated::<syn::Lifetime, syn::Token![,]>::parse_terminated,
                 )
-                .map_err(|_| {
-                    syn::Error::new_spanned(&attr, "expected `#[unsafe(covariant('a, ...))]`")
-                })?;
+                .map_err(|_| syn::Error::new_spanned(&attr, "expected `#[covariant('a, ...)]`"))?;
             if lifetimes.is_empty() {
                 return Err(syn::Error::new_spanned(
                     attr,

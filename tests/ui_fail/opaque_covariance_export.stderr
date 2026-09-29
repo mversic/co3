@@ -1,0 +1,5 @@
+error: `#[covariant(...)]` is only supported in `ffi!` extern blocks
+ --> tests/ui_fail/opaque_covariance_export.rs:6:17
+  |
+6 |     #[covariant('a)]
+  |                 ^^

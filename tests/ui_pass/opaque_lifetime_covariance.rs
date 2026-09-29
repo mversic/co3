@@ -3,7 +3,7 @@ use co3::ffi;
 ffi! {
     #![unsafe(extern("C"))]
 
-    #[unsafe(covariant('a))]
+    #[covariant('a)]
     type Borrowed<'a>;
 
     impl<'a> Drop for Borrowed<'a> {

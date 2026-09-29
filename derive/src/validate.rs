@@ -801,6 +801,12 @@ fn validate_export_visibility(vis: &syn::Visibility, item: &impl ToTokens) -> Re
 }
 
 fn validate_export_type(item: &crate::ForeignItemType) -> Result<()> {
+    if let Some(lifetime) = item.covariant_lifetimes.first() {
+        return Err(Error::new_spanned(
+            lifetime,
+            "`#[covariant(...)]` is only supported in `ffi!` extern blocks",
+        ));
+    }
     for attr in &item.ty.attrs {
         if !attr.path().is_ident("tag")
             && !attr.path().is_ident("erased")

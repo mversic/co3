@@ -172,7 +172,7 @@
 //! # Tagged dispatch
 //!
 //! Tagged dispatch is a dynamic dispatch over a closed set of concrete implementations commonly used
-//! in C APIs. The concrete type is erased at the FFI boundary and carried as a shared representation
+//! in C APIs. **The concrete type is erased at the FFI boundary and carried as a shared representation**
 //! accompanied by a tag that identifies the concrete implementation to invoke. By default, tags are
 //! injected at the start of the function argument list but import declarations can place it explicitly
 //! with `<dyn T>::TAG`. Every tag-dispatched concrete instantiation is compile-time checked to have
@@ -255,9 +255,9 @@
 //! agreeing on the allocator and who is responsible for freeing the allocation.
 //!
 //! Because it is designed to eliminate common footguns in FFI, `CO3` takes an opinionated stance here.
-//! By default, all owned values (e.g. `Vec<T>`) are exported as references and immediately cloned on
-//! the importing side. The universal guarantee is that any reference be valid for the duration of
-//! the function call; past that, it is the user's responsibility to ensure reference validity.
+//! **By default, all owned values (e.g. `Vec<T>`) are exported as references** and immediately cloned
+//! on the importing side. The universal guarantee is that **any reference be valid for the duration of
+//! the function call**; past that, it is the user's responsibility to ensure reference validity.
 //!
 //! Apply `move` to transfer ownership of an argument or return value:
 //!
@@ -431,7 +431,7 @@
 //!
 //! Raw function is a function whose arguments and output are lowered `C` types of declared.
 //!
-//! Raw functions are either imported through `ffi!` or generated using `raw!` macro where each
+//! **Raw functions are either imported through `ffi!` or generated using `raw!` macro** where each
 //! `fn` declaration generates a corresponding `extern "C" {fn_name}_raw` companion function from
 //! an already existing function.
 //!
@@ -488,10 +488,13 @@
 //! register_method_callback(Value::doubled_raw);
 //! ```
 //!
-//! # Opaque type variance
+//! # Extern type variance
 //!
-//! Lifetime and type parameters of declared opaque types are invariant by default. A lifetime
-//! parameter can explicitly be declared covariant with `#[unsafe(covariant(...))]`:
+//! Lifetime and type parameters of declared extern types are invariant by default. A lifetime
+//! parameter can explicitly be declared covariant with `#[covariant(...)]` in an extern block.
+//!
+//! **This assertion is part of the extern block's safety contract**: the provider's real type must be
+//! covariant over every listed lifetime.
 //!
 //! ```rust
 //! use co3::ffi;
@@ -499,18 +502,10 @@
 //! ffi! {
 //!    #![unsafe(extern("C"))]
 //!
-//!    #[unsafe(covariant('parent))]
-//!    type Child<'parent, T>;
-//!
-//!    impl<'parent, T> Drop for Child<'parent, T> {
-//!        fn drop(&mut self);
-//!    }
+//!    #[covariant('parent)]
+//!    type Child<'parent>;
 //! }
 //! ```
-//!
-//! The attribute is unsafe because it asserts that the provider's real type is covariant over every
-//! listed lifetime. Type parameters cannot be listed and remain invariant.
-//!
 #![no_std]
 
 #[cfg(feature = "alloc")]

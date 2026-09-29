@@ -3,22 +3,29 @@ use co3::ffi;
 ffi! {
     #![unsafe(extern("C"))]
 
-    #[unsafe(covariant('missing))]
+    #[covariant('missing)]
     type Unknown<'a>;
 }
 
 ffi! {
     #![unsafe(extern("C"))]
 
-    #[unsafe(covariant('a, 'a))]
+    #[covariant('a, 'a)]
     type Duplicate<'a>;
 }
 
 ffi! {
     #![unsafe(extern("C"))]
 
-    #[unsafe(covariant(T))]
+    #[covariant(T)]
     type TypeParameter<T>;
+}
+
+ffi! {
+    #![unsafe(extern("C"))]
+
+    #[unsafe(covariant('a))]
+    type OldSyntax<'a>;
 }
 
 fn main() {}
