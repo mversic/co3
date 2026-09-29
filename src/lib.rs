@@ -4,8 +4,8 @@
 //! representations are checked for traps, including pointees, and ownership transfer is _opt-in_.
 //!
 //! **[`ffi!`] is the main entry point.** It generates ABI-facing wrappers and conversion glue for
-//! functions, impl blocks, opaque types, and imported statics. Blocks either _export_ declarations
-//! from Rust with `#![unsafe(export("ABI"))]` or _import_ them from a foreign library with
+//! functions, impl blocks, opaque types, and statics. Blocks either _export_ declarations from
+//! Rust with `#![unsafe(export("ABI"))]` or _import_ them from a foreign library with
 //! `#![unsafe(extern("ABI"))]`.
 //!
 //! **[`raw!`] generates C-compatible companions** from existing Rust function declarations. The

@@ -63,7 +63,7 @@ A C-compatible companion type has a defined foreign representation and no trap r
 
 ### 2.2. `ffi!`
 
-`ffi!` is a fn-like macro that enables writing export/extern declarations of types, methods and impl blocks, and extern declarations of statics.
+`ffi!` is a fn-like macro that enables writing export/extern declarations of types, statics, methods and impl blocks.
 It must always start with a declaration of direction and ABI (e.g. `#![unsafe(export("system"))]` or `#![unsafe(extern("system"))]`).
 
 - `#[cfg]` and `#[cfg_attr]` are fully supported in all attribute positions inside the `ffi` macro.

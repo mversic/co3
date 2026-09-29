@@ -92,8 +92,8 @@ co3::ffi! {
     impl<V: OdbcVersion> SQLHENV<V> {
         pub fn get_attr0(&self);
         pub fn get_attr1(a: &Self);
-        pub fn get_attr2(one: u32, &self);
-        pub fn get_attr3<dyn(u32) T = u32>(one: T, &self)
+        pub fn get_attr2(&self, one: u32);
+        pub fn get_attr3<dyn(u32) T = u32>(&self, one: T)
         where
             use<T> @ <SQLHENV2>;
     }

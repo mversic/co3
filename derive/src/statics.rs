@@ -31,6 +31,62 @@ fn gen_static_assert(ty: &syn::Type) -> TokenStream {
     }
 }
 
+pub(crate) fn gen_export_static(item: Co3Static) -> TokenStream {
+    let co3 = co3_path();
+    let Co3Static {
+        attrs,
+        mutability,
+        ident,
+        ty,
+        ..
+    } = item;
+    let cfg_attrs = cfg_attrs(&attrs).collect::<Vec<_>>();
+    let symbol = attrs
+        .iter()
+        .find_map(symbol_name_value)
+        .expect("static symbol name is synthesized before code generation");
+    let c_ty = quote!(<#ty as #co3::ReprC>::CType);
+    let source_check = if matches!(mutability, syn::StaticMutability::None) {
+        quote!(__co3_assert_type(&#ident);)
+    } else {
+        quote!(__co3_assert_mut_type(&raw mut #ident);)
+    };
+    let static_assert = gen_static_assert(&ty);
+
+    quote! {
+        #(#cfg_attrs)*
+        #static_assert
+
+        #(#cfg_attrs)*
+        const _: () = {
+            trait __Co3Same<T> {}
+            impl<T> __Co3Same<T> for T {}
+
+            fn __co3_assert_type<T: __Co3Same<#c_ty>>(_: &T) {}
+            fn __co3_assert_mut_type<T: __Co3Same<#c_ty>>(_: *mut T) {}
+            fn __co3_check_source() {
+                #source_check
+            }
+        };
+
+        #(#cfg_attrs)*
+        #[cfg(debug_assertions)]
+        const _: () = {
+            unsafe extern "C" {
+                #[link_name = #symbol]
+                static __co3_symbol: #c_ty;
+            }
+
+            struct __Co3SymbolProbe(*const #c_ty);
+            unsafe impl Sync for __Co3SymbolProbe {}
+
+            #[used]
+            static __CO3_SYMBOL_PROBE: __Co3SymbolProbe =
+                __Co3SymbolProbe(&raw const __co3_symbol);
+        };
+    }
+}
+
 fn wrapper_definition(
     vis: &syn::Visibility,
     ident: &syn::Ident,

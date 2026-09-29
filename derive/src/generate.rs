@@ -1485,7 +1485,7 @@ pub(crate) fn expand_export_decls(
 
     let exports = decls.into_iter().map(|decl| {
         let export = match decl {
-        ForeignItem::Static(_) => unreachable!("export statics are rejected during validation"),
+        ForeignItem::Static(item) => crate::statics::gen_export_static(item),
         ForeignItem::Type(ForeignItemType {
             ty,
             id,

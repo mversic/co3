@@ -1,6 +1,5 @@
 use std::collections::{BTreeMap, BTreeSet};
 
-use quote::ToTokens;
 use syn::{Attribute, Error, Expr, Result, Type, visit::Visit};
 
 use crate::{
@@ -123,13 +122,22 @@ pub(crate) fn validate_raw_signature(sig: &syn::Signature) -> Result<()> {
             "raw function declarations require a safe, synchronous function with at most 12 arguments",
         ));
     }
-    for (index, input) in sig.inputs.iter().enumerate() {
+    let mut receiver_seen = false;
+    let mut ordinary_arg_seen_before_receiver = false;
+    for input in &sig.inputs {
         let syn::FnArg::Typed(arg) = input else {
-            if index == 0 {
-                continue;
+            if ordinary_arg_seen_before_receiver {
+                return Err(Error::new_spanned(
+                    input,
+                    "an imported method receiver may only be preceded by `<dyn T>::TAG` arguments",
+                ));
             }
-            return Err(Error::new_spanned(input, "function receiver must be first"));
+            receiver_seen = true;
+            continue;
         };
+        if !receiver_seen && tag_id(&arg.ty).is_none() {
+            ordinary_arg_seen_before_receiver = true;
+        }
         if !matches!(arg.pat.as_ref(), syn::Pat::Ident(_)) {
             return Err(Error::new_spanned(
                 &arg.pat,
@@ -713,6 +721,11 @@ fn validate_extern_impl(impl_: &crate::Co3Impl) -> Result<()> {
         let syn::ImplItem::Fn(method) = item else {
             continue;
         };
+        if impl_.import_mode != crate::ImportMode::Raw
+            && let Err(err) = validate_import_receiver_position(&method.sig)
+        {
+            push_error(&mut errors, err);
+        }
         let method_dispatch = impl_.method_dispatch_args.contains_key(&method.sig.ident)
             || has_runtime_dispatch(&method.sig.generics);
         if !impl_dispatch && !method_dispatch {
@@ -776,28 +789,20 @@ fn validate_impls(
 }
 
 fn validate_export_static(item: &Co3Static) -> Result<()> {
-    Err(Error::new_spanned(
-        &item.ident,
-        "static items are not supported in `ffi!` export blocks; define the static in Rust with a matching exported symbol",
-    ))
+    if item.expr.is_some() {
+        return Err(Error::new_spanned(
+            &item.ident,
+            "export static declarations cannot have an initializer",
+        ));
+    }
+    validate_extern_static(item)?;
+    Ok(())
 }
 
 fn validate_export_fn(item: &crate::Co3Fn) -> Result<()> {
-    validate_export_visibility(&item.item.vis, &item.item.sig.ident)?;
     validate_unpack_export(&item.sig)?;
     validate_export_fn_attrs(&item.attrs)?;
     reject_explicit_dispatch_ids(&item.sig)
-}
-
-fn validate_export_visibility(vis: &syn::Visibility, item: &impl ToTokens) -> Result<()> {
-    if matches!(vis, syn::Visibility::Inherited) {
-        Ok(())
-    } else {
-        Err(Error::new_spanned(
-            item,
-            "visibility qualifiers are not allowed on functions or methods in `ffi!` export blocks",
-        ))
-    }
 }
 
 fn validate_export_type(item: &crate::ForeignItemType) -> Result<()> {
@@ -826,9 +831,6 @@ fn validate_export_impl(impl_: &crate::Co3Impl) -> Result<()> {
         let syn::ImplItem::Fn(method) = item else {
             continue;
         };
-        if let Err(err) = validate_export_visibility(&method.vis, &method.sig.ident) {
-            push_error(&mut errors, err);
-        }
         if drop_impl && !matches!(method.sig.output, syn::ReturnType::Default) {
             let err_msg = "returning `Drop::drop` is supported only in extern declarations";
             push_error(&mut errors, Error::new_spanned(&method.sig.output, err_msg));
@@ -850,6 +852,20 @@ fn validate_export_impl(impl_: &crate::Co3Impl) -> Result<()> {
 }
 
 fn validate_export_receiver_position(sig: &syn::Signature) -> Result<()> {
+    validate_receiver_position(
+        sig,
+        "an exported method receiver must be the first non-tag argument",
+    )
+}
+
+fn validate_import_receiver_position(sig: &syn::Signature) -> Result<()> {
+    validate_receiver_position(
+        sig,
+        "an imported method receiver may only be preceded by `<dyn T>::TAG` arguments",
+    )
+}
+
+fn validate_receiver_position(sig: &syn::Signature, err_msg: &str) -> Result<()> {
     let Some((receiver_position, receiver)) = sig
         .inputs
         .iter()
@@ -867,7 +883,6 @@ fn validate_export_receiver_position(sig: &syn::Signature) -> Result<()> {
         return Ok(());
     }
 
-    let err_msg = "an exported method receiver must be the first non-tag argument";
     Err(Error::new_spanned(receiver, err_msg))
 }
 

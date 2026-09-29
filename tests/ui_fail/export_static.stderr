@@ -1,11 +1,5 @@
-error: static items are not supported in `ffi!` export blocks; define the static in Rust with a matching exported symbol
- --> tests/ui_fail/export_static.rs:6:12
+error: export static declarations cannot have an initializer
+ --> tests/ui_fail/export_static.rs:8:16
   |
-6 |     static VERSION: u32;
-  |            ^^^^^^^
-
-error: static items are not supported in `ffi!` export blocks; define the static in Rust with a matching exported symbol
- --> tests/ui_fail/export_static.rs:7:16
-  |
-7 |     static mut FLAGS: u32 = 0;
+8 |     static mut FLAGS: u32 = 0;
   |                ^^^^^

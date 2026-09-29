@@ -11,7 +11,7 @@ use crate::{
     Co3Fn, Co3Impl, DispatchGroups,
     ffi_fn::{
         self, emit_extern_definition, gen_definition_body, gen_drop_definition_body,
-        gen_failure_panic, gen_static_fn_signature_drift_check, gen_input_decode_stmts,
+        gen_failure_panic, gen_input_decode_stmts, gen_static_fn_signature_drift_check,
         gen_store_sync_stmts, gen_sync_check, gen_sync_error, gen_unknown_tag_error, is_unpack_arg,
         item_fn_input_arg_type, item_fn_output_type, merge_generics, normalize_fn_signature,
         strip_dispatch_params,

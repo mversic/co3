@@ -94,14 +94,14 @@ enum NormalizedItem {
 
 #[derive(Clone, Copy, PartialEq, Eq)]
 enum NormalizationMode {
-    Ffi,
+    Ffi(DeclKind),
     Raw,
 }
 
 impl NormalizationMode {
     fn macro_name(self) -> &'static str {
         match self {
-            Self::Ffi => "ffi!",
+            Self::Ffi(_) => "ffi!",
             Self::Raw => "raw!",
         }
     }
@@ -536,18 +536,12 @@ pub fn ffi(input: TokenStream) -> Result<TokenStream> {
             ));
         }
 
-        let (normalized, aliases) = normalize_items(items, NormalizationMode::Ffi)?;
+        let (normalized, aliases) = normalize_items(items, NormalizationMode::Ffi(kind))?;
         for item in &normalized {
             let NormalizedItem::Foreign(item) = item else {
                 continue;
             };
             let check = |sig: &syn::Signature| -> Result<()> {
-                if kind == DeclKind::Export {
-                    return Err(syn::Error::new_spanned(
-                        &sig.ident,
-                        "raw function declarations are not allowed in `ffi!` export blocks; use `raw!` to generate companions",
-                    ));
-                }
                 if let Some(raw_abi) = &sig.abi {
                     return Err(syn::Error::new_spanned(
                         raw_abi,
@@ -714,7 +708,7 @@ fn normalize_items(
     let mut aliases = Vec::new();
     for item in items {
         match item {
-            ParsedItem::Raw(raw_decl) if mode == NormalizationMode::Ffi => {
+            ParsedItem::Raw(raw_decl) if matches!(mode, NormalizationMode::Ffi(_)) => {
                 let item = ItemFn {
                     attrs: raw_decl.attrs,
                     vis: raw_decl.vis,
@@ -725,7 +719,9 @@ fn normalize_items(
                 let ForeignItem::Fn(mut item) = ParsedItem::Fn(item).normalize()? else {
                     unreachable!("function declaration normalizes to a function")
                 };
-                item.import_mode = ImportMode::Raw;
+                if mode == NormalizationMode::Ffi(DeclKind::Extern) {
+                    item.import_mode = ImportMode::Raw;
+                }
                 normalized.push(NormalizedItem::Foreign(ForeignItem::Fn(item)));
             }
             ParsedItem::Raw(raw_decl) => normalized.push(NormalizedItem::Raw(raw_decl)),
@@ -763,6 +759,10 @@ fn normalize_items(
                         }
                     } else if let Some(marker) = marker {
                         method.attrs.remove(marker);
+                        if mode == NormalizationMode::Ffi(DeclKind::Export) {
+                            impl_items.push(syn::ImplItem::Fn(method));
+                            continue;
+                        }
                     } else {
                         impl_items.push(syn::ImplItem::Fn(method));
                         continue;
@@ -785,7 +785,7 @@ fn normalize_items(
                     }
                     crate::ffi_fn::SelfConcretizer { self_ty: &self_ty }
                         .visit_signature_mut(&mut sig);
-                    if mode == NormalizationMode::Ffi {
+                    if matches!(mode, NormalizationMode::Ffi(_)) {
                         method.sig = sig;
                         raw_impl_items.push(syn::ImplItem::Fn(method));
                     } else {
