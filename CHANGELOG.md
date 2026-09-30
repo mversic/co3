@@ -9,6 +9,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [0.5.1] - 2026-09-30
 
+### Added
+
+- Support `#[unpack]` inside `raw!` and on fn pointers
+
 ### Changed
 
 - Hide export of `impls::impls!` from the documentation

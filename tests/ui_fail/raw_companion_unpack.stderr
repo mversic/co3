@@ -1,5 +1,5 @@
-error: #[unpack] is only supported on `ffi!` imports
+error: #[unpack] expects exactly two parts
  --> tests/ui_fail/raw_companion_unpack.rs:8:16
   |
-8 |     fn process(#[unpack(u8, u8)] value: (u8, u8));
-  |                ^^^^^^^^^^^^^^^^^
+8 |     fn process(#[unpack] value: (u8, u8));
+  |                ^^^^^^^^^

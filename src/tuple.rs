@@ -58,7 +58,7 @@ use crate::{
     CFnArg, CFnReturn, CType, Decode, Encode, ReprC, Store,
     borrow::{Borrow, BorrowCast, BorrowCastMut, FromBorrow},
     niche::Niche,
-    slice::Unpack2,
+    slice::{Pack2, Unpack2},
     stored::{DecodeOwned, EncodeOwned},
     transmute::CheckedTransmute,
 };
@@ -301,6 +301,18 @@ where
     #[inline(always)]
     fn unpack(value: Self::CType) -> Result<(Part1, Part2), Self::Error> {
         Ok((value.0, value.1))
+    }
+}
+
+impl<A, B, Part1: CType, Part2: CType> Pack2<Part1, Part2> for (A, B)
+where
+    Self: ReprC<CType = ReprCTuple2<Part1, Part2>>,
+{
+    type Error = core::convert::Infallible;
+
+    #[inline(always)]
+    fn pack(part1: Part1, part2: Part2) -> Result<Self::CType, Self::Error> {
+        Ok(ReprCTuple2(part1, part2))
     }
 }
 

@@ -128,16 +128,10 @@ pub(crate) fn validate_raw_companions(raw_decls: &[crate::parse::RawFnDecl]) -> 
                 "companion functions do not have foreign symbol names",
             ));
         }
-        for input in &raw_decl.sig.inputs {
-            if let syn::FnArg::Typed(arg) = input
-                && let Some(attr) = arg.attrs.iter().find(|attr| is_unpack_attr(attr))
-            {
-                return Err(Error::new_spanned(
-                    attr,
-                    "#[unpack] is only supported on `ffi!` imports",
-                ));
-            }
-        }
+        validate_unpack(
+            &raw_decl.sig,
+            raw_decl.owner.as_ref().map(|owner| &owner.generics),
+        )?;
         validate_raw_dispatch(raw_decl)?;
         validate_soft_lifetimes(&raw_decl.sig)?;
     }

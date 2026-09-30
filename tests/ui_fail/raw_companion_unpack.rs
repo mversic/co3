@@ -5,7 +5,7 @@ fn process(value: (u8, u8)) {
 }
 
 raw! {
-    fn process(#[unpack(u8, u8)] value: (u8, u8));
+    fn process(#[unpack] value: (u8, u8));
 }
 
 fn main() {}

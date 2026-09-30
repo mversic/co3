@@ -16,6 +16,11 @@ fn default_source(value: u8) -> u8 {
     value + 3
 }
 
+fn overwrite(bytes: &mut [u8]) -> usize {
+    bytes.fill(7);
+    bytes.len()
+}
+
 #[derive(Clone, Copy, RustSpec, ReprC)]
 #[repr_c(identity)]
 #[repr(transparent)]
@@ -33,6 +38,7 @@ impl Value {
 
 raw! {
     pub fn default_source(value: u8) -> u8;
+    pub fn overwrite(#[unpack(_, _)] bytes: &mut [u8]) -> usize;
 
     impl Value {
         pub fn add(self, amount: u8) -> u8;
@@ -54,6 +60,7 @@ type OrdinaryAlias<T> = Option<T>;
 co3::ffi! {
     #![unsafe(export("C"))]
     type SystemCallback = raw extern "system" fn(u8) -> u8;
+    type UnpackedCallback = raw fn(#[unpack(_, _)] &mut [u8]) -> usize;
 }
 
 fn main() {
@@ -67,6 +74,10 @@ fn main() {
     let method_companion: unsafe extern "C" fn(Value, u8) -> u8 = Value::add_system_raw;
     let _: OrdinaryAlias<Value> = Some(Value(1));
     let _: unsafe extern "system" fn(u8) -> u8 = callback;
+    let unpacked: UnpackedCallback = overwrite_raw;
+    let mut bytes = [0_u8; 3];
+    assert_eq!(unsafe { unpacked(bytes.as_mut_ptr(), bytes.len()) }, 3);
+    assert_eq!(bytes, [7; 3]);
 
     assert_eq!(unsafe { c(1) }, 2);
     assert_eq!(unsafe { system(1) }, 3);

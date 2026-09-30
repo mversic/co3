@@ -59,6 +59,7 @@ pub(crate) fn lower_fn_pointer_type(
         })
         .collect();
     sig.output = pointer.output.clone();
+    crate::validate::validate_unpack(&sig, None)?;
     lower_nested_fn_pointers(&mut sig, failure_mode)?;
     lower_callback_fn_type(sig, &abi, failure_mode, false)
 }
@@ -171,6 +172,16 @@ impl VisitMut for RawTypeLowerer<'_> {
                 },
             );
             match lowered {
+                Ok(lowered) => *ty = lowered,
+                Err(error) => self.error = Some(error),
+            }
+        } else if let syn::Type::FnPtr(pointer) = ty
+            && pointer
+                .inputs
+                .iter()
+                .any(|arg| arg.attrs.iter().any(ffi_fn::is_unpack_attr))
+        {
+            match lower_fn_pointer_type(pointer, self.failure_mode) {
                 Ok(lowered) => *ty = lowered,
                 Err(error) => self.error = Some(error),
             }

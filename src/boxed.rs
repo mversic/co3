@@ -7,7 +7,7 @@ use rust_spec::RustSpec;
 use crate::{
     CFnArg, CFnReturn, CType, Decode, Encode, ReprC,
     borrow::{BorrowCast, BorrowCastMut},
-    slice::{CSlice, CSliceMut, Unpack2},
+    slice::{CSlice, CSliceMut, Pack2, Unpack2},
     stored::{DecodeOwned, EncodeOwned},
     transmute::CheckedTransmute,
 };
@@ -285,5 +285,22 @@ where
     #[inline(always)]
     fn unpack(value: Self::CType) -> Result<(K, U), Self::Error> {
         Ok((CBox { data: value.data }.into(), value.len.try_into()?))
+    }
+}
+
+impl<R: ?Sized, C: CType, K: CType + Into<CBox<C>>, U: CType + TryInto<usize>> Pack2<K, U>
+    for Box<R>
+where
+    Self: ReprC<CType = CBoxedSlice<C>>,
+{
+    type Error = <U as TryInto<usize>>::Error;
+
+    #[inline(always)]
+    fn pack(data: K, len: U) -> Result<Self::CType, Self::Error> {
+        let data: CBox<C> = data.into();
+        Ok(CBoxedSlice {
+            data: data.data,
+            len: len.try_into()?,
+        })
     }
 }

@@ -1,4 +1,28 @@
-use co3::ffi;
+use co3::{ffi, raw};
+
+fn overwrite(bytes: &mut [u8]) -> usize {
+    bytes.fill(7);
+    bytes.len()
+}
+
+fn narrow(value: u8) -> u8 {
+    value + 1
+}
+
+raw! {
+    fn overwrite(#[unpack(_, _)] bytes: &mut [u8]) -> usize;
+    fn narrow(#[unpack(u16)] value: u8) -> u8;
+}
+
+#[test]
+fn raw_companion_reconstructs_unpacked_slice() {
+    let callback: unsafe extern "C" fn(*mut u8, usize) -> usize = overwrite_raw;
+    let mut bytes = [0_u8; 3];
+    assert_eq!(unsafe { callback(bytes.as_mut_ptr(), bytes.len()) }, 3);
+    assert_eq!(bytes, [7; 3]);
+    let narrow_callback: unsafe extern "C" fn(u16) -> u8 = narrow_raw;
+    assert_eq!(unsafe { narrow_callback(41) }, 42);
+}
 
 #[unsafe(export_name = "raw_wrapper__value")]
 extern "C" fn value_source(value: u8) -> u8 {

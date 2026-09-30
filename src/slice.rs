@@ -20,6 +20,27 @@ where
     fn unpack(value: Self::CType) -> Result<Part, Self::Error>;
 }
 
+/// Reconstructs a C-compatible representation from one ABI argument.
+pub trait Pack<Part: CType>: ReprC<CType: Sized> {
+    /// Error returned when the ABI argument cannot be converted.
+    type Error;
+
+    /// Tries to reconstruct the C representation.
+    fn pack(part: Part) -> Result<Self::CType, Self::Error>;
+}
+
+impl<T, Part: CType + TryInto<Self::CType>> Pack<Part> for T
+where
+    Self: ReprC<CType: Sized>,
+{
+    type Error = <Part as TryInto<Self::CType>>::Error;
+
+    #[inline(always)]
+    fn pack(part: Part) -> Result<Self::CType, Self::Error> {
+        part.try_into()
+    }
+}
+
 impl<T, Part: CType + TryFrom<Self::CType>> Unpack<Part> for T
 where
     Self: ReprC<CType: Sized>,
@@ -42,6 +63,27 @@ pub trait Unpack2<Part1: CType, Part2: CType>: ReprC<CType: Sized> {
 
     /// Tries to split the C representation into its constituents.
     fn unpack(value: Self::CType) -> Result<(Part1, Part2), Self::Error>;
+}
+
+/// Reconstructs a C-compatible representation from two ABI arguments.
+pub trait Pack2<Part1: CType, Part2: CType>: ReprC<CType: Sized> {
+    /// Error returned when the ABI arguments cannot be combined.
+    type Error;
+
+    /// Tries to reconstruct the C representation.
+    fn pack(part1: Part1, part2: Part2) -> Result<Self::CType, Self::Error>;
+}
+
+impl<T: Pack2<Part1, Part2>, Part1: CType, Part2: CType> Pack2<Part1, Part2> for Option<T>
+where
+    Self: ReprC<CType = T::CType>,
+{
+    type Error = T::Error;
+
+    #[inline(always)]
+    fn pack(part1: Part1, part2: Part2) -> Result<Self::CType, Self::Error> {
+        T::pack(part1, part2)
+    }
 }
 
 impl<T: Unpack2<Part1, Part2>, Part1: CType, Part2: CType> Unpack2<Part1, Part2> for Option<T>
@@ -72,7 +114,29 @@ macro_rules! impl_unpack2_for_transparent_wrapper {
     )+};
 }
 
+macro_rules! impl_pack2_for_transparent_wrapper {
+    ($($wrapper:ty),+ $(,)?) => {$(
+        impl<T: ?Sized, Part1: CType, Part2: CType> Pack2<Part1, Part2> for $wrapper
+        where
+            T: Pack2<Part1, Part2>,
+        {
+            type Error = T::Error;
+
+            #[inline(always)]
+            fn pack(part1: Part1, part2: Part2) -> Result<Self::CType, Self::Error> {
+                T::pack(part1, part2)
+            }
+        }
+    )+};
+}
+
 impl_unpack2_for_transparent_wrapper! {
+    core::cell::UnsafeCell<T>,
+    core::cell::Cell<T>,
+    core::mem::ManuallyDrop<T>,
+}
+
+impl_pack2_for_transparent_wrapper! {
     core::cell::UnsafeCell<T>,
     core::cell::Cell<T>,
     core::mem::ManuallyDrop<T>,
@@ -325,6 +389,18 @@ where
     }
 }
 
+impl<R: ?Sized, C: CType, U: CType + TryInto<usize>> Pack2<*const C, U> for &R
+where
+    Self: ReprC<CType = CSlice<C>>,
+{
+    type Error = <U as TryInto<usize>>::Error;
+
+    #[inline(always)]
+    fn pack(data: *const C, len: U) -> Result<Self::CType, Self::Error> {
+        Ok(CSlice::from_raw_parts(data, len.try_into()?))
+    }
+}
+
 impl<R: ?Sized, C: CType, U: CType> Unpack2<*mut C, U> for &R
 where
     Self: ReprC<CType = CSliceMut<C>>,
@@ -338,6 +414,18 @@ where
     }
 }
 
+impl<R: ?Sized, C: CType, U: CType + TryInto<usize>> Pack2<*mut C, U> for &R
+where
+    Self: ReprC<CType = CSliceMut<C>>,
+{
+    type Error = <U as TryInto<usize>>::Error;
+
+    #[inline(always)]
+    fn pack(data: *mut C, len: U) -> Result<Self::CType, Self::Error> {
+        Ok(CSliceMut::from_raw_parts_mut(data, len.try_into()?))
+    }
+}
+
 impl<R: ?Sized, C: CType, U: CType> Unpack2<*mut C, U> for &mut R
 where
     Self: ReprC<CType = CSliceMut<C>>,
@@ -348,6 +436,18 @@ where
     #[inline(always)]
     fn unpack(value: Self::CType) -> Result<(*mut C, U), Self::Error> {
         Ok((value.data, value.len.try_into()?))
+    }
+}
+
+impl<R: ?Sized, C: CType, U: CType + TryInto<usize>> Pack2<*mut C, U> for &mut R
+where
+    Self: ReprC<CType = CSliceMut<C>>,
+{
+    type Error = <U as TryInto<usize>>::Error;
+
+    #[inline(always)]
+    fn pack(data: *mut C, len: U) -> Result<Self::CType, Self::Error> {
+        Ok(CSliceMut::from_raw_parts_mut(data, len.try_into()?))
     }
 }
 

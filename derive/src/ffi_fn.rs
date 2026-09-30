@@ -201,6 +201,7 @@ pub(crate) fn gen_definition_body(
     let inputs = &sig.inputs;
     let return_ty = fn_return_ty(&sig);
 
+    let pack_input_stmts = gen_pack_input_stmts(inputs, failure_mode);
     let decode_input_stmts = gen_input_decode_stmts(inputs, failure_mode);
     let store_sync_stmts = gen_store_sync_stmts(inputs.len());
     let sync_error = gen_sync_error(failure_mode);
@@ -232,6 +233,7 @@ pub(crate) fn gen_definition_body(
     quote! {{
         #return_borrow_check
 
+        #pack_input_stmts
         #decode_input_stmts
         let __co3_output = (#callee)(
             #(#arg_names),*
@@ -241,6 +243,57 @@ pub(crate) fn gen_definition_body(
 
         #output
     }}
+}
+
+fn gen_pack_input_stmts(
+    inputs: &Punctuated<syn::FnArg, syn::Token![,]>,
+    failure_mode: FailureMode,
+) -> TokenStream {
+    let decode_error = gen_decode_error(failure_mode);
+    let stmts = inputs.iter().filter_map(|input| {
+        let syn::FnArg::Typed(syn::PatType { attrs, pat, ty, .. }) = input else {
+            return None;
+        };
+        if !attrs.iter().any(is_unpack_attr) {
+            return None;
+        }
+        let name = item_fn_input_ident(pat);
+        let decode_ty = borrowed_arg_ty(attrs, ty);
+        let cfg = cfg_attrs(attrs).collect::<Vec<_>>();
+        let conversion = if is_single_unpack_arg(attrs) {
+            let part_ty = single_unpack_part(attrs, ty)
+                .expect("validated #[unpack] attribute")
+                .expect("one-part unpack attribute was found");
+            quote!(<#decode_ty as co3::slice::Pack<<#part_ty as co3::ReprC>::CType>>::pack(#name))
+        } else {
+            let (data_name, metadata_name) = unpack_arg_names(name);
+            let (logical1, logical2) =
+                unpack_logical_parts(attrs, ty).expect("validated #[unpack] attribute");
+            let (abi1, abi2) = unpack_abi_parts(attrs, ty).expect("validated #[unpack] attribute");
+            let (part1, part2) = unpack_parts(attrs)
+                .expect("validated #[unpack] attribute")
+                .expect("two-part unpack attribute was found");
+            let data = if part1.abi.is_some() {
+                crate::abi_retype::gen_retype(quote!(#data_name), &abi1, &logical1)
+            } else {
+                quote!(#data_name)
+            };
+            let metadata = if part2.abi.is_some() {
+                crate::abi_retype::gen_retype(quote!(#metadata_name), &abi2, &logical2)
+            } else {
+                quote!(#metadata_name)
+            };
+            quote!(<#decode_ty as co3::slice::Pack2<#logical1, #logical2>>::pack(#data, #metadata))
+        };
+        Some(quote! {
+            #(#cfg)*
+            let #name = match #conversion {
+                Ok(value) => value,
+                Err(_) => { #decode_error }
+            };
+        })
+    });
+    quote!(#(#stmts)*)
 }
 
 pub(crate) fn gen_abi_return_encode(value: TokenStream, borrow_output: bool) -> TokenStream {

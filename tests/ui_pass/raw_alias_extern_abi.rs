@@ -7,6 +7,7 @@ ffi! {
     type InheritedAbi = raw fn(u8);
     type Ordinary = core::num::NonZeroU8;
     type Regular = extern "C" fn(u8);
+    type RegularUnpacked = extern "C" fn(#[unpack(_, _)] &mut [u8]) -> usize;
     type Composite = (String, raw fn(String));
     type Optional = Option<raw fn(u8)>;
     type CompositeReturn = (u8, raw fn() -> u8);
@@ -21,6 +22,10 @@ fn main() {
     static_assertions::assert_type_eq_all!(InheritedAbi, unsafe extern "C" fn(u8));
     static_assertions::assert_type_eq_all!(Ordinary, u8);
     static_assertions::assert_type_eq_all!(Regular, Option<extern "C" fn(u8)>);
+    static_assertions::assert_type_eq_all!(
+        RegularUnpacked,
+        Option<unsafe extern "C" fn(*mut u8, usize) -> usize>
+    );
     static_assertions::assert_type_eq_all!(
         Composite,
         <(String, unsafe extern "C" fn(co3::slice::CSlice<u8>)) as ReprC>::CType
