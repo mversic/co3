@@ -7,6 +7,27 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.5.0] - 2026-09-29
+
+### Added
+
+- Add `raw!` to generate visible C-ABI `{name}_raw` companions for existing functions
+
+### Fixed
+
+- Lower one-part `#[unpack(A)]` imports using `<A as ReprC>::CType` as the foreign parameter type.
+- Emit `CFnArg` and `CFnReturn` assertions for each statically selected ordinary import declaration.
+- Require `move` when passing `CBox` or `CBoxedSlice` through imported function arguments.
+- Check exported associated types and consts definitions against the existing Rust impl.
+
+### Changed
+
+- Lower `ffi!` type aliases through `ReprC`; `raw fn` aliases lower pointer signatures, can appear inside composite types, and inherit the block ABI unless specified explicitly.
+- Rename the ABI traits from `ExternC` to `ReprC` and `ReprC` to `CType`.
+- Reject explicit `<dyn T>::TAG` arguments in `ffi!` export declarations.
+- Disallow defining statics in export blocks; they can still be declared.
+- Rename the derive helper attribute from `reprC` to `repr_c`.
+
 ## [0.4.1] - 2026-09-22
 
 ### Added
