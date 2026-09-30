@@ -7,7 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-## [0.5.0] - 2026-09-29
+## [0.5.1] - 2026-09-30
+
+### Changed
+
+- Hide export of `impls::impls!` from the documentation
+
+## [0.5.0] - 2026-09-30
 
 ### Added
 
@@ -22,7 +28,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
-- Lower `ffi!` type aliases through `ReprC`; `raw fn` aliases lower pointer signatures, can appear inside composite types, and inherit the block ABI unless specified explicitly.
 - Rename the ABI traits from `ExternC` to `ReprC` and `ReprC` to `CType`.
 - Reject explicit `<dyn T>::TAG` arguments in `ffi!` export declarations.
 - Disallow defining statics in export blocks; they can still be declared.
