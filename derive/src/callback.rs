@@ -145,6 +145,7 @@ pub(crate) fn lower_raw_alias_signature(
             "raw function pointers require a safe, synchronous, non-generic function with at most 12 arguments",
         ));
     }
+    crate::validate::validate_unpack(&sig, None)?;
     lower_raw_fn_types_in_signature(&mut sig, failure_mode, block_abi)?;
     lower_nested_fn_pointers(&mut sig, failure_mode)?;
     lower_callback_fn_type(sig, &abi, failure_mode, move_fn)

@@ -157,18 +157,20 @@ pub(crate) struct ParsedAlias {
 }
 
 struct RawFnTypeArg {
+    attrs: Vec<Attribute>,
     by_val: bool,
     ty: Type,
 }
 
 impl Parse for RawFnTypeArg {
     fn parse(input: ParseStream) -> syn::Result<Self> {
+        let attrs = input.call(Attribute::parse_outer)?;
         let by_val = input.peek(syn::Token![move]);
         if by_val {
             input.parse::<syn::Token![move]>()?;
         }
         let ty = input.parse::<Type>()?;
-        Ok(Self { by_val, ty })
+        Ok(Self { attrs, by_val, ty })
     }
 }
 
@@ -353,9 +355,10 @@ pub(crate) fn parse_raw_function_type(tokens: TokenStream) -> Result<(syn::Signa
             let RawFnTypeArgs(args_list) = syn::parse2(args.stream())?;
             let converted = args_list.into_iter().enumerate().map(|(index, arg)| {
                 let name = format_ident!("__co3_arg_{index}");
+                let attrs = arg.attrs;
                 let by_val = arg.by_val.then(|| quote!(move));
                 let ty = arg.ty;
-                quote!(#name: #by_val #ty)
+                quote!(#(#attrs)* #name: #by_val #ty)
             });
             let mut converted_group = Group::new(Delimiter::Parenthesis, quote!(#(#converted),*));
             converted_group.set_span(args.span());

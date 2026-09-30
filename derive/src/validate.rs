@@ -1318,7 +1318,7 @@ fn validate_unpack_export(sig: &syn::Signature) -> Result<()> {
     Ok(())
 }
 
-fn validate_unpack(sig: &syn::Signature, outer: Option<&syn::Generics>) -> Result<()> {
+pub(crate) fn validate_unpack(sig: &syn::Signature, outer: Option<&syn::Generics>) -> Result<()> {
     let runtime_parameters = outer
         .into_iter()
         .flat_map(|generics| generics.type_params())

@@ -22,6 +22,7 @@ ffi! {
 
     type GenericDefault<T = raw fn()> = T;
     type InsideMacro = macro_owned_type!(raw fn());
+    type Unpacked = raw fn(#[unpack(_, _)] &mut [u8]) -> core::ffi::c_int;
 
     type Api;
     impl Api {
@@ -35,4 +36,8 @@ fn main() {
     let _: Option<unsafe extern "C" fn(u8)> = CALLBACK.read();
     let _: GenericDefault = None;
     let _: InsideMacro = 0u8;
+    static_assertions::assert_type_eq_all!(
+        Unpacked,
+        unsafe extern "C" fn(*mut u8, usize) -> core::ffi::c_int
+    );
 }
