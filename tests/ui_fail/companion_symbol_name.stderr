@@ -1,5 +1,0 @@
-error: companion functions do not have foreign symbol names
- --> tests/ui_fail/companion_symbol_name.rs:8:5
-  |
-8 |     #[symbol_name = "local"]
-  |     ^^^^^^^^^^^^^^^^^^^^^^^^

@@ -21,3 +21,27 @@ error: raw function pointer aliases cannot use the Rust ABI
    |
 20 |     type CompositeRust = (u8, raw extern "Rust" fn(u8));
    |                                   ^^^^^^^^^^^^^
+
+error: #[unpack] expects exactly two parts
+  --> tests/ui_fail/type_alias_fn_pointer_abi.rs:25:40
+   |
+25 |     type InvalidUnpack = extern "C" fn(#[unpack] &mut [u8]);
+   |                                        ^^^^^^^^^
+
+error: raw function pointer aliases cannot use the Rust ABI
+  --> tests/ui_fail/type_alias_fn_pointer_abi.rs:30:26
+   |
+30 |     type AliasRust = raw extern "Rust" fn();
+   |                          ^^^^^^^^^^^^^
+
+error: expected `;`
+  --> tests/ui_fail/type_alias_fn_pointer_abi.rs:35:30
+   |
+35 |     type InvalidSyntax = raw "system" fn(u8);
+   |                              ^^^^^^^^
+
+error: expected `fn`
+  --> tests/ui_fail/type_alias_fn_pointer_abi.rs:40:9
+   |
+40 |     raw "system" fn foreign(value: u8);
+   |         ^^^^^^^^

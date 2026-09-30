@@ -1,4 +1,4 @@
-use co3::{ReprC, ffi};
+use co3::{ffi, ReprC};
 
 ffi! {
     #![unsafe(extern("C"))]
@@ -14,6 +14,22 @@ ffi! {
     type Nested = raw extern "C" fn(raw extern "system" fn(u8));
     type Returned = raw fn() -> raw fn(u8);
     type RawNested = raw extern "C" fn(extern "system" fn(u8));
+}
+
+ffi! {
+    #![unsafe(extern("C"))]
+
+    type BadArg = raw extern "C" fn(move [u8; 2]);
+    type BadReturn = raw extern "C" fn() -> move [u8; 2];
+}
+
+ffi! {
+    #![unsafe(export("C"))]
+
+    type Moved<T> = raw extern "C" fn(move T) -> move T;
+    type Borrowed<T> = raw extern "C" fn(T) -> T;
+    type Array<const N: usize> = raw extern "C" fn(move [u8; N]) -> move [u8; N];
+    type Combined<T, const N: usize> = raw extern "C" fn(move [T; N]);
 }
 
 fn main() {
@@ -35,7 +51,24 @@ fn main() {
         CompositeReturn,
         <(u8, unsafe extern "C" fn() -> u8) as ReprC>::CType
     );
-    static_assertions::assert_type_eq_all!(Nested, unsafe extern "C" fn(Option<unsafe extern "system" fn(u8)>));
-    static_assertions::assert_type_eq_all!(Returned, unsafe extern "C" fn() -> Option<unsafe extern "C" fn(u8)>);
+    static_assertions::assert_type_eq_all!(
+        Nested,
+        unsafe extern "C" fn(Option<unsafe extern "system" fn(u8)>)
+    );
+    static_assertions::assert_type_eq_all!(
+        Returned,
+        unsafe extern "C" fn() -> Option<unsafe extern "C" fn(u8)>
+    );
     let _: Option<RawNested> = None;
+
+    static_assertions::assert_type_eq_all!(BadArg, unsafe extern "C" fn([u8; 2]));
+    static_assertions::assert_type_eq_all!(BadReturn, unsafe extern "C" fn() -> [u8; 2]);
+    static_assertions::assert_not_impl_any!(BadArg: ReprC);
+    static_assertions::assert_not_impl_any!(BadReturn: ReprC);
+
+    type StringC = <String as ReprC>::CType;
+    static_assertions::assert_type_eq_all!(Moved<String>, unsafe extern "C" fn(StringC) -> StringC);
+    static_assertions::assert_type_eq_all!(Borrowed<u8>, unsafe extern "C" fn(u8) -> u8);
+    static_assertions::assert_type_eq_all!(Array<2>, unsafe extern "C" fn([u8; 2]) -> [u8; 2]);
+    static_assertions::assert_type_eq_all!(Combined<u8, 2>, unsafe extern "C" fn([u8; 2]));
 }

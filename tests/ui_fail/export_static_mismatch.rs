@@ -1,5 +1,13 @@
 use co3::ffi;
 
+static mut FLAGS: u32 = 0;
+
+ffi! {
+    #![unsafe(export("C"))]
+
+    static mut FLAGS: u32 = 0;
+}
+
 static WRONG_TYPE: u16 = 1;
 static mut WRONG_MUTABILITY: u32 = 2;
 static WRONG_MUTABILITY_2: u32 = 3;

@@ -20,4 +20,24 @@ ffi! {
     type CompositeRust = (u8, raw extern "Rust" fn(u8));
 }
 
+ffi! {
+    #![unsafe(extern("C"))]
+    type InvalidUnpack = extern "C" fn(#[unpack] &mut [u8]);
+}
+
+ffi! {
+    #![unsafe(export("C"))]
+    type AliasRust = raw extern "Rust" fn();
+}
+
+ffi! {
+    #![unsafe(extern("C"))]
+    type InvalidSyntax = raw "system" fn(u8);
+}
+
+ffi! {
+    #![unsafe(extern("C"))]
+    raw "system" fn foreign(value: u8);
+}
+
 fn main() {}

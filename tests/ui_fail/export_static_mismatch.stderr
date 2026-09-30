@@ -1,49 +1,55 @@
+error: export static declarations cannot have an initializer
+ --> tests/ui_fail/export_static_mismatch.rs:8:16
+  |
+8 |     static mut FLAGS: u32 = 0;
+  |                ^^^^^
+
 error[E0277]: the trait bound `u16: _::_::__Co3Same<u32>` is not satisfied
-  --> tests/ui_fail/export_static_mismatch.rs:7:1
+  --> tests/ui_fail/export_static_mismatch.rs:15:1
    |
- 7 | / ffi! {
- 8 | |     #![unsafe(export("C"))]
- 9 | |
-10 | |     static WRONG_TYPE: u32;
-11 | |     static WRONG_MUTABILITY: u32;
-12 | |     static mut WRONG_MUTABILITY_2: u32;
-13 | | }
+15 | / ffi! {
+16 | |     #![unsafe(export("C"))]
+17 | |
+18 | |     static WRONG_TYPE: u32;
+19 | |     static WRONG_MUTABILITY: u32;
+20 | |     static mut WRONG_MUTABILITY_2: u32;
+21 | | }
    | |_^ the trait `_::_::__Co3Same<u32>` is not implemented for `u16`
    |
 note: required by a bound in `_::_::__co3_assert_type`
-  --> tests/ui_fail/export_static_mismatch.rs:7:1
+  --> tests/ui_fail/export_static_mismatch.rs:15:1
    |
- 7 | / ffi! {
- 8 | |     #![unsafe(export("C"))]
- 9 | |
-10 | |     static WRONG_TYPE: u32;
-11 | |     static WRONG_MUTABILITY: u32;
-12 | |     static mut WRONG_MUTABILITY_2: u32;
-13 | | }
+15 | / ffi! {
+16 | |     #![unsafe(export("C"))]
+17 | |
+18 | |     static WRONG_TYPE: u32;
+19 | |     static WRONG_MUTABILITY: u32;
+20 | |     static mut WRONG_MUTABILITY_2: u32;
+21 | | }
    | |_^ required by this bound in `__co3_assert_type`
    = note: this error originates in the macro `ffi` (in Nightly builds, run with -Z macro-backtrace for more info)
 
 error[E0133]: use of mutable static is unsafe and requires unsafe block
-  --> tests/ui_fail/export_static_mismatch.rs:11:12
+  --> tests/ui_fail/export_static_mismatch.rs:19:12
    |
-11 |     static WRONG_MUTABILITY: u32;
+19 |     static WRONG_MUTABILITY: u32;
    |            ^^^^^^^^^^^^^^^^ use of mutable static
    |
    = note: mutable statics can be mutated by multiple threads: aliasing violations or data races will cause undefined behavior
 
 error[E0596]: cannot borrow immutable static item `WRONG_MUTABILITY_2` as mutable
-  --> tests/ui_fail/export_static_mismatch.rs:7:1
+  --> tests/ui_fail/export_static_mismatch.rs:15:1
    |
- 5 |   static WRONG_MUTABILITY_2: u32 = 3;
+13 |   static WRONG_MUTABILITY_2: u32 = 3;
    |   ------------------------------ this `static` cannot be borrowed as mutable
- 6 |
- 7 | / ffi! {
- 8 | |     #![unsafe(export("C"))]
- 9 | |
-10 | |     static WRONG_TYPE: u32;
-11 | |     static WRONG_MUTABILITY: u32;
-12 | |     static mut WRONG_MUTABILITY_2: u32;
-13 | | }
+14 |
+15 | / ffi! {
+16 | |     #![unsafe(export("C"))]
+17 | |
+18 | |     static WRONG_TYPE: u32;
+19 | |     static WRONG_MUTABILITY: u32;
+20 | |     static mut WRONG_MUTABILITY_2: u32;
+21 | | }
    | |_^ cannot borrow as mutable
    |
    = note: this error originates in the macro `ffi` (in Nightly builds, run with -Z macro-backtrace for more info)

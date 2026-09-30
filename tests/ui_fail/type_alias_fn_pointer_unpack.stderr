@@ -1,5 +1,0 @@
-error: #[unpack] expects exactly two parts
- --> tests/ui_fail/type_alias_fn_pointer_unpack.rs:6:34
-  |
-6 |     type Invalid = extern "C" fn(#[unpack] &mut [u8]);
-  |                                  ^^^^^^^^^

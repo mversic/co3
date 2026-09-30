@@ -1,5 +1,0 @@
-error: export static declarations cannot have an initializer
- --> tests/ui_fail/export_static.rs:8:16
-  |
-8 |     static mut FLAGS: u32 = 0;
-  |                ^^^^^

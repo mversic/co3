@@ -1,5 +1,0 @@
-error: raw function pointer aliases cannot use the Rust ABI
- --> tests/ui_fail/raw_rust_abi.rs:5:22
-  |
-5 |     type Alias = raw extern "Rust" fn();
-  |                      ^^^^^^^^^^^^^

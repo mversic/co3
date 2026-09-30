@@ -1,21 +1,57 @@
 error: `raw!` only supports function declarations and impl blocks
- --> tests/ui_fail/raw_type_items.rs:3:1
+ --> tests/ui_fail/raw_type_items.rs:7:1
   |
-3 | / raw! {
-4 | |     type Opaque;
-5 | | }
+7 | / raw! {
+8 | |     type Opaque;
+9 | | }
   | |_^
   |
   = note: this error originates in the macro `raw` (in Nightly builds, run with -Z macro-backtrace for more info)
 
 error: item not supported
- --> tests/ui_fail/raw_type_items.rs:8:5
-  |
-8 |     struct Value;
-  |     ^^^^^^
-
-error: item not supported
   --> tests/ui_fail/raw_type_items.rs:12:5
    |
-12 |     enum Choice { A }
+12 |     struct Value;
+   |     ^^^^^^
+
+error: item not supported
+  --> tests/ui_fail/raw_type_items.rs:16:5
+   |
+16 |     enum Choice { A }
    |     ^^^^
+
+error: type aliases are not allowed in `raw!`; use a Rust alias or declare a raw alias in `ffi!`
+  --> tests/ui_fail/raw_type_items.rs:20:10
+   |
+20 |     type Ordinary = u8;
+   |          ^^^^^^^^
+
+error: type aliases are not allowed in `raw!`; use a Rust alias or declare a raw alias in `ffi!`
+  --> tests/ui_fail/raw_type_items.rs:24:10
+   |
+24 |     type Callback = raw extern "C" fn(u8);
+   |          ^^^^^^^^
+
+error: omit `raw` on `raw!` companion declarations
+  --> tests/ui_fail/raw_type_items.rs:28:12
+   |
+28 |     raw fn existing();
+   |            ^^^^^^^^
+
+error: omit `raw` on `raw!` companion declarations
+  --> tests/ui_fail/raw_type_items.rs:31:1
+   |
+31 | / raw! {
+32 | |     impl Host {
+33 | |         raw fn method(self);
+34 | |     }
+35 | | }
+   | |_^
+   |
+   = note: this error originates in the macro `raw` (in Nightly builds, run with -Z macro-backtrace for more info)
+
+error: raw function declarations require a safe, synchronous function with at most 12 arguments
+  --> tests/ui_fail/raw_type_items.rs:38:5
+   |
+38 |     unsafe extern "system" fn existing();
+   |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^

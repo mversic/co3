@@ -1,5 +1,17 @@
 error: #[unpack] expects exactly two parts
- --> tests/ui_fail/raw_companion_unpack.rs:8:16
-  |
-8 |     fn process(#[unpack] value: (u8, u8));
-  |                ^^^^^^^^^
+  --> tests/ui_fail/raw_companion_unpack.rs:10:16
+   |
+10 |     fn process(#[unpack] value: (u8, u8));
+   |                ^^^^^^^^^
+
+error: #[unpack] expects exactly two parts
+  --> tests/ui_fail/raw_companion_unpack.rs:16:26
+   |
+16 |     raw fn missing_parts(#[unpack] value: (u8, u8));
+   |                          ^^^^^^^^^
+
+error: #[unpack] expects exactly two parts
+  --> tests/ui_fail/raw_companion_unpack.rs:19:37
+   |
+19 |         raw fn missing_method_parts(#[unpack] value: (u8, u8));
+   |                                     ^^^^^^^^^
