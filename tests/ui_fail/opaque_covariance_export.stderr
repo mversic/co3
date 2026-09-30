@@ -1,5 +1,18 @@
-error: `#[covariant(...)]` is only supported in `ffi!` extern blocks
- --> tests/ui_fail/opaque_covariance_export.rs:6:17
-  |
-6 |     #[covariant('a)]
-  |                 ^^
+error: lifetime may not live long enough
+  --> tests/ui_fail/opaque_covariance_export.rs:5:1
+   |
+ 5 | / ffi! {
+ 6 | |     #![unsafe(export("C"))]
+ 7 | |
+ 8 | |     #[covariant('a)]
+   | |                 -- lifetime `'__co3_covariant_short` defined here
+ 9 | |     type Exported<'a>;
+   | |                   -- lifetime `'a` defined here
+10 | | }
+   | |_^ function was supposed to return data with lifetime `'a` but it is returning data with lifetime `'__co3_covariant_short`
+   |
+   = help: consider adding the following bound: `'__co3_covariant_short: 'a`
+   = note: requirement occurs because of the type `Exported<'_>`, which makes the generic argument `'_` invariant
+   = note: the struct `Exported<'a>` is invariant over the parameter `'a`
+   = help: see <https://doc.rust-lang.org/nomicon/subtyping.html> for more information about variance
+   = note: this error originates in the macro `ffi` (in Nightly builds, run with -Z macro-backtrace for more info)

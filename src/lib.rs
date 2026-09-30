@@ -488,10 +488,10 @@
 //! register_method_callback(Value::doubled_raw);
 //! ```
 //!
-//! # Extern type variance
+//! # Opaque type variance
 //!
-//! Lifetime and type parameters of declared extern types are invariant by default. A lifetime
-//! parameter can explicitly be declared covariant with `#[covariant(...)]` in an extern block.
+//! Lifetime and type parameters of declared extern **types are invariant by default**. A lifetime
+//! parameter can explicitly be declared covariant with `#[covariant(...)]`.
 //!
 //! **This assertion is part of the extern block's safety contract**: the provider's real type must be
 //! covariant over every listed lifetime.

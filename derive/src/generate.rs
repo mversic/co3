@@ -1483,7 +1483,7 @@ pub(crate) fn expand_export_decls(
             ty,
             id,
             id_value,
-            covariant_lifetimes: _,
+            covariant_lifetimes,
             self_impls,
             drop,
         }) => {
@@ -1541,6 +1541,7 @@ pub(crate) fn expand_export_decls(
                 .as_deref()
                 .map(|value| gen_tag_impl(ident, &ty.generics, value));
             let size_check = gen_non_zst_sized_check(ident, &ty.generics);
+            let covariance_checks = gen_export_covariance_checks(ident, &ty.generics, &covariant_lifetimes);
 
             quote! {
                 #(#type_cfg_attrs)*
@@ -1550,6 +1551,7 @@ pub(crate) fn expand_export_decls(
 
                     #drop
                     #size_check
+                    #covariance_checks
                     #drop_check
 
                     unsafe impl #impl_generics co3::stored::EncodeOwned for #ident #ty_generics #where_clause {
@@ -2515,6 +2517,114 @@ fn gen_non_zst_sized_check(ident: &syn::Ident, generics: &syn::Generics) -> Toke
 
             #non_zst_check
         };
+    }
+}
+
+fn gen_export_covariance_checks(
+    ident: &syn::Ident,
+    generics: &syn::Generics,
+    covariant_lifetimes: &[syn::Lifetime],
+) -> TokenStream {
+    let checks = covariant_lifetimes.iter().map(|long| {
+        let mut name = String::from("__co3_covariant_short");
+        while generics
+            .lifetimes()
+            .any(|param| param.lifetime.ident == name)
+        {
+            name.push('_');
+        }
+        let short = syn::Lifetime::new(&format!("'{name}"), long.span());
+        let mut check_generics = generics.clone();
+        check_generics.params.insert(0, syn::parse_quote!(#short));
+        check_generics
+            .make_where_clause()
+            .predicates
+            .push(syn::parse_quote!(#long: #short));
+        let mut target_bounds = generics
+            .where_clause
+            .iter()
+            .flat_map(|clause| clause.predicates.iter().cloned())
+            .collect::<Vec<_>>();
+        for param in &generics.params {
+            match param {
+                syn::GenericParam::Lifetime(param) if !param.bounds.is_empty() => {
+                    let lifetime = &param.lifetime;
+                    let bounds = &param.bounds;
+                    target_bounds.push(syn::parse_quote!(#lifetime: #bounds));
+                }
+                syn::GenericParam::Type(param) if !param.bounds.is_empty() => {
+                    let ident = &param.ident;
+                    let bounds = &param.bounds;
+                    target_bounds.push(syn::parse_quote!(#ident: #bounds));
+                }
+                _ => {}
+            }
+        }
+        for mut bound in target_bounds {
+            ReplaceLifetime {
+                from: long,
+                to: &short,
+            }
+            .visit_where_predicate_mut(&mut bound);
+            check_generics.make_where_clause().predicates.push(bound);
+        }
+        let (fn_generics, _, where_clause) = check_generics.split_for_impl();
+        let source_args = generics
+            .params
+            .iter()
+            .map(|param| match param {
+                syn::GenericParam::Lifetime(param) => {
+                    let lifetime = &param.lifetime;
+                    quote!(#lifetime)
+                }
+                syn::GenericParam::Type(param) => {
+                    let ident = &param.ident;
+                    quote!(#ident)
+                }
+                syn::GenericParam::Const(param) => {
+                    let ident = &param.ident;
+                    quote!(#ident)
+                }
+            })
+            .collect::<Vec<_>>();
+        let target_args =
+            generics
+                .params
+                .iter()
+                .zip(&source_args)
+                .map(|(param, arg)| match param {
+                    syn::GenericParam::Lifetime(param) if param.lifetime.ident == long.ident => {
+                        quote!(#short)
+                    }
+                    _ => arg.clone(),
+                });
+        let source_ty = quote!(#ident <#(#source_args),*>);
+        let target_ty = quote!(#ident <#(#target_args),*>);
+
+        quote! {
+            const _: () = {
+                fn __co3_check_covariance #fn_generics (
+                    value: &#short #source_ty,
+                ) -> &#short #target_ty #where_clause {
+                    value
+                }
+            };
+        }
+    });
+
+    quote! { #(#checks)* }
+}
+
+struct ReplaceLifetime<'a> {
+    from: &'a syn::Lifetime,
+    to: &'a syn::Lifetime,
+}
+
+impl VisitMut for ReplaceLifetime<'_> {
+    fn visit_lifetime_mut(&mut self, lifetime: &mut syn::Lifetime) {
+        if lifetime.ident == self.from.ident {
+            *lifetime = self.to.clone();
+        }
     }
 }
 

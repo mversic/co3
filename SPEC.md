@@ -78,7 +78,7 @@ It must always start with a declaration of direction and ABI (e.g. `#![unsafe(ex
 - `#![symbol_fragments(Ty = "frag", ...)]` declares symbol interpolation values for types used to concretize parameters.
 - `#![failure = "panic" | "error"]` controls whether internal failures panic(default) or are returned.
 - `type Type;` declares an opaque type (it's representation is unknown). This type should not be dereferenced.
-- `#[covariant('a, ...)]` on an extern type in an extern block declares the listed lifetime parameters covariant.
+- `#[covariant('a, ...)]` on an opaque/extern type declares the listed lifetime parameters covariant.
 - `#[tag(TagTy)]` on a type declaration defines its tag type; `#[tag(TagTy, unsafe(val))]` also assigns its tag value.
 - `where use<T, ...> @ (<Type1> | ...)` opts into a kind of polymorphic dispatch where concrete types are known at compile time but erased at runtime.
 - `#[unpack(_, _)]` on an imported function argument unpacks the compound type into two funcion arguments (facilitates useing `&[T]` in legacy APIs).
