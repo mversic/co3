@@ -376,10 +376,16 @@ fn rewrite_view_repr_c_attrs(
 
 fn gen_view_is_valid_attr(is_valid: &syn::ExprClosure, fields: &syn::Fields) -> TokenStream {
     let field_vars = field_vars(fields);
+    let field_types = fields.iter().map(|field| &field.ty).collect::<Vec<_>>();
+    let args = field_vars
+        .iter()
+        .map(|field| quote!(#field))
+        .collect::<Vec<_>>();
+    let call = super::gen_is_valid_call(is_valid, &field_types, &args);
 
     quote! {
         |#(#field_vars),*| {
-            (#is_valid)(#(#field_vars),*)
+            #call
         }
     }
 }

@@ -825,11 +825,16 @@ fn gen_record_is_valid(
     niche_validation: Option<TokenStream>,
 ) -> TokenStream {
     let custom_validation = is_valid.map(|is_valid| {
+        let args = field_names
+            .iter()
+            .map(|field| quote!(#field))
+            .collect::<Vec<_>>();
+        let call = super::gen_is_valid_call(is_valid, field_types, &args);
         quote! { && { #(
             let #field_names = core::ptr::from_ref(#field_names).cast();
             let #field_names = unsafe {&*#field_names}; )*
 
-            (#is_valid)(#(#field_names),*)
+            #call
         }}
     });
 
@@ -1017,13 +1022,19 @@ fn gen_record_conversion(
 ) -> (TokenStream, TokenStream) {
     let store_vars = tuple_field_exprs(fields.len());
     let field_vars = field_vars(fields);
+    let field_types = fields.iter().map(|field| &field.ty).collect::<Vec<_>>();
 
     let tag_field = tag.as_ref().map(|tag| quote! { tag: #tag, });
     let tag_element = tag.as_ref().map(|tag| quote! { #tag, });
 
     let custom_validation = is_valid.map(|is_valid| {
+        let args = field_vars
+            .iter()
+            .map(|field| quote!(&#field))
+            .collect::<Vec<_>>();
+        let call = super::gen_is_valid_call(is_valid, &field_types, &args);
         quote! {
-            if !(#is_valid)(#(&#field_vars),*) {
+            if !#call {
                 return None;
             }
         }

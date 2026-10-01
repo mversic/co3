@@ -1,6 +1,6 @@
 use proc_macro2::TokenStream;
 use quote::quote;
-use syn::{Attribute, spanned::Spanned as _, visit::Visit};
+use syn::{Attribute, parenthesized, spanned::Spanned as _, visit::Visit};
 
 use crate::{
     layout::attr::{ReprKind, parse_repr},
@@ -11,6 +11,7 @@ use crate::{
 mod attr;
 mod borrow;
 mod ctype;
+mod custom;
 mod item;
 mod niche;
 mod wide;
@@ -19,6 +20,7 @@ const FFI_TYPE_ATTR: &str = "repr_c";
 
 #[derive(Default)]
 pub(super) struct ReprCAttrs {
+    pub(super) as_type: Option<syn::Type>,
     pub(super) niche_value: Option<syn::Expr>,
     pub(super) is_valid: Option<syn::ExprClosure>,
     pub(super) is_identity: bool,
@@ -42,6 +44,22 @@ fn parse_repr_c_attrs(attrs: &[Attribute]) -> syn::Result<ReprCAttrs> {
         found_attr = true;
 
         attr.parse_nested_meta(|meta| {
+            if meta.path.is_ident("as") {
+                let content;
+                parenthesized!(content in meta.input);
+                let value: syn::Type = content.parse()?;
+                if !content.is_empty() {
+                    return Err(content.error("expected one intermediate type"));
+                }
+                if matches!(&value, syn::Type::Path(path) if path.qself.is_none() && path.path.is_ident("Self")) {
+                    return Err(syn::Error::new_spanned(value, "use `repr_c(identity)` for `Self`"));
+                }
+                if repr_c.as_type.replace(value).is_some() {
+                    return Err(meta.error("Duplicate `as` within attribute"));
+                }
+                return Ok(());
+            }
+
             if meta.path.is_ident("identity") {
                 if repr_c.is_identity {
                     return Err(meta.error("Duplicate `identity` within attribute"));
@@ -91,6 +109,7 @@ fn parse_repr_c_attrs(attrs: &[Attribute]) -> syn::Result<ReprCAttrs> {
     }
 
     if repr_c.niche_value.is_none()
+        && repr_c.as_type.is_none()
         && repr_c.is_valid.is_none()
         && !repr_c.is_identity
         && !repr_c.is_view
@@ -110,7 +129,7 @@ fn parse_repr_c_attrs(attrs: &[Attribute]) -> syn::Result<ReprCAttrs> {
 
 fn type_is_valid_closure(
     fields: &syn::Fields,
-    is_valid: &mut Option<syn::ExprClosure>,
+    is_valid: &Option<syn::ExprClosure>,
 ) -> syn::Result<()> {
     let Some(is_valid) = is_valid else {
         return Ok(());
@@ -123,22 +142,18 @@ fn type_is_valid_closure(
         ));
     }
 
-    for (input, field) in is_valid.inputs.iter_mut().zip(fields) {
-        if matches!(input, syn::Pat::Type(_)) {
-            continue;
-        }
-
-        let ty = &field.ty;
-        let pat = input.clone();
-        *input = syn::Pat::Type(syn::PatType {
-            attrs: Vec::new(),
-            pat: Box::new(pat),
-            colon_token: Default::default(),
-            ty: Box::new(syn::parse_quote!(&#ty)),
-        });
-    }
-
     Ok(())
+}
+
+pub(super) fn gen_is_valid_call(
+    is_valid: &syn::ExprClosure,
+    field_types: &[&syn::Type],
+    args: &[TokenStream],
+) -> TokenStream {
+    quote! {{
+        let __co3_is_valid: fn(#(&#field_types),*) -> bool = #is_valid;
+        __co3_is_valid(#(#args),*)
+    }}
 }
 
 pub(crate) fn derive_repr_c(input: &syn::DeriveInput) -> syn::Result<TokenStream> {
@@ -147,8 +162,17 @@ pub(crate) fn derive_repr_c(input: &syn::DeriveInput) -> syn::Result<TokenStream
     let repr = parse_repr(&input.attrs)?;
     let repr_attr = repr.kind.as_ref();
     let repr_alignment = repr.alignment.as_ref();
-    let mut repr_c_attrs = parse_repr_c_attrs(&input.attrs)?;
+    let repr_c_attrs = parse_repr_c_attrs(&input.attrs)?;
     let mut variant_attrs = Vec::new();
+
+    let is_custom = repr_c_attrs.as_type.is_some();
+    if is_custom && (repr_c_attrs.is_identity || repr_c_attrs.is_view || repr_c_attrs.is_wide_data)
+    {
+        return Err(syn::Error::new_spanned(
+            &input.ident,
+            "`as(T)` cannot be combined with other representation modes",
+        ));
+    }
 
     if repr_c_attrs.is_identity {
         match &input.data {
@@ -159,14 +183,17 @@ pub(crate) fn derive_repr_c(input: &syn::DeriveInput) -> syn::Result<TokenStream
                     &mut errors,
                     syn::Error::new_spanned(
                         &input.ident,
-                        "`identity` requires `#[repr(C)]` or `#[repr(transparent)]`",
+                        "`repr_c(identity)` requires `#[repr(C)]` or `#[repr(transparent)]`",
                     ),
                 );
             }
             syn::Data::Struct(_) => {}
             _ => push_error(
                 &mut errors,
-                syn::Error::new_spanned(&input.ident, "`identity` is only supported on structs"),
+                syn::Error::new_spanned(
+                    &input.ident,
+                    "`repr_c(identity)` is only supported on structs",
+                ),
             ),
         }
         if repr_c_attrs.is_valid.is_some() {
@@ -174,7 +201,7 @@ pub(crate) fn derive_repr_c(input: &syn::DeriveInput) -> syn::Result<TokenStream
                 &mut errors,
                 syn::Error::new_spanned(
                     &input.ident,
-                    "`identity` cannot be combined with `is_valid`",
+                    "`repr_c(identity)` cannot be combined with `is_valid`",
                 ),
             );
         }
@@ -183,16 +210,25 @@ pub(crate) fn derive_repr_c(input: &syn::DeriveInput) -> syn::Result<TokenStream
                 &mut errors,
                 syn::Error::new_spanned(
                     &input.ident,
-                    "`identity` cannot be combined with `NICHE_VALUE`",
+                    "`repr_c(identity)` cannot be combined with `NICHE_VALUE`",
                 ),
             );
         }
-        if repr_c_attrs.is_view || repr_c_attrs.is_wide_data {
+        if repr_c_attrs.is_view {
             push_error(
                 &mut errors,
                 syn::Error::new_spanned(
                     &input.ident,
-                    "`identity` cannot be combined with generated representation modes",
+                    "`repr_c(identity)` cannot be combined with `view`",
+                ),
+            );
+        }
+        if repr_c_attrs.is_wide_data {
+            push_error(
+                &mut errors,
+                syn::Error::new_spanned(
+                    &input.ident,
+                    "`repr_c(identity)` cannot be combined with `__wide_data`",
                 ),
             );
         }
@@ -201,7 +237,7 @@ pub(crate) fn derive_repr_c(input: &syn::DeriveInput) -> syn::Result<TokenStream
     match &input.data {
         syn::Data::Struct(data) => {
             validate_fields_no_ffi_type_attr(&data.fields, &mut errors);
-            if let Err(err) = type_is_valid_closure(&data.fields, &mut repr_c_attrs.is_valid) {
+            if let Err(err) = type_is_valid_closure(&data.fields, &repr_c_attrs.is_valid) {
                 push_error(&mut errors, err);
             }
         }
@@ -216,7 +252,7 @@ pub(crate) fn derive_repr_c(input: &syn::DeriveInput) -> syn::Result<TokenStream
                 push_error(&mut errors, syn::Error::new_spanned(&input.ident, err_msg));
             }
 
-            if matches!(repr_attr, Some(ReprKind::C(None))) {
+            if !is_custom && matches!(repr_attr, Some(ReprKind::C(None))) {
                 let err_msg = "#[repr(C)]` not supported; use `#[repr(int)]`/`#[repr(C, int)]`";
                 push_error(&mut errors, syn::Error::new_spanned(&input.ident, err_msg));
             }
@@ -229,28 +265,49 @@ pub(crate) fn derive_repr_c(input: &syn::DeriveInput) -> syn::Result<TokenStream
             for variant in &data.variants {
                 validate_fields_no_ffi_type_attr(&variant.fields, &mut errors);
 
-                if has_data_variant && variant.discriminant.is_some() {
+                if !is_custom && has_data_variant && variant.discriminant.is_some() {
                     let err_msg = "Explicit discriminants are not supported in data-carrying enums";
                     push_error(&mut errors, syn::Error::new(variant.span(), err_msg));
                 }
 
-                let mut variant_repr_c_attrs = parse_repr_c_attrs(&variant.attrs)?;
+                let variant_repr_c_attrs = parse_repr_c_attrs(&variant.attrs)?;
                 if let Err(err) =
-                    type_is_valid_closure(&variant.fields, &mut variant_repr_c_attrs.is_valid)
+                    type_is_valid_closure(&variant.fields, &variant_repr_c_attrs.is_valid)
                 {
                     push_error(&mut errors, err);
                 }
-                if variant_repr_c_attrs.niche_value.is_some() {
-                    let err_msg = "`NICHE_VALUE` is only supported on types";
-                    push_error(&mut errors, syn::Error::new(variant.span(), err_msg));
-                }
-                if variant_repr_c_attrs.is_view {
-                    let err_msg = "`view` is only supported on types";
-                    push_error(&mut errors, syn::Error::new(variant.span(), err_msg));
-                }
-                if variant_repr_c_attrs.is_identity {
-                    let err_msg = "`identity` is only supported on types";
-                    push_error(&mut errors, syn::Error::new(variant.span(), err_msg));
+                if is_custom {
+                    if variant_repr_c_attrs.as_type.is_some()
+                        || variant_repr_c_attrs.is_identity
+                        || variant_repr_c_attrs.is_view
+                        || variant_repr_c_attrs.is_wide_data
+                        || variant_repr_c_attrs.niche_value.is_some()
+                    {
+                        push_error(
+                            &mut errors,
+                            syn::Error::new_spanned(
+                                &variant.ident,
+                                "only `is_valid` is supported on variants with `as(T)`",
+                            ),
+                        );
+                    }
+                } else {
+                    if variant_repr_c_attrs.niche_value.is_some() {
+                        let err_msg = "`NICHE_VALUE` is only supported on types";
+                        push_error(&mut errors, syn::Error::new(variant.span(), err_msg));
+                    }
+                    if variant_repr_c_attrs.is_view {
+                        let err_msg = "`view` is only supported on types";
+                        push_error(&mut errors, syn::Error::new(variant.span(), err_msg));
+                    }
+                    if variant_repr_c_attrs.is_identity {
+                        let err_msg = "`repr_c(identity)` is only supported on types";
+                        push_error(&mut errors, syn::Error::new(variant.span(), err_msg));
+                    }
+                    if variant_repr_c_attrs.as_type.is_some() {
+                        let err_msg = "`as(T)` is only supported on types";
+                        push_error(&mut errors, syn::Error::new(variant.span(), err_msg));
+                    }
                 }
                 variant_attrs.push(VariantReprCAttrs {
                     is_valid: variant_repr_c_attrs.is_valid,
@@ -264,6 +321,14 @@ pub(crate) fn derive_repr_c(input: &syn::DeriveInput) -> syn::Result<TokenStream
 
     if let Some(errors) = errors {
         return Err(errors);
+    }
+
+    if is_custom {
+        return Ok(custom::derive_custom_repr_c(
+            input,
+            &repr_c_attrs,
+            &variant_attrs,
+        ));
     }
 
     let mut generics = input.generics.clone();

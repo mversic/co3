@@ -1,0 +1,52 @@
+error: use `repr_c(identity)` for `Self`
+ --> tests/ui_fail/repr_c_as_invalid.rs:4:13
+  |
+4 | #[repr_c(as(Self))]
+  |             ^^^^
+
+error: unknown type kind
+ --> tests/ui_fail/repr_c_as_invalid.rs:8:10
+  |
+8 | #[repr_c(u32)]
+  |          ^^^
+
+error: unknown type kind
+  --> tests/ui_fail/repr_c_as_invalid.rs:12:10
+   |
+12 | #[repr_c(into = u32)]
+   |          ^^^^
+
+error: expected parentheses
+  --> tests/ui_fail/repr_c_as_invalid.rs:16:13
+   |
+16 | #[repr_c(as = u32)]
+   |             ^
+
+error: `as(T)` cannot be combined with other representation modes
+  --> tests/ui_fail/repr_c_as_invalid.rs:21:8
+   |
+21 | struct MixedModes(u32);
+   |        ^^^^^^^^^^
+
+error[E0277]: the trait bound `MissingIntermediate: EncodeOwned` is not satisfied
+  --> tests/ui_fail/repr_c_as_invalid.rs:23:10
+   |
+23 | #[derive(ReprC)]
+   |          ^^^^^ unsatisfied trait bound
+   |
+help: the trait `EncodeOwned` is not implemented for `MissingIntermediate`
+  --> tests/ui_fail/repr_c_as_invalid.rs:27:1
+   |
+27 | struct MissingIntermediate(u32);
+   | ^^^^^^^^^^^^^^^^^^^^^^^^^^
+   = help: the following other types implement trait `EncodeOwned`:
+             &'_lšč0 _TŠČ0
+             &'_lšč0 mut _TŠČ0
+             ()
+             (A, B)
+             (A, B, C)
+             (A, B, C, D)
+             (A, B, C, D, E)
+             (A, B, C, D, E, F)
+           and $N others
+   = note: this error originates in the derive macro `ReprC` (in Nightly builds, run with -Z macro-backtrace for more info)

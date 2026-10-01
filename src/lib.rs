@@ -59,8 +59,7 @@
 //!
 //! Use **`#![unsafe(export("ABI"))]`** to expose existing Rust items. Although an ABI can be
 //! exported on its own, the provider will often also provide a Rust client as well. In the common
-//! case, export declarations are naturally paired with matching import declarations via a shared
-//! crate that defines the application interface.
+//! case, **export declarations are naturally paired with matching import declarations**.
 //!
 //! ```rust
 //! use co3::ffi;

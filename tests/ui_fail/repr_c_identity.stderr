@@ -1,14 +1,32 @@
-error: `identity` requires `#[repr(C)]` or `#[repr(transparent)]`
+error: `repr_c(identity)` requires `#[repr(C)]` or `#[repr(transparent)]`
  --> tests/ui_fail/repr_c_identity.rs:5:8
   |
 5 | struct MissingRepr(i32);
   |        ^^^^^^^^^^^
 
-error: `identity` is only supported on structs
+error: `repr_c(identity)` is only supported on structs
   --> tests/ui_fail/repr_c_identity.rs:10:6
    |
 10 | enum Enum {
    |      ^^^^
+
+error: `repr_c(identity)` cannot be combined with `NICHE_VALUE`
+  --> tests/ui_fail/repr_c_identity.rs:22:8
+   |
+22 | struct IdentityWithNiche(u32);
+   |        ^^^^^^^^^^^^^^^^^
+
+error: `repr_c(identity)` cannot be combined with `is_valid`
+  --> tests/ui_fail/repr_c_identity.rs:27:8
+   |
+27 | struct IdentityWithValidation(u32);
+   |        ^^^^^^^^^^^^^^^^^^^^^^
+
+error: unknown type kind
+  --> tests/ui_fail/repr_c_identity.rs:31:10
+   |
+31 | #[repr_c(Self)]
+   |          ^^^^
 
 error[E0277]: the trait bound `bool: CType` is not satisfied
   --> tests/ui_fail/repr_c_identity.rs:14:10
