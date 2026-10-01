@@ -67,7 +67,7 @@ note: required for `ParametrizedView<'_dšč, T>` to implement `ReprC`
 note: the requirement `ParametrizedView<'_dšč, T>: ReprC` appears on the `impl`'s associated constant `NICHE_VALUE` but not on the corresponding trait's associated constant
   --> src/niche.rs
    |
-   |     pub trait Niche: ReprC<CType: Copy> + Sized {
+   |     pub trait Niche: ReprC<CType: Copy> {
    |               ----- in this trait
    |         const NICHE_VALUE: Self::CType;
    |               ^^^^^^^^^^^ this trait's associated constant doesn't have the requirement `ParametrizedView<'_dšč, T>: ReprC`
@@ -100,7 +100,7 @@ error[E0277]: the trait bound `T: ReprC` is not satisfied
 note: the requirement `UnsizedSliceView<'_dšč, T>: ReprC` appears on the `impl`'s associated constant `NICHE_VALUE` but not on the corresponding trait's associated constant
   --> src/niche.rs
    |
-   |     pub trait Niche: ReprC<CType: Copy> + Sized {
+   |     pub trait Niche: ReprC<CType: Copy> {
    |               ----- in this trait
    |         const NICHE_VALUE: Self::CType;
    |               ^^^^^^^^^^^ this trait's associated constant doesn't have the requirement `UnsizedSliceView<'_dšč, T>: ReprC`
@@ -125,7 +125,7 @@ note: required for `CUnsizedSliceConstView<T>` to implement `Copy`
 note: required by a bound in `Niche`
   --> src/niche.rs
    |
-   |     pub trait Niche: ReprC<CType: Copy> + Sized {
+   |     pub trait Niche: ReprC<CType: Copy> {
    |                                   ^^^^ required by this bound in `Niche`
    = note: this error originates in the derive macro `co3::ReprC` which comes from the expansion of the derive macro `ReprC` (in Nightly builds, run with -Z macro-backtrace for more info)
 

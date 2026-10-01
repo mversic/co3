@@ -1,6 +1,10 @@
 use std::cmp::Ordering;
+use std::ffi::{CStr, c_char};
 
-use co3::{ReprC, encode, ffi, option::ReprCOption, rust_spec::RustSpec, soft_decode, soft_encode};
+use co3::{
+    ReprC, encode, ffi, niche::Niche, option::ReprCOption, rust_spec::RustSpec, soft_decode,
+    soft_encode,
+};
 
 #[derive(Clone, Copy, PartialEq, Eq, RustSpec, ReprC)]
 #[repr(transparent)]
@@ -40,6 +44,22 @@ ffi! {
         #[symbol_name = "abi__Drop__Opaque__drop"]
         fn drop(&mut self);
     }
+}
+
+#[test]
+fn thin_extern_reference_niche() {
+    static_assertions::assert_impl_all!(&Extern: Niche<CType = *const Extern>);
+    static_assertions::assert_impl_all!(&mut Extern: Niche<CType = *mut Extern>);
+    // CStr is unsized but also has a thin pointer representation. This catches
+    // an accidental Sized bound on the pointer-backed reference Niche impls.
+    static_assertions::assert_impl_all!(&CStr: Niche<CType = *const c_char>);
+
+    assert_eq!(encode(None::<&Extern>), std::ptr::null());
+    assert_eq!(
+        soft_encode(None::<&mut Extern>, &mut ()),
+        std::ptr::null_mut()
+    );
+    assert_eq!(encode(None::<&CStr>), std::ptr::null());
 }
 
 #[derive(Clone, Copy, RustSpec, ReprC)]

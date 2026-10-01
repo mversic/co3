@@ -9,7 +9,7 @@ use rust_spec::{
     layout::{NonRobust, Robust},
     mutability::{Exclusive, Interior},
     niche::{NicheStabilityKind, WithNiche, WithoutNiche},
-    size::{MetaSized, Sized as RustSpecSized, SizedKind, SliceLike, Zero},
+    size::{MetaSized, NulTerminated, Sized as RustSpecSized, SizedKind, SliceLike, Zero},
 };
 
 #[cfg(feature = "alloc")]
@@ -22,6 +22,7 @@ use crate::{
     ReprC,
     borrow::{Borrow, BorrowCast, FromBorrow, borrow_cast},
     cell::InteriorMut,
+    ffi::NulTerminatedRef,
     niche::Niche,
     result::ReprCResult,
     slice::{CSlice, CSliceMut},
@@ -199,6 +200,20 @@ disjoint_impls! {
             let owned = self.clone();
             let ctype = owned.soft_encode(&mut store.store);
             store.ctype.insert(ctype)
+        }
+    }
+    unsafe impl<R: NulTerminatedRef + ?Sized> EncodeOwned for &R
+    where
+        Self: RustSpec<Layout = Unstable> + ReprC<CType = *const <R as ReprC>::CType>,
+        R: RustSpec<Size = NulTerminated, Mutability = Exclusive>,
+    {
+        type Store = ();
+
+        fn soft_encode<'itm>(self, (): &mut ()) -> Self::CType
+        where
+            Self: 'itm,
+        {
+            self.as_c_ptr()
         }
     }
     #[cfg(feature = "alloc")]
@@ -614,6 +629,22 @@ disjoint_impls! {
             source: Self::CType,
             store: &'itm mut Self::Store,
         ) -> Option<Self>;
+    }
+
+    unsafe impl<'d, R: NulTerminatedRef + ?Sized> DecodeOwned<'d> for &'d R
+    where
+        Self: RustSpec<Layout = Unstable> + ReprC<CType = *const <R as ReprC>::CType>,
+        R: RustSpec<Size = NulTerminated, Mutability = Exclusive>,
+    {
+        type Store = ();
+
+        unsafe fn soft_decode<'itm: 'd>(source: Self::CType, (): &mut ()) -> Option<Self> {
+            if source.is_null() {
+                return None;
+            }
+
+            Some(unsafe { R::from_c_ptr(source) })
+        }
     }
 
     unsafe impl<'d, R: ReprC + ?Sized> DecodeOwned<'d> for &'d R

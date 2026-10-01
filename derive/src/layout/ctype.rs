@@ -284,7 +284,7 @@ fn gen_ctype_wide_impl(
     };
 
     quote! {
-        impl #impl_generics co3::wide::Wide for #name #ty_generics
+        unsafe impl #impl_generics co3::wide::Wide for #name #ty_generics
         where
             #source_wide_predicate,
             #(#source_data_ctype_bounds,)*

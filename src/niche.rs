@@ -22,17 +22,17 @@ disjoint_impls! {
     ///
     /// [`Option<bool>`]     - will be serilized into one byte
     /// [`Option<*const T>`] - will take the size of the pointer
-    pub trait Niche: ReprC<CType: Copy> + Sized {
+    pub trait Niche: ReprC<CType: Copy> {
         const NICHE_VALUE: Self::CType;
     }
 
-    impl<R, C> Niche for &R
+    impl<R: ?Sized, C> Niche for &R
     where
         Self: ReprC<CType = *const C>,
     {
         const NICHE_VALUE: Self::CType = core::ptr::null();
     }
-    impl<R, C> Niche for &R
+    impl<R: ?Sized, C> Niche for &R
     where
         Self: ReprC<CType = *mut C>,
     {
@@ -51,7 +51,7 @@ disjoint_impls! {
         const NICHE_VALUE: Self::CType = CSliceMut::NICHE_VALUE;
     }
 
-    impl<R, C> Niche for &mut R
+    impl<R: ?Sized, C> Niche for &mut R
     where
         Self: ReprC<CType = *mut C>,
     {
@@ -65,7 +65,7 @@ disjoint_impls! {
     }
 
     #[cfg(feature = "alloc")]
-    impl<R, C> Niche for Box<R>
+    impl<R: ?Sized, C> Niche for Box<R>
     where
         Self: ReprC<CType = CBox<C>>,
     {
@@ -79,7 +79,7 @@ disjoint_impls! {
         const NICHE_VALUE: Self::CType = CBoxedSlice::NICHE_VALUE;
     }
 
-    impl<T, C> Niche for NonNull<T>
+    impl<T: ?Sized, C> Niche for NonNull<T>
     where
         Self: ReprC<CType = *mut C>,
     {

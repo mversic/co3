@@ -526,7 +526,7 @@ use rust_spec::{
     One, RustSpec,
     mutability::{Exclusive, Interior},
     niche::{NicheStabilityKind, WithNiche, WithoutNiche},
-    size::{ExternTypeLike, MetaSized, SizedKind, SliceLike, Zero},
+    size::{ExternTypeLike, MetaSized, NulTerminated, SizedKind, SliceLike, Zero},
 };
 #[cfg(feature = "alloc")]
 use rust_spec::{Stable, Unstable, size::MetadataKind};
@@ -564,6 +564,7 @@ pub mod wide;
 trait Thin {}
 impl<K: SizedKind> Thin for rust_spec::size::Sized<K> {}
 impl Thin for ExternTypeLike {}
+impl Thin for NulTerminated {}
 
 #[cfg(feature = "alloc")]
 trait Dst {}

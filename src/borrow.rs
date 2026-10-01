@@ -16,6 +16,8 @@ trait NonExternTypeLike {}
 #[cfg(feature = "alloc")]
 impl<K: MetadataKind> NonExternTypeLike for MetaSized<K> {}
 #[cfg(feature = "alloc")]
+impl NonExternTypeLike for rust_spec::size::NulTerminated {}
+#[cfg(feature = "alloc")]
 impl<K: SizedKind> NonExternTypeLike for rust_spec::size::Sized<K> {}
 
 /// A layout-compatible borrowed view of a robust C representation.

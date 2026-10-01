@@ -12,7 +12,12 @@ use core::{
 /// This includes slices, trait objects, and DSTs whose last field is one of the
 /// aforementioned. This is an advanced trait used to form ABI slice and wide
 /// representations; [`crate::ffi!`] handles ordinary slices automatically.
-pub trait Wide {
+///
+/// # Safety
+///
+/// - `metadata`, `as_ptr`, and `as_mut_ptr` **MUST** describe the same value and its actual layout
+/// - If `into_non_null` is implemented, it must transfer the original allocation to the caller
+pub unsafe trait Wide {
     /// Data component of a wide pointer.
     ///
     /// # Warning
@@ -67,7 +72,7 @@ pub trait Wide {
 macro_rules! impl_wide_for_transparent_wrapper {
     ($($wrapper:ident),+ $(,)?) => {$(
         // TODO: It's super weird that we require Wide::Data: ReprC here
-        impl<R: Wide<Data: crate::ReprC> + ?Sized> Wide for $wrapper<R> {
+        unsafe impl<R: Wide<Data: crate::ReprC> + ?Sized> Wide for $wrapper<R> {
             type Data = R::Data;
             type Metadata = R::Metadata;
 
@@ -121,7 +126,7 @@ macro_rules! impl_wide_for_transparent_wrapper {
 
 impl_wide_for_transparent_wrapper!(UnsafeCell, Cell, ManuallyDrop);
 
-impl<R> Wide for [R] {
+unsafe impl<R> Wide for [R] {
     type Data = R;
     type Metadata = usize;
 
@@ -157,7 +162,7 @@ impl<R> Wide for [R] {
     }
 }
 
-impl Wide for str {
+unsafe impl Wide for str {
     type Data = u8;
     type Metadata = usize;
 

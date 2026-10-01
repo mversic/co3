@@ -48,7 +48,7 @@ pub(crate) fn expand(
         (!is_transparent_single && generates_wide).then(|| gen_data_def(input, &data.fields));
     let wide_impl = generates_wide.then(|| {
         quote! {
-            impl #impl_generics co3::wide::Wide for #name #ty_generics
+            unsafe impl #impl_generics co3::wide::Wide for #name #ty_generics
             where
                 #wide_predicate,
                 #predicates
