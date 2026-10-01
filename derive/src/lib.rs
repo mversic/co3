@@ -3,20 +3,20 @@
 //! # Example
 //!
 //! ```rust
-//! #[cfg(not(feature = "import"))]
+//! #[cfg(feature = "export")]
 //! struct Local(u8);
 //!
-//! #[cfg(not(feature = "import"))]
+//! #[cfg(feature = "export")]
 //! fn make_local() -> Box<Local> { Box::new(Local(0)) }
 //!
-//! #[cfg(not(feature = "import"))]
+//! #[cfg(feature = "export")]
 //! type LocalType = Box<Local>;
-//! #[cfg(feature = "import")]
+//! #[cfg(not(feature = "export"))]
 //! type LocalType = OwnedLocal;
 //!
 //! co3::ffi! {
-//!     #![cfg_attr(not(feature = "import"), unsafe(export("C")))]
-//!     #![cfg_attr(feature = "import", unsafe(extern("C")))]
+//!     #![cfg_attr(feature = "export", unsafe(export("C")))]
+//!     #![cfg_attr(not(feature = "export"), unsafe(extern("C")))]
 //!
 //!     #![symbol_prefix = "provider"]
 //!

@@ -65,24 +65,24 @@
 //! ```rust
 //! use co3::ffi;
 //!
-//! #[cfg(not(feature = "import"))]
+//! #[cfg(feature = "export")]
 //! pub struct CounterHandle(u32);
 //!
-//! #[cfg(not(feature = "import"))]
+//! #[cfg(feature = "export")]
 //! impl core::ops::AddAssign<u32> for CounterHandle {
 //!    fn add_assign(&mut self, rhs: u32) {
 //!        self.0 += rhs;
 //!    }
 //! }
 //!
-//! #[cfg(not(feature = "import"))]
+//! #[cfg(feature = "export")]
 //! fn increment<T: core::ops::AddAssign<u32>>(value: &mut T) {
 //!    *value += 1;
 //! }
 //!
 //! ffi! {
-//!    #![cfg_attr(not(feature = "import"), unsafe(export("C")))]
-//!    #![cfg_attr(feature = "import", unsafe(extern("C")))]
+//!    #![cfg_attr(feature = "export", unsafe(export("C")))]
+//!    #![cfg_attr(not(feature = "export"), unsafe(extern("C")))]
 //!
 //!    type CounterHandle;
 //!
