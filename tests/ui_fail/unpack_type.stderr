@@ -22,13 +22,13 @@ error: #[unpack] is only supported in extern declarations
 9 |     fn missing_second_unpack_try(#[unpack(u8, _)] value: u32);
   |                                  ^^^^^^^^^^^^^^^^
 
-error: the first `_` unpack argument is only supported for two-element tuples, references to `Wide` types, and `Box`es of `Wide` types
+error: the first `_` unpack argument is only supported for two-element tuples, references or raw pointers to `Wide` types, and `Box`es of `Wide` types
   --> tests/ui_fail/unpack_type.rs:15:46
    |
 15 |     fn missing_unpack(#[unpack(_, _)] value: u32);
    |                                              ^^^
 
-error: the first `_` unpack argument is only supported for two-element tuples, references to `Wide` types, and `Box`es of `Wide` types
+error: the first `_` unpack argument is only supported for two-element tuples, references or raw pointers to `Wide` types, and `Box`es of `Wide` types
   --> tests/ui_fail/unpack_type.rs:16:50
    |
 16 |     fn missing_unpack_try(#[unpack(_, _)] value: u32);
@@ -52,7 +52,7 @@ error: the ABI type after `=>` cannot be `_`
 24 |     fn missing_erased_type(#[unpack(u8 => _, u8)] value: ReprCTuple2<u8, u8>);
    |                                           ^
 
-error: the first `_` unpack argument is only supported for two-element tuples, references to `Wide` types, and `Box`es of `Wide` types
+error: the first `_` unpack argument is only supported for two-element tuples, references or raw pointers to `Wide` types, and `Box`es of `Wide` types
   --> tests/ui_fail/unpack_type.rs:25:52
    |
 25 |     fn nested_option(#[unpack(_, _)] value: Option<Option<&[u8]>>);
@@ -98,9 +98,9 @@ error[E0277]: the trait bound `ReprCTuple2<u8, u8>: Unpack2<u32, CBoxedSlice<u8>
              `&R` implements `Unpack2<*mut C, U>`
              `&mut R` implements `Unpack2<*mut C, U>`
              `(A, B)` implements `Unpack2<Part1, Part2>`
+             `*const R` implements `Unpack2<*const C, U>`
+             `*mut R` implements `Unpack2<*mut C, U>`
              `Box<R>` implements `Unpack2<K, U>`
              `Cell<T>` implements `Unpack2<Part1, Part2>`
-             `ManuallyDrop<T>` implements `Unpack2<Part1, Part2>`
-             `Option<T>` implements `Unpack2<Part1, Part2>`
-             `UnsafeCell<T>` implements `Unpack2<Part1, Part2>`
+           and $N others
    = note: this error originates in the macro `ffi` (in Nightly builds, run with -Z macro-backtrace for more info)

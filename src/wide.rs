@@ -29,13 +29,13 @@ pub unsafe trait Wide {
     type Metadata;
 
     /// Extracts the metadata component of a pointer.
-    fn metadata(&self) -> Self::Metadata;
+    fn metadata(ptr: *const Self) -> Self::Metadata;
 
     /// Returns a raw pointer to the underlying data.
-    fn as_ptr(&self) -> *const Self::Data;
+    fn as_ptr(ptr: *const Self) -> *const Self::Data;
 
-    /// Returns an unsafe mutable pointer to the underlying data.
-    fn as_mut_ptr(&mut self) -> *mut Self::Data;
+    /// Returns a mutable raw pointer to the underlying data.
+    fn as_mut_ptr(ptr: *mut Self) -> *mut Self::Data;
 
     /// Consumes the `Box`, returning a wrapped `NonNull` pointer.
     ///
@@ -76,18 +76,16 @@ macro_rules! impl_wide_for_transparent_wrapper {
             type Data = R::Data;
             type Metadata = R::Metadata;
 
-            fn metadata(&self) -> Self::Metadata {
-                // SAFETY: Each listed wrapper has the same layout and pointer metadata as `R`.
-                // The temporary reference is used only to obtain that immutable metadata.
-                unsafe { (&*(self as *const Self as *const R)).metadata() }
+            fn metadata(ptr: *const Self) -> Self::Metadata {
+                R::metadata(ptr as *const R)
             }
 
-            fn as_ptr(&self) -> *const Self::Data {
-                self as *const Self as *const Self::Data
+            fn as_ptr(ptr: *const Self) -> *const Self::Data {
+                R::as_ptr(ptr as *const R)
             }
 
-            fn as_mut_ptr(&mut self) -> *mut Self::Data {
-                self as *mut Self as *mut Self::Data
+            fn as_mut_ptr(ptr: *mut Self) -> *mut Self::Data {
+                R::as_mut_ptr(ptr as *mut R)
             }
 
             #[cfg(feature = "alloc")]
@@ -129,16 +127,16 @@ unsafe impl<R> Wide for [R] {
     type Data = R;
     type Metadata = usize;
 
-    fn metadata(&self) -> Self::Metadata {
-        Self::len(self)
+    fn metadata(ptr: *const Self) -> Self::Metadata {
+        ptr.len()
     }
 
-    fn as_ptr(&self) -> *const Self::Data {
-        Self::as_ptr(self)
+    fn as_ptr(ptr: *const Self) -> *const Self::Data {
+        ptr as *const R
     }
 
-    fn as_mut_ptr(&mut self) -> *mut Self::Data {
-        Self::as_mut_ptr(self)
+    fn as_mut_ptr(ptr: *mut Self) -> *mut Self::Data {
+        ptr as *mut R
     }
 
     #[cfg(feature = "alloc")]
@@ -165,16 +163,16 @@ unsafe impl Wide for str {
     type Data = u8;
     type Metadata = usize;
 
-    fn metadata(&self) -> Self::Metadata {
-        Self::len(self)
+    fn metadata(ptr: *const Self) -> Self::Metadata {
+        (ptr as *const [u8]).len()
     }
 
-    fn as_ptr(&self) -> *const Self::Data {
-        self.as_ptr()
+    fn as_ptr(ptr: *const Self) -> *const Self::Data {
+        ptr as *const u8
     }
 
-    fn as_mut_ptr(&mut self) -> *mut Self::Data {
-        self.as_mut_ptr()
+    fn as_mut_ptr(ptr: *mut Self) -> *mut Self::Data {
+        ptr as *mut u8
     }
 
     #[cfg(feature = "alloc")]

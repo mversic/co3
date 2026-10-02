@@ -471,12 +471,17 @@ fn gen_view_name(name: &Ident) -> Ident {
 
 pub fn gen_identity_borrow_impls(name: &Ident, generics: &syn::Generics) -> TokenStream {
     let (impl_generics, ty_generics, where_clause) = generics.split_for_impl();
+    let predicates = where_clause.as_ref().map(|clause| &clause.predicates);
     let mut from_borrow_generics = generics.clone();
     from_borrow_generics.params.insert(0, parse_quote!('d));
     let (from_borrow_impl_generics, _, _) = from_borrow_generics.split_for_impl();
 
     quote! {
-        unsafe impl #impl_generics co3::borrow::Borrow for #name #ty_generics #where_clause {
+        unsafe impl #impl_generics co3::borrow::Borrow for #name #ty_generics
+        where
+            for<'_dummy> Self: Sized,
+            #predicates
+        {
             type Borrowed<'_išč>
                 = Self
             where
@@ -493,7 +498,11 @@ pub fn gen_identity_borrow_impls(name: &Ident, generics: &syn::Generics) -> Toke
             }
         }
 
-        impl #from_borrow_impl_generics co3::borrow::FromBorrow<'d> for #name #ty_generics #where_clause {
+        impl #from_borrow_impl_generics co3::borrow::FromBorrow<'d> for #name #ty_generics
+        where
+            for<'_dummy> Self: Sized,
+            #predicates
+        {
             fn from_borrow(source: Self) -> Self {
                 source
             }

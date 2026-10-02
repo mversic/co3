@@ -138,7 +138,7 @@ ffi! {
     #[symbol_name = "optional_slice_mut_len_impl"]
     fn optional_slice_mut_len(#[unpack(_, usize)] values: Option<&mut [u32]>) -> usize;
 
-    fn borrowed_box(#[unpack(*const u32, usize)] value: Box<[u32]>);
+    fn borrowed_box(#[unpack(_, _)] value: Box<[u32]>);
     fn moved_box(#[unpack(_, _)] value: move Box<[u32]>);
     fn optional_moved_box(#[unpack(_, _)] value: move Option<Box<[u32]>>);
     fn parenthesized_ref(#[unpack(_, _)] value: (&[u32]));

@@ -477,8 +477,8 @@ pub(crate) fn unpack_abi_parts(
 ) -> syn::Result<(Type, Type)> {
     let (part1, part2) = unpack_parts(attrs)?.expect("unpack attribute was validated");
     Ok((
-        abi_unpack_part(arg_ty, part1, 1)?,
-        abi_unpack_part(arg_ty, part2, 2)?,
+        abi_unpack_part(attrs, arg_ty, part1, 1)?,
+        abi_unpack_part(attrs, arg_ty, part2, 2)?,
     ))
 }
 
@@ -488,40 +488,54 @@ pub(crate) fn unpack_logical_parts(
 ) -> syn::Result<(Type, Type)> {
     let (part1, part2) = unpack_parts(attrs)?.expect("unpack attribute was validated");
     Ok((
-        logical_unpack_part(arg_ty, &part1.logical, 1)?,
-        logical_unpack_part(arg_ty, &part2.logical, 2)?,
+        logical_unpack_part(attrs, arg_ty, &part1.logical, 1)?,
+        logical_unpack_part(attrs, arg_ty, &part2.logical, 2)?,
     ))
 }
 
-fn abi_unpack_part(arg_ty: &Type, part: UnpackPart, position: u8) -> syn::Result<Type> {
+fn abi_unpack_part(
+    attrs: &[syn::Attribute],
+    arg_ty: &Type,
+    part: UnpackPart,
+    position: u8,
+) -> syn::Result<Type> {
     match part.abi {
         Some(abi) => Ok(parse_quote!(<#abi as co3::ReprC>::CType)),
-        None => logical_unpack_part(arg_ty, &part.logical, position),
+        None => logical_unpack_part(attrs, arg_ty, &part.logical, position),
     }
 }
 
-fn logical_unpack_part(arg_ty: &Type, part: &Type, position: u8) -> syn::Result<Type> {
+fn logical_unpack_part(
+    attrs: &[syn::Attribute],
+    arg_ty: &Type,
+    part: &Type,
+    position: u8,
+) -> syn::Result<Type> {
     if matches!(part, Type::Infer(_)) {
-        inferred_unpack_part(arg_ty, position)
+        inferred_unpack_part(arg_ty, position, ownership_mode_for_arg(attrs, arg_ty))
     } else {
         Ok(parse_quote!(<#part as co3::ReprC>::CType))
     }
 }
 
-fn inferred_unpack_part(arg_ty: &Type, part: u8) -> syn::Result<Type> {
+fn inferred_unpack_part(arg_ty: &Type, part: u8, ownership: OwnershipMode) -> syn::Result<Type> {
     let arg_ty = peel_grouped_type(arg_ty);
 
     if let Some(inner_ty) = option_inner_type(arg_ty) {
-        return inferred_non_option_unpack_part(inner_ty, part);
+        return inferred_non_option_unpack_part(inner_ty, part, ownership);
     }
 
-    inferred_non_option_unpack_part(arg_ty, part)
+    inferred_non_option_unpack_part(arg_ty, part, ownership)
 }
 
-fn inferred_non_option_unpack_part(arg_ty: &Type, part: u8) -> syn::Result<Type> {
+fn inferred_non_option_unpack_part(
+    arg_ty: &Type,
+    part: u8,
+    ownership: OwnershipMode,
+) -> syn::Result<Type> {
     match arg_ty {
-        Type::Paren(paren) => return inferred_non_option_unpack_part(&paren.elem, part),
-        Type::Group(group) => return inferred_non_option_unpack_part(&group.elem, part),
+        Type::Paren(paren) => return inferred_non_option_unpack_part(&paren.elem, part, ownership),
+        Type::Group(group) => return inferred_non_option_unpack_part(&group.elem, part, ownership),
         _ => {}
     }
 
@@ -535,7 +549,11 @@ fn inferred_non_option_unpack_part(arg_ty: &Type, part: u8) -> syn::Result<Type>
 
     if let Some(wide_ty) = boxed_wide_type(arg_ty) {
         return Ok(if part == 1 {
-            parse_quote!(co3::boxed::CBox<<<#wide_ty as co3::wide::Wide>::Data as co3::ReprC>::CType>)
+            if ownership == OwnershipMode::ByValue {
+                parse_quote!(co3::boxed::CBox<<<#wide_ty as co3::wide::Wide>::Data as co3::ReprC>::CType>)
+            } else {
+                parse_quote!(*const <<#wide_ty as co3::wide::Wide>::Data as co3::ReprC>::CType)
+            }
         } else {
             parse_quote!(<#wide_ty as co3::wide::Wide>::Metadata)
         });
@@ -554,11 +572,24 @@ fn inferred_non_option_unpack_part(arg_ty: &Type, part: u8) -> syn::Result<Type>
         });
     }
 
+    if let Type::Ptr(pointer) = arg_ty {
+        let wide_ty = &pointer.elem;
+        return Ok(if part == 1 {
+            if matches!(pointer.mutability, syn::PointerMutability::Mut(_)) {
+                parse_quote!(*mut <<#wide_ty as co3::wide::Wide>::Data as co3::ReprC>::CType)
+            } else {
+                parse_quote!(*const <<#wide_ty as co3::wide::Wide>::Data as co3::ReprC>::CType)
+            }
+        } else {
+            parse_quote!(<#wide_ty as co3::wide::Wide>::Metadata)
+        });
+    }
+
     let position = if part == 1 { "first" } else { "second" };
     Err(syn::Error::new_spanned(
         arg_ty,
         format!(
-            "the {position} `_` unpack argument is only supported for two-element tuples, references to `Wide` types, and `Box`es of `Wide` types"
+            "the {position} `_` unpack argument is only supported for two-element tuples, references or raw pointers to `Wide` types, and `Box`es of `Wide` types"
         ),
     ))
 }

@@ -162,9 +162,8 @@ fn gen_tagged_union_partial_eq(
     let name = &union.ident;
     let (impl_generics, ty_generics, where_clause) = union.generics.split_for_impl();
     let predicates = where_clause.as_ref().map(|clause| &clause.predicates);
-    let bounds = union.fields.named.iter().map(|field| {
-        let ty = &field.ty;
-        quote!(#ty: core::cmp::PartialEq)
+    let bounds = union.fields.named.iter().flat_map(|field| {
+        gen_conditional_trait_bounds(&field.ty, &union.generics, quote!(core::cmp::PartialEq))
     });
     let arms = variants.iter().enumerate().map(|(index, variant)| {
         let tag = Literal::usize_unsuffixed(index);
@@ -233,7 +232,7 @@ fn gen_ctype_wide_impl(
         return quote! {};
     }
 
-    let Some((field, field_ref, field_member)) = last_field(&ctype.fields) else {
+    let Some((field, _, field_member)) = last_field(&ctype.fields) else {
         return quote! {};
     };
 
@@ -251,7 +250,7 @@ fn gen_ctype_wide_impl(
     let data_ctype_name = gen_ctype_name(&data_name);
 
     let ctype_wide_predicate = wide_predicate(field_ty, &ctype.generics);
-    let methods = gen_dst_methods(is_transparent, field_ty, field_ref, field_member);
+    let methods = gen_dst_methods(is_transparent, field_ty, field_member);
 
     let alloc_methods = gen_alloc_methods();
     let Some((source_last, ..)) = last_field(source_fields) else {
@@ -358,9 +357,8 @@ fn gen_tagged_payload_partial_eq(
     let name = &ctype.ident;
     let (impl_generics, ty_generics, where_clause) = ctype.generics.split_for_impl();
     let predicates = where_clause.as_ref().map(|clause| &clause.predicates);
-    let bounds = payload.fields.named.iter().map(|field| {
-        let ty = &field.ty;
-        quote!(#ty: core::cmp::PartialEq)
+    let bounds = payload.fields.named.iter().flat_map(|field| {
+        gen_conditional_trait_bounds(&field.ty, &ctype.generics, quote!(core::cmp::PartialEq))
     });
     let arms = variants.iter().enumerate().map(|(index, variant)| {
         let tag = Literal::usize_unsuffixed(index);
@@ -602,17 +600,30 @@ fn gen_struct_ctype_impls<const ADD_COPY: bool, const GEN_PARTIAL_EQ: bool>(
     }
 }
 
+fn gen_conditional_trait_bounds(
+    ty: &syn::Type,
+    generics: &syn::Generics,
+    bound: TokenStream,
+) -> Vec<TokenStream> {
+    if is_type_parametrized(ty, generics) {
+        vec![quote!(#ty: #bound)]
+    } else {
+        let mut bounds = vec![quote!(for<'_dummy> #ty: #bound)];
+        bounds.extend(
+            gen_hrtb_projection_bounds(ty, generics, bound)
+                .into_iter()
+                .map(|predicate| quote!(#predicate)),
+        );
+        bounds
+    }
+}
+
 fn gen_struct_partial_eq(ctype: &syn::ItemStruct) -> TokenStream {
     let name = &ctype.ident;
     let (impl_generics, ty_generics, where_clause) = ctype.generics.split_for_impl();
     let predicates = where_clause.as_ref().map(|clause| &clause.predicates);
     let bounds = ctype.fields.iter().flat_map(|field| {
-        let ty = &field.ty;
-        if is_type_parametrized(ty, &ctype.generics) {
-            vec![parse_quote!(#ty: core::cmp::PartialEq)]
-        } else {
-            gen_hrtb_projection_bounds(ty, &ctype.generics, quote!(core::cmp::PartialEq))
-        }
+        gen_conditional_trait_bounds(&field.ty, &ctype.generics, quote!(core::cmp::PartialEq))
     });
     let comparisons = ctype
         .fields
@@ -1173,13 +1184,20 @@ fn gen_default_impl<const ADD_COPY: bool>(
 ) -> TokenStream {
     let (impl_generics, ty_generics, where_clause) = generics.split_for_impl();
     let predicates = where_clause.as_ref().map(|w| &w.predicates);
-
-    let copy_bounds = gen_copy_bounds::<ADD_COPY>(generics, fields);
+    let sized_bound = fields.last().and_then(|&ty| {
+        if is_type_parametrized(ty, generics) {
+            Some(quote!(#ty: Sized,))
+        } else if !ADD_COPY {
+            Some(quote!(for<'_dummy> #ty: Sized,))
+        } else {
+            None
+        }
+    });
 
     quote! {
         impl #impl_generics Default for #ident #ty_generics
         where
-            #(#copy_bounds,)*
+            #sized_bound
             #predicates
         {
             #[inline(always)]

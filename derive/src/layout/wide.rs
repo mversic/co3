@@ -21,7 +21,7 @@ pub(crate) fn expand(
         return Ok(quote! {});
     };
 
-    let Some((field, field_ref, field_member)) = last_field(&data.fields) else {
+    let Some((field, _, field_member)) = last_field(&data.fields) else {
         return Ok(quote! {});
     };
 
@@ -40,7 +40,7 @@ pub(crate) fn expand(
     } else {
         gen_data_ty(input)
     };
-    let methods = gen_dst_methods(is_transparent_single, field_ty, field_ref, field_member);
+    let methods = gen_dst_methods(is_transparent_single, field_ty, field_member);
     let alloc_methods = gen_alloc_methods();
 
     let wide_predicate = wide_predicate(field_ty, &input.generics);
@@ -270,7 +270,6 @@ pub(super) fn wide_predicate(field_ty: &syn::Type, generics: &syn::Generics) -> 
 pub(super) fn gen_dst_methods(
     is_transparent: bool,
     field_ty: &syn::Type,
-    field_ref: TokenStream,
     field_member: TokenStream,
 ) -> TokenStream {
     let offset = if is_transparent {
@@ -281,18 +280,18 @@ pub(super) fn gen_dst_methods(
 
     quote! {
         #[inline(always)]
-        fn metadata(&self) -> Self::Metadata {
-            co3::wide::Wide::metadata(&#field_ref)
+        fn metadata(ptr: *const Self) -> Self::Metadata {
+            <#field_ty as co3::wide::Wide>::metadata(ptr as *const #field_ty)
         }
 
         #[inline(always)]
-        fn as_ptr(&self) -> *const Self::Data {
-            self as *const Self as *const Self::Data
+        fn as_ptr(ptr: *const Self) -> *const Self::Data {
+            ptr as *const Self::Data
         }
 
         #[inline(always)]
-        fn as_mut_ptr(&mut self) -> *mut Self::Data {
-            self as *mut Self as *mut Self::Data
+        fn as_mut_ptr(ptr: *mut Self) -> *mut Self::Data {
+            ptr as *mut Self::Data
         }
 
         #[inline(always)]

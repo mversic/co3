@@ -160,8 +160,8 @@ disjoint_impls! {
         where
             Self: 'itm,
         {
-            let len = self.metadata();
-            let ptr = self.as_ptr().cast();
+            let len = R::metadata(core::ptr::from_ref(self));
+            let ptr = R::as_ptr(core::ptr::from_ref(self)).cast();
             CSlice::from_raw_parts(ptr, len)
         }
     }
@@ -298,8 +298,8 @@ disjoint_impls! {
         where
             Self: 'itm,
         {
-            let len = self.metadata();
-            let ptr = self.as_mut_ptr().cast();
+            let len = R::metadata(core::ptr::from_ref(self));
+            let ptr = R::as_mut_ptr(core::ptr::from_mut(self)).cast();
             CSliceMut::from_raw_parts_mut(ptr, len)
         }
     }
@@ -395,7 +395,7 @@ disjoint_impls! {
             // TODO: It's a bit stupid that this is the only conversion
             // where Store != () when type's Layout = Stable
             if impls::impls!(<R::Owned as EncodeOwned>::Store: EmptyStore) {
-                let len = self.metadata();
+                let len = R::metadata(core::ptr::from_ref(&*self));
                 let data = R::into_non_null(self);
 
                 return CBoxedSlice::from_raw_parts(data.cast(), len);

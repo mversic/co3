@@ -1,5 +1,17 @@
 use co3::{ReprC, ffi, rust_spec::RustSpec};
 
+#[derive(ReprC)]
+struct UninitField(core::mem::MaybeUninit<u8>);
+
+#[derive(ReprC)]
+enum UninitVariant {
+    Field(core::mem::MaybeUninit<u8>),
+    Empty,
+}
+
+static_assertions::assert_not_impl_any!(<UninitField as ReprC>::CType: PartialEq);
+static_assertions::assert_not_impl_any!(<UninitVariant as ReprC>::CType: PartialEq);
+
 #[derive(Clone, Copy, RustSpec, ReprC)]
 #[repr_c(as(u32))]
 struct Handle(u32);

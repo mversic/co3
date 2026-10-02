@@ -336,10 +336,9 @@ pub(crate) fn derive_repr_c(input: &syn::DeriveInput) -> syn::Result<TokenStream
     let tokens = match &input.data {
         syn::Data::Struct(_) => {
             let item = derive_item(repr_attr, repr_alignment, input, &repr_c_attrs, &[]);
-            let wide =
-                (!repr_c_attrs.is_identity && !repr_c_attrs.is_view && !repr_c_attrs.is_wide_data)
-                    .then(|| wide::expand(input, repr_attr))
-                    .transpose()?;
+            let wide = (!repr_c_attrs.is_view && !repr_c_attrs.is_wide_data)
+                .then(|| wide::expand(input, repr_attr))
+                .transpose()?;
             quote! { #item #wide }
         }
         syn::Data::Enum(data) if data.variants.is_empty() => {

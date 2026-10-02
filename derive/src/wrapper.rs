@@ -460,7 +460,11 @@ pub(crate) fn gen_wrapper_body_with_callee<const DISPATCHED: bool>(
 
 fn unpack_input(input: &FnArg) -> (&[syn::Attribute], syn::Ident, syn::Type) {
     match input {
-        FnArg::Typed(arg) => (&arg.attrs, item_fn_input_ident(&arg.pat).clone(), (*arg.ty).clone()),
+        FnArg::Typed(arg) => (
+            &arg.attrs,
+            item_fn_input_ident(&arg.pat).clone(),
+            (*arg.ty).clone(),
+        ),
         FnArg::Receiver(receiver) => (
             &receiver.attrs,
             format_ident!("__co3_self"),

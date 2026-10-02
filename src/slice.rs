@@ -1,4 +1,5 @@
 //! C-ABI slice carriers.
+use core::ptr::NonNull;
 use rust_spec::RustSpec;
 
 use crate::{
@@ -6,6 +7,7 @@ use crate::{
     borrow::{Borrow, BorrowCast, BorrowCastMut, FromBorrow},
     stored::{DecodeOwned, EncodeOwned},
     transmute::CheckedTransmute,
+    wide::Wide,
 };
 
 /// Fallibly converts a C-compatible representation into one ABI argument.
@@ -375,6 +377,58 @@ macro_rules! impl_slice_carrier {
 
 impl_slice_carrier! { CSlice }
 impl_slice_carrier! { CSliceMut }
+
+impl<R: CType + Wide<Data = C, Metadata = usize> + ?Sized, C: CType, U: CType> Unpack2<*const C, U>
+    for *const R
+where
+    usize: TryInto<U>,
+{
+    type Error = <usize as TryInto<U>>::Error;
+
+    #[inline(always)]
+    fn unpack(value: Self::CType) -> Result<(*const C, U), Self::Error> {
+        Ok((R::as_ptr(value), R::metadata(value).try_into()?))
+    }
+}
+
+impl<R: CType + Wide<Data = C, Metadata = usize> + ?Sized, C: CType, U: CType> Unpack2<*mut C, U>
+    for *mut R
+where
+    usize: TryInto<U>,
+{
+    type Error = <usize as TryInto<U>>::Error;
+
+    #[inline(always)]
+    fn unpack(value: Self::CType) -> Result<(*mut C, U), Self::Error> {
+        Ok((R::as_mut_ptr(value), R::metadata(value).try_into()?))
+    }
+}
+
+impl<R: CType + Wide<Data = C, Metadata = usize> + ?Sized, C: CType, U: CType> Unpack2<*const C, U>
+    for NonNull<R>
+where
+    usize: TryInto<U>,
+{
+    type Error = <usize as TryInto<U>>::Error;
+
+    #[inline(always)]
+    fn unpack(value: Self::CType) -> Result<(*const C, U), Self::Error> {
+        Ok((R::as_ptr(value), R::metadata(value).try_into()?))
+    }
+}
+
+impl<R: CType + Wide<Data = C, Metadata = usize> + ?Sized, C: CType, U: CType> Unpack2<*mut C, U>
+    for NonNull<R>
+where
+    usize: TryInto<U>,
+{
+    type Error = <usize as TryInto<U>>::Error;
+
+    #[inline(always)]
+    fn unpack(value: Self::CType) -> Result<(*mut C, U), Self::Error> {
+        Ok((R::as_mut_ptr(value), R::metadata(value).try_into()?))
+    }
+}
 
 impl<R: ?Sized, C: CType, U: CType> Unpack2<*const C, U> for &R
 where

@@ -24,6 +24,14 @@ struct CNonCopyData;
 #[repr(transparent)]
 struct Generic<T>(T);
 
+#[derive(RustSpec, ReprC)]
+#[repr_c(identity)]
+#[repr(transparent)]
+struct Bytes([u8]);
+
+static_assertions::assert_type_eq_all!(<Bytes as ReprC>::CType, Bytes);
+static_assertions::assert_not_impl_any!(Bytes: co3::borrow::Borrow);
+
 static_assertions::assert_type_eq_all!(<Integer as ReprC>::CType, Integer);
 static_assertions::assert_type_eq_all!(<NonCopy as ReprC>::CType, NonCopy);
 static_assertions::assert_type_eq_all!(<Generic<u32> as ReprC>::CType, Generic<u32>);
