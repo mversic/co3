@@ -1322,10 +1322,15 @@ pub(crate) fn validate_unpack(sig: &syn::Signature, outer: Option<&syn::Generics
         .collect::<Vec<_>>();
     let detector = crate::utils::ParamUseDetector::new(runtime_parameters);
     for input in &sig.inputs {
-        let syn::FnArg::Typed(input) = input else {
-            continue;
+        let receiver_ty;
+        let (attrs, ty) = match input {
+            syn::FnArg::Typed(input) => (&input.attrs, input.ty.as_ref()),
+            syn::FnArg::Receiver(receiver) => {
+                receiver_ty = crate::utils::receiver_ty(receiver);
+                (&receiver.attrs, &receiver_ty)
+            }
         };
-        let mut unpack_attrs = input.attrs.iter().filter(|attr| is_unpack_attr(attr));
+        let mut unpack_attrs = attrs.iter().filter(|attr| is_unpack_attr(attr));
         if let Some(first) = unpack_attrs.next()
             && let Some(duplicate) = unpack_attrs.next()
         {
@@ -1334,14 +1339,14 @@ pub(crate) fn validate_unpack(sig: &syn::Signature, outer: Option<&syn::Generics
                 format!("duplicate {} attribute", unpack_attr_name(first)),
             ));
         }
-        let Some(attr) = input.attrs.iter().find(|attr| is_unpack_attr(attr)) else {
+        let Some(attr) = attrs.iter().find(|attr| is_unpack_attr(attr)) else {
             continue;
         };
-        if crate::ffi_fn::validate_single_unpack(&input.attrs)? {
+        if crate::ffi_fn::validate_single_unpack(attrs)? {
             continue;
         }
-        let (part1, part2) = unpack_types(&input.attrs)?.expect("unpack attribute was found");
-        if detector.type_mentions_param(&input.ty)
+        let (part1, part2) = unpack_types(attrs)?.expect("unpack attribute was found");
+        if detector.type_mentions_param(ty)
             && (matches!(part1, syn::Type::Infer(_)) || matches!(part2, syn::Type::Infer(_)))
         {
             let err_msg = format!(
@@ -1351,7 +1356,7 @@ pub(crate) fn validate_unpack(sig: &syn::Signature, outer: Option<&syn::Generics
             return Err(Error::new_spanned(attr, err_msg));
         }
         if matches!(part1, syn::Type::Infer(_)) || matches!(part2, syn::Type::Infer(_)) {
-            crate::ffi_fn::unpack_abi_parts(&input.attrs, &input.ty)?;
+            crate::ffi_fn::unpack_abi_parts(attrs, ty)?;
         }
     }
 

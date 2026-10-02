@@ -1,11 +1,45 @@
 use std::num::NonZeroU8;
 
-use co3::{ReprC, rust_spec::RustSpec, wide::Wide};
+use co3::{ReprC, ffi, rust_spec::RustSpec, wide::Wide};
 use static_assertions::assert_impl_all;
 
 #[repr(transparent)]
 #[derive(RustSpec, ReprC)]
 struct Bytes([u8]);
+
+#[unsafe(no_mangle)]
+extern "C" fn unpack_receiver_fill(data: *mut u8, len: usize) -> usize {
+    let bytes = unsafe { core::slice::from_raw_parts_mut(data, len) };
+    bytes.copy_from_slice(&[4, 5, 6]);
+    len
+}
+
+#[unsafe(no_mangle)]
+extern "C" fn unpack_receiver_sum(data: *const u8, len: usize) -> usize {
+    let bytes = unsafe { core::slice::from_raw_parts(data, len) };
+    bytes.iter().map(|&byte| byte as usize).sum()
+}
+
+ffi! {
+    #![unsafe(extern("C"))]
+
+    impl Bytes {
+        #[symbol_name = "unpack_receiver_fill"]
+        fn fill(#[unpack(_, usize)] &mut self) -> usize;
+
+        #[symbol_name = "unpack_receiver_sum"]
+        fn sum(#[unpack(_, usize)] &self) -> usize;
+    }
+}
+
+#[test]
+fn unpacked_receivers_call_c_with_data_and_length() {
+    let mut values = [1u8, 2, 3];
+    let bytes = unsafe { <Bytes as Wide>::from_raw_parts_mut(values.as_mut_ptr(), values.len()) };
+    assert_eq!(bytes.sum(), 6);
+    assert_eq!(bytes.fill(), 3);
+    assert_eq!(values, [4, 5, 6]);
+}
 
 #[repr(C)]
 #[derive(RustSpec, ReprC)]

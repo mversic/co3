@@ -458,23 +458,31 @@ pub(crate) fn gen_wrapper_body_with_callee<const DISPATCHED: bool>(
     }
 }
 
+fn unpack_input(input: &FnArg) -> (&[syn::Attribute], syn::Ident, syn::Type) {
+    match input {
+        FnArg::Typed(arg) => (&arg.attrs, item_fn_input_ident(&arg.pat).clone(), (*arg.ty).clone()),
+        FnArg::Receiver(receiver) => (
+            &receiver.attrs,
+            format_ident!("__co3_self"),
+            crate::utils::receiver_ty(receiver),
+        ),
+    }
+}
+
 fn gen_single_unpack_input_stmts(
     failure_mode: FailureMode,
     inputs: &Punctuated<FnArg, syn::Token![,]>,
 ) -> TokenStream {
     let stmts = inputs.iter().filter_map(|input| {
-        let FnArg::Typed(syn::PatType { attrs, pat, ty, .. }) = input else {
-            return None;
-        };
+        let (attrs, arg_name, ty) = unpack_input(input);
         if !ffi_fn::is_single_unpack_arg(attrs) {
             return None;
         }
-        let arg_name = item_fn_input_ident(pat);
-        let unpack_ty = match ownership_mode_for_arg(attrs, ty) {
+        let unpack_ty = match ownership_mode_for_arg(attrs, &ty) {
             OwnershipMode::ByValue => quote!(#ty),
             OwnershipMode::Borrow => quote!(<#ty as co3::borrow::Borrow>::Borrowed<'_>),
         };
-        let target_ty = ffi_fn::single_unpack_part(attrs, ty)
+        let target_ty = ffi_fn::single_unpack_part(attrs, &ty)
             .expect("validated one-part unpack attribute")
             .expect("one-part unpack attribute was found");
         let part_ty = quote!(<#target_ty as co3::ReprC>::CType);
@@ -656,21 +664,18 @@ fn gen_unpack_input_stmts(
     inputs: &Punctuated<FnArg, syn::Token![,]>,
 ) -> TokenStream {
     let stmts = inputs.iter().filter_map(|input| {
-        let FnArg::Typed(syn::PatType { attrs, pat, ty, .. }) = input else {
-            return None;
-        };
+        let (attrs, arg_name, ty) = unpack_input(input);
         if !is_unpack_arg(attrs) {
             return None;
         }
-        let arg_name = item_fn_input_ident(pat);
-        let (data_name, metadata_name) = unpack_arg_names(arg_name);
-        let (target1_ty, target2_ty) = ffi_fn::unpack_logical_parts(attrs, ty)
+        let (data_name, metadata_name) = unpack_arg_names(&arg_name);
+        let (target1_ty, target2_ty) = ffi_fn::unpack_logical_parts(attrs, &ty)
             .expect("validated #[unpack] attribute")
             ;
-        let inferred_option_ty = ffi_fn::inferred_unpack_option_inner(attrs, ty)
+        let inferred_option_ty = ffi_fn::inferred_unpack_option_inner(attrs, &ty)
             .expect("validated #[unpack] attribute")
             .map(|inner_ty| quote!(core::option::Option<#inner_ty>));
-        let unpack_ty = match (ownership_mode_for_arg(attrs, ty), inferred_option_ty) {
+        let unpack_ty = match (ownership_mode_for_arg(attrs, &ty), inferred_option_ty) {
             (OwnershipMode::ByValue, Some(option_ty)) => option_ty,
             (OwnershipMode::ByValue, None) => quote!(#ty),
             (OwnershipMode::Borrow, Some(option_ty)) => {
@@ -681,7 +686,7 @@ fn gen_unpack_input_stmts(
             }
         };
         let (abi1_ty, abi2_ty) =
-            ffi_fn::unpack_abi_parts(attrs, ty).expect("validated #[unpack] attribute");
+            ffi_fn::unpack_abi_parts(attrs, &ty).expect("validated #[unpack] attribute");
         let (part1, part2) =
             ffi_fn::unpack_parts(attrs).expect("validated #[unpack] attribute").unwrap();
         {
@@ -738,8 +743,13 @@ fn gen_unpack_erase_stmt(
 fn gen_ffi_fn_call(sig: &syn::Signature, callee: &TokenStream) -> TokenStream {
     let arg_names = sig.inputs.iter().map(|input| match input {
         FnArg::Receiver(receiver) => {
-            let cfg = crate::utils::cfg_attrs(&receiver.attrs);
-            quote!(#(#cfg)* __co3_self)
+            let cfg = crate::utils::cfg_attrs(&receiver.attrs).collect::<Vec<_>>();
+            if is_unpack_arg(&receiver.attrs) {
+                let (data_name, metadata_name) = unpack_arg_names(&format_ident!("__co3_self"));
+                quote!(#(#cfg)* #data_name, #(#cfg)* #metadata_name)
+            } else {
+                quote!(#(#cfg)* __co3_self)
+            }
         }
         FnArg::Typed(syn::PatType { attrs, pat, .. }) => {
             let arg_name = item_fn_input_ident(pat);

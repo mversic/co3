@@ -64,6 +64,19 @@ mod c_symbols {
     }
 
     #[unsafe(no_mangle)]
+    extern "C" fn unpack_receiver_mut(data: *mut u8, len: usize) -> usize {
+        let bytes = unsafe { core::slice::from_raw_parts_mut(data, len) };
+        bytes[0] = 9;
+        len
+    }
+
+    #[unsafe(no_mangle)]
+    extern "C" fn unpack_receiver_ref(data: *const u8, len: usize) -> usize {
+        let bytes = unsafe { core::slice::from_raw_parts(data, len) };
+        bytes.iter().map(|&byte| byte as usize).sum()
+    }
+
+    #[unsafe(no_mangle)]
     extern "C" fn dispatch_associated_unpack(_: u8, data: *mut u8, len: usize) -> usize {
         assert_eq!(data.is_null(), len == 0);
         len
@@ -150,6 +163,14 @@ ffi! {
         fn imported_inherent_unpack_len(&self, #[unpack(_, _)] values: &[u32]) -> usize;
     }
 
+    impl OdbcStr<u8> {
+        #[symbol_name = "unpack_receiver_mut"]
+        fn unpack_receiver_mut(#[unpack(_, usize)] &mut self) -> usize;
+
+        #[symbol_name = "unpack_receiver_ref"]
+        fn unpack_receiver_ref(#[unpack(_, usize)] &self) -> usize;
+    }
+
     impl ImportUnpackLen for Counter {
         #[symbol_name = "export_trait_unpack_len"]
         fn import_trait_unpack_len(&self, #[unpack(_, usize)] values: &[u32]) -> usize;
@@ -212,6 +233,14 @@ fn main() {
         3
     );
     assert_eq!(dispatch_associated_unpack::<ByteTarget>(None), 0);
+
+    let mut bytes = [1, 2, 3];
+    let bytes = unsafe {
+        <OdbcStr<u8> as co3::wide::Wide>::from_raw_parts_mut(bytes.as_mut_ptr(), bytes.len())
+    };
+    assert_eq!(bytes.unpack_receiver_ref(), 6);
+    assert_eq!(bytes.unpack_receiver_mut(), 3);
+    assert_eq!(&bytes.0, &[9, 2, 3]);
 
     let counter = Counter(10);
     assert_eq!(counter.imported_inherent_unpack_len(&[1, 2, 3]), 13);
