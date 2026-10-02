@@ -45,7 +45,8 @@ note: required for `ParametrizedView<'_dšč, T>` to implement `ReprC`
    |
 52 | #[derive(ReprC)]
    |          ^^^^^ type parameter would need to implement `ReprC`
-   = help: consider manually implementing `ReprC` to avoid undesired bounds
+   = help: consider manually implementing `ReprC` to avoid undesired bounds caused by "imperfect derives"
+   = note: to learn more, visit <https://github.com/rust-lang/rust/issues/26925>
    = note: this error originates in the derive macro `co3::ReprC` which comes from the expansion of the derive macro `ReprC` (in Nightly builds, run with -Z macro-backtrace for more info)
 help: consider further restricting type parameter `T` with trait `ReprC`
    |
@@ -63,7 +64,8 @@ note: required for `ParametrizedView<'_dšč, T>` to implement `ReprC`
    |
 52 | #[derive(ReprC)]
    |          ^^^^^ type parameter would need to implement `ReprC`
-   = help: consider manually implementing `ReprC` to avoid undesired bounds
+   = help: consider manually implementing `ReprC` to avoid undesired bounds caused by "imperfect derives"
+   = note: to learn more, visit <https://github.com/rust-lang/rust/issues/26925>
 note: the requirement `ParametrizedView<'_dšč, T>: ReprC` appears on the `impl`'s associated constant `NICHE_VALUE` but not on the corresponding trait's associated constant
   --> src/niche.rs
    |
@@ -181,7 +183,8 @@ note: required for `UnsizedSlice<u8>` to implement `Niche`
 57 | #[repr_c(NICHE_VALUE = unsafe { core::mem::zeroed() })]
 58 | pub struct UnsizedSlice<T>([T]);
    |            ^^^^^^^^^^^^^^^
-   = help: consider manually implementing `Niche` to avoid undesired bounds
+   = help: consider manually implementing `Niche` to avoid undesired bounds caused by "imperfect derives"
+   = note: to learn more, visit <https://github.com/rust-lang/rust/issues/26925>
 note: required by a bound in `require_niche`
   --> tests/ui_fail/custom_validation.rs:61:25
    |
@@ -207,7 +210,8 @@ note: required for `UnsizedSlice<u8>` to implement `Niche`
 57 | #[repr_c(NICHE_VALUE = unsafe { core::mem::zeroed() })]
 58 | pub struct UnsizedSlice<T>([T]);
    |            ^^^^^^^^^^^^^^^
-   = help: consider manually implementing `Niche` to avoid undesired bounds
+   = help: consider manually implementing `Niche` to avoid undesired bounds caused by "imperfect derives"
+   = note: to learn more, visit <https://github.com/rust-lang/rust/issues/26925>
 note: required by a bound in `require_niche`
   --> tests/ui_fail/custom_validation.rs:61:25
    |

@@ -61,20 +61,20 @@ ffi! {
     unsafe fn ambiguous1() -> Ambiguous;
 
     impl OpaqueStructU32 {
-        fn re_exported() -> move Box<Self>;
+        fn re_exported() -> move OwnedOpaqueStructU32;
     }
 
     impl CustomExports for OpaqueStructU8 {
         #[symbol_name = "xor_u8"]
-        fn xor(&self, by: u8) -> move Box<Self>;
+        fn xor(&self, by: u8) -> move OwnedOpaqueStructU8;
     }
 
-    impl Clone for Box<OpaqueStructBool> {
+    impl Clone for OwnedOpaqueStructBool {
         #[symbol_name = "cclone"]
         fn clone(&self) -> move Self;
     }
 
-    impl Clone for Box<OpaqueStructI32> {
+    impl Clone for OwnedOpaqueStructI32 {
         #[symbol_name = "lclone"]
         fn clone(&self) -> move Self;
     }
@@ -106,7 +106,7 @@ ffi! {
 ffi! {
     #![unsafe(export("C"))]
 
-    impl Clone for Box<OpaqueStructU8> {
+    impl Clone for OwnedOpaqueStructU8 {
         #[symbol_name = "clone"]
         fn clone(&self) -> move Self;
     }
@@ -264,10 +264,10 @@ fn exported_abi() {
         let opaque_u8_ptr = (&*opaque_u8 as *const OpaqueStructU8).cast::<c_void>();
 
         let opaque_bool_handle =
-            co3::encode::<&Box<OpaqueStructBool>>(&opaque_bool).cast::<c_void>();
+            co3::encode::<&OwnedOpaqueStructBool>(&opaque_bool).cast::<c_void>();
         let opaque_bool_clone =
             Box::from_raw(export_opaque_clone_bool(opaque_bool_handle).cast::<OpaqueStructBool>());
-        let opaque_u8_handle = co3::encode::<&Box<OpaqueStructU8>>(&opaque_u8).cast::<c_void>();
+        let opaque_u8_handle = co3::encode::<&OwnedOpaqueStructU8>(&opaque_u8).cast::<c_void>();
         let opaque_u8_clone =
             Box::from_raw(export_opaque_clone_u8(opaque_u8_handle).cast::<OpaqueStructU8>());
         assert_eq!(OpaqueStructU8(11_u8), *opaque_u8_clone);

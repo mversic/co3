@@ -105,7 +105,7 @@ mod provider {
         }
 
         impl MyType2 {
-            fn new() -> move Box<Self>;
+            fn new() -> move OwnedMyType2;
         }
 
         impl AmbiguousX<u64, 3> for MyType<u64> {

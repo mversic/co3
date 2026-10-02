@@ -40,7 +40,7 @@ mod provider {
 
         // TODO: This should be allowed with '_ but it's not.
         // This is a special case where reference is materialized
-        impl<'a> Default for Box<Opaque<'a>> {
+        impl<'a> Default for OwnedOpaque<'a> {
             #[symbol_name = "kita__Default__Box_Opaque__default"]
             fn default() -> move Self;
         }

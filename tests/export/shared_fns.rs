@@ -14,8 +14,8 @@ ffi! {
     type FfiStruct;
 
     impl FfiStruct {
-        fn new(name: move String) -> move Box<Self>;
-        fn clone_box(&self) -> move Box<Self>;
+        fn new(name: move String) -> move OwnedFfiStruct;
+        fn clone_box(&self) -> move OwnedFfiStruct;
         fn equals(&self, other: &Self) -> bool;
         fn compare(&self, other: &Self) -> Ordering;
     }

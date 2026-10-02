@@ -39,24 +39,24 @@ help: `&'_lšč0 R` implements trait `co3::_::ReprC0<_TŠČ0, _TŠČ1>`
    | /     impl<R: ReprC + ?Sized> ReprC for &R
    | |     where
    | |         R: RustSpec<Size: Thin, Mutability = Exclusive>,
-   | |________________________________________________________^ `co3::_::ReprC0<_TŠČ0, rust_spec::mutability::Exclusive>`
+   | |________________________________________________________^ `co3::_::ReprC0<_TŠČ0, co3::rust_spec::mutability::Exclusive>`
 ...
    | /     impl<R: ReprC + ?Sized> ReprC for &R
    | |     where
    | |         R: RustSpec<Size: Thin, Mutability = Interior>,
-   | |_______________________________________________________^ `co3::_::ReprC0<_TŠČ0, rust_spec::mutability::Interior>`
+   | |_______________________________________________________^ `co3::_::ReprC0<_TŠČ0, co3::rust_spec::mutability::Interior>`
 ...
    | /     impl<R: Wide<Data: ReprC, Metadata = usize> + ?Sized> ReprC for &R
    | |     where
    | |         R: RustSpec<Size = MetaSized<SliceLike>, Mutability = Exclusive>,
    | |         <<R as Wide>::Data as ReprC>::CType: Sized,
-   | |___________________________________________________^ `co3::_::ReprC0<size::MetaSized<SliceLike>, rust_spec::mutability::Exclusive>`
+   | |___________________________________________________^ `co3::_::ReprC0<co3::rust_spec::size::MetaSized<SliceLike>, co3::rust_spec::mutability::Exclusive>`
 ...
    | /     impl<R: Wide<Data: ReprC, Metadata = usize> + ?Sized> ReprC for &R
    | |     where
    | |         R: RustSpec<Size = MetaSized<SliceLike>, Mutability = Interior>,
    | |         <<R as Wide>::Data as ReprC>::CType: Sized,
-   | |___________________________________________________^ `co3::_::ReprC0<size::MetaSized<SliceLike>, rust_spec::mutability::Interior>`
+   | |___________________________________________________^ `co3::_::ReprC0<co3::rust_spec::size::MetaSized<SliceLike>, co3::rust_spec::mutability::Interior>`
    = note: required for `&'__co3_0 (dyn Trait + '__co3_0)` to implement `ReprC`
    = note: this error originates in the macro `ffi` (in Nightly builds, run with -Z macro-backtrace for more info)
 
@@ -98,7 +98,7 @@ help: `&'_lšč0 R` implements trait `rust_spec::_::RustSpec0<_TŠČ0>`
    | /     unsafe impl<R: ?Sized, U: MetadataKind> RustSpec for &R
    | |     where
    | |         R: RustSpec<Size = size::MetaSized<U>>,
-   | |_______________________________________________^ `rust_spec::_::RustSpec0<size::MetaSized<U>>`
+   | |_______________________________________________^ `rust_spec::_::RustSpec0<co3::rust_spec::size::MetaSized<U>>`
 ...
    | /     unsafe impl<R: ?Sized> RustSpec for &R
    | |     where
@@ -120,14 +120,14 @@ error[E0277]: the trait bound `&dyn Trait: stored::_::DecodeOwned0<'_, _, _, _, 
    | |_^ the trait `stored::_::DecodeOwned0<'_, _, _, _, _>` is not implemented for `&dyn Trait`
    |
    = help: the following other types implement trait `stored::_::DecodeOwned0<'d, _TŠČ1, _TŠČ2, _TŠČ3, _TŠČ4>`:
-             `&'d R` implements `stored::_::DecodeOwned0<'d, Stable, <R as RustSpec>::Size, rust_spec::mutability::Exclusive, <R as RustSpec>::Layout>`
-             `&'d R` implements `stored::_::DecodeOwned0<'d, Stable, <R as RustSpec>::Size, rust_spec::mutability::Interior, <R as RustSpec>::Layout>`
-             `&'d R` implements `stored::_::DecodeOwned0<'d, Unstable, NulTerminated, rust_spec::mutability::Exclusive, <R as RustSpec>::Layout>`
-             `&'d R` implements `stored::_::DecodeOwned0<'d, Unstable, size::MetaSized<SliceLike>, rust_spec::mutability::Exclusive, Stable>`
-             `&'d R` implements `stored::_::DecodeOwned0<'d, Unstable, size::MetaSized<SliceLike>, rust_spec::mutability::Interior, Stable>`
-             `&'d R` implements `stored::_::DecodeOwned0<'d, Unstable, size::Sized<S>, rust_spec::mutability::Exclusive, Unstable>`
-             `&'d R` implements `stored::_::DecodeOwned0<'d, Unstable, size::Sized<S>, rust_spec::mutability::Interior, Unstable>`
-             `&'d [R]` implements `stored::_::DecodeOwned0<'d, Unstable, size::MetaSized<SliceLike>, rust_spec::mutability::Exclusive, Unstable>`
-             `&'d [R]` implements `stored::_::DecodeOwned0<'d, Unstable, size::MetaSized<SliceLike>, rust_spec::mutability::Interior, Unstable>`
+             `&'d R` implements `stored::_::DecodeOwned0<'d, Stable, <R as RustSpec>::Size, co3::rust_spec::mutability::Exclusive, <R as RustSpec>::Layout>`
+             `&'d R` implements `stored::_::DecodeOwned0<'d, Stable, <R as RustSpec>::Size, co3::rust_spec::mutability::Interior, <R as RustSpec>::Layout>`
+             `&'d R` implements `stored::_::DecodeOwned0<'d, Unstable, NulTerminated, co3::rust_spec::mutability::Exclusive, <R as RustSpec>::Layout>`
+             `&'d R` implements `stored::_::DecodeOwned0<'d, Unstable, co3::rust_spec::size::MetaSized<SliceLike>, co3::rust_spec::mutability::Exclusive, Stable>`
+             `&'d R` implements `stored::_::DecodeOwned0<'d, Unstable, co3::rust_spec::size::MetaSized<SliceLike>, co3::rust_spec::mutability::Interior, Stable>`
+             `&'d R` implements `stored::_::DecodeOwned0<'d, Unstable, co3::rust_spec::size::Sized<S>, co3::rust_spec::mutability::Exclusive, Unstable>`
+             `&'d R` implements `stored::_::DecodeOwned0<'d, Unstable, co3::rust_spec::size::Sized<S>, co3::rust_spec::mutability::Interior, Unstable>`
+             `&'d [R]` implements `stored::_::DecodeOwned0<'d, Unstable, co3::rust_spec::size::MetaSized<SliceLike>, co3::rust_spec::mutability::Exclusive, Unstable>`
+             `&'d [R]` implements `stored::_::DecodeOwned0<'d, Unstable, co3::rust_spec::size::MetaSized<SliceLike>, co3::rust_spec::mutability::Interior, Unstable>`
    = note: required for `&dyn Trait` to implement `DecodeOwned<'_>`
    = note: this error originates in the macro `ffi` (in Nightly builds, run with -Z macro-backtrace for more info)

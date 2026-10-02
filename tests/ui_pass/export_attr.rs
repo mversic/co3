@@ -93,12 +93,12 @@ mod provider {
         #[tag(u8, unsafe(1))]
         type Opaque;
 
-        impl Default for Box<Opaque> {
+        impl Default for OwnedOpaque {
             #[symbol_name = "kita__Default__OwnedOpaque__default"]
             fn default() -> move Self;
         }
 
-        impl ToOwned for Box<Opaque> {
+        impl ToOwned for OwnedOpaque {
             fn to_owned(&self) -> move <Self as ToOwned>::Owned;
         }
 

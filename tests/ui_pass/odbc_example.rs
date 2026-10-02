@@ -143,7 +143,7 @@ co3::ffi! {
     impl SQLHENV2 {
         fn get_attr0(&self);
         fn get_attr1(a: &Self);
-        fn get_attr2(self: Box<Self>);
+        fn get_attr2(self: OwnedSQLHENV2);
         fn get_attr3<dyn(u32) T = u32>(&self, one: move T)
         where
             use<T> @ <SQLHENV2>;

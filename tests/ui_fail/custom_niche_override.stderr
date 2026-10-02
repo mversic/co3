@@ -14,7 +14,8 @@ note: required for `OverridesInferredNiche` to implement `Niche`
 ...
 10 | pub struct OverridesInferredNiche(NonZeroU8);
    |            ^^^^^^^^^^^^^^^^^^^^^^
-   = help: consider manually implementing `Niche` to avoid undesired bounds
+   = help: consider manually implementing `Niche` to avoid undesired bounds caused by "imperfect derives"
+   = note: to learn more, visit <https://github.com/rust-lang/rust/issues/26925>
    = note: associated types for the current `impl` cannot be restricted in `where` clauses
    = note: associated types for the current `impl` cannot be restricted in `where` clauses
    = note: associated types for the current `impl` cannot be restricted in `where` clauses
@@ -60,7 +61,8 @@ note: required for `CustomNicheRequiresUnstable` to implement `Niche`
 13 | #[repr_c(NICHE_VALUE = CCustomNicheRequiresUnstable(1))]
 14 | struct CustomNicheRequiresUnstable(u8);
    |        ^^^^^^^^^^^^^^^^^^^^^^^^^^^
-   = help: consider manually implementing `Niche` to avoid undesired bounds
+   = help: consider manually implementing `Niche` to avoid undesired bounds caused by "imperfect derives"
+   = note: to learn more, visit <https://github.com/rust-lang/rust/issues/26925>
    = note: this error originates in the derive macro `ReprC` (in Nightly builds, run with -Z macro-backtrace for more info)
 
 error[E0277]: the trait bound `CustomNicheRequiresUnstable: RustSpec` is not satisfied
@@ -102,7 +104,8 @@ note: required for `OverridesInferredNiche` to implement `Niche`
 ...
 10 | pub struct OverridesInferredNiche(NonZeroU8);
    |            ^^^^^^^^^^^^^^^^^^^^^^
-   = help: consider manually implementing `Niche` to avoid undesired bounds
+   = help: consider manually implementing `Niche` to avoid undesired bounds caused by "imperfect derives"
+   = note: to learn more, visit <https://github.com/rust-lang/rust/issues/26925>
    = note: associated types for the current `impl` cannot be restricted in `where` clauses
    = note: associated types for the current `impl` cannot be restricted in `where` clauses
    = note: associated types for the current `impl` cannot be restricted in `where` clauses

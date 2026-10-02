@@ -160,17 +160,17 @@ mod provider {
             fn drop(&mut self);
         }
 
-        impl Default for Box<Opaque<bool, u8>> {
+        impl Default for OwnedOpaque<bool, u8> {
             #[symbol_name = "handles_default_bool_u8"]
             fn default() -> move Self;
         }
 
-        impl Default for Box<Opaque<u8, bool>> {
+        impl Default for OwnedOpaque<u8, bool> {
             #[symbol_name = "handles_default_u8_bool"]
             fn default() -> move Self;
         }
 
-        impl Clone for Box<Opaque<bool, u8>> {
+        impl Clone for OwnedOpaque<bool, u8> {
             #[symbol_name = "handles_clone_bool_u8"]
             fn clone(&self) -> move Self;
         }

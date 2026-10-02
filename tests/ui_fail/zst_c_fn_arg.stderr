@@ -9,14 +9,15 @@ note: expected this to be `rust_spec::size::Sized<Gt<rust_spec::Zero>>`
    |
 27 | #[derive(Clone, Copy, RustSpec, ReprC)]
    |                                 ^^^^^
-   = note: expected struct `rust_spec::size::Sized<Gt<rust_spec::Zero>>`
-              found struct `rust_spec::size::Sized<rust_spec::Zero>`
+   = note: expected struct `Sized<Gt<Zero>>`
+              found struct `Sized<Zero>`
 note: required for `CZeroLenArrayZst` to implement `CFnArg`
   --> tests/ui_fail/zst_c_fn_arg.rs:27:33
    |
 27 | #[derive(Clone, Copy, RustSpec, ReprC)]
    |                                 ^^^^^ type parameter would need to implement `CFnArg`
-   = help: consider manually implementing `CFnArg` to avoid undesired bounds
+   = help: consider manually implementing `CFnArg` to avoid undesired bounds caused by "imperfect derives"
+   = note: to learn more, visit <https://github.com/rust-lang/rust/issues/26925>
    = note: associated types for the current `impl` cannot be restricted in `where` clauses
    = note: associated types for the current `impl` cannot be restricted in `where` clauses
 note: required by a bound in `require_arg`
@@ -37,14 +38,15 @@ note: expected this to be `rust_spec::size::Sized<Gt<rust_spec::Zero>>`
    |
 27 | #[derive(Clone, Copy, RustSpec, ReprC)]
    |                                 ^^^^^
-   = note: expected struct `rust_spec::size::Sized<Gt<rust_spec::Zero>>`
-              found struct `rust_spec::size::Sized<rust_spec::Zero>`
+   = note: expected struct `Sized<Gt<Zero>>`
+              found struct `Sized<Zero>`
 note: required for `CZeroLenArrayZst` to implement `CFnReturn`
   --> tests/ui_fail/zst_c_fn_arg.rs:27:33
    |
 27 | #[derive(Clone, Copy, RustSpec, ReprC)]
    |                                 ^^^^^ type parameter would need to implement `CFnReturn`
-   = help: consider manually implementing `CFnReturn` to avoid undesired bounds
+   = help: consider manually implementing `CFnReturn` to avoid undesired bounds caused by "imperfect derives"
+   = note: to learn more, visit <https://github.com/rust-lang/rust/issues/26925>
    = note: associated types for the current `impl` cannot be restricted in `where` clauses
    = note: associated types for the current `impl` cannot be restricted in `where` clauses
 note: required by a bound in `require_return`
@@ -65,14 +67,15 @@ note: expected this to be `rust_spec::size::Sized<Gt<rust_spec::Zero>>`
    |
 38 | #[derive(Clone, Copy, RustSpec, ReprC)]
    |                                 ^^^^^
-   = note: expected struct `rust_spec::size::Sized<Gt<rust_spec::Zero>>`
-              found struct `rust_spec::size::Sized<rust_spec::Zero>`
+   = note: expected struct `Sized<Gt<Zero>>`
+              found struct `Sized<Zero>`
 note: required for `CReprCZst` to implement `CFnArg`
   --> tests/ui_fail/zst_c_fn_arg.rs:38:33
    |
 38 | #[derive(Clone, Copy, RustSpec, ReprC)]
    |                                 ^^^^^ type parameter would need to implement `CFnArg`
-   = help: consider manually implementing `CFnArg` to avoid undesired bounds
+   = help: consider manually implementing `CFnArg` to avoid undesired bounds caused by "imperfect derives"
+   = note: to learn more, visit <https://github.com/rust-lang/rust/issues/26925>
    = note: associated types for the current `impl` cannot be restricted in `where` clauses
    = note: associated types for the current `impl` cannot be restricted in `where` clauses
 note: required by a bound in `require_arg`
@@ -93,14 +96,15 @@ note: expected this to be `rust_spec::size::Sized<Gt<rust_spec::Zero>>`
    |
 38 | #[derive(Clone, Copy, RustSpec, ReprC)]
    |                                 ^^^^^
-   = note: expected struct `rust_spec::size::Sized<Gt<rust_spec::Zero>>`
-              found struct `rust_spec::size::Sized<rust_spec::Zero>`
+   = note: expected struct `Sized<Gt<Zero>>`
+              found struct `Sized<Zero>`
 note: required for `CReprCZst` to implement `CFnReturn`
   --> tests/ui_fail/zst_c_fn_arg.rs:38:33
    |
 38 | #[derive(Clone, Copy, RustSpec, ReprC)]
    |                                 ^^^^^ type parameter would need to implement `CFnReturn`
-   = help: consider manually implementing `CFnReturn` to avoid undesired bounds
+   = help: consider manually implementing `CFnReturn` to avoid undesired bounds caused by "imperfect derives"
+   = note: to learn more, visit <https://github.com/rust-lang/rust/issues/26925>
    = note: associated types for the current `impl` cannot be restricted in `where` clauses
    = note: associated types for the current `impl` cannot be restricted in `where` clauses
 note: required by a bound in `require_return`
@@ -121,14 +125,15 @@ note: expected this to be `rust_spec::size::Sized<Gt<rust_spec::Zero>>`
    |
 45 | #[derive(Clone, Copy, RustSpec, ReprC)]
    |                                 ^^^^^
-   = note: expected struct `rust_spec::size::Sized<Gt<rust_spec::Zero>>`
-              found struct `rust_spec::size::Sized<rust_spec::Zero>`
+   = note: expected struct `Sized<Gt<Zero>>`
+              found struct `Sized<Zero>`
 note: required for `CTransparentZst` to implement `CFnArg`
   --> tests/ui_fail/zst_c_fn_arg.rs:45:33
    |
 45 | #[derive(Clone, Copy, RustSpec, ReprC)]
    |                                 ^^^^^ type parameter would need to implement `CFnArg`
-   = help: consider manually implementing `CFnArg` to avoid undesired bounds
+   = help: consider manually implementing `CFnArg` to avoid undesired bounds caused by "imperfect derives"
+   = note: to learn more, visit <https://github.com/rust-lang/rust/issues/26925>
    = note: associated types for the current `impl` cannot be restricted in `where` clauses
    = note: associated types for the current `impl` cannot be restricted in `where` clauses
 note: required by a bound in `require_arg`
@@ -149,14 +154,15 @@ note: expected this to be `rust_spec::size::Sized<Gt<rust_spec::Zero>>`
    |
 45 | #[derive(Clone, Copy, RustSpec, ReprC)]
    |                                 ^^^^^
-   = note: expected struct `rust_spec::size::Sized<Gt<rust_spec::Zero>>`
-              found struct `rust_spec::size::Sized<rust_spec::Zero>`
+   = note: expected struct `Sized<Gt<Zero>>`
+              found struct `Sized<Zero>`
 note: required for `CTransparentZst` to implement `CFnReturn`
   --> tests/ui_fail/zst_c_fn_arg.rs:45:33
    |
 45 | #[derive(Clone, Copy, RustSpec, ReprC)]
    |                                 ^^^^^ type parameter would need to implement `CFnReturn`
-   = help: consider manually implementing `CFnReturn` to avoid undesired bounds
+   = help: consider manually implementing `CFnReturn` to avoid undesired bounds caused by "imperfect derives"
+   = note: to learn more, visit <https://github.com/rust-lang/rust/issues/26925>
    = note: associated types for the current `impl` cannot be restricted in `where` clauses
    = note: associated types for the current `impl` cannot be restricted in `where` clauses
 note: required by a bound in `require_return`
@@ -177,14 +183,15 @@ note: expected this to be `rust_spec::size::Sized<Gt<rust_spec::Zero>>`
    |
 51 | #[derive(Clone, Copy, RustSpec, ReprC)]
    |                                 ^^^^^
-   = note: expected struct `rust_spec::size::Sized<Gt<rust_spec::Zero>>`
-              found struct `rust_spec::size::Sized<rust_spec::Zero>`
+   = note: expected struct `Sized<Gt<Zero>>`
+              found struct `Sized<Zero>`
 note: required for `CNoReprZst` to implement `CFnArg`
   --> tests/ui_fail/zst_c_fn_arg.rs:51:33
    |
 51 | #[derive(Clone, Copy, RustSpec, ReprC)]
    |                                 ^^^^^ type parameter would need to implement `CFnArg`
-   = help: consider manually implementing `CFnArg` to avoid undesired bounds
+   = help: consider manually implementing `CFnArg` to avoid undesired bounds caused by "imperfect derives"
+   = note: to learn more, visit <https://github.com/rust-lang/rust/issues/26925>
    = note: associated types for the current `impl` cannot be restricted in `where` clauses
    = note: associated types for the current `impl` cannot be restricted in `where` clauses
 note: required by a bound in `require_arg`
@@ -205,14 +212,15 @@ note: expected this to be `rust_spec::size::Sized<Gt<rust_spec::Zero>>`
    |
 51 | #[derive(Clone, Copy, RustSpec, ReprC)]
    |                                 ^^^^^
-   = note: expected struct `rust_spec::size::Sized<Gt<rust_spec::Zero>>`
-              found struct `rust_spec::size::Sized<rust_spec::Zero>`
+   = note: expected struct `Sized<Gt<Zero>>`
+              found struct `Sized<Zero>`
 note: required for `CNoReprZst` to implement `CFnReturn`
   --> tests/ui_fail/zst_c_fn_arg.rs:51:33
    |
 51 | #[derive(Clone, Copy, RustSpec, ReprC)]
    |                                 ^^^^^ type parameter would need to implement `CFnReturn`
-   = help: consider manually implementing `CFnReturn` to avoid undesired bounds
+   = help: consider manually implementing `CFnReturn` to avoid undesired bounds caused by "imperfect derives"
+   = note: to learn more, visit <https://github.com/rust-lang/rust/issues/26925>
    = note: associated types for the current `impl` cannot be restricted in `where` clauses
    = note: associated types for the current `impl` cannot be restricted in `where` clauses
 note: required by a bound in `require_return`
@@ -233,14 +241,15 @@ note: expected this to be `rust_spec::size::Sized<Gt<rust_spec::Zero>>`
    |
  3 | #[derive(Clone, Copy, RustSpec, ReprC)]
    |                                 ^^^^^
-   = note: expected struct `rust_spec::size::Sized<Gt<rust_spec::Zero>>`
-              found struct `rust_spec::size::Sized<rust_spec::Zero>`
+   = note: expected struct `Sized<Gt<Zero>>`
+              found struct `Sized<Zero>`
 note: required for `CParamReprCZst<()>` to implement `CFnArg`
   --> tests/ui_fail/zst_c_fn_arg.rs:3:33
    |
  3 | #[derive(Clone, Copy, RustSpec, ReprC)]
    |                                 ^^^^^ type parameter would need to implement `CFnArg`
-   = help: consider manually implementing `CFnArg` to avoid undesired bounds
+   = help: consider manually implementing `CFnArg` to avoid undesired bounds caused by "imperfect derives"
+   = note: to learn more, visit <https://github.com/rust-lang/rust/issues/26925>
    = note: associated types for the current `impl` cannot be restricted in `where` clauses
    = note: associated types for the current `impl` cannot be restricted in `where` clauses
    = note: associated types for the current `impl` cannot be restricted in `where` clauses
@@ -262,14 +271,15 @@ note: expected this to be `rust_spec::size::Sized<Gt<rust_spec::Zero>>`
    |
  3 | #[derive(Clone, Copy, RustSpec, ReprC)]
    |                                 ^^^^^
-   = note: expected struct `rust_spec::size::Sized<Gt<rust_spec::Zero>>`
-              found struct `rust_spec::size::Sized<rust_spec::Zero>`
+   = note: expected struct `Sized<Gt<Zero>>`
+              found struct `Sized<Zero>`
 note: required for `CParamReprCZst<()>` to implement `CFnReturn`
   --> tests/ui_fail/zst_c_fn_arg.rs:3:33
    |
  3 | #[derive(Clone, Copy, RustSpec, ReprC)]
    |                                 ^^^^^ type parameter would need to implement `CFnReturn`
-   = help: consider manually implementing `CFnReturn` to avoid undesired bounds
+   = help: consider manually implementing `CFnReturn` to avoid undesired bounds caused by "imperfect derives"
+   = note: to learn more, visit <https://github.com/rust-lang/rust/issues/26925>
    = note: associated types for the current `impl` cannot be restricted in `where` clauses
    = note: associated types for the current `impl` cannot be restricted in `where` clauses
    = note: associated types for the current `impl` cannot be restricted in `where` clauses
@@ -291,14 +301,15 @@ note: expected this to be `rust_spec::size::Sized<Gt<rust_spec::Zero>>`
    |
 10 | #[derive(Clone, Copy, RustSpec, ReprC)]
    |                                 ^^^^^
-   = note: expected struct `rust_spec::size::Sized<Gt<rust_spec::Zero>>`
-              found struct `rust_spec::size::Sized<rust_spec::Zero>`
+   = note: expected struct `Sized<Gt<Zero>>`
+              found struct `Sized<Zero>`
 note: required for `CParamTransparentZst<()>` to implement `CFnArg`
   --> tests/ui_fail/zst_c_fn_arg.rs:10:33
    |
 10 | #[derive(Clone, Copy, RustSpec, ReprC)]
    |                                 ^^^^^ type parameter would need to implement `CFnArg`
-   = help: consider manually implementing `CFnArg` to avoid undesired bounds
+   = help: consider manually implementing `CFnArg` to avoid undesired bounds caused by "imperfect derives"
+   = note: to learn more, visit <https://github.com/rust-lang/rust/issues/26925>
    = note: associated types for the current `impl` cannot be restricted in `where` clauses
    = note: associated types for the current `impl` cannot be restricted in `where` clauses
    = note: associated types for the current `impl` cannot be restricted in `where` clauses
@@ -320,14 +331,15 @@ note: expected this to be `rust_spec::size::Sized<Gt<rust_spec::Zero>>`
    |
 10 | #[derive(Clone, Copy, RustSpec, ReprC)]
    |                                 ^^^^^
-   = note: expected struct `rust_spec::size::Sized<Gt<rust_spec::Zero>>`
-              found struct `rust_spec::size::Sized<rust_spec::Zero>`
+   = note: expected struct `Sized<Gt<Zero>>`
+              found struct `Sized<Zero>`
 note: required for `CParamTransparentZst<()>` to implement `CFnReturn`
   --> tests/ui_fail/zst_c_fn_arg.rs:10:33
    |
 10 | #[derive(Clone, Copy, RustSpec, ReprC)]
    |                                 ^^^^^ type parameter would need to implement `CFnReturn`
-   = help: consider manually implementing `CFnReturn` to avoid undesired bounds
+   = help: consider manually implementing `CFnReturn` to avoid undesired bounds caused by "imperfect derives"
+   = note: to learn more, visit <https://github.com/rust-lang/rust/issues/26925>
    = note: associated types for the current `impl` cannot be restricted in `where` clauses
    = note: associated types for the current `impl` cannot be restricted in `where` clauses
    = note: associated types for the current `impl` cannot be restricted in `where` clauses
@@ -349,14 +361,15 @@ note: expected this to be `rust_spec::size::Sized<Gt<rust_spec::Zero>>`
    |
 32 | #[derive(Clone, Copy, RustSpec, ReprC)]
    |                                 ^^^^^
-   = note: expected struct `rust_spec::size::Sized<Gt<rust_spec::Zero>>`
-              found struct `rust_spec::size::Sized<rust_spec::Zero>`
+   = note: expected struct `Sized<Gt<Zero>>`
+              found struct `Sized<Zero>`
 note: required for `CParamNoReprZst<()>` to implement `CFnArg`
   --> tests/ui_fail/zst_c_fn_arg.rs:32:33
    |
 32 | #[derive(Clone, Copy, RustSpec, ReprC)]
    |                                 ^^^^^ type parameter would need to implement `CFnArg`
-   = help: consider manually implementing `CFnArg` to avoid undesired bounds
+   = help: consider manually implementing `CFnArg` to avoid undesired bounds caused by "imperfect derives"
+   = note: to learn more, visit <https://github.com/rust-lang/rust/issues/26925>
    = note: associated types for the current `impl` cannot be restricted in `where` clauses
    = note: associated types for the current `impl` cannot be restricted in `where` clauses
    = note: associated types for the current `impl` cannot be restricted in `where` clauses
@@ -378,14 +391,15 @@ note: expected this to be `rust_spec::size::Sized<Gt<rust_spec::Zero>>`
    |
 32 | #[derive(Clone, Copy, RustSpec, ReprC)]
    |                                 ^^^^^
-   = note: expected struct `rust_spec::size::Sized<Gt<rust_spec::Zero>>`
-              found struct `rust_spec::size::Sized<rust_spec::Zero>`
+   = note: expected struct `Sized<Gt<Zero>>`
+              found struct `Sized<Zero>`
 note: required for `CParamNoReprZst<()>` to implement `CFnReturn`
   --> tests/ui_fail/zst_c_fn_arg.rs:32:33
    |
 32 | #[derive(Clone, Copy, RustSpec, ReprC)]
    |                                 ^^^^^ type parameter would need to implement `CFnReturn`
-   = help: consider manually implementing `CFnReturn` to avoid undesired bounds
+   = help: consider manually implementing `CFnReturn` to avoid undesired bounds caused by "imperfect derives"
+   = note: to learn more, visit <https://github.com/rust-lang/rust/issues/26925>
    = note: associated types for the current `impl` cannot be restricted in `where` clauses
    = note: associated types for the current `impl` cannot be restricted in `where` clauses
    = note: associated types for the current `impl` cannot be restricted in `where` clauses
@@ -407,14 +421,15 @@ note: expected this to be `rust_spec::size::Sized<Gt<rust_spec::Zero>>`
    |
 22 | #[derive(Clone, Copy, RustSpec, ReprC)]
    |                                 ^^^^^
-   = note: expected struct `rust_spec::size::Sized<Gt<rust_spec::Zero>>`
-              found struct `rust_spec::size::Sized<rust_spec::Zero>`
+   = note: expected struct `Sized<Gt<Zero>>`
+              found struct `Sized<Zero>`
 note: required for `CParamFieldlessEnum` to implement `CFnArg`
   --> tests/ui_fail/zst_c_fn_arg.rs:22:33
    |
 22 | #[derive(Clone, Copy, RustSpec, ReprC)]
    |                                 ^^^^^ type parameter would need to implement `CFnArg`
-   = help: consider manually implementing `CFnArg` to avoid undesired bounds
+   = help: consider manually implementing `CFnArg` to avoid undesired bounds caused by "imperfect derives"
+   = note: to learn more, visit <https://github.com/rust-lang/rust/issues/26925>
    = note: associated types for the current `impl` cannot be restricted in `where` clauses
    = note: associated types for the current `impl` cannot be restricted in `where` clauses
 note: required by a bound in `require_arg`
@@ -435,14 +450,15 @@ note: expected this to be `rust_spec::size::Sized<Gt<rust_spec::Zero>>`
    |
 22 | #[derive(Clone, Copy, RustSpec, ReprC)]
    |                                 ^^^^^
-   = note: expected struct `rust_spec::size::Sized<Gt<rust_spec::Zero>>`
-              found struct `rust_spec::size::Sized<rust_spec::Zero>`
+   = note: expected struct `Sized<Gt<Zero>>`
+              found struct `Sized<Zero>`
 note: required for `CParamFieldlessEnum` to implement `CFnReturn`
   --> tests/ui_fail/zst_c_fn_arg.rs:22:33
    |
 22 | #[derive(Clone, Copy, RustSpec, ReprC)]
    |                                 ^^^^^ type parameter would need to implement `CFnReturn`
-   = help: consider manually implementing `CFnReturn` to avoid undesired bounds
+   = help: consider manually implementing `CFnReturn` to avoid undesired bounds caused by "imperfect derives"
+   = note: to learn more, visit <https://github.com/rust-lang/rust/issues/26925>
    = note: associated types for the current `impl` cannot be restricted in `where` clauses
    = note: associated types for the current `impl` cannot be restricted in `where` clauses
 note: required by a bound in `require_return`

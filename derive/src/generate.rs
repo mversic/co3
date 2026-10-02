@@ -1475,6 +1475,17 @@ pub(crate) fn expand_export_decls(
             _ => None,
         })
         .collect::<BTreeSet<_>>();
+    let owned_type_aliases = if cfg!(feature = "alloc") {
+        decls
+            .iter()
+            .filter_map(|decl| match decl {
+                ForeignItem::Type(item) => Some(gen_export_owned_type_alias(&item.ty)),
+                _ => None,
+            })
+            .collect::<Vec<_>>()
+    } else {
+        Vec::new()
+    };
 
     let exports = decls.into_iter().map(|decl| {
         let export = match decl {
@@ -1620,7 +1631,25 @@ pub(crate) fn expand_export_decls(
         quote! { const _: () = { use #co3 as co3; #export }; }
     });
 
-    quote! { #(#exports)* }
+    quote! { #(#owned_type_aliases)* #(#exports)* }
+}
+
+fn gen_export_owned_type_alias(ty: &syn::ForeignItemType) -> TokenStream {
+    let co3 = co3_path();
+    let type_cfg_attrs = cfg_attrs(&ty.attrs)
+        .map(|attr| quote!(#attr))
+        .collect::<Vec<_>>();
+    let owned_ident = gen_owned_extern_type_name(&ty.ident);
+    let ident = &ty.ident;
+    let vis = &ty.vis;
+    let generics = &ty.generics;
+    let (impl_generics, ty_generics, where_clause) = generics.split_for_impl();
+
+    quote! {
+        #(#type_cfg_attrs)*
+        #[allow(type_alias_bounds)]
+        #vis type #owned_ident #impl_generics #where_clause = #co3::boxed::Box<#ident #ty_generics>;
+    }
 }
 
 pub(crate) fn gen_raw_companions(

@@ -68,17 +68,17 @@ mod provider {
         }
 
         impl Value {
-            fn new(input: move String) -> move Box<Self>;
+            fn new(input: move String) -> move OwnedValue;
             fn len(&self) -> usize;
         }
 
-        impl Clone for Box<Value> {
+        impl Clone for OwnedValue {
             #[symbol_name = "import_opaque_value_clone"]
             fn clone(&self) -> move Self;
         }
 
         impl OpaqueStruct {
-            fn new(name: u8) -> move Box<Self>;
+            fn new(name: u8) -> move OwnedOpaqueStruct;
             fn name(&self) -> u8;
             fn identity(&self) -> &Self;
             fn value_len(&self, value: &Value) -> usize;

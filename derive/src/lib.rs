@@ -9,11 +9,6 @@
 //! #[cfg(feature = "export")]
 //! fn make_local() -> Box<Local> { Box::new(Local(0)) }
 //!
-//! #[cfg(feature = "export")]
-//! type LocalType = Box<Local>;
-//! #[cfg(not(feature = "export"))]
-//! type LocalType = OwnedLocal;
-//!
 //! co3::ffi! {
 //!     #![cfg_attr(feature = "export", unsafe(export("C")))]
 //!     #![cfg_attr(not(feature = "export"), unsafe(extern("C")))]
@@ -22,7 +17,7 @@
 //!
 //!     type Local;
 //!
-//!     fn make_local() -> move LocalType;
+//!     fn make_local() -> move OwnedLocal;
 //! }
 //! # fn main() {}
 //! ```

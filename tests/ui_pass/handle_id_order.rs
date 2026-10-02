@@ -86,7 +86,7 @@ mod provider {
         #[tag(u8, unsafe(2))]
         type Opaque2;
 
-        impl Default for Box<Opaque1> {
+        impl Default for OwnedOpaque1 {
             #[symbol_name = "this_crate__Default__Box_Opaque1__default"]
             fn default() -> move Self;
         }
@@ -96,17 +96,17 @@ mod provider {
             fn drop(&mut self);
         }
 
-        impl Default for Box<Opaque2> {
+        impl Default for OwnedOpaque2 {
             #[symbol_name = "this_crate__Default__Box_Opaque2__default"]
             fn default() -> move Self;
         }
 
-        impl ToOwned for Box<Opaque1> {
+        impl ToOwned for OwnedOpaque1 {
             #[symbol_name = "this_crate__ToOwned__Box_Opaque1__to_owned"]
             fn to_owned(&self) -> move <Self as ToOwned>::Owned;
         }
 
-        impl ToOwned for Box<Opaque2> {
+        impl ToOwned for OwnedOpaque2 {
             #[symbol_name = "this_crate__ToOwned__Box_Opaque2__to_owned"]
             fn to_owned(&self) -> move <Self as ToOwned>::Owned;
         }
