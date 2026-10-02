@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.5.3] - 2026-10-02
+
+### Added
+
+- Support `#[repr_c(as(T))]` to delegate owned conversions through `Into<T>` and `TryFrom<T>`.
+- Generate an `OwnedType = Box<Type>` alias for opaque types in `ffi!` export declarations.
+
 ## [0.5.2] - 2026-10-01
 
 ### Fixed

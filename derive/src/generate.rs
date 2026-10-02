@@ -1640,6 +1640,7 @@ fn gen_export_owned_type_alias(ty: &syn::ForeignItemType) -> TokenStream {
         .map(|attr| quote!(#attr))
         .collect::<Vec<_>>();
     let owned_ident = gen_owned_extern_type_name(&ty.ident);
+    let owned_doc = gen_owned_extern_type_doc(&ty.ident);
     let ident = &ty.ident;
     let vis = &ty.vis;
     let generics = &ty.generics;
@@ -1648,6 +1649,7 @@ fn gen_export_owned_type_alias(ty: &syn::ForeignItemType) -> TokenStream {
     quote! {
         #(#type_cfg_attrs)*
         #[allow(type_alias_bounds)]
+        #[doc = #owned_doc]
         #vis type #owned_ident #impl_generics #where_clause = #co3::boxed::Box<#ident #ty_generics>;
     }
 }
