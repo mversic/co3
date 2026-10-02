@@ -92,8 +92,7 @@ macro_rules! impl_wide_for_transparent_wrapper {
 
             #[cfg(feature = "alloc")]
             fn into_non_null(self: Box<Self>) -> NonNull<Self::Data> {
-                let ptr = Box::into_raw(self).cast::<Self::Data>();
-                unsafe { NonNull::new_unchecked(ptr) }
+                Box::into_non_null(self).cast::<Self::Data>()
             }
 
             unsafe fn from_raw_parts<'a>(
@@ -144,8 +143,7 @@ unsafe impl<R> Wide for [R] {
 
     #[cfg(feature = "alloc")]
     fn into_non_null(self: Box<Self>) -> NonNull<Self::Data> {
-        let ptr = Box::into_raw(self).cast::<Self::Data>();
-        unsafe { NonNull::new_unchecked(ptr) }
+        Box::into_non_null(self).cast::<Self::Data>()
     }
 
     unsafe fn from_raw_parts<'a>(data: *const Self::Data, len: Self::Metadata) -> &'a Self {
@@ -158,7 +156,8 @@ unsafe impl<R> Wide for [R] {
 
     #[cfg(feature = "alloc")]
     unsafe fn from_non_null(data: NonNull<Self::Data>, len: Self::Metadata) -> Box<Self> {
-        unsafe { Box::from_raw(core::ptr::slice_from_raw_parts_mut(data.as_ptr(), len)) }
+        let slice = NonNull::slice_from_raw_parts(data, len);
+        unsafe { Box::from_non_null(slice) }
     }
 }
 
@@ -180,7 +179,6 @@ unsafe impl Wide for str {
 
     #[cfg(feature = "alloc")]
     fn into_non_null(self: Box<Self>) -> NonNull<Self::Data> {
-        // TODO: Use Box::into_non_null when available in stable
         self.into_boxed_bytes().into_non_null()
     }
 
@@ -196,12 +194,10 @@ unsafe impl Wide for str {
 
     #[cfg(feature = "alloc")]
     unsafe fn from_non_null(data: NonNull<Self::Data>, len: Self::Metadata) -> Box<Self> {
-        // TODO: Use Box::from_non_null once available on stable
-        let slice = unsafe { <[u8]>::from_non_null(data, len) };
-        let slice = Box::into_raw(slice);
-        let str = unsafe { core::str::from_utf8_unchecked_mut(&mut *slice) };
+        let str = unsafe { Self::from_raw_parts_mut(data.as_ptr(), len) };
 
-        unsafe { Box::from_raw(str) }
+        let str = NonNull::from(str);
+        unsafe { Box::from_non_null(str) }
     }
 }
 

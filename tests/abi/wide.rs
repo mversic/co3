@@ -60,3 +60,34 @@ fn struct_wide_raw_parts_round_trip() {
     let bytes = unsafe { <Bytes as Wide>::from_non_null(data, metadata) };
     assert_eq!(&bytes.0, &[4, 5, 6]);
 }
+
+#[test]
+fn boxed_str_non_null_round_trip() {
+    let value: Box<str> = "héllo".into();
+    let len = value.len();
+    let ptr = value.as_ptr();
+
+    let data = value.into_non_null();
+    assert_eq!(data.as_ptr(), ptr.cast_mut());
+
+    let value = unsafe { <str as Wide>::from_non_null(data, len) };
+    assert_eq!(&*value, "héllo");
+}
+
+#[test]
+fn empty_and_zero_sized_boxed_wide_round_trip() {
+    let empty: Box<[u8]> = Vec::new().into_boxed_slice();
+    let data = empty.into_non_null();
+    let empty = unsafe { <[u8] as Wide>::from_non_null(data, 0) };
+    assert!(empty.is_empty());
+
+    let zero_sized = vec![(); 3].into_boxed_slice();
+    let data = zero_sized.into_non_null();
+    let zero_sized = unsafe { <[()] as Wide>::from_non_null(data, 3) };
+    assert_eq!(zero_sized.len(), 3);
+
+    let empty: Box<str> = "".into();
+    let data = empty.into_non_null();
+    let empty = unsafe { <str as Wide>::from_non_null(data, 0) };
+    assert!(empty.is_empty());
+}

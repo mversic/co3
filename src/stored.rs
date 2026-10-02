@@ -371,9 +371,7 @@ disjoint_impls! {
             // TODO: It's a bit stupid that this is the only conversion
             // where Store != () when type's Layout = Stable
             if impls::impls!(R::Store: EmptyStore) {
-                // TODO: Use Box::into_non_null when stable
-                let ptr = Box::into_raw(self).cast();
-                let non_null_ptr = unsafe { NonNull::new_unchecked(ptr) };
+                let non_null_ptr = Box::into_non_null(self).cast();
                 return CBox::from_raw_parts(non_null_ptr);
             }
 
@@ -449,12 +447,9 @@ disjoint_impls! {
         where
             Self: 'itm,
         {
-            // TODO: Use Vec::into_non_null once available
-            let mut source = core::mem::ManuallyDrop::new(self.into_boxed_slice());
-
+            let source = self.into_boxed_slice();
             let len = source.len();
-            let data = source.as_mut_ptr().cast();
-            let data = unsafe { NonNull::new_unchecked(data) };
+            let data = Box::into_non_null(source).cast();
 
             CBoxedSlice::from_raw_parts(data, len)
         }
@@ -1049,7 +1044,6 @@ disjoint_impls! {
             let len = source.len();
             let data = source.data().cast();
 
-            // TODO: Use Box::from_non_null once available
             Some(unsafe { Box::from_raw(core::ptr::slice_from_raw_parts_mut(data, len)) }.into())
         }
     }

@@ -166,11 +166,11 @@ impl<C> CBox<C> {
 impl<C> CBoxedSlice<C> {
     /// Create [`Self`] from a [`Box<[T]>`]
     pub fn from_boxed_slice(source: Box<[C]>) -> Self {
-        let mut boxed_slice = core::mem::ManuallyDrop::new(source);
+        let len = source.len();
 
         Self {
-            data: boxed_slice.as_mut_ptr(),
-            len: boxed_slice.len(),
+            data: Box::into_raw(source).cast(),
+            len,
         }
     }
 
