@@ -7,7 +7,7 @@ use core::ptr::NonNull;
 use disjoint_impls::disjoint_impls;
 
 #[cfg(feature = "alloc")]
-use crate::boxed::{CBox, CBoxedSlice};
+use crate::boxed::{CBox, CBoxCell, CBoxedSlice, CBoxedSliceCell};
 use crate::{
     CType, ReprC, assert_arr_has_non_zero_len,
     option::ReprCOption,
@@ -74,9 +74,38 @@ disjoint_impls! {
     #[cfg(feature = "alloc")]
     impl<R: ?Sized, C> Niche for Box<R>
     where
+        Self: ReprC<CType = CBoxCell<C>>,
+    {
+        const NICHE_VALUE: Self::CType = CBoxCell::NICHE_VALUE;
+    }
+    #[cfg(feature = "alloc")]
+    impl<R: ?Sized, C> Niche for Box<R>
+    where
         Self: ReprC<CType = CBoxedSlice<C>>,
     {
         const NICHE_VALUE: Self::CType = CBoxedSlice::NICHE_VALUE;
+    }
+    #[cfg(feature = "alloc")]
+    impl<R: ?Sized, C> Niche for Box<R>
+    where
+        Self: ReprC<CType = CBoxedSliceCell<C>>,
+    {
+        const NICHE_VALUE: Self::CType = CBoxedSliceCell::NICHE_VALUE;
+    }
+
+    #[cfg(feature = "alloc")]
+    impl<R, C> Niche for Vec<R>
+    where
+        Self: ReprC<CType = CBoxedSlice<C>>,
+    {
+        const NICHE_VALUE: Self::CType = CBoxedSlice::NICHE_VALUE;
+    }
+    #[cfg(feature = "alloc")]
+    impl<R, C> Niche for Vec<R>
+    where
+        Self: ReprC<CType = CBoxedSliceCell<C>>,
+    {
+        const NICHE_VALUE: Self::CType = CBoxedSliceCell::NICHE_VALUE;
     }
 
     impl<T: ?Sized, C> Niche for NonNull<T>
@@ -112,14 +141,6 @@ disjoint_impls! {
     {
         const NICHE_VALUE: Self::CType = 4;
     }
-}
-
-#[cfg(feature = "alloc")]
-impl<R, C> Niche for Vec<R>
-where
-    Self: ReprC<CType = CBoxedSlice<C>>,
-{
-    const NICHE_VALUE: Self::CType = CBoxedSlice::NICHE_VALUE;
 }
 
 impl<R: Niche, const N: usize> Niche for [R; N]

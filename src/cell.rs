@@ -30,12 +30,34 @@ unsafe impl<T: ?Sized> InteriorMut for UnsafeCell<T> {
     }
 }
 
+unsafe impl<T> InteriorMut for [UnsafeCell<T>] {
+    type Target = [T];
+
+    #[inline]
+    fn get(&self) -> *mut Self::Target {
+        let data = UnsafeCell::raw_get(self.as_ptr());
+        core::ptr::slice_from_raw_parts_mut(data, self.len())
+    }
+}
+
 unsafe impl<T: ?Sized> InteriorMut for Cell<T> {
     type Target = T;
 
     #[inline]
     fn get(&self) -> *mut Self::Target {
         Cell::as_ptr(self)
+    }
+}
+
+unsafe impl<T> InteriorMut for [Cell<T>] {
+    type Target = [T];
+
+    #[inline]
+    fn get(&self) -> *mut Self::Target {
+        // Cell<T> is a transparent wrapper around UnsafeCell<T>. raw_get also
+        // works for an empty slice, where there is no first Cell to borrow.
+        let data = UnsafeCell::raw_get(self.as_ptr().cast::<UnsafeCell<T>>());
+        core::ptr::slice_from_raw_parts_mut(data, self.len())
     }
 }
 
@@ -64,6 +86,29 @@ unsafe impl<R: InteriorMut + ?Sized> InteriorMut for alloc::boxed::Box<R> {
     #[inline]
     fn get(&self) -> *mut Self::Target {
         InteriorMut::get(self.as_ref())
+    }
+}
+
+#[cfg(test)]
+mod slice_tests {
+    use super::*;
+
+    #[test]
+    fn shared_slice_pointers_cover_cells_and_empty_slices() {
+        let cells = [UnsafeCell::new(1_u8)];
+        let view = crate::encode(&cells[..]);
+        unsafe { view.data().write(2) };
+        assert_eq!(unsafe { *cells[0].get() }, 2);
+
+        let cells = [Cell::new(3_u8)];
+        let view = crate::encode(&cells[..]);
+        unsafe { view.data().write(4) };
+        assert_eq!(cells[0].get(), 4);
+
+        let empty_unsafe_cells: [UnsafeCell<u8>; 0] = [];
+        assert_eq!(crate::encode(&empty_unsafe_cells[..]).len(), 0);
+        let empty_cells: [Cell<u8>; 0] = [];
+        assert_eq!(crate::encode(&empty_cells[..]).len(), 0);
     }
 }
 

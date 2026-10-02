@@ -473,6 +473,36 @@ mod tests {
         assert_not_impl_any!(Vec<(u8, u8, u8)>: Encode, Decode<'static>);
     }
 
+    #[cfg(feature = "alloc")]
+    #[test]
+    fn unstable_sized_box_decode_releases_source_allocation() {
+        type Value = Box<(u8, u8, u8)>;
+
+        let mut encode_store = Default::default();
+        let source = <Value as EncodeOwned>::soft_encode(Box::new((1, 2, 3)), &mut encode_store);
+        let mut decode_store = Default::default();
+        let decoded = unsafe { <Value as DecodeOwned>::soft_decode(source, &mut decode_store) };
+
+        assert_eq!(decoded, Some(Box::new((1, 2, 3))));
+    }
+
+    #[cfg(feature = "alloc")]
+    #[test]
+    fn unstable_slice_box_owned_round_trip() {
+        type Value = Box<[(u8, u8, u8)]>;
+
+        let input: Value = Vec::from([(1, 2, 3), (4, 5, 6)]).into_boxed_slice();
+        let mut encode_store = Default::default();
+        let source = <Value as EncodeOwned>::soft_encode(input, &mut encode_store);
+        let mut decode_store = Default::default();
+        let decoded = unsafe { <Value as DecodeOwned>::soft_decode(source, &mut decode_store) };
+
+        assert_eq!(
+            decoded,
+            Some(Vec::from([(1, 2, 3), (4, 5, 6)]).into_boxed_slice())
+        );
+    }
+
     #[test]
     fn stored_tuple_3_with_niche() {
         // NOTE: Confirms niche is taken from the first available element

@@ -127,7 +127,7 @@ error[E0277]: the trait bound `&dyn Trait: stored::_::DecodeOwned0<'_, _, _, _, 
              `&'d R` implements `stored::_::DecodeOwned0<'d, Unstable, co3::rust_spec::size::MetaSized<SliceLike>, co3::rust_spec::mutability::Interior, Stable>`
              `&'d R` implements `stored::_::DecodeOwned0<'d, Unstable, co3::rust_spec::size::Sized<S>, co3::rust_spec::mutability::Exclusive, Unstable>`
              `&'d R` implements `stored::_::DecodeOwned0<'d, Unstable, co3::rust_spec::size::Sized<S>, co3::rust_spec::mutability::Interior, Unstable>`
-             `&'d [R]` implements `stored::_::DecodeOwned0<'d, Unstable, co3::rust_spec::size::MetaSized<SliceLike>, co3::rust_spec::mutability::Exclusive, Unstable>`
-             `&'d [R]` implements `stored::_::DecodeOwned0<'d, Unstable, co3::rust_spec::size::MetaSized<SliceLike>, co3::rust_spec::mutability::Interior, Unstable>`
+             `&'d [R]` implements `stored::_::DecodeOwned0<'d, Unstable, <[R] as RustSpec>::Size, co3::rust_spec::mutability::Exclusive, Unstable>`
+             `&'d [R]` implements `stored::_::DecodeOwned0<'d, Unstable, <[R] as RustSpec>::Size, co3::rust_spec::mutability::Interior, Unstable>`
    = note: required for `&dyn Trait` to implement `DecodeOwned<'_>`
    = note: this error originates in the macro `ffi` (in Nightly builds, run with -Z macro-backtrace for more info)

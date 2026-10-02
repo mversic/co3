@@ -21,6 +21,85 @@ pub struct CBox<C> {
     pub(crate) data: *mut C,
 }
 
+/// Owned pointer whose shared borrowed view permits interior mutation.
+///
+/// Like [`CBox`], a null data pointer represents `Option<Box<C>>`.
+#[derive(RustSpec)]
+#[repr(transparent)]
+pub struct CBoxCell<C> {
+    pub(crate) data: *mut C,
+}
+
+macro_rules! impl_boxed_pointer {
+    ($ty:ident, $as_const:tt) => {
+        impl<C> core::fmt::Debug for $ty<C> {
+            fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+                f.debug_struct(stringify!($ty))
+                    .field("data", &self.data)
+                    .finish_non_exhaustive()
+            }
+        }
+        impl<C> PartialEq for $ty<C> {
+            fn eq(&self, other: &Self) -> bool {
+                self.data == other.data
+            }
+        }
+        impl<C> Eq for $ty<C> {}
+        impl<C> PartialOrd for $ty<C> {
+            fn partial_cmp(&self, other: &Self) -> Option<core::cmp::Ordering> {
+                Some(self.cmp(other))
+            }
+        }
+        impl<C> Ord for $ty<C> {
+            fn cmp(&self, other: &Self) -> core::cmp::Ordering {
+                self.data.cmp(&other.data)
+            }
+        }
+        impl<C> Clone for $ty<C> {
+            fn clone(&self) -> Self {
+                *self
+            }
+        }
+        impl<C> Copy for $ty<C> {}
+
+        impl<C> $ty<C> {
+            /// Create [`Self`] from a [`Box<C>`].
+            pub fn from_box(source: Box<C>) -> Self {
+                Self { data: Box::into_raw(source) }
+            }
+
+            pub(crate) const NICHE_VALUE: Self = Self { data: core::ptr::null_mut() };
+
+            /// Recover the allocation, returning `None` for the null niche.
+            ///
+            /// # Safety
+            ///
+            /// Check [`Box::from_raw`].
+            pub(crate) unsafe fn into_rust(self) -> Option<Box<C>> {
+                if self.data.is_null() {
+                    return None;
+                }
+                Some(unsafe { Box::from_raw(self.data) })
+            }
+
+            #[allow(unused)]
+            pub(crate) const fn is_niche(&self) -> bool {
+                self.data.is_null()
+            }
+        }
+
+        unsafe impl<C: CType> BorrowCast for $ty<C> {
+            type AsConst = *$as_const C;
+        }
+        unsafe impl<C: CType> BorrowCastMut for $ty<C> {
+            type AsMut = *mut C;
+        }
+    };
+}
+
+impl_boxed_pointer!(CBox, const);
+impl_boxed_pointer!(CBoxCell, mut);
+
 /// Owned slice `Box<[C]>` with a defined C ABI layout. Consists of a data pointer and a length.
 /// Used in place of a function out-pointer to transfer ownership of the slice to the caller.
 /// If the data pointer is set to `null`, the struct represents `Option<Box<[C]>>`.
@@ -31,12 +110,52 @@ pub struct CBoxedSlice<C> {
     len: usize,
 }
 
-impl<C> core::fmt::Debug for CBox<C> {
+/// Owned slice whose shared borrowed view permits interior mutation.
+#[derive(RustSpec)]
+#[repr(transparent)]
+pub struct CBoxedSliceCell<C>(CBoxedSlice<C>);
+
+impl<C> core::fmt::Debug for CBoxedSliceCell<C> {
     fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
-        f.debug_struct(stringify!(CBox))
-            .field("data", &self.data)
-            .finish_non_exhaustive()
+        self.0.fmt(f)
     }
+}
+impl<C> PartialEq for CBoxedSliceCell<C> {
+    fn eq(&self, other: &Self) -> bool {
+        self.0 == other.0
+    }
+}
+impl<C> Eq for CBoxedSliceCell<C> {}
+impl<C> PartialOrd for CBoxedSliceCell<C> {
+    fn partial_cmp(&self, other: &Self) -> Option<core::cmp::Ordering> {
+        Some(self.cmp(other))
+    }
+}
+impl<C> Ord for CBoxedSliceCell<C> {
+    fn cmp(&self, other: &Self) -> core::cmp::Ordering {
+        self.0.cmp(&other.0)
+    }
+}
+impl<C> Clone for CBoxedSliceCell<C> {
+    fn clone(&self) -> Self {
+        *self
+    }
+}
+impl<C> Copy for CBoxedSliceCell<C> {}
+
+impl<C> CBoxedSliceCell<C> {
+    pub fn from_boxed_slice(source: Box<[C]>) -> Self {
+        Self(CBoxedSlice::from_boxed_slice(source))
+    }
+
+    /// # Safety
+    ///
+    /// Check [`Box::from_raw`].
+    pub(crate) unsafe fn into_rust(self) -> Option<Box<[C]>> {
+        unsafe { self.0.into_rust() }
+    }
+
+    pub(crate) const NICHE_VALUE: Self = Self(CBoxedSlice::NICHE_VALUE);
 }
 
 impl<C> core::fmt::Debug for CBoxedSlice<C> {
@@ -51,12 +170,6 @@ impl<C> core::fmt::Debug for CBoxedSlice<C> {
                 .field("len", &self.len)
                 .finish()
         }
-    }
-}
-
-impl<C> PartialEq for CBox<C> {
-    fn eq(&self, other: &Self) -> bool {
-        self.data == other.data
     }
 }
 
@@ -76,25 +189,14 @@ impl<C> PartialEq for CBoxedSlice<C> {
     }
 }
 
-impl<C> Eq for CBox<C> {}
 impl<C> Eq for CBoxedSlice<C> {}
 
-impl<C> PartialOrd for CBox<C> {
-    fn partial_cmp(&self, other: &Self) -> Option<core::cmp::Ordering> {
-        Some(self.cmp(other))
-    }
-}
 impl<C> PartialOrd for CBoxedSlice<C> {
     fn partial_cmp(&self, other: &Self) -> Option<core::cmp::Ordering> {
         Some(self.cmp(other))
     }
 }
 
-impl<C> Ord for CBox<C> {
-    fn cmp(&self, other: &Self) -> core::cmp::Ordering {
-        self.data.cmp(&other.data)
-    }
-}
 impl<C> Ord for CBoxedSlice<C> {
     fn cmp(&self, other: &Self) -> core::cmp::Ordering {
         use core::cmp::Ordering;
@@ -117,49 +219,20 @@ impl<C> Ord for CBoxedSlice<C> {
     }
 }
 
-impl<C> Clone for CBox<C> {
-    fn clone(&self) -> Self {
-        *self
-    }
-}
 impl<C> Clone for CBoxedSlice<C> {
     fn clone(&self) -> Self {
         *self
     }
 }
 
-impl<C> Copy for CBox<C> {}
 impl<C> Copy for CBoxedSlice<C> {}
 
 impl<C> CBox<C> {
-    /// Create [`Self`] from a [`Box<C>`].
-    pub fn from_box(source: Box<C>) -> Self {
-        Self {
-            data: Box::into_raw(source),
-        }
-    }
-
     /// Create [`Self`] from a raw data pointer
     pub(crate) const fn from_raw_parts(data: NonNull<C>) -> Self {
         Self {
             data: data.as_ptr(),
         }
-    }
-}
-
-impl<C> CBox<C> {
-    /// Set the pointer to null.
-    pub(crate) const NICHE_VALUE: Self = Self {
-        data: core::ptr::null_mut(),
-    };
-
-    pub(crate) unsafe fn read(self) -> C {
-        unsafe { self.data.read() }
-    }
-
-    /// Returns `true` if the option is a `None` value.
-    pub(crate) const fn is_niche(&self) -> bool {
-        self.data.is_null()
     }
 }
 
@@ -258,19 +331,21 @@ macro_rules! impl_boxed_carrier {
 }
 
 impl_boxed_carrier! { CBox }
+impl_boxed_carrier! { CBoxCell }
 impl_boxed_carrier! { CBoxedSlice }
-
-unsafe impl<C: CType> BorrowCast for CBox<C> {
-    type AsConst = *const C;
-}
-unsafe impl<C: CType> BorrowCastMut for CBox<C> {
-    type AsMut = *mut C;
-}
+impl_boxed_carrier! { CBoxedSliceCell }
 
 unsafe impl<C: CType> BorrowCast for CBoxedSlice<C> {
     type AsConst = CSlice<C>;
 }
 unsafe impl<C: CType> BorrowCastMut for CBoxedSlice<C> {
+    type AsMut = CSliceMut<C>;
+}
+
+unsafe impl<C: CType> BorrowCast for CBoxedSliceCell<C> {
+    type AsConst = CSliceMut<C>;
+}
+unsafe impl<C: CType> BorrowCastMut for CBoxedSliceCell<C> {
     type AsMut = CSliceMut<C>;
 }
 

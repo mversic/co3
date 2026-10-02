@@ -13,10 +13,14 @@ use rust_spec::{
 };
 
 #[cfg(feature = "alloc")]
+use crate::sync::{
+    RefDstDecodeStore, RefDstEncodeStore, RefMutDstEncodeStore, RefMutSliceDecodeStore,
+};
+#[cfg(feature = "alloc")]
 use crate::{
-    Dst,
+    Dst, Thin,
     borrow::{BorrowCastMut, borrow_cast_mut},
-    boxed::{CBox, CBoxedSlice},
+    boxed::{CBox, CBoxCell, CBoxedSlice, CBoxedSliceCell},
 };
 use crate::{
     ReprC,
@@ -26,6 +30,10 @@ use crate::{
     niche::Niche,
     result::ReprCResult,
     slice::{CSlice, CSliceMut},
+    sync::{
+        InteriorMutSizedEncodeStore, RefMutSizedDecodeStore, RefMutSizedEncodeStore,
+        RefSizedDecodeStore, RefSizedEncodeStore,
+    },
     transmute::CheckedTransmute,
     wide::Wide,
 };
@@ -91,9 +99,9 @@ disjoint_impls! {
             Self: 'itm;
     }
 
-    unsafe impl<R: ReprC + ?Sized> EncodeOwned for &R
+    unsafe impl<R: CheckedTransmute + ?Sized> EncodeOwned for &R
     where
-        Self: RustSpec<Layout = Stable> + CheckedTransmute<CType = *const <R as ReprC>::CType>,
+        Self: RustSpec<Layout = Stable> + ReprC<CType = *const <R as ReprC>::CType>,
         R: RustSpec<Mutability = Exclusive>,
     {
         type Store = ();
@@ -113,7 +121,7 @@ disjoint_impls! {
     unsafe impl<R: InteriorMut + ReprC + ?Sized> EncodeOwned for &R
     where
         Self: RustSpec<Layout = Stable> + ReprC<CType = *mut <R as ReprC>::CType>,
-        R: RustSpec<Trap = Robust, Mutability = Interior>,
+        R: RustSpec<Mutability = Interior, Trap = Robust>,
     {
         type Store = ();
 
@@ -129,11 +137,11 @@ disjoint_impls! {
             unsafe { core::mem::transmute_copy::<*mut R::Target, *mut R::CType>(&ptr) }
         }
     }
-    unsafe impl<'a, R: InteriorMut<Target: DecodeOwned<'a, Store: EmptyStore>> + Clone, S: SizedKind>
+    unsafe impl<'a, R: InteriorMut<Target: DecodeOwned<'a, Store: EmptyStore>> + Clone>
         EncodeOwned for &'a R
     where
         Self: RustSpec<Layout = Stable> + ReprC<CType = *mut <R as ReprC>::CType>,
-        R: RustSpec<Size = RustSpecSized<S>, Trap = NonRobust, Mutability = Interior>,
+        R: RustSpec<Mutability = Interior, Trap = NonRobust>,
         R: EncodeOwned<CType = <<R as InteriorMut>::Target as ReprC>::CType, Store: EmptyStore>
     {
         type Store = InteriorMutSizedEncodeStore<'a, R>;
@@ -151,8 +159,8 @@ disjoint_impls! {
     unsafe impl<R: Wide<Data: CheckedTransmute<CType: Sized>, Metadata = usize> + ?Sized> EncodeOwned
         for &R
     where
-        Self: RustSpec<Layout = Unstable>,
-        R: RustSpec<Layout = Stable, Size = MetaSized<SliceLike>, Mutability = Exclusive>,
+        Self: RustSpec<Layout = Unstable> + ReprC<CType = CSlice<<<R as Wide>::Data as ReprC>::CType>>,
+        R: RustSpec<Layout = Stable, Mutability = Exclusive>,
     {
         type Store = ();
 
@@ -165,13 +173,32 @@ disjoint_impls! {
             CSlice::from_raw_parts(ptr, len)
         }
     }
+    unsafe impl<R: InteriorMut + Wide<Data: CheckedTransmute<CType: Sized>, Metadata = usize> + ?Sized> EncodeOwned
+        for &R
+    where
+        Self: RustSpec<Layout = Unstable> + ReprC<CType = CSliceMut<<<R as Wide>::Data as ReprC>::CType>>,
+        R: RustSpec<Layout = Stable, Mutability = Interior, Trap = Robust>,
+        <R as InteriorMut>::Target: Wide<Data: CheckedTransmute, Metadata = usize>,
+    {
+        type Store = ();
+
+        fn soft_encode<'itm>(self, (): &mut ()) -> Self::CType
+        where
+            Self: 'itm,
+        {
+            let target = InteriorMut::get(self);
+            let len = <<R as InteriorMut>::Target as Wide>::metadata(target);
+            let ptr = <<R as InteriorMut>::Target as Wide>::as_mut_ptr(target).cast();
+            CSliceMut::from_raw_parts_mut(ptr, len)
+        }
+    }
     // FIXME: There is a deep issue here that surfaces in 0-length slices: https://github.com/mversic/co3/issues/229
     // The canonical example is: &[&UnsafeCell<T>] -> *const &UnsafeCell<T> -> can't call raw_get on the inner cell?
     //#[cfg(feature = "alloc")]
     //unsafe impl<'a, R: ToOwned<Owned: EncodeOwned + DecodeOwned<'a>> + ?Sized> EncodeOwned for &'a R
     //where
-    //    Self: RustSpec<Layout = Unstable> + ReprC<CType = <<<R as ToOwned>::Owned as ReprC>::CType as BorrowCastMut>::AsMut>,
-    //    R: RustSpec<Layout = Stable, Size = MetaSized<SliceLike>, Trap = NonRobust, Mutability = Interior>,
+    //    Self: RustSpec<Layout = Unstable> + ReprC<CType = CSliceMut<<<R as Wide>::Data as ReprC>::CType>>,
+    //    R: RustSpec<Layout = Stable, Mutability = Interior, Trap = NonRobust>,
     //    R: ToOwned<Owned: ReprC<CType: BorrowCastMut<AsMut: Copy> + Copy>>,
     //{
     //    type Store = InteriorMutDstEncodeStore<'a, R>;
@@ -188,8 +215,8 @@ disjoint_impls! {
     //}
     unsafe impl<R: EncodeOwned + Clone, S: SizedKind> EncodeOwned for &R
     where
-        Self: RustSpec<Layout = Unstable>,
-        R: RustSpec<Layout = Unstable, Size = RustSpecSized<S>, Mutability = Exclusive>,
+        Self: RustSpec<Layout = Unstable> + ReprC<CType = *const <R as ReprC>::CType>,
+        R: RustSpec<Size = RustSpecSized<S>, Mutability = Exclusive>,
     {
         type Store = RefSizedEncodeStore<R>;
 
@@ -221,7 +248,7 @@ disjoint_impls! {
         EncodeOwned for &R
     where
         Self: RustSpec<Layout = Unstable>,
-        R: RustSpec<Layout = Unstable, Size: Dst>,
+        R: RustSpec<Size: Dst, Layout = Unstable>,
         Self: ReprC<CType = <<<R as ToOwned>::Owned as ReprC>::CType as BorrowCast>::AsConst>,
     {
         type Store = RefDstEncodeStore<R>;
@@ -239,7 +266,7 @@ disjoint_impls! {
     unsafe impl<'a, R: InteriorMut + ?Sized> EncodeOwned for &'a mut R
     where
         Self: RustSpec + ReprC<CType = <&'a R as ReprC>::CType>,
-        R: RustSpec<Layout = Stable, Mutability = Interior>,
+        R: RustSpec<Mutability = Interior, Layout = Stable>,
         &'a R: EncodeOwned<Store: EmptyStore>,
     {
         type Store = ();
@@ -251,10 +278,10 @@ disjoint_impls! {
             encode_owned(&*self)
         }
     }
-    unsafe impl<R: ReprC + ?Sized> EncodeOwned for &mut R
+    unsafe impl<R: CheckedTransmute + ?Sized> EncodeOwned for &mut R
     where
-        Self: RustSpec<Layout = Stable> + CheckedTransmute<CType = *mut <R as ReprC>::CType>,
-        R: RustSpec<Trap = Robust, Mutability = Exclusive>,
+        Self: RustSpec<Layout = Stable> + ReprC<CType = *mut <R as ReprC>::CType>,
+        R: RustSpec<Mutability = Exclusive, Trap = Robust>,
     {
         type Store = ();
 
@@ -270,11 +297,11 @@ disjoint_impls! {
             unsafe { core::mem::transmute_copy::<*mut R, *mut R::CType>(&ptr) }
         }
     }
-    unsafe impl<'a, R: EncodeOwned + DecodeOwned<'a, Store: EmptyStore + 'a> + Clone, S: SizedKind>
+    unsafe impl<'a, R: CheckedTransmute + EncodeOwned + DecodeOwned<'a, Store: EmptyStore + 'a> + Clone>
         EncodeOwned for &'a mut R
     where
-        Self: RustSpec<Layout = Stable> + CheckedTransmute<CType = *mut <R as ReprC>::CType>,
-        R: RustSpec<Size = RustSpecSized<S>, Trap = NonRobust, Mutability = Exclusive>,
+        Self: RustSpec<Layout = Stable> + ReprC<CType = *mut <R as ReprC>::CType>,
+        R: RustSpec<Mutability = Exclusive, Trap = NonRobust>,
     {
         type Store = RefMutSizedEncodeStore<'a, R>;
 
@@ -282,15 +309,14 @@ disjoint_impls! {
         where
             Self: 'itm,
         {
-            // TODO: This impl is identical to later impl for Self: RustSpec<Layout = Unstable>
             encode_ref_mut_sized(self, store)
         }
     }
     unsafe impl<R: Wide<Data: CheckedTransmute<CType: Sized>, Metadata = usize> + ?Sized> EncodeOwned
         for &mut R
     where
-        Self: RustSpec<Layout = Unstable>,
-        R: RustSpec<Layout = Stable, Size = MetaSized<SliceLike>, Trap = Robust, Mutability = Exclusive>,
+        Self: RustSpec<Layout = Unstable> + ReprC<CType = CSliceMut<<<R as Wide>::Data as ReprC>::CType>>,
+        R: RustSpec<Mutability = Exclusive, Trap = Robust, Layout = Stable>,
     {
         type Store = ();
 
@@ -308,7 +334,7 @@ disjoint_impls! {
         EncodeOwned for &'a mut R
     where
         Self: RustSpec<Layout = Unstable> + ReprC<CType = <<<R as ToOwned>::Owned as ReprC>::CType as BorrowCastMut>::AsMut>,
-        R: RustSpec<Layout = Stable, Size = MetaSized<SliceLike>, Trap = NonRobust, Mutability = Exclusive>,
+        R: RustSpec<Layout = Stable, Mutability = Exclusive, Trap = NonRobust>,
         R: ToOwned<Owned: EncodeOwned<CType: BorrowCastMut<AsMut: Copy> + Copy, Store: EmptyStore> + DecodeOwned<'a, Store: EmptyStore>>,
     {
         type Store = RefMutDstEncodeStore<'a, R>;
@@ -317,7 +343,6 @@ disjoint_impls! {
         where
             Self: 'itm,
         {
-            // TODO: This impl is identical to later impl Self: RustSpec<Layout = Unstable>
             encode_ref_mut_dst(self, store)
         }
     }
@@ -325,7 +350,7 @@ disjoint_impls! {
         EncodeOwned for &'a mut R
     where
         Self: RustSpec<Layout = Unstable> + ReprC<CType = *mut <R as ReprC>::CType>,
-        R: RustSpec<Layout = Unstable, Size = RustSpecSized<S>>,
+        R: RustSpec<Size = RustSpecSized<S>, Layout = Unstable>,
     {
         type Store = RefMutSizedEncodeStore<'a, R>;
 
@@ -342,7 +367,7 @@ disjoint_impls! {
         EncodeOwned for &'a mut R
     where
         Self: RustSpec<Layout = Unstable>,
-        R: RustSpec<Layout = Unstable, Size: Dst> + AssignFromOwned,
+        R: RustSpec<Size: Dst, Layout = Unstable> + AssignFromOwned,
         <R as ToOwned>::Owned: DecodeOwned<'a, Store: EmptyStore + 'a>,
         Self: ReprC<CType = <<<R as ToOwned>::Owned as ReprC>::CType as BorrowCastMut>::AsMut>,
     {
@@ -357,10 +382,10 @@ disjoint_impls! {
     }
 
     #[cfg(feature = "alloc")]
-    unsafe impl<R: EncodeOwned> EncodeOwned for Box<R>
+    unsafe impl<R: CheckedTransmute + EncodeOwned> EncodeOwned for Box<R>
     where
-        Self: RustSpec<Layout = Stable> + CheckedTransmute<CType = CBox<<R as ReprC>::CType>>,
-        R: RustSpec<Layout = Stable>,
+        Self: RustSpec<Layout = Stable> + ReprC<CType = CBox<<R as ReprC>::CType>>,
+        R: RustSpec<Layout = Stable, Size: Thin, Mutability = Exclusive>,
     {
         type Store = Box<R::Store>;
 
@@ -379,11 +404,26 @@ disjoint_impls! {
         }
     }
     #[cfg(feature = "alloc")]
+    unsafe impl<R: EncodeOwned, S: SizedKind> EncodeOwned for Box<R>
+    where
+        Self: ReprC<CType = CBoxCell<<R as ReprC>::CType>>,
+        R: RustSpec<Size = RustSpecSized<S>, Mutability = Interior>,
+    {
+        type Store = Box<R::Store>;
+
+        fn soft_encode<'itm>(self, store: &'itm mut Self::Store) -> Self::CType
+        where
+            Self: 'itm,
+        {
+            CBoxCell::from_box(Box::new((*self).soft_encode(store)))
+        }
+    }
+    #[cfg(feature = "alloc")]
     unsafe impl<R: Owned + Wide<Data: CheckedTransmute<CType: Sized>, Metadata = usize> + ?Sized>
         EncodeOwned for Box<R>
     where
         Self: RustSpec<Layout = Unstable> + Into<<R as Owned>::Owned>,
-        R: RustSpec<Layout = Stable, Size = MetaSized<SliceLike>>,
+        R: RustSpec<Layout = Stable, Size = MetaSized<SliceLike>, Mutability = Exclusive>,
         <R as Owned>::Owned: EncodeOwned<CType = CBoxedSlice<<<R as Wide>::Data as ReprC>::CType>>,
     {
         type Store = <R::Owned as EncodeOwned>::Store;
@@ -401,14 +441,31 @@ disjoint_impls! {
                 return CBoxedSlice::from_raw_parts(data.cast(), len);
             }
 
-            self.into().soft_encode(store)
+            encode_box_owned::<R>(self, store)
+        }
+    }
+    #[cfg(feature = "alloc")]
+    unsafe impl<R: Owned + Wide<Data: ReprC<CType: Sized>, Metadata = usize> + ?Sized> EncodeOwned
+        for Box<R>
+    where
+        Self: RustSpec<Layout = Unstable> + Into<<R as Owned>::Owned>,
+        R: RustSpec<Layout = Stable, Size = MetaSized<SliceLike>, Mutability = Interior>,
+        <R as Owned>::Owned: EncodeOwned<CType = CBoxedSliceCell<<<R as Wide>::Data as ReprC>::CType>>,
+    {
+        type Store = <R::Owned as EncodeOwned>::Store;
+
+        fn soft_encode<'itm>(self, store: &'itm mut Self::Store) -> Self::CType
+        where
+            Self: 'itm,
+        {
+            encode_box_owned::<R>(self, store)
         }
     }
     #[cfg(feature = "alloc")]
     unsafe impl<R: EncodeOwned, S: SizedKind> EncodeOwned for Box<R>
     where
-        Self: RustSpec<Layout = Unstable>,
-        R: RustSpec<Layout = Unstable, Size = RustSpecSized<S>>,
+        Self: RustSpec<Layout = Unstable> + ReprC<CType = CBox<<R as ReprC>::CType>>,
+        R: RustSpec<Layout = Unstable, Size = RustSpecSized<S>, Mutability = Exclusive>,
     {
         type Store = Box<R::Store>;
 
@@ -432,7 +489,7 @@ disjoint_impls! {
         where
             Self: 'itm,
         {
-            self.into().soft_encode(store)
+            encode_box_owned::<R>(self, store)
         }
     }
 
@@ -440,6 +497,7 @@ disjoint_impls! {
     unsafe impl<R: CheckedTransmute<CType: Copy>> EncodeOwned for Vec<R>
     where
         R: RustSpec<Layout = Stable>,
+        Self: ReprC<CType = CBoxedSlice<<R as ReprC>::CType>>,
     {
         type Store = ();
 
@@ -458,6 +516,7 @@ disjoint_impls! {
     unsafe impl<R: EncodeOwned> EncodeOwned for Vec<R>
     where
         R: RustSpec<Layout = Unstable>,
+        Self: ReprC<CType = CBoxedSlice<<R as ReprC>::CType>>,
     {
         type Store = Box<[R::Store]>;
 
@@ -465,15 +524,24 @@ disjoint_impls! {
         where
             Self: 'itm,
         {
-            *store = (0..self.len()).map(|_| Default::default()).collect();
+            CBoxedSlice::from_boxed_slice(encode_vec_elements(self, store))
+        }
+    }
+    #[cfg(feature = "alloc")]
+    unsafe impl<R: EncodeOwned> EncodeOwned for Vec<R>
+    where
+        // TODO: I believe his bound SHOULD be removed but that disjoint_impls! has a bug
+        // Likewise for Decode
+        R: RustSpec,
+        Self: ReprC<CType = CBoxedSliceCell<<R as ReprC>::CType>>,
+    {
+        type Store = Box<[R::Store]>;
 
-            let ctypes = self
-                .into_iter()
-                .zip(store)
-                .map(|(item, store)| item.soft_encode(store))
-                .collect::<Box<[_]>>();
-
-            CBoxedSlice::from_boxed_slice(ctypes)
+        fn soft_encode<'itm>(self, store: &'itm mut Self::Store) -> Self::CType
+        where
+            Self: 'itm,
+        {
+            CBoxedSliceCell::from_boxed_slice(encode_vec_elements(self, store))
         }
     }
 
@@ -641,10 +709,9 @@ disjoint_impls! {
             Some(unsafe { R::from_c_ptr(source) })
         }
     }
-
-    unsafe impl<'d, R: ReprC + ?Sized> DecodeOwned<'d> for &'d R
+    unsafe impl<'d, R: CheckedTransmute + ?Sized> DecodeOwned<'d> for &'d R
     where
-        Self: RustSpec<Layout = Stable> + CheckedTransmute<CType = *const <R as ReprC>::CType>,
+        Self: RustSpec<Layout = Stable> + ReprC<CType = *const <R as ReprC>::CType>,
         R: RustSpec<Mutability = Exclusive>,
     {
         type Store = ();
@@ -692,16 +759,7 @@ disjoint_impls! {
                 return None;
             }
 
-            let ctype_slice = unsafe { R::CType::from_raw_parts(source.data(), source.len()) };
-
-            if unsafe { !R::is_valid(ctype_slice) } {
-                return None;
-            }
-
-            let len = source.len();
-            let data = source.data().cast();
-
-            Some(unsafe { R::from_raw_parts(data, len) })
+            unsafe { decode_wide_ref::<R>(source.data(), source.len()) }
         }
     }
     unsafe impl<'d, R: CheckedTransmute<CType: Wide<Metadata = usize>> + Wide<Metadata = usize> + ?Sized>
@@ -718,16 +776,7 @@ disjoint_impls! {
                 return None;
             }
 
-            let ctype_slice = unsafe { R::CType::from_raw_parts(source.data(), source.len()) };
-
-            if unsafe { !R::is_valid(ctype_slice) } {
-                return None;
-            }
-
-            let len = source.len();
-            let data = source.data().cast();
-
-            Some(unsafe { R::from_raw_parts(data, len) })
+            unsafe { decode_wide_ref::<R>(source.data(), source.len()) }
         }
     }
     unsafe impl<'d, R: ReprC<CType: BorrowCast<AsConst: Copy> + Copy> + FromBorrow<'d>, S: SizedKind>
@@ -743,13 +792,7 @@ disjoint_impls! {
             source: Self::CType,
             store: &'itm mut Self::Store,
         ) -> Option<Self> {
-            if source.is_null() {
-                return None;
-            }
-
-            let source = borrow_cast(unsafe { source.read() });
-            let value = unsafe { DecodeOwned::soft_decode(source, &mut store.store)? };
-            Some(store.value.insert(FromBorrow::from_borrow(value)))
+            unsafe { decode_ref_sized(source, store) }
         }
     }
     unsafe impl<'d, R: ReprC<CType: BorrowCast<AsConst: Copy> + Copy> + FromBorrow<'d>, S: SizedKind>
@@ -765,22 +808,15 @@ disjoint_impls! {
             source: Self::CType,
             store: &'itm mut Self::Store,
         ) -> Option<Self> {
-            if source.is_null() {
-                return None;
-            }
-
-            let source = borrow_cast(unsafe { source.read() });
-            let value = unsafe { DecodeOwned::soft_decode(source, &mut store.store)? };
-            Some(store.value.insert(FromBorrow::from_borrow(value)))
+            unsafe { decode_ref_sized(source, store) }
         }
     }
     #[cfg(feature = "alloc")]
-    // TODO: Implement for all R, not just slices. It's quite difficult to unify it under this
     unsafe impl<'d, R: DecodeOwned<'d, CType: BorrowCast<AsConst: Copy> + Copy> + FromBorrow<'d> + Clone>
         DecodeOwned<'d> for &'d [R]
     where
         Self: RustSpec<Layout = Unstable> + ReprC<CType = CSlice<<R as ReprC>::CType>>,
-        [R]: RustSpec<Layout = Unstable, Size = MetaSized<SliceLike>, Mutability = Exclusive>,
+        [R]: RustSpec<Layout = Unstable, Mutability = Exclusive>,
         <R as Borrow>::Borrowed<'d>: DecodeOwned<'d, CType = <<R as ReprC>::CType as BorrowCast>::AsConst>,
     {
         type Store = RefDstDecodeStore<[R], Box<[<<R as Borrow>::Borrowed<'d> as DecodeOwned<'d>>::Store]>>;
@@ -790,32 +826,16 @@ disjoint_impls! {
             store: &'itm mut Self::Store,
         ) -> Option<Self> {
             let source = unsafe { source.into_rust()? };
-
-            store.store = core::iter::repeat_with(Default::default)
-                .take(source.len())
-                .collect();
-
-            let mut value = Vec::with_capacity(source.len());
-            for (elem, elem_store) in source.iter().zip(&mut store.store) {
-                let source = borrow_cast(*elem);
-
-                let decoded = unsafe {
-                    DecodeOwned::soft_decode(source, elem_store)?
-                };
-
-                value.push(R::from_borrow(decoded));
-            }
-
+            let value = unsafe { decode_ref_slice_elements(source, &mut store.store)? };
             Some(store.value.insert(value))
         }
     }
     #[cfg(feature = "alloc")]
-    // TODO: Implement for all R, not just slices. It's quite difficult to unify it under this
     unsafe impl<'d, R: DecodeOwned<'d, CType: BorrowCast<AsConst: Copy> + Copy> + FromBorrow<'d> + Clone>
         DecodeOwned<'d> for &'d [R]
     where
         Self: RustSpec<Layout = Unstable> + ReprC<CType = CSliceMut<<R as ReprC>::CType>>,
-        [R]: RustSpec<Layout = Unstable, Size = MetaSized<SliceLike>, Mutability = Interior>,
+        [R]: RustSpec<Layout = Unstable, Mutability = Interior>,
         <R as Borrow>::Borrowed<'d>: DecodeOwned<'d, CType = <<R as ReprC>::CType as BorrowCast>::AsConst>,
     {
         type Store = RefDstDecodeStore<[R], Box<[<<R as Borrow>::Borrowed<'d> as DecodeOwned<'d>>::Store]>>;
@@ -825,22 +845,7 @@ disjoint_impls! {
             store: &'itm mut Self::Store,
         ) -> Option<Self> {
             let source = unsafe { source.into_rust()? };
-
-            store.store = core::iter::repeat_with(Default::default)
-                .take(source.len())
-                .collect();
-
-            let mut value = Vec::with_capacity(source.len());
-            for (elem, elem_store) in source.iter().zip(&mut store.store) {
-                let source = borrow_cast(*elem);
-
-                let decoded = unsafe {
-                    DecodeOwned::soft_decode(source, elem_store)?
-                };
-
-                value.push(R::from_borrow(decoded));
-            }
-
+            let value = unsafe { decode_ref_slice_elements(source, &mut store.store)? };
             Some(store.value.insert(value))
         }
     }
@@ -912,12 +917,11 @@ disjoint_impls! {
         }
     }
     #[cfg(feature = "alloc")]
-    // TODO: Implement for all R, not just slices. It's quite difficult to unify it under this
     unsafe impl<'d, R: DecodeOwned<'d, CType: BorrowCast<AsConst: Copy> + Copy> + FromBorrow<'d> + EncodeOwned<Store: EmptyStore>>
         DecodeOwned<'d> for &'d mut [R]
     where
         Self: RustSpec<Layout = Unstable> + ReprC<CType = CSliceMut<<R as ReprC>::CType>>,
-        [R]: RustSpec<Layout = Unstable, Size = MetaSized<SliceLike>>,
+        [R]: RustSpec<Layout = Unstable>,
         <R as Borrow>::Borrowed<'d>: DecodeOwned<'d, CType = <<R as ReprC>::CType as BorrowCast>::AsConst>,
     {
         type Store = RefMutSliceDecodeStore<R, Box<[<<R as Borrow>::Borrowed<'d> as DecodeOwned<'d>>::Store]>>;
@@ -929,29 +933,16 @@ disjoint_impls! {
             store.source = Some(source);
 
             let source = unsafe { source.into_rust()? };
-            store.store = core::iter::repeat_with(Default::default)
-                .take(source.len())
-                .collect();
-
-            let mut value = Vec::with_capacity(source.len());
-            for (elem, elem_store) in source.iter().zip(&mut store.store) {
-                let source = borrow_cast(*elem);
-
-                let decoded = unsafe {
-                    DecodeOwned::soft_decode(source, elem_store)?
-                };
-
-                value.push(R::from_borrow(decoded));
-            }
-
+            let value = unsafe { decode_ref_slice_elements(source, &mut store.store)? };
             Some(store.value.insert(value))
         }
     }
 
     #[cfg(feature = "alloc")]
-    unsafe impl<'d, R: CheckedTransmute<CType: Sized>> DecodeOwned<'d> for Box<R>
+    unsafe impl<'d, R: ReprC<CType: Sized>, S: SizedKind> DecodeOwned<'d> for Box<R>
     where
         Self: RustSpec<Layout = Stable> + CheckedTransmute<CType = CBox<<R as ReprC>::CType>>,
+        R: RustSpec<Layout = Stable, Size = RustSpecSized<S>, Mutability = Exclusive>,
     {
         type Store = ();
 
@@ -965,11 +956,28 @@ disjoint_impls! {
         }
     }
     #[cfg(feature = "alloc")]
+    unsafe impl<'d, R: DecodeOwned<'d, CType: Sized>, S: SizedKind> DecodeOwned<'d> for Box<R>
+    where
+        Self: ReprC<CType = CBoxCell<<R as ReprC>::CType>>,
+        R: RustSpec<Size = RustSpecSized<S>, Mutability = Interior>,
+    {
+        type Store = Box<R::Store>;
+
+        unsafe fn soft_decode<'itm: 'd>(
+            source: Self::CType,
+            store: &'itm mut Self::Store,
+        ) -> Option<Self> {
+            let source = unsafe { source.into_rust()? };
+            let value = unsafe { R::soft_decode(*source, store)? };
+            Some(Box::new(value))
+        }
+    }
+    #[cfg(feature = "alloc")]
     unsafe impl<'d, R: CheckedTransmute<CType: Wide<Metadata = usize>> + Wide<Metadata = usize> + ?Sized>
         DecodeOwned<'d> for Box<R>
     where
-        Self: RustSpec<Layout = Unstable>,
-        R: RustSpec<Layout = Stable, Size = MetaSized<SliceLike>>,
+        Self: RustSpec<Layout = Unstable> + ReprC<CType = CBoxedSlice<<<R as Wide>::Data as ReprC>::CType>>,
+        R: RustSpec<Layout = Stable, Size = MetaSized<SliceLike>, Mutability = Exclusive>,
         <R as Wide>::Data: ReprC<CType = <<R as ReprC>::CType as Wide>::Data>,
     {
         type Store = ();
@@ -993,10 +1001,24 @@ disjoint_impls! {
         }
     }
     #[cfg(feature = "alloc")]
+    unsafe impl<'d, R: Owned + Wide<Data: ReprC<CType: Sized>, Metadata = usize> + ?Sized>
+        DecodeOwned<'d> for Box<R>
+    where
+        Self: RustSpec<Layout = Unstable> + ReprC<CType = CBoxedSliceCell<<<R as Wide>::Data as ReprC>::CType>>,
+        R: RustSpec<Layout = Stable, Size = MetaSized<SliceLike>, Mutability = Interior>,
+        <R as Owned>::Owned: DecodeOwned<'d, CType = CBoxedSliceCell<<<R as Wide>::Data as ReprC>::CType>> + Into<Self>,
+    {
+        type Store = <<R as Owned>::Owned as DecodeOwned<'d>>::Store;
+
+        unsafe fn soft_decode<'itm: 'd>(source: Self::CType, store: &'itm mut Self::Store) -> Option<Self> {
+            unsafe { decode_box_owned::<R>(source, store) }
+        }
+    }
+    #[cfg(feature = "alloc")]
     unsafe impl<'d, R: DecodeOwned<'d, CType: Sized>, S: SizedKind> DecodeOwned<'d> for Box<R>
     where
-        Self: RustSpec<Layout = Unstable>,
-        R: RustSpec<Layout = Unstable, Size = RustSpecSized<S>>,
+        Self: RustSpec<Layout = Unstable> + ReprC<CType = CBox<<R as ReprC>::CType>>,
+        R: RustSpec<Layout = Unstable, Size = RustSpecSized<S>, Mutability = Exclusive>,
     {
         type Store = Box<R::Store>;
 
@@ -1004,8 +1026,8 @@ disjoint_impls! {
             source: Self::CType,
             store: &'itm mut Self::Store,
         ) -> Option<Self> {
-            let source = unsafe { source.read() };
-            let value = unsafe { R::soft_decode(source, &mut **store)? };
+            let source = unsafe { source.into_rust()? };
+            let value = unsafe { R::soft_decode(*source, store)? };
             Some(Box::new(value))
         }
     }
@@ -1022,7 +1044,7 @@ disjoint_impls! {
             source: Self::CType,
             store: &'itm mut Self::Store,
         ) -> Option<Self> {
-            unsafe { R::Owned::soft_decode(source, store) }.map(Into::into)
+            unsafe { decode_box_owned::<R>(source, store) }
         }
     }
 
@@ -1031,6 +1053,7 @@ disjoint_impls! {
     where
         R: RustSpec<Layout = Stable>,
         <R as ReprC>::CType: Copy,
+        Self: ReprC<CType = CBoxedSlice<<R as ReprC>::CType>>,
     {
         type Store = ();
 
@@ -1038,6 +1061,7 @@ disjoint_impls! {
             let slice: &[_] = unsafe { borrow_cast(source).into_rust()? };
 
             if slice.iter().any(|slice| unsafe { !R::is_valid(slice) }) {
+                drop(unsafe { source.into_rust() });
                 return None;
             }
 
@@ -1051,6 +1075,7 @@ disjoint_impls! {
     unsafe impl<'d, R: DecodeOwned<'d>> DecodeOwned<'d> for Vec<R>
     where
         R: RustSpec<Layout = Unstable>,
+        Self: ReprC<CType = CBoxedSlice<<R as ReprC>::CType>>,
     {
         type Store = Box<[R::Store]>;
 
@@ -1059,22 +1084,22 @@ disjoint_impls! {
             store: &'itm mut Self::Store,
         ) -> Option<Self> {
             let source = unsafe { source.into_rust()? };
+            unsafe { decode_vec_elements(source, store) }
+        }
+    }
+    #[cfg(feature = "alloc")]
+    unsafe impl<'d, R: DecodeOwned<'d> + RustSpec> DecodeOwned<'d> for Vec<R>
+    where
+        Self: ReprC<CType = CBoxedSliceCell<<R as ReprC>::CType>>,
+    {
+        type Store = Box<[R::Store]>;
 
-            let mut is_valid = true;
-            *store = core::iter::repeat_with(Default::default)
-                .take(source.len())
-                .collect();
-
-            let mut decoded = Vec::with_capacity(source.len());
-            for (item, store) in source.into_vec().into_iter().zip(store.iter_mut()) {
-                if let Some(item) = unsafe { R::soft_decode(item, store) } {
-                    decoded.push(item);
-                } else {
-                    is_valid = false;
-                }
-            }
-
-            is_valid.then_some(decoded)
+        unsafe fn soft_decode<'itm: 'd>(
+            source: Self::CType,
+            store: &'itm mut Self::Store
+        ) -> Option<Self> {
+            let source = unsafe { source.into_rust()? };
+            unsafe { decode_vec_elements(source, store) }
         }
     }
 
@@ -1195,6 +1220,35 @@ disjoint_impls! {
     }
 }
 
+/// Perform the conversion from `T` into [`T::CType`] using external storage.
+///
+/// Prefer using [`crate::encode`] whenever possible.
+pub(crate) fn encode_owned<T: EncodeOwned<Store: EmptyStore>>(item: T) -> T::CType {
+    let mut store = Default::default();
+    T::soft_encode(item, &mut store)
+}
+
+/// Perform the conversion from [`T::CType`](crate::ReprC::CType) into `T` without external storage.
+///
+/// Prefer using [`crate::decode`] whenever possible.
+///
+/// # Safety
+///
+/// - All conversions from a pointer must ensure pointer validity beforehand
+pub(crate) unsafe fn decode_owned<'d, T: DecodeOwned<'d, Store: EmptyStore + 'd>>(
+    source: T::CType,
+) -> Option<T> {
+    unsafe fn extend_store_lifetime<'d, S>(store: &mut S) -> &'d mut S {
+        unsafe { core::mem::transmute::<&mut S, &'d mut S>(store) }
+    }
+
+    let mut store = T::Store::default();
+    // SAFETY: When `T::Store` implements `EmptyStore`, `T::soft_decode` must not return
+    // references into the store, so extending this borrow cannot make local backing data escape.
+    let store = unsafe { extend_store_lifetime(&mut store) };
+    unsafe { T::soft_decode(source, store) }
+}
+
 #[cfg(feature = "alloc")]
 impl<T: Clone> AssignFromOwned for [T] {
     fn assign_from_owned(&mut self, owned: Self::Owned) -> Option<()> {
@@ -1226,6 +1280,62 @@ impl AssignFromOwned for str {
     }
 }
 
+unsafe fn decode_wide_ref<'d, R>(
+    data: *const <<R as ReprC>::CType as Wide>::Data,
+    len: usize,
+) -> Option<&'d R>
+where
+    R: CheckedTransmute<CType: Wide<Metadata = usize>> + Wide<Metadata = usize> + ?Sized,
+    R::Data: ReprC<CType = <<R as ReprC>::CType as Wide>::Data>,
+{
+    let ctype_slice = unsafe { R::CType::from_raw_parts(data, len) };
+    if unsafe { !R::is_valid(ctype_slice) } {
+        return None;
+    }
+
+    Some(unsafe { R::from_raw_parts(data.cast(), len) })
+}
+
+unsafe fn decode_ref_sized<'d, 'itm: 'd, R>(
+    source: *const R::CType,
+    store: &'itm mut RefSizedDecodeStore<R, <R::Borrowed<'d> as DecodeOwned<'d>>::Store>,
+) -> Option<&'d R>
+where
+    R: ReprC<CType: BorrowCast<AsConst: Copy> + Copy> + FromBorrow<'d>,
+    R::Borrowed<'d>: DecodeOwned<'d, CType = <R::CType as BorrowCast>::AsConst>,
+{
+    if source.is_null() {
+        return None;
+    }
+
+    let source = borrow_cast(unsafe { source.read() });
+    let value = unsafe { DecodeOwned::soft_decode(source, &mut store.store)? };
+    Some(store.value.insert(R::from_borrow(value)))
+}
+
+#[cfg(feature = "alloc")]
+unsafe fn decode_ref_slice_elements<'d, 'itm: 'd, R>(
+    source: &[R::CType],
+    store: &'itm mut Box<[<R::Borrowed<'d> as DecodeOwned<'d>>::Store]>,
+) -> Option<Vec<R>>
+where
+    R: ReprC<CType: BorrowCast<AsConst: Copy> + Copy> + FromBorrow<'d>,
+    R::Borrowed<'d>: DecodeOwned<'d, CType = <R::CType as BorrowCast>::AsConst>,
+{
+    *store = core::iter::repeat_with(Default::default)
+        .take(source.len())
+        .collect();
+
+    let mut value = Vec::with_capacity(source.len());
+    for (elem, elem_store) in source.iter().zip(store.iter_mut()) {
+        let source = borrow_cast(*elem);
+        let decoded = unsafe { DecodeOwned::soft_decode(source, elem_store)? };
+        value.push(R::from_borrow(decoded));
+    }
+
+    Some(value)
+}
+
 fn encode_ref_mut_sized<'a, R: EncodeOwned + Clone>(
     value: &'a mut R,
     store: &mut RefMutSizedEncodeStore<'a, R>,
@@ -1248,6 +1358,64 @@ where
     let owned = ToOwned::to_owned(&**original);
     let ctype = owned.soft_encode(&mut store.store);
     borrow_cast_mut(*store.ctype.insert(ctype))
+}
+
+#[cfg(feature = "alloc")]
+fn encode_box_owned<R: Owned + ?Sized>(
+    value: Box<R>,
+    store: &mut <R::Owned as EncodeOwned>::Store,
+) -> <R::Owned as ReprC>::CType
+where
+    Box<R>: Into<R::Owned>,
+    R::Owned: EncodeOwned,
+{
+    value.into().soft_encode(store)
+}
+
+#[cfg(feature = "alloc")]
+unsafe fn decode_box_owned<'d, 'itm: 'd, R: Owned + ?Sized>(
+    source: <R::Owned as ReprC>::CType,
+    store: &'itm mut <R::Owned as DecodeOwned<'d>>::Store,
+) -> Option<Box<R>>
+where
+    R::Owned: DecodeOwned<'d> + Into<Box<R>>,
+{
+    unsafe { R::Owned::soft_decode(source, store) }.map(Into::into)
+}
+
+#[cfg(feature = "alloc")]
+fn encode_vec_elements<R: EncodeOwned>(
+    value: Vec<R>,
+    store: &mut Box<[R::Store]>,
+) -> Box<[R::CType]> {
+    *store = (0..value.len()).map(|_| Default::default()).collect();
+    value
+        .into_iter()
+        .zip(store)
+        .map(|(item, store)| item.soft_encode(store))
+        .collect()
+}
+
+#[cfg(feature = "alloc")]
+unsafe fn decode_vec_elements<'d, 'itm: 'd, R: DecodeOwned<'d>>(
+    source: Box<[R::CType]>,
+    store: &'itm mut Box<[R::Store]>,
+) -> Option<Vec<R>> {
+    let mut is_valid = true;
+
+    *store = core::iter::repeat_with(Default::default)
+        .take(source.len())
+        .collect();
+
+    let mut decoded = Vec::with_capacity(source.len());
+    for (item, store) in source.into_vec().into_iter().zip(store.iter_mut()) {
+        if let Some(item) = unsafe { R::soft_decode(item, store) } {
+            decoded.push(item);
+        } else {
+            is_valid = false;
+        }
+    }
+    is_valid.then_some(decoded)
 }
 
 fn encode_result<'itm, R: EncodeOwned<CType: Copy> + 'itm, E: EncodeOwned<CType: Copy> + 'itm>(
@@ -1293,360 +1461,4 @@ where
     };
 
     Some(value)
-}
-
-/// Perform the conversion from `T` into [`T::CType`] using external storage.
-///
-/// Prefer using [`crate::encode`] whenever possible.
-pub(crate) fn encode_owned<T: EncodeOwned<Store: EmptyStore>>(item: T) -> T::CType {
-    let mut store = Default::default();
-    T::soft_encode(item, &mut store)
-}
-
-/// Perform the conversion from [`T::CType`](crate::ReprC::CType) into `T` without external storage.
-///
-/// Prefer using [`crate::decode`] whenever possible.
-///
-/// # Safety
-///
-/// - All conversions from a pointer must ensure pointer validity beforehand
-pub(crate) unsafe fn decode_owned<'d, T: DecodeOwned<'d, Store: EmptyStore + 'd>>(
-    source: T::CType,
-) -> Option<T> {
-    unsafe fn extend_store_lifetime<'d, S>(store: &mut S) -> &'d mut S {
-        unsafe { core::mem::transmute::<&mut S, &'d mut S>(store) }
-    }
-
-    let mut store = T::Store::default();
-    // SAFETY: When `T::Store` implements `EmptyStore`, `T::soft_decode` must not return
-    // references into the store, so extending this borrow cannot make local backing data escape.
-    let store = unsafe { extend_store_lifetime(&mut store) };
-    unsafe { T::soft_decode(source, store) }
-}
-
-impl Store for () {
-    fn sync(self) -> Option<()> {
-        Some(())
-    }
-}
-
-#[cfg(feature = "alloc")]
-impl<D: Store> Store for Box<D> {
-    fn sync(self) -> Option<()> {
-        (*self).sync()
-    }
-}
-
-#[cfg(feature = "alloc")]
-impl<D: Store> Store for Box<[D]> {
-    fn sync(self) -> Option<()> {
-        let mut is_valid = true;
-
-        for store in self {
-            if store.sync().is_none() {
-                is_valid = false;
-            }
-        }
-
-        is_valid.then_some(())
-    }
-}
-
-pub struct RefSizedEncodeStore<R: EncodeOwned> {
-    pub(crate) ctype: Option<R::CType>,
-    pub(crate) store: R::Store,
-}
-
-#[cfg(feature = "alloc")]
-pub struct RefDstEncodeStore<R: ToOwned<Owned: EncodeOwned> + ?Sized> {
-    pub(crate) ctype: Option<<R::Owned as ReprC>::CType>,
-    pub(crate) store: <R::Owned as EncodeOwned>::Store,
-}
-
-pub struct InteriorMutSizedEncodeStore<'d, R: ReprC<CType: Sized>> {
-    pub(crate) ctype: Option<R::CType>,
-    pub(crate) original: Option<&'d R>,
-}
-
-// FIXME:
-//#[cfg(feature = "alloc")]
-//pub struct InteriorMutDstEncodeStore<'d, R: ToOwned<Owned: EncodeOwned> + ?Sized> {
-//    pub(crate) ctype: Option<<R::Owned as ReprC>::CType>,
-//    pub(crate) original: Option<&'d R>,
-//}
-
-pub struct RefMutSizedEncodeStore<'d, R: EncodeOwned> {
-    pub(crate) ctype: Option<R::CType>,
-    pub(crate) store: R::Store,
-    pub(crate) original: Option<&'d mut R>,
-}
-
-#[cfg(feature = "alloc")]
-pub struct RefMutDstEncodeStore<'d, R: ToOwned<Owned: EncodeOwned> + ?Sized> {
-    pub(crate) ctype: Option<<R::Owned as ReprC>::CType>,
-    pub(crate) store: <R::Owned as EncodeOwned>::Store,
-    pub(crate) original: Option<&'d mut R>,
-}
-
-pub struct RefSizedDecodeStore<R, S> {
-    pub(crate) value: Option<R>,
-    pub(crate) store: S,
-}
-
-pub struct RefMutSizedDecodeStore<R: ReprC, S> {
-    pub(crate) value: Option<R>,
-    pub(crate) store: S,
-    pub(crate) source: Option<*mut R::CType>,
-}
-
-#[cfg(feature = "alloc")]
-pub struct RefDstDecodeStore<R: ToOwned + ?Sized, S> {
-    pub(crate) value: Option<R::Owned>,
-    pub(crate) store: S,
-}
-
-#[cfg(feature = "alloc")]
-pub struct RefMutSliceDecodeStore<R: ReprC<CType: Sized>, S> {
-    pub(crate) value: Option<Vec<R>>,
-    pub(crate) store: S,
-    pub(crate) source: Option<CSliceMut<R::CType>>,
-}
-
-/// This struct exists only because [arrays don't yet implement Default](https://github.com/rust-lang/rust/issues/61415)
-pub struct ArrayStore<D, const N: usize>(pub(crate) [D; N]);
-
-impl<R: EncodeOwned> Default for RefSizedEncodeStore<R> {
-    fn default() -> Self {
-        Self {
-            ctype: None,
-            store: Default::default(),
-        }
-    }
-}
-
-impl<R: EncodeOwned> Store for RefSizedEncodeStore<R> {
-    fn sync(self) -> Option<()> {
-        self.store.sync()
-    }
-}
-
-#[cfg(feature = "alloc")]
-impl<R: ToOwned<Owned: EncodeOwned> + ?Sized> Default for RefDstEncodeStore<R> {
-    fn default() -> Self {
-        Self {
-            ctype: None,
-            store: Default::default(),
-        }
-    }
-}
-
-#[cfg(feature = "alloc")]
-impl<R: ToOwned<Owned: EncodeOwned> + ?Sized> Store for RefDstEncodeStore<R> {
-    fn sync(self) -> Option<()> {
-        self.store.sync()
-    }
-}
-
-impl<'d, R: EncodeOwned> Default for RefMutSizedEncodeStore<'d, R> {
-    fn default() -> Self {
-        Self {
-            ctype: Default::default(),
-            store: Default::default(),
-            original: Default::default(),
-        }
-    }
-}
-
-// TODO: I'd bet the store doesn't have to be empty on decode during sync
-// it should be possible to traverse the ctype and update current type.
-impl<'d, R> Store for RefMutSizedEncodeStore<'d, R>
-where
-    R: EncodeOwned + DecodeOwned<'d, Store: EmptyStore + 'd>,
-{
-    fn sync(self) -> Option<()> {
-        let original = self.original?;
-        self.store.sync()?;
-        let ctype = self.ctype?;
-
-        let value = unsafe { decode_owned(ctype)? };
-        *original = value;
-        Some(())
-    }
-}
-
-impl<'d, R: ReprC<CType: Sized>> Default for InteriorMutSizedEncodeStore<'d, R> {
-    fn default() -> Self {
-        Self {
-            ctype: Default::default(),
-            original: Default::default(),
-        }
-    }
-}
-
-// &mut &(u32,)
-// TODO: I'd bet the store doesn't have to be empty on decode during sync
-// it should be possible to traverse the ctype and update current type.
-impl<'d, R: InteriorMut<Target: DecodeOwned<'d, Store: EmptyStore>>> Store
-    for InteriorMutSizedEncodeStore<'d, R>
-where
-    R: ReprC<CType = <R::Target as ReprC>::CType>,
-{
-    fn sync(self) -> Option<()> {
-        let original = self.original?;
-        let ctype = self.ctype?;
-
-        let value = unsafe { decode_owned::<'d, R::Target>(ctype)? };
-        unsafe { original.get().write(value) };
-        Some(())
-    }
-}
-
-#[cfg(feature = "alloc")]
-impl<'d, R: ToOwned<Owned: EncodeOwned> + ?Sized> Default for RefMutDstEncodeStore<'d, R> {
-    fn default() -> Self {
-        Self {
-            ctype: Default::default(),
-            store: Default::default(),
-            original: Default::default(),
-        }
-    }
-}
-
-#[cfg(feature = "alloc")]
-impl<'d, R: AssignFromOwned> Store for RefMutDstEncodeStore<'d, R>
-where
-    R: ToOwned<Owned: EncodeOwned + DecodeOwned<'d, Store: EmptyStore>> + ?Sized,
-{
-    fn sync(self) -> Option<()> {
-        let original = self.original?;
-        self.store.sync()?;
-        let ctype = self.ctype?;
-
-        let owned = unsafe { decode_owned::<'d, R::Owned>(ctype)? };
-        original.assign_from_owned(owned)
-    }
-}
-
-impl<R, S: Default> Default for RefSizedDecodeStore<R, S> {
-    fn default() -> Self {
-        Self {
-            value: None,
-            store: Default::default(),
-        }
-    }
-}
-
-impl<R: ReprC, S: Default> Default for RefMutSizedDecodeStore<R, S> {
-    fn default() -> Self {
-        Self {
-            value: None,
-            store: Default::default(),
-            source: None,
-        }
-    }
-}
-
-impl<R, S: Store> Store for RefSizedDecodeStore<R, S> {
-    fn sync(self) -> Option<()> {
-        self.store.sync()
-    }
-}
-
-impl<R: EncodeOwned<Store: EmptyStore>, S: Store> Store for RefMutSizedDecodeStore<R, S> {
-    fn sync(self) -> Option<()> {
-        let source = self.source?;
-        self.store.sync()?;
-        let value = self.value?;
-        unsafe { source.write(encode_owned(value)) };
-        Some(())
-    }
-}
-
-#[cfg(feature = "alloc")]
-impl<R: ToOwned + ?Sized, S: Default> Default for RefDstDecodeStore<R, S> {
-    fn default() -> Self {
-        Self {
-            value: None,
-            store: Default::default(),
-        }
-    }
-}
-
-#[cfg(feature = "alloc")]
-impl<R: ReprC<CType: Sized>, S: Default> Default for RefMutSliceDecodeStore<R, S> {
-    fn default() -> Self {
-        Self {
-            value: None,
-            store: Default::default(),
-            source: None,
-        }
-    }
-}
-
-#[cfg(feature = "alloc")]
-impl<R: ToOwned + ?Sized, S: Store> Store for RefDstDecodeStore<R, S> {
-    fn sync(self) -> Option<()> {
-        self.store.sync()
-    }
-}
-
-#[cfg(feature = "alloc")]
-impl<R: EncodeOwned<CType: Sized, Store: EmptyStore>, S: Store> Store
-    for RefMutSliceDecodeStore<R, S>
-{
-    fn sync(self) -> Option<()> {
-        let source = self.source?;
-        self.store.sync()?;
-        let value = self.value?;
-
-        if source.len() != value.len() {
-            return None;
-        }
-
-        let source = unsafe { source.into_rust()? };
-        for (destination, value) in source.iter_mut().zip(value) {
-            *destination = encode_owned(value);
-        }
-        Some(())
-    }
-}
-
-impl<D: Default, const N: usize> Default for ArrayStore<D, N> {
-    fn default() -> Self {
-        Self(core::array::from_fn(|_| D::default()))
-    }
-}
-
-impl<D: Store, const N: usize> Store for ArrayStore<D, N> {
-    fn sync(self) -> Option<()> {
-        let mut is_valid = true;
-
-        for store in self.0 {
-            if store.sync().is_none() {
-                is_valid = false;
-            }
-        }
-
-        is_valid.then_some(())
-    }
-}
-
-unsafe impl<D: EmptyStore, const N: usize> EmptyStore for ArrayStore<D, N> {}
-
-impl<T: Store> Store for Option<T> {
-    fn sync(self) -> Option<()> {
-        match self {
-            Some(store) => store.sync(),
-            None => Some(()),
-        }
-    }
-}
-
-impl<T: Store, E: Store> Store for Result<T, E> {
-    fn sync(self) -> Option<()> {
-        match self {
-            Ok(store) => store.sync(),
-            Err(store) => store.sync(),
-        }
-    }
 }

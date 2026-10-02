@@ -7,7 +7,7 @@ use rust_spec::{
     size::{MetaSized, MetadataKind, SizedKind},
 };
 
-use crate::{CType, stored::ArrayStore};
+use crate::{CType, sync::ArrayStore};
 
 // TODO: Remove this once extern types are stable
 // https://github.com/rust-lang/rust/issues/43467
@@ -24,7 +24,7 @@ impl<K: SizedKind> NonExternTypeLike for rust_spec::size::Sized<K> {}
 ///
 /// # Safety
 ///
-/// - only owned to borrowed const pointer casting is allowed
+/// - only owned to borrowed pointer casting is allowed (except for interior-mutable referent)
 // TODO: Stupid trait with a stupid name
 pub unsafe trait BorrowCast: CType {
     type AsConst: CType + ?Sized;

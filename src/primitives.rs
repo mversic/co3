@@ -10,7 +10,8 @@ use crate::{
     CFnArg, CFnReturn, CType, Decode, Encode, ReprC, assert_arr_has_non_zero_len,
     borrow::{Borrow, BorrowCast, BorrowCastMut, FromBorrow},
     niche::Niche,
-    stored::{ArrayStore, DecodeOwned, EmptyStore, EncodeOwned},
+    stored::{DecodeOwned, EmptyStore, EncodeOwned},
+    sync::ArrayStore,
     transmute::CheckedTransmute,
 };
 

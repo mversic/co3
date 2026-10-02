@@ -531,7 +531,7 @@ use rust_spec::{
 use rust_spec::{Stable, Unstable, size::MetadataKind};
 
 #[cfg(feature = "alloc")]
-use crate::boxed::{CBox, CBoxedSlice};
+use crate::boxed::{CBox, CBoxCell, CBoxedSlice, CBoxedSliceCell};
 use crate::{
     option::ReprCOption,
     result::ReprCResult,
@@ -555,6 +555,7 @@ pub mod result;
 pub mod slice;
 mod std_impls;
 pub mod stored;
+pub mod sync;
 pub mod tag;
 pub mod transmute;
 pub mod tuple;
@@ -663,19 +664,36 @@ disjoint_impls! {
     #[cfg(feature = "alloc")]
     impl<R: ReprC, S: SizedKind> ReprC for Box<R>
     where
-        R: RustSpec<Size = rust_spec::size::Sized<S>>,
+        R: RustSpec<Size = rust_spec::size::Sized<S>, Mutability = Exclusive>,
         <R as ReprC>::CType: Sized,
     {
         type CType = CBox<R::CType>;
     }
     #[cfg(feature = "alloc")]
+    impl<R: ReprC, S: SizedKind> ReprC for Box<R>
+    where
+        R: RustSpec<Size = rust_spec::size::Sized<S>, Mutability = Interior>,
+        <R as ReprC>::CType: Sized,
+    {
+        type CType = CBoxCell<R::CType>;
+    }
+    #[cfg(feature = "alloc")]
     impl<R: ?Sized> ReprC for Box<R>
     where
-        R: RustSpec<Size = MetaSized<SliceLike>>,
+        R: RustSpec<Size = MetaSized<SliceLike>, Mutability = Exclusive>,
         R: Wide<Data: ReprC, Metadata = usize>,
         <<R as Wide>::Data as ReprC>::CType: Sized,
     {
         type CType = CBoxedSlice<<R::Data as ReprC>::CType>;
+    }
+    #[cfg(feature = "alloc")]
+    impl<R: ?Sized> ReprC for Box<R>
+    where
+        R: RustSpec<Size = MetaSized<SliceLike>, Mutability = Interior>,
+        R: Wide<Data: ReprC, Metadata = usize>,
+        <<R as Wide>::Data as ReprC>::CType: Sized,
+    {
+        type CType = CBoxedSliceCell<<R::Data as ReprC>::CType>;
     }
 
     impl<R: ReprC> ReprC for Option<R>
@@ -830,8 +848,11 @@ pub unsafe fn decode<'d, T: Decode<'d, Store: EmptyStore> + 'd>(source: T::CType
 }
 
 #[cfg(feature = "alloc")]
-impl<R: ReprC<CType: Sized>> ReprC for Vec<R> {
-    type CType = CBoxedSlice<R::CType>;
+impl<R> ReprC for Vec<R>
+where
+    Box<[R]>: ReprC,
+{
+    type CType = <Box<[R]> as ReprC>::CType;
 }
 
 #[cfg(feature = "alloc")]

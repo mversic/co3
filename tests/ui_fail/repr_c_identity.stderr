@@ -39,9 +39,9 @@ error[E0277]: the trait bound `bool: CType` is not satisfied
              *const R
              *mut R
              CBox<C>
+             CBoxCell<C>
              CBoxedSlice<C>
+             CBoxedSliceCell<C>
              CSlice<C>
-             CSliceMut<C>
-             MaybeUninit<T>
            and $N others
    = note: this error originates in the derive macro `ReprC` (in Nightly builds, run with -Z macro-backtrace for more info)

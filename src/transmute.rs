@@ -54,7 +54,7 @@ disjoint_impls! {
     }
 }
 
-// NOTE: It is UB to transmute between `UnsafeCell<T>` and `T`
+// NOTE: To obtain a mutable access to the underlying data, `UnsafeCell::get` must be used
 unsafe impl<R: CheckedTransmute + RustSpec<Mutability = Exclusive> + ?Sized> CheckedTransmute for &R
 where
     Self: ReprC<CType: Copy>,
@@ -90,9 +90,10 @@ where
 }
 
 #[cfg(feature = "alloc")]
-unsafe impl<R: CheckedTransmute<CType: Sized>> CheckedTransmute for Box<R>
+unsafe impl<R: CheckedTransmute<CType: Sized> + RustSpec<Mutability = Exclusive>> CheckedTransmute
+    for Box<R>
 where
-    Self: ReprC<CType = CBox<R::CType>>,
+    Self: ReprC<CType = CBox<<R as ReprC>::CType>>,
 {
     #[inline(always)]
     unsafe fn is_valid(target: &Self::CType) -> bool {

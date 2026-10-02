@@ -606,11 +606,13 @@ mod tests {
     #[cfg(feature = "alloc")]
     use alloc::{boxed::Box, vec};
 
+    #[cfg(feature = "alloc")]
+    use static_assertions::assert_type_eq_all;
     use static_assertions::{assert_impl_all, assert_not_impl_any};
 
     use super::*;
     #[cfg(feature = "alloc")]
-    use crate::boxed::{CBox, CBoxedSlice};
+    use crate::boxed::{CBoxCell, CBoxedSlice, CBoxedSliceCell};
     use crate::{
         CFnArg, CFnReturn, Decode, Encode,
         option::ReprCOption,
@@ -824,12 +826,14 @@ mod tests {
         );
         #[cfg(feature = "alloc")]
         assert_impl_all!(Box<UnsafeCell<u8>>:
-            Niche<CType = CBox<u8>>,
+            Niche<CType = CBoxCell<u8>>,
             Decode<'static>,
             Encode,
         );
+        #[cfg(feature = "alloc")]
+        assert_not_impl_any!(Box<UnsafeCell<u8>>: CheckedTransmute);
         assert_impl_all!(&[UnsafeCell<u8>]:
-            Niche<CType = CSlice<u8>>,
+            Niche<CType = CSliceMut<u8>>,
             Decode<'static>,
             Encode,
         );
@@ -840,13 +844,13 @@ mod tests {
         );
         #[cfg(feature = "alloc")]
         assert_impl_all!(Box<[UnsafeCell<u8>]>:
-            Niche<CType = CBoxedSlice<u8>>,
+            Niche<CType = CBoxedSliceCell<u8>>,
             Decode<'static>,
             Encode,
         );
         #[cfg(feature = "alloc")]
         assert_impl_all!(Vec<UnsafeCell<u8>>:
-            Niche<CType = CBoxedSlice<u8>>,
+            Niche<CType = CBoxedSliceCell<u8>>,
             Decode<'static>,
             Encode,
         );
@@ -862,6 +866,57 @@ mod tests {
         );
 
         assert_not_impl_any!(UnsafeCell<u8>: CType);
+    }
+
+    #[cfg(feature = "alloc")]
+    #[test]
+    fn interior_mutable_slice_carriers_round_trip() {
+        assert_type_eq_all!(
+            <CBoxedSliceCell<u8> as BorrowCast>::AsConst,
+            <&[UnsafeCell<u8>] as ReprC>::CType
+        );
+
+        let cells = [UnsafeCell::new(3_u8), UnsafeCell::new(4_u8)];
+        let view = crate::encode(&cells[..]);
+        unsafe { view.data().write(9) };
+        assert_eq!(unsafe { *cells[0].get() }, 9);
+
+        let boxed = crate::encode(vec![UnsafeCell::new(5_u8)].into_boxed_slice());
+        unsafe { crate::borrow::borrow_cast(boxed).data().write(7) };
+        let boxed = unsafe { crate::decode::<Box<[UnsafeCell<u8>]>>(boxed) }.unwrap();
+        assert_eq!(unsafe { *boxed[0].get() }, 7);
+
+        let vector = crate::encode(vec![UnsafeCell::new(6_u8)]);
+        let vector = unsafe { crate::decode::<Vec<UnsafeCell<u8>>>(vector) }.unwrap();
+        assert_eq!(unsafe { *vector[0].get() }, 6);
+    }
+
+    #[cfg(feature = "alloc")]
+    #[test]
+    fn boxed_cell_borrow_and_round_trip() {
+        assert_type_eq_all!(
+            <CBoxCell<u8> as BorrowCast>::AsConst,
+            <&UnsafeCell<u8> as ReprC>::CType,
+            <&Cell<u8> as ReprC>::CType
+        );
+
+        let encoded = crate::encode(Box::new(UnsafeCell::new(4u8)));
+        let borrowed = crate::borrow::borrow_cast(encoded);
+        unsafe { borrowed.write(8) };
+        let decoded = unsafe { crate::decode::<Box<UnsafeCell<u8>>>(encoded) }.unwrap();
+        assert_eq!((*decoded).into_inner(), 8);
+
+        let encoded = crate::encode(Box::new(Cell::new(4u8)));
+        unsafe { crate::borrow::borrow_cast(encoded).write(6) };
+        let decoded = unsafe { crate::decode::<Box<Cell<u8>>>(encoded) }.unwrap();
+        assert_eq!(decoded.get(), 6);
+
+        let none = crate::encode(None::<Box<UnsafeCell<u8>>>);
+        assert_eq!(none, CBoxCell::NICHE_VALUE);
+        assert!(matches!(
+            unsafe { crate::decode::<Option<Box<UnsafeCell<u8>>>>(none) },
+            Some(None)
+        ));
     }
 
     #[test]
@@ -882,31 +937,49 @@ mod tests {
         );
         #[cfg(feature = "alloc")]
         assert_impl_all!(Box<UnsafeCell<NonZero<u8>>>:
-            Niche<CType = CBox<u8>>,
+            Niche<CType = CBoxCell<u8>>,
             Decode<'static>,
             Encode,
         );
+
+        #[cfg(feature = "alloc")]
+        {
+            let valid = CBoxCell::from_box(Box::new(7u8));
+            let decoded = unsafe { crate::decode::<Box<UnsafeCell<NonZero<u8>>>>(valid) }.unwrap();
+            assert_eq!((*decoded).into_inner().get(), 7);
+
+            let invalid = CBoxCell::from_box(Box::new(0u8));
+            assert!(unsafe { crate::decode::<Box<UnsafeCell<NonZero<u8>>>>(invalid) }.is_none());
+        }
         assert_impl_all!(&[UnsafeCell<NonZero<u8>>]:
-            Niche<CType = CSlice<u8>>,
+            Niche<CType = CSliceMut<u8>>,
             Decode<'static>,
-            Encode,
         );
+        assert_not_impl_any!(&[UnsafeCell<NonZero<u8>>]: Encode);
         assert_impl_all!(&mut [UnsafeCell<NonZero<u8>>]:
             Niche<CType = CSliceMut<u8>>,
             Decode<'static>,
         );
         #[cfg(feature = "alloc")]
         assert_impl_all!(Box<[UnsafeCell<NonZero<u8>>]>:
-            Niche<CType = CBoxedSlice<u8>>,
+            Niche<CType = CBoxedSliceCell<u8>>,
             Decode<'static>,
             Encode,
         );
         #[cfg(feature = "alloc")]
         assert_impl_all!(Vec<UnsafeCell<NonZero<u8>>>:
-            Niche<CType = CBoxedSlice<u8>>,
+            Niche<CType = CBoxedSliceCell<u8>>,
             Decode<'static>,
             Encode,
         );
+        #[cfg(feature = "alloc")]
+        {
+            let invalid = CBoxedSliceCell::from_boxed_slice(vec![0_u8].into_boxed_slice());
+            assert!(unsafe { crate::decode::<Vec<UnsafeCell<NonZero<u8>>>>(invalid) }.is_none());
+
+            let invalid = CBoxedSliceCell::from_boxed_slice(vec![0_u8].into_boxed_slice());
+            assert!(unsafe { crate::decode::<Box<[UnsafeCell<NonZero<u8>>]>>(invalid) }.is_none());
+        }
         assert_impl_all!([UnsafeCell<NonZero<u8>>; 2]:
             ReprC<CType = [u8; 2]>,
             Decode<'static>,

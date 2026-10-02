@@ -18,11 +18,11 @@ help: the trait `CFnArg` is not implemented for `CallbackValue`
              *const R
              *mut R
              CBox<C>
+             CBoxCell<C>
              CBoxedSlice<C>
+             CBoxedSliceCell<C>
              CCallbackValue
              CCallbackValueConstView
-             CCallbackValueMutView
-             CSlice<C>
            and $N others
    = note: required for `extern "C" fn(CallbackValue)` to implement `ReprC`
    = note: this error originates in the macro `ffi` (in Nightly builds, run with -Z macro-backtrace for more info)
@@ -48,10 +48,10 @@ help: the trait `CFnReturn` is not implemented for `CallbackValue`
              *const R
              *mut R
              CBox<C>
+             CBoxCell<C>
              CBoxedSlice<C>
+             CBoxedSliceCell<C>
              CCallbackValue
-             CCallbackValueConstView
-             CCallbackValueMutView
            and $N others
    = note: required for `extern "C" fn() -> CallbackValue` to implement `ReprC`
    = note: this error originates in the macro `ffi` (in Nightly builds, run with -Z macro-backtrace for more info)
