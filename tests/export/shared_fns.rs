@@ -51,10 +51,10 @@ unsafe extern "C" {
     fn clone_raw(value: *const c_void) -> *mut c_void;
 
     #[link_name = "export_shared__FfiStruct__equals"]
-    fn equals_raw(value: *const c_void, other: *const c_void) -> u8;
+    fn equals_raw(value: *const c_void, other: *const c_void) -> co3::primitives::CBool;
 
     #[link_name = "export_shared__FfiStruct__compare"]
-    fn compare_raw(value: *const c_void, other: *const c_void) -> i8;
+    fn compare_raw(value: *const c_void, other: *const c_void) -> co3::primitives::COrdering;
 
     #[link_name = "export_shared__Drop__FfiStruct__drop"]
     fn drop_raw(value: *mut c_void);

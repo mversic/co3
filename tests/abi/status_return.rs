@@ -68,6 +68,18 @@ fn decode_status(source: <CustomStatus as ReprC>::CType) -> CustomStatus {
 }
 
 #[test]
+fn fieldless_enum_constants_use_upper_snake_case() {
+    assert_eq!(
+        CCustomStatus::UNKNOWN_HANDLE.0,
+        CustomStatus::UnknownHandle as u8
+    );
+    assert_eq!(
+        CCustomStatus::SOFT_SYNC_ERROR.0,
+        CustomStatus::SoftSyncError as u8
+    );
+}
+
+#[test]
 fn error_failure_mode_returns_status_on_export_decode_failure() {
     let status = unsafe { export_error_input_raw(0) };
 

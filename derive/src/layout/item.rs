@@ -856,6 +856,27 @@ fn gen_record_is_valid(
     }
 }
 
+fn upper_snake_case(name: &str) -> String {
+    let chars: Vec<_> = name.strip_prefix("r#").unwrap_or(name).chars().collect();
+    let mut result = String::new();
+
+    for (index, &ch) in chars.iter().enumerate() {
+        if ch.is_uppercase()
+            && index > 0
+            && chars[index - 1] != '_'
+            && (chars[index - 1].is_lowercase()
+                || chars[index - 1].is_numeric()
+                || (chars[index - 1].is_uppercase()
+                    && chars.get(index + 1).is_some_and(|next| next.is_lowercase())))
+        {
+            result.push('_');
+        }
+        result.extend(ch.to_uppercase());
+    }
+
+    result
+}
+
 pub(super) fn derive_fieldless_enum(
     repr: Option<&ReprKind>,
     alignment: Option<&syn::LitInt>,
@@ -926,23 +947,34 @@ pub(super) fn derive_fieldless_enum(
     let ctype_name = gen_ctype_name(name);
     let ctype_ty = quote!(#ctype_name #ty_generics);
     let ctype_def = gen_fieldless_enum_ctype(&tag_ctype, alignment, vis, name, generics);
-    let encode_impl = tag_type
+    let variant_consts = variants.iter().map(|variant| {
+        let variant_name = &variant.ident;
+        let const_name = format_ident!("{}", upper_snake_case(&variant_name.to_string()));
+        let value = if tag_type.is_none() {
+            quote!(())
+        } else {
+            quote!(#name::#variant_name as #tag_ctype)
+        };
+
+        quote! { #vis const #const_name: Self = Self(#value); }
+    });
+    let from_body = tag_type
         .as_ref()
-        .map(|repr| quote! { #ctype_name(self as #repr) })
+        .map(|repr| quote! { #ctype_name(value as #repr) })
         .unwrap_or_else(|| quote! { #ctype_name(()) });
-    let decode_impl = if tag_type.is_some() {
+    let try_from_body = if tag_type.is_some() {
         quote! {
             match source.0 {
                 #(#variants_decode,)*
                 _ => None
-            }
+            }.ok_or(())
         }
     } else {
         let transparent_variant = &variants[0].ident;
 
         quote! {
             let #ctype_name(()) = source;
-            Some(Self::#transparent_variant)
+            Ok(Self::#transparent_variant)
         }
     };
     let niche_impl = tag_type
@@ -956,6 +988,24 @@ pub(super) fn derive_fieldless_enum(
         #niche_impl
         #borrow_impls
 
+        impl #impl_generics #ctype_name #ty_generics #where_clause {
+            #(#variant_consts)*
+        }
+
+        impl #impl_generics core::convert::From<#name #ty_generics> for #ctype_name #ty_generics #where_clause {
+            fn from(value: #name #ty_generics) -> Self {
+                #from_body
+            }
+        }
+
+        impl #impl_generics core::convert::TryFrom<#ctype_name #ty_generics> for #name #ty_generics #where_clause {
+            type Error = ();
+
+            fn try_from(source: #ctype_name #ty_generics) -> core::result::Result<Self, Self::Error> {
+                #try_from_body
+            }
+        }
+
         impl #impl_generics co3::ReprC for #name #ty_generics #where_clause {
             type CType = #ctype_ty;
         }
@@ -966,7 +1016,7 @@ pub(super) fn derive_fieldless_enum(
             where
                 Self: '_išč,
             {
-                #encode_impl
+                core::convert::Into::into(self)
             }
         }
 
@@ -974,7 +1024,7 @@ pub(super) fn derive_fieldless_enum(
             type Store = ();
 
             unsafe fn soft_decode<'_išč: '_dšč>(source: Self::CType, (): &mut ()) -> Option<Self> {
-                #decode_impl
+                <Self as core::convert::TryFrom<_>>::try_from(source).ok()
             }
         }
 

@@ -550,7 +550,7 @@ mod ffi;
 pub mod niche;
 pub mod ops;
 pub mod option;
-mod primitives;
+pub mod primitives;
 pub mod result;
 pub mod slice;
 mod std_impls;
@@ -949,7 +949,7 @@ mod tests {
             let encoded = soft_encode(slice_ref, &mut store);
             let c_slice = unsafe { encoded.into_rust().unwrap() };
 
-            c_slice[0] = ReprCTuple2(100, 1);
+            c_slice[0] = ReprCTuple2(100, primitives::CBool::TRUE);
             store.sync().unwrap();
         }
 
@@ -970,7 +970,7 @@ mod tests {
             let mut store = Box::default();
             let encoded = soft_encode(&mut value, &mut *store);
             let original_data = unsafe { (*encoded).data };
-            let replacement = CBox::from_box(Box::new(ReprCTuple2(100, 1)));
+            let replacement = CBox::from_box(Box::new(ReprCTuple2(100, primitives::CBool::TRUE)));
             let replacement_data = replacement.data;
 
             unsafe {
@@ -989,7 +989,7 @@ mod tests {
     fn decode_stored_ref_mut_slice() {
         use tuple::ReprCTuple2;
 
-        let mut tuples = [ReprCTuple2(10, 1)];
+        let mut tuples = [ReprCTuple2(10, primitives::CBool::TRUE)];
         let c_slice = CSliceMut::from_slice(&mut tuples);
 
         {

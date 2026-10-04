@@ -1414,7 +1414,7 @@ fn preprocess_dispatch_params(header: TokenStream) -> syn::Result<TokenStream> {
         let tt = tokens[idx].clone();
 
         if generic_params_finished {
-            out.extend(std::iter::once(tt));
+            out.extend(core::iter::once(tt));
             idx += 1;
             continue;
         }
@@ -1424,24 +1424,24 @@ fn preprocess_dispatch_params(header: TokenStream) -> syn::Result<TokenStream> {
                 if angle_depth == 0 && group.delimiter() == proc_macro2::Delimiter::Parenthesis =>
             {
                 generic_params_finished = true;
-                out.extend(std::iter::once(tt));
+                out.extend(core::iter::once(tt));
                 idx += 1;
             }
             proc_macro2::TokenTree::Punct(punct) if punct.as_char() == '<' => {
                 angle_depth += 1;
                 at_param_start = angle_depth == 1;
-                out.extend(std::iter::once(tt));
+                out.extend(core::iter::once(tt));
                 idx += 1;
             }
             proc_macro2::TokenTree::Punct(punct) if punct.as_char() == '>' => {
                 angle_depth = angle_depth.saturating_sub(1);
                 at_param_start = false;
-                out.extend(std::iter::once(tt));
+                out.extend(core::iter::once(tt));
                 idx += 1;
             }
             proc_macro2::TokenTree::Punct(punct) if punct.as_char() == ',' && angle_depth == 1 => {
                 at_param_start = true;
-                out.extend(std::iter::once(tt));
+                out.extend(core::iter::once(tt));
                 idx += 1;
             }
             proc_macro2::TokenTree::Ident(ident)
@@ -1466,16 +1466,16 @@ fn preprocess_dispatch_params(header: TokenStream) -> syn::Result<TokenStream> {
             }
             proc_macro2::TokenTree::Punct(punct) if angle_depth == 1 && punct.as_char() == '#' => {
                 at_param_start = false;
-                out.extend(std::iter::once(tt));
+                out.extend(core::iter::once(tt));
                 idx += 1;
             }
             proc_macro2::TokenTree::Ident(_) if angle_depth == 1 && at_param_start => {
                 at_param_start = false;
-                out.extend(std::iter::once(tt));
+                out.extend(core::iter::once(tt));
                 idx += 1;
             }
             _ => {
-                out.extend(std::iter::once(tt));
+                out.extend(core::iter::once(tt));
                 idx += 1;
             }
         }
@@ -1672,7 +1672,7 @@ fn parse_signature(
                 _ => {}
             }
         }
-        signature_tokens.extend(std::iter::once(tt));
+        signature_tokens.extend(core::iter::once(tt));
     }
 
     let (signature_tokens, dispatch_attrs) = preprocess_dispatch_where_clause(signature_tokens)?;
@@ -1795,7 +1795,7 @@ fn parse_impl_item(input: syn::parse::ParseStream) -> syn::Result<ItemImpl> {
     let mut header = TokenStream::new();
     while !input.peek(syn::token::Brace) {
         let tt: proc_macro2::TokenTree = input.parse()?;
-        header.extend(std::iter::once(tt));
+        header.extend(core::iter::once(tt));
     }
 
     let content;

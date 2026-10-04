@@ -392,11 +392,8 @@ pub enum FieldlessLargeEnum {
 
 #[test]
 fn verify_enum_niche_value() {
-    let expected_bool = 2_u8;
-    let expected_ord = 2_i8;
-
-    assert_eq!(expected_bool, encode(None::<bool>));
-    assert_eq!(expected_ord, encode(None::<Ordering>));
+    assert_eq!(co3::primitives::CBool::NICHE, encode(None::<bool>));
+    assert_eq!(co3::primitives::COrdering::NICHE, encode(None::<Ordering>));
 
     assert_eq!(encode(None::<Opaque>), ReprCOption::None());
     assert!(encode(None::<OwnedExtern>).0.is_null());
@@ -455,6 +452,46 @@ fn fieldless_enum_explicit_discriminants_round_trip() {
     );
     // Zero is occupied, so the generated niche selects the next invalid tag.
     assert_eq!(encode(None::<FieldlessExplicitEnum>).0, 1);
+}
+
+#[test]
+fn fieldless_enum_carrier_conversions() {
+    assert_eq!(co3::primitives::CBool::TRUE, encode(true));
+    assert_eq!(co3::primitives::CBool::FALSE, encode(false));
+    assert_eq!(co3::primitives::COrdering::LESS, encode(Ordering::Less));
+    assert_eq!(co3::primitives::COrdering::EQUAL, encode(Ordering::Equal));
+    assert_eq!(
+        co3::primitives::COrdering::GREATER,
+        encode(Ordering::Greater)
+    );
+    assert_eq!(CFieldlessExplicitEnum::NEGATIVE.0, -2);
+    assert_eq!(CFieldlessExplicitEnum::ZERO.0, 0);
+    assert_eq!(CFieldlessExplicitEnum::FIVE.0, 5);
+    assert_eq!(CFieldlessExplicitEnum::SIX.0, 6);
+    assert_eq!(CFieldlessNoReprEnum::A.0, 0);
+    assert_eq!(CFieldlessNoReprEnum::B.0, 1);
+    assert_eq!(CFieldlessNoReprEnum::C.0, 2);
+    assert_eq!(CFieldlessNoReprEnum::D.0, 3);
+    let explicit: CFieldlessExplicitEnum = FieldlessExplicitEnum::Five.into();
+    assert_eq!(explicit.0, 5);
+    assert_eq!(
+        FieldlessExplicitEnum::try_from(explicit),
+        Ok(FieldlessExplicitEnum::Five)
+    );
+    assert_eq!(
+        FieldlessExplicitEnum::try_from(CFieldlessExplicitEnum(1)),
+        Err(())
+    );
+
+    let inferred: CFieldlessNoReprEnum = FieldlessNoReprEnum::C.into();
+    assert_eq!(
+        FieldlessNoReprEnum::try_from(inferred),
+        Ok(FieldlessNoReprEnum::C)
+    );
+    assert_eq!(
+        FieldlessNoReprEnum::try_from(CFieldlessNoReprEnum(4)),
+        Err(())
+    );
 }
 
 #[test]

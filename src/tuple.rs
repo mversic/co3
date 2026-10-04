@@ -19,7 +19,7 @@
 //! ```rust
 //! use core::mem::size_of;
 //!
-//! use co3::{encode, option::ReprCOption, tuple::ReprCTuple3, ReprC};
+//! use co3::{encode, option::ReprCOption, primitives::CBool, tuple::ReprCTuple3, ReprC};
 //!
 //! type TupleWithNiche1<'a> = (u8, bool, &'a bool);
 //! type TupleWithNiche2<'a> = (u8, &'a bool, bool);
@@ -39,10 +39,10 @@
 //! );
 //!
 //! let none_value_1: Option<TupleWithNiche1> = None;
-//! assert_eq!(encode(none_value_1), ReprCTuple3(0, 2, core::ptr::null()));
+//! assert_eq!(encode(none_value_1), ReprCTuple3(0, CBool::NICHE, core::ptr::null()));
 //!
 //! let none_value_2: Option<TupleWithNiche2> = None;
-//! assert_eq!(encode(none_value_2), ReprCTuple3(0, core::ptr::null(), 0));
+//! assert_eq!(encode(none_value_2), ReprCTuple3(0, core::ptr::null(), CBool::FALSE));
 //!
 //! let none_value_3: Option<TupleWithoutNiche> = None;
 //! assert_eq!(encode(none_value_3), ReprCOption::None());
@@ -508,57 +508,57 @@ mod tests {
         // NOTE: Confirms niche is taken from the first available element
         assert_eq!(
             <(u8, StdNonZero<u8>, bool)>::NICHE_VALUE,
-            ReprCTuple3(0, 0, 0)
+            ReprCTuple3(0, 0, crate::primitives::CBool::FALSE)
         );
 
         assert_impl_all!((u8, StdNonZero<u8>, bool):
-            Niche<CType = ReprCTuple3<u8, u8, u8>>,
+            Niche<CType = ReprCTuple3<u8, u8, crate::primitives::CBool>>,
             Decode<'static>,
             Encode,
         );
 
         assert_impl_all!(&(u8, StdNonZero<u8>, bool):
-            Niche<CType = *const ReprCTuple3<u8, u8, u8>>,
+            Niche<CType = *const ReprCTuple3<u8, u8, crate::primitives::CBool>>,
             Decode<'static>,
             Encode,
         );
         assert_impl_all!(&mut (u8, StdNonZero<u8>, bool):
-            Niche<CType = *mut ReprCTuple3<u8, u8, u8>>,
+            Niche<CType = *mut ReprCTuple3<u8, u8, crate::primitives::CBool>>,
             Decode<'static>,
             Encode,
         );
         #[cfg(feature = "alloc")]
         assert_impl_all!(Box<(u8, StdNonZero<u8>, bool)>:
-            Niche<CType = CBox<ReprCTuple3<u8, u8, u8>>>,
+            Niche<CType = CBox<ReprCTuple3<u8, u8, crate::primitives::CBool>>>,
             DecodeOwned<'static>,
             EncodeOwned,
         );
         #[cfg(feature = "alloc")]
         assert_impl_all!(&[(u8, StdNonZero<u8>, bool)]:
-            Niche<CType = CSlice<ReprCTuple3<u8, u8, u8>>>,
+            Niche<CType = CSlice<ReprCTuple3<u8, u8, crate::primitives::CBool>>>,
             Decode<'static>,
             Encode,
         );
         #[cfg(feature = "alloc")]
         assert_impl_all!(&mut [(u8, StdNonZero<u8>, bool)]:
-            Niche<CType = CSliceMut<ReprCTuple3<u8, u8, u8>>>,
+            Niche<CType = CSliceMut<ReprCTuple3<u8, u8, crate::primitives::CBool>>>,
             Decode<'static>,
             Encode,
         );
         #[cfg(feature = "alloc")]
         assert_impl_all!(Box<[(u8, StdNonZero<u8>, bool)]>:
-            Niche<CType = CBoxedSlice<ReprCTuple3<u8, u8, u8>>>,
+            Niche<CType = CBoxedSlice<ReprCTuple3<u8, u8, crate::primitives::CBool>>>,
             DecodeOwned<'static>,
             EncodeOwned,
         );
         #[cfg(feature = "alloc")]
         assert_impl_all!(Vec<(u8, StdNonZero<u8>, bool)>:
-            Niche<CType = CBoxedSlice<ReprCTuple3<u8, u8, u8>>>,
+            Niche<CType = CBoxedSlice<ReprCTuple3<u8, u8, crate::primitives::CBool>>>,
             DecodeOwned<'static>,
             EncodeOwned,
         );
         assert_impl_all!([(u8, StdNonZero<u8>, bool); 2]:
-            Niche<CType = [ReprCTuple3<u8, u8, u8>; 2]>,
+            Niche<CType = [ReprCTuple3<u8, u8, crate::primitives::CBool>; 2]>,
             Decode<'static>,
             Encode,
         );

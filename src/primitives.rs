@@ -15,6 +15,76 @@ use crate::{
     transmute::CheckedTransmute,
 };
 
+/// C-compatible carrier for [`bool`].
+#[repr(transparent)]
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, rust_spec::RustSpec)]
+pub struct CBool(u8);
+
+/// C-compatible carrier for [`Ordering`].
+#[repr(transparent)]
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, rust_spec::RustSpec)]
+pub struct COrdering(i8);
+
+impl CBool {
+    pub const NICHE: Self = Self(2);
+
+    pub const FALSE: Self = Self(0);
+    pub const TRUE: Self = Self(1);
+
+    pub(crate) const fn from_raw(value: u8) -> Self {
+        Self(value)
+    }
+}
+
+impl From<bool> for CBool {
+    fn from(value: bool) -> Self {
+        if value { Self::TRUE } else { Self::FALSE }
+    }
+}
+
+impl TryFrom<CBool> for bool {
+    type Error = ();
+
+    fn try_from(value: CBool) -> Result<Self, Self::Error> {
+        match value.0 {
+            0 => Ok(false),
+            1 => Ok(true),
+            _ => Err(()),
+        }
+    }
+}
+
+impl COrdering {
+    pub const NICHE: Self = Self(2);
+
+    pub const LESS: Self = Self(-1);
+    pub const EQUAL: Self = Self(0);
+    pub const GREATER: Self = Self(1);
+}
+
+impl From<Ordering> for COrdering {
+    fn from(value: Ordering) -> Self {
+        match value {
+            Ordering::Less => Self::LESS,
+            Ordering::Equal => Self::EQUAL,
+            Ordering::Greater => Self::GREATER,
+        }
+    }
+}
+
+impl TryFrom<COrdering> for Ordering {
+    type Error = ();
+
+    fn try_from(value: COrdering) -> Result<Self, Self::Error> {
+        match value.0 {
+            -1 => Ok(Self::Less),
+            0 => Ok(Self::Equal),
+            1 => Ok(Self::Greater),
+            _ => Err(()),
+        }
+    }
+}
+
 macro_rules! primitive_derive {
     ( $primitive:ty ) => {
         unsafe impl Borrow for $primitive {
@@ -267,6 +337,12 @@ macro_rules! fieldless_enum_derive {
         }
     };
     ( $src:ty => $dst:ty: {$niche_val:expr}: $validity_fn:expr; $decode_fn:expr ) => {
+        fieldless_enum_derive! {
+            $src => $dst: {$niche_val}: $validity_fn; $decode_fn;
+            |source: $src| -> $dst { source as $dst }
+        }
+    };
+    ( $src:ty => $dst:ty: {$niche_val:expr}: $validity_fn:expr; $decode_fn:expr; $encode_fn:expr ) => {
         unsafe impl CheckedTransmute for $src {
             #[inline(always)]
             unsafe fn is_valid(target: &Self::CType) -> bool {
@@ -302,7 +378,7 @@ macro_rules! fieldless_enum_derive {
             where
                 Self: 'itm,
             {
-                self as $dst
+                $encode_fn(self)
             }
         }
         unsafe impl<'d> DecodeOwned<'d> for $src {
@@ -338,6 +414,8 @@ primitive_derive! { u128 }
 primitive_derive! { i128 }
 primitive_derive! { f32 }
 primitive_derive! { f64 }
+primitive_derive! { CBool }
+primitive_derive! { COrdering }
 
 raw_pointer_derive! { const }
 raw_pointer_derive! { mut }
@@ -438,18 +516,16 @@ fieldless_enum_derive! {
     |i: &u32| char::from_u32(*i).is_some()
 }
 fieldless_enum_derive! {
-    bool => u8: {2}:
-    |i: &u8| *i == 0 || *i == 1
+    bool => CBool: {CBool::NICHE}:
+    |i: &CBool| i.0 == 0 || i.0 == 1;
+    |source: CBool| source.try_into().ok();
+    |source: bool| source.into()
 }
 fieldless_enum_derive! {
-    Ordering => i8: {2}:
-    |i: &i8| (-1..=1).contains(i);
-    |source| match source {
-        -1 => Some(Ordering::Less),
-        0 => Some(Ordering::Equal),
-        1 => Some(Ordering::Greater),
-        _ => None,
-    }
+    Ordering => COrdering: {COrdering::NICHE}:
+    |i: &COrdering| (-1..=1).contains(&i.0);
+    |source: COrdering| source.try_into().ok();
+    |source: Ordering| source.into()
 }
 
 #[cfg(test)]

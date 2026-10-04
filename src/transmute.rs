@@ -178,56 +178,56 @@ mod tests {
     #[test]
     fn transparent_type() {
         assert_impl_all!(bool:
-            Niche<CType = u8>,
+            Niche<CType = crate::primitives::CBool>,
             Decode<'static>,
             Encode,
         );
         assert_impl_all!(&bool:
-            Niche<CType = *const u8>,
+            Niche<CType = *const crate::primitives::CBool>,
             Decode<'static>,
             Encode,
         );
         assert_impl_all!(&mut bool:
-            Niche<CType = *mut u8>,
+            Niche<CType = *mut crate::primitives::CBool>,
             Decode<'static>,
             Encode,
         );
         #[cfg(feature = "alloc")]
         assert_impl_all!(Box<bool>:
-            Niche<CType = CBox<u8>>,
+            Niche<CType = CBox<crate::primitives::CBool>>,
             Decode<'static>,
             Encode,
         );
         assert_impl_all!(&[bool]:
-            Niche<CType = CSlice<u8>>,
+            Niche<CType = CSlice<crate::primitives::CBool>>,
             Decode<'static>,
             Encode,
         );
         #[cfg(feature = "alloc")]
         assert_impl_all!(&mut [bool]:
-            Niche<CType = CSliceMut<u8>>,
+            Niche<CType = CSliceMut<crate::primitives::CBool>>,
             Decode<'static>,
             Encode,
         );
         #[cfg(feature = "alloc")]
         assert_impl_all!(Box<[bool]>:
-            Niche<CType = CBoxedSlice<u8>>,
+            Niche<CType = CBoxedSlice<crate::primitives::CBool>>,
             Decode<'static>,
             Encode,
         );
         #[cfg(feature = "alloc")]
         assert_impl_all!(Vec<bool>:
-            Niche<CType = CBoxedSlice<u8>>,
+            Niche<CType = CBoxedSlice<crate::primitives::CBool>>,
             Decode<'static>,
             Encode,
         );
         assert_impl_all!([bool; 2]:
-            Niche<CType = [u8; 2]>,
+            Niche<CType = [crate::primitives::CBool; 2]>,
             Decode<'static>,
             Encode,
         );
         assert_impl_all!(Option<bool>:
-            Niche<CType = u8>,
+            Niche<CType = crate::primitives::CBool>,
             Decode<'static>,
             Encode,
         );
@@ -247,7 +247,7 @@ mod tests {
         );
         #[cfg(feature = "alloc")]
         assert_impl_all!(Box<&bool>:
-            Niche<CType = CBox<*const u8>>,
+            Niche<CType = CBox<*const crate::primitives::CBool>>,
             Decode<'static>,
             Encode,
         );
@@ -289,51 +289,51 @@ mod tests {
     #[test]
     fn transparent_ref() {
         assert_impl_all!(&&bool:
-            Niche<CType = *const *const u8>,
+            Niche<CType = *const *const crate::primitives::CBool>,
             Decode<'static>,
             Encode,
         );
         assert_impl_all!(&mut &bool:
-            Niche<CType = *mut *const u8>,
+            Niche<CType = *mut *const crate::primitives::CBool>,
             Decode<'static>,
             Encode,
         );
         #[cfg(feature = "alloc")]
         assert_impl_all!(Box<&bool>:
-            Niche<CType = CBox<*const u8>>,
+            Niche<CType = CBox<*const crate::primitives::CBool>>,
             Decode<'static>,
             Encode,
         );
         assert_impl_all!(&[&bool]:
-            Niche<CType = CSlice<*const u8>>,
+            Niche<CType = CSlice<*const crate::primitives::CBool>>,
             Decode<'static>,
             Encode,
         );
         #[cfg(feature = "alloc")]
         assert_impl_all!(&mut [&bool]:
-            Niche<CType = CSliceMut<*const u8>>,
+            Niche<CType = CSliceMut<*const crate::primitives::CBool>>,
             Decode<'static>,
             Encode,
         );
         #[cfg(feature = "alloc")]
         assert_impl_all!(Box<[&bool]>:
-            Niche<CType = CBoxedSlice<*const u8>>,
+            Niche<CType = CBoxedSlice<*const crate::primitives::CBool>>,
             Decode<'static>,
             Encode,
         );
         #[cfg(feature = "alloc")]
         assert_impl_all!(Vec<&bool>:
-            Niche<CType = CBoxedSlice<*const u8>>,
+            Niche<CType = CBoxedSlice<*const crate::primitives::CBool>>,
             Decode<'static>,
             Encode,
         );
         assert_impl_all!([&bool; 2]:
-            Niche<CType = [*const u8; 2]>,
+            Niche<CType = [*const crate::primitives::CBool; 2]>,
             Decode<'static>,
             Encode,
         );
         assert_impl_all!(Option<&bool>:
-            ReprC<CType = *const u8>,
+            ReprC<CType = *const crate::primitives::CBool>,
             Decode<'static>,
             Encode,
         );
@@ -394,48 +394,48 @@ mod tests {
     #[test]
     fn transparent_ref_mut() {
         assert_impl_all!(&&mut bool:
-            Niche<CType = *const *mut u8>,
+            Niche<CType = *const *mut crate::primitives::CBool>,
             Decode<'static>,
             Encode,
         );
         assert_impl_all!(&mut &mut bool:
-            Niche<CType = *mut *mut u8>,
+            Niche<CType = *mut *mut crate::primitives::CBool>,
             Decode<'static>,
         );
         #[cfg(feature = "alloc")]
         assert_impl_all!(Box<&mut bool>:
-            Niche<CType = CBox<*mut u8>>,
+            Niche<CType = CBox<*mut crate::primitives::CBool>>,
             Decode<'static>,
             Encode,
         );
         assert_impl_all!(&[&mut bool]:
-            Niche<CType = CSlice<*mut u8>>,
+            Niche<CType = CSlice<*mut crate::primitives::CBool>>,
             Decode<'static>,
             Encode,
         );
         assert_impl_all!(&mut [&mut bool]:
-            Niche<CType = CSliceMut<*mut u8>>,
+            Niche<CType = CSliceMut<*mut crate::primitives::CBool>>,
             Decode<'static>,
         );
         #[cfg(feature = "alloc")]
         assert_impl_all!(Box<[&mut bool]>:
-            Niche<CType = CBoxedSlice<*mut u8>>,
+            Niche<CType = CBoxedSlice<*mut crate::primitives::CBool>>,
             Decode<'static>,
             Encode,
         );
         #[cfg(feature = "alloc")]
         assert_impl_all!(Vec<&mut bool>:
-            Niche<CType = CBoxedSlice<*mut u8>>,
+            Niche<CType = CBoxedSlice<*mut crate::primitives::CBool>>,
             Decode<'static>,
             Encode
         );
         assert_impl_all!([&mut bool; 2]:
-            Niche<CType = [*mut u8; 2]>,
+            Niche<CType = [*mut crate::primitives::CBool; 2]>,
             Decode<'static>,
             Encode
         );
         assert_impl_all!(Option<&mut bool>:
-            ReprC<CType = *mut u8>,
+            ReprC<CType = *mut crate::primitives::CBool>,
             Decode<'static>,
             Encode
         );

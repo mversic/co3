@@ -622,20 +622,23 @@ mod tests {
     #[test]
     fn maybe_uninit_lowers_without_validating_or_encoding_the_inner_value() {
         assert_impl_all!(MaybeUninit<bool>:
-            ReprC<CType = MaybeUninit<u8>>,
+            ReprC<CType = MaybeUninit<crate::primitives::CBool>>,
             CheckedTransmute,
             Decode<'static>,
             Encode,
         );
         assert_impl_all!(MaybeUninit<u8>: CType, CFnArg, CFnReturn);
 
-        let source = MaybeUninit::new(2_u8);
+        let source = MaybeUninit::new(crate::primitives::CBool::NICHE);
         assert!(unsafe { <MaybeUninit<bool> as CheckedTransmute>::is_valid(&source) });
 
         let decoded = unsafe { crate::decode::<MaybeUninit<bool>>(source) }.unwrap();
         let encoded = crate::encode(decoded);
 
-        assert_eq!(unsafe { encoded.assume_init() }, 2);
+        assert_eq!(
+            unsafe { encoded.assume_init() },
+            crate::primitives::CBool::NICHE
+        );
     }
 
     // TODO: Enable

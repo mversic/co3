@@ -11,6 +11,7 @@ use crate::boxed::{CBox, CBoxCell, CBoxedSlice, CBoxedSliceCell};
 use crate::{
     CType, ReprC, assert_arr_has_non_zero_len,
     option::ReprCOption,
+    primitives::CBool,
     result::ReprCResult,
     slice::{CSlice, CSliceMut},
 };
@@ -133,13 +134,13 @@ disjoint_impls! {
     where
         Self: ReprC<CType = <bool as ReprC>::CType>,
     {
-        const NICHE_VALUE: Self::CType = 3;
+        const NICHE_VALUE: Self::CType = CBool::from_raw(3);
     }
     impl Niche for Option<Option<bool>>
     where
         Self: ReprC<CType = <bool as ReprC>::CType>,
     {
-        const NICHE_VALUE: Self::CType = 4;
+        const NICHE_VALUE: Self::CType = CBool::from_raw(4);
     }
 }
 
@@ -174,13 +175,13 @@ mod tests {
     #[test]
     fn nested_option_niche_family() {
         assert_impl_all!(Option<bool>:
-            Niche<CType = u8>,
+            Niche<CType = CBool>,
             Decode<'static>,
             Encode,
 
         );
         assert_impl_all!(Option<Option<bool>>:
-            Niche<CType = u8>,
+            Niche<CType = CBool>,
             Decode<'static>,
             Encode,
 
@@ -197,9 +198,9 @@ mod tests {
 
     #[test]
     fn niche_values() {
-        assert_eq!(core::ptr::null::<u8>(), crate::encode(None::<&bool>));
+        assert_eq!(core::ptr::null::<CBool>(), crate::encode(None::<&bool>));
         assert_eq!(
-            core::ptr::null::<u8>(),
+            core::ptr::null_mut::<CBool>(),
             co3::soft_encode(None::<&mut bool>, &mut Default::default())
         );
 

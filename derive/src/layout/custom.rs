@@ -163,7 +163,7 @@ pub(super) fn derive_custom_repr_c(
             where
                 Self: '_išč,
             {
-                let value: #intermediate = self.into();
+                let value: #intermediate = core::convert::Into::into(self);
                 let encoded = co3::stored::EncodeOwned::soft_encode(value, store);
                 #encode_niche_check
                 encoded
