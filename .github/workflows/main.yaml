@@ -89,6 +89,22 @@ jobs:
         RUSTFLAGS: -D warnings
       run: cargo test --workspace
 
+  no-std:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    steps:
+    - uses: actions/checkout@v7
+    - uses: dtolnay/rust-toolchain@stable
+      with:
+        targets: thumbv7em-none-eabi
+    - uses: Swatinem/rust-cache@v2
+      with:
+        key: no-std
+
+    - name: Check all features on target without std
+      run: cargo check -p co3 --target thumbv7em-none-eabi --all-features
+
   miri:
     runs-on: ubuntu-latest
     timeout-minutes: 15
