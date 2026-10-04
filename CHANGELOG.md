@@ -7,6 +7,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.6.0] - 2026-10-04
+
+### Added
+
+- Support `#[unpack]` on method receivers and raw pointers to wide types.
+- Implement `Unpack2` for raw and `NonNull` pointers to wide types.
+- Derive `Wide` for eligible `#[repr_c(identity)]` dynamically sized structs.
+
+### Changed
+
+- Change `Wide` API to take raw pointers instead of references.
+- Move conversion store structs, including `ArrayStore`, from `stored` to `sync`.
+- Use `CBoxCell` types as the C-compatible representations of interior mutable boxes.
+
+### Fixed
+
+- Correct conversion and borrowing of interior mutable slices and boxes.
+
 ## [0.5.3] - 2026-10-02
 
 ### Added
