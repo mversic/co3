@@ -64,6 +64,11 @@ macro_rules! non_zero_derive {
             unsafe fn soft_decode<'itm: 'd>(source: Self::CType, (): &mut ()) -> Option<Self> {
                 Self::new(source)
             }
+
+            #[inline(always)]
+            unsafe fn soft_decode_unchecked<'itm: 'd>(source: Self::CType, (): &mut ()) -> Self {
+                unsafe { Self::new_unchecked(source) }
+            }
         }
 
         impl Encode for NonZero<$primitive> {}
@@ -259,6 +264,15 @@ unsafe impl<'d, T: CType + ?Sized> DecodeOwned<'d> for NonNull<T> {
         let ptr = unsafe { DecodeOwned::soft_decode(source, store)? };
         NonNull::new(ptr)
     }
+
+    #[inline(always)]
+    unsafe fn soft_decode_unchecked<'itm: 'd>(
+        source: Self::CType,
+        store: &'itm mut Self::Store,
+    ) -> Self {
+        let ptr = unsafe { <*mut T as DecodeOwned>::soft_decode_unchecked(source, store) };
+        unsafe { NonNull::new_unchecked(ptr) }
+    }
 }
 
 impl<T: CType + ?Sized> Encode for NonNull<T> {}
@@ -331,6 +345,12 @@ unsafe impl<'d> DecodeOwned<'d> for String {
         let bytes = unsafe { crate::stored::decode_owned(source)? };
         String::from_utf8(bytes).ok()
     }
+
+    #[inline(always)]
+    unsafe fn soft_decode_unchecked<'itm: 'd>(source: Self::CType, (): &mut ()) -> Self {
+        let bytes = unsafe { crate::stored::decode_owned_unchecked(source) };
+        unsafe { String::from_utf8_unchecked(bytes) }
+    }
 }
 
 #[cfg(feature = "alloc")]
@@ -389,6 +409,14 @@ unsafe impl<'d, R: DecodeOwned<'d, CType: Copy>> DecodeOwned<'d> for UnsafeCell<
         store: &'itm mut Self::Store,
     ) -> Option<Self> {
         unsafe { R::soft_decode(source, store) }.map(Self::new)
+    }
+
+    #[inline(always)]
+    unsafe fn soft_decode_unchecked<'itm: 'd>(
+        source: Self::CType,
+        store: &'itm mut Self::Store,
+    ) -> Self {
+        Self::new(unsafe { R::soft_decode_unchecked(source, store) })
     }
 }
 
@@ -450,6 +478,14 @@ unsafe impl<'d, R: DecodeOwned<'d, CType: Copy>> DecodeOwned<'d> for Cell<R> {
         store: &'itm mut Self::Store,
     ) -> Option<Self> {
         unsafe { R::soft_decode(source, store) }.map(Self::new)
+    }
+
+    #[inline(always)]
+    unsafe fn soft_decode_unchecked<'itm: 'd>(
+        source: Self::CType,
+        store: &'itm mut Self::Store,
+    ) -> Self {
+        Self::new(unsafe { R::soft_decode_unchecked(source, store) })
     }
 }
 

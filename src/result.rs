@@ -129,6 +129,14 @@ impl<T: Copy, E: Copy> ReprCResult<T, E> {
             output.assume_init()
         }
     }
+
+    pub(crate) unsafe fn into_result_unchecked(self) -> Result<T, E> {
+        match self.tag() {
+            0 => Ok(unsafe { self.ok.1.assume_init() }),
+            1 => Err(unsafe { self.err.1.assume_init() }),
+            _ => unsafe { core::hint::unreachable_unchecked() },
+        }
+    }
 }
 
 impl<T: Copy, E: Copy> Copy for ReprCResult<T, E> {}
@@ -288,6 +296,28 @@ unsafe impl<'d, T: DecodeOwned<'d, CType: Copy> + Copy, E: DecodeOwned<'d, CType
                 }))
             }
             _ => Some(source.forward_payload()),
+        }
+    }
+
+    #[inline(always)]
+    unsafe fn soft_decode_unchecked<'itm: 'd>(
+        source: Self::CType,
+        store: &'itm mut Self::Store,
+    ) -> Self {
+        match source.tag() {
+            0 => {
+                let Result::Ok(store) = store.insert(Result::Ok(Default::default())) else {
+                    unreachable!()
+                };
+                Self::Ok(unsafe { T::soft_decode_unchecked(source.ok.1.assume_init(), store) })
+            }
+            1 => {
+                let Result::Err(store) = store.insert(Result::Err(Default::default())) else {
+                    unreachable!()
+                };
+                Self::Err(unsafe { E::soft_decode_unchecked(source.err.1.assume_init(), store) })
+            }
+            _ => source.forward_payload(),
         }
     }
 }

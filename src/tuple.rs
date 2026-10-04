@@ -180,6 +180,16 @@ macro_rules! impl_tuple {
                 let store: private_store::Store<$($ty::Store),*> = store.into();
                 Some(unsafe { ($( $ty::soft_decode($ty, store.$ty)?, )*) })
             }
+
+            #[inline(always)]
+            #[expect(non_snake_case)]
+            unsafe fn soft_decode_unchecked<'itm: 'd>(source: Self::CType, store: &'itm mut Self::Store) -> Self {
+                impl_tuple! {@decl_priv_store $($ty),*}
+
+                let $ffi_ty($($ty),*) = source;
+                let store: private_store::Store<$($ty::Store),*> = store.into();
+                unsafe { ($( $ty::soft_decode_unchecked($ty, store.$ty), )*) }
+            }
         }
         unsafe impl<'d, $($ty: DecodeOwned<'d, CType: Copy>),*> DecodeOwned<'d> for $ffi_ty<$($ty),*> {
             type Store = ($( $ty::Store, )*);
@@ -192,6 +202,16 @@ macro_rules! impl_tuple {
                 let $ffi_ty($($ty),*) = source;
                 let store: private_store::Store<$($ty::Store,)*> = store.into();
                 Some(unsafe { $ffi_ty($( $ty::soft_decode($ty, store.$ty)? ),*) })
+            }
+
+            #[inline(always)]
+            #[expect(non_snake_case)]
+            unsafe fn soft_decode_unchecked<'itm: 'd>(source: Self::CType, store: &'itm mut Self::Store) -> Self {
+                impl_tuple! {@decl_priv_store $($ty),*}
+
+                let $ffi_ty($($ty),*) = source;
+                let store: private_store::Store<$($ty::Store),*> = store.into();
+                unsafe { $ffi_ty($( $ty::soft_decode_unchecked($ty, store.$ty) ),*) }
             }
         }
 

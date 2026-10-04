@@ -14,15 +14,15 @@ disjoint_impls! {
     /// # Safety
     ///
     /// - `Self` and `Self::CType` must be mutually transmutable (this includes [`Drop`] semantics)
-    /// - `Self::is_valid` must not return false negatives, i.e. return `true` for trap representations
+    /// - `Self::is_valid` must return `false` for trap representations and `true` for valid representations
     pub unsafe trait CheckedTransmute: ReprC {
         /// Called when transmuting an [`ReprC::CType`] back into [`Self`] to check for trap representations.
         ///
-        /// This function must never return false negatives, i.e. return `true` for a trap representation.
+        /// Return `true` only when `target` is a valid representation of `Self`.
         ///
         /// # Safety
         ///
-        /// pointers in `Self::Target` must be valid for reads
+        /// Any pointers dereferenced while checking `target` must be valid for reads.
         unsafe fn is_valid(target: &Self::CType) -> bool;
     }
 

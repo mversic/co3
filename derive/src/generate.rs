@@ -3321,6 +3321,11 @@ fn gen_owned_extern_type_impls(
             unsafe fn soft_decode<'itm: 'd>(source: Self::CType, (): &mut ()) -> Option<Self> {
                 unsafe { <Self as #co3::transmute::CheckedTransmute>::is_valid(&source) }.then_some(Self(source.0))
             }
+
+            #[inline(always)]
+            unsafe fn soft_decode_unchecked<'itm: 'd>(source: Self::CType, (): &mut ()) -> Self {
+                Self(source.0)
+            }
         }
 
         impl #impl_generics #co3::Encode for #owned_ident #ty_generics #where_clause {}

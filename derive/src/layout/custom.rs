@@ -187,6 +187,20 @@ pub(super) fn derive_custom_repr_c(
                 #custom_validation
                 Some(value)
             }
+
+            unsafe fn soft_decode_unchecked<'_išč: '_dšč>(
+                source: Self::CType,
+                store: &'_išč mut Self::Store,
+            ) -> Self {
+                let value = unsafe {
+                    co3::stored::DecodeOwned::soft_decode_unchecked(source, store)
+                };
+                unsafe {
+                    <Self as core::convert::TryFrom<#intermediate>>::try_from(value)
+                        .ok()
+                        .unwrap_unchecked()
+                }
+            }
         }
 
         impl #encode_impl_generics co3::Encode for #name #ty_generics #encode_where_clause {}

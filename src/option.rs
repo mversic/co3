@@ -104,6 +104,14 @@ impl<T> ReprCOption<T> {
             output.assume_init()
         }
     }
+
+    pub(crate) unsafe fn into_option_unchecked(self) -> Option<T> {
+        match self.tag {
+            0 => None,
+            1 => Some(unsafe { self.payload.assume_init() }),
+            _ => unsafe { core::hint::unreachable_unchecked() },
+        }
+    }
 }
 
 impl<T: Copy> Copy for ReprCOption<T> {}
@@ -213,6 +221,19 @@ unsafe impl<'d, T: DecodeOwned<'d, CType: Copy>> DecodeOwned<'d> for ReprCOption
                 Some(Self::Some(payload))
             }
             _ => Some(source.forward_payload()),
+        }
+    }
+
+    #[inline(always)]
+    unsafe fn soft_decode_unchecked<'itm: 'd>(
+        source: Self::CType,
+        store: &'itm mut Self::Store,
+    ) -> Self {
+        match source.tag {
+            1 => {
+                Self::Some(unsafe { T::soft_decode_unchecked(source.payload.assume_init(), store) })
+            }
+            _ => source.forward_payload(),
         }
     }
 }

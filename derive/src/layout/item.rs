@@ -312,7 +312,7 @@ fn gen_struct_codec_impls(
             gen_ctype_name(name)
         };
 
-        let (encode_body, decode_body) =
+        let (encode_body, decode_body, decode_unchecked_body) =
             gen_record_conversion(None, quote!(Self), fields, is_valid);
 
         CodecImpls {
@@ -325,6 +325,10 @@ fn gen_struct_codec_impls(
             decode_impl: quote! {
                 let #ctype_name #fields_destructure = source;
                 #decode_body
+            },
+            decode_unchecked_impl: quote! {
+                let #ctype_name #fields_destructure = source;
+                #decode_unchecked_body
             },
         }
     };
@@ -381,7 +385,7 @@ fn gen_enum_codec_impls(
         )
     };
 
-    let (variants_encode, variants_decode): (Vec<_>, Vec<_>) = variants
+    let variants: Vec<_> = variants
         .iter()
         .enumerate()
         .map(|(idx, variant)| {
@@ -408,7 +412,7 @@ fn gen_enum_codec_impls(
                 Some(ReprKind::C(None)) => unreachable!(),
             };
 
-            let (encode_body, decode_body) = gen_record_conversion(
+            let (encode_body, decode_body, decode_unchecked_body) = gen_record_conversion(
                 variant_tag,
                 quote!(Self::#variant_name),
                 &variant.fields,
@@ -501,6 +505,16 @@ fn gen_enum_codec_impls(
                     #decode_body
                 }
             };
+            let decode_variant_unchecked = quote! {
+                {
+                    let source = #decode_source;
+
+                    #decode_destructure
+                    #decode_store_init
+
+                    #decode_unchecked_body
+                }
+            };
 
             (
                 quote! {
@@ -510,9 +524,22 @@ fn gen_enum_codec_impls(
                     }
                 },
                 quote! { #tag_value => #decode_variant },
+                quote! { #tag_value => #decode_variant_unchecked },
             )
         })
-        .unzip();
+        .collect();
+    let variants_encode = variants
+        .iter()
+        .map(|(encode, _, _)| encode.clone())
+        .collect::<Vec<_>>();
+    let variants_decode = variants
+        .iter()
+        .map(|(_, decode, _)| decode.clone())
+        .collect::<Vec<_>>();
+    let variants_decode_unchecked = variants
+        .iter()
+        .map(|(_, _, decode)| decode.clone())
+        .collect::<Vec<_>>();
 
     let decode_impl = match repr {
         Some(ReprKind::C(Some(_))) => quote! {
@@ -532,6 +559,24 @@ fn gen_enum_codec_impls(
         },
         _ => unreachable!(),
     };
+    let decode_unchecked_impl = match repr {
+        Some(ReprKind::C(Some(_))) => quote! {
+            match source.tag {
+                #(#variants_decode_unchecked,)*
+                _ => unsafe { core::hint::unreachable_unchecked() },
+            }
+        },
+        None | Some(ReprKind::Primitive(_)) => quote! {
+            {
+                let repr_value = <*const _>::cast::<#tag_type>(core::ptr::from_ref(&source));
+                match unsafe { *repr_value } {
+                    #(#variants_decode_unchecked,)*
+                    _ => unsafe { core::hint::unreachable_unchecked() },
+                }
+            }
+        },
+        _ => unreachable!(),
+    };
 
     let codec_impls = CodecImpls {
         encode_store,
@@ -542,6 +587,7 @@ fn gen_enum_codec_impls(
             }
         },
         decode_impl,
+        decode_unchecked_impl,
     };
 
     gen_codec_impls::<true>(is_view, name, generics, &fields, codec_impls)
@@ -579,7 +625,7 @@ fn gen_transparent_enum_codec_impls(
         .and_then(|attrs| attrs.is_valid.as_ref());
     let encode_store = encode_store_type(&variant.fields);
     let decode_store = decode_store_type(&variant.fields);
-    let (encode_body, decode_body) = gen_record_conversion(
+    let (encode_body, decode_body, decode_unchecked_body) = gen_record_conversion(
         None,
         quote!(Self::#variant_name),
         &variant.fields,
@@ -604,6 +650,10 @@ fn gen_transparent_enum_codec_impls(
             decode_impl: quote! {
                 let #ctype_name #destructure_fields = source;
                 #decode_body
+            },
+            decode_unchecked_impl: quote! {
+                let #ctype_name #destructure_fields = source;
+                #decode_unchecked_body
             },
         },
     )
@@ -939,12 +989,30 @@ pub(super) fn derive_fieldless_enum(
     };
 
     let tag_ctype: syn::Type = tag_type.clone().unwrap_or_else(|| parse_quote!(()));
+    let ctype_name = gen_ctype_name(name);
     let variants_decode = variants.iter().map(|variant| {
         let variant_name = &variant.ident;
         quote! { value if value == Self::#variant_name as #tag_ctype => Some(Self::#variant_name) }
     });
+    let decode_unchecked = if tag_type.is_some() {
+        let variants = variants.iter().map(|variant| {
+            let variant_name = &variant.ident;
+            quote! { value if value == Self::#variant_name as #tag_ctype => Self::#variant_name }
+        });
+        quote! {
+            match source.0 {
+                #(#variants,)*
+                _ => unsafe { core::hint::unreachable_unchecked() },
+            }
+        }
+    } else {
+        let transparent_variant = &variants[0].ident;
+        quote! {
+            let #ctype_name(()) = source;
+            Self::#transparent_variant
+        }
+    };
 
-    let ctype_name = gen_ctype_name(name);
     let ctype_ty = quote!(#ctype_name #ty_generics);
     let ctype_def = gen_fieldless_enum_ctype(&tag_ctype, alignment, vis, name, generics);
     let variant_consts = variants.iter().map(|variant| {
@@ -1026,6 +1094,10 @@ pub(super) fn derive_fieldless_enum(
             unsafe fn soft_decode<'_išč: '_dšč>(source: Self::CType, (): &mut ()) -> Option<Self> {
                 <Self as core::convert::TryFrom<_>>::try_from(source).ok()
             }
+
+            unsafe fn soft_decode_unchecked<'_išč: '_dšč>(source: Self::CType, (): &mut ()) -> Self {
+                #decode_unchecked
+            }
         }
 
         impl #impl_generics co3::Encode for #name #ty_generics #where_clause {}
@@ -1069,7 +1141,7 @@ fn gen_record_conversion(
     source_head: TokenStream,
     fields: &syn::Fields,
     is_valid: Option<&syn::ExprClosure>,
-) -> (TokenStream, TokenStream) {
+) -> (TokenStream, TokenStream, TokenStream) {
     let store_vars = tuple_field_exprs(fields.len());
     let field_vars = field_vars(fields);
     let field_types = fields.iter().map(|field| &field.ty).collect::<Vec<_>>();
@@ -1108,6 +1180,15 @@ fn gen_record_conversion(
                     #(#field_vars),*
                 })
             },
+            quote! { #(
+                let #field_vars = unsafe {
+                    co3::stored::DecodeOwned::soft_decode_unchecked(#field_vars, #store_vars)
+                }; )*
+
+                #source_head {
+                    #(#field_vars),*
+                }
+            },
         ),
         syn::Fields::Unnamed(_) => (
             quote! {
@@ -1126,6 +1207,15 @@ fn gen_record_conversion(
                     #(#field_vars),*
                 ))
             },
+            quote! { #(
+                let #field_vars = unsafe {
+                    co3::stored::DecodeOwned::soft_decode_unchecked(#field_vars, #store_vars)
+                }; )*
+
+                #source_head(
+                    #(#field_vars),*
+                )
+            },
         ),
     }
 }
@@ -1135,6 +1225,7 @@ struct CodecImpls {
     decode_store: TokenStream,
     encode_impl: TokenStream,
     decode_impl: TokenStream,
+    decode_unchecked_impl: TokenStream,
 }
 
 fn gen_codec_impls<const ADD_COPY: bool>(
@@ -1149,6 +1240,7 @@ fn gen_codec_impls<const ADD_COPY: bool>(
         decode_store,
         encode_impl,
         decode_impl,
+        decode_unchecked_impl,
     } = codec_impls;
 
     let (impl_generics, ty_generics, where_clause) = generics.split_for_impl();
@@ -1248,6 +1340,10 @@ fn gen_codec_impls<const ADD_COPY: bool>(
 
             unsafe fn soft_decode<'_išč: '_dšč>(source: Self::CType, store: &'_išč mut Self::Store) -> Option<Self> {
                 #decode_impl
+            }
+
+            unsafe fn soft_decode_unchecked<'_išč: '_dšč>(source: Self::CType, store: &'_išč mut Self::Store) -> Self {
+                #decode_unchecked_impl
             }
         }
 

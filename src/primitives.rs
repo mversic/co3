@@ -299,6 +299,10 @@ macro_rules! impl_fn_types {
             unsafe fn soft_decode<'itm: 'd>(source: Self::CType, (): &mut ()) -> Option<Self> {
                 source
             }
+
+            unsafe fn soft_decode_unchecked<'itm: 'd>(source: Self::CType, (): &mut ()) -> Self {
+                unsafe { source.unwrap_unchecked() }
+            }
         }
         impl<$($arg: CFnArg,)* R: CFnReturn> Encode for $fn_type
         where $fn_type: rust_spec::RustSpec<Layout = rust_spec::Stable> {}
@@ -342,7 +346,7 @@ macro_rules! fieldless_enum_derive {
             |source: $src| -> $dst { source as $dst }
         }
     };
-    ( $src:ty => $dst:ty: {$niche_val:expr}: $validity_fn:expr; $decode_fn:expr; $encode_fn:expr ) => {
+    ( $src:ty => $dst:ty: {$niche_val:expr}: $validity_fn:expr; $decode_fn:expr; $encode_fn:expr $(; $unchecked_fn:expr)? ) => {
         unsafe impl CheckedTransmute for $src {
             #[inline(always)]
             unsafe fn is_valid(target: &Self::CType) -> bool {
@@ -389,6 +393,10 @@ macro_rules! fieldless_enum_derive {
                 let source = unsafe { crate::stored::decode_owned::<$dst>(source)? };
                 $decode_fn(source)
             }
+
+            $(unsafe fn soft_decode_unchecked<'itm: 'd>(source: Self::CType, (): &mut ()) -> Self {
+                ($unchecked_fn)(source)
+            })?
         }
 
         impl Encode for $src {}
@@ -480,6 +488,16 @@ unsafe impl<'d, R: DecodeOwned<'d, CType: Copy>, const N: usize> DecodeOwned<'d>
 
         Some(decoded.map(|item| unsafe { item.unwrap_unchecked() }))
     }
+
+    unsafe fn soft_decode_unchecked<'itm: 'd>(
+        source: Self::CType,
+        store: &'itm mut Self::Store,
+    ) -> Self {
+        assert_arr_has_non_zero_len::<N>();
+
+        let mut stores = store.0.iter_mut();
+        source.map(|item| unsafe { R::soft_decode_unchecked(item, stores.next().unwrap()) })
+    }
 }
 
 unsafe impl<R: CType, const N: usize> CType for [R; N] {}
@@ -513,19 +531,31 @@ impl_fn_types! {
 
 fieldless_enum_derive! {
     char => u32: {0x110000}:
-    |i: &u32| char::from_u32(*i).is_some()
+    |i: &u32| char::from_u32(*i).is_some();
+    |source: u32| char::from_u32(source);
+    |source: char| source as u32;
+    |source: u32| unsafe { char::from_u32_unchecked(source) }
 }
 fieldless_enum_derive! {
     bool => CBool: {CBool::NICHE}:
     |i: &CBool| i.0 == 0 || i.0 == 1;
     |source: CBool| source.try_into().ok();
-    |source: bool| source.into()
+    |source: bool| source.into();
+    |source: CBool| unsafe { core::mem::transmute::<CBool, bool>(source) }
 }
 fieldless_enum_derive! {
     Ordering => COrdering: {COrdering::NICHE}:
     |i: &COrdering| (-1..=1).contains(&i.0);
     |source: COrdering| source.try_into().ok();
-    |source: Ordering| source.into()
+    |source: Ordering| source.into();
+    |source: COrdering| unsafe {
+        match source.0 {
+            -1 => Ordering::Less,
+            0 => Ordering::Equal,
+            1 => Ordering::Greater,
+            _ => core::hint::unreachable_unchecked(),
+        }
+    }
 }
 
 #[cfg(test)]

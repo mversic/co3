@@ -838,6 +838,22 @@ pub unsafe fn soft_decode<'d, T: Decode<'d>>(
     unsafe { T::soft_decode(source, store) }
 }
 
+/// Decode a value known to be accepted by [`soft_decode`] using external storage.
+///
+/// The default implementation still performs checked decoding. A type may
+/// override the unchecked path to avoid validation.
+///
+/// # Safety
+///
+/// All pointer validity, aliasing, allocation, and ownership requirements of
+/// [`soft_decode`] apply, and `soft_decode(source, store)` must return `Some`.
+pub unsafe fn soft_decode_unchecked<'d, T: Decode<'d>>(
+    source: T::CType,
+    store: &'d mut T::Store,
+) -> T {
+    unsafe { T::soft_decode_unchecked(source, store) }
+}
+
 /// Perform the conversion from [`T::CType`](ReprC::CType) into `T`.
 ///
 /// # Safety
@@ -845,6 +861,19 @@ pub unsafe fn soft_decode<'d, T: Decode<'d>>(
 /// - All conversions from a pointer must ensure pointer validity beforehand
 pub unsafe fn decode<'d, T: Decode<'d, Store: EmptyStore> + 'd>(source: T::CType) -> Option<T> {
     unsafe { stored::decode_owned(source) }
+}
+
+/// Decode a value known to be accepted by [`decode`].
+///
+/// The default implementation still performs checked decoding. A type may
+/// override the unchecked path to avoid validation.
+///
+/// # Safety
+///
+/// All pointer validity, aliasing, allocation, and ownership requirements of
+/// [`decode`] apply, and `decode(source)` must return `Some`.
+pub unsafe fn decode_unchecked<'d, T: Decode<'d, Store: EmptyStore> + 'd>(source: T::CType) -> T {
+    unsafe { stored::decode_owned_unchecked(source) }
 }
 
 #[cfg(feature = "alloc")]
