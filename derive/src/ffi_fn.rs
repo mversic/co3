@@ -172,8 +172,12 @@ pub(crate) fn gen_abi_assertions(sig: &syn::Signature) -> TokenStream {
             }
         };
         StaticLifetimeNormalizer::default().visit_type_mut(&mut ty);
-        let cfg = cfg_attrs(attrs);
+        let cfg = cfg_attrs(attrs).collect::<Vec<_>>();
+        let identity_check = gen_implicit_primitive_checks(&ty);
+        let identity_check =
+            (!identity_check.is_empty()).then(|| quote! { #(#cfg)* #identity_check });
         quote! {
+            #identity_check
             #(#cfg)*
             const {
                 assert!(co3::impls!(#ty: co3::CFnArg), "co3 FFI argument must implement CFnArg");
@@ -184,8 +188,10 @@ pub(crate) fn gen_abi_assertions(sig: &syn::Signature) -> TokenStream {
         .cloned()
         .unwrap_or_else(|| parse_quote!(()));
     StaticLifetimeNormalizer::default().visit_type_mut(&mut return_ty);
+    let return_identity_check = gen_implicit_primitive_checks(&return_ty);
     quote! {
         #(#arguments)*
+        #return_identity_check
         const {
             assert!(co3::impls!((#return_ty): co3::CFnReturn), "co3 FFI return must implement CFnReturn");
         };
@@ -221,7 +227,11 @@ pub(crate) fn gen_definition_body(
     } else {
         quote! {}
     };
-    let encoded_output = gen_abi_return_encode(quote!(__co3_output), !fn_by_val);
+    let encoded_output = if return_ty.is_some_and(is_identity_primitive) {
+        quote!(__co3_output)
+    } else {
+        gen_abi_return_encode(quote!(__co3_output), !fn_by_val)
+    };
     let output = match failure_mode {
         FailureMode::Panic => quote! { Ok::<_, ()>(#encoded_output) },
         FailureMode::Error => match return_ty {
@@ -333,7 +343,7 @@ pub(crate) fn gen_drop_definition_body(
 }
 
 pub(crate) fn gen_return_borrow_check(return_ty: &syn::Type, fn_by_val: bool) -> TokenStream {
-    if fn_by_val {
+    if fn_by_val || is_identity_primitive(return_ty) {
         return quote! {};
     }
 
@@ -738,7 +748,9 @@ pub(crate) fn gen_input_decode_stmts<'a>(
         let decode_ty = borrowed_arg_ty(attrs, &arg_ty);
         let decode_arg = quote! { #arg_name };
 
-        let decode_call = if soft_for_arg(attrs) {
+        let decode_call = if is_identity_primitive(&arg_ty) {
+            quote! { Some(#decode_arg) }
+        } else if soft_for_arg(attrs) {
             quote! { co3::soft_decode(#decode_arg, &mut __co3_input_stores.#idx) }
         } else {
             quote! { co3::decode(#decode_arg) }
@@ -751,6 +763,10 @@ pub(crate) fn gen_input_decode_stmts<'a>(
             },
         };
 
+        let primitive_checks = gen_implicit_primitive_checks(&arg_ty);
+        if !primitive_checks.is_empty() {
+            stmts.extend(quote! { #enabled #primitive_checks });
+        }
         stmts.extend(quote! {
             #enabled
             let #arg_name: Option<#decode_ty> = unsafe { #decode_call };
@@ -1317,6 +1333,10 @@ fn synthesize_lifetime_bounds(sig: &mut syn::Signature) {
 }
 
 pub(crate) fn item_fn_input_arg_type(attrs: &[syn::Attribute], arg_ty: &Type) -> TokenStream {
+    if is_identity_primitive(arg_ty) {
+        return quote!(#arg_ty);
+    }
+
     let c_type = quote! { <#arg_ty as co3::ReprC>::CType };
 
     match ownership_mode_for_arg(attrs, arg_ty) {
@@ -1328,6 +1348,10 @@ pub(crate) fn item_fn_input_arg_type(attrs: &[syn::Attribute], arg_ty: &Type) ->
 }
 
 pub(crate) fn item_fn_output_type(return_ty: &Type) -> Type {
+    if is_identity_primitive(return_ty) {
+        return return_ty.clone();
+    }
+
     parse_quote!(<#return_ty as co3::ReprC>::CType)
 }
 
@@ -1364,7 +1388,7 @@ fn is_implicitly_by_value(ty: &Type) -> bool {
     match ty {
         Type::Reference(_) | Type::Ptr(_) | Type::FnPtr(_) => true,
         Type::Path(path) => {
-            is_copy_primitive_path(path)
+            copy_primitive_type(path).is_some()
                 || option_inner_type(ty).is_some_and(is_implicitly_by_value)
         }
         Type::Tuple(tuple) => {
@@ -1374,33 +1398,71 @@ fn is_implicitly_by_value(ty: &Type) -> bool {
     }
 }
 
-fn is_copy_primitive_path(path: &syn::TypePath) -> bool {
+fn copy_primitive_type(path: &syn::TypePath) -> Option<Type> {
     if path.qself.is_some() {
-        return false;
+        return None;
     }
 
-    path.path.segments.last().is_some_and(|segment| {
-        segment.arguments.is_empty()
-            && matches!(
-                segment.ident.to_string().as_str(),
-                "bool"
-                    | "char"
-                    | "u8"
-                    | "u16"
-                    | "u32"
-                    | "u64"
-                    | "u128"
-                    | "usize"
-                    | "i8"
-                    | "i16"
-                    | "i32"
-                    | "i64"
-                    | "i128"
-                    | "isize"
-                    | "f32"
-                    | "f64"
-            )
-    })
+    let segment = path.path.segments.last()?;
+    if !segment.arguments.is_empty() {
+        return None;
+    }
+
+    let ident = &segment.ident;
+    match ident.to_string().as_str() {
+        "bool" | "char" | "u8" | "u16" | "u32" | "u64" | "u128" | "usize" | "i8" | "i16"
+        | "i32" | "i64" | "i128" | "isize" | "f32" | "f64" => {
+            Some(parse_quote!(core::primitive::#ident))
+        }
+        "c_char" | "c_schar" | "c_uchar" | "c_short" | "c_ushort" | "c_int" | "c_uint"
+        | "c_long" | "c_ulong" | "c_longlong" | "c_ulonglong" | "c_float" | "c_double" => {
+            Some(parse_quote!(core::ffi::#ident))
+        }
+        _ => None,
+    }
+}
+
+pub(crate) fn is_identity_primitive(ty: &Type) -> bool {
+    let Type::Path(path) = peel_grouped_type(ty) else {
+        return false;
+    };
+    copy_primitive_type(path).is_some()
+        && !matches!(
+            path.path
+                .segments
+                .last()
+                .unwrap()
+                .ident
+                .to_string()
+                .as_str(),
+            "bool" | "char"
+        )
+}
+
+pub(crate) fn gen_implicit_primitive_checks(ty: &Type) -> TokenStream {
+    if !is_implicitly_by_value(ty) {
+        return quote! {};
+    }
+
+    let ty = peel_grouped_type(ty);
+    match ty {
+        Type::Path(path) => {
+            if let Some(identity) = copy_primitive_type(path) {
+                quote! {
+                    let _: fn(#ty) -> #ty = core::convert::identity::<#identity>;
+                }
+            } else if let Some(inner) = option_inner_type(ty) {
+                gen_implicit_primitive_checks(inner)
+            } else {
+                quote! {}
+            }
+        }
+        Type::Tuple(tuple) if !tuple.elems.is_empty() => {
+            let checks = tuple.elems.iter().map(gen_implicit_primitive_checks);
+            quote!(#(#checks)*)
+        }
+        _ => quote! {},
+    }
 }
 
 pub(crate) struct SelfConcretizer<'a> {
@@ -1628,6 +1690,7 @@ mod tests {
             parse_quote!(*const u8),
             parse_quote!(unsafe extern "C" fn(u8) -> u16),
             parse_quote!(u32),
+            parse_quote!(bool),
             parse_quote!(core::primitive::char),
             parse_quote!(Option<&u8>),
             parse_quote!(Option<Option<&u8>>),
@@ -1643,6 +1706,13 @@ mod tests {
                 quote!(#ty),
             );
         }
+    }
+
+    #[test]
+    fn copy_primitives_with_custom_carriers_are_not_identity_primitives() {
+        assert!(!is_identity_primitive(&parse_quote!(bool)));
+        assert!(!is_identity_primitive(&parse_quote!(core::primitive::char)));
+        assert!(is_identity_primitive(&parse_quote!(u32)));
     }
 
     #[test]

@@ -4,6 +4,7 @@ mod cfg_args;
 mod cstr;
 mod custom_repr;
 mod handles;
+mod identity_primitives;
 mod niche_value;
 mod raw_selected;
 mod raw_tagged_dispatch;

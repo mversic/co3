@@ -411,7 +411,9 @@ pub(crate) fn gen_wrapper_body_with_callee<const DISPATCHED: bool>(
             gen_return_derase::<DISPATCHED>(self_ty, dispatch_generics, output_ty, fn_by_val);
         let return_borrow_check = gen_return_borrow_check(output_ty, fn_by_val);
         let decode_error = gen_return_decode_error(failure_mode, output_ty);
-        let decode_output = if fn_by_val {
+        let decode_output = if ffi_fn::is_identity_primitive(output_ty) {
+            quote! { let __co3_out: Option<#output_ty> = Some(__co3_out); }
+        } else if fn_by_val {
             quote! {
                 let __co3_out: Option<#output_ty> = unsafe { co3::decode(__co3_out) };
             }
@@ -620,6 +622,10 @@ fn gen_input_conversion_stmts(inputs: &Punctuated<FnArg, syn::Token![,]>) -> Tok
             }
         };
         let cfg = crate::utils::cfg_attrs(attrs).collect::<Vec<_>>();
+        let primitive_checks = ffi_fn::gen_implicit_primitive_checks(ty);
+        if !primitive_checks.is_empty() {
+            stmts.extend(quote! { #(#cfg)* #primitive_checks });
+        }
 
         if let Some(inner_ty) =
             ffi_fn::inferred_unpack_option_inner(attrs, ty).expect("validated #[unpack] attribute")
@@ -631,7 +637,9 @@ fn gen_input_conversion_stmts(inputs: &Punctuated<FnArg, syn::Token![,]>) -> Tok
         }
 
         let store_name = gen_store_name(&arg_name);
-        if OwnershipMode::Borrow == ownership_mode_for_arg(attrs, ty) {
+        if !ffi_fn::is_identity_primitive(ty)
+            && OwnershipMode::Borrow == ownership_mode_for_arg(attrs, ty)
+        {
             let owner_name = format_ident!("__co3_{arg_name}_owner");
 
             stmts.extend(quote! {
@@ -645,7 +653,9 @@ fn gen_input_conversion_stmts(inputs: &Punctuated<FnArg, syn::Token![,]>) -> Tok
             });
         }
 
-        stmts.extend(if soft_for_arg(attrs) {
+        stmts.extend(if ffi_fn::is_identity_primitive(ty) {
+            quote! {}
+        } else if soft_for_arg(attrs) {
             quote! {
                 #(#cfg)*
                 let mut #store_name = Default::default();
