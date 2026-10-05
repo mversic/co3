@@ -1646,6 +1646,7 @@ fn encode_vec_elements<R: EncodeOwned>(
     store: &mut Box<[R::Store]>,
 ) -> Box<[R::CType]> {
     *store = (0..value.len()).map(|_| Default::default()).collect();
+
     value
         .into_iter()
         .zip(store)

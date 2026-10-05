@@ -1,11 +1,15 @@
 //! Conversions for types in [`core::ffi`].
 
+#[cfg(feature = "alloc")]
+use alloc::ffi::CString;
 use core::ffi::{CStr, c_char, c_void};
 
 use crate::{
     CType, ReprC,
     borrow::{Borrow, BorrowCast, BorrowCastMut, FromBorrow},
 };
+#[cfg(feature = "alloc")]
+use crate::{Encode, boxed::CBox, niche::Niche, stored::EncodeOwned};
 
 /// Pointer conversion for a nul-terminated pointee.
 ///
@@ -70,6 +74,31 @@ unsafe impl NulTerminatedRef for CStr {
     unsafe fn from_c_ptr<'a>(ptr: *const Self::CType) -> &'a Self {
         unsafe { CStr::from_ptr(ptr) }
     }
+}
+
+#[cfg(feature = "alloc")]
+impl ReprC for CString {
+    type CType = CBox<c_char>;
+}
+#[cfg(feature = "alloc")]
+unsafe impl EncodeOwned for CString {
+    type Store = ();
+
+    #[inline(always)]
+    fn soft_encode<'itm>(self, (): &mut ()) -> Self::CType
+    where
+        Self: 'itm,
+    {
+        self.into_boxed_c_str().soft_encode(&mut ())
+    }
+}
+
+#[cfg(feature = "alloc")]
+impl Encode for CString {}
+
+#[cfg(feature = "alloc")]
+impl Niche for CString {
+    const NICHE_VALUE: Self::CType = CBox::NICHE_VALUE;
 }
 
 #[cfg(test)]

@@ -1,5 +1,7 @@
 #[cfg(feature = "alloc")]
-use alloc::{string::String, vec::Vec};
+use alloc::{boxed::Box, ffi::CString, string::String, vec::Vec};
+#[cfg(feature = "alloc")]
+use core::ffi::c_char;
 use core::{
     cell::{Cell, UnsafeCell},
     marker::PhantomData,
@@ -16,7 +18,10 @@ use crate::{
     transmute::CheckedTransmute,
 };
 #[cfg(feature = "alloc")]
-use crate::{boxed::CBoxedSlice, stored::Owned};
+use crate::{
+    boxed::{CBox, CBoxedSlice},
+    stored::Owned,
+};
 
 macro_rules! non_zero_derive {
     ($($primitive:ty),+ $(,)?) => {$(
@@ -333,7 +338,7 @@ unsafe impl EncodeOwned for String {
     where
         Self: 'itm,
     {
-        crate::stored::encode_owned(self.into_bytes())
+        self.into_boxed_str().soft_encode(&mut ())
     }
 }
 #[cfg(feature = "alloc")]
@@ -342,14 +347,12 @@ unsafe impl<'d> DecodeOwned<'d> for String {
 
     #[inline(always)]
     unsafe fn soft_decode<'itm: 'd>(source: Self::CType, (): &mut ()) -> Option<Self> {
-        let bytes = unsafe { crate::stored::decode_owned(source)? };
-        String::from_utf8(bytes).ok()
+        unsafe { Box::<str>::soft_decode(source, &mut ()) }.map(Into::into)
     }
 
     #[inline(always)]
     unsafe fn soft_decode_unchecked<'itm: 'd>(source: Self::CType, (): &mut ()) -> Self {
-        let bytes = unsafe { crate::stored::decode_owned_unchecked(source) };
-        unsafe { String::from_utf8_unchecked(bytes) }
+        unsafe { Box::<str>::soft_decode_unchecked(source, &mut ()) }.into()
     }
 }
 
@@ -640,7 +643,7 @@ unsafe impl<T: EmptyStore> EmptyStore for ManuallyDrop<T> {}
 #[cfg(test)]
 mod tests {
     #[cfg(feature = "alloc")]
-    use alloc::{boxed::Box, vec};
+    use alloc::vec;
 
     #[cfg(feature = "alloc")]
     use static_assertions::assert_type_eq_all;
