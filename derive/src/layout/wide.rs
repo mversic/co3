@@ -340,7 +340,7 @@ pub(super) fn gen_alloc_methods() -> TokenStream {
     quote! {
         #[inline(always)]
         fn into_non_null(self: co3::boxed::Box<Self>) -> core::ptr::NonNull<Self::Data> {
-            co3::boxed::Box::into_non_null(self).cast::<Self::Data>()
+            co3::boxed::Box::into_non_null(self).cast()
         }
 
         #[inline(always)]

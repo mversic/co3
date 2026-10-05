@@ -63,12 +63,12 @@ macro_rules! impl_boxed_pointer {
         impl<C> Copy for $ty<C> {}
 
         impl<C> $ty<C> {
+            pub(crate) const NICHE_VALUE: Self = Self { data: core::ptr::null_mut() };
+
             /// Create [`Self`] from a [`Box<C>`].
             pub fn from_box(source: Box<C>) -> Self {
                 Self { data: Box::into_raw(source) }
             }
-
-            pub(crate) const NICHE_VALUE: Self = Self { data: core::ptr::null_mut() };
 
             /// Recover the allocation, returning `None` for the null niche.
             ///
@@ -85,6 +85,13 @@ macro_rules! impl_boxed_pointer {
             #[allow(unused)]
             pub(crate) const fn is_niche(&self) -> bool {
                 self.data.is_null()
+            }
+
+            /// Create [`Self`] from a raw data pointer
+            pub(crate) const fn from_raw_parts(data: NonNull<C>) -> Self {
+                Self {
+                    data: data.as_ptr(),
+                }
             }
         }
 
@@ -144,6 +151,8 @@ impl<C> Clone for CBoxedSliceCell<C> {
 impl<C> Copy for CBoxedSliceCell<C> {}
 
 impl<C> CBoxedSliceCell<C> {
+    pub(crate) const NICHE_VALUE: Self = Self(CBoxedSlice::NICHE_VALUE);
+
     pub fn from_boxed_slice(source: Box<[C]>) -> Self {
         Self(CBoxedSlice::from_boxed_slice(source))
     }
@@ -154,8 +163,6 @@ impl<C> CBoxedSliceCell<C> {
     pub(crate) unsafe fn into_rust(self) -> Option<Box<[C]>> {
         unsafe { self.0.into_rust() }
     }
-
-    pub(crate) const NICHE_VALUE: Self = Self(CBoxedSlice::NICHE_VALUE);
 }
 
 impl<C> core::fmt::Debug for CBoxedSlice<C> {
@@ -226,15 +233,6 @@ impl<C> Clone for CBoxedSlice<C> {
 }
 
 impl<C> Copy for CBoxedSlice<C> {}
-
-impl<C> CBox<C> {
-    /// Create [`Self`] from a raw data pointer
-    pub(crate) const fn from_raw_parts(data: NonNull<C>) -> Self {
-        Self {
-            data: data.as_ptr(),
-        }
-    }
-}
 
 impl<C> CBoxedSlice<C> {
     /// Create [`Self`] from a [`Box<[T]>`]

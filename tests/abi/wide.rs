@@ -1,4 +1,7 @@
-use std::num::NonZeroU8;
+use std::{
+    cell::{Cell, UnsafeCell},
+    num::NonZeroU8,
+};
 
 use co3::{ReprC, ffi, rust_spec::RustSpec, slice::Unpack2, wide::Wide};
 use static_assertions::assert_impl_all;
@@ -32,6 +35,61 @@ fn non_null_wide_unpacks_pointer_metadata() {
         <*mut RawBytes as Unpack2<*mut u8, usize>>::unpack(ptr.as_ptr()).unwrap();
     assert_eq!(raw_mut_data, data);
     assert_eq!(raw_mut_len, 3);
+}
+
+#[test]
+fn cell_wrappers_reconstruct_borrowed_wide_references() {
+    let cell = UnsafeCell::new([1u8, 2, 3]);
+    let ptr: *const UnsafeCell<[u8]> = &cell;
+    let data = <UnsafeCell<[u8]> as Wide>::as_ptr(ptr);
+    let len = <UnsafeCell<[u8]> as Wide>::metadata(ptr);
+    let rebuilt = unsafe { <UnsafeCell<[u8]> as Wide>::from_raw_parts(data, len) };
+    assert!(core::ptr::eq(ptr, rebuilt));
+
+    let mut cell = Cell::new([4u8, 5, 6]);
+    let ptr: *mut Cell<[u8]> = &mut cell;
+    let data = <Cell<[u8]> as Wide>::as_mut_ptr(ptr);
+    let len = <Cell<[u8]> as Wide>::metadata(ptr);
+    let rebuilt = unsafe { <Cell<[u8]> as Wide>::from_raw_parts_mut(data, len) };
+    rebuilt.get_mut()[1] = 9;
+    assert_eq!(cell.into_inner(), [4, 9, 6]);
+
+    let mut text = String::from("hé");
+    let cell = Cell::from_mut(text.as_mut_str());
+    let ptr = core::ptr::from_ref(cell);
+    let data = <Cell<str> as Wide>::as_ptr(ptr);
+    let len = <Cell<str> as Wide>::metadata(ptr);
+    let rebuilt = unsafe { <Cell<str> as Wide>::from_raw_parts(data, len) };
+    assert!(core::ptr::eq(ptr, rebuilt));
+    assert_eq!(len, 3);
+
+    let mut text = String::from("hé");
+    let cell = UnsafeCell::from_mut(text.as_mut_str());
+    let ptr = core::ptr::from_mut(cell);
+    let data = <UnsafeCell<str> as Wide>::as_mut_ptr(ptr);
+    let len = <UnsafeCell<str> as Wide>::metadata(ptr);
+    let rebuilt = unsafe { <UnsafeCell<str> as Wide>::from_raw_parts_mut(data, len) };
+    assert!(core::ptr::eq(ptr, rebuilt));
+    assert_eq!(rebuilt.get_mut(), "hé");
+}
+
+#[test]
+fn boxed_cell_wrappers_keep_their_allocation() {
+    let original: Box<UnsafeCell<[u8]>> = Box::new(UnsafeCell::new([1, 2, 3]));
+    let ptr = <UnsafeCell<[u8]> as Wide>::as_ptr(core::ptr::from_ref(&*original));
+    let len = <UnsafeCell<[u8]> as Wide>::metadata(core::ptr::from_ref(&*original));
+    let data = <UnsafeCell<[u8]> as Wide>::into_non_null(original);
+    assert_eq!(data.as_ptr(), ptr.cast_mut());
+    let mut recovered = unsafe { <UnsafeCell<[u8]> as Wide>::from_non_null(data, len) };
+    assert_eq!(recovered.get_mut(), &[1, 2, 3]);
+
+    let original: Box<Cell<[u8]>> = Box::new(Cell::new([4, 5, 6]));
+    let ptr = <Cell<[u8]> as Wide>::as_ptr(core::ptr::from_ref(&*original));
+    let len = <Cell<[u8]> as Wide>::metadata(core::ptr::from_ref(&*original));
+    let data = <Cell<[u8]> as Wide>::into_non_null(original);
+    assert_eq!(data.as_ptr(), ptr.cast_mut());
+    let mut recovered = unsafe { <Cell<[u8]> as Wide>::from_non_null(data, len) };
+    assert_eq!(recovered.get_mut(), &[4, 5, 6]);
 }
 
 #[unsafe(no_mangle)]

@@ -533,6 +533,7 @@ use rust_spec::{Stable, Unstable, size::MetadataKind};
 #[cfg(feature = "alloc")]
 use crate::boxed::{CBox, CBoxCell, CBoxedSlice, CBoxedSliceCell};
 use crate::{
+    ffi::NulTerminatedBuf,
     option::ReprCOption,
     result::ReprCResult,
     slice::{CSlice, CSliceMut},
@@ -546,7 +547,7 @@ pub mod boxed;
 pub mod cell;
 #[doc(hidden)]
 pub mod either;
-mod ffi;
+pub mod ffi;
 pub mod niche;
 pub mod ops;
 pub mod option;
@@ -560,11 +561,6 @@ pub mod tag;
 pub mod transmute;
 pub mod tuple;
 pub mod wide;
-
-trait Thin {}
-impl<K: SizedKind> Thin for rust_spec::size::Sized<K> {}
-impl Thin for ExternTypeLike {}
-impl Thin for NulTerminated {}
 
 #[cfg(feature = "alloc")]
 trait Dst {}
@@ -620,17 +616,24 @@ disjoint_impls! {
         type CType: CType + ?Sized;
     }
 
-    impl<R: ReprC + ?Sized> ReprC for &R
+    impl<R: ReprC, S: SizedKind> ReprC for &R
     where
-        R: RustSpec<Size: Thin, Mutability = Exclusive>,
+        R: RustSpec<Size = rust_spec::size::Sized<S>, Mutability = Exclusive>,
     {
         type CType = *const R::CType;
     }
     impl<R: ReprC + ?Sized> ReprC for &R
     where
-        R: RustSpec<Size: Thin, Mutability = Interior>,
+        R: RustSpec<Size = ExternTypeLike, Mutability = Exclusive>,
     {
-        type CType = *mut R::CType;
+        type CType = *const R::CType;
+    }
+    impl<R: NulTerminatedBuf<Data: ReprC> + ?Sized> ReprC for &R
+    where
+        R: RustSpec<Size = NulTerminated, Mutability = Exclusive>,
+        <<R as NulTerminatedBuf>::Data as ReprC>::CType: Sized,
+    {
+        type CType = *const <R::Data as ReprC>::CType;
     }
     impl<R: Wide<Data: ReprC, Metadata = usize> + ?Sized> ReprC for &R
     where
@@ -638,6 +641,26 @@ disjoint_impls! {
         <<R as Wide>::Data as ReprC>::CType: Sized,
     {
         type CType = CSlice<<R::Data as ReprC>::CType>;
+    }
+
+    impl<R: ReprC, S: SizedKind> ReprC for &R
+    where
+        R: RustSpec<Size = rust_spec::size::Sized<S>, Mutability = Interior>,
+    {
+        type CType = *mut R::CType;
+    }
+    impl<R: ReprC + ?Sized> ReprC for &R
+    where
+        R: RustSpec<Size = ExternTypeLike, Mutability = Interior>,
+    {
+        type CType = *mut R::CType;
+    }
+    impl<R: NulTerminatedBuf<Data: ReprC> + ?Sized> ReprC for &R
+    where
+        R: RustSpec<Size = NulTerminated, Mutability = Interior>,
+        <<R as NulTerminatedBuf>::Data as ReprC>::CType: Sized,
+    {
+        type CType = *mut <R::Data as ReprC>::CType;
     }
     impl<R: Wide<Data: ReprC, Metadata = usize> + ?Sized> ReprC for &R
     where
@@ -647,11 +670,24 @@ disjoint_impls! {
         type CType = CSliceMut<<R::Data as ReprC>::CType>;
     }
 
-    impl<R: ReprC + ?Sized> ReprC for &mut R
+    impl<R: ReprC, S: SizedKind> ReprC for &mut R
     where
-        R: RustSpec<Size: Thin>,
+        R: RustSpec<Size = rust_spec::size::Sized<S>>,
     {
         type CType = *mut R::CType;
+    }
+    impl<R: ReprC + ?Sized> ReprC for &mut R
+    where
+        R: RustSpec<Size = ExternTypeLike>,
+    {
+        type CType = *mut R::CType;
+    }
+    impl<R: NulTerminatedBuf<Data: ReprC> + ?Sized> ReprC for &mut R
+    where
+        R: RustSpec<Size = NulTerminated>,
+        <<R as NulTerminatedBuf>::Data as ReprC>::CType: Sized,
+    {
+        type CType = *mut <R::Data as ReprC>::CType;
     }
     impl<R: Wide<Data: ReprC, Metadata = usize> + ?Sized> ReprC for &mut R
     where
@@ -670,12 +706,12 @@ disjoint_impls! {
         type CType = CBox<R::CType>;
     }
     #[cfg(feature = "alloc")]
-    impl<R: ReprC, S: SizedKind> ReprC for Box<R>
+    impl<R: NulTerminatedBuf<Data: ReprC> + ?Sized> ReprC for Box<R>
     where
-        R: RustSpec<Size = rust_spec::size::Sized<S>, Mutability = Interior>,
-        <R as ReprC>::CType: Sized,
+        R: RustSpec<Size = NulTerminated, Mutability = Exclusive>,
+        <<R as NulTerminatedBuf>::Data as ReprC>::CType: Sized,
     {
-        type CType = CBoxCell<R::CType>;
+        type CType = CBox<<R::Data as ReprC>::CType>;
     }
     #[cfg(feature = "alloc")]
     impl<R: ?Sized> ReprC for Box<R>
@@ -685,6 +721,23 @@ disjoint_impls! {
         <<R as Wide>::Data as ReprC>::CType: Sized,
     {
         type CType = CBoxedSlice<<R::Data as ReprC>::CType>;
+    }
+
+    #[cfg(feature = "alloc")]
+    impl<R: ReprC, S: SizedKind> ReprC for Box<R>
+    where
+        R: RustSpec<Size = rust_spec::size::Sized<S>, Mutability = Interior>,
+        <R as ReprC>::CType: Sized,
+    {
+        type CType = CBoxCell<R::CType>;
+    }
+    #[cfg(feature = "alloc")]
+    impl<R: NulTerminatedBuf<Data: ReprC> + ?Sized> ReprC for Box<R>
+    where
+        R: RustSpec<Size = NulTerminated, Mutability = Interior>,
+        <<R as NulTerminatedBuf>::Data as ReprC>::CType: Sized,
+    {
+        type CType = CBoxCell<<R::Data as ReprC>::CType>;
     }
     #[cfg(feature = "alloc")]
     impl<R: ?Sized> ReprC for Box<R>
@@ -785,15 +838,12 @@ disjoint_impls! {
     #[cfg(feature = "alloc")]
     impl<'d, R: ?Sized> Decode<'d> for Box<R>
     where
-        Self: RustSpec<Layout = Stable>,
-        Self: DecodeOwned<'d>,
+        Self: RustSpec<Layout = Stable> + DecodeOwned<'d>,
     {}
     #[cfg(feature = "alloc")]
-    impl<'d, R: ?Sized> Decode<'d> for Box<R>
+    impl<'d, R: RustSpec<Layout = Stable> + ?Sized> Decode<'d> for Box<R>
     where
-        Self: RustSpec<Layout = Unstable>,
-        R: RustSpec<Layout = Stable>,
-        Self: DecodeOwned<'d>,
+        Self: RustSpec<Layout = Unstable> + DecodeOwned<'d>,
     {}
 }
 

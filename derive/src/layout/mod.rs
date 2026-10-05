@@ -14,6 +14,7 @@ mod ctype;
 mod custom;
 mod item;
 mod niche;
+mod nul_terminated;
 mod wide;
 
 const FFI_TYPE_ATTR: &str = "repr_c";
@@ -339,7 +340,10 @@ pub(crate) fn derive_repr_c(input: &syn::DeriveInput) -> syn::Result<TokenStream
             let wide = (!repr_c_attrs.is_view && !repr_c_attrs.is_wide_data)
                 .then(|| wide::expand(input, repr_attr))
                 .transpose()?;
-            quote! { #item #wide }
+            let nul_terminated = (!repr_c_attrs.is_view && !repr_c_attrs.is_wide_data)
+                .then(|| nul_terminated::expand(input, repr_attr))
+                .transpose()?;
+            quote! { #item #wide #nul_terminated }
         }
         syn::Data::Enum(data) if data.variants.is_empty() => {
             // TODO: Support uninhabited enums. yes, it is possible

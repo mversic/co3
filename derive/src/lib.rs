@@ -434,7 +434,7 @@ impl DispatchGroups {
 ///   [`co3::niche::Niche::NICHE_VALUE`](https://docs.rs/co3/latest/co3/niche/trait.Niche.html#associatedconstant.NICHE_VALUE)
 /// * `#[repr_c(is_valid = |[fieldN]| ...)]` on a struct or enum variant customizes validation
 /// * `#[repr_c(identity)]` uses a `repr(C)` or `repr(transparent)` struct directly as its CType
-/// * `#[repr_c(as(T))]` delegates owned conversion through `T` via `Into<T>` and `TryFrom<T>`
+/// * `#[repr_c(as(T))]` delegates owned conversion through `T` via `Into<T>` and `TryInto<Self>`
 ///
 /// # Example
 ///

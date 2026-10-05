@@ -1,7 +1,5 @@
 #[cfg(feature = "alloc")]
-use alloc::{boxed::Box, ffi::CString, string::String, vec::Vec};
-#[cfg(feature = "alloc")]
-use core::ffi::c_char;
+use alloc::{boxed::Box, string::String, vec::Vec};
 use core::{
     cell::{Cell, UnsafeCell},
     marker::PhantomData,
@@ -18,10 +16,7 @@ use crate::{
     transmute::CheckedTransmute,
 };
 #[cfg(feature = "alloc")]
-use crate::{
-    boxed::{CBox, CBoxedSlice},
-    stored::Owned,
-};
+use crate::{boxed::CBoxedSlice, stored::Owned};
 
 macro_rules! non_zero_derive {
     ($($primitive:ty),+ $(,)?) => {$(
@@ -959,6 +954,21 @@ mod tests {
             unsafe { crate::decode::<Option<Box<UnsafeCell<u8>>>>(none) },
             Some(None)
         ));
+    }
+
+    #[test]
+    fn non_robust_mutable_cell_syncs_after_soft_encode() {
+        use crate::stored::Store;
+
+        let mut value = Cell::new(NonZero::new(3_u8).unwrap());
+        let mut store = <&mut Cell<NonZero<u8>> as EncodeOwned>::Store::default();
+        let encoded = <&mut Cell<NonZero<u8>> as EncodeOwned>::soft_encode(
+            &mut value,
+            &mut store,
+        );
+        unsafe { encoded.write(4) };
+        assert_eq!(store.sync(), Some(()));
+        assert_eq!(value.get().get(), 4);
     }
 
     #[test]

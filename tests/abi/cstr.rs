@@ -1,6 +1,16 @@
 use co3::{ReprC, ffi, raw, rust_spec::RustSpec};
 use core::ffi::{CStr, c_char};
 
+#[repr(transparent)]
+#[derive(RustSpec, ReprC)]
+struct WrappedCStr(CStr);
+
+#[test]
+fn transparent_cstr_uses_char_data() {
+    static_assertions::assert_impl_all!(WrappedCStr: co3::ffi::NulTerminatedBuf<Data = c_char>);
+    static_assertions::assert_impl_all!(Box<WrappedCStr>: co3::stored::EncodeOwned, co3::stored::DecodeOwned<'static>);
+}
+
 fn cstr_len(value: &CStr) -> usize {
     value.to_bytes().len()
 }

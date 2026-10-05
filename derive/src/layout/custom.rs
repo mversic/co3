@@ -105,7 +105,7 @@ pub(super) fn derive_custom_repr_c(
     decode_generics
         .make_where_clause()
         .predicates
-        .push(parse_quote!(#name #ty_generics: core::convert::TryFrom<#intermediate>));
+        .push(parse_quote!(#intermediate: core::convert::TryInto<#name #ty_generics>));
     decode_generics
         .make_where_clause()
         .predicates
@@ -183,7 +183,7 @@ pub(super) fn derive_custom_repr_c(
                 let value: #intermediate = unsafe {
                     co3::stored::DecodeOwned::soft_decode(source, store)?
                 };
-                let value: Self = core::convert::TryFrom::try_from(value).ok()?;
+                let value: Self = core::convert::TryInto::try_into(value).ok()?;
                 #custom_validation
                 Some(value)
             }
@@ -196,7 +196,7 @@ pub(super) fn derive_custom_repr_c(
                     co3::stored::DecodeOwned::soft_decode_unchecked(source, store)
                 };
                 unsafe {
-                    <Self as core::convert::TryFrom<#intermediate>>::try_from(value)
+                    <#intermediate as core::convert::TryInto<Self>>::try_into(value)
                         .ok()
                         .unwrap_unchecked()
                 }
