@@ -125,7 +125,7 @@ impl Encode for CString {}
 
 #[cfg(feature = "alloc")]
 impl Niche for CString {
-    const NICHE_VALUE: Self::CType = CBox::NICHE_VALUE;
+    const NICHE_VALUE: Self::CType = CBox::NICHE;
 }
 
 unsafe impl Borrow for c_void {
@@ -174,6 +174,7 @@ mod tests {
         assert_not_impl_any!(Cell<CStr>: NulTerminatedBuf);
         assert_impl_all!(ManuallyDrop<CStr>: NulTerminatedBuf);
         assert_impl_all!(&ManuallyDrop<CStr>: Encode, Decode<'static>);
+        assert_not_impl_any!(&mut CStr: ReprC, Encode, Decode<'static>);
         #[cfg(feature = "alloc")]
         {
             assert_impl_all!(Box<ManuallyDrop<CStr>>: EncodeOwned, crate::stored::DecodeOwned<'static>);

@@ -16,7 +16,8 @@ use core::{
 /// # Safety
 ///
 /// - `metadata`, `as_ptr`, and `as_mut_ptr` **MUST** describe the same value and its actual layout
-/// - If `into_non_null` is implemented, it must transfer the original allocation to the caller.
+/// - Ownership methods must transfer and recover the original allocation.
+/// - Constructors must point to that value when given valid raw parts.
 pub unsafe trait Wide {
     /// Data component of a wide pointer.
     ///

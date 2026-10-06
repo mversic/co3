@@ -331,7 +331,7 @@ where
     type Error = core::convert::Infallible;
 
     #[inline(always)]
-    fn pack(part1: Part1, part2: Part2) -> Result<Self::CType, Self::Error> {
+    unsafe fn pack(part1: Part1, part2: Part2) -> Result<Self::CType, Self::Error> {
         Ok(ReprCTuple2(part1, part2))
     }
 }
@@ -416,7 +416,8 @@ mod tests {
     #[cfg(feature = "alloc")]
     use crate::{
         boxed::{CBox, CBoxedSlice},
-        slice::{CSlice, CSliceMut},
+        restrict::CRestrict,
+        slice::{CSlice, CSliceRestrict},
         stored::{DecodeOwned, EncodeOwned},
     };
 
@@ -447,7 +448,7 @@ mod tests {
             Encode,
         );
         assert_impl_all!(&mut (u8, u8, u8):
-        Niche<CType = *mut ReprCTuple3<u8, u8, u8>>,
+        Niche<CType = CRestrict<ReprCTuple3<u8, u8, u8>>>,
         Encode,
         );
         #[cfg(feature = "alloc")]
@@ -462,7 +463,7 @@ mod tests {
         );
         #[cfg(feature = "alloc")]
         assert_impl_all!(&mut [(u8, u8, u8)]:
-            Niche<CType = CSliceMut<ReprCTuple3<u8, u8, u8>>>,
+            Niche<CType = CSliceRestrict<ReprCTuple3<u8, u8, u8>>>,
             Encode,
         );
         #[cfg(feature = "alloc")]
@@ -543,7 +544,7 @@ mod tests {
             Encode,
         );
         assert_impl_all!(&mut (u8, StdNonZero<u8>, bool):
-            Niche<CType = *mut ReprCTuple3<u8, u8, crate::primitives::CBool>>,
+            Niche<CType = CRestrict<ReprCTuple3<u8, u8, crate::primitives::CBool>>>,
             Decode<'static>,
             Encode,
         );
@@ -561,7 +562,7 @@ mod tests {
         );
         #[cfg(feature = "alloc")]
         assert_impl_all!(&mut [(u8, StdNonZero<u8>, bool)]:
-            Niche<CType = CSliceMut<ReprCTuple3<u8, u8, crate::primitives::CBool>>>,
+            Niche<CType = CSliceRestrict<ReprCTuple3<u8, u8, crate::primitives::CBool>>>,
             Decode<'static>,
             Encode,
         );

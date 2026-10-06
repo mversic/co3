@@ -89,7 +89,7 @@ impl<T: PartialOrd + Copy, E: PartialOrd + Copy> PartialOrd for ReprCResult<T, E
 }
 
 impl<T: Copy, E: Copy> ReprCResult<T, E> {
-    pub(crate) const NICHE_VALUE: Self = Self {
+    pub(crate) const NICHE: Self = Self {
         ok: ReprCResultOk(2, MaybeUninit::zeroed()),
     };
 

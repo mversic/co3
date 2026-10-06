@@ -1,9 +1,5 @@
 use co3::{
-    CType, ReprC, ffi,
-    ops::{CFn0, CFn1, CFn2, CFn12},
-    option::ReprCOption,
-    raw,
-    rust_spec::RustSpec,
+    CType, ReprC, ffi, ops::{CFn0, CFn1, CFn2, CFn12}, option::ReprCOption, raw, restrict::CRestrict, rust_spec::RustSpec,
 };
 
 #[derive(Clone, Copy, RustSpec, ReprC)]
@@ -49,7 +45,8 @@ unsafe extern "C" fn return_pointer(value: *const u32) -> *const u32 {
 
 unsafe extern "C" fn ignore_pointer(_: *const u32) {}
 
-unsafe extern "C" fn update_option(value: *mut ReprCOption<u8>) -> u32 {
+unsafe extern "C" fn update_option(value: CRestrict<ReprCOption<u8>>) -> u32 {
+    let value = value.as_ptr();
     unsafe { *value = ReprCOption::Some(42) };
     7
 }

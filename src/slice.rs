@@ -73,7 +73,12 @@ pub trait Pack2<Part1: CType, Part2: CType>: ReprC<CType: Sized> {
     type Error;
 
     /// Tries to reconstruct the C representation.
-    fn pack(part1: Part1, part2: Part2) -> Result<Self::CType, Self::Error>;
+    ///
+    /// # Safety
+    ///
+    /// The parts must satisfy the ownership, validity, and exclusivity
+    /// requirements of the representation being constructed.
+    unsafe fn pack(part1: Part1, part2: Part2) -> Result<Self::CType, Self::Error>;
 }
 
 impl<T: Pack2<Part1, Part2>, Part1: CType, Part2: CType> Pack2<Part1, Part2> for Option<T>
@@ -83,8 +88,8 @@ where
     type Error = T::Error;
 
     #[inline(always)]
-    fn pack(part1: Part1, part2: Part2) -> Result<Self::CType, Self::Error> {
-        T::pack(part1, part2)
+    unsafe fn pack(part1: Part1, part2: Part2) -> Result<Self::CType, Self::Error> {
+        unsafe { T::pack(part1, part2) }
     }
 }
 
@@ -100,7 +105,7 @@ where
     }
 }
 
-macro_rules! impl_unpack2_for_transparent_wrapper {
+macro_rules! impl_pack2_for_transparent_wrapper {
     ($($wrapper:ty),+ $(,)?) => {$(
         impl<T: ?Sized, Part1: CType, Part2: CType> Unpack2<Part1, Part2> for $wrapper
         where
@@ -113,11 +118,6 @@ macro_rules! impl_unpack2_for_transparent_wrapper {
                 T::unpack(value)
             }
         }
-    )+};
-}
-
-macro_rules! impl_pack2_for_transparent_wrapper {
-    ($($wrapper:ty),+ $(,)?) => {$(
         impl<T: ?Sized, Part1: CType, Part2: CType> Pack2<Part1, Part2> for $wrapper
         where
             T: Pack2<Part1, Part2>,
@@ -125,17 +125,11 @@ macro_rules! impl_pack2_for_transparent_wrapper {
             type Error = T::Error;
 
             #[inline(always)]
-            fn pack(part1: Part1, part2: Part2) -> Result<Self::CType, Self::Error> {
-                T::pack(part1, part2)
+            unsafe fn pack(part1: Part1, part2: Part2) -> Result<Self::CType, Self::Error> {
+                unsafe { T::pack(part1, part2) }
             }
         }
     )+};
-}
-
-impl_unpack2_for_transparent_wrapper! {
-    core::cell::UnsafeCell<T>,
-    core::cell::Cell<T>,
-    core::mem::ManuallyDrop<T>,
 }
 
 impl_pack2_for_transparent_wrapper! {
@@ -153,11 +147,19 @@ pub struct CSlice<C> {
     len: usize,
 }
 
-/// Mutable slice `&mut [C]` with a defined C ABI layout. Consists of a data pointer and a length.
-/// If the data pointer is set to `null`, the struct represents `Option<&mut [C]>`.
+/// Mutable, potentially aliased slice with a defined C ABI layout.
 #[derive(RustSpec)]
 #[repr(C)]
 pub struct CSliceMut<C> {
+    data: *mut C,
+    len: usize,
+}
+
+/// Exclusive mutable slice with a defined C ABI layout.
+/// Header generators should render its data pointer as `C *restrict`.
+#[derive(RustSpec)]
+#[repr(C)]
+pub struct CSliceRestrict<C> {
     data: *mut C,
     len: usize,
 }
@@ -228,11 +230,11 @@ macro_rules! impl_raw_slice_methods {
     };
 }
 
-impl_raw_slice_methods! { CSlice<C>, CSliceMut<C> }
+impl_raw_slice_methods! { CSlice<C>, CSliceMut<C>, CSliceRestrict<C> }
 
 impl<C> CSlice<C> {
     /// Set the slice's data pointer to null
-    pub(crate) const NICHE_VALUE: Self = Self {
+    pub(crate) const NICHE: Self = Self {
         data: core::ptr::null(),
         // TODO: Use MaybeUninit for len?
         len: 0,
@@ -268,13 +270,6 @@ impl<C> CSlice<C> {
 }
 
 impl<C> CSliceMut<C> {
-    /// Set the slice's data pointer to null
-    pub(crate) const NICHE_VALUE: Self = Self {
-        data: core::ptr::null_mut(),
-        // TODO: Use MaybeUninit for len?
-        len: 0,
-    };
-
     /// Create [`Self`] from mutable slice
     pub const fn from_slice(slice: &mut [C]) -> Self {
         Self {
@@ -283,27 +278,57 @@ impl<C> CSliceMut<C> {
         }
     }
 
-    /// Create [`Self`] from a raw data pointer and slice metadata.
-    ///
-    /// Before decoding this carrier into a Rust mutable reference, the caller
-    /// must ensure the pointer and length describe a valid initialized slice
-    /// with exclusive access.
-    pub const fn from_raw_parts_mut(data: *mut C, len: usize) -> Self {
+    /// Create a mutable slice carrier without an exclusivity promise.
+    pub(crate) const fn from_raw_parts_mut(data: *mut C, len: usize) -> Self {
         Self { data, len }
     }
+}
 
-    pub(crate) const fn data(&self) -> *mut C {
-        self.data
+impl<C> CSliceRestrict<C> {
+    /// Create an exclusive mutable slice carrier.
+    pub const fn from_slice(slice: &mut [C]) -> Self {
+        Self {
+            data: slice.as_mut_ptr(),
+            len: slice.len(),
+        }
     }
 
-    pub(crate) const fn len(&self) -> usize {
-        self.len
-    }
-
-    pub(crate) const fn is_niche(&self) -> bool {
-        self.data.is_null()
+    /// Create an exclusive mutable slice carrier from raw parts.
+    ///
+    /// # Safety
+    ///
+    /// A non-null pointer and `len` must describe a valid mutable slice whose
+    /// accesses satisfy the exclusive borrow represented by this carrier.
+    pub const unsafe fn from_raw_parts_mut(data: *mut C, len: usize) -> Self {
+        Self { data, len }
     }
 }
+
+macro_rules! impl_mut_slice_methods {
+    ($ty:ident) => {
+        impl<C> $ty<C> {
+            pub(crate) const NICHE: Self = Self {
+                data: core::ptr::null_mut(),
+                len: 0,
+            };
+
+            pub(crate) const fn data(&self) -> *mut C {
+                self.data
+            }
+
+            pub(crate) const fn len(&self) -> usize {
+                self.len
+            }
+
+            pub(crate) const fn is_niche(&self) -> bool {
+                self.data.is_null()
+            }
+        }
+    };
+}
+
+impl_mut_slice_methods! { CSliceMut }
+impl_mut_slice_methods! { CSliceRestrict }
 
 macro_rules! impl_slice_carrier {
     ($ty:ident) => {
@@ -377,142 +402,86 @@ macro_rules! impl_slice_carrier {
 
 impl_slice_carrier! { CSlice }
 impl_slice_carrier! { CSliceMut }
+impl_slice_carrier! { CSliceRestrict }
 
-impl<R: CType + Wide<Data = C, Metadata = usize> + ?Sized, C: CType, U: CType> Unpack2<*const C, U>
-    for *const R
-where
-    usize: TryInto<U>,
-{
-    type Error = <usize as TryInto<U>>::Error;
+macro_rules! impl_raw_wide_unpack {
+    ($source:ty, $part:ty, $accessor:ident) => {
+        impl<R: CType + Wide<Data = C, Metadata = usize> + ?Sized, C: CType, U: CType>
+            Unpack2<$part, U> for $source
+        where
+            usize: TryInto<U>,
+        {
+            type Error = <usize as TryInto<U>>::Error;
 
-    #[inline(always)]
-    fn unpack(value: Self::CType) -> Result<(*const C, U), Self::Error> {
-        Ok((R::as_ptr(value), R::metadata(value).try_into()?))
-    }
+            #[inline(always)]
+            fn unpack(value: Self::CType) -> Result<($part, U), Self::Error> {
+                Ok((R::$accessor(value), R::metadata(value).try_into()?))
+            }
+        }
+    };
 }
 
-impl<R: CType + Wide<Data = C, Metadata = usize> + ?Sized, C: CType, U: CType> Unpack2<*mut C, U>
-    for *mut R
-where
-    usize: TryInto<U>,
-{
-    type Error = <usize as TryInto<U>>::Error;
+impl_raw_wide_unpack!(*const R, *const C, as_ptr);
+impl_raw_wide_unpack!(*mut R, *mut C, as_mut_ptr);
+impl_raw_wide_unpack!(NonNull<R>, *const C, as_ptr);
+impl_raw_wide_unpack!(NonNull<R>, *mut C, as_mut_ptr);
 
-    #[inline(always)]
-    fn unpack(value: Self::CType) -> Result<(*mut C, U), Self::Error> {
-        Ok((R::as_mut_ptr(value), R::metadata(value).try_into()?))
-    }
+macro_rules! construct_slice_carrier {
+    (safe, $carrier:ident, $constructor:ident, $data:ident, $len:ident) => {
+        $carrier::$constructor($data, $len)
+    };
+    (unsafe, $carrier:ident, $constructor:ident, $data:ident, $len:ident) => {
+        unsafe { $carrier::$constructor($data, $len) }
+    };
 }
 
-impl<R: CType + Wide<Data = C, Metadata = usize> + ?Sized, C: CType, U: CType> Unpack2<*const C, U>
-    for NonNull<R>
-where
-    usize: TryInto<U>,
-{
-    type Error = <usize as TryInto<U>>::Error;
+macro_rules! impl_ref_slice_pack {
+    ($reference:ty, $carrier:ident, $pointer:ty, $constructor:ident, $safety:ident) => {
+        impl<R: ?Sized, C: CType, U: CType> Unpack2<$pointer, U> for $reference
+        where
+            Self: ReprC<CType = $carrier<C>>,
+            usize: TryInto<U>,
+        {
+            type Error = <usize as TryInto<U>>::Error;
 
-    #[inline(always)]
-    fn unpack(value: Self::CType) -> Result<(*const C, U), Self::Error> {
-        Ok((R::as_ptr(value), R::metadata(value).try_into()?))
-    }
+            #[inline(always)]
+            fn unpack(value: Self::CType) -> Result<($pointer, U), Self::Error> {
+                Ok((value.data, value.len.try_into()?))
+            }
+        }
+
+        impl<R: ?Sized, C: CType, U: CType + TryInto<usize>> Pack2<$pointer, U> for $reference
+        where
+            Self: ReprC<CType = $carrier<C>>,
+        {
+            type Error = <U as TryInto<usize>>::Error;
+
+            #[inline(always)]
+            unsafe fn pack(data: $pointer, len: U) -> Result<Self::CType, Self::Error> {
+                let len = len.try_into()?;
+                Ok(construct_slice_carrier!(
+                    $safety,
+                    $carrier,
+                    $constructor,
+                    data,
+                    len
+                ))
+            }
+        }
+    };
 }
 
-impl<R: CType + Wide<Data = C, Metadata = usize> + ?Sized, C: CType, U: CType> Unpack2<*mut C, U>
-    for NonNull<R>
-where
-    usize: TryInto<U>,
-{
-    type Error = <usize as TryInto<U>>::Error;
-
-    #[inline(always)]
-    fn unpack(value: Self::CType) -> Result<(*mut C, U), Self::Error> {
-        Ok((R::as_mut_ptr(value), R::metadata(value).try_into()?))
-    }
-}
-
-impl<R: ?Sized, C: CType, U: CType> Unpack2<*const C, U> for &R
-where
-    Self: ReprC<CType = CSlice<C>>,
-    usize: TryInto<U>,
-{
-    type Error = <usize as TryInto<U>>::Error;
-
-    #[inline(always)]
-    fn unpack(value: Self::CType) -> Result<(*const C, U), Self::Error> {
-        Ok((value.data, value.len.try_into()?))
-    }
-}
-
-impl<R: ?Sized, C: CType, U: CType + TryInto<usize>> Pack2<*const C, U> for &R
-where
-    Self: ReprC<CType = CSlice<C>>,
-{
-    type Error = <U as TryInto<usize>>::Error;
-
-    #[inline(always)]
-    fn pack(data: *const C, len: U) -> Result<Self::CType, Self::Error> {
-        Ok(CSlice::from_raw_parts(data, len.try_into()?))
-    }
-}
-
-impl<R: ?Sized, C: CType, U: CType> Unpack2<*mut C, U> for &R
-where
-    Self: ReprC<CType = CSliceMut<C>>,
-    usize: TryInto<U>,
-{
-    type Error = <usize as TryInto<U>>::Error;
-
-    #[inline(always)]
-    fn unpack(value: Self::CType) -> Result<(*mut C, U), Self::Error> {
-        Ok((value.data, value.len.try_into()?))
-    }
-}
-
-impl<R: ?Sized, C: CType, U: CType + TryInto<usize>> Pack2<*mut C, U> for &R
-where
-    Self: ReprC<CType = CSliceMut<C>>,
-{
-    type Error = <U as TryInto<usize>>::Error;
-
-    #[inline(always)]
-    fn pack(data: *mut C, len: U) -> Result<Self::CType, Self::Error> {
-        Ok(CSliceMut::from_raw_parts_mut(data, len.try_into()?))
-    }
-}
-
-impl<R: ?Sized, C: CType, U: CType> Unpack2<*mut C, U> for &mut R
-where
-    Self: ReprC<CType = CSliceMut<C>>,
-    usize: TryInto<U>,
-{
-    type Error = <usize as TryInto<U>>::Error;
-
-    #[inline(always)]
-    fn unpack(value: Self::CType) -> Result<(*mut C, U), Self::Error> {
-        Ok((value.data, value.len.try_into()?))
-    }
-}
-
-impl<R: ?Sized, C: CType, U: CType + TryInto<usize>> Pack2<*mut C, U> for &mut R
-where
-    Self: ReprC<CType = CSliceMut<C>>,
-{
-    type Error = <U as TryInto<usize>>::Error;
-
-    #[inline(always)]
-    fn pack(data: *mut C, len: U) -> Result<Self::CType, Self::Error> {
-        Ok(CSliceMut::from_raw_parts_mut(data, len.try_into()?))
-    }
-}
+impl_ref_slice_pack!(&R, CSlice, *const C, from_raw_parts, safe);
+impl_ref_slice_pack!(&R, CSliceMut, *mut C, from_raw_parts_mut, safe);
+impl_ref_slice_pack!(&mut R, CSliceRestrict, *mut C, from_raw_parts_mut, unsafe);
 
 #[cfg(feature = "alloc")]
 impl<C> CSlice<C> {
-    /// Convert [`Self`] into a mutable slice. Return `None` if data pointer is null.
-    /// Unlike [`core::slice::from_raw_parts_mut`], data pointer is allowed to be null.
+    /// Convert into a shared slice. Return `None` if the data pointer is null.
     ///
     /// # Safety
     ///
-    /// Check [`core::slice::from_raw_parts_mut`]
+    /// Check [`core::slice::from_raw_parts`].
     pub(crate) const unsafe fn into_rust<'slice>(self) -> Option<&'slice [C]> {
         if self.data.is_null() {
             return None;
@@ -523,13 +492,12 @@ impl<C> CSlice<C> {
 }
 
 #[cfg(feature = "alloc")]
-impl<C> CSliceMut<C> {
-    /// Convert [`Self`] into a mutable slice. Return `None` if data pointer is null.
-    /// Unlike [`core::slice::from_raw_parts_mut`], data pointer is allowed to be null.
+impl<C> CSliceRestrict<C> {
+    /// Convert into an exclusive mutable slice. Return `None` if the data pointer is null.
     ///
     /// # Safety
     ///
-    /// Check [`core::slice::from_raw_parts_mut`]
+    /// Check [`core::slice::from_raw_parts_mut`].
     pub(crate) const unsafe fn into_rust<'slice>(self) -> Option<&'slice mut [C]> {
         if self.data.is_null() {
             return None;

@@ -293,7 +293,7 @@ fn gen_pack_input_stmts(
             } else {
                 quote!(#metadata_name)
             };
-            quote!(<#decode_ty as co3::slice::Pack2<#logical1, #logical2>>::pack(#data, #metadata))
+            quote!(unsafe { <#decode_ty as co3::slice::Pack2<#logical1, #logical2>>::pack(#data, #metadata) })
         };
         Some(quote! {
             #(#cfg)*
@@ -330,12 +330,12 @@ pub(crate) fn gen_drop_definition_body(
     };
 
     quote! {{
-        if __co3_self.is_null() {
+        if __co3_self.as_ptr().is_null() {
             #decode_error
         }
 
         unsafe {
-            core::mem::drop(co3::boxed::Box::from_raw(__co3_self));
+            core::mem::drop(co3::boxed::Box::from_raw(__co3_self.as_ptr()));
         }
 
         #output

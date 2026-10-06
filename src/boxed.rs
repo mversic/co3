@@ -7,7 +7,8 @@ use rust_spec::RustSpec;
 use crate::{
     CFnArg, CFnReturn, CType, Decode, Encode, ReprC,
     borrow::{BorrowCast, BorrowCastMut},
-    slice::{CSlice, CSliceMut, Pack2, Unpack2},
+    restrict::CRestrict,
+    slice::{CSlice, CSliceMut, CSliceRestrict, Pack2, Unpack2},
     stored::{DecodeOwned, EncodeOwned},
     transmute::CheckedTransmute,
 };
@@ -30,8 +31,25 @@ pub struct CBoxCell<C> {
     pub(crate) data: *mut C,
 }
 
+/// Owned slice `Box<[C]>` with a defined C ABI layout.
+///
+/// If the data pointer is set to `null`, the struct represents `Option<Box<[C]>>`.
+#[derive(RustSpec)]
+#[repr(C)]
+pub struct CBoxedSlice<C> {
+    pub(crate) data: *mut C,
+    len: usize,
+}
+
+/// Owned slice whose shared borrowed view permits interior mutation.
+///
+/// Like [`CBoxedSlice`], a null data pointer represents `Option<Box<C>>`.
+#[derive(RustSpec)]
+#[repr(transparent)]
+pub struct CBoxedSliceCell<C>(CBoxedSlice<C>);
+
 macro_rules! impl_boxed_pointer {
-    ($ty:ident, $as_const:tt) => {
+    ($ty:ident, $as_const:ty) => {
         impl<C> core::fmt::Debug for $ty<C> {
             fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
                 f.debug_struct(stringify!($ty))
@@ -63,11 +81,15 @@ macro_rules! impl_boxed_pointer {
         impl<C> Copy for $ty<C> {}
 
         impl<C> $ty<C> {
-            pub(crate) const NICHE_VALUE: Self = Self { data: core::ptr::null_mut() };
+            pub(crate) const NICHE: Self = Self {
+                data: core::ptr::null_mut(),
+            };
 
             /// Create [`Self`] from a [`Box<C>`].
             pub fn from_box(source: Box<C>) -> Self {
-                Self { data: Box::into_raw(source) }
+                Self {
+                    data: Box::into_raw(source),
+                }
             }
 
             /// Recover the allocation, returning `None` for the null niche.
@@ -87,8 +109,13 @@ macro_rules! impl_boxed_pointer {
                 self.data.is_null()
             }
 
-            /// Create [`Self`] from a raw data pointer
-            pub(crate) const fn from_raw_parts(data: NonNull<C>) -> Self {
+            /// Create [`Self`] from a raw owned pointer.
+            ///
+            /// # Safety
+            ///
+            /// `data` must retain unique ownership and provenance of a live allocation
+            /// compatible with the owning type later recovered from this carrier.
+            pub(crate) const unsafe fn from_non_null(data: NonNull<C>) -> Self {
                 Self {
                     data: data.as_ptr(),
                 }
@@ -96,31 +123,16 @@ macro_rules! impl_boxed_pointer {
         }
 
         unsafe impl<C: CType> BorrowCast for $ty<C> {
-            type AsConst = *$as_const C;
+            type AsConst = $as_const;
         }
         unsafe impl<C: CType> BorrowCastMut for $ty<C> {
-            type AsMut = *mut C;
+            type AsMut = CRestrict<C>;
         }
     };
 }
 
-impl_boxed_pointer!(CBox, const);
-impl_boxed_pointer!(CBoxCell, mut);
-
-/// Owned slice `Box<[C]>` with a defined C ABI layout. Consists of a data pointer and a length.
-/// Used in place of a function out-pointer to transfer ownership of the slice to the caller.
-/// If the data pointer is set to `null`, the struct represents `Option<Box<[C]>>`.
-#[derive(RustSpec)]
-#[repr(C)]
-pub struct CBoxedSlice<C> {
-    pub(crate) data: *mut C,
-    len: usize,
-}
-
-/// Owned slice whose shared borrowed view permits interior mutation.
-#[derive(RustSpec)]
-#[repr(transparent)]
-pub struct CBoxedSliceCell<C>(CBoxedSlice<C>);
+impl_boxed_pointer!(CBox, *const C);
+impl_boxed_pointer!(CBoxCell, *mut C);
 
 impl<C> core::fmt::Debug for CBoxedSliceCell<C> {
     fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
@@ -151,7 +163,7 @@ impl<C> Clone for CBoxedSliceCell<C> {
 impl<C> Copy for CBoxedSliceCell<C> {}
 
 impl<C> CBoxedSliceCell<C> {
-    pub(crate) const NICHE_VALUE: Self = Self(CBoxedSlice::NICHE_VALUE);
+    pub(crate) const NICHE: Self = Self(CBoxedSlice::NICHE);
 
     pub fn from_boxed_slice(source: Box<[C]>) -> Self {
         Self(CBoxedSlice::from_boxed_slice(source))
@@ -245,8 +257,13 @@ impl<C> CBoxedSlice<C> {
         }
     }
 
-    /// Create [`Self`] from a raw data pointer and slice metadata.
-    pub(crate) const fn from_raw_parts(data: NonNull<C>, len: usize) -> Self {
+    /// Create [`Self`] from raw owned slice parts.
+    ///
+    /// # Safety
+    ///
+    /// `data` and `len` must retain unique ownership and provenance of a live
+    /// allocation compatible with the owning slice later recovered from this carrier.
+    pub(crate) const unsafe fn from_raw_parts(data: NonNull<C>, len: usize) -> Self {
         Self {
             data: data.as_ptr(),
             len,
@@ -269,7 +286,7 @@ impl<C> CBoxedSlice<C> {
 
 impl<C> CBoxedSlice<C> {
     /// Set the slice's data pointer to null
-    pub(crate) const NICHE_VALUE: Self = Self {
+    pub(crate) const NICHE: Self = Self {
         data: core::ptr::null_mut(),
         len: 0,
     };
@@ -337,14 +354,14 @@ unsafe impl<C: CType> BorrowCast for CBoxedSlice<C> {
     type AsConst = CSlice<C>;
 }
 unsafe impl<C: CType> BorrowCastMut for CBoxedSlice<C> {
-    type AsMut = CSliceMut<C>;
+    type AsMut = CSliceRestrict<C>;
 }
 
 unsafe impl<C: CType> BorrowCast for CBoxedSliceCell<C> {
     type AsConst = CSliceMut<C>;
 }
 unsafe impl<C: CType> BorrowCastMut for CBoxedSliceCell<C> {
-    type AsMut = CSliceMut<C>;
+    type AsMut = CSliceRestrict<C>;
 }
 
 impl<R: ?Sized, C: CType, K: CType, U: CType> Unpack2<K, U> for Box<R>
@@ -369,7 +386,7 @@ where
     type Error = <U as TryInto<usize>>::Error;
 
     #[inline(always)]
-    fn pack(data: K, len: U) -> Result<Self::CType, Self::Error> {
+    unsafe fn pack(data: K, len: U) -> Result<Self::CType, Self::Error> {
         let data: CBox<C> = data.into();
         Ok(CBoxedSlice {
             data: data.data,

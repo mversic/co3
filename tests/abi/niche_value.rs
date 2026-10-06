@@ -1,6 +1,8 @@
 use std::cmp::Ordering;
 use std::ffi::{CStr, c_char};
 
+use co3::primitives::{CBool, COrdering};
+use co3::restrict::CRestrict;
 use co3::{
     ReprC, encode, ffi, niche::Niche, option::ReprCOption, rust_spec::RustSpec, soft_decode,
     soft_encode,
@@ -49,16 +51,15 @@ ffi! {
 #[test]
 fn thin_extern_reference_niche() {
     static_assertions::assert_impl_all!(&Extern: Niche<CType = *const Extern>);
-    static_assertions::assert_impl_all!(&mut Extern: Niche<CType = *mut Extern>);
+    static_assertions::assert_impl_all!(&mut Extern: Niche<CType = CRestrict<Extern>>);
     // CStr is unsized but also has a thin pointer representation. This catches
     // an accidental Sized bound on the pointer-backed reference Niche impls.
     static_assertions::assert_impl_all!(&CStr: Niche<CType = *const c_char>);
 
     assert_eq!(encode(None::<&Extern>), std::ptr::null());
-    assert_eq!(
-        soft_encode(None::<&mut Extern>, &mut ()),
-        std::ptr::null_mut()
-    );
+    assert_eq!(soft_encode(None::<&mut Extern>, &mut ()), unsafe {
+        CRestrict::<Extern>::from_raw(std::ptr::null_mut())
+    });
     assert_eq!(encode(None::<&CStr>), std::ptr::null());
 }
 
@@ -392,8 +393,8 @@ pub enum FieldlessLargeEnum {
 
 #[test]
 fn verify_enum_niche_value() {
-    assert_eq!(co3::primitives::CBool::NICHE, encode(None::<bool>));
-    assert_eq!(co3::primitives::COrdering::NICHE, encode(None::<Ordering>));
+    assert_eq!(CBool::NICHE, encode(None::<bool>));
+    assert_eq!(COrdering::NICHE, encode(None::<Ordering>));
 
     assert_eq!(encode(None::<Opaque>), ReprCOption::None());
     assert!(encode(None::<OwnedExtern>).0.is_null());
@@ -456,14 +457,11 @@ fn fieldless_enum_explicit_discriminants_round_trip() {
 
 #[test]
 fn fieldless_enum_carrier_conversions() {
-    assert_eq!(co3::primitives::CBool::TRUE, encode(true));
-    assert_eq!(co3::primitives::CBool::FALSE, encode(false));
-    assert_eq!(co3::primitives::COrdering::LESS, encode(Ordering::Less));
-    assert_eq!(co3::primitives::COrdering::EQUAL, encode(Ordering::Equal));
-    assert_eq!(
-        co3::primitives::COrdering::GREATER,
-        encode(Ordering::Greater)
-    );
+    assert_eq!(CBool::TRUE, encode(true));
+    assert_eq!(CBool::FALSE, encode(false));
+    assert_eq!(COrdering::LESS, encode(Ordering::Less));
+    assert_eq!(COrdering::EQUAL, encode(Ordering::Equal));
+    assert_eq!(COrdering::GREATER, encode(Ordering::Greater));
     assert_eq!(CFieldlessExplicitEnum::NEGATIVE.0, -2);
     assert_eq!(CFieldlessExplicitEnum::ZERO.0, 0);
     assert_eq!(CFieldlessExplicitEnum::FIVE.0, 5);
@@ -497,7 +495,7 @@ fn fieldless_enum_carrier_conversions() {
 #[test]
 fn usize_repr_enums_round_trip() {
     const _: () = assert!(
-        core::mem::size_of::<<FieldlessUsizeEnum as co3::ReprC>::CType>()
+        core::mem::size_of::<<FieldlessUsizeEnum as ReprC>::CType>()
             == core::mem::size_of::<usize>()
     );
 

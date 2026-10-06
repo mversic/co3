@@ -62,7 +62,7 @@ pub(super) fn expand(
                 <#field_ty as co3::ffi::NulTerminatedBuf>::as_ptr(ptr as *const #field_ty)
             }
 
-            unsafe fn from_raw<'a>(ptr: *const Self::Data) -> &'a Self {
+            unsafe fn from_raw<'__co3_nul_terminated>(ptr: *const Self::Data) -> &'__co3_nul_terminated Self {
                 let inner = unsafe {
                     <#field_ty as co3::ffi::NulTerminatedBuf>::from_raw(ptr)
                 };

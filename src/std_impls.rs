@@ -358,7 +358,7 @@ impl Decode<'_> for String {}
 
 #[cfg(feature = "alloc")]
 impl Niche for String {
-    const NICHE_VALUE: Self::CType = CBoxedSlice::NICHE_VALUE;
+    const NICHE_VALUE: Self::CType = CBoxedSlice::NICHE;
 }
 
 unsafe impl<T: Borrow> Borrow for UnsafeCell<T> {
@@ -650,7 +650,8 @@ mod tests {
     use crate::{
         CFnArg, CFnReturn, Decode, Encode,
         option::ReprCOption,
-        slice::{CSlice, CSliceMut},
+        restrict::CRestrict,
+        slice::{CSlice, CSliceMut, CSliceRestrict},
     };
 
     #[test]
@@ -690,7 +691,7 @@ mod tests {
     //        Encode,
     //    );
     //    assert_impl_all!(&mut ManuallyDrop<u8>:
-    //        Niche<CType = *mut u8>,
+    //        Niche<CType = CRestrict<u8>>,
     //        RustSpec<Niche = rust_spec::niche::WithNiche<rust_spec::Stable>>,
     //        Decode<'static>,
     //        Encode,
@@ -707,7 +708,7 @@ mod tests {
     //        Encode,
     //    );
     //    assert_impl_all!(&mut [ManuallyDrop<u8>]:
-    //        Niche<CType = CSliceMut<u8>>,
+    //        Niche<CType = CSliceRestrict<u8>>,
     //        Decode<'static>,
     //        Encode,
     //    );
@@ -751,7 +752,7 @@ mod tests {
     //        Encode,
     //    );
     //    assert_impl_all!(&mut ManuallyDrop<String>:
-    //        Niche<CType = *mut CBoxedSlice<u8>,
+    //        Niche<CType = CRestrict<CBoxedSlice<u8>>,
     //        Decode<'static>,
     //        Encode,
     //    );
@@ -767,7 +768,7 @@ mod tests {
     //        Encode,
     //    );
     //    assert_impl_all!(&mut [ManuallyDrop<String>]:
-    //        Niche<CType = CSliceMut<CBoxedSlice<u8>>>,
+    //        Niche<CType = CSliceRestrict<CBoxedSlice<u8>>>,
     //        Decode<'static>,
     //        Encode,
     //    );
@@ -810,7 +811,7 @@ mod tests {
 
         #[cfg(feature = "alloc")]
         assert_impl_all!(&mut str:
-            Niche<CType = CSliceMut<u8>>,
+            Niche<CType = CSliceRestrict<u8>>,
             Decode<'static>,
             Encode,
         );
@@ -832,7 +833,8 @@ mod tests {
         assert!(decoded.is_none());
 
         let mut invalid = [0xff];
-        let source = CSliceMut::from_raw_parts_mut(invalid.as_mut_ptr(), invalid.len());
+        let source =
+            unsafe { CSliceRestrict::from_raw_parts_mut(invalid.as_mut_ptr(), invalid.len()) };
         let decoded = unsafe { crate::decode::<&mut str>(source) };
         assert!(decoded.is_none());
 
@@ -857,7 +859,7 @@ mod tests {
             Encode,
         );
         assert_impl_all!(&mut UnsafeCell<u8>:
-            Niche<CType = *mut u8>,
+            Niche<CType = CRestrict<u8>>,
             Decode<'static>,
             Encode,
         );
@@ -875,7 +877,7 @@ mod tests {
             Encode,
         );
         assert_impl_all!(&mut [UnsafeCell<u8>]:
-            Niche<CType = CSliceMut<u8>>,
+            Niche<CType = CSliceRestrict<u8>>,
             Decode<'static>,
             Encode,
         );
@@ -903,6 +905,28 @@ mod tests {
         );
 
         assert_not_impl_any!(UnsafeCell<u8>: CType);
+    }
+
+    #[test]
+    fn mutable_unsafe_cell_reference_round_trip() {
+        let mut cell = UnsafeCell::new(7_u8);
+        let encoded = crate::encode(&mut cell);
+        unsafe { encoded.as_ptr().write(9) };
+        assert_eq!(*cell.get_mut(), 9);
+
+        let source = unsafe { CRestrict::from_raw(cell.get()) };
+        let decoded = unsafe { crate::decode::<&mut UnsafeCell<u8>>(source) }.unwrap();
+        *decoded.get_mut() = 11;
+        assert_eq!(*cell.get_mut(), 11);
+
+        let value = UnsafeCell::new(NonZero::new(3_u8).unwrap());
+        let source = unsafe { CRestrict::from_raw(value.get().cast::<u8>()) };
+        let decoded = unsafe { crate::decode::<&mut UnsafeCell<NonZero<u8>>>(source) }.unwrap();
+        assert_eq!(decoded.get_mut().get(), 3);
+
+        let invalid = UnsafeCell::new(0_u8);
+        let source = unsafe { CRestrict::from_raw(invalid.get()) };
+        assert!(unsafe { crate::decode::<&mut UnsafeCell<NonZero<u8>>>(source) }.is_none());
     }
 
     #[cfg(feature = "alloc")]
@@ -949,7 +973,7 @@ mod tests {
         assert_eq!(decoded.get(), 6);
 
         let none = crate::encode(None::<Box<UnsafeCell<u8>>>);
-        assert_eq!(none, CBoxCell::NICHE_VALUE);
+        assert_eq!(none, CBoxCell::NICHE);
         assert!(matches!(
             unsafe { crate::decode::<Option<Box<UnsafeCell<u8>>>>(none) },
             Some(None)
@@ -962,11 +986,8 @@ mod tests {
 
         let mut value = Cell::new(NonZero::new(3_u8).unwrap());
         let mut store = <&mut Cell<NonZero<u8>> as EncodeOwned>::Store::default();
-        let encoded = <&mut Cell<NonZero<u8>> as EncodeOwned>::soft_encode(
-            &mut value,
-            &mut store,
-        );
-        unsafe { encoded.write(4) };
+        let encoded = <&mut Cell<NonZero<u8>> as EncodeOwned>::soft_encode(&mut value, &mut store);
+        unsafe { encoded.as_ptr().write(4) };
         assert_eq!(store.sync(), Some(()));
         assert_eq!(value.get().get(), 4);
     }
@@ -984,7 +1005,7 @@ mod tests {
             //Encode,
         );
         assert_impl_all!(&mut UnsafeCell<NonZero<u8>>:
-            Niche<CType = *mut u8>,
+            Niche<CType = CRestrict<u8>>,
             Decode<'static>,
         );
         #[cfg(feature = "alloc")]
@@ -1009,7 +1030,7 @@ mod tests {
         );
         assert_not_impl_any!(&[UnsafeCell<NonZero<u8>>]: Encode);
         assert_impl_all!(&mut [UnsafeCell<NonZero<u8>>]:
-            Niche<CType = CSliceMut<u8>>,
+            Niche<CType = CSliceRestrict<u8>>,
             Decode<'static>,
         );
         #[cfg(feature = "alloc")]

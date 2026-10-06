@@ -65,7 +65,7 @@ impl<T: PartialOrd> PartialOrd for ReprCOption<T> {
 }
 
 impl<T> ReprCOption<T> {
-    pub(crate) const NICHE_VALUE: Self = Self {
+    pub(crate) const NICHE: Self = Self {
         tag: 2,
         payload: MaybeUninit::zeroed(),
     };

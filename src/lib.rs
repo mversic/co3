@@ -312,9 +312,10 @@
 //!
 //! # Unpacking at the ABI boundary
 //!
-//! Rust slices are lowered into [`slice::CSlice`]/[`slice::CSliceMut`]
-//! which are C-ABI containers holding a data pointer and a length. However, it is common for FFI APIs to instead accept those components as separate function arguments.
-//! Mark an argument with `#[unpack(T1, T2)]` to import its two ABI parts:
+//! Rust slice is lowered into [`slice::CSlice`], [`slice::CSliceMut`], or [`slice::CSliceRestrict`]
+//! C-ABI container holding a data pointer and a length. However, it is common for FFI APIs to
+//! instead accept those components as separate function arguments. Mark an argument with
+//! `#[unpack(T1, T2)]` to import its two ABI parts:
 //!
 //! ```rust
 //! # use co3::ffi;
@@ -532,11 +533,12 @@ use rust_spec::{Stable, Unstable, size::MetadataKind};
 
 #[cfg(feature = "alloc")]
 use crate::boxed::{CBox, CBoxCell, CBoxedSlice, CBoxedSliceCell};
+use crate::restrict::CRestrict;
 use crate::{
     ffi::NulTerminatedBuf,
     option::ReprCOption,
     result::ReprCResult,
-    slice::{CSlice, CSliceMut},
+    slice::{CSlice, CSliceMut, CSliceRestrict},
     stored::{DecodeOwned, EmptyStore, EncodeOwned, Store},
     wide::Wide,
 };
@@ -552,6 +554,7 @@ pub mod niche;
 pub mod ops;
 pub mod option;
 pub mod primitives;
+pub mod restrict;
 pub mod result;
 pub mod slice;
 mod std_impls;
@@ -609,6 +612,13 @@ pub unsafe trait CFnArg: CType + Copy {}
 /// Type must be allowed as a foreign function return type.
 pub unsafe trait CFnReturn: CType + Copy {}
 
+/// Pointers to types implementing this trait alias are “thin”.
+///
+/// See [`core::ptr::Thin`]
+trait Thin {}
+impl<K: SizedKind> Thin for rust_spec::size::Sized<K> {}
+impl Thin for ExternTypeLike {}
+
 disjoint_impls! {
     /// A Rust type that has a C-compatible companion type.
     pub trait ReprC {
@@ -616,15 +626,9 @@ disjoint_impls! {
         type CType: CType + ?Sized;
     }
 
-    impl<R: ReprC, S: SizedKind> ReprC for &R
-    where
-        R: RustSpec<Size = rust_spec::size::Sized<S>, Mutability = Exclusive>,
-    {
-        type CType = *const R::CType;
-    }
     impl<R: ReprC + ?Sized> ReprC for &R
     where
-        R: RustSpec<Size = ExternTypeLike, Mutability = Exclusive>,
+        R: RustSpec<Size: Thin, Mutability = Exclusive>,
     {
         type CType = *const R::CType;
     }
@@ -643,15 +647,9 @@ disjoint_impls! {
         type CType = CSlice<<R::Data as ReprC>::CType>;
     }
 
-    impl<R: ReprC, S: SizedKind> ReprC for &R
-    where
-        R: RustSpec<Size = rust_spec::size::Sized<S>, Mutability = Interior>,
-    {
-        type CType = *mut R::CType;
-    }
     impl<R: ReprC + ?Sized> ReprC for &R
     where
-        R: RustSpec<Size = ExternTypeLike, Mutability = Interior>,
+        R: RustSpec<Size: Thin, Mutability = Interior>,
     {
         type CType = *mut R::CType;
     }
@@ -670,31 +668,18 @@ disjoint_impls! {
         type CType = CSliceMut<<R::Data as ReprC>::CType>;
     }
 
-    impl<R: ReprC, S: SizedKind> ReprC for &mut R
-    where
-        R: RustSpec<Size = rust_spec::size::Sized<S>>,
-    {
-        type CType = *mut R::CType;
-    }
     impl<R: ReprC + ?Sized> ReprC for &mut R
     where
-        R: RustSpec<Size = ExternTypeLike>,
+        R: RustSpec<Size: Thin>,
     {
-        type CType = *mut R::CType;
-    }
-    impl<R: NulTerminatedBuf<Data: ReprC> + ?Sized> ReprC for &mut R
-    where
-        R: RustSpec<Size = NulTerminated>,
-        <<R as NulTerminatedBuf>::Data as ReprC>::CType: Sized,
-    {
-        type CType = *mut <R::Data as ReprC>::CType;
+        type CType = CRestrict<R::CType>;
     }
     impl<R: Wide<Data: ReprC, Metadata = usize> + ?Sized> ReprC for &mut R
     where
         R: RustSpec<Size = MetaSized<SliceLike>>,
         <<R as Wide>::Data as ReprC>::CType: Sized,
     {
-        type CType = CSliceMut<<R::Data as ReprC>::CType>;
+        type CType = CSliceRestrict<<R::Data as ReprC>::CType>;
     }
 
     #[cfg(feature = "alloc")]
@@ -880,7 +865,9 @@ pub fn encode<T: Encode<Store: EmptyStore>>(item: T) -> T::CType {
 ///
 /// # Safety
 ///
-/// - All conversions from a pointer must ensure pointer validity beforehand
+/// If decoding uses a pointer in `source` to access memory, form a reference, or take ownership,
+/// the caller must uphold the validity, lifetime, aliasing, ownership and allocation requirements
+/// of the resulting value.
 pub unsafe fn soft_decode<'d, T: Decode<'d>>(
     source: T::CType,
     store: &'d mut T::Store,
@@ -895,8 +882,8 @@ pub unsafe fn soft_decode<'d, T: Decode<'d>>(
 ///
 /// # Safety
 ///
-/// All pointer validity, aliasing, allocation, and ownership requirements of
-/// [`soft_decode`] apply, and `soft_decode(source, store)` must return `Some`.
+/// - The caller must uphold all of the safety obligations of [`soft_decode`]. Additionally,
+/// - for the same values of `store` and `source` arguments [`soft_decode`] must return `Some`.
 pub unsafe fn soft_decode_unchecked<'d, T: Decode<'d>>(
     source: T::CType,
     store: &'d mut T::Store,
@@ -908,7 +895,7 @@ pub unsafe fn soft_decode_unchecked<'d, T: Decode<'d>>(
 ///
 /// # Safety
 ///
-/// - All conversions from a pointer must ensure pointer validity beforehand
+/// See safety section in [`soft_decode`]
 pub unsafe fn decode<'d, T: Decode<'d, Store: EmptyStore> + 'd>(source: T::CType) -> Option<T> {
     unsafe { stored::decode_owned(source) }
 }
@@ -969,7 +956,7 @@ mod tests {
             let mut store = Box::default();
             let encoded = soft_encode(value_mut_ref, &mut *store);
             unsafe {
-                *encoded = ReprCOption::Some(other);
+                *encoded.as_ptr() = ReprCOption::Some(other);
             }
             store.sync().unwrap();
         }
@@ -990,7 +977,7 @@ mod tests {
     #[test]
     fn decode_stored_mut_ref() {
         let mut c_opt = ReprCOption::Some(1u8);
-        let c_ptr: *mut _ = &mut c_opt;
+        let c_ptr = CRestrict::from_mut(&mut c_opt);
         let new_val: u8 = 42;
         {
             let mut store = Box::default();
@@ -1002,7 +989,7 @@ mod tests {
         assert_eq!(c_opt, ReprCOption::Some(42u8));
 
         let mut c_opts = [ReprCOption::Some(1u8)];
-        let c_slice = CSliceMut::from_slice(&mut c_opts);
+        let c_slice = CSliceRestrict::from_slice(&mut c_opts);
         let x: u8 = 10;
         {
             let mut store = Box::default();
@@ -1048,12 +1035,12 @@ mod tests {
         {
             let mut store = Box::default();
             let encoded = soft_encode(&mut value, &mut *store);
-            let original_data = unsafe { (*encoded).data };
+            let original_data = unsafe { (*encoded.as_ptr()).data };
             let replacement = CBox::from_box(Box::new(ReprCTuple2(100, primitives::CBool::TRUE)));
             let replacement_data = replacement.data;
 
             unsafe {
-                *encoded = replacement;
+                *encoded.as_ptr() = replacement;
             }
 
             assert_ne!(original_data, replacement_data);
@@ -1069,7 +1056,7 @@ mod tests {
         use tuple::ReprCTuple2;
 
         let mut tuples = [ReprCTuple2(10, primitives::CBool::TRUE)];
-        let c_slice = CSliceMut::from_slice(&mut tuples);
+        let c_slice = CSliceRestrict::from_slice(&mut tuples);
 
         {
             let mut store = Box::default();
