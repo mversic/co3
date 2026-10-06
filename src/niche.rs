@@ -12,9 +12,9 @@ use crate::{
     CType, ReprC, assert_arr_has_non_zero_len,
     option::ReprCOption,
     primitives::CBool,
-    restrict::CRestrict,
+    reference::CRefMut,
     result::ReprCResult,
-    slice::{CSlice, CSliceMut, CSliceRestrict},
+    slice::{CSlice, CSliceMut},
 };
 
 disjoint_impls! {
@@ -36,9 +36,9 @@ disjoint_impls! {
     }
     impl<R: ?Sized, C> Niche for &R
     where
-        Self: ReprC<CType = *mut C>,
+        Self: ReprC<CType = CRefMut<C, false>>,
     {
-        const NICHE_VALUE: Self::CType = core::ptr::null_mut();
+        const NICHE_VALUE: Self::CType = CRefMut::<C, false>::NICHE;
     }
     impl<R: ?Sized, C> Niche for &R
     where
@@ -48,22 +48,22 @@ disjoint_impls! {
     }
     impl<R: ?Sized, C> Niche for &R
     where
-        Self: ReprC<CType = CSliceMut<C>>,
+        Self: ReprC<CType = CSliceMut<C, false>>,
     {
-        const NICHE_VALUE: Self::CType = CSliceMut::NICHE;
+        const NICHE_VALUE: Self::CType = CSliceMut::<C, false>::NICHE;
     }
 
     impl<R: ?Sized, C> Niche for &mut R
     where
-        Self: ReprC<CType = CRestrict<C>>,
+        Self: ReprC<CType = CRefMut<C>>,
     {
-        const NICHE_VALUE: Self::CType = CRestrict::NICHE;
+        const NICHE_VALUE: Self::CType = CRefMut::NICHE;
     }
     impl<R: ?Sized, C> Niche for &mut R
     where
-        Self: ReprC<CType = CSliceRestrict<C>>,
+        Self: ReprC<CType = CSliceMut<C>>,
     {
-        const NICHE_VALUE: Self::CType = CSliceRestrict::NICHE;
+        const NICHE_VALUE: Self::CType = CSliceMut::<C>::NICHE;
     }
 
     #[cfg(feature = "alloc")]
@@ -201,26 +201,20 @@ mod tests {
     fn niche_values() {
         assert_eq!(core::ptr::null::<CBool>(), crate::encode(None::<&bool>));
         assert_eq!(
-            CRestrict::<CBool>::NICHE,
+            CRefMut::<CBool>::NICHE,
             co3::soft_encode(None::<&mut bool>, &mut Default::default())
         );
 
         #[cfg(feature = "alloc")]
-        assert_eq!(
-            CBoxedSlice::<u8>::NICHE,
-            crate::encode(None::<String>)
-        );
+        assert_eq!(CBoxedSlice::<u8>::NICHE, crate::encode(None::<String>));
         #[cfg(feature = "alloc")]
-        assert_eq!(
-            CBoxedSlice::<u8>::NICHE,
-            crate::encode(None::<Box<str>>)
-        );
+        assert_eq!(CBoxedSlice::<u8>::NICHE, crate::encode(None::<Box<str>>));
 
         assert_eq!(CSlice::<u8>::NICHE, crate::encode(None::<&str>));
 
         #[cfg(feature = "alloc")]
         assert_eq!(
-            co3::slice::CSliceRestrict::<u8>::NICHE,
+            co3::slice::CSliceMut::<u8>::NICHE,
             crate::soft_encode(None::<&mut str>, &mut Default::default())
         );
 

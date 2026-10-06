@@ -78,7 +78,7 @@ fn shared_unsafe_cell_wide_uses_mutable_carrier() {
     let cell = UnsafeCell::new([1u8, 2, 3]);
     let original: &UnsafeCell<[u8]> = &cell;
 
-    let carrier: co3::slice::CSliceMut<u8> = co3::encode(original);
+    let carrier: co3::slice::CSliceMut<u8, false> = co3::encode(original);
     let (data, len) = <&UnsafeCell<[u8]> as Unpack2<*mut u8, usize>>::unpack(carrier).unwrap();
     assert_eq!(data, cell.get().cast());
     assert_eq!(len, 3);

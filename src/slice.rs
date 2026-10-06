@@ -147,26 +147,21 @@ pub struct CSlice<C> {
     len: usize,
 }
 
-/// Mutable, potentially aliased slice with a defined C ABI layout.
+/// Mutable slice carrier with a defined C ABI layout.
+///
+/// `RESTRICTED = true` is the default and represents exclusive access; header
+/// generators should render its data pointer as `C *restrict`. Use
+/// `CSliceMut<C, false>` for a mutable pointer that may be aliased.
 #[derive(RustSpec)]
 #[repr(C)]
-pub struct CSliceMut<C> {
-    data: *mut C,
-    len: usize,
-}
-
-/// Exclusive mutable slice with a defined C ABI layout.
-/// Header generators should render its data pointer as `C *restrict`.
-#[derive(RustSpec)]
-#[repr(C)]
-pub struct CSliceRestrict<C> {
+pub struct CSliceMut<C, const RESTRICTED: bool = true> {
     data: *mut C,
     len: usize,
 }
 
 macro_rules! impl_raw_slice_methods {
-    ($($ty:ty),+ $(,)?) => {$(
-        impl<C> core::fmt::Debug for $ty {
+    ($ty:ident, [$($params:tt)*], [$($args:tt)*]) => {
+        impl<$($params)*> core::fmt::Debug for $ty<$($args)*> {
             fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
                 if self.data.is_null() {
                     f.debug_struct(stringify!($ty))
@@ -180,7 +175,7 @@ macro_rules! impl_raw_slice_methods {
                 }
             }
         }
-        impl<C> PartialEq for $ty {
+        impl<$($params)*> PartialEq for $ty<$($args)*> {
             fn eq(&self, other: &Self) -> bool {
                 match (self.data.is_null(), other.data.is_null()) {
                     (true, true) => true,
@@ -195,13 +190,13 @@ macro_rules! impl_raw_slice_methods {
                 }
             }
         }
-        impl<C> Eq for $ty {}
-        impl<C> PartialOrd for $ty {
+        impl<$($params)*> Eq for $ty<$($args)*> {}
+        impl<$($params)*> PartialOrd for $ty<$($args)*> {
             fn partial_cmp(&self, other: &Self) -> Option<core::cmp::Ordering> {
                 Some(self.cmp(other))
             }
         }
-        impl<C> Ord for $ty {
+        impl<$($params)*> Ord for $ty<$($args)*> {
             fn cmp(&self, other: &Self) -> core::cmp::Ordering {
                 use core::cmp::Ordering;
                 match (self.data.is_null(), other.data.is_null()) {
@@ -221,16 +216,17 @@ macro_rules! impl_raw_slice_methods {
                 }
             }
         }
-        impl<C> Clone for $ty {
+        impl<$($params)*> Clone for $ty<$($args)*> {
             fn clone(&self) -> Self {
                 *self
             }
         }
-        impl<C> Copy for $ty {})+
+        impl<$($params)*> Copy for $ty<$($args)*> {}
     };
 }
 
-impl_raw_slice_methods! { CSlice<C>, CSliceMut<C>, CSliceRestrict<C> }
+impl_raw_slice_methods! { CSlice, [C], [C] }
+impl_raw_slice_methods! { CSliceMut, [C, const RESTRICTED: bool], [C, RESTRICTED] }
 
 impl<C> CSlice<C> {
     /// Set the slice's data pointer to null
@@ -269,7 +265,7 @@ impl<C> CSlice<C> {
     }
 }
 
-impl<C> CSliceMut<C> {
+impl<C, const RESTRICTED: bool> CSliceMut<C, RESTRICTED> {
     /// Create [`Self`] from mutable slice
     pub const fn from_slice(slice: &mut [C]) -> Self {
         Self {
@@ -278,35 +274,20 @@ impl<C> CSliceMut<C> {
         }
     }
 
-    /// Create a mutable slice carrier without an exclusivity promise.
-    pub(crate) const fn from_raw_parts_mut(data: *mut C, len: usize) -> Self {
-        Self { data, len }
-    }
-}
-
-impl<C> CSliceRestrict<C> {
-    /// Create an exclusive mutable slice carrier.
-    pub const fn from_slice(slice: &mut [C]) -> Self {
-        Self {
-            data: slice.as_mut_ptr(),
-            len: slice.len(),
-        }
-    }
-
-    /// Create an exclusive mutable slice carrier from raw parts.
+    /// Create a mutable slice carrier from raw parts.
     ///
     /// # Safety
     ///
-    /// A non-null pointer and `len` must describe a valid mutable slice whose
-    /// accesses satisfy the exclusive borrow represented by this carrier.
+    /// The pointer and length must describe a valid slice. When `RESTRICTED`
+    /// is `true`, accesses must also satisfy exclusive access.
     pub const unsafe fn from_raw_parts_mut(data: *mut C, len: usize) -> Self {
         Self { data, len }
     }
 }
 
 macro_rules! impl_mut_slice_methods {
-    ($ty:ident) => {
-        impl<C> $ty<C> {
+    ($ty:ident, [$($params:tt)*], [$($args:tt)*]) => {
+        impl<$($params)*> $ty<$($args)*> {
             pub(crate) const NICHE: Self = Self {
                 data: core::ptr::null_mut(),
                 len: 0,
@@ -327,12 +308,11 @@ macro_rules! impl_mut_slice_methods {
     };
 }
 
-impl_mut_slice_methods! { CSliceMut }
-impl_mut_slice_methods! { CSliceRestrict }
+impl_mut_slice_methods! { CSliceMut, [C, const RESTRICTED: bool], [C, RESTRICTED] }
 
 macro_rules! impl_slice_carrier {
-    ($ty:ident) => {
-        unsafe impl<C> Borrow for $ty<C> {
+    ($ty:ident, [$($params:tt)*], [$($args:tt)*]) => {
+        unsafe impl<$($params)*> Borrow for $ty<$($args)*> {
             type Borrowed<'itm>
                 = Self
             where
@@ -348,17 +328,17 @@ macro_rules! impl_slice_carrier {
                 self
             }
         }
-        impl<'itm, C> FromBorrow<'itm> for $ty<C> {
+        impl<'itm, $($params)*> FromBorrow<'itm> for $ty<$($args)*> {
             #[inline(always)]
             fn from_borrow(source: Self) -> Self {
                 source
             }
         }
 
-        impl<C: CType> ReprC for $ty<C> {
+        impl<$($params)*> ReprC for $ty<$($args)*> where C: CType {
             type CType = Self;
         }
-        unsafe impl<C: CType> EncodeOwned for $ty<C> {
+        unsafe impl<$($params)*> EncodeOwned for $ty<$($args)*> where C: CType {
             type Store = ();
 
             #[inline(always)]
@@ -369,7 +349,7 @@ macro_rules! impl_slice_carrier {
                 self
             }
         }
-        unsafe impl<'d, C: CType> DecodeOwned<'d> for $ty<C> {
+        unsafe impl<'d, $($params)*> DecodeOwned<'d> for $ty<$($args)*> where C: CType {
             type Store = ();
 
             #[inline(always)]
@@ -378,31 +358,30 @@ macro_rules! impl_slice_carrier {
             }
         }
 
-        impl<C: CType> Encode for $ty<C> {}
-        impl<'d, C: CType> Decode<'d> for $ty<C> {}
+        impl<$($params)*> Encode for $ty<$($args)*> where C: CType {}
+        impl<'d, $($params)*> Decode<'d> for $ty<$($args)*> where C: CType {}
 
-        unsafe impl<C: CType> CheckedTransmute for $ty<C> {
+        unsafe impl<$($params)*> CheckedTransmute for $ty<$($args)*> where C: CType {
             #[inline(always)]
             unsafe fn is_valid(_: &Self::CType) -> bool {
                 true
             }
         }
 
-        unsafe impl<C: CType> CType for $ty<C> {}
-        unsafe impl<C: CType> CFnArg for $ty<C> {}
-        unsafe impl<C: CType> CFnReturn for $ty<C> {}
-        unsafe impl<C: CType> BorrowCast for $ty<C> {
+        unsafe impl<$($params)*> CType for $ty<$($args)*> where C: CType {}
+        unsafe impl<$($params)*> CFnArg for $ty<$($args)*> where C: CType {}
+        unsafe impl<$($params)*> CFnReturn for $ty<$($args)*> where C: CType {}
+        unsafe impl<$($params)*> BorrowCast for $ty<$($args)*> where C: CType {
             type AsConst = Self;
         }
-        unsafe impl<C: CType> BorrowCastMut for $ty<C> {
+        unsafe impl<$($params)*> BorrowCastMut for $ty<$($args)*> where C: CType {
             type AsMut = Self;
         }
     };
 }
 
-impl_slice_carrier! { CSlice }
-impl_slice_carrier! { CSliceMut }
-impl_slice_carrier! { CSliceRestrict }
+impl_slice_carrier! { CSlice, [C], [C] }
+impl_slice_carrier! { CSliceMut, [C, const RESTRICTED: bool], [C, RESTRICTED] }
 
 macro_rules! impl_raw_wide_unpack {
     ($source:ty, $part:ty, $accessor:ident) => {
@@ -427,19 +406,19 @@ impl_raw_wide_unpack!(NonNull<R>, *const C, as_ptr);
 impl_raw_wide_unpack!(NonNull<R>, *mut C, as_mut_ptr);
 
 macro_rules! construct_slice_carrier {
-    (safe, $carrier:ident, $constructor:ident, $data:ident, $len:ident) => {
-        $carrier::$constructor($data, $len)
+    (safe, $carrier:ty, $constructor:ident, $data:ident, $len:ident) => {
+        <$carrier>::$constructor($data, $len)
     };
-    (unsafe, $carrier:ident, $constructor:ident, $data:ident, $len:ident) => {
-        unsafe { $carrier::$constructor($data, $len) }
+    (unsafe, $carrier:ty, $constructor:ident, $data:ident, $len:ident) => {
+        unsafe { <$carrier>::$constructor($data, $len) }
     };
 }
 
 macro_rules! impl_ref_slice_pack {
-    ($reference:ty, $carrier:ident, $pointer:ty, $constructor:ident, $safety:ident) => {
+    ($reference:ty, $carrier:ty, $pointer:ty, $constructor:ident, $safety:ident) => {
         impl<R: ?Sized, C: CType, U: CType> Unpack2<$pointer, U> for $reference
         where
-            Self: ReprC<CType = $carrier<C>>,
+            Self: ReprC<CType = $carrier>,
             usize: TryInto<U>,
         {
             type Error = <usize as TryInto<U>>::Error;
@@ -452,7 +431,7 @@ macro_rules! impl_ref_slice_pack {
 
         impl<R: ?Sized, C: CType, U: CType + TryInto<usize>> Pack2<$pointer, U> for $reference
         where
-            Self: ReprC<CType = $carrier<C>>,
+            Self: ReprC<CType = $carrier>,
         {
             type Error = <U as TryInto<usize>>::Error;
 
@@ -471,9 +450,9 @@ macro_rules! impl_ref_slice_pack {
     };
 }
 
-impl_ref_slice_pack!(&R, CSlice, *const C, from_raw_parts, safe);
-impl_ref_slice_pack!(&R, CSliceMut, *mut C, from_raw_parts_mut, safe);
-impl_ref_slice_pack!(&mut R, CSliceRestrict, *mut C, from_raw_parts_mut, unsafe);
+impl_ref_slice_pack!(&R, CSlice<C>, *const C, from_raw_parts, safe);
+impl_ref_slice_pack!(&R, CSliceMut<C, false>, *mut C, from_raw_parts_mut, unsafe);
+impl_ref_slice_pack!(&mut R, CSliceMut<C>, *mut C, from_raw_parts_mut, unsafe);
 
 #[cfg(feature = "alloc")]
 impl<C> CSlice<C> {
@@ -492,7 +471,7 @@ impl<C> CSlice<C> {
 }
 
 #[cfg(feature = "alloc")]
-impl<C> CSliceRestrict<C> {
+impl<C> CSliceMut<C> {
     /// Convert into an exclusive mutable slice. Return `None` if the data pointer is null.
     ///
     /// # Safety

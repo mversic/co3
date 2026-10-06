@@ -312,10 +312,11 @@
 //!
 //! # Unpacking at the ABI boundary
 //!
-//! Rust slice is lowered into [`slice::CSlice`], [`slice::CSliceMut`], or [`slice::CSliceRestrict`]
-//! C-ABI container holding a data pointer and a length. However, it is common for FFI APIs to
-//! instead accept those components as separate function arguments. Mark an argument with
-//! `#[unpack(T1, T2)]` to import its two ABI parts:
+//! Rust slices are lowered into [`slice::CSlice`] or [`slice::CSliceMut`], C-ABI
+//! containers holding a data pointer and a length. The
+//! The default `CSliceMut<C>` form represents exclusive mutable access.
+//! Some FFI APIs accept the pointer and length as separate arguments; mark an
+//! argument with `#[unpack(T1, T2)]` to import its two ABI parts:
 //!
 //! ```rust
 //! # use co3::ffi;
@@ -533,12 +534,12 @@ use rust_spec::{Stable, Unstable, size::MetadataKind};
 
 #[cfg(feature = "alloc")]
 use crate::boxed::{CBox, CBoxCell, CBoxedSlice, CBoxedSliceCell};
-use crate::restrict::CRestrict;
+use crate::reference::CRefMut;
 use crate::{
     ffi::NulTerminatedBuf,
     option::ReprCOption,
     result::ReprCResult,
-    slice::{CSlice, CSliceMut, CSliceRestrict},
+    slice::{CSlice, CSliceMut},
     stored::{DecodeOwned, EmptyStore, EncodeOwned, Store},
     wide::Wide,
 };
@@ -554,7 +555,7 @@ pub mod niche;
 pub mod ops;
 pub mod option;
 pub mod primitives;
-pub mod restrict;
+pub mod reference;
 pub mod result;
 pub mod slice;
 mod std_impls;
@@ -651,35 +652,35 @@ disjoint_impls! {
     where
         R: RustSpec<Size: Thin, Mutability = Interior>,
     {
-        type CType = *mut R::CType;
+        type CType = CRefMut<R::CType, false>;
     }
     impl<R: NulTerminatedBuf<Data: ReprC> + ?Sized> ReprC for &R
     where
         R: RustSpec<Size = NulTerminated, Mutability = Interior>,
         <<R as NulTerminatedBuf>::Data as ReprC>::CType: Sized,
     {
-        type CType = *mut <R::Data as ReprC>::CType;
+        type CType = CRefMut<<R::Data as ReprC>::CType, false>;
     }
     impl<R: Wide<Data: ReprC, Metadata = usize> + ?Sized> ReprC for &R
     where
         R: RustSpec<Size = MetaSized<SliceLike>, Mutability = Interior>,
         <<R as Wide>::Data as ReprC>::CType: Sized,
     {
-        type CType = CSliceMut<<R::Data as ReprC>::CType>;
+        type CType = CSliceMut<<R::Data as ReprC>::CType, false>;
     }
 
     impl<R: ReprC + ?Sized> ReprC for &mut R
     where
         R: RustSpec<Size: Thin>,
     {
-        type CType = CRestrict<R::CType>;
+        type CType = CRefMut<R::CType>;
     }
     impl<R: Wide<Data: ReprC, Metadata = usize> + ?Sized> ReprC for &mut R
     where
         R: RustSpec<Size = MetaSized<SliceLike>>,
         <<R as Wide>::Data as ReprC>::CType: Sized,
     {
-        type CType = CSliceRestrict<<R::Data as ReprC>::CType>;
+        type CType = CSliceMut<<R::Data as ReprC>::CType>;
     }
 
     #[cfg(feature = "alloc")]
@@ -977,7 +978,7 @@ mod tests {
     #[test]
     fn decode_stored_mut_ref() {
         let mut c_opt = ReprCOption::Some(1u8);
-        let c_ptr = CRestrict::from_mut(&mut c_opt);
+        let c_ptr = CRefMut::from_mut(&mut c_opt);
         let new_val: u8 = 42;
         {
             let mut store = Box::default();
@@ -989,7 +990,7 @@ mod tests {
         assert_eq!(c_opt, ReprCOption::Some(42u8));
 
         let mut c_opts = [ReprCOption::Some(1u8)];
-        let c_slice = CSliceRestrict::from_slice(&mut c_opts);
+        let c_slice = CSliceMut::<_>::from_slice(&mut c_opts);
         let x: u8 = 10;
         {
             let mut store = Box::default();
@@ -1056,7 +1057,7 @@ mod tests {
         use tuple::ReprCTuple2;
 
         let mut tuples = [ReprCTuple2(10, primitives::CBool::TRUE)];
-        let c_slice = CSliceRestrict::from_slice(&mut tuples);
+        let c_slice = CSliceMut::<_>::from_slice(&mut tuples);
 
         {
             let mut store = Box::default();

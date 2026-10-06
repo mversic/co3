@@ -416,8 +416,8 @@ mod tests {
     #[cfg(feature = "alloc")]
     use crate::{
         boxed::{CBox, CBoxedSlice},
-        restrict::CRestrict,
-        slice::{CSlice, CSliceRestrict},
+        reference::CRefMut,
+        slice::{CSlice, CSliceMut},
         stored::{DecodeOwned, EncodeOwned},
     };
 
@@ -448,7 +448,7 @@ mod tests {
             Encode,
         );
         assert_impl_all!(&mut (u8, u8, u8):
-        Niche<CType = CRestrict<ReprCTuple3<u8, u8, u8>>>,
+        Niche<CType = CRefMut<ReprCTuple3<u8, u8, u8>>>,
         Encode,
         );
         #[cfg(feature = "alloc")]
@@ -463,7 +463,7 @@ mod tests {
         );
         #[cfg(feature = "alloc")]
         assert_impl_all!(&mut [(u8, u8, u8)]:
-            Niche<CType = CSliceRestrict<ReprCTuple3<u8, u8, u8>>>,
+            Niche<CType = CSliceMut<ReprCTuple3<u8, u8, u8>>>,
             Encode,
         );
         #[cfg(feature = "alloc")]
@@ -544,7 +544,7 @@ mod tests {
             Encode,
         );
         assert_impl_all!(&mut (u8, StdNonZero<u8>, bool):
-            Niche<CType = CRestrict<ReprCTuple3<u8, u8, crate::primitives::CBool>>>,
+            Niche<CType = CRefMut<ReprCTuple3<u8, u8, crate::primitives::CBool>>>,
             Decode<'static>,
             Encode,
         );
@@ -562,7 +562,7 @@ mod tests {
         );
         #[cfg(feature = "alloc")]
         assert_impl_all!(&mut [(u8, StdNonZero<u8>, bool)]:
-            Niche<CType = CSliceRestrict<ReprCTuple3<u8, u8, crate::primitives::CBool>>>,
+            Niche<CType = CSliceMut<ReprCTuple3<u8, u8, crate::primitives::CBool>>>,
             Decode<'static>,
             Encode,
         );

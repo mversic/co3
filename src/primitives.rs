@@ -571,8 +571,8 @@ mod tests {
     use crate::{
         Encode,
         option::ReprCOption,
-        restrict::CRestrict,
-        slice::{CSlice, CSliceRestrict},
+        reference::CRefMut,
+        slice::{CSlice, CSliceMut},
     };
 
     #[test]
@@ -636,7 +636,7 @@ mod tests {
             Encode,
         );
         assert_impl_all!(&mut u8:
-            Niche<CType = CRestrict<u8>>,
+            Niche<CType = CRefMut<u8>>,
             Decode<'static>,
             Encode,
         );
@@ -652,7 +652,7 @@ mod tests {
             Encode,
         );
         assert_impl_all!(&mut [u8]:
-            Niche<CType = CSliceRestrict<u8>>,
+            Niche<CType = CSliceMut<u8>>,
             Decode<'static>,
             Encode,
         );

@@ -283,7 +283,7 @@ pub(crate) fn gen_owned_drop_wrapper_body<const DISPATCHED: bool>(
         self_ty,
         generics,
         erase_declared_receiver,
-        Some(quote! { let __co3_self = unsafe { co3::restrict::CRestrict::from_raw(self.0) }; }),
+        Some(quote! { let __co3_self = unsafe { co3::reference::CRefMut::from_raw(self.0) }; }),
     )
 }
 

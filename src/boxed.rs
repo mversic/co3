@@ -7,8 +7,8 @@ use rust_spec::RustSpec;
 use crate::{
     CFnArg, CFnReturn, CType, Decode, Encode, ReprC,
     borrow::{BorrowCast, BorrowCastMut},
-    restrict::CRestrict,
-    slice::{CSlice, CSliceMut, CSliceRestrict, Pack2, Unpack2},
+    reference::CRefMut,
+    slice::{CSlice, CSliceMut, Pack2, Unpack2},
     stored::{DecodeOwned, EncodeOwned},
     transmute::CheckedTransmute,
 };
@@ -126,13 +126,13 @@ macro_rules! impl_boxed_pointer {
             type AsConst = $as_const;
         }
         unsafe impl<C: CType> BorrowCastMut for $ty<C> {
-            type AsMut = CRestrict<C>;
+            type AsMut = CRefMut<C>;
         }
     };
 }
 
 impl_boxed_pointer!(CBox, *const C);
-impl_boxed_pointer!(CBoxCell, *mut C);
+impl_boxed_pointer!(CBoxCell, CRefMut<C, false>);
 
 impl<C> core::fmt::Debug for CBoxedSliceCell<C> {
     fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
@@ -354,14 +354,14 @@ unsafe impl<C: CType> BorrowCast for CBoxedSlice<C> {
     type AsConst = CSlice<C>;
 }
 unsafe impl<C: CType> BorrowCastMut for CBoxedSlice<C> {
-    type AsMut = CSliceRestrict<C>;
+    type AsMut = CSliceMut<C>;
 }
 
 unsafe impl<C: CType> BorrowCast for CBoxedSliceCell<C> {
-    type AsConst = CSliceMut<C>;
+    type AsConst = CSliceMut<C, false>;
 }
 unsafe impl<C: CType> BorrowCastMut for CBoxedSliceCell<C> {
-    type AsMut = CSliceRestrict<C>;
+    type AsMut = CSliceMut<C>;
 }
 
 impl<R: ?Sized, C: CType, K: CType, U: CType> Unpack2<K, U> for Box<R>
