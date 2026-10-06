@@ -21,7 +21,7 @@ pub(crate) fn expand(
         return Ok(quote! {});
     };
 
-    let Some((field, _, field_member)) = last_field(&data.fields) else {
+    let Some((field, ..)) = last_field(&data.fields) else {
         return Ok(quote! {});
     };
 
@@ -40,10 +40,14 @@ pub(crate) fn expand(
     } else {
         gen_data_ty(input)
     };
-    let methods = gen_dst_methods(is_transparent_single, field_ty, field_member);
-    let alloc_methods = gen_alloc_methods();
+    let methods = gen_dst_methods(is_transparent_single, field_ty);
+    let alloc_methods = gen_alloc_methods(is_transparent_single);
 
     let wide_predicate = wide_predicate(field_ty, &input.generics);
+    let usize_predicate = (!is_transparent_single).then(|| {
+        let predicate = wide_usize_predicate(field_ty, &input.generics);
+        quote!(#predicate,)
+    });
     let data_def =
         (!is_transparent_single && generates_wide).then(|| gen_data_def(input, &data.fields));
     let wide_impl = generates_wide.then(|| {
@@ -51,6 +55,7 @@ pub(crate) fn expand(
             unsafe impl #impl_generics co3::wide::Wide for #name #ty_generics
             where
                 #wide_predicate,
+                #usize_predicate
                 #predicates
             {
                 type Data = #data_ty;
@@ -267,15 +272,52 @@ pub(super) fn wide_predicate(field_ty: &syn::Type, generics: &syn::Generics) -> 
     quote! { #for_dummy #field_ty: co3::wide::Wide }
 }
 
-pub(super) fn gen_dst_methods(
-    is_transparent: bool,
-    field_ty: &syn::Type,
-    field_member: TokenStream,
-) -> TokenStream {
-    let offset = if is_transparent {
-        quote!(0)
+pub(super) fn wide_usize_predicate(field_ty: &syn::Type, generics: &syn::Generics) -> TokenStream {
+    let for_dummy = (!is_type_parametrized(field_ty, generics)).then(|| quote! { for<'__dummy> });
+    quote! { #for_dummy #field_ty: co3::wide::Wide<Metadata = usize> }
+}
+
+pub(super) fn gen_dst_methods(is_transparent: bool, field_ty: &syn::Type) -> TokenStream {
+    let constructors = if is_transparent {
+        quote! {
+            #[inline(always)]
+            unsafe fn from_raw_parts<'__rust_spec>(
+                data: *const Self::Data,
+                metadata: Self::Metadata,
+            ) -> &'__rust_spec Self {
+                let inner = unsafe { <#field_ty as co3::wide::Wide>::from_raw_parts(data.cast(), metadata) };
+                unsafe { &*(inner as *const #field_ty as *const Self) }
+            }
+
+            #[inline(always)]
+            unsafe fn from_raw_parts_mut<'__rust_spec>(
+                data: *mut Self::Data,
+                metadata: Self::Metadata,
+            ) -> &'__rust_spec mut Self {
+                let inner = unsafe { <#field_ty as co3::wide::Wide>::from_raw_parts_mut(data.cast(), metadata) };
+                unsafe { &mut *(inner as *mut #field_ty as *mut Self) }
+            }
+        }
     } else {
-        quote!(core::mem::offset_of!(Self::Data, #field_member))
+        quote! {
+            #[inline(always)]
+            unsafe fn from_raw_parts<'__rust_spec>(
+                data: *const Self::Data,
+                metadata: Self::Metadata,
+            ) -> &'__rust_spec Self {
+                let ptr = core::ptr::slice_from_raw_parts(data.cast::<u8>(), metadata) as *const Self;
+                unsafe { &*ptr }
+            }
+
+            #[inline(always)]
+            unsafe fn from_raw_parts_mut<'__rust_spec>(
+                data: *mut Self::Data,
+                metadata: Self::Metadata,
+            ) -> &'__rust_spec mut Self {
+                let ptr = core::ptr::slice_from_raw_parts_mut(data.cast::<u8>(), metadata) as *mut Self;
+                unsafe { &mut *ptr }
+            }
+        }
     };
 
     quote! {
@@ -294,48 +336,26 @@ pub(super) fn gen_dst_methods(
             ptr as *mut Self::Data
         }
 
-        #[inline(always)]
-        unsafe fn from_raw_parts<'__rust_spec>(
-            data: *const Self::Data,
-            metadata: Self::Metadata,
-        ) -> &'__rust_spec Self {
-            let offset = #offset;
-            let field = unsafe {
-                <#field_ty as co3::wide::Wide>::from_raw_parts(
-                    data.cast::<u8>().byte_add(offset).cast(),
-                    metadata,
-                )
-            };
-            let field_ptr = field as *const #field_ty;
-            let ptr = unsafe { (field_ptr as *const Self).byte_sub(offset) };
-
-            unsafe { &*ptr }
-        }
-
-        #[inline(always)]
-        unsafe fn from_raw_parts_mut<'__rust_spec>(
-            data: *mut Self::Data,
-            metadata: Self::Metadata,
-        ) -> &'__rust_spec mut Self {
-            let offset = #offset;
-            let field = unsafe {
-                <#field_ty as co3::wide::Wide>::from_raw_parts_mut(
-                    data.cast::<u8>().byte_add(offset).cast(),
-                    metadata,
-                )
-            };
-            let field_ptr = field as *mut #field_ty;
-            let ptr = unsafe { (field_ptr as *mut Self).byte_sub(offset) };
-
-            unsafe { &mut *ptr }
-        }
+        #constructors
     }
 }
 
-pub(super) fn gen_alloc_methods() -> TokenStream {
+pub(super) fn gen_alloc_methods(is_transparent: bool) -> TokenStream {
     if !cfg!(feature = "alloc") {
         return quote! {};
     }
+
+    let constructor = if is_transparent {
+        quote! {
+            let ptr = unsafe { <Self as co3::wide::Wide>::from_raw_parts_mut(data.as_ptr(), metadata) }
+                as *mut Self;
+        }
+    } else {
+        quote! {
+            let ptr = core::ptr::slice_from_raw_parts_mut(data.as_ptr().cast::<u8>(), metadata)
+                as *mut Self;
+        }
+    };
 
     quote! {
         #[inline(always)]
@@ -348,9 +368,7 @@ pub(super) fn gen_alloc_methods() -> TokenStream {
             data: core::ptr::NonNull<Self::Data>,
             metadata: Self::Metadata,
         ) -> co3::boxed::Box<Self> {
-            let ptr = unsafe {
-                <Self as co3::wide::Wide>::from_raw_parts_mut(data.as_ptr(), metadata)
-            } as *mut Self;
+            #constructor
             unsafe { co3::boxed::Box::from_raw(ptr) }
         }
     }

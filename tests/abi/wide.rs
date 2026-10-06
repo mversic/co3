@@ -74,6 +74,22 @@ fn cell_wrappers_reconstruct_borrowed_wide_references() {
 }
 
 #[test]
+fn shared_unsafe_cell_wide_uses_mutable_carrier() {
+    let cell = UnsafeCell::new([1u8, 2, 3]);
+    let original: &UnsafeCell<[u8]> = &cell;
+
+    let carrier: co3::slice::CSliceMut<u8> = co3::encode(original);
+    let (data, len) = <&UnsafeCell<[u8]> as Unpack2<*mut u8, usize>>::unpack(carrier).unwrap();
+    assert_eq!(data, cell.get().cast());
+    assert_eq!(len, 3);
+    unsafe { data.add(1).write(9) };
+
+    let decoded = unsafe { co3::decode::<&UnsafeCell<[u8]>>(carrier) }.unwrap();
+    assert!(core::ptr::eq(original, decoded));
+    assert_eq!(unsafe { &*cell.get() }, &[1, 9, 3]);
+}
+
+#[test]
 fn boxed_cell_wrappers_keep_their_allocation() {
     let original: Box<UnsafeCell<[u8]>> = Box::new(UnsafeCell::new([1, 2, 3]));
     let ptr = <UnsafeCell<[u8]> as Wide>::as_ptr(core::ptr::from_ref(&*original));
@@ -166,6 +182,52 @@ fn struct_wide_classification() {
     assert_impl_all!(<Bytes as Wide>::Data: Sized);
     assert_impl_all!(<Packet as Wide>::Data: Sized);
     assert_impl_all!(<TuplePacket as Wide>::Data: Sized);
+}
+
+#[test]
+fn struct_wide_raw_parts_preserve_prefix_provenance() {
+    #[repr(C)]
+    struct Storage {
+        tag: NonZeroU8,
+        payload: [u8; 3],
+    }
+
+    let storage = Storage {
+        tag: NonZeroU8::new(1).unwrap(),
+        payload: [2, 3, 4],
+    };
+    let packet = unsafe {
+        <Packet as Wide>::from_raw_parts(
+            core::ptr::from_ref(&storage).cast::<<Packet as Wide>::Data>(),
+            storage.payload.len(),
+        )
+    };
+
+    assert_eq!(packet.tag, storage.tag);
+    assert_eq!(&packet.payload, &storage.payload);
+
+    let mut storage = Storage {
+        tag: NonZeroU8::new(5).unwrap(),
+        payload: [6, 7, 8],
+    };
+    let packet = unsafe {
+        <Packet as Wide>::from_raw_parts_mut(
+            core::ptr::from_mut(&mut storage).cast::<<Packet as Wide>::Data>(),
+            3,
+        )
+    };
+    packet.payload[1] = 9;
+    assert_eq!(storage.payload, [6, 9, 8]);
+
+    let storage = Box::new(Storage {
+        tag: NonZeroU8::new(10).unwrap(),
+        payload: [11, 12, 13],
+    });
+    let data =
+        core::ptr::NonNull::new(Box::into_raw(storage).cast::<<Packet as Wide>::Data>()).unwrap();
+    let packet = unsafe { <Packet as Wide>::from_non_null(data, 3) };
+    assert_eq!(packet.tag.get(), 10);
+    assert_eq!(&packet.payload, &[11, 12, 13]);
 }
 
 #[test]

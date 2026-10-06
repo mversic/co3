@@ -10,7 +10,7 @@ use crate::layout::{
     primitive_tag_type,
     wide::{
         data_bound_ty, gen_alloc_methods, gen_data_ctype_bounds, gen_data_struct_name,
-        gen_dst_methods, last_field, wide_predicate,
+        gen_dst_methods, last_field, wide_predicate, wide_usize_predicate,
     },
 };
 use crate::utils::co3_path;
@@ -232,7 +232,7 @@ fn gen_ctype_wide_impl(
         return quote! {};
     }
 
-    let Some((field, _, field_member)) = last_field(&ctype.fields) else {
+    let Some((field, ..)) = last_field(&ctype.fields) else {
         return quote! {};
     };
 
@@ -250,9 +250,13 @@ fn gen_ctype_wide_impl(
     let data_ctype_name = gen_ctype_name(&data_name);
 
     let ctype_wide_predicate = wide_predicate(field_ty, &ctype.generics);
-    let methods = gen_dst_methods(is_transparent, field_ty, field_member);
+    let methods = gen_dst_methods(is_transparent, field_ty);
 
-    let alloc_methods = gen_alloc_methods();
+    let alloc_methods = gen_alloc_methods(is_transparent);
+    let usize_predicate = (!is_transparent).then(|| {
+        let predicate = wide_usize_predicate(field_ty, &ctype.generics);
+        quote!(#predicate,)
+    });
     let Some((source_last, ..)) = last_field(source_fields) else {
         return quote! {};
     };
@@ -290,6 +294,7 @@ fn gen_ctype_wide_impl(
             #data_bound
             #source_data_ctype_sized_bound,
             #ctype_wide_predicate,
+            #usize_predicate
             #predicates
         {
             type Data = #data_ty;
