@@ -337,20 +337,20 @@ where
 }
 
 impl<A: Niche> Niche for (A,) {
-    const NICHE_VALUE: Self::CType = ReprCTuple1(A::NICHE_VALUE);
+    const NICHE: Self::CType = ReprCTuple1(A::NICHE);
 }
 
 disjoint_impls! {
     #[disjoint_impls(remote)]
     trait Niche: ReprC<CType: Copy> + Sized {
-        const NICHE_VALUE: Self::CType;
+        const NICHE: Self::CType;
     }
 
     impl<A: Niche<CType: Copy>, B: ReprC<CType: Copy>, N: NicheStabilityKind> Niche for (A, B)
     where
         A: RustSpec<Niche = WithNiche<N>>,
     {
-        const NICHE_VALUE: Self::CType = ReprCTuple2(A::NICHE_VALUE, unsafe { core::mem::zeroed() });
+        const NICHE: Self::CType = ReprCTuple2(A::NICHE, unsafe { core::mem::zeroed() });
     }
 
     impl<A: ReprC<CType: Copy>, B: Niche<CType: Copy>, N: NicheStabilityKind> Niche for (A, B)
@@ -358,7 +358,7 @@ disjoint_impls! {
         A: RustSpec<Niche = WithoutNiche>,
         B: RustSpec<Niche = WithNiche<N>>,
     {
-        const NICHE_VALUE: Self::CType = ReprCTuple2(unsafe { core::mem::zeroed() }, B::NICHE_VALUE);
+        const NICHE: Self::CType = ReprCTuple2(unsafe { core::mem::zeroed() }, B::NICHE);
     }
 }
 
@@ -366,10 +366,10 @@ impl<A: ReprC<CType: Copy>, B: ReprC<CType: Copy>, C: ReprC<CType: Copy>> Niche 
 where
     (A, (B, C)): Niche<CType = ReprCTuple2<A::CType, <(B, C) as ReprC>::CType>>,
 {
-    const NICHE_VALUE: Self::CType = ReprCTuple3(
-        <(A, (B, C))>::NICHE_VALUE.0,
-        <(A, (B, C))>::NICHE_VALUE.1.0,
-        <(A, (B, C))>::NICHE_VALUE.1.1,
+    const NICHE: Self::CType = ReprCTuple3(
+        <(A, (B, C))>::NICHE.0,
+        <(A, (B, C))>::NICHE.1.0,
+        <(A, (B, C))>::NICHE.1.1,
     );
 }
 
@@ -380,8 +380,8 @@ macro_rules! impl_tuple_niche_recursive {
             where
                 ($left, $right): Niche<CType = ReprCTuple2<<$left as ReprC>::CType, <$right as ReprC>::CType>>,
             {
-                const NICHE_VALUE: Self::CType = $ffi_ty(
-                    $(<($left, $right)>::NICHE_VALUE.$field),+
+                const NICHE: Self::CType = $ffi_ty(
+                    $(<($left, $right)>::NICHE.$field),+
                 );
             }
         )+
@@ -528,7 +528,7 @@ mod tests {
     fn stored_tuple_3_with_niche() {
         // NOTE: Confirms niche is taken from the first available element
         assert_eq!(
-            <(u8, StdNonZero<u8>, bool)>::NICHE_VALUE,
+            <(u8, StdNonZero<u8>, bool)>::NICHE,
             ReprCTuple3(0, 0, crate::primitives::CBool::FALSE)
         );
 

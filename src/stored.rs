@@ -695,14 +695,14 @@ disjoint_impls! {
                 let encoded = value.soft_encode(store);
 
                 debug_assert!(
-                    encoded != R::NICHE_VALUE,
-                    "encoding produced the reserved NICHE_VALUE"
+                    encoded != R::NICHE,
+                    "encoding produced the reserved NICHE"
                 );
 
                 return encoded;
             }
 
-            R::NICHE_VALUE
+            R::NICHE
         }
     }
 
@@ -765,7 +765,7 @@ disjoint_impls! {
         {
             match self {
                 Ok(ok) => ok.soft_encode(store),
-                Err(_) => R::NICHE_VALUE,
+                Err(_) => R::NICHE,
             }
         }
     }
@@ -782,7 +782,7 @@ disjoint_impls! {
             Self: 'itm,
         {
             match self {
-                Ok(_) => E::NICHE_VALUE,
+                Ok(_) => E::NICHE,
                 Err(err) => err.soft_encode(store),
             }
         }
@@ -1499,7 +1499,7 @@ disjoint_impls! {
             source: R::CType,
             store: &'itm mut Self::Store,
         ) -> Option<Self> {
-            if source == R::NICHE_VALUE {
+            if source == R::NICHE {
                 return Some(None);
             }
 
@@ -1510,7 +1510,7 @@ disjoint_impls! {
             source: R::CType,
             store: &'itm mut Self::Store,
         ) -> Self {
-            if source == R::NICHE_VALUE {
+            if source == R::NICHE {
                 return None;
             }
 
@@ -1585,7 +1585,7 @@ disjoint_impls! {
             source: Self::CType,
             store: &'itm mut Self::Store,
         ) -> Option<Self> {
-            if source == R::NICHE_VALUE {
+            if source == R::NICHE {
                 return Some(Err(E::default()));
             }
 
@@ -1593,7 +1593,7 @@ disjoint_impls! {
         }
 
         unsafe fn soft_decode_unchecked<'itm: 'd>(source: Self::CType, store: &'itm mut Self::Store) -> Self {
-            if source == R::NICHE_VALUE {
+            if source == R::NICHE {
                 return Err(E::default());
             }
 
@@ -1613,7 +1613,7 @@ disjoint_impls! {
             source: Self::CType,
             store: &'itm mut Self::Store,
         ) -> Option<Self> {
-            if source == E::NICHE_VALUE {
+            if source == E::NICHE {
                 return Some(Ok(R::default()));
             }
 
@@ -1621,7 +1621,7 @@ disjoint_impls! {
         }
 
         unsafe fn soft_decode_unchecked<'itm: 'd>(source: Self::CType, store: &'itm mut Self::Store) -> Self {
-            if source == E::NICHE_VALUE {
+            if source == E::NICHE {
                 return Ok(R::default());
             }
 

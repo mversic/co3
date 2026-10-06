@@ -11,11 +11,11 @@ use co3::{
 #[derive(Clone, Copy, PartialEq, Eq, RustSpec, ReprC)]
 #[repr(transparent)]
 #[rust_spec(with_custom_niche)]
-#[repr_c(NICHE_VALUE = COverlappingCustomNiche(1))]
+#[repr_c(NICHE = COverlappingCustomNiche(1))]
 struct OverlappingCustomNiche(u8);
 
 #[test]
-#[cfg_attr(debug_assertions, should_panic(expected = "reserved NICHE_VALUE"))]
+#[cfg_attr(debug_assertions, should_panic(expected = "reserved NICHE"))]
 fn custom_niche_must_not_overlap_an_encoded_value() {
     let _ = encode(Some(OverlappingCustomNiche(1)));
 }

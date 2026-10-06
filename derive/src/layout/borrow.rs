@@ -34,8 +34,8 @@ pub(super) fn gen_item_view(
         let owner_name = &input.ident;
         let (_, owner_ty_generics, _) = input.generics.split_for_impl();
         quote! {
-            #[repr_c(NICHE_VALUE = co3::borrow::borrow_cast(
-                <#owner_name #owner_ty_generics as co3::niche::Niche>::NICHE_VALUE
+            #[repr_c(NICHE = co3::borrow::borrow_cast(
+                <#owner_name #owner_ty_generics as co3::niche::Niche>::NICHE
             ))]
         }
     });

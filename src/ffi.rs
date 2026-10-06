@@ -125,7 +125,7 @@ impl Encode for CString {}
 
 #[cfg(feature = "alloc")]
 impl Niche for CString {
-    const NICHE_VALUE: Self::CType = CBox::NICHE;
+    const NICHE: Self::CType = CBox::NICHE;
 }
 
 unsafe impl Borrow for c_void {

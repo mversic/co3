@@ -5,16 +5,16 @@ use co3::rust_spec::RustSpec;
 
 #[derive(RustSpec, ReprC)]
 #[rust_spec(with_custom_niche)]
-#[repr_c(NICHE_VALUE = unsafe { core::mem::zeroed() })]
+#[repr_c(NICHE = unsafe { core::mem::zeroed() })]
 struct Valid<T>(u8, PhantomData<T>);
 
 #[derive(RustSpec, ReprC)]
-#[repr_c(NICHE_VALUE = unsafe { core::mem::zeroed() })]
+#[repr_c(NICHE = unsafe { core::mem::zeroed() })]
 struct MissingCustomNiche<T>(u8, PhantomData<T>);
 
 #[derive(RustSpec, ReprC)]
 #[rust_spec(with_custom_niche)]
-#[repr_c(NICHE_VALUE = unsafe { core::mem::zeroed() })]
+#[repr_c(NICHE = unsafe { core::mem::zeroed() })]
 struct OverridesInferredNiche<T>(NonZeroU8, PhantomData<T>);
 
 static_assertions::assert_impl_all!(Valid<()>: co3::niche::Niche);

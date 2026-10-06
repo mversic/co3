@@ -82,7 +82,7 @@ macro_rules! non_zero_derive {
         }
 
         impl Niche for NonZero<$primitive> {
-            const NICHE_VALUE: Self::CType = 0;
+            const NICHE: Self::CType = 0;
         }
         )+
     }
@@ -358,7 +358,7 @@ impl Decode<'_> for String {}
 
 #[cfg(feature = "alloc")]
 impl Niche for String {
-    const NICHE_VALUE: Self::CType = CBoxedSlice::NICHE;
+    const NICHE: Self::CType = CBoxedSlice::NICHE;
 }
 
 unsafe impl<T: Borrow> Borrow for UnsafeCell<T> {
@@ -630,7 +630,7 @@ unsafe impl<T: CheckedTransmute + ?Sized> CheckedTransmute for ManuallyDrop<T> {
 }
 
 impl<T: Niche> Niche for ManuallyDrop<T> {
-    const NICHE_VALUE: Self::CType = T::NICHE_VALUE;
+    const NICHE: Self::CType = T::NICHE;
 }
 
 unsafe impl<T: EmptyStore> EmptyStore for ManuallyDrop<T> {}

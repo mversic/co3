@@ -310,7 +310,7 @@ macro_rules! impl_fn_types {
         where $fn_type: rust_spec::RustSpec<Layout = rust_spec::Stable> {}
         impl<$($arg: CFnArg,)* R: CFnReturn> Niche for $fn_type
         where $fn_type: rust_spec::RustSpec<Layout = rust_spec::Stable> {
-            const NICHE_VALUE: Self::CType = None;
+            const NICHE: Self::CType = None;
         }
         unsafe impl<$($arg: CFnArg,)* R: CFnReturn> CheckedTransmute for $fn_type
         where $fn_type: rust_spec::RustSpec<Layout = rust_spec::Stable> {
@@ -403,7 +403,7 @@ macro_rules! fieldless_enum_derive {
         impl Decode<'_> for $src {}
 
         impl Niche for $src {
-            const NICHE_VALUE: Self::CType = $niche_val;
+            const NICHE: Self::CType = $niche_val;
         }
     };
 }

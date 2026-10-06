@@ -35,8 +35,8 @@ pub fn gen_view_niche_ir(view_name: &syn::Ident, generics: &syn::Generics) -> To
             >,
             #predicates
         {
-            const NICHE_VALUE: Self::CType = co3::borrow::borrow_cast(
-                <#owner_ty as co3::niche::Niche>::NICHE_VALUE
+            const NICHE: Self::CType = co3::borrow::borrow_cast(
+                <#owner_ty as co3::niche::Niche>::NICHE
             );
         }
     }
@@ -87,7 +87,7 @@ pub fn gen_struct_niche_ir(
             (quote! { #niche_value }, quote! {}, custom_niche_bounds)
         } else {
             let niche_field_values = accessors.iter().map(|accessor| {
-                quote! { <#fields_tuple as co3::niche::Niche>::NICHE_VALUE.#accessor }
+                quote! { <#fields_tuple as co3::niche::Niche>::NICHE.#accessor }
             });
             let niche_value = match fields {
                 syn::Fields::Named(_) | syn::Fields::Unit => {
@@ -114,7 +114,7 @@ pub fn gen_struct_niche_ir(
             #(#extern_c_bounds,)*
             #predicates
         {
-            const NICHE_VALUE: Self::CType = #niche_value;
+            const NICHE: Self::CType = #niche_value;
         }
     }
 }
@@ -214,7 +214,7 @@ pub fn gen_enum_niche_ir(
             #self_bounds
             #predicates
         {
-            const NICHE_VALUE: <Self as co3::ReprC>::CType = #niche_value;
+            const NICHE: <Self as co3::ReprC>::CType = #niche_value;
         }
     }
 }

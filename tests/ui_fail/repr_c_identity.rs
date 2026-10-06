@@ -18,7 +18,7 @@ struct NonRobust(bool);
 
 #[derive(ReprC)]
 #[repr(C)]
-#[repr_c(identity, NICHE_VALUE = 42)]
+#[repr_c(identity, NICHE = 42)]
 struct IdentityWithNiche(u32);
 
 #[derive(ReprC)]

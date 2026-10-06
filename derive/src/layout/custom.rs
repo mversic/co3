@@ -129,13 +129,13 @@ pub(super) fn derive_custom_repr_c(
         let (impl_generics, _, where_clause) = niche_generics.split_for_impl();
         quote! {
             impl #impl_generics co3::niche::Niche for #name #ty_generics #where_clause {
-                const NICHE_VALUE: Self::CType = #niche_value;
+                const NICHE: Self::CType = #niche_value;
             }
         }
     });
     let encode_niche_check = attrs.niche_value.as_ref().map(|niche_value| {
         quote! {
-            debug_assert!(encoded != #niche_value, "encoding produced the reserved NICHE_VALUE");
+            debug_assert!(encoded != #niche_value, "encoding produced the reserved NICHE");
         }
     });
     let decode_niche_check = attrs.niche_value.as_ref().map(|niche_value| {

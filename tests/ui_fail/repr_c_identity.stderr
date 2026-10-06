@@ -10,7 +10,7 @@ error: `repr_c(identity)` is only supported on structs
 10 | enum Enum {
    |      ^^^^
 
-error: `repr_c(identity)` cannot be combined with `NICHE_VALUE`
+error: `repr_c(identity)` cannot be combined with `NICHE`
   --> tests/ui_fail/repr_c_identity.rs:22:8
    |
 22 | struct IdentityWithNiche(u32);

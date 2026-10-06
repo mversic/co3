@@ -103,7 +103,7 @@ fn intermediate_store_is_forwarded_in_both_directions() {
 
 #[derive(Clone, Copy, RustSpec, ReprC)]
 #[rust_spec(with_custom_niche)]
-#[repr_c(as(u32), NICHE_VALUE = 0, is_valid = |value| value.is_power_of_two())]
+#[repr_c(as(u32), NICHE = 0, is_valid = |value| value.is_power_of_two())]
 struct PowerOfTwo(u32);
 
 impl From<PowerOfTwo> for u32 {
@@ -133,7 +133,7 @@ fn intermediate_conversion_respects_custom_niche_and_validity() {
 }
 
 #[test]
-#[cfg_attr(debug_assertions, should_panic(expected = "reserved NICHE_VALUE"))]
+#[cfg_attr(debug_assertions, should_panic(expected = "reserved NICHE"))]
 fn intermediate_conversion_rejects_encoding_the_reserved_niche() {
     let _ = co3::encode(PowerOfTwo(0));
 }

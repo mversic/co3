@@ -58,7 +58,7 @@ note: required for `CustomNicheRequiresUnstable` to implement `Niche`
    |
 12 | #[derive(ReprC)]
    |          ----- type parameter would need to implement `Niche`
-13 | #[repr_c(NICHE_VALUE = CCustomNicheRequiresUnstable(1))]
+13 | #[repr_c(NICHE = CCustomNicheRequiresUnstable(1))]
 14 | struct CustomNicheRequiresUnstable(u8);
    |        ^^^^^^^^^^^^^^^^^^^^^^^^^^^
    = help: consider manually implementing `Niche` to avoid undesired bounds caused by "imperfect derives"

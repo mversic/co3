@@ -93,10 +93,10 @@ fn parse_repr_c_attrs(attrs: &[Attribute]) -> syn::Result<ReprCAttrs> {
                 return Ok(());
             }
 
-            if meta.path.is_ident("NICHE_VALUE") {
+            if meta.path.is_ident("NICHE") {
                 let value: syn::Expr = meta.value()?.parse()?;
                 if repr_c.niche_value.replace(value).is_some() {
-                    return Err(meta.error("Duplicate `NICHE_VALUE` within attribute"));
+                    return Err(meta.error("Duplicate `NICHE` within attribute"));
                 }
                 return Ok(());
             }
@@ -211,7 +211,7 @@ pub(crate) fn derive_repr_c(input: &syn::DeriveInput) -> syn::Result<TokenStream
                 &mut errors,
                 syn::Error::new_spanned(
                     &input.ident,
-                    "`repr_c(identity)` cannot be combined with `NICHE_VALUE`",
+                    "`repr_c(identity)` cannot be combined with `NICHE`",
                 ),
             );
         }
@@ -249,7 +249,7 @@ pub(crate) fn derive_repr_c(input: &syn::DeriveInput) -> syn::Result<TokenStream
             }
 
             if repr_c_attrs.niche_value.is_some() {
-                let err_msg = "`NICHE_VALUE` is only supported on structs";
+                let err_msg = "`NICHE` is only supported on structs";
                 push_error(&mut errors, syn::Error::new_spanned(&input.ident, err_msg));
             }
 
@@ -294,7 +294,7 @@ pub(crate) fn derive_repr_c(input: &syn::DeriveInput) -> syn::Result<TokenStream
                     }
                 } else {
                     if variant_repr_c_attrs.niche_value.is_some() {
-                        let err_msg = "`NICHE_VALUE` is only supported on types";
+                        let err_msg = "`NICHE` is only supported on types";
                         push_error(&mut errors, syn::Error::new(variant.span(), err_msg));
                     }
                     if variant_repr_c_attrs.is_view {

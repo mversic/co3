@@ -25,45 +25,45 @@ disjoint_impls! {
     /// [`Option<bool>`]     - will be serilized into one byte
     /// [`Option<*const T>`] - will take the size of the pointer
     pub trait Niche: ReprC<CType: Copy> {
-        const NICHE_VALUE: Self::CType;
+        const NICHE: Self::CType;
     }
 
     impl<R: ?Sized, C> Niche for &R
     where
         Self: ReprC<CType = *const C>,
     {
-        const NICHE_VALUE: Self::CType = core::ptr::null();
+        const NICHE: Self::CType = core::ptr::null();
     }
     impl<R: ?Sized, C> Niche for &R
     where
         Self: ReprC<CType = CRefMut<C, false>>,
     {
-        const NICHE_VALUE: Self::CType = CRefMut::<C, false>::NICHE;
+        const NICHE: Self::CType = CRefMut::<C, false>::NICHE;
     }
     impl<R: ?Sized, C> Niche for &R
     where
         Self: ReprC<CType = CSlice<C>>,
     {
-        const NICHE_VALUE: Self::CType = CSlice::NICHE;
+        const NICHE: Self::CType = CSlice::NICHE;
     }
     impl<R: ?Sized, C> Niche for &R
     where
         Self: ReprC<CType = CSliceMut<C, false>>,
     {
-        const NICHE_VALUE: Self::CType = CSliceMut::<C, false>::NICHE;
+        const NICHE: Self::CType = CSliceMut::<C, false>::NICHE;
     }
 
     impl<R: ?Sized, C> Niche for &mut R
     where
         Self: ReprC<CType = CRefMut<C>>,
     {
-        const NICHE_VALUE: Self::CType = CRefMut::NICHE;
+        const NICHE: Self::CType = CRefMut::NICHE;
     }
     impl<R: ?Sized, C> Niche for &mut R
     where
         Self: ReprC<CType = CSliceMut<C>>,
     {
-        const NICHE_VALUE: Self::CType = CSliceMut::<C>::NICHE;
+        const NICHE: Self::CType = CSliceMut::<C>::NICHE;
     }
 
     #[cfg(feature = "alloc")]
@@ -71,28 +71,28 @@ disjoint_impls! {
     where
         Self: ReprC<CType = CBox<C>>,
     {
-        const NICHE_VALUE: Self::CType = CBox::NICHE;
+        const NICHE: Self::CType = CBox::NICHE;
     }
     #[cfg(feature = "alloc")]
     impl<R: ?Sized, C> Niche for Box<R>
     where
         Self: ReprC<CType = CBoxCell<C>>,
     {
-        const NICHE_VALUE: Self::CType = CBoxCell::NICHE;
+        const NICHE: Self::CType = CBoxCell::NICHE;
     }
     #[cfg(feature = "alloc")]
     impl<R: ?Sized, C> Niche for Box<R>
     where
         Self: ReprC<CType = CBoxedSlice<C>>,
     {
-        const NICHE_VALUE: Self::CType = CBoxedSlice::NICHE;
+        const NICHE: Self::CType = CBoxedSlice::NICHE;
     }
     #[cfg(feature = "alloc")]
     impl<R: ?Sized, C> Niche for Box<R>
     where
         Self: ReprC<CType = CBoxedSliceCell<C>>,
     {
-        const NICHE_VALUE: Self::CType = CBoxedSliceCell::NICHE;
+        const NICHE: Self::CType = CBoxedSliceCell::NICHE;
     }
 
     #[cfg(feature = "alloc")]
@@ -100,48 +100,48 @@ disjoint_impls! {
     where
         Self: ReprC<CType = CBoxedSlice<C>>,
     {
-        const NICHE_VALUE: Self::CType = CBoxedSlice::NICHE;
+        const NICHE: Self::CType = CBoxedSlice::NICHE;
     }
     #[cfg(feature = "alloc")]
     impl<R, C> Niche for Vec<R>
     where
         Self: ReprC<CType = CBoxedSliceCell<C>>,
     {
-        const NICHE_VALUE: Self::CType = CBoxedSliceCell::NICHE;
+        const NICHE: Self::CType = CBoxedSliceCell::NICHE;
     }
 
     impl<T: ?Sized, C> Niche for NonNull<T>
     where
         Self: ReprC<CType = *mut C>,
     {
-        const NICHE_VALUE: Self::CType = core::ptr::null_mut();
+        const NICHE: Self::CType = core::ptr::null_mut();
     }
     // TODO: Support ?Sized
     //impl<R: ?C> Niche for NonNull<R>
     //where
     //    Self: ReprC<CType = CBoxedSlice<C>>,
     //{
-    //    const NICHE_VALUE: Self::CType = CBoxedSlice::none();
+    //    const NICHE: Self::CType = CBoxedSlice::none();
     //}
 
     impl<R, C: CType + Copy> Niche for Option<R>
     where
         Self: ReprC<CType = ReprCOption<C>>,
     {
-        const NICHE_VALUE: Self::CType = ReprCOption::NICHE;
+        const NICHE: Self::CType = ReprCOption::NICHE;
     }
     // TODO: Depends on: https://github.com/mversic/co3/issues/33
     impl Niche for Option<bool>
     where
         Self: ReprC<CType = <bool as ReprC>::CType>,
     {
-        const NICHE_VALUE: Self::CType = CBool::from_raw(3);
+        const NICHE: Self::CType = CBool::from_raw(3);
     }
     impl Niche for Option<Option<bool>>
     where
         Self: ReprC<CType = <bool as ReprC>::CType>,
     {
-        const NICHE_VALUE: Self::CType = CBool::from_raw(4);
+        const NICHE: Self::CType = CBool::from_raw(4);
     }
 }
 
@@ -149,9 +149,9 @@ impl<R: Niche, const N: usize> Niche for [R; N]
 where
     Self: ReprC<CType = [R::CType; N]>,
 {
-    const NICHE_VALUE: Self::CType = {
+    const NICHE: Self::CType = {
         assert_arr_has_non_zero_len::<N>();
-        [R::NICHE_VALUE; N]
+        [R::NICHE; N]
     };
 }
 
@@ -159,7 +159,7 @@ impl<R, E, C: CType + Copy, D: CType + Copy> Niche for Result<R, E>
 where
     Self: ReprC<CType = ReprCResult<C, D>>,
 {
-    const NICHE_VALUE: Self::CType = ReprCResult::NICHE;
+    const NICHE: Self::CType = ReprCResult::NICHE;
 }
 
 #[cfg(test)]

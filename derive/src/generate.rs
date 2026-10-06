@@ -3300,7 +3300,7 @@ fn gen_owned_extern_type_impls(
             }
         }
         impl #impl_generics #co3::niche::Niche for #owned_ident #ty_generics #where_clause {
-            const NICHE_VALUE: Self::CType = #owned_repr_c_name(core::ptr::null_mut());
+            const NICHE: Self::CType = #owned_repr_c_name(core::ptr::null_mut());
         }
 
         unsafe impl #impl_generics #co3::stored::EncodeOwned for #owned_ident #ty_generics #where_clause {

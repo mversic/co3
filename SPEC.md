@@ -59,7 +59,7 @@ A C-compatible companion type has a defined foreign representation and no trap r
 - `#[repr_c(as(T))]` delegates owned conversion through a Rust type `T` via `Into<T>` and `TryInto<Self>`.
 - Conversion of types with explicit representation (i.e. `#[repr(C)]`/`repr(transmute)`) are optimized.
 - `#[repr_c(is_valid = |field0, ...| {...})]` provides additional validity invariant of a struct/variant.
-- `#[repr_c(NICHE_VALUE = <expr>)]` defines the struct's trap value that is used for niche optimization.
+- `#[repr_c(NICHE = <expr>)]` defines the struct's trap value that is used for niche optimization.
 
 ### 2.2. `ffi!`
 
