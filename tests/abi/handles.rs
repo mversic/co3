@@ -229,6 +229,15 @@ fn erased_handle_dispatch() {
 }
 
 #[test]
+fn erased_handle_drop_by_value() {
+    let _lock = provider::lock_drop_test();
+    provider::reset_drop_count();
+    drop(OwnedOpaque::<bool, u8>::default());
+    drop(OwnedOpaque::<u8, bool>::default());
+    assert_eq!(provider::drop_count(), 2);
+}
+
+#[test]
 fn static_parameters_behind_dyn_self_do_not_bind_symbols() {
     let _lock = provider::lock_drop_test();
     let mut handle: OwnedOpaque<bool, u8> = Default::default();

@@ -14,7 +14,12 @@ use crate::{
     borrow::{Borrow, BorrowCast, BorrowCastMut, FromBorrow},
 };
 #[cfg(feature = "alloc")]
-use crate::{Encode, boxed::CBox, niche::Niche, stored::EncodeOwned};
+use crate::{
+    Decode, Encode,
+    boxed::CBox,
+    niche::Niche,
+    stored::{DecodeOwned, EncodeOwned},
+};
 
 /// A nul-terminated value represented across the ABI by a pointer to its data.
 ///
@@ -119,9 +124,19 @@ unsafe impl EncodeOwned for CString {
         self.into_boxed_c_str().soft_encode(&mut ())
     }
 }
+#[cfg(feature = "alloc")]
+unsafe impl<'d> DecodeOwned<'d> for CString {
+    type Store = ();
+
+    unsafe fn soft_decode<'itm: 'd>(source: Self::CType, (): &mut ()) -> Option<Self> {
+        unsafe { Box::<CStr>::soft_decode(source, &mut ()) }.map(Into::into)
+    }
+}
 
 #[cfg(feature = "alloc")]
 impl Encode for CString {}
+#[cfg(feature = "alloc")]
+impl Decode<'_> for CString {}
 
 #[cfg(feature = "alloc")]
 impl Niche for CString {
@@ -205,5 +220,14 @@ mod tests {
         let decoded: Box<CStr> = unsafe { crate::stored::decode_owned(encoded) }.unwrap();
         assert_eq!(decoded.as_ptr(), ptr);
         assert_eq!(&*decoded, c"owned");
+    }
+
+    #[cfg(feature = "alloc")]
+    #[test]
+    fn cstring_round_trip() {
+        let original = CString::new("owned").unwrap();
+        let encoded = crate::encode(original.clone());
+        let decoded: CString = unsafe { crate::decode(encoded) }.unwrap();
+        assert_eq!(decoded, original);
     }
 }

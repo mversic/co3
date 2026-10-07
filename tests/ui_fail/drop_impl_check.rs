@@ -13,30 +13,10 @@ unsafe impl Tagged for Export1<u32> {
 ffi! {
     #![unsafe(export("C"))]
 
-    #![symbol_prefix = "kita"]
-
-    impl Drop for OpaqueType {
-        fn drop(&mut self);
-    }
-}
-
-ffi! {
-    #![unsafe(export("C"))]
-
     type ReturningDrop;
 
     impl Drop for ReturningDrop {
         fn drop(&mut self) -> i16;
-    }
-}
-
-ffi! {
-    #![unsafe(extern("C"))]
-
-    #![symbol_prefix = "kita"]
-
-    impl Drop for ExternType {
-        fn drop(&mut self);
     }
 }
 

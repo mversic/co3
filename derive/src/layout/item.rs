@@ -69,9 +69,11 @@ pub(super) fn derive_item(
     }
 
     let ctype_def = (!is_view).then(|| gen_item_ctype(repr, alignment, input, !is_wide_data));
-    let view_def = (!is_view && !is_wide_data).then(|| gen_item_view(input, attrs, variant_attrs));
+    let view_def = (!is_view && !is_wide_data && !attrs.with_custom_drop)
+        .then(|| gen_item_view(input, attrs, variant_attrs));
 
-    let borrow_impls = (!is_view && !is_wide_data).then(|| gen_item_borrow_impls(input));
+    let borrow_impls =
+        (!is_view && !is_wide_data).then(|| gen_item_borrow_impls(input, attrs.with_custom_drop));
     let codec_impls = gen_item_codec_impls(repr, input, attrs, variant_attrs);
     let niche_impls = if is_view {
         attrs
@@ -130,6 +132,7 @@ fn gen_item_codec_impls(
     match &input.data {
         syn::Data::Struct(data) => gen_struct_codec_impls(
             is_view,
+            attrs.with_custom_drop,
             &input.ident,
             &input.generics,
             &data.fields,
@@ -137,6 +140,7 @@ fn gen_item_codec_impls(
         ),
         syn::Data::Enum(data) => gen_enum_codec_impls(
             is_view,
+            attrs.with_custom_drop,
             repr,
             &input.ident,
             &input.generics,
@@ -293,6 +297,7 @@ fn gen_interior_mut_impl(
 
 fn gen_struct_codec_impls(
     is_view: bool,
+    with_custom_drop: bool,
     name: &Ident,
     generics: &syn::Generics,
     fields: &syn::Fields,
@@ -315,11 +320,22 @@ fn gen_struct_codec_impls(
         let (encode_body, decode_body, decode_unchecked_body) =
             gen_record_conversion(None, quote!(Self), fields, is_valid);
 
+        let encode_destructure = if with_custom_drop {
+            let field_vars = field_vars(fields);
+            quote! {
+                let __co3_owned = core::mem::ManuallyDrop::new(self);
+                let Self #fields_destructure = &*__co3_owned;
+                #(let #field_vars = *#field_vars;)*
+            }
+        } else {
+            quote! { let Self #fields_destructure = self; }
+        };
+
         CodecImpls {
             encode_store,
             decode_store,
             encode_impl: quote! {
-                let Self #fields_destructure = self;
+                #encode_destructure
                 #ctype_name #encode_body
             },
             decode_impl: quote! {
@@ -338,6 +354,7 @@ fn gen_struct_codec_impls(
 
 fn gen_enum_codec_impls(
     is_view: bool,
+    with_custom_drop: bool,
     repr: Option<&ReprKind>,
     name: &Ident,
     generics: &syn::Generics,
@@ -353,7 +370,14 @@ fn gen_enum_codec_impls(
     };
 
     if is_transparent_enum_repr(repr, variants) {
-        return gen_transparent_enum_codec_impls(is_view, name, generics, variants, variant_attrs);
+        return gen_transparent_enum_codec_impls(
+            is_view,
+            with_custom_drop,
+            name,
+            generics,
+            variants,
+            variant_attrs,
+        );
     }
     let tag_type = enum_tag_type(repr, variants.len());
 
@@ -403,6 +427,12 @@ fn gen_enum_codec_impls(
             let tag_value = proc_macro2::Literal::usize_unsuffixed(idx);
 
             let destructure_fields = gen_fields_destructure(&variant.fields);
+            let copy_fields = if with_custom_drop {
+                let field_vars = field_vars(&variant.fields);
+                quote! { #(let #field_vars = *#field_vars;)* }
+            } else {
+                quote! {}
+            };
             let custom_is_valid = variant_attrs[idx].is_valid.as_ref();
             let variant_tag = match repr {
                 None | Some(ReprKind::Primitive(_)) => {
@@ -519,6 +549,7 @@ fn gen_enum_codec_impls(
             (
                 quote! {
                     Self::#variant_name #destructure_fields => {
+                        #copy_fields
                         #encode_store_init
                         #encode_variant
                     }
@@ -578,11 +609,16 @@ fn gen_enum_codec_impls(
         _ => unreachable!(),
     };
 
+    let encode_target = if with_custom_drop {
+        quote! { &*core::mem::ManuallyDrop::new(self) }
+    } else {
+        quote! { self }
+    };
     let codec_impls = CodecImpls {
         encode_store,
         decode_store,
         encode_impl: quote! {
-            match self {
+            match #encode_target {
                 #(#variants_encode,)*
             }
         },
@@ -595,6 +631,7 @@ fn gen_enum_codec_impls(
 
 fn gen_transparent_enum_codec_impls(
     is_view: bool,
+    with_custom_drop: bool,
     name: &Ident,
     generics: &syn::Generics,
     variants: &syn::punctuated::Punctuated<syn::Variant, syn::Token![,]>,
@@ -620,6 +657,17 @@ fn gen_transparent_enum_codec_impls(
         .map(|field| &field.ty)
         .collect::<Vec<_>>();
     let destructure_fields = gen_fields_destructure(&variant.fields);
+    let copy_fields = if with_custom_drop {
+        let field_vars = field_vars(&variant.fields);
+        quote! { #(let #field_vars = *#field_vars;)* }
+    } else {
+        quote! {}
+    };
+    let encode_target = if with_custom_drop {
+        quote! { &*core::mem::ManuallyDrop::new(self) }
+    } else {
+        quote! { self }
+    };
     let custom_is_valid = variant_attrs
         .first()
         .and_then(|attrs| attrs.is_valid.as_ref());
@@ -641,8 +689,9 @@ fn gen_transparent_enum_codec_impls(
             encode_store,
             decode_store,
             encode_impl: quote! {
-                match self {
+                match #encode_target {
                     Self::#variant_name #destructure_fields => {
+                        #copy_fields
                         #ctype_name #encode_body
                     }
                 }

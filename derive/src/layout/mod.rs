@@ -27,6 +27,7 @@ pub(super) struct ReprCAttrs {
     pub(super) is_identity: bool,
     pub(super) is_view: bool,
     pub(super) is_wide_data: bool,
+    pub(super) with_custom_drop: bool,
 }
 
 #[derive(Default)]
@@ -77,6 +78,14 @@ fn parse_repr_c_attrs(attrs: &[Attribute]) -> syn::Result<ReprCAttrs> {
                 return Ok(());
             }
 
+            if meta.path.is_ident("with_custom_drop") {
+                if repr_c.with_custom_drop {
+                    return Err(meta.error("Duplicate `with_custom_drop` within attribute"));
+                }
+                repr_c.with_custom_drop = true;
+                return Ok(());
+            }
+
             if meta.path.is_ident("__wide_data") {
                 if repr_c.is_wide_data {
                     return Err(meta.error("Duplicate `__wide_data` within attribute"));
@@ -115,6 +124,7 @@ fn parse_repr_c_attrs(attrs: &[Attribute]) -> syn::Result<ReprCAttrs> {
         && !repr_c.is_identity
         && !repr_c.is_view
         && !repr_c.is_wide_data
+        && !repr_c.with_custom_drop
     {
         return Err(syn::Error::new_spanned(
             attrs
@@ -167,6 +177,12 @@ pub(crate) fn derive_repr_c(input: &syn::DeriveInput) -> syn::Result<TokenStream
     let mut variant_attrs = Vec::new();
 
     let is_custom = repr_c_attrs.as_type.is_some();
+    if repr_c_attrs.with_custom_drop && repr_c_attrs.is_identity {
+        return Err(syn::Error::new_spanned(
+            &input.ident,
+            "`with_custom_drop` cannot be combined with `identity`",
+        ));
+    }
     if is_custom && (repr_c_attrs.is_identity || repr_c_attrs.is_view || repr_c_attrs.is_wide_data)
     {
         return Err(syn::Error::new_spanned(
@@ -243,6 +259,20 @@ pub(crate) fn derive_repr_c(input: &syn::DeriveInput) -> syn::Result<TokenStream
             }
         }
         syn::Data::Enum(data) => {
+            if repr_c_attrs.with_custom_drop
+                && data
+                    .variants
+                    .iter()
+                    .all(|variant| matches!(variant.fields, syn::Fields::Unit))
+            {
+                push_error(
+                    &mut errors,
+                    syn::Error::new_spanned(
+                        &input.ident,
+                        "`with_custom_drop` is not yet supported on fieldless enums",
+                    ),
+                );
+            }
             if repr_c_attrs.is_valid.is_some() {
                 let err_msg = "`is_valid` is only supported on structs or enum variants";
                 push_error(&mut errors, syn::Error::new_spanned(&input.ident, err_msg));
@@ -324,12 +354,36 @@ pub(crate) fn derive_repr_c(input: &syn::DeriveInput) -> syn::Result<TokenStream
         return Err(errors);
     }
 
+    let mut bounded_input = input.clone();
+    if repr_c_attrs.with_custom_drop {
+        let field_types: Vec<_> = match &input.data {
+            syn::Data::Struct(data) => data.fields.iter().map(|field| &field.ty).collect(),
+            syn::Data::Enum(data) => data
+                .variants
+                .iter()
+                .flat_map(|variant| variant.fields.iter().map(|field| &field.ty))
+                .collect(),
+            syn::Data::Union(_) => unreachable!(),
+        };
+        for field_type in field_types {
+            bounded_input
+                .generics
+                .make_where_clause()
+                .predicates
+                .push(syn::parse_quote!(#field_type: Copy));
+        }
+    }
+    let input = &bounded_input;
+
     if is_custom {
-        return Ok(custom::derive_custom_repr_c(
-            input,
-            &repr_c_attrs,
-            &variant_attrs,
-        ));
+        let drop_impl_assert = repr_c_attrs
+            .with_custom_drop
+            .then(|| assert_has_drop(&input.generics, &input.ident));
+        let tokens = custom::derive_custom_repr_c(input, &repr_c_attrs, &variant_attrs);
+        return Ok(quote! {
+            #drop_impl_assert
+            #tokens
+        });
     }
 
     let mut generics = input.generics.clone();
@@ -382,7 +436,11 @@ pub(crate) fn derive_repr_c(input: &syn::DeriveInput) -> syn::Result<TokenStream
     if let Some(errors) = errors {
         Err(errors)
     } else {
-        let drop_impl_assert = assert_no_drop(&generics, &input.ident);
+        let drop_impl_assert = if repr_c_attrs.with_custom_drop {
+            assert_has_drop(&generics, &input.ident)
+        } else {
+            assert_no_drop(&generics, &input.ident)
+        };
 
         let body = quote! {
             #drop_impl_assert
@@ -397,6 +455,22 @@ pub(crate) fn derive_repr_c(input: &syn::DeriveInput) -> syn::Result<TokenStream
                 #body
             })
         }
+    }
+}
+
+fn assert_has_drop(generics: &syn::Generics, ident: &syn::Ident) -> TokenStream {
+    let (impl_generics, ty_generics, where_clause) = generics.split_for_impl();
+    quote! {
+        const _: () = {
+            #[expect(dead_code)]
+            trait AssertHasDrop { fn assert_has_drop(); }
+            impl #impl_generics AssertHasDrop for #ident #ty_generics #where_clause {
+                fn assert_has_drop() {
+                    fn require_drop<T: core::ops::Drop>() {}
+                    let _ = require_drop::<#ident #ty_generics>;
+                }
+            }
+        };
     }
 }
 

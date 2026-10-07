@@ -1,5 +1,5 @@
 #[cfg(feature = "alloc")]
-use alloc::{boxed::Box, string::String, vec::Vec};
+use alloc::{string::String, vec::Vec};
 use core::{
     cell::{Cell, UnsafeCell},
     marker::PhantomData,
@@ -333,7 +333,7 @@ unsafe impl EncodeOwned for String {
     where
         Self: 'itm,
     {
-        self.into_boxed_str().soft_encode(&mut ())
+        self.into_bytes().soft_encode(&mut ())
     }
 }
 #[cfg(feature = "alloc")]
@@ -342,12 +342,14 @@ unsafe impl<'d> DecodeOwned<'d> for String {
 
     #[inline(always)]
     unsafe fn soft_decode<'itm: 'd>(source: Self::CType, (): &mut ()) -> Option<Self> {
-        unsafe { Box::<str>::soft_decode(source, &mut ()) }.map(Into::into)
+        let bytes = unsafe { Vec::<u8>::soft_decode(source, &mut ())? };
+        String::from_utf8(bytes).ok()
     }
 
     #[inline(always)]
     unsafe fn soft_decode_unchecked<'itm: 'd>(source: Self::CType, (): &mut ()) -> Self {
-        unsafe { Box::<str>::soft_decode_unchecked(source, &mut ()) }.into()
+        let bytes = unsafe { Vec::<u8>::soft_decode_unchecked(source, &mut ()) };
+        unsafe { String::from_utf8_unchecked(bytes) }
     }
 }
 
@@ -594,33 +596,43 @@ impl<'itm, T: FromBorrow<'itm>> FromBorrow<'itm> for ManuallyDrop<T> {
 impl<T: ReprC + ?Sized> ReprC for ManuallyDrop<T> {
     type CType = T::CType;
 }
-// FIXME: I think t's not ok to get owned type and encode it
-// ManuallyDrop::into_inner(self).soft_encode(store)
-//unsafe impl<R: EncodeOwned<CType: Copy>> EncodeOwned for ManuallyDrop<R> {
-//    type Store = R::Store;
-//
-//    #[inline(always)]
-//    fn soft_encode<'itm>(self, store: &'itm mut Self::Store) -> Self::CType
-//    where
-//        Self: 'itm,
-//    {
-//        unimplemented!()
-//    }
-//}
-//unsafe impl<'d, R: DecodeOwned<'d, CType: Copy>> DecodeOwned<'d> for ManuallyDrop<R> {
-//    type Store = R::Store;
-//
-//    #[inline(always)]
-//    unsafe fn soft_decode<'itm: 'd>(
-//        source: Self::CType,
-//        store: &'itm mut Self::Store,
-//    ) -> Option<Self> {
-//        unimplemented!()
-//    }
-//}
+unsafe impl<T: ReprC> EncodeOwned for ManuallyDrop<T>
+where
+    Self: CheckedTransmute<CType: Sized>,
+{
+    type Store = ();
 
-//impl<R: Encode<CType: Copy>> Encode for ManuallyDrop<R> {}
-//impl<'d, R: Decode<'d, CType: Copy>> Decode<'d> for ManuallyDrop<R> {}
+    #[inline(always)]
+    fn soft_encode<'itm>(self, (): &mut ()) -> Self::CType
+    where
+        Self: 'itm,
+    {
+        unsafe { core::mem::transmute_copy(&self) }
+    }
+}
+unsafe impl<'d, T: ReprC> DecodeOwned<'d> for ManuallyDrop<T>
+where
+    Self: CheckedTransmute<CType: Sized>,
+{
+    type Store = ();
+
+    #[inline(always)]
+    unsafe fn soft_decode<'itm: 'd>(source: Self::CType, (): &mut ()) -> Option<Self> {
+        if !unsafe { Self::is_valid(&source) } {
+            return None;
+        }
+
+        Some(unsafe { Self::soft_decode_unchecked(source, &mut ()) })
+    }
+
+    #[inline(always)]
+    unsafe fn soft_decode_unchecked<'itm: 'd>(source: Self::CType, (): &mut ()) -> Self {
+        unsafe { core::mem::transmute_copy(&source) }
+    }
+}
+
+impl<T: ReprC> Encode for ManuallyDrop<T> where Self: CheckedTransmute<CType: Sized> {}
+impl<'d, T: ReprC> Decode<'d> for ManuallyDrop<T> where Self: CheckedTransmute<CType: Sized> {}
 
 unsafe impl<T: CheckedTransmute + ?Sized> CheckedTransmute for ManuallyDrop<T> {
     #[inline(always)]
@@ -637,8 +649,10 @@ unsafe impl<T: EmptyStore> EmptyStore for ManuallyDrop<T> {}
 
 #[cfg(test)]
 mod tests {
+    use core::sync::atomic::{AtomicUsize, Ordering};
+
     #[cfg(feature = "alloc")]
-    use alloc::vec;
+    use alloc::{boxed::Box, vec};
 
     #[cfg(feature = "alloc")]
     use static_assertions::assert_type_eq_all;
@@ -653,6 +667,57 @@ mod tests {
         reference::CRefMut,
         slice::{CSlice, CSliceMut},
     };
+
+    #[test]
+    fn manually_drop_checked_transmute_encodes_without_dropping() {
+        static DROP_COUNT: AtomicUsize = AtomicUsize::new(0);
+
+        #[repr(transparent)]
+        struct DropProbe(u8);
+
+        impl Drop for DropProbe {
+            fn drop(&mut self) {
+                DROP_COUNT.fetch_add(1, Ordering::Relaxed);
+            }
+        }
+
+        impl ReprC for DropProbe {
+            type CType = u8;
+        }
+
+        unsafe impl CheckedTransmute for DropProbe {
+            unsafe fn is_valid(_: &Self::CType) -> bool {
+                true
+            }
+        }
+
+        assert_impl_all!(ManuallyDrop<DropProbe>: CheckedTransmute, Encode, Decode<'static>);
+
+        let before = DROP_COUNT.load(Ordering::Relaxed);
+        let encoded = crate::encode(ManuallyDrop::new(DropProbe(42)));
+
+        assert_eq!(encoded, 42);
+        assert_eq!(DROP_COUNT.load(Ordering::Relaxed), before);
+
+        {
+            let decoded = unsafe { crate::decode::<ManuallyDrop<DropProbe>>(encoded) }.unwrap();
+            assert_eq!(decoded.0, 42);
+            assert_eq!(DROP_COUNT.load(Ordering::Relaxed), before);
+        }
+        assert_eq!(DROP_COUNT.load(Ordering::Relaxed), before);
+    }
+
+    #[test]
+    fn manually_drop_decode_rejects_invalid_inner_representation() {
+        assert_impl_all!(ManuallyDrop<bool>: Decode<'static>, Encode);
+
+        let invalid = crate::primitives::CBool::NICHE;
+        assert!(unsafe { crate::decode::<ManuallyDrop<bool>>(invalid) }.is_none());
+
+        let encoded = crate::encode(ManuallyDrop::new(true));
+        let decoded = unsafe { crate::decode::<ManuallyDrop<bool>>(encoded) }.unwrap();
+        assert!(*decoded);
+    }
 
     #[test]
     fn maybe_uninit_lowers_without_validating_or_encoding_the_inner_value() {
@@ -844,6 +909,23 @@ mod tests {
             let decoded = unsafe { crate::decode::<Box<str>>(source) };
             assert!(decoded.is_none());
         }
+    }
+
+    #[cfg(feature = "alloc")]
+    #[test]
+    fn owned_strings_round_trip_without_recursive_conversion() {
+        let text = String::from("hello 🍃");
+        let encoded = crate::encode(text.clone());
+        assert_eq!(
+            unsafe { crate::decode::<String>(encoded) },
+            Some(text.clone())
+        );
+
+        let encoded = crate::encode(text.clone().into_boxed_str());
+        assert_eq!(
+            unsafe { crate::decode::<Box<str>>(encoded) }.as_deref(),
+            Some(text.as_str())
+        );
     }
 
     #[test]

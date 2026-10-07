@@ -346,7 +346,7 @@ pub(crate) fn impl_method_symbol_binding_params(
         [(&impl_.generics, true), (&method.sig.generics, false)],
         [&impl_.dispatch_args, &dispatch],
         declared_types,
-        false,
+        crate::utils::is_blanket_drop_impl(&impl_.item),
         |uses| {
             visit_signature_positions(uses, &method.sig);
             uses.visit_type(&impl_.self_ty);

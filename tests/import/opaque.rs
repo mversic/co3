@@ -133,3 +133,8 @@ fn imported_opaque_borrow_preserves_identity() {
 
     assert!(core::ptr::eq::<OpaqueStruct>(&*opaque, identity));
 }
+
+#[test]
+fn imported_opaque_drop_sends_pointer() {
+    drop(OpaqueStruct::new(7));
+}

@@ -1,4 +1,5 @@
-use std::{cmp::Ordering, ffi::c_void};
+use std::cmp::Ordering;
+use std::ffi::c_void;
 
 use co3::{boxed::CBoxedSlice, ffi};
 

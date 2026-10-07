@@ -143,11 +143,11 @@ disjoint_impls! {
             CSlice::from_raw_parts(ptr, len)
         }
     }
-    unsafe impl<R: NulTerminatedBuf<Data: CheckedTransmute<CType: Sized>> + ?Sized> EncodeOwned
-        for &R
+    unsafe impl<R: NulTerminatedBuf + ?Sized> EncodeOwned for &R
     where
         Self: RustSpec,
         R: RustSpec<Size = NulTerminated, Mutability = Exclusive>,
+        <R as NulTerminatedBuf>::Data: CheckedTransmute<CType: Sized>,
     {
         type Store = ();
 
@@ -277,13 +277,12 @@ disjoint_impls! {
     //        borrow_cast_mut(*store.ctype.insert(ctype))
     //    }
     //}
-    unsafe impl<R: InteriorMut + NulTerminatedBuf<Data: CheckedTransmute<CType: Sized>> + ?Sized> EncodeOwned
-        for &R
+    unsafe impl<R: InteriorMut + NulTerminatedBuf + ?Sized> EncodeOwned for &R
     where
-        Self: RustSpec
-            + ReprC<CType = CRefMut<<<R as NulTerminatedBuf>::Data as ReprC>::CType, false>>,
+        Self: RustSpec,
         R: RustSpec<Size = NulTerminated, Mutability = Interior, Trap = Robust>,
-        <R as InteriorMut>::Target: NulTerminatedBuf<Data: CheckedTransmute>
+        <R as InteriorMut>::Target: NulTerminatedBuf<Data: CheckedTransmute>,
+        <R as NulTerminatedBuf>::Data: CheckedTransmute<CType: Sized>,
     {
         type Store = ();
 
@@ -524,10 +523,11 @@ disjoint_impls! {
         }
     }
     #[cfg(feature = "alloc")]
-    unsafe impl<R: NulTerminatedBuf<Data: CheckedTransmute<CType: Copy>> + ?Sized> EncodeOwned for Box<R>
+    unsafe impl<R: NulTerminatedBuf + ?Sized> EncodeOwned for Box<R>
     where
-        Self: RustSpec + ReprC<CType = CBox<<<R as NulTerminatedBuf>::Data as ReprC>::CType>>,
+        Self: RustSpec,
         R: RustSpec<Size = NulTerminated, Mutability = Exclusive>,
+        <R as NulTerminatedBuf>::Data: CheckedTransmute<CType: Sized>,
     {
         type Store = ();
 
@@ -829,10 +829,11 @@ disjoint_impls! {
         }
     }
 
-    unsafe impl<'d, R: NulTerminatedBuf<Data = D> + ?Sized, D: CheckedTransmute<CType: Sized> + RustSpec<Layout = Stable>> DecodeOwned<'d> for &'d R
+    unsafe impl<'d, R: NulTerminatedBuf + ?Sized> DecodeOwned<'d> for &'d R
     where
-        Self: RustSpec + ReprC<CType = *const <D as ReprC>::CType>,
+        Self: RustSpec,
         R: RustSpec<Size = NulTerminated, Mutability = Exclusive>,
+        <R as NulTerminatedBuf>::Data: CheckedTransmute<CType: Sized>,
     {
         type Store = ();
 
@@ -848,10 +849,11 @@ disjoint_impls! {
             unsafe { R::from_raw(source.cast()) }
         }
     }
-    unsafe impl<'d, R: NulTerminatedBuf<Data = D> + ?Sized, D: CheckedTransmute<CType: Sized> + RustSpec<Layout = Stable>> DecodeOwned<'d> for &'d R
+    unsafe impl<'d, R: NulTerminatedBuf + ?Sized> DecodeOwned<'d> for &'d R
     where
-        Self: RustSpec + ReprC<CType = CRefMut<<D as ReprC>::CType, false>>,
+        Self: RustSpec,
         R: RustSpec<Size = NulTerminated, Mutability = Interior>,
+        <R as NulTerminatedBuf>::Data: CheckedTransmute<CType: Sized>,
     {
         type Store = ();
 
@@ -1236,11 +1238,11 @@ disjoint_impls! {
         }
     }
     #[cfg(feature = "alloc")]
-    unsafe impl<'d, R: NulTerminatedBuf<Data = D> + ?Sized, D: CheckedTransmute<CType: Sized>>
-        DecodeOwned<'d> for Box<R>
+    unsafe impl<'d, R: NulTerminatedBuf + ?Sized> DecodeOwned<'d> for Box<R>
     where
-        Self: RustSpec + ReprC<CType = CBox<<D as ReprC>::CType>>,
+        Self: RustSpec,
         R: RustSpec<Size = NulTerminated, Mutability = Exclusive>,
+        <R as NulTerminatedBuf>::Data: CheckedTransmute<CType: Sized>,
     {
         type Store = ();
 
@@ -1250,11 +1252,11 @@ disjoint_impls! {
         }
     }
     #[cfg(feature = "alloc")]
-    unsafe impl<'d, R: NulTerminatedBuf<Data = D> + ?Sized, D: CheckedTransmute<CType: Sized>>
-        DecodeOwned<'d> for Box<R>
+    unsafe impl<'d, R: NulTerminatedBuf + ?Sized> DecodeOwned<'d> for Box<R>
     where
-        Self: RustSpec + ReprC<CType = CBoxCell<<D as ReprC>::CType>>,
+        Self: RustSpec,
         R: RustSpec<Size = NulTerminated, Mutability = Interior>,
+        <R as NulTerminatedBuf>::Data: CheckedTransmute<CType: Sized>,
     {
         type Store = ();
 

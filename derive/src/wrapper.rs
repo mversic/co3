@@ -177,6 +177,13 @@ pub fn wrap_impl_definition<const DISPATCHED: bool>(
                 Some(&arg.pat)
             });
             quote!(unsafe { #name(#(#args),*) })
+        } else if drop_impl && !erase_declared_receiver {
+            gen_regular_drop_import_body::<DISPATCHED>(
+                failure_mode,
+                &wrapper_item,
+                self_ty,
+                generics,
+            )
         } else {
             gen_impl_wrapper_body::<DISPATCHED>(
                 failure_mode,
@@ -246,6 +253,29 @@ pub fn wrap_impl_definition<const DISPATCHED: bool>(
     }
 }
 
+fn gen_regular_drop_import_body<const DISPATCHED: bool>(
+    failure_mode: FailureMode,
+    item: &syn::ImplItemFn,
+    self_ty: &syn::Type,
+    generics: &syn::Generics,
+) -> TokenStream {
+    let mut owned_item = item.clone();
+    ffi_fn::normalize_fn_signature(&mut owned_item.sig, Some(self_ty));
+    let owned_ty: syn::Type = syn::parse_quote!(core::mem::ManuallyDrop<#self_ty>);
+    ffi_fn::drop_owned_receiver(&mut owned_item.sig, Some(&owned_ty));
+
+    gen_impl_wrapper_body_with_self_binding::<DISPATCHED>(
+        failure_mode,
+        &owned_item,
+        self_ty,
+        generics,
+        false,
+        Some(quote! {
+            let __co3_self = core::mem::ManuallyDrop::new(unsafe { core::ptr::read(self) });
+        }),
+    )
+}
+
 pub(crate) fn gen_impl_wrapper_body<const DISPATCHED: bool>(
     failure_mode: FailureMode,
     item: &syn::ImplItemFn,
@@ -277,13 +307,18 @@ pub(crate) fn gen_owned_drop_wrapper_body<const DISPATCHED: bool>(
     generics: &syn::Generics,
     erase_declared_receiver: bool,
 ) -> TokenStream {
+    let mut pointer_item = item.clone();
+    ffi_fn::normalize_fn_signature(&mut pointer_item.sig, Some(self_ty));
+    let pointer_ty: syn::Type = syn::parse_quote!(*mut #self_ty);
+    ffi_fn::drop_owned_receiver(&mut pointer_item.sig, Some(&pointer_ty));
+
     gen_impl_wrapper_body_with_self_binding::<DISPATCHED>(
         failure_mode,
-        item,
+        &pointer_item,
         self_ty,
         generics,
         erase_declared_receiver,
-        Some(quote! { let __co3_self = unsafe { co3::reference::CRefMut::from_raw(self.0) }; }),
+        Some(quote! { let __co3_self = self.0; }),
     )
 }
 

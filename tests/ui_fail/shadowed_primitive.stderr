@@ -1,0 +1,11 @@
+error[E0308]: mismatched types
+  --> tests/ui_fail/shadowed_primitive.rs:12:1
+   |
+12 | / raw! {
+13 | |     fn identity(value: shadow::i32) -> shadow::i32;
+14 | | }
+   | |_^ expected fn pointer, found fn item
+   |
+   = note: expected fn pointer `fn(u64) -> u64`
+                 found fn item `fn(i32) -> i32 {std::convert::identity::<i32>}`
+   = note: this error originates in the macro `raw` (in Nightly builds, run with -Z macro-backtrace for more info)

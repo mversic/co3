@@ -1,0 +1,5 @@
+error: exported runtime `Drop for T` cannot mix opaque and regular selections
+  --> tests/ui_fail/blanket_runtime_mixed_drop_export.rs:20:30
+   |
+20 |     impl<dyn(u8) T> Drop for T
+   |                              ^

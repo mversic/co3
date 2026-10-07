@@ -49,7 +49,11 @@ pub(super) fn gen_item_view(
     }
 }
 
-pub(super) fn gen_item_borrow_impls(input: &DeriveInput) -> TokenStream {
+pub(super) fn gen_item_borrow_impls(input: &DeriveInput, with_custom_drop: bool) -> TokenStream {
+    if with_custom_drop {
+        return gen_custom_drop_borrow_impl(&input.ident, &input.generics);
+    }
+
     if fields_are_only_phantom_data(&input.data) {
         return gen_identity_borrow_impls(&input.ident, &input.generics);
     }
@@ -62,6 +66,42 @@ pub(super) fn gen_item_borrow_impls(input: &DeriveInput) -> TokenStream {
             gen_enum_borrow_impls(&input.ident, &input.generics, &data.variants)
         }
         syn::Data::Union(_) => unreachable!(),
+    }
+}
+
+fn gen_custom_drop_borrow_impl(name: &Ident, generics: &syn::Generics) -> TokenStream {
+    let (impl_generics, ty_generics, where_clause) = generics.split_for_impl();
+    let mut from_borrow_generics = generics.clone();
+    from_borrow_generics.params.insert(0, parse_quote!('_išč));
+    from_borrow_generics
+        .make_where_clause()
+        .predicates
+        .push(parse_quote!(Self: Clone));
+    let (from_borrow_impl_generics, _, from_borrow_where_clause) =
+        from_borrow_generics.split_for_impl();
+
+    quote! {
+        unsafe impl #impl_generics co3::borrow::Borrow for #name #ty_generics #where_clause {
+            type Borrowed<'_išč> = &'_išč Self where Self: '_išč;
+            type Owner = core::option::Option<Self>;
+
+            #[inline(always)]
+            fn borrow<'_išč>(self, owner: &'_išč mut Self::Owner) -> Self::Borrowed<'_išč>
+            where
+                Self: '_išč,
+            {
+                owner.insert(self)
+            }
+        }
+
+        impl #from_borrow_impl_generics co3::borrow::FromBorrow<'_išč>
+            for #name #ty_generics #from_borrow_where_clause
+        {
+            #[inline(always)]
+            fn from_borrow(source: Self::Borrowed<'_išč>) -> Self {
+                source.clone()
+            }
+        }
     }
 }
 

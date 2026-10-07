@@ -10,9 +10,9 @@ use syn::{
 use crate::{
     Co3Fn, Co3Impl, DispatchGroups,
     ffi_fn::{
-        self, emit_extern_definition, gen_definition_body, gen_drop_definition_body,
-        gen_failure_panic, gen_input_decode_stmts, gen_static_fn_signature_drift_check,
-        gen_store_sync_stmts, gen_sync_check, gen_sync_error, gen_unknown_tag_error, is_unpack_arg,
+        self, emit_extern_definition, gen_definition_body, gen_failure_panic,
+        gen_input_decode_stmts, gen_static_fn_signature_drift_check, gen_store_sync_stmts,
+        gen_sync_check, gen_sync_error, gen_unknown_tag_error, is_unpack_arg,
         item_fn_input_arg_type, item_fn_output_type, merge_generics, normalize_fn_signature,
         strip_dispatch_params,
     },
@@ -91,6 +91,7 @@ pub(crate) fn gen_dispatch_fn_export(
         &item.attrs,
         &callee,
         false,
+        &Default::default(),
         DispatchEmission::Export,
     );
 
@@ -147,6 +148,7 @@ pub(crate) fn gen_raw_dispatch_companion(
         attrs,
         &callee,
         false,
+        &Default::default(),
         DispatchEmission::Companion(vis),
     )
 }
@@ -329,6 +331,7 @@ pub(crate) fn gen_dispatch_export(
     }: Co3Impl,
     self_id: Option<&syn::Type>,
     dyn_self: bool,
+    declared_types: &std::collections::BTreeSet<syn::Ident>,
 ) -> TokenStream {
     let receiver = if dyn_self {
         DispatchReceiver::DynSelf {
@@ -383,6 +386,7 @@ pub(crate) fn gen_dispatch_export(
             &item.attrs,
             &callee,
             drop_impl,
+            declared_types,
             DispatchEmission::Export,
         );
 
@@ -409,6 +413,7 @@ fn synthesize_dispatch_export_fn(
     attrs: &[syn::Attribute],
     callee: &syn::Expr,
     drop_impl: bool,
+    declared_types: &std::collections::BTreeSet<syn::Ident>,
     emission: DispatchEmission<'_>,
 ) -> TokenStream {
     let layout_checks = gen_dispatch_erased_layout_checks(generics, &sig, dispatch_args);
@@ -421,6 +426,52 @@ fn synthesize_dispatch_export_fn(
     strip_dispatch_params(&mut sig.generics);
 
     let fn_by_val = attrs.iter().any(crate::ffi_fn::is_by_val_attr);
+    let selected_opaque_drop = receiver.ty().is_some_and(|self_ty| {
+        let syn::Type::Path(path) = self_ty else {
+            return false;
+        };
+        let Some(param) = path.path.get_ident() else {
+            return false;
+        };
+        let Some((params, targets)) = dispatch_args
+            .groups()
+            .find(|(params, _)| params.contains(param))
+        else {
+            return false;
+        };
+        let Some(index) = params.iter().position(|candidate| candidate == param) else {
+            return false;
+        };
+        !targets.is_empty()
+            && targets.iter().all(|target| {
+                let Some(syn::GenericArgument::Type(syn::Type::Path(path))) =
+                    target.args.get(index)
+                else {
+                    return false;
+                };
+                path.qself.is_none()
+                    && path.path.segments.len() == 1
+                    && path
+                        .path
+                        .segments
+                        .first()
+                        .is_some_and(|segment| declared_types.contains(&segment.ident))
+            })
+    });
+    let opaque_drop = drop_impl
+        && (selected_opaque_drop
+            || receiver.is_dyn_self()
+            || receiver.ty().is_some_and(|ty| match ty {
+                syn::Type::Path(path) => path
+                    .path
+                    .segments
+                    .first()
+                    .is_some_and(|segment| declared_types.contains(&segment.ident)),
+                _ => false,
+            }));
+    if drop_impl && !opaque_drop {
+        ffi_fn::drop_owned_receiver(&mut sig, None);
+    }
     let selector_inputs = dispatch_selector_inputs(&sig.inputs)
         .filter_map(|(_, pat, tag_id)| {
             let tag_id_ty = resolve_tag_id_type(generics, receiver, tag_id)?;
@@ -448,6 +499,7 @@ fn synthesize_dispatch_export_fn(
         dispatch_args,
         failure_mode,
         drop_impl,
+        opaque_drop,
     );
 
     let decode_selector_stmts = gen_input_decode_stmts(&selector_inputs, failure_mode);
@@ -472,7 +524,20 @@ fn synthesize_dispatch_export_fn(
     }};
 
     erase_dispatch_signature(generics, receiver, &mut sig);
-    let lowered_sig = ffi_fn::lower_abi_fn_signature(sig, failure_mode, fn_by_val);
+    let mut lowered_sig = ffi_fn::lower_abi_fn_signature(sig, failure_mode, fn_by_val);
+    if opaque_drop {
+        let receiver = lowered_sig
+            .inputs
+            .iter_mut()
+            .find_map(|input| match input {
+                syn::FnArg::Typed(arg) if ffi_fn::item_fn_input_ident(&arg.pat) == "__co3_self" => {
+                    Some(arg)
+                }
+                _ => None,
+            })
+            .expect("opaque Drop requires a receiver");
+        receiver.ty = parse_quote!(co3::boxed::CBox<core::ffi::c_void>);
+    }
     let definition = match emission {
         DispatchEmission::Export => {
             emit_extern_definition(abi, attrs, failure_mode, quote!(#lowered_sig), fn_body)
@@ -809,8 +874,15 @@ fn synthesize_dispatch_arms(
     args: &DispatchGroups,
     failure_mode: FailureMode,
     drop_impl: bool,
+    opaque_drop: bool,
 ) -> Vec<TokenStream> {
-    let derase_tag_stmts = gen_tag_retype_stmts(RetypeDirection::Derase, generics, receiver, sig);
+    let derase_tag_stmts = gen_tag_retype_stmts(
+        RetypeDirection::Derase,
+        generics,
+        receiver,
+        sig,
+        opaque_drop,
+    );
 
     let dispatch_selectors = dispatch_selector_inputs(&sig.inputs)
         .map(|(_, _, tag_id)| tag_id)
@@ -850,8 +922,31 @@ fn synthesize_dispatch_arms(
         monomorphizer.visit_expr_mut(&mut check_callee);
         let signature_check = (!drop_impl)
             .then(|| gen_static_fn_signature_drift_check(arm_sig.clone(), check_callee.clone()));
-        let arm_body = if drop_impl {
-            gen_drop_definition_body(&arm_sig, failure_mode)
+        let opaque_self_retype = opaque_drop.then(|| {
+            let self_ty = arm_sig
+                .inputs
+                .iter()
+                .find_map(|input| match input {
+                    syn::FnArg::Typed(arg)
+                        if ffi_fn::item_fn_input_ident(&arg.pat) == "__co3_self" =>
+                    {
+                        let syn::Type::Reference(reference) = arg.ty.as_ref() else {
+                            unreachable!("`Drop::drop` requires `&mut self`");
+                        };
+                        Some(reference.elem.as_ref())
+                    }
+                    _ => None,
+                })
+                .expect("opaque Drop requires a receiver");
+            let erased_ty = parse_quote!(co3::boxed::CBox<core::ffi::c_void>);
+            let concrete_ty = parse_quote!(co3::boxed::CBox<#self_ty>);
+            let retype = gen_retype(&quote!(__co3_self), &erased_ty, &concrete_ty);
+            quote!(let __co3_self = #retype;)
+        });
+        let arm_body = if drop_impl && opaque_drop {
+            ffi_fn::gen_opaque_drop_definition_body(&arm_sig, failure_mode)
+        } else if drop_impl {
+            ffi_fn::gen_regular_drop_definition_body(&arm_sig, failure_mode)
         } else {
             gen_definition_body(arm_sig, quote!(#check_callee), fn_by_val, failure_mode)
         };
@@ -893,6 +988,7 @@ fn synthesize_dispatch_arms(
             parse_quote! {{
                 match (|| -> Result<_, _> {
                     #(#derase_tag_stmts)*
+                    #opaque_self_retype
                     #signature_check
                     #arm_body
                 })() {
@@ -904,6 +1000,7 @@ fn synthesize_dispatch_arms(
             parse_quote! {{
                 (|| -> Result<_, _> {
                     #(#derase_tag_stmts)*
+                    #opaque_self_retype
                     #signature_check
                     #arm_body
                 })()
@@ -1034,6 +1131,7 @@ pub(crate) fn gen_tag_erase_stmts(
             }
         },
         &sig,
+        false,
     )
 }
 
@@ -1051,6 +1149,7 @@ pub(crate) fn gen_dyn_self_erase_stmts(
             id: None,
         },
         &sig,
+        false,
     )
 }
 
@@ -1170,6 +1269,7 @@ fn gen_tag_retype_stmts(
     generics: &syn::Generics,
     receiver: DispatchReceiver,
     sig: &syn::Signature,
+    skip_self: bool,
 ) -> Vec<TokenStream> {
     let args = sig.inputs.iter().filter(|input| !is_tag_id_arg(input));
     let mut erased_params = ErasedParamReplacer::new(generics);
@@ -1198,7 +1298,10 @@ fn gen_tag_retype_stmts(
             ),
         };
 
-        if is_unpack_arg(attrs) || crate::ffi_fn::is_single_unpack_arg(attrs) {
+        if (skip_self && is_self)
+            || is_unpack_arg(attrs)
+            || crate::ffi_fn::is_single_unpack_arg(attrs)
+        {
             continue;
         }
 

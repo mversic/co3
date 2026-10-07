@@ -14,7 +14,7 @@ disjoint_impls! {
     ///
     /// # Safety
     ///
-    /// - `Self` and `Self::CType` must be mutually transmutable (this includes [`Drop`] semantics)
+    /// - `Self` and `Self::CType` must have mutually transmutable layouts and value representations.
     /// - `Self::is_valid` must return `false` for trap representations and `true` for valid representations
     pub unsafe trait CheckedTransmute: ReprC {
         /// Called when transmuting an [`ReprC::CType`] back into [`Self`] to check for trap representations.

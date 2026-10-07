@@ -366,6 +366,24 @@ pub(crate) fn is_drop_impl(impl_: &syn::ItemImpl) -> bool {
         .is_some_and(|(path, _)| path.segments.last().is_some_and(|seg| seg.ident == "Drop"))
 }
 
+pub(crate) fn is_blanket_drop_impl(impl_: &syn::ItemImpl) -> bool {
+    if !is_drop_impl(impl_) {
+        return false;
+    }
+    let Type::Path(self_ty) = impl_.self_ty.as_ref() else {
+        return false;
+    };
+    if self_ty.qself.is_some() {
+        return false;
+    }
+    self_ty.path.get_ident().is_some_and(|ident| {
+        impl_
+            .generics
+            .type_params()
+            .any(|param| param.ident == *ident)
+    })
+}
+
 pub(crate) fn has_non_lifetime_generics(generics: &syn::Generics) -> bool {
     generics
         .params

@@ -9,6 +9,7 @@ mod niche_value;
 mod raw_selected;
 mod raw_tagged_dispatch;
 mod raw_wrapper_abi;
+mod regular_drop;
 mod statics;
 mod status_return;
 mod wide;

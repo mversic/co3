@@ -1,4 +1,4 @@
-use std::collections::BTreeSet;
+use std::collections::{BTreeMap, BTreeSet};
 
 use proc_macro2::TokenStream;
 use quote::{format_ident, quote};
@@ -240,6 +240,94 @@ fn monomorphize_static_impl_bindings(
             binding
         })
         .collect()
+}
+
+fn declared_drop_type<'a>(
+    ty: &syn::Type,
+    types: &'a BTreeMap<syn::Ident, ForeignItemType>,
+) -> Option<&'a ForeignItemType> {
+    let syn::Type::Path(path) = ty else {
+        return None;
+    };
+    if path.qself.is_some() || path.path.segments.len() != 1 {
+        return None;
+    }
+    types.get(&path.path.segments.first()?.ident)
+}
+
+// Called after static bindings have been resolved. A remaining `Drop for T`
+// selection is runtime dispatched; imports need a concrete Owned wrapper for
+// each opaque selection, while regular selections keep their original impl.
+fn split_runtime_drop_import(
+    mut drop: Co3Impl,
+    types: &BTreeMap<syn::Ident, ForeignItemType>,
+) -> Vec<(Co3Impl, Option<syn::Ident>)> {
+    if !crate::utils::is_drop_impl(&drop.item) {
+        return vec![(drop, None)];
+    }
+    let syn::Type::Path(self_ty) = drop.self_ty.as_ref() else {
+        return vec![(drop, None)];
+    };
+    let Some(param) = self_ty.path.get_ident().cloned() else {
+        return vec![(drop, None)];
+    };
+    let key = vec![param.clone()];
+    let Some(targets) = drop.dispatch_args.groups.get(&key).cloned() else {
+        return vec![(drop, None)];
+    };
+    if !drop
+        .generics
+        .type_params()
+        .any(|p| p.ident == param && p.attrs.iter().any(is_type_erased))
+    {
+        return vec![(drop, None)];
+    }
+    let mut result = Vec::new();
+    let mut regular = Vec::new();
+    for target in targets {
+        let Some(syn::GenericArgument::Type(selected_ty)) = target.args.first() else {
+            regular.push(target);
+            continue;
+        };
+        let Some(declared) = declared_drop_type(selected_ty, types) else {
+            regular.push(target);
+            continue;
+        };
+        let mut opaque = drop.clone();
+        for item in &mut opaque.items {
+            let syn::ImplItem::Fn(method) = item else {
+                continue;
+            };
+            for input in &mut method.sig.inputs {
+                let syn::FnArg::Typed(input) = input else {
+                    continue;
+                };
+                if matches!(crate::dispatch::tag_id(&input.ty),
+                    Some(crate::dispatch::TagId::DynType(id)) if *id == param)
+                {
+                    *input.ty = syn::parse_quote!(<dyn Self>::TAG);
+                }
+            }
+        }
+        let selected_arg = syn::GenericArgument::Type(selected_ty.clone());
+        DispatchMonomorphizer::for_substitutions(
+            &drop.generics,
+            std::iter::once((&param, &selected_arg)),
+        )
+        .visit_item_impl_mut(&mut opaque.item);
+        opaque.self_ty = Box::new(syn::parse_quote!(dyn #selected_ty));
+        opaque.generics.params = core::mem::take(&mut opaque.generics.params)
+            .into_iter()
+            .filter(|generic| !matches!(generic, syn::GenericParam::Type(ty) if ty.ident == param))
+            .collect();
+        opaque.dispatch_args.groups.remove(&key);
+        result.push((opaque, Some(declared.ty.ident.clone())));
+    }
+    if !regular.is_empty() {
+        drop.dispatch_args.groups.insert(key, regular);
+        result.push((drop, None));
+    }
+    result
 }
 
 fn monomorphize_static_fn_bindings(
@@ -502,10 +590,18 @@ fn gen_export_impl(
             TokenStream::new()
         } else if !descriptor.dispatch_args.is_empty() || dyn_self {
             let self_id = dyn_self.then_some(type_id).flatten();
-            let export = gen_dispatch_export(abi, failure_mode, descriptor, self_id, dyn_self);
+            let export = gen_dispatch_export(
+                abi,
+                failure_mode,
+                descriptor,
+                self_id,
+                dyn_self,
+                declared_types,
+            );
             quote!(#associated_item_checks #export)
         } else {
-            let export = ffi_fn::gen_impl_definition(abi, failure_mode, descriptor.item);
+            let export =
+                ffi_fn::gen_impl_definition(abi, failure_mode, descriptor.item, declared_self);
             quote!(#associated_item_checks #export)
         }
     });
@@ -1475,6 +1571,13 @@ pub(crate) fn expand_export_decls(
             _ => None,
         })
         .collect::<BTreeSet<_>>();
+    let declared_drop_types = decls
+        .iter()
+        .filter_map(|decl| match decl {
+            ForeignItem::Type(item) => Some((item.ty.ident.clone(), item.clone())),
+            _ => None,
+        })
+        .collect::<BTreeMap<_, _>>();
     let owned_type_aliases = if cfg!(feature = "alloc") {
         decls
             .iter()
@@ -1615,17 +1718,40 @@ pub(crate) fn expand_export_decls(
                 });
             quote!(#(#definitions)*)
         }
-        ForeignItem::Impl(impl_) => {
-            gen_export_impl(
-                &abi,
-                failure_mode,
-                impl_,
-                None,
-                false,
-                symbol_fragments,
-                &declared_types,
-            )
+        ForeignItem::Impl(impl_) if crate::utils::is_blanket_drop_impl(&impl_.item) => {
+            let bindings = monomorphize_static_impl_bindings(
+                impl_, symbol_fragments, &declared_types,
+            );
+            let definitions = bindings.into_iter().map(|binding| {
+                let declared = declared_drop_type(&binding.self_ty, &declared_drop_types);
+                if declared.is_none() {
+                    // Runtime dispatch may still select opaque types. They must
+                    // share one pointer ABI; a mixed receiver has no such ABI.
+                    let selected = binding.dispatch_args.groups().flat_map(|(params, targets)| {
+                        let index = params.iter().position(|p| binding.self_ty.as_ref() == &syn::parse_quote!(#p));
+                        targets.iter().filter_map(move |target| index.and_then(|i| target.args.get(i)))
+                    });
+                    let kinds = selected.filter_map(|arg| match arg {
+                        syn::GenericArgument::Type(ty) => Some(declared_drop_type(ty, &declared_drop_types).is_some()),
+                        _ => None,
+                    }).collect::<BTreeSet<_>>();
+                    if kinds.len() > 1 {
+                        return syn::Error::new_spanned(&binding.self_ty,
+                            "exported runtime `Drop for T` cannot mix opaque and regular selections"
+                        ).to_compile_error();
+                    }
+                }
+                gen_export_impl(
+                    &abi, failure_mode, binding,
+                    declared.and_then(|item| item.id.as_deref()),
+                    declared.is_some(), symbol_fragments, &declared_types,
+                )
+            });
+            quote!(#(#definitions)*)
         }
+        ForeignItem::Impl(impl_) => gen_export_impl(
+            &abi, failure_mode, impl_, None, false, symbol_fragments, &declared_types,
+        ),
     };
 
         quote! { const _: () = { use #co3 as co3; #export }; }
@@ -1719,10 +1845,13 @@ fn synthesize_impl_extern_decls(
     self_id: Option<&syn::Type>,
     args: Option<&DispatchGroups>,
     declared_self: bool,
+    opaque_drop_pointer: bool,
     selection: Option<&[crate::DispatchSelection<'_>]>,
     symbol_fragments: &std::collections::BTreeMap<String, syn::LitStr>,
 ) -> Vec<(syn::Ident, TokenStream, TokenStream)> {
     let dispatch_generics = impl_.generics.clone();
+    let drop_impl = crate::utils::is_drop_impl(&impl_);
+    let opaque_drop = drop_impl && opaque_drop_pointer;
     let receiver =
         crate::dispatch::DispatchReceiver::for_impl(&impl_.self_ty, &impl_.self_ty, self_id);
     impl_
@@ -1740,8 +1869,17 @@ fn synthesize_impl_extern_decls(
                 .any(|input| matches!(input, FnArg::Receiver(_)));
             if import_mode == crate::ImportMode::Regular {
                 normalize_fn_signature(&mut item.sig, Some(&impl_.self_ty));
+                if drop_impl {
+                    if opaque_drop {
+                        let self_ty = &impl_.self_ty;
+                        let pointer_ty: syn::Type = syn::parse_quote!(*mut #self_ty);
+                        ffi_fn::drop_owned_receiver(&mut item.sig, Some(&pointer_ty));
+                    } else {
+                        ffi_fn::drop_owned_receiver(&mut item.sig, None);
+                    }
+                }
             }
-            if declared_self {
+            if declared_self && !(opaque_drop && impl_.generics.params.is_empty()) {
                 erase_dispatch_signature(
                     &syn::Generics::default(),
                     crate::dispatch::DispatchReceiver::DynSelf {
@@ -1783,6 +1921,35 @@ fn synthesize_impl_extern_decls(
                 item.sig.abi = None;
                 item.sig.safety = syn::Safety::Default;
                 let sig = item.sig;
+                quote!(#sig)
+            } else if opaque_drop {
+                let pointer_ty = item
+                    .sig
+                    .inputs
+                    .iter()
+                    .find_map(|input| match input {
+                        FnArg::Typed(arg)
+                            if ffi_fn::item_fn_input_ident(&arg.pat) == "__co3_self" =>
+                        {
+                            Some(arg.ty.clone())
+                        }
+                        _ => None,
+                    })
+                    .expect("opaque Drop requires a receiver");
+                let mut sig = ffi_fn::lower_abi_fn_signature(item.sig, failure_mode, false);
+                let receiver = sig
+                    .inputs
+                    .iter_mut()
+                    .find_map(|input| match input {
+                        FnArg::Typed(arg)
+                            if ffi_fn::item_fn_input_ident(&arg.pat) == "__co3_self" =>
+                        {
+                            Some(arg)
+                        }
+                        _ => None,
+                    })
+                    .expect("opaque Drop requires a receiver");
+                receiver.ty = pointer_ty;
                 quote!(#sig)
             } else {
                 gen_extern_fn_signature(
@@ -1868,6 +2035,7 @@ pub(crate) fn expand_extern_decls(
             None,
             None,
             declared_self,
+            false,
             None,
             symbol_fragments,
         );
@@ -1976,6 +2144,7 @@ pub(crate) fn expand_extern_decls(
                     source_impl.clone(),
                     self_id,
                     Some(args),
+                    false,
                     false,
                     Some(selections),
                     symbol_fragments,
@@ -2388,6 +2557,13 @@ pub(crate) fn expand_extern_decls(
             _ => None,
         })
         .collect::<BTreeSet<_>>();
+    let declared_drop_types = decls
+        .iter()
+        .filter_map(|decl| match decl {
+            ForeignItem::Type(item) => Some((item.ty.ident.clone(), item.clone())),
+            _ => None,
+        })
+        .collect::<BTreeMap<_, _>>();
     let imports = decls.into_iter().map(|decl| match decl {
         ForeignItem::Type(ForeignItemType {
             ty,
@@ -2477,6 +2653,58 @@ pub(crate) fn expand_extern_decls(
             } else {
                 wrap_fn_definition(&abi, failure_mode, attrs, item.import_mode, item.item)
             }
+        }
+        ForeignItem::Impl(impl_) if crate::utils::is_blanket_drop_impl(&impl_.item) => {
+            let bindings =
+                monomorphize_static_impl_bindings(impl_, symbol_fragments, &declared_types);
+            let imports = bindings
+                .into_iter()
+                .flat_map(|binding| split_runtime_drop_import(binding, &declared_drop_types))
+                .map(|(binding, selected)| {
+                    let declared = selected
+                        .as_ref()
+                        .and_then(|ident| declared_drop_types.get(ident))
+                        .or_else(|| declared_drop_type(&binding.self_ty, &declared_drop_types));
+                    if let Some(declared) = declared {
+                        let owned_ident = gen_owned_extern_type_name(&declared.ty.ident);
+                        if binding.dispatch_args.is_empty()
+                            && trait_object_single_trait_bound(&binding.self_ty).is_none()
+                        {
+                            expand_plain_drop_import(
+                                &abi,
+                                failure_mode,
+                                attrs,
+                                binding.item,
+                                &owned_ident,
+                                &declared.ty.generics,
+                                symbol_fragments,
+                            )
+                        } else {
+                            expand_dispatch_drop_import(
+                                &abi,
+                                failure_mode,
+                                attrs,
+                                binding,
+                                declared.id.as_deref(),
+                                &owned_ident,
+                                &declared.ty.generics,
+                                symbol_fragments,
+                            )
+                        }
+                    } else {
+                        expand_import_impl(
+                            &abi,
+                            failure_mode,
+                            attrs,
+                            binding,
+                            None,
+                            false,
+                            symbol_fragments,
+                            &declared_types,
+                        )
+                    }
+                });
+            quote!(#(#imports)*)
         }
         ForeignItem::Impl(impl_) => expand_import_impl(
             &abi,
@@ -2722,6 +2950,7 @@ fn expand_dispatch_drop_import(
         dispatch_args,
         ..
     } = item;
+    let owned_self_ty = owned_extern_self_ty(owned_ident, declared_generics);
     let extern_decls = synthesize_impl_extern_decls(
         abi,
         failure_mode,
@@ -2731,6 +2960,7 @@ fn expand_dispatch_drop_import(
         declared_id_ty,
         Some(&dispatch_args),
         false,
+        true,
         None,
         symbol_fragments,
     );
@@ -2747,7 +2977,6 @@ fn expand_dispatch_drop_import(
         ..
     } = &impl_;
     let declared_self_ty = declared_extern_self_ty(self_ty, declared_generics);
-    let owned_self_ty = owned_extern_self_ty(owned_ident, declared_generics);
 
     let mut wrapper_generics = generics.clone();
     add_missing_decl_lifetimes(&mut wrapper_generics, declared_generics);
@@ -2856,6 +3085,7 @@ fn expand_plain_drop_import(
         None,
         None,
         true,
+        true,
         None,
         symbol_fragments,
     );
@@ -2884,7 +3114,7 @@ fn expand_plain_drop_import(
         &lowered_method,
         &declared_self_ty,
         generics,
-        true,
+        !declared_generics.params.is_empty(),
     );
     let mut wrapper_generics = generics.clone();
     add_missing_decl_lifetimes(&mut wrapper_generics, declared_generics);

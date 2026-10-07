@@ -314,14 +314,23 @@ pub(crate) fn gen_abi_return_encode(value: TokenStream, borrow_output: bool) -> 
     }
 }
 
-pub(crate) fn gen_drop_definition_body(
+pub(crate) fn gen_opaque_drop_definition_body(
     sig: &syn::Signature,
     failure_mode: FailureMode,
 ) -> TokenStream {
-    debug_assert!(sig.inputs.iter().any(|input| matches!(
-        input,
-        syn::FnArg::Typed(arg) if item_fn_input_ident(&arg.pat) == "__co3_self"
-    )));
+    let self_ty = sig
+        .inputs
+        .iter()
+        .find_map(|input| match input {
+            syn::FnArg::Typed(arg) if item_fn_input_ident(&arg.pat) == "__co3_self" => {
+                let Type::Reference(reference) = arg.ty.as_ref() else {
+                    unreachable!("`Drop::drop` requires `&mut self`");
+                };
+                Some(reference.elem.as_ref())
+            }
+            _ => None,
+        })
+        .expect("`Drop::drop` requires a receiver");
 
     let decode_error = gen_decode_error(failure_mode);
     let output = match failure_mode {
@@ -330,16 +339,71 @@ pub(crate) fn gen_drop_definition_body(
     };
 
     quote! {{
-        if __co3_self.as_ptr().is_null() {
+        let Some(__co3_value) = (unsafe { co3::decode::<co3::boxed::Box<#self_ty>>(__co3_self) }) else {
             #decode_error
-        }
-
-        unsafe {
-            core::mem::drop(co3::boxed::Box::from_raw(__co3_self.as_ptr()));
-        }
+        };
+        core::mem::drop(__co3_value);
 
         #output
     }}
+}
+
+pub(crate) fn gen_regular_drop_definition_body(
+    sig: &syn::Signature,
+    failure_mode: FailureMode,
+) -> TokenStream {
+    let self_ty = sig
+        .inputs
+        .iter()
+        .find_map(|input| match input {
+            syn::FnArg::Typed(arg) if item_fn_input_ident(&arg.pat) == "__co3_self" => {
+                Some(match arg.ty.as_ref() {
+                    Type::Reference(reference) => reference.elem.as_ref(),
+                    owned => owned,
+                })
+            }
+            _ => None,
+        })
+        .expect("`Drop::drop` requires a receiver");
+    let decode_error = gen_decode_error(failure_mode);
+    let output = match failure_mode {
+        FailureMode::Panic => quote! { Ok::<_, ()>(co3::encode(())) },
+        FailureMode::Error => quote! { Ok(co3::encode(())) },
+    };
+
+    quote! {{
+        let mut __co3_store = <#self_ty as co3::stored::DecodeOwned<'_>>::Store::default();
+        let __co3_value = unsafe {
+            <#self_ty as co3::stored::DecodeOwned<'_>>::soft_decode(
+                __co3_self,
+                &mut __co3_store,
+            )
+        };
+        let Some(__co3_value) = __co3_value else {
+            #decode_error
+        };
+        core::mem::drop(__co3_value);
+        #output
+    }}
+}
+
+pub(crate) fn drop_owned_receiver(sig: &mut syn::Signature, owned_ty: Option<&Type>) {
+    let arg = sig
+        .inputs
+        .iter_mut()
+        .find_map(|input| match input {
+            syn::FnArg::Typed(arg) if item_fn_input_ident(&arg.pat) == "__co3_self" => Some(arg),
+            _ => None,
+        })
+        .expect("`Drop::drop` requires a normalized receiver");
+    let syn::Type::Reference(reference) = arg.ty.as_ref() else {
+        unreachable!("`Drop::drop` requires `&mut self`");
+    };
+    arg.ty = owned_ty
+        .cloned()
+        .map(Box::new)
+        .unwrap_or_else(|| reference.elem.clone());
+    arg.attrs.push(syn::parse_quote!(#[by_val]));
 }
 
 pub(crate) fn gen_return_borrow_check(return_ty: &syn::Type, fn_by_val: bool) -> TokenStream {
@@ -885,6 +949,7 @@ pub fn gen_impl_definition(
     abi: &syn::Abi,
     failure_mode: FailureMode,
     impl_: syn::ItemImpl,
+    declared_self: bool,
 ) -> TokenStream {
     let trait_ = impl_.trait_.as_ref().map(|(path, _)| path);
     let drop_impl = is_drop_impl(&impl_);
@@ -915,13 +980,40 @@ pub fn gen_impl_definition(
         let check_callee = callee.clone();
 
         let fn_by_val = item.attrs.iter().any(is_by_val_attr);
-        let fn_signature = gen_extern_fn_signature(item.sig.clone(), failure_mode, fn_by_val);
+        let mut abi_sig = item.sig.clone();
+        if drop_impl {
+            if declared_self {
+                let owned_ty: Type = syn::parse_quote!(co3::boxed::Box<#self_ty>);
+                drop_owned_receiver(&mut abi_sig, Some(&owned_ty));
+            } else {
+                drop_owned_receiver(&mut abi_sig, None);
+            }
+        }
+        let fn_signature = if drop_impl && declared_self {
+            let mut sig = lower_abi_fn_signature(abi_sig, failure_mode, fn_by_val);
+            let receiver = sig
+                .inputs
+                .iter_mut()
+                .find_map(|input| match input {
+                    syn::FnArg::Typed(arg) if item_fn_input_ident(&arg.pat) == "__co3_self" => {
+                        Some(arg)
+                    }
+                    _ => None,
+                })
+                .expect("opaque Drop requires a receiver");
+            receiver.ty = syn::parse_quote!(co3::boxed::CBox<#self_ty>);
+            quote!(#sig)
+        } else {
+            gen_extern_fn_signature(abi_sig, failure_mode, fn_by_val)
+        };
         let signature_drift_check =
             // NOTE: `Drop::drop` has a fixed signature enforced by `validate_drop_impl`
             (!drop_impl)
                 .then(|| gen_static_fn_signature_drift_check(item.sig.clone(), check_callee));
-        let body = if drop_impl {
-            gen_drop_definition_body(&item.sig, failure_mode)
+        let body = if drop_impl && declared_self {
+            gen_opaque_drop_definition_body(&item.sig, failure_mode)
+        } else if drop_impl {
+            gen_regular_drop_definition_body(&item.sig, failure_mode)
         } else {
             gen_definition_body(item.sig, quote!(#callee), fn_by_val, failure_mode)
         };

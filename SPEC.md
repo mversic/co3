@@ -57,9 +57,10 @@ A C-compatible companion type has a defined foreign representation and no trap r
 - By default, the derive defines a C-compatible companion type and conversions between the two types.
 - `#[repr_c(identity)]` uses a `#[repr(C)]` or `#[repr(transparent)]` struct directly as its companion.
 - `#[repr_c(as(T))]` delegates owned conversion through a Rust type `T` via `Into<T>` and `TryInto<Self>`.
-- Conversion of types with explicit representation (i.e. `#[repr(C)]`/`repr(transmute)`) are optimized.
 - `#[repr_c(is_valid = |field0, ...| {...})]` provides additional validity invariant of a struct/variant.
 - `#[repr_c(NICHE = <expr>)]` defines the struct's trap value that is used for niche optimization.
+- `#[repr_c(with_custom_drop)]` tells `ReprC` derive macro that a custom drop exists for this type.
+- Conversion of types with explicit representation (i.e. `#[repr(C)]`/`repr(transmute)`) are optimized.
 
 ### 2.2. `ffi!`
 
@@ -140,6 +141,6 @@ Every non-lifetime generic parameter **MUST** be constrained by a direct concret
 
 Symbol interpolation generates a unique function symbol for each combination of concrete parameter selections:
 
-- Only a function-level static generic parameter constrained in a `use` predicate group **CAN** be interpolated.
+- Only a static generic parameter constrained in a `use` predicate by a concrete selection **CAN** be interpolated.
 - Every static generic parameter **MUST** be interpolated unless used exclusively within a runtime-dispatched type.
 - If given, function symbol name **MUST** interpolate every eligible static generic parameter exactly once.

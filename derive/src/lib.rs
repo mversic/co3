@@ -430,11 +430,11 @@ impl DispatchGroups {
 ///
 /// # Helper Attributes
 ///
-/// * `#[repr_c(NICHE = <expr>)]` on a struct customizes
-///   [`co3::niche::Niche::NICHE`](https://docs.rs/co3/latest/co3/niche/trait.Niche.html#associatedconstant.NICHE)
+/// * `#[repr_c(NICHE = <expr>)]` on a struct customizes [`co3::niche::Niche::NICHE`](https://docs.rs/co3/latest/co3/niche/trait.Niche.html#associatedconstant.NICHE)
 /// * `#[repr_c(is_valid = |[fieldN]| ...)]` on a struct or enum variant customizes validation
 /// * `#[repr_c(identity)]` uses a `repr(C)` or `repr(transparent)` struct directly as its CType
 /// * `#[repr_c(as(T))]` delegates owned conversion through `T` via `Into<T>` and `TryInto<Self>`
+/// * `#[repr_c(with_custom_drop)]` tells the derive a custom `Drop` impl exists for the type.
 ///
 /// # Example
 ///
@@ -1022,6 +1022,14 @@ fn pack_type_drop_impls(decls: Vec<ForeignItem>) -> Result<Vec<ForeignItem>> {
 
     const UNKNOWN_DROP: &str = "explicit `impl Drop` is only allowed for declared types";
 
+    let declared_types = decls
+        .iter()
+        .filter_map(|decl| match decl {
+            ForeignItem::Type(item) => Some(item.ty.ident.clone()),
+            ForeignItem::Impl(_) | ForeignItem::Fn(_) | ForeignItem::Static(_) => None,
+        })
+        .collect::<BTreeSet<_>>();
+
     let mut dynamic_drop_coverage = BTreeMap::<syn::Ident, usize>::new();
     for decl in &decls {
         let ForeignItem::Impl(drop) = decl else {
@@ -1065,10 +1073,13 @@ fn pack_type_drop_impls(decls: Vec<ForeignItem>) -> Result<Vec<ForeignItem>> {
                         continue;
                     }
                     if let Some(self_ty) = self_ty_ident(&impl_) {
-                        insert_drop(&mut explicit_drops, &mut errors, self_ty, impl_);
+                        if declared_types.contains(&self_ty) {
+                            insert_drop(&mut explicit_drops, &mut errors, self_ty, impl_);
+                        } else {
+                            kept_decls.push(ForeignItem::Impl(impl_));
+                        }
                     } else {
-                        let err = syn::Error::new_spanned(&impl_.self_ty, UNKNOWN_DROP);
-                        push_error(&mut errors, err);
+                        kept_decls.push(ForeignItem::Impl(impl_));
                     }
                 } else {
                     kept_decls.push(ForeignItem::Impl(impl_));

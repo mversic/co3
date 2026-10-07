@@ -596,7 +596,8 @@ pub trait Error {
 ///
 /// # Safety
 ///
-/// Type implementing the trait must have a defined C-compatible value representation and no trap representations.
+/// - Type implementing the trait must have a defined C-compatible value representation and be robust.
+/// - Dropping a value of this type must not run Rust drop glue, including drop glue for its fields.
 pub unsafe trait CType {}
 
 /// `C` type that is allowed as a foreign function argument.
