@@ -162,6 +162,30 @@ note: required because it appears within the type `OpaqueSlice<T>`
    = note: the return type of a function must have a statically known size
    = note: this error originates in the macro `ffi` (in Nightly builds, run with -Z macro-backtrace for more info)
 
+error[E0277]: the size for values of type `[u8]` cannot be known at compilation time
+  --> tests/ui_fail/opaque_dst_export.rs:9:1
+   |
+ 9 | / ffi! {
+10 | |     #![unsafe(export("C"))]
+11 | |
+12 | |     #[tag(u8)]
+...  |
+21 | | }
+   | |_^ doesn't have a size known at compile-time
+   |
+   = help: within `OpaqueSlice<u8>`, the trait `std::marker::Sized` is not implemented for `[u8]`
+note: required because it appears within the type `OpaqueSlice<u8>`
+  --> tests/ui_fail/opaque_dst_export.rs:7:8
+   |
+ 7 | struct OpaqueSlice<T>([T]);
+   |        ^^^^^^^^^^^
+note: required by an implicit `Sized` bound in `CBox`
+  --> src/boxed.rs
+   |
+   | pub struct CBox<C> {
+   |                 ^ required by the implicit `Sized` requirement on this type parameter in `CBox`
+   = note: this error originates in the macro `ffi` (in Nightly builds, run with -Z macro-backtrace for more info)
+
 error[E0277]: the size for values of type `[T]` cannot be known at compilation time
   --> tests/ui_fail/opaque_dst_export.rs:9:1
    |

@@ -624,9 +624,9 @@ fn inferred_non_option_unpack_part(
     if let Some(wide_ty) = boxed_wide_type(arg_ty) {
         return Ok(if part == 1 {
             if ownership == OwnershipMode::ByValue {
-                parse_quote!(co3::boxed::CBox<<<#wide_ty as co3::wide::Wide>::Data as co3::ReprC>::CType>)
+                parse_quote!(co3::boxed::CBox<<<<#wide_ty as co3::wide::Wide>::Header as co3::wide::WideHeader>::Data as co3::ReprC>::CType>)
             } else {
-                parse_quote!(*const <<#wide_ty as co3::wide::Wide>::Data as co3::ReprC>::CType)
+                parse_quote!(*const <<<#wide_ty as co3::wide::Wide>::Header as co3::wide::WideHeader>::Data as co3::ReprC>::CType)
             }
         } else {
             parse_quote!(<#wide_ty as co3::wide::Wide>::Metadata)
@@ -637,9 +637,9 @@ fn inferred_non_option_unpack_part(
         let wide_ty = &reference.elem;
         return Ok(if part == 1 {
             if reference.mutability.is_some() {
-                parse_quote!(*mut <<#wide_ty as co3::wide::Wide>::Data as co3::ReprC>::CType)
+                parse_quote!(*mut <<<#wide_ty as co3::wide::Wide>::Header as co3::wide::WideHeader>::Data as co3::ReprC>::CType)
             } else {
-                parse_quote!(*const <<#wide_ty as co3::wide::Wide>::Data as co3::ReprC>::CType)
+                parse_quote!(*const <<<#wide_ty as co3::wide::Wide>::Header as co3::wide::WideHeader>::Data as co3::ReprC>::CType)
             }
         } else {
             parse_quote!(<#wide_ty as co3::wide::Wide>::Metadata)
@@ -650,9 +650,9 @@ fn inferred_non_option_unpack_part(
         let wide_ty = &pointer.elem;
         return Ok(if part == 1 {
             if matches!(pointer.mutability, syn::PointerMutability::Mut(_)) {
-                parse_quote!(*mut <<#wide_ty as co3::wide::Wide>::Data as co3::ReprC>::CType)
+                parse_quote!(*mut <<<#wide_ty as co3::wide::Wide>::Header as co3::wide::WideHeader>::Data as co3::ReprC>::CType)
             } else {
-                parse_quote!(*const <<#wide_ty as co3::wide::Wide>::Data as co3::ReprC>::CType)
+                parse_quote!(*const <<<#wide_ty as co3::wide::Wide>::Header as co3::wide::WideHeader>::Data as co3::ReprC>::CType)
             }
         } else {
             parse_quote!(<#wide_ty as co3::wide::Wide>::Metadata)

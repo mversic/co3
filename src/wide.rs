@@ -7,6 +7,13 @@ use core::{
     mem::ManuallyDrop,
 };
 
+pub(crate) type WideData<R> = <<R as Wide>::Header as WideHeader>::Data;
+
+/// Describes the data addressed by a dynamically sized type's fixed header.
+pub trait WideHeader {
+    type Data;
+}
+
 /// A dynamically sized value with data and metadata (also called a `fat` pointer).
 ///
 /// This includes slices, trait objects, and DSTs whose last field is one of the
@@ -15,16 +22,13 @@ use core::{
 ///
 /// # Safety
 ///
-/// - `metadata`, `as_ptr`, and `as_mut_ptr` **MUST** describe the same value and its actual layout
+/// - The header pointer must be aligned for `Header::Data` and point to its first element, if any.
+/// - `metadata`, `as_ptr`, and `as_mut_ptr` **MUST** describe the same value and its actual layout.
 /// - Ownership methods must transfer and recover the original allocation.
 /// - Constructors must point to that value when given valid raw parts.
 pub unsafe trait Wide {
-    /// Data component of a wide pointer.
-    ///
-    /// # Warning
-    ///
-    /// Constructing a `&T::Data` is only valid if conceptually `Self::Metadata > 0`
-    type Data;
+    /// Fixed-layout prefix at the data address of a wide pointer.
+    type Header: WideHeader;
 
     /// Metadata component of a pointer.
     type Metadata;
@@ -33,17 +37,17 @@ pub unsafe trait Wide {
     fn metadata(ptr: *const Self) -> Self::Metadata;
 
     /// Returns a raw pointer to the underlying data.
-    fn as_ptr(ptr: *const Self) -> *const Self::Data;
+    fn as_ptr(ptr: *const Self) -> *const Self::Header;
 
     /// Returns a mutable raw pointer to the underlying data.
-    fn as_mut_ptr(ptr: *mut Self) -> *mut Self::Data;
+    fn as_mut_ptr(ptr: *mut Self) -> *mut Self::Header;
 
     /// Forms a wide reference from a data pointer and metadata.
     ///
     /// # Safety
     ///
     /// `data` and `metadata` must describe a valid `Self` that can be shared for `'a`.
-    unsafe fn from_raw_parts<'a>(data: *const Self::Data, metadata: Self::Metadata) -> &'a Self;
+    unsafe fn from_raw_parts<'a>(data: *const Self::Header, metadata: Self::Metadata) -> &'a Self;
 
     /// Performs the same functionality as [`Self::from_raw_parts`], except that a mutable reference is returned.
     ///
@@ -51,7 +55,7 @@ pub unsafe trait Wide {
     ///
     /// `data` and `metadata` must describe a valid `Self` that can be exclusively borrowed for `'a`.
     unsafe fn from_raw_parts_mut<'a>(
-        data: *mut Self::Data,
+        data: *mut Self::Header,
         metadata: Self::Metadata,
     ) -> &'a mut Self;
 
@@ -59,7 +63,7 @@ pub unsafe trait Wide {
     ///
     /// See [`Box::into_non_null`]
     #[cfg(feature = "alloc")]
-    fn into_non_null(self: Box<Self>) -> NonNull<Self::Data>;
+    fn into_non_null(self: Box<Self>) -> NonNull<Self::Header>;
 
     /// Constructs a box from a `NonNull` pointer.
     ///
@@ -67,30 +71,29 @@ pub unsafe trait Wide {
     ///
     /// `data` and `metadata` must identify the allocation transferred by `Self::into_non_null`.
     #[cfg(feature = "alloc")]
-    unsafe fn from_non_null(data: NonNull<Self::Data>, metadata: Self::Metadata) -> Box<Self>;
+    unsafe fn from_non_null(data: NonNull<Self::Header>, metadata: Self::Metadata) -> Box<Self>;
 }
 
 macro_rules! impl_wide_for_transparent_wrapper {
     ($($wrapper:ident),+ $(,)?) => {$(
-        // TODO: It's super weird that we require Wide::Data: ReprC here
-        unsafe impl<R: Wide<Data: crate::ReprC> + ?Sized> Wide for $wrapper<R> {
-            type Data = R::Data;
+        unsafe impl<R: Wide<Header: crate::ReprC> + ?Sized> Wide for $wrapper<R> {
+            type Header = R::Header;
             type Metadata = R::Metadata;
 
             fn metadata(ptr: *const Self) -> Self::Metadata {
                 R::metadata(ptr as *const R)
             }
 
-            fn as_ptr(ptr: *const Self) -> *const Self::Data {
+            fn as_ptr(ptr: *const Self) -> *const Self::Header {
                 R::as_ptr(ptr as *const R)
             }
 
-            fn as_mut_ptr(ptr: *mut Self) -> *mut Self::Data {
+            fn as_mut_ptr(ptr: *mut Self) -> *mut Self::Header {
                 R::as_mut_ptr(ptr as *mut R)
             }
 
             unsafe fn from_raw_parts<'a>(
-                data: *const Self::Data,
+                data: *const Self::Header,
                 metadata: Self::Metadata,
             ) -> &'a Self {
                 let inner = unsafe { R::from_raw_parts(data, metadata) };
@@ -98,7 +101,7 @@ macro_rules! impl_wide_for_transparent_wrapper {
             }
 
             unsafe fn from_raw_parts_mut<'a>(
-                data: *mut Self::Data,
+                data: *mut Self::Header,
                 metadata: Self::Metadata,
             ) -> &'a mut Self {
                 let inner = unsafe { R::from_raw_parts_mut(data, metadata) };
@@ -106,13 +109,13 @@ macro_rules! impl_wide_for_transparent_wrapper {
             }
 
             #[cfg(feature = "alloc")]
-            fn into_non_null(self: Box<Self>) -> NonNull<Self::Data> {
+            fn into_non_null(self: Box<Self>) -> NonNull<Self::Header> {
                 Box::into_non_null(self).cast()
             }
 
             #[cfg(feature = "alloc")]
             unsafe fn from_non_null(
-                data: NonNull<Self::Data>,
+                data: NonNull<Self::Header>,
                 metadata: Self::Metadata,
             ) -> Box<Self> {
                 let inner = unsafe { R::from_raw_parts_mut(data.as_ptr(), metadata) };
@@ -127,77 +130,77 @@ impl_wide_for_transparent_wrapper!(ManuallyDrop);
 macro_rules! impl_wide_for_cell {
     ($($wrapper:ident),+ $(,)?) => {$(
         unsafe impl<R: crate::ReprC> Wide for $wrapper<[R]> {
-            type Data = R;
+            type Header = [R; 0];
             type Metadata = usize;
 
             fn metadata(ptr: *const Self) -> Self::Metadata {
                 (ptr as *const [R]).len()
             }
 
-            fn as_ptr(ptr: *const Self) -> *const Self::Data {
+            fn as_ptr(ptr: *const Self) -> *const Self::Header {
                 ptr.cast()
             }
 
-            fn as_mut_ptr(ptr: *mut Self) -> *mut Self::Data {
+            fn as_mut_ptr(ptr: *mut Self) -> *mut Self::Header {
                 ptr.cast()
             }
 
-            unsafe fn from_raw_parts<'a>(data: *const R, len: usize) -> &'a Self {
-                let ptr = core::ptr::slice_from_raw_parts(data, len) as *const Self;
+            unsafe fn from_raw_parts<'a>(data: *const Self::Header, len: usize) -> &'a Self {
+                let ptr = core::ptr::slice_from_raw_parts(data.cast::<R>(), len) as *const Self;
                 unsafe { &*ptr }
             }
 
-            unsafe fn from_raw_parts_mut<'a>(data: *mut R, len: usize) -> &'a mut Self {
-                let ptr = core::ptr::slice_from_raw_parts_mut(data, len) as *mut Self;
+            unsafe fn from_raw_parts_mut<'a>(data: *mut Self::Header, len: usize) -> &'a mut Self {
+                let ptr = core::ptr::slice_from_raw_parts_mut(data.cast::<R>(), len) as *mut Self;
                 unsafe { &mut *ptr }
             }
 
             #[cfg(feature = "alloc")]
-            fn into_non_null(self: Box<Self>) -> NonNull<Self::Data> {
+            fn into_non_null(self: Box<Self>) -> NonNull<Self::Header> {
                 Box::into_non_null(self).cast()
             }
 
             #[cfg(feature = "alloc")]
-            unsafe fn from_non_null(data: NonNull<R>, len: usize) -> Box<Self> {
-                let ptr = NonNull::slice_from_raw_parts(data, len).as_ptr() as *mut Self;
+            unsafe fn from_non_null(data: NonNull<Self::Header>, len: usize) -> Box<Self> {
+                let ptr = NonNull::slice_from_raw_parts(data.cast::<R>(), len).as_ptr() as *mut Self;
                 unsafe { Box::from_raw(ptr) }
             }
         }
 
         unsafe impl Wide for $wrapper<str> {
-            type Data = u8;
+            type Header = [u8; 0];
             type Metadata = usize;
 
             fn metadata(ptr: *const Self) -> Self::Metadata {
                 (ptr as *const [u8]).len()
             }
 
-            fn as_ptr(ptr: *const Self) -> *const Self::Data {
+            fn as_ptr(ptr: *const Self) -> *const Self::Header {
                 ptr.cast()
             }
 
-            fn as_mut_ptr(ptr: *mut Self) -> *mut Self::Data {
+            fn as_mut_ptr(ptr: *mut Self) -> *mut Self::Header {
                 ptr.cast()
             }
 
-            unsafe fn from_raw_parts<'a>(data: *const u8, len: usize) -> &'a Self {
-                let ptr = core::ptr::slice_from_raw_parts(data, len) as *const Self;
+            unsafe fn from_raw_parts<'a>(data: *const Self::Header, len: usize) -> &'a Self {
+                let ptr = core::ptr::slice_from_raw_parts(data.cast::<u8>(), len) as *const Self;
                 unsafe { &*ptr }
             }
 
-            unsafe fn from_raw_parts_mut<'a>(data: *mut u8, len: usize) -> &'a mut Self {
-                let ptr = core::ptr::slice_from_raw_parts_mut(data, len) as *mut Self;
+            unsafe fn from_raw_parts_mut<'a>(data: *mut Self::Header, len: usize) -> &'a mut Self {
+                let ptr = core::ptr::slice_from_raw_parts_mut(data.cast::<u8>(), len) as *mut Self;
                 unsafe { &mut *ptr }
             }
 
             #[cfg(feature = "alloc")]
-            fn into_non_null(self: Box<Self>) -> NonNull<Self::Data> {
+            fn into_non_null(self: Box<Self>) -> NonNull<Self::Header> {
                 Box::into_non_null(self).cast()
             }
 
             #[cfg(feature = "alloc")]
-            unsafe fn from_non_null(data: NonNull<u8>, len: usize) -> Box<Self> {
-                let ptr = NonNull::slice_from_raw_parts(data, len).as_ptr() as *mut Self;
+            unsafe fn from_non_null(data: NonNull<Self::Header>, len: usize) -> Box<Self> {
+                let ptr = NonNull::slice_from_raw_parts(data.cast::<u8>(), len).as_ptr() as *mut Self;
                 unsafe { Box::from_raw(ptr) }
             }
         }
@@ -207,79 +210,83 @@ macro_rules! impl_wide_for_cell {
 impl_wide_for_cell!(UnsafeCell, Cell);
 
 unsafe impl<R> Wide for [R] {
-    type Data = R;
+    type Header = [R; 0];
     type Metadata = usize;
 
     fn metadata(ptr: *const Self) -> Self::Metadata {
         ptr.len()
     }
 
-    fn as_ptr(ptr: *const Self) -> *const Self::Data {
-        ptr as *const R
+    fn as_ptr(ptr: *const Self) -> *const Self::Header {
+        ptr as *const Self::Header
     }
 
-    fn as_mut_ptr(ptr: *mut Self) -> *mut Self::Data {
-        ptr as *mut R
+    fn as_mut_ptr(ptr: *mut Self) -> *mut Self::Header {
+        ptr as *mut Self::Header
     }
 
-    unsafe fn from_raw_parts<'a>(data: *const Self::Data, len: Self::Metadata) -> &'a Self {
-        unsafe { core::slice::from_raw_parts(data, len) }
+    unsafe fn from_raw_parts<'a>(data: *const Self::Header, len: Self::Metadata) -> &'a Self {
+        unsafe { core::slice::from_raw_parts(data.cast::<R>(), len) }
     }
 
-    unsafe fn from_raw_parts_mut<'a>(data: *mut Self::Data, len: Self::Metadata) -> &'a mut Self {
-        unsafe { core::slice::from_raw_parts_mut(data, len) }
+    unsafe fn from_raw_parts_mut<'a>(data: *mut Self::Header, len: Self::Metadata) -> &'a mut Self {
+        unsafe { core::slice::from_raw_parts_mut(data.cast::<R>(), len) }
     }
 
     #[cfg(feature = "alloc")]
-    fn into_non_null(self: Box<Self>) -> NonNull<Self::Data> {
+    fn into_non_null(self: Box<Self>) -> NonNull<Self::Header> {
         Box::into_non_null(self).cast()
     }
 
     #[cfg(feature = "alloc")]
-    unsafe fn from_non_null(data: NonNull<Self::Data>, len: Self::Metadata) -> Box<Self> {
-        let slice = NonNull::slice_from_raw_parts(data, len);
+    unsafe fn from_non_null(data: NonNull<Self::Header>, len: Self::Metadata) -> Box<Self> {
+        let slice = NonNull::slice_from_raw_parts(data.cast::<R>(), len);
         unsafe { Box::from_non_null(slice) }
     }
 }
 
 unsafe impl Wide for str {
-    type Data = u8;
+    type Header = [u8; 0];
     type Metadata = usize;
 
     fn metadata(ptr: *const Self) -> Self::Metadata {
         (ptr as *const [u8]).len()
     }
 
-    fn as_ptr(ptr: *const Self) -> *const Self::Data {
-        ptr as *const u8
+    fn as_ptr(ptr: *const Self) -> *const Self::Header {
+        ptr as *const Self::Header
     }
 
-    fn as_mut_ptr(ptr: *mut Self) -> *mut Self::Data {
-        ptr as *mut u8
+    fn as_mut_ptr(ptr: *mut Self) -> *mut Self::Header {
+        ptr as *mut Self::Header
     }
 
-    unsafe fn from_raw_parts<'a>(data: *const Self::Data, len: Self::Metadata) -> &'a Self {
-        let slice = unsafe { <[u8]>::from_raw_parts(data, len) };
+    unsafe fn from_raw_parts<'a>(data: *const Self::Header, len: Self::Metadata) -> &'a Self {
+        let slice = unsafe { <[u8]>::from_raw_parts(data.cast(), len) };
         unsafe { core::str::from_utf8_unchecked(slice) }
     }
 
-    unsafe fn from_raw_parts_mut<'a>(data: *mut Self::Data, len: Self::Metadata) -> &'a mut Self {
-        let slice = unsafe { <[u8]>::from_raw_parts_mut(data, len) };
+    unsafe fn from_raw_parts_mut<'a>(data: *mut Self::Header, len: Self::Metadata) -> &'a mut Self {
+        let slice = unsafe { <[u8]>::from_raw_parts_mut(data.cast(), len) };
         unsafe { core::str::from_utf8_unchecked_mut(slice) }
     }
 
     #[cfg(feature = "alloc")]
-    fn into_non_null(self: Box<Self>) -> NonNull<Self::Data> {
-        self.into_boxed_bytes().into_non_null()
+    fn into_non_null(self: Box<Self>) -> NonNull<Self::Header> {
+        self.into_boxed_bytes().into_non_null().cast()
     }
 
     #[cfg(feature = "alloc")]
-    unsafe fn from_non_null(data: NonNull<Self::Data>, len: Self::Metadata) -> Box<Self> {
+    unsafe fn from_non_null(data: NonNull<Self::Header>, len: Self::Metadata) -> Box<Self> {
         let str = unsafe { Self::from_raw_parts_mut(data.as_ptr(), len) };
 
         let str = NonNull::from(str);
         unsafe { Box::from_non_null(str) }
     }
+}
+
+impl<T> WideHeader for [T; 0] {
+    type Data = T;
 }
 
 #[cfg(test)]
@@ -295,14 +302,14 @@ mod tests {
 
     #[test]
     fn wide_is_implemented_for_builtin_wide_types() {
-        assert_impl_all!([u8]: Wide<Data = u8, Metadata = usize>);
-        assert_impl_all!(str: Wide<Data = u8, Metadata = usize>);
-        assert_impl_all!(UnsafeCell<[u8]>: Wide<Data = u8, Metadata = usize>);
-        assert_impl_all!(UnsafeCell<str>: Wide<Data = u8, Metadata = usize>);
-        assert_impl_all!(Cell<[u8]>: Wide<Data = u8, Metadata = usize>);
-        assert_impl_all!(Cell<str>: Wide<Data = u8, Metadata = usize>);
-        assert_impl_all!(ManuallyDrop<[u8]>: Wide<Data = u8, Metadata = usize>);
-        assert_impl_all!(ManuallyDrop<str>: Wide<Data = u8, Metadata = usize>);
+        assert_impl_all!([u8]: Wide<Header = [u8; 0], Metadata = usize>);
+        assert_impl_all!(str: Wide<Header = [u8; 0], Metadata = usize>);
+        assert_impl_all!(UnsafeCell<[u8]>: Wide<Header = [u8; 0], Metadata = usize>);
+        assert_impl_all!(UnsafeCell<str>: Wide<Header = [u8; 0], Metadata = usize>);
+        assert_impl_all!(Cell<[u8]>: Wide<Header = [u8; 0], Metadata = usize>);
+        assert_impl_all!(Cell<str>: Wide<Header = [u8; 0], Metadata = usize>);
+        assert_impl_all!(ManuallyDrop<[u8]>: Wide<Header = [u8; 0], Metadata = usize>);
+        assert_impl_all!(ManuallyDrop<str>: Wide<Header = [u8; 0], Metadata = usize>);
     }
 
     #[test]

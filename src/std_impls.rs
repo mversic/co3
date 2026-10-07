@@ -278,7 +278,11 @@ unsafe impl<'d, T: CType + ?Sized> DecodeOwned<'d> for NonNull<T> {
 impl<T: CType + ?Sized> Encode for NonNull<T> {}
 impl<T: CType + ?Sized> Decode<'_> for NonNull<T> {}
 
-unsafe impl<T: CType + ?Sized> CheckedTransmute for NonNull<T> {
+unsafe impl<T: CType + ?Sized> CheckedTransmute for NonNull<T>
+where
+    T: rust_spec::RustSpec<Size: crate::Thin>,
+    Self: ReprC<CType = *mut T>,
+{
     #[inline(always)]
     unsafe fn is_valid(target: &Self::CType) -> bool {
         !target.is_null()

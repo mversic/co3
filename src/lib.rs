@@ -534,14 +534,14 @@ use rust_spec::{Stable, Unstable, size::MetadataKind};
 
 #[cfg(feature = "alloc")]
 use crate::boxed::{CBox, CBoxCell, CBoxedSlice, CBoxedSliceCell};
-use crate::reference::CRefMut;
 use crate::{
     ffi::NulTerminatedBuf,
     option::ReprCOption,
+    reference::CRefMut,
     result::ReprCResult,
     slice::{CSlice, CSliceMut},
     stored::{DecodeOwned, EmptyStore, EncodeOwned, Store},
-    wide::Wide,
+    wide::{Wide, WideHeader},
 };
 
 pub mod borrow;
@@ -641,12 +641,12 @@ disjoint_impls! {
     {
         type CType = *const <R::Data as ReprC>::CType;
     }
-    impl<R: Wide<Data: ReprC, Metadata = usize> + ?Sized> ReprC for &R
+    impl<R: Wide<Header: WideHeader<Data: ReprC>, Metadata = usize> + ?Sized> ReprC for &R
     where
         R: RustSpec<Size = MetaSized<SliceLike>, Mutability = Exclusive>,
-        <<R as Wide>::Data as ReprC>::CType: Sized,
+        <<<R as Wide>::Header as WideHeader>::Data as ReprC>::CType: Sized,
     {
-        type CType = CSlice<<R::Data as ReprC>::CType>;
+        type CType = CSlice<<<<R as Wide>::Header as WideHeader>::Data as ReprC>::CType>;
     }
 
     impl<R: ReprC + ?Sized> ReprC for &R
@@ -662,12 +662,12 @@ disjoint_impls! {
     {
         type CType = CRefMut<<R::Data as ReprC>::CType, false>;
     }
-    impl<R: Wide<Data: ReprC, Metadata = usize> + ?Sized> ReprC for &R
+    impl<R: Wide<Header: WideHeader<Data: ReprC>, Metadata = usize> + ?Sized> ReprC for &R
     where
         R: RustSpec<Size = MetaSized<SliceLike>, Mutability = Interior>,
-        <<R as Wide>::Data as ReprC>::CType: Sized,
+        <<<R as Wide>::Header as WideHeader>::Data as ReprC>::CType: Sized,
     {
-        type CType = CSliceMut<<R::Data as ReprC>::CType, false>;
+        type CType = CSliceMut<<<<R as Wide>::Header as WideHeader>::Data as ReprC>::CType, false>;
     }
 
     impl<R: ReprC + ?Sized> ReprC for &mut R
@@ -676,12 +676,12 @@ disjoint_impls! {
     {
         type CType = CRefMut<R::CType>;
     }
-    impl<R: Wide<Data: ReprC, Metadata = usize> + ?Sized> ReprC for &mut R
+    impl<R: Wide<Header: WideHeader<Data: ReprC>, Metadata = usize> + ?Sized> ReprC for &mut R
     where
         R: RustSpec<Size = MetaSized<SliceLike>>,
-        <<R as Wide>::Data as ReprC>::CType: Sized,
+        <<<R as Wide>::Header as WideHeader>::Data as ReprC>::CType: Sized,
     {
-        type CType = CSliceMut<<R::Data as ReprC>::CType>;
+        type CType = CSliceMut<<<<R as Wide>::Header as WideHeader>::Data as ReprC>::CType>;
     }
 
     #[cfg(feature = "alloc")]
@@ -704,10 +704,10 @@ disjoint_impls! {
     impl<R: ?Sized> ReprC for Box<R>
     where
         R: RustSpec<Size = MetaSized<SliceLike>, Mutability = Exclusive>,
-        R: Wide<Data: ReprC, Metadata = usize>,
-        <<R as Wide>::Data as ReprC>::CType: Sized,
+        R: Wide<Header: WideHeader<Data: ReprC>, Metadata = usize>,
+        <<<R as Wide>::Header as WideHeader>::Data as ReprC>::CType: Sized,
     {
-        type CType = CBoxedSlice<<R::Data as ReprC>::CType>;
+        type CType = CBoxedSlice<<<<R as Wide>::Header as WideHeader>::Data as ReprC>::CType>;
     }
 
     #[cfg(feature = "alloc")]
@@ -730,10 +730,10 @@ disjoint_impls! {
     impl<R: ?Sized> ReprC for Box<R>
     where
         R: RustSpec<Size = MetaSized<SliceLike>, Mutability = Interior>,
-        R: Wide<Data: ReprC, Metadata = usize>,
-        <<R as Wide>::Data as ReprC>::CType: Sized,
+        R: Wide<Header: WideHeader<Data: ReprC>, Metadata = usize>,
+        <<<R as Wide>::Header as WideHeader>::Data as ReprC>::CType: Sized,
     {
-        type CType = CBoxedSliceCell<<R::Data as ReprC>::CType>;
+        type CType = CBoxedSliceCell<<<<R as Wide>::Header as WideHeader>::Data as ReprC>::CType>;
     }
 
     impl<R: ReprC> ReprC for Option<R>

@@ -4,6 +4,8 @@
 use alloc::vec::Vec;
 use core::cmp::Ordering;
 
+use rust_spec::RustSpec;
+
 #[cfg(feature = "alloc")]
 use crate::stored::Owned;
 use crate::{
@@ -17,12 +19,12 @@ use crate::{
 
 /// C-compatible carrier for [`bool`].
 #[repr(transparent)]
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, rust_spec::RustSpec)]
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, RustSpec)]
 pub struct CBool(u8);
 
 /// C-compatible carrier for [`Ordering`].
 #[repr(transparent)]
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, rust_spec::RustSpec)]
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, RustSpec)]
 pub struct COrdering(i8);
 
 impl CBool {
@@ -207,7 +209,10 @@ macro_rules! raw_pointer_derive {
         impl<R: CType + ?Sized> Encode for *$mutability R {}
         impl<R: CType + ?Sized> Decode<'_> for *$mutability R {}
 
-        unsafe impl<R: CType + ?Sized> CheckedTransmute for *$mutability R {
+        unsafe impl<R: CType + ?Sized> CheckedTransmute for *$mutability R
+        where
+            R: RustSpec<Size: crate::Thin>,
+        {
             #[inline(always)]
             unsafe fn is_valid(_: &Self::CType) -> bool {
                 true
@@ -273,28 +278,28 @@ macro_rules! impl_fn_types {
     };
     (@impl [$($arg:ident),*] $fn_type:ty) => {
         unsafe impl<$($arg: CFnArg,)* R: CFnReturn> Borrow for $fn_type
-        where $fn_type: rust_spec::RustSpec<Layout = rust_spec::Stable> {
+        where $fn_type: RustSpec<Layout = rust_spec::Stable> {
             type Borrowed<'itm> = Self where Self: 'itm;
             type Owner = ();
             fn borrow<'itm>(self, (): &mut ()) -> Self::Borrowed<'itm>
             where Self: 'itm { self }
         }
         impl<'itm, $($arg: CFnArg,)* R: CFnReturn> FromBorrow<'itm> for $fn_type
-        where $fn_type: rust_spec::RustSpec<Layout = rust_spec::Stable> {
+        where $fn_type: RustSpec<Layout = rust_spec::Stable> {
             fn from_borrow(source: Self) -> Self { source }
         }
         impl<$($arg: CFnArg,)* R: CFnReturn> ReprC for $fn_type
-        where $fn_type: rust_spec::RustSpec<Layout = rust_spec::Stable> {
+        where $fn_type: RustSpec<Layout = rust_spec::Stable> {
             type CType = Option<Self>;
         }
         unsafe impl<$($arg: CFnArg,)* R: CFnReturn> EncodeOwned for $fn_type
-        where $fn_type: rust_spec::RustSpec<Layout = rust_spec::Stable> {
+        where $fn_type: RustSpec<Layout = rust_spec::Stable> {
             type Store = ();
             fn soft_encode<'itm>(self, (): &mut ()) -> Self::CType
             where Self: 'itm { Some(self) }
         }
         unsafe impl<'d, $($arg: CFnArg,)* R: CFnReturn> DecodeOwned<'d> for $fn_type
-        where $fn_type: rust_spec::RustSpec<Layout = rust_spec::Stable> {
+        where $fn_type: RustSpec<Layout = rust_spec::Stable> {
             type Store = ();
             unsafe fn soft_decode<'itm: 'd>(source: Self::CType, (): &mut ()) -> Option<Self> {
                 source
@@ -305,29 +310,29 @@ macro_rules! impl_fn_types {
             }
         }
         impl<$($arg: CFnArg,)* R: CFnReturn> Encode for $fn_type
-        where $fn_type: rust_spec::RustSpec<Layout = rust_spec::Stable> {}
+        where $fn_type: RustSpec<Layout = rust_spec::Stable> {}
         impl<$($arg: CFnArg,)* R: CFnReturn> Decode<'_> for $fn_type
-        where $fn_type: rust_spec::RustSpec<Layout = rust_spec::Stable> {}
+        where $fn_type: RustSpec<Layout = rust_spec::Stable> {}
         impl<$($arg: CFnArg,)* R: CFnReturn> Niche for $fn_type
-        where $fn_type: rust_spec::RustSpec<Layout = rust_spec::Stable> {
+        where $fn_type: RustSpec<Layout = rust_spec::Stable> {
             const NICHE: Self::CType = None;
         }
         unsafe impl<$($arg: CFnArg,)* R: CFnReturn> CheckedTransmute for $fn_type
-        where $fn_type: rust_spec::RustSpec<Layout = rust_spec::Stable> {
+        where $fn_type: RustSpec<Layout = rust_spec::Stable> {
             unsafe fn is_valid(target: &Self::CType) -> bool { target.is_some() }
         }
         unsafe impl<$($arg: CFnArg,)* R: CFnReturn> CType for Option<$fn_type>
-        where $fn_type: rust_spec::RustSpec<Layout = rust_spec::Stable> {}
+        where $fn_type: RustSpec<Layout = rust_spec::Stable> {}
         unsafe impl<$($arg: CFnArg,)* R: CFnReturn> CFnArg for Option<$fn_type>
-        where $fn_type: rust_spec::RustSpec<Layout = rust_spec::Stable> {}
+        where $fn_type: RustSpec<Layout = rust_spec::Stable> {}
         unsafe impl<$($arg: CFnArg,)* R: CFnReturn> CFnReturn for Option<$fn_type>
-        where $fn_type: rust_spec::RustSpec<Layout = rust_spec::Stable> {}
+        where $fn_type: RustSpec<Layout = rust_spec::Stable> {}
         unsafe impl<$($arg: CFnArg,)* R: CFnReturn> BorrowCast for Option<$fn_type>
-        where $fn_type: rust_spec::RustSpec<Layout = rust_spec::Stable> {
+        where $fn_type: RustSpec<Layout = rust_spec::Stable> {
             type AsConst = Self;
         }
         unsafe impl<$($arg: CFnArg,)* R: CFnReturn> BorrowCastMut for Option<$fn_type>
-        where $fn_type: rust_spec::RustSpec<Layout = rust_spec::Stable> {
+        where $fn_type: RustSpec<Layout = rust_spec::Stable> {
             type AsMut = Self;
         }
     };

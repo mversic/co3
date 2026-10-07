@@ -6,7 +6,6 @@ use crate::{
     CFnArg, CFnReturn, CType, Decode, Encode, ReprC,
     borrow::{Borrow, FromBorrow},
     stored::{DecodeOwned, EncodeOwned},
-    transmute::CheckedTransmute,
 };
 
 /// A mutable pointer carrier whose access contract is selected by `RESTRICTED`.
@@ -123,12 +122,6 @@ unsafe impl<'d, C: CType + ?Sized, const RESTRICTED: bool> DecodeOwned<'d>
 
 impl<C: CType + ?Sized, const RESTRICTED: bool> Encode for CRefMut<C, RESTRICTED> {}
 impl<'d, C: CType + ?Sized, const RESTRICTED: bool> Decode<'d> for CRefMut<C, RESTRICTED> {}
-
-unsafe impl<C: CType + ?Sized, const RESTRICTED: bool> CheckedTransmute for CRefMut<C, RESTRICTED> {
-    unsafe fn is_valid(_: &Self::CType) -> bool {
-        true
-    }
-}
 
 unsafe impl<C: CType + ?Sized, const RESTRICTED: bool> CType for CRefMut<C, RESTRICTED> {}
 unsafe impl<C: CType, const RESTRICTED: bool> CFnArg for CRefMut<C, RESTRICTED> {}

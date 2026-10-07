@@ -376,9 +376,11 @@ pub(crate) fn derive_repr_c(input: &syn::DeriveInput) -> syn::Result<TokenStream
     let input = &bounded_input;
 
     if is_custom {
-        let drop_impl_assert = repr_c_attrs
-            .with_custom_drop
-            .then(|| assert_has_drop(&input.generics, &input.ident));
+        let drop_impl_assert = if repr_c_attrs.with_custom_drop {
+            assert_has_drop(&input.generics, &input.ident)
+        } else {
+            assert_no_drop(&input.generics, &input.ident)
+        };
         let tokens = custom::derive_custom_repr_c(input, &repr_c_attrs, &variant_attrs);
         return Ok(quote! {
             #drop_impl_assert

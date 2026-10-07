@@ -45,28 +45,6 @@ jobs:
     - name: Lint workspace (derive only)
       run: cargo clippy --workspace --benches --tests --examples --no-default-features --features derive -- --deny warnings
 
-  #allocator-api:
-  #  runs-on: ubuntu-latest
-  #  timeout-minutes: 5
-
-  #  steps:
-  #  - uses: actions/checkout@v7
-  #  - uses: dtolnay/rust-toolchain@nightly
-  #    with:
-  #      components: clippy
-  #  - uses: Swatinem/rust-cache@v2
-  #    with:
-  #      key: allocator-api
-
-  #  - name: Lint workspace
-  #    run: cargo +nightly clippy --workspace --benches --tests --examples --features allocator-api -- --deny warnings --allow unused-features
-
-  #  - name: Lint workspace (alloc only)
-  #    run: cargo +nightly clippy --workspace --benches --tests --examples --no-default-features --features allocator-api,alloc -- --deny warnings --allow unused-features
-
-  #  - name: Lint workspace (derive only)
-  #    run: cargo +nightly clippy --workspace --benches --tests --examples --no-default-features --features allocator-api,derive -- --deny warnings --allow unused-features
-
   test:
     runs-on: ${{ matrix.os }}
     timeout-minutes: 5
@@ -121,25 +99,39 @@ jobs:
     - name: Prepare Miri
       run: cargo miri setup
 
-    - name: Run Miri with leak checking
+    - name: Run tests with leak checking under Tree Borrows
+      env:
+        MIRIFLAGS: -Zmiri-tree-borrows
       run: |
         cargo miri test --all-features --lib -- \
           --skip tests::encode_stored_mut_box_allows_pointer_replacement
         cargo miri test --all-features --test export
+        cargo miri test --all-features --test abi
+        cargo miri test --all-features --test import
 
     # Stable opaque types use ZST stand-ins. These tests form Rust references to those stand-ins
     # before passing their pointers back to the provider. Stacked Borrows rejects the resulting
     # zero-byte-to-full-allocation access; Tree Borrows, which has no subobject provenance, accepts
     # it. Rust's final aliasing rules for this pattern are not yet settled.
-    - name: Run ABI integration tests under Tree Borrows
-      env:
-        MIRIFLAGS: -Zmiri-tree-borrows
-      run: cargo miri test --all-features --test abi
+    - name: Run tests with leak checking under Stacked Borrows
+      run: |
+        cargo miri test --all-features --lib -- \
+          --skip tests::encode_stored_mut_box_allows_pointer_replacement
+        cargo miri test --all-features --test export
+        cargo miri test --all-features --test abi -- \
+          --skip handles::erased_handle_dispatch \
+          --skip handles::static_parameters_behind_dyn_self_do_not_bind_symbols
+        cargo miri test --all-features --test import -- \
+          --skip opaque::constructs_and_uses_imported_opaque_handles \
+          --skip opaque::imported_opaque_borrow_preserves_identity
 
-    - name: Run known leak case with leak checking disabled
-      env:
-        MIRIFLAGS: -Zmiri-ignore-leaks
-      run: cargo miri test --all-features --lib tests::encode_stored_mut_box_allows_pointer_replacement -- --exact
+    # Keep the leak exception scoped to this exact test in each command. All other
+    # Miri invocations above use the default leak checking behavior.
+    # FIXME: https://github.com/mversic/co3/issues/182
+    - name: Run only the known leak case with leak checking disabled
+      run: |
+        MIRIFLAGS='-Zmiri-tree-borrows -Zmiri-ignore-leaks' cargo miri test --all-features --lib tests::encode_stored_mut_box_allows_pointer_replacement -- --exact
+        MIRIFLAGS='-Zmiri-ignore-leaks' cargo miri test --all-features --lib tests::encode_stored_mut_box_allows_pointer_replacement -- --exact
 
   wasm-test:
     runs-on: ubuntu-latest

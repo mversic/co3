@@ -156,7 +156,8 @@ fn raw_wide_pointer_placeholders_infer_data_and_metadata() {
 #[test]
 fn unpacked_receivers_call_c_with_data_and_length() {
     let mut values = [1u8, 2, 3];
-    let bytes = unsafe { <Bytes as Wide>::from_raw_parts_mut(values.as_mut_ptr(), values.len()) };
+    let bytes =
+        unsafe { <Bytes as Wide>::from_raw_parts_mut(values.as_mut_ptr().cast(), values.len()) };
     assert_eq!(bytes.sum(), 6);
     assert_eq!(bytes.fill(), 3);
     assert_eq!(values, [4, 5, 6]);
@@ -179,9 +180,9 @@ fn struct_wide_classification() {
     assert_impl_all!(Packet: Wide<Metadata = usize>);
     assert_impl_all!(TuplePacket: Wide<Metadata = usize>);
 
-    assert_impl_all!(<Bytes as Wide>::Data: Sized);
-    assert_impl_all!(<Packet as Wide>::Data: Sized);
-    assert_impl_all!(<TuplePacket as Wide>::Data: Sized);
+    assert_impl_all!(<Bytes as Wide>::Header: Sized);
+    assert_impl_all!(<Packet as Wide>::Header: Sized);
+    assert_impl_all!(<TuplePacket as Wide>::Header: Sized);
 }
 
 #[test]
@@ -198,7 +199,7 @@ fn struct_wide_raw_parts_preserve_prefix_provenance() {
     };
     let packet = unsafe {
         <Packet as Wide>::from_raw_parts(
-            core::ptr::from_ref(&storage).cast::<<Packet as Wide>::Data>(),
+            core::ptr::from_ref(&storage).cast::<<Packet as Wide>::Header>(),
             storage.payload.len(),
         )
     };
@@ -212,7 +213,7 @@ fn struct_wide_raw_parts_preserve_prefix_provenance() {
     };
     let packet = unsafe {
         <Packet as Wide>::from_raw_parts_mut(
-            core::ptr::from_mut(&mut storage).cast::<<Packet as Wide>::Data>(),
+            core::ptr::from_mut(&mut storage).cast::<<Packet as Wide>::Header>(),
             3,
         )
     };
@@ -224,7 +225,7 @@ fn struct_wide_raw_parts_preserve_prefix_provenance() {
         payload: [11, 12, 13],
     });
     let data =
-        core::ptr::NonNull::new(Box::into_raw(storage).cast::<<Packet as Wide>::Data>()).unwrap();
+        core::ptr::NonNull::new(Box::into_raw(storage).cast::<<Packet as Wide>::Header>()).unwrap();
     let packet = unsafe { <Packet as Wide>::from_non_null(data, 3) };
     assert_eq!(packet.tag.get(), 10);
     assert_eq!(&packet.payload, &[11, 12, 13]);
@@ -235,7 +236,7 @@ fn struct_wide_raw_parts_round_trip() {
     let values: [u8; 3] = [1, 2, 3];
     let bytes = unsafe {
         <Bytes as Wide>::from_raw_parts(
-            values.as_ptr().cast::<<Bytes as Wide>::Data>(),
+            values.as_ptr().cast::<<Bytes as Wide>::Header>(),
             values.len(),
         )
     };
@@ -244,7 +245,7 @@ fn struct_wide_raw_parts_round_trip() {
     let mut values: [u8; 3] = [1, 2, 3];
     let bytes = unsafe {
         <Bytes as Wide>::from_raw_parts_mut(
-            values.as_mut_ptr().cast::<<Bytes as Wide>::Data>(),
+            values.as_mut_ptr().cast::<<Bytes as Wide>::Header>(),
             values.len(),
         )
     };
@@ -253,7 +254,7 @@ fn struct_wide_raw_parts_round_trip() {
 
     let values = vec![4u8, 5, 6].into_boxed_slice();
     let len = values.len();
-    let data = Box::into_raw(values).cast::<<Bytes as Wide>::Data>();
+    let data = Box::into_raw(values).cast::<<Bytes as Wide>::Header>();
     let bytes =
         unsafe { <Bytes as Wide>::from_non_null(core::ptr::NonNull::new_unchecked(data), len) };
     let metadata = Bytes::metadata(core::ptr::from_ref(&*bytes));
@@ -269,7 +270,7 @@ fn boxed_str_non_null_round_trip() {
     let ptr = value.as_ptr();
 
     let data = value.into_non_null();
-    assert_eq!(data.as_ptr(), ptr.cast_mut());
+    assert_eq!(data.as_ptr(), ptr.cast_mut().cast());
 
     let value = unsafe { <str as Wide>::from_non_null(data, len) };
     assert_eq!(&*value, "héllo");

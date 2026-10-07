@@ -10,7 +10,8 @@ use crate::layout::{
     primitive_tag_type,
     wide::{
         data_bound_ty, gen_alloc_methods, gen_data_ctype_bounds, gen_data_struct_name,
-        gen_dst_methods, last_field, wide_predicate, wide_usize_predicate,
+        gen_dst_methods, gen_identity_header_impl, header_repr_c_predicate, last_field,
+        wide_predicate, wide_usize_predicate,
     },
 };
 use crate::utils::co3_path;
@@ -204,11 +205,14 @@ fn derive_ctype_struct<const ADD_COPY: bool>(
     let ctype_impls =
         gen_struct_ctype_impls::<ADD_COPY, true>(&ctype_def, generate_views_and_spec, alignment);
     let wide_impl = generate_wide.then(|| gen_ctype_wide_impl(repr, &ctype_def, fields, generics));
+    let header_impl = (!generate_views_and_spec)
+        .then(|| gen_identity_header_impl(&ctype_def.ident, &ctype_def.generics));
 
     quote! {
         #ctype_def
         #ctype_impls
         #wide_impl
+        #header_impl
     }
 }
 
@@ -252,7 +256,7 @@ fn gen_ctype_wide_impl(
     let ctype_wide_predicate = wide_predicate(field_ty, &ctype.generics);
     let methods = gen_dst_methods(is_transparent, field_ty);
 
-    let alloc_methods = gen_alloc_methods(is_transparent);
+    let alloc_methods = gen_alloc_methods(is_transparent, field_ty);
     let usize_predicate = (!is_transparent).then(|| {
         let predicate = wide_usize_predicate(field_ty, &ctype.generics);
         quote!(#predicate,)
@@ -263,6 +267,7 @@ fn gen_ctype_wide_impl(
     let source_field_ty = &source_last.ty;
 
     let source_wide_predicate = wide_predicate(&source_last.ty, source_generics);
+    let source_header_predicate = header_repr_c_predicate(&source_last.ty, source_generics);
     let source_data_ctype_bounds = gen_data_ctype_bounds(source_fields, source_generics);
     let source_data_ty = data_bound_ty(&source_last.ty, true);
     let source_data_ctype_sized_bound = if is_type_parametrized(&source_data_ty, source_generics) {
@@ -281,23 +286,27 @@ fn gen_ctype_wide_impl(
         }
     });
     let data_ty = if is_transparent {
-        quote!(<<#source_field_ty as co3::wide::Wide>::Data as co3::ReprC>::CType)
+        quote!(<<#source_field_ty as co3::wide::Wide>::Header as co3::ReprC>::CType)
     } else {
         quote!(<#data_name #ty_generics as co3::ReprC>::CType)
     };
+    let transparent_header_predicate =
+        is_transparent.then(|| quote!(#for_dummy #data_ty: co3::wide::WideHeader,));
 
     quote! {
         unsafe impl #impl_generics co3::wide::Wide for #name #ty_generics
         where
             #source_wide_predicate,
+            #source_header_predicate,
             #(#source_data_ctype_bounds,)*
             #data_bound
             #source_data_ctype_sized_bound,
+            #transparent_header_predicate
             #ctype_wide_predicate,
             #usize_predicate
             #predicates
         {
-            type Data = #data_ty;
+            type Header = #data_ty;
             type Metadata = <#field_ty as co3::wide::Wide>::Metadata;
 
             #methods

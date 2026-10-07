@@ -234,9 +234,9 @@ fn main() {
     );
     assert_eq!(dispatch_associated_unpack::<ByteTarget>(None), 0);
 
-    let mut bytes = [1, 2, 3];
+    let mut bytes = [1u8, 2, 3];
     let bytes = unsafe {
-        <OdbcStr<u8> as co3::wide::Wide>::from_raw_parts_mut(bytes.as_mut_ptr(), bytes.len())
+        <OdbcStr<u8> as co3::wide::Wide>::from_raw_parts_mut(bytes.as_mut_ptr().cast(), bytes.len())
     };
     assert_eq!(bytes.unpack_receiver_ref(), 6);
     assert_eq!(bytes.unpack_receiver_mut(), 3);

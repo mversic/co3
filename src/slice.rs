@@ -7,7 +7,7 @@ use crate::{
     borrow::{Borrow, BorrowCast, BorrowCastMut, FromBorrow},
     stored::{DecodeOwned, EncodeOwned},
     transmute::CheckedTransmute,
-    wide::Wide,
+    wide::{Wide, WideHeader},
 };
 
 /// Fallibly converts a C-compatible representation into one ABI argument.
@@ -385,16 +385,16 @@ impl_slice_carrier! { CSliceMut, [C, const RESTRICTED: bool], [C, RESTRICTED] }
 
 macro_rules! impl_raw_wide_unpack {
     ($source:ty, $part:ty, $accessor:ident) => {
-        impl<R: CType + Wide<Data = C, Metadata = usize> + ?Sized, C: CType, U: CType>
-            Unpack2<$part, U> for $source
+        impl<R: CType + ?Sized, C: CType, U: CType> Unpack2<$part, U> for $source
         where
+            R: Wide<Header: WideHeader<Data = C>, Metadata = usize>,
             usize: TryInto<U>,
         {
             type Error = <usize as TryInto<U>>::Error;
 
             #[inline(always)]
             fn unpack(value: Self::CType) -> Result<($part, U), Self::Error> {
-                Ok((R::$accessor(value), R::metadata(value).try_into()?))
+                Ok((R::$accessor(value).cast(), R::metadata(value).try_into()?))
             }
         }
     };

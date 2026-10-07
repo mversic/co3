@@ -7,7 +7,7 @@ use rust_spec::{RustSpec, Stable, mutability::Exclusive, niche::WithNiche, size:
 #[cfg(feature = "alloc")]
 use crate::boxed::CBox;
 use crate::reference::CRefMut;
-use crate::{ReprC, assert_arr_has_non_zero_len};
+use crate::{CType, ReprC, Thin, assert_arr_has_non_zero_len};
 
 disjoint_impls! {
     /// Type that can be **safely transmuted** into its C representation.
@@ -55,13 +55,14 @@ disjoint_impls! {
     }
 }
 
-unsafe impl<R: CheckedTransmute + RustSpec<Mutability = Exclusive> + ?Sized> CheckedTransmute for &R
+unsafe impl<R: CheckedTransmute + ?Sized> CheckedTransmute for &R
 where
+    R: RustSpec<Size: Thin, Mutability = Exclusive>,
     Self: ReprC<CType = *const R::CType>,
 {
     #[inline(always)]
     unsafe fn is_valid(target: &Self::CType) -> bool {
-        let ptr = unsafe { core::mem::transmute_copy::<Self::CType, *const R::CType>(target) };
+        let ptr = *target;
 
         if ptr.is_null() {
             return false;
@@ -77,6 +78,7 @@ where
 // If layout is Stable<Robust> then also consider how it affects Box<&mut R>
 unsafe impl<R: CheckedTransmute + ?Sized> CheckedTransmute for &mut R
 where
+    R: RustSpec<Size: Thin>,
     Self: ReprC<CType = CRefMut<R::CType>>,
 {
     #[inline(always)]
@@ -91,10 +93,19 @@ where
     }
 }
 
-#[cfg(feature = "alloc")]
-unsafe impl<R: CheckedTransmute<CType: Sized> + RustSpec<Mutability = Exclusive>> CheckedTransmute
-    for Box<R>
+unsafe impl<C: CType + ?Sized, const RESTRICTED: bool> CheckedTransmute for CRefMut<C, RESTRICTED>
 where
+    C: RustSpec<Size: Thin>,
+{
+    unsafe fn is_valid(_: &Self::CType) -> bool {
+        true
+    }
+}
+
+#[cfg(feature = "alloc")]
+unsafe impl<R: CheckedTransmute<CType: Sized>> CheckedTransmute for Box<R>
+where
+    R: RustSpec<Size: Thin, Mutability = Exclusive>,
     Self: ReprC<CType = CBox<<R as ReprC>::CType>>,
 {
     #[inline(always)]

@@ -10,6 +10,15 @@ pub(super) fn gen_data_struct_name(ident: &syn::Ident) -> syn::Ident {
     format_ident!("{}Data", ident)
 }
 
+pub(super) fn gen_identity_header_impl(name: &syn::Ident, generics: &syn::Generics) -> TokenStream {
+    let (impl_generics, ty_generics, where_clause) = generics.split_for_impl();
+    quote! {
+        impl #impl_generics co3::wide::WideHeader for #name #ty_generics #where_clause {
+            type Data = Self;
+        }
+    }
+}
+
 pub(crate) fn expand(
     input: &syn::DeriveInput,
     repr: Option<&ReprKind>,
@@ -36,14 +45,15 @@ pub(crate) fn expand(
     let is_transparent_single = is_single && matches!(repr, Some(ReprKind::Transparent));
     let generates_wide = !is_single || is_transparent_single;
     let data_ty = if is_transparent_single {
-        quote!(<#field_ty as co3::wide::Wide>::Data)
+        quote!(<#field_ty as co3::wide::Wide>::Header)
     } else {
         gen_data_ty(input)
     };
     let methods = gen_dst_methods(is_transparent_single, field_ty);
-    let alloc_methods = gen_alloc_methods(is_transparent_single);
+    let alloc_methods = gen_alloc_methods(is_transparent_single, field_ty);
 
     let wide_predicate = wide_predicate(field_ty, &input.generics);
+    let header_predicate = header_repr_c_predicate(field_ty, &input.generics);
     let usize_predicate = (!is_transparent_single).then(|| {
         let predicate = wide_usize_predicate(field_ty, &input.generics);
         quote!(#predicate,)
@@ -55,10 +65,11 @@ pub(crate) fn expand(
             unsafe impl #impl_generics co3::wide::Wide for #name #ty_generics
             where
                 #wide_predicate,
+                #header_predicate,
                 #usize_predicate
                 #predicates
             {
-                type Data = #data_ty;
+                type Header = #data_ty;
                 type Metadata = <#field_ty as co3::wide::Wide>::Metadata;
 
                 #methods
@@ -123,6 +134,7 @@ fn gen_data_def(input: &syn::DeriveInput, fields: &syn::Fields) -> TokenStream {
     let generics = data_generics(fields, &input.generics);
     let (impl_generics, _, where_clause) = generics.split_for_impl();
     let predicates = where_clause.as_ref().map(|w| &w.predicates);
+    let header_impl = gen_identity_header_impl(&name, &generics);
 
     let suffix =
         match fields {
@@ -171,6 +183,8 @@ fn gen_data_def(input: &syn::DeriveInput, fields: &syn::Fields) -> TokenStream {
         #[repr_c(__wide_data)]
         #(#attrs)*
         #vis struct #name #impl_generics #suffix
+
+        #header_impl
     }
 }
 
@@ -185,6 +199,11 @@ pub(super) fn data_generics(fields: &syn::Fields, generics: &syn::Generics) -> s
         .make_where_clause()
         .predicates
         .push(parse_quote!(#wide_predicate));
+    let header_predicate = header_repr_c_predicate(&last.ty, generics);
+    data_generics
+        .make_where_clause()
+        .predicates
+        .push(parse_quote!(#header_predicate));
     data_generics
 }
 
@@ -236,15 +255,12 @@ fn data_field_ty(ty: &syn::Type, is_last_field: bool) -> syn::Type {
         return ty.clone();
     }
 
-    match ty {
-        syn::Type::Slice(_) => parse_quote! { [<#ty as co3::wide::Wide>::Data; 0] },
-        _ => parse_quote! { <#ty as co3::wide::Wide>::Data },
-    }
+    parse_quote! { <#ty as co3::wide::Wide>::Header }
 }
 
 pub(super) fn data_bound_ty(ty: &syn::Type, is_last_field: bool) -> syn::Type {
-    if is_last_field && matches!(ty, syn::Type::Slice(_)) {
-        parse_quote!(<#ty as co3::wide::Wide>::Data)
+    if is_last_field {
+        parse_quote!(<<#ty as co3::wide::Wide>::Header as co3::wide::WideHeader>::Data)
     } else {
         data_field_ty(ty, is_last_field)
     }
@@ -277,12 +293,21 @@ pub(super) fn wide_usize_predicate(field_ty: &syn::Type, generics: &syn::Generic
     quote! { #for_dummy #field_ty: co3::wide::Wide<Metadata = usize> }
 }
 
+pub(super) fn header_repr_c_predicate(
+    field_ty: &syn::Type,
+    generics: &syn::Generics,
+) -> TokenStream {
+    let for_dummy = (!is_type_parametrized(field_ty, generics)).then(|| quote! { for<'__dummy> });
+    quote! { #for_dummy <#field_ty as co3::wide::Wide>::Header: co3::ReprC<CType: Sized> }
+}
+
 pub(super) fn gen_dst_methods(is_transparent: bool, field_ty: &syn::Type) -> TokenStream {
+    let tail_data_ty = data_bound_ty(field_ty, true);
     let constructors = if is_transparent {
         quote! {
             #[inline(always)]
             unsafe fn from_raw_parts<'__rust_spec>(
-                data: *const Self::Data,
+                data: *const Self::Header,
                 metadata: Self::Metadata,
             ) -> &'__rust_spec Self {
                 let inner = unsafe { <#field_ty as co3::wide::Wide>::from_raw_parts(data.cast(), metadata) };
@@ -291,7 +316,7 @@ pub(super) fn gen_dst_methods(is_transparent: bool, field_ty: &syn::Type) -> Tok
 
             #[inline(always)]
             unsafe fn from_raw_parts_mut<'__rust_spec>(
-                data: *mut Self::Data,
+                data: *mut Self::Header,
                 metadata: Self::Metadata,
             ) -> &'__rust_spec mut Self {
                 let inner = unsafe { <#field_ty as co3::wide::Wide>::from_raw_parts_mut(data.cast(), metadata) };
@@ -302,19 +327,19 @@ pub(super) fn gen_dst_methods(is_transparent: bool, field_ty: &syn::Type) -> Tok
         quote! {
             #[inline(always)]
             unsafe fn from_raw_parts<'__rust_spec>(
-                data: *const Self::Data,
+                data: *const Self::Header,
                 metadata: Self::Metadata,
             ) -> &'__rust_spec Self {
-                let ptr = core::ptr::slice_from_raw_parts(data.cast::<u8>(), metadata) as *const Self;
+                let ptr = core::ptr::slice_from_raw_parts(data.cast::<#tail_data_ty>(), metadata) as *const Self;
                 unsafe { &*ptr }
             }
 
             #[inline(always)]
             unsafe fn from_raw_parts_mut<'__rust_spec>(
-                data: *mut Self::Data,
+                data: *mut Self::Header,
                 metadata: Self::Metadata,
             ) -> &'__rust_spec mut Self {
-                let ptr = core::ptr::slice_from_raw_parts_mut(data.cast::<u8>(), metadata) as *mut Self;
+                let ptr = core::ptr::slice_from_raw_parts_mut(data.cast::<#tail_data_ty>(), metadata) as *mut Self;
                 unsafe { &mut *ptr }
             }
         }
@@ -327,24 +352,25 @@ pub(super) fn gen_dst_methods(is_transparent: bool, field_ty: &syn::Type) -> Tok
         }
 
         #[inline(always)]
-        fn as_ptr(ptr: *const Self) -> *const Self::Data {
-            ptr as *const Self::Data
+        fn as_ptr(ptr: *const Self) -> *const Self::Header {
+            ptr as *const Self::Header
         }
 
         #[inline(always)]
-        fn as_mut_ptr(ptr: *mut Self) -> *mut Self::Data {
-            ptr as *mut Self::Data
+        fn as_mut_ptr(ptr: *mut Self) -> *mut Self::Header {
+            ptr as *mut Self::Header
         }
 
         #constructors
     }
 }
 
-pub(super) fn gen_alloc_methods(is_transparent: bool) -> TokenStream {
+pub(super) fn gen_alloc_methods(is_transparent: bool, field_ty: &syn::Type) -> TokenStream {
     if !cfg!(feature = "alloc") {
         return quote! {};
     }
 
+    let tail_data_ty = data_bound_ty(field_ty, true);
     let constructor = if is_transparent {
         quote! {
             let ptr = unsafe { <Self as co3::wide::Wide>::from_raw_parts_mut(data.as_ptr(), metadata) }
@@ -352,20 +378,20 @@ pub(super) fn gen_alloc_methods(is_transparent: bool) -> TokenStream {
         }
     } else {
         quote! {
-            let ptr = core::ptr::slice_from_raw_parts_mut(data.as_ptr().cast::<u8>(), metadata)
+            let ptr = core::ptr::slice_from_raw_parts_mut(data.as_ptr().cast::<#tail_data_ty>(), metadata)
                 as *mut Self;
         }
     };
 
     quote! {
         #[inline(always)]
-        fn into_non_null(self: co3::boxed::Box<Self>) -> core::ptr::NonNull<Self::Data> {
+        fn into_non_null(self: co3::boxed::Box<Self>) -> core::ptr::NonNull<Self::Header> {
             co3::boxed::Box::into_non_null(self).cast()
         }
 
         #[inline(always)]
         unsafe fn from_non_null(
-            data: core::ptr::NonNull<Self::Data>,
+            data: core::ptr::NonNull<Self::Header>,
             metadata: Self::Metadata,
         ) -> co3::boxed::Box<Self> {
             #constructor
