@@ -2,12 +2,12 @@ use co3::{ReprC, ffi, rust_spec::RustSpec};
 
 #[derive(Clone, RustSpec, ReprC)]
 #[repr(C)]
-#[repr_c(with_custom_drop)]
+#[rust_spec(custom_drop)]
 struct Regular(u32);
 
 #[derive(Clone, RustSpec, ReprC)]
 #[repr(C)]
-#[repr_c(with_custom_drop)]
+#[rust_spec(custom_drop)]
 struct RegularExport(u32);
 
 impl Drop for RegularExport {

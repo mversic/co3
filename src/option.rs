@@ -149,6 +149,7 @@ unsafe impl<T: RustSpec> RustSpec for ReprCOption<T> {
     type Trap = T::Trap;
     type Niche = WithoutNiche;
     type Mutability = rust_spec::mutability::Exclusive;
+    type Drop = rust_spec::drop::NoDrop;
     type __IndirectTrap = T::__IndirectTrap;
 }
 

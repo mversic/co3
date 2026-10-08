@@ -2,7 +2,7 @@ use co3::{ReprC, rust_spec::RustSpec};
 
 #[derive(RustSpec, ReprC)]
 #[repr_c(is_valid = |a| *a != 42)]
-#[rust_spec(with_custom_niche)]
+#[rust_spec(custom_niche)]
 #[repr_c(NICHE = Self::CType {
     field: 42
 })]

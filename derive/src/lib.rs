@@ -434,7 +434,6 @@ impl DispatchGroups {
 /// * `#[repr_c(is_valid = |[fieldN]| ...)]` on a struct or enum variant customizes validation
 /// * `#[repr_c(identity)]` uses a `repr(C)` or `repr(transparent)` struct directly as its CType
 /// * `#[repr_c(as(T))]` delegates owned conversion through `T` via `Into<T>` and `TryInto<Self>`
-/// * `#[repr_c(with_custom_drop)]` tells the derive a custom `Drop` impl exists for the type.
 ///
 /// # Example
 ///

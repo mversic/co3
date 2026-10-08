@@ -3,40 +3,12 @@ use core::ffi::{CStr, c_char};
 use std::ffi::CString;
 use std::sync::atomic::{AtomicUsize, Ordering};
 
-static DROP_COUNT: AtomicUsize = AtomicUsize::new(0);
-static DROP_TEST_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
-
-#[derive(Clone, RustSpec, ReprC)]
-#[repr(C)]
-#[repr_c(with_custom_drop)]
-struct DropProbe<T: Copy>(T);
-
-impl<T: Copy> Drop for DropProbe<T> {
-    fn drop(&mut self) {
-        DROP_COUNT.fetch_add(1, Ordering::SeqCst);
-    }
-}
-
-#[derive(Clone, RustSpec, ReprC)]
-#[repr(u8)]
-#[repr_c(with_custom_drop)]
-enum DropVariant {
-    Value(u8),
-    Empty,
-}
-
-impl Drop for DropVariant {
-    fn drop(&mut self) {
-        DROP_COUNT.fetch_add(1, Ordering::SeqCst);
-    }
-}
-
 type BatteryString = CString;
 type BatteryCStr = Box<CStr>;
 
 #[derive(RustSpec, ReprC)]
 #[repr(transparent)]
-#[repr_c(with_custom_drop)]
+#[rust_spec(custom_drop)]
 struct RemoteString(CBox<c_char>);
 
 impl Clone for RemoteString {
@@ -91,44 +63,54 @@ fn regular_drop_import_calls_export() {
     drop(remote);
 }
 
+static FIELDLESS_DROPS: AtomicUsize = AtomicUsize::new(0);
+
+#[derive(Clone, RustSpec, ReprC)]
+#[repr(u8)]
+#[rust_spec(custom_drop)]
+enum ExplicitFieldlessDrop {
+    First = 2,
+    Second = 5,
+}
+
+impl Drop for ExplicitFieldlessDrop {
+    fn drop(&mut self) {
+        FIELDLESS_DROPS.fetch_add(1, Ordering::Relaxed);
+    }
+}
+
+#[derive(Clone, RustSpec, ReprC)]
+#[rust_spec(custom_drop)]
+enum InferredFieldlessDrop {
+    First = 2,
+    Second,
+}
+
+impl Drop for InferredFieldlessDrop {
+    fn drop(&mut self) {
+        FIELDLESS_DROPS.fetch_add(1, Ordering::Relaxed);
+    }
+}
+
 #[test]
-fn custom_drop_borrow_keeps_original_in_owner() {
+fn fieldless_enums_with_drop_convert_and_borrow() {
     use co3::borrow::{Borrow, FromBorrow};
 
-    let _guard = DROP_TEST_LOCK.lock().unwrap();
-    let before = DROP_COUNT.load(Ordering::SeqCst);
-    let mut owner = Default::default();
-    let borrowed = Borrow::borrow(DropProbe(7_u8), &mut owner);
-    assert_eq!(borrowed.0, 7);
-    let cloned: DropProbe<u8> = FromBorrow::from_borrow(borrowed);
-    assert_eq!(cloned.0, 7);
-    assert_eq!(DROP_COUNT.load(Ordering::SeqCst), before);
-    drop(owner);
-    assert_eq!(DROP_COUNT.load(Ordering::SeqCst), before + 1);
+    let before = FIELDLESS_DROPS.load(Ordering::Relaxed);
+    assert_eq!(co3::encode(ExplicitFieldlessDrop::Second).0, 5);
+    assert_eq!(co3::encode(InferredFieldlessDrop::Second).0, 3);
+    assert_eq!(FIELDLESS_DROPS.load(Ordering::Relaxed) - before, 2);
+
+    let decoded = ExplicitFieldlessDrop::try_from(CExplicitFieldlessDrop(2)).unwrap();
+    assert!(matches!(decoded, ExplicitFieldlessDrop::First));
+    drop(decoded);
+    assert!(ExplicitFieldlessDrop::try_from(CExplicitFieldlessDrop(3)).is_err());
+
+    let mut owner = <ExplicitFieldlessDrop as Borrow>::Owner::default();
+    let borrowed = Borrow::borrow(ExplicitFieldlessDrop::Second, &mut owner);
+    let cloned = <ExplicitFieldlessDrop as FromBorrow>::from_borrow(borrowed);
+    assert!(matches!(cloned, ExplicitFieldlessDrop::Second));
     drop(cloned);
-    assert_eq!(DROP_COUNT.load(Ordering::SeqCst), before + 2);
-}
-
-#[test]
-fn custom_drop_owned_encode_does_not_run_destructor() {
-    let _guard = DROP_TEST_LOCK.lock().unwrap();
-    let before = DROP_COUNT.load(Ordering::SeqCst);
-    let carrier = co3::encode(DropProbe(11_u8));
-    assert_eq!(DROP_COUNT.load(Ordering::SeqCst), before);
-    let value: DropProbe<u8> = unsafe { co3::decode(carrier) }.unwrap();
-    assert_eq!(value.0, 11);
-    drop(value);
-    assert_eq!(DROP_COUNT.load(Ordering::SeqCst), before + 1);
-}
-
-#[test]
-fn custom_drop_data_enum_roundtrip() {
-    let _guard = DROP_TEST_LOCK.lock().unwrap();
-    let before = DROP_COUNT.load(Ordering::SeqCst);
-    let carrier = co3::encode(DropVariant::Value(5));
-    assert_eq!(DROP_COUNT.load(Ordering::SeqCst), before);
-    let value: DropVariant = unsafe { co3::decode(carrier) }.unwrap();
-    assert!(matches!(value, DropVariant::Value(5)));
-    drop(value);
-    assert_eq!(DROP_COUNT.load(Ordering::SeqCst), before + 1);
+    drop(owner);
+    assert_eq!(FIELDLESS_DROPS.load(Ordering::Relaxed) - before, 5);
 }

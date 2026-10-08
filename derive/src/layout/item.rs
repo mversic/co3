@@ -56,6 +56,9 @@ pub(super) fn derive_item(
                 .predicates
                 .push(parse_quote!(#field: co3::CType));
         }
+        identity_generics.make_where_clause().predicates.push(
+            parse_quote!(Self: co3::rust_spec::RustSpec<Drop = co3::rust_spec::drop::NoDrop>),
+        );
 
         let repr_c_impls = gen_identity_repr_c_impls(name, &identity_generics, &fields);
         let borrow_impls = gen_identity_borrow_impls(name, &identity_generics);
@@ -69,11 +72,9 @@ pub(super) fn derive_item(
     }
 
     let ctype_def = (!is_view).then(|| gen_item_ctype(repr, alignment, input, !is_wide_data));
-    let view_def = (!is_view && !is_wide_data && !attrs.with_custom_drop)
-        .then(|| gen_item_view(input, attrs, variant_attrs));
+    let view_def = (!is_view && !is_wide_data).then(|| gen_item_view(input, attrs, variant_attrs));
 
-    let borrow_impls =
-        (!is_view && !is_wide_data).then(|| gen_item_borrow_impls(input, attrs.with_custom_drop));
+    let borrow_impls = (!is_view && !is_wide_data).then(|| gen_item_borrow_impls(input));
     let codec_impls = gen_item_codec_impls(repr, input, attrs, variant_attrs);
     let niche_impls = if is_view {
         attrs
@@ -132,7 +133,6 @@ fn gen_item_codec_impls(
     match &input.data {
         syn::Data::Struct(data) => gen_struct_codec_impls(
             is_view,
-            attrs.with_custom_drop,
             &input.ident,
             &input.generics,
             &data.fields,
@@ -140,7 +140,6 @@ fn gen_item_codec_impls(
         ),
         syn::Data::Enum(data) => gen_enum_codec_impls(
             is_view,
-            attrs.with_custom_drop,
             repr,
             &input.ident,
             &input.generics,
@@ -297,7 +296,6 @@ fn gen_interior_mut_impl(
 
 fn gen_struct_codec_impls(
     is_view: bool,
-    with_custom_drop: bool,
     name: &Ident,
     generics: &syn::Generics,
     fields: &syn::Fields,
@@ -320,15 +318,11 @@ fn gen_struct_codec_impls(
         let (encode_body, decode_body, decode_unchecked_body) =
             gen_record_conversion(None, quote!(Self), fields, is_valid);
 
-        let encode_destructure = if with_custom_drop {
-            let field_vars = field_vars(fields);
-            quote! {
-                let __co3_owned = core::mem::ManuallyDrop::new(self);
-                let Self #fields_destructure = &*__co3_owned;
-                #(let #field_vars = *#field_vars;)*
-            }
-        } else {
-            quote! { let Self #fields_destructure = self; }
+        let field_vars = field_vars(fields);
+        let encode_destructure = quote! {
+            let __co3_owned = core::mem::ManuallyDrop::new(self);
+            let Self #fields_destructure = &*__co3_owned;
+            #(let #field_vars = unsafe { core::ptr::read(#field_vars) };)*
         };
 
         CodecImpls {
@@ -354,7 +348,6 @@ fn gen_struct_codec_impls(
 
 fn gen_enum_codec_impls(
     is_view: bool,
-    with_custom_drop: bool,
     repr: Option<&ReprKind>,
     name: &Ident,
     generics: &syn::Generics,
@@ -370,14 +363,7 @@ fn gen_enum_codec_impls(
     };
 
     if is_transparent_enum_repr(repr, variants) {
-        return gen_transparent_enum_codec_impls(
-            is_view,
-            with_custom_drop,
-            name,
-            generics,
-            variants,
-            variant_attrs,
-        );
+        return gen_transparent_enum_codec_impls(is_view, name, generics, variants, variant_attrs);
     }
     let tag_type = enum_tag_type(repr, variants.len());
 
@@ -427,12 +413,8 @@ fn gen_enum_codec_impls(
             let tag_value = proc_macro2::Literal::usize_unsuffixed(idx);
 
             let destructure_fields = gen_fields_destructure(&variant.fields);
-            let copy_fields = if with_custom_drop {
-                let field_vars = field_vars(&variant.fields);
-                quote! { #(let #field_vars = *#field_vars;)* }
-            } else {
-                quote! {}
-            };
+            let move_vars = field_vars(&variant.fields);
+            let move_fields = quote! { #(let #move_vars = unsafe { core::ptr::read(#move_vars) };)* };
             let custom_is_valid = variant_attrs[idx].is_valid.as_ref();
             let variant_tag = match repr {
                 None | Some(ReprKind::Primitive(_)) => {
@@ -549,7 +531,7 @@ fn gen_enum_codec_impls(
             (
                 quote! {
                     Self::#variant_name #destructure_fields => {
-                        #copy_fields
+                        #move_fields
                         #encode_store_init
                         #encode_variant
                     }
@@ -609,16 +591,12 @@ fn gen_enum_codec_impls(
         _ => unreachable!(),
     };
 
-    let encode_target = if with_custom_drop {
-        quote! { &*core::mem::ManuallyDrop::new(self) }
-    } else {
-        quote! { self }
-    };
     let codec_impls = CodecImpls {
         encode_store,
         decode_store,
         encode_impl: quote! {
-            match #encode_target {
+            let __co3_owned = core::mem::ManuallyDrop::new(self);
+            match &*__co3_owned {
                 #(#variants_encode,)*
             }
         },
@@ -631,7 +609,6 @@ fn gen_enum_codec_impls(
 
 fn gen_transparent_enum_codec_impls(
     is_view: bool,
-    with_custom_drop: bool,
     name: &Ident,
     generics: &syn::Generics,
     variants: &syn::punctuated::Punctuated<syn::Variant, syn::Token![,]>,
@@ -657,17 +634,8 @@ fn gen_transparent_enum_codec_impls(
         .map(|field| &field.ty)
         .collect::<Vec<_>>();
     let destructure_fields = gen_fields_destructure(&variant.fields);
-    let copy_fields = if with_custom_drop {
-        let field_vars = field_vars(&variant.fields);
-        quote! { #(let #field_vars = *#field_vars;)* }
-    } else {
-        quote! {}
-    };
-    let encode_target = if with_custom_drop {
-        quote! { &*core::mem::ManuallyDrop::new(self) }
-    } else {
-        quote! { self }
-    };
+    let field_vars = field_vars(&variant.fields);
+    let move_fields = quote! { #(let #field_vars = unsafe { core::ptr::read(#field_vars) };)* };
     let custom_is_valid = variant_attrs
         .first()
         .and_then(|attrs| attrs.is_valid.as_ref());
@@ -689,9 +657,10 @@ fn gen_transparent_enum_codec_impls(
             encode_store,
             decode_store,
             encode_impl: quote! {
-                match #encode_target {
+                let __co3_owned = core::mem::ManuallyDrop::new(self);
+                match &*__co3_owned {
                     Self::#variant_name #destructure_fields => {
-                        #copy_fields
+                        #move_fields
                         #ctype_name #encode_body
                     }
                 }
@@ -979,11 +948,15 @@ fn upper_snake_case(name: &str) -> String {
 pub(super) fn derive_fieldless_enum(
     repr: Option<&ReprKind>,
     alignment: Option<&syn::LitInt>,
-    vis: &syn::Visibility,
-    name: &Ident,
-    generics: &syn::Generics,
-    variants: &syn::punctuated::Punctuated<syn::Variant, syn::Token![,]>,
+    input: &syn::DeriveInput,
 ) -> TokenStream {
+    let syn::Data::Enum(data) = &input.data else {
+        unreachable!()
+    };
+    let vis = &input.vis;
+    let name = &input.ident;
+    let generics = &input.generics;
+    let variants = &data.variants;
     let (impl_generics, ty_generics, where_clause) = generics.split_for_impl();
     let mut decode_generics = generics.clone();
     decode_generics.params.insert(0, parse_quote!('_dšč));
@@ -999,6 +972,32 @@ pub(super) fn derive_fieldless_enum(
         Some(ReprKind::C(None)) => unreachable!(),
     };
 
+    let mut previous_tag = None;
+    let tag_consts = tag_type
+        .as_ref()
+        .map(|tag_ty| {
+            variants
+                .iter()
+                .map(|variant| {
+                    let tag_name = format_ident!("__CO3_TAG_{}", variant.ident);
+                    let tag_value = if let Some((_, value)) = &variant.discriminant {
+                        quote! { (#value) as #tag_ty }
+                    } else if let Some(previous) = &previous_tag {
+                        quote! { Self::#previous + 1 }
+                    } else {
+                        quote! { 0 }
+                    };
+                    previous_tag = Some(tag_name.clone());
+                    (tag_name, tag_value)
+                })
+                .collect::<Vec<_>>()
+        })
+        .unwrap_or_default();
+    let variant_tags = tag_consts
+        .iter()
+        .map(|(tag_name, _)| quote! { #name::#tag_name })
+        .collect::<Vec<_>>();
+
     let checked_transmute_method = match repr {
         None => quote! {},
         Some(ReprKind::C(None)) => unreachable!(),
@@ -1010,15 +1009,12 @@ pub(super) fn derive_fieldless_enum(
         {
             quote! { unsafe fn is_valid(_: &Self::CType) -> bool { true } }
         }
-        Some(ReprKind::C(Some(repr)) | ReprKind::Primitive(repr)) => {
-            let variant_tags = variants.iter().map(|variant| {
-                let variant_name = &variant.ident;
-                quote! { target.0 == Self::#variant_name as #repr }
-            });
+        Some(ReprKind::C(Some(_)) | ReprKind::Primitive(_)) => {
+            let variant_tags = &variant_tags;
 
             quote! {
                 unsafe fn is_valid(target: &Self::CType) -> bool {
-                    false #(|| #variant_tags)*
+                    false #(|| target.0 == #variant_tags)*
                 }
             }
         }
@@ -1039,14 +1035,14 @@ pub(super) fn derive_fieldless_enum(
 
     let tag_ctype: syn::Type = tag_type.clone().unwrap_or_else(|| parse_quote!(()));
     let ctype_name = gen_ctype_name(name);
-    let variants_decode = variants.iter().map(|variant| {
+    let variants_decode = variants.iter().zip(&variant_tags).map(|(variant, tag)| {
         let variant_name = &variant.ident;
-        quote! { value if value == Self::#variant_name as #tag_ctype => Some(Self::#variant_name) }
+        quote! { value if value == #tag => Some(Self::#variant_name) }
     });
     let decode_unchecked = if tag_type.is_some() {
-        let variants = variants.iter().map(|variant| {
+        let variants = variants.iter().zip(&variant_tags).map(|(variant, tag)| {
             let variant_name = &variant.ident;
-            quote! { value if value == Self::#variant_name as #tag_ctype => Self::#variant_name }
+            quote! { value if value == #tag => Self::#variant_name }
         });
         quote! {
             match source.0 {
@@ -1064,20 +1060,26 @@ pub(super) fn derive_fieldless_enum(
 
     let ctype_ty = quote!(#ctype_name #ty_generics);
     let ctype_def = gen_fieldless_enum_ctype(&tag_ctype, alignment, vis, name, generics);
-    let variant_consts = variants.iter().map(|variant| {
+    let variant_consts = variants.iter().enumerate().map(|(index, variant)| {
         let variant_name = &variant.ident;
         let const_name = format_ident!("{}", upper_snake_case(&variant_name.to_string()));
         let value = if tag_type.is_none() {
             quote!(())
         } else {
-            quote!(#name::#variant_name as #tag_ctype)
+            variant_tags[index].clone()
         };
 
         quote! { #vis const #const_name: Self = Self(#value); }
     });
     let from_body = tag_type
         .as_ref()
-        .map(|repr| quote! { #ctype_name(value as #repr) })
+        .map(|_| {
+            let variant_tags = variants.iter().zip(&variant_tags).map(|(variant, tag)| {
+                let variant_name = &variant.ident;
+                quote! { #name::#variant_name => #ctype_name(#tag) }
+            });
+            quote! { match &value { #(#variant_tags,)* } }
+        })
         .unwrap_or_else(|| quote! { #ctype_name(()) });
     let try_from_body = if tag_type.is_some() {
         quote! {
@@ -1098,9 +1100,23 @@ pub(super) fn derive_fieldless_enum(
         .is_some()
         .then(|| gen_enum_niche_ir(repr, name, generics, variants));
 
-    let borrow_impls = gen_identity_borrow_impls(name, generics);
+    let borrow_impls = gen_item_borrow_impls(input);
+    let tag_const_defs = tag_consts.iter().map(|(tag_name, value)| {
+        quote! {
+            #[allow(non_upper_case_globals)]
+            const #tag_name: #tag_ctype = #value;
+        }
+    });
+    let tag_const_impl = tag_type.as_ref().map(|_| {
+        quote! {
+            impl #impl_generics #name #ty_generics #where_clause {
+                #(#tag_const_defs)*
+            }
+        }
+    });
 
     quote! {
+        #tag_const_impl
         #ctype_def
         #niche_impl
         #borrow_impls

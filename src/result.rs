@@ -179,6 +179,7 @@ where
     type Trap = <<T as RustSpec>::Trap as Add<<E as RustSpec>::Trap>>::Output;
     type Niche = WithoutNiche;
     type Mutability = rust_spec::mutability::Exclusive;
+    type Drop = rust_spec::drop::NoDrop;
     type __IndirectTrap = <T::__IndirectTrap as Add<E::__IndirectTrap>>::Output;
 }
 

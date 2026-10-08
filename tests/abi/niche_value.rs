@@ -10,7 +10,7 @@ use co3::{
 
 #[derive(Clone, Copy, PartialEq, Eq, RustSpec, ReprC)]
 #[repr(transparent)]
-#[rust_spec(with_custom_niche)]
+#[rust_spec(custom_niche)]
 #[repr_c(NICHE = COverlappingCustomNiche(1))]
 struct OverlappingCustomNiche(u8);
 

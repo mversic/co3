@@ -271,6 +271,10 @@ fn gen_regular_drop_import_body<const DISPATCHED: bool>(
         generics,
         false,
         Some(quote! {
+            fn __co3_require_custom_drop<T: co3::rust_spec::RustSpec<
+                Drop = co3::rust_spec::drop::WithDrop<co3::rust_spec::drop::Custom>
+            >>() {}
+            __co3_require_custom_drop::<#self_ty>();
             let __co3_self = core::mem::ManuallyDrop::new(unsafe { core::ptr::read(self) });
         }),
     )
@@ -311,7 +315,6 @@ pub(crate) fn gen_owned_drop_wrapper_body<const DISPATCHED: bool>(
     ffi_fn::normalize_fn_signature(&mut pointer_item.sig, Some(self_ty));
     let pointer_ty: syn::Type = syn::parse_quote!(*mut #self_ty);
     ffi_fn::drop_owned_receiver(&mut pointer_item.sig, Some(&pointer_ty));
-
     gen_impl_wrapper_body_with_self_binding::<DISPATCHED>(
         failure_mode,
         &pointer_item,

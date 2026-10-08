@@ -5,7 +5,7 @@ use static_assertions::{assert_impl_all, assert_not_impl_any};
 #[repr(C, align(16))]
 struct AlignedStruct(u8);
 
-#[derive(ReprC)]
+#[derive(RustSpec, ReprC)]
 #[repr(C)]
 #[repr(align(16))]
 struct SeparatelyAlignedStruct(u8);

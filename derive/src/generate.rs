@@ -3429,6 +3429,7 @@ fn gen_owned_repr_c_impls(ident: &syn::Ident, generics: &syn::Generics) -> Token
             type Trap = #co3::rust_spec::layout::Robust;
             type Niche = #co3::rust_spec::niche::WithoutNiche;
             type Mutability = #co3::rust_spec::mutability::Exclusive;
+            type Drop = #co3::rust_spec::drop::NoDrop;
             type __IndirectTrap = #co3::rust_spec::layout::Robust;
         }
 
@@ -3505,6 +3506,7 @@ fn gen_owned_extern_type_impls(
             type Trap = #co3::rust_spec::layout::NonRobust;
             type Niche = #co3::rust_spec::niche::WithNiche<#co3::rust_spec::Stable>;
             type Mutability = #co3::rust_spec::mutability::Exclusive;
+            type Drop = #co3::rust_spec::drop::WithDrop<#co3::rust_spec::drop::Custom>;
             type __IndirectTrap = #co3::rust_spec::layout::Robust;
         }
 
@@ -3619,6 +3621,7 @@ fn derive_opaque_item(
             type Trap = co3::rust_spec::layout::Robust;
             type Niche = #niche_kind;
             type Mutability = co3::rust_spec::mutability::Exclusive;
+            type Drop = co3::rust_spec::drop::NoDrop;
             type __IndirectTrap = co3::rust_spec::layout::Robust;
         }
 

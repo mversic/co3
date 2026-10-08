@@ -4,7 +4,7 @@ use co3::ReprC;
 use co3::rust_spec::RustSpec;
 
 #[derive(RustSpec, ReprC)]
-#[rust_spec(with_custom_niche)]
+#[rust_spec(custom_niche)]
 #[repr_c(NICHE = unsafe { core::mem::zeroed() })]
 struct Valid<T>(u8, PhantomData<T>);
 
@@ -13,7 +13,7 @@ struct Valid<T>(u8, PhantomData<T>);
 struct MissingCustomNiche<T>(u8, PhantomData<T>);
 
 #[derive(RustSpec, ReprC)]
-#[rust_spec(with_custom_niche)]
+#[rust_spec(custom_niche)]
 #[repr_c(NICHE = unsafe { core::mem::zeroed() })]
 struct OverridesInferredNiche<T>(NonZeroU8, PhantomData<T>);
 

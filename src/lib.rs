@@ -518,7 +518,8 @@ use alloc::{boxed::Box, vec::Vec};
 
 #[cfg(feature = "derive")]
 pub use co3_derive::*;
-use disjoint_impls::disjoint_impls;
+#[doc(hidden)]
+pub use disjoint_impls::disjoint_impls;
 #[doc(hidden)]
 pub use impls::impls;
 #[doc(hidden)]

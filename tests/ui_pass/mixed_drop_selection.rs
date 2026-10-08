@@ -2,7 +2,7 @@ use co3::{ReprC, Tag, ffi, rust_spec::RustSpec};
 
 #[derive(Clone, RustSpec, Tag, ReprC)]
 #[repr(C)]
-#[repr_c(with_custom_drop)]
+#[rust_spec(custom_drop)]
 #[tag(u8, unsafe(2))]
 struct Regular(u32);
 

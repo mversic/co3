@@ -1,5 +1,5 @@
 use proc_macro2::{Literal, TokenStream};
-use quote::quote;
+use quote::{format_ident, quote};
 
 use crate::{
     layout::{
@@ -165,8 +165,8 @@ pub fn gen_enum_niche_ir(
     let niche_value = if is_fieldless && has_explicit_discriminant {
         let ctype_name = gen_ctype_name(enum_name);
         let variant_tags = variants.iter().map(|variant| {
-            let variant_name = &variant.ident;
-            quote! { __co3_niche_tag != Self::#variant_name as #tag_ty }
+            let tag_name = format_ident!("__CO3_TAG_{}", variant.ident);
+            quote! { __co3_niche_tag != Self::#tag_name }
         });
         quote! {
             #ctype_name({

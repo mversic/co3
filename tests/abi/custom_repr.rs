@@ -29,36 +29,6 @@ fn intermediate_codecs_round_trip_and_reject_invalid_input() {
     assert!(unsafe { co3::decode::<Handle>(0) }.is_none());
 }
 
-#[derive(ReprC)]
-#[repr_c(as(u32), with_custom_drop)]
-struct GenericCustomDrop<T: Copy>(T);
-
-impl<T: Copy> Drop for GenericCustomDrop<T> {
-    fn drop(&mut self) {}
-}
-
-impl<T: Copy + Into<u32>> From<GenericCustomDrop<T>> for u32 {
-    fn from(value: GenericCustomDrop<T>) -> Self {
-        value.0.into()
-    }
-}
-
-impl<T: Copy + TryFrom<u32>> TryFrom<u32> for GenericCustomDrop<T> {
-    type Error = T::Error;
-
-    fn try_from(value: u32) -> Result<Self, Self::Error> {
-        T::try_from(value).map(Self)
-    }
-}
-
-#[test]
-fn generic_custom_drop_intermediate_round_trip() {
-    let encoded = co3::encode(GenericCustomDrop(7_u32));
-    assert_eq!(encoded, 7);
-    let decoded: GenericCustomDrop<u32> = unsafe { co3::decode(encoded) }.unwrap();
-    assert_eq!(decoded.0, 7);
-}
-
 #[derive(Default)]
 struct ConversionStore(usize);
 
@@ -132,7 +102,7 @@ fn intermediate_store_is_forwarded_in_both_directions() {
 }
 
 #[derive(Clone, Copy, RustSpec, ReprC)]
-#[rust_spec(with_custom_niche)]
+#[rust_spec(custom_niche)]
 #[repr_c(as(u32), NICHE = 0, is_valid = |value| value.is_power_of_two())]
 struct PowerOfTwo(u32);
 

@@ -624,6 +624,7 @@ disjoint_impls! {
     unsafe impl<R: CheckedTransmute<CType: Copy>> EncodeOwned for Vec<R>
     where
         R: RustSpec<Mutability = Exclusive, Layout = Stable>,
+        Self: ReprC<CType = CBoxedSlice<<R as ReprC>::CType>>,
     {
         type Store = ();
 
@@ -642,6 +643,7 @@ disjoint_impls! {
     unsafe impl<R: EncodeOwned> EncodeOwned for Vec<R>
     where
         R: RustSpec<Mutability = Exclusive, Layout = Unstable>,
+        Self: ReprC<CType = CBoxedSlice<<R as ReprC>::CType>>,
     {
         type Store = Box<[R::Store]>;
 
@@ -656,6 +658,7 @@ disjoint_impls! {
     unsafe impl<R: EncodeOwned> EncodeOwned for Vec<R>
     where
         R: RustSpec<Mutability = Interior>,
+        Self: ReprC<CType = CBoxedSliceCell<<R as ReprC>::CType>>,
     {
         type Store = Box<[R::Store]>;
 
@@ -1397,6 +1400,7 @@ disjoint_impls! {
     unsafe impl<'d, R: CheckedTransmute> DecodeOwned<'d> for Vec<R>
     where
         R: RustSpec<Mutability = Exclusive, Layout = Stable>,
+        Self: ReprC<CType = CBoxedSlice<<R as ReprC>::CType>>,
         <R as ReprC>::CType: Copy,
     {
         type Store = ();
@@ -1423,6 +1427,7 @@ disjoint_impls! {
     unsafe impl<'d, R: DecodeOwned<'d>> DecodeOwned<'d> for Vec<R>
     where
         R: RustSpec<Mutability = Exclusive, Layout = Unstable>,
+        Self: ReprC<CType = CBoxedSlice<<R as ReprC>::CType>>,
     {
         type Store = Box<[R::Store]>;
 
@@ -1445,7 +1450,8 @@ disjoint_impls! {
     #[cfg(feature = "alloc")]
     unsafe impl<'d, R: DecodeOwned<'d>> DecodeOwned<'d> for Vec<R>
     where
-        R: RustSpec<Mutability = Interior>
+        R: RustSpec<Mutability = Interior>,
+        Self: ReprC<CType = CBoxedSliceCell<<R as ReprC>::CType>>,
     {
         type Store = Box<[R::Store]>;
 

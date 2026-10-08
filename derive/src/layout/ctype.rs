@@ -775,6 +775,7 @@ fn gen_type_spec(
             type Trap = co3::rust_spec::layout::Robust;
             type Niche = co3::rust_spec::niche::WithoutNiche;
             type Mutability = co3::rust_spec::mutability::Exclusive;
+            type Drop = co3::rust_spec::drop::NoDrop;
             type __IndirectTrap = co3::rust_spec::layout::Robust;
         }
     }
