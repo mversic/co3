@@ -6,6 +6,12 @@ use core::{
     cell::{Cell, UnsafeCell},
     mem::ManuallyDrop,
 };
+use rust_spec::{
+    RustSpec,
+    size::{MetaSized, SliceLike},
+};
+
+use crate::{CType, transmute::CheckedTransmute};
 
 pub(crate) type WideData<R> = <<R as Wide>::Header as WideHeader>::Data;
 
@@ -129,12 +135,19 @@ impl_wide_for_transparent_wrapper!(ManuallyDrop);
 
 macro_rules! impl_wide_for_cell {
     ($($wrapper:ident),+ $(,)?) => {$(
-        unsafe impl<R> Wide for $wrapper<[R]> {
-            type Header = [R; 0];
+        // SAFETY: CheckedTransmute equates T's layout with [C]. SliceLike gives
+        // both pointer types the same length metadata; Cell and UnsafeCell
+        // preserve the layout of T.
+        unsafe impl<T: ?Sized, C: CType> Wide for $wrapper<T>
+        where
+            T: CheckedTransmute<CType = [C]> + RustSpec<Size = MetaSized<SliceLike>>,
+        {
+            type Header = [C; 0];
             type Metadata = usize;
 
             fn metadata(ptr: *const Self) -> Self::Metadata {
-                (ptr as *const [R]).len()
+                let slice = unsafe { core::mem::transmute_copy::<*const Self, *const [C]>(&ptr) };
+                slice.len()
             }
 
             fn as_ptr(ptr: *const Self) -> *const Self::Header {
@@ -146,12 +159,14 @@ macro_rules! impl_wide_for_cell {
             }
 
             unsafe fn from_raw_parts<'a>(data: *const Self::Header, len: usize) -> &'a Self {
-                let ptr = core::ptr::slice_from_raw_parts(data.cast::<R>(), len) as *const Self;
+                let slice = core::ptr::slice_from_raw_parts(data.cast::<C>(), len);
+                let ptr = unsafe { core::mem::transmute_copy::<*const [C], *const Self>(&slice) };
                 unsafe { &*ptr }
             }
 
             unsafe fn from_raw_parts_mut<'a>(data: *mut Self::Header, len: usize) -> &'a mut Self {
-                let ptr = core::ptr::slice_from_raw_parts_mut(data.cast::<R>(), len) as *mut Self;
+                let slice = core::ptr::slice_from_raw_parts_mut(data.cast::<C>(), len);
+                let ptr = unsafe { core::mem::transmute_copy::<*mut [C], *mut Self>(&slice) };
                 unsafe { &mut *ptr }
             }
 
@@ -162,45 +177,8 @@ macro_rules! impl_wide_for_cell {
 
             #[cfg(feature = "alloc")]
             unsafe fn from_non_null(data: NonNull<Self::Header>, len: usize) -> Box<Self> {
-                let ptr = NonNull::slice_from_raw_parts(data.cast::<R>(), len).as_ptr() as *mut Self;
-                unsafe { Box::from_raw(ptr) }
-            }
-        }
-
-        unsafe impl Wide for $wrapper<str> {
-            type Header = [u8; 0];
-            type Metadata = usize;
-
-            fn metadata(ptr: *const Self) -> Self::Metadata {
-                (ptr as *const [u8]).len()
-            }
-
-            fn as_ptr(ptr: *const Self) -> *const Self::Header {
-                ptr.cast()
-            }
-
-            fn as_mut_ptr(ptr: *mut Self) -> *mut Self::Header {
-                ptr.cast()
-            }
-
-            unsafe fn from_raw_parts<'a>(data: *const Self::Header, len: usize) -> &'a Self {
-                let ptr = core::ptr::slice_from_raw_parts(data.cast::<u8>(), len) as *const Self;
-                unsafe { &*ptr }
-            }
-
-            unsafe fn from_raw_parts_mut<'a>(data: *mut Self::Header, len: usize) -> &'a mut Self {
-                let ptr = core::ptr::slice_from_raw_parts_mut(data.cast::<u8>(), len) as *mut Self;
-                unsafe { &mut *ptr }
-            }
-
-            #[cfg(feature = "alloc")]
-            fn into_non_null(self: Box<Self>) -> NonNull<Self::Header> {
-                Box::into_non_null(self).cast()
-            }
-
-            #[cfg(feature = "alloc")]
-            unsafe fn from_non_null(data: NonNull<Self::Header>, len: usize) -> Box<Self> {
-                let ptr = NonNull::slice_from_raw_parts(data.cast::<u8>(), len).as_ptr() as *mut Self;
+                let slice = NonNull::slice_from_raw_parts(data.cast::<C>(), len).as_ptr();
+                let ptr = unsafe { core::mem::transmute_copy::<*mut [C], *mut Self>(&slice) };
                 unsafe { Box::from_raw(ptr) }
             }
         }

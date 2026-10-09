@@ -12,6 +12,7 @@ mod attr;
 mod borrow;
 mod ctype;
 mod custom;
+mod field;
 mod item;
 mod niche;
 mod nul_terminated;
@@ -25,6 +26,7 @@ pub(super) struct ReprCAttrs {
     pub(super) niche_value: Option<syn::Expr>,
     pub(super) is_valid: Option<syn::ExprClosure>,
     pub(super) is_identity: bool,
+    pub(super) is_transparent: bool,
     pub(super) is_view: bool,
     pub(super) is_wide_data: bool,
 }
@@ -66,6 +68,14 @@ fn parse_repr_c_attrs(attrs: &[Attribute]) -> syn::Result<ReprCAttrs> {
                     return Err(meta.error("Duplicate `identity` within attribute"));
                 }
                 repr_c.is_identity = true;
+                return Ok(());
+            }
+
+            if meta.path.is_ident("transparent") {
+                if repr_c.is_transparent {
+                    return Err(meta.error("Duplicate `transparent` within attribute"));
+                }
+                repr_c.is_transparent = true;
                 return Ok(());
             }
 
@@ -113,6 +123,7 @@ fn parse_repr_c_attrs(attrs: &[Attribute]) -> syn::Result<ReprCAttrs> {
         && repr_c.as_type.is_none()
         && repr_c.is_valid.is_none()
         && !repr_c.is_identity
+        && !repr_c.is_transparent
         && !repr_c.is_view
         && !repr_c.is_wide_data
     {
@@ -167,6 +178,30 @@ pub(crate) fn derive_repr_c(input: &syn::DeriveInput) -> syn::Result<TokenStream
     let mut variant_attrs = Vec::new();
 
     let is_custom = repr_c_attrs.as_type.is_some();
+    if repr_c_attrs.is_transparent {
+        if is_custom
+            || repr_c_attrs.is_identity
+            || repr_c_attrs.is_view
+            || repr_c_attrs.is_wide_data
+        {
+            return Err(syn::Error::new_spanned(
+                &input.ident,
+                "`repr_c(transparent)` cannot be combined with other representation options",
+            ));
+        }
+        let syn::Data::Struct(data) = &input.data else {
+            return Err(syn::Error::new_spanned(
+                &input.ident,
+                "`repr_c(transparent)` requires a struct",
+            ));
+        };
+        if data.fields.len() != 1 {
+            return Err(syn::Error::new_spanned(
+                &input.ident,
+                "`repr_c(transparent)` requires exactly one field",
+            ));
+        }
+    }
     if is_custom && (repr_c_attrs.is_identity || repr_c_attrs.is_view || repr_c_attrs.is_wide_data)
     {
         return Err(syn::Error::new_spanned(
@@ -332,6 +367,12 @@ pub(crate) fn derive_repr_c(input: &syn::DeriveInput) -> syn::Result<TokenStream
             #primitive_type_checks
             #tokens
         });
+    }
+
+    if repr_c_attrs.is_transparent {
+        let item = field::derive_field_repr_c(input, repr_attr, &repr_c_attrs);
+        let wide = wide::expand(input, repr_attr)?;
+        return Ok(quote! { #item #wide });
     }
 
     let tokens = match &input.data {
