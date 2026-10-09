@@ -53,8 +53,21 @@ mod imported {
 
 #[test]
 fn conditional_parameter_keeps_exported_function() {
-    assert_eq!(imported::select(41), 42);
-    assert_eq!(imported::select_second(40), 42);
-    assert_eq!(imported::optional_disabled(41), 42);
-    assert_eq!(imported::optional_enabled(40, 2), 42);
+    #[cfg(miri)]
+    {
+        // Miri cannot call imported C functions, but checking these function pointer types
+        // still verifies that cfg-disabled parameters disappear from the generated API.
+        let _: fn(u8) -> u8 = imported::select;
+        let _: fn(u8) -> u8 = imported::select_second;
+        let _: fn(u8) -> u8 = imported::optional_disabled;
+        let _: fn(u8, u8) -> u8 = imported::optional_enabled;
+    }
+
+    #[cfg(not(miri))]
+    {
+        assert_eq!(imported::select(41), 42);
+        assert_eq!(imported::select_second(40), 42);
+        assert_eq!(imported::optional_disabled(41), 42);
+        assert_eq!(imported::optional_enabled(40, 2), 42);
+    }
 }

@@ -563,6 +563,8 @@ fieldless_enum_derive! {
     }
 }
 
+pub(crate) use primitive_derive;
+
 #[cfg(test)]
 mod tests {
     #[cfg(feature = "alloc")]

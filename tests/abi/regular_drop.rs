@@ -1,5 +1,7 @@
+use co3::ffi::c_char;
 use co3::{ReprC, boxed::CBox, ffi, rust_spec::RustSpec, stored::EncodeOwned};
-use core::ffi::{CStr, c_char};
+use core::ffi::CStr;
+use static_assertions::{assert_impl_all, assert_not_impl_any};
 use std::ffi::CString;
 use std::sync::atomic::{AtomicUsize, Ordering};
 
@@ -14,7 +16,7 @@ struct RemoteString(CBox<c_char>);
 impl Clone for RemoteString {
     fn clone(&self) -> Self {
         let ptr = co3::borrow::borrow_cast(self.0);
-        let value = unsafe { CStr::from_ptr(ptr) }.to_owned();
+        let value = unsafe { CStr::from_ptr(ptr.cast()) }.to_owned();
         Self(co3::encode(value))
     }
 }
@@ -64,6 +66,91 @@ fn regular_drop_import_calls_export() {
 }
 
 static FIELDLESS_DROPS: AtomicUsize = AtomicUsize::new(0);
+
+#[derive(RustSpec, ReprC)]
+#[repr(C)]
+struct NoDropValue(u32);
+
+#[test]
+fn no_drop_borrows_itself_without_owner() {
+    use co3::borrow::{Borrow, BorrowCast, BorrowCastMut, FromBorrow};
+
+    fn assert_identity_cast<C: BorrowCast<AsConst = C>>() {}
+    fn assert_identity_mut_cast<C: BorrowCastMut<AsMut = C>>() {}
+    assert_identity_cast::<CNoDropValue>();
+    assert_identity_mut_cast::<CNoDropValue>();
+
+    let mut owner: <NoDropValue as Borrow>::Owner = ();
+    let borrowed: NoDropValue = Borrow::borrow(NoDropValue(5), &mut owner);
+    let restored = <NoDropValue as FromBorrow>::from_borrow(borrowed);
+    assert_eq!(restored.0, 5);
+}
+
+#[derive(RustSpec, ReprC)]
+#[repr(C)]
+struct InheritedDrop(Box<u32>);
+
+#[test]
+fn inherited_drop_borrows_fields() {
+    use co3::borrow::{Borrow, BorrowCastMut, FromBorrow};
+
+    static_assertions::assert_type_eq_all!(
+        <CInheritedDrop as BorrowCastMut>::AsMut,
+        CInheritedDropMutView
+    );
+
+    let mut owner = <InheritedDrop as Borrow>::Owner::default();
+    let borrowed = Borrow::borrow(InheritedDrop(Box::new(7)), &mut owner);
+    let borrowed: InheritedDropView<'_> = borrowed;
+    let restored = <InheritedDrop as FromBorrow>::from_borrow(borrowed);
+    assert_eq!(*restored.0, 7);
+}
+
+#[derive(Clone, RustSpec, ReprC)]
+#[repr(C)]
+#[rust_spec(custom_drop)]
+struct CustomAndInheritedDrop(Box<u32>);
+
+impl Drop for CustomAndInheritedDrop {
+    fn drop(&mut self) {}
+}
+
+#[test]
+fn custom_and_inherited_drop_borrows_whole_value() {
+    use co3::borrow::{Borrow, FromBorrow};
+
+    let mut owner = <CustomAndInheritedDrop as Borrow>::Owner::default();
+    let borrowed = Borrow::borrow(CustomAndInheritedDrop(Box::new(9)), &mut owner);
+    let borrowed: &CustomAndInheritedDrop = borrowed;
+    let restored = <CustomAndInheritedDrop as FromBorrow>::from_borrow(borrowed);
+    assert_eq!(*restored.0, 9);
+}
+
+#[test]
+fn custom_drop_companion_has_no_borrow_casts() {
+    use co3::borrow::{BorrowCast, BorrowCastMut};
+
+    assert_not_impl_any!(CCustomAndInheritedDrop: BorrowCast, BorrowCastMut);
+    assert_impl_all!(CBox<CCustomAndInheritedDrop>: BorrowCast, BorrowCastMut);
+}
+
+#[derive(RustSpec, ReprC)]
+#[repr(C, u8)]
+enum InheritedDropEnum {
+    Value(Box<u32>),
+    Empty,
+}
+
+#[test]
+fn inherited_drop_enum_borrows_fields() {
+    use co3::borrow::{Borrow, FromBorrow};
+
+    let mut owner = <InheritedDropEnum as Borrow>::Owner::default();
+    let borrowed = Borrow::borrow(InheritedDropEnum::Value(Box::new(11)), &mut owner);
+    let borrowed: InheritedDropEnumView<'_> = borrowed;
+    let restored = <InheritedDropEnum as FromBorrow>::from_borrow(borrowed);
+    assert!(matches!(restored, InheritedDropEnum::Value(value) if *value == 11));
+}
 
 #[derive(Clone, RustSpec, ReprC)]
 #[repr(u8)]

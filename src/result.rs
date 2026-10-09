@@ -170,6 +170,7 @@ impl<T: Copy, E: Copy> TryFrom<ReprCResult<T, E>> for Result<T, E> {
 unsafe impl<T: RustSpec + Copy, E: RustSpec + Copy> RustSpec for ReprCResult<T, E>
 where
     T: RustSpec<Layout: Add<<E as RustSpec>::Layout>, Trap: Add<E::Trap>>,
+    T: RustSpec<Drop: Add<E::Drop, Output: rust_spec::drop::DropKind>>,
     T::Alignment: rust_spec::Max<E::Alignment>,
     T::__IndirectTrap: Add<E::__IndirectTrap>,
 {
@@ -178,8 +179,8 @@ where
     type Alignment = <T::Alignment as rust_spec::Max<E::Alignment>>::Output;
     type Trap = <<T as RustSpec>::Trap as Add<<E as RustSpec>::Trap>>::Output;
     type Niche = WithoutNiche;
+    type Drop = <<T as RustSpec>::Drop as Add<E::Drop>>::Output;
     type Mutability = rust_spec::mutability::Exclusive;
-    type Drop = rust_spec::drop::NoDrop;
     type __IndirectTrap = <T::__IndirectTrap as Add<E::__IndirectTrap>>::Output;
 }
 

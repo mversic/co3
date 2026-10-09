@@ -1,6 +1,7 @@
 use co3::{ReprC, ffi, rust_spec::RustSpec};
 
 #[derive(RustSpec)]
+#[rust_spec(custom_drop)]
 #[repr(C)]
 struct ImportedNonIdentity(u8);
 
@@ -23,6 +24,7 @@ ffi! {
 }
 
 #[derive(RustSpec)]
+#[rust_spec(custom_drop)]
 #[repr(C)]
 struct ExportedDrop(u8);
 

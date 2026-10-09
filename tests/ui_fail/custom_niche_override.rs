@@ -9,7 +9,7 @@ use co3::rust_spec::RustSpec;
 #[repr_c(NICHE = COverridesInferredNiche(1))]
 pub struct OverridesInferredNiche(NonZeroU8);
 
-#[derive(ReprC)]
+#[derive(RustSpec, ReprC)]
 #[repr_c(NICHE = CCustomNicheRequiresUnstable(1))]
 struct CustomNicheRequiresUnstable(u8);
 

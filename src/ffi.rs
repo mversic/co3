@@ -5,21 +5,48 @@ use alloc::{boxed::Box, ffi::CString};
 #[cfg(feature = "alloc")]
 use core::ptr::NonNull;
 use core::{
-    ffi::{CStr, c_char, c_void},
+    ffi::{CStr, c_void},
     mem::ManuallyDrop,
 };
 
+use rust_spec::RustSpec;
+
+use crate::primitives::primitive_derive;
+
 use crate::{
-    CType, ReprC,
+    CFnArg, CFnReturn, CType, Decode, Encode, ReprC,
     borrow::{Borrow, BorrowCast, BorrowCastMut, FromBorrow},
-};
-#[cfg(feature = "alloc")]
-use crate::{
-    Decode, Encode,
-    boxed::CBox,
-    niche::Niche,
     stored::{DecodeOwned, EncodeOwned},
+    transmute::CheckedTransmute,
 };
+
+macro_rules! c_alias_carrier {
+    ($name:ident, $alias:ty) => {
+        #[repr(transparent)]
+        #[allow(non_camel_case_types)]
+        #[derive(Clone, Copy, Debug, Default, PartialEq, RustSpec)]
+        pub struct $name(pub $alias);
+
+        primitive_derive! { $name }
+    };
+}
+
+c_alias_carrier! { c_char, core::ffi::c_char }
+c_alias_carrier! { c_schar, core::ffi::c_schar }
+c_alias_carrier! { c_uchar, core::ffi::c_uchar }
+c_alias_carrier! { c_short, core::ffi::c_short }
+c_alias_carrier! { c_ushort, core::ffi::c_ushort }
+c_alias_carrier! { c_int, core::ffi::c_int }
+c_alias_carrier! { c_uint, core::ffi::c_uint }
+c_alias_carrier! { c_long, core::ffi::c_long }
+c_alias_carrier! { c_ulong, core::ffi::c_ulong }
+c_alias_carrier! { c_longlong, core::ffi::c_longlong }
+c_alias_carrier! { c_ulonglong, core::ffi::c_ulonglong }
+c_alias_carrier! { c_float, core::ffi::c_float }
+c_alias_carrier! { c_double, core::ffi::c_double }
+
+#[cfg(feature = "alloc")]
+use crate::{boxed::CBox, niche::Niche};
 
 /// A nul-terminated value represented across the ABI by a pointer to its data.
 ///
@@ -93,18 +120,18 @@ unsafe impl NulTerminatedBuf for CStr {
     }
 
     unsafe fn from_raw<'a>(ptr: *const Self::Data) -> &'a Self {
-        unsafe { CStr::from_ptr(ptr) }
+        unsafe { CStr::from_ptr(ptr.cast()) }
     }
 
     #[cfg(feature = "alloc")]
     fn into_non_null(self: Box<Self>) -> NonNull<Self::Data> {
         let raw = self.into_c_string().into_raw();
-        unsafe { NonNull::new_unchecked(raw) }
+        unsafe { NonNull::new_unchecked(raw.cast()) }
     }
 
     #[cfg(feature = "alloc")]
     unsafe fn from_non_null(ptr: NonNull<Self::Data>) -> Box<Self> {
-        unsafe { CString::from_raw(ptr.as_ptr()) }.into_boxed_c_str()
+        unsafe { CString::from_raw(ptr.cast().as_ptr()) }.into_boxed_c_str()
     }
 }
 
@@ -201,7 +228,7 @@ mod tests {
     fn cstr_reference_round_trip() {
         let original = c"hello";
         let encoded = crate::encode(original);
-        assert_eq!(encoded, original.as_ptr());
+        assert_eq!(encoded.cast(), original.as_ptr());
 
         let decoded: &CStr = unsafe { crate::decode(encoded) }.unwrap();
         assert_eq!(decoded, original);
@@ -216,7 +243,7 @@ mod tests {
         let original = CString::new("owned").unwrap().into_boxed_c_str();
         let ptr = original.as_ptr();
         let encoded = crate::stored::encode_owned(original);
-        assert_eq!(encoded.data.cast_const(), ptr);
+        assert_eq!(encoded.data.cast_const().cast(), ptr);
         let decoded: Box<CStr> = unsafe { crate::stored::decode_owned(encoded) }.unwrap();
         assert_eq!(decoded.as_ptr(), ptr);
         assert_eq!(&*decoded, c"owned");

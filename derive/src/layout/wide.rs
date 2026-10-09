@@ -199,11 +199,6 @@ pub(super) fn data_generics(fields: &syn::Fields, generics: &syn::Generics) -> s
         .make_where_clause()
         .predicates
         .push(parse_quote!(#wide_predicate));
-    let header_predicate = header_repr_c_predicate(&last.ty, generics);
-    data_generics
-        .make_where_clause()
-        .predicates
-        .push(parse_quote!(#header_predicate));
     data_generics
 }
 

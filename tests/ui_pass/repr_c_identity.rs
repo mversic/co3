@@ -1,3 +1,4 @@
+use co3::ffi::c_char;
 use co3::{CFnArg, ReprC, ffi, rust_spec::RustSpec};
 
 #[derive(Clone, Copy, RustSpec, ReprC)]
@@ -24,6 +25,10 @@ struct CNonCopyData;
 #[repr(transparent)]
 struct Generic<T>(T);
 
+#[derive(Clone, Copy, RustSpec, ReprC)]
+#[repr(C)]
+struct GenericAliasFields<T>(c_char, T, u32);
+
 #[derive(RustSpec, ReprC)]
 #[repr_c(identity)]
 #[repr(transparent)]
@@ -35,6 +40,7 @@ static_assertions::assert_not_impl_any!(Bytes: co3::borrow::Borrow);
 static_assertions::assert_type_eq_all!(<Integer as ReprC>::CType, Integer);
 static_assertions::assert_type_eq_all!(<NonCopy as ReprC>::CType, NonCopy);
 static_assertions::assert_type_eq_all!(<Generic<u32> as ReprC>::CType, Generic<u32>);
+static_assertions::assert_impl_all!(GenericAliasFields<u32>: ReprC);
 static_assertions::assert_impl_all!(NonCopy: co3::Encode);
 static_assertions::assert_not_impl_any!(NonCopy: CFnArg);
 static_assertions::assert_not_impl_any!(Generic<bool>: ReprC);

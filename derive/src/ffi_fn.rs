@@ -1508,7 +1508,7 @@ fn copy_primitive_type(path: &syn::TypePath) -> Option<Type> {
         }
         "c_char" | "c_schar" | "c_uchar" | "c_short" | "c_ushort" | "c_int" | "c_uint"
         | "c_long" | "c_ulong" | "c_longlong" | "c_ulonglong" | "c_float" | "c_double" => {
-            Some(parse_quote!(core::ffi::#ident))
+            Some(parse_quote!(co3::ffi::#ident))
         }
         _ => None,
     }
@@ -1540,8 +1540,20 @@ pub(crate) fn gen_implicit_primitive_checks(ty: &Type) -> TokenStream {
     match ty {
         Type::Path(path) => {
             if let Some(identity) = copy_primitive_type(path) {
+                let message = if matches!(path.path.segments.last().map(|s| s.ident.to_string()), Some(name) if name.starts_with("c_"))
+                {
+                    "use the `co3::ffi` equivalent or a type alias for it"
+                } else {
+                    "use the Rust primitive or a type alias for it"
+                };
                 quote! {
-                    let _: fn(#ty) -> #ty = core::convert::identity::<#identity>;
+                    {
+                        #[diagnostic::on_unimplemented(message = #message)]
+                        trait ExactType {}
+                        impl ExactType for #identity {}
+                        fn check<T: ExactType>() {}
+                        let _ = check::<#ty>;
+                    }
                 }
             } else if let Some(inner) = option_inner_type(ty) {
                 gen_implicit_primitive_checks(inner)

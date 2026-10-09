@@ -76,7 +76,7 @@ pub unsafe trait Wide {
 
 macro_rules! impl_wide_for_transparent_wrapper {
     ($($wrapper:ident),+ $(,)?) => {$(
-        unsafe impl<R: Wide<Header: crate::ReprC> + ?Sized> Wide for $wrapper<R> {
+        unsafe impl<R: Wide + ?Sized> Wide for $wrapper<R> {
             type Header = R::Header;
             type Metadata = R::Metadata;
 
@@ -129,7 +129,7 @@ impl_wide_for_transparent_wrapper!(ManuallyDrop);
 
 macro_rules! impl_wide_for_cell {
     ($($wrapper:ident),+ $(,)?) => {$(
-        unsafe impl<R: crate::ReprC> Wide for $wrapper<[R]> {
+        unsafe impl<R> Wide for $wrapper<[R]> {
             type Header = [R; 0];
             type Metadata = usize;
 

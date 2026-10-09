@@ -183,13 +183,13 @@ impl Unpack2<u32, i32> for ConnectionPooling {
     }
 }
 
-#[derive(Clone, ReprC)]
+#[derive(Clone, RustSpec, ReprC)]
 #[repr(u32)]
 pub enum CpMatch {
     A,
 }
 
-#[derive(Clone, ReprC)]
+#[derive(Clone, RustSpec, ReprC)]
 #[repr(u32)]
 enum ConnectionPooling {
     A,

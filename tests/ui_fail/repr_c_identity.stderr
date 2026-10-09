@@ -29,10 +29,10 @@ error: unknown type kind
    |          ^^^^
 
 error[E0277]: the trait bound `bool: CType` is not satisfied
-  --> tests/ui_fail/repr_c_identity.rs:14:10
+  --> tests/ui_fail/repr_c_identity.rs:14:20
    |
-14 | #[derive(ReprC)]
-   |          ^^^^^ the trait `CType` is not implemented for `bool`
+14 | #[derive(RustSpec, ReprC)]
+   |                    ^^^^^ the trait `CType` is not implemented for `bool`
    |
    = help: the following other types implement trait `CType`:
              ()

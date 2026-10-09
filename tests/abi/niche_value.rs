@@ -1,5 +1,6 @@
+use co3::ffi::c_char;
 use std::cmp::Ordering;
-use std::ffi::{CStr, c_char};
+use std::ffi::CStr;
 
 use co3::primitives::{CBool, COrdering};
 use co3::reference::CRefMut;

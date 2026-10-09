@@ -1,3 +1,75 @@
+error[E0606]: casting `*const [<<<T as ReprC>::CType as Wide>::Header as WideHeader>::Data]` as `*const CParamReprCZst<T>` is invalid
+ --> tests/ui_fail/zst_c_fn_arg.rs:3:33
+  |
+3 | #[derive(Clone, Copy, RustSpec, ReprC)]
+  |                                 ^^^^^
+  |
+  = note: the pointers may have different metadata
+  = note: this error originates in the derive macro `ReprC` (in Nightly builds, run with -Z macro-backtrace for more info)
+
+error[E0606]: casting `*mut [<<<T as ReprC>::CType as Wide>::Header as WideHeader>::Data]` as `*mut CParamReprCZst<T>` is invalid
+ --> tests/ui_fail/zst_c_fn_arg.rs:3:33
+  |
+3 | #[derive(Clone, Copy, RustSpec, ReprC)]
+  |                                 ^^^^^
+  |
+  = note: the pointers may have different metadata
+  = note: this error originates in the derive macro `ReprC` (in Nightly builds, run with -Z macro-backtrace for more info)
+
+error[E0606]: casting `*const [<<T as Wide>::Header as WideHeader>::Data]` as `*const ParamReprCZst<T>` is invalid
+ --> tests/ui_fail/zst_c_fn_arg.rs:3:33
+  |
+3 | #[derive(Clone, Copy, RustSpec, ReprC)]
+  |                                 ^^^^^
+  |
+  = note: the pointers may have different metadata
+  = note: this error originates in the derive macro `ReprC` (in Nightly builds, run with -Z macro-backtrace for more info)
+
+error[E0606]: casting `*mut [<<T as Wide>::Header as WideHeader>::Data]` as `*mut ParamReprCZst<T>` is invalid
+ --> tests/ui_fail/zst_c_fn_arg.rs:3:33
+  |
+3 | #[derive(Clone, Copy, RustSpec, ReprC)]
+  |                                 ^^^^^
+  |
+  = note: the pointers may have different metadata
+  = note: this error originates in the derive macro `ReprC` (in Nightly builds, run with -Z macro-backtrace for more info)
+
+error[E0606]: casting `*const [<<<T as ReprC>::CType as Wide>::Header as WideHeader>::Data]` as `*const CParamNoReprZst<T>` is invalid
+  --> tests/ui_fail/zst_c_fn_arg.rs:32:33
+   |
+32 | #[derive(Clone, Copy, RustSpec, ReprC)]
+   |                                 ^^^^^
+   |
+   = note: the pointers may have different metadata
+   = note: this error originates in the derive macro `ReprC` (in Nightly builds, run with -Z macro-backtrace for more info)
+
+error[E0606]: casting `*mut [<<<T as ReprC>::CType as Wide>::Header as WideHeader>::Data]` as `*mut CParamNoReprZst<T>` is invalid
+  --> tests/ui_fail/zst_c_fn_arg.rs:32:33
+   |
+32 | #[derive(Clone, Copy, RustSpec, ReprC)]
+   |                                 ^^^^^
+   |
+   = note: the pointers may have different metadata
+   = note: this error originates in the derive macro `ReprC` (in Nightly builds, run with -Z macro-backtrace for more info)
+
+error[E0606]: casting `*const [<<T as Wide>::Header as WideHeader>::Data]` as `*const ParamNoReprZst<T>` is invalid
+  --> tests/ui_fail/zst_c_fn_arg.rs:32:33
+   |
+32 | #[derive(Clone, Copy, RustSpec, ReprC)]
+   |                                 ^^^^^
+   |
+   = note: the pointers may have different metadata
+   = note: this error originates in the derive macro `ReprC` (in Nightly builds, run with -Z macro-backtrace for more info)
+
+error[E0606]: casting `*mut [<<T as Wide>::Header as WideHeader>::Data]` as `*mut ParamNoReprZst<T>` is invalid
+  --> tests/ui_fail/zst_c_fn_arg.rs:32:33
+   |
+32 | #[derive(Clone, Copy, RustSpec, ReprC)]
+   |                                 ^^^^^
+   |
+   = note: the pointers may have different metadata
+   = note: this error originates in the derive macro `ReprC` (in Nightly builds, run with -Z macro-backtrace for more info)
+
 error[E0271]: type mismatch resolving `<CZeroLenArrayZst as RustSpec>::Size == Sized<Gt<Zero>>`
   --> tests/ui_fail/zst_c_fn_arg.rs:71:19
    |

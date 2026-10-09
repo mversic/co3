@@ -148,8 +148,8 @@ unsafe impl<T: RustSpec> RustSpec for ReprCOption<T> {
     type Alignment = T::Alignment;
     type Trap = T::Trap;
     type Niche = WithoutNiche;
+    type Drop = T::Drop;
     type Mutability = rust_spec::mutability::Exclusive;
-    type Drop = rust_spec::drop::NoDrop;
     type __IndirectTrap = T::__IndirectTrap;
 }
 

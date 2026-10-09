@@ -1,9 +1,9 @@
 use co3::{ReprC, ffi, rust_spec::RustSpec};
 
-#[derive(ReprC)]
+#[derive(RustSpec, ReprC)]
 struct UninitField(core::mem::MaybeUninit<u8>);
 
-#[derive(ReprC)]
+#[derive(RustSpec, ReprC)]
 enum UninitVariant {
     Field(core::mem::MaybeUninit<u8>),
     Empty,
@@ -58,7 +58,7 @@ impl TryFrom<u8> for Status {
     }
 }
 
-#[derive(ReprC)]
+#[derive(RustSpec, ReprC)]
 #[repr_c(as(u32))]
 struct Wrapped<T>(T);
 

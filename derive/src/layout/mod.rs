@@ -106,7 +106,7 @@ fn parse_repr_c_attrs(attrs: &[Attribute]) -> syn::Result<ReprCAttrs> {
     }
 
     if !found_attr {
-        return Ok(ReprCAttrs::default());
+        return Ok(repr_c);
     }
 
     if repr_c.niche_value.is_none()
@@ -324,9 +324,14 @@ pub(crate) fn derive_repr_c(input: &syn::DeriveInput) -> syn::Result<TokenStream
         return Err(errors);
     }
 
+    let primitive_type_checks = gen_primitive_field_type_checks(input);
+
     if is_custom {
         let tokens = custom::derive_custom_repr_c(input, &repr_c_attrs, &variant_attrs);
-        return Ok(tokens);
+        return Ok(quote! {
+            #primitive_type_checks
+            #tokens
+        });
     }
 
     let tokens = match &input.data {
@@ -371,6 +376,8 @@ pub(crate) fn derive_repr_c(input: &syn::DeriveInput) -> syn::Result<TokenStream
         Err(errors)
     } else {
         let body = quote! {
+            #primitive_type_checks
+
             #tokens
         };
 
@@ -381,6 +388,52 @@ pub(crate) fn derive_repr_c(input: &syn::DeriveInput) -> syn::Result<TokenStream
                 #body
             })
         }
+    }
+}
+
+fn gen_primitive_field_type_checks(input: &syn::DeriveInput) -> TokenStream {
+    let checks = match &input.data {
+        syn::Data::Struct(data) => data
+            .fields
+            .iter()
+            .filter_map(|field| {
+                let check = crate::ffi_fn::gen_implicit_primitive_checks(&field.ty);
+                if check.is_empty() {
+                    return None;
+                }
+                let cfg = crate::utils::cfg_attrs(&field.attrs);
+                Some(quote! { #(#cfg)* #check })
+            })
+            .collect::<Vec<_>>(),
+        syn::Data::Enum(data) => data
+            .variants
+            .iter()
+            .flat_map(|variant| {
+                let variant_cfg = crate::utils::cfg_attrs(&variant.attrs).collect::<Vec<_>>();
+                variant.fields.iter().filter_map(move |field| {
+                    let check = crate::ffi_fn::gen_implicit_primitive_checks(&field.ty);
+                    if check.is_empty() {
+                        return None;
+                    }
+                    let field_cfg = crate::utils::cfg_attrs(&field.attrs);
+                    Some(quote! { #(#variant_cfg)* #(#field_cfg)* #check })
+                })
+            })
+            .collect::<Vec<_>>(),
+        syn::Data::Union(_) => return TokenStream::new(),
+    };
+    if checks.is_empty() {
+        return TokenStream::new();
+    }
+
+    let (impl_generics, _, where_clause) = input.generics.split_for_impl();
+    quote! {
+        const _: () = {
+            #[allow(dead_code)]
+            fn check #impl_generics () #where_clause {
+                #(#checks)*
+            }
+        };
     }
 }
 

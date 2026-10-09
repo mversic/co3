@@ -1,7 +1,10 @@
+use co3::ffi::{c_char, c_int};
 use co3::ffi;
 
 macro_rules! macro_owned_type {
-    (raw fn($($arg:tt)*)) => { u8 };
+    (raw fn($($arg:tt)*)) => {
+        u8
+    };
 }
 
 unsafe extern "C" fn callback(_: u8) {}
@@ -22,7 +25,9 @@ ffi! {
 
     type GenericDefault<T = raw fn()> = T;
     type InsideMacro = macro_owned_type!(raw fn());
-    type Unpacked = raw fn(#[unpack(_, _)] &mut [u8]) -> core::ffi::c_int;
+    type Unpacked = raw fn(#[unpack(_, _)] &mut [u8]) -> c_int;
+    type CIntAlias = c_int;
+    type CCharPointer = *const c_char;
 
     type Api;
     impl Api {
@@ -33,11 +38,13 @@ ffi! {
 }
 
 fn main() {
+    static_assertions::assert_type_eq_all!(CIntAlias, c_int);
+    static_assertions::assert_type_eq_all!(CCharPointer, *const c_char);
     let _: Option<unsafe extern "C" fn(u8)> = CALLBACK.read();
     let _: GenericDefault = None;
     let _: InsideMacro = 0u8;
     static_assertions::assert_type_eq_all!(
         Unpacked,
-        unsafe extern "C" fn(*mut u8, usize) -> core::ffi::c_int
+        unsafe extern "C" fn(*mut u8, usize) -> c_int
     );
 }

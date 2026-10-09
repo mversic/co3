@@ -1,8 +1,17 @@
 use co3::{ReprC, Tag, ffi, rust_spec::RustSpec};
 
-#[derive(Clone, Debug, PartialEq, Eq, RustSpec, ReprC)]
+#[derive(RustSpec, ReprC)]
 #[repr(transparent)]
-struct Value<T: ToOwned + ?Sized>(T::Owned);
+struct Value<T: ToOwned + ?Sized>(<T as ToOwned>::Owned);
+
+impl<T: ToOwned + ?Sized> Clone for Value<T>
+where
+    T::Owned: Clone,
+{
+    fn clone(&self) -> Self {
+        Self(self.0.clone())
+    }
+}
 
 #[derive(RustSpec, ReprC)]
 #[repr(transparent)]

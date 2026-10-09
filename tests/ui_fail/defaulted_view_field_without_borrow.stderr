@@ -1,0 +1,27 @@
+error[E0277]: the trait bound `NoBorrow: co3::borrow::Borrow` is not satisfied
+  --> tests/ui_fail/defaulted_view_field_without_borrow.rs:10:20
+   |
+10 | #[derive(RustSpec, ReprC)]
+   |                    ^^^^^ unsatisfied trait bound
+   |
+help: the trait `co3::borrow::Borrow` is not implemented for `NoBorrow`
+  --> tests/ui_fail/defaulted_view_field_without_borrow.rs:4:1
+   |
+ 4 | struct NoBorrow(u32);
+   | ^^^^^^^^^^^^^^^
+   = help: the following other types implement trait `co3::borrow::Borrow`:
+             &R
+             &mut R
+             ()
+             (A, B)
+             (A, B, C)
+             (A, B, C, D)
+             (A, B, C, D, E)
+             (A, B, C, D, E, F)
+           and $N others
+note: required by a bound in `WrapperView`
+  --> tests/ui_fail/defaulted_view_field_without_borrow.rs:10:20
+   |
+10 | #[derive(RustSpec, ReprC)]
+   |                    ^^^^^ required by this bound in `WrapperView`
+   = note: this error originates in the derive macro `ReprC` (in Nightly builds, run with -Z macro-backtrace for more info)

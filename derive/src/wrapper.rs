@@ -272,7 +272,7 @@ fn gen_regular_drop_import_body<const DISPATCHED: bool>(
         false,
         Some(quote! {
             fn __co3_require_custom_drop<T: co3::rust_spec::RustSpec<
-                Drop = co3::rust_spec::drop::WithDrop<co3::rust_spec::drop::Custom>
+                Drop = co3::rust_spec::drop::CustomDrop<co3::rust_spec::drop::NoDrop>
             >>() {}
             __co3_require_custom_drop::<#self_ty>();
             let __co3_self = core::mem::ManuallyDrop::new(unsafe { core::ptr::read(self) });

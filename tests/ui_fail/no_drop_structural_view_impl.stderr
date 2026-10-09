@@ -1,0 +1,25 @@
+error[E0271]: type mismatch resolving `<NoDrop as RustSpec>::Drop == AutoDrop`
+  --> tests/ui_fail/no_drop_structural_view_impl.rs:10:22
+   |
+10 |     require_repr_c::<NoDropView<'static>>();
+   |                      ^^^^^^^^^^^^^^^^^^^ type mismatch resolving `<NoDrop as RustSpec>::Drop == AutoDrop`
+   |
+note: expected this to be `AutoDrop`
+  --> tests/ui_fail/no_drop_structural_view_impl.rs:3:10
+   |
+ 3 | #[derive(RustSpec, ReprC)]
+   |          ^^^^^^^^
+note: required for `NoDropView<'static>` to implement `ReprC`
+  --> tests/ui_fail/no_drop_structural_view_impl.rs:3:20
+   |
+ 3 | #[derive(RustSpec, ReprC)]
+   |                    ^^^^^ type parameter would need to implement `ReprC`
+   = help: consider manually implementing `ReprC` to avoid undesired bounds caused by "imperfect derives"
+   = note: to learn more, visit <https://github.com/rust-lang/rust/issues/26925>
+   = note: associated types for the current `impl` cannot be restricted in `where` clauses
+note: required by a bound in `require_repr_c`
+  --> tests/ui_fail/no_drop_structural_view_impl.rs:7:22
+   |
+ 7 | fn require_repr_c<T: ReprC>() {}
+   |                      ^^^^^ required by this bound in `require_repr_c`
+   = note: this error originates in the derive macro `RustSpec` which comes from the expansion of the derive macro `ReprC` (in Nightly builds, run with -Z macro-backtrace for more info)

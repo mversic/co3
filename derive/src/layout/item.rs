@@ -71,24 +71,82 @@ pub(super) fn derive_item(
         };
     }
 
-    let ctype_def = (!is_view).then(|| gen_item_ctype(repr, alignment, input, !is_wide_data));
     let view_def = (!is_view && !is_wide_data).then(|| gen_item_view(input, attrs, variant_attrs));
 
+    let mut bounded_impl_input = input.clone();
+    if is_view {
+        let owner_name = gen_view_owner_name(&input.ident);
+        let has_view_lifetime = matches!(
+            input.generics.params.first(),
+            Some(syn::GenericParam::Lifetime(param)) if param.lifetime.ident == "_dšč"
+        );
+        let owner_args = generic_param_idents(
+            input
+                .generics
+                .params
+                .iter()
+                .skip(has_view_lifetime as usize),
+        )
+        .collect::<Vec<_>>();
+        let owner_type = if owner_args.is_empty() {
+            quote!(#owner_name)
+        } else {
+            quote!(#owner_name <#(#owner_args),*>)
+        };
+        let speculative =
+            (input.generics.type_params().count() == 0).then_some(quote!(for<'_dummy>));
+        bounded_impl_input
+            .generics
+            .make_where_clause()
+            .predicates
+            .push(parse_quote!(
+                #speculative #owner_type:
+                    co3::rust_spec::RustSpec<Drop = co3::rust_spec::drop::AutoDrop>
+            ));
+    } else if is_wide_data {
+        let syn::Data::Struct(data) = &input.data else {
+            unreachable!("wide data is a struct")
+        };
+        let header_ty = &data
+            .fields
+            .iter()
+            .next_back()
+            .expect("wide data has a tail")
+            .ty;
+        let speculative =
+            (!is_type_parametrized(header_ty, &input.generics)).then_some(quote!(for<'_dummy>));
+        bounded_impl_input
+            .generics
+            .make_where_clause()
+            .predicates
+            .push(parse_quote!(#speculative #header_ty: co3::ReprC<CType: Sized>));
+    }
+    let impl_input = if is_view || is_wide_data {
+        &bounded_impl_input
+    } else {
+        input
+    };
+    let ctype_def = (!is_view).then(|| {
+        let ctype_input = if is_wide_data { impl_input } else { input };
+        gen_item_ctype(repr, alignment, ctype_input, !is_wide_data)
+    });
+
     let borrow_impls = (!is_view && !is_wide_data).then(|| gen_item_borrow_impls(input));
-    let codec_impls = gen_item_codec_impls(repr, input, attrs, variant_attrs);
+    let codec_impls = gen_item_codec_impls(repr, impl_input, attrs, variant_attrs);
     let niche_impls = if is_view {
         attrs
             .niche_value
             .is_some()
-            .then(|| gen_view_niche_ir(&input.ident, &input.generics))
+            .then(|| gen_view_niche_ir(&input.ident, &impl_input.generics))
     } else {
         Some(gen_item_niche_impls(repr, input, attrs))
     };
-    let interior_mut_impl = gen_item_interior_mut_impl(repr, input);
+    let interior_mut_input = if is_wide_data { input } else { impl_input };
+    let interior_mut_impl = gen_item_interior_mut_impl(repr, interior_mut_input);
 
     let repr_c_impls = repr
         .is_some()
-        .then(|| gen_item_repr_c_impls(repr, input, attrs, variant_attrs));
+        .then(|| gen_item_repr_c_impls(repr, impl_input, attrs, variant_attrs));
 
     quote! {
         #ctype_def

@@ -34,18 +34,6 @@ pub(super) fn gen_item_view(
     rewrite_view_fields(&mut view_def.data);
     let owner_name = &input.ident;
     let (_, owner_ty_generics, _) = input.generics.split_for_impl();
-    let owner_drop_bound: syn::WherePredicate = if input.generics.type_params().count() == 0 {
-        parse_quote!(for<'_dummy> #owner_name #owner_ty_generics:
-            co3::rust_spec::RustSpec<Drop = co3::rust_spec::drop::NoDrop>)
-    } else {
-        parse_quote!(#owner_name #owner_ty_generics:
-            co3::rust_spec::RustSpec<Drop = co3::rust_spec::drop::NoDrop>)
-    };
-    view_def
-        .generics
-        .make_where_clause()
-        .predicates
-        .push(owner_drop_bound);
 
     let inherited_niche = attrs.niche_value.as_ref().map(|_| {
         quote! {
@@ -68,23 +56,35 @@ pub(super) fn gen_item_view(
 pub(super) fn gen_item_borrow_impls(input: &DeriveInput) -> TokenStream {
     let fieldless_enum = matches!(&input.data, syn::Data::Enum(data)
         if data.variants.iter().all(|variant| matches!(variant.fields, syn::Fields::Unit)));
+    let no_drop = gen_identity_borrow_impls_for_drop(
+        &input.ident,
+        &input.generics,
+        quote!(co3::rust_spec::RustSpec<Drop = co3::rust_spec::drop::NoDrop>),
+    );
+    let structural_bound = quote!(co3::rust_spec::RustSpec<Drop = co3::rust_spec::drop::AutoDrop>);
     let structural = if fields_are_only_phantom_data(&input.data) || fieldless_enum {
-        gen_identity_borrow_impls_for_drop(&input.ident, &input.generics)
+        gen_identity_borrow_impls_for_drop(&input.ident, &input.generics, structural_bound)
     } else {
         match &input.data {
-            syn::Data::Struct(data) => {
-                gen_struct_borrow_impls(&input.ident, &input.generics, &data.fields)
-            }
-            syn::Data::Enum(data) => {
-                gen_enum_borrow_impls(&input.ident, &input.generics, &data.variants)
-            }
+            syn::Data::Struct(data) => gen_struct_borrow_impls(
+                &input.ident,
+                &input.generics,
+                &data.fields,
+                structural_bound,
+            ),
+            syn::Data::Enum(data) => gen_enum_borrow_impls(
+                &input.ident,
+                &input.generics,
+                &data.variants,
+                structural_bound,
+            ),
             syn::Data::Union(_) => unreachable!(),
         }
     };
     let whole = gen_with_drop_borrow_impls(&input.ident, &input.generics);
     let mut borrow_impls = Vec::new();
     let mut from_borrow_impls = Vec::new();
-    for tokens in [structural, whole] {
+    for tokens in [no_drop, structural, whole] {
         let parsed: syn::File = syn::parse2(tokens).expect("generated borrow impls must parse");
         for item in parsed.items {
             let syn::Item::Impl(item) = item else {
@@ -112,6 +112,7 @@ pub(super) fn gen_item_borrow_impls(input: &DeriveInput) -> TokenStream {
 
             co3::disjoint_impls! {
                 #[disjoint_impls(remote)]
+                #[allow(clippy::missing_safety_doc)]
                 pub unsafe trait Borrow: Sized {
                     type Borrowed<'itm> where Self: 'itm;
                     type Owner: Default;
@@ -143,7 +144,7 @@ fn gen_with_drop_borrow_impls(name: &Ident, generics: &syn::Generics) -> TokenSt
         .params
         .push(parse_quote!(#drop_kind: co3::rust_spec::drop::DropKind));
     let drop_bound: syn::WherePredicate = parse_quote!(Self:
-        co3::rust_spec::RustSpec<Drop = co3::rust_spec::drop::WithDrop<#drop_kind>>);
+        co3::rust_spec::RustSpec<Drop = co3::rust_spec::drop::CustomDrop<#drop_kind>>);
     borrow_generics
         .make_where_clause()
         .predicates
@@ -192,12 +193,42 @@ fn gen_with_drop_borrow_impls(name: &Ident, generics: &syn::Generics) -> TokenSt
     }
 }
 
+fn fresh_drop_kind_ident(generics: &syn::Generics) -> Ident {
+    (0..)
+        .map(|index| format_ident!("__co3_drop_kind_{index}"))
+        .find(|ident| !generics.type_params().any(|param| param.ident == *ident))
+        .expect("a fresh generic parameter name must exist")
+}
+
+fn gen_structural_move_prologue() -> TokenStream {
+    quote! {
+        // This branch has only field drop glue. Move the fields out, then let their owners drop them.
+        let __co3_self = core::mem::ManuallyDrop::new(self);
+        let __co3_self_ptr = &__co3_self as *const core::mem::ManuallyDrop<Self> as *const Self;
+    }
+}
+
 fn gen_struct_borrow_impls(
     name: &Ident,
     generics: &syn::Generics,
     fields: &syn::Fields,
+    drop_bound: TokenStream,
 ) -> TokenStream {
     let fields_destructure = gen_fields_destructure(fields);
+    let field_reads = field_vars(fields)
+        .into_iter()
+        .enumerate()
+        .map(|(index, var)| {
+            let member = fields
+                .iter()
+                .nth(index)
+                .and_then(|field| field.ident.clone())
+                .map(syn::Member::Named)
+                .unwrap_or_else(|| syn::Member::Unnamed(index.into()));
+            quote! {
+                let #var = unsafe { core::ptr::read(&raw const (*__co3_self_ptr).#member) };
+            }
+        });
 
     let view_name = gen_view_name(name);
     let field_tys = fields.iter().map(|field| &field.ty).collect::<Vec<_>>();
@@ -205,10 +236,12 @@ fn gen_struct_borrow_impls(
     let borrowed_fields = gen_field_borrow_exprs(fields);
     let borrowed_view = gen_record_construction(quote! { #view_name }, fields, &borrowed_fields);
     let from_borrow_body = gen_record_from_borrow(quote!(Self), fields);
+    let move_prologue = gen_structural_move_prologue();
 
     let (borrow_impl, from_borrow_impl) = (
         quote! {
-            let Self #fields_destructure = self;
+            #move_prologue
+            #(#field_reads)*
             #borrowed_view
         },
         quote! {
@@ -224,6 +257,7 @@ fn gen_struct_borrow_impls(
         owner_type,
         borrow_impl,
         from_borrow_impl,
+        drop_bound,
     )
 }
 
@@ -231,6 +265,7 @@ fn gen_enum_borrow_impls(
     name: &Ident,
     generics: &syn::Generics,
     variants: &syn::punctuated::Punctuated<syn::Variant, syn::Token![,]>,
+    drop_bound: TokenStream,
 ) -> TokenStream {
     let fields = variants
         .iter()
@@ -241,6 +276,7 @@ fn gen_enum_borrow_impls(
     let owner_either_ty = gen_either_name(variants.len());
 
     let owner_type = enum_view_owner_type(variants);
+    let move_prologue = gen_structural_move_prologue();
     let (variants_borrow, variants_from_borrow): (Vec<_>, Vec<_>) = variants
         .iter()
         .enumerate()
@@ -258,6 +294,9 @@ fn gen_enum_borrow_impls(
             let owner_vars = (0..field_vars.len())
                 .map(|idx| format_ident!("__co3_owner_{idx}"))
                 .collect::<Vec<_>>();
+            let field_reads = field_vars.iter().map(|field_var| {
+                quote! { let #field_var = unsafe { core::ptr::read(#field_var) }; }
+            });
             let borrow_stmts = field_vars
                 .iter()
                 .zip(&variant.fields)
@@ -281,6 +320,7 @@ fn gen_enum_borrow_impls(
                         };
 
                         let (#(#owner_vars,)*) = owner;
+                        #(#field_reads)*
                         #(#borrow_stmts)*
                         #borrowed_variant
                     }
@@ -293,7 +333,10 @@ fn gen_enum_borrow_impls(
         .unzip();
 
     let (borrow_impl, from_borrow_impl) = (
-        quote! { match self { #(#variants_borrow,)* } },
+        quote! {
+            #move_prologue
+            match unsafe { &*__co3_self_ptr } { #(#variants_borrow,)* }
+        },
         quote! {
             match source { #(#variants_from_borrow,)* }
         },
@@ -306,6 +349,7 @@ fn gen_enum_borrow_impls(
         owner_type,
         borrow_impl,
         from_borrow_impl,
+        drop_bound,
     )
 }
 
@@ -316,6 +360,7 @@ fn gen_borrow_impls<const ADD_SIZED: bool>(
     owner_type: TokenStream,
     borrow_impl: TokenStream,
     from_borrow_impl: TokenStream,
+    drop_trait_bound: TokenStream,
 ) -> TokenStream {
     let (impl_generics, ty_generics, where_clause) = generics.split_for_impl();
     let predicates = where_clause.as_ref().map(|w| &w.predicates);
@@ -344,9 +389,9 @@ fn gen_borrow_impls<const ADD_SIZED: bool>(
         }
     });
     let drop_bound = if generics.type_params().count() == 0 {
-        quote! { for<'_dummy> Self: co3::rust_spec::RustSpec<Drop = co3::rust_spec::drop::NoDrop>, }
+        quote! { for<'_dummy> Self: #drop_trait_bound, }
     } else {
-        quote! { Self: co3::rust_spec::RustSpec<Drop = co3::rust_spec::drop::NoDrop>, }
+        quote! { Self: #drop_trait_bound, }
     };
     quote! {
         unsafe impl #impl_generics Borrow for #name #ty_generics
@@ -643,20 +688,30 @@ pub fn gen_identity_borrow_impls(name: &Ident, generics: &syn::Generics) -> Toke
     }
 }
 
-fn gen_identity_borrow_impls_for_drop(name: &Ident, generics: &syn::Generics) -> TokenStream {
+fn gen_identity_borrow_impls_for_drop(
+    name: &Ident,
+    generics: &syn::Generics,
+    drop_trait_bound: TokenStream,
+) -> TokenStream {
     let (impl_generics, ty_generics, where_clause) = generics.split_for_impl();
     let predicates = where_clause.as_ref().map(|clause| &clause.predicates);
     let mut from_generics = generics.clone();
     from_generics.params.insert(0, parse_quote!('_išč));
     let (from_impl_generics, _, _) = from_generics.split_for_impl();
     let drop_bound = if generics.type_params().count() == 0 {
-        quote! { for<'_dummy> Self: co3::rust_spec::RustSpec<Drop = co3::rust_spec::drop::NoDrop>, }
+        quote! { for<'_dummy> Self: #drop_trait_bound, }
     } else {
-        quote! { Self: co3::rust_spec::RustSpec<Drop = co3::rust_spec::drop::NoDrop>, }
+        quote! { Self: #drop_trait_bound, }
+    };
+    let sized_bound = if generics.type_params().count() == 0 {
+        quote! { for<'_dummy> Self: Sized, }
+    } else {
+        quote! { Self: Sized, }
     };
     quote! {
         unsafe impl #impl_generics Borrow for #name #ty_generics where
             #drop_bound
+            #sized_bound
             #predicates
         {
             type Borrowed<'_išč> = Self where Self: '_išč;
@@ -666,18 +721,13 @@ fn gen_identity_borrow_impls_for_drop(name: &Ident, generics: &syn::Generics) ->
         }
         impl #from_impl_generics FromBorrow<'_išč> for #name #ty_generics where
             #drop_bound
+            #sized_bound
+            Self: '_išč,
             #predicates
         {
             fn from_borrow(source: Self::Borrowed<'_išč>) -> Self { source }
         }
     }
-}
-
-fn fresh_drop_kind_ident(generics: &syn::Generics) -> Ident {
-    (0..)
-        .map(|index| format_ident!("__co3_drop_kind_{index}"))
-        .find(|ident| !generics.type_params().any(|param| param.ident == *ident))
-        .expect("a fresh generic parameter name must exist")
 }
 
 pub fn gen_borrow_cast_eq_bounds(fields: &[&syn::Type]) -> TokenStream {

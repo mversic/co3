@@ -55,7 +55,7 @@ pub(super) fn gen_fieldless_enum_ctype(
     };
     // Keep the normal non-ZST CFnArg size guard. In particular, a one-variant
     // fieldless enum is represented by `CEnum(())` and must not become a CFnArg.
-    let impls = gen_struct_ctype_impls::<false, true>(&ctype, false, alignment);
+    let impls = gen_struct_ctype_impls::<false, true>(&ctype, false, alignment, None);
     let fields = ctype
         .fields
         .iter()
@@ -150,7 +150,7 @@ fn derive_data_enum_ctype(
         generics,
         variants,
     );
-    let union_impls = gen_union_ctype_impls(&union_def, alignment);
+    let union_impls = gen_union_ctype_impls(&union_def, alignment, Some(name));
     let partial_eq_impl = gen_tagged_union_partial_eq(&union_def, &tag_type, variants);
     quote! { #(#variant_structs)* #union_def #union_impls #partial_eq_impl }
 }
@@ -202,8 +202,12 @@ fn derive_ctype_struct<const ADD_COPY: bool>(
     generate_wide: bool,
 ) -> TokenStream {
     let ctype_def = gen_ctype_struct_item::<ADD_COPY>(repr, alignment, vis, name, generics, fields);
-    let ctype_impls =
-        gen_struct_ctype_impls::<ADD_COPY, true>(&ctype_def, generate_views_and_spec, alignment);
+    let ctype_impls = gen_struct_ctype_impls::<ADD_COPY, true>(
+        &ctype_def,
+        generate_views_and_spec,
+        alignment,
+        Some(name),
+    );
     let wide_impl = generate_wide.then(|| gen_ctype_wide_impl(repr, &ctype_def, fields, generics));
     let header_impl = (!generate_views_and_spec)
         .then(|| gen_identity_header_impl(&ctype_def.ident, &ctype_def.generics));
@@ -328,7 +332,7 @@ fn derive_repr_c_data_enum_ctype(
     let (payload_def, variant_structs) =
         gen_data_enum_union(None, None, vis, &payload_name, name, generics, variants);
 
-    let payload_impls = gen_union_ctype_impls(&payload_def, None);
+    let payload_impls = gen_union_ctype_impls(&payload_def, None, None);
     let (impl_generics, ty_generics, where_clause) = generics.split_for_impl();
     let predicates = where_clause.as_ref().map(|w| &w.predicates);
     let ctype_name = gen_ctype_name(name);
@@ -348,7 +352,8 @@ fn derive_repr_c_data_enum_ctype(
         }
     };
 
-    let ctype_impls = gen_struct_ctype_impls::<true, false>(&ctype_def, true, alignment);
+    let ctype_impls =
+        gen_struct_ctype_impls::<true, false>(&ctype_def, true, alignment, Some(name));
     let partial_eq_impl = gen_tagged_payload_partial_eq(&ctype_def, &payload_def, variants);
 
     quote! {
@@ -516,7 +521,7 @@ fn gen_variant_struct(
     }
 
     let ctype = gen_ctype_struct_item::<true>(repr, None, vis, &name, generics, &fields);
-    let ctype_impls = gen_struct_ctype_impls::<true, true>(&ctype, true, None);
+    let ctype_impls = gen_struct_ctype_impls::<true, true>(&ctype, true, None, None);
     quote! { #ctype #ctype_impls }
 }
 
@@ -576,6 +581,7 @@ fn gen_struct_ctype_impls<const ADD_COPY: bool, const GEN_PARTIAL_EQ: bool>(
     ctype: &syn::ItemStruct,
     generate_views_and_spec: bool,
     alignment: Option<&syn::LitInt>,
+    owner_name: Option<&syn::Ident>,
 ) -> TokenStream {
     let fields = ctype.fields.iter().map(|f| &f.ty).collect::<Vec<_>>();
     let all_phantom_data = !fields.is_empty() && fields.iter().all(|ty| is_phantom_data(ty));
@@ -593,7 +599,7 @@ fn gen_struct_ctype_impls<const ADD_COPY: bool, const GEN_PARTIAL_EQ: bool>(
         generate_views.then(|| gen_ctype_struct_view::<ADD_COPY>(ctype.clone(), true, alignment));
 
     let borrow_cast_impl = if generate_views {
-        gen_borrow_cast_impl::<ADD_COPY>(&ctype.ident, &ctype.generics, &fields)
+        gen_borrow_cast_impl::<ADD_COPY>(&ctype.ident, &ctype.generics, &fields, owner_name)
     } else if all_phantom_data {
         gen_identity_borrow_cast_impl(&ctype.ident, &ctype.generics)
     } else {
@@ -657,7 +663,11 @@ fn gen_struct_partial_eq(ctype: &syn::ItemStruct) -> TokenStream {
     }
 }
 
-fn gen_union_ctype_impls(ctype: &syn::ItemUnion, alignment: Option<&syn::LitInt>) -> TokenStream {
+fn gen_union_ctype_impls(
+    ctype: &syn::ItemUnion,
+    alignment: Option<&syn::LitInt>,
+    owner_name: Option<&syn::Ident>,
+) -> TokenStream {
     let fields = ctype.fields.named.iter().map(|f| &f.ty).collect::<Vec<_>>();
 
     let copy_impls = gen_copy_impls::<true>(&ctype.ident, &ctype.generics, &fields);
@@ -667,7 +677,8 @@ fn gen_union_ctype_impls(ctype: &syn::ItemUnion, alignment: Option<&syn::LitInt>
     let const_view = gen_ctype_union_view(ctype.clone(), false, alignment);
     let mut_view = gen_ctype_union_view(ctype.clone(), true, alignment);
 
-    let borrow_cast_impl = gen_borrow_cast_impl::<true>(&ctype.ident, &ctype.generics, &fields);
+    let borrow_cast_impl =
+        gen_borrow_cast_impl::<true>(&ctype.ident, &ctype.generics, &fields, owner_name);
 
     quote! {
         #copy_impls
@@ -965,6 +976,7 @@ fn gen_borrow_cast_impl<const ADD_COPY: bool>(
     ident: &syn::Ident,
     generics: &syn::Generics,
     fields: &[&syn::Type],
+    owner_name: Option<&syn::Ident>,
 ) -> TokenStream {
     let (impl_generics, ty_generics, where_clause) = generics.split_for_impl();
     let predicates = where_clause.as_ref().map(|w| &w.predicates);
@@ -975,22 +987,95 @@ fn gen_borrow_cast_impl<const ADD_COPY: bool>(
     let const_bounds = gen_ctype_borrow_cast_bounds::<ADD_COPY>(generics, fields, false);
     let mut_bounds = gen_ctype_borrow_cast_bounds::<ADD_COPY>(generics, fields, true);
 
-    quote! {
-        unsafe impl #impl_generics co3::borrow::BorrowCast for #ident #ty_generics
-        where
-            #(#const_bounds,)*
-            #predicates
-        {
-            type AsConst = #const_view_name #ty_generics;
-        }
+    let cast_impls = if let Some(owner_name) = owner_name {
+        let owner_type = quote!(#owner_name #ty_generics);
+        let no_drop_bound = if generics.type_params().count() == 0 {
+            quote!(for<'_dummy> #owner_type: co3::rust_spec::RustSpec<Drop = co3::rust_spec::drop::NoDrop>,)
+        } else {
+            quote!(#owner_type: co3::rust_spec::RustSpec<Drop = co3::rust_spec::drop::NoDrop>,)
+        };
+        let auto_drop_bound = if generics.type_params().count() == 0 {
+            quote!(for<'_dummy> #owner_type: co3::rust_spec::RustSpec<Drop = co3::rust_spec::drop::AutoDrop>,)
+        } else {
+            quote!(#owner_type: co3::rust_spec::RustSpec<Drop = co3::rust_spec::drop::AutoDrop>,)
+        };
+        quote! {
+            const _: () = {
+                use co3::borrow::{BorrowCast, BorrowCastMut};
 
-        unsafe impl #impl_generics co3::borrow::BorrowCastMut for #ident #ty_generics
-        where
-            #(#mut_bounds,)*
-            #predicates
-        {
-            type AsMut = #mut_view_name #ty_generics;
+                co3::disjoint_impls! {
+                    #[disjoint_impls(remote)]
+                    #[allow(clippy::missing_safety_doc)]
+                    pub unsafe trait BorrowCast: co3::CType {
+                        type AsConst: co3::CType + ?Sized;
+                    }
+
+                    unsafe impl #impl_generics BorrowCast for #ident #ty_generics
+                    where
+                        #no_drop_bound
+                        #predicates
+                    {
+                        type AsConst = Self;
+                    }
+
+                    unsafe impl #impl_generics BorrowCast for #ident #ty_generics
+                    where
+                        #auto_drop_bound
+                        #(#const_bounds,)*
+                        #predicates
+                    {
+                        type AsConst = #const_view_name #ty_generics;
+                    }
+                }
+
+                co3::disjoint_impls! {
+                    #[disjoint_impls(remote)]
+                    #[allow(clippy::missing_safety_doc)]
+                    pub unsafe trait BorrowCastMut: co3::CType {
+                        type AsMut: co3::CType + ?Sized;
+                    }
+
+                    unsafe impl #impl_generics BorrowCastMut for #ident #ty_generics
+                    where
+                        #no_drop_bound
+                        #predicates
+                    {
+                        type AsMut = Self;
+                    }
+
+                    unsafe impl #impl_generics BorrowCastMut for #ident #ty_generics
+                    where
+                        #auto_drop_bound
+                        #(#mut_bounds,)*
+                        #predicates
+                    {
+                        type AsMut = #mut_view_name #ty_generics;
+                    }
+                }
+            };
         }
+    } else {
+        quote! {
+            unsafe impl #impl_generics co3::borrow::BorrowCast for #ident #ty_generics
+            where
+                #(#const_bounds,)*
+                #predicates
+            {
+                type AsConst = #const_view_name #ty_generics;
+            }
+
+            unsafe impl #impl_generics co3::borrow::BorrowCastMut for #ident #ty_generics
+            where
+                #(#mut_bounds,)*
+                #predicates
+            {
+                type AsMut = #mut_view_name #ty_generics;
+            }
+        }
+    };
+
+    quote! {
+        #cast_impls
     }
 }
 

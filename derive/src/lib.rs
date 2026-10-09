@@ -466,9 +466,9 @@ pub fn tag_derive(item: syn::DeriveInput) -> Result<TokenStream> {
 /// # Example
 ///
 /// ```rust
-/// use co3::{ReprC, ffi};
+/// use co3::{ReprC, ffi, rust_spec::RustSpec};
 ///
-/// #[derive(Clone, Copy, ReprC)]
+/// #[derive(Clone, Copy, RustSpec, ReprC)]
 /// struct Step(u32);
 ///
 /// ffi! {
@@ -641,8 +641,12 @@ fn expand_abi_type_alias(ParsedAlias { mut item, raw_root }: ParsedAlias) -> Tok
     }
     let co3 = co3_path();
     let source = &item.ty;
+    let identity_check = crate::ffi_fn::gen_implicit_primitive_checks(source);
     *item.ty = parse_quote!(<#source as #co3::ReprC>::CType);
-    quote!(#item)
+    quote! {
+        const _: () = { #identity_check };
+        #item
+    }
 }
 
 fn pack_items(items: Vec<ForeignItem>) -> Result<Vec<ForeignItem>> {

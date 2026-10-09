@@ -1,0 +1,40 @@
+error[E0277]: use the `co3::ffi` equivalent or a type alias for it
+ --> tests/ui_fail/core_ffi_type.rs:7:14
+  |
+7 | struct Value(c_int);
+  |              ^^^^^ the trait `_::check::ExactType` is not implemented for `i32`
+  |
+help: the trait `_::check::ExactType` is implemented for `c_int`
+ --> tests/ui_fail/core_ffi_type.rs:5:33
+  |
+5 | #[derive(Clone, Copy, RustSpec, ReprC)]
+  |                                 ^^^^^
+note: required by a bound in `_::check::check`
+ --> tests/ui_fail/core_ffi_type.rs:5:33
+  |
+5 | #[derive(Clone, Copy, RustSpec, ReprC)]
+  |                                 ^^^^^ required by this bound in `check`
+  = note: this error originates in the derive macro `ReprC` (in Nightly builds, run with -Z macro-backtrace for more info)
+
+error[E0277]: use the `co3::ffi` equivalent or a type alias for it
+  --> tests/ui_fail/core_ffi_type.rs:11:20
+   |
+11 |     fn take(value: c_int);
+   |                    ^^^^^ the trait `take::ExactType` is not implemented for `i32`
+   |
+help: the trait `take::ExactType` is implemented for `c_int`
+  --> tests/ui_fail/core_ffi_type.rs:9:1
+   |
+ 9 | / ffi! {
+10 | |     #![unsafe(extern("C"))]
+11 | |     fn take(value: c_int);
+   | |________________________^
+note: required by a bound in `take::check`
+  --> tests/ui_fail/core_ffi_type.rs:9:1
+   |
+ 9 | / ffi! {
+10 | |     #![unsafe(extern("C"))]
+11 | |     fn take(value: c_int);
+12 | | }
+   | |_^ required by this bound in `check`
+   = note: this error originates in the macro `ffi` (in Nightly builds, run with -Z macro-backtrace for more info)

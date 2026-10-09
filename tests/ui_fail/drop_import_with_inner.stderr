@@ -1,0 +1,24 @@
+error[E0271]: type mismatch resolving `<CustomAndInner as RustSpec>::Drop == CustomDrop<NoDrop>`
+  --> tests/ui_fail/drop_import_with_inner.rs:11:19
+   |
+11 |     impl Drop for CustomAndInner {
+   |                   ^^^^^^^^^^^^^^ type mismatch resolving `<CustomAndInner as RustSpec>::Drop == CustomDrop<NoDrop>`
+   |
+note: expected this to be `CustomDrop<NoDrop>`
+  --> tests/ui_fail/drop_import_with_inner.rs:3:10
+   |
+ 3 | #[derive(RustSpec, ReprC)]
+   |          ^^^^^^^^
+   = note: expected struct `CustomDrop<NoDrop>`
+              found struct `CustomDrop<AutoDrop>`
+note: required by a bound in `__co3_require_custom_drop`
+  --> tests/ui_fail/drop_import_with_inner.rs:8:1
+   |
+ 8 | / ffi! {
+ 9 | |     #![unsafe(extern("C"))]
+10 | |
+11 | |     impl Drop for CustomAndInner {
+...  |
+14 | | }
+   | |_^ required by this bound in `__co3_require_custom_drop`
+   = note: this error originates in the derive macro `RustSpec` which comes from the expansion of the macro `ffi` (in Nightly builds, run with -Z macro-backtrace for more info)

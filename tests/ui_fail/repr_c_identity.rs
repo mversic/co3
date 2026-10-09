@@ -1,4 +1,4 @@
-use co3::ReprC;
+use co3::{rust_spec::RustSpec, ReprC};
 
 #[derive(ReprC)]
 #[repr_c(identity)]
@@ -11,7 +11,7 @@ enum Enum {
     Value,
 }
 
-#[derive(ReprC)]
+#[derive(RustSpec, ReprC)]
 #[repr_c(identity)]
 #[repr(C)]
 struct NonRobust(bool);

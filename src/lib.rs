@@ -32,11 +32,11 @@
 //! external library:
 //!
 //! ```rust
-//! use co3::{ffi, ReprC};
+//! use co3::{ffi, ReprC, rust_spec::RustSpec};
 //!
 //! // `ReprC` generates a stable C-compatible companion even without an explicit `#[repr(...)]`.
 //! // If given, an explicit representation would be leveraged to produce a more optimal mapping.
-//! #[derive(Clone, Copy, ReprC)]
+//! #[derive(Clone, Copy, RustSpec, ReprC)]
 //! struct Value(u32);
 //!
 //! trait Counter {
@@ -948,6 +948,7 @@ const fn assert_arr_has_non_zero_len<const N: usize>() {
 #[cfg(feature = "alloc")]
 mod tests {
     use super::*;
+    use crate::primitives::CBool;
 
     #[test]
     fn encode_stored_mut_ref() {
@@ -1018,7 +1019,7 @@ mod tests {
             let encoded = soft_encode(slice_ref, &mut store);
             let c_slice = unsafe { encoded.into_rust().unwrap() };
 
-            c_slice[0] = ReprCTuple2(100, primitives::CBool::TRUE);
+            c_slice[0] = ReprCTuple2(100, CBool::TRUE);
             store.sync().unwrap();
         }
 
@@ -1039,7 +1040,7 @@ mod tests {
             let mut store = Box::default();
             let encoded = soft_encode(&mut value, &mut *store);
             let original_data = unsafe { (*encoded.as_ptr()).data };
-            let replacement = CBox::from_box(Box::new(ReprCTuple2(100, primitives::CBool::TRUE)));
+            let replacement = CBox::from_box(Box::new(ReprCTuple2(100, CBool::TRUE)));
             let replacement_data = replacement.data;
 
             unsafe {
@@ -1058,7 +1059,7 @@ mod tests {
     fn decode_stored_ref_mut_slice() {
         use tuple::ReprCTuple2;
 
-        let mut tuples = [ReprCTuple2(10, primitives::CBool::TRUE)];
+        let mut tuples = [ReprCTuple2(10, CBool::TRUE)];
         let c_slice = CSliceMut::<_>::from_slice(&mut tuples);
 
         {
