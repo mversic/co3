@@ -1,0 +1,11 @@
+error: `repr_c(transparent)` cannot be combined with `NICHE`
+ --> tests/ui_fail/transparent_with_validation.rs:5:8
+  |
+5 | struct Reserved(u8);
+  |        ^^^^^^^^
+
+error: `repr_c(transparent)` cannot be combined with `is_valid`
+ --> tests/ui_fail/transparent_with_validation.rs:9:8
+  |
+9 | struct Validated(u8);
+  |        ^^^^^^^^^

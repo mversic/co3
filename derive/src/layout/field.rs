@@ -58,6 +58,21 @@ pub(super) fn derive_field_repr_c(
         .make_where_clause()
         .predicates
         .push(parse_quote!(#field_ty: co3::ReprC));
+    repr_generics
+        .make_where_clause()
+        .predicates
+        .push(parse_quote!(
+            #name #ty_generics: co3::rust_spec::RustSpec
+        ));
+    // DropKind addition keeps CustomDrop, but collapses NoDrop and AutoDrop to AutoDrop.
+    repr_generics
+        .make_where_clause()
+        .predicates
+        .push(parse_quote!(
+            <#name #ty_generics as co3::rust_spec::RustSpec>::Drop:
+                core::ops::Add<co3::rust_spec::drop::AutoDrop,
+                    Output = co3::rust_spec::drop::AutoDrop>
+        ));
     let (repr_impl_generics, _, repr_where_clause) = repr_generics.split_for_impl();
 
     let niche_bound: Option<WherePredicate> = attrs
@@ -106,6 +121,10 @@ pub(super) fn derive_field_repr_c(
         generics
             .make_where_clause()
             .predicates
+            .push(parse_quote!(#name #ty_generics: co3::ReprC<CType = <#field_ty as co3::ReprC>::CType>));
+        generics
+            .make_where_clause()
+            .predicates
             .extend(niche_bound.iter().cloned());
         let (impl_generics, _, where_clause) = generics.split_for_impl();
         quote! {
@@ -133,43 +152,11 @@ pub(super) fn derive_field_repr_c(
                 debug_assert!(encoded != #value, "encoding produced the reserved NICHE");
             }
         });
-        let has_custom_drop = input.attrs.iter().any(|attr| {
-            attr.path().is_ident("rust_spec")
-                && attr
-                    .parse_args_with(
-                        syn::punctuated::Punctuated::<syn::Meta, syn::Token![,]>::parse_terminated,
-                    )
-                    .is_ok_and(|args| args.iter().any(|arg| arg.path().is_ident("custom_drop")))
-        });
-        let custom_impl = has_custom_drop.then(|| {
-            let mut custom_generics = input.generics.clone();
-            custom_generics.params.push(parse_quote!(__Co3Drop: co3::rust_spec::drop::DropKind));
-            let (custom_impl_generics, _, _) = custom_generics.split_for_impl();
-            quote! {
-                unsafe impl #custom_impl_generics EncodeOwned for #name #ty_generics
-                where
-                    #speculative #name #ty_generics: co3::rust_spec::RustSpec<Drop = co3::rust_spec::drop::CustomDrop<__Co3Drop>>,
-                    #field_ty: co3::stored::EncodeOwned,
-                    #(#niche_bounds,)*
-                    #predicates
-                {
-                    type Store = <#field_ty as co3::stored::EncodeOwned>::Store;
-
-                    fn soft_encode<'_išč>(self, store: &'_išč mut Self::Store) -> Self::CType
-                    where Self: '_išč {
-                        let owner = core::mem::ManuallyDrop::new(self);
-                        let value = unsafe { core::ptr::read(&raw const (*owner).#member) };
-                        let encoded = co3::stored::EncodeOwned::soft_encode(value, store);
-                        #encode_niche_check
-                        encoded
-                    }
-                }
-            }
-        });
 
         let mut decode_generics = input.generics.clone();
         decode_generics.params.insert(0, parse_quote!('_dšč));
         decode_generics.make_where_clause().predicates.push(parse_quote!(#field_ty: co3::stored::DecodeOwned<'_dšč>));
+        decode_generics.make_where_clause().predicates.push(parse_quote!(#name #ty_generics: co3::ReprC<CType = <#field_ty as co3::ReprC>::CType>));
         decode_generics.make_where_clause().predicates.extend(niche_bound.iter().cloned());
         let (decode_impl_generics, _, decode_where_clause) = decode_generics.split_for_impl();
 
@@ -181,6 +168,7 @@ pub(super) fn derive_field_repr_c(
                     Niche = co3::rust_spec::niche::WithNiche<co3::rust_spec::Unstable>
                 >
             ));
+            generics.make_where_clause().predicates.push(parse_quote!(#name #ty_generics: co3::ReprC<CType = <#field_ty as co3::ReprC>::CType>));
             let (impl_generics, _, where_clause) = generics.split_for_impl();
             quote! {
                 impl #impl_generics co3::niche::Niche for #name #ty_generics #where_clause {
@@ -191,6 +179,7 @@ pub(super) fn derive_field_repr_c(
             let mut generics = input.generics.clone();
             let speculative = (input.generics.type_params().count() == 0).then_some(quote!(for<'_dummy>));
             generics.make_where_clause().predicates.push(parse_quote!(#speculative #field_ty: co3::niche::Niche));
+            generics.make_where_clause().predicates.push(parse_quote!(#name #ty_generics: co3::ReprC<CType = <#field_ty as co3::ReprC>::CType>));
             let (impl_generics, _, where_clause) = generics.split_for_impl();
             quote! {
                 impl #impl_generics co3::niche::Niche for #name #ty_generics #where_clause {
@@ -253,7 +242,6 @@ pub(super) fn derive_field_repr_c(
                         }
                     }
 
-                    #custom_impl
                 }
             };
 

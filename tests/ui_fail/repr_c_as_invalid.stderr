@@ -28,6 +28,29 @@ error: `as(T)` cannot be combined with other representation modes
 21 | struct MixedModes(u32);
    |        ^^^^^^^^^^
 
+error[E0277]: the trait bound `MissingCodec: RustSpec` is not satisfied
+  --> tests/ui_fail/repr_c_as_invalid.rs:23:10
+   |
+23 | #[derive(ReprC)]
+   |          ^^^^^ unsatisfied trait bound
+   |
+help: the trait `RustSpec` is not implemented for `MissingCodec`
+  --> tests/ui_fail/repr_c_as_invalid.rs:25:1
+   |
+25 | struct MissingCodec(u32);
+   | ^^^^^^^^^^^^^^^^^^^
+   = help: the following other types implement trait `RustSpec`:
+             &'_lšč0 _TŠČ0
+             &'_lšč0 mut _TŠČ0
+             ()
+             (A, B)
+             (A, B, C)
+             (A, B, C, D)
+             (A, B, C, D, E)
+             (A, B, C, D, E, F)
+           and $N others
+   = note: this error originates in the derive macro `ReprC` (in Nightly builds, run with -Z macro-backtrace for more info)
+
 error[E0277]: the trait bound `MissingIntermediate: EncodeOwned` is not satisfied
   --> tests/ui_fail/repr_c_as_invalid.rs:23:10
    |
@@ -49,4 +72,37 @@ help: the trait `EncodeOwned` is not implemented for `MissingIntermediate`
              (A, B, C, D, E)
              (A, B, C, D, E, F)
            and $N others
+   = note: this error originates in the derive macro `ReprC` (in Nightly builds, run with -Z macro-backtrace for more info)
+
+error[E0277]: the trait bound `MissingCodec: ReprC` is not satisfied
+  --> tests/ui_fail/repr_c_as_invalid.rs:23:10
+   |
+23 | #[derive(ReprC)]
+   |          ^^^^^ unsatisfied trait bound
+   |
+help: the trait `RustSpec` is not implemented for `MissingCodec`
+  --> tests/ui_fail/repr_c_as_invalid.rs:25:1
+   |
+25 | struct MissingCodec(u32);
+   | ^^^^^^^^^^^^^^^^^^^
+   = help: the following other types implement trait `RustSpec`:
+             &'_lšč0 _TŠČ0
+             &'_lšč0 mut _TŠČ0
+             ()
+             (A, B)
+             (A, B, C)
+             (A, B, C, D)
+             (A, B, C, D, E)
+             (A, B, C, D, E, F)
+           and $N others
+note: required for `MissingCodec` to implement `ReprC`
+  --> tests/ui_fail/repr_c_as_invalid.rs:25:8
+   |
+23 | #[derive(ReprC)]
+   |          ----- type parameter would need to implement `ReprC`
+24 | #[repr_c(as(MissingIntermediate))]
+25 | struct MissingCodec(u32);
+   |        ^^^^^^^^^^^^
+   = help: consider manually implementing `ReprC` to avoid undesired bounds caused by "imperfect derives"
+   = note: to learn more, visit <https://github.com/rust-lang/rust/issues/26925>
    = note: this error originates in the derive macro `ReprC` (in Nightly builds, run with -Z macro-backtrace for more info)

@@ -30,7 +30,7 @@ impl From<u32> for TransparentFieldHandle {
 
 #[repr(transparent)]
 #[derive(RustSpec, ReprC)]
-#[repr_c(transparent, is_valid = |value| *value > 10)]
+#[repr_c(is_valid = |value| *value > 10)]
 struct ValidatedByte(u8);
 
 impl From<u8> for ValidatedByte {
@@ -72,17 +72,10 @@ impl<T> From<T> for GenericField<T> {
     }
 }
 
-#[repr(transparent)]
-#[derive(RustSpec, ReprC)]
-#[rust_spec(custom_niche)]
-#[repr_c(transparent, NICHE = 0)]
-struct ReservedByte(u8);
-
 static DROP_BOX_COUNT: AtomicUsize = AtomicUsize::new(0);
 
 #[derive(RustSpec, ReprC)]
 #[rust_spec(custom_drop)]
-#[repr_c(transparent)]
 struct DropBox(Box<u32>);
 
 impl Drop for DropBox {
@@ -101,10 +94,23 @@ fn field_representation_maps_owned_conversion_and_transmutation() {
     assert_impl_all!(FieldHandle: ReprC<CType = u32>);
     assert_not_impl_any!(FieldHandle: co3::transmute::CheckedTransmute);
     assert_impl_all!(TransparentFieldHandle: co3::transmute::CheckedTransmute);
-    assert!(!unsafe { <ValidatedByte as co3::transmute::CheckedTransmute>::is_valid(&10) });
-    assert!(unsafe { <ValidatedByte as co3::transmute::CheckedTransmute>::is_valid(&11) });
-    assert!(unsafe { co3::decode::<ValidatedByte>(10) }.is_none());
-    assert_eq!(unsafe { co3::decode::<ValidatedByte>(11) }.unwrap().0, 11);
+    assert!(!unsafe {
+        <ValidatedByte as co3::transmute::CheckedTransmute>::is_valid(&CValidatedByte::from_fields(
+            10,
+        ))
+    });
+    assert!(unsafe {
+        <ValidatedByte as co3::transmute::CheckedTransmute>::is_valid(&CValidatedByte::from_fields(
+            11,
+        ))
+    });
+    assert!(unsafe { co3::decode::<ValidatedByte>(CValidatedByte::from_fields(10)) }.is_none());
+    assert_eq!(
+        unsafe { co3::decode::<ValidatedByte>(CValidatedByte::from_fields(11)) }
+            .unwrap()
+            .0,
+        11
+    );
     assert!(!unsafe { <NonZeroField as co3::transmute::CheckedTransmute>::is_valid(&0) });
     assert!(unsafe { <NonZeroField as co3::transmute::CheckedTransmute>::is_valid(&1) });
     assert_impl_all!(FieldSlice<u8>: ReprC<CType = [u8]>);
@@ -116,19 +122,9 @@ fn field_representation_maps_owned_conversion_and_transmutation() {
 }
 
 #[test]
-fn field_representation_rejects_reserved_niche() {
-    assert_impl_all!(ReservedByte: co3::niche::Niche<CType = u8>);
+fn field_representation_preserves_inner_niche() {
     assert_impl_all!(NonZeroField: co3::niche::Niche<CType = u8>);
-    assert_eq!(<ReservedByte as co3::niche::Niche>::NICHE, 0_u8);
     assert_eq!(<NonZeroField as co3::niche::Niche>::NICHE, 0_u8);
-    assert!(!unsafe { <ReservedByte as co3::transmute::CheckedTransmute>::is_valid(&0) });
-    assert!(unsafe { <ReservedByte as co3::transmute::CheckedTransmute>::is_valid(&7) });
-    assert!(unsafe { co3::decode::<ReservedByte>(0) }.is_none());
-    assert_eq!(unsafe { co3::decode::<ReservedByte>(7) }.unwrap().0, 7);
-    assert!(matches!(
-        unsafe { co3::decode::<Option<ReservedByte>>(0) },
-        Some(None)
-    ));
     assert!(matches!(
         unsafe { co3::decode::<Option<NonZeroField>>(0) },
         Some(None)
@@ -183,7 +179,7 @@ fn cells_rebuild_transparent_slice_wrappers() {
     assert!(core::ptr::eq(cell, rebuilt));
 }
 
-#[derive(ReprC)]
+#[derive(RustSpec, ReprC)]
 #[repr_c(as(u32))]
 struct Handle(u32);
 
@@ -208,34 +204,28 @@ fn intermediate_codecs_round_trip_and_reject_invalid_input() {
     assert!(unsafe { co3::decode::<Handle>(0) }.is_none());
 }
 
-#[derive(ReprC)]
+#[derive(RustSpec, ReprC)]
 #[repr_c(as(u32))]
-struct GenericCustomDrop<T: Copy>(T);
+struct AutoDropHandle(Box<u32>);
 
-impl<T: Copy> Drop for GenericCustomDrop<T> {
-    fn drop(&mut self) {}
-}
-
-impl<T: Copy + Into<u32>> From<GenericCustomDrop<T>> for u32 {
-    fn from(value: GenericCustomDrop<T>) -> Self {
-        value.0.into()
+impl From<AutoDropHandle> for u32 {
+    fn from(value: AutoDropHandle) -> Self {
+        *value.0
     }
 }
 
-impl<T: Copy + TryFrom<u32>> TryFrom<u32> for GenericCustomDrop<T> {
-    type Error = T::Error;
-
-    fn try_from(value: u32) -> Result<Self, Self::Error> {
-        T::try_from(value).map(Self)
+impl From<u32> for AutoDropHandle {
+    fn from(value: u32) -> Self {
+        Self(Box::new(value))
     }
 }
 
 #[test]
-fn generic_custom_drop_intermediate_round_trip() {
-    let encoded = co3::encode(GenericCustomDrop(7_u32));
+fn intermediate_representation_allows_auto_drop() {
+    let encoded = co3::encode(AutoDropHandle(Box::new(7)));
     assert_eq!(encoded, 7);
-    let decoded: GenericCustomDrop<u32> = unsafe { co3::decode(encoded) }.unwrap();
-    assert_eq!(decoded.0, 7);
+    let decoded: AutoDropHandle = unsafe { co3::decode(encoded) }.unwrap();
+    assert_eq!(*decoded.0, 7);
 }
 
 #[derive(Default)]
@@ -274,7 +264,7 @@ unsafe impl<'d> DecodeOwned<'d> for Intermediate {
     }
 }
 
-#[derive(ReprC)]
+#[derive(RustSpec, ReprC)]
 #[repr_c(as(Intermediate))]
 struct StoredHandle(u32);
 
@@ -308,81 +298,4 @@ fn intermediate_store_is_forwarded_in_both_directions() {
     assert_eq!(decode_store.0, 1);
     assert!(unsafe { co3::soft_decode::<StoredHandle>(0, &mut decode_store) }.is_none());
     assert_eq!(decode_store.0, 2);
-}
-
-#[derive(Clone, Copy, RustSpec, ReprC)]
-#[rust_spec(custom_niche)]
-#[repr_c(as(u32), NICHE = 0, is_valid = |value| value.is_power_of_two())]
-struct PowerOfTwo(u32);
-
-impl From<PowerOfTwo> for u32 {
-    fn from(value: PowerOfTwo) -> Self {
-        value.0
-    }
-}
-
-impl From<u32> for PowerOfTwo {
-    fn from(value: u32) -> Self {
-        Self(value)
-    }
-}
-
-#[test]
-fn intermediate_conversion_respects_custom_niche_and_validity() {
-    assert_eq!(co3::encode(None::<PowerOfTwo>), 0);
-    assert_eq!(co3::encode(Some(PowerOfTwo(4))), 4);
-    assert!(unsafe { co3::decode::<PowerOfTwo>(0) }.is_none());
-    assert!(unsafe { co3::decode::<PowerOfTwo>(3) }.is_none());
-    assert_eq!(unsafe { co3::decode::<PowerOfTwo>(4) }.unwrap().0, 4);
-    assert!(
-        unsafe { co3::decode::<Option<PowerOfTwo>>(0) }
-            .unwrap()
-            .is_none()
-    );
-}
-
-#[test]
-#[cfg_attr(debug_assertions, should_panic(expected = "reserved NICHE"))]
-fn intermediate_conversion_rejects_encoding_the_reserved_niche() {
-    let _ = co3::encode(PowerOfTwo(0));
-}
-
-#[derive(RustSpec, ReprC)]
-#[repr_c(as(u32))]
-enum ValidatedEnum {
-    #[repr_c(is_valid = |value| value.is_power_of_two())]
-    Power(u32),
-    Other,
-}
-
-impl From<ValidatedEnum> for u32 {
-    fn from(value: ValidatedEnum) -> Self {
-        match value {
-            ValidatedEnum::Power(raw) => raw,
-            ValidatedEnum::Other => 0,
-        }
-    }
-}
-
-impl From<u32> for ValidatedEnum {
-    fn from(raw: u32) -> Self {
-        if raw == 0 {
-            Self::Other
-        } else {
-            Self::Power(raw)
-        }
-    }
-}
-
-#[test]
-fn intermediate_conversion_respects_variant_validity() {
-    assert!(matches!(
-        unsafe { co3::decode::<ValidatedEnum>(0) },
-        Some(ValidatedEnum::Other)
-    ));
-    assert!(unsafe { co3::decode::<ValidatedEnum>(3) }.is_none());
-    assert!(matches!(
-        unsafe { co3::decode::<ValidatedEnum>(4) },
-        Some(ValidatedEnum::Power(4))
-    ));
 }

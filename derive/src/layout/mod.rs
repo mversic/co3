@@ -179,6 +179,24 @@ pub(crate) fn derive_repr_c(input: &syn::DeriveInput) -> syn::Result<TokenStream
 
     let is_custom = repr_c_attrs.as_type.is_some();
     if repr_c_attrs.is_transparent {
+        if repr_c_attrs.niche_value.is_some() {
+            push_error(
+                &mut errors,
+                syn::Error::new_spanned(
+                    &input.ident,
+                    "`repr_c(transparent)` cannot be combined with `NICHE`",
+                ),
+            );
+        }
+        if repr_c_attrs.is_valid.is_some() {
+            push_error(
+                &mut errors,
+                syn::Error::new_spanned(
+                    &input.ident,
+                    "`repr_c(transparent)` cannot be combined with `is_valid`",
+                ),
+            );
+        }
         if is_custom
             || repr_c_attrs.is_identity
             || repr_c_attrs.is_view
@@ -208,6 +226,26 @@ pub(crate) fn derive_repr_c(input: &syn::DeriveInput) -> syn::Result<TokenStream
             &input.ident,
             "`as(T)` cannot be combined with other representation modes",
         ));
+    }
+    if is_custom {
+        if repr_c_attrs.niche_value.is_some() {
+            push_error(
+                &mut errors,
+                syn::Error::new_spanned(
+                    &input.ident,
+                    "`repr_c(as(T))` cannot be combined with `NICHE`",
+                ),
+            );
+        }
+        if repr_c_attrs.is_valid.is_some() {
+            push_error(
+                &mut errors,
+                syn::Error::new_spanned(
+                    &input.ident,
+                    "`repr_c(as(T))` cannot be combined with `is_valid`",
+                ),
+            );
+        }
     }
 
     if repr_c_attrs.is_identity {
@@ -313,6 +351,15 @@ pub(crate) fn derive_repr_c(input: &syn::DeriveInput) -> syn::Result<TokenStream
                     push_error(&mut errors, err);
                 }
                 if is_custom {
+                    if variant_repr_c_attrs.is_valid.is_some() {
+                        push_error(
+                            &mut errors,
+                            syn::Error::new_spanned(
+                                &variant.ident,
+                                "`repr_c(as(T))` cannot be combined with variant `is_valid`",
+                            ),
+                        );
+                    }
                     if variant_repr_c_attrs.as_type.is_some()
                         || variant_repr_c_attrs.is_identity
                         || variant_repr_c_attrs.is_view
@@ -323,7 +370,7 @@ pub(crate) fn derive_repr_c(input: &syn::DeriveInput) -> syn::Result<TokenStream
                             &mut errors,
                             syn::Error::new_spanned(
                                 &variant.ident,
-                                "only `is_valid` is supported on variants with `as(T)`",
+                                "variant representation options are not supported with `as(T)`",
                             ),
                         );
                     }
@@ -362,7 +409,7 @@ pub(crate) fn derive_repr_c(input: &syn::DeriveInput) -> syn::Result<TokenStream
     let primitive_type_checks = gen_primitive_field_type_checks(input);
 
     if is_custom {
-        let tokens = custom::derive_custom_repr_c(input, &repr_c_attrs, &variant_attrs);
+        let tokens = custom::derive_custom_repr_c(input, &repr_c_attrs);
         return Ok(quote! {
             #primitive_type_checks
             #tokens

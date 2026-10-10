@@ -79,7 +79,7 @@ impl<T: TryFrom<u32>> TryFrom<u32> for Wrapped<T> {
 #[derive(RustSpec, ReprC)]
 struct Intermediate(u32);
 
-#[derive(ReprC)]
+#[derive(RustSpec, ReprC)]
 #[repr_c(as(Intermediate))]
 struct Indirect(u32);
 
@@ -98,7 +98,7 @@ impl From<Intermediate> for Indirect {
 #[derive(RustSpec, ReprC)]
 struct GenericIntermediate<T>(T);
 
-#[derive(ReprC)]
+#[derive(RustSpec, ReprC)]
 #[repr_c(as(GenericIntermediate<T>))]
 struct GenericIndirect<T>(T);
 
@@ -150,51 +150,6 @@ fn main() {
 mod validation {
     use co3::{ReprC, rust_spec::RustSpec};
 
-    #[derive(ReprC)]
-    #[repr_c(as(u32), is_valid = |value| value.is_power_of_two())]
-    struct Named {
-        value: u32,
-    }
-
-    impl From<Named> for u32 {
-        fn from(value: Named) -> Self {
-            value.value
-        }
-    }
-
-    impl From<u32> for Named {
-        fn from(value: u32) -> Self {
-            Self { value }
-        }
-    }
-
-    #[derive(ReprC)]
-    #[repr_c(as(u32))]
-    enum NamedVariant {
-        #[repr_c(is_valid = |value| value.is_power_of_two())]
-        Power { value: u32 },
-        Zero,
-    }
-
-    impl From<NamedVariant> for u32 {
-        fn from(value: NamedVariant) -> Self {
-            match value {
-                NamedVariant::Power { value } => value,
-                NamedVariant::Zero => 0,
-            }
-        }
-    }
-
-    impl From<u32> for NamedVariant {
-        fn from(value: u32) -> Self {
-            if value == 0 {
-                Self::Zero
-            } else {
-                Self::Power { value }
-            }
-        }
-    }
-
     #[derive(RustSpec, ReprC)]
     #[repr_c(is_valid = |value| value.is_power_of_two())]
     struct PowerOfTwo(u32);
@@ -210,7 +165,5 @@ mod validation {
     pub(super) fn check() {
         let _ = PowerOfTwo(2);
         let _ = Number::PowerOfTwo(2);
-        assert!(unsafe { co3::decode::<Named>(3) }.is_none());
-        assert!(unsafe { co3::decode::<NamedVariant>(3) }.is_none());
     }
 }

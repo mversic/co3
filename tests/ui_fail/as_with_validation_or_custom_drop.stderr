@@ -1,0 +1,50 @@
+error: `repr_c(as(T))` cannot be combined with `NICHE`
+ --> tests/ui_fail/as_with_validation_or_custom_drop.rs:6:8
+  |
+6 | struct WithNiche(u8);
+  |        ^^^^^^^^^
+
+error: `repr_c(as(T))` cannot be combined with `is_valid`
+  --> tests/ui_fail/as_with_validation_or_custom_drop.rs:10:8
+   |
+10 | struct WithValidation(u8);
+   |        ^^^^^^^^^^^^^^
+
+error: `repr_c(as(T))` cannot be combined with variant `is_valid`
+  --> tests/ui_fail/as_with_validation_or_custom_drop.rs:16:5
+   |
+16 |     Value(u8),
+   |     ^^^^^
+
+error[E0271]: type mismatch resolving `<CustomDrop<NoDrop> as Add<AutoDrop>>::Output == AutoDrop`
+  --> tests/ui_fail/as_with_validation_or_custom_drop.rs:19:20
+   |
+19 | #[derive(RustSpec, ReprC)]
+   |                    ^^^^^ expected `AutoDrop`, found `CustomDrop<AutoDrop>`
+   |
+   = note: expected enum `AutoDrop`
+            found struct `CustomDrop<AutoDrop>`
+   = note: this error originates in the derive macro `ReprC` (in Nightly builds, run with -Z macro-backtrace for more info)
+
+error[E0271]: type mismatch resolving `<CustomDrop<NoDrop> as Add<AutoDrop>>::Output == AutoDrop`
+  --> tests/ui_fail/as_with_validation_or_custom_drop.rs:19:20
+   |
+19 | #[derive(RustSpec, ReprC)]
+   |                    ^^^^^ expected `AutoDrop`, found `CustomDrop<AutoDrop>`
+   |
+   = note: expected enum `AutoDrop`
+            found struct `CustomDrop<AutoDrop>`
+note: required for `WithCustomDrop` to implement `ReprC`
+  --> tests/ui_fail/as_with_validation_or_custom_drop.rs:22:8
+   |
+19 | #[derive(RustSpec, ReprC)]
+   |                    ----- type parameter would need to implement `ReprC`
+...
+22 | struct WithCustomDrop(u8);
+   |        ^^^^^^^^^^^^^^
+   = help: consider manually implementing `ReprC` to avoid undesired bounds caused by "imperfect derives"
+   = note: to learn more, visit <https://github.com/rust-lang/rust/issues/26925>
+   = note: associated types for the current `impl` cannot be restricted in `where` clauses
+   = note: associated types for the current `impl` cannot be restricted in `where` clauses
+   = note: associated types for the current `impl` cannot be restricted in `where` clauses
+   = note: this error originates in the derive macro `ReprC` (in Nightly builds, run with -Z macro-backtrace for more info)
