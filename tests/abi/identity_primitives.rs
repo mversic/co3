@@ -34,11 +34,11 @@ raw! {
 }
 
 fn increment(value: c_int) -> c_int {
-    c_int(value.0 + 1)
+    value + c_int::new(1)
 }
 
 fn increment_carrier(value: c_int) -> c_int {
-    c_int(value.0 + 1)
+    value + c_int::new(1)
 }
 
 raw! {
@@ -47,7 +47,7 @@ raw! {
 }
 
 fn double(value: c_long) -> c_long {
-    c_long(value.0 * 2)
+    value + value
 }
 
 ffi! {
@@ -67,41 +67,46 @@ ffi! {
 #[test]
 fn identity_primitives_keep_their_abi_types() {
     let raw_increment: unsafe extern "C" fn(c_int) -> c_int = increment_raw;
-    assert_eq!(unsafe { raw_increment(c_int(20)) }, c_int(21));
-    assert_eq!(imported_double(c_long(21)), c_long(42));
+    assert_eq!(unsafe { raw_increment(c_int::new(20)) }, c_int::new(21));
+    assert_eq!(imported_double(c_long::new(21)), c_long::new(42));
     let raw_carrier: unsafe extern "C" fn(c_int) -> c_int = increment_carrier_raw;
-    let result = unsafe { raw_carrier(c_int(20)) };
-    assert_eq!(result, c_int(21));
+    let result = unsafe { raw_carrier(c_int::new(20)) };
+    assert_eq!(result, c_int::new(21));
 }
 
 #[test]
 fn c_alias_fields_use_distinct_carriers() {
-    let carrier_field = co3::encode(CarrierField(c_int(3)));
+    let carrier_field = co3::encode(CarrierField(c_int::new(3)));
     let _: c_int = carrier_field.0;
-    let lowered = co3::encode(AliasFields(c_int(3), 4_u32, c_long(5)));
+    let lowered = co3::encode(AliasFields(c_int::new(3), 4_u32, c_long::new(5)));
     let _: c_int = lowered.0;
     let _: u32 = lowered.1;
     let _: c_long = lowered.2;
     let decoded = unsafe { co3::decode::<AliasFields<u32>>(lowered) }.unwrap();
-    assert_eq!((decoded.0, decoded.1, decoded.2), (c_int(3), 4, c_long(5)));
+    assert_eq!(
+        (decoded.0, decoded.1, decoded.2),
+        (c_int::new(3), 4, c_long::new(5))
+    );
 
-    let view = co3::borrow::Borrow::borrow(AliasFields(c_int(3), 4_u32, c_long(5)), &mut ());
+    let view =
+        co3::borrow::Borrow::borrow(AliasFields(c_int::new(3), 4_u32, c_long::new(5)), &mut ());
     let borrowed_lowered = co3::encode(view);
     let _: c_int = borrowed_lowered.0;
     let _: c_long = borrowed_lowered.2;
-    let view = co3::borrow::Borrow::borrow(AliasFields(c_int(3), 4_u32, c_long(5)), &mut ());
+    let view =
+        co3::borrow::Borrow::borrow(AliasFields(c_int::new(3), 4_u32, c_long::new(5)), &mut ());
     let recovered: AliasFields<u32> = co3::borrow::FromBorrow::from_borrow(view);
     assert_eq!(
         (recovered.0, recovered.1, recovered.2),
-        (c_int(3), 4, c_long(5))
+        (c_int::new(3), 4, c_long::new(5))
     );
 }
 
 #[test]
 fn c_alias_enum_field_round_trips() {
-    let lowered = co3::encode(AliasEnum::Value(c_int(7)));
+    let lowered = co3::encode(AliasEnum::Value(c_int::new(7)));
     let decoded = unsafe { co3::decode::<AliasEnum>(lowered) }.unwrap();
-    assert!(matches!(decoded, AliasEnum::Value(c_int(7))));
+    assert!(matches!(decoded, AliasEnum::Value(value) if value == c_int::new(7)));
 }
 
 #[test]
