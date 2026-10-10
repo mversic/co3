@@ -7,6 +7,26 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.7.0] - 2026-10-10
+
+### Added
+
+- Add `decode_unchecked` to decode C-compatible values without validating them.
+- Handle types with custom `Drop` implementations via `RustSpec::Drop` axis.
+- Support encoding `CString` and custom nul-terminated aggregate types.
+- Support `#[repr_c(transparent)]` which uses inner type's `CType`
+- Generate C-compatible wrappers for `bool` and `Ordering`.
+
+### Changed
+
+- Model aliasing explicitly in C ABI carriers `CRefMut` and `CSliceMut`.
+- Rename the niche derive setting from `NICHE_VALUE` to `NICHE`.
+- Separate header and data handling for `Wide` types.
+
+### Removed
+
+- Restrict `Wide` implementations to custom slice-like DSTs to avoid undefined behavior.
+
 ## [0.6.0] - 2026-10-04
 
 ### Added
@@ -54,19 +74,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - Add `raw!` to generate visible C-ABI `{name}_raw` companions for existing functions
 
-### Fixed
-
-- Lower one-part `#[unpack(A)]` imports using `<A as ReprC>::CType` as the foreign parameter type.
-- Emit `CFnArg` and `CFnReturn` assertions for each statically selected ordinary import declaration.
-- Require `move` when passing `CBox` or `CBoxedSlice` through imported function arguments.
-- Check exported associated types and consts definitions against the existing Rust impl.
-
 ### Changed
 
 - Rename the ABI traits from `ExternC` to `ReprC` and `ReprC` to `CType`.
 - Reject explicit `<dyn T>::TAG` arguments in `ffi!` export declarations.
 - Disallow defining statics in export blocks; they can still be declared.
 - Rename the derive helper attribute from `reprC` to `repr_c`.
+
+### Fixed
+
+- Lower one-part `#[unpack(A)]` imports using `<A as ReprC>::CType` as the foreign parameter type.
+- Emit `CFnArg` and `CFnReturn` assertions for each statically selected ordinary import declaration.
+- Require `move` when passing `CBox` or `CBoxedSlice` through imported function arguments.
+- Check exported associated types and consts definitions against the existing Rust impl.
 
 ## [0.4.1] - 2026-09-22
 
