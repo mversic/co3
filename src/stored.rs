@@ -1,5 +1,6 @@
 #[cfg(feature = "alloc")]
 use alloc::{borrow::ToOwned, boxed::Box, vec::Vec};
+#[cfg(feature = "alloc")]
 use core::cell::UnsafeCell;
 #[cfg(feature = "alloc")]
 use core::ptr::NonNull;

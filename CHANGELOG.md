@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.7.1] - 2026-10-10
+
+### Added
+
+- Add conversions and derives for `co3::ffi` types and make their use portable
+
 ## [0.7.0] - 2026-10-10
 
 ### Added

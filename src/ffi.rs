@@ -174,6 +174,7 @@ macro_rules! c_integer_conversions {
         )*
 
         $(
+            #[allow(clippy::infallible_try_from)]
             impl TryFrom<$try_from> for $name {
                 type Error = <$alias as TryFrom<$try_from>>::Error;
 
@@ -192,6 +193,7 @@ macro_rules! c_integer_conversions {
         )*
 
         $(
+            #[allow(clippy::infallible_try_from)]
             impl TryFrom<$name> for $try_into {
                 type Error = <$try_into as TryFrom<$alias>>::Error;
 
@@ -373,6 +375,7 @@ impl From<c_float> for f32 {
 }
 
 impl From<c_double> for f64 {
+    #[allow(clippy::useless_conversion)]
     fn from(value: c_double) -> Self {
         Self::from(value.0)
     }
