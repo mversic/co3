@@ -188,10 +188,11 @@ fn fieldless_enums_with_drop_convert_and_borrow() {
     assert_eq!(co3::encode(InferredFieldlessDrop::Second).0, 3);
     assert_eq!(FIELDLESS_DROPS.load(Ordering::Relaxed) - before, 2);
 
-    let decoded = ExplicitFieldlessDrop::try_from(CExplicitFieldlessDrop(2)).unwrap();
+    let decoded =
+        unsafe { co3::decode::<ExplicitFieldlessDrop>(CExplicitFieldlessDrop(2)) }.unwrap();
     assert!(matches!(decoded, ExplicitFieldlessDrop::First));
     drop(decoded);
-    assert!(ExplicitFieldlessDrop::try_from(CExplicitFieldlessDrop(3)).is_err());
+    assert!(unsafe { co3::decode::<ExplicitFieldlessDrop>(CExplicitFieldlessDrop(3)) }.is_none());
 
     let mut owner = <ExplicitFieldlessDrop as Borrow>::Owner::default();
     let borrowed = Borrow::borrow(ExplicitFieldlessDrop::Second, &mut owner);

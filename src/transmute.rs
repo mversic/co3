@@ -110,11 +110,11 @@ where
 {
     #[inline(always)]
     unsafe fn is_valid(target: &Self::CType) -> bool {
-        if target.is_niche() {
+        if target.is_null() {
             return false;
         }
 
-        unsafe { R::is_valid(&*target.data) }
+        unsafe { R::is_valid(&*target.as_ptr()) }
     }
 }
 
@@ -149,7 +149,7 @@ unsafe impl<R: CheckedTransmute<CType: Copy>> CheckedTransmute for [R] {
 unsafe impl CheckedTransmute for str {
     #[inline(always)]
     unsafe fn is_valid(target: &Self::CType) -> bool {
-        core::str::from_utf8(target).is_ok()
+        core::str::from_utf8(&target.0).is_ok()
     }
 }
 

@@ -82,7 +82,7 @@ error: runtime-dispatched #[unpack] arguments cannot use `_` placeholders
 50 |     fn missing_payload_unpack_try<dyn(u8) T = (u8, u8)>(#[unpack(_, _)] value: T)
    |                                                         ^^^^^^^^^^^^^^^
 
-error[E0277]: the trait bound `ReprCTuple2<u8, u8>: Unpack2<u32, CBoxedSlice<u8>>` is not satisfied
+error[E0277]: the trait bound `ReprCTuple2<u8, u8>: Unpack2<u32, Utf8String>` is not satisfied
   --> tests/ui_fail/unpack_type.rs:28:1
    |
 28 | / ffi! {
@@ -91,7 +91,7 @@ error[E0277]: the trait bound `ReprCTuple2<u8, u8>: Unpack2<u32, CBoxedSlice<u8>
 31 | |     fn missing_into(#[unpack(u32, String)] value: ReprCTuple2<u8, u8>);
 32 | |     fn missing_into_try(#[unpack(u32, String)] value: ReprCTuple2<u8, u8>);
 33 | | }
-   | |_^ the trait `Unpack2<u32, CBoxedSlice<u8>>` is not implemented for `ReprCTuple2<u8, u8>`
+   | |_^ the trait `Unpack2<u32, Utf8String>` is not implemented for `ReprCTuple2<u8, u8>`
    |
    = help: the following other types implement trait `Unpack2<Part1, Part2>`:
              `&R` implements `Unpack2<*const C, U>`

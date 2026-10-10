@@ -229,14 +229,15 @@ impl_raw_slice_methods! { CSlice, [C], [C] }
 impl_raw_slice_methods! { CSliceMut, [C, const RESTRICTED: bool], [C, RESTRICTED] }
 
 impl<C> CSlice<C> {
-    /// Set the slice's data pointer to null
-    pub(crate) const NICHE: Self = Self {
-        data: core::ptr::null(),
-        // TODO: Use MaybeUninit for len?
-        len: 0,
-    };
+    /// Construct a carrier with a null data pointer and zero length.
+    pub const fn null() -> Self {
+        Self {
+            data: core::ptr::null(),
+            len: 0,
+        }
+    }
 
-    /// Create [`Self`] from shared slice
+    /// Wrap an existing slice of lowered data.
     pub const fn from_slice(slice: &[C]) -> Self {
         Self {
             data: slice.as_ptr(),
@@ -244,11 +245,18 @@ impl<C> CSlice<C> {
         }
     }
 
+    /// Return the stored data pointer.
+    pub const fn as_ptr(self) -> *const C {
+        self.data
+    }
+
     /// Create [`Self`] from a raw data pointer and slice metadata.
     ///
-    /// Before decoding this carrier into a Rust reference, the caller must
-    /// ensure the pointer and length describe a valid initialized slice.
-    pub const fn from_raw_parts(data: *const C, len: usize) -> Self {
+    /// # Safety
+    ///
+    /// A non-null pointer and length must describe a valid initialized slice
+    /// for any access through the resulting carrier.
+    pub const unsafe fn from_raw_parts(data: *const C, len: usize) -> Self {
         Self { data, len }
     }
 
@@ -256,22 +264,48 @@ impl<C> CSlice<C> {
         self.data
     }
 
-    pub(crate) const fn len(&self) -> usize {
+    #[expect(
+        clippy::len_without_is_empty,
+        reason = "nullable carrier uses Option<bool>"
+    )]
+    pub const fn len(&self) -> usize {
         self.len
     }
 
-    pub(crate) const fn is_niche(&self) -> bool {
+    /// Return `None` for a null carrier, or whether the present slice is empty.
+    pub const fn is_empty(&self) -> Option<bool> {
+        if self.data.is_null() {
+            None
+        } else {
+            Some(self.len == 0)
+        }
+    }
+
+    pub(crate) const fn is_null(&self) -> bool {
         self.data.is_null()
     }
 }
 
 impl<C, const RESTRICTED: bool> CSliceMut<C, RESTRICTED> {
-    /// Create [`Self`] from mutable slice
+    /// Construct a carrier with a null data pointer and zero length.
+    pub const fn null() -> Self {
+        Self {
+            data: core::ptr::null_mut(),
+            len: 0,
+        }
+    }
+
+    /// Wrap an existing mutable slice of lowered data.
     pub const fn from_slice(slice: &mut [C]) -> Self {
         Self {
             data: slice.as_mut_ptr(),
             len: slice.len(),
         }
+    }
+
+    /// Return the stored data pointer.
+    pub const fn as_ptr(self) -> *mut C {
+        self.data
     }
 
     /// Create a mutable slice carrier from raw parts.
@@ -288,20 +322,25 @@ impl<C, const RESTRICTED: bool> CSliceMut<C, RESTRICTED> {
 macro_rules! impl_mut_slice_methods {
     ($ty:ident, [$($params:tt)*], [$($args:tt)*]) => {
         impl<$($params)*> $ty<$($args)*> {
-            pub(crate) const NICHE: Self = Self {
-                data: core::ptr::null_mut(),
-                len: 0,
-            };
-
             pub(crate) const fn data(&self) -> *mut C {
                 self.data
             }
 
-            pub(crate) const fn len(&self) -> usize {
+            #[expect(clippy::len_without_is_empty, reason = "nullable carrier uses Option<bool>")]
+            pub const fn len(&self) -> usize {
                 self.len
             }
 
-            pub(crate) const fn is_niche(&self) -> bool {
+            /// Return `None` for a null carrier, or whether the present slice is empty.
+            pub const fn is_empty(&self) -> Option<bool> {
+                if self.data.is_null() {
+                    None
+                } else {
+                    Some(self.len == 0)
+                }
+            }
+
+            pub(crate) const fn is_null(&self) -> bool {
                 self.data.is_null()
             }
         }
@@ -406,9 +445,6 @@ impl_raw_wide_unpack!(NonNull<R>, *const C, as_ptr);
 impl_raw_wide_unpack!(NonNull<R>, *mut C, as_mut_ptr);
 
 macro_rules! construct_slice_carrier {
-    (safe, $carrier:ty, $constructor:ident, $data:ident, $len:ident) => {
-        <$carrier>::$constructor($data, $len)
-    };
     (unsafe, $carrier:ty, $constructor:ident, $data:ident, $len:ident) => {
         unsafe { <$carrier>::$constructor($data, $len) }
     };
@@ -450,38 +486,38 @@ macro_rules! impl_ref_slice_pack {
     };
 }
 
-impl_ref_slice_pack!(&R, CSlice<C>, *const C, from_raw_parts, safe);
+impl_ref_slice_pack!(&R, CSlice<C>, *const C, from_raw_parts, unsafe);
 impl_ref_slice_pack!(&R, CSliceMut<C, false>, *mut C, from_raw_parts_mut, unsafe);
 impl_ref_slice_pack!(&mut R, CSliceMut<C>, *mut C, from_raw_parts_mut, unsafe);
 
-#[cfg(feature = "alloc")]
 impl<C> CSlice<C> {
-    /// Convert into a shared slice. Return `None` if the data pointer is null.
+    /// Recover a shared slice, returning `None` for a null pointer.
     ///
     /// # Safety
     ///
-    /// Check [`core::slice::from_raw_parts`].
-    pub(crate) const unsafe fn into_rust<'slice>(self) -> Option<&'slice [C]> {
+    /// The pointer and length must satisfy `core::slice::from_raw_parts` for the returned lifetime.
+    pub const unsafe fn into_rust<'a>(self) -> Option<&'a [C]> {
         if self.data.is_null() {
-            return None;
+            None
+        } else {
+            Some(unsafe { core::slice::from_raw_parts(self.data, self.len) })
         }
-
-        Some(unsafe { core::slice::from_raw_parts(self.data, self.len) })
     }
 }
 
-#[cfg(feature = "alloc")]
 impl<C> CSliceMut<C> {
-    /// Convert into an exclusive mutable slice. Return `None` if the data pointer is null.
+    /// Recover a mutable slice, returning `None` for a null pointer.
     ///
     /// # Safety
     ///
-    /// Check [`core::slice::from_raw_parts_mut`].
-    pub(crate) const unsafe fn into_rust<'slice>(self) -> Option<&'slice mut [C]> {
+    /// The pointer and length must satisfy `core::slice::from_raw_parts_mut` for the returned lifetime.
+    pub const unsafe fn into_rust<'a>(self) -> Option<&'a mut [C]> {
         if self.data.is_null() {
-            return None;
+            None
+        } else {
+            Some(unsafe { core::slice::from_raw_parts_mut(self.data, self.len) })
         }
-
-        Some(unsafe { core::slice::from_raw_parts_mut(self.data, self.len) })
     }
 }
+
+pub(crate) use impl_raw_slice_methods;

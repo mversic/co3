@@ -86,3 +86,11 @@ fn boxed_zst_traits() {
     assert_not_impl_any!(NoReprStruct<()>: CheckedTransmute);
     assert_not_impl_any!(NoReprEnum<()>: CheckedTransmute);
 }
+
+#[test]
+fn transparent_enum_carrier_constructs_its_variant() {
+    let carrier = CTransparentEnum::<()>::A(co3::boxed::CBox::from_box(Box::new(())));
+    assert_eq!(carrier.tag(), ());
+    let decoded = unsafe { co3::decode::<TransparentEnum<()>>(carrier) }.unwrap();
+    assert_eq!(decoded, TransparentEnum::A(Box::new(())));
+}

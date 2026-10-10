@@ -89,9 +89,11 @@ impl<T: PartialOrd + Copy, E: PartialOrd + Copy> PartialOrd for ReprCResult<T, E
 }
 
 impl<T: Copy, E: Copy> ReprCResult<T, E> {
-    pub(crate) const NICHE: Self = Self {
-        ok: ReprCResultOk(2, MaybeUninit::zeroed()),
-    };
+    pub(crate) const fn niche() -> Self {
+        Self {
+            ok: ReprCResultOk(2, MaybeUninit::zeroed()),
+        }
+    }
 
     /// Construct the success value
     #[expect(non_snake_case)]
@@ -109,10 +111,11 @@ impl<T: Copy, E: Copy> ReprCResult<T, E> {
         }
     }
 
+    /// Return the stored variant tag.
     #[inline(always)]
-    fn tag(self) -> u8 {
-        // SAFETY: Variant structs have tag as the first field
-        unsafe { *core::ptr::from_ref(&self).cast::<u8>() }
+    pub fn tag(&self) -> u8 {
+        // SAFETY: Both union variants place the tag at offset zero.
+        unsafe { *core::ptr::from_ref(self).cast::<u8>() }
     }
 
     #[inline(always)]
@@ -130,6 +133,15 @@ impl<T: Copy, E: Copy> ReprCResult<T, E> {
         }
     }
 
+    /// Return the represented `Result<T, E>`, or `None` for an invalid tag.
+    pub fn into_rust(self) -> Option<Result<T, E>> {
+        match self.tag() {
+            0 => Some(Ok(unsafe { self.ok.1.assume_init() })),
+            1 => Some(Err(unsafe { self.err.1.assume_init() })),
+            _ => None,
+        }
+    }
+
     pub(crate) unsafe fn into_result_unchecked(self) -> Result<T, E> {
         match self.tag() {
             0 => Ok(unsafe { self.ok.1.assume_init() }),
@@ -143,27 +155,6 @@ impl<T: Copy, E: Copy> Copy for ReprCResult<T, E> {}
 impl<T: Copy, E: Copy> Clone for ReprCResult<T, E> {
     fn clone(&self) -> Self {
         *self
-    }
-}
-
-impl<T: Copy, E: Copy> From<Result<T, E>> for ReprCResult<T, E> {
-    fn from(value: Result<T, E>) -> Self {
-        match value {
-            Ok(ok) => Self::Ok(ok),
-            Err(err) => Self::Err(err),
-        }
-    }
-}
-
-impl<T: Copy, E: Copy> TryFrom<ReprCResult<T, E>> for Result<T, E> {
-    type Error = ();
-
-    fn try_from(value: ReprCResult<T, E>) -> Result<Self, Self::Error> {
-        match value.tag() {
-            0 => Ok(Ok(unsafe { value.ok.1.assume_init() })),
-            1 => Ok(Err(unsafe { value.err.1.assume_init() })),
-            _ => Err(()),
-        }
     }
 }
 

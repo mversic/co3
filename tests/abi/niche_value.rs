@@ -394,8 +394,8 @@ pub enum FieldlessLargeEnum {
 
 #[test]
 fn verify_enum_niche_value() {
-    assert_eq!(CBool::NICHE, encode(None::<bool>));
-    assert_eq!(COrdering::NICHE, encode(None::<Ordering>));
+    assert_eq!(bool::NICHE, encode(None::<bool>));
+    assert_eq!(Ordering::NICHE, encode(None::<Ordering>));
 
     assert_eq!(encode(None::<Opaque>), ReprCOption::None());
     assert!(encode(None::<OwnedExtern>).0.is_null());
@@ -449,7 +449,7 @@ fn fieldless_enum_explicit_discriminants_round_trip() {
         Some(FieldlessExplicitEnum::Five)
     );
     assert_eq!(
-        unsafe { co3::decode::<FieldlessExplicitEnum>(CFieldlessExplicitEnum(1)) },
+        unsafe { co3::decode::<FieldlessExplicitEnum>(CFieldlessExplicitEnum::from_i8(1)) },
         None
     );
     // Zero is occupied, so the generated niche selects the next invalid tag.
@@ -458,38 +458,55 @@ fn fieldless_enum_explicit_discriminants_round_trip() {
 
 #[test]
 fn fieldless_enum_carrier_conversions() {
+    use static_assertions::assert_not_impl_any;
+
+    assert_not_impl_any!(CBool: From<bool>, TryFrom<bool>);
+    assert_not_impl_any!(COrdering: From<Ordering>, TryFrom<Ordering>);
+    assert_not_impl_any!(CBool: From<u8>, TryFrom<u8>);
+    assert_not_impl_any!(bool: From<CBool>, TryFrom<CBool>);
+    assert_not_impl_any!(COrdering: From<i8>, TryFrom<i8>);
+    assert_not_impl_any!(Ordering: From<COrdering>, TryFrom<COrdering>);
+    assert_not_impl_any!(CFieldlessExplicitEnum: From<FieldlessExplicitEnum>, TryFrom<FieldlessExplicitEnum>);
+    assert_not_impl_any!(FieldlessExplicitEnum: From<CFieldlessExplicitEnum>, TryFrom<CFieldlessExplicitEnum>);
+    assert_not_impl_any!(CFieldlessNoReprEnum: From<FieldlessNoReprEnum>, TryFrom<FieldlessNoReprEnum>);
+    assert_not_impl_any!(FieldlessNoReprEnum: From<CFieldlessNoReprEnum>, TryFrom<CFieldlessNoReprEnum>);
+
     assert_eq!(CBool::TRUE, encode(true));
     assert_eq!(CBool::FALSE, encode(false));
+    assert_eq!(CBool(1), encode(true));
     assert_eq!(COrdering::LESS, encode(Ordering::Less));
     assert_eq!(COrdering::EQUAL, encode(Ordering::Equal));
     assert_eq!(COrdering::GREATER, encode(Ordering::Greater));
-    assert_eq!(CFieldlessExplicitEnum::NEGATIVE.0, -2);
-    assert_eq!(CFieldlessExplicitEnum::ZERO.0, 0);
-    assert_eq!(CFieldlessExplicitEnum::FIVE.0, 5);
-    assert_eq!(CFieldlessExplicitEnum::SIX.0, 6);
-    assert_eq!(CFieldlessNoReprEnum::A.0, 0);
-    assert_eq!(CFieldlessNoReprEnum::B.0, 1);
-    assert_eq!(CFieldlessNoReprEnum::C.0, 2);
-    assert_eq!(CFieldlessNoReprEnum::D.0, 3);
-    let explicit: CFieldlessExplicitEnum = FieldlessExplicitEnum::Five.into();
+    assert_eq!(COrdering(-1), encode(Ordering::Less));
+    assert_eq!(CFieldlessExplicitEnum::Negative().tag(), -2);
+    assert_eq!(CFieldlessExplicitEnum::Zero().tag(), 0);
+    assert_eq!(CFieldlessExplicitEnum::Five().tag(), 5);
+    assert_eq!(CFieldlessExplicitEnum::Six().tag(), 6);
+    assert_eq!(CFieldlessNoReprEnum::A().tag(), 0);
+    assert_eq!(CFieldlessNoReprEnum::from_u8(1).tag(), 1);
+    assert_eq!(CFieldlessLargeEnum::from_u16(256).tag(), 256);
+    assert_eq!(CFieldlessNoReprEnum::B().tag(), 1);
+    assert_eq!(CFieldlessNoReprEnum::C().tag(), 2);
+    assert_eq!(CFieldlessNoReprEnum::D().tag(), 3);
+    let explicit = encode(FieldlessExplicitEnum::Five);
     assert_eq!(explicit.0, 5);
     assert_eq!(
-        FieldlessExplicitEnum::try_from(explicit),
-        Ok(FieldlessExplicitEnum::Five)
+        unsafe { co3::decode::<FieldlessExplicitEnum>(explicit) },
+        Some(FieldlessExplicitEnum::Five)
     );
     assert_eq!(
-        FieldlessExplicitEnum::try_from(CFieldlessExplicitEnum(1)),
-        Err(())
+        unsafe { co3::decode::<FieldlessExplicitEnum>(CFieldlessExplicitEnum(1)) },
+        None
     );
 
-    let inferred: CFieldlessNoReprEnum = FieldlessNoReprEnum::C.into();
+    let inferred = encode(FieldlessNoReprEnum::C);
     assert_eq!(
-        FieldlessNoReprEnum::try_from(inferred),
-        Ok(FieldlessNoReprEnum::C)
+        unsafe { co3::decode::<FieldlessNoReprEnum>(inferred) },
+        Some(FieldlessNoReprEnum::C)
     );
     assert_eq!(
-        FieldlessNoReprEnum::try_from(CFieldlessNoReprEnum(4)),
-        Err(())
+        unsafe { co3::decode::<FieldlessNoReprEnum>(CFieldlessNoReprEnum(4)) },
+        None
     );
 }
 

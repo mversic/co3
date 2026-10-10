@@ -982,27 +982,6 @@ fn gen_record_is_valid(
     }
 }
 
-fn upper_snake_case(name: &str) -> String {
-    let chars: Vec<_> = name.strip_prefix("r#").unwrap_or(name).chars().collect();
-    let mut result = String::new();
-
-    for (index, &ch) in chars.iter().enumerate() {
-        if ch.is_uppercase()
-            && index > 0
-            && chars[index - 1] != '_'
-            && (chars[index - 1].is_lowercase()
-                || chars[index - 1].is_numeric()
-                || (chars[index - 1].is_uppercase()
-                    && chars.get(index + 1).is_some_and(|next| next.is_lowercase())))
-        {
-            result.push('_');
-        }
-        result.extend(ch.to_uppercase());
-    }
-
-    result
-}
-
 pub(super) fn derive_fieldless_enum(
     repr: Option<&ReprKind>,
     alignment: Option<&syn::LitInt>,
@@ -1030,7 +1009,9 @@ pub(super) fn derive_fieldless_enum(
         Some(ReprKind::C(None)) => unreachable!(),
     };
 
+    // Anchor implicit tags at the last explicit tag to avoid a recursive chain of constants.
     let mut previous_tag = None;
+    let mut implicit_offset = 0;
     let tag_consts = tag_type
         .as_ref()
         .map(|tag_ty| {
@@ -1039,13 +1020,18 @@ pub(super) fn derive_fieldless_enum(
                 .map(|variant| {
                     let tag_name = format_ident!("__CO3_TAG_{}", variant.ident);
                     let tag_value = if let Some((_, value)) = &variant.discriminant {
+                        previous_tag = Some(tag_name.clone());
+                        implicit_offset = 0;
                         quote! { (#value) as #tag_ty }
                     } else if let Some(previous) = &previous_tag {
-                        quote! { Self::#previous + 1 }
+                        implicit_offset += 1;
+                        let offset = proc_macro2::Literal::usize_unsuffixed(implicit_offset);
+                        quote! { Self::#previous.wrapping_add(#offset as #tag_ty) }
                     } else {
-                        quote! { 0 }
+                        let value = proc_macro2::Literal::usize_unsuffixed(implicit_offset);
+                        implicit_offset += 1;
+                        quote! { #value }
                     };
-                    previous_tag = Some(tag_name.clone());
                     (tag_name, tag_value)
                 })
                 .collect::<Vec<_>>()
@@ -1118,40 +1104,42 @@ pub(super) fn derive_fieldless_enum(
 
     let ctype_ty = quote!(#ctype_name #ty_generics);
     let ctype_def = gen_fieldless_enum_ctype(&tag_ctype, alignment, vis, name, generics);
-    let variant_consts = variants.iter().enumerate().map(|(index, variant)| {
+    let variant_ctors = variants.iter().enumerate().map(|(index, variant)| {
         let variant_name = &variant.ident;
-        let const_name = format_ident!("{}", upper_snake_case(&variant_name.to_string()));
         let value = if tag_type.is_none() {
             quote!(())
         } else {
             variant_tags[index].clone()
         };
 
-        quote! { #vis const #const_name: Self = Self(#value); }
+        quote! {
+            #[expect(non_snake_case)]
+            #vis const fn #variant_name() -> Self { Self(#value) }
+        }
     });
-    let from_body = tag_type
+    let encode_body = tag_type
         .as_ref()
         .map(|_| {
             let variant_tags = variants.iter().zip(&variant_tags).map(|(variant, tag)| {
                 let variant_name = &variant.ident;
                 quote! { #name::#variant_name => #ctype_name(#tag) }
             });
-            quote! { match &value { #(#variant_tags,)* } }
+            quote! { match &self { #(#variant_tags,)* } }
         })
         .unwrap_or_else(|| quote! { #ctype_name(()) });
-    let try_from_body = if tag_type.is_some() {
+    let decode_body = if tag_type.is_some() {
         quote! {
             match source.0 {
                 #(#variants_decode,)*
                 _ => None
-            }.ok_or(())
+            }
         }
     } else {
         let transparent_variant = &variants[0].ident;
 
         quote! {
             let #ctype_name(()) = source;
-            Ok(Self::#transparent_variant)
+            Some(Self::#transparent_variant)
         }
     };
     let niche_impl = tag_type
@@ -1180,21 +1168,7 @@ pub(super) fn derive_fieldless_enum(
         #borrow_impls
 
         impl #impl_generics #ctype_name #ty_generics #where_clause {
-            #(#variant_consts)*
-        }
-
-        impl #impl_generics core::convert::From<#name #ty_generics> for #ctype_name #ty_generics #where_clause {
-            fn from(value: #name #ty_generics) -> Self {
-                #from_body
-            }
-        }
-
-        impl #impl_generics core::convert::TryFrom<#ctype_name #ty_generics> for #name #ty_generics #where_clause {
-            type Error = ();
-
-            fn try_from(source: #ctype_name #ty_generics) -> core::result::Result<Self, Self::Error> {
-                #try_from_body
-            }
+            #(#variant_ctors)*
         }
 
         impl #impl_generics co3::ReprC for #name #ty_generics #where_clause {
@@ -1207,7 +1181,7 @@ pub(super) fn derive_fieldless_enum(
             where
                 Self: '_išč,
             {
-                core::convert::Into::into(self)
+                #encode_body
             }
         }
 
@@ -1215,7 +1189,7 @@ pub(super) fn derive_fieldless_enum(
             type Store = ();
 
             unsafe fn soft_decode<'_išč: '_dšč>(source: Self::CType, (): &mut ()) -> Option<Self> {
-                <Self as core::convert::TryFrom<_>>::try_from(source).ok()
+                #decode_body
             }
 
             unsafe fn soft_decode_unchecked<'_išč: '_dšč>(source: Self::CType, (): &mut ()) -> Self {

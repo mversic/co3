@@ -68,13 +68,13 @@ fn decode_status(source: <CustomStatus as ReprC>::CType) -> CustomStatus {
 }
 
 #[test]
-fn fieldless_enum_constants_use_upper_snake_case() {
+fn fieldless_enum_variant_constructors_expose_tags() {
     assert_eq!(
-        CCustomStatus::UNKNOWN_HANDLE.0,
+        CCustomStatus::UnknownHandle().tag(),
         CustomStatus::UnknownHandle as u8
     );
     assert_eq!(
-        CCustomStatus::SOFT_SYNC_ERROR.0,
+        CCustomStatus::SoftSyncError().tag(),
         CustomStatus::SoftSyncError as u8
     );
 }

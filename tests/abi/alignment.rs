@@ -11,6 +11,17 @@ struct AlignedStruct(u8);
 struct SeparatelyAlignedStruct(u8);
 
 #[derive(RustSpec, ReprC)]
+#[repr(C)]
+struct GenericCarrier<T>(T);
+
+#[derive(RustSpec, ReprC)]
+#[repr(C)]
+struct ViewFields {
+    first: u8,
+    second: u32,
+}
+
+#[derive(RustSpec, ReprC)]
 #[repr(u8, align(16))]
 enum AlignedFieldlessEnum {
     First,
@@ -65,6 +76,38 @@ fn explicit_repr_alignment_is_preserved_by_companion_types() {
     assert_impl_all!(AlignedFieldlessEnum: CheckedTransmute);
     assert_impl_all!(AlignedDataEnum: CheckedTransmute);
     assert_impl_all!(ExplicitCAlignedDataEnum: CheckedTransmute);
+}
+
+#[test]
+fn data_enum_carriers_construct_variants_and_report_tags() {
+    assert_eq!(CAlignedDataEnum::First(7).tag(), 0);
+    assert_eq!(CAlignedDataEnum::Second().tag(), 1);
+    assert_eq!(CExplicitCAlignedDataEnum::First(7).tag(), 0);
+    assert_eq!(CExplicitCAlignedDataEnum::Second().tag(), 1);
+
+    let carrier = unsafe { CAlignedStruct::from_fields(3) };
+    let decoded: AlignedStruct = unsafe { co3::decode(carrier).unwrap() };
+    assert_eq!(decoded.0, 3);
+
+    let carrier = unsafe { CGenericCarrier::<u32>::from_fields(5) };
+    let (field,) = carrier.into_fields();
+    assert_eq!(field, 5);
+
+    let carrier = unsafe { CGenericCarrier::<u32>::from_fields(field) };
+    let decoded: GenericCarrier<u32> = unsafe { co3::decode(carrier).unwrap() };
+    assert_eq!(decoded.0, 5);
+}
+
+#[test]
+fn generated_view_structs_expose_fields_methods() {
+    let view = unsafe { ViewFieldsView::from_fields(1, 2) };
+    assert_eq!(view.into_fields(), (1, 2));
+
+    let const_view = unsafe { CViewFieldsConstView::from_fields(3, 4) };
+    assert_eq!(const_view.into_fields(), (3, 4));
+
+    let mut_view = unsafe { CViewFieldsMutView::from_fields(5, 6) };
+    assert_eq!(mut_view.into_fields(), (5, 6));
 }
 
 #[test]

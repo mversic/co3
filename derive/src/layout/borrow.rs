@@ -4,7 +4,7 @@ use syn::{DeriveInput, Ident, parse_quote};
 
 use crate::layout::{
     ReprCAttrs, VariantReprCAttrs,
-    ctype::gen_ctype_name,
+    ctype::{gen_ctype_name, gen_fields_methods},
     generic_param_idents, is_phantom_data, is_type_parametrized,
     item::{field_vars, gen_fields_destructure},
 };
@@ -32,6 +32,13 @@ pub(super) fn gen_item_view(
 
     rewrite_view_generics(&mut view_def);
     rewrite_view_fields(&mut view_def.data);
+    let fields_methods = match &view_def.data {
+        syn::Data::Struct(data) => {
+            gen_fields_methods(&view_def.ident, &view_def.generics, &data.fields)
+        }
+        syn::Data::Enum(_) => quote! {},
+        syn::Data::Union(_) => unreachable!(),
+    };
     let owner_name = &input.ident;
     let (_, owner_ty_generics, _) = input.generics.split_for_impl();
 
@@ -50,6 +57,7 @@ pub(super) fn gen_item_view(
         #inherited_niche
         #[doc(hidden)]
         #view_def
+        #fields_methods
     }
 }
 
@@ -504,10 +512,18 @@ fn gen_record_from_borrow(head: TokenStream, fields: &syn::Fields) -> TokenStrea
 
 fn rewrite_view_fields(data: &mut syn::Data) {
     match data {
-        syn::Data::Struct(data) => rewrite_view_field_tys(&mut data.fields),
+        syn::Data::Struct(data) => {
+            rewrite_view_field_tys(&mut data.fields);
+            for field in data.fields.iter_mut() {
+                field.vis = syn::Visibility::Inherited;
+            }
+        }
         syn::Data::Enum(data) => {
             for variant in &mut data.variants {
                 rewrite_view_field_tys(&mut variant.fields);
+                for field in variant.fields.iter_mut() {
+                    field.vis = syn::Visibility::Inherited;
+                }
             }
         }
         syn::Data::Union(_) => unreachable!(),

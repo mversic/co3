@@ -19,7 +19,7 @@
 //! ```rust
 //! use core::mem::size_of;
 //!
-//! use co3::{encode, option::ReprCOption, primitives::CBool, tuple::ReprCTuple3, ReprC};
+//! use co3::{encode, niche::Niche, option::ReprCOption, primitives::CBool, tuple::ReprCTuple3, ReprC};
 //!
 //! type TupleWithNiche1<'a> = (u8, bool, &'a bool);
 //! type TupleWithNiche2<'a> = (u8, &'a bool, bool);
@@ -39,7 +39,7 @@
 //! );
 //!
 //! let none_value_1: Option<TupleWithNiche1> = None;
-//! assert_eq!(encode(none_value_1), ReprCTuple3(0, CBool::NICHE, core::ptr::null()));
+//! assert_eq!(encode(none_value_1), ReprCTuple3(0, bool::NICHE, core::ptr::null()));
 //!
 //! let none_value_2: Option<TupleWithNiche2> = None;
 //! assert_eq!(encode(none_value_2), ReprCTuple3(0, core::ptr::null(), CBool::FALSE));
@@ -230,14 +230,6 @@ macro_rules! impl_tuple {
             Self: RustSpec<Size = rust_spec::size::Sized<rust_spec::Gt<rust_spec::Zero>>>,
         {}
 
-        impl<$($ty),*> From<($( $ty, )*)> for $ffi_ty<$($ty),*> {
-            #[expect(non_snake_case)]
-            fn from(source: ($( $ty, )*)) -> Self {
-                let ($($ty,)*) = source;
-                Self($( $ty ),*)
-            }
-        }
-
         impl_tuple!(@split [] $($ty),+ -> $ffi_ty);
     };
 
@@ -248,6 +240,15 @@ macro_rules! impl_tuple {
         #[repr(C)]
         #[derive(RustSpec, Debug, Clone, Copy, Default, PartialEq, Eq, PartialOrd, Ord, Hash)]
         pub struct $ffi_ty<$($head,)* $last: ?Sized>($(pub $head,)* pub $last);
+
+        impl<$($head,)* $last> $ffi_ty<$($head,)* $last> {
+            /// Return the stored fields as a Rust tuple without decoding them.
+            #[expect(non_snake_case)]
+            pub fn into_rust(self) -> ($($head,)* $last,) {
+                let $ffi_ty($($head,)* $last) = self;
+                ($($head,)* $last,)
+            }
+        }
 
         impl<$($head: ReprC<CType: Sized>,)* $last: ReprC + ?Sized> ReprC for ($($head,)* $last,) {
             type CType = $ffi_ty<$($head::CType,)* $last::CType>;

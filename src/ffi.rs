@@ -25,7 +25,11 @@ macro_rules! c_alias_carrier {
         #[repr(transparent)]
         #[allow(non_camel_case_types)]
         #[derive(Clone, Copy, Debug, Default, PartialEq, PartialOrd, RustSpec)]
-        pub struct $name($alias);
+        pub struct $name(
+            // NOTE: The wrapped type must remain private to prevent Rust literals to coerce to it.
+            // Privacy helps keep the use of the type always portable to different architectures.
+            $alias,
+        );
 
         impl $name {
             /// Creates a carrier from the target's C type. An unsuffixed numeric literal is
@@ -552,7 +556,7 @@ impl Decode<'_> for CString {}
 
 #[cfg(feature = "alloc")]
 impl Niche for CString {
-    const NICHE: Self::CType = CBox::NICHE;
+    const NICHE: Self::CType = CBox::null();
 }
 
 unsafe impl Borrow for c_void {
@@ -672,7 +676,7 @@ mod tests {
         let original = CString::new("owned").unwrap().into_boxed_c_str();
         let ptr = original.as_ptr();
         let encoded = crate::stored::encode_owned(original);
-        assert_eq!(encoded.data.cast_const().cast(), ptr);
+        assert_eq!(encoded.as_ptr().cast_const().cast(), ptr);
         let decoded: Box<CStr> = unsafe { crate::stored::decode_owned(encoded) }.unwrap();
         assert_eq!(decoded.as_ptr(), ptr);
         assert_eq!(&*decoded, c"owned");

@@ -65,10 +65,17 @@ impl<T: PartialOrd> PartialOrd for ReprCOption<T> {
 }
 
 impl<T> ReprCOption<T> {
-    pub(crate) const NICHE: Self = Self {
-        tag: 2,
-        payload: MaybeUninit::zeroed(),
-    };
+    pub(crate) const fn niche() -> Self {
+        Self {
+            tag: 2,
+            payload: MaybeUninit::zeroed(),
+        }
+    }
+
+    /// Return the stored variant tag.
+    pub const fn tag(&self) -> u8 {
+        self.tag
+    }
 
     /// Construct no value
     #[expect(non_snake_case)]
@@ -105,6 +112,15 @@ impl<T> ReprCOption<T> {
         }
     }
 
+    /// Return the represented `Option<T>`, or `None` for an invalid tag.
+    pub fn into_rust(self) -> Option<Option<T>> {
+        match self.tag {
+            0 => Some(None),
+            1 => Some(Some(unsafe { self.payload.assume_init() })),
+            _ => None,
+        }
+    }
+
     pub(crate) unsafe fn into_option_unchecked(self) -> Option<T> {
         match self.tag {
             0 => None,
@@ -118,27 +134,6 @@ impl<T: Copy> Copy for ReprCOption<T> {}
 impl<T: Copy> Clone for ReprCOption<T> {
     fn clone(&self) -> Self {
         *self
-    }
-}
-
-impl<T> From<Option<T>> for ReprCOption<T> {
-    fn from(value: Option<T>) -> Self {
-        match value {
-            Some(value) => Self::Some(value),
-            None => Self::None(),
-        }
-    }
-}
-
-impl<T> TryFrom<ReprCOption<T>> for Option<T> {
-    type Error = ();
-
-    fn try_from(value: ReprCOption<T>) -> Result<Self, Self::Error> {
-        match value.tag {
-            0 => Ok(None),
-            1 => Ok(Some(unsafe { value.payload.assume_init() })),
-            _ => Err(()),
-        }
     }
 }
 

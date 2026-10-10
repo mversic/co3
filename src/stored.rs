@@ -23,6 +23,7 @@ use crate::{
     Dst,
     borrow::{BorrowCastMut, borrow_cast_mut},
     boxed::{CBox, CBoxCell, CBoxedSlice, CBoxedSliceCell},
+    str::Utf8String,
 };
 use crate::{
     ReprC, Thin,
@@ -30,6 +31,7 @@ use crate::{
     cell::InteriorMut,
     ffi::NulTerminatedBuf,
     niche::Niche,
+    option::ReprCOption,
     reference::CRefMut,
     result::ReprCResult,
     slice::{CSlice, CSliceMut},
@@ -69,16 +71,29 @@ pub trait Owned {
     type Owned;
 }
 
+#[cfg(feature = "alloc")]
+trait IntoBoxedSlice<T> {
+    fn into_boxed_slice(self) -> CBoxedSlice<T>;
+}
+
+#[cfg(feature = "alloc")]
+impl<T> IntoBoxedSlice<T> for CBoxedSlice<T> {
+    fn into_boxed_slice(self) -> CBoxedSlice<T> {
+        self
+    }
+}
+
+#[cfg(feature = "alloc")]
+impl IntoBoxedSlice<u8> for Utf8String {
+    fn into_boxed_slice(self) -> CBoxedSlice<u8> {
+        self.0
+    }
+}
+
 // TODO: Can we remove this trait?
 #[cfg(feature = "alloc")]
 pub trait AssignFromOwned: ToOwned {
     fn assign_from_owned(&mut self, owned: Self::Owned) -> Option<()>;
-}
-
-/// Writes an owned value back through a shared, interior-mutable reference.
-#[cfg(feature = "alloc")]
-pub trait AssignFromOwnedShared: InteriorMut + ToOwned {
-    fn assign_from_owned_shared(&self, owned: Self::Owned) -> Option<()>;
 }
 
 disjoint_impls! {
@@ -140,9 +155,12 @@ disjoint_impls! {
         where
             Self: 'itm,
         {
-            let len = R::metadata(core::ptr::from_ref(self));
-            let ptr = R::as_ptr(core::ptr::from_ref(self)).cast();
-            CSlice::from_raw_parts(ptr, len)
+            let source = core::ptr::from_ref(self);
+
+            let len = R::metadata(source);
+            let data = R::as_ptr(source).cast();
+
+            unsafe { CSlice::from_raw_parts(data, len) }
         }
     }
     unsafe impl<R: NulTerminatedBuf + ?Sized> EncodeOwned for &R
@@ -253,8 +271,10 @@ disjoint_impls! {
             Self: 'itm,
         {
             let target = InteriorMut::get(self);
+
             let len = <R::Target as Wide>::metadata(target);
             let ptr = <R::Target as Wide>::as_mut_ptr(target).cast();
+
             unsafe { CSliceMut::<_, false>::from_raw_parts_mut(ptr, len) }
         }
     }
@@ -384,8 +404,8 @@ disjoint_impls! {
         where
             Self: 'itm,
         {
-            let ptr = R::as_mut_ptr(self);
             let len = R::metadata(self);
+            let ptr = R::as_mut_ptr(self);
 
             unsafe { CSliceMut::<_>::from_raw_parts_mut(ptr.cast(), len) }
         }
@@ -468,8 +488,8 @@ disjoint_impls! {
         where
             Self: 'itm,
         {
-            let ptr = R::as_mut_ptr(self);
             let len = R::metadata(self);
+            let ptr = R::as_mut_ptr(self);
 
             unsafe { CSliceMut::<_>::from_raw_parts_mut(ptr.cast(), len) }
         }
@@ -503,7 +523,9 @@ disjoint_impls! {
     where
         Self: RustSpec<Layout = Unstable> + Into<<R as Owned>::Owned>,
         R: RustSpec<Layout = Stable, Size = MetaSized<SliceLike>, Mutability = Exclusive>,
-        <R as Owned>::Owned: EncodeOwned<CType = CBoxedSlice<<WideData<R> as ReprC>::CType>>,
+        <R as Owned>::Owned: EncodeOwned,
+        <<R as Owned>::Owned as ReprC>::CType:
+            IntoBoxedSlice<<WideData<R> as ReprC>::CType>,
         <<<R as Wide>::Header as WideHeader>::Data as ReprC>::CType: Sized,
     {
         type Store = <R::Owned as EncodeOwned>::Store;
@@ -521,7 +543,7 @@ disjoint_impls! {
                 return unsafe { CBoxedSlice::from_raw_parts(data.cast(), len) };
             }
 
-            encode_box_owned::<R>(self, store)
+            encode_box_owned::<R>(self, store).into_boxed_slice()
         }
     }
     #[cfg(feature = "alloc")]
@@ -634,6 +656,7 @@ disjoint_impls! {
             Self: 'itm,
         {
             let source = self.into_boxed_slice();
+
             let len = source.len();
             let data = Box::into_non_null(source).cast();
 
@@ -682,7 +705,10 @@ disjoint_impls! {
         where
             Self: 'itm,
         {
-            self.map(|v| v.soft_encode(store)).into()
+            match self {
+                Some(value) => ReprCOption::Some(value.soft_encode(store)),
+                None => ReprCOption::None(),
+            }
         }
     }
     // NOTE: PartialEq is only required for decoding, Here it is only used by `debug_assert!`
@@ -933,7 +959,7 @@ disjoint_impls! {
         type Store = ();
 
         unsafe fn soft_decode<'itm: 'd>(source: Self::CType, store: &'itm mut ()) -> Option<Self> {
-            if source.is_niche() {
+            if source.is_null() {
                 return None;
             }
 
@@ -959,7 +985,7 @@ disjoint_impls! {
         type Store = ();
 
         unsafe fn soft_decode<'itm: 'd>(source: Self::CType, store: &'itm mut ()) -> Option<Self> {
-            if source.is_niche() {
+            if source.is_null() {
                 return None;
             }
 
@@ -1077,7 +1103,7 @@ disjoint_impls! {
             source: Self::CType,
             store: &'itm mut Self::Store,
         ) -> Option<Self> {
-            if source.is_niche() {
+            if source.is_null() {
                 return None;
             }
 
@@ -1134,7 +1160,7 @@ disjoint_impls! {
         type Store = ();
 
         unsafe fn soft_decode<'itm: 'd>(source: Self::CType, store: &'itm mut ()) -> Option<Self> {
-            if source.is_niche() {
+            if source.is_null() {
                 return None;
             }
 
@@ -1240,7 +1266,7 @@ disjoint_impls! {
         }
 
         unsafe fn soft_decode_unchecked<'itm: 'd>(source: Self::CType, (): &mut ()) -> Self {
-            unsafe { Box::from_raw(source.data.cast()) }
+            unsafe { Box::from_raw(source.as_ptr().cast()) }
         }
     }
     #[cfg(feature = "alloc")]
@@ -1253,7 +1279,7 @@ disjoint_impls! {
         type Store = ();
 
         unsafe fn soft_decode<'itm: 'd>(source: Self::CType, (): &mut ()) -> Option<Self> {
-            let ptr = NonNull::new(source.data)?;
+            let ptr = NonNull::new(source.as_ptr())?;
             Some(unsafe { R::from_non_null(ptr.cast()) })
         }
     }
@@ -1267,7 +1293,7 @@ disjoint_impls! {
         type Store = ();
 
         unsafe fn soft_decode<'itm: 'd>(source: Self::CType, (): &mut ()) -> Option<Self> {
-            let ptr = NonNull::new(source.data)?;
+            let ptr = NonNull::new(source.as_ptr())?;
             Some(unsafe { R::from_non_null(ptr.cast()) })
         }
     }
@@ -1306,12 +1332,12 @@ disjoint_impls! {
         type Store = ();
 
         unsafe fn soft_decode<'itm: 'd>(source: Self::CType, (): &mut ()) -> Option<Self> {
-            if source.is_niche() {
+            if source.is_null() {
                 return None;
             }
 
-            let data = source.data();
             let len = source.len();
+            let data = source.data();
 
             if unsafe { !R::is_valid(R::CType::from_raw_parts(data.cast(), len)) } {
                 let ptr = unsafe { NonNull::new_unchecked(data) };
@@ -1323,8 +1349,8 @@ disjoint_impls! {
         }
 
         unsafe fn soft_decode_unchecked<'itm: 'd>(source: Self::CType, (): &mut ()) -> Self {
-            let data = source.data().cast();
             let len = source.len();
+            let data = source.data().cast();
 
             unsafe { R::from_non_null(NonNull::new_unchecked(data), len) }
         }
@@ -1484,7 +1510,7 @@ disjoint_impls! {
             source: Self::CType,
             store: &'itm mut Self::Store,
         ) -> Option<Self> {
-            match source.try_into().ok()? {
+            match source.into_rust()? {
                 Some(source) => unsafe { R::soft_decode(source, store) }.map(Some),
                 None => Some(None),
             }
@@ -1918,7 +1944,7 @@ unsafe fn decode_result<'d, 'i, R: DecodeOwned<'d, CType: Copy>, E: DecodeOwned<
 where
     'i: 'd,
 {
-    let value = match source.try_into().ok()? {
+    let value = match source.into_rust()? {
         Ok(ok) => {
             let ok_store = store.insert(Ok(Default::default()));
             let ok_store = unsafe { ok_store.as_mut().unwrap_unchecked() };

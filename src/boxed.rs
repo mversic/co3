@@ -8,7 +8,7 @@ use crate::{
     CFnArg, CFnReturn, CType, Decode, Encode, ReprC,
     borrow::{BorrowCast, BorrowCastMut},
     reference::CRefMut,
-    slice::{CSlice, CSliceMut, Pack2, Unpack2},
+    slice::{CSlice, CSliceMut, Pack2, Unpack2, impl_raw_slice_methods},
     stored::{DecodeOwned, EncodeOwned},
     transmute::CheckedTransmute,
 };
@@ -19,7 +19,7 @@ use crate::{
 #[derive(RustSpec)]
 #[repr(transparent)]
 pub struct CBox<C> {
-    pub(crate) data: *mut C,
+    data: *mut C,
 }
 
 /// Owned pointer whose shared borrowed view permits interior mutation.
@@ -28,7 +28,7 @@ pub struct CBox<C> {
 #[derive(RustSpec)]
 #[repr(transparent)]
 pub struct CBoxCell<C> {
-    pub(crate) data: *mut C,
+    data: *mut C,
 }
 
 /// Owned slice `Box<[C]>` with a defined C ABI layout.
@@ -37,16 +37,19 @@ pub struct CBoxCell<C> {
 #[derive(RustSpec)]
 #[repr(C)]
 pub struct CBoxedSlice<C> {
-    pub(crate) data: *mut C,
+    data: *mut C,
     len: usize,
 }
 
 /// Owned slice whose shared borrowed view permits interior mutation.
 ///
-/// Like [`CBoxedSlice`], a null data pointer represents `Option<Box<C>>`.
+/// Like [`CBoxedSlice`], a null data pointer represents `Option<Box<[C]>>`.
 #[derive(RustSpec)]
-#[repr(transparent)]
-pub struct CBoxedSliceCell<C>(CBoxedSlice<C>);
+#[repr(C)]
+pub struct CBoxedSliceCell<C> {
+    data: *mut C,
+    len: usize,
+}
 
 macro_rules! impl_boxed_pointer {
     ($ty:ident, $as_const:ty) => {
@@ -81,9 +84,17 @@ macro_rules! impl_boxed_pointer {
         impl<C> Copy for $ty<C> {}
 
         impl<C> $ty<C> {
-            pub(crate) const NICHE: Self = Self {
-                data: core::ptr::null_mut(),
-            };
+            /// Construct a carrier with a null data pointer.
+            pub const fn null() -> Self {
+                Self {
+                    data: core::ptr::null_mut(),
+                }
+            }
+
+            /// Return the stored data pointer.
+            pub const fn as_ptr(self) -> *mut C {
+                self.data
+            }
 
             /// Create [`Self`] from a [`Box<C>`].
             pub fn from_box(source: Box<C>) -> Self {
@@ -92,20 +103,21 @@ macro_rules! impl_boxed_pointer {
                 }
             }
 
-            /// Recover the allocation, returning `None` for the null niche.
+            /// Recover the allocation, returning `None` for a null pointer.
             ///
             /// # Safety
             ///
-            /// Check [`Box::from_raw`].
-            pub(crate) unsafe fn into_rust(self) -> Option<Box<C>> {
+            /// A non-null pointer must uniquely own a live allocation compatible with `Box<C>`.
+            pub unsafe fn into_rust(self) -> Option<Box<C>> {
                 if self.data.is_null() {
-                    return None;
+                    None
+                } else {
+                    Some(unsafe { Box::from_raw(self.data) })
                 }
-                Some(unsafe { Box::from_raw(self.data) })
             }
 
             #[allow(unused)]
-            pub(crate) const fn is_niche(&self) -> bool {
+            pub(crate) const fn is_null(&self) -> bool {
                 self.data.is_null()
             }
 
@@ -115,7 +127,7 @@ macro_rules! impl_boxed_pointer {
             ///
             /// `data` must retain unique ownership and provenance of a live allocation
             /// compatible with the owning type later recovered from this carrier.
-            pub(crate) const unsafe fn from_non_null(data: NonNull<C>) -> Self {
+            pub const unsafe fn from_non_null(data: NonNull<C>) -> Self {
                 Self {
                     data: data.as_ptr(),
                 }
@@ -136,12 +148,15 @@ impl_boxed_pointer!(CBoxCell, CRefMut<C, false>);
 
 impl<C> core::fmt::Debug for CBoxedSliceCell<C> {
     fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
-        self.0.fmt(f)
+        f.debug_struct("CBoxedSliceCell")
+            .field("data", &self.data)
+            .field("len", &self.len)
+            .finish()
     }
 }
 impl<C> PartialEq for CBoxedSliceCell<C> {
     fn eq(&self, other: &Self) -> bool {
-        self.0 == other.0
+        self.data == other.data && self.len == other.len
     }
 }
 impl<C> Eq for CBoxedSliceCell<C> {}
@@ -152,7 +167,7 @@ impl<C> PartialOrd for CBoxedSliceCell<C> {
 }
 impl<C> Ord for CBoxedSliceCell<C> {
     fn cmp(&self, other: &Self) -> core::cmp::Ordering {
-        self.0.cmp(&other.0)
+        (self.data, self.len).cmp(&(other.data, other.len))
     }
 }
 impl<C> Clone for CBoxedSliceCell<C> {
@@ -163,90 +178,84 @@ impl<C> Clone for CBoxedSliceCell<C> {
 impl<C> Copy for CBoxedSliceCell<C> {}
 
 impl<C> CBoxedSliceCell<C> {
-    pub(crate) const NICHE: Self = Self(CBoxedSlice::NICHE);
+    /// Construct a carrier with a null data pointer and zero length.
+    pub const fn null() -> Self {
+        Self {
+            data: core::ptr::null_mut(),
+            len: 0,
+        }
+    }
 
     pub fn from_boxed_slice(source: Box<[C]>) -> Self {
-        Self(CBoxedSlice::from_boxed_slice(source))
+        let len = source.len();
+
+        Self {
+            data: Box::into_raw(source).cast(),
+            len,
+        }
     }
 
+    /// Return the stored data pointer.
+    pub const fn as_ptr(self) -> *mut C {
+        self.data
+    }
+
+    /// Return the number of elements in the slice.
+    #[expect(
+        clippy::len_without_is_empty,
+        reason = "nullable carrier uses Option<bool>"
+    )]
+    pub const fn len(&self) -> usize {
+        self.len
+    }
+
+    /// Return `None` for a null carrier, or whether the present slice is empty.
+    pub const fn is_empty(&self) -> Option<bool> {
+        if self.data.is_null() {
+            None
+        } else {
+            Some(self.len == 0)
+        }
+    }
+
+    /// Create an owning slice carrier from a non-null pointer and length.
+    ///
     /// # Safety
     ///
-    /// Check [`Box::from_raw`].
-    pub(crate) unsafe fn into_rust(self) -> Option<Box<[C]>> {
-        unsafe { self.0.into_rust() }
+    /// `data` and `len` must describe a uniquely owned live allocation compatible
+    /// with the boxed slice later recovered from this carrier.
+    pub const unsafe fn from_raw_parts(data: NonNull<C>, len: usize) -> Self {
+        Self {
+            data: data.as_ptr(),
+            len,
+        }
     }
-}
 
-impl<C> core::fmt::Debug for CBoxedSlice<C> {
-    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+    /// Recover the allocation, returning `None` for a null pointer.
+    ///
+    /// # Safety
+    ///
+    /// A non-null pointer and length must uniquely own a live allocation compatible with `Box<[C]>`.
+    pub unsafe fn into_rust(self) -> Option<Box<[C]>> {
         if self.data.is_null() {
-            f.debug_struct(stringify!(CBoxedSlice))
-                .field("data", &self.data)
-                .finish_non_exhaustive()
+            None
         } else {
-            f.debug_struct(stringify!(CBoxedSlice))
-                .field("data", &self.data)
-                .field("len", &self.len)
-                .finish()
+            Some(unsafe { Box::from_raw(core::ptr::slice_from_raw_parts_mut(self.data, self.len)) })
         }
     }
 }
 
-impl<C> PartialEq for CBoxedSlice<C> {
-    fn eq(&self, other: &Self) -> bool {
-        match (self.data.is_null(), other.data.is_null()) {
-            (true, true) => true,
-            (false, false) => {
-                if self.len == 0 || other.len == 0 {
-                    self.len == other.len
-                } else {
-                    self.data == other.data && self.len == other.len
-                }
-            }
-            _ => false,
-        }
-    }
-}
-
-impl<C> Eq for CBoxedSlice<C> {}
-
-impl<C> PartialOrd for CBoxedSlice<C> {
-    fn partial_cmp(&self, other: &Self) -> Option<core::cmp::Ordering> {
-        Some(self.cmp(other))
-    }
-}
-
-impl<C> Ord for CBoxedSlice<C> {
-    fn cmp(&self, other: &Self) -> core::cmp::Ordering {
-        use core::cmp::Ordering;
-
-        match (self.data.is_null(), other.data.is_null()) {
-            (true, true) => Ordering::Equal,
-            (true, false) => Ordering::Less,
-            (false, true) => Ordering::Greater,
-            (false, false) => {
-                if self.len == 0 || other.len == 0 {
-                    self.len.cmp(&other.len)
-                } else {
-                    match self.data.cmp(&other.data) {
-                        Ordering::Equal => self.len.cmp(&other.len),
-                        ordering => ordering,
-                    }
-                }
-            }
-        }
-    }
-}
-
-impl<C> Clone for CBoxedSlice<C> {
-    fn clone(&self) -> Self {
-        *self
-    }
-}
-
-impl<C> Copy for CBoxedSlice<C> {}
+impl_raw_slice_methods! { CBoxedSlice, [C], [C] }
 
 impl<C> CBoxedSlice<C> {
+    /// Construct a carrier with a null data pointer and zero length.
+    pub const fn null() -> Self {
+        Self {
+            data: core::ptr::null_mut(),
+            len: 0,
+        }
+    }
+
     /// Create [`Self`] from a [`Box<[T]>`]
     pub fn from_boxed_slice(source: Box<[C]>) -> Self {
         let len = source.len();
@@ -257,50 +266,63 @@ impl<C> CBoxedSlice<C> {
         }
     }
 
-    /// Create [`Self`] from raw owned slice parts.
+    /// Return the stored data pointer.
+    pub const fn as_ptr(self) -> *mut C {
+        self.data
+    }
+
+    /// Return the number of elements in the slice.
+    #[expect(
+        clippy::len_without_is_empty,
+        reason = "nullable carrier uses Option<bool>"
+    )]
+    pub const fn len(&self) -> usize {
+        self.len
+    }
+
+    /// Return `None` for a null carrier, or whether the present slice is empty.
+    pub const fn is_empty(&self) -> Option<bool> {
+        if self.data.is_null() {
+            None
+        } else {
+            Some(self.len == 0)
+        }
+    }
+
+    /// Create [`Self`] from a non-null pointer and length.
     ///
     /// # Safety
     ///
     /// `data` and `len` must retain unique ownership and provenance of a live
     /// allocation compatible with the owning slice later recovered from this carrier.
-    pub(crate) const unsafe fn from_raw_parts(data: NonNull<C>, len: usize) -> Self {
+    pub const unsafe fn from_raw_parts(data: NonNull<C>, len: usize) -> Self {
         Self {
             data: data.as_ptr(),
             len,
         }
     }
 
-    /// Convert [`Self`] into [`Box<[C]>`]. Returns `None` if pointer is null.
+    /// Recover the allocation, returning `None` for a null pointer.
     ///
     /// # Safety
     ///
-    /// Check [`Box::from_raw`].
-    pub(crate) unsafe fn into_rust(self) -> Option<Box<[C]>> {
+    /// A non-null pointer and length must uniquely own a live allocation compatible with `Box<[C]>`.
+    pub unsafe fn into_rust(self) -> Option<Box<[C]>> {
         if self.data.is_null() {
-            return None;
+            None
+        } else {
+            Some(unsafe { Box::from_raw(core::ptr::slice_from_raw_parts_mut(self.data, self.len)) })
         }
-
-        Some(unsafe { Box::from_raw(core::ptr::slice_from_raw_parts_mut(self.data, self.len)) })
     }
 }
 
 impl<C> CBoxedSlice<C> {
-    /// Set the slice's data pointer to null
-    pub(crate) const NICHE: Self = Self {
-        data: core::ptr::null_mut(),
-        len: 0,
-    };
-
-    pub(crate) const fn is_niche(&self) -> bool {
+    pub(crate) const fn is_null(&self) -> bool {
         self.data.is_null()
     }
 
     pub(crate) const fn data(&self) -> *mut C {
         self.data
-    }
-
-    pub(crate) const fn len(&self) -> usize {
-        self.len
     }
 }
 

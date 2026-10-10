@@ -3,7 +3,9 @@ use quote::{format_ident, quote};
 use syn::parse_quote;
 
 use super::{
-    ReprKind, ctype::gen_extern_c_bounds_for_ctype, is_phantom_data, is_type_parametrized,
+    ReprKind,
+    ctype::{gen_extern_c_bounds_for_ctype, gen_fields_methods},
+    is_phantom_data, is_type_parametrized,
 };
 
 pub(super) fn gen_data_struct_name(ident: &syn::Ident) -> syn::Ident {
@@ -135,6 +137,12 @@ fn gen_data_def(input: &syn::DeriveInput, fields: &syn::Fields) -> TokenStream {
     let (impl_generics, _, where_clause) = generics.split_for_impl();
     let predicates = where_clause.as_ref().map(|w| &w.predicates);
     let header_impl = gen_identity_header_impl(&name, &generics);
+    let mut data_fields = fields.clone();
+    for (index, field) in data_fields.iter_mut().enumerate() {
+        field.ty = data_field_ty(&field.ty, index == fields_len - 1);
+        field.vis = syn::Visibility::Inherited;
+    }
+    let fields_methods = gen_fields_methods(&name, &generics, &data_fields);
 
     let suffix =
         match fields {
@@ -143,13 +151,12 @@ fn gen_data_def(input: &syn::DeriveInput, fields: &syn::Fields) -> TokenStream {
                     let attrs = field.attrs.iter().filter(|attr| {
                         attr.path().is_ident("cfg") || attr.path().is_ident("cfg_attr")
                     });
-                    let vis = &field.vis;
                     let name = &field.ident;
 
                     let is_last_field = index == fields_len - 1;
                     let ty = data_field_ty(&field.ty, is_last_field);
 
-                    quote! { #(#attrs)* #vis #name: #ty }
+                    quote! { #(#attrs)* #name: #ty }
                 });
 
                 quote! {
@@ -162,12 +169,10 @@ fn gen_data_def(input: &syn::DeriveInput, fields: &syn::Fields) -> TokenStream {
                     let attrs = field.attrs.iter().filter(|attr| {
                         attr.path().is_ident("cfg") || attr.path().is_ident("cfg_attr")
                     });
-                    let vis = &field.vis;
-
                     let is_last_field = index == fields_len - 1;
                     let ty = data_field_ty(&field.ty, is_last_field);
 
-                    quote! { #(#attrs)* #vis #ty }
+                    quote! { #(#attrs)* #ty }
                 });
 
                 quote! {
@@ -184,6 +189,7 @@ fn gen_data_def(input: &syn::DeriveInput, fields: &syn::Fields) -> TokenStream {
         #(#attrs)*
         #vis struct #name #impl_generics #suffix
 
+        #fields_methods
         #header_impl
     }
 }

@@ -34,7 +34,7 @@ pub(super) fn gen_fieldless_enum_ctype(
     generics: &syn::Generics,
 ) -> TokenStream {
     let ctype_name = gen_ctype_name(name);
-    let (impl_generics, _, where_clause) = generics.split_for_impl();
+    let (impl_generics, ty_generics, where_clause) = generics.split_for_impl();
     let predicates = where_clause
         .as_ref()
         .map(|where_clause| &where_clause.predicates);
@@ -49,7 +49,7 @@ pub(super) fn gen_fieldless_enum_ctype(
     let ctype: syn::ItemStruct = parse_quote! {
         #[doc(hidden)]
         #repr
-        #vis struct #ctype_name #impl_generics(pub #tag_type)
+        #vis struct #ctype_name #impl_generics(#tag_type)
         where
             #predicates;
     };
@@ -63,12 +63,31 @@ pub(super) fn gen_fieldless_enum_ctype(
         .collect::<Vec<_>>();
     let type_spec_impl = gen_type_spec(&ctype.ident, &ctype.generics, &fields, alignment);
     let borrow_cast_impl = gen_identity_borrow_cast_impl(&ctype.ident, &ctype.generics);
+    let primitive_constructor = match tag_type {
+        syn::Type::Path(path) => {
+            let primitive = path.path.get_ident().expect("primitive enum tag type");
+            let method = format_ident!("from_{primitive}");
+            quote! {
+                /// Construct a carrier from its primitive discriminant.
+                /// Invalid enum tags remain valid carrier values and are rejected by decoding.
+                pub const fn #method(tag: #tag_type) -> Self { Self(tag) }
+            }
+        }
+        syn::Type::Tuple(tuple) if tuple.elems.is_empty() => quote! {},
+        _ => unreachable!("fieldless enum tag is a primitive or unit type"),
+    };
 
     quote! {
         #ctype
         #impls
         #type_spec_impl
         #borrow_cast_impl
+        impl #impl_generics #ctype_name #ty_generics #where_clause {
+            #primitive_constructor
+
+            /// Return the raw discriminant.
+            pub const fn tag(&self) -> #tag_type { self.0 }
+        }
     }
 }
 
@@ -96,8 +115,7 @@ pub(super) fn gen_item_ctype(
             let Some(first_variant) = data.variants.first() else {
                 return quote! {};
             };
-
-            derive_ctype_struct::<true>(
+            let carrier = derive_ctype_struct::<true>(
                 repr,
                 alignment,
                 vis,
@@ -106,7 +124,9 @@ pub(super) fn gen_item_ctype(
                 &first_variant.fields,
                 generate_views_and_spec,
                 false,
-            )
+            );
+            let constructor = gen_transparent_enum_constructor(name, generics, first_variant);
+            quote! { #carrier #constructor }
         }
         syn::Data::Enum(data) if repr.is_none() => {
             let tag_type = infer_repr(data.variants.len());
@@ -132,6 +152,58 @@ pub(super) fn gen_item_ctype(
     }
 }
 
+fn gen_transparent_enum_constructor(
+    enum_name: &syn::Ident,
+    generics: &syn::Generics,
+    variant: &syn::Variant,
+) -> TokenStream {
+    let ctype_name = gen_ctype_name(enum_name);
+    let variant_name = &variant.ident;
+    let field_types = variant
+        .fields
+        .iter()
+        .map(|field| &field.ty)
+        .collect::<Vec<_>>();
+    let bounds = gen_extern_c_bounds_for_ctype::<true>(generics, &field_types);
+    let mut impl_generics_with_bounds = generics.clone();
+    impl_generics_with_bounds
+        .make_where_clause()
+        .predicates
+        .extend(bounds);
+    let (impl_generics, ty_generics, where_clause) = impl_generics_with_bounds.split_for_impl();
+    let args = variant
+        .fields
+        .iter()
+        .enumerate()
+        .map(|(index, field)| {
+            let name = field
+                .ident
+                .clone()
+                .unwrap_or_else(|| format_ident!("field_{index}"));
+            (name, lowered_field_ty(&field.ty))
+        })
+        .collect::<Vec<_>>();
+    let arg_names = args.iter().map(|(name, _)| name).collect::<Vec<_>>();
+    let arg_types = args.iter().map(|(_, ty)| ty).collect::<Vec<_>>();
+    let body = match &variant.fields {
+        syn::Fields::Named(_) => quote!(Self { #(#arg_names),* }),
+        syn::Fields::Unnamed(_) => quote!(Self(#(#arg_names),*)),
+        syn::Fields::Unit => quote!(Self),
+    };
+
+    quote! {
+        impl #impl_generics #ctype_name #ty_generics #where_clause {
+            /// This single-variant representation has no stored discriminant.
+            pub const fn tag(&self) {}
+
+            #[expect(non_snake_case)]
+            pub fn #variant_name(#(#arg_names: #arg_types),*) -> Self {
+                #body
+            }
+        }
+    }
+}
+
 fn derive_data_enum_ctype(
     tag_type: syn::Type,
     alignment: Option<&syn::LitInt>,
@@ -152,7 +224,99 @@ fn derive_data_enum_ctype(
     );
     let union_impls = gen_union_ctype_impls(&union_def, alignment, Some(name));
     let partial_eq_impl = gen_tagged_union_partial_eq(&union_def, &tag_type, variants);
-    quote! { #(#variant_structs)* #union_def #union_impls #partial_eq_impl }
+    let constructors = gen_enum_variant_constructors(
+        &union_def.ident,
+        &union_def.generics,
+        name,
+        variants,
+        Some(&tag_type),
+        None,
+    );
+    quote! { #(#variant_structs)* #union_def #union_impls #partial_eq_impl #constructors }
+}
+
+fn gen_enum_variant_constructors(
+    ctype_name: &syn::Ident,
+    generics: &syn::Generics,
+    enum_name: &syn::Ident,
+    variants: &syn::punctuated::Punctuated<syn::Variant, syn::Token![,]>,
+    variant_tag: Option<&syn::Type>,
+    payload_name: Option<&syn::Ident>,
+) -> TokenStream {
+    let (impl_generics, ty_generics, where_clause) = generics.split_for_impl();
+    let tag_type = variant_tag.expect("data enum has a tag type");
+    let tag_accessor = if payload_name.is_some() {
+        quote! {
+            /// Return the raw discriminant.
+            pub const fn tag(&self) -> #tag_type { self.tag }
+        }
+    } else {
+        quote! {
+            /// Return the raw discriminant.
+            pub fn tag(&self) -> #tag_type {
+                unsafe { *core::ptr::from_ref(self).cast::<#tag_type>() }
+            }
+        }
+    };
+    let methods = variants.iter().enumerate().map(|(index, variant)| {
+        let variant_name = &variant.ident;
+        let variant_struct_name = gen_variant_struct_name(enum_name, variant_name);
+        let tag = Literal::usize_unsuffixed(index);
+        let args = variant
+            .fields
+            .iter()
+            .enumerate()
+            .map(|(index, field)| {
+                let name = field
+                    .ident
+                    .clone()
+                    .unwrap_or_else(|| format_ident!("field_{index}"));
+                (name, lowered_field_ty(&field.ty))
+            })
+            .collect::<Vec<_>>();
+        let arg_names = args.iter().map(|(name, _)| name).collect::<Vec<_>>();
+        let arg_types = args.iter().map(|(_, ty)| ty).collect::<Vec<_>>();
+        let tag_value = if payload_name.is_none() {
+            variant_tag.map(|tag_type| quote!(#tag as #tag_type))
+        } else {
+            None
+        };
+        let body = match (&variant.fields, tag_value.as_ref()) {
+            (syn::Fields::Named(_), Some(tag)) => {
+                quote!(#variant_struct_name { tag: #tag, #(#arg_names),* })
+            }
+            (syn::Fields::Unnamed(_), Some(tag)) => {
+                quote!(#variant_struct_name(#tag, #(#arg_names),*))
+            }
+            (syn::Fields::Unit, Some(tag)) => quote!(#variant_struct_name { tag: #tag }),
+            (syn::Fields::Named(_), None) => quote!(#variant_struct_name { #(#arg_names),* }),
+            (syn::Fields::Unnamed(_), None) => quote!(#variant_struct_name(#(#arg_names),*)),
+            (syn::Fields::Unit, None) => quote!(#variant_struct_name {}),
+        };
+        let result = if let Some(payload_name) = payload_name {
+            let tag_type = variant_tag.expect("tagged payload has a tag type");
+            quote!(Self {
+                tag: #tag as #tag_type,
+                payload: #payload_name { #variant_name: #body },
+            })
+        } else {
+            quote!(Self { #variant_name: #body })
+        };
+
+        quote! {
+            #[expect(non_snake_case)]
+            pub fn #variant_name(#(#arg_names: #arg_types),*) -> Self {
+                #result
+            }
+        }
+    });
+
+    quote! {
+        impl #impl_generics #ctype_name #ty_generics #where_clause {
+            #tag_accessor
+            #(#methods)*
+        }
+    }
 }
 
 fn gen_tagged_union_partial_eq(
@@ -202,6 +366,8 @@ fn derive_ctype_struct<const ADD_COPY: bool>(
     generate_wide: bool,
 ) -> TokenStream {
     let ctype_def = gen_ctype_struct_item::<ADD_COPY>(repr, alignment, vis, name, generics, fields);
+    let fields_methods =
+        gen_fields_methods(&ctype_def.ident, &ctype_def.generics, &ctype_def.fields);
     let ctype_impls = gen_struct_ctype_impls::<ADD_COPY, true>(
         &ctype_def,
         generate_views_and_spec,
@@ -214,9 +380,72 @@ fn derive_ctype_struct<const ADD_COPY: bool>(
 
     quote! {
         #ctype_def
+        #fields_methods
         #ctype_impls
         #wide_impl
         #header_impl
+    }
+}
+
+pub(super) fn gen_fields_methods(
+    name: &syn::Ident,
+    generics: &syn::Generics,
+    fields: &syn::Fields,
+) -> TokenStream {
+    let (impl_generics, ty_generics, where_clause) = generics.split_for_impl();
+    let args = fields
+        .iter()
+        .enumerate()
+        .map(|(index, field)| {
+            let arg = field
+                .ident
+                .clone()
+                .unwrap_or_else(|| format_ident!("field_{index}"));
+            (arg, &field.ty)
+        })
+        .collect::<Vec<_>>();
+    let arg_names = args.iter().map(|(name, _)| name).collect::<Vec<_>>();
+    let arg_types = args.iter().map(|(_, ty)| ty).collect::<Vec<_>>();
+    let members = fields.members().collect::<Vec<_>>();
+    let body = match fields {
+        syn::Fields::Named(_) => quote!(Self { #(#arg_names),* }),
+        syn::Fields::Unnamed(_) => quote!(Self(#(#arg_names),*)),
+        syn::Fields::Unit => quote!(Self),
+    };
+    let into_body = if fields.is_empty() {
+        quote! { let _this = core::mem::ManuallyDrop::new(self); }
+    } else {
+        quote! {
+            let this = core::mem::ManuallyDrop::new(self);
+            ( #(unsafe { core::ptr::read(&this.#members) },)* )
+        }
+    };
+
+    quote! {
+        impl #impl_generics #name #ty_generics #where_clause {
+            /// Construct this generated struct from its fields.
+            ///
+            /// # Safety
+            ///
+            /// The caller must uphold the validity, ownership, and aliasing
+            /// requirements of this generated struct.
+            pub unsafe fn from_fields(#(#arg_names: #arg_types),*) -> Self
+            where
+                for<'_dummy> Self: Sized,
+                #(for<'_dummy> #arg_types: Sized,)*
+            {
+                #body
+            }
+
+            /// Consume this generated struct and return its fields in declaration order.
+            pub fn into_fields(self) -> (#(#arg_types,)*)
+            where
+                for<'_dummy> Self: Sized,
+                #(for<'_dummy> #arg_types: Sized,)*
+            {
+                #into_body
+            }
+        }
     }
 }
 
@@ -354,7 +583,17 @@ fn derive_repr_c_data_enum_ctype(
 
     let ctype_impls =
         gen_struct_ctype_impls::<true, false>(&ctype_def, true, alignment, Some(name));
+    let fields_methods =
+        gen_fields_methods(&ctype_def.ident, &ctype_def.generics, &ctype_def.fields);
     let partial_eq_impl = gen_tagged_payload_partial_eq(&ctype_def, &payload_def, variants);
+    let constructors = gen_enum_variant_constructors(
+        &ctype_def.ident,
+        &ctype_def.generics,
+        name,
+        variants,
+        Some(&tag_type),
+        Some(&payload_name),
+    );
 
     quote! {
         #(#variant_structs)*
@@ -363,8 +602,10 @@ fn derive_repr_c_data_enum_ctype(
         #payload_impls
 
         #ctype_def
+        #fields_methods
         #ctype_impls
         #partial_eq_impl
+        #constructors
     }
 }
 
@@ -438,12 +679,12 @@ fn gen_ctype_struct_item<const ADD_COPY: bool>(
                     #(#extern_c_bounds,)*
                     #predicates
                 {
-                    #(pub #field_names: #field_c_tys),*
+                    #(#field_names: #field_c_tys),*
                 }
             }
         }
         syn::Fields::Unnamed(_) => quote! {
-            struct #ctype_name #impl_generics (#(pub #field_c_tys),*)
+            struct #ctype_name #impl_generics (#(#field_c_tys),*)
             where
                 #(#extern_c_bounds,)*
                 #predicates;
@@ -521,8 +762,9 @@ fn gen_variant_struct(
     }
 
     let ctype = gen_ctype_struct_item::<true>(repr, None, vis, &name, generics, &fields);
+    let fields_methods = gen_fields_methods(&ctype.ident, &ctype.generics, &ctype.fields);
     let ctype_impls = gen_struct_ctype_impls::<true, true>(&ctype, true, None, None);
-    quote! { #ctype #ctype_impls }
+    quote! { #ctype #fields_methods #ctype_impls }
 }
 
 fn gen_union_fields(
@@ -612,7 +854,6 @@ fn gen_struct_ctype_impls<const ADD_COPY: bool, const GEN_PARTIAL_EQ: bool>(
         #default_impl
         #robust_impls
         #type_spec_impl
-
         #const_view
         #mut_view
 
@@ -1112,6 +1353,7 @@ fn gen_ctype_struct_view<const ADD_COPY: bool>(
     alignment: Option<&syn::LitInt>,
 ) -> TokenStream {
     rewrite_ctype_view_struct::<ADD_COPY>(&mut ctype, is_mut);
+    let fields_methods = gen_fields_methods(&ctype.ident, &ctype.generics, &ctype.fields);
 
     let fields = ctype
         .fields
@@ -1126,6 +1368,7 @@ fn gen_ctype_struct_view<const ADD_COPY: bool>(
 
     quote! {
         #ctype
+        #fields_methods
         #copy_impls
         #default_impl
         #robust_impls

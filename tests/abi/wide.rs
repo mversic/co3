@@ -186,6 +186,14 @@ fn struct_wide_classification() {
 }
 
 #[test]
+fn generated_data_struct_exposes_fields_methods() {
+    let data = unsafe { PacketData::from_fields(NonZeroU8::new(7).unwrap(), []) };
+    let (tag, payload) = data.into_fields();
+    assert_eq!(tag.get(), 7);
+    assert!(payload.is_empty());
+}
+
+#[test]
 fn struct_wide_raw_parts_preserve_prefix_provenance() {
     #[repr(C)]
     struct Storage {

@@ -128,3 +128,94 @@ fn copy_primitives_with_custom_carriers_use_value_conversion() {
         co3::encode('b')
     );
 }
+
+#[test]
+fn lowered_aggregates_use_codecs_without_conversion_traits() {
+    use co3::{option::ReprCOption, result::ReprCResult, tuple::ReprCTuple2};
+    use static_assertions::assert_not_impl_any;
+
+    assert_not_impl_any!(ReprCOption<u8>: From<Option<u8>>, TryFrom<Option<u8>>);
+    assert_not_impl_any!(Option<u8>: From<ReprCOption<u8>>, TryFrom<ReprCOption<u8>>);
+    assert_not_impl_any!(ReprCResult<u8, u8>: From<Result<u8, u8>>, TryFrom<Result<u8, u8>>);
+    assert_not_impl_any!(Result<u8, u8>: From<ReprCResult<u8, u8>>, TryFrom<ReprCResult<u8, u8>>);
+    assert_not_impl_any!(ReprCTuple2<u8, u8>: From<(u8, u8)>, TryFrom<(u8, u8)>);
+    assert_not_impl_any!((u8, u8): From<ReprCTuple2<u8, u8>>, TryFrom<ReprCTuple2<u8, u8>>);
+
+    for value in [None, Some(42_u8)] {
+        assert_eq!(
+            unsafe { co3::decode::<Option<u8>>(co3::encode(value)) },
+            Some(value)
+        );
+    }
+    let option = ReprCOption::Some(42_u8);
+    assert_eq!(unsafe { co3::decode::<Option<u8>>(option) }, Some(Some(42)));
+
+    for value in [Ok(42_u8), Err(7_u8)] {
+        let mut store = Default::default();
+        let lowered = co3::soft_encode(value, &mut store);
+        assert_eq!(
+            unsafe { co3::decode::<Result<u8, u8>>(lowered) },
+            Some(value)
+        );
+    }
+    let result = ReprCResult::<u8, u8>::Err(7_u8);
+    assert_eq!(
+        unsafe { co3::decode::<Result<u8, u8>>(result) },
+        Some(Err(7))
+    );
+    assert_eq!(
+        unsafe { co3::decode::<(u8, u8)>(co3::encode((42_u8, 7_u8))) },
+        Some((42, 7))
+    );
+}
+
+#[test]
+fn safe_carrier_constructors_accept_lowered_storage() {
+    use co3::{
+        boxed::{CBox, CBoxedSlice},
+        reference::CRefMut,
+        slice::{CSlice, CSliceMut},
+        str::Utf8String,
+    };
+
+    let boxed = CBox::from_box(Box::new(9_u8));
+    assert_eq!(*unsafe { co3::decode::<Box<u8>>(boxed) }.unwrap(), 9);
+
+    let raw = Box::into_raw(Box::new(10_u8));
+    let boxed = unsafe { CBox::from_non_null(core::ptr::NonNull::new(raw).unwrap()) };
+    assert_eq!(*unsafe { co3::decode::<Box<u8>>(boxed) }.unwrap(), 10);
+
+    let boxed_slice = CBoxedSlice::from_boxed_slice(Box::from([4_u8, 5]));
+    assert_eq!(
+        &*unsafe { co3::decode::<Box<[u8]>>(boxed_slice) }.unwrap(),
+        &[4, 5]
+    );
+    assert_eq!(CBox::<u8>::null(), co3::encode(None::<Box<u8>>));
+    assert_eq!(CBoxedSlice::<u8>::null(), co3::encode(None::<Box<[u8]>>));
+    assert_eq!(CSlice::<u8>::null(), co3::encode(None::<&[u8]>));
+    assert_eq!(
+        CRefMut::<u8>::null(),
+        co3::soft_encode(None::<&mut u8>, &mut Default::default())
+    );
+    let _: CSliceMut<u8> = CSliceMut::null();
+    assert_eq!(Utf8String::null(), co3::encode(None::<String>));
+
+    let utf8 = Utf8String(CBoxedSlice::from_boxed_slice(Box::from("hello".as_bytes())));
+    assert_eq!(unsafe { co3::decode::<String>(utf8) }.unwrap(), "hello");
+
+    let bytes: Box<[u8]> = Box::from("world".as_bytes());
+    let len = bytes.len();
+    let data = core::ptr::NonNull::new(Box::into_raw(bytes).cast::<u8>()).unwrap();
+    let utf8 = Utf8String(unsafe { CBoxedSlice::from_raw_parts(data, len) });
+    assert_eq!(unsafe { co3::decode::<String>(utf8) }.unwrap(), "world");
+
+    let bytes = [1_u8, 2];
+    let _slice = CSlice::from_slice(&bytes);
+    assert_eq!(
+        CSlice::<u8>::from_slice("hello".as_bytes()),
+        co3::encode("hello")
+    );
+    let mut bytes = [3_u8, 4];
+    let _slice_mut = CSliceMut::<u8>::from_slice(&mut bytes);
+    let _ref_mut = CRefMut::<u8>::from_mut(&mut bytes[0]);
+}

@@ -561,6 +561,7 @@ pub mod result;
 pub mod slice;
 mod std_impls;
 pub mod stored;
+pub mod str;
 pub mod sync;
 pub mod tag;
 pub mod transmute;
@@ -981,7 +982,7 @@ mod tests {
     #[test]
     fn decode_stored_mut_ref() {
         let mut c_opt = ReprCOption::Some(1u8);
-        let c_ptr = CRefMut::from_mut(&mut c_opt);
+        let c_ptr = encode(&mut c_opt);
         let new_val: u8 = 42;
         {
             let mut store = Box::default();
@@ -993,7 +994,7 @@ mod tests {
         assert_eq!(c_opt, ReprCOption::Some(42u8));
 
         let mut c_opts = [ReprCOption::Some(1u8)];
-        let c_slice = CSliceMut::<_>::from_slice(&mut c_opts);
+        let c_slice = encode(&mut c_opts[..]);
         let x: u8 = 10;
         {
             let mut store = Box::default();
@@ -1039,9 +1040,9 @@ mod tests {
         {
             let mut store = Box::default();
             let encoded = soft_encode(&mut value, &mut *store);
-            let original_data = unsafe { (*encoded.as_ptr()).data };
+            let original_data = unsafe { (*encoded.as_ptr()).as_ptr() };
             let replacement = CBox::from_box(Box::new(ReprCTuple2(100, CBool::TRUE)));
-            let replacement_data = replacement.data;
+            let replacement_data = replacement.as_ptr();
 
             unsafe {
                 *encoded.as_ptr() = replacement;
@@ -1059,8 +1060,8 @@ mod tests {
     fn decode_stored_ref_mut_slice() {
         use tuple::ReprCTuple2;
 
-        let mut tuples = [ReprCTuple2(10, CBool::TRUE)];
-        let c_slice = CSliceMut::<_>::from_slice(&mut tuples);
+        let mut tuples = [ReprCTuple2(10_u32, CBool::TRUE)];
+        let c_slice = encode(&mut tuples[..]);
 
         {
             let mut store = Box::default();

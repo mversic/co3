@@ -18,73 +18,35 @@ use crate::{
 };
 
 /// C-compatible carrier for [`bool`].
+///
+/// Every byte value is valid for this carrier; conversion to `bool` accepts only 0 and 1.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, RustSpec)]
 #[repr(transparent)]
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, RustSpec)]
-pub struct CBool(u8);
+pub struct CBool(pub u8);
 
 /// C-compatible carrier for [`Ordering`].
+///
+/// Every byte value is valid for this carrier; conversion to `Ordering` accepts only -1, 0, and 1.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, RustSpec)]
 #[repr(transparent)]
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, RustSpec)]
-pub struct COrdering(i8);
+pub struct COrdering(pub i8);
+
+/// C-compatible carrier for a Unicode scalar value (`char`).
+///
+/// Every `u32` value is valid for this carrier; conversion to `char` validates the scalar value.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, RustSpec)]
+#[repr(transparent)]
+pub struct UnicodeChar(pub u32);
 
 impl CBool {
-    pub const NICHE: Self = Self(2);
-
     pub const FALSE: Self = Self(0);
     pub const TRUE: Self = Self(1);
-
-    pub(crate) const fn from_raw(value: u8) -> Self {
-        Self(value)
-    }
-}
-
-impl From<bool> for CBool {
-    fn from(value: bool) -> Self {
-        if value { Self::TRUE } else { Self::FALSE }
-    }
-}
-
-impl TryFrom<CBool> for bool {
-    type Error = ();
-
-    fn try_from(value: CBool) -> Result<Self, Self::Error> {
-        match value.0 {
-            0 => Ok(false),
-            1 => Ok(true),
-            _ => Err(()),
-        }
-    }
 }
 
 impl COrdering {
-    pub const NICHE: Self = Self(2);
-
     pub const LESS: Self = Self(-1);
     pub const EQUAL: Self = Self(0);
     pub const GREATER: Self = Self(1);
-}
-
-impl From<Ordering> for COrdering {
-    fn from(value: Ordering) -> Self {
-        match value {
-            Ordering::Less => Self::LESS,
-            Ordering::Equal => Self::EQUAL,
-            Ordering::Greater => Self::GREATER,
-        }
-    }
-}
-
-impl TryFrom<COrdering> for Ordering {
-    type Error = ();
-
-    fn try_from(value: COrdering) -> Result<Self, Self::Error> {
-        match value.0 {
-            -1 => Ok(Self::Less),
-            0 => Ok(Self::Equal),
-            1 => Ok(Self::Greater),
-            _ => Err(()),
-        }
-    }
 }
 
 macro_rules! primitive_derive {
@@ -339,18 +301,6 @@ macro_rules! impl_fn_types {
 }
 
 macro_rules! fieldless_enum_derive {
-    ( $src:ty => $dst:ty: {$niche_val:expr}: $validity_fn:expr ) => {
-        fieldless_enum_derive! {
-            $src => $dst: {$niche_val}: $validity_fn;
-            |source: $dst| -> Option<$src> { source.try_into().ok() }
-        }
-    };
-    ( $src:ty => $dst:ty: {$niche_val:expr}: $validity_fn:expr; $decode_fn:expr ) => {
-        fieldless_enum_derive! {
-            $src => $dst: {$niche_val}: $validity_fn; $decode_fn;
-            |source: $src| -> $dst { source as $dst }
-        }
-    };
     ( $src:ty => $dst:ty: {$niche_val:expr}: $validity_fn:expr; $decode_fn:expr; $encode_fn:expr $(; $unchecked_fn:expr)? ) => {
         unsafe impl CheckedTransmute for $src {
             #[inline(always)]
@@ -429,6 +379,7 @@ primitive_derive! { f32 }
 primitive_derive! { f64 }
 primitive_derive! { CBool }
 primitive_derive! { COrdering }
+primitive_derive! { UnicodeChar }
 
 raw_pointer_derive! { const }
 raw_pointer_derive! { mut }
@@ -535,32 +486,52 @@ impl_fn_types! {
 }
 
 fieldless_enum_derive! {
-    char => u32: {0x110000}:
-    |i: &u32| char::from_u32(*i).is_some();
-    |source: u32| char::from_u32(source);
-    |source: char| source as u32;
-    |source: u32| unsafe { char::from_u32_unchecked(source) }
+    char => UnicodeChar: {UnicodeChar(0x110000)}:
+    |i: &UnicodeChar| char::from_u32(i.0).is_some();
+    |source: UnicodeChar| char::from_u32(source.0);
+    |source: char| UnicodeChar(source as u32);
+    |source: UnicodeChar| unsafe { char::from_u32_unchecked(source.0) }
+}
+
+#[cfg(test)]
+mod unicode_char_tests {
+    use super::*;
+
+    #[test]
+    fn char_has_distinct_scalar_carrier() {
+        static_assertions::assert_impl_all!(char: ReprC<CType = UnicodeChar>);
+        static_assertions::assert_not_impl_any!(UnicodeChar: From<char>, From<u32>, TryFrom<u32>);
+        assert_eq!(UnicodeChar('🍃' as u32), crate::encode('🍃'));
+        assert_eq!(crate::encode('🍃').0, '🍃' as u32);
+        assert_eq!(
+            unsafe { crate::decode::<char>(UnicodeChar(0x110000)) },
+            None
+        );
+        assert_eq!(unsafe { crate::decode::<char>(UnicodeChar(0xd800)) }, None);
+    }
 }
 fieldless_enum_derive! {
-    bool => CBool: {CBool::NICHE}:
+    bool => CBool: {CBool(2)}:
     |i: &CBool| i.0 == 0 || i.0 == 1;
-    |source: CBool| source.try_into().ok();
-    |source: bool| source.into();
+    |source: CBool| match source.0 {
+        0 => Some(false),
+        1 => Some(true),
+        _ => None,
+    };
+    |source: bool| CBool(source as u8);
     |source: CBool| unsafe { core::mem::transmute::<CBool, bool>(source) }
 }
 fieldless_enum_derive! {
-    Ordering => COrdering: {COrdering::NICHE}:
+    Ordering => COrdering: {COrdering(2)}:
     |i: &COrdering| (-1..=1).contains(&i.0);
-    |source: COrdering| source.try_into().ok();
-    |source: Ordering| source.into();
-    |source: COrdering| unsafe {
-        match source.0 {
-            -1 => Ordering::Less,
-            0 => Ordering::Equal,
-            1 => Ordering::Greater,
-            _ => core::hint::unreachable_unchecked(),
-        }
-    }
+    |source: COrdering| match source.0 {
+        -1 => Some(Ordering::Less),
+        0 => Some(Ordering::Equal),
+        1 => Some(Ordering::Greater),
+        _ => None,
+    };
+    |source: Ordering| COrdering(source as i8);
+    |source: COrdering| unsafe { core::mem::transmute::<COrdering, Ordering>(source) }
 }
 
 pub(crate) use primitive_derive;
@@ -581,6 +552,61 @@ mod tests {
         reference::CRefMut,
         slice::{CSlice, CSliceMut},
     };
+
+    #[test]
+    fn scalar_carriers_accept_all_values_without_niches() {
+        assert_impl_all!(CBool: CType, ReprC<CType = CBool>);
+        assert_impl_all!(COrdering: CType, ReprC<CType = COrdering>);
+        assert_impl_all!(UnicodeChar: CType, ReprC<CType = UnicodeChar>);
+        assert_not_impl_any!(CBool: Niche);
+        assert_not_impl_any!(COrdering: Niche);
+        assert_not_impl_any!(UnicodeChar: Niche);
+        assert_impl_all!(Option<CBool>: ReprC<CType = ReprCOption<CBool>>);
+        assert_impl_all!(Option<COrdering>: ReprC<CType = ReprCOption<COrdering>>);
+        assert_impl_all!(Option<UnicodeChar>: ReprC<CType = ReprCOption<UnicodeChar>>);
+
+        for raw in u8::MIN..=u8::MAX {
+            let boolean = CBool(raw);
+            assert_eq!(boolean.0, raw);
+            assert_eq!(unsafe { crate::decode::<CBool>(boolean) }, Some(boolean));
+            assert_eq!(
+                unsafe { crate::decode::<bool>(boolean) }.is_some(),
+                raw <= 1
+            );
+            let ordering = COrdering(raw as i8);
+            assert_eq!(ordering.0, raw as i8);
+            assert_eq!(
+                unsafe { crate::decode::<COrdering>(ordering) },
+                Some(ordering)
+            );
+            assert_eq!(
+                unsafe { crate::decode::<Ordering>(ordering) }.is_some(),
+                (-1..=1).contains(&ordering.0)
+            );
+        }
+
+        for raw in [0, 0xd800, 0x10ffff, 0x110000, u32::MAX] {
+            let scalar = UnicodeChar(raw);
+            assert_eq!(scalar.0, raw);
+            assert_eq!(
+                unsafe { crate::decode::<UnicodeChar>(scalar) },
+                Some(scalar)
+            );
+            assert_eq!(
+                unsafe { crate::decode::<char>(scalar) },
+                char::from_u32(raw)
+            );
+        }
+        for value in [Ordering::Less, Ordering::Equal, Ordering::Greater] {
+            assert_eq!(
+                unsafe { crate::decode_unchecked::<Ordering>(crate::encode(value)) },
+                value
+            );
+        }
+        assert_eq!(crate::encode(None::<bool>), bool::NICHE);
+        assert_eq!(crate::encode(None::<Ordering>), Ordering::NICHE);
+        assert_eq!(crate::encode(None::<char>), char::NICHE);
+    }
 
     #[test]
     fn function_pointer_conversion() {

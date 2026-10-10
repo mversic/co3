@@ -13,10 +13,11 @@ use crate::{
     borrow::{Borrow, BorrowCast, BorrowCastMut, FromBorrow},
     niche::Niche,
     stored::{DecodeOwned, EmptyStore, EncodeOwned},
+    str::Utf8Str,
     transmute::CheckedTransmute,
 };
 #[cfg(feature = "alloc")]
-use crate::{boxed::CBoxedSlice, stored::Owned};
+use crate::{boxed::CBoxedSlice, stored::Owned, str::Utf8String};
 
 macro_rules! non_zero_derive {
     ($($primitive:ty),+ $(,)?) => {$(
@@ -295,7 +296,7 @@ impl Owned for str {
 }
 
 impl ReprC for str {
-    type CType = [u8];
+    type CType = Utf8Str;
 }
 
 #[cfg(feature = "alloc")]
@@ -326,7 +327,7 @@ impl<'itm> FromBorrow<'itm> for String {
 
 #[cfg(feature = "alloc")]
 impl ReprC for String {
-    type CType = <Vec<u8> as ReprC>::CType;
+    type CType = Utf8String;
 }
 #[cfg(feature = "alloc")]
 unsafe impl EncodeOwned for String {
@@ -337,7 +338,9 @@ unsafe impl EncodeOwned for String {
     where
         Self: 'itm,
     {
-        self.into_bytes().soft_encode(&mut ())
+        Utf8String(CBoxedSlice::from_boxed_slice(
+            self.into_bytes().into_boxed_slice(),
+        ))
     }
 }
 #[cfg(feature = "alloc")]
@@ -346,13 +349,13 @@ unsafe impl<'d> DecodeOwned<'d> for String {
 
     #[inline(always)]
     unsafe fn soft_decode<'itm: 'd>(source: Self::CType, (): &mut ()) -> Option<Self> {
-        let bytes = unsafe { Vec::<u8>::soft_decode(source, &mut ())? };
+        let bytes = unsafe { Vec::<u8>::soft_decode(source.0, &mut ())? };
         String::from_utf8(bytes).ok()
     }
 
     #[inline(always)]
     unsafe fn soft_decode_unchecked<'itm: 'd>(source: Self::CType, (): &mut ()) -> Self {
-        let bytes = unsafe { Vec::<u8>::soft_decode_unchecked(source, &mut ()) };
+        let bytes = unsafe { Vec::<u8>::soft_decode_unchecked(source.0, &mut ()) };
         unsafe { String::from_utf8_unchecked(bytes) }
     }
 }
@@ -364,7 +367,7 @@ impl Decode<'_> for String {}
 
 #[cfg(feature = "alloc")]
 impl Niche for String {
-    const NICHE: Self::CType = CBoxedSlice::NICHE;
+    const NICHE: Self::CType = Utf8String(CBoxedSlice::null());
 }
 
 unsafe impl<T: Borrow> Borrow for UnsafeCell<T> {
@@ -715,7 +718,7 @@ mod tests {
     fn manually_drop_decode_rejects_invalid_inner_representation() {
         assert_impl_all!(ManuallyDrop<bool>: Decode<'static>, Encode);
 
-        let invalid = crate::primitives::CBool::NICHE;
+        let invalid = bool::NICHE;
         assert!(unsafe { crate::decode::<ManuallyDrop<bool>>(invalid) }.is_none());
 
         let encoded = crate::encode(ManuallyDrop::new(true));
@@ -733,16 +736,13 @@ mod tests {
         );
         assert_impl_all!(MaybeUninit<u8>: CType, CFnArg, CFnReturn);
 
-        let source = MaybeUninit::new(crate::primitives::CBool::NICHE);
+        let source = MaybeUninit::new(bool::NICHE);
         assert!(unsafe { <MaybeUninit<bool> as CheckedTransmute>::is_valid(&source) });
 
         let decoded = unsafe { crate::decode::<MaybeUninit<bool>>(source) }.unwrap();
         let encoded = crate::encode(decoded);
 
-        assert_eq!(
-            unsafe { encoded.assume_init() },
-            crate::primitives::CBool::NICHE
-        );
+        assert_eq!(unsafe { encoded.assume_init() }, bool::NICHE);
     }
 
     // TODO: Enable
@@ -872,6 +872,10 @@ mod tests {
 
     #[test]
     fn str_is_supported() {
+        assert_impl_all!(str: ReprC<CType = Utf8Str>);
+        #[cfg(feature = "alloc")]
+        assert_impl_all!(String: ReprC<CType = Utf8String>);
+
         assert_impl_all!(&str:
             Niche<CType = CSlice<u8>>,
             Decode<'static>,
@@ -897,7 +901,7 @@ mod tests {
     fn str_decode_rejects_invalid_utf8() {
         let invalid = [0xff];
 
-        let source = CSlice::from_raw_parts(invalid.as_ptr(), invalid.len());
+        let source = unsafe { CSlice::from_raw_parts(invalid.as_ptr(), invalid.len()) };
         let decoded = unsafe { crate::decode::<&str>(source) };
         assert!(decoded.is_none());
 
@@ -1059,7 +1063,7 @@ mod tests {
         assert_eq!(decoded.get(), 6);
 
         let none = crate::encode(None::<Box<UnsafeCell<u8>>>);
-        assert_eq!(none, CBoxCell::NICHE);
+        assert!(none.as_ptr().is_null());
         assert!(matches!(
             unsafe { crate::decode::<Option<Box<UnsafeCell<u8>>>>(none) },
             Some(None)

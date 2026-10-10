@@ -38,32 +38,32 @@ disjoint_impls! {
     where
         Self: ReprC<CType = CRefMut<C, false>>,
     {
-        const NICHE: Self::CType = CRefMut::<C, false>::NICHE;
+        const NICHE: Self::CType = CRefMut::null();
     }
     impl<R: ?Sized, C> Niche for &R
     where
         Self: ReprC<CType = CSlice<C>>,
     {
-        const NICHE: Self::CType = CSlice::NICHE;
+        const NICHE: Self::CType = CSlice::null();
     }
     impl<R: ?Sized, C> Niche for &R
     where
         Self: ReprC<CType = CSliceMut<C, false>>,
     {
-        const NICHE: Self::CType = CSliceMut::<C, false>::NICHE;
+        const NICHE: Self::CType = CSliceMut::null();
     }
 
     impl<R: ?Sized, C> Niche for &mut R
     where
         Self: ReprC<CType = CRefMut<C>>,
     {
-        const NICHE: Self::CType = CRefMut::NICHE;
+        const NICHE: Self::CType = CRefMut::null();
     }
     impl<R: ?Sized, C> Niche for &mut R
     where
         Self: ReprC<CType = CSliceMut<C>>,
     {
-        const NICHE: Self::CType = CSliceMut::<C>::NICHE;
+        const NICHE: Self::CType = CSliceMut::null();
     }
 
     #[cfg(feature = "alloc")]
@@ -71,28 +71,28 @@ disjoint_impls! {
     where
         Self: ReprC<CType = CBox<C>>,
     {
-        const NICHE: Self::CType = CBox::NICHE;
+        const NICHE: Self::CType = CBox::null();
     }
     #[cfg(feature = "alloc")]
     impl<R: ?Sized, C> Niche for Box<R>
     where
         Self: ReprC<CType = CBoxCell<C>>,
     {
-        const NICHE: Self::CType = CBoxCell::NICHE;
+        const NICHE: Self::CType = CBoxCell::null();
     }
     #[cfg(feature = "alloc")]
     impl<R: ?Sized, C> Niche for Box<R>
     where
         Self: ReprC<CType = CBoxedSlice<C>>,
     {
-        const NICHE: Self::CType = CBoxedSlice::NICHE;
+        const NICHE: Self::CType = CBoxedSlice::null();
     }
     #[cfg(feature = "alloc")]
     impl<R: ?Sized, C> Niche for Box<R>
     where
         Self: ReprC<CType = CBoxedSliceCell<C>>,
     {
-        const NICHE: Self::CType = CBoxedSliceCell::NICHE;
+        const NICHE: Self::CType = CBoxedSliceCell::null();
     }
 
     #[cfg(feature = "alloc")]
@@ -100,14 +100,14 @@ disjoint_impls! {
     where
         Self: ReprC<CType = CBoxedSlice<C>>,
     {
-        const NICHE: Self::CType = CBoxedSlice::NICHE;
+        const NICHE: Self::CType = CBoxedSlice::null();
     }
     #[cfg(feature = "alloc")]
     impl<R, C> Niche for Vec<R>
     where
         Self: ReprC<CType = CBoxedSliceCell<C>>,
     {
-        const NICHE: Self::CType = CBoxedSliceCell::NICHE;
+        const NICHE: Self::CType = CBoxedSliceCell::null();
     }
 
     impl<T: ?Sized, C> Niche for NonNull<T>
@@ -128,20 +128,20 @@ disjoint_impls! {
     where
         Self: ReprC<CType = ReprCOption<C>>,
     {
-        const NICHE: Self::CType = ReprCOption::NICHE;
+        const NICHE: Self::CType = ReprCOption::niche();
     }
     // TODO: Depends on: https://github.com/mversic/co3/issues/33
     impl Niche for Option<bool>
     where
         Self: ReprC<CType = <bool as ReprC>::CType>,
     {
-        const NICHE: Self::CType = CBool::from_raw(3);
+        const NICHE: Self::CType = CBool(3);
     }
     impl Niche for Option<Option<bool>>
     where
         Self: ReprC<CType = <bool as ReprC>::CType>,
     {
-        const NICHE: Self::CType = CBool::from_raw(4);
+        const NICHE: Self::CType = CBool(4);
     }
 }
 
@@ -159,7 +159,7 @@ impl<R, E, C: CType + Copy, D: CType + Copy> Niche for Result<R, E>
 where
     Self: ReprC<CType = ReprCResult<C, D>>,
 {
-    const NICHE: Self::CType = ReprCResult::NICHE;
+    const NICHE: Self::CType = ReprCResult::niche();
 }
 
 #[cfg(test)]
@@ -171,7 +171,7 @@ mod tests {
     use static_assertions::{assert_impl_all, assert_not_impl_any};
 
     use super::*;
-    use crate::{CType, Decode, Encode, slice::CSlice, tuple::ReprCTuple2};
+    use crate::{CType, Decode, Encode, tuple::ReprCTuple2};
 
     #[test]
     fn nested_option_niche_family() {
@@ -201,32 +201,34 @@ mod tests {
     fn niche_values() {
         assert_eq!(core::ptr::null::<CBool>(), crate::encode(None::<&bool>));
         assert_eq!(
-            CRefMut::<CBool>::NICHE,
+            <&mut bool as Niche>::NICHE,
             co3::soft_encode(None::<&mut bool>, &mut Default::default())
         );
 
         #[cfg(feature = "alloc")]
-        assert_eq!(CBoxedSlice::<u8>::NICHE, crate::encode(None::<String>));
+        assert_eq!(<String as Niche>::NICHE, crate::encode(None::<String>));
         #[cfg(feature = "alloc")]
-        assert_eq!(CBoxedSlice::<u8>::NICHE, crate::encode(None::<Box<str>>));
+        assert_eq!(<Box<str> as Niche>::NICHE, crate::encode(None::<Box<str>>));
 
-        assert_eq!(CSlice::<u8>::NICHE, crate::encode(None::<&str>));
+        assert_eq!(<&str as Niche>::NICHE, crate::encode(None::<&str>));
 
         #[cfg(feature = "alloc")]
         assert_eq!(
-            co3::slice::CSliceMut::<u8>::NICHE,
+            <&mut str as Niche>::NICHE,
             crate::soft_encode(None::<&mut str>, &mut Default::default())
         );
 
         assert_eq!(core::ptr::null_mut(), crate::encode(None::<NonNull<u32>>));
 
-        // FIXME:
-        //#[cfg(feature = "alloc")]
-        //assert_eq!(
-        //    CBoxedSlice::<u8>::NICHE,
-        //    crate::encode(None::<ManuallyDrop<String>>)
-        //);
+        #[cfg(feature = "alloc")]
+        assert_eq!(
+            <core::mem::ManuallyDrop<String> as Niche>::NICHE,
+            <String as Niche>::NICHE
+        );
 
-        //assert_eq!(2_u8, crate::encode(None::<ManuallyDrop<bool>>));
+        assert_eq!(
+            <core::mem::ManuallyDrop<bool> as Niche>::NICHE,
+            crate::encode(None::<core::mem::ManuallyDrop<bool>>)
+        );
     }
 }

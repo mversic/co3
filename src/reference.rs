@@ -29,6 +29,7 @@ impl<C: ?Sized, const RESTRICTED: bool> CRefMut<C, RESTRICTED> {
         Self { data }
     }
 
+    /// Wrap an existing mutable reference to lowered data.
     pub const fn from_mut(data: &mut C) -> Self {
         Self { data }
     }
@@ -39,9 +40,12 @@ impl<C: ?Sized, const RESTRICTED: bool> CRefMut<C, RESTRICTED> {
 }
 
 impl<C, const RESTRICTED: bool> CRefMut<C, RESTRICTED> {
-    pub(crate) const NICHE: Self = Self {
-        data: core::ptr::null_mut(),
-    };
+    /// Construct a carrier with a null data pointer.
+    pub const fn null() -> Self {
+        Self {
+            data: core::ptr::null_mut(),
+        }
+    }
 }
 
 impl<C: ?Sized, const RESTRICTED: bool> core::fmt::Debug for CRefMut<C, RESTRICTED> {
