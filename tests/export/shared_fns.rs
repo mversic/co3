@@ -1,7 +1,7 @@
 use std::cmp::Ordering;
 use std::ffi::c_void;
 
-use co3::{ffi, str::Utf8String};
+use co3::{boxed::CBoxedSlice, ffi};
 
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
 pub struct FfiStruct {
@@ -46,7 +46,7 @@ impl FfiStruct {
 
 unsafe extern "C" {
     #[link_name = "export_shared__FfiStruct__new"]
-    fn new_raw(name: Utf8String) -> *mut c_void;
+    fn new_raw(name: CBoxedSlice<u8>) -> *mut c_void;
 
     #[link_name = "export_shared__FfiStruct__clone_box"]
     fn clone_raw(value: *const c_void) -> *mut c_void;

@@ -175,7 +175,6 @@ fn safe_carrier_constructors_accept_lowered_storage() {
         boxed::{CBox, CBoxedSlice},
         reference::CRefMut,
         slice::{CSlice, CSliceMut},
-        str::Utf8String,
     };
 
     let boxed = CBox::from_box(Box::new(9_u8));
@@ -198,15 +197,15 @@ fn safe_carrier_constructors_accept_lowered_storage() {
         co3::soft_encode(None::<&mut u8>, &mut Default::default())
     );
     let _: CSliceMut<u8> = CSliceMut::null();
-    assert_eq!(Utf8String::null(), co3::encode(None::<String>));
+    assert_eq!(CBoxedSlice::<u8>::null(), co3::encode(None::<String>));
 
-    let utf8 = Utf8String(CBoxedSlice::from_boxed_slice(Box::from("hello".as_bytes())));
+    let utf8 = CBoxedSlice::from_boxed_slice(Box::from("hello".as_bytes()));
     assert_eq!(unsafe { co3::decode::<String>(utf8) }.unwrap(), "hello");
 
     let bytes: Box<[u8]> = Box::from("world".as_bytes());
     let len = bytes.len();
     let data = core::ptr::NonNull::new(Box::into_raw(bytes).cast::<u8>()).unwrap();
-    let utf8 = Utf8String(unsafe { CBoxedSlice::from_raw_parts(data, len) });
+    let utf8 = unsafe { CBoxedSlice::from_raw_parts(data, len) };
     assert_eq!(unsafe { co3::decode::<String>(utf8) }.unwrap(), "world");
 
     let bytes = [1_u8, 2];

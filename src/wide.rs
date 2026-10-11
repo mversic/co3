@@ -264,44 +264,6 @@ unsafe impl Wide for str {
     }
 }
 
-unsafe impl Wide for crate::str::Utf8Str {
-    type Header = [u8; 0];
-    type Metadata = usize;
-
-    fn metadata(ptr: *const Self) -> usize {
-        (ptr as *const [u8]).len()
-    }
-
-    fn as_ptr(ptr: *const Self) -> *const Self::Header {
-        ptr as *const Self::Header
-    }
-
-    fn as_mut_ptr(ptr: *mut Self) -> *mut Self::Header {
-        ptr as *mut Self::Header
-    }
-
-    unsafe fn from_raw_parts<'a>(data: *const Self::Header, len: usize) -> &'a Self {
-        let slice = unsafe { core::slice::from_raw_parts(data.cast(), len) };
-        unsafe { &*(slice as *const [u8] as *const Self) }
-    }
-
-    unsafe fn from_raw_parts_mut<'a>(data: *mut Self::Header, len: usize) -> &'a mut Self {
-        let slice = unsafe { core::slice::from_raw_parts_mut(data.cast(), len) };
-        unsafe { &mut *(slice as *mut [u8] as *mut Self) }
-    }
-
-    #[cfg(feature = "alloc")]
-    fn into_non_null(self: Box<Self>) -> NonNull<Self::Header> {
-        Box::into_non_null(self).cast()
-    }
-
-    #[cfg(feature = "alloc")]
-    unsafe fn from_non_null(data: NonNull<Self::Header>, len: usize) -> Box<Self> {
-        let slice = NonNull::slice_from_raw_parts(data.cast::<u8>(), len);
-        unsafe { Box::from_raw(slice.as_ptr() as *mut Self) }
-    }
-}
-
 impl<T> WideHeader for [T; 0] {
     type Data = T;
 }

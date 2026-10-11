@@ -561,7 +561,6 @@ pub mod result;
 pub mod slice;
 mod std_impls;
 pub mod stored;
-pub mod str;
 pub mod sync;
 pub mod tag;
 pub mod transmute;

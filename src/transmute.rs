@@ -149,7 +149,7 @@ unsafe impl<R: CheckedTransmute<CType: Copy>> CheckedTransmute for [R] {
 unsafe impl CheckedTransmute for str {
     #[inline(always)]
     unsafe fn is_valid(target: &Self::CType) -> bool {
-        core::str::from_utf8(&target.0).is_ok()
+        core::str::from_utf8(target).is_ok()
     }
 }
 

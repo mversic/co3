@@ -23,7 +23,6 @@ use crate::{
     Dst,
     borrow::{BorrowCastMut, borrow_cast_mut},
     boxed::{CBox, CBoxCell, CBoxedSlice, CBoxedSliceCell},
-    str::Utf8String,
 };
 use crate::{
     ReprC, Thin,
@@ -69,25 +68,6 @@ unsafe impl<T: EmptyStore> EmptyStore for Vec<T> {}
 #[cfg(feature = "alloc")]
 pub trait Owned {
     type Owned;
-}
-
-#[cfg(feature = "alloc")]
-trait IntoBoxedSlice<T> {
-    fn into_boxed_slice(self) -> CBoxedSlice<T>;
-}
-
-#[cfg(feature = "alloc")]
-impl<T> IntoBoxedSlice<T> for CBoxedSlice<T> {
-    fn into_boxed_slice(self) -> CBoxedSlice<T> {
-        self
-    }
-}
-
-#[cfg(feature = "alloc")]
-impl IntoBoxedSlice<u8> for Utf8String {
-    fn into_boxed_slice(self) -> CBoxedSlice<u8> {
-        self.0
-    }
 }
 
 // TODO: Can we remove this trait?
@@ -523,9 +503,7 @@ disjoint_impls! {
     where
         Self: RustSpec<Layout = Unstable> + Into<<R as Owned>::Owned>,
         R: RustSpec<Layout = Stable, Size = MetaSized<SliceLike>, Mutability = Exclusive>,
-        <R as Owned>::Owned: EncodeOwned,
-        <<R as Owned>::Owned as ReprC>::CType:
-            IntoBoxedSlice<<WideData<R> as ReprC>::CType>,
+        <R as Owned>::Owned: EncodeOwned<CType = CBoxedSlice<<WideData<R> as ReprC>::CType>>,
         <<<R as Wide>::Header as WideHeader>::Data as ReprC>::CType: Sized,
     {
         type Store = <R::Owned as EncodeOwned>::Store;
@@ -543,7 +521,7 @@ disjoint_impls! {
                 return unsafe { CBoxedSlice::from_raw_parts(data.cast(), len) };
             }
 
-            encode_box_owned::<R>(self, store).into_boxed_slice()
+            encode_box_owned::<R>(self, store)
         }
     }
     #[cfg(feature = "alloc")]
