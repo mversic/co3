@@ -7,6 +7,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.7.2] - 2026-10-11
+
+### Added
+
+- implement `CType` for robust `Option`s, `Result`s and derived types with stable layout.
+- Add the transparent `CRef<T>` carrier for shared references to thin values.
+
+### Fixed
+
+- Reject niches, validation, and custom `Drop` in repr delegation
+
 ## [0.7.1] - 2026-10-10
 
 ### Added
