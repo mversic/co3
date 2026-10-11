@@ -501,6 +501,18 @@ fn gen_ctype_wide_impl(
 
     let source_wide_predicate = wide_predicate(&source_last.ty, source_generics);
     let source_header_predicate = header_repr_c_predicate(&source_last.ty, source_generics);
+    // A plain type parameter has an implicit `Sized` bound, but its `CType`
+    // does not. Make the generated wide impl conditional on a thin tail.
+    let source_tail_ctype_sized = is_implicitly_sized_type_param(source_field_ty, source_generics)
+        .then(|| quote!(#source_field_ty: co3::ReprC<CType: Sized>,));
+    let source_slice_tail = if let syn::Type::Slice(slice) = source_field_ty {
+        let element = &slice.elem;
+        Some(quote! {
+            #element: co3::ReprC<CType: Sized>,
+        })
+    } else {
+        None
+    };
     let source_data_ctype_bounds = gen_data_ctype_bounds(source_fields, source_generics);
     let source_data_ty = data_bound_ty(&source_last.ty, true);
     let source_data_ctype_sized_bound = if is_type_parametrized(&source_data_ty, source_generics) {
@@ -531,6 +543,8 @@ fn gen_ctype_wide_impl(
         where
             #source_wide_predicate,
             #source_header_predicate,
+            #source_tail_ctype_sized
+            #source_slice_tail
             #(#source_data_ctype_bounds,)*
             #data_bound
             #source_data_ctype_sized_bound,
@@ -546,6 +560,38 @@ fn gen_ctype_wide_impl(
             #alloc_methods
         }
     }
+}
+
+fn is_implicitly_sized_type_param(ty: &syn::Type, generics: &syn::Generics) -> bool {
+    let syn::Type::Path(path) = ty else {
+        return false;
+    };
+    let Some(ident) = path
+        .qself
+        .is_none()
+        .then(|| path.path.get_ident())
+        .flatten()
+    else {
+        return false;
+    };
+    let Some(param) = generics.type_params().find(|param| param.ident == *ident) else {
+        return false;
+    };
+    let maybe_sized = |bound: &syn::TypeParamBound| {
+        matches!(bound, syn::TypeParamBound::Trait(trait_bound)
+            if trait_bound.maybe.is_some() && trait_bound.path.is_ident("Sized"))
+    };
+    !param.bounds.iter().any(maybe_sized)
+        && !generics
+            .where_clause
+            .iter()
+            .flat_map(|clause| &clause.predicates)
+            .any(|predicate| {
+                matches!(predicate, syn::WherePredicate::Type(predicate)
+                if matches!(&predicate.bounded_ty, syn::Type::Path(path)
+                    if path.qself.is_none() && path.path.is_ident(ident))
+                    && predicate.bounds.iter().any(maybe_sized))
+            })
 }
 
 fn derive_repr_c_data_enum_ctype(
