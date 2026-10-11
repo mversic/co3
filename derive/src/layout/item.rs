@@ -71,7 +71,8 @@ pub(super) fn derive_item(
         };
     }
 
-    let view_def = (!is_view && !is_wide_data).then(|| gen_item_view(input, attrs, variant_attrs));
+    let view_def =
+        (!is_view && !is_wide_data).then(|| gen_item_view(input, attrs, variant_attrs, repr));
 
     let mut bounded_impl_input = input.clone();
     if is_view {

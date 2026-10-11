@@ -51,12 +51,14 @@ pub const fn borrow_cast_mut<C: BorrowCastMut<AsMut: Copy> + Copy>(source: C) ->
 
 /// A trait for structurally borrowing data.
 ///
-/// It should hold that `<T::CType as BorrowCast>::AsConst == <T::Borrowed as ReprC>::CType`
+/// It should hold that `<T::CType as BorrowCast>::AsConst == <T::Borrowed as ReprC>::CType`.
 ///
 /// # Safety
 ///
-/// If [`Self::Owner`] implements [`crate::stored::EmptyStore`], [`Borrow::borrow`] must not
-/// return references into `owner`. This rule prevents ownership transfer in return values.
+/// - `Borrowed<'itm>` must be a borrowed form of `Self`: it may be `Self`, or a structural view
+///   that borrows its fields (for example, `Box<T>` to `&T`).
+/// - If [`Self::Owner`] implements [`crate::stored::EmptyStore`], [`Borrow::borrow`] must not
+///   return references into `owner`. This rule prevents ownership transfer in return values.
 pub unsafe trait Borrow: Sized {
     type Borrowed<'itm>
     where

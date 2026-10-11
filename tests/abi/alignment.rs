@@ -1,3 +1,5 @@
+use core::cell::Cell;
+
 use co3::{ReprC, rust_spec::RustSpec, transmute::CheckedTransmute};
 use static_assertions::{assert_impl_all, assert_not_impl_any};
 
@@ -20,6 +22,9 @@ struct ViewFields {
     first: u8,
     second: u32,
 }
+
+#[derive(RustSpec, ReprC)]
+struct InteriorMutableField(Cell<u8>);
 
 #[derive(RustSpec, ReprC)]
 #[repr(u8, align(16))]
@@ -108,6 +113,25 @@ fn generated_view_structs_expose_fields_methods() {
 
     let mut_view = unsafe { CViewFieldsMutView::from_fields(5, 6) };
     assert_eq!(mut_view.into_fields(), (5, 6));
+}
+
+#[test]
+fn generated_view_keeps_owner_axes_and_recomputes_mutability() {
+    assert_impl_all!(InteriorMutableField:
+        RustSpec<Mutability = co3::rust_spec::mutability::Interior>,
+    );
+    assert_impl_all!(InteriorMutableFieldView<'static>:
+        RustSpec<
+            Layout = <InteriorMutableField as RustSpec>::Layout,
+            Size = <InteriorMutableField as RustSpec>::Size,
+            Alignment = <InteriorMutableField as RustSpec>::Alignment,
+            Trap = <InteriorMutableField as RustSpec>::Trap,
+            Niche = <InteriorMutableField as RustSpec>::Niche,
+            Drop = co3::rust_spec::drop::NoDrop,
+            Mutability = co3::rust_spec::mutability::Exclusive,
+            __IndirectTrap = <InteriorMutableField as RustSpec>::__IndirectTrap,
+        >,
+    );
 }
 
 #[test]

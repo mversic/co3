@@ -4,6 +4,7 @@ use syn::{DeriveInput, Ident, parse_quote};
 
 use crate::layout::{
     ReprCAttrs, VariantReprCAttrs,
+    attr::ReprKind,
     ctype::{gen_ctype_name, gen_fields_methods},
     generic_param_idents, is_phantom_data, is_type_parametrized,
     item::{field_vars, gen_fields_destructure},
@@ -13,6 +14,7 @@ pub(super) fn gen_item_view(
     input: &DeriveInput,
     attrs: &ReprCAttrs,
     variant_attrs: &[VariantReprCAttrs],
+    repr: Option<&ReprKind>,
 ) -> TokenStream {
     if attrs.is_view {
         return quote! {};
@@ -32,7 +34,7 @@ pub(super) fn gen_item_view(
 
     rewrite_view_generics(&mut view_def);
     rewrite_view_fields(&mut view_def.data);
-    let rust_spec_impl = gen_view_rust_spec(input, &view_def);
+    let rust_spec_impl = gen_view_rust_spec(input, &view_def, repr);
     let fields_methods = match &view_def.data {
         syn::Data::Struct(data) => {
             gen_fields_methods(&view_def.ident, &view_def.generics, &data.fields)
@@ -62,7 +64,11 @@ pub(super) fn gen_item_view(
     }
 }
 
-fn gen_view_rust_spec(owner: &DeriveInput, view: &DeriveInput) -> TokenStream {
+fn gen_view_rust_spec(
+    owner: &DeriveInput,
+    view: &DeriveInput,
+    repr: Option<&ReprKind>,
+) -> TokenStream {
     let rust_spec = quote!(co3::rust_spec::RustSpec);
     let owner_name = &owner.ident;
     let owner_args = generic_param_idents(owner.generics.params.iter()).collect::<Vec<_>>();
@@ -74,11 +80,22 @@ fn gen_view_rust_spec(owner: &DeriveInput, view: &DeriveInput) -> TokenStream {
     let view_name = &view.ident;
     let (impl_generics, ty_generics, where_clause) = view.generics.split_for_impl();
     let predicates = where_clause.as_ref().map(|clause| &clause.predicates);
+    let (mutability, mutability_bounds) = match &view.data {
+        syn::Data::Struct(data) => view_single_field_mutability(&data.fields),
+        syn::Data::Enum(data)
+            if data.variants.len() == 1 && matches!(repr, None | Some(ReprKind::Transparent)) =>
+        {
+            view_single_field_mutability(&data.variants[0].fields)
+        }
+        syn::Data::Enum(_) => (quote!(co3::rust_spec::mutability::Exclusive), Vec::new()),
+        syn::Data::Union(_) => unreachable!(),
+    };
 
     quote! {
         unsafe impl #impl_generics #rust_spec for #view_name #ty_generics
         where
             #owner_ty: #rust_spec,
+            #(#mutability_bounds,)*
             #predicates
         {
             type Layout = <#owner_ty as #rust_spec>::Layout;
@@ -87,10 +104,29 @@ fn gen_view_rust_spec(owner: &DeriveInput, view: &DeriveInput) -> TokenStream {
             type Trap = <#owner_ty as #rust_spec>::Trap;
             type Niche = <#owner_ty as #rust_spec>::Niche;
             type Drop = co3::rust_spec::drop::NoDrop;
-            type Mutability = <#owner_ty as #rust_spec>::Mutability;
+            type Mutability = #mutability;
             type __IndirectTrap = <#owner_ty as #rust_spec>::__IndirectTrap;
         }
     }
+}
+
+fn view_single_field_mutability(fields: &syn::Fields) -> (TokenStream, Vec<TokenStream>) {
+    match fields {
+        syn::Fields::Named(fields) if fields.named.len() == 1 => {
+            view_field_mutability(&fields.named[0].ty)
+        }
+        syn::Fields::Unnamed(fields) if fields.unnamed.len() == 1 => {
+            view_field_mutability(&fields.unnamed[0].ty)
+        }
+        _ => (quote!(co3::rust_spec::mutability::Exclusive), Vec::new()),
+    }
+}
+
+fn view_field_mutability(field: &syn::Type) -> (TokenStream, Vec<TokenStream>) {
+    (
+        quote!(<#field as co3::rust_spec::RustSpec>::Mutability),
+        vec![quote!(#field: co3::rust_spec::RustSpec)],
+    )
 }
 
 pub(super) fn gen_item_borrow_impls(input: &DeriveInput) -> TokenStream {
