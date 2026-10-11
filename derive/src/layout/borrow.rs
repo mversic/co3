@@ -32,6 +32,7 @@ pub(super) fn gen_item_view(
 
     rewrite_view_generics(&mut view_def);
     rewrite_view_fields(&mut view_def.data);
+    let rust_spec_impl = gen_view_rust_spec(input, &view_def);
     let fields_methods = match &view_def.data {
         syn::Data::Struct(data) => {
             gen_fields_methods(&view_def.ident, &view_def.generics, &data.fields)
@@ -44,7 +45,6 @@ pub(super) fn gen_item_view(
 
     let inherited_niche = attrs.niche_value.as_ref().map(|_| {
         quote! {
-            #[rust_spec(custom_niche)]
             #[repr_c(NICHE = co3::borrow::borrow_cast(
                 <#owner_name #owner_ty_generics as co3::niche::Niche>::NICHE
             ))]
@@ -52,12 +52,44 @@ pub(super) fn gen_item_view(
     });
 
     quote! {
-        #[derive(co3::rust_spec::RustSpec, co3::ReprC)]
+        #[derive(co3::ReprC)]
         #[repr_c(view)]
         #inherited_niche
         #[doc(hidden)]
         #view_def
+        #rust_spec_impl
         #fields_methods
+    }
+}
+
+fn gen_view_rust_spec(owner: &DeriveInput, view: &DeriveInput) -> TokenStream {
+    let rust_spec = quote!(co3::rust_spec::RustSpec);
+    let owner_name = &owner.ident;
+    let owner_args = generic_param_idents(owner.generics.params.iter()).collect::<Vec<_>>();
+    let owner_ty = if owner_args.is_empty() {
+        quote!(#owner_name)
+    } else {
+        quote!(#owner_name<#(#owner_args),*>)
+    };
+    let view_name = &view.ident;
+    let (impl_generics, ty_generics, where_clause) = view.generics.split_for_impl();
+    let predicates = where_clause.as_ref().map(|clause| &clause.predicates);
+
+    quote! {
+        unsafe impl #impl_generics #rust_spec for #view_name #ty_generics
+        where
+            #owner_ty: #rust_spec,
+            #predicates
+        {
+            type Layout = <#owner_ty as #rust_spec>::Layout;
+            type Size = <#owner_ty as #rust_spec>::Size;
+            type Alignment = <#owner_ty as #rust_spec>::Alignment;
+            type Trap = <#owner_ty as #rust_spec>::Trap;
+            type Niche = <#owner_ty as #rust_spec>::Niche;
+            type Drop = co3::rust_spec::drop::NoDrop;
+            type Mutability = <#owner_ty as #rust_spec>::Mutability;
+            type __IndirectTrap = <#owner_ty as #rust_spec>::__IndirectTrap;
+        }
     }
 }
 

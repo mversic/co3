@@ -429,6 +429,7 @@ pub(super) fn gen_fields_methods(
             ///
             /// The caller must uphold the validity, ownership, and aliasing
             /// requirements of this generated struct.
+            #[allow(clippy::too_many_arguments)]
             pub unsafe fn from_fields(#(#arg_names: #arg_types),*) -> Self
             where
                 for<'_dummy> Self: Sized,
@@ -456,6 +457,15 @@ fn gen_ctype_wide_impl(
     source_generics: &syn::Generics,
 ) -> TokenStream {
     let is_transparent = matches!(repr, Some(ReprKind::Transparent));
+
+    // For a generic slice tail, the projected CType element does not give
+    // rustc enough information to prove matching pointer metadata for the
+    // generated C struct. The source DST still gets its own Wide impl.
+    if source_fields.iter().next_back().is_some_and(|field| {
+        matches!(&field.ty, syn::Type::Slice(slice) if is_type_parametrized(&slice.elem, source_generics))
+    }) {
+        return quote! {};
+    }
 
     if source_fields
         .iter()

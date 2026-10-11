@@ -4,7 +4,20 @@ use std::{
 };
 
 use co3::{ReprC, ffi, rust_spec::RustSpec, slice::Unpack2, wide::Wide};
-use static_assertions::assert_impl_all;
+use static_assertions::{assert_impl_all, assert_not_impl_any};
+
+#[repr(C)]
+#[derive(RustSpec, ReprC)]
+struct GenericSlicePacket<T> {
+    id: u32,
+    payload: [T],
+}
+
+#[test]
+fn generic_slice_tail_omits_generated_carrier_wide_impl() {
+    assert_impl_all!(GenericSlicePacket<u8>: Wide);
+    assert_not_impl_any!(CGenericSlicePacket<u8>: Wide);
+}
 
 #[repr(transparent)]
 #[derive(RustSpec, ReprC)]
