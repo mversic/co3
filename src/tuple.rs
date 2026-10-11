@@ -19,7 +19,10 @@
 //! ```rust
 //! use core::mem::size_of;
 //!
-//! use co3::{encode, niche::Niche, option::ReprCOption, primitives::CBool, tuple::ReprCTuple3, ReprC};
+//! use co3::{
+//!     encode, niche::Niche, option::ReprCOption, primitives::CBool,
+//!     reference::CRef, tuple::ReprCTuple3, ReprC,
+//! };
 //!
 //! type TupleWithNiche1<'a> = (u8, bool, &'a bool);
 //! type TupleWithNiche2<'a> = (u8, &'a bool, bool);
@@ -39,10 +42,10 @@
 //! );
 //!
 //! let none_value_1: Option<TupleWithNiche1> = None;
-//! assert_eq!(encode(none_value_1), ReprCTuple3(0, bool::NICHE, core::ptr::null()));
+//! assert_eq!(encode(none_value_1), ReprCTuple3(0, bool::NICHE, CRef::null()));
 //!
 //! let none_value_2: Option<TupleWithNiche2> = None;
-//! assert_eq!(encode(none_value_2), ReprCTuple3(0, core::ptr::null(), CBool::FALSE));
+//! assert_eq!(encode(none_value_2), ReprCTuple3(0, CRef::null(), CBool::FALSE));
 //!
 //! let none_value_3: Option<TupleWithoutNiche> = None;
 //! assert_eq!(encode(none_value_3), ReprCOption::None());
@@ -413,11 +416,12 @@ mod tests {
     use static_assertions::assert_not_impl_any;
 
     use super::*;
+    #[cfg(feature = "alloc")]
+    use crate::boxed::{CBox, CBoxedSlice};
+    use crate::reference::{CRef, CRefMut};
     use crate::{Decode, Encode, option::ReprCOption};
     #[cfg(feature = "alloc")]
     use crate::{
-        boxed::{CBox, CBoxedSlice},
-        reference::CRefMut,
         slice::{CSlice, CSliceMut},
         stored::{DecodeOwned, EncodeOwned},
     };
@@ -444,7 +448,7 @@ mod tests {
         );
 
         assert_impl_all!(&(u8, u8, u8):
-            Niche<CType = *const ReprCTuple3<u8, u8, u8>>,
+            Niche<CType = CRef<ReprCTuple3<u8, u8, u8>>>,
             Decode<'static>,
             Encode,
         );
@@ -540,7 +544,7 @@ mod tests {
         );
 
         assert_impl_all!(&(u8, StdNonZero<u8>, bool):
-            Niche<CType = *const ReprCTuple3<u8, u8, crate::primitives::CBool>>,
+            Niche<CType = CRef<ReprCTuple3<u8, u8, crate::primitives::CBool>>>,
             Decode<'static>,
             Encode,
         );

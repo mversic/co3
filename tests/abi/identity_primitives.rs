@@ -172,13 +172,20 @@ fn lowered_aggregates_use_codecs_without_conversion_traits() {
 #[test]
 fn safe_carrier_constructors_accept_lowered_storage() {
     use co3::{
+        borrow::borrow_cast,
         boxed::{CBox, CBoxedSlice},
-        reference::CRefMut,
+        reference::{CRef, CRefMut},
         slice::{CSlice, CSliceMut},
     };
 
     let boxed = CBox::from_box(Box::new(9_u8));
+    let borrowed: CRef<u8> = borrow_cast(boxed);
+    assert_eq!(borrowed.as_ptr(), boxed.as_ptr());
     assert_eq!(*unsafe { co3::decode::<Box<u8>>(boxed) }.unwrap(), 9);
+
+    let value = 8_u8;
+    assert_eq!(CRef::from_ref(&value), co3::encode(&value));
+    assert_eq!(CRef::<u8>::null(), co3::encode(None::<&u8>));
 
     let raw = Box::into_raw(Box::new(10_u8));
     let boxed = unsafe { CBox::from_non_null(core::ptr::NonNull::new(raw).unwrap()) };

@@ -661,7 +661,7 @@ mod tests {
     fn cstr_reference_round_trip() {
         let original = c"hello";
         let encoded = crate::encode(original);
-        assert_eq!(encoded.cast(), original.as_ptr());
+        assert_eq!(encoded.as_ptr().cast(), original.as_ptr());
 
         let decoded: &CStr = unsafe { crate::decode(encoded) }.unwrap();
         assert_eq!(decoded, original);

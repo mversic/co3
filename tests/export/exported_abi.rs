@@ -1,7 +1,7 @@
 use co3::rust_spec::RustSpec;
 use core::ffi::c_void;
 
-use co3::{ReprC, ffi};
+use co3::{ReprC, ffi, reference::CRef};
 
 trait AmbiguousX<T, const N: usize> {
     type U;
@@ -200,7 +200,7 @@ fn exported_abi() {
         fn export_opaque_clone_bool(handle: *const c_void) -> *mut c_void;
         #[link_name = "nclone"]
         fn export_non_opaque_clone_bool(
-            handle_ptr: *const <NonOpaqueStruct<bool> as co3::ReprC>::CType,
+            handle_ptr: CRef<<NonOpaqueStruct<bool> as co3::ReprC>::CType>,
         ) -> <NonOpaqueStruct<bool> as co3::ReprC>::CType;
         #[link_name = "xor_u8"]
         fn export_opaque_xor_u8(handle_ptr: *const c_void, by: u8) -> *mut c_void;
@@ -214,13 +214,13 @@ fn exported_abi() {
     }
 
     unsafe extern "C" {
-        fn kita(a: *const [i8; 4]) -> <Ambiguous as co3::ReprC>::CType;
+        fn kita(a: CRef<[i8; 4]>) -> <Ambiguous as co3::ReprC>::CType;
         fn kita1() -> <Ambiguous as co3::ReprC>::CType;
         fn kita2() -> <Ambiguous as co3::ReprC>::CType;
 
         #[link_name = "export__Clone__NonOpaqueStruct_u8__clone"]
         fn export_non_opaque_clone_u8(
-            handle: *const <NonOpaqueStruct<u8> as co3::ReprC>::CType,
+            handle: CRef<<NonOpaqueStruct<u8> as co3::ReprC>::CType>,
         ) -> <NonOpaqueStruct<u8> as co3::ReprC>::CType;
         #[link_name = "clone"]
         fn export_opaque_clone_u8(handle: *const c_void) -> *mut c_void;
@@ -263,11 +263,14 @@ fn exported_abi() {
 
         let opaque_u8_ptr = (&*opaque_u8 as *const OpaqueStructU8).cast::<c_void>();
 
-        let opaque_bool_handle =
-            co3::encode::<&OwnedOpaqueStructBool>(&opaque_bool).cast::<c_void>();
+        let opaque_bool_handle = co3::encode::<&OwnedOpaqueStructBool>(&opaque_bool)
+            .as_ptr()
+            .cast::<c_void>();
         let opaque_bool_clone =
             Box::from_raw(export_opaque_clone_bool(opaque_bool_handle).cast::<OpaqueStructBool>());
-        let opaque_u8_handle = co3::encode::<&OwnedOpaqueStructU8>(&opaque_u8).cast::<c_void>();
+        let opaque_u8_handle = co3::encode::<&OwnedOpaqueStructU8>(&opaque_u8)
+            .as_ptr()
+            .cast::<c_void>();
         let opaque_u8_clone =
             Box::from_raw(export_opaque_clone_u8(opaque_u8_handle).cast::<OpaqueStructU8>());
         assert_eq!(OpaqueStructU8(11_u8), *opaque_u8_clone);

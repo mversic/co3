@@ -547,7 +547,7 @@ mod tests {
     use crate::{
         Encode,
         option::ReprCOption,
-        reference::CRefMut,
+        reference::{CRef, CRefMut},
         slice::{CSlice, CSliceMut},
     };
 
@@ -662,7 +662,7 @@ mod tests {
             CType,
         );
         assert_impl_all!(&u8:
-            Niche<CType = *const u8>,
+            Niche<CType = CRef<u8>>,
             Decode<'static>,
             Encode,
         );

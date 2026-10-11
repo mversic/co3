@@ -1,7 +1,8 @@
 use std::marker::PhantomData;
 
 use co3::{
-    ReprC, boxed::CBoxedSlice, ffi, option::ReprCOption, rust_spec::RustSpec, slice::CSlice,
+    ReprC, boxed::CBoxedSlice, ffi, option::ReprCOption, reference::CRef, rust_spec::RustSpec,
+    slice::CSlice,
 };
 
 #[derive(Clone, Copy, PartialEq, Eq, Debug, RustSpec, ReprC)]
@@ -90,9 +91,7 @@ pub fn slice_to_slice(value: &[TransparentStruct]) -> &[TransparentStruct] {
 
 unsafe extern "C" {
     #[link_name = "export_transparent__array_of_transparent"]
-    fn array_of_transparent_raw(
-        arr: *const [TransparentStruct; 1],
-    ) -> *const [TransparentStruct; 1];
+    fn array_of_transparent_raw(arr: CRef<[TransparentStruct; 1]>) -> CRef<[TransparentStruct; 1]>;
 
     #[link_name = "export_transparent__transparent_option"]
     fn transparent_option_raw(
@@ -115,7 +114,7 @@ unsafe extern "C" {
     ) -> TransparentStruct;
 
     #[link_name = "export_transparent__TransparentStruct__payload"]
-    fn payload_raw(value: *const TransparentStruct) -> *const GenericTransparentStruct<()>;
+    fn payload_raw(value: CRef<TransparentStruct>) -> CRef<GenericTransparentStruct<()>>;
 }
 
 #[test]

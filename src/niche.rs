@@ -12,7 +12,7 @@ use crate::{
     CType, ReprC, assert_arr_has_non_zero_len,
     option::ReprCOption,
     primitives::CBool,
-    reference::CRefMut,
+    reference::{CRef, CRefMut},
     result::ReprCResult,
     slice::{CSlice, CSliceMut},
 };
@@ -30,9 +30,9 @@ disjoint_impls! {
 
     impl<R: ?Sized, C> Niche for &R
     where
-        Self: ReprC<CType = *const C>,
+        Self: ReprC<CType = CRef<C>>,
     {
-        const NICHE: Self::CType = core::ptr::null();
+        const NICHE: Self::CType = CRef::null();
     }
     impl<R: ?Sized, C> Niche for &R
     where
@@ -199,7 +199,7 @@ mod tests {
 
     #[test]
     fn niche_values() {
-        assert_eq!(core::ptr::null::<CBool>(), crate::encode(None::<&bool>));
+        assert_eq!(CRef::<CBool>::null(), crate::encode(None::<&bool>));
         assert_eq!(
             <&mut bool as Niche>::NICHE,
             co3::soft_encode(None::<&mut bool>, &mut Default::default())

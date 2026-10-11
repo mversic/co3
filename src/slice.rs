@@ -520,4 +520,5 @@ impl<C> CSliceMut<C> {
     }
 }
 
+#[cfg(feature = "alloc")]
 pub(crate) use impl_raw_slice_methods;

@@ -7,7 +7,7 @@ use rust_spec::RustSpec;
 use crate::{
     CFnArg, CFnReturn, CType, Decode, Encode, ReprC,
     borrow::{BorrowCast, BorrowCastMut},
-    reference::CRefMut,
+    reference::{CRef, CRefMut},
     slice::{CSlice, CSliceMut, Pack2, Unpack2, impl_raw_slice_methods},
     stored::{DecodeOwned, EncodeOwned},
     transmute::CheckedTransmute,
@@ -143,7 +143,7 @@ macro_rules! impl_boxed_pointer {
     };
 }
 
-impl_boxed_pointer!(CBox, *const C);
+impl_boxed_pointer!(CBox, CRef<C>);
 impl_boxed_pointer!(CBoxCell, CRefMut<C, false>);
 
 impl<C> core::fmt::Debug for CBoxedSliceCell<C> {

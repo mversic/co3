@@ -538,7 +538,7 @@ use crate::boxed::{CBox, CBoxCell, CBoxedSlice, CBoxedSliceCell};
 use crate::{
     ffi::NulTerminatedBuf,
     option::ReprCOption,
-    reference::CRefMut,
+    reference::{CRef, CRefMut},
     result::ReprCResult,
     slice::{CSlice, CSliceMut},
     stored::{DecodeOwned, EmptyStore, EncodeOwned, Store},
@@ -651,14 +651,14 @@ disjoint_impls! {
     where
         R: RustSpec<Size: Thin, Mutability = Exclusive>,
     {
-        type CType = *const R::CType;
+        type CType = CRef<R::CType>;
     }
     impl<R: NulTerminatedBuf<Data: ReprC> + ?Sized> ReprC for &R
     where
         R: RustSpec<Size = NulTerminated, Mutability = Exclusive>,
         <<R as NulTerminatedBuf>::Data as ReprC>::CType: Sized,
     {
-        type CType = *const <R::Data as ReprC>::CType;
+        type CType = CRef<<R::Data as ReprC>::CType>;
     }
     impl<R: Wide<Header: WideHeader<Data: ReprC>, Metadata = usize> + ?Sized> ReprC for &R
     where

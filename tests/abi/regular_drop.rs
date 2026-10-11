@@ -16,7 +16,7 @@ struct RemoteString(CBox<c_char>);
 impl Clone for RemoteString {
     fn clone(&self) -> Self {
         let ptr = co3::borrow::borrow_cast(self.0);
-        let value = unsafe { CStr::from_ptr(ptr.cast()) }.to_owned();
+        let value = unsafe { CStr::from_ptr(ptr.as_ptr().cast()) }.to_owned();
         Self(co3::encode(value))
     }
 }

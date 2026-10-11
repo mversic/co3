@@ -31,7 +31,7 @@ use crate::{
     ffi::NulTerminatedBuf,
     niche::Niche,
     option::ReprCOption,
-    reference::CRefMut,
+    reference::{CRef, CRefMut},
     result::ReprCResult,
     slice::{CSlice, CSliceMut},
     sync::{
@@ -105,7 +105,7 @@ disjoint_impls! {
 
     unsafe impl<R: ReprC + ?Sized> EncodeOwned for &R
     where
-        Self: RustSpec<Layout = Stable> + CheckedTransmute<CType = *const <R as ReprC>::CType>,
+        Self: RustSpec<Layout = Stable> + CheckedTransmute<CType = CRef<<R as ReprC>::CType>>,
         R: RustSpec<Layout = Stable, Size: Thin, Mutability = Exclusive>,
     {
         type Store = ();
@@ -119,7 +119,7 @@ disjoint_impls! {
             // TODO: Hack before `Thin` trait is available in stable:
             // https://doc.rust-lang.org/std/ptr/traitalias.Thin.html
             // https://github.com/rust-lang/rust/issues/81513
-            unsafe { core::mem::transmute_copy::<*const R, *const R::CType>(&ptr) }
+            unsafe { CRef::from_raw(core::mem::transmute_copy::<*const R, *const R::CType>(&ptr)) }
         }
     }
     unsafe impl<R: Wide<Header: WideHeader<Data: CheckedTransmute>, Metadata = usize> + ?Sized>
@@ -155,7 +155,8 @@ disjoint_impls! {
         where
             Self: 'itm,
         {
-            R::as_ptr(core::ptr::from_ref(self)).cast()
+            let ptr = R::as_ptr(core::ptr::from_ref(self)).cast();
+            unsafe { CRef::from_raw(ptr) }
         }
     }
     unsafe impl<R: EncodeOwned + Clone, S: SizedKind> EncodeOwned for &R
@@ -171,7 +172,7 @@ disjoint_impls! {
         {
             let owned = self.clone();
             let ctype = owned.soft_encode(&mut store.store);
-            store.ctype.insert(ctype)
+            CRef::from_ref(store.ctype.insert(ctype))
         }
     }
     #[cfg(feature = "alloc")]
@@ -210,12 +211,7 @@ disjoint_impls! {
             // TODO: Hack before `Thin` trait is available in stable:
             // https://doc.rust-lang.org/std/ptr/traitalias.Thin.html
             // https://github.com/rust-lang/rust/issues/81513
-            unsafe {
-                CRefMut::<_, false>::from_raw(core::mem::transmute_copy::<
-                    *mut R::Target,
-                    *mut R::CType,
-                >(&ptr))
-            }
+            unsafe { CRefMut::from_raw(core::mem::transmute_copy::<*mut R::Target, *mut R::CType>(&ptr)) }
         }
     }
     unsafe impl<'a, R: InteriorMut<Target: DecodeOwned<'a, Store: EmptyStore>> + Clone, S: SizedKind>
@@ -234,7 +230,8 @@ disjoint_impls! {
             let original = store.original.insert(self);
             let owned = (**original).clone();
             let ctype = encode_owned(owned);
-            unsafe { CRefMut::<_, false>::from_raw(store.ctype.insert(ctype)) }
+            let ptr = store.ctype.insert(ctype);
+            unsafe { CRefMut::from_raw(ptr) }
         }
     }
     unsafe impl<R: InteriorMut + Wide<Metadata = usize> + ?Sized> EncodeOwned for &R
@@ -255,7 +252,7 @@ disjoint_impls! {
             let len = <R::Target as Wide>::metadata(target);
             let ptr = <R::Target as Wide>::as_mut_ptr(target).cast();
 
-            unsafe { CSliceMut::<_, false>::from_raw_parts_mut(ptr, len) }
+            unsafe { CSliceMut::from_raw_parts_mut(ptr, len) }
         }
     }
     // FIXME: There is a deep issue here that surfaces in 0-length slices: https://github.com/mversic/co3/issues/229
@@ -292,11 +289,8 @@ disjoint_impls! {
         where
             Self: 'itm,
         {
-            unsafe {
-                CRefMut::<_, false>::from_raw(
-                    <R::Target as NulTerminatedBuf>::as_ptr(self.get()).cast_mut().cast(),
-                )
-            }
+            let ptr = <R::Target as NulTerminatedBuf>::as_ptr(self.get()).cast_mut().cast();
+            unsafe { CRefMut::from_raw(ptr) }
         }
     }
     // FIXME: These are interior mutable references with unstable layout
@@ -369,7 +363,8 @@ disjoint_impls! {
         where
             Self: 'itm,
         {
-            unsafe { CRefMut::from_raw(encode_ref_mut_sized(self, store)) }
+            let ptr = encode_ref_mut_sized(self, store);
+            unsafe { CRefMut::from_raw(ptr) }
         }
     }
     unsafe impl<R: Wide<Metadata = usize> + ?Sized> EncodeOwned for &mut R
@@ -385,9 +380,9 @@ disjoint_impls! {
             Self: 'itm,
         {
             let len = R::metadata(self);
-            let ptr = R::as_mut_ptr(self);
+            let ptr = R::as_mut_ptr(self).cast();
 
-            unsafe { CSliceMut::<_>::from_raw_parts_mut(ptr.cast(), len) }
+            unsafe { CSliceMut::from_raw_parts_mut(ptr, len) }
         }
     }
     #[cfg(feature = "alloc")]
@@ -419,7 +414,8 @@ disjoint_impls! {
         where
             Self: 'itm,
         {
-            unsafe { CRefMut::from_raw(encode_ref_mut_sized(self, store)) }
+            let ptr = encode_ref_mut_sized(self, store);
+            unsafe { CRefMut::from_raw(ptr) }
         }
     }
     #[cfg(feature = "alloc")]
@@ -453,7 +449,8 @@ disjoint_impls! {
         where
             Self: 'itm,
         {
-            unsafe { CRefMut::from_raw((&*self).soft_encode(store).as_ptr()) }
+            let ptr = (&*self).soft_encode(store).as_ptr();
+            unsafe { CRefMut::from_raw(ptr) }
         }
     }
     unsafe impl<R: Wide<Metadata = usize> + ?Sized> EncodeOwned for &mut R
@@ -469,9 +466,9 @@ disjoint_impls! {
             Self: 'itm,
         {
             let len = R::metadata(self);
-            let ptr = R::as_mut_ptr(self);
+            let ptr = R::as_mut_ptr(self).cast();
 
-            unsafe { CSliceMut::<_>::from_raw_parts_mut(ptr.cast(), len) }
+            unsafe { CSliceMut::from_raw_parts_mut(ptr, len) }
         }
     }
 
@@ -516,9 +513,9 @@ disjoint_impls! {
             // where Store != () when type's Layout = Stable
             if impls::impls!(<R::Owned as EncodeOwned>::Store: EmptyStore) {
                 let len = R::metadata(core::ptr::from_ref(&*self));
-                let data = R::into_non_null(self);
+                let data = R::into_non_null(self).cast();
 
-                return unsafe { CBoxedSlice::from_raw_parts(data.cast(), len) };
+                return unsafe { CBoxedSlice::from_raw_parts(data, len) };
             }
 
             encode_box_owned::<R>(self, store)
@@ -537,7 +534,8 @@ disjoint_impls! {
         where
             Self: 'itm,
         {
-            unsafe { CBox::from_non_null(R::into_non_null(self).cast()) }
+            let ptr = R::into_non_null(self).cast();
+            unsafe { CBox::from_non_null(ptr) }
         }
     }
     #[cfg(feature = "alloc")]
@@ -601,7 +599,8 @@ disjoint_impls! {
         where
             Self: 'itm,
         {
-            unsafe { CBoxCell::from_non_null(R::into_non_null(self).cast()) }
+            let ptr = R::into_non_null(self).cast();
+            unsafe { CBoxCell::from_non_null(ptr) }
         }
     }
     #[cfg(feature = "alloc")]
@@ -835,7 +834,7 @@ disjoint_impls! {
             source: Self::CType,
             store: &'itm mut Self::Store,
         ) -> Self {
-            unsafe { Self::soft_decode(source, store).unwrap() }
+            unsafe { Self::soft_decode(source, store) }.unwrap()
         }
     }
 
@@ -848,7 +847,7 @@ disjoint_impls! {
         type Store = ();
 
         unsafe fn soft_decode<'itm: 'd>(source: Self::CType, store: &'itm mut ()) -> Option<Self> {
-            if source.is_null() {
+            if source.as_ptr().is_null() {
                 return None;
             }
 
@@ -856,7 +855,8 @@ disjoint_impls! {
         }
 
         unsafe fn soft_decode_unchecked<'itm: 'd>(source: Self::CType, (): &mut ()) -> Self {
-            unsafe { R::from_raw(source.cast()) }
+            let ptr = source.as_ptr().cast();
+            unsafe { R::from_raw(ptr) }
         }
     }
     unsafe impl<'d, R: NulTerminatedBuf + ?Sized> DecodeOwned<'d> for &'d R
@@ -869,6 +869,7 @@ disjoint_impls! {
 
         unsafe fn soft_decode<'itm: 'd>(source: Self::CType, (): &mut ()) -> Option<Self> {
             let source = source.as_ptr();
+
             if source.is_null() {
                 return None;
             }
@@ -878,7 +879,7 @@ disjoint_impls! {
     }
     unsafe impl<'d, R: ReprC + ?Sized> DecodeOwned<'d> for &'d R
     where
-        Self: RustSpec<Layout = Stable> + CheckedTransmute<CType = *const <R as ReprC>::CType>,
+        Self: RustSpec<Layout = Stable> + CheckedTransmute<CType = CRef<<R as ReprC>::CType>>,
         R: RustSpec<Size: Thin, Mutability = Exclusive>,
     {
         type Store = ();
@@ -891,11 +892,13 @@ disjoint_impls! {
             // TODO: Hack before `Thin` trait is available in stable:
             // https://doc.rust-lang.org/std/ptr/traitalias.Thin.html
             // https://github.com/rust-lang/rust/issues/81513
-            unsafe { core::mem::transmute_copy::<*const R::CType, *const R>(&source).as_ref() }
+            let ptr = source.as_ptr();
+            unsafe { core::mem::transmute_copy::<*const R::CType, *const R>(&ptr).as_ref() }
         }
 
         unsafe fn soft_decode_unchecked<'itm: 'd>(source: Self::CType, (): &mut ()) -> Self {
-            unsafe { &*core::mem::transmute_copy::<*const R::CType, *const R>(&source) }
+            let ptr = source.as_ptr();
+            unsafe { &*core::mem::transmute_copy::<*const R::CType, *const R>(&ptr) }
         }
     }
     unsafe impl<'d, R: CheckedTransmute<CType: Copy> + ?Sized> DecodeOwned<'d> for &'d R
@@ -995,14 +998,16 @@ disjoint_impls! {
             source: Self::CType,
             store: &'itm mut Self::Store,
         ) -> Option<Self> {
-            unsafe { decode_ref_sized(source, store) }
+            let ptr = source.as_ptr();
+            unsafe { decode_ref_sized(ptr, store) }
         }
 
         unsafe fn soft_decode_unchecked<'itm: 'd>(
             source: Self::CType,
             store: &'itm mut Self::Store,
         ) -> Self {
-            let source = borrow_cast(unsafe { source.read() });
+            let ptr = source.as_ptr();
+            let source = borrow_cast(unsafe { ptr.read() });
             let value = unsafe {
                 DecodeOwned::soft_decode_unchecked(source, &mut store.store)
             };

@@ -1,12 +1,128 @@
-//! ABI carriers for mutable pointers.
+//! ABI carriers for pointers derived from references.
 
 use rust_spec::RustSpec;
 
 use crate::{
     CFnArg, CFnReturn, CType, Decode, Encode, ReprC,
-    borrow::{Borrow, FromBorrow},
+    borrow::{Borrow, BorrowCast, BorrowCastMut, FromBorrow},
     stored::{DecodeOwned, EncodeOwned},
 };
+
+/// A shared reference pointer carrier with the same ABI as `*const C`.
+///
+/// A null pointer represents an absent reference.
+#[derive(RustSpec)]
+#[repr(transparent)]
+pub struct CRef<C: ?Sized> {
+    data: *const C,
+}
+
+impl<C: ?Sized> CRef<C> {
+    /// Wrap a pointer that follows the validity and aliasing rules of a shared reference.
+    ///
+    /// # Safety
+    /// A non-null pointer must refer to a live `C` for any later dereference.
+    pub const unsafe fn from_raw(data: *const C) -> Self {
+        Self { data }
+    }
+
+    /// Wrap an existing shared reference to lowered data.
+    pub const fn from_ref(data: &C) -> Self {
+        Self { data }
+    }
+
+    pub const fn as_ptr(self) -> *const C {
+        self.data
+    }
+}
+
+impl<C> CRef<C> {
+    /// Construct a carrier with a null data pointer.
+    pub const fn null() -> Self {
+        Self {
+            data: core::ptr::null(),
+        }
+    }
+}
+
+impl<C: ?Sized> core::fmt::Debug for CRef<C> {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        f.debug_tuple("CRef").field(&self.data).finish()
+    }
+}
+impl<C: ?Sized> Clone for CRef<C> {
+    fn clone(&self) -> Self {
+        *self
+    }
+}
+impl<C: ?Sized> Copy for CRef<C> {}
+impl<C: ?Sized> PartialEq for CRef<C> {
+    fn eq(&self, other: &Self) -> bool {
+        core::ptr::eq(self.data, other.data)
+    }
+}
+impl<C: ?Sized> Eq for CRef<C> {}
+impl<C> PartialOrd for CRef<C> {
+    fn partial_cmp(&self, other: &Self) -> Option<core::cmp::Ordering> {
+        Some(self.cmp(other))
+    }
+}
+impl<C> Ord for CRef<C> {
+    fn cmp(&self, other: &Self) -> core::cmp::Ordering {
+        self.data.cmp(&other.data)
+    }
+}
+
+unsafe impl<C: ?Sized> Borrow for CRef<C> {
+    type Borrowed<'itm>
+        = Self
+    where
+        Self: 'itm;
+    type Owner = ();
+
+    fn borrow<'itm>(self, (): &mut ()) -> Self::Borrowed<'itm>
+    where
+        Self: 'itm,
+    {
+        self
+    }
+}
+impl<'itm, C: ?Sized> FromBorrow<'itm> for CRef<C> {
+    fn from_borrow(source: Self) -> Self {
+        source
+    }
+}
+impl<C: CType + ?Sized> ReprC for CRef<C> {
+    type CType = Self;
+}
+unsafe impl<C: CType + ?Sized> EncodeOwned for CRef<C> {
+    type Store = ();
+
+    fn soft_encode<'itm>(self, (): &mut ()) -> Self::CType
+    where
+        Self: 'itm,
+    {
+        self
+    }
+}
+unsafe impl<'d, C: CType + ?Sized> DecodeOwned<'d> for CRef<C> {
+    type Store = ();
+
+    unsafe fn soft_decode<'itm: 'd>(source: Self::CType, (): &mut ()) -> Option<Self> {
+        Some(source)
+    }
+}
+impl<C: CType + ?Sized> Encode for CRef<C> {}
+impl<'d, C: CType + ?Sized> Decode<'d> for CRef<C> {}
+unsafe impl<C: CType + ?Sized> CType for CRef<C> {}
+unsafe impl<C: CType> CFnArg for CRef<C> {}
+unsafe impl<C: CType> CFnReturn for CRef<C> {}
+unsafe impl<C: CType + ?Sized> BorrowCast for CRef<C> {
+    type AsConst = Self;
+}
+unsafe impl<C: CType + ?Sized> BorrowCastMut for CRef<C> {
+    type AsMut = Self;
+}
 
 /// A mutable pointer carrier whose access contract is selected by `RESTRICTED`.
 ///
@@ -139,6 +255,25 @@ mod tests {
 
     use super::*;
     use crate::{niche::Niche, slice::CSliceMut};
+
+    #[test]
+    fn shared_reference_carrier_preserves_pointer_abi() {
+        assert_impl_all!(&u8: Niche<CType = CRef<u8>>, Encode, Decode<'static>);
+        assert_impl_all!(&CRef<u8>: Niche<CType = CRef<CRef<u8>>>, Encode, Decode<'static>);
+        assert_eq!(
+            core::mem::size_of::<CRef<u8>>(),
+            core::mem::size_of::<*const u8>()
+        );
+        assert_eq!(
+            core::mem::align_of::<CRef<u8>>(),
+            core::mem::align_of::<*const u8>()
+        );
+
+        let value = 7_u8;
+        let carrier = crate::encode(&value);
+        assert_eq!(carrier, CRef::from_ref(&value));
+        assert_eq!(unsafe { crate::decode::<&u8>(carrier) }, Some(&value));
+    }
 
     #[test]
     fn exclusive_and_shared_mutable_references_have_distinct_carriers() {

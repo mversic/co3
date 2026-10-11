@@ -1,4 +1,4 @@
-use co3::{ffi, ops::CFn1, raw};
+use co3::{ffi, ops::CFn1, raw, reference::CRef};
 
 fn identity<T>(value: T) -> T {
     value
@@ -55,7 +55,7 @@ fn main() {
     assert_eq!(unsafe { cloned_raw::<u8>(7) }, 7);
     assert_eq!(unsafe { const_value_raw::<4>() }, 4);
     let byte = 9_u8;
-    assert_eq!(unsafe { *borrowed_raw(&byte) }, 9);
+    assert_eq!(unsafe { *borrowed_raw(CRef::from_ref(&byte)).as_ptr() }, 9);
 
     let echo: BytesRaw = Host::<Vec<u8>>::echo_raw;
     let value: Vec<u8> = unsafe { echo.call(vec![1_u8, 2, 3]) }.unwrap();

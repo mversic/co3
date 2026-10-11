@@ -6,7 +6,7 @@ use rust_spec::{RustSpec, Stable, mutability::Exclusive, niche::WithNiche, size:
 
 #[cfg(feature = "alloc")]
 use crate::boxed::CBox;
-use crate::reference::CRefMut;
+use crate::reference::{CRef, CRefMut};
 use crate::{CType, ReprC, Thin, assert_arr_has_non_zero_len};
 
 disjoint_impls! {
@@ -58,11 +58,11 @@ disjoint_impls! {
 unsafe impl<R: CheckedTransmute + ?Sized> CheckedTransmute for &R
 where
     R: RustSpec<Size: Thin, Mutability = Exclusive>,
-    Self: ReprC<CType = *const R::CType>,
+    Self: ReprC<CType = CRef<R::CType>>,
 {
     #[inline(always)]
     unsafe fn is_valid(target: &Self::CType) -> bool {
-        let ptr = *target;
+        let ptr = target.as_ptr();
 
         if ptr.is_null() {
             return false;
@@ -90,6 +90,15 @@ where
         }
 
         unsafe { R::is_valid(&*ptr) }
+    }
+}
+
+unsafe impl<C: CType + ?Sized> CheckedTransmute for CRef<C>
+where
+    C: RustSpec<Size: Thin>,
+{
+    unsafe fn is_valid(_: &Self::CType) -> bool {
+        true
     }
 }
 
@@ -196,7 +205,7 @@ mod tests {
             Encode,
         );
         assert_impl_all!(&bool:
-            Niche<CType = *const crate::primitives::CBool>,
+            Niche<CType = CRef<crate::primitives::CBool>>,
             Decode<'static>,
             Encode,
         );
@@ -249,49 +258,49 @@ mod tests {
     #[test]
     fn robust_ref() {
         assert_impl_all!(&&u8:
-            Niche<CType = *const *const u8>,
+            Niche<CType = CRef<CRef<u8>>>,
             Decode<'static>,
             Encode,
         );
         assert_impl_all!(&mut &u8:
-            Niche<CType = CRefMut<*const u8>>,
+            Niche<CType = CRefMut<CRef<u8>>>,
             Decode<'static>,
             Encode,
         );
         #[cfg(feature = "alloc")]
         assert_impl_all!(Box<&bool>:
-            Niche<CType = CBox<*const crate::primitives::CBool>>,
+            Niche<CType = CBox<CRef<crate::primitives::CBool>>>,
             Decode<'static>,
             Encode,
         );
         assert_impl_all!(&[&u8]:
-            Niche<CType = CSlice<*const u8>>,
+            Niche<CType = CSlice<CRef<u8>>>,
             Decode<'static>,
             Encode,
         );
         assert_impl_all!(&mut [&u8]:
-            Niche<CType = CSliceMut<*const u8>>,
+            Niche<CType = CSliceMut<CRef<u8>>>,
             Decode<'static>,
         );
         #[cfg(feature = "alloc")]
         assert_impl_all!(Box<[&u8]>:
-            Niche<CType = CBoxedSlice<*const u8>>,
+            Niche<CType = CBoxedSlice<CRef<u8>>>,
             Decode<'static>,
             Encode,
         );
         #[cfg(feature = "alloc")]
         assert_impl_all!(Vec<&u8>:
-            Niche<CType = CBoxedSlice<*const u8>>,
+            Niche<CType = CBoxedSlice<CRef<u8>>>,
             Decode<'static>,
             Encode,
         );
         assert_impl_all!([&u8; 2]:
-            Niche<CType = [*const u8; 2]>,
+            Niche<CType = [CRef<u8>; 2]>,
             Decode<'static>,
             Encode,
         );
         assert_impl_all!(Option<&u8>:
-            ReprC<CType = *const u8>,
+            ReprC<CType = CRef<u8>>,
             Decode<'static>,
             Encode,
         );
@@ -302,51 +311,51 @@ mod tests {
     #[test]
     fn transparent_ref() {
         assert_impl_all!(&&bool:
-            Niche<CType = *const *const crate::primitives::CBool>,
+            Niche<CType = CRef<CRef<crate::primitives::CBool>>>,
             Decode<'static>,
             Encode,
         );
         assert_impl_all!(&mut &bool:
-            Niche<CType = CRefMut<*const crate::primitives::CBool>>,
+            Niche<CType = CRefMut<CRef<crate::primitives::CBool>>>,
             Decode<'static>,
             Encode,
         );
         #[cfg(feature = "alloc")]
         assert_impl_all!(Box<&bool>:
-            Niche<CType = CBox<*const crate::primitives::CBool>>,
+            Niche<CType = CBox<CRef<crate::primitives::CBool>>>,
             Decode<'static>,
             Encode,
         );
         assert_impl_all!(&[&bool]:
-            Niche<CType = CSlice<*const crate::primitives::CBool>>,
+            Niche<CType = CSlice<CRef<crate::primitives::CBool>>>,
             Decode<'static>,
             Encode,
         );
         #[cfg(feature = "alloc")]
         assert_impl_all!(&mut [&bool]:
-            Niche<CType = CSliceMut<*const crate::primitives::CBool>>,
+            Niche<CType = CSliceMut<CRef<crate::primitives::CBool>>>,
             Decode<'static>,
             Encode,
         );
         #[cfg(feature = "alloc")]
         assert_impl_all!(Box<[&bool]>:
-            Niche<CType = CBoxedSlice<*const crate::primitives::CBool>>,
+            Niche<CType = CBoxedSlice<CRef<crate::primitives::CBool>>>,
             Decode<'static>,
             Encode,
         );
         #[cfg(feature = "alloc")]
         assert_impl_all!(Vec<&bool>:
-            Niche<CType = CBoxedSlice<*const crate::primitives::CBool>>,
+            Niche<CType = CBoxedSlice<CRef<crate::primitives::CBool>>>,
             Decode<'static>,
             Encode,
         );
         assert_impl_all!([&bool; 2]:
-            Niche<CType = [*const crate::primitives::CBool; 2]>,
+            Niche<CType = [CRef<crate::primitives::CBool>; 2]>,
             Decode<'static>,
             Encode,
         );
         assert_impl_all!(Option<&bool>:
-            ReprC<CType = *const crate::primitives::CBool>,
+            ReprC<CType = CRef<crate::primitives::CBool>>,
             Decode<'static>,
             Encode,
         );
@@ -355,7 +364,7 @@ mod tests {
     #[test]
     fn robust_ref_mut() {
         assert_impl_all!(&&mut u8:
-            Niche<CType = *const CRefMut<u8>>,
+            Niche<CType = CRef<CRefMut<u8>>>,
             Decode<'static>,
             Encode,
         );
@@ -407,7 +416,7 @@ mod tests {
     #[test]
     fn transparent_ref_mut() {
         assert_impl_all!(&&mut bool:
-            Niche<CType = *const CRefMut<crate::primitives::CBool>>,
+            Niche<CType = CRef<CRefMut<crate::primitives::CBool>>>,
             Decode<'static>,
             Encode,
         );

@@ -3471,7 +3471,7 @@ fn gen_owned_repr_c_impls(ident: &syn::Ident, generics: &syn::Generics) -> Token
         unsafe impl #impl_generics #co3::CFnReturn for #owned_repr_c_name #ty_generics #where_clause {}
 
         unsafe impl #impl_generics #co3::borrow::BorrowCast for #owned_repr_c_name #ty_generics #where_clause {
-            type AsConst = *const #ident #ty_generics;
+            type AsConst = #co3::reference::CRef<#ident #ty_generics>;
         }
         unsafe impl #impl_generics #co3::borrow::BorrowCastMut for #owned_repr_c_name #ty_generics #where_clause {
             type AsMut = #co3::reference::CRefMut<#ident #ty_generics>;

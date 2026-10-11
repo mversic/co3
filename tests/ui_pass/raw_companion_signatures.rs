@@ -1,6 +1,6 @@
 #![allow(improper_ctypes_definitions)]
 
-use co3::{raw, ReprC};
+use co3::{raw, reference::CRef, ReprC};
 
 fn existing(value: u8) -> u8 {
     value
@@ -71,7 +71,7 @@ fn main() {
 
     let value = 7_u8;
     unsafe {
-        take_raw::<u8>(&value);
-        ArgumentHost::take_raw::<u8>(&value);
+        take_raw::<u8>(CRef::from_ref(&value));
+        ArgumentHost::take_raw::<u8>(CRef::from_ref(&value));
     }
 }

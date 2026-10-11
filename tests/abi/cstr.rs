@@ -1,5 +1,5 @@
 use co3::ffi::c_char;
-use co3::{ReprC, ffi, raw, rust_spec::RustSpec};
+use co3::{ReprC, ffi, raw, reference::CRef, rust_spec::RustSpec};
 use core::ffi::CStr;
 
 #[repr(transparent)]
@@ -22,8 +22,8 @@ raw! {
 
 #[test]
 fn raw_cstr_uses_thin_char_pointer() {
-    let callback: unsafe extern "C" fn(*const c_char) -> usize = cstr_len_raw;
-    assert_eq!(unsafe { callback(c"hello".as_ptr().cast()) }, 5);
+    let callback: unsafe extern "C" fn(CRef<c_char>) -> usize = cstr_len_raw;
+    assert_eq!(unsafe { callback(co3::encode(c"hello")) }, 5);
 }
 
 #[unsafe(export_name = "abi_cstr__borrowed")]
@@ -46,10 +46,12 @@ ffi! {
 
 #[test]
 fn imported_cstr_uses_thin_char_pointer() {
-    let callback: unsafe extern "C" fn(*const c_char) -> *const c_char = borrowed;
+    let callback: unsafe extern "C" fn(CRef<c_char>) -> CRef<c_char> = borrowed;
     let original = c"hello";
     assert_eq!(
-        unsafe { callback(original.as_ptr().cast()) }.cast::<u8>(),
+        unsafe { callback(co3::encode(original)) }
+            .as_ptr()
+            .cast::<u8>(),
         original.as_ptr().cast::<u8>()
     );
     assert_eq!(borrowed_native(original), original);
