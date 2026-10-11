@@ -602,6 +602,24 @@ pub trait Error {
 /// - Dropping a value of this type must not run Rust drop glue, including drop glue for its fields.
 pub unsafe trait CType {}
 
+unsafe impl<T> CType for Option<T> where
+    Self: RustSpec<
+            Layout = rust_spec::Stable,
+            Trap = rust_spec::layout::Robust,
+            Drop = rust_spec::drop::NoDrop,
+        >
+{
+}
+
+unsafe impl<T, E> CType for Result<T, E> where
+    Self: RustSpec<
+            Layout = rust_spec::Stable,
+            Trap = rust_spec::layout::Robust,
+            Drop = rust_spec::drop::NoDrop,
+        >
+{
+}
+
 /// `C` type that is allowed as a foreign function argument.
 ///
 /// # Safety

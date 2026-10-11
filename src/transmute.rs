@@ -177,7 +177,7 @@ mod tests {
     #[cfg(feature = "alloc")]
     use alloc::vec::Vec;
 
-    use static_assertions::{assert_impl_all, assert_not_impl_any};
+    use static_assertions::assert_impl_all;
 
     use super::*;
     #[cfg(feature = "alloc")]
@@ -296,7 +296,7 @@ mod tests {
             Encode,
         );
 
-        assert_not_impl_any!(Option<&u8>: CType);
+        assert_impl_all!(Option<&u8>: CType);
     }
 
     #[test]
@@ -401,7 +401,7 @@ mod tests {
             Encode,
         );
 
-        assert_not_impl_any!(Option<&mut u8>: CType);
+        assert_impl_all!(Option<&mut u8>: CType);
     }
 
     #[test]

@@ -5,7 +5,7 @@ use syn::{Attribute, parenthesized, spanned::Spanned as _, visit::Visit};
 use crate::{
     layout::attr::{ReprKind, parse_repr},
     layout::item::{derive_fieldless_enum, derive_item},
-    utils::push_error,
+    utils::{ParamUseDetector, push_error},
 };
 
 mod attr;
@@ -410,16 +410,19 @@ pub(crate) fn derive_repr_c(input: &syn::DeriveInput) -> syn::Result<TokenStream
 
     if is_custom {
         let tokens = custom::derive_custom_repr_c(input, &repr_c_attrs);
+        let ctype_impl = gen_source_ctype_impl(input, &repr_c_attrs);
         return Ok(quote! {
             #primitive_type_checks
             #tokens
+            #ctype_impl
         });
     }
 
     if repr_c_attrs.is_transparent {
         let item = field::derive_field_repr_c(input, repr_attr, &repr_c_attrs);
         let wide = wide::expand(input, repr_attr)?;
-        return Ok(quote! { #item #wide });
+        let ctype_impl = gen_source_ctype_impl(input, &repr_c_attrs);
+        return Ok(quote! { #item #wide #ctype_impl });
     }
 
     let tokens = match &input.data {
@@ -463,10 +466,12 @@ pub(crate) fn derive_repr_c(input: &syn::DeriveInput) -> syn::Result<TokenStream
     if let Some(errors) = errors {
         Err(errors)
     } else {
+        let ctype_impl = gen_source_ctype_impl(input, &repr_c_attrs);
         let body = quote! {
             #primitive_type_checks
 
             #tokens
+            #ctype_impl
         };
 
         if repr_c_attrs.is_wide_data {
@@ -476,6 +481,54 @@ pub(crate) fn derive_repr_c(input: &syn::DeriveInput) -> syn::Result<TokenStream
                 #body
             })
         }
+    }
+}
+
+fn gen_source_ctype_impl(input: &syn::DeriveInput, attrs: &ReprCAttrs) -> TokenStream {
+    if attrs.is_identity || attrs.is_view || attrs.is_wide_data {
+        return quote! {};
+    }
+
+    let field_types = match &input.data {
+        syn::Data::Struct(data) => data
+            .fields
+            .iter()
+            .map(|field| &field.ty)
+            .collect::<Vec<_>>(),
+        syn::Data::Enum(data) => data
+            .variants
+            .iter()
+            .flat_map(|variant| variant.fields.iter().map(|field| &field.ty))
+            .collect::<Vec<_>>(),
+        syn::Data::Union(_) => return quote! {},
+    };
+    let name = &input.ident;
+    let generics = &input.generics;
+    let (impl_generics, ty_generics, where_clause) = generics.split_for_impl();
+    let predicates = where_clause.as_ref().map(|clause| &clause.predicates);
+    let speculative = (generics.type_params().count() == 0).then_some(quote!(for<'_dummy>));
+    let detector = ParamUseDetector::new(generics.params.iter().filter_map(|param| match param {
+        syn::GenericParam::Type(param) => Some(&param.ident),
+        syn::GenericParam::Const(param) => Some(&param.ident),
+        syn::GenericParam::Lifetime(_) => None,
+    }));
+    let field_bounds = field_types.iter().map(|field_type| {
+        let speculative =
+            (!detector.type_mentions_param(field_type)).then_some(quote!(for<'_co3_field>));
+        quote!(#speculative #field_type: co3::CType,)
+    });
+
+    quote! {
+        unsafe impl #impl_generics co3::CType for #name #ty_generics
+        where
+            #speculative Self: co3::rust_spec::RustSpec<
+                Layout = co3::rust_spec::Stable,
+                Trap = co3::rust_spec::layout::Robust,
+                Drop = co3::rust_spec::drop::NoDrop,
+            >,
+            #(#field_bounds)*
+            #predicates
+        {}
     }
 }
 
