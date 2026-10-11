@@ -7,6 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.7.3] - 2026-10-11
+
+### Added
+
+- Add implied `Sized` bound to params in slice-like DST tails.
+
+### Changed
+
+- implement `RustSpec` for synthesized views manually.
+
 ## [0.7.2] - 2026-10-11
 
 ### Added
