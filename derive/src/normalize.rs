@@ -65,6 +65,7 @@ pub(crate) fn normalize_items(
                 }));
             }
             ParsedItem::Impl(mut item) => {
+                let was_empty = item.items.is_empty();
                 let raw_dispatch = if mode == NormalizationMode::Raw {
                     let ForeignItem::Impl(parsed) = ParsedItem::Impl(item.clone()).normalize()?
                     else {
@@ -152,7 +153,8 @@ pub(crate) fn normalize_items(
                         }));
                     }
                 }
-                if !raw_impl_items.is_empty() {
+                let has_raw_impl_items = !raw_impl_items.is_empty();
+                if has_raw_impl_items {
                     let mut raw_impl = item.clone();
                     raw_impl.items = raw_impl_items;
                     let ForeignItem::Impl(mut raw_impl) = ParsedItem::Impl(raw_impl).normalize()?
@@ -163,7 +165,7 @@ pub(crate) fn normalize_items(
                     normalized.push(NormalizedItem::Foreign(ForeignItem::Impl(raw_impl)));
                 }
                 item.items = impl_items;
-                if !item.items.is_empty() {
+                if !item.items.is_empty() || was_empty {
                     normalized.push(NormalizedItem::Foreign(ParsedItem::Impl(item).normalize()?));
                 }
             }

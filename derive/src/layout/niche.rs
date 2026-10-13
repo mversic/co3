@@ -6,10 +6,10 @@ use crate::{
         attr::ReprKind,
         borrow::gen_view_owner_name,
         ctype::{gen_ctype_name, gen_extern_c_bounds_for_ctype},
-        enum_tag_type, generic_param_idents, is_exhaustive_enum, is_transparent_enum_repr,
-        is_type_parametrized,
+        enum_tag_type, generic_param_idents, is_exhaustive_enum, is_parametrized,
+        is_transparent_enum_repr,
     },
-    utils::build_extern_c_type_tuple,
+    utils::{build_extern_c_type_tuple, speculative_marker},
 };
 
 pub fn gen_view_niche_ir(view_name: &syn::Ident, generics: &syn::Generics) -> TokenStream {
@@ -56,16 +56,12 @@ pub fn gen_struct_niche_ir(
         .map(|where_clause| &where_clause.predicates);
 
     let ctype_name = gen_ctype_name(struct_name);
-    let for_dummy = (generics.type_params().count() == 0).then_some(quote! {
-        for<'_dummy>
-    });
+    let for_dummy = speculative_marker(generics.params.is_empty());
 
     let last_field_sized = fields.iter().next_back().map(|field| {
         let ty = &field.ty;
 
-        let for_dummy = (!is_type_parametrized(ty, generics)).then_some(quote! {
-            for<'_dummy>
-        });
+        let for_dummy = speculative_marker(!is_parametrized(ty, generics));
 
         quote! { #for_dummy #ty: Sized, }
     });

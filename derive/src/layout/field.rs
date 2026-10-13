@@ -2,7 +2,8 @@ use proc_macro2::TokenStream;
 use quote::quote;
 use syn::{DeriveInput, GenericParam, Type, TypeParamBound, WherePredicate, parse_quote};
 
-use super::{ReprCAttrs, attr::ReprKind, gen_is_valid_call};
+use super::{ReprCAttrs, attr::ReprKind, gen_is_valid_call, is_parametrized};
+use crate::utils::speculative_marker;
 
 fn is_unsized_field(input: &DeriveInput, field_ty: &Type) -> bool {
     match field_ty {
@@ -146,7 +147,7 @@ pub(super) fn derive_field_repr_c(
     let codecs = (!is_unsized_field(input, field_ty)).then(|| {
         let (impl_generics, _, where_clause) = input.generics.split_for_impl();
         let predicates = where_clause.as_ref().map(|clause| &clause.predicates);
-        let speculative = (input.generics.type_params().count() == 0).then_some(quote!(for<'_dummy>));
+        let speculative = speculative_marker(input.generics.params.is_empty());
         let encode_niche_check = attrs.niche_value.as_ref().map(|value| {
             quote! {
                 debug_assert!(encoded != #value, "encoding produced the reserved NICHE");
@@ -177,7 +178,8 @@ pub(super) fn derive_field_repr_c(
             }
         } else {
             let mut generics = input.generics.clone();
-            let speculative = (input.generics.type_params().count() == 0).then_some(quote!(for<'_dummy>));
+            let speculative =
+                speculative_marker(!is_parametrized(field_ty, &input.generics));
             generics.make_where_clause().predicates.push(parse_quote!(#speculative #field_ty: co3::niche::Niche));
             generics.make_where_clause().predicates.push(parse_quote!(#name #ty_generics: co3::ReprC<CType = <#field_ty as co3::ReprC>::CType>));
             let (impl_generics, _, where_clause) = generics.split_for_impl();

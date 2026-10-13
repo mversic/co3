@@ -21,6 +21,11 @@ pub(crate) fn co3_path() -> TokenStream {
     }
 }
 
+/// Emits the dummy higher-ranked marker for speculative bounds.
+pub(crate) fn speculative_marker(enabled: bool) -> Option<TokenStream> {
+    enabled.then(|| quote!(for<'_dummy>))
+}
+
 pub(crate) fn cfg_attrs(attrs: &[Attribute]) -> impl Iterator<Item = &Attribute> {
     attrs
         .iter()

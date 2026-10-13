@@ -2,6 +2,8 @@ use proc_macro2::TokenStream;
 use quote::{format_ident, quote};
 use syn::{Ident, parse_quote};
 
+use crate::utils::speculative_marker;
+
 use crate::layout::{
     ReprCAttrs, VariantReprCAttrs,
     attr::ReprKind,
@@ -15,8 +17,8 @@ use crate::layout::{
         gen_identity_borrow_cast_impl, gen_identity_repr_c_impls, gen_item_ctype,
         gen_variant_struct_name,
     },
-    enum_tag_type, generic_param_idents, infer_repr, is_exhaustive_enum, is_phantom_data,
-    is_transparent_enum_repr, is_type_parametrized,
+    enum_tag_type, generic_param_idents, infer_repr, is_exhaustive_enum, is_parametrized,
+    is_phantom_data, is_transparent_enum_repr,
     niche::{gen_enum_niche_ir, gen_struct_niche_ir, gen_view_niche_ir},
     primitive_tag_type,
 };
@@ -94,8 +96,8 @@ pub(super) fn derive_item(
         } else {
             quote!(#owner_name <#(#owner_args),*>)
         };
-        let speculative =
-            (input.generics.type_params().count() == 0).then_some(quote!(for<'_dummy>));
+        // The generated view lifetime is not an argument of the owner type.
+        let speculative = speculative_marker(owner_args.is_empty());
         bounded_impl_input
             .generics
             .make_where_clause()
@@ -115,7 +117,7 @@ pub(super) fn derive_item(
             .expect("wide data has a tail")
             .ty;
         let speculative =
-            (!is_type_parametrized(header_ty, &input.generics)).then_some(quote!(for<'_dummy>));
+            speculative_marker(!is_parametrized(header_ty, &input.generics));
         bounded_impl_input
             .generics
             .make_where_clause()
@@ -335,7 +337,7 @@ fn gen_interior_mut_impl(
         .as_ref()
         .map(|where_clause| &where_clause.predicates);
     let field_ty = &field.ty;
-    let for_dummy = (!is_type_parametrized(field_ty, generics)).then_some(quote! { for<'_dummy> });
+    let for_dummy = speculative_marker(!is_parametrized(field_ty, generics));
 
     quote! {
         unsafe impl #impl_generics co3::cell::InteriorMut for #name #ty_generics
@@ -921,7 +923,7 @@ fn gen_checked_transmute_bounds<const ADD_COPY: bool>(
         .iter()
         .filter(|ty| !is_phantom_data(ty))
         .map(|&ty| {
-            let for_dummy = (!is_type_parametrized(ty, generics)).then_some(quote!(for<'_dummy>));
+            let for_dummy = speculative_marker(!is_parametrized(ty, generics));
 
             let ctype_bound = if ADD_COPY {
                 quote!(<CType: Copy>)
@@ -934,7 +936,7 @@ fn gen_checked_transmute_bounds<const ADD_COPY: bool>(
         .collect::<Vec<_>>();
 
     if !is_phantom_data(last) {
-        let for_dummy = (!is_type_parametrized(last, generics)).then_some(quote!(for<'_dummy>));
+        let for_dummy = speculative_marker(!is_parametrized(last, generics));
         let copy_bound = ADD_COPY.then(|| quote! { <CType: Copy> });
 
         predicates.push(parse_quote! {
@@ -1360,10 +1362,9 @@ fn gen_codec_impls<const ADD_COPY: bool>(
 
     let sized_bound = if is_view {
         quote! {}
-    } else if !is_view && generics.type_params().count() == 0 {
-        quote!(for<'_dummy> Self: Sized,)
     } else {
-        quote!(Self: Sized,)
+        let speculative = speculative_marker(!is_view && generics.params.is_empty());
+        quote!(#speculative Self: Sized,)
     };
 
     let has_view_lifetime = is_view
@@ -1471,8 +1472,7 @@ fn gen_field_encode_bounds<'a>(
         .iter()
         .filter(move |ty| !is_phantom_data(ty))
         .map(move |ty| {
-            let for_dummy =
-                (!is_type_parametrized(ty, generics)).then_some(quote! { for<'_dummy> });
+            let for_dummy = speculative_marker(!is_parametrized(ty, generics));
             parse_quote! { #for_dummy #ty: #bound<CType: Copy> }
         })
 }
@@ -1486,8 +1486,7 @@ fn gen_field_decode_bounds<'a>(
         .iter()
         .filter(move |ty| !is_phantom_data(ty))
         .map(move |ty| {
-            let for_dummy =
-                (!is_type_parametrized(ty, generics)).then_some(quote! { for<'_dummy> });
+            let for_dummy = speculative_marker(!is_parametrized(ty, generics));
             parse_quote! { #for_dummy #ty: #bound<'_dšč, CType: Copy> }
         })
 }
@@ -1530,7 +1529,7 @@ fn gen_borrow_cast_view_bounds<const ADD_COPY: bool>(
         .iter()
         .filter(|ty| !is_phantom_data(ty))
         .map(|ty| borrow_ty(ty))
-        .filter(|ty| is_type_parametrized(ty, generics))
+        .filter(|ty| is_parametrized(ty, generics))
         .map(|ty| {
             let ctype_bound = if ADD_COPY {
                 quote! { <AsConst: Copy> + Copy }
@@ -1544,7 +1543,7 @@ fn gen_borrow_cast_view_bounds<const ADD_COPY: bool>(
 
     if !is_phantom_data(last) {
         let last = borrow_ty(last);
-        if is_type_parametrized(last, generics) {
+        if is_parametrized(last, generics) {
             let ctype_bound = ADD_COPY.then(|| quote! { <AsConst: Copy> + Copy });
             predicates.push(quote!(#last: co3::ReprC<CType: co3::borrow::BorrowCast #ctype_bound>));
         }

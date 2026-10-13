@@ -2,11 +2,13 @@ use proc_macro2::TokenStream;
 use quote::{format_ident, quote};
 use syn::{DeriveInput, Ident, parse_quote};
 
+use crate::utils::speculative_marker;
+
 use crate::layout::{
     ReprCAttrs, VariantReprCAttrs,
     attr::ReprKind,
     ctype::{gen_ctype_name, gen_fields_methods},
-    generic_param_idents, is_phantom_data, is_type_parametrized,
+    generic_param_idents, is_parametrized, is_phantom_data,
     item::{field_vars, gen_fields_destructure},
 };
 
@@ -225,8 +227,9 @@ fn gen_with_drop_borrow_impls(name: &Ident, generics: &syn::Generics) -> TokenSt
         .make_where_clause()
         .predicates
         .push(drop_bound);
-    let sized_bound: syn::WherePredicate = if generics.type_params().count() == 0 {
-        parse_quote!(for<'_dummy> Self: Sized)
+    let speculative = speculative_marker(generics.params.is_empty());
+    let sized_bound: syn::WherePredicate = if generics.params.is_empty() {
+        parse_quote!(#speculative Self: Sized)
     } else {
         parse_quote!(Self: Sized)
     };
@@ -237,8 +240,8 @@ fn gen_with_drop_borrow_impls(name: &Ident, generics: &syn::Generics) -> TokenSt
     let (impl_generics, _, where_clause) = borrow_generics.split_for_impl();
     let mut from_borrow_generics = borrow_generics.clone();
     from_borrow_generics.params.insert(0, parse_quote!('_išč));
-    let clone_bound: syn::WherePredicate = if generics.type_params().count() == 0 {
-        parse_quote!(for<'_dummy> Self: Clone)
+    let clone_bound: syn::WherePredicate = if generics.params.is_empty() {
+        parse_quote!(#speculative Self: Clone)
     } else {
         parse_quote!(Self: Clone)
     };
@@ -457,18 +460,9 @@ fn gen_borrow_impls<const ADD_SIZED: bool>(
         gen_field_trait_bounds(generics, fields, quote! { co3::borrow::FromBorrow<'_išč> });
 
     let view_name = gen_view_name(name);
-    let sized_bound = ADD_SIZED.then(|| {
-        if generics.type_params().count() == 0 {
-            quote! { for<'_dummy> Self: Sized, }
-        } else {
-            quote! { Self: Sized, }
-        }
-    });
-    let drop_bound = if generics.type_params().count() == 0 {
-        quote! { for<'_dummy> Self: #drop_trait_bound, }
-    } else {
-        quote! { Self: #drop_trait_bound, }
-    };
+    let speculative = speculative_marker(generics.params.is_empty());
+    let sized_bound = ADD_SIZED.then(|| quote! { #speculative Self: Sized, });
+    let drop_bound = quote! { #speculative Self: #drop_trait_bound, };
     quote! {
         unsafe impl #impl_generics Borrow for #name #ty_generics
         where
@@ -734,6 +728,7 @@ fn gen_view_name(name: &Ident) -> Ident {
 pub fn gen_identity_borrow_impls(name: &Ident, generics: &syn::Generics) -> TokenStream {
     let (impl_generics, ty_generics, where_clause) = generics.split_for_impl();
     let predicates = where_clause.as_ref().map(|clause| &clause.predicates);
+    let speculative = speculative_marker(generics.params.is_empty());
     let mut from_borrow_generics = generics.clone();
     from_borrow_generics.params.insert(0, parse_quote!('d));
     let (from_borrow_impl_generics, _, _) = from_borrow_generics.split_for_impl();
@@ -741,7 +736,7 @@ pub fn gen_identity_borrow_impls(name: &Ident, generics: &syn::Generics) -> Toke
     quote! {
         unsafe impl #impl_generics co3::borrow::Borrow for #name #ty_generics
         where
-            for<'_dummy> Self: Sized,
+            #speculative Self: Sized,
             #predicates
         {
             type Borrowed<'_išč>
@@ -762,7 +757,7 @@ pub fn gen_identity_borrow_impls(name: &Ident, generics: &syn::Generics) -> Toke
 
         impl #from_borrow_impl_generics co3::borrow::FromBorrow<'d> for #name #ty_generics
         where
-            for<'_dummy> Self: Sized,
+            #speculative Self: Sized,
             #predicates
         {
             fn from_borrow(source: Self) -> Self {
@@ -782,16 +777,9 @@ fn gen_identity_borrow_impls_for_drop(
     let mut from_generics = generics.clone();
     from_generics.params.insert(0, parse_quote!('_išč));
     let (from_impl_generics, _, _) = from_generics.split_for_impl();
-    let drop_bound = if generics.type_params().count() == 0 {
-        quote! { for<'_dummy> Self: #drop_trait_bound, }
-    } else {
-        quote! { Self: #drop_trait_bound, }
-    };
-    let sized_bound = if generics.type_params().count() == 0 {
-        quote! { for<'_dummy> Self: Sized, }
-    } else {
-        quote! { Self: Sized, }
-    };
+    let speculative = speculative_marker(generics.params.is_empty());
+    let drop_bound = quote! { #speculative Self: #drop_trait_bound, };
+    let sized_bound = quote! { #speculative Self: Sized, };
     quote! {
         unsafe impl #impl_generics Borrow for #name #ty_generics where
             #drop_bound
@@ -844,7 +832,7 @@ fn gen_field_trait_bounds<'a>(
     bound: TokenStream,
 ) -> impl Iterator<Item = syn::WherePredicate> + use<'a> {
     fields.iter().map(move |ty| {
-        let for_dummy = (!is_type_parametrized(ty, generics)).then_some(quote!(for<'_dummy>));
+        let for_dummy = speculative_marker(!is_parametrized(ty, generics));
 
         parse_quote! { #for_dummy #ty: #bound }
     })

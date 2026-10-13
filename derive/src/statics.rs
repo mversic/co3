@@ -147,7 +147,7 @@ fn gen_import_wrapper(
     } else {
         (
             quote! {
-                for<'_dummy> #ty: #co3::Decode<'_dummy, Store: #co3::stored::EmptyStore>,
+                for<'__co3_decode> #ty: #co3::Decode<'__co3_decode, Store: #co3::stored::EmptyStore>,
                 <#ty as #co3::ReprC>::CType: Copy,
             },
             quote!(#co3::decode::<#ty>(source)),

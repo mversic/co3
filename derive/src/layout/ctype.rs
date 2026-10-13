@@ -6,7 +6,7 @@ use syn::{parse_quote, visit::Visit};
 
 use crate::layout::{
     attr::ReprKind,
-    infer_repr, is_phantom_data, is_transparent_enum_repr, is_type_parametrized,
+    infer_repr, is_parametrized, is_phantom_data, is_transparent_enum_repr,
     primitive_tag_type,
     wide::{
         data_bound_ty, gen_alloc_methods, gen_data_ctype_bounds, gen_data_struct_name,
@@ -14,7 +14,7 @@ use crate::layout::{
         wide_predicate, wide_usize_predicate,
     },
 };
-use crate::utils::co3_path;
+use crate::utils::{co3_path, speculative_marker};
 
 fn lowered_field_ty(field_ty: &syn::Type) -> TokenStream {
     if is_phantom_data(field_ty) {
@@ -406,6 +406,14 @@ pub(super) fn gen_fields_methods(
         .collect::<Vec<_>>();
     let arg_names = args.iter().map(|(name, _)| name).collect::<Vec<_>>();
     let arg_types = args.iter().map(|(_, ty)| ty).collect::<Vec<_>>();
+    let arg_sized_bounds = args
+        .iter()
+        .map(|(_, ty)| {
+            let speculative = speculative_marker(!is_parametrized(ty, generics));
+            quote!(#speculative #ty: Sized,)
+        })
+        .collect::<Vec<_>>();
+    let self_sized_bound = speculative_marker(generics.params.is_empty());
     let members = fields.members().collect::<Vec<_>>();
     let body = match fields {
         syn::Fields::Named(_) => quote!(Self { #(#arg_names),* }),
@@ -432,8 +440,8 @@ pub(super) fn gen_fields_methods(
             #[allow(clippy::too_many_arguments)]
             pub unsafe fn from_fields(#(#arg_names: #arg_types),*) -> Self
             where
-                for<'_dummy> Self: Sized,
-                #(for<'_dummy> #arg_types: Sized,)*
+                #self_sized_bound Self: Sized,
+                #(#arg_sized_bounds)*
             {
                 #body
             }
@@ -441,8 +449,8 @@ pub(super) fn gen_fields_methods(
             /// Consume this generated struct and return its fields in declaration order.
             pub fn into_fields(self) -> (#(#arg_types,)*)
             where
-                for<'_dummy> Self: Sized,
-                #(for<'_dummy> #arg_types: Sized,)*
+                #self_sized_bound Self: Sized,
+                #(#arg_sized_bounds)*
             {
                 #into_body
             }
@@ -462,7 +470,7 @@ fn gen_ctype_wide_impl(
     // rustc enough information to prove matching pointer metadata for the
     // generated C struct. The source DST still gets its own Wide impl.
     if source_fields.iter().next_back().is_some_and(|field| {
-        matches!(&field.ty, syn::Type::Slice(slice) if is_type_parametrized(&slice.elem, source_generics))
+        matches!(&field.ty, syn::Type::Slice(slice) if is_parametrized(&slice.elem, source_generics))
     }) {
         return quote! {};
     }
@@ -525,15 +533,14 @@ fn gen_ctype_wide_impl(
     };
     let source_data_ctype_bounds = gen_data_ctype_bounds(source_fields, source_generics);
     let source_data_ty = data_bound_ty(&source_last.ty, true);
-    let source_data_ctype_sized_bound = if is_type_parametrized(&source_data_ty, source_generics) {
+    let source_data_ctype_sized_bound = if is_parametrized(&source_data_ty, source_generics)
+    {
         quote!(#source_data_ty: co3::ReprC<CType: Sized>)
     } else {
         quote!(for<'__dummy> #source_data_ty: co3::ReprC<CType: Sized>)
     };
 
-    let for_dummy = (ctype.generics.type_params().count() == 0).then_some(quote! {
-        for<'_dummy>
-    });
+    let for_dummy = speculative_marker(ctype.generics.params.is_empty());
 
     let data_bound = (!is_transparent).then(|| {
         quote! {
@@ -922,10 +929,11 @@ fn gen_conditional_trait_bounds(
     generics: &syn::Generics,
     bound: TokenStream,
 ) -> Vec<TokenStream> {
-    if is_type_parametrized(ty, generics) {
+    if is_parametrized(ty, generics) {
         vec![quote!(#ty: #bound)]
     } else {
-        let mut bounds = vec![quote!(for<'_dummy> #ty: #bound)];
+        let speculative = speculative_marker(true);
+        let mut bounds = vec![quote!(#speculative #ty: #bound)];
         bounds.extend(
             gen_hrtb_projection_bounds(ty, generics, bound)
                 .into_iter()
@@ -1002,7 +1010,7 @@ fn gen_robust_impls<const ADD_COPY: bool>(
     let copy_bounds = gen_copy_bounds::<ADD_COPY>(generics, fields);
     let codec_impls = gen_identity_codec_impls::<ADD_COPY>(ident, generics, fields, true);
 
-    let for_dummy = (generics.type_params().count() == 0).then_some(quote! { for<'_dummy> });
+    let for_dummy = speculative_marker(generics.params.is_empty());
 
     let type_spec_bound = (!ADD_COPY).then(|| {
         quote! { #for_dummy Self: #co3::rust_spec::RustSpec<Size = #co3::rust_spec::size::Sized<#co3::rust_spec::Gt<#co3::rust_spec::Zero>>>, }
@@ -1064,7 +1072,7 @@ fn gen_type_spec(
     }
     let rust_spec_bounds = fields
         .iter()
-        .filter(|field| !is_type_parametrized(field, generics))
+        .filter(|field| !is_parametrized(field, generics))
         .flat_map(|field| {
             gen_hrtb_projection_bounds(field, generics, quote! { co3::rust_spec::RustSpec })
         });
@@ -1122,7 +1130,7 @@ fn gen_field_family_parts(
     let (concrete_fields, parametrized_fields): (Vec<_>, Vec<_>) = fields
         .iter()
         .copied()
-        .partition(|field| !is_type_parametrized(field, generics));
+        .partition(|field| !is_parametrized(field, generics));
 
     let mut concrete_fields = concrete_fields.into_iter();
     let concrete_family = concrete_fields.next().map(|first| {
@@ -1171,7 +1179,10 @@ fn gen_identity_codec_impls<const ADD_COPY: bool>(
     } else {
         Vec::new()
     };
-    let sized_bound = (!require_copy).then(|| quote!(for<'_dummy> Self: Sized,));
+    let sized_bound = (!require_copy).then(|| {
+        let speculative = speculative_marker(generics.params.is_empty());
+        quote!(#speculative Self: Sized,)
+    });
 
     quote! {
         impl #impl_generics co3::ReprC for #ident #ty_generics
@@ -1233,13 +1244,14 @@ pub(super) fn gen_identity_repr_c_impls(
     let (impl_generics, ty_generics, where_clause) = generics.split_for_impl();
     let predicates = where_clause.as_ref().map(|clause| &clause.predicates);
     let codec_impls = gen_identity_codec_impls::<false>(ident, generics, fields, false);
+    let speculative = speculative_marker(generics.params.is_empty());
 
     quote! {
         unsafe impl #impl_generics co3::CType for #ident #ty_generics #where_clause {}
 
         unsafe impl #impl_generics co3::CFnArg for #ident #ty_generics
         where
-            for<'_dummy> Self: Copy + co3::rust_spec::RustSpec<
+            #speculative Self: Copy + co3::rust_spec::RustSpec<
                 Size = co3::rust_spec::size::Sized<
                     co3::rust_spec::Gt<co3::rust_spec::Zero>
                 >
@@ -1248,7 +1260,7 @@ pub(super) fn gen_identity_repr_c_impls(
         {}
         unsafe impl #impl_generics co3::CFnReturn for #ident #ty_generics
         where
-            for<'_dummy> Self: Copy + co3::rust_spec::RustSpec<
+            #speculative Self: Copy + co3::rust_spec::RustSpec<
                 Size = co3::rust_spec::size::Sized<
                     co3::rust_spec::Gt<co3::rust_spec::Zero>
                 >
@@ -1286,16 +1298,9 @@ fn gen_borrow_cast_impl<const ADD_COPY: bool>(
 
     let cast_impls = if let Some(owner_name) = owner_name {
         let owner_type = quote!(#owner_name #ty_generics);
-        let no_drop_bound = if generics.type_params().count() == 0 {
-            quote!(for<'_dummy> #owner_type: co3::rust_spec::RustSpec<Drop = co3::rust_spec::drop::NoDrop>,)
-        } else {
-            quote!(#owner_type: co3::rust_spec::RustSpec<Drop = co3::rust_spec::drop::NoDrop>,)
-        };
-        let auto_drop_bound = if generics.type_params().count() == 0 {
-            quote!(for<'_dummy> #owner_type: co3::rust_spec::RustSpec<Drop = co3::rust_spec::drop::AutoDrop>,)
-        } else {
-            quote!(#owner_type: co3::rust_spec::RustSpec<Drop = co3::rust_spec::drop::AutoDrop>,)
-        };
+        let speculative = speculative_marker(generics.params.is_empty());
+        let no_drop_bound = quote!(#speculative #owner_type: co3::rust_spec::RustSpec<Drop = co3::rust_spec::drop::NoDrop>,);
+        let auto_drop_bound = quote!(#speculative #owner_type: co3::rust_spec::RustSpec<Drop = co3::rust_spec::drop::AutoDrop>,);
         quote! {
             const _: () = {
                 use co3::borrow::{BorrowCast, BorrowCastMut};
@@ -1563,14 +1568,15 @@ fn gen_copy_bounds<const ADD_COPY: bool>(
 
     let mut predicates = fields
         .iter()
-        .filter(|ty| is_type_parametrized(ty, generics))
+        .filter(|ty| is_parametrized(ty, generics))
         .map(|&ty| parse_quote! { #ty: Copy })
         .collect::<Vec<_>>();
 
-    if is_type_parametrized(last, generics) {
+    if is_parametrized(last, generics) {
         predicates.push(quote!(#last: Copy));
     } else if !ADD_COPY {
-        predicates.push(quote!(for<'_dummy> #last: Copy));
+        let speculative = speculative_marker(true);
+        predicates.push(quote!(#speculative #last: Copy));
     }
 
     predicates
@@ -1584,10 +1590,11 @@ fn gen_default_impl<const ADD_COPY: bool>(
     let (impl_generics, ty_generics, where_clause) = generics.split_for_impl();
     let predicates = where_clause.as_ref().map(|w| &w.predicates);
     let sized_bound = fields.last().and_then(|&ty| {
-        if is_type_parametrized(ty, generics) {
+        if is_parametrized(ty, generics) {
             Some(quote!(#ty: Sized,))
         } else if !ADD_COPY {
-            Some(quote!(for<'_dummy> #ty: Sized,))
+            let speculative = speculative_marker(true);
+            Some(quote!(#speculative #ty: Sized,))
         } else {
             None
         }
@@ -1766,7 +1773,7 @@ pub(super) fn gen_extern_c_bounds_for_ctype<const ADD_COPY: bool>(
             return vec![];
         }
 
-        if is_type_parametrized(ty, generics) {
+        if is_parametrized(ty, generics) {
             vec![parse_quote! { #ty: co3::ReprC #ctype_bound }]
         } else {
             gen_hrtb_projection_bounds(ty, generics, quote! { co3::ReprC #ctype_bound })
@@ -1884,7 +1891,7 @@ fn gen_ctype_borrow_cast_bounds<const ADD_COPY: bool>(
 
     let mut predicates = fields
         .iter()
-        .filter(|ty| !is_phantom_data(ty) && is_type_parametrized(ty, generics))
+        .filter(|ty| !is_phantom_data(ty) && is_parametrized(ty, generics))
         .map(|&ty| {
             let ctype_bound = if ADD_COPY {
                 quote! { <#assoc_type: Copy> }
@@ -1896,7 +1903,7 @@ fn gen_ctype_borrow_cast_bounds<const ADD_COPY: bool>(
         })
         .collect::<Vec<_>>();
 
-    if !is_phantom_data(last) && is_type_parametrized(last, generics) {
+    if !is_phantom_data(last) && is_parametrized(last, generics) {
         let copy_bound = ADD_COPY.then(|| quote! { <#assoc_type: Copy> });
         predicates.push(parse_quote! { #last: #borrow_cast_trait #copy_bound });
     }

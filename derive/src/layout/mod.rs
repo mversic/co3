@@ -5,7 +5,7 @@ use syn::{Attribute, parenthesized, spanned::Spanned as _, visit::Visit};
 use crate::{
     layout::attr::{ReprKind, parse_repr},
     layout::item::{derive_fieldless_enum, derive_item},
-    utils::{ParamUseDetector, push_error},
+    utils::{ParamUseDetector, push_error, speculative_marker},
 };
 
 mod attr;
@@ -506,15 +506,10 @@ fn gen_source_ctype_impl(input: &syn::DeriveInput, attrs: &ReprCAttrs) -> TokenS
     let generics = &input.generics;
     let (impl_generics, ty_generics, where_clause) = generics.split_for_impl();
     let predicates = where_clause.as_ref().map(|clause| &clause.predicates);
-    let speculative = (generics.type_params().count() == 0).then_some(quote!(for<'_dummy>));
-    let detector = ParamUseDetector::new(generics.params.iter().filter_map(|param| match param {
-        syn::GenericParam::Type(param) => Some(&param.ident),
-        syn::GenericParam::Const(param) => Some(&param.ident),
-        syn::GenericParam::Lifetime(_) => None,
-    }));
+    let speculative = speculative_marker(generics.params.is_empty());
     let field_bounds = field_types.iter().map(|field_type| {
         let speculative =
-            (!detector.type_mentions_param(field_type)).then_some(quote!(for<'_co3_field>));
+            (!is_parametrized(field_type, generics)).then_some(quote!(for<'_co3_field>));
         quote!(#speculative #field_type: co3::CType,)
     });
 
@@ -649,39 +644,44 @@ pub(super) fn is_phantom_data(ty: &syn::Type) -> bool {
     }
 }
 
-/// Check if a type contains any of the type parameters from generics
-pub(super) fn is_type_parametrized(ty: &syn::Type, generics: &syn::Generics) -> bool {
-    /// Visitor to check if a type contains any of the specified type parameters
-    struct TypeParamVisitor<'a> {
-        type_params: &'a [&'a syn::Ident],
-        is_generic: bool,
+/// Check whether a type mentions any type, lifetime, or const parameter.
+pub(super) fn is_parametrized(ty: &syn::Type, generics: &syn::Generics) -> bool {
+    struct LifetimeUse<'a> {
+        generics: &'a syn::Generics,
+        found: bool,
     }
 
-    impl Visit<'_> for TypeParamVisitor<'_> {
-        fn visit_type_path(&mut self, type_path: &syn::TypePath) {
-            if type_path.qself.is_none()
-                && let Some(first_segment) = type_path.path.segments.first()
-                && self.type_params.contains(&&first_segment.ident)
+    impl Visit<'_> for LifetimeUse<'_> {
+        fn visit_lifetime(&mut self, lifetime: &syn::Lifetime) {
+            if self
+                .generics
+                .lifetimes()
+                .any(|param| param.lifetime.ident == lifetime.ident)
             {
-                self.is_generic = true;
+                self.found = true;
             }
 
-            syn::visit::visit_type_path(self, type_path);
+            syn::visit::visit_lifetime(self, lifetime);
         }
     }
 
-    let type_param_idents = generics
-        .type_params()
-        .map(|param| &param.ident)
-        .collect::<Vec<_>>();
+    // syn can parse Foo<N> as a type argument even when N is a const parameter.
+    let type_or_const = generics.params.iter().filter_map(|param| match param {
+        syn::GenericParam::Type(param) => Some(&param.ident),
+        syn::GenericParam::Const(param) => Some(&param.ident),
+        syn::GenericParam::Lifetime(_) => None,
+    });
+    if ParamUseDetector::new(type_or_const).type_mentions_param(ty) {
+        return true;
+    }
 
-    let mut visitor = TypeParamVisitor {
-        type_params: &type_param_idents,
-        is_generic: false,
+    let mut visitor = LifetimeUse {
+        generics,
+        found: false,
     };
 
     visitor.visit_type(ty);
-    visitor.is_generic
+    visitor.found
 }
 
 fn repr_type_name(repr: &syn::Type) -> Option<&str> {
@@ -780,4 +780,32 @@ fn generic_param_idents<'a>(
         syn::GenericParam::Type(syn::TypeParam { ident, .. }) => quote! { #ident },
         syn::GenericParam::Const(syn::ConstParam { ident, .. }) => quote! { #ident },
     })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::is_parametrized;
+
+    #[test]
+    fn detects_type_lifetime_and_const_arguments() {
+        let generics = syn::parse_quote!(<'a, T, const N: usize>);
+
+        assert!(is_parametrized(&syn::parse_quote!(T), &generics));
+        assert!(is_parametrized(
+            &syn::parse_quote!(&'a u8),
+            &generics
+        ));
+        assert!(is_parametrized(
+            &syn::parse_quote!(Wrapper<N>),
+            &generics
+        ));
+        assert!(is_parametrized(
+            &syn::parse_quote!([u8; N]),
+            &generics
+        ));
+        assert!(!is_parametrized(
+            &syn::parse_quote!(Wrapper<1>),
+            &generics
+        ));
+    }
 }

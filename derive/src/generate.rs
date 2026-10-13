@@ -20,7 +20,7 @@ use crate::{
     utils::{
         DispatchMonomorphizer, ParamUseDetector, cfg_attrs, erased_id_repr,
         has_non_lifetime_generics, has_runtime_dispatch, is_payload_erased, is_type_erased,
-        soft_for_arg, strip_internal_generic_param,
+        soft_for_arg, speculative_marker, strip_internal_generic_param,
     },
     wrapper::{
         gen_decl_abi_assertions, gen_extern_decl, gen_owned_drop_wrapper_body, gen_wrapper_body,
@@ -2470,7 +2470,12 @@ pub(crate) fn expand_extern_decls(
             let dispatched_impl =
                 !impl_dispatch_args.is_empty() || has_runtime_dispatch(&plain.generics) || dyn_self;
             let (checks, mut selected_imports) = if plain.items.is_empty() {
-                (TokenStream::new(), Vec::new())
+                let imports = if plain.trait_.is_some() && !dispatched_impl {
+                    vec![(TokenStream::new(), plain.item)]
+                } else {
+                    Vec::new()
+                };
+                (TokenStream::new(), imports)
             } else if dispatched_impl {
                 synthesize_impl_dispatch_import(
                     abi,
@@ -3493,6 +3498,130 @@ fn gen_owned_extern_type_impls(
 
     let owned_ident = gen_owned_extern_type_name(ident);
     let owned_repr_c_name = gen_owned_repr_c_name(ident);
+    let speculative = speculative_marker(generics.params.is_empty());
+    let bound_impl = |trait_path: syn::Path, unsafety: bool, body: TokenStream| {
+        let mut bounded_generics = generics.clone();
+        bounded_generics
+            .make_where_clause()
+            .predicates
+            .push(syn::parse_quote!(#speculative #ident #ty_generics: #trait_path));
+        let (bounded_impl_generics, _, bounded_where_clause) = bounded_generics.split_for_impl();
+        let unsafe_token = unsafety.then_some(quote!(unsafe));
+        quote! {
+            #unsafe_token impl #bounded_impl_generics #trait_path for #owned_ident #ty_generics
+                #bounded_where_clause { #body }
+        }
+    };
+    let send_impl = bound_impl(syn::parse_quote!(core::marker::Send), true, quote!());
+    let sync_impl = bound_impl(syn::parse_quote!(core::marker::Sync), true, quote!());
+    let unwind_safe_impl = bound_impl(syn::parse_quote!(core::panic::UnwindSafe), false, quote!());
+    let ref_unwind_safe_impl = bound_impl(
+        syn::parse_quote!(core::panic::RefUnwindSafe),
+        false,
+        quote!(),
+    );
+    let iterator_impl = bound_impl(
+        syn::parse_quote!(core::iter::Iterator),
+        false,
+        quote! {
+            type Item = <#ident #ty_generics as core::iter::Iterator>::Item;
+
+            fn next(&mut self) -> Option<Self::Item> {
+                core::iter::Iterator::next(&mut **self)
+            }
+
+            fn size_hint(&self) -> (usize, Option<usize>) {
+                core::iter::Iterator::size_hint(&**self)
+            }
+
+            fn nth(&mut self, n: usize) -> Option<Self::Item> {
+                core::iter::Iterator::nth(&mut **self, n)
+            }
+
+            fn last(mut self) -> Option<Self::Item> {
+                core::iter::Iterator::last(&mut **self)
+            }
+        },
+    );
+    let double_ended_impl = bound_impl(
+        syn::parse_quote!(core::iter::DoubleEndedIterator),
+        false,
+        quote! {
+            fn next_back(&mut self) -> Option<Self::Item> {
+                core::iter::DoubleEndedIterator::next_back(&mut **self)
+            }
+
+            fn nth_back(&mut self, n: usize) -> Option<Self::Item> {
+                core::iter::DoubleEndedIterator::nth_back(&mut **self, n)
+            }
+        },
+    );
+    let exact_size_impl = bound_impl(
+        syn::parse_quote!(core::iter::ExactSizeIterator),
+        false,
+        quote! {
+            fn len(&self) -> usize {
+                core::iter::ExactSizeIterator::len(&**self)
+            }
+
+            fn is_empty(&self) -> bool {
+                core::iter::ExactSizeIterator::is_empty(&**self)
+            }
+        },
+    );
+    let fused_impl = bound_impl(
+        syn::parse_quote!(core::iter::FusedIterator),
+        false,
+        quote!(),
+    );
+    let partial_eq_impl = bound_impl(
+        syn::parse_quote!(core::cmp::PartialEq),
+        false,
+        quote! {
+            fn eq(&self, other: &Self) -> bool {
+                core::cmp::PartialEq::eq(&**self, &**other)
+            }
+
+            fn ne(&self, other: &Self) -> bool {
+                core::cmp::PartialEq::ne(&**self, &**other)
+            }
+        },
+    );
+    let eq_impl = bound_impl(syn::parse_quote!(core::cmp::Eq), false, quote!());
+    let partial_ord_impl = bound_impl(
+        syn::parse_quote!(core::cmp::PartialOrd),
+        false,
+        quote! {
+            fn partial_cmp(&self, other: &Self) -> Option<core::cmp::Ordering> {
+                core::cmp::PartialOrd::partial_cmp(&**self, &**other)
+            }
+
+            fn lt(&self, other: &Self) -> bool {
+                core::cmp::PartialOrd::lt(&**self, &**other)
+            }
+
+            fn le(&self, other: &Self) -> bool {
+                core::cmp::PartialOrd::le(&**self, &**other)
+            }
+
+            fn ge(&self, other: &Self) -> bool {
+                core::cmp::PartialOrd::ge(&**self, &**other)
+            }
+
+            fn gt(&self, other: &Self) -> bool {
+                core::cmp::PartialOrd::gt(&**self, &**other)
+            }
+        },
+    );
+    let ord_impl = bound_impl(
+        syn::parse_quote!(core::cmp::Ord),
+        false,
+        quote! {
+            fn cmp(&self, other: &Self) -> core::cmp::Ordering {
+                core::cmp::Ord::cmp(&**self, &**other)
+            }
+        },
+    );
     let tag_family_impl = id
         .map(|id| gen_tag_family_impl(&owned_ident, generics, id))
         .unwrap_or_default();
@@ -3512,6 +3641,19 @@ fn gen_owned_extern_type_impls(
 
         #tag_family_impl
         #tag_impl
+
+        #send_impl
+        #sync_impl
+        #unwind_safe_impl
+        #ref_unwind_safe_impl
+        #iterator_impl
+        #double_ended_impl
+        #exact_size_impl
+        #fused_impl
+        #partial_eq_impl
+        #eq_impl
+        #partial_ord_impl
+        #ord_impl
 
         unsafe impl #impl_generics #co3::transmute::CheckedTransmute for #owned_ident #ty_generics #where_clause {
             #[inline(always)]
@@ -3573,6 +3715,12 @@ fn gen_owned_extern_type_impls(
         impl #impl_generics core::ops::DerefMut for #owned_ident #ty_generics #where_clause {
             fn deref_mut(&mut self) -> &mut Self::Target {
                 unsafe { &mut *self.0 }
+            }
+        }
+
+        impl #impl_generics core::fmt::Pointer for #owned_ident #ty_generics #where_clause {
+            fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+                core::fmt::Pointer::fmt(&self.0, f)
             }
         }
 

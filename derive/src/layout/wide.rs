@@ -5,7 +5,7 @@ use syn::parse_quote;
 use super::{
     ReprKind,
     ctype::{gen_extern_c_bounds_for_ctype, gen_fields_methods},
-    is_phantom_data, is_type_parametrized,
+    is_parametrized, is_phantom_data,
 };
 
 pub(super) fn gen_data_struct_name(ident: &syn::Ident) -> syn::Ident {
@@ -285,12 +285,14 @@ pub(super) fn gen_data_ctype_bounds(
 }
 
 pub(super) fn wide_predicate(field_ty: &syn::Type, generics: &syn::Generics) -> TokenStream {
-    let for_dummy = (!is_type_parametrized(field_ty, generics)).then(|| quote! { for<'__dummy> });
+    let for_dummy =
+        (!is_parametrized(field_ty, generics)).then(|| quote! { for<'__dummy> });
     quote! { #for_dummy #field_ty: co3::wide::Wide }
 }
 
 pub(super) fn wide_usize_predicate(field_ty: &syn::Type, generics: &syn::Generics) -> TokenStream {
-    let for_dummy = (!is_type_parametrized(field_ty, generics)).then(|| quote! { for<'__dummy> });
+    let for_dummy =
+        (!is_parametrized(field_ty, generics)).then(|| quote! { for<'__dummy> });
     quote! { #for_dummy #field_ty: co3::wide::Wide<Metadata = usize> }
 }
 
@@ -298,7 +300,8 @@ pub(super) fn header_repr_c_predicate(
     field_ty: &syn::Type,
     generics: &syn::Generics,
 ) -> TokenStream {
-    let for_dummy = (!is_type_parametrized(field_ty, generics)).then(|| quote! { for<'__dummy> });
+    let for_dummy =
+        (!is_parametrized(field_ty, generics)).then(|| quote! { for<'__dummy> });
     quote! { #for_dummy <#field_ty as co3::wide::Wide>::Header: co3::ReprC<CType: Sized> }
 }
 

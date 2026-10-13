@@ -1,7 +1,7 @@
 use proc_macro2::TokenStream;
 use quote::quote;
 
-use super::{ReprKind, is_type_parametrized, wide::last_field};
+use super::{ReprKind, is_parametrized, wide::last_field};
 
 pub(super) fn expand(
     input: &syn::DeriveInput,
@@ -20,7 +20,7 @@ pub(super) fn expand(
     let (impl_generics, ty_generics, where_clause) = input.generics.split_for_impl();
     let predicates = where_clause.as_ref().map(|w| &w.predicates);
     let for_dummy =
-        (!is_type_parametrized(field_ty, &input.generics)).then(|| quote! { for<'__dummy> });
+        (!is_parametrized(field_ty, &input.generics)).then(|| quote! { for<'__dummy> });
     let alloc_method = cfg!(feature = "alloc").then(|| {
         quote! {
             fn into_non_null(
