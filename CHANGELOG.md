@@ -11,6 +11,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- delegate notable trait impls for `OwnedExternType` to matching impls on `ExternType`.
+
+### Fixed
+
+- Resolve associated item paths FFI function signatures.
+- don't allow `#[derive]` on extern type declarations.
+
+## [0.7.3] - 2026-10-11
+
+### Added
+
 - Add implied `Sized` bound to params in slice-like DST tails.
 
 ### Changed
