@@ -414,70 +414,6 @@ fn materialize_declared_dyn_self(impl_: &mut ItemImpl, declared_self: bool) -> b
     dyn_self
 }
 
-struct ExportAssociatedSelfConcretizer<'a> {
-    self_ty: &'a syn::Type,
-    trait_path: Option<&'a syn::Path>,
-}
-
-impl VisitMut for ExportAssociatedSelfConcretizer<'_> {
-    fn visit_type_mut(&mut self, ty: &mut syn::Type) {
-        syn::visit_mut::visit_type_mut(self, ty);
-        let syn::Type::Path(syn::TypePath {
-            qself: None, path, ..
-        }) = ty
-        else {
-            return;
-        };
-        if !path
-            .segments
-            .first()
-            .is_some_and(|segment| segment.ident == "Self")
-        {
-            return;
-        }
-        if path.segments.len() == 1 {
-            *ty = self.self_ty.clone();
-            return;
-        }
-        let mut rest = syn::Path {
-            leading_colon: None,
-            segments: Default::default(),
-        };
-        rest.segments.extend(path.segments.iter().skip(1).cloned());
-        let self_ty = self.self_ty;
-        *ty = if let Some(trait_path) = self.trait_path {
-            syn::parse_quote!(<#self_ty as #trait_path>::#rest)
-        } else {
-            syn::parse_quote!(<#self_ty>::#rest)
-        };
-    }
-
-    fn visit_expr_path_mut(&mut self, expr: &mut syn::ExprPath) {
-        syn::visit_mut::visit_expr_path_mut(self, expr);
-        if expr.qself.is_some()
-            || !expr
-                .path
-                .segments
-                .first()
-                .is_some_and(|segment| segment.ident == "Self")
-        {
-            return;
-        }
-        let mut rest = syn::Path {
-            leading_colon: None,
-            segments: Default::default(),
-        };
-        rest.segments
-            .extend(expr.path.segments.iter().skip(1).cloned());
-        let self_ty = self.self_ty;
-        *expr = if let Some(trait_path) = self.trait_path {
-            syn::parse_quote!(<#self_ty as #trait_path>::#rest)
-        } else {
-            syn::parse_quote!(<#self_ty>::#rest)
-        };
-    }
-}
-
 fn gen_export_associated_item_checks(dispatch: &Co3Impl) -> TokenStream {
     if !dispatch
         .items
@@ -498,11 +434,13 @@ fn gen_export_associated_item_checks(dispatch: &Co3Impl) -> TokenStream {
         );
         let self_ty = &selected.self_ty;
         let trait_path = selected.trait_.as_ref().map(|(path, _)| path);
+        let names = ffi_fn::impl_associated_item_names(&selected);
         let impl_attrs = cfg_attrs(&selected.attrs).collect::<Vec<_>>();
         for item in &selected.items {
-            let mut concretizer = ExportAssociatedSelfConcretizer {
+            let mut concretizer = ffi_fn::ImplPathConcretizer {
                 self_ty,
                 trait_path,
+                names: &names,
             };
             match item {
                 ImplItem::Type(item) => {
@@ -810,7 +748,7 @@ fn dispatch_delegate_sig(
     delegate_name: &syn::Ident,
 ) -> syn::Signature {
     let mut sig = wrapper_sig.clone();
-    normalize_fn_signature(&mut sig, self_ty);
+    normalize_fn_signature(&mut sig, self_ty, None);
     sig.ident = delegate_name.clone();
     sig.generics.params.clear();
     sig
@@ -1397,7 +1335,7 @@ fn prepare_dispatch_import(
     } else {
         wrapper_source_sig.clone()
     };
-    normalize_fn_signature(&mut extern_sig, context.self_ty);
+    normalize_fn_signature(&mut extern_sig, context.self_ty, None);
     let extern_generics = if matches!(mode, DispatchImportMode::Static(_)) {
         let mut extern_args = context.args.clone();
         extern_args.inject_unnamed_lifetimes(&mut extern_sig.generics);
@@ -1703,7 +1641,7 @@ pub(crate) fn expand_export_decls(
             }
         }
         ForeignItem::Fn(mut item) => {
-            normalize_fn_signature(&mut item.sig, None);
+            normalize_fn_signature(&mut item.sig, None, None);
             let bindings =
                 monomorphize_static_fn_bindings(item, symbol_fragments, &declared_types);
             let definitions = bindings
@@ -1850,6 +1788,7 @@ fn synthesize_impl_extern_decls(
     symbol_fragments: &std::collections::BTreeMap<String, syn::LitStr>,
 ) -> Vec<(syn::Ident, TokenStream, TokenStream)> {
     let dispatch_generics = impl_.generics.clone();
+    let associated_items = ffi_fn::impl_associated_item_names(&impl_);
     let drop_impl = crate::utils::is_drop_impl(&impl_);
     let opaque_drop = drop_impl && opaque_drop_pointer;
     let receiver =
@@ -1868,7 +1807,17 @@ fn synthesize_impl_extern_decls(
                 .iter()
                 .any(|input| matches!(input, FnArg::Receiver(_)));
             if import_mode == crate::ImportMode::Regular {
-                normalize_fn_signature(&mut item.sig, Some(&impl_.self_ty));
+                normalize_fn_signature(
+                    &mut item.sig,
+                    Some(&impl_.self_ty),
+                    impl_
+                        .trait_
+                        .as_ref()
+                        .map(|(trait_path, _)| ffi_fn::ImplAssocContext {
+                            trait_path,
+                            names: &associated_items,
+                        }),
+                );
                 if drop_impl {
                     if opaque_drop {
                         let self_ty = &impl_.self_ty;
@@ -2014,7 +1963,7 @@ pub(crate) fn expand_extern_decls(
                     continue;
                 };
                 let wrapper_abi = method.sig.abi.clone().unwrap_or_else(|| abi.clone());
-                normalize_fn_signature(&mut method.sig, Some(&self_ty));
+                normalize_fn_signature(&mut method.sig, Some(&self_ty), None);
                 method.sig = ffi_fn::lower_abi_fn_signature(
                     method.sig.clone(),
                     failure_mode,
@@ -3539,7 +3488,7 @@ fn gen_owned_extern_type_impls(
             }
 
             fn last(mut self) -> Option<Self::Item> {
-                core::iter::Iterator::last(&mut **self)
+                core::iter::Iterator::last(&mut *self)
             }
         },
     );
@@ -3563,10 +3512,6 @@ fn gen_owned_extern_type_impls(
             fn len(&self) -> usize {
                 core::iter::ExactSizeIterator::len(&**self)
             }
-
-            fn is_empty(&self) -> bool {
-                core::iter::ExactSizeIterator::is_empty(&**self)
-            }
         },
     );
     let fused_impl = bound_impl(
@@ -3582,6 +3527,7 @@ fn gen_owned_extern_type_impls(
                 core::cmp::PartialEq::eq(&**self, &**other)
             }
 
+            #[allow(clippy::partialeq_ne_impl)]
             fn ne(&self, other: &Self) -> bool {
                 core::cmp::PartialEq::ne(&**self, &**other)
             }

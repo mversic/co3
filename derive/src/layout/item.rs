@@ -116,8 +116,7 @@ pub(super) fn derive_item(
             .next_back()
             .expect("wide data has a tail")
             .ty;
-        let speculative =
-            speculative_marker(!is_parametrized(header_ty, &input.generics));
+        let speculative = speculative_marker(!is_parametrized(header_ty, &input.generics));
         bounded_impl_input
             .generics
             .make_where_clause()

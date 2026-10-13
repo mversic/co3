@@ -6,8 +6,7 @@ use syn::{parse_quote, visit::Visit};
 
 use crate::layout::{
     attr::ReprKind,
-    infer_repr, is_parametrized, is_phantom_data, is_transparent_enum_repr,
-    primitive_tag_type,
+    infer_repr, is_parametrized, is_phantom_data, is_transparent_enum_repr, primitive_tag_type,
     wide::{
         data_bound_ty, gen_alloc_methods, gen_data_ctype_bounds, gen_data_struct_name,
         gen_dst_methods, gen_identity_header_impl, header_repr_c_predicate, last_field,
@@ -533,8 +532,7 @@ fn gen_ctype_wide_impl(
     };
     let source_data_ctype_bounds = gen_data_ctype_bounds(source_fields, source_generics);
     let source_data_ty = data_bound_ty(&source_last.ty, true);
-    let source_data_ctype_sized_bound = if is_parametrized(&source_data_ty, source_generics)
-    {
+    let source_data_ctype_sized_bound = if is_parametrized(&source_data_ty, source_generics) {
         quote!(#source_data_ty: co3::ReprC<CType: Sized>)
     } else {
         quote!(for<'__dummy> #source_data_ty: co3::ReprC<CType: Sized>)

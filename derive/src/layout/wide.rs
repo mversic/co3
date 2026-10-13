@@ -285,14 +285,12 @@ pub(super) fn gen_data_ctype_bounds(
 }
 
 pub(super) fn wide_predicate(field_ty: &syn::Type, generics: &syn::Generics) -> TokenStream {
-    let for_dummy =
-        (!is_parametrized(field_ty, generics)).then(|| quote! { for<'__dummy> });
+    let for_dummy = (!is_parametrized(field_ty, generics)).then(|| quote! { for<'__dummy> });
     quote! { #for_dummy #field_ty: co3::wide::Wide }
 }
 
 pub(super) fn wide_usize_predicate(field_ty: &syn::Type, generics: &syn::Generics) -> TokenStream {
-    let for_dummy =
-        (!is_parametrized(field_ty, generics)).then(|| quote! { for<'__dummy> });
+    let for_dummy = (!is_parametrized(field_ty, generics)).then(|| quote! { for<'__dummy> });
     quote! { #for_dummy #field_ty: co3::wide::Wide<Metadata = usize> }
 }
 
@@ -300,8 +298,7 @@ pub(super) fn header_repr_c_predicate(
     field_ty: &syn::Type,
     generics: &syn::Generics,
 ) -> TokenStream {
-    let for_dummy =
-        (!is_parametrized(field_ty, generics)).then(|| quote! { for<'__dummy> });
+    let for_dummy = (!is_parametrized(field_ty, generics)).then(|| quote! { for<'__dummy> });
     quote! { #for_dummy <#field_ty as co3::wide::Wide>::Header: co3::ReprC<CType: Sized> }
 }
 

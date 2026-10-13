@@ -110,7 +110,7 @@ pub(crate) fn wrap_fn_definition(
     );
     let co3 = co3_path();
 
-    ffi_fn::normalize_fn_signature(&mut item.sig, None);
+    ffi_fn::normalize_fn_signature(&mut item.sig, None, None);
     let decl = ffi_fn::gen_extern_fn_signature(
         item.sig,
         failure_mode,
@@ -260,7 +260,7 @@ fn gen_regular_drop_import_body<const DISPATCHED: bool>(
     generics: &syn::Generics,
 ) -> TokenStream {
     let mut owned_item = item.clone();
-    ffi_fn::normalize_fn_signature(&mut owned_item.sig, Some(self_ty));
+    ffi_fn::normalize_fn_signature(&mut owned_item.sig, Some(self_ty), None);
     let owned_ty: syn::Type = syn::parse_quote!(core::mem::ManuallyDrop<#self_ty>);
     ffi_fn::drop_owned_receiver(&mut owned_item.sig, Some(&owned_ty));
 
@@ -312,7 +312,7 @@ pub(crate) fn gen_owned_drop_wrapper_body<const DISPATCHED: bool>(
     erase_declared_receiver: bool,
 ) -> TokenStream {
     let mut pointer_item = item.clone();
-    ffi_fn::normalize_fn_signature(&mut pointer_item.sig, Some(self_ty));
+    ffi_fn::normalize_fn_signature(&mut pointer_item.sig, Some(self_ty), None);
     let pointer_ty: syn::Type = syn::parse_quote!(*mut #self_ty);
     ffi_fn::drop_owned_receiver(&mut pointer_item.sig, Some(&pointer_ty));
     gen_impl_wrapper_body_with_self_binding::<DISPATCHED>(

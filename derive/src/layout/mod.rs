@@ -791,21 +791,9 @@ mod tests {
         let generics = syn::parse_quote!(<'a, T, const N: usize>);
 
         assert!(is_parametrized(&syn::parse_quote!(T), &generics));
-        assert!(is_parametrized(
-            &syn::parse_quote!(&'a u8),
-            &generics
-        ));
-        assert!(is_parametrized(
-            &syn::parse_quote!(Wrapper<N>),
-            &generics
-        ));
-        assert!(is_parametrized(
-            &syn::parse_quote!([u8; N]),
-            &generics
-        ));
-        assert!(!is_parametrized(
-            &syn::parse_quote!(Wrapper<1>),
-            &generics
-        ));
+        assert!(is_parametrized(&syn::parse_quote!(&'a u8), &generics));
+        assert!(is_parametrized(&syn::parse_quote!(Wrapper<N>), &generics));
+        assert!(is_parametrized(&syn::parse_quote!([u8; N]), &generics));
+        assert!(!is_parametrized(&syn::parse_quote!(Wrapper<1>), &generics));
     }
 }

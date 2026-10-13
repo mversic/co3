@@ -130,7 +130,7 @@ pub(crate) fn gen_raw_dispatch_companion(
         ffi_fn::merge_generics(owner.generics.clone(), &mut sig.generics);
     }
     let generics = sig.generics.clone();
-    ffi_fn::normalize_fn_signature(&mut sig, owner_ty);
+    ffi_fn::normalize_fn_signature(&mut sig, owner_ty, None);
     synthesize_dispatch_tag_ids(None, &generics, &mut sig.inputs);
     sig.ident = ffi_fn::raw_definition_name(&sig.ident);
     let abi: syn::Abi = parse_quote!(extern "C");
@@ -347,6 +347,7 @@ pub(crate) fn gen_dispatch_export(
 
     let impl_attrs = &impl_.attrs;
     let self_ty = &impl_.self_ty;
+    let associated_items = ffi_fn::impl_associated_item_names(&impl_);
 
     let drop_impl = is_drop_impl(&impl_);
     let items = impl_.items.into_iter().filter_map(|item| {
@@ -370,7 +371,17 @@ pub(crate) fn gen_dispatch_export(
             .filter(|param| !dispatch_params.contains(&param.ident))
             .map(|param| param.ident.clone())
             .collect::<Vec<_>>();
-        normalize_fn_signature(&mut item.sig, Some(self_ty));
+        normalize_fn_signature(
+            &mut item.sig,
+            Some(self_ty),
+            impl_
+                .trait_
+                .as_ref()
+                .map(|(trait_path, _)| ffi_fn::ImplAssocContext {
+                    trait_path,
+                    names: &associated_items,
+                }),
+        );
 
         let trait_ = impl_.trait_.as_ref().map(|(path, _)| path);
         let callee = ffi_fn::impl_method_callee(self_ty, trait_, &item.sig.ident);
@@ -1115,7 +1126,7 @@ pub(crate) fn gen_tag_erase_stmts(
 ) -> Vec<TokenStream> {
     let mut sig = sig.clone();
 
-    normalize_fn_signature(&mut sig, Some(self_ty));
+    normalize_fn_signature(&mut sig, Some(self_ty), None);
     gen_tag_retype_stmts(
         RetypeDirection::Erase,
         generics,
@@ -1140,7 +1151,7 @@ pub(crate) fn gen_dyn_self_erase_stmts(
     sig: &syn::Signature,
 ) -> Vec<TokenStream> {
     let mut sig = sig.clone();
-    normalize_fn_signature(&mut sig, Some(self_ty));
+    normalize_fn_signature(&mut sig, Some(self_ty), None);
     gen_tag_retype_stmts(
         RetypeDirection::Erase,
         &syn::Generics::default(),

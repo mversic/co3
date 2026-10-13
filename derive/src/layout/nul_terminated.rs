@@ -19,8 +19,7 @@ pub(super) fn expand(
     let name = &input.ident;
     let (impl_generics, ty_generics, where_clause) = input.generics.split_for_impl();
     let predicates = where_clause.as_ref().map(|w| &w.predicates);
-    let for_dummy =
-        (!is_parametrized(field_ty, &input.generics)).then(|| quote! { for<'__dummy> });
+    let for_dummy = (!is_parametrized(field_ty, &input.generics)).then(|| quote! { for<'__dummy> });
     let alloc_method = cfg!(feature = "alloc").then(|| {
         quote! {
             fn into_non_null(
