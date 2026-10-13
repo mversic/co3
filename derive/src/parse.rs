@@ -1175,12 +1175,36 @@ pub(crate) fn parse_opaque_type_attrs(
     attrs: &mut Vec<syn::Attribute>,
     generics: &syn::Generics,
 ) -> Result<(Option<syn::Type>, Option<syn::Expr>, Vec<syn::Lifetime>)> {
+    fn contains_derive(meta: &syn::Meta) -> Result<bool> {
+        if meta.path().is_ident("derive") {
+            return Ok(true);
+        }
+        if let syn::Meta::List(list) = meta
+            && list.path.is_ident("cfg_attr")
+        {
+            let nested = list.parse_args_with(
+                syn::punctuated::Punctuated::<syn::Meta, syn::Token![,]>::parse_terminated,
+            )?;
+            return nested.iter().skip(1).try_fold(false, |found, meta| {
+                contains_derive(meta).map(|derived| found || derived)
+            });
+        }
+        Ok(false)
+    }
+
     let mut kept = Vec::with_capacity(attrs.len());
 
     let mut tag_ty = None;
     let mut tag_value = None;
     let mut covariant_lifetimes = Vec::new();
     for attr in attrs.drain(..) {
+        if contains_derive(&attr.meta)? {
+            return Err(syn::Error::new_spanned(
+                attr,
+                "`#[derive(...)]` is not supported on opaque or extern type declarations",
+            ));
+        }
+
         if attr.path().is_ident("tag") {
             let (ty, value) = attr.parse_args_with(crate::tag::parse_tag_args)?;
             if tag_ty.replace(ty).is_some() {

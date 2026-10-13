@@ -1,0 +1,30 @@
+error: `#[derive(...)]` is not supported on opaque or extern type declarations
+ --> tests/ui_fail/opaque_derive.rs:9:5
+  |
+9 |     #[derive(Debug)]
+  |     ^^^^^^^^^^^^^^^^
+
+error: `#[derive(...)]` is not supported on opaque or extern type declarations
+  --> tests/ui_fail/opaque_derive.rs:16:5
+   |
+16 |     #[derive(Debug)]
+   |     ^^^^^^^^^^^^^^^^
+
+error: `#[derive(...)]` is not supported on opaque or extern type declarations
+  --> tests/ui_fail/opaque_derive.rs:20:1
+   |
+20 | / ffi! {
+21 | |     #![unsafe(extern("C"))]
+22 | |
+23 | |     #[cfg_attr(all(), derive(Debug))]
+24 | |     type Conditional;
+25 | | }
+   | |_^
+   |
+   = note: this error originates in the macro `ffi` (in Nightly builds, run with -Z macro-backtrace for more info)
+
+error: `#[derive(...)]` is not supported on opaque or extern type declarations
+  --> tests/ui_fail/opaque_derive.rs:31:5
+   |
+31 |     #[derive(Debug)]
+   |     ^^^^^^^^^^^^^^^^

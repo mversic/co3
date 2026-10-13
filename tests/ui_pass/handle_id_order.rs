@@ -11,7 +11,6 @@ ffi! {
     #[tag(u32, unsafe(1))]
     type Opaque1;
     #[tag(u8, unsafe(2))]
-    #[derive(PartialEq)]
     type Opaque2;
 
     impl ToOwned for Opaque1 {
