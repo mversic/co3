@@ -6,6 +6,8 @@ edition.workspace = true
 license.workspace = true
 authors.workspace = true
 
+rust-version.workspace = true
+
 description = "Derive macros for `CO3`"
 repository = "https://github.com/mversic/co3/derive"
 

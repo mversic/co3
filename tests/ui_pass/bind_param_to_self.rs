@@ -1,7 +1,9 @@
-use co3::ffi;
+use co3::{ffi, rust_spec::RustSpec};
 
 trait Kita<U> {}
 
+#[derive(RustSpec)]
+#[rust_spec(opaque)]
 struct UsedExport(u8);
 
 impl Kita<Self> for UsedExport {}

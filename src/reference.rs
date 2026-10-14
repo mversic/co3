@@ -72,7 +72,6 @@ impl<C> Ord for CRef<C> {
         self.data.cmp(&other.data)
     }
 }
-
 unsafe impl<C: ?Sized> Borrow for CRef<C> {
     type Borrowed<'itm>
         = Self
@@ -92,9 +91,11 @@ impl<'itm, C: ?Sized> FromBorrow<'itm> for CRef<C> {
         source
     }
 }
+
 impl<C: CType + ?Sized> ReprC for CRef<C> {
     type CType = Self;
 }
+
 unsafe impl<C: CType + ?Sized> EncodeOwned for CRef<C> {
     type Store = ();
 
@@ -193,7 +194,6 @@ impl<C, const RESTRICTED: bool> Ord for CRefMut<C, RESTRICTED> {
         self.data.cmp(&other.data)
     }
 }
-
 unsafe impl<C: ?Sized, const RESTRICTED: bool> Borrow for CRefMut<C, RESTRICTED> {
     type Borrowed<'itm>
         = Self
@@ -208,7 +208,6 @@ unsafe impl<C: ?Sized, const RESTRICTED: bool> Borrow for CRefMut<C, RESTRICTED>
         self
     }
 }
-
 impl<'itm, C: ?Sized, const RESTRICTED: bool> FromBorrow<'itm> for CRefMut<C, RESTRICTED> {
     fn from_borrow(source: Self) -> Self {
         source
@@ -278,11 +277,11 @@ mod tests {
     #[test]
     fn exclusive_and_shared_mutable_references_have_distinct_carriers() {
         assert_impl_all!(&mut u8: Niche<CType = CRefMut<u8>>);
-        assert_impl_all!(&UnsafeCell<u8>: Niche<CType = CRefMut<u8, false>>);
-        assert_impl_all!(&mut UnsafeCell<u8>: Niche<CType = CRefMut<u8>>);
+        assert_impl_all!(&UnsafeCell<u8>: Niche<CType = CRefMut<UnsafeCell<u8>, false>>);
+        assert_impl_all!(&mut UnsafeCell<u8>: Niche<CType = CRefMut<UnsafeCell<u8>>>);
         assert_impl_all!(&mut [u8]: Niche<CType = CSliceMut<u8>>);
-        assert_impl_all!(&[UnsafeCell<u8>]: Niche<CType = CSliceMut<u8, false>>);
-        assert_impl_all!(&mut [UnsafeCell<u8>]: Niche<CType = CSliceMut<u8>>);
+        assert_impl_all!(&[UnsafeCell<u8>]: Niche<CType = CSliceMut<UnsafeCell<u8>, false>>);
+        assert_impl_all!(&mut [UnsafeCell<u8>]: Niche<CType = CSliceMut<UnsafeCell<u8>>>);
 
         assert_eq!(
             core::mem::size_of::<CRefMut<u8>>(),
@@ -294,10 +293,10 @@ mod tests {
         );
 
         let mut cell = UnsafeCell::new(1_u8);
-        let shared: CRefMut<u8, false> = crate::encode(&cell);
-        let exclusive: CRefMut<u8> = crate::encode(&mut cell);
+        let shared: CRefMut<UnsafeCell<u8>, false> = crate::encode(&cell);
+        let exclusive: CRefMut<UnsafeCell<u8>> = crate::encode(&mut cell);
         assert_eq!(shared.as_ptr(), exclusive.as_ptr());
-        unsafe { exclusive.as_ptr().write(2) };
+        unsafe { exclusive.as_ptr().write(UnsafeCell::new(2)) };
         assert_eq!(cell.into_inner(), 2);
     }
 }

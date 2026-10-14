@@ -21,7 +21,8 @@ fn custom_niche_must_not_overlap_an_encoded_value() {
     let _ = encode(Some(OverlappingCustomNiche(1)));
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, RustSpec)]
+#[rust_spec(opaque)]
 #[expect(dead_code)]
 pub enum Opaque {
     A,

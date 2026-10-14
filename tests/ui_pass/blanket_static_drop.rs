@@ -14,7 +14,11 @@ impl Drop for RegularExport {
     fn drop(&mut self) {}
 }
 
+#[derive(RustSpec)]
+#[rust_spec(opaque)]
 struct ExportA(u8);
+#[derive(RustSpec)]
+#[rust_spec(opaque)]
 struct ExportB(u8);
 
 impl Drop for ExportA {

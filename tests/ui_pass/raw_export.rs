@@ -1,4 +1,4 @@
-use co3::ffi;
+use co3::{ffi, rust_spec::RustSpec};
 
 fn local_function() {}
 
@@ -6,6 +6,8 @@ extern "system" fn local_system(value: u8) -> u8 {
     value
 }
 
+#[derive(RustSpec)]
+#[rust_spec(opaque)]
 struct Local(u8);
 
 impl Local {

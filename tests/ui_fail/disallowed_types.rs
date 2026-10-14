@@ -26,8 +26,10 @@ struct StableButNotCStatic(u32);
 
 mod provider {
     use super::*;
+    use co3::rust_spec::RustSpec;
 
-    #[derive(Clone)]
+    #[derive(Clone, RustSpec)]
+    #[rust_spec(opaque)]
     struct OpaqueZst;
 
     impl Dispatch for Handle {
@@ -54,8 +56,8 @@ mod provider {
     }
 
     #[expect(unused_variables)]
-    pub extern "C" fn disallowed_opaque_args(arg1: Box<OpaqueZst>) {}
-    pub extern "C" fn disallowed_opaque_return() -> Box<OpaqueZst> {
+    pub extern "C" fn disallowed_opaque_args(arg1: OwnedOpaqueZst) {}
+    pub extern "C" fn disallowed_opaque_return() -> OwnedOpaqueZst {
         Box::new(OpaqueZst)
     }
 
@@ -64,9 +66,11 @@ mod provider {
 
         type OpaqueZst;
 
-        impl ToOwned for Box<OpaqueZst> {
+        impl ToOwned for OwnedOpaqueZst {
+            type Owned = OwnedOpaqueZst;
+
             #[symbol_name = "my_type_new"]
-            fn to_owned(&self) -> <Self as ToOwned>::Owned;
+            fn to_owned(&self) -> Self::Owned;
         }
     }
 
@@ -95,12 +99,12 @@ mod provider {
     ffi! {
         #![unsafe(export("C"))]
 
-        extern "C" fn disallowed_opaque_args(arg1: Box<OpaqueZst>);
+        extern "C" fn disallowed_opaque_args(arg1: OwnedOpaqueZst);
     }
     ffi! {
         #![unsafe(export("C"))]
 
-        extern "C" fn disallowed_opaque_return() -> Box<OpaqueZst>;
+        extern "C" fn disallowed_opaque_return() -> OwnedOpaqueZst;
     }
 
     ffi! {
@@ -136,7 +140,7 @@ ffi! {
         type Owned = OwnedMyType;
 
         #[symbol_name = "my_type_new"]
-        fn to_owned(&self) -> move <Self as ToOwned>::Owned;
+        fn to_owned(&self) -> move Self::Owned;
     }
 }
 

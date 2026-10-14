@@ -1,5 +1,9 @@
 //! C-ABI slice carriers.
-use core::ptr::NonNull;
+use core::{
+    cell::{Cell, UnsafeCell},
+    mem::ManuallyDrop,
+    ptr::NonNull,
+};
 use rust_spec::RustSpec;
 
 use crate::{
@@ -105,37 +109,59 @@ where
     }
 }
 
-macro_rules! impl_pack2_for_transparent_wrapper {
-    ($($wrapper:ty),+ $(,)?) => {$(
-        impl<T: ?Sized, Part1: CType, Part2: CType> Unpack2<Part1, Part2> for $wrapper
-        where
-            T: Unpack2<Part1, Part2>,
-        {
-            type Error = T::Error;
+impl<T: ?Sized, Part1: CType, Part2: CType> Unpack2<Part1, Part2> for ManuallyDrop<T>
+where
+    T: Unpack2<Part1, Part2>,
+{
+    type Error = T::Error;
 
-            #[inline(always)]
-            fn unpack(value: Self::CType) -> Result<(Part1, Part2), Self::Error> {
-                T::unpack(value)
-            }
-        }
-        impl<T: ?Sized, Part1: CType, Part2: CType> Pack2<Part1, Part2> for $wrapper
-        where
-            T: Pack2<Part1, Part2>,
-        {
-            type Error = T::Error;
+    #[inline(always)]
+    fn unpack(value: Self::CType) -> Result<(Part1, Part2), Self::Error> {
+        T::unpack(ManuallyDrop::into_inner(value))
+    }
+}
+impl<T: ?Sized, Part1: CType, Part2: CType> Pack2<Part1, Part2> for ManuallyDrop<T>
+where
+    T: Pack2<Part1, Part2>,
+{
+    type Error = T::Error;
 
-            #[inline(always)]
-            unsafe fn pack(part1: Part1, part2: Part2) -> Result<Self::CType, Self::Error> {
-                unsafe { T::pack(part1, part2) }
-            }
-        }
-    )+};
+    #[inline(always)]
+    unsafe fn pack(part1: Part1, part2: Part2) -> Result<Self::CType, Self::Error> {
+        unsafe { T::pack(part1, part2) }.map(ManuallyDrop::new)
+    }
 }
 
-impl_pack2_for_transparent_wrapper! {
-    core::cell::UnsafeCell<T>,
-    core::cell::Cell<T>,
-    core::mem::ManuallyDrop<T>,
+impl<T: Unpack2<Part1, Part2>, Part1: CType, Part2: CType> Unpack2<Part1, Part2> for UnsafeCell<T> {
+    type Error = T::Error;
+
+    fn unpack(value: Self::CType) -> Result<(Part1, Part2), Self::Error> {
+        T::unpack(value.into_inner())
+    }
+}
+
+impl<T: Pack2<Part1, Part2>, Part1: CType, Part2: CType> Pack2<Part1, Part2> for UnsafeCell<T> {
+    type Error = T::Error;
+
+    unsafe fn pack(part1: Part1, part2: Part2) -> Result<Self::CType, Self::Error> {
+        unsafe { T::pack(part1, part2) }.map(UnsafeCell::new)
+    }
+}
+
+impl<T: Unpack2<Part1, Part2>, Part1: CType, Part2: CType> Unpack2<Part1, Part2> for Cell<T> {
+    type Error = T::Error;
+
+    fn unpack(value: Self::CType) -> Result<(Part1, Part2), Self::Error> {
+        T::unpack(value.into_inner())
+    }
+}
+
+impl<T: Pack2<Part1, Part2>, Part1: CType, Part2: CType> Pack2<Part1, Part2> for Cell<T> {
+    type Error = T::Error;
+
+    unsafe fn pack(part1: Part1, part2: Part2) -> Result<Self::CType, Self::Error> {
+        unsafe { T::pack(part1, part2) }.map(UnsafeCell::new)
+    }
 }
 
 /// Immutable slice `&[C]` with a defined C ABI layout. Consists of a data pointer and a length.
@@ -351,7 +377,7 @@ impl_mut_slice_methods! { CSliceMut, [C, const RESTRICTED: bool], [C, RESTRICTED
 
 macro_rules! impl_slice_carrier {
     ($ty:ident, [$($params:tt)*], [$($args:tt)*]) => {
-        unsafe impl<$($params)*> Borrow for $ty<$($args)*> {
+unsafe impl<$($params)*> Borrow for $ty<$($args)*> {
             type Borrowed<'itm>
                 = Self
             where

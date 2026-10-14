@@ -206,7 +206,7 @@ mod self_projection {
 
         impl Assoc for Host {
             type Base = u8;
-            type Item = <Self as Assoc>::Base;
+            type Item = Self::Base;
         }
     }
 }

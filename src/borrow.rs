@@ -1,13 +1,17 @@
 #[cfg(feature = "alloc")]
-use alloc::{borrow::ToOwned, boxed::Box, vec::Vec};
+pub use alloc::borrow::ToOwned;
+#[cfg(feature = "alloc")]
+use alloc::{boxed::Box, vec::Vec};
 
 #[cfg(feature = "alloc")]
-use rust_spec::{
-    RustSpec,
-    size::{MetaSized, MetadataKind, SizedKind},
-};
+use rust_spec::size::{MetaSized, MetadataKind, SizedKind};
 
 use crate::{CType, sync::ArrayStore};
+
+union BorrowCastValue<From, To> {
+    from: core::mem::ManuallyDrop<From>,
+    to: core::mem::ManuallyDrop<To>,
+}
 
 // TODO: Remove this once extern types are stable
 // https://github.com/rust-lang/rust/issues/43467
@@ -40,13 +44,15 @@ pub unsafe trait BorrowCastMut: CType {
 }
 
 #[inline(always)]
-pub const fn borrow_cast<C: BorrowCast<AsConst: Copy> + Copy>(source: C) -> C::AsConst {
-    unsafe { core::mem::transmute_copy(&source) }
+pub const fn borrow_cast<C: BorrowCast<AsConst: Sized>>(source: C) -> C::AsConst {
+    let source = core::mem::ManuallyDrop::new(source);
+    unsafe { core::mem::ManuallyDrop::into_inner(BorrowCastValue { from: source }.to) }
 }
 
 #[inline(always)]
-pub const fn borrow_cast_mut<C: BorrowCastMut<AsMut: Copy> + Copy>(source: C) -> C::AsMut {
-    unsafe { core::mem::transmute_copy(&source) }
+pub const fn borrow_cast_mut<C: BorrowCastMut<AsMut: Sized>>(source: C) -> C::AsMut {
+    let source = core::mem::ManuallyDrop::new(source);
+    unsafe { core::mem::ManuallyDrop::into_inner(BorrowCastValue { from: source }.to) }
 }
 
 /// A trait for structurally borrowing data.
@@ -182,7 +188,7 @@ impl<'itm, 'a: 'itm, R: ?Sized> FromBorrow<'itm> for &'a mut R {
 
 #[cfg(feature = "alloc")]
 // NOTE: extern types cannot be borrowed, only moved
-unsafe impl<R: RustSpec<Size: NonExternTypeLike> + ?Sized> Borrow for Box<R> {
+unsafe impl<R: rust_spec::RustSpec<Size: NonExternTypeLike> + ?Sized> Borrow for Box<R> {
     type Borrowed<'itm>
         = &'itm R
     where
@@ -201,7 +207,8 @@ unsafe impl<R: RustSpec<Size: NonExternTypeLike> + ?Sized> Borrow for Box<R> {
     }
 }
 #[cfg(feature = "alloc")]
-impl<'itm, R: RustSpec<Size: NonExternTypeLike> + ToOwned + ?Sized> FromBorrow<'itm> for Box<R>
+impl<'itm, R: rust_spec::RustSpec<Size: NonExternTypeLike> + ToOwned + ?Sized> FromBorrow<'itm>
+    for Box<R>
 where
     R::Owned: Into<Self>,
 {

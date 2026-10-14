@@ -1,38 +1,38 @@
 error[E0277]: the size for values of type `[T]` cannot be known at compilation time
-  --> tests/ui_fail/opaque_dst_export.rs:13:10
+  --> tests/ui_fail/opaque_dst_export.rs:15:10
    |
-13 |     type OpaqueSlice<T>;
+15 |     type OpaqueSlice<T>;
    |          ^^^^^^^^^^^^^^ doesn't have a size known at compile-time
    |
    = help: within `OpaqueSlice<T>`, the trait `std::marker::Sized` is not implemented for `[T]`
 note: required because it appears within the type `OpaqueSlice<T>`
-  --> tests/ui_fail/opaque_dst_export.rs:7:8
+  --> tests/ui_fail/opaque_dst_export.rs:9:8
    |
- 7 | struct OpaqueSlice<T>([T]);
+ 9 | struct OpaqueSlice<T>([T]);
    |        ^^^^^^^^^^^
 note: required by an implicit `Sized` bound in `__Co3AssertSized`
-  --> tests/ui_fail/opaque_dst_export.rs:9:1
+  --> tests/ui_fail/opaque_dst_export.rs:11:1
    |
- 9 | / ffi! {
-10 | |     #![unsafe(export("C"))]
-11 | |
-12 | |     #[tag(u8)]
+11 | / ffi! {
+12 | |     #![unsafe(export("C"))]
+13 | |
+14 | |     #[tag(u8)]
 ...  |
-21 | | }
+23 | | }
    | |_^ required by the implicit `Sized` requirement on this type parameter in `__Co3AssertSized`
    = note: this error originates in the macro `ffi` (in Nightly builds, run with -Z macro-backtrace for more info)
 
 error[E0277]: the size for values of type `[T]` cannot be known at compilation time
-  --> tests/ui_fail/opaque_dst_export.rs:13:10
+  --> tests/ui_fail/opaque_dst_export.rs:15:10
    |
-13 |     type OpaqueSlice<T>;
+15 |     type OpaqueSlice<T>;
    |          ^^^^^^^^^^^^^^ doesn't have a size known at compile-time
    |
    = help: within `OpaqueSlice<T>`, the trait `std::marker::Sized` is not implemented for `[T]`
 note: required because it appears within the type `OpaqueSlice<T>`
-  --> tests/ui_fail/opaque_dst_export.rs:7:8
+  --> tests/ui_fail/opaque_dst_export.rs:9:8
    |
- 7 | struct OpaqueSlice<T>([T]);
+ 9 | struct OpaqueSlice<T>([T]);
    |        ^^^^^^^^^^^
 note: required by a bound in `EncodeOwned`
   --> src/stored.rs
@@ -41,21 +41,21 @@ note: required by a bound in `EncodeOwned`
    |                                                ^^^^^ required by this bound in `EncodeOwned`
 
 error[E0277]: the size for values of type `[T]` cannot be known at compilation time
-  --> tests/ui_fail/opaque_dst_export.rs:9:1
+  --> tests/ui_fail/opaque_dst_export.rs:11:1
    |
- 9 | / ffi! {
-10 | |     #![unsafe(export("C"))]
-11 | |
-12 | |     #[tag(u8)]
+11 | / ffi! {
+12 | |     #![unsafe(export("C"))]
+13 | |
+14 | |     #[tag(u8)]
 ...  |
-21 | | }
+23 | | }
    | |_^ doesn't have a size known at compile-time
    |
    = help: within `OpaqueSlice<T>`, the trait `std::marker::Sized` is not implemented for `[T]`
 note: required because it appears within the type `OpaqueSlice<T>`
-  --> tests/ui_fail/opaque_dst_export.rs:7:8
+  --> tests/ui_fail/opaque_dst_export.rs:9:8
    |
- 7 | struct OpaqueSlice<T>([T]);
+ 9 | struct OpaqueSlice<T>([T]);
    |        ^^^^^^^^^^^
 note: required by an implicit `Sized` bound in `Option`
   --> $RUST/core/src/option.rs
@@ -65,16 +65,16 @@ note: required by an implicit `Sized` bound in `Option`
    = note: this error originates in the macro `ffi` (in Nightly builds, run with -Z macro-backtrace for more info)
 
 error[E0277]: the size for values of type `[T]` cannot be known at compilation time
-  --> tests/ui_fail/opaque_dst_export.rs:13:10
+  --> tests/ui_fail/opaque_dst_export.rs:15:10
    |
-13 |     type OpaqueSlice<T>;
+15 |     type OpaqueSlice<T>;
    |          ^^^^^^^^^^^^^^ doesn't have a size known at compile-time
    |
    = help: within `OpaqueSlice<T>`, the trait `std::marker::Sized` is not implemented for `[T]`
 note: required because it appears within the type `OpaqueSlice<T>`
-  --> tests/ui_fail/opaque_dst_export.rs:7:8
+  --> tests/ui_fail/opaque_dst_export.rs:9:8
    |
- 7 | struct OpaqueSlice<T>([T]);
+ 9 | struct OpaqueSlice<T>([T]);
    |        ^^^^^^^^^^^
 note: required by a bound in `DecodeOwned`
   --> src/stored.rs
@@ -83,26 +83,27 @@ note: required by a bound in `DecodeOwned`
    |                                                    ^^^^^ required by this bound in `DecodeOwned`
 
 error[E0277]: the size for values of type `[T]` cannot be known at compilation time
-  --> tests/ui_fail/opaque_dst_export.rs:13:10
+  --> tests/ui_fail/opaque_dst_export.rs:15:10
    |
-13 |     type OpaqueSlice<T>;
+15 |     type OpaqueSlice<T>;
    |          ^^^^^^^^^^^^^^ doesn't have a size known at compile-time
    |
    = help: within `OpaqueSlice<T>`, the trait `std::marker::Sized` is not implemented for `[T]`
 help: the trait `EncodeOwned` is not implemented for `OpaqueSlice<T>`
       but trait `EncodeOwned` is implemented for it
-  --> tests/ui_fail/opaque_dst_export.rs:9:1
+  --> tests/ui_fail/opaque_dst_export.rs:11:1
    |
- 9 | / ffi! {
-10 | |     #![unsafe(export("C"))]
-11 | |
-12 | |     #[tag(u8)]
-13 | |     type OpaqueSlice<T>;
-   | |_______________________^
+11 | / ffi! {
+12 | |     #![unsafe(export("C"))]
+13 | |
+14 | |     #[tag(u8)]
+...  |
+23 | | }
+   | |_^
 note: required because it appears within the type `OpaqueSlice<T>`
-  --> tests/ui_fail/opaque_dst_export.rs:7:8
+  --> tests/ui_fail/opaque_dst_export.rs:9:8
    |
- 7 | struct OpaqueSlice<T>([T]);
+ 9 | struct OpaqueSlice<T>([T]);
    |        ^^^^^^^^^^^
    = note: required for `OpaqueSlice<T>` to implement `EncodeOwned`
 note: required by a bound in `Encode`
@@ -113,26 +114,27 @@ note: required by a bound in `Encode`
    = note: this error originates in the macro `ffi` (in Nightly builds, run with -Z macro-backtrace for more info)
 
 error[E0277]: the size for values of type `[T]` cannot be known at compilation time
-  --> tests/ui_fail/opaque_dst_export.rs:13:10
+  --> tests/ui_fail/opaque_dst_export.rs:15:10
    |
-13 |     type OpaqueSlice<T>;
+15 |     type OpaqueSlice<T>;
    |          ^^^^^^^^^^^^^^ doesn't have a size known at compile-time
    |
    = help: within `OpaqueSlice<T>`, the trait `std::marker::Sized` is not implemented for `[T]`
 help: the trait `DecodeOwned<'_>` is not implemented for `OpaqueSlice<T>`
       but trait `DecodeOwned<'_>` is implemented for it
-  --> tests/ui_fail/opaque_dst_export.rs:9:1
+  --> tests/ui_fail/opaque_dst_export.rs:11:1
    |
- 9 | / ffi! {
-10 | |     #![unsafe(export("C"))]
-11 | |
-12 | |     #[tag(u8)]
-13 | |     type OpaqueSlice<T>;
-   | |_______________________^
+11 | / ffi! {
+12 | |     #![unsafe(export("C"))]
+13 | |
+14 | |     #[tag(u8)]
+...  |
+23 | | }
+   | |_^
 note: required because it appears within the type `OpaqueSlice<T>`
-  --> tests/ui_fail/opaque_dst_export.rs:7:8
+  --> tests/ui_fail/opaque_dst_export.rs:9:8
    |
- 7 | struct OpaqueSlice<T>([T]);
+ 9 | struct OpaqueSlice<T>([T]);
    |        ^^^^^^^^^^^
    = note: required for `OpaqueSlice<T>` to implement `DecodeOwned<'_>`
 note: required by a bound in `Decode`
@@ -143,41 +145,41 @@ note: required by a bound in `Decode`
    = note: this error originates in the macro `ffi` (in Nightly builds, run with -Z macro-backtrace for more info)
 
 error[E0277]: the size for values of type `[T]` cannot be known at compilation time
-  --> tests/ui_fail/opaque_dst_export.rs:9:1
+  --> tests/ui_fail/opaque_dst_export.rs:11:1
    |
- 9 | / ffi! {
-10 | |     #![unsafe(export("C"))]
-11 | |
-12 | |     #[tag(u8)]
+11 | / ffi! {
+12 | |     #![unsafe(export("C"))]
+13 | |
+14 | |     #[tag(u8)]
 ...  |
-21 | | }
+23 | | }
    | |_^ doesn't have a size known at compile-time
    |
    = help: within `OpaqueSlice<T>`, the trait `std::marker::Sized` is not implemented for `[T]`
 note: required because it appears within the type `OpaqueSlice<T>`
-  --> tests/ui_fail/opaque_dst_export.rs:7:8
+  --> tests/ui_fail/opaque_dst_export.rs:9:8
    |
- 7 | struct OpaqueSlice<T>([T]);
+ 9 | struct OpaqueSlice<T>([T]);
    |        ^^^^^^^^^^^
    = note: the return type of a function must have a statically known size
    = note: this error originates in the macro `ffi` (in Nightly builds, run with -Z macro-backtrace for more info)
 
 error[E0277]: the size for values of type `[u8]` cannot be known at compilation time
-  --> tests/ui_fail/opaque_dst_export.rs:9:1
+  --> tests/ui_fail/opaque_dst_export.rs:11:1
    |
- 9 | / ffi! {
-10 | |     #![unsafe(export("C"))]
-11 | |
-12 | |     #[tag(u8)]
+11 | / ffi! {
+12 | |     #![unsafe(export("C"))]
+13 | |
+14 | |     #[tag(u8)]
 ...  |
-21 | | }
+23 | | }
    | |_^ doesn't have a size known at compile-time
    |
    = help: within `OpaqueSlice<u8>`, the trait `std::marker::Sized` is not implemented for `[u8]`
 note: required because it appears within the type `OpaqueSlice<u8>`
-  --> tests/ui_fail/opaque_dst_export.rs:7:8
+  --> tests/ui_fail/opaque_dst_export.rs:9:8
    |
- 7 | struct OpaqueSlice<T>([T]);
+ 9 | struct OpaqueSlice<T>([T]);
    |        ^^^^^^^^^^^
 note: required by an implicit `Sized` bound in `CBox`
   --> src/boxed.rs
@@ -187,24 +189,24 @@ note: required by an implicit `Sized` bound in `CBox`
    = note: this error originates in the macro `ffi` (in Nightly builds, run with -Z macro-backtrace for more info)
 
 error[E0277]: the size for values of type `[T]` cannot be known at compilation time
-  --> tests/ui_fail/opaque_dst_export.rs:9:1
+  --> tests/ui_fail/opaque_dst_export.rs:11:1
    |
- 9 | / ffi! {
-10 | |     #![unsafe(export("C"))]
-11 | |
-12 | |     #[tag(u8)]
+11 | / ffi! {
+12 | |     #![unsafe(export("C"))]
+13 | |
+14 | |     #[tag(u8)]
 ...  |
-21 | | }
+23 | | }
    | |_^ doesn't have a size known at compile-time
    |
    = help: within `OpaqueSlice<T>`, the trait `std::marker::Sized` is not implemented for `[T]`
 note: required because it appears within the type `OpaqueSlice<T>`
-  --> tests/ui_fail/opaque_dst_export.rs:7:8
+  --> tests/ui_fail/opaque_dst_export.rs:9:8
    |
- 7 | struct OpaqueSlice<T>([T]);
+ 9 | struct OpaqueSlice<T>([T]);
    |        ^^^^^^^^^^^
    = note: this error originates in the macro `ffi` (in Nightly builds, run with -Z macro-backtrace for more info)
 help: function arguments must have a statically known size, borrowed types always have a known size
    |
- 9 | &ffi! {
+11 | &ffi! {
    | +

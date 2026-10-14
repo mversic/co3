@@ -1,4 +1,4 @@
-use co3::ffi;
+use co3::{ffi, rust_spec::RustSpec};
 
 trait Value {
     fn value(&self) -> u8;
@@ -7,6 +7,8 @@ trait Value {
 mod export {
     use super::*;
 
+    #[derive(RustSpec)]
+    #[rust_spec(opaque)]
     struct Concrete(u8);
 
     impl Value for Concrete {

@@ -57,13 +57,13 @@ ffi! {
     impl ToOwned for Opaque1 {
         type Owned = OwnedOpaque1;
 
-        fn to_owned(&self) -> move <Self as ToOwned>::Owned;
+        fn to_owned(&self) -> move Self::Owned;
     }
 
     impl ToOwned for Opaque2 {
         type Owned = OwnedOpaque2;
 
-        fn to_owned(&self) -> move <Self as ToOwned>::Owned;
+        fn to_owned(&self) -> move Self::Owned;
     }
 
     impl<dyn(u32) T: ToOwned> Kita for T
@@ -72,7 +72,7 @@ ffi! {
     {
         type MySelf = <T as ToOwned>::Owned;
 
-        fn kita(self_id: <dyn Self>::TAG, self: &Self) -> move Vec<<Self as Kita>::MySelf>;
+        fn kita(self_id: <dyn Self>::TAG, self: &Self) -> move Vec<Self::MySelf>;
         fn kita2(a: &u32, self_id: <dyn T>::TAG);
     }
 }

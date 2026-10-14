@@ -14,7 +14,7 @@ trait AmbiguousY {
 }
 
 trait CustomExports {
-    fn xor(&self, by: u8) -> Box<Self>;
+    fn xor(&self, by: u8) -> OwnedOpaqueStructU8;
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, RustSpec, ReprC)]
@@ -27,19 +27,24 @@ pub enum Ambiguous {
     None,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq)]
+#[derive(Debug, Clone, Copy, PartialEq, RustSpec)]
+#[rust_spec(opaque)]
 pub(crate) struct OpaqueStructU8(u8);
 
-#[derive(Debug, Clone, Copy, PartialEq)]
+#[derive(Debug, Clone, Copy, PartialEq, RustSpec)]
+#[rust_spec(opaque)]
 pub(crate) struct OpaqueStructU32(u32);
 
-#[derive(Debug, Clone, Copy, PartialEq)]
+#[derive(Debug, Clone, Copy, PartialEq, RustSpec)]
+#[rust_spec(opaque)]
 pub(crate) struct OpaqueStructU64(u64);
 
-#[derive(Debug, Clone, Copy, PartialEq)]
+#[derive(Debug, Clone, Copy, PartialEq, RustSpec)]
+#[rust_spec(opaque)]
 pub(crate) struct OpaqueStructBool(bool);
 
-#[derive(Debug, Clone, Copy, PartialEq)]
+#[derive(Debug, Clone, Copy, PartialEq, RustSpec)]
+#[rust_spec(opaque)]
 pub(crate) struct OpaqueStructI32(i32);
 
 #[derive(Debug, Clone, Copy, PartialEq, RustSpec, ReprC)]
@@ -157,13 +162,13 @@ impl AmbiguousY for OpaqueStructU64 {
 }
 
 impl CustomExports for OpaqueStructU8 {
-    fn xor(&self, by: u8) -> Box<Self> {
+    fn xor(&self, by: u8) -> OwnedOpaqueStructU8 {
         Box::new(OpaqueStructU8(self.0 ^ by))
     }
 }
 
 impl OpaqueStructU32 {
-    fn re_exported() -> Box<Self> {
+    fn re_exported() -> OwnedOpaqueStructU32 {
         Box::new(OpaqueStructU32(42))
     }
 }

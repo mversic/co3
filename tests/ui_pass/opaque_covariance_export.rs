@@ -1,7 +1,11 @@
-use co3::ffi;
+use co3::{ffi, rust_spec::RustSpec};
 
+#[derive(RustSpec)]
+#[rust_spec(opaque)]
 struct Exported<'a, 'b>(&'a u8, &'b u8);
 
+#[derive(RustSpec)]
+#[rust_spec(opaque)]
 struct Bounded<'a, 'b>(&'a u8, &'b u8)
 where
     'a: 'b;

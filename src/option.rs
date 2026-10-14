@@ -1,7 +1,7 @@
 //! C-compatible representation of [`core::option::Option`].
 use core::mem::MaybeUninit;
 
-use rust_spec::{RustSpec, niche::WithoutNiche};
+use rust_spec::niche::WithoutNiche;
 
 use crate::{
     CFnArg, CFnReturn, CType, Decode, Encode, ReprC,
@@ -137,17 +137,6 @@ impl<T: Copy> Clone for ReprCOption<T> {
     }
 }
 
-unsafe impl<T: RustSpec> RustSpec for ReprCOption<T> {
-    type Layout = T::Layout;
-    type Size = rust_spec::size::Sized<rust_spec::Gt<rust_spec::Zero>>;
-    type Alignment = T::Alignment;
-    type Trap = T::Trap;
-    type Niche = WithoutNiche;
-    type Drop = T::Drop;
-    type Mutability = rust_spec::mutability::Exclusive;
-    type __IndirectTrap = T::__IndirectTrap;
-}
-
 unsafe impl<T: Borrow> Borrow for ReprCOption<T> {
     type Borrowed<'itm>
         = ReprCOption<T::Borrowed<'itm>>
@@ -183,10 +172,21 @@ impl<'itm, T: FromBorrow<'itm>> FromBorrow<'itm> for ReprCOption<T> {
     }
 }
 
+unsafe impl<T: crate::rust_spec::RustSpec> crate::rust_spec::RustSpec for ReprCOption<T> {
+    type Layout = <T as crate::rust_spec::RustSpec>::Layout;
+    type Size = rust_spec::size::Sized<rust_spec::Gt<rust_spec::Zero>>;
+    type Alignment = <T as crate::rust_spec::RustSpec>::Alignment;
+    type Trap = <T as crate::rust_spec::RustSpec>::Trap;
+    type Niche = WithoutNiche;
+    type Drop = <T as crate::rust_spec::RustSpec>::Drop;
+    type Mutability = <T as crate::rust_spec::RustSpec>::Mutability;
+    type __IndirectTrap = <T as crate::rust_spec::RustSpec>::__IndirectTrap;
+}
+
 impl<T: ReprC<CType: Sized>> ReprC for ReprCOption<T> {
     type CType = ReprCOption<T::CType>;
 }
-unsafe impl<T: EncodeOwned<CType: Copy>> EncodeOwned for ReprCOption<T> {
+unsafe impl<T: EncodeOwned> EncodeOwned for ReprCOption<T> {
     type Store = T::Store;
 
     #[inline(always)]
@@ -203,7 +203,7 @@ unsafe impl<T: EncodeOwned<CType: Copy>> EncodeOwned for ReprCOption<T> {
         }
     }
 }
-unsafe impl<'d, T: DecodeOwned<'d, CType: Copy>> DecodeOwned<'d> for ReprCOption<T> {
+unsafe impl<'d, T: DecodeOwned<'d>> DecodeOwned<'d> for ReprCOption<T> {
     type Store = T::Store;
 
     #[inline(always)]
@@ -234,10 +234,10 @@ unsafe impl<'d, T: DecodeOwned<'d, CType: Copy>> DecodeOwned<'d> for ReprCOption
     }
 }
 
-impl<T: Encode<CType: Copy>> Encode for ReprCOption<T> {}
-impl<'d, T: Decode<'d, CType: Copy>> Decode<'d> for ReprCOption<T> {}
+impl<T: Encode> Encode for ReprCOption<T> {}
+impl<'d, T: Decode<'d>> Decode<'d> for ReprCOption<T> {}
 
-unsafe impl<T: CheckedTransmute<CType: Copy>> CheckedTransmute for ReprCOption<T> {
+unsafe impl<T: CheckedTransmute<CType: Sized>> CheckedTransmute for ReprCOption<T> {
     #[inline(always)]
     unsafe fn is_valid(target: &Self::CType) -> bool {
         match target.tag {
@@ -248,13 +248,13 @@ unsafe impl<T: CheckedTransmute<CType: Copy>> CheckedTransmute for ReprCOption<T
 }
 
 unsafe impl<T: CType> CType for ReprCOption<T> {}
-unsafe impl<T: CType + Copy> CFnArg for ReprCOption<T> {}
-unsafe impl<T: CType + Copy> CFnReturn for ReprCOption<T> {}
+unsafe impl<T: CType> CFnArg for ReprCOption<T> {}
+unsafe impl<T: CType> CFnReturn for ReprCOption<T> {}
 
-unsafe impl<T: BorrowCast<AsConst: Copy> + Copy> BorrowCast for ReprCOption<T> {
+unsafe impl<T: BorrowCast<AsConst: Sized>> BorrowCast for ReprCOption<T> {
     type AsConst = ReprCOption<T::AsConst>;
 }
-unsafe impl<T: BorrowCastMut<AsMut: Copy> + Copy> BorrowCastMut for ReprCOption<T> {
+unsafe impl<T: BorrowCastMut<AsMut: Sized>> BorrowCastMut for ReprCOption<T> {
     type AsMut = ReprCOption<T::AsMut>;
 }
 

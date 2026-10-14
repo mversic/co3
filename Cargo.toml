@@ -7,11 +7,15 @@ edition = "2024"
 license = "Apache-2.0"
 authors = ["Marin Veršić <marin.versic101@gmail.com>"]
 
+# Required for the UnsafeCell transmutation guarantees used by this crate.
+rust-version = "1.99"
+
 [package]
 name = "co3"
 
 version.workspace = true
 edition.workspace = true
+rust-version.workspace = true
 license.workspace = true
 authors.workspace = true
 
@@ -37,7 +41,7 @@ default = ["alloc", "derive"]
 [dependencies]
 co3-derive = { version = "0.7.4", path = "derive", optional = true }
 
-rust-spec = { version = "0.5.2", default-features = false, features = ["derive"] }
+rust-spec = { version = "0.5.3", default-features = false, features = ["derive"] }
 disjoint_impls = "1.4.2"
 impls = "1.0.3"
 
@@ -60,3 +64,7 @@ required-features = ["alloc", "derive"]
 [[test]]
 name = "import"
 required-features = ["alloc", "derive"]
+
+[[test]]
+name = "no_alloc"
+required-features = ["derive"]

@@ -122,7 +122,7 @@ macro_rules! primitive_derive {
 
 macro_rules! raw_pointer_derive {
     ( $mutability:tt ) => {
-        unsafe impl<R: ?Sized> Borrow for *$mutability R {
+unsafe impl<R: ?Sized> Borrow for *$mutability R {
             type Borrowed<'itm>
                 = Self
             where
@@ -173,7 +173,7 @@ macro_rules! raw_pointer_derive {
 
         unsafe impl<R: CType + ?Sized> CheckedTransmute for *$mutability R
         where
-            R: RustSpec<Size: crate::Thin>,
+            R: rust_spec::RustSpec<Size: crate::Thin>,
         {
             #[inline(always)]
             unsafe fn is_valid(_: &Self::CType) -> bool {
@@ -239,7 +239,7 @@ macro_rules! impl_fn_types {
         impl_fn_types!(@impl [$($arg),*] unsafe extern $abi fn($($arg),*) -> R);
     };
     (@impl [$($arg:ident),*] $fn_type:ty) => {
-        unsafe impl<$($arg: CFnArg,)* R: CFnReturn> Borrow for $fn_type
+unsafe impl<$($arg: CFnArg,)* R: CFnReturn> Borrow for $fn_type
         where Option<Self>: CType {
             type Borrowed<'itm> = Self where Self: 'itm;
             type Owner = ();
@@ -300,14 +300,7 @@ macro_rules! impl_fn_types {
 
 macro_rules! fieldless_enum_derive {
     ( $src:ty => $dst:ty: {$niche_val:expr}: $validity_fn:expr; $decode_fn:expr; $encode_fn:expr $(; $unchecked_fn:expr)? ) => {
-        unsafe impl CheckedTransmute for $src {
-            #[inline(always)]
-            unsafe fn is_valid(target: &Self::CType) -> bool {
-                $validity_fn(target)
-            }
-        }
-
-        unsafe impl Borrow for $src {
+unsafe impl Borrow for $src {
             type Borrowed<'itm> = Self;
 
             type Owner = ();
@@ -355,6 +348,13 @@ macro_rules! fieldless_enum_derive {
         impl Encode for $src {}
         impl Decode<'_> for $src {}
 
+        unsafe impl CheckedTransmute for $src {
+            #[inline(always)]
+            unsafe fn is_valid(target: &Self::CType) -> bool {
+                $validity_fn(target)
+            }
+        }
+
         impl Niche for $src {
             const NICHE: Self::CType = $niche_val;
         }
@@ -386,23 +386,20 @@ raw_pointer_derive! { mut }
 impl<R> Owned for [R] {
     type Owned = Vec<R>;
 }
-
 unsafe impl<R: CType> CType for [R] {}
-
 impl<R: ReprC<CType: Sized>> ReprC for [R] {
     type CType = [R::CType];
 }
-unsafe impl<R: BorrowCast<AsConst: Copy>> BorrowCast for [R] {
+unsafe impl<R: BorrowCast<AsConst: Sized>> BorrowCast for [R] {
     type AsConst = [R::AsConst];
 }
-unsafe impl<R: BorrowCastMut<AsMut: Copy>> BorrowCastMut for [R] {
+unsafe impl<R: BorrowCastMut<AsMut: Sized>> BorrowCastMut for [R] {
     type AsMut = [R::AsMut];
 }
-
 impl<R: ReprC<CType: Sized>, const N: usize> ReprC for [R; N] {
     type CType = [R::CType; N];
 }
-unsafe impl<R: EncodeOwned<CType: Copy>, const N: usize> EncodeOwned for [R; N] {
+unsafe impl<R: EncodeOwned, const N: usize> EncodeOwned for [R; N] {
     type Store = ArrayStore<R::Store, N>;
 
     fn soft_encode<'itm>(self, store: &'itm mut Self::Store) -> Self::CType
@@ -424,7 +421,7 @@ unsafe impl<R: EncodeOwned<CType: Copy>, const N: usize> EncodeOwned for [R; N] 
         })
     }
 }
-unsafe impl<'d, R: DecodeOwned<'d, CType: Copy>, const N: usize> DecodeOwned<'d> for [R; N] {
+unsafe impl<'d, R: DecodeOwned<'d>, const N: usize> DecodeOwned<'d> for [R; N] {
     type Store = ArrayStore<R::Store, N>;
 
     unsafe fn soft_decode<'itm: 'd>(
@@ -456,10 +453,10 @@ unsafe impl<'d, R: DecodeOwned<'d, CType: Copy>, const N: usize> DecodeOwned<'d>
 
 unsafe impl<R: CType, const N: usize> CType for [R; N] {}
 
-unsafe impl<R: BorrowCast<AsConst: Copy> + Copy, const N: usize> BorrowCast for [R; N] {
+unsafe impl<R: BorrowCast<AsConst: Sized>, const N: usize> BorrowCast for [R; N] {
     type AsConst = [R::AsConst; N];
 }
-unsafe impl<R: BorrowCastMut<AsMut: Copy> + Copy, const N: usize> BorrowCastMut for [R; N] {
+unsafe impl<R: BorrowCastMut<AsMut: Sized>, const N: usize> BorrowCastMut for [R; N] {
     type AsMut = [R::AsMut; N];
 }
 

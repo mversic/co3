@@ -1,7 +1,9 @@
-use co3::{tag::Tagged, ffi};
+use co3::{ffi, rust_spec::RustSpec, tag::Tagged};
 
 trait Kita {}
 
+#[derive(RustSpec)]
+#[rust_spec(opaque)]
 struct Export1<T>(T);
 
 impl<T> Kita for Export1<T> {}

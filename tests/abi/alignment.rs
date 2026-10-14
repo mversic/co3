@@ -118,7 +118,7 @@ fn generated_view_structs_expose_fields_methods() {
 #[test]
 fn generated_view_keeps_owner_axes_and_recomputes_mutability() {
     assert_impl_all!(InteriorMutableField:
-        RustSpec<Mutability = co3::rust_spec::mutability::Interior>,
+        RustSpec<Mutability = co3::rust_spec::mutability::WithInterior>,
     );
     assert_impl_all!(InteriorMutableFieldView<'static>:
         RustSpec<
@@ -128,7 +128,7 @@ fn generated_view_keeps_owner_axes_and_recomputes_mutability() {
             Trap = <InteriorMutableField as RustSpec>::Trap,
             Niche = <InteriorMutableField as RustSpec>::Niche,
             Drop = co3::rust_spec::drop::NoDrop,
-            Mutability = co3::rust_spec::mutability::Exclusive,
+            Mutability = co3::rust_spec::mutability::WithInterior,
             __IndirectTrap = <InteriorMutableField as RustSpec>::__IndirectTrap,
         >,
     );

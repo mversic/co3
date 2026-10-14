@@ -79,7 +79,7 @@ pub(super) fn derive_field_repr_c(
     let niche_bound: Option<WherePredicate> = attrs
         .niche_value
         .as_ref()
-        .map(|_| parse_quote!(<#field_ty as co3::ReprC>::CType: Copy + PartialEq));
+        .map(|_| parse_quote!(<#field_ty as co3::ReprC>::CType: PartialEq));
     let niche_bounds = niche_bound.iter().collect::<Vec<_>>();
     let niche_rejection = attrs.niche_value.as_ref().map(|value| {
         quote! {
@@ -148,6 +148,10 @@ pub(super) fn derive_field_repr_c(
         let (impl_generics, _, where_clause) = input.generics.split_for_impl();
         let predicates = where_clause.as_ref().map(|clause| &clause.predicates);
         let speculative = speculative_marker(input.generics.params.is_empty());
+        let size_kinds = [
+            quote!(co3::rust_spec::Zero),
+            quote!(co3::rust_spec::Gt<co3::rust_spec::Zero>),
+        ];
         let encode_niche_check = attrs.niche_value.as_ref().map(|value| {
             quote! {
                 debug_assert!(encoded != #value, "encoding produced the reserved NICHE");
@@ -156,11 +160,9 @@ pub(super) fn derive_field_repr_c(
 
         let mut decode_generics = input.generics.clone();
         decode_generics.params.insert(0, parse_quote!('_dšč));
-        decode_generics.make_where_clause().predicates.push(parse_quote!(#field_ty: co3::stored::DecodeOwned<'_dšč>));
+        decode_generics.make_where_clause().predicates.push(parse_quote!(#speculative #field_ty: co3::stored::DecodeOwned<'_dšč>));
         decode_generics.make_where_clause().predicates.push(parse_quote!(#name #ty_generics: co3::ReprC<CType = <#field_ty as co3::ReprC>::CType>));
         decode_generics.make_where_clause().predicates.extend(niche_bound.iter().cloned());
-        let (decode_impl_generics, _, decode_where_clause) = decode_generics.split_for_impl();
-
         let niche_impl = if let Some(value) = attrs.niche_value.as_ref() {
             let mut generics = input.generics.clone();
             generics.make_where_clause().predicates.extend(niche_bound.iter().cloned());
@@ -190,6 +192,79 @@ pub(super) fn derive_field_repr_c(
             }
         };
 
+        let drop_kinds = [
+            quote!(co3::rust_spec::drop::NoDrop),
+            quote!(co3::rust_spec::drop::AutoDrop),
+        ];
+        let mut encode_impls = Vec::new();
+        for size_kind in &size_kinds {
+            for drop_kind in &drop_kinds {
+                encode_impls.push(quote! {
+                    unsafe impl #impl_generics EncodeOwned for #name #ty_generics
+                    where
+                        #speculative #name #ty_generics: co3::ReprC<CType = <#field_ty as co3::ReprC>::CType>
+                            + co3::rust_spec::RustSpec<
+                            Drop = #drop_kind,
+                            Size = co3::rust_spec::size::Sized<#size_kind>,
+                        >,
+                        #speculative #field_ty: co3::stored::EncodeOwned,
+                        #speculative #field_ty: co3::ReprC + co3::rust_spec::RustSpec<
+                            Size = co3::rust_spec::size::Sized<#size_kind>,
+                        >,
+                        #(#niche_bounds,)*
+                        #predicates
+                    {
+                        type Store = <#field_ty as co3::stored::EncodeOwned>::Store;
+
+                        fn soft_encode<'_išč>(self, store: &'_išč mut Self::Store) -> Self::CType
+                        where Self: '_išč {
+                            let owner = core::mem::ManuallyDrop::new(self);
+                            let value = unsafe { core::ptr::read(&raw const (*owner).#member) };
+                            let encoded = co3::stored::EncodeOwned::soft_encode(value, store);
+                            #encode_niche_check
+                            encoded
+                        }
+                    }
+                });
+            }
+        }
+
+        let decode_impls = size_kinds.iter().map(|size_kind| {
+            let mut sized_generics = decode_generics.clone();
+            sized_generics.make_where_clause().predicates.push(parse_quote!(
+                #speculative #name #ty_generics: co3::rust_spec::RustSpec<
+                    Size = co3::rust_spec::size::Sized<#size_kind>
+                >
+            ));
+            sized_generics.make_where_clause().predicates.push(parse_quote!(
+                #speculative #field_ty: co3::rust_spec::RustSpec<
+                    Size = co3::rust_spec::size::Sized<#size_kind>
+                >
+            ));
+            let (sized_impl_generics, _, sized_where_clause) = sized_generics.split_for_impl();
+            quote! {
+                unsafe impl #sized_impl_generics DecodeOwned<'_dšč> for #name #ty_generics #sized_where_clause {
+                    type Store = <#field_ty as co3::stored::DecodeOwned<'_dšč>>::Store;
+
+                    unsafe fn soft_decode<'_išč: '_dšč>(
+                        source: Self::CType,
+                        store: &'_išč mut Self::Store,
+                    ) -> Option<Self> {
+                        #niche_rejection
+                        let value = unsafe { <#field_ty as co3::stored::DecodeOwned<'_dšč>>::soft_decode(source, store)? };
+                        #decode_custom_validation
+                        Some(#construct)
+                    }
+                }
+            }
+        }).collect::<Vec<_>>();
+        let mut decode_trait_generics = decode_generics.clone();
+        decode_trait_generics.make_where_clause().predicates.push(parse_quote!(
+            #speculative #name #ty_generics: co3::stored::DecodeOwned<'_dšč>
+        ));
+        let (decode_trait_impl_generics, _, decode_trait_where_clause) =
+            decode_trait_generics.split_for_impl();
+
         quote! {
             #niche_impl
 
@@ -206,66 +281,33 @@ pub(super) fn derive_field_repr_c(
                         where Self: 'itm;
                     }
 
-                    unsafe impl #impl_generics EncodeOwned for #name #ty_generics
-                    where
-                        #speculative #name #ty_generics: co3::rust_spec::RustSpec<Drop = co3::rust_spec::drop::NoDrop>,
-                        #field_ty: co3::stored::EncodeOwned,
-                        #(#niche_bounds,)*
-                        #predicates
-                    {
-                        type Store = <#field_ty as co3::stored::EncodeOwned>::Store;
-
-                        fn soft_encode<'_išč>(self, store: &'_išč mut Self::Store) -> Self::CType
-                        where Self: '_išč {
-                            let owner = core::mem::ManuallyDrop::new(self);
-                            let value = unsafe { core::ptr::read(&raw const (*owner).#member) };
-                            let encoded = co3::stored::EncodeOwned::soft_encode(value, store);
-                            #encode_niche_check
-                            encoded
-                        }
-                    }
-
-                    unsafe impl #impl_generics EncodeOwned for #name #ty_generics
-                    where
-                        #speculative #name #ty_generics: co3::rust_spec::RustSpec<Drop = co3::rust_spec::drop::AutoDrop>,
-                        #field_ty: co3::stored::EncodeOwned,
-                        #(#niche_bounds,)*
-                        #predicates
-                    {
-                        type Store = <#field_ty as co3::stored::EncodeOwned>::Store;
-
-                        fn soft_encode<'_išč>(self, store: &'_išč mut Self::Store) -> Self::CType
-                        where Self: '_išč {
-                            let owner = core::mem::ManuallyDrop::new(self);
-                            let value = unsafe { core::ptr::read(&raw const (*owner).#member) };
-                            let encoded = co3::stored::EncodeOwned::soft_encode(value, store);
-                            #encode_niche_check
-                            encoded
-                        }
-                    }
+                    #(#encode_impls)*
 
                 }
             };
 
-            unsafe impl #decode_impl_generics co3::stored::DecodeOwned<'_dšč>
-                for #name #ty_generics #decode_where_clause
-            {
-                type Store = <#field_ty as co3::stored::DecodeOwned<'_dšč>>::Store;
+            const _: () = {
+                use co3::stored::DecodeOwned;
 
-                unsafe fn soft_decode<'_išč: '_dšč>(
-                    source: Self::CType,
-                    store: &'_išč mut Self::Store,
-                ) -> Option<Self> {
-                    #niche_rejection
-                    let value = unsafe { <#field_ty as co3::stored::DecodeOwned<'_dšč>>::soft_decode(source, store)? };
-                    #decode_custom_validation
-                    Some(#construct)
+                co3::disjoint_impls! {
+                    #[disjoint_impls(remote)]
+                    #[allow(clippy::missing_safety_doc)]
+                    pub unsafe trait DecodeOwned<'d>: co3::ReprC<CType: Sized> + Sized {
+                        type Store: co3::stored::Store + Default;
+
+                        unsafe fn soft_decode<'itm: 'd>(
+                            source: Self::CType,
+                            store: &'itm mut Self::Store,
+                        ) -> Option<Self>;
+                    }
+
+                    #(#decode_impls)*
                 }
-            }
+            };
 
             impl #impl_generics co3::Encode for #name #ty_generics
-            where #name #ty_generics: co3::stored::EncodeOwned, #predicates {}
-            impl #decode_impl_generics co3::Decode<'_dšč> for #name #ty_generics #decode_where_clause {}
+            where #speculative #name #ty_generics: co3::stored::EncodeOwned, #predicates {}
+            impl #decode_trait_impl_generics co3::Decode<'_dšč> for #name #ty_generics #decode_trait_where_clause {}
         }
     });
 

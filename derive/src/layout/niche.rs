@@ -5,7 +5,7 @@ use crate::{
     layout::{
         attr::ReprKind,
         borrow::gen_view_owner_name,
-        ctype::{gen_ctype_name, gen_extern_c_bounds_for_ctype},
+        ctype::{gen_copy_extern_c_bounds_for_ctype, gen_ctype_name},
         enum_tag_type, generic_param_idents, is_exhaustive_enum, is_parametrized,
         is_transparent_enum_repr,
     },
@@ -25,7 +25,11 @@ pub fn gen_view_niche_ir(view_name: &syn::Ident, generics: &syn::Generics) -> To
     let owner_generics =
         generic_param_idents(generics.params.iter().skip(has_view_lifetime as usize))
             .collect::<Vec<_>>();
-    let owner_ty = quote! { #owner_name <#(#owner_generics),*> };
+    let owner_ty = if owner_generics.is_empty() {
+        quote! { #owner_name }
+    } else {
+        quote! { #owner_name <#(#owner_generics),*> }
+    };
 
     quote! {
         impl #impl_generics co3::niche::Niche for #view_name #view_ty_generics where
@@ -66,7 +70,7 @@ pub fn gen_struct_niche_ir(
         quote! { #for_dummy #ty: Sized, }
     });
     let types = fields.iter().map(|f| &f.ty).collect::<Vec<_>>();
-    let extern_c_bounds = gen_extern_c_bounds_for_ctype::<true>(generics, &types);
+    let extern_c_bounds = gen_copy_extern_c_bounds_for_ctype(generics, &types);
     let (fields_tuple, c_fields_tuple, accessors) = build_extern_c_type_tuple(&types);
 
     let (niche_value, inferred_niche_bounds, custom_niche_bounds) =
@@ -150,7 +154,7 @@ pub fn gen_enum_niche_ir(
         .iter()
         .flat_map(|variant| variant.fields.iter().map(|field| &field.ty))
         .collect::<Vec<_>>();
-    let extern_c_bounds = gen_extern_c_bounds_for_ctype::<true>(generics, &variant_field_types);
+    let extern_c_bounds = gen_copy_extern_c_bounds_for_ctype(generics, &variant_field_types);
 
     let niche_discriminant = Literal::usize_unsuffixed(variants.len());
     let niche_tag_value = quote! { #niche_discriminant as #tag_ty };

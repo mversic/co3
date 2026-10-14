@@ -1,9 +1,11 @@
-use co3::ffi;
+use co3::{ffi, rust_spec::RustSpec};
 
 trait RefKita {
     fn kita(&self) -> u32;
 }
 
+#[derive(RustSpec)]
+#[rust_spec(opaque)]
 struct Exported0(u8);
 impl RefKita for Exported0 {
     fn kita(&self) -> u32 {
@@ -11,6 +13,8 @@ impl RefKita for Exported0 {
     }
 }
 
+#[derive(RustSpec)]
+#[rust_spec(opaque)]
 struct Exported1(u8);
 impl RefKita for Exported1 {
     fn kita(&self) -> u32 {

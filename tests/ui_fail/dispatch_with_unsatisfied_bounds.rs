@@ -1,4 +1,4 @@
-use co3::{ffi, tag::Tagged};
+use co3::{ffi, rust_spec::RustSpec, tag::Tagged};
 
 pub trait Unimplemented {}
 
@@ -6,6 +6,8 @@ trait RefKita {
     fn kita(&self) -> u32;
 }
 
+#[derive(RustSpec)]
+#[rust_spec(opaque)]
 struct Exported2<T>(T);
 impl RefKita for Exported2<u32> {
     fn kita(&self) -> u32 {

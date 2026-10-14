@@ -16,24 +16,24 @@ ffi! {
     impl ToOwned for Opaque1 {
         type Owned = OwnedOpaque1;
 
-        #[symbol_name = "this_crate__ToOwned__Box_Opaque1__to_owned"]
-        fn to_owned(&self) -> move <Self as ToOwned>::Owned;
+        #[symbol_name = "this_crate__ToOwned__OwnedOpaque1__to_owned"]
+        fn to_owned(&self) -> move Self::Owned;
     }
 
     impl ToOwned for Opaque2 {
         type Owned = OwnedOpaque2;
 
-        #[symbol_name = "this_crate__ToOwned__Box_Opaque2__to_owned"]
-        fn to_owned(&self) -> move <Self as ToOwned>::Owned;
+        #[symbol_name = "this_crate__ToOwned__OwnedOpaque2__to_owned"]
+        fn to_owned(&self) -> move Self::Owned;
     }
 
     impl Default for OwnedOpaque1 {
-        #[symbol_name = "this_crate__Default__Box_Opaque1__default"]
+        #[symbol_name = "this_crate__Default__OwnedOpaque1__default"]
         fn default() -> move Self;
     }
 
     impl Default for OwnedOpaque2 {
-        #[symbol_name = "this_crate__Default__Box_Opaque2__default"]
+        #[symbol_name = "this_crate__Default__OwnedOpaque2__default"]
         fn default() -> move Self;
     }
 
@@ -47,17 +47,20 @@ ffi! {
 
 mod provider {
     use super::*;
+    use co3::rust_spec::RustSpec;
 
     trait Custom<T> {
         fn kita1(&mut self, inc: &T) -> u8;
     }
 
-    #[derive(Clone)]
+    #[derive(Clone, RustSpec)]
+    #[rust_spec(opaque)]
     pub struct Opaque1(u8);
-    #[derive(Clone)]
+    #[derive(Clone, RustSpec)]
+    #[rust_spec(opaque)]
     pub struct Opaque2(u8);
 
-    impl Default for Box<Opaque1> {
+    impl Default for OwnedOpaque1 {
         fn default() -> Self {
             Box::new(Opaque1(0))
         }
@@ -86,7 +89,7 @@ mod provider {
         type Opaque2;
 
         impl Default for OwnedOpaque1 {
-            #[symbol_name = "this_crate__Default__Box_Opaque1__default"]
+            #[symbol_name = "this_crate__Default__OwnedOpaque1__default"]
             fn default() -> move Self;
         }
 
@@ -96,18 +99,22 @@ mod provider {
         }
 
         impl Default for OwnedOpaque2 {
-            #[symbol_name = "this_crate__Default__Box_Opaque2__default"]
+            #[symbol_name = "this_crate__Default__OwnedOpaque2__default"]
             fn default() -> move Self;
         }
 
         impl ToOwned for OwnedOpaque1 {
-            #[symbol_name = "this_crate__ToOwned__Box_Opaque1__to_owned"]
-            fn to_owned(&self) -> move <Self as ToOwned>::Owned;
+            type Owned = OwnedOpaque1;
+
+            #[symbol_name = "this_crate__ToOwned__OwnedOpaque1__to_owned"]
+            fn to_owned(&self) -> move Self::Owned;
         }
 
         impl ToOwned for OwnedOpaque2 {
-            #[symbol_name = "this_crate__ToOwned__Box_Opaque2__to_owned"]
-            fn to_owned(&self) -> move <Self as ToOwned>::Owned;
+            type Owned = OwnedOpaque2;
+
+            #[symbol_name = "this_crate__ToOwned__OwnedOpaque2__to_owned"]
+            fn to_owned(&self) -> move Self::Owned;
         }
 
         impl<dyn(u8) T, dyn(u32) U> Custom<T> for U

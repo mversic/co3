@@ -138,7 +138,7 @@ macro_rules! impl_tuple {
             }
         }
 
-        unsafe impl<$($ty: EncodeOwned<CType: Copy>),*> EncodeOwned for ($($ty,)*) {
+        unsafe impl<$($ty: EncodeOwned),*> EncodeOwned for ($($ty,)*) {
             type Store = ($( $ty::Store, )*);
 
             #[inline(always)]
@@ -154,7 +154,7 @@ macro_rules! impl_tuple {
                 $ffi_ty($( $ty.soft_encode(store.$ty) ),*)
             }
         }
-        unsafe impl<$($ty: EncodeOwned<CType: Copy>),*> EncodeOwned for $ffi_ty<$($ty),*> {
+        unsafe impl<$($ty: EncodeOwned),*> EncodeOwned for $ffi_ty<$($ty),*> {
             type Store = ($( $ty::Store, )*);
 
             #[inline(always)]
@@ -171,7 +171,7 @@ macro_rules! impl_tuple {
             }
         }
 
-        unsafe impl<'d, $($ty: DecodeOwned<'d, CType: Copy>),*> DecodeOwned<'d> for ($($ty,)*) {
+        unsafe impl<'d, $($ty: DecodeOwned<'d>),*> DecodeOwned<'d> for ($($ty,)*) {
             type Store = ($( $ty::Store, )*);
 
             #[inline(always)]
@@ -194,7 +194,7 @@ macro_rules! impl_tuple {
                 unsafe { ($( $ty::soft_decode_unchecked($ty, store.$ty), )*) }
             }
         }
-        unsafe impl<'d, $($ty: DecodeOwned<'d, CType: Copy>),*> DecodeOwned<'d> for $ffi_ty<$($ty),*> {
+        unsafe impl<'d, $($ty: DecodeOwned<'d>),*> DecodeOwned<'d> for $ffi_ty<$($ty),*> {
             type Store = ($( $ty::Store, )*);
 
             #[inline(always)]
@@ -218,17 +218,17 @@ macro_rules! impl_tuple {
             }
         }
 
-        impl<$($ty: Encode<CType: Copy>),*> Encode for ($($ty,)*) {}
-        impl<$($ty: Encode<CType: Copy>),*> Encode for $ffi_ty<$($ty),*> {}
+        impl<$($ty: Encode),*> Encode for ($($ty,)*) {}
+        impl<$($ty: Encode),*> Encode for $ffi_ty<$($ty),*> {}
 
-        impl<'d, $($ty: Decode<'d, CType: Copy>),*> Decode<'d> for ($($ty,)*) {}
-        impl<'d, $($ty: Decode<'d, CType: Copy>),*> Decode<'d> for $ffi_ty<$($ty),*> {}
+        impl<'d, $($ty: Decode<'d>),*> Decode<'d> for ($($ty,)*) {}
+        impl<'d, $($ty: Decode<'d>),*> Decode<'d> for $ffi_ty<$($ty),*> {}
 
-        unsafe impl<$($ty: CType + Copy),*> CFnArg for $ffi_ty<$($ty),*>
+        unsafe impl<$($ty: CType),*> CFnArg for $ffi_ty<$($ty),*>
         where
             Self: RustSpec<Size = rust_spec::size::Sized<rust_spec::Gt<rust_spec::Zero>>>,
         {}
-        unsafe impl<$($ty: CType + Copy),*> CFnReturn for $ffi_ty<$($ty),*>
+        unsafe impl<$($ty: CType),*> CFnReturn for $ffi_ty<$($ty),*>
         where
             Self: RustSpec<Size = rust_spec::size::Sized<rust_spec::Gt<rust_spec::Zero>>>,
         {}

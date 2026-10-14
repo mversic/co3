@@ -1,12 +1,12 @@
 #[cfg(feature = "alloc")]
 use alloc::{borrow::ToOwned, boxed::Box, vec::Vec};
 
+use crate::ReprC;
 #[cfg(feature = "alloc")]
 use crate::slice::CSliceMut;
 #[cfg(feature = "alloc")]
 use crate::stored::AssignFromOwned;
 use crate::stored::{DecodeOwned, EmptyStore, EncodeOwned, decode_owned, encode_owned};
-use crate::{ReprC, cell::InteriorMut};
 
 use crate::stored::Store;
 
@@ -48,18 +48,6 @@ pub struct RefDstEncodeStore<R: ToOwned<Owned: EncodeOwned> + ?Sized> {
     pub(crate) ctype: Option<<R::Owned as ReprC>::CType>,
     pub(crate) store: <R::Owned as EncodeOwned>::Store,
 }
-
-pub struct InteriorMutSizedEncodeStore<'d, R: ReprC<CType: Sized>> {
-    pub(crate) ctype: Option<R::CType>,
-    pub(crate) original: Option<&'d R>,
-}
-
-// FIXME:
-//#[cfg(feature = "alloc")]
-//pub struct InteriorMutDstEncodeStore<'d, R: ToOwned<Owned: EncodeOwned> + ?Sized> {
-//    pub(crate) ctype: Option<<R::Owned as ReprC>::CType>,
-//    pub(crate) original: Option<&'d R>,
-//}
 
 pub struct RefMutSizedEncodeStore<'d, R: EncodeOwned> {
     pub(crate) ctype: Option<R::CType>,
@@ -156,33 +144,6 @@ where
 
         let value = unsafe { decode_owned(ctype)? };
         *original = value;
-        Some(())
-    }
-}
-
-impl<'d, R: ReprC<CType: Sized>> Default for InteriorMutSizedEncodeStore<'d, R> {
-    fn default() -> Self {
-        Self {
-            ctype: Default::default(),
-            original: Default::default(),
-        }
-    }
-}
-
-// &mut &(u32,)
-// TODO: I'd bet the store doesn't have to be empty on decode during sync
-// it should be possible to traverse the ctype and update current type.
-impl<'d, R: InteriorMut<Target: DecodeOwned<'d, Store: EmptyStore>>> Store
-    for InteriorMutSizedEncodeStore<'d, R>
-where
-    R: ReprC<CType = <R::Target as ReprC>::CType>,
-{
-    fn sync(self) -> Option<()> {
-        let original = self.original?;
-        let ctype = self.ctype?;
-
-        let value = unsafe { decode_owned::<'d, R::Target>(ctype)? };
-        unsafe { original.get().write(value) };
         Some(())
     }
 }

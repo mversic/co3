@@ -76,6 +76,8 @@ ffi! {
     fn imported_value_soft(#[cfg_attr(all(), soft)] value: &(u8,)) -> u8;
 }
 
+#[derive(RustSpec)]
+#[rust_spec(opaque)]
 struct ExportOpaque(u8);
 
 ffi! {

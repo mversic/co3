@@ -6,10 +6,7 @@ use core::{
     cell::{Cell, UnsafeCell},
     mem::ManuallyDrop,
 };
-use rust_spec::{
-    RustSpec,
-    size::{MetaSized, SliceLike},
-};
+use rust_spec::size::{MetaSized, SliceLike};
 
 use crate::{CType, transmute::CheckedTransmute};
 
@@ -140,7 +137,7 @@ macro_rules! impl_wide_for_cell {
         // length metadata; Cell and UnsafeCell preserve T's layout.
         unsafe impl<T: ?Sized, C: CType> Wide for $wrapper<T>
         where
-            T: CheckedTransmute + RustSpec<Size = MetaSized<SliceLike>>,
+            T: CheckedTransmute + rust_spec::RustSpec<Size = MetaSized<SliceLike>>,
             T::CType: Wide<Header = [C; 0], Metadata = usize>,
         {
             type Header = [C; 0];

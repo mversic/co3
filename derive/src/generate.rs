@@ -1540,7 +1540,16 @@ pub(crate) fn expand_export_decls(
             drop,
         }) => {
             let type_cfg_attrs = cfg_attrs(&ty.attrs).map(|attr| quote!(#attr)).collect::<Vec<_>>();
-            let (impl_generics, ty_generics, where_clause) = ty.generics.split_for_impl();
+            let mut export_generics = ty.generics.clone();
+            export_generics
+                .make_where_clause()
+                .predicates
+                .push(syn::parse_quote!(Self: co3::ReprC<CType = Self>));
+            export_generics
+                .make_where_clause()
+                .predicates
+                .push(syn::parse_quote!(Self: co3::rust_spec::Opaque));
+            let (impl_generics, ty_generics, where_clause) = export_generics.split_for_impl();
             let mut decode_generics = ty.generics.clone();
             decode_generics.params.insert(0, syn::parse_quote!('_dšč));
             let (decode_impl_generics, _, _) = decode_generics.split_for_impl();
@@ -1585,9 +1594,6 @@ pub(crate) fn expand_export_decls(
                 id.as_deref(),
                 ident,
                 &ty.generics,
-                // TODO: This is not correct, but I don't think it matters whether it's ZST or not
-                quote! { #co3::rust_spec::size::Sized<#co3::rust_spec::Gt<#co3::rust_spec::Zero>> },
-                quote! { #co3::rust_spec::niche::WithoutNiche },
             );
             let tag_impl = id_value
                 .as_deref()
@@ -3334,25 +3340,43 @@ fn gen_extern_type_impls(
     generics: &syn::Generics,
 ) -> TokenStream {
     let (impl_generics, ty_generics, where_clause) = generics.split_for_impl();
-    let opaque_impls = derive_opaque_item(
-        id,
-        ident,
-        generics,
-        quote! { co3::rust_spec::size::ExternTypeLike },
-        quote! { co3::rust_spec::niche::WithoutNiche },
-    );
+    let tag_family_impl = id.map(|id| gen_tag_family_impl(ident, generics, id));
     let tag_impl = id_value.map(|value| gen_tag_impl(ident, generics, value));
 
     quote! {
-        #opaque_impls
-        #tag_impl
+            #tag_family_impl
+            #tag_impl
 
-        unsafe impl #impl_generics co3::borrow::BorrowCast for #ident #ty_generics #where_clause {
-            type AsConst = Self;
-        }
-        unsafe impl #impl_generics co3::borrow::BorrowCastMut for #ident #ty_generics #where_clause {
-            type AsMut = Self;
-        }
+            unsafe impl #impl_generics co3::CType for #ident #ty_generics #where_clause {}
+            unsafe impl #impl_generics co3::rust_spec::Opaque for #ident #ty_generics #where_clause {}
+            unsafe impl #impl_generics co3::transmute::CheckedTransmute for #ident #ty_generics #where_clause {
+                #[inline(always)]
+                unsafe fn is_valid(_: &Self::CType) -> bool {
+                    true
+                }
+            }
+
+            impl #impl_generics co3::ReprC for #ident #ty_generics #where_clause {
+                type CType = Self;
+            }
+
+            unsafe impl #impl_generics co3::borrow::BorrowCast for #ident #ty_generics #where_clause {
+                type AsConst = Self;
+            }
+            unsafe impl #impl_generics co3::borrow::BorrowCastMut for #ident #ty_generics #where_clause {
+                type AsMut = Self;
+            }
+
+            unsafe impl #impl_generics co3::rust_spec::RustSpec for #ident #ty_generics #where_clause {
+                type Layout = co3::rust_spec::Stable;
+                type Size = co3::rust_spec::size::ExternTypeLike;
+                type Alignment = co3::rust_spec::One;
+                type Trap = co3::rust_spec::layout::Robust;
+                type Niche = co3::rust_spec::niche::WithoutNiche;
+                type Drop = co3::rust_spec::drop::NoDrop;
+                type Mutability = co3::rust_spec::mutability::Exclusive;
+                type __IndirectTrap = co3::rust_spec::layout::Robust;
+            }
     }
 }
 
@@ -3448,6 +3472,21 @@ fn gen_owned_extern_type_impls(
     let owned_ident = gen_owned_extern_type_name(ident);
     let owned_repr_c_name = gen_owned_repr_c_name(ident);
     let speculative = speculative_marker(generics.params.is_empty());
+    let clone_impl = cfg!(feature = "alloc").then(|| {
+        let mut clone_generics = generics.clone();
+        clone_generics.make_where_clause().predicates.push(syn::parse_quote!(
+            #speculative #ident #ty_generics:
+                #co3::borrow::ToOwned<Owned = #owned_ident #ty_generics>
+        ));
+        let (clone_impl_generics, _, clone_where_clause) = clone_generics.split_for_impl();
+        quote! {
+            impl #clone_impl_generics Clone for #owned_ident #ty_generics #clone_where_clause {
+                fn clone(&self) -> Self {
+                    #co3::borrow::ToOwned::to_owned(&**self)
+                }
+            }
+        }
+    });
     let bound_impl = |trait_path: syn::Path, unsafety: bool, body: TokenStream| {
         let mut bounded_generics = generics.clone();
         bounded_generics
@@ -3588,6 +3627,7 @@ fn gen_owned_extern_type_impls(
         #tag_family_impl
         #tag_impl
 
+        #clone_impl
         #send_impl
         #sync_impl
         #unwind_safe_impl
@@ -3698,29 +3738,19 @@ fn derive_opaque_item(
     id: Option<&syn::Type>,
     ident: &syn::Ident,
     generics: &syn::Generics,
-    size_kind: TokenStream,
-    niche_kind: TokenStream,
 ) -> TokenStream {
-    let (impl_generics, ty_generics, where_clause) = generics.split_for_impl();
+    let mut opaque_generics = generics.clone();
+    opaque_generics
+        .make_where_clause()
+        .predicates
+        .push(syn::parse_quote!(Self: co3::rust_spec::Opaque));
+    let (impl_generics, ty_generics, where_clause) = opaque_generics.split_for_impl();
     let tag_family_impl = id.map(|id| gen_tag_family_impl(ident, generics, id));
 
     quote! {
         #tag_family_impl
 
-        unsafe impl #impl_generics co3::rust_spec::RustSpec for #ident #ty_generics #where_clause {
-            type Layout = co3::rust_spec::Stable;
-            type Size = #size_kind;
-            // TODO: This is just useless IMO
-            type Alignment = co3::rust_spec::One;
-            type Trap = co3::rust_spec::layout::Robust;
-            type Niche = #niche_kind;
-            type Drop = co3::rust_spec::drop::NoDrop;
-            type Mutability = co3::rust_spec::mutability::Exclusive;
-            type __IndirectTrap = co3::rust_spec::layout::Robust;
-        }
-
         unsafe impl #impl_generics co3::CType for #ident #ty_generics #where_clause {}
-
         unsafe impl #impl_generics co3::transmute::CheckedTransmute for #ident #ty_generics #where_clause {
             #[inline(always)]
             unsafe fn is_valid(_: &Self::CType) -> bool {

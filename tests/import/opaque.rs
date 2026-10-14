@@ -20,9 +20,10 @@ ffi! {
         fn len(&self) -> usize;
     }
 
-    impl Clone for OwnedValue {
+    impl ToOwned for Value {
+        type Owned = OwnedValue;
         #[symbol_name = "import_opaque_value_clone"]
-        fn clone(&self) -> move Self;
+        fn to_owned(&self) -> move Self::Owned;
     }
 
     impl OpaqueStruct {
@@ -35,11 +36,14 @@ ffi! {
 
 mod provider {
     use co3::ffi;
+    use co3::rust_spec::RustSpec;
 
-    #[derive(Debug, Clone, PartialEq, Eq)]
+    #[derive(Debug, PartialEq, Eq, RustSpec)]
+    #[rust_spec(opaque)]
     pub struct Value(String);
 
-    #[derive(Debug, PartialEq, Eq)]
+    #[derive(Debug, PartialEq, Eq, RustSpec)]
+    #[rust_spec(opaque)]
     pub struct OpaqueStruct {
         name: u8,
     }
@@ -50,6 +54,14 @@ mod provider {
 
     impl Drop for OpaqueStruct {
         fn drop(&mut self) {}
+    }
+
+    impl ToOwned for Value {
+        type Owned = OwnedValue;
+
+        fn to_owned(&self) -> Self::Owned {
+            Box::new(Self(self.0.clone()))
+        }
     }
 
     ffi! {
@@ -72,9 +84,11 @@ mod provider {
             fn len(&self) -> usize;
         }
 
-        impl Clone for OwnedValue {
+        impl ToOwned for Value {
+            type Owned = OwnedValue;
+
             #[symbol_name = "import_opaque_value_clone"]
-            fn clone(&self) -> move Self;
+            fn to_owned(&self) -> move Self::Owned;
         }
 
         impl OpaqueStruct {
@@ -86,7 +100,7 @@ mod provider {
     }
 
     impl Value {
-        fn new(input: String) -> Box<Self> {
+        fn new(input: String) -> OwnedValue {
             Box::new(Self(input))
         }
 
@@ -96,7 +110,7 @@ mod provider {
     }
 
     impl OpaqueStruct {
-        fn new(name: u8) -> Box<Self> {
+        fn new(name: u8) -> OwnedOpaqueStruct {
             Box::new(Self { name })
         }
 

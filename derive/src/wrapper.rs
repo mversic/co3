@@ -263,6 +263,24 @@ fn gen_regular_drop_import_body<const DISPATCHED: bool>(
     ffi_fn::normalize_fn_signature(&mut owned_item.sig, Some(self_ty), None);
     let owned_ty: syn::Type = syn::parse_quote!(core::mem::ManuallyDrop<#self_ty>);
     ffi_fn::drop_owned_receiver(&mut owned_item.sig, Some(&owned_ty));
+    let imported_name = owned_item.sig.ident.clone();
+    owned_item.sig.ident = format_ident!("__co3_drop_encoded");
+    let arg_names = owned_item
+        .sig
+        .inputs
+        .iter()
+        .map(|input| match input {
+            FnArg::Typed(arg) => item_fn_input_ident(&arg.pat).clone(),
+            FnArg::Receiver(_) => unreachable!("normalized Drop receiver"),
+        })
+        .collect::<Vec<_>>();
+    let forwarded_args = arg_names.iter().map(|name| {
+        if name == "__co3_self" {
+            quote!(core::mem::ManuallyDrop::into_inner(#name))
+        } else {
+            quote!(#name)
+        }
+    });
 
     gen_impl_wrapper_body_with_self_binding::<DISPATCHED>(
         failure_mode,
@@ -276,6 +294,9 @@ fn gen_regular_drop_import_body<const DISPATCHED: bool>(
             >>() {}
             __co3_require_custom_drop::<#self_ty>();
             let __co3_self = core::mem::ManuallyDrop::new(unsafe { core::ptr::read(self) });
+            let __co3_drop_encoded = |#(#arg_names),*| unsafe {
+                #imported_name(#(#forwarded_args),*)
+            };
         }),
     )
 }

@@ -281,7 +281,7 @@ pub(super) fn gen_data_ctype_bounds(
 
     let generics = data_generics(fields, generics);
     let field_tys = field_tys.iter().collect::<Vec<_>>();
-    gen_extern_c_bounds_for_ctype::<false>(&generics, &field_tys)
+    gen_extern_c_bounds_for_ctype(&generics, &field_tys)
 }
 
 pub(super) fn wide_predicate(field_ty: &syn::Type, generics: &syn::Generics) -> TokenStream {

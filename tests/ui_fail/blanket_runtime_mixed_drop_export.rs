@@ -1,5 +1,7 @@
-use co3::ffi;
+use co3::{ffi, rust_spec::RustSpec};
 
+#[derive(RustSpec)]
+#[rust_spec(opaque)]
 struct Opaque(u8);
 struct Regular(u8);
 

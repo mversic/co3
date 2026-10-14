@@ -131,29 +131,6 @@ note: required by a bound in `Niche`
    |                                   ^^^^ required by this bound in `Niche`
    = note: this error originates in the derive macro `co3::ReprC` which comes from the expansion of the derive macro `ReprC` (in Nightly builds, run with -Z macro-backtrace for more info)
 
-error[E0277]: the trait bound `[_]: Copy` is not satisfied
-  --> tests/ui_fail/custom_validation.rs:56:10
-   |
-56 | #[derive(ReprC)]
-   |          ^^^^^ the trait `Copy` is not implemented for `[_]`
-   |
-help: the trait `Copy` is implemented for `[T; N]`
-  --> $RUST/core/src/array/mod.rs
-   |
-   | impl<T: Copy, const N: usize> Copy for [T; N] {}
-   | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-note: required for `CUnsizedSliceConstView<T>` to implement `Copy`
-  --> tests/ui_fail/custom_validation.rs:56:10
-   |
-56 | #[derive(ReprC)]
-   |          ^^^^^ type parameter would need to implement `Copy`
-note: required by a bound in `borrow_cast`
-  --> src/borrow.rs
-   |
-   | pub const fn borrow_cast<C: BorrowCast<AsConst: Copy> + Copy>(source: C) -> C::AsConst {
-   |                                                 ^^^^ required by this bound in `borrow_cast`
-   = note: this error originates in the derive macro `co3::ReprC` which comes from the expansion of the derive macro `ReprC` (in Nightly builds, run with -Z macro-backtrace for more info)
-
 error[E0277]: the trait bound `UnsizedSlice<u8>: Niche` is not satisfied
   --> tests/ui_fail/custom_validation.rs:62:21
    |

@@ -1,14 +1,14 @@
 error: lifetime may not live long enough
-  --> tests/ui_fail/opaque_covariance_export.rs:5:1
+  --> tests/ui_fail/opaque_covariance_export.rs:7:1
    |
- 5 | / ffi! {
- 6 | |     #![unsafe(export("C"))]
- 7 | |
- 8 | |     #[covariant('a)]
+ 7 | / ffi! {
+ 8 | |     #![unsafe(export("C"))]
+ 9 | |
+10 | |     #[covariant('a)]
    | |                 -- lifetime `'__co3_covariant_short` defined here
- 9 | |     type Exported<'a>;
+11 | |     type Exported<'a>;
    | |                   -- lifetime `'a` defined here
-10 | | }
+12 | | }
    | |_^ function was supposed to return data with lifetime `'a` but it is returning data with lifetime `'__co3_covariant_short`
    |
    = help: consider adding the following bound: `'__co3_covariant_short: 'a`

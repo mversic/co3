@@ -1,12 +1,14 @@
 use core::marker::PhantomData;
 
-use co3::ffi;
+use co3::{ffi, rust_spec::RustSpec};
 
 trait Mixed<T> {
     fn hidden(&self);
     fn exposed(&self, value: &T);
 }
 
+#[derive(RustSpec)]
+#[rust_spec(opaque)]
 struct Resource<T>(u8, PhantomData<T>);
 
 impl<T> Drop for Resource<T> {

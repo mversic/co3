@@ -91,7 +91,6 @@ note: required for `CZeroLenArrayZst` to implement `CFnArg`
    = help: consider manually implementing `CFnArg` to avoid undesired bounds caused by "imperfect derives"
    = note: to learn more, visit <https://github.com/rust-lang/rust/issues/26925>
    = note: associated types for the current `impl` cannot be restricted in `where` clauses
-   = note: associated types for the current `impl` cannot be restricted in `where` clauses
 note: required by a bound in `require_arg`
   --> tests/ui_fail/zst_c_fn_arg.rs:67:19
    |
@@ -119,7 +118,6 @@ note: required for `CZeroLenArrayZst` to implement `CFnReturn`
    |                                 ^^^^^ type parameter would need to implement `CFnReturn`
    = help: consider manually implementing `CFnReturn` to avoid undesired bounds caused by "imperfect derives"
    = note: to learn more, visit <https://github.com/rust-lang/rust/issues/26925>
-   = note: associated types for the current `impl` cannot be restricted in `where` clauses
    = note: associated types for the current `impl` cannot be restricted in `where` clauses
 note: required by a bound in `require_return`
   --> tests/ui_fail/zst_c_fn_arg.rs:68:22
@@ -149,7 +147,6 @@ note: required for `CReprCZst` to implement `CFnArg`
    = help: consider manually implementing `CFnArg` to avoid undesired bounds caused by "imperfect derives"
    = note: to learn more, visit <https://github.com/rust-lang/rust/issues/26925>
    = note: associated types for the current `impl` cannot be restricted in `where` clauses
-   = note: associated types for the current `impl` cannot be restricted in `where` clauses
 note: required by a bound in `require_arg`
   --> tests/ui_fail/zst_c_fn_arg.rs:67:19
    |
@@ -177,7 +174,6 @@ note: required for `CReprCZst` to implement `CFnReturn`
    |                                 ^^^^^ type parameter would need to implement `CFnReturn`
    = help: consider manually implementing `CFnReturn` to avoid undesired bounds caused by "imperfect derives"
    = note: to learn more, visit <https://github.com/rust-lang/rust/issues/26925>
-   = note: associated types for the current `impl` cannot be restricted in `where` clauses
    = note: associated types for the current `impl` cannot be restricted in `where` clauses
 note: required by a bound in `require_return`
   --> tests/ui_fail/zst_c_fn_arg.rs:68:22
@@ -207,7 +203,6 @@ note: required for `CTransparentZst` to implement `CFnArg`
    = help: consider manually implementing `CFnArg` to avoid undesired bounds caused by "imperfect derives"
    = note: to learn more, visit <https://github.com/rust-lang/rust/issues/26925>
    = note: associated types for the current `impl` cannot be restricted in `where` clauses
-   = note: associated types for the current `impl` cannot be restricted in `where` clauses
 note: required by a bound in `require_arg`
   --> tests/ui_fail/zst_c_fn_arg.rs:67:19
    |
@@ -235,7 +230,6 @@ note: required for `CTransparentZst` to implement `CFnReturn`
    |                                 ^^^^^ type parameter would need to implement `CFnReturn`
    = help: consider manually implementing `CFnReturn` to avoid undesired bounds caused by "imperfect derives"
    = note: to learn more, visit <https://github.com/rust-lang/rust/issues/26925>
-   = note: associated types for the current `impl` cannot be restricted in `where` clauses
    = note: associated types for the current `impl` cannot be restricted in `where` clauses
 note: required by a bound in `require_return`
   --> tests/ui_fail/zst_c_fn_arg.rs:68:22
@@ -265,7 +259,6 @@ note: required for `CNoReprZst` to implement `CFnArg`
    = help: consider manually implementing `CFnArg` to avoid undesired bounds caused by "imperfect derives"
    = note: to learn more, visit <https://github.com/rust-lang/rust/issues/26925>
    = note: associated types for the current `impl` cannot be restricted in `where` clauses
-   = note: associated types for the current `impl` cannot be restricted in `where` clauses
 note: required by a bound in `require_arg`
   --> tests/ui_fail/zst_c_fn_arg.rs:67:19
    |
@@ -294,7 +287,6 @@ note: required for `CNoReprZst` to implement `CFnReturn`
    = help: consider manually implementing `CFnReturn` to avoid undesired bounds caused by "imperfect derives"
    = note: to learn more, visit <https://github.com/rust-lang/rust/issues/26925>
    = note: associated types for the current `impl` cannot be restricted in `where` clauses
-   = note: associated types for the current `impl` cannot be restricted in `where` clauses
 note: required by a bound in `require_return`
   --> tests/ui_fail/zst_c_fn_arg.rs:68:22
    |
@@ -322,7 +314,6 @@ note: required for `CParamReprCZst<()>` to implement `CFnArg`
    |                                 ^^^^^ type parameter would need to implement `CFnArg`
    = help: consider manually implementing `CFnArg` to avoid undesired bounds caused by "imperfect derives"
    = note: to learn more, visit <https://github.com/rust-lang/rust/issues/26925>
-   = note: associated types for the current `impl` cannot be restricted in `where` clauses
    = note: associated types for the current `impl` cannot be restricted in `where` clauses
    = note: associated types for the current `impl` cannot be restricted in `where` clauses
 note: required by a bound in `require_arg`
@@ -354,7 +345,6 @@ note: required for `CParamReprCZst<()>` to implement `CFnReturn`
    = note: to learn more, visit <https://github.com/rust-lang/rust/issues/26925>
    = note: associated types for the current `impl` cannot be restricted in `where` clauses
    = note: associated types for the current `impl` cannot be restricted in `where` clauses
-   = note: associated types for the current `impl` cannot be restricted in `where` clauses
 note: required by a bound in `require_return`
   --> tests/ui_fail/zst_c_fn_arg.rs:68:22
    |
@@ -382,7 +372,6 @@ note: required for `CParamTransparentZst<()>` to implement `CFnArg`
    |                                 ^^^^^ type parameter would need to implement `CFnArg`
    = help: consider manually implementing `CFnArg` to avoid undesired bounds caused by "imperfect derives"
    = note: to learn more, visit <https://github.com/rust-lang/rust/issues/26925>
-   = note: associated types for the current `impl` cannot be restricted in `where` clauses
    = note: associated types for the current `impl` cannot be restricted in `where` clauses
    = note: associated types for the current `impl` cannot be restricted in `where` clauses
 note: required by a bound in `require_arg`
@@ -414,7 +403,6 @@ note: required for `CParamTransparentZst<()>` to implement `CFnReturn`
    = note: to learn more, visit <https://github.com/rust-lang/rust/issues/26925>
    = note: associated types for the current `impl` cannot be restricted in `where` clauses
    = note: associated types for the current `impl` cannot be restricted in `where` clauses
-   = note: associated types for the current `impl` cannot be restricted in `where` clauses
 note: required by a bound in `require_return`
   --> tests/ui_fail/zst_c_fn_arg.rs:68:22
    |
@@ -442,7 +430,6 @@ note: required for `CParamNoReprZst<()>` to implement `CFnArg`
    |                                 ^^^^^ type parameter would need to implement `CFnArg`
    = help: consider manually implementing `CFnArg` to avoid undesired bounds caused by "imperfect derives"
    = note: to learn more, visit <https://github.com/rust-lang/rust/issues/26925>
-   = note: associated types for the current `impl` cannot be restricted in `where` clauses
    = note: associated types for the current `impl` cannot be restricted in `where` clauses
    = note: associated types for the current `impl` cannot be restricted in `where` clauses
 note: required by a bound in `require_arg`
@@ -474,6 +461,63 @@ note: required for `CParamNoReprZst<()>` to implement `CFnReturn`
    = note: to learn more, visit <https://github.com/rust-lang/rust/issues/26925>
    = note: associated types for the current `impl` cannot be restricted in `where` clauses
    = note: associated types for the current `impl` cannot be restricted in `where` clauses
+note: required by a bound in `require_return`
+  --> tests/ui_fail/zst_c_fn_arg.rs:68:22
+   |
+68 | fn require_return<T: CFnReturn>() {}
+   |                      ^^^^^^^^^ required by this bound in `require_return`
+   = note: this error originates in the derive macro `ReprC` (in Nightly builds, run with -Z macro-backtrace for more info)
+
+error[E0271]: type mismatch resolving `<CParamTransparentEnum<()> as RustSpec>::Size == Sized<Gt<Zero>>`
+  --> tests/ui_fail/zst_c_fn_arg.rs:92:19
+   |
+92 |     require_arg::<<ParamTransparentEnum<()> as ReprC>::CType>();
+   |                   ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ type mismatch resolving `<CParamTransparentEnum<()> as RustSpec>::Size == Sized<Gt<Zero>>`
+   |
+note: expected this to be `rust_spec::size::Sized<Gt<rust_spec::Zero>>`
+  --> tests/ui_fail/zst_c_fn_arg.rs:16:33
+   |
+16 | #[derive(Clone, Copy, RustSpec, ReprC)]
+   |                                 ^^^^^
+   = note: expected struct `Sized<Gt<Zero>>`
+              found struct `Sized<Zero>`
+note: required for `CParamTransparentEnum<()>` to implement `CFnArg`
+  --> tests/ui_fail/zst_c_fn_arg.rs:16:33
+   |
+16 | #[derive(Clone, Copy, RustSpec, ReprC)]
+   |                                 ^^^^^ type parameter would need to implement `CFnArg`
+   = help: consider manually implementing `CFnArg` to avoid undesired bounds caused by "imperfect derives"
+   = note: to learn more, visit <https://github.com/rust-lang/rust/issues/26925>
+   = note: associated types for the current `impl` cannot be restricted in `where` clauses
+   = note: associated types for the current `impl` cannot be restricted in `where` clauses
+note: required by a bound in `require_arg`
+  --> tests/ui_fail/zst_c_fn_arg.rs:67:19
+   |
+67 | fn require_arg<T: CFnArg>() {}
+   |                   ^^^^^^ required by this bound in `require_arg`
+   = note: this error originates in the derive macro `ReprC` (in Nightly builds, run with -Z macro-backtrace for more info)
+
+error[E0271]: type mismatch resolving `<CParamTransparentEnum<()> as RustSpec>::Size == Sized<Gt<Zero>>`
+  --> tests/ui_fail/zst_c_fn_arg.rs:93:22
+   |
+93 |     require_return::<<ParamTransparentEnum<()> as ReprC>::CType>();
+   |                      ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ type mismatch resolving `<CParamTransparentEnum<()> as RustSpec>::Size == Sized<Gt<Zero>>`
+   |
+note: expected this to be `rust_spec::size::Sized<Gt<rust_spec::Zero>>`
+  --> tests/ui_fail/zst_c_fn_arg.rs:16:33
+   |
+16 | #[derive(Clone, Copy, RustSpec, ReprC)]
+   |                                 ^^^^^
+   = note: expected struct `Sized<Gt<Zero>>`
+              found struct `Sized<Zero>`
+note: required for `CParamTransparentEnum<()>` to implement `CFnReturn`
+  --> tests/ui_fail/zst_c_fn_arg.rs:16:33
+   |
+16 | #[derive(Clone, Copy, RustSpec, ReprC)]
+   |                                 ^^^^^ type parameter would need to implement `CFnReturn`
+   = help: consider manually implementing `CFnReturn` to avoid undesired bounds caused by "imperfect derives"
+   = note: to learn more, visit <https://github.com/rust-lang/rust/issues/26925>
+   = note: associated types for the current `impl` cannot be restricted in `where` clauses
    = note: associated types for the current `impl` cannot be restricted in `where` clauses
 note: required by a bound in `require_return`
   --> tests/ui_fail/zst_c_fn_arg.rs:68:22
@@ -503,7 +547,6 @@ note: required for `CParamFieldlessEnum` to implement `CFnArg`
    = help: consider manually implementing `CFnArg` to avoid undesired bounds caused by "imperfect derives"
    = note: to learn more, visit <https://github.com/rust-lang/rust/issues/26925>
    = note: associated types for the current `impl` cannot be restricted in `where` clauses
-   = note: associated types for the current `impl` cannot be restricted in `where` clauses
 note: required by a bound in `require_arg`
   --> tests/ui_fail/zst_c_fn_arg.rs:67:19
    |
@@ -531,7 +574,6 @@ note: required for `CParamFieldlessEnum` to implement `CFnReturn`
    |                                 ^^^^^ type parameter would need to implement `CFnReturn`
    = help: consider manually implementing `CFnReturn` to avoid undesired bounds caused by "imperfect derives"
    = note: to learn more, visit <https://github.com/rust-lang/rust/issues/26925>
-   = note: associated types for the current `impl` cannot be restricted in `where` clauses
    = note: associated types for the current `impl` cannot be restricted in `where` clauses
 note: required by a bound in `require_return`
   --> tests/ui_fail/zst_c_fn_arg.rs:68:22

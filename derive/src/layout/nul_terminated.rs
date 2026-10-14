@@ -45,7 +45,6 @@ pub(super) fn expand(
                     )
                 }
             }
-
         }
     });
 

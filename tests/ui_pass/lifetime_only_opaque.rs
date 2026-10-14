@@ -7,7 +7,7 @@ ffi! {
     pub type Opaque<'a>;
 
     impl<'a> Default for OwnedOpaque<'a> {
-        #[symbol_name = "kita__Default__Box_Opaque__default"]
+        #[symbol_name = "kita__Default__OwnedOpaque__default"]
         fn default() -> move Self;
     }
 
@@ -19,9 +19,11 @@ ffi! {
 mod provider {
     use co3::ffi;
 
+    #[derive(co3::rust_spec::RustSpec)]
+    #[rust_spec(opaque)]
     struct Opaque<'a>(&'a u8);
 
-    impl Default for Box<Opaque<'_>> {
+    impl Default for OwnedOpaque<'_> {
         fn default() -> Self {
             Box::new(Opaque(&0))
         }
@@ -41,7 +43,7 @@ mod provider {
         // TODO: This should be allowed with '_ but it's not.
         // This is a special case where reference is materialized
         impl<'a> Default for OwnedOpaque<'a> {
-            #[symbol_name = "kita__Default__Box_Opaque__default"]
+            #[symbol_name = "kita__Default__OwnedOpaque__default"]
             fn default() -> move Self;
         }
 

@@ -2,6 +2,7 @@ mod alignment;
 mod callback;
 mod cfg_args;
 mod clippy;
+mod ctype_mapping;
 mod cstr;
 mod custom_repr;
 mod handles;

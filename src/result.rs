@@ -1,7 +1,7 @@
 //! C-compatible representation of [`core::result::Result`].
 use core::{mem::MaybeUninit, ops::Add};
 
-use rust_spec::{RustSpec, niche::WithoutNiche};
+use rust_spec::niche::WithoutNiche;
 
 use crate::{
     CFnArg, CFnReturn, CType, Decode, Encode, ReprC,
@@ -158,20 +158,29 @@ impl<T: Copy, E: Copy> Clone for ReprCResult<T, E> {
     }
 }
 
-unsafe impl<T: RustSpec + Copy, E: RustSpec + Copy> RustSpec for ReprCResult<T, E>
+unsafe impl<T: crate::rust_spec::RustSpec + Copy, E: crate::rust_spec::RustSpec + Copy>
+    crate::rust_spec::RustSpec for ReprCResult<T, E>
 where
-    T: RustSpec<Layout: Add<<E as RustSpec>::Layout>, Trap: Add<E::Trap>>,
-    T: RustSpec<Drop: Add<E::Drop, Output: rust_spec::drop::DropKind>>,
+    T: crate::rust_spec::RustSpec<
+            Layout: Add<<E as crate::rust_spec::RustSpec>::Layout>,
+            Trap: Add<E::Trap>,
+        >,
+    T: crate::rust_spec::RustSpec<Drop: Add<E::Drop, Output: rust_spec::drop::DropKind>>,
     T::Alignment: rust_spec::Max<E::Alignment>,
+    T::Mutability: Add<E::Mutability>,
     T::__IndirectTrap: Add<E::__IndirectTrap>,
 {
-    type Layout = <<T as RustSpec>::Layout as Add<<E as RustSpec>::Layout>>::Output;
+    type Layout = <<T as crate::rust_spec::RustSpec>::Layout as Add<
+        <E as crate::rust_spec::RustSpec>::Layout,
+    >>::Output;
     type Size = rust_spec::size::Sized<rust_spec::Gt<rust_spec::Zero>>;
     type Alignment = <T::Alignment as rust_spec::Max<E::Alignment>>::Output;
-    type Trap = <<T as RustSpec>::Trap as Add<<E as RustSpec>::Trap>>::Output;
+    type Trap = <<T as crate::rust_spec::RustSpec>::Trap as Add<
+        <E as crate::rust_spec::RustSpec>::Trap,
+    >>::Output;
     type Niche = WithoutNiche;
-    type Drop = <<T as RustSpec>::Drop as Add<E::Drop>>::Output;
-    type Mutability = rust_spec::mutability::Exclusive;
+    type Drop = <<T as crate::rust_spec::RustSpec>::Drop as Add<E::Drop>>::Output;
+    type Mutability = <T::Mutability as Add<E::Mutability>>::Output;
     type __IndirectTrap = <T::__IndirectTrap as Add<E::__IndirectTrap>>::Output;
 }
 
@@ -232,6 +241,8 @@ impl<T: ReprC<CType: Copy> + Copy, E: ReprC<CType: Copy> + Copy> ReprC for ReprC
 }
 unsafe impl<T: EncodeOwned<CType: Copy> + Copy, E: EncodeOwned<CType: Copy> + Copy> EncodeOwned
     for ReprCResult<T, E>
+where
+    Self: ReprC<CType = ReprCResult<T::CType, E::CType>>,
 {
     type Store = Option<Result<T::Store, E::Store>>;
 
@@ -261,6 +272,8 @@ unsafe impl<T: EncodeOwned<CType: Copy> + Copy, E: EncodeOwned<CType: Copy> + Co
 }
 unsafe impl<'d, T: DecodeOwned<'d, CType: Copy> + Copy, E: DecodeOwned<'d, CType: Copy> + Copy>
     DecodeOwned<'d> for ReprCResult<T, E>
+where
+    Self: ReprC<CType = ReprCResult<T::CType, E::CType>>,
 {
     type Store = Option<Result<T::Store, E::Store>>;
 
@@ -315,14 +328,21 @@ unsafe impl<'d, T: DecodeOwned<'d, CType: Copy> + Copy, E: DecodeOwned<'d, CType
     }
 }
 
-impl<T: Encode<CType: Copy> + Copy, E: Encode<CType: Copy> + Copy> Encode for ReprCResult<T, E> {}
+impl<T: Encode<CType: Copy> + Copy, E: Encode<CType: Copy> + Copy> Encode for ReprCResult<T, E> where
+    Self: ReprC<CType = ReprCResult<T::CType, E::CType>>
+{
+}
 impl<'d, T: Decode<'d, CType: Copy> + Copy, E: Decode<'d, CType: Copy> + Copy> Decode<'d>
     for ReprCResult<T, E>
+where
+    Self: ReprC<CType = ReprCResult<T::CType, E::CType>>,
 {
 }
 
 unsafe impl<T: CheckedTransmute<CType: Copy> + Copy, E: CheckedTransmute<CType: Copy> + Copy>
     CheckedTransmute for ReprCResult<T, E>
+where
+    Self: ReprC<CType = ReprCResult<T::CType, E::CType>>,
 {
     #[inline(always)]
     unsafe fn is_valid(target: &Self::CType) -> bool {

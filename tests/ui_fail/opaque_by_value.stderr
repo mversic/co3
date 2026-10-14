@@ -1,0 +1,171 @@
+error[E0277]: the trait bound `Opaque: Copy` is not satisfied
+  --> tests/ui_fail/opaque_by_value.rs:15:1
+   |
+15 | / ffi! {
+16 | |     #![unsafe(export("C"))]
+17 | |
+18 | |     type Opaque;
+...  |
+23 | |     fn takes_kita5_slice_mut(#[soft] value: &mut [Kita5]);
+24 | | }
+   | |_^ the trait `Copy` is not implemented for `Opaque`
+   |
+   = help: the following other types implement trait `stored::_::DecodeOwned0<'d, _TŠČ1, _TŠČ2, _TŠČ3, _TŠČ4>`:
+             `&'d R` implements `stored::_::DecodeOwned0<'d, NulTerminated, Exclusive, <R as RustSpec>::Layout, <&'d R as RustSpec>::Layout>`
+             `&'d R` implements `stored::_::DecodeOwned0<'d, NulTerminated, WithInterior, <R as RustSpec>::Layout, <&'d R as RustSpec>::Layout>`
+             `&'d R` implements `stored::_::DecodeOwned0<'d, _TŠČ0, Exclusive, <R as RustSpec>::Layout, Stable>`
+             `&'d R` implements `stored::_::DecodeOwned0<'d, _TŠČ1, WithInterior, <R as RustSpec>::Layout, Stable>`
+             `&'d R` implements `stored::_::DecodeOwned0<'d, rust_spec::size::MetaSized<SliceLike>, Exclusive, Stable, Unstable>`
+             `&'d R` implements `stored::_::DecodeOwned0<'d, rust_spec::size::MetaSized<SliceLike>, WithInterior, Stable, Unstable>`
+             `&'d R` implements `stored::_::DecodeOwned0<'d, rust_spec::size::Sized<S>, Exclusive, Unstable, Unstable>`
+             `&'d R` implements `stored::_::DecodeOwned0<'d, rust_spec::size::Sized<S>, WithInterior, Unstable, Unstable>`
+           and $N others
+note: required for `CKita5` to implement `Copy`
+  --> tests/ui_fail/opaque_by_value.rs:7:27
+   |
+ 7 | #[derive(Clone, RustSpec, ReprC)]
+   |                           ^^^^^ type parameter would need to implement `Copy`
+   = note: required for `&Kita5` to implement `stored::_::DecodeOwned0<'_, rust_spec::size::Sized<Gt<rust_spec::Zero>>, Exclusive, Unstable, Unstable>`
+   = note: this error originates in the macro `ffi` which comes from the expansion of the derive macro `ReprC` (in Nightly builds, run with -Z macro-backtrace for more info)
+help: consider annotating `Opaque` with `#[derive(Copy)]`
+   |
+ 5 + #[derive(Copy)]
+ 6 | struct Opaque(u32);
+   |
+
+error[E0277]: the trait bound `Opaque: Copy` is not satisfied
+  --> tests/ui_fail/opaque_by_value.rs:15:1
+   |
+15 | / ffi! {
+16 | |     #![unsafe(export("C"))]
+17 | |
+18 | |     type Opaque;
+...  |
+23 | |     fn takes_kita5_slice_mut(#[soft] value: &mut [Kita5]);
+24 | | }
+   | |_^ the trait `Copy` is not implemented for `Opaque`
+   |
+help: the following other types implement trait `stored::_::DecodeOwned1<'d, _TŠČ1, _TŠČ2, _TŠČ3>`
+  --> src/stored.rs
+   |
+   | /     unsafe impl<'d, R: ReprC + rust_spec::RustSpec<Size: Thin> + ?Sized> DecodeOwned<'d> for &'d mut R
+   | |     where
+   | |         Self: rust_spec::RustSpec<Layout = Stable> + CheckedTransmute<CType = CRefMut<<R as ReprC>::CType>>,
+   | |____________________________________________________________________________________________________________^ `&'d mut R` implements `stored::_::DecodeOwned1<'d, Stable, _TŠČ0, <R as RustSpec>::Layout>`
+...
+   | /     unsafe impl<'d, R: CheckedTransmute<CType: Wide<Metadata = usize>> + Wide<Metadata = usize> + ?Sized>
+   | |         DecodeOwned<'d> for &'d mut R
+   | |     where
+   | |         Self: rust_spec::RustSpec<Layout = Unstable>,
+   | |         R: rust_spec::RustSpec<Layout = Stable, Size = MetaSized<SliceLike>>,
+   | |         WideData<R>: ReprC<CType = WideData<<R as ReprC>::CType>>,
+   | |__________________________________________________________________^ `&'d mut R` implements `stored::_::DecodeOwned1<'d, Unstable, rust_spec::size::MetaSized<SliceLike>, Stable>`
+...
+   | /     unsafe impl<'d, R: ReprC<CType: BorrowCast<AsConst: Copy> + Copy> + FromBorrow<'d>, S: SizedKind>
+   | |         DecodeOwned<'d> for &'d mut R
+   | |     where
+   | |         Self: rust_spec::RustSpec<Layout = Unstable>,
+   | |         R: rust_spec::RustSpec<Layout = Unstable, Size = RustSpecSized<S>> + EncodeOwned<Store: EmptyStore>,
+   | |         <R as Borrow>::Borrowed<'d>: DecodeOwned<'d, CType = <<R as ReprC>::CType as BorrowCast>::AsConst>,
+   | |___________________________________________________________________________________________________________^ `&'d mut R` implements `stored::_::DecodeOwned1<'d, Unstable, rust_spec::size::Sized<S>, Unstable>`
+...
+   | /     unsafe impl<'d, R: DecodeOwned<'d, CType: BorrowCast<AsConst: Copy> + Copy> + FromBorrow<'d> + EncodeOwned<Store: EmptyStore>>
+   | |         DecodeOwned<'d> for &'d mut [R]
+   | |     where
+   | |         Self: rust_spec::RustSpec<Layout = Unstable>,
+   | |         [R]: rust_spec::RustSpec<Layout = Unstable, Size = MetaSized<SliceLike>>,
+   | |         <R as Borrow>::Borrowed<'d>: DecodeOwned<'d, CType = <<R as ReprC>::CType as BorrowCast>::AsConst>,
+   | |___________________________________________________________________________________________________________^ `&'d mut [R]` implements `stored::_::DecodeOwned1<'d, Unstable, rust_spec::size::MetaSized<SliceLike>, Unstable>`
+note: required for `CKita5` to implement `Copy`
+  --> tests/ui_fail/opaque_by_value.rs:7:27
+   |
+ 7 | #[derive(Clone, RustSpec, ReprC)]
+   |                           ^^^^^ type parameter would need to implement `Copy`
+   = note: required for `&mut Kita5` to implement `stored::_::DecodeOwned1<'_, Unstable, rust_spec::size::Sized<Gt<rust_spec::Zero>>, Unstable>`
+   = note: this error originates in the macro `ffi` which comes from the expansion of the derive macro `ReprC` (in Nightly builds, run with -Z macro-backtrace for more info)
+help: consider annotating `Opaque` with `#[derive(Copy)]`
+   |
+ 5 + #[derive(Copy)]
+ 6 | struct Opaque(u32);
+   |
+
+error[E0277]: the trait bound `Opaque: Copy` is not satisfied
+  --> tests/ui_fail/opaque_by_value.rs:15:1
+   |
+15 | / ffi! {
+16 | |     #![unsafe(export("C"))]
+17 | |
+18 | |     type Opaque;
+...  |
+23 | |     fn takes_kita5_slice_mut(#[soft] value: &mut [Kita5]);
+24 | | }
+   | |_^ the trait `Copy` is not implemented for `Opaque`
+   |
+help: `&[R]` implements trait `stored::_::DecodeOwned0<'d, _TŠČ1, _TŠČ2, _TŠČ3, _TŠČ4>`
+  --> src/stored.rs
+   |
+   | /     unsafe impl<'d, R: DecodeOwned<'d, CType: BorrowCast<AsConst: Copy> + Copy> + FromBorrow<'d> + Clone>
+   | |         DecodeOwned<'d> for &'d [R]
+   | |     where
+   | |         Self: rust_spec::RustSpec<Layout = Unstable>,
+   | |         [R]: rust_spec::RustSpec<Layout = Unstable, Size = MetaSized<SliceLike>, Mutability = Exclusive>,
+   | |         <R as Borrow>::Borrowed<'d>: DecodeOwned<'d, CType = <<R as ReprC>::CType as BorrowCast>::AsConst>,
+   | |___________________________________________________________________________________________________________^ `stored::_::DecodeOwned0<'_, rust_spec::size::MetaSized<SliceLike>, Exclusive, Unstable, Unstable>`
+...
+   | /     unsafe impl<'d, R: DecodeOwned<'d, CType: BorrowCast<AsConst: Copy> + Copy> + FromBorrow<'d> + Clone>
+   | |         DecodeOwned<'d> for &'d [R]
+   | |     where
+   | |         Self: rust_spec::RustSpec<Layout = Unstable>,
+   | |         [R]: rust_spec::RustSpec<Layout = Unstable, Size = MetaSized<SliceLike>, Mutability = WithInterior>,
+   | |         <R as Borrow>::Borrowed<'d>: DecodeOwned<'d, CType = <<R as ReprC>::CType as BorrowCast>::AsConst>,
+   | |___________________________________________________________________________________________________________^ `stored::_::DecodeOwned0<'_, rust_spec::size::MetaSized<SliceLike>, WithInterior, Unstable, Unstable>`
+note: required for `CKita5` to implement `Copy`
+  --> tests/ui_fail/opaque_by_value.rs:7:27
+   |
+ 7 | #[derive(Clone, RustSpec, ReprC)]
+   |                           ^^^^^ type parameter would need to implement `Copy`
+   = note: required for `&[Kita5]` to implement `stored::_::DecodeOwned0<'_, rust_spec::size::MetaSized<SliceLike>, Exclusive, Unstable, Unstable>`
+   = note: this error originates in the macro `ffi` which comes from the expansion of the derive macro `ReprC` (in Nightly builds, run with -Z macro-backtrace for more info)
+help: consider annotating `Opaque` with `#[derive(Copy)]`
+   |
+ 5 + #[derive(Copy)]
+ 6 | struct Opaque(u32);
+   |
+
+error[E0277]: the trait bound `Opaque: Copy` is not satisfied
+  --> tests/ui_fail/opaque_by_value.rs:15:1
+   |
+15 | / ffi! {
+16 | |     #![unsafe(export("C"))]
+17 | |
+18 | |     type Opaque;
+...  |
+23 | |     fn takes_kita5_slice_mut(#[soft] value: &mut [Kita5]);
+24 | | }
+   | |_^ the trait `Copy` is not implemented for `Opaque`
+   |
+help: the trait `stored::_::DecodeOwned1<'_, Unstable, rust_spec::size::MetaSized<SliceLike>, Unstable>` is conditionally implemented for `&mut [R]`
+  --> src/stored.rs
+   |
+   |       unsafe impl<'d, R: DecodeOwned<'d, CType: BorrowCast<AsConst: Copy> + Copy> + FromBorrow<'d> + EncodeOwned<Store: EmptyStore>>
+   |       ^                                                                     ---- unsatisfied requirement introduced here: `CKita5: Copy`
+   |  _____|
+   | |
+   | |         DecodeOwned<'d> for &'d mut [R]
+   | |     where
+   | |         Self: rust_spec::RustSpec<Layout = Unstable>,
+   | |         [R]: rust_spec::RustSpec<Layout = Unstable, Size = MetaSized<SliceLike>>,
+   | |         <R as Borrow>::Borrowed<'d>: DecodeOwned<'d, CType = <<R as ReprC>::CType as BorrowCast>::AsConst>,
+   | |___________________________________________________________________________________________________________^
+note: required for `CKita5` to implement `Copy`
+  --> tests/ui_fail/opaque_by_value.rs:7:27
+   |
+ 7 | #[derive(Clone, RustSpec, ReprC)]
+   |                           ^^^^^ type parameter would need to implement `Copy`
+   = note: required for `&mut [Kita5]` to implement `stored::_::DecodeOwned1<'_, Unstable, rust_spec::size::MetaSized<SliceLike>, Unstable>`
+   = note: this error originates in the macro `ffi` which comes from the expansion of the derive macro `ReprC` (in Nightly builds, run with -Z macro-backtrace for more info)
+help: consider annotating `Opaque` with `#[derive(Copy)]`
+   |
+ 5 + #[derive(Copy)]
+ 6 | struct Opaque(u32);
+   |

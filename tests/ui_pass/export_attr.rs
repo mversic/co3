@@ -59,8 +59,10 @@ mod provider {
     use core::ops::Add;
 
     use super::*;
+    use co3::rust_spec::RustSpec;
 
-    #[derive(Debug, Clone, Copy)]
+    #[derive(Debug, Clone, Copy, RustSpec)]
+    #[rust_spec(opaque)]
     pub struct Opaque(u8);
 
     impl Add for Opaque {
@@ -71,7 +73,7 @@ mod provider {
         }
     }
 
-    impl Default for Box<Opaque> {
+    impl Default for OwnedOpaque {
         fn default() -> Self {
             Box::new(Opaque(3))
         }
@@ -108,7 +110,9 @@ mod provider {
         }
 
         impl ToOwned for OwnedOpaque {
-            fn to_owned(&self) -> move <Self as ToOwned>::Owned;
+            type Owned = OwnedOpaque;
+
+            fn to_owned(&self) -> move Self::Owned;
         }
 
         impl<dyn(u8) T: Add<Output = u8> + ToOwned<Owned = T> + ?Sized = u8> Value<T>

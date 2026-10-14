@@ -1,6 +1,10 @@
-use co3::ffi;
+use co3::{ffi, rust_spec::RustSpec};
 
+#[derive(RustSpec)]
+#[rust_spec(opaque)]
 struct First(u8);
+#[derive(RustSpec)]
+#[rust_spec(opaque)]
 struct Second(u8);
 
 impl Drop for First {

@@ -2,7 +2,7 @@
 use alloc::boxed::Box;
 
 use disjoint_impls::disjoint_impls;
-use rust_spec::{RustSpec, Stable, mutability::Exclusive, niche::WithNiche, size::Zero};
+use rust_spec::{Stable, niche::WithNiche, size::Zero};
 
 #[cfg(feature = "alloc")]
 use crate::boxed::CBox;
@@ -27,23 +27,58 @@ disjoint_impls! {
         unsafe fn is_valid(target: &Self::CType) -> bool;
     }
 
-    unsafe impl<R: CheckedTransmute<CType: Copy>, E> CheckedTransmute for Result<R, E>
+    unsafe impl<R: CheckedTransmute + ?Sized> CheckedTransmute for &R
     where
-        R: RustSpec<
+        Self: ReprC<CType = CRef<<R as ReprC>::CType>>,
+        R: rust_spec::RustSpec<Size: Thin>,
+    {
+        #[inline(always)]
+        unsafe fn is_valid(target: &Self::CType) -> bool {
+            let ptr = target.as_ptr();
+
+            if ptr.is_null() {
+                return false;
+            }
+
+            unsafe { R::is_valid(&*ptr) }
+        }
+    }
+    unsafe impl<R: CheckedTransmute + ?Sized, const RESTRICTED: bool> CheckedTransmute for &R
+    where
+        Self: ReprC<CType = CRefMut<<R as ReprC>::CType, RESTRICTED>>,
+        R: rust_spec::RustSpec<Size: Thin>,
+    {
+        #[inline(always)]
+        unsafe fn is_valid(target: &Self::CType) -> bool {
+            let ptr = target.as_ptr();
+
+            if ptr.is_null() {
+                return false;
+            }
+
+            unsafe { R::is_valid(&*ptr) }
+        }
+    }
+
+    unsafe impl<R: CheckedTransmute<CType: Copy> + ReprC, E: ReprC> CheckedTransmute for Result<R, E>
+    where
+        Self: ReprC<CType = <R as ReprC>::CType>,
+        R: rust_spec::RustSpec<
                 Size = rust_spec::size::Sized<rust_spec::Gt<rust_spec::Zero>>,
                 Niche = WithNiche<Stable>,
             >,
-        E: RustSpec<Size = rust_spec::size::Sized<Zero>, Alignment = rust_spec::One>,
+        E: rust_spec::RustSpec<Size = rust_spec::size::Sized<Zero>, Alignment = rust_spec::One>,
     {
         #[inline(always)]
         unsafe fn is_valid(target: &Self::CType) -> bool {
             unsafe { R::is_valid(target) }
         }
     }
-    unsafe impl<R, E: CheckedTransmute<CType: Copy>> CheckedTransmute for Result<R, E>
+    unsafe impl<R: ReprC, E: CheckedTransmute<CType: Copy>> CheckedTransmute for Result<R, E>
     where
-        R: RustSpec<Size = rust_spec::size::Sized<Zero>, Alignment = rust_spec::One>,
-        E: RustSpec<
+        Self: ReprC<CType = <E as ReprC>::CType>,
+        R: rust_spec::RustSpec<Size = rust_spec::size::Sized<Zero>, Alignment = rust_spec::One>,
+        E: rust_spec::RustSpec<
                 Size = rust_spec::size::Sized<rust_spec::Gt<rust_spec::Zero>>,
                 Niche = WithNiche<Stable>,
             >,
@@ -55,31 +90,14 @@ disjoint_impls! {
     }
 }
 
-unsafe impl<R: CheckedTransmute + ?Sized> CheckedTransmute for &R
-where
-    R: RustSpec<Size: Thin, Mutability = Exclusive>,
-    Self: ReprC<CType = CRef<R::CType>>,
-{
-    #[inline(always)]
-    unsafe fn is_valid(target: &Self::CType) -> bool {
-        let ptr = target.as_ptr();
-
-        if ptr.is_null() {
-            return false;
-        }
-
-        unsafe { R::is_valid(&*ptr) }
-    }
-}
-
 // FIXME: Should it be implemented for non-robust R?
 // atm we say yes, this is transmutable but don't misuse it.
 // Either require `Stable<Robust>` or write this in the documentation
 // If layout is Stable<Robust> then also consider how it affects Box<&mut R>
-unsafe impl<R: CheckedTransmute + ?Sized> CheckedTransmute for &mut R
+unsafe impl<R: CheckedTransmute + ?Sized, const RESTRICTED: bool> CheckedTransmute for &mut R
 where
-    R: RustSpec<Size: Thin>,
-    Self: ReprC<CType = CRefMut<R::CType>>,
+    R: rust_spec::RustSpec<Size: Thin>,
+    Self: ReprC<CType = CRefMut<R::CType, RESTRICTED>>,
 {
     #[inline(always)]
     unsafe fn is_valid(target: &Self::CType) -> bool {
@@ -90,31 +108,13 @@ where
         }
 
         unsafe { R::is_valid(&*ptr) }
-    }
-}
-
-unsafe impl<C: CType + ?Sized> CheckedTransmute for CRef<C>
-where
-    C: RustSpec<Size: Thin>,
-{
-    unsafe fn is_valid(_: &Self::CType) -> bool {
-        true
-    }
-}
-
-unsafe impl<C: CType + ?Sized, const RESTRICTED: bool> CheckedTransmute for CRefMut<C, RESTRICTED>
-where
-    C: RustSpec<Size: Thin>,
-{
-    unsafe fn is_valid(_: &Self::CType) -> bool {
-        true
     }
 }
 
 #[cfg(feature = "alloc")]
 unsafe impl<R: CheckedTransmute<CType: Sized>> CheckedTransmute for Box<R>
 where
-    R: RustSpec<Size: Thin, Mutability = Exclusive>,
+    R: rust_spec::RustSpec<Size: Thin>,
     Self: ReprC<CType = CBox<<R as ReprC>::CType>>,
 {
     #[inline(always)]
@@ -127,7 +127,25 @@ where
     }
 }
 
-unsafe impl<R: CheckedTransmute<CType: Copy>, const N: usize> CheckedTransmute for [R; N] {
+unsafe impl<C: CType + ?Sized> CheckedTransmute for CRef<C>
+where
+    C: rust_spec::RustSpec<Size: Thin>,
+{
+    unsafe fn is_valid(_: &Self::CType) -> bool {
+        true
+    }
+}
+
+unsafe impl<C: CType + ?Sized, const RESTRICTED: bool> CheckedTransmute for CRefMut<C, RESTRICTED>
+where
+    C: rust_spec::RustSpec<Size: Thin>,
+{
+    unsafe fn is_valid(_: &Self::CType) -> bool {
+        true
+    }
+}
+
+unsafe impl<R: CheckedTransmute<CType: Sized>, const N: usize> CheckedTransmute for [R; N] {
     #[inline(always)]
     unsafe fn is_valid(target: &Self::CType) -> bool {
         assert_arr_has_non_zero_len::<N>();
@@ -142,7 +160,7 @@ unsafe impl<R: CheckedTransmute<CType: Copy>, const N: usize> CheckedTransmute f
     }
 }
 
-unsafe impl<R: CheckedTransmute<CType: Copy>> CheckedTransmute for [R] {
+unsafe impl<R: CheckedTransmute<CType: Sized>> CheckedTransmute for [R] {
     #[inline(always)]
     unsafe fn is_valid(target: &Self::CType) -> bool {
         for item in target {
@@ -162,10 +180,9 @@ unsafe impl CheckedTransmute for str {
     }
 }
 
-unsafe impl<R: CheckedTransmute<CType: Copy>> CheckedTransmute for Option<R>
+unsafe impl<R: CheckedTransmute<CType: Sized>> CheckedTransmute for Option<R>
 where
-    R: RustSpec<Niche = WithNiche<Stable>>,
-    Self: ReprC<CType = R::CType>,
+    R: rust_spec::RustSpec<Niche = WithNiche<Stable>>,
 {
     #[inline(always)]
     unsafe fn is_valid(target: &Self::CType) -> bool {
@@ -174,7 +191,7 @@ where
 }
 
 // TODO: Use this somehow to strengthen CheckedTransmute assumptions
-//fn assert_size_and_allignment_match<R: CheckedTransmute<CType: Copy>>() {
+//fn assert_size_and_allignment_match<R: CheckedTransmute<CType: Sized>>() {
 //    const {
 //        debug_assert!(core::mem::size_of::<R>() == core::mem::size_of::<R::CType>());
 //        debug_assert!(core::mem::align_of::<R>() == core::mem::align_of::<R::CType>());

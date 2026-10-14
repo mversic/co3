@@ -88,6 +88,7 @@ mod provider {
     };
 
     use co3::ffi;
+    use co3::rust_spec::RustSpec;
 
     use super::*;
 
@@ -98,7 +99,8 @@ mod provider {
         DROP_TEST_LOCK.lock().unwrap()
     }
 
-    #[derive(Debug, Clone, Default, PartialEq, Eq)]
+    #[derive(Debug, Clone, Default, PartialEq, Eq, RustSpec)]
+    #[rust_spec(opaque)]
     struct Opaque<T, U> {
         value: u8,
         marker: PhantomData<(T, U)>,

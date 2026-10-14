@@ -1,9 +1,10 @@
 use std::cmp::Ordering;
 use std::ffi::c_void;
 
-use co3::{boxed::CBoxedSlice, ffi};
+use co3::{boxed::CBoxedSlice, ffi, rust_spec::RustSpec};
 
-#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, RustSpec)]
+#[rust_spec(opaque)]
 pub struct FfiStruct {
     name: String,
 }
@@ -27,11 +28,11 @@ ffi! {
 }
 
 impl FfiStruct {
-    fn new(name: String) -> Box<Self> {
+    fn new(name: String) -> OwnedFfiStruct {
         Box::new(Self { name })
     }
 
-    fn clone_box(&self) -> Box<Self> {
+    fn clone_box(&self) -> OwnedFfiStruct {
         Box::new(self.clone())
     }
 

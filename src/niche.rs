@@ -223,7 +223,7 @@ mod tests {
         #[cfg(feature = "alloc")]
         assert_eq!(
             <core::mem::ManuallyDrop<String> as Niche>::NICHE,
-            <String as Niche>::NICHE
+            core::mem::ManuallyDrop::new(<String as Niche>::NICHE)
         );
 
         assert_eq!(

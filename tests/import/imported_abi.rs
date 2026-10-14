@@ -89,6 +89,8 @@ mod provider {
     #[repr(transparent)]
     struct MyType<T>(T);
 
+    #[derive(RustSpec)]
+    #[rust_spec(opaque)]
     #[repr(transparent)]
     enum MyType2 {
         #[expect(dead_code)]
@@ -147,7 +149,7 @@ mod provider {
     }
 
     impl MyType2 {
-        fn new() -> Box<Self> {
+        fn new() -> OwnedMyType2 {
             Box::new(MyType2::A("KITA".to_owned()))
         }
     }

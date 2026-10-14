@@ -118,12 +118,14 @@ co3::ffi! {
 }
 
 #[derive(Clone)]
+#[derive(RustSpec)]
+#[rust_spec(opaque)]
 struct SQLHENV2(u32);
 
 impl SQLHENV2 {
     pub fn get_attr0(&self) {}
     pub fn get_attr1(_a: &Self) {}
-    pub fn get_attr2(self: Box<Self>) {}
+    pub fn get_attr2(self: OwnedSQLHENV2) {}
     pub fn get_attr3<T>(&self, _one: T) {}
 }
 
