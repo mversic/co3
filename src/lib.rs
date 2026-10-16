@@ -565,13 +565,14 @@ pub use disjoint_impls::disjoint_impls;
 pub use impls::impls;
 #[doc(hidden)]
 pub use rust_spec;
-#[cfg(feature = "alloc")]
-use rust_spec::{Stable, Unstable, size::MetadataKind};
 use rust_spec::{
+    RustSpec,
     mutability::{Exclusive, WithInterior},
     niche::{NicheStabilityKind, WithNiche, WithoutNiche},
     size::{ExternTypeLike, MetaSized, NulTerminated, SizedKind, SliceLike, Zero},
 };
+#[cfg(feature = "alloc")]
+use rust_spec::{Stable, Unstable, size::MetadataKind};
 
 #[cfg(feature = "alloc")]
 use crate::boxed::{CBox, CBoxCell, CBoxedSlice, CBoxedSliceCell};
@@ -640,24 +641,6 @@ pub trait Error {
 /// - Type must be `memcpy`-able which means it must have no Drop behavior or contain mutable references.
 pub unsafe trait CType {}
 
-unsafe impl<T> CType for Option<T> where
-    Self: rust_spec::RustSpec<
-            Layout = rust_spec::Stable,
-            Trap = rust_spec::layout::Robust,
-            Drop = rust_spec::drop::NoDrop,
-        >
-{
-}
-
-unsafe impl<T, E> CType for Result<T, E> where
-    Self: rust_spec::RustSpec<
-            Layout = rust_spec::Stable,
-            Trap = rust_spec::layout::Robust,
-            Drop = rust_spec::drop::NoDrop,
-        >
-{
-}
-
 /// `C` type that is allowed as a foreign function argument.
 ///
 /// # Safety
@@ -688,20 +671,20 @@ disjoint_impls! {
 
     impl<R: ReprC + ?Sized> ReprC for &R
     where
-        R: rust_spec::RustSpec<Size: Thin, Mutability = Exclusive>,
+        R: RustSpec<Size: Thin, Mutability = Exclusive>,
     {
         type CType = CRef<R::CType>;
     }
     impl<R: NulTerminatedBuf<Data: ReprC> + ?Sized> ReprC for &R
     where
-        R: rust_spec::RustSpec<Size = NulTerminated, Mutability = Exclusive>,
+        R: RustSpec<Size = NulTerminated, Mutability = Exclusive>,
         <<R as NulTerminatedBuf>::Data as ReprC>::CType: Sized,
     {
         type CType = CRef<<R::Data as ReprC>::CType>;
     }
     impl<R: Wide<Header: WideHeader<Data: ReprC>, Metadata = usize> + ?Sized> ReprC for &R
     where
-        R: rust_spec::RustSpec<Size = MetaSized<SliceLike>, Mutability = Exclusive>,
+        R: RustSpec<Size = MetaSized<SliceLike>, Mutability = Exclusive>,
         <<<R as Wide>::Header as WideHeader>::Data as ReprC>::CType: Sized,
     {
         type CType = CSlice<<<<R as Wide>::Header as WideHeader>::Data as ReprC>::CType>;
@@ -709,20 +692,20 @@ disjoint_impls! {
 
     impl<R: ReprC + ?Sized> ReprC for &R
     where
-        R: rust_spec::RustSpec<Size: Thin, Mutability = WithInterior>,
+        R: RustSpec<Size: Thin, Mutability = WithInterior>,
     {
         type CType = CRefMut<R::CType, false>;
     }
     impl<R: NulTerminatedBuf<Data: ReprC> + ?Sized> ReprC for &R
     where
-        R: rust_spec::RustSpec<Size = NulTerminated, Mutability = WithInterior>,
+        R: RustSpec<Size = NulTerminated, Mutability = WithInterior>,
         <<R as NulTerminatedBuf>::Data as ReprC>::CType: Sized,
     {
         type CType = CRefMut<<R::Data as ReprC>::CType, false>;
     }
     impl<R: Wide<Header: WideHeader<Data: ReprC>, Metadata = usize> + ?Sized> ReprC for &R
     where
-        R: rust_spec::RustSpec<Size = MetaSized<SliceLike>, Mutability = WithInterior>,
+        R: RustSpec<Size = MetaSized<SliceLike>, Mutability = WithInterior>,
         <<<R as Wide>::Header as WideHeader>::Data as ReprC>::CType: Sized,
     {
         type CType = CSliceMut<<<<R as Wide>::Header as WideHeader>::Data as ReprC>::CType, false>;
@@ -730,13 +713,13 @@ disjoint_impls! {
 
     impl<R: ReprC + ?Sized> ReprC for &mut R
     where
-        R: rust_spec::RustSpec<Size: Thin>,
+        R: RustSpec<Size: Thin>,
     {
         type CType = CRefMut<R::CType>;
     }
     impl<R: Wide<Header: WideHeader<Data: ReprC>, Metadata = usize> + ?Sized> ReprC for &mut R
     where
-        R: rust_spec::RustSpec<Size = MetaSized<SliceLike>>,
+        R: RustSpec<Size = MetaSized<SliceLike>>,
         <<<R as Wide>::Header as WideHeader>::Data as ReprC>::CType: Sized,
     {
         type CType = CSliceMut<<<<R as Wide>::Header as WideHeader>::Data as ReprC>::CType>;
@@ -745,7 +728,7 @@ disjoint_impls! {
     #[cfg(feature = "alloc")]
     impl<R: ReprC, S: SizedKind> ReprC for Box<R>
     where
-        R: rust_spec::RustSpec<Size = rust_spec::size::Sized<S>, Mutability = Exclusive>,
+        R: RustSpec<Size = rust_spec::size::Sized<S>, Mutability = Exclusive>,
         <R as ReprC>::CType: Sized,
     {
         type CType = CBox<R::CType>;
@@ -753,7 +736,7 @@ disjoint_impls! {
     #[cfg(feature = "alloc")]
     impl<R: NulTerminatedBuf<Data: ReprC> + ?Sized> ReprC for Box<R>
     where
-        R: rust_spec::RustSpec<Size = NulTerminated, Mutability = Exclusive>,
+        R: RustSpec<Size = NulTerminated, Mutability = Exclusive>,
         <<R as NulTerminatedBuf>::Data as ReprC>::CType: Sized,
     {
         type CType = CBox<<R::Data as ReprC>::CType>;
@@ -761,7 +744,7 @@ disjoint_impls! {
     #[cfg(feature = "alloc")]
     impl<R: ?Sized> ReprC for Box<R>
     where
-        R: rust_spec::RustSpec<Size = MetaSized<SliceLike>, Mutability = Exclusive>,
+        R: RustSpec<Size = MetaSized<SliceLike>, Mutability = Exclusive>,
         R: Wide<Header: WideHeader<Data: ReprC>, Metadata = usize>,
         <<<R as Wide>::Header as WideHeader>::Data as ReprC>::CType: Sized,
     {
@@ -771,7 +754,7 @@ disjoint_impls! {
     #[cfg(feature = "alloc")]
     impl<R: ReprC, S: SizedKind> ReprC for Box<R>
     where
-        R: rust_spec::RustSpec<Size = rust_spec::size::Sized<S>, Mutability = WithInterior>,
+        R: RustSpec<Size = rust_spec::size::Sized<S>, Mutability = WithInterior>,
         <R as ReprC>::CType: Sized,
     {
         type CType = CBoxCell<R::CType>;
@@ -779,7 +762,7 @@ disjoint_impls! {
     #[cfg(feature = "alloc")]
     impl<R: NulTerminatedBuf<Data: ReprC> + ?Sized> ReprC for Box<R>
     where
-        R: rust_spec::RustSpec<Size = NulTerminated, Mutability = WithInterior>,
+        R: RustSpec<Size = NulTerminated, Mutability = WithInterior>,
         <<R as NulTerminatedBuf>::Data as ReprC>::CType: Sized,
     {
         type CType = CBoxCell<<R::Data as ReprC>::CType>;
@@ -787,7 +770,7 @@ disjoint_impls! {
     #[cfg(feature = "alloc")]
     impl<R: ?Sized> ReprC for Box<R>
     where
-        R: rust_spec::RustSpec<Size = MetaSized<SliceLike>, Mutability = WithInterior>,
+        R: RustSpec<Size = MetaSized<SliceLike>, Mutability = WithInterior>,
         R: Wide<Header: WideHeader<Data: ReprC>, Metadata = usize>,
         <<<R as Wide>::Header as WideHeader>::Data as ReprC>::CType: Sized,
     {
@@ -796,14 +779,14 @@ disjoint_impls! {
 
     impl<R: ReprC> ReprC for Option<R>
     where
-        R: rust_spec::RustSpec<Niche = WithoutNiche>,
+        R: RustSpec<Niche = WithoutNiche>,
         <R as ReprC>::CType: Sized,
     {
         type CType = ReprCOption<R::CType>;
     }
     impl<R: ReprC, N: NicheStabilityKind> ReprC for Option<R>
     where
-        R: rust_spec::RustSpec<Niche = WithNiche<N>>,
+        R: RustSpec<Niche = WithNiche<N>>,
     {
         type CType = R::CType;
     }
@@ -811,8 +794,8 @@ disjoint_impls! {
     // TODO: The next 3 impls are the same
     impl<R: ReprC, E: ReprC<CType: Sized>, K: SizedKind> ReprC for Result<R, E>
     where
-        R: rust_spec::RustSpec<Size = rust_spec::size::Sized<K>>,
-        E: rust_spec::RustSpec<Size = rust_spec::size::Sized<K>>,
+        R: RustSpec<Size = rust_spec::size::Sized<K>>,
+        E: RustSpec<Size = rust_spec::size::Sized<K>>,
         // TODO: There is an error in disjoint_impls! that doesn't allow to use
         // `ReprC<CType: Copy>` constraint. Fix that! Check other Result sites
         <R as ReprC>::CType: CType + Copy,
@@ -822,8 +805,8 @@ disjoint_impls! {
     }
     impl<R: ReprC, E: ReprC<CType: Sized>, N: NicheStabilityKind> ReprC for Result<R, E>
     where
-        R: rust_spec::RustSpec<Size = rust_spec::size::Sized<rust_spec::Gt<rust_spec::Zero>>, Niche = WithNiche<N>>,
-        E: rust_spec::RustSpec<
+        R: RustSpec<Size = rust_spec::size::Sized<rust_spec::Gt<rust_spec::Zero>>, Niche = WithNiche<N>>,
+        E: RustSpec<
             Size = rust_spec::size::Sized<Zero>,
             Alignment = rust_spec::Gt<rust_spec::One>,
         >,
@@ -834,11 +817,11 @@ disjoint_impls! {
     }
     impl<R: ReprC, E: ReprC<CType: Sized>, N: NicheStabilityKind> ReprC for Result<R, E>
     where
-        R: rust_spec::RustSpec<
+        R: RustSpec<
             Size = rust_spec::size::Sized<Zero>,
             Alignment = rust_spec::Gt<rust_spec::One>,
         >,
-        E: rust_spec::RustSpec<Size = rust_spec::size::Sized<rust_spec::Gt<rust_spec::Zero>>, Niche = WithNiche<N>>,
+        E: RustSpec<Size = rust_spec::size::Sized<rust_spec::Gt<rust_spec::Zero>>, Niche = WithNiche<N>>,
         <R as ReprC>::CType: CType + Copy,
         <E as ReprC>::CType: CType + Copy,
     {
@@ -846,15 +829,15 @@ disjoint_impls! {
     }
     impl<R: ReprC, E: ReprC<CType: Sized>, N: NicheStabilityKind> ReprC for Result<R, E>
     where
-        R: rust_spec::RustSpec<Size = rust_spec::size::Sized<rust_spec::Gt<rust_spec::Zero>>, Niche = WithNiche<N>>,
-        E: rust_spec::RustSpec<Size = rust_spec::size::Sized<Zero>, Alignment = rust_spec::One>,
+        R: RustSpec<Size = rust_spec::size::Sized<rust_spec::Gt<rust_spec::Zero>>, Niche = WithNiche<N>>,
+        E: RustSpec<Size = rust_spec::size::Sized<Zero>, Alignment = rust_spec::One>,
     {
         type CType = R::CType;
     }
     impl<R: ReprC, E: ReprC<CType: Sized>, N: NicheStabilityKind> ReprC for Result<R, E>
     where
-        R: rust_spec::RustSpec<Size = rust_spec::size::Sized<Zero>, Alignment = rust_spec::One>,
-        E: rust_spec::RustSpec<Size = rust_spec::size::Sized<rust_spec::Gt<rust_spec::Zero>>, Niche = WithNiche<N>>,
+        R: RustSpec<Size = rust_spec::size::Sized<Zero>, Alignment = rust_spec::One>,
+        E: RustSpec<Size = rust_spec::size::Sized<rust_spec::Gt<rust_spec::Zero>>, Niche = WithNiche<N>>,
         <E as ReprC>::CType: CType + Sized,
     {
         type CType = E::CType;
@@ -868,12 +851,12 @@ disjoint_impls! {
     #[cfg(feature = "alloc")]
     impl<R: ?Sized> Encode for Box<R>
     where
-        Self: rust_spec::RustSpec<Layout = Stable> + EncodeOwned,
+        Self: RustSpec<Layout = Stable> + EncodeOwned,
     {}
     #[cfg(feature = "alloc")]
-    impl<R: rust_spec::RustSpec<Layout = Stable> + ?Sized> Encode for Box<R>
+    impl<R: RustSpec<Layout = Stable> + ?Sized> Encode for Box<R>
     where
-        Self: rust_spec::RustSpec<Layout = Unstable> + EncodeOwned,
+        Self: RustSpec<Layout = Unstable> + EncodeOwned,
     {}
 }
 
@@ -884,12 +867,12 @@ disjoint_impls! {
     #[cfg(feature = "alloc")]
     impl<'d, R: ?Sized> Decode<'d> for Box<R>
     where
-        Self: rust_spec::RustSpec<Layout = Stable> + DecodeOwned<'d>,
+        Self: RustSpec<Layout = Stable> + DecodeOwned<'d>,
     {}
     #[cfg(feature = "alloc")]
-    impl<'d, R: rust_spec::RustSpec<Layout = Stable> + ?Sized> Decode<'d> for Box<R>
+    impl<'d, R: RustSpec<Layout = Stable> + ?Sized> Decode<'d> for Box<R>
     where
-        Self: rust_spec::RustSpec<Layout = Unstable> + DecodeOwned<'d>,
+        Self: RustSpec<Layout = Unstable> + DecodeOwned<'d>,
     {}
 }
 
@@ -972,6 +955,65 @@ pub unsafe fn decode<'d, T: Decode<'d, Store: EmptyStore> + 'd>(source: T::CType
 /// [`decode`] apply, and `decode(source)` must return `Some`.
 pub unsafe fn decode_unchecked<'d, T: Decode<'d, Store: EmptyStore> + 'd>(source: T::CType) -> T {
     unsafe { stored::decode_owned_unchecked(source) }
+}
+
+unsafe impl<T> CType for Option<T> where
+    Self: RustSpec<
+            Layout = rust_spec::Stable,
+            Trap = rust_spec::layout::Robust,
+            Drop = rust_spec::drop::NoDrop,
+        >
+{
+}
+unsafe impl<T, E> CType for Result<T, E> where
+    Self: RustSpec<
+            Layout = rust_spec::Stable,
+            Trap = rust_spec::layout::Robust,
+            Drop = rust_spec::drop::NoDrop,
+        >
+{
+}
+
+unsafe impl<T> CFnArg for Option<T> where
+    Self: CType + RustSpec<Size = rust_spec::size::Sized<rust_spec::Gt<rust_spec::Zero>>>
+{
+}
+unsafe impl<T> CFnReturn for Option<T> where
+    Self: CType + RustSpec<Size = rust_spec::size::Sized<rust_spec::Gt<rust_spec::Zero>>>
+{
+}
+unsafe impl<T, E> CFnArg for Result<T, E> where
+    Self: CType + RustSpec<Size = rust_spec::size::Sized<rust_spec::Gt<rust_spec::Zero>>>
+{
+}
+unsafe impl<T, E> CFnReturn for Result<T, E> where
+    Self: CType + RustSpec<Size = rust_spec::size::Sized<rust_spec::Gt<rust_spec::Zero>>>
+{
+}
+
+unsafe impl<T> borrow::BorrowCast for Option<T>
+where
+    Self: CType,
+{
+    type AsConst = Self;
+}
+unsafe impl<T> borrow::BorrowCastMut for Option<T>
+where
+    Self: CType,
+{
+    type AsMut = Self;
+}
+unsafe impl<T, E> borrow::BorrowCast for Result<T, E>
+where
+    Self: CType,
+{
+    type AsConst = Self;
+}
+unsafe impl<T, E> borrow::BorrowCastMut for Result<T, E>
+where
+    Self: CType,
+{
+    type AsMut = Self;
 }
 
 #[cfg(feature = "alloc")]

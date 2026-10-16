@@ -245,6 +245,12 @@ impl<'d, C: CType + ?Sized, const RESTRICTED: bool> Decode<'d> for CRefMut<C, RE
 unsafe impl<C: CType + ?Sized, const RESTRICTED: bool> CType for CRefMut<C, RESTRICTED> {}
 unsafe impl<C: CType, const RESTRICTED: bool> CFnArg for CRefMut<C, RESTRICTED> {}
 unsafe impl<C: CType, const RESTRICTED: bool> CFnReturn for CRefMut<C, RESTRICTED> {}
+unsafe impl<C: CType + ?Sized, const RESTRICTED: bool> BorrowCast for CRefMut<C, RESTRICTED> {
+    type AsConst = Self;
+}
+unsafe impl<C: CType + ?Sized, const RESTRICTED: bool> BorrowCastMut for CRefMut<C, RESTRICTED> {
+    type AsMut = Self;
+}
 
 #[cfg(test)]
 mod tests {

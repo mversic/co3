@@ -283,18 +283,6 @@ unsafe impl<$($arg: CFnArg,)* R: CFnReturn> Borrow for $fn_type
         where Option<Self>: CType {
             unsafe fn is_valid(target: &Self::CType) -> bool { target.is_some() }
         }
-        unsafe impl<$($arg: CFnArg,)* R: CFnReturn> CFnArg for Option<$fn_type>
-        where Self: CType {}
-        unsafe impl<$($arg: CFnArg,)* R: CFnReturn> CFnReturn for Option<$fn_type>
-        where Self: CType {}
-        unsafe impl<$($arg: CFnArg,)* R: CFnReturn> BorrowCast for Option<$fn_type>
-        where Self: CType {
-            type AsConst = Self;
-        }
-        unsafe impl<$($arg: CFnArg,)* R: CFnReturn> BorrowCastMut for Option<$fn_type>
-        where Self: CType {
-            type AsMut = Self;
-        }
     };
 }
 

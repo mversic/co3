@@ -16,6 +16,7 @@ use core::{
     num::NonZero,
     ptr::NonNull,
 };
+use rust_spec::RustSpec;
 
 macro_rules! non_zero_derive {
     ($($primitive:ty),+ $(,)?) => {$(
@@ -276,7 +277,7 @@ impl<T: CType + ?Sized> Decode<'_> for NonNull<T> {}
 
 unsafe impl<T: CType + ?Sized> CheckedTransmute for NonNull<T>
 where
-    T: rust_spec::RustSpec<Size: crate::Thin>,
+    T: RustSpec<Size: crate::Thin>,
     Self: ReprC<CType = *mut T>,
 {
     #[inline(always)]
@@ -382,7 +383,6 @@ impl<'itm, T: FromBorrow<'itm>> FromBorrow<'itm> for UnsafeCell<T> {
     }
 }
 
-unsafe impl<R: CType + ?Sized> CType for UnsafeCell<R> {}
 unsafe impl<R: BorrowCast + ?Sized> BorrowCast for UnsafeCell<R> {
     type AsConst = UnsafeCell<R::AsConst>;
 }
@@ -435,6 +435,17 @@ unsafe impl<T: CheckedTransmute + ?Sized> CheckedTransmute for UnsafeCell<T> {
 }
 
 unsafe impl<T: EmptyStore> EmptyStore for UnsafeCell<T> {}
+
+unsafe impl<R: CType + ?Sized> CType for UnsafeCell<R> {}
+unsafe impl<T: CFnArg> CFnArg for UnsafeCell<T> where
+    Self: RustSpec<Size = rust_spec::size::Sized<rust_spec::Gt<rust_spec::Zero>>>
+{
+}
+unsafe impl<T: CFnReturn> CFnReturn for UnsafeCell<T> where
+    Self: RustSpec<Size = rust_spec::size::Sized<rust_spec::Gt<rust_spec::Zero>>>
+{
+}
+
 unsafe impl<T: Borrow> Borrow for Cell<T> {
     type Borrowed<'itm>
         = UnsafeCell<T::Borrowed<'itm>>
@@ -503,6 +514,23 @@ unsafe impl<T: CheckedTransmute<CType: Copy>> CheckedTransmute for Cell<T> {
 }
 
 unsafe impl<T: EmptyStore> EmptyStore for Cell<T> {}
+
+unsafe impl<R: CType + ?Sized> CType for Cell<R> {}
+unsafe impl<T: CFnArg> CFnArg for Cell<T> where
+    Self: RustSpec<Size = rust_spec::size::Sized<rust_spec::Gt<rust_spec::Zero>>>
+{
+}
+unsafe impl<T: CFnReturn> CFnReturn for Cell<T> where
+    Self: RustSpec<Size = rust_spec::size::Sized<rust_spec::Gt<rust_spec::Zero>>>
+{
+}
+unsafe impl<T: BorrowCast + ?Sized> BorrowCast for Cell<T> {
+    type AsConst = UnsafeCell<T::AsConst>;
+}
+unsafe impl<T: BorrowCastMut + ?Sized> BorrowCastMut for Cell<T> {
+    type AsMut = UnsafeCell<T::AsMut>;
+}
+
 unsafe impl<T> Borrow for MaybeUninit<T> {
     type Borrowed<'itm>
         = Self
@@ -560,8 +588,14 @@ unsafe impl<T: CheckedTransmute<CType: Sized>> CheckedTransmute for MaybeUninit<
 }
 
 unsafe impl<T: CType> CType for MaybeUninit<T> {}
-unsafe impl<T: CFnArg> CFnArg for MaybeUninit<T> {}
-unsafe impl<T: CFnReturn> CFnReturn for MaybeUninit<T> {}
+unsafe impl<T: CFnArg> CFnArg for MaybeUninit<T> where
+    Self: RustSpec<Size = rust_spec::size::Sized<rust_spec::Gt<rust_spec::Zero>>>
+{
+}
+unsafe impl<T: CFnReturn> CFnReturn for MaybeUninit<T> where
+    Self: RustSpec<Size = rust_spec::size::Sized<rust_spec::Gt<rust_spec::Zero>>>
+{
+}
 
 unsafe impl<T: CType> BorrowCast for MaybeUninit<T> {
     type AsConst = Self;
@@ -571,81 +605,62 @@ unsafe impl<T: CType> BorrowCastMut for MaybeUninit<T> {
 }
 
 unsafe impl<T: EmptyStore> EmptyStore for MaybeUninit<T> {}
-unsafe impl<T: Borrow> Borrow for ManuallyDrop<T> {
+
+unsafe impl<T> Borrow for ManuallyDrop<T> {
     type Borrowed<'itm>
-        = T::Borrowed<'itm>
+        = Self
     where
         Self: 'itm;
 
-    type Owner = T::Owner;
+    type Owner = ();
 
     #[inline(always)]
-    fn borrow<'itm>(self, owner: &'itm mut Self::Owner) -> Self::Borrowed<'itm>
+    fn borrow<'itm>(self, (): &mut ()) -> Self::Borrowed<'itm>
     where
         Self: 'itm,
     {
-        ManuallyDrop::into_inner(self).borrow(owner)
+        self
     }
 }
-impl<'itm, T: FromBorrow<'itm>> FromBorrow<'itm> for ManuallyDrop<T> {
+impl<'itm, T: 'itm> FromBorrow<'itm> for ManuallyDrop<T> {
     #[inline(always)]
     fn from_borrow(source: Self::Borrowed<'itm>) -> Self {
-        ManuallyDrop::new(T::from_borrow(source))
+        source
     }
 }
 
 impl<T: ReprC + ?Sized> ReprC for ManuallyDrop<T> {
     type CType = ManuallyDrop<T::CType>;
 }
-unsafe impl<T: CType + ?Sized> CType for ManuallyDrop<T> {}
-unsafe impl<T: ReprC> EncodeOwned for ManuallyDrop<T>
-where
-    Self: CheckedTransmute<CType: Sized>,
-{
-    type Store = ();
 
-    #[inline(always)]
-    fn soft_encode<'itm>(self, (): &mut ()) -> Self::CType
-    where
-        Self: 'itm,
-    {
-        unsafe { core::mem::transmute_copy(&self) }
-    }
-}
-unsafe impl<'d, T: ReprC> DecodeOwned<'d> for ManuallyDrop<T>
-where
-    Self: CheckedTransmute<CType: Sized>,
-{
-    type Store = ();
-
-    #[inline(always)]
-    unsafe fn soft_decode<'itm: 'd>(source: Self::CType, (): &mut ()) -> Option<Self> {
-        if !unsafe { Self::is_valid(&source) } {
-            return None;
-        }
-
-        Some(unsafe { Self::soft_decode_unchecked(source, &mut ()) })
-    }
-
-    #[inline(always)]
-    unsafe fn soft_decode_unchecked<'itm: 'd>(source: Self::CType, (): &mut ()) -> Self {
-        unsafe { core::mem::transmute_copy(&source) }
-    }
-}
-
-impl<T: ReprC> Encode for ManuallyDrop<T> where Self: CheckedTransmute<CType: Sized> {}
-impl<'d, T: ReprC> Decode<'d> for ManuallyDrop<T> where Self: CheckedTransmute<CType: Sized> {}
+impl<T: ReprC> Encode for ManuallyDrop<T> where Self: EncodeOwned {}
+impl<'d, T: ReprC> Decode<'d> for ManuallyDrop<T> where Self: DecodeOwned<'d> {}
 
 unsafe impl<T: CheckedTransmute + ?Sized> CheckedTransmute for ManuallyDrop<T> {
     #[inline(always)]
     unsafe fn is_valid(target: &Self::CType) -> bool {
-        let target = target as *const ManuallyDrop<T::CType> as *const T::CType;
-        unsafe { T::is_valid(&*target) }
+        unsafe { T::is_valid(target) }
     }
 }
 
 impl<T: Niche> Niche for ManuallyDrop<T> {
     const NICHE: Self::CType = ManuallyDrop::new(T::NICHE);
+}
+
+unsafe impl<T: CType + ?Sized> CType for ManuallyDrop<T> {}
+unsafe impl<T: CFnArg> CFnArg for ManuallyDrop<T> where
+    Self: RustSpec<Size = rust_spec::size::Sized<rust_spec::Gt<rust_spec::Zero>>>
+{
+}
+unsafe impl<T: CFnReturn> CFnReturn for ManuallyDrop<T> where
+    Self: RustSpec<Size = rust_spec::size::Sized<rust_spec::Gt<rust_spec::Zero>>>
+{
+}
+unsafe impl<T: CType + ?Sized> BorrowCast for ManuallyDrop<T> {
+    type AsConst = Self;
+}
+unsafe impl<T: CType + ?Sized> BorrowCastMut for ManuallyDrop<T> {
+    type AsMut = Self;
 }
 
 unsafe impl<T: EmptyStore> EmptyStore for ManuallyDrop<T> {}

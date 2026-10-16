@@ -524,6 +524,36 @@ fn gen_source_ctype_impl(input: &syn::DeriveInput, attrs: &ReprCAttrs) -> TokenS
             #(#field_bounds)*
             #predicates
         {}
+
+        unsafe impl #impl_generics co3::CFnArg for #name #ty_generics
+        where
+            #speculative Self: co3::CType + co3::rust_spec::RustSpec<
+                Size = co3::rust_spec::size::Sized<co3::rust_spec::Gt<co3::rust_spec::Zero>>,
+            >,
+            #predicates
+        {}
+        unsafe impl #impl_generics co3::CFnReturn for #name #ty_generics
+        where
+            #speculative Self: co3::CType + co3::rust_spec::RustSpec<
+                Size = co3::rust_spec::size::Sized<co3::rust_spec::Gt<co3::rust_spec::Zero>>,
+            >,
+            #predicates
+        {}
+
+        unsafe impl #impl_generics co3::borrow::BorrowCast for #name #ty_generics
+        where
+            #speculative Self: co3::CType,
+            #predicates
+        {
+            type AsConst = Self;
+        }
+        unsafe impl #impl_generics co3::borrow::BorrowCastMut for #name #ty_generics
+        where
+            #speculative Self: co3::CType,
+            #predicates
+        {
+            type AsMut = Self;
+        }
     }
 }
 
