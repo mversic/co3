@@ -7,6 +7,30 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.8.0] - 2026-10-17
+
+### Added
+
+- Parameterize wide pointer carriers by unsized `Wide` pointee types.
+- Support `UnsafeCell<T>` and `Cell<T>` in C-compatible representations.
+- Implement `CType` for `ManuallyDrop<T>` and represent it as `ManuallyDrop<T::CType>`.
+
+### Changed
+
+- Rename `CSlice`/`CSliceMut`/`CBoxedSlice` to `CWideRef`/`CWideRefMut`/`CWideBox`/`CWideBoxCell`.
+- Rename the mutable carrier const param from `RESTRICTED` to `EXCLUSIVE` and remove its default.
+- Require opaque types to have the opaque `RustSpec` with `#[rust_spec(opaque)]`.
+- Set the MSRV to 1.99 because of the `UnsafeCell` transmutation guarantees.
+- Remove the `Copy` supertrait requirement from `CFnArg` and `CFnReturn`.
+
+### Fixed
+
+- Corrected (de)serialization of `ManuallyDrop` and `MaybeUninit`
+
+### Removed
+
+- `cell::InteriorMut` was removed because using `UnsafeCell::get` is no longer required
+
 ## [0.7.4] - 2026-10-13
 
 ### Added
