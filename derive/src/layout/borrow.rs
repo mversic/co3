@@ -7,7 +7,7 @@ use crate::utils::speculative_marker;
 use crate::layout::{
     ReprCAttrs, VariantReprCAttrs,
     attr::ReprKind,
-    ctype::{gen_ctype_name, gen_fields_methods},
+    ctype::{SyntacticSizedness, gen_ctype_name, gen_fields_methods, syntactic_sizedness},
     generic_param_idents, is_parametrized, is_phantom_data,
     item::{field_vars, gen_fields_destructure},
 };
@@ -39,7 +39,7 @@ pub(super) fn gen_item_view(
     let rust_spec_impl = gen_view_rust_spec(input, &view_def, repr);
     let fields_methods = match &view_def.data {
         syn::Data::Struct(data) => {
-            gen_fields_methods(&view_def.ident, &view_def.generics, &data.fields)
+            gen_fields_methods(&view_def.ident, &view_def.generics, &data.fields, false)
         }
         syn::Data::Enum(_) => quote! {},
         syn::Data::Union(_) => unreachable!(),
@@ -47,13 +47,23 @@ pub(super) fn gen_item_view(
     let owner_name = &input.ident;
     let (_, owner_ty_generics, _) = input.generics.split_for_impl();
 
-    let inherited_niche = attrs.niche_value.as_ref().map(|_| {
-        quote! {
-            #[repr_c(NICHE = co3::borrow::borrow_cast(
-                <#owner_name #owner_ty_generics as co3::niche::Niche>::NICHE
-            ))]
-        }
-    });
+    let known_unsized_tail = matches!(
+        &input.data,
+        syn::Data::Struct(data)
+            if data.fields.iter().next_back().is_some_and(|field|
+                syntactic_sizedness(&field.ty, &input.generics) == SyntacticSizedness::Unsized)
+    );
+    let inherited_niche = attrs
+        .niche_value
+        .as_ref()
+        .filter(|_| !known_unsized_tail)
+        .map(|_| {
+            quote! {
+                #[repr_c(NICHE = co3::borrow::borrow_cast(
+                    <#owner_name #owner_ty_generics as co3::niche::Niche>::NICHE
+                ))]
+            }
+        });
 
     quote! {
         #[derive(co3::ReprC)]

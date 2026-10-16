@@ -76,29 +76,3 @@ error[E0690]: transparent struct needs at most one non-trivial field, but has 2
 17 | #[repr(transparent)]
 18 | struct MultiFieldStruct<T>(T, T);
    | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ needs at most one non-trivial field, but has 2
-
-error[E0690]: transparent struct needs at most one non-trivial field, but has 2
-  --> tests/ui_fail/multiple_fields_transparent.rs:16:10
-   |
-16 | #[derive(ReprC)]
-   |          ^^^^^
-   |          |
-   |          needs at most one non-trivial field, but has 2
-   |          this field is generic and hence may have non-zero size
-17 | #[repr(transparent)]
-18 | struct MultiFieldStruct<T>(T, T);
-   |                            - this field is generic and hence may have non-zero size
-   |
-   = note: this error originates in the derive macro `ReprC` (in Nightly builds, run with -Z macro-backtrace for more info)
-
-error[E0690]: transparent struct needs at most one non-trivial field, but has 2
-  --> tests/ui_fail/multiple_fields_transparent.rs:16:10
-   |
-16 | #[derive(ReprC)]
-   |          ^^^^^
-   |          |
-   |          needs at most one non-trivial field, but has 2
-   |          this field is generic and hence may have non-zero size
-   |          this field is generic and hence may have non-zero size
-   |
-   = note: this error originates in the derive macro `co3::ReprC` (in Nightly builds, run with -Z macro-backtrace for more info)

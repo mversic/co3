@@ -15,6 +15,7 @@ use crate::{
     reference::{CRef, CRefMut},
     result::ReprCResult,
     slice::{CWideRef, CWideRefMut},
+    wide::Wide,
 };
 
 disjoint_impls! {
@@ -40,13 +41,13 @@ disjoint_impls! {
     {
         const NICHE: Self::CType = CRefMut::null();
     }
-    impl<R: ?Sized, C: CType> Niche for &R
+    impl<R: ?Sized, C: Wide + ?Sized> Niche for &R
     where
         Self: ReprC<CType = CWideRef<C>>,
     {
         const NICHE: Self::CType = CWideRef::null();
     }
-    impl<R: ?Sized, C: CType> Niche for &R
+    impl<R: ?Sized, C: Wide + ?Sized> Niche for &R
     where
         Self: ReprC<CType = CWideRefMut<C, false>>,
     {
@@ -59,7 +60,7 @@ disjoint_impls! {
     {
         const NICHE: Self::CType = CRefMut::null();
     }
-    impl<R: ?Sized, C: CType> Niche for &mut R
+    impl<R: ?Sized, C: Wide + ?Sized> Niche for &mut R
     where
         Self: ReprC<CType = CWideRefMut<C, true>>,
     {
@@ -81,14 +82,14 @@ disjoint_impls! {
         const NICHE: Self::CType = CBoxCell::null();
     }
     #[cfg(feature = "alloc")]
-    impl<R: ?Sized, C: CType> Niche for Box<R>
+    impl<R: ?Sized, C: Wide + ?Sized> Niche for Box<R>
     where
         Self: ReprC<CType = CWideBox<C>>,
     {
         const NICHE: Self::CType = CWideBox::null();
     }
     #[cfg(feature = "alloc")]
-    impl<R: ?Sized, C: CType> Niche for Box<R>
+    impl<R: ?Sized, C: Wide + ?Sized> Niche for Box<R>
     where
         Self: ReprC<CType = CWideBoxCell<C>>,
     {
@@ -96,14 +97,14 @@ disjoint_impls! {
     }
 
     #[cfg(feature = "alloc")]
-    impl<R, C: CType> Niche for Vec<R>
+    impl<R, C: Wide + ?Sized> Niche for Vec<R>
     where
         Self: ReprC<CType = CWideBox<C>>,
     {
         const NICHE: Self::CType = CWideBox::null();
     }
     #[cfg(feature = "alloc")]
-    impl<R, C: CType> Niche for Vec<R>
+    impl<R, C: Wide + ?Sized> Niche for Vec<R>
     where
         Self: ReprC<CType = CWideBoxCell<C>>,
     {

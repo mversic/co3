@@ -5,9 +5,11 @@ use crate::{
     layout::{
         attr::ReprKind,
         borrow::gen_view_owner_name,
-        ctype::{gen_copy_extern_c_bounds_for_ctype, gen_ctype_name},
-        enum_tag_type, generic_param_idents, is_exhaustive_enum, is_parametrized,
-        is_transparent_enum_repr,
+        ctype::{
+            SyntacticSizedness, gen_copy_extern_c_bounds_for_ctype, gen_ctype_name,
+            syntactic_sizedness,
+        },
+        enum_tag_type, generic_param_idents, is_exhaustive_enum, is_transparent_enum_repr,
     },
     utils::{build_extern_c_type_tuple, speculative_marker},
 };
@@ -52,6 +54,12 @@ pub fn gen_struct_niche_ir(
     fields: &syn::Fields,
     niche_value: Option<&syn::Expr>,
 ) -> TokenStream {
+    if fields.iter().next_back().is_some_and(|field| {
+        syntactic_sizedness(&field.ty, generics) == SyntacticSizedness::Unsized
+    }) {
+        return quote! {};
+    }
+
     let (impl_generics, ty_generics, _) = generics.split_for_impl();
 
     let predicates = generics
@@ -62,14 +70,8 @@ pub fn gen_struct_niche_ir(
     let ctype_name = gen_ctype_name(struct_name);
     let for_dummy = speculative_marker(generics.params.is_empty());
 
-    let last_field_sized = fields.iter().next_back().map(|field| {
-        let ty = &field.ty;
-
-        let for_dummy = speculative_marker(!is_parametrized(ty, generics));
-
-        quote! { #for_dummy #ty: Sized, }
-    });
     let types = fields.iter().map(|f| &f.ty).collect::<Vec<_>>();
+    let (last_field_sized, _) = super::ctype::c_fn_last_field_bounds(&types, generics);
     let extern_c_bounds = gen_copy_extern_c_bounds_for_ctype(generics, &types);
     let (fields_tuple, c_fields_tuple, accessors) = build_extern_c_type_tuple(&types);
 

@@ -14,7 +14,7 @@ use crate::{
 /// A null pointer represents an absent reference.
 #[derive(RustSpec)]
 #[repr(transparent)]
-pub struct CRef<C: CType + ?Sized> {
+pub struct CRef<C: ?Sized> {
     data: *const C,
 }
 
@@ -31,9 +31,24 @@ impl<C: CType + ?Sized> CRef<C> {
     pub const fn from_ref(data: &C) -> Self {
         Self { data }
     }
+}
 
+impl<C: ?Sized> CRef<C> {
     pub const fn as_ptr(self) -> *const C {
         self.data
+    }
+
+    /// Recover the shared reference, returning `None` for a null pointer.
+    ///
+    /// # Safety
+    ///
+    /// A non-null pointer must refer to a live `C` for the returned lifetime.
+    pub unsafe fn into_ref<'a>(self) -> Option<&'a C> {
+        if self.data.is_null() {
+            None
+        } else {
+            Some(unsafe { &*self.data })
+        }
     }
 }
 
@@ -46,23 +61,23 @@ impl<C: CType> CRef<C> {
     }
 }
 
-impl<C: CType + ?Sized> core::fmt::Debug for CRef<C> {
+impl<C: ?Sized> core::fmt::Debug for CRef<C> {
     fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
         f.debug_tuple("CRef").field(&self.data).finish()
     }
 }
-impl<C: CType + ?Sized> Clone for CRef<C> {
+impl<C: ?Sized> Clone for CRef<C> {
     fn clone(&self) -> Self {
         *self
     }
 }
-impl<C: CType + ?Sized> Copy for CRef<C> {}
-impl<C: CType + ?Sized> PartialEq for CRef<C> {
+impl<C: ?Sized> Copy for CRef<C> {}
+impl<C: ?Sized> PartialEq for CRef<C> {
     fn eq(&self, other: &Self) -> bool {
         core::ptr::eq(self.data, other.data)
     }
 }
-impl<C: CType + ?Sized> Eq for CRef<C> {}
+impl<C: ?Sized> Eq for CRef<C> {}
 impl<C: CType> PartialOrd for CRef<C> {
     fn partial_cmp(&self, other: &Self) -> Option<core::cmp::Ordering> {
         Some(self.cmp(other))
@@ -73,7 +88,7 @@ impl<C: CType> Ord for CRef<C> {
         self.data.cmp(&other.data)
     }
 }
-unsafe impl<C: CType + ?Sized> Borrow for CRef<C> {
+unsafe impl<C: ?Sized> Borrow for CRef<C> {
     type Borrowed<'itm>
         = Self
     where
@@ -87,7 +102,7 @@ unsafe impl<C: CType + ?Sized> Borrow for CRef<C> {
         self
     }
 }
-impl<'itm, C: CType + ?Sized> FromBorrow<'itm> for CRef<C> {
+impl<'itm, C: ?Sized> FromBorrow<'itm> for CRef<C> {
     fn from_borrow(source: Self) -> Self {
         source
     }
@@ -132,7 +147,7 @@ unsafe impl<C: CType + ?Sized> BorrowCastMut for CRef<C> {
 /// - `EXCLUSIVE = false` represents access that comes from `&UnsafeCell<T>`.
 #[derive(RustSpec)]
 #[repr(transparent)]
-pub struct CRefMut<C: CType + ?Sized, const EXCLUSIVE: bool> {
+pub struct CRefMut<C: ?Sized, const EXCLUSIVE: bool> {
     data: *mut C,
 }
 
@@ -151,13 +166,31 @@ impl<C: CType + ?Sized, const EXCLUSIVE: bool> CRefMut<C, EXCLUSIVE> {
     pub const fn from_mut(data: &mut C) -> Self {
         Self { data }
     }
+}
 
+impl<C: ?Sized, const EXCLUSIVE: bool> CRefMut<C, EXCLUSIVE> {
     pub const fn as_ptr(self) -> *mut C {
         self.data
     }
 }
 
-impl<C: CType, const EXCLUSIVE: bool> CRefMut<C, EXCLUSIVE> {
+impl<C: ?Sized> CRefMut<C, true> {
+    /// Recover the mutable reference, returning `None` for a null pointer.
+    ///
+    /// # Safety
+    ///
+    /// The pointer must refer to a live `C` that is exclusively accessible
+    /// for the returned lifetime.
+    pub unsafe fn into_mut<'a>(self) -> Option<&'a mut C> {
+        if self.data.is_null() {
+            None
+        } else {
+            Some(unsafe { &mut *self.data })
+        }
+    }
+}
+
+impl<C, const EXCLUSIVE: bool> CRefMut<C, EXCLUSIVE> {
     /// Construct a carrier with a null data pointer.
     pub const fn null() -> Self {
         Self {
@@ -175,25 +208,25 @@ impl<C: CType + ?Sized> CRefMut<UnsafeCell<C>, false> {
     }
 }
 
-impl<C: CType + ?Sized, const EXCLUSIVE: bool> core::fmt::Debug for CRefMut<C, EXCLUSIVE> {
+impl<C: ?Sized, const EXCLUSIVE: bool> core::fmt::Debug for CRefMut<C, EXCLUSIVE> {
     fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
         f.debug_tuple("CRefMut").field(&self.data).finish()
     }
 }
 
-impl<C: CType + ?Sized, const EXCLUSIVE: bool> Clone for CRefMut<C, EXCLUSIVE> {
+impl<C: ?Sized, const EXCLUSIVE: bool> Clone for CRefMut<C, EXCLUSIVE> {
     fn clone(&self) -> Self {
         *self
     }
 }
-impl<C: CType + ?Sized, const EXCLUSIVE: bool> Copy for CRefMut<C, EXCLUSIVE> {}
+impl<C: ?Sized, const EXCLUSIVE: bool> Copy for CRefMut<C, EXCLUSIVE> {}
 
-impl<C: CType + ?Sized, const EXCLUSIVE: bool> PartialEq for CRefMut<C, EXCLUSIVE> {
+impl<C: ?Sized, const EXCLUSIVE: bool> PartialEq for CRefMut<C, EXCLUSIVE> {
     fn eq(&self, other: &Self) -> bool {
         core::ptr::eq(self.data, other.data)
     }
 }
-impl<C: CType + ?Sized, const EXCLUSIVE: bool> Eq for CRefMut<C, EXCLUSIVE> {}
+impl<C: ?Sized, const EXCLUSIVE: bool> Eq for CRefMut<C, EXCLUSIVE> {}
 impl<C: CType, const EXCLUSIVE: bool> PartialOrd for CRefMut<C, EXCLUSIVE> {
     fn partial_cmp(&self, other: &Self) -> Option<core::cmp::Ordering> {
         Some(self.cmp(other))
@@ -204,7 +237,7 @@ impl<C: CType, const EXCLUSIVE: bool> Ord for CRefMut<C, EXCLUSIVE> {
         self.data.cmp(&other.data)
     }
 }
-unsafe impl<C: CType + ?Sized, const EXCLUSIVE: bool> Borrow for CRefMut<C, EXCLUSIVE> {
+unsafe impl<C: ?Sized, const EXCLUSIVE: bool> Borrow for CRefMut<C, EXCLUSIVE> {
     type Borrowed<'itm>
         = Self
     where
@@ -218,7 +251,7 @@ unsafe impl<C: CType + ?Sized, const EXCLUSIVE: bool> Borrow for CRefMut<C, EXCL
         self
     }
 }
-impl<'itm, C: CType + ?Sized, const EXCLUSIVE: bool> FromBorrow<'itm> for CRefMut<C, EXCLUSIVE> {
+impl<'itm, C: ?Sized, const EXCLUSIVE: bool> FromBorrow<'itm> for CRefMut<C, EXCLUSIVE> {
     fn from_borrow(source: Self) -> Self {
         source
     }
@@ -295,9 +328,9 @@ mod tests {
         assert_impl_all!(&mut u8: Niche<CType = CRefMut<u8, true>>);
         assert_impl_all!(&UnsafeCell<u8>: Niche<CType = CRefMut<UnsafeCell<u8>, false>>);
         assert_impl_all!(&mut UnsafeCell<u8>: Niche<CType = CRefMut<UnsafeCell<u8>, true>>);
-        assert_impl_all!(&mut [u8]: Niche<CType = CWideRefMut<u8, true>>);
-        assert_impl_all!(&[UnsafeCell<u8>]: Niche<CType = CWideRefMut<UnsafeCell<u8>, false>>);
-        assert_impl_all!(&mut [UnsafeCell<u8>]: Niche<CType = CWideRefMut<UnsafeCell<u8>, true>>);
+        assert_impl_all!(&mut [u8]: Niche<CType = CWideRefMut<[u8], true>>);
+        assert_impl_all!(&[UnsafeCell<u8>]: Niche<CType = CWideRefMut<[UnsafeCell<u8>], false>>);
+        assert_impl_all!(&mut [UnsafeCell<u8>]: Niche<CType = CWideRefMut<[UnsafeCell<u8>], true>>);
 
         assert_eq!(
             core::mem::size_of::<CRefMut<u8, true>>(),

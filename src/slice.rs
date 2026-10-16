@@ -1,4 +1,4 @@
-//! C-ABI slice carriers.
+//! C-ABI borrowed wide pointer carriers.
 use core::{
     cell::{Cell, UnsafeCell},
     mem::ManuallyDrop,
@@ -11,14 +11,11 @@ use crate::{
     borrow::{Borrow, BorrowCast, BorrowCastMut, FromBorrow},
     stored::{DecodeOwned, EncodeOwned},
     transmute::CheckedTransmute,
-    wide::{Wide, WideHeader},
+    wide::{PointeeData, Wide, WideHeader},
 };
 
 /// Fallibly converts a C-compatible representation into one ABI argument.
-pub trait Unpack<Part>: ReprC<CType: Sized>
-where
-    Part: CType,
-{
+pub trait Unpack<Part: CType>: ReprC<CType: Sized> {
     /// Error returned when the ABI argument cannot be produced.
     type Error;
 
@@ -33,30 +30,6 @@ pub trait Pack<Part: CType>: ReprC<CType: Sized> {
 
     /// Tries to reconstruct the C representation.
     fn pack(part: Part) -> Result<Self::CType, Self::Error>;
-}
-
-impl<T, Part: CType + TryInto<Self::CType>> Pack<Part> for T
-where
-    Self: ReprC<CType: Sized>,
-{
-    type Error = <Part as TryInto<Self::CType>>::Error;
-
-    #[inline(always)]
-    fn pack(part: Part) -> Result<Self::CType, Self::Error> {
-        part.try_into()
-    }
-}
-
-impl<T, Part: CType + TryFrom<Self::CType>> Unpack<Part> for T
-where
-    Self: ReprC<CType: Sized>,
-{
-    type Error = <Part as TryFrom<Self::CType>>::Error;
-
-    #[inline(always)]
-    fn unpack(value: Self::CType) -> Result<Part, Self::Error> {
-        Part::try_from(value)
-    }
 }
 
 /// Unpacks a C-compatible representation as two ABI arguments.
@@ -83,6 +56,436 @@ pub trait Pack2<Part1: CType, Part2: CType>: ReprC<CType: Sized> {
     /// The parts must satisfy the ownership, validity, and exclusivity
     /// requirements of the representation being constructed.
     unsafe fn pack(part1: Part1, part2: Part2) -> Result<Self::CType, Self::Error>;
+}
+
+/// Shared reference to a C-compatible wide pointee.
+/// A null data pointer represents an absent reference.
+#[derive(RustSpec)]
+#[repr(C)]
+pub struct CWideRef<P: Wide + ?Sized> {
+    data: *const PointeeData<P>,
+    len: usize,
+}
+
+/// Mutable slice carrier with a defined C ABI layout.
+///
+/// - `EXCLUSIVE = true` represents exclusive access that comes from `&mut T`.
+/// - `EXCLUSIVE = false` represents access that comes from `&UnsafeCell<T>`.
+#[derive(RustSpec)]
+#[repr(C)]
+pub struct CWideRefMut<P: Wide + ?Sized, const EXCLUSIVE: bool> {
+    data: *mut PointeeData<P>,
+    len: usize,
+}
+
+macro_rules! impl_raw_slice_methods {
+    ($ty:ident, [$($params:tt)*], [$($args:tt)*]) => {
+        impl<$($params)*> core::fmt::Debug for $ty<$($args)*> {
+            fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+                if self.data.is_null() {
+                    f.debug_struct(stringify!($ty))
+                        .field("data", &self.data)
+                        .finish_non_exhaustive()
+                } else {
+                    f.debug_struct(stringify!($ty))
+                        .field("data", &self.data)
+                        .field("len", &self.len)
+                        .finish()
+                }
+            }
+        }
+        impl<$($params)*> PartialEq for $ty<$($args)*> {
+            fn eq(&self, other: &Self) -> bool {
+                match (self.data.is_null(), other.data.is_null()) {
+                    (true, true) => true,
+                    (false, false) => {
+                        if self.len == 0 || other.len == 0 {
+                            self.len == other.len
+                        } else {
+                            self.data == other.data && self.len == other.len
+                        }
+                    }
+                    _ => false,
+                }
+            }
+        }
+        impl<$($params)*> Eq for $ty<$($args)*> {}
+        impl<$($params)*> PartialOrd for $ty<$($args)*> {
+            fn partial_cmp(&self, other: &Self) -> Option<core::cmp::Ordering> {
+                Some(self.cmp(other))
+            }
+        }
+        impl<$($params)*> Ord for $ty<$($args)*> {
+            fn cmp(&self, other: &Self) -> core::cmp::Ordering {
+                use core::cmp::Ordering;
+                match (self.data.is_null(), other.data.is_null()) {
+                    (true, true) => Ordering::Equal,
+                    (true, false) => Ordering::Less,
+                    (false, true) => Ordering::Greater,
+                    (false, false) => {
+                        if self.len == 0 || other.len == 0 {
+                            self.len.cmp(&other.len)
+                        } else {
+                            match self.data.cmp(&other.data) {
+                                Ordering::Equal => self.len.cmp(&other.len),
+                                ordering => ordering,
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        impl<$($params)*> Clone for $ty<$($args)*> {
+            fn clone(&self) -> Self {
+                *self
+            }
+        }
+        impl<$($params)*> Copy for $ty<$($args)*> {}
+    };
+}
+
+impl_raw_slice_methods! { CWideRef, [P: Wide + ?Sized], [P] }
+impl_raw_slice_methods! { CWideRefMut, [P: Wide + ?Sized, const EXCLUSIVE: bool], [P, EXCLUSIVE] }
+
+impl<P: Wide + ?Sized> CWideRef<P> {
+    /// Construct a carrier with a null data pointer and zero length.
+    pub const fn null() -> Self {
+        Self {
+            data: core::ptr::null(),
+            len: 0,
+        }
+    }
+
+    /// Return the stored data pointer.
+    pub const fn as_ptr(self) -> *const PointeeData<P> {
+        self.data
+    }
+
+    pub(crate) const fn data(&self) -> *const PointeeData<P> {
+        self.data
+    }
+
+    #[expect(
+        clippy::len_without_is_empty,
+        reason = "nullable carrier uses Option<bool>"
+    )]
+    pub const fn len(&self) -> usize {
+        self.len
+    }
+
+    /// Return `None` for a null carrier, or whether the present slice is empty.
+    pub const fn is_empty(&self) -> Option<bool> {
+        if self.data.is_null() {
+            None
+        } else {
+            Some(self.len == 0)
+        }
+    }
+
+    pub(crate) const fn is_null(&self) -> bool {
+        self.data.is_null()
+    }
+}
+
+impl<P: Wide<Header: WideHeader<Data: CType>> + ?Sized> CWideRef<P> {
+    /// Create [`Self`] from a raw data pointer and slice metadata.
+    ///
+    /// # Safety
+    ///
+    /// A non-null pointer and length must describe a valid initialized slice
+    /// for any access through the resulting carrier.
+    pub const unsafe fn from_raw_parts(data: *const PointeeData<P>, len: usize) -> Self {
+        Self { data, len }
+    }
+}
+
+impl<P: Wide + ?Sized, const EXCLUSIVE: bool> CWideRefMut<P, EXCLUSIVE> {
+    /// Construct a carrier with a null data pointer and zero length.
+    pub const fn null() -> Self {
+        Self {
+            data: core::ptr::null_mut(),
+            len: 0,
+        }
+    }
+
+    /// Return the stored data pointer.
+    pub const fn as_ptr(self) -> *mut PointeeData<P> {
+        self.data
+    }
+}
+
+impl<P: Wide<Header: WideHeader<Data: CType>> + ?Sized, const EXCLUSIVE: bool>
+    CWideRefMut<P, EXCLUSIVE>
+{
+    /// Create a mutable slice carrier from raw parts.
+    ///
+    /// # Safety
+    ///
+    /// The pointer and length must describe a valid slice. When `EXCLUSIVE`
+    /// is `true`, accesses must also satisfy exclusive access.
+    pub const unsafe fn from_raw_parts_mut(data: *mut PointeeData<P>, len: usize) -> Self {
+        Self { data, len }
+    }
+}
+
+impl<P: Wide<Header: WideHeader<Data: CType>, Metadata = usize> + ?Sized> CWideRef<P> {
+    /// Wrap an existing wide reference.
+    pub fn from_ref(source: &P) -> Self {
+        let len = P::metadata(source);
+        let data = P::as_ptr(source).cast();
+        Self { data, len }
+    }
+}
+
+impl<P: Wide<Header: WideHeader<Data: CType>, Metadata = usize> + ?Sized, const EXCLUSIVE: bool>
+    CWideRefMut<P, EXCLUSIVE>
+{
+    /// Wrap an existing mutable wide reference.
+    pub fn from_mut(source: &mut P) -> Self {
+        let len = P::metadata(source);
+        let data = P::as_mut_ptr(source).cast();
+        Self { data, len }
+    }
+}
+
+macro_rules! impl_mut_slice_methods {
+    ($ty:ident, [$($params:tt)*], [$($args:tt)*]) => {
+        impl<$($params)*> $ty<$($args)*> {
+            pub(crate) const fn data(&self) -> *mut PointeeData<P> {
+                self.data
+            }
+
+            #[expect(clippy::len_without_is_empty, reason = "nullable carrier uses Option<bool>")]
+            pub const fn len(&self) -> usize {
+                self.len
+            }
+
+            /// Return `None` for a null carrier, or whether the present slice is empty.
+            pub const fn is_empty(&self) -> Option<bool> {
+                if self.data.is_null() {
+                    None
+                } else {
+                    Some(self.len == 0)
+                }
+            }
+
+            pub(crate) const fn is_null(&self) -> bool {
+                self.data.is_null()
+            }
+        }
+    };
+}
+
+impl_mut_slice_methods! { CWideRefMut, [P: Wide + ?Sized, const EXCLUSIVE: bool], [P, EXCLUSIVE] }
+
+macro_rules! impl_slice_carrier {
+    ($ty:ident, [$($params:tt)*], [$($args:tt)*]) => {
+        impl<$($params)*> ReprC for $ty<$($args)*> {
+            type CType = Self;
+        }
+        unsafe impl<$($params)*> EncodeOwned for $ty<$($args)*> {
+            type Store = ();
+
+            #[inline(always)]
+            fn soft_encode<'itm>(self, (): &mut ()) -> Self::CType
+            where
+                Self: 'itm,
+            {
+                self
+            }
+        }
+        unsafe impl<'d, $($params)*> DecodeOwned<'d> for $ty<$($args)*> {
+            type Store = ();
+
+            #[inline(always)]
+            unsafe fn soft_decode<'itm: 'd>(source: Self::CType, (): &mut ()) -> Option<Self> {
+                Some(source)
+            }
+        }
+
+        impl<$($params)*> Encode for $ty<$($args)*> {}
+        impl<'d, $($params)*> Decode<'d> for $ty<$($args)*> {}
+
+        unsafe impl<$($params)*> CheckedTransmute for $ty<$($args)*> {
+            #[inline(always)]
+            unsafe fn is_valid(_: &Self::CType) -> bool {
+                true
+            }
+        }
+
+        unsafe impl<$($params)*> CType for $ty<$($args)*> {}
+        unsafe impl<$($params)*> CFnArg for $ty<$($args)*> {}
+        unsafe impl<$($params)*> CFnReturn for $ty<$($args)*> {}
+        unsafe impl<$($params)*> BorrowCast for $ty<$($args)*> {
+            type AsConst = Self;
+        }
+        unsafe impl<$($params)*> BorrowCastMut for $ty<$($args)*> {
+            type AsMut = Self;
+        }
+    };
+}
+
+macro_rules! impl_wide_slice_borrow {
+    ($ty:ident, [$($params:tt)*], [$($args:tt)*]) => {
+        unsafe impl<$($params)*> Borrow for $ty<$($args)*> {
+            type Borrowed<'itm> = Self where Self: 'itm;
+            type Owner = ();
+
+            fn borrow<'itm>(self, (): &mut ()) -> Self::Borrowed<'itm>
+            where
+                Self: 'itm,
+            {
+                self
+            }
+        }
+
+        impl<'itm, $($params)*> FromBorrow<'itm> for $ty<$($args)*> {
+            fn from_borrow(source: Self) -> Self {
+                source
+            }
+        }
+    };
+}
+
+impl_wide_slice_borrow! { CWideRef, [P: Wide + ?Sized], [P] }
+impl_wide_slice_borrow! { CWideRefMut, [P: Wide + ?Sized, const EXCLUSIVE: bool], [P, EXCLUSIVE] }
+
+impl_slice_carrier! { CWideRef, [P: Wide<Header: WideHeader<Data: CType>> + ?Sized], [P] }
+impl_slice_carrier! { CWideRefMut, [P: Wide<Header: WideHeader<Data: CType>> + ?Sized, const EXCLUSIVE: bool], [P, EXCLUSIVE] }
+
+macro_rules! impl_raw_wide_unpack {
+    ($source:ty, $part:ty, $accessor:ident) => {
+        impl<R: CType + ?Sized, C: CType, U: CType> Unpack2<$part, U> for $source
+        where
+            R: Wide<Header: WideHeader<Data = C>> + Wide<Metadata = usize>,
+            usize: TryInto<U>,
+        {
+            type Error = <usize as TryInto<U>>::Error;
+
+            #[inline(always)]
+            fn unpack(value: Self::CType) -> Result<($part, U), Self::Error> {
+                Ok((R::$accessor(value).cast(), R::metadata(value).try_into()?))
+            }
+        }
+    };
+}
+
+impl_raw_wide_unpack!(*const R, *const C, as_ptr);
+impl_raw_wide_unpack!(*mut R, *mut C, as_mut_ptr);
+impl_raw_wide_unpack!(NonNull<R>, *const C, as_ptr);
+impl_raw_wide_unpack!(NonNull<R>, *mut C, as_mut_ptr);
+
+macro_rules! construct_slice_carrier {
+    (unsafe, $carrier:ty, $constructor:ident, $data:ident, $len:ident) => {
+        unsafe { <$carrier>::$constructor($data, $len) }
+    };
+}
+
+macro_rules! impl_ref_slice_pack {
+    ($reference:ty, $carrier:ty, $pointer:ty, $constructor:ident, $safety:ident) => {
+        impl<R: ?Sized, P: Wide<Header: WideHeader<Data = C>> + ?Sized, C: CType, U: CType>
+            Unpack2<$pointer, U> for $reference
+        where
+            Self: ReprC<CType = $carrier>,
+            usize: TryInto<U>,
+        {
+            type Error = <usize as TryInto<U>>::Error;
+
+            #[inline(always)]
+            fn unpack(value: Self::CType) -> Result<($pointer, U), Self::Error> {
+                Ok((value.data, value.len.try_into()?))
+            }
+        }
+
+        impl<
+            R: ?Sized,
+            P: Wide<Header: WideHeader<Data = C>> + ?Sized,
+            C: CType,
+            U: CType + TryInto<usize>,
+        > Pack2<$pointer, U> for $reference
+        where
+            Self: ReprC<CType = $carrier>,
+        {
+            type Error = <U as TryInto<usize>>::Error;
+
+            #[inline(always)]
+            unsafe fn pack(data: $pointer, len: U) -> Result<Self::CType, Self::Error> {
+                let len = len.try_into()?;
+                Ok(construct_slice_carrier!(
+                    $safety,
+                    $carrier,
+                    $constructor,
+                    data,
+                    len
+                ))
+            }
+        }
+    };
+}
+
+impl_ref_slice_pack!(&R, CWideRef<P>, *const C, from_raw_parts, unsafe);
+impl_ref_slice_pack!(&R, CWideRefMut<P, false>, *mut C, from_raw_parts_mut, unsafe);
+impl_ref_slice_pack!(&mut R, CWideRefMut<P, true>, *mut C, from_raw_parts_mut, unsafe);
+
+impl<P: Wide<Header: WideHeader<Data: CType>, Metadata = usize> + ?Sized> CWideRef<P> {
+    /// Recover a shared wide reference, returning `None` for a null pointer.
+    ///
+    /// # Safety
+    ///
+    /// The pointer and metadata must describe a valid `P` for the returned lifetime.
+    pub unsafe fn into_ref<'a>(self) -> Option<&'a P> {
+        if self.data.is_null() {
+            return None;
+        }
+
+        let len = self.len;
+        let data = self.data.cast();
+
+        Some(unsafe { P::from_raw_parts(data, len) })
+    }
+}
+
+impl<P: Wide<Header: WideHeader<Data: CType>, Metadata = usize> + ?Sized> CWideRefMut<P, true> {
+    /// Recover a mutable wide reference, returning `None` for a null pointer.
+    ///
+    /// # Safety
+    ///
+    /// The pointer and metadata must describe a valid, exclusively accessible `P`
+    /// for the returned lifetime.
+    pub unsafe fn into_mut<'a>(self) -> Option<&'a mut P> {
+        if self.data.is_null() {
+            return None;
+        }
+
+        let len = self.len;
+        let data = self.data.cast();
+
+        Some(unsafe { P::from_raw_parts_mut(data, len) })
+    }
+}
+
+impl<T, Part: CType + TryInto<Self::CType>> Pack<Part> for T
+where
+    Self: ReprC<CType: Sized>,
+{
+    type Error = <Part as TryInto<Self::CType>>::Error;
+
+    #[inline(always)]
+    fn pack(part: Part) -> Result<Self::CType, Self::Error> {
+        part.try_into()
+    }
+}
+
+impl<T, Part: CType + TryFrom<Self::CType>> Unpack<Part> for T
+where
+    Self: ReprC<CType: Sized>,
+{
+    type Error = <Part as TryFrom<Self::CType>>::Error;
+
+    #[inline(always)]
+    fn unpack(value: Self::CType) -> Result<Part, Self::Error> {
+        Part::try_from(value)
+    }
 }
 
 impl<T: Pack2<Part1, Part2>, Part1: CType, Part2: CType> Pack2<Part1, Part2> for Option<T>
@@ -161,397 +564,6 @@ impl<T: Pack2<Part1, Part2>, Part1: CType, Part2: CType> Pack2<Part1, Part2> for
 
     unsafe fn pack(part1: Part1, part2: Part2) -> Result<Self::CType, Self::Error> {
         unsafe { T::pack(part1, part2) }.map(UnsafeCell::new)
-    }
-}
-
-/// Immutable slice `&[C]` with a defined C ABI layout. Consists of a data pointer and a length.
-/// If the data pointer is set to `null`, the struct represents `Option<&[C]>`.
-#[derive(RustSpec)]
-#[repr(C)]
-pub struct CWideRef<C: CType> {
-    data: *const C,
-    len: usize,
-}
-
-/// Mutable slice carrier with a defined C ABI layout.
-///
-/// - `EXCLUSIVE = true` represents exclusive access that comes from `&mut T`.
-/// - `EXCLUSIVE = false` represents access that comes from `&UnsafeCell<T>`.
-#[derive(RustSpec)]
-#[repr(C)]
-pub struct CWideRefMut<C: CType, const EXCLUSIVE: bool> {
-    data: *mut C,
-    len: usize,
-}
-
-macro_rules! impl_raw_slice_methods {
-    ($ty:ident, [$($params:tt)*], [$($args:tt)*]) => {
-        impl<$($params)*> core::fmt::Debug for $ty<$($args)*> {
-            fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
-                if self.data.is_null() {
-                    f.debug_struct(stringify!($ty))
-                        .field("data", &self.data)
-                        .finish_non_exhaustive()
-                } else {
-                    f.debug_struct(stringify!($ty))
-                        .field("data", &self.data)
-                        .field("len", &self.len)
-                        .finish()
-                }
-            }
-        }
-        impl<$($params)*> PartialEq for $ty<$($args)*> {
-            fn eq(&self, other: &Self) -> bool {
-                match (self.data.is_null(), other.data.is_null()) {
-                    (true, true) => true,
-                    (false, false) => {
-                        if self.len == 0 || other.len == 0 {
-                            self.len == other.len
-                        } else {
-                            self.data == other.data && self.len == other.len
-                        }
-                    }
-                    _ => false,
-                }
-            }
-        }
-        impl<$($params)*> Eq for $ty<$($args)*> {}
-        impl<$($params)*> PartialOrd for $ty<$($args)*> {
-            fn partial_cmp(&self, other: &Self) -> Option<core::cmp::Ordering> {
-                Some(self.cmp(other))
-            }
-        }
-        impl<$($params)*> Ord for $ty<$($args)*> {
-            fn cmp(&self, other: &Self) -> core::cmp::Ordering {
-                use core::cmp::Ordering;
-                match (self.data.is_null(), other.data.is_null()) {
-                    (true, true) => Ordering::Equal,
-                    (true, false) => Ordering::Less,
-                    (false, true) => Ordering::Greater,
-                    (false, false) => {
-                        if self.len == 0 || other.len == 0 {
-                            self.len.cmp(&other.len)
-                        } else {
-                            match self.data.cmp(&other.data) {
-                                Ordering::Equal => self.len.cmp(&other.len),
-                                ordering => ordering,
-                            }
-                        }
-                    }
-                }
-            }
-        }
-        impl<$($params)*> Clone for $ty<$($args)*> {
-            fn clone(&self) -> Self {
-                *self
-            }
-        }
-        impl<$($params)*> Copy for $ty<$($args)*> {}
-    };
-}
-
-impl_raw_slice_methods! { CWideRef, [C: CType], [C] }
-impl_raw_slice_methods! { CWideRefMut, [C: CType, const EXCLUSIVE: bool], [C, EXCLUSIVE] }
-
-impl<C: CType> CWideRef<C> {
-    /// Construct a carrier with a null data pointer and zero length.
-    pub const fn null() -> Self {
-        Self {
-            data: core::ptr::null(),
-            len: 0,
-        }
-    }
-
-    /// Wrap an existing slice of lowered data.
-    pub const fn from_slice(slice: &[C]) -> Self {
-        Self {
-            data: slice.as_ptr(),
-            len: slice.len(),
-        }
-    }
-
-    /// Return the stored data pointer.
-    pub const fn as_ptr(self) -> *const C {
-        self.data
-    }
-
-    /// Create [`Self`] from a raw data pointer and slice metadata.
-    ///
-    /// # Safety
-    ///
-    /// A non-null pointer and length must describe a valid initialized slice
-    /// for any access through the resulting carrier.
-    pub const unsafe fn from_raw_parts(data: *const C, len: usize) -> Self {
-        Self { data, len }
-    }
-
-    pub(crate) const fn data(&self) -> *const C {
-        self.data
-    }
-
-    #[expect(
-        clippy::len_without_is_empty,
-        reason = "nullable carrier uses Option<bool>"
-    )]
-    pub const fn len(&self) -> usize {
-        self.len
-    }
-
-    /// Return `None` for a null carrier, or whether the present slice is empty.
-    pub const fn is_empty(&self) -> Option<bool> {
-        if self.data.is_null() {
-            None
-        } else {
-            Some(self.len == 0)
-        }
-    }
-
-    pub(crate) const fn is_null(&self) -> bool {
-        self.data.is_null()
-    }
-}
-
-impl<C: CType, const EXCLUSIVE: bool> CWideRefMut<C, EXCLUSIVE> {
-    /// Construct a carrier with a null data pointer and zero length.
-    pub const fn null() -> Self {
-        Self {
-            data: core::ptr::null_mut(),
-            len: 0,
-        }
-    }
-
-    /// Wrap an existing mutable slice of lowered data.
-    pub const fn from_slice(slice: &mut [C]) -> Self {
-        Self {
-            data: slice.as_mut_ptr(),
-            len: slice.len(),
-        }
-    }
-
-    /// Return the stored data pointer.
-    pub const fn as_ptr(self) -> *mut C {
-        self.data
-    }
-
-    /// Create a mutable slice carrier from raw parts.
-    ///
-    /// # Safety
-    ///
-    /// The pointer and length must describe a valid slice. When `EXCLUSIVE`
-    /// is `true`, accesses must also satisfy exclusive access.
-    pub const unsafe fn from_raw_parts_mut(data: *mut C, len: usize) -> Self {
-        Self { data, len }
-    }
-}
-
-impl<C: CType> CWideRefMut<UnsafeCell<C>, false> {
-    /// Create a carrier for shared access to a slice's cells.
-    pub fn from_cell_slice(slice: &[UnsafeCell<C>]) -> Self {
-        Self {
-            data: slice.as_ptr().cast_mut(),
-            len: slice.len(),
-        }
-    }
-}
-
-macro_rules! impl_mut_slice_methods {
-    ($ty:ident, [$($params:tt)*], [$($args:tt)*]) => {
-        impl<$($params)*> $ty<$($args)*> {
-            pub(crate) const fn data(&self) -> *mut C {
-                self.data
-            }
-
-            #[expect(clippy::len_without_is_empty, reason = "nullable carrier uses Option<bool>")]
-            pub const fn len(&self) -> usize {
-                self.len
-            }
-
-            /// Return `None` for a null carrier, or whether the present slice is empty.
-            pub const fn is_empty(&self) -> Option<bool> {
-                if self.data.is_null() {
-                    None
-                } else {
-                    Some(self.len == 0)
-                }
-            }
-
-            pub(crate) const fn is_null(&self) -> bool {
-                self.data.is_null()
-            }
-        }
-    };
-}
-
-impl_mut_slice_methods! { CWideRefMut, [C: CType, const EXCLUSIVE: bool], [C, EXCLUSIVE] }
-
-macro_rules! impl_slice_carrier {
-    ($ty:ident, [$($params:tt)*], [$($args:tt)*]) => {
-unsafe impl<$($params)*> Borrow for $ty<$($args)*> {
-            type Borrowed<'itm>
-                = Self
-            where
-                Self: 'itm;
-
-            type Owner = ();
-
-            #[inline(always)]
-            fn borrow<'itm>(self, (): &mut ()) -> Self::Borrowed<'itm>
-            where
-                Self: 'itm,
-            {
-                self
-            }
-        }
-        impl<'itm, $($params)*> FromBorrow<'itm> for $ty<$($args)*> {
-            #[inline(always)]
-            fn from_borrow(source: Self) -> Self {
-                source
-            }
-        }
-
-        impl<$($params)*> ReprC for $ty<$($args)*> where C: CType {
-            type CType = Self;
-        }
-        unsafe impl<$($params)*> EncodeOwned for $ty<$($args)*> where C: CType {
-            type Store = ();
-
-            #[inline(always)]
-            fn soft_encode<'itm>(self, (): &mut ()) -> Self::CType
-            where
-                Self: 'itm,
-            {
-                self
-            }
-        }
-        unsafe impl<'d, $($params)*> DecodeOwned<'d> for $ty<$($args)*> where C: CType {
-            type Store = ();
-
-            #[inline(always)]
-            unsafe fn soft_decode<'itm: 'd>(source: Self::CType, (): &mut ()) -> Option<Self> {
-                Some(source)
-            }
-        }
-
-        impl<$($params)*> Encode for $ty<$($args)*> where C: CType {}
-        impl<'d, $($params)*> Decode<'d> for $ty<$($args)*> where C: CType {}
-
-        unsafe impl<$($params)*> CheckedTransmute for $ty<$($args)*> where C: CType {
-            #[inline(always)]
-            unsafe fn is_valid(_: &Self::CType) -> bool {
-                true
-            }
-        }
-
-        unsafe impl<$($params)*> CType for $ty<$($args)*> where C: CType {}
-        unsafe impl<$($params)*> CFnArg for $ty<$($args)*> where C: CType {}
-        unsafe impl<$($params)*> CFnReturn for $ty<$($args)*> where C: CType {}
-        unsafe impl<$($params)*> BorrowCast for $ty<$($args)*> where C: CType {
-            type AsConst = Self;
-        }
-        unsafe impl<$($params)*> BorrowCastMut for $ty<$($args)*> where C: CType {
-            type AsMut = Self;
-        }
-    };
-}
-
-impl_slice_carrier! { CWideRef, [C: CType], [C] }
-impl_slice_carrier! { CWideRefMut, [C: CType, const EXCLUSIVE: bool], [C, EXCLUSIVE] }
-
-macro_rules! impl_raw_wide_unpack {
-    ($source:ty, $part:ty, $accessor:ident) => {
-        impl<R: CType + ?Sized, C: CType, U: CType> Unpack2<$part, U> for $source
-        where
-            R: Wide<Header: WideHeader<Data = C>, Metadata = usize>,
-            usize: TryInto<U>,
-        {
-            type Error = <usize as TryInto<U>>::Error;
-
-            #[inline(always)]
-            fn unpack(value: Self::CType) -> Result<($part, U), Self::Error> {
-                Ok((R::$accessor(value).cast(), R::metadata(value).try_into()?))
-            }
-        }
-    };
-}
-
-impl_raw_wide_unpack!(*const R, *const C, as_ptr);
-impl_raw_wide_unpack!(*mut R, *mut C, as_mut_ptr);
-impl_raw_wide_unpack!(NonNull<R>, *const C, as_ptr);
-impl_raw_wide_unpack!(NonNull<R>, *mut C, as_mut_ptr);
-
-macro_rules! construct_slice_carrier {
-    (unsafe, $carrier:ty, $constructor:ident, $data:ident, $len:ident) => {
-        unsafe { <$carrier>::$constructor($data, $len) }
-    };
-}
-
-macro_rules! impl_ref_slice_pack {
-    ($reference:ty, $carrier:ty, $pointer:ty, $constructor:ident, $safety:ident) => {
-        impl<R: ?Sized, C: CType, U: CType> Unpack2<$pointer, U> for $reference
-        where
-            Self: ReprC<CType = $carrier>,
-            usize: TryInto<U>,
-        {
-            type Error = <usize as TryInto<U>>::Error;
-
-            #[inline(always)]
-            fn unpack(value: Self::CType) -> Result<($pointer, U), Self::Error> {
-                Ok((value.data, value.len.try_into()?))
-            }
-        }
-
-        impl<R: ?Sized, C: CType, U: CType + TryInto<usize>> Pack2<$pointer, U> for $reference
-        where
-            Self: ReprC<CType = $carrier>,
-        {
-            type Error = <U as TryInto<usize>>::Error;
-
-            #[inline(always)]
-            unsafe fn pack(data: $pointer, len: U) -> Result<Self::CType, Self::Error> {
-                let len = len.try_into()?;
-                Ok(construct_slice_carrier!(
-                    $safety,
-                    $carrier,
-                    $constructor,
-                    data,
-                    len
-                ))
-            }
-        }
-    };
-}
-
-impl_ref_slice_pack!(&R, CWideRef<C>, *const C, from_raw_parts, unsafe);
-impl_ref_slice_pack!(&R, CWideRefMut<C, false>, *mut C, from_raw_parts_mut, unsafe);
-impl_ref_slice_pack!(&mut R, CWideRefMut<C, true>, *mut C, from_raw_parts_mut, unsafe);
-
-impl<C: CType> CWideRef<C> {
-    /// Recover a shared slice, returning `None` for a null pointer.
-    ///
-    /// # Safety
-    ///
-    /// The pointer and length must satisfy `core::slice::from_raw_parts` for the returned lifetime.
-    pub const unsafe fn into_rust<'a>(self) -> Option<&'a [C]> {
-        if self.data.is_null() {
-            None
-        } else {
-            Some(unsafe { core::slice::from_raw_parts(self.data, self.len) })
-        }
-    }
-}
-
-impl<C: CType> CWideRefMut<C, true> {
-    /// Recover a mutable slice, returning `None` for a null pointer.
-    ///
-    /// # Safety
-    ///
-    /// The pointer and length must satisfy `core::slice::from_raw_parts_mut` for the returned lifetime.
-    pub const unsafe fn into_rust<'a>(self) -> Option<&'a mut [C]> {
-        if self.data.is_null() {
-            None
-        } else {
-            Some(unsafe { core::slice::from_raw_parts_mut(self.data, self.len) })
-        }
     }
 }
 

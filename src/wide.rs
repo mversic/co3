@@ -17,6 +17,9 @@ pub trait WideHeader {
     type Data;
 }
 
+/// Element at the data address of a C-compatible wide pointee.
+pub type PointeeData<P> = <<P as Wide>::Header as WideHeader>::Data;
+
 /// A dynamically sized value with data and metadata (also called a `fat` pointer).
 ///
 /// This includes slices, trait objects, and DSTs whose last field is one of the
@@ -30,7 +33,7 @@ pub trait WideHeader {
 /// - Ownership methods must transfer and recover the original allocation.
 /// - Constructors must point to that value when given valid raw parts.
 pub unsafe trait Wide {
-    /// Fixed-layout prefix at the data address of a wide pointer.
+    /// The fixed header at the start of the allocation.
     type Header: WideHeader;
 
     /// Metadata component of a pointer.
@@ -135,12 +138,12 @@ macro_rules! impl_wide_for_cell {
         // SAFETY: CheckedTransmute equates T's layout with its CType. The
         // CType's Wide implementation supplies a [C; 0] header and usize
         // length metadata; Cell and UnsafeCell preserve T's layout.
-        unsafe impl<T: ?Sized, C: CType> Wide for $wrapper<T>
+        unsafe impl<T: CheckedTransmute + Wide + ?Sized, C: CType> Wide for $wrapper<T>
         where
-            T: CheckedTransmute + rust_spec::RustSpec<Size = MetaSized<SliceLike>>,
-            T::CType: Wide<Header = [C; 0], Metadata = usize>,
+            T: rust_spec::RustSpec<Size = MetaSized<SliceLike>>,
+            T::CType: Wide<Header = [C; 0]>,
         {
-            type Header = [C; 0];
+            type Header = T::Header;
             type Metadata = usize;
 
             fn metadata(ptr: *const Self) -> Self::Metadata {

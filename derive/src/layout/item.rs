@@ -13,9 +13,9 @@ use crate::layout::{
         gen_view_owner_name,
     },
     ctype::{
-        gen_ctype_name, gen_extern_c_bounds_for_ctype, gen_fieldless_enum_ctype,
-        gen_identity_borrow_cast_impl, gen_identity_repr_c_impls, gen_item_ctype, gen_union_fields,
-        gen_variant_struct_name,
+        c_fn_last_field_bounds, gen_ctype_name, gen_extern_c_bounds_for_ctype,
+        gen_fieldless_enum_ctype, gen_identity_borrow_cast_impl, gen_identity_repr_c_impls,
+        gen_item_ctype, gen_union_fields, gen_variant_struct_name,
     },
     enum_tag_type, generic_param_idents, infer_repr, is_exhaustive_enum, is_parametrized,
     is_phantom_data, is_transparent_enum_repr,
@@ -1384,11 +1384,10 @@ fn gen_codec_impls(
     let encode_bounds = gen_field_encode_bounds(generics, fields, quote! { co3::Encode });
     let decode_bounds = gen_field_decode_bounds(generics, fields, quote! { co3::Decode });
 
-    let sized_bound = if is_view {
-        quote! {}
+    let (sized_bound, omit_sized_impls) = if is_view {
+        (quote! {}, false)
     } else {
-        let speculative = speculative_marker(!is_view && generics.params.is_empty());
-        quote!(#speculative Self: Sized,)
+        c_fn_last_field_bounds(fields, generics)
     };
 
     let (borrow_cast_bounds, cast_eq_bounds) = if is_view {
@@ -1406,16 +1405,7 @@ fn gen_codec_impls(
     }
     let (decode_impl_generics, _, _) = decode_generics.split_for_impl();
 
-    quote! {
-        impl #impl_generics co3::ReprC for #name #ty_generics where
-            #(#borrow_cast_bounds,)*
-            #(#repr_c_bounds,)*
-            #(#extern_c_bounds,)*
-            #predicates
-        {
-            type CType = #ctype_name #ctype_ty_generics;
-        }
-
+    let sized_impls = (!omit_sized_impls).then(|| quote! {
         unsafe impl #impl_generics co3::stored::EncodeOwned for #name #ty_generics
         where
             #sized_bound
@@ -1467,6 +1457,19 @@ fn gen_codec_impls(
             #cast_eq_bounds
             #predicates
         {}
+    });
+
+    quote! {
+        impl #impl_generics co3::ReprC for #name #ty_generics where
+            #(#borrow_cast_bounds,)*
+            #(#repr_c_bounds,)*
+            #(#extern_c_bounds,)*
+            #predicates
+        {
+            type CType = #ctype_name #ctype_ty_generics;
+        }
+
+        #sized_impls
     }
 }
 

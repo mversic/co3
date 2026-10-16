@@ -422,7 +422,7 @@ pub(crate) fn derive_repr_c(input: &syn::DeriveInput) -> syn::Result<TokenStream
         let item = field::derive_field_repr_c(input, repr_attr, &repr_c_attrs);
         let wide = wide::expand(input, repr_attr)?;
         let ctype_impl = gen_source_ctype_impl(input, &repr_c_attrs);
-        return Ok(quote! { #item #wide #ctype_impl });
+        return Ok(quote! { #primitive_type_checks #item #wide #ctype_impl });
     }
 
     let tokens = match &input.data {
@@ -507,10 +507,33 @@ fn gen_source_ctype_impl(input: &syn::DeriveInput, attrs: &ReprCAttrs) -> TokenS
     let (impl_generics, ty_generics, where_clause) = generics.split_for_impl();
     let predicates = where_clause.as_ref().map(|clause| &clause.predicates);
     let speculative = speculative_marker(generics.params.is_empty());
+    let (last_field_sized_bound, omit_c_fn_impls) =
+        ctype::c_fn_last_field_bounds(&field_types, generics);
     let field_bounds = field_types.iter().map(|field_type| {
         let speculative =
             (!is_parametrized(field_type, generics)).then_some(quote!(for<'_co3_field>));
         quote!(#speculative #field_type: co3::CType,)
+    });
+
+    let c_fn_impls = (!omit_c_fn_impls).then(|| {
+        quote! {
+            unsafe impl #impl_generics co3::CFnArg for #name #ty_generics
+            where
+                #last_field_sized_bound
+                #speculative Self: co3::CType + co3::rust_spec::RustSpec<
+                    Size = co3::rust_spec::size::Sized<co3::rust_spec::Gt<co3::rust_spec::Zero>>,
+                >,
+                #predicates
+            {}
+            unsafe impl #impl_generics co3::CFnReturn for #name #ty_generics
+            where
+                #last_field_sized_bound
+                #speculative Self: co3::CType + co3::rust_spec::RustSpec<
+                    Size = co3::rust_spec::size::Sized<co3::rust_spec::Gt<co3::rust_spec::Zero>>,
+                >,
+                #predicates
+            {}
+        }
     });
 
     quote! {
@@ -525,20 +548,7 @@ fn gen_source_ctype_impl(input: &syn::DeriveInput, attrs: &ReprCAttrs) -> TokenS
             #predicates
         {}
 
-        unsafe impl #impl_generics co3::CFnArg for #name #ty_generics
-        where
-            #speculative Self: co3::CType + co3::rust_spec::RustSpec<
-                Size = co3::rust_spec::size::Sized<co3::rust_spec::Gt<co3::rust_spec::Zero>>,
-            >,
-            #predicates
-        {}
-        unsafe impl #impl_generics co3::CFnReturn for #name #ty_generics
-        where
-            #speculative Self: co3::CType + co3::rust_spec::RustSpec<
-                Size = co3::rust_spec::size::Sized<co3::rust_spec::Gt<co3::rust_spec::Zero>>,
-            >,
-            #predicates
-        {}
+        #c_fn_impls
 
         unsafe impl #impl_generics co3::borrow::BorrowCast for #name #ty_generics
         where
@@ -558,12 +568,37 @@ fn gen_source_ctype_impl(input: &syn::DeriveInput, attrs: &ReprCAttrs) -> TokenS
 }
 
 fn gen_primitive_field_type_checks(input: &syn::DeriveInput) -> TokenStream {
+    fn field_check(ty: &syn::Type) -> TokenStream {
+        let primitive = crate::ffi_fn::gen_implicit_primitive_checks(ty);
+        let mut ungrouped = ty;
+        loop {
+            ungrouped = match ungrouped {
+                syn::Type::Group(group) => &group.elem,
+                syn::Type::Paren(paren) => &paren.elem,
+                _ => break,
+            };
+        }
+        let option = if crate::ffi_fn::option_inner_type(ungrouped).is_some() {
+            quote! {
+                {
+                    trait ExactOption {}
+                    impl<T> ExactOption for core::option::Option<T> {}
+                    fn check<T: ExactOption>() {}
+                    let _ = check::<#ty>;
+                }
+            }
+        } else {
+            TokenStream::new()
+        };
+        quote! { #primitive #option }
+    }
+
     let checks = match &input.data {
         syn::Data::Struct(data) => data
             .fields
             .iter()
             .filter_map(|field| {
-                let check = crate::ffi_fn::gen_implicit_primitive_checks(&field.ty);
+                let check = field_check(&field.ty);
                 if check.is_empty() {
                     return None;
                 }
@@ -577,7 +612,7 @@ fn gen_primitive_field_type_checks(input: &syn::DeriveInput) -> TokenStream {
             .flat_map(|variant| {
                 let variant_cfg = crate::utils::cfg_attrs(&variant.attrs).collect::<Vec<_>>();
                 variant.fields.iter().filter_map(move |field| {
-                    let check = crate::ffi_fn::gen_implicit_primitive_checks(&field.ty);
+                    let check = field_check(&field.ty);
                     if check.is_empty() {
                         return None;
                     }

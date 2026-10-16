@@ -6,12 +6,126 @@ use crate::layout::{
     attr::ReprKind,
     infer_repr, is_parametrized, is_phantom_data, is_transparent_enum_repr, primitive_tag_type,
     wide::{
-        data_bound_ty, gen_alloc_methods, gen_data_ctype_bounds, gen_data_struct_name,
-        gen_dst_methods, gen_identity_header_impl, header_repr_c_predicate, last_field,
-        wide_predicate, wide_usize_predicate,
+        gen_alloc_methods, gen_data_struct_name, gen_dst_methods, gen_identity_header_impl,
+        header_repr_c_predicate, last_field, wide_predicate, wide_usize_predicate,
     },
 };
 use crate::utils::{co3_path, speculative_marker};
+
+#[derive(Clone, Copy, PartialEq, Eq)]
+pub(super) enum SyntacticSizedness {
+    Sized,
+    Unsized,
+    Unknown,
+}
+
+pub(super) fn syntactic_sizedness(ty: &syn::Type, generics: &syn::Generics) -> SyntacticSizedness {
+    use SyntacticSizedness::*;
+
+    match ty {
+        syn::Type::Slice(_) | syn::Type::TraitObject(_) => Unsized,
+        syn::Type::Reference(_)
+        | syn::Type::Ptr(_)
+        | syn::Type::Array(_)
+        | syn::Type::Tuple(_)
+        | syn::Type::Never(_) => Sized,
+        syn::Type::Paren(ty) => syntactic_sizedness(&ty.elem, generics),
+        syn::Type::Group(ty) => syntactic_sizedness(&ty.elem, generics),
+        syn::Type::Path(path) => {
+            let Some(last) = path.path.segments.last() else {
+                return Unknown;
+            };
+            if last.ident == "CStr" || last.ident == "str" {
+                return Unsized;
+            }
+            if path.qself.is_some() {
+                return Unknown;
+            }
+            if crate::ffi_fn::option_inner_type(ty).is_some() {
+                return Sized;
+            }
+            if path.path.segments.len() == 1 {
+                if let Some(param) = generics
+                    .type_params()
+                    .find(|param| param.ident == last.ident)
+                {
+                    return if param.bounds.iter().any(|bound| {
+                        matches!(bound, syn::TypeParamBound::Trait(bound)
+                            if bound.maybe.is_some() && bound.path.is_ident("Sized"))
+                    }) {
+                        Unknown
+                    } else {
+                        Sized
+                    };
+                }
+                return if crate::ffi_fn::copy_primitive_type(path).is_some() {
+                    Sized
+                } else {
+                    Unknown
+                };
+            }
+            if crate::ffi_fn::copy_primitive_type(path).is_some() {
+                Sized
+            } else {
+                Unknown
+            }
+        }
+        _ => Unknown,
+    }
+}
+
+#[derive(Clone, Copy, PartialEq, Eq)]
+pub(super) enum WideTail {
+    Yes,
+    No,
+    Unknown,
+}
+
+pub(super) fn wide_tail(ty: &syn::Type, generics: &syn::Generics) -> WideTail {
+    match ty {
+        syn::Type::Slice(_) => WideTail::Yes,
+        syn::Type::Path(path)
+            if path
+                .path
+                .segments
+                .last()
+                .is_some_and(|segment| segment.ident == "str") =>
+        {
+            WideTail::Yes
+        }
+        syn::Type::Path(path)
+            if path
+                .path
+                .segments
+                .last()
+                .is_some_and(|segment| segment.ident == "CStr") =>
+        {
+            WideTail::No
+        }
+        _ => match syntactic_sizedness(ty, generics) {
+            SyntacticSizedness::Sized => WideTail::No,
+            SyntacticSizedness::Unsized | SyntacticSizedness::Unknown => WideTail::Unknown,
+        },
+    }
+}
+
+pub(super) fn c_fn_last_field_bounds(
+    fields: &[&syn::Type],
+    generics: &syn::Generics,
+) -> (TokenStream, bool) {
+    let Some(last) = fields.last() else {
+        return (quote! {}, false);
+    };
+
+    match syntactic_sizedness(last, generics) {
+        SyntacticSizedness::Sized => (quote! {}, false),
+        SyntacticSizedness::Unsized => (quote! {}, true),
+        SyntacticSizedness::Unknown => {
+            let speculative = speculative_marker(!is_parametrized(last, generics));
+            (quote!(#speculative #last: Sized,), false)
+        }
+    }
+}
 
 fn lowered_field_ty(field_ty: &syn::Type) -> TokenStream {
     if is_phantom_data(field_ty) {
@@ -52,7 +166,7 @@ pub(super) fn gen_fieldless_enum_ctype(
     };
     // Keep the normal non-ZST CFnArg size guard. In particular, a one-variant
     // fieldless enum is represented by `CEnum(())` and must not become a CFnArg.
-    let impls = gen_struct_ctype_impls::<true>(&ctype, false, alignment, None);
+    let impls = gen_struct_ctype_impls::<true>(&ctype, false, alignment, None, false);
     let fields = ctype
         .fields
         .iter()
@@ -367,10 +481,22 @@ fn derive_ctype_struct(
     generate_wide: bool,
 ) -> TokenStream {
     let ctype_def = gen_ctype_struct_item(repr, alignment, vis, name, generics, fields);
-    let fields_methods =
-        gen_fields_methods(&ctype_def.ident, &ctype_def.generics, &ctype_def.fields);
-    let ctype_impls =
-        gen_struct_ctype_impls::<true>(&ctype_def, generate_views_and_spec, alignment, Some(name));
+    let known_unsized_tail = fields.iter().next_back().is_some_and(|field| {
+        syntactic_sizedness(&field.ty, generics) == SyntacticSizedness::Unsized
+    });
+    let fields_methods = gen_fields_methods(
+        &ctype_def.ident,
+        &ctype_def.generics,
+        &ctype_def.fields,
+        known_unsized_tail,
+    );
+    let ctype_impls = gen_struct_ctype_impls::<true>(
+        &ctype_def,
+        generate_views_and_spec,
+        alignment,
+        Some(name),
+        known_unsized_tail,
+    );
     let wide_impl = generate_wide.then(|| gen_ctype_wide_impl(repr, &ctype_def, fields, generics));
     let header_impl = (!generate_views_and_spec)
         .then(|| gen_identity_header_impl(&ctype_def.ident, &ctype_def.generics));
@@ -388,6 +514,7 @@ pub(super) fn gen_fields_methods(
     name: &syn::Ident,
     generics: &syn::Generics,
     fields: &syn::Fields,
+    known_unsized_tail: bool,
 ) -> TokenStream {
     let (impl_generics, ty_generics, where_clause) = generics.split_for_impl();
     let args = fields
@@ -403,14 +530,11 @@ pub(super) fn gen_fields_methods(
         .collect::<Vec<_>>();
     let arg_names = args.iter().map(|(name, _)| name).collect::<Vec<_>>();
     let arg_types = args.iter().map(|(_, ty)| ty).collect::<Vec<_>>();
-    let arg_sized_bounds = args
-        .iter()
-        .map(|(_, ty)| {
-            let speculative = speculative_marker(!is_parametrized(ty, generics));
-            quote!(#speculative #ty: Sized,)
-        })
-        .collect::<Vec<_>>();
-    let self_sized_bound = speculative_marker(generics.params.is_empty());
+    let field_types = args.iter().map(|(_, ty)| *ty).collect::<Vec<_>>();
+    let (last_field_sized_bound, omit_methods) = c_fn_last_field_bounds(&field_types, generics);
+    if known_unsized_tail || omit_methods {
+        return quote! {};
+    }
     let members = fields.members().collect::<Vec<_>>();
     let body = match fields {
         syn::Fields::Named(_) => quote!(Self { #(#arg_names),* }),
@@ -437,8 +561,7 @@ pub(super) fn gen_fields_methods(
             #[allow(clippy::too_many_arguments)]
             pub unsafe fn from_fields(#(#arg_names: #arg_types),*) -> Self
             where
-                #self_sized_bound Self: Sized,
-                #(#arg_sized_bounds)*
+                #last_field_sized_bound
             {
                 #body
             }
@@ -446,8 +569,7 @@ pub(super) fn gen_fields_methods(
             /// Consume this generated struct and return its fields in declaration order.
             pub fn into_fields(self) -> (#(#arg_types,)*)
             where
-                #self_sized_bound Self: Sized,
-                #(#arg_sized_bounds)*
+                #last_field_sized_bound
             {
                 #into_body
             }
@@ -462,15 +584,6 @@ fn gen_ctype_wide_impl(
     source_generics: &syn::Generics,
 ) -> TokenStream {
     let is_transparent = matches!(repr, Some(ReprKind::Transparent));
-
-    // For a generic slice tail, the projected CType element does not give
-    // rustc enough information to prove matching pointer metadata for the
-    // generated C struct. The source DST still gets its own Wide impl.
-    if source_fields.iter().next_back().is_some_and(|field| {
-        matches!(&field.ty, syn::Type::Slice(slice) if is_parametrized(&slice.elem, source_generics))
-    }) {
-        return quote! {};
-    }
 
     if source_fields
         .iter()
@@ -501,7 +614,10 @@ fn gen_ctype_wide_impl(
     let data_name = gen_data_struct_name(&source_name);
     let data_ctype_name = gen_ctype_name(&data_name);
 
-    let ctype_wide_predicate = wide_predicate(field_ty, &ctype.generics);
+    let ctype_wide_predicate = is_transparent.then(|| {
+        let predicate = wide_predicate(field_ty, &ctype.generics);
+        quote!(#predicate,)
+    });
     let methods = gen_dst_methods(is_transparent, field_ty);
 
     let alloc_methods = gen_alloc_methods(is_transparent, field_ty);
@@ -514,28 +630,22 @@ fn gen_ctype_wide_impl(
     };
     let source_field_ty = &source_last.ty;
 
-    let source_wide_predicate = wide_predicate(&source_last.ty, source_generics);
+    if wide_tail(source_field_ty, source_generics) == WideTail::No {
+        return quote! {};
+    }
+
     let source_header_predicate = header_repr_c_predicate(&source_last.ty, source_generics);
-    // A plain type parameter has an implicit `Sized` bound, but its `CType`
-    // does not. Make the generated wide impl conditional on a thin tail.
     let source_tail_ctype_sized = is_implicitly_sized_type_param(source_field_ty, source_generics)
         .then(|| quote!(#source_field_ty: co3::ReprC<CType: Sized>,));
     let source_slice_tail = if let syn::Type::Slice(slice) = source_field_ty {
         let element = &slice.elem;
         Some(quote! {
             #element: co3::ReprC<CType: Sized>,
+            [#element]: co3::ReprC<CType = [<#element as co3::ReprC>::CType]>,
         })
     } else {
         None
     };
-    let source_data_ctype_bounds = gen_data_ctype_bounds(source_fields, source_generics);
-    let source_data_ty = data_bound_ty(&source_last.ty, true);
-    let source_data_ctype_sized_bound = if is_parametrized(&source_data_ty, source_generics) {
-        quote!(#source_data_ty: co3::ReprC<CType: Sized>)
-    } else {
-        quote!(for<'__dummy> #source_data_ty: co3::ReprC<CType: Sized>)
-    };
-
     let for_dummy = speculative_marker(ctype.generics.params.is_empty());
 
     let data_bound = (!is_transparent).then(|| {
@@ -554,15 +664,12 @@ fn gen_ctype_wide_impl(
     quote! {
         unsafe impl #impl_generics co3::wide::Wide for #name #ty_generics
         where
-            #source_wide_predicate,
             #source_header_predicate,
             #source_tail_ctype_sized
             #source_slice_tail
-            #(#source_data_ctype_bounds,)*
             #data_bound
-            #source_data_ctype_sized_bound,
             #transparent_header_predicate
-            #ctype_wide_predicate,
+            #ctype_wide_predicate
             #usize_predicate
             #predicates
         {
@@ -640,9 +747,14 @@ fn derive_repr_c_data_enum_ctype(
         }
     };
 
-    let ctype_impls = gen_struct_ctype_impls::<false>(&ctype_def, true, alignment, Some(name));
-    let fields_methods =
-        gen_fields_methods(&ctype_def.ident, &ctype_def.generics, &ctype_def.fields);
+    let ctype_impls =
+        gen_struct_ctype_impls::<false>(&ctype_def, true, alignment, Some(name), false);
+    let fields_methods = gen_fields_methods(
+        &ctype_def.ident,
+        &ctype_def.generics,
+        &ctype_def.fields,
+        false,
+    );
     let partial_eq_impl = gen_tagged_payload_partial_eq(&ctype_def, &payload_def, variants);
     let constructors = gen_enum_variant_constructors(
         &ctype_def.ident,
@@ -827,8 +939,8 @@ fn gen_variant_struct(
         .extend(gen_sized_extern_c_bounds_for_ctype(generics, &field_types));
 
     let ctype = gen_ctype_struct_item(repr, None, vis, &name, &variant_generics, &fields);
-    let fields_methods = gen_fields_methods(&ctype.ident, &ctype.generics, &ctype.fields);
-    let ctype_impls = gen_struct_ctype_impls::<true>(&ctype, true, None, None);
+    let fields_methods = gen_fields_methods(&ctype.ident, &ctype.generics, &ctype.fields, false);
+    let ctype_impls = gen_struct_ctype_impls::<true>(&ctype, true, None, None, false);
     quote! { #ctype #fields_methods #ctype_impls }
 }
 
@@ -907,19 +1019,22 @@ fn gen_struct_ctype_impls<const GEN_PARTIAL_EQ: bool>(
     generate_views_and_spec: bool,
     alignment: Option<&syn::LitInt>,
     owner_name: Option<&syn::Ident>,
+    known_unsized_tail: bool,
 ) -> TokenStream {
     let fields = ctype.fields.iter().map(|f| &f.ty).collect::<Vec<_>>();
     let all_phantom_data = !fields.is_empty() && fields.iter().all(|ty| is_phantom_data(ty));
     let generate_views = generate_views_and_spec && !all_phantom_data;
 
-    let copy_impls = gen_copy_impls(&ctype.ident, &ctype.generics, &fields);
+    let copy_impls = gen_copy_impls(&ctype.ident, &ctype.generics, &fields, known_unsized_tail);
     let partial_eq_impl = GEN_PARTIAL_EQ.then(|| gen_struct_partial_eq(ctype));
-    let default_impl = gen_default_impl(&ctype.ident, &ctype.generics, &fields);
-    let robust_impls = gen_robust_impls(&ctype.ident, &ctype.generics, &fields);
+    let default_impl = gen_default_impl(&ctype.ident, &ctype.generics, &fields, known_unsized_tail);
+    let robust_impls = gen_robust_impls(&ctype.ident, &ctype.generics, &fields, known_unsized_tail);
     let type_spec_impl = generate_views_and_spec
         .then(|| gen_type_spec(&ctype.ident, &ctype.generics, &fields, alignment));
-    let const_view = generate_views.then(|| gen_ctype_struct_view(ctype.clone(), false, alignment));
-    let mut_view = generate_views.then(|| gen_ctype_struct_view(ctype.clone(), true, alignment));
+    let const_view = generate_views
+        .then(|| gen_ctype_struct_view(ctype.clone(), false, alignment, known_unsized_tail));
+    let mut_view = generate_views
+        .then(|| gen_ctype_struct_view(ctype.clone(), true, alignment, known_unsized_tail));
 
     let borrow_cast_impl = if generate_views {
         gen_borrow_cast_impl(&ctype.ident, &ctype.generics, &fields, owner_name, false)
@@ -993,9 +1108,9 @@ fn gen_union_ctype_impls(
 ) -> TokenStream {
     let fields = ctype.fields.named.iter().map(|f| &f.ty).collect::<Vec<_>>();
 
-    let copy_impls = gen_copy_impls(&ctype.ident, &ctype.generics, &fields);
-    let default_impl = gen_default_impl(&ctype.ident, &ctype.generics, &fields);
-    let robust_impls = gen_robust_impls(&ctype.ident, &ctype.generics, &fields);
+    let copy_impls = gen_copy_impls(&ctype.ident, &ctype.generics, &fields, false);
+    let default_impl = gen_default_impl(&ctype.ident, &ctype.generics, &fields, false);
+    let robust_impls = gen_robust_impls(&ctype.ident, &ctype.generics, &fields, false);
     let type_spec_impl = gen_type_spec(&ctype.ident, &ctype.generics, &fields, alignment);
     let const_view = gen_ctype_union_view(ctype.clone(), false, alignment);
     let mut_view = gen_ctype_union_view(ctype.clone(), true, alignment);
@@ -1016,34 +1131,59 @@ fn gen_union_ctype_impls(
     }
 }
 
+fn gen_c_fn_impls(
+    ident: &syn::Ident,
+    generics: &syn::Generics,
+    fields: &[&syn::Type],
+) -> TokenStream {
+    let co3 = co3_path();
+    let (last_field_sized_bound, omit) = c_fn_last_field_bounds(fields, generics);
+    if omit {
+        return quote! {};
+    }
+
+    let (impl_generics, ty_generics, where_clause) = generics.split_for_impl();
+    let predicates = where_clause.as_ref().map(|w| &w.predicates);
+    let speculative = speculative_marker(generics.params.is_empty());
+    let size_bound = quote! {
+        #speculative Self: #co3::rust_spec::RustSpec<
+            Size = #co3::rust_spec::size::Sized<#co3::rust_spec::Gt<#co3::rust_spec::Zero>>
+        >,
+    };
+
+    quote! {
+        unsafe impl #impl_generics #co3::CFnArg for #ident #ty_generics where
+            #last_field_sized_bound
+            #size_bound
+            #predicates
+        {}
+        unsafe impl #impl_generics #co3::CFnReturn for #ident #ty_generics where
+            #last_field_sized_bound
+            #size_bound
+            #predicates
+        {}
+    }
+}
+
 fn gen_robust_impls(
     ident: &syn::Ident,
     generics: &syn::Generics,
-    _fields: &[&syn::Type],
+    fields: &[&syn::Type],
+    known_unsized_tail: bool,
 ) -> TokenStream {
     let co3 = co3_path();
     let (impl_generics, ty_generics, where_clause) = generics.split_for_impl();
-    let predicates = where_clause.as_ref().map(|w| &w.predicates);
-
     let codec_impls = gen_identity_codec_impls(ident, generics, true);
-
-    let for_dummy = speculative_marker(generics.params.is_empty());
-
-    let type_spec_bound = quote! { #for_dummy Self: #co3::rust_spec::RustSpec<Size = #co3::rust_spec::size::Sized<#co3::rust_spec::Gt<#co3::rust_spec::Zero>>>, };
+    let c_fn_impls = if known_unsized_tail {
+        quote! {}
+    } else {
+        gen_c_fn_impls(ident, generics, fields)
+    };
 
     quote! {
         unsafe impl #impl_generics #co3::CType for #ident #ty_generics #where_clause {}
 
-        unsafe impl #impl_generics #co3::CFnArg for #ident #ty_generics
-        where
-            #type_spec_bound
-            #predicates
-        {}
-        unsafe impl #impl_generics #co3::CFnReturn for #ident #ty_generics
-        where
-            #type_spec_bound
-            #predicates
-        {}
+        #c_fn_impls
 
         unsafe impl #impl_generics #co3::transmute::CheckedTransmute for #ident #ty_generics #where_clause {
             #[inline(always)]
@@ -1242,34 +1382,16 @@ fn gen_identity_codec_impls(
 pub(super) fn gen_identity_repr_c_impls(
     ident: &syn::Ident,
     generics: &syn::Generics,
-    _fields: &[&syn::Type],
+    fields: &[&syn::Type],
 ) -> TokenStream {
     let (impl_generics, ty_generics, where_clause) = generics.split_for_impl();
-    let predicates = where_clause.as_ref().map(|clause| &clause.predicates);
     let codec_impls = gen_identity_codec_impls(ident, generics, true);
-    let speculative = speculative_marker(generics.params.is_empty());
+    let c_fn_impls = gen_c_fn_impls(ident, generics, fields);
 
     quote! {
         unsafe impl #impl_generics co3::CType for #ident #ty_generics #where_clause {}
 
-        unsafe impl #impl_generics co3::CFnArg for #ident #ty_generics
-        where
-            #speculative Self: co3::rust_spec::RustSpec<
-                Size = co3::rust_spec::size::Sized<
-                    co3::rust_spec::Gt<co3::rust_spec::Zero>
-                >
-            >,
-            #predicates
-        {}
-        unsafe impl #impl_generics co3::CFnReturn for #ident #ty_generics
-        where
-            #speculative Self: co3::rust_spec::RustSpec<
-                Size = co3::rust_spec::size::Sized<
-                    co3::rust_spec::Gt<co3::rust_spec::Zero>
-                >
-            >,
-            #predicates
-        {}
+        #c_fn_impls
 
         unsafe impl #impl_generics co3::transmute::CheckedTransmute for #ident #ty_generics
         #where_clause
@@ -1430,9 +1552,15 @@ fn gen_ctype_struct_view(
     mut ctype: syn::ItemStruct,
     is_mut: bool,
     alignment: Option<&syn::LitInt>,
+    known_unsized_tail: bool,
 ) -> TokenStream {
     rewrite_ctype_view_struct(&mut ctype, is_mut);
-    let fields_methods = gen_fields_methods(&ctype.ident, &ctype.generics, &ctype.fields);
+    let fields_methods = gen_fields_methods(
+        &ctype.ident,
+        &ctype.generics,
+        &ctype.fields,
+        known_unsized_tail,
+    );
 
     let fields = ctype
         .fields
@@ -1440,9 +1568,9 @@ fn gen_ctype_struct_view(
         .map(|field| &field.ty)
         .collect::<Vec<_>>();
 
-    let copy_impls = gen_copy_impls(&ctype.ident, &ctype.generics, &fields);
-    let default_impl = gen_default_impl(&ctype.ident, &ctype.generics, &fields);
-    let robust_impls = gen_robust_impls(&ctype.ident, &ctype.generics, &fields);
+    let copy_impls = gen_copy_impls(&ctype.ident, &ctype.generics, &fields, known_unsized_tail);
+    let default_impl = gen_default_impl(&ctype.ident, &ctype.generics, &fields, known_unsized_tail);
+    let robust_impls = gen_robust_impls(&ctype.ident, &ctype.generics, &fields, known_unsized_tail);
     let type_spec_impl = gen_type_spec(&ctype.ident, &ctype.generics, &fields, alignment);
 
     quote! {
@@ -1507,9 +1635,9 @@ fn gen_ctype_union_view(
         .map(|field| &field.ty)
         .collect::<Vec<_>>();
 
-    let copy_impls = gen_copy_impls(&ctype.ident, &ctype.generics, &fields);
-    let default_impl = gen_default_impl(&ctype.ident, &ctype.generics, &fields);
-    let robust_impls = gen_robust_impls(&ctype.ident, &ctype.generics, &fields);
+    let copy_impls = gen_copy_impls(&ctype.ident, &ctype.generics, &fields, false);
+    let default_impl = gen_default_impl(&ctype.ident, &ctype.generics, &fields, false);
+    let robust_impls = gen_robust_impls(&ctype.ident, &ctype.generics, &fields, false);
     let type_spec_impl = gen_type_spec(&ctype.ident, &ctype.generics, &fields, alignment);
 
     quote! {
@@ -1589,9 +1717,18 @@ fn gen_copy_impls(
     ident: &syn::Ident,
     generics: &syn::Generics,
     fields: &[&syn::Type],
+    known_unsized_tail: bool,
 ) -> TokenStream {
     let (impl_generics, ty_generics, where_clause) = generics.split_for_impl();
     let predicates = where_clause.as_ref().map(|w| &w.predicates);
+
+    if known_unsized_tail
+        || fields.last().is_some_and(|field| {
+            syntactic_sizedness(field, generics) == SyntacticSizedness::Unsized
+        })
+    {
+        return quote! {};
+    }
 
     let copy_bounds = gen_copy_bounds(generics, fields);
 
@@ -1644,17 +1781,14 @@ fn gen_default_impl(
     ident: &syn::Ident,
     generics: &syn::Generics,
     fields: &[&syn::Type],
+    known_unsized_tail: bool,
 ) -> TokenStream {
     let (impl_generics, ty_generics, where_clause) = generics.split_for_impl();
     let predicates = where_clause.as_ref().map(|w| &w.predicates);
-    let sized_bound = fields.last().map(|&ty| {
-        if is_parametrized(ty, generics) {
-            quote!(#ty: Sized,)
-        } else {
-            let speculative = speculative_marker(true);
-            quote!(#speculative #ty: Sized,)
-        }
-    });
+    let (sized_bound, omit_impl) = c_fn_last_field_bounds(fields, generics);
+    if known_unsized_tail || omit_impl {
+        return quote! {};
+    }
 
     quote! {
         impl #impl_generics Default for #ident #ty_generics

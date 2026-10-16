@@ -695,7 +695,7 @@ fn peel_grouped_type(mut ty: &Type) -> &Type {
     }
 }
 
-fn option_inner_type(ty: &Type) -> Option<&Type> {
+pub(crate) fn option_inner_type(ty: &Type) -> Option<&Type> {
     let Type::Path(path) = ty else {
         return None;
     };
@@ -1489,7 +1489,7 @@ fn is_implicitly_by_value(ty: &Type) -> bool {
     }
 }
 
-fn copy_primitive_type(path: &syn::TypePath) -> Option<Type> {
+pub(crate) fn copy_primitive_type(path: &syn::TypePath) -> Option<Type> {
     if path.qself.is_some() {
         return None;
     }

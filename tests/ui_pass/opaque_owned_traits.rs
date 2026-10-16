@@ -55,7 +55,6 @@ unsafe impl Send for SendOnly {}
 unsafe impl Sync for SyncOnly {}
 
 fn assert_marker<T: Marker + ?Sized>() {}
-fn assert_send<T: Send>() {}
 fn assert_sync<T: Sync>() {}
 
 fn compares_owned(left: OwnedValue, right: OwnedValue) {
@@ -81,9 +80,9 @@ fn uses_iterator_traits(mut numbers: OwnedNumbers) {
 
 fn main() {
     assert_marker::<Thing>();
-    assert_send::<OwnedSendOnly>();
     assert_sync::<OwnedSyncOnly>();
 
+    static_assertions::assert_not_impl_any!(OwnedSendOnly: Send);
     static_assertions::assert_not_impl_any!(OwnedSendOnly: Sync);
     static_assertions::assert_not_impl_any!(OwnedSyncOnly: Send);
     static_assertions::assert_not_impl_any!(OwnedNeither: Send, Sync);

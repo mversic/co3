@@ -102,10 +102,10 @@ unsafe extern "C" {
     fn self_to_self_raw(value: TransparentStruct) -> TransparentStruct;
 
     #[link_name = "export_transparent__vec_to_vec"]
-    fn vec_to_vec_raw(value: CWideBox<TransparentStruct>) -> CWideBox<TransparentStruct>;
+    fn vec_to_vec_raw(value: CWideBox<[TransparentStruct]>) -> CWideBox<[TransparentStruct]>;
 
     #[link_name = "export_transparent__slice_to_slice"]
-    fn slice_to_slice_raw(value: CWideRef<TransparentStruct>) -> CWideRef<TransparentStruct>;
+    fn slice_to_slice_raw(value: CWideRef<[TransparentStruct]>) -> CWideRef<[TransparentStruct]>;
 
     #[link_name = "export_transparent__TransparentStruct__with_payload"]
     fn with_payload_raw(

@@ -58,7 +58,7 @@ pub struct Parametrized<T: ?Sized>(T);
 pub struct UnsizedSlice<T>([T]);
 
 fn unsized_niches_cannot_be_used() {
-    fn require_niche<T: co3::niche::Niche>() {}
+    fn require_niche<T: co3::niche::Niche + ?Sized>() {}
     require_niche::<UnsizedSlice<u8>>();
     require_niche::<UnsizedStr>();
 }

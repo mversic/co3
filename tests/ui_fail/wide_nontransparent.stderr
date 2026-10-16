@@ -43,6 +43,7 @@ help: the trait `Wide` is not implemented for `NonTransparentDst`
              Cell<T>
              ManuallyDrop<R>
              UnsafeCell<T>
+             Utf8Str
              [R]
              str
 note: required by a bound in `require_wide`
@@ -66,6 +67,7 @@ help: the trait `Wide` is not implemented for `GenericNonTransparentDst<[u8]>`
              Cell<T>
              ManuallyDrop<R>
              UnsafeCell<T>
+             Utf8Str
              [R]
              str
 note: required by a bound in `require_wide`

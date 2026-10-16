@@ -247,7 +247,7 @@ macro_rules! impl_tuple {
         impl<$($head,)* $last> $ffi_ty<$($head,)* $last> {
             /// Return the stored fields as a Rust tuple without decoding them.
             #[expect(non_snake_case)]
-            pub fn into_rust(self) -> ($($head,)* $last,) {
+            pub fn into_tuple(self) -> ($($head,)* $last,) {
                 let $ffi_ty($($head,)* $last) = self;
                 ($($head,)* $last,)
             }
@@ -463,22 +463,22 @@ mod tests {
         );
         #[cfg(feature = "alloc")]
         assert_impl_all!(&[(u8, u8, u8)]:
-            Niche<CType = CWideRef<ReprCTuple3<u8, u8, u8>>>,
+            Niche<CType = CWideRef<[ReprCTuple3<u8, u8, u8>]>>,
             Encode,
         );
         #[cfg(feature = "alloc")]
         assert_impl_all!(&mut [(u8, u8, u8)]:
-            Niche<CType = CWideRefMut<ReprCTuple3<u8, u8, u8>, true>>,
+            Niche<CType = CWideRefMut<[ReprCTuple3<u8, u8, u8>], true>>,
             Encode,
         );
         #[cfg(feature = "alloc")]
         assert_impl_all!(Box<[(u8, u8, u8)]>:
-            Niche<CType = CWideBox<ReprCTuple3<u8, u8, u8>>>,
+            Niche<CType = CWideBox<[ReprCTuple3<u8, u8, u8>]>>,
             EncodeOwned,
         );
         #[cfg(feature = "alloc")]
         assert_impl_all!(Vec<(u8, u8, u8)>:
-            Niche<CType = CWideBox<ReprCTuple3<u8, u8, u8>>>,
+            Niche<CType = CWideBox<[ReprCTuple3<u8, u8, u8>]>>,
             DecodeOwned<'static>,
             EncodeOwned,
         );
@@ -561,25 +561,25 @@ mod tests {
         );
         #[cfg(feature = "alloc")]
         assert_impl_all!(&[(u8, StdNonZero<u8>, bool)]:
-            Niche<CType = CWideRef<ReprCTuple3<u8, u8, crate::primitives::CBool>>>,
+            Niche<CType = CWideRef<[ReprCTuple3<u8, u8, crate::primitives::CBool>]>>,
             Decode<'static>,
             Encode,
         );
         #[cfg(feature = "alloc")]
         assert_impl_all!(&mut [(u8, StdNonZero<u8>, bool)]:
-            Niche<CType = CWideRefMut<ReprCTuple3<u8, u8, crate::primitives::CBool>, true>>,
+            Niche<CType = CWideRefMut<[ReprCTuple3<u8, u8, crate::primitives::CBool>], true>>,
             Decode<'static>,
             Encode,
         );
         #[cfg(feature = "alloc")]
         assert_impl_all!(Box<[(u8, StdNonZero<u8>, bool)]>:
-            Niche<CType = CWideBox<ReprCTuple3<u8, u8, crate::primitives::CBool>>>,
+            Niche<CType = CWideBox<[ReprCTuple3<u8, u8, crate::primitives::CBool>]>>,
             DecodeOwned<'static>,
             EncodeOwned,
         );
         #[cfg(feature = "alloc")]
         assert_impl_all!(Vec<(u8, StdNonZero<u8>, bool)>:
-            Niche<CType = CWideBox<ReprCTuple3<u8, u8, crate::primitives::CBool>>>,
+            Niche<CType = CWideBox<[ReprCTuple3<u8, u8, crate::primitives::CBool>]>>,
             DecodeOwned<'static>,
             EncodeOwned,
         );

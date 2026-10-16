@@ -605,6 +605,7 @@ pub mod sync;
 pub mod tag;
 pub mod transmute;
 pub mod tuple;
+pub mod utf8;
 pub mod wide;
 
 #[cfg(feature = "alloc")]
@@ -645,15 +646,15 @@ pub unsafe trait CType {}
 ///
 /// # Safety
 ///
-/// Type must be allowed as a foreign function argument type.
-pub unsafe trait CFnArg: CType {}
+/// Type must be allowed as a foreign function argument type. In particular, ZSTs are not allowed.
+pub unsafe trait CFnArg: CType + Sized {}
 
 /// `C` type that is allowed as a foreign function return value.
 ///
 /// # Safety
 ///
-/// Type must be allowed as a foreign function return type.
-pub unsafe trait CFnReturn: CType {}
+/// Type must be allowed as a foreign function return type. In particular, ZSTs are not allowed.
+pub unsafe trait CFnReturn: CType + Sized {}
 
 /// Pointers to types implementing this trait alias are “thin”.
 ///
@@ -678,16 +679,14 @@ disjoint_impls! {
     impl<R: NulTerminatedBuf<Data: ReprC> + ?Sized> ReprC for &R
     where
         R: RustSpec<Size = NulTerminated, Mutability = Exclusive>,
-        <<R as NulTerminatedBuf>::Data as ReprC>::CType: Sized,
     {
         type CType = CRef<<R::Data as ReprC>::CType>;
     }
-    impl<R: Wide<Header: WideHeader<Data: ReprC>, Metadata = usize> + ?Sized> ReprC for &R
+    impl<R: ReprC<CType: Wide<Header: WideHeader<Data: CType>>> + ?Sized> ReprC for &R
     where
         R: RustSpec<Size = MetaSized<SliceLike>, Mutability = Exclusive>,
-        <<<R as Wide>::Header as WideHeader>::Data as ReprC>::CType: Sized,
     {
-        type CType = CWideRef<<<<R as Wide>::Header as WideHeader>::Data as ReprC>::CType>;
+        type CType = CWideRef<R::CType>;
     }
 
     impl<R: ReprC + ?Sized> ReprC for &R
@@ -699,16 +698,14 @@ disjoint_impls! {
     impl<R: NulTerminatedBuf<Data: ReprC> + ?Sized> ReprC for &R
     where
         R: RustSpec<Size = NulTerminated, Mutability = WithInterior>,
-        <<R as NulTerminatedBuf>::Data as ReprC>::CType: Sized,
     {
         type CType = CRefMut<<R::Data as ReprC>::CType, false>;
     }
-    impl<R: Wide<Header: WideHeader<Data: ReprC>, Metadata = usize> + ?Sized> ReprC for &R
+    impl<R: ReprC<CType: Wide<Header: WideHeader<Data: CType>>> + ?Sized> ReprC for &R
     where
         R: RustSpec<Size = MetaSized<SliceLike>, Mutability = WithInterior>,
-        <<<R as Wide>::Header as WideHeader>::Data as ReprC>::CType: Sized,
     {
-        type CType = CWideRefMut<<<<R as Wide>::Header as WideHeader>::Data as ReprC>::CType, false>;
+        type CType = CWideRefMut<R::CType, false>;
     }
 
     impl<R: ReprC + ?Sized> ReprC for &mut R
@@ -717,12 +714,11 @@ disjoint_impls! {
     {
         type CType = CRefMut<R::CType, true>;
     }
-    impl<R: Wide<Header: WideHeader<Data: ReprC>, Metadata = usize> + ?Sized> ReprC for &mut R
+    impl<R: ReprC<CType: Wide<Header: WideHeader<Data: CType>>> + ?Sized> ReprC for &mut R
     where
         R: RustSpec<Size = MetaSized<SliceLike>>,
-        <<<R as Wide>::Header as WideHeader>::Data as ReprC>::CType: Sized,
     {
-        type CType = CWideRefMut<<<<R as Wide>::Header as WideHeader>::Data as ReprC>::CType, true>;
+        type CType = CWideRefMut<R::CType, true>;
     }
 
     #[cfg(feature = "alloc")]
@@ -742,13 +738,11 @@ disjoint_impls! {
         type CType = CBox<<R::Data as ReprC>::CType>;
     }
     #[cfg(feature = "alloc")]
-    impl<R: ?Sized> ReprC for Box<R>
+    impl<R: ReprC<CType: Wide<Header: WideHeader<Data: CType + Sized>>> + ?Sized> ReprC for Box<R>
     where
         R: RustSpec<Size = MetaSized<SliceLike>, Mutability = Exclusive>,
-        R: Wide<Header: WideHeader<Data: ReprC>, Metadata = usize>,
-        <<<R as Wide>::Header as WideHeader>::Data as ReprC>::CType: Sized,
     {
-        type CType = CWideBox<<<<R as Wide>::Header as WideHeader>::Data as ReprC>::CType>;
+        type CType = CWideBox<R::CType>;
     }
 
     #[cfg(feature = "alloc")]
@@ -768,13 +762,11 @@ disjoint_impls! {
         type CType = CBoxCell<<R::Data as ReprC>::CType>;
     }
     #[cfg(feature = "alloc")]
-    impl<R: ?Sized> ReprC for Box<R>
+    impl<R: ReprC<CType: Wide<Header: WideHeader<Data: CType + Sized>>> + ?Sized> ReprC for Box<R>
     where
         R: RustSpec<Size = MetaSized<SliceLike>, Mutability = WithInterior>,
-        R: Wide<Header: WideHeader<Data: ReprC>, Metadata = usize>,
-        <<<R as Wide>::Header as WideHeader>::Data as ReprC>::CType: Sized,
     {
-        type CType = CWideBoxCell<<<<R as Wide>::Header as WideHeader>::Data as ReprC>::CType>;
+        type CType = CWideBoxCell<R::CType>;
     }
 
     impl<R: ReprC> ReprC for Option<R>
@@ -792,7 +784,7 @@ disjoint_impls! {
     }
 
     // TODO: The next 3 impls are the same
-    impl<R: ReprC, E: ReprC<CType: Sized>, K: SizedKind> ReprC for Result<R, E>
+    impl<R: ReprC, E: ReprC, K: SizedKind> ReprC for Result<R, E>
     where
         R: RustSpec<Size = rust_spec::size::Sized<K>>,
         E: RustSpec<Size = rust_spec::size::Sized<K>>,
@@ -803,42 +795,47 @@ disjoint_impls! {
     {
         type CType = ReprCResult<R::CType, E::CType>;
     }
-    impl<R: ReprC, E: ReprC<CType: Sized>, N: NicheStabilityKind> ReprC for Result<R, E>
-    where
-        R: RustSpec<Size = rust_spec::size::Sized<rust_spec::Gt<rust_spec::Zero>>, Niche = WithNiche<N>>,
-        E: RustSpec<
-            Size = rust_spec::size::Sized<Zero>,
-            Alignment = rust_spec::Gt<rust_spec::One>,
-        >,
-        <R as ReprC>::CType: CType + Copy,
-        <E as ReprC>::CType: CType + Copy,
-    {
-        type CType = ReprCResult<R::CType, E::CType>;
-    }
-    impl<R: ReprC, E: ReprC<CType: Sized>, N: NicheStabilityKind> ReprC for Result<R, E>
+    impl<R: ReprC, E: ReprC, N: NicheStabilityKind> ReprC for Result<R, E>
     where
         R: RustSpec<
-            Size = rust_spec::size::Sized<Zero>,
-            Alignment = rust_spec::Gt<rust_spec::One>,
-        >,
-        E: RustSpec<Size = rust_spec::size::Sized<rust_spec::Gt<rust_spec::Zero>>, Niche = WithNiche<N>>,
+                Size = rust_spec::size::Sized<rust_spec::Gt<rust_spec::Zero>>,
+                Niche = WithNiche<N>,
+            >,
+        E: RustSpec<Size = rust_spec::size::Sized<Zero>, Alignment = rust_spec::Gt<rust_spec::One>>,
         <R as ReprC>::CType: CType + Copy,
         <E as ReprC>::CType: CType + Copy,
     {
         type CType = ReprCResult<R::CType, E::CType>;
     }
-    impl<R: ReprC, E: ReprC<CType: Sized>, N: NicheStabilityKind> ReprC for Result<R, E>
+    impl<R: ReprC, E: ReprC, N: NicheStabilityKind> ReprC for Result<R, E>
     where
-        R: RustSpec<Size = rust_spec::size::Sized<rust_spec::Gt<rust_spec::Zero>>, Niche = WithNiche<N>>,
+        R: RustSpec<Size = rust_spec::size::Sized<Zero>, Alignment = rust_spec::Gt<rust_spec::One>>,
+        E: RustSpec<
+                Size = rust_spec::size::Sized<rust_spec::Gt<rust_spec::Zero>>,
+                Niche = WithNiche<N>,
+            >,
+        <R as ReprC>::CType: CType + Copy,
+        <E as ReprC>::CType: CType + Copy,
+    {
+        type CType = ReprCResult<R::CType, E::CType>;
+    }
+    impl<R: ReprC, E: ReprC, N: NicheStabilityKind> ReprC for Result<R, E>
+    where
+        R: RustSpec<
+                Size = rust_spec::size::Sized<rust_spec::Gt<rust_spec::Zero>>,
+                Niche = WithNiche<N>,
+            >,
         E: RustSpec<Size = rust_spec::size::Sized<Zero>, Alignment = rust_spec::One>,
     {
         type CType = R::CType;
     }
-    impl<R: ReprC, E: ReprC<CType: Sized>, N: NicheStabilityKind> ReprC for Result<R, E>
+    impl<R: ReprC, E: ReprC, N: NicheStabilityKind> ReprC for Result<R, E>
     where
         R: RustSpec<Size = rust_spec::size::Sized<Zero>, Alignment = rust_spec::One>,
-        E: RustSpec<Size = rust_spec::size::Sized<rust_spec::Gt<rust_spec::Zero>>, Niche = WithNiche<N>>,
-        <E as ReprC>::CType: CType + Sized,
+        E: RustSpec<
+                Size = rust_spec::size::Sized<rust_spec::Gt<rust_spec::Zero>>,
+                Niche = WithNiche<N>,
+            >,
     {
         type CType = E::CType;
     }
@@ -849,15 +846,12 @@ disjoint_impls! {
     pub trait Encode: EncodeOwned {}
 
     #[cfg(feature = "alloc")]
-    impl<R: ?Sized> Encode for Box<R>
-    where
-        Self: RustSpec<Layout = Stable> + EncodeOwned,
-    {}
+    impl<R: ?Sized> Encode for Box<R> where Self: RustSpec<Layout = Stable> + EncodeOwned {}
     #[cfg(feature = "alloc")]
-    impl<R: RustSpec<Layout = Stable> + ?Sized> Encode for Box<R>
-    where
-        Self: RustSpec<Layout = Unstable> + EncodeOwned,
-    {}
+    impl<R: RustSpec<Layout = Stable> + ?Sized> Encode for Box<R> where
+        Self: RustSpec<Layout = Unstable> + EncodeOwned
+    {
+    }
 }
 
 disjoint_impls! {
@@ -865,15 +859,12 @@ disjoint_impls! {
     pub trait Decode<'d>: DecodeOwned<'d> {}
 
     #[cfg(feature = "alloc")]
-    impl<'d, R: ?Sized> Decode<'d> for Box<R>
-    where
-        Self: RustSpec<Layout = Stable> + DecodeOwned<'d>,
-    {}
+    impl<'d, R: ?Sized> Decode<'d> for Box<R> where Self: RustSpec<Layout = Stable> + DecodeOwned<'d> {}
     #[cfg(feature = "alloc")]
-    impl<'d, R: RustSpec<Layout = Stable> + ?Sized> Decode<'d> for Box<R>
-    where
-        Self: RustSpec<Layout = Unstable> + DecodeOwned<'d>,
-    {}
+    impl<'d, R: RustSpec<Layout = Stable> + ?Sized> Decode<'d> for Box<R> where
+        Self: RustSpec<Layout = Unstable> + DecodeOwned<'d>
+    {
+    }
 }
 
 impl<R: ?Sized> Encode for &R where Self: EncodeOwned {}
@@ -1071,7 +1062,7 @@ mod tests {
         {
             let mut store = Box::default();
             let encoded = soft_encode(ref_mut, &mut *store);
-            let c_slice = unsafe { encoded.into_rust().unwrap() };
+            let c_slice = unsafe { encoded.into_mut().unwrap() };
             c_slice[0] = ReprCOption::Some(other);
             store.sync().unwrap();
         }
@@ -1117,7 +1108,7 @@ mod tests {
             let mut store = Box::default();
 
             let encoded = soft_encode(slice_ref, &mut store);
-            let c_slice = unsafe { encoded.into_rust().unwrap() };
+            let c_slice = unsafe { encoded.into_mut().unwrap() };
 
             c_slice[0] = ReprCTuple2(100, CBool::TRUE);
             store.sync().unwrap();

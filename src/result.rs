@@ -134,7 +134,7 @@ impl<T: Copy, E: Copy> ReprCResult<T, E> {
     }
 
     /// Return the represented `Result<T, E>`, or `None` for an invalid tag.
-    pub fn into_rust(self) -> Option<Result<T, E>> {
+    pub fn into_result(self) -> Option<Result<T, E>> {
         match self.tag() {
             0 => Some(Ok(unsafe { self.ok.1.assume_init() })),
             1 => Some(Err(unsafe { self.err.1.assume_init() })),

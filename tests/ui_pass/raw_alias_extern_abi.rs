@@ -1,4 +1,4 @@
-use co3::{ffi, ReprC};
+use co3::{ffi, utf8::Utf8Str, ReprC};
 
 ffi! {
     #![unsafe(extern("C"))]
@@ -44,7 +44,7 @@ fn main() {
     );
     static_assertions::assert_type_eq_all!(
         Composite,
-        <(String, unsafe extern "C" fn(co3::slice::CWideRef<u8>)) as ReprC>::CType
+        <(String, unsafe extern "C" fn(co3::slice::CWideRef<Utf8Str>)) as ReprC>::CType
     );
     static_assertions::assert_type_eq_all!(Optional, Option<unsafe extern "C" fn(u8)>);
     static_assertions::assert_type_eq_all!(

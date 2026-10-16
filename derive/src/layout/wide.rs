@@ -4,8 +4,8 @@ use syn::parse_quote;
 
 use super::{
     ReprKind,
-    ctype::{gen_extern_c_bounds_for_ctype, gen_fields_methods},
-    is_parametrized, is_phantom_data,
+    ctype::{WideTail, gen_fields_methods, wide_tail},
+    generic_param_idents, is_parametrized, is_phantom_data,
 };
 
 pub(super) fn gen_data_struct_name(ident: &syn::Ident) -> syn::Ident {
@@ -40,6 +40,10 @@ pub(crate) fn expand(
         return Ok(quote! {});
     }
 
+    if wide_tail(&field.ty, &input.generics) == WideTail::No {
+        return Ok(quote! {});
+    }
+
     let name = &input.ident;
     let field_ty = &field.ty;
 
@@ -54,7 +58,6 @@ pub(crate) fn expand(
     let methods = gen_dst_methods(is_transparent_single, field_ty);
     let alloc_methods = gen_alloc_methods(is_transparent_single, field_ty);
 
-    let wide_predicate = wide_predicate(field_ty, &input.generics);
     let header_predicate = header_repr_c_predicate(field_ty, &input.generics);
     let usize_predicate = (!is_transparent_single).then(|| {
         let predicate = wide_usize_predicate(field_ty, &input.generics);
@@ -66,7 +69,6 @@ pub(crate) fn expand(
         quote! {
             unsafe impl #impl_generics co3::wide::Wide for #name #ty_generics
             where
-                #wide_predicate,
                 #header_predicate,
                 #usize_predicate
                 #predicates
@@ -122,6 +124,44 @@ fn gen_data_ty(input: &syn::DeriveInput) -> TokenStream {
 }
 
 fn gen_data_def(input: &syn::DeriveInput, fields: &syn::Fields) -> TokenStream {
+    if let Some((last, ..)) = last_field(fields)
+        && wide_tail(&last.ty, &input.generics) == WideTail::Unknown
+        && !is_parametrized(&last.ty, &input.generics)
+    {
+        let tail_ty = &last.ty;
+        let tail_param = format_ident!("__Co3WideTail");
+        let mut internal_input = input.clone();
+        internal_input.ident = format_ident!("__Co3{}", input.ident);
+        internal_input
+            .generics
+            .params
+            .push(parse_quote!(#tail_param: ?Sized));
+        let mut internal_fields = fields.clone();
+        internal_fields
+            .iter_mut()
+            .next_back()
+            .expect("wide data has a tail")
+            .ty = parse_quote!(#tail_param);
+        let internal_def = gen_data_def(&internal_input, &internal_fields);
+
+        let name = gen_data_struct_name(&input.ident);
+        let internal_name = gen_data_struct_name(&internal_input.ident);
+        let ctype_name = format_ident!("C{name}");
+        let internal_ctype_name = format_ident!("C{internal_name}");
+        let mut alias_generics = input.generics.clone();
+        alias_generics
+            .params
+            .push(parse_quote!(#tail_param: ?Sized = #tail_ty));
+        let args = generic_param_idents(alias_generics.params.iter()).collect::<Vec<_>>();
+        let vis = &input.vis;
+
+        return quote! {
+            #internal_def
+            #vis type #name #alias_generics = #internal_name<#(#args),*>;
+            #vis type #ctype_name #alias_generics = #internal_ctype_name<#(#args),*>;
+        };
+    }
+
     let name = gen_data_struct_name(&input.ident);
 
     let attrs = input
@@ -142,7 +182,7 @@ fn gen_data_def(input: &syn::DeriveInput, fields: &syn::Fields) -> TokenStream {
         field.ty = data_field_ty(&field.ty, index == fields_len - 1);
         field.vis = syn::Visibility::Inherited;
     }
-    let fields_methods = gen_fields_methods(&name, &generics, &data_fields);
+    let fields_methods = gen_fields_methods(&name, &generics, &data_fields, false);
 
     let suffix =
         match fields {
@@ -267,23 +307,6 @@ pub(super) fn data_bound_ty(ty: &syn::Type, is_last_field: bool) -> syn::Type {
     }
 }
 
-pub(super) fn gen_data_ctype_bounds(
-    fields: &syn::Fields,
-    generics: &syn::Generics,
-) -> Vec<syn::WherePredicate> {
-    let fields_len = fields.len();
-
-    let field_tys = fields
-        .iter()
-        .enumerate()
-        .map(|(index, field)| data_bound_ty(&field.ty, index == fields_len - 1))
-        .collect::<Vec<_>>();
-
-    let generics = data_generics(fields, generics);
-    let field_tys = field_tys.iter().collect::<Vec<_>>();
-    gen_extern_c_bounds_for_ctype(&generics, &field_tys)
-}
-
 pub(super) fn wide_predicate(field_ty: &syn::Type, generics: &syn::Generics) -> TokenStream {
     let for_dummy = (!is_parametrized(field_ty, generics)).then(|| quote! { for<'__dummy> });
     quote! { #for_dummy #field_ty: co3::wide::Wide }
@@ -299,7 +322,7 @@ pub(super) fn header_repr_c_predicate(
     generics: &syn::Generics,
 ) -> TokenStream {
     let for_dummy = (!is_parametrized(field_ty, generics)).then(|| quote! { for<'__dummy> });
-    quote! { #for_dummy <#field_ty as co3::wide::Wide>::Header: co3::ReprC<CType: Sized> }
+    quote! { #for_dummy #field_ty: co3::wide::Wide<Header: co3::ReprC<CType: Sized>> }
 }
 
 pub(super) fn gen_dst_methods(is_transparent: bool, field_ty: &syn::Type) -> TokenStream {

@@ -14,7 +14,7 @@ error[E0277]: the trait bound `Opaque: Copy` is not satisfied
              `&'d R` implements `stored::_::DecodeOwned0<'d, NulTerminated, Exclusive, <R as RustSpec>::Layout, <&'d R as RustSpec>::Layout>`
              `&'d R` implements `stored::_::DecodeOwned0<'d, NulTerminated, WithInterior, <R as RustSpec>::Layout, <&'d R as RustSpec>::Layout>`
              `&'d R` implements `stored::_::DecodeOwned0<'d, _TŠČ0, Exclusive, <R as RustSpec>::Layout, Stable>`
-             `&'d R` implements `stored::_::DecodeOwned0<'d, _TŠČ1, WithInterior, <R as RustSpec>::Layout, Stable>`
+             `&'d R` implements `stored::_::DecodeOwned0<'d, _TŠČ0, WithInterior, <R as RustSpec>::Layout, Stable>`
              `&'d R` implements `stored::_::DecodeOwned0<'d, rust_spec::size::MetaSized<SliceLike>, Exclusive, Stable, Unstable>`
              `&'d R` implements `stored::_::DecodeOwned0<'d, rust_spec::size::MetaSized<SliceLike>, WithInterior, Stable, Unstable>`
              `&'d R` implements `stored::_::DecodeOwned0<'d, rust_spec::size::Sized<S>, Exclusive, Unstable, Unstable>`
@@ -53,14 +53,14 @@ help: the following other types implement trait `stored::_::DecodeOwned1<'d, _T�
    | |         Self: RustSpec<Layout = Stable> + CheckedTransmute<CType = CRefMut<<R as ReprC>::CType, true>>,
    | |_______________________________________________________________________________________________________^ `&'d mut R` implements `stored::_::DecodeOwned1<'d, Stable, _TŠČ0, <R as RustSpec>::Layout>`
 ...
-   | /     unsafe impl<'d, R: CheckedTransmute<CType: Wide<Metadata = usize>> + Wide<Metadata = usize> + ?Sized>
+   | /     unsafe impl<'d, R: CheckedTransmute<CType: Wide<Metadata = usize>> + ?Sized>
    | |         DecodeOwned<'d> for &'d mut R
    | |     where
    | |         Self: RustSpec<Layout = Unstable>,
    | |         R: RustSpec<Layout = Stable, Size = MetaSized<SliceLike>>,
-   | |         WideData<R>: ReprC<CType = WideData<<R as ReprC>::CType>>,
-   | |         <WideData<R> as ReprC>::CType: CType,
-   | |_____________________________________________^ `&'d mut R` implements `stored::_::DecodeOwned1<'d, Unstable, rust_spec::size::MetaSized<SliceLike>, Stable>`
+   | |         WideData<<R as ReprC>::CType>: CType,
+   | |         R: Wide<Metadata = usize>,
+   | |__________________________________^ `&'d mut R` implements `stored::_::DecodeOwned1<'d, Unstable, rust_spec::size::MetaSized<SliceLike>, Stable>`
 ...
    | /     unsafe impl<'d, R: ReprC<CType: BorrowCast<AsConst: Copy> + Copy> + FromBorrow<'d>, S: SizedKind>
    | |         DecodeOwned<'d> for &'d mut R

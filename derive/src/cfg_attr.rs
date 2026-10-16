@@ -1,5 +1,6 @@
 use proc_macro2::{Delimiter, Group, TokenStream, TokenTree};
 use quote::quote;
+use std::collections::HashSet;
 
 #[derive(Clone)]
 pub(crate) struct Variant {
@@ -88,8 +89,13 @@ fn append_variants(lhs: Vec<Variant>, rhs: Vec<Variant>) -> Vec<Variant> {
 
     for left in lhs {
         for right in &rhs {
-            let mut cfgs = left.cfgs.clone();
-            cfgs.extend(right.cfgs.iter().cloned());
+            let mut cfgs = Vec::with_capacity(left.cfgs.len() + right.cfgs.len());
+            let mut seen_cfgs = HashSet::with_capacity(cfgs.capacity());
+            for cfg in left.cfgs.iter().chain(&right.cfgs) {
+                if seen_cfgs.insert(cfg.to_string()) {
+                    cfgs.push(cfg.clone());
+                }
+            }
 
             let mut tokens = left.tokens.clone();
             tokens.extend(right.tokens.clone());

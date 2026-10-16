@@ -71,7 +71,7 @@ error[E0277]: the trait bound `&dyn Trait: rust_spec::_::RustSpec0<_>` is not sa
    | |_^ the trait `rust_spec::_::RustSpec0<_>` is not implemented for `&dyn Trait`
    |
 help: `&'_lšč0 R` implements trait `rust_spec::_::RustSpec0<_TŠČ0>`
-  --> $RUST_SPEC/src/lib.rs
+  --> $CARGO/rust-spec-$VERSION/src/lib.rs
    |
    | /     unsafe impl<R: ?Sized> RustSpec for &R
    | |     where
@@ -106,7 +106,7 @@ error[E0277]: the trait bound `&dyn Trait: stored::_::DecodeOwned0<'_, _, _, _, 
              `&'d R` implements `stored::_::DecodeOwned0<'d, NulTerminated, Exclusive, <R as RustSpec>::Layout, <&'d R as RustSpec>::Layout>`
              `&'d R` implements `stored::_::DecodeOwned0<'d, NulTerminated, WithInterior, <R as RustSpec>::Layout, <&'d R as RustSpec>::Layout>`
              `&'d R` implements `stored::_::DecodeOwned0<'d, _TŠČ0, Exclusive, <R as RustSpec>::Layout, Stable>`
-             `&'d R` implements `stored::_::DecodeOwned0<'d, _TŠČ1, WithInterior, <R as RustSpec>::Layout, Stable>`
+             `&'d R` implements `stored::_::DecodeOwned0<'d, _TŠČ0, WithInterior, <R as RustSpec>::Layout, Stable>`
              `&'d R` implements `stored::_::DecodeOwned0<'d, co3::rust_spec::size::MetaSized<SliceLike>, Exclusive, Stable, Unstable>`
              `&'d R` implements `stored::_::DecodeOwned0<'d, co3::rust_spec::size::MetaSized<SliceLike>, WithInterior, Stable, Unstable>`
              `&'d R` implements `stored::_::DecodeOwned0<'d, co3::rust_spec::size::Sized<S>, Exclusive, Unstable, Unstable>`

@@ -11,6 +11,7 @@ use crate::{
     slice::{CWideRef, CWideRefMut, Pack2, Unpack2, impl_raw_slice_methods},
     stored::{DecodeOwned, EncodeOwned},
     transmute::CheckedTransmute,
+    wide::{PointeeData, Wide, WideHeader},
 };
 
 /// Owned pointer derived from `Box<C>`.
@@ -18,7 +19,7 @@ use crate::{
 /// If the data pointer is set to `null`, the struct represents `Option<Box<C>>`.
 #[derive(RustSpec)]
 #[repr(transparent)]
-pub struct CBox<C: CType> {
+pub struct CBox<C> {
     data: *mut C,
 }
 
@@ -27,17 +28,17 @@ pub struct CBox<C: CType> {
 /// Like [`CBox`], a null data pointer represents `Option<Box<C>>`.
 #[derive(RustSpec)]
 #[repr(transparent)]
-pub struct CBoxCell<C: CType> {
+pub struct CBoxCell<C> {
     data: *mut C,
 }
 
-/// Owned slice `Box<[C]>` with a defined C ABI layout.
+/// Owned wide pointee with a defined C ABI layout.
 ///
 /// If the data pointer is set to `null`, the struct represents `Option<Box<[C]>>`.
 #[derive(RustSpec)]
 #[repr(C)]
-pub struct CWideBox<C: CType> {
-    data: *mut C,
+pub struct CWideBox<P: Wide + ?Sized> {
+    data: *mut PointeeData<P>,
     len: usize,
 }
 
@@ -46,8 +47,8 @@ pub struct CWideBox<C: CType> {
 /// Like [`CWideBox`], a null data pointer represents `Option<Box<[C]>>`.
 #[derive(RustSpec)]
 #[repr(C)]
-pub struct CWideBoxCell<C: CType> {
-    data: *mut C,
+pub struct CWideBoxCell<P: Wide + ?Sized> {
+    data: *mut PointeeData<P>,
     len: usize,
 }
 
@@ -83,7 +84,7 @@ macro_rules! impl_boxed_pointer {
         }
         impl<C: CType> Copy for $ty<C> {}
 
-        impl<C: CType> $ty<C> {
+        impl<C> $ty<C> {
             /// Construct a carrier with a null data pointer.
             pub const fn null() -> Self {
                 Self {
@@ -96,19 +97,12 @@ macro_rules! impl_boxed_pointer {
                 self.data
             }
 
-            /// Create [`Self`] from a [`Box<C>`].
-            pub fn from_box(source: Box<C>) -> Self {
-                Self {
-                    data: Box::into_raw(source),
-                }
-            }
-
             /// Recover the allocation, returning `None` for a null pointer.
             ///
             /// # Safety
             ///
             /// A non-null pointer must uniquely own a live allocation compatible with `Box<C>`.
-            pub unsafe fn into_rust(self) -> Option<Box<C>> {
+            pub unsafe fn into_box(self) -> Option<Box<C>> {
                 if self.data.is_null() {
                     None
                 } else {
@@ -119,6 +113,15 @@ macro_rules! impl_boxed_pointer {
             #[allow(unused)]
             pub(crate) const fn is_null(&self) -> bool {
                 self.data.is_null()
+            }
+        }
+
+        impl<C: CType> $ty<C> {
+            /// Create [`Self`] from a [`Box<C>`].
+            pub fn from_box(source: Box<C>) -> Self {
+                Self {
+                    data: Box::into_raw(source),
+                }
             }
 
             /// Create [`Self`] from a raw owned pointer.
@@ -146,7 +149,7 @@ macro_rules! impl_boxed_pointer {
 impl_boxed_pointer!(CBox, CRef<C>);
 impl_boxed_pointer!(CBoxCell, CRefMut<C, false>);
 
-impl<C: CType> core::fmt::Debug for CWideBoxCell<C> {
+impl<P: Wide + ?Sized> core::fmt::Debug for CWideBoxCell<P> {
     fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
         f.debug_struct("CWideBoxCell")
             .field("data", &self.data)
@@ -154,30 +157,30 @@ impl<C: CType> core::fmt::Debug for CWideBoxCell<C> {
             .finish()
     }
 }
-impl<C: CType> PartialEq for CWideBoxCell<C> {
+impl<P: Wide + ?Sized> PartialEq for CWideBoxCell<P> {
     fn eq(&self, other: &Self) -> bool {
         self.data == other.data && self.len == other.len
     }
 }
-impl<C: CType> Eq for CWideBoxCell<C> {}
-impl<C: CType> PartialOrd for CWideBoxCell<C> {
+impl<P: Wide + ?Sized> Eq for CWideBoxCell<P> {}
+impl<P: Wide + ?Sized> PartialOrd for CWideBoxCell<P> {
     fn partial_cmp(&self, other: &Self) -> Option<core::cmp::Ordering> {
         Some(self.cmp(other))
     }
 }
-impl<C: CType> Ord for CWideBoxCell<C> {
+impl<P: Wide + ?Sized> Ord for CWideBoxCell<P> {
     fn cmp(&self, other: &Self) -> core::cmp::Ordering {
         (self.data, self.len).cmp(&(other.data, other.len))
     }
 }
-impl<C: CType> Clone for CWideBoxCell<C> {
+impl<P: Wide + ?Sized> Clone for CWideBoxCell<P> {
     fn clone(&self) -> Self {
         *self
     }
 }
-impl<C: CType> Copy for CWideBoxCell<C> {}
+impl<P: Wide + ?Sized> Copy for CWideBoxCell<P> {}
 
-impl<C: CType> CWideBoxCell<C> {
+impl<P: Wide + ?Sized> CWideBoxCell<P> {
     /// Construct a carrier with a null data pointer and zero length.
     pub const fn null() -> Self {
         Self {
@@ -186,17 +189,8 @@ impl<C: CType> CWideBoxCell<C> {
         }
     }
 
-    pub fn from_boxed_slice(source: Box<[C]>) -> Self {
-        let len = source.len();
-
-        Self {
-            data: Box::into_raw(source).cast(),
-            len,
-        }
-    }
-
     /// Return the stored data pointer.
-    pub const fn as_ptr(self) -> *mut C {
+    pub const fn as_ptr(self) -> *mut PointeeData<P> {
         self.data
     }
 
@@ -217,37 +211,50 @@ impl<C: CType> CWideBoxCell<C> {
             Some(self.len == 0)
         }
     }
+}
 
+impl<P: Wide<Header: WideHeader<Data: CType>> + ?Sized> CWideBoxCell<P> {
     /// Create an owning slice carrier from a non-null pointer and length.
     ///
     /// # Safety
     ///
     /// `data` and `len` must describe a uniquely owned live allocation compatible
     /// with the boxed slice later recovered from this carrier.
-    pub const unsafe fn from_raw_parts(data: NonNull<C>, len: usize) -> Self {
+    pub const unsafe fn from_raw_parts(data: NonNull<PointeeData<P>>, len: usize) -> Self {
+        Self {
+            data: data.as_ptr(),
+            len,
+        }
+    }
+}
+
+impl<P: Wide<Header: WideHeader<Data: CType>, Metadata = usize> + ?Sized> CWideBoxCell<P> {
+    /// Create [`Self`] from a [`Box<P>`].
+    pub fn from_box(source: Box<P>) -> Self {
+        let len = P::metadata(&*source);
+        let data = P::into_non_null(source).cast();
         Self {
             data: data.as_ptr(),
             len,
         }
     }
 
-    /// Recover the allocation, returning `None` for a null pointer.
+    /// Recover the owned wide value, returning `None` for a null pointer.
     ///
     /// # Safety
     ///
-    /// A non-null pointer and length must uniquely own a live allocation compatible with `Box<[C]>`.
-    pub unsafe fn into_rust(self) -> Option<Box<[C]>> {
-        if self.data.is_null() {
-            None
-        } else {
-            Some(unsafe { Box::from_raw(core::ptr::slice_from_raw_parts_mut(self.data, self.len)) })
-        }
+    /// The pointer and metadata must retain unique ownership of the allocation
+    /// and describe a valid `P` value.
+    pub unsafe fn into_box(self) -> Option<Box<P>> {
+        let len = self.len;
+        let data = NonNull::<P::Header>::new(self.data.cast())?;
+        Some(unsafe { P::from_non_null(data, len) })
     }
 }
 
-impl_raw_slice_methods! { CWideBox, [C: CType], [C] }
+impl_raw_slice_methods! { CWideBox, [P: Wide + ?Sized], [P] }
 
-impl<C: CType> CWideBox<C> {
+impl<P: Wide + ?Sized> CWideBox<P> {
     /// Construct a carrier with a null data pointer and zero length.
     pub const fn null() -> Self {
         Self {
@@ -256,18 +263,8 @@ impl<C: CType> CWideBox<C> {
         }
     }
 
-    /// Create [`Self`] from a [`Box<[T]>`]
-    pub fn from_boxed_slice(source: Box<[C]>) -> Self {
-        let len = source.len();
-
-        Self {
-            data: Box::into_raw(source).cast(),
-            len,
-        }
-    }
-
     /// Return the stored data pointer.
-    pub const fn as_ptr(self) -> *mut C {
+    pub const fn as_ptr(self) -> *mut PointeeData<P> {
         self.data
     }
 
@@ -288,50 +285,63 @@ impl<C: CType> CWideBox<C> {
             Some(self.len == 0)
         }
     }
+}
 
+impl<P: Wide<Header: WideHeader<Data: CType>> + ?Sized> CWideBox<P> {
     /// Create [`Self`] from a non-null pointer and length.
     ///
     /// # Safety
     ///
     /// `data` and `len` must retain unique ownership and provenance of a live
     /// allocation compatible with the owning slice later recovered from this carrier.
-    pub const unsafe fn from_raw_parts(data: NonNull<C>, len: usize) -> Self {
+    pub const unsafe fn from_raw_parts(data: NonNull<PointeeData<P>>, len: usize) -> Self {
+        Self {
+            data: data.as_ptr(),
+            len,
+        }
+    }
+}
+
+impl<P: Wide<Header: WideHeader<Data: CType>, Metadata = usize> + ?Sized> CWideBox<P> {
+    /// Create [`Self`] from a [`Box<P>`].
+    pub fn from_box(source: Box<P>) -> Self {
+        let len = P::metadata(&*source);
+        let data = P::into_non_null(source).cast();
         Self {
             data: data.as_ptr(),
             len,
         }
     }
 
-    /// Recover the allocation, returning `None` for a null pointer.
+    /// Recover the owned wide value, returning `None` for a null pointer.
     ///
     /// # Safety
     ///
-    /// A non-null pointer and length must uniquely own a live allocation compatible with `Box<[C]>`.
-    pub unsafe fn into_rust(self) -> Option<Box<[C]>> {
-        if self.data.is_null() {
-            None
-        } else {
-            Some(unsafe { Box::from_raw(core::ptr::slice_from_raw_parts_mut(self.data, self.len)) })
-        }
+    /// The pointer and metadata must retain unique ownership of the allocation
+    /// and describe a valid `P` value.
+    pub unsafe fn into_box(self) -> Option<Box<P>> {
+        let len = self.len;
+        let data = NonNull::<P::Header>::new(self.data.cast())?;
+        Some(unsafe { P::from_non_null(data, len) })
     }
 }
 
-impl<C: CType> CWideBox<C> {
+impl<P: Wide + ?Sized> CWideBox<P> {
     pub(crate) const fn is_null(&self) -> bool {
         self.data.is_null()
     }
 
-    pub(crate) const fn data(&self) -> *mut C {
+    pub(crate) const fn data(&self) -> *mut PointeeData<P> {
         self.data
     }
 }
 
 macro_rules! impl_boxed_carrier {
-    ($ty:ident) => {
-        impl<C: CType> ReprC for $ty<C> {
+    ($ty:ident, [$($params:tt)*], [$($args:tt)*]) => {
+        impl<$($params)*> ReprC for $ty<$($args)*> {
             type CType = Self;
         }
-        unsafe impl<C: CType> EncodeOwned for $ty<C> {
+        unsafe impl<$($params)*> EncodeOwned for $ty<$($args)*> {
             type Store = ();
 
             #[inline(always)]
@@ -342,7 +352,7 @@ macro_rules! impl_boxed_carrier {
                 self
             }
         }
-        unsafe impl<'d, C: CType> DecodeOwned<'d> for $ty<C> {
+        unsafe impl<'d, $($params)*> DecodeOwned<'d> for $ty<$($args)*> {
             type Store = ();
 
             #[inline(always)]
@@ -351,45 +361,46 @@ macro_rules! impl_boxed_carrier {
             }
         }
 
-        impl<C: CType> Encode for $ty<C> {}
-        impl<'d, C: CType> Decode<'d> for $ty<C> {}
+        impl<$($params)*> Encode for $ty<$($args)*> {}
+        impl<'d, $($params)*> Decode<'d> for $ty<$($args)*> {}
 
-        unsafe impl<C: CType> CheckedTransmute for $ty<C> {
+        unsafe impl<$($params)*> CheckedTransmute for $ty<$($args)*> {
             #[inline(always)]
             unsafe fn is_valid(_: &Self::CType) -> bool {
                 true
             }
         }
 
-        unsafe impl<C: CType> CType for $ty<C> {}
-        unsafe impl<C: CType> CFnArg for $ty<C> {}
-        unsafe impl<C: CType> CFnReturn for $ty<C> {}
+        unsafe impl<$($params)*> CType for $ty<$($args)*> {}
+        unsafe impl<$($params)*> CFnArg for $ty<$($args)*> {}
+        unsafe impl<$($params)*> CFnReturn for $ty<$($args)*> {}
     };
 }
 
-impl_boxed_carrier! { CBox }
-impl_boxed_carrier! { CBoxCell }
-impl_boxed_carrier! { CWideBox }
-impl_boxed_carrier! { CWideBoxCell }
+impl_boxed_carrier! { CBox, [C: CType], [C] }
+impl_boxed_carrier! { CBoxCell, [C: CType], [C] }
+impl_boxed_carrier! { CWideBox, [P: Wide<Header: WideHeader<Data: CType>> + ?Sized], [P] }
+impl_boxed_carrier! { CWideBoxCell, [P: Wide<Header: WideHeader<Data: CType>> + ?Sized], [P] }
 
-unsafe impl<C: CType> BorrowCast for CWideBox<C> {
-    type AsConst = CWideRef<C>;
+unsafe impl<P: Wide<Header: WideHeader<Data: CType>> + ?Sized> BorrowCast for CWideBox<P> {
+    type AsConst = CWideRef<P>;
 }
-unsafe impl<C: CType> BorrowCastMut for CWideBox<C> {
-    type AsMut = CWideRefMut<C, true>;
-}
-
-unsafe impl<C: CType> BorrowCast for CWideBoxCell<C> {
-    type AsConst = CWideRefMut<C, false>;
-}
-unsafe impl<C: CType> BorrowCastMut for CWideBoxCell<C> {
-    type AsMut = CWideRefMut<C, true>;
+unsafe impl<P: Wide<Header: WideHeader<Data: CType>> + ?Sized> BorrowCastMut for CWideBox<P> {
+    type AsMut = CWideRefMut<P, true>;
 }
 
-impl<R: ?Sized, C: CType, K: CType, U: CType> Unpack2<K, U> for Box<R>
+unsafe impl<P: Wide<Header: WideHeader<Data: CType>> + ?Sized> BorrowCast for CWideBoxCell<P> {
+    type AsConst = CWideRefMut<P, false>;
+}
+unsafe impl<P: Wide<Header: WideHeader<Data: CType>> + ?Sized> BorrowCastMut for CWideBoxCell<P> {
+    type AsMut = CWideRefMut<P, true>;
+}
+
+impl<R: ?Sized, P: Wide<Header: WideHeader<Data: CType>> + ?Sized, K: CType, U: CType> Unpack2<K, U>
+    for Box<R>
 where
-    Self: ReprC<CType = CWideBox<C>>,
-    CBox<C>: Into<K>,
+    Self: ReprC<CType = CWideBox<P>>,
+    CBox<PointeeData<P>>: Into<K>,
     usize: TryInto<U>,
 {
     type Error = <usize as TryInto<U>>::Error;
@@ -400,16 +411,18 @@ where
     }
 }
 
-impl<R: ?Sized, C: CType, K: CType + Into<CBox<C>>, U: CType + TryInto<usize>> Pack2<K, U>
+impl<R: ?Sized, P: Wide<Header: WideHeader<Data: CType>> + ?Sized, K: CType, U: CType> Pack2<K, U>
     for Box<R>
 where
-    Self: ReprC<CType = CWideBox<C>>,
+    Self: ReprC<CType = CWideBox<P>>,
+    K: Into<CBox<PointeeData<P>>>,
+    U: TryInto<usize>,
 {
     type Error = <U as TryInto<usize>>::Error;
 
     #[inline(always)]
     unsafe fn pack(data: K, len: U) -> Result<Self::CType, Self::Error> {
-        let data: CBox<C> = data.into();
+        let data: CBox<PointeeData<P>> = data.into();
         Ok(CWideBox {
             data: data.data,
             len: len.try_into()?,

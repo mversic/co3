@@ -657,24 +657,24 @@ mod tests {
             Encode,
         );
         assert_impl_all!(&[u8]:
-            Niche<CType = CWideRef<u8>>,
+            Niche<CType = CWideRef<[u8]>>,
             Decode<'static>,
             Encode,
         );
         assert_impl_all!(&mut [u8]:
-            Niche<CType = CWideRefMut<u8, true>>,
+            Niche<CType = CWideRefMut<[u8], true>>,
             Decode<'static>,
             Encode,
         );
         #[cfg(feature = "alloc")]
         assert_impl_all!(Box<[u8]>:
-            Niche<CType = CWideBox<u8>>,
+            Niche<CType = CWideBox<[u8]>>,
             Decode<'static>,
             Encode,
         );
         #[cfg(feature = "alloc")]
         assert_impl_all!(Vec<u8>:
-            Niche<CType = CWideBox<u8>>,
+            Niche<CType = CWideBox<[u8]>>,
             Decode<'static>,
             Encode,
         );

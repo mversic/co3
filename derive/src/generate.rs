@@ -3504,7 +3504,6 @@ fn gen_owned_extern_type_impls(
                 #bounded_where_clause { #body }
         }
     };
-    let send_impl = bound_impl(syn::parse_quote!(core::marker::Send), true, quote!());
     let sync_impl = bound_impl(syn::parse_quote!(core::marker::Sync), true, quote!());
     let unwind_safe_impl = bound_impl(syn::parse_quote!(core::panic::UnwindSafe), false, quote!());
     let ref_unwind_safe_impl = bound_impl(
@@ -3632,7 +3631,6 @@ fn gen_owned_extern_type_impls(
         #tag_impl
 
         #clone_impl
-        #send_impl
         #sync_impl
         #unwind_safe_impl
         #ref_unwind_safe_impl

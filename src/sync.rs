@@ -83,7 +83,7 @@ pub struct RefDstDecodeStore<R: ToOwned + ?Sized, S> {
 pub struct RefMutSliceDecodeStore<R: ReprC<CType: Sized>, S> {
     pub(crate) value: Option<Vec<R>>,
     pub(crate) store: S,
-    pub(crate) source: Option<CWideRefMut<R::CType, true>>,
+    pub(crate) source: Option<CWideRefMut<[R::CType], true>>,
 }
 
 /// This struct exists only because [arrays don't yet implement Default](https://github.com/rust-lang/rust/issues/61415)
@@ -250,7 +250,7 @@ impl<R: EncodeOwned<CType: Sized, Store: EmptyStore>, S: Store> Store
             return None;
         }
 
-        let source = unsafe { source.into_rust()? };
+        let source = unsafe { source.into_mut()? };
         for (destination, value) in source.iter_mut().zip(value) {
             *destination = encode_owned(value);
         }

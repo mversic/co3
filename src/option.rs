@@ -113,7 +113,7 @@ impl<T> ReprCOption<T> {
     }
 
     /// Return the represented `Option<T>`, or `None` for an invalid tag.
-    pub fn into_rust(self) -> Option<Option<T>> {
+    pub fn into_option(self) -> Option<Option<T>> {
         match self.tag {
             0 => Some(None),
             1 => Some(Some(unsafe { self.payload.assume_init() })),

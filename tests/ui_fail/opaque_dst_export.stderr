@@ -184,7 +184,7 @@ note: required because it appears within the type `OpaqueSlice<u8>`
 note: required by an implicit `Sized` bound in `CBox`
   --> src/boxed.rs
    |
-   | pub struct CBox<C: CType> {
+   | pub struct CBox<C> {
    |                 ^ required by the implicit `Sized` requirement on this type parameter in `CBox`
    = note: this error originates in the macro `ffi` (in Nightly builds, run with -Z macro-backtrace for more info)
 

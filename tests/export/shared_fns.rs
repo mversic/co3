@@ -1,7 +1,7 @@
 use std::cmp::Ordering;
 use std::ffi::c_void;
 
-use co3::{boxed::CWideBox, ffi, rust_spec::RustSpec};
+use co3::{boxed::CWideBox, ffi, rust_spec::RustSpec, utf8::Utf8Str};
 
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, RustSpec)]
 #[rust_spec(opaque)]
@@ -47,7 +47,7 @@ impl FfiStruct {
 
 unsafe extern "C" {
     #[link_name = "export_shared__FfiStruct__new"]
-    fn new_raw(name: CWideBox<u8>) -> *mut c_void;
+    fn new_raw(name: CWideBox<Utf8Str>) -> *mut c_void;
 
     #[link_name = "export_shared__FfiStruct__clone_box"]
     fn clone_raw(value: *const c_void) -> *mut c_void;
