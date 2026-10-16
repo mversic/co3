@@ -8,7 +8,7 @@ use crate::{
     CFnArg, CFnReturn, CType, Decode, Encode, ReprC,
     borrow::{BorrowCast, BorrowCastMut},
     reference::{CRef, CRefMut},
-    slice::{CSlice, CSliceMut, Pack2, Unpack2, impl_raw_slice_methods},
+    slice::{CWideRef, CWideRefMut, Pack2, Unpack2, impl_raw_slice_methods},
     stored::{DecodeOwned, EncodeOwned},
     transmute::CheckedTransmute,
 };
@@ -18,7 +18,7 @@ use crate::{
 /// If the data pointer is set to `null`, the struct represents `Option<Box<C>>`.
 #[derive(RustSpec)]
 #[repr(transparent)]
-pub struct CBox<C> {
+pub struct CBox<C: CType> {
     data: *mut C,
 }
 
@@ -27,7 +27,7 @@ pub struct CBox<C> {
 /// Like [`CBox`], a null data pointer represents `Option<Box<C>>`.
 #[derive(RustSpec)]
 #[repr(transparent)]
-pub struct CBoxCell<C> {
+pub struct CBoxCell<C: CType> {
     data: *mut C,
 }
 
@@ -36,54 +36,54 @@ pub struct CBoxCell<C> {
 /// If the data pointer is set to `null`, the struct represents `Option<Box<[C]>>`.
 #[derive(RustSpec)]
 #[repr(C)]
-pub struct CBoxedSlice<C> {
+pub struct CWideBox<C: CType> {
     data: *mut C,
     len: usize,
 }
 
 /// Owned slice whose shared borrowed view permits interior mutation.
 ///
-/// Like [`CBoxedSlice`], a null data pointer represents `Option<Box<[C]>>`.
+/// Like [`CWideBox`], a null data pointer represents `Option<Box<[C]>>`.
 #[derive(RustSpec)]
 #[repr(C)]
-pub struct CBoxedSliceCell<C> {
+pub struct CWideBoxCell<C: CType> {
     data: *mut C,
     len: usize,
 }
 
 macro_rules! impl_boxed_pointer {
     ($ty:ident, $as_const:ty) => {
-        impl<C> core::fmt::Debug for $ty<C> {
+        impl<C: CType> core::fmt::Debug for $ty<C> {
             fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
                 f.debug_struct(stringify!($ty))
                     .field("data", &self.data)
                     .finish_non_exhaustive()
             }
         }
-        impl<C> PartialEq for $ty<C> {
+        impl<C: CType> PartialEq for $ty<C> {
             fn eq(&self, other: &Self) -> bool {
                 self.data == other.data
             }
         }
-        impl<C> Eq for $ty<C> {}
-        impl<C> PartialOrd for $ty<C> {
+        impl<C: CType> Eq for $ty<C> {}
+        impl<C: CType> PartialOrd for $ty<C> {
             fn partial_cmp(&self, other: &Self) -> Option<core::cmp::Ordering> {
                 Some(self.cmp(other))
             }
         }
-        impl<C> Ord for $ty<C> {
+        impl<C: CType> Ord for $ty<C> {
             fn cmp(&self, other: &Self) -> core::cmp::Ordering {
                 self.data.cmp(&other.data)
             }
         }
-        impl<C> Clone for $ty<C> {
+        impl<C: CType> Clone for $ty<C> {
             fn clone(&self) -> Self {
                 *self
             }
         }
-        impl<C> Copy for $ty<C> {}
+        impl<C: CType> Copy for $ty<C> {}
 
-        impl<C> $ty<C> {
+        impl<C: CType> $ty<C> {
             /// Construct a carrier with a null data pointer.
             pub const fn null() -> Self {
                 Self {
@@ -146,38 +146,38 @@ macro_rules! impl_boxed_pointer {
 impl_boxed_pointer!(CBox, CRef<C>);
 impl_boxed_pointer!(CBoxCell, CRefMut<C, false>);
 
-impl<C> core::fmt::Debug for CBoxedSliceCell<C> {
+impl<C: CType> core::fmt::Debug for CWideBoxCell<C> {
     fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
-        f.debug_struct("CBoxedSliceCell")
+        f.debug_struct("CWideBoxCell")
             .field("data", &self.data)
             .field("len", &self.len)
             .finish()
     }
 }
-impl<C> PartialEq for CBoxedSliceCell<C> {
+impl<C: CType> PartialEq for CWideBoxCell<C> {
     fn eq(&self, other: &Self) -> bool {
         self.data == other.data && self.len == other.len
     }
 }
-impl<C> Eq for CBoxedSliceCell<C> {}
-impl<C> PartialOrd for CBoxedSliceCell<C> {
+impl<C: CType> Eq for CWideBoxCell<C> {}
+impl<C: CType> PartialOrd for CWideBoxCell<C> {
     fn partial_cmp(&self, other: &Self) -> Option<core::cmp::Ordering> {
         Some(self.cmp(other))
     }
 }
-impl<C> Ord for CBoxedSliceCell<C> {
+impl<C: CType> Ord for CWideBoxCell<C> {
     fn cmp(&self, other: &Self) -> core::cmp::Ordering {
         (self.data, self.len).cmp(&(other.data, other.len))
     }
 }
-impl<C> Clone for CBoxedSliceCell<C> {
+impl<C: CType> Clone for CWideBoxCell<C> {
     fn clone(&self) -> Self {
         *self
     }
 }
-impl<C> Copy for CBoxedSliceCell<C> {}
+impl<C: CType> Copy for CWideBoxCell<C> {}
 
-impl<C> CBoxedSliceCell<C> {
+impl<C: CType> CWideBoxCell<C> {
     /// Construct a carrier with a null data pointer and zero length.
     pub const fn null() -> Self {
         Self {
@@ -245,9 +245,9 @@ impl<C> CBoxedSliceCell<C> {
     }
 }
 
-impl_raw_slice_methods! { CBoxedSlice, [C], [C] }
+impl_raw_slice_methods! { CWideBox, [C: CType], [C] }
 
-impl<C> CBoxedSlice<C> {
+impl<C: CType> CWideBox<C> {
     /// Construct a carrier with a null data pointer and zero length.
     pub const fn null() -> Self {
         Self {
@@ -316,7 +316,7 @@ impl<C> CBoxedSlice<C> {
     }
 }
 
-impl<C> CBoxedSlice<C> {
+impl<C: CType> CWideBox<C> {
     pub(crate) const fn is_null(&self) -> bool {
         self.data.is_null()
     }
@@ -369,26 +369,26 @@ macro_rules! impl_boxed_carrier {
 
 impl_boxed_carrier! { CBox }
 impl_boxed_carrier! { CBoxCell }
-impl_boxed_carrier! { CBoxedSlice }
-impl_boxed_carrier! { CBoxedSliceCell }
+impl_boxed_carrier! { CWideBox }
+impl_boxed_carrier! { CWideBoxCell }
 
-unsafe impl<C: CType> BorrowCast for CBoxedSlice<C> {
-    type AsConst = CSlice<C>;
+unsafe impl<C: CType> BorrowCast for CWideBox<C> {
+    type AsConst = CWideRef<C>;
 }
-unsafe impl<C: CType> BorrowCastMut for CBoxedSlice<C> {
-    type AsMut = CSliceMut<C, true>;
+unsafe impl<C: CType> BorrowCastMut for CWideBox<C> {
+    type AsMut = CWideRefMut<C, true>;
 }
 
-unsafe impl<C: CType> BorrowCast for CBoxedSliceCell<C> {
-    type AsConst = CSliceMut<C, false>;
+unsafe impl<C: CType> BorrowCast for CWideBoxCell<C> {
+    type AsConst = CWideRefMut<C, false>;
 }
-unsafe impl<C: CType> BorrowCastMut for CBoxedSliceCell<C> {
-    type AsMut = CSliceMut<C, true>;
+unsafe impl<C: CType> BorrowCastMut for CWideBoxCell<C> {
+    type AsMut = CWideRefMut<C, true>;
 }
 
 impl<R: ?Sized, C: CType, K: CType, U: CType> Unpack2<K, U> for Box<R>
 where
-    Self: ReprC<CType = CBoxedSlice<C>>,
+    Self: ReprC<CType = CWideBox<C>>,
     CBox<C>: Into<K>,
     usize: TryInto<U>,
 {
@@ -403,14 +403,14 @@ where
 impl<R: ?Sized, C: CType, K: CType + Into<CBox<C>>, U: CType + TryInto<usize>> Pack2<K, U>
     for Box<R>
 where
-    Self: ReprC<CType = CBoxedSlice<C>>,
+    Self: ReprC<CType = CWideBox<C>>,
 {
     type Error = <U as TryInto<usize>>::Error;
 
     #[inline(always)]
     unsafe fn pack(data: K, len: U) -> Result<Self::CType, Self::Error> {
         let data: CBox<C> = data.into();
-        Ok(CBoxedSlice {
+        Ok(CWideBox {
             data: data.data,
             len: len.try_into()?,
         })

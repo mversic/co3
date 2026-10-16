@@ -44,7 +44,7 @@ fn main() {
     );
     static_assertions::assert_type_eq_all!(
         Composite,
-        <(String, unsafe extern "C" fn(co3::slice::CSlice<u8>)) as ReprC>::CType
+        <(String, unsafe extern "C" fn(co3::slice::CWideRef<u8>)) as ReprC>::CType
     );
     static_assertions::assert_type_eq_all!(Optional, Option<unsafe extern "C" fn(u8)>);
     static_assertions::assert_type_eq_all!(

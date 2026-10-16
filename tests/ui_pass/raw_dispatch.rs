@@ -42,15 +42,15 @@ extern "C" fn static_u16_provider(value: u16) -> u16 {
 
 #[unsafe(export_name = "raw_dispatch_owned_string")]
 extern "C" fn owned_string_provider(
-    value: co3::boxed::CBoxedSlice<u8>,
-) -> co3::boxed::CBoxedSlice<u8> {
+    value: co3::boxed::CWideBox<u8>,
+) -> co3::boxed::CWideBox<u8> {
     value
 }
 
 #[unsafe(export_name = "raw_dispatch_owned_bytes")]
 extern "C" fn owned_bytes_provider(
-    value: co3::boxed::CBoxedSlice<u8>,
-) -> co3::boxed::CBoxedSlice<u8> {
+    value: co3::boxed::CWideBox<u8>,
+) -> co3::boxed::CWideBox<u8> {
     value
 }
 

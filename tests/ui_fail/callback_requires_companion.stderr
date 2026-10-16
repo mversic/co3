@@ -16,9 +16,9 @@ error[E0277]: the trait bound `(): CFnArg` is not satisfied
              CBool
              CBox<C>
              CBoxCell<C>
-             CBoxedSlice<C>
-             CBoxedSliceCell<C>
              CNoRepr
+             CNoReprConstView
+             CNoReprMutView
            and $N others
    = note: required for `extern "C" fn(())` to implement `ReprC`
    = note: this error originates in the macro `ffi` (in Nightly builds, run with -Z macro-backtrace for more info)
@@ -42,8 +42,8 @@ error[E0277]: the trait bound `[u32; 2]: CFnReturn` is not satisfied
              CBool
              CBox<C>
              CBoxCell<C>
-             CBoxedSlice<C>
-             CBoxedSliceCell<C>
+             CNoRepr
+             CNoReprConstView
            and $N others
    = note: required for `extern "C" fn() -> [u32; 2]` to implement `ReprC`
    = note: this error originates in the macro `ffi` (in Nightly builds, run with -Z macro-backtrace for more info)

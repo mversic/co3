@@ -58,7 +58,6 @@ A C-compatible companion type has a defined foreign representation and no trap r
 - `#[repr_c(identity)]` uses a `#[repr(C)]` or `#[repr(transparent)]` struct directly as its companion.
 - `#[repr_c(as(T))]` delegates owned conversion through a Rust type `T` via `Into<T>` and `TryInto<Self>`.
 - `#[repr_c(transparent)]` uses the `CType` of the inner field as its C-compatible companion.
-- Shared references to thin values use the transparent `reference::CRef<T>` carrier, whose ABI matches `*const T`; null represents the `None` niche. Raw Rust pointers retain their pointer representation.
 - `#[repr_c(is_valid = |field0, ...| {...})]` provides additional validity invariant of a struct/variant.
 - `#[repr_c(NICHE = <expr>)]` defines the struct's trap value that is used for niche optimization.
 - Conversion of types with explicit representation (i.e. `#[repr(C)]`/`repr(transmute)`) are optimized.

@@ -173,9 +173,9 @@ fn lowered_aggregates_use_codecs_without_conversion_traits() {
 fn safe_carrier_constructors_accept_lowered_storage() {
     use co3::{
         borrow::borrow_cast,
-        boxed::{CBox, CBoxedSlice},
+        boxed::{CBox, CWideBox},
         reference::{CRef, CRefMut},
-        slice::{CSlice, CSliceMut},
+        slice::{CWideRef, CWideRefMut},
     };
 
     let boxed = CBox::from_box(Box::new(9_u8));
@@ -191,37 +191,37 @@ fn safe_carrier_constructors_accept_lowered_storage() {
     let boxed = unsafe { CBox::from_non_null(core::ptr::NonNull::new(raw).unwrap()) };
     assert_eq!(*unsafe { co3::decode::<Box<u8>>(boxed) }.unwrap(), 10);
 
-    let boxed_slice = CBoxedSlice::from_boxed_slice(Box::from([4_u8, 5]));
+    let boxed_slice = CWideBox::from_boxed_slice(Box::from([4_u8, 5]));
     assert_eq!(
         &*unsafe { co3::decode::<Box<[u8]>>(boxed_slice) }.unwrap(),
         &[4, 5]
     );
     assert_eq!(CBox::<u8>::null(), co3::encode(None::<Box<u8>>));
-    assert_eq!(CBoxedSlice::<u8>::null(), co3::encode(None::<Box<[u8]>>));
-    assert_eq!(CSlice::<u8>::null(), co3::encode(None::<&[u8]>));
+    assert_eq!(CWideBox::<u8>::null(), co3::encode(None::<Box<[u8]>>));
+    assert_eq!(CWideRef::<u8>::null(), co3::encode(None::<&[u8]>));
     assert_eq!(
         CRefMut::<_, true>::null(),
         co3::soft_encode(None::<&mut u8>, &mut Default::default())
     );
-    let _: CSliceMut<u8, true> = CSliceMut::null();
-    assert_eq!(CBoxedSlice::<u8>::null(), co3::encode(None::<String>));
+    let _: CWideRefMut<u8, true> = CWideRefMut::null();
+    assert_eq!(CWideBox::<u8>::null(), co3::encode(None::<String>));
 
-    let utf8 = CBoxedSlice::from_boxed_slice(Box::from("hello".as_bytes()));
+    let utf8 = CWideBox::from_boxed_slice(Box::from("hello".as_bytes()));
     assert_eq!(unsafe { co3::decode::<String>(utf8) }.unwrap(), "hello");
 
     let bytes: Box<[u8]> = Box::from("world".as_bytes());
     let len = bytes.len();
     let data = core::ptr::NonNull::new(Box::into_raw(bytes).cast::<u8>()).unwrap();
-    let utf8 = unsafe { CBoxedSlice::from_raw_parts(data, len) };
+    let utf8 = unsafe { CWideBox::from_raw_parts(data, len) };
     assert_eq!(unsafe { co3::decode::<String>(utf8) }.unwrap(), "world");
 
     let bytes = [1_u8, 2];
-    let _slice = CSlice::from_slice(&bytes);
+    let _slice = CWideRef::from_slice(&bytes);
     assert_eq!(
-        CSlice::<u8>::from_slice("hello".as_bytes()),
+        CWideRef::<u8>::from_slice("hello".as_bytes()),
         co3::encode("hello")
     );
     let mut bytes = [3_u8, 4];
-    let _slice_mut = CSliceMut::<_, true>::from_slice(&mut bytes);
+    let _slice_mut = CWideRefMut::<_, true>::from_slice(&mut bytes);
     let _ref_mut = CRefMut::<_, true>::from_mut(&mut bytes[0]);
 }

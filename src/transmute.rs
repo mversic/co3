@@ -207,11 +207,11 @@ mod tests {
 
     use super::*;
     #[cfg(feature = "alloc")]
-    use crate::boxed::CBoxedSlice;
+    use crate::boxed::CWideBox;
     use crate::{
         CType, Decode, Encode,
         niche::Niche,
-        slice::{CSlice, CSliceMut},
+        slice::{CWideRef, CWideRefMut},
     };
 
     #[test]
@@ -238,25 +238,25 @@ mod tests {
             Encode,
         );
         assert_impl_all!(&[bool]:
-            Niche<CType = CSlice<crate::primitives::CBool>>,
+            Niche<CType = CWideRef<crate::primitives::CBool>>,
             Decode<'static>,
             Encode,
         );
         #[cfg(feature = "alloc")]
         assert_impl_all!(&mut [bool]:
-            Niche<CType = CSliceMut<crate::primitives::CBool, true>>,
+            Niche<CType = CWideRefMut<crate::primitives::CBool, true>>,
             Decode<'static>,
             Encode,
         );
         #[cfg(feature = "alloc")]
         assert_impl_all!(Box<[bool]>:
-            Niche<CType = CBoxedSlice<crate::primitives::CBool>>,
+            Niche<CType = CWideBox<crate::primitives::CBool>>,
             Decode<'static>,
             Encode,
         );
         #[cfg(feature = "alloc")]
         assert_impl_all!(Vec<bool>:
-            Niche<CType = CBoxedSlice<crate::primitives::CBool>>,
+            Niche<CType = CWideBox<crate::primitives::CBool>>,
             Decode<'static>,
             Encode,
         );
@@ -291,23 +291,23 @@ mod tests {
             Encode,
         );
         assert_impl_all!(&[&u8]:
-            Niche<CType = CSlice<CRef<u8>>>,
+            Niche<CType = CWideRef<CRef<u8>>>,
             Decode<'static>,
             Encode,
         );
         assert_impl_all!(&mut [&u8]:
-            Niche<CType = CSliceMut<CRef<u8>, true>>,
+            Niche<CType = CWideRefMut<CRef<u8>, true>>,
             Decode<'static>,
         );
         #[cfg(feature = "alloc")]
         assert_impl_all!(Box<[&u8]>:
-            Niche<CType = CBoxedSlice<CRef<u8>>>,
+            Niche<CType = CWideBox<CRef<u8>>>,
             Decode<'static>,
             Encode,
         );
         #[cfg(feature = "alloc")]
         assert_impl_all!(Vec<&u8>:
-            Niche<CType = CBoxedSlice<CRef<u8>>>,
+            Niche<CType = CWideBox<CRef<u8>>>,
             Decode<'static>,
             Encode,
         );
@@ -344,25 +344,25 @@ mod tests {
             Encode,
         );
         assert_impl_all!(&[&bool]:
-            Niche<CType = CSlice<CRef<crate::primitives::CBool>>>,
+            Niche<CType = CWideRef<CRef<crate::primitives::CBool>>>,
             Decode<'static>,
             Encode,
         );
         #[cfg(feature = "alloc")]
         assert_impl_all!(&mut [&bool]:
-            Niche<CType = CSliceMut<CRef<crate::primitives::CBool>, true>>,
+            Niche<CType = CWideRefMut<CRef<crate::primitives::CBool>, true>>,
             Decode<'static>,
             Encode,
         );
         #[cfg(feature = "alloc")]
         assert_impl_all!(Box<[&bool]>:
-            Niche<CType = CBoxedSlice<CRef<crate::primitives::CBool>>>,
+            Niche<CType = CWideBox<CRef<crate::primitives::CBool>>>,
             Decode<'static>,
             Encode,
         );
         #[cfg(feature = "alloc")]
         assert_impl_all!(Vec<&bool>:
-            Niche<CType = CBoxedSlice<CRef<crate::primitives::CBool>>>,
+            Niche<CType = CWideBox<CRef<crate::primitives::CBool>>>,
             Decode<'static>,
             Encode,
         );
@@ -396,23 +396,23 @@ mod tests {
             Encode,
         );
         assert_impl_all!(&[&mut u8]:
-            Niche<CType = CSlice<CRefMut<u8, true>>>,
+            Niche<CType = CWideRef<CRefMut<u8, true>>>,
             Decode<'static>,
             Encode,
         );
         assert_impl_all!(&mut [&mut u8]:
-            Niche<CType = CSliceMut<CRefMut<u8, true>, true>>,
+            Niche<CType = CWideRefMut<CRefMut<u8, true>, true>>,
             Decode<'static>,
         );
         #[cfg(feature = "alloc")]
         assert_impl_all!(Box<[&mut u8]>:
-            Niche<CType = CBoxedSlice<CRefMut<u8, true>>>,
+            Niche<CType = CWideBox<CRefMut<u8, true>>>,
             Decode<'static>,
             Encode,
         );
         #[cfg(feature = "alloc")]
         assert_impl_all!(Vec<&mut u8>:
-            Niche<CType = CBoxedSlice<CRefMut<u8, true>>>,
+            Niche<CType = CWideBox<CRefMut<u8, true>>>,
             Decode<'static>,
             Encode,
         );
@@ -448,23 +448,23 @@ mod tests {
             Encode,
         );
         assert_impl_all!(&[&mut bool]:
-            Niche<CType = CSlice<CRefMut<crate::primitives::CBool, true>>>,
+            Niche<CType = CWideRef<CRefMut<crate::primitives::CBool, true>>>,
             Decode<'static>,
             Encode,
         );
         assert_impl_all!(&mut [&mut bool]:
-            Niche<CType = CSliceMut<CRefMut<crate::primitives::CBool, true>, true>>,
+            Niche<CType = CWideRefMut<CRefMut<crate::primitives::CBool, true>, true>>,
             Decode<'static>,
         );
         #[cfg(feature = "alloc")]
         assert_impl_all!(Box<[&mut bool]>:
-            Niche<CType = CBoxedSlice<CRefMut<crate::primitives::CBool, true>>>,
+            Niche<CType = CWideBox<CRefMut<crate::primitives::CBool, true>>>,
             Decode<'static>,
             Encode,
         );
         #[cfg(feature = "alloc")]
         assert_impl_all!(Vec<&mut bool>:
-            Niche<CType = CBoxedSlice<CRefMut<crate::primitives::CBool, true>>>,
+            Niche<CType = CWideBox<CRefMut<crate::primitives::CBool, true>>>,
             Decode<'static>,
             Encode
         );

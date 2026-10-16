@@ -522,12 +522,12 @@ mod tests {
 
     use super::*;
     #[cfg(feature = "alloc")]
-    use crate::boxed::{CBox, CBoxedSlice};
+    use crate::boxed::{CBox, CWideBox};
     use crate::{
         Encode,
         option::ReprCOption,
         reference::{CRef, CRefMut},
-        slice::{CSlice, CSliceMut},
+        slice::{CWideRef, CWideRefMut},
     };
 
     #[test]
@@ -657,24 +657,24 @@ mod tests {
             Encode,
         );
         assert_impl_all!(&[u8]:
-            Niche<CType = CSlice<u8>>,
+            Niche<CType = CWideRef<u8>>,
             Decode<'static>,
             Encode,
         );
         assert_impl_all!(&mut [u8]:
-            Niche<CType = CSliceMut<u8, true>>,
+            Niche<CType = CWideRefMut<u8, true>>,
             Decode<'static>,
             Encode,
         );
         #[cfg(feature = "alloc")]
         assert_impl_all!(Box<[u8]>:
-            Niche<CType = CBoxedSlice<u8>>,
+            Niche<CType = CWideBox<u8>>,
             Decode<'static>,
             Encode,
         );
         #[cfg(feature = "alloc")]
         assert_impl_all!(Vec<u8>:
-            Niche<CType = CBoxedSlice<u8>>,
+            Niche<CType = CWideBox<u8>>,
             Decode<'static>,
             Encode,
         );

@@ -6,7 +6,7 @@ use crate::{
     transmute::CheckedTransmute,
 };
 #[cfg(feature = "alloc")]
-use crate::{boxed::CBoxedSlice, stored::Owned};
+use crate::{boxed::CWideBox, stored::Owned};
 #[cfg(feature = "alloc")]
 use alloc::{string::String, vec::Vec};
 use core::{
@@ -358,7 +358,7 @@ impl Decode<'_> for String {}
 
 #[cfg(feature = "alloc")]
 impl Niche for String {
-    const NICHE: Self::CType = CBoxedSlice::null();
+    const NICHE: Self::CType = CWideBox::null();
 }
 unsafe impl<T: Borrow> Borrow for UnsafeCell<T> {
     type Borrowed<'itm>
@@ -676,12 +676,12 @@ mod tests {
 
     use super::*;
     #[cfg(feature = "alloc")]
-    use crate::boxed::{CBoxCell, CBoxedSlice, CBoxedSliceCell};
+    use crate::boxed::{CBoxCell, CWideBox, CWideBoxCell};
     use crate::{
         CFnArg, CFnReturn, Decode, Encode,
         option::ReprCOption,
         reference::CRefMut,
-        slice::{CSlice, CSliceMut},
+        slice::{CWideRef, CWideRefMut},
     };
 
     // FIXME:
@@ -784,24 +784,24 @@ mod tests {
     //        Encode,
     //    );
     //    assert_impl_all!(&[ManuallyDrop<u8>]:
-    //        Niche<CType = CSlice<u8>>,
+    //        Niche<CType = CWideRef<u8>>,
     //        Decode<'static>,
     //        Encode,
     //    );
     //    assert_impl_all!(&mut [ManuallyDrop<u8>]:
-    //        Niche<CType = CSliceMut<u8, true>>,
+    //        Niche<CType = CWideRefMut<u8, true>>,
     //        Decode<'static>,
     //        Encode,
     //    );
     //    #[cfg(feature = "alloc")]
     //    assert_impl_all!(Box<[ManuallyDrop<u8>]>:
-    //        Niche<CType = CBoxedSlice<u8>>,
+    //        Niche<CType = CWideBox<u8>>,
     //        Decode<'static>,
     //        Encode,
     //    );
     //    #[cfg(feature = "alloc")]
     //    assert_impl_all!(Vec<ManuallyDrop<u8>>:
-    //        Niche<CType = CBoxedSlice<u8>>,
+    //        Niche<CType = CWideBox<u8>>,
     //        Decode<'static>,
     //        Encode,
     //    );
@@ -823,54 +823,54 @@ mod tests {
     //#[cfg(feature = "alloc")]
     //fn manually_drop_inner_with_drop() {
     //    assert_impl_all!(ManuallyDrop<String>:
-    //        Niche<CType = CBoxedSlice<u8>>,
+    //        Niche<CType = CWideBox<u8>>,
     //        Decode<'static>,
     //        Encode,
     //    );
     //    assert_impl_all!(&ManuallyDrop<String>:
-    //        Niche<CType = *const CBoxedSlice<u8>,
+    //        Niche<CType = *const CWideBox<u8>,
     //        Decode<'static>,
     //        Encode,
     //    );
     //    assert_impl_all!(&mut ManuallyDrop<String>:
-    //        Niche<CType = CRefMut<CBoxedSlice<u8>, true>,
+    //        Niche<CType = CRefMut<CWideBox<u8>, true>,
     //        Decode<'static>,
     //        Encode,
     //    );
     //    assert_impl_all!(Box<ManuallyDrop<String>>:
-    //        Niche<CType = CBox<CBoxedSlice<u8>>,
+    //        Niche<CType = CBox<CWideBox<u8>>,
     //        RustSpec<Niche = rust_spec::niche::WithNiche<rust_spec::Stable>>>>,
     //        DecodeOwned<'static>,
     //        EncodeOwned,
     //    );
     //    assert_impl_all!(&[ManuallyDrop<String>]:
-    //        Niche<CType = CSlice<CBoxedSlice<u8>>>,
+    //        Niche<CType = CWideRef<CWideBox<u8>>>,
     //        Decode<'static>,
     //        Encode,
     //    );
     //    assert_impl_all!(&mut [ManuallyDrop<String>]:
-    //        Niche<CType = CSliceMut<CBoxedSlice<u8>, true>>,
+    //        Niche<CType = CWideRefMut<CWideBox<u8>, true>>,
     //        Decode<'static>,
     //        Encode,
     //    );
     //    assert_impl_all!(Box<[ManuallyDrop<String>]>:
-    //        Niche<CType = CBoxedSlice<CBoxedSlice<u8>>>,
+    //        Niche<CType = CWideBox<CWideBox<u8>>>,
     //        DecodeOwned<'static>,
     //        EncodeOwned,
     //    );
     //    assert_impl_all!(Vec<ManuallyDrop<String>>:
-    //        Niche<CType = CBoxedSlice<CBoxedSlice<u8>>>,
+    //        Niche<CType = CWideBox<CWideBox<u8>>>,
     //        DecodeOwned<'static>,
     //        EncodeOwned,
     //    );
     //    assert_impl_all!([ManuallyDrop<String>; 2]:
-    //        Niche<CType = [CBoxedSlice<u8>; 2]>,
+    //        Niche<CType = [CWideBox<u8>; 2]>,
     //        Decode<'static>,
     //        Encode,
     //    );
     //    assert_impl_all!(Option<ManuallyDrop<String>>:
-    //        //Niche<CType = CBoxedSlice<u8>>,
-    //        ReprC<CType = CBoxedSlice<u8>>,
+    //        //Niche<CType = CWideBox<u8>>,
+    //        ReprC<CType = CWideBox<u8>>,
     //        Decode<'static>,
     //        Encode,
     //    );
@@ -886,24 +886,24 @@ mod tests {
     fn str_is_supported() {
         assert_impl_all!(str: ReprC<CType = [u8]>);
         #[cfg(feature = "alloc")]
-        assert_impl_all!(String: ReprC<CType = CBoxedSlice<u8>>);
+        assert_impl_all!(String: ReprC<CType = CWideBox<u8>>);
 
         assert_impl_all!(&str:
-            Niche<CType = CSlice<u8>>,
+            Niche<CType = CWideRef<u8>>,
             Decode<'static>,
             Encode,
         );
 
         #[cfg(feature = "alloc")]
         assert_impl_all!(&mut str:
-            Niche<CType = CSliceMut<u8, true>>,
+            Niche<CType = CWideRefMut<u8, true>>,
             Decode<'static>,
             Encode,
         );
 
         #[cfg(feature = "alloc")]
         assert_impl_all!(Box<str>:
-            Niche<CType = CBoxedSlice<u8>>,
+            Niche<CType = CWideBox<u8>>,
             Decode<'static>,
             Encode,
         );
@@ -913,20 +913,20 @@ mod tests {
     fn str_decode_rejects_invalid_utf8() {
         let invalid = [0xff];
 
-        let source = unsafe { CSlice::from_raw_parts(invalid.as_ptr(), invalid.len()) };
+        let source = unsafe { CWideRef::from_raw_parts(invalid.as_ptr(), invalid.len()) };
         let decoded = unsafe { crate::decode::<&str>(source) };
         assert!(decoded.is_none());
 
         let mut invalid = [0xff];
         let source = unsafe {
-            CSliceMut::<_, true>::from_raw_parts_mut(invalid.as_mut_ptr(), invalid.len())
+            CWideRefMut::<_, true>::from_raw_parts_mut(invalid.as_mut_ptr(), invalid.len())
         };
         let decoded = unsafe { crate::decode::<&mut str>(source) };
         assert!(decoded.is_none());
 
         #[cfg(feature = "alloc")]
         {
-            let source = CBoxedSlice::from_boxed_slice(vec![0xff].into_boxed_slice());
+            let source = CWideBox::from_boxed_slice(vec![0xff].into_boxed_slice());
             let decoded = unsafe { crate::decode::<Box<str>>(source) };
             assert!(decoded.is_none());
         }
@@ -981,24 +981,24 @@ mod tests {
         #[cfg(feature = "alloc")]
         assert_not_impl_any!(Box<UnsafeCell<u8>>: CheckedTransmute);
         assert_impl_all!(&[UnsafeCell<u8>]:
-            Niche<CType = CSliceMut<UnsafeCell<u8>, false>>,
+            Niche<CType = CWideRefMut<UnsafeCell<u8>, false>>,
             Decode<'static>,
             Encode,
         );
         assert_impl_all!(&mut [UnsafeCell<u8>]:
-            Niche<CType = CSliceMut<UnsafeCell<u8>, true>>,
+            Niche<CType = CWideRefMut<UnsafeCell<u8>, true>>,
             Decode<'static>,
             Encode,
         );
         #[cfg(feature = "alloc")]
         assert_impl_all!(Box<[UnsafeCell<u8>]>:
-            Niche<CType = CBoxedSliceCell<UnsafeCell<u8>>>,
+            Niche<CType = CWideBoxCell<UnsafeCell<u8>>>,
             Decode<'static>,
             Encode,
         );
         #[cfg(feature = "alloc")]
         assert_impl_all!(Vec<UnsafeCell<u8>>:
-            Niche<CType = CBoxedSliceCell<UnsafeCell<u8>>>,
+            Niche<CType = CWideBoxCell<UnsafeCell<u8>>>,
             Decode<'static>,
             Encode,
         );
@@ -1060,7 +1060,7 @@ mod tests {
     #[test]
     fn interior_mutable_slice_carriers_round_trip() {
         assert_type_eq_all!(
-            <CBoxedSliceCell<UnsafeCell<u8>> as BorrowCast>::AsConst,
+            <CWideBoxCell<UnsafeCell<u8>> as BorrowCast>::AsConst,
             <&[UnsafeCell<u8>] as ReprC>::CType
         );
 
@@ -1166,33 +1166,33 @@ mod tests {
             assert!(unsafe { crate::decode::<Box<UnsafeCell<NonZero<u8>>>>(invalid) }.is_none());
         }
         assert_impl_all!(&[UnsafeCell<NonZero<u8>>]:
-            Niche<CType = CSliceMut<UnsafeCell<u8>, false>>,
+            Niche<CType = CWideRefMut<UnsafeCell<u8>, false>>,
             Decode<'static>,
         );
         assert_impl_all!(&mut [UnsafeCell<NonZero<u8>>]:
-            Niche<CType = CSliceMut<UnsafeCell<u8>, true>>,
+            Niche<CType = CWideRefMut<UnsafeCell<u8>, true>>,
             Decode<'static>,
         );
         #[cfg(feature = "alloc")]
         assert_impl_all!(Box<[UnsafeCell<NonZero<u8>>]>:
-            Niche<CType = CBoxedSliceCell<UnsafeCell<u8>>>,
+            Niche<CType = CWideBoxCell<UnsafeCell<u8>>>,
             Decode<'static>,
             Encode,
         );
         #[cfg(feature = "alloc")]
         assert_impl_all!(Vec<UnsafeCell<NonZero<u8>>>:
-            Niche<CType = CBoxedSliceCell<UnsafeCell<u8>>>,
+            Niche<CType = CWideBoxCell<UnsafeCell<u8>>>,
             Decode<'static>,
             Encode,
         );
         #[cfg(feature = "alloc")]
         {
             let invalid =
-                CBoxedSliceCell::from_boxed_slice(vec![UnsafeCell::new(0_u8)].into_boxed_slice());
+                CWideBoxCell::from_boxed_slice(vec![UnsafeCell::new(0_u8)].into_boxed_slice());
             assert!(unsafe { crate::decode::<Vec<UnsafeCell<NonZero<u8>>>>(invalid) }.is_none());
 
             let invalid =
-                CBoxedSliceCell::from_boxed_slice(vec![UnsafeCell::new(0_u8)].into_boxed_slice());
+                CWideBoxCell::from_boxed_slice(vec![UnsafeCell::new(0_u8)].into_boxed_slice());
             assert!(unsafe { crate::decode::<Box<[UnsafeCell<NonZero<u8>>]>>(invalid) }.is_none());
         }
         assert_impl_all!([UnsafeCell<NonZero<u8>>; 2]:

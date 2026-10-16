@@ -3,7 +3,7 @@ use alloc::{borrow::ToOwned, boxed::Box, vec::Vec};
 
 use crate::ReprC;
 #[cfg(feature = "alloc")]
-use crate::slice::CSliceMut;
+use crate::slice::CWideRefMut;
 #[cfg(feature = "alloc")]
 use crate::stored::AssignFromOwned;
 use crate::stored::{DecodeOwned, EmptyStore, EncodeOwned, decode_owned, encode_owned};
@@ -83,7 +83,7 @@ pub struct RefDstDecodeStore<R: ToOwned + ?Sized, S> {
 pub struct RefMutSliceDecodeStore<R: ReprC<CType: Sized>, S> {
     pub(crate) value: Option<Vec<R>>,
     pub(crate) store: S,
-    pub(crate) source: Option<CSliceMut<R::CType, true>>,
+    pub(crate) source: Option<CWideRefMut<R::CType, true>>,
 }
 
 /// This struct exists only because [arrays don't yet implement Default](https://github.com/rust-lang/rust/issues/61415)

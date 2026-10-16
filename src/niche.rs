@@ -7,14 +7,14 @@ use core::ptr::NonNull;
 use disjoint_impls::disjoint_impls;
 
 #[cfg(feature = "alloc")]
-use crate::boxed::{CBox, CBoxCell, CBoxedSlice, CBoxedSliceCell};
+use crate::boxed::{CBox, CBoxCell, CWideBox, CWideBoxCell};
 use crate::{
     CType, ReprC, assert_arr_has_non_zero_len,
     option::ReprCOption,
     primitives::CBool,
     reference::{CRef, CRefMut},
     result::ReprCResult,
-    slice::{CSlice, CSliceMut},
+    slice::{CWideRef, CWideRefMut},
 };
 
 disjoint_impls! {
@@ -28,89 +28,89 @@ disjoint_impls! {
         const NICHE: Self::CType;
     }
 
-    impl<R: ?Sized, C> Niche for &R
+    impl<R: ?Sized, C: CType> Niche for &R
     where
         Self: ReprC<CType = CRef<C>>,
     {
         const NICHE: Self::CType = CRef::null();
     }
-    impl<R: ?Sized, C> Niche for &R
+    impl<R: ?Sized, C: CType> Niche for &R
     where
         Self: ReprC<CType = CRefMut<C, false>>,
     {
         const NICHE: Self::CType = CRefMut::null();
     }
-    impl<R: ?Sized, C> Niche for &R
+    impl<R: ?Sized, C: CType> Niche for &R
     where
-        Self: ReprC<CType = CSlice<C>>,
+        Self: ReprC<CType = CWideRef<C>>,
     {
-        const NICHE: Self::CType = CSlice::null();
+        const NICHE: Self::CType = CWideRef::null();
     }
-    impl<R: ?Sized, C> Niche for &R
+    impl<R: ?Sized, C: CType> Niche for &R
     where
-        Self: ReprC<CType = CSliceMut<C, false>>,
+        Self: ReprC<CType = CWideRefMut<C, false>>,
     {
-        const NICHE: Self::CType = CSliceMut::null();
+        const NICHE: Self::CType = CWideRefMut::null();
     }
 
-    impl<R: ?Sized, C> Niche for &mut R
+    impl<R: ?Sized, C: CType> Niche for &mut R
     where
         Self: ReprC<CType = CRefMut<C, true>>,
     {
         const NICHE: Self::CType = CRefMut::null();
     }
-    impl<R: ?Sized, C> Niche for &mut R
+    impl<R: ?Sized, C: CType> Niche for &mut R
     where
-        Self: ReprC<CType = CSliceMut<C, true>>,
+        Self: ReprC<CType = CWideRefMut<C, true>>,
     {
-        const NICHE: Self::CType = CSliceMut::null();
+        const NICHE: Self::CType = CWideRefMut::null();
     }
 
     #[cfg(feature = "alloc")]
-    impl<R: ?Sized, C> Niche for Box<R>
+    impl<R: ?Sized, C: CType> Niche for Box<R>
     where
         Self: ReprC<CType = CBox<C>>,
     {
         const NICHE: Self::CType = CBox::null();
     }
     #[cfg(feature = "alloc")]
-    impl<R: ?Sized, C> Niche for Box<R>
+    impl<R: ?Sized, C: CType> Niche for Box<R>
     where
         Self: ReprC<CType = CBoxCell<C>>,
     {
         const NICHE: Self::CType = CBoxCell::null();
     }
     #[cfg(feature = "alloc")]
-    impl<R: ?Sized, C> Niche for Box<R>
+    impl<R: ?Sized, C: CType> Niche for Box<R>
     where
-        Self: ReprC<CType = CBoxedSlice<C>>,
+        Self: ReprC<CType = CWideBox<C>>,
     {
-        const NICHE: Self::CType = CBoxedSlice::null();
+        const NICHE: Self::CType = CWideBox::null();
     }
     #[cfg(feature = "alloc")]
-    impl<R: ?Sized, C> Niche for Box<R>
+    impl<R: ?Sized, C: CType> Niche for Box<R>
     where
-        Self: ReprC<CType = CBoxedSliceCell<C>>,
+        Self: ReprC<CType = CWideBoxCell<C>>,
     {
-        const NICHE: Self::CType = CBoxedSliceCell::null();
+        const NICHE: Self::CType = CWideBoxCell::null();
     }
 
     #[cfg(feature = "alloc")]
-    impl<R, C> Niche for Vec<R>
+    impl<R, C: CType> Niche for Vec<R>
     where
-        Self: ReprC<CType = CBoxedSlice<C>>,
+        Self: ReprC<CType = CWideBox<C>>,
     {
-        const NICHE: Self::CType = CBoxedSlice::null();
+        const NICHE: Self::CType = CWideBox::null();
     }
     #[cfg(feature = "alloc")]
-    impl<R, C> Niche for Vec<R>
+    impl<R, C: CType> Niche for Vec<R>
     where
-        Self: ReprC<CType = CBoxedSliceCell<C>>,
+        Self: ReprC<CType = CWideBoxCell<C>>,
     {
-        const NICHE: Self::CType = CBoxedSliceCell::null();
+        const NICHE: Self::CType = CWideBoxCell::null();
     }
 
-    impl<T: ?Sized, C> Niche for NonNull<T>
+    impl<T: ?Sized, C: CType> Niche for NonNull<T>
     where
         Self: ReprC<CType = *mut C>,
     {
@@ -119,9 +119,9 @@ disjoint_impls! {
     // TODO: Support ?Sized
     //impl<R: ?C> Niche for NonNull<R>
     //where
-    //    Self: ReprC<CType = CBoxedSlice<C>>,
+    //    Self: ReprC<CType = CWideBox<C>>,
     //{
-    //    const NICHE: Self::CType = CBoxedSlice::none();
+    //    const NICHE: Self::CType = CWideBox::none();
     //}
 
     impl<R, C: CType + Copy> Niche for Option<R>

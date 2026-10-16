@@ -59,7 +59,8 @@ help: the following other types implement trait `stored::_::DecodeOwned1<'d, _TÅ
    | |         Self: RustSpec<Layout = Unstable>,
    | |         R: RustSpec<Layout = Stable, Size = MetaSized<SliceLike>>,
    | |         WideData<R>: ReprC<CType = WideData<<R as ReprC>::CType>>,
-   | |__________________________________________________________________^ `&'d mut R` implements `stored::_::DecodeOwned1<'d, Unstable, rust_spec::size::MetaSized<SliceLike>, Stable>`
+   | |         <WideData<R> as ReprC>::CType: CType,
+   | |_____________________________________________^ `&'d mut R` implements `stored::_::DecodeOwned1<'d, Unstable, rust_spec::size::MetaSized<SliceLike>, Stable>`
 ...
    | /     unsafe impl<'d, R: ReprC<CType: BorrowCast<AsConst: Copy> + Copy> + FromBorrow<'d>, S: SizedKind>
    | |         DecodeOwned<'d> for &'d mut R

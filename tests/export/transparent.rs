@@ -1,8 +1,8 @@
 use std::marker::PhantomData;
 
 use co3::{
-    ReprC, boxed::CBoxedSlice, ffi, option::ReprCOption, reference::CRef, rust_spec::RustSpec,
-    slice::CSlice,
+    ReprC, boxed::CWideBox, ffi, option::ReprCOption, reference::CRef, rust_spec::RustSpec,
+    slice::CWideRef,
 };
 
 #[derive(Clone, Copy, PartialEq, Eq, Debug, RustSpec, ReprC)]
@@ -102,10 +102,10 @@ unsafe extern "C" {
     fn self_to_self_raw(value: TransparentStruct) -> TransparentStruct;
 
     #[link_name = "export_transparent__vec_to_vec"]
-    fn vec_to_vec_raw(value: CBoxedSlice<TransparentStruct>) -> CBoxedSlice<TransparentStruct>;
+    fn vec_to_vec_raw(value: CWideBox<TransparentStruct>) -> CWideBox<TransparentStruct>;
 
     #[link_name = "export_transparent__slice_to_slice"]
-    fn slice_to_slice_raw(value: CSlice<TransparentStruct>) -> CSlice<TransparentStruct>;
+    fn slice_to_slice_raw(value: CWideRef<TransparentStruct>) -> CWideRef<TransparentStruct>;
 
     #[link_name = "export_transparent__TransparentStruct__with_payload"]
     fn with_payload_raw(

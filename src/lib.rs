@@ -333,7 +333,7 @@
 //!
 //! # Unpacking at the ABI boundary
 //!
-//! Rust slices are lowered into [`slice::CSlice`] or [`slice::CSliceMut`], C-ABI
+//! Rust slices are lowered into [`slice::CWideRef`] or [`slice::CWideRefMut`], C-ABI
 //! containers holding a data pointer and a length.
 //!
 //! Some FFI APIs accept the pointer and length as separate arguments; mark an
@@ -575,13 +575,13 @@ use rust_spec::{
 use rust_spec::{Stable, Unstable, size::MetadataKind};
 
 #[cfg(feature = "alloc")]
-use crate::boxed::{CBox, CBoxCell, CBoxedSlice, CBoxedSliceCell};
+use crate::boxed::{CBox, CBoxCell, CWideBox, CWideBoxCell};
 use crate::{
     ffi::NulTerminatedBuf,
     option::ReprCOption,
     reference::{CRef, CRefMut},
     result::ReprCResult,
-    slice::{CSlice, CSliceMut},
+    slice::{CWideRef, CWideRefMut},
     stored::{DecodeOwned, EmptyStore, EncodeOwned, Store},
     wide::{Wide, WideHeader},
 };
@@ -687,7 +687,7 @@ disjoint_impls! {
         R: RustSpec<Size = MetaSized<SliceLike>, Mutability = Exclusive>,
         <<<R as Wide>::Header as WideHeader>::Data as ReprC>::CType: Sized,
     {
-        type CType = CSlice<<<<R as Wide>::Header as WideHeader>::Data as ReprC>::CType>;
+        type CType = CWideRef<<<<R as Wide>::Header as WideHeader>::Data as ReprC>::CType>;
     }
 
     impl<R: ReprC + ?Sized> ReprC for &R
@@ -708,7 +708,7 @@ disjoint_impls! {
         R: RustSpec<Size = MetaSized<SliceLike>, Mutability = WithInterior>,
         <<<R as Wide>::Header as WideHeader>::Data as ReprC>::CType: Sized,
     {
-        type CType = CSliceMut<<<<R as Wide>::Header as WideHeader>::Data as ReprC>::CType, false>;
+        type CType = CWideRefMut<<<<R as Wide>::Header as WideHeader>::Data as ReprC>::CType, false>;
     }
 
     impl<R: ReprC + ?Sized> ReprC for &mut R
@@ -722,7 +722,7 @@ disjoint_impls! {
         R: RustSpec<Size = MetaSized<SliceLike>>,
         <<<R as Wide>::Header as WideHeader>::Data as ReprC>::CType: Sized,
     {
-        type CType = CSliceMut<<<<R as Wide>::Header as WideHeader>::Data as ReprC>::CType, true>;
+        type CType = CWideRefMut<<<<R as Wide>::Header as WideHeader>::Data as ReprC>::CType, true>;
     }
 
     #[cfg(feature = "alloc")]
@@ -748,7 +748,7 @@ disjoint_impls! {
         R: Wide<Header: WideHeader<Data: ReprC>, Metadata = usize>,
         <<<R as Wide>::Header as WideHeader>::Data as ReprC>::CType: Sized,
     {
-        type CType = CBoxedSlice<<<<R as Wide>::Header as WideHeader>::Data as ReprC>::CType>;
+        type CType = CWideBox<<<<R as Wide>::Header as WideHeader>::Data as ReprC>::CType>;
     }
 
     #[cfg(feature = "alloc")]
@@ -774,7 +774,7 @@ disjoint_impls! {
         R: Wide<Header: WideHeader<Data: ReprC>, Metadata = usize>,
         <<<R as Wide>::Header as WideHeader>::Data as ReprC>::CType: Sized,
     {
-        type CType = CBoxedSliceCell<<<<R as Wide>::Header as WideHeader>::Data as ReprC>::CType>;
+        type CType = CWideBoxCell<<<<R as Wide>::Header as WideHeader>::Data as ReprC>::CType>;
     }
 
     impl<R: ReprC> ReprC for Option<R>
