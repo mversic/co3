@@ -64,7 +64,3 @@ required-features = ["alloc", "derive"]
 [[test]]
 name = "import"
 required-features = ["alloc", "derive"]
-
-[[test]]
-name = "no_alloc"
-required-features = ["derive"]

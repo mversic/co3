@@ -1,5 +1,5 @@
 use quote::quote;
-use syn::{ItemFn, Result, parse_quote, visit_mut::VisitMut};
+use syn::{ItemFn, Result, parse_quote};
 
 use crate::{DeclKind, DispatchGroups, ForeignItem, ImportMode, ParsedItem, parse};
 
@@ -114,16 +114,12 @@ pub(crate) fn normalize_items(
                     };
                     let mut sig = method.sig;
                     if let Some(syn::FnArg::Receiver(receiver)) = sig.inputs.first() {
-                        let mut receiver_ty = crate::utils::receiver_ty(receiver);
-                        crate::ffi_fn::SelfConcretizer { self_ty: &self_ty }
-                            .visit_type_mut(&mut receiver_ty);
+                        let receiver_ty = crate::utils::receiver_ty(receiver);
                         let attrs = &receiver.attrs;
                         let receiver_arg: syn::FnArg =
                             parse_quote!(#(#attrs)* __co3_self: #receiver_ty);
                         sig.inputs[0] = receiver_arg;
                     }
-                    crate::ffi_fn::SelfConcretizer { self_ty: &self_ty }
-                        .visit_signature_mut(&mut sig);
                     if matches!(mode, NormalizationMode::Ffi(_)) {
                         method.sig = sig;
                         raw_impl_items.push(syn::ImplItem::Fn(method));

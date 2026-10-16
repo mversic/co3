@@ -48,32 +48,32 @@ error[E0277]: the trait bound `Opaque: Copy` is not satisfied
 help: the following other types implement trait `stored::_::DecodeOwned1<'d, _TŠČ1, _TŠČ2, _TŠČ3>`
   --> src/stored.rs
    |
-   | /     unsafe impl<'d, R: ReprC + rust_spec::RustSpec<Size: Thin> + ?Sized> DecodeOwned<'d> for &'d mut R
+   | /     unsafe impl<'d, R: ReprC + RustSpec<Size: Thin> + ?Sized> DecodeOwned<'d> for &'d mut R
    | |     where
-   | |         Self: rust_spec::RustSpec<Layout = Stable> + CheckedTransmute<CType = CRefMut<<R as ReprC>::CType>>,
-   | |____________________________________________________________________________________________________________^ `&'d mut R` implements `stored::_::DecodeOwned1<'d, Stable, _TŠČ0, <R as RustSpec>::Layout>`
+   | |         Self: RustSpec<Layout = Stable> + CheckedTransmute<CType = CRefMut<<R as ReprC>::CType>>,
+   | |_________________________________________________________________________________________________^ `&'d mut R` implements `stored::_::DecodeOwned1<'d, Stable, _TŠČ0, <R as RustSpec>::Layout>`
 ...
    | /     unsafe impl<'d, R: CheckedTransmute<CType: Wide<Metadata = usize>> + Wide<Metadata = usize> + ?Sized>
    | |         DecodeOwned<'d> for &'d mut R
    | |     where
-   | |         Self: rust_spec::RustSpec<Layout = Unstable>,
-   | |         R: rust_spec::RustSpec<Layout = Stable, Size = MetaSized<SliceLike>>,
+   | |         Self: RustSpec<Layout = Unstable>,
+   | |         R: RustSpec<Layout = Stable, Size = MetaSized<SliceLike>>,
    | |         WideData<R>: ReprC<CType = WideData<<R as ReprC>::CType>>,
    | |__________________________________________________________________^ `&'d mut R` implements `stored::_::DecodeOwned1<'d, Unstable, rust_spec::size::MetaSized<SliceLike>, Stable>`
 ...
    | /     unsafe impl<'d, R: ReprC<CType: BorrowCast<AsConst: Copy> + Copy> + FromBorrow<'d>, S: SizedKind>
    | |         DecodeOwned<'d> for &'d mut R
    | |     where
-   | |         Self: rust_spec::RustSpec<Layout = Unstable>,
-   | |         R: rust_spec::RustSpec<Layout = Unstable, Size = RustSpecSized<S>> + EncodeOwned<Store: EmptyStore>,
+   | |         Self: RustSpec<Layout = Unstable>,
+   | |         R: RustSpec<Layout = Unstable, Size = RustSpecSized<S>> + EncodeOwned<Store: EmptyStore>,
    | |         <R as Borrow>::Borrowed<'d>: DecodeOwned<'d, CType = <<R as ReprC>::CType as BorrowCast>::AsConst>,
    | |___________________________________________________________________________________________________________^ `&'d mut R` implements `stored::_::DecodeOwned1<'d, Unstable, rust_spec::size::Sized<S>, Unstable>`
 ...
    | /     unsafe impl<'d, R: DecodeOwned<'d, CType: BorrowCast<AsConst: Copy> + Copy> + FromBorrow<'d> + EncodeOwned<Store: EmptyStore>>
    | |         DecodeOwned<'d> for &'d mut [R]
    | |     where
-   | |         Self: rust_spec::RustSpec<Layout = Unstable>,
-   | |         [R]: rust_spec::RustSpec<Layout = Unstable, Size = MetaSized<SliceLike>>,
+   | |         Self: RustSpec<Layout = Unstable>,
+   | |         [R]: RustSpec<Layout = Unstable, Size = MetaSized<SliceLike>>,
    | |         <R as Borrow>::Borrowed<'d>: DecodeOwned<'d, CType = <<R as ReprC>::CType as BorrowCast>::AsConst>,
    | |___________________________________________________________________________________________________________^ `&'d mut [R]` implements `stored::_::DecodeOwned1<'d, Unstable, rust_spec::size::MetaSized<SliceLike>, Unstable>`
 note: required for `CKita5` to implement `Copy`
@@ -107,16 +107,16 @@ help: `&[R]` implements trait `stored::_::DecodeOwned0<'d, _TŠČ1, _TŠČ2, _T�
    | /     unsafe impl<'d, R: DecodeOwned<'d, CType: BorrowCast<AsConst: Copy> + Copy> + FromBorrow<'d> + Clone>
    | |         DecodeOwned<'d> for &'d [R]
    | |     where
-   | |         Self: rust_spec::RustSpec<Layout = Unstable>,
-   | |         [R]: rust_spec::RustSpec<Layout = Unstable, Size = MetaSized<SliceLike>, Mutability = Exclusive>,
+   | |         Self: RustSpec<Layout = Unstable>,
+   | |         [R]: RustSpec<Layout = Unstable, Size = MetaSized<SliceLike>, Mutability = Exclusive>,
    | |         <R as Borrow>::Borrowed<'d>: DecodeOwned<'d, CType = <<R as ReprC>::CType as BorrowCast>::AsConst>,
    | |___________________________________________________________________________________________________________^ `stored::_::DecodeOwned0<'_, rust_spec::size::MetaSized<SliceLike>, Exclusive, Unstable, Unstable>`
 ...
    | /     unsafe impl<'d, R: DecodeOwned<'d, CType: BorrowCast<AsConst: Copy> + Copy> + FromBorrow<'d> + Clone>
    | |         DecodeOwned<'d> for &'d [R]
    | |     where
-   | |         Self: rust_spec::RustSpec<Layout = Unstable>,
-   | |         [R]: rust_spec::RustSpec<Layout = Unstable, Size = MetaSized<SliceLike>, Mutability = WithInterior>,
+   | |         Self: RustSpec<Layout = Unstable>,
+   | |         [R]: RustSpec<Layout = Unstable, Size = MetaSized<SliceLike>, Mutability = WithInterior>,
    | |         <R as Borrow>::Borrowed<'d>: DecodeOwned<'d, CType = <<R as ReprC>::CType as BorrowCast>::AsConst>,
    | |___________________________________________________________________________________________________________^ `stored::_::DecodeOwned0<'_, rust_spec::size::MetaSized<SliceLike>, WithInterior, Unstable, Unstable>`
 note: required for `CKita5` to implement `Copy`
@@ -153,8 +153,8 @@ help: the trait `stored::_::DecodeOwned1<'_, Unstable, rust_spec::size::MetaSize
    | |
    | |         DecodeOwned<'d> for &'d mut [R]
    | |     where
-   | |         Self: rust_spec::RustSpec<Layout = Unstable>,
-   | |         [R]: rust_spec::RustSpec<Layout = Unstable, Size = MetaSized<SliceLike>>,
+   | |         Self: RustSpec<Layout = Unstable>,
+   | |         [R]: RustSpec<Layout = Unstable, Size = MetaSized<SliceLike>>,
    | |         <R as Borrow>::Borrowed<'d>: DecodeOwned<'d, CType = <<R as ReprC>::CType as BorrowCast>::AsConst>,
    | |___________________________________________________________________________________________________________^
 note: required for `CKita5` to implement `Copy`

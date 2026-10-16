@@ -239,30 +239,26 @@ macro_rules! impl_fn_types {
         impl_fn_types!(@impl [$($arg),*] unsafe extern $abi fn($($arg),*) -> R);
     };
     (@impl [$($arg:ident),*] $fn_type:ty) => {
-unsafe impl<$($arg: CFnArg,)* R: CFnReturn> Borrow for $fn_type
-        where Option<Self>: CType {
-            type Borrowed<'itm> = Self where Self: 'itm;
+        unsafe impl<$($arg,)* R> Borrow for $fn_type {
             type Owner = ();
-            fn borrow<'itm>(self, (): &mut ()) -> Self::Borrowed<'itm>
-            where Self: 'itm { self }
+
+            type Borrowed<'itm> = Self where Self: 'itm;
+            fn borrow<'itm>(self, (): &mut ()) -> Self::Borrowed<'itm> where Self: 'itm { self }
         }
-        impl<'itm, $($arg: CFnArg,)* R: CFnReturn> FromBorrow<'itm> for $fn_type
-        where Option<Self>: CType {
+        impl<'itm, $($arg,)* R> FromBorrow<'itm> for $fn_type {
             fn from_borrow(source: Self) -> Self { source }
         }
-        impl<$($arg: CFnArg,)* R: CFnReturn> ReprC for $fn_type
-        where Option<Self>: CType {
+        impl<$($arg: CFnArg,)* R: CFnReturn> ReprC for $fn_type where Option<Self>: CType {
             type CType = Option<Self>;
         }
-        unsafe impl<$($arg: CFnArg,)* R: CFnReturn> EncodeOwned for $fn_type
-        where Option<Self>: CType {
+        unsafe impl<$($arg,)* R> EncodeOwned for $fn_type where Self: ReprC<CType = Option<Self>> {
             type Store = ();
-            fn soft_encode<'itm>(self, (): &mut ()) -> Self::CType
-            where Self: 'itm { Some(self) }
+
+            fn soft_encode<'itm>(self, (): &mut ()) -> Self::CType where Self: 'itm { Some(self) }
         }
-        unsafe impl<'d, $($arg: CFnArg,)* R: CFnReturn> DecodeOwned<'d> for $fn_type
-        where Option<Self>: CType {
+        unsafe impl<'d, $($arg,)* R> DecodeOwned<'d> for $fn_type where Self: ReprC<CType = Option<Self>> {
             type Store = ();
+
             unsafe fn soft_decode<'itm: 'd>(source: Self::CType, (): &mut ()) -> Option<Self> {
                 source
             }
@@ -271,16 +267,14 @@ unsafe impl<$($arg: CFnArg,)* R: CFnReturn> Borrow for $fn_type
                 unsafe { source.unwrap_unchecked() }
             }
         }
-        impl<$($arg: CFnArg,)* R: CFnReturn> Encode for $fn_type
-        where Option<Self>: CType {}
-        impl<$($arg: CFnArg,)* R: CFnReturn> Decode<'_> for $fn_type
-        where Option<Self>: CType {}
-        impl<$($arg: CFnArg,)* R: CFnReturn> Niche for $fn_type
-        where Option<Self>: CType {
+
+        impl<$($arg,)* R> Encode for $fn_type where Self: ReprC<CType = Option<Self>> {}
+        impl<$($arg,)* R> Decode<'_> for $fn_type where Self: ReprC<CType = Option<Self>> {}
+
+        impl<$($arg,)* R> Niche for $fn_type where Self: ReprC<CType = Option<Self>> {
             const NICHE: Self::CType = None;
         }
-        unsafe impl<$($arg: CFnArg,)* R: CFnReturn> CheckedTransmute for $fn_type
-        where Option<Self>: CType {
+        unsafe impl<$($arg,)* R> CheckedTransmute for $fn_type where Self: ReprC<CType = Option<Self>> {
             unsafe fn is_valid(target: &Self::CType) -> bool { target.is_some() }
         }
     };

@@ -1,0 +1,10 @@
+[package]
+name = "co3-no-alloc-check"
+version = "0.0.0"
+edition = "2024"
+publish = false
+
+[dependencies]
+co3 = { path = "../..", default-features = false, features = ["derive"] }
+
+[workspace]

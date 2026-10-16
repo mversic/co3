@@ -149,6 +149,7 @@ pub fn wrap_impl_definition<const DISPATCHED: bool>(
 
     let trait_ = trait_.as_ref().map(|(path, _)| path);
     let drop_impl = is_drop_impl(impl_);
+    let associated_items = ffi_fn::impl_associated_item_names(impl_);
     let defaultness = &modifiers.defaultness;
     let methods = items.iter().map(|item| {
         let syn::ImplItem::Fn(item) = item else {
@@ -164,6 +165,17 @@ pub fn wrap_impl_definition<const DISPATCHED: bool>(
             .filter(|attr| !is_symbol_name_attr(attr) && !is_by_val_attr(attr));
 
         let mut wrapper_item = item.clone();
+        let mut concretizer = ffi_fn::ImplPathConcretizer {
+            self_ty,
+            trait_path: trait_,
+            names: &associated_items,
+        };
+        for input in &mut wrapper_item.sig.inputs {
+            if let FnArg::Typed(input) = input {
+                concretizer.visit_type_mut(&mut input.ty);
+            }
+        }
+        concretizer.visit_return_type_mut(&mut wrapper_item.sig.output);
         if drop_impl && matches!(item.sig.output, syn::ReturnType::Type(_, _)) {
             sig.output = syn::ReturnType::Default;
             wrapper_item.sig.output = syn::ReturnType::Default;
@@ -629,7 +641,7 @@ fn gen_return_derase<const DISPATCHED: bool>(
         .zip(dispatch_generics)
         .map(|(self_ty, generics)| {
             let mut output_ty = output_ty.clone();
-            ffi_fn::SelfConcretizer { self_ty }.visit_type_mut(&mut output_ty);
+            ffi_fn::ImplPathConcretizer::self_only(self_ty).visit_type_mut(&mut output_ty);
             gen_return_derase_expr(generics, &output_ty, quote!(__co3_out), fn_by_val)
         })
         .unwrap_or_else(|| quote!(__co3_out))

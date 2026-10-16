@@ -45,6 +45,9 @@ jobs:
     - name: Lint workspace (derive only)
       run: cargo clippy --workspace --benches --tests --examples --no-default-features --features derive -- --deny warnings
 
+    - name: Lint no-alloc fixture
+      run: cargo clippy --manifest-path fixtures/no_alloc/Cargo.toml -- --deny warnings
+
   test:
     runs-on: ${{ matrix.os }}
     timeout-minutes: 5

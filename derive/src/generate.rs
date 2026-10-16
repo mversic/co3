@@ -799,7 +799,7 @@ fn gen_dispatch_set(
             .for_each(|arg| monomorphizer.visit_generic_argument_mut(arg));
         if let Some(self_ty) = delegate.and_then(|delegate| delegate.self_ty) {
             selection_args.iter_mut().for_each(|arg| {
-                ffi_fn::SelfConcretizer { self_ty }.visit_generic_argument_mut(arg);
+                ffi_fn::ImplPathConcretizer::self_only(self_ty).visit_generic_argument_mut(arg);
                 monomorphizer.visit_generic_argument_mut(arg);
             });
         }
@@ -830,11 +830,12 @@ fn gen_dispatch_set(
         }
         if let Some(self_ty) = delegate.and_then(|delegate| delegate.self_ty) {
             auxiliary_params.iter_mut().for_each(|param| {
-                ffi_fn::SelfConcretizer { self_ty }.visit_generic_param_mut(param);
+                ffi_fn::ImplPathConcretizer::self_only(self_ty).visit_generic_param_mut(param);
                 monomorphizer.visit_generic_param_mut(param);
             });
             if let Some(where_clause) = &mut impl_where_clause {
-                ffi_fn::SelfConcretizer { self_ty }.visit_where_clause_mut(where_clause);
+                ffi_fn::ImplPathConcretizer::self_only(self_ty)
+                    .visit_where_clause_mut(where_clause);
                 monomorphizer.visit_where_clause_mut(where_clause);
             }
         }
@@ -874,7 +875,8 @@ fn gen_dispatch_set(
                 let mut raw_sig = delegate.raw_sig.clone();
                 monomorphizer.visit_signature_mut(&mut raw_sig);
                 if let Some(self_ty) = delegate.self_ty {
-                    ffi_fn::SelfConcretizer { self_ty }.visit_signature_mut(&mut raw_sig);
+                    ffi_fn::ImplPathConcretizer::self_only(self_ty)
+                        .visit_signature_mut(&mut raw_sig);
                     monomorphizer.visit_signature_mut(&mut raw_sig);
                 }
                 raw_sig.ident = format_ident!("__co3_raw");
@@ -932,7 +934,8 @@ fn gen_dispatch_set(
                     });
                 monomorphizer.visit_impl_item_fn_mut(&mut method);
                 if let Some(self_ty) = delegate.self_ty {
-                    ffi_fn::SelfConcretizer { self_ty }.visit_impl_item_fn_mut(&mut method);
+                    ffi_fn::ImplPathConcretizer::self_only(self_ty)
+                        .visit_impl_item_fn_mut(&mut method);
                     monomorphizer.visit_impl_item_fn_mut(&mut method);
                 }
                 quote!(#method)
@@ -1960,9 +1963,35 @@ pub(crate) fn expand_extern_decls(
         declared_self: bool,
         symbol_fragments: &std::collections::BTreeMap<String, syn::LitStr>,
     ) -> (TokenStream, ItemImpl) {
+        // Preserve the ABI and safety on the wrapper method. Its signature is
+        // ABI-lowered before generation, while Self paths remain in the impl
+        // context where they are valid.
+        let mut wrapper_source = impl_.clone();
         if import_mode == crate::ImportMode::Raw {
-            // The forwarding method and the foreign declaration both consume this
-            // lowered signature. Keep ABI and safety on the method only.
+            for item in &mut wrapper_source.items {
+                let syn::ImplItem::Fn(method) = item else {
+                    continue;
+                };
+                let wrapper_abi = method.sig.abi.clone().unwrap_or_else(|| abi.clone());
+                method.sig.abi = Some(wrapper_abi.clone());
+                method.sig.safety = syn::Safety::Unsafe(Default::default());
+                normalize_fn_signature(&mut method.sig, None, None);
+                method.sig = ffi_fn::lower_abi_fn_signature(
+                    method.sig.clone(),
+                    failure_mode,
+                    method.attrs.iter().any(ffi_fn::is_by_val_attr),
+                );
+                method.sig.abi = Some(wrapper_abi);
+                method.sig.safety = syn::Safety::Unsafe(Default::default());
+            }
+        }
+        let mut import = wrap_impl_definition::<false>(
+            failure_mode,
+            import_mode,
+            &wrapper_source,
+            declared_self,
+        );
+        if import_mode == crate::ImportMode::Raw {
             let self_ty = impl_.self_ty.clone();
             for item in &mut impl_.items {
                 let syn::ImplItem::Fn(method) = item else {
@@ -1979,8 +2008,6 @@ pub(crate) fn expand_extern_decls(
                 method.sig.safety = syn::Safety::Unsafe(Default::default());
             }
         }
-        let mut import =
-            wrap_impl_definition::<false>(failure_mode, import_mode, &impl_, declared_self);
         let extern_decl = synthesize_impl_extern_decls(
             abi,
             failure_mode,
@@ -2940,10 +2967,8 @@ fn expand_dispatch_drop_import(
 
     let mut wrapper_generics = generics.clone();
     add_missing_decl_lifetimes(&mut wrapper_generics, declared_generics);
-    ffi_fn::SelfConcretizer {
-        self_ty: &declared_self_ty,
-    }
-    .visit_generics_mut(&mut wrapper_generics);
+    ffi_fn::ImplPathConcretizer::self_only(&declared_self_ty)
+        .visit_generics_mut(&mut wrapper_generics);
     wrapper_generics
         .type_params_mut()
         .for_each(strip_internal_generic_param);
@@ -3078,10 +3103,8 @@ fn expand_plain_drop_import(
     );
     let mut wrapper_generics = generics.clone();
     add_missing_decl_lifetimes(&mut wrapper_generics, declared_generics);
-    ffi_fn::SelfConcretizer {
-        self_ty: &declared_self_ty,
-    }
-    .visit_generics_mut(&mut wrapper_generics);
+    ffi_fn::ImplPathConcretizer::self_only(&declared_self_ty)
+        .visit_generics_mut(&mut wrapper_generics);
     let (impl_generics, _, where_clause) = wrapper_generics.split_for_impl();
     let abi_assertions = extern_decls.iter().map(|(_, _, assertions)| assertions);
     let extern_decl_tokens = extern_decls.iter().map(|(_, decl, _)| decl);

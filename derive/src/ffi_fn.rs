@@ -1591,10 +1591,6 @@ pub(crate) fn gen_implicit_primitive_checks(ty: &Type) -> TokenStream {
     }
 }
 
-pub(crate) struct SelfConcretizer<'a> {
-    pub(crate) self_ty: &'a Type,
-}
-
 pub(crate) fn qualified_method_callee(
     self_ty: &Type,
     trait_: Option<&Path>,
@@ -1656,6 +1652,14 @@ pub(crate) struct ImplPathConcretizer<'a> {
 }
 
 impl ImplPathConcretizer<'_> {
+    pub(crate) fn self_only(self_ty: &Type) -> ImplPathConcretizer<'_> {
+        ImplPathConcretizer {
+            self_ty,
+            trait_path: None,
+            names: &[],
+        }
+    }
+
     fn associated_rest(&self, path: &Path) -> Option<Path> {
         self.trait_path?;
         let skip = if path.segments.first()?.ident == "Self" {
@@ -1732,49 +1736,7 @@ impl VisitMut for ImplPathConcretizer<'_> {
             let self_ty = self.self_ty;
             let trait_path = self.trait_path.unwrap();
             *expr = parse_quote!(<#self_ty as #trait_path>::#rest);
-        } else if expr
-            .path
-            .segments
-            .first()
-            .is_some_and(|segment| segment.ident == "Self")
-        {
-            let rest = Path {
-                leading_colon: None,
-                segments: expr.path.segments.iter().skip(1).cloned().collect(),
-            };
-            let self_ty = self.self_ty;
-            *expr = parse_quote!(<#self_ty>::#rest);
         }
-    }
-}
-
-impl VisitMut for SelfConcretizer<'_> {
-    fn visit_type_mut(&mut self, node: &mut Type) {
-        if tag_id(node).is_some() {
-            return;
-        }
-
-        syn::visit_mut::visit_type_mut(self, node);
-        let Type::Path(syn::TypePath {
-            qself: None, path, ..
-        }) = node
-        else {
-            return;
-        };
-        let Some(first) = path.segments.first() else {
-            return;
-        };
-        if first.ident != "Self" {
-            return;
-        }
-
-        let mut rest = Path {
-            leading_colon: None,
-            segments: Default::default(),
-        };
-
-        rest.segments.extend(path.segments.iter().skip(1).cloned());
-        *node = qualify_self_path(self.self_ty, &rest);
     }
 }
 

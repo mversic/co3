@@ -202,7 +202,7 @@ impl DispatchGroups {
     }
 
     pub(crate) fn concretize_self(&mut self, self_ty: &syn::Type) {
-        let mut concretizer = crate::ffi_fn::SelfConcretizer { self_ty };
+        let mut concretizer = crate::ffi_fn::ImplPathConcretizer::self_only(self_ty);
         for targets in self.groups.values_mut() {
             for target in targets {
                 for argument in &mut target.args {
