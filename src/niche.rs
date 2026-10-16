@@ -55,13 +55,13 @@ disjoint_impls! {
 
     impl<R: ?Sized, C> Niche for &mut R
     where
-        Self: ReprC<CType = CRefMut<C>>,
+        Self: ReprC<CType = CRefMut<C, true>>,
     {
         const NICHE: Self::CType = CRefMut::null();
     }
     impl<R: ?Sized, C> Niche for &mut R
     where
-        Self: ReprC<CType = CSliceMut<C>>,
+        Self: ReprC<CType = CSliceMut<C, true>>,
     {
         const NICHE: Self::CType = CSliceMut::null();
     }

@@ -318,7 +318,7 @@ disjoint_impls! {
 
     unsafe impl<R: ReprC + ?Sized> EncodeOwned for &mut R
     where
-        Self: RustSpec<Layout = Stable> + CheckedTransmute<CType = CRefMut<<R as ReprC>::CType>>,
+        Self: RustSpec<Layout = Stable> + CheckedTransmute<CType = CRefMut<<R as ReprC>::CType, true>>,
         R: RustSpec<Layout = Stable, Size: Thin, Mutability = Exclusive, Trap = Robust>,
     {
         type Store = ();
@@ -338,7 +338,7 @@ disjoint_impls! {
     unsafe impl<'a, R: EncodeOwned + DecodeOwned<'a, Store: EmptyStore + 'a> + Clone, S: SizedKind>
         EncodeOwned for &'a mut R
     where
-        Self: RustSpec<Layout = Stable> + CheckedTransmute<CType = CRefMut<<R as ReprC>::CType>>,
+        Self: RustSpec<Layout = Stable> + CheckedTransmute<CType = CRefMut<<R as ReprC>::CType, true>>,
         R: RustSpec<Layout= Stable, Size = RustSpecSized<S>, Mutability = Exclusive, Trap = NonRobust>,
     {
         type Store = RefMutSizedEncodeStore<'a, R>;
@@ -439,7 +439,7 @@ disjoint_impls! {
     }
     //unsafe impl<'a, R: NulTerminatedBuf<Data: ReprC> + ?Sized> EncodeOwned for &'a mut R
     //where
-    //    Self: ReprC<CType = CRefMut<<<R as NulTerminatedBuf>::Data as ReprC>::CType>>,
+    //    Self: ReprC<CType = CRefMut<<<R as NulTerminatedBuf>::Data as ReprC>::CType, true>>,
     //    R: RustSpec<Size = NulTerminated, Mutability = WithInterior>,
     //    &'a R: EncodeOwned<CType = CRefMut<<<R as NulTerminatedBuf>::Data as ReprC>::CType, false>>,
     //
@@ -1154,7 +1154,7 @@ disjoint_impls! {
 
     unsafe impl<'d, R: ReprC + RustSpec<Size: Thin> + ?Sized> DecodeOwned<'d> for &'d mut R
     where
-        Self: RustSpec<Layout = Stable> + CheckedTransmute<CType = CRefMut<<R as ReprC>::CType>>,
+        Self: RustSpec<Layout = Stable> + CheckedTransmute<CType = CRefMut<<R as ReprC>::CType, true>>,
     {
         type Store = ();
 

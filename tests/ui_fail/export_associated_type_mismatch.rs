@@ -181,7 +181,7 @@ mod generic_where_self_projection {
 
         impl Assoc for Host {
             type Base = u8;
-            type Item<T> = (T, u8) where Self::Base: Sized;
+            type Item<T> = (T, u8) where <Self as Assoc>::Base: Sized;
         }
     }
 }
@@ -206,7 +206,7 @@ mod self_projection {
 
         impl Assoc for Host {
             type Base = u8;
-            type Item = Self::Base;
+            type Item = <Self as Assoc>::Base;
         }
     }
 }
@@ -233,8 +233,8 @@ mod unqualified_self_projection {
 
         impl Assoc for Host {
             type Base = u8;
-            type Item = Self::Base;
-            type Nested = Option<Self::Base>;
+            type Item = <Self as Assoc>::Base;
+            type Nested = Option<<Self as Assoc>::Base>;
         }
     }
 }

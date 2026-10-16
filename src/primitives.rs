@@ -646,7 +646,7 @@ mod tests {
             Encode,
         );
         assert_impl_all!(&mut u8:
-            Niche<CType = CRefMut<u8>>,
+            Niche<CType = CRefMut<u8, true>>,
             Decode<'static>,
             Encode,
         );
@@ -662,7 +662,7 @@ mod tests {
             Encode,
         );
         assert_impl_all!(&mut [u8]:
-            Niche<CType = CSliceMut<u8>>,
+            Niche<CType = CSliceMut<u8, true>>,
             Decode<'static>,
             Encode,
         );

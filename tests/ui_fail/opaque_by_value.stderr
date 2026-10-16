@@ -50,8 +50,8 @@ help: the following other types implement trait `stored::_::DecodeOwned1<'d, _T�
    |
    | /     unsafe impl<'d, R: ReprC + RustSpec<Size: Thin> + ?Sized> DecodeOwned<'d> for &'d mut R
    | |     where
-   | |         Self: RustSpec<Layout = Stable> + CheckedTransmute<CType = CRefMut<<R as ReprC>::CType>>,
-   | |_________________________________________________________________________________________________^ `&'d mut R` implements `stored::_::DecodeOwned1<'d, Stable, _TŠČ0, <R as RustSpec>::Layout>`
+   | |         Self: RustSpec<Layout = Stable> + CheckedTransmute<CType = CRefMut<<R as ReprC>::CType, true>>,
+   | |_______________________________________________________________________________________________________^ `&'d mut R` implements `stored::_::DecodeOwned1<'d, Stable, _TŠČ0, <R as RustSpec>::Layout>`
 ...
    | /     unsafe impl<'d, R: CheckedTransmute<CType: Wide<Metadata = usize>> + Wide<Metadata = usize> + ?Sized>
    | |         DecodeOwned<'d> for &'d mut R

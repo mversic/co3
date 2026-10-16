@@ -83,7 +83,7 @@ pub struct RefDstDecodeStore<R: ToOwned + ?Sized, S> {
 pub struct RefMutSliceDecodeStore<R: ReprC<CType: Sized>, S> {
     pub(crate) value: Option<Vec<R>>,
     pub(crate) store: S,
-    pub(crate) source: Option<CSliceMut<R::CType>>,
+    pub(crate) source: Option<CSliceMut<R::CType, true>>,
 }
 
 /// This struct exists only because [arrays don't yet implement Default](https://github.com/rust-lang/rust/issues/61415)

@@ -50,7 +50,7 @@ unsafe extern "C" fn return_pointer(value: CRef<u32>) -> CRef<u32> {
 
 unsafe extern "C" fn ignore_pointer(_: CRef<u32>) {}
 
-unsafe extern "C" fn update_option(value: CRefMut<ReprCOption<u8>>) -> u32 {
+unsafe extern "C" fn update_option(value: CRefMut<ReprCOption<u8>, true>) -> u32 {
     let value = value.as_ptr();
     unsafe { *value = ReprCOption::Some(42) };
     7

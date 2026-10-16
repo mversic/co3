@@ -956,8 +956,6 @@ pub fn gen_impl_definition(
     let impl_attrs = &impl_.attrs;
 
     let self_ty = &impl_.self_ty;
-    let associated_items = impl_associated_item_names(&impl_);
-
     let definitions = impl_.items.into_iter().filter_map(|item| {
         let syn::ImplItem::Fn(mut item) = item else {
             return None;
@@ -968,14 +966,7 @@ pub fn gen_impl_definition(
             .inputs
             .iter()
             .any(|input| matches!(input, syn::FnArg::Receiver(_)));
-        normalize_fn_signature(
-            &mut item.sig,
-            Some(self_ty),
-            trait_.map(|trait_path| ImplAssocContext {
-                trait_path,
-                names: &associated_items,
-            }),
-        );
+        normalize_fn_signature(&mut item.sig, Some(self_ty));
 
         let fn_name = &item.sig.ident;
         let callee = impl_method_callee(self_ty, trait_, fn_name);
@@ -1097,7 +1088,7 @@ pub fn gen_fn_definition(
     mut item: syn::ItemFn,
     callee: syn::Expr,
 ) -> TokenStream {
-    normalize_fn_signature(&mut item.sig, None, None);
+    normalize_fn_signature(&mut item.sig, None);
 
     let ffi_fn_body = gen_fn_definition_body(&item, failure_mode, callee);
     let fn_by_val = item.attrs.iter().any(is_by_val_attr);
@@ -1455,16 +1446,7 @@ pub(crate) fn item_fn_output_type(return_ty: &Type) -> Type {
     parse_quote!(<#return_ty as co3::ReprC>::CType)
 }
 
-pub(crate) struct ImplAssocContext<'a> {
-    pub trait_path: &'a Path,
-    pub names: &'a [Ident],
-}
-
-pub(crate) fn normalize_fn_signature(
-    sig: &mut syn::Signature,
-    self_ty: Option<&Type>,
-    impl_assoc: Option<ImplAssocContext<'_>>,
-) {
+pub(crate) fn normalize_fn_signature(sig: &mut syn::Signature, self_ty: Option<&Type>) {
     for input in &mut sig.inputs {
         if let syn::FnArg::Receiver(receiver) = input {
             let attrs = &receiver.attrs;
@@ -1474,12 +1456,7 @@ pub(crate) fn normalize_fn_signature(
     }
 
     if let Some(self_ty) = self_ty {
-        ImplPathConcretizer {
-            self_ty,
-            trait_path: impl_assoc.as_ref().map(|context| context.trait_path),
-            names: impl_assoc.as_ref().map_or(&[], |context| context.names),
-        }
-        .visit_signature_mut(sig);
+        SelfConcretizer { self_ty }.visit_signature_mut(sig);
         TraitObjectReferenceParenthesizer.visit_signature_mut(sig);
     }
 }
@@ -1632,73 +1609,17 @@ fn qualify_self_path(self_ty: &Type, rest: &Path) -> Type {
     parse_quote!(<#self_ty>::#rest)
 }
 
-pub(crate) fn impl_associated_item_names(impl_: &syn::ItemImpl) -> Vec<Ident> {
-    impl_
-        .items
-        .iter()
-        .filter_map(|item| match item {
-            syn::ImplItem::Type(item) => Some(item.ident.clone()),
-            syn::ImplItem::Const(item) => Some(item.ident.clone()),
-            syn::ImplItem::Fn(item) => Some(item.sig.ident.clone()),
-            _ => None,
-        })
-        .collect()
-}
-
-pub(crate) struct ImplPathConcretizer<'a> {
+pub(crate) struct SelfConcretizer<'a> {
     pub(crate) self_ty: &'a Type,
-    pub(crate) trait_path: Option<&'a Path>,
-    pub(crate) names: &'a [Ident],
 }
 
-impl ImplPathConcretizer<'_> {
-    pub(crate) fn self_only(self_ty: &Type) -> ImplPathConcretizer<'_> {
-        ImplPathConcretizer {
-            self_ty,
-            trait_path: None,
-            names: &[],
-        }
-    }
-
-    fn associated_rest(&self, path: &Path) -> Option<Path> {
-        self.trait_path?;
-        let skip = if path.segments.first()?.ident == "Self" {
-            1
-        } else {
-            let Type::Path(syn::TypePath {
-                qself: None,
-                path: self_path,
-                ..
-            }) = self.self_ty
-            else {
-                return None;
-            };
-            let prefix = Path {
-                leading_colon: path.leading_colon,
-                segments: path
-                    .segments
-                    .iter()
-                    .take(self_path.segments.len())
-                    .cloned()
-                    .collect(),
-            };
-            if quote!(#prefix).to_string() != quote!(#self_path).to_string() {
-                return None;
-            }
-            self_path.segments.len()
-        };
-        let item = path.segments.iter().nth(skip)?;
-        if !self.names.contains(&item.ident) {
-            return None;
-        }
-        Some(Path {
-            leading_colon: None,
-            segments: path.segments.iter().skip(skip).cloned().collect(),
-        })
+impl SelfConcretizer<'_> {
+    pub(crate) fn new(self_ty: &Type) -> SelfConcretizer<'_> {
+        SelfConcretizer { self_ty }
     }
 }
 
-impl VisitMut for ImplPathConcretizer<'_> {
+impl VisitMut for SelfConcretizer<'_> {
     fn visit_type_mut(&mut self, ty: &mut Type) {
         if tag_id(ty).is_some() {
             return;
@@ -1710,11 +1631,7 @@ impl VisitMut for ImplPathConcretizer<'_> {
         else {
             return;
         };
-        if let Some(rest) = self.associated_rest(path) {
-            let self_ty = self.self_ty;
-            let trait_path = self.trait_path.unwrap();
-            *ty = parse_quote!(<#self_ty as #trait_path>::#rest);
-        } else if path
+        if path
             .segments
             .first()
             .is_some_and(|segment| segment.ident == "Self")
@@ -1732,10 +1649,18 @@ impl VisitMut for ImplPathConcretizer<'_> {
         if expr.qself.is_some() {
             return;
         }
-        if let Some(rest) = self.associated_rest(&expr.path) {
+        if expr
+            .path
+            .segments
+            .first()
+            .is_some_and(|segment| segment.ident == "Self")
+        {
+            let rest = Path {
+                leading_colon: None,
+                segments: expr.path.segments.iter().skip(1).cloned().collect(),
+            };
             let self_ty = self.self_ty;
-            let trait_path = self.trait_path.unwrap();
-            *expr = parse_quote!(<#self_ty as #trait_path>::#rest);
+            *expr = parse_quote!(<#self_ty>::#rest);
         }
     }
 }
@@ -1745,49 +1670,28 @@ mod tests {
     use super::*;
 
     #[test]
-    fn impl_paths_use_one_concretization_pass() {
+    fn self_paths_are_concretized_without_trait_qualification() {
         let self_ty: Type = parse_quote!(Widget);
-        let trait_path: Path = parse_quote!(Trait);
-        let names = [parse_quote!(Item), parse_quote!(COUNT), parse_quote!(make)];
         let mut sig: syn::Signature = parse_quote!(
             fn example(
                 value: Self::Item,
+                qualified: <Self as Trait>::Item,
                 other: Widget::Item,
                 untouched: Other::Item,
             ) -> [Self::Item; Self::COUNT + Widget::COUNT + Self::make()]
         );
 
-        normalize_fn_signature(
-            &mut sig,
-            Some(&self_ty),
-            Some(ImplAssocContext {
-                trait_path: &trait_path,
-                names: &names,
-            }),
-        );
+        normalize_fn_signature(&mut sig, Some(&self_ty));
 
         let expected: syn::Signature = parse_quote!(
             fn example(
-                value: <Widget as Trait>::Item,
-                other: <Widget as Trait>::Item,
+                value: Widget::Item,
+                qualified: <Widget as Trait>::Item,
+                other: Widget::Item,
                 untouched: Other::Item,
-            ) -> [<Widget as Trait>::Item;
-                <Widget as Trait>::COUNT + <Widget as Trait>::COUNT + <Widget as Trait>::make()]
+            ) -> [Widget::Item; <Widget>::COUNT + Widget::COUNT + <Widget>::make()]
         );
         assert_eq!(quote!(#sig).to_string(), quote!(#expected).to_string());
-    }
-
-    #[test]
-    fn collects_every_named_impl_item() {
-        let item: syn::ItemImpl = parse_quote!(
-            impl Trait for Widget {
-                type Item = u8;
-                const COUNT: usize = 1;
-                fn make() -> Self::Item { 0 }
-            }
-        );
-        let names = impl_associated_item_names(&item);
-        assert_eq!(names, ["Item", "COUNT", "make"]);
     }
 
     #[test]

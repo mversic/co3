@@ -50,7 +50,7 @@ ffi! {
         use<T> @ (<u8> | <u16>),
     {
         const BASE: u8 = 1;
-        const VALUE: u8 = Self::BASE + 1;
+        const VALUE: u8 = <Self as Values>::BASE + 1;
     }
 
     impl<dyn(u8) T> Values for Host<T>
@@ -58,7 +58,7 @@ ffi! {
         use<T> @ <Tagged>,
     {
         const BASE: u8 = 1;
-        const VALUE: u8 = Self::BASE + 1;
+        const VALUE: u8 = <Self as Values>::BASE + 1;
     }
 
     impl Boolean {

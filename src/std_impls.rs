@@ -772,7 +772,7 @@ mod tests {
     //        Encode,
     //    );
     //    assert_impl_all!(&mut ManuallyDrop<u8>:
-    //        Niche<CType = CRefMut<u8>>,
+    //        Niche<CType = CRefMut<u8, true>>,
     //        RustSpec<Niche = rust_spec::niche::WithNiche<rust_spec::Stable>>,
     //        Decode<'static>,
     //        Encode,
@@ -789,7 +789,7 @@ mod tests {
     //        Encode,
     //    );
     //    assert_impl_all!(&mut [ManuallyDrop<u8>]:
-    //        Niche<CType = CSliceMut<u8>>,
+    //        Niche<CType = CSliceMut<u8, true>>,
     //        Decode<'static>,
     //        Encode,
     //    );
@@ -833,7 +833,7 @@ mod tests {
     //        Encode,
     //    );
     //    assert_impl_all!(&mut ManuallyDrop<String>:
-    //        Niche<CType = CRefMut<CBoxedSlice<u8>>,
+    //        Niche<CType = CRefMut<CBoxedSlice<u8>, true>,
     //        Decode<'static>,
     //        Encode,
     //    );
@@ -849,7 +849,7 @@ mod tests {
     //        Encode,
     //    );
     //    assert_impl_all!(&mut [ManuallyDrop<String>]:
-    //        Niche<CType = CSliceMut<CBoxedSlice<u8>>>,
+    //        Niche<CType = CSliceMut<CBoxedSlice<u8>, true>>,
     //        Decode<'static>,
     //        Encode,
     //    );
@@ -896,7 +896,7 @@ mod tests {
 
         #[cfg(feature = "alloc")]
         assert_impl_all!(&mut str:
-            Niche<CType = CSliceMut<u8>>,
+            Niche<CType = CSliceMut<u8, true>>,
             Decode<'static>,
             Encode,
         );
@@ -918,8 +918,9 @@ mod tests {
         assert!(decoded.is_none());
 
         let mut invalid = [0xff];
-        let source =
-            unsafe { CSliceMut::<_>::from_raw_parts_mut(invalid.as_mut_ptr(), invalid.len()) };
+        let source = unsafe {
+            CSliceMut::<_, true>::from_raw_parts_mut(invalid.as_mut_ptr(), invalid.len())
+        };
         let decoded = unsafe { crate::decode::<&mut str>(source) };
         assert!(decoded.is_none());
 
@@ -967,7 +968,7 @@ mod tests {
             Encode,
         );
         assert_impl_all!(&mut UnsafeCell<u8>:
-            Niche<CType = CRefMut<UnsafeCell<u8>>>,
+            Niche<CType = CRefMut<UnsafeCell<u8>, true>>,
             Decode<'static>,
             Encode,
         );
@@ -985,7 +986,7 @@ mod tests {
             Encode,
         );
         assert_impl_all!(&mut [UnsafeCell<u8>]:
-            Niche<CType = CSliceMut<UnsafeCell<u8>>>,
+            Niche<CType = CSliceMut<UnsafeCell<u8>, true>>,
             Decode<'static>,
             Encode,
         );
@@ -1143,7 +1144,7 @@ mod tests {
             //Encode,
         );
         assert_impl_all!(&mut UnsafeCell<NonZero<u8>>:
-            Niche<CType = CRefMut<UnsafeCell<u8>>>,
+            Niche<CType = CRefMut<UnsafeCell<u8>, true>>,
             Decode<'static>,
         );
         #[cfg(feature = "alloc")]
@@ -1169,7 +1170,7 @@ mod tests {
             Decode<'static>,
         );
         assert_impl_all!(&mut [UnsafeCell<NonZero<u8>>]:
-            Niche<CType = CSliceMut<UnsafeCell<u8>>>,
+            Niche<CType = CSliceMut<UnsafeCell<u8>, true>>,
             Decode<'static>,
         );
         #[cfg(feature = "alloc")]

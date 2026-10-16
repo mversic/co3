@@ -110,7 +110,7 @@ pub(crate) fn wrap_fn_definition(
     );
     let co3 = co3_path();
 
-    ffi_fn::normalize_fn_signature(&mut item.sig, None, None);
+    ffi_fn::normalize_fn_signature(&mut item.sig, None);
     let decl = ffi_fn::gen_extern_fn_signature(
         item.sig,
         failure_mode,
@@ -149,7 +149,6 @@ pub fn wrap_impl_definition<const DISPATCHED: bool>(
 
     let trait_ = trait_.as_ref().map(|(path, _)| path);
     let drop_impl = is_drop_impl(impl_);
-    let associated_items = ffi_fn::impl_associated_item_names(impl_);
     let defaultness = &modifiers.defaultness;
     let methods = items.iter().map(|item| {
         let syn::ImplItem::Fn(item) = item else {
@@ -165,11 +164,7 @@ pub fn wrap_impl_definition<const DISPATCHED: bool>(
             .filter(|attr| !is_symbol_name_attr(attr) && !is_by_val_attr(attr));
 
         let mut wrapper_item = item.clone();
-        let mut concretizer = ffi_fn::ImplPathConcretizer {
-            self_ty,
-            trait_path: trait_,
-            names: &associated_items,
-        };
+        let mut concretizer = ffi_fn::SelfConcretizer::new(self_ty);
         for input in &mut wrapper_item.sig.inputs {
             if let FnArg::Typed(input) = input {
                 concretizer.visit_type_mut(&mut input.ty);
@@ -272,7 +267,7 @@ fn gen_regular_drop_import_body<const DISPATCHED: bool>(
     generics: &syn::Generics,
 ) -> TokenStream {
     let mut owned_item = item.clone();
-    ffi_fn::normalize_fn_signature(&mut owned_item.sig, Some(self_ty), None);
+    ffi_fn::normalize_fn_signature(&mut owned_item.sig, Some(self_ty));
     let owned_ty: syn::Type = syn::parse_quote!(core::mem::ManuallyDrop<#self_ty>);
     ffi_fn::drop_owned_receiver(&mut owned_item.sig, Some(&owned_ty));
     let imported_name = owned_item.sig.ident.clone();
@@ -345,7 +340,7 @@ pub(crate) fn gen_owned_drop_wrapper_body<const DISPATCHED: bool>(
     erase_declared_receiver: bool,
 ) -> TokenStream {
     let mut pointer_item = item.clone();
-    ffi_fn::normalize_fn_signature(&mut pointer_item.sig, Some(self_ty), None);
+    ffi_fn::normalize_fn_signature(&mut pointer_item.sig, Some(self_ty));
     let pointer_ty: syn::Type = syn::parse_quote!(*mut #self_ty);
     ffi_fn::drop_owned_receiver(&mut pointer_item.sig, Some(&pointer_ty));
     gen_impl_wrapper_body_with_self_binding::<DISPATCHED>(
@@ -641,7 +636,7 @@ fn gen_return_derase<const DISPATCHED: bool>(
         .zip(dispatch_generics)
         .map(|(self_ty, generics)| {
             let mut output_ty = output_ty.clone();
-            ffi_fn::ImplPathConcretizer::self_only(self_ty).visit_type_mut(&mut output_ty);
+            ffi_fn::SelfConcretizer::new(self_ty).visit_type_mut(&mut output_ty);
             gen_return_derase_expr(generics, &output_ty, quote!(__co3_out), fn_by_val)
         })
         .unwrap_or_else(|| quote!(__co3_out))

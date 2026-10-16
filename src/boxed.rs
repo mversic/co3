@@ -138,7 +138,7 @@ macro_rules! impl_boxed_pointer {
             type AsConst = $as_const;
         }
         unsafe impl<C: CType> BorrowCastMut for $ty<C> {
-            type AsMut = CRefMut<C>;
+            type AsMut = CRefMut<C, true>;
         }
     };
 }
@@ -376,14 +376,14 @@ unsafe impl<C: CType> BorrowCast for CBoxedSlice<C> {
     type AsConst = CSlice<C>;
 }
 unsafe impl<C: CType> BorrowCastMut for CBoxedSlice<C> {
-    type AsMut = CSliceMut<C>;
+    type AsMut = CSliceMut<C, true>;
 }
 
 unsafe impl<C: CType> BorrowCast for CBoxedSliceCell<C> {
     type AsConst = CSliceMut<C, false>;
 }
 unsafe impl<C: CType> BorrowCastMut for CBoxedSliceCell<C> {
-    type AsMut = CSliceMut<C>;
+    type AsMut = CSliceMut<C, true>;
 }
 
 impl<R: ?Sized, C: CType, K: CType, U: CType> Unpack2<K, U> for Box<R>

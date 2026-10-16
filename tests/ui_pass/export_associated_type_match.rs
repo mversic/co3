@@ -132,7 +132,7 @@ ffi! {
 
     impl Projection for ProjectionHost {
         type Base = u8;
-        type Item = Self::Base;
+        type Item = <Self as Projection>::Base;
     }
 
     impl Unsized for UnsizedHost {
@@ -141,7 +141,7 @@ ffi! {
 
     impl WhereProjection for WhereProjectionHost {
         type Base = u8;
-        type Item<T> = (T, u8) where Self::Base: Sized;
+        type Item<T> = (T, u8) where <Self as WhereProjection>::Base: Sized;
     }
 }
 

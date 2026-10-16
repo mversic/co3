@@ -112,7 +112,7 @@ mod provider {
         impl ToOwned for OwnedOpaque {
             type Owned = OwnedOpaque;
 
-            fn to_owned(&self) -> move Self::Owned;
+            fn to_owned(&self) -> move <Self as ToOwned>::Owned;
         }
 
         impl<dyn(u8) T: Add<Output = u8> + ToOwned<Owned = T> + ?Sized = u8> Value<T>

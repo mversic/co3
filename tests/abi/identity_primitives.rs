@@ -200,10 +200,10 @@ fn safe_carrier_constructors_accept_lowered_storage() {
     assert_eq!(CBoxedSlice::<u8>::null(), co3::encode(None::<Box<[u8]>>));
     assert_eq!(CSlice::<u8>::null(), co3::encode(None::<&[u8]>));
     assert_eq!(
-        CRefMut::<u8>::null(),
+        CRefMut::<_, true>::null(),
         co3::soft_encode(None::<&mut u8>, &mut Default::default())
     );
-    let _: CSliceMut<u8> = CSliceMut::null();
+    let _: CSliceMut<u8, true> = CSliceMut::null();
     assert_eq!(CBoxedSlice::<u8>::null(), co3::encode(None::<String>));
 
     let utf8 = CBoxedSlice::from_boxed_slice(Box::from("hello".as_bytes()));
@@ -222,6 +222,6 @@ fn safe_carrier_constructors_accept_lowered_storage() {
         co3::encode("hello")
     );
     let mut bytes = [3_u8, 4];
-    let _slice_mut = CSliceMut::<u8>::from_slice(&mut bytes);
-    let _ref_mut = CRefMut::<u8>::from_mut(&mut bytes[0]);
+    let _slice_mut = CSliceMut::<_, true>::from_slice(&mut bytes);
+    let _ref_mut = CRefMut::<_, true>::from_mut(&mut bytes[0]);
 }

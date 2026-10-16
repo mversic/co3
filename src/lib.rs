@@ -334,8 +334,8 @@
 //! # Unpacking at the ABI boundary
 //!
 //! Rust slices are lowered into [`slice::CSlice`] or [`slice::CSliceMut`], C-ABI
-//! containers holding a data pointer and a length. The
-//! The default `CSliceMut<C>` form represents exclusive mutable access.
+//! containers holding a data pointer and a length.
+//!
 //! Some FFI APIs accept the pointer and length as separate arguments; mark an
 //! argument with `#[unpack(T1, T2)]` to import its two ABI parts:
 //!
@@ -715,14 +715,14 @@ disjoint_impls! {
     where
         R: RustSpec<Size: Thin>,
     {
-        type CType = CRefMut<R::CType>;
+        type CType = CRefMut<R::CType, true>;
     }
     impl<R: Wide<Header: WideHeader<Data: ReprC>, Metadata = usize> + ?Sized> ReprC for &mut R
     where
         R: RustSpec<Size = MetaSized<SliceLike>>,
         <<<R as Wide>::Header as WideHeader>::Data as ReprC>::CType: Sized,
     {
-        type CType = CSliceMut<<<<R as Wide>::Header as WideHeader>::Data as ReprC>::CType>;
+        type CType = CSliceMut<<<<R as Wide>::Header as WideHeader>::Data as ReprC>::CType, true>;
     }
 
     #[cfg(feature = "alloc")]

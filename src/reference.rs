@@ -125,23 +125,23 @@ unsafe impl<C: CType + ?Sized> BorrowCastMut for CRef<C> {
     type AsMut = Self;
 }
 
-/// A mutable pointer carrier whose access contract is selected by `RESTRICTED`.
+/// A mutable pointer carrier  with a defined C ABI layout.
 ///
-/// The default, `true`, represents exclusive mutable access. Set it to `false`
-/// for pointers derived from shared references to interior mutable values.
+/// - `EXCLUSIVE = true` represents exclusive access that comes from `&mut T`.
+/// - `EXCLUSIVE = false` represents access that comes from `&UnsafeCell<T>`.
 #[derive(RustSpec)]
 #[repr(transparent)]
-pub struct CRefMut<C: ?Sized, const RESTRICTED: bool = true> {
+pub struct CRefMut<C: ?Sized, const EXCLUSIVE: bool> {
     data: *mut C,
 }
 
-impl<C: ?Sized, const RESTRICTED: bool> CRefMut<C, RESTRICTED> {
+impl<C: ?Sized, const EXCLUSIVE: bool> CRefMut<C, EXCLUSIVE> {
     /// Wrap a pointer in a mutable ABI carrier.
     ///
     /// # Safety
     ///
     /// The pointer must satisfy the validity and aliasing rules of the source
-    /// reference. If `RESTRICTED` is `true`, accesses must be exclusive.
+    /// reference. If `EXCLUSIVE` is `true`, accesses must be exclusive.
     pub const unsafe fn from_raw(data: *mut C) -> Self {
         Self { data }
     }
@@ -156,7 +156,7 @@ impl<C: ?Sized, const RESTRICTED: bool> CRefMut<C, RESTRICTED> {
     }
 }
 
-impl<C, const RESTRICTED: bool> CRefMut<C, RESTRICTED> {
+impl<C, const EXCLUSIVE: bool> CRefMut<C, EXCLUSIVE> {
     /// Construct a carrier with a null data pointer.
     pub const fn null() -> Self {
         Self {
@@ -165,36 +165,36 @@ impl<C, const RESTRICTED: bool> CRefMut<C, RESTRICTED> {
     }
 }
 
-impl<C: ?Sized, const RESTRICTED: bool> core::fmt::Debug for CRefMut<C, RESTRICTED> {
+impl<C: ?Sized, const EXCLUSIVE: bool> core::fmt::Debug for CRefMut<C, EXCLUSIVE> {
     fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
         f.debug_tuple("CRefMut").field(&self.data).finish()
     }
 }
 
-impl<C: ?Sized, const RESTRICTED: bool> Clone for CRefMut<C, RESTRICTED> {
+impl<C: ?Sized, const EXCLUSIVE: bool> Clone for CRefMut<C, EXCLUSIVE> {
     fn clone(&self) -> Self {
         *self
     }
 }
-impl<C: ?Sized, const RESTRICTED: bool> Copy for CRefMut<C, RESTRICTED> {}
+impl<C: ?Sized, const EXCLUSIVE: bool> Copy for CRefMut<C, EXCLUSIVE> {}
 
-impl<C: ?Sized, const RESTRICTED: bool> PartialEq for CRefMut<C, RESTRICTED> {
+impl<C: ?Sized, const EXCLUSIVE: bool> PartialEq for CRefMut<C, EXCLUSIVE> {
     fn eq(&self, other: &Self) -> bool {
         core::ptr::eq(self.data, other.data)
     }
 }
-impl<C: ?Sized, const RESTRICTED: bool> Eq for CRefMut<C, RESTRICTED> {}
-impl<C, const RESTRICTED: bool> PartialOrd for CRefMut<C, RESTRICTED> {
+impl<C: ?Sized, const EXCLUSIVE: bool> Eq for CRefMut<C, EXCLUSIVE> {}
+impl<C, const EXCLUSIVE: bool> PartialOrd for CRefMut<C, EXCLUSIVE> {
     fn partial_cmp(&self, other: &Self) -> Option<core::cmp::Ordering> {
         Some(self.cmp(other))
     }
 }
-impl<C, const RESTRICTED: bool> Ord for CRefMut<C, RESTRICTED> {
+impl<C, const EXCLUSIVE: bool> Ord for CRefMut<C, EXCLUSIVE> {
     fn cmp(&self, other: &Self) -> core::cmp::Ordering {
         self.data.cmp(&other.data)
     }
 }
-unsafe impl<C: ?Sized, const RESTRICTED: bool> Borrow for CRefMut<C, RESTRICTED> {
+unsafe impl<C: ?Sized, const EXCLUSIVE: bool> Borrow for CRefMut<C, EXCLUSIVE> {
     type Borrowed<'itm>
         = Self
     where
@@ -208,17 +208,17 @@ unsafe impl<C: ?Sized, const RESTRICTED: bool> Borrow for CRefMut<C, RESTRICTED>
         self
     }
 }
-impl<'itm, C: ?Sized, const RESTRICTED: bool> FromBorrow<'itm> for CRefMut<C, RESTRICTED> {
+impl<'itm, C: ?Sized, const EXCLUSIVE: bool> FromBorrow<'itm> for CRefMut<C, EXCLUSIVE> {
     fn from_borrow(source: Self) -> Self {
         source
     }
 }
 
-impl<C: CType + ?Sized, const RESTRICTED: bool> ReprC for CRefMut<C, RESTRICTED> {
+impl<C: CType + ?Sized, const EXCLUSIVE: bool> ReprC for CRefMut<C, EXCLUSIVE> {
     type CType = Self;
 }
 
-unsafe impl<C: CType + ?Sized, const RESTRICTED: bool> EncodeOwned for CRefMut<C, RESTRICTED> {
+unsafe impl<C: CType + ?Sized, const EXCLUSIVE: bool> EncodeOwned for CRefMut<C, EXCLUSIVE> {
     type Store = ();
 
     fn soft_encode<'itm>(self, (): &mut ()) -> Self::CType
@@ -229,8 +229,8 @@ unsafe impl<C: CType + ?Sized, const RESTRICTED: bool> EncodeOwned for CRefMut<C
     }
 }
 
-unsafe impl<'d, C: CType + ?Sized, const RESTRICTED: bool> DecodeOwned<'d>
-    for CRefMut<C, RESTRICTED>
+unsafe impl<'d, C: CType + ?Sized, const EXCLUSIVE: bool> DecodeOwned<'d>
+    for CRefMut<C, EXCLUSIVE>
 {
     type Store = ();
 
@@ -239,16 +239,16 @@ unsafe impl<'d, C: CType + ?Sized, const RESTRICTED: bool> DecodeOwned<'d>
     }
 }
 
-impl<C: CType + ?Sized, const RESTRICTED: bool> Encode for CRefMut<C, RESTRICTED> {}
-impl<'d, C: CType + ?Sized, const RESTRICTED: bool> Decode<'d> for CRefMut<C, RESTRICTED> {}
+impl<C: CType + ?Sized, const EXCLUSIVE: bool> Encode for CRefMut<C, EXCLUSIVE> {}
+impl<'d, C: CType + ?Sized, const EXCLUSIVE: bool> Decode<'d> for CRefMut<C, EXCLUSIVE> {}
 
-unsafe impl<C: CType + ?Sized, const RESTRICTED: bool> CType for CRefMut<C, RESTRICTED> {}
-unsafe impl<C: CType, const RESTRICTED: bool> CFnArg for CRefMut<C, RESTRICTED> {}
-unsafe impl<C: CType, const RESTRICTED: bool> CFnReturn for CRefMut<C, RESTRICTED> {}
-unsafe impl<C: CType + ?Sized, const RESTRICTED: bool> BorrowCast for CRefMut<C, RESTRICTED> {
+unsafe impl<C: CType + ?Sized, const EXCLUSIVE: bool> CType for CRefMut<C, EXCLUSIVE> {}
+unsafe impl<C: CType, const EXCLUSIVE: bool> CFnArg for CRefMut<C, EXCLUSIVE> {}
+unsafe impl<C: CType, const EXCLUSIVE: bool> CFnReturn for CRefMut<C, EXCLUSIVE> {}
+unsafe impl<C: CType + ?Sized, const EXCLUSIVE: bool> BorrowCast for CRefMut<C, EXCLUSIVE> {
     type AsConst = Self;
 }
-unsafe impl<C: CType + ?Sized, const RESTRICTED: bool> BorrowCastMut for CRefMut<C, RESTRICTED> {
+unsafe impl<C: CType + ?Sized, const EXCLUSIVE: bool> BorrowCastMut for CRefMut<C, EXCLUSIVE> {
     type AsMut = Self;
 }
 
@@ -282,25 +282,25 @@ mod tests {
 
     #[test]
     fn exclusive_and_shared_mutable_references_have_distinct_carriers() {
-        assert_impl_all!(&mut u8: Niche<CType = CRefMut<u8>>);
+        assert_impl_all!(&mut u8: Niche<CType = CRefMut<u8, true>>);
         assert_impl_all!(&UnsafeCell<u8>: Niche<CType = CRefMut<UnsafeCell<u8>, false>>);
-        assert_impl_all!(&mut UnsafeCell<u8>: Niche<CType = CRefMut<UnsafeCell<u8>>>);
-        assert_impl_all!(&mut [u8]: Niche<CType = CSliceMut<u8>>);
+        assert_impl_all!(&mut UnsafeCell<u8>: Niche<CType = CRefMut<UnsafeCell<u8>, true>>);
+        assert_impl_all!(&mut [u8]: Niche<CType = CSliceMut<u8, true>>);
         assert_impl_all!(&[UnsafeCell<u8>]: Niche<CType = CSliceMut<UnsafeCell<u8>, false>>);
-        assert_impl_all!(&mut [UnsafeCell<u8>]: Niche<CType = CSliceMut<UnsafeCell<u8>>>);
+        assert_impl_all!(&mut [UnsafeCell<u8>]: Niche<CType = CSliceMut<UnsafeCell<u8>, true>>);
 
         assert_eq!(
-            core::mem::size_of::<CRefMut<u8>>(),
+            core::mem::size_of::<CRefMut<u8, true>>(),
             core::mem::size_of::<*mut u8>()
         );
         assert_eq!(
-            core::mem::align_of::<CRefMut<u8>>(),
+            core::mem::align_of::<CRefMut<u8, true>>(),
             core::mem::align_of::<*mut u8>()
         );
 
         let mut cell = UnsafeCell::new(1_u8);
         let shared: CRefMut<UnsafeCell<u8>, false> = crate::encode(&cell);
-        let exclusive: CRefMut<UnsafeCell<u8>> = crate::encode(&mut cell);
+        let exclusive: CRefMut<UnsafeCell<u8>, true> = crate::encode(&mut cell);
         assert_eq!(shared.as_ptr(), exclusive.as_ptr());
         unsafe { exclusive.as_ptr().write(UnsafeCell::new(2)) };
         assert_eq!(cell.into_inner(), 2);

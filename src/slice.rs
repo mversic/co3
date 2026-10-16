@@ -175,12 +175,11 @@ pub struct CSlice<C> {
 
 /// Mutable slice carrier with a defined C ABI layout.
 ///
-/// `RESTRICTED = true` is the default and represents exclusive access; header
-/// generators should render its data pointer as `C *restrict`. Use
-/// `CSliceMut<C, false>` for a mutable pointer that may be aliased.
+/// - `EXCLUSIVE = true` represents exclusive access that comes from `&mut T`.
+/// - `EXCLUSIVE = false` represents access that comes from `&UnsafeCell<T>`.
 #[derive(RustSpec)]
 #[repr(C)]
-pub struct CSliceMut<C, const RESTRICTED: bool = true> {
+pub struct CSliceMut<C, const EXCLUSIVE: bool> {
     data: *mut C,
     len: usize,
 }
@@ -252,7 +251,7 @@ macro_rules! impl_raw_slice_methods {
 }
 
 impl_raw_slice_methods! { CSlice, [C], [C] }
-impl_raw_slice_methods! { CSliceMut, [C, const RESTRICTED: bool], [C, RESTRICTED] }
+impl_raw_slice_methods! { CSliceMut, [C, const EXCLUSIVE: bool], [C, EXCLUSIVE] }
 
 impl<C> CSlice<C> {
     /// Construct a carrier with a null data pointer and zero length.
@@ -312,7 +311,7 @@ impl<C> CSlice<C> {
     }
 }
 
-impl<C, const RESTRICTED: bool> CSliceMut<C, RESTRICTED> {
+impl<C, const EXCLUSIVE: bool> CSliceMut<C, EXCLUSIVE> {
     /// Construct a carrier with a null data pointer and zero length.
     pub const fn null() -> Self {
         Self {
@@ -338,7 +337,7 @@ impl<C, const RESTRICTED: bool> CSliceMut<C, RESTRICTED> {
     ///
     /// # Safety
     ///
-    /// The pointer and length must describe a valid slice. When `RESTRICTED`
+    /// The pointer and length must describe a valid slice. When `EXCLUSIVE`
     /// is `true`, accesses must also satisfy exclusive access.
     pub const unsafe fn from_raw_parts_mut(data: *mut C, len: usize) -> Self {
         Self { data, len }
@@ -373,7 +372,7 @@ macro_rules! impl_mut_slice_methods {
     };
 }
 
-impl_mut_slice_methods! { CSliceMut, [C, const RESTRICTED: bool], [C, RESTRICTED] }
+impl_mut_slice_methods! { CSliceMut, [C, const EXCLUSIVE: bool], [C, EXCLUSIVE] }
 
 macro_rules! impl_slice_carrier {
     ($ty:ident, [$($params:tt)*], [$($args:tt)*]) => {
@@ -446,7 +445,7 @@ unsafe impl<$($params)*> Borrow for $ty<$($args)*> {
 }
 
 impl_slice_carrier! { CSlice, [C], [C] }
-impl_slice_carrier! { CSliceMut, [C, const RESTRICTED: bool], [C, RESTRICTED] }
+impl_slice_carrier! { CSliceMut, [C, const EXCLUSIVE: bool], [C, EXCLUSIVE] }
 
 macro_rules! impl_raw_wide_unpack {
     ($source:ty, $part:ty, $accessor:ident) => {
@@ -514,7 +513,7 @@ macro_rules! impl_ref_slice_pack {
 
 impl_ref_slice_pack!(&R, CSlice<C>, *const C, from_raw_parts, unsafe);
 impl_ref_slice_pack!(&R, CSliceMut<C, false>, *mut C, from_raw_parts_mut, unsafe);
-impl_ref_slice_pack!(&mut R, CSliceMut<C>, *mut C, from_raw_parts_mut, unsafe);
+impl_ref_slice_pack!(&mut R, CSliceMut<C, true>, *mut C, from_raw_parts_mut, unsafe);
 
 impl<C> CSlice<C> {
     /// Recover a shared slice, returning `None` for a null pointer.
@@ -531,7 +530,7 @@ impl<C> CSlice<C> {
     }
 }
 
-impl<C> CSliceMut<C> {
+impl<C> CSliceMut<C, true> {
     /// Recover a mutable slice, returning `None` for a null pointer.
     ///
     /// # Safety

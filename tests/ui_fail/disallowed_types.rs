@@ -70,7 +70,7 @@ mod provider {
             type Owned = OwnedOpaqueZst;
 
             #[symbol_name = "my_type_new"]
-            fn to_owned(&self) -> Self::Owned;
+            fn to_owned(&self) -> <Self as ToOwned>::Owned;
         }
     }
 
@@ -140,7 +140,7 @@ ffi! {
         type Owned = OwnedMyType;
 
         #[symbol_name = "my_type_new"]
-        fn to_owned(&self) -> move Self::Owned;
+        fn to_owned(&self) -> move <Self as ToOwned>::Owned;
     }
 }
 

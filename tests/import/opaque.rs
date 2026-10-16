@@ -23,7 +23,7 @@ ffi! {
     impl ToOwned for Value {
         type Owned = OwnedValue;
         #[symbol_name = "import_opaque_value_clone"]
-        fn to_owned(&self) -> move Self::Owned;
+        fn to_owned(&self) -> move <Self as ToOwned>::Owned;
     }
 
     impl OpaqueStruct {
@@ -88,7 +88,7 @@ mod provider {
             type Owned = OwnedValue;
 
             #[symbol_name = "import_opaque_value_clone"]
-            fn to_owned(&self) -> move Self::Owned;
+            fn to_owned(&self) -> move <Self as ToOwned>::Owned;
         }
 
         impl OpaqueStruct {

@@ -17,14 +17,14 @@ ffi! {
         type Owned = OwnedOpaque1;
 
         #[symbol_name = "this_crate__ToOwned__OwnedOpaque1__to_owned"]
-        fn to_owned(&self) -> move Self::Owned;
+        fn to_owned(&self) -> move <Self as ToOwned>::Owned;
     }
 
     impl ToOwned for Opaque2 {
         type Owned = OwnedOpaque2;
 
         #[symbol_name = "this_crate__ToOwned__OwnedOpaque2__to_owned"]
-        fn to_owned(&self) -> move Self::Owned;
+        fn to_owned(&self) -> move <Self as ToOwned>::Owned;
     }
 
     impl Default for OwnedOpaque1 {
@@ -107,14 +107,14 @@ mod provider {
             type Owned = OwnedOpaque1;
 
             #[symbol_name = "this_crate__ToOwned__OwnedOpaque1__to_owned"]
-            fn to_owned(&self) -> move Self::Owned;
+            fn to_owned(&self) -> move <Self as ToOwned>::Owned;
         }
 
         impl ToOwned for OwnedOpaque2 {
             type Owned = OwnedOpaque2;
 
             #[symbol_name = "this_crate__ToOwned__OwnedOpaque2__to_owned"]
-            fn to_owned(&self) -> move Self::Owned;
+            fn to_owned(&self) -> move <Self as ToOwned>::Owned;
         }
 
         impl<dyn(u8) T, dyn(u32) U> Custom<T> for U

@@ -53,14 +53,14 @@ ffi! {
 #[test]
 fn thin_extern_reference_niche() {
     static_assertions::assert_impl_all!(&Extern: Niche<CType = CRef<Extern>>);
-    static_assertions::assert_impl_all!(&mut Extern: Niche<CType = CRefMut<Extern>>);
+    static_assertions::assert_impl_all!(&mut Extern: Niche<CType = CRefMut<Extern, true>>);
     // CStr is unsized but also has a thin pointer representation. This catches
     // an accidental Sized bound on the pointer-backed reference Niche impls.
     static_assertions::assert_impl_all!(&CStr: Niche<CType = CRef<c_char>>);
 
     assert_eq!(encode(None::<&Extern>), CRef::null());
     assert_eq!(soft_encode(None::<&mut Extern>, &mut ()), unsafe {
-        CRefMut::<Extern>::from_raw(std::ptr::null_mut())
+        CRefMut::from_raw(std::ptr::null_mut())
     });
     assert_eq!(encode(None::<&CStr>), CRef::null());
 }

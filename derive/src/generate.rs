@@ -433,15 +433,9 @@ fn gen_export_associated_item_checks(dispatch: &Co3Impl) -> TokenStream {
             &mut selected,
         );
         let self_ty = &selected.self_ty;
-        let trait_path = selected.trait_.as_ref().map(|(path, _)| path);
-        let names = ffi_fn::impl_associated_item_names(&selected);
         let impl_attrs = cfg_attrs(&selected.attrs).collect::<Vec<_>>();
         for item in &selected.items {
-            let mut concretizer = ffi_fn::ImplPathConcretizer {
-                self_ty,
-                trait_path,
-                names: &names,
-            };
+            let mut concretizer = ffi_fn::SelfConcretizer::new(self_ty);
             match item {
                 ImplItem::Type(item) => {
                     let ident = &item.ident;
@@ -456,7 +450,7 @@ fn gen_export_associated_item_checks(dispatch: &Co3Impl) -> TokenStream {
                     let (fn_generics, _, where_clause) = generics.split_for_impl();
                     let assoc_args = dispatch_trait_args(&item.generics);
                     let assoc_args = (!assoc_args.is_empty()).then(|| quote!(<#assoc_args>));
-                    let actual = if let Some(trait_path) = trait_path {
+                    let actual = if let Some((trait_path, _)) = selected.trait_.as_ref() {
                         quote!(<#self_ty as #trait_path>::#ident #assoc_args)
                     } else {
                         quote!(<#self_ty>::#ident #assoc_args)
@@ -479,7 +473,7 @@ fn gen_export_associated_item_checks(dispatch: &Co3Impl) -> TokenStream {
                     let mut declared = item.expr.clone();
                     concretizer.visit_type_mut(&mut ty);
                     concretizer.visit_expr_mut(&mut declared);
-                    let actual = if let Some(trait_path) = trait_path {
+                    let actual = if let Some((trait_path, _)) = selected.trait_.as_ref() {
                         quote!(<#self_ty as #trait_path>::#ident)
                     } else {
                         quote!(<#self_ty>::#ident)
@@ -748,7 +742,7 @@ fn dispatch_delegate_sig(
     delegate_name: &syn::Ident,
 ) -> syn::Signature {
     let mut sig = wrapper_sig.clone();
-    normalize_fn_signature(&mut sig, self_ty, None);
+    normalize_fn_signature(&mut sig, self_ty);
     sig.ident = delegate_name.clone();
     sig.generics.params.clear();
     sig
@@ -799,7 +793,7 @@ fn gen_dispatch_set(
             .for_each(|arg| monomorphizer.visit_generic_argument_mut(arg));
         if let Some(self_ty) = delegate.and_then(|delegate| delegate.self_ty) {
             selection_args.iter_mut().for_each(|arg| {
-                ffi_fn::ImplPathConcretizer::self_only(self_ty).visit_generic_argument_mut(arg);
+                ffi_fn::SelfConcretizer::new(self_ty).visit_generic_argument_mut(arg);
                 monomorphizer.visit_generic_argument_mut(arg);
             });
         }
@@ -830,12 +824,11 @@ fn gen_dispatch_set(
         }
         if let Some(self_ty) = delegate.and_then(|delegate| delegate.self_ty) {
             auxiliary_params.iter_mut().for_each(|param| {
-                ffi_fn::ImplPathConcretizer::self_only(self_ty).visit_generic_param_mut(param);
+                ffi_fn::SelfConcretizer::new(self_ty).visit_generic_param_mut(param);
                 monomorphizer.visit_generic_param_mut(param);
             });
             if let Some(where_clause) = &mut impl_where_clause {
-                ffi_fn::ImplPathConcretizer::self_only(self_ty)
-                    .visit_where_clause_mut(where_clause);
+                ffi_fn::SelfConcretizer::new(self_ty).visit_where_clause_mut(where_clause);
                 monomorphizer.visit_where_clause_mut(where_clause);
             }
         }
@@ -875,8 +868,7 @@ fn gen_dispatch_set(
                 let mut raw_sig = delegate.raw_sig.clone();
                 monomorphizer.visit_signature_mut(&mut raw_sig);
                 if let Some(self_ty) = delegate.self_ty {
-                    ffi_fn::ImplPathConcretizer::self_only(self_ty)
-                        .visit_signature_mut(&mut raw_sig);
+                    ffi_fn::SelfConcretizer::new(self_ty).visit_signature_mut(&mut raw_sig);
                     monomorphizer.visit_signature_mut(&mut raw_sig);
                 }
                 raw_sig.ident = format_ident!("__co3_raw");
@@ -934,8 +926,7 @@ fn gen_dispatch_set(
                     });
                 monomorphizer.visit_impl_item_fn_mut(&mut method);
                 if let Some(self_ty) = delegate.self_ty {
-                    ffi_fn::ImplPathConcretizer::self_only(self_ty)
-                        .visit_impl_item_fn_mut(&mut method);
+                    ffi_fn::SelfConcretizer::new(self_ty).visit_impl_item_fn_mut(&mut method);
                     monomorphizer.visit_impl_item_fn_mut(&mut method);
                 }
                 quote!(#method)
@@ -1338,7 +1329,7 @@ fn prepare_dispatch_import(
     } else {
         wrapper_source_sig.clone()
     };
-    normalize_fn_signature(&mut extern_sig, context.self_ty, None);
+    normalize_fn_signature(&mut extern_sig, context.self_ty);
     let extern_generics = if matches!(mode, DispatchImportMode::Static(_)) {
         let mut extern_args = context.args.clone();
         extern_args.inject_unnamed_lifetimes(&mut extern_sig.generics);
@@ -1650,7 +1641,7 @@ pub(crate) fn expand_export_decls(
             }
         }
         ForeignItem::Fn(mut item) => {
-            normalize_fn_signature(&mut item.sig, None, None);
+            normalize_fn_signature(&mut item.sig, None);
             let bindings =
                 monomorphize_static_fn_bindings(item, symbol_fragments, &declared_types);
             let definitions = bindings
@@ -1797,7 +1788,6 @@ fn synthesize_impl_extern_decls(
     symbol_fragments: &std::collections::BTreeMap<String, syn::LitStr>,
 ) -> Vec<(syn::Ident, TokenStream, TokenStream)> {
     let dispatch_generics = impl_.generics.clone();
-    let associated_items = ffi_fn::impl_associated_item_names(&impl_);
     let drop_impl = crate::utils::is_drop_impl(&impl_);
     let opaque_drop = drop_impl && opaque_drop_pointer;
     let receiver =
@@ -1816,17 +1806,7 @@ fn synthesize_impl_extern_decls(
                 .iter()
                 .any(|input| matches!(input, FnArg::Receiver(_)));
             if import_mode == crate::ImportMode::Regular {
-                normalize_fn_signature(
-                    &mut item.sig,
-                    Some(&impl_.self_ty),
-                    impl_
-                        .trait_
-                        .as_ref()
-                        .map(|(trait_path, _)| ffi_fn::ImplAssocContext {
-                            trait_path,
-                            names: &associated_items,
-                        }),
-                );
+                normalize_fn_signature(&mut item.sig, Some(&impl_.self_ty));
                 if drop_impl {
                     if opaque_drop {
                         let self_ty = &impl_.self_ty;
@@ -1975,7 +1955,7 @@ pub(crate) fn expand_extern_decls(
                 let wrapper_abi = method.sig.abi.clone().unwrap_or_else(|| abi.clone());
                 method.sig.abi = Some(wrapper_abi.clone());
                 method.sig.safety = syn::Safety::Unsafe(Default::default());
-                normalize_fn_signature(&mut method.sig, None, None);
+                normalize_fn_signature(&mut method.sig, None);
                 method.sig = ffi_fn::lower_abi_fn_signature(
                     method.sig.clone(),
                     failure_mode,
@@ -1998,7 +1978,7 @@ pub(crate) fn expand_extern_decls(
                     continue;
                 };
                 let wrapper_abi = method.sig.abi.clone().unwrap_or_else(|| abi.clone());
-                normalize_fn_signature(&mut method.sig, Some(&self_ty), None);
+                normalize_fn_signature(&mut method.sig, Some(&self_ty));
                 method.sig = ffi_fn::lower_abi_fn_signature(
                     method.sig.clone(),
                     failure_mode,
@@ -2967,8 +2947,7 @@ fn expand_dispatch_drop_import(
 
     let mut wrapper_generics = generics.clone();
     add_missing_decl_lifetimes(&mut wrapper_generics, declared_generics);
-    ffi_fn::ImplPathConcretizer::self_only(&declared_self_ty)
-        .visit_generics_mut(&mut wrapper_generics);
+    ffi_fn::SelfConcretizer::new(&declared_self_ty).visit_generics_mut(&mut wrapper_generics);
     wrapper_generics
         .type_params_mut()
         .for_each(strip_internal_generic_param);
@@ -3103,8 +3082,7 @@ fn expand_plain_drop_import(
     );
     let mut wrapper_generics = generics.clone();
     add_missing_decl_lifetimes(&mut wrapper_generics, declared_generics);
-    ffi_fn::ImplPathConcretizer::self_only(&declared_self_ty)
-        .visit_generics_mut(&mut wrapper_generics);
+    ffi_fn::SelfConcretizer::new(&declared_self_ty).visit_generics_mut(&mut wrapper_generics);
     let (impl_generics, _, where_clause) = wrapper_generics.split_for_impl();
     let abi_assertions = extern_decls.iter().map(|(_, _, assertions)| assertions);
     let extern_decl_tokens = extern_decls.iter().map(|(_, decl, _)| decl);
@@ -3475,7 +3453,7 @@ fn gen_owned_repr_c_impls(ident: &syn::Ident, generics: &syn::Generics) -> Token
             type AsConst = #co3::reference::CRef<#ident #ty_generics>;
         }
         unsafe impl #impl_generics #co3::borrow::BorrowCastMut for #owned_repr_c_name #ty_generics #where_clause {
-            type AsMut = #co3::reference::CRefMut<#ident #ty_generics>;
+            type AsMut = #co3::reference::CRefMut<#ident #ty_generics, true>;
         }
     }
 }
@@ -3497,10 +3475,13 @@ fn gen_owned_extern_type_impls(
     let speculative = speculative_marker(generics.params.is_empty());
     let clone_impl = cfg!(feature = "alloc").then(|| {
         let mut clone_generics = generics.clone();
-        clone_generics.make_where_clause().predicates.push(syn::parse_quote!(
-            #speculative #ident #ty_generics:
-                #co3::borrow::ToOwned<Owned = #owned_ident #ty_generics>
-        ));
+        clone_generics
+            .make_where_clause()
+            .predicates
+            .push(syn::parse_quote!(
+                #speculative #ident #ty_generics:
+                    #co3::borrow::ToOwned<Owned = #owned_ident #ty_generics>
+            ));
         let (clone_impl_generics, _, clone_where_clause) = clone_generics.split_for_impl();
         quote! {
             impl #clone_impl_generics Clone for #owned_ident #ty_generics #clone_where_clause {
