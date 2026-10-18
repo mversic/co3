@@ -284,7 +284,7 @@ disjoint_impls! {
         EncodeOwned for &R
     where
         Self: RustSpec<Layout = Unstable>,
-        R: RustSpec<Layout = Unstable, Size: Dst, Mutaility = Exclusive>,
+        R: RustSpec<Layout = Unstable, Size: Dst, Mutability = Exclusive>,
         Self: ReprC<CType = <<<R as ToOwned>::Owned as ReprC>::CType as BorrowCast>::AsConst>,
     {
         type Store = RefDstEncodeStore<R>;
@@ -1012,90 +1012,6 @@ disjoint_impls! {
                 )
             };
             store.value.insert(value)
-        }
-    }
-
-    unsafe impl<'d, R: CheckedTransmute + ?Sized> DecodeOwned<'d> for &'d R
-    where
-        Self: RustSpec<Layout = Stable>,
-        R: RustSpec<Size: Thin, Mutability = WithInterior>,
-    {
-        type Store = ();
-
-        unsafe fn soft_decode<'itm: 'd>(source: Self::CType, (): &mut ()) -> Option<Self> {
-            let source = source.as_ptr();
-            if source.is_null() {
-                return None;
-            }
-
-            if unsafe { !R::is_valid(&*source) } {
-                return None;
-            }
-
-            // TODO: Hack before `Thin` trait is available in stable:
-            // https://doc.rust-lang.org/std/ptr/traitalias.Thin.html
-            // https://github.com/rust-lang/rust/issues/81513
-            unsafe { core::mem::transmute_copy::<*mut R::CType, *mut R>(&source).as_ref() }
-        }
-
-        unsafe fn soft_decode_unchecked<'itm: 'd>(source: Self::CType, (): &mut ()) -> Self {
-            let source = source.as_ptr();
-            unsafe { &*core::mem::transmute_copy::<*mut R::CType, *mut R>(&source) }
-        }
-    }
-    unsafe impl<'d, R: CheckedTransmute<CType: Wide<Metadata = usize>> + ?Sized>
-        DecodeOwned<'d> for &'d R
-    where
-        Self: RustSpec<Layout = Unstable>,
-        R: RustSpec<Layout = Stable, Size = MetaSized<SliceLike>, Mutability = WithInterior>,
-        WideData<<R as ReprC>::CType>: CType,
-        R: Wide<Metadata = usize>,
-    {
-        type Store = ();
-
-        unsafe fn soft_decode<'itm: 'd>(source: Self::CType, store: &'itm mut ()) -> Option<Self> {
-            if source.is_null() {
-                return None;
-            }
-
-            // TODO: We're creating a temporary reference to inner type of UnsafeCell.
-            // That is not in itself a UB if that reference is not mutably aliased
-            // However, I'm not entirely comfortale with it
-            let ctype_slice = unsafe {
-                R::CType::from_raw_parts(
-                    source.data().cast::<<R::CType as Wide>::Header>(),
-                    source.len(),
-                )
-            };
-            if unsafe { !R::is_valid(ctype_slice) } {
-                return None;
-            }
-
-            Some(unsafe { Self::soft_decode_unchecked(source, store) })
-        }
-
-        unsafe fn soft_decode_unchecked<'itm: 'd>(source: Self::CType, (): &mut ()) -> Self {
-            unsafe {
-                R::from_raw_parts(source.data().cast::<<R as Wide>::Header>(), source.len())
-            }
-        }
-    }
-    unsafe impl<'d, R: NulTerminatedBuf + ?Sized> DecodeOwned<'d> for &'d R
-    where
-        Self: RustSpec,
-        R: RustSpec<Size = NulTerminated, Mutability = WithInterior>,
-        <R as NulTerminatedBuf>::Data: CheckedTransmute,
-    {
-        type Store = ();
-
-        unsafe fn soft_decode<'itm: 'd>(source: Self::CType, (): &mut ()) -> Option<Self> {
-            let source = source.as_ptr();
-
-            if source.is_null() {
-                return None;
-            }
-
-            Some(unsafe { R::from_raw(source.cast()) })
         }
     }
 

@@ -8,3 +8,5 @@ Conversion is built from four layers:
 2. **ABI mapping** (`ReprC`): map the Rust type into a robust `repr(C)` type based on those properties.
 3. **Value conversion** (`Encode`/`Decode`): convert values to and from that robust `repr(C)` type.
 4. **Post-call writeback** (`Store::sync`): apply deferred updates for mutable reference paths.
+
+EncodeOwned/DecodeOwned are not implemented for `UnsafeCell` where unsychronized is requried

@@ -897,9 +897,9 @@ mod tests {
         );
         assert_impl_all!(&UnsafeCell<u8>:
             Niche<CType = CRefMut<UnsafeCell<u8>, false>>,
-            Decode<'static>,
             Encode,
         );
+        assert_not_impl_any!(&UnsafeCell<u8>: Decode<'static>, CheckedTransmute);
         assert_impl_all!(&mut UnsafeCell<u8>:
             Niche<CType = CRefMut<UnsafeCell<u8>, true>>,
             Decode<'static>,
@@ -915,9 +915,9 @@ mod tests {
         assert_not_impl_any!(Box<UnsafeCell<u8>>: CheckedTransmute);
         assert_impl_all!(&[UnsafeCell<u8>]:
             Niche<CType = CWideRefMut<[UnsafeCell<u8>], false>>,
-            Decode<'static>,
             Encode,
         );
+        assert_not_impl_any!(&[UnsafeCell<u8>]: Decode<'static>);
         assert_impl_all!(&mut [UnsafeCell<u8>]:
             Niche<CType = CWideRefMut<[UnsafeCell<u8>], true>>,
             Decode<'static>,
@@ -1073,9 +1073,9 @@ mod tests {
         );
         assert_impl_all!(&UnsafeCell<NonZero<u8>>:
             Niche<CType = CRefMut<UnsafeCell<u8>, false>>,
-            Decode<'static>,
             //Encode,
         );
+        assert_not_impl_any!(&UnsafeCell<NonZero<u8>>: Decode<'static>, CheckedTransmute);
         assert_impl_all!(&mut UnsafeCell<NonZero<u8>>:
             Niche<CType = CRefMut<UnsafeCell<u8>, true>>,
             Decode<'static>,
@@ -1100,8 +1100,8 @@ mod tests {
         }
         assert_impl_all!(&[UnsafeCell<NonZero<u8>>]:
             Niche<CType = CWideRefMut<[UnsafeCell<u8>], false>>,
-            Decode<'static>,
         );
+        assert_not_impl_any!(&[UnsafeCell<NonZero<u8>>]: Decode<'static>);
         assert_impl_all!(&mut [UnsafeCell<NonZero<u8>>]:
             Niche<CType = CWideRefMut<[UnsafeCell<u8>], true>>,
             Decode<'static>,

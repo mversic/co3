@@ -64,23 +64,6 @@ disjoint_impls! {
             unsafe { R::is_valid(&*ptr) }
         }
     }
-    unsafe impl<R: CheckedTransmute + ?Sized, const EXCLUSIVE: bool> CheckedTransmute for &R
-    where
-        Self: ReprC<CType = CRefMut<<R as ReprC>::CType, EXCLUSIVE>>,
-        R: rust_spec::RustSpec<Size: Thin>,
-    {
-        #[inline(always)]
-        unsafe fn is_valid(target: &Self::CType) -> bool {
-            let ptr = target.as_ptr();
-
-            if ptr.is_null() {
-                return false;
-            }
-
-            unsafe { R::is_valid(&*ptr) }
-        }
-    }
-
     unsafe impl<R: CheckedTransmute<CType: Copy> + ReprC, E: ReprC> CheckedTransmute for Result<R, E>
     where
         Self: ReprC<CType = <R as ReprC>::CType>,

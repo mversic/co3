@@ -97,8 +97,6 @@ fn shared_unsafe_cell_wide_uses_mutable_carrier() {
     assert_eq!(len, 3);
     unsafe { data.add(1).write(9) };
 
-    let decoded = unsafe { co3::decode::<&UnsafeCell<[u8]>>(carrier) }.unwrap();
-    assert!(core::ptr::eq(original, decoded));
     assert_eq!(unsafe { &*cell.get() }, &[1, 9, 3]);
 }
 
