@@ -588,23 +588,8 @@ impl<'itm, T: 'itm> FromBorrow<'itm> for ManuallyDrop<T> {
     }
 }
 
-impl<T: ReprC + ?Sized> ReprC for ManuallyDrop<T> {
-    type CType = ManuallyDrop<T::CType>;
-}
-
 impl<T: ReprC> Encode for ManuallyDrop<T> where Self: EncodeOwned {}
 impl<'d, T: ReprC> Decode<'d> for ManuallyDrop<T> where Self: DecodeOwned<'d> {}
-
-unsafe impl<T: CheckedTransmute + ?Sized> CheckedTransmute for ManuallyDrop<T> {
-    #[inline(always)]
-    unsafe fn is_valid(target: &Self::CType) -> bool {
-        unsafe { T::is_valid(target) }
-    }
-}
-
-impl<T: Niche> Niche for ManuallyDrop<T> {
-    const NICHE: Self::CType = ManuallyDrop::new(T::NICHE);
-}
 
 unsafe impl<T: CType + ?Sized> CType for ManuallyDrop<T> {}
 unsafe impl<T: CFnArg> CFnArg for ManuallyDrop<T> where
@@ -688,9 +673,7 @@ mod tests {
         assert_impl_all!(ManuallyDrop<bool>: Decode<'static>, Encode);
 
         let invalid = bool::NICHE;
-        assert!(
-            unsafe { crate::decode::<ManuallyDrop<bool>>(ManuallyDrop::new(invalid)) }.is_none()
-        );
+        assert!(unsafe { crate::decode::<ManuallyDrop<bool>>(invalid) }.is_none());
 
         let encoded = crate::encode(ManuallyDrop::new(true));
         let decoded = unsafe { crate::decode::<ManuallyDrop<bool>>(encoded) }.unwrap();
@@ -719,57 +702,57 @@ mod tests {
     #[test]
     fn manually_drop_inner_without_drop() {
         assert_impl_all!(ManuallyDrop<u8>:
-            ReprC<CType = ManuallyDrop<u8>>,
+            ReprC<CType = u8>,
             Decode<'static>,
             Encode,
         );
         assert_impl_all!(&ManuallyDrop<u8>:
-            Niche<CType = CRef<ManuallyDrop<u8>>>,
+            Niche<CType = CRef<u8>>,
             RustSpec<Niche = rust_spec::niche::WithNiche<rust_spec::Stable>>,
             Decode<'static>,
             Encode,
         );
         assert_impl_all!(&mut ManuallyDrop<u8>:
-            Niche<CType = CRefMut<ManuallyDrop<u8>, true>>,
+            Niche<CType = CRefMut<u8, true>>,
             RustSpec<Niche = rust_spec::niche::WithNiche<rust_spec::Stable>>,
             Decode<'static>,
             Encode,
         );
         #[cfg(feature = "alloc")]
         assert_impl_all!(Box<ManuallyDrop<u8>>:
-            Niche<CType = CBox<ManuallyDrop<u8>>>,
+            Niche<CType = CBox<u8>>,
             Decode<'static>,
             Encode,
         );
         assert_impl_all!(&[ManuallyDrop<u8>]:
-            Niche<CType = CWideRef<[ManuallyDrop<u8>]>>,
+            Niche<CType = CWideRef<[u8]>>,
             Decode<'static>,
             Encode,
         );
         assert_impl_all!(&mut [ManuallyDrop<u8>]:
-            Niche<CType = CWideRefMut<[ManuallyDrop<u8>], true>>,
+            Niche<CType = CWideRefMut<[u8], true>>,
             Decode<'static>,
             Encode,
         );
         #[cfg(feature = "alloc")]
         assert_impl_all!(Box<[ManuallyDrop<u8>]>:
-            Niche<CType = CWideBox<[ManuallyDrop<u8>]>>,
+            Niche<CType = CWideBox<[u8]>>,
             Decode<'static>,
             Encode,
         );
         #[cfg(feature = "alloc")]
         assert_impl_all!(Vec<ManuallyDrop<u8>>:
-            Niche<CType = CWideBox<[ManuallyDrop<u8>]>>,
+            Niche<CType = CWideBox<[u8]>>,
             Decode<'static>,
             Encode,
         );
         assert_impl_all!([ManuallyDrop<u8>; 2]:
-            ReprC<CType = [ManuallyDrop<u8>; 2]>,
+            ReprC<CType = [u8; 2]>,
             Decode<'static>,
             Encode,
         );
         assert_impl_all!(Option<ManuallyDrop<u8>>:
-            Niche<CType = ReprCOption<ManuallyDrop<u8>>>,
+            Niche<CType = ReprCOption<u8>>,
             Decode<'static>,
             Encode,
         );

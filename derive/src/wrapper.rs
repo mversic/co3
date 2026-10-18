@@ -283,7 +283,7 @@ fn gen_regular_drop_import_body<const DISPATCHED: bool>(
         .collect::<Vec<_>>();
     let forwarded_args = arg_names.iter().map(|name| {
         if name == "__co3_self" {
-            quote!(core::mem::ManuallyDrop::into_inner(#name))
+            quote!(__Co3DropArg::into_drop_arg(#name))
         } else {
             quote!(#name)
         }
@@ -300,6 +300,15 @@ fn gen_regular_drop_import_body<const DISPATCHED: bool>(
                 Drop = co3::rust_spec::drop::CustomDrop<co3::rust_spec::drop::NoDrop>
             >>() {}
             __co3_require_custom_drop::<#self_ty>();
+            trait __Co3DropArg<__Co3Value> {
+                fn into_drop_arg(self) -> __Co3Value;
+            }
+            impl<__Co3Value> __Co3DropArg<__Co3Value> for __Co3Value {
+                fn into_drop_arg(self) -> __Co3Value { self }
+            }
+            impl<__Co3Value> __Co3DropArg<__Co3Value> for core::mem::ManuallyDrop<__Co3Value> {
+                fn into_drop_arg(self) -> __Co3Value { core::mem::ManuallyDrop::into_inner(self) }
+            }
             let __co3_self = core::mem::ManuallyDrop::new(unsafe { core::ptr::read(self) });
             let __co3_drop_encoded = |#(#arg_names),*| unsafe {
                 #imported_name(#(#forwarded_args),*)

@@ -2,14 +2,15 @@
 
 #[cfg(feature = "alloc")]
 use alloc::{boxed::Box, vec::Vec};
-use core::ptr::NonNull;
+use core::{mem::ManuallyDrop, ptr::NonNull};
 
 use disjoint_impls::disjoint_impls;
+use rust_spec::{RustSpec, drop::NoDrop};
 
 #[cfg(feature = "alloc")]
 use crate::boxed::{CBox, CBoxCell, CWideBox, CWideBoxCell};
 use crate::{
-    CType, ReprC, assert_arr_has_non_zero_len,
+    CType, ReprC, WithDrop, assert_arr_has_non_zero_len,
     option::ReprCOption,
     primitives::CBool,
     reference::{CRef, CRefMut},
@@ -143,6 +144,19 @@ disjoint_impls! {
         Self: ReprC<CType = <bool as ReprC>::CType>,
     {
         const NICHE: Self::CType = CBool(4);
+    }
+
+    impl<R: Niche> Niche for ManuallyDrop<R>
+    where
+        R: RustSpec<Drop = NoDrop>,
+    {
+        const NICHE: Self::CType = R::NICHE;
+    }
+    impl<R: Niche> Niche for ManuallyDrop<R>
+    where
+        R: RustSpec<Drop: WithDrop>,
+    {
+        const NICHE: Self::CType = ManuallyDrop::new(R::NICHE);
     }
 }
 

@@ -9,7 +9,16 @@ use crate::{
     stored::{DecodeOwned, EncodeOwned},
 };
 
-/// A shared reference pointer carrier with the same ABI as `*const C`.
+const fn assert_thin_pointer<C: ?Sized>() {
+    const {
+        assert!(
+            core::mem::size_of::<*const C>() == core::mem::size_of::<*const ()>(),
+            "reference carrier requires a thin pointer"
+        );
+    }
+}
+
+/// A thin shared reference pointer carrier with the same ABI as `*const C`.
 ///
 /// A null pointer represents an absent reference.
 #[derive(RustSpec)]
@@ -22,13 +31,16 @@ impl<C: CType + ?Sized> CRef<C> {
     /// Wrap a pointer that follows the validity and aliasing rules of a shared reference.
     ///
     /// # Safety
-    /// A non-null pointer must refer to a live `C` for any later dereference.
+    ///
+    /// A non-null thin pointer must refer to a live `C` for any later dereference.
     pub const unsafe fn from_raw(data: *const C) -> Self {
+        assert_thin_pointer::<C>();
         Self { data }
     }
 
     /// Wrap an existing shared reference to lowered data.
     pub const fn from_ref(data: &C) -> Self {
+        assert_thin_pointer::<C>();
         Self { data }
     }
 }
@@ -141,7 +153,7 @@ unsafe impl<C: CType + ?Sized> BorrowCastMut for CRef<C> {
     type AsMut = Self;
 }
 
-/// A mutable pointer carrier  with a defined C ABI layout.
+/// A thin mutable pointer carrier with a defined C ABI layout.
 ///
 /// - `EXCLUSIVE = true` represents exclusive access that comes from `&mut T`.
 /// - `EXCLUSIVE = false` represents access that comes from `&UnsafeCell<T>`.
@@ -156,14 +168,18 @@ impl<C: CType + ?Sized, const EXCLUSIVE: bool> CRefMut<C, EXCLUSIVE> {
     ///
     /// # Safety
     ///
-    /// The pointer must satisfy the validity and aliasing rules of the source
+    /// The thin pointer must satisfy the validity and aliasing rules of the source
     /// reference. If `EXCLUSIVE` is `true`, accesses must be exclusive.
     pub const unsafe fn from_raw(data: *mut C) -> Self {
+        assert_thin_pointer::<C>();
         Self { data }
     }
+}
 
+impl<C: CType + ?Sized> CRefMut<C, true> {
     /// Wrap an existing mutable reference to lowered data.
     pub const fn from_mut(data: &mut C) -> Self {
+        assert_thin_pointer::<C>();
         Self { data }
     }
 }
@@ -199,12 +215,11 @@ impl<C, const EXCLUSIVE: bool> CRefMut<C, EXCLUSIVE> {
     }
 }
 
-impl<C: CType + ?Sized> CRefMut<UnsafeCell<C>, false> {
-    /// Create a carrier for shared access to a cell's interior.
-    pub const fn from_cell(cell: &UnsafeCell<C>) -> Self {
-        Self {
-            data: core::ptr::from_ref(cell).cast_mut(),
-        }
+impl<C: CType + ?Sized> CRefMut<C, false> {
+    /// Create a carrier for shared access with interior mutability.
+    pub const fn from_ref(cell: &UnsafeCell<C>) -> Self {
+        assert_thin_pointer::<C>();
+        Self { data: cell.get() }
     }
 }
 

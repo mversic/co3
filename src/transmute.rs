@@ -1,13 +1,14 @@
 #[cfg(feature = "alloc")]
 use alloc::boxed::Box;
+use core::mem::ManuallyDrop;
 
 use disjoint_impls::disjoint_impls;
-use rust_spec::{Stable, niche::WithNiche, size::Zero};
+use rust_spec::{RustSpec, Stable, drop::NoDrop, niche::WithNiche, size::Zero};
 
 #[cfg(feature = "alloc")]
 use crate::boxed::CBox;
 use crate::reference::{CRef, CRefMut};
-use crate::{CType, ReprC, Thin, assert_arr_has_non_zero_len, utf8::Utf8Str};
+use crate::{CType, ReprC, Thin, WithDrop, assert_arr_has_non_zero_len, utf8::Utf8Str};
 
 disjoint_impls! {
     /// Type that can be **safely transmuted** into its C representation.
@@ -25,6 +26,26 @@ disjoint_impls! {
         ///
         /// Any pointers dereferenced while checking `target` must be valid for reads.
         unsafe fn is_valid(target: &Self::CType) -> bool;
+    }
+
+    unsafe impl<R: CheckedTransmute + ?Sized> CheckedTransmute for ManuallyDrop<R>
+    where
+        R: RustSpec<Drop = NoDrop>,
+    {
+        #[inline(always)]
+        unsafe fn is_valid(target: &Self::CType) -> bool {
+            unsafe { R::is_valid(target) }
+        }
+    }
+
+    unsafe impl<R: CheckedTransmute + ?Sized> CheckedTransmute for ManuallyDrop<R>
+    where
+        R: RustSpec<Drop: WithDrop>,
+    {
+        #[inline(always)]
+        unsafe fn is_valid(target: &Self::CType) -> bool {
+            unsafe { R::is_valid(target) }
+        }
     }
 
     unsafe impl<R: CheckedTransmute + ?Sized> CheckedTransmute for &R
@@ -216,6 +237,18 @@ mod tests {
         niche::Niche,
         slice::{CWideRef, CWideRefMut},
     };
+
+    #[test]
+    fn manually_drop_validates_inner_representation() {
+        let invalid_bool = <bool as Niche>::NICHE;
+        assert!(!unsafe { <ManuallyDrop<bool> as CheckedTransmute>::is_valid(&invalid_bool) });
+
+        #[cfg(feature = "alloc")]
+        {
+            let null_box = ManuallyDrop::new(CBox::<u8>::null());
+            assert!(!unsafe { <ManuallyDrop<Box<u8>> as CheckedTransmute>::is_valid(&null_box) });
+        }
+    }
 
     #[test]
     fn transparent_type() {

@@ -556,6 +556,7 @@ extern crate self as co3;
 
 #[cfg(feature = "alloc")]
 use alloc::{boxed::Box, vec::Vec};
+use core::mem::ManuallyDrop;
 
 #[cfg(feature = "derive")]
 pub use co3_derive::*;
@@ -567,6 +568,7 @@ pub use impls::impls;
 pub use rust_spec;
 use rust_spec::{
     RustSpec,
+    drop::NoDrop,
     mutability::{Exclusive, WithInterior},
     niche::{NicheStabilityKind, WithNiche, WithoutNiche},
     size::{ExternTypeLike, MetaSized, NulTerminated, SizedKind, SliceLike, Zero},
@@ -662,6 +664,10 @@ pub unsafe trait CFnReturn: CType + Sized {}
 trait Thin {}
 impl<K: SizedKind> Thin for rust_spec::size::Sized<K> {}
 impl Thin for ExternTypeLike {}
+
+trait WithDrop {}
+impl WithDrop for rust_spec::drop::AutoDrop {}
+impl<K: rust_spec::drop::DropKind> WithDrop for rust_spec::drop::CustomDrop<K> {}
 
 disjoint_impls! {
     /// A Rust type that has a C-compatible companion type.
@@ -838,6 +844,19 @@ disjoint_impls! {
             >,
     {
         type CType = E::CType;
+    }
+
+    impl<R: ReprC + ?Sized> ReprC for ManuallyDrop<R>
+    where
+        R: RustSpec<Drop = NoDrop>
+    {
+        type CType = R::CType;
+    }
+    impl<R: ReprC + ?Sized> ReprC for ManuallyDrop<R>
+    where
+        R: RustSpec<Drop: WithDrop>,
+    {
+        type CType = ManuallyDrop<R::CType>;
     }
 }
 

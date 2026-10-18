@@ -4,10 +4,11 @@ use core::{
     mem::ManuallyDrop,
     ptr::NonNull,
 };
-use rust_spec::RustSpec;
+use disjoint_impls::disjoint_impls;
+use rust_spec::{RustSpec, drop::NoDrop};
 
 use crate::{
-    CFnArg, CFnReturn, CType, Decode, Encode, ReprC,
+    CFnArg, CFnReturn, CType, Decode, Encode, ReprC, WithDrop,
     borrow::{Borrow, BorrowCast, BorrowCastMut, FromBorrow},
     stored::{DecodeOwned, EncodeOwned},
     transmute::CheckedTransmute,
@@ -30,32 +31,6 @@ pub trait Pack<Part: CType>: ReprC<CType: Sized> {
 
     /// Tries to reconstruct the C representation.
     fn pack(part: Part) -> Result<Self::CType, Self::Error>;
-}
-
-/// Unpacks a C-compatible representation as two ABI arguments.
-///
-/// This is used by `#[unpack(T1, T2)]` in [`crate::ffi!`] declarations.
-/// Fallibly unpacks a C-compatible representation as two ABI arguments.
-pub trait Unpack2<Part1: CType, Part2: CType>: ReprC<CType: Sized> {
-    /// Error returned when either constituent cannot be produced.
-    type Error;
-
-    /// Tries to split the C representation into its constituents.
-    fn unpack(value: Self::CType) -> Result<(Part1, Part2), Self::Error>;
-}
-
-/// Reconstructs a C-compatible representation from two ABI arguments.
-pub trait Pack2<Part1: CType, Part2: CType>: ReprC<CType: Sized> {
-    /// Error returned when the ABI arguments cannot be combined.
-    type Error;
-
-    /// Tries to reconstruct the C representation.
-    ///
-    /// # Safety
-    ///
-    /// The parts must satisfy the ownership, validity, and exclusivity
-    /// requirements of the representation being constructed.
-    unsafe fn pack(part1: Part1, part2: Part2) -> Result<Self::CType, Self::Error>;
 }
 
 /// Shared reference to a C-compatible wide pointee.
@@ -512,26 +487,81 @@ where
     }
 }
 
-impl<T: ?Sized, Part1: CType, Part2: CType> Unpack2<Part1, Part2> for ManuallyDrop<T>
-where
-    T: Unpack2<Part1, Part2>,
-{
-    type Error = T::Error;
+disjoint_impls! {
+    /// Unpacks a C-compatible representation as two ABI arguments.
+    ///
+    /// This is used by `#[unpack(T1, T2)]` in [`crate::ffi!`] declarations.
+    /// Fallibly unpacks a C-compatible representation as two ABI arguments.
+    pub trait Unpack2<Part1: CType, Part2: CType>: ReprC<CType: Sized> {
+        /// Error returned when either constituent cannot be produced.
+        type Error;
 
-    #[inline(always)]
-    fn unpack(value: Self::CType) -> Result<(Part1, Part2), Self::Error> {
-        T::unpack(ManuallyDrop::into_inner(value))
+        /// Tries to split the C representation into its constituents.
+        fn unpack(value: Self::CType) -> Result<(Part1, Part2), Self::Error>;
+    }
+
+    impl<T: Unpack2<Part1, Part2>, Part1: CType, Part2: CType> Unpack2<Part1, Part2> for ManuallyDrop<T>
+    where
+        T: RustSpec<Drop = NoDrop>,
+    {
+        type Error = T::Error;
+
+        #[inline(always)]
+        fn unpack(value: Self::CType) -> Result<(Part1, Part2), Self::Error> {
+            T::unpack(value)
+        }
+    }
+
+    impl<T: Unpack2<Part1, Part2>, Part1: CType, Part2: CType> Unpack2<Part1, Part2> for ManuallyDrop<T>
+    where
+        T: RustSpec<Drop: WithDrop>,
+    {
+        type Error = T::Error;
+
+        #[inline(always)]
+        fn unpack(value: Self::CType) -> Result<(Part1, Part2), Self::Error> {
+            T::unpack(ManuallyDrop::into_inner(value))
+        }
     }
 }
-impl<T: ?Sized, Part1: CType, Part2: CType> Pack2<Part1, Part2> for ManuallyDrop<T>
-where
-    T: Pack2<Part1, Part2>,
-{
-    type Error = T::Error;
 
-    #[inline(always)]
-    unsafe fn pack(part1: Part1, part2: Part2) -> Result<Self::CType, Self::Error> {
-        unsafe { T::pack(part1, part2) }.map(ManuallyDrop::new)
+disjoint_impls! {
+    /// Reconstructs a C-compatible representation from two ABI arguments.
+    pub trait Pack2<Part1: CType, Part2: CType>: ReprC<CType: Sized> {
+        /// Error returned when the ABI arguments cannot be combined.
+        type Error;
+
+        /// Tries to reconstruct the C representation.
+        ///
+        /// # Safety
+        ///
+        /// The parts must satisfy the ownership, validity, and exclusivity
+        /// requirements of the representation being constructed.
+        unsafe fn pack(part1: Part1, part2: Part2) -> Result<Self::CType, Self::Error>;
+    }
+
+    impl<T: Pack2<Part1, Part2>, Part1: CType, Part2: CType> Pack2<Part1, Part2> for ManuallyDrop<T>
+    where
+        T: RustSpec<Drop = NoDrop>,
+    {
+        type Error = T::Error;
+
+        #[inline(always)]
+        unsafe fn pack(part1: Part1, part2: Part2) -> Result<Self::CType, Self::Error> {
+            unsafe { T::pack(part1, part2) }
+        }
+    }
+
+    impl<T: Pack2<Part1, Part2>, Part1: CType, Part2: CType> Pack2<Part1, Part2> for ManuallyDrop<T>
+    where
+        T: RustSpec<Drop: WithDrop>,
+    {
+        type Error = T::Error;
+
+        #[inline(always)]
+        unsafe fn pack(part1: Part1, part2: Part2) -> Result<Self::CType, Self::Error> {
+            unsafe { T::pack(part1, part2) }.map(ManuallyDrop::new)
+        }
     }
 }
 
