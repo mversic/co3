@@ -358,8 +358,9 @@ mod tests {
 
         let mut cell = UnsafeCell::new(1_u8);
         let shared: CRefMut<UnsafeCell<u8>, false> = crate::encode(&cell);
+        assert_eq!(shared.as_ptr(), cell.get().cast::<UnsafeCell<u8>>());
         let exclusive: CRefMut<UnsafeCell<u8>, true> = crate::encode(&mut cell);
-        assert_eq!(shared.as_ptr(), exclusive.as_ptr());
+        assert_eq!(exclusive.as_ptr(), cell.get().cast::<UnsafeCell<u8>>());
         unsafe { exclusive.as_ptr().write(UnsafeCell::new(2)) };
         assert_eq!(cell.into_inner(), 2);
     }

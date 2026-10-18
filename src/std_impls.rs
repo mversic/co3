@@ -516,7 +516,9 @@ impl<'itm, T: 'itm> FromBorrow<'itm> for MaybeUninit<T> {
 impl<T: CheckedTransmute<CType: Sized>> ReprC for MaybeUninit<T> {
     type CType = MaybeUninit<T::CType>;
 }
-unsafe impl<T: CheckedTransmute<CType: Sized>> EncodeOwned for MaybeUninit<T> {
+unsafe impl<T: CheckedTransmute<CType: Sized> + EncodeOwned<Store: EmptyStore>> EncodeOwned
+    for MaybeUninit<T>
+{
     type Store = ();
 
     #[inline(always)]
@@ -536,7 +538,7 @@ unsafe impl<'d, T: CheckedTransmute<CType: Sized>> DecodeOwned<'d> for MaybeUnin
     }
 }
 
-impl<T: CheckedTransmute<CType: Sized>> Encode for MaybeUninit<T> {}
+impl<T: CheckedTransmute<CType: Sized> + EncodeOwned<Store: EmptyStore>> Encode for MaybeUninit<T> {}
 impl<'d, T: CheckedTransmute<CType: Sized>> Decode<'d> for MaybeUninit<T> {}
 
 unsafe impl<T: CheckedTransmute<CType: Sized>> CheckedTransmute for MaybeUninit<T> {
@@ -972,7 +974,7 @@ mod tests {
     }
 
     #[test]
-    fn shared_slice_pointers_cover_cells_and_empty_slices() {
+    fn shared_and_exclusive_slice_pointers_cover_cells_and_empty_slices() {
         let cells = [UnsafeCell::new(1_u8)];
         let view = crate::encode(&cells[..]);
         unsafe { view.data().write(UnsafeCell::new(2)) };
@@ -983,10 +985,22 @@ mod tests {
         unsafe { view.data().write(UnsafeCell::new(4)) };
         assert_eq!(cells[0].get(), 4);
 
+        let mut cells = [UnsafeCell::new(1_u8)];
+        let view = crate::encode(&mut cells[..]);
+        unsafe { view.data().write(UnsafeCell::new(2)) };
+        assert_eq!(unsafe { *cells[0].get() }, 2);
+
+        let mut cells = [Cell::new(3_u8)];
+        let view = crate::encode(&mut cells[..]);
+        unsafe { view.data().write(UnsafeCell::new(4)) };
+        assert_eq!(cells[0].get(), 4);
+
         let empty_unsafe_cells: [UnsafeCell<u8>; 0] = [];
         assert_eq!(crate::encode(&empty_unsafe_cells[..]).len(), 0);
-        let empty_cells: [Cell<u8>; 0] = [];
-        assert_eq!(crate::encode(&empty_cells[..]).len(), 0);
+        let mut empty_unsafe_cells: [UnsafeCell<u8>; 0] = [];
+        assert_eq!(crate::encode(&mut empty_unsafe_cells[..]).len(), 0);
+        let mut empty_cells: [Cell<u8>; 0] = [];
+        assert_eq!(crate::encode(&mut empty_cells[..]).len(), 0);
     }
 
     #[cfg(feature = "alloc")]
@@ -997,8 +1011,8 @@ mod tests {
             <&[UnsafeCell<u8>] as ReprC>::CType
         );
 
-        let cells = [UnsafeCell::new(3_u8), UnsafeCell::new(4_u8)];
-        let view = crate::encode(&cells[..]);
+        let mut cells = [UnsafeCell::new(3_u8), UnsafeCell::new(4_u8)];
+        let view = crate::encode(&mut cells[..]);
         unsafe { view.data().write(UnsafeCell::new(9)) };
         assert_eq!(unsafe { *cells[0].get() }, 9);
 
@@ -1073,7 +1087,6 @@ mod tests {
         );
         assert_impl_all!(&UnsafeCell<NonZero<u8>>:
             Niche<CType = CRefMut<UnsafeCell<u8>, false>>,
-            //Encode,
         );
         assert_not_impl_any!(&UnsafeCell<NonZero<u8>>: Decode<'static>, CheckedTransmute);
         assert_impl_all!(&mut UnsafeCell<NonZero<u8>>:

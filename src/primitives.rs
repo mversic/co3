@@ -603,7 +603,7 @@ mod tests {
         let decoded = unsafe { Callback::soft_decode(encoded, &mut ()) }.unwrap();
         assert_eq!(decoded(41), 42);
         assert!(unsafe { Callback::soft_decode(None, &mut ()) }.is_none());
-        assert!(Option::<Callback>::None.soft_encode(&mut ()).is_none());
+        assert!(Option::<Callback>::None.soft_encode(&mut None).is_none());
 
         type VoidCallback = extern "C" fn();
         assert_impl_all!(VoidCallback: ReprC, Encode, Decode<'static>);

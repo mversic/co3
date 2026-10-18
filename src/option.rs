@@ -187,7 +187,7 @@ impl<T: ReprC<CType: Sized>> ReprC for ReprCOption<T> {
     type CType = ReprCOption<T::CType>;
 }
 unsafe impl<T: EncodeOwned> EncodeOwned for ReprCOption<T> {
-    type Store = T::Store;
+    type Store = Option<T::Store>;
 
     #[inline(always)]
     fn soft_encode<'itm>(self, store: &'itm mut Self::Store) -> Self::CType
@@ -197,7 +197,7 @@ unsafe impl<T: EncodeOwned> EncodeOwned for ReprCOption<T> {
         match self.tag {
             1 => {
                 let payload = unsafe { self.payload.assume_init() };
-                ReprCOption::Some(payload.soft_encode(store))
+                ReprCOption::Some(payload.soft_encode(store.insert(Default::default())))
             }
             _ => self.forward_payload(),
         }
