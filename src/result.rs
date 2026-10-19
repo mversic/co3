@@ -6,7 +6,7 @@ use rust_spec::niche::WithoutNiche;
 use crate::{
     CFnArg, CFnReturn, CType, Decode, Encode, ReprC,
     borrow::{Borrow, BorrowCast, BorrowCastMut, FromBorrow},
-    stored::{DecodeOwned, EmptyStore, EncodeOwned},
+    stored::{DecodeOwned, DirectEncodeOwned, EmptyStore, EncodeOwned},
     transmute::CheckedTransmute,
 };
 
@@ -270,6 +270,36 @@ where
         }
     }
 }
+unsafe impl<T: DirectEncodeOwned<CType: Copy> + Copy, E: DirectEncodeOwned<CType: Copy> + Copy>
+    DirectEncodeOwned for ReprCResult<T, E>
+where
+    Self: ReprC<CType = ReprCResult<T::CType, E::CType>>,
+{
+    type SoftStore = Option<Result<T::SoftStore, E::SoftStore>>;
+
+    unsafe fn soft_encode_unchecked(self, store: &mut Self::SoftStore) -> Self::CType {
+        match self.tag() {
+            0 => {
+                let Result::Ok(inner) = store.insert(Ok(Default::default())) else {
+                    unreachable!()
+                };
+
+                ReprCResult::Ok(unsafe { self.ok.1.assume_init().soft_encode_unchecked(inner) })
+            }
+            1 => {
+                let Result::Err(inner) = store.insert(Err(Default::default())) else {
+                    unreachable!()
+                };
+
+                ReprCResult::Err(unsafe { self.err.1.assume_init().soft_encode_unchecked(inner) })
+            }
+            _ => {
+                *store = None;
+                self.forward_payload()
+            }
+        }
+    }
+}
 unsafe impl<'d, T: DecodeOwned<'d, CType: Copy> + Copy, E: DecodeOwned<'d, CType: Copy> + Copy>
     DecodeOwned<'d> for ReprCResult<T, E>
 where
@@ -330,6 +360,12 @@ where
 
 impl<T: Encode<CType: Copy> + Copy, E: Encode<CType: Copy> + Copy> Encode for ReprCResult<T, E> where
     Self: ReprC<CType = ReprCResult<T::CType, E::CType>>
+{
+}
+impl<T: crate::DirectEncode<CType: Copy> + Copy, E: crate::DirectEncode<CType: Copy> + Copy>
+    crate::DirectEncode for ReprCResult<T, E>
+where
+    Self: ReprC<CType = ReprCResult<T::CType, E::CType>>,
 {
 }
 impl<'d, T: Decode<'d, CType: Copy> + Copy, E: Decode<'d, CType: Copy> + Copy> Decode<'d>

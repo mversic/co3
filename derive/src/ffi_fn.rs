@@ -352,15 +352,16 @@ pub(crate) fn gen_regular_drop_definition_body(
     sig: &syn::Signature,
     failure_mode: FailureMode,
 ) -> TokenStream {
-    let self_ty = sig
+    let (self_ty, soft) = sig
         .inputs
         .iter()
         .find_map(|input| match input {
             syn::FnArg::Typed(arg) if item_fn_input_ident(&arg.pat) == "__co3_self" => {
-                Some(match arg.ty.as_ref() {
+                let self_ty = match arg.ty.as_ref() {
                     Type::Reference(reference) => reference.elem.as_ref(),
                     owned => owned,
-                })
+                };
+                Some((self_ty, soft_for_arg(&arg.attrs)))
             }
             _ => None,
         })
@@ -371,18 +372,29 @@ pub(crate) fn gen_regular_drop_definition_body(
         FailureMode::Error => quote! { Ok(co3::encode(())) },
     };
 
+    if !soft {
+        return quote! {{
+            let Some(__co3_value) = (unsafe { co3::stored::decode_owned::<#self_ty>(__co3_self) }) else {
+                #decode_error
+            };
+            core::mem::drop(__co3_value);
+            #output
+        }};
+    }
+
+    let sync_error = gen_sync_error(failure_mode);
     quote! {{
         let mut __co3_store = <#self_ty as co3::stored::DecodeOwned<'_>>::Store::default();
         let __co3_value = unsafe {
-            <#self_ty as co3::stored::DecodeOwned<'_>>::soft_decode(
-                __co3_self,
-                &mut __co3_store,
-            )
+            <#self_ty as co3::stored::DecodeOwned>::soft_decode(__co3_self, &mut __co3_store)
         };
         let Some(__co3_value) = __co3_value else {
             #decode_error
         };
         core::mem::drop(__co3_value);
+        if co3::stored::Store::sync(__co3_store).is_none() {
+            #sync_error
+        }
         #output
     }}
 }

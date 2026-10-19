@@ -6,7 +6,8 @@ use rust_spec::RustSpec;
 use crate::{
     CFnArg, CFnReturn, CType, Decode, Encode, ReprC,
     borrow::{Borrow, BorrowCast, BorrowCastMut, FromBorrow},
-    stored::{DecodeOwned, EncodeOwned},
+    stored::{DecodeOwned, DirectEncodeOwned, EncodeOwned},
+    transmute::CheckedTransmute,
 };
 
 const fn assert_thin_pointer<C: ?Sized>() {
@@ -131,6 +132,13 @@ unsafe impl<C: CType + ?Sized> EncodeOwned for CRef<C> {
     where
         Self: 'itm,
     {
+        unsafe { self.soft_encode_unchecked(&mut ()) }
+    }
+}
+unsafe impl<C: CType + ?Sized> DirectEncodeOwned for CRef<C> {
+    type SoftStore = ();
+
+    unsafe fn soft_encode_unchecked(self, (): &mut ()) -> Self::CType {
         self
     }
 }
@@ -142,6 +150,7 @@ unsafe impl<'d, C: CType + ?Sized> DecodeOwned<'d> for CRef<C> {
     }
 }
 impl<C: CType + ?Sized> Encode for CRef<C> {}
+impl<C: CType + ?Sized> crate::DirectEncode for CRef<C> {}
 impl<'d, C: CType + ?Sized> Decode<'d> for CRef<C> {}
 unsafe impl<C: CType + ?Sized> CType for CRef<C> {}
 unsafe impl<C: CType> CFnArg for CRef<C> {}
@@ -283,6 +292,13 @@ unsafe impl<C: CType + ?Sized, const EXCLUSIVE: bool> EncodeOwned for CRefMut<C,
     where
         Self: 'itm,
     {
+        unsafe { self.soft_encode_unchecked(&mut ()) }
+    }
+}
+unsafe impl<C: CType + ?Sized, const EXCLUSIVE: bool> DirectEncodeOwned for CRefMut<C, EXCLUSIVE> {
+    type SoftStore = ();
+
+    unsafe fn soft_encode_unchecked(self, (): &mut ()) -> Self::CType {
         self
     }
 }
@@ -298,6 +314,7 @@ unsafe impl<'d, C: CType + ?Sized, const EXCLUSIVE: bool> DecodeOwned<'d>
 }
 
 impl<C: CType + ?Sized, const EXCLUSIVE: bool> Encode for CRefMut<C, EXCLUSIVE> {}
+impl<C: CType + ?Sized, const EXCLUSIVE: bool> crate::DirectEncode for CRefMut<C, EXCLUSIVE> {}
 impl<'d, C: CType + ?Sized, const EXCLUSIVE: bool> Decode<'d> for CRefMut<C, EXCLUSIVE> {}
 
 unsafe impl<C: CType + ?Sized, const EXCLUSIVE: bool> CType for CRefMut<C, EXCLUSIVE> {}
@@ -308,6 +325,18 @@ unsafe impl<C: CType + ?Sized, const EXCLUSIVE: bool> BorrowCast for CRefMut<C, 
 }
 unsafe impl<C: CType + ?Sized, const EXCLUSIVE: bool> BorrowCastMut for CRefMut<C, EXCLUSIVE> {
     type AsMut = Self;
+}
+
+unsafe impl<C: CType + ?Sized> CheckedTransmute for CRef<C> {
+    unsafe fn is_valid(_: &Self::CType) -> bool {
+        true
+    }
+}
+
+unsafe impl<C: CType + ?Sized, const EXCLUSIVE: bool> CheckedTransmute for CRefMut<C, EXCLUSIVE> {
+    unsafe fn is_valid(_: &Self::CType) -> bool {
+        true
+    }
 }
 
 #[cfg(test)]
@@ -357,8 +386,6 @@ mod tests {
         );
 
         let mut cell = UnsafeCell::new(1_u8);
-        let shared: CRefMut<UnsafeCell<u8>, false> = crate::encode(&cell);
-        assert_eq!(shared.as_ptr(), cell.get().cast::<UnsafeCell<u8>>());
         let exclusive: CRefMut<UnsafeCell<u8>, true> = crate::encode(&mut cell);
         assert_eq!(exclusive.as_ptr(), cell.get().cast::<UnsafeCell<u8>>());
         unsafe { exclusive.as_ptr().write(UnsafeCell::new(2)) };

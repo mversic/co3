@@ -59,7 +59,7 @@ fn thin_extern_reference_niche() {
     static_assertions::assert_impl_all!(&CStr: Niche<CType = CRef<c_char>>);
 
     assert_eq!(encode(None::<&Extern>), CRef::null());
-    assert_eq!(soft_encode(None::<&mut Extern>, &mut ()), unsafe {
+    assert_eq!(soft_encode(None::<&mut Extern>, &mut None), unsafe {
         CRefMut::from_raw(std::ptr::null_mut())
     });
     assert_eq!(encode(None::<&CStr>), CRef::null());

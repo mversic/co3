@@ -115,10 +115,11 @@ pub(super) fn derive_field_repr_c(
 
     let checked = matches!(repr, Some(ReprKind::Transparent)).then(|| {
         let mut generics = input.generics.clone();
+        let speculative = speculative_marker(!is_parametrized(field_ty, &input.generics));
         generics
             .make_where_clause()
             .predicates
-            .push(parse_quote!(#field_ty: co3::transmute::CheckedTransmute));
+            .push(parse_quote!(#speculative #field_ty: co3::transmute::CheckedTransmute));
         generics
             .make_where_clause()
             .predicates
@@ -148,10 +149,7 @@ pub(super) fn derive_field_repr_c(
         let (impl_generics, _, where_clause) = input.generics.split_for_impl();
         let predicates = where_clause.as_ref().map(|clause| &clause.predicates);
         let speculative = speculative_marker(input.generics.params.is_empty());
-        let size_kinds = [
-            quote!(co3::rust_spec::Zero),
-            quote!(co3::rust_spec::Gt<co3::rust_spec::Zero>),
-        ];
+        let field_speculative = speculative_marker(!is_parametrized(field_ty, &input.generics));
         let encode_niche_check = attrs.niche_value.as_ref().map(|value| {
             quote! {
                 debug_assert!(encoded != #value, "encoding produced the reserved NICHE");
@@ -192,75 +190,70 @@ pub(super) fn derive_field_repr_c(
             }
         };
 
-        let drop_kinds = [
-            quote!(co3::rust_spec::drop::NoDrop),
-            quote!(co3::rust_spec::drop::AutoDrop),
-        ];
-        let mut encode_impls = Vec::new();
-        for size_kind in &size_kinds {
-            for drop_kind in &drop_kinds {
-                encode_impls.push(quote! {
-                    unsafe impl #impl_generics EncodeOwned for #name #ty_generics
-                    where
-                        #speculative #name #ty_generics: co3::ReprC<CType = <#field_ty as co3::ReprC>::CType>
-                            + co3::rust_spec::RustSpec<
-                            Drop = #drop_kind,
-                            Size = co3::rust_spec::size::Sized<#size_kind>,
-                        >,
-                        #speculative #field_ty: co3::stored::EncodeOwned,
-                        #speculative #field_ty: co3::ReprC + co3::rust_spec::RustSpec<
-                            Size = co3::rust_spec::size::Sized<#size_kind>,
-                        >,
-                        #(#niche_bounds,)*
-                        #predicates
-                    {
-                        type Store = <#field_ty as co3::stored::EncodeOwned>::Store;
+        let encode_impl = quote! {
+            unsafe impl #impl_generics co3::stored::EncodeOwned for #name #ty_generics
+            where
+                #speculative #name #ty_generics: co3::stored::DirectEncodeOwned<
+                    CType = <#field_ty as co3::ReprC>::CType,
+                >,
+                #speculative #field_ty: co3::stored::EncodeOwned,
+                #(#niche_bounds,)*
+                #predicates
+            {
+                type Store = <#field_ty as co3::stored::EncodeOwned>::Store;
 
-                        fn soft_encode<'_išč>(self, store: &'_išč mut Self::Store) -> Self::CType
-                        where Self: '_išč {
-                            let owner = core::mem::ManuallyDrop::new(self);
-                            let value = unsafe { core::ptr::read(&raw const (*owner).#member) };
-                            let encoded = co3::stored::EncodeOwned::soft_encode(value, store);
-                            #encode_niche_check
-                            encoded
-                        }
-                    }
-                });
-            }
-        }
-
-        let decode_impls = size_kinds.iter().map(|size_kind| {
-            let mut sized_generics = decode_generics.clone();
-            sized_generics.make_where_clause().predicates.push(parse_quote!(
-                #speculative #name #ty_generics: co3::rust_spec::RustSpec<
-                    Size = co3::rust_spec::size::Sized<#size_kind>
-                >
-            ));
-            sized_generics.make_where_clause().predicates.push(parse_quote!(
-                #speculative #field_ty: co3::rust_spec::RustSpec<
-                    Size = co3::rust_spec::size::Sized<#size_kind>
-                >
-            ));
-            let (sized_impl_generics, _, sized_where_clause) = sized_generics.split_for_impl();
-            quote! {
-                unsafe impl #sized_impl_generics DecodeOwned<'_dšč> for #name #ty_generics #sized_where_clause {
-                    type Store = <#field_ty as co3::stored::DecodeOwned<'_dšč>>::Store;
-
-                    unsafe fn soft_decode<'_išč: '_dšč>(
-                        source: Self::CType,
-                        store: &'_išč mut Self::Store,
-                    ) -> Option<Self> {
-                        #niche_rejection
-                        let value = unsafe { <#field_ty as co3::stored::DecodeOwned<'_dšč>>::soft_decode(source, store)? };
-                        #decode_custom_validation
-                        Some(#construct)
-                    }
+                fn soft_encode<'_išč>(self, store: &'_išč mut Self::Store) -> Self::CType
+                where Self: '_išč {
+                    let owner = core::mem::ManuallyDrop::new(self);
+                    let value = unsafe { core::ptr::read(&raw const (*owner).#member) };
+                    let encoded = co3::stored::EncodeOwned::soft_encode(value, store);
+                    #encode_niche_check
+                    encoded
                 }
             }
-        }).collect::<Vec<_>>();
+        };
+        let direct_impl = quote! {
+            unsafe impl #impl_generics co3::stored::DirectEncodeOwned for #name #ty_generics
+            where
+                #speculative #name #ty_generics: co3::ReprC<CType = <#field_ty as co3::ReprC>::CType>,
+                #speculative #field_ty: co3::stored::DirectEncodeOwned,
+                #(#niche_bounds,)*
+                #predicates
+            {
+                type SoftStore = <#field_ty as co3::stored::DirectEncodeOwned>::SoftStore;
+
+                unsafe fn soft_encode_unchecked(self, store: &mut Self::SoftStore) -> Self::CType {
+                    let owner = core::mem::ManuallyDrop::new(self);
+                    let value = unsafe { core::ptr::read(&raw const (*owner).#member) };
+                    unsafe { co3::stored::DirectEncodeOwned::soft_encode_unchecked(value, store) }
+                }
+            }
+        };
+
+        let (decode_impl_generics, _, decode_where_clause) = decode_generics.split_for_impl();
+        let decode_impl = quote! {
+            unsafe impl #decode_impl_generics co3::stored::DecodeOwned<'_dšč>
+                for #name #ty_generics #decode_where_clause
+            {
+                type Store = <#field_ty as co3::stored::DecodeOwned<'_dšč>>::Store;
+
+                unsafe fn soft_decode<'_išč: '_dšč>(
+                    source: Self::CType,
+                    store: &'_išč mut Self::Store,
+                ) -> Option<Self> {
+                    #niche_rejection
+                    let value = unsafe { <#field_ty as co3::stored::DecodeOwned<'_dšč>>::soft_decode(source, store)? };
+                    #decode_custom_validation
+                    Some(#construct)
+                }
+            }
+        };
         let mut decode_trait_generics = decode_generics.clone();
         decode_trait_generics.make_where_clause().predicates.push(parse_quote!(
             #speculative #name #ty_generics: co3::stored::DecodeOwned<'_dšč>
+        ));
+        decode_trait_generics.make_where_clause().predicates.push(parse_quote!(
+            #field_speculative #field_ty: co3::Decode<'_dšč>
         ));
         let (decode_trait_impl_generics, _, decode_trait_where_clause) =
             decode_trait_generics.split_for_impl();
@@ -268,45 +261,24 @@ pub(super) fn derive_field_repr_c(
         quote! {
             #niche_impl
 
-            const _: () = {
-                use co3::stored::EncodeOwned;
+            #direct_impl
 
-                co3::disjoint_impls! {
-                    #[disjoint_impls(remote)]
-                    #[allow(clippy::missing_safety_doc)]
-                    pub unsafe trait EncodeOwned: co3::ReprC<CType: Sized> + Sized {
-                        type Store: co3::stored::Store + Default;
+            #encode_impl
 
-                        fn soft_encode<'itm>(self, store: &'itm mut Self::Store) -> Self::CType
-                        where Self: 'itm;
-                    }
-
-                    #(#encode_impls)*
-
-                }
-            };
-
-            const _: () = {
-                use co3::stored::DecodeOwned;
-
-                co3::disjoint_impls! {
-                    #[disjoint_impls(remote)]
-                    #[allow(clippy::missing_safety_doc)]
-                    pub unsafe trait DecodeOwned<'d>: co3::ReprC<CType: Sized> + Sized {
-                        type Store: co3::stored::Store + Default;
-
-                        unsafe fn soft_decode<'itm: 'd>(
-                            source: Self::CType,
-                            store: &'itm mut Self::Store,
-                        ) -> Option<Self>;
-                    }
-
-                    #(#decode_impls)*
-                }
-            };
+            #decode_impl
 
             impl #impl_generics co3::Encode for #name #ty_generics
-            where #speculative #name #ty_generics: co3::stored::EncodeOwned, #predicates {}
+            where
+                #speculative #name #ty_generics: co3::stored::EncodeOwned,
+                #field_speculative #field_ty: co3::Encode,
+                #predicates
+            {}
+            impl #impl_generics co3::DirectEncode for #name #ty_generics
+            where
+                #speculative #name #ty_generics: co3::stored::DirectEncodeOwned,
+                #field_speculative #field_ty: co3::DirectEncode,
+                #predicates
+            {}
             impl #decode_trait_impl_generics co3::Decode<'_dšč> for #name #ty_generics #decode_trait_where_clause {}
         }
     });

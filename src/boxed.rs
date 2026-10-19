@@ -9,7 +9,7 @@ use crate::{
     borrow::{BorrowCast, BorrowCastMut},
     reference::{CRef, CRefMut},
     slice::{CWideRef, CWideRefMut, Pack2, Unpack2, impl_raw_slice_methods},
-    stored::{DecodeOwned, EncodeOwned},
+    stored::{DecodeOwned, DirectEncodeOwned, EncodeOwned},
     transmute::CheckedTransmute,
     wide::{PointeeData, Wide, WideHeader},
 };
@@ -349,6 +349,13 @@ macro_rules! impl_boxed_carrier {
             where
                 Self: 'itm,
             {
+                unsafe { self.soft_encode_unchecked(&mut ()) }
+            }
+        }
+        unsafe impl<$($params)*> DirectEncodeOwned for $ty<$($args)*> {
+            type SoftStore = ();
+
+            unsafe fn soft_encode_unchecked(self, (): &mut ()) -> Self::CType {
                 self
             }
         }
@@ -362,6 +369,7 @@ macro_rules! impl_boxed_carrier {
         }
 
         impl<$($params)*> Encode for $ty<$($args)*> {}
+        impl<$($params)*> crate::DirectEncode for $ty<$($args)*> {}
         impl<'d, $($params)*> Decode<'d> for $ty<$($args)*> {}
 
         unsafe impl<$($params)*> CheckedTransmute for $ty<$($args)*> {

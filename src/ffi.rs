@@ -11,12 +11,11 @@ use core::{
 
 use rust_spec::RustSpec;
 
-use crate::primitives::primitive_derive;
-
 use crate::{
     CFnArg, CFnReturn, CType, Decode, Encode, ReprC,
     borrow::{Borrow, BorrowCast, BorrowCastMut, FromBorrow},
-    stored::{DecodeOwned, EncodeOwned},
+    primitives::primitive_derive,
+    stored::{DecodeOwned, DirectEncodeOwned, EncodeOwned},
     transmute::CheckedTransmute,
 };
 
@@ -537,7 +536,15 @@ unsafe impl EncodeOwned for CString {
     where
         Self: 'itm,
     {
-        self.into_boxed_c_str().soft_encode(&mut ())
+        unsafe { self.soft_encode_unchecked(&mut ()) }
+    }
+}
+#[cfg(feature = "alloc")]
+unsafe impl DirectEncodeOwned for CString {
+    type SoftStore = ();
+
+    unsafe fn soft_encode_unchecked(self, (): &mut ()) -> Self::CType {
+        unsafe { self.into_boxed_c_str().soft_encode_unchecked(&mut ()) }
     }
 }
 #[cfg(feature = "alloc")]
@@ -551,6 +558,8 @@ unsafe impl<'d> DecodeOwned<'d> for CString {
 
 #[cfg(feature = "alloc")]
 impl Encode for CString {}
+#[cfg(feature = "alloc")]
+impl crate::DirectEncode for CString {}
 #[cfg(feature = "alloc")]
 impl Decode<'_> for CString {}
 

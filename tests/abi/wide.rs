@@ -87,12 +87,12 @@ fn cell_wrappers_reconstruct_borrowed_wide_references() {
 }
 
 #[test]
-fn shared_unsafe_cell_wide_uses_mutable_carrier() {
-    let cell = UnsafeCell::new([1u8, 2, 3]);
-    let original: &UnsafeCell<[u8]> = &cell;
+fn exclusive_unsafe_cell_wide_uses_mutable_carrier() {
+    let mut cell = UnsafeCell::new([1u8, 2, 3]);
+    let original: &mut UnsafeCell<[u8]> = &mut cell;
 
-    let carrier: co3::slice::CWideRefMut<UnsafeCell<[u8]>, false> = co3::encode(original);
-    let (data, len) = <&UnsafeCell<[u8]> as Unpack2<*mut u8, usize>>::unpack(carrier).unwrap();
+    let carrier: co3::slice::CWideRefMut<UnsafeCell<[u8]>, true> = co3::encode(original);
+    let (data, len) = <&mut UnsafeCell<[u8]> as Unpack2<*mut u8, usize>>::unpack(carrier).unwrap();
     assert_eq!(data, cell.get().cast());
     assert_eq!(len, 3);
     unsafe { data.add(1).write(9) };

@@ -584,7 +584,7 @@ use crate::{
     reference::{CRef, CRefMut},
     result::ReprCResult,
     slice::{CWideRef, CWideRefMut},
-    stored::{DecodeOwned, EmptyStore, EncodeOwned, Store},
+    stored::{DecodeOwned, DirectEncodeOwned, EmptyStore, EncodeOwned, Store},
     wide::{Wide, WideHeader},
 };
 
@@ -720,6 +720,14 @@ disjoint_impls! {
     {
         type CType = CRefMut<R::CType, true>;
     }
+    // TODO: DecodeOwned needs NulTerminatedBuf::from_raw_mut. Checked encoding of
+    // non-robust data also needs temporary storage and writeback.
+    // impl<R: NulTerminatedBuf<Data: ReprC> + ?Sized> ReprC for &mut R
+    // where
+    //     R: RustSpec<Size = NulTerminated>,
+    // {
+    //     type CType = CRefMut<<R::Data as ReprC>::CType, true>;
+    // }
     impl<R: ReprC<CType: Wide<Header: WideHeader<Data: CType>>> + ?Sized> ReprC for &mut R
     where
         R: RustSpec<Size = MetaSized<SliceLike>>,
@@ -861,8 +869,21 @@ disjoint_impls! {
 }
 
 disjoint_impls! {
+    /// Facilitates unchecked conversion from a Rust type into a C-compatible representation.
+    pub trait DirectEncode: DirectEncodeOwned {}
+
+    #[cfg(feature = "alloc")]
+    impl<R: ?Sized> DirectEncode for Box<R> where Self: RustSpec<Layout = Stable> + DirectEncodeOwned {}
+    #[cfg(feature = "alloc")]
+    impl<R: RustSpec<Layout = Stable> + ?Sized> DirectEncode for Box<R> where
+        Self: RustSpec<Layout = Unstable> + DirectEncodeOwned
+    {
+    }
+}
+
+disjoint_impls! {
     /// Facilitates conversion from a Rust type into a corresponding C-compatible representation.
-    pub trait Encode: EncodeOwned {}
+    pub trait Encode: EncodeOwned + DirectEncode {}
 
     #[cfg(feature = "alloc")]
     impl<R: ?Sized> Encode for Box<R> where Self: RustSpec<Layout = Stable> + EncodeOwned {}
@@ -888,18 +909,39 @@ disjoint_impls! {
 
 impl<R: ?Sized> Encode for &R where Self: EncodeOwned {}
 impl<R: ?Sized> Encode for &mut R where Self: EncodeOwned {}
+impl<R: ?Sized> DirectEncode for &R where Self: DirectEncodeOwned {}
+impl<R: ?Sized> DirectEncode for &mut R where Self: DirectEncodeOwned {}
 
 impl<'d, R: ?Sized> Decode<'d> for &'d R where Self: DecodeOwned<'d> {}
 impl<'d, R: ?Sized> Decode<'d> for &'d mut R where Self: DecodeOwned<'d> {}
 
 impl<R: Encode, const N: usize> Encode for [R; N] where Self: EncodeOwned {}
+impl<R: DirectEncode, const N: usize> DirectEncode for [R; N] where Self: DirectEncodeOwned {}
 impl<'d, R: Decode<'d>, const N: usize> Decode<'d> for [R; N] where Self: DecodeOwned<'d> {}
 
 impl<R: Encode> Encode for Option<R> where Self: EncodeOwned {}
+impl<R: DirectEncode> DirectEncode for Option<R> where Self: DirectEncodeOwned {}
 impl<'d, R: Decode<'d>> Decode<'d> for Option<R> where Self: DecodeOwned<'d> {}
 
 impl<R: Encode, E: Encode> Encode for Result<R, E> where Self: EncodeOwned {}
+impl<R: DirectEncode, E: DirectEncode> DirectEncode for Result<R, E> where Self: DirectEncodeOwned {}
 impl<'d, R: Decode<'d>, E: Decode<'d>> Decode<'d> for Result<R, E> where Self: DecodeOwned<'d> {}
+
+/// Perform the conversion from `T` into [`ReprC::CType`].
+pub fn encode<T: Encode<Store: EmptyStore>>(item: T) -> T::CType {
+    stored::encode_owned(item)
+}
+
+/// Perform the conversion from [`T::CType`](ReprC::CType) into `T`.
+///
+/// # Safety
+///
+/// If decoding uses a pointer in `source` to access memory, form a reference, or take ownership,
+/// the caller must uphold the validity, lifetime, aliasing, ownership and allocation requirements
+/// of the resulting value.
+pub unsafe fn decode<'d, T: Decode<'d, Store: EmptyStore> + 'd>(source: T::CType) -> Option<T> {
+    unsafe { stored::decode_owned(source) }
+}
 
 /// Perform the conversion from `T` into [`ReprC::CType`] using external storage.
 ///
@@ -908,20 +950,13 @@ pub fn soft_encode<T: Encode>(item: T, store: &mut T::Store) -> T::CType {
     item.soft_encode(store)
 }
 
-/// Perform the conversion from `T` into [`ReprC::CType`].
-pub fn encode<T: Encode<Store: EmptyStore>>(item: T) -> T::CType {
-    stored::encode_owned(item)
-}
-
-/// Perform the conversion from [`T::CType`](ReprC::CType) into `T` using external storage.
+/// Perform the conversion from [`ReprC::CType`] into `T` using external storage.
 ///
 /// Prefer using [`decode`] whenever possible
 ///
 /// # Safety
 ///
-/// If decoding uses a pointer in `source` to access memory, form a reference, or take ownership,
-/// the caller must uphold the validity, lifetime, aliasing, ownership and allocation requirements
-/// of the resulting value.
+/// See safety section in [`decode`]
 pub unsafe fn soft_decode<'d, T: Decode<'d>>(
     source: T::CType,
     store: &'d mut T::Store,
@@ -929,29 +964,16 @@ pub unsafe fn soft_decode<'d, T: Decode<'d>>(
     unsafe { T::soft_decode(source, store) }
 }
 
-/// Decode a value known to be accepted by [`soft_decode`] using external storage.
+/// Encode `T` whose unchecked store is empty.
 ///
-/// The default implementation still performs checked decoding. A type may
-/// override the unchecked path to avoid validation.
-///
-/// # Safety
-///
-/// - The caller must uphold all of the safety obligations of [`soft_decode`]. Additionally,
-/// - for the same values of `store` and `source` arguments [`soft_decode`] must return `Some`.
-pub unsafe fn soft_decode_unchecked<'d, T: Decode<'d>>(
-    source: T::CType,
-    store: &'d mut T::Store,
-) -> T {
-    unsafe { T::soft_decode_unchecked(source, store) }
-}
-
-/// Perform the conversion from [`T::CType`](ReprC::CType) into `T`.
+/// Prefer using [`encode`] whenever possible
 ///
 /// # Safety
 ///
-/// See safety section in [`soft_decode`]
-pub unsafe fn decode<'d, T: Decode<'d, Store: EmptyStore> + 'd>(source: T::CType) -> Option<T> {
-    unsafe { stored::decode_owned(source) }
+/// The caller must ensure that foreign code preserves every invariant of the
+/// original Rust value, including validity of any pointees it can mutate.
+pub unsafe fn encode_unchecked<T: DirectEncode<SoftStore: EmptyStore>>(item: T) -> T::CType {
+    unsafe { stored::encode_owned_unchecked(item) }
 }
 
 /// Decode a value known to be accepted by [`decode`].
@@ -959,12 +981,43 @@ pub unsafe fn decode<'d, T: Decode<'d, Store: EmptyStore> + 'd>(source: T::CType
 /// The default implementation still performs checked decoding. A type may
 /// override the unchecked path to avoid validation.
 ///
+/// Prefer using [`decode`] whenever possible
+///
 /// # Safety
 ///
-/// All pointer validity, aliasing, allocation, and ownership requirements of
-/// [`decode`] apply, and `decode(source)` must return `Some`.
+/// - The caller must uphold all of the safety obligations of [`decode`]. Additionally,
+/// - for the same values of `store` and `source` arguments, [`decode`] must return `Some`.
 pub unsafe fn decode_unchecked<'d, T: Decode<'d, Store: EmptyStore> + 'd>(source: T::CType) -> T {
     unsafe { stored::decode_owned_unchecked(source) }
+}
+
+/// Encode `T` using its unchecked conversion store.
+///
+/// Prefer using [`soft_encode`] whenever possible
+///
+/// # Safety
+///
+/// See safety section in [`encode_unchecked`]
+pub unsafe fn soft_encode_unchecked<T: DirectEncode>(
+    item: T,
+    store: &mut T::SoftStore,
+) -> T::CType {
+    unsafe { T::soft_encode_unchecked(item, store) }
+}
+
+/// Decode a value known to be accepted by [`soft_decode`] using external storage.
+///
+/// Prefer using [`soft_decode`] whenever possible
+///
+/// # Safety
+///
+/// - The caller must uphold all of the safety obligations of [`soft_decode`]. Additionally,
+/// - for the same values of `store` and `source` arguments, [`soft_decode`] must return `Some`.
+pub unsafe fn soft_decode_unchecked<'d, T: Decode<'d>>(
+    source: T::CType,
+    store: &'d mut T::Store,
+) -> T {
+    unsafe { T::soft_decode_unchecked(source, store) }
 }
 
 unsafe impl<T> CType for Option<T> where
@@ -1039,6 +1092,13 @@ impl<R> Encode for Vec<R>
 where
     Self: EncodeOwned,
     Box<[R]>: Encode,
+{
+}
+#[cfg(feature = "alloc")]
+impl<R> DirectEncode for Vec<R>
+where
+    Self: DirectEncodeOwned,
+    Box<[R]>: DirectEncode,
 {
 }
 #[cfg(feature = "alloc")]

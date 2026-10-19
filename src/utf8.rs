@@ -12,7 +12,7 @@ use crate::{
     Decode, Encode,
     boxed::CWideBox,
     niche::Niche,
-    stored::{DecodeOwned, EncodeOwned},
+    stored::{DecodeOwned, DirectEncodeOwned, EncodeOwned},
 };
 
 /// C-compatible byte region used as the representation of `str`.
@@ -85,6 +85,14 @@ unsafe impl EncodeOwned for String {
     where
         Self: 'itm,
     {
+        unsafe { self.soft_encode_unchecked(&mut ()) }
+    }
+}
+#[cfg(feature = "alloc")]
+unsafe impl DirectEncodeOwned for String {
+    type SoftStore = ();
+
+    unsafe fn soft_encode_unchecked(self, (): &mut ()) -> Self::CType {
         let bytes = self.into_bytes().into_boxed_slice();
         let len = bytes.len();
         let data = Box::into_non_null(bytes).cast::<u8>();
@@ -122,6 +130,8 @@ unsafe impl<'d> DecodeOwned<'d> for String {
 
 #[cfg(feature = "alloc")]
 impl Encode for String {}
+#[cfg(feature = "alloc")]
+impl crate::DirectEncode for String {}
 #[cfg(feature = "alloc")]
 impl Decode<'_> for String {}
 

@@ -3,12 +3,19 @@ use alloc::boxed::Box;
 use core::mem::ManuallyDrop;
 
 use disjoint_impls::disjoint_impls;
-use rust_spec::{RustSpec, Stable, drop::NoDrop, niche::WithNiche, size::Zero};
+use rust_spec::{
+    RustSpec, Stable,
+    drop::NoDrop,
+    layout::Robust,
+    mutability::{Exclusive, WithInterior},
+    niche::WithNiche,
+    size::Zero,
+};
 
 #[cfg(feature = "alloc")]
 use crate::boxed::CBox;
 use crate::reference::{CRef, CRefMut};
-use crate::{CType, ReprC, Thin, WithDrop, assert_arr_has_non_zero_len, utf8::Utf8Str};
+use crate::{ReprC, Thin, WithDrop, assert_arr_has_non_zero_len, utf8::Utf8Str};
 
 disjoint_impls! {
     /// Type that can be **safely transmuted** into its C representation.
@@ -26,6 +33,62 @@ disjoint_impls! {
         ///
         /// Any pointers dereferenced while checking `target` must be valid for reads.
         unsafe fn is_valid(target: &Self::CType) -> bool;
+    }
+
+    unsafe impl<R: CheckedTransmute + ?Sized> CheckedTransmute for &R
+    where
+        R: rust_spec::RustSpec<Size: Thin, Mutability = Exclusive>,
+        Self: ReprC<CType = CRef<<R as ReprC>::CType>>,
+    {
+        #[inline(always)]
+        unsafe fn is_valid(target: &Self::CType) -> bool {
+            let ptr = target.as_ptr();
+
+            if ptr.is_null() {
+                return false;
+            }
+
+            unsafe { R::is_valid(&*ptr) }
+        }
+    }
+    unsafe impl<R: CheckedTransmute + ?Sized> CheckedTransmute for &R
+    where
+        R: RustSpec<Size: Thin, Mutability = WithInterior, Trap = Robust>,
+        Self: ReprC<CType = CRefMut<<R as ReprC>::CType, false>>,
+    {
+        #[inline(always)]
+        unsafe fn is_valid(target: &Self::CType) -> bool {
+            !target.as_ptr().is_null()
+        }
+    }
+
+    unsafe impl<R: CheckedTransmute<CType: Copy> + ReprC, E: ReprC> CheckedTransmute for Result<R, E>
+    where
+        R: rust_spec::RustSpec<
+                Size = rust_spec::size::Sized<rust_spec::Gt<rust_spec::Zero>>,
+                Niche = WithNiche<Stable>,
+            >,
+        E: rust_spec::RustSpec<Size = rust_spec::size::Sized<Zero>, Alignment = rust_spec::One>,
+        Self: ReprC<CType = <R as ReprC>::CType>,
+    {
+        #[inline(always)]
+        unsafe fn is_valid(target: &Self::CType) -> bool {
+            unsafe { R::is_valid(target) }
+        }
+    }
+    unsafe impl<R: ReprC, E: CheckedTransmute<CType: Copy>> CheckedTransmute for Result<R, E>
+    where
+        R: rust_spec::RustSpec<Size = rust_spec::size::Sized<Zero>, Alignment = rust_spec::One>,
+        E: rust_spec::RustSpec<
+                Size = rust_spec::size::Sized<rust_spec::Gt<rust_spec::Zero>>,
+                Niche = WithNiche<Stable>,
+            >,
+        Self: ReprC<CType = <E as ReprC>::CType>,
+    {
+        #[inline(always)]
+        unsafe fn is_valid(target: &Self::CType) -> bool {
+            unsafe { E::is_valid(target) }
+        }
     }
 
     unsafe impl<R: CheckedTransmute + ?Sized> CheckedTransmute for ManuallyDrop<R>
@@ -47,57 +110,8 @@ disjoint_impls! {
             unsafe { R::is_valid(target) }
         }
     }
-
-    unsafe impl<R: CheckedTransmute + ?Sized> CheckedTransmute for &R
-    where
-        Self: ReprC<CType = CRef<<R as ReprC>::CType>>,
-        R: rust_spec::RustSpec<Size: Thin>,
-    {
-        #[inline(always)]
-        unsafe fn is_valid(target: &Self::CType) -> bool {
-            let ptr = target.as_ptr();
-
-            if ptr.is_null() {
-                return false;
-            }
-
-            unsafe { R::is_valid(&*ptr) }
-        }
-    }
-    unsafe impl<R: CheckedTransmute<CType: Copy> + ReprC, E: ReprC> CheckedTransmute for Result<R, E>
-    where
-        Self: ReprC<CType = <R as ReprC>::CType>,
-        R: rust_spec::RustSpec<
-                Size = rust_spec::size::Sized<rust_spec::Gt<rust_spec::Zero>>,
-                Niche = WithNiche<Stable>,
-            >,
-        E: rust_spec::RustSpec<Size = rust_spec::size::Sized<Zero>, Alignment = rust_spec::One>,
-    {
-        #[inline(always)]
-        unsafe fn is_valid(target: &Self::CType) -> bool {
-            unsafe { R::is_valid(target) }
-        }
-    }
-    unsafe impl<R: ReprC, E: CheckedTransmute<CType: Copy>> CheckedTransmute for Result<R, E>
-    where
-        Self: ReprC<CType = <E as ReprC>::CType>,
-        R: rust_spec::RustSpec<Size = rust_spec::size::Sized<Zero>, Alignment = rust_spec::One>,
-        E: rust_spec::RustSpec<
-                Size = rust_spec::size::Sized<rust_spec::Gt<rust_spec::Zero>>,
-                Niche = WithNiche<Stable>,
-            >,
-    {
-        #[inline(always)]
-        unsafe fn is_valid(target: &Self::CType) -> bool {
-            unsafe { E::is_valid(target) }
-        }
-    }
 }
 
-// FIXME: Should it be implemented for non-robust R?
-// atm we say yes, this is transmutable but don't misuse it.
-// Either require `Stable<Robust>` or write this in the documentation
-// If layout is Stable<Robust> then also consider how it affects Box<&mut R>
 unsafe impl<R: CheckedTransmute + ?Sized, const EXCLUSIVE: bool> CheckedTransmute for &mut R
 where
     R: rust_spec::RustSpec<Size: Thin>,
@@ -128,24 +142,6 @@ where
         }
 
         unsafe { R::is_valid(&*target.as_ptr()) }
-    }
-}
-
-unsafe impl<C: CType + ?Sized> CheckedTransmute for CRef<C>
-where
-    C: rust_spec::RustSpec<Size: Thin>,
-{
-    unsafe fn is_valid(_: &Self::CType) -> bool {
-        true
-    }
-}
-
-unsafe impl<C: CType + ?Sized, const EXCLUSIVE: bool> CheckedTransmute for CRefMut<C, EXCLUSIVE>
-where
-    C: rust_spec::RustSpec<Size: Thin>,
-{
-    unsafe fn is_valid(_: &Self::CType) -> bool {
-        true
     }
 }
 
@@ -231,6 +227,19 @@ mod tests {
             let null_box = ManuallyDrop::new(CBox::<u8>::null());
             assert!(!unsafe { <ManuallyDrop<Box<u8>> as CheckedTransmute>::is_valid(&null_box) });
         }
+    }
+
+    #[test]
+    fn robust_shared_interior_reference_checks_only_the_pointer() {
+        use core::cell::UnsafeCell;
+
+        let cell = UnsafeCell::new(7_u8);
+        let encoded = crate::encode(&cell);
+        assert_eq!(encoded.as_ptr(), core::ptr::from_ref(&cell).cast_mut());
+        assert!(unsafe { <&UnsafeCell<u8> as CheckedTransmute>::is_valid(&encoded) });
+
+        let null = CRefMut::<UnsafeCell<u8>, false>::null();
+        assert!(!unsafe { <&UnsafeCell<u8> as CheckedTransmute>::is_valid(&null) });
     }
 
     #[test]

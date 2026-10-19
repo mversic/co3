@@ -62,7 +62,7 @@ use crate::{
     borrow::{Borrow, BorrowCast, BorrowCastMut, FromBorrow},
     niche::Niche,
     slice::{Pack2, Unpack2},
-    stored::{DecodeOwned, EncodeOwned},
+    stored::{DecodeOwned, DirectEncodeOwned, EncodeOwned},
     transmute::CheckedTransmute,
 };
 
@@ -153,6 +153,7 @@ macro_rules! impl_tuple {
                 let store: private_store::Store<$($ty::Store,)*> = store.into();
                 $ffi_ty($( $ty.soft_encode(store.$ty) ),*)
             }
+
         }
         unsafe impl<$($ty: EncodeOwned),*> EncodeOwned for $ffi_ty<$($ty),*> {
             type Store = ($( $ty::Store, )*);
@@ -168,6 +169,33 @@ macro_rules! impl_tuple {
                 let $ffi_ty($($ty),*) = self;
                 let store: private_store::Store<$($ty::Store,)*> = store.into();
                 $ffi_ty($( $ty.soft_encode(store.$ty) ),*)
+            }
+
+        }
+
+        unsafe impl<$($ty: DirectEncodeOwned),*> DirectEncodeOwned for ($($ty,)*) {
+            type SoftStore = ($($ty::SoftStore,)*);
+
+            #[expect(non_snake_case)]
+            unsafe fn soft_encode_unchecked(self, store: &mut Self::SoftStore) -> Self::CType {
+                impl_tuple! {@decl_priv_store $($ty),*}
+
+                let ($($ty,)*) = self;
+                let store: private_store::Store<$($ty::SoftStore,)*> = store.into();
+                $ffi_ty($(unsafe { $ty.soft_encode_unchecked(store.$ty) }),*)
+            }
+        }
+
+        unsafe impl<$($ty: DirectEncodeOwned),*> DirectEncodeOwned for $ffi_ty<$($ty),*> {
+            type SoftStore = ($($ty::SoftStore,)*);
+
+            #[expect(non_snake_case)]
+            unsafe fn soft_encode_unchecked(self, store: &mut Self::SoftStore) -> Self::CType {
+                impl_tuple! {@decl_priv_store $($ty),*}
+
+                let $ffi_ty($($ty),*) = self;
+                let store: private_store::Store<$($ty::SoftStore,)*> = store.into();
+                $ffi_ty($(unsafe { $ty.soft_encode_unchecked(store.$ty) }),*)
             }
         }
 
@@ -220,6 +248,8 @@ macro_rules! impl_tuple {
 
         impl<$($ty: Encode),*> Encode for ($($ty,)*) {}
         impl<$($ty: Encode),*> Encode for $ffi_ty<$($ty),*> {}
+        impl<$($ty: crate::DirectEncode),*> crate::DirectEncode for ($($ty,)*) {}
+        impl<$($ty: crate::DirectEncode),*> crate::DirectEncode for $ffi_ty<$($ty),*> {}
 
         impl<'d, $($ty: Decode<'d>),*> Decode<'d> for ($($ty,)*) {}
         impl<'d, $($ty: Decode<'d>),*> Decode<'d> for $ffi_ty<$($ty),*> {}

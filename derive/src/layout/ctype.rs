@@ -1350,6 +1350,18 @@ fn gen_identity_codec_impls(
             where
                 Self: 'itm,
             {
+                use co3::stored::DirectEncodeOwned as _;
+                unsafe { self.soft_encode_unchecked(&mut ()) }
+            }
+        }
+        unsafe impl #impl_generics co3::stored::DirectEncodeOwned for #ident #ty_generics
+        where
+            #sized_bound
+            #predicates
+        {
+            type SoftStore = ();
+
+            unsafe fn soft_encode_unchecked(self, (): &mut ()) -> Self::CType {
                 self
             }
         }
@@ -1367,6 +1379,11 @@ fn gen_identity_codec_impls(
         }
 
         impl #impl_generics co3::Encode for #ident #ty_generics
+        where
+            #sized_bound
+            #predicates
+        {}
+        impl #impl_generics co3::DirectEncode for #ident #ty_generics
         where
             #sized_bound
             #predicates

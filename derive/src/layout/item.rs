@@ -265,6 +265,7 @@ fn gen_struct_codec_impls(
     let field_types = fields.iter().map(|field| &field.ty).collect::<Vec<_>>();
 
     let encode_store = encode_store_type(fields);
+    let direct_store = direct_store_type(fields);
     let decode_store = decode_store_type(fields);
 
     let codec_impls = {
@@ -276,7 +277,7 @@ fn gen_struct_codec_impls(
             gen_ctype_name(name)
         };
 
-        let (encode_body, decode_body, decode_unchecked_body) =
+        let (encode_body, direct_encode_body, decode_body, decode_unchecked_body) =
             gen_record_conversion(None, quote!(Self), fields, is_valid);
 
         let field_vars = field_vars(fields);
@@ -288,11 +289,16 @@ fn gen_struct_codec_impls(
 
         CodecImpls {
             encode_store,
+            direct_store,
             decode_store,
             repr_c_bounds: Vec::new(),
             encode_impl: quote! {
                 #encode_destructure
                 #ctype_name #encode_body
+            },
+            direct_encode_impl: quote! {
+                #encode_destructure
+                #ctype_name #direct_encode_body
             },
             decode_impl: quote! {
                 let #ctype_name #fields_destructure = source;
@@ -369,14 +375,16 @@ fn gen_enum_codec_impls(
         union_copy_bounds = source_bounds;
     }
 
-    let (encode_store, decode_store) = {
+    let (encode_store, direct_store, decode_store) = {
         let either_name = gen_either_name(variants.len());
 
         let field_encode_stores = variants.iter().map(|v| encode_store_type(&v.fields));
+        let field_direct_stores = variants.iter().map(|v| direct_store_type(&v.fields));
         let field_decode_stores = variants.iter().map(|v| decode_store_type(&v.fields));
 
         (
             quote! { core::option::Option<co3::either::#either_name<#(#field_encode_stores),*>> },
+            quote! { core::option::Option<co3::either::#either_name<#(#field_direct_stores),*>> },
             quote! { core::option::Option<co3::either::#either_name<#(#field_decode_stores),*>> },
         )
     };
@@ -410,7 +418,7 @@ fn gen_enum_codec_impls(
                 Some(ReprKind::C(None)) => unreachable!(),
             };
 
-            let (encode_body, decode_body, decode_unchecked_body) = gen_record_conversion(
+            let (encode_body, direct_encode_body, decode_body, decode_unchecked_body) = gen_record_conversion(
                 variant_tag,
                 quote!(Self::#variant_name),
                 &variant.fields,
@@ -469,6 +477,20 @@ fn gen_enum_codec_impls(
                 },
                 _ => unreachable!(),
             };
+            let direct_encode_variant = match repr {
+                Some(ReprKind::C(Some(_))) => quote! {
+                    #ctype_name {
+                        tag: #tag_value as #tag_type,
+                        payload: #payload_name { #variant_name: #variant_struct_name #direct_encode_body },
+                    }
+                },
+                None | Some(ReprKind::Primitive(_)) => quote! {
+                    #ctype_name {
+                        #variant_name: #variant_struct_name #direct_encode_body
+                    }
+                },
+                _ => unreachable!(),
+            };
 
             let decode_source = match repr {
                 Some(ReprKind::C(Some(_))) => quote! { unsafe { source.payload.#variant_name } },
@@ -522,6 +544,13 @@ fn gen_enum_codec_impls(
                         #encode_variant
                     }
                 },
+                quote! {
+                    Self::#variant_name #destructure_fields => {
+                        #move_fields
+                        #encode_store_init
+                        #direct_encode_variant
+                    }
+                },
                 quote! { #tag_value => #decode_variant },
                 quote! { #tag_value => #decode_variant_unchecked },
             )
@@ -529,15 +558,19 @@ fn gen_enum_codec_impls(
         .collect();
     let variants_encode = variants
         .iter()
-        .map(|(encode, _, _)| encode.clone())
+        .map(|(encode, _, _, _)| encode.clone())
+        .collect::<Vec<_>>();
+    let variants_direct_encode = variants
+        .iter()
+        .map(|(_, encode, _, _)| encode.clone())
         .collect::<Vec<_>>();
     let variants_decode = variants
         .iter()
-        .map(|(_, decode, _)| decode.clone())
+        .map(|(_, _, decode, _)| decode.clone())
         .collect::<Vec<_>>();
     let variants_decode_unchecked = variants
         .iter()
-        .map(|(_, _, decode)| decode.clone())
+        .map(|(_, _, _, decode)| decode.clone())
         .collect::<Vec<_>>();
 
     let decode_impl = match repr {
@@ -579,12 +612,19 @@ fn gen_enum_codec_impls(
 
     let codec_impls = CodecImpls {
         encode_store,
+        direct_store,
         decode_store,
         repr_c_bounds: union_copy_bounds,
         encode_impl: quote! {
             let __co3_owned = core::mem::ManuallyDrop::new(self);
             match &*__co3_owned {
                 #(#variants_encode,)*
+            }
+        },
+        direct_encode_impl: quote! {
+            let __co3_owned = core::mem::ManuallyDrop::new(self);
+            match &*__co3_owned {
+                #(#variants_direct_encode,)*
             }
         },
         decode_impl,
@@ -627,13 +667,15 @@ fn gen_transparent_enum_codec_impls(
         .first()
         .and_then(|attrs| attrs.is_valid.as_ref());
     let encode_store = encode_store_type(&variant.fields);
+    let direct_store = direct_store_type(&variant.fields);
     let decode_store = decode_store_type(&variant.fields);
-    let (encode_body, decode_body, decode_unchecked_body) = gen_record_conversion(
-        None,
-        quote!(Self::#variant_name),
-        &variant.fields,
-        custom_is_valid,
-    );
+    let (encode_body, direct_encode_body, decode_body, decode_unchecked_body) =
+        gen_record_conversion(
+            None,
+            quote!(Self::#variant_name),
+            &variant.fields,
+            custom_is_valid,
+        );
 
     let mut bounded_generics = generics.clone();
     if !is_view && let Some(last) = field_types.last().filter(|ty| !is_phantom_data(ty)) {
@@ -651,6 +693,7 @@ fn gen_transparent_enum_codec_impls(
         &field_types,
         CodecImpls {
             encode_store,
+            direct_store,
             decode_store,
             repr_c_bounds: Vec::new(),
             encode_impl: quote! {
@@ -659,6 +702,15 @@ fn gen_transparent_enum_codec_impls(
                     Self::#variant_name #destructure_fields => {
                         #move_fields
                         #ctype_name #encode_body
+                    }
+                }
+            },
+            direct_encode_impl: quote! {
+                let __co3_owned = core::mem::ManuallyDrop::new(self);
+                match &*__co3_owned {
+                    Self::#variant_name #destructure_fields => {
+                        #move_fields
+                        #ctype_name #direct_encode_body
                     }
                 }
             },
@@ -1181,6 +1233,14 @@ pub(super) fn derive_fieldless_enum(
             where
                 Self: '_išč,
             {
+                use co3::stored::DirectEncodeOwned as _;
+                unsafe { self.soft_encode_unchecked(&mut ()) }
+            }
+        }
+        unsafe impl #impl_generics co3::stored::DirectEncodeOwned for #name #ty_generics #where_clause {
+            type SoftStore = ();
+
+            unsafe fn soft_encode_unchecked(self, (): &mut ()) -> Self::CType {
                 #encode_body
             }
         }
@@ -1198,6 +1258,7 @@ pub(super) fn derive_fieldless_enum(
         }
 
         impl #impl_generics co3::Encode for #name #ty_generics #where_clause {}
+        impl #impl_generics co3::DirectEncode for #name #ty_generics #where_clause {}
         impl #impl_generics co3::Decode<'_> for #name #ty_generics #where_clause {}
 
         #checked_transmute_impl
@@ -1238,7 +1299,7 @@ fn gen_record_conversion(
     source_head: TokenStream,
     fields: &syn::Fields,
     is_valid: Option<&syn::ExprClosure>,
-) -> (TokenStream, TokenStream, TokenStream) {
+) -> (TokenStream, TokenStream, TokenStream, TokenStream) {
     let store_vars = tuple_field_exprs(fields.len());
     let field_vars = field_vars(fields);
     let field_types = fields.iter().map(|field| &field.ty).collect::<Vec<_>>();
@@ -1265,6 +1326,12 @@ fn gen_record_conversion(
                 {
                     #tag_field
                     #(#field_vars: co3::stored::EncodeOwned::soft_encode(#field_vars, #store_vars)),*
+                }
+            },
+            quote! {
+                {
+                    #tag_field
+                    #(#field_vars: unsafe { co3::stored::DirectEncodeOwned::soft_encode_unchecked(#field_vars, #store_vars) }),*
                 }
             },
             quote! { #(
@@ -1294,6 +1361,12 @@ fn gen_record_conversion(
                     #(co3::stored::EncodeOwned::soft_encode(#field_vars, #store_vars)),*
                 )
             },
+            quote! {
+                (
+                    #tag_element
+                    #(unsafe { co3::stored::DirectEncodeOwned::soft_encode_unchecked(#field_vars, #store_vars) }),*
+                )
+            },
             quote! { #(
                 let #field_vars = unsafe {
                     co3::stored::DecodeOwned::soft_decode(#field_vars, #store_vars)?
@@ -1319,9 +1392,11 @@ fn gen_record_conversion(
 
 struct CodecImpls {
     encode_store: TokenStream,
+    direct_store: TokenStream,
     decode_store: TokenStream,
     repr_c_bounds: Vec<syn::WherePredicate>,
     encode_impl: TokenStream,
+    direct_encode_impl: TokenStream,
     decode_impl: TokenStream,
     decode_unchecked_impl: TokenStream,
 }
@@ -1335,9 +1410,11 @@ fn gen_codec_impls(
 ) -> TokenStream {
     let CodecImpls {
         encode_store,
+        direct_store,
         decode_store,
         repr_c_bounds,
         encode_impl,
+        direct_encode_impl,
         decode_impl,
         decode_unchecked_impl,
     } = codec_impls;
@@ -1378,10 +1455,13 @@ fn gen_codec_impls(
 
     let encode_owned_bounds =
         gen_field_encode_bounds(generics, fields, quote! { co3::stored::EncodeOwned });
+    let direct_encode_bounds =
+        gen_field_encode_bounds(generics, fields, quote! { co3::stored::DirectEncodeOwned });
     let decode_owned_bounds =
         gen_field_decode_bounds(generics, fields, quote! { co3::stored::DecodeOwned });
 
     let encode_bounds = gen_field_encode_bounds(generics, fields, quote! { co3::Encode });
+    let direct_bounds = gen_field_encode_bounds(generics, fields, quote! { co3::DirectEncode });
     let decode_bounds = gen_field_decode_bounds(generics, fields, quote! { co3::Decode });
 
     let (sized_bound, omit_sized_impls) = if is_view {
@@ -1420,6 +1500,22 @@ fn gen_codec_impls(
             fn soft_encode<'_išč>(self, store: &'_išč mut Self::Store) -> Self::CType where Self: '_išč {
                 #encode_impl
             }
+
+        }
+        unsafe impl #impl_generics co3::stored::DirectEncodeOwned for #name #ty_generics
+        where
+            #sized_bound
+            #(#borrow_cast_bounds,)*
+            #(#repr_c_bounds,)*
+            #(#direct_encode_bounds,)*
+            #cast_eq_bounds
+            #predicates
+        {
+            type SoftStore = #direct_store;
+
+            unsafe fn soft_encode_unchecked(self, store: &mut <Self as co3::stored::DirectEncodeOwned>::SoftStore) -> Self::CType {
+                #direct_encode_impl
+            }
         }
         unsafe impl #decode_impl_generics co3::stored::DecodeOwned<'_dšč> for #name #ty_generics
         where
@@ -1446,6 +1542,14 @@ fn gen_codec_impls(
             #(#borrow_cast_bounds,)*
             #(#repr_c_bounds,)*
             #(#encode_bounds,)*
+            #cast_eq_bounds
+            #predicates
+        {}
+        impl #impl_generics co3::DirectEncode for #name #ty_generics where
+            #sized_bound
+            #(#borrow_cast_bounds,)*
+            #(#repr_c_bounds,)*
+            #(#direct_bounds,)*
             #cast_eq_bounds
             #predicates
         {}
@@ -1504,6 +1608,14 @@ fn gen_field_decode_bounds<'a>(
 fn encode_store_type(fields: &syn::Fields) -> TokenStream {
     let fields = fields.iter().map(|syn::Field { ty, .. }| {
         quote! { <#ty as co3::stored::EncodeOwned>::Store }
+    });
+
+    quote!((#(#fields,)*))
+}
+
+fn direct_store_type(fields: &syn::Fields) -> TokenStream {
+    let fields = fields.iter().map(|syn::Field { ty, .. }| {
+        quote! { <#ty as co3::stored::DirectEncodeOwned>::SoftStore }
     });
 
     quote!((#(#fields,)*))

@@ -38,27 +38,27 @@ impl<D: Store> Store for Box<[D]> {
     }
 }
 
-pub struct RefSizedEncodeStore<R: EncodeOwned> {
+pub struct RefSizedEncodeStore<R: ReprC<CType: Sized>, S: Store> {
     pub(crate) ctype: Option<R::CType>,
-    pub(crate) store: R::Store,
+    pub(crate) store: S,
 }
 
 #[cfg(feature = "alloc")]
-pub struct RefDstEncodeStore<R: ToOwned<Owned: EncodeOwned> + ?Sized> {
+pub struct RefDstEncodeStore<R: ToOwned<Owned: ReprC<CType: Sized>> + ?Sized, S: Store> {
     pub(crate) ctype: Option<<R::Owned as ReprC>::CType>,
-    pub(crate) store: <R::Owned as EncodeOwned>::Store,
+    pub(crate) store: S,
 }
 
-pub struct RefMutSizedEncodeStore<'d, R: EncodeOwned> {
+pub struct RefMutSizedEncodeStore<'d, R: ReprC<CType: Sized>, S: Store> {
     pub(crate) ctype: Option<R::CType>,
-    pub(crate) store: R::Store,
+    pub(crate) store: S,
     pub(crate) original: Option<&'d mut R>,
 }
 
 #[cfg(feature = "alloc")]
-pub struct RefMutDstEncodeStore<'d, R: ToOwned<Owned: EncodeOwned> + ?Sized> {
+pub struct RefMutDstEncodeStore<'d, R: ToOwned<Owned: ReprC<CType: Sized>> + ?Sized, S: Store> {
     pub(crate) ctype: Option<<R::Owned as ReprC>::CType>,
-    pub(crate) store: <R::Owned as EncodeOwned>::Store,
+    pub(crate) store: S,
     pub(crate) original: Option<&'d mut R>,
 }
 
@@ -89,7 +89,7 @@ pub struct RefMutSliceDecodeStore<R: ReprC<CType: Sized>, S> {
 /// This struct exists only because [arrays don't yet implement Default](https://github.com/rust-lang/rust/issues/61415)
 pub struct ArrayStore<D, const N: usize>(pub(crate) [D; N]);
 
-impl<R: EncodeOwned> Default for RefSizedEncodeStore<R> {
+impl<R: ReprC<CType: Sized>, S: Store + Default> Default for RefSizedEncodeStore<R, S> {
     fn default() -> Self {
         Self {
             ctype: None,
@@ -98,14 +98,16 @@ impl<R: EncodeOwned> Default for RefSizedEncodeStore<R> {
     }
 }
 
-impl<R: EncodeOwned> Store for RefSizedEncodeStore<R> {
+impl<R: ReprC<CType: Sized>, S: Store> Store for RefSizedEncodeStore<R, S> {
     fn sync(self) -> Option<()> {
         self.store.sync()
     }
 }
 
 #[cfg(feature = "alloc")]
-impl<R: ToOwned<Owned: EncodeOwned> + ?Sized> Default for RefDstEncodeStore<R> {
+impl<R: ToOwned<Owned: ReprC<CType: Sized>> + ?Sized, S: Store + Default> Default
+    for RefDstEncodeStore<R, S>
+{
     fn default() -> Self {
         Self {
             ctype: None,
@@ -115,13 +117,13 @@ impl<R: ToOwned<Owned: EncodeOwned> + ?Sized> Default for RefDstEncodeStore<R> {
 }
 
 #[cfg(feature = "alloc")]
-impl<R: ToOwned<Owned: EncodeOwned> + ?Sized> Store for RefDstEncodeStore<R> {
+impl<R: ToOwned<Owned: ReprC<CType: Sized>> + ?Sized, S: Store> Store for RefDstEncodeStore<R, S> {
     fn sync(self) -> Option<()> {
         self.store.sync()
     }
 }
 
-impl<'d, R: EncodeOwned> Default for RefMutSizedEncodeStore<'d, R> {
+impl<'d, R: ReprC<CType: Sized>, S: Store + Default> Default for RefMutSizedEncodeStore<'d, R, S> {
     fn default() -> Self {
         Self {
             ctype: Default::default(),
@@ -133,9 +135,10 @@ impl<'d, R: EncodeOwned> Default for RefMutSizedEncodeStore<'d, R> {
 
 // TODO: I'd bet the store doesn't have to be empty on decode during sync
 // it should be possible to traverse the ctype and update current type.
-impl<'d, R> Store for RefMutSizedEncodeStore<'d, R>
+impl<'d, R, S> Store for RefMutSizedEncodeStore<'d, R, S>
 where
-    R: EncodeOwned + DecodeOwned<'d, Store: EmptyStore + 'd>,
+    R: DecodeOwned<'d, Store: EmptyStore + 'd>,
+    S: Store,
 {
     fn sync(self) -> Option<()> {
         let original = self.original?;
@@ -149,7 +152,9 @@ where
 }
 
 #[cfg(feature = "alloc")]
-impl<'d, R: ToOwned<Owned: EncodeOwned> + ?Sized> Default for RefMutDstEncodeStore<'d, R> {
+impl<'d, R: ToOwned<Owned: ReprC<CType: Sized>> + ?Sized, S: Store + Default> Default
+    for RefMutDstEncodeStore<'d, R, S>
+{
     fn default() -> Self {
         Self {
             ctype: Default::default(),
@@ -160,9 +165,9 @@ impl<'d, R: ToOwned<Owned: EncodeOwned> + ?Sized> Default for RefMutDstEncodeSto
 }
 
 #[cfg(feature = "alloc")]
-impl<'d, R: AssignFromOwned> Store for RefMutDstEncodeStore<'d, R>
+impl<'d, R: AssignFromOwned, S: Store> Store for RefMutDstEncodeStore<'d, R, S>
 where
-    R: ToOwned<Owned: EncodeOwned + DecodeOwned<'d, Store: EmptyStore>> + ?Sized,
+    R: ToOwned<Owned: DecodeOwned<'d, Store: EmptyStore>> + ?Sized,
 {
     fn sync(self) -> Option<()> {
         let original = self.original?;

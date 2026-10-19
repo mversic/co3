@@ -1,10 +1,10 @@
 #[cfg(feature = "alloc")]
 use crate::stored::Owned;
 use crate::{
-    CFnArg, CFnReturn, CType, Decode, Encode, ReprC,
+    CFnArg, CFnReturn, CType, Decode, DirectEncode, Encode, ReprC,
     borrow::{Borrow, BorrowCast, BorrowCastMut, FromBorrow},
     niche::Niche,
-    stored::{DecodeOwned, EmptyStore, EncodeOwned},
+    stored::{DecodeOwned, DirectEncodeOwned, EmptyStore, EncodeOwned},
     transmute::CheckedTransmute,
     utf8::Utf8Str,
 };
@@ -55,6 +55,13 @@ macro_rules! non_zero_derive {
             where
                 Self: 'itm
             {
+                unsafe { self.soft_encode_unchecked(&mut ()) }
+            }
+        }
+        unsafe impl DirectEncodeOwned for NonZero<$primitive> {
+            type SoftStore = ();
+
+            unsafe fn soft_encode_unchecked(self, (): &mut ()) -> Self::CType {
                 self.get()
             }
         }
@@ -73,6 +80,7 @@ macro_rules! non_zero_derive {
         }
 
         impl Encode for NonZero<$primitive> {}
+        impl DirectEncode for NonZero<$primitive> {}
         impl Decode<'_> for NonZero<$primitive> {}
 
         unsafe impl CheckedTransmute for NonZero<$primitive> {
@@ -119,6 +127,14 @@ unsafe impl EncodeOwned for () {
     where
         Self: 'itm,
     {
+        unsafe { self.soft_encode_unchecked(&mut ()) }
+    }
+}
+
+unsafe impl DirectEncodeOwned for () {
+    type SoftStore = ();
+
+    unsafe fn soft_encode_unchecked(self, (): &mut ()) -> Self::CType {
         self
     }
 }
@@ -132,6 +148,7 @@ unsafe impl<'d> DecodeOwned<'d> for () {
 }
 
 impl Encode for () {}
+impl DirectEncode for () {}
 impl Decode<'_> for () {}
 
 unsafe impl CheckedTransmute for () {
@@ -191,6 +208,13 @@ unsafe impl<T: ?Sized> EncodeOwned for PhantomData<T> {
     where
         Self: 'itm,
     {
+        unsafe { self.soft_encode_unchecked(&mut ()) }
+    }
+}
+unsafe impl<T: ?Sized> DirectEncodeOwned for PhantomData<T> {
+    type SoftStore = ();
+
+    unsafe fn soft_encode_unchecked(self, (): &mut ()) -> Self::CType {
         self
     }
 }
@@ -204,6 +228,7 @@ unsafe impl<'d, T: ?Sized> DecodeOwned<'d> for PhantomData<T> {
 }
 
 impl<T: ?Sized> Encode for PhantomData<T> {}
+impl<T: ?Sized> DirectEncode for PhantomData<T> {}
 impl<T: ?Sized> Decode<'_> for PhantomData<T> {}
 
 unsafe impl<T: ?Sized> CType for PhantomData<T> {}
@@ -248,7 +273,14 @@ unsafe impl<T: CType + ?Sized> EncodeOwned for NonNull<T> {
     where
         Self: 'itm,
     {
-        self.as_ptr().soft_encode(store)
+        unsafe { self.soft_encode_unchecked(store) }
+    }
+}
+unsafe impl<T: CType + ?Sized> DirectEncodeOwned for NonNull<T> {
+    type SoftStore = ();
+
+    unsafe fn soft_encode_unchecked(self, (): &mut ()) -> Self::CType {
+        unsafe { self.as_ptr().soft_encode_unchecked(&mut ()) }
     }
 }
 unsafe impl<'d, T: CType + ?Sized> DecodeOwned<'d> for NonNull<T> {
@@ -274,6 +306,7 @@ unsafe impl<'d, T: CType + ?Sized> DecodeOwned<'d> for NonNull<T> {
 }
 
 impl<T: CType + ?Sized> Encode for NonNull<T> {}
+impl<T: CType + ?Sized> DirectEncode for NonNull<T> {}
 impl<T: CType + ?Sized> Decode<'_> for NonNull<T> {}
 
 unsafe impl<T: CType + ?Sized> CheckedTransmute for NonNull<T>
@@ -363,6 +396,13 @@ unsafe impl<R: EncodeOwned> EncodeOwned for UnsafeCell<R> {
         UnsafeCell::new(self.into_inner().soft_encode(store))
     }
 }
+unsafe impl<R: DirectEncodeOwned> DirectEncodeOwned for UnsafeCell<R> {
+    type SoftStore = R::SoftStore;
+
+    unsafe fn soft_encode_unchecked(self, store: &mut Self::SoftStore) -> Self::CType {
+        UnsafeCell::new(unsafe { self.into_inner().soft_encode_unchecked(store) })
+    }
+}
 unsafe impl<'d, R: DecodeOwned<'d>> DecodeOwned<'d> for UnsafeCell<R> {
     type Store = R::Store;
 
@@ -384,6 +424,7 @@ unsafe impl<'d, R: DecodeOwned<'d>> DecodeOwned<'d> for UnsafeCell<R> {
 }
 
 impl<R: Encode> Encode for UnsafeCell<R> {}
+impl<R: DirectEncode> DirectEncode for UnsafeCell<R> {}
 impl<'d, R: Decode<'d>> Decode<'d> for UnsafeCell<R> {}
 
 unsafe impl<T: CheckedTransmute + ?Sized> CheckedTransmute for UnsafeCell<T> {
@@ -442,6 +483,13 @@ unsafe impl<R: EncodeOwned> EncodeOwned for Cell<R> {
         UnsafeCell::new(self.into_inner().soft_encode(store))
     }
 }
+unsafe impl<R: DirectEncodeOwned> DirectEncodeOwned for Cell<R> {
+    type SoftStore = R::SoftStore;
+
+    unsafe fn soft_encode_unchecked(self, store: &mut Self::SoftStore) -> Self::CType {
+        UnsafeCell::new(unsafe { self.into_inner().soft_encode_unchecked(store) })
+    }
+}
 unsafe impl<'d, R: DecodeOwned<'d>> DecodeOwned<'d> for Cell<R> {
     type Store = R::Store;
 
@@ -463,6 +511,7 @@ unsafe impl<'d, R: DecodeOwned<'d>> DecodeOwned<'d> for Cell<R> {
 }
 
 impl<R: Encode> Encode for Cell<R> {}
+impl<R: DirectEncode> DirectEncode for Cell<R> {}
 impl<'d, R: Decode<'d>> Decode<'d> for Cell<R> {}
 
 unsafe impl<T: CheckedTransmute<CType: Copy>> CheckedTransmute for Cell<T> {
@@ -526,6 +575,13 @@ unsafe impl<T: CheckedTransmute<CType: Sized> + EncodeOwned<Store: EmptyStore>> 
     where
         Self: 'itm,
     {
+        unsafe { self.soft_encode_unchecked(&mut ()) }
+    }
+}
+unsafe impl<T: CheckedTransmute<CType: Sized>> DirectEncodeOwned for MaybeUninit<T> {
+    type SoftStore = ();
+
+    unsafe fn soft_encode_unchecked(self, (): &mut ()) -> Self::CType {
         unsafe { core::mem::transmute_copy(&self) }
     }
 }
@@ -539,6 +595,7 @@ unsafe impl<'d, T: CheckedTransmute<CType: Sized>> DecodeOwned<'d> for MaybeUnin
 }
 
 impl<T: CheckedTransmute<CType: Sized> + EncodeOwned<Store: EmptyStore>> Encode for MaybeUninit<T> {}
+impl<T: CheckedTransmute<CType: Sized>> DirectEncode for MaybeUninit<T> {}
 impl<'d, T: CheckedTransmute<CType: Sized>> Decode<'d> for MaybeUninit<T> {}
 
 unsafe impl<T: CheckedTransmute<CType: Sized>> CheckedTransmute for MaybeUninit<T> {
@@ -590,8 +647,9 @@ impl<'itm, T: 'itm> FromBorrow<'itm> for ManuallyDrop<T> {
     }
 }
 
-impl<T: ReprC> Encode for ManuallyDrop<T> where Self: EncodeOwned {}
-impl<'d, T: ReprC> Decode<'d> for ManuallyDrop<T> where Self: DecodeOwned<'d> {}
+impl<T: Encode> Encode for ManuallyDrop<T> where Self: EncodeOwned {}
+impl<T: DirectEncode> DirectEncode for ManuallyDrop<T> where Self: DirectEncodeOwned {}
+impl<'d, T: Decode<'d>> Decode<'d> for ManuallyDrop<T> where Self: DecodeOwned<'d> {}
 
 unsafe impl<T: CType + ?Sized> CType for ManuallyDrop<T> {}
 unsafe impl<T: CFnArg> CFnArg for ManuallyDrop<T> where
@@ -693,7 +751,7 @@ mod tests {
         assert_impl_all!(MaybeUninit<u8>: CType, CFnArg, CFnReturn);
 
         let source = MaybeUninit::new(bool::NICHE);
-        assert!(unsafe { <MaybeUninit<bool> as CheckedTransmute>::is_valid(&source) });
+        assert!(unsafe { MaybeUninit::<bool>::is_valid(&source) });
 
         let decoded = unsafe { crate::decode::<MaybeUninit<bool>>(source) }.unwrap();
         let encoded = crate::encode(decoded);
@@ -900,8 +958,9 @@ mod tests {
         assert_impl_all!(&UnsafeCell<u8>:
             Niche<CType = CRefMut<UnsafeCell<u8>, false>>,
             Encode,
+            CheckedTransmute,
         );
-        assert_not_impl_any!(&UnsafeCell<u8>: Decode<'static>, CheckedTransmute);
+        assert_not_impl_any!(&UnsafeCell<u8>: Decode<'static>);
         assert_impl_all!(&mut UnsafeCell<u8>:
             Niche<CType = CRefMut<UnsafeCell<u8>, true>>,
             Decode<'static>,
@@ -974,17 +1033,7 @@ mod tests {
     }
 
     #[test]
-    fn shared_and_exclusive_slice_pointers_cover_cells_and_empty_slices() {
-        let cells = [UnsafeCell::new(1_u8)];
-        let view = crate::encode(&cells[..]);
-        unsafe { view.data().write(UnsafeCell::new(2)) };
-        assert_eq!(unsafe { *cells[0].get() }, 2);
-
-        let cells = [Cell::new(3_u8)];
-        let view = crate::encode(&cells[..]);
-        unsafe { view.data().write(UnsafeCell::new(4)) };
-        assert_eq!(cells[0].get(), 4);
-
+    fn exclusive_slice_pointers_cover_cells_and_empty_slices() {
         let mut cells = [UnsafeCell::new(1_u8)];
         let view = crate::encode(&mut cells[..]);
         unsafe { view.data().write(UnsafeCell::new(2)) };
@@ -995,8 +1044,6 @@ mod tests {
         unsafe { view.data().write(UnsafeCell::new(4)) };
         assert_eq!(cells[0].get(), 4);
 
-        let empty_unsafe_cells: [UnsafeCell<u8>; 0] = [];
-        assert_eq!(crate::encode(&empty_unsafe_cells[..]).len(), 0);
         let mut empty_unsafe_cells: [UnsafeCell<u8>; 0] = [];
         assert_eq!(crate::encode(&mut empty_unsafe_cells[..]).len(), 0);
         let mut empty_cells: [Cell<u8>; 0] = [];

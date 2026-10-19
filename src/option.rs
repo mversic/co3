@@ -6,11 +6,11 @@ use rust_spec::niche::WithoutNiche;
 use crate::{
     CFnArg, CFnReturn, CType, Decode, Encode, ReprC,
     borrow::{Borrow, BorrowCast, BorrowCastMut, FromBorrow},
-    stored::{DecodeOwned, EmptyStore, EncodeOwned},
+    stored::{DecodeOwned, DirectEncodeOwned, EmptyStore, EncodeOwned},
     transmute::CheckedTransmute,
 };
 
-/// FFI-safe equivalent of [`core::option::Option`]
+/// FFI-safe equivalent of [`core::option::Option`].
 #[repr(C)]
 pub struct ReprCOption<T> {
     tag: u8,
@@ -203,6 +203,23 @@ unsafe impl<T: EncodeOwned> EncodeOwned for ReprCOption<T> {
         }
     }
 }
+unsafe impl<T: DirectEncodeOwned> DirectEncodeOwned for ReprCOption<T> {
+    type SoftStore = Option<T::SoftStore>;
+
+    unsafe fn soft_encode_unchecked(self, store: &mut Self::SoftStore) -> Self::CType {
+        match self.tag {
+            1 => ReprCOption::Some(unsafe {
+                self.payload
+                    .assume_init()
+                    .soft_encode_unchecked(store.insert(Default::default()))
+            }),
+            _ => {
+                *store = None;
+                self.forward_payload()
+            }
+        }
+    }
+}
 unsafe impl<'d, T: DecodeOwned<'d>> DecodeOwned<'d> for ReprCOption<T> {
     type Store = T::Store;
 
@@ -235,6 +252,7 @@ unsafe impl<'d, T: DecodeOwned<'d>> DecodeOwned<'d> for ReprCOption<T> {
 }
 
 impl<T: Encode> Encode for ReprCOption<T> {}
+impl<T: crate::DirectEncode> crate::DirectEncode for ReprCOption<T> {}
 impl<'d, T: Decode<'d>> Decode<'d> for ReprCOption<T> {}
 
 unsafe impl<T: CheckedTransmute<CType: Sized>> CheckedTransmute for ReprCOption<T> {

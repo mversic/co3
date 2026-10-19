@@ -288,6 +288,32 @@ fn gen_regular_drop_import_body<const DISPATCHED: bool>(
             quote!(#name)
         }
     });
+    let receiver_attrs = owned_item
+        .sig
+        .inputs
+        .iter()
+        .find_map(|input| match input {
+            FnArg::Typed(arg) if item_fn_input_ident(&arg.pat) == "__co3_self" => Some(&arg.attrs),
+            _ => None,
+        })
+        .expect("regular Drop requires a receiver");
+    let receiver_cfg = cfg_attrs(receiver_attrs).collect::<Vec<_>>();
+    let store_name = gen_store_name(&format_ident!("__co3_self"));
+    let input_convert = if soft_for_arg(receiver_attrs) {
+        quote! {
+            #(#receiver_cfg)*
+            let mut #store_name = Default::default();
+            #(#receiver_cfg)*
+            let __co3_self = co3::stored::EncodeOwned::soft_encode(
+                __co3_self, &mut #store_name
+            );
+        }
+    } else {
+        quote! {
+            #(#receiver_cfg)*
+            let __co3_self = co3::stored::encode_owned(__co3_self);
+        }
+    };
 
     gen_impl_wrapper_body_with_self_binding::<DISPATCHED>(
         failure_mode,
@@ -314,6 +340,7 @@ fn gen_regular_drop_import_body<const DISPATCHED: bool>(
                 #imported_name(#(#forwarded_args),*)
             };
         }),
+        Some(input_convert),
     )
 }
 
@@ -338,6 +365,7 @@ pub(crate) fn gen_impl_wrapper_body<const DISPATCHED: bool>(
         generics,
         erase_declared_receiver,
         self_binding,
+        None,
     )
 }
 
@@ -359,6 +387,7 @@ pub(crate) fn gen_owned_drop_wrapper_body<const DISPATCHED: bool>(
         generics,
         erase_declared_receiver,
         Some(quote! { let __co3_self = self.0; }),
+        None,
     )
 }
 
@@ -369,6 +398,7 @@ fn gen_impl_wrapper_body_with_self_binding<const DISPATCHED: bool>(
     generics: &syn::Generics,
     erase_declared_receiver: bool,
     self_binding: Option<TokenStream>,
+    input_convert: Option<TokenStream>,
 ) -> TokenStream {
     let id_assignments = item.sig.inputs.iter().filter_map(|input| {
         let FnArg::Typed(syn::PatType { pat, ty, .. }) = input else {
@@ -382,14 +412,30 @@ fn gen_impl_wrapper_body_with_self_binding<const DISPATCHED: bool>(
 
         Some(quote! { let #pat = <#tag_ty as co3::tag::Tagged>::TAG; })
     });
-    let wrapper_body = gen_wrapper_body::<DISPATCHED>(
-        failure_mode,
-        item.attrs.iter().any(is_by_val_attr),
-        Some(self_ty),
-        Some(generics),
-        erase_declared_receiver,
-        &item.sig,
-    );
+    let wrapper_body = if let Some(input_convert) = input_convert {
+        let name = &item.sig.ident;
+        gen_wrapper_body_with_input_conversion::<DISPATCHED>(
+            failure_mode,
+            item.attrs.iter().any(is_by_val_attr),
+            Some(self_ty),
+            Some(generics),
+            erase_declared_receiver,
+            &item.sig,
+            WrapperBodyCode {
+                callee: quote!(#name),
+                input_convert,
+            },
+        )
+    } else {
+        gen_wrapper_body::<DISPATCHED>(
+            failure_mode,
+            item.attrs.iter().any(is_by_val_attr),
+            Some(self_ty),
+            Some(generics),
+            erase_declared_receiver,
+            &item.sig,
+        )
+    };
     let co3 = co3_path();
 
     quote! {
@@ -455,6 +501,39 @@ pub(crate) fn gen_wrapper_body_with_callee<const DISPATCHED: bool>(
     sig: &syn::Signature,
     callee: TokenStream,
 ) -> TokenStream {
+    let input_convert = gen_input_conversion_stmts(&sig.inputs);
+    gen_wrapper_body_with_input_conversion::<DISPATCHED>(
+        failure_mode,
+        fn_by_val,
+        self_ty,
+        dispatch_generics,
+        erase_declared_receiver,
+        sig,
+        WrapperBodyCode {
+            callee,
+            input_convert,
+        },
+    )
+}
+
+struct WrapperBodyCode {
+    callee: TokenStream,
+    input_convert: TokenStream,
+}
+
+fn gen_wrapper_body_with_input_conversion<const DISPATCHED: bool>(
+    failure_mode: FailureMode,
+    fn_by_val: bool,
+    self_ty: Option<&syn::Type>,
+    dispatch_generics: Option<&syn::Generics>,
+    erase_declared_receiver: bool,
+    sig: &syn::Signature,
+    code: WrapperBodyCode,
+) -> TokenStream {
+    let WrapperBodyCode {
+        callee,
+        input_convert,
+    } = code;
     let tag_erase_stmts = if DISPATCHED {
         self_ty
             .zip(dispatch_generics)
@@ -466,7 +545,6 @@ pub(crate) fn gen_wrapper_body_with_callee<const DISPATCHED: bool>(
         Default::default()
     };
 
-    let input_convert = gen_input_conversion_stmts(&sig.inputs);
     let single_unpack_inputs = gen_single_unpack_input_stmts(failure_mode, &sig.inputs);
     let unpack_inputs = gen_unpack_input_stmts(failure_mode, &sig.inputs);
     let declared_receiver_erase = if !DISPATCHED

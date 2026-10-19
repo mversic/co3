@@ -10,7 +10,7 @@ use rust_spec::{RustSpec, drop::NoDrop};
 use crate::{
     CFnArg, CFnReturn, CType, Decode, Encode, ReprC, WithDrop,
     borrow::{Borrow, BorrowCast, BorrowCastMut, FromBorrow},
-    stored::{DecodeOwned, EncodeOwned},
+    stored::{DecodeOwned, DirectEncodeOwned, EncodeOwned},
     transmute::CheckedTransmute,
     wide::{PointeeData, Wide, WideHeader},
 };
@@ -46,6 +46,10 @@ pub struct CWideRef<P: Wide + ?Sized> {
 ///
 /// - `EXCLUSIVE = true` represents exclusive access that comes from `&mut T`.
 /// - `EXCLUSIVE = false` represents access that comes from `&UnsafeCell<T>`.
+///
+/// `EXCLUSIVE == false` should be read as unknown. For all is known to this wrapper the access
+/// is exclusive. You have to use `UnsafeCell` in `P` to assert non-exclusive access. It is the
+/// user's responsibility to ensure any access of the pointer is well synchronized.
 #[derive(RustSpec)]
 #[repr(C)]
 pub struct CWideRefMut<P: Wide + ?Sized, const EXCLUSIVE: bool> {
@@ -266,6 +270,13 @@ macro_rules! impl_slice_carrier {
             where
                 Self: 'itm,
             {
+                unsafe { self.soft_encode_unchecked(&mut ()) }
+            }
+        }
+        unsafe impl<$($params)*> DirectEncodeOwned for $ty<$($args)*> {
+            type SoftStore = ();
+
+            unsafe fn soft_encode_unchecked(self, (): &mut ()) -> Self::CType {
                 self
             }
         }
@@ -279,6 +290,7 @@ macro_rules! impl_slice_carrier {
         }
 
         impl<$($params)*> Encode for $ty<$($args)*> {}
+        impl<$($params)*> crate::DirectEncode for $ty<$($args)*> {}
         impl<'d, $($params)*> Decode<'d> for $ty<$($args)*> {}
 
         unsafe impl<$($params)*> CheckedTransmute for $ty<$($args)*> {

@@ -12,7 +12,7 @@ use crate::{
     CFnArg, CFnReturn, CType, Decode, Encode, ReprC, assert_arr_has_non_zero_len,
     borrow::{Borrow, BorrowCast, BorrowCastMut, FromBorrow},
     niche::Niche,
-    stored::{DecodeOwned, EmptyStore, EncodeOwned},
+    stored::{DecodeOwned, DirectEncodeOwned, EmptyStore, EncodeOwned},
     sync::ArrayStore,
     transmute::CheckedTransmute,
 };
@@ -85,6 +85,14 @@ macro_rules! primitive_derive {
             where
                 Self: 'itm,
             {
+                unsafe { self.soft_encode_unchecked(&mut ()) }
+            }
+        }
+        unsafe impl $crate::stored::DirectEncodeOwned for $primitive {
+            type SoftStore = ();
+
+            #[inline(always)]
+            unsafe fn soft_encode_unchecked(self, (): &mut ()) -> Self::CType {
                 self
             }
         }
@@ -98,6 +106,7 @@ macro_rules! primitive_derive {
         }
 
         impl Encode for $primitive {}
+        impl $crate::DirectEncode for $primitive {}
         impl Decode<'_> for $primitive {}
 
         unsafe impl CheckedTransmute for $primitive {
@@ -159,6 +168,13 @@ unsafe impl<R: ?Sized> Borrow for *$mutability R {
                 self
             }
         }
+        unsafe impl<R: CType + ?Sized> DirectEncodeOwned for *$mutability R {
+            type SoftStore = ();
+
+            unsafe fn soft_encode_unchecked(self, (): &mut ()) -> Self::CType {
+                self
+            }
+        }
         unsafe impl<'d, R: CType + ?Sized> DecodeOwned<'d> for *$mutability R {
             type Store = ();
 
@@ -169,6 +185,7 @@ unsafe impl<R: ?Sized> Borrow for *$mutability R {
         }
 
         impl<R: CType + ?Sized> Encode for *$mutability R {}
+        impl<R: CType + ?Sized> $crate::DirectEncode for *$mutability R {}
         impl<R: CType + ?Sized> Decode<'_> for *$mutability R {}
 
         unsafe impl<R: CType + ?Sized> CheckedTransmute for *$mutability R
@@ -243,10 +260,14 @@ macro_rules! impl_fn_types {
             type Owner = ();
 
             type Borrowed<'itm> = Self where Self: 'itm;
-            fn borrow<'itm>(self, (): &mut ()) -> Self::Borrowed<'itm> where Self: 'itm { self }
+            fn borrow<'itm>(self, (): &mut ()) -> Self::Borrowed<'itm> where Self: 'itm {
+                self
+            }
         }
         impl<'itm, $($arg,)* R> FromBorrow<'itm> for $fn_type {
-            fn from_borrow(source: Self) -> Self { source }
+            fn from_borrow(source: Self) -> Self {
+                source
+            }
         }
         impl<$($arg: CFnArg,)* R: CFnReturn> ReprC for $fn_type where Option<Self>: CType {
             type CType = Option<Self>;
@@ -254,7 +275,16 @@ macro_rules! impl_fn_types {
         unsafe impl<$($arg,)* R> EncodeOwned for $fn_type where Self: ReprC<CType = Option<Self>> {
             type Store = ();
 
-            fn soft_encode<'itm>(self, (): &mut ()) -> Self::CType where Self: 'itm { Some(self) }
+            fn soft_encode<'itm>(self, (): &mut ()) -> Self::CType where Self: 'itm {
+                unsafe { self.soft_encode_unchecked(&mut ()) }
+            }
+        }
+        unsafe impl<$($arg,)* R> DirectEncodeOwned for $fn_type where Self: ReprC<CType = Option<Self>> {
+            type SoftStore = ();
+
+            unsafe fn soft_encode_unchecked(self, (): &mut ()) -> Self::CType {
+                Some(self)
+            }
         }
         unsafe impl<'d, $($arg,)* R> DecodeOwned<'d> for $fn_type where Self: ReprC<CType = Option<Self>> {
             type Store = ();
@@ -269,6 +299,7 @@ macro_rules! impl_fn_types {
         }
 
         impl<$($arg,)* R> Encode for $fn_type where Self: ReprC<CType = Option<Self>> {}
+        impl<$($arg,)* R> $crate::DirectEncode for $fn_type where Self: ReprC<CType = Option<Self>> {}
         impl<$($arg,)* R> Decode<'_> for $fn_type where Self: ReprC<CType = Option<Self>> {}
 
         impl<$($arg,)* R> Niche for $fn_type where Self: ReprC<CType = Option<Self>> {
@@ -310,6 +341,14 @@ unsafe impl Borrow for $src {
             where
                 Self: 'itm,
             {
+                unsafe { self.soft_encode_unchecked(&mut ()) }
+            }
+        }
+        unsafe impl DirectEncodeOwned for $src {
+            type SoftStore = ();
+
+            #[inline(always)]
+            unsafe fn soft_encode_unchecked(self, (): &mut ()) -> Self::CType {
                 $encode_fn(self)
             }
         }
@@ -328,6 +367,7 @@ unsafe impl Borrow for $src {
         }
 
         impl Encode for $src {}
+        impl $crate::DirectEncode for $src {}
         impl Decode<'_> for $src {}
 
         unsafe impl CheckedTransmute for $src {
@@ -400,6 +440,24 @@ unsafe impl<R: EncodeOwned, const N: usize> EncodeOwned for [R; N] {
             let store = stores.next().unwrap();
 
             item.soft_encode(store)
+        })
+    }
+}
+
+unsafe impl<R: DirectEncodeOwned, const N: usize> DirectEncodeOwned for [R; N] {
+    type SoftStore = ArrayStore<R::SoftStore, N>;
+
+    unsafe fn soft_encode_unchecked(self, store: &mut Self::SoftStore) -> Self::CType {
+        assert_arr_has_non_zero_len::<N>();
+
+        let mut items = self.into_iter();
+        let mut stores = store.0.iter_mut();
+
+        core::array::from_fn(|_| {
+            let item = items.next().unwrap();
+            let store = stores.next().unwrap();
+
+            unsafe { item.soft_encode_unchecked(store) }
         })
     }
 }

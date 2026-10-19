@@ -4,7 +4,10 @@ pub use alloc::borrow::ToOwned;
 use alloc::{boxed::Box, vec::Vec};
 
 #[cfg(feature = "alloc")]
-use rust_spec::size::{MetaSized, MetadataKind, SizedKind};
+use rust_spec::{
+    RustSpec,
+    size::{MetaSized, MetadataKind, SizedKind},
+};
 
 use crate::{CType, sync::ArrayStore};
 
@@ -82,64 +85,6 @@ pub trait FromBorrow<'itm>: Borrow {
     fn from_borrow(source: Self::Borrowed<'itm>) -> Self;
 }
 
-unsafe impl<R: Borrow> Borrow for Option<R> {
-    type Borrowed<'itm>
-        = Option<R::Borrowed<'itm>>
-    where
-        Self: 'itm;
-
-    type Owner = R::Owner;
-
-    #[inline(always)]
-    fn borrow<'itm>(self, owner: &'itm mut Self::Owner) -> Self::Borrowed<'itm>
-    where
-        Self: 'itm,
-    {
-        self.map(|value| value.borrow(owner))
-    }
-}
-impl<'itm, R: FromBorrow<'itm>> FromBorrow<'itm> for Option<R> {
-    #[inline(always)]
-    fn from_borrow(source: Self::Borrowed<'itm>) -> Self {
-        source.map(R::from_borrow)
-    }
-}
-
-unsafe impl<T: Borrow, E: Borrow> Borrow for Result<T, E> {
-    type Borrowed<'itm>
-        = Result<T::Borrowed<'itm>, E::Borrowed<'itm>>
-    where
-        Self: 'itm;
-
-    type Owner = Option<Result<T::Owner, E::Owner>>;
-
-    #[inline(always)]
-    fn borrow<'itm>(self, owner: &'itm mut Self::Owner) -> Self::Borrowed<'itm>
-    where
-        Self: 'itm,
-    {
-        match self {
-            Ok(value) => {
-                let ok_owner = owner.insert(Ok(Default::default())).as_mut();
-                Ok(value.borrow(unsafe { ok_owner.unwrap_unchecked() }))
-            }
-            Err(err) => {
-                let err_owner = owner.insert(Err(Default::default())).as_mut();
-                Err(err.borrow(unsafe { err_owner.unwrap_err_unchecked() }))
-            }
-        }
-    }
-}
-impl<'itm, T: FromBorrow<'itm>, E: FromBorrow<'itm>> FromBorrow<'itm> for Result<T, E> {
-    #[inline(always)]
-    fn from_borrow(source: Self::Borrowed<'itm>) -> Self {
-        match source {
-            Ok(value) => Ok(T::from_borrow(value)),
-            Err(err) => Err(E::from_borrow(err)),
-        }
-    }
-}
-
 unsafe impl<R: ?Sized> Borrow for &R {
     type Borrowed<'itm>
         = Self
@@ -188,7 +133,7 @@ impl<'itm, 'a: 'itm, R: ?Sized> FromBorrow<'itm> for &'a mut R {
 
 #[cfg(feature = "alloc")]
 // NOTE: extern types cannot be borrowed, only moved
-unsafe impl<R: rust_spec::RustSpec<Size: NonExternTypeLike> + ?Sized> Borrow for Box<R> {
+unsafe impl<R: RustSpec<Size: NonExternTypeLike> + ?Sized> Borrow for Box<R> {
     type Borrowed<'itm>
         = &'itm R
     where
@@ -207,8 +152,7 @@ unsafe impl<R: rust_spec::RustSpec<Size: NonExternTypeLike> + ?Sized> Borrow for
     }
 }
 #[cfg(feature = "alloc")]
-impl<'itm, R: rust_spec::RustSpec<Size: NonExternTypeLike> + ToOwned + ?Sized> FromBorrow<'itm>
-    for Box<R>
+impl<'itm, R: RustSpec<Size: NonExternTypeLike> + ToOwned + ?Sized> FromBorrow<'itm> for Box<R>
 where
     R::Owned: Into<Self>,
 {
@@ -276,5 +220,63 @@ impl<'itm, R: FromBorrow<'itm>, const N: usize> FromBorrow<'itm> for [R; N] {
     #[inline(always)]
     fn from_borrow(source: Self::Borrowed<'itm>) -> Self {
         source.map(R::from_borrow)
+    }
+}
+
+unsafe impl<R: Borrow> Borrow for Option<R> {
+    type Borrowed<'itm>
+        = Option<R::Borrowed<'itm>>
+    where
+        Self: 'itm;
+
+    type Owner = R::Owner;
+
+    #[inline(always)]
+    fn borrow<'itm>(self, owner: &'itm mut Self::Owner) -> Self::Borrowed<'itm>
+    where
+        Self: 'itm,
+    {
+        self.map(|value| value.borrow(owner))
+    }
+}
+impl<'itm, R: FromBorrow<'itm>> FromBorrow<'itm> for Option<R> {
+    #[inline(always)]
+    fn from_borrow(source: Self::Borrowed<'itm>) -> Self {
+        source.map(R::from_borrow)
+    }
+}
+
+unsafe impl<T: Borrow, E: Borrow> Borrow for Result<T, E> {
+    type Borrowed<'itm>
+        = Result<T::Borrowed<'itm>, E::Borrowed<'itm>>
+    where
+        Self: 'itm;
+
+    type Owner = Option<Result<T::Owner, E::Owner>>;
+
+    #[inline(always)]
+    fn borrow<'itm>(self, owner: &'itm mut Self::Owner) -> Self::Borrowed<'itm>
+    where
+        Self: 'itm,
+    {
+        match self {
+            Ok(value) => {
+                let ok_owner = owner.insert(Ok(Default::default())).as_mut();
+                Ok(value.borrow(unsafe { ok_owner.unwrap_unchecked() }))
+            }
+            Err(err) => {
+                let err_owner = owner.insert(Err(Default::default())).as_mut();
+                Err(err.borrow(unsafe { err_owner.unwrap_err_unchecked() }))
+            }
+        }
+    }
+}
+impl<'itm, T: FromBorrow<'itm>, E: FromBorrow<'itm>> FromBorrow<'itm> for Result<T, E> {
+    #[inline(always)]
+    fn from_borrow(source: Self::Borrowed<'itm>) -> Self {
+        match source {
+            Ok(value) => Ok(T::from_borrow(value)),
+            Err(err) => Err(E::from_borrow(err)),
+        }
     }
 }
