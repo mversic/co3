@@ -31,12 +31,14 @@ pub struct ReprCStruct<T: ?Sized> {
 #[derive(Debug, Clone, PartialEq, Eq, RustSpec, ReprC)]
 #[repr(u8)]
 pub enum ReprCEnum<T: ?Sized> {
+    #[repr_c(allow_zero_tag)]
     A(Box<T>),
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, RustSpec, ReprC)]
 #[repr(C, u8)]
 pub enum ReprCDataEnum<T: ?Sized> {
+    #[repr_c(allow_zero_tag)]
     A(Box<T>),
 }
 

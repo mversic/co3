@@ -29,6 +29,7 @@ struct InteriorMutableField(Cell<u8>);
 #[derive(RustSpec, ReprC)]
 #[repr(u8, align(16))]
 enum AlignedFieldlessEnum {
+    #[repr_c(allow_zero_tag)]
     First,
     Second,
 }
@@ -36,6 +37,7 @@ enum AlignedFieldlessEnum {
 #[derive(RustSpec, ReprC)]
 #[repr(u8, align(16))]
 enum AlignedDataEnum {
+    #[repr_c(allow_zero_tag)]
     First(u32),
     Second,
 }
@@ -43,6 +45,7 @@ enum AlignedDataEnum {
 #[derive(RustSpec, ReprC)]
 #[repr(C, u8, align(32))]
 enum ExplicitCAlignedDataEnum {
+    #[repr_c(allow_zero_tag)]
     First(u32),
     Second,
 }

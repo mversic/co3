@@ -38,10 +38,24 @@ pub(super) fn derive_field_repr_c(
     repr: Option<&ReprKind>,
     attrs: &ReprCAttrs,
 ) -> TokenStream {
-    let syn::Data::Struct(data) = &input.data else {
-        unreachable!("validated single-field struct")
+    let (field, variant) = match &input.data {
+        syn::Data::Struct(data) => (
+            data.fields.iter().next().expect("validated single field"),
+            None,
+        ),
+        syn::Data::Enum(data) => {
+            let variant = &data.variants[0];
+            (
+                variant
+                    .fields
+                    .iter()
+                    .next()
+                    .expect("validated single field"),
+                Some(&variant.ident),
+            )
+        }
+        syn::Data::Union(_) => unreachable!(),
     };
-    let field = data.fields.iter().next().expect("validated single field");
     let field_ty = &field.ty;
     let member = field.ident.as_ref().map_or_else(
         || syn::Member::Unnamed(syn::Index::from(0)),
@@ -49,9 +63,24 @@ pub(super) fn derive_field_repr_c(
     );
     let name = &input.ident;
     let (_, ty_generics, _) = input.generics.split_for_impl();
-    let construct = match &field.ident {
-        Some(ident) => quote! { Self { #ident: value } },
-        None => quote! { Self(value) },
+    let construct = match (variant, &field.ident) {
+        (None, Some(ident)) => quote! { Self { #ident: value } },
+        (None, None) => quote! { Self(value) },
+        (Some(variant), Some(ident)) => quote! { Self::#variant { #ident: value } },
+        (Some(variant), None) => quote! { Self::#variant(value) },
+    };
+    let take_field = match (variant, &field.ident) {
+        (None, _) => quote! { unsafe { core::ptr::read(&raw const (*owner).#member) } },
+        (Some(variant), Some(ident)) => quote! {
+            match &*owner {
+                #name::#variant { #ident: field } => unsafe { core::ptr::read(field) },
+            }
+        },
+        (Some(variant), None) => quote! {
+            match &*owner {
+                #name::#variant(field) => unsafe { core::ptr::read(field) },
+            }
+        },
     };
 
     let mut repr_generics = input.generics.clone();
@@ -155,6 +184,10 @@ pub(super) fn derive_field_repr_c(
                 debug_assert!(encoded != #value, "encoding produced the reserved NICHE");
             }
         });
+        let encode_custom_check = attrs.is_valid.as_ref().map(|is_valid| {
+            let call = gen_is_valid_call(is_valid, &[field_ty], &[quote!(&value)]);
+            quote! { debug_assert!(#call, "encoding failed custom is_valid"); }
+        });
 
         let mut decode_generics = input.generics.clone();
         decode_generics.params.insert(0, parse_quote!('_dšč));
@@ -205,7 +238,8 @@ pub(super) fn derive_field_repr_c(
                 fn soft_encode<'_išč>(self, store: &'_išč mut Self::Store) -> Self::CType
                 where Self: '_išč {
                     let owner = core::mem::ManuallyDrop::new(self);
-                    let value = unsafe { core::ptr::read(&raw const (*owner).#member) };
+                    let value = #take_field;
+                    #encode_custom_check
                     let encoded = co3::stored::EncodeOwned::soft_encode(value, store);
                     #encode_niche_check
                     encoded
@@ -224,7 +258,7 @@ pub(super) fn derive_field_repr_c(
 
                 unsafe fn soft_encode_unchecked(self, store: &mut Self::SoftStore) -> Self::CType {
                     let owner = core::mem::ManuallyDrop::new(self);
-                    let value = unsafe { core::ptr::read(&raw const (*owner).#member) };
+                    let value = #take_field;
                     unsafe { co3::stored::DirectEncodeOwned::soft_encode_unchecked(value, store) }
                 }
             }

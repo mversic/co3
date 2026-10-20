@@ -557,7 +557,7 @@ fieldless_enum_derive! {
     |source: CBool| unsafe { core::mem::transmute::<CBool, bool>(source) }
 }
 fieldless_enum_derive! {
-    Ordering => COrdering: {COrdering(2)}:
+    Ordering => COrdering: {COrdering(-2)}:
     |i: &COrdering| (-1..=1).contains(&i.0);
     |source: COrdering| match source.0 {
         -1 => Some(Ordering::Less),

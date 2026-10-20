@@ -5,6 +5,7 @@ use co3::{Error, ReprC, ffi, rust_spec::RustSpec};
 #[derive(Debug, PartialEq, Eq, RustSpec, ReprC)]
 #[repr(u8)]
 enum CustomStatus {
+    #[repr_c(allow_zero_tag)]
     Ok,
     TrapValue,
     UnknownHandle,

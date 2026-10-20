@@ -608,14 +608,18 @@ fn rewrite_view_attrs(
     variant_attrs: &[VariantReprCAttrs],
 ) {
     match &mut input.data {
-        syn::Data::Struct(data) => {
-            rewrite_view_repr_c_attrs(&mut input.attrs, attrs.is_valid.as_ref(), &data.fields)
-        }
+        syn::Data::Struct(data) => rewrite_view_repr_c_attrs(
+            &mut input.attrs,
+            attrs.is_valid.as_ref(),
+            false,
+            &data.fields,
+        ),
         syn::Data::Enum(data) => {
             for (variant, attrs) in data.variants.iter_mut().zip(variant_attrs) {
                 rewrite_view_repr_c_attrs(
                     &mut variant.attrs,
                     attrs.is_valid.as_ref(),
+                    attrs.allow_zero_tag,
                     &variant.fields,
                 );
             }
@@ -627,11 +631,12 @@ fn rewrite_view_attrs(
 fn rewrite_view_repr_c_attrs(
     attrs: &mut Vec<syn::Attribute>,
     is_valid: Option<&syn::ExprClosure>,
+    allow_zero_tag: bool,
     fields: &syn::Fields,
 ) {
     attrs.retain(|a| !a.path().is_ident("repr_c"));
-    if is_valid.is_none() {
-        return;
+    if allow_zero_tag {
+        attrs.push(parse_quote! { #[repr_c(allow_zero_tag)] });
     }
 
     if let Some(is_valid) = is_valid {

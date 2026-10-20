@@ -14,6 +14,7 @@ trait AmbiguousY {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, RustSpec, ReprC)]
 #[repr(u8)]
 enum Ambiguous {
+    #[repr_c(allow_zero_tag)]
     AmbiguousX,
     AmbiguousY,
     Fn,

@@ -65,9 +65,9 @@ disjoint_impls! {
     unsafe impl<R: CheckedTransmute<CType: Copy> + ReprC, E: ReprC> CheckedTransmute for Result<R, E>
     where
         R: rust_spec::RustSpec<
-                Size = rust_spec::size::Sized<rust_spec::Gt<rust_spec::Zero>>,
-                Niche = WithNiche<Stable>,
-            >,
+            Size = rust_spec::size::Sized<rust_spec::Gt<rust_spec::Zero>>,
+            Niche = WithNiche<Stable>,
+        >,
         E: rust_spec::RustSpec<Size = rust_spec::size::Sized<Zero>, Alignment = rust_spec::One>,
         Self: ReprC<CType = <R as ReprC>::CType>,
     {
@@ -80,9 +80,9 @@ disjoint_impls! {
     where
         R: rust_spec::RustSpec<Size = rust_spec::size::Sized<Zero>, Alignment = rust_spec::One>,
         E: rust_spec::RustSpec<
-                Size = rust_spec::size::Sized<rust_spec::Gt<rust_spec::Zero>>,
-                Niche = WithNiche<Stable>,
-            >,
+            Size = rust_spec::size::Sized<rust_spec::Gt<rust_spec::Zero>>,
+            Niche = WithNiche<Stable>,
+        >,
         Self: ReprC<CType = <E as ReprC>::CType>,
     {
         #[inline(always)]

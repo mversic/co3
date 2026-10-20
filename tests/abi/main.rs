@@ -5,6 +5,8 @@ mod clippy;
 mod cstr;
 mod ctype_mapping;
 mod custom_repr;
+mod data_enum_explicit;
+mod exhaustive_enum;
 mod handles;
 mod identity_primitives;
 mod niche_value;

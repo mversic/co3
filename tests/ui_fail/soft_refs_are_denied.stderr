@@ -1,99 +1,11 @@
-error[E0277]: the trait bound `RefSizedDecodeStore<(u8,), ((),)>: co3::stored::EmptyStore` is not satisfied
-  --> tests/ui_fail/soft_refs_are_denied.rs:11:5
+error: `#[soft]` cannot be combined with `move`
+  --> tests/ui_fail/soft_refs_are_denied.rs:15:57
    |
-11 | /     ffi! {
-12 | |         #![unsafe(export("C"))]
-13 | |
-14 | |         fn by_ref_is_allowed(#[soft] arg1: &(u8,), #[soft] arg2: Vec<(u8,)>) -> u8;
-15 | |         fn by_val_is_denied(arg1: &(u8,), #[soft] arg2: move Vec<(u8,)>) -> u8;
-16 | |     }
-   | |_____^ the trait `co3::stored::EmptyStore` is not implemented for `RefSizedDecodeStore<(u8,), ((),)>`
-   |
-   = help: the following other types implement trait `co3::stored::EmptyStore`:
-             ()
-             (A,)
-             (A, B)
-             (A, B, C)
-             (A, B, C, D)
-             (A, B, C, D, E)
-             (A, B, C, D, E, F)
-             (A, B, C, D, E, F, G)
-           and $N others
-note: required by a bound in `decode`
-  --> src/lib.rs
-   |
-   | pub unsafe fn decode<'d, T: Decode<'d, Store: EmptyStore> + 'd>(source: T::CType) -> Option<T> {
-   |                                               ^^^^^^^^^^ required by this bound in `decode`
-   = note: this error originates in the macro `ffi` (in Nightly builds, run with -Z macro-backtrace for more info)
+15 |         fn by_val_is_denied(arg1: &(u8,), #[soft] arg2: move Vec<(u8,)>) -> u8;
+   |                                                         ^^^^
 
-error[E0271]: type mismatch resolving `<[(u8,)] as RustSpec>::Layout == Stable`
-  --> tests/ui_fail/soft_refs_are_denied.rs:11:5
+error: `#[soft]` cannot be combined with `move`
+  --> tests/ui_fail/soft_refs_are_denied.rs:28:68
    |
-11 | /     ffi! {
-12 | |         #![unsafe(export("C"))]
-13 | |
-14 | |         fn by_ref_is_allowed(#[soft] arg1: &(u8,), #[soft] arg2: Vec<(u8,)>) -> u8;
-15 | |         fn by_val_is_denied(arg1: &(u8,), #[soft] arg2: move Vec<(u8,)>) -> u8;
-16 | |     }
-   | |_____^ expected `Stable`, found `Unstable`
-   |
-   = note: required for `Box<[(u8,)]>` to implement `co3::_::Decode0<'_, Unstable>`
-   = note: required for `Box<[(u8,)]>` to implement `Decode<'_>`
-   = note: 1 redundant requirement hidden
-   = note: required for `Vec<(u8,)>` to implement `Decode<'_>`
-note: required by a bound in `co3::soft_decode`
-  --> src/lib.rs
-   |
-   | pub unsafe fn soft_decode<'d, T: Decode<'d>>(
-   |                                  ^^^^^^^^^^ required by this bound in `soft_decode`
-   = note: this error originates in the macro `ffi` (in Nightly builds, run with -Z macro-backtrace for more info)
-
-error[E0277]: the trait bound `RefSizedEncodeStore<(u8,), ((),)>: co3::stored::EmptyStore` is not satisfied
-  --> tests/ui_fail/soft_refs_are_denied.rs:28:40
-   |
-24 | / ffi! {
-25 | |     #![unsafe(extern("C"))]
-26 | |
-27 | |     pub extern "C" fn by_ref_is_allowed(#[soft] arg1: &(u8,), #[soft] arg2: Vec<(u8,)>) -> u8;
-28 | |     pub extern "C" fn by_val_is_denied(arg1: &(u8,), #[soft] arg2: move Vec<(u8,)>) -> u8;
-   | |                                        ^^^^ the trait `co3::stored::EmptyStore` is not implemented for `RefSizedEncodeStore<(u8,), ((),)>`
-29 | | }
-   | |_- required by a bound introduced by this call
-   |
-   = help: the following other types implement trait `co3::stored::EmptyStore`:
-             ()
-             (A,)
-             (A, B)
-             (A, B, C)
-             (A, B, C, D)
-             (A, B, C, D, E)
-             (A, B, C, D, E, F)
-             (A, B, C, D, E, F, G)
-           and $N others
-note: required by a bound in `encode`
-  --> src/lib.rs
-   |
-   | pub fn encode<T: Encode<Store: EmptyStore>>(item: T) -> T::CType {
-   |                                ^^^^^^^^^^ required by this bound in `encode`
-
-error[E0271]: type mismatch resolving `<[(u8,)] as RustSpec>::Layout == Stable`
-  --> tests/ui_fail/soft_refs_are_denied.rs:28:62
-   |
-24 | / ffi! {
-25 | |     #![unsafe(extern("C"))]
-26 | |
-27 | |     pub extern "C" fn by_ref_is_allowed(#[soft] arg1: &(u8,), #[soft] arg2: Vec<(u8,)>) -> u8;
-28 | |     pub extern "C" fn by_val_is_denied(arg1: &(u8,), #[soft] arg2: move Vec<(u8,)>) -> u8;
-   | |                                                              ^^^^ expected `Stable`, found `Unstable`
-29 | | }
-   | |_- required by a bound introduced by this call
-   |
-   = note: required for `Box<[(u8,)]>` to implement `co3::_::Encode0<Unstable>`
-   = note: required for `Box<[(u8,)]>` to implement `Encode`
-   = note: 1 redundant requirement hidden
-   = note: required for `Vec<(u8,)>` to implement `Encode`
-note: required by a bound in `co3::soft_encode`
-  --> src/lib.rs
-   |
-   | pub fn soft_encode<T: Encode>(item: T, store: &mut T::Store) -> T::CType {
-   |                       ^^^^^^ required by this bound in `soft_encode`
+28 |     pub extern "C" fn by_val_is_denied(arg1: &(u8,), #[soft] arg2: move Vec<(u8,)>) -> u8;
+   |                                                                    ^^^^

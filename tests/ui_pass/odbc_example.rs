@@ -194,6 +194,7 @@ pub enum CpMatch {
 #[derive(Clone, RustSpec, ReprC)]
 #[repr(u32)]
 enum ConnectionPooling {
+    #[repr_c(allow_zero_tag)]
     A,
     B,
 }

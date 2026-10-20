@@ -1,4 +1,4 @@
-use proc_macro2::{Literal, TokenStream};
+use proc_macro2::TokenStream;
 use quote::{format_ident, quote};
 
 use crate::{
@@ -9,7 +9,8 @@ use crate::{
             SyntacticSizedness, gen_copy_extern_c_bounds_for_ctype, gen_ctype_name,
             syntactic_sizedness,
         },
-        enum_tag_type, generic_param_idents, is_exhaustive_enum, is_transparent_enum_repr,
+        enum_tag_type, enum_variant_tag_exprs, generic_param_idents, is_exhaustive_enum,
+        is_transparent_enum_repr,
     },
     utils::{build_extern_c_type_tuple, speculative_marker},
 };
@@ -126,8 +127,13 @@ pub fn gen_enum_niche_ir(
     enum_name: &syn::Ident,
     generics: &syn::Generics,
     variants: &syn::punctuated::Punctuated<syn::Variant, syn::Token![,]>,
+    transparent: bool,
 ) -> TokenStream {
     let (impl_generics, ty_generics, where_clause) = generics.split_for_impl();
+
+    if variants.len() == 1 && matches!(variants[0].fields, syn::Fields::Unit) {
+        return quote! {};
+    }
 
     if is_transparent_enum_repr(repr, variants) {
         let Some(variant) = variants.first() else {
@@ -158,29 +164,59 @@ pub fn gen_enum_niche_ir(
         .collect::<Vec<_>>();
     let extern_c_bounds = gen_copy_extern_c_bounds_for_ctype(generics, &variant_field_types);
 
-    let niche_discriminant = Literal::usize_unsuffixed(variants.len());
-    let niche_tag_value = quote! { #niche_discriminant as #tag_ty };
+    // Implicit tags occupy 0..variants.len(), leaving the wrapping predecessor
+    // of zero available as a niche.
+    let niche_tag_value = if variants.is_empty() {
+        quote! { 0 as #tag_ty }
+    } else {
+        quote! { (0 as #tag_ty).wrapping_sub(1) }
+    };
 
     let has_explicit_discriminant = variants
         .iter()
         .any(|variant| variant.discriminant.is_some());
-    let niche_value = if is_fieldless && has_explicit_discriminant {
+    let tag_values = enum_variant_tag_exprs(variants, &tag_ty);
+    let niche_value = if has_explicit_discriminant {
         let ctype_name = gen_ctype_name(enum_name);
-        let variant_tags = variants.iter().map(|variant| {
-            let tag_name = format_ident!("__CO3_TAG_{}", variant.ident);
-            quote! { __co3_niche_tag != Self::#tag_name }
+        let variant_tags = variants.iter().zip(&tag_values).map(|(variant, value)| {
+            if is_fieldless {
+                let tag = format_ident!("__CO3_TAG_{}", variant.ident);
+                quote! { __co3_niche_tag != Self::#tag }
+            } else {
+                quote! { __co3_niche_tag != #value }
+            }
         });
-        quote! {
-            #ctype_name({
-                let mut __co3_niche_tag: #tag_ty = 0;
-                loop {
-                    if true #(&& #variant_tags)* {
-                        break __co3_niche_tag;
-                    }
-                    __co3_niche_tag = __co3_niche_tag.wrapping_add(1);
+        let niche_tag = quote! {{
+            let mut __co3_niche_tag: #tag_ty = 0;
+            loop {
+                if true #(&& #variant_tags)* {
+                    break __co3_niche_tag;
                 }
-            })
+                __co3_niche_tag = __co3_niche_tag.wrapping_sub(1);
+            }
+        }};
+        if is_fieldless && transparent {
+            niche_tag
+        } else if is_fieldless {
+            quote! { #ctype_name(#niche_tag) }
+        } else {
+            match repr {
+                Some(ReprKind::C(Some(_))) => quote! {
+                    Self::CType {
+                        tag: #niche_tag,
+                        payload: unsafe { core::mem::zeroed() },
+                    }
+                },
+                None | Some(ReprKind::Primitive(_)) => quote! {{
+                    let mut value: Self::CType = unsafe { core::mem::zeroed() };
+                    unsafe { *<*mut Self::CType>::cast::<#tag_ty>(core::ptr::from_mut(&mut value)) = #niche_tag };
+                    value
+                }},
+                Some(ReprKind::Transparent | ReprKind::C(None)) => unreachable!(),
+            }
         }
+    } else if is_fieldless && transparent {
+        niche_tag_value
     } else if is_fieldless {
         let ctype_name = gen_ctype_name(enum_name);
         quote! { #ctype_name(#niche_tag_value) }

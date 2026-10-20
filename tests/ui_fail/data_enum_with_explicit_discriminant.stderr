@@ -1,5 +1,21 @@
-error: Explicit discriminants are not supported in data-carrying enums
- --> tests/ui_fail/data_enum_with_explicit_discriminant.rs:6:5
+error[E0732]: `#[repr(inttype)]` must be specified for enums with explicit discriminants and non-unit variants
+ --> tests/ui_fail/data_enum_with_explicit_discriminant.rs:4:1
   |
-6 |     A = 1,
-  |     ^
+4 | pub enum EnumWithExplicitDiscriminant {
+  | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+5 |     A = 1,
+  |         - explicit discriminant specified here
+6 |     B(String),
+  |     - non-unit discriminant declared here
+
+error[E0732]: `#[repr(inttype)]` must be specified for enums with explicit discriminants and non-unit variants
+ --> tests/ui_fail/data_enum_with_explicit_discriminant.rs:4:1
+  |
+4 | / pub enum EnumWithExplicitDiscriminant {
+5 | |     A = 1,
+  | |         - explicit discriminant specified here
+6 | |     B(String),
+  | |     - non-unit discriminant declared here
+7 | |     C,
+8 | | }
+  | |_^

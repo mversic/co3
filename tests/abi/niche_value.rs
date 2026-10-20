@@ -68,6 +68,7 @@ fn thin_extern_reference_niche() {
 #[derive(Clone, Copy, RustSpec, ReprC)]
 #[repr(u8)]
 pub enum FieldlessUEnum {
+    #[repr_c(allow_zero_tag)]
     Var1,
     Var2,
     Var3,
@@ -77,6 +78,7 @@ pub enum FieldlessUEnum {
 #[derive(Clone, Copy, RustSpec, ReprC)]
 #[repr(i8)]
 pub enum FieldlessIEnum {
+    #[repr_c(allow_zero_tag)]
     Var1,
     Var2,
     Var3,
@@ -87,6 +89,7 @@ pub enum FieldlessIEnum {
 #[repr(i8)]
 pub enum FieldlessExplicitEnum {
     Negative = -2,
+    #[repr_c(allow_zero_tag)]
     Zero = 0,
     Five = 5,
     Six,
@@ -95,12 +98,22 @@ pub enum FieldlessExplicitEnum {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, RustSpec, ReprC)]
 #[repr(usize)]
 pub enum FieldlessUsizeEnum {
+    #[repr_c(allow_zero_tag)]
     Zero = 0,
     Five = 5,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, RustSpec, ReprC)]
+pub enum FieldlessThreeEnum {
+    #[repr_c(allow_zero_tag)]
+    A,
+    B,
+    C,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, RustSpec, ReprC)]
 pub enum FieldlessNoReprEnum {
+    #[repr_c(allow_zero_tag)]
     A,
     B,
     C,
@@ -110,6 +123,7 @@ pub enum FieldlessNoReprEnum {
 #[derive(Debug, Clone, PartialEq, Eq, RustSpec, ReprC)]
 #[repr(C, i8)]
 pub enum ReprCDataEnum<'a, T> {
+    #[repr_c(allow_zero_tag)]
     A(&'a [u32; 2]),
     B(u32),
     C(T),
@@ -119,6 +133,7 @@ pub enum ReprCDataEnum<'a, T> {
 #[derive(Debug, Clone, PartialEq, Eq, RustSpec, ReprC)]
 #[repr(i8)]
 pub enum DataEnum<'a, T> {
+    #[repr_c(allow_zero_tag)]
     A(&'a [u32; 2]),
     B(u32),
     C(T),
@@ -128,6 +143,7 @@ pub enum DataEnum<'a, T> {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, RustSpec, ReprC)]
 #[repr(usize)]
 pub enum DataUsizeEnum {
+    #[repr_c(allow_zero_tag)]
     A(u8),
     B,
 }
@@ -135,6 +151,7 @@ pub enum DataUsizeEnum {
 #[derive(Clone, Copy, RustSpec, ReprC)]
 #[repr(u16)]
 pub enum FieldlessLargeEnum {
+    #[repr_c(allow_zero_tag)]
     Var1,
     Var2,
     Var3,
@@ -401,8 +418,11 @@ fn verify_enum_niche_value() {
     assert_eq!(encode(None::<Opaque>), ReprCOption::None());
     assert!(encode(None::<OwnedExtern>).0.is_null());
 
-    let expected_niche_enum_discriminant_u = 4_u8;
-    let expected_niche_enum_discriminant_i = 4_i8;
+    let expected_niche_enum_discriminant_u = u8::MAX;
+    let expected_niche_enum_discriminant_i = -1_i8;
+
+    assert_eq!(encode(Ok::<(), FieldlessThreeEnum>(())).0, u8::MAX);
+    assert_eq!(encode(Ok::<(), FieldlessNoReprEnum>(())).0, u8::MAX);
 
     assert_eq!(
         expected_niche_enum_discriminant_u,
@@ -430,7 +450,7 @@ fn verify_enum_niche_value() {
     let encoded = soft_encode(None::<DataEnum<&u8>>, &mut Default::default());
     assert_eq!(expected_niche_enum_discriminant_i, unsafe { encoded.D.tag });
 
-    let expected_fieldless_large_enum = 256u16;
+    let expected_fieldless_large_enum = u16::MAX;
 
     assert_eq!(
         expected_fieldless_large_enum,
@@ -453,8 +473,8 @@ fn fieldless_enum_explicit_discriminants_round_trip() {
         unsafe { co3::decode::<FieldlessExplicitEnum>(CFieldlessExplicitEnum::from_i8(1)) },
         None
     );
-    // Zero is occupied, so the generated niche selects the next invalid tag.
-    assert_eq!(encode(None::<FieldlessExplicitEnum>).0, 1);
+    // Zero is occupied, so the generated niche searches backward for an invalid tag.
+    assert_eq!(encode(None::<FieldlessExplicitEnum>).0, -1);
 }
 
 #[test]

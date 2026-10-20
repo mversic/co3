@@ -167,7 +167,8 @@ impl Parse for RawFnTypeArg {
         let attrs = input.call(Attribute::parse_outer)?;
         let by_val = input.peek(syn::Token![move]);
         if by_val {
-            input.parse::<syn::Token![move]>()?;
+            let move_token = input.parse::<syn::Token![move]>()?;
+            reject_soft_move(&attrs, move_token.span)?;
         }
         let ty = input.parse::<Type>()?;
         Ok(Self { attrs, by_val, ty })
@@ -1518,12 +1519,23 @@ fn push_by_val(attrs: &mut Vec<Attribute>, span: proc_macro2::Span) {
     }
 }
 
+fn reject_soft_move(attrs: &[Attribute], span: proc_macro2::Span) -> syn::Result<()> {
+    if attrs.iter().any(|attr| attr.path().is_ident("soft")) {
+        return Err(syn::Error::new(
+            span,
+            "`#[soft]` cannot be combined with `move`",
+        ));
+    }
+    Ok(())
+}
+
 fn parse_move_by_val(
     input: syn::parse::ParseStream,
     attrs: &mut Vec<Attribute>,
 ) -> syn::Result<bool> {
     if input.peek(syn::Token![move]) {
         let move_token = input.parse::<syn::Token![move]>()?;
+        reject_soft_move(attrs, move_token.span)?;
         push_by_val(attrs, move_token.span);
         return Ok(true);
     }
@@ -1979,6 +1991,30 @@ mod tests {
                 .attrs
                 .iter()
                 .any(|attr| attr.path().is_ident("by_val"))
+        );
+    }
+
+    #[test]
+    fn rejects_soft_move_during_parsing() {
+        let cases = [
+            "fn name(#[soft] value: move u8);",
+            "impl Value { fn name(#[soft] self: move Self); }",
+        ];
+        let error = Parser::parse_str(parse_fn_item, cases[0]).unwrap_err();
+        assert_eq!(
+            error.to_string(),
+            "`#[soft]` cannot be combined with `move`"
+        );
+        let error = Parser::parse_str(parse_impl_item, cases[1]).unwrap_err();
+        assert_eq!(
+            error.to_string(),
+            "`#[soft]` cannot be combined with `move`"
+        );
+        let error =
+            parse_raw_function_type(quote!(raw extern "C" fn(#[soft] move u8))).unwrap_err();
+        assert_eq!(
+            error.to_string(),
+            "`#[soft]` cannot be combined with `move`"
         );
     }
 

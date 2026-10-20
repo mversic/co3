@@ -34,6 +34,120 @@ impl From<u32> for TransparentFieldHandle {
 #[repr_c(is_valid = |value| *value > 10)]
 struct ValidatedByte(u8);
 
+#[repr(transparent)]
+#[derive(Clone, RustSpec, ReprC)]
+#[repr_c(is_valid = |value| *value)]
+struct ValidatedBool(bool);
+
+#[derive(RustSpec, ReprC)]
+#[repr_c(is_valid = |value| *value > 10)]
+struct ValidatedOwned(u8);
+
+#[derive(RustSpec, ReprC)]
+enum ValidatedVariant {
+    #[repr_c(is_valid = |value| *value > 10)]
+    Value(u8),
+    Empty,
+}
+
+#[test]
+#[cfg(debug_assertions)]
+#[should_panic(expected = "encoding failed custom is_valid")]
+fn checked_owned_encoding_asserts_custom_validity() {
+    let _ = co3::encode(ValidatedOwned(10));
+}
+
+#[test]
+#[cfg(debug_assertions)]
+#[should_panic(expected = "encoding failed custom is_valid")]
+fn checked_variant_encoding_asserts_custom_validity() {
+    let _ = co3::encode(ValidatedVariant::Value(10));
+}
+
+#[test]
+#[cfg(debug_assertions)]
+#[should_panic(expected = "encoding failed custom is_valid")]
+fn checked_field_encoding_asserts_custom_validity() {
+    let _ = co3::encode(ValidatedByte(10));
+}
+
+#[test]
+#[cfg(debug_assertions)]
+#[should_panic(expected = "encoding failed CheckedTransmute::is_valid")]
+fn checked_reference_encoding_asserts_pointee_validity() {
+    let _ = co3::encode(&ValidatedByte(10));
+}
+
+#[test]
+#[cfg(debug_assertions)]
+#[should_panic(expected = "encoding failed CheckedTransmute::is_valid")]
+fn checked_mut_reference_encoding_asserts_pointee_validity() {
+    let mut value = ValidatedByte(10);
+    let _ = co3::encode(&mut value);
+}
+
+#[test]
+#[cfg(debug_assertions)]
+#[should_panic(expected = "encoding failed CheckedTransmute::is_valid")]
+fn checked_wide_reference_encoding_asserts_each_pointee() {
+    let values = [ValidatedByte(11), ValidatedByte(10)];
+    let _ = co3::encode(&values[..]);
+}
+
+#[test]
+#[cfg(debug_assertions)]
+#[should_panic(expected = "encoding failed CheckedTransmute::is_valid")]
+fn checked_mut_wide_reference_encoding_asserts_each_pointee() {
+    let mut values = [ValidatedByte(11), ValidatedByte(10)];
+    let _ = co3::encode(&mut values[..]);
+}
+
+#[test]
+#[cfg(debug_assertions)]
+#[should_panic(expected = "encoding failed CheckedTransmute::is_valid")]
+fn checked_interior_wide_reference_encoding_asserts_each_pointee() {
+    let values = [
+        UnsafeCell::new(ValidatedByte(11)),
+        UnsafeCell::new(ValidatedByte(10)),
+    ];
+    let _ = co3::encode(&values[..]);
+}
+
+#[test]
+#[cfg(debug_assertions)]
+#[should_panic(expected = "encoding failed CheckedTransmute::is_valid")]
+fn checked_mut_interior_wide_reference_encoding_asserts_each_pointee() {
+    let mut values = [
+        UnsafeCell::new(ValidatedByte(11)),
+        UnsafeCell::new(ValidatedByte(10)),
+    ];
+    let _ = co3::encode(&mut values[..]);
+}
+
+#[test]
+#[cfg(debug_assertions)]
+#[should_panic(expected = "encoding failed custom is_valid")]
+fn checked_mut_nonrobust_wide_reference_asserts_original_pointee_validity() {
+    let mut values = [ValidatedBool(true), ValidatedBool(false)];
+    let mut store = Default::default();
+    let _ = co3::stored::EncodeOwned::soft_encode(&mut values[..], &mut store);
+}
+
+#[test]
+#[cfg(debug_assertions)]
+#[should_panic(expected = "encoding failed custom is_valid")]
+fn checked_wide_box_encoding_asserts_each_pointee() {
+    let values = [ValidatedByte(11), ValidatedByte(10)];
+    let _ = co3::stored::encode_owned(Vec::from(values).into_boxed_slice());
+}
+
+#[test]
+#[cfg(debug_assertions)]
+#[should_panic(expected = "encoding failed custom is_valid")]
+fn checked_box_encoding_asserts_pointee_validity() {
+    let _ = co3::encode(Box::new(ValidatedByte(10)));
+}
+
 impl From<u8> for ValidatedByte {
     fn from(value: u8) -> Self {
         Self(value)

@@ -1,0 +1,71 @@
+error: `allow_zero_tag` belongs on the zero-tag variant
+  --> tests/ui_fail/enum_zero_tag.rs:61:6
+   |
+61 | enum MarkerOnEnum {
+   |      ^^^^^^^^^^^^
+
+error: `allow_zero_tag` cannot be combined with `#[repr(transparent)]`
+  --> tests/ui_fail/enum_zero_tag.rs:70:5
+   |
+70 |     Only(u8),
+   |     ^^^^
+
+error: `allow_zero_tag` requires more than one fieldless variant
+  --> tests/ui_fail/enum_zero_tag.rs:76:5
+   |
+76 |     Only,
+   |     ^^^^
+
+error: `allow_zero_tag` requires more than one fieldless variant
+  --> tests/ui_fail/enum_zero_tag.rs:83:5
+   |
+83 |     Only,
+   |     ^^^^
+
+error[E0080]: evaluation panicked: variant First has tag zero; zero can serve as a niche to optimize some representations; add #[repr_c(allow_zero_tag)] to use zero here and select another niche
+ --> tests/ui_fail/enum_zero_tag.rs:7:5
+  |
+7 |     First,
+  |     ^^^^^ evaluation of `_` failed here
+
+error[E0080]: evaluation panicked: variant First has tag zero; zero can serve as a niche to optimize some representations; add #[repr_c(allow_zero_tag)] to use zero here and select another niche
+  --> tests/ui_fail/enum_zero_tag.rs:14:5
+   |
+14 |     First = 0,
+   |     ^^^^^ evaluation of `_` failed here
+
+error[E0080]: evaluation panicked: variant Second has tag zero; zero can serve as a niche to optimize some representations; add #[repr_c(allow_zero_tag)] to use zero here and select another niche
+  --> tests/ui_fail/enum_zero_tag.rs:22:5
+   |
+22 |     Second = 0,
+   |     ^^^^^^ evaluation of `_` failed here
+
+error[E0080]: evaluation panicked: variant A has tag zero; zero can serve as a niche to optimize some representations; add #[repr_c(allow_zero_tag)] to use zero here and select another niche
+  --> tests/ui_fail/enum_zero_tag.rs:29:5
+   |
+29 |     A(u32),
+   |     ^ evaluation of `_` failed here
+
+error[E0080]: evaluation panicked: variant B has tag zero; zero can serve as a niche to optimize some representations; add #[repr_c(allow_zero_tag)] to use zero here and select another niche
+  --> tests/ui_fail/enum_zero_tag.rs:37:5
+   |
+37 |     B = 0,
+   |     ^ evaluation of `_` failed here
+
+error[E0080]: evaluation panicked: `allow_zero_tag` on First requires tag zero
+  --> tests/ui_fail/enum_zero_tag.rs:46:5
+   |
+46 |     First = 1,
+   |     ^^^^^ evaluation of `_` failed here
+
+error[E0080]: evaluation panicked: variant Second has tag zero; zero can serve as a niche to optimize some representations; add #[repr_c(allow_zero_tag)] to use zero here and select another niche
+  --> tests/ui_fail/enum_zero_tag.rs:47:5
+   |
+47 |     Second = 0,
+   |     ^^^^^^ evaluation of `_` failed here
+
+error[E0080]: evaluation panicked: `allow_zero_tag` on First requires tag zero
+  --> tests/ui_fail/enum_zero_tag.rs:54:5
+   |
+54 |     First = 1,
+   |     ^^^^^ evaluation of `_` failed here

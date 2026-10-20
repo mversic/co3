@@ -369,7 +369,12 @@
 //!
 //! #[derive(RustSpec, ReprC)]
 //! #[repr(u8)]
-//! enum ApiError { InvalidRepresentation, UnknownHandle, SoftSync }
+//! enum ApiError {
+//!    #[repr_c(allow_zero_tag)]
+//!    InvalidRepresentation,
+//!    UnknownHandle,
+//!    SoftSync,
+//! }
 //!
 //! impl Error for ApiError {
 //!    fn trap_value() -> Self { Self::InvalidRepresentation }

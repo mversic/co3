@@ -26,6 +26,7 @@ mod validation {
     #[derive(RustSpec, ReprC)]
     #[repr(u8)]
     enum Number {
+        #[repr_c(allow_zero_tag)]
         #[repr_c(is_valid = |value| value.is_power_of_two())]
         PowerOfTwo(u32),
         Other,

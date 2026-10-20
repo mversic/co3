@@ -137,6 +137,7 @@ fn custom_drop_companion_has_no_borrow_casts() {
 #[derive(RustSpec, ReprC)]
 #[repr(C, u8)]
 enum InheritedDropEnum {
+    #[repr_c(allow_zero_tag)]
     Value(Box<u32>),
     Empty,
 }

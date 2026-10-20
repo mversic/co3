@@ -446,7 +446,7 @@ pub unsafe trait NulTerminatedBuf {
     type Data;
 
     /// Returns a raw pointer to the underlying data.
-    fn as_ptr(ptr: *const Self) -> *const Self::Data;
+    fn as_ptr(value: &Self) -> *const Self::Data;
 
     /// Forms a nul-terminated reference from a data pointer.
     ///
@@ -474,8 +474,8 @@ pub unsafe trait NulTerminatedBuf {
 unsafe impl<R: NulTerminatedBuf + ?Sized> NulTerminatedBuf for ManuallyDrop<R> {
     type Data = R::Data;
 
-    fn as_ptr(ptr: *const Self) -> *const Self::Data {
-        R::as_ptr(ptr as *const R)
+    fn as_ptr(value: &Self) -> *const Self::Data {
+        R::as_ptr(value)
     }
 
     unsafe fn from_raw<'a>(ptr: *const Self::Data) -> &'a Self {
@@ -503,8 +503,8 @@ impl ReprC for CStr {
 unsafe impl NulTerminatedBuf for CStr {
     type Data = c_char;
 
-    fn as_ptr(ptr: *const Self) -> *const Self::Data {
-        ptr.cast()
+    fn as_ptr(value: &Self) -> *const Self::Data {
+        value.as_ptr().cast()
     }
 
     unsafe fn from_raw<'a>(ptr: *const Self::Data) -> &'a Self {

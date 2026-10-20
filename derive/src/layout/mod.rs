@@ -1,5 +1,5 @@
 use proc_macro2::TokenStream;
-use quote::quote;
+use quote::{format_ident, quote, quote_spanned};
 use syn::{Attribute, spanned::Spanned as _, visit::Visit};
 
 use crate::{
@@ -27,11 +27,13 @@ pub(super) struct ReprCAttrs {
     pub(super) is_transparent: bool,
     pub(super) is_view: bool,
     pub(super) is_wide_data: bool,
+    pub(super) allow_zero_tag: bool,
 }
 
 #[derive(Default)]
 pub(super) struct VariantReprCAttrs {
     pub(super) is_valid: Option<syn::ExprClosure>,
+    pub(super) allow_zero_tag: bool,
 }
 
 fn parse_repr_c_attrs(attrs: &[Attribute]) -> syn::Result<ReprCAttrs> {
@@ -85,6 +87,14 @@ fn parse_repr_c_attrs(attrs: &[Attribute]) -> syn::Result<ReprCAttrs> {
                 return Ok(());
             }
 
+            if meta.path.is_ident("allow_zero_tag") {
+                if repr_c.allow_zero_tag {
+                    return Err(meta.error("Duplicate `allow_zero_tag` within attribute"));
+                }
+                repr_c.allow_zero_tag = true;
+                return Ok(());
+            }
+
             if meta.path.is_ident("NICHE") {
                 let value: syn::Expr = meta.value()?.parse()?;
                 if repr_c.niche_value.replace(value).is_some() {
@@ -107,6 +117,7 @@ fn parse_repr_c_attrs(attrs: &[Attribute]) -> syn::Result<ReprCAttrs> {
         && !repr_c.is_transparent
         && !repr_c.is_view
         && !repr_c.is_wide_data
+        && !repr_c.allow_zero_tag
     {
         return Err(syn::Error::new_spanned(
             attrs
@@ -157,6 +168,7 @@ pub(crate) fn derive_repr_c(input: &syn::DeriveInput) -> syn::Result<TokenStream
     let repr_alignment = repr.alignment.as_ref();
     let repr_c_attrs = parse_repr_c_attrs(&input.attrs)?;
     let mut variant_attrs = Vec::new();
+    let mut zero_discriminant_check = TokenStream::new();
 
     if repr_c_attrs.is_transparent {
         if repr_c_attrs.niche_value.is_some() {
@@ -183,16 +195,26 @@ pub(crate) fn derive_repr_c(input: &syn::DeriveInput) -> syn::Result<TokenStream
                 "`repr_c(transparent)` cannot be combined with other representation options",
             ));
         }
-        let syn::Data::Struct(data) = &input.data else {
+        let fieldless_enum = matches!(&input.data, syn::Data::Enum(data)
+            if !data.variants.is_empty()
+                && data.variants.iter().all(|variant| matches!(variant.fields, syn::Fields::Unit)));
+        let fields = match &input.data {
+            syn::Data::Struct(data) => Some(&data.fields),
+            syn::Data::Enum(data) if data.variants.len() == 1 || fieldless_enum => {
+                Some(&data.variants[0].fields)
+            }
+            _ => None,
+        };
+        let Some(fields) = fields else {
             return Err(syn::Error::new_spanned(
                 &input.ident,
-                "`repr_c(transparent)` requires a struct",
+                "`repr_c(transparent)` requires a struct, a fieldless enum, or a single-variant enum",
             ));
         };
-        if data.fields.len() != 1 {
+        if fields.len() != 1 && !(matches!(input.data, syn::Data::Enum(_)) && fields.is_empty()) {
             return Err(syn::Error::new_spanned(
                 &input.ident,
-                "`repr_c(transparent)` requires exactly one field",
+                "`repr_c(transparent)` requires exactly one field (or a fieldless enum variant)",
             ));
         }
     }
@@ -210,11 +232,19 @@ pub(crate) fn derive_repr_c(input: &syn::DeriveInput) -> syn::Result<TokenStream
                 );
             }
             syn::Data::Struct(_) => {}
+            syn::Data::Enum(data)
+                if matches!(
+                    repr_attr,
+                    Some(ReprKind::Primitive(_) | ReprKind::C(Some(_)))
+                ) && is_exhaustive_enum(
+                    data.variants.len(),
+                    &enum_tag_type(repr_attr, data.variants.len()),
+                ) => {}
             _ => push_error(
                 &mut errors,
                 syn::Error::new_spanned(
                     &input.ident,
-                    "`repr_c(identity)` is only supported on structs",
+                    "`repr_c(identity)` requires a struct or an exhaustive enum",
                 ),
             ),
         }
@@ -258,12 +288,30 @@ pub(crate) fn derive_repr_c(input: &syn::DeriveInput) -> syn::Result<TokenStream
 
     match &input.data {
         syn::Data::Struct(data) => {
+            if repr_c_attrs.allow_zero_tag {
+                push_error(
+                    &mut errors,
+                    syn::Error::new_spanned(
+                        &input.ident,
+                        "`allow_zero_tag` is only supported on enum variants",
+                    ),
+                );
+            }
             validate_fields_no_ffi_type_attr(&data.fields, &mut errors);
             if let Err(err) = type_is_valid_closure(&data.fields, &repr_c_attrs.is_valid) {
                 push_error(&mut errors, err);
             }
         }
         syn::Data::Enum(data) => {
+            if repr_c_attrs.allow_zero_tag {
+                push_error(
+                    &mut errors,
+                    syn::Error::new_spanned(
+                        &input.ident,
+                        "`allow_zero_tag` belongs on the zero-tag variant",
+                    ),
+                );
+            }
             if repr_c_attrs.is_valid.is_some() {
                 let err_msg = "`is_valid` is only supported on structs or enum variants";
                 push_error(&mut errors, syn::Error::new_spanned(&input.ident, err_msg));
@@ -279,20 +327,28 @@ pub(crate) fn derive_repr_c(input: &syn::DeriveInput) -> syn::Result<TokenStream
                 push_error(&mut errors, syn::Error::new_spanned(&input.ident, err_msg));
             }
 
-            let has_data_variant = data
+            let is_fieldless = data
                 .variants
                 .iter()
-                .any(|variant| !matches!(variant.fields, syn::Fields::Unit));
+                .all(|variant| matches!(variant.fields, syn::Fields::Unit));
+            let has_integer_repr = matches!(
+                repr_attr,
+                Some(ReprKind::Primitive(_) | ReprKind::C(Some(_)))
+            );
 
             for variant in &data.variants {
                 validate_fields_no_ffi_type_attr(&variant.fields, &mut errors);
 
-                if has_data_variant && variant.discriminant.is_some() {
-                    let err_msg = "Explicit discriminants are not supported in data-carrying enums";
-                    push_error(&mut errors, syn::Error::new(variant.span(), err_msg));
-                }
-
                 let variant_repr_c_attrs = parse_repr_c_attrs(&variant.attrs)?;
+                if repr_c_attrs.is_identity && variant_repr_c_attrs.is_valid.is_some() {
+                    push_error(
+                        &mut errors,
+                        syn::Error::new_spanned(
+                            &variant.ident,
+                            "`repr_c(identity)` cannot be combined with variant `is_valid`",
+                        ),
+                    );
+                }
                 if let Err(err) =
                     type_is_valid_closure(&variant.fields, &variant_repr_c_attrs.is_valid)
                 {
@@ -312,7 +368,84 @@ pub(crate) fn derive_repr_c(input: &syn::DeriveInput) -> syn::Result<TokenStream
                 }
                 variant_attrs.push(VariantReprCAttrs {
                     is_valid: variant_repr_c_attrs.is_valid,
+                    allow_zero_tag: variant_repr_c_attrs.allow_zero_tag,
                 });
+            }
+
+            if (is_fieldless || has_integer_repr)
+                && !data.variants.is_empty()
+                && !(is_fieldless && data.variants.len() == 1)
+                && !matches!(repr_attr, Some(ReprKind::C(None)))
+                && !is_transparent_enum_repr(repr_attr, &data.variants)
+                && !is_exhaustive_enum(
+                    data.variants.len(),
+                    &enum_tag_type(repr_attr, data.variants.len()),
+                )
+            {
+                let name = &input.ident;
+                let tag_ty = enum_tag_type(repr_attr, data.variants.len());
+                let tag_values = enum_variant_tag_exprs(&data.variants, &tag_ty);
+                let variant_checks = data
+                    .variants
+                    .iter()
+                    .zip(&variant_attrs)
+                    .zip(tag_values)
+                    .map(|((variant, attrs), value)| {
+                        let variant_name = &variant.ident;
+                        let value = if is_fieldless {
+                            let tag = format_ident!("__CO3_TAG_{}", variant_name);
+                            quote! { #name::#tag }
+                        } else {
+                            value
+                        };
+                        if attrs.allow_zero_tag {
+                            quote_spanned! {variant_name.span()=>
+                                const _: () = assert!(
+                                    #value == 0,
+                                    concat!("`allow_zero_tag` on ", stringify!(#variant_name), " requires tag zero")
+                                );
+                            }
+                        } else {
+                            quote_spanned! {variant_name.span()=>
+                                const _: () = assert!(
+                                    #value != 0,
+                                    concat!(
+                                        "variant ", stringify!(#variant_name),
+                                        " has tag zero; zero can serve as a niche to optimize some representations; add #[repr_c(allow_zero_tag)] to use zero here and select another niche"
+                                    )
+                                );
+                            }
+                        }
+                    });
+                zero_discriminant_check = quote! { #(#variant_checks)* };
+            }
+
+            for (variant, attrs) in data.variants.iter().zip(&variant_attrs) {
+                if !attrs.allow_zero_tag {
+                    continue;
+                }
+                let message = if matches!(repr_attr, Some(ReprKind::Transparent)) {
+                    Some("`allow_zero_tag` cannot be combined with `#[repr(transparent)]`")
+                } else if is_fieldless && data.variants.len() == 1 {
+                    Some("`allow_zero_tag` requires more than one fieldless variant")
+                } else if !is_fieldless && !has_integer_repr {
+                    Some("`allow_zero_tag` on data-carrying enums requires `#[repr(int)]`")
+                } else if !matches!(repr_attr, Some(ReprKind::C(None)))
+                    && is_exhaustive_enum(
+                        data.variants.len(),
+                        &enum_tag_type(repr_attr, data.variants.len()),
+                    )
+                {
+                    Some("`allow_zero_tag` cannot be used on an exhaustive enum")
+                } else {
+                    None
+                };
+                if let Some(message) = message {
+                    push_error(
+                        &mut errors,
+                        syn::Error::new_spanned(&variant.ident, message),
+                    );
+                }
             }
         }
         syn::Data::Union(_) => {
@@ -326,7 +459,9 @@ pub(crate) fn derive_repr_c(input: &syn::DeriveInput) -> syn::Result<TokenStream
 
     let primitive_type_checks = gen_primitive_field_type_checks(input);
 
-    if repr_c_attrs.is_transparent {
+    if repr_c_attrs.is_transparent
+        && !matches!(&input.data, syn::Data::Enum(data) if data.variants.iter().all(|variant| variant.fields.is_empty()))
+    {
         let item = field::derive_field_repr_c(input, repr_attr, &repr_c_attrs);
         let wide = wide::expand(input, repr_attr)?;
         let ctype_impl = gen_source_ctype_impl(input, &repr_c_attrs);
@@ -352,12 +487,25 @@ pub(crate) fn derive_repr_c(input: &syn::DeriveInput) -> syn::Result<TokenStream
             quote! {}
         }
         syn::Data::Enum(data) => {
-            if data
+            if repr_c_attrs.is_identity {
+                derive_item(
+                    repr_attr,
+                    repr_alignment,
+                    input,
+                    &repr_c_attrs,
+                    &variant_attrs,
+                )
+            } else if data
                 .variants
                 .iter()
                 .all(|v| matches!(v.fields, syn::Fields::Unit))
             {
-                derive_fieldless_enum(repr_attr, repr_alignment, input)
+                derive_fieldless_enum(
+                    repr_attr,
+                    repr_alignment,
+                    input,
+                    repr_c_attrs.is_transparent,
+                )
             } else {
                 derive_item(
                     repr_attr,
@@ -377,6 +525,7 @@ pub(crate) fn derive_repr_c(input: &syn::DeriveInput) -> syn::Result<TokenStream
         let ctype_impl = gen_source_ctype_impl(input, &repr_c_attrs);
         let body = quote! {
             #primitive_type_checks
+            #zero_discriminant_check
 
             #tokens
             #ctype_impl
@@ -715,6 +864,32 @@ pub(super) fn enum_tag_type(repr: Option<&ReprKind>, variants_len: usize) -> syn
     }
 }
 
+pub(super) fn enum_variant_tag_exprs(
+    variants: &syn::punctuated::Punctuated<syn::Variant, syn::Token![,]>,
+    tag_ty: &syn::Type,
+) -> Vec<TokenStream> {
+    let mut last_explicit = None::<&syn::Expr>;
+    let mut offset = 0usize;
+    variants
+        .iter()
+        .map(|variant| {
+            if let Some((_, value)) = &variant.discriminant {
+                last_explicit = Some(value);
+                offset = 0;
+                quote! { (#value) as #tag_ty }
+            } else if let Some(value) = last_explicit {
+                offset += 1;
+                let offset = proc_macro2::Literal::usize_unsuffixed(offset);
+                quote! { ((#value) as #tag_ty).wrapping_add(#offset as #tag_ty) }
+            } else {
+                let value = proc_macro2::Literal::usize_unsuffixed(offset);
+                offset += 1;
+                quote! { #value as #tag_ty }
+            }
+        })
+        .collect()
+}
+
 pub(super) fn is_transparent_enum_repr(
     repr: Option<&ReprKind>,
     variants: &syn::punctuated::Punctuated<syn::Variant, syn::Token![,]>,
@@ -757,7 +932,107 @@ fn generic_param_idents<'a>(
 
 #[cfg(test)]
 mod tests {
-    use super::is_parametrized;
+    use super::{derive_repr_c, is_parametrized};
+
+    #[test]
+    fn zero_discriminant_requires_marked_variant() {
+        let input = syn::parse_quote! {
+            enum Error { A, B, C }
+        };
+        let expansion = derive_repr_c(&input).unwrap().to_string();
+        assert!(expansion.contains("has tag zero"));
+
+        let input = syn::parse_quote! {
+            enum Error { #[repr_c(allow_zero_tag)] A, B, C }
+        };
+        let expansion = derive_repr_c(&input).unwrap().to_string();
+        assert!(!expansion.contains("variant A has tag zero"));
+        assert!(expansion.contains("requires tag zero"));
+    }
+
+    #[test]
+    fn plain_repr_c_enum_reports_its_existing_diagnostic() {
+        let fieldless = syn::parse_quote! {
+            #[repr(C)]
+            enum Fieldless { First, Second }
+        };
+        let data = syn::parse_quote! {
+            #[repr(C)]
+            enum WithData { First(u8), Second }
+        };
+        for input in [fieldless, data] {
+            let error = derive_repr_c(&input).unwrap_err();
+            assert!(error.to_string().contains("#[repr(C)]` not supported"));
+        }
+    }
+
+    #[test]
+    fn nonzero_discriminants_do_not_require_opt_in() {
+        let input = syn::parse_quote! {
+            #[repr(u8)]
+            enum Error { A = 1, B, C }
+        };
+        let expansion = derive_repr_c(&input).unwrap().to_string();
+        assert!(expansion.contains("has tag zero"));
+    }
+
+    #[test]
+    fn explicit_discriminant_without_repr_is_left_to_rustc() {
+        let input = syn::parse_quote! {
+            enum Error { A = 1, B(u8), C }
+        };
+        assert!(derive_repr_c(&input).is_ok());
+    }
+
+    #[test]
+    fn full_u8_range_does_not_require_a_niche_opt_in() {
+        use quote::{format_ident, quote};
+
+        let variants = (0..=u8::MAX)
+            .map(|value| format_ident!("V{value}"))
+            .collect::<Vec<_>>();
+        for repr in [quote! {}, quote! { #[repr(u8)] }] {
+            let input = syn::parse2(quote! {
+                #repr
+                enum FullRange { #(#variants,)* }
+            })
+            .unwrap();
+            let expansion = derive_repr_c(&input).unwrap().to_string();
+            assert!(!expansion.contains("has tag zero"));
+        }
+    }
+
+    #[test]
+    fn exhaustive_enums_reject_allow_zero_tag() {
+        use quote::{format_ident, quote};
+
+        let variants = (0..=u8::MAX)
+            .map(|value| format_ident!("V{value}"))
+            .collect::<Vec<_>>();
+        let first = &variants[0];
+        let rest = &variants[1..];
+        for input in [
+            quote! {
+                enum InferredFullRange { #[repr_c(allow_zero_tag)] #first, #(#rest,)* }
+            },
+            quote! {
+                #[repr(u8)]
+                enum FullRange { #[repr_c(allow_zero_tag)] #first, #(#rest,)* }
+            },
+            quote! {
+                #[repr(u8)]
+                enum FullRangeWithData { #[repr_c(allow_zero_tag)] #first(u8), #(#rest,)* }
+            },
+        ] {
+            let input = syn::parse2(input).unwrap();
+            let error = derive_repr_c(&input).unwrap_err();
+            assert!(
+                error
+                    .to_string()
+                    .contains("cannot be used on an exhaustive enum")
+            );
+        }
+    }
 
     #[test]
     fn detects_type_lifetime_and_const_arguments() {

@@ -11,17 +11,17 @@ error[E0277]: the trait bound `Opaque: Copy` is not satisfied
    | |_^ the trait `Copy` is not implemented for `Opaque`
    |
    = help: the following other types implement trait `stored::_::DecodeOwned0<'d, _TŠČ1, _TŠČ2, _TŠČ3, _TŠČ4>`:
-             `&'d R` implements `stored::_::DecodeOwned0<'d, <&'d R as RustSpec>::Layout, NulTerminated, Exclusive, <R as RustSpec>::Layout>`
-             `&'d R` implements `stored::_::DecodeOwned0<'d, Stable, _TŠČ0, Exclusive, <R as RustSpec>::Layout>`
-             `&'d R` implements `stored::_::DecodeOwned0<'d, Unstable, rust_spec::size::MetaSized<SliceLike>, Exclusive, Stable>`
-             `&'d R` implements `stored::_::DecodeOwned0<'d, Unstable, rust_spec::size::Sized<S>, Exclusive, Unstable>`
-             `&'d [R]` implements `stored::_::DecodeOwned0<'d, Unstable, rust_spec::size::MetaSized<SliceLike>, Exclusive, Unstable>`
+             `&'d R` implements `stored::_::DecodeOwned0<'d, Stable, Stable, _TŠČ0, Exclusive>`
+             `&'d R` implements `stored::_::DecodeOwned0<'d, Unstable, Stable, rust_spec::size::MetaSized<SliceLike>, Exclusive>`
+             `&'d R` implements `stored::_::DecodeOwned0<'d, Unstable, Unstable, NulTerminated, Exclusive>`
+             `&'d R` implements `stored::_::DecodeOwned0<'d, Unstable, Unstable, rust_spec::size::Sized<S>, Exclusive>`
+             `&'d [R]` implements `stored::_::DecodeOwned0<'d, Unstable, Unstable, rust_spec::size::MetaSized<SliceLike>, Exclusive>`
 note: required for `CKita5` to implement `Copy`
   --> tests/ui_fail/opaque_by_value.rs:7:27
    |
  7 | #[derive(Clone, RustSpec, ReprC)]
    |                           ^^^^^ type parameter would need to implement `Copy`
-   = note: required for `&Kita5` to implement `stored::_::DecodeOwned0<'_, Unstable, rust_spec::size::Sized<Gt<rust_spec::Zero>>, Exclusive, Unstable>`
+   = note: required for `&Kita5` to implement `stored::_::DecodeOwned0<'_, Unstable, Unstable, rust_spec::size::Sized<Gt<rust_spec::Zero>>, Exclusive>`
    = note: this error originates in the macro `ffi` which comes from the expansion of the derive macro `ReprC` (in Nightly builds, run with -Z macro-backtrace for more info)
 help: consider annotating `Opaque` with `#[derive(Copy)]`
    |
@@ -49,8 +49,7 @@ help: the following other types implement trait `stored::_::DecodeOwned1<'d, _T�
    | |         Self: RustSpec<Layout = Stable> + CheckedTransmute<CType = CRefMut<<R as ReprC>::CType, true>>,
    | |_______________________________________________________________________________________________________^ `&'d mut R` implements `stored::_::DecodeOwned1<'d, Stable, _TŠČ0, <R as RustSpec>::Layout>`
 ...
-   | /     unsafe impl<'d, R: CheckedTransmute<CType: Wide<Metadata = usize>> + ?Sized>
-   | |         DecodeOwned<'d> for &'d mut R
+   | /     unsafe impl<'d, R: CheckedTransmute<CType: Wide<Metadata = usize>> + ?Sized> DecodeOwned<'d> for &'d mut R
    | |     where
    | |         Self: RustSpec<Layout = Unstable>,
    | |         R: RustSpec<Layout = Stable, Size = MetaSized<SliceLike>>,
@@ -98,7 +97,7 @@ error[E0277]: the trait bound `Opaque: Copy` is not satisfied
 24 | | }
    | |_^ the trait `Copy` is not implemented for `Opaque`
    |
-help: the trait `stored::_::DecodeOwned0<'_, Unstable, rust_spec::size::MetaSized<SliceLike>, Exclusive, Unstable>` is conditionally implemented for `&[R]`
+help: the trait `stored::_::DecodeOwned0<'_, Unstable, Unstable, rust_spec::size::MetaSized<SliceLike>, Exclusive>` is conditionally implemented for `&[R]`
   --> src/stored.rs
    |
    |       unsafe impl<'d, R: DecodeOwned<'d, CType: BorrowCast<AsConst: Copy> + Copy> + FromBorrow<'d> + Clone>
@@ -116,7 +115,7 @@ note: required for `CKita5` to implement `Copy`
    |
  7 | #[derive(Clone, RustSpec, ReprC)]
    |                           ^^^^^ type parameter would need to implement `Copy`
-   = note: required for `&[Kita5]` to implement `stored::_::DecodeOwned0<'_, Unstable, rust_spec::size::MetaSized<SliceLike>, Exclusive, Unstable>`
+   = note: required for `&[Kita5]` to implement `stored::_::DecodeOwned0<'_, Unstable, Unstable, rust_spec::size::MetaSized<SliceLike>, Exclusive>`
    = note: this error originates in the macro `ffi` which comes from the expansion of the derive macro `ReprC` (in Nightly builds, run with -Z macro-backtrace for more info)
 help: consider annotating `Opaque` with `#[derive(Copy)]`
    |

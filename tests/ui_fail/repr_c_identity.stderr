@@ -4,7 +4,7 @@ error: `repr_c(identity)` requires `#[repr(C)]` or `#[repr(transparent)]`
 5 | struct MissingRepr(i32);
   |        ^^^^^^^^^^^
 
-error: `repr_c(identity)` is only supported on structs
+error: `repr_c(identity)` requires a struct or an exhaustive enum
   --> tests/ui_fail/repr_c_identity.rs:10:6
    |
 10 | enum Enum {

@@ -6,6 +6,7 @@ use co3::rust_spec::RustSpec;
 
 #[derive(Clone, Copy, RustSpec, ReprC)]
 enum State {
+    #[repr_c(allow_zero_tag)]
     Disconnected,
     Connected,
 }

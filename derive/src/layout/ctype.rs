@@ -1,4 +1,4 @@
-use proc_macro2::{Literal, TokenStream};
+use proc_macro2::TokenStream;
 use quote::{format_ident, quote};
 use syn::{parse_quote, visit::Visit};
 
@@ -135,8 +135,8 @@ fn lowered_field_ty(field_ty: &syn::Type) -> TokenStream {
     quote!(<#field_ty as co3::ReprC>::CType)
 }
 
-/// Generates the C carrier for a fieldless enum. Unlike a data enum's C
-/// union, this is always a transparent newtype over its discriminant.
+/// Generates the wrapper carrier for a fieldless enum. Exhaustive enums
+/// without custom Drop use the tag itself as their CType instead.
 pub(super) fn gen_fieldless_enum_ctype(
     tag_type: &syn::Type,
     alignment: Option<&syn::LitInt>,
@@ -373,10 +373,11 @@ fn gen_enum_variant_constructors(
             }
         }
     };
+    let tag_values = super::enum_variant_tag_exprs(variants, tag_type);
     let methods = variants.iter().enumerate().map(|(index, variant)| {
         let variant_name = &variant.ident;
         let variant_struct_name = gen_variant_struct_name(enum_name, variant_name);
-        let tag = Literal::usize_unsuffixed(index);
+        let tag = &tag_values[index];
         let args = variant
             .fields
             .iter()
@@ -445,10 +446,11 @@ fn gen_tagged_union_partial_eq(
     let bounds = union.fields.named.iter().flat_map(|field| {
         gen_conditional_trait_bounds(&field.ty, &union.generics, quote!(core::cmp::PartialEq))
     });
+    let tag_values = super::enum_variant_tag_exprs(variants, tag_type);
     let arms = variants.iter().enumerate().map(|(index, variant)| {
-        let tag = Literal::usize_unsuffixed(index);
+        let tag = &tag_values[index];
         let member = &variant.ident;
-        quote!(#tag => unsafe { self.#member == other.#member })
+        quote!(value if value == #tag => unsafe { self.#member == other.#member })
     });
 
     quote! {
@@ -460,7 +462,7 @@ fn gen_tagged_union_partial_eq(
             fn eq(&self, other: &Self) -> bool {
                 let self_tag = unsafe { *core::ptr::from_ref(self).cast::<#tag_type>() };
                 let other_tag = unsafe { *core::ptr::from_ref(other).cast::<#tag_type>() };
-                self_tag == other_tag && match self_tag as usize {
+                self_tag == other_tag && match self_tag {
                     #(#arms,)*
                     _ => true,
                 }
@@ -755,7 +757,8 @@ fn derive_repr_c_data_enum_ctype(
         &ctype_def.fields,
         false,
     );
-    let partial_eq_impl = gen_tagged_payload_partial_eq(&ctype_def, &payload_def, variants);
+    let partial_eq_impl =
+        gen_tagged_payload_partial_eq(&ctype_def, &payload_def, &tag_type, variants);
     let constructors = gen_enum_variant_constructors(
         &ctype_def.ident,
         &ctype_def.generics,
@@ -782,6 +785,7 @@ fn derive_repr_c_data_enum_ctype(
 fn gen_tagged_payload_partial_eq(
     ctype: &syn::ItemStruct,
     payload: &syn::ItemUnion,
+    tag_type: &syn::Type,
     variants: &syn::punctuated::Punctuated<syn::Variant, syn::Token![,]>,
 ) -> TokenStream {
     let name = &ctype.ident;
@@ -790,10 +794,11 @@ fn gen_tagged_payload_partial_eq(
     let bounds = payload.fields.named.iter().flat_map(|field| {
         gen_conditional_trait_bounds(&field.ty, &ctype.generics, quote!(core::cmp::PartialEq))
     });
+    let tag_values = super::enum_variant_tag_exprs(variants, tag_type);
     let arms = variants.iter().enumerate().map(|(index, variant)| {
-        let tag = Literal::usize_unsuffixed(index);
+        let tag = &tag_values[index];
         let member = &variant.ident;
-        quote!(#tag => unsafe { self.payload.#member == other.payload.#member })
+        quote!(value if value == #tag => unsafe { self.payload.#member == other.payload.#member })
     });
 
     quote! {
@@ -803,7 +808,7 @@ fn gen_tagged_payload_partial_eq(
             #predicates
         {
             fn eq(&self, other: &Self) -> bool {
-                self.tag == other.tag && match self.tag as usize {
+                self.tag == other.tag && match self.tag {
                     #(#arms,)*
                     _ => true,
                 }

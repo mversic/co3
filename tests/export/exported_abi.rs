@@ -20,6 +20,7 @@ trait CustomExports {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, RustSpec, ReprC)]
 #[repr(u8)]
 pub enum Ambiguous {
+    #[repr_c(allow_zero_tag)]
     AmbiguousX,
     AmbiguousY,
     Inherent,

@@ -14,7 +14,7 @@ pub(super) fn expand(
         return Ok(quote! {});
     }
 
-    let (field, _, _) = last_field(&data.fields).expect("one field was checked");
+    let (field, _, field_member) = last_field(&data.fields).expect("one field was checked");
     let field_ty = &field.ty;
     let name = &input.ident;
     let (impl_generics, ty_generics, where_clause) = input.generics.split_for_impl();
@@ -56,8 +56,8 @@ pub(super) fn expand(
         {
             type Data = <#field_ty as co3::ffi::NulTerminatedBuf>::Data;
 
-            fn as_ptr(ptr: *const Self) -> *const Self::Data {
-                <#field_ty as co3::ffi::NulTerminatedBuf>::as_ptr(ptr as *const #field_ty)
+            fn as_ptr(value: &Self) -> *const Self::Data {
+                <#field_ty as co3::ffi::NulTerminatedBuf>::as_ptr(&value.#field_member)
             }
 
             unsafe fn from_raw<'__co3_nul_terminated>(ptr: *const Self::Data) -> &'__co3_nul_terminated Self {
