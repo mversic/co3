@@ -7,7 +7,7 @@ use crate::utils::speculative_marker;
 use crate::layout::{
     ReprCAttrs, VariantReprCAttrs,
     attr::ReprKind,
-    ctype::{SyntacticSizedness, gen_ctype_name, gen_fields_methods, syntactic_sizedness},
+    ctype::{classify_tail, gen_ctype_name, gen_fields_methods},
     generic_param_idents, is_parametrized, is_phantom_data,
     item::{field_vars, gen_fields_destructure},
 };
@@ -51,7 +51,7 @@ pub(super) fn gen_item_view(
         &input.data,
         syn::Data::Struct(data)
             if data.fields.iter().next_back().is_some_and(|field|
-                syntactic_sizedness(&field.ty, &input.generics) == SyntacticSizedness::Unsized)
+                classify_tail(&field.ty, &input.generics).is_known_unsized())
     );
     let inherited_niche = attrs
         .niche_value
@@ -561,8 +561,16 @@ fn gen_record_construction(
     match fields {
         syn::Fields::Named(_) | syn::Fields::Unit => {
             let field_names: Vec<_> = fields.iter().filter_map(|f| f.ident.as_ref()).collect();
+            let field_values = field_names.iter().zip(values).map(|(name, value)| {
+                let value = quote!(#value);
+                if syn::parse2::<syn::Ident>(value.clone()).is_ok_and(|ident| ident == **name) {
+                    quote!(#name)
+                } else {
+                    quote!(#name: #value)
+                }
+            });
 
-            quote! { #head { #(#field_names: #values),* } }
+            quote! { #head { #(#field_values),* } }
         }
         syn::Fields::Unnamed(_) => quote! { #head(#(#values),*) },
     }

@@ -4,8 +4,8 @@ use syn::parse_quote;
 
 use super::{
     ReprKind,
-    ctype::{WideTail, gen_fields_methods, wide_tail},
-    generic_param_idents, is_parametrized, is_phantom_data,
+    ctype::{TailClass, UnsizedTail, classify_tail, gen_fields_methods},
+    generic_param_idents, is_parametrized,
 };
 
 pub(super) fn gen_data_struct_name(ident: &syn::Ident) -> syn::Ident {
@@ -21,6 +21,24 @@ pub(super) fn gen_identity_header_impl(name: &syn::Ident, generics: &syn::Generi
     }
 }
 
+pub(super) fn wide_tail_type<'a>(
+    fields: &'a syn::Fields,
+    repr: Option<&ReprKind>,
+    generics: &syn::Generics,
+) -> Option<&'a syn::Type> {
+    let tail = &fields.iter().next_back()?.ty;
+    if fields.len() == 1 && !matches!(repr, Some(ReprKind::Transparent)) {
+        return None;
+    }
+    if matches!(
+        classify_tail(tail, generics),
+        TailClass::Sized | TailClass::Unsized(UnsizedTail::NulTerminated)
+    ) {
+        return None;
+    }
+    Some(tail)
+}
+
 pub(crate) fn expand(
     input: &syn::DeriveInput,
     repr: Option<&ReprKind>,
@@ -32,59 +50,42 @@ pub(crate) fn expand(
         return Ok(quote! {});
     };
 
-    let Some((field, ..)) = last_field(&data.fields) else {
+    let Some(field_ty) = wide_tail_type(&data.fields, repr, &input.generics) else {
         return Ok(quote! {});
     };
-
-    if is_phantom_data(&field.ty) {
-        return Ok(quote! {});
-    }
-
-    if wide_tail(&field.ty, &input.generics) == WideTail::No {
-        return Ok(quote! {});
-    }
 
     let name = &input.ident;
-    let field_ty = &field.ty;
+    let is_transparent = matches!(repr, Some(ReprKind::Transparent));
 
-    let is_single = data.fields.len() == 1;
-    let is_transparent_single = is_single && matches!(repr, Some(ReprKind::Transparent));
-    let generates_wide = !is_single || is_transparent_single;
-    let data_ty = if is_transparent_single {
+    let header_ty = if is_transparent {
         quote!(<#field_ty as co3::wide::Wide>::Header)
     } else {
-        gen_data_ty(input)
+        gen_data_struct_ty(input)
     };
-    let methods = gen_dst_methods(is_transparent_single, field_ty);
-    let alloc_methods = gen_alloc_methods(is_transparent_single, field_ty);
+    let methods = gen_dst_methods(is_transparent, field_ty);
+    let alloc_methods = gen_alloc_methods(is_transparent, field_ty);
 
     let header_predicate = header_repr_c_predicate(field_ty, &input.generics);
-    let usize_predicate = (!is_transparent_single).then(|| {
+    let usize_predicate = (!is_transparent).then(|| {
         let predicate = wide_usize_predicate(field_ty, &input.generics);
         quote!(#predicate,)
     });
-    let data_def =
-        (!is_transparent_single && generates_wide).then(|| gen_data_def(input, &data.fields));
-    let wide_impl = generates_wide.then(|| {
-        quote! {
-            unsafe impl #impl_generics co3::wide::Wide for #name #ty_generics
-            where
-                #header_predicate,
-                #usize_predicate
-                #predicates
-            {
-                type Header = #data_ty;
-                type Metadata = <#field_ty as co3::wide::Wide>::Metadata;
-
-                #methods
-                #alloc_methods
-            }
-        }
-    });
+    let data_def = (!is_transparent).then(|| gen_data_def(input, &data.fields));
 
     Ok(quote! {
         #data_def
-        #wide_impl
+        unsafe impl #impl_generics co3::wide::Wide for #name #ty_generics
+        where
+            #header_predicate,
+            #usize_predicate
+            #predicates
+        {
+            type Header = #header_ty;
+            type Metadata = <#field_ty as co3::wide::Wide>::Metadata;
+
+            #methods
+            #alloc_methods
+        }
     })
 }
 
@@ -102,7 +103,7 @@ pub(super) fn last_field(fields: &syn::Fields) -> Option<(&syn::Field, TokenStre
     Some((field, field_ref, field_member))
 }
 
-fn gen_data_ty(input: &syn::DeriveInput) -> TokenStream {
+fn gen_data_struct_ty(input: &syn::DeriveInput) -> TokenStream {
     let name = gen_data_struct_name(&input.ident);
 
     let args = input.generics.params.iter().map(|param| match param {
@@ -125,7 +126,11 @@ fn gen_data_ty(input: &syn::DeriveInput) -> TokenStream {
 
 fn gen_data_def(input: &syn::DeriveInput, fields: &syn::Fields) -> TokenStream {
     if let Some((last, ..)) = last_field(fields)
-        && wide_tail(&last.ty, &input.generics) == WideTail::Unknown
+        && matches!(
+            classify_tail(&last.ty, &input.generics),
+            TailClass::Unknown
+                | TailClass::Unsized(UnsizedTail::Unknown | UnsizedTail::DynTraitLike)
+        )
         && !is_parametrized(&last.ty, &input.generics)
     {
         let tail_ty = &last.ty;

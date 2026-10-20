@@ -7,83 +7,94 @@ use crate::layout::{
     infer_repr, is_parametrized, is_phantom_data, is_transparent_enum_repr, primitive_tag_type,
     wide::{
         gen_alloc_methods, gen_data_struct_name, gen_dst_methods, gen_identity_header_impl,
-        header_repr_c_predicate, last_field, wide_predicate, wide_usize_predicate,
+        header_repr_c_predicate, last_field, wide_predicate, wide_tail_type, wide_usize_predicate,
     },
 };
 use crate::utils::{co3_path, speculative_marker};
 
 #[derive(Clone, Copy, PartialEq, Eq)]
-pub(super) enum SyntacticSizedness {
+pub(super) enum TailClass {
     Sized,
-    Unsized,
+    Unsized(UnsizedTail),
     Unknown,
 }
 
-pub(super) fn syntactic_sizedness(ty: &syn::Type, generics: &syn::Generics) -> SyntacticSizedness {
-    use SyntacticSizedness::*;
+#[derive(Clone, Copy, PartialEq, Eq)]
+pub(super) enum UnsizedTail {
+    SliceLike,
+    NulTerminated,
+    DynTraitLike,
+    Unknown,
+}
+
+impl TailClass {
+    pub(super) fn is_known_unsized(self) -> bool {
+        matches!(
+            self,
+            Self::Unsized(
+                UnsizedTail::SliceLike | UnsizedTail::NulTerminated | UnsizedTail::DynTraitLike
+            )
+        )
+    }
+}
+
+fn tail_type_param<'a>(ty: &syn::Type, generics: &'a syn::Generics) -> Option<&'a syn::TypeParam> {
+    match ty {
+        syn::Type::Paren(paren) => return tail_type_param(&paren.elem, generics),
+        syn::Type::Group(group) => return tail_type_param(&group.elem, generics),
+        _ => {}
+    }
+    let syn::Type::Path(path) = ty else {
+        return None;
+    };
+    let ident = path
+        .qself
+        .is_none()
+        .then(|| path.path.get_ident())
+        .flatten()?;
+    generics.type_params().find(|param| param.ident == *ident)
+}
+
+fn has_maybe_sized_bound(param: &syn::TypeParam, generics: &syn::Generics) -> bool {
+    let maybe_sized = |bound: &syn::TypeParamBound| {
+        matches!(bound, syn::TypeParamBound::Trait(bound)
+            if bound.maybe.is_some() && bound.path.is_ident("Sized"))
+    };
+    param.bounds.iter().any(maybe_sized)
+        || generics
+            .where_clause
+            .iter()
+            .flat_map(|clause| &clause.predicates)
+            .any(|predicate| {
+                matches!(predicate, syn::WherePredicate::Type(predicate)
+                    if matches!(&predicate.bounded_ty, syn::Type::Path(path)
+                        if path.qself.is_none() && path.path.is_ident(&param.ident))
+                    && predicate.bounds.iter().any(maybe_sized))
+            })
+}
+
+pub(super) fn classify_tail(ty: &syn::Type, generics: &syn::Generics) -> TailClass {
+    if let Some(param) = tail_type_param(ty, generics) {
+        return if has_maybe_sized_bound(param, generics) {
+            TailClass::Unsized(UnsizedTail::Unknown)
+        } else {
+            TailClass::Sized
+        };
+    }
+    if is_phantom_data(ty) {
+        return TailClass::Sized;
+    }
 
     match ty {
-        syn::Type::Slice(_) | syn::Type::TraitObject(_) => Unsized,
+        syn::Type::Paren(ty) => classify_tail(&ty.elem, generics),
+        syn::Type::Group(ty) => classify_tail(&ty.elem, generics),
+        syn::Type::Slice(_) => TailClass::Unsized(UnsizedTail::SliceLike),
+        syn::Type::TraitObject(_) => TailClass::Unsized(UnsizedTail::DynTraitLike),
         syn::Type::Reference(_)
         | syn::Type::Ptr(_)
         | syn::Type::Array(_)
         | syn::Type::Tuple(_)
-        | syn::Type::Never(_) => Sized,
-        syn::Type::Paren(ty) => syntactic_sizedness(&ty.elem, generics),
-        syn::Type::Group(ty) => syntactic_sizedness(&ty.elem, generics),
-        syn::Type::Path(path) => {
-            let Some(last) = path.path.segments.last() else {
-                return Unknown;
-            };
-            if last.ident == "CStr" || last.ident == "str" {
-                return Unsized;
-            }
-            if path.qself.is_some() {
-                return Unknown;
-            }
-            if crate::ffi_fn::option_inner_type(ty).is_some() {
-                return Sized;
-            }
-            if path.path.segments.len() == 1 {
-                if let Some(param) = generics
-                    .type_params()
-                    .find(|param| param.ident == last.ident)
-                {
-                    return if param.bounds.iter().any(|bound| {
-                        matches!(bound, syn::TypeParamBound::Trait(bound)
-                            if bound.maybe.is_some() && bound.path.is_ident("Sized"))
-                    }) {
-                        Unknown
-                    } else {
-                        Sized
-                    };
-                }
-                return if crate::ffi_fn::copy_primitive_type(path).is_some() {
-                    Sized
-                } else {
-                    Unknown
-                };
-            }
-            if crate::ffi_fn::copy_primitive_type(path).is_some() {
-                Sized
-            } else {
-                Unknown
-            }
-        }
-        _ => Unknown,
-    }
-}
-
-#[derive(Clone, Copy, PartialEq, Eq)]
-pub(super) enum WideTail {
-    Yes,
-    No,
-    Unknown,
-}
-
-pub(super) fn wide_tail(ty: &syn::Type, generics: &syn::Generics) -> WideTail {
-    match ty {
-        syn::Type::Slice(_) => WideTail::Yes,
+        | syn::Type::Never(_) => TailClass::Sized,
         syn::Type::Path(path)
             if path
                 .path
@@ -91,7 +102,7 @@ pub(super) fn wide_tail(ty: &syn::Type, generics: &syn::Generics) -> WideTail {
                 .last()
                 .is_some_and(|segment| segment.ident == "str") =>
         {
-            WideTail::Yes
+            TailClass::Unsized(UnsizedTail::SliceLike)
         }
         syn::Type::Path(path)
             if path
@@ -100,12 +111,22 @@ pub(super) fn wide_tail(ty: &syn::Type, generics: &syn::Generics) -> WideTail {
                 .last()
                 .is_some_and(|segment| segment.ident == "CStr") =>
         {
-            WideTail::No
+            TailClass::Unsized(UnsizedTail::NulTerminated)
         }
-        _ => match syntactic_sizedness(ty, generics) {
-            SyntacticSizedness::Sized => WideTail::No,
-            SyntacticSizedness::Unsized | SyntacticSizedness::Unknown => WideTail::Unknown,
-        },
+        syn::Type::Path(path) => {
+            if path.qself.is_some() {
+                return TailClass::Unknown;
+            }
+            if crate::ffi_fn::option_inner_type(ty).is_some() {
+                return TailClass::Sized;
+            }
+            if crate::ffi_fn::copy_primitive_type(path).is_some() {
+                TailClass::Sized
+            } else {
+                TailClass::Unknown
+            }
+        }
+        _ => TailClass::Unknown,
     }
 }
 
@@ -117,10 +138,12 @@ pub(super) fn c_fn_last_field_bounds(
         return (quote! {}, false);
     };
 
-    match syntactic_sizedness(last, generics) {
-        SyntacticSizedness::Sized => (quote! {}, false),
-        SyntacticSizedness::Unsized => (quote! {}, true),
-        SyntacticSizedness::Unknown => {
+    match classify_tail(last, generics) {
+        TailClass::Sized => (quote! {}, false),
+        TailClass::Unsized(
+            UnsizedTail::SliceLike | UnsizedTail::NulTerminated | UnsizedTail::DynTraitLike,
+        ) => (quote! {}, true),
+        TailClass::Unsized(UnsizedTail::Unknown) | TailClass::Unknown => {
             let speculative = speculative_marker(!is_parametrized(last, generics));
             (quote!(#speculative #last: Sized,), false)
         }
@@ -483,9 +506,10 @@ fn derive_ctype_struct(
     generate_wide: bool,
 ) -> TokenStream {
     let ctype_def = gen_ctype_struct_item(repr, alignment, vis, name, generics, fields);
-    let known_unsized_tail = fields.iter().next_back().is_some_and(|field| {
-        syntactic_sizedness(&field.ty, generics) == SyntacticSizedness::Unsized
-    });
+    let known_unsized_tail = fields
+        .iter()
+        .next_back()
+        .is_some_and(|field| classify_tail(&field.ty, generics).is_known_unsized());
     let fields_methods = gen_fields_methods(
         &ctype_def.ident,
         &ctype_def.generics,
@@ -585,19 +609,10 @@ fn gen_ctype_wide_impl(
     source_fields: &syn::Fields,
     source_generics: &syn::Generics,
 ) -> TokenStream {
+    let Some(source_field_ty) = wide_tail_type(source_fields, repr, source_generics) else {
+        return quote! {};
+    };
     let is_transparent = matches!(repr, Some(ReprKind::Transparent));
-
-    if source_fields
-        .iter()
-        .next_back()
-        .is_some_and(|field| is_phantom_data(&field.ty))
-    {
-        return quote! {};
-    }
-
-    if source_fields.len() == 1 && !is_transparent {
-        return quote! {};
-    }
 
     let Some((field, ..)) = last_field(&ctype.fields) else {
         return quote! {};
@@ -627,18 +642,7 @@ fn gen_ctype_wide_impl(
         let predicate = wide_usize_predicate(field_ty, &ctype.generics);
         quote!(#predicate,)
     });
-    let Some((source_last, ..)) = last_field(source_fields) else {
-        return quote! {};
-    };
-    let source_field_ty = &source_last.ty;
-
-    if wide_tail(source_field_ty, source_generics) == WideTail::No {
-        return quote! {};
-    }
-
-    let source_header_predicate = header_repr_c_predicate(&source_last.ty, source_generics);
-    let source_tail_ctype_sized = is_implicitly_sized_type_param(source_field_ty, source_generics)
-        .then(|| quote!(#source_field_ty: co3::ReprC<CType: Sized>,));
+    let source_header_predicate = header_repr_c_predicate(source_field_ty, source_generics);
     let source_slice_tail = if let syn::Type::Slice(slice) = source_field_ty {
         let element = &slice.elem;
         Some(quote! {
@@ -667,7 +671,6 @@ fn gen_ctype_wide_impl(
         unsafe impl #impl_generics co3::wide::Wide for #name #ty_generics
         where
             #source_header_predicate,
-            #source_tail_ctype_sized
             #source_slice_tail
             #data_bound
             #transparent_header_predicate
@@ -682,38 +685,6 @@ fn gen_ctype_wide_impl(
             #alloc_methods
         }
     }
-}
-
-fn is_implicitly_sized_type_param(ty: &syn::Type, generics: &syn::Generics) -> bool {
-    let syn::Type::Path(path) = ty else {
-        return false;
-    };
-    let Some(ident) = path
-        .qself
-        .is_none()
-        .then(|| path.path.get_ident())
-        .flatten()
-    else {
-        return false;
-    };
-    let Some(param) = generics.type_params().find(|param| param.ident == *ident) else {
-        return false;
-    };
-    let maybe_sized = |bound: &syn::TypeParamBound| {
-        matches!(bound, syn::TypeParamBound::Trait(trait_bound)
-            if trait_bound.maybe.is_some() && trait_bound.path.is_ident("Sized"))
-    };
-    !param.bounds.iter().any(maybe_sized)
-        && !generics
-            .where_clause
-            .iter()
-            .flat_map(|clause| &clause.predicates)
-            .any(|predicate| {
-                matches!(predicate, syn::WherePredicate::Type(predicate)
-                if matches!(&predicate.bounded_ty, syn::Type::Path(path)
-                    if path.qself.is_none() && path.path.is_ident(ident))
-                    && predicate.bounds.iter().any(maybe_sized))
-            })
 }
 
 fn derive_repr_c_data_enum_ctype(
@@ -1745,9 +1716,9 @@ fn gen_copy_impls(
     let predicates = where_clause.as_ref().map(|w| &w.predicates);
 
     if known_unsized_tail
-        || fields.last().is_some_and(|field| {
-            syntactic_sizedness(field, generics) == SyntacticSizedness::Unsized
-        })
+        || fields
+            .last()
+            .is_some_and(|field| classify_tail(field, generics).is_known_unsized())
     {
         return quote! {};
     }
@@ -2127,4 +2098,77 @@ fn gen_ctype_borrow_cast_bounds(
     }
 
     predicates
+}
+
+#[cfg(test)]
+mod tail_tests {
+    use super::{TailClass, UnsizedTail, classify_tail};
+    use syn::parse_quote;
+
+    #[test]
+    fn classifies_known_and_speculative_tails() {
+        let generics = parse_quote!(<T: ?Sized>);
+
+        assert!(matches!(
+            classify_tail(&parse_quote!(u32), &generics),
+            TailClass::Sized
+        ));
+        assert!(matches!(
+            classify_tail(&parse_quote!(core::marker::PhantomData<T>), &generics),
+            TailClass::Sized
+        ));
+        assert!(matches!(
+            classify_tail(&parse_quote!([u8]), &generics),
+            TailClass::Unsized(UnsizedTail::SliceLike)
+        ));
+        assert!(matches!(
+            classify_tail(&parse_quote!(str), &generics),
+            TailClass::Unsized(UnsizedTail::SliceLike)
+        ));
+        assert!(matches!(
+            classify_tail(&parse_quote!(core::ffi::CStr), &generics),
+            TailClass::Unsized(UnsizedTail::NulTerminated)
+        ));
+        assert!(matches!(
+            classify_tail(&parse_quote!(dyn Send), &generics),
+            TailClass::Unsized(UnsizedTail::DynTraitLike)
+        ));
+        assert!(matches!(
+            classify_tail(&parse_quote!(T), &generics),
+            TailClass::Unsized(UnsizedTail::Unknown)
+        ));
+
+        let sized_generics = parse_quote!(<S>);
+        assert!(matches!(
+            classify_tail(&parse_quote!(S), &sized_generics),
+            TailClass::Sized
+        ));
+        let shadowed = parse_quote!(<CStr>);
+        assert!(matches!(
+            classify_tail(&parse_quote!(CStr), &shadowed),
+            TailClass::Sized
+        ));
+        assert!(matches!(
+            classify_tail(&parse_quote!(SomeUserType), &sized_generics),
+            TailClass::Unknown
+        ));
+
+        let explicitly_sized = parse_quote!(<S: Sized>);
+        assert!(matches!(
+            classify_tail(&parse_quote!(S), &explicitly_sized),
+            TailClass::Sized
+        ));
+
+        let where_unsized: syn::DeriveInput = parse_quote! {
+            struct WhereUnsized<U> where U: ?Sized { tail: U }
+        };
+        assert!(matches!(
+            classify_tail(&parse_quote!(U), &where_unsized.generics),
+            TailClass::Unsized(UnsizedTail::Unknown)
+        ));
+        assert!(matches!(
+            classify_tail(&parse_quote!((U)), &where_unsized.generics),
+            TailClass::Unsized(UnsizedTail::Unknown)
+        ));
+    }
 }

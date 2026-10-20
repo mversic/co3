@@ -687,11 +687,11 @@ disjoint_impls! {
     {
         type CType = CRef<R::CType>;
     }
-    impl<R: NulTerminatedBuf<Data: ReprC> + ?Sized> ReprC for &R
+    impl<R: NulTerminatedBuf<Header: ReprC> + ?Sized> ReprC for &R
     where
         R: RustSpec<Size = NulTerminated, Mutability = Exclusive>,
     {
-        type CType = CRef<<R::Data as ReprC>::CType>;
+        type CType = CRef<<R::Header as ReprC>::CType>;
     }
     impl<R: ReprC<CType: Wide<Header: WideHeader<Data: CType>>> + ?Sized> ReprC for &R
     where
@@ -706,11 +706,11 @@ disjoint_impls! {
     {
         type CType = CRefMut<R::CType, false>;
     }
-    impl<R: NulTerminatedBuf<Data: ReprC> + ?Sized> ReprC for &R
+    impl<R: NulTerminatedBuf<Header: ReprC> + ?Sized> ReprC for &R
     where
         R: RustSpec<Size = NulTerminated, Mutability = WithInterior>,
     {
-        type CType = CRefMut<<R::Data as ReprC>::CType, false>;
+        type CType = CRefMut<<R::Header as ReprC>::CType, false>;
     }
     impl<R: ReprC<CType: Wide<Header: WideHeader<Data: CType>>> + ?Sized> ReprC for &R
     where
@@ -727,11 +727,11 @@ disjoint_impls! {
     }
     // TODO: DecodeOwned needs NulTerminatedBuf::from_raw_mut. Checked encoding of
     // non-robust data also needs temporary storage and writeback.
-    // impl<R: NulTerminatedBuf<Data: ReprC> + ?Sized> ReprC for &mut R
+    // impl<R: NulTerminatedBuf<Header: ReprC> + ?Sized> ReprC for &mut R
     // where
     //     R: RustSpec<Size = NulTerminated>,
     // {
-    //     type CType = CRefMut<<R::Data as ReprC>::CType, true>;
+    //     type CType = CRefMut<<R::Header as ReprC>::CType, true>;
     // }
     impl<R: ReprC<CType: Wide<Header: WideHeader<Data: CType>>> + ?Sized> ReprC for &mut R
     where
@@ -749,12 +749,12 @@ disjoint_impls! {
         type CType = CBox<R::CType>;
     }
     #[cfg(feature = "alloc")]
-    impl<R: NulTerminatedBuf<Data: ReprC> + ?Sized> ReprC for Box<R>
+    impl<R: NulTerminatedBuf<Header: ReprC> + ?Sized> ReprC for Box<R>
     where
         R: RustSpec<Size = NulTerminated, Mutability = Exclusive>,
-        <<R as NulTerminatedBuf>::Data as ReprC>::CType: Sized,
+        <<R as NulTerminatedBuf>::Header as ReprC>::CType: Sized,
     {
-        type CType = CBox<<R::Data as ReprC>::CType>;
+        type CType = CBox<<R::Header as ReprC>::CType>;
     }
     #[cfg(feature = "alloc")]
     impl<R: ReprC<CType: Wide<Header: WideHeader<Data: CType + Sized>>> + ?Sized> ReprC for Box<R>
@@ -773,12 +773,12 @@ disjoint_impls! {
         type CType = CBoxCell<R::CType>;
     }
     #[cfg(feature = "alloc")]
-    impl<R: NulTerminatedBuf<Data: ReprC> + ?Sized> ReprC for Box<R>
+    impl<R: NulTerminatedBuf<Header: ReprC> + ?Sized> ReprC for Box<R>
     where
         R: RustSpec<Size = NulTerminated, Mutability = WithInterior>,
-        <<R as NulTerminatedBuf>::Data as ReprC>::CType: Sized,
+        <<R as NulTerminatedBuf>::Header as ReprC>::CType: Sized,
     {
-        type CType = CBoxCell<<R::Data as ReprC>::CType>;
+        type CType = CBoxCell<<R::Header as ReprC>::CType>;
     }
     #[cfg(feature = "alloc")]
     impl<R: ReprC<CType: Wide<Header: WideHeader<Data: CType + Sized>>> + ?Sized> ReprC for Box<R>

@@ -173,11 +173,7 @@ pub(crate) fn gen_abi_assertions(sig: &syn::Signature) -> TokenStream {
         };
         StaticLifetimeNormalizer::default().visit_type_mut(&mut ty);
         let cfg = cfg_attrs(attrs).collect::<Vec<_>>();
-        let identity_check = gen_implicit_primitive_checks(&ty);
-        let identity_check =
-            (!identity_check.is_empty()).then(|| quote! { #(#cfg)* #identity_check });
         quote! {
-            #identity_check
             #(#cfg)*
             const {
                 assert!(co3::impls!(#ty: co3::CFnArg), "co3 FFI argument must implement CFnArg");
@@ -188,10 +184,8 @@ pub(crate) fn gen_abi_assertions(sig: &syn::Signature) -> TokenStream {
         .cloned()
         .unwrap_or_else(|| parse_quote!(()));
     StaticLifetimeNormalizer::default().visit_type_mut(&mut return_ty);
-    let return_identity_check = gen_implicit_primitive_checks(&return_ty);
     quote! {
         #(#arguments)*
-        #return_identity_check
         const {
             assert!(co3::impls!((#return_ty): co3::CFnReturn), "co3 FFI return must implement CFnReturn");
         };
@@ -839,10 +833,6 @@ pub(crate) fn gen_input_decode_stmts<'a>(
             },
         };
 
-        let primitive_checks = gen_implicit_primitive_checks(&arg_ty);
-        if !primitive_checks.is_empty() {
-            stmts.extend(quote! { #enabled #primitive_checks });
-        }
         stmts.extend(quote! {
             #enabled
             let #arg_name: Option<#decode_ty> = unsafe { #decode_call };
@@ -1540,44 +1530,6 @@ pub(crate) fn is_identity_primitive(ty: &Type) -> bool {
                 .as_str(),
             "bool" | "char"
         )
-}
-
-pub(crate) fn gen_implicit_primitive_checks(ty: &Type) -> TokenStream {
-    if !is_implicitly_by_value(ty) {
-        return quote! {};
-    }
-
-    let ty = peel_grouped_type(ty);
-    match ty {
-        Type::Path(path) => {
-            if let Some(identity) = copy_primitive_type(path) {
-                let message = if matches!(path.path.segments.last().map(|s| s.ident.to_string()), Some(name) if name.starts_with("c_"))
-                {
-                    "use the `co3::ffi` equivalent or a type alias for it"
-                } else {
-                    "use the Rust primitive or a type alias for it"
-                };
-                quote! {
-                    {
-                        #[diagnostic::on_unimplemented(message = #message)]
-                        trait ExactType {}
-                        impl ExactType for #identity {}
-                        fn check<T: ExactType>() {}
-                        let _ = check::<#ty>;
-                    }
-                }
-            } else if let Some(inner) = option_inner_type(ty) {
-                gen_implicit_primitive_checks(inner)
-            } else {
-                quote! {}
-            }
-        }
-        Type::Tuple(tuple) if !tuple.elems.is_empty() => {
-            let checks = tuple.elems.iter().map(gen_implicit_primitive_checks);
-            quote!(#(#checks)*)
-        }
-        _ => quote! {},
-    }
 }
 
 pub(crate) fn qualified_method_callee(

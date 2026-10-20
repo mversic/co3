@@ -457,7 +457,8 @@ pub(crate) fn derive_repr_c(input: &syn::DeriveInput) -> syn::Result<TokenStream
         return Err(errors);
     }
 
-    let primitive_type_checks = gen_primitive_field_type_checks(input);
+    let type_checks = (!repr_c_attrs.is_view && !repr_c_attrs.is_wide_data)
+        .then(|| crate::type_checks::TypeChecks::for_derive(input));
 
     if repr_c_attrs.is_transparent
         && !matches!(&input.data, syn::Data::Enum(data) if data.variants.iter().all(|variant| variant.fields.is_empty()))
@@ -465,7 +466,7 @@ pub(crate) fn derive_repr_c(input: &syn::DeriveInput) -> syn::Result<TokenStream
         let item = field::derive_field_repr_c(input, repr_attr, &repr_c_attrs);
         let wide = wide::expand(input, repr_attr)?;
         let ctype_impl = gen_source_ctype_impl(input, &repr_c_attrs);
-        return Ok(quote! { #primitive_type_checks #item #wide #ctype_impl });
+        return Ok(quote! { #type_checks #item #wide #ctype_impl });
     }
 
     let tokens = match &input.data {
@@ -524,7 +525,7 @@ pub(crate) fn derive_repr_c(input: &syn::DeriveInput) -> syn::Result<TokenStream
     } else {
         let ctype_impl = gen_source_ctype_impl(input, &repr_c_attrs);
         let body = quote! {
-            #primitive_type_checks
+            #type_checks
             #zero_discriminant_check
 
             #tokens
@@ -621,77 +622,6 @@ fn gen_source_ctype_impl(input: &syn::DeriveInput, attrs: &ReprCAttrs) -> TokenS
         {
             type AsMut = Self;
         }
-    }
-}
-
-fn gen_primitive_field_type_checks(input: &syn::DeriveInput) -> TokenStream {
-    fn field_check(ty: &syn::Type) -> TokenStream {
-        let primitive = crate::ffi_fn::gen_implicit_primitive_checks(ty);
-        let mut ungrouped = ty;
-        loop {
-            ungrouped = match ungrouped {
-                syn::Type::Group(group) => &group.elem,
-                syn::Type::Paren(paren) => &paren.elem,
-                _ => break,
-            };
-        }
-        let option = if crate::ffi_fn::option_inner_type(ungrouped).is_some() {
-            quote! {
-                {
-                    trait ExactOption {}
-                    impl<T> ExactOption for core::option::Option<T> {}
-                    fn check<T: ExactOption>() {}
-                    let _ = check::<#ty>;
-                }
-            }
-        } else {
-            TokenStream::new()
-        };
-        quote! { #primitive #option }
-    }
-
-    let checks = match &input.data {
-        syn::Data::Struct(data) => data
-            .fields
-            .iter()
-            .filter_map(|field| {
-                let check = field_check(&field.ty);
-                if check.is_empty() {
-                    return None;
-                }
-                let cfg = crate::utils::cfg_attrs(&field.attrs);
-                Some(quote! { #(#cfg)* #check })
-            })
-            .collect::<Vec<_>>(),
-        syn::Data::Enum(data) => data
-            .variants
-            .iter()
-            .flat_map(|variant| {
-                let variant_cfg = crate::utils::cfg_attrs(&variant.attrs).collect::<Vec<_>>();
-                variant.fields.iter().filter_map(move |field| {
-                    let check = field_check(&field.ty);
-                    if check.is_empty() {
-                        return None;
-                    }
-                    let field_cfg = crate::utils::cfg_attrs(&field.attrs);
-                    Some(quote! { #(#variant_cfg)* #(#field_cfg)* #check })
-                })
-            })
-            .collect::<Vec<_>>(),
-        syn::Data::Union(_) => return TokenStream::new(),
-    };
-    if checks.is_empty() {
-        return TokenStream::new();
-    }
-
-    let (impl_generics, _, where_clause) = input.generics.split_for_impl();
-    quote! {
-        const _: () = {
-            #[allow(dead_code)]
-            fn check #impl_generics () #where_clause {
-                #(#checks)*
-            }
-        };
     }
 }
 

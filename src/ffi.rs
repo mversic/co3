@@ -440,13 +440,14 @@ use crate::{boxed::CBox, niche::Niche};
 ///
 /// # Safety
 ///
-/// Implementations must identify the same valid nul-terminated data through every method.
+/// - Implementor must be a DST; a sized type, including a ZST, must not implement this trait.
+/// - Implementations must identify the same valid nul-terminated data through every method.
 pub unsafe trait NulTerminatedBuf {
-    /// Data of a nul-terminated pointer.
-    type Data;
+    /// Header of a nul-terminated pointer.
+    type Header;
 
     /// Returns a raw pointer to the underlying data.
-    fn as_ptr(value: &Self) -> *const Self::Data;
+    fn as_ptr(value: &Self) -> *const Self::Header;
 
     /// Forms a nul-terminated reference from a data pointer.
     ///
@@ -455,11 +456,11 @@ pub unsafe trait NulTerminatedBuf {
     /// `ptr` must be non-null and properly aligned. The initialized data through the first nul
     /// must be readable within one allocation, fit in `isize::MAX` bytes, and remain unchanged for
     /// `'a`.
-    unsafe fn from_raw<'a>(ptr: *const Self::Data) -> &'a Self;
+    unsafe fn from_raw<'a>(ptr: *const Self::Header) -> &'a Self;
 
     /// Consumes the `Box`, returning a wrapped `NonNull` pointer.
     #[cfg(feature = "alloc")]
-    fn into_non_null(self: Box<Self>) -> NonNull<Self::Data>;
+    fn into_non_null(self: Box<Self>) -> NonNull<Self::Header>;
 
     /// Constructs a box from a `NonNull` pointer.
     ///
@@ -468,29 +469,29 @@ pub unsafe trait NulTerminatedBuf {
     /// `ptr` must come from `Self::into_non_null`, retain its allocation provenance,
     /// and still own the complete allocation.
     #[cfg(feature = "alloc")]
-    unsafe fn from_non_null(ptr: NonNull<Self::Data>) -> Box<Self>;
+    unsafe fn from_non_null(ptr: NonNull<Self::Header>) -> Box<Self>;
 }
 
 unsafe impl<R: NulTerminatedBuf + ?Sized> NulTerminatedBuf for ManuallyDrop<R> {
-    type Data = R::Data;
+    type Header = R::Header;
 
-    fn as_ptr(value: &Self) -> *const Self::Data {
+    fn as_ptr(value: &Self) -> *const Self::Header {
         R::as_ptr(value)
     }
 
-    unsafe fn from_raw<'a>(ptr: *const Self::Data) -> &'a Self {
+    unsafe fn from_raw<'a>(ptr: *const Self::Header) -> &'a Self {
         let inner = unsafe { R::from_raw(ptr) };
         unsafe { &*(inner as *const R as *const Self) }
     }
 
     #[cfg(feature = "alloc")]
-    fn into_non_null(self: Box<Self>) -> NonNull<Self::Data> {
+    fn into_non_null(self: Box<Self>) -> NonNull<Self::Header> {
         let inner = unsafe { Box::from_raw(Box::into_raw(self) as *mut R) };
         R::into_non_null(inner)
     }
 
     #[cfg(feature = "alloc")]
-    unsafe fn from_non_null(ptr: NonNull<Self::Data>) -> Box<Self> {
+    unsafe fn from_non_null(ptr: NonNull<Self::Header>) -> Box<Self> {
         let inner = unsafe { R::from_non_null(ptr) };
         unsafe { Box::from_raw(Box::into_raw(inner) as *mut Self) }
     }
@@ -501,24 +502,24 @@ impl ReprC for CStr {
 }
 
 unsafe impl NulTerminatedBuf for CStr {
-    type Data = c_char;
+    type Header = c_char;
 
-    fn as_ptr(value: &Self) -> *const Self::Data {
+    fn as_ptr(value: &Self) -> *const Self::Header {
         value.as_ptr().cast()
     }
 
-    unsafe fn from_raw<'a>(ptr: *const Self::Data) -> &'a Self {
+    unsafe fn from_raw<'a>(ptr: *const Self::Header) -> &'a Self {
         unsafe { CStr::from_ptr(ptr.cast()) }
     }
 
     #[cfg(feature = "alloc")]
-    fn into_non_null(self: Box<Self>) -> NonNull<Self::Data> {
+    fn into_non_null(self: Box<Self>) -> NonNull<Self::Header> {
         let raw = self.into_c_string().into_raw();
         unsafe { NonNull::new_unchecked(raw.cast()) }
     }
 
     #[cfg(feature = "alloc")]
-    unsafe fn from_non_null(ptr: NonNull<Self::Data>) -> Box<Self> {
+    unsafe fn from_non_null(ptr: NonNull<Self::Header>) -> Box<Self> {
         unsafe { CString::from_raw(ptr.cast().as_ptr()) }.into_boxed_c_str()
     }
 }

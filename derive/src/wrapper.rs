@@ -775,20 +775,6 @@ fn gen_input_conversion_stmts(inputs: &Punctuated<FnArg, syn::Token![,]>) -> Tok
             }
         };
         let cfg = crate::utils::cfg_attrs(attrs).collect::<Vec<_>>();
-        let primitive_checks = ffi_fn::gen_implicit_primitive_checks(ty);
-        if !primitive_checks.is_empty() {
-            stmts.extend(quote! { #(#cfg)* #primitive_checks });
-        }
-
-        if let Some(inner_ty) =
-            ffi_fn::inferred_unpack_option_inner(attrs, ty).expect("validated #[unpack] attribute")
-        {
-            stmts.extend(quote! {
-                #(#cfg)*
-                let #arg_name: core::option::Option<#inner_ty> = #arg_name;
-            });
-        }
-
         let store_name = gen_store_name(&arg_name);
         if !ffi_fn::is_identity_primitive(ty)
             && OwnershipMode::Borrow == ownership_mode_for_arg(attrs, ty)

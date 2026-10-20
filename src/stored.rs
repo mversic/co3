@@ -142,12 +142,12 @@ disjoint_impls! {
         }
     }
 
-    unsafe impl<R: NulTerminatedBuf<Data: ReprC> + ?Sized> DirectEncodeOwned for &R
+    unsafe impl<R: NulTerminatedBuf<Header: ReprC + CType> + ?Sized> DirectEncodeOwned for &R
     where
         Self: RustSpec<Layout = Unstable>,
         R: RustSpec<Layout = Unstable, Size = NulTerminated, Mutability = Exclusive>,
-        <R as NulTerminatedBuf>::Data: RustSpec<Layout = Stable>,
-        <<R as NulTerminatedBuf>::Data as ReprC>::CType: Sized,
+        <R as NulTerminatedBuf>::Header: RustSpec<Layout = Stable>,
+        <<R as NulTerminatedBuf>::Header as ReprC>::CType: Sized,
     {
         type SoftStore = ();
 
@@ -186,12 +186,12 @@ disjoint_impls! {
         }
     }
 
-    unsafe impl<R: NulTerminatedBuf<Data: ReprC> + ?Sized> DirectEncodeOwned for &R
+    unsafe impl<R: NulTerminatedBuf<Header: ReprC + CType> + ?Sized> DirectEncodeOwned for &R
     where
         Self: RustSpec<Layout = Unstable>,
         R: RustSpec<Layout = Unstable, Size = NulTerminated, Mutability = WithInterior>,
-        <R as NulTerminatedBuf>::Data: RustSpec<Layout = Stable>,
-        <<R as NulTerminatedBuf>::Data as ReprC>::CType: Sized,
+        <R as NulTerminatedBuf>::Header: RustSpec<Layout = Stable>,
+        <<R as NulTerminatedBuf>::Header as ReprC>::CType: Sized,
     {
         type SoftStore = ();
 
@@ -342,12 +342,12 @@ disjoint_impls! {
     }
 
     #[cfg(feature = "alloc")]
-    unsafe impl<R: NulTerminatedBuf<Data: ReprC> + ?Sized> DirectEncodeOwned for Box<R>
+    unsafe impl<R: NulTerminatedBuf<Header: ReprC + CType> + ?Sized> DirectEncodeOwned for Box<R>
     where
         Self: RustSpec<Layout = Unstable>,
         R: RustSpec<Layout = Unstable, Size = NulTerminated, Mutability = Exclusive>,
-        <R as NulTerminatedBuf>::Data: RustSpec<Layout = Stable>,
-        <<R as NulTerminatedBuf>::Data as ReprC>::CType: Sized,
+        <R as NulTerminatedBuf>::Header: RustSpec<Layout = Stable>,
+        <<R as NulTerminatedBuf>::Header as ReprC>::CType: Sized,
     {
         type SoftStore = ();
 
@@ -399,12 +399,12 @@ disjoint_impls! {
     }
 
     #[cfg(feature = "alloc")]
-    unsafe impl<R: NulTerminatedBuf<Data: ReprC> + ?Sized> DirectEncodeOwned for Box<R>
+    unsafe impl<R: NulTerminatedBuf<Header: ReprC + CType> + ?Sized> DirectEncodeOwned for Box<R>
     where
         Self: RustSpec<Layout = Unstable>,
         R: RustSpec<Layout = Unstable, Size = NulTerminated, Mutability = WithInterior>,
-        <R as NulTerminatedBuf>::Data: RustSpec<Layout = Stable>,
-        <<R as NulTerminatedBuf>::Data as ReprC>::CType: Sized,
+        <R as NulTerminatedBuf>::Header: RustSpec<Layout = Stable>,
+        <<R as NulTerminatedBuf>::Header as ReprC>::CType: Sized,
     {
         type SoftStore = ();
 
@@ -720,8 +720,7 @@ disjoint_impls! {
     where
         Self: RustSpec<Layout = Unstable>,
         R: RustSpec<Layout = Unstable, Size = NulTerminated, Mutability = Exclusive>,
-        <R as NulTerminatedBuf>::Data: RustSpec<Layout = Stable> + CheckedTransmute,
-        <<R as NulTerminatedBuf>::Data as ReprC>::CType: Sized,
+        <R as NulTerminatedBuf>::Header: RustSpec<Layout = Stable> + ReprC<CType: Sized> + CType,
     {
         type Store = ();
 
@@ -770,8 +769,7 @@ disjoint_impls! {
     where
         Self: RustSpec<Layout = Unstable>,
         R: RustSpec<Layout = Unstable, Size = NulTerminated, Mutability = WithInterior, Trap = Robust>,
-        <R as NulTerminatedBuf>::Data: RustSpec<Layout = Stable> + CheckedTransmute,
-        <<R as NulTerminatedBuf>::Data as ReprC>::CType: Sized,
+        <R as NulTerminatedBuf>::Header: RustSpec<Layout = Stable> + ReprC<CType: Sized> + CType,
     {
         type Store = ();
 
@@ -994,8 +992,7 @@ disjoint_impls! {
     where
         Self: RustSpec<Layout = Unstable>,
         R: RustSpec<Layout = Unstable, Size = NulTerminated, Mutability = Exclusive>,
-        <R as NulTerminatedBuf>::Data: RustSpec<Layout = Stable> + CheckedTransmute,
-        <<R as NulTerminatedBuf>::Data as ReprC>::CType: Sized,
+        <R as NulTerminatedBuf>::Header: RustSpec<Layout = Stable> + ReprC<CType: Sized> + CType,
     {
         type Store = ();
 
@@ -1059,8 +1056,7 @@ disjoint_impls! {
     where
         Self: RustSpec<Layout = Unstable>,
         R: RustSpec<Layout = Unstable, Size = NulTerminated, Mutability = WithInterior>,
-        <R as NulTerminatedBuf>::Data: RustSpec<Layout = Stable> + CheckedTransmute,
-        <<R as NulTerminatedBuf>::Data as ReprC>::CType: Sized,
+        <R as NulTerminatedBuf>::Header: RustSpec<Layout = Stable> + ReprC<CType: Sized> + CType,
     {
         type Store = ();
 
@@ -1076,8 +1072,8 @@ disjoint_impls! {
     unsafe impl<R: Owned<Owned: EncodeOwned> + ?Sized> EncodeOwned for Box<R>
     where
         Self: RustSpec<Layout = Unstable> + Into<<R as Owned>::Owned>,
-        R: RustSpec<Layout = Unstable, Size: Dst>,
         Self: ReprC<CType = <<R as Owned>::Owned as ReprC>::CType>,
+        R: RustSpec<Layout = Unstable, Size: Dst>,
     {
         type Store = <R::Owned as EncodeOwned>::Store;
 
@@ -1400,7 +1396,7 @@ disjoint_impls! {
     where
         Self: RustSpec<Layout = Unstable>,
         R: RustSpec<Layout = Unstable, Size = NulTerminated, Mutability = Exclusive>,
-        <R as NulTerminatedBuf>::Data: RustSpec<Layout = Stable> + CheckedTransmute,
+        <R as NulTerminatedBuf>::Header: RustSpec<Layout = Stable> + ReprC<CType: Sized> + CType,
     {
         type Store = ();
 
@@ -1543,7 +1539,7 @@ disjoint_impls! {
     // unsafe impl<'d, R: NulTerminatedBuf + ?Sized> DecodeOwned<'d> for &'d mut R
     // where
     //     R: RustSpec<Size = NulTerminated>,
-    //     <R::Data as CheckedTransmute as ReprC>::CType: Sized>,
+    //     <R::Header as CheckedTransmute as ReprC>::CType: Sized>,
     // {
     //     type Store = ();
     //
@@ -1660,8 +1656,7 @@ disjoint_impls! {
     where
         Self: RustSpec<Layout = Unstable>,
         R: RustSpec<Layout = Unstable, Size = NulTerminated, Mutability = Exclusive>,
-        <R as NulTerminatedBuf>::Data: RustSpec<Layout = Stable> + CheckedTransmute,
-        <<R as NulTerminatedBuf>::Data as ReprC>::CType: Sized,
+        <R as NulTerminatedBuf>::Header: RustSpec<Layout = Stable> + ReprC<CType: Sized> + CType,
     {
         type Store = ();
 

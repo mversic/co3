@@ -1,5 +1,6 @@
 use std::{
     cell::{Cell, UnsafeCell},
+    marker::PhantomData,
     num::NonZeroU8,
 };
 
@@ -17,6 +18,39 @@ struct GenericSlicePacket<T> {
 fn generic_slice_tail_has_generated_carrier_wide_impl() {
     assert_impl_all!(GenericSlicePacket<u8>: Wide);
     assert_impl_all!(CGenericSlicePacket<u8>: Wide);
+}
+
+#[repr(transparent)]
+#[derive(RustSpec, ReprC)]
+struct TransparentSlicePacket<T>(PhantomData<T>, [T]);
+
+#[repr(transparent)]
+#[derive(RustSpec, ReprC)]
+struct TransparentGenericTail<T: ?Sized> {
+    _marker: PhantomData<T>,
+    tail: T,
+}
+
+#[test]
+fn transparent_multiple_fields_use_the_tail_header() {
+    fn has_slice_header<T: Wide<Header = [u8; 0]> + ?Sized>() {}
+
+    has_slice_header::<TransparentSlicePacket<u8>>();
+    has_slice_header::<CTransparentSlicePacket<u8>>();
+    has_slice_header::<TransparentGenericTail<[u8]>>();
+    has_slice_header::<CTransparentGenericTail<[u8]>>();
+
+    let payload = [3u8, 5, 8];
+    let ptr = core::ptr::slice_from_raw_parts(payload.as_ptr(), payload.len())
+        as *const TransparentSlicePacket<u8>;
+    assert_eq!(<TransparentSlicePacket<u8> as Wide>::metadata(ptr), 3);
+    let rebuilt = unsafe {
+        <TransparentSlicePacket<u8> as Wide>::from_raw_parts(
+            <TransparentSlicePacket<u8> as Wide>::as_ptr(ptr),
+            3,
+        )
+    };
+    assert!(core::ptr::eq(ptr, rebuilt));
 }
 
 #[repr(transparent)]

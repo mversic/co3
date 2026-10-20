@@ -1,13 +1,29 @@
-error[E0308]: mismatched types
- --> tests/ui_fail/unpack_option_shadow.rs:8:40
+error[E0277]: `Option` must resolve to `core::option::Option`
+ --> tests/ui_fail/unpack_option_shadow.rs:5:1
   |
 5 | / ffi! {
 6 | |     #![unsafe(extern("C"))]
 7 | |
 8 | |     fn shadowed_option(#[unpack(_, _)] value: Option<&[u8]>);
-  | |                                        ^^^^^ expected `Option<&[u8]>`, found `Result<&[u8], ()>`
 9 | | }
-  | |_- expected due to this
+  | |_^ the trait `_::ExactType` is not implemented for `Result<(), ()>`
   |
-  = note: expected enum `std::option::Option<&[u8]>`
-             found enum `Result<&[u8], ()>`
+help: the trait `_::ExactType` is implemented for `std::option::Option<()>`
+ --> tests/ui_fail/unpack_option_shadow.rs:5:1
+  |
+5 | / ffi! {
+6 | |     #![unsafe(extern("C"))]
+7 | |
+8 | |     fn shadowed_option(#[unpack(_, _)] value: Option<&[u8]>);
+9 | | }
+  | |_^
+note: required by a bound in `_::check`
+ --> tests/ui_fail/unpack_option_shadow.rs:5:1
+  |
+5 | / ffi! {
+6 | |     #![unsafe(extern("C"))]
+7 | |
+8 | |     fn shadowed_option(#[unpack(_, _)] value: Option<&[u8]>);
+9 | | }
+  | |_^ required by this bound in `check`
+  = note: this error originates in the macro `ffi` (in Nightly builds, run with -Z macro-backtrace for more info)

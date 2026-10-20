@@ -1,15 +1,39 @@
 use co3::ffi::c_char;
 use co3::{ReprC, ffi, raw, reference::CRef, rust_spec::RustSpec};
 use core::ffi::CStr;
+use core::marker::PhantomData;
 
 #[repr(transparent)]
 #[derive(RustSpec, ReprC)]
 struct WrappedCStr(CStr);
 
+#[repr(transparent)]
+#[derive(RustSpec, ReprC)]
+struct WrappedCStrWithMarkers(PhantomData<()>, (), CStr);
+
+#[repr(transparent)]
+#[derive(RustSpec, ReprC)]
+struct NamedWrappedCStr {
+    _marker: PhantomData<()>,
+    value: CStr,
+}
+
 #[test]
 fn transparent_cstr_uses_char_data() {
-    static_assertions::assert_impl_all!(WrappedCStr: co3::ffi::NulTerminatedBuf<Data = c_char>);
+    static_assertions::assert_impl_all!(WrappedCStr: co3::ffi::NulTerminatedBuf<Header = c_char>);
     static_assertions::assert_impl_all!(Box<WrappedCStr>: co3::stored::EncodeOwned, co3::stored::DecodeOwned<'static>);
+    static_assertions::assert_impl_all!(WrappedCStrWithMarkers: co3::ffi::NulTerminatedBuf<Header = c_char>);
+    static_assertions::assert_impl_all!(NamedWrappedCStr: co3::ffi::NulTerminatedBuf<Header = c_char>);
+
+    let source = c"hello";
+    let wrapped = unsafe {
+        <WrappedCStrWithMarkers as co3::ffi::NulTerminatedBuf>::from_raw(source.as_ptr().cast())
+    };
+    assert_eq!(wrapped.2.to_bytes(), source.to_bytes());
+    assert_eq!(
+        <WrappedCStrWithMarkers as co3::ffi::NulTerminatedBuf>::as_ptr(wrapped),
+        source.as_ptr().cast(),
+    );
 }
 
 fn cstr_len(value: &CStr) -> usize {

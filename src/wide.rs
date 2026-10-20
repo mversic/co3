@@ -28,6 +28,7 @@ pub type PointeeData<P> = <<P as Wide>::Header as WideHeader>::Data;
 ///
 /// # Safety
 ///
+/// - Implementor must be a DST; a sized type, including a ZST, must not implement this trait.
 /// - The header pointer must be aligned for `Header::Data` and point to its first element, if any.
 /// - `metadata`, `as_ptr`, and `as_mut_ptr` **MUST** describe the same value and its actual layout.
 /// - Ownership methods must transfer and recover the original allocation.

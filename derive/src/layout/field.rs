@@ -1,37 +1,14 @@
 use proc_macro2::TokenStream;
 use quote::quote;
-use syn::{DeriveInput, GenericParam, Type, TypeParamBound, WherePredicate, parse_quote};
+use syn::{DeriveInput, WherePredicate, parse_quote};
 
-use super::{ReprCAttrs, attr::ReprKind, gen_is_valid_call, is_parametrized};
+use super::{
+    ReprCAttrs,
+    attr::ReprKind,
+    ctype::{TailClass, classify_tail},
+    gen_is_valid_call, is_parametrized,
+};
 use crate::utils::speculative_marker;
-
-fn is_unsized_field(input: &DeriveInput, field_ty: &Type) -> bool {
-    match field_ty {
-        Type::Slice(_) | Type::TraitObject(_) => true,
-        Type::Path(path) if path.qself.is_none() && path.path.is_ident("str") => true,
-        Type::Path(path) if path.qself.is_none() && path.path.segments.len() == 1 => {
-            let ident = &path.path.segments[0].ident;
-            let inline = input.generics.params.iter().any(|param| {
-                matches!(param, GenericParam::Type(param)
-                    if param.ident == *ident && param.bounds.iter().any(|bound|
-                        matches!(bound, TypeParamBound::Trait(bound)
-                            if bound.maybe.is_some() && bound.path.is_ident("Sized"))))
-            });
-            let in_where_clause = input.generics.where_clause.as_ref().is_some_and(|clause| {
-                clause.predicates.iter().any(|predicate| {
-                    matches!(predicate, WherePredicate::Type(predicate)
-                        if matches!(&predicate.bounded_ty, Type::Path(path)
-                            if path.qself.is_none() && path.path.is_ident(ident))
-                        && predicate.bounds.iter().any(|bound|
-                            matches!(bound, TypeParamBound::Trait(bound)
-                                if bound.maybe.is_some() && bound.path.is_ident("Sized"))))
-                })
-            });
-            inline || in_where_clause
-        }
-        _ => false,
-    }
-}
 
 pub(super) fn derive_field_repr_c(
     input: &DeriveInput,
@@ -174,7 +151,11 @@ pub(super) fn derive_field_repr_c(
         }
     });
 
-    let codecs = (!is_unsized_field(input, field_ty)).then(|| {
+    let codecs = (!matches!(
+        classify_tail(field_ty, &input.generics),
+        TailClass::Unsized(_)
+    ))
+    .then(|| {
         let (impl_generics, _, where_clause) = input.generics.split_for_impl();
         let predicates = where_clause.as_ref().map(|clause| &clause.predicates);
         let speculative = speculative_marker(input.generics.params.is_empty());

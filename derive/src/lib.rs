@@ -59,6 +59,7 @@ mod normalize;
 mod parse;
 mod statics;
 mod tag;
+mod type_checks;
 mod utils;
 mod validate;
 mod wrapper;
@@ -522,6 +523,7 @@ pub fn ffi(input: TokenStream) -> Result<TokenStream> {
         validate_items(kind, &attrs, &items)?;
         synthesize_items(&symbol_prefix, &mut items)?;
 
+        let type_checks = type_checks::TypeChecks::for_ffi(&items, &aliases);
         let aliases = expand_type_aliases(aliases);
         let declarations = match kind {
             DeclKind::Export => {
@@ -536,7 +538,7 @@ pub fn ffi(input: TokenStream) -> Result<TokenStream> {
                 &symbol_fragments,
             ),
         };
-        return Ok(quote!(#aliases #declarations));
+        return Ok(quote!(#type_checks #aliases #declarations));
     }
 
     let co3 = co3_path();
@@ -626,8 +628,9 @@ pub fn raw(input: TokenStream) -> Result<TokenStream> {
     }
     validate_raw_companions(&raw_decls)?;
     debug_assert!(aliases.is_empty());
+    let type_checks = type_checks::TypeChecks::for_raw(&raw_decls);
     let companions = gen_raw_companions(failure_mode, raw_decls);
-    Ok(quote!(#(#companions)*))
+    Ok(quote!(#type_checks #(#companions)*))
 }
 
 fn expand_type_aliases(aliases: Vec<ParsedAlias>) -> TokenStream {
@@ -641,12 +644,8 @@ fn expand_abi_type_alias(ParsedAlias { mut item, raw_root }: ParsedAlias) -> Tok
     }
     let co3 = co3_path();
     let source = &item.ty;
-    let identity_check = crate::ffi_fn::gen_implicit_primitive_checks(source);
     *item.ty = parse_quote!(<#source as #co3::ReprC>::CType);
-    quote! {
-        const _: () = { #identity_check };
-        #item
-    }
+    quote!(#item)
 }
 
 fn pack_items(items: Vec<ForeignItem>) -> Result<Vec<ForeignItem>> {

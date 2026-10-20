@@ -1,7 +1,12 @@
 use proc_macro2::TokenStream;
 use quote::quote;
 
-use super::{ReprKind, is_parametrized, wide::last_field};
+use super::{
+    ReprKind,
+    ctype::{TailClass, UnsizedTail, classify_tail},
+    is_parametrized,
+    wide::last_field,
+};
 
 pub(super) fn expand(
     input: &syn::DeriveInput,
@@ -10,11 +15,19 @@ pub(super) fn expand(
     let syn::Data::Struct(data) = &input.data else {
         return Ok(quote! {});
     };
-    if !matches!(repr, Some(ReprKind::Transparent)) || data.fields.len() != 1 {
+    if !matches!(repr, Some(ReprKind::Transparent)) {
         return Ok(quote! {});
     }
 
-    let (field, _, field_member) = last_field(&data.fields).expect("one field was checked");
+    let Some((field, _, field_member)) = last_field(&data.fields) else {
+        return Ok(quote! {});
+    };
+    if matches!(
+        classify_tail(&field.ty, &input.generics),
+        TailClass::Sized | TailClass::Unsized(UnsizedTail::SliceLike)
+    ) {
+        return Ok(quote! {});
+    }
     let field_ty = &field.ty;
     let name = &input.ident;
     let (impl_generics, ty_generics, where_clause) = input.generics.split_for_impl();
@@ -24,7 +37,7 @@ pub(super) fn expand(
         quote! {
             fn into_non_null(
                 self: co3::boxed::Box<Self>,
-            ) -> core::ptr::NonNull<Self::Data> {
+            ) -> core::ptr::NonNull<Self::Header> {
                 let inner = unsafe {
                     co3::boxed::Box::from_raw(
                         co3::boxed::Box::into_raw(self) as *mut #field_ty
@@ -34,7 +47,7 @@ pub(super) fn expand(
             }
 
             unsafe fn from_non_null(
-                ptr: core::ptr::NonNull<Self::Data>,
+                ptr: core::ptr::NonNull<Self::Header>,
             ) -> co3::boxed::Box<Self> {
                 let inner = unsafe {
                     <#field_ty as co3::ffi::NulTerminatedBuf>::from_non_null(ptr.cast())
@@ -54,13 +67,13 @@ pub(super) fn expand(
             #for_dummy #field_ty: co3::ffi::NulTerminatedBuf,
             #predicates
         {
-            type Data = <#field_ty as co3::ffi::NulTerminatedBuf>::Data;
+            type Header = <#field_ty as co3::ffi::NulTerminatedBuf>::Header;
 
-            fn as_ptr(value: &Self) -> *const Self::Data {
+            fn as_ptr(value: &Self) -> *const Self::Header {
                 <#field_ty as co3::ffi::NulTerminatedBuf>::as_ptr(&value.#field_member)
             }
 
-            unsafe fn from_raw<'__co3_nul_terminated>(ptr: *const Self::Data) -> &'__co3_nul_terminated Self {
+            unsafe fn from_raw<'__co3_nul_terminated>(ptr: *const Self::Header) -> &'__co3_nul_terminated Self {
                 let inner = unsafe {
                     <#field_ty as co3::ffi::NulTerminatedBuf>::from_raw(ptr)
                 };

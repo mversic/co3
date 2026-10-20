@@ -1,4 +1,4 @@
-error[E0277]: use the Rust primitive or a type alias for it
+error[E0277]: `i32` must resolve to `core::primitive::i32`
   --> tests/ui_fail/shadowed_primitive.rs:13:24
    |
 13 |     fn identity(value: shadow::i32) -> shadow::i32;

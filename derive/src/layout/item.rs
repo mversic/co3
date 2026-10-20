@@ -1248,7 +1248,7 @@ pub(super) fn derive_fieldless_enum(
         })
         .unwrap_or_else(|| {
             if transparent {
-                quote! { () }
+                quote! {}
             } else {
                 quote! { #ctype_name(()) }
             }

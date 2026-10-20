@@ -5,10 +5,7 @@ use crate::{
     layout::{
         attr::ReprKind,
         borrow::gen_view_owner_name,
-        ctype::{
-            SyntacticSizedness, gen_copy_extern_c_bounds_for_ctype, gen_ctype_name,
-            syntactic_sizedness,
-        },
+        ctype::{classify_tail, gen_copy_extern_c_bounds_for_ctype, gen_ctype_name},
         enum_tag_type, enum_variant_tag_exprs, generic_param_idents, is_exhaustive_enum,
         is_transparent_enum_repr,
     },
@@ -55,9 +52,11 @@ pub fn gen_struct_niche_ir(
     fields: &syn::Fields,
     niche_value: Option<&syn::Expr>,
 ) -> TokenStream {
-    if fields.iter().next_back().is_some_and(|field| {
-        syntactic_sizedness(&field.ty, generics) == SyntacticSizedness::Unsized
-    }) {
+    if fields
+        .iter()
+        .next_back()
+        .is_some_and(|field| classify_tail(&field.ty, generics).is_known_unsized())
+    {
         return quote! {};
     }
 
