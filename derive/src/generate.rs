@@ -929,6 +929,34 @@ fn gen_dispatch_set(
                     ffi_fn::SelfConcretizer::new(self_ty).visit_impl_item_fn_mut(&mut method);
                     monomorphizer.visit_impl_item_fn_mut(&mut method);
                 }
+                // The selected input type is concrete in this dispatch arm.
+                // Its generated borrow-encoding bound belongs on the generic
+                // trait method, but repeating it here makes the impl appear to
+                // require more than the trait. Keep bounds on auxiliary params.
+                let auxiliary_idents = auxiliary_params.iter().filter_map(|param| match param {
+                    syn::GenericParam::Type(param) => Some(&param.ident),
+                    syn::GenericParam::Const(param) => Some(&param.ident),
+                    syn::GenericParam::Lifetime(_) => None,
+                });
+                let auxiliary_detector = ParamUseDetector::new(auxiliary_idents);
+                if let Some(where_clause) = &mut method.sig.generics.where_clause {
+                    where_clause.predicates = core::mem::take(&mut where_clause.predicates)
+                        .into_iter()
+                        .filter(|predicate| {
+                            let generated_borrow_bound = matches!(predicate,
+                                syn::WherePredicate::Type(predicate)
+                                    if predicate.lifetimes.as_ref().is_some_and(|lifetimes|
+                                        lifetimes.lifetimes.iter().any(|param| matches!(param,
+                                            syn::GenericParam::Lifetime(param)
+                                                if param.lifetime.ident == "__co3_borrow"
+                                        ))
+                                    )
+                            );
+                            !generated_borrow_bound
+                                || auxiliary_detector.predicate_mentions_param(predicate)
+                        })
+                        .collect();
+                }
                 quote!(#method)
             })
             .unwrap_or_default();

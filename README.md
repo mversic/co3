@@ -18,28 +18,28 @@ _Safely_ export and/or import FFI bindings:
    - if preserving soundness requires additional validation, temporary storage, or cloning, that cost is accepted.
    - only explicit opt-in modes prioritize performance by explicitly shifting soundness responsibility to the user.
 
-# Why Bother?
+## Why Bother?
 
 Ain't nobody got time for this, just give me a tldr:
 
-1. You won't find anything quite as **ergonomic and expressive yet safe**
+1. CO3 is **ergonomic and expressive yet safe**
 
    - which crate allows using **native Rust types**? Those claiming so still require wrappers
    - while many claim expressivity, have you ever seen a **runtime tagged-dispatch** in Rust?
 
-2. If you're exporting FFI from _Rust_, `CO3` makes it **unbelievably easy**
+2. If you're exporting FFI from Rust, `CO3` **makes it a breeze**
 
    - `CO3` aims to make the complex process of FFI generation completely painless
    - literally, just write down the export declarations as if writing native `Rust`
 
-3. Although recent, `CO3` is already **incredibly feature rich and well tested**
+3. Although recent, `CO3` is already **feature rich and well tested**
 
    - the initial release of `CO3` required it reached feature parity with the ecosystem
-   - which crate allows you to use **generics in FFI or custom DSTs**? yes, `CO3` does
+   - which crate allows you to use **generics in FFI or custom DSTs**? `CO3` does
 
 Check the [release article](https://mversic.github.io/co3/) for the motivation behind `CO3` and in-depth analysis of its features.
 
-# ABI Stability
+## ABI Stability
 
 Although this crate is pre-1.0.0, its **ABI is considered stable**. This does not mean the API is stable. In practice:
 
@@ -48,7 +48,7 @@ Although this crate is pre-1.0.0, its **ABI is considered stable**. This does no
 
 In other words, external binaries that integrate through the defined ABI should keep working, while Rust code using this crate directly may need refactoring between releases.
 
-# Example
+## Example
 
 Using `CO3` is super-duper **simple yet highly expressive**. In a nutshell:
 
@@ -114,7 +114,7 @@ ffi! {
 
 Note that type deriving `ReprC`, although recommended, **is not required to have a stable representation**.
 
-## Tagged Dispatch
+### Tagged Dispatch
 
 It is common in FFI for several concrete types to share one C representation. Think of FFI functions
 like [SQLAllocHandle](https://learn.microsoft.com/en-us/sql/odbc/reference/syntax/sqlallochandle-function)
@@ -170,15 +170,15 @@ ffi! {
 
 To see what `CO3` is capable of and what using it looks like in practice, check out [rs-odbc](https://github.com/mversic/rs-odbc).
 
-# Related Projects
+## Related Projects
 
-## [cxx](https://github.com/dtolnay/cxx)
+### [cxx](https://github.com/dtolnay/cxx)
 
 This crate generates a `C++` API and bridge code, with **compile-time checks** for supported declarations against `C++` headers.
 
 If your FFI is `Rust <-> C++`, using this crate is preferable because it gives **deep cross-language integration**. As always, considering the author, this is a very well made crate. I think both crates could learn from each other.
 
-## [bindgen](https://github.com/rust-lang/rust-bindgen)
+### [bindgen](https://github.com/rust-lang/rust-bindgen)
 
 This crate generates **`Rust` bindings from `C` headers**.
 
@@ -186,15 +186,15 @@ I maintain this is not a crate you would ever want to use because **`C` APIs com
 
 Because `Rust`'s type system is much more expressive than `C`'s, it's much better to **write an authoritative layer in `Rust`**.
 
-## [cbindgen](https://github.com/mozilla/cbindgen)
+### [cbindgen](https://github.com/mozilla/cbindgen)
 
 Use this crate to build **`C` headers from `CO3` export declarations**.
 
-## [cheadergen](https://docs.rs/cheadergen/latest/cheadergen/)
+### [cheadergen](https://docs.rs/cheadergen/latest/cheadergen/)
 
 The same as `cbindgen` but newer. **I'd prefer it** if it were at the same feature parity level.
 
-## [safer_ffi](https://github.com/getditto/safer_ffi)
+### [safer_ffi](https://github.com/getditto/safer_ffi)
 
 While I appreciate the work done, **this crate looks more like an attempt than a real solution**.
 
@@ -202,13 +202,13 @@ Given the existence of `CO3`, I fail to see why would anyone recommend using thi
 
 If there is anything found missing in `CO3` that `safer-ffi` can do, report it and **the gap should be closed immediately**.
 
-## [Diplomat](https://github.com/rust-diplomat/diplomat)
+### [Diplomat](https://github.com/rust-diplomat/diplomat)
 
 Generates not only C API glue for your `Rust` exports but also **bindings for supported target languages**.
 
 I don't think `CO3` would aim to match that functionality, but I do think **they'd benefit a lot from building on top of `CO3`**.
 
-## [Interoptopus](https://github.com/ralfbiedert/interoptopus)
+### [Interoptopus](https://github.com/ralfbiedert/interoptopus)
 
 Quite similar to `Diplomat` in scope.
 
