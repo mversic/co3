@@ -7,6 +7,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.8.1] - 2026-10-21
+
+### Added
+
+- Derive `Wide` and `NulTerminatedBuf` for `#[repr(transparent)]` structs with multiple fields
+
+### Changed
+
+- Emit special-type identity checks once per derive or FFI expansion.
+- Rename `NulTerminatedBuf::Data` to `NulTerminatedBuf::Header`.
+- lower `ManuallyDrop<T>` as `T::CType` when `T` is `NoDrop`.
+- Require `Wide` implementors to be dynamically sized types.
+
+### Removed
+
+- remove `UnsafeCell` impls which relied on unsychronized access.
+- remove `#[repr_c(as(T))]` feature which relied on false `RustSpec`.
+
 ## [0.8.0] - 2026-10-17
 
 ### Added
