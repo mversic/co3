@@ -182,9 +182,9 @@ If your FFI is `Rust <-> C++`, using this crate is preferable because it gives *
 
 This crate generates **`Rust` bindings from `C` headers**.
 
-I maintain this is not a crate you would ever want to use because **`C` APIs communicate many invariants through informal ways** that automated translation into `Rust` bindings cannot capture.
+I would generally not recommend using this approach because **`C` APIs communicate many invariants through informal ways** that automated translation into `Rust` bindings cannot capture. Likewise, you are also very likely to find yourself writing wrappers around the generated code in Rust anyways, which makes me question what the whole point of automatic generation of bindings is.
 
-Because `Rust`'s type system is much more expressive than `C`'s, it's much better to **write an authoritative layer in `Rust`**.
+Because `Rust`'s type system is much more expressive than `C`'s, you might consider it better to **write an authoritative layer in `Rust`**.
 
 ### [cbindgen](https://github.com/mozilla/cbindgen)
 
@@ -196,9 +196,7 @@ The same as `cbindgen` but newer. **I'd prefer it** if it were at the same featu
 
 ### [safer_ffi](https://github.com/getditto/safer_ffi)
 
-While I appreciate the work done, **this crate looks more like an attempt than a real solution**.
-
-Given the existence of `CO3`, I fail to see why would anyone recommend using this crate. The API is too complicated while expressivity just isn't there.
+While I appreciate the work done, **this crate looks more like an attempt than a real solution**. Given the existence of `CO3`, aside from being a more mature project, I cannot find a reason to recommend using this crate. The API is too complicated while expressivity just isn't there.
 
 If there is anything found missing in `CO3` that `safer-ffi` can do, report it and **the gap should be closed immediately**.
 
