@@ -61,11 +61,11 @@ help: the following other types implement trait `stored::_::DecodeOwned1<'d, _TÅ
    | |         DecodeOwned<'d> for &'d mut R
    | |     where
    | |         Self: RustSpec<Layout = Unstable>,
-   | |         R: RustSpec<Layout = Unstable, Size = RustSpecSized<S>> + EncodeOwned<Store: EmptyStore>,
+   | |         R: RustSpec<Layout = Unstable, Size = RustSpecSized<S>> + EncodeMove<Store: EmptyStore>,
    | |         <R as Borrow>::Borrowed<'d>: DecodeOwned<'d, CType = <<R as ReprC>::CType as BorrowCast>::AsConst>,
    | |___________________________________________________________________________________________________________^ `&'d mut R` implements `stored::_::DecodeOwned1<'d, Unstable, rust_spec::size::Sized<S>, Unstable>`
 ...
-   | /     unsafe impl<'d, R: DecodeOwned<'d, CType: BorrowCast<AsConst: Copy> + Copy> + FromBorrow<'d> + EncodeOwned<Store: EmptyStore>>
+   | /     unsafe impl<'d, R: DecodeOwned<'d, CType: BorrowCast<AsConst: Copy> + Copy> + FromBorrow<'d> + EncodeMove<Store: EmptyStore>>
    | |         DecodeOwned<'d> for &'d mut [R]
    | |     where
    | |         Self: RustSpec<Layout = Unstable>,
@@ -138,7 +138,7 @@ error[E0277]: the trait bound `Opaque: Copy` is not satisfied
 help: the trait `stored::_::DecodeOwned1<'_, Unstable, rust_spec::size::MetaSized<SliceLike>, Unstable>` is conditionally implemented for `&mut [R]`
   --> src/stored.rs
    |
-   |       unsafe impl<'d, R: DecodeOwned<'d, CType: BorrowCast<AsConst: Copy> + Copy> + FromBorrow<'d> + EncodeOwned<Store: EmptyStore>>
+   |       unsafe impl<'d, R: DecodeOwned<'d, CType: BorrowCast<AsConst: Copy> + Copy> + FromBorrow<'d> + EncodeMove<Store: EmptyStore>>
    |       ^                                                                     ---- unsatisfied requirement introduced here: `CKita5: Copy`
    |  _____|
    | |

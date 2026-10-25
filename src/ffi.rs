@@ -15,7 +15,7 @@ use crate::{
     CFnArg, CFnReturn, CType, Decode, Encode, ReprC,
     borrow::{Borrow, BorrowCast, BorrowCastMut, FromBorrow},
     primitives::primitive_derive,
-    stored::{DecodeOwned, DirectEncodeOwned, EncodeOwned},
+    stored::{DecodeOwned, EncodeMove, EncodeMoveUnchecked},
     transmute::CheckedTransmute,
 };
 
@@ -529,7 +529,7 @@ impl ReprC for CString {
     type CType = CBox<c_char>;
 }
 #[cfg(feature = "alloc")]
-unsafe impl EncodeOwned for CString {
+unsafe impl EncodeMove for CString {
     type Store = ();
 
     #[inline(always)]
@@ -541,7 +541,7 @@ unsafe impl EncodeOwned for CString {
     }
 }
 #[cfg(feature = "alloc")]
-unsafe impl DirectEncodeOwned for CString {
+unsafe impl EncodeMoveUnchecked for CString {
     type SoftStore = ();
 
     unsafe fn soft_encode_unchecked(self, (): &mut ()) -> Self::CType {
@@ -560,7 +560,7 @@ unsafe impl<'d> DecodeOwned<'d> for CString {
 #[cfg(feature = "alloc")]
 impl Encode for CString {}
 #[cfg(feature = "alloc")]
-impl crate::DirectEncode for CString {}
+impl crate::EncodeUnchecked for CString {}
 #[cfg(feature = "alloc")]
 impl Decode<'_> for CString {}
 
@@ -659,10 +659,11 @@ mod tests {
         assert_not_impl_any!(Cell<CStr>: NulTerminatedBuf);
         assert_impl_all!(ManuallyDrop<CStr>: NulTerminatedBuf);
         assert_impl_all!(&ManuallyDrop<CStr>: Encode, Decode<'static>);
-        assert_not_impl_any!(&mut CStr: ReprC, Encode, Decode<'static>);
+        assert_impl_all!(&mut CStr: ReprC);
+        assert_not_impl_any!(&mut CStr: Encode, Decode<'static>);
         #[cfg(feature = "alloc")]
         {
-            assert_impl_all!(Box<ManuallyDrop<CStr>>: EncodeOwned, crate::stored::DecodeOwned<'static>);
+            assert_impl_all!(Box<ManuallyDrop<CStr>>: EncodeMove, crate::stored::DecodeOwned<'static>);
             assert_impl_all!(CString: Encode);
         }
     }

@@ -130,7 +130,7 @@ fn checked_mut_interior_wide_reference_encoding_asserts_each_pointee() {
 fn checked_mut_nonrobust_wide_reference_asserts_original_pointee_validity() {
     let mut values = [ValidatedBool(true), ValidatedBool(false)];
     let mut store = Default::default();
-    let _ = co3::stored::EncodeOwned::soft_encode(&mut values[..], &mut store);
+    let _ = co3::stored::EncodeMove::soft_encode(&mut values[..], &mut store);
 }
 
 #[test]
@@ -210,9 +210,9 @@ fn field_representation_maps_owned_conversion_and_transmutation() {
     assert_not_impl_any!(FieldHandle: co3::transmute::CheckedTransmute);
     assert_not_impl_any!(CFieldHandle: co3::transmute::CheckedTransmute);
     assert_impl_all!(TransparentFieldHandle: co3::transmute::CheckedTransmute);
-    assert_impl_all!(FieldHandle: co3::stored::DirectEncodeOwned);
-    assert_impl_all!(CFieldHandle: co3::stored::DirectEncodeOwned);
-    assert_impl_all!(TransparentFieldHandle: co3::stored::DirectEncodeOwned);
+    assert_impl_all!(FieldHandle: co3::stored::EncodeMoveUnchecked);
+    assert_impl_all!(CFieldHandle: co3::stored::EncodeMoveUnchecked);
+    assert_impl_all!(TransparentFieldHandle: co3::stored::EncodeMoveUnchecked);
     assert!(!unsafe {
         <ValidatedByte as co3::transmute::CheckedTransmute>::is_valid(&CValidatedByte::from_fields(
             10,

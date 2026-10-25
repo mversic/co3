@@ -3,27 +3,31 @@ use alloc::boxed::Box;
 use core::mem::ManuallyDrop;
 
 use disjoint_impls::disjoint_impls;
+#[cfg(feature = "alloc")]
+use rust_spec::size::SizedKind;
 use rust_spec::{
     RustSpec, Stable,
     drop::NoDrop,
     layout::Robust,
     mutability::{Exclusive, WithInterior},
     niche::WithNiche,
-    size::{SizedKind, Zero},
+    size::Zero,
 };
 
 #[cfg(feature = "alloc")]
 use crate::boxed::{CBox, CBoxCell};
-use crate::reference::{CRef, CRefMut};
-use crate::{ReprC, Thin, WithDrop, assert_arr_has_non_zero_len, utf8::Utf8Str};
+use crate::{
+    ReprC, Thin, WithDrop, assert_arr_has_non_zero_len,
+    reference::{CRef, CRefMut},
+    utf8::Utf8Str,
+};
 
 disjoint_impls! {
     /// Type that can be **safely transmuted** into its C representation.
     ///
     /// # Safety
     ///
-    /// - `Self` and `Self::CType` must have mutually transmutable layouts and value representations.
-    /// - `Self::is_valid` must return `false` for trap representations and `true` for valid representations
+    /// - `Self` and `Self::CType` must be compatbile for a stable ABI (like `extern "C"`)
     pub unsafe trait CheckedTransmute: ReprC {
         /// Called when transmuting an [`ReprC::CType`] back into [`Self`] to check for trap representations.
         ///

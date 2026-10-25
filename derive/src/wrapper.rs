@@ -304,7 +304,7 @@ fn gen_regular_drop_import_body<const DISPATCHED: bool>(
             #(#receiver_cfg)*
             let mut #store_name = Default::default();
             #(#receiver_cfg)*
-            let __co3_self = co3::stored::EncodeOwned::soft_encode(
+            let __co3_self = co3::stored::EncodeMove::soft_encode(
                 __co3_self, &mut #store_name
             );
         }

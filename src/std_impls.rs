@@ -1,10 +1,10 @@
 #[cfg(feature = "alloc")]
 use crate::stored::Owned;
 use crate::{
-    CFnArg, CFnReturn, CType, Decode, DirectEncode, Encode, ReprC,
+    CFnArg, CFnReturn, CType, Decode, Encode, EncodeUnchecked, ReprC,
     borrow::{Borrow, BorrowCast, BorrowCastMut, FromBorrow},
     niche::Niche,
-    stored::{DecodeOwned, DirectEncodeOwned, EmptyStore, EncodeOwned},
+    stored::{DecodeOwned, EmptyStore, EncodeMove, EncodeMoveUnchecked},
     transmute::CheckedTransmute,
     utf8::Utf8Str,
 };
@@ -21,6 +21,7 @@ use rust_spec::RustSpec;
 
 macro_rules! non_zero_derive {
     ($($primitive:ty),+ $(,)?) => {$(
+        crate::mutable::impl_copy_mut!([] NonZero<$primitive>);
         unsafe impl Borrow for NonZero<$primitive> {
             type Borrowed<'itm>
                 = Self
@@ -47,7 +48,7 @@ macro_rules! non_zero_derive {
         impl ReprC for NonZero<$primitive> {
             type CType = $primitive;
         }
-        unsafe impl EncodeOwned for NonZero<$primitive> {
+        unsafe impl EncodeMove for NonZero<$primitive> {
             type Store = ();
 
             #[inline(always)]
@@ -58,7 +59,7 @@ macro_rules! non_zero_derive {
                 unsafe { self.soft_encode_unchecked(&mut ()) }
             }
         }
-        unsafe impl DirectEncodeOwned for NonZero<$primitive> {
+        unsafe impl EncodeMoveUnchecked for NonZero<$primitive> {
             type SoftStore = ();
 
             unsafe fn soft_encode_unchecked(self, (): &mut ()) -> Self::CType {
@@ -80,7 +81,7 @@ macro_rules! non_zero_derive {
         }
 
         impl Encode for NonZero<$primitive> {}
-        impl DirectEncode for NonZero<$primitive> {}
+        impl EncodeUnchecked for NonZero<$primitive> {}
         impl Decode<'_> for NonZero<$primitive> {}
 
         unsafe impl CheckedTransmute for NonZero<$primitive> {
@@ -119,7 +120,7 @@ impl<'itm> FromBorrow<'itm> for () {
 impl ReprC for () {
     type CType = Self;
 }
-unsafe impl EncodeOwned for () {
+unsafe impl EncodeMove for () {
     type Store = ();
 
     #[inline(always)]
@@ -131,7 +132,7 @@ unsafe impl EncodeOwned for () {
     }
 }
 
-unsafe impl DirectEncodeOwned for () {
+unsafe impl EncodeMoveUnchecked for () {
     type SoftStore = ();
 
     unsafe fn soft_encode_unchecked(self, (): &mut ()) -> Self::CType {
@@ -148,7 +149,7 @@ unsafe impl<'d> DecodeOwned<'d> for () {
 }
 
 impl Encode for () {}
-impl DirectEncode for () {}
+impl EncodeUnchecked for () {}
 impl Decode<'_> for () {}
 
 unsafe impl CheckedTransmute for () {
@@ -200,7 +201,7 @@ unsafe impl<T: ?Sized> CheckedTransmute for PhantomData<T> {
         true
     }
 }
-unsafe impl<T: ?Sized> EncodeOwned for PhantomData<T> {
+unsafe impl<T: ?Sized> EncodeMove for PhantomData<T> {
     type Store = ();
 
     #[inline(always)]
@@ -211,7 +212,7 @@ unsafe impl<T: ?Sized> EncodeOwned for PhantomData<T> {
         unsafe { self.soft_encode_unchecked(&mut ()) }
     }
 }
-unsafe impl<T: ?Sized> DirectEncodeOwned for PhantomData<T> {
+unsafe impl<T: ?Sized> EncodeMoveUnchecked for PhantomData<T> {
     type SoftStore = ();
 
     unsafe fn soft_encode_unchecked(self, (): &mut ()) -> Self::CType {
@@ -228,7 +229,7 @@ unsafe impl<'d, T: ?Sized> DecodeOwned<'d> for PhantomData<T> {
 }
 
 impl<T: ?Sized> Encode for PhantomData<T> {}
-impl<T: ?Sized> DirectEncode for PhantomData<T> {}
+impl<T: ?Sized> EncodeUnchecked for PhantomData<T> {}
 impl<T: ?Sized> Decode<'_> for PhantomData<T> {}
 
 unsafe impl<T: ?Sized> CType for PhantomData<T> {}
@@ -265,8 +266,8 @@ impl<T: CType + ?Sized> ReprC for NonNull<T> {
     // TODO: afaik the pointer is not necessarily mutable just non-null
     type CType = <*mut T as ReprC>::CType;
 }
-unsafe impl<T: CType + ?Sized> EncodeOwned for NonNull<T> {
-    type Store = <*mut T as EncodeOwned>::Store;
+unsafe impl<T: CType + ?Sized> EncodeMove for NonNull<T> {
+    type Store = <*mut T as EncodeMove>::Store;
 
     #[inline(always)]
     fn soft_encode<'itm>(self, store: &'itm mut Self::Store) -> Self::CType
@@ -276,7 +277,7 @@ unsafe impl<T: CType + ?Sized> EncodeOwned for NonNull<T> {
         unsafe { self.soft_encode_unchecked(store) }
     }
 }
-unsafe impl<T: CType + ?Sized> DirectEncodeOwned for NonNull<T> {
+unsafe impl<T: CType + ?Sized> EncodeMoveUnchecked for NonNull<T> {
     type SoftStore = ();
 
     unsafe fn soft_encode_unchecked(self, (): &mut ()) -> Self::CType {
@@ -306,7 +307,7 @@ unsafe impl<'d, T: CType + ?Sized> DecodeOwned<'d> for NonNull<T> {
 }
 
 impl<T: CType + ?Sized> Encode for NonNull<T> {}
-impl<T: CType + ?Sized> DirectEncode for NonNull<T> {}
+impl<T: CType + ?Sized> EncodeUnchecked for NonNull<T> {}
 impl<T: CType + ?Sized> Decode<'_> for NonNull<T> {}
 
 unsafe impl<T: CType + ?Sized> CheckedTransmute for NonNull<T>
@@ -385,7 +386,7 @@ unsafe impl<R: BorrowCastMut + ?Sized> BorrowCastMut for UnsafeCell<R> {
 impl<R: ReprC + ?Sized> ReprC for UnsafeCell<R> {
     type CType = UnsafeCell<R::CType>;
 }
-unsafe impl<R: EncodeOwned> EncodeOwned for UnsafeCell<R> {
+unsafe impl<R: EncodeMove> EncodeMove for UnsafeCell<R> {
     type Store = R::Store;
 
     #[inline(always)]
@@ -396,7 +397,7 @@ unsafe impl<R: EncodeOwned> EncodeOwned for UnsafeCell<R> {
         UnsafeCell::new(self.into_inner().soft_encode(store))
     }
 }
-unsafe impl<R: DirectEncodeOwned> DirectEncodeOwned for UnsafeCell<R> {
+unsafe impl<R: EncodeMoveUnchecked> EncodeMoveUnchecked for UnsafeCell<R> {
     type SoftStore = R::SoftStore;
 
     unsafe fn soft_encode_unchecked(self, store: &mut Self::SoftStore) -> Self::CType {
@@ -424,7 +425,7 @@ unsafe impl<'d, R: DecodeOwned<'d>> DecodeOwned<'d> for UnsafeCell<R> {
 }
 
 impl<R: Encode> Encode for UnsafeCell<R> {}
-impl<R: DirectEncode> DirectEncode for UnsafeCell<R> {}
+impl<R: EncodeUnchecked> EncodeUnchecked for UnsafeCell<R> {}
 impl<'d, R: Decode<'d>> Decode<'d> for UnsafeCell<R> {}
 
 unsafe impl<T: CheckedTransmute + ?Sized> CheckedTransmute for UnsafeCell<T> {
@@ -472,7 +473,7 @@ impl<'itm, T: FromBorrow<'itm>> FromBorrow<'itm> for Cell<T> {
 impl<R: ReprC + ?Sized> ReprC for Cell<R> {
     type CType = <UnsafeCell<R> as ReprC>::CType;
 }
-unsafe impl<R: EncodeOwned> EncodeOwned for Cell<R> {
+unsafe impl<R: EncodeMove> EncodeMove for Cell<R> {
     type Store = R::Store;
 
     #[inline(always)]
@@ -483,7 +484,7 @@ unsafe impl<R: EncodeOwned> EncodeOwned for Cell<R> {
         UnsafeCell::new(self.into_inner().soft_encode(store))
     }
 }
-unsafe impl<R: DirectEncodeOwned> DirectEncodeOwned for Cell<R> {
+unsafe impl<R: EncodeMoveUnchecked> EncodeMoveUnchecked for Cell<R> {
     type SoftStore = R::SoftStore;
 
     unsafe fn soft_encode_unchecked(self, store: &mut Self::SoftStore) -> Self::CType {
@@ -511,7 +512,7 @@ unsafe impl<'d, R: DecodeOwned<'d>> DecodeOwned<'d> for Cell<R> {
 }
 
 impl<R: Encode> Encode for Cell<R> {}
-impl<R: DirectEncode> DirectEncode for Cell<R> {}
+impl<R: EncodeUnchecked> EncodeUnchecked for Cell<R> {}
 impl<'d, R: Decode<'d>> Decode<'d> for Cell<R> {}
 
 unsafe impl<T: CheckedTransmute<CType: Copy>> CheckedTransmute for Cell<T> {
@@ -565,7 +566,7 @@ impl<'itm, T: 'itm> FromBorrow<'itm> for MaybeUninit<T> {
 impl<T: CheckedTransmute<CType: Sized>> ReprC for MaybeUninit<T> {
     type CType = MaybeUninit<T::CType>;
 }
-unsafe impl<T: CheckedTransmute<CType: Sized> + EncodeOwned<Store: EmptyStore>> EncodeOwned
+unsafe impl<T: CheckedTransmute<CType: Sized> + EncodeMove<Store: EmptyStore>> EncodeMove
     for MaybeUninit<T>
 {
     type Store = ();
@@ -578,7 +579,7 @@ unsafe impl<T: CheckedTransmute<CType: Sized> + EncodeOwned<Store: EmptyStore>> 
         unsafe { self.soft_encode_unchecked(&mut ()) }
     }
 }
-unsafe impl<T: CheckedTransmute<CType: Sized>> DirectEncodeOwned for MaybeUninit<T> {
+unsafe impl<T: CheckedTransmute<CType: Sized>> EncodeMoveUnchecked for MaybeUninit<T> {
     type SoftStore = ();
 
     unsafe fn soft_encode_unchecked(self, (): &mut ()) -> Self::CType {
@@ -594,8 +595,8 @@ unsafe impl<'d, T: CheckedTransmute<CType: Sized>> DecodeOwned<'d> for MaybeUnin
     }
 }
 
-impl<T: CheckedTransmute<CType: Sized> + EncodeOwned<Store: EmptyStore>> Encode for MaybeUninit<T> {}
-impl<T: CheckedTransmute<CType: Sized>> DirectEncode for MaybeUninit<T> {}
+impl<T: CheckedTransmute<CType: Sized> + EncodeMove<Store: EmptyStore>> Encode for MaybeUninit<T> {}
+impl<T: CheckedTransmute<CType: Sized>> EncodeUnchecked for MaybeUninit<T> {}
 impl<'d, T: CheckedTransmute<CType: Sized>> Decode<'d> for MaybeUninit<T> {}
 
 unsafe impl<T: CheckedTransmute<CType: Sized>> CheckedTransmute for MaybeUninit<T> {
@@ -647,8 +648,8 @@ impl<'itm, T: 'itm> FromBorrow<'itm> for ManuallyDrop<T> {
     }
 }
 
-impl<T: Encode> Encode for ManuallyDrop<T> where Self: EncodeOwned {}
-impl<T: DirectEncode> DirectEncode for ManuallyDrop<T> where Self: DirectEncodeOwned {}
+impl<T: Encode> Encode for ManuallyDrop<T> where Self: EncodeMove {}
+impl<T: EncodeUnchecked> EncodeUnchecked for ManuallyDrop<T> where Self: EncodeMoveUnchecked {}
 impl<'d, T: Decode<'d>> Decode<'d> for ManuallyDrop<T> where Self: DecodeOwned<'d> {}
 
 unsafe impl<T: CType + ?Sized> CType for ManuallyDrop<T> {}
@@ -1045,9 +1046,9 @@ mod tests {
         assert_eq!(cells[0].get(), 4);
 
         let mut empty_unsafe_cells: [UnsafeCell<u8>; 0] = [];
-        assert_eq!(crate::encode(&mut empty_unsafe_cells[..]).len(), 0);
+        assert_eq!(crate::encode(&mut empty_unsafe_cells[..]).metadata(), 0);
         let mut empty_cells: [Cell<u8>; 0] = [];
-        assert_eq!(crate::encode(&mut empty_cells[..]).len(), 0);
+        assert_eq!(crate::encode(&mut empty_cells[..]).metadata(), 0);
     }
 
     #[cfg(feature = "alloc")]
@@ -1118,8 +1119,8 @@ mod tests {
     //    use crate::stored::Store;
 
     //    let mut value = Cell::new(NonZero::new(3_u8).unwrap());
-    //    let mut store = <&mut Cell<NonZero<u8>> as EncodeOwned>::Store::default();
-    //    let encoded = <&mut Cell<NonZero<u8>> as EncodeOwned>::soft_encode(&mut value, &mut store);
+    //    let mut store = <&mut Cell<NonZero<u8>> as EncodeMove>::Store::default();
+    //    let encoded = <&mut Cell<NonZero<u8>> as EncodeMove>::soft_encode(&mut value, &mut store);
     //    unsafe { encoded.as_ptr().write(UnsafeCell::new(4)) };
     //    assert_eq!(store.sync(), Some(()));
     //    assert_eq!(value.get().get(), 4);

@@ -1,12 +1,15 @@
 //! C-compatible representation of [`core::result::Result`].
 use core::{mem::MaybeUninit, ops::Add};
 
-use rust_spec::niche::WithoutNiche;
+use rust_spec::{RustSpec, mutability::Exclusive, niche::WithoutNiche};
 
 use crate::{
-    CFnArg, CFnReturn, CType, Decode, Encode, ReprC,
+    CFnArg, CFnReturn, CType, Decode, Encode, ReprC, Thin,
     borrow::{Borrow, BorrowCast, BorrowCastMut, FromBorrow},
-    stored::{DecodeOwned, DirectEncodeOwned, EmptyStore, EncodeOwned},
+    reference::CRef,
+    stored::{
+        DecodeOwned, EmptyStore, EncodeMove, EncodeMoveUnchecked, EncodeRef, EncodeRefUnchecked,
+    },
     transmute::CheckedTransmute,
 };
 
@@ -118,21 +121,6 @@ impl<T: Copy, E: Copy> ReprCResult<T, E> {
         unsafe { *core::ptr::from_ref(self).cast::<u8>() }
     }
 
-    #[inline(always)]
-    fn forward_payload<U: Copy, V: Copy>(self) -> ReprCResult<U, V> {
-        let mut output = MaybeUninit::<ReprCResult<U, V>>::zeroed();
-
-        unsafe {
-            core::ptr::copy_nonoverlapping(
-                core::ptr::from_ref(&self).cast::<u8>(),
-                output.as_mut_ptr().cast::<u8>(),
-                core::cmp::min(size_of::<Self>(), size_of::<ReprCResult<U, V>>()),
-            );
-
-            output.assume_init()
-        }
-    }
-
     /// Return the represented `Result<T, E>`, or `None` for an invalid tag.
     pub fn into_result(self) -> Option<Result<T, E>> {
         match self.tag() {
@@ -149,6 +137,21 @@ impl<T: Copy, E: Copy> ReprCResult<T, E> {
             _ => unsafe { core::hint::unreachable_unchecked() },
         }
     }
+
+    #[inline(always)]
+    fn forward_payload<U: Copy, V: Copy>(self) -> ReprCResult<U, V> {
+        let mut output = MaybeUninit::<ReprCResult<U, V>>::zeroed();
+
+        unsafe {
+            core::ptr::copy_nonoverlapping(
+                core::ptr::from_ref(&self).cast::<u8>(),
+                output.as_mut_ptr().cast::<u8>(),
+                core::cmp::min(size_of::<Self>(), size_of::<ReprCResult<U, V>>()),
+            );
+
+            output.assume_init()
+        }
+    }
 }
 
 impl<T: Copy, E: Copy> Copy for ReprCResult<T, E> {}
@@ -158,28 +161,20 @@ impl<T: Copy, E: Copy> Clone for ReprCResult<T, E> {
     }
 }
 
-unsafe impl<T: crate::rust_spec::RustSpec + Copy, E: crate::rust_spec::RustSpec + Copy>
-    crate::rust_spec::RustSpec for ReprCResult<T, E>
+unsafe impl<T: RustSpec + Copy, E: RustSpec + Copy> RustSpec for ReprCResult<T, E>
 where
-    T: crate::rust_spec::RustSpec<
-            Layout: Add<<E as crate::rust_spec::RustSpec>::Layout>,
-            Trap: Add<E::Trap>,
-        >,
-    T: crate::rust_spec::RustSpec<Drop: Add<E::Drop, Output: rust_spec::drop::DropKind>>,
+    T: RustSpec<Layout: Add<<E as RustSpec>::Layout>, Trap: Add<E::Trap>>,
+    T: RustSpec<Drop: Add<E::Drop, Output: rust_spec::drop::DropKind>>,
     T::Alignment: rust_spec::Max<E::Alignment>,
     T::Mutability: Add<E::Mutability>,
     T::__IndirectTrap: Add<E::__IndirectTrap>,
 {
-    type Layout = <<T as crate::rust_spec::RustSpec>::Layout as Add<
-        <E as crate::rust_spec::RustSpec>::Layout,
-    >>::Output;
+    type Layout = <T::Layout as Add<E::Layout>>::Output;
     type Size = rust_spec::size::Sized<rust_spec::Gt<rust_spec::Zero>>;
     type Alignment = <T::Alignment as rust_spec::Max<E::Alignment>>::Output;
-    type Trap = <<T as crate::rust_spec::RustSpec>::Trap as Add<
-        <E as crate::rust_spec::RustSpec>::Trap,
-    >>::Output;
+    type Trap = <T::Trap as Add<E::Trap>>::Output;
     type Niche = WithoutNiche;
-    type Drop = <<T as crate::rust_spec::RustSpec>::Drop as Add<E::Drop>>::Output;
+    type Drop = <T::Drop as Add<E::Drop>>::Output;
     type Mutability = <T::Mutability as Add<E::Mutability>>::Output;
     type Opacity = rust_spec::NonOpaque;
     type __IndirectTrap = <T::__IndirectTrap as Add<E::__IndirectTrap>>::Output;
@@ -240,7 +235,7 @@ where
 impl<T: ReprC<CType: Copy> + Copy, E: ReprC<CType: Copy> + Copy> ReprC for ReprCResult<T, E> {
     type CType = ReprCResult<T::CType, E::CType>;
 }
-unsafe impl<T: EncodeOwned<CType: Copy> + Copy, E: EncodeOwned<CType: Copy> + Copy> EncodeOwned
+unsafe impl<T: EncodeMove<CType: Copy> + Copy, E: EncodeMove<CType: Copy> + Copy> EncodeMove
     for ReprCResult<T, E>
 where
     Self: ReprC<CType = ReprCResult<T::CType, E::CType>>,
@@ -271,8 +266,8 @@ where
         }
     }
 }
-unsafe impl<T: DirectEncodeOwned<CType: Copy> + Copy, E: DirectEncodeOwned<CType: Copy> + Copy>
-    DirectEncodeOwned for ReprCResult<T, E>
+unsafe impl<T: EncodeMoveUnchecked<CType: Copy> + Copy, E: EncodeMoveUnchecked<CType: Copy> + Copy>
+    EncodeMoveUnchecked for ReprCResult<T, E>
 where
     Self: ReprC<CType = ReprCResult<T::CType, E::CType>>,
 {
@@ -301,6 +296,107 @@ where
         }
     }
 }
+unsafe impl<'a, T: ReprC<CType: Copy> + Copy, E: ReprC<CType: Copy> + Copy> EncodeRef<'a>
+    for ReprCResult<T, E>
+where
+    Self: RustSpec<Mutability = Exclusive, Size: Thin> + 'a,
+    Self: ReprC<CType = ReprCResult<T::CType, E::CType>>,
+    &'a T: EncodeMove<CType = CRef<<T as ReprC>::CType>>,
+    &'a E: EncodeMove<CType = CRef<<E as ReprC>::CType>>,
+{
+    type Store = crate::sync::RefSizedEncodeStore<
+        Self,
+        Option<Result<<&'a T as EncodeMove>::Store, <&'a E as EncodeMove>::Store>>,
+    >;
+    fn encode_ref(&'a self, store: &mut Self::Store) -> <&'a Self as ReprC>::CType {
+        store.encode(|fields| {
+            let store = fields;
+            match self.tag() {
+                0 => {
+                    let Result::Ok(store) = store.insert(Result::Ok(Default::default())) else {
+                        unreachable!()
+                    };
+
+                    ReprCResult::Ok(crate::stored::encode_ref_field(
+                        unsafe { self.ok.1.assume_init_ref() },
+                        store,
+                    ))
+                }
+                1 => {
+                    let Result::Err(store) = store.insert(Result::Err(Default::default())) else {
+                        unreachable!()
+                    };
+
+                    ReprCResult::Err(crate::stored::encode_ref_field(
+                        unsafe { self.err.1.assume_init_ref() },
+                        store,
+                    ))
+                }
+                _ => {
+                    *store = None;
+                    self.forward_payload()
+                }
+            }
+        })
+    }
+}
+unsafe impl<'a, T: ReprC<CType: Copy> + Copy, E: ReprC<CType: Copy> + Copy> EncodeRefUnchecked<'a>
+    for ReprCResult<T, E>
+where
+    Self: RustSpec<Mutability = Exclusive, Size: Thin> + 'a,
+    Self: ReprC<CType = ReprCResult<T::CType, E::CType>>,
+    &'a T: EncodeMoveUnchecked<CType = CRef<<T as ReprC>::CType>>,
+    &'a E: EncodeMoveUnchecked<CType = CRef<<E as ReprC>::CType>>,
+{
+    type SoftStore = crate::sync::RefSizedEncodeStore<
+        Self,
+        Option<
+            Result<
+                <&'a T as EncodeMoveUnchecked>::SoftStore,
+                <&'a E as EncodeMoveUnchecked>::SoftStore,
+            >,
+        >,
+    >;
+    unsafe fn encode_ref_unchecked(
+        &'a self,
+        store: &mut Self::SoftStore,
+    ) -> <&'a Self as ReprC>::CType {
+        store.encode(|fields| {
+            let store = fields;
+            match self.tag() {
+                0 => {
+                    let Result::Ok(inner) = store.insert(Ok(Default::default())) else {
+                        unreachable!()
+                    };
+
+                    ReprCResult::Ok(unsafe {
+                        crate::stored::encode_ref_field_unchecked(
+                            self.ok.1.assume_init_ref(),
+                            inner,
+                        )
+                    })
+                }
+                1 => {
+                    let Result::Err(inner) = store.insert(Err(Default::default())) else {
+                        unreachable!()
+                    };
+
+                    ReprCResult::Err(unsafe {
+                        crate::stored::encode_ref_field_unchecked(
+                            self.err.1.assume_init_ref(),
+                            inner,
+                        )
+                    })
+                }
+                _ => {
+                    *store = None;
+                    self.forward_payload()
+                }
+            }
+        })
+    }
+}
+
 unsafe impl<'d, T: DecodeOwned<'d, CType: Copy> + Copy, E: DecodeOwned<'d, CType: Copy> + Copy>
     DecodeOwned<'d> for ReprCResult<T, E>
 where
@@ -363,8 +459,8 @@ impl<T: Encode<CType: Copy> + Copy, E: Encode<CType: Copy> + Copy> Encode for Re
     Self: ReprC<CType = ReprCResult<T::CType, E::CType>>
 {
 }
-impl<T: crate::DirectEncode<CType: Copy> + Copy, E: crate::DirectEncode<CType: Copy> + Copy>
-    crate::DirectEncode for ReprCResult<T, E>
+impl<T: crate::EncodeUnchecked<CType: Copy> + Copy, E: crate::EncodeUnchecked<CType: Copy> + Copy>
+    crate::EncodeUnchecked for ReprCResult<T, E>
 where
     Self: ReprC<CType = ReprCResult<T::CType, E::CType>>,
 {

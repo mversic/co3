@@ -1,6 +1,6 @@
 use core::cell::Cell;
 
-use co3::stored::{DecodeOwned, DirectEncodeOwned, EncodeOwned, Store};
+use co3::stored::{DecodeOwned, EncodeMoveUnchecked, EncodeMove, Store};
 
 #[test]
 fn stable_interior_vec_direct_encoding_transfers_allocation() {
