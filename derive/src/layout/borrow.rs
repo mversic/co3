@@ -117,6 +117,7 @@ fn gen_view_rust_spec(
             type Niche = <#owner_ty as #rust_spec>::Niche;
             type Drop = co3::rust_spec::drop::NoDrop;
             type Mutability = #mutability;
+            type Opacity = co3::rust_spec::NonOpaque;
             type __IndirectTrap = <#owner_ty as #rust_spec>::__IndirectTrap;
         }
     }

@@ -90,11 +90,13 @@ pub(super) fn classify_tail(ty: &syn::Type, generics: &syn::Generics) -> TailCla
         syn::Type::Group(ty) => classify_tail(&ty.elem, generics),
         syn::Type::Slice(_) => TailClass::Unsized(UnsizedTail::SliceLike),
         syn::Type::TraitObject(_) => TailClass::Unsized(UnsizedTail::DynTraitLike),
-        syn::Type::Reference(_)
-        | syn::Type::Ptr(_)
-        | syn::Type::Array(_)
-        | syn::Type::Tuple(_)
-        | syn::Type::Never(_) => TailClass::Sized,
+        syn::Type::Reference(_) | syn::Type::Ptr(_) | syn::Type::Array(_) | syn::Type::Never(_) => {
+            TailClass::Sized
+        }
+        syn::Type::Tuple(tuple) => tuple
+            .elems
+            .last()
+            .map_or(TailClass::Sized, |tail| classify_tail(tail, generics)),
         syn::Type::Path(path)
             if path
                 .path
@@ -1221,6 +1223,7 @@ fn gen_type_spec(
             type Niche = co3::rust_spec::niche::WithoutNiche;
             type Mutability = co3::rust_spec::mutability::Exclusive;
             type Drop = co3::rust_spec::drop::NoDrop;
+            type Opacity = co3::rust_spec::NonOpaque;
             type __IndirectTrap = co3::rust_spec::layout::Robust;
         }
     }
@@ -2104,6 +2107,40 @@ fn gen_ctype_borrow_cast_bounds(
 mod tail_tests {
     use super::{TailClass, UnsizedTail, classify_tail};
     use syn::parse_quote;
+
+    #[test]
+    fn tuple_classification_follows_the_final_element() {
+        let generics = parse_quote!(<T: ?Sized, S>);
+        for ty in [
+            parse_quote!(()),
+            parse_quote!((S,)),
+            parse_quote!((u8, *const T)),
+        ] {
+            assert!(matches!(classify_tail(&ty, &generics), TailClass::Sized));
+        }
+        for ty in [parse_quote!((T,)), parse_quote!((u8, (T,)))] {
+            assert!(matches!(
+                classify_tail(&ty, &generics),
+                TailClass::Unsized(UnsizedTail::Unknown)
+            ));
+        }
+        assert!(matches!(
+            classify_tail(&parse_quote!((u8, [S])), &generics),
+            TailClass::Unsized(UnsizedTail::SliceLike)
+        ));
+        assert!(matches!(
+            classify_tail(&parse_quote!((u8, dyn Send)), &generics),
+            TailClass::Unsized(UnsizedTail::DynTraitLike)
+        ));
+        assert!(matches!(
+            classify_tail(&parse_quote!((u8, core::ffi::CStr)), &generics),
+            TailClass::Unsized(UnsizedTail::NulTerminated)
+        ));
+        assert!(matches!(
+            classify_tail(&parse_quote!((u8, SomeAlias)), &generics),
+            TailClass::Unknown
+        ));
+    }
 
     #[test]
     fn classifies_known_and_speculative_tails() {

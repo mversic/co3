@@ -1570,7 +1570,7 @@ pub(crate) fn expand_export_decls(
             export_generics
                 .make_where_clause()
                 .predicates
-                .push(syn::parse_quote!(Self: co3::rust_spec::Opaque));
+                .push(syn::parse_quote!(Self: co3::rust_spec::RustSpec<Opacity = co3::rust_spec::Opaque>));
             let (impl_generics, ty_generics, where_clause) = export_generics.split_for_impl();
             let mut decode_generics = ty.generics.clone();
             decode_generics.params.insert(0, syn::parse_quote!('_dšč));
@@ -3386,7 +3386,6 @@ fn gen_extern_type_impls(
             #tag_impl
 
             unsafe impl #impl_generics co3::CType for #ident #ty_generics #where_clause {}
-            unsafe impl #impl_generics co3::rust_spec::Opaque for #ident #ty_generics #where_clause {}
             unsafe impl #impl_generics co3::transmute::CheckedTransmute for #ident #ty_generics #where_clause {
                 #[inline(always)]
                 unsafe fn is_valid(_: &Self::CType) -> bool {
@@ -3413,6 +3412,7 @@ fn gen_extern_type_impls(
                 type Niche = co3::rust_spec::niche::WithoutNiche;
                 type Drop = co3::rust_spec::drop::NoDrop;
                 type Mutability = co3::rust_spec::mutability::Exclusive;
+                type Opacity = co3::rust_spec::Opaque;
                 type __IndirectTrap = co3::rust_spec::layout::Robust;
             }
     }
@@ -3446,6 +3446,7 @@ fn gen_owned_repr_c_impls(ident: &syn::Ident, generics: &syn::Generics) -> Token
             type Niche = #co3::rust_spec::niche::WithoutNiche;
             type Drop = #co3::rust_spec::drop::NoDrop;
             type Mutability = #co3::rust_spec::mutability::Exclusive;
+            type Opacity = #co3::rust_spec::NonOpaque;
             type __IndirectTrap = #co3::rust_spec::layout::Robust;
         }
 
@@ -3670,6 +3671,7 @@ fn gen_owned_extern_type_impls(
             type Niche = #co3::rust_spec::niche::WithNiche<#co3::rust_spec::Stable>;
             type Mutability = #co3::rust_spec::mutability::Exclusive;
             type Drop = #co3::rust_spec::drop::CustomDrop<#co3::rust_spec::drop::NoDrop>;
+            type Opacity = #co3::rust_spec::NonOpaque;
             type __IndirectTrap = #co3::rust_spec::layout::Robust;
         }
 
@@ -3800,7 +3802,7 @@ fn derive_opaque_item(
     opaque_generics
         .make_where_clause()
         .predicates
-        .push(syn::parse_quote!(Self: co3::rust_spec::Opaque));
+        .push(syn::parse_quote!(Self: co3::rust_spec::RustSpec<Opacity = co3::rust_spec::Opaque>));
     let (impl_generics, ty_generics, where_clause) = opaque_generics.split_for_impl();
     let tag_family_impl = id.map(|id| gen_tag_family_impl(ident, generics, id));
 

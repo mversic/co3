@@ -181,6 +181,7 @@ where
     type Niche = WithoutNiche;
     type Drop = <<T as crate::rust_spec::RustSpec>::Drop as Add<E::Drop>>::Output;
     type Mutability = <T::Mutability as Add<E::Mutability>>::Output;
+    type Opacity = rust_spec::NonOpaque;
     type __IndirectTrap = <T::__IndirectTrap as Add<E::__IndirectTrap>>::Output;
 }
 

@@ -15,6 +15,29 @@ use crate::{
     wide::{PointeeData, Wide, WideHeader},
 };
 
+/// Constructs a shared-reference carrier from its data address and metadata without reading it.
+pub(crate) trait FromRawWideRef<P: Wide + ?Sized>: CType + Sized {
+    /// # Safety
+    ///
+    /// The pointer and length must satisfy the validity and aliasing requirements
+    /// of the selected carrier. Interior-mutability access must remain synchronized.
+    unsafe fn from_raw_reference(data: *const PointeeData<P>, len: usize) -> Self;
+}
+
+impl<P: Wide<Header: WideHeader<Data: CType>> + ?Sized> FromRawWideRef<P> for CWideRef<P> {
+    unsafe fn from_raw_reference(data: *const PointeeData<P>, len: usize) -> Self {
+        unsafe { Self::from_raw_parts(data, len) }
+    }
+}
+
+impl<P: Wide<Header: WideHeader<Data: CType>> + ?Sized> FromRawWideRef<P>
+    for CWideRefMut<P, false>
+{
+    unsafe fn from_raw_reference(data: *const PointeeData<P>, len: usize) -> Self {
+        unsafe { Self::from_raw_parts_mut(data.cast_mut(), len) }
+    }
+}
+
 /// Fallibly converts a C-compatible representation into one ABI argument.
 pub trait Unpack<Part: CType>: ReprC<CType: Sized> {
     /// Error returned when the ABI argument cannot be produced.

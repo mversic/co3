@@ -180,6 +180,7 @@ unsafe impl<T: crate::rust_spec::RustSpec> crate::rust_spec::RustSpec for ReprCO
     type Niche = WithoutNiche;
     type Drop = <T as crate::rust_spec::RustSpec>::Drop;
     type Mutability = <T as crate::rust_spec::RustSpec>::Mutability;
+    type Opacity = rust_spec::NonOpaque;
     type __IndirectTrap = <T as crate::rust_spec::RustSpec>::__IndirectTrap;
 }
 

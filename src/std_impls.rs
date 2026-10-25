@@ -960,7 +960,7 @@ mod tests {
             Encode,
             CheckedTransmute,
         );
-        assert_not_impl_any!(&UnsafeCell<u8>: Decode<'static>);
+        assert_impl_all!(&UnsafeCell<u8>: Decode<'static>);
         assert_impl_all!(&mut UnsafeCell<u8>:
             Niche<CType = CRefMut<UnsafeCell<u8>, true>>,
             Decode<'static>,
@@ -973,12 +973,12 @@ mod tests {
             Encode,
         );
         #[cfg(feature = "alloc")]
-        assert_not_impl_any!(Box<UnsafeCell<u8>>: CheckedTransmute);
+        assert_impl_all!(Box<UnsafeCell<u8>>: CheckedTransmute);
         assert_impl_all!(&[UnsafeCell<u8>]:
             Niche<CType = CWideRefMut<[UnsafeCell<u8>], false>>,
             Encode,
         );
-        assert_not_impl_any!(&[UnsafeCell<u8>]: Decode<'static>);
+        assert_impl_all!(&[UnsafeCell<u8>]: Decode<'static>);
         assert_impl_all!(&mut [UnsafeCell<u8>]:
             Niche<CType = CWideRefMut<[UnsafeCell<u8>], true>>,
             Decode<'static>,

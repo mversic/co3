@@ -9,11 +9,11 @@ use rust_spec::{
     layout::Robust,
     mutability::{Exclusive, WithInterior},
     niche::WithNiche,
-    size::Zero,
+    size::{SizedKind, Zero},
 };
 
 #[cfg(feature = "alloc")]
-use crate::boxed::CBox;
+use crate::boxed::{CBox, CBoxCell};
 use crate::reference::{CRef, CRefMut};
 use crate::{ReprC, Thin, WithDrop, assert_arr_has_non_zero_len, utf8::Utf8Str};
 
@@ -37,7 +37,7 @@ disjoint_impls! {
 
     unsafe impl<R: CheckedTransmute + ?Sized> CheckedTransmute for &R
     where
-        R: rust_spec::RustSpec<Size: Thin, Mutability = Exclusive>,
+        R: RustSpec<Size: Thin, Mutability = Exclusive>,
         Self: ReprC<CType = CRef<<R as ReprC>::CType>>,
     {
         #[inline(always)]
@@ -62,13 +62,46 @@ disjoint_impls! {
         }
     }
 
+    #[cfg(feature = "alloc")]
+    unsafe impl<R: CheckedTransmute, S: SizedKind> CheckedTransmute for Box<R>
+    where
+        R: RustSpec<Size = rust_spec::size::Sized<S>, Mutability = Exclusive>,
+        Self: ReprC<CType = CBox<<R as ReprC>::CType>>,
+        <R as ReprC>::CType: Sized,
+    {
+        #[inline(always)]
+        unsafe fn is_valid(target: &Self::CType) -> bool {
+            if target.is_null() {
+                return false;
+            }
+
+            unsafe { R::is_valid(&*target.as_ptr()) }
+        }
+    }
+    #[cfg(feature = "alloc")]
+    unsafe impl<R: CheckedTransmute, S: SizedKind> CheckedTransmute for Box<R>
+    where
+        R: RustSpec<Size = rust_spec::size::Sized<S>, Mutability = WithInterior>,
+        Self: ReprC<CType = CBoxCell<<R as ReprC>::CType>>,
+        <R as ReprC>::CType: Sized,
+    {
+        #[inline(always)]
+        unsafe fn is_valid(target: &Self::CType) -> bool {
+            if target.is_null() {
+                return false;
+            }
+
+            unsafe { R::is_valid(&*target.as_ptr()) }
+        }
+    }
+
     unsafe impl<R: CheckedTransmute<CType: Copy> + ReprC, E: ReprC> CheckedTransmute for Result<R, E>
     where
-        R: rust_spec::RustSpec<
+        R: RustSpec<
             Size = rust_spec::size::Sized<rust_spec::Gt<rust_spec::Zero>>,
             Niche = WithNiche<Stable>,
         >,
-        E: rust_spec::RustSpec<Size = rust_spec::size::Sized<Zero>, Alignment = rust_spec::One>,
+        E: RustSpec<Size = rust_spec::size::Sized<Zero>, Alignment = rust_spec::One>,
         Self: ReprC<CType = <R as ReprC>::CType>,
     {
         #[inline(always)]
@@ -78,8 +111,8 @@ disjoint_impls! {
     }
     unsafe impl<R: ReprC, E: CheckedTransmute<CType: Copy>> CheckedTransmute for Result<R, E>
     where
-        R: rust_spec::RustSpec<Size = rust_spec::size::Sized<Zero>, Alignment = rust_spec::One>,
-        E: rust_spec::RustSpec<
+        R: RustSpec<Size = rust_spec::size::Sized<Zero>, Alignment = rust_spec::One>,
+        E: RustSpec<
             Size = rust_spec::size::Sized<rust_spec::Gt<rust_spec::Zero>>,
             Niche = WithNiche<Stable>,
         >,
@@ -114,7 +147,7 @@ disjoint_impls! {
 
 unsafe impl<R: CheckedTransmute + ?Sized, const EXCLUSIVE: bool> CheckedTransmute for &mut R
 where
-    R: rust_spec::RustSpec<Size: Thin>,
+    R: RustSpec<Size: Thin>,
     Self: ReprC<CType = CRefMut<R::CType, EXCLUSIVE>>,
 {
     #[inline(always)]
@@ -126,22 +159,6 @@ where
         }
 
         unsafe { R::is_valid(&*ptr) }
-    }
-}
-
-#[cfg(feature = "alloc")]
-unsafe impl<R: CheckedTransmute<CType: Sized>> CheckedTransmute for Box<R>
-where
-    R: rust_spec::RustSpec<Size: Thin>,
-    Self: ReprC<CType = CBox<<R as ReprC>::CType>>,
-{
-    #[inline(always)]
-    unsafe fn is_valid(target: &Self::CType) -> bool {
-        if target.is_null() {
-            return false;
-        }
-
-        unsafe { R::is_valid(&*target.as_ptr()) }
     }
 }
 
@@ -185,7 +202,7 @@ unsafe impl CheckedTransmute for str {
 
 unsafe impl<R: CheckedTransmute<CType: Sized>> CheckedTransmute for Option<R>
 where
-    R: rust_spec::RustSpec<Niche = WithNiche<Stable>>,
+    R: RustSpec<Niche = WithNiche<Stable>>,
 {
     #[inline(always)]
     unsafe fn is_valid(target: &Self::CType) -> bool {

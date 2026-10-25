@@ -14,6 +14,60 @@ use crate::{
     wide::{PointeeData, Wide, WideHeader},
 };
 
+pub(crate) trait FromBox<C: CType>: BorrowCastMut<AsMut = CRefMut<C, true>> + Copy {
+    unsafe fn into_box(self) -> Option<Box<C>> {
+        let ptr = NonNull::new(crate::borrow::borrow_cast_mut(self).as_ptr())?;
+        Some(unsafe { Box::from_raw(ptr.as_ptr()) })
+    }
+    unsafe fn from_non_null(data: NonNull<C>) -> Self;
+}
+
+impl<C: CType> FromBox<C> for CBox<C> {
+    unsafe fn from_non_null(data: NonNull<C>) -> Self {
+        unsafe { CBox::from_non_null(data) }
+    }
+}
+
+impl<C: CType> FromBox<C> for CBoxCell<C> {
+    unsafe fn from_non_null(data: NonNull<C>) -> Self {
+        unsafe { CBoxCell::from_non_null(data) }
+    }
+}
+
+pub(crate) trait FromWideBox<P: Wide<Header: WideHeader<Data: CType>> + ?Sized>: CType + Sized {
+    unsafe fn from_raw_parts(data: NonNull<PointeeData<P>>, len: usize) -> Self;
+    fn data(&self) -> *mut PointeeData<P>;
+    fn len(&self) -> usize;
+}
+
+impl<P: Wide<Header: WideHeader<Data: CType>> + ?Sized> FromWideBox<P> for CWideBox<P> {
+    fn data(&self) -> *mut PointeeData<P> {
+        CWideBox::as_ptr(*self)
+    }
+
+    fn len(&self) -> usize {
+        CWideBox::len(self)
+    }
+
+    unsafe fn from_raw_parts(data: NonNull<PointeeData<P>>, len: usize) -> Self {
+        unsafe { CWideBox::from_raw_parts(data, len) }
+    }
+}
+
+impl<P: Wide<Header: WideHeader<Data: CType>> + ?Sized> FromWideBox<P> for CWideBoxCell<P> {
+    fn data(&self) -> *mut PointeeData<P> {
+        CWideBoxCell::as_ptr(*self)
+    }
+
+    fn len(&self) -> usize {
+        CWideBoxCell::len(self)
+    }
+
+    unsafe fn from_raw_parts(data: NonNull<PointeeData<P>>, len: usize) -> Self {
+        unsafe { CWideBoxCell::from_raw_parts(data, len) }
+    }
+}
+
 /// Owned pointer derived from `Box<C>`.
 ///
 /// If the data pointer is set to `null`, the struct represents `Option<Box<C>>`.

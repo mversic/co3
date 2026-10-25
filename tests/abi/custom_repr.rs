@@ -135,7 +135,7 @@ fn checked_mut_nonrobust_wide_reference_asserts_original_pointee_validity() {
 
 #[test]
 #[cfg(debug_assertions)]
-#[should_panic(expected = "encoding failed custom is_valid")]
+#[should_panic(expected = "encoding failed CheckedTransmute::is_valid")]
 fn checked_wide_box_encoding_asserts_each_pointee() {
     let values = [ValidatedByte(11), ValidatedByte(10)];
     let _ = co3::stored::encode_owned(Vec::from(values).into_boxed_slice());
@@ -143,7 +143,7 @@ fn checked_wide_box_encoding_asserts_each_pointee() {
 
 #[test]
 #[cfg(debug_assertions)]
-#[should_panic(expected = "encoding failed custom is_valid")]
+#[should_panic(expected = "encoding failed CheckedTransmute::is_valid")]
 fn checked_box_encoding_asserts_pointee_validity() {
     let _ = co3::encode(Box::new(ValidatedByte(10)));
 }

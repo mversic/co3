@@ -873,44 +873,33 @@ disjoint_impls! {
     }
 }
 
-disjoint_impls! {
-    /// Facilitates unchecked conversion from a Rust type into a C-compatible representation.
-    pub trait DirectEncode: DirectEncodeOwned {}
+/// Facilitates unchecked conversion from a Rust type into a C-compatible representation.
+pub trait DirectEncode: DirectEncodeOwned {}
 
-    #[cfg(feature = "alloc")]
-    impl<R: ?Sized> DirectEncode for Box<R> where Self: RustSpec<Layout = Stable> + DirectEncodeOwned {}
-    #[cfg(feature = "alloc")]
-    impl<R: RustSpec<Layout = Stable> + ?Sized> DirectEncode for Box<R> where
-        Self: RustSpec<Layout = Unstable> + DirectEncodeOwned
+/// Facilitates conversion from a Rust type into a corresponding C-compatible representation.
+pub trait Encode: EncodeOwned + DirectEncode {}
+
+/// Facilitates conversion into a Rust type from a corresponding C-compatible representation.
+pub trait Decode<'d>: DecodeOwned<'d> {}
+
+#[cfg(feature = "alloc")]
+const _: () = {
+    // An unstable box representation can still transfer its allocation when the
+    // pointee layout is stable (for example, a boxed slice).
+    trait BoxConversionLayout<R: ?Sized> {}
+    impl<R: ?Sized> BoxConversionLayout<R> for Stable {}
+    impl<R: RustSpec<Layout = Stable> + ?Sized> BoxConversionLayout<R> for Unstable {}
+
+    impl<R: ?Sized> DirectEncode for Box<R> where
+        Self: RustSpec<Layout: BoxConversionLayout<R>> + DirectEncodeOwned
     {
     }
-}
-
-disjoint_impls! {
-    /// Facilitates conversion from a Rust type into a corresponding C-compatible representation.
-    pub trait Encode: EncodeOwned + DirectEncode {}
-
-    #[cfg(feature = "alloc")]
-    impl<R: ?Sized> Encode for Box<R> where Self: RustSpec<Layout = Stable> + EncodeOwned {}
-    #[cfg(feature = "alloc")]
-    impl<R: RustSpec<Layout = Stable> + ?Sized> Encode for Box<R> where
-        Self: RustSpec<Layout = Unstable> + EncodeOwned
+    impl<R: ?Sized> Encode for Box<R> where Self: RustSpec<Layout: BoxConversionLayout<R>> + EncodeOwned {}
+    impl<'d, R: ?Sized> Decode<'d> for Box<R> where
+        Self: RustSpec<Layout: BoxConversionLayout<R>> + DecodeOwned<'d>
     {
     }
-}
-
-disjoint_impls! {
-    /// Facilitates conversion into a Rust type from a corresponding C-compatible representation.
-    pub trait Decode<'d>: DecodeOwned<'d> {}
-
-    #[cfg(feature = "alloc")]
-    impl<'d, R: ?Sized> Decode<'d> for Box<R> where Self: RustSpec<Layout = Stable> + DecodeOwned<'d> {}
-    #[cfg(feature = "alloc")]
-    impl<'d, R: RustSpec<Layout = Stable> + ?Sized> Decode<'d> for Box<R> where
-        Self: RustSpec<Layout = Unstable> + DecodeOwned<'d>
-    {
-    }
-}
+};
 
 impl<R: ?Sized> Encode for &R where Self: EncodeOwned {}
 impl<R: ?Sized> Encode for &mut R where Self: EncodeOwned {}

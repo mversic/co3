@@ -10,6 +10,27 @@ use crate::{
     transmute::CheckedTransmute,
 };
 
+/// Constructs the carrier selected by `ReprC` for a shared reference without reading it.
+pub(crate) trait FromRawRef<C: ?Sized>: CType + Sized {
+    /// # Safety
+    ///
+    /// The thin pointer must satisfy the validity and aliasing requirements of the
+    /// selected carrier. Interior-mutability access must remain synchronized.
+    unsafe fn from_raw_reference(data: *const C) -> Self;
+}
+
+impl<C: CType + ?Sized> FromRawRef<C> for CRef<C> {
+    unsafe fn from_raw_reference(data: *const C) -> Self {
+        unsafe { Self::from_raw(data) }
+    }
+}
+
+impl<C: CType + ?Sized> FromRawRef<C> for CRefMut<C, false> {
+    unsafe fn from_raw_reference(data: *const C) -> Self {
+        unsafe { Self::from_raw(data.cast_mut()) }
+    }
+}
+
 const fn assert_thin_pointer<C: ?Sized>() {
     const {
         assert!(

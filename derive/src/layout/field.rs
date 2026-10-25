@@ -65,20 +65,16 @@ pub(super) fn derive_field_repr_c(
         .make_where_clause()
         .predicates
         .push(parse_quote!(#field_ty: co3::ReprC));
+    // A transparent conversion must not skip a custom Drop implementation.
+    repr_generics
+        .make_where_clause()
+        .predicates
+        .push(parse_quote!(#name #ty_generics: co3::rust_spec::RustSpec));
     repr_generics
         .make_where_clause()
         .predicates
         .push(parse_quote!(
-            #name #ty_generics: co3::rust_spec::RustSpec
-        ));
-    // DropKind addition keeps CustomDrop, but collapses NoDrop and AutoDrop to AutoDrop.
-    repr_generics
-        .make_where_clause()
-        .predicates
-        .push(parse_quote!(
-            <#name #ty_generics as co3::rust_spec::RustSpec>::Drop:
-                core::ops::Add<co3::rust_spec::drop::AutoDrop,
-                    Output = co3::rust_spec::drop::AutoDrop>
+            <#name #ty_generics as co3::rust_spec::RustSpec>::Drop: __Co3NonCustomDrop
         ));
     let (repr_impl_generics, _, repr_where_clause) = repr_generics.split_for_impl();
 
@@ -299,9 +295,15 @@ pub(super) fn derive_field_repr_c(
     });
 
     quote! {
-        impl #repr_impl_generics co3::ReprC for #name #ty_generics #repr_where_clause {
-            type CType = <#field_ty as co3::ReprC>::CType;
-        }
+        const _: () = {
+            trait __Co3NonCustomDrop {}
+            impl __Co3NonCustomDrop for co3::rust_spec::drop::NoDrop {}
+            impl __Co3NonCustomDrop for co3::rust_spec::drop::AutoDrop {}
+
+            impl #repr_impl_generics co3::ReprC for #name #ty_generics #repr_where_clause {
+                type CType = <#field_ty as co3::ReprC>::CType;
+            }
+        };
 
         #checked
         #codecs

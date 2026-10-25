@@ -1065,15 +1065,7 @@ pub(super) fn derive_fieldless_enum(
             .make_where_clause()
             .predicates
             .push(parse_quote!(
-                #name #ty_generics: co3::rust_spec::RustSpec
-            ));
-        bounded_generics
-            .make_where_clause()
-            .predicates
-            .push(parse_quote!(
-                <#name #ty_generics as co3::rust_spec::RustSpec>::Drop:
-                    core::ops::Add<co3::rust_spec::drop::AutoDrop,
-                        Output = co3::rust_spec::drop::AutoDrop>
+                #name #ty_generics: co3::rust_spec::RustSpec<Drop = co3::rust_spec::drop::NoDrop>
             ));
     }
     let generics = &bounded_generics;
