@@ -201,42 +201,42 @@ pub(super) fn derive_field_repr_c(
         };
 
         let encode_impl = quote! {
-            unsafe impl #impl_generics co3::stored::EncodeOwned for #name #ty_generics
+            unsafe impl #impl_generics co3::stored::EncodeMove for #name #ty_generics
             where
-                #speculative #name #ty_generics: co3::stored::DirectEncodeOwned<
+                #speculative #name #ty_generics: co3::stored::EncodeMoveUnchecked<
                     CType = <#field_ty as co3::ReprC>::CType,
                 >,
-                #speculative #field_ty: co3::stored::EncodeOwned,
+                #speculative #field_ty: co3::stored::EncodeMove,
                 #(#niche_bounds,)*
                 #predicates
             {
-                type Store = <#field_ty as co3::stored::EncodeOwned>::Store;
+                type Store = <#field_ty as co3::stored::EncodeMove>::Store;
 
                 fn soft_encode<'_išč>(self, store: &'_išč mut Self::Store) -> Self::CType
                 where Self: '_išč {
                     let owner = core::mem::ManuallyDrop::new(self);
                     let value = #take_field;
                     #encode_custom_check
-                    let encoded = co3::stored::EncodeOwned::soft_encode(value, store);
+                    let encoded = co3::stored::EncodeMove::soft_encode(value, store);
                     #encode_niche_check
                     encoded
                 }
             }
         };
         let direct_impl = quote! {
-            unsafe impl #impl_generics co3::stored::DirectEncodeOwned for #name #ty_generics
+            unsafe impl #impl_generics co3::stored::EncodeMoveUnchecked for #name #ty_generics
             where
                 #speculative #name #ty_generics: co3::ReprC<CType = <#field_ty as co3::ReprC>::CType>,
-                #speculative #field_ty: co3::stored::DirectEncodeOwned,
+                #speculative #field_ty: co3::stored::EncodeMoveUnchecked,
                 #(#niche_bounds,)*
                 #predicates
             {
-                type SoftStore = <#field_ty as co3::stored::DirectEncodeOwned>::SoftStore;
+                type SoftStore = <#field_ty as co3::stored::EncodeMoveUnchecked>::SoftStore;
 
                 unsafe fn soft_encode_unchecked(self, store: &mut Self::SoftStore) -> Self::CType {
                     let owner = core::mem::ManuallyDrop::new(self);
                     let value = #take_field;
-                    unsafe { co3::stored::DirectEncodeOwned::soft_encode_unchecked(value, store) }
+                    unsafe { co3::stored::EncodeMoveUnchecked::soft_encode_unchecked(value, store) }
                 }
             }
         };
@@ -280,19 +280,21 @@ pub(super) fn derive_field_repr_c(
 
             impl #impl_generics co3::Encode for #name #ty_generics
             where
-                #speculative #name #ty_generics: co3::stored::EncodeOwned,
+                #speculative #name #ty_generics: co3::stored::EncodeMove,
                 #field_speculative #field_ty: co3::Encode,
                 #predicates
             {}
-            impl #impl_generics co3::DirectEncode for #name #ty_generics
+            impl #impl_generics co3::EncodeUnchecked for #name #ty_generics
             where
-                #speculative #name #ty_generics: co3::stored::DirectEncodeOwned,
-                #field_speculative #field_ty: co3::DirectEncode,
+                #speculative #name #ty_generics: co3::stored::EncodeMoveUnchecked,
+                #field_speculative #field_ty: co3::EncodeUnchecked,
                 #predicates
             {}
             impl #decode_trait_impl_generics co3::Decode<'_dšč> for #name #ty_generics #decode_trait_where_clause {}
         }
     });
+
+    let references = super::reference::gen_field_ref_impls(input, field, variant);
 
     quote! {
         const _: () = {
@@ -307,5 +309,6 @@ pub(super) fn derive_field_repr_c(
 
         #checked
         #codecs
+        #references
     }
 }

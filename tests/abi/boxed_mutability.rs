@@ -1,6 +1,6 @@
 use core::cell::Cell;
 
-use co3::stored::{DecodeOwned, EncodeMoveUnchecked, EncodeMove, Store};
+use co3::stored::{DecodeOwned, EncodeMove, EncodeMoveUnchecked, Store};
 
 #[test]
 fn stable_interior_box_direct_round_trip_preserves_allocation() {

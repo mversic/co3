@@ -15,6 +15,7 @@ mod field;
 mod item;
 mod niche;
 mod nul_terminated;
+mod reference;
 mod wide;
 
 const FFI_TYPE_ATTR: &str = "repr_c";
@@ -215,6 +216,15 @@ pub(crate) fn derive_repr_c(input: &syn::DeriveInput) -> syn::Result<TokenStream
             return Err(syn::Error::new_spanned(
                 &input.ident,
                 "`repr_c(transparent)` requires exactly one field (or a fieldless enum variant)",
+            ));
+        }
+        if matches!(input.data, syn::Data::Enum(_))
+            && !fieldless_enum
+            && !matches!(repr_attr, Some(ReprKind::Transparent))
+        {
+            return Err(syn::Error::new_spanned(
+                &input.ident,
+                "`repr_c(transparent)` on a data-carrying enum requires `#[repr(transparent)]`",
             ));
         }
     }
@@ -465,8 +475,9 @@ pub(crate) fn derive_repr_c(input: &syn::DeriveInput) -> syn::Result<TokenStream
     {
         let item = field::derive_field_repr_c(input, repr_attr, &repr_c_attrs);
         let wide = wide::expand(input, repr_attr)?;
+        let nul_terminated = nul_terminated::expand(input, repr_attr)?;
         let ctype_impl = gen_source_ctype_impl(input, &repr_c_attrs);
-        return Ok(quote! { #type_checks #item #wide #ctype_impl });
+        return Ok(quote! { #type_checks #item #wide #nul_terminated #ctype_impl });
     }
 
     let tokens = match &input.data {
@@ -863,6 +874,46 @@ fn generic_param_idents<'a>(
 #[cfg(test)]
 mod tests {
     use super::{derive_repr_c, is_parametrized};
+
+    #[test]
+    fn transparent_data_enum_requires_transparent_rust_repr() {
+        for repr in [
+            quote::quote!(),
+            quote::quote!(#[repr(C)]),
+            quote::quote!(#[repr(u8)]),
+        ] {
+            let input = syn::parse_quote! {
+                #repr
+                #[repr_c(transparent)]
+                enum Wrapper { Value(u32) }
+            };
+            assert_eq!(
+                derive_repr_c(&input).unwrap_err().to_string(),
+                "`repr_c(transparent)` on a data-carrying enum requires `#[repr(transparent)]`",
+            );
+        }
+        let input = syn::parse_quote! {
+            #[repr(transparent)]
+            #[repr_c(transparent)]
+            enum Wrapper { Value(u32) }
+        };
+        assert!(derive_repr_c(&input).is_ok());
+    }
+
+    #[test]
+    fn transparent_fieldless_enum_keeps_its_exception() {
+        let unit = syn::parse_quote! {
+            #[repr_c(transparent)]
+            enum Unit { Only }
+        };
+        let tags = syn::parse_quote! {
+            #[repr(u8)]
+            #[repr_c(transparent)]
+            enum Tags { First = 1, Second = 2 }
+        };
+        assert!(derive_repr_c(&unit).is_ok());
+        assert!(derive_repr_c(&tags).is_ok());
+    }
 
     #[test]
     fn zero_discriminant_requires_marked_variant() {

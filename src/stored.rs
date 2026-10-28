@@ -19,8 +19,8 @@ use rust_spec::{
 #[cfg(feature = "alloc")]
 use crate::{
     Dst,
-    boxed::{FromBox, FromWideBox},
     borrow::{BorrowCastMut, borrow_cast_mut},
+    boxed::{FromBox, FromWideBox},
     sync::{RefDstDecodeStore, RefMutDstEncodeStore, RefMutSliceDecodeStore},
 };
 
@@ -1442,11 +1442,11 @@ disjoint_impls! {
             source: Self::CType,
             store: &'itm mut Self::Store,
         ) -> Option<Self> {
-            store.source = Some(source);
-            let source = unsafe { source.into_mut()? };
-            let values = source.iter().map(|value| unsafe { core::ptr::read(value) });
-            let value = unsafe { decode_ref_slice_elements(values, &mut store.store)? };
-            Some(store.value.insert(value))
+            unsafe {
+                store.decode(source, |values, fields| {
+                    decode_ref_slice_elements(values.iter().copied(), fields)
+                })
+            }
         }
 
         #[inline(always)]
@@ -1454,15 +1454,11 @@ disjoint_impls! {
             source: Self::CType,
             store: &'itm mut Self::Store,
         ) -> Self {
-            store.source = Some(source);
-            let source = unsafe { source.into_mut().unwrap_unchecked() };
-            let value = unsafe {
-                decode_ref_slice_elements_unchecked(
-                    source.iter().map(|value| core::ptr::read(value)),
-                    &mut store.store,
-                )
-            };
-            store.value.insert(value)
+            unsafe {
+                store.decode(source, |values, fields| {
+                    Some(decode_ref_slice_elements_unchecked(values.iter().copied(), fields))
+                })
+            }.expect("unchecked decoding produces a value")
         }
     }
 

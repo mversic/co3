@@ -105,8 +105,6 @@ pub struct RefMutSizedEncodeStore<
     R: DecodeOwned<'d, Store: EmptyStore + 'd>,
     S: Store + Default,
 > {
-    // TODO: Drop order is relevant here. If we pack the two
-    // options we'll have to implement a custom Drop
     ctype: Option<R::CType>,
     store: S,
     original: Option<&'d mut R>,
@@ -292,6 +290,29 @@ impl<R: ToOwned + ?Sized, S: Store> Store for RefDstDecodeStore<R, S> {
     }
 }
 
+/// Owns a slice or slice-tailed C pointee and retains its source borrow until writeback.
+///
+/// ```compile_fail,E0506
+/// use co3::stored::{EncodeMut, Store};
+/// let mut values = [1_u32, 2];
+/// let mut store = Default::default();
+/// values[..].encode_mut(&mut store);
+/// values[0] = 7;
+/// store.sync();
+/// ```
+#[cfg(feature = "alloc")]
+pub struct RefMutWideEncodeStore<'a, R: ReprC<CType: Wide> + ?Sized, S: Store, P> {
+    ctype: Option<Box<R::CType>>,
+    fields: Box<S>,
+    #[expect(
+        clippy::type_complexity,
+        reason = "writeback keeps its destination and callback together"
+    )]
+    writeback: Option<(P, fn(&R::CType, P))>,
+    // Retains the exclusive source borrow represented by the writeback state.
+    borrowed: PhantomData<&'a mut ()>,
+}
+
 #[cfg(feature = "alloc")]
 pub struct RefMutDstEncodeStore<'d, R, S: Store + Default>
 where
@@ -300,6 +321,28 @@ where
     ctype: Option<<R::Owned as ReprC>::CType>,
     store: S,
     original: Option<&'d mut R>,
+}
+
+#[cfg(feature = "alloc")]
+pub struct RefMutSliceDecodeStore<R: ReprC<CType: Sized>, S> {
+    value: Option<Vec<R>>,
+    store: S,
+    source: Option<CWideRefMut<[R::CType], true>>,
+}
+
+#[cfg(feature = "alloc")]
+impl<R: ReprC<CType: Sized>, S> RefMutSliceDecodeStore<R, S> {
+    /// The source must remain valid and exclusively accessible until synchronization.
+    pub(crate) unsafe fn decode<'a>(
+        &'a mut self,
+        source: CWideRefMut<[R::CType], true>,
+        decode: impl FnOnce(&'a [R::CType], &'a mut S) -> Option<Vec<R>>,
+    ) -> Option<&'a mut [R]> {
+        self.source = Some(source);
+        let source = unsafe { source.into_mut()? };
+        let value = decode(source, &mut self.store)?;
+        Some(self.value.insert(value))
+    }
 }
 
 /// Retains a mutable reborrow without allowing its temporary pointer to escape
@@ -329,109 +372,6 @@ impl<C: CType + Copy + PartialEq, S: Store> Store for RefMutReferenceEncodeStore
         // Restore the original pointee even when pointer replacement is rejected.
         self.inner.sync()?;
         unchanged.then_some(())
-    }
-}
-
-#[cfg(feature = "alloc")]
-pub struct RefMutSliceDecodeStore<R: ReprC<CType: Sized>, S> {
-    pub(crate) value: Option<Vec<R>>,
-    pub(crate) store: S,
-    pub(crate) source: Option<CWideRefMut<[R::CType], true>>,
-}
-
-/// This struct exists only because [arrays don't yet implement Default](https://github.com/rust-lang/rust/issues/61415)
-pub struct ArrayStore<D, const N: usize>(pub(crate) [D; N]);
-
-#[cfg(test)]
-mod ref_sized_encode_tests {
-    extern crate std;
-
-    use super::{RefMutSizedDecodeStore, RefSizedDecodeStore, RefSizedEncodeStore, Store};
-
-    #[test]
-    fn failed_build_clears_carrier_and_allows_reuse() {
-        let mut store = RefSizedEncodeStore::<u32, ()>::default();
-        store.encode(|_| 7);
-        let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-            store.encode(|_| panic!("encoding failed"));
-        }));
-        assert!(result.is_err());
-        assert!(store.ctype.is_none());
-
-        let encoded = store.encode(|_| 11);
-        assert_eq!(unsafe { *encoded.as_ptr() }, 11);
-    }
-
-    #[test]
-    fn failed_decode_clears_value_and_allows_reuse() {
-        let mut store = RefSizedDecodeStore::<u32, ()>::default();
-        assert_eq!(store.decode(|_| Some(7)), Some(&7));
-        assert_eq!(store.decode(|_| None), None);
-        assert!(store.value.is_none());
-        assert_eq!(store.decode(|_| Some(11)), Some(&11));
-    }
-
-    #[test]
-    fn mutable_decode_only_arms_writeback_after_success() {
-        let mut source = 7_u32;
-        let mut store = RefMutSizedDecodeStore::<u32, ()>::default();
-        let value = unsafe { store.decode(&mut source, |_| Some(7)) }.unwrap();
-        *value = 11;
-        assert_eq!(store.sync(), Some(()));
-        assert_eq!(source, 11);
-
-        let mut store = RefMutSizedDecodeStore::<u32, ()>::default();
-        assert!(unsafe { store.decode(&mut source, |_| None) }.is_none());
-        assert_eq!(store.sync(), None);
-        assert_eq!(source, 11);
-    }
-
-    #[test]
-    fn mutable_decode_reuse_synchronizes_previous_value() {
-        let mut first = 7_u32;
-        let mut second = 3_u32;
-        let mut store = RefMutSizedDecodeStore::<u32, ()>::default();
-        *unsafe { store.decode(&mut first, |_| Some(7)) }.unwrap() = 11;
-        *unsafe { store.decode(&mut second, |_| Some(3)) }.unwrap() = 13;
-        assert_eq!(first, 11);
-        assert_eq!(store.sync(), Some(()));
-        assert_eq!(second, 13);
-    }
-
-    #[test]
-    fn mutable_decode_reuse_stops_when_synchronization_fails() {
-        #[derive(Default)]
-        struct Fields(bool);
-        impl Store for Fields {
-            fn sync(self) -> Option<()> {
-                (!self.0).then_some(())
-            }
-        }
-
-        let mut first = 7_u32;
-        let mut second = 3_u32;
-        let mut store = RefMutSizedDecodeStore::<u32, Fields>::default();
-        *unsafe {
-            store.decode(&mut first, |fields| {
-                fields.0 = true;
-                Some(7)
-            })
-        }
-        .unwrap() = 11;
-        let mut called = false;
-        assert!(
-            unsafe {
-                store.decode(&mut second, |_| {
-                    called = true;
-                    Some(3)
-                })
-            }
-            .is_none()
-        );
-        assert!(!called);
-        assert_eq!(first, 7);
-        assert_eq!(second, 3);
-        assert_eq!(store.sync(), None);
     }
 }
 
@@ -528,44 +468,22 @@ impl<R: EncodeMove<CType: Sized, Store: EmptyStore>, S: Store> Store
     }
 }
 
-/// Owns a slice or slice-tailed C pointee and retains its source borrow until writeback.
-///
-/// ```compile_fail,E0506
-/// use co3::stored::{EncodeMut, Store};
-/// let mut values = [1_u32, 2];
-/// let mut store = Default::default();
-/// values[..].encode_mut(&mut store);
-/// values[0] = 7;
-/// store.sync();
-/// ```
 #[cfg(feature = "alloc")]
-pub struct RefMutWideEncodeStore<'a, W: Wide + ?Sized, S: Store, P> {
-    ctype: Option<Box<W>>,
-    fields: Box<S>,
-    #[expect(
-        clippy::type_complexity,
-        reason = "writeback keeps its destination and callback together"
-    )]
-    writeback: Option<(P, fn(&W, P))>,
-    // Retains the exclusive source borrow represented by the writeback state.
-    borrowed: PhantomData<&'a mut ()>,
-}
-
-#[cfg(feature = "alloc")]
-impl<'a, W: Wide<Header: WideHeader<Data: CType>> + ?Sized, S: Store, P>
-    RefMutWideEncodeStore<'a, W, S, P>
+impl<
+    'a,
+    R: ReprC<CType: Wide<Header: WideHeader<Data: CType>, Metadata: CType>> + ?Sized,
+    S: Store,
+    P,
+> RefMutWideEncodeStore<'a, R, S, P>
 {
     /// Construct the pointee and its writeback state using stable field storage.
     /// Reuse cancels pending writeback before invoking the builder. A panic
     /// leaves no pending conversion; the previous pointee survives the builder.
     pub fn encode(
         &mut self,
-        build: impl FnOnce(&mut S) -> (Box<W>, P),
-        copy_back: fn(&W, P),
-    ) -> CWideRefMut<W, true>
-    where
-        W::Metadata: CType,
-    {
+        build: impl FnOnce(&mut S) -> (Box<R::CType>, P),
+        copy_back: fn(&R::CType, P),
+    ) -> CWideRefMut<R::CType, true> {
         self.writeback = None;
         let previous = self.ctype.take();
         let (value, state) = build(&mut self.fields);
@@ -573,12 +491,19 @@ impl<'a, W: Wide<Header: WideHeader<Data: CType>> + ?Sized, S: Store, P>
         self.writeback = Some((state, copy_back));
         drop(previous);
         let value = &mut **self.ctype.as_mut().unwrap();
-        unsafe { CWideRefMut::from_raw_parts_mut(W::as_mut_ptr(value).cast(), W::metadata(value)) }
+        unsafe {
+            CWideRefMut::from_raw_parts_mut(
+                <R::CType as Wide>::as_mut_ptr(value).cast(),
+                <R::CType as Wide>::metadata(value),
+            )
+        }
     }
 }
 
 #[cfg(feature = "alloc")]
-impl<'a, W: Wide + ?Sized, S: Store + Default, P> Default for RefMutWideEncodeStore<'a, W, S, P> {
+impl<'a, R: ReprC<CType: Wide> + ?Sized, S: Store + Default, P> Default
+    for RefMutWideEncodeStore<'a, R, S, P>
+{
     fn default() -> Self {
         Self {
             borrowed: PhantomData,
@@ -590,7 +515,7 @@ impl<'a, W: Wide + ?Sized, S: Store + Default, P> Default for RefMutWideEncodeSt
 }
 
 #[cfg(feature = "alloc")]
-impl<'a, W: Wide + ?Sized, S: Store, P> Store for RefMutWideEncodeStore<'a, W, S, P> {
+impl<'a, R: ReprC<CType: Wide> + ?Sized, S: Store, P> Store for RefMutWideEncodeStore<'a, R, S, P> {
     fn sync(self) -> Option<()> {
         if let Some((state, copy_back)) = self.writeback {
             copy_back(self.ctype.as_deref()?, state);
@@ -639,6 +564,9 @@ impl<T: Store, E: Store> Store for Result<T, E> {
         }
     }
 }
+
+/// This struct exists only because [arrays don't yet implement Default](https://github.com/rust-lang/rust/issues/61415)
+pub struct ArrayStore<D, const N: usize>(pub(crate) [D; N]);
 
 #[cfg(all(test, feature = "alloc"))]
 mod owned_encode_state_tests {
@@ -784,4 +712,97 @@ mod owned_encode_state_tests {
     }
     state_tests!(sized, RefMutSizedEncodeStore);
     state_tests!(dst, RefMutDstEncodeStore);
+}
+
+#[cfg(test)]
+mod tests {
+    extern crate std;
+
+    use super::{RefMutSizedDecodeStore, RefSizedDecodeStore, RefSizedEncodeStore, Store};
+
+    #[test]
+    fn failed_build_clears_carrier_and_allows_reuse() {
+        let mut store = RefSizedEncodeStore::<u32, ()>::default();
+        store.encode(|_| 7);
+        let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+            store.encode(|_| panic!("encoding failed"));
+        }));
+        assert!(result.is_err());
+        assert!(store.ctype.is_none());
+
+        let encoded = store.encode(|_| 11);
+        assert_eq!(unsafe { *encoded.as_ptr() }, 11);
+    }
+
+    #[test]
+    fn failed_decode_clears_value_and_allows_reuse() {
+        let mut store = RefSizedDecodeStore::<u32, ()>::default();
+        assert_eq!(store.decode(|_| Some(7)), Some(&7));
+        assert_eq!(store.decode(|_| None), None);
+        assert!(store.value.is_none());
+        assert_eq!(store.decode(|_| Some(11)), Some(&11));
+    }
+
+    #[test]
+    fn mutable_decode_only_arms_writeback_after_success() {
+        let mut source = 7_u32;
+        let mut store = RefMutSizedDecodeStore::<u32, ()>::default();
+        let value = unsafe { store.decode(&mut source, |_| Some(7)) }.unwrap();
+        *value = 11;
+        assert_eq!(store.sync(), Some(()));
+        assert_eq!(source, 11);
+
+        let mut store = RefMutSizedDecodeStore::<u32, ()>::default();
+        assert!(unsafe { store.decode(&mut source, |_| None) }.is_none());
+        assert_eq!(store.sync(), None);
+        assert_eq!(source, 11);
+    }
+
+    #[test]
+    fn mutable_decode_reuse_synchronizes_previous_value() {
+        let mut first = 7_u32;
+        let mut second = 3_u32;
+        let mut store = RefMutSizedDecodeStore::<u32, ()>::default();
+        *unsafe { store.decode(&mut first, |_| Some(7)) }.unwrap() = 11;
+        *unsafe { store.decode(&mut second, |_| Some(3)) }.unwrap() = 13;
+        assert_eq!(first, 11);
+        assert_eq!(store.sync(), Some(()));
+        assert_eq!(second, 13);
+    }
+
+    #[test]
+    fn mutable_decode_reuse_stops_when_synchronization_fails() {
+        #[derive(Default)]
+        struct Fields(bool);
+        impl Store for Fields {
+            fn sync(self) -> Option<()> {
+                (!self.0).then_some(())
+            }
+        }
+
+        let mut first = 7_u32;
+        let mut second = 3_u32;
+        let mut store = RefMutSizedDecodeStore::<u32, Fields>::default();
+        *unsafe {
+            store.decode(&mut first, |fields| {
+                fields.0 = true;
+                Some(7)
+            })
+        }
+        .unwrap() = 11;
+        let mut called = false;
+        assert!(
+            unsafe {
+                store.decode(&mut second, |_| {
+                    called = true;
+                    Some(3)
+                })
+            }
+            .is_none()
+        );
+        assert!(!called);
+        assert_eq!(first, 7);
+        assert_eq!(second, 3);
+        assert_eq!(store.sync(), None);
+    }
 }

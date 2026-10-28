@@ -386,7 +386,7 @@ pub(crate) fn gen_owned_drop_wrapper_body<const DISPATCHED: bool>(
         self_ty,
         generics,
         erase_declared_receiver,
-        Some(quote! { let __co3_self = self.0; }),
+        Some(quote! { let __co3_self = self.0.as_ptr(); }),
         None,
     )
 }
@@ -646,7 +646,7 @@ fn gen_single_unpack_input_stmts(
             .expect("one-part unpack attribute was found");
         let part_ty = quote!(<#target_ty as co3::ReprC>::CType);
         let conversion = quote! {
-            <#unpack_ty as co3::slice::Unpack<#part_ty>>::unpack(#arg_name)
+            <#unpack_ty as co3::pack::Unpack<#part_ty>>::unpack(#arg_name)
         };
         let conversion = match failure_mode {
             FailureMode::Panic => quote! { #conversion.unwrap_or_else(|_| panic!("co3 generated FFI unpack conversion failure")) },
@@ -844,7 +844,7 @@ fn gen_unpack_input_stmts(
             ffi_fn::unpack_parts(attrs).expect("validated #[unpack] attribute").unwrap();
         {
             let conversion = quote! {
-                <#unpack_ty as co3::slice::Unpack2<#target1_ty, #target2_ty>>::unpack(#arg_name)
+                <#unpack_ty as co3::pack::Unpack2<#target1_ty, #target2_ty>>::unpack(#arg_name)
             };
             let conversion = match failure_mode {
                 FailureMode::Panic => quote! { #conversion.unwrap_or_else(|_| panic!("co3 generated FFI unpack conversion failure")) },

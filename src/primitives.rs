@@ -530,23 +530,6 @@ fieldless_enum_derive! {
     |source: UnicodeChar| unsafe { char::from_u32_unchecked(source.0) }
 }
 
-#[cfg(test)]
-mod unicode_char_tests {
-    use super::*;
-
-    #[test]
-    fn char_has_distinct_scalar_carrier() {
-        static_assertions::assert_impl_all!(char: ReprC<CType = UnicodeChar>);
-        static_assertions::assert_not_impl_any!(UnicodeChar: From<char>, From<u32>, TryFrom<u32>);
-        assert_eq!(UnicodeChar('🍃' as u32), crate::encode('🍃'));
-        assert_eq!(crate::encode('🍃').0, '🍃' as u32);
-        assert_eq!(
-            unsafe { crate::decode::<char>(UnicodeChar(0x110000)) },
-            None
-        );
-        assert_eq!(unsafe { crate::decode::<char>(UnicodeChar(0xd800)) }, None);
-    }
-}
 fieldless_enum_derive! {
     bool => CBool: {CBool(2)}:
     |i: &CBool| i.0 == 0 || i.0 == 1;
@@ -748,5 +731,18 @@ mod tests {
             Decode<'static>,
             Encode,
         );
+    }
+
+    #[test]
+    fn char_has_distinct_scalar_carrier() {
+        static_assertions::assert_impl_all!(char: ReprC<CType = UnicodeChar>);
+        static_assertions::assert_not_impl_any!(UnicodeChar: From<char>, From<u32>, TryFrom<u32>);
+        assert_eq!(UnicodeChar('🍃' as u32), crate::encode('🍃'));
+        assert_eq!(crate::encode('🍃').0, '🍃' as u32);
+        assert_eq!(
+            unsafe { crate::decode::<char>(UnicodeChar(0x110000)) },
+            None
+        );
+        assert_eq!(unsafe { crate::decode::<char>(UnicodeChar(0xd800)) }, None);
     }
 }

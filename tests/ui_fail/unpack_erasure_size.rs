@@ -1,4 +1,4 @@
-use co3::{ReprC, encode, ffi, rust_spec::RustSpec, slice::Unpack2};
+use co3::{ReprC, encode, ffi, rust_spec::RustSpec, pack::Unpack2};
 
 #[derive(RustSpec, ReprC)]
 #[repr(transparent)]

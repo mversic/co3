@@ -78,7 +78,6 @@ macro_rules! impl_copy_mut {
         }
     };
 }
-pub(crate) use impl_copy_mut;
 
 unsafe impl<'a, R: EncodeMutUnchecked<'a> + ?Sized> EncodeMutUnchecked<'a> for ManuallyDrop<R>
 where
@@ -233,7 +232,7 @@ where
 {
     type SoftStore = crate::sync::RefMutWideEncodeStore<
         'a,
-        [T::CType],
+        [T],
         alloc::boxed::Box<[<&'a mut T as crate::stored::EncodeMoveUnchecked>::SoftStore]>,
         alloc::boxed::Box<[crate::reference::CRefMut<T::CType, true>]>,
     >;
@@ -273,7 +272,7 @@ where
 {
     type Store = crate::sync::RefMutWideEncodeStore<
         'a,
-        [T::CType],
+        [T],
         alloc::boxed::Box<[<&'a mut T as crate::stored::EncodeMove>::Store]>,
         alloc::boxed::Box<[crate::reference::CRefMut<T::CType, true>]>,
     >;
@@ -348,3 +347,5 @@ where
         crate::reference::CRefMut::from_mut(store.value.insert(value))
     }
 }
+
+pub(crate) use impl_copy_mut;

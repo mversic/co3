@@ -268,7 +268,7 @@ fn gen_pack_input_stmts(
             let part_ty = single_unpack_part(attrs, ty)
                 .expect("validated #[unpack] attribute")
                 .expect("one-part unpack attribute was found");
-            quote!(<#decode_ty as co3::slice::Pack<<#part_ty as co3::ReprC>::CType>>::pack(#name))
+            quote!(<#decode_ty as co3::pack::Pack<<#part_ty as co3::ReprC>::CType>>::pack(#name))
         } else {
             let (data_name, metadata_name) = unpack_arg_names(name);
             let (logical1, logical2) =
@@ -287,7 +287,7 @@ fn gen_pack_input_stmts(
             } else {
                 quote!(#metadata_name)
             };
-            quote!(unsafe { <#decode_ty as co3::slice::Pack2<#logical1, #logical2>>::pack(#data, #metadata) })
+            quote!(unsafe { <#decode_ty as co3::pack::Pack2<#logical1, #logical2>>::pack(#data, #metadata) })
         };
         Some(quote! {
             #(#cfg)*

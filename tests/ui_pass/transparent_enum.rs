@@ -25,12 +25,14 @@ enum ImplicitTransparentTupleEnum {
 
 #[derive(Clone, Copy, RustSpec, ReprC)]
 #[repr_c(transparent)]
+#[repr(transparent)]
 enum ExplicitTransparentTupleEnum {
     A(u8),
 }
 
 #[derive(Clone, Copy, RustSpec, ReprC)]
 #[repr_c(transparent)]
+#[repr(transparent)]
 enum ExplicitTransparentNamedEnum {
     A { value: u8 },
 }

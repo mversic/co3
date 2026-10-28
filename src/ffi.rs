@@ -659,7 +659,7 @@ mod tests {
         assert_not_impl_any!(Cell<CStr>: NulTerminatedBuf);
         assert_impl_all!(ManuallyDrop<CStr>: NulTerminatedBuf);
         assert_impl_all!(&ManuallyDrop<CStr>: Encode, Decode<'static>);
-        assert_impl_all!(&mut CStr: ReprC);
+        assert_not_impl_any!(&mut CStr: ReprC);
         assert_not_impl_any!(&mut CStr: Encode, Decode<'static>);
         #[cfg(feature = "alloc")]
         {

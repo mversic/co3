@@ -1048,7 +1048,7 @@ fn prepare_dispatch_wrapper_sig(
             ffi_fn::single_unpack_part(attrs, ty).expect("validated one-part unpack attribute")
         {
             let target_part = quote!(<#target_ty as #co3::ReprC>::CType);
-            let unpack_trait = quote!(#co3::slice::Unpack<#target_part>);
+            let unpack_trait = quote!(#co3::pack::Unpack<#target_part>);
             let unpack_bound =
                 if ffi_fn::ownership_mode_for_arg(attrs, ty) == OwnershipMode::ByValue {
                     syn::parse_quote!(#ty: #unpack_trait)
@@ -1100,7 +1100,7 @@ fn prepare_dispatch_wrapper_sig(
                     <#part2 as #co3::ReprC>::CType: #co3::CType + Sized
                 ));
             }
-            let unpack_trait = quote!(#co3::slice::Unpack2<#source_part1, #source_part2>);
+            let unpack_trait = quote!(#co3::pack::Unpack2<#source_part1, #source_part2>);
             let unpack_bound =
                 if ffi_fn::ownership_mode_for_arg(attrs, ty) == OwnershipMode::ByValue {
                     syn::parse_quote!(
