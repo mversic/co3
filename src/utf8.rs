@@ -7,7 +7,7 @@ use core::ptr::NonNull;
 
 use rust_spec::RustSpec;
 
-use crate::{CType, ReprC, transmute::CheckedTransmute, wide::Wide};
+use crate::{CType, ReprC, transmute::AbiCompatible, wide::Wide};
 #[cfg(feature = "alloc")]
 use crate::{
     Decode, Encode,
@@ -29,7 +29,7 @@ impl ReprC for Utf8Str {
     type CType = Self;
 }
 
-unsafe impl CheckedTransmute for Utf8Str {
+unsafe impl AbiCompatible for Utf8Str {
     unsafe fn is_valid(_: &Self::CType) -> bool {
         true
     }

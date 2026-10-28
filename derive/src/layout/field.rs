@@ -121,7 +121,7 @@ pub(super) fn derive_field_repr_c(
         generics
             .make_where_clause()
             .predicates
-            .push(parse_quote!(#speculative #field_ty: co3::transmute::CheckedTransmute));
+            .push(parse_quote!(#speculative #field_ty: co3::transmute::AbiCompatible));
         generics
             .make_where_clause()
             .predicates
@@ -132,12 +132,12 @@ pub(super) fn derive_field_repr_c(
             .extend(niche_bound.iter().cloned());
         let (impl_generics, _, where_clause) = generics.split_for_impl();
         quote! {
-            unsafe impl #impl_generics co3::transmute::CheckedTransmute
+            unsafe impl #impl_generics co3::transmute::AbiCompatible
                 for #name #ty_generics #where_clause
             {
                 unsafe fn is_valid(target: &Self::CType) -> bool {
                     #checked_niche_rejection
-                    if !unsafe { <#field_ty as co3::transmute::CheckedTransmute>::is_valid(target) } {
+                    if !unsafe { <#field_ty as co3::transmute::AbiCompatible>::is_valid(target) } {
                         return false;
                     }
                     #checked_custom_validation

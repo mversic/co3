@@ -10,7 +10,7 @@ use crate::{
         DecodeOwned, EmptyStore, EncodeMove, EncodeMoveUnchecked, EncodeRef, EncodeRefUnchecked,
     },
     sync::RefSizedEncodeStore,
-    transmute::CheckedTransmute,
+    transmute::AbiCompatible,
 };
 
 /// FFI-safe equivalent of [`core::option::Option`].
@@ -322,7 +322,7 @@ impl<T: Encode> Encode for ReprCOption<T> {}
 impl<T: crate::EncodeUnchecked> crate::EncodeUnchecked for ReprCOption<T> {}
 impl<'d, T: Decode<'d>> Decode<'d> for ReprCOption<T> {}
 
-unsafe impl<T: CheckedTransmute<CType: Copy>> CheckedTransmute for ReprCOption<T> {
+unsafe impl<T: AbiCompatible<CType: Copy>> AbiCompatible for ReprCOption<T> {
     #[inline(always)]
     unsafe fn is_valid(target: &Self::CType) -> bool {
         match target.tag {

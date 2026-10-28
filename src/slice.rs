@@ -5,7 +5,7 @@ use crate::{
     CFnArg, CFnReturn, CType, Decode, Encode, ReprC,
     borrow::{Borrow, BorrowCast, BorrowCastMut, FromBorrow},
     stored::{DecodeOwned, EncodeMove, EncodeMoveUnchecked},
-    transmute::CheckedTransmute,
+    transmute::AbiCompatible,
     wide::{PointeeData, Wide, WideHeader},
 };
 
@@ -264,7 +264,7 @@ macro_rules! impl_identity_carrier {
         impl<$($params)*> crate::EncodeUnchecked for $ty<$($args)*> {}
         impl<'d, $($params)*> Decode<'d> for $ty<$($args)*> {}
 
-        unsafe impl<$($params)*> CheckedTransmute for $ty<$($args)*> {
+        unsafe impl<$($params)*> AbiCompatible for $ty<$($args)*> {
             #[inline(always)]
             unsafe fn is_valid(_: &Self::CType) -> bool {
                 true

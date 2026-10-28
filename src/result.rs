@@ -10,7 +10,7 @@ use crate::{
     stored::{
         DecodeOwned, EmptyStore, EncodeMove, EncodeMoveUnchecked, EncodeRef, EncodeRefUnchecked,
     },
-    transmute::CheckedTransmute,
+    transmute::AbiCompatible,
 };
 
 /// FFI-safe equivalent of [`core::result::Result`]
@@ -472,8 +472,8 @@ where
 {
 }
 
-unsafe impl<T: CheckedTransmute<CType: Copy> + Copy, E: CheckedTransmute<CType: Copy> + Copy>
-    CheckedTransmute for ReprCResult<T, E>
+unsafe impl<T: AbiCompatible<CType: Copy> + Copy, E: AbiCompatible<CType: Copy> + Copy>
+    AbiCompatible for ReprCResult<T, E>
 where
     Self: ReprC<CType = ReprCResult<T::CType, E::CType>>,
 {

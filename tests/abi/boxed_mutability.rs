@@ -40,7 +40,7 @@ fn unstable_interior_box_checked_round_trip() {
 
 #[test]
 fn interior_box_validation_checks_null_and_pointee() {
-    use co3::{boxed::CBoxCell, transmute::CheckedTransmute};
+    use co3::{boxed::CBoxCell, transmute::AbiCompatible};
 
     assert!(!unsafe { Box::<Cell<bool>>::is_valid(&CBoxCell::null()) });
     let carrier = unsafe { Box::new(Cell::new(true)).soft_encode_unchecked(&mut ()) };

@@ -1163,7 +1163,7 @@ fn gen_robust_impls(
 
         #c_fn_impls
 
-        unsafe impl #impl_generics #co3::transmute::CheckedTransmute for #ident #ty_generics #where_clause {
+        unsafe impl #impl_generics #co3::transmute::AbiCompatible for #ident #ty_generics #where_clause {
             #[inline(always)]
             unsafe fn is_valid(_: &Self::CType) -> bool {
                 true
@@ -1390,7 +1390,7 @@ pub(super) fn gen_identity_repr_c_impls(
 
         #c_fn_impls
 
-        unsafe impl #impl_generics co3::transmute::CheckedTransmute for #ident #ty_generics
+        unsafe impl #impl_generics co3::transmute::AbiCompatible for #ident #ty_generics
         #where_clause
         {
             #[inline(always)]

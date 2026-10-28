@@ -10,7 +10,7 @@ use crate::{
     reference::{CRef, CRefMut},
     slice::{CWideRef, CWideRefMut, impl_identity_carrier, impl_wide_raw_methods},
     stored::{DecodeOwned, EncodeMove, EncodeMoveUnchecked},
-    transmute::CheckedTransmute,
+    transmute::AbiCompatible,
     wide::{PointeeData, Wide, WideHeader},
 };
 

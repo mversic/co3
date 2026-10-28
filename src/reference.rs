@@ -7,7 +7,7 @@ use crate::{
     CFnArg, CFnReturn, CType, Decode, Encode, ReprC,
     borrow::{Borrow, BorrowCast, BorrowCastMut, FromBorrow},
     stored::{DecodeOwned, EncodeMove, EncodeMoveUnchecked},
-    transmute::CheckedTransmute,
+    transmute::AbiCompatible,
 };
 
 /// Constructs the carrier selected by `ReprC` for a shared reference without reading it.
@@ -237,7 +237,7 @@ macro_rules! impl_reference_identity {
         unsafe impl<$($params)*> CFnReturn for $ty<$($args)*> {}
         unsafe impl<$($params)*> BorrowCast for $ty<$($args)*> { type AsConst = Self; }
         unsafe impl<$($params)*> BorrowCastMut for $ty<$($args)*> { type AsMut = Self; }
-        unsafe impl<$($params)*> CheckedTransmute for $ty<$($args)*> {
+        unsafe impl<$($params)*> AbiCompatible for $ty<$($args)*> {
             unsafe fn is_valid(_: &Self::CType) -> bool { true }
         }
     };

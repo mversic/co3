@@ -16,7 +16,7 @@ use crate::{
     borrow::{Borrow, BorrowCast, BorrowCastMut, FromBorrow},
     primitives::primitive_derive,
     stored::{DecodeOwned, EncodeMove, EncodeMoveUnchecked},
-    transmute::CheckedTransmute,
+    transmute::AbiCompatible,
 };
 
 macro_rules! c_alias_carrier {
