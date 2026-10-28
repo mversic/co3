@@ -2,6 +2,7 @@
 
 #[cfg(feature = "alloc")]
 use alloc::{boxed::Box, string::String};
+#[cfg(feature = "alloc")]
 use core::ptr::NonNull;
 
 use rust_spec::RustSpec;
@@ -12,7 +13,7 @@ use crate::{
     Decode, Encode,
     boxed::CWideBox,
     niche::Niche,
-    stored::{DecodeOwned, DirectEncodeOwned, EncodeOwned},
+    stored::{DecodeOwned, EncodeMove, EncodeMoveUnchecked},
 };
 
 /// C-compatible byte region used as the representation of `str`.
@@ -78,7 +79,7 @@ impl ReprC for String {
 }
 
 #[cfg(feature = "alloc")]
-unsafe impl EncodeOwned for String {
+unsafe impl EncodeMove for String {
     type Store = ();
 
     fn soft_encode<'itm>(self, (): &mut ()) -> Self::CType
@@ -89,7 +90,7 @@ unsafe impl EncodeOwned for String {
     }
 }
 #[cfg(feature = "alloc")]
-unsafe impl DirectEncodeOwned for String {
+unsafe impl EncodeMoveUnchecked for String {
     type SoftStore = ();
 
     unsafe fn soft_encode_unchecked(self, (): &mut ()) -> Self::CType {
@@ -111,7 +112,7 @@ unsafe impl<'d> DecodeOwned<'d> for String {
         let bytes = unsafe {
             Box::from_raw(core::ptr::slice_from_raw_parts_mut(
                 source.as_ptr(),
-                source.len(),
+                source.metadata(),
             ))
         };
         String::from_utf8(bytes.into_vec()).ok()
@@ -121,7 +122,7 @@ unsafe impl<'d> DecodeOwned<'d> for String {
         let bytes = unsafe {
             Box::from_raw(core::ptr::slice_from_raw_parts_mut(
                 source.as_ptr(),
-                source.len(),
+                source.metadata(),
             ))
         };
         unsafe { String::from_utf8_unchecked(bytes.into_vec()) }
@@ -131,7 +132,7 @@ unsafe impl<'d> DecodeOwned<'d> for String {
 #[cfg(feature = "alloc")]
 impl Encode for String {}
 #[cfg(feature = "alloc")]
-impl crate::DirectEncode for String {}
+impl crate::EncodeUnchecked for String {}
 #[cfg(feature = "alloc")]
 impl Decode<'_> for String {}
 

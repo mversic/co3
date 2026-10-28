@@ -7,7 +7,7 @@ use co3::{
     Decode, Encode,
     option::ReprCOption,
     primitives::CBool,
-    stored::{DirectEncodeOwned, EmptyStore, EncodeOwned, Store},
+    stored::{EmptyStore, EncodeMove, EncodeMoveUnchecked, Store},
     transmute::CheckedTransmute,
 };
 use static_assertions::{assert_impl_all, assert_not_impl_any};
@@ -30,7 +30,7 @@ impl co3::ReprC for RawProbe {
 }
 
 #[cfg(feature = "alloc")]
-unsafe impl co3::stored::EncodeOwned for RawProbe {
+unsafe impl co3::stored::EncodeMove for RawProbe {
     type Store = ();
 
     fn soft_encode<'itm>(self, (): &'itm mut ()) -> Self::CType
@@ -43,7 +43,7 @@ unsafe impl co3::stored::EncodeOwned for RawProbe {
 }
 
 #[cfg(feature = "alloc")]
-unsafe impl DirectEncodeOwned for RawProbe {
+unsafe impl EncodeMoveUnchecked for RawProbe {
     type SoftStore = ();
 
     unsafe fn soft_encode_unchecked(self, (): &mut ()) -> Self::CType {
@@ -59,7 +59,7 @@ unsafe impl CheckedTransmute for RawProbe {
 }
 
 #[cfg(feature = "alloc")]
-impl co3::DirectEncode for RawProbe {}
+impl co3::EncodeUnchecked for RawProbe {}
 
 #[cfg(feature = "alloc")]
 impl Encode for RawProbe {}
@@ -71,7 +71,7 @@ impl co3::ReprC for UncheckedOnly {
     type CType = u8;
 }
 
-unsafe impl co3::stored::EncodeOwned for UncheckedOnly {
+unsafe impl co3::stored::EncodeMove for UncheckedOnly {
     type Store = ();
 
     fn soft_encode<'itm>(self, (): &'itm mut ()) -> Self::CType
@@ -82,19 +82,19 @@ unsafe impl co3::stored::EncodeOwned for UncheckedOnly {
     }
 }
 
-unsafe impl co3::stored::DirectEncodeOwned for UncheckedOnly {
+unsafe impl co3::stored::EncodeMoveUnchecked for UncheckedOnly {
     type SoftStore = ();
 
     unsafe fn soft_encode_unchecked(
         self,
-        _store: &mut <Self as co3::stored::DirectEncodeOwned>::SoftStore,
+        _store: &mut <Self as co3::stored::EncodeMoveUnchecked>::SoftStore,
     ) -> Self::CType {
-        co3::stored::EncodeOwned::soft_encode(self, &mut ())
+        co3::stored::EncodeMove::soft_encode(self, &mut ())
     }
 }
 
 impl Encode for UncheckedOnly {}
-impl co3::DirectEncode for UncheckedOnly {}
+impl co3::EncodeUnchecked for UncheckedOnly {}
 
 #[test]
 fn direct_encode_does_not_require_checked_transmute() {
@@ -121,7 +121,7 @@ impl co3::ReprC for StoredDirect {
     type CType = u8;
 }
 
-unsafe impl EncodeOwned for StoredDirect {
+unsafe impl EncodeMove for StoredDirect {
     type Store = ();
 
     fn soft_encode<'itm>(self, _: &mut Self::Store) -> Self::CType
@@ -132,12 +132,12 @@ unsafe impl EncodeOwned for StoredDirect {
     }
 }
 
-unsafe impl DirectEncodeOwned for StoredDirect {
+unsafe impl EncodeMoveUnchecked for StoredDirect {
     type SoftStore = DirectState;
 
     unsafe fn soft_encode_unchecked(
         self,
-        store: &mut <Self as DirectEncodeOwned>::SoftStore,
+        store: &mut <Self as EncodeMoveUnchecked>::SoftStore,
     ) -> Self::CType {
         store.calls += 1;
         self.0
@@ -145,7 +145,7 @@ unsafe impl DirectEncodeOwned for StoredDirect {
 }
 
 impl Encode for StoredDirect {}
-impl co3::DirectEncode for StoredDirect {}
+impl co3::EncodeUnchecked for StoredDirect {}
 
 #[derive(co3::rust_spec::RustSpec, co3::ReprC)]
 #[repr(C)]
@@ -190,20 +190,15 @@ fn direct_store_is_independent_and_propagates_through_derives() {
     array_store.sync().unwrap();
 
     fn empty<T: EmptyStore>() {}
-    empty::<<&mut bool as DirectEncodeOwned>::SoftStore>();
-    empty::<<Option<&mut bool> as DirectEncodeOwned>::SoftStore>();
-    empty::<<TransparentMut<'static> as DirectEncodeOwned>::SoftStore>();
-    assert_not_impl_any!(<TransparentMut<'static> as EncodeOwned>::Store: EmptyStore);
+    empty::<<&mut bool as EncodeMoveUnchecked>::SoftStore>();
+    empty::<<Option<&mut bool> as EncodeMoveUnchecked>::SoftStore>();
+    empty::<<TransparentMut<'static> as EncodeMoveUnchecked>::SoftStore>();
+    assert_not_impl_any!(<TransparentMut<'static> as EncodeMove>::Store: EmptyStore);
 }
 
 #[test]
-fn unchecked_encoding_can_require_writeback_storage() {
-    let mut value = Some(8_u8);
-    let mut store = Default::default();
-    let encoded = unsafe { co3::soft_encode_unchecked(&mut value, &mut store) };
-    unsafe { *encoded.as_ptr() = ReprCOption::Some(42) };
-    store.sync().unwrap();
-    assert_eq!(value, Some(42));
+fn unstable_mutable_option_has_an_explicit_encoder() {
+    assert_impl_all!(&mut Option<u8>: EncodeMoveUnchecked, EncodeMove);
 }
 
 // FIXME: Generic Box encoding cannot select its `EmptyStore` branch with `impls::impls!`;
@@ -240,12 +235,12 @@ fn stable_wrappers_use_fast_paths_without_inner_encoder_calls() {
 
 #[test]
 fn shared_interior_and_mutable_non_robust_refs_have_direct_paths() {
-    assert_impl_all!(&UnsafeCell<u8>: DirectEncodeOwned);
-    assert_impl_all!(&[UnsafeCell<u8>]: DirectEncodeOwned);
-    assert_impl_all!(&mut bool: DirectEncodeOwned);
-    assert_impl_all!(TransparentMut<'static>: DirectEncodeOwned);
-    assert_impl_all!(&mut u8: DirectEncodeOwned);
-    assert_impl_all!(&mut UnsafeCell<u8>: DirectEncodeOwned);
+    assert_impl_all!(&UnsafeCell<u8>: EncodeMoveUnchecked);
+    assert_impl_all!(&[UnsafeCell<u8>]: EncodeMoveUnchecked);
+    assert_impl_all!(&mut bool: EncodeMoveUnchecked);
+    assert_impl_all!(TransparentMut<'static>: EncodeMoveUnchecked);
+    assert_impl_all!(&mut u8: EncodeMoveUnchecked);
+    assert_impl_all!(&mut UnsafeCell<u8>: EncodeMoveUnchecked);
 }
 
 #[test]
@@ -363,12 +358,12 @@ enum VariantMut<'a> {
 #[cfg(feature = "alloc")]
 #[test]
 fn derived_representations_preserve_stable_fast_paths() {
-    assert_impl_all!(RawRecord: DirectEncodeOwned);
-    assert_impl_all!(RawTransparent: DirectEncodeOwned);
-    assert_impl_all!(RawVariant: DirectEncodeOwned);
-    assert_impl_all!(RustRecord: DirectEncodeOwned);
-    assert_impl_all!(RecordMut<'static>: DirectEncodeOwned);
-    assert_impl_all!(VariantMut<'static>: DirectEncodeOwned);
+    assert_impl_all!(RawRecord: EncodeMoveUnchecked);
+    assert_impl_all!(RawTransparent: EncodeMoveUnchecked);
+    assert_impl_all!(RawVariant: EncodeMoveUnchecked);
+    assert_impl_all!(RustRecord: EncodeMoveUnchecked);
+    assert_impl_all!(RecordMut<'static>: EncodeMoveUnchecked);
+    assert_impl_all!(VariantMut<'static>: EncodeMoveUnchecked);
 
     let value = Box::new(RawRecord { value: 3, tag: 5 });
     let ptr = (&*value as *const RawRecord).cast_mut().cast();

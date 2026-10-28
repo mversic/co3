@@ -4,7 +4,7 @@ use std::{
     num::NonZeroU8,
 };
 
-use co3::{ReprC, ffi, rust_spec::RustSpec, slice::Unpack2, wide::Wide};
+use co3::{ReprC, ffi, pack::Unpack2, rust_spec::RustSpec, wide::Wide};
 use static_assertions::assert_impl_all;
 
 #[repr(C)]

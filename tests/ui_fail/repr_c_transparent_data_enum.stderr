@@ -1,0 +1,17 @@
+error: `repr_c(transparent)` on a data-carrying enum requires `#[repr(transparent)]`
+ --> tests/ui_fail/repr_c_transparent_data_enum.rs:5:6
+  |
+5 | enum RustLayout {
+  |      ^^^^^^^^^^
+
+error: `repr_c(transparent)` on a data-carrying enum requires `#[repr(transparent)]`
+  --> tests/ui_fail/repr_c_transparent_data_enum.rs:12:6
+   |
+12 | enum CLayout {
+   |      ^^^^^^^
+
+error: `repr_c(transparent)` on a data-carrying enum requires `#[repr(transparent)]`
+  --> tests/ui_fail/repr_c_transparent_data_enum.rs:19:6
+   |
+19 | enum PrimitiveLayout {
+   |      ^^^^^^^^^^^^^^^

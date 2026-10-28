@@ -1317,7 +1317,8 @@ fn gen_identity_codec_impls(
         {
             type CType = Self;
         }
-        unsafe impl #impl_generics co3::stored::EncodeOwned for #ident #ty_generics
+
+        unsafe impl #impl_generics co3::stored::EncodeMove for #ident #ty_generics
         where
             #sized_bound
             #predicates
@@ -1329,11 +1330,11 @@ fn gen_identity_codec_impls(
             where
                 Self: 'itm,
             {
-                use co3::stored::DirectEncodeOwned as _;
+                use co3::stored::EncodeMoveUnchecked as _;
                 unsafe { self.soft_encode_unchecked(&mut ()) }
             }
         }
-        unsafe impl #impl_generics co3::stored::DirectEncodeOwned for #ident #ty_generics
+        unsafe impl #impl_generics co3::stored::EncodeMoveUnchecked for #ident #ty_generics
         where
             #sized_bound
             #predicates
@@ -1362,7 +1363,7 @@ fn gen_identity_codec_impls(
             #sized_bound
             #predicates
         {}
-        impl #impl_generics co3::DirectEncode for #ident #ty_generics
+        impl #impl_generics co3::EncodeUnchecked for #ident #ty_generics
         where
             #sized_bound
             #predicates

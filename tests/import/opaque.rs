@@ -152,3 +152,33 @@ fn imported_opaque_borrow_preserves_identity() {
 fn imported_opaque_drop_sends_pointer() {
     drop(OpaqueStruct::new(7));
 }
+
+#[test]
+fn owned_handle_has_null_niche() {
+    use co3::{
+        ReprC,
+        niche::Niche,
+        stored::{DecodeOwned, EncodeMove},
+    };
+    use core::mem::{align_of, size_of};
+
+    type Carrier = <OwnedOpaqueStruct as ReprC>::CType;
+    assert_eq!(size_of::<Option<OwnedOpaqueStruct>>(), size_of::<Carrier>());
+    assert_eq!(
+        align_of::<Option<OwnedOpaqueStruct>>(),
+        align_of::<Carrier>()
+    );
+
+    let null = <OwnedOpaqueStruct as Niche>::NICHE;
+    assert!(unsafe { OwnedOpaqueStruct::soft_decode(null, &mut ()) }.is_none());
+    assert!(matches!(
+        unsafe { <Option<OwnedOpaqueStruct>>::soft_decode(null, &mut None) },
+        Some(None)
+    ));
+
+    let raw = Some(OpaqueStruct::new(42)).soft_encode(&mut None);
+    let decoded = unsafe { <Option<OwnedOpaqueStruct>>::soft_decode(raw, &mut None) }
+        .expect("valid carrier")
+        .expect("non-null handle");
+    assert_eq!(decoded.name(), 42);
+}

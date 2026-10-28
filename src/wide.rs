@@ -4,8 +4,11 @@ use alloc::boxed::Box;
 use core::ptr::NonNull;
 use core::{
     cell::{Cell, UnsafeCell},
+    fmt::Debug,
+    hash::Hash,
     mem::ManuallyDrop,
 };
+
 use rust_spec::size::{MetaSized, SliceLike};
 
 use crate::{CType, transmute::CheckedTransmute};
@@ -38,7 +41,7 @@ pub unsafe trait Wide {
     type Header: WideHeader;
 
     /// Metadata component of a pointer.
-    type Metadata;
+    type Metadata: Debug + Copy + Send + Sync + Ord + Hash + Unpin;
 
     /// Extracts the metadata component of a pointer.
     fn metadata(ptr: *const Self) -> Self::Metadata;

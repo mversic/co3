@@ -1,12 +1,15 @@
 //! C-compatible representation of [`core::option::Option`].
 use core::mem::MaybeUninit;
 
-use rust_spec::niche::WithoutNiche;
+use rust_spec::{RustSpec, mutability::Exclusive, niche::WithoutNiche};
 
 use crate::{
-    CFnArg, CFnReturn, CType, Decode, Encode, ReprC,
+    CFnArg, CFnReturn, CType, Decode, Encode, ReprC, Thin,
     borrow::{Borrow, BorrowCast, BorrowCastMut, FromBorrow},
-    stored::{DecodeOwned, DirectEncodeOwned, EmptyStore, EncodeOwned},
+    stored::{
+        DecodeOwned, EmptyStore, EncodeMove, EncodeMoveUnchecked, EncodeRef, EncodeRefUnchecked,
+    },
+    sync::RefSizedEncodeStore,
     transmute::CheckedTransmute,
 };
 
@@ -72,11 +75,6 @@ impl<T> ReprCOption<T> {
         }
     }
 
-    /// Return the stored variant tag.
-    pub const fn tag(&self) -> u8 {
-        self.tag
-    }
-
     /// Construct no value
     #[expect(non_snake_case)]
     pub const fn None() -> Self {
@@ -95,21 +93,9 @@ impl<T> ReprCOption<T> {
         }
     }
 
-    fn forward_payload<U>(self) -> ReprCOption<U> {
-        let mut output = MaybeUninit::<ReprCOption<U>>::zeroed();
-
-        unsafe {
-            let output_ptr = output.as_mut_ptr();
-            core::ptr::addr_of_mut!((*output_ptr).tag).write(self.tag);
-
-            core::ptr::copy_nonoverlapping(
-                self.payload.as_ptr().cast::<u8>(),
-                core::ptr::addr_of_mut!((*output_ptr).payload).cast::<u8>(),
-                core::cmp::min(size_of::<T>(), size_of::<U>()),
-            );
-
-            output.assume_init()
-        }
+    /// Return the stored variant tag.
+    pub const fn tag(&self) -> u8 {
+        self.tag
     }
 
     /// Return the represented `Option<T>`, or `None` for an invalid tag.
@@ -128,12 +114,34 @@ impl<T> ReprCOption<T> {
             _ => unsafe { core::hint::unreachable_unchecked() },
         }
     }
+
+    fn forward_payload<U>(&self) -> ReprCOption<U> {
+        let mut output = MaybeUninit::<ReprCOption<U>>::zeroed();
+
+        unsafe {
+            let output_ptr = output.as_mut_ptr();
+            core::ptr::addr_of_mut!((*output_ptr).tag).write(self.tag);
+
+            core::ptr::copy_nonoverlapping(
+                self.payload.as_ptr().cast::<u8>(),
+                core::ptr::addr_of_mut!((*output_ptr).payload).cast::<u8>(),
+                core::cmp::min(size_of::<T>(), size_of::<U>()),
+            );
+
+            output.assume_init()
+        }
+    }
 }
 
 impl<T: Copy> Copy for ReprCOption<T> {}
 impl<T: Copy> Clone for ReprCOption<T> {
     fn clone(&self) -> Self {
         *self
+    }
+}
+impl<T> Default for ReprCOption<T> {
+    fn default() -> Self {
+        Self::None()
     }
 }
 
@@ -172,22 +180,22 @@ impl<'itm, T: FromBorrow<'itm>> FromBorrow<'itm> for ReprCOption<T> {
     }
 }
 
-unsafe impl<T: crate::rust_spec::RustSpec> crate::rust_spec::RustSpec for ReprCOption<T> {
-    type Layout = <T as crate::rust_spec::RustSpec>::Layout;
+unsafe impl<T: RustSpec> RustSpec for ReprCOption<T> {
+    type Layout = T::Layout;
     type Size = rust_spec::size::Sized<rust_spec::Gt<rust_spec::Zero>>;
-    type Alignment = <T as crate::rust_spec::RustSpec>::Alignment;
-    type Trap = <T as crate::rust_spec::RustSpec>::Trap;
+    type Alignment = T::Alignment;
+    type Trap = T::Trap;
     type Niche = WithoutNiche;
-    type Drop = <T as crate::rust_spec::RustSpec>::Drop;
-    type Mutability = <T as crate::rust_spec::RustSpec>::Mutability;
+    type Drop = T::Drop;
+    type Mutability = T::Mutability;
     type Opacity = rust_spec::NonOpaque;
-    type __IndirectTrap = <T as crate::rust_spec::RustSpec>::__IndirectTrap;
+    type __IndirectTrap = T::__IndirectTrap;
 }
 
 impl<T: ReprC<CType: Sized>> ReprC for ReprCOption<T> {
     type CType = ReprCOption<T::CType>;
 }
-unsafe impl<T: EncodeOwned> EncodeOwned for ReprCOption<T> {
+unsafe impl<T: EncodeMove> EncodeMove for ReprCOption<T> {
     type Store = Option<T::Store>;
 
     #[inline(always)]
@@ -204,7 +212,7 @@ unsafe impl<T: EncodeOwned> EncodeOwned for ReprCOption<T> {
         }
     }
 }
-unsafe impl<T: DirectEncodeOwned> DirectEncodeOwned for ReprCOption<T> {
+unsafe impl<T: EncodeMoveUnchecked> EncodeMoveUnchecked for ReprCOption<T> {
     type SoftStore = Option<T::SoftStore>;
 
     unsafe fn soft_encode_unchecked(self, store: &mut Self::SoftStore) -> Self::CType {
@@ -221,6 +229,64 @@ unsafe impl<T: DirectEncodeOwned> DirectEncodeOwned for ReprCOption<T> {
         }
     }
 }
+unsafe impl<'a, T: ReprC<CType: Copy>> EncodeRef<'a> for ReprCOption<T>
+where
+    Self: RustSpec<Mutability = Exclusive, Size: Thin> + 'a,
+    &'a T: EncodeMove<CType = crate::reference::CRef<T::CType>>,
+{
+    type Store = RefSizedEncodeStore<Self, Option<<&'a T as EncodeMove>::Store>>;
+
+    fn encode_ref(&'a self, store: &mut Self::Store) -> <&'a Self as ReprC>::CType {
+        store.encode(|fields| {
+            let store = fields;
+
+            match self.tag {
+                1 => {
+                    let payload = unsafe { self.payload.assume_init_ref() };
+
+                    ReprCOption::Some(crate::stored::encode_ref_field(
+                        payload,
+                        store.insert(Default::default()),
+                    ))
+                }
+                _ => {
+                    *store = None;
+                    self.forward_payload()
+                }
+            }
+        })
+    }
+}
+unsafe impl<'a, T: ReprC<CType: Copy>> EncodeRefUnchecked<'a> for ReprCOption<T>
+where
+    Self: RustSpec<Mutability = Exclusive, Size: Thin> + 'a,
+    &'a T: EncodeMoveUnchecked<CType = crate::reference::CRef<T::CType>>,
+{
+    type SoftStore = RefSizedEncodeStore<Self, Option<<&'a T as EncodeMoveUnchecked>::SoftStore>>;
+
+    unsafe fn encode_ref_unchecked(
+        &'a self,
+        store: &mut Self::SoftStore,
+    ) -> <&'a Self as ReprC>::CType {
+        store.encode(|fields| {
+            let store = fields;
+
+            match self.tag {
+                1 => ReprCOption::Some(unsafe {
+                    crate::stored::encode_ref_field_unchecked(
+                        self.payload.assume_init_ref(),
+                        store.insert(Default::default()),
+                    )
+                }),
+                _ => {
+                    *store = None;
+                    self.forward_payload()
+                }
+            }
+        })
+    }
+}
+
 unsafe impl<'d, T: DecodeOwned<'d>> DecodeOwned<'d> for ReprCOption<T> {
     type Store = T::Store;
 
@@ -253,10 +319,10 @@ unsafe impl<'d, T: DecodeOwned<'d>> DecodeOwned<'d> for ReprCOption<T> {
 }
 
 impl<T: Encode> Encode for ReprCOption<T> {}
-impl<T: crate::DirectEncode> crate::DirectEncode for ReprCOption<T> {}
+impl<T: crate::EncodeUnchecked> crate::EncodeUnchecked for ReprCOption<T> {}
 impl<'d, T: Decode<'d>> Decode<'d> for ReprCOption<T> {}
 
-unsafe impl<T: CheckedTransmute<CType: Sized>> CheckedTransmute for ReprCOption<T> {
+unsafe impl<T: CheckedTransmute<CType: Copy>> CheckedTransmute for ReprCOption<T> {
     #[inline(always)]
     unsafe fn is_valid(target: &Self::CType) -> bool {
         match target.tag {
@@ -270,10 +336,10 @@ unsafe impl<T: CType> CType for ReprCOption<T> {}
 unsafe impl<T: CType> CFnArg for ReprCOption<T> {}
 unsafe impl<T: CType> CFnReturn for ReprCOption<T> {}
 
-unsafe impl<T: BorrowCast<AsConst: Sized>> BorrowCast for ReprCOption<T> {
+unsafe impl<T: BorrowCast<AsConst: Copy>> BorrowCast for ReprCOption<T> {
     type AsConst = ReprCOption<T::AsConst>;
 }
-unsafe impl<T: BorrowCastMut<AsMut: Sized>> BorrowCastMut for ReprCOption<T> {
+unsafe impl<T: BorrowCastMut<AsMut: Copy>> BorrowCastMut for ReprCOption<T> {
     type AsMut = ReprCOption<T::AsMut>;
 }
 

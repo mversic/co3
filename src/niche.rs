@@ -16,7 +16,7 @@ use crate::{
     reference::{CRef, CRefMut},
     result::ReprCResult,
     slice::{CWideRef, CWideRefMut},
-    wide::Wide,
+    wide::{Wide, WideHeader},
 };
 
 disjoint_impls! {
@@ -42,15 +42,17 @@ disjoint_impls! {
     {
         const NICHE: Self::CType = CRefMut::null();
     }
-    impl<R: ?Sized, C: Wide + ?Sized> Niche for &R
+    impl<R: ?Sized, C: Wide<Header: WideHeader<Data: CType>> + ?Sized> Niche for &R
     where
         Self: ReprC<CType = CWideRef<C>>,
+        <C as Wide>::Metadata: CType,
     {
         const NICHE: Self::CType = CWideRef::null();
     }
-    impl<R: ?Sized, C: Wide + ?Sized> Niche for &R
+    impl<R: ?Sized, C: Wide<Header: WideHeader<Data: CType>> + ?Sized> Niche for &R
     where
         Self: ReprC<CType = CWideRefMut<C, false>>,
+        <C as Wide>::Metadata: CType,
     {
         const NICHE: Self::CType = CWideRefMut::null();
     }
@@ -61,9 +63,10 @@ disjoint_impls! {
     {
         const NICHE: Self::CType = CRefMut::null();
     }
-    impl<R: ?Sized, C: Wide + ?Sized> Niche for &mut R
+    impl<R: ?Sized, C: Wide<Header: WideHeader<Data: CType>> + ?Sized> Niche for &mut R
     where
         Self: ReprC<CType = CWideRefMut<C, true>>,
+        <C as Wide>::Metadata: CType,
     {
         const NICHE: Self::CType = CWideRefMut::null();
     }
@@ -83,31 +86,35 @@ disjoint_impls! {
         const NICHE: Self::CType = CBoxCell::null();
     }
     #[cfg(feature = "alloc")]
-    impl<R: ?Sized, C: Wide + ?Sized> Niche for Box<R>
+    impl<R: ?Sized, C: Wide<Header: WideHeader<Data: CType>> + ?Sized> Niche for Box<R>
     where
         Self: ReprC<CType = CWideBox<C>>,
+        <C as Wide>::Metadata: CType,
     {
         const NICHE: Self::CType = CWideBox::null();
     }
     #[cfg(feature = "alloc")]
-    impl<R: ?Sized, C: Wide + ?Sized> Niche for Box<R>
+    impl<R: ?Sized, C: Wide<Header: WideHeader<Data: CType>> + ?Sized> Niche for Box<R>
     where
         Self: ReprC<CType = CWideBoxCell<C>>,
+        <C as Wide>::Metadata: CType,
     {
         const NICHE: Self::CType = CWideBoxCell::null();
     }
 
     #[cfg(feature = "alloc")]
-    impl<R, C: Wide + ?Sized> Niche for Vec<R>
+    impl<R, C: Wide<Header: WideHeader<Data: CType>> + ?Sized> Niche for Vec<R>
     where
         Self: ReprC<CType = CWideBox<C>>,
+        <C as Wide>::Metadata: CType,
     {
         const NICHE: Self::CType = CWideBox::null();
     }
     #[cfg(feature = "alloc")]
-    impl<R, C: Wide + ?Sized> Niche for Vec<R>
+    impl<R, C: Wide<Header: WideHeader<Data: CType>> + ?Sized> Niche for Vec<R>
     where
         Self: ReprC<CType = CWideBoxCell<C>>,
+        <C as Wide>::Metadata: CType,
     {
         const NICHE: Self::CType = CWideBoxCell::null();
     }

@@ -61,13 +61,16 @@ use crate::{
     CFnArg, CFnReturn, CType, Decode, Encode, ReprC, Store,
     borrow::{Borrow, BorrowCast, BorrowCastMut, FromBorrow},
     niche::Niche,
-    slice::{Pack2, Unpack2},
-    stored::{DecodeOwned, DirectEncodeOwned, EncodeOwned},
+    stored::{DecodeOwned, EncodeMove, EncodeMoveUnchecked, EncodeRef, EncodeRefUnchecked},
     transmute::CheckedTransmute,
 };
 
 macro_rules! impl_tuple {
-    ( ($( $ty:ident ),+) -> $ffi_ty:ident ) => {
+    ( ($( $ty:ident : $idx:tt ),+) -> $ffi_ty:ident ) => {
+        impl_tuple!(@main [$($ty:$idx),+] [] $($ty:$idx),+ -> $ffi_ty);
+    };
+
+    (@main [$($ty:ident:$idx:tt),+] [$($head:ident:$head_idx:tt,)*] $last:ident:$last_idx:tt -> $ffi_ty:ident) => {
         impl<$($ty: Store),+> Store for ($($ty,)+) {
             #[expect(non_snake_case)]
             fn sync(self) -> Option<()> {
@@ -138,7 +141,7 @@ macro_rules! impl_tuple {
             }
         }
 
-        unsafe impl<$($ty: EncodeOwned),*> EncodeOwned for ($($ty,)*) {
+        unsafe impl<$($ty: EncodeMove),*> EncodeMove for ($($ty,)*) {
             type Store = ($( $ty::Store, )*);
 
             #[inline(always)]
@@ -155,7 +158,7 @@ macro_rules! impl_tuple {
             }
 
         }
-        unsafe impl<$($ty: EncodeOwned),*> EncodeOwned for $ffi_ty<$($ty),*> {
+        unsafe impl<$($ty: EncodeMove),*> EncodeMove for $ffi_ty<$($ty),*> {
             type Store = ($( $ty::Store, )*);
 
             #[inline(always)]
@@ -173,7 +176,7 @@ macro_rules! impl_tuple {
 
         }
 
-        unsafe impl<$($ty: DirectEncodeOwned),*> DirectEncodeOwned for ($($ty,)*) {
+        unsafe impl<$($ty: EncodeMoveUnchecked),*> EncodeMoveUnchecked for ($($ty,)*) {
             type SoftStore = ($($ty::SoftStore,)*);
 
             #[expect(non_snake_case)]
@@ -186,7 +189,7 @@ macro_rules! impl_tuple {
             }
         }
 
-        unsafe impl<$($ty: DirectEncodeOwned),*> DirectEncodeOwned for $ffi_ty<$($ty),*> {
+        unsafe impl<$($ty: EncodeMoveUnchecked),*> EncodeMoveUnchecked for $ffi_ty<$($ty),*> {
             type SoftStore = ($($ty::SoftStore,)*);
 
             #[expect(non_snake_case)]
@@ -198,6 +201,96 @@ macro_rules! impl_tuple {
                 $ffi_ty($(unsafe { $ty.soft_encode_unchecked(store.$ty) }),*)
             }
         }
+
+        #[allow(non_snake_case)]
+        const _: () = {
+        disjoint_impls! {
+        /// # Safety
+        /// Implementations must uphold the contract of [`crate::stored::EncodeRef`].
+        #[disjoint_impls(remote)]
+        pub unsafe trait EncodeRef<'a>: EncodeRefUnchecked<'a> {
+            type Store: Store + Default;
+            fn encode_ref(&'a self, store: &mut Self::Store) -> <&'a Self as ReprC>::CType
+            where &'a Self: ReprC<CType: Sized>;
+        }
+
+        unsafe impl<'a, $($ty: ReprC<CType: Copy> + 'a),*> EncodeRef<'a> for ($($ty,)*)
+        where
+            Self: RustSpec<Mutability = rust_spec::mutability::Exclusive, Size: crate::Thin>,
+            $(&'a $ty: EncodeMove + ReprC<CType = crate::reference::CRef<<$ty as ReprC>::CType>>),*
+        {
+            type Store = crate::sync::RefSizedEncodeStore<Self, ($(<&'a $ty as EncodeMove>::Store,)*)>;
+            fn encode_ref(&'a self, store: &mut Self::Store) -> <&'a Self as ReprC>::CType {
+                store.encode(|fields| {
+                    impl_tuple! {@decl_priv_store $($ty),*}
+                    let ($($ty,)*) = self;
+                    let fields: private_store::Store<$(<&'a $ty as EncodeMove>::Store,)*> = fields.into();
+                    $ffi_ty($($crate::stored::encode_ref_field($ty, fields.$ty)),*)
+                })
+            }
+        }
+
+        unsafe impl<'a, $($ty: ReprC<CType: Copy> + 'a),*> EncodeRef<'a> for $ffi_ty<$($ty),*>
+        where
+            Self: RustSpec<Mutability = rust_spec::mutability::Exclusive, Size: crate::Thin>,
+            $(&'a $ty: EncodeMove + ReprC<CType = crate::reference::CRef<<$ty as ReprC>::CType>>),*
+        {
+            type Store = crate::sync::RefSizedEncodeStore<Self, ($(<&'a $ty as EncodeMove>::Store,)*)>;
+            fn encode_ref(&'a self, store: &mut Self::Store) -> <&'a Self as ReprC>::CType {
+                store.encode(|fields| {
+                    impl_tuple! {@decl_priv_store $($ty),*}
+                    let $ffi_ty($($ty),*) = self;
+                    let fields: private_store::Store<$(<&'a $ty as EncodeMove>::Store,)*> = fields.into();
+                    $ffi_ty($($crate::stored::encode_ref_field($ty, fields.$ty)),*)
+                })
+            }
+        }
+        }};
+
+        #[allow(non_snake_case)]
+        const _: () = {
+        disjoint_impls! {
+        /// # Safety
+        /// Implementations must uphold the contract of [`crate::stored::EncodeRefUnchecked`].
+        #[disjoint_impls(remote)]
+        pub unsafe trait EncodeRefUnchecked<'a>: ReprC + 'a {
+            type SoftStore: Store + Default;
+            unsafe fn encode_ref_unchecked(&'a self, store: &mut Self::SoftStore) -> <&'a Self as ReprC>::CType
+            where &'a Self: ReprC<CType: Sized>;
+        }
+
+        unsafe impl<'a, $($ty: ReprC<CType: Copy> + 'a),*> EncodeRefUnchecked<'a> for ($($ty,)*)
+        where
+            Self: RustSpec<Mutability = rust_spec::mutability::Exclusive, Size: crate::Thin>,
+            $(&'a $ty: EncodeMoveUnchecked + ReprC<CType = crate::reference::CRef<<$ty as ReprC>::CType>>),*
+        {
+            type SoftStore = crate::sync::RefSizedEncodeStore<Self, ($(<&'a $ty as EncodeMoveUnchecked>::SoftStore,)*)>;
+            unsafe fn encode_ref_unchecked(&'a self, store: &mut Self::SoftStore) -> <&'a Self as ReprC>::CType {
+                store.encode(|fields| {
+                    impl_tuple! {@decl_priv_store $($ty),*}
+                    let ($($ty,)*) = self;
+                    let fields: private_store::Store<$(<&'a $ty as EncodeMoveUnchecked>::SoftStore,)*> = fields.into();
+                    $ffi_ty($(unsafe { $crate::stored::encode_ref_field_unchecked($ty, fields.$ty) }),*)
+                })
+            }
+        }
+
+        unsafe impl<'a, $($ty: ReprC<CType: Copy> + 'a),*> EncodeRefUnchecked<'a> for $ffi_ty<$($ty),*>
+        where
+            Self: RustSpec<Mutability = rust_spec::mutability::Exclusive, Size: crate::Thin>,
+            $(&'a $ty: EncodeMoveUnchecked + ReprC<CType = crate::reference::CRef<<$ty as ReprC>::CType>>),*
+        {
+            type SoftStore = crate::sync::RefSizedEncodeStore<Self, ($(<&'a $ty as EncodeMoveUnchecked>::SoftStore,)*)>;
+            unsafe fn encode_ref_unchecked(&'a self, store: &mut Self::SoftStore) -> <&'a Self as ReprC>::CType {
+                store.encode(|fields| {
+                    impl_tuple! {@decl_priv_store $($ty),*}
+                    let $ffi_ty($($ty),*) = self;
+                    let fields: private_store::Store<$(<&'a $ty as EncodeMoveUnchecked>::SoftStore,)*> = fields.into();
+                    $ffi_ty($(unsafe { $crate::stored::encode_ref_field_unchecked($ty, fields.$ty) }),*)
+                })
+            }
+        }
+        }};
 
         unsafe impl<'d, $($ty: DecodeOwned<'d>),*> DecodeOwned<'d> for ($($ty,)*) {
             type Store = ($( $ty::Store, )*);
@@ -248,8 +341,8 @@ macro_rules! impl_tuple {
 
         impl<$($ty: Encode),*> Encode for ($($ty,)*) {}
         impl<$($ty: Encode),*> Encode for $ffi_ty<$($ty),*> {}
-        impl<$($ty: crate::DirectEncode),*> crate::DirectEncode for ($($ty,)*) {}
-        impl<$($ty: crate::DirectEncode),*> crate::DirectEncode for $ffi_ty<$($ty),*> {}
+        impl<$($ty: crate::EncodeUnchecked),*> crate::EncodeUnchecked for ($($ty,)*) {}
+        impl<$($ty: crate::EncodeUnchecked),*> crate::EncodeUnchecked for $ffi_ty<$($ty),*> {}
 
         impl<'d, $($ty: Decode<'d>),*> Decode<'d> for ($($ty,)*) {}
         impl<'d, $($ty: Decode<'d>),*> Decode<'d> for $ffi_ty<$($ty),*> {}
@@ -263,16 +356,22 @@ macro_rules! impl_tuple {
             Self: RustSpec<Size = rust_spec::size::Sized<rust_spec::Gt<rust_spec::Zero>>>,
         {}
 
-        impl_tuple!(@split [] $($ty),+ -> $ffi_ty);
+        impl_tuple!(@split [] $($ty:$idx),+ -> $ffi_ty);
     };
 
-    (@split [$($head:ident,)*] $last:ident -> $ffi_ty:ident) => {
+    (@split [$($head:ident:$head_idx:tt,)*] $last:ident:$last_idx:tt -> $ffi_ty:ident) => {
         /// FFI-safe tuple with a stable `repr(C)` memory layout.
         ///
         /// See [the module level documentation](self) for more.
         #[repr(C)]
         #[derive(RustSpec, Debug, Clone, Copy, Default, PartialEq, Eq, PartialOrd, Ord, Hash)]
         pub struct $ffi_ty<$($head,)* $last: ?Sized>($(pub $head,)* pub $last);
+
+        impl<$($head: CType,)* __Co3WideHeader: CType> crate::wide::WideHeader for $ffi_ty<$($head,)* __Co3WideHeader> {
+            type Data = Self;
+        }
+
+        impl_tuple!(@wide_impl [$($head,)*] $last -> $ffi_ty);
 
         impl<$($head,)* $last> $ffi_ty<$($head,)* $last> {
             /// Return the stored fields as a Rust tuple without decoding them.
@@ -313,8 +412,63 @@ macro_rules! impl_tuple {
         unsafe impl<$($head: crate::stored::EmptyStore,)* $last: crate::stored::EmptyStore> crate::stored::EmptyStore for $ffi_ty<$($head,)* $last> {}
     };
 
-    (@split [$($head:ident,)*] $next:ident, $($tail:ident),+ -> $ffi_ty:ident) => {
-        impl_tuple!(@split [$($head,)* $next,] $($tail),+ -> $ffi_ty);
+    (@split [$($head:ident:$head_idx:tt,)*] $next:ident:$next_idx:tt, $($tail:ident:$tail_idx:tt),+ -> $ffi_ty:ident) => {
+        impl_tuple!(@split [$($head:$head_idx,)* $next:$next_idx,] $($tail:$tail_idx),+ -> $ffi_ty);
+    };
+
+    (@main [$($ty:ident:$idx:tt),+] [$($head:ident:$head_idx:tt,)*] $next:ident:$next_idx:tt, $($tail:ident:$tail_idx:tt),+ -> $ffi_ty:ident) => {
+        impl_tuple!(@main [$($ty:$idx),+] [$($head:$head_idx,)* $next:$next_idx,] $($tail:$tail_idx),+ -> $ffi_ty);
+    };
+
+    (@wide_impl [] $last:ident -> $ffi_ty:ident) => {};
+    (@wide_impl [$($head:ident,)+] $last:ident -> $ffi_ty:ident) => {
+        unsafe impl<$($head: CType,)+ $last: CType + crate::wide::Wide<Metadata = usize> + RustSpec<Size = rust_spec::size::MetaSized<rust_spec::size::SliceLike>> + ?Sized>
+            crate::wide::Wide for $ffi_ty<$($head,)+ $last>
+        where
+            <$last as crate::wide::Wide>::Header: CType + Sized,
+        {
+            type Header = $ffi_ty<$($head,)+ <$last as crate::wide::Wide>::Header>;
+            type Metadata = usize;
+
+            fn metadata(ptr: *const Self) -> usize {
+                <$last as crate::wide::Wide>::metadata(ptr as *const $last)
+            }
+
+            fn as_ptr(ptr: *const Self) -> *const Self::Header {
+                ptr as *const Self::Header
+            }
+
+            fn as_mut_ptr(ptr: *mut Self) -> *mut Self::Header {
+                ptr as *mut Self::Header
+            }
+
+            unsafe fn from_raw_parts<'a>(data: *const Self::Header, len: usize) -> &'a Self {
+                let slice = core::ptr::slice_from_raw_parts(data.cast::<crate::wide::PointeeData<$last>>(), len);
+                assert_eq!(core::mem::size_of::<*const Self>(), core::mem::size_of_val(&slice));
+                // A slice-like DST has a data pointer and usize metadata. The
+                // repr(C) tuple has the same metadata as its unsized last field.
+                let ptr = unsafe { core::mem::transmute_copy::<_, *const Self>(&slice) };
+                unsafe { &*ptr }
+            }
+
+            unsafe fn from_raw_parts_mut<'a>(data: *mut Self::Header, len: usize) -> &'a mut Self {
+                let slice = core::ptr::slice_from_raw_parts_mut(data.cast::<crate::wide::PointeeData<$last>>(), len);
+                assert_eq!(core::mem::size_of::<*mut Self>(), core::mem::size_of_val(&slice));
+                let ptr = unsafe { core::mem::transmute_copy::<_, *mut Self>(&slice) };
+                unsafe { &mut *ptr }
+            }
+
+            #[cfg(feature = "alloc")]
+            fn into_non_null(self: alloc::boxed::Box<Self>) -> core::ptr::NonNull<Self::Header> {
+                alloc::boxed::Box::into_non_null(self).cast()
+            }
+
+            #[cfg(feature = "alloc")]
+            unsafe fn from_non_null(data: core::ptr::NonNull<Self::Header>, len: usize) -> alloc::boxed::Box<Self> {
+                let ptr = unsafe { Self::from_raw_parts_mut(data.as_ptr(), len) } as *mut Self;
+                unsafe { alloc::boxed::Box::from_raw(ptr) }
+            }
+        }
     };
 
     // NOTE: This is a trick to index tuples
@@ -333,42 +487,18 @@ macro_rules! impl_tuple {
     };
 }
 
-impl_tuple! {(A) -> ReprCTuple1}
-impl_tuple! {(A, B) -> ReprCTuple2}
-impl_tuple! {(A, B, C) -> ReprCTuple3}
-impl_tuple! {(A, B, C, D) -> ReprCTuple4}
-impl_tuple! {(A, B, C, D, E) -> ReprCTuple5}
-impl_tuple! {(A, B, C, D, E, F) -> ReprCTuple6}
-impl_tuple! {(A, B, C, D, E, F, G) -> ReprCTuple7}
-impl_tuple! {(A, B, C, D, E, F, G, H) -> ReprCTuple8}
-impl_tuple! {(A, B, C, D, E, F, G, H, I) -> ReprCTuple9}
-impl_tuple! {(A, B, C, D, E, F, G, H, I, J) -> ReprCTuple10}
-impl_tuple! {(A, B, C, D, E, F, G, H, I, J, K) -> ReprCTuple11}
-impl_tuple! {(A, B, C, D, E, F, G, H, I, J, K, L) -> ReprCTuple12}
-
-impl<A, B, Part1: CType, Part2: CType> Unpack2<Part1, Part2> for (A, B)
-where
-    Self: ReprC<CType = ReprCTuple2<Part1, Part2>>,
-{
-    type Error = core::convert::Infallible;
-
-    #[inline(always)]
-    fn unpack(value: Self::CType) -> Result<(Part1, Part2), Self::Error> {
-        Ok((value.0, value.1))
-    }
-}
-
-impl<A, B, Part1: CType, Part2: CType> Pack2<Part1, Part2> for (A, B)
-where
-    Self: ReprC<CType = ReprCTuple2<Part1, Part2>>,
-{
-    type Error = core::convert::Infallible;
-
-    #[inline(always)]
-    unsafe fn pack(part1: Part1, part2: Part2) -> Result<Self::CType, Self::Error> {
-        Ok(ReprCTuple2(part1, part2))
-    }
-}
+impl_tuple! {(A:0) -> ReprCTuple1}
+impl_tuple! {(A:0, B:1) -> ReprCTuple2}
+impl_tuple! {(A:0, B:1, C:2) -> ReprCTuple3}
+impl_tuple! {(A:0, B:1, C:2, D:3) -> ReprCTuple4}
+impl_tuple! {(A:0, B:1, C:2, D:3, E:4) -> ReprCTuple5}
+impl_tuple! {(A:0, B:1, C:2, D:3, E:4, F:5) -> ReprCTuple6}
+impl_tuple! {(A:0, B:1, C:2, D:3, E:4, F:5, G:6) -> ReprCTuple7}
+impl_tuple! {(A:0, B:1, C:2, D:3, E:4, F:5, G:6, H:7) -> ReprCTuple8}
+impl_tuple! {(A:0, B:1, C:2, D:3, E:4, F:5, G:6, H:7, I:8) -> ReprCTuple9}
+impl_tuple! {(A:0, B:1, C:2, D:3, E:4, F:5, G:6, H:7, I:8, J:9) -> ReprCTuple10}
+impl_tuple! {(A:0, B:1, C:2, D:3, E:4, F:5, G:6, H:7, I:8, J:9, K:10) -> ReprCTuple11}
+impl_tuple! {(A:0, B:1, C:2, D:3, E:4, F:5, G:6, H:7, I:8, J:9, K:10, L:11) -> ReprCTuple12}
 
 impl<A: Niche> Niche for (A,) {
     const NICHE: Self::CType = ReprCTuple1(A::NICHE);
@@ -453,7 +583,7 @@ mod tests {
     #[cfg(feature = "alloc")]
     use crate::{
         slice::{CWideRef, CWideRefMut},
-        stored::{DecodeOwned, EncodeOwned},
+        stored::{DecodeOwned, EncodeMove},
     };
 
     #[test]
@@ -484,12 +614,11 @@ mod tests {
         );
         assert_impl_all!(&mut (u8, u8, u8):
         Niche<CType = CRefMut<ReprCTuple3<u8, u8, u8>, true>>,
-        Encode,
         );
         #[cfg(feature = "alloc")]
         assert_impl_all!(Box<(u8, u8, u8)>:
             Niche<CType = CBox<ReprCTuple3<u8, u8, u8>>>,
-            EncodeOwned,
+            EncodeMove,
         );
         #[cfg(feature = "alloc")]
         assert_impl_all!(&[(u8, u8, u8)]:
@@ -499,18 +628,17 @@ mod tests {
         #[cfg(feature = "alloc")]
         assert_impl_all!(&mut [(u8, u8, u8)]:
             Niche<CType = CWideRefMut<[ReprCTuple3<u8, u8, u8>], true>>,
-            Encode,
         );
         #[cfg(feature = "alloc")]
         assert_impl_all!(Box<[(u8, u8, u8)]>:
             Niche<CType = CWideBox<[ReprCTuple3<u8, u8, u8>]>>,
-            EncodeOwned,
+            EncodeMove,
         );
         #[cfg(feature = "alloc")]
         assert_impl_all!(Vec<(u8, u8, u8)>:
             Niche<CType = CWideBox<[ReprCTuple3<u8, u8, u8>]>>,
             DecodeOwned<'static>,
-            EncodeOwned,
+            EncodeMove,
         );
         assert_impl_all!([(u8, u8, u8); 2]:
             ReprC<CType = [ReprCTuple3<u8, u8, u8>; 2]>,
@@ -535,7 +663,7 @@ mod tests {
         type Value = Box<(u8, u8, u8)>;
 
         let mut encode_store = Default::default();
-        let source = <Value as EncodeOwned>::soft_encode(Box::new((1, 2, 3)), &mut encode_store);
+        let source = <Value as EncodeMove>::soft_encode(Box::new((1, 2, 3)), &mut encode_store);
         let mut decode_store = Default::default();
         let decoded = unsafe { <Value as DecodeOwned>::soft_decode(source, &mut decode_store) };
 
@@ -549,7 +677,7 @@ mod tests {
 
         let input: Value = Vec::from([(1, 2, 3), (4, 5, 6)]).into_boxed_slice();
         let mut encode_store = Default::default();
-        let source = <Value as EncodeOwned>::soft_encode(input, &mut encode_store);
+        let source = <Value as EncodeMove>::soft_encode(input, &mut encode_store);
         let mut decode_store = Default::default();
         let decoded = unsafe { <Value as DecodeOwned>::soft_decode(source, &mut decode_store) };
 
@@ -581,13 +709,12 @@ mod tests {
         assert_impl_all!(&mut (u8, StdNonZero<u8>, bool):
             Niche<CType = CRefMut<ReprCTuple3<u8, u8, crate::primitives::CBool>, true>>,
             Decode<'static>,
-            Encode,
         );
         #[cfg(feature = "alloc")]
         assert_impl_all!(Box<(u8, StdNonZero<u8>, bool)>:
             Niche<CType = CBox<ReprCTuple3<u8, u8, crate::primitives::CBool>>>,
             DecodeOwned<'static>,
-            EncodeOwned,
+            EncodeMove,
         );
         #[cfg(feature = "alloc")]
         assert_impl_all!(&[(u8, StdNonZero<u8>, bool)]:
@@ -599,19 +726,18 @@ mod tests {
         assert_impl_all!(&mut [(u8, StdNonZero<u8>, bool)]:
             Niche<CType = CWideRefMut<[ReprCTuple3<u8, u8, crate::primitives::CBool>], true>>,
             Decode<'static>,
-            Encode,
         );
         #[cfg(feature = "alloc")]
         assert_impl_all!(Box<[(u8, StdNonZero<u8>, bool)]>:
             Niche<CType = CWideBox<[ReprCTuple3<u8, u8, crate::primitives::CBool>]>>,
             DecodeOwned<'static>,
-            EncodeOwned,
+            EncodeMove,
         );
         #[cfg(feature = "alloc")]
         assert_impl_all!(Vec<(u8, StdNonZero<u8>, bool)>:
             Niche<CType = CWideBox<[ReprCTuple3<u8, u8, crate::primitives::CBool>]>>,
             DecodeOwned<'static>,
-            EncodeOwned,
+            EncodeMove,
         );
         assert_impl_all!([(u8, StdNonZero<u8>, bool); 2]:
             Niche<CType = [ReprCTuple3<u8, u8, crate::primitives::CBool>; 2]>,

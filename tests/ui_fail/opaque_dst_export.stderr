@@ -29,8 +29,8 @@ error[E0277]: the size for values of type `[T]` cannot be known at compilation t
    |          ^^^^^^^^^^^^^^ doesn't have a size known at compile-time
    |
    = help: within `OpaqueSlice<T>`, the trait `std::marker::Sized` is not implemented for `[T]`
-help: the trait `DirectEncodeOwned` is not implemented for `OpaqueSlice<T>`
-      but trait `DirectEncodeOwned` is implemented for it
+help: the trait `EncodeMoveUnchecked` is not implemented for `OpaqueSlice<T>`
+      but trait `EncodeMoveUnchecked` is implemented for it
   --> tests/ui_fail/opaque_dst_export.rs:11:1
    |
 11 | / ffi! {
@@ -45,12 +45,12 @@ note: required because it appears within the type `OpaqueSlice<T>`
    |
  9 | struct OpaqueSlice<T>([T]);
    |        ^^^^^^^^^^^
-   = note: required for `OpaqueSlice<T>` to implement `DirectEncodeOwned`
-note: required by a bound in `EncodeOwned`
+   = note: required for `OpaqueSlice<T>` to implement `EncodeMoveUnchecked`
+note: required by a bound in `EncodeMove`
   --> src/stored.rs
    |
-   |     pub unsafe trait EncodeOwned: DirectEncodeOwned {
-   |                                   ^^^^^^^^^^^^^^^^^ required by this bound in `EncodeOwned`
+   |     pub unsafe trait EncodeMove: EncodeMoveUnchecked {
+   |                                   ^^^^^^^^^^^^^^^^^ required by this bound in `EncodeMove`
    = note: this error originates in the macro `ffi` (in Nightly builds, run with -Z macro-backtrace for more info)
 
 error[E0277]: the size for values of type `[T]` cannot be known at compilation time
@@ -65,11 +65,11 @@ note: required because it appears within the type `OpaqueSlice<T>`
    |
  9 | struct OpaqueSlice<T>([T]);
    |        ^^^^^^^^^^^
-note: required by a bound in `DirectEncodeOwned`
+note: required by a bound in `EncodeMoveUnchecked`
   --> src/stored.rs
    |
-   |     pub unsafe trait DirectEncodeOwned: ReprC<CType: Sized> + Sized {
-   |                                                      ^^^^^ required by this bound in `DirectEncodeOwned`
+   |     pub unsafe trait EncodeMoveUnchecked: ReprC<CType: Sized> + Sized {
+   |                                                      ^^^^^ required by this bound in `EncodeMoveUnchecked`
 
 error[E0277]: the size for values of type `[T]` cannot be known at compilation time
   --> tests/ui_fail/opaque_dst_export.rs:11:1
@@ -120,8 +120,8 @@ error[E0277]: the size for values of type `[T]` cannot be known at compilation t
    |          ^^^^^^^^^^^^^^ doesn't have a size known at compile-time
    |
    = help: within `OpaqueSlice<T>`, the trait `std::marker::Sized` is not implemented for `[T]`
-help: the trait `DirectEncode` is not implemented for `OpaqueSlice<T>`
-      but trait `DirectEncode` is implemented for it
+help: the trait `EncodeUnchecked` is not implemented for `OpaqueSlice<T>`
+      but trait `EncodeUnchecked` is implemented for it
   --> tests/ui_fail/opaque_dst_export.rs:11:1
    |
 11 | / ffi! {
@@ -136,12 +136,12 @@ note: required because it appears within the type `OpaqueSlice<T>`
    |
  9 | struct OpaqueSlice<T>([T]);
    |        ^^^^^^^^^^^
-   = note: required for `OpaqueSlice<T>` to implement `DirectEncodeOwned`
-   = note: required for `OpaqueSlice<T>` to implement `DirectEncode`
+   = note: required for `OpaqueSlice<T>` to implement `EncodeMoveUnchecked`
+   = note: required for `OpaqueSlice<T>` to implement `EncodeUnchecked`
 note: required by a bound in `Encode`
   --> src/lib.rs
    |
-   | pub trait Encode: EncodeOwned + DirectEncode {}
+   | pub trait Encode: EncodeMove + EncodeUnchecked {}
    |                                 ^^^^^^^^^^^^ required by this bound in `Encode`
    = note: this error originates in the macro `ffi` (in Nightly builds, run with -Z macro-backtrace for more info)
 
@@ -152,8 +152,8 @@ error[E0277]: the size for values of type `[T]` cannot be known at compilation t
    |          ^^^^^^^^^^^^^^ doesn't have a size known at compile-time
    |
    = help: within `OpaqueSlice<T>`, the trait `std::marker::Sized` is not implemented for `[T]`
-help: the trait `DirectEncodeOwned` is not implemented for `OpaqueSlice<T>`
-      but trait `DirectEncodeOwned` is implemented for it
+help: the trait `EncodeMoveUnchecked` is not implemented for `OpaqueSlice<T>`
+      but trait `EncodeMoveUnchecked` is implemented for it
   --> tests/ui_fail/opaque_dst_export.rs:11:1
    |
 11 | / ffi! {
@@ -168,12 +168,12 @@ note: required because it appears within the type `OpaqueSlice<T>`
    |
  9 | struct OpaqueSlice<T>([T]);
    |        ^^^^^^^^^^^
-   = note: required for `OpaqueSlice<T>` to implement `DirectEncodeOwned`
-note: required by a bound in `DirectEncode`
+   = note: required for `OpaqueSlice<T>` to implement `EncodeMoveUnchecked`
+note: required by a bound in `EncodeUnchecked`
   --> src/lib.rs
    |
-   | pub trait DirectEncode: DirectEncodeOwned {}
-   |                         ^^^^^^^^^^^^^^^^^ required by this bound in `DirectEncode`
+   | pub trait EncodeUnchecked: EncodeMoveUnchecked {}
+   |                         ^^^^^^^^^^^^^^^^^ required by this bound in `EncodeUnchecked`
    = note: this error originates in the macro `ffi` (in Nightly builds, run with -Z macro-backtrace for more info)
 
 error[E0277]: the size for values of type `[T]` cannot be known at compilation time

@@ -359,7 +359,10 @@ pub(super) fn gen_dst_methods(is_transparent: bool, field_ty: &syn::Type) -> Tok
                 data: *const Self::Header,
                 metadata: Self::Metadata,
             ) -> &'__rust_spec Self {
-                let ptr = core::ptr::slice_from_raw_parts(data.cast::<#tail_data_ty>(), metadata) as *const Self;
+                let raw = core::ptr::slice_from_raw_parts(data.cast::<#tail_data_ty>(), metadata);
+                const { assert!(core::mem::size_of::<*const Self>() == core::mem::size_of::<*const [#tail_data_ty]>()); }
+                // The slice-like tail supplies usize metadata. Raw pointers are Copy.
+                let ptr: *const Self = unsafe { core::mem::transmute_copy(&raw) };
                 unsafe { &*ptr }
             }
 
@@ -368,7 +371,9 @@ pub(super) fn gen_dst_methods(is_transparent: bool, field_ty: &syn::Type) -> Tok
                 data: *mut Self::Header,
                 metadata: Self::Metadata,
             ) -> &'__rust_spec mut Self {
-                let ptr = core::ptr::slice_from_raw_parts_mut(data.cast::<#tail_data_ty>(), metadata) as *mut Self;
+                let raw = core::ptr::slice_from_raw_parts_mut(data.cast::<#tail_data_ty>(), metadata);
+                const { assert!(core::mem::size_of::<*mut Self>() == core::mem::size_of::<*mut [#tail_data_ty]>()); }
+                let ptr: *mut Self = unsafe { core::mem::transmute_copy(&raw) };
                 unsafe { &mut *ptr }
             }
         }
@@ -407,8 +412,9 @@ pub(super) fn gen_alloc_methods(is_transparent: bool, field_ty: &syn::Type) -> T
         }
     } else {
         quote! {
-            let ptr = core::ptr::slice_from_raw_parts_mut(data.as_ptr().cast::<#tail_data_ty>(), metadata)
-                as *mut Self;
+            let raw = core::ptr::slice_from_raw_parts_mut(data.as_ptr().cast::<#tail_data_ty>(), metadata);
+            const { assert!(core::mem::size_of::<*mut Self>() == core::mem::size_of::<*mut [#tail_data_ty]>()); }
+            let ptr: *mut Self = unsafe { core::mem::transmute_copy(&raw) };
         }
     };
 

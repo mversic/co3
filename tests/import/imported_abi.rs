@@ -224,5 +224,5 @@ fn extern_abi() {
 
     let my_type2 = MyType2::new();
     let a = my_type2.0.cast::<String>();
-    assert_eq!("KITA", unsafe { &*a });
+    assert_eq!("KITA", unsafe { a.as_ref() });
 }

@@ -1,5 +1,5 @@
 use co3::ffi::c_char;
-use co3::{ReprC, boxed::CBox, ffi, rust_spec::RustSpec, stored::EncodeOwned};
+use co3::{ReprC, boxed::CBox, ffi, rust_spec::RustSpec, stored::EncodeMove};
 use core::ffi::CStr;
 use static_assertions::{assert_impl_all, assert_not_impl_any};
 use std::ffi::CString;
