@@ -11,10 +11,10 @@ use rust_spec::{RustSpec, drop::NoDrop};
 use crate::boxed::{CBox, CBoxCell, CWideBox, CWideBoxCell};
 use crate::{
     CType, ReprC, WithDrop, assert_arr_has_non_zero_len,
-    option::ReprCOption,
+    option::COption,
     primitives::CBool,
     reference::{CRef, CRefMut},
-    result::ReprCResult,
+    result::CResult,
     slice::{CWideRef, CWideRefMut},
     wide::{Wide, WideHeader},
 };
@@ -135,9 +135,9 @@ disjoint_impls! {
 
     impl<R, C: CType + Copy> Niche for Option<R>
     where
-        Self: ReprC<CType = ReprCOption<C>>,
+        Self: ReprC<CType = COption<C>>,
     {
-        const NICHE: Self::CType = ReprCOption::niche();
+        const NICHE: Self::CType = COption::niche();
     }
     // TODO: Depends on: https://github.com/mversic/co3/issues/33
     impl Niche for Option<bool>
@@ -167,6 +167,14 @@ disjoint_impls! {
     }
 }
 
+impl<T: ReprC<CType: Copy>> Niche for crate::option::Option<T> {
+    const NICHE: Self::CType = COption::niche();
+}
+
+impl<T: ReprC<CType: Copy>, E: ReprC<CType: Copy>> Niche for crate::result::Result<T, E> {
+    const NICHE: Self::CType = CResult::niche();
+}
+
 impl<R: Niche, const N: usize> Niche for [R; N]
 where
     Self: ReprC<CType = [R::CType; N]>,
@@ -179,9 +187,9 @@ where
 
 impl<R, E, C: CType + Copy, D: CType + Copy> Niche for Result<R, E>
 where
-    Self: ReprC<CType = ReprCResult<C, D>>,
+    Self: ReprC<CType = CResult<C, D>>,
 {
-    const NICHE: Self::CType = ReprCResult::niche();
+    const NICHE: Self::CType = CResult::niche();
 }
 
 #[cfg(test)]

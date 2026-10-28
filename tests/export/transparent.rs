@@ -1,7 +1,7 @@
 use std::marker::PhantomData;
 
 use co3::{
-    ReprC, boxed::CWideBox, ffi, option::ReprCOption, reference::CRef, rust_spec::RustSpec,
+    ReprC, boxed::CWideBox, ffi, option::COption, reference::CRef, rust_spec::RustSpec,
     slice::CWideRef,
 };
 
@@ -95,8 +95,8 @@ unsafe extern "C" {
 
     #[link_name = "export_transparent__transparent_option"]
     fn transparent_option_raw(
-        arr: ReprCOption<TransparentWithoutNiche>,
-    ) -> ReprCOption<TransparentWithoutNiche>;
+        arr: COption<TransparentWithoutNiche>,
+    ) -> COption<TransparentWithoutNiche>;
 
     #[link_name = "export_transparent__self_to_self"]
     fn self_to_self_raw(value: TransparentStruct) -> TransparentStruct;

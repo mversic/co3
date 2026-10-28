@@ -340,10 +340,10 @@ fn buffers_and_boxes_borrow_original_allocations() {
 fn tagged_wrappers_delegate_and_clear_inactive_stores() {
     use co3::stored::EncodeRef;
     let mut store = Default::default();
-    let encoded = co3::option::ReprCOption::Some(RefOnly(83)).encode_ref(&mut store);
+    let encoded = co3::option::Option::Some(RefOnly(83)).encode_ref(&mut store);
     let encoded = unsafe { &*encoded.as_ptr() };
     assert_eq!(encoded.into_option(), Some(Some(83)));
-    let encoded = co3::option::ReprCOption::<RefOnly>::None().encode_ref(&mut store);
+    let encoded = co3::option::Option::<RefOnly>::None.encode_ref(&mut store);
     let encoded = unsafe { &*encoded.as_ptr() };
     assert_eq!(encoded.into_option(), Some(None));
     let value = *encoded;

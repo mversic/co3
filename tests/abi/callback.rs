@@ -1,7 +1,7 @@
 use co3::{
     CType, ReprC, ffi,
     ops::{CFn0, CFn1, CFn2, CFn12},
-    option::ReprCOption,
+    option::COption,
     raw,
     reference::{CRef, CRefMut},
     rust_spec::RustSpec,
@@ -50,9 +50,9 @@ unsafe extern "C" fn return_pointer(value: CRef<u32>) -> CRef<u32> {
 
 unsafe extern "C" fn ignore_pointer(_: CRef<u32>) {}
 
-unsafe extern "C" fn update_option(value: CRefMut<ReprCOption<u8>, true>) -> u32 {
+unsafe extern "C" fn update_option(value: CRefMut<COption<u8>, true>) -> u32 {
     let value = value.as_ptr();
-    unsafe { *value = ReprCOption::Some(42) };
+    unsafe { *value = COption::Some(42) };
     7
 }
 

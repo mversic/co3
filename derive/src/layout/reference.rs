@@ -61,8 +61,10 @@ pub(super) fn group_aggregate_ref_impls(
     implementations: TokenStream,
     dispatch: bool,
 ) -> TokenStream {
-    let extern_thin = (!dispatch).then(|| quote! {
-        impl Thin for co3::rust_spec::size::ExternTypeLike {}
+    let extern_thin = (!dispatch).then(|| {
+        quote! {
+            impl Thin for co3::rust_spec::size::ExternTypeLike {}
+        }
     });
     let thin = quote! {
         trait Thin {}

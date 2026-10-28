@@ -5,7 +5,7 @@ use core::{
 
 use co3::{
     Decode, Encode,
-    option::ReprCOption,
+    option::COption,
     primitives::CBool,
     stored::{EmptyStore, EncodeMove, EncodeMoveUnchecked, Store},
     transmute::AbiCompatible,
@@ -475,8 +475,8 @@ fn vec_of_optional_mut_bool_syncs_present_elements() {
 #[test]
 fn repr_c_option_without_payload_skips_inner_store() {
     let mut store = Default::default();
-    let _: <ReprCOption<&mut bool> as co3::ReprC>::CType =
-        co3::soft_encode(ReprCOption::<&mut bool>::None(), &mut store);
+    let _: <COption<&mut bool> as co3::ReprC>::CType =
+        co3::soft_encode(COption::<&mut bool>::None(), &mut store);
     store.sync().unwrap();
 }
 

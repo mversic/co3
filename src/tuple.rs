@@ -12,7 +12,7 @@
 //! Values of all the other tuple elements of the niche are zeroed (NOT a stable guarantee yet)
 //!
 //! When none of the tuple elements have a niche value, `Option<(A, B, ...)>` is represented as a
-//! `ReprCOption<ReprCTupleN<A, B, ...>>`.
+//! `COption<ReprCTupleN<A, B, ...>>`.
 //!
 //! # Example
 //!
@@ -20,7 +20,7 @@
 //! use core::mem::size_of;
 //!
 //! use co3::{
-//!     encode, niche::Niche, option::ReprCOption, primitives::CBool,
+//!     encode, niche::Niche, option::COption, primitives::CBool,
 //!     reference::CRef, tuple::ReprCTuple3, ReprC,
 //! };
 //!
@@ -48,7 +48,7 @@
 //! assert_eq!(encode(none_value_2), ReprCTuple3(0, CRef::null(), CBool::FALSE));
 //!
 //! let none_value_3: Option<TupleWithoutNiche> = None;
-//! assert_eq!(encode(none_value_3), ReprCOption::None());
+//! assert_eq!(encode(none_value_3), COption::None());
 //! ```
 
 use disjoint_impls::disjoint_impls;
@@ -579,7 +579,7 @@ mod tests {
     #[cfg(feature = "alloc")]
     use crate::boxed::{CBox, CWideBox};
     use crate::reference::{CRef, CRefMut};
-    use crate::{Decode, Encode, option::ReprCOption};
+    use crate::{Decode, Encode, option::COption};
     #[cfg(feature = "alloc")]
     use crate::{
         slice::{CWideRef, CWideRefMut},
@@ -646,7 +646,7 @@ mod tests {
             Encode,
         );
         assert_impl_all!(Option<(u8, u8, u8)>:
-            Niche<CType = ReprCOption<ReprCTuple3<u8, u8, u8>>>,
+            Niche<CType = COption<ReprCTuple3<u8, u8, u8>>>,
             Decode<'static>,
             Encode,
         );

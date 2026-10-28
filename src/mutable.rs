@@ -171,7 +171,8 @@ impl_cell_mut!(UnsafeCell, UnsafeCell::get_mut);
 impl_copy_mut!(['r, T: ?Sized] &'r T);
 impl_copy_mut!([R: Copy] Option<R>);
 impl_copy_mut!([T: Copy, E: Copy] Result<T, E>);
-impl_copy_mut!([T: Copy, E: Copy] crate::result::ReprCResult<T, E>);
+impl_copy_mut!([T: Copy, E: Copy] crate::result::CResult<T, E>);
+impl_copy_mut!([T: Copy, E: Copy] crate::result::Result<T, E>);
 
 macro_rules! impl_move_out_mut {
     ([$($params:tt)*] $ty:ty where $($bounds:tt)*) => {
@@ -207,7 +208,8 @@ macro_rules! impl_move_out_mut {
         }
     };
 }
-impl_move_out_mut!([T] crate::option::ReprCOption<T> where);
+impl_move_out_mut!([T] crate::option::COption<T> where);
+impl_move_out_mut!([T] crate::option::Option<T> where);
 #[cfg(feature = "alloc")]
 impl_move_out_mut!([T] alloc::vec::Vec<T> where T: crate::ReprC<CType: crate::CType + Sized>);
 #[cfg(feature = "alloc")]
