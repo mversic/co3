@@ -1,6 +1,9 @@
 #[cfg(feature = "alloc")]
 use alloc::boxed::Box;
-use core::mem::ManuallyDrop;
+use core::{
+    cell::{Cell, UnsafeCell},
+    mem::ManuallyDrop,
+};
 
 use disjoint_impls::disjoint_impls;
 #[cfg(feature = "alloc")]
@@ -8,7 +11,7 @@ use rust_spec::size::SizedKind;
 use rust_spec::{
     RustSpec, Stable,
     drop::NoDrop,
-    layout::Robust,
+    layout::{NonRobust, Robust},
     mutability::{Exclusive, WithInterior},
     niche::WithNiche,
     size::Zero,
@@ -27,7 +30,8 @@ disjoint_impls! {
     ///
     /// # Safety
     ///
-    /// - `Self` and `Self::CType` must be compatbile for a stable ABI (like `extern "C"`)
+    /// - `Self` and `Self::CType` must be compatible with the same stable ABI (such as `extern "C"`).
+    /// - If `Self` is robust, validation must not inspect its contents to establish their validity.
     pub unsafe trait AbiCompatible: ReprC {
         /// Called when transmuting an [`ReprC::CType`] back into [`Self`] to check for trap representations.
         ///
@@ -36,6 +40,7 @@ disjoint_impls! {
         /// # Safety
         ///
         /// Any pointers dereferenced while checking `target` must be valid for reads.
+        /// All access to shared pointers must be synchronized (through `&UnsafeCell<T>`).
         unsafe fn is_valid(target: &Self::CType) -> bool;
     }
 
@@ -147,12 +152,50 @@ disjoint_impls! {
             unsafe { R::is_valid(target) }
         }
     }
+
+    unsafe impl<T: AbiCompatible + ?Sized> AbiCompatible for UnsafeCell<T>
+    where
+        Self: RustSpec<Layout = Stable, Trap = Robust>
+    {
+        #[inline(always)]
+        unsafe fn is_valid(_: &Self::CType) -> bool {
+            true
+        }
+    }
+    unsafe impl<T: AbiCompatible> AbiCompatible for UnsafeCell<T>
+    where
+        Self: RustSpec<Layout = Stable, Trap = NonRobust>
+    {
+        #[inline(always)]
+        unsafe fn is_valid(target: &Self::CType) -> bool {
+            unsafe { T::is_valid(&*target.get()) }
+        }
+    }
+
+    unsafe impl<T: AbiCompatible + ?Sized> AbiCompatible for Cell<T>
+    where
+        Self: RustSpec<Layout = Stable, Trap = Robust>
+    {
+        #[inline(always)]
+        unsafe fn is_valid(_: &Self::CType) -> bool {
+            true
+        }
+    }
+    unsafe impl<T: AbiCompatible> AbiCompatible for Cell<T>
+    where
+        Self: RustSpec<Layout = Stable, Trap = NonRobust>
+    {
+        #[inline(always)]
+        unsafe fn is_valid(target: &Self::CType) -> bool {
+            unsafe { T::is_valid(&*target.get()) }
+        }
+    }
 }
 
-unsafe impl<R: AbiCompatible + ?Sized, const EXCLUSIVE: bool> AbiCompatible for &mut R
+unsafe impl<R: AbiCompatible + ?Sized> AbiCompatible for &mut R
 where
     R: RustSpec<Size: Thin>,
-    Self: ReprC<CType = CRefMut<R::CType, EXCLUSIVE>>,
+    Self: ReprC<CType = CRefMut<R::CType, true>>,
 {
     #[inline(always)]
     unsafe fn is_valid(target: &Self::CType) -> bool {
