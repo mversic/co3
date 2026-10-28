@@ -34,6 +34,8 @@ impl From<u32> for TransparentFieldHandle {
 #[repr_c(is_valid = |value| *value > 10)]
 struct ValidatedByte(u8);
 
+// SAFETY: Validation only compares the inline u8; it follows no pointers.
+
 #[repr(transparent)]
 #[derive(Clone, RustSpec, ReprC)]
 #[repr_c(is_valid = |value| *value)]

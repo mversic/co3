@@ -10,7 +10,7 @@ use rust_spec::{RustSpec, drop::NoDrop};
 #[cfg(feature = "alloc")]
 use crate::boxed::{CBox, CBoxCell, CWideBox, CWideBoxCell};
 use crate::{
-    CType, ReprC, WithDrop, assert_arr_has_non_zero_len,
+    CType, NeedsDrop, ReprC, assert_arr_has_non_zero_len,
     option::COption,
     primitives::CBool,
     reference::{CRef, CRefMut},
@@ -161,7 +161,7 @@ disjoint_impls! {
     }
     impl<R: Niche> Niche for ManuallyDrop<R>
     where
-        R: RustSpec<Drop: WithDrop>,
+        R: RustSpec<Drop: NeedsDrop>,
     {
         const NICHE: Self::CType = ManuallyDrop::new(R::NICHE);
     }

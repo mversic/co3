@@ -264,6 +264,7 @@ macro_rules! impl_identity_carrier {
         impl<$($params)*> crate::EncodeUnchecked for $ty<$($args)*> {}
         impl<'d, $($params)*> Decode<'d> for $ty<$($args)*> {}
 
+
         unsafe impl<$($params)*> AbiCompatible for $ty<$($args)*> {
             #[inline(always)]
             unsafe fn is_valid(_: &Self::CType) -> bool {

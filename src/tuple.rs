@@ -54,7 +54,9 @@
 use disjoint_impls::disjoint_impls;
 use rust_spec::{
     RustSpec,
-    niche::{NicheStabilityKind, WithNiche, WithoutNiche},
+    layout::LayoutKind,
+    mutability::{Exclusive, ExclusiveKind},
+    niche::{WithNiche, WithoutNiche},
 };
 
 use crate::{
@@ -214,9 +216,9 @@ macro_rules! impl_tuple {
             where &'a Self: ReprC<CType: Sized>;
         }
 
-        unsafe impl<'a, $($ty: ReprC<CType: Copy> + 'a),*> EncodeRef<'a> for ($($ty,)*)
+        unsafe impl<'a, $($ty: ReprC<CType: Copy> + 'a),*, __Interior: ExclusiveKind> EncodeRef<'a> for ($($ty,)*)
         where
-            Self: RustSpec<Mutability = rust_spec::mutability::Exclusive, Size: crate::Thin>,
+            Self: RustSpec<Mutability = Exclusive<__Interior>, Size: crate::Thin>,
             $(&'a $ty: EncodeMove + ReprC<CType = crate::reference::CRef<<$ty as ReprC>::CType>>),*
         {
             type Store = crate::sync::RefSizedEncodeStore<Self, ($(<&'a $ty as EncodeMove>::Store,)*)>;
@@ -230,9 +232,9 @@ macro_rules! impl_tuple {
             }
         }
 
-        unsafe impl<'a, $($ty: ReprC<CType: Copy> + 'a),*> EncodeRef<'a> for $ffi_ty<$($ty),*>
+        unsafe impl<'a, $($ty: ReprC<CType: Copy> + 'a),*, __Interior: ExclusiveKind> EncodeRef<'a> for $ffi_ty<$($ty),*>
         where
-            Self: RustSpec<Mutability = rust_spec::mutability::Exclusive, Size: crate::Thin>,
+            Self: RustSpec<Mutability = Exclusive<__Interior>, Size: crate::Thin>,
             $(&'a $ty: EncodeMove + ReprC<CType = crate::reference::CRef<<$ty as ReprC>::CType>>),*
         {
             type Store = crate::sync::RefSizedEncodeStore<Self, ($(<&'a $ty as EncodeMove>::Store,)*)>;
@@ -259,9 +261,9 @@ macro_rules! impl_tuple {
             where &'a Self: ReprC<CType: Sized>;
         }
 
-        unsafe impl<'a, $($ty: ReprC<CType: Copy> + 'a),*> EncodeRefUnchecked<'a> for ($($ty,)*)
+        unsafe impl<'a, $($ty: ReprC<CType: Copy> + 'a),*, __Interior: ExclusiveKind> EncodeRefUnchecked<'a> for ($($ty,)*)
         where
-            Self: RustSpec<Mutability = rust_spec::mutability::Exclusive, Size: crate::Thin>,
+            Self: RustSpec<Mutability = Exclusive<__Interior>, Size: crate::Thin>,
             $(&'a $ty: EncodeMoveUnchecked + ReprC<CType = crate::reference::CRef<<$ty as ReprC>::CType>>),*
         {
             type SoftStore = crate::sync::RefSizedEncodeStore<Self, ($(<&'a $ty as EncodeMoveUnchecked>::SoftStore,)*)>;
@@ -275,9 +277,9 @@ macro_rules! impl_tuple {
             }
         }
 
-        unsafe impl<'a, $($ty: ReprC<CType: Copy> + 'a),*> EncodeRefUnchecked<'a> for $ffi_ty<$($ty),*>
+        unsafe impl<'a, $($ty: ReprC<CType: Copy> + 'a),*, __Interior: ExclusiveKind> EncodeRefUnchecked<'a> for $ffi_ty<$($ty),*>
         where
-            Self: RustSpec<Mutability = rust_spec::mutability::Exclusive, Size: crate::Thin>,
+            Self: RustSpec<Mutability = Exclusive<__Interior>, Size: crate::Thin>,
             $(&'a $ty: EncodeMoveUnchecked + ReprC<CType = crate::reference::CRef<<$ty as ReprC>::CType>>),*
         {
             type SoftStore = crate::sync::RefSizedEncodeStore<Self, ($(<&'a $ty as EncodeMoveUnchecked>::SoftStore,)*)>;
@@ -388,6 +390,7 @@ macro_rules! impl_tuple {
         impl<$($head: ReprC<CType: Sized>,)* $last: ReprC + ?Sized> ReprC for $ffi_ty<$($head,)* $last> {
             type CType = $ffi_ty<$($head::CType,)* $last::CType>;
         }
+
 
         unsafe impl<$($head: AbiCompatible<CType: Copy>,)* $last: AbiCompatible + ?Sized> AbiCompatible for $ffi_ty<$($head,)* $last> {
             #[inline(always)]
@@ -510,14 +513,14 @@ disjoint_impls! {
         const NICHE: Self::CType;
     }
 
-    impl<A: Niche<CType: Copy>, B: ReprC<CType: Copy>, N: NicheStabilityKind> Niche for (A, B)
+    impl<A: Niche<CType: Copy>, B: ReprC<CType: Copy>, N: LayoutKind> Niche for (A, B)
     where
         A: RustSpec<Niche = WithNiche<N>>,
     {
         const NICHE: Self::CType = ReprCTuple2(A::NICHE, unsafe { core::mem::zeroed() });
     }
 
-    impl<A: ReprC<CType: Copy>, B: Niche<CType: Copy>, N: NicheStabilityKind> Niche for (A, B)
+    impl<A: ReprC<CType: Copy>, B: Niche<CType: Copy>, N: LayoutKind> Niche for (A, B)
     where
         A: RustSpec<Niche = WithoutNiche>,
         B: RustSpec<Niche = WithNiche<N>>,
