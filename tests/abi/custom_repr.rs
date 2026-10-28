@@ -214,14 +214,10 @@ fn field_representation_maps_owned_conversion_and_transmutation() {
     assert_impl_all!(CFieldHandle: co3::stored::EncodeMoveUnchecked);
     assert_impl_all!(TransparentFieldHandle: co3::stored::EncodeMoveUnchecked);
     assert!(!unsafe {
-        <ValidatedByte as co3::transmute::AbiCompatible>::is_valid(&CValidatedByte::from_fields(
-            10,
-        ))
+        <ValidatedByte as co3::transmute::AbiCompatible>::is_valid(&CValidatedByte::from_fields(10))
     });
     assert!(unsafe {
-        <ValidatedByte as co3::transmute::AbiCompatible>::is_valid(&CValidatedByte::from_fields(
-            11,
-        ))
+        <ValidatedByte as co3::transmute::AbiCompatible>::is_valid(&CValidatedByte::from_fields(11))
     });
     assert!(unsafe { co3::decode::<ValidatedByte>(CValidatedByte::from_fields(10)) }.is_none());
     assert_eq!(

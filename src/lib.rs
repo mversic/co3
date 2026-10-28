@@ -586,9 +586,9 @@ use crate::boxed::{CBox, CBoxCell, CWideBox, CWideBoxCell};
 #[cfg(feature = "alloc")]
 use crate::ffi::NulTerminatedBuf;
 use crate::{
-    option::ReprCOption,
+    option::COption,
     reference::{CRef, CRefMut},
-    result::ReprCResult,
+    result::CResult,
     slice::{CWideRef, CWideRefMut},
     stored::{DecodeOwned, EmptyStore, EncodeMove, EncodeMoveUnchecked, Store},
     wide::{Wide, WideHeader},
@@ -791,7 +791,7 @@ disjoint_impls! {
         R: RustSpec<Niche = WithoutNiche>,
         <R as ReprC>::CType: Sized,
     {
-        type CType = ReprCOption<R::CType>;
+        type CType = COption<R::CType>;
     }
     impl<R: ReprC, N: NicheStabilityKind> ReprC for Option<R>
     where
@@ -810,7 +810,7 @@ disjoint_impls! {
         <R as ReprC>::CType: CType + Copy,
         <E as ReprC>::CType: CType + Copy,
     {
-        type CType = ReprCResult<R::CType, E::CType>;
+        type CType = CResult<R::CType, E::CType>;
     }
     impl<R: ReprC, E: ReprC, N: NicheStabilityKind> ReprC for Result<R, E>
     where
@@ -822,7 +822,7 @@ disjoint_impls! {
         <R as ReprC>::CType: CType + Copy,
         <E as ReprC>::CType: CType + Copy,
     {
-        type CType = ReprCResult<R::CType, E::CType>;
+        type CType = CResult<R::CType, E::CType>;
     }
     impl<R: ReprC, E: ReprC, N: NicheStabilityKind> ReprC for Result<R, E>
     where
@@ -834,7 +834,7 @@ disjoint_impls! {
         <R as ReprC>::CType: CType + Copy,
         <E as ReprC>::CType: CType + Copy,
     {
-        type CType = ReprCResult<R::CType, E::CType>;
+        type CType = CResult<R::CType, E::CType>;
     }
     impl<R: ReprC, E: ReprC, N: NicheStabilityKind> ReprC for Result<R, E>
     where
@@ -1116,6 +1116,70 @@ mod tests {
     use crate::primitives::CBool;
 
     #[test]
+    fn explicit_option_and_result_round_trip_and_reject_invalid_tags() {
+        use crate::{
+            option::Option as StableOption,
+            result::{CResult, Result as StableResult},
+        };
+
+        let encoded = encode(StableOption::Some(true));
+        assert_eq!(encoded.into_option(), Some(Some(CBool::TRUE)));
+        assert_eq!(
+            unsafe { decode::<StableOption<bool>>(encoded) },
+            Some(StableOption::Some(true))
+        );
+        assert_eq!(
+            unsafe { decode::<StableOption<bool>>(COption::niche()) },
+            None
+        );
+
+        let encoded = encode(StableResult::<bool, u8>::Err(7));
+        assert_eq!(
+            unsafe { decode::<StableResult<bool, u8>>(encoded) },
+            Some(StableResult::Err(7))
+        );
+        assert_eq!(
+            unsafe { decode::<StableResult<bool, u8>>(CResult::niche()) },
+            None
+        );
+
+        let mut store = Default::default();
+        let encoded = soft_encode(None::<StableOption<u8>>, &mut store);
+        assert_eq!(store.sync(), Some(()));
+        let mut store = Default::default();
+        assert_eq!(
+            unsafe { soft_decode::<Option<StableOption<u8>>>(encoded, &mut store) },
+            Some(None)
+        );
+
+        let value = StableOption::Some(alloc::vec![1_u32, 2]);
+        let mut store = Default::default();
+        let carrier = crate::stored::EncodeRef::encode_ref(&value, &mut store);
+        assert_eq!(unsafe { (*carrier.as_ptr()).tag() }, 1);
+        assert_eq!(store.sync(), Some(()));
+
+        let value = StableResult::<Vec<u32>, u8>::Ok(alloc::vec![3]);
+        let mut store = Default::default();
+        let carrier = crate::stored::EncodeRef::encode_ref(&value, &mut store);
+        assert_eq!(unsafe { (*carrier.as_ptr()).tag() }, 0);
+        assert_eq!(store.sync(), Some(()));
+
+        let mut value = StableOption::Some(true);
+        let mut store = Default::default();
+        let carrier = crate::stored::EncodeMut::encode_mut(&mut value, &mut store);
+        unsafe { *carrier.as_ptr() = COption::None() };
+        assert_eq!(store.sync(), Some(()));
+        assert_eq!(value, StableOption::None);
+
+        let mut value = StableResult::<u32, bool>::Ok(4);
+        let mut store = Default::default();
+        let carrier = crate::stored::EncodeMut::encode_mut(&mut value, &mut store);
+        unsafe { *carrier.as_ptr() = CResult::Err(CBool::TRUE) };
+        assert_eq!(store.sync(), Some(()));
+        assert_eq!(value, StableResult::Err(true));
+    }
+
+    #[test]
     fn encode_stored_mut_ref() {
         let inner = 8u8;
         let other = 42u8;
@@ -1125,7 +1189,7 @@ mod tests {
             let mut store = Box::default();
             let encoded = soft_encode(value_mut_ref, &mut *store);
             unsafe {
-                *encoded.as_ptr() = ReprCOption::Some(other);
+                *encoded.as_ptr() = COption::Some(other);
             }
             store.sync().unwrap();
         }
@@ -1137,7 +1201,7 @@ mod tests {
             let mut store = Box::default();
             let encoded = soft_encode(ref_mut, &mut *store);
             let c_slice = unsafe { encoded.into_mut().unwrap() };
-            c_slice[0] = ReprCOption::Some(other);
+            c_slice[0] = COption::Some(other);
             store.sync().unwrap();
         }
         assert_eq!(slice, [Some(42u8)]);
@@ -1145,7 +1209,7 @@ mod tests {
 
     #[test]
     fn decode_stored_mut_ref() {
-        let mut c_opt = ReprCOption::Some(1u8);
+        let mut c_opt = COption::Some(1u8);
         let c_ptr = encode(&mut c_opt);
         let new_val: u8 = 42;
         {
@@ -1155,9 +1219,9 @@ mod tests {
             *decoded = Some(new_val);
             store.sync().unwrap();
         }
-        assert_eq!(c_opt, ReprCOption::Some(42u8));
+        assert_eq!(c_opt, COption::Some(42u8));
 
-        let mut c_opts = [ReprCOption::Some(1u8)];
+        let mut c_opts = [COption::Some(1u8)];
         let c_slice = encode(&mut c_opts[..]);
         let x: u8 = 10;
         {
@@ -1167,7 +1231,7 @@ mod tests {
             decoded[0] = Some(x);
             store.sync().unwrap();
         }
-        assert_eq!(c_opts[0], ReprCOption::Some(10u8));
+        assert_eq!(c_opts[0], COption::Some(10u8));
     }
 
     // FIXME:

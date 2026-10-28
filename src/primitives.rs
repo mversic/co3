@@ -568,7 +568,7 @@ mod tests {
     use crate::boxed::{CBox, CWideBox};
     use crate::{
         Encode,
-        option::ReprCOption,
+        option::COption,
         reference::{CRef, CRefMut},
         slice::{CWideRef, CWideRefMut},
     };
@@ -581,9 +581,9 @@ mod tests {
         assert_not_impl_any!(CBool: Niche);
         assert_not_impl_any!(COrdering: Niche);
         assert_not_impl_any!(UnicodeChar: Niche);
-        assert_impl_all!(Option<CBool>: ReprC<CType = ReprCOption<CBool>>);
-        assert_impl_all!(Option<COrdering>: ReprC<CType = ReprCOption<COrdering>>);
-        assert_impl_all!(Option<UnicodeChar>: ReprC<CType = ReprCOption<UnicodeChar>>);
+        assert_impl_all!(Option<CBool>: ReprC<CType = COption<CBool>>);
+        assert_impl_all!(Option<COrdering>: ReprC<CType = COption<COrdering>>);
+        assert_impl_all!(Option<UnicodeChar>: ReprC<CType = COption<UnicodeChar>>);
 
         for raw in u8::MIN..=u8::MAX {
             let boolean = CBool(raw);
@@ -727,7 +727,7 @@ mod tests {
             CType,
         );
         assert_impl_all!(Option<u8>:
-            Niche<CType = ReprCOption<u8>>,
+            Niche<CType = COption<u8>>,
             Decode<'static>,
             Encode,
         );

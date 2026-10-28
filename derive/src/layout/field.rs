@@ -122,10 +122,9 @@ pub(super) fn derive_field_repr_c(
             .make_where_clause()
             .predicates
             .push(parse_quote!(#speculative #field_ty: co3::transmute::AbiCompatible));
-        generics
-            .make_where_clause()
-            .predicates
-            .push(parse_quote!(#name #ty_generics: co3::ReprC<CType = <#field_ty as co3::ReprC>::CType>));
+        generics.make_where_clause().predicates.push(
+            parse_quote!(#name #ty_generics: co3::ReprC<CType = <#field_ty as co3::ReprC>::CType>),
+        );
         generics
             .make_where_clause()
             .predicates

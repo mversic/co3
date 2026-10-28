@@ -1,5 +1,5 @@
 use co3::{
-    option::ReprCOption,
+    option::{COption, Option as StableOption},
     primitives::CBool,
     rust_spec::RustSpec,
     stored::{EncodeMove, EncodeMoveUnchecked, Store},
@@ -77,20 +77,20 @@ fn mutable_function_pointer_rejects_null_writeback() {
 
 #[test]
 fn mutable_repr_c_option_writes_back() {
-    let mut value = ReprCOption::Some(7_u32);
+    let mut value = StableOption::Some(7_u32);
     let mut store = Default::default();
     let encoded = (&mut value).soft_encode(&mut store);
     let output = unsafe { &mut *encoded.as_ptr() };
-    *output = ReprCOption::Some(11);
+    *output = COption::Some(11);
     assert_eq!(store.sync(), Some(()));
-    assert_eq!(value.into_option(), Some(Some(11)));
+    assert_eq!(value, StableOption::Some(11));
 
-    let mut value = ReprCOption::<u32>::None();
+    let mut value = StableOption::<u32>::None;
     let mut store = Default::default();
     let encoded = (&mut value).soft_encode(&mut store);
-    unsafe { *encoded.as_ptr() = ReprCOption::Some(13) };
+    unsafe { *encoded.as_ptr() = COption::Some(13) };
     assert_eq!(store.sync(), Some(()));
-    assert_eq!(value.into_option(), Some(Some(13)));
+    assert_eq!(value, StableOption::Some(13));
 }
 
 #[test]
@@ -98,16 +98,16 @@ fn mutable_copy_result_can_change_variant() {
     let mut value: Result<u32, bool> = Ok(7);
     let mut store = Default::default();
     let encoded = (&mut value).soft_encode(&mut store);
-    unsafe { *encoded.as_ptr() = co3::result::ReprCResult::Err(co3::primitives::CBool::TRUE) };
+    unsafe { *encoded.as_ptr() = co3::result::CResult::Err(co3::primitives::CBool::TRUE) };
     assert_eq!(store.sync(), Some(()));
     assert_eq!(value, Err(true));
 
-    let mut value: co3::result::ReprCResult<u32, bool> = co3::result::ReprCResult::Ok(4);
+    let mut value: co3::result::Result<u32, bool> = co3::result::Result::Ok(4);
     let mut store = Default::default();
     let encoded = (&mut value).soft_encode(&mut store);
-    unsafe { *encoded.as_ptr() = co3::result::ReprCResult::Err(co3::primitives::CBool::TRUE) };
+    unsafe { *encoded.as_ptr() = co3::result::CResult::Err(co3::primitives::CBool::TRUE) };
     assert_eq!(store.sync(), Some(()));
-    assert_eq!(value.into_result(), Some(Err(true)));
+    assert_eq!(value, co3::result::Result::Err(true));
 }
 
 #[derive(RustSpec, co3::ReprC, Debug, PartialEq)]

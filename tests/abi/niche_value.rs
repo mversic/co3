@@ -5,7 +5,7 @@ use std::ffi::CStr;
 use co3::primitives::{CBool, COrdering};
 use co3::reference::{CRef, CRefMut};
 use co3::{
-    ReprC, encode, ffi, niche::Niche, option::ReprCOption, rust_spec::RustSpec, soft_decode,
+    ReprC, encode, ffi, niche::Niche, option::COption, rust_spec::RustSpec, soft_decode,
     soft_encode,
 };
 
@@ -415,7 +415,7 @@ fn verify_enum_niche_value() {
     assert_eq!(bool::NICHE, encode(None::<bool>));
     assert_eq!(Ordering::NICHE, encode(None::<Ordering>));
 
-    assert_eq!(encode(None::<Opaque>), ReprCOption::None());
+    assert_eq!(encode(None::<Opaque>), COption::None());
     assert!(encode(None::<OwnedExtern>).0.is_null());
 
     let expected_niche_enum_discriminant_u = u8::MAX;

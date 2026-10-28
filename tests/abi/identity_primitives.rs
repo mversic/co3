@@ -131,13 +131,13 @@ fn copy_primitives_with_custom_carriers_use_value_conversion() {
 
 #[test]
 fn lowered_aggregates_use_codecs_without_conversion_traits() {
-    use co3::{option::ReprCOption, result::ReprCResult, tuple::ReprCTuple2};
+    use co3::{option::COption, result::CResult, tuple::ReprCTuple2};
     use static_assertions::assert_not_impl_any;
 
-    assert_not_impl_any!(ReprCOption<u8>: From<Option<u8>>, TryFrom<Option<u8>>);
-    assert_not_impl_any!(Option<u8>: From<ReprCOption<u8>>, TryFrom<ReprCOption<u8>>);
-    assert_not_impl_any!(ReprCResult<u8, u8>: From<Result<u8, u8>>, TryFrom<Result<u8, u8>>);
-    assert_not_impl_any!(Result<u8, u8>: From<ReprCResult<u8, u8>>, TryFrom<ReprCResult<u8, u8>>);
+    assert_not_impl_any!(COption<u8>: From<Option<u8>>, TryFrom<Option<u8>>);
+    assert_not_impl_any!(Option<u8>: From<COption<u8>>, TryFrom<COption<u8>>);
+    assert_not_impl_any!(CResult<u8, u8>: From<Result<u8, u8>>, TryFrom<Result<u8, u8>>);
+    assert_not_impl_any!(Result<u8, u8>: From<CResult<u8, u8>>, TryFrom<CResult<u8, u8>>);
     assert_not_impl_any!(ReprCTuple2<u8, u8>: From<(u8, u8)>, TryFrom<(u8, u8)>);
     assert_not_impl_any!((u8, u8): From<ReprCTuple2<u8, u8>>, TryFrom<ReprCTuple2<u8, u8>>);
 
@@ -147,7 +147,7 @@ fn lowered_aggregates_use_codecs_without_conversion_traits() {
             Some(value)
         );
     }
-    let option = ReprCOption::Some(42_u8);
+    let option = COption::Some(42_u8);
     assert_eq!(unsafe { co3::decode::<Option<u8>>(option) }, Some(Some(42)));
 
     for value in [Ok(42_u8), Err(7_u8)] {
@@ -158,7 +158,7 @@ fn lowered_aggregates_use_codecs_without_conversion_traits() {
             Some(value)
         );
     }
-    let result = ReprCResult::<u8, u8>::Err(7_u8);
+    let result = CResult::<u8, u8>::Err(7_u8);
     assert_eq!(
         unsafe { co3::decode::<Result<u8, u8>>(result) },
         Some(Err(7))

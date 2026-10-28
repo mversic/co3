@@ -1090,11 +1090,11 @@ fn gen_record_is_valid(
         .zip(field_types)
         .filter(|(_, field_ty)| !is_phantom_data(field_ty))
         .map(|(field_name, field_ty)| {
-                quote! {
-                    if !unsafe { <#field_ty as co3::transmute::AbiCompatible>::is_valid(#field_name)} {
-                        return false;
-                    }
+            quote! {
+                if !unsafe { <#field_ty as co3::transmute::AbiCompatible>::is_valid(#field_name)} {
+                    return false;
                 }
+            }
         });
 
     quote! { #(#field_validation)*

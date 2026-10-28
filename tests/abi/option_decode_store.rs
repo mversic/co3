@@ -1,5 +1,5 @@
 use co3::{
-    option::ReprCOption,
+    option::COption,
     primitives::CBool,
     reference::CRefMut,
     stored::{DecodeOwned, Store},
@@ -9,12 +9,12 @@ use co3::{
 fn decoding_none_has_no_active_store() {
     let mut untagged = <Option<u8> as DecodeOwned>::Store::default();
     let decoded =
-        unsafe { <Option<u8> as DecodeOwned>::soft_decode(ReprCOption::Some(7), &mut untagged) };
+        unsafe { <Option<u8> as DecodeOwned>::soft_decode(COption::Some(7), &mut untagged) };
     assert!(matches!(decoded, Some(Some(7))));
     assert!(untagged.is_some());
 
     let decoded =
-        unsafe { <Option<u8> as DecodeOwned>::soft_decode(ReprCOption::None(), &mut untagged) };
+        unsafe { <Option<u8> as DecodeOwned>::soft_decode(COption::None(), &mut untagged) };
     assert!(matches!(decoded, Some(None)));
     assert!(untagged.is_none());
     assert_eq!(untagged.sync(), Some(()));

@@ -29,9 +29,9 @@ use crate::{
     borrow::{Borrow, BorrowCast, FromBorrow, borrow_cast},
     ffi::NulTerminatedBuf,
     niche::Niche,
-    option::ReprCOption,
+    option::COption,
     reference::{CRef, CRefMut, FromRawRef},
-    result::ReprCResult,
+    result::CResult,
     slice::{CWideRefMut, FromRawWideRef},
     sync::{RefMutSizedDecodeStore, RefSizedDecodeStore},
     transmute::AbiCompatible,
@@ -310,12 +310,12 @@ disjoint_impls! {
         #[inline(always)]
         unsafe fn soft_encode_unchecked(self, store: &mut Self::SoftStore) -> Self::CType {
             match self {
-                Some(value) => ReprCOption::Some(unsafe {
+                Some(value) => COption::Some(unsafe {
                     value.soft_encode_unchecked(store.insert(Default::default()))
                 }),
                 None => {
                     *store = None;
-                    ReprCOption::None()
+                    COption::None()
                 }
             }
         }
@@ -343,7 +343,7 @@ disjoint_impls! {
     unsafe impl<R: EncodeMoveUnchecked<CType: Copy>, E: EncodeMoveUnchecked<CType: Copy>, K: SizedKind> EncodeMoveUnchecked
         for Result<R, E>
     where
-        Self: ReprC<CType = ReprCResult<<R as ReprC>::CType, <E as ReprC>::CType>>,
+        Self: ReprC<CType = CResult<<R as ReprC>::CType, <E as ReprC>::CType>>,
         R: RustSpec<Size = RustSpecSized<K>>,
         E: RustSpec<Size = RustSpecSized<K>>,
     {
@@ -354,11 +354,11 @@ disjoint_impls! {
             match self {
                 Ok(ok) => {
                     let Result::Ok(inner) = store.insert(Ok(Default::default())) else { unreachable!() };
-                    ReprCResult::Ok(unsafe { ok.soft_encode_unchecked(inner) })
+                    CResult::Ok(unsafe { ok.soft_encode_unchecked(inner) })
                 }
                 Err(err) => {
                     let Result::Err(inner) = store.insert(Err(Default::default())) else { unreachable!() };
-                    ReprCResult::Err(unsafe { err.soft_encode_unchecked(inner) })
+                    CResult::Err(unsafe { err.soft_encode_unchecked(inner) })
                 }
             }
         }
@@ -367,7 +367,7 @@ disjoint_impls! {
     unsafe impl<R: EncodeMoveUnchecked + Niche, E: EncodeMoveUnchecked<CType: Copy>, N: NicheStabilityKind>
         EncodeMoveUnchecked for Result<R, E>
     where
-        Self: ReprC<CType = ReprCResult<<R as ReprC>::CType, <E as ReprC>::CType>>,
+        Self: ReprC<CType = CResult<<R as ReprC>::CType, <E as ReprC>::CType>>,
         R: RustSpec<Size = RustSpecSized<rust_spec::Gt<Zero>>, Niche = WithNiche<N>>,
         E: RustSpec<Size = RustSpecSized<Zero>, Alignment = rust_spec::Gt<One>>,
     {
@@ -378,11 +378,11 @@ disjoint_impls! {
             match self {
                 Ok(ok) => {
                     let Result::Ok(inner) = store.insert(Ok(Default::default())) else { unreachable!() };
-                    ReprCResult::Ok(unsafe { ok.soft_encode_unchecked(inner) })
+                    CResult::Ok(unsafe { ok.soft_encode_unchecked(inner) })
                 }
                 Err(err) => {
                     let Result::Err(inner) = store.insert(Err(Default::default())) else { unreachable!() };
-                    ReprCResult::Err(unsafe { err.soft_encode_unchecked(inner) })
+                    CResult::Err(unsafe { err.soft_encode_unchecked(inner) })
                 }
             }
         }
@@ -391,7 +391,7 @@ disjoint_impls! {
     unsafe impl<R: EncodeMoveUnchecked<CType: Copy>, E: EncodeMoveUnchecked<CType: Copy> + Niche, N: NicheStabilityKind>
         EncodeMoveUnchecked for Result<R, E>
     where
-        Self: ReprC<CType = ReprCResult<<R as ReprC>::CType, <E as ReprC>::CType>>,
+        Self: ReprC<CType = CResult<<R as ReprC>::CType, <E as ReprC>::CType>>,
         R: RustSpec<Size = RustSpecSized<Zero>, Alignment = rust_spec::Gt<One>>,
         E: RustSpec<Size = RustSpecSized<rust_spec::Gt<Zero>>, Niche = WithNiche<N>>,
     {
@@ -402,11 +402,11 @@ disjoint_impls! {
             match self {
                 Ok(ok) => {
                     let Result::Ok(inner) = store.insert(Ok(Default::default())) else { unreachable!() };
-                    ReprCResult::Ok(unsafe { ok.soft_encode_unchecked(inner) })
+                    CResult::Ok(unsafe { ok.soft_encode_unchecked(inner) })
                 }
                 Err(err) => {
                     let Result::Err(inner) = store.insert(Err(Default::default())) else { unreachable!() };
-                    ReprCResult::Err(unsafe { err.soft_encode_unchecked(inner) })
+                    CResult::Err(unsafe { err.soft_encode_unchecked(inner) })
                 }
             }
         }
@@ -903,10 +903,10 @@ disjoint_impls! {
             Self: 'itm,
         {
             match self {
-                Some(value) => ReprCOption::Some(value.soft_encode(store.insert(Default::default()))),
+                Some(value) => COption::Some(value.soft_encode(store.insert(Default::default()))),
                 None => {
                     *store = None;
-                    ReprCOption::None()
+                    COption::None()
                 }
             }
         }
@@ -938,7 +938,7 @@ disjoint_impls! {
     unsafe impl<R: EncodeMove<CType: Copy>, E: EncodeMove<CType: Copy>, K: SizedKind> EncodeMove
         for Result<R, E>
     where
-        Self: ReprC<CType = ReprCResult<<R as ReprC>::CType, <E as ReprC>::CType>>,
+        Self: ReprC<CType = CResult<<R as ReprC>::CType, <E as ReprC>::CType>>,
         R: RustSpec<Size = RustSpecSized<K>>,
         E: RustSpec<Size = RustSpecSized<K>>,
     {
@@ -955,7 +955,7 @@ disjoint_impls! {
     unsafe impl<R: EncodeMove + Niche, E: EncodeMove<CType: Copy>, N: NicheStabilityKind> EncodeMove
         for Result<R, E>
     where
-        Self: ReprC<CType = ReprCResult<<R as ReprC>::CType, <E as ReprC>::CType>>,
+        Self: ReprC<CType = CResult<<R as ReprC>::CType, <E as ReprC>::CType>>,
         R: RustSpec<Size = RustSpecSized<rust_spec::Gt<Zero>>, Niche = WithNiche<N>>,
         E: RustSpec<Size = RustSpecSized<Zero>, Alignment = rust_spec::Gt<One>>,
     {
@@ -972,7 +972,7 @@ disjoint_impls! {
     unsafe impl<R: EncodeMove<CType: Copy>, E: EncodeMove<CType: Copy> + Niche, N: NicheStabilityKind>
         EncodeMove for Result<R, E>
     where
-        Self: ReprC<CType = ReprCResult<<R as ReprC>::CType, <E as ReprC>::CType>>,
+        Self: ReprC<CType = CResult<<R as ReprC>::CType, <E as ReprC>::CType>>,
         R: RustSpec<Size = RustSpecSized<Zero>, Alignment = rust_spec::Gt<One>>,
         E: RustSpec<Size = RustSpecSized<rust_spec::Gt<Zero>>, Niche = WithNiche<N>>,
     {
@@ -1726,7 +1726,7 @@ disjoint_impls! {
     unsafe impl<'d, R: DecodeOwned<'d, CType: Copy>, E: DecodeOwned<'d, CType: Copy>, K: SizedKind>
         DecodeOwned<'d> for Result<R, E>
     where
-        Self: ReprC<CType = ReprCResult<<R as ReprC>::CType, <E as ReprC>::CType>>,
+        Self: ReprC<CType = CResult<<R as ReprC>::CType, <E as ReprC>::CType>>,
         R: RustSpec<Size = RustSpecSized<K>>,
         E: RustSpec<Size = RustSpecSized<K>>,
     {
@@ -1751,7 +1751,7 @@ disjoint_impls! {
     unsafe impl<'d, R: DecodeOwned<'d> + Niche, E: DecodeOwned<'d, CType: Copy>, N: NicheStabilityKind>
         DecodeOwned<'d> for Result<R, E>
     where
-        Self: ReprC<CType = ReprCResult<<R as ReprC>::CType, <E as ReprC>::CType>>,
+        Self: ReprC<CType = CResult<<R as ReprC>::CType, <E as ReprC>::CType>>,
         R: RustSpec<Size = RustSpecSized<rust_spec::Gt<Zero>>, Niche = WithNiche<N>>,
         E: RustSpec<Size = RustSpecSized<Zero>, Alignment = rust_spec::Gt<One>>,
     {
@@ -1770,7 +1770,7 @@ disjoint_impls! {
     unsafe impl<'d, R: DecodeOwned<'d, CType: Copy>, E: DecodeOwned<'d> + Niche, N: NicheStabilityKind>
         DecodeOwned<'d> for Result<R, E>
     where
-        Self: ReprC<CType = ReprCResult<<R as ReprC>::CType, <E as ReprC>::CType>>,
+        Self: ReprC<CType = CResult<<R as ReprC>::CType, <E as ReprC>::CType>>,
         R: RustSpec<Size = RustSpecSized<Zero>, Alignment = rust_spec::Gt<One>>,
         E: RustSpec<Size = RustSpecSized<rust_spec::Gt<Zero>>, Niche = WithNiche<N>>,
     {
@@ -2198,28 +2198,28 @@ unsafe fn decode_vec_elements_unchecked<'d, 'itm: 'd, R: DecodeOwned<'d>>(
 fn encode_result<'itm, R: EncodeMove<CType: Copy> + 'itm, E: EncodeMove<CType: Copy> + 'itm>(
     value: Result<R, E>,
     store: &'itm mut Option<Result<R::Store, E::Store>>,
-) -> ReprCResult<R::CType, E::CType> {
+) -> CResult<R::CType, E::CType> {
     match value {
         Ok(ok) => {
             let Result::Ok(store) = store.insert(Ok(Default::default())) else {
                 unreachable!()
             };
 
-            ReprCResult::Ok(ok.soft_encode(store))
+            CResult::Ok(ok.soft_encode(store))
         }
         Err(err) => {
             let Result::Err(store) = store.insert(Err(Default::default())) else {
                 unreachable!()
             };
 
-            ReprCResult::Err(err.soft_encode(store))
+            CResult::Err(err.soft_encode(store))
         }
     }
 }
 
 #[inline(always)]
 unsafe fn decode_result<'d, 'i, R: DecodeOwned<'d, CType: Copy>, E: DecodeOwned<'d, CType: Copy>>(
-    source: ReprCResult<R::CType, E::CType>,
+    source: CResult<R::CType, E::CType>,
     store: &'i mut Option<Result<R::Store, E::Store>>,
 ) -> Option<Result<R, E>>
 where
@@ -2248,7 +2248,7 @@ unsafe fn decode_result_unchecked<
     R: DecodeOwned<'d, CType: Copy>,
     E: DecodeOwned<'d, CType: Copy>,
 >(
-    source: ReprCResult<R::CType, E::CType>,
+    source: CResult<R::CType, E::CType>,
     store: &'i mut Option<Result<R::Store, E::Store>>,
 ) -> Result<R, E>
 where

@@ -684,7 +684,7 @@ mod tests {
     use crate::boxed::{CBox, CBoxCell, CWideBox, CWideBoxCell};
     use crate::{
         CFnArg, CFnReturn, Decode, Encode,
-        option::ReprCOption,
+        option::COption,
         reference::{CRef, CRefMut},
         slice::{CWideRef, CWideRefMut},
     };
@@ -813,7 +813,7 @@ mod tests {
             Encode,
         );
         assert_impl_all!(Option<ManuallyDrop<u8>>:
-            Niche<CType = ReprCOption<u8>>,
+            Niche<CType = COption<u8>>,
             Decode<'static>,
             Encode,
         );
@@ -1003,7 +1003,7 @@ mod tests {
             Encode,
         );
         assert_impl_all!(Option<UnsafeCell<u8>>:
-            ReprC<CType = ReprCOption<UnsafeCell<u8>>>,
+            ReprC<CType = COption<UnsafeCell<u8>>>,
             Decode<'static>,
             Encode,
         );
@@ -1193,7 +1193,7 @@ mod tests {
             Encode,
         );
         assert_impl_all!(Option<UnsafeCell<NonZero<u8>>>:
-            ReprC<CType = ReprCOption<UnsafeCell<u8>>>,
+            ReprC<CType = COption<UnsafeCell<u8>>>,
             Decode<'static>,
             Encode,
         );
