@@ -14,7 +14,7 @@ use crate::{
     niche::Niche,
     stored::{DecodeOwned, EmptyStore, EncodeMove, EncodeMoveUnchecked},
     sync::ArrayStore,
-    transmute::CheckedTransmute,
+    transmute::AbiCompatible,
 };
 
 /// C-compatible carrier for [`bool`].
@@ -109,7 +109,7 @@ macro_rules! primitive_derive {
         impl $crate::EncodeUnchecked for $primitive {}
         impl Decode<'_> for $primitive {}
 
-        unsafe impl CheckedTransmute for $primitive {
+        unsafe impl AbiCompatible for $primitive {
             #[inline(always)]
             unsafe fn is_valid(_: &Self::CType) -> bool {
                 true
@@ -188,7 +188,7 @@ macro_rules! raw_pointer_derive {
         impl<R: CType + ?Sized> $crate::EncodeUnchecked for *$mutability R {}
         impl<R: CType + ?Sized> Decode<'_> for *$mutability R {}
 
-        unsafe impl<R: CType + ?Sized> CheckedTransmute for *$mutability R
+        unsafe impl<R: CType + ?Sized> AbiCompatible for *$mutability R
         where
             R: rust_spec::RustSpec<Size: crate::Thin>,
         {
@@ -306,7 +306,7 @@ macro_rules! impl_fn_types {
         impl<$($arg,)* R> Niche for $fn_type where Self: ReprC<CType = Option<Self>> {
             const NICHE: Self::CType = None;
         }
-        unsafe impl<$($arg,)* R> CheckedTransmute for $fn_type where Self: ReprC<CType = Option<Self>> {
+        unsafe impl<$($arg,)* R> AbiCompatible for $fn_type where Self: ReprC<CType = Option<Self>> {
             unsafe fn is_valid(target: &Self::CType) -> bool { target.is_some() }
         }
     };
@@ -372,7 +372,7 @@ macro_rules! fieldless_enum_derive {
         impl $crate::EncodeUnchecked for $src {}
         impl Decode<'_> for $src {}
 
-        unsafe impl CheckedTransmute for $src {
+        unsafe impl AbiCompatible for $src {
             #[inline(always)]
             unsafe fn is_valid(target: &Self::CType) -> bool {
                 $validity_fn(target)

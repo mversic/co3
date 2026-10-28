@@ -32,7 +32,7 @@ use crate::{
     wide::{PointeeData, Wide, WideHeader},
 };
 #[cfg(feature = "alloc")]
-use crate::{boxed::FromWideBox, sync::RefWideEncodeStore, transmute::CheckedTransmute};
+use crate::{boxed::FromWideBox, sync::RefWideEncodeStore, transmute::AbiCompatible};
 disjoint_impls! {
     /// Encodes the contents of a shared reference without transferring ownership.
     ///
@@ -66,7 +66,7 @@ disjoint_impls! {
     }
 
     #[cfg(feature = "alloc")]
-    unsafe impl<'a, T: CheckedTransmute + ReprC<CType: CType + Sized>> EncodeRefUnchecked<'a>
+    unsafe impl<'a, T: AbiCompatible + ReprC<CType: CType + Sized>> EncodeRefUnchecked<'a>
         for Vec<T>
     where
         T: RustSpec<Layout = Stable>,
@@ -81,7 +81,7 @@ disjoint_impls! {
         ) -> <&'a Self as ReprC>::CType {
             store.encode(|_fields| {
                 // Vec's data pointer is non-null even for empty or ZST vectors.
-                // CheckedTransmute guarantees compatible element representations;
+                // AbiCompatible guarantees compatible element representations;
                 // this carrier is only exposed behind the shared reference header.
                 let data = unsafe { NonNull::new_unchecked(self.as_ptr().cast_mut().cast()) };
                 unsafe { Self::CType::from_shared_parts(data, self.len()) }
@@ -545,7 +545,7 @@ disjoint_impls! {
     }
 
     #[cfg(feature = "alloc")]
-    unsafe impl<'a, T: CheckedTransmute + ReprC<CType: CType + Sized>> EncodeRef<'a> for Vec<T>
+    unsafe impl<'a, T: AbiCompatible + ReprC<CType: CType + Sized>> EncodeRef<'a> for Vec<T>
     where
         T: RustSpec<Layout = Stable, Mutability = Exclusive>,
         Self: ReprC<CType: FromWideBox<[<T as ReprC>::CType]>>,
@@ -562,7 +562,7 @@ disjoint_impls! {
     }
 
     #[cfg(feature = "alloc")]
-    unsafe impl<'a, T: CheckedTransmute + ReprC<CType: CType + Sized>> EncodeRef<'a> for Vec<T>
+    unsafe impl<'a, T: AbiCompatible + ReprC<CType: CType + Sized>> EncodeRef<'a> for Vec<T>
     where
         T: RustSpec<Layout = Stable, Mutability = WithInterior, Trap = Robust>,
         Self: ReprC<CType: FromWideBox<[<T as ReprC>::CType]>>,

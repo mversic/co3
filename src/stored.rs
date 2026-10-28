@@ -34,7 +34,7 @@ use crate::{
     result::ReprCResult,
     slice::{CWideRefMut, FromRawWideRef},
     sync::{RefMutSizedDecodeStore, RefSizedDecodeStore},
-    transmute::CheckedTransmute,
+    transmute::AbiCompatible,
     wide::{Wide, WideData, WideHeader},
 };
 
@@ -93,7 +93,7 @@ disjoint_impls! {
         unsafe fn soft_encode_unchecked(self, store: &mut Self::SoftStore) -> Self::CType;
     }
 
-    unsafe impl<R: CheckedTransmute + ?Sized> EncodeMoveUnchecked for &R
+    unsafe impl<R: AbiCompatible + ?Sized> EncodeMoveUnchecked for &R
     where
         Self: RustSpec<Layout = Stable> + ReprC<CType: FromRawRef<<R as ReprC>::CType>>,
         R: RustSpec<Layout = Stable, Size: Thin>,
@@ -112,7 +112,7 @@ disjoint_impls! {
             unsafe { Self::CType::from_raw_reference(val) }
         }
     }
-    unsafe impl<R: CheckedTransmute + Wide<Metadata = usize> + ?Sized> EncodeMoveUnchecked for &R
+    unsafe impl<R: AbiCompatible + Wide<Metadata = usize> + ?Sized> EncodeMoveUnchecked for &R
     where
         Self: RustSpec<Layout = Unstable> + ReprC<CType: FromRawWideRef<<R as ReprC>::CType>>,
         R: RustSpec<Layout = Stable, Size = MetaSized<SliceLike>>,
@@ -145,7 +145,7 @@ disjoint_impls! {
         }
     }
 
-    unsafe impl<R: CheckedTransmute + ?Sized> EncodeMoveUnchecked for &mut R
+    unsafe impl<R: AbiCompatible + ?Sized> EncodeMoveUnchecked for &mut R
     where
         Self: RustSpec<Layout = Stable>,
         R: RustSpec<Layout = Stable, Size: Thin>,
@@ -164,7 +164,7 @@ disjoint_impls! {
             unsafe { CRefMut::from_raw(val) }
         }
     }
-    unsafe impl<R: CheckedTransmute + Wide<Metadata = usize> + ?Sized> EncodeMoveUnchecked for &mut R
+    unsafe impl<R: AbiCompatible + Wide<Metadata = usize> + ?Sized> EncodeMoveUnchecked for &mut R
     where
         Self: RustSpec<Layout = Unstable>,
         R: RustSpec<Layout = Stable, Size = MetaSized<SliceLike>>,
@@ -193,7 +193,7 @@ disjoint_impls! {
     }
 
     #[cfg(feature = "alloc")]
-    unsafe impl<R: CheckedTransmute, S: SizedKind> EncodeMoveUnchecked for Box<R>
+    unsafe impl<R: AbiCompatible, S: SizedKind> EncodeMoveUnchecked for Box<R>
     where
         Self: RustSpec<Layout = Stable> + ReprC<CType: FromBox<<R as ReprC>::CType>>,
         R: RustSpec<Layout = Stable, Size = RustSpecSized<S>>,
@@ -208,7 +208,7 @@ disjoint_impls! {
         }
     }
     #[cfg(feature = "alloc")]
-    unsafe impl<R: CheckedTransmute + Wide<Metadata = usize> + ?Sized> EncodeMoveUnchecked for Box<R>
+    unsafe impl<R: AbiCompatible + Wide<Metadata = usize> + ?Sized> EncodeMoveUnchecked for Box<R>
     where
         Self: RustSpec<Layout = Unstable> + ReprC<CType: FromWideBox<<R as ReprC>::CType>>,
         R: RustSpec<Layout = Stable, Size = MetaSized<SliceLike>>,
@@ -271,7 +271,7 @@ disjoint_impls! {
     }
 
     #[cfg(feature = "alloc")]
-    unsafe impl<R: CheckedTransmute + ReprC> EncodeMoveUnchecked for Vec<R>
+    unsafe impl<R: AbiCompatible + ReprC> EncodeMoveUnchecked for Vec<R>
     where
         R: RustSpec<Layout = Stable>,
         Self: ReprC<CType: Sized>,
@@ -507,7 +507,7 @@ disjoint_impls! {
             Self: 'itm;
     }
 
-    unsafe impl<R: CheckedTransmute + ?Sized> EncodeMove for &R
+    unsafe impl<R: AbiCompatible + ?Sized> EncodeMove for &R
     where
         Self: RustSpec<Layout = Stable> + ReprC<CType = CRef<<R as ReprC>::CType>>,
         R: RustSpec<Layout = Stable, Size: Thin, Mutability = Exclusive>,
@@ -524,7 +524,7 @@ disjoint_impls! {
             encoded
         }
     }
-    unsafe impl<R: CheckedTransmute + Wide<Metadata = usize> + ?Sized> EncodeMove for &R
+    unsafe impl<R: AbiCompatible + Wide<Metadata = usize> + ?Sized> EncodeMove for &R
     where
         Self: RustSpec<Layout = Unstable>,
         R: RustSpec<Layout = Stable, Size = MetaSized<SliceLike>, Mutability = Exclusive>,
@@ -559,7 +559,7 @@ disjoint_impls! {
         }
     }
 
-    unsafe impl<R: CheckedTransmute + ?Sized> EncodeMove for &R
+    unsafe impl<R: AbiCompatible + ?Sized> EncodeMove for &R
     where
         Self: RustSpec<Layout = Stable> + ReprC<CType = CRefMut<<R as ReprC>::CType, false>>,
         R: RustSpec<Layout = Stable, Size: Thin, Mutability = WithInterior, Trap = Robust>,
@@ -576,7 +576,7 @@ disjoint_impls! {
             encoded
         }
     }
-    unsafe impl<R: CheckedTransmute + Wide<Metadata = usize> + ?Sized> EncodeMove for &R
+    unsafe impl<R: AbiCompatible + Wide<Metadata = usize> + ?Sized> EncodeMove for &R
     where
         Self: RustSpec<Layout = Unstable>,
         R: RustSpec<Layout = Stable, Size = MetaSized<SliceLike>, Mutability = WithInterior, Trap = Robust>,
@@ -595,7 +595,7 @@ disjoint_impls! {
         }
     }
 
-    unsafe impl<R: CheckedTransmute + ?Sized> EncodeMove for &mut R
+    unsafe impl<R: AbiCompatible + ?Sized> EncodeMove for &mut R
     where
         Self: RustSpec<Layout = Stable> + ReprC<CType = CRefMut<<R as ReprC>::CType, true>>,
         R: RustSpec<Layout = Stable, Size: Thin, Trap = Robust>,
@@ -612,7 +612,7 @@ disjoint_impls! {
             encoded
         }
     }
-    unsafe impl<'a, R: CheckedTransmute + EncodeMut<'a>> EncodeMove for &'a mut R
+    unsafe impl<'a, R: AbiCompatible + EncodeMut<'a>> EncodeMove for &'a mut R
     where
         Self: RustSpec<Layout = Stable> + ReprC<CType = CRefMut<<R as ReprC>::CType, true>>,
         R: RustSpec<Layout = Stable, Size: Thin, Trap = NonRobust>,
@@ -629,7 +629,7 @@ disjoint_impls! {
             encoded
         }
     }
-    unsafe impl<R: CheckedTransmute + Wide<Metadata = usize> + ?Sized> EncodeMove for &mut R
+    unsafe impl<R: AbiCompatible + Wide<Metadata = usize> + ?Sized> EncodeMove for &mut R
     where
         Self: RustSpec<Layout = Unstable>,
         R: RustSpec<Layout = Stable, Size = MetaSized<SliceLike>, Trap = Robust>,
@@ -649,7 +649,7 @@ disjoint_impls! {
     }
     // TODO: This looks like a mess of bounds
     #[cfg(feature = "alloc")]
-    unsafe impl<'a, R: CheckedTransmute + Wide<Metadata = usize> + AssignFromOwned + ?Sized> EncodeMove
+    unsafe impl<'a, R: AbiCompatible + Wide<Metadata = usize> + AssignFromOwned + ?Sized> EncodeMove
         for &'a mut R
     where
         Self: RustSpec<Layout = Unstable>,
@@ -685,11 +685,11 @@ disjoint_impls! {
     }
 
     #[cfg(feature = "alloc")]
-    unsafe impl<R: CheckedTransmute + EncodeMove, S: SizedKind> EncodeMove for Box<R>
+    unsafe impl<R: AbiCompatible + EncodeMove, S: SizedKind> EncodeMove for Box<R>
     where
         Self: RustSpec<Layout = Stable>,
         R: RustSpec<Layout = Stable, Size = RustSpecSized<S>, Trap = Robust>,
-        Self: CheckedTransmute<CType: FromBox<<R as ReprC>::CType>>,
+        Self: AbiCompatible<CType: FromBox<<R as ReprC>::CType>>,
     {
         type Store = ();
 
@@ -704,11 +704,11 @@ disjoint_impls! {
         }
     }
     #[cfg(feature = "alloc")]
-    unsafe impl<R: CheckedTransmute + EncodeMove, S: SizedKind> EncodeMove for Box<R>
+    unsafe impl<R: AbiCompatible + EncodeMove, S: SizedKind> EncodeMove for Box<R>
     where
         Self: RustSpec<Layout = Stable>,
         R: RustSpec<Layout = Stable, Size = RustSpecSized<S>, Trap = NonRobust>,
-        Self: CheckedTransmute<CType: FromBox<<R as ReprC>::CType>>,
+        Self: AbiCompatible<CType: FromBox<<R as ReprC>::CType>>,
     {
         type Store = Box<R::Store>;
 
@@ -729,7 +729,7 @@ disjoint_impls! {
         }
     }
     #[cfg(feature = "alloc")]
-    unsafe impl<R: CheckedTransmute + Wide<Metadata = usize> + ?Sized> EncodeMove for Box<R>
+    unsafe impl<R: AbiCompatible + Wide<Metadata = usize> + ?Sized> EncodeMove for Box<R>
     where
         Self: RustSpec<Layout = Unstable>,
         R: RustSpec<Layout = Stable, Size = MetaSized<SliceLike>, Trap = Robust>,
@@ -749,7 +749,7 @@ disjoint_impls! {
         }
     }
     #[cfg(feature = "alloc")]
-    unsafe impl<R: CheckedTransmute + Wide<Metadata = usize> + Owned + ?Sized> EncodeMove for Box<R>
+    unsafe impl<R: AbiCompatible + Wide<Metadata = usize> + Owned + ?Sized> EncodeMove for Box<R>
     where
         Self: RustSpec<Layout = Unstable> + Into<<R as Owned>::Owned>,
         R: RustSpec<Layout = Stable, Size = MetaSized<SliceLike>, Trap = NonRobust>,
@@ -832,7 +832,7 @@ disjoint_impls! {
     }
 
     #[cfg(feature = "alloc")]
-    unsafe impl<R: CheckedTransmute + EncodeMove> EncodeMove for Vec<R>
+    unsafe impl<R: AbiCompatible + EncodeMove> EncodeMove for Vec<R>
     where
         R: RustSpec<Layout = Stable, Trap = Robust>,
         Self: ReprC<CType: Sized>,
@@ -850,7 +850,7 @@ disjoint_impls! {
         }
     }
     #[cfg(feature = "alloc")]
-    unsafe impl<R: CheckedTransmute + EncodeMove> EncodeMove for Vec<R>
+    unsafe impl<R: AbiCompatible + EncodeMove> EncodeMove for Vec<R>
     where
         R: RustSpec<Layout = Stable, Trap = NonRobust>,
         Self: ReprC<CType: FromWideBox<[<R as ReprC>::CType]>>,
@@ -1094,7 +1094,7 @@ disjoint_impls! {
         }
     }
 
-    unsafe impl<'d, R: CheckedTransmute + ?Sized> DecodeOwned<'d> for &'d R
+    unsafe impl<'d, R: AbiCompatible + ?Sized> DecodeOwned<'d> for &'d R
     where
         Self: RustSpec<Layout = Stable> + ReprC<CType = CRef<<R as ReprC>::CType>>,
         R: RustSpec<Layout = Stable, Size: Thin, Mutability = Exclusive>,
@@ -1120,7 +1120,7 @@ disjoint_impls! {
             unsafe { &*core::mem::transmute_copy::<*const R::CType, *const R>(&ptr) }
         }
     }
-    unsafe impl<'d, R: CheckedTransmute<CType: Wide<Metadata = usize>> + ?Sized>
+    unsafe impl<'d, R: AbiCompatible<CType: Wide<Metadata = usize>> + ?Sized>
         DecodeOwned<'d> for &'d R
     where
         Self: RustSpec<Layout = Unstable>,
@@ -1232,7 +1232,7 @@ disjoint_impls! {
         }
     }
 
-    unsafe impl<'d, R: CheckedTransmute + ?Sized> DecodeOwned<'d> for &'d R
+    unsafe impl<'d, R: AbiCompatible + ?Sized> DecodeOwned<'d> for &'d R
     where
         Self: RustSpec<Layout = Stable> + ReprC<CType = CRefMut<<R as ReprC>::CType, false>>,
         R: RustSpec<Layout = Stable, Size: Thin, Mutability = WithInterior, Trap = Robust>,
@@ -1258,7 +1258,7 @@ disjoint_impls! {
             unsafe { &*core::mem::transmute_copy::<*const R::CType, *const R>(&ptr) }
         }
     }
-    unsafe impl<'d, R: CheckedTransmute + Wide<Metadata = usize> + ?Sized> DecodeOwned<'d> for &'d R
+    unsafe impl<'d, R: AbiCompatible + Wide<Metadata = usize> + ?Sized> DecodeOwned<'d> for &'d R
     where
         Self: RustSpec<Layout = Unstable>,
         R: RustSpec<Layout = Stable, Size = MetaSized<SliceLike>, Mutability = WithInterior, Trap = Robust>,
@@ -1305,7 +1305,7 @@ disjoint_impls! {
     //    }
     //}
 
-    unsafe impl<'d, R: CheckedTransmute + RustSpec<Size: Thin> + ?Sized> DecodeOwned<'d> for &'d mut R
+    unsafe impl<'d, R: AbiCompatible + RustSpec<Size: Thin> + ?Sized> DecodeOwned<'d> for &'d mut R
     where
         Self: RustSpec<Layout = Stable> + ReprC<CType = CRefMut<<R as ReprC>::CType, true>>,
     {
@@ -1330,7 +1330,7 @@ disjoint_impls! {
             unsafe { &mut *core::mem::transmute_copy::<*mut R::CType, *mut R>(&source) }
         }
     }
-    unsafe impl<'d, R: CheckedTransmute<CType: Wide<Metadata = usize>> + ?Sized> DecodeOwned<'d> for &'d mut R
+    unsafe impl<'d, R: AbiCompatible<CType: Wide<Metadata = usize>> + ?Sized> DecodeOwned<'d> for &'d mut R
     where
         Self: RustSpec<Layout = Unstable>,
         R: RustSpec<Layout = Stable, Size = MetaSized<SliceLike>>,
@@ -1371,7 +1371,7 @@ disjoint_impls! {
     // unsafe impl<'d, R: NulTerminatedBuf + ?Sized> DecodeOwned<'d> for &'d mut R
     // where
     //     R: RustSpec<Size = NulTerminated>,
-    //     <R::Header as CheckedTransmute as ReprC>::CType: Sized>,
+    //     <R::Header as AbiCompatible as ReprC>::CType: Sized>,
     // {
     //     type Store = ();
     //
@@ -1463,11 +1463,11 @@ disjoint_impls! {
     }
 
     #[cfg(feature = "alloc")]
-    unsafe impl<'d, R: CheckedTransmute, S: SizedKind> DecodeOwned<'d> for Box<R>
+    unsafe impl<'d, R: AbiCompatible, S: SizedKind> DecodeOwned<'d> for Box<R>
     where
         Self: RustSpec<Layout = Stable>,
         R: RustSpec<Layout = Stable, Size = RustSpecSized<S>>,
-        Self: CheckedTransmute<CType: FromBox<<R as ReprC>::CType>>,
+        Self: AbiCompatible<CType: FromBox<<R as ReprC>::CType>>,
         <R as ReprC>::CType: Sized,
     {
         type Store = ();
@@ -1508,7 +1508,7 @@ disjoint_impls! {
         }
     }
     #[cfg(feature = "alloc")]
-    unsafe impl<'d, R: CheckedTransmute<CType: Wide<Metadata = usize>> + ?Sized>
+    unsafe impl<'d, R: AbiCompatible<CType: Wide<Metadata = usize>> + ?Sized>
         DecodeOwned<'d> for Box<R>
     where
         Self: RustSpec<Layout = Unstable>,
@@ -1607,7 +1607,7 @@ disjoint_impls! {
     }
 
     #[cfg(feature = "alloc")]
-    unsafe impl<'d, R: CheckedTransmute> DecodeOwned<'d> for Vec<R>
+    unsafe impl<'d, R: AbiCompatible> DecodeOwned<'d> for Vec<R>
     where
         R: RustSpec<Layout = Stable>,
         Self: ReprC<CType: Sized>,
@@ -1924,24 +1924,24 @@ pub(crate) unsafe fn decode_owned_unchecked<'d, T: DecodeOwned<'d, Store: EmptyS
 }
 
 #[inline(always)]
-fn debug_assert_encoded_valid<R: CheckedTransmute>(encoded: &R::CType) {
+fn debug_assert_encoded_valid<R: AbiCompatible>(encoded: &R::CType) {
     debug_assert!(
         unsafe { R::is_valid(encoded) },
-        "encoding failed CheckedTransmute::is_valid"
+        "encoding failed AbiCompatible::is_valid"
     );
 }
 
 #[inline(always)]
 fn debug_assert_wide_pointee_valid<R>(data: *const WideData<R::CType>, len: usize)
 where
-    R: CheckedTransmute<CType: Wide<Metadata = usize>> + ?Sized,
+    R: AbiCompatible<CType: Wide<Metadata = usize>> + ?Sized,
 {
     debug_assert!(
         unsafe {
             let ctype = R::CType::from_raw_parts(data.cast(), len);
             R::is_valid(ctype)
         },
-        "encoding failed CheckedTransmute::is_valid"
+        "encoding failed AbiCompatible::is_valid"
     );
 }
 

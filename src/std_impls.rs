@@ -5,7 +5,7 @@ use crate::{
     borrow::{Borrow, BorrowCast, BorrowCastMut, FromBorrow},
     niche::Niche,
     stored::{DecodeOwned, EmptyStore, EncodeMove, EncodeMoveUnchecked},
-    transmute::CheckedTransmute,
+    transmute::AbiCompatible,
     utf8::Utf8Str,
 };
 #[cfg(feature = "alloc")]
@@ -84,7 +84,7 @@ macro_rules! non_zero_derive {
         impl EncodeUnchecked for NonZero<$primitive> {}
         impl Decode<'_> for NonZero<$primitive> {}
 
-        unsafe impl CheckedTransmute for NonZero<$primitive> {
+        unsafe impl AbiCompatible for NonZero<$primitive> {
             #[inline(always)]
             unsafe fn is_valid(target: &Self::CType) -> bool {
                 *target != 0
@@ -152,7 +152,7 @@ impl Encode for () {}
 impl EncodeUnchecked for () {}
 impl Decode<'_> for () {}
 
-unsafe impl CheckedTransmute for () {
+unsafe impl AbiCompatible for () {
     #[inline(always)]
     unsafe fn is_valid(_: &Self::CType) -> bool {
         true
@@ -195,7 +195,7 @@ impl<'itm, T: ?Sized + 'itm> FromBorrow<'itm> for PhantomData<T> {
 impl<T: ?Sized> ReprC for PhantomData<T> {
     type CType = Self;
 }
-unsafe impl<T: ?Sized> CheckedTransmute for PhantomData<T> {
+unsafe impl<T: ?Sized> AbiCompatible for PhantomData<T> {
     #[inline(always)]
     unsafe fn is_valid(_: &Self::CType) -> bool {
         true
@@ -310,7 +310,7 @@ impl<T: CType + ?Sized> Encode for NonNull<T> {}
 impl<T: CType + ?Sized> EncodeUnchecked for NonNull<T> {}
 impl<T: CType + ?Sized> Decode<'_> for NonNull<T> {}
 
-unsafe impl<T: CType + ?Sized> CheckedTransmute for NonNull<T>
+unsafe impl<T: CType + ?Sized> AbiCompatible for NonNull<T>
 where
     T: RustSpec<Size: crate::Thin>,
     Self: ReprC<CType = *mut T>,
@@ -428,7 +428,7 @@ impl<R: Encode> Encode for UnsafeCell<R> {}
 impl<R: EncodeUnchecked> EncodeUnchecked for UnsafeCell<R> {}
 impl<'d, R: Decode<'d>> Decode<'d> for UnsafeCell<R> {}
 
-unsafe impl<T: CheckedTransmute + ?Sized> CheckedTransmute for UnsafeCell<T> {
+unsafe impl<T: AbiCompatible + ?Sized> AbiCompatible for UnsafeCell<T> {
     #[inline(always)]
     unsafe fn is_valid(target: &Self::CType) -> bool {
         unsafe { T::is_valid(&*target.get()) }
@@ -515,7 +515,7 @@ impl<R: Encode> Encode for Cell<R> {}
 impl<R: EncodeUnchecked> EncodeUnchecked for Cell<R> {}
 impl<'d, R: Decode<'d>> Decode<'d> for Cell<R> {}
 
-unsafe impl<T: CheckedTransmute<CType: Copy>> CheckedTransmute for Cell<T> {
+unsafe impl<T: AbiCompatible<CType: Copy>> AbiCompatible for Cell<T> {
     #[inline(always)]
     unsafe fn is_valid(target: &Self::CType) -> bool {
         unsafe { T::is_valid(&*target.get()) }
@@ -563,10 +563,10 @@ impl<'itm, T: 'itm> FromBorrow<'itm> for MaybeUninit<T> {
     }
 }
 
-impl<T: CheckedTransmute<CType: Sized>> ReprC for MaybeUninit<T> {
+impl<T: AbiCompatible<CType: Sized>> ReprC for MaybeUninit<T> {
     type CType = MaybeUninit<T::CType>;
 }
-unsafe impl<T: CheckedTransmute<CType: Sized> + EncodeMove<Store: EmptyStore>> EncodeMove
+unsafe impl<T: AbiCompatible<CType: Sized> + EncodeMove<Store: EmptyStore>> EncodeMove
     for MaybeUninit<T>
 {
     type Store = ();
@@ -579,14 +579,14 @@ unsafe impl<T: CheckedTransmute<CType: Sized> + EncodeMove<Store: EmptyStore>> E
         unsafe { self.soft_encode_unchecked(&mut ()) }
     }
 }
-unsafe impl<T: CheckedTransmute<CType: Sized>> EncodeMoveUnchecked for MaybeUninit<T> {
+unsafe impl<T: AbiCompatible<CType: Sized>> EncodeMoveUnchecked for MaybeUninit<T> {
     type SoftStore = ();
 
     unsafe fn soft_encode_unchecked(self, (): &mut ()) -> Self::CType {
         unsafe { core::mem::transmute_copy(&self) }
     }
 }
-unsafe impl<'d, T: CheckedTransmute<CType: Sized>> DecodeOwned<'d> for MaybeUninit<T> {
+unsafe impl<'d, T: AbiCompatible<CType: Sized>> DecodeOwned<'d> for MaybeUninit<T> {
     type Store = ();
 
     #[inline(always)]
@@ -595,11 +595,11 @@ unsafe impl<'d, T: CheckedTransmute<CType: Sized>> DecodeOwned<'d> for MaybeUnin
     }
 }
 
-impl<T: CheckedTransmute<CType: Sized> + EncodeMove<Store: EmptyStore>> Encode for MaybeUninit<T> {}
-impl<T: CheckedTransmute<CType: Sized>> EncodeUnchecked for MaybeUninit<T> {}
-impl<'d, T: CheckedTransmute<CType: Sized>> Decode<'d> for MaybeUninit<T> {}
+impl<T: AbiCompatible<CType: Sized> + EncodeMove<Store: EmptyStore>> Encode for MaybeUninit<T> {}
+impl<T: AbiCompatible<CType: Sized>> EncodeUnchecked for MaybeUninit<T> {}
+impl<'d, T: AbiCompatible<CType: Sized>> Decode<'d> for MaybeUninit<T> {}
 
-unsafe impl<T: CheckedTransmute<CType: Sized>> CheckedTransmute for MaybeUninit<T> {
+unsafe impl<T: AbiCompatible<CType: Sized>> AbiCompatible for MaybeUninit<T> {
     #[inline(always)]
     unsafe fn is_valid(_: &Self::CType) -> bool {
         true
@@ -707,13 +707,13 @@ mod tests {
     //        type CType = u8;
     //    }
 
-    //    unsafe impl CheckedTransmute for DropProbe {
+    //    unsafe impl AbiCompatible for DropProbe {
     //        unsafe fn is_valid(_: &Self::CType) -> bool {
     //            true
     //        }
     //    }
 
-    //    assert_impl_all!(ManuallyDrop<DropProbe>: CheckedTransmute, Encode, Decode<'static>);
+    //    assert_impl_all!(ManuallyDrop<DropProbe>: AbiCompatible, Encode, Decode<'static>);
 
     //    let before = DROP_COUNT.load(Ordering::Relaxed);
     //    let encoded = crate::encode(ManuallyDrop::new(DropProbe(42)));
@@ -745,7 +745,7 @@ mod tests {
     fn maybe_uninit_lowers_without_validating_or_encoding_the_inner_value() {
         assert_impl_all!(MaybeUninit<bool>:
             ReprC<CType = MaybeUninit<crate::primitives::CBool>>,
-            CheckedTransmute,
+            AbiCompatible,
             Decode<'static>,
             Encode,
         );
@@ -945,11 +945,11 @@ mod tests {
 
     #[test]
     fn robust_unsafe_cell() {
-        assert_impl_all!(UnsafeCell<u8>: CheckedTransmute);
-        assert_impl_all!(Cell<u8>: CheckedTransmute);
-        assert_impl_all!([UnsafeCell<u8>; 2]: CheckedTransmute);
-        assert_not_impl_any!((UnsafeCell<u8>, u8): CheckedTransmute);
-        assert_impl_all!(ManuallyDrop<UnsafeCell<u8>>: CheckedTransmute);
+        assert_impl_all!(UnsafeCell<u8>: AbiCompatible);
+        assert_impl_all!(Cell<u8>: AbiCompatible);
+        assert_impl_all!([UnsafeCell<u8>; 2]: AbiCompatible);
+        assert_not_impl_any!((UnsafeCell<u8>, u8): AbiCompatible);
+        assert_impl_all!(ManuallyDrop<UnsafeCell<u8>>: AbiCompatible);
 
         assert_impl_all!(UnsafeCell<u8>:
             ReprC<CType = UnsafeCell<u8>>,
@@ -959,7 +959,7 @@ mod tests {
         assert_impl_all!(&UnsafeCell<u8>:
             Niche<CType = CRefMut<UnsafeCell<u8>, false>>,
             Encode,
-            CheckedTransmute,
+            AbiCompatible,
         );
         assert_impl_all!(&UnsafeCell<u8>: Decode<'static>);
         assert_impl_all!(&mut UnsafeCell<u8>:
@@ -974,7 +974,7 @@ mod tests {
             Encode,
         );
         #[cfg(feature = "alloc")]
-        assert_impl_all!(Box<UnsafeCell<u8>>: CheckedTransmute);
+        assert_impl_all!(Box<UnsafeCell<u8>>: AbiCompatible);
         assert_impl_all!(&[UnsafeCell<u8>]:
             Niche<CType = CWideRefMut<[UnsafeCell<u8>], false>>,
             Encode,
@@ -1136,7 +1136,7 @@ mod tests {
         assert_impl_all!(&UnsafeCell<NonZero<u8>>:
             Niche<CType = CRefMut<UnsafeCell<u8>, false>>,
         );
-        assert_not_impl_any!(&UnsafeCell<NonZero<u8>>: Decode<'static>, CheckedTransmute);
+        assert_not_impl_any!(&UnsafeCell<NonZero<u8>>: Decode<'static>, AbiCompatible);
         assert_impl_all!(&mut UnsafeCell<NonZero<u8>>:
             Niche<CType = CRefMut<UnsafeCell<u8>, true>>,
             Decode<'static>,

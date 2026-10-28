@@ -3,7 +3,7 @@ use co3::{
     borrow::{BorrowCast, BorrowCastMut},
     reference::CRefMut,
     rust_spec::RustSpec,
-    transmute::CheckedTransmute,
+    transmute::AbiCompatible,
 };
 use core::{
     cell::{Cell, UnsafeCell},
@@ -95,14 +95,14 @@ fn boxed_zst_traits() {
     assert_traits!(TransparentStruct<()>, CTransparentStructZst);
     assert_traits!(TransparentEnum<()>, CTransparentEnumZst);
 
-    assert_impl_all!(ReprCStruct<()>: CheckedTransmute);
-    assert_impl_all!(ReprCEnum<()>: CheckedTransmute);
-    assert_impl_all!(ReprCDataEnum<()>: CheckedTransmute);
-    assert_impl_all!(TransparentStruct<()>: CheckedTransmute);
-    assert_impl_all!(TransparentEnum<()>: CheckedTransmute);
+    assert_impl_all!(ReprCStruct<()>: AbiCompatible);
+    assert_impl_all!(ReprCEnum<()>: AbiCompatible);
+    assert_impl_all!(ReprCDataEnum<()>: AbiCompatible);
+    assert_impl_all!(TransparentStruct<()>: AbiCompatible);
+    assert_impl_all!(TransparentEnum<()>: AbiCompatible);
 
-    assert_not_impl_any!(NoReprStruct<()>: CheckedTransmute);
-    assert_not_impl_any!(NoReprEnum<()>: CheckedTransmute);
+    assert_not_impl_any!(NoReprStruct<()>: AbiCompatible);
+    assert_not_impl_any!(NoReprEnum<()>: AbiCompatible);
 }
 
 #[test]

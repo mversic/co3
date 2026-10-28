@@ -11,7 +11,7 @@ use core::{
 
 use rust_spec::size::{MetaSized, SliceLike};
 
-use crate::{CType, transmute::CheckedTransmute};
+use crate::{CType, transmute::AbiCompatible};
 
 pub(crate) type WideData<R> = <<R as Wide>::Header as WideHeader>::Data;
 
@@ -139,10 +139,10 @@ impl_wide_for_transparent_wrapper!(ManuallyDrop);
 
 macro_rules! impl_wide_for_cell {
     ($($wrapper:ident),+ $(,)?) => {$(
-        // SAFETY: CheckedTransmute equates T's layout with its CType. The
+        // SAFETY: AbiCompatible equates T's layout with its CType. The
         // CType's Wide implementation supplies a [C; 0] header and usize
         // length metadata; Cell and UnsafeCell preserve T's layout.
-        unsafe impl<T: CheckedTransmute + Wide + ?Sized, C: CType> Wide for $wrapper<T>
+        unsafe impl<T: AbiCompatible + Wide + ?Sized, C: CType> Wide for $wrapper<T>
         where
             T: rust_spec::RustSpec<Size = MetaSized<SliceLike>>,
             T::CType: Wide<Header = [C; 0]>,

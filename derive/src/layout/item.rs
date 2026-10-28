@@ -1022,7 +1022,7 @@ fn gen_repr_c_impls(
     };
 
     quote! {
-        unsafe impl #impl_generics co3::transmute::CheckedTransmute for #name #ty_generics
+        unsafe impl #impl_generics co3::transmute::AbiCompatible for #name #ty_generics
         where
             #(#checked_transmute_bounds,)*
             #(#borrow_cast_bounds,)*
@@ -1051,14 +1051,14 @@ fn gen_checked_transmute_bounds(
         .map(|&ty| {
             let for_dummy = speculative_marker(!is_parametrized(ty, generics));
 
-            parse_quote! { #for_dummy #ty: co3::transmute::CheckedTransmute<CType: Sized> }
+            parse_quote! { #for_dummy #ty: co3::transmute::AbiCompatible<CType: Sized> }
         })
         .collect::<Vec<_>>();
 
     if !is_phantom_data(last) {
         let for_dummy = speculative_marker(!is_parametrized(last, generics));
         predicates.push(parse_quote! {
-            #for_dummy #last: co3::transmute::CheckedTransmute
+            #for_dummy #last: co3::transmute::AbiCompatible
         });
     }
 
@@ -1091,7 +1091,7 @@ fn gen_record_is_valid(
         .filter(|(_, field_ty)| !is_phantom_data(field_ty))
         .map(|(field_name, field_ty)| {
                 quote! {
-                    if !unsafe { <#field_ty as co3::transmute::CheckedTransmute>::is_valid(#field_name)} {
+                    if !unsafe { <#field_ty as co3::transmute::AbiCompatible>::is_valid(#field_name)} {
                         return false;
                     }
                 }
@@ -1210,7 +1210,7 @@ pub(super) fn derive_fieldless_enum(
         Some(ReprKind::C(None)) => unreachable!(),
         Some(ReprKind::Transparent | ReprKind::C(Some(_)) | ReprKind::Primitive(_)) => {
             quote! {
-                unsafe impl #impl_generics co3::transmute::CheckedTransmute for #name #ty_generics #where_clause {
+                unsafe impl #impl_generics co3::transmute::AbiCompatible for #name #ty_generics #where_clause {
                     #[inline(always)]
                     #checked_transmute_method
                 }

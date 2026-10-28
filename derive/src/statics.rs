@@ -213,10 +213,10 @@ fn gen_import_wrapper(
             #[inline]
             pub fn get(&self) -> Option<&#ty>
             where
-                for<'_dummy> #ty: #co3::transmute::CheckedTransmute + Sync,
+                for<'_dummy> #ty: #co3::transmute::AbiCompatible + Sync,
             {
                 let valid = unsafe {
-                    <#ty as #co3::transmute::CheckedTransmute>::is_valid(
+                    <#ty as #co3::transmute::AbiCompatible>::is_valid(
                         unsafe { &#raw_ident },
                     )
                 };
@@ -227,7 +227,7 @@ fn gen_import_wrapper(
 
             #[inline]
             pub unsafe fn get_unchecked(&self) -> &#ty
-            where for<'_dummy> #ty: #co3::transmute::CheckedTransmute,
+            where for<'_dummy> #ty: #co3::transmute::AbiCompatible,
             {
                 unsafe { &*(&#raw_ident as *const _ as *const #ty) }
             }

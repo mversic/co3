@@ -1,6 +1,6 @@
 use core::cell::Cell;
 
-use co3::{ReprC, rust_spec::RustSpec, transmute::CheckedTransmute};
+use co3::{ReprC, rust_spec::RustSpec, transmute::AbiCompatible};
 use static_assertions::{assert_impl_all, assert_not_impl_any};
 
 #[derive(RustSpec, ReprC)]
@@ -79,11 +79,11 @@ fn explicit_repr_alignment_is_preserved_by_companion_types() {
     assert_nontrivial_alignment::<<AlignedDataEnum as ReprC>::CType>();
     assert_nontrivial_alignment::<<ExplicitCAlignedDataEnum as ReprC>::CType>();
 
-    assert_impl_all!(AlignedStruct: CheckedTransmute);
-    assert_impl_all!(SeparatelyAlignedStruct: CheckedTransmute);
-    assert_impl_all!(AlignedFieldlessEnum: CheckedTransmute);
-    assert_impl_all!(AlignedDataEnum: CheckedTransmute);
-    assert_impl_all!(ExplicitCAlignedDataEnum: CheckedTransmute);
+    assert_impl_all!(AlignedStruct: AbiCompatible);
+    assert_impl_all!(SeparatelyAlignedStruct: AbiCompatible);
+    assert_impl_all!(AlignedFieldlessEnum: AbiCompatible);
+    assert_impl_all!(AlignedDataEnum: AbiCompatible);
+    assert_impl_all!(ExplicitCAlignedDataEnum: AbiCompatible);
 }
 
 #[test]
@@ -145,5 +145,5 @@ fn alignment_without_a_stable_layout_is_preserved_without_transmute() {
         32
     );
     assert_nontrivial_alignment::<<RustLayoutAligned as ReprC>::CType>();
-    assert_not_impl_any!(RustLayoutAligned: CheckedTransmute);
+    assert_not_impl_any!(RustLayoutAligned: AbiCompatible);
 }

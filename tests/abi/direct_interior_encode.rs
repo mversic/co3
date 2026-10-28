@@ -41,7 +41,7 @@ fn transparent_wrappers_preserve_owned_marker_restrictions() {
     assert_impl_all!(TransparentVec<u8>: Encode, EncodeUnchecked, Decode<'static>);
     assert_impl_all!(ConcreteTransparentVec: EncodeMove, EncodeMoveUnchecked, DecodeOwned<'static>);
     assert_not_impl_any!(ConcreteTransparentVec: Encode, EncodeUnchecked, Decode<'static>);
-    assert_impl_all!(ConcreteTransparentByte: co3::transmute::CheckedTransmute);
+    assert_impl_all!(ConcreteTransparentByte: co3::transmute::AbiCompatible);
 
     assert_impl_all!(TransparentBox<(u8,)>: EncodeMove, EncodeMoveUnchecked, DecodeOwned<'static>);
     assert_not_impl_any!(TransparentBox<(u8,)>: Encode, EncodeUnchecked, Decode<'static>);

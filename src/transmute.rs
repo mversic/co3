@@ -28,7 +28,7 @@ disjoint_impls! {
     /// # Safety
     ///
     /// - `Self` and `Self::CType` must be compatbile for a stable ABI (like `extern "C"`)
-    pub unsafe trait CheckedTransmute: ReprC {
+    pub unsafe trait AbiCompatible: ReprC {
         /// Called when transmuting an [`ReprC::CType`] back into [`Self`] to check for trap representations.
         ///
         /// Return `true` only when `target` is a valid representation of `Self`.
@@ -39,7 +39,7 @@ disjoint_impls! {
         unsafe fn is_valid(target: &Self::CType) -> bool;
     }
 
-    unsafe impl<R: CheckedTransmute + ?Sized> CheckedTransmute for &R
+    unsafe impl<R: AbiCompatible + ?Sized> AbiCompatible for &R
     where
         R: RustSpec<Size: Thin, Mutability = Exclusive>,
         Self: ReprC<CType = CRef<<R as ReprC>::CType>>,
@@ -55,7 +55,7 @@ disjoint_impls! {
             unsafe { R::is_valid(&*ptr) }
         }
     }
-    unsafe impl<R: CheckedTransmute + ?Sized> CheckedTransmute for &R
+    unsafe impl<R: AbiCompatible + ?Sized> AbiCompatible for &R
     where
         R: RustSpec<Size: Thin, Mutability = WithInterior, Trap = Robust>,
         Self: ReprC<CType = CRefMut<<R as ReprC>::CType, false>>,
@@ -67,7 +67,7 @@ disjoint_impls! {
     }
 
     #[cfg(feature = "alloc")]
-    unsafe impl<R: CheckedTransmute, S: SizedKind> CheckedTransmute for Box<R>
+    unsafe impl<R: AbiCompatible, S: SizedKind> AbiCompatible for Box<R>
     where
         R: RustSpec<Size = rust_spec::size::Sized<S>, Mutability = Exclusive>,
         Self: ReprC<CType = CBox<<R as ReprC>::CType>>,
@@ -83,7 +83,7 @@ disjoint_impls! {
         }
     }
     #[cfg(feature = "alloc")]
-    unsafe impl<R: CheckedTransmute, S: SizedKind> CheckedTransmute for Box<R>
+    unsafe impl<R: AbiCompatible, S: SizedKind> AbiCompatible for Box<R>
     where
         R: RustSpec<Size = rust_spec::size::Sized<S>, Mutability = WithInterior>,
         Self: ReprC<CType = CBoxCell<<R as ReprC>::CType>>,
@@ -99,7 +99,7 @@ disjoint_impls! {
         }
     }
 
-    unsafe impl<R: CheckedTransmute<CType: Copy> + ReprC, E: ReprC> CheckedTransmute for Result<R, E>
+    unsafe impl<R: AbiCompatible<CType: Copy> + ReprC, E: ReprC> AbiCompatible for Result<R, E>
     where
         R: RustSpec<
             Size = rust_spec::size::Sized<rust_spec::Gt<rust_spec::Zero>>,
@@ -113,7 +113,7 @@ disjoint_impls! {
             unsafe { R::is_valid(target) }
         }
     }
-    unsafe impl<R: ReprC, E: CheckedTransmute<CType: Copy>> CheckedTransmute for Result<R, E>
+    unsafe impl<R: ReprC, E: AbiCompatible<CType: Copy>> AbiCompatible for Result<R, E>
     where
         R: RustSpec<Size = rust_spec::size::Sized<Zero>, Alignment = rust_spec::One>,
         E: RustSpec<
@@ -128,7 +128,7 @@ disjoint_impls! {
         }
     }
 
-    unsafe impl<R: CheckedTransmute + ?Sized> CheckedTransmute for ManuallyDrop<R>
+    unsafe impl<R: AbiCompatible + ?Sized> AbiCompatible for ManuallyDrop<R>
     where
         R: RustSpec<Drop = NoDrop>,
     {
@@ -138,7 +138,7 @@ disjoint_impls! {
         }
     }
 
-    unsafe impl<R: CheckedTransmute + ?Sized> CheckedTransmute for ManuallyDrop<R>
+    unsafe impl<R: AbiCompatible + ?Sized> AbiCompatible for ManuallyDrop<R>
     where
         R: RustSpec<Drop: WithDrop>,
     {
@@ -149,7 +149,7 @@ disjoint_impls! {
     }
 }
 
-unsafe impl<R: CheckedTransmute + ?Sized, const EXCLUSIVE: bool> CheckedTransmute for &mut R
+unsafe impl<R: AbiCompatible + ?Sized, const EXCLUSIVE: bool> AbiCompatible for &mut R
 where
     R: RustSpec<Size: Thin>,
     Self: ReprC<CType = CRefMut<R::CType, EXCLUSIVE>>,
@@ -166,7 +166,7 @@ where
     }
 }
 
-unsafe impl<R: CheckedTransmute<CType: Sized>, const N: usize> CheckedTransmute for [R; N] {
+unsafe impl<R: AbiCompatible<CType: Sized>, const N: usize> AbiCompatible for [R; N] {
     #[inline(always)]
     unsafe fn is_valid(target: &Self::CType) -> bool {
         assert_arr_has_non_zero_len::<N>();
@@ -181,7 +181,7 @@ unsafe impl<R: CheckedTransmute<CType: Sized>, const N: usize> CheckedTransmute 
     }
 }
 
-unsafe impl<R: CheckedTransmute<CType: Sized>> CheckedTransmute for [R] {
+unsafe impl<R: AbiCompatible<CType: Sized>> AbiCompatible for [R] {
     #[inline(always)]
     unsafe fn is_valid(target: &Self::CType) -> bool {
         for item in target {
@@ -194,7 +194,7 @@ unsafe impl<R: CheckedTransmute<CType: Sized>> CheckedTransmute for [R] {
     }
 }
 
-unsafe impl CheckedTransmute for str {
+unsafe impl AbiCompatible for str {
     #[inline(always)]
     unsafe fn is_valid(target: &Self::CType) -> bool {
         let ptr = core::ptr::from_ref(target);
@@ -204,7 +204,7 @@ unsafe impl CheckedTransmute for str {
     }
 }
 
-unsafe impl<R: CheckedTransmute<CType: Sized>> CheckedTransmute for Option<R>
+unsafe impl<R: AbiCompatible<CType: Sized>> AbiCompatible for Option<R>
 where
     R: RustSpec<Niche = WithNiche<Stable>>,
 {
@@ -214,8 +214,8 @@ where
     }
 }
 
-// TODO: Use this somehow to strengthen CheckedTransmute assumptions
-//fn assert_size_and_allignment_match<R: CheckedTransmute<CType: Sized>>() {
+// TODO: Use this somehow to strengthen AbiCompatible assumptions
+//fn assert_size_and_allignment_match<R: AbiCompatible<CType: Sized>>() {
 //    const {
 //        debug_assert!(core::mem::size_of::<R>() == core::mem::size_of::<R::CType>());
 //        debug_assert!(core::mem::align_of::<R>() == core::mem::align_of::<R::CType>());
@@ -241,12 +241,12 @@ mod tests {
     #[test]
     fn manually_drop_validates_inner_representation() {
         let invalid_bool = <bool as Niche>::NICHE;
-        assert!(!unsafe { <ManuallyDrop<bool> as CheckedTransmute>::is_valid(&invalid_bool) });
+        assert!(!unsafe { <ManuallyDrop<bool> as AbiCompatible>::is_valid(&invalid_bool) });
 
         #[cfg(feature = "alloc")]
         {
             let null_box = ManuallyDrop::new(CBox::<u8>::null());
-            assert!(!unsafe { <ManuallyDrop<Box<u8>> as CheckedTransmute>::is_valid(&null_box) });
+            assert!(!unsafe { <ManuallyDrop<Box<u8>> as AbiCompatible>::is_valid(&null_box) });
         }
     }
 
@@ -257,10 +257,10 @@ mod tests {
         let cell = UnsafeCell::new(7_u8);
         let encoded = crate::encode(&cell);
         assert_eq!(encoded.as_ptr(), core::ptr::from_ref(&cell).cast_mut());
-        assert!(unsafe { <&UnsafeCell<u8> as CheckedTransmute>::is_valid(&encoded) });
+        assert!(unsafe { <&UnsafeCell<u8> as AbiCompatible>::is_valid(&encoded) });
 
         let null = CRefMut::<UnsafeCell<u8>, false>::null();
-        assert!(!unsafe { <&UnsafeCell<u8> as CheckedTransmute>::is_valid(&null) });
+        assert!(!unsafe { <&UnsafeCell<u8> as AbiCompatible>::is_valid(&null) });
     }
 
     #[test]

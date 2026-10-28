@@ -8,7 +8,7 @@ use co3::{
     option::ReprCOption,
     primitives::CBool,
     stored::{EmptyStore, EncodeMove, EncodeMoveUnchecked, Store},
-    transmute::CheckedTransmute,
+    transmute::AbiCompatible,
 };
 use static_assertions::{assert_impl_all, assert_not_impl_any};
 // FIXME: Restore these fixtures with the disabled fast-path tests below.
@@ -52,7 +52,7 @@ unsafe impl EncodeMoveUnchecked for RawProbe {
 }
 
 #[cfg(feature = "alloc")]
-unsafe impl CheckedTransmute for RawProbe {
+unsafe impl AbiCompatible for RawProbe {
     unsafe fn is_valid(_: &Self::CType) -> bool {
         true
     }
@@ -98,7 +98,7 @@ impl co3::EncodeUnchecked for UncheckedOnly {}
 
 #[test]
 fn direct_encode_does_not_require_checked_transmute() {
-    assert_not_impl_any!(UncheckedOnly: CheckedTransmute);
+    assert_not_impl_any!(UncheckedOnly: AbiCompatible);
     assert_eq!(unsafe { co3::encode_unchecked(UncheckedOnly(7)) }, 8);
 }
 
@@ -395,7 +395,7 @@ fn derived_representations_preserve_stable_fast_paths() {
 
 #[test]
 fn maybe_uninit_rejects_encoding_an_inner_value_with_a_store() {
-    assert_impl_all!(MaybeUninit<&mut bool>: CheckedTransmute, Decode<'static>);
+    assert_impl_all!(MaybeUninit<&mut bool>: AbiCompatible, Decode<'static>);
     assert_not_impl_any!(MaybeUninit<&mut bool>: Encode);
 }
 
@@ -495,7 +495,7 @@ fn niche_result_without_mut_ref_skips_inner_store() {
 
 #[test]
 fn derived_transparent_mut_bool_syncs_its_store() {
-    assert_impl_all!(TransparentMut<'static>: CheckedTransmute);
+    assert_impl_all!(TransparentMut<'static>: AbiCompatible);
     let mut value = false;
     let mut store = Default::default();
     let encoded = co3::soft_encode(TransparentMut(&mut value), &mut store);
@@ -520,7 +520,7 @@ fn optional_derived_transparent_syncs_only_present_values() {
 
 #[test]
 fn derived_record_mut_bool_syncs_its_field_store() {
-    assert_impl_all!(RecordMut<'static>: CheckedTransmute);
+    assert_impl_all!(RecordMut<'static>: AbiCompatible);
     let mut value = false;
     let mut store = Default::default();
     let encoded = co3::soft_encode(

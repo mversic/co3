@@ -62,7 +62,7 @@ use crate::{
     borrow::{Borrow, BorrowCast, BorrowCastMut, FromBorrow},
     niche::Niche,
     stored::{DecodeOwned, EncodeMove, EncodeMoveUnchecked, EncodeRef, EncodeRefUnchecked},
-    transmute::CheckedTransmute,
+    transmute::AbiCompatible,
 };
 
 macro_rules! impl_tuple {
@@ -389,7 +389,7 @@ macro_rules! impl_tuple {
             type CType = $ffi_ty<$($head::CType,)* $last::CType>;
         }
 
-        unsafe impl<$($head: CheckedTransmute<CType: Copy>,)* $last: CheckedTransmute + ?Sized> CheckedTransmute for $ffi_ty<$($head,)* $last> {
+        unsafe impl<$($head: AbiCompatible<CType: Copy>,)* $last: AbiCompatible + ?Sized> AbiCompatible for $ffi_ty<$($head,)* $last> {
             #[inline(always)]
             #[expect(non_snake_case)]
             unsafe fn is_valid(target: &Self::CType) -> bool {
