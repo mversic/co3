@@ -1195,12 +1195,19 @@ fn gen_type_spec(
         generics,
         fields,
         quote! { co3::rust_spec::Max },
-        quote! { Alignment },
+        quote! { __Alignment },
         quote! { co3::rust_spec::One },
     );
     if repr_alignment.is_some_and(|alignment| alignment.base10_digits() != "1") {
         alignment = quote!(co3::rust_spec::Gt<co3::rust_spec::One>);
     }
+    let (mutability, mutability_bounds) = gen_field_family(
+        generics,
+        fields,
+        quote! { core::ops::Add },
+        quote! { Mutability },
+        quote! { co3::rust_spec::mutability::Exclusive<co3::rust_spec::mutability::WithoutInterior> },
+    );
     let rust_spec_bounds = fields
         .iter()
         .filter(|field| !is_parametrized(field, generics))
@@ -1214,14 +1221,15 @@ fn gen_type_spec(
             #(#rust_spec_bounds,)*
             #(#size_bounds,)*
             #(#alignment_bounds,)*
+            #(#mutability_bounds,)*
             #predicates
         {
             type Layout = co3::rust_spec::Stable;
             type Size = #size;
-            type Alignment = #alignment;
+            type __Alignment = #alignment;
             type Trap = co3::rust_spec::layout::Robust;
             type Niche = co3::rust_spec::niche::WithoutNiche;
-            type Mutability = co3::rust_spec::mutability::Exclusive;
+            type Mutability = #mutability;
             type Drop = co3::rust_spec::drop::NoDrop;
             type Opacity = co3::rust_spec::NonOpaque;
             type __IndirectTrap = co3::rust_spec::layout::Robust;

@@ -2,7 +2,11 @@
 use core::mem::MaybeUninit;
 use core::option::Option as CoreOption;
 
-use rust_spec::{RustSpec, mutability::Exclusive, niche::WithoutNiche};
+use rust_spec::{
+    RustSpec,
+    mutability::{Exclusive, ExclusiveKind},
+    niche::WithoutNiche,
+};
 
 use crate::{
     CFnArg, CFnReturn, CType, Decode, Encode, EncodeUnchecked, ReprC, Thin,
@@ -94,9 +98,10 @@ unsafe impl<T: EncodeMove> EncodeMove for Option<T> {
     }
 }
 
-unsafe impl<'a, T: ReprC<CType: Copy> + 'a> EncodeRefUnchecked<'a> for Option<T>
+unsafe impl<'a, T: ReprC<CType: Copy> + 'a, __Interior: ExclusiveKind> EncodeRefUnchecked<'a>
+    for Option<T>
 where
-    Self: RustSpec<Mutability = Exclusive, Size: Thin> + 'a,
+    Self: RustSpec<Mutability = Exclusive<__Interior>, Size: Thin> + 'a,
     &'a T: EncodeMoveUnchecked<CType = crate::reference::CRef<T::CType>>,
 {
     type SoftStore =
@@ -118,9 +123,9 @@ where
     }
 }
 
-unsafe impl<'a, T: ReprC<CType: Copy> + 'a> EncodeRef<'a> for Option<T>
+unsafe impl<'a, T: ReprC<CType: Copy> + 'a, __Interior: ExclusiveKind> EncodeRef<'a> for Option<T>
 where
-    Self: RustSpec<Mutability = Exclusive, Size: Thin> + 'a,
+    Self: RustSpec<Mutability = Exclusive<__Interior>, Size: Thin> + 'a,
     &'a T: EncodeMove<CType = crate::reference::CRef<T::CType>>,
 {
     type Store = RefSizedEncodeStore<Self, CoreOption<<&'a T as EncodeMove>::Store>>;
@@ -334,7 +339,7 @@ impl<'itm, T: FromBorrow<'itm>> FromBorrow<'itm> for COption<T> {
 unsafe impl<T: RustSpec> RustSpec for COption<T> {
     type Layout = T::Layout;
     type Size = rust_spec::size::Sized<rust_spec::Gt<rust_spec::Zero>>;
-    type Alignment = T::Alignment;
+    type __Alignment = T::__Alignment;
     type Trap = T::Trap;
     type Niche = WithoutNiche;
     type Drop = T::Drop;
@@ -380,9 +385,9 @@ unsafe impl<T: EncodeMoveUnchecked> EncodeMoveUnchecked for COption<T> {
         }
     }
 }
-unsafe impl<'a, T: ReprC<CType: Copy>> EncodeRef<'a> for COption<T>
+unsafe impl<'a, T: ReprC<CType: Copy>, __Interior: ExclusiveKind> EncodeRef<'a> for COption<T>
 where
-    Self: RustSpec<Mutability = Exclusive, Size: Thin> + 'a,
+    Self: RustSpec<Mutability = Exclusive<__Interior>, Size: Thin> + 'a,
     &'a T: EncodeMove<CType = crate::reference::CRef<T::CType>>,
 {
     type Store = RefSizedEncodeStore<Self, CoreOption<<&'a T as EncodeMove>::Store>>;
@@ -408,9 +413,10 @@ where
         })
     }
 }
-unsafe impl<'a, T: ReprC<CType: Copy>> EncodeRefUnchecked<'a> for COption<T>
+unsafe impl<'a, T: ReprC<CType: Copy>, __Interior: ExclusiveKind> EncodeRefUnchecked<'a>
+    for COption<T>
 where
-    Self: RustSpec<Mutability = Exclusive, Size: Thin> + 'a,
+    Self: RustSpec<Mutability = Exclusive<__Interior>, Size: Thin> + 'a,
     &'a T: EncodeMoveUnchecked<CType = crate::reference::CRef<T::CType>>,
 {
     type SoftStore =

@@ -84,6 +84,7 @@ macro_rules! non_zero_derive {
         impl EncodeUnchecked for NonZero<$primitive> {}
         impl Decode<'_> for NonZero<$primitive> {}
 
+
         unsafe impl AbiCompatible for NonZero<$primitive> {
             #[inline(always)]
             unsafe fn is_valid(target: &Self::CType) -> bool {

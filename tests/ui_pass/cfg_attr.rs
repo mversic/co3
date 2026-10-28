@@ -37,8 +37,7 @@ ffi! {
     #![cfg_attr(all(), symbol_prefix = "cfg_attr")]
 
     #[cfg(all())]
-    #[cfg_attr(any(), symbol_name = "unused")]
-    #[cfg_attr(all(), symbol_name = "cfg_attr__value_plain")]
+    #[symbol_name = "cfg_attr__value_plain"]
     fn value_plain(#[cfg(all())] value: Value) -> u8;
 }
 
@@ -48,8 +47,7 @@ ffi! {
     #![cfg_attr(any(), symbol_prefix = "unused")]
     #![cfg_attr(all(), symbol_prefix = "cfg_attr")]
 
-    #[cfg_attr(any(), symbol_name = "unused")]
-    #[cfg_attr(all(), symbol_name = "cfg_attr__value_plain")]
+    #[symbol_name = "cfg_attr__value_plain"]
     fn imported_value_plain(value: Value) -> u8;
 }
 
@@ -66,14 +64,14 @@ ffi! {
     #![cfg_attr(all(), unsafe(export("C")))]
 
     #[symbol_name = "cfg_attr__value_soft"]
-    fn value_soft(#[cfg_attr(all(), soft)] value: &(u8,)) -> u8;
+    fn value_soft(#[soft] value: &(u8,)) -> u8;
 }
 
 ffi! {
     #![cfg_attr(all(), unsafe(extern("C")))]
 
     #[symbol_name = "cfg_attr__value_soft"]
-    fn imported_value_soft(#[cfg_attr(all(), soft)] value: &(u8,)) -> u8;
+    fn imported_value_soft(#[soft] value: &(u8,)) -> u8;
 }
 
 #[derive(RustSpec)]
@@ -86,7 +84,7 @@ ffi! {
     #![symbol_prefix = "cfg_attr"]
 
     #[cfg(all())]
-    #[cfg_attr(all(), tag(u8))]
+    #[tag(u8)]
     type ExportOpaque;
 }
 
@@ -98,7 +96,7 @@ mod imported {
 
         #![symbol_prefix = "cfg_attr"]
 
-        #[cfg_attr(all(), tag(u8))]
+        #[tag(u8)]
         type Opaque;
     }
 }

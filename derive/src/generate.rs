@@ -3407,11 +3407,11 @@ fn gen_extern_type_impls(
             unsafe impl #impl_generics co3::rust_spec::RustSpec for #ident #ty_generics #where_clause {
                 type Layout = co3::rust_spec::Stable;
                 type Size = co3::rust_spec::size::ExternTypeLike;
-                type Alignment = co3::rust_spec::One;
+                type __Alignment = co3::rust_spec::One;
                 type Trap = co3::rust_spec::layout::Robust;
                 type Niche = co3::rust_spec::niche::WithoutNiche;
                 type Drop = co3::rust_spec::drop::NoDrop;
-                type Mutability = co3::rust_spec::mutability::Exclusive;
+                type Mutability = co3::rust_spec::mutability::Exclusive<co3::rust_spec::mutability::WithoutInterior>;
                 type Opacity = co3::rust_spec::Opaque;
                 type __IndirectTrap = co3::rust_spec::layout::Robust;
             }
@@ -3441,11 +3441,11 @@ fn gen_owned_repr_c_impls(ident: &syn::Ident, generics: &syn::Generics) -> Token
         unsafe impl #impl_generics #co3::rust_spec::RustSpec for #owned_repr_c_name #ty_generics #where_clause {
             type Layout = #co3::rust_spec::Stable;
             type Size = #co3::rust_spec::size::Sized<#co3::rust_spec::Gt<#co3::rust_spec::Zero>>;
-            type Alignment = <usize as #co3::rust_spec::RustSpec>::Alignment;
+            type __Alignment = <usize as #co3::rust_spec::RustSpec>::__Alignment;
             type Trap = #co3::rust_spec::layout::Robust;
             type Niche = #co3::rust_spec::niche::WithoutNiche;
             type Drop = #co3::rust_spec::drop::NoDrop;
-            type Mutability = #co3::rust_spec::mutability::Exclusive;
+            type Mutability = #co3::rust_spec::mutability::Exclusive<#co3::rust_spec::mutability::WithoutInterior>;
             type Opacity = #co3::rust_spec::NonOpaque;
             type __IndirectTrap = #co3::rust_spec::layout::Robust;
         }
@@ -3484,6 +3484,7 @@ fn gen_owned_repr_c_impls(ident: &syn::Ident, generics: &syn::Generics) -> Token
         impl #impl_generics #co3::Encode for #owned_repr_c_name #ty_generics #where_clause {}
         impl #impl_generics #co3::EncodeUnchecked for #owned_repr_c_name #ty_generics #where_clause {}
         impl #impl_generics #co3::Decode<'_> for #owned_repr_c_name #ty_generics #where_clause {}
+
 
         unsafe impl #impl_generics #co3::transmute::AbiCompatible for #owned_repr_c_name #ty_generics #where_clause {
             #[inline(always)]
@@ -3666,10 +3667,10 @@ fn gen_owned_extern_type_impls(
         unsafe impl #impl_generics #co3::rust_spec::RustSpec for #owned_ident #ty_generics #where_clause {
             type Layout = #co3::rust_spec::Stable;
             type Size = #co3::rust_spec::size::Sized<#co3::rust_spec::Gt<#co3::rust_spec::Zero>>;
-            type Alignment = <usize as #co3::rust_spec::RustSpec>::Alignment;
+            type __Alignment = <usize as #co3::rust_spec::RustSpec>::__Alignment;
             type Trap = #co3::rust_spec::layout::NonRobust;
             type Niche = #co3::rust_spec::niche::WithNiche<#co3::rust_spec::Stable>;
-            type Mutability = #co3::rust_spec::mutability::Exclusive;
+            type Mutability = #co3::rust_spec::mutability::Exclusive<#co3::rust_spec::mutability::WithoutInterior>;
             type Drop = #co3::rust_spec::drop::CustomDrop<#co3::rust_spec::drop::NoDrop>;
             type Opacity = #co3::rust_spec::NonOpaque;
             type __IndirectTrap = #co3::rust_spec::layout::Robust;
@@ -3690,6 +3691,7 @@ fn gen_owned_extern_type_impls(
         #eq_impl
         #partial_ord_impl
         #ord_impl
+
 
         unsafe impl #impl_generics #co3::transmute::AbiCompatible for #owned_ident #ty_generics #where_clause {
             #[inline(always)]

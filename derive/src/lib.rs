@@ -493,7 +493,7 @@ pub fn tag_derive(item: syn::DeriveInput) -> Result<TokenStream> {
 pub fn ffi(input: TokenStream) -> Result<TokenStream> {
     let cfg_attr_variants = expand_cfg_attr(input.clone())?;
 
-    if cfg_attr_variants.len() == 1 {
+    if cfg_attr_variants.len() == 1 && cfg_attr_variants[0].cfgs.is_empty() {
         let ParsedInput {
             kind,
             abi,
@@ -581,7 +581,7 @@ pub fn ffi(input: TokenStream) -> Result<TokenStream> {
 #[proc_macro]
 pub fn raw(input: TokenStream) -> Result<TokenStream> {
     let cfg_attr_variants = expand_cfg_attr(input.clone())?;
-    if cfg_attr_variants.len() != 1 {
+    if cfg_attr_variants.len() != 1 || !cfg_attr_variants[0].cfgs.is_empty() {
         let co3 = co3_path();
         return Ok(emit_macro_invocations(
             quote!(#co3::raw),

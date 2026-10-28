@@ -62,7 +62,9 @@ fn assert_same_layout<T: ReprC<CType: Sized>>() {
     );
 }
 
-fn assert_nontrivial_alignment<T: RustSpec<Alignment = co3::rust_spec::Gt<co3::rust_spec::One>>>() {
+fn assert_nontrivial_alignment<
+    T: RustSpec<__Alignment = co3::rust_spec::Gt<co3::rust_spec::One>>,
+>() {
 }
 
 #[test]
@@ -121,17 +123,17 @@ fn generated_view_structs_expose_fields_methods() {
 #[test]
 fn generated_view_keeps_owner_axes_and_recomputes_mutability() {
     assert_impl_all!(InteriorMutableField:
-        RustSpec<Mutability = co3::rust_spec::mutability::WithInterior>,
+        RustSpec<Mutability = co3::rust_spec::mutability::WithInterior<co3::rust_spec::layout::Robust>>,
     );
     assert_impl_all!(InteriorMutableFieldView<'static>:
         RustSpec<
             Layout = <InteriorMutableField as RustSpec>::Layout,
             Size = <InteriorMutableField as RustSpec>::Size,
-            Alignment = <InteriorMutableField as RustSpec>::Alignment,
+            __Alignment = <InteriorMutableField as RustSpec>::__Alignment,
             Trap = <InteriorMutableField as RustSpec>::Trap,
             Niche = <InteriorMutableField as RustSpec>::Niche,
             Drop = co3::rust_spec::drop::NoDrop,
-            Mutability = co3::rust_spec::mutability::WithInterior,
+            Mutability = co3::rust_spec::mutability::WithInterior<co3::rust_spec::layout::Robust>,
             __IndirectTrap = <InteriorMutableField as RustSpec>::__IndirectTrap,
         >,
     );

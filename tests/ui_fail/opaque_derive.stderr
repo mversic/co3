@@ -10,18 +10,17 @@ error: `#[derive(...)]` is not supported on opaque or extern type declarations
 16 |     #[derive(Debug)]
    |     ^^^^^^^^^^^^^^^^
 
-error: `#[derive(...)]` is not supported on opaque or extern type declarations
-  --> tests/ui_fail/opaque_derive.rs:20:1
+error[E0774]: `derive` may only be applied to `struct`s, `enum`s and `union`s
+  --> tests/ui_fail/opaque_derive.rs:23:23
    |
 20 | / ffi! {
 21 | |     #![unsafe(extern("C"))]
 22 | |
 23 | |     #[cfg_attr(all(), derive(Debug))]
+   | |                       ^^^^^^^^^^^^^ not applicable here
 24 | |     type Conditional;
 25 | | }
-   | |_^
-   |
-   = note: this error originates in the macro `ffi` (in Nightly builds, run with -Z macro-backtrace for more info)
+   | |_- not a `struct`, `enum` or `union`
 
 error: `#[derive(...)]` is not supported on opaque or extern type declarations
   --> tests/ui_fail/opaque_derive.rs:31:5

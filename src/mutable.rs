@@ -8,6 +8,9 @@ use core::{
     mem::ManuallyDrop,
 };
 
+#[cfg(feature = "alloc")]
+use rust_spec::{RustSpec, size::SizedKind};
+
 /// Encodes a mutable reference, retaining converted storage and writeback state.
 ///
 /// # Safety
@@ -304,14 +307,11 @@ where
 }
 
 #[cfg(feature = "alloc")]
-unsafe impl<
-    'a,
-    'b: 'a,
-    R: ReprC + rust_spec::RustSpec<Size = rust_spec::size::Sized<K>>,
-    K: rust_spec::size::SizedKind,
-> EncodeMutUnchecked<'a> for &'b mut R
+unsafe impl<'a, 'b: 'a, R: ReprC + RustSpec<Size = rust_spec::size::Sized<K>>, K: SizedKind>
+    EncodeMutUnchecked<'a> for &'b mut R
 where
     R: EncodeMutUnchecked<'a>,
+    Self: RustSpec<Size: crate::Thin>,
 {
     type SoftStore = crate::sync::RefMutReferenceEncodeStore<
         crate::reference::CRefMut<R::CType, true>,
@@ -329,14 +329,11 @@ where
 }
 
 #[cfg(feature = "alloc")]
-unsafe impl<
-    'a,
-    'b: 'a,
-    R: ReprC + rust_spec::RustSpec<Size = rust_spec::size::Sized<K>>,
-    K: rust_spec::size::SizedKind,
-> EncodeMut<'a> for &'b mut R
+unsafe impl<'a, 'b: 'a, R: ReprC + RustSpec<Size = rust_spec::size::Sized<K>>, K: SizedKind>
+    EncodeMut<'a> for &'b mut R
 where
     R: EncodeMut<'a>,
+    Self: RustSpec<Size: crate::Thin>,
 {
     type Store = crate::sync::RefMutReferenceEncodeStore<
         crate::reference::CRefMut<R::CType, true>,

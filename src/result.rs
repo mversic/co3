@@ -2,7 +2,12 @@
 use core::result::Result as CoreResult;
 use core::{mem::MaybeUninit, ops::Add};
 
-use rust_spec::{RustSpec, mutability::Exclusive, niche::WithoutNiche};
+use rust_spec::{
+    RustSpec,
+    drop::DropKind,
+    mutability::{Exclusive, ExclusiveKind},
+    niche::WithoutNiche,
+};
 
 use crate::EncodeUnchecked;
 use crate::sync::RefSizedEncodeStore;
@@ -127,10 +132,10 @@ unsafe impl<T: EncodeMove<CType: Copy>, E: EncodeMove<CType: Copy>> EncodeMove f
     }
 }
 
-unsafe impl<'a, T: ReprC<CType: Copy> + 'a, E: ReprC<CType: Copy> + 'a> EncodeRefUnchecked<'a>
-    for Result<T, E>
+unsafe impl<'a, T: ReprC<CType: Copy> + 'a, E: ReprC<CType: Copy> + 'a, __Interior: ExclusiveKind>
+    EncodeRefUnchecked<'a> for Result<T, E>
 where
-    Self: RustSpec<Mutability = Exclusive, Size: Thin> + 'a,
+    Self: RustSpec<Mutability = Exclusive<__Interior>, Size: Thin> + 'a,
     &'a T: EncodeMoveUnchecked<CType = CRef<T::CType>>,
     &'a E: EncodeMoveUnchecked<CType = CRef<E::CType>>,
 {
@@ -165,10 +170,10 @@ where
     }
 }
 
-unsafe impl<'a, T: ReprC<CType: Copy> + 'a, E: ReprC<CType: Copy> + 'a> EncodeRef<'a>
-    for Result<T, E>
+unsafe impl<'a, T: ReprC<CType: Copy> + 'a, E: ReprC<CType: Copy> + 'a, __Interior: ExclusiveKind>
+    EncodeRef<'a> for Result<T, E>
 where
-    Self: RustSpec<Mutability = Exclusive, Size: Thin> + 'a,
+    Self: RustSpec<Mutability = Exclusive<__Interior>, Size: Thin> + 'a,
     &'a T: EncodeMove<CType = CRef<T::CType>>,
     &'a E: EncodeMove<CType = CRef<E::CType>>,
 {
@@ -372,14 +377,14 @@ impl<T: Copy, E: Copy> Clone for CResult<T, E> {
 unsafe impl<T: RustSpec + Copy, E: RustSpec + Copy> RustSpec for CResult<T, E>
 where
     T: RustSpec<Layout: Add<<E as RustSpec>::Layout>, Trap: Add<E::Trap>>,
-    T: RustSpec<Drop: Add<E::Drop, Output: rust_spec::drop::DropKind>>,
-    T::Alignment: rust_spec::Max<E::Alignment>,
+    T: RustSpec<Drop: Add<E::Drop, Output: DropKind>>,
+    T::__Alignment: rust_spec::Max<E::__Alignment>,
     T::Mutability: Add<E::Mutability>,
     T::__IndirectTrap: Add<E::__IndirectTrap>,
 {
     type Layout = <T::Layout as Add<E::Layout>>::Output;
     type Size = rust_spec::size::Sized<rust_spec::Gt<rust_spec::Zero>>;
-    type Alignment = <T::Alignment as rust_spec::Max<E::Alignment>>::Output;
+    type __Alignment = <T::__Alignment as rust_spec::Max<E::__Alignment>>::Output;
     type Trap = <T::Trap as Add<E::Trap>>::Output;
     type Niche = WithoutNiche;
     type Drop = <T::Drop as Add<E::Drop>>::Output;
@@ -506,10 +511,14 @@ where
         }
     }
 }
-unsafe impl<'a, T: ReprC<CType: Copy> + Copy, E: ReprC<CType: Copy> + Copy> EncodeRef<'a>
-    for CResult<T, E>
+unsafe impl<
+    'a,
+    T: ReprC<CType: Copy> + Copy,
+    E: ReprC<CType: Copy> + Copy,
+    __Interior: ExclusiveKind,
+> EncodeRef<'a> for CResult<T, E>
 where
-    Self: RustSpec<Mutability = Exclusive, Size: Thin> + 'a,
+    Self: RustSpec<Mutability = Exclusive<__Interior>, Size: Thin> + 'a,
     Self: ReprC<CType = CResult<T::CType, E::CType>>,
     &'a T: EncodeMove<CType = CRef<<T as ReprC>::CType>>,
     &'a E: EncodeMove<CType = CRef<<E as ReprC>::CType>>,
@@ -552,10 +561,14 @@ where
         })
     }
 }
-unsafe impl<'a, T: ReprC<CType: Copy> + Copy, E: ReprC<CType: Copy> + Copy> EncodeRefUnchecked<'a>
-    for CResult<T, E>
+unsafe impl<
+    'a,
+    T: ReprC<CType: Copy> + Copy,
+    E: ReprC<CType: Copy> + Copy,
+    __Interior: ExclusiveKind,
+> EncodeRefUnchecked<'a> for CResult<T, E>
 where
-    Self: RustSpec<Mutability = Exclusive, Size: Thin> + 'a,
+    Self: RustSpec<Mutability = Exclusive<__Interior>, Size: Thin> + 'a,
     Self: ReprC<CType = CResult<T::CType, E::CType>>,
     &'a T: EncodeMoveUnchecked<CType = CRef<<T as ReprC>::CType>>,
     &'a E: EncodeMoveUnchecked<CType = CRef<<E as ReprC>::CType>>,

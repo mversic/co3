@@ -13,7 +13,7 @@ use disjoint_impls::disjoint_impls;
 use rust_spec::{RustSpec, drop::NoDrop};
 
 use crate::{
-    CType, ReprC, WithDrop,
+    CType, NeedsDrop, ReprC,
     slice::{CWideRef, CWideRefMut},
     tuple::ReprCTuple2,
     wide::{Wide, WideHeader},
@@ -168,7 +168,7 @@ disjoint_impls! {
 
     impl<T: Unpack2<Part1, Part2>, Part1: CType, Part2: CType> Unpack2<Part1, Part2> for ManuallyDrop<T>
     where
-        T: RustSpec<Drop: WithDrop>,
+        T: RustSpec<Drop: NeedsDrop>,
     {
         type Error = T::Error;
 
@@ -232,7 +232,7 @@ disjoint_impls! {
 
     impl<T: Pack2<Part1, Part2>, Part1: CType, Part2: CType> Pack2<Part1, Part2> for ManuallyDrop<T>
     where
-        T: RustSpec<Drop: WithDrop>,
+        T: RustSpec<Drop: NeedsDrop>,
     {
         type Error = T::Error;
 

@@ -162,7 +162,7 @@ fn gen_import_wrapper(
                 store: &'__co3_static_d mut <#ty as #co3::stored::DecodeOwned<'__co3_static_d>>::Store,
             ) -> Option<#ty>
             where
-                for<'_dummy> #ty: #co3::Decode<'__co3_static_d>,
+                for<'_dummy> #ty: #co3::Decode<'__co3_static_d> + Copy,
                 <#ty as #co3::ReprC>::CType: Copy,
             {
                 let source = unsafe { core::ptr::read(core::ptr::addr_of!(#raw_ident)) };
@@ -177,7 +177,8 @@ fn gen_import_wrapper(
                 store: &'__co3_static_d mut <#ty as #co3::stored::DecodeOwned<'__co3_static_d>>::Store,
             ) -> Option<#ty>
             where
-                for<'_dummy> #ty: #co3::Decode<'__co3_static_d>,
+                for<'_dummy> #ty: #co3::Decode<'__co3_static_d> + #co3::transmute::AbiCompatible + Copy,
+                for<'_dummy> <#ty as #co3::rust_spec::RustSpec>::Mutability: __Co3InteriorTrap<Trap = #co3::rust_spec::layout::Robust>,
                 <#ty as #co3::ReprC>::CType: Copy,
             {
                 let source = unsafe { #raw_ident };
@@ -190,7 +191,7 @@ fn gen_import_wrapper(
         quote! {
             #[inline]
             pub unsafe fn read(&self) -> Option<#ty>
-            where #decode_bounds
+            where for<'_dummy> #ty: Copy, #decode_bounds
             {
                 let source = unsafe { core::ptr::read(core::ptr::addr_of!(#raw_ident)) };
                 unsafe { #decode }
@@ -200,7 +201,10 @@ fn gen_import_wrapper(
         quote! {
             #[inline]
             pub fn read(&self) -> Option<#ty>
-            where #decode_bounds
+            where
+                for<'_dummy> <#ty as #co3::rust_spec::RustSpec>::Mutability: __Co3InteriorTrap<Trap = #co3::rust_spec::layout::Robust>,
+                for<'_dummy> #ty: #co3::transmute::AbiCompatible + Copy,
+                #decode_bounds
             {
                 let source = unsafe { #raw_ident };
                 unsafe { #decode }
@@ -213,7 +217,8 @@ fn gen_import_wrapper(
             #[inline]
             pub fn get(&self) -> Option<&#ty>
             where
-                for<'_dummy> #ty: #co3::rust_spec::RustSpec<Mutability = #co3::rust_spec::mutability::Exclusive> + #co3::transmute::AbiCompatible + Sync,
+                for<'_dummy> <#ty as #co3::rust_spec::RustSpec>::Mutability: __Co3InteriorTrap<Trap = #co3::rust_spec::layout::Robust>,
+                for<'_dummy> #ty: #co3::transmute::AbiCompatible + Sync,
             {
                 let valid = unsafe {
                     <#ty as #co3::transmute::AbiCompatible>::is_valid(
@@ -255,14 +260,38 @@ fn gen_import_wrapper(
         }
     });
 
+    let interior_trap = (!mutable).then(|| {
+        quote! {
+            trait __Co3InteriorTrap {
+                type Trap;
+            }
+            impl __Co3InteriorTrap for #co3::rust_spec::mutability::WithoutInterior {
+                type Trap = #co3::rust_spec::layout::Robust;
+            }
+            impl<R> __Co3InteriorTrap for #co3::rust_spec::mutability::WithInterior<R> {
+                type Trap = R;
+            }
+            impl<I: #co3::rust_spec::mutability::ExclusiveKind + __Co3InteriorTrap>
+                __Co3InteriorTrap for #co3::rust_spec::mutability::Exclusive<I>
+            {
+                type Trap = I::Trap;
+            }
+        }
+    });
+
     quote! {
         #definition
-        impl #wrapper_ident {
-            #direct_access
-            #soft_read
-            #read
-            #mutable_methods
-        }
+        const _: () = {
+            #interior_trap
+            // This bound is intentionally inaccessible outside the expansion.
+            #[allow(private_bounds)]
+            impl #wrapper_ident {
+                #direct_access
+                #soft_read
+                #read
+                #mutable_methods
+            }
+        };
         #value
     }
 }

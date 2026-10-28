@@ -188,6 +188,7 @@ macro_rules! raw_pointer_derive {
         impl<R: CType + ?Sized> $crate::EncodeUnchecked for *$mutability R {}
         impl<R: CType + ?Sized> Decode<'_> for *$mutability R {}
 
+
         unsafe impl<R: CType + ?Sized> AbiCompatible for *$mutability R
         where
             R: rust_spec::RustSpec<Size: crate::Thin>,
@@ -371,6 +372,7 @@ macro_rules! fieldless_enum_derive {
         impl Encode for $src {}
         impl $crate::EncodeUnchecked for $src {}
         impl Decode<'_> for $src {}
+
 
         unsafe impl AbiCompatible for $src {
             #[inline(always)]
