@@ -17,6 +17,7 @@ use rust_spec::{
 #[cfg(feature = "alloc")]
 use rust_spec::{Stable, Unstable, layout::Robust, mutability::WithInterior};
 
+use crate::transmute::AbiCompatible;
 use crate::{
     CType, ReprC,
     niche::Niche,
@@ -29,7 +30,7 @@ use crate::{
     wide::{PointeeData, Wide, WideHeader},
 };
 #[cfg(feature = "alloc")]
-use crate::{boxed::FromWideBox, sync::RefWideEncodeStore, transmute::AbiCompatible};
+use crate::{boxed::FromWideBox, sync::RefWideEncodeStore};
 disjoint_impls! {
     /// Encodes the contents of a shared reference without transferring ownership.
     ///
@@ -427,6 +428,49 @@ disjoint_impls! {
         }
     }
 
+
+
+    unsafe impl<
+        'a,
+        T: AbiCompatible<CType: CType + Sized> + 'a,
+        const N: usize,
+    > EncodeRefUnchecked<'a> for [T; N]
+    where
+        T: RustSpec<Layout = rust_spec::Stable>,
+        &'a Self: ReprC<CType = CRef<[<T as ReprC>::CType; N]>>,
+        &'a T: EncodeMoveUnchecked + ReprC<CType = CRef<<T as ReprC>::CType>>,
+    {
+        type SoftStore = ();
+        unsafe fn encode_ref_unchecked(&'a self, _: &mut ()) -> <&'a Self as ReprC>::CType {
+            crate::assert_arr_has_non_zero_len::<N>();
+            // SAFETY: Array layout preserves the ABI-compatible element layout.
+            // Only the pointer is converted; no element is read or copied.
+            unsafe { CRef::from_raw(core::ptr::from_ref(self).cast()) }
+        }
+    }
+    unsafe impl<'a, T: ReprC<CType: Copy> + 'a, const N: usize>
+        EncodeRefUnchecked<'a> for [T; N]
+    where
+        T: RustSpec<Layout = rust_spec::Unstable>,
+        &'a Self: ReprC<CType = CRef<[<T as ReprC>::CType; N]>>,
+        &'a T: EncodeMoveUnchecked + ReprC<CType = CRef<<T as ReprC>::CType>>,
+    {
+        type SoftStore = RefSizedEncodeStore<
+            Self,
+            crate::sync::ArrayStore<<&'a T as EncodeMoveUnchecked>::SoftStore, N>,
+        >;
+        unsafe fn encode_ref_unchecked(
+            &'a self,
+            store: &mut Self::SoftStore,
+        ) -> <&'a Self as ReprC>::CType {
+            store.encode(|fields| {
+                crate::assert_arr_has_non_zero_len::<N>();
+                core::array::from_fn(|i| unsafe {
+                    crate::stored::encode_ref_field_unchecked(&self[i], &mut fields.0[i])
+                })
+            })
+        }
+    }
 }
 
 disjoint_impls! {
@@ -750,6 +794,42 @@ disjoint_impls! {
         }
     }
 
+
+
+    unsafe impl<
+        'a,
+        T: AbiCompatible<CType: CType + Sized> + 'a,
+        const N: usize,
+    > EncodeRef<'a> for [T; N]
+    where
+        T: RustSpec<Layout = rust_spec::Stable>,
+        &'a Self: ReprC<CType = CRef<[<T as ReprC>::CType; N]>>,
+        &'a T: EncodeMove + ReprC<CType = CRef<<T as ReprC>::CType>>,
+    {
+        type Store = ();
+        fn encode_ref(&'a self, _: &mut ()) -> <&'a Self as ReprC>::CType {
+            crate::assert_arr_has_non_zero_len::<N>();
+            // SAFETY: Array layout preserves the ABI-compatible element layout.
+            // Only the pointer is converted; no element is read or copied.
+            unsafe { CRef::from_raw(core::ptr::from_ref(self).cast()) }
+        }
+    }
+    unsafe impl<'a, T: ReprC<CType: Copy> + 'a, const N: usize> EncodeRef<'a>
+        for [T; N]
+    where
+        T: RustSpec<Layout = rust_spec::Unstable>,
+        &'a Self: ReprC<CType = CRef<[<T as ReprC>::CType; N]>>,
+        &'a T: EncodeMove + ReprC<CType = CRef<<T as ReprC>::CType>>,
+    {
+        type Store =
+            RefSizedEncodeStore<Self, crate::sync::ArrayStore<<&'a T as EncodeMove>::Store, N>>;
+        fn encode_ref(&'a self, store: &mut Self::Store) -> <&'a Self as ReprC>::CType {
+            store.encode(|fields| {
+                crate::assert_arr_has_non_zero_len::<N>();
+                core::array::from_fn(|i| crate::stored::encode_ref_field(&self[i], &mut fields.0[i]))
+            })
+        }
+    }
 }
 
 fn encode_shared_result<'a, R: ReprC<CType: Copy> + 'a, E: ReprC<CType: Copy> + 'a>(
@@ -773,44 +853,6 @@ where
             };
             CResult::Err(crate::stored::encode_ref_field(err, store))
         }
-    }
-}
-
-unsafe impl<'a, T: ReprC<CType: Copy> + 'a, const N: usize, __Interior: ExclusiveKind>
-    EncodeRefUnchecked<'a> for [T; N]
-where
-    Self: RustSpec<Mutability = Exclusive<__Interior>, Size: crate::Thin>,
-    &'a T: EncodeMoveUnchecked + ReprC<CType = CRef<<T as ReprC>::CType>>,
-{
-    type SoftStore = RefSizedEncodeStore<
-        Self,
-        crate::sync::ArrayStore<<&'a T as EncodeMoveUnchecked>::SoftStore, N>,
-    >;
-    unsafe fn encode_ref_unchecked(
-        &'a self,
-        store: &mut Self::SoftStore,
-    ) -> <&'a Self as ReprC>::CType {
-        store.encode(|fields| {
-            crate::assert_arr_has_non_zero_len::<N>();
-            core::array::from_fn(|i| unsafe {
-                crate::stored::encode_ref_field_unchecked(&self[i], &mut fields.0[i])
-            })
-        })
-    }
-}
-unsafe impl<'a, T: ReprC<CType: Copy> + 'a, const N: usize, __Interior: ExclusiveKind> EncodeRef<'a>
-    for [T; N]
-where
-    Self: RustSpec<Mutability = Exclusive<__Interior>, Size: crate::Thin>,
-    &'a T: EncodeMove + ReprC<CType = CRef<<T as ReprC>::CType>>,
-{
-    type Store =
-        RefSizedEncodeStore<Self, crate::sync::ArrayStore<<&'a T as EncodeMove>::Store, N>>;
-    fn encode_ref(&'a self, store: &mut Self::Store) -> <&'a Self as ReprC>::CType {
-        store.encode(|fields| {
-            crate::assert_arr_has_non_zero_len::<N>();
-            core::array::from_fn(|i| crate::stored::encode_ref_field(&self[i], &mut fields.0[i]))
-        })
     }
 }
 

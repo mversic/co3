@@ -23,21 +23,28 @@ use crate::{
     utf8::Utf8Str,
 };
 
-/// Robustness of interior-mutable storage reachable from a mutability axis.
-/// Used to gate validation under shared access, independently of the value's traps.
-pub(crate) trait InteriorTrap {
-    type Trap;
+// The trait is public inside a private module so associated-type projections
+// in conversion impls are legal without exposing the helper to callers.
+mod interior {
+    use super::{Exclusive, ExclusiveKind, Robust, WithInterior, WithoutInterior};
+    /// Robustness of interior-mutable storage reachable from a mutability axis.
+    /// Used to gate validation under shared access, independently of the value's traps.
+    pub trait InteriorTrap {
+        type Trap;
+    }
+
+    impl InteriorTrap for WithoutInterior {
+        type Trap = Robust;
+    }
+    impl<R> InteriorTrap for WithInterior<R> {
+        type Trap = R;
+    }
+    impl<I: ExclusiveKind + InteriorTrap> InteriorTrap for Exclusive<I> {
+        type Trap = I::Trap;
+    }
 }
 
-impl InteriorTrap for WithoutInterior {
-    type Trap = Robust;
-}
-impl<R> InteriorTrap for WithInterior<R> {
-    type Trap = R;
-}
-impl<I: ExclusiveKind + InteriorTrap> InteriorTrap for Exclusive<I> {
-    type Trap = I::Trap;
-}
+pub(crate) use interior::InteriorTrap;
 
 disjoint_impls! {
     /// Type that can be **safely transmuted** into its C representation.
@@ -285,6 +292,25 @@ where
 //        debug_assert!(core::mem::align_of::<R>() == core::mem::align_of::<R::CType>());
 //    };
 //}
+
+/// Move a value between layout-compatible representations without borrowing
+/// or reading its fields, including any interior-mutable fields.
+///
+/// # Safety
+/// Both types must have compatible layouts and the source must be valid as T.
+/// Ownership and any lifetime/aliasing obligations must transfer to the result.
+pub(crate) unsafe fn transmute_owned<S, T>(source: S) -> T {
+    const {
+        assert!(core::mem::size_of::<S>() == core::mem::size_of::<T>());
+        assert!(core::mem::align_of::<S>() == core::mem::align_of::<T>());
+    }
+    union Value<S, T> {
+        source: ManuallyDrop<S>,
+        target: ManuallyDrop<T>,
+    }
+    let source = Value { source: ManuallyDrop::new(source)};
+    unsafe { ManuallyDrop::into_inner(source.target) }
+}
 
 #[cfg(test)]
 mod tests {

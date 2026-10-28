@@ -1272,3 +1272,6 @@ mod tests {
         assert_eq!(tuples[0].0, 100);
     }
 }
+
+#[cfg(test)]
+mod transmute_tests;

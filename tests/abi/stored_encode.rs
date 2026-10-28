@@ -113,8 +113,8 @@ impl Store for DirectState {
     }
 }
 
+// Deliberately unstable: exercise field conversion and its auxiliary store.
 #[derive(co3::rust_spec::RustSpec)]
-#[repr(transparent)]
 struct StoredDirect(u8);
 
 impl co3::ReprC for StoredDirect {
