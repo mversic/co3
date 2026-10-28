@@ -454,9 +454,17 @@ disjoint_impls! {
         }
     }
 
+    unsafe impl<R> EncodeMoveUnchecked for ManuallyDrop<R>
+    where R: RustSpec<Layout = Stable>, Self: AbiCompatible<CType: Sized>,
+    {
+        type SoftStore = ();
+        unsafe fn soft_encode_unchecked(self, (): &mut ()) -> Self::CType {
+            unsafe { core::mem::transmute_copy(&self) }
+        }
+    }
     unsafe impl<R: EncodeMoveUnchecked> EncodeMoveUnchecked for ManuallyDrop<R>
     where
-        R: RustSpec<Drop = NoDrop>,
+        R: RustSpec<Layout = Unstable, Drop = NoDrop>,
     {
         type SoftStore = R::SoftStore;
 
@@ -467,7 +475,7 @@ disjoint_impls! {
     }
     unsafe impl<R: EncodeMoveUnchecked> EncodeMoveUnchecked for ManuallyDrop<R>
     where
-        R: RustSpec<Drop: WithDrop>,
+        R: RustSpec<Layout = Unstable, Drop: WithDrop>,
     {
         type SoftStore = R::SoftStore;
 
@@ -1025,9 +1033,17 @@ disjoint_impls! {
         }
     }
 
+    unsafe impl<R> EncodeMove for ManuallyDrop<R>
+    where R: RustSpec<Layout = Stable>, Self: AbiCompatible<CType: Sized>,
+    {
+        type Store = ();
+        fn soft_encode<'itm>(self, (): &mut ()) -> Self::CType where Self: 'itm {
+            unsafe { self.soft_encode_unchecked(&mut ()) }
+        }
+    }
     unsafe impl<R: EncodeMove> EncodeMove for ManuallyDrop<R>
     where
-        R: RustSpec<Drop = NoDrop>,
+        R: RustSpec<Layout = Unstable, Drop = NoDrop>,
     {
         type Store = R::Store;
 
@@ -1042,7 +1058,7 @@ disjoint_impls! {
 
     unsafe impl<R: EncodeMove> EncodeMove for ManuallyDrop<R>
     where
-        R: RustSpec<Drop: WithDrop>,
+        R: RustSpec<Layout = Unstable, Drop: WithDrop>,
     {
         type Store = R::Store;
 
@@ -1847,9 +1863,27 @@ disjoint_impls! {
         }
     }
 
+    unsafe impl<'d, R> DecodeOwned<'d> for ManuallyDrop<R>
+    where
+        R: RustSpec<Layout = Stable, Mutability = Exclusive>,
+        Self: AbiCompatible<CType: Sized>,
+    {
+        type Store = ();
+
+        unsafe fn soft_decode<'itm: 'd>(source: Self::CType, (): &'itm mut ()) -> Option<Self> {
+            if !unsafe { Self::is_valid(&source) } { return None; }
+            Some(unsafe { Self::soft_decode_unchecked(source, &mut ()) })
+        }
+
+        unsafe fn soft_decode_unchecked<'itm: 'd>(source: Self::CType, (): &'itm mut ()) -> Self {
+            let source = ManuallyDrop::new(source);
+            unsafe { core::mem::transmute_copy(&source) }
+        }
+    }
+
     unsafe impl<'d, R: DecodeOwned<'d>> DecodeOwned<'d> for ManuallyDrop<R>
     where
-        R: RustSpec<Drop = NoDrop>,
+        R: RustSpec<Layout = Unstable, Drop = NoDrop>,
     {
         type Store = R::Store;
 
@@ -1865,7 +1899,39 @@ disjoint_impls! {
     }
     unsafe impl<'d, R: DecodeOwned<'d>> DecodeOwned<'d> for ManuallyDrop<R>
     where
-        R: RustSpec<Drop: WithDrop>,
+        R: RustSpec<Layout = Unstable, Drop: WithDrop>,
+    {
+        type Store = R::Store;
+
+        #[inline(always)]
+        unsafe fn soft_decode<'itm: 'd>(source: Self::CType, store: &'itm mut Self::Store) -> Option<Self> {
+            unsafe { R::soft_decode(ManuallyDrop::into_inner(source), store) }.map(Self::new)
+        }
+
+        #[inline(always)]
+        unsafe fn soft_decode_unchecked<'itm: 'd>(source: Self::CType, store: &'itm mut Self::Store) -> Self {
+            Self::new(unsafe { R::soft_decode_unchecked(ManuallyDrop::into_inner(source), store) })
+        }
+    }
+    unsafe impl<'d, R: DecodeOwned<'d>> DecodeOwned<'d> for ManuallyDrop<R>
+    where
+        R: RustSpec<Layout = Stable, Mutability = WithInterior, Drop = NoDrop>,
+    {
+        type Store = R::Store;
+
+        #[inline(always)]
+        unsafe fn soft_decode<'itm: 'd>(source: Self::CType, store: &'itm mut Self::Store) -> Option<Self> {
+            unsafe { R::soft_decode(source, store) }.map(Self::new)
+        }
+
+        #[inline(always)]
+        unsafe fn soft_decode_unchecked<'itm: 'd>(source: Self::CType, store: &'itm mut Self::Store) -> Self {
+            Self::new(unsafe { R::soft_decode_unchecked(source, store) })
+        }
+    }
+    unsafe impl<'d, R: DecodeOwned<'d>> DecodeOwned<'d> for ManuallyDrop<R>
+    where
+        R: RustSpec<Layout = Stable, Mutability = WithInterior, Drop: WithDrop>,
     {
         type Store = R::Store;
 

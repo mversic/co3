@@ -428,13 +428,6 @@ impl<R: Encode> Encode for UnsafeCell<R> {}
 impl<R: EncodeUnchecked> EncodeUnchecked for UnsafeCell<R> {}
 impl<'d, R: Decode<'d>> Decode<'d> for UnsafeCell<R> {}
 
-unsafe impl<T: AbiCompatible + ?Sized> AbiCompatible for UnsafeCell<T> {
-    #[inline(always)]
-    unsafe fn is_valid(target: &Self::CType) -> bool {
-        unsafe { T::is_valid(&*target.get()) }
-    }
-}
-
 unsafe impl<T: EmptyStore> EmptyStore for UnsafeCell<T> {}
 
 unsafe impl<R: CType + ?Sized> CType for UnsafeCell<R> {}
@@ -514,13 +507,6 @@ unsafe impl<'d, R: DecodeOwned<'d>> DecodeOwned<'d> for Cell<R> {
 impl<R: Encode> Encode for Cell<R> {}
 impl<R: EncodeUnchecked> EncodeUnchecked for Cell<R> {}
 impl<'d, R: Decode<'d>> Decode<'d> for Cell<R> {}
-
-unsafe impl<T: AbiCompatible<CType: Copy>> AbiCompatible for Cell<T> {
-    #[inline(always)]
-    unsafe fn is_valid(target: &Self::CType) -> bool {
-        unsafe { T::is_valid(&*target.get()) }
-    }
-}
 
 unsafe impl<T: EmptyStore> EmptyStore for Cell<T> {}
 
@@ -616,11 +602,11 @@ unsafe impl<T: CFnReturn> CFnReturn for MaybeUninit<T> where
 {
 }
 
-unsafe impl<T: CType> BorrowCast for MaybeUninit<T> {
-    type AsConst = Self;
+unsafe impl<T: BorrowCast<AsConst: Sized>> BorrowCast for MaybeUninit<T> {
+    type AsConst = MaybeUninit<T::AsConst>;
 }
-unsafe impl<T: CType> BorrowCastMut for MaybeUninit<T> {
-    type AsMut = Self;
+unsafe impl<T: BorrowCastMut<AsMut: Sized>> BorrowCastMut for MaybeUninit<T> {
+    type AsMut = MaybeUninit<T::AsMut>;
 }
 
 unsafe impl<T: EmptyStore> EmptyStore for MaybeUninit<T> {}
@@ -661,11 +647,11 @@ unsafe impl<T: CFnReturn> CFnReturn for ManuallyDrop<T> where
     Self: RustSpec<Size = rust_spec::size::Sized<rust_spec::Gt<rust_spec::Zero>>>
 {
 }
-unsafe impl<T: CType + ?Sized> BorrowCast for ManuallyDrop<T> {
-    type AsConst = Self;
+unsafe impl<T: BorrowCast + ?Sized> BorrowCast for ManuallyDrop<T> {
+    type AsConst = T::AsConst;
 }
-unsafe impl<T: CType + ?Sized> BorrowCastMut for ManuallyDrop<T> {
-    type AsMut = Self;
+unsafe impl<T: BorrowCastMut + ?Sized> BorrowCastMut for ManuallyDrop<T> {
+    type AsMut = T::AsMut;
 }
 
 unsafe impl<T: EmptyStore> EmptyStore for ManuallyDrop<T> {}
@@ -688,6 +674,26 @@ mod tests {
         reference::{CRef, CRefMut},
         slice::{CWideRef, CWideRefMut},
     };
+
+    #[test]
+    #[cfg(feature = "alloc")]
+    fn manually_drop_stable_and_unstable_conversions() {
+        assert_type_eq_all!(<ManuallyDrop<bool> as EncodeMove>::Store, ());
+        assert_type_eq_all!(<ManuallyDrop<Box<u8>> as EncodeMove>::Store, ());
+        assert_type_eq_all!(<ManuallyDrop<Box<u8>> as DecodeOwned<'static>>::Store, ());
+        assert_type_eq_all!(
+            <ManuallyDrop<Vec<(u8,)>> as EncodeMove>::Store,
+            <Vec<(u8,)> as EncodeMove>::Store
+        );
+        let mut encode_store = Default::default();
+        let encoded = ManuallyDrop::new(vec![(3_u8,), (5_u8,)]).soft_encode(&mut encode_store);
+        let mut decode_store = Default::default();
+        let decoded = unsafe {
+            <ManuallyDrop<Vec<(u8,)>> as DecodeOwned>::soft_decode(encoded, &mut decode_store)
+        }
+        .unwrap();
+        assert_eq!(ManuallyDrop::into_inner(decoded), vec![(3,), (5,)]);
+    }
 
     // FIXME:
     //#[test]
@@ -824,6 +830,9 @@ mod tests {
     #[test]
     #[cfg(feature = "alloc")]
     fn manually_drop_inner_with_drop() {
+        assert_type_eq_all!(<ManuallyDrop<CBox<u32>> as BorrowCast>::AsConst, CRef<u32>);
+        assert_type_eq_all!(<ManuallyDrop<CBox<u32>> as BorrowCastMut>::AsMut, CRefMut<u32, true>);
+        assert_type_eq_all!(<ManuallyDrop<CRef<u32>> as BorrowCast>::AsConst, CRef<u32>);
         assert_impl_all!(ManuallyDrop<String>:
             ReprC<CType = ManuallyDrop<CWideBox<Utf8Str>>>,
             Decode<'static>,

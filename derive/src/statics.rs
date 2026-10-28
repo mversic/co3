@@ -213,7 +213,7 @@ fn gen_import_wrapper(
             #[inline]
             pub fn get(&self) -> Option<&#ty>
             where
-                for<'_dummy> #ty: #co3::transmute::AbiCompatible + Sync,
+                for<'_dummy> #ty: #co3::rust_spec::RustSpec<Mutability = #co3::rust_spec::mutability::Exclusive> + #co3::transmute::AbiCompatible + Sync,
             {
                 let valid = unsafe {
                     <#ty as #co3::transmute::AbiCompatible>::is_valid(
