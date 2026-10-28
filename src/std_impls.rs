@@ -84,7 +84,6 @@ macro_rules! non_zero_derive {
         impl EncodeUnchecked for NonZero<$primitive> {}
         impl Decode<'_> for NonZero<$primitive> {}
 
-
         unsafe impl AbiCompatible for NonZero<$primitive> {
             #[inline(always)]
             unsafe fn is_valid(target: &Self::CType) -> bool {
@@ -387,47 +386,10 @@ unsafe impl<R: BorrowCastMut + ?Sized> BorrowCastMut for UnsafeCell<R> {
 impl<R: ReprC + ?Sized> ReprC for UnsafeCell<R> {
     type CType = UnsafeCell<R::CType>;
 }
-unsafe impl<R: EncodeMove> EncodeMove for UnsafeCell<R> {
-    type Store = R::Store;
 
-    #[inline(always)]
-    fn soft_encode<'itm>(self, store: &'itm mut Self::Store) -> Self::CType
-    where
-        Self: 'itm,
-    {
-        UnsafeCell::new(self.into_inner().soft_encode(store))
-    }
-}
-unsafe impl<R: EncodeMoveUnchecked> EncodeMoveUnchecked for UnsafeCell<R> {
-    type SoftStore = R::SoftStore;
-
-    unsafe fn soft_encode_unchecked(self, store: &mut Self::SoftStore) -> Self::CType {
-        UnsafeCell::new(unsafe { self.into_inner().soft_encode_unchecked(store) })
-    }
-}
-unsafe impl<'d, R: DecodeOwned<'d>> DecodeOwned<'d> for UnsafeCell<R> {
-    type Store = R::Store;
-
-    #[inline(always)]
-    unsafe fn soft_decode<'itm: 'd>(
-        source: Self::CType,
-        store: &'itm mut Self::Store,
-    ) -> Option<Self> {
-        unsafe { R::soft_decode(source.into_inner(), store) }.map(Self::new)
-    }
-
-    #[inline(always)]
-    unsafe fn soft_decode_unchecked<'itm: 'd>(
-        source: Self::CType,
-        store: &'itm mut Self::Store,
-    ) -> Self {
-        Self::new(unsafe { R::soft_decode_unchecked(source.into_inner(), store) })
-    }
-}
-
-impl<R: Encode> Encode for UnsafeCell<R> {}
-impl<R: EncodeUnchecked> EncodeUnchecked for UnsafeCell<R> {}
-impl<'d, R: Decode<'d>> Decode<'d> for UnsafeCell<R> {}
+impl<R: Encode> Encode for UnsafeCell<R> where Self: EncodeMove {}
+impl<R: EncodeUnchecked> EncodeUnchecked for UnsafeCell<R> where Self: EncodeMoveUnchecked {}
+impl<'d, R: Decode<'d>> Decode<'d> for UnsafeCell<R> where Self: DecodeOwned<'d> {}
 
 unsafe impl<T: EmptyStore> EmptyStore for UnsafeCell<T> {}
 
@@ -467,47 +429,10 @@ impl<'itm, T: FromBorrow<'itm>> FromBorrow<'itm> for Cell<T> {
 impl<R: ReprC + ?Sized> ReprC for Cell<R> {
     type CType = <UnsafeCell<R> as ReprC>::CType;
 }
-unsafe impl<R: EncodeMove> EncodeMove for Cell<R> {
-    type Store = R::Store;
 
-    #[inline(always)]
-    fn soft_encode<'itm>(self, store: &'itm mut Self::Store) -> Self::CType
-    where
-        Self: 'itm,
-    {
-        UnsafeCell::new(self.into_inner().soft_encode(store))
-    }
-}
-unsafe impl<R: EncodeMoveUnchecked> EncodeMoveUnchecked for Cell<R> {
-    type SoftStore = R::SoftStore;
-
-    unsafe fn soft_encode_unchecked(self, store: &mut Self::SoftStore) -> Self::CType {
-        UnsafeCell::new(unsafe { self.into_inner().soft_encode_unchecked(store) })
-    }
-}
-unsafe impl<'d, R: DecodeOwned<'d>> DecodeOwned<'d> for Cell<R> {
-    type Store = R::Store;
-
-    #[inline(always)]
-    unsafe fn soft_decode<'itm: 'd>(
-        source: Self::CType,
-        store: &'itm mut Self::Store,
-    ) -> Option<Self> {
-        unsafe { R::soft_decode(source.into_inner(), store) }.map(Self::new)
-    }
-
-    #[inline(always)]
-    unsafe fn soft_decode_unchecked<'itm: 'd>(
-        source: Self::CType,
-        store: &'itm mut Self::Store,
-    ) -> Self {
-        Self::new(unsafe { R::soft_decode_unchecked(source.into_inner(), store) })
-    }
-}
-
-impl<R: Encode> Encode for Cell<R> {}
-impl<R: EncodeUnchecked> EncodeUnchecked for Cell<R> {}
-impl<'d, R: Decode<'d>> Decode<'d> for Cell<R> {}
+impl<R: Encode> Encode for Cell<R> where Self: EncodeMove {}
+impl<R: EncodeUnchecked> EncodeUnchecked for Cell<R> where Self: EncodeMoveUnchecked {}
+impl<'d, R: Decode<'d>> Decode<'d> for Cell<R> where Self: DecodeOwned<'d> {}
 
 unsafe impl<T: EmptyStore> EmptyStore for Cell<T> {}
 

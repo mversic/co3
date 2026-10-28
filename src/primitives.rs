@@ -9,11 +9,10 @@ use rust_spec::RustSpec;
 #[cfg(feature = "alloc")]
 use crate::stored::Owned;
 use crate::{
-    CFnArg, CFnReturn, CType, Decode, Encode, ReprC, assert_arr_has_non_zero_len,
+    CFnArg, CFnReturn, CType, Decode, Encode, ReprC,
     borrow::{Borrow, BorrowCast, BorrowCastMut, FromBorrow},
     niche::Niche,
     stored::{DecodeOwned, EmptyStore, EncodeMove, EncodeMoveUnchecked},
-    sync::ArrayStore,
     transmute::AbiCompatible,
 };
 
@@ -424,75 +423,6 @@ unsafe impl<R: BorrowCastMut<AsMut: Sized>> BorrowCastMut for [R] {
 }
 impl<R: ReprC<CType: Sized>, const N: usize> ReprC for [R; N] {
     type CType = [R::CType; N];
-}
-unsafe impl<R: EncodeMove, const N: usize> EncodeMove for [R; N] {
-    type Store = ArrayStore<R::Store, N>;
-
-    fn soft_encode<'itm>(self, store: &'itm mut Self::Store) -> Self::CType
-    where
-        Self: 'itm,
-    {
-        assert_arr_has_non_zero_len::<N>();
-
-        let store = &mut store.0;
-
-        let mut items = self.into_iter();
-        let mut stores = store.iter_mut();
-
-        core::array::from_fn(|_| {
-            let item = items.next().unwrap();
-            let store = stores.next().unwrap();
-
-            item.soft_encode(store)
-        })
-    }
-}
-
-unsafe impl<R: EncodeMoveUnchecked, const N: usize> EncodeMoveUnchecked for [R; N] {
-    type SoftStore = ArrayStore<R::SoftStore, N>;
-
-    unsafe fn soft_encode_unchecked(self, store: &mut Self::SoftStore) -> Self::CType {
-        assert_arr_has_non_zero_len::<N>();
-
-        let mut items = self.into_iter();
-        let mut stores = store.0.iter_mut();
-
-        core::array::from_fn(|_| {
-            let item = items.next().unwrap();
-            let store = stores.next().unwrap();
-
-            unsafe { item.soft_encode_unchecked(store) }
-        })
-    }
-}
-unsafe impl<'d, R: DecodeOwned<'d>, const N: usize> DecodeOwned<'d> for [R; N] {
-    type Store = ArrayStore<R::Store, N>;
-
-    unsafe fn soft_decode<'itm: 'd>(
-        source: Self::CType,
-        store: &'itm mut Self::Store,
-    ) -> Option<Self> {
-        assert_arr_has_non_zero_len::<N>();
-
-        let mut stores = store.0.iter_mut();
-        let decoded = source.map(|item| unsafe { R::soft_decode(item, stores.next().unwrap()) });
-
-        if decoded.iter().any(Option::is_none) {
-            return None;
-        }
-
-        Some(decoded.map(|item| unsafe { item.unwrap_unchecked() }))
-    }
-
-    unsafe fn soft_decode_unchecked<'itm: 'd>(
-        source: Self::CType,
-        store: &'itm mut Self::Store,
-    ) -> Self {
-        assert_arr_has_non_zero_len::<N>();
-
-        let mut stores = store.0.iter_mut();
-        source.map(|item| unsafe { R::soft_decode_unchecked(item, stores.next().unwrap()) })
-    }
 }
 
 unsafe impl<R: CType, const N: usize> CType for [R; N] {}

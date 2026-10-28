@@ -1,20 +1,17 @@
 #[cfg(feature = "alloc")]
 use alloc::{borrow::ToOwned, boxed::Box, vec::Vec};
-use core::mem::ManuallyDrop;
 #[cfg(feature = "alloc")]
 use core::ptr::NonNull;
+use core::{
+    cell::{Cell, UnsafeCell},
+    mem::ManuallyDrop,
+};
 
 pub use crate::mutable::{EncodeMut, EncodeMutUnchecked};
 pub use crate::shared::{EncodeRef, EncodeRefUnchecked};
 use disjoint_impls::disjoint_impls;
 use rust_spec::{
-    RustSpec, Stable, Unstable,
-    drop::NoDrop,
-    layout::LayoutKind,
-    layout::{NonRobust, Robust},
-    mutability::{Exclusive, ExclusiveKind, WithInterior},
-    niche::{WithNiche, WithoutNiche},
-    size::{MetaSized, NulTerminated, Sized as RustSpecSized, SizedKind, SliceLike, Zero},
+    Gt, RustSpec, Stable, Unstable, drop::NoDrop, layout::{LayoutKind, NonRobust, Robust}, mutability::{Exclusive, ExclusiveKind, WithInterior}, niche::{WithNiche, WithoutNiche}, size::{MetaSized, NulTerminated, Sized as RustSpecSized, SizedKind, SliceLike, Zero},
 };
 
 #[cfg(feature = "alloc")]
@@ -26,7 +23,7 @@ use crate::{
 };
 
 use crate::{
-    CType, NeedsDrop, ReprC, Thin,
+    CType, NeedsDrop, ReprC, Thin, assert_arr_has_non_zero_len,
     borrow::{Borrow, BorrowCast, FromBorrow, borrow_cast},
     ffi::NulTerminatedBuf,
     niche::Niche,
@@ -34,8 +31,8 @@ use crate::{
     reference::{CRef, CRefMut, FromRawRef},
     result::CResult,
     slice::{CWideRefMut, FromRawWideRef},
-    sync::{RefMutSizedDecodeStore, RefSizedDecodeStore},
-    transmute::AbiCompatible,
+    sync::{ArrayStore, RefMutSizedDecodeStore, RefSizedDecodeStore},
+    transmute::{AbiCompatible, InteriorTrap},
     wide::{Wide, WideData, WideHeader},
 };
 
@@ -371,7 +368,7 @@ disjoint_impls! {
         for Result<R, E>
     where
         Self: ReprC<CType = <R as ReprC>::CType>,
-        R: RustSpec<Size = RustSpecSized<rust_spec::Gt<Zero>>, Niche = WithNiche<N>>,
+        R: RustSpec<Size = RustSpecSized<Gt<Zero>>, Niche = WithNiche<N>>,
         E: RustSpec<Size = RustSpecSized<Zero>>,
     {
         type SoftStore = Option<R::SoftStore>;
@@ -393,7 +390,7 @@ disjoint_impls! {
     where
         Self: ReprC<CType = <E as ReprC>::CType>,
         R: RustSpec<Size = RustSpecSized<Zero>>,
-        E: RustSpec<Size = RustSpecSized<rust_spec::Gt<Zero>>, Niche = WithNiche<N>>,
+        E: RustSpec<Size = RustSpecSized<Gt<Zero>>, Niche = WithNiche<N>>,
     {
         type SoftStore = Option<E::SoftStore>;
 
@@ -410,7 +407,9 @@ disjoint_impls! {
     }
 
     unsafe impl<R> EncodeMoveUnchecked for ManuallyDrop<R>
-    where R: RustSpec<Layout = Stable>, Self: AbiCompatible<CType: Sized>,
+    where
+        R: RustSpec<Layout = Stable>,
+        Self: AbiCompatible<CType: Sized>,
     {
         type SoftStore = ();
         unsafe fn soft_encode_unchecked(self, (): &mut ()) -> Self::CType {
@@ -437,6 +436,107 @@ disjoint_impls! {
         #[inline(always)]
         unsafe fn soft_encode_unchecked(self, store: &mut Self::SoftStore) -> Self::CType {
             ManuallyDrop::new(unsafe { Self::into_inner(self).soft_encode_unchecked(store) })
+        }
+    }
+
+    unsafe impl<R: EncodeMoveUnchecked + AbiCompatible<CType: Sized>, const N: usize>
+        EncodeMoveUnchecked for [R; N]
+    where
+        R: RustSpec<Layout = Stable, Mutability: InteriorTrap<Trap = Robust>>,
+    {
+        type SoftStore = ();
+        unsafe fn soft_encode_unchecked(self, _: &mut ()) -> Self::CType {
+            assert_arr_has_non_zero_len::<N>();
+            // SAFETY: The owned wrapper/array preserves its ABI-compatible payload layout.
+            unsafe { crate::transmute::transmute_owned(self) }
+        }
+    }
+    unsafe impl<R: EncodeMoveUnchecked, const N: usize> EncodeMoveUnchecked for [R; N]
+    where
+        R: RustSpec<Layout = Stable, Mutability: InteriorTrap<Trap = NonRobust>>,
+    {
+        type SoftStore = ArrayStore<R::SoftStore, N>;
+
+        unsafe fn soft_encode_unchecked(self, store: &mut Self::SoftStore) -> Self::CType {
+            unsafe { encode_unchecked_array_elements(self, store) }
+        }
+    }
+    unsafe impl<R: EncodeMoveUnchecked, const N: usize> EncodeMoveUnchecked for [R; N]
+    where
+        R: RustSpec<Layout = Unstable>,
+    {
+        type SoftStore = ArrayStore<R::SoftStore, N>;
+
+        unsafe fn soft_encode_unchecked(self, store: &mut Self::SoftStore) -> Self::CType {
+            unsafe { encode_unchecked_array_elements(self, store) }
+        }
+    }
+
+    unsafe impl<R: EncodeMoveUnchecked + AbiCompatible<CType: Sized>> EncodeMoveUnchecked for UnsafeCell<R>
+    where
+        R: RustSpec<Layout = Stable, Mutability: InteriorTrap<Trap = Robust>>,
+    {
+        type SoftStore = ();
+        unsafe fn soft_encode_unchecked(self, _: &mut ()) -> Self::CType {
+            // SAFETY: The owned wrapper/array preserves its ABI-compatible payload layout.
+            unsafe { crate::transmute::transmute_owned(self) }
+        }
+    }
+    unsafe impl<R: EncodeMoveUnchecked> EncodeMoveUnchecked for UnsafeCell<R>
+    where
+        R: RustSpec<Layout = Stable, Mutability: InteriorTrap<Trap = NonRobust>>,
+    {
+        type SoftStore = R::SoftStore;
+
+        unsafe fn soft_encode_unchecked(self, store: &mut Self::SoftStore) -> Self::CType {
+            UnsafeCell::new(unsafe { self.into_inner().soft_encode_unchecked(store) })
+        }
+    }
+    unsafe impl<R: EncodeMoveUnchecked> EncodeMoveUnchecked for UnsafeCell<R>
+    where
+        R: RustSpec<Layout = Unstable>,
+    {
+        type SoftStore = R::SoftStore;
+
+        unsafe fn soft_encode_unchecked(self, store: &mut Self::SoftStore) -> Self::CType {
+            UnsafeCell::new(unsafe { self.into_inner().soft_encode_unchecked(store) })
+        }
+    }
+
+    unsafe impl<R: EncodeMoveUnchecked + AbiCompatible<CType: Sized>> EncodeMoveUnchecked for Cell<R>
+    where
+        R: RustSpec<
+                Layout = Stable,
+                Mutability: InteriorTrap<Trap = Robust>,
+            >,
+    {
+        type SoftStore = ();
+        unsafe fn soft_encode_unchecked(self, _: &mut ()) -> Self::CType {
+            // SAFETY: The owned wrapper/array preserves its ABI-compatible payload layout.
+            unsafe { crate::transmute::transmute_owned(self) }
+        }
+    }
+    unsafe impl<R: EncodeMoveUnchecked> EncodeMoveUnchecked for Cell<R>
+    where
+        R: RustSpec<
+                Layout = Stable,
+                Mutability: InteriorTrap<Trap = NonRobust>,
+            >,
+    {
+        type SoftStore = R::SoftStore;
+
+        unsafe fn soft_encode_unchecked(self, store: &mut Self::SoftStore) -> Self::CType {
+            UnsafeCell::new(unsafe { self.into_inner().soft_encode_unchecked(store) })
+        }
+    }
+    unsafe impl<R: EncodeMoveUnchecked> EncodeMoveUnchecked for Cell<R>
+    where
+        R: RustSpec<Layout = Unstable>,
+    {
+        type SoftStore = R::SoftStore;
+
+        unsafe fn soft_encode_unchecked(self, store: &mut Self::SoftStore) -> Self::CType {
+            UnsafeCell::new(unsafe { self.into_inner().soft_encode_unchecked(store) })
         }
     }
 }
@@ -474,7 +574,7 @@ disjoint_impls! {
     where
         Self: RustSpec<Layout = Stable> + ReprC<CType = CRef<<R as ReprC>::CType>>,
         R: RustSpec<Layout = Stable, Size: Thin, Mutability = Exclusive<__Interior>>,
-        <R as RustSpec>::Mutability: crate::transmute::InteriorTrap<Trap = Robust>,
+        <R as RustSpec>::Mutability: InteriorTrap<Trap = Robust>,
     {
         type Store = ();
 
@@ -493,7 +593,7 @@ disjoint_impls! {
         Self: RustSpec<Layout = Unstable>,
         R: RustSpec<Layout = Stable, Size = MetaSized<SliceLike>, Mutability = Exclusive<__Interior>>,
         <R as ReprC>::CType: Wide<Header: WideHeader<Data: CType>, Metadata = usize>,
-        <R as RustSpec>::Mutability: crate::transmute::InteriorTrap<Trap = Robust>,
+        <R as RustSpec>::Mutability: InteriorTrap<Trap = Robust>,
     {
         type Store = ();
 
@@ -528,7 +628,7 @@ disjoint_impls! {
     where
         Self: RustSpec<Layout = Stable> + ReprC<CType = CRefMut<<R as ReprC>::CType, false>>,
         R: RustSpec<Layout = Stable, Size: Thin, Mutability = WithInterior<__Trap>>,
-        <R as RustSpec>::Mutability: crate::transmute::InteriorTrap<Trap = Robust>,
+        <R as RustSpec>::Mutability: InteriorTrap<Trap = Robust>,
     {
         type Store = ();
 
@@ -547,7 +647,7 @@ disjoint_impls! {
         Self: RustSpec<Layout = Unstable>,
         R: RustSpec<Layout = Stable, Size = MetaSized<SliceLike>, Mutability = WithInterior<__Trap>>,
         <R as ReprC>::CType: Wide<Header: WideHeader<Data: CType>, Metadata = usize>,
-        <R as RustSpec>::Mutability: crate::transmute::InteriorTrap<Trap = Robust>,
+        <R as RustSpec>::Mutability: InteriorTrap<Trap = Robust>,
     {
         type Store = ();
 
@@ -922,7 +1022,7 @@ disjoint_impls! {
     unsafe impl<R: EncodeMove + Niche, E: ReprC, N: LayoutKind> EncodeMove for Result<R, E>
     where
         Self: ReprC<CType = <R as ReprC>::CType>,
-        R: RustSpec<Size = RustSpecSized<rust_spec::Gt<Zero>>, Niche = WithNiche<N>>,
+        R: RustSpec<Size = RustSpecSized<Gt<Zero>>, Niche = WithNiche<N>>,
         E: RustSpec<Size = RustSpecSized<Zero>>,
     {
         type Store = Option<R::Store>;
@@ -942,7 +1042,7 @@ disjoint_impls! {
     where
         Self: ReprC<CType = <E as ReprC>::CType>,
         R: RustSpec<Size = RustSpecSized<Zero>>,
-        E: RustSpec<Size = RustSpecSized<rust_spec::Gt<Zero>>, Niche = WithNiche<N>>,
+        E: RustSpec<Size = RustSpecSized<Gt<Zero>>, Niche = WithNiche<N>>,
     {
         type Store = Option<E::Store>;
 
@@ -995,6 +1095,140 @@ disjoint_impls! {
             ManuallyDrop::new(Self::into_inner(self).soft_encode(store))
         }
     }
+
+
+    unsafe impl<R: EncodeMove + AbiCompatible<CType: Sized>, const N: usize> EncodeMove for [R; N]
+    where
+        R: RustSpec<Layout = Stable, Trap = Robust>,
+        Self: EncodeMoveUnchecked + ReprC<CType = [<R as ReprC>::CType; N]>,
+    {
+        type Store = ();
+        fn soft_encode<'itm>(self, _: &mut ()) -> Self::CType
+        where
+            Self: 'itm,
+        {
+            assert_arr_has_non_zero_len::<N>();
+            // SAFETY: Ownership is transferred and robust payloads require no validity conversion.
+            unsafe { crate::transmute::transmute_owned(self) }
+        }
+    }
+    unsafe impl<R: EncodeMove, const N: usize> EncodeMove for [R; N]
+    where
+        R: RustSpec<Layout = Stable, Trap = NonRobust>,
+        Self: EncodeMoveUnchecked + ReprC<CType = [<R as ReprC>::CType; N]>,
+    {
+        type Store = ArrayStore<R::Store, N>;
+
+        fn soft_encode<'itm>(self, store: &'itm mut Self::Store) -> Self::CType
+        where
+            Self: 'itm,
+        {
+            encode_array_elements(self, store)
+        }
+    }
+    unsafe impl<R: EncodeMove, const N: usize> EncodeMove for [R; N]
+    where
+        R: RustSpec<Layout = Unstable>,
+    {
+        type Store = ArrayStore<R::Store, N>;
+
+        fn soft_encode<'itm>(self, store: &'itm mut Self::Store) -> Self::CType
+        where
+            Self: 'itm,
+        {
+            encode_array_elements(self, store)
+        }
+    }
+
+    unsafe impl<R: EncodeMove + AbiCompatible<CType: Sized>> EncodeMove for UnsafeCell<R>
+    where
+        R: RustSpec<Layout = Stable, Trap = Robust>,
+        Self: EncodeMoveUnchecked + ReprC<CType = UnsafeCell<<R as ReprC>::CType>>,
+    {
+        type Store = ();
+        fn soft_encode<'itm>(self, _: &mut ()) -> Self::CType
+        where
+            Self: 'itm,
+        {
+            // SAFETY: Ownership is transferred and robust payloads require no validity conversion.
+            unsafe { crate::transmute::transmute_owned(self) }
+        }
+    }
+    unsafe impl<R: EncodeMove> EncodeMove for UnsafeCell<R>
+    where
+        R: RustSpec<Layout = Stable, Trap = NonRobust>,
+        Self: EncodeMoveUnchecked + ReprC<CType = UnsafeCell<<R as ReprC>::CType>>,
+    {
+        type Store = R::Store;
+
+        #[inline(always)]
+        fn soft_encode<'itm>(self, store: &'itm mut Self::Store) -> Self::CType
+        where
+            Self: 'itm,
+        {
+            UnsafeCell::new(self.into_inner().soft_encode(store))
+        }
+    }
+    unsafe impl<R: EncodeMove> EncodeMove for UnsafeCell<R>
+    where
+        R: RustSpec<Layout = Unstable>,
+    {
+        type Store = R::Store;
+
+        #[inline(always)]
+        fn soft_encode<'itm>(self, store: &'itm mut Self::Store) -> Self::CType
+        where
+            Self: 'itm,
+        {
+            UnsafeCell::new(self.into_inner().soft_encode(store))
+        }
+    }
+
+    unsafe impl<R> EncodeMove for Cell<R>
+    where
+        R: EncodeMove
+            + AbiCompatible<CType: Sized>
+            + RustSpec<Layout = Stable, Trap = Robust>,
+        Self: EncodeMoveUnchecked + ReprC<CType = UnsafeCell<<R as ReprC>::CType>>,
+    {
+        type Store = ();
+        fn soft_encode<'itm>(self, _: &mut ()) -> Self::CType
+        where
+            Self: 'itm,
+        {
+            // SAFETY: Ownership is transferred and robust payloads require no validity conversion.
+            unsafe { crate::transmute::transmute_owned(self) }
+        }
+    }
+    unsafe impl<R: EncodeMove> EncodeMove for Cell<R>
+    where
+        R: RustSpec<Layout = Stable, Trap = NonRobust>,
+        Self: EncodeMoveUnchecked + ReprC<CType = UnsafeCell<<R as ReprC>::CType>>,
+    {
+        type Store = R::Store;
+
+        #[inline(always)]
+        fn soft_encode<'itm>(self, store: &'itm mut Self::Store) -> Self::CType
+        where
+            Self: 'itm,
+        {
+            UnsafeCell::new(self.into_inner().soft_encode(store))
+        }
+    }
+    unsafe impl<R: EncodeMove> EncodeMove for Cell<R>
+    where
+        R: RustSpec<Layout = Unstable>,
+    {
+        type Store = R::Store;
+
+        #[inline(always)]
+        fn soft_encode<'itm>(self, store: &'itm mut Self::Store) -> Self::CType
+        where
+            Self: 'itm,
+        {
+            UnsafeCell::new(self.into_inner().soft_encode(store))
+        }
+    }
 }
 
 disjoint_impls! {
@@ -1039,7 +1273,7 @@ disjoint_impls! {
     where
         Self: RustSpec<Layout = Stable> + ReprC<CType = CRef<<R as ReprC>::CType>>,
         R: RustSpec<Layout = Stable, Size: Thin, Mutability = Exclusive<__Interior>>,
-        <R as RustSpec>::Mutability: crate::transmute::InteriorTrap<Trap = Robust>,
+        <R as RustSpec>::Mutability: InteriorTrap<Trap = Robust>,
     {
         type Store = ();
 
@@ -1069,7 +1303,7 @@ disjoint_impls! {
         R: RustSpec<Layout = Stable, Size = MetaSized<SliceLike>, Mutability = Exclusive<__Interior>>,
         WideData<<R as ReprC>::CType>: CType,
         R: Wide<Metadata = usize>,
-        <R as RustSpec>::Mutability: crate::transmute::InteriorTrap<Trap = Robust>,
+        <R as RustSpec>::Mutability: InteriorTrap<Trap = Robust>,
     {
         type Store = ();
 
@@ -1099,7 +1333,7 @@ disjoint_impls! {
             + ReprC<CType = <<R as NulTerminatedBuf>::Header as ReprC>::CType>,
         <R as ReprC>::CType: CType + Sized,
         <R as NulTerminatedBuf>::Header: RustSpec<Layout = Stable> + ReprC<CType: Sized> + CType,
-        <R as RustSpec>::Mutability: crate::transmute::InteriorTrap<Trap = Robust>,
+        <R as RustSpec>::Mutability: InteriorTrap<Trap = Robust>,
     {
         type Store = ();
 
@@ -1124,7 +1358,7 @@ disjoint_impls! {
         Self: RustSpec<Layout = Unstable>,
         R: RustSpec<Layout = Unstable, Size = RustSpecSized<S>, Mutability = Exclusive<__Interior>>,
         <R as Borrow>::Borrowed<'d>: DecodeOwned<'d, CType = <<R as ReprC>::CType as BorrowCast>::AsConst>,
-        <R as RustSpec>::Mutability: crate::transmute::InteriorTrap<Trap = Robust>,
+        <R as RustSpec>::Mutability: InteriorTrap<Trap = Robust>,
     {
         type Store = RefSizedDecodeStore<R, <R::Borrowed<'d> as DecodeOwned<'d>>::Store>;
 
@@ -1181,7 +1415,7 @@ disjoint_impls! {
     where
         Self: RustSpec<Layout = Stable> + ReprC<CType = CRefMut<<R as ReprC>::CType, false>>,
         R: RustSpec<Layout = Stable, Size: Thin, Mutability = WithInterior<__Trap>>,
-        <R as RustSpec>::Mutability: crate::transmute::InteriorTrap<Trap = Robust>,
+        <R as RustSpec>::Mutability: InteriorTrap<Trap = Robust>,
     {
         type Store = ();
 
@@ -1209,7 +1443,7 @@ disjoint_impls! {
         Self: RustSpec<Layout = Unstable>,
         R: RustSpec<Layout = Stable, Size = MetaSized<SliceLike>, Mutability = WithInterior<__Trap>>,
         <R as ReprC>::CType: Wide<Header: WideHeader<Data: CType>, Metadata = usize>,
-        <R as RustSpec>::Mutability: crate::transmute::InteriorTrap<Trap = Robust>,
+        <R as RustSpec>::Mutability: InteriorTrap<Trap = Robust>,
     {
         type Store = ();
 
@@ -1702,7 +1936,7 @@ disjoint_impls! {
         DecodeOwned<'d> for Result<R, E>
     where
         Self: ReprC<CType = <R as ReprC>::CType>,
-        R: RustSpec<Size = RustSpecSized<rust_spec::Gt<Zero>>, Niche = WithNiche<N>>,
+        R: RustSpec<Size = RustSpecSized<Gt<Zero>>, Niche = WithNiche<N>>,
         E: RustSpec<Size = RustSpecSized<Zero>>,
     {
         type Store = R::Store;
@@ -1733,7 +1967,7 @@ disjoint_impls! {
     where
         Self: ReprC<CType = <E as ReprC>::CType>,
         R: RustSpec<Size = RustSpecSized<Zero>>,
-        E: RustSpec<Size = RustSpecSized<rust_spec::Gt<Zero>>, Niche = WithNiche<N>>,
+        E: RustSpec<Size = RustSpecSized<Gt<Zero>>, Niche = WithNiche<N>>,
     {
         type Store = E::Store;
 
@@ -1777,6 +2011,56 @@ disjoint_impls! {
         }
     }
 
+    unsafe impl<'d, R, __Interior> DecodeOwned<'d> for ManuallyDrop<R>
+    where
+        R: RustSpec<Layout = Stable, Trap = Robust, Mutability = WithInterior<__Interior>>,
+        Self: AbiCompatible<CType: Sized>,
+    {
+        type Store = ();
+
+        unsafe fn soft_decode<'itm: 'd>(source: Self::CType, (): &'itm mut ()) -> Option<Self> {
+            // SAFETY: Robust, ABI-compatible values need no validation or payload reads.
+            Some(unsafe { crate::transmute::transmute_owned(source) })
+        }
+
+        unsafe fn soft_decode_unchecked<'itm: 'd>(source: Self::CType, (): &'itm mut ()) -> Self {
+            // SAFETY: Ownership is transferred using the ABI-compatible wrapper layout.
+            unsafe { crate::transmute::transmute_owned(source) }
+        }
+    }
+
+    unsafe impl<'d, R: DecodeOwned<'d>, __Trap> DecodeOwned<'d> for ManuallyDrop<R>
+    where
+        R: RustSpec<Layout = Stable, Trap = NonRobust, Mutability = WithInterior<__Trap>, Drop = NoDrop>,
+    {
+        type Store = R::Store;
+
+        #[inline(always)]
+        unsafe fn soft_decode<'itm: 'd>(source: Self::CType, store: &'itm mut Self::Store) -> Option<Self> {
+            unsafe { R::soft_decode(source, store) }.map(Self::new)
+        }
+
+        #[inline(always)]
+        unsafe fn soft_decode_unchecked<'itm: 'd>(source: Self::CType, store: &'itm mut Self::Store) -> Self {
+            Self::new(unsafe { R::soft_decode_unchecked(source, store) })
+        }
+    }
+    unsafe impl<'d, R: DecodeOwned<'d>, __Trap> DecodeOwned<'d> for ManuallyDrop<R>
+    where
+        R: RustSpec<Layout = Stable, Trap = NonRobust, Mutability = WithInterior<__Trap>, Drop: NeedsDrop>,
+    {
+        type Store = R::Store;
+
+        #[inline(always)]
+        unsafe fn soft_decode<'itm: 'd>(source: Self::CType, store: &'itm mut Self::Store) -> Option<Self> {
+            unsafe { R::soft_decode(ManuallyDrop::into_inner(source), store) }.map(Self::new)
+        }
+
+        #[inline(always)]
+        unsafe fn soft_decode_unchecked<'itm: 'd>(source: Self::CType, store: &'itm mut Self::Store) -> Self {
+            Self::new(unsafe { R::soft_decode_unchecked(ManuallyDrop::into_inner(source), store) })
+        }
+    }
     unsafe impl<'d, R: DecodeOwned<'d>> DecodeOwned<'d> for ManuallyDrop<R>
     where
         R: RustSpec<Layout = Unstable, Drop = NoDrop>,
@@ -1809,36 +2093,177 @@ disjoint_impls! {
             Self::new(unsafe { R::soft_decode_unchecked(ManuallyDrop::into_inner(source), store) })
         }
     }
-    unsafe impl<'d, R: DecodeOwned<'d>, __Trap> DecodeOwned<'d> for ManuallyDrop<R>
+
+
+    unsafe impl<'d, R: DecodeOwned<'d> + AbiCompatible<CType: Sized>, const N: usize> DecodeOwned<'d> for [R; N]
     where
-        R: RustSpec<Layout = Stable, Mutability = WithInterior<__Trap>, Drop = NoDrop>,
+        R: RustSpec<Layout = Stable, Trap = Robust>,
     {
-        type Store = R::Store;
-
-        #[inline(always)]
-        unsafe fn soft_decode<'itm: 'd>(source: Self::CType, store: &'itm mut Self::Store) -> Option<Self> {
-            unsafe { R::soft_decode(source, store) }.map(Self::new)
+        type Store = ();
+        unsafe fn soft_decode<'itm: 'd>(source: Self::CType, _: &'itm mut ()) -> Option<Self> {
+            assert_arr_has_non_zero_len::<N>();
+            // SAFETY: Robust, ABI-compatible payloads have no invalid bit patterns to inspect.
+            Some(unsafe { crate::transmute::transmute_owned(source) })
         }
-
-        #[inline(always)]
-        unsafe fn soft_decode_unchecked<'itm: 'd>(source: Self::CType, store: &'itm mut Self::Store) -> Self {
-            Self::new(unsafe { R::soft_decode_unchecked(source, store) })
+        unsafe fn soft_decode_unchecked<'itm: 'd>(source: Self::CType, _: &'itm mut ()) -> Self {
+            assert_arr_has_non_zero_len::<N>();
+            unsafe { crate::transmute::transmute_owned(source) }
         }
     }
-    unsafe impl<'d, R: DecodeOwned<'d>, __Trap> DecodeOwned<'d> for ManuallyDrop<R>
+    unsafe impl<'d, R: DecodeOwned<'d>, const N: usize> DecodeOwned<'d> for [R; N]
     where
-        R: RustSpec<Layout = Stable, Mutability = WithInterior<__Trap>, Drop: NeedsDrop>,
+        R: RustSpec<Layout = Stable, Trap = NonRobust>,
+    {
+        type Store = ArrayStore<R::Store, N>;
+
+        unsafe fn soft_decode<'itm: 'd>(
+            source: Self::CType,
+            store: &'itm mut Self::Store,
+        ) -> Option<Self> {
+            unsafe { decode_array_elements(source, store) }
+        }
+
+        unsafe fn soft_decode_unchecked<'itm: 'd>(
+            source: Self::CType,
+            store: &'itm mut Self::Store,
+        ) -> Self {
+            unsafe { decode_unchecked_array_elements(source, store) }
+        }
+    }
+    unsafe impl<'d, R: DecodeOwned<'d>, const N: usize> DecodeOwned<'d> for [R; N]
+    where
+        R: RustSpec<Layout = Unstable>,
+    {
+        type Store = ArrayStore<R::Store, N>;
+
+        unsafe fn soft_decode<'itm: 'd>(
+            source: Self::CType,
+            store: &'itm mut Self::Store,
+        ) -> Option<Self> {
+            unsafe { decode_array_elements(source, store) }
+        }
+
+        unsafe fn soft_decode_unchecked<'itm: 'd>(
+            source: Self::CType,
+            store: &'itm mut Self::Store,
+        ) -> Self {
+            unsafe { decode_unchecked_array_elements(source, store) }
+        }
+    }
+
+    unsafe impl<'d, R: DecodeOwned<'d> + AbiCompatible<CType: Sized>> DecodeOwned<'d> for UnsafeCell<R>
+    where
+        R: RustSpec<Layout = Stable, Trap = Robust>,
+    {
+        type Store = ();
+        unsafe fn soft_decode<'itm: 'd>(source: Self::CType, _: &'itm mut ()) -> Option<Self> {
+            // SAFETY: Robust, ABI-compatible payloads have no invalid bit patterns to inspect.
+            Some(unsafe { crate::transmute::transmute_owned(source) })
+        }
+        unsafe fn soft_decode_unchecked<'itm: 'd>(source: Self::CType, _: &'itm mut ()) -> Self {
+            unsafe { crate::transmute::transmute_owned(source) }
+        }
+    }
+    unsafe impl<'d, R: DecodeOwned<'d>> DecodeOwned<'d> for UnsafeCell<R>
+    where
+        R: RustSpec<Layout = Stable, Trap = NonRobust>,
     {
         type Store = R::Store;
 
         #[inline(always)]
-        unsafe fn soft_decode<'itm: 'd>(source: Self::CType, store: &'itm mut Self::Store) -> Option<Self> {
-            unsafe { R::soft_decode(ManuallyDrop::into_inner(source), store) }.map(Self::new)
+        unsafe fn soft_decode<'itm: 'd>(
+            source: Self::CType,
+            store: &'itm mut Self::Store,
+        ) -> Option<Self> {
+            unsafe { R::soft_decode(source.into_inner(), store) }.map(Self::new)
         }
 
         #[inline(always)]
-        unsafe fn soft_decode_unchecked<'itm: 'd>(source: Self::CType, store: &'itm mut Self::Store) -> Self {
-            Self::new(unsafe { R::soft_decode_unchecked(ManuallyDrop::into_inner(source), store) })
+        unsafe fn soft_decode_unchecked<'itm: 'd>(
+            source: Self::CType,
+            store: &'itm mut Self::Store,
+        ) -> Self {
+            Self::new(unsafe { R::soft_decode_unchecked(source.into_inner(), store) })
+        }
+    }
+    unsafe impl<'d, R: DecodeOwned<'d>> DecodeOwned<'d> for UnsafeCell<R>
+    where
+        R: RustSpec<Layout = Unstable>,
+    {
+        type Store = R::Store;
+
+        #[inline(always)]
+        unsafe fn soft_decode<'itm: 'd>(
+            source: Self::CType,
+            store: &'itm mut Self::Store,
+        ) -> Option<Self> {
+            unsafe { R::soft_decode(source.into_inner(), store) }.map(Self::new)
+        }
+
+        #[inline(always)]
+        unsafe fn soft_decode_unchecked<'itm: 'd>(
+            source: Self::CType,
+            store: &'itm mut Self::Store,
+        ) -> Self {
+            Self::new(unsafe { R::soft_decode_unchecked(source.into_inner(), store) })
+        }
+    }
+
+    unsafe impl<'d, R: DecodeOwned<'d> + AbiCompatible<CType: Sized>> DecodeOwned<'d> for Cell<R>
+    where
+        R: RustSpec<Layout = Stable, Trap = Robust>,
+    {
+        type Store = ();
+        unsafe fn soft_decode<'itm: 'd>(source: Self::CType, _: &'itm mut ()) -> Option<Self> {
+            // SAFETY: Robust, ABI-compatible payloads have no invalid bit patterns to inspect.
+            Some(unsafe { crate::transmute::transmute_owned(source) })
+        }
+        unsafe fn soft_decode_unchecked<'itm: 'd>(source: Self::CType, _: &'itm mut ()) -> Self {
+            unsafe { crate::transmute::transmute_owned(source) }
+        }
+    }
+    unsafe impl<'d, R: DecodeOwned<'d>> DecodeOwned<'d> for Cell<R>
+    where
+        R: RustSpec<Layout = Stable, Trap = NonRobust>,
+    {
+        type Store = R::Store;
+
+        #[inline(always)]
+        unsafe fn soft_decode<'itm: 'd>(
+            source: Self::CType,
+            store: &'itm mut Self::Store,
+        ) -> Option<Self> {
+            unsafe { R::soft_decode(source.into_inner(), store) }.map(Self::new)
+        }
+
+        #[inline(always)]
+        unsafe fn soft_decode_unchecked<'itm: 'd>(
+            source: Self::CType,
+            store: &'itm mut Self::Store,
+        ) -> Self {
+            Self::new(unsafe { R::soft_decode_unchecked(source.into_inner(), store) })
+        }
+    }
+    unsafe impl<'d, R: DecodeOwned<'d>> DecodeOwned<'d> for Cell<R>
+    where
+        R: RustSpec<Layout = Unstable>,
+    {
+        type Store = R::Store;
+
+        #[inline(always)]
+        unsafe fn soft_decode<'itm: 'd>(
+            source: Self::CType,
+            store: &'itm mut Self::Store,
+        ) -> Option<Self> {
+            unsafe { R::soft_decode(source.into_inner(), store) }.map(Self::new)
+        }
+
+        #[inline(always)]
+        unsafe fn soft_decode_unchecked<'itm: 'd>(
+            source: Self::CType,
+            store: &'itm mut Self::Store,
+        ) -> Self {
+            Self::new(unsafe { R::soft_decode_unchecked(source.into_inner(), store) })
         }
     }
 }
@@ -2266,4 +2691,67 @@ where
 {
     let encoded = unsafe { value.soft_encode_unchecked(store) };
     unsafe { encoded.as_ptr().read() }
+}
+
+// Structural array fallbacks share element conversion; transmutation stays in the impls.
+unsafe fn encode_unchecked_array_elements<R: EncodeMoveUnchecked, const N: usize>(
+    value: [R; N],
+    store: &mut ArrayStore<R::SoftStore, N>,
+) -> [R::CType; N] {
+    assert_arr_has_non_zero_len::<N>();
+
+    let mut items = value.into_iter();
+    let mut stores = store.0.iter_mut();
+
+    core::array::from_fn(|_| {
+        let item = items.next().unwrap();
+        let store = stores.next().unwrap();
+
+        unsafe { item.soft_encode_unchecked(store) }
+    })
+}
+
+fn encode_array_elements<'itm, R: EncodeMove + 'itm, const N: usize>(
+    value: [R; N],
+    store: &'itm mut ArrayStore<R::Store, N>,
+) -> [R::CType; N] {
+    assert_arr_has_non_zero_len::<N>();
+
+    let store = &mut store.0;
+
+    let mut items = value.into_iter();
+    let mut stores = store.iter_mut();
+
+    core::array::from_fn(|_| {
+        let item = items.next().unwrap();
+        let store = stores.next().unwrap();
+
+        item.soft_encode(store)
+    })
+}
+
+unsafe fn decode_array_elements<'d, 'itm: 'd, R: DecodeOwned<'d>, const N: usize>(
+    source: [R::CType; N],
+    store: &'itm mut ArrayStore<R::Store, N>,
+) -> Option<[R; N]> {
+    assert_arr_has_non_zero_len::<N>();
+
+    let mut stores = store.0.iter_mut();
+    let decoded = source.map(|item| unsafe { R::soft_decode(item, stores.next().unwrap()) });
+
+    if decoded.iter().any(Option::is_none) {
+        return None;
+    }
+
+    Some(decoded.map(|item| unsafe { item.unwrap_unchecked() }))
+}
+
+unsafe fn decode_unchecked_array_elements<'d, 'itm: 'd, R: DecodeOwned<'d>, const N: usize>(
+    source: [R::CType; N],
+    store: &'itm mut ArrayStore<R::Store, N>,
+) -> [R; N] {
+    assert_arr_has_non_zero_len::<N>();
+
+    let mut stores = store.0.iter_mut();
+    source.map(|item| unsafe { R::soft_decode_unchecked(item, stores.next().unwrap()) })
 }
