@@ -1523,13 +1523,14 @@ fn gen_borrow_cast_impl(
                 co3::disjoint_impls! {
                     #[disjoint_impls(remote)]
                     #[allow(clippy::missing_safety_doc)]
-                    pub unsafe trait BorrowCast: co3::CType {
-                        type AsConst: co3::CType + ?Sized;
+                    pub unsafe trait BorrowCast: co3::CType + Sized {
+                        type AsConst: co3::CType + Sized;
                     }
 
                     unsafe impl #impl_generics BorrowCast for #ident #ty_generics
                     where
                         #no_drop_bound
+                        #speculative Self: Sized,
                         #predicates
                     {
                         type AsConst = Self;
@@ -1538,8 +1539,10 @@ fn gen_borrow_cast_impl(
                     unsafe impl #impl_generics BorrowCast for #ident #ty_generics
                     where
                         #auto_drop_bound
+                        #speculative Self: Sized,
                         #speculative #owner_type: co3::borrow::Borrow,
                         #speculative <#owner_type as co3::borrow::Borrow>::Borrowed: co3::ReprC,
+                        #speculative <<#owner_type as co3::borrow::Borrow>::Borrowed as co3::ReprC>::CType: Sized,
                         #predicates
                     {
                         type AsConst = <<#owner_type as co3::borrow::Borrow>::Borrowed as co3::ReprC>::CType;
@@ -1558,13 +1561,14 @@ fn gen_borrow_cast_impl(
                 co3::disjoint_impls! {
                     #[disjoint_impls(remote)]
                     #[allow(clippy::missing_safety_doc)]
-                    pub unsafe trait BorrowCastMut: co3::CType {
-                        type AsMut: co3::CType + ?Sized;
+                    pub unsafe trait BorrowCastMut: co3::CType + Sized {
+                        type AsMut: co3::CType + Sized;
                     }
 
                     unsafe impl #impl_generics BorrowCastMut for #ident #ty_generics
                     where
                         #no_drop_bound
+                        #speculative Self: Sized,
                         #predicates
                     {
                         type AsMut = Self;
@@ -1573,8 +1577,10 @@ fn gen_borrow_cast_impl(
                     unsafe impl #impl_generics BorrowCastMut for #ident #ty_generics
                     where
                         #auto_drop_bound
+                        #speculative Self: Sized,
                         #(#mut_bounds,)*
                         #speculative #mut_view_name #ty_generics: co3::CType,
+                        #speculative #mut_view_name #ty_generics: Sized,
                         #predicates
                     {
                         type AsMut = #mut_view_name #ty_generics;
@@ -1586,6 +1592,7 @@ fn gen_borrow_cast_impl(
         quote! {
             unsafe impl #impl_generics co3::borrow::BorrowCast for #ident #ty_generics
             where
+                Self: Sized,
                 #(#const_bounds,)*
                 #predicates
             {
@@ -1594,6 +1601,8 @@ fn gen_borrow_cast_impl(
 
             unsafe impl #impl_generics co3::borrow::BorrowCastMut for #ident #ty_generics
             where
+                Self: Sized,
+                #mut_view_name #ty_generics: Sized,
                 #(#mut_bounds,)*
                 #predicates
             {
@@ -1612,13 +1621,23 @@ pub(super) fn gen_identity_borrow_cast_impl(
     generics: &syn::Generics,
 ) -> TokenStream {
     let (impl_generics, ty_generics, where_clause) = generics.split_for_impl();
+    let predicates = where_clause.as_ref().map(|clause| &clause.predicates);
+    let speculative = speculative_marker(generics.params.is_empty());
 
     quote! {
-        unsafe impl #impl_generics co3::borrow::BorrowCast for #ident #ty_generics #where_clause {
+        unsafe impl #impl_generics co3::borrow::BorrowCast for #ident #ty_generics
+        where
+            #speculative Self: Sized,
+            #predicates
+        {
             type AsConst = Self;
         }
 
-        unsafe impl #impl_generics co3::borrow::BorrowCastMut for #ident #ty_generics #where_clause {
+        unsafe impl #impl_generics co3::borrow::BorrowCastMut for #ident #ty_generics
+        where
+            #speculative Self: Sized,
+            #predicates
+        {
             type AsMut = Self;
         }
     }

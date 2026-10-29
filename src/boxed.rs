@@ -40,7 +40,6 @@ pub(crate) trait FromWideBox<P: Wide<Header: WideHeader<Data: CType>, Metadata: 
     unsafe fn from_raw_parts(data: NonNull<PointeeData<P>>, len: P::Metadata) -> Self;
     /// Builds a shared-view header. The caller must keep the `len` elements
     /// alive while the view is used; ownership is not transferred.
-    unsafe fn from_shared_parts(data: NonNull<PointeeData<P>>, len: P::Metadata) -> Self;
     fn data(&self) -> *mut PointeeData<P>;
     fn metadata(&self) -> P::Metadata;
 }
@@ -48,12 +47,6 @@ pub(crate) trait FromWideBox<P: Wide<Header: WideHeader<Data: CType>, Metadata: 
 impl<P: Wide<Header: WideHeader<Data: CType>, Metadata: CType> + ?Sized> FromWideBox<P>
     for CWideBox<P>
 {
-    unsafe fn from_shared_parts(data: NonNull<PointeeData<P>>, len: P::Metadata) -> Self {
-        Self {
-            data: data.as_ptr(),
-            metadata: len,
-        }
-    }
     fn data(&self) -> *mut PointeeData<P> {
         CWideBox::as_ptr(*self)
     }
@@ -70,12 +63,6 @@ impl<P: Wide<Header: WideHeader<Data: CType>, Metadata: CType> + ?Sized> FromWid
 impl<P: Wide<Header: WideHeader<Data: CType>, Metadata: CType> + ?Sized> FromWideBox<P>
     for CWideBoxCell<P>
 {
-    unsafe fn from_shared_parts(data: NonNull<PointeeData<P>>, len: P::Metadata) -> Self {
-        Self {
-            data: data.as_ptr(),
-            metadata: len,
-        }
-    }
     fn data(&self) -> *mut PointeeData<P> {
         CWideBoxCell::as_ptr(*self)
     }
@@ -383,12 +370,5 @@ impl<C: BorrowCastMut<AsMut: Copy> + Copy> OwnedMutView for C {
     type View = C::AsMut;
     fn mut_view(self) -> Self::View {
         crate::borrow::borrow_cast_mut(self)
-    }
-}
-impl<T: CType> OwnedMutView for crate::vec::CVec<T> {
-    type View = CWideRefMut<[T], true>;
-    fn mut_view(self) -> Self::View {
-        // The view carries no ownership. Its caller retains the CVec allocation.
-        unsafe { CWideRefMut::from_raw_parts_mut(self.as_ptr(), self.len()) }
     }
 }

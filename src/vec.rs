@@ -1,4 +1,5 @@
 //! Stable vector ownership and its robust C-compatible representation.
+use crate::borrow::{BorrowCast, BorrowCastMut};
 use crate::transmute::AbiCompatibleValidate;
 use crate::{
     CFnArg, CFnReturn, CType, Decode, Encode, EncodeUnchecked, ReprC,
@@ -389,30 +390,10 @@ impl<T> PartialEq for CVec<T> {
     }
 }
 
-impl<T: CType> crate::boxed::FromWideBox<[T]> for CVec<T> {
-    unsafe fn from_raw_parts(data: NonNull<T>, len: usize) -> Self {
-        Self::from_vec(
-            unsafe {
-                alloc::boxed::Box::from_raw(core::ptr::slice_from_raw_parts_mut(data.as_ptr(), len))
-            }
-            .into_vec(),
-        )
-    }
-    unsafe fn from_shared_parts(data: NonNull<T>, len: usize) -> Self {
-        Self::from_raw_parts(
-            data.as_ptr(),
-            len,
-            if core::mem::size_of::<T>() == 0 {
-                usize::MAX
-            } else {
-                len
-            },
-        )
-    }
-    fn data(&self) -> *mut T {
-        self.data
-    }
-    fn metadata(&self) -> usize {
-        self.len
-    }
+// FIXME: These are fake impls
+unsafe impl<C: BorrowCast> BorrowCast for CVec<C> {
+    type AsConst = Self;
+}
+unsafe impl<C: BorrowCastMut> BorrowCastMut for CVec<C> {
+    type AsMut = Self;
 }

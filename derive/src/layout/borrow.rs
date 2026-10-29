@@ -107,9 +107,12 @@ fn gen_view_rust_spec(owner: &DeriveInput, view: &DeriveInput) -> TokenStream {
         syn::Data::Union(_) => unreachable!(),
     };
     let (mutability, mutability_bounds) = if let [field] = fields.as_slice() {
+        let speculative = speculative_marker(
+            matches!(&owner.data, syn::Data::Struct(_)) && !is_parametrized(field, &owner.generics),
+        );
         (
             quote!(<#field as co3::rust_spec::RustSpec>::Mutability),
-            vec![quote!(#field: co3::rust_spec::RustSpec)],
+            vec![quote!(#speculative #field: co3::rust_spec::RustSpec)],
         )
     } else {
         // Conservatively retain the owner's interior-storage classification for
@@ -572,9 +575,19 @@ fn rewrite_view_generics(input: &mut DeriveInput) {
         syn::Data::Union(_) => unreachable!(),
     };
 
-    let borrow_bounds =
-        gen_field_trait_bounds(&input.generics, &field_tys, quote! { co3::borrow::Borrow })
-            .collect::<Vec<_>>();
+    let last_is_tail = matches!(&input.data, syn::Data::Struct(_));
+    let borrow_bounds = field_tys
+        .iter()
+        .enumerate()
+        .map(|(index, ty)| {
+            let speculative = speculative_marker(
+                last_is_tail
+                    && index + 1 == field_tys.len()
+                    && !is_parametrized(ty, &input.generics),
+            );
+            parse_quote!(#speculative #ty: co3::borrow::Borrow)
+        })
+        .collect::<Vec<syn::WherePredicate>>();
 
     let tail_bound: Option<syn::WherePredicate> = if let syn::Data::Struct(data) = &input.data {
         data.fields.iter().last().map(|field| {
