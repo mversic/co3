@@ -23,8 +23,8 @@ use crate::{stored::DecodeOwned, transmute::AbiCompatible};
 /// # Safety
 ///
 /// - only owned to borrowed pointer casting is allowed (except for interior-mutable referent)
-pub unsafe trait BorrowCast: CType {
-    type AsConst: CType + ?Sized;
+pub unsafe trait BorrowCast: CType + Sized {
+    type AsConst: CType;
 }
 
 /// A layout-compatible mutably borrowed view of a robust C representation.
@@ -32,8 +32,8 @@ pub unsafe trait BorrowCast: CType {
 /// # Safety
 ///
 /// - only owned to borrowed mut pointer casting is allowed
-pub unsafe trait BorrowCastMut: CType {
-    type AsMut: CType + ?Sized;
+pub unsafe trait BorrowCastMut: CType + Sized {
+    type AsMut: CType;
 }
 
 // TODO: Maybe it doesn't have to be unsafe anymore. depends on how we

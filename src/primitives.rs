@@ -412,14 +412,6 @@ impl<R: ReprC<CType: Sized>, const N: usize> ReprC for [R; N] {
 
 unsafe impl<R: CType, const N: usize> CType for [R; N] {}
 
-// A slice view keeps the same metadata and casts each element's layout-compatible carrier.
-unsafe impl<R: BorrowCast<AsConst: Sized>> BorrowCast for [R] {
-    type AsConst = [R::AsConst];
-}
-unsafe impl<R: BorrowCastMut<AsMut: Sized>> BorrowCastMut for [R] {
-    type AsMut = [R::AsMut];
-}
-
 unsafe impl<R: BorrowCast<AsConst: Sized>, const N: usize> BorrowCast for [R; N] {
     type AsConst = [R::AsConst; N];
 }

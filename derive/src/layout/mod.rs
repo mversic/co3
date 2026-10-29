@@ -621,14 +621,14 @@ fn gen_source_ctype_impl(input: &syn::DeriveInput, attrs: &ReprCAttrs) -> TokenS
 
         unsafe impl #impl_generics co3::borrow::BorrowCast for #name #ty_generics
         where
-            #speculative Self: co3::CType,
+            #speculative Self: co3::CType + Sized,
             #predicates
         {
             type AsConst = Self;
         }
         unsafe impl #impl_generics co3::borrow::BorrowCastMut for #name #ty_generics
         where
-            #speculative Self: co3::CType,
+            #speculative Self: co3::CType + Sized,
             #predicates
         {
             type AsMut = Self;

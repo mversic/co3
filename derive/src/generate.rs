@@ -1652,13 +1652,6 @@ pub(crate) fn expand_export_decls(
                     impl #impl_generics co3::EncodeUnchecked for #ident #ty_generics #where_clause {}
                     impl #impl_generics co3::Decode<'_> for #ident #ty_generics #where_clause {}
 
-                    unsafe impl #impl_generics co3::borrow::BorrowCast for #ident #ty_generics #where_clause {
-                        type AsConst = Self;
-                    }
-                    unsafe impl #impl_generics co3::borrow::BorrowCastMut for #ident #ty_generics #where_clause {
-                        type AsMut = Self;
-                    }
-
                     #(#dispatch)*
                 };
             }
@@ -3388,13 +3381,6 @@ fn gen_extern_type_impls(
 
             impl #impl_generics co3::ReprC for #ident #ty_generics #where_clause {
                 type CType = Self;
-            }
-
-            unsafe impl #impl_generics co3::borrow::BorrowCast for #ident #ty_generics #where_clause {
-                type AsConst = Self;
-            }
-            unsafe impl #impl_generics co3::borrow::BorrowCastMut for #ident #ty_generics #where_clause {
-                type AsMut = Self;
             }
 
             unsafe impl #impl_generics co3::rust_spec::RustSpec for #ident #ty_generics #where_clause {

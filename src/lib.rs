@@ -596,10 +596,10 @@ use crate::{
 pub mod borrow;
 #[cfg(feature = "alloc")]
 pub mod boxed;
+mod decoded;
 #[doc(hidden)]
 pub mod either;
 pub mod ffi;
-mod decoded;
 mod mutable;
 pub mod niche;
 pub mod ops;
