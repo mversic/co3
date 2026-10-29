@@ -163,16 +163,22 @@ impl Store for CheckedStore {
 // shared conversion has state, whereas its unchecked conversion has none.
 unsafe impl<'a> co3::stored::EncodeRefUnchecked<'a> for RefOnly {
     type SoftStore = co3::sync::RefSizedEncodeStore<Self, ()>;
-    unsafe fn encode_ref_unchecked(
+    unsafe fn encode_ref_unchecked<'itm>(
         &'a self,
-        store: &mut Self::SoftStore,
-    ) -> <&'a Self as co3::ReprC>::CType {
+        store: &'itm mut Self::SoftStore,
+    ) -> <&'a Self as co3::ReprC>::CType
+    where
+        'a: 'itm,
+    {
         store.encode(|_fields| self.0)
     }
 }
 unsafe impl<'a> co3::stored::EncodeRef<'a> for RefOnly {
     type Store = co3::sync::RefSizedEncodeStore<Self, CheckedStore>;
-    fn encode_ref(&'a self, store: &mut Self::Store) -> <&'a Self as co3::ReprC>::CType {
+    fn encode_ref<'itm>(&'a self, store: &'itm mut Self::Store) -> <&'a Self as co3::ReprC>::CType
+    where
+        'a: 'itm,
+    {
         store.encode(|fields| {
             fields.0 = true;
             self.0

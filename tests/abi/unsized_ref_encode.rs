@@ -80,16 +80,22 @@ impl ReprC for SliceView {
 }
 unsafe impl<'a> EncodeRefUnchecked<'a> for SliceView {
     type SoftStore = <[Element] as EncodeRefUnchecked<'a>>::SoftStore;
-    unsafe fn encode_ref_unchecked(
+    unsafe fn encode_ref_unchecked<'itm>(
         &'a self,
-        store: &mut Self::SoftStore,
-    ) -> <&'a Self as ReprC>::CType {
+        store: &'itm mut Self::SoftStore,
+    ) -> <&'a Self as ReprC>::CType
+    where
+        'a: 'itm,
+    {
         unsafe { self.0.encode_ref_unchecked(store) }
     }
 }
 unsafe impl<'a> EncodeRef<'a> for SliceView {
     type Store = <[Element] as EncodeRef<'a>>::Store;
-    fn encode_ref(&'a self, store: &mut Self::Store) -> <&'a Self as ReprC>::CType {
+    fn encode_ref<'itm>(&'a self, store: &'itm mut Self::Store) -> <&'a Self as ReprC>::CType
+    where
+        'a: 'itm,
+    {
         self.0.encode_ref(store)
     }
 }
@@ -151,13 +157,22 @@ impl ReprC for Explicit {
 }
 unsafe impl<'a> EncodeMutUnchecked<'a> for Explicit {
     type SoftStore = ();
-    unsafe fn encode_mut_unchecked(&'a mut self, _: &mut ()) -> <&'a mut Self as ReprC>::CType {
+    unsafe fn encode_mut_unchecked<'itm>(
+        &'a mut self,
+        _: &'itm mut (),
+    ) -> <&'a mut Self as ReprC>::CType
+    where
+        'a: 'itm,
+    {
         co3::reference::CRefMut::from_mut(&mut self.0)
     }
 }
 unsafe impl<'a> EncodeMut<'a> for Explicit {
     type Store = ();
-    fn encode_mut(&'a mut self, _: &mut ()) -> <&'a mut Self as ReprC>::CType {
+    fn encode_mut<'itm>(&'a mut self, _: &'itm mut ()) -> <&'a mut Self as ReprC>::CType
+    where
+        'a: 'itm,
+    {
         co3::reference::CRefMut::from_mut(&mut self.0)
     }
 }
@@ -178,13 +193,22 @@ impl ReprC for MutSliceView {
 }
 unsafe impl<'a> EncodeMutUnchecked<'a> for MutSliceView {
     type SoftStore = ();
-    unsafe fn encode_mut_unchecked(&'a mut self, _: &mut ()) -> <&'a mut Self as ReprC>::CType {
+    unsafe fn encode_mut_unchecked<'itm>(
+        &'a mut self,
+        _: &'itm mut (),
+    ) -> <&'a mut Self as ReprC>::CType
+    where
+        'a: 'itm,
+    {
         unsafe { (&mut self.0).soft_encode_unchecked(&mut ()) }
     }
 }
 unsafe impl<'a> EncodeMut<'a> for MutSliceView {
     type Store = ();
-    fn encode_mut(&'a mut self, _: &mut ()) -> <&'a mut Self as ReprC>::CType {
+    fn encode_mut<'itm>(&'a mut self, _: &'itm mut ()) -> <&'a mut Self as ReprC>::CType
+    where
+        'a: 'itm,
+    {
         (&mut self.0).soft_encode(&mut ())
     }
 }

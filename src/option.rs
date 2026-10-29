@@ -59,7 +59,10 @@ impl<T: ReprC<CType: Sized>> ReprC for Option<T> {
 unsafe impl<T: EncodeMoveUnchecked> EncodeMoveUnchecked for Option<T> {
     type SoftStore = CoreOption<T::SoftStore>;
 
-    unsafe fn soft_encode_unchecked(self, store: &mut Self::SoftStore) -> Self::CType {
+    unsafe fn soft_encode_unchecked<'itm>(self, store: &'itm mut Self::SoftStore) -> Self::CType
+    where
+        Self: 'itm,
+    {
         match self {
             Self::None => {
                 *store = None;
@@ -98,10 +101,13 @@ where
     type SoftStore =
         RefSizedEncodeStore<Self, CoreOption<<&'a T as EncodeMoveUnchecked>::SoftStore>>;
 
-    unsafe fn encode_ref_unchecked(
+    unsafe fn encode_ref_unchecked<'itm>(
         &'a self,
-        store: &mut Self::SoftStore,
-    ) -> <&'a Self as ReprC>::CType {
+        store: &'itm mut Self::SoftStore,
+    ) -> <&'a Self as ReprC>::CType
+    where
+        'a: 'itm,
+    {
         store.encode(|fields| match self {
             Self::None => {
                 *fields = None;
@@ -121,7 +127,10 @@ where
 {
     type Store = RefSizedEncodeStore<Self, CoreOption<<&'a T as EncodeMove>::Store>>;
 
-    fn encode_ref(&'a self, store: &mut Self::Store) -> <&'a Self as ReprC>::CType {
+    fn encode_ref<'itm>(&'a self, store: &'itm mut Self::Store) -> <&'a Self as ReprC>::CType
+    where
+        'a: 'itm,
+    {
         store.encode(|fields| match self {
             Self::None => {
                 *fields = None;

@@ -1635,7 +1635,7 @@ pub(crate) fn expand_export_decls(
                     unsafe impl #impl_generics co3::stored::EncodeMoveUnchecked for #ident #ty_generics #where_clause {
                         type SoftStore = ();
 
-                        unsafe fn soft_encode_unchecked(self, (): &mut ()) -> Self::CType {
+                        unsafe fn soft_encode_unchecked<'itm>(self, (): &'itm mut ()) -> Self::CType where Self: 'itm {
                             self
                         }
                     }
@@ -3460,7 +3460,7 @@ fn gen_owned_repr_c_impls(ident: &syn::Ident, generics: &syn::Generics) -> Token
         unsafe impl #impl_generics #co3::stored::EncodeMoveUnchecked for #owned_repr_c_name #ty_generics #where_clause {
             type SoftStore = ();
 
-            unsafe fn soft_encode_unchecked(self, (): &mut ()) -> Self::CType {
+            unsafe fn soft_encode_unchecked<'itm>(self, (): &'itm mut ()) -> Self::CType where Self: 'itm {
                 self
             }
         }
@@ -3720,7 +3720,7 @@ fn gen_owned_extern_type_impls(
         unsafe impl #impl_generics #co3::stored::EncodeMoveUnchecked for #owned_ident #ty_generics #where_clause {
             type SoftStore = ();
 
-            unsafe fn soft_encode_unchecked(self, (): &mut ()) -> Self::CType {
+            unsafe fn soft_encode_unchecked<'itm>(self, (): &'itm mut ()) -> Self::CType where Self: 'itm {
                 #owned_repr_c_name(core::mem::ManuallyDrop::new(self).0.as_ptr())
             }
         }

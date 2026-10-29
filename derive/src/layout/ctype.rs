@@ -1406,7 +1406,7 @@ fn gen_identity_codec_impls(
         {
             type SoftStore = ();
 
-            unsafe fn soft_encode_unchecked(self, (): &mut ()) -> Self::CType {
+            unsafe fn soft_encode_unchecked<'itm>(self, (): &'itm mut ()) -> Self::CType where Self: 'itm {
                 self
             }
         }

@@ -93,7 +93,10 @@ unsafe impl EncodeMove for String {
 unsafe impl EncodeMoveUnchecked for String {
     type SoftStore = ();
 
-    unsafe fn soft_encode_unchecked(self, (): &mut ()) -> Self::CType {
+    unsafe fn soft_encode_unchecked<'itm>(self, (): &'itm mut ()) -> Self::CType
+    where
+        Self: 'itm,
+    {
         let bytes = self.into_bytes().into_boxed_slice();
         let len = bytes.len();
         let data = Box::into_non_null(bytes).cast::<u8>();

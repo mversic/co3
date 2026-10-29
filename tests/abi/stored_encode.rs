@@ -45,7 +45,7 @@ unsafe impl co3::stored::EncodeMove for RawProbe {
 unsafe impl EncodeMoveUnchecked for RawProbe {
     type SoftStore = ();
 
-    unsafe fn soft_encode_unchecked(self, (): &mut ()) -> Self::CType {
+    unsafe fn soft_encode_unchecked<'itm>(self, (): &'itm mut ()) -> Self::CType where Self: 'itm {
         self.0
     }
 }
@@ -84,10 +84,13 @@ unsafe impl co3::stored::EncodeMove for UncheckedOnly {
 unsafe impl co3::stored::EncodeMoveUnchecked for UncheckedOnly {
     type SoftStore = ();
 
-    unsafe fn soft_encode_unchecked(
+    unsafe fn soft_encode_unchecked<'itm>(
         self,
-        _store: &mut <Self as co3::stored::EncodeMoveUnchecked>::SoftStore,
-    ) -> Self::CType {
+        _store: &'itm mut <Self as co3::stored::EncodeMoveUnchecked>::SoftStore,
+    ) -> Self::CType
+    where
+        Self: 'itm,
+    {
         co3::stored::EncodeMove::soft_encode(self, &mut ())
     }
 }
@@ -145,10 +148,13 @@ unsafe impl EncodeMove for StoredDirect {
 unsafe impl EncodeMoveUnchecked for StoredDirect {
     type SoftStore = DirectState;
 
-    unsafe fn soft_encode_unchecked(
+    unsafe fn soft_encode_unchecked<'itm>(
         self,
-        store: &mut <Self as EncodeMoveUnchecked>::SoftStore,
-    ) -> Self::CType {
+        store: &'itm mut <Self as EncodeMoveUnchecked>::SoftStore,
+    ) -> Self::CType
+    where
+        Self: 'itm,
+    {
         store.calls += 1;
         self.0
     }

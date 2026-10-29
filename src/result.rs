@@ -70,7 +70,10 @@ unsafe impl<T: EncodeMoveUnchecked<CType: Copy>, E: EncodeMoveUnchecked<CType: C
 {
     type SoftStore = Option<CoreResult<T::SoftStore, E::SoftStore>>;
 
-    unsafe fn soft_encode_unchecked(self, store: &mut Self::SoftStore) -> Self::CType {
+    unsafe fn soft_encode_unchecked<'itm>(self, store: &'itm mut Self::SoftStore) -> Self::CType
+    where
+        Self: 'itm,
+    {
         match self {
             Self::Ok(value) => {
                 let Ok(inner) = store.insert(Ok(Default::default())) else {
@@ -129,10 +132,13 @@ where
         >,
     >;
 
-    unsafe fn encode_ref_unchecked(
+    unsafe fn encode_ref_unchecked<'itm>(
         &'a self,
-        store: &mut Self::SoftStore,
-    ) -> <&'a Self as ReprC>::CType {
+        store: &'itm mut Self::SoftStore,
+    ) -> <&'a Self as ReprC>::CType
+    where
+        'a: 'itm,
+    {
         store.encode(|fields| match self {
             Self::Ok(value) => {
                 let Ok(inner) = fields.insert(Ok(Default::default())) else {
@@ -162,7 +168,10 @@ where
         Option<CoreResult<<&'a T as EncodeMove>::Store, <&'a E as EncodeMove>::Store>>,
     >;
 
-    fn encode_ref(&'a self, store: &mut Self::Store) -> <&'a Self as ReprC>::CType {
+    fn encode_ref<'itm>(&'a self, store: &'itm mut Self::Store) -> <&'a Self as ReprC>::CType
+    where
+        'a: 'itm,
+    {
         store.encode(|fields| match self {
             Self::Ok(value) => {
                 let Ok(inner) = fields.insert(Ok(Default::default())) else {

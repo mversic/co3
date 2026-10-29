@@ -120,8 +120,10 @@ pub(super) fn group_aggregate_ref_impls(
                 #[disjoint_impls(remote)]
                 pub unsafe trait #name<'a>: #supertrait {
                     type #store_name: co3::stored::Store + Default;
-                    #unsafe_fn fn #method(&'a #mutability self, store: &mut Self::#store_name) -> <&'a #mutability Self as co3::ReprC>::CType
-                    where &'a #mutability Self: co3::ReprC<CType: Sized>;
+                    #unsafe_fn fn #method<'itm>(&'a #mutability self, store: &'itm mut Self::#store_name) -> <&'a #mutability Self as co3::ReprC>::CType
+                    where
+                        &'a #mutability Self: co3::ReprC<CType: Sized>,
+                        'a: 'itm;
                 }
                 #(#implementations)*
             }
@@ -177,7 +179,10 @@ pub(super) fn gen_field_ref_impls(
                     #predicates
                 {
                     type #store_name = <&'_ršč #mutability #field_ty as #move_trait>::#store_name;
-                    #unsafe_fn fn #method(&'_ršč #mutability self, store: &mut Self::#store_name) -> <&'_ršč #mutability Self as co3::ReprC>::CType {
+                    #unsafe_fn fn #method<'itm>(&'_ršč #mutability self, store: &'itm mut Self::#store_name) -> <&'_ršč #mutability Self as co3::ReprC>::CType
+                    where
+                        '_ršč: 'itm,
+                    {
                         #call
                     }
                 }

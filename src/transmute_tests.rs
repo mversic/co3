@@ -23,7 +23,10 @@ unsafe impl AbiCompatible for Direct {
 // These deliberately panic: aggregate fast paths must not invoke them.
 unsafe impl EncodeMoveUnchecked for Direct {
     type SoftStore = ();
-    unsafe fn soft_encode_unchecked(self, _: &mut ()) -> u8 {
+    unsafe fn soft_encode_unchecked<'itm>(self, _: &'itm mut ()) -> u8
+    where
+        Self: 'itm,
+    {
         panic!("visited field")
     }
 }

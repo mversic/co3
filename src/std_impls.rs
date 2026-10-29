@@ -55,7 +55,7 @@ macro_rules! non_zero_derive {
         unsafe impl EncodeMoveUnchecked for NonZero<$primitive> {
             type SoftStore = ();
 
-            unsafe fn soft_encode_unchecked(self, (): &mut ()) -> Self::CType {
+            unsafe fn soft_encode_unchecked<'itm>(self, (): &'itm mut ()) -> Self::CType where Self: 'itm {
                 self.get()
             }
         }
@@ -122,7 +122,10 @@ unsafe impl EncodeMove for () {
 unsafe impl EncodeMoveUnchecked for () {
     type SoftStore = ();
 
-    unsafe fn soft_encode_unchecked(self, (): &mut ()) -> Self::CType {
+    unsafe fn soft_encode_unchecked<'itm>(self, (): &'itm mut ()) -> Self::CType
+    where
+        Self: 'itm,
+    {
         self
     }
 }
@@ -193,7 +196,10 @@ unsafe impl<T: ?Sized> EncodeMove for PhantomData<T> {
 unsafe impl<T: ?Sized> EncodeMoveUnchecked for PhantomData<T> {
     type SoftStore = ();
 
-    unsafe fn soft_encode_unchecked(self, (): &mut ()) -> Self::CType {
+    unsafe fn soft_encode_unchecked<'itm>(self, (): &'itm mut ()) -> Self::CType
+    where
+        Self: 'itm,
+    {
         self
     }
 }
@@ -249,7 +255,10 @@ unsafe impl<T: CType + ?Sized> EncodeMove for NonNull<T> {
 unsafe impl<T: CType + ?Sized> EncodeMoveUnchecked for NonNull<T> {
     type SoftStore = ();
 
-    unsafe fn soft_encode_unchecked(self, (): &mut ()) -> Self::CType {
+    unsafe fn soft_encode_unchecked<'itm>(self, (): &'itm mut ()) -> Self::CType
+    where
+        Self: 'itm,
+    {
         unsafe { self.as_ptr().soft_encode_unchecked(&mut ()) }
     }
 }
@@ -425,7 +434,10 @@ unsafe impl<T: AbiCompatible<CType: Sized> + EncodeMove<Store: EmptyStore>> Enco
 unsafe impl<T: AbiCompatible<CType: Sized>> EncodeMoveUnchecked for MaybeUninit<T> {
     type SoftStore = ();
 
-    unsafe fn soft_encode_unchecked(self, (): &mut ()) -> Self::CType {
+    unsafe fn soft_encode_unchecked<'itm>(self, (): &'itm mut ()) -> Self::CType
+    where
+        Self: 'itm,
+    {
         unsafe { core::mem::transmute_copy(&self) }
     }
 }

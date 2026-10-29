@@ -232,7 +232,7 @@ pub(super) fn derive_field_repr_c(
             {
                 type SoftStore = <#field_ty as co3::stored::EncodeMoveUnchecked>::SoftStore;
 
-                unsafe fn soft_encode_unchecked(self, store: &mut Self::SoftStore) -> Self::CType {
+                unsafe fn soft_encode_unchecked<'itm>(self, store: &'itm mut Self::SoftStore) -> Self::CType where Self: 'itm {
                     let owner = core::mem::ManuallyDrop::new(self);
                     let value = #take_field;
                     unsafe { co3::stored::EncodeMoveUnchecked::soft_encode_unchecked(value, store) }

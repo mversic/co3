@@ -56,12 +56,13 @@ disjoint_impls! {
         /// # Safety
         ///
         /// See [`crate::soft_encode_unchecked`].
-        unsafe fn encode_ref_unchecked(
+        unsafe fn encode_ref_unchecked<'itm>(
             &'a self,
-            store: &mut Self::SoftStore,
+            store: &'itm mut Self::SoftStore,
         ) -> <&'a Self as ReprC>::CType
         where
-            &'a Self: ReprC<CType: Sized>;
+            &'a Self: ReprC<CType: Sized>,
+        'a: 'itm;
     }
 
     #[cfg(feature = "alloc")]
@@ -74,10 +75,10 @@ disjoint_impls! {
     {
         type SoftStore = RefSizedEncodeStore<Self, ()>;
 
-        unsafe fn encode_ref_unchecked(
+        unsafe fn encode_ref_unchecked<'itm>(
             &'a self,
-            store: &mut Self::SoftStore,
-        ) -> <&'a Self as ReprC>::CType {
+            store: &'itm mut Self::SoftStore,
+        ) -> <&'a Self as ReprC>::CType  where 'a: 'itm {
             store.encode(|_fields| {
                 // Vec's data pointer is non-null even for empty or ZST vectors.
                 // AbiCompatible guarantees compatible element representations;
@@ -96,10 +97,10 @@ disjoint_impls! {
     {
         type SoftStore = RefSizedEncodeStore<Self, ()>;
 
-        unsafe fn encode_ref_unchecked(
+        unsafe fn encode_ref_unchecked<'itm>(
             &'a self,
-            store: &mut Self::SoftStore,
-        ) -> <&'a Self as ReprC>::CType {
+            store: &'itm mut Self::SoftStore,
+        ) -> <&'a Self as ReprC>::CType  where 'a: 'itm {
             store.encode(|_fields| {
                 // Vec's data pointer is non-null even for empty or ZST vectors.
                 // AbiCompatible guarantees compatible element representations;
@@ -119,10 +120,10 @@ disjoint_impls! {
     {
         type SoftStore = RefSizedEncodeStore<Self, RefVecEncodeStore<<T as ReprC>::CType, Box<[<&'a T as EncodeMoveUnchecked>::SoftStore]>>>;
 
-        unsafe fn encode_ref_unchecked(
+        unsafe fn encode_ref_unchecked<'itm>(
             &'a self,
-            store: &mut Self::SoftStore,
-        ) -> <&'a Self as ReprC>::CType {
+            store: &'itm mut Self::SoftStore,
+        ) -> <&'a Self as ReprC>::CType  where 'a: 'itm {
             store.encode(|fields| {
                 let store = fields;
 
@@ -140,10 +141,10 @@ disjoint_impls! {
     {
         type SoftStore = RefSizedEncodeStore<Self, RefVecEncodeStore<<T as ReprC>::CType, Box<[<&'a T as EncodeMoveUnchecked>::SoftStore]>>>;
 
-        unsafe fn encode_ref_unchecked(
+        unsafe fn encode_ref_unchecked<'itm>(
             &'a self,
-            store: &mut Self::SoftStore,
-        ) -> <&'a Self as ReprC>::CType {
+            store: &'itm mut Self::SoftStore,
+        ) -> <&'a Self as ReprC>::CType  where 'a: 'itm {
             store.encode(|fields| {
                 let store = fields;
 
@@ -161,10 +162,10 @@ disjoint_impls! {
         type SoftStore =
             RefSizedEncodeStore<Self, Option<<&'a R as EncodeMoveUnchecked>::SoftStore>>;
 
-        unsafe fn encode_ref_unchecked(
+        unsafe fn encode_ref_unchecked<'itm>(
             &'a self,
-            store: &mut Self::SoftStore,
-        ) -> <&'a Self as ReprC>::CType {
+            store: &'itm mut Self::SoftStore,
+        ) -> <&'a Self as ReprC>::CType  where 'a: 'itm {
             store.encode(|fields| {
                 let store = fields;
 
@@ -193,10 +194,10 @@ disjoint_impls! {
     {
         type SoftStore = RefSizedEncodeStore<Self, Option<<&'a R as EncodeMoveUnchecked>::SoftStore>>;
 
-        unsafe fn encode_ref_unchecked(
+        unsafe fn encode_ref_unchecked<'itm>(
             &'a self,
-            store: &mut Self::SoftStore,
-        ) -> <&'a Self as ReprC>::CType {
+            store: &'itm mut Self::SoftStore,
+        ) -> <&'a Self as ReprC>::CType  where 'a: 'itm {
             store.encode(|fields| {
                 let store = fields;
 
@@ -236,10 +237,10 @@ disjoint_impls! {
             >,
         >;
 
-        unsafe fn encode_ref_unchecked(
+        unsafe fn encode_ref_unchecked<'itm>(
             &'a self,
-            store: &mut Self::SoftStore,
-        ) -> <&'a Self as ReprC>::CType {
+            store: &'itm mut Self::SoftStore,
+        ) -> <&'a Self as ReprC>::CType  where 'a: 'itm {
             store.encode(|fields| {
                 let store = fields;
 
@@ -274,10 +275,10 @@ disjoint_impls! {
     {
         type SoftStore = RefSizedEncodeStore<Self, Option<<&'a R as EncodeMoveUnchecked>::SoftStore>>;
 
-        unsafe fn encode_ref_unchecked(
+        unsafe fn encode_ref_unchecked<'itm>(
             &'a self,
-            store: &mut Self::SoftStore,
-        ) -> <&'a Self as ReprC>::CType {
+            store: &'itm mut Self::SoftStore,
+        ) -> <&'a Self as ReprC>::CType  where 'a: 'itm {
             store.encode(|fields| {
                 let store = fields;
 
@@ -305,10 +306,10 @@ disjoint_impls! {
     {
         type SoftStore = RefSizedEncodeStore<Self, Option<<&'a E as EncodeMoveUnchecked>::SoftStore>>;
 
-        unsafe fn encode_ref_unchecked(
+        unsafe fn encode_ref_unchecked<'itm>(
             &'a self,
-            store: &mut Self::SoftStore,
-        ) -> <&'a Self as ReprC>::CType {
+            store: &'itm mut Self::SoftStore,
+        ) -> <&'a Self as ReprC>::CType  where 'a: 'itm {
             store.encode(|fields| {
                 let store = fields;
 
@@ -334,10 +335,10 @@ disjoint_impls! {
     {
         type SoftStore = R::SoftStore;
 
-        unsafe fn encode_ref_unchecked(
+        unsafe fn encode_ref_unchecked<'itm>(
             &'a self,
-            store: &mut Self::SoftStore,
-        ) -> <&'a Self as ReprC>::CType {
+            store: &'itm mut Self::SoftStore,
+        ) -> <&'a Self as ReprC>::CType  where 'a: 'itm {
             let inner = unsafe { R::encode_ref_unchecked(&**self, store) };
             // ManuallyDrop's C representation is the inner CType or its transparent wrapper.
             unsafe { CRef::from_raw(inner.as_ptr().cast()) }
@@ -353,10 +354,10 @@ disjoint_impls! {
     {
         type SoftStore = R::SoftStore;
 
-        unsafe fn encode_ref_unchecked(
+        unsafe fn encode_ref_unchecked<'itm>(
             &'a self,
-            store: &mut Self::SoftStore,
-        ) -> <&'a Self as ReprC>::CType {
+            store: &'itm mut Self::SoftStore,
+        ) -> <&'a Self as ReprC>::CType  where 'a: 'itm {
             let inner = unsafe { R::encode_ref_unchecked(&**self, store) };
             unsafe { CRef::from_raw(inner.as_ptr().cast()) }
         }
@@ -372,10 +373,10 @@ disjoint_impls! {
     {
         type SoftStore = R::SoftStore;
 
-        unsafe fn encode_ref_unchecked(
+        unsafe fn encode_ref_unchecked<'itm>(
             &'a self,
-            store: &mut Self::SoftStore,
-        ) -> <&'a Self as ReprC>::CType {
+            store: &'itm mut Self::SoftStore,
+        ) -> <&'a Self as ReprC>::CType  where 'a: 'itm {
             let inner = unsafe { R::encode_ref_unchecked(&**self, store) };
             unsafe { CWideRef::from_raw_parts(inner.as_ptr().cast::<PointeeData<Self::CType>>(), inner.metadata()) }
         }
@@ -390,10 +391,10 @@ disjoint_impls! {
         &'a Self: ReprC<CType = CRef<<Self as ReprC>::CType>>,
     {
         type SoftStore = RefSizedEncodeStore<Self, <&'a R as EncodeMoveUnchecked>::SoftStore>;
-        unsafe fn encode_ref_unchecked(
+        unsafe fn encode_ref_unchecked<'itm>(
             &'a self,
-            store: &mut Self::SoftStore,
-        ) -> <&'a Self as ReprC>::CType {
+            store: &'itm mut Self::SoftStore,
+        ) -> <&'a Self as ReprC>::CType  where 'a: 'itm {
             store.encode(|fields| {
                 let view = unsafe { (&**self).soft_encode_unchecked(fields) };
                 // BorrowCast guarantees the same carrier layout. This header remains
@@ -411,10 +412,10 @@ disjoint_impls! {
         &'a Self: ReprC<CType = CRef<<Self as ReprC>::CType>>,
     {
         type SoftStore = RefSizedEncodeStore<Self, <&'a R as EncodeMoveUnchecked>::SoftStore>;
-        unsafe fn encode_ref_unchecked(
+        unsafe fn encode_ref_unchecked<'itm>(
             &'a self,
-            store: &mut Self::SoftStore,
-        ) -> <&'a Self as ReprC>::CType {
+            store: &'itm mut Self::SoftStore,
+        ) -> <&'a Self as ReprC>::CType  where 'a: 'itm {
             store.encode(|fields| {
                 let view = unsafe { (&**self).soft_encode_unchecked(fields) };
                 // BorrowCast guarantees the same carrier layout. This header remains
@@ -432,10 +433,10 @@ disjoint_impls! {
         &'a Self: ReprC<CType = CRef<<Self as ReprC>::CType>>,
     {
         type SoftStore = RefSizedEncodeStore<Self, <&'a R as EncodeMoveUnchecked>::SoftStore>;
-        unsafe fn encode_ref_unchecked(
+        unsafe fn encode_ref_unchecked<'itm>(
             &'a self,
-            store: &mut Self::SoftStore,
-        ) -> <&'a Self as ReprC>::CType {
+            store: &'itm mut Self::SoftStore,
+        ) -> <&'a Self as ReprC>::CType  where 'a: 'itm {
             store.encode(|fields| {
                 let view = unsafe { (&**self).soft_encode_unchecked(fields) };
                 // BorrowCast guarantees the same carrier layout. This header remains
@@ -452,17 +453,17 @@ disjoint_impls! {
     {
         type SoftStore = RefWideEncodeStore<[T], Box<[<&'a T as EncodeMoveUnchecked>::SoftStore]>>;
 
-        unsafe fn encode_ref_unchecked(
+        unsafe fn encode_ref_unchecked<'itm>(
             &'a self,
-            store: &mut Self::SoftStore,
-        ) -> <&'a Self as ReprC>::CType {
+            store: &'itm mut Self::SoftStore,
+        ) -> <&'a Self as ReprC>::CType  where 'a: 'itm {
             store.encode(|stores| unsafe { encode_slice_unchecked(self, stores) })
         }
     }
 
     unsafe impl<'a> EncodeRefUnchecked<'a> for core::ffi::CStr {
         type SoftStore = ();
-        unsafe fn encode_ref_unchecked(&'a self, _: &mut ()) -> <&'a Self as ReprC>::CType {
+        unsafe fn encode_ref_unchecked<'itm>(&'a self, _: &'itm mut ()) -> <&'a Self as ReprC>::CType  where 'a: 'itm {
             unsafe { CRef::from_raw(self.as_ptr().cast()) }
         }
     }
@@ -478,7 +479,7 @@ disjoint_impls! {
         &'a T: EncodeMoveUnchecked + ReprC<CType = CRef<<T as ReprC>::CType>>,
     {
         type SoftStore = ();
-        unsafe fn encode_ref_unchecked(&'a self, _: &mut ()) -> <&'a Self as ReprC>::CType {
+        unsafe fn encode_ref_unchecked<'itm>(&'a self, _: &'itm mut ()) -> <&'a Self as ReprC>::CType  where 'a: 'itm {
             crate::assert_arr_has_non_zero_len::<N>();
             // SAFETY: Array layout preserves the ABI-compatible element layout.
             // Only the pointer is converted; no element is read or copied.
@@ -496,10 +497,10 @@ disjoint_impls! {
             Self,
             crate::sync::ArrayStore<<&'a T as EncodeMoveUnchecked>::SoftStore, N>,
         >;
-        unsafe fn encode_ref_unchecked(
+        unsafe fn encode_ref_unchecked<'itm>(
             &'a self,
-            store: &mut Self::SoftStore,
-        ) -> <&'a Self as ReprC>::CType {
+            store: &'itm mut Self::SoftStore,
+        ) -> <&'a Self as ReprC>::CType  where 'a: 'itm {
             store.encode(|fields| {
                 crate::assert_arr_has_non_zero_len::<N>();
                 core::array::from_fn(|i| unsafe {
@@ -525,9 +526,10 @@ disjoint_impls! {
         /// Returns access to the encoded referent without transferring ownership.
         /// The source and store must remain alive for any later access. Neither
         /// the referent nor its backing allocations may be freed or owned-decoded.
-        fn encode_ref(&'a self, store: &mut Self::Store) -> <&'a Self as ReprC>::CType
+        fn encode_ref<'itm>(&'a self, store: &'itm mut Self::Store) -> <&'a Self as ReprC>::CType
         where
-            &'a Self: ReprC<CType: Sized>;
+            &'a Self: ReprC<CType: Sized>,
+        'a: 'itm;
     }
 
     #[cfg(feature = "alloc")]
@@ -539,7 +541,7 @@ disjoint_impls! {
     {
         type Store = RefSizedEncodeStore<Self, ()>;
 
-        fn encode_ref(&'a self, store: &mut Self::Store) -> <&'a Self as ReprC>::CType {
+        fn encode_ref<'itm>(&'a self, store: &'itm mut Self::Store) -> <&'a Self as ReprC>::CType  where 'a: 'itm {
             store.encode(|_fields| {
                 CVec::from_raw_parts(self.as_ptr().cast_mut().cast(), self.len(), self.capacity())
             })
@@ -554,7 +556,7 @@ disjoint_impls! {
     {
         type Store = RefSizedEncodeStore<Self, ()>;
 
-        fn encode_ref(&'a self, store: &mut Self::Store) -> <&'a Self as ReprC>::CType {
+        fn encode_ref<'itm>(&'a self, store: &'itm mut Self::Store) -> <&'a Self as ReprC>::CType  where 'a: 'itm {
             store.encode(|_fields| {
                 CVec::from_raw_parts(self.as_ptr().cast_mut().cast(), self.len(), self.capacity())
             })
@@ -570,7 +572,7 @@ disjoint_impls! {
     {
         type Store = RefSizedEncodeStore<Self, ()>;
 
-        fn encode_ref(&'a self, store: &mut Self::Store) -> <&'a Self as ReprC>::CType {
+        fn encode_ref<'itm>(&'a self, store: &'itm mut Self::Store) -> <&'a Self as ReprC>::CType  where 'a: 'itm {
             store.encode(|_fields| {
                 CVec::from_raw_parts(self.as_ptr().cast_mut().cast(), self.len(), self.capacity())
             })
@@ -585,7 +587,7 @@ disjoint_impls! {
     {
         type Store = RefSizedEncodeStore<Self, ()>;
 
-        fn encode_ref(&'a self, store: &mut Self::Store) -> <&'a Self as ReprC>::CType {
+        fn encode_ref<'itm>(&'a self, store: &'itm mut Self::Store) -> <&'a Self as ReprC>::CType  where 'a: 'itm {
             store.encode(|_fields| {
                 CVec::from_raw_parts(self.as_ptr().cast_mut().cast(), self.len(), self.capacity())
             })
@@ -602,7 +604,7 @@ disjoint_impls! {
     {
         type Store = RefSizedEncodeStore<Self, RefVecEncodeStore<<T as ReprC>::CType, Box<[<&'a T as EncodeMove>::Store]>>>;
 
-        fn encode_ref(&'a self, store: &mut Self::Store) -> <&'a Self as ReprC>::CType {
+        fn encode_ref<'itm>(&'a self, store: &'itm mut Self::Store) -> <&'a Self as ReprC>::CType  where 'a: 'itm {
             store.encode(|fields| {
                 let store = fields;
 
@@ -620,7 +622,7 @@ disjoint_impls! {
     {
         type Store = RefSizedEncodeStore<Self, RefVecEncodeStore<<T as ReprC>::CType, Box<[<&'a T as EncodeMove>::Store]>>>;
 
-        fn encode_ref(&'a self, store: &mut Self::Store) -> <&'a Self as ReprC>::CType {
+        fn encode_ref<'itm>(&'a self, store: &'itm mut Self::Store) -> <&'a Self as ReprC>::CType  where 'a: 'itm {
             store.encode(|fields| {
                 let store = fields;
 
@@ -637,7 +639,7 @@ disjoint_impls! {
     {
         type Store = RefSizedEncodeStore<Self, Option<<&'a R as EncodeMove>::Store>>;
 
-        fn encode_ref(&'a self, store: &mut Self::Store) -> <&'a Self as ReprC>::CType {
+        fn encode_ref<'itm>(&'a self, store: &'itm mut Self::Store) -> <&'a Self as ReprC>::CType  where 'a: 'itm {
             store.encode(|fields| {
                 let store = fields;
 
@@ -664,7 +666,7 @@ disjoint_impls! {
     {
         type Store = RefSizedEncodeStore<Self, Option<<&'a R as EncodeMove>::Store>>;
 
-        fn encode_ref(&'a self, store: &mut Self::Store) -> <&'a Self as ReprC>::CType {
+        fn encode_ref<'itm>(&'a self, store: &'itm mut Self::Store) -> <&'a Self as ReprC>::CType  where 'a: 'itm {
             store.encode(|fields| {
                 let store = fields;
 
@@ -696,7 +698,7 @@ disjoint_impls! {
             Option<Result<<&'a R as EncodeMove>::Store, <&'a E as EncodeMove>::Store>>,
         >;
 
-        fn encode_ref(&'a self, store: &mut Self::Store) -> <&'a Self as ReprC>::CType {
+        fn encode_ref<'itm>(&'a self, store: &'itm mut Self::Store) -> <&'a Self as ReprC>::CType  where 'a: 'itm {
             store.encode(|fields| {
                 let store = fields;
 
@@ -715,7 +717,7 @@ disjoint_impls! {
     {
         type Store = RefSizedEncodeStore<Self, Option<<&'a R as EncodeMove>::Store>>;
 
-        fn encode_ref(&'a self, store: &mut Self::Store) -> <&'a Self as ReprC>::CType {
+        fn encode_ref<'itm>(&'a self, store: &'itm mut Self::Store) -> <&'a Self as ReprC>::CType  where 'a: 'itm {
             store.encode(|fields| {
                 let store = fields;
 
@@ -740,7 +742,7 @@ disjoint_impls! {
     {
         type Store = RefSizedEncodeStore<Self, Option<<&'a E as EncodeMove>::Store>>;
 
-        fn encode_ref(&'a self, store: &mut Self::Store) -> <&'a Self as ReprC>::CType {
+        fn encode_ref<'itm>(&'a self, store: &'itm mut Self::Store) -> <&'a Self as ReprC>::CType  where 'a: 'itm {
             store.encode(|fields| {
                 let store = fields;
 
@@ -764,7 +766,7 @@ disjoint_impls! {
     {
         type Store = R::Store;
 
-        fn encode_ref(&'a self, store: &mut Self::Store) -> <&'a Self as ReprC>::CType {
+        fn encode_ref<'itm>(&'a self, store: &'itm mut Self::Store) -> <&'a Self as ReprC>::CType  where 'a: 'itm {
             let inner = R::encode_ref(&**self, store);
             unsafe { CRef::from_raw(inner.as_ptr().cast()) }
         }
@@ -779,7 +781,7 @@ disjoint_impls! {
     {
         type Store = R::Store;
 
-        fn encode_ref(&'a self, store: &mut Self::Store) -> <&'a Self as ReprC>::CType {
+        fn encode_ref<'itm>(&'a self, store: &'itm mut Self::Store) -> <&'a Self as ReprC>::CType  where 'a: 'itm {
             let inner = R::encode_ref(&**self, store);
             unsafe { CRef::from_raw(inner.as_ptr().cast()) }
         }
@@ -795,7 +797,7 @@ disjoint_impls! {
     {
         type Store = R::Store;
 
-        fn encode_ref(&'a self, store: &mut Self::Store) -> <&'a Self as ReprC>::CType {
+        fn encode_ref<'itm>(&'a self, store: &'itm mut Self::Store) -> <&'a Self as ReprC>::CType  where 'a: 'itm {
             let inner = R::encode_ref(&**self, store);
             unsafe { CWideRef::from_raw_parts(inner.as_ptr().cast::<PointeeData<Self::CType>>(), inner.metadata()) }
         }
@@ -810,7 +812,7 @@ disjoint_impls! {
         &'a Self: ReprC<CType = CRef<<Self as ReprC>::CType>>,
     {
         type Store = RefSizedEncodeStore<Self, <&'a R as EncodeMove>::Store>;
-        fn encode_ref(&'a self, store: &mut Self::Store) -> <&'a Self as ReprC>::CType {
+        fn encode_ref<'itm>(&'a self, store: &'itm mut Self::Store) -> <&'a Self as ReprC>::CType  where 'a: 'itm {
             store.encode(|fields| {
                 let view = (&**self).soft_encode(fields);
                 // BorrowCast guarantees the same carrier layout. This header remains
@@ -828,7 +830,7 @@ disjoint_impls! {
         &'a Self: ReprC<CType = CRef<<Self as ReprC>::CType>>,
     {
         type Store = RefSizedEncodeStore<Self, <&'a R as EncodeMove>::Store>;
-        fn encode_ref(&'a self, store: &mut Self::Store) -> <&'a Self as ReprC>::CType {
+        fn encode_ref<'itm>(&'a self, store: &'itm mut Self::Store) -> <&'a Self as ReprC>::CType  where 'a: 'itm {
             store.encode(|fields| {
                 let view = (&**self).soft_encode(fields);
                 // BorrowCast guarantees the same carrier layout. This header remains
@@ -846,7 +848,7 @@ disjoint_impls! {
         &'a Self: ReprC<CType = CRef<<Self as ReprC>::CType>>,
     {
         type Store = RefSizedEncodeStore<Self, <&'a R as EncodeMove>::Store>;
-        fn encode_ref(&'a self, store: &mut Self::Store) -> <&'a Self as ReprC>::CType {
+        fn encode_ref<'itm>(&'a self, store: &'itm mut Self::Store) -> <&'a Self as ReprC>::CType  where 'a: 'itm {
             store.encode(|fields| {
                 let view = (&**self).soft_encode(fields);
                 // BorrowCast guarantees the same carrier layout. This header remains
@@ -863,14 +865,14 @@ disjoint_impls! {
     {
         type Store = RefWideEncodeStore<[T], Box<[<&'a T as EncodeMove>::Store]>>;
 
-        fn encode_ref(&'a self, store: &mut Self::Store) -> <&'a Self as ReprC>::CType {
+        fn encode_ref<'itm>(&'a self, store: &'itm mut Self::Store) -> <&'a Self as ReprC>::CType  where 'a: 'itm {
             store.encode(|stores| encode_slice(self, stores))
         }
     }
 
     unsafe impl<'a> EncodeRef<'a> for core::ffi::CStr {
         type Store = ();
-        fn encode_ref(&'a self, _: &mut ()) -> <&'a Self as ReprC>::CType {
+        fn encode_ref<'itm>(&'a self, _: &'itm mut ()) -> <&'a Self as ReprC>::CType  where 'a: 'itm {
             unsafe { CRef::from_raw(self.as_ptr().cast()) }
         }
     }
@@ -886,7 +888,7 @@ disjoint_impls! {
         &'a T: EncodeMove + ReprC<CType = CRef<<T as ReprC>::CType>>,
     {
         type Store = ();
-        fn encode_ref(&'a self, _: &mut ()) -> <&'a Self as ReprC>::CType {
+        fn encode_ref<'itm>(&'a self, _: &'itm mut ()) -> <&'a Self as ReprC>::CType  where 'a: 'itm {
             crate::assert_arr_has_non_zero_len::<N>();
             // SAFETY: Array layout preserves the ABI-compatible element layout.
             // Only the pointer is converted; no element is read or copied.
@@ -902,7 +904,7 @@ disjoint_impls! {
     {
         type Store =
             RefSizedEncodeStore<Self, crate::sync::ArrayStore<<&'a T as EncodeMove>::Store, N>>;
-        fn encode_ref(&'a self, store: &mut Self::Store) -> <&'a Self as ReprC>::CType {
+        fn encode_ref<'itm>(&'a self, store: &'itm mut Self::Store) -> <&'a Self as ReprC>::CType  where 'a: 'itm {
             store.encode(|fields| {
                 crate::assert_arr_has_non_zero_len::<N>();
                 core::array::from_fn(|i| crate::stored::encode_ref_field(&self[i], &mut fields.0[i]))
@@ -945,10 +947,13 @@ where
 {
     type SoftStore = RefSizedEncodeStore<Self, <Self as EncodeMoveUnchecked>::SoftStore>;
 
-    unsafe fn encode_ref_unchecked(
+    unsafe fn encode_ref_unchecked<'itm>(
         &'a self,
-        store: &mut Self::SoftStore,
-    ) -> <&'a Self as ReprC>::CType {
+        store: &'itm mut Self::SoftStore,
+    ) -> <&'a Self as ReprC>::CType
+    where
+        'a: 'itm,
+    {
         store.encode(|fields| unsafe { (*self).soft_encode_unchecked(fields) })
     }
 }
@@ -961,7 +966,10 @@ where
 {
     type Store = RefSizedEncodeStore<Self, <Self as EncodeMove>::Store>;
 
-    fn encode_ref(&'a self, store: &mut Self::Store) -> <&'a Self as ReprC>::CType {
+    fn encode_ref<'itm>(&'a self, store: &'itm mut Self::Store) -> <&'a Self as ReprC>::CType
+    where
+        'a: 'itm,
+    {
         store.encode(|fields| (*self).soft_encode(fields))
     }
 }
@@ -977,10 +985,13 @@ where
 {
     type SoftStore = RefSizedEncodeStore<Self, <&'a R as EncodeMoveUnchecked>::SoftStore>;
 
-    unsafe fn encode_ref_unchecked(
+    unsafe fn encode_ref_unchecked<'itm>(
         &'a self,
-        store: &mut Self::SoftStore,
-    ) -> <&'a Self as ReprC>::CType {
+        store: &'itm mut Self::SoftStore,
+    ) -> <&'a Self as ReprC>::CType
+    where
+        'a: 'itm,
+    {
         store.encode(|fields| {
             let value = unsafe { (&**self).soft_encode_unchecked(fields) };
             const {
@@ -1004,7 +1015,10 @@ where
 {
     type Store = RefSizedEncodeStore<Self, <&'a R as EncodeMove>::Store>;
 
-    fn encode_ref(&'a self, store: &mut Self::Store) -> <&'a Self as ReprC>::CType {
+    fn encode_ref<'itm>(&'a self, store: &'itm mut Self::Store) -> <&'a Self as ReprC>::CType
+    where
+        'a: 'itm,
+    {
         store.encode(|fields| {
             let value = (&**self).soft_encode(fields);
             const {
@@ -1025,10 +1039,13 @@ macro_rules! impl_buffer_shared {
     ($ty:ty, $view:ident) => {
         unsafe impl<'a> EncodeRefUnchecked<'a> for $ty {
             type SoftStore = RefSizedEncodeStore<Self, ()>;
-            unsafe fn encode_ref_unchecked(
+            unsafe fn encode_ref_unchecked<'itm>(
                 &'a self,
-                store: &mut Self::SoftStore,
-            ) -> <&'a Self as ReprC>::CType {
+                store: &'itm mut Self::SoftStore,
+            ) -> <&'a Self as ReprC>::CType
+            where
+                'a: 'itm,
+            {
                 store.encode(|_fields| {
                     let view = unsafe { self.$view().soft_encode_unchecked(&mut ()) };
                     // The pointee remains borrowed; only its raw pointer carrier changes.
@@ -1038,7 +1055,13 @@ macro_rules! impl_buffer_shared {
         }
         unsafe impl<'a> EncodeRef<'a> for $ty {
             type Store = RefSizedEncodeStore<Self, ()>;
-            fn encode_ref(&'a self, store: &mut Self::Store) -> <&'a Self as ReprC>::CType {
+            fn encode_ref<'itm>(
+                &'a self,
+                store: &'itm mut Self::Store,
+            ) -> <&'a Self as ReprC>::CType
+            where
+                'a: 'itm,
+            {
                 store.encode(|_fields| {
                     let view = self.$view().soft_encode(&mut ());
                     unsafe { core::mem::transmute_copy(&view) }
