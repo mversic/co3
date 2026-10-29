@@ -17,7 +17,7 @@ note: required by a bound in `_::<impl __Co3Static_VALUE>::read`
 error[E0277]: the trait bound `Box<u8>: Copy` is not satisfied
   --> tests/ui_fail/static_read_noncopy.rs:10:28
    |
-10 |     let _ = unsafe { VALUE.soft_read(&mut ()) };
+10 |     let _ = unsafe { VALUE.soft_read(&mut Default::default()) };
    |                            ^^^^^^^^^ the trait `Copy` is not implemented for `Box<u8>`
    |
 note: required by a bound in `_::<impl __Co3Static_VALUE>::soft_read`

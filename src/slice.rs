@@ -3,8 +3,7 @@ use rust_spec::RustSpec;
 
 use crate::{
     CFnArg, CFnReturn, CType, Decode, Encode, ReprC,
-    borrow::{Borrow, BorrowCast, BorrowCastMut},
-    stored::{DecodeOwned, EncodeMove, EncodeMoveUnchecked},
+    stored::{DecodeMove, EncodeMove, EncodeMoveUnchecked},
     transmute::AbiCompatible,
     wide::{PointeeData, Wide, WideHeader},
 };
@@ -251,7 +250,7 @@ macro_rules! impl_identity_carrier {
                 self
             }
         }
-        unsafe impl<'d, $($params)*> DecodeOwned<'d> for $ty<$($args)*> {
+        unsafe impl<'d, $($params)*> DecodeMove<'d> for $ty<$($args)*> {
             type Store = ();
 
             #[inline(always)]
@@ -279,9 +278,9 @@ macro_rules! impl_identity_carrier {
     };
 }
 
-macro_rules! impl_wide_borrow {
+macro_rules! impl_carrier_borrow {
     ($ty:ident, [$($params:tt)*], [$($args:tt)*]) => {
-        unsafe impl<$($params)*> Borrow for $ty<$($args)*> {
+        unsafe impl<$($params)*> $crate::borrow::Borrow for $ty<$($args)*> {
             type Borrowed = Self;
 
             fn borrow(self) -> Self::Borrowed {
@@ -292,31 +291,17 @@ macro_rules! impl_wide_borrow {
                 source
             }
         }
-
-
-    };
-}
-
-macro_rules! impl_wide_carrier {
-    ($ty:ident, [$($params:tt)*], [$($args:tt)*]) => {
-        impl_identity_carrier! { $ty, [$($params)*], [$($args)*] }
-        unsafe impl<$($params)*> BorrowCast for $ty<$($args)*> {
-            type AsConst = Self;
-        }
-        unsafe impl<$($params)*> BorrowCastMut for $ty<$($args)*> {
-            type AsMut = Self;
-        }
     };
 }
 
 impl_wide_raw_methods! { CWideRef, [P: Wide + ?Sized], [P] }
 impl_wide_raw_methods! { CWideRefMut, [P: Wide + ?Sized, const EXCLUSIVE: bool], [P, EXCLUSIVE] }
 
-impl_wide_borrow! { CWideRef, [P: Wide + ?Sized], [P] }
-impl_wide_borrow! { CWideRefMut, [P: Wide + ?Sized, const EXCLUSIVE: bool], [P, EXCLUSIVE] }
+impl_carrier_borrow! { CWideRef, [P: Wide + ?Sized], [P] }
+impl_carrier_borrow! { CWideRefMut, [P: Wide + ?Sized, const EXCLUSIVE: bool], [P, EXCLUSIVE] }
 
-impl_wide_carrier! { CWideRef, [P: Wide<Header: WideHeader<Data: CType>> + ?Sized], [P] }
-impl_wide_carrier! { CWideRefMut, [P: Wide<Header: WideHeader<Data: CType>> + ?Sized, const EXCLUSIVE: bool], [P, EXCLUSIVE] }
+impl_identity_carrier! { CWideRef, [P: Wide<Header: WideHeader<Data: CType>> + ?Sized], [P] }
+impl_identity_carrier! { CWideRefMut, [P: Wide<Header: WideHeader<Data: CType>> + ?Sized, const EXCLUSIVE: bool], [P, EXCLUSIVE] }
 
 impl<P: Wide<Header: WideHeader<Data: CType>, Metadata: CType> + ?Sized> Default for CWideRef<P> {
     fn default() -> Self {
@@ -331,6 +316,7 @@ impl<P: Wide<Header: WideHeader<Data: CType>, Metadata: CType> + ?Sized, const E
     }
 }
 
+pub(crate) use impl_carrier_borrow;
 pub(crate) use impl_identity_carrier;
 #[cfg(feature = "alloc")]
 pub(crate) use impl_wide_raw_methods;

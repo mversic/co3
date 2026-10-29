@@ -113,11 +113,8 @@ fn generated_view_structs_expose_fields_methods() {
     let view = unsafe { ViewFieldsView::from_fields(1, 2) };
     assert_eq!(view.into_fields(), (1, 2));
 
-    let const_view = unsafe { CViewFieldsConstView::from_fields(3, 4) };
-    assert_eq!(const_view.into_fields(), (3, 4));
-
-    let mut_view = unsafe { CViewFieldsMutView::from_fields(5, 6) };
-    assert_eq!(mut_view.into_fields(), (5, 6));
+    let carrier = unsafe { CViewFieldsView::from_fields(3, 4) };
+    assert_eq!(carrier.into_fields(), (3, 4));
 }
 
 #[test]

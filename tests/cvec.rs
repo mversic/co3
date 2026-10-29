@@ -69,33 +69,34 @@ fn stable_vec_operations_preserve_ownership() {
 
 #[test]
 fn raw_carrier_construction_needs_no_allocation_invariants() {
-    let carrier = CVec::<u8>::from_raw_parts(core::ptr::null_mut(), 7, 3);
+    let carrier = unsafe { CVec::<u8>::from_raw_parts(core::ptr::null_mut(), 7, 3) };
     assert_eq!(carrier.len(), 7);
     assert_eq!(carrier.capacity(), 3);
 }
 
 #[test]
 fn owned_encoding_preserves_capacity_and_validates_elements() {
-    use co3::stored::{DecodeOwned, EncodeMove};
+    use co3::stored::{DecodeMove, EncodeMove, Store};
     let mut value = Vec::with_capacity(32);
     value.extend([1u32, 2, 3]);
-    let ptr = value.as_ptr();
     let cap = value.capacity();
-    let carrier = co3::vec::Vec::from(value).soft_encode(&mut ());
-    assert_eq!(carrier.as_ptr(), ptr.cast_mut());
+    let mut encode_store = Default::default();
+    let carrier = co3::vec::Vec::from(value).soft_encode(&mut encode_store);
+    assert_eq!(carrier.len(), 3);
     assert_eq!(carrier.capacity(), cap);
-    let value = unsafe { co3::vec::Vec::<u32>::soft_decode(carrier, &mut ()) }.unwrap();
+    let value = unsafe { co3::vec::Vec::<u32>::soft_decode(carrier, &mut Default::default()) }.unwrap();
     assert_eq!(value.capacity(), cap);
     assert_eq!(&*value, &[1, 2, 3]);
+    assert_eq!(encode_store.sync(), Some(()));
     let invalid = CVec::from_vec(vec![co3::primitives::CBool(2)]);
-    assert!(unsafe { co3::vec::Vec::<bool>::soft_decode(invalid, &mut ()) }.is_none());
+    assert!(unsafe { co3::vec::Vec::<bool>::soft_decode(invalid, &mut Default::default()) }.is_none());
 }
 
 #[test]
 fn borrowed_vector_keeps_owner_and_decodes_a_clone() {
     use co3::{
         borrow::{Borrow, Borrowed},
-        stored::{DecodeOwned, EncodeMove, Store},
+        stored::{DecodeMove, EncodeMove, Store},
     };
     let value = vec![7u32, 8];
     let original = value.as_ptr();
@@ -116,7 +117,7 @@ fn borrowed_vector_keeps_owner_and_decodes_a_clone() {
 
 #[test]
 fn unstable_elements_and_value_traits() {
-    use co3::stored::{DecodeOwned, EncodeMove, Store};
+    use co3::stored::{DecodeMove, EncodeMove, Store};
     let value: co3::vec::Vec<_> = vec![(1u32,), (2,)].into();
     let mut encode_store = Default::default();
     let carrier = value.soft_encode(&mut encode_store);
@@ -134,22 +135,23 @@ fn unstable_elements_and_value_traits() {
 
 #[test]
 fn standard_vec_preserves_spare_capacity() {
-    use co3::stored::{DecodeOwned, EncodeMove};
+    use co3::stored::{DecodeMove, EncodeMove, Store};
     let mut value = Vec::with_capacity(64);
     value.extend([3u32, 4]);
     let cap = value.capacity();
-    let ptr = value.as_ptr();
-    let carrier = value.soft_encode(&mut ());
+    let mut encode_store = Default::default();
+    let carrier = value.soft_encode(&mut encode_store);
+    assert_eq!(carrier.len(), 2);
     assert_eq!(carrier.capacity(), cap);
-    assert_eq!(carrier.as_ptr(), ptr.cast_mut());
-    let value = unsafe { Vec::<u32>::soft_decode(carrier, &mut ()) }.unwrap();
+    let value = unsafe { Vec::<u32>::soft_decode(carrier, &mut Default::default()) }.unwrap();
     assert_eq!(value.capacity(), cap);
     assert_eq!(value, [3, 4]);
+    assert_eq!(encode_store.sync(), Some(()));
 }
 
 #[test]
 fn boxed_unstable_elements_use_box_allocation_layout() {
-    use co3::stored::{DecodeOwned, EncodeMove, Store};
+    use co3::stored::{DecodeMove, EncodeMove, Store};
     let value = vec![(1u32,), (2,)].into_boxed_slice();
     let mut encoding = Default::default();
     let carrier = value.soft_encode(&mut encoding);

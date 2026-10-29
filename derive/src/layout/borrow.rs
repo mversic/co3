@@ -64,9 +64,11 @@ pub(super) fn gen_item_view(
         .filter(|_| !known_unsized_tail)
         .map(|_| {
             quote! {
-                #[repr_c(NICHE = co3::borrow::borrow_cast(
-                    <#owner_name #owner_ty_generics as co3::niche::Niche>::NICHE
-                ))]
+                #[repr_c(NICHE = unsafe {
+                    core::mem::transmute_copy(
+                        &<#owner_name #owner_ty_generics as co3::niche::Niche>::NICHE
+                    )
+                })]
             }
         });
 
@@ -647,10 +649,6 @@ pub(super) fn gen_view_owner_name(view_name: &Ident) -> Ident {
 
 pub(super) fn gen_view_ctype_name(view_name: &Ident) -> Ident {
     gen_ctype_name(view_name)
-}
-
-pub(super) fn gen_const_view_name(name: &Ident) -> Ident {
-    Ident::new(&format!("{name}ConstView"), name.span())
 }
 
 fn gen_view_name(name: &Ident) -> Ident {

@@ -11,7 +11,7 @@ use co3::{
 
 #[test]
 fn mutable_slice_decode_writes_changes_back() {
-    use co3::{slice::CWideRefMut, stored::DecodeOwned, tuple::ReprCTuple2};
+    use co3::{slice::CWideRefMut, stored::DecodeMove, tuple::ReprCTuple2};
 
     let mut values = [ReprCTuple2(1_u8, 2_u8)];
     let source = CWideRefMut::from_mut(&mut values[..]);
@@ -61,14 +61,14 @@ fn empty_unstable_slices_encode_and_sync() {
 #[test]
 fn nul_terminated_reference_uses_explicit_encoder_without_storage() {
     let value = c"borrowed";
-    let encoded: <&core::ffi::CStr as ReprC>::CType = value.encode_ref(&mut ());
+    let encoded: <&core::ffi::CStr as ReprC>::CType = value.encode_ref(&mut Default::default());
     assert_eq!(encoded.as_ptr().cast::<core::ffi::c_char>(), value.as_ptr());
-    let encoded = unsafe { value.encode_ref_unchecked(&mut ()) };
+    let encoded = unsafe { value.encode_ref_unchecked(&mut Default::default()) };
     assert_eq!(encoded.as_ptr().cast::<core::ffi::c_char>(), value.as_ptr());
     let wrapped: &core::mem::ManuallyDrop<core::ffi::CStr> = unsafe {
         &*(value as *const core::ffi::CStr as *const core::mem::ManuallyDrop<core::ffi::CStr>)
     };
-    assert_eq!(wrapped.soft_encode(&mut ()).as_ptr(), encoded.as_ptr());
+    assert_eq!(wrapped.soft_encode(&mut Default::default()).as_ptr(), encoded.as_ptr());
 }
 
 // A downstream unsized type can implement reference encoding without ToOwned.
@@ -142,10 +142,10 @@ fn boxed_custom_wide_type_delegates_to_pointee_encoder() {
 #[test]
 fn stable_slice_paths_remain_store_free() {
     let mut values = [31_u32, 37];
-    let encoded = values.as_slice().soft_encode(&mut ());
+    let encoded = values.as_slice().soft_encode(&mut Default::default());
     assert_eq!(encoded.as_ptr(), values.as_ptr());
     let original = values.as_mut_ptr();
-    let encoded = values.as_mut_slice().soft_encode(&mut ());
+    let encoded = values.as_mut_slice().soft_encode(&mut Default::default());
     assert_eq!(encoded.as_ptr(), original);
 }
 
@@ -180,7 +180,7 @@ unsafe impl<'a> EncodeMut<'a> for Explicit {
 #[test]
 fn explicit_sized_mutable_reference_encoder_needs_no_owned_decoder() {
     let mut value = Explicit(41);
-    let encoded = (&mut value).soft_encode(&mut ());
+    let encoded = (&mut value).soft_encode(&mut Default::default());
     unsafe { encoded.as_ptr().write(43) };
     assert_eq!(value.0, 43);
 }
@@ -200,7 +200,7 @@ unsafe impl<'a> EncodeMutUnchecked<'a> for MutSliceView {
     where
         'a: 'itm,
     {
-        unsafe { (&mut self.0).soft_encode_unchecked(&mut ()) }
+        unsafe { (&mut self.0).soft_encode_unchecked(&mut Default::default()) }
     }
 }
 unsafe impl<'a> EncodeMut<'a> for MutSliceView {
@@ -209,14 +209,14 @@ unsafe impl<'a> EncodeMut<'a> for MutSliceView {
     where
         'a: 'itm,
     {
-        (&mut self.0).soft_encode(&mut ())
+        (&mut self.0).soft_encode(&mut Default::default())
     }
 }
 #[test]
 fn explicit_unsized_mutable_encoder_needs_no_value_helper() {
     let mut values = [23_u32];
     let view = unsafe { &mut *(values.as_mut_slice() as *mut [u32] as *mut MutSliceView) };
-    let encoded = view.soft_encode(&mut ());
+    let encoded = view.soft_encode(&mut Default::default());
     unsafe { encoded.as_ptr().write(29) };
     assert_eq!(values, [29]);
     static_assertions::assert_not_impl_any!([Element]: EncodeMut<'static>, EncodeMutUnchecked<'static>);

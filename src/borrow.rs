@@ -15,30 +15,8 @@ use crate::{
     niche::Niche,
     stored::{EncodeMove, EncodeMoveUnchecked, Store},
 };
-use crate::{stored::DecodeOwned, transmute::AbiCompatible};
+use crate::{stored::DecodeMove, transmute::AbiCompatible};
 
-// TODO: Stupid trait with a stupid name
-/// A layout-compatible borrowed view of a robust C representation.
-///
-/// # Safety
-///
-/// - only owned to borrowed pointer casting is allowed (except for interior-mutable referent)
-pub unsafe trait BorrowCast: CType + Sized {
-    type AsConst: CType;
-}
-
-/// A layout-compatible mutably borrowed view of a robust C representation.
-///
-/// # Safety
-///
-/// - only owned to borrowed mut pointer casting is allowed
-pub unsafe trait BorrowCastMut: CType + Sized {
-    type AsMut: CType;
-}
-
-// TODO: Maybe it doesn't have to be unsafe anymore. depends on how we
-// derive stuff for generated views during ReprC derive
-// TODO: Mention in comments how it relates to AsConst once that's settled down again
 disjoint_impls! {
     /// A trait for structurally borrowing data.
     ///
@@ -132,7 +110,7 @@ impl<T: ReprC<CType: Sized>> ReprC for Borrowed<T> {
     type CType = Borrowed<T::CType>;
 }
 
-impl<'d, R> crate::Decode<'d> for Borrowed<R> where Self: DecodeOwned<'d> {}
+impl<'d, R> crate::Decode<'d> for Borrowed<R> where Self: DecodeMove<'d> {}
 impl<T> crate::EncodeUnchecked for Borrowed<T> where Self: EncodeMoveUnchecked {}
 impl<T> crate::Encode for Borrowed<T> where Self: EncodeMove {}
 
@@ -193,6 +171,20 @@ unsafe impl<R> Borrow for Vec<R> {
     #[inline(always)]
     fn from_borrow(source: Self::Borrowed) -> Self {
         Borrowed::into_inner(source)
+    }
+}
+
+unsafe impl<R> Borrow for Borrowed<R> {
+    type Borrowed = Self;
+
+    #[inline(always)]
+    fn borrow(self) -> Self::Borrowed {
+        self
+    }
+
+    #[inline(always)]
+    fn from_borrow(source: Self::Borrowed) -> Self {
+        source
     }
 }
 
@@ -304,29 +296,6 @@ impl<C, S: Store> Store for BorrowedDecodeStore<C, S> {
     }
 }
 
-unsafe impl<C: BorrowCast> BorrowCast for Borrowed<C> {
-    type AsConst = C::AsConst;
-}
-unsafe impl<C: BorrowCastMut> BorrowCastMut for Borrowed<C> {
-    type AsMut = C::AsMut;
-}
-
-#[inline(always)]
-pub const fn borrow_cast<C: BorrowCast<AsConst: Sized>>(source: C) -> C::AsConst {
-    let source = core::mem::ManuallyDrop::new(source);
-    unsafe { core::mem::ManuallyDrop::into_inner(BorrowCastValue { from: source }.to) }
-}
-
-#[inline(always)]
-pub const fn borrow_cast_mut<C: BorrowCastMut<AsMut: Sized>>(source: C) -> C::AsMut {
-    let source = core::mem::ManuallyDrop::new(source);
-    unsafe { core::mem::ManuallyDrop::into_inner(BorrowCastValue { from: source }.to) }
-}
-
-union BorrowCastValue<From, To> {
-    from: core::mem::ManuallyDrop<From>,
-    to: core::mem::ManuallyDrop<To>,
-}
 
 // Keep the higher-ranked bound outside disjoint_impls, which cannot expand its binder.
 #[doc(hidden)]

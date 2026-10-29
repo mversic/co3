@@ -186,14 +186,14 @@ fn stable_mutable_vec_has_no_element_store() {
     fn empty_checked<
         'a,
         T: co3::ReprC<CType: Sized>
-            + co3::stored::DecodeOwned<'a, Store: co3::stored::EmptyStore + 'a>
+            + co3::stored::DecodeMove<'a, Store: co3::stored::EmptyStore + 'a>
             + co3::stored::EncodeMut<'a, Store = co3::sync::RefMutSizedEncodeStore<'a, T, ()>>,
     >() {
     }
     fn empty_direct<
         'a,
         T: co3::ReprC<CType: Sized>
-            + co3::stored::DecodeOwned<'a, Store: co3::stored::EmptyStore + 'a>
+            + co3::stored::DecodeMove<'a, Store: co3::stored::EmptyStore + 'a>
             + co3::stored::EncodeMutUnchecked<
                 'a,
                 SoftStore = co3::sync::RefMutSizedEncodeStore<'a, T, ()>,
@@ -224,7 +224,7 @@ fn mutable_vec_allows_replacing_its_owned_header() {
     let header = unsafe { &mut *encoded.as_ptr() };
     // A callee can consume the old allocation and install a new owned value.
     drop(unsafe { header.into_vec().unwrap() });
-    *header = vec![4_u32, 5, 6].soft_encode(&mut ());
+    *header = vec![4_u32, 5, 6].soft_encode(&mut Default::default());
     assert_eq!(store.sync(), Some(()));
     assert_eq!(values, [4, 5, 6]);
 }
@@ -254,7 +254,7 @@ fn stable_mutable_vec_reuses_non_clone_elements() {
 fn stable_identity_mutable_reference_needs_no_referent_encoder() {
     let mut value = NoClone(51);
     let ptr = &mut value as *mut NoClone;
-    let encoded = (&mut value).soft_encode(&mut ());
+    let encoded = (&mut value).soft_encode(&mut Default::default());
     assert_eq!(encoded.as_ptr(), ptr);
     unsafe { (*encoded.as_ptr()).0 = 52 };
     assert_eq!(value.0, 52);
@@ -367,9 +367,9 @@ fn nested_mutable_reference_validates_pointee_and_retains_borrowed_elements() {
 }
 
 #[test]
-fn sized_aggregate_mutable_encoders_are_unsupported() {
+fn sized_aggregate_mutable_encoder_coverage() {
     use co3::stored::{EncodeMut, EncodeMutUnchecked};
-    static_assertions::assert_not_impl_any!([bool; 2]: EncodeMut<'static>, EncodeMutUnchecked<'static>);
+    static_assertions::assert_impl_all!([bool; 2]: EncodeMut<'static>, EncodeMutUnchecked<'static>);
     static_assertions::assert_not_impl_any!((u32, bool): EncodeMut<'static>, EncodeMutUnchecked<'static>);
     static_assertions::assert_not_impl_any!(co3::tuple::ReprCTuple2<u32, bool>: EncodeMut<'static>, EncodeMutUnchecked<'static>);
     static_assertions::assert_not_impl_any!(Record: EncodeMut<'static>, EncodeMutUnchecked<'static>);

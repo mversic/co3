@@ -6,8 +6,8 @@ use rust_spec::RustSpec;
 
 use crate::{
     CFnArg, CFnReturn, CType, Decode, Encode, ReprC,
-    borrow::{Borrow, BorrowCast, BorrowCastMut},
-    stored::{DecodeOwned, EncodeMove, EncodeMoveUnchecked},
+    borrow::Borrow,
+    stored::{DecodeMove, EncodeMove, EncodeMoveUnchecked},
     transmute::AbiCompatible,
 };
 
@@ -225,7 +225,7 @@ macro_rules! impl_reference_identity {
             type SoftStore = ();
             unsafe fn soft_encode_unchecked<'itm>(self, (): &'itm mut ()) -> Self::CType where Self: 'itm { self }
         }
-        unsafe impl<'d, $($params)*> DecodeOwned<'d> for $ty<$($args)*> {
+        unsafe impl<'d, $($params)*> DecodeMove<'d> for $ty<$($args)*> {
             type Store = ();
             unsafe fn soft_decode<'itm: 'd>(source: Self::CType, (): &mut ()) -> Option<Self> { Some(source) }
         }
@@ -235,8 +235,6 @@ macro_rules! impl_reference_identity {
         unsafe impl<$($params)*> CType for $ty<$($args)*> {}
         unsafe impl<$($params)*> CFnArg for $ty<$($args)*> {}
         unsafe impl<$($params)*> CFnReturn for $ty<$($args)*> {}
-        unsafe impl<$($params)*> BorrowCast for $ty<$($args)*> { type AsConst = Self; }
-        unsafe impl<$($params)*> BorrowCastMut for $ty<$($args)*> { type AsMut = Self; }
         unsafe impl<$($params)*> AbiCompatibleValidate for $ty<$($args)*> {
             unsafe fn is_valid(_: &Self::CType) -> bool { true }
         }

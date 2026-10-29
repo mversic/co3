@@ -15,10 +15,10 @@ use crate::EncodeUnchecked;
 use crate::sync::RefSizedEncodeStore;
 use crate::{
     CFnArg, CFnReturn, CType, Decode, Encode, ReprC, Thin,
-    borrow::{Borrow, BorrowCast, BorrowCastMut},
+    borrow::Borrow,
     reference::CRef,
     stored::{
-        DecodeOwned, EmptyStore, EncodeMove, EncodeMoveUnchecked, EncodeRef, EncodeRefUnchecked,
+        DecodeMove, EmptyStore, EncodeMove, EncodeMoveUnchecked, EncodeRef, EncodeRefUnchecked,
     },
     transmute::AbiCompatible,
 };
@@ -190,7 +190,7 @@ where
     }
 }
 
-unsafe impl<'d, T: DecodeOwned<'d, CType: Copy>, E: DecodeOwned<'d, CType: Copy>> DecodeOwned<'d>
+unsafe impl<'d, T: DecodeMove<'d, CType: Copy>, E: DecodeMove<'d, CType: Copy>> DecodeMove<'d>
     for Result<T, E>
 {
     type Store = Option<CoreResult<T::Store, E::Store>>;
@@ -350,6 +350,11 @@ impl<T: Copy, E: Copy> CResult<T, E> {
         unsafe { *core::ptr::from_ref(self).cast::<u8>() }
     }
 
+    /// Borrow only the active payload, rejecting invalid tags.
+    pub(crate) fn as_result(&self) -> Option<CoreResult<&T, &E>> {
+        match self.tag() { 0 => Some(Ok(unsafe { self.ok.1.assume_init_ref() })), 1 => Some(Err(unsafe { self.err.1.assume_init_ref() })), _ => None }
+    }
+
     /// Return the represented `core::result::Result<T, E>`, or `None` for an invalid tag.
     pub fn into_result(self) -> Option<CoreResult<T, E>> {
         match self.tag() {
@@ -407,18 +412,6 @@ unsafe impl<T: CType + Copy, E: CType + Copy> Borrow for CResult<T, E> {
 
 crate::slice::impl_identity_carrier! { CResult, [T: CType + Copy, E: CType + Copy], [T, E] }
 
-unsafe impl<T: BorrowCast<AsConst: Copy> + Copy, E: BorrowCast<AsConst: Copy> + Copy> BorrowCast
-    for CResult<T, E>
-{
-    type AsConst = CResult<T::AsConst, E::AsConst>;
-}
-
-unsafe impl<T: BorrowCastMut<AsMut: Copy> + Copy, E: BorrowCastMut<AsMut: Copy> + Copy>
-    BorrowCastMut for CResult<T, E>
-{
-    type AsMut = CResult<T::AsMut, E::AsMut>;
-}
-
 unsafe impl<T: EmptyStore, E: EmptyStore> EmptyStore for CoreResult<T, E> {}
 
 unsafe impl<T, E> CType for CoreResult<T, E> where
@@ -435,25 +428,13 @@ unsafe impl<T, E> CFnReturn for CoreResult<T, E> where
 {
 }
 
-unsafe impl<T, E> BorrowCast for CoreResult<T, E>
-where
-    Self: CType,
-{
-    type AsConst = Self;
-}
-unsafe impl<T, E> BorrowCastMut for CoreResult<T, E>
-where
-    Self: CType,
-{
-    type AsMut = Self;
-}
 
 impl<R: Encode, E: Encode> Encode for CoreResult<R, E> where Self: EncodeMove {}
 impl<R: EncodeUnchecked, E: EncodeUnchecked> EncodeUnchecked for CoreResult<R, E> where
     Self: EncodeMoveUnchecked
 {
 }
-impl<'d, R: Decode<'d>, E: Decode<'d>> Decode<'d> for CoreResult<R, E> where Self: DecodeOwned<'d> {}
+impl<'d, R: Decode<'d>, E: Decode<'d>> Decode<'d> for CoreResult<R, E> where Self: DecodeMove<'d> {}
 
 impl<T, E> From<CoreResult<T, E>> for Result<T, E> {
     fn from(value: CoreResult<T, E>) -> Self {

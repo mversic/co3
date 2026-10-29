@@ -15,14 +15,15 @@ use rust_spec::{
 };
 
 #[cfg(feature = "alloc")]
-use crate::boxed::{CBox, CBoxCell};
+use crate::boxed::{CBox};
 use crate::{
     NeedsDrop, ReprC, assert_arr_has_non_zero_len,
     niche::Niche,
     reference::{CRef, CRefMut},
     utf8::Utf8Str,
 };
-pub(crate) use interior::InteriorTrap;
+#[doc(hidden)]
+pub use interior::InteriorTrap;
 
 // The trait is public inside a private module so associated-type projections
 // in conversion impls are legal without exposing the helper to callers.
@@ -46,14 +47,12 @@ mod interior {
     }
 }
 
+disjoint_impls! {
 /// Type that can be safely transmuted into its C representation.
 ///
 /// # Safety
 /// `Self` and `Self::CType` must be compatible with the same stable ABI.
-pub unsafe trait AbiCompatible: ReprC {}
 
-disjoint_impls! {
-    #[disjoint_impls(remote)]
     pub unsafe trait AbiCompatible: ReprC {}
 
     unsafe impl<R: AbiCompatible + ?Sized, __Interior: ExclusiveKind> AbiCompatible for &R
@@ -86,7 +85,7 @@ disjoint_impls! {
         where
             Self: RustSpec<Layout = Stable>,
             R: RustSpec<Mutability = WithInterior<__Trap>>,
-            Self: ReprC<CType = CBoxCell<<R as ReprC>::CType>>,
+            Self: ReprC<CType = CBox<<R as ReprC>::CType>>,
             <R as ReprC>::CType: Sized,
         {}
 
@@ -211,7 +210,7 @@ disjoint_impls! {
     where
         Self: RustSpec<Layout = Stable>,
         R: RustSpec<Mutability = WithInterior<__Trap>>,
-        Self: ReprC<CType = CBoxCell<<R as ReprC>::CType>>,
+        Self: ReprC<CType = CBox<<R as ReprC>::CType>>,
         <R as ReprC>::CType: Sized,
     {
         #[inline(always)]
@@ -801,5 +800,245 @@ mod tests {
             Decode<'static>,
             Encode
         );
+    }
+}
+
+#[cfg(test)]
+mod conversion_tests {
+    //! Regression tests for conversion and writeback paths.
+    use crate::transmute::AbiCompatibleValidate;
+    use crate::{
+        ReprC,
+        primitives::CBool,
+        stored::{DecodeMove, EncodeMove, EncodeMoveUnchecked, EncodeRef, EncodeRefUnchecked, Store},
+        transmute::AbiCompatible,
+    };
+    use core::cell::{Cell, UnsafeCell};
+
+    #[derive(rust_spec::RustSpec)]
+    #[repr(transparent)]
+    struct Direct(u8);
+
+    impl ReprC for Direct {
+        type CType = u8;
+    }
+    // SAFETY: Direct is a transparent, robust u8.
+    unsafe impl AbiCompatibleValidate for Direct {
+        unsafe fn is_valid(_: &u8) -> bool {
+            true
+        }
+    }
+    unsafe impl AbiCompatible for Direct {}
+    // These deliberately panic: aggregate fast paths must not invoke them.
+    unsafe impl EncodeMoveUnchecked for Direct {
+        type SoftStore = ();
+        unsafe fn soft_encode_unchecked<'itm>(self, _: &'itm mut ()) -> u8
+        where
+            Self: 'itm,
+        {
+            panic!("visited field")
+        }
+    }
+    unsafe impl EncodeMove for Direct {
+        type Store = ();
+        fn soft_encode<'itm>(self, _: &mut ()) -> u8
+        where
+            Self: 'itm,
+        {
+            panic!("visited field")
+        }
+    }
+    unsafe impl<'d> DecodeMove<'d> for Direct {
+        type Store = ();
+        unsafe fn soft_decode<'itm: 'd>(_: u8, _: &'itm mut ()) -> Option<Self> {
+            panic!("visited field")
+        }
+        unsafe fn soft_decode_unchecked<'itm: 'd>(_: u8, _: &'itm mut ()) -> Self {
+            panic!("visited field")
+        }
+    }
+
+    #[test]
+    fn stable_robust_arrays_encode_elements() {
+        assert_eq!([3u8, 4].soft_encode(&mut Default::default()), [3, 4]);
+        assert_eq!(
+            unsafe { [5u8, 6].soft_encode_unchecked(&mut Default::default()) },
+            [5, 6]
+        );
+        let values = unsafe { <[Direct; 2] as DecodeMove>::soft_decode([7, 8], &mut Default::default()) }.unwrap();
+        assert_eq!(values.map(|x| x.0), [7, 8]);
+        let values = unsafe { <[Direct; 2] as DecodeMove>::soft_decode_unchecked([9, 10], &mut Default::default()) };
+        assert_eq!(values.map(|x| x.0), [9, 10]);
+    }
+
+    #[test]
+    fn owned_cells_move_without_visiting_contents() {
+        assert_eq!(Cell::new(Direct(3)).soft_encode(&mut Default::default()).into_inner(), 3);
+        assert_eq!(
+            UnsafeCell::new(Direct(4)).soft_encode(&mut Default::default()).into_inner(),
+            4
+        );
+        let cell = unsafe { Cell::new(Direct(5)).soft_encode_unchecked(&mut Default::default()) };
+        assert_eq!(cell.into_inner(), 5);
+        let cell =
+            unsafe { <UnsafeCell<Direct> as DecodeMove>::soft_decode(UnsafeCell::new(6), &mut Default::default()) }
+                .unwrap();
+        assert_eq!(cell.into_inner().0, 6);
+        let cell = unsafe {
+            <Cell<Direct> as DecodeMove>::soft_decode_unchecked(UnsafeCell::new(7), &mut Default::default())
+        };
+        assert_eq!(cell.into_inner().0, 7);
+        // Non-Copy carriers are moved, not read through &UnsafeCell.
+        let cells = [UnsafeCell::new(Direct(8)), UnsafeCell::new(Direct(9))]
+            .soft_encode(&mut Default::default());
+        assert_eq!(cells.map(UnsafeCell::into_inner), [8, 9]);
+    }
+
+    #[test]
+    fn stable_shared_arrays_preserve_the_original_pointer() {
+        let values = [Direct(3), Direct(4)];
+        let encoded = values.encode_ref(&mut Default::default());
+        assert_eq!(encoded.as_ptr().cast::<u8>(), values.as_ptr().cast::<u8>());
+        let encoded = unsafe { values.encode_ref_unchecked(&mut Default::default()) };
+        assert_eq!(encoded.as_ptr().cast::<u8>(), values.as_ptr().cast::<u8>());
+    }
+
+    #[test]
+    fn nonrobust_checked_conversions_still_validate() {
+        let mut store = Default::default();
+        assert!(
+            unsafe { <[bool; 2] as DecodeMove>::soft_decode([CBool(1), CBool(2)], &mut store) }
+                .is_none()
+        );
+        assert!(
+            unsafe { <Cell<bool> as DecodeMove>::soft_decode(UnsafeCell::new(CBool(2)), &mut Default::default()) }
+                .is_none()
+        );
+        let mut store = Default::default();
+        let values =
+            unsafe { <[bool; 2] as DecodeMove>::soft_decode([CBool(1), CBool(0)], &mut store) }
+                .unwrap();
+        assert_eq!(values, [true, false]);
+    }
+
+    #[test]
+    fn checked_arrays_keep_mutable_reference_writeback() {
+        let mut value = true;
+        let mut store = Default::default();
+        let encoded = [&mut value].soft_encode(&mut store);
+        // SAFETY: The mutable carrier refers to the live conversion store.
+        unsafe { encoded[0].as_ptr().write(CBool::FALSE) };
+        assert_eq!(store.sync(), Some(()));
+        assert!(!value);
+    }
+
+    #[test]
+    fn manually_drop_keeps_mutable_reference_writeback() {
+        let mut value = true;
+        let mut store = Default::default();
+        let encoded = core::mem::ManuallyDrop::new(&mut value).soft_encode(&mut store);
+        unsafe { encoded.as_ptr().write(CBool::FALSE) };
+        assert_eq!(store.sync(), Some(()));
+        assert!(!value);
+    }
+
+    #[test]
+    fn unstable_arrays_keep_field_conversion_and_stores() {
+        let values = [(true, 3u8), (false, 4u8)];
+        let mut store = Default::default();
+        let encoded = values.soft_encode(&mut store);
+        assert_eq!(encoded[0].0, CBool::TRUE);
+        assert_eq!(encoded[1].1, 4);
+        let mut decode_store = Default::default();
+        let decoded =
+            unsafe { <[(bool, u8); 2] as DecodeMove>::soft_decode(encoded, &mut decode_store) }
+                .unwrap();
+        assert_eq!(decoded, values);
+    }
+
+    #[test]
+    fn moving_values_does_not_drop_the_source_or_duplicate_ownership() {
+        use core::sync::atomic::{AtomicUsize, Ordering};
+        static DROPS: AtomicUsize = AtomicUsize::new(0);
+        #[repr(transparent)]
+        struct Owned(u8);
+        impl Drop for Owned {
+            fn drop(&mut self) {
+                DROPS.fetch_add(1, Ordering::SeqCst);
+            }
+        }
+        // SAFETY: Identity conversion transfers ownership of the same type.
+        let moved: Owned = unsafe { crate::transmute::transmute_owned(Owned(7)) };
+        assert_eq!(DROPS.load(Ordering::SeqCst), 0);
+        assert_eq!(moved.0, 7);
+        drop(moved);
+        assert_eq!(DROPS.load(Ordering::SeqCst), 1);
+    }
+
+    #[test]
+    fn unchecked_arrays_keep_shared_interior_references_without_validation() {
+        use core::num::NonZeroU8;
+        let cell = UnsafeCell::new(NonZeroU8::new(3).unwrap());
+        let mut store = Default::default();
+        let encoded = unsafe { [&cell].soft_encode_unchecked(&mut store) };
+        assert_eq!(
+            encoded[0].as_ptr().cast::<()>(),
+            core::ptr::from_ref(&cell).cast_mut().cast::<()>()
+        );
+    }
+
+    #[test]
+    fn manually_drop_robust_interior_decodes_without_visiting_payload() {
+        use core::mem::ManuallyDrop;
+
+        #[derive(rust_spec::RustSpec)]
+        #[repr(transparent)]
+        struct Interior(UnsafeCell<u8>);
+
+        impl ReprC for Interior {
+            type CType = UnsafeCell<u8>;
+        }
+        // SAFETY: Interior is a transparent wrapper around its carrier.
+        unsafe impl AbiCompatibleValidate for Interior {
+            unsafe fn is_valid(_: &Self::CType) -> bool {
+                panic!("visited robust interior validator")
+            }
+        }
+        unsafe impl AbiCompatible for Interior {}
+        unsafe impl<'d> DecodeMove<'d> for Interior {
+            type Store = ();
+            unsafe fn soft_decode<'itm: 'd>(_: Self::CType, _: &'itm mut ()) -> Option<Self> {
+                panic!("visited interior decoder")
+            }
+            unsafe fn soft_decode_unchecked<'itm: 'd>(_: Self::CType, _: &'itm mut ()) -> Self {
+                panic!("visited interior decoder")
+            }
+        }
+
+        let decoded = unsafe {
+            <ManuallyDrop<Interior> as DecodeMove>::soft_decode(UnsafeCell::new(3), &mut Default::default())
+        }
+        .unwrap();
+        assert_eq!(ManuallyDrop::into_inner(decoded).0.into_inner(), 3);
+        let decoded = unsafe {
+            <ManuallyDrop<Interior> as DecodeMove>::soft_decode_unchecked(UnsafeCell::new(4), &mut Default::default())
+        };
+        assert_eq!(ManuallyDrop::into_inner(decoded).0.into_inner(), 4);
+
+        // Non-robust interior still delegates to the payload's validating decoder.
+        assert!(
+            unsafe {
+                <ManuallyDrop<Cell<bool>> as DecodeMove>::soft_decode(
+                    UnsafeCell::new(CBool(2)),
+                    &mut Default::default(),
+                )
+            }
+            .is_none()
+        );
+        let decoded = unsafe {
+            <ManuallyDrop<Cell<bool>> as DecodeMove>::soft_decode(UnsafeCell::new(CBool(1)), &mut Default::default())
+        }
+        .unwrap();
+        assert!(ManuallyDrop::into_inner(decoded).into_inner());
     }
 }

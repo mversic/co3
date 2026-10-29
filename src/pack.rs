@@ -1,7 +1,7 @@
 //! Conversion between C-compatible representations and ABI arguments.
 
 #[cfg(feature = "alloc")]
-use crate::boxed::{Box, CBox, CBoxCell, CWideBox, CWideBoxCell};
+use crate::boxed::{Box, CBox, CWideBox};
 use core::{
     cell::{Cell, UnsafeCell},
     mem::ManuallyDrop,
@@ -184,21 +184,10 @@ disjoint_impls! {
     {
         type Error = <<P as Wide>::Metadata as TryInto<U>>::Error;
         fn unpack(value: Self::CType) -> Result<(K, U), Self::Error> {
-            Ok((CBox::from_raw(value.as_ptr()).into(), value.metadata().try_into()?))
+            Ok((unsafe { CBox::from_raw(value.as_ptr()) }.into(), value.metadata().try_into()?))
         }
     }
 
-    #[cfg(feature = "alloc")]
-    impl<R: ?Sized, P: Wide<Header: WideHeader<Data: CType + Sized>, Metadata: TryInto<U>> + ?Sized, K: CType, U: CType> Unpack2<K, U> for Box<R>
-    where
-        Self: ReprC<CType = CWideBoxCell<P>>,
-        CBoxCell<<<P as Wide>::Header as WideHeader>::Data>: Into<K>,
-    {
-        type Error = <<P as Wide>::Metadata as TryInto<U>>::Error;
-        fn unpack(value: Self::CType) -> Result<(K, U), Self::Error> {
-            Ok((CBoxCell::from_raw(value.as_ptr()).into(), value.metadata().try_into()?))
-        }
-    }
 }
 
 disjoint_impls! {
@@ -249,22 +238,10 @@ disjoint_impls! {
         type Error = <U as TryInto<<P as Wide>::Metadata>>::Error;
         unsafe fn pack(data: K, metadata: U) -> Result<Self::CType, Self::Error> {
             let data: CBox<<<P as Wide>::Header as WideHeader>::Data> = data.into();
-            Ok(CWideBox::from_raw_nullable(data.as_ptr(), metadata.try_into()?))
+            Ok(unsafe { CWideBox::from_raw_nullable(data.as_ptr(), metadata.try_into()?) })
         }
     }
 
-    #[cfg(feature = "alloc")]
-    impl<R: ?Sized, P: Wide<Header: WideHeader<Data: CType + Sized>, Metadata: CType + Sized> + ?Sized, K: CType, U: CType + TryInto<<P as Wide>::Metadata>> Pack2<K, U> for Box<R>
-    where
-        Self: ReprC<CType = CWideBoxCell<P>>,
-        K: Into<CBoxCell<<<P as Wide>::Header as WideHeader>::Data>>,
-    {
-        type Error = <U as TryInto<<P as Wide>::Metadata>>::Error;
-        unsafe fn pack(data: K, metadata: U) -> Result<Self::CType, Self::Error> {
-            let data: CBoxCell<<<P as Wide>::Header as WideHeader>::Data> = data.into();
-            Ok(CWideBoxCell::from_raw_nullable(data.as_ptr(), metadata.try_into()?))
-        }
-    }
 }
 
 impl<T: Unpack2<Part1, Part2>, Part1: CType, Part2: CType> Unpack2<Part1, Part2> for UnsafeCell<T> {

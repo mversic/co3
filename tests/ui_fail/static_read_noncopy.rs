@@ -7,5 +7,5 @@ ffi! {
 
 fn main() {
     let _ = unsafe { VALUE.read() };
-    let _ = unsafe { VALUE.soft_read(&mut ()) };
+    let _ = unsafe { VALUE.soft_read(&mut Default::default()) };
 }

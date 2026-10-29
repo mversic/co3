@@ -4,43 +4,27 @@ use quote::{format_ident, quote};
 use crate::{
     layout::{
         attr::ReprKind,
-        borrow::gen_view_owner_name,
         ctype::{classify_tail, gen_copy_extern_c_bounds_for_ctype, gen_ctype_name},
-        enum_tag_type, enum_variant_tag_exprs, generic_param_idents, is_exhaustive_enum,
+        enum_tag_type, enum_variant_tag_exprs, is_exhaustive_enum,
         is_transparent_enum_repr,
     },
     utils::{build_extern_c_type_tuple, speculative_marker},
 };
 
-pub fn gen_view_niche_ir(view_name: &syn::Ident, generics: &syn::Generics) -> TokenStream {
-    let (impl_generics, view_ty_generics, where_clause) = generics.split_for_impl();
-    let predicates = where_clause
-        .as_ref()
-        .map(|where_clause| &where_clause.predicates);
-    let has_view_lifetime = matches!(
-        generics.params.first(),
-        Some(syn::GenericParam::Lifetime(param)) if param.lifetime.ident == "_dšč"
-    );
-    let owner_name = gen_view_owner_name(view_name);
-    let owner_generics =
-        generic_param_idents(generics.params.iter().skip(has_view_lifetime as usize))
-            .collect::<Vec<_>>();
-    let owner_ty = if owner_generics.is_empty() {
-        quote! { #owner_name }
-    } else {
-        quote! { #owner_name <#(#owner_generics),*> }
-    };
-
-    let speculative = speculative_marker(generics.params.is_empty());
+pub fn gen_niche_value_ir(
+    name: &syn::Ident,
+    generics: &syn::Generics,
+    value: TokenStream,
+    bounds: TokenStream,
+) -> TokenStream {
+    let (impl_generics, ty_generics, where_clause) = generics.split_for_impl();
+    let predicates = where_clause.as_ref().map(|clause| &clause.predicates);
     quote! {
-        impl #impl_generics co3::niche::Niche for #view_name #view_ty_generics where
-            #owner_ty: co3::niche::Niche,
-            #speculative Self: co3::ReprC<CType: Copy>,
+        impl #impl_generics co3::niche::Niche for #name #ty_generics where
+            #bounds
             #predicates
         {
-            const NICHE: Self::CType = unsafe { core::mem::transmute_copy(
-                &<#owner_ty as co3::niche::Niche>::NICHE
-            ) };
+            const NICHE: Self::CType = #value;
         }
     }
 }
@@ -59,12 +43,7 @@ pub fn gen_struct_niche_ir(
         return quote! {};
     }
 
-    let (impl_generics, ty_generics, _) = generics.split_for_impl();
-
-    let predicates = generics
-        .where_clause
-        .as_ref()
-        .map(|where_clause| &where_clause.predicates);
+    let (_, ty_generics, _) = generics.split_for_impl();
 
     let ctype_name = gen_ctype_name(struct_name);
     let for_dummy = speculative_marker(generics.params.is_empty());
@@ -106,18 +85,18 @@ pub fn gen_struct_niche_ir(
             )
         };
 
-    quote! {
-        impl #impl_generics co3::niche::Niche for #struct_name #ty_generics where
+    gen_niche_value_ir(
+        struct_name,
+        generics,
+        niche_value,
+        quote! {
             #for_dummy #ctype_name #ty_generics: Copy,
             #last_field_sized
             #inferred_niche_bounds
             #custom_niche_bounds
             #(#extern_c_bounds,)*
-            #predicates
-        {
-            const NICHE: Self::CType = #niche_value;
-        }
-    }
+        },
+    )
 }
 
 pub fn gen_enum_niche_ir(

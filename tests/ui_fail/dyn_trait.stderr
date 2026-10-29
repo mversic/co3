@@ -88,10 +88,10 @@ help: `&'_lšč0 R` implements trait `rust_spec::_::RustSpec0<_TŠČ0>`
    | |         R: RustSpec<Size = size::NulTerminated>,
    | |________________________________________________^ `rust_spec::_::RustSpec0<NulTerminated>`
    = note: required for `&dyn Trait` to implement `RustSpec`
-   = note: required for `&dyn Trait` to implement `DecodeOwned<'_>`
+   = note: required for `&dyn Trait` to implement `DecodeMove<'_>`
    = note: this error originates in the macro `ffi` (in Nightly builds, run with -Z macro-backtrace for more info)
 
-error[E0277]: the trait bound `&dyn Trait: stored::_::DecodeOwned0<'_, _, _, _, _>` is not satisfied
+error[E0277]: the trait bound `&dyn Trait: stored::_::DecodeMove0<'_, _, _, _, _>` is not satisfied
   --> tests/ui_fail/dyn_trait.rs:7:1
    |
  7 | / ffi! {
@@ -100,13 +100,13 @@ error[E0277]: the trait bound `&dyn Trait: stored::_::DecodeOwned0<'_, _, _, _, 
 10 | |     impl dyn Trait {
 ...  |
 13 | | }
-   | |_^ the trait `stored::_::DecodeOwned0<'_, _, _, _, _>` is not implemented for `&dyn Trait`
+   | |_^ the trait `stored::_::DecodeMove0<'_, _, _, _, _>` is not implemented for `&dyn Trait`
    |
-   = help: the following other types implement trait `stored::_::DecodeOwned0<'d, _TŠČ1, _TŠČ2, _TŠČ3, _TŠČ4>`:
-             `&'d R` implements `stored::_::DecodeOwned0<'d, Stable, Stable, _TŠČ0, Exclusive>`
-             `&'d R` implements `stored::_::DecodeOwned0<'d, Unstable, Stable, co3::rust_spec::size::MetaSized<SliceLike>, Exclusive>`
-             `&'d R` implements `stored::_::DecodeOwned0<'d, Unstable, Unstable, NulTerminated, Exclusive>`
-             `&'d R` implements `stored::_::DecodeOwned0<'d, Unstable, Unstable, co3::rust_spec::size::Sized<S>, Exclusive>`
-             `&'d [R]` implements `stored::_::DecodeOwned0<'d, Unstable, Unstable, co3::rust_spec::size::MetaSized<SliceLike>, Exclusive>`
-   = note: required for `&dyn Trait` to implement `DecodeOwned<'_>`
+   = help: the following other types implement trait `stored::_::DecodeMove0<'d, _TŠČ1, _TŠČ2, _TŠČ3, _TŠČ4>`:
+             `&'d R` implements `stored::_::DecodeMove0<'d, Stable, Stable, _TŠČ0, Exclusive>`
+             `&'d R` implements `stored::_::DecodeMove0<'d, Unstable, Stable, co3::rust_spec::size::MetaSized<SliceLike>, Exclusive>`
+             `&'d R` implements `stored::_::DecodeMove0<'d, Unstable, Unstable, NulTerminated, Exclusive>`
+             `&'d R` implements `stored::_::DecodeMove0<'d, Unstable, Unstable, co3::rust_spec::size::Sized<S>, Exclusive>`
+             `&'d [R]` implements `stored::_::DecodeMove0<'d, Unstable, Unstable, co3::rust_spec::size::MetaSized<SliceLike>, Exclusive>`
+   = note: required for `&dyn Trait` to implement `DecodeMove<'_>`
    = note: this error originates in the macro `ffi` (in Nightly builds, run with -Z macro-backtrace for more info)

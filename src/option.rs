@@ -12,9 +12,9 @@ use rust_spec::{
 
 use crate::{
     CFnArg, CFnReturn, CType, Decode, Encode, EncodeUnchecked, ReprC, Thin,
-    borrow::{Borrow, BorrowCast, BorrowCastMut},
+    borrow::Borrow,
     stored::{
-        DecodeOwned, EmptyStore, EncodeMove, EncodeMoveUnchecked, EncodeRef, EncodeRefUnchecked,
+        DecodeMove, EmptyStore, EncodeMove, EncodeMoveUnchecked, EncodeRef, EncodeRefUnchecked,
     },
     sync::RefSizedEncodeStore,
     transmute::AbiCompatible,
@@ -145,7 +145,7 @@ where
     }
 }
 
-unsafe impl<'d, T: DecodeOwned<'d>> DecodeOwned<'d> for Option<T> {
+unsafe impl<'d, T: DecodeMove<'d>> DecodeMove<'d> for Option<T> {
     type Store = CoreOption<T::Store>;
 
     unsafe fn soft_decode<'a: 'd>(
@@ -281,6 +281,11 @@ impl<T> COption<T> {
         self.tag
     }
 
+    /// Borrow only the active payload, rejecting invalid tags.
+    pub(crate) fn as_option(&self) -> CoreOption<CoreOption<&T>> {
+        match self.tag { 0 => Some(None), 1 => Some(Some(unsafe { self.payload.assume_init_ref() })), _ => None }
+    }
+
     /// Return the represented `core::option::Option<T>`, or `None` for an invalid tag.
     pub fn into_option(self) -> CoreOption<CoreOption<T>> {
         match self.tag {
@@ -330,12 +335,6 @@ unsafe impl<T: RustSpec> RustSpec for COption<T> {
 
 crate::slice::impl_identity_carrier! { COption, [T: CType], [T] }
 
-unsafe impl<T: BorrowCast<AsConst: Copy>> BorrowCast for COption<T> {
-    type AsConst = COption<T::AsConst>;
-}
-unsafe impl<T: BorrowCastMut<AsMut: Copy>> BorrowCastMut for COption<T> {
-    type AsMut = COption<T::AsMut>;
-}
 
 unsafe impl<T: EmptyStore> EmptyStore for CoreOption<T> {}
 
@@ -351,22 +350,10 @@ unsafe impl<T> CFnReturn for CoreOption<T> where
     Self: CType + RustSpec<Size = rust_spec::size::Sized<rust_spec::Gt<rust_spec::Zero>>>
 {
 }
-unsafe impl<T> BorrowCast for CoreOption<T>
-where
-    Self: CType,
-{
-    type AsConst = Self;
-}
-unsafe impl<T> BorrowCastMut for CoreOption<T>
-where
-    Self: CType,
-{
-    type AsMut = Self;
-}
 
 impl<R: Encode> Encode for CoreOption<R> where Self: EncodeMove {}
 impl<R: EncodeUnchecked> EncodeUnchecked for CoreOption<R> where Self: EncodeMoveUnchecked {}
-impl<'d, R: Decode<'d>> Decode<'d> for CoreOption<R> where Self: DecodeOwned<'d> {}
+impl<'d, R: Decode<'d>> Decode<'d> for CoreOption<R> where Self: DecodeMove<'d> {}
 
 impl<T> From<CoreOption<T>> for Option<T> {
     fn from(value: CoreOption<T>) -> Self {

@@ -6,33 +6,33 @@ use rust_spec::RustSpec;
 
 use crate::{
     CFnArg, CFnReturn, CType, Decode, Encode, ReprC,
-    borrow::{BorrowCast, BorrowCastMut},
-    reference::{CRef, CRefMut},
-    slice::{CWideRef, CWideRefMut, impl_identity_carrier, impl_wide_raw_methods},
-    stored::{DecodeOwned, EncodeMove, EncodeMoveUnchecked},
+    slice::{impl_identity_carrier, impl_wide_raw_methods},
+    stored::{DecodeMove, EncodeMove, EncodeMoveUnchecked},
     transmute::AbiCompatible,
     wide::{PointeeData, Wide, WideHeader},
 };
 
-pub(crate) trait FromBox<C: CType>: BorrowCastMut<AsMut = CRefMut<C, true>> + Copy {
+pub(crate) trait FromBox<C: CType>: CType + Copy {
+    fn data(self) -> *mut C;
+
     unsafe fn into_box(self) -> Option<Box<C>> {
-        let ptr = NonNull::new(crate::borrow::borrow_cast_mut(self).as_ptr())?;
+        let ptr = NonNull::new(self.data())?;
         Some(unsafe { Box::from_raw(ptr.as_ptr()) })
     }
     unsafe fn from_non_null(data: NonNull<C>) -> Self;
 }
 
 impl<C: CType> FromBox<C> for CBox<C> {
+    fn data(self) -> *mut C {
+        self.as_ptr()
+    }
+
     unsafe fn from_non_null(data: NonNull<C>) -> Self {
         unsafe { CBox::from_non_null(data) }
     }
 }
 
-impl<C: CType> FromBox<C> for CBoxCell<C> {
-    unsafe fn from_non_null(data: NonNull<C>) -> Self {
-        unsafe { CBoxCell::from_non_null(data) }
-    }
-}
+
 
 pub(crate) trait FromWideBox<P: Wide<Header: WideHeader<Data: CType>, Metadata: CType> + ?Sized>:
     CType + Sized
@@ -60,21 +60,7 @@ impl<P: Wide<Header: WideHeader<Data: CType>, Metadata: CType> + ?Sized> FromWid
     }
 }
 
-impl<P: Wide<Header: WideHeader<Data: CType>, Metadata: CType> + ?Sized> FromWideBox<P>
-    for CWideBoxCell<P>
-{
-    fn data(&self) -> *mut PointeeData<P> {
-        CWideBoxCell::as_ptr(*self)
-    }
 
-    fn metadata(&self) -> P::Metadata {
-        self.metadata
-    }
-
-    unsafe fn from_raw_parts(data: NonNull<PointeeData<P>>, len: P::Metadata) -> Self {
-        unsafe { CWideBoxCell::from_raw_parts(data, len) }
-    }
-}
 
 /// Owned pointer derived from `Box<C>`.
 ///
@@ -85,14 +71,7 @@ pub struct CBox<C> {
     data: *mut C,
 }
 
-/// Owned pointer whose shared borrowed view permits interior mutation.
-///
-/// Like [`CBox`], a null data pointer represents `Option<Box<C>>`.
-#[derive(RustSpec)]
-#[repr(transparent)]
-pub struct CBoxCell<C> {
-    data: *mut C,
-}
+
 
 /// Owned wide pointee with a defined C ABI layout.
 ///
@@ -104,18 +83,10 @@ pub struct CWideBox<P: Wide + ?Sized> {
     metadata: P::Metadata,
 }
 
-/// Owned slice whose shared borrowed view permits interior mutation.
-///
-/// Like [`CWideBox`], a null data pointer represents `Option<Box<[C]>>`.
-#[derive(RustSpec)]
-#[repr(C)]
-pub struct CWideBoxCell<P: Wide + ?Sized> {
-    data: *mut PointeeData<P>,
-    metadata: P::Metadata,
-}
+
 
 macro_rules! impl_boxed_pointer {
-    ($ty:ident, $as_const:ty) => {
+    ($ty:ident) => {
         impl<C> core::fmt::Debug for $ty<C> {
             fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
                 f.debug_struct(stringify!($ty))
@@ -182,8 +153,7 @@ macro_rules! impl_boxed_pointer {
                 }
             }
 
-            // TODO: This method should not be
-            pub(crate) const fn from_raw(data: *mut C) -> Self {
+            pub(crate) const unsafe fn from_raw(data: *mut C) -> Self {
                 Self { data }
             }
         }
@@ -213,12 +183,6 @@ macro_rules! impl_boxed_pointer {
             }
         }
 
-        unsafe impl<C: CType> BorrowCast for $ty<C> {
-            type AsConst = $as_const;
-        }
-        unsafe impl<C: CType> BorrowCastMut for $ty<C> {
-            type AsMut = CRefMut<C, true>;
-        }
     };
 }
 
@@ -275,7 +239,7 @@ macro_rules! impl_wide_box_methods {
                 Some(unsafe { P::from_non_null(data, self.metadata) })
             }
 
-            pub(crate) const fn from_raw_nullable(
+            pub(crate) const unsafe fn from_raw_nullable(
                 data: *mut PointeeData<P>,
                 metadata: P::Metadata,
             ) -> Self {
@@ -295,38 +259,15 @@ macro_rules! impl_wide_box_methods {
     };
 }
 
-impl_boxed_pointer!(CBox, CRef<C>);
-impl_boxed_pointer!(CBoxCell, CRefMut<C, false>);
+impl_boxed_pointer!(CBox);
 
 impl_wide_box_methods!(CWideBox);
-impl_wide_box_methods!(CWideBoxCell);
 
 impl_identity_carrier! { CBox, [C: CType], [C] }
-impl_identity_carrier! { CBoxCell, [C: CType], [C] }
 impl_identity_carrier! { CWideBox, [P: Wide<Header: WideHeader<Data: CType>, Metadata: CType> + ?Sized], [P] }
-impl_identity_carrier! { CWideBoxCell, [P: Wide<Header: WideHeader<Data: CType>, Metadata: CType> + ?Sized], [P] }
 
-unsafe impl<P: Wide<Header: WideHeader<Data: CType>, Metadata: CType> + ?Sized> BorrowCast
-    for CWideBox<P>
-{
-    type AsConst = CWideRef<P>;
-}
-unsafe impl<P: Wide<Header: WideHeader<Data: CType>, Metadata: CType> + ?Sized> BorrowCastMut
-    for CWideBox<P>
-{
-    type AsMut = CWideRefMut<P, true>;
-}
-
-unsafe impl<P: Wide<Header: WideHeader<Data: CType>, Metadata: CType> + ?Sized> BorrowCast
-    for CWideBoxCell<P>
-{
-    type AsConst = CWideRefMut<P, false>;
-}
-unsafe impl<P: Wide<Header: WideHeader<Data: CType>, Metadata: CType> + ?Sized> BorrowCastMut
-    for CWideBoxCell<P>
-{
-    type AsMut = CWideRefMut<P, true>;
-}
+crate::slice::impl_carrier_borrow! { CBox, [C: CType], [C] }
+crate::slice::impl_carrier_borrow! { CWideBox, [P: Wide<Header: WideHeader<Data: CType>, Metadata: CType> + ?Sized], [P] }
 
 /// Converts owned carrier allocations without assuming their headers have equal layout.
 pub(crate) trait OwnedBoxCarrier<B>: Sized {
@@ -359,16 +300,3 @@ macro_rules! impl_vec_box_carrier {
     };
 }
 impl_vec_box_carrier!(CWideBox);
-impl_vec_box_carrier!(CWideBoxCell);
-
-/// Constructs a borrowed mutable view while retaining ownership in the original carrier.
-pub(crate) trait OwnedMutView: Copy {
-    type View: CType + Copy;
-    fn mut_view(self) -> Self::View;
-}
-impl<C: BorrowCastMut<AsMut: Copy> + Copy> OwnedMutView for C {
-    type View = C::AsMut;
-    fn mut_view(self) -> Self::View {
-        crate::borrow::borrow_cast_mut(self)
-    }
-}

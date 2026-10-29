@@ -583,20 +583,21 @@ use rust_spec::{
 use rust_spec::{Stable, Unstable, size::MetadataKind};
 
 #[cfg(feature = "alloc")]
-use crate::boxed::{CBox, CBoxCell, CWideBox, CWideBoxCell};
+use crate::boxed::{CBox, CWideBox};
 #[cfg(feature = "alloc")]
 use crate::ffi::NulTerminatedBuf;
 use crate::{
     reference::{CRef, CRefMut},
     slice::{CWideRef, CWideRefMut},
-    stored::{DecodeOwned, EmptyStore, EncodeMove, EncodeMoveUnchecked, Store},
+    stored::{DecodeMove, EmptyStore, EncodeMove, EncodeMoveUnchecked, Store},
     wide::{Wide, WideHeader},
 };
 
 pub mod borrow;
 #[cfg(feature = "alloc")]
 pub mod boxed;
-mod decoded;
+#[doc(hidden)]
+pub mod decoded;
 #[doc(hidden)]
 pub mod either;
 pub mod ffi;
@@ -741,51 +742,27 @@ disjoint_impls! {
     }
 
     #[cfg(feature = "alloc")]
-    impl<R: ReprC, S: SizedKind, __Interior: ExclusiveKind> ReprC for Box<R>
+    impl<R: ReprC, S: SizedKind> ReprC for Box<R>
     where
-        R: RustSpec<Size = rust_spec::size::Sized<S>, Mutability = Exclusive<__Interior>>,
+        R: RustSpec<Size = rust_spec::size::Sized<S>>,
         <R as ReprC>::CType: Sized,
     {
         type CType = CBox<R::CType>;
     }
     #[cfg(feature = "alloc")]
-    impl<R: NulTerminatedBuf<Header: ReprC> + ?Sized, __Interior: ExclusiveKind> ReprC for Box<R>
+    impl<R: NulTerminatedBuf<Header: ReprC> + ?Sized> ReprC for Box<R>
     where
-        R: RustSpec<Size = NulTerminated, Mutability = Exclusive<__Interior>>,
+        R: RustSpec<Size = NulTerminated>,
         <<R as NulTerminatedBuf>::Header as ReprC>::CType: Sized,
     {
         type CType = CBox<<R::Header as ReprC>::CType>;
     }
     #[cfg(feature = "alloc")]
-    impl<R: ReprC<CType: Wide<Header: WideHeader<Data: CType + Sized>, Metadata = usize>> + ?Sized, __Interior: ExclusiveKind> ReprC for Box<R>
+    impl<R: ReprC<CType: Wide<Header: WideHeader<Data: CType + Sized>, Metadata = usize>> + ?Sized> ReprC for Box<R>
     where
-        R: RustSpec<Size = MetaSized<SliceLike>, Mutability = Exclusive<__Interior>>,
+        R: RustSpec<Size = MetaSized<SliceLike>>,
     {
         type CType = CWideBox<R::CType>;
-    }
-
-    #[cfg(feature = "alloc")]
-    impl<R: ReprC, S: SizedKind, __Trap> ReprC for Box<R>
-    where
-        R: RustSpec<Size = rust_spec::size::Sized<S>, Mutability = WithInterior<__Trap>>,
-        <R as ReprC>::CType: Sized,
-    {
-        type CType = CBoxCell<R::CType>;
-    }
-    #[cfg(feature = "alloc")]
-    impl<R: NulTerminatedBuf<Header: ReprC> + ?Sized, __Trap> ReprC for Box<R>
-    where
-        R: RustSpec<Size = NulTerminated, Mutability = WithInterior<__Trap>>,
-        <<R as NulTerminatedBuf>::Header as ReprC>::CType: Sized,
-    {
-        type CType = CBoxCell<<R::Header as ReprC>::CType>;
-    }
-    #[cfg(feature = "alloc")]
-    impl<R: ReprC<CType: Wide<Header: WideHeader<Data: CType + Sized>, Metadata = usize>> + ?Sized, __Trap> ReprC for Box<R>
-    where
-        R: RustSpec<Size = MetaSized<SliceLike>, Mutability = WithInterior<__Trap>>,
-    {
-        type CType = CWideBoxCell<R::CType>;
     }
 
     impl<R: ReprC> ReprC for Option<R>
@@ -855,7 +832,7 @@ pub trait EncodeUnchecked: EncodeMoveUnchecked {}
 pub trait Encode: EncodeMove + EncodeUnchecked {}
 
 /// Facilitates conversion into a Rust type from a corresponding C-compatible representation.
-pub trait Decode<'d>: DecodeOwned<'d> {}
+pub trait Decode<'d>: DecodeMove<'d> {}
 
 #[cfg(feature = "alloc")]
 const _: () = {
@@ -871,7 +848,7 @@ const _: () = {
     }
     impl<R: ?Sized> Encode for Box<R> where Self: RustSpec<Layout: BoxConversionLayout<R>> + EncodeMove {}
     impl<'d, R: ?Sized> Decode<'d> for Box<R> where
-        Self: RustSpec<Layout: BoxConversionLayout<R>> + DecodeOwned<'d>
+        Self: RustSpec<Layout: BoxConversionLayout<R>> + DecodeMove<'d>
     {
     }
 };
@@ -881,12 +858,12 @@ impl<R: ?Sized> Encode for &mut R where Self: EncodeMove {}
 impl<R: ?Sized> EncodeUnchecked for &R where Self: EncodeMoveUnchecked {}
 impl<R: ?Sized> EncodeUnchecked for &mut R where Self: EncodeMoveUnchecked {}
 
-impl<'d, R: ?Sized> Decode<'d> for &'d R where Self: DecodeOwned<'d> {}
-impl<'d, R: ?Sized> Decode<'d> for &'d mut R where Self: DecodeOwned<'d> {}
+impl<'d, R: ?Sized> Decode<'d> for &'d R where Self: DecodeMove<'d> {}
+impl<'d, R: ?Sized> Decode<'d> for &'d mut R where Self: DecodeMove<'d> {}
 
 impl<R: Encode, const N: usize> Encode for [R; N] where Self: EncodeMove {}
 impl<R: EncodeUnchecked, const N: usize> EncodeUnchecked for [R; N] where Self: EncodeMoveUnchecked {}
-impl<'d, R: Decode<'d>, const N: usize> Decode<'d> for [R; N] where Self: DecodeOwned<'d> {}
+impl<'d, R: Decode<'d>, const N: usize> Decode<'d> for [R; N] where Self: DecodeMove<'d> {}
 
 /// Perform the conversion from `T` into [`ReprC::CType`].
 pub fn encode<T: Encode<Store: EmptyStore>>(item: T) -> T::CType {
@@ -1107,8 +1084,8 @@ mod tests {
         let mut value = Some(inner);
         let value_mut_ref: &mut Option<u8> = &mut value;
         {
-            let mut store = Box::default();
-            let encoded = soft_encode(value_mut_ref, &mut *store);
+            let mut store = Default::default();
+            let encoded = soft_encode(value_mut_ref, &mut store);
             unsafe {
                 *encoded.as_ptr() = COption::Some(other);
             }
@@ -1119,8 +1096,8 @@ mod tests {
         let mut slice = [Some(1u8)];
         let ref_mut: &mut [_] = &mut slice;
         {
-            let mut store = Box::default();
-            let encoded = soft_encode(ref_mut, &mut *store);
+            let mut store = Default::default();
+            let encoded = soft_encode(ref_mut, &mut store);
             let c_slice = unsafe { encoded.into_mut().unwrap() };
             c_slice[0] = COption::Some(other);
             store.sync().unwrap();
@@ -1134,8 +1111,8 @@ mod tests {
         let c_ptr = encode(&mut c_opt);
         let new_val: u8 = 42;
         {
-            let mut store = Box::default();
-            let decoded = unsafe { soft_decode::<&mut _>(c_ptr, &mut *store) }.unwrap();
+            let mut store = Default::default();
+            let decoded = unsafe { soft_decode::<&mut _>(c_ptr, &mut store) }.unwrap();
 
             *decoded = Some(new_val);
             store.sync().unwrap();
@@ -1146,8 +1123,8 @@ mod tests {
         let c_slice = encode(&mut c_opts[..]);
         let x: u8 = 10;
         {
-            let mut store = Box::default();
-            let decoded = unsafe { soft_decode::<&mut [_]>(c_slice, &mut *store) }.unwrap();
+            let mut store = Default::default();
+            let decoded = unsafe { soft_decode::<&mut [_]>(c_slice, &mut store) }.unwrap();
 
             decoded[0] = Some(x);
             store.sync().unwrap();
@@ -1165,7 +1142,7 @@ mod tests {
     //    let slice_ref: &mut [_] = &mut tuples;
 
     //    {
-    //        let mut store = Box::default();
+    //        let mut store = Default::default();
 
     //        let encoded = soft_encode(slice_ref, &mut store);
     //        let c_slice = unsafe { encoded.into_mut().unwrap() };
@@ -1188,8 +1165,8 @@ mod tests {
         let mut value = Box::new((1_u32, true));
 
         {
-            let mut store = Box::default();
-            let encoded = soft_encode(&mut value, &mut *store);
+            let mut store = Default::default();
+            let encoded = soft_encode(&mut value, &mut store);
             let original_data = unsafe { (*encoded.as_ptr()).as_ptr() };
             let replacement = CBox::from_box(Box::new(ReprCTuple2(100, CBool::TRUE)));
             let replacement_data = replacement.as_ptr();
@@ -1214,7 +1191,7 @@ mod tests {
         let c_slice = encode(&mut tuples[..]);
 
         {
-            let mut store = Box::default();
+            let mut store = Default::default();
             let decoded =
                 unsafe { soft_decode::<&mut [(u32, bool)]>(c_slice, &mut store) }.unwrap();
 
@@ -1226,5 +1203,3 @@ mod tests {
     }
 }
 
-#[cfg(test)]
-mod transmute_tests;

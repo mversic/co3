@@ -14,7 +14,7 @@ use crate::{
     Decode, Encode,
     boxed::CWideBox,
     niche::Niche,
-    stored::{DecodeOwned, EncodeMove, EncodeMoveUnchecked},
+    stored::{DecodeMove, EncodeMove, EncodeMoveUnchecked},
 };
 
 /// C-compatible byte region used as the representation of `str`.
@@ -107,7 +107,7 @@ unsafe impl EncodeMoveUnchecked for String {
 }
 
 #[cfg(feature = "alloc")]
-unsafe impl<'d> DecodeOwned<'d> for String {
+unsafe impl<'d> DecodeMove<'d> for String {
     type Store = ();
 
     unsafe fn soft_decode<'itm: 'd>(source: Self::CType, (): &mut ()) -> Option<Self> {

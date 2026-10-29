@@ -158,7 +158,7 @@ fn owned_handle_has_null_niche() {
     use co3::{
         ReprC,
         niche::Niche,
-        stored::{DecodeOwned, EncodeMove},
+        stored::{DecodeMove, EncodeMove},
     };
     use core::mem::{align_of, size_of};
 
@@ -170,7 +170,7 @@ fn owned_handle_has_null_niche() {
     );
 
     let null = <OwnedOpaqueStruct as Niche>::NICHE;
-    assert!(unsafe { OwnedOpaqueStruct::soft_decode(null, &mut ()) }.is_none());
+    assert!(unsafe { OwnedOpaqueStruct::soft_decode(null, &mut Default::default()) }.is_none());
     assert!(matches!(
         unsafe { <Option<OwnedOpaqueStruct>>::soft_decode(null, &mut None) },
         Some(None)

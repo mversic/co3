@@ -10,18 +10,18 @@ error[E0277]: the trait bound `Opaque: Copy` is not satisfied
 24 | | }
    | |_^ the trait `Copy` is not implemented for `Opaque`
    |
-   = help: the following other types implement trait `stored::_::DecodeOwned0<'d, _TŠČ1, _TŠČ2, _TŠČ3, _TŠČ4>`:
-             `&'d R` implements `stored::_::DecodeOwned0<'d, Stable, Stable, _TŠČ0, Exclusive>`
-             `&'d R` implements `stored::_::DecodeOwned0<'d, Unstable, Stable, rust_spec::size::MetaSized<SliceLike>, Exclusive>`
-             `&'d R` implements `stored::_::DecodeOwned0<'d, Unstable, Unstable, NulTerminated, Exclusive>`
-             `&'d R` implements `stored::_::DecodeOwned0<'d, Unstable, Unstable, rust_spec::size::Sized<S>, Exclusive>`
-             `&'d [R]` implements `stored::_::DecodeOwned0<'d, Unstable, Unstable, rust_spec::size::MetaSized<SliceLike>, Exclusive>`
+   = help: the following other types implement trait `stored::_::DecodeMove0<'d, _TŠČ1, _TŠČ2, _TŠČ3, _TŠČ4>`:
+             `&'d R` implements `stored::_::DecodeMove0<'d, Stable, Stable, _TŠČ0, Exclusive>`
+             `&'d R` implements `stored::_::DecodeMove0<'d, Unstable, Stable, rust_spec::size::MetaSized<SliceLike>, Exclusive>`
+             `&'d R` implements `stored::_::DecodeMove0<'d, Unstable, Unstable, NulTerminated, Exclusive>`
+             `&'d R` implements `stored::_::DecodeMove0<'d, Unstable, Unstable, rust_spec::size::Sized<S>, Exclusive>`
+             `&'d [R]` implements `stored::_::DecodeMove0<'d, Unstable, Unstable, rust_spec::size::MetaSized<SliceLike>, Exclusive>`
 note: required for `CKita5` to implement `Copy`
   --> tests/ui_fail/opaque_by_value.rs:7:27
    |
  7 | #[derive(Clone, RustSpec, ReprC)]
    |                           ^^^^^ type parameter would need to implement `Copy`
-   = note: required for `&Kita5` to implement `stored::_::DecodeOwned0<'_, Unstable, Unstable, rust_spec::size::Sized<Gt<rust_spec::Zero>>, Exclusive>`
+   = note: required for `&Kita5` to implement `stored::_::DecodeMove0<'_, Unstable, Unstable, rust_spec::size::Sized<Gt<rust_spec::Zero>>, Exclusive>`
    = note: this error originates in the macro `ffi` which comes from the expansion of the derive macro `ReprC` (in Nightly builds, run with -Z macro-backtrace for more info)
 help: consider annotating `Opaque` with `#[derive(Copy)]`
    |
@@ -41,43 +41,43 @@ error[E0277]: the trait bound `Opaque: Copy` is not satisfied
 24 | | }
    | |_^ the trait `Copy` is not implemented for `Opaque`
    |
-help: the following other types implement trait `stored::_::DecodeOwned1<'d, _TŠČ1, _TŠČ2, _TŠČ3>`
+help: the following other types implement trait `stored::_::DecodeMove1<'d, _TŠČ1, _TŠČ2, _TŠČ3>`
   --> src/stored.rs
    |
-   | /     unsafe impl<'d, R: AbiCompatible + RustSpec<Size: Thin> + ?Sized> DecodeOwned<'d> for &'d mut R
+   | /     unsafe impl<'d, R: AbiCompatible + RustSpec<Size: Thin> + ?Sized> DecodeMove<'d> for &'d mut R
    | |     where
    | |         Self: RustSpec<Layout = Stable> + ReprC<CType = CRefMut<<R as ReprC>::CType, true>>,
-   | |____________________________________________________________________________________________^ `&'d mut R` implements `stored::_::DecodeOwned1<'d, Stable, _TŠČ0, <R as RustSpec>::Layout>`
+   | |____________________________________________________________________________________________^ `&'d mut R` implements `stored::_::DecodeMove1<'d, Stable, _TŠČ0, <R as RustSpec>::Layout>`
 ...
-   | /     unsafe impl<'d, R: AbiCompatible<CType: Wide<Metadata = usize>> + ?Sized> DecodeOwned<'d> for &'d mut R
+   | /     unsafe impl<'d, R: AbiCompatible<CType: Wide<Metadata = usize>> + ?Sized> DecodeMove<'d> for &'d mut R
    | |     where
    | |         Self: RustSpec<Layout = Unstable>,
    | |         R: RustSpec<Layout = Stable, Size = MetaSized<SliceLike>>,
    | |         WideData<<R as ReprC>::CType>: CType,
    | |         R: Wide<Metadata = usize>,
-   | |__________________________________^ `&'d mut R` implements `stored::_::DecodeOwned1<'d, Unstable, rust_spec::size::MetaSized<SliceLike>, Stable>`
+   | |__________________________________^ `&'d mut R` implements `stored::_::DecodeMove1<'d, Unstable, rust_spec::size::MetaSized<SliceLike>, Stable>`
 ...
    | /     unsafe impl<'d, R: ReprC<CType: BorrowCast<AsConst: Copy> + Copy> + FromBorrow<'d>, S: SizedKind>
-   | |         DecodeOwned<'d> for &'d mut R
+   | |         DecodeMove<'d> for &'d mut R
    | |     where
    | |         Self: RustSpec<Layout = Unstable>,
    | |         R: RustSpec<Layout = Unstable, Size = RustSpecSized<S>> + EncodeMove<Store: EmptyStore>,
-   | |         <R as Borrow>::Borrowed<'d>: DecodeOwned<'d, CType = <<R as ReprC>::CType as BorrowCast>::AsConst>,
-   | |___________________________________________________________________________________________________________^ `&'d mut R` implements `stored::_::DecodeOwned1<'d, Unstable, rust_spec::size::Sized<S>, Unstable>`
+   | |         <R as Borrow>::Borrowed<'d>: DecodeMove<'d, CType = <<R as ReprC>::CType as BorrowCast>::AsConst>,
+   | |___________________________________________________________________________________________________________^ `&'d mut R` implements `stored::_::DecodeMove1<'d, Unstable, rust_spec::size::Sized<S>, Unstable>`
 ...
-   | /     unsafe impl<'d, R: DecodeOwned<'d, CType: BorrowCast<AsConst: Copy> + Copy> + FromBorrow<'d> + EncodeMove<Store: EmptyStore>>
-   | |         DecodeOwned<'d> for &'d mut [R]
+   | /     unsafe impl<'d, R: DecodeMove<'d, CType: BorrowCast<AsConst: Copy> + Copy> + FromBorrow<'d> + EncodeMove<Store: EmptyStore>>
+   | |         DecodeMove<'d> for &'d mut [R]
    | |     where
    | |         Self: RustSpec<Layout = Unstable>,
    | |         [R]: RustSpec<Layout = Unstable, Size = MetaSized<SliceLike>>,
-   | |         <R as Borrow>::Borrowed<'d>: DecodeOwned<'d, CType = <<R as ReprC>::CType as BorrowCast>::AsConst>,
-   | |___________________________________________________________________________________________________________^ `&'d mut [R]` implements `stored::_::DecodeOwned1<'d, Unstable, rust_spec::size::MetaSized<SliceLike>, Unstable>`
+   | |         <R as Borrow>::Borrowed<'d>: DecodeMove<'d, CType = <<R as ReprC>::CType as BorrowCast>::AsConst>,
+   | |___________________________________________________________________________________________________________^ `&'d mut [R]` implements `stored::_::DecodeMove1<'d, Unstable, rust_spec::size::MetaSized<SliceLike>, Unstable>`
 note: required for `CKita5` to implement `Copy`
   --> tests/ui_fail/opaque_by_value.rs:7:27
    |
  7 | #[derive(Clone, RustSpec, ReprC)]
    |                           ^^^^^ type parameter would need to implement `Copy`
-   = note: required for `&mut Kita5` to implement `stored::_::DecodeOwned1<'_, Unstable, rust_spec::size::Sized<Gt<rust_spec::Zero>>, Unstable>`
+   = note: required for `&mut Kita5` to implement `stored::_::DecodeMove1<'_, Unstable, rust_spec::size::Sized<Gt<rust_spec::Zero>>, Unstable>`
    = note: this error originates in the macro `ffi` which comes from the expansion of the derive macro `ReprC` (in Nightly builds, run with -Z macro-backtrace for more info)
 help: consider annotating `Opaque` with `#[derive(Copy)]`
    |
@@ -97,25 +97,25 @@ error[E0277]: the trait bound `Opaque: Copy` is not satisfied
 24 | | }
    | |_^ the trait `Copy` is not implemented for `Opaque`
    |
-help: the trait `stored::_::DecodeOwned0<'_, Unstable, Unstable, rust_spec::size::MetaSized<SliceLike>, Exclusive>` is conditionally implemented for `&[R]`
+help: the trait `stored::_::DecodeMove0<'_, Unstable, Unstable, rust_spec::size::MetaSized<SliceLike>, Exclusive>` is conditionally implemented for `&[R]`
   --> src/stored.rs
    |
-   |       unsafe impl<'d, R: DecodeOwned<'d, CType: BorrowCast<AsConst: Copy> + Copy> + FromBorrow<'d> + Clone>
+   |       unsafe impl<'d, R: DecodeMove<'d, CType: BorrowCast<AsConst: Copy> + Copy> + FromBorrow<'d> + Clone>
    |       ^                                                                     ---- unsatisfied requirement introduced here: `CKita5: Copy`
    |  _____|
    | |
-   | |         DecodeOwned<'d> for &'d [R]
+   | |         DecodeMove<'d> for &'d [R]
    | |     where
    | |         Self: RustSpec<Layout = Unstable>,
    | |         [R]: RustSpec<Layout = Unstable, Size = MetaSized<SliceLike>, Mutability = Exclusive>,
-   | |         <R as Borrow>::Borrowed<'d>: DecodeOwned<'d, CType = <<R as ReprC>::CType as BorrowCast>::AsConst>,
+   | |         <R as Borrow>::Borrowed<'d>: DecodeMove<'d, CType = <<R as ReprC>::CType as BorrowCast>::AsConst>,
    | |___________________________________________________________________________________________________________^
 note: required for `CKita5` to implement `Copy`
   --> tests/ui_fail/opaque_by_value.rs:7:27
    |
  7 | #[derive(Clone, RustSpec, ReprC)]
    |                           ^^^^^ type parameter would need to implement `Copy`
-   = note: required for `&[Kita5]` to implement `stored::_::DecodeOwned0<'_, Unstable, Unstable, rust_spec::size::MetaSized<SliceLike>, Exclusive>`
+   = note: required for `&[Kita5]` to implement `stored::_::DecodeMove0<'_, Unstable, Unstable, rust_spec::size::MetaSized<SliceLike>, Exclusive>`
    = note: this error originates in the macro `ffi` which comes from the expansion of the derive macro `ReprC` (in Nightly builds, run with -Z macro-backtrace for more info)
 help: consider annotating `Opaque` with `#[derive(Copy)]`
    |
@@ -135,25 +135,25 @@ error[E0277]: the trait bound `Opaque: Copy` is not satisfied
 24 | | }
    | |_^ the trait `Copy` is not implemented for `Opaque`
    |
-help: the trait `stored::_::DecodeOwned1<'_, Unstable, rust_spec::size::MetaSized<SliceLike>, Unstable>` is conditionally implemented for `&mut [R]`
+help: the trait `stored::_::DecodeMove1<'_, Unstable, rust_spec::size::MetaSized<SliceLike>, Unstable>` is conditionally implemented for `&mut [R]`
   --> src/stored.rs
    |
-   |       unsafe impl<'d, R: DecodeOwned<'d, CType: BorrowCast<AsConst: Copy> + Copy> + FromBorrow<'d> + EncodeMove<Store: EmptyStore>>
+   |       unsafe impl<'d, R: DecodeMove<'d, CType: BorrowCast<AsConst: Copy> + Copy> + FromBorrow<'d> + EncodeMove<Store: EmptyStore>>
    |       ^                                                                     ---- unsatisfied requirement introduced here: `CKita5: Copy`
    |  _____|
    | |
-   | |         DecodeOwned<'d> for &'d mut [R]
+   | |         DecodeMove<'d> for &'d mut [R]
    | |     where
    | |         Self: RustSpec<Layout = Unstable>,
    | |         [R]: RustSpec<Layout = Unstable, Size = MetaSized<SliceLike>>,
-   | |         <R as Borrow>::Borrowed<'d>: DecodeOwned<'d, CType = <<R as ReprC>::CType as BorrowCast>::AsConst>,
+   | |         <R as Borrow>::Borrowed<'d>: DecodeMove<'d, CType = <<R as ReprC>::CType as BorrowCast>::AsConst>,
    | |___________________________________________________________________________________________________________^
 note: required for `CKita5` to implement `Copy`
   --> tests/ui_fail/opaque_by_value.rs:7:27
    |
  7 | #[derive(Clone, RustSpec, ReprC)]
    |                           ^^^^^ type parameter would need to implement `Copy`
-   = note: required for `&mut [Kita5]` to implement `stored::_::DecodeOwned1<'_, Unstable, rust_spec::size::MetaSized<SliceLike>, Unstable>`
+   = note: required for `&mut [Kita5]` to implement `stored::_::DecodeMove1<'_, Unstable, rust_spec::size::MetaSized<SliceLike>, Unstable>`
    = note: this error originates in the macro `ffi` which comes from the expansion of the derive macro `ReprC` (in Nightly builds, run with -Z macro-backtrace for more info)
 help: consider annotating `Opaque` with `#[derive(Copy)]`
    |

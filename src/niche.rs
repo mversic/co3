@@ -5,10 +5,15 @@ use alloc::{boxed::Box, vec::Vec};
 use core::{mem::ManuallyDrop, ptr::NonNull};
 
 use disjoint_impls::disjoint_impls;
-use rust_spec::{RustSpec, drop::NoDrop};
+use rust_spec::{
+    RustSpec,
+    drop::NoDrop,
+    layout::LayoutKind,
+    niche::{WithNiche, WithoutNiche},
+};
 
 #[cfg(feature = "alloc")]
-use crate::boxed::{CBox, CBoxCell, CWideBox, CWideBoxCell};
+use crate::boxed::{CBox, CWideBox};
 use crate::{
     CType, NeedsDrop, ReprC, assert_arr_has_non_zero_len,
     option::COption,
@@ -16,6 +21,7 @@ use crate::{
     reference::{CRef, CRefMut},
     result::CResult,
     slice::{CWideRef, CWideRefMut},
+    tuple::ReprCTuple2,
     wide::{Wide, WideHeader},
 };
 
@@ -79,27 +85,12 @@ disjoint_impls! {
         const NICHE: Self::CType = CBox::null();
     }
     #[cfg(feature = "alloc")]
-    impl<R: ?Sized, C: CType> Niche for Box<R>
-    where
-        Self: ReprC<CType = CBoxCell<C>>,
-    {
-        const NICHE: Self::CType = CBoxCell::null();
-    }
-    #[cfg(feature = "alloc")]
     impl<R: ?Sized, C: Wide<Header: WideHeader<Data: CType>> + ?Sized> Niche for Box<R>
     where
         Self: ReprC<CType = CWideBox<C>>,
         <C as Wide>::Metadata: CType,
     {
         const NICHE: Self::CType = CWideBox::null();
-    }
-    #[cfg(feature = "alloc")]
-    impl<R: ?Sized, C: Wide<Header: WideHeader<Data: CType>> + ?Sized> Niche for Box<R>
-    where
-        Self: ReprC<CType = CWideBoxCell<C>>,
-        <C as Wide>::Metadata: CType,
-    {
-        const NICHE: Self::CType = CWideBoxCell::null();
     }
 
 
@@ -148,6 +139,21 @@ disjoint_impls! {
         R: RustSpec<Drop: NeedsDrop>,
     {
         const NICHE: Self::CType = ManuallyDrop::new(R::NICHE);
+    }
+
+    impl<A: Niche<CType: Copy>, B: ReprC<CType: Copy>, N: LayoutKind> Niche for (A, B)
+    where
+        A: RustSpec<Niche = WithNiche<N>>,
+    {
+        const NICHE: Self::CType = ReprCTuple2(A::NICHE, unsafe { core::mem::zeroed() });
+    }
+
+    impl<A: ReprC<CType: Copy>, B: Niche<CType: Copy>, N: LayoutKind> Niche for (A, B)
+    where
+        A: RustSpec<Niche = WithoutNiche>,
+        B: RustSpec<Niche = WithNiche<N>>,
+    {
+        const NICHE: Self::CType = ReprCTuple2(unsafe { core::mem::zeroed() }, B::NICHE);
     }
 }
 

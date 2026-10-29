@@ -378,9 +378,9 @@ pub(crate) fn gen_regular_drop_definition_body(
 
     let sync_error = gen_sync_error(failure_mode);
     quote! {{
-        let mut __co3_store = <#self_ty as co3::stored::DecodeOwned<'_>>::Store::default();
+        let mut __co3_store = <#self_ty as co3::stored::DecodeMove<'_>>::Store::default();
         let __co3_value = unsafe {
-            <#self_ty as co3::stored::DecodeOwned>::soft_decode(__co3_self, &mut __co3_store)
+            <#self_ty as co3::stored::DecodeMove>::soft_decode(__co3_self, &mut __co3_store)
         };
         let Some(__co3_value) = __co3_value else {
             #decode_error
@@ -847,7 +847,7 @@ pub(crate) fn gen_input_decode_stmts<'a>(
 
         value_initializers.push(quote!(#enabled <Option<#arg_ty> as core::default::Default>::default(), #inactive_value));
         let store_ty = if soft_for_arg(attrs) {
-            quote!(<#decode_ty as co3::stored::DecodeOwned<'_>>::Store)
+            quote!(<#decode_ty as co3::stored::DecodeMove<'_>>::Store)
         } else {
             quote!(())
         };
@@ -1793,12 +1793,12 @@ mod tests {
     fn does_not_synthesize_bounds_from_projections() {
         let sig = with_synthesized_lifetime_bounds(parse_quote!(
             fn f<'a, 'b>(
-                x: <&'a <Foo as ReprC>::CType<'b> as BorrowCast>::AsConst
+                x: <&'a <Foo as ReprC>::CType<'b> as Projection>::Output
             )
         ));
         let expected: syn::Signature = parse_quote!(
             fn f<'a, 'b>(
-                x: <&'a <Foo as ReprC>::CType<'b> as BorrowCast>::AsConst
+                x: <&'a <Foo as ReprC>::CType<'b> as Projection>::Output
             )
         );
 

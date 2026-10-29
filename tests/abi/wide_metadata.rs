@@ -1,9 +1,9 @@
 use co3::{
     CType,
-    boxed::{CBox, CBoxCell, CWideBox, CWideBoxCell},
+    boxed::{CBox, CWideBox},
     pack::{Pack2, Unpack2},
     slice::{CWideRef, CWideRefMut},
-    stored::{DecodeOwned, Store},
+    stored::{DecodeMove, Store},
     sync::{RefMutWideEncodeStore, RefWideEncodeStore},
     wide::Wide,
 };
@@ -145,7 +145,7 @@ fn wide_boxes_preserve_custom_metadata() {
         unsafe { <Box<Pointee> as Pack2<CBox<u8>, Metadata>>::pack(data, metadata) }.unwrap();
     assert_eq!(&unsafe { carrier.into_box() }.unwrap().1, &[1, 2, 3]);
 
-    let carrier = CWideBoxCell::from_box(boxed());
+    let carrier = CWideBox::from_box(boxed());
     assert_eq!(carrier.metadata(), expected);
     assert_eq!(&unsafe { carrier.into_box() }.unwrap().1, &[1, 2, 3]);
     assert_eq!(
@@ -156,7 +156,7 @@ fn wide_boxes_preserve_custom_metadata() {
         }
     );
     assert_eq!(
-        CWideBoxCell::<Pointee>::null().metadata(),
+        CWideBox::<Pointee>::null().metadata(),
         Metadata {
             length: 0,
             marker: 0
@@ -175,11 +175,11 @@ fn owned_slice_pack_handles_both_mutability_kinds() {
 
     type Element = UnsafeCell<u8>;
     let inner = vec![Element::new(3), Element::new(5)].into_boxed_slice();
-    let carrier = CWideBoxCell::from_box(inner);
+    let carrier = CWideBox::from_box(inner);
     let (data, len) =
-        <Box<[Cell<u8>]> as Unpack2<CBoxCell<Element>, usize>>::unpack(carrier).unwrap();
+        <Box<[Cell<u8>]> as Unpack2<CBox<Element>, usize>>::unpack(carrier).unwrap();
     let carrier =
-        unsafe { <Box<[Cell<u8>]> as Pack2<CBoxCell<Element>, usize>>::pack(data, len) }.unwrap();
+        unsafe { <Box<[Cell<u8>]> as Pack2<CBox<Element>, usize>>::pack(data, len) }.unwrap();
     let mut boxed = unsafe { carrier.into_box() }.unwrap();
     assert_eq!(
         boxed.iter_mut().map(|v| *v.get_mut()).collect::<Vec<_>>(),
@@ -190,7 +190,7 @@ fn owned_slice_pack_handles_both_mutability_kinds() {
     static_assertions::assert_not_impl_any!(Vec<u8>:
         Unpack2<CBox<u8>, usize>, Pack2<CBox<u8>, usize>);
     static_assertions::assert_not_impl_any!(Vec<Cell<u8>>:
-        Unpack2<CBoxCell<Element>, usize>, Pack2<CBoxCell<Element>, usize>);
+        Unpack2<CBox<Element>, usize>, Pack2<CBox<Element>, usize>);
 }
 
 #[test]
@@ -225,7 +225,7 @@ fn carriers_preserve_non_slice_metadata() {
         }
     );
     let raw = unsafe { CWideRef::<Pointee>::from_raw_parts(shared.as_ptr(), shared.metadata()) };
-    let decoded = unsafe { <CWideRef<Pointee> as DecodeOwned>::soft_decode(raw, &mut ()) }.unwrap();
+    let decoded = unsafe { <CWideRef<Pointee> as DecodeMove>::soft_decode(raw, &mut Default::default()) }.unwrap();
     assert_eq!(decoded.metadata(), shared.metadata());
     assert_eq!(unsafe { &shared.into_ref().unwrap().1 }, &[3, 5, 8]);
 
@@ -250,7 +250,7 @@ fn carriers_preserve_non_slice_metadata() {
         }
     );
     let decoded =
-        unsafe { <CWideRef<Pointee> as DecodeOwned>::soft_decode(null, &mut ()) }.unwrap();
+        unsafe { <CWideRef<Pointee> as DecodeMove>::soft_decode(null, &mut Default::default()) }.unwrap();
     assert!(unsafe { decoded.into_ref() }.is_none());
     static_assertions::assert_impl_all!(CWideRef<Pointee>: CType, Copy);
 }

@@ -171,14 +171,13 @@ fn lowered_aggregates_use_codecs_without_conversion_traits() {
 fn safe_carrier_constructors_accept_lowered_storage() {
     use co3::utf8::Utf8Str;
     use co3::{
-        borrow::borrow_cast,
         boxed::{CBox, CWideBox},
         reference::{CRef, CRefMut},
         slice::{CWideRef, CWideRefMut},
     };
 
     let boxed = CBox::from_box(Box::new(9_u8));
-    let borrowed: CRef<u8> = borrow_cast(boxed);
+    let borrowed = unsafe { CRef::from_raw(boxed.as_ptr()) };
     assert_eq!(borrowed.as_ptr(), boxed.as_ptr());
     assert_eq!(*unsafe { co3::decode::<Box<u8>>(boxed) }.unwrap(), 9);
 
