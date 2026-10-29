@@ -211,10 +211,12 @@ macro_rules! impl_move_out_mut {
         }
     };
 }
-impl_move_out_mut!([T] crate::option::COption<T> where);
+impl_move_out_mut!([T] crate::option::COption<T> where Self: Default);
 impl_move_out_mut!([T] crate::option::Option<T> where);
 #[cfg(feature = "alloc")]
 impl_move_out_mut!([T] alloc::vec::Vec<T> where T: crate::ReprC<CType: crate::CType + Sized>);
+#[cfg(feature = "alloc")]
+impl_move_out_mut!([T] crate::vec::Vec<T> where T: crate::ReprC<CType: crate::CType + Sized>);
 #[cfg(feature = "alloc")]
 impl_move_out_mut!([T] alloc::boxed::Box<[T]> where T: crate::ReprC<CType: crate::CType + Sized>);
 #[cfg(feature = "alloc")]

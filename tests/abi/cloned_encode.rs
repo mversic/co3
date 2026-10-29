@@ -1,7 +1,11 @@
 use co3::{
     ReprC,
     borrow::Borrowed,
-    stored::{EncodeMove, EncodeMoveUnchecked, Store},
+    reference::{CRef, CRefMut},
+    stored::{
+        EncodeMove, EncodeMoveUnchecked, EncodeMut, EncodeMutUnchecked, EncodeRef,
+        EncodeRefUnchecked, Store,
+    },
 };
 use std::sync::atomic::{AtomicUsize, Ordering};
 
@@ -56,20 +60,61 @@ unsafe impl EncodeMove for Probe {
     }
 }
 
+// Borrow the actual byte: no snapshot, clone, or deferred writeback is needed.
+unsafe impl<'a> EncodeRefUnchecked<'a> for Probe {
+    type SoftStore = ProbeStore;
+
+    unsafe fn encode_ref_unchecked(&'a self, _: &mut ProbeStore) -> <&'a Self as ReprC>::CType {
+        CRef::from_ref(&self.0)
+    }
+}
+
+unsafe impl<'a> EncodeRef<'a> for Probe {
+    type Store = ProbeStore;
+
+    fn encode_ref(&'a self, _: &mut ProbeStore) -> <&'a Self as ReprC>::CType {
+        CRef::from_ref(&self.0)
+    }
+}
+
+unsafe impl<'a> EncodeMutUnchecked<'a> for Probe {
+    type SoftStore = ProbeStore;
+
+    unsafe fn encode_mut_unchecked(
+        &'a mut self,
+        _: &mut ProbeStore,
+    ) -> <&'a mut Self as ReprC>::CType {
+        CRefMut::from_mut(&mut self.0)
+    }
+}
+
+unsafe impl<'a> EncodeMut<'a> for Probe {
+    type Store = ProbeStore;
+
+    fn encode_mut(&'a mut self, _: &mut ProbeStore) -> <&'a mut Self as ReprC>::CType {
+        CRefMut::from_mut(&mut self.0)
+    }
+}
+
 #[test]
-fn shared_and_borrowed_encoding_clone_once_and_sync_nested_state() {
+fn reference_and_borrowed_encoding_avoid_clones_and_sync_nested_state() {
     let mut store = Default::default();
-    let encoded = (&Probe(7)).soft_encode(&mut store);
+    let value = Probe(7);
+    let encoded = (&value).soft_encode(&mut store);
     assert_eq!(unsafe { *encoded.as_ptr() }, 7);
     assert_eq!(store.sync(), Some(()));
 
     let mut store = Default::default();
-    let encoded = unsafe { (&Probe(8)).soft_encode_unchecked(&mut store) };
+    let value = Probe(8);
+    let encoded = unsafe { (&value).soft_encode_unchecked(&mut store) };
     assert_eq!(unsafe { *encoded.as_ptr() }, 8);
     assert_eq!(store.sync(), Some(()));
 
     let mut store = Default::default();
-    assert_eq!(Borrowed::into_inner(Borrowed::new(Probe(9)).soft_encode(&mut store)), 9);
+    assert_eq!(
+        Borrowed::into_inner(Borrowed::new(Probe(9)).soft_encode(&mut store)),
+        9
+    );
     assert_eq!(store.sync(), Some(()));
 
     let mut store = Default::default();
@@ -77,6 +122,19 @@ fn shared_and_borrowed_encoding_clone_once_and_sync_nested_state() {
     assert_eq!(Borrowed::into_inner(encoded), 10);
     assert_eq!(store.sync(), Some(()));
 
-    assert_eq!(CLONES.load(Ordering::Relaxed), 4);
-    assert_eq!(SYNCS.load(Ordering::Relaxed), 4);
+    let mut value = Probe(11);
+    let mut store = Default::default();
+    let encoded = (&mut value).soft_encode(&mut store);
+    unsafe { *encoded.as_ptr() = 12 };
+    assert_eq!(store.sync(), Some(()));
+    assert_eq!(value.0, 12);
+
+    let mut store = Default::default();
+    let encoded = unsafe { (&mut value).soft_encode_unchecked(&mut store) };
+    unsafe { *encoded.as_ptr() = 13 };
+    assert_eq!(store.sync(), Some(()));
+    assert_eq!(value.0, 13);
+
+    assert_eq!(CLONES.load(Ordering::Relaxed), 0);
+    assert_eq!(SYNCS.load(Ordering::Relaxed), 6);
 }

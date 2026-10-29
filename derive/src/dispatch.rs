@@ -416,7 +416,12 @@ fn synthesize_dispatch_export_fn(
     declared_types: &std::collections::BTreeSet<syn::Ident>,
     emission: DispatchEmission<'_>,
 ) -> TokenStream {
-    let layout_checks = gen_dispatch_erased_layout_checks(generics, &sig, dispatch_args, attrs.iter().any(ffi_fn::is_by_val_attr));
+    let layout_checks = gen_dispatch_erased_layout_checks(
+        generics,
+        &sig,
+        dispatch_args,
+        attrs.iter().any(ffi_fn::is_by_val_attr),
+    );
 
     // Static parameters have already been substituted by the caller. What
     // remains is the generic signature used to synthesize dynamic match arms
@@ -677,11 +682,15 @@ pub(crate) fn gen_dispatch_erased_layout_checks(
             let mut concrete_output = output_ty.as_ref().clone();
             DispatchMonomorphizer::for_dispatch_group(generics, selections)
                 .visit_type_mut(&mut concrete_output);
-            let erased_output = ErasedParamReplacer::new(generics).replace(output_ty.as_ref().clone());
-            checks.extend(dispatch_layout_checks([((
-                dispatch_return_type(&concrete_output, fn_by_val),
-                dispatch_return_type(&erased_output, fn_by_val),
-            ), output_ty.span())]));
+            let erased_output =
+                ErasedParamReplacer::new(generics).replace(output_ty.as_ref().clone());
+            checks.extend(dispatch_layout_checks([(
+                (
+                    dispatch_return_type(&concrete_output, fn_by_val),
+                    dispatch_return_type(&erased_output, fn_by_val),
+                ),
+                output_ty.span(),
+            )]));
         }
 
         for layout_ty in dispatch_layout_check_tys(output_ty, &layout_param_detector) {
@@ -967,7 +976,8 @@ fn synthesize_dispatch_arms(
         let mut arm_body: syn::Block = if let ReturnType::Type(_, output_ty) = &retype_sig.output {
             let mut concrete_output = output_ty.as_ref().clone();
             monomorphizer.visit_type_mut(&mut concrete_output);
-            let erased_output = ErasedParamReplacer::new(generics).replace(output_ty.as_ref().clone());
+            let erased_output =
+                ErasedParamReplacer::new(generics).replace(output_ty.as_ref().clone());
             let concrete_ty = dispatch_return_type(&concrete_output, fn_by_val);
             let erased_ty = dispatch_return_type(&erased_output, fn_by_val);
             let erased_out = gen_retype(&quote!(__co3_arm_out), &concrete_ty, &erased_ty);

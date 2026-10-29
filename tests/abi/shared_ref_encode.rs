@@ -16,7 +16,7 @@ fn stable_vec_borrows_non_clone_elements() {
     let encoded = (&values).soft_encode(&mut store);
     let header = unsafe { &*encoded.as_ptr() };
     assert_eq!(header.as_ptr().cast_const(), values.as_ptr());
-    assert_eq!(header.metadata(), 2);
+    assert_eq!(header.len(), 2);
     assert_eq!(unsafe { (*header.as_ptr()).0 }, 7);
     assert_eq!(store.sync(), Some(()));
     assert_eq!(values[1].0, 11);
@@ -39,7 +39,7 @@ fn nested_shared_vec_refs_borrow_elements() {
     let encoded = co3::soft_encode(nested, &mut store);
     let header = unsafe { &*(*encoded.as_ptr()).as_ptr() };
     assert_eq!(header.as_ptr().cast_const(), values.as_ptr());
-    assert_eq!(header.metadata(), 2);
+    assert_eq!(header.len(), 2);
     assert_eq!(unsafe { (*header.as_ptr()).0 }, 7);
     assert_eq!(store.sync(), Some(()));
 
@@ -47,7 +47,7 @@ fn nested_shared_vec_refs_borrow_elements() {
     let encoded = unsafe { co3::soft_encode_unchecked(&nested, &mut store) };
     let header = unsafe { &*(*(*encoded.as_ptr()).as_ptr()).as_ptr() };
     assert_eq!(header.as_ptr().cast_const(), values.as_ptr());
-    assert_eq!(header.metadata(), 2);
+    assert_eq!(header.len(), 2);
     assert_eq!(store.sync(), Some(()));
     assert_eq!(values[1].0, 11);
 }
@@ -59,13 +59,13 @@ fn stable_vec_handles_empty_zst_and_non_robust_elements() {
         let encoded = (&values).soft_encode(&mut store);
         let header = unsafe { &*encoded.as_ptr() };
         assert_eq!(header.as_ptr().cast::<bool>().cast_const(), values.as_ptr());
-        assert_eq!(header.metadata(), values.len());
+        assert_eq!(header.len(), values.len());
         assert_eq!(store.sync(), Some(()));
     }
     let values = vec![(); 3];
     let mut store = Default::default();
     let encoded = (&values).soft_encode(&mut store);
-    assert_eq!(unsafe { (*encoded.as_ptr()).metadata() }, 3);
+    assert_eq!(unsafe { (*encoded.as_ptr()).len() }, 3);
     assert_eq!(store.sync(), Some(()));
 }
 
@@ -102,7 +102,7 @@ fn unstable_vec_converts_elements() {
         header.as_ptr().cast::<(u32,)>().cast_const(),
         values.as_ptr()
     );
-    assert_eq!(header.metadata(), 2);
+    assert_eq!(header.len(), 2);
     assert_eq!(unsafe { (*header.as_ptr()).0 }, 19);
     assert_eq!(store.sync(), Some(()));
     assert_eq!(values, [(19,), (23,)]);
@@ -135,6 +135,17 @@ fn checked_vec_of_cells_borrows_element_storage() {
 
 #[derive(RustSpec)]
 struct RefOnly(u32);
+
+unsafe impl co3::borrow::Borrow for RefOnly {
+    type Borrowed = Self;
+
+    fn borrow(self) -> Self {
+        self
+    }
+    fn from_borrow(source: Self) -> Self {
+        source
+    }
+}
 
 impl co3::ReprC for RefOnly {
     type CType = u32;
@@ -491,7 +502,7 @@ fn shared_borrow_of_mutable_reference_keeps_vec_shared() {
     let encoded = co3::soft_encode(&reference, &mut store);
     let header = unsafe { &*(*encoded.as_ptr()).as_ptr() };
     assert_eq!(header.as_ptr().cast_const(), pointer);
-    assert_eq!(header.metadata(), 2);
+    assert_eq!(header.len(), 2);
     assert_eq!(store.sync(), Some(()));
     assert_eq!(reference[1].0, 11);
 

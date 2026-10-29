@@ -102,22 +102,6 @@ disjoint_impls! {
         const NICHE: Self::CType = CWideBoxCell::null();
     }
 
-    #[cfg(feature = "alloc")]
-    impl<R, C: Wide<Header: WideHeader<Data: CType>> + ?Sized> Niche for Vec<R>
-    where
-        Self: ReprC<CType = CWideBox<C>>,
-        <C as Wide>::Metadata: CType,
-    {
-        const NICHE: Self::CType = CWideBox::null();
-    }
-    #[cfg(feature = "alloc")]
-    impl<R, C: Wide<Header: WideHeader<Data: CType>> + ?Sized> Niche for Vec<R>
-    where
-        Self: ReprC<CType = CWideBoxCell<C>>,
-        <C as Wide>::Metadata: CType,
-    {
-        const NICHE: Self::CType = CWideBoxCell::null();
-    }
 
     impl<T: ?Sized, C: CType> Niche for NonNull<T>
     where
@@ -165,6 +149,11 @@ disjoint_impls! {
     {
         const NICHE: Self::CType = ManuallyDrop::new(R::NICHE);
     }
+}
+
+#[cfg(feature = "alloc")]
+impl<R: ReprC<CType: CType + Sized>> Niche for Vec<R> {
+    const NICHE: Self::CType = <crate::vec::Vec<R> as Niche>::NICHE;
 }
 
 impl<T: ReprC<CType: Copy>> Niche for crate::option::Option<T> {

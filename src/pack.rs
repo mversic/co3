@@ -2,8 +2,6 @@
 
 #[cfg(feature = "alloc")]
 use crate::boxed::{Box, CBox, CBoxCell, CWideBox, CWideBoxCell};
-#[cfg(feature = "alloc")]
-use alloc::vec::Vec;
 use core::{
     cell::{Cell, UnsafeCell},
     mem::ManuallyDrop,
@@ -322,30 +320,6 @@ where
     #[inline(always)]
     unsafe fn pack(part1: Part1, part2: Part2) -> Result<Self::CType, Self::Error> {
         Ok(ReprCTuple2(part1, part2))
-    }
-}
-
-#[cfg(feature = "alloc")]
-impl<R, Part1: CType, Part2: CType> Unpack2<Part1, Part2> for Vec<R>
-where
-    Box<[R]>: Unpack2<Part1, Part2>,
-    Self: ReprC<CType = <Box<[R]> as ReprC>::CType>,
-{
-    type Error = <Box<[R]> as Unpack2<Part1, Part2>>::Error;
-    fn unpack(value: Self::CType) -> Result<(Part1, Part2), Self::Error> {
-        <Box<[R]> as Unpack2<Part1, Part2>>::unpack(value)
-    }
-}
-
-#[cfg(feature = "alloc")]
-impl<R, Part1: CType, Part2: CType> Pack2<Part1, Part2> for Vec<R>
-where
-    Box<[R]>: Pack2<Part1, Part2>,
-    Self: ReprC<CType = <Box<[R]> as ReprC>::CType>,
-{
-    type Error = <Box<[R]> as Pack2<Part1, Part2>>::Error;
-    unsafe fn pack(part1: Part1, part2: Part2) -> Result<Self::CType, Self::Error> {
-        unsafe { <Box<[R]> as Pack2<Part1, Part2>>::pack(part1, part2) }
     }
 }
 

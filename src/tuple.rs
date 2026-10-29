@@ -613,7 +613,7 @@ mod tests {
         );
         #[cfg(feature = "alloc")]
         assert_impl_all!(Vec<(u8, u8, u8)>:
-            Niche<CType = CWideBox<[ReprCTuple3<u8, u8, u8>]>>,
+            Niche<CType = crate::vec::CVec<ReprCTuple3<u8, u8, u8>>>,
             DecodeOwned<'static>,
             EncodeMove,
         );
@@ -631,7 +631,7 @@ mod tests {
         #[cfg(feature = "alloc")]
         assert_not_impl_any!(Box<[(u8, u8, u8)]>: Encode, Decode<'static>);
         #[cfg(feature = "alloc")]
-        assert_not_impl_any!(Vec<(u8, u8, u8)>: Encode, Decode<'static>);
+        assert_impl_all!(Vec<(u8, u8, u8)>: Encode, Decode<'static>);
     }
 
     #[cfg(feature = "alloc")]
@@ -712,7 +712,7 @@ mod tests {
         );
         #[cfg(feature = "alloc")]
         assert_impl_all!(Vec<(u8, StdNonZero<u8>, bool)>:
-            Niche<CType = CWideBox<[ReprCTuple3<u8, u8, crate::primitives::CBool>]>>,
+            Niche<CType = crate::vec::CVec<ReprCTuple3<u8, u8, crate::primitives::CBool>>>,
             DecodeOwned<'static>,
             EncodeMove,
         );
@@ -731,6 +731,6 @@ mod tests {
         #[cfg(feature = "alloc")]
         assert_not_impl_any!(Box<[(u8, StdNonZero<u8>, u8)]>: Encode, Decode<'static>);
         #[cfg(feature = "alloc")]
-        assert_not_impl_any!(Vec<(u8, StdNonZero<u8>, u8)>: Encode, Decode<'static>);
+        assert_impl_all!(Vec<(u8, StdNonZero<u8>, u8)>: Encode, Decode<'static>);
     }
 }

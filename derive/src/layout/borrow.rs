@@ -12,16 +12,6 @@ use crate::layout::{
     item::{field_vars, gen_fields_destructure},
 };
 
-fn has_custom_drop(input: &DeriveInput) -> bool {
-    input.attrs.iter()
-        .filter(|attr| attr.path().is_ident("rust_spec"))
-        .filter_map(|attr| attr.parse_args_with(
-            syn::punctuated::Punctuated::<syn::Meta, syn::Token![,]>::parse_terminated
-        ).ok())
-        .flatten()
-        .any(|meta| matches!(meta, syn::Meta::Path(path) if path.is_ident("custom_drop")))
-}
-
 pub(super) fn gen_item_view(
     input: &DeriveInput,
     attrs: &ReprCAttrs,
@@ -49,13 +39,8 @@ pub(super) fn gen_item_view(
 
     view_def.ident = gen_view_name(&input.ident);
 
-    let custom_drop = has_custom_drop(input);
-    // Custom-drop values borrow as Borrowed<Self>, so their unused structural
-    // view must not require the individual fields to implement Borrow.
-    if !custom_drop {
-        rewrite_view_generics(&mut view_def);
-        rewrite_view_fields(&mut view_def.data);
-    }
+    rewrite_view_generics(&mut view_def);
+    rewrite_view_fields(&mut view_def.data);
     let rust_spec_impl = gen_view_rust_spec(input, &view_def);
     let fields_methods = match &view_def.data {
         syn::Data::Struct(data) => {
@@ -186,7 +171,6 @@ pub(super) fn gen_item_borrow_impls(input: &DeriveInput) -> TokenStream {
         }
     };
     let whole = gen_with_drop_borrow_impls(&input.ident, &input.generics);
-    let structural = (!has_custom_drop(input)).then_some(structural);
     quote! {
         const _: () = {
             use co3::borrow::Borrow;
@@ -408,7 +392,13 @@ fn gen_borrow_impls<const ADD_SIZED: bool>(
 
     let view_name = gen_view_name(name);
     let speculative = speculative_marker(generics.params.is_empty());
-    let sized_bound = ADD_SIZED.then(|| quote! { #speculative Self: Sized, });
+    let sized_bound = ADD_SIZED.then(|| {
+        let tail_bound = fields.last().map(|ty| {
+            let speculative = speculative_marker(!is_parametrized(ty, generics));
+            quote!(#speculative #ty: Sized,)
+        });
+        quote! { #speculative Self: Sized, #tail_bound }
+    });
     let drop_bound = quote! { #speculative Self: #drop_trait_bound, };
     quote! {
         unsafe impl #impl_generics Borrow for #name #ty_generics
@@ -586,7 +576,17 @@ fn rewrite_view_generics(input: &mut DeriveInput) {
         gen_field_trait_bounds(&input.generics, &field_tys, quote! { co3::borrow::Borrow })
             .collect::<Vec<_>>();
 
+    let tail_bound: Option<syn::WherePredicate> = if let syn::Data::Struct(data) = &input.data {
+        data.fields.iter().last().map(|field| {
+            let ty = &field.ty;
+            let speculative = speculative_marker(!is_parametrized(ty, &input.generics));
+            parse_quote!(#speculative #ty: Sized)
+        })
+    } else {
+        None
+    };
     let where_clause = input.generics.make_where_clause();
+    where_clause.predicates.extend(tail_bound);
     where_clause.predicates.extend(borrow_bounds);
 }
 

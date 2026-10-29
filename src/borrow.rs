@@ -4,8 +4,6 @@ pub use alloc::borrow::ToOwned;
 use alloc::{boxed::Box, vec::Vec};
 
 use disjoint_impls::disjoint_impls;
-#[cfg(feature = "alloc")]
-use rust_spec::size::{MetaSized, MetadataKind, SizedKind};
 use rust_spec::{
     RustSpec,
     mutability::{Exclusive, WithInterior, WithoutInterior},
@@ -17,17 +15,6 @@ use crate::{
     stored::{EncodeMove, EncodeMoveUnchecked, Store},
 };
 use crate::{stored::DecodeOwned, transmute::AbiCompatible};
-
-// TODO: Remove this once extern types are stable
-// https://github.com/rust-lang/rust/issues/43467
-#[cfg(feature = "alloc")]
-trait NonExternTypeLike {}
-#[cfg(feature = "alloc")]
-impl<K: MetadataKind> NonExternTypeLike for MetaSized<K> {}
-#[cfg(feature = "alloc")]
-impl NonExternTypeLike for rust_spec::size::NulTerminated {}
-#[cfg(feature = "alloc")]
-impl<K: SizedKind> NonExternTypeLike for rust_spec::size::Sized<K> {}
 
 // TODO: Stupid trait with a stupid name
 /// A layout-compatible borrowed view of a robust C representation.
@@ -178,8 +165,7 @@ unsafe impl<R: ?Sized> Borrow for &mut R {
 }
 
 #[cfg(feature = "alloc")]
-// NOTE: extern types cannot be borrowed, only moved
-unsafe impl<R: RustSpec<Size: NonExternTypeLike> + ?Sized> Borrow for Box<R> {
+unsafe impl<R: ?Sized> Borrow for Box<R> {
     type Borrowed = Borrowed<Self>;
 
     #[inline(always)]
@@ -199,15 +185,27 @@ unsafe impl<R> Borrow for Vec<R> {
 
     #[inline(always)]
     fn borrow(self) -> Self::Borrowed {
-        Borrowed(self)
+        Borrowed::new(self)
     }
 
     #[inline(always)]
     fn from_borrow(source: Self::Borrowed) -> Self {
-        source.0
+        Borrowed::into_inner(source)
     }
 }
 
+#[cfg(feature = "alloc")]
+unsafe impl Borrow for alloc::ffi::CString {
+    type Borrowed = Borrowed<Self>;
+
+    fn borrow(self) -> Self::Borrowed {
+        Borrowed::new(self)
+    }
+
+    fn from_borrow(source: Self::Borrowed) -> Self {
+        Borrowed::into_inner(source)
+    }
+}
 unsafe impl<R: Borrow, const N: usize> Borrow for [R; N] {
     type Borrowed = [R::Borrowed; N];
 
@@ -304,7 +302,13 @@ impl<C, S: Store> Store for BorrowedDecodeStore<C, S> {
     }
 }
 
-// NOTE: ManuallyDrop is used to prevent opaque types from
+unsafe impl<C: BorrowCast> BorrowCast for Borrowed<C> {
+    type AsConst = C::AsConst;
+}
+unsafe impl<C: BorrowCastMut> BorrowCastMut for Borrowed<C> {
+    type AsMut = C::AsMut;
+}
+
 #[inline(always)]
 pub const fn borrow_cast<C: BorrowCast<AsConst: Sized>>(source: C) -> C::AsConst {
     let source = core::mem::ManuallyDrop::new(source);
@@ -324,6 +328,7 @@ union BorrowCastValue<From, To> {
 
 // Keep the higher-ranked bound outside disjoint_impls, which cannot expand its binder.
 #[doc(hidden)]
+// TODO: This trait should be removable IMO
 pub trait BorrowedOwnerEncode: ReprC<CType: Copy> + Sized {
     type ReferenceStore: Store + Default;
     fn encode_borrowed(

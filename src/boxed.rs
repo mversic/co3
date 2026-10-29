@@ -162,6 +162,12 @@ macro_rules! impl_boxed_pointer {
             }
         }
 
+        impl<C: CType> Default for $ty<C> {
+            fn default() -> Self {
+                Self::null()
+            }
+        }
+
         impl<C: CType> $ty<C> {
             /// Construct a carrier with a null data pointer.
             pub const fn null() -> Self {
@@ -232,6 +238,14 @@ macro_rules! impl_boxed_pointer {
 macro_rules! impl_wide_box_methods {
     ($ty:ident) => {
         impl_wide_raw_methods! { $ty, [P: Wide + ?Sized], [P] }
+
+        impl<P: Wide<Header: WideHeader<Data: CType>, Metadata: CType> + ?Sized> Default
+            for $ty<P>
+        {
+            fn default() -> Self {
+                Self::null()
+            }
+        }
 
         impl<P: Wide<Header: WideHeader<Data: CType>, Metadata: CType> + ?Sized> $ty<P> {
             /// Construct an absent carrier with initialized metadata.
@@ -325,4 +339,56 @@ unsafe impl<P: Wide<Header: WideHeader<Data: CType>, Metadata: CType> + ?Sized> 
     for CWideBoxCell<P>
 {
     type AsMut = CWideRefMut<P, true>;
+}
+
+/// Converts owned carrier allocations without assuming their headers have equal layout.
+pub(crate) trait OwnedBoxCarrier<B>: Sized {
+    unsafe fn from_box_carrier(value: B) -> Option<Self>;
+    unsafe fn into_box_carrier(self) -> B;
+}
+impl<C> OwnedBoxCarrier<C> for C {
+    unsafe fn from_box_carrier(value: C) -> Option<Self> {
+        Some(value)
+    }
+    unsafe fn into_box_carrier(self) -> C {
+        self
+    }
+}
+macro_rules! impl_vec_box_carrier {
+    ($boxed:ident) => {
+        impl<T: CType> OwnedBoxCarrier<$boxed<[T]>> for crate::vec::CVec<T> {
+            unsafe fn from_box_carrier(value: $boxed<[T]>) -> Option<Self> {
+                let data = NonNull::new(value.as_ptr())?;
+                let slice = core::ptr::slice_from_raw_parts_mut(data.as_ptr(), value.metadata());
+                // SAFETY: The caller transfers ownership of the boxed allocation.
+                Some(Self::from_vec(unsafe { Box::from_raw(slice) }.into_vec()))
+            }
+            unsafe fn into_box_carrier(self) -> $boxed<[T]> {
+                // Shrink before discarding capacity, so Box deallocates with the correct layout.
+                let value = unsafe { self.into_vec().expect("encoded owned vector is valid") };
+                $boxed::from_box(value.into_boxed_slice())
+            }
+        }
+    };
+}
+impl_vec_box_carrier!(CWideBox);
+impl_vec_box_carrier!(CWideBoxCell);
+
+/// Constructs a borrowed mutable view while retaining ownership in the original carrier.
+pub(crate) trait OwnedMutView: Copy {
+    type View: CType + Copy;
+    fn mut_view(self) -> Self::View;
+}
+impl<C: BorrowCastMut<AsMut: Copy> + Copy> OwnedMutView for C {
+    type View = C::AsMut;
+    fn mut_view(self) -> Self::View {
+        crate::borrow::borrow_cast_mut(self)
+    }
+}
+impl<T: CType> OwnedMutView for crate::vec::CVec<T> {
+    type View = CWideRefMut<[T], true>;
+    fn mut_view(self) -> Self::View {
+        // The view carries no ownership. Its caller retains the CVec allocation.
+        unsafe { CWideRefMut::from_raw_parts_mut(self.as_ptr(), self.len()) }
+    }
 }

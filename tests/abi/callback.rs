@@ -123,8 +123,8 @@ fn borrow_rust_value(value: RustValue) -> RustValue {
     value
 }
 
-extern "C" fn borrowed_return() -> CRef<Value> {
-    CRef::null()
+extern "C" fn borrowed_return() -> co3::borrow::Borrowed<co3::boxed::CBox<Value>> {
+    co3::borrow::Borrowed::new(co3::boxed::CBox::null())
 }
 
 ffi! {

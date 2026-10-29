@@ -169,8 +169,8 @@ fn owned_slice_pack_handles_both_mutability_kinds() {
     use core::cell::{Cell, UnsafeCell};
 
     let plain = CWideBox::from_box(vec![3_u8, 5].into_boxed_slice());
-    let (data, len) = <Vec<u8> as Unpack2<CBox<u8>, usize>>::unpack(plain).unwrap();
-    let carrier = unsafe { <Vec<u8> as Pack2<CBox<u8>, usize>>::pack(data, len) }.unwrap();
+    let (data, len) = <Box<[u8]> as Unpack2<CBox<u8>, usize>>::unpack(plain).unwrap();
+    let carrier = unsafe { <Box<[u8]> as Pack2<CBox<u8>, usize>>::pack(data, len) }.unwrap();
     assert_eq!(&*unsafe { carrier.into_box() }.unwrap(), &[3, 5]);
 
     type Element = UnsafeCell<u8>;
@@ -186,13 +186,11 @@ fn owned_slice_pack_handles_both_mutability_kinds() {
         [3, 5]
     );
 
-    let carrier = CWideBoxCell::from_box(vec![Element::new(7)].into_boxed_slice());
-    let (data, len) =
-        <Vec<Cell<u8>> as Unpack2<CBoxCell<Element>, usize>>::unpack(carrier).unwrap();
-    let carrier =
-        unsafe { <Vec<Cell<u8>> as Pack2<CBoxCell<Element>, usize>>::pack(data, len) }.unwrap();
-    let mut boxed = unsafe { carrier.into_box() }.unwrap();
-    assert_eq!(*boxed[0].get_mut(), 7);
+    // A vector's capacity cannot be represented by a pointer/length pair.
+    static_assertions::assert_not_impl_any!(Vec<u8>:
+        Unpack2<CBox<u8>, usize>, Pack2<CBox<u8>, usize>);
+    static_assertions::assert_not_impl_any!(Vec<Cell<u8>>:
+        Unpack2<CBoxCell<Element>, usize>, Pack2<CBoxCell<Element>, usize>);
 }
 
 #[test]

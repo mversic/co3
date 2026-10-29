@@ -88,13 +88,11 @@ fn c_alias_fields_use_distinct_carriers() {
         (c_int::new(3), 4, c_long::new(5))
     );
 
-    let view =
-        co3::borrow::Borrow::borrow(AliasFields(c_int::new(3), 4_u32, c_long::new(5)));
+    let view = co3::borrow::Borrow::borrow(AliasFields(c_int::new(3), 4_u32, c_long::new(5)));
     let borrowed_lowered = co3::encode(view);
     let _: c_int = borrowed_lowered.0;
     let _: c_long = borrowed_lowered.2;
-    let view =
-        co3::borrow::Borrow::borrow(AliasFields(c_int::new(3), 4_u32, c_long::new(5)));
+    let view = co3::borrow::Borrow::borrow(AliasFields(c_int::new(3), 4_u32, c_long::new(5)));
     let recovered: AliasFields<u32> = co3::borrow::Borrow::from_borrow(view);
     assert_eq!(
         (recovered.0, recovered.1, recovered.2),

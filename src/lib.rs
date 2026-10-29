@@ -560,7 +560,7 @@ extern crate alloc;
 extern crate self as co3;
 
 #[cfg(feature = "alloc")]
-use alloc::{boxed::Box, vec::Vec};
+use alloc::boxed::Box;
 use core::mem::ManuallyDrop;
 
 #[cfg(feature = "derive")]
@@ -587,9 +587,7 @@ use crate::boxed::{CBox, CBoxCell, CWideBox, CWideBoxCell};
 #[cfg(feature = "alloc")]
 use crate::ffi::NulTerminatedBuf;
 use crate::{
-    option::COption,
     reference::{CRef, CRefMut},
-    result::CResult,
     slice::{CWideRef, CWideRefMut},
     stored::{DecodeOwned, EmptyStore, EncodeMove, EncodeMoveUnchecked, Store},
     wide::{Wide, WideHeader},
@@ -618,6 +616,8 @@ pub mod tag;
 pub mod transmute;
 pub mod tuple;
 pub mod utf8;
+#[cfg(feature = "alloc")]
+pub mod vec;
 pub mod wide;
 
 #[cfg(feature = "alloc")]
@@ -792,7 +792,7 @@ disjoint_impls! {
         R: RustSpec<Niche = WithoutNiche>,
         <R as ReprC>::CType: Sized,
     {
-        type CType = COption<R::CType>;
+        type CType = <option::Option<R> as ReprC>::CType;
     }
     impl<R: ReprC, N: LayoutKind> ReprC for Option<R>
     where
@@ -810,7 +810,7 @@ disjoint_impls! {
         <R as ReprC>::CType: CType + Copy,
         <E as ReprC>::CType: CType + Copy,
     {
-        type CType = CResult<R::CType, E::CType>;
+        type CType = <result::Result<R, E> as ReprC>::CType;
     }
     impl<R: ReprC, E: ReprC, N: LayoutKind> ReprC for Result<R, E>
     where
@@ -886,17 +886,6 @@ impl<'d, R: ?Sized> Decode<'d> for &'d mut R where Self: DecodeOwned<'d> {}
 impl<R: Encode, const N: usize> Encode for [R; N] where Self: EncodeMove {}
 impl<R: EncodeUnchecked, const N: usize> EncodeUnchecked for [R; N] where Self: EncodeMoveUnchecked {}
 impl<'d, R: Decode<'d>, const N: usize> Decode<'d> for [R; N] where Self: DecodeOwned<'d> {}
-
-impl<R: Encode> Encode for Option<R> where Self: EncodeMove {}
-impl<R: EncodeUnchecked> EncodeUnchecked for Option<R> where Self: EncodeMoveUnchecked {}
-impl<'d, R: Decode<'d>> Decode<'d> for Option<R> where Self: DecodeOwned<'d> {}
-
-impl<R: Encode, E: Encode> Encode for Result<R, E> where Self: EncodeMove {}
-impl<R: EncodeUnchecked, E: EncodeUnchecked> EncodeUnchecked for Result<R, E> where
-    Self: EncodeMoveUnchecked
-{
-}
-impl<'d, R: Decode<'d>, E: Decode<'d>> Decode<'d> for Result<R, E> where Self: DecodeOwned<'d> {}
 
 /// Perform the conversion from `T` into [`ReprC::CType`].
 pub fn encode<T: Encode<Store: EmptyStore>>(item: T) -> T::CType {
@@ -991,87 +980,6 @@ pub unsafe fn soft_decode_unchecked<'d, T: Decode<'d>>(
     unsafe { T::soft_decode_unchecked(source, store) }
 }
 
-unsafe impl<T> CType for Option<T> where
-    Self: RustSpec<Layout = rust_spec::Stable, Trap = rust_spec::layout::Robust, Drop = NoDrop>
-{
-}
-unsafe impl<T, E> CType for Result<T, E> where
-    Self: RustSpec<Layout = rust_spec::Stable, Trap = rust_spec::layout::Robust, Drop = NoDrop>
-{
-}
-
-unsafe impl<T> CFnArg for Option<T> where
-    Self: CType + RustSpec<Size = rust_spec::size::Sized<rust_spec::Gt<rust_spec::Zero>>>
-{
-}
-unsafe impl<T> CFnReturn for Option<T> where
-    Self: CType + RustSpec<Size = rust_spec::size::Sized<rust_spec::Gt<rust_spec::Zero>>>
-{
-}
-unsafe impl<T, E> CFnArg for Result<T, E> where
-    Self: CType + RustSpec<Size = rust_spec::size::Sized<rust_spec::Gt<rust_spec::Zero>>>
-{
-}
-unsafe impl<T, E> CFnReturn for Result<T, E> where
-    Self: CType + RustSpec<Size = rust_spec::size::Sized<rust_spec::Gt<rust_spec::Zero>>>
-{
-}
-
-unsafe impl<T> borrow::BorrowCast for Option<T>
-where
-    Self: CType,
-{
-    type AsConst = Self;
-}
-unsafe impl<T> borrow::BorrowCastMut for Option<T>
-where
-    Self: CType,
-{
-    type AsMut = Self;
-}
-unsafe impl<T, E> borrow::BorrowCast for Result<T, E>
-where
-    Self: CType,
-{
-    type AsConst = Self;
-}
-unsafe impl<T, E> borrow::BorrowCastMut for Result<T, E>
-where
-    Self: CType,
-{
-    type AsMut = Self;
-}
-
-#[cfg(feature = "alloc")]
-impl<R> ReprC for Vec<R>
-where
-    Box<[R]>: ReprC,
-{
-    type CType = <Box<[R]> as ReprC>::CType;
-}
-
-#[cfg(feature = "alloc")]
-impl<R> Encode for Vec<R>
-where
-    Self: EncodeMove,
-    Box<[R]>: Encode,
-{
-}
-#[cfg(feature = "alloc")]
-impl<R> EncodeUnchecked for Vec<R>
-where
-    Self: EncodeMoveUnchecked,
-    Box<[R]>: EncodeUnchecked,
-{
-}
-#[cfg(feature = "alloc")]
-impl<'d, R> Decode<'d> for Vec<R>
-where
-    Self: DecodeOwned<'d>,
-    Box<[R]>: Decode<'d>,
-{
-}
-
 // TODO: Check https://github.com/mversic/co3/issues/13
 const fn assert_arr_has_non_zero_len<const N: usize>() {
     assert!(N != 0, "empty array is a ZST");
@@ -1081,7 +989,51 @@ const fn assert_arr_has_non_zero_len<const N: usize>() {
 #[cfg(feature = "alloc")]
 mod tests {
     use super::*;
+    use crate::option::COption;
     use crate::primitives::CBool;
+
+    #[test]
+    fn native_niches_and_explicit_enum_carriers_remain_distinct() {
+        use crate::transmute::AbiCompatible;
+        use crate::{
+            option::Option as TaggedOption,
+            result::{CResult, Result as TaggedResult},
+        };
+        use core::num::NonZeroU8;
+
+        static_assertions::assert_impl_all!(TaggedOption<NonZeroU8>: AbiCompatible);
+        static_assertions::assert_impl_all!(TaggedResult<NonZeroU8, ()>: AbiCompatible);
+        let value = NonZeroU8::new(7).unwrap();
+        let native: u8 = encode(Some(value));
+        let tagged: COption<u8> = encode(TaggedOption::Some(value));
+        assert_eq!(native, 7);
+        assert_eq!(tagged.into_option(), Some(Some(7)));
+        assert_eq!(
+            unsafe { decode::<TaggedOption<NonZeroU8>>(tagged) },
+            Some(TaggedOption::Some(value))
+        );
+        assert_eq!(encode(None::<NonZeroU8>), 0_u8);
+
+        let native: u8 = encode(Result::<NonZeroU8, ()>::Err(()));
+        let tagged: CResult<u8, ()> = encode(TaggedResult::<NonZeroU8, ()>::Err(()));
+        assert_eq!(native, 0);
+        assert_eq!(
+            unsafe { decode::<TaggedResult<NonZeroU8, ()>>(tagged) },
+            Some(TaggedResult::Err(()))
+        );
+
+        for value in [None, Some(3_u8)] {
+            let encoded = unsafe { encode_unchecked(value) };
+            assert_eq!(unsafe { decode_unchecked::<Option<u8>>(encoded) }, value);
+        }
+        for value in [Ok(3_u8), Err(false)] {
+            let encoded = unsafe { encode_unchecked(value) };
+            assert_eq!(
+                unsafe { decode_unchecked::<Result<u8, bool>>(encoded) },
+                value
+            );
+        }
+    }
 
     #[test]
     fn explicit_option_and_result_round_trip_and_reject_invalid_tags() {
@@ -1126,7 +1078,7 @@ mod tests {
         assert_eq!(unsafe { (*carrier.as_ptr()).tag() }, 1);
         assert_eq!(store.sync(), Some(()));
 
-        let value = StableResult::<Vec<u32>, u8>::Ok(alloc::vec![3]);
+        let value = StableResult::<alloc::vec::Vec<u32>, u8>::Ok(alloc::vec![3]);
         let mut store = Default::default();
         let carrier = crate::stored::EncodeRef::encode_ref(&value, &mut store);
         assert_eq!(unsafe { (*carrier.as_ptr()).tag() }, 0);
