@@ -489,7 +489,7 @@ struct InteriorIdentity(core::cell::UnsafeCell<u32>);
 #[test]
 fn stable_identity_reference_preserves_interior_storage() {
     let value = InteriorIdentity(core::cell::UnsafeCell::new(127));
-    let mut store = ();
+    let mut store = Default::default();
     let encoded = (&value).soft_encode(&mut store);
     assert_eq!(
         encoded.as_ptr().cast_const(),

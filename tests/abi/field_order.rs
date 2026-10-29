@@ -4,7 +4,7 @@ use co3::{
     ReprC,
     rust_spec::RustSpec,
     stored::{
-        DecodeOwned, EncodeMove, EncodeMoveUnchecked, EncodeMut, EncodeMutUnchecked, EncodeRef,
+        DecodeMove, EncodeMove, EncodeMoveUnchecked, EncodeMut, EncodeMutUnchecked, EncodeRef,
         EncodeRefUnchecked,
     },
     tuple::ReprCTuple3,
@@ -52,7 +52,7 @@ unsafe impl EncodeMove for Probe {
         self.0
     }
 }
-unsafe impl<'d> DecodeOwned<'d> for Probe {
+unsafe impl<'d> DecodeMove<'d> for Probe {
     type Store = ();
     unsafe fn soft_decode<'a: 'd>(source: u8, _: &'a mut ()) -> Option<Self> {
         EVENTS.with(|events| events.borrow_mut().push(source));
@@ -123,7 +123,7 @@ fn owned_tuple_and_derived_fields_encode_and_decode_in_order() {
     let encoded: ReprCTuple3<u8, u8, u8> = EncodeMove::soft_encode(values, &mut ((), (), ()));
     assert_order();
     let _ =
-        unsafe { <(Probe, Probe, Probe) as DecodeOwned>::soft_decode(encoded, &mut ((), (), ())) }
+        unsafe { <(Probe, Probe, Probe) as DecodeMove>::soft_decode(encoded, &mut ((), (), ())) }
             .unwrap();
     assert_order();
 
@@ -135,7 +135,7 @@ fn owned_tuple_and_derived_fields_encode_and_decode_in_order() {
     };
     assert_order();
     let _ = unsafe {
-        <(Probe, Probe, Probe) as DecodeOwned>::soft_decode_unchecked(encoded, &mut ((), (), ()))
+        <(Probe, Probe, Probe) as DecodeMove>::soft_decode_unchecked(encoded, &mut ((), (), ()))
     };
     assert_order();
 

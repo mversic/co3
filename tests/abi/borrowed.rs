@@ -5,7 +5,7 @@ use std::sync::atomic::{AtomicUsize, Ordering};
 #[test]
 fn retained_owners_expose_borrowed_views_without_changing_the_carrier() {
     use co3::borrow::Borrowed;
-    use co3::stored::{DecodeOwned, EncodeMove, Store};
+    use co3::stored::{DecodeMove, EncodeMove, Store};
     assert_type_eq_all!(<Box<u32> as Borrow>::Borrowed, Borrowed<Box<u32>>);
     assert_type_eq_all!(<Vec<u32> as Borrow>::Borrowed, Borrowed<Vec<u32>>);
     assert_type_eq_all!(
@@ -55,7 +55,7 @@ impl Drop for RetainedDrop {
 #[test]
 fn custom_drop_keeps_the_original_alive_and_clones_on_restore() {
     use co3::borrow::Borrowed;
-    use co3::stored::{DecodeOwned, EncodeMove, Store};
+    use co3::stored::{DecodeMove, EncodeMove, Store};
     assert_type_eq_all!(<RetainedDrop as Borrow>::Borrowed, Borrowed<RetainedDrop>);
     let mut store = Default::default();
     let encoded = RetainedDrop(7).borrow().soft_encode(&mut store);

@@ -4,6 +4,7 @@ use syn::{parse_quote, visit::Visit};
 
 use crate::layout::{
     attr::ReprKind,
+    borrow::gen_identity_borrow_impls,
     infer_repr, is_parametrized, is_phantom_data, is_transparent_enum_repr, primitive_tag_type,
     wide::{
         gen_alloc_methods, gen_data_struct_name, gen_dst_methods, gen_identity_header_impl,
@@ -191,14 +192,13 @@ pub(super) fn gen_fieldless_enum_ctype(
     };
     // Keep the normal non-ZST CFnArg size guard. In particular, a one-variant
     // fieldless enum is represented by `CEnum(())` and must not become a CFnArg.
-    let impls = gen_struct_ctype_impls::<true>(&ctype, false, false, alignment, None, false);
+    let impls = gen_struct_ctype_impls::<true>(&ctype, false, alignment, false);
     let fields = ctype
         .fields
         .iter()
         .map(|field| &field.ty)
         .collect::<Vec<_>>();
     let type_spec_impl = gen_type_spec(&ctype.ident, &ctype.generics, &fields, alignment);
-    let borrow_cast_impl = gen_identity_borrow_cast_impl(&ctype.ident, &ctype.generics);
     let primitive_constructor = match tag_type {
         syn::Type::Path(path) => {
             let primitive = path.path.get_ident().expect("primitive enum tag type");
@@ -217,7 +217,7 @@ pub(super) fn gen_fieldless_enum_ctype(
         #ctype
         #impls
         #type_spec_impl
-        #borrow_cast_impl
+
         impl #impl_generics #ctype_name #ty_generics #where_clause {
             #primitive_constructor
 
@@ -231,9 +231,8 @@ pub(super) fn gen_item_ctype(
     repr: Option<&ReprKind>,
     alignment: Option<&syn::LitInt>,
     input: &syn::DeriveInput,
-    generate_views_and_spec: bool,
+    generate_spec: bool,
     generate_wide: bool,
-    generate_cast_views: bool,
 ) -> TokenStream {
     let vis = &input.vis;
     let name = &input.ident;
@@ -246,9 +245,8 @@ pub(super) fn gen_item_ctype(
             name,
             generics,
             &data.fields,
-            generate_views_and_spec,
+            generate_spec,
             generate_wide,
-            generate_cast_views,
         ),
         syn::Data::Enum(data) if is_transparent_enum_repr(repr, &data.variants) => {
             let Some(first_variant) = data.variants.first() else {
@@ -261,24 +259,15 @@ pub(super) fn gen_item_ctype(
                 name,
                 generics,
                 &first_variant.fields,
-                generate_views_and_spec,
+                generate_spec,
                 false,
-                generate_cast_views,
             );
             let constructor = gen_transparent_enum_constructor(name, generics, first_variant);
             quote! { #carrier #constructor }
         }
         syn::Data::Enum(data) if repr.is_none() => {
             let tag_type = infer_repr(data.variants.len());
-            derive_data_enum_ctype(
-                tag_type,
-                alignment,
-                vis,
-                name,
-                generics,
-                &data.variants,
-                generate_cast_views,
-            )
+            derive_data_enum_ctype(tag_type, alignment, vis, name, generics, &data.variants)
         }
         syn::Data::Enum(data) if let Some(ReprKind::Primitive(repr)) = repr => {
             derive_data_enum_ctype(
@@ -288,20 +277,11 @@ pub(super) fn gen_item_ctype(
                 name,
                 generics,
                 &data.variants,
-                generate_cast_views,
             )
         }
         syn::Data::Enum(data) if matches!(repr, Some(&ReprKind::C(Some(_)))) => {
             let tag_type = primitive_tag_type(repr.expect("C primitive representation")).clone();
-            derive_repr_c_data_enum_ctype(
-                tag_type,
-                alignment,
-                vis,
-                name,
-                generics,
-                &data.variants,
-                generate_cast_views,
-            )
+            derive_repr_c_data_enum_ctype(tag_type, alignment, vis, name, generics, &data.variants)
         }
         syn::Data::Union(_) | syn::Data::Enum(_) => {
             unreachable!()
@@ -372,7 +352,6 @@ fn derive_data_enum_ctype(
     name: &syn::Ident,
     generics: &syn::Generics,
     variants: &syn::punctuated::Punctuated<syn::Variant, syn::Token![,]>,
-    generate_cast_views: bool,
 ) -> TokenStream {
     let union_name = gen_ctype_name(name);
     let (union_def, variant_structs) = gen_data_enum_union(
@@ -383,9 +362,8 @@ fn derive_data_enum_ctype(
         name,
         generics,
         variants,
-        generate_cast_views,
     );
-    let union_impls = gen_union_ctype_impls(&union_def, alignment, Some(name), generate_cast_views);
+    let union_impls = gen_union_ctype_impls(&union_def, alignment);
     let partial_eq_impl = gen_tagged_union_partial_eq(&union_def, &tag_type, variants);
     let constructors = gen_enum_variant_constructors(
         &union_def.ident,
@@ -527,9 +505,8 @@ fn derive_ctype_struct(
     name: &syn::Ident,
     generics: &syn::Generics,
     fields: &syn::Fields,
-    generate_views_and_spec: bool,
+    generate_spec: bool,
     generate_wide: bool,
-    generate_cast_views: bool,
 ) -> TokenStream {
     let ctype_def = gen_ctype_struct_item(repr, alignment, vis, name, generics, fields);
     let known_unsized_tail = fields
@@ -542,17 +519,11 @@ fn derive_ctype_struct(
         &ctype_def.fields,
         known_unsized_tail,
     );
-    let ctype_impls = gen_struct_ctype_impls::<true>(
-        &ctype_def,
-        generate_views_and_spec,
-        generate_cast_views,
-        alignment,
-        Some(name),
-        known_unsized_tail,
-    );
+    let ctype_impls =
+        gen_struct_ctype_impls::<true>(&ctype_def, generate_spec, alignment, known_unsized_tail);
     let wide_impl = generate_wide.then(|| gen_ctype_wide_impl(repr, &ctype_def, fields, generics));
-    let header_impl = (!generate_views_and_spec)
-        .then(|| gen_identity_header_impl(&ctype_def.ident, &ctype_def.generics));
+    let header_impl =
+        (!generate_spec).then(|| gen_identity_header_impl(&ctype_def.ident, &ctype_def.generics));
 
     quote! {
         #ctype_def
@@ -721,22 +692,13 @@ fn derive_repr_c_data_enum_ctype(
     name: &syn::Ident,
     generics: &syn::Generics,
     variants: &syn::punctuated::Punctuated<syn::Variant, syn::Token![,]>,
-    generate_cast_views: bool,
 ) -> TokenStream {
     let payload_name = format_ident!("{name}Payload");
 
-    let (payload_def, variant_structs) = gen_data_enum_union(
-        None,
-        None,
-        vis,
-        &payload_name,
-        name,
-        generics,
-        variants,
-        generate_cast_views,
-    );
+    let (payload_def, variant_structs) =
+        gen_data_enum_union(None, None, vis, &payload_name, name, generics, variants);
 
-    let payload_impls = gen_union_ctype_impls(&payload_def, None, None, generate_cast_views);
+    let payload_impls = gen_union_ctype_impls(&payload_def, None);
     let (impl_generics, ty_generics, where_clause) = generics.split_for_impl();
     let predicates = where_clause.as_ref().map(|w| &w.predicates);
     let ctype_name = gen_ctype_name(name);
@@ -756,14 +718,7 @@ fn derive_repr_c_data_enum_ctype(
         }
     };
 
-    let ctype_impls = gen_struct_ctype_impls::<false>(
-        &ctype_def,
-        true,
-        generate_cast_views,
-        alignment,
-        Some(name),
-        false,
-    );
+    let ctype_impls = gen_struct_ctype_impls::<false>(&ctype_def, true, alignment, false);
     let fields_methods = gen_fields_methods(
         &ctype_def.ident,
         &ctype_def.generics,
@@ -894,7 +849,6 @@ fn gen_data_enum_union(
     enum_name: &syn::Ident,
     generics: &syn::Generics,
     variants: &syn::punctuated::Punctuated<syn::Variant, syn::Token![,]>,
-    generate_cast_views: bool,
 ) -> (syn::ItemUnion, Vec<TokenStream>) {
     let (variant_generics, union_fields) = gen_union_fields(enum_name, generics, variants);
 
@@ -902,14 +856,7 @@ fn gen_data_enum_union(
         .iter()
         .zip(&variant_generics)
         .map(|(variant, generics)| {
-            gen_variant_struct(
-                variant_tag.as_ref(),
-                vis,
-                enum_name,
-                generics,
-                variant,
-                generate_cast_views,
-            )
+            gen_variant_struct(variant_tag.as_ref(), vis, enum_name, generics, variant)
         });
 
     let (impl_generics, _, where_clause) = generics.split_for_impl();
@@ -937,7 +884,6 @@ fn gen_variant_struct(
     enum_name: &syn::Ident,
     generics: &syn::Generics,
     variant: &syn::Variant,
-    generate_cast_views: bool,
 ) -> TokenStream {
     let name = format_ident!("{enum_name}{}", &variant.ident);
 
@@ -967,8 +913,7 @@ fn gen_variant_struct(
 
     let ctype = gen_ctype_struct_item(repr, None, vis, &name, &variant_generics, &fields);
     let fields_methods = gen_fields_methods(&ctype.ident, &ctype.generics, &ctype.fields, false);
-    let ctype_impls =
-        gen_struct_ctype_impls::<true>(&ctype, true, generate_cast_views, None, None, false);
+    let ctype_impls = gen_struct_ctype_impls::<true>(&ctype, true, None, false);
     quote! { #ctype #fields_methods #ctype_impls }
 }
 
@@ -1044,45 +989,24 @@ pub(super) fn gen_sized_extern_c_bounds_for_ctype(
 
 fn gen_struct_ctype_impls<const GEN_PARTIAL_EQ: bool>(
     ctype: &syn::ItemStruct,
-    generate_views_and_spec: bool,
-    generate_cast_views: bool,
+    generate_spec: bool,
     alignment: Option<&syn::LitInt>,
-    owner_name: Option<&syn::Ident>,
     known_unsized_tail: bool,
 ) -> TokenStream {
     let fields = ctype.fields.iter().map(|f| &f.ty).collect::<Vec<_>>();
-    let all_phantom_data = !fields.is_empty() && fields.iter().all(|ty| is_phantom_data(ty));
-    let generate_views = generate_cast_views && !all_phantom_data && !known_unsized_tail;
-
     let copy_impls = gen_copy_impls(&ctype.ident, &ctype.generics, &fields, known_unsized_tail);
     let partial_eq_impl = GEN_PARTIAL_EQ.then(|| gen_struct_partial_eq(ctype));
     let default_impl = gen_default_impl(&ctype.ident, &ctype.generics, &fields, known_unsized_tail);
     let robust_impls = gen_robust_impls(&ctype.ident, &ctype.generics, &fields, known_unsized_tail);
-    let type_spec_impl = generate_views_and_spec
-        .then(|| gen_type_spec(&ctype.ident, &ctype.generics, &fields, alignment));
-    let const_view = generate_views
-        .then(|| gen_ctype_struct_view(ctype.clone(), false, alignment, known_unsized_tail));
-    let mut_view = generate_views
-        .then(|| gen_ctype_struct_view(ctype.clone(), true, alignment, known_unsized_tail));
-
-    let borrow_cast_impl = if generate_views {
-        gen_borrow_cast_impl(&ctype.ident, &ctype.generics, &fields, owner_name, false)
-    } else if all_phantom_data || generate_views_and_spec {
-        gen_identity_borrow_cast_impl(&ctype.ident, &ctype.generics)
-    } else {
-        quote! {}
-    };
-
+    let type_spec_impl =
+        generate_spec.then(|| gen_type_spec(&ctype.ident, &ctype.generics, &fields, alignment));
     quote! {
         #copy_impls
         #partial_eq_impl
         #default_impl
         #robust_impls
         #type_spec_impl
-        #const_view
-        #mut_view
 
-        #borrow_cast_impl
     }
 }
 
@@ -1130,39 +1054,19 @@ fn gen_struct_partial_eq(ctype: &syn::ItemStruct) -> TokenStream {
     }
 }
 
-fn gen_union_ctype_impls(
-    ctype: &syn::ItemUnion,
-    alignment: Option<&syn::LitInt>,
-    owner_name: Option<&syn::Ident>,
-    generate_cast_views: bool,
-) -> TokenStream {
+fn gen_union_ctype_impls(ctype: &syn::ItemUnion, alignment: Option<&syn::LitInt>) -> TokenStream {
     let fields = ctype.fields.named.iter().map(|f| &f.ty).collect::<Vec<_>>();
 
     let copy_impls = gen_copy_impls(&ctype.ident, &ctype.generics, &fields, false);
     let default_impl = gen_default_impl(&ctype.ident, &ctype.generics, &fields, false);
     let robust_impls = gen_robust_impls(&ctype.ident, &ctype.generics, &fields, false);
     let type_spec_impl = gen_type_spec(&ctype.ident, &ctype.generics, &fields, alignment);
-    let const_view =
-        generate_cast_views.then(|| gen_ctype_union_view(ctype.clone(), false, alignment));
-    let mut_view =
-        generate_cast_views.then(|| gen_ctype_union_view(ctype.clone(), true, alignment));
-
-    let borrow_cast_impl = if generate_cast_views {
-        gen_borrow_cast_impl(&ctype.ident, &ctype.generics, &fields, owner_name, true)
-    } else {
-        gen_identity_borrow_cast_impl(&ctype.ident, &ctype.generics)
-    };
-
     quote! {
         #copy_impls
         #default_impl
         #robust_impls
         #type_spec_impl
 
-        #const_view
-        #mut_view
-
-        #borrow_cast_impl
     }
 }
 
@@ -1208,6 +1112,7 @@ fn gen_robust_impls(
 ) -> TokenStream {
     let co3 = co3_path();
     let (impl_generics, ty_generics, where_clause) = generics.split_for_impl();
+    let borrow_impls = (!known_unsized_tail).then(|| gen_identity_borrow_impls(ident, generics));
     let codec_impls = gen_identity_codec_impls(ident, generics, true);
     let c_fn_impls = if known_unsized_tail {
         quote! {}
@@ -1228,6 +1133,7 @@ fn gen_robust_impls(
         }
         unsafe impl #impl_generics #co3::transmute::AbiCompatible for #ident #ty_generics #where_clause {}
 
+        #borrow_impls
         #codec_impls
     }
 }
@@ -1411,7 +1317,7 @@ fn gen_identity_codec_impls(
                 self
             }
         }
-        unsafe impl #decode_impl_generics co3::stored::DecodeOwned<'d> for #ident #ty_generics
+        unsafe impl #decode_impl_generics co3::stored::DecodeMove<'d> for #ident #ty_generics
         where
             #sized_bound
             #predicates
@@ -1472,177 +1378,6 @@ pub(super) fn gen_identity_repr_c_impls(
     }
 }
 
-fn gen_borrow_cast_impl(
-    ident: &syn::Ident,
-    generics: &syn::Generics,
-    fields: &[&syn::Type],
-    owner_name: Option<&syn::Ident>,
-    union_fields: bool,
-) -> TokenStream {
-    let (impl_generics, ty_generics, where_clause) = generics.split_for_impl();
-    let predicates = where_clause.as_ref().map(|w| &w.predicates);
-
-    let const_view_name = gen_const_view_name(ident);
-    let mut_view_name = gen_mut_view_name(ident);
-
-    let mut const_bounds = gen_ctype_borrow_cast_bounds(generics, fields, false);
-    let mut mut_bounds = gen_ctype_borrow_cast_bounds(generics, fields, true);
-    if union_fields {
-        const_bounds.extend(
-            fields
-                .iter()
-                .filter(|&&ty| !is_phantom_data(ty))
-                .map(|&ty| quote!(#ty: co3::borrow::BorrowCast<AsConst: Copy> + Copy)),
-        );
-        mut_bounds.extend(
-            fields
-                .iter()
-                .filter(|&&ty| !is_phantom_data(ty))
-                .map(|&ty| quote!(#ty: co3::borrow::BorrowCastMut<AsMut: Copy> + Copy)),
-        );
-    }
-
-    let cast_impls = if let Some(owner_name) = owner_name {
-        let owner_type = quote!(#owner_name #ty_generics);
-        let speculative = speculative_marker(generics.params.is_empty());
-        let no_drop_bound = quote!(#speculative #owner_type: co3::rust_spec::RustSpec<Drop = co3::rust_spec::drop::NoDrop>,);
-        let auto_drop_bound = quote!(#speculative #owner_type: co3::rust_spec::RustSpec<Drop = co3::rust_spec::drop::AutoDrop>,);
-        let drop_kind = (0..)
-            .map(|i| format_ident!("__co3_borrow_drop_{i}"))
-            .find(|name| !generics.type_params().any(|param| param.ident == *name))
-            .unwrap();
-        let mut custom_generics = generics.clone();
-        custom_generics
-            .params
-            .push(syn::parse_quote!(#drop_kind: co3::rust_spec::drop::DropKind));
-        let (custom_impl_generics, _, _) = custom_generics.split_for_impl();
-        quote! {
-            const _: () = {
-                use co3::borrow::{BorrowCast, BorrowCastMut};
-
-                co3::disjoint_impls! {
-                    #[disjoint_impls(remote)]
-                    #[allow(clippy::missing_safety_doc)]
-                    pub unsafe trait BorrowCast: co3::CType + Sized {
-                        type AsConst: co3::CType + Sized;
-                    }
-
-                    unsafe impl #impl_generics BorrowCast for #ident #ty_generics
-                    where
-                        #no_drop_bound
-                        #speculative Self: Sized,
-                        #predicates
-                    {
-                        type AsConst = Self;
-                    }
-
-                    unsafe impl #impl_generics BorrowCast for #ident #ty_generics
-                    where
-                        #auto_drop_bound
-                        #speculative Self: Sized,
-                        #speculative #owner_type: co3::borrow::Borrow,
-                        #speculative <#owner_type as co3::borrow::Borrow>::Borrowed: co3::ReprC,
-                        #speculative <<#owner_type as co3::borrow::Borrow>::Borrowed as co3::ReprC>::CType: Sized,
-                        #predicates
-                    {
-                        type AsConst = <<#owner_type as co3::borrow::Borrow>::Borrowed as co3::ReprC>::CType;
-                    }
-
-                    unsafe impl #custom_impl_generics BorrowCast for #ident #ty_generics
-                    where
-                        #owner_type: co3::rust_spec::RustSpec<Drop = co3::rust_spec::drop::CustomDrop<#drop_kind>>,
-                        #speculative Self: Sized,
-                        #predicates
-                    {
-                        type AsConst = co3::borrow::Borrowed<Self>;
-                    }
-                }
-
-                co3::disjoint_impls! {
-                    #[disjoint_impls(remote)]
-                    #[allow(clippy::missing_safety_doc)]
-                    pub unsafe trait BorrowCastMut: co3::CType + Sized {
-                        type AsMut: co3::CType + Sized;
-                    }
-
-                    unsafe impl #impl_generics BorrowCastMut for #ident #ty_generics
-                    where
-                        #no_drop_bound
-                        #speculative Self: Sized,
-                        #predicates
-                    {
-                        type AsMut = Self;
-                    }
-
-                    unsafe impl #impl_generics BorrowCastMut for #ident #ty_generics
-                    where
-                        #auto_drop_bound
-                        #speculative Self: Sized,
-                        #(#mut_bounds,)*
-                        #speculative #mut_view_name #ty_generics: co3::CType,
-                        #speculative #mut_view_name #ty_generics: Sized,
-                        #predicates
-                    {
-                        type AsMut = #mut_view_name #ty_generics;
-                    }
-                }
-            };
-        }
-    } else {
-        quote! {
-            unsafe impl #impl_generics co3::borrow::BorrowCast for #ident #ty_generics
-            where
-                Self: Sized,
-                #(#const_bounds,)*
-                #predicates
-            {
-                type AsConst = #const_view_name #ty_generics;
-            }
-
-            unsafe impl #impl_generics co3::borrow::BorrowCastMut for #ident #ty_generics
-            where
-                Self: Sized,
-                #mut_view_name #ty_generics: Sized,
-                #(#mut_bounds,)*
-                #predicates
-            {
-                type AsMut = #mut_view_name #ty_generics;
-            }
-        }
-    };
-
-    quote! {
-        #cast_impls
-    }
-}
-
-pub(super) fn gen_identity_borrow_cast_impl(
-    ident: &syn::Ident,
-    generics: &syn::Generics,
-) -> TokenStream {
-    let (impl_generics, ty_generics, where_clause) = generics.split_for_impl();
-    let predicates = where_clause.as_ref().map(|clause| &clause.predicates);
-    let speculative = speculative_marker(generics.params.is_empty());
-
-    quote! {
-        unsafe impl #impl_generics co3::borrow::BorrowCast for #ident #ty_generics
-        where
-            #speculative Self: Sized,
-            #predicates
-        {
-            type AsConst = Self;
-        }
-
-        unsafe impl #impl_generics co3::borrow::BorrowCastMut for #ident #ty_generics
-        where
-            #speculative Self: Sized,
-            #predicates
-        {
-            type AsMut = Self;
-        }
-    }
-}
-
 fn gen_ctype_repr_attr(repr: Option<&ReprKind>, alignment: Option<&syn::LitInt>) -> TokenStream {
     let kind = if repr == Some(&ReprKind::Transparent) {
         quote!(transparent)
@@ -1651,171 +1386,6 @@ fn gen_ctype_repr_attr(repr: Option<&ReprKind>, alignment: Option<&syn::LitInt>)
     };
     let alignment = alignment.map(|alignment| quote!(, align(#alignment)));
     quote! { #[repr(#kind #alignment)] }
-}
-
-fn gen_ctype_struct_view(
-    mut ctype: syn::ItemStruct,
-    is_mut: bool,
-    alignment: Option<&syn::LitInt>,
-    known_unsized_tail: bool,
-) -> TokenStream {
-    rewrite_ctype_view_struct(&mut ctype, is_mut);
-    let fields_methods = gen_fields_methods(
-        &ctype.ident,
-        &ctype.generics,
-        &ctype.fields,
-        known_unsized_tail,
-    );
-
-    let fields = ctype
-        .fields
-        .iter()
-        .map(|field| &field.ty)
-        .collect::<Vec<_>>();
-
-    let copy_impls = gen_copy_impls(&ctype.ident, &ctype.generics, &fields, known_unsized_tail);
-    let default_impl = gen_default_impl(&ctype.ident, &ctype.generics, &fields, known_unsized_tail);
-    let robust_impls = gen_robust_impls(&ctype.ident, &ctype.generics, &fields, known_unsized_tail);
-    let type_spec_impl = gen_type_spec(&ctype.ident, &ctype.generics, &fields, alignment);
-
-    quote! {
-        #ctype
-        #fields_methods
-        #copy_impls
-        #default_impl
-        #robust_impls
-        #type_spec_impl
-    }
-}
-
-fn gen_ctype_union_view(
-    mut ctype: syn::ItemUnion,
-    is_mut: bool,
-    alignment: Option<&syn::LitInt>,
-) -> TokenStream {
-    // The source union's `Copy` predicates describe its original variant
-    // structs. A union view has different fields (the const/mut view structs),
-    // so carrying those predicates over would unnecessarily require both
-    // representations to be `Copy` just to define the view.
-    let original_fields = ctype
-        .fields
-        .named
-        .iter()
-        .map(|field| field.ty.clone())
-        .collect::<Vec<_>>();
-    rewrite_ctype_view_union(&mut ctype, is_mut);
-
-    if let Some(where_clause) = &mut ctype.generics.where_clause {
-        where_clause.predicates = where_clause
-            .predicates
-            .iter()
-            .filter(|predicate| {
-                !matches!(predicate, syn::WherePredicate::Type(predicate)
-                    if original_fields.iter().any(|field| field == &predicate.bounded_ty)
-                        && predicate.bounds.iter().any(|bound| matches!(bound, syn::TypeParamBound::Trait(bound)
-                            if bound.path.is_ident("Copy"))))
-            })
-            .cloned()
-            .collect();
-    }
-
-    let view_field_tys = ctype
-        .fields
-        .named
-        .iter()
-        .map(|field| field.ty.clone())
-        .collect::<Vec<_>>();
-    for ty in &view_field_tys {
-        ctype
-            .generics
-            .make_where_clause()
-            .predicates
-            .push(parse_quote!(#ty: Copy));
-    }
-
-    let fields = ctype
-        .fields
-        .named
-        .iter()
-        .map(|field| &field.ty)
-        .collect::<Vec<_>>();
-
-    let copy_impls = gen_copy_impls(&ctype.ident, &ctype.generics, &fields, false);
-    let default_impl = gen_default_impl(&ctype.ident, &ctype.generics, &fields, false);
-    let robust_impls = gen_robust_impls(&ctype.ident, &ctype.generics, &fields, false);
-    let type_spec_impl = gen_type_spec(&ctype.ident, &ctype.generics, &fields, alignment);
-
-    quote! {
-        #ctype
-        #copy_impls
-        #default_impl
-        #robust_impls
-        #type_spec_impl
-    }
-}
-
-fn rewrite_ctype_view_struct(ctype: &mut syn::ItemStruct, is_mut: bool) {
-    rewrite_ctype_view_name(&mut ctype.ident, is_mut);
-    rewrite_ctype_view_generics(
-        &mut ctype.generics,
-        ctype.fields.iter_mut().map(|field| &mut field.ty),
-        is_mut,
-    );
-}
-
-fn rewrite_ctype_view_union(ctype: &mut syn::ItemUnion, is_mut: bool) {
-    rewrite_ctype_view_name(&mut ctype.ident, is_mut);
-    rewrite_ctype_view_generics(
-        &mut ctype.generics,
-        ctype.fields.named.iter_mut().map(|field| &mut field.ty),
-        is_mut,
-    );
-}
-
-fn rewrite_ctype_view_name(ident: &mut syn::Ident, is_mut: bool) {
-    *ident = if is_mut {
-        gen_mut_view_name(ident)
-    } else {
-        gen_const_view_name(ident)
-    };
-}
-
-fn rewrite_ctype_view_generics<'a>(
-    generics: &mut syn::Generics,
-    fields: impl Iterator<Item = &'a mut syn::Type>,
-    is_mut: bool,
-) {
-    let field_tys = rewrite_ctype_view_field_tys(fields, is_mut);
-    let field_tys = field_tys.iter().collect::<Vec<_>>();
-
-    for bound in gen_ctype_borrow_cast_bounds(generics, &field_tys, is_mut) {
-        generics.make_where_clause().predicates.push(parse_quote! {
-            #bound
-        });
-    }
-}
-
-fn rewrite_ctype_view_field_tys<'a>(
-    fields: impl Iterator<Item = &'a mut syn::Type>,
-    is_mut: bool,
-) -> Vec<syn::Type> {
-    fields
-        .map(|field_ty| {
-            let ty = field_ty.clone();
-
-            if is_phantom_data(&ty) {
-                return ty;
-            }
-
-            let (borrow_cast_trait, view_ty) = if is_mut {
-                (quote!(co3::borrow::BorrowCastMut), quote!(AsMut))
-            } else {
-                (quote!(co3::borrow::BorrowCast), quote!(AsConst))
-            };
-            *field_ty = parse_quote! { <#ty as #borrow_cast_trait>::#view_ty };
-            ty
-        })
-        .collect()
 }
 
 fn gen_copy_impls(
@@ -1911,14 +1481,6 @@ fn gen_default_impl(
 
 pub(super) fn gen_ctype_name(item_name: &syn::Ident) -> syn::Ident {
     format_ident!("C{item_name}")
-}
-
-fn gen_const_view_name(item_name: &syn::Ident) -> syn::Ident {
-    format_ident!("{item_name}ConstView")
-}
-
-fn gen_mut_view_name(item_name: &syn::Ident) -> syn::Ident {
-    format_ident!("{item_name}MutView")
 }
 
 pub(super) fn gen_variant_struct_name(
@@ -2179,37 +1741,6 @@ fn gen_hrtb_projection_bounds(
     }
 
     bounds
-}
-
-fn gen_ctype_borrow_cast_bounds(
-    generics: &syn::Generics,
-    fields: &[&syn::Type],
-    is_mut: bool,
-) -> Vec<TokenStream> {
-    let (borrow_cast_trait, assoc_type) = if is_mut {
-        (quote! { co3::borrow::BorrowCastMut }, quote!(AsMut))
-    } else {
-        (quote! { co3::borrow::BorrowCast }, quote!(AsConst))
-    };
-
-    let Some((last, fields)) = fields.split_last() else {
-        return Vec::new();
-    };
-
-    let mut predicates = fields
-        .iter()
-        .filter(|ty| !is_phantom_data(ty) && is_parametrized(ty, generics))
-        .map(|&ty| {
-            let ctype_bound = quote! { <#assoc_type: Sized> };
-            parse_quote! { #ty: #borrow_cast_trait #ctype_bound }
-        })
-        .collect::<Vec<_>>();
-
-    if !is_phantom_data(last) && is_parametrized(last, generics) {
-        predicates.push(parse_quote! { #last: #borrow_cast_trait });
-    }
-
-    predicates
 }
 
 #[cfg(test)]

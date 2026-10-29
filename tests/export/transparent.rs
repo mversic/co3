@@ -139,6 +139,17 @@ fn transparent_values_cross_exported_abi() {
 }
 
 #[test]
+fn stable_mutable_encoder_uses_the_original_pointer() {
+    use co3::stored::{EncodeMut, EncodeMutUnchecked};
+    static_assertions::assert_impl_all!(TransparentStruct:
+        EncodeMut<'static, Store = ()>, EncodeMutUnchecked<'static, SoftStore = ()>);
+    let mut value = TransparentStruct::new(GenericTransparentStruct::new(42));
+    let original = core::ptr::from_mut(&mut value);
+    let encoded = value.encode_mut(&mut Default::default());
+    assert_eq!(encoded.as_ptr(), original);
+}
+
+#[test]
 fn transparent_collections_cross_exported_abi() {
     let values = vec![
         TransparentStruct::new(GenericTransparentStruct::new(2)),

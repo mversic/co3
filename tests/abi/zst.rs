@@ -1,6 +1,6 @@
 use co3::{
     CFnArg, CFnReturn, CType, Decode, Encode, ReprC,
-    borrow::{BorrowCast, BorrowCastMut},
+    borrow::Borrow,
     reference::CRefMut,
     rust_spec::RustSpec,
     transmute::AbiCompatible,
@@ -121,13 +121,12 @@ fn zero_sized_wrappers_are_not_function_values() {
 
 #[test]
 fn source_types_get_function_markers_only_when_nonzero() {
-    assert_impl_all!(Source<u32>: CType, CFnArg, CFnReturn, BorrowCast, BorrowCastMut);
-    assert_type_eq_all!(<Source<u32> as BorrowCast>::AsConst, Source<u32>);
-    assert_type_eq_all!(<Source<u32> as BorrowCastMut>::AsMut, Source<u32>);
+    assert_impl_all!(Source<u32>: CType, CFnArg, CFnReturn, Borrow);
+    assert_type_eq_all!(<Source<u32> as Borrow>::Borrowed, Source<u32>);
 
-    assert_impl_all!(Source<()>: CType, BorrowCast, BorrowCastMut);
+    assert_impl_all!(Source<()>: CType, Borrow);
     assert_not_impl_any!(Source<()>: CFnArg, CFnReturn);
-    assert_impl_all!(SourceZst: CType, BorrowCast, BorrowCastMut);
+    assert_impl_all!(SourceZst: CType, Borrow);
     assert_not_impl_any!(SourceZst: CFnArg, CFnReturn);
 }
 
@@ -138,28 +137,25 @@ fn niche_optimized_option_and_result_are_function_values() {
     type Success = Result<NonZero<u8>, ()>;
     type Failure = Result<(), NonZero<u8>>;
 
-    assert_impl_all!(Optional: CType, CFnArg, CFnReturn, BorrowCast, BorrowCastMut);
-    assert_impl_all!(Callback: CType, CFnArg, CFnReturn, BorrowCast, BorrowCastMut);
-    assert_impl_all!(Success: CType, CFnArg, CFnReturn, BorrowCast, BorrowCastMut);
-    assert_impl_all!(Failure: CType, CFnArg, CFnReturn, BorrowCast, BorrowCastMut);
-    assert_type_eq_all!(<Optional as BorrowCast>::AsConst, Optional);
-    assert_type_eq_all!(<Success as BorrowCastMut>::AsMut, Success);
-    assert_type_eq_all!(<Failure as BorrowCast>::AsConst, Failure);
+    assert_impl_all!(Optional: CType, CFnArg, CFnReturn, Borrow);
+    assert_impl_all!(Callback: CType, CFnArg, CFnReturn, Borrow);
+    assert_impl_all!(Success: CType, CFnArg, CFnReturn, Borrow);
+    assert_impl_all!(Failure: CType, CFnArg, CFnReturn, Borrow);
+    assert_type_eq_all!(<Optional as Borrow>::Borrowed, Optional);
+    assert_type_eq_all!(<Success as Borrow>::Borrowed, Success);
+    assert_type_eq_all!(<Failure as Borrow>::Borrowed, Failure);
 }
 
 #[test]
-fn wrapper_borrow_casts_match_their_borrowed_representations() {
-    assert_impl_all!(Cell<u8>: BorrowCast, BorrowCastMut);
-    assert_type_eq_all!(<Cell<u8> as BorrowCast>::AsConst, UnsafeCell<u8>);
-    assert_type_eq_all!(<Cell<u8> as BorrowCastMut>::AsMut, UnsafeCell<u8>);
+fn wrappers_preserve_their_borrowed_representations() {
+    assert_impl_all!(Cell<u8>: Borrow);
+    assert_type_eq_all!(<Cell<u8> as Borrow>::Borrowed, Cell<u8>);
 
-    assert_impl_all!(ManuallyDrop<u8>: BorrowCast, BorrowCastMut);
-    assert_type_eq_all!(<ManuallyDrop<u8> as BorrowCast>::AsConst, u8);
-    assert_type_eq_all!(<ManuallyDrop<u8> as BorrowCastMut>::AsMut, u8);
+    assert_impl_all!(ManuallyDrop<u8>: Borrow);
+    assert_type_eq_all!(<ManuallyDrop<u8> as Borrow>::Borrowed, ManuallyDrop<u8>);
 
-    assert_impl_all!(CRefMut<u8, true>: BorrowCast, BorrowCastMut);
-    assert_type_eq_all!(<CRefMut<u8, true> as BorrowCast>::AsConst, CRefMut<u8, true>);
-    assert_type_eq_all!(<CRefMut<u8, true> as BorrowCastMut>::AsMut, CRefMut<u8, true>);
+    assert_impl_all!(CRefMut<u8, true>: Borrow);
+    assert_type_eq_all!(<CRefMut<u8, true> as Borrow>::Borrowed, CRefMut<u8, true>);
 }
 
 #[test]

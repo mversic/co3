@@ -134,7 +134,7 @@ fn gen_import_wrapper(
     let (wrapper_ident, definition, value) = wrapper_definition(vis, ident, ty, mutable);
 
     let co3 = co3_path();
-    // A concrete lifetime lets rustc resolve the function pointer's DecodeOwned
+    // A concrete lifetime lets rustc resolve the function pointer's DecodeMove
     // store before checking the EmptyStore bound.
     let (decode_bounds, decode) = if matches!(ty, syn::Type::FnPtr(_)) {
         (
@@ -159,7 +159,7 @@ fn gen_import_wrapper(
             #[inline]
             pub unsafe fn soft_read<'__co3_static_d>(
                 &self,
-                store: &'__co3_static_d mut <#ty as #co3::stored::DecodeOwned<'__co3_static_d>>::Store,
+                store: &'__co3_static_d mut <#ty as #co3::stored::DecodeMove<'__co3_static_d>>::Store,
             ) -> Option<#ty>
             where
                 for<'_dummy> #ty: #co3::Decode<'__co3_static_d> + Copy,
@@ -174,7 +174,7 @@ fn gen_import_wrapper(
             #[inline]
             pub fn soft_read<'__co3_static_d>(
                 &self,
-                store: &'__co3_static_d mut <#ty as #co3::stored::DecodeOwned<'__co3_static_d>>::Store,
+                store: &'__co3_static_d mut <#ty as #co3::stored::DecodeMove<'__co3_static_d>>::Store,
             ) -> Option<#ty>
             where
                 for<'_dummy> #ty: #co3::Decode<'__co3_static_d> + #co3::transmute::AbiCompatible + Copy,

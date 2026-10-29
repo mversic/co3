@@ -175,7 +175,7 @@ pub(super) fn derive_field_repr_c(
 
         let mut decode_generics = input.generics.clone();
         decode_generics.params.insert(0, parse_quote!('_dšč));
-        decode_generics.make_where_clause().predicates.push(parse_quote!(#speculative #field_ty: co3::stored::DecodeOwned<'_dšč>));
+        decode_generics.make_where_clause().predicates.push(parse_quote!(#speculative #field_ty: co3::stored::DecodeMove<'_dšč>));
         decode_generics.make_where_clause().predicates.push(parse_quote!(#name #ty_generics: co3::ReprC<CType = <#field_ty as co3::ReprC>::CType>));
         decode_generics.make_where_clause().predicates.extend(niche_bound.iter().cloned());
         let niche_impl = if let Some(value) = attrs.niche_value.as_ref() {
@@ -250,17 +250,17 @@ pub(super) fn derive_field_repr_c(
 
         let (decode_impl_generics, _, decode_where_clause) = decode_generics.split_for_impl();
         let decode_impl = quote! {
-            unsafe impl #decode_impl_generics co3::stored::DecodeOwned<'_dšč>
+            unsafe impl #decode_impl_generics co3::stored::DecodeMove<'_dšč>
                 for #name #ty_generics #decode_where_clause
             {
-                type Store = <#field_ty as co3::stored::DecodeOwned<'_dšč>>::Store;
+                type Store = <#field_ty as co3::stored::DecodeMove<'_dšč>>::Store;
 
                 unsafe fn soft_decode<'_išč: '_dšč>(
                     source: Self::CType,
                     store: &'_išč mut Self::Store,
                 ) -> Option<Self> {
                     #niche_rejection
-                    let value = unsafe { <#field_ty as co3::stored::DecodeOwned<'_dšč>>::soft_decode(source, store)? };
+                    let value = unsafe { <#field_ty as co3::stored::DecodeMove<'_dšč>>::soft_decode(source, store)? };
                     #decode_custom_validation
                     Some(#construct)
                 }
@@ -268,7 +268,7 @@ pub(super) fn derive_field_repr_c(
         };
         let mut decode_trait_generics = decode_generics.clone();
         decode_trait_generics.make_where_clause().predicates.push(parse_quote!(
-            #speculative #name #ty_generics: co3::stored::DecodeOwned<'_dšč>
+            #speculative #name #ty_generics: co3::stored::DecodeMove<'_dšč>
         ));
         decode_trait_generics.make_where_clause().predicates.push(parse_quote!(
             #field_speculative #field_ty: co3::Decode<'_dšč>

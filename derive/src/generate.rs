@@ -1639,7 +1639,7 @@ pub(crate) fn expand_export_decls(
                             self
                         }
                     }
-                    unsafe impl #decode_impl_generics co3::stored::DecodeOwned<'_dšč> for #ident #ty_generics #where_clause {
+                    unsafe impl #decode_impl_generics co3::stored::DecodeMove<'_dšč> for #ident #ty_generics #where_clause {
                         type Store = ();
 
                         #[inline(always)]
@@ -3451,7 +3451,7 @@ fn gen_owned_repr_c_impls(ident: &syn::Ident, generics: &syn::Generics) -> Token
                 self
             }
         }
-        unsafe impl #decode_impl_generics #co3::stored::DecodeOwned<'d> for #owned_repr_c_name #ty_generics #where_clause {
+        unsafe impl #decode_impl_generics #co3::stored::DecodeMove<'d> for #owned_repr_c_name #ty_generics #where_clause {
             type Store = ();
 
             #[inline(always)]
@@ -3477,12 +3477,18 @@ fn gen_owned_repr_c_impls(ident: &syn::Ident, generics: &syn::Generics) -> Token
         unsafe impl #impl_generics #co3::CFnArg for #owned_repr_c_name #ty_generics #where_clause {}
         unsafe impl #impl_generics #co3::CFnReturn for #owned_repr_c_name #ty_generics #where_clause {}
 
-        unsafe impl #impl_generics #co3::borrow::BorrowCast for #owned_repr_c_name #ty_generics #where_clause {
-            type AsConst = #co3::reference::CRef<#ident #ty_generics>;
+        unsafe impl #impl_generics #co3::borrow::Borrow for #owned_repr_c_name #ty_generics #where_clause {
+            type Borrowed = Self;
+
+            fn borrow(self) -> Self {
+                self
+            }
+
+            fn from_borrow(source: Self) -> Self {
+                source
+            }
         }
-        unsafe impl #impl_generics #co3::borrow::BorrowCastMut for #owned_repr_c_name #ty_generics #where_clause {
-            type AsMut = #co3::reference::CRefMut<#ident #ty_generics, true>;
-        }
+
     }
 }
 
@@ -3713,7 +3719,7 @@ fn gen_owned_extern_type_impls(
                 #owned_repr_c_name(core::mem::ManuallyDrop::new(self).0.as_ptr())
             }
         }
-        unsafe impl #decode_impl_generics #co3::stored::DecodeOwned<'d> for #owned_ident #ty_generics #where_clause {
+        unsafe impl #decode_impl_generics #co3::stored::DecodeMove<'d> for #owned_ident #ty_generics #where_clause {
             type Store = ();
 
             #[inline(always)]

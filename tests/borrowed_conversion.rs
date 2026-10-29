@@ -52,13 +52,13 @@ fn borrowed_box_keeps_owner_until_sync() {
 fn shared_interior_reference_encodes_directly() {
     let value = core::cell::UnsafeCell::new(7u8);
     let borrowed = (&value).borrow();
-    let encoded = borrowed.soft_encode(&mut ());
+    let encoded = borrowed.soft_encode(&mut Default::default());
     assert_eq!(Borrowed::into_inner(encoded).as_ptr(), value.get().cast());
 }
 
 #[test]
 fn owned_decode_clones_without_taking_ownership() {
-    use co3::stored::DecodeOwned;
+    use co3::stored::DecodeMove;
     let value = Box::new(11u8);
     let original = core::ptr::from_ref(&*value);
     let mut encode_store = Default::default();
@@ -75,7 +75,7 @@ fn owned_decode_clones_without_taking_ownership() {
 
 #[test]
 fn shared_references_with_reachable_interior_are_wrapped() {
-    use co3::stored::DecodeOwned;
+    use co3::stored::DecodeMove;
     use core::cell::UnsafeCell;
     let plain = 5u8;
     let identity: &u8 = (&plain).borrow();
@@ -84,8 +84,8 @@ fn shared_references_with_reachable_interior_are_wrapped() {
     let cell = UnsafeCell::new(7u8);
     let inner = &cell;
     let wrapped: Borrowed<&&UnsafeCell<u8>> = (&inner).borrow();
-    let encoded = wrapped.soft_encode(&mut ());
-    let mut store = ();
+    let encoded = wrapped.soft_encode(&mut Default::default());
+    let mut store = Default::default();
     let decoded =
         unsafe { <Borrowed<&&UnsafeCell<u8>>>::soft_decode(encoded, &mut store) }.unwrap();
     assert!(core::ptr::eq(

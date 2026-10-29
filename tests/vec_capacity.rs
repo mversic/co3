@@ -1,7 +1,7 @@
 #![cfg(feature = "alloc")]
 
 use co3::stored::{
-    DecodeOwned, EncodeMove, EncodeMoveUnchecked, EncodeMut, EncodeRef, EncodeRefUnchecked, Store,
+    DecodeMove, EncodeMove, EncodeMoveUnchecked, EncodeMut, EncodeRef, EncodeRefUnchecked, Store,
 };
 
 #[test]

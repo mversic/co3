@@ -1,14 +1,14 @@
 use core::cell::Cell;
 
-use co3::stored::{DecodeOwned, EncodeMove, EncodeMoveUnchecked, Store};
+use co3::stored::{DecodeMove, EncodeMove, EncodeMoveUnchecked, Store};
 
 #[test]
 fn stable_interior_box_direct_round_trip_preserves_allocation() {
     let value = Box::new(Cell::new(true));
     let original = core::ptr::from_ref(&*value);
-    let encoded = unsafe { value.soft_encode_unchecked(&mut ()) };
+    let encoded = unsafe { value.soft_encode_unchecked(&mut Default::default()) };
     assert_eq!(encoded.as_ptr().cast::<Cell<bool>>(), original.cast_mut());
-    let decoded = unsafe { Box::<Cell<bool>>::soft_decode(encoded, &mut ()) }.unwrap();
+    let decoded = unsafe { Box::<Cell<bool>>::soft_decode(encoded, &mut Default::default()) }.unwrap();
     assert_eq!(core::ptr::from_ref(&*decoded), original);
     assert!(decoded.get());
 }
@@ -17,9 +17,9 @@ fn stable_interior_box_direct_round_trip_preserves_allocation() {
 fn stable_interior_slice_box_direct_round_trip_preserves_allocation() {
     let value = Box::new([Cell::new(true), Cell::new(false)]) as Box<[Cell<bool>]>;
     let original = value.as_ptr();
-    let encoded = unsafe { value.soft_encode_unchecked(&mut ()) };
+    let encoded = unsafe { value.soft_encode_unchecked(&mut Default::default()) };
     assert_eq!(encoded.as_ptr().cast::<Cell<bool>>(), original.cast_mut());
-    let decoded = unsafe { Box::<[Cell<bool>]>::soft_decode(encoded, &mut ()) }.unwrap();
+    let decoded = unsafe { Box::<[Cell<bool>]>::soft_decode(encoded, &mut Default::default()) }.unwrap();
     assert_eq!(decoded.as_ptr(), original);
     assert_eq!(
         decoded.iter().map(Cell::get).collect::<Vec<_>>(),
@@ -40,10 +40,10 @@ fn unstable_interior_box_checked_round_trip() {
 
 #[test]
 fn interior_box_validation_checks_null_and_pointee() {
-    use co3::{boxed::CBoxCell, transmute::AbiCompatibleValidate};
+    use co3::{boxed::CBox, transmute::AbiCompatibleValidate};
 
-    assert!(!unsafe { Box::<Cell<bool>>::is_valid(&CBoxCell::null()) });
-    let carrier = unsafe { Box::new(Cell::new(true)).soft_encode_unchecked(&mut ()) };
+    assert!(!unsafe { Box::<Cell<bool>>::is_valid(&CBox::null()) });
+    let carrier = unsafe { Box::new(Cell::new(true)).soft_encode_unchecked(&mut Default::default()) };
     assert!(unsafe { Box::<Cell<bool>>::is_valid(&carrier) });
-    drop(unsafe { Box::<Cell<bool>>::soft_decode(carrier, &mut ()) }.unwrap());
+    drop(unsafe { Box::<Cell<bool>>::soft_decode(carrier, &mut Default::default()) }.unwrap());
 }

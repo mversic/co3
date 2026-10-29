@@ -1,11 +1,11 @@
 //! Stable vector ownership and its robust C-compatible representation.
-use crate::borrow::{BorrowCast, BorrowCastMut};
+
 use crate::transmute::AbiCompatibleValidate;
 use crate::{
     CFnArg, CFnReturn, CType, Decode, Encode, EncodeUnchecked, ReprC,
     borrow::Borrowed,
     slice::impl_identity_carrier,
-    stored::{DecodeOwned, EncodeMove, EncodeMoveUnchecked},
+    stored::{DecodeMove, EncodeMove, EncodeMoveUnchecked},
     transmute::AbiCompatible,
 };
 use core::{
@@ -219,8 +219,7 @@ impl<T: CType> CVec<T> {
         }
     }
 
-    /// Constructs a robust header without validating its allocation or contents.
-    pub const fn from_raw_parts(data: *mut T, len: usize, capacity: usize) -> Self {
+    pub const unsafe fn from_raw_parts(data: *mut T, len: usize, capacity: usize) -> Self {
         Self {
             data,
             len,
@@ -258,6 +257,7 @@ impl<T> CVec<T> {
     }
 }
 impl_identity_carrier! { CVec, [T: CType], [T] }
+crate::slice::impl_carrier_borrow! { CVec, [T: CType], [T] }
 
 impl<T> From<alloc::vec::Vec<T>> for Vec<T> {
     fn from(value: alloc::vec::Vec<T>) -> Self {
@@ -292,7 +292,7 @@ impl<R> Encode for alloc::vec::Vec<R> where Self: EncodeMove {}
 #[cfg(feature = "alloc")]
 impl<R> EncodeUnchecked for alloc::vec::Vec<R> where Self: EncodeMoveUnchecked {}
 #[cfg(feature = "alloc")]
-impl<'d, R> Decode<'d> for alloc::vec::Vec<R> where Self: DecodeOwned<'d> {}
+impl<'d, R> Decode<'d> for alloc::vec::Vec<R> where Self: DecodeMove<'d> {}
 
 // The header has C layout; reachable element layout and mutability follow T.
 unsafe impl<T: RustSpec<Mutability: rust_spec::mutability::PointerMutability>> RustSpec for Vec<T> {
@@ -352,7 +352,7 @@ impl<T> Extend<T> for Vec<T> {
 }
 impl<T> Encode for Vec<T> where Self: EncodeMove + crate::EncodeUnchecked {}
 impl<T> crate::EncodeUnchecked for Vec<T> where Self: EncodeMoveUnchecked {}
-impl<'d, T> Decode<'d> for Vec<T> where Self: DecodeOwned<'d> {}
+impl<'d, T> Decode<'d> for Vec<T> where Self: DecodeMove<'d> {}
 impl<T: ReprC<CType: CType + Sized>> crate::niche::Niche for Vec<T> {
     const NICHE: Self::CType = CVec::null();
 }
@@ -388,12 +388,4 @@ impl<T> PartialEq for CVec<T> {
     fn eq(&self, other: &Self) -> bool {
         self.data == other.data && self.len == other.len && self.capacity == other.capacity
     }
-}
-
-// FIXME: These are fake impls
-unsafe impl<C: BorrowCast> BorrowCast for CVec<C> {
-    type AsConst = Self;
-}
-unsafe impl<C: BorrowCastMut> BorrowCastMut for CVec<C> {
-    type AsMut = Self;
 }

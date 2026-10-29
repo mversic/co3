@@ -13,7 +13,7 @@ use crate::{
 use crate::{
     ReprC,
     reference::{CRef, CRefMut},
-    stored::{DecodeOwned, EmptyStore, EncodeMove, Store, decode_owned, encode_owned},
+    stored::{DecodeMove, EmptyStore, EncodeMove, Store, decode_owned, encode_owned},
 };
 
 impl Store for () {
@@ -102,7 +102,7 @@ impl<R, S: Store> Store for RefSizedDecodeStore<R, S> {
 
 pub struct RefMutSizedEncodeStore<
     'd,
-    R: DecodeOwned<'d, Store: EmptyStore + 'd>,
+    R: DecodeMove<'d, Store: EmptyStore + 'd>,
     S: Store + Default,
 > {
     ctype: Option<R::CType>,
@@ -110,16 +110,17 @@ pub struct RefMutSizedEncodeStore<
     original: Option<&'d mut R>,
 }
 
-pub struct RefMutSizedDecodeStore<R: ReprC, S> {
+pub struct RefMutSizedDecodeStore<R: ReprC, S, P = *mut <R as ReprC>::CType> {
     value: Option<R>,
     store: S,
-    source: Option<*mut R::CType>,
+    writeback: Option<(P, fn(R, P) -> Option<()>, bool)>,
 }
 
-impl<'d, R: DecodeOwned<'d, Store: EmptyStore + 'd>, S: Store + Default>
+impl<'d, R: DecodeMove<'d, Store: EmptyStore + 'd>, S: Store + Default>
     RefMutSizedEncodeStore<'d, R, S>
 {
-    pub(crate) fn encode(
+    #[doc(hidden)]
+    pub fn encode(
         &mut self,
         original: &'d mut R,
         encode: impl FnOnce(&mut R, &mut S) -> R::CType,
@@ -142,33 +143,64 @@ impl<'d, R: DecodeOwned<'d, Store: EmptyStore + 'd>, S: Store + Default>
 
 impl<R: EncodeMove<Store: EmptyStore>, S: Store + Default> RefMutSizedDecodeStore<R, S> {
     /// The source must remain valid and exclusively accessible until synchronization or reuse.
-    pub(crate) unsafe fn decode<'a>(
+    #[doc(hidden)]
+    pub unsafe fn decode<'a>(
         &'a mut self,
         source: *mut R::CType,
         build: impl FnOnce(&'a mut S) -> Option<R>,
     ) -> Option<&'a mut R> {
-        if self.source.is_some() {
-            self.finish()?;
-        }
-        if source.is_null() {
-            return None;
-        }
+        if source.is_null() { return None; }
+        unsafe { self.decode_with_order(|fields| build(fields).map(|value| (value, source)), |value, source| {
+            unsafe { source.write(encode_owned(value)) };
+            Some(())
+        }, true) }
+    }
+}
 
-        let value = build(&mut self.store)?;
-        self.source = Some(source);
+impl<R: ReprC, S: Store + Default, P> RefMutSizedDecodeStore<R, S, P> {
+    /// Retain a reconstructed value and type-specific writeback state.
+    ///
+    /// # Safety
+    /// State must remain valid until synchronization. Any pointers into field
+    /// stores must point into pinned backing allocations, since sync moves Self.
+    /// The callback must not let references to temporary storage escape.
+    #[doc(hidden)]
+    pub unsafe fn decode_with<'a>(
+        &'a mut self,
+        build: impl FnOnce(&'a mut S) -> Option<(R, P)>,
+        writeback: fn(R, P) -> Option<()>,
+    ) -> Option<&'a mut R> {
+        unsafe { self.decode_with_order(build, writeback, false) }
+    }
+
+    unsafe fn decode_with_order<'a>(
+        &'a mut self,
+        build: impl FnOnce(&'a mut S) -> Option<(R, P)>,
+        writeback: fn(R, P) -> Option<()>,
+        sync_fields_first: bool,
+    ) -> Option<&'a mut R> {
+        if self.writeback.is_some() { self.finish()?; }
+        let (value, state) = build(&mut self.store)?;
+        self.writeback = Some((state, writeback, sync_fields_first));
         Some(self.value.insert(value))
     }
 
     fn finish(&mut self) -> Option<()> {
-        let source = self.source.take()?;
+        let (state, writeback, sync_fields_first) = self.writeback.take()?;
         let value = self.value.take()?;
-        core::mem::take(&mut self.store).sync()?;
-        unsafe { source.write(encode_owned(value)) };
-        Some(())
+        // Whole-value writeback must not commit when field validation fails.
+        if sync_fields_first {
+            core::mem::take(&mut self.store).sync()?;
+            return writeback(value, state);
+        }
+        // Reborrowed field destinations must be updated before their stores sync.
+        let written = writeback(value, state);
+        let synced = core::mem::take(&mut self.store).sync();
+        written.and(synced)
     }
 }
 
-impl<'d, R: DecodeOwned<'d, Store: EmptyStore + 'd>, S: Store + Default> Default
+impl<'d, R: DecodeMove<'d, Store: EmptyStore + 'd>, S: Store + Default> Default
     for RefMutSizedEncodeStore<'d, R, S>
 {
     fn default() -> Self {
@@ -180,17 +212,17 @@ impl<'d, R: DecodeOwned<'d, Store: EmptyStore + 'd>, S: Store + Default> Default
     }
 }
 
-impl<R: ReprC, S: Default> Default for RefMutSizedDecodeStore<R, S> {
+impl<R: ReprC, S: Default, P> Default for RefMutSizedDecodeStore<R, S, P> {
     fn default() -> Self {
         Self {
             value: None,
             store: Default::default(),
-            source: None,
+            writeback: None,
         }
     }
 }
 
-impl<'d, R: DecodeOwned<'d, Store: EmptyStore + 'd>, S: Store + Default> Store
+impl<'d, R: DecodeMove<'d, Store: EmptyStore + 'd>, S: Store + Default> Store
     for RefMutSizedEncodeStore<'d, R, S>
 {
     fn sync(mut self) -> Option<()> {
@@ -200,13 +232,13 @@ impl<'d, R: DecodeOwned<'d, Store: EmptyStore + 'd>, S: Store + Default> Store
     }
 }
 
-impl<R: EncodeMove<Store: EmptyStore>, S: Store + Default> Store for RefMutSizedDecodeStore<R, S> {
+impl<R: ReprC, S: Store + Default, P> Store for RefMutSizedDecodeStore<R, S, P> {
     fn sync(mut self) -> Option<()> {
         self.finish()
     }
 }
 
-impl<'d, R: DecodeOwned<'d, Store: EmptyStore + 'd>, S: Store + Default> Drop
+impl<'d, R: DecodeMove<'d, Store: EmptyStore + 'd>, S: Store + Default> Drop
     for RefMutSizedEncodeStore<'d, R, S>
 {
     fn drop(&mut self) {
@@ -301,8 +333,10 @@ impl<R: ToOwned + ?Sized, S: Store> Store for RefDstDecodeStore<R, S> {
 /// store.sync();
 /// ```
 #[cfg(feature = "alloc")]
-pub struct RefMutWideEncodeStore<'a, R: ReprC<CType: Wide> + ?Sized, S: Store, P> {
-    ctype: Option<Box<R::CType>>,
+pub struct RefMutWideEncodeStore<'a, R: ReprC<CType: Wide> + ?Sized, S: Store, P, B = Box<<R as ReprC>::CType>>
+where B: core::ops::DerefMut<Target = R::CType>,
+{
+    ctype: Option<B>,
     fields: Box<S>,
     #[expect(
         clippy::type_complexity,
@@ -316,7 +350,7 @@ pub struct RefMutWideEncodeStore<'a, R: ReprC<CType: Wide> + ?Sized, S: Store, P
 #[cfg(feature = "alloc")]
 pub struct RefMutDstEncodeStore<'d, R, S: Store + Default>
 where
-    R: ToOwned<Owned: DecodeOwned<'d, Store: EmptyStore + 'd>> + ?Sized,
+    R: ToOwned<Owned: DecodeMove<'d, Store: EmptyStore + 'd>> + ?Sized,
 {
     ctype: Option<<R::Owned as ReprC>::CType>,
     store: S,
@@ -378,7 +412,7 @@ impl<C: CType + Copy + PartialEq, S: Store> Store for RefMutReferenceEncodeStore
 #[cfg(feature = "alloc")]
 impl<'d, R, S: Store + Default> RefMutDstEncodeStore<'d, R, S>
 where
-    R: ToOwned<Owned: DecodeOwned<'d, Store: EmptyStore + 'd>> + ?Sized,
+    R: ToOwned<Owned: DecodeMove<'d, Store: EmptyStore + 'd>> + ?Sized,
 {
     pub(crate) fn encode(
         &mut self,
@@ -404,7 +438,7 @@ where
 #[cfg(feature = "alloc")]
 impl<'d, R, S: Store + Default> Default for RefMutDstEncodeStore<'d, R, S>
 where
-    R: ToOwned<Owned: DecodeOwned<'d, Store: EmptyStore + 'd>> + ?Sized,
+    R: ToOwned<Owned: DecodeMove<'d, Store: EmptyStore + 'd>> + ?Sized,
 {
     fn default() -> Self {
         Self {
@@ -418,7 +452,7 @@ where
 #[cfg(feature = "alloc")]
 impl<'d, R, S: Store + Default> Store for RefMutDstEncodeStore<'d, R, S>
 where
-    R: AssignFromOwned + ToOwned<Owned: DecodeOwned<'d, Store: EmptyStore + 'd>> + ?Sized,
+    R: AssignFromOwned + ToOwned<Owned: DecodeMove<'d, Store: EmptyStore + 'd>> + ?Sized,
 {
     fn sync(mut self) -> Option<()> {
         let (original, owned) = self.finish()?;
@@ -429,7 +463,7 @@ where
 #[cfg(feature = "alloc")]
 impl<'d, R, S: Store + Default> Drop for RefMutDstEncodeStore<'d, R, S>
 where
-    R: ToOwned<Owned: DecodeOwned<'d, Store: EmptyStore + 'd>> + ?Sized,
+    R: ToOwned<Owned: DecodeMove<'d, Store: EmptyStore + 'd>> + ?Sized,
 {
     fn drop(&mut self) {
         drop(self.finish());
@@ -474,14 +508,15 @@ impl<
     R: ReprC<CType: Wide<Header: WideHeader<Data: CType>, Metadata: CType>> + ?Sized,
     S: Store,
     P,
-> RefMutWideEncodeStore<'a, R, S, P>
+    B: core::ops::DerefMut<Target = R::CType>,
+> RefMutWideEncodeStore<'a, R, S, P, B>
 {
     /// Construct the pointee and its writeback state using stable field storage.
     /// Reuse cancels pending writeback before invoking the builder. A panic
     /// leaves no pending conversion; the previous pointee survives the builder.
     pub fn encode(
         &mut self,
-        build: impl FnOnce(&mut S) -> (Box<R::CType>, P),
+        build: impl FnOnce(&mut S) -> (B, P),
         copy_back: fn(&R::CType, P),
     ) -> CWideRefMut<R::CType, true> {
         self.writeback = None;
@@ -501,8 +536,8 @@ impl<
 }
 
 #[cfg(feature = "alloc")]
-impl<'a, R: ReprC<CType: Wide> + ?Sized, S: Store + Default, P> Default
-    for RefMutWideEncodeStore<'a, R, S, P>
+impl<'a, R: ReprC<CType: Wide> + ?Sized, S: Store + Default, P, B: core::ops::DerefMut<Target = R::CType>> Default
+    for RefMutWideEncodeStore<'a, R, S, P, B>
 {
     fn default() -> Self {
         Self {
@@ -515,7 +550,7 @@ impl<'a, R: ReprC<CType: Wide> + ?Sized, S: Store + Default, P> Default
 }
 
 #[cfg(feature = "alloc")]
-impl<'a, R: ReprC<CType: Wide> + ?Sized, S: Store, P> Store for RefMutWideEncodeStore<'a, R, S, P> {
+impl<'a, R: ReprC<CType: Wide> + ?Sized, S: Store, P, B: core::ops::DerefMut<Target = R::CType>> Store for RefMutWideEncodeStore<'a, R, S, P, B> {
     fn sync(self) -> Option<()> {
         if let Some((state, copy_back)) = self.writeback {
             copy_back(self.ctype.as_deref()?, state);
@@ -610,7 +645,7 @@ mod owned_encode_state_tests {
         type CType = *mut u8;
     }
 
-    unsafe impl<'d> DecodeOwned<'d> for Tracked {
+    unsafe impl<'d> DecodeMove<'d> for Tracked {
         type Store = ();
         unsafe fn soft_decode<'itm: 'd>(source: *mut u8, _: &'itm mut ()) -> Option<Self> {
             if source.is_null() {
@@ -828,11 +863,13 @@ impl<T, S: Default> Default for RefVecEncodeStore<T, S> {
 impl<T: CType, S> RefVecEncodeStore<T, S> {
     pub fn encode(&mut self, encode: impl FnOnce(&mut S) -> Vec<T>) -> crate::vec::CVec<T> {
         self.elements = encode(&mut self.fields);
-        crate::vec::CVec::from_raw_parts(
-            self.elements.as_mut_ptr(),
-            self.elements.len(),
-            self.elements.capacity(),
-        )
+        unsafe {
+            crate::vec::CVec::from_raw_parts(
+                self.elements.as_mut_ptr(),
+                self.elements.len(),
+                self.elements.capacity(),
+            )
+        }
     }
 }
 

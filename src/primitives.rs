@@ -10,9 +10,9 @@ use rust_spec::RustSpec;
 use crate::stored::Owned;
 use crate::{
     CFnArg, CFnReturn, CType, Decode, Encode, ReprC,
-    borrow::{Borrow, BorrowCast, BorrowCastMut},
+    borrow::Borrow,
     niche::Niche,
-    stored::{DecodeOwned, EmptyStore, EncodeMove, EncodeMoveUnchecked},
+    stored::{DecodeMove, EmptyStore, EncodeMove, EncodeMoveUnchecked},
     transmute::AbiCompatible,
 };
 
@@ -50,6 +50,7 @@ impl COrdering {
 
 macro_rules! primitive_derive {
     ( $primitive:ty ) => {
+        $crate::mutable::impl_direct_mut!([] $primitive);
         unsafe impl Borrow for $primitive {
             type Borrowed = Self;
 
@@ -89,7 +90,7 @@ macro_rules! primitive_derive {
                 self
             }
         }
-        unsafe impl<'d> DecodeOwned<'d> for $primitive {
+        unsafe impl<'d> DecodeMove<'d> for $primitive {
             type Store = ();
 
             #[inline(always)]
@@ -114,17 +115,12 @@ macro_rules! primitive_derive {
         unsafe impl CFnArg for $primitive {}
         unsafe impl CFnReturn for $primitive {}
 
-        unsafe impl BorrowCast for $primitive {
-            type AsConst = Self;
-        }
-        unsafe impl BorrowCastMut for $primitive {
-            type AsMut = Self;
-        }
     };
 }
 
 macro_rules! raw_pointer_derive {
     ( $mutability:tt ) => {
+        $crate::mutable::impl_direct_mut!([R: CType + ?Sized] *$mutability R);
         unsafe impl<R: ?Sized> Borrow for *$mutability R {
             type Borrowed = Self;
 
@@ -162,7 +158,7 @@ macro_rules! raw_pointer_derive {
                 self
             }
         }
-        unsafe impl<'d, R: CType + ?Sized> DecodeOwned<'d> for *$mutability R {
+        unsafe impl<'d, R: CType + ?Sized> DecodeMove<'d> for *$mutability R {
             type Store = ();
 
             #[inline(always)]
@@ -194,12 +190,6 @@ unsafe impl<R: CType + ?Sized> AbiCompatible for *$mutability R
         unsafe impl<R: CType> CFnArg for *$mutability R {}
         unsafe impl<R: CType> CFnReturn for *$mutability R {}
 
-        unsafe impl<R: CType + ?Sized> BorrowCast for *$mutability R {
-            type AsConst = Self;
-        }
-        unsafe impl<R: CType + ?Sized> BorrowCastMut for *$mutability R {
-            type AsMut = Self;
-        }
 
     };
 }
@@ -278,7 +268,7 @@ macro_rules! impl_fn_types {
                 Some(self)
             }
         }
-        unsafe impl<'d, $($arg,)* R> DecodeOwned<'d> for $fn_type where Self: ReprC<CType = Option<Self>> {
+        unsafe impl<'d, $($arg,)* R> DecodeMove<'d> for $fn_type where Self: ReprC<CType = Option<Self>> {
             type Store = ();
 
             unsafe fn soft_decode<'itm: 'd>(source: Self::CType, (): &mut ()) -> Option<Self> {
@@ -344,7 +334,7 @@ macro_rules! fieldless_enum_derive {
                 $encode_fn(self)
             }
         }
-        unsafe impl<'d> DecodeOwned<'d> for $src {
+        unsafe impl<'d> DecodeMove<'d> for $src {
             type Store = ();
 
             #[inline(always)]
@@ -412,12 +402,6 @@ impl<R: ReprC<CType: Sized>, const N: usize> ReprC for [R; N] {
 
 unsafe impl<R: CType, const N: usize> CType for [R; N] {}
 
-unsafe impl<R: BorrowCast<AsConst: Sized>, const N: usize> BorrowCast for [R; N] {
-    type AsConst = [R::AsConst; N];
-}
-unsafe impl<R: BorrowCastMut<AsMut: Sized>, const N: usize> BorrowCastMut for [R; N] {
-    type AsMut = [R::AsMut; N];
-}
 
 unsafe impl<T: EmptyStore, const N: usize> EmptyStore for [T; N] {}
 // TODO: It's not possbile to implement for specific len yet: https://github.com/mversic/co3/issues/13
@@ -559,10 +543,10 @@ mod tests {
         assert_impl_all!(Option<SystemCallback>: CFnArg);
 
         let encoded = increment as Callback;
-        let encoded = encoded.soft_encode(&mut ());
-        let decoded = unsafe { Callback::soft_decode(encoded, &mut ()) }.unwrap();
+        let encoded = encoded.soft_encode(&mut Default::default());
+        let decoded = unsafe { Callback::soft_decode(encoded, &mut Default::default()) }.unwrap();
         assert_eq!(decoded(41), 42);
-        assert!(unsafe { Callback::soft_decode(None, &mut ()) }.is_none());
+        assert!(unsafe { Callback::soft_decode(None, &mut Default::default()) }.is_none());
         assert!(Option::<Callback>::None.soft_encode(&mut None).is_none());
 
         type VoidCallback = extern "C" fn();

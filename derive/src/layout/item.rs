@@ -9,17 +9,17 @@ use crate::layout::{
     ReprCAttrs, VariantReprCAttrs,
     attr::ReprKind,
     borrow::{
-        either_variant_name, gen_const_view_name, gen_either_name, gen_identity_borrow_impls,
+        either_variant_name, gen_either_name, gen_identity_borrow_impls,
         gen_item_borrow_impls, gen_item_view, gen_view_ctype_name, gen_view_owner_name,
     },
     ctype::{
         TailClass, UnsizedTail, c_fn_last_field_bounds, classify_tail, gen_ctype_name,
-        gen_extern_c_bounds_for_ctype, gen_fieldless_enum_ctype, gen_identity_borrow_cast_impl,
-        gen_identity_repr_c_impls, gen_item_ctype, gen_union_fields, gen_variant_struct_name,
+        gen_extern_c_bounds_for_ctype, gen_fieldless_enum_ctype,
+        gen_identity_repr_c_impls, gen_item_ctype, gen_variant_struct_name,
     },
     enum_tag_type, enum_variant_tag_exprs, generic_param_idents, infer_repr, is_exhaustive_enum,
     is_parametrized, is_phantom_data, is_transparent_enum_repr,
-    niche::{gen_enum_niche_ir, gen_struct_niche_ir, gen_view_niche_ir},
+    niche::{gen_enum_niche_ir, gen_niche_value_ir, gen_struct_niche_ir},
     primitive_tag_type,
 };
 
@@ -40,6 +40,11 @@ pub(super) fn derive_item(
 
     let is_view = attrs.is_view;
     let is_wide_data = attrs.is_wide_data;
+    let has_unsized_tail = matches!(&input.data, syn::Data::Struct(data)
+        if data.fields.iter().next_back().is_some_and(|field|
+            classify_tail(&field.ty, &input.generics).is_known_unsized()));
+    let sized_decode_impls = (!is_wide_data && !has_unsized_tail)
+        .then(|| super::reference::gen_sized_decode_impls(input, repr, attrs, variant_attrs));
     if attrs.is_identity {
         let fields = match &input.data {
             syn::Data::Struct(data) => data
@@ -64,12 +69,15 @@ pub(super) fn derive_item(
         }
         let repr_c_impls = gen_identity_repr_c_impls(name, &identity_generics, &fields);
         let borrow_impls = gen_identity_borrow_impls(name, &identity_generics);
-        let borrow_cast_impls = gen_identity_borrow_cast_impl(name, &identity_generics);
+        let mut stable_input = input.clone();
+        stable_input.generics = identity_generics.clone();
+        let stable_mut_impls = super::reference::gen_stable_direct_mut_impls(&stable_input);
 
         return quote! {
             #repr_c_impls
             #borrow_impls
-            #borrow_cast_impls
+            #stable_mut_impls
+            #sized_decode_impls
         };
     }
 
@@ -130,7 +138,6 @@ pub(super) fn derive_item(
             ctype_input,
             !is_wide_data,
             !is_wide_data && !is_view,
-            !is_wide_data && !is_view,
         )
     });
 
@@ -148,14 +155,7 @@ pub(super) fn derive_item(
     let mut codec_attrs = attrs.clone();
     codec_attrs.is_view = false;
     let codec_impls = gen_item_codec_impls(repr, impl_input, &codec_attrs, variant_attrs);
-    let niche_impls = if is_view {
-        attrs
-            .niche_value
-            .is_some()
-            .then(|| gen_view_niche_ir(&input.ident, &impl_input.generics))
-    } else {
-        Some(gen_item_niche_impls(repr, input, attrs))
-    };
+    let niche_impls = gen_item_niche_impls(repr, if is_view { impl_input } else { input }, attrs);
 
     let repr_c_impls = repr
         .is_some()
@@ -167,6 +167,7 @@ pub(super) fn derive_item(
 
         #borrow_impls
         #codec_impls
+        #sized_decode_impls
         #niche_impls
 
         #repr_c_impls
@@ -178,6 +179,34 @@ fn gen_item_niche_impls(
     input: &syn::DeriveInput,
     attrs: &ReprCAttrs,
 ) -> TokenStream {
+    if attrs.is_view {
+        let Some(value) = &attrs.niche_value else {
+            return quote! {};
+        };
+        let owner_name = gen_view_owner_name(&input.ident);
+        let has_view_lifetime = matches!(
+            input.generics.params.first(),
+            Some(syn::GenericParam::Lifetime(param)) if param.lifetime.ident == "_dšč"
+        );
+        let owner_args =
+            generic_param_idents(input.generics.params.iter().skip(has_view_lifetime as usize))
+                .collect::<Vec<_>>();
+        let owner_ty = if owner_args.is_empty() {
+            quote!(#owner_name)
+        } else {
+            quote!(#owner_name<#(#owner_args),*>)
+        };
+        let speculative = speculative_marker(input.generics.params.is_empty());
+        return gen_niche_value_ir(
+            &input.ident,
+            &input.generics,
+            quote!(#value),
+            quote! {
+                #owner_ty: co3::niche::Niche,
+                #speculative Self: co3::ReprC<CType: Copy>,
+            },
+        );
+    }
     match &input.data {
         syn::Data::Struct(data) => gen_struct_niche_ir(
             &input.ident,
@@ -236,7 +265,8 @@ fn gen_item_codec_impls(
             matches!(classify_tail(&field.ty, &input.generics),
                 TailClass::Unknown | TailClass::Unsized(UnsizedTail::Unknown))));
     let references = group_aggregate_ref_impls(shared, dispatch);
-    quote! { #owned #references }
+    let stable_mut = super::reference::gen_stable_direct_mut_impls(input);
+    quote! { #owned #references #stable_mut }
 }
 
 fn gen_item_repr_c_impls(
@@ -281,7 +311,6 @@ fn gen_item_repr_c_impls(
             )
         }
         syn::Data::Enum(data) => gen_repr_c_data_enum_impls(
-            is_view,
             repr,
             &input.ident,
             &input.generics,
@@ -369,7 +398,6 @@ fn gen_enum_codec_impls(
     variants: &syn::punctuated::Punctuated<syn::Variant, syn::Token![,]>,
     variant_attrs: &[VariantReprCAttrs],
 ) -> TokenStream {
-    let view_owner_name = is_view.then(|| gen_view_owner_name(name));
 
     let ctype_name = if is_view {
         gen_view_ctype_name(name)
@@ -390,45 +418,14 @@ fn gen_enum_codec_impls(
     let tag_type = enum_tag_type(repr, variants.len());
     let tag_values = enum_variant_tag_exprs(variants, &tag_type);
 
-    let payload_name = if let Some(owner_name) = &view_owner_name {
-        format_ident!("{owner_name}Payload")
-    } else {
-        format_ident!("{name}Payload")
-    };
-    let payload_name = if is_view {
-        gen_const_view_name(&payload_name)
-    } else {
-        payload_name
-    };
+    let payload_name = format_ident!("{name}Payload");
 
     let fields = variants
         .iter()
         .flat_map(|variant| variant.fields.iter().map(|field| &field.ty))
         .collect::<Vec<_>>();
 
-    let mut union_copy_bounds = gen_enum_union_copy_bounds(name, generics, variants, is_view);
-    if is_view {
-        // Enum payload fields must have sized C representations, including the
-        // final field which may be unsized in an ordinary struct view.
-        let source_fields = fields
-            .iter()
-            .filter_map(|field| match field {
-                syn::Type::Path(syn::TypePath {
-                    qself: Some(qself), ..
-                }) => Some(&*qself.ty),
-                _ => None,
-            })
-            .filter(|field| is_parametrized(field, generics))
-            .collect::<Vec<_>>();
-        let mut source_bounds = source_fields
-            .into_iter()
-            .map(|field| {
-                parse_quote!(#field: co3::ReprC<CType: co3::borrow::BorrowCast<AsConst: Sized> + Sized>)
-            })
-            .collect::<Vec<syn::WherePredicate>>();
-        source_bounds.append(&mut union_copy_bounds);
-        union_copy_bounds = source_bounds;
-    }
+    let union_copy_bounds = gen_enum_union_copy_bounds(name, generics, variants);
 
     let (encode_store, direct_store, decode_store) = {
         let either_name = gen_either_name(variants.len());
@@ -451,11 +448,7 @@ fn gen_enum_codec_impls(
             let either_ty = gen_either_name(variants.len());
 
             let variant_name = &variant.ident;
-            let variant_struct_name = if let Some(owner_name) = &view_owner_name {
-                gen_const_view_name(&gen_variant_struct_name(owner_name, variant_name))
-            } else {
-                gen_variant_struct_name(name, variant_name)
-            };
+            let variant_struct_name = gen_variant_struct_name(name, variant_name);
 
             let store_variant = either_variant_name(idx);
             let variant_struct = quote! { #variant_struct_name };
@@ -850,11 +843,10 @@ fn gen_repr_c_struct_impls(
         #is_valid_body
     };
 
-    gen_repr_c_impls(is_view, name, generics, &field_types, is_valid_impl)
+    gen_repr_c_impls(name, generics, &field_types, is_valid_impl)
 }
 
 fn gen_repr_c_data_enum_impls(
-    is_view: bool,
     repr: Option<&ReprKind>,
     name: &Ident,
     generics: &syn::Generics,
@@ -873,12 +865,7 @@ fn gen_repr_c_data_enum_impls(
         let tag_value = &tag_values[variant_idx];
 
         let variant_name = &variant.ident;
-        let variant_struct_name = if is_view {
-            let view_owner_name = gen_view_owner_name(name);
-            gen_const_view_name(&gen_variant_struct_name(&view_owner_name, variant_name))
-        } else {
-            gen_variant_struct_name(name, variant_name)
-        };
+        let variant_struct_name = gen_variant_struct_name(name, variant_name);
 
         let variant_fields = variant
             .fields
@@ -942,79 +929,22 @@ fn gen_repr_c_data_enum_impls(
 
     let mut bounded_generics = generics.clone();
     let predicates = &mut bounded_generics.make_where_clause().predicates;
-    if is_view {
-        let source_fields = fields
-            .iter()
-            .filter_map(|field| match field {
-                syn::Type::Path(syn::TypePath {
-                    qself: Some(qself), ..
-                }) => Some(&*qself.ty),
-                _ => None,
-            })
-            .filter(|field| is_parametrized(field, generics));
-        predicates.extend(source_fields.map(|field| -> syn::WherePredicate {
-            parse_quote!(#field: co3::ReprC<CType: co3::borrow::BorrowCast<AsConst: Sized> + Sized>)
-        }));
-    }
     predicates.extend(gen_enum_union_copy_bounds(
-        name, generics, variants, is_view,
+        name, generics, variants,
     ));
 
-    gen_repr_c_impls(is_view, name, &bounded_generics, &fields, is_valid_impl)
+    gen_repr_c_impls(name, &bounded_generics, &fields, is_valid_impl)
 }
 
 fn gen_enum_union_copy_bounds(
     enum_name: &Ident,
     generics: &syn::Generics,
     variants: &syn::punctuated::Punctuated<syn::Variant, syn::Token![,]>,
-    is_view: bool,
 ) -> Vec<syn::WherePredicate> {
-    let (owner_name, owner_generics) = if is_view {
-        let owner_name = gen_view_owner_name(enum_name);
-        let mut owner_generics = generics.clone();
-        if matches!(
-            owner_generics.params.first(),
-            Some(syn::GenericParam::Lifetime(param)) if param.lifetime.ident == "_dšč"
-        ) {
-            owner_generics.params = owner_generics.params.into_iter().skip(1).collect();
-        }
-        (owner_name, owner_generics)
-    } else {
-        (enum_name.clone(), generics.clone())
-    };
-
-    let (_, fields) = gen_union_fields(&owner_name, &owner_generics, variants);
-    let field_types = variants
-        .iter()
-        .flat_map(|variant| variant.fields.iter().map(|field| &field.ty))
-        .collect::<Vec<_>>();
-    let mut bounds = if is_view {
-        Vec::new()
-    } else {
-        super::ctype::gen_sized_extern_c_bounds_for_ctype(&owner_generics, &field_types)
-    };
-    bounds.reserve(fields.named.len() * if is_view { 2 } else { 1 });
-    for field in fields.named {
-        let original_ty = field.ty;
-
-        if is_view {
-            bounds.push(parse_quote!(#original_ty: Copy));
-            let mut view_ty = original_ty.clone();
-            if let syn::Type::Path(path) = &mut view_ty
-                && let Some(segment) = path.path.segments.last_mut()
-            {
-                segment.ident = gen_const_view_name(&segment.ident);
-                bounds.push(parse_quote!(#view_ty: Copy));
-            }
-        } else {
-            bounds.push(parse_quote!(#original_ty: Copy));
-        }
-    }
-    bounds
+    super::ctype::gen_union_extern_c_bounds(enum_name, generics, variants)
 }
 
 fn gen_repr_c_impls(
-    is_view: bool,
     name: &Ident,
     generics: &syn::Generics,
     fields: &[&syn::Type],
@@ -1024,18 +954,13 @@ fn gen_repr_c_impls(
     let predicates = where_clause.as_ref().map(|w| &w.predicates);
     let checked_transmute_bounds = gen_checked_transmute_bounds(generics, fields, false);
     let validation_bounds = gen_checked_transmute_bounds(generics, fields, true);
-    let (borrow_cast_bounds, cast_eq_bounds) = if is_view {
-        (Vec::<TokenStream>::new(), quote! {})
-    } else {
-        (vec![], quote! {})
-    };
 
     quote! {
         unsafe impl #impl_generics co3::transmute::AbiCompatibleValidate for #name #ty_generics
         where
             #(#validation_bounds,)*
-            #(#borrow_cast_bounds,)*
-            #cast_eq_bounds
+
+
             #predicates
         {
             #[inline(always)]
@@ -1046,8 +971,8 @@ fn gen_repr_c_impls(
         unsafe impl #impl_generics co3::transmute::AbiCompatible for #name #ty_generics
         where
             #(#checked_transmute_bounds,)*
-            #(#borrow_cast_bounds,)*
-            #cast_eq_bounds
+
+
             #predicates
         {}
     }
@@ -1418,6 +1343,7 @@ pub(super) fn derive_fieldless_enum(
     let mut ref_generics = generics.clone();
     ref_generics.params.insert(0, parse_quote!('_ršč));
     let (ref_impl_generics, _, _) = ref_generics.split_for_impl();
+    let stable_mut_impls = super::reference::gen_stable_direct_mut_impls(input);
 
     quote! {
         #tag_const_impl
@@ -1428,6 +1354,7 @@ pub(super) fn derive_fieldless_enum(
         #ctype_variant_ctors
 
         #repr_c_impl
+        #stable_mut_impls
         unsafe impl #ref_impl_generics co3::stored::EncodeRefUnchecked<'_ršč> for #name #ty_generics #where_clause {
             type SoftStore = co3::sync::RefSizedEncodeStore<Self, ()>;
             unsafe fn encode_ref_unchecked<'itm>(&'_ršč self, store: &'itm mut Self::SoftStore) -> <&'_ršč Self as co3::ReprC>::CType  where '_ršč: 'itm {
@@ -1460,7 +1387,7 @@ pub(super) fn derive_fieldless_enum(
             }
         }
 
-        unsafe impl #decode_impl_generics co3::stored::DecodeOwned<'_dšč> for #name #ty_generics #where_clause {
+        unsafe impl #decode_impl_generics co3::stored::DecodeMove<'_dšč> for #name #ty_generics #where_clause {
             type Store = ();
 
             unsafe fn soft_decode<'_išč: '_dšč>(source: Self::CType, (): &mut ()) -> Option<Self> {
@@ -1579,7 +1506,7 @@ fn gen_record_conversion(
             },
             quote! { #(
                 let #field_vars = unsafe {
-                    co3::stored::DecodeOwned::soft_decode(#field_vars, #store_vars)?
+                    co3::stored::DecodeMove::soft_decode(#field_vars, #store_vars)?
                 }; )*
 
                 #custom_validation
@@ -1589,7 +1516,7 @@ fn gen_record_conversion(
             },
             quote! { #(
                 let #field_vars = unsafe {
-                    co3::stored::DecodeOwned::soft_decode_unchecked(#field_vars, #store_vars)
+                    co3::stored::DecodeMove::soft_decode_unchecked(#field_vars, #store_vars)
                 }; )*
 
                 #source_head {
@@ -1612,7 +1539,7 @@ fn gen_record_conversion(
             },
             quote! { #(
                 let #field_vars = unsafe {
-                    co3::stored::DecodeOwned::soft_decode(#field_vars, #store_vars)?
+                    co3::stored::DecodeMove::soft_decode(#field_vars, #store_vars)?
                 }; )*
 
                 #custom_validation
@@ -1622,7 +1549,7 @@ fn gen_record_conversion(
             },
             quote! { #(
                 let #field_vars = unsafe {
-                    co3::stored::DecodeOwned::soft_decode_unchecked(#field_vars, #store_vars)
+                    co3::stored::DecodeMove::soft_decode_unchecked(#field_vars, #store_vars)
                 }; )*
 
                 #source_head(
@@ -1705,7 +1632,7 @@ fn gen_codec_impls(
         quote! { co3::stored::EncodeMoveUnchecked },
     );
     let decode_owned_bounds =
-        gen_field_decode_bounds(generics, fields, quote! { co3::stored::DecodeOwned });
+        gen_field_decode_bounds(generics, fields, quote! { co3::stored::DecodeMove });
 
     let encode_bounds = gen_field_encode_bounds(generics, fields, quote! { co3::Encode });
     let direct_bounds = gen_field_encode_bounds(generics, fields, quote! { co3::EncodeUnchecked });
@@ -1717,11 +1644,6 @@ fn gen_codec_impls(
         c_fn_last_field_bounds(fields, generics)
     };
 
-    let (borrow_cast_bounds, cast_eq_bounds) = if is_view {
-        (Vec::<TokenStream>::new(), quote! {})
-    } else {
-        (vec![], quote! {})
-    };
 
     let mut decode_generics = generics.clone();
     if !has_view_lifetime {
@@ -1764,10 +1686,10 @@ fn gen_codec_impls(
                     #speculative Self: co3::ReprC<CType = #ctype_name #ctype_ty_generics>
                         + co3::rust_spec::RustSpec<Size: Thin> + '_ršč,
                     #speculative &'_ršč Self: co3::ReprC<CType = co3::reference::CRef<<Self as co3::ReprC>::CType>>,
-                    #(#borrow_cast_bounds,)*
+
                     #(#repr_c_bounds,)*
                     #(#field_bounds,)*
-                    #cast_eq_bounds
+
                     #predicates
                 {
                     type #store_name = co3::sync::RefSizedEncodeStore<Self, #field_store>;
@@ -1784,10 +1706,10 @@ fn gen_codec_impls(
         unsafe impl #impl_generics co3::stored::EncodeMove for #name #ty_generics
         where
             #sized_bound
-            #(#borrow_cast_bounds,)*
+
             #(#repr_c_bounds,)*
             #(#encode_owned_bounds,)*
-            #cast_eq_bounds
+
             #predicates
         {
             type Store = #encode_store;
@@ -1800,10 +1722,10 @@ fn gen_codec_impls(
         unsafe impl #impl_generics co3::stored::EncodeMoveUnchecked for #name #ty_generics
         where
             #sized_bound
-            #(#borrow_cast_bounds,)*
+
             #(#repr_c_bounds,)*
             #(#direct_encode_bounds,)*
-            #cast_eq_bounds
+
             #predicates
         {
             type SoftStore = #direct_store;
@@ -1812,13 +1734,13 @@ fn gen_codec_impls(
                 #direct_encode_impl
             }
         }
-        unsafe impl #decode_impl_generics co3::stored::DecodeOwned<'_dšč> for #name #ty_generics
+        unsafe impl #decode_impl_generics co3::stored::DecodeMove<'_dšč> for #name #ty_generics
         where
             #sized_bound
-            #(#borrow_cast_bounds,)*
+
             #(#repr_c_bounds,)*
             #(#decode_owned_bounds,)*
-            #cast_eq_bounds
+
             #predicates
         {
             type Store = #decode_store;
@@ -1834,33 +1756,33 @@ fn gen_codec_impls(
 
         impl #impl_generics co3::Encode for #name #ty_generics where
             #sized_bound
-            #(#borrow_cast_bounds,)*
+
             #(#repr_c_bounds,)*
             #(#encode_bounds,)*
-            #cast_eq_bounds
+
             #predicates
         {}
         impl #impl_generics co3::EncodeUnchecked for #name #ty_generics where
             #sized_bound
-            #(#borrow_cast_bounds,)*
+
             #(#repr_c_bounds,)*
             #(#direct_bounds,)*
-            #cast_eq_bounds
+
             #predicates
         {}
         impl #decode_impl_generics co3::Decode<'_dšč> for #name #ty_generics where
             #sized_bound
-            #(#borrow_cast_bounds,)*
+
             #(#repr_c_bounds,)*
             #(#decode_bounds,)*
-            #cast_eq_bounds
+
             #predicates
         {}
     });
 
     quote! {
         impl #impl_generics co3::ReprC for #name #ty_generics where
-            #(#borrow_cast_bounds,)*
+
             #(#repr_c_bounds,)*
             #(#extern_c_bounds,)*
             #predicates
@@ -1926,7 +1848,7 @@ fn direct_store_type(fields: &syn::Fields, mode: EncodeMode) -> TokenStream {
 
 fn decode_store_type(fields: &syn::Fields) -> TokenStream {
     let fields = fields.iter().map(|syn::Field { ty, .. }| {
-        quote! { <#ty as co3::stored::DecodeOwned<'_dšč>>::Store }
+        quote! { <#ty as co3::stored::DecodeMove<'_dšč>>::Store }
     });
 
     quote!((#(#fields,)*))

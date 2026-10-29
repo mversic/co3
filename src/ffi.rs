@@ -13,9 +13,9 @@ use rust_spec::RustSpec;
 
 use crate::{
     CFnArg, CFnReturn, CType, Decode, Encode, ReprC,
-    borrow::{Borrow, BorrowCast, BorrowCastMut},
+    borrow::Borrow,
     primitives::primitive_derive,
-    stored::{DecodeOwned, EncodeMove, EncodeMoveUnchecked},
+    stored::{DecodeMove, EncodeMove, EncodeMoveUnchecked},
     transmute::AbiCompatible,
 };
 
@@ -552,7 +552,7 @@ unsafe impl EncodeMoveUnchecked for CString {
     }
 }
 #[cfg(feature = "alloc")]
-unsafe impl<'d> DecodeOwned<'d> for CString {
+unsafe impl<'d> DecodeMove<'d> for CString {
     type Store = ();
 
     unsafe fn soft_decode<'itm: 'd>(source: Self::CType, (): &mut ()) -> Option<Self> {
@@ -588,12 +588,6 @@ impl ReprC for c_void {
     type CType = Self;
 }
 unsafe impl CType for c_void {}
-unsafe impl BorrowCast for c_void {
-    type AsConst = Self;
-}
-unsafe impl BorrowCastMut for c_void {
-    type AsMut = Self;
-}
 
 #[cfg(test)]
 mod tests {
@@ -659,7 +653,7 @@ mod tests {
         assert_not_impl_any!(&mut CStr: Encode, Decode<'static>);
         #[cfg(feature = "alloc")]
         {
-            assert_impl_all!(Box<ManuallyDrop<CStr>>: EncodeMove, crate::stored::DecodeOwned<'static>);
+            assert_impl_all!(Box<ManuallyDrop<CStr>>: EncodeMove, crate::stored::DecodeMove<'static>);
             assert_impl_all!(CString: Encode);
         }
     }

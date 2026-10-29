@@ -344,7 +344,7 @@ fn c_callback_crosses_export_and_import() {
     );
     fn assert_existing_fn_pointer_impls<T>(_: T) {}
     assert_existing_fn_pointer_impls(sum_native_raw as CCallback);
-    let raw_value = co3::borrow::borrow_cast(co3::encode(RustValue(21)));
+    let raw_value = co3::encode(RustValue(21));
     let raw_result = unsafe { double_rust_raw(raw_value) };
     assert_eq!(
         unsafe { co3::decode::<RustValue>(raw_result) },

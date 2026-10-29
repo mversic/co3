@@ -93,7 +93,7 @@ unsafe impl co3::stored::EncodeMoveUnchecked for UncheckedOnly {
     where
         Self: 'itm,
     {
-        co3::stored::EncodeMove::soft_encode(self, &mut ())
+        co3::stored::EncodeMove::soft_encode(self, &mut Default::default())
     }
 }
 

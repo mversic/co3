@@ -1,12 +1,13 @@
 use core::cell::Cell;
 
-use co3::stored::{DecodeOwned, EncodeMove, EncodeMoveUnchecked, Store};
+use co3::stored::{DecodeMove, EncodeMove, EncodeMoveUnchecked, Store};
 
 #[test]
 fn stable_interior_vec_direct_encoding_transfers_allocation() {
     let values = Box::<[Cell<bool>]>::from([Cell::new(true), Cell::new(false)]).into_vec();
     let original = values.as_ptr();
-    let encoded = unsafe { values.soft_encode_unchecked(&mut ()) };
+    let mut encode_store = Default::default();
+    let encoded = unsafe { values.soft_encode_unchecked(&mut encode_store) };
     assert_eq!(encoded.as_ptr().cast::<Cell<bool>>(), original.cast_mut());
     let mut store = Default::default();
     let decoded = unsafe { Vec::<Cell<bool>>::soft_decode(encoded, &mut store) }.unwrap();
@@ -44,26 +45,26 @@ fn unstable_interior_vec_unchecked_round_trip() {
 }
 
 #[test]
-fn robust_vec_checked_encoding_transfers_allocation() {
+fn robust_vec_checked_encoding_preserves_values_and_capacity() {
     let mut values = Vec::<u32>::with_capacity(12);
     values.extend([3, 7]);
     let capacity = values.capacity();
-    let original = values.as_ptr();
-    let encoded = values.soft_encode(&mut ());
-    assert_eq!(encoded.as_ptr(), original.cast_mut());
+    let mut encode_store = Default::default();
+    let encoded = values.soft_encode(&mut encode_store);
     assert_eq!(encoded.capacity(), capacity);
     let decoded = unsafe { encoded.into_vec() }.unwrap();
     assert_eq!(decoded.capacity(), capacity);
     assert_eq!(decoded, [3, 7]);
+    encode_store.sync().unwrap();
 
     let values = Box::<[Cell<u8>]>::from([Cell::new(3), Cell::new(7)]).into_vec();
-    let original = values.as_ptr();
-    let encoded = values.soft_encode(&mut ());
-    assert_eq!(encoded.as_ptr().cast::<Cell<u8>>(), original.cast_mut());
+    let mut encode_store = Default::default();
+    let encoded = values.soft_encode(&mut encode_store);
     let mut store = Default::default();
     let decoded = unsafe { Vec::<Cell<u8>>::soft_decode(encoded, &mut store) }.unwrap();
     assert_eq!(decoded.iter().map(Cell::get).collect::<Vec<_>>(), [3, 7]);
     store.sync().unwrap();
+    encode_store.sync().unwrap();
 }
 
 #[test]
@@ -86,17 +87,18 @@ fn stable_vec_decode_checks_validity_before_reusing_allocation() {
 
     let source = CVec::from_vec(vec![CBool(1), CBool(0)]);
     let original = source.as_ptr().cast::<bool>();
-    let decoded = unsafe { Vec::<bool>::soft_decode(source, &mut ()) }.unwrap();
+    let mut store = Default::default();
+    let decoded = unsafe { Vec::<bool>::soft_decode(source, &mut store) }.unwrap();
     assert_eq!(decoded.as_ptr(), original);
     assert_eq!(decoded, [true, false]);
 
     let invalid = CVec::from_vec(vec![CBool(1), CBool(2)]);
-    assert!(unsafe { Vec::<bool>::soft_decode(invalid, &mut ()) }.is_none());
-    assert!(unsafe { Vec::<bool>::soft_decode(CVec::null(), &mut ()) }.is_none());
+    assert!(unsafe { Vec::<bool>::soft_decode(invalid, &mut Default::default()) }.is_none());
+    assert!(unsafe { Vec::<bool>::soft_decode(CVec::null(), &mut Default::default()) }.is_none());
 
     let source = CVec::from_vec(vec![CBool(1)]);
     let original = source.as_ptr().cast::<bool>();
-    let decoded = unsafe { Vec::<bool>::soft_decode_unchecked(source, &mut ()) };
+    let decoded = unsafe { Vec::<bool>::soft_decode_unchecked(source, &mut Default::default()) };
     assert_eq!(decoded.as_ptr(), original);
     assert_eq!(decoded, [true]);
 }

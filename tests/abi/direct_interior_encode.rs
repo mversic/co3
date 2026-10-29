@@ -1,6 +1,6 @@
 use core::{cell::UnsafeCell, mem::ManuallyDrop, num::NonZeroU8};
 
-use co3::stored::{DecodeOwned, EncodeMove, EncodeMoveUnchecked};
+use co3::stored::{DecodeMove, EncodeMove, EncodeMoveUnchecked};
 use co3::{Decode, Encode, EncodeUnchecked};
 use static_assertions::{assert_impl_all, assert_not_impl_any};
 
@@ -36,14 +36,14 @@ struct RecordVec<T> {
 
 #[test]
 fn transparent_wrappers_preserve_owned_marker_restrictions() {
-    assert_impl_all!(TransparentVec<(u8,)>: EncodeMove, EncodeMoveUnchecked, DecodeOwned<'static>);
+    assert_impl_all!(TransparentVec<(u8,)>: EncodeMove, EncodeMoveUnchecked, DecodeMove<'static>);
     assert_impl_all!(TransparentVec<(u8,)>: Encode, EncodeUnchecked, Decode<'static>);
     assert_impl_all!(TransparentVec<u8>: Encode, EncodeUnchecked, Decode<'static>);
-    assert_impl_all!(ConcreteTransparentVec: EncodeMove, EncodeMoveUnchecked, DecodeOwned<'static>);
+    assert_impl_all!(ConcreteTransparentVec: EncodeMove, EncodeMoveUnchecked, DecodeMove<'static>);
     assert_impl_all!(ConcreteTransparentVec: Encode, EncodeUnchecked, Decode<'static>);
     assert_impl_all!(ConcreteTransparentByte: co3::transmute::AbiCompatible);
 
-    assert_impl_all!(TransparentBox<(u8,)>: EncodeMove, EncodeMoveUnchecked, DecodeOwned<'static>);
+    assert_impl_all!(TransparentBox<(u8,)>: EncodeMove, EncodeMoveUnchecked, DecodeMove<'static>);
     assert_not_impl_any!(TransparentBox<(u8,)>: Encode, EncodeUnchecked, Decode<'static>);
     assert_impl_all!(TransparentBox<u8>: Encode, EncodeUnchecked, Decode<'static>);
 

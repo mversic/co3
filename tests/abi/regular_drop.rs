@@ -1,7 +1,7 @@
 use co3::ffi::c_char;
 use co3::{ReprC, boxed::CBox, ffi, rust_spec::RustSpec, stored::EncodeMove};
 use core::ffi::CStr;
-use static_assertions::{assert_impl_all, assert_not_impl_any};
+use static_assertions::assert_impl_all;
 use std::ffi::CString;
 use std::sync::atomic::{AtomicUsize, Ordering};
 
@@ -15,7 +15,7 @@ struct RemoteString(CBox<c_char>);
 
 impl Clone for RemoteString {
     fn clone(&self) -> Self {
-        let ptr = co3::borrow::borrow_cast(self.0);
+        let ptr = self.0;
         let value = unsafe { CStr::from_ptr(ptr.as_ptr().cast()) }.to_owned();
         Self(co3::encode(value))
     }
@@ -55,7 +55,7 @@ fn regular_drop_decodes_owned_carrier() {
     let carrier = CString::new("battery")
         .unwrap()
         .into_boxed_c_str()
-        .soft_encode(&mut ());
+        .soft_encode(&mut Default::default());
     unsafe { drop_cstr(carrier) };
 }
 
@@ -73,12 +73,12 @@ struct NoDropValue(u32);
 
 #[test]
 fn no_drop_borrows_itself_without_owner() {
-    use co3::borrow::{Borrow, BorrowCast, BorrowCastMut};
+    use co3::borrow::Borrow;
+    static_assertions::assert_impl_all!(NoDropValue:
+        co3::stored::EncodeMut<'static, Store = ()>,
+        co3::stored::EncodeMutUnchecked<'static, SoftStore = ()>);
 
-    fn assert_identity_cast<C: BorrowCast<AsConst = C>>() {}
-    fn assert_identity_mut_cast<C: BorrowCastMut<AsMut = C>>() {}
-    assert_identity_cast::<CNoDropValue>();
-    assert_identity_mut_cast::<CNoDropValue>();
+    static_assertions::assert_type_eq_all!(<CNoDropValue as Borrow>::Borrowed, CNoDropValue);
 
     let borrowed: NoDropValue = Borrow::borrow(NoDropValue(5));
     let restored = <NoDropValue as Borrow>::from_borrow(borrowed);
@@ -91,11 +91,11 @@ struct InheritedDrop(Box<u32>);
 
 #[test]
 fn inherited_drop_borrows_fields() {
-    use co3::borrow::{Borrow, BorrowCastMut};
+    use co3::borrow::Borrow;
 
     static_assertions::assert_type_eq_all!(
-        <CInheritedDrop as BorrowCastMut>::AsMut,
-        CInheritedDropMutView
+        <CInheritedDrop as Borrow>::Borrowed,
+        CInheritedDrop
     );
 
     let borrowed = Borrow::borrow(InheritedDrop(Box::new(7)));
@@ -124,12 +124,13 @@ fn custom_and_inherited_drop_borrows_whole_value() {
 }
 
 #[test]
-fn custom_drop_companion_has_read_only_borrow_cast() {
-    use co3::borrow::{BorrowCast, BorrowCastMut};
+fn custom_drop_companion_borrows_as_self() {
 
-    assert_impl_all!(CCustomAndInheritedDrop: BorrowCast);
-    assert_not_impl_any!(CCustomAndInheritedDrop: BorrowCastMut);
-    assert_impl_all!(CBox<CCustomAndInheritedDrop>: BorrowCast, BorrowCastMut);
+    static_assertions::assert_type_eq_all!(
+        <CCustomAndInheritedDrop as co3::borrow::Borrow>::Borrowed,
+        CCustomAndInheritedDrop
+    );
+    assert_impl_all!(CBox<CCustomAndInheritedDrop>: co3::borrow::Borrow);
 }
 
 #[derive(RustSpec, ReprC)]
