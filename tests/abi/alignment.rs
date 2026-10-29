@@ -125,7 +125,7 @@ fn generated_view_keeps_owner_axes_and_recomputes_mutability() {
     assert_impl_all!(InteriorMutableField:
         RustSpec<Mutability = co3::rust_spec::mutability::WithInterior<co3::rust_spec::layout::Robust>>,
     );
-    assert_impl_all!(InteriorMutableFieldView<'static>:
+    assert_impl_all!(InteriorMutableFieldView:
         RustSpec<
             Layout = <InteriorMutableField as RustSpec>::Layout,
             Size = <InteriorMutableField as RustSpec>::Size,

@@ -1054,7 +1054,7 @@ fn prepare_dispatch_wrapper_sig(
                     syn::parse_quote!(#ty: #unpack_trait)
                 } else {
                     syn::parse_quote!(
-                        for<'__co3_unpack> <#ty as #co3::borrow::Borrow>::Borrowed<'__co3_unpack>:
+                        <#ty as #co3::borrow::Borrow>::Borrowed:
                             #unpack_trait
                     )
                 };
@@ -1108,7 +1108,7 @@ fn prepare_dispatch_wrapper_sig(
                     )
                 } else {
                     syn::parse_quote!(
-                        for<'__co3_unpack> <#ty as #co3::borrow::Borrow>::Borrowed<'__co3_unpack>:
+                        <#ty as #co3::borrow::Borrow>::Borrowed:
                             #unpack_trait
                     )
                 };
@@ -1133,26 +1133,10 @@ fn prepare_dispatch_wrapper_sig(
             } else {
                 where_clause
                     .predicates
-                    .push(syn::parse_quote!(#ty: #co3::ReprC + #co3::borrow::Borrow));
-                where_clause.predicates.push(syn::parse_quote!(
-                    <#ty as #co3::ReprC>::CType: #co3::borrow::BorrowCast<AsConst: Sized>
-                ));
-                let bound = if soft_for_arg(attrs) {
-                    syn::parse_quote!(
-                        for<'__co3_borrow> <#ty as #co3::borrow::Borrow>::Borrowed<'__co3_borrow>:
-                            #co3::Encode<
-                                CType = <<#ty as #co3::ReprC>::CType as #co3::borrow::BorrowCast>::AsConst,
-                            >
-                    )
-                } else {
-                    syn::parse_quote!(
-                        for<'__co3_borrow> <#ty as #co3::borrow::Borrow>::Borrowed<'__co3_borrow>:
-                            #co3::Encode<
-                                CType = <<#ty as #co3::ReprC>::CType as #co3::borrow::BorrowCast>::AsConst,
-                                Store: #co3::stored::EmptyStore,
-                            >
-                    )
-                };
+                    .push(syn::parse_quote!(#ty: #co3::borrow::Borrow));
+                let bound = syn::parse_quote!(
+                    <#ty as #co3::borrow::Borrow>::Borrowed: #co3::Encode
+                );
                 where_clause.predicates.push(bound);
             }
         }
@@ -1447,6 +1431,7 @@ fn prepare_dispatch_import(
                     &dispatch_generics,
                     sig,
                     dispatch_args,
+                    fn_attrs.iter().any(ffi_fn::is_by_val_attr),
                 ),
                 wrapper_sig,
                 id_assignments: Vec::new(),
@@ -1498,6 +1483,7 @@ fn prepare_dispatch_import(
                     &dispatch_generics,
                     &wrapper_source_sig,
                     &args,
+                    fn_attrs.iter().any(ffi_fn::is_by_val_attr),
                 ),
                 wrapper_sig,
                 id_assignments,
@@ -1875,7 +1861,7 @@ fn synthesize_impl_extern_decls(
             }
 
             let erased_layout_checks = args
-                .map(|args| gen_dispatch_erased_layout_checks(&impl_.generics, &item.sig, args));
+                .map(|args| gen_dispatch_erased_layout_checks(&impl_.generics, &item.sig, args, item.attrs.iter().any(ffi_fn::is_by_val_attr)));
 
             if args.is_some() {
                 strip_erased_param_predicates(&impl_.generics, &mut item.sig.generics);

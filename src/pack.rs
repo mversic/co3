@@ -348,3 +348,19 @@ where
         unsafe { <Box<[R]> as Pack2<Part1, Part2>>::pack(part1, part2) }
     }
 }
+
+impl<T: Unpack2<A, B>, A: CType, B: CType> Unpack2<A, B> for crate::borrow::Borrowed<T> {
+    type Error = T::Error;
+
+    fn unpack(value: Self::CType) -> Result<(A, B), Self::Error> {
+        T::unpack(crate::borrow::Borrowed::into_inner(value))
+    }
+}
+
+impl<T: Pack2<A, B>, A: CType, B: CType> Pack2<A, B> for crate::borrow::Borrowed<T> {
+    type Error = T::Error;
+
+    unsafe fn pack(a: A, b: B) -> Result<Self::CType, Self::Error> {
+        unsafe { T::pack(a, b) }.map(crate::borrow::Borrowed::new)
+    }
+}

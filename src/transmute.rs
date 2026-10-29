@@ -22,6 +22,7 @@ use crate::{
     reference::{CRef, CRefMut},
     utf8::Utf8Str,
 };
+pub(crate) use interior::InteriorTrap;
 
 // The trait is public inside a private module so associated-type projections
 // in conversion impls are legal without exposing the helper to callers.
@@ -43,8 +44,6 @@ mod interior {
         type Trap = I::Trap;
     }
 }
-
-pub(crate) use interior::InteriorTrap;
 
 disjoint_impls! {
     /// Type that can be **safely transmuted** into its C representation.
@@ -308,7 +307,9 @@ pub(crate) unsafe fn transmute_owned<S, T>(source: S) -> T {
         source: ManuallyDrop<S>,
         target: ManuallyDrop<T>,
     }
-    let source = Value { source: ManuallyDrop::new(source)};
+    let source = Value {
+        source: ManuallyDrop::new(source),
+    };
     unsafe { ManuallyDrop::into_inner(source.target) }
 }
 

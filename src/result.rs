@@ -13,7 +13,7 @@ use crate::EncodeUnchecked;
 use crate::sync::RefSizedEncodeStore;
 use crate::{
     CFnArg, CFnReturn, CType, Decode, Encode, ReprC, Thin,
-    borrow::{Borrow, BorrowCast, BorrowCastMut, FromBorrow},
+    borrow::{Borrow, BorrowCast, BorrowCastMut},
     reference::CRef,
     stored::{
         DecodeOwned, EmptyStore, EncodeMove, EncodeMoveUnchecked, EncodeRef, EncodeRefUnchecked,
@@ -45,38 +45,17 @@ struct CResultOk<T: Copy>(u8, MaybeUninit<T>);
 struct CResultErr<E: Copy>(u8, MaybeUninit<E>);
 
 unsafe impl<T: Borrow, E: Borrow> Borrow for Result<T, E> {
-    type Borrowed<'a>
-        = Result<T::Borrowed<'a>, E::Borrowed<'a>>
-    where
-        Self: 'a;
-    type Owner = Option<CoreResult<T::Owner, E::Owner>>;
-
-    fn borrow<'a>(self, owner: &'a mut Self::Owner) -> Self::Borrowed<'a>
-    where
-        Self: 'a,
-    {
+    type Borrowed = Result<T::Borrowed, E::Borrowed>;
+    fn borrow(self) -> Self::Borrowed {
         match self {
-            Self::Ok(value) => {
-                let Ok(inner) = owner.insert(Ok(Default::default())) else {
-                    unreachable!()
-                };
-                Result::Ok(value.borrow(inner))
-            }
-            Self::Err(value) => {
-                let Err(inner) = owner.insert(Err(Default::default())) else {
-                    unreachable!()
-                };
-                Result::Err(value.borrow(inner))
-            }
+            Self::Ok(v) => Result::Ok(v.borrow()),
+            Self::Err(v) => Result::Err(v.borrow()),
         }
     }
-}
-
-impl<'a, T: FromBorrow<'a>, E: FromBorrow<'a>> FromBorrow<'a> for Result<T, E> {
-    fn from_borrow(value: Self::Borrowed<'a>) -> Self {
-        match value {
-            Result::Ok(value) => Self::Ok(T::from_borrow(value)),
-            Result::Err(value) => Self::Err(E::from_borrow(value)),
+    fn from_borrow(source: Self::Borrowed) -> Self {
+        match source {
+            Result::Ok(v) => Self::Ok(T::from_borrow(v)),
+            Result::Err(v) => Self::Err(E::from_borrow(v)),
         }
     }
 }
@@ -395,49 +374,22 @@ where
 
 unsafe impl<T: Borrow + Copy, E: Borrow + Copy> Borrow for CResult<T, E>
 where
-    for<'itm> T::Borrowed<'itm>: Copy,
-    for<'itm> E::Borrowed<'itm>: Copy,
+    T::Borrowed: Copy,
+    E::Borrowed: Copy,
 {
-    type Borrowed<'itm>
-        = CResult<T::Borrowed<'itm>, E::Borrowed<'itm>>
-    where
-        Self: 'itm;
-
-    type Owner = Option<CoreResult<T::Owner, E::Owner>>;
+    type Borrowed = CResult<T::Borrowed, E::Borrowed>;
 
     #[inline(always)]
-    fn borrow<'itm>(self, owner: &'itm mut Self::Owner) -> Self::Borrowed<'itm>
-    where
-        Self: 'itm,
-    {
+    fn borrow(self) -> Self::Borrowed {
         match self.tag() {
-            0 => {
-                let CoreResult::Ok(owner) = owner.insert(CoreResult::Ok(Default::default())) else {
-                    unreachable!()
-                };
-
-                CResult::Ok(unsafe { self.ok.1.assume_init() }.borrow(owner))
-            }
-            1 => {
-                let CoreResult::Err(owner) = owner.insert(CoreResult::Err(Default::default()))
-                else {
-                    unreachable!()
-                };
-
-                CResult::Err(unsafe { self.err.1.assume_init() }.borrow(owner))
-            }
+            0 => CResult::Ok(unsafe { self.ok.1.assume_init() }.borrow()),
+            1 => CResult::Err(unsafe { self.err.1.assume_init() }.borrow()),
             _ => self.forward_payload(),
         }
     }
-}
-impl<'itm, T: FromBorrow<'itm> + Copy, E: FromBorrow<'itm> + Copy> FromBorrow<'itm>
-    for CResult<T, E>
-where
-    for<'borrow> T::Borrowed<'borrow>: Copy,
-    for<'borrow> E::Borrowed<'borrow>: Copy,
-{
+
     #[inline(always)]
-    fn from_borrow(source: Self::Borrowed<'itm>) -> Self {
+    fn from_borrow(source: Self::Borrowed) -> Self {
         match source.tag() {
             0 => Self::Ok(T::from_borrow(unsafe { source.ok.1.assume_init() })),
             1 => Self::Err(E::from_borrow(unsafe { source.err.1.assume_init() })),

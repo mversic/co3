@@ -73,16 +73,15 @@ struct NoDropValue(u32);
 
 #[test]
 fn no_drop_borrows_itself_without_owner() {
-    use co3::borrow::{Borrow, BorrowCast, BorrowCastMut, FromBorrow};
+    use co3::borrow::{Borrow, BorrowCast, BorrowCastMut};
 
     fn assert_identity_cast<C: BorrowCast<AsConst = C>>() {}
     fn assert_identity_mut_cast<C: BorrowCastMut<AsMut = C>>() {}
     assert_identity_cast::<CNoDropValue>();
     assert_identity_mut_cast::<CNoDropValue>();
 
-    let mut owner: <NoDropValue as Borrow>::Owner = ();
-    let borrowed: NoDropValue = Borrow::borrow(NoDropValue(5), &mut owner);
-    let restored = <NoDropValue as FromBorrow>::from_borrow(borrowed);
+    let borrowed: NoDropValue = Borrow::borrow(NoDropValue(5));
+    let restored = <NoDropValue as Borrow>::from_borrow(borrowed);
     assert_eq!(restored.0, 5);
 }
 
@@ -92,17 +91,16 @@ struct InheritedDrop(Box<u32>);
 
 #[test]
 fn inherited_drop_borrows_fields() {
-    use co3::borrow::{Borrow, BorrowCastMut, FromBorrow};
+    use co3::borrow::{Borrow, BorrowCastMut};
 
     static_assertions::assert_type_eq_all!(
         <CInheritedDrop as BorrowCastMut>::AsMut,
         CInheritedDropMutView
     );
 
-    let mut owner = <InheritedDrop as Borrow>::Owner::default();
-    let borrowed = Borrow::borrow(InheritedDrop(Box::new(7)), &mut owner);
-    let borrowed: InheritedDropView<'_> = borrowed;
-    let restored = <InheritedDrop as FromBorrow>::from_borrow(borrowed);
+    let borrowed = Borrow::borrow(InheritedDrop(Box::new(7)));
+    let borrowed: InheritedDropView = borrowed;
+    let restored = <InheritedDrop as Borrow>::from_borrow(borrowed);
     assert_eq!(*restored.0, 7);
 }
 
@@ -117,20 +115,20 @@ impl Drop for CustomAndInheritedDrop {
 
 #[test]
 fn custom_and_inherited_drop_borrows_whole_value() {
-    use co3::borrow::{Borrow, FromBorrow};
+    use co3::borrow::{Borrow};
 
-    let mut owner = <CustomAndInheritedDrop as Borrow>::Owner::default();
-    let borrowed = Borrow::borrow(CustomAndInheritedDrop(Box::new(9)), &mut owner);
-    let borrowed: &CustomAndInheritedDrop = borrowed;
-    let restored = <CustomAndInheritedDrop as FromBorrow>::from_borrow(borrowed);
+    let borrowed = Borrow::borrow(CustomAndInheritedDrop(Box::new(9)));
+    let borrowed: co3::borrow::Borrowed<CustomAndInheritedDrop> = borrowed;
+    let restored = <CustomAndInheritedDrop as Borrow>::from_borrow(borrowed);
     assert_eq!(*restored.0, 9);
 }
 
 #[test]
-fn custom_drop_companion_has_no_borrow_casts() {
+fn custom_drop_companion_has_read_only_borrow_cast() {
     use co3::borrow::{BorrowCast, BorrowCastMut};
 
-    assert_not_impl_any!(CCustomAndInheritedDrop: BorrowCast, BorrowCastMut);
+    assert_impl_all!(CCustomAndInheritedDrop: BorrowCast);
+    assert_not_impl_any!(CCustomAndInheritedDrop: BorrowCastMut);
     assert_impl_all!(CBox<CCustomAndInheritedDrop>: BorrowCast, BorrowCastMut);
 }
 
@@ -144,12 +142,11 @@ enum InheritedDropEnum {
 
 #[test]
 fn inherited_drop_enum_borrows_fields() {
-    use co3::borrow::{Borrow, FromBorrow};
+    use co3::borrow::{Borrow};
 
-    let mut owner = <InheritedDropEnum as Borrow>::Owner::default();
-    let borrowed = Borrow::borrow(InheritedDropEnum::Value(Box::new(11)), &mut owner);
-    let borrowed: InheritedDropEnumView<'_> = borrowed;
-    let restored = <InheritedDropEnum as FromBorrow>::from_borrow(borrowed);
+    let borrowed = Borrow::borrow(InheritedDropEnum::Value(Box::new(11)));
+    let borrowed: InheritedDropEnumView = borrowed;
+    let restored = <InheritedDropEnum as Borrow>::from_borrow(borrowed);
     assert!(matches!(restored, InheritedDropEnum::Value(value) if *value == 11));
 }
 
@@ -182,7 +179,7 @@ impl Drop for InferredFieldlessDrop {
 
 #[test]
 fn fieldless_enums_with_drop_convert_and_borrow() {
-    use co3::borrow::{Borrow, FromBorrow};
+    use co3::borrow::{Borrow};
 
     let before = FIELDLESS_DROPS.load(Ordering::Relaxed);
     assert_eq!(co3::encode(ExplicitFieldlessDrop::Second).0, 5);
@@ -195,11 +192,9 @@ fn fieldless_enums_with_drop_convert_and_borrow() {
     drop(decoded);
     assert!(unsafe { co3::decode::<ExplicitFieldlessDrop>(CExplicitFieldlessDrop(3)) }.is_none());
 
-    let mut owner = <ExplicitFieldlessDrop as Borrow>::Owner::default();
-    let borrowed = Borrow::borrow(ExplicitFieldlessDrop::Second, &mut owner);
-    let cloned = <ExplicitFieldlessDrop as FromBorrow>::from_borrow(borrowed);
+    let borrowed = Borrow::borrow(ExplicitFieldlessDrop::Second);
+    let cloned = <ExplicitFieldlessDrop as Borrow>::from_borrow(borrowed);
     assert!(matches!(cloned, ExplicitFieldlessDrop::Second));
     drop(cloned);
-    drop(owner);
-    assert_eq!(FIELDLESS_DROPS.load(Ordering::Relaxed) - before, 5);
+    assert_eq!(FIELDLESS_DROPS.load(Ordering::Relaxed) - before, 4);
 }

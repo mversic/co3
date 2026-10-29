@@ -61,7 +61,7 @@ use rust_spec::{
 
 use crate::{
     CFnArg, CFnReturn, CType, Decode, Encode, ReprC, Store,
-    borrow::{Borrow, BorrowCast, BorrowCastMut, FromBorrow},
+    borrow::{Borrow, BorrowCast, BorrowCastMut},
     niche::Niche,
     stored::{DecodeOwned, EncodeMove, EncodeMoveUnchecked, EncodeRef, EncodeRefUnchecked},
     transmute::AbiCompatible,
@@ -83,61 +83,35 @@ macro_rules! impl_tuple {
         }
 
         unsafe impl<$($ty: Borrow),+> Borrow for ($($ty,)+) {
-            type Borrowed<'itm>
-                = ($( $ty::Borrowed<'itm>, )+)
-            where
-                Self: 'itm;
-
-            type Owner = ($( $ty::Owner, )+);
+            type Borrowed = ($( $ty::Borrowed, )+);
 
             #[inline(always)]
             #[expect(non_snake_case)]
-            fn borrow<'itm>(self, owner: &'itm mut Self::Owner) -> Self::Borrowed<'itm>
-            where
-                Self: 'itm,
-            {
-                impl_tuple! {@decl_priv_store $($ty),+}
-
+            fn borrow(self) -> Self::Borrowed {
                 let ($($ty,)+) = self;
-                let owner: private_store::Store<$($ty::Owner),+> = owner.into();
-
-                ($( $ty.borrow(owner.$ty), )+)
+                ($( $ty.borrow(), )+)
             }
-        }
-        unsafe impl<$($ty: Borrow),*> Borrow for $ffi_ty<$($ty),*> {
-            type Borrowed<'itm>
-                = $ffi_ty<$( $ty::Borrowed<'itm> ),+>
-            where
-                Self: 'itm;
-
-            type Owner = ($( $ty::Owner, )+);
 
             #[inline(always)]
             #[expect(non_snake_case)]
-            fn borrow<'itm>(self, owner: &'itm mut Self::Owner) -> Self::Borrowed<'itm>
-            where
-                Self: 'itm,
-            {
-                impl_tuple! {@decl_priv_store $($ty),+}
-
-                let $ffi_ty($($ty),*) = self;
-                let owner: private_store::Store<$($ty::Owner),+> = owner.into();
-
-                $ffi_ty($( $ty.borrow(owner.$ty) ),+)
-            }
-        }
-        impl<'itm, $($ty: FromBorrow<'itm>),+> FromBorrow<'itm> for ($($ty,)+) {
-            #[inline(always)]
-            #[expect(non_snake_case)]
-            fn from_borrow(source: Self::Borrowed<'itm>) -> Self {
+            fn from_borrow(source: Self::Borrowed) -> Self {
                 let ($($ty,)+) = source;
                 ($( $ty::from_borrow($ty), )+)
             }
         }
-        impl<'itm, $($ty: FromBorrow<'itm>),+> FromBorrow<'itm> for $ffi_ty<$($ty),*> {
+        unsafe impl<$($ty: Borrow),*> Borrow for $ffi_ty<$($ty),*> {
+            type Borrowed = $ffi_ty<$( $ty::Borrowed ),+>;
+
             #[inline(always)]
             #[expect(non_snake_case)]
-            fn from_borrow(source: Self::Borrowed<'itm>) -> Self {
+            fn borrow(self) -> Self::Borrowed {
+                let $ffi_ty($($ty),*) = self;
+                $ffi_ty($( $ty.borrow() ),+)
+            }
+
+            #[inline(always)]
+            #[expect(non_snake_case)]
+            fn from_borrow(source: Self::Borrowed) -> Self {
                 let $ffi_ty($($ty),+) = source;
                 $ffi_ty($( $ty::from_borrow($ty) ),+)
             }

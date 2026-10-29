@@ -10,7 +10,7 @@ use rust_spec::RustSpec;
 use crate::stored::Owned;
 use crate::{
     CFnArg, CFnReturn, CType, Decode, Encode, ReprC,
-    borrow::{Borrow, BorrowCast, BorrowCastMut, FromBorrow},
+    borrow::{Borrow, BorrowCast, BorrowCastMut},
     niche::Niche,
     stored::{DecodeOwned, EmptyStore, EncodeMove, EncodeMoveUnchecked},
     transmute::AbiCompatible,
@@ -51,22 +51,13 @@ impl COrdering {
 macro_rules! primitive_derive {
     ( $primitive:ty ) => {
         unsafe impl Borrow for $primitive {
-            type Borrowed<'itm>
-                = Self
-            where
-                Self: 'itm;
-
-            type Owner = ();
+            type Borrowed = Self;
 
             #[inline(always)]
-            fn borrow<'itm>(self, (): &mut ()) -> Self::Borrowed<'itm>
-            where
-                Self: 'itm,
-            {
+            fn borrow(self) -> Self::Borrowed {
                 self
             }
-        }
-        impl<'itm> FromBorrow<'itm> for $primitive {
+
             #[inline(always)]
             fn from_borrow(source: Self) -> Self {
                 source
@@ -131,27 +122,20 @@ macro_rules! primitive_derive {
 macro_rules! raw_pointer_derive {
     ( $mutability:tt ) => {
         unsafe impl<R: ?Sized> Borrow for *$mutability R {
-            type Borrowed<'itm>
-                = Self
-            where
-                Self: 'itm;
-
-            type Owner = ();
+            type Borrowed = Self;
 
             #[inline(always)]
-            fn borrow<'itm>(self, (): &mut ()) -> Self::Borrowed<'itm>
-            where
-                Self: 'itm,
+            fn borrow(self) -> Self::Borrowed
             {
                 self
             }
-        }
-        impl<'itm, R: ?Sized> FromBorrow<'itm> for *$mutability R {
+
             #[inline(always)]
             fn from_borrow(source: Self) -> Self {
                 source
             }
         }
+
 
         impl<R: CType + ?Sized> ReprC for *$mutability R {
             type CType = Self;
@@ -257,18 +241,17 @@ macro_rules! impl_fn_types {
     };
     (@impl [$($arg:ident),*] $fn_type:ty) => {
         unsafe impl<$($arg,)* R> Borrow for $fn_type {
-            type Owner = ();
 
-            type Borrowed<'itm> = Self where Self: 'itm;
-            fn borrow<'itm>(self, (): &mut ()) -> Self::Borrowed<'itm> where Self: 'itm {
+            type Borrowed = Self;
+            fn borrow(self) -> Self::Borrowed {
                 self
             }
-        }
-        impl<'itm, $($arg,)* R> FromBorrow<'itm> for $fn_type {
+
             fn from_borrow(source: Self) -> Self {
                 source
             }
         }
+
         impl<$($arg: CFnArg,)* R: CFnReturn> ReprC for $fn_type where Option<Self>: CType {
             type CType = Option<Self>;
         }
@@ -315,21 +298,19 @@ macro_rules! impl_fn_types {
 macro_rules! fieldless_enum_derive {
     ( $src:ty => $dst:ty: {$niche_val:expr}: $validity_fn:expr; $decode_fn:expr; $encode_fn:expr $(; $unchecked_fn:expr)? ) => {
         unsafe impl Borrow for $src {
-            type Borrowed<'itm> = Self;
-
-            type Owner = ();
+            type Borrowed = Self;
 
             #[inline(always)]
-            fn borrow<'itm>(self, (): &mut ()) -> Self::Borrowed<'itm> {
+            fn borrow(self) -> Self::Borrowed {
                 self
             }
-        }
-        impl<'itm> FromBorrow<'itm> for $src {
+
             #[inline(always)]
-            fn from_borrow(source: Self::Borrowed<'itm>) -> Self {
+            fn from_borrow(source: Self::Borrowed) -> Self {
                 source
             }
         }
+
 
         crate::mutable::impl_copy_mut!([] $src);
         impl ReprC for $src {
@@ -415,17 +396,19 @@ unsafe impl<R: CType> CType for [R] {}
 impl<R: ReprC<CType: Sized>> ReprC for [R] {
     type CType = [R::CType];
 }
+impl<R: ReprC<CType: Sized>, const N: usize> ReprC for [R; N] {
+    type CType = [R::CType; N];
+}
+
+unsafe impl<R: CType, const N: usize> CType for [R; N] {}
+
+// A slice view keeps the same metadata and casts each element's layout-compatible carrier.
 unsafe impl<R: BorrowCast<AsConst: Sized>> BorrowCast for [R] {
     type AsConst = [R::AsConst];
 }
 unsafe impl<R: BorrowCastMut<AsMut: Sized>> BorrowCastMut for [R] {
     type AsMut = [R::AsMut];
 }
-impl<R: ReprC<CType: Sized>, const N: usize> ReprC for [R; N] {
-    type CType = [R::CType; N];
-}
-
-unsafe impl<R: CType, const N: usize> CType for [R; N] {}
 
 unsafe impl<R: BorrowCast<AsConst: Sized>, const N: usize> BorrowCast for [R; N] {
     type AsConst = [R::AsConst; N];

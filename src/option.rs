@@ -10,7 +10,7 @@ use rust_spec::{
 
 use crate::{
     CFnArg, CFnReturn, CType, Decode, Encode, EncodeUnchecked, ReprC, Thin,
-    borrow::{Borrow, BorrowCast, BorrowCastMut, FromBorrow},
+    borrow::{Borrow, BorrowCast, BorrowCastMut},
     stored::{
         DecodeOwned, EmptyStore, EncodeMove, EncodeMoveUnchecked, EncodeRef, EncodeRefUnchecked,
     },
@@ -35,28 +35,18 @@ pub struct COption<T> {
 }
 
 unsafe impl<T: Borrow> Borrow for Option<T> {
-    type Borrowed<'a>
-        = Option<T::Borrowed<'a>>
-    where
-        Self: 'a;
-    type Owner = T::Owner;
+    type Borrowed = Option<T::Borrowed>;
 
-    fn borrow<'a>(self, owner: &'a mut Self::Owner) -> Self::Borrowed<'a>
-    where
-        Self: 'a,
-    {
+    fn borrow(self) -> Self::Borrowed {
         match self {
             Self::None => Option::None,
-            Self::Some(value) => Option::Some(value.borrow(owner)),
+            Self::Some(v) => Option::Some(v.borrow()),
         }
     }
-}
-
-impl<'a, T: FromBorrow<'a>> FromBorrow<'a> for Option<T> {
-    fn from_borrow(value: Self::Borrowed<'a>) -> Self {
-        match value {
+    fn from_borrow(source: Self::Borrowed) -> Self {
+        match source {
             Option::None => Self::None,
-            Option::Some(value) => Self::Some(T::from_borrow(value)),
+            Option::Some(v) => Self::Some(T::from_borrow(v)),
         }
     }
 }
@@ -302,30 +292,21 @@ impl<T> Default for COption<T> {
 }
 
 unsafe impl<T: Borrow> Borrow for COption<T> {
-    type Borrowed<'itm>
-        = COption<T::Borrowed<'itm>>
-    where
-        Self: 'itm;
-
-    type Owner = T::Owner;
+    type Borrowed = COption<T::Borrowed>;
 
     #[inline(always)]
-    fn borrow<'itm>(self, owner: &'itm mut Self::Owner) -> Self::Borrowed<'itm>
-    where
-        Self: 'itm,
-    {
+    fn borrow(self) -> Self::Borrowed {
         match self.tag {
             1 => {
                 let payload = unsafe { self.payload.assume_init() };
-                COption::Some(payload.borrow(owner))
+                COption::Some(payload.borrow())
             }
             _ => self.forward_payload(),
         }
     }
-}
-impl<'itm, T: FromBorrow<'itm>> FromBorrow<'itm> for COption<T> {
+
     #[inline(always)]
-    fn from_borrow(source: Self::Borrowed<'itm>) -> Self {
+    fn from_borrow(source: Self::Borrowed) -> Self {
         match source.tag {
             1 => {
                 let payload = unsafe { source.payload.assume_init() };

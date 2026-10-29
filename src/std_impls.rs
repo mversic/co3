@@ -2,7 +2,7 @@
 use crate::stored::Owned;
 use crate::{
     CFnArg, CFnReturn, CType, Decode, Encode, EncodeUnchecked, ReprC,
-    borrow::{Borrow, BorrowCast, BorrowCastMut, FromBorrow},
+    borrow::{Borrow, BorrowCast, BorrowCastMut, Borrowed},
     niche::Niche,
     stored::{DecodeOwned, EmptyStore, EncodeMove, EncodeMoveUnchecked},
     transmute::AbiCompatible,
@@ -23,27 +23,20 @@ macro_rules! non_zero_derive {
     ($($primitive:ty),+ $(,)?) => {$(
         crate::mutable::impl_copy_mut!([] NonZero<$primitive>);
         unsafe impl Borrow for NonZero<$primitive> {
-            type Borrowed<'itm>
-                = Self
-            where
-                Self: 'itm;
-
-            type Owner = ();
+            type Borrowed = Self;
 
             #[inline(always)]
-            fn borrow<'itm>(self, (): &mut ()) -> Self::Borrowed<'itm>
-            where
-                Self: 'itm,
+            fn borrow(self) -> Self::Borrowed
             {
                 self
             }
-        }
-        impl<'itm> FromBorrow<'itm> for NonZero<$primitive> {
+
             #[inline(always)]
-            fn from_borrow(source: Self::Borrowed<'itm>) -> Self {
+            fn from_borrow(source: Self::Borrowed) -> Self {
                 source
             }
         }
+
 
         impl ReprC for NonZero<$primitive> {
             type CType = $primitive;
@@ -80,9 +73,9 @@ macro_rules! non_zero_derive {
             }
         }
 
-        impl Encode for NonZero<$primitive> {}
-        impl EncodeUnchecked for NonZero<$primitive> {}
         impl Decode<'_> for NonZero<$primitive> {}
+        impl EncodeUnchecked for NonZero<$primitive> {}
+        impl Encode for NonZero<$primitive> {}
 
         unsafe impl AbiCompatible for NonZero<$primitive> {
             #[inline(always)]
@@ -102,17 +95,11 @@ non_zero_derive! {
     u8, i8, u16, i16, u32, i32, u64, i64, u128, i128,
 }
 unsafe impl Borrow for () {
-    type Borrowed<'itm>
-        = Self
-    where
-        Self: 'itm;
-
-    type Owner = ();
+    type Borrowed = Self;
 
     #[inline(always)]
-    fn borrow<'itm>(self, (): &mut ()) -> Self::Borrowed<'itm> {}
-}
-impl<'itm> FromBorrow<'itm> for () {
+    fn borrow(self) -> Self::Borrowed {}
+
     #[inline(always)]
     fn from_borrow(_: ()) -> Self {}
 }
@@ -148,9 +135,9 @@ unsafe impl<'d> DecodeOwned<'d> for () {
     }
 }
 
-impl Encode for () {}
-impl EncodeUnchecked for () {}
 impl Decode<'_> for () {}
+impl EncodeUnchecked for () {}
+impl Encode for () {}
 
 unsafe impl AbiCompatible for () {
     #[inline(always)]
@@ -170,24 +157,15 @@ unsafe impl BorrowCastMut for () {
 
 unsafe impl EmptyStore for () {}
 unsafe impl<T: ?Sized> Borrow for PhantomData<T> {
-    type Borrowed<'itm>
-        = Self
-    where
-        Self: 'itm;
-
-    type Owner = ();
+    type Borrowed = Self;
 
     #[inline(always)]
-    fn borrow<'itm>(self, (): &mut ()) -> Self::Borrowed<'itm>
-    where
-        Self: 'itm,
-    {
+    fn borrow(self) -> Self::Borrowed {
         self
     }
-}
-impl<'itm, T: ?Sized + 'itm> FromBorrow<'itm> for PhantomData<T> {
+
     #[inline(always)]
-    fn from_borrow(source: Self::Borrowed<'itm>) -> Self {
+    fn from_borrow(source: Self::Borrowed) -> Self {
         source
     }
 }
@@ -228,9 +206,9 @@ unsafe impl<'d, T: ?Sized> DecodeOwned<'d> for PhantomData<T> {
     }
 }
 
-impl<T: ?Sized> Encode for PhantomData<T> {}
-impl<T: ?Sized> EncodeUnchecked for PhantomData<T> {}
 impl<T: ?Sized> Decode<'_> for PhantomData<T> {}
+impl<T: ?Sized> EncodeUnchecked for PhantomData<T> {}
+impl<T: ?Sized> Encode for PhantomData<T> {}
 
 unsafe impl<T: ?Sized> CType for PhantomData<T> {}
 unsafe impl<T: ?Sized> BorrowCast for PhantomData<T> {
@@ -240,24 +218,15 @@ unsafe impl<T: ?Sized> BorrowCastMut for PhantomData<T> {
     type AsMut = Self;
 }
 unsafe impl<T: ?Sized> Borrow for NonNull<T> {
-    type Borrowed<'itm>
-        = Self
-    where
-        Self: 'itm;
-
-    type Owner = ();
+    type Borrowed = Self;
 
     #[inline(always)]
-    fn borrow<'itm>(self, (): &mut ()) -> Self::Borrowed<'itm>
-    where
-        Self: 'itm,
-    {
+    fn borrow(self) -> Self::Borrowed {
         self
     }
-}
-impl<'itm, T: ?Sized + 'itm> FromBorrow<'itm> for NonNull<T> {
+
     #[inline(always)]
-    fn from_borrow(source: Self::Borrowed<'itm>) -> Self {
+    fn from_borrow(source: Self::Borrowed) -> Self {
         source
     }
 }
@@ -306,9 +275,9 @@ unsafe impl<'d, T: CType + ?Sized> DecodeOwned<'d> for NonNull<T> {
     }
 }
 
-impl<T: CType + ?Sized> Encode for NonNull<T> {}
-impl<T: CType + ?Sized> EncodeUnchecked for NonNull<T> {}
 impl<T: CType + ?Sized> Decode<'_> for NonNull<T> {}
+impl<T: CType + ?Sized> EncodeUnchecked for NonNull<T> {}
+impl<T: CType + ?Sized> Encode for NonNull<T> {}
 
 unsafe impl<T: CType + ?Sized> AbiCompatible for NonNull<T>
 where
@@ -329,49 +298,29 @@ impl ReprC for str {
 }
 #[cfg(feature = "alloc")]
 unsafe impl Borrow for String {
-    type Borrowed<'itm>
-        = &'itm str
-    where
-        Self: 'itm;
-
-    type Owner = Self;
+    type Borrowed = Borrowed<Self>;
 
     #[inline(always)]
-    fn borrow<'itm>(self, owner: &'itm mut Self::Owner) -> Self::Borrowed<'itm>
-    where
-        Self: 'itm,
-    {
-        *owner = self;
-        owner
+    fn borrow(self) -> Self::Borrowed {
+        Borrowed::new(self)
     }
-}
-#[cfg(feature = "alloc")]
-impl<'itm> FromBorrow<'itm> for String {
+
     #[inline(always)]
-    fn from_borrow(source: Self::Borrowed<'itm>) -> Self {
-        source.into()
+    fn from_borrow(source: Self::Borrowed) -> Self {
+        Borrowed::into_inner(source)
     }
 }
 
 unsafe impl<T: Borrow> Borrow for UnsafeCell<T> {
-    type Borrowed<'itm>
-        = UnsafeCell<T::Borrowed<'itm>>
-    where
-        Self: 'itm;
-
-    type Owner = T::Owner;
+    type Borrowed = UnsafeCell<T::Borrowed>;
 
     #[inline(always)]
-    fn borrow<'itm>(self, owner: &'itm mut Self::Owner) -> Self::Borrowed<'itm>
-    where
-        Self: 'itm,
-    {
-        UnsafeCell::new(self.into_inner().borrow(owner))
+    fn borrow(self) -> Self::Borrowed {
+        UnsafeCell::new(self.into_inner().borrow())
     }
-}
-impl<'itm, T: FromBorrow<'itm>> FromBorrow<'itm> for UnsafeCell<T> {
+
     #[inline(always)]
-    fn from_borrow(source: Self::Borrowed<'itm>) -> Self {
+    fn from_borrow(source: Self::Borrowed) -> Self {
         UnsafeCell::new(T::from_borrow(source.into_inner()))
     }
 }
@@ -404,24 +353,15 @@ unsafe impl<T: CFnReturn> CFnReturn for UnsafeCell<T> where
 }
 
 unsafe impl<T: Borrow> Borrow for Cell<T> {
-    type Borrowed<'itm>
-        = UnsafeCell<T::Borrowed<'itm>>
-    where
-        Self: 'itm;
-
-    type Owner = T::Owner;
+    type Borrowed = UnsafeCell<T::Borrowed>;
 
     #[inline(always)]
-    fn borrow<'itm>(self, owner: &'itm mut Self::Owner) -> Self::Borrowed<'itm>
-    where
-        Self: 'itm,
-    {
-        UnsafeCell::new(Cell::into_inner(self)).borrow(owner)
+    fn borrow(self) -> Self::Borrowed {
+        UnsafeCell::new(Cell::into_inner(self)).borrow()
     }
-}
-impl<'itm, T: FromBorrow<'itm>> FromBorrow<'itm> for Cell<T> {
+
     #[inline(always)]
-    fn from_borrow(source: Self::Borrowed<'itm>) -> Self {
+    fn from_borrow(source: Self::Borrowed) -> Self {
         Cell::new(T::from_borrow(source.into_inner()))
     }
 }
@@ -453,24 +393,15 @@ unsafe impl<T: BorrowCastMut + ?Sized> BorrowCastMut for Cell<T> {
 }
 
 unsafe impl<T> Borrow for MaybeUninit<T> {
-    type Borrowed<'itm>
-        = Self
-    where
-        Self: 'itm;
-
-    type Owner = ();
+    type Borrowed = Self;
 
     #[inline(always)]
-    fn borrow<'itm>(self, (): &mut ()) -> Self::Borrowed<'itm>
-    where
-        Self: 'itm,
-    {
+    fn borrow(self) -> Self::Borrowed {
         self
     }
-}
-impl<'itm, T: 'itm> FromBorrow<'itm> for MaybeUninit<T> {
+
     #[inline(always)]
-    fn from_borrow(source: Self::Borrowed<'itm>) -> Self {
+    fn from_borrow(source: Self::Borrowed) -> Self {
         source
     }
 }
@@ -507,10 +438,12 @@ unsafe impl<'d, T: AbiCompatible<CType: Sized>> DecodeOwned<'d> for MaybeUninit<
     }
 }
 
-impl<T: AbiCompatible<CType: Sized> + EncodeMove<Store: EmptyStore>> Encode for MaybeUninit<T> {}
-impl<T: AbiCompatible<CType: Sized>> EncodeUnchecked for MaybeUninit<T> {}
+// TODO: Weird bounds here
 impl<'d, T: AbiCompatible<CType: Sized>> Decode<'d> for MaybeUninit<T> {}
+impl<T: AbiCompatible<CType: Sized>> EncodeUnchecked for MaybeUninit<T> {}
+impl<T: AbiCompatible<CType: Sized> + EncodeMove<Store: EmptyStore>> Encode for MaybeUninit<T> {}
 
+// TODO: Technically all bits are valid, but using T: CType feels safer
 unsafe impl<T: AbiCompatible<CType: Sized>> AbiCompatible for MaybeUninit<T> {
     #[inline(always)]
     unsafe fn is_valid(_: &Self::CType) -> bool {
@@ -538,24 +471,15 @@ unsafe impl<T: BorrowCastMut<AsMut: Sized>> BorrowCastMut for MaybeUninit<T> {
 unsafe impl<T: EmptyStore> EmptyStore for MaybeUninit<T> {}
 
 unsafe impl<T> Borrow for ManuallyDrop<T> {
-    type Borrowed<'itm>
-        = Self
-    where
-        Self: 'itm;
-
-    type Owner = ();
+    type Borrowed = Self;
 
     #[inline(always)]
-    fn borrow<'itm>(self, (): &mut ()) -> Self::Borrowed<'itm>
-    where
-        Self: 'itm,
-    {
+    fn borrow(self) -> Self::Borrowed {
         self
     }
-}
-impl<'itm, T: 'itm> FromBorrow<'itm> for ManuallyDrop<T> {
+
     #[inline(always)]
-    fn from_borrow(source: Self::Borrowed<'itm>) -> Self {
+    fn from_borrow(source: Self::Borrowed) -> Self {
         source
     }
 }
@@ -620,46 +544,6 @@ mod tests {
         .unwrap();
         assert_eq!(ManuallyDrop::into_inner(decoded), vec![(3,), (5,)]);
     }
-
-    // FIXME:
-    //#[test]
-    //fn manually_drop_checked_transmute_encodes_without_dropping() {
-    //    static DROP_COUNT: AtomicUsize = AtomicUsize::new(0);
-
-    //    #[repr(transparent)]
-    //    struct DropProbe(u8);
-
-    //    impl Drop for DropProbe {
-    //        fn drop(&mut self) {
-    //            DROP_COUNT.fetch_add(1, Ordering::Relaxed);
-    //        }
-    //    }
-
-    //    impl ReprC for DropProbe {
-    //        type CType = u8;
-    //    }
-
-    //    unsafe impl AbiCompatible for DropProbe {
-    //        unsafe fn is_valid(_: &Self::CType) -> bool {
-    //            true
-    //        }
-    //    }
-
-    //    assert_impl_all!(ManuallyDrop<DropProbe>: AbiCompatible, Encode, Decode<'static>);
-
-    //    let before = DROP_COUNT.load(Ordering::Relaxed);
-    //    let encoded = crate::encode(ManuallyDrop::new(DropProbe(42)));
-
-    //    assert_eq!(encoded, 42);
-    //    assert_eq!(DROP_COUNT.load(Ordering::Relaxed), before);
-
-    //    {
-    //        let decoded = unsafe { crate::decode::<ManuallyDrop<DropProbe>>(encoded) }.unwrap();
-    //        assert_eq!(decoded.0, 42);
-    //        assert_eq!(DROP_COUNT.load(Ordering::Relaxed), before);
-    //    }
-    //    assert_eq!(DROP_COUNT.load(Ordering::Relaxed), before);
-    //}
 
     #[test]
     fn manually_drop_decode_rejects_invalid_inner_representation() {
@@ -1048,18 +932,17 @@ mod tests {
         ));
     }
 
-    // FIXME:
-    //#[test]
-    //fn non_robust_mutable_cell_syncs_after_soft_encode() {
-    //    use crate::stored::Store;
+    #[test]
+    fn non_robust_mutable_cell_syncs_after_soft_encode() {
+        use crate::stored::Store;
 
-    //    let mut value = Cell::new(NonZero::new(3_u8).unwrap());
-    //    let mut store = <&mut Cell<NonZero<u8>> as EncodeMove>::Store::default();
-    //    let encoded = <&mut Cell<NonZero<u8>> as EncodeMove>::soft_encode(&mut value, &mut store);
-    //    unsafe { encoded.as_ptr().write(UnsafeCell::new(4)) };
-    //    assert_eq!(store.sync(), Some(()));
-    //    assert_eq!(value.get().get(), 4);
-    //}
+        let mut value = Cell::new(NonZero::new(3_u8).unwrap());
+        let mut store = <&mut Cell<NonZero<u8>> as EncodeMove>::Store::default();
+        let encoded = <&mut Cell<NonZero<u8>> as EncodeMove>::soft_encode(&mut value, &mut store);
+        unsafe { encoded.as_ptr().write(UnsafeCell::new(4)) };
+        assert_eq!(store.sync(), Some(()));
+        assert_eq!(value.get().get(), 4);
+    }
 
     #[test]
     fn non_robust_unsafe_cell() {

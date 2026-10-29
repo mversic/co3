@@ -3,7 +3,7 @@ use rust_spec::RustSpec;
 
 use crate::{
     CFnArg, CFnReturn, CType, Decode, Encode, ReprC,
-    borrow::{Borrow, BorrowCast, BorrowCastMut, FromBorrow},
+    borrow::{Borrow, BorrowCast, BorrowCastMut},
     stored::{DecodeOwned, EncodeMove, EncodeMoveUnchecked},
     transmute::AbiCompatible,
     wide::{PointeeData, Wide, WideHeader},
@@ -281,22 +281,19 @@ macro_rules! impl_identity_carrier {
 macro_rules! impl_wide_borrow {
     ($ty:ident, [$($params:tt)*], [$($args:tt)*]) => {
         unsafe impl<$($params)*> Borrow for $ty<$($args)*> {
-            type Borrowed<'itm> = Self where Self: 'itm;
-            type Owner = ();
+            type Borrowed = Self;
 
-            fn borrow<'itm>(self, (): &mut ()) -> Self::Borrowed<'itm>
-            where
-                Self: 'itm,
+            fn borrow(self) -> Self::Borrowed
             {
                 self
             }
-        }
 
-        impl<'itm, $($params)*> FromBorrow<'itm> for $ty<$($args)*> {
             fn from_borrow(source: Self) -> Self {
                 source
             }
         }
+
+
     };
 }
 
