@@ -1,4 +1,5 @@
 //! C-compatible representation of [`core::option::Option`].
+use crate::transmute::AbiCompatibleValidate;
 use core::mem::MaybeUninit;
 use core::option::Option as CoreOption;
 
@@ -182,7 +183,7 @@ impl<T: Encode> Encode for Option<T> {}
 impl<T: EncodeUnchecked> EncodeUnchecked for Option<T> {}
 impl<'d, T: Decode<'d>> Decode<'d> for Option<T> {}
 
-unsafe impl<T: AbiCompatible<CType: Copy>> AbiCompatible for Option<T> {
+unsafe impl<T: AbiCompatibleValidate<CType: Copy>> AbiCompatibleValidate for Option<T> {
     unsafe fn is_valid(target: &Self::CType) -> bool {
         match target.tag {
             0 => true,
@@ -191,6 +192,7 @@ unsafe impl<T: AbiCompatible<CType: Copy>> AbiCompatible for Option<T> {
         }
     }
 }
+unsafe impl<T: AbiCompatible<CType: Copy>> AbiCompatible for Option<T> {}
 
 impl<T: core::fmt::Debug> core::fmt::Debug for COption<T> {
     fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {

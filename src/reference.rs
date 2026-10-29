@@ -1,5 +1,6 @@
 //! ABI carriers for pointers derived from references.
 
+use crate::transmute::AbiCompatibleValidate;
 use core::cell::UnsafeCell;
 use rust_spec::RustSpec;
 
@@ -236,9 +237,10 @@ macro_rules! impl_reference_identity {
         unsafe impl<$($params)*> CFnReturn for $ty<$($args)*> {}
         unsafe impl<$($params)*> BorrowCast for $ty<$($args)*> { type AsConst = Self; }
         unsafe impl<$($params)*> BorrowCastMut for $ty<$($args)*> { type AsMut = Self; }
-        unsafe impl<$($params)*> AbiCompatible for $ty<$($args)*> {
+        unsafe impl<$($params)*> AbiCompatibleValidate for $ty<$($args)*> {
             unsafe fn is_valid(_: &Self::CType) -> bool { true }
         }
+unsafe impl<$($params)*> AbiCompatible for $ty<$($args)*> {}
     };
 }
 

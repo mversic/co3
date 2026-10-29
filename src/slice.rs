@@ -265,13 +265,14 @@ macro_rules! impl_identity_carrier {
         impl<'d, $($params)*> Decode<'d> for $ty<$($args)*> {}
 
 
-        unsafe impl<$($params)*> AbiCompatible for $ty<$($args)*> {
+        unsafe impl<$($params)*> $crate::transmute::AbiCompatibleValidate for $ty<$($args)*> {
             #[inline(always)]
             unsafe fn is_valid(_: &Self::CType) -> bool {
                 true
             }
         }
 
+        unsafe impl<$($params)*> AbiCompatible for $ty<$($args)*> {}
         unsafe impl<$($params)*> CType for $ty<$($args)*> {}
         unsafe impl<$($params)*> CFnArg for $ty<$($args)*> {}
         unsafe impl<$($params)*> CFnReturn for $ty<$($args)*> {}
@@ -283,8 +284,7 @@ macro_rules! impl_wide_borrow {
         unsafe impl<$($params)*> Borrow for $ty<$($args)*> {
             type Borrowed = Self;
 
-            fn borrow(self) -> Self::Borrowed
-            {
+            fn borrow(self) -> Self::Borrowed {
                 self
             }
 

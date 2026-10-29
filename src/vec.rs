@@ -1,4 +1,5 @@
 //! Stable vector ownership and its robust C-compatible representation.
+use crate::transmute::AbiCompatibleValidate;
 use crate::{
     CFnArg, CFnReturn, CType, Decode, Encode, EncodeUnchecked, ReprC,
     borrow::Borrowed,
@@ -354,7 +355,7 @@ impl<'d, T> Decode<'d> for Vec<T> where Self: DecodeOwned<'d> {}
 impl<T: ReprC<CType: CType + Sized>> crate::niche::Niche for Vec<T> {
     const NICHE: Self::CType = CVec::null();
 }
-unsafe impl<T: AbiCompatible<CType: CType + Sized>> AbiCompatible for Vec<T>
+unsafe impl<T: AbiCompatibleValidate<CType: CType + Sized>> AbiCompatibleValidate for Vec<T>
 where
     T: RustSpec<Layout = rust_spec::Stable, Mutability: rust_spec::mutability::PointerMutability>,
 {
@@ -366,6 +367,10 @@ where
         // each element validator must respect interior mutability.
         (0..value.len).all(|i| unsafe { T::is_valid(&*value.data.add(i)) })
     }
+}
+unsafe impl<T: AbiCompatible<CType: CType + Sized>> AbiCompatible for Vec<T> where
+    T: RustSpec<Layout = rust_spec::Stable, Mutability: rust_spec::mutability::PointerMutability>
+{
 }
 impl<T> core::fmt::Debug for CVec<T> {
     fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
@@ -382,10 +387,6 @@ impl<T> PartialEq for CVec<T> {
     fn eq(&self, other: &Self) -> bool {
         self.data == other.data && self.len == other.len && self.capacity == other.capacity
     }
-}
-
-unsafe impl<T: CType> crate::borrow::BorrowCast for CVec<T> {
-    type AsConst = Borrowed<Self>;
 }
 
 impl<T: CType> crate::boxed::FromWideBox<[T]> for CVec<T> {

@@ -1022,7 +1022,8 @@ fn gen_repr_c_impls(
 ) -> TokenStream {
     let (impl_generics, ty_generics, where_clause) = generics.split_for_impl();
     let predicates = where_clause.as_ref().map(|w| &w.predicates);
-    let checked_transmute_bounds = gen_checked_transmute_bounds(generics, fields);
+    let checked_transmute_bounds = gen_checked_transmute_bounds(generics, fields, false);
+    let validation_bounds = gen_checked_transmute_bounds(generics, fields, true);
     let (borrow_cast_bounds, cast_eq_bounds) = if is_view {
         (Vec::<TokenStream>::new(), quote! {})
     } else {
@@ -1030,9 +1031,9 @@ fn gen_repr_c_impls(
     };
 
     quote! {
-        unsafe impl #impl_generics co3::transmute::AbiCompatible for #name #ty_generics
+        unsafe impl #impl_generics co3::transmute::AbiCompatibleValidate for #name #ty_generics
         where
-            #(#checked_transmute_bounds,)*
+            #(#validation_bounds,)*
             #(#borrow_cast_bounds,)*
             #cast_eq_bounds
             #predicates
@@ -1042,12 +1043,20 @@ fn gen_repr_c_impls(
                 #is_valid_body
             }
         }
+        unsafe impl #impl_generics co3::transmute::AbiCompatible for #name #ty_generics
+        where
+            #(#checked_transmute_bounds,)*
+            #(#borrow_cast_bounds,)*
+            #cast_eq_bounds
+            #predicates
+        {}
     }
 }
 
 fn gen_checked_transmute_bounds(
     generics: &syn::Generics,
     fields: &[&syn::Type],
+    validate: bool,
 ) -> Vec<syn::WherePredicate> {
     let Some((last, fields)) = fields.split_last() else {
         return Vec::new();
@@ -1059,14 +1068,20 @@ fn gen_checked_transmute_bounds(
         .map(|&ty| {
             let for_dummy = speculative_marker(!is_parametrized(ty, generics));
 
-            parse_quote! { #for_dummy #ty: co3::transmute::AbiCompatible<CType: Sized> }
+            if validate {
+                parse_quote! { #for_dummy #ty: co3::transmute::AbiCompatibleValidate<CType: Sized> }
+            } else {
+                parse_quote! { #for_dummy #ty: co3::transmute::AbiCompatible<CType: Sized> }
+            }
         })
         .collect::<Vec<_>>();
 
     if !is_phantom_data(last) {
         let for_dummy = speculative_marker(!is_parametrized(last, generics));
-        predicates.push(parse_quote! {
-            #for_dummy #last: co3::transmute::AbiCompatible
+        predicates.push(if validate {
+            parse_quote! { #for_dummy #last: co3::transmute::AbiCompatibleValidate }
+        } else {
+            parse_quote! { #for_dummy #last: co3::transmute::AbiCompatible }
         });
     }
 
@@ -1099,7 +1114,7 @@ fn gen_record_is_valid(
         .filter(|(_, field_ty)| !is_phantom_data(field_ty))
         .map(|(field_name, field_ty)| {
             quote! {
-                if !unsafe { <#field_ty as co3::transmute::AbiCompatible>::is_valid(#field_name)} {
+                if !unsafe { <#field_ty as co3::transmute::AbiCompatibleValidate>::is_valid(#field_name)} {
                     return false;
                 }
             }
@@ -1226,10 +1241,11 @@ pub(super) fn derive_fieldless_enum(
         Some(ReprKind::C(None)) => unreachable!(),
         Some(ReprKind::Transparent | ReprKind::C(Some(_)) | ReprKind::Primitive(_)) => {
             quote! {
-                unsafe impl #impl_generics co3::transmute::AbiCompatible for #name #ty_generics #where_clause {
+                unsafe impl #impl_generics co3::transmute::AbiCompatibleValidate for #name #ty_generics #where_clause {
                     #[inline(always)]
                     #checked_transmute_method
                 }
+                unsafe impl #impl_generics co3::transmute::AbiCompatible for #name #ty_generics #where_clause {}
             }
         }
     };

@@ -118,10 +118,6 @@ pub(super) fn derive_field_repr_c(
     let checked = matches!(repr, Some(ReprKind::Transparent)).then(|| {
         let mut generics = input.generics.clone();
         let speculative = speculative_marker(!is_parametrized(field_ty, &input.generics));
-        generics
-            .make_where_clause()
-            .predicates
-            .push(parse_quote!(#speculative #field_ty: co3::transmute::AbiCompatible));
         generics.make_where_clause().predicates.push(
             parse_quote!(#name #ty_generics: co3::ReprC<CType = <#field_ty as co3::ReprC>::CType>),
         );
@@ -129,20 +125,32 @@ pub(super) fn derive_field_repr_c(
             .make_where_clause()
             .predicates
             .extend(niche_bound.iter().cloned());
+        let mut validation_generics = generics.clone();
+        validation_generics.make_where_clause().predicates.push(
+            parse_quote!(#speculative #field_ty: co3::transmute::AbiCompatibleValidate),
+        );
+        generics
+            .make_where_clause()
+            .predicates
+            .push(parse_quote!(#speculative #field_ty: co3::transmute::AbiCompatible));
         let (impl_generics, _, where_clause) = generics.split_for_impl();
+        let (validation_impl_generics, _, validation_where_clause) = validation_generics.split_for_impl();
         quote! {
-            unsafe impl #impl_generics co3::transmute::AbiCompatible
-                for #name #ty_generics #where_clause
+            unsafe impl #validation_impl_generics co3::transmute::AbiCompatibleValidate
+                for #name #ty_generics #validation_where_clause
             {
                 unsafe fn is_valid(target: &Self::CType) -> bool {
                     #checked_niche_rejection
-                    if !unsafe { <#field_ty as co3::transmute::AbiCompatible>::is_valid(target) } {
+                    if !unsafe { <#field_ty as co3::transmute::AbiCompatibleValidate>::is_valid(target) } {
                         return false;
                     }
                     #checked_custom_validation
                     true
                 }
             }
+            unsafe impl #impl_generics co3::transmute::AbiCompatible
+                for #name #ty_generics #where_clause
+            {}
         }
     });
 

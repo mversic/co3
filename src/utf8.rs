@@ -1,5 +1,6 @@
 //! Unsized C representation of a UTF-8 string.
 
+use crate::transmute::AbiCompatibleValidate;
 #[cfg(feature = "alloc")]
 use alloc::{boxed::Box, string::String};
 #[cfg(feature = "alloc")]
@@ -29,11 +30,12 @@ impl ReprC for Utf8Str {
     type CType = Self;
 }
 
-unsafe impl AbiCompatible for Utf8Str {
+unsafe impl AbiCompatibleValidate for Utf8Str {
     unsafe fn is_valid(_: &Self::CType) -> bool {
         true
     }
 }
+unsafe impl AbiCompatible for Utf8Str {}
 
 unsafe impl Wide for Utf8Str {
     type Header = [u8; 0];

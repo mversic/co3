@@ -1,3 +1,4 @@
+use crate::transmute::AbiCompatibleValidate;
 #[cfg(feature = "alloc")]
 pub use alloc::borrow::ToOwned;
 #[cfg(feature = "alloc")]
@@ -139,12 +140,13 @@ unsafe impl<C: CType> CType for Borrowed<C> {}
 unsafe impl<C: CFnArg> CFnArg for Borrowed<C> {}
 unsafe impl<C: CFnReturn> CFnReturn for Borrowed<C> {}
 
-unsafe impl<T: AbiCompatible<CType: Sized>> AbiCompatible for Borrowed<T> {
+unsafe impl<T: AbiCompatibleValidate<CType: Sized>> AbiCompatibleValidate for Borrowed<T> {
     #[inline(always)]
     unsafe fn is_valid(target: &Self::CType) -> bool {
         unsafe { T::is_valid(&target.0) }
     }
 }
+unsafe impl<T: AbiCompatible<CType: Sized>> AbiCompatible for Borrowed<T> {}
 
 impl<T: Niche> Niche for Borrowed<T> {
     const NICHE: Self::CType = Borrowed(T::NICHE);
