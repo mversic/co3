@@ -156,7 +156,7 @@ macro_rules! impl_tuple {
             type SoftStore = ($($ty::SoftStore,)*);
 
             #[expect(non_snake_case)]
-            unsafe fn soft_encode_unchecked(self, store: &mut Self::SoftStore) -> Self::CType {
+            unsafe fn soft_encode_unchecked<'itm>(self, store: &'itm mut Self::SoftStore) -> Self::CType where Self: 'itm {
                 impl_tuple! {@decl_priv_store $($ty),*}
 
                 let ($($ty,)*) = self;
@@ -169,7 +169,7 @@ macro_rules! impl_tuple {
             type SoftStore = ($($ty::SoftStore,)*);
 
             #[expect(non_snake_case)]
-            unsafe fn soft_encode_unchecked(self, store: &mut Self::SoftStore) -> Self::CType {
+            unsafe fn soft_encode_unchecked<'itm>(self, store: &'itm mut Self::SoftStore) -> Self::CType where Self: 'itm {
                 impl_tuple! {@decl_priv_store $($ty),*}
 
                 let $ffi_ty($($ty),*) = self;
@@ -186,8 +186,8 @@ macro_rules! impl_tuple {
         #[disjoint_impls(remote)]
         pub unsafe trait EncodeRef<'a>: EncodeRefUnchecked<'a> {
             type Store: Store + Default;
-            fn encode_ref(&'a self, store: &mut Self::Store) -> <&'a Self as ReprC>::CType
-            where &'a Self: ReprC<CType: Sized>;
+            fn encode_ref<'itm>(&'a self, store: &'itm mut Self::Store) -> <&'a Self as ReprC>::CType
+            where &'a Self: ReprC<CType: Sized>, 'a: 'itm;
         }
 
         unsafe impl<'a, $($ty: ReprC<CType: Copy> + 'a),*, __Interior: ExclusiveKind> EncodeRef<'a> for ($($ty,)*)
@@ -196,7 +196,7 @@ macro_rules! impl_tuple {
             $(&'a $ty: EncodeMove + ReprC<CType = crate::reference::CRef<<$ty as ReprC>::CType>>),*
         {
             type Store = crate::sync::RefSizedEncodeStore<Self, ($(<&'a $ty as EncodeMove>::Store,)*)>;
-            fn encode_ref(&'a self, store: &mut Self::Store) -> <&'a Self as ReprC>::CType {
+            fn encode_ref<'itm>(&'a self, store: &'itm mut Self::Store) -> <&'a Self as ReprC>::CType  where 'a: 'itm {
                 store.encode(|fields| {
                     impl_tuple! {@decl_priv_store $($ty),*}
                     let ($($ty,)*) = self;
@@ -212,7 +212,7 @@ macro_rules! impl_tuple {
             $(&'a $ty: EncodeMove + ReprC<CType = crate::reference::CRef<<$ty as ReprC>::CType>>),*
         {
             type Store = crate::sync::RefSizedEncodeStore<Self, ($(<&'a $ty as EncodeMove>::Store,)*)>;
-            fn encode_ref(&'a self, store: &mut Self::Store) -> <&'a Self as ReprC>::CType {
+            fn encode_ref<'itm>(&'a self, store: &'itm mut Self::Store) -> <&'a Self as ReprC>::CType  where 'a: 'itm {
                 store.encode(|fields| {
                     impl_tuple! {@decl_priv_store $($ty),*}
                     let $ffi_ty($($ty),*) = self;
@@ -231,8 +231,8 @@ macro_rules! impl_tuple {
         #[disjoint_impls(remote)]
         pub unsafe trait EncodeRefUnchecked<'a>: ReprC + 'a {
             type SoftStore: Store + Default;
-            unsafe fn encode_ref_unchecked(&'a self, store: &mut Self::SoftStore) -> <&'a Self as ReprC>::CType
-            where &'a Self: ReprC<CType: Sized>;
+            unsafe fn encode_ref_unchecked<'itm>(&'a self, store: &'itm mut Self::SoftStore) -> <&'a Self as ReprC>::CType
+            where &'a Self: ReprC<CType: Sized>, 'a: 'itm;
         }
 
         unsafe impl<'a, $($ty: ReprC<CType: Copy> + 'a),*, __Interior: ExclusiveKind> EncodeRefUnchecked<'a> for ($($ty,)*)
@@ -241,7 +241,7 @@ macro_rules! impl_tuple {
             $(&'a $ty: EncodeMoveUnchecked + ReprC<CType = crate::reference::CRef<<$ty as ReprC>::CType>>),*
         {
             type SoftStore = crate::sync::RefSizedEncodeStore<Self, ($(<&'a $ty as EncodeMoveUnchecked>::SoftStore,)*)>;
-            unsafe fn encode_ref_unchecked(&'a self, store: &mut Self::SoftStore) -> <&'a Self as ReprC>::CType {
+            unsafe fn encode_ref_unchecked<'itm>(&'a self, store: &'itm mut Self::SoftStore) -> <&'a Self as ReprC>::CType  where 'a: 'itm {
                 store.encode(|fields| {
                     impl_tuple! {@decl_priv_store $($ty),*}
                     let ($($ty,)*) = self;
@@ -257,7 +257,7 @@ macro_rules! impl_tuple {
             $(&'a $ty: EncodeMoveUnchecked + ReprC<CType = crate::reference::CRef<<$ty as ReprC>::CType>>),*
         {
             type SoftStore = crate::sync::RefSizedEncodeStore<Self, ($(<&'a $ty as EncodeMoveUnchecked>::SoftStore,)*)>;
-            unsafe fn encode_ref_unchecked(&'a self, store: &mut Self::SoftStore) -> <&'a Self as ReprC>::CType {
+            unsafe fn encode_ref_unchecked<'itm>(&'a self, store: &'itm mut Self::SoftStore) -> <&'a Self as ReprC>::CType  where 'a: 'itm {
                 store.encode(|fields| {
                     impl_tuple! {@decl_priv_store $($ty),*}
                     let $ffi_ty($($ty),*) = self;

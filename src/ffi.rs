@@ -544,7 +544,10 @@ unsafe impl EncodeMove for CString {
 unsafe impl EncodeMoveUnchecked for CString {
     type SoftStore = ();
 
-    unsafe fn soft_encode_unchecked(self, (): &mut ()) -> Self::CType {
+    unsafe fn soft_encode_unchecked<'itm>(self, (): &'itm mut ()) -> Self::CType
+    where
+        Self: 'itm,
+    {
         unsafe { self.into_boxed_c_str().soft_encode_unchecked(&mut ()) }
     }
 }

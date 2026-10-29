@@ -44,7 +44,10 @@ impl Store for ProbeStore {
 unsafe impl EncodeMoveUnchecked for Probe {
     type SoftStore = ProbeStore;
 
-    unsafe fn soft_encode_unchecked(self, _: &mut ProbeStore) -> u8 {
+    unsafe fn soft_encode_unchecked<'itm>(self, _: &'itm mut ProbeStore) -> u8
+    where
+        Self: 'itm,
+    {
         self.0
     }
 }
@@ -64,7 +67,13 @@ unsafe impl EncodeMove for Probe {
 unsafe impl<'a> EncodeRefUnchecked<'a> for Probe {
     type SoftStore = ProbeStore;
 
-    unsafe fn encode_ref_unchecked(&'a self, _: &mut ProbeStore) -> <&'a Self as ReprC>::CType {
+    unsafe fn encode_ref_unchecked<'itm>(
+        &'a self,
+        _: &'itm mut ProbeStore,
+    ) -> <&'a Self as ReprC>::CType
+    where
+        'a: 'itm,
+    {
         CRef::from_ref(&self.0)
     }
 }
@@ -72,7 +81,10 @@ unsafe impl<'a> EncodeRefUnchecked<'a> for Probe {
 unsafe impl<'a> EncodeRef<'a> for Probe {
     type Store = ProbeStore;
 
-    fn encode_ref(&'a self, _: &mut ProbeStore) -> <&'a Self as ReprC>::CType {
+    fn encode_ref<'itm>(&'a self, _: &'itm mut ProbeStore) -> <&'a Self as ReprC>::CType
+    where
+        'a: 'itm,
+    {
         CRef::from_ref(&self.0)
     }
 }
@@ -80,10 +92,13 @@ unsafe impl<'a> EncodeRef<'a> for Probe {
 unsafe impl<'a> EncodeMutUnchecked<'a> for Probe {
     type SoftStore = ProbeStore;
 
-    unsafe fn encode_mut_unchecked(
+    unsafe fn encode_mut_unchecked<'itm>(
         &'a mut self,
-        _: &mut ProbeStore,
-    ) -> <&'a mut Self as ReprC>::CType {
+        _: &'itm mut ProbeStore,
+    ) -> <&'a mut Self as ReprC>::CType
+    where
+        'a: 'itm,
+    {
         CRefMut::from_mut(&mut self.0)
     }
 }
@@ -91,7 +106,10 @@ unsafe impl<'a> EncodeMutUnchecked<'a> for Probe {
 unsafe impl<'a> EncodeMut<'a> for Probe {
     type Store = ProbeStore;
 
-    fn encode_mut(&'a mut self, _: &mut ProbeStore) -> <&'a mut Self as ReprC>::CType {
+    fn encode_mut<'itm>(&'a mut self, _: &'itm mut ProbeStore) -> <&'a mut Self as ReprC>::CType
+    where
+        'a: 'itm,
+    {
         CRefMut::from_mut(&mut self.0)
     }
 }

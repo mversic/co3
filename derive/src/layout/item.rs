@@ -1414,13 +1414,13 @@ pub(super) fn derive_fieldless_enum(
         #repr_c_impl
         unsafe impl #ref_impl_generics co3::stored::EncodeRefUnchecked<'_ršč> for #name #ty_generics #where_clause {
             type SoftStore = co3::sync::RefSizedEncodeStore<Self, ()>;
-            unsafe fn encode_ref_unchecked(&'_ršč self, store: &mut Self::SoftStore) -> <&'_ršč Self as co3::ReprC>::CType {
+            unsafe fn encode_ref_unchecked<'itm>(&'_ršč self, store: &'itm mut Self::SoftStore) -> <&'_ršč Self as co3::ReprC>::CType  where '_ršč: 'itm {
                 store.encode(|_| { #encode_body })
             }
         }
         unsafe impl #ref_impl_generics co3::stored::EncodeRef<'_ršč> for #name #ty_generics #where_clause {
             type Store = co3::sync::RefSizedEncodeStore<Self, ()>;
-            fn encode_ref(&'_ršč self, store: &mut Self::Store) -> <&'_ršč Self as co3::ReprC>::CType {
+            fn encode_ref<'itm>(&'_ršč self, store: &'itm mut Self::Store) -> <&'_ršč Self as co3::ReprC>::CType  where '_ršč: 'itm {
                 store.encode(|_| { #encode_body })
             }
         }
@@ -1439,7 +1439,7 @@ pub(super) fn derive_fieldless_enum(
         unsafe impl #impl_generics co3::stored::EncodeMoveUnchecked for #name #ty_generics #where_clause {
             type SoftStore = ();
 
-            unsafe fn soft_encode_unchecked(self, (): &mut ()) -> Self::CType {
+            unsafe fn soft_encode_unchecked<'itm>(self, (): &'itm mut ()) -> Self::CType where Self: 'itm {
                 #encode_body
             }
         }
@@ -1755,7 +1755,7 @@ fn gen_codec_impls(
                     #predicates
                 {
                     type #store_name = co3::sync::RefSizedEncodeStore<Self, #field_store>;
-                    #unsafe_fn fn #method(&'_ršč self, store: &mut Self::#store_name) -> <&'_ršč Self as co3::ReprC>::CType {
+                    #unsafe_fn fn #method<'itm>(&'_ršč self, store: &'itm mut Self::#store_name) -> <&'_ršč Self as co3::ReprC>::CType where '_ršč: 'itm {
                         store.encode(|store| { #encode_body })
                     }
                 }
@@ -1792,7 +1792,7 @@ fn gen_codec_impls(
         {
             type SoftStore = #direct_store;
 
-            unsafe fn soft_encode_unchecked(self, store: &mut <Self as co3::stored::EncodeMoveUnchecked>::SoftStore) -> Self::CType {
+            unsafe fn soft_encode_unchecked<'itm>(self, store: &'itm mut <Self as co3::stored::EncodeMoveUnchecked>::SoftStore) -> Self::CType where Self: 'itm {
                 #direct_encode_impl
             }
         }

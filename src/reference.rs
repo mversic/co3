@@ -222,7 +222,7 @@ macro_rules! impl_reference_identity {
         }
         unsafe impl<$($params)*> EncodeMoveUnchecked for $ty<$($args)*> {
             type SoftStore = ();
-            unsafe fn soft_encode_unchecked(self, (): &mut ()) -> Self::CType { self }
+            unsafe fn soft_encode_unchecked<'itm>(self, (): &'itm mut ()) -> Self::CType where Self: 'itm { self }
         }
         unsafe impl<'d, $($params)*> DecodeOwned<'d> for $ty<$($args)*> {
             type Store = ();

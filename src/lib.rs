@@ -599,6 +599,7 @@ pub mod boxed;
 #[doc(hidden)]
 pub mod either;
 pub mod ffi;
+mod decoded;
 mod mutable;
 pub mod niche;
 pub mod ops;

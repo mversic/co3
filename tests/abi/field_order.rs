@@ -34,7 +34,10 @@ impl ReprC for Probe {
 
 unsafe impl EncodeMoveUnchecked for Probe {
     type SoftStore = ();
-    unsafe fn soft_encode_unchecked(self, _: &mut ()) -> u8 {
+    unsafe fn soft_encode_unchecked<'itm>(self, _: &'itm mut ()) -> u8
+    where
+        Self: 'itm,
+    {
         EVENTS.with(|events| events.borrow_mut().push(self.0));
         self.0
     }
@@ -59,28 +62,43 @@ unsafe impl<'d> DecodeOwned<'d> for Probe {
 
 unsafe impl<'a> EncodeRefUnchecked<'a> for Probe {
     type SoftStore = ();
-    unsafe fn encode_ref_unchecked(&'a self, _: &mut ()) -> <&'a Self as ReprC>::CType {
+    unsafe fn encode_ref_unchecked<'itm>(&'a self, _: &'itm mut ()) -> <&'a Self as ReprC>::CType
+    where
+        'a: 'itm,
+    {
         EVENTS.with(|events| events.borrow_mut().push(self.0));
         co3::reference::CRef::from_ref(&self.0)
     }
 }
 unsafe impl<'a> EncodeRef<'a> for Probe {
     type Store = ();
-    fn encode_ref(&'a self, _: &mut ()) -> <&'a Self as ReprC>::CType {
+    fn encode_ref<'itm>(&'a self, _: &'itm mut ()) -> <&'a Self as ReprC>::CType
+    where
+        'a: 'itm,
+    {
         EVENTS.with(|events| events.borrow_mut().push(self.0));
         co3::reference::CRef::from_ref(&self.0)
     }
 }
 unsafe impl<'a> EncodeMutUnchecked<'a> for Probe {
     type SoftStore = ();
-    unsafe fn encode_mut_unchecked(&'a mut self, _: &mut ()) -> <&'a mut Self as ReprC>::CType {
+    unsafe fn encode_mut_unchecked<'itm>(
+        &'a mut self,
+        _: &'itm mut (),
+    ) -> <&'a mut Self as ReprC>::CType
+    where
+        'a: 'itm,
+    {
         EVENTS.with(|events| events.borrow_mut().push(self.0));
         co3::reference::CRefMut::from_mut(&mut self.0)
     }
 }
 unsafe impl<'a> EncodeMut<'a> for Probe {
     type Store = ();
-    fn encode_mut(&'a mut self, _: &mut ()) -> <&'a mut Self as ReprC>::CType {
+    fn encode_mut<'itm>(&'a mut self, _: &'itm mut ()) -> <&'a mut Self as ReprC>::CType
+    where
+        'a: 'itm,
+    {
         EVENTS.with(|events| events.borrow_mut().push(self.0));
         co3::reference::CRefMut::from_mut(&mut self.0)
     }

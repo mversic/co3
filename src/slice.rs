@@ -247,7 +247,7 @@ macro_rules! impl_identity_carrier {
         unsafe impl<$($params)*> EncodeMoveUnchecked for $ty<$($args)*> {
             type SoftStore = ();
 
-            unsafe fn soft_encode_unchecked(self, (): &mut ()) -> Self::CType {
+            unsafe fn soft_encode_unchecked<'itm>(self, (): &'itm mut ()) -> Self::CType where Self: 'itm {
                 self
             }
         }

@@ -82,7 +82,10 @@ macro_rules! primitive_derive {
             type SoftStore = ();
 
             #[inline(always)]
-            unsafe fn soft_encode_unchecked(self, (): &mut ()) -> Self::CType {
+            unsafe fn soft_encode_unchecked<'itm>(self, (): &'itm mut ()) -> Self::CType
+            where
+                Self: 'itm,
+            {
                 self
             }
         }
@@ -154,7 +157,7 @@ macro_rules! raw_pointer_derive {
         unsafe impl<R: CType + ?Sized> EncodeMoveUnchecked for *$mutability R {
             type SoftStore = ();
 
-            unsafe fn soft_encode_unchecked(self, (): &mut ()) -> Self::CType {
+            unsafe fn soft_encode_unchecked<'itm>(self, (): &'itm mut ()) -> Self::CType where Self: 'itm {
                 self
             }
         }
@@ -266,7 +269,7 @@ macro_rules! impl_fn_types {
         unsafe impl<$($arg,)* R> EncodeMoveUnchecked for $fn_type where Self: ReprC<CType = Option<Self>> {
             type SoftStore = ();
 
-            unsafe fn soft_encode_unchecked(self, (): &mut ()) -> Self::CType {
+            unsafe fn soft_encode_unchecked<'itm>(self, (): &'itm mut ()) -> Self::CType where Self: 'itm {
                 Some(self)
             }
         }
@@ -331,7 +334,7 @@ macro_rules! fieldless_enum_derive {
             type SoftStore = ();
 
             #[inline(always)]
-            unsafe fn soft_encode_unchecked(self, (): &mut ()) -> Self::CType {
+            unsafe fn soft_encode_unchecked<'itm>(self, (): &'itm mut ()) -> Self::CType where Self: 'itm {
                 $encode_fn(self)
             }
         }
