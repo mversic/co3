@@ -16,6 +16,18 @@ thread_local! {
 
 #[derive(RustSpec)]
 struct Probe(u8);
+
+unsafe impl co3::borrow::Borrow for Probe {
+    type Borrowed = Self;
+
+    fn borrow(self) -> Self {
+        self
+    }
+    fn from_borrow(source: Self) -> Self {
+        source
+    }
+}
+
 impl ReprC for Probe {
     type CType = u8;
 }

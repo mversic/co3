@@ -806,3 +806,39 @@ mod tests {
         assert_eq!(store.sync(), None);
     }
 }
+
+/// Owns converted vector elements while a shared carrier borrows their allocation.
+#[cfg(feature = "alloc")]
+pub struct RefVecEncodeStore<T, S> {
+    elements: Vec<T>,
+    fields: S,
+}
+
+#[cfg(feature = "alloc")]
+impl<T, S: Default> Default for RefVecEncodeStore<T, S> {
+    fn default() -> Self {
+        Self {
+            elements: Vec::new(),
+            fields: S::default(),
+        }
+    }
+}
+
+#[cfg(feature = "alloc")]
+impl<T: CType, S> RefVecEncodeStore<T, S> {
+    pub fn encode(&mut self, encode: impl FnOnce(&mut S) -> Vec<T>) -> crate::vec::CVec<T> {
+        self.elements = encode(&mut self.fields);
+        crate::vec::CVec::from_raw_parts(
+            self.elements.as_mut_ptr(),
+            self.elements.len(),
+            self.elements.capacity(),
+        )
+    }
+}
+
+#[cfg(feature = "alloc")]
+impl<T, S: Store> Store for RefVecEncodeStore<T, S> {
+    fn sync(self) -> Option<()> {
+        self.fields.sync()
+    }
+}

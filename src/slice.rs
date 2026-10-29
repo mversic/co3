@@ -255,7 +255,7 @@ macro_rules! impl_identity_carrier {
             type Store = ();
 
             #[inline(always)]
-            unsafe fn soft_decode<'itm: 'd>(source: Self::CType, (): &mut ()) -> Option<Self> {
+            unsafe fn soft_decode<'itm: 'd>(source: Self::CType, (): &mut ()) -> core::option::Option<Self> {
                 Some(source)
             }
         }
@@ -318,7 +318,19 @@ impl_wide_borrow! { CWideRefMut, [P: Wide + ?Sized, const EXCLUSIVE: bool], [P, 
 impl_wide_carrier! { CWideRef, [P: Wide<Header: WideHeader<Data: CType>> + ?Sized], [P] }
 impl_wide_carrier! { CWideRefMut, [P: Wide<Header: WideHeader<Data: CType>> + ?Sized, const EXCLUSIVE: bool], [P, EXCLUSIVE] }
 
-#[cfg(feature = "alloc")]
+impl<P: Wide<Header: WideHeader<Data: CType>, Metadata: CType> + ?Sized> Default for CWideRef<P> {
+    fn default() -> Self {
+        Self::null()
+    }
+}
+impl<P: Wide<Header: WideHeader<Data: CType>, Metadata: CType> + ?Sized, const EXCLUSIVE: bool>
+    Default for CWideRefMut<P, EXCLUSIVE>
+{
+    fn default() -> Self {
+        Self::null()
+    }
+}
+
 pub(crate) use impl_identity_carrier;
 #[cfg(feature = "alloc")]
 pub(crate) use impl_wide_raw_methods;

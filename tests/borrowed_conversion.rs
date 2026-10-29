@@ -2,6 +2,32 @@ use co3::borrow::{Borrow, Borrowed};
 use co3::stored::{EncodeMove, Store};
 
 #[test]
+fn owned_containers_preserve_their_type_and_allocation_when_borrowed() {
+    fn restore<T: Borrow<Borrowed = Borrowed<T>>>(value: T) -> T {
+        T::from_borrow(value.borrow())
+    }
+
+    let boxed = Box::new(7_u8);
+    let original = core::ptr::from_ref(&*boxed);
+    assert_eq!(core::ptr::from_ref(&*restore(boxed)), original);
+
+    let values = vec![1_u8, 2];
+    let original = values.as_ptr();
+    let values = restore(values);
+    assert_eq!(values.as_ptr(), original);
+    let values = restore(co3::vec::Vec::from(values));
+    assert_eq!(values.as_ptr(), original);
+
+    let text = String::from("owned");
+    let original = text.as_ptr();
+    assert_eq!(restore(text).as_ptr(), original);
+
+    let text = std::ffi::CString::new("owned").unwrap();
+    let original = text.as_ptr();
+    assert_eq!(restore(text).as_ptr(), original);
+}
+
+#[test]
 fn borrowed_mut_reference_keeps_its_marker() {
     let mut value = 7u8;
     let borrowed: Borrowed<&mut u8> = (&mut value).borrow();

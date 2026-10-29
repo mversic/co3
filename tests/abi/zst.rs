@@ -154,8 +154,8 @@ fn wrapper_borrow_casts_match_their_borrowed_representations() {
     assert_type_eq_all!(<Cell<u8> as BorrowCastMut>::AsMut, UnsafeCell<u8>);
 
     assert_impl_all!(ManuallyDrop<u8>: BorrowCast, BorrowCastMut);
-    assert_type_eq_all!(<ManuallyDrop<u8> as BorrowCast>::AsConst, ManuallyDrop<u8>);
-    assert_type_eq_all!(<ManuallyDrop<u8> as BorrowCastMut>::AsMut, ManuallyDrop<u8>);
+    assert_type_eq_all!(<ManuallyDrop<u8> as BorrowCast>::AsConst, u8);
+    assert_type_eq_all!(<ManuallyDrop<u8> as BorrowCastMut>::AsMut, u8);
 
     assert_impl_all!(CRefMut<u8, true>: BorrowCast, BorrowCastMut);
     assert_type_eq_all!(<CRefMut<u8, true> as BorrowCast>::AsConst, CRefMut<u8, true>);

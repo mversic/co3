@@ -5,7 +5,6 @@ use core::{
 
 use co3::{
     Decode, Encode,
-    option::COption,
     primitives::CBool,
     stored::{EmptyStore, EncodeMove, EncodeMoveUnchecked, Store},
     transmute::AbiCompatible,
@@ -116,6 +115,17 @@ impl Store for DirectState {
 // Deliberately unstable: exercise field conversion and its auxiliary store.
 #[derive(co3::rust_spec::RustSpec)]
 struct StoredDirect(u8);
+
+unsafe impl co3::borrow::Borrow for StoredDirect {
+    type Borrowed = Self;
+
+    fn borrow(self) -> Self {
+        self
+    }
+    fn from_borrow(source: Self) -> Self {
+        source
+    }
+}
 
 impl co3::ReprC for StoredDirect {
     type CType = u8;
@@ -428,7 +438,7 @@ fn vec_mut_bool_syncs_element_stores() {
     let mut store = Default::default();
     let encoded = co3::soft_encode(values.iter_mut().collect::<Vec<_>>(), &mut store);
     unsafe { *(*encoded.as_ptr()).as_ptr() = CBool::TRUE };
-    drop(unsafe { encoded.into_box().unwrap() });
+    drop(unsafe { encoded.into_vec().unwrap() });
     store.sync().unwrap();
     assert_eq!(values, [true, false]);
 }
@@ -441,7 +451,7 @@ fn vec_with_empty_element_stores_reuses_allocation() {
     let mut store = Default::default();
     let encoded = co3::soft_encode(values, &mut store);
     assert_eq!(encoded.as_ptr(), original.cast_mut());
-    drop(unsafe { encoded.into_box().unwrap() });
+    drop(unsafe { encoded.into_vec().unwrap() });
     store.sync().unwrap();
 }
 
@@ -467,7 +477,7 @@ fn vec_of_optional_mut_bool_syncs_present_elements() {
     let mut store = Default::default();
     let encoded = co3::soft_encode(vec![Some(&mut value), None], &mut store);
     unsafe { *(*encoded.as_ptr()).as_ptr() = CBool::TRUE };
-    drop(unsafe { encoded.into_box().unwrap() });
+    drop(unsafe { encoded.into_vec().unwrap() });
     store.sync().unwrap();
     assert!(value);
 }
@@ -475,8 +485,8 @@ fn vec_of_optional_mut_bool_syncs_present_elements() {
 #[test]
 fn repr_c_option_without_payload_skips_inner_store() {
     let mut store = Default::default();
-    let _: <COption<&mut bool> as co3::ReprC>::CType =
-        co3::soft_encode(COption::<&mut bool>::None(), &mut store);
+    let _: <co3::option::Option<&mut bool> as co3::ReprC>::CType =
+        co3::soft_encode(co3::option::Option::<&mut bool>::None, &mut store);
     store.sync().unwrap();
 }
 
@@ -549,7 +559,7 @@ fn vec_of_derived_records_syncs_field_stores() {
         &mut store,
     );
     unsafe { *(*encoded.as_ptr()).value.as_ptr() = CBool::TRUE };
-    drop(unsafe { encoded.into_box().unwrap() });
+    drop(unsafe { encoded.into_vec().unwrap() });
     store.sync().unwrap();
     assert!(value);
 }

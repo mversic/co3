@@ -441,7 +441,7 @@ mod tests {
         );
         #[cfg(feature = "alloc")]
         assert_impl_all!(Vec<bool>:
-            Niche<CType = CWideBox<[crate::primitives::CBool]>>,
+            Niche<CType = crate::vec::CVec<crate::primitives::CBool>>,
             Decode<'static>,
             Encode,
         );
@@ -492,7 +492,7 @@ mod tests {
         );
         #[cfg(feature = "alloc")]
         assert_impl_all!(Vec<&u8>:
-            Niche<CType = CWideBox<[CRef<u8>]>>,
+            Niche<CType = crate::vec::CVec<CRef<u8>>>,
             Decode<'static>,
             Encode,
         );
@@ -547,7 +547,7 @@ mod tests {
         );
         #[cfg(feature = "alloc")]
         assert_impl_all!(Vec<&bool>:
-            Niche<CType = CWideBox<[CRef<crate::primitives::CBool>]>>,
+            Niche<CType = crate::vec::CVec<CRef<crate::primitives::CBool>>>,
             Decode<'static>,
             Encode,
         );
@@ -597,7 +597,7 @@ mod tests {
         );
         #[cfg(feature = "alloc")]
         assert_impl_all!(Vec<&mut u8>:
-            Niche<CType = CWideBox<[CRefMut<u8, true>]>>,
+            Niche<CType = crate::vec::CVec<CRefMut<u8, true>>>,
             Decode<'static>,
             Encode,
         );
@@ -649,7 +649,7 @@ mod tests {
         );
         #[cfg(feature = "alloc")]
         assert_impl_all!(Vec<&mut bool>:
-            Niche<CType = CWideBox<[CRefMut<crate::primitives::CBool, true>]>>,
+            Niche<CType = crate::vec::CVec<CRefMut<crate::primitives::CBool, true>>>,
             Decode<'static>,
             Encode
         );

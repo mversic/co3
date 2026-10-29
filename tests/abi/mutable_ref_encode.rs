@@ -223,7 +223,7 @@ fn mutable_vec_allows_replacing_its_owned_header() {
     let encoded = (&mut values).soft_encode(&mut store);
     let header = unsafe { &mut *encoded.as_ptr() };
     // A callee can consume the old allocation and install a new owned value.
-    drop(unsafe { header.into_box().unwrap() });
+    drop(unsafe { header.into_vec().unwrap() });
     *header = vec![4_u32, 5, 6].soft_encode(&mut ());
     assert_eq!(store.sync(), Some(()));
     assert_eq!(values, [4, 5, 6]);
@@ -384,8 +384,8 @@ fn stable_vec_reuses_allocation() {
     let mut store = Default::default();
     let encoded = co3::soft_encode(values, &mut store);
     assert_eq!(encoded.as_ptr(), original.cast_mut());
-    assert_eq!(encoded.metadata(), 3);
-    let decoded = unsafe { encoded.into_box().unwrap() }.into_vec();
+    assert_eq!(encoded.len(), 3);
+    let decoded = unsafe { encoded.into_vec().unwrap() };
     assert_eq!(decoded, [1, 2, 3]);
     assert_eq!(store.sync(), Some(()));
 }
@@ -399,7 +399,7 @@ fn stable_vec_reuses_allocation_and_syncs_element_stores() {
     let encoded = co3::soft_encode(references, &mut store);
     assert_eq!(encoded.as_ptr(), original);
     unsafe { *(*encoded.as_ptr()).as_ptr() = CBool::TRUE };
-    drop(unsafe { encoded.into_box().unwrap() });
+    drop(unsafe { encoded.into_vec().unwrap() });
     assert_eq!(store.sync(), Some(()));
     assert_eq!(values, [true, false]);
 }

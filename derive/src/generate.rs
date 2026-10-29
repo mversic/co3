@@ -1860,8 +1860,14 @@ fn synthesize_impl_extern_decls(
                 );
             }
 
-            let erased_layout_checks = args
-                .map(|args| gen_dispatch_erased_layout_checks(&impl_.generics, &item.sig, args, item.attrs.iter().any(ffi_fn::is_by_val_attr)));
+            let erased_layout_checks = args.map(|args| {
+                gen_dispatch_erased_layout_checks(
+                    &impl_.generics,
+                    &item.sig,
+                    args,
+                    item.attrs.iter().any(ffi_fn::is_by_val_attr),
+                )
+            });
 
             if args.is_some() {
                 strip_erased_param_predicates(&impl_.generics, &mut item.sig.generics);

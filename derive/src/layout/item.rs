@@ -2,8 +2,8 @@ use proc_macro2::TokenStream;
 use quote::{format_ident, quote};
 use syn::{Ident, parse_quote};
 
-use crate::utils::speculative_marker;
 use crate::layout::reference::{encoder_names, group_aggregate_ref_impls};
+use crate::utils::speculative_marker;
 
 use crate::layout::{
     ReprCAttrs, VariantReprCAttrs,
@@ -13,9 +13,9 @@ use crate::layout::{
         gen_item_borrow_impls, gen_item_view, gen_view_ctype_name, gen_view_owner_name,
     },
     ctype::{
-        TailClass, UnsizedTail, classify_tail, c_fn_last_field_bounds, gen_ctype_name, gen_extern_c_bounds_for_ctype,
-        gen_fieldless_enum_ctype, gen_identity_borrow_cast_impl, gen_identity_repr_c_impls,
-        gen_item_ctype, gen_union_fields, gen_variant_struct_name,
+        TailClass, UnsizedTail, c_fn_last_field_bounds, classify_tail, gen_ctype_name,
+        gen_extern_c_bounds_for_ctype, gen_fieldless_enum_ctype, gen_identity_borrow_cast_impl,
+        gen_identity_repr_c_impls, gen_item_ctype, gen_union_fields, gen_variant_struct_name,
     },
     enum_tag_type, enum_variant_tag_exprs, generic_param_idents, infer_repr, is_exhaustive_enum,
     is_parametrized, is_phantom_data, is_transparent_enum_repr,
@@ -193,7 +193,10 @@ fn gen_item_niche_impls(
 }
 
 #[derive(Clone, Copy, PartialEq, Eq)]
-enum EncodeMode { Owned, Ref }
+enum EncodeMode {
+    Owned,
+    Ref,
+}
 
 fn gen_item_codec_impls(
     repr: Option<&ReprKind>,
@@ -1095,11 +1098,11 @@ fn gen_record_is_valid(
         .zip(field_types)
         .filter(|(_, field_ty)| !is_phantom_data(field_ty))
         .map(|(field_name, field_ty)| {
-                quote! {
-                    if !unsafe { <#field_ty as co3::transmute::AbiCompatible>::is_valid(#field_name)} {
-                        return false;
-                    }
+            quote! {
+                if !unsafe { <#field_ty as co3::transmute::AbiCompatible>::is_valid(#field_name)} {
+                    return false;
                 }
+            }
         });
 
     quote! { #(#field_validation)*
@@ -1680,8 +1683,11 @@ fn gen_codec_impls(
 
     let encode_owned_bounds =
         gen_field_encode_bounds(generics, fields, quote! { co3::stored::EncodeMove });
-    let direct_encode_bounds =
-        gen_field_encode_bounds(generics, fields, quote! { co3::stored::EncodeMoveUnchecked });
+    let direct_encode_bounds = gen_field_encode_bounds(
+        generics,
+        fields,
+        quote! { co3::stored::EncodeMoveUnchecked },
+    );
     let decode_owned_bounds =
         gen_field_decode_bounds(generics, fields, quote! { co3::stored::DecodeOwned });
 
@@ -1725,8 +1731,13 @@ fn gen_codec_impls(
             };
             let field_bounds = fields.iter().map(|ty| {
                 let speculative = speculative_marker(!is_parametrized(ty, generics));
+                let repr_bound = if is_phantom_data(ty) {
+                    quote!(co3::ReprC<CType = #ty>)
+                } else {
+                    quote!(co3::ReprC<CType: Copy>)
+                };
                 quote! {
-                    #speculative #ty: co3::ReprC<CType: Copy> + '_ršč,
+                    #speculative #ty: #repr_bound + '_ršč,
                     #speculative &'_ršč #ty: #move_trait + co3::ReprC<CType = co3::reference::CRef<<#ty as co3::ReprC>::CType>>
                 }
             });

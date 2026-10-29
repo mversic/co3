@@ -2,6 +2,7 @@
 use core::mem::MaybeUninit;
 use core::option::Option as CoreOption;
 
+use rust_spec::drop::NoDrop;
 use rust_spec::{
     RustSpec,
     mutability::{Exclusive, ExclusiveKind},
@@ -135,18 +136,35 @@ where
 }
 
 unsafe impl<'d, T: DecodeOwned<'d>> DecodeOwned<'d> for Option<T> {
-    type Store = T::Store;
+    type Store = CoreOption<T::Store>;
 
     unsafe fn soft_decode<'a: 'd>(
         source: Self::CType,
         store: &'a mut Self::Store,
     ) -> CoreOption<Self> {
-        match source.tag {
-            0 => Some(Self::None),
-            1 => Some(Self::Some(unsafe {
-                T::soft_decode(source.payload.assume_init(), store)?
+        match source.into_option()? {
+            None => {
+                *store = None;
+                Some(Self::None)
+            }
+            Some(value) => Some(Self::Some(unsafe {
+                T::soft_decode(value, store.insert(Default::default()))?
             })),
-            _ => None,
+        }
+    }
+
+    unsafe fn soft_decode_unchecked<'a: 'd>(
+        source: Self::CType,
+        store: &'a mut Self::Store,
+    ) -> Self {
+        match unsafe { source.into_option_unchecked() } {
+            None => {
+                *store = None;
+                Self::None
+            }
+            Some(value) => Self::Some(unsafe {
+                T::soft_decode_unchecked(value, store.insert(Default::default()))
+            }),
         }
     }
 }
@@ -213,7 +231,13 @@ impl<T: PartialOrd> PartialOrd for COption<T> {
     }
 }
 
-impl<T> COption<T> {
+impl<T: CType> Default for COption<T> {
+    fn default() -> Self {
+        Self::None()
+    }
+}
+
+impl<T: CType> COption<T> {
     pub(crate) const fn niche() -> Self {
         Self {
             tag: 2,
@@ -238,7 +262,9 @@ impl<T> COption<T> {
             payload: MaybeUninit::new(value),
         }
     }
+}
 
+impl<T> COption<T> {
     /// Return the stored variant tag.
     pub const fn tag(&self) -> u8 {
         self.tag
@@ -260,23 +286,6 @@ impl<T> COption<T> {
             _ => unsafe { core::hint::unreachable_unchecked() },
         }
     }
-
-    fn forward_payload<U>(&self) -> COption<U> {
-        let mut output = MaybeUninit::<COption<U>>::zeroed();
-
-        unsafe {
-            let output_ptr = output.as_mut_ptr();
-            core::ptr::addr_of_mut!((*output_ptr).tag).write(self.tag);
-
-            core::ptr::copy_nonoverlapping(
-                self.payload.as_ptr().cast::<u8>(),
-                core::ptr::addr_of_mut!((*output_ptr).payload).cast::<u8>(),
-                core::cmp::min(size_of::<T>(), size_of::<U>()),
-            );
-
-            output.assume_init()
-        }
-    }
 }
 
 impl<T: Copy> Copy for COption<T> {}
@@ -285,35 +294,14 @@ impl<T: Copy> Clone for COption<T> {
         *self
     }
 }
-impl<T> Default for COption<T> {
-    fn default() -> Self {
-        Self::None()
+unsafe impl<T: CType> Borrow for COption<T> {
+    type Borrowed = Self;
+
+    fn borrow(self) -> Self {
+        self
     }
-}
-
-unsafe impl<T: Borrow> Borrow for COption<T> {
-    type Borrowed = COption<T::Borrowed>;
-
-    #[inline(always)]
-    fn borrow(self) -> Self::Borrowed {
-        match self.tag {
-            1 => {
-                let payload = unsafe { self.payload.assume_init() };
-                COption::Some(payload.borrow())
-            }
-            _ => self.forward_payload(),
-        }
-    }
-
-    #[inline(always)]
-    fn from_borrow(source: Self::Borrowed) -> Self {
-        match source.tag {
-            1 => {
-                let payload = unsafe { source.payload.assume_init() };
-                Self::Some(T::from_borrow(payload))
-            }
-            _ => source.forward_payload(),
-        }
+    fn from_borrow(source: Self) -> Self {
+        source
     }
 }
 
@@ -329,151 +317,7 @@ unsafe impl<T: RustSpec> RustSpec for COption<T> {
     type __IndirectTrap = T::__IndirectTrap;
 }
 
-impl<T: ReprC<CType: Sized>> ReprC for COption<T> {
-    type CType = COption<T::CType>;
-}
-unsafe impl<T: EncodeMove> EncodeMove for COption<T> {
-    type Store = CoreOption<T::Store>;
-
-    #[inline(always)]
-    fn soft_encode<'itm>(self, store: &'itm mut Self::Store) -> Self::CType
-    where
-        Self: 'itm,
-    {
-        match self.tag {
-            1 => {
-                let payload = unsafe { self.payload.assume_init() };
-                COption::Some(payload.soft_encode(store.insert(Default::default())))
-            }
-            _ => self.forward_payload(),
-        }
-    }
-}
-unsafe impl<T: EncodeMoveUnchecked> EncodeMoveUnchecked for COption<T> {
-    type SoftStore = CoreOption<T::SoftStore>;
-
-    unsafe fn soft_encode_unchecked(self, store: &mut Self::SoftStore) -> Self::CType {
-        match self.tag {
-            1 => COption::Some(unsafe {
-                self.payload
-                    .assume_init()
-                    .soft_encode_unchecked(store.insert(Default::default()))
-            }),
-            _ => {
-                *store = None;
-                self.forward_payload()
-            }
-        }
-    }
-}
-unsafe impl<'a, T: ReprC<CType: Copy>, __Interior: ExclusiveKind> EncodeRef<'a> for COption<T>
-where
-    Self: RustSpec<Mutability = Exclusive<__Interior>, Size: Thin> + 'a,
-    &'a T: EncodeMove<CType = crate::reference::CRef<T::CType>>,
-{
-    type Store = RefSizedEncodeStore<Self, CoreOption<<&'a T as EncodeMove>::Store>>;
-
-    fn encode_ref(&'a self, store: &mut Self::Store) -> <&'a Self as ReprC>::CType {
-        store.encode(|fields| {
-            let store = fields;
-
-            match self.tag {
-                1 => {
-                    let payload = unsafe { self.payload.assume_init_ref() };
-
-                    COption::Some(crate::stored::encode_ref_field(
-                        payload,
-                        store.insert(Default::default()),
-                    ))
-                }
-                _ => {
-                    *store = None;
-                    self.forward_payload()
-                }
-            }
-        })
-    }
-}
-unsafe impl<'a, T: ReprC<CType: Copy>, __Interior: ExclusiveKind> EncodeRefUnchecked<'a>
-    for COption<T>
-where
-    Self: RustSpec<Mutability = Exclusive<__Interior>, Size: Thin> + 'a,
-    &'a T: EncodeMoveUnchecked<CType = crate::reference::CRef<T::CType>>,
-{
-    type SoftStore =
-        RefSizedEncodeStore<Self, CoreOption<<&'a T as EncodeMoveUnchecked>::SoftStore>>;
-
-    unsafe fn encode_ref_unchecked(
-        &'a self,
-        store: &mut Self::SoftStore,
-    ) -> <&'a Self as ReprC>::CType {
-        store.encode(|fields| {
-            let store = fields;
-
-            match self.tag {
-                1 => COption::Some(unsafe {
-                    crate::stored::encode_ref_field_unchecked(
-                        self.payload.assume_init_ref(),
-                        store.insert(Default::default()),
-                    )
-                }),
-                _ => {
-                    *store = None;
-                    self.forward_payload()
-                }
-            }
-        })
-    }
-}
-
-unsafe impl<'d, T: DecodeOwned<'d>> DecodeOwned<'d> for COption<T> {
-    type Store = T::Store;
-
-    #[inline(always)]
-    unsafe fn soft_decode<'itm: 'd>(
-        source: Self::CType,
-        store: &'itm mut Self::Store,
-    ) -> CoreOption<Self> {
-        match source.tag {
-            1 => {
-                let payload = unsafe { T::soft_decode(source.payload.assume_init(), store)? };
-                Some(Self::Some(payload))
-            }
-            _ => Some(source.forward_payload()),
-        }
-    }
-
-    #[inline(always)]
-    unsafe fn soft_decode_unchecked<'itm: 'd>(
-        source: Self::CType,
-        store: &'itm mut Self::Store,
-    ) -> Self {
-        match source.tag {
-            1 => {
-                Self::Some(unsafe { T::soft_decode_unchecked(source.payload.assume_init(), store) })
-            }
-            _ => source.forward_payload(),
-        }
-    }
-}
-
-impl<T: Encode> Encode for COption<T> {}
-impl<T: EncodeUnchecked> EncodeUnchecked for COption<T> {}
-impl<'d, T: Decode<'d>> Decode<'d> for COption<T> {}
-
-unsafe impl<T: AbiCompatible<CType: Copy>> AbiCompatible for COption<T> {
-    #[inline(always)]
-    unsafe fn is_valid(target: &Self::CType) -> bool {
-        match target.tag {
-            1 => unsafe { T::is_valid(&*target.payload.as_ptr()) },
-            _ => true,
-        }
-    }
-}
-
-unsafe impl<T: CType> CType for COption<T> {}
-unsafe impl<T: CType> CFnArg for COption<T> {}
-unsafe impl<T: CType> CFnReturn for COption<T> {}
+crate::slice::impl_identity_carrier! { COption, [T: CType], [T] }
 
 unsafe impl<T: BorrowCast<AsConst: Copy>> BorrowCast for COption<T> {
     type AsConst = COption<T::AsConst>;
@@ -483,3 +327,49 @@ unsafe impl<T: BorrowCastMut<AsMut: Copy>> BorrowCastMut for COption<T> {
 }
 
 unsafe impl<T: EmptyStore> EmptyStore for CoreOption<T> {}
+
+unsafe impl<T> CType for CoreOption<T> where
+    Self: RustSpec<Layout = rust_spec::Stable, Trap = rust_spec::layout::Robust, Drop = NoDrop>
+{
+}
+unsafe impl<T> CFnArg for CoreOption<T> where
+    Self: CType + RustSpec<Size = rust_spec::size::Sized<rust_spec::Gt<rust_spec::Zero>>>
+{
+}
+unsafe impl<T> CFnReturn for CoreOption<T> where
+    Self: CType + RustSpec<Size = rust_spec::size::Sized<rust_spec::Gt<rust_spec::Zero>>>
+{
+}
+unsafe impl<T> BorrowCast for CoreOption<T>
+where
+    Self: CType,
+{
+    type AsConst = Self;
+}
+unsafe impl<T> BorrowCastMut for CoreOption<T>
+where
+    Self: CType,
+{
+    type AsMut = Self;
+}
+
+impl<R: Encode> Encode for CoreOption<R> where Self: EncodeMove {}
+impl<R: EncodeUnchecked> EncodeUnchecked for CoreOption<R> where Self: EncodeMoveUnchecked {}
+impl<'d, R: Decode<'d>> Decode<'d> for CoreOption<R> where Self: DecodeOwned<'d> {}
+
+impl<T> From<CoreOption<T>> for Option<T> {
+    fn from(value: CoreOption<T>) -> Self {
+        match value {
+            None => Self::None,
+            Some(value) => Self::Some(value),
+        }
+    }
+}
+impl<T> From<Option<T>> for CoreOption<T> {
+    fn from(value: Option<T>) -> Self {
+        match value {
+            Option::None => Self::None,
+            Option::Some(value) => Self::Some(value),
+        }
+    }
+}

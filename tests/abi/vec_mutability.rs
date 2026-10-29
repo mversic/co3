@@ -45,11 +45,16 @@ fn unstable_interior_vec_unchecked_round_trip() {
 
 #[test]
 fn robust_vec_checked_encoding_transfers_allocation() {
-    let values = Box::<[u32]>::from([3, 7]).into_vec();
+    let mut values = Vec::<u32>::with_capacity(12);
+    values.extend([3, 7]);
+    let capacity = values.capacity();
     let original = values.as_ptr();
     let encoded = values.soft_encode(&mut ());
     assert_eq!(encoded.as_ptr(), original.cast_mut());
-    assert_eq!(&*unsafe { encoded.into_box() }.unwrap(), &[3, 7]);
+    assert_eq!(encoded.capacity(), capacity);
+    let decoded = unsafe { encoded.into_vec() }.unwrap();
+    assert_eq!(decoded.capacity(), capacity);
+    assert_eq!(decoded, [3, 7]);
 
     let values = Box::<[Cell<u8>]>::from([Cell::new(3), Cell::new(7)]).into_vec();
     let original = values.as_ptr();
@@ -70,26 +75,26 @@ fn nonrobust_vec_keeps_element_writeback_stores() {
         .collect::<Vec<_>>()
         .soft_encode(&mut store);
     unsafe { *(*encoded.as_ptr()).as_ptr() = co3::primitives::CBool::TRUE };
-    drop(unsafe { encoded.into_box() }.unwrap());
+    drop(unsafe { encoded.into_vec() }.unwrap());
     store.sync().unwrap();
     assert_eq!(values, [true, false]);
 }
 
 #[test]
 fn stable_vec_decode_checks_validity_before_reusing_allocation() {
-    use co3::{boxed::CWideBox, primitives::CBool};
+    use co3::{primitives::CBool, vec::CVec};
 
-    let source = CWideBox::from_box(Box::<[CBool]>::from([CBool(1), CBool(0)]));
+    let source = CVec::from_vec(vec![CBool(1), CBool(0)]);
     let original = source.as_ptr().cast::<bool>();
     let decoded = unsafe { Vec::<bool>::soft_decode(source, &mut ()) }.unwrap();
     assert_eq!(decoded.as_ptr(), original);
     assert_eq!(decoded, [true, false]);
 
-    let invalid = CWideBox::from_box(Box::<[CBool]>::from([CBool(1), CBool(2)]));
+    let invalid = CVec::from_vec(vec![CBool(1), CBool(2)]);
     assert!(unsafe { Vec::<bool>::soft_decode(invalid, &mut ()) }.is_none());
-    assert!(unsafe { Vec::<bool>::soft_decode(CWideBox::null(), &mut ()) }.is_none());
+    assert!(unsafe { Vec::<bool>::soft_decode(CVec::null(), &mut ()) }.is_none());
 
-    let source = CWideBox::from_box(Box::<[CBool]>::from([CBool(1)]));
+    let source = CVec::from_vec(vec![CBool(1)]);
     let original = source.as_ptr().cast::<bool>();
     let decoded = unsafe { Vec::<bool>::soft_decode_unchecked(source, &mut ()) };
     assert_eq!(decoded.as_ptr(), original);

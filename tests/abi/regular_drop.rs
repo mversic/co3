@@ -115,7 +115,7 @@ impl Drop for CustomAndInheritedDrop {
 
 #[test]
 fn custom_and_inherited_drop_borrows_whole_value() {
-    use co3::borrow::{Borrow};
+    use co3::borrow::Borrow;
 
     let borrowed = Borrow::borrow(CustomAndInheritedDrop(Box::new(9)));
     let borrowed: co3::borrow::Borrowed<CustomAndInheritedDrop> = borrowed;
@@ -142,7 +142,7 @@ enum InheritedDropEnum {
 
 #[test]
 fn inherited_drop_enum_borrows_fields() {
-    use co3::borrow::{Borrow};
+    use co3::borrow::Borrow;
 
     let borrowed = Borrow::borrow(InheritedDropEnum::Value(Box::new(11)));
     let borrowed: InheritedDropEnumView = borrowed;
@@ -179,7 +179,7 @@ impl Drop for InferredFieldlessDrop {
 
 #[test]
 fn fieldless_enums_with_drop_convert_and_borrow() {
-    use co3::borrow::{Borrow};
+    use co3::borrow::Borrow;
 
     let before = FIELDLESS_DROPS.load(Ordering::Relaxed);
     assert_eq!(co3::encode(ExplicitFieldlessDrop::Second).0, 5);

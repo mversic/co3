@@ -3,8 +3,6 @@
 #[cfg(feature = "alloc")]
 use alloc::{boxed::Box, vec::Vec};
 use core::mem::ManuallyDrop;
-#[cfg(feature = "alloc")]
-use core::ptr::NonNull;
 
 use disjoint_impls::disjoint_impls;
 use rust_spec::{
@@ -30,7 +28,10 @@ use crate::{
     wide::{PointeeData, Wide, WideHeader},
 };
 #[cfg(feature = "alloc")]
-use crate::{boxed::FromWideBox, sync::RefWideEncodeStore};
+use crate::{
+    sync::{RefVecEncodeStore, RefWideEncodeStore},
+    vec::CVec,
+};
 disjoint_impls! {
     /// Encodes the contents of a shared reference without transferring ownership.
     ///
@@ -68,7 +69,7 @@ disjoint_impls! {
         for Vec<T>
     where
         T: RustSpec<Layout = Stable>,
-        Self: ReprC<CType: FromWideBox<[<T as ReprC>::CType]>>,
+        Self: ReprC<CType = CVec<<T as ReprC>::CType>>,
         Self: RustSpec<Mutability = Exclusive<__Interior>, Size: crate::Thin> + 'a,
     {
         type SoftStore = RefSizedEncodeStore<Self, ()>;
@@ -81,8 +82,29 @@ disjoint_impls! {
                 // Vec's data pointer is non-null even for empty or ZST vectors.
                 // AbiCompatible guarantees compatible element representations;
                 // this carrier is only exposed behind the shared reference header.
-                let data = unsafe { NonNull::new_unchecked(self.as_ptr().cast_mut().cast()) };
-                unsafe { Self::CType::from_shared_parts(data, self.len()) }
+                CVec::from_raw_parts(self.as_ptr().cast_mut().cast(), self.len(), self.capacity())
+            })
+        }
+    }
+    #[cfg(feature = "alloc")]
+    unsafe impl<'a, T: AbiCompatible + ReprC<CType: CType + Sized>, __Interior: ExclusiveKind> EncodeRefUnchecked<'a>
+        for crate::vec::Vec<T>
+    where
+        T: RustSpec<Layout = Stable>,
+        Self: ReprC<CType = CVec<<T as ReprC>::CType>>,
+        Self: RustSpec<Mutability = Exclusive<__Interior>, Size: crate::Thin> + 'a,
+    {
+        type SoftStore = RefSizedEncodeStore<Self, ()>;
+
+        unsafe fn encode_ref_unchecked(
+            &'a self,
+            store: &mut Self::SoftStore,
+        ) -> <&'a Self as ReprC>::CType {
+            store.encode(|_fields| {
+                // Vec's data pointer is non-null even for empty or ZST vectors.
+                // AbiCompatible guarantees compatible element representations;
+                // this carrier is only exposed behind the shared reference header.
+                CVec::from_raw_parts(self.as_ptr().cast_mut().cast(), self.len(), self.capacity())
             })
         }
     }
@@ -91,11 +113,11 @@ disjoint_impls! {
     unsafe impl<'a, T: ReprC<CType: CType + Copy + Sized>, __Interior: ExclusiveKind> EncodeRefUnchecked<'a> for Vec<T>
     where
         T: RustSpec<Layout = Unstable>,
-        Self: ReprC<CType: FromWideBox<[<T as ReprC>::CType]>>,
+        Self: ReprC<CType = CVec<<T as ReprC>::CType>>,
         Self: RustSpec<Mutability = Exclusive<__Interior>, Size: crate::Thin> + 'a,
         &'a T: EncodeMoveUnchecked + ReprC<CType = CRef<<T as ReprC>::CType>>,
     {
-        type SoftStore = RefSizedEncodeStore<Self, RefWideEncodeStore<[T], Box<[<&'a T as EncodeMoveUnchecked>::SoftStore]>>>;
+        type SoftStore = RefSizedEncodeStore<Self, RefVecEncodeStore<<T as ReprC>::CType, Box<[<&'a T as EncodeMoveUnchecked>::SoftStore]>>>;
 
         unsafe fn encode_ref_unchecked(
             &'a self,
@@ -104,14 +126,33 @@ disjoint_impls! {
             store.encode(|fields| {
                 let store = fields;
 
-                let slice = store.encode(|stores| unsafe { encode_slice_unchecked(self, stores) });
-                let data = unsafe { NonNull::new_unchecked(slice.as_ptr().cast_mut()) };
-                unsafe { Self::CType::from_shared_parts(data, self.len()) }
+                store.encode(|stores| unsafe { encode_vec_unchecked(self, self.capacity(), stores) })
+            })
+        }
+    }
+    #[cfg(feature = "alloc")]
+    unsafe impl<'a, T: ReprC<CType: CType + Copy + Sized>, __Interior: ExclusiveKind> EncodeRefUnchecked<'a> for crate::vec::Vec<T>
+    where
+        T: RustSpec<Layout = Unstable>,
+        Self: ReprC<CType = CVec<<T as ReprC>::CType>>,
+        Self: RustSpec<Mutability = Exclusive<__Interior>, Size: crate::Thin> + 'a,
+        &'a T: EncodeMoveUnchecked + ReprC<CType = CRef<<T as ReprC>::CType>>,
+    {
+        type SoftStore = RefSizedEncodeStore<Self, RefVecEncodeStore<<T as ReprC>::CType, Box<[<&'a T as EncodeMoveUnchecked>::SoftStore]>>>;
+
+        unsafe fn encode_ref_unchecked(
+            &'a self,
+            store: &mut Self::SoftStore,
+        ) -> <&'a Self as ReprC>::CType {
+            store.encode(|fields| {
+                let store = fields;
+
+                store.encode(|stores| unsafe { encode_vec_unchecked(self, self.capacity(), stores) })
             })
         }
     }
 
-    unsafe impl<'a, R: ReprC<CType: Copy>, __Interior: ExclusiveKind> EncodeRefUnchecked<'a> for Option<R>
+    unsafe impl<'a, R: ReprC<CType: CType + Copy>, __Interior: ExclusiveKind> EncodeRefUnchecked<'a> for Option<R>
     where
         R: RustSpec<Niche = WithoutNiche>,
         Self: RustSpec<Mutability = Exclusive<__Interior>, Size: crate::Thin> + 'a,
@@ -175,7 +216,7 @@ disjoint_impls! {
         }
     }
 
-    unsafe impl<'a, R: ReprC<CType: Copy>, E: ReprC<CType: Copy>, K: SizedKind, __Interior: ExclusiveKind> EncodeRefUnchecked<'a>
+    unsafe impl<'a, R: ReprC<CType: CType + Copy>, E: ReprC<CType: CType + Copy>, K: SizedKind, __Interior: ExclusiveKind> EncodeRefUnchecked<'a>
         for Result<R, E>
     where
         Self: ReprC<CType = CResult<<R as ReprC>::CType, <E as ReprC>::CType>>,
@@ -221,8 +262,6 @@ disjoint_impls! {
             })
         }
     }
-
-
 
     unsafe impl<'a, R: Niche, E: ReprC, N: LayoutKind, __Interior: ExclusiveKind> EncodeRefUnchecked<'a>
         for Result<R, E>
@@ -428,8 +467,6 @@ disjoint_impls! {
         }
     }
 
-
-
     unsafe impl<
         'a,
         T: AbiCompatible<CType: CType + Sized> + 'a,
@@ -497,15 +534,29 @@ disjoint_impls! {
     unsafe impl<'a, T: AbiCompatible + ReprC<CType: CType + Sized>, __Interior: ExclusiveKind> EncodeRef<'a> for Vec<T>
     where
         T: RustSpec<Layout = Stable, Mutability = Exclusive<__Interior>>,
-        Self: ReprC<CType: FromWideBox<[<T as ReprC>::CType]>>,
+        Self: ReprC<CType = CVec<<T as ReprC>::CType>>,
         Self: RustSpec<Mutability = Exclusive<__Interior>, Size: crate::Thin> + 'a,
     {
         type Store = RefSizedEncodeStore<Self, ()>;
 
         fn encode_ref(&'a self, store: &mut Self::Store) -> <&'a Self as ReprC>::CType {
             store.encode(|_fields| {
-                let data = unsafe { NonNull::new_unchecked(self.as_ptr().cast_mut().cast()) };
-                unsafe { Self::CType::from_shared_parts(data, self.len()) }
+                CVec::from_raw_parts(self.as_ptr().cast_mut().cast(), self.len(), self.capacity())
+            })
+        }
+    }
+    #[cfg(feature = "alloc")]
+    unsafe impl<'a, T: AbiCompatible + ReprC<CType: CType + Sized>, __Interior: ExclusiveKind> EncodeRef<'a> for crate::vec::Vec<T>
+    where
+        T: RustSpec<Layout = Stable, Mutability = Exclusive<__Interior>>,
+        Self: ReprC<CType = CVec<<T as ReprC>::CType>>,
+        Self: RustSpec<Mutability = Exclusive<__Interior>, Size: crate::Thin> + 'a,
+    {
+        type Store = RefSizedEncodeStore<Self, ()>;
+
+        fn encode_ref(&'a self, store: &mut Self::Store) -> <&'a Self as ReprC>::CType {
+            store.encode(|_fields| {
+                CVec::from_raw_parts(self.as_ptr().cast_mut().cast(), self.len(), self.capacity())
             })
         }
     }
@@ -514,15 +565,29 @@ disjoint_impls! {
     unsafe impl<'a, T: AbiCompatible + ReprC<CType: CType + Sized>, __Interior: ExclusiveKind> EncodeRef<'a> for Vec<T>
     where
         T: RustSpec<Layout = Stable, Mutability = WithInterior<Robust>>,
-        Self: ReprC<CType: FromWideBox<[<T as ReprC>::CType]>>,
+        Self: ReprC<CType = CVec<<T as ReprC>::CType>>,
         Self: RustSpec<Mutability = Exclusive<__Interior>, Size: crate::Thin> + 'a,
     {
         type Store = RefSizedEncodeStore<Self, ()>;
 
         fn encode_ref(&'a self, store: &mut Self::Store) -> <&'a Self as ReprC>::CType {
             store.encode(|_fields| {
-                let data = unsafe { NonNull::new_unchecked(self.as_ptr().cast_mut().cast()) };
-                unsafe { Self::CType::from_shared_parts(data, self.len()) }
+                CVec::from_raw_parts(self.as_ptr().cast_mut().cast(), self.len(), self.capacity())
+            })
+        }
+    }
+    #[cfg(feature = "alloc")]
+    unsafe impl<'a, T: AbiCompatible + ReprC<CType: CType + Sized>, __Interior: ExclusiveKind> EncodeRef<'a> for crate::vec::Vec<T>
+    where
+        T: RustSpec<Layout = Stable, Mutability = WithInterior<Robust>>,
+        Self: ReprC<CType = CVec<<T as ReprC>::CType>>,
+        Self: RustSpec<Mutability = Exclusive<__Interior>, Size: crate::Thin> + 'a,
+    {
+        type Store = RefSizedEncodeStore<Self, ()>;
+
+        fn encode_ref(&'a self, store: &mut Self::Store) -> <&'a Self as ReprC>::CType {
+            store.encode(|_fields| {
+                CVec::from_raw_parts(self.as_ptr().cast_mut().cast(), self.len(), self.capacity())
             })
         }
     }
@@ -531,24 +596,40 @@ disjoint_impls! {
     unsafe impl<'a, T: ReprC<CType: CType + Copy + Sized>, __Interior: ExclusiveKind> EncodeRef<'a> for Vec<T>
     where
         T: RustSpec<Layout = Unstable>,
-        Self: EncodeRefUnchecked<'a> + ReprC<CType: FromWideBox<[<T as ReprC>::CType]>>,
+        Self: EncodeRefUnchecked<'a> + ReprC<CType = CVec<<T as ReprC>::CType>>,
         Self: RustSpec<Mutability = Exclusive<__Interior>, Size: crate::Thin> + 'a,
         &'a T: EncodeMove + ReprC<CType = CRef<<T as ReprC>::CType>>,
     {
-        type Store = RefSizedEncodeStore<Self, RefWideEncodeStore<[T], Box<[<&'a T as EncodeMove>::Store]>>>;
+        type Store = RefSizedEncodeStore<Self, RefVecEncodeStore<<T as ReprC>::CType, Box<[<&'a T as EncodeMove>::Store]>>>;
 
         fn encode_ref(&'a self, store: &mut Self::Store) -> <&'a Self as ReprC>::CType {
             store.encode(|fields| {
                 let store = fields;
 
-                let slice = store.encode(|stores| encode_slice(self, stores));
-                let data = unsafe { NonNull::new_unchecked(slice.as_ptr().cast_mut()) };
-                unsafe { Self::CType::from_shared_parts(data, self.len()) }
+                store.encode(|stores| encode_vec(self, self.capacity(), stores))
+            })
+        }
+    }
+    #[cfg(feature = "alloc")]
+    unsafe impl<'a, T: ReprC<CType: CType + Copy + Sized>, __Interior: ExclusiveKind> EncodeRef<'a> for crate::vec::Vec<T>
+    where
+        T: RustSpec<Layout = Unstable>,
+        Self: EncodeRefUnchecked<'a> + ReprC<CType = CVec<<T as ReprC>::CType>>,
+        Self: RustSpec<Mutability = Exclusive<__Interior>, Size: crate::Thin> + 'a,
+        &'a T: EncodeMove + ReprC<CType = CRef<<T as ReprC>::CType>>,
+    {
+        type Store = RefSizedEncodeStore<Self, RefVecEncodeStore<<T as ReprC>::CType, Box<[<&'a T as EncodeMove>::Store]>>>;
+
+        fn encode_ref(&'a self, store: &mut Self::Store) -> <&'a Self as ReprC>::CType {
+            store.encode(|fields| {
+                let store = fields;
+
+                store.encode(|stores| encode_vec(self, self.capacity(), stores))
             })
         }
     }
 
-    unsafe impl<'a, R: ReprC<CType: Copy>, __Interior: ExclusiveKind> EncodeRef<'a> for Option<R>
+    unsafe impl<'a, R: ReprC<CType: CType + Copy>, __Interior: ExclusiveKind> EncodeRef<'a> for Option<R>
     where
         R: RustSpec<Niche = WithoutNiche>,
         Self: RustSpec<Mutability = Exclusive<__Interior>, Size: crate::Thin> + 'a,
@@ -600,7 +681,7 @@ disjoint_impls! {
         }
     }
 
-    unsafe impl<'a, R: ReprC<CType: Copy>, E: ReprC<CType: Copy>, K: SizedKind, __Interior: ExclusiveKind> EncodeRef<'a>
+    unsafe impl<'a, R: ReprC<CType: CType + Copy>, E: ReprC<CType: CType + Copy>, K: SizedKind, __Interior: ExclusiveKind> EncodeRef<'a>
         for Result<R, E>
     where
         Self: ReprC<CType = CResult<<R as ReprC>::CType, <E as ReprC>::CType>>,
@@ -793,8 +874,6 @@ disjoint_impls! {
             unsafe { CRef::from_raw(self.as_ptr().cast()) }
         }
     }
-
-
 
     unsafe impl<
         'a,
@@ -1007,4 +1086,48 @@ where
         .zip(stores.iter_mut())
         .map(|(item, store)| unsafe { crate::stored::encode_ref_field_unchecked(item, store) })
         .collect()
+}
+
+#[cfg(feature = "alloc")]
+fn encode_vec<'a, T: ReprC<CType: CType + Copy> + 'a, S: Store + Default>(
+    source: &'a [T],
+    capacity: usize,
+    stores: &mut Box<[S]>,
+) -> Vec<T::CType>
+where
+    &'a T: EncodeMove<CType = CRef<T::CType>, Store = S>,
+{
+    *stores = core::iter::repeat_with(Default::default)
+        .take(source.len())
+        .collect();
+    let mut encoded = Vec::with_capacity(capacity);
+    encoded.extend(
+        source
+            .iter()
+            .zip(stores.iter_mut())
+            .map(|(item, store)| crate::stored::encode_ref_field(item, store)),
+    );
+    encoded
+}
+
+#[cfg(feature = "alloc")]
+unsafe fn encode_vec_unchecked<'a, T: ReprC<CType: CType + Copy> + 'a, S: Store + Default>(
+    source: &'a [T],
+    capacity: usize,
+    stores: &mut Box<[S]>,
+) -> Vec<T::CType>
+where
+    &'a T: EncodeMoveUnchecked<CType = CRef<T::CType>, SoftStore = S>,
+{
+    *stores = core::iter::repeat_with(Default::default)
+        .take(source.len())
+        .collect();
+    let mut encoded = Vec::with_capacity(capacity);
+    encoded.extend(
+        source
+            .iter()
+            .zip(stores.iter_mut())
+            .map(|(item, store)| unsafe { crate::stored::encode_ref_field_unchecked(item, store) }),
+    );
+    encoded
 }

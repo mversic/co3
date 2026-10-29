@@ -2,6 +2,7 @@
 use core::result::Result as CoreResult;
 use core::{mem::MaybeUninit, ops::Add};
 
+use rust_spec::drop::NoDrop;
 use rust_spec::{
     RustSpec,
     drop::DropKind,
@@ -200,6 +201,26 @@ unsafe impl<'d, T: DecodeOwned<'d, CType: Copy>, E: DecodeOwned<'d, CType: Copy>
             }
         }
     }
+
+    unsafe fn soft_decode_unchecked<'a: 'd>(
+        source: Self::CType,
+        store: &'a mut Self::Store,
+    ) -> Self {
+        match unsafe { source.into_result_unchecked() } {
+            Ok(value) => {
+                let Ok(inner) = store.insert(Ok(Default::default())) else {
+                    unreachable!()
+                };
+                Self::Ok(unsafe { T::soft_decode_unchecked(value, inner) })
+            }
+            Err(value) => {
+                let Err(inner) = store.insert(Err(Default::default())) else {
+                    unreachable!()
+                };
+                Self::Err(unsafe { E::soft_decode_unchecked(value, inner) })
+            }
+        }
+    }
 }
 
 impl<T: Encode<CType: Copy>, E: Encode<CType: Copy>> Encode for Result<T, E> {}
@@ -283,7 +304,7 @@ impl<T: PartialOrd + Copy, E: PartialOrd + Copy> PartialOrd for CResult<T, E> {
     }
 }
 
-impl<T: Copy, E: Copy> CResult<T, E> {
+impl<T: CType + Copy, E: CType + Copy> CResult<T, E> {
     pub(crate) const fn niche() -> Self {
         Self {
             ok: CResultOk(2, MaybeUninit::zeroed()),
@@ -305,7 +326,9 @@ impl<T: Copy, E: Copy> CResult<T, E> {
             err: CResultErr(1, MaybeUninit::new(err)),
         }
     }
+}
 
+impl<T: Copy, E: Copy> CResult<T, E> {
     /// Return the stored variant tag.
     #[inline(always)]
     pub fn tag(&self) -> u8 {
@@ -327,21 +350,6 @@ impl<T: Copy, E: Copy> CResult<T, E> {
             0 => Ok(unsafe { self.ok.1.assume_init() }),
             1 => Err(unsafe { self.err.1.assume_init() }),
             _ => unsafe { core::hint::unreachable_unchecked() },
-        }
-    }
-
-    #[inline(always)]
-    fn forward_payload<U: Copy, V: Copy>(self) -> CResult<U, V> {
-        let mut output = MaybeUninit::<CResult<U, V>>::zeroed();
-
-        unsafe {
-            core::ptr::copy_nonoverlapping(
-                core::ptr::from_ref(&self).cast::<u8>(),
-                output.as_mut_ptr().cast::<u8>(),
-                core::cmp::min(size_of::<Self>(), size_of::<CResult<U, V>>()),
-            );
-
-            output.assume_init()
         }
     }
 }
@@ -372,303 +380,18 @@ where
     type __IndirectTrap = <T::__IndirectTrap as Add<E::__IndirectTrap>>::Output;
 }
 
-unsafe impl<T: Borrow + Copy, E: Borrow + Copy> Borrow for CResult<T, E>
-where
-    T::Borrowed: Copy,
-    E::Borrowed: Copy,
-{
-    type Borrowed = CResult<T::Borrowed, E::Borrowed>;
+unsafe impl<T: CType + Copy, E: CType + Copy> Borrow for CResult<T, E> {
+    type Borrowed = Self;
 
-    #[inline(always)]
-    fn borrow(self) -> Self::Borrowed {
-        match self.tag() {
-            0 => CResult::Ok(unsafe { self.ok.1.assume_init() }.borrow()),
-            1 => CResult::Err(unsafe { self.err.1.assume_init() }.borrow()),
-            _ => self.forward_payload(),
-        }
+    fn borrow(self) -> Self {
+        self
     }
-
-    #[inline(always)]
-    fn from_borrow(source: Self::Borrowed) -> Self {
-        match source.tag() {
-            0 => Self::Ok(T::from_borrow(unsafe { source.ok.1.assume_init() })),
-            1 => Self::Err(E::from_borrow(unsafe { source.err.1.assume_init() })),
-            _ => source.forward_payload(),
-        }
+    fn from_borrow(source: Self) -> Self {
+        source
     }
 }
 
-impl<T: ReprC<CType: Copy> + Copy, E: ReprC<CType: Copy> + Copy> ReprC for CResult<T, E> {
-    type CType = CResult<T::CType, E::CType>;
-}
-unsafe impl<T: EncodeMove<CType: Copy> + Copy, E: EncodeMove<CType: Copy> + Copy> EncodeMove
-    for CResult<T, E>
-where
-    Self: ReprC<CType = CResult<T::CType, E::CType>>,
-{
-    type Store = Option<CoreResult<T::Store, E::Store>>;
-
-    #[inline(always)]
-    fn soft_encode<'itm>(self, store: &'itm mut Self::Store) -> Self::CType
-    where
-        Self: 'itm,
-    {
-        match self.tag() {
-            0 => {
-                let CoreResult::Ok(store) = store.insert(CoreResult::Ok(Default::default())) else {
-                    unreachable!()
-                };
-
-                CResult::Ok(unsafe { self.ok.1.assume_init() }.soft_encode(store))
-            }
-            1 => {
-                let CoreResult::Err(store) = store.insert(CoreResult::Err(Default::default()))
-                else {
-                    unreachable!()
-                };
-
-                CResult::Err(unsafe { self.err.1.assume_init() }.soft_encode(store))
-            }
-            _ => self.forward_payload(),
-        }
-    }
-}
-unsafe impl<T: EncodeMoveUnchecked<CType: Copy> + Copy, E: EncodeMoveUnchecked<CType: Copy> + Copy>
-    EncodeMoveUnchecked for CResult<T, E>
-where
-    Self: ReprC<CType = CResult<T::CType, E::CType>>,
-{
-    type SoftStore = Option<CoreResult<T::SoftStore, E::SoftStore>>;
-
-    unsafe fn soft_encode_unchecked(self, store: &mut Self::SoftStore) -> Self::CType {
-        match self.tag() {
-            0 => {
-                let CoreResult::Ok(inner) = store.insert(Ok(Default::default())) else {
-                    unreachable!()
-                };
-
-                CResult::Ok(unsafe { self.ok.1.assume_init().soft_encode_unchecked(inner) })
-            }
-            1 => {
-                let CoreResult::Err(inner) = store.insert(Err(Default::default())) else {
-                    unreachable!()
-                };
-
-                CResult::Err(unsafe { self.err.1.assume_init().soft_encode_unchecked(inner) })
-            }
-            _ => {
-                *store = None;
-                self.forward_payload()
-            }
-        }
-    }
-}
-unsafe impl<
-    'a,
-    T: ReprC<CType: Copy> + Copy,
-    E: ReprC<CType: Copy> + Copy,
-    __Interior: ExclusiveKind,
-> EncodeRef<'a> for CResult<T, E>
-where
-    Self: RustSpec<Mutability = Exclusive<__Interior>, Size: Thin> + 'a,
-    Self: ReprC<CType = CResult<T::CType, E::CType>>,
-    &'a T: EncodeMove<CType = CRef<<T as ReprC>::CType>>,
-    &'a E: EncodeMove<CType = CRef<<E as ReprC>::CType>>,
-{
-    type Store = crate::sync::RefSizedEncodeStore<
-        Self,
-        Option<CoreResult<<&'a T as EncodeMove>::Store, <&'a E as EncodeMove>::Store>>,
-    >;
-    fn encode_ref(&'a self, store: &mut Self::Store) -> <&'a Self as ReprC>::CType {
-        store.encode(|fields| {
-            let store = fields;
-            match self.tag() {
-                0 => {
-                    let CoreResult::Ok(store) = store.insert(CoreResult::Ok(Default::default()))
-                    else {
-                        unreachable!()
-                    };
-
-                    CResult::Ok(crate::stored::encode_ref_field(
-                        unsafe { self.ok.1.assume_init_ref() },
-                        store,
-                    ))
-                }
-                1 => {
-                    let CoreResult::Err(store) = store.insert(CoreResult::Err(Default::default()))
-                    else {
-                        unreachable!()
-                    };
-
-                    CResult::Err(crate::stored::encode_ref_field(
-                        unsafe { self.err.1.assume_init_ref() },
-                        store,
-                    ))
-                }
-                _ => {
-                    *store = None;
-                    self.forward_payload()
-                }
-            }
-        })
-    }
-}
-unsafe impl<
-    'a,
-    T: ReprC<CType: Copy> + Copy,
-    E: ReprC<CType: Copy> + Copy,
-    __Interior: ExclusiveKind,
-> EncodeRefUnchecked<'a> for CResult<T, E>
-where
-    Self: RustSpec<Mutability = Exclusive<__Interior>, Size: Thin> + 'a,
-    Self: ReprC<CType = CResult<T::CType, E::CType>>,
-    &'a T: EncodeMoveUnchecked<CType = CRef<<T as ReprC>::CType>>,
-    &'a E: EncodeMoveUnchecked<CType = CRef<<E as ReprC>::CType>>,
-{
-    type SoftStore = crate::sync::RefSizedEncodeStore<
-        Self,
-        Option<
-            CoreResult<
-                <&'a T as EncodeMoveUnchecked>::SoftStore,
-                <&'a E as EncodeMoveUnchecked>::SoftStore,
-            >,
-        >,
-    >;
-    unsafe fn encode_ref_unchecked(
-        &'a self,
-        store: &mut Self::SoftStore,
-    ) -> <&'a Self as ReprC>::CType {
-        store.encode(|fields| {
-            let store = fields;
-            match self.tag() {
-                0 => {
-                    let CoreResult::Ok(inner) = store.insert(Ok(Default::default())) else {
-                        unreachable!()
-                    };
-
-                    CResult::Ok(unsafe {
-                        crate::stored::encode_ref_field_unchecked(
-                            self.ok.1.assume_init_ref(),
-                            inner,
-                        )
-                    })
-                }
-                1 => {
-                    let CoreResult::Err(inner) = store.insert(Err(Default::default())) else {
-                        unreachable!()
-                    };
-
-                    CResult::Err(unsafe {
-                        crate::stored::encode_ref_field_unchecked(
-                            self.err.1.assume_init_ref(),
-                            inner,
-                        )
-                    })
-                }
-                _ => {
-                    *store = None;
-                    self.forward_payload()
-                }
-            }
-        })
-    }
-}
-
-unsafe impl<'d, T: DecodeOwned<'d, CType: Copy> + Copy, E: DecodeOwned<'d, CType: Copy> + Copy>
-    DecodeOwned<'d> for CResult<T, E>
-where
-    Self: ReprC<CType = CResult<T::CType, E::CType>>,
-{
-    type Store = Option<CoreResult<T::Store, E::Store>>;
-
-    #[inline(always)]
-    unsafe fn soft_decode<'itm: 'd>(
-        source: Self::CType,
-        store: &'itm mut Self::Store,
-    ) -> Option<Self> {
-        match source.tag() {
-            0 => {
-                let CoreResult::Ok(store) = store.insert(CoreResult::Ok(Default::default())) else {
-                    unreachable!()
-                };
-
-                Some(Self::Ok(unsafe {
-                    T::soft_decode(source.ok.1.assume_init(), store)?
-                }))
-            }
-            1 => {
-                let CoreResult::Err(store) = store.insert(CoreResult::Err(Default::default()))
-                else {
-                    unreachable!()
-                };
-
-                Some(Self::Err(unsafe {
-                    E::soft_decode(source.err.1.assume_init(), store)?
-                }))
-            }
-            _ => Some(source.forward_payload()),
-        }
-    }
-
-    #[inline(always)]
-    unsafe fn soft_decode_unchecked<'itm: 'd>(
-        source: Self::CType,
-        store: &'itm mut Self::Store,
-    ) -> Self {
-        match source.tag() {
-            0 => {
-                let CoreResult::Ok(store) = store.insert(CoreResult::Ok(Default::default())) else {
-                    unreachable!()
-                };
-                Self::Ok(unsafe { T::soft_decode_unchecked(source.ok.1.assume_init(), store) })
-            }
-            1 => {
-                let CoreResult::Err(store) = store.insert(CoreResult::Err(Default::default()))
-                else {
-                    unreachable!()
-                };
-                Self::Err(unsafe { E::soft_decode_unchecked(source.err.1.assume_init(), store) })
-            }
-            _ => source.forward_payload(),
-        }
-    }
-}
-
-impl<T: Encode<CType: Copy> + Copy, E: Encode<CType: Copy> + Copy> Encode for CResult<T, E> where
-    Self: ReprC<CType = CResult<T::CType, E::CType>>
-{
-}
-impl<T: EncodeUnchecked<CType: Copy> + Copy, E: EncodeUnchecked<CType: Copy> + Copy> EncodeUnchecked
-    for CResult<T, E>
-where
-    Self: ReprC<CType = CResult<T::CType, E::CType>>,
-{
-}
-impl<'d, T: Decode<'d, CType: Copy> + Copy, E: Decode<'d, CType: Copy> + Copy> Decode<'d>
-    for CResult<T, E>
-where
-    Self: ReprC<CType = CResult<T::CType, E::CType>>,
-{
-}
-
-unsafe impl<T: AbiCompatible<CType: Copy> + Copy, E: AbiCompatible<CType: Copy> + Copy>
-    AbiCompatible for CResult<T, E>
-where
-    Self: ReprC<CType = CResult<T::CType, E::CType>>,
-{
-    #[inline(always)]
-    unsafe fn is_valid(target: &Self::CType) -> bool {
-        match target.tag() {
-            0 => unsafe { T::is_valid(&*target.ok.1.as_ptr()) },
-            1 => unsafe { E::is_valid(&*target.err.1.as_ptr()) },
-            _ => true,
-        }
-    }
-}
-
-unsafe impl<T: CType + Copy, E: CType + Copy> CType for CResult<T, E> {}
-unsafe impl<T: CType + Copy, E: CType + Copy> CFnArg for CResult<T, E> {}
-unsafe impl<T: CType + Copy, E: CType + Copy> CFnReturn for CResult<T, E> {}
+crate::slice::impl_identity_carrier! { CResult, [T: CType + Copy, E: CType + Copy], [T, E] }
 
 unsafe impl<T: BorrowCast<AsConst: Copy> + Copy, E: BorrowCast<AsConst: Copy> + Copy> BorrowCast
     for CResult<T, E>
@@ -683,3 +406,54 @@ unsafe impl<T: BorrowCastMut<AsMut: Copy> + Copy, E: BorrowCastMut<AsMut: Copy> 
 }
 
 unsafe impl<T: EmptyStore, E: EmptyStore> EmptyStore for CoreResult<T, E> {}
+
+unsafe impl<T, E> CType for CoreResult<T, E> where
+    Self: RustSpec<Layout = rust_spec::Stable, Trap = rust_spec::layout::Robust, Drop = NoDrop>
+{
+}
+
+unsafe impl<T, E> CFnArg for CoreResult<T, E> where
+    Self: CType + RustSpec<Size = rust_spec::size::Sized<rust_spec::Gt<rust_spec::Zero>>>
+{
+}
+unsafe impl<T, E> CFnReturn for CoreResult<T, E> where
+    Self: CType + RustSpec<Size = rust_spec::size::Sized<rust_spec::Gt<rust_spec::Zero>>>
+{
+}
+
+unsafe impl<T, E> BorrowCast for CoreResult<T, E>
+where
+    Self: CType,
+{
+    type AsConst = Self;
+}
+unsafe impl<T, E> BorrowCastMut for CoreResult<T, E>
+where
+    Self: CType,
+{
+    type AsMut = Self;
+}
+
+impl<R: Encode, E: Encode> Encode for CoreResult<R, E> where Self: EncodeMove {}
+impl<R: EncodeUnchecked, E: EncodeUnchecked> EncodeUnchecked for CoreResult<R, E> where
+    Self: EncodeMoveUnchecked
+{
+}
+impl<'d, R: Decode<'d>, E: Decode<'d>> Decode<'d> for CoreResult<R, E> where Self: DecodeOwned<'d> {}
+
+impl<T, E> From<CoreResult<T, E>> for Result<T, E> {
+    fn from(value: CoreResult<T, E>) -> Self {
+        match value {
+            Ok(value) => Self::Ok(value),
+            Err(value) => Self::Err(value),
+        }
+    }
+}
+impl<T, E> From<Result<T, E>> for CoreResult<T, E> {
+    fn from(value: Result<T, E>) -> Self {
+        match value {
+            Result::Ok(value) => Self::Ok(value),
+            Result::Err(value) => Self::Err(value),
+        }
+    }
+}

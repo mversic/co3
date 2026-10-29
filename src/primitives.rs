@@ -632,7 +632,7 @@ mod tests {
         );
         #[cfg(feature = "alloc")]
         assert_impl_all!(Vec<u8>:
-            Niche<CType = CWideBox<[u8]>>,
+            Niche<CType = crate::vec::CVec<u8>>,
             Decode<'static>,
             Encode,
         );

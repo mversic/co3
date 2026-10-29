@@ -619,7 +619,7 @@ mod tests {
         );
         #[cfg(feature = "alloc")]
         assert_impl_all!(Vec<ManuallyDrop<u8>>:
-            Niche<CType = CWideBox<[u8]>>,
+            Niche<CType = crate::vec::CVec<u8>>,
             Decode<'static>,
             Encode,
         );
@@ -674,7 +674,7 @@ mod tests {
             Niche<CType = CWideBox<[ManuallyDrop<CBox<u8>>]>>,
         );
         assert_impl_all!(Vec<ManuallyDrop<Box<u8>>>:
-            Niche<CType = CWideBox<[ManuallyDrop<CBox<u8>>]>>,
+            Niche<CType = crate::vec::CVec<ManuallyDrop<CBox<u8>>>>,
         );
         assert_impl_all!([ManuallyDrop<Box<u8>>; 2]:
             Niche<CType = [ManuallyDrop<CBox<u8>>; 2]>,
@@ -812,7 +812,7 @@ mod tests {
         );
         #[cfg(feature = "alloc")]
         assert_impl_all!(Vec<UnsafeCell<u8>>:
-            Niche<CType = CWideBoxCell<[UnsafeCell<u8>]>>,
+            Niche<CType = crate::vec::CVec<UnsafeCell<u8>>>,
             Decode<'static>,
             Encode,
         );
@@ -993,13 +993,13 @@ mod tests {
         );
         #[cfg(feature = "alloc")]
         assert_impl_all!(Vec<UnsafeCell<NonZero<u8>>>:
-            Niche<CType = CWideBoxCell<[UnsafeCell<u8>]>>,
+            Niche<CType = crate::vec::CVec<UnsafeCell<u8>>>,
             Decode<'static>,
             Encode,
         );
         #[cfg(feature = "alloc")]
         {
-            let invalid = CWideBoxCell::from_box(vec![UnsafeCell::new(0_u8)].into_boxed_slice());
+            let invalid = crate::vec::CVec::from_vec(vec![UnsafeCell::new(0_u8)]);
             assert!(unsafe { crate::decode::<Vec<UnsafeCell<NonZero<u8>>>>(invalid) }.is_none());
 
             let invalid = CWideBoxCell::from_box(vec![UnsafeCell::new(0_u8)].into_boxed_slice());

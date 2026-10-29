@@ -1,4 +1,9 @@
-use co3::{ReprC, borrow::{Borrow, Borrowed}, boxed::CBox, rust_spec::RustSpec};
+use co3::{
+    ReprC,
+    borrow::{Borrow, Borrowed},
+    boxed::CBox,
+    rust_spec::RustSpec,
+};
 
 #[derive(RustSpec, ReprC)]
 #[repr(transparent)]
