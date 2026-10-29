@@ -5,7 +5,7 @@ use rust_spec::RustSpec;
 
 use crate::{
     CFnArg, CFnReturn, CType, Decode, Encode, ReprC,
-    borrow::{Borrow, BorrowCast, BorrowCastMut, FromBorrow},
+    borrow::{Borrow, BorrowCast, BorrowCastMut},
     stored::{DecodeOwned, EncodeMove, EncodeMoveUnchecked},
     transmute::AbiCompatible,
 };
@@ -202,13 +202,12 @@ macro_rules! impl_reference_carrier {
         }
 
         unsafe impl<$($params)*> Borrow for $ty<$($args)*> {
-            type Borrowed<'itm> = Self where Self: 'itm;
-            type Owner = ();
-            fn borrow<'itm>(self, (): &mut ()) -> Self::Borrowed<'itm> where Self: 'itm { self }
+            type Borrowed = Self;
+
+            fn borrow(self) -> Self::Borrowed { self }
+            fn from_borrow(source: Self::Borrowed) -> Self { source }
         }
-        impl<'itm, $($params)*> FromBorrow<'itm> for $ty<$($args)*> {
-            fn from_borrow(source: Self) -> Self { source }
-        }
+
     };
 }
 

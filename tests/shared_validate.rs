@@ -92,9 +92,9 @@ fn shared_validation_is_transitive() {
     assert_impl_all!(&Mixed<UnsafeCell<u8>>: EncodeMove, DecodeOwned<'static>);
     assert_impl_all!(&[Mixed<UnsafeCell<u8>>]: EncodeMove, DecodeOwned<'static>);
     assert_not_impl_any!(&Mixed<UnsafeCell<NonZeroU8>>: EncodeMove, DecodeOwned<'static>);
-    assert_impl_all!(MixedView<'static, Box<UnsafeCell<NonZeroU8>>>:
+    assert_impl_all!(MixedView<Box<UnsafeCell<NonZeroU8>>>:
         RustSpec<Mutability = Exclusive<WithInterior<NonRobust>>>);
-    assert_not_impl_any!(&MixedView<'static, Box<UnsafeCell<NonZeroU8>>>: EncodeMove, DecodeOwned<'static>);
+    assert_not_impl_any!(&MixedView<Box<UnsafeCell<NonZeroU8>>>: EncodeMove, DecodeOwned<'static>);
 }
 
 #[test]

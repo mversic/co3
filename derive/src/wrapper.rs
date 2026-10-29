@@ -572,9 +572,9 @@ fn gen_wrapper_body_with_input_conversion<const DISPATCHED: bool>(
             }
         } else {
             quote! {
-                let __co3_out: Option<<#output_ty as co3::borrow::Borrow>::Borrowed<'_>> =
+                let __co3_out: Option<<#output_ty as co3::borrow::Borrow>::Borrowed> =
                     unsafe { co3::decode(__co3_out) };
-                let __co3_out = __co3_out.map(<#output_ty as co3::borrow::FromBorrow>::from_borrow);
+                let __co3_out = __co3_out.map(<#output_ty as co3::borrow::Borrow>::from_borrow);
             }
         };
 
@@ -639,7 +639,7 @@ fn gen_single_unpack_input_stmts(
         }
         let unpack_ty = match ownership_mode_for_arg(attrs, &ty) {
             OwnershipMode::ByValue => quote!(#ty),
-            OwnershipMode::Borrow => quote!(<#ty as co3::borrow::Borrow>::Borrowed<'_>),
+            OwnershipMode::Borrow => quote!(<#ty as co3::borrow::Borrow>::Borrowed),
         };
         let target_ty = ffi_fn::single_unpack_part(attrs, &ty)
             .expect("validated one-part unpack attribute")
@@ -734,12 +734,23 @@ fn gen_store_sync_stmts(inputs: &Punctuated<FnArg, syn::Token![,]>) -> TokenStre
     let mut store_sync_stmts = quote! {};
 
     for (idx, input) in inputs.iter().enumerate() {
-        let (attrs, arg_name) = match input {
-            FnArg::Typed(arg) => (&arg.attrs, item_fn_input_ident(&arg.pat).clone()),
-            FnArg::Receiver(receiver) => (&receiver.attrs, format_ident!("__co3_self")),
+        let receiver_ty;
+        let (attrs, arg_name, ty) = match input {
+            FnArg::Typed(arg) => (
+                &arg.attrs,
+                item_fn_input_ident(&arg.pat).clone(),
+                arg.ty.as_ref(),
+            ),
+            FnArg::Receiver(receiver) => {
+                receiver_ty = crate::utils::receiver_ty(receiver);
+                (&receiver.attrs, format_ident!("__co3_self"), &receiver_ty)
+            }
         };
 
-        if soft_for_arg(attrs) {
+        if soft_for_arg(attrs)
+            || (!ffi_fn::is_identity_primitive(ty)
+                && OwnershipMode::Borrow == ownership_mode_for_arg(attrs, ty))
+        {
             let store_name = gen_store_name(&arg_name);
             let cfg = crate::utils::cfg_attrs(attrs);
 
@@ -776,25 +787,18 @@ fn gen_input_conversion_stmts(inputs: &Punctuated<FnArg, syn::Token![,]>) -> Tok
         };
         let cfg = crate::utils::cfg_attrs(attrs).collect::<Vec<_>>();
         let store_name = gen_store_name(&arg_name);
-        if !ffi_fn::is_identity_primitive(ty)
-            && OwnershipMode::Borrow == ownership_mode_for_arg(attrs, ty)
-        {
-            let owner_name = format_ident!("__co3_{arg_name}_owner");
-
+        let borrowed = !ffi_fn::is_identity_primitive(ty)
+            && OwnershipMode::Borrow == ownership_mode_for_arg(attrs, ty);
+        if borrowed {
             stmts.extend(quote! {
                 #(#cfg)*
-                let mut #owner_name = Default::default();
-
-                #(#cfg)*
-                let #arg_name = co3::borrow::Borrow::borrow(
-                    #arg_name, &mut #owner_name
-                );
+                let #arg_name = co3::borrow::Borrow::borrow(#arg_name);
             });
         }
 
         stmts.extend(if ffi_fn::is_identity_primitive(ty) {
             quote! {}
-        } else if soft_for_arg(attrs) {
+        } else if soft_for_arg(attrs) || borrowed {
             quote! {
                 #(#cfg)*
                 let mut #store_name = Default::default();
@@ -832,10 +836,10 @@ fn gen_unpack_input_stmts(
             (OwnershipMode::ByValue, Some(option_ty)) => option_ty,
             (OwnershipMode::ByValue, None) => quote!(#ty),
             (OwnershipMode::Borrow, Some(option_ty)) => {
-                quote!(<#option_ty as co3::borrow::Borrow>::Borrowed<'_>)
+                quote!(<#option_ty as co3::borrow::Borrow>::Borrowed)
             }
             (OwnershipMode::Borrow, None) => {
-                quote!(<#ty as co3::borrow::Borrow>::Borrowed<'_>)
+                quote!(<#ty as co3::borrow::Borrow>::Borrowed)
             }
         };
         let (abi1_ty, abi2_ty) =

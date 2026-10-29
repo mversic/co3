@@ -31,17 +31,16 @@ pub fn gen_view_niche_ir(view_name: &syn::Ident, generics: &syn::Generics) -> To
         quote! { #owner_name <#(#owner_generics),*> }
     };
 
+    let speculative = speculative_marker(generics.params.is_empty());
     quote! {
         impl #impl_generics co3::niche::Niche for #view_name #view_ty_generics where
             #owner_ty: co3::niche::Niche,
-            <#owner_ty as co3::ReprC>::CType: co3::borrow::BorrowCast<
-                AsConst = <Self as co3::ReprC>::CType
-            >,
+            #speculative Self: co3::ReprC<CType: Copy>,
             #predicates
         {
-            const NICHE: Self::CType = co3::borrow::borrow_cast(
-                <#owner_ty as co3::niche::Niche>::NICHE
-            );
+            const NICHE: Self::CType = unsafe { core::mem::transmute_copy(
+                &<#owner_ty as co3::niche::Niche>::NICHE
+            ) };
         }
     }
 }

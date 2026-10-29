@@ -344,7 +344,6 @@ fn add_generic_companion_bounds(
         if !detector.type_mentions_param(ty) {
             continue;
         }
-        predicates.push(parse_quote!(#ty: co3::ReprC));
         let mut lifetimes = Lifetimes(Vec::new());
         lifetimes.visit_type(ty);
         let decode_lifetime = (lifetimes.0.len() == 1).then(|| lifetimes.0.remove(0));
@@ -367,42 +366,27 @@ fn add_generic_companion_bounds(
             }
         } else {
             predicates.push(parse_quote!(#ty: co3::borrow::Borrow));
-            predicates.push(parse_quote!(
-                <#ty as co3::ReprC>::CType: co3::borrow::BorrowCast
-            ));
-            predicates.push(parse_quote!(for<'__co3_d> #ty: co3::borrow::FromBorrow<'__co3_d>));
-            if soft_for_arg(&arg.attrs) {
-                predicates.push(parse_quote!(
-                    for<'__co3_d> <#ty as co3::borrow::Borrow>::Borrowed<'__co3_d>:
-                        co3::Decode<
-                            '__co3_d,
-                            CType = <<#ty as co3::ReprC>::CType as co3::borrow::BorrowCast>::AsConst,
-                        >
-                ));
+            let borrowed = quote!(<#ty as co3::borrow::Borrow>::Borrowed);
+            let store_bound =
+                (!soft_for_arg(&arg.attrs)).then(|| quote!(, Store: co3::stored::EmptyStore));
+            if let Some(lifetime) = decode_lifetime {
+                predicates
+                    .push(parse_quote!(#borrowed: co3::Decode<#lifetime #store_bound> + #lifetime));
             } else {
-                predicates.push(parse_quote!(
-                    for<'__co3_d> <#ty as co3::borrow::Borrow>::Borrowed<'__co3_d>:
-                        co3::Decode<
-                            '__co3_d,
-                            CType = <<#ty as co3::ReprC>::CType as co3::borrow::BorrowCast>::AsConst,
-                            Store: co3::stored::EmptyStore,
-                        >
-                ));
+                predicates.push(
+                    parse_quote!(for<'__co3_d> #borrowed: co3::Decode<'__co3_d #store_bound>),
+                );
             }
         }
     }
     if let syn::ReturnType::Type(_, ty) = &source_sig.output
         && detector.type_mentions_param(ty)
     {
-        predicates.push(parse_quote!(#ty: co3::Encode<Store: co3::stored::EmptyStore>));
-        if !fn_by_val {
-            predicates.push(parse_quote!(
-                <#ty as co3::ReprC>::CType:
-                    co3::borrow::BorrowCast<AsConst: Sized>
-            ));
-            predicates.push(parse_quote!(
-                #ty: co3::borrow::Borrow<Owner: co3::stored::EmptyStore>
-            ));
+        if fn_by_val {
+            predicates.push(parse_quote!(#ty: co3::Encode<Store: co3::stored::EmptyStore>));
+        } else {
+            predicates.push(parse_quote!(#ty: co3::borrow::Borrow));
+            predicates.push(parse_quote!(<#ty as co3::borrow::Borrow>::Borrowed: co3::Encode<Store: co3::stored::EmptyStore>));
         }
     }
     raw_sig

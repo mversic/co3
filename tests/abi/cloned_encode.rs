@@ -69,12 +69,12 @@ fn shared_and_borrowed_encoding_clone_once_and_sync_nested_state() {
     assert_eq!(store.sync(), Some(()));
 
     let mut store = Default::default();
-    assert_eq!(Borrowed(Probe(9)).soft_encode(&mut store).0, 9);
+    assert_eq!(Borrowed::into_inner(Borrowed::new(Probe(9)).soft_encode(&mut store)), 9);
     assert_eq!(store.sync(), Some(()));
 
     let mut store = Default::default();
-    let encoded = unsafe { Borrowed(Probe(10)).soft_encode_unchecked(&mut store) };
-    assert_eq!(encoded.0, 10);
+    let encoded = unsafe { Borrowed::new(Probe(10)).soft_encode_unchecked(&mut store) };
+    assert_eq!(Borrowed::into_inner(encoded), 10);
     assert_eq!(store.sync(), Some(()));
 
     assert_eq!(CLONES.load(Ordering::Relaxed), 4);

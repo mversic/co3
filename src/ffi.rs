@@ -13,7 +13,7 @@ use rust_spec::RustSpec;
 
 use crate::{
     CFnArg, CFnReturn, CType, Decode, Encode, ReprC,
-    borrow::{Borrow, BorrowCast, BorrowCastMut, FromBorrow},
+    borrow::{Borrow, BorrowCast, BorrowCastMut},
     primitives::primitive_derive,
     stored::{DecodeOwned, EncodeMove, EncodeMoveUnchecked},
     transmute::AbiCompatible,
@@ -570,24 +570,17 @@ impl Niche for CString {
 }
 
 unsafe impl Borrow for c_void {
-    type Borrowed<'itm>
-        = Self
-    where
-        Self: 'itm;
-    type Owner = ();
+    type Borrowed = Self;
 
-    fn borrow<'itm>(self, (): &mut ()) -> Self::Borrowed<'itm>
-    where
-        Self: 'itm,
-    {
+    fn borrow(self) -> Self::Borrowed {
         self
     }
-}
-impl<'itm> FromBorrow<'itm> for c_void {
+
     fn from_borrow(source: Self) -> Self {
         source
     }
 }
+
 impl ReprC for c_void {
     type CType = Self;
 }

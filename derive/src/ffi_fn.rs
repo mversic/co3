@@ -243,9 +243,9 @@ pub(crate) fn gen_definition_body(
             #(#arg_names),*
         );
 
+        let __co3_encoded_output = #output;
         #sync_check
-
-        #output
+        __co3_encoded_output
     }}
 }
 
@@ -302,7 +302,7 @@ fn gen_pack_input_stmts(
 
 pub(crate) fn gen_abi_return_encode(value: TokenStream, borrow_output: bool) -> TokenStream {
     if borrow_output {
-        quote!(co3::borrow::borrow_cast(co3::encode(#value)))
+        quote!(co3::encode(co3::borrow::Borrow::borrow(#value)))
     } else {
         quote!(co3::encode(#value))
     }
@@ -420,7 +420,7 @@ pub(crate) fn gen_return_borrow_check(return_ty: &syn::Type, fn_by_val: bool) ->
     quote! {
         const {
             assert!(
-                co3::impls!((#return_ty): co3::borrow::Borrow<Owner: co3::stored::EmptyStore>),
+                co3::impls!((<#return_ty as co3::borrow::Borrow>::Borrowed): co3::Encode<Store: co3::stored::EmptyStore>),
                 "Mark the return type with `move` to transfer ownership",
             );
         }
@@ -751,7 +751,7 @@ fn borrowed_arg_ty(attrs: &[syn::Attribute], arg_ty: &Type) -> TokenStream {
     match ownership_mode_for_arg(attrs, arg_ty) {
         OwnershipMode::ByValue => quote!(#arg_ty),
         OwnershipMode::Borrow => quote! {
-            <#arg_ty as co3::borrow::Borrow>::Borrowed<'_>
+            <#arg_ty as co3::borrow::Borrow>::Borrowed
         },
     }
 }
@@ -829,7 +829,7 @@ pub(crate) fn gen_input_decode_stmts<'a>(
         let from_borrow = match ownership_mode_for_arg(attrs, &arg_ty) {
             OwnershipMode::ByValue => quote!(#arg_name),
             OwnershipMode::Borrow => quote! {
-                #arg_name.map(co3::borrow::FromBorrow::from_borrow)
+                #arg_name.map(co3::borrow::Borrow::from_borrow)
             },
         };
 
@@ -1142,10 +1142,19 @@ pub(crate) fn lower_abi_fn_signature(
     failure_mode: FailureMode,
     move_fn: bool,
 ) -> syn::Signature {
+    let mut sig = sig;
+    explicitize_signature_lifetimes(&mut sig);
+    let borrowed_output = if !move_fn {
+        match &sig.output {
+            syn::ReturnType::Type(_, ty) if !is_identity_primitive(ty) => Some(ty.clone()),
+            _ => None,
+        }
+    } else {
+        None
+    };
     let mut sig = lower_extern_fn_signature(sig, failure_mode);
-    if !move_fn && let syn::ReturnType::Type(_, return_ty) = &mut sig.output {
-        let c_type = return_ty.as_ref();
-        **return_ty = parse_quote!(<#c_type as co3::borrow::BorrowCast>::AsConst);
+    if let Some(ty) = borrowed_output {
+        sig.output = parse_quote!(-> <<#ty as co3::borrow::Borrow>::Borrowed as co3::ReprC>::CType);
     }
     sig
 }
@@ -1435,7 +1444,7 @@ pub(crate) fn item_fn_input_arg_type(attrs: &[syn::Attribute], arg_ty: &Type) ->
     match ownership_mode_for_arg(attrs, arg_ty) {
         OwnershipMode::ByValue => quote! { #c_type },
         OwnershipMode::Borrow => quote! {
-            <#c_type as co3::borrow::BorrowCast>::AsConst
+            <<#arg_ty as co3::borrow::Borrow>::Borrowed as co3::ReprC>::CType
         },
     }
 }
@@ -1479,7 +1488,8 @@ fn is_implicitly_by_value(ty: &Type) -> bool {
     }
 
     match ty {
-        Type::Reference(_) | Type::Ptr(_) | Type::FnPtr(_) => true,
+        Type::Reference(_) => false,
+        Type::Ptr(_) | Type::FnPtr(_) => true,
         Type::Path(path) => {
             copy_primitive_type(path).is_some()
                 || option_inner_type(ty).is_some_and(is_implicitly_by_value)
@@ -1799,17 +1809,11 @@ mod tests {
     fn selects_implicit_by_value_argument_types_during_generation() {
         let by_value: &[Type] = &[
             parse_quote!(<dyn Trait>::TAG),
-            parse_quote!(&u8),
-            parse_quote!(&mut str),
             parse_quote!(*const u8),
             parse_quote!(unsafe extern "C" fn(u8) -> u16),
             parse_quote!(u32),
             parse_quote!(bool),
             parse_quote!(core::primitive::char),
-            parse_quote!(Option<&u8>),
-            parse_quote!(Option<Option<&u8>>),
-            parse_quote!((<dyn Trait>::TAG, Option<&u8>, (u32, fn()))),
-            parse_quote!((&u8)),
         ];
 
         for ty in by_value {
@@ -1833,6 +1837,14 @@ mod tests {
     fn leaves_other_argument_types_borrowed_by_default() {
         let borrowed: &[Type] = &[
             parse_quote!(String),
+            parse_quote!(&u8),
+            parse_quote!(&mut str),
+            parse_quote!(Option<&u8>),
+            parse_quote!(Option<Option<&u8>>),
+            parse_quote!(Option<&mut u8>),
+            parse_quote!((<dyn Trait>::TAG, Option<&u8>, (u32, fn()))),
+            parse_quote!((&u8)),
+            parse_quote!((&u8, &mut u8)),
             parse_quote!(Option<String>),
             parse_quote!((&u8, String)),
             parse_quote!([u8; 4]),
@@ -1852,6 +1864,14 @@ mod tests {
         let attrs = [parse_quote!(#[by_val])];
         assert_eq!(
             ownership_mode_for_arg(&attrs, &parse_quote!(String)),
+            OwnershipMode::ByValue,
+        );
+        assert_eq!(
+            ownership_mode_for_arg(&attrs, &parse_quote!(&mut u8)),
+            OwnershipMode::ByValue,
+        );
+        assert_eq!(
+            ownership_mode_for_arg(&attrs, &parse_quote!(&u8)),
             OwnershipMode::ByValue,
         );
     }

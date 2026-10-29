@@ -2,27 +2,25 @@ use proc_macro2::TokenStream;
 use quote::{format_ident, quote};
 use syn::{Ident, parse_quote};
 
-use crate::{
-    layout::{
-        ReprCAttrs, VariantReprCAttrs,
-        attr::ReprKind,
-        borrow::{
-            either_variant_name, gen_borrow_cast_eq_bounds, gen_const_view_name, gen_either_name,
-            gen_identity_borrow_impls, gen_item_borrow_impls, gen_item_view, gen_view_ctype_name,
-            gen_view_owner_name,
-        },
-        ctype::{
-            TailClass, UnsizedTail, c_fn_last_field_bounds, classify_tail, gen_ctype_name,
-            gen_extern_c_bounds_for_ctype, gen_fieldless_enum_ctype, gen_identity_borrow_cast_impl,
-            gen_identity_repr_c_impls, gen_item_ctype, gen_union_fields, gen_variant_struct_name,
-        },
-        enum_tag_type, enum_variant_tag_exprs, generic_param_idents, infer_repr,
-        is_exhaustive_enum, is_parametrized, is_phantom_data, is_transparent_enum_repr,
-        niche::{gen_enum_niche_ir, gen_struct_niche_ir, gen_view_niche_ir},
-        primitive_tag_type,
-        reference::{encoder_names, group_aggregate_ref_impls},
+use crate::utils::speculative_marker;
+use crate::layout::reference::{encoder_names, group_aggregate_ref_impls};
+
+use crate::layout::{
+    ReprCAttrs, VariantReprCAttrs,
+    attr::ReprKind,
+    borrow::{
+        either_variant_name, gen_const_view_name, gen_either_name, gen_identity_borrow_impls,
+        gen_item_borrow_impls, gen_item_view, gen_view_ctype_name, gen_view_owner_name,
     },
-    utils::speculative_marker,
+    ctype::{
+        TailClass, UnsizedTail, classify_tail, c_fn_last_field_bounds, gen_ctype_name, gen_extern_c_bounds_for_ctype,
+        gen_fieldless_enum_ctype, gen_identity_borrow_cast_impl, gen_identity_repr_c_impls,
+        gen_item_ctype, gen_union_fields, gen_variant_struct_name,
+    },
+    enum_tag_type, enum_variant_tag_exprs, generic_param_idents, infer_repr, is_exhaustive_enum,
+    is_parametrized, is_phantom_data, is_transparent_enum_repr,
+    niche::{gen_enum_niche_ir, gen_struct_niche_ir, gen_view_niche_ir},
+    primitive_tag_type,
 };
 
 pub(super) fn derive_item(
@@ -79,36 +77,7 @@ pub(super) fn derive_item(
         (!is_view && !is_wide_data).then(|| gen_item_view(input, attrs, variant_attrs, repr));
 
     let mut bounded_impl_input = input.clone();
-    if is_view {
-        let owner_name = gen_view_owner_name(&input.ident);
-        let has_view_lifetime = matches!(
-            input.generics.params.first(),
-            Some(syn::GenericParam::Lifetime(param)) if param.lifetime.ident == "_dšč"
-        );
-        let owner_args = generic_param_idents(
-            input
-                .generics
-                .params
-                .iter()
-                .skip(has_view_lifetime as usize),
-        )
-        .collect::<Vec<_>>();
-        let owner_type = if owner_args.is_empty() {
-            quote!(#owner_name)
-        } else {
-            quote!(#owner_name <#(#owner_args),*>)
-        };
-        // The generated view lifetime is not an argument of the owner type.
-        let speculative = speculative_marker(owner_args.is_empty());
-        bounded_impl_input
-            .generics
-            .make_where_clause()
-            .predicates
-            .push(parse_quote!(
-                #speculative #owner_type:
-                    co3::rust_spec::RustSpec<Drop = co3::rust_spec::drop::AutoDrop>
-            ));
-    } else if is_wide_data {
+    if is_wide_data {
         let syn::Data::Struct(data) = &input.data else {
             unreachable!("wide data is a struct")
         };
@@ -125,18 +94,60 @@ pub(super) fn derive_item(
             .predicates
             .push(parse_quote!(#speculative #header_ty: co3::ReprC<CType: Sized>));
     }
+    if is_view {
+        let fields: Vec<_> = match &input.data {
+            syn::Data::Struct(data) => data.fields.iter().collect(),
+            syn::Data::Enum(data) => data.variants.iter().flat_map(|v| v.fields.iter()).collect(),
+            syn::Data::Union(_) => unreachable!(),
+        };
+        for field in fields {
+            let ty = &field.ty;
+            if is_phantom_data(ty) {
+                continue;
+            }
+            let speculative = speculative_marker(!is_parametrized(ty, &input.generics));
+            bounded_impl_input
+                .generics
+                .make_where_clause()
+                .predicates
+                .push(parse_quote!(#speculative #ty: co3::ReprC<CType: Sized>));
+        }
+    }
     let impl_input = if is_view || is_wide_data {
         &bounded_impl_input
     } else {
         input
     };
-    let ctype_def = (!is_view).then(|| {
-        let ctype_input = if is_wide_data { impl_input } else { input };
-        gen_item_ctype(repr, alignment, ctype_input, !is_wide_data)
+    let ctype_def = Some({
+        let ctype_input = if is_wide_data || is_view {
+            impl_input
+        } else {
+            input
+        };
+        gen_item_ctype(
+            repr,
+            alignment,
+            ctype_input,
+            !is_wide_data,
+            !is_wide_data && !is_view,
+            !is_wide_data && !is_view,
+        )
     });
 
+    let mut codec_input = impl_input.clone();
+    if is_view {
+        let owner_name = gen_view_owner_name(&input.ident);
+        let (_, owner_args, _) = input.generics.split_for_impl();
+        let speculative = speculative_marker(input.generics.params.is_empty());
+        codec_input.generics.make_where_clause().predicates.push(parse_quote!(
+            #speculative #owner_name #owner_args: co3::rust_spec::RustSpec<Drop = co3::rust_spec::drop::AutoDrop>
+        ));
+    }
+    let impl_input = &codec_input;
     let borrow_impls = (!is_view && !is_wide_data).then(|| gen_item_borrow_impls(input));
-    let codec_impls = gen_item_codec_impls(repr, impl_input, attrs, variant_attrs);
+    let mut codec_attrs = attrs.clone();
+    codec_attrs.is_view = false;
+    let codec_impls = gen_item_codec_impls(repr, impl_input, &codec_attrs, variant_attrs);
     let niche_impls = if is_view {
         attrs
             .niche_value
@@ -148,7 +159,7 @@ pub(super) fn derive_item(
 
     let repr_c_impls = repr
         .is_some()
-        .then(|| gen_item_repr_c_impls(repr, impl_input, attrs, variant_attrs));
+        .then(|| gen_item_repr_c_impls(repr, impl_input, &codec_attrs, variant_attrs));
 
     quote! {
         #ctype_def
@@ -182,10 +193,7 @@ fn gen_item_niche_impls(
 }
 
 #[derive(Clone, Copy, PartialEq, Eq)]
-enum EncodeMode {
-    Owned,
-    Ref,
-}
+enum EncodeMode { Owned, Ref }
 
 fn gen_item_codec_impls(
     repr: Option<&ReprKind>,
@@ -1013,10 +1021,7 @@ fn gen_repr_c_impls(
     let predicates = where_clause.as_ref().map(|w| &w.predicates);
     let checked_transmute_bounds = gen_checked_transmute_bounds(generics, fields);
     let (borrow_cast_bounds, cast_eq_bounds) = if is_view {
-        (
-            gen_borrow_cast_view_bounds(generics, fields),
-            gen_borrow_cast_eq_bounds(fields),
-        )
+        (Vec::<TokenStream>::new(), quote! {})
     } else {
         (vec![], quote! {})
     };
@@ -1090,11 +1095,11 @@ fn gen_record_is_valid(
         .zip(field_types)
         .filter(|(_, field_ty)| !is_phantom_data(field_ty))
         .map(|(field_name, field_ty)| {
-            quote! {
-                if !unsafe { <#field_ty as co3::transmute::AbiCompatible>::is_valid(#field_name)} {
-                    return false;
+                quote! {
+                    if !unsafe { <#field_ty as co3::transmute::AbiCompatible>::is_valid(#field_name)} {
+                        return false;
+                    }
                 }
-            }
         });
 
     quote! { #(#field_validation)*
@@ -1121,7 +1126,15 @@ pub(super) fn derive_fieldless_enum(
             .make_where_clause()
             .predicates
             .push(parse_quote!(
-                #name #ty_generics: co3::rust_spec::RustSpec<Drop = co3::rust_spec::drop::NoDrop>
+                #name #ty_generics: co3::rust_spec::RustSpec
+            ));
+        bounded_generics
+            .make_where_clause()
+            .predicates
+            .push(parse_quote!(
+                <#name #ty_generics as co3::rust_spec::RustSpec>::Drop:
+                    core::ops::Add<co3::rust_spec::drop::AutoDrop,
+                        Output = co3::rust_spec::drop::AutoDrop>
             ));
     }
     let generics = &bounded_generics;
@@ -1667,11 +1680,8 @@ fn gen_codec_impls(
 
     let encode_owned_bounds =
         gen_field_encode_bounds(generics, fields, quote! { co3::stored::EncodeMove });
-    let direct_encode_bounds = gen_field_encode_bounds(
-        generics,
-        fields,
-        quote! { co3::stored::EncodeMoveUnchecked },
-    );
+    let direct_encode_bounds =
+        gen_field_encode_bounds(generics, fields, quote! { co3::stored::EncodeMoveUnchecked });
     let decode_owned_bounds =
         gen_field_decode_bounds(generics, fields, quote! { co3::stored::DecodeOwned });
 
@@ -1686,10 +1696,7 @@ fn gen_codec_impls(
     };
 
     let (borrow_cast_bounds, cast_eq_bounds) = if is_view {
-        (
-            gen_borrow_cast_view_bounds(generics, fields),
-            gen_borrow_cast_eq_bounds(fields),
-        )
+        (Vec::<TokenStream>::new(), quote! {})
     } else {
         (vec![], quote! {})
     };
@@ -1896,42 +1903,4 @@ fn decode_store_type(fields: &syn::Fields) -> TokenStream {
     });
 
     quote!((#(#fields,)*))
-}
-
-fn gen_borrow_cast_view_bounds(
-    generics: &syn::Generics,
-    fields: &[&syn::Type],
-) -> Vec<TokenStream> {
-    let Some((last, fields)) = fields.split_last() else {
-        return vec![];
-    };
-
-    fn borrow_ty(field_ty: &syn::Type) -> &syn::Type {
-        match field_ty {
-            syn::Type::Path(syn::TypePath {
-                qself: Some(syn::QSelf { ty, .. }),
-                ..
-            }) => ty,
-            _ => unreachable!(),
-        }
-    }
-
-    let mut predicates = fields
-        .iter()
-        .filter(|ty| !is_phantom_data(ty))
-        .map(|ty| borrow_ty(ty))
-        .filter(|ty| is_parametrized(ty, generics))
-        .map(
-            |ty| quote! { #ty: co3::ReprC<CType: co3::borrow::BorrowCast<AsConst: Sized> + Sized> },
-        )
-        .collect::<Vec<_>>();
-
-    if !is_phantom_data(last) {
-        let last = borrow_ty(last);
-        if is_parametrized(last, generics) {
-            predicates.push(quote!(#last: co3::ReprC<CType: co3::borrow::BorrowCast>));
-        }
-    }
-
-    predicates
 }

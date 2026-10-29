@@ -416,7 +416,7 @@ fn synthesize_dispatch_export_fn(
     declared_types: &std::collections::BTreeSet<syn::Ident>,
     emission: DispatchEmission<'_>,
 ) -> TokenStream {
-    let layout_checks = gen_dispatch_erased_layout_checks(generics, &sig, dispatch_args);
+    let layout_checks = gen_dispatch_erased_layout_checks(generics, &sig, dispatch_args, attrs.iter().any(ffi_fn::is_by_val_attr));
 
     // Static parameters have already been substituted by the caller. What
     // remains is the generic signature used to synthesize dynamic match arms
@@ -622,6 +622,7 @@ pub(crate) fn gen_dispatch_erased_layout_checks(
     generics: &syn::Generics,
     sig: &syn::Signature,
     args: &DispatchGroups,
+    fn_by_val: bool,
 ) -> TokenStream {
     let layout_param_detector = ParamUseDetector::new(
         generics
@@ -669,6 +670,19 @@ pub(crate) fn gen_dispatch_erased_layout_checks(
         let ReturnType::Type(_, output_ty) = &sig.output else {
             return;
         };
+
+        // Check the actual return carriers used by dispatch retyping, in addition
+        // to the underlying value and pointee layouts checked below.
+        if layout_param_detector.type_mentions_param(output_ty) {
+            let mut concrete_output = output_ty.as_ref().clone();
+            DispatchMonomorphizer::for_dispatch_group(generics, selections)
+                .visit_type_mut(&mut concrete_output);
+            let erased_output = ErasedParamReplacer::new(generics).replace(output_ty.as_ref().clone());
+            checks.extend(dispatch_layout_checks([((
+                dispatch_return_type(&concrete_output, fn_by_val),
+                dispatch_return_type(&erased_output, fn_by_val),
+            ), output_ty.span())]));
+        }
 
         for layout_ty in dispatch_layout_check_tys(output_ty, &layout_param_detector) {
             let span = layout_ty.span();
@@ -951,19 +965,11 @@ fn synthesize_dispatch_arms(
             gen_definition_body(arm_sig, quote!(#check_callee), fn_by_val, failure_mode)
         };
         let mut arm_body: syn::Block = if let ReturnType::Type(_, output_ty) = &retype_sig.output {
-            let mut concrete_ty = item_fn_output_type(output_ty);
-            monomorphizer.visit_type_mut(&mut concrete_ty);
-
-            let erased_ty =
-                ErasedParamReplacer::new(generics).replace(item_fn_output_type(output_ty));
-            let (concrete_ty, erased_ty) = if fn_by_val {
-                (concrete_ty, erased_ty)
-            } else {
-                (
-                    parse_quote!(<#concrete_ty as co3::borrow::BorrowCast>::AsConst),
-                    parse_quote!(<#erased_ty as co3::borrow::BorrowCast>::AsConst),
-                )
-            };
+            let mut concrete_output = output_ty.as_ref().clone();
+            monomorphizer.visit_type_mut(&mut concrete_output);
+            let erased_output = ErasedParamReplacer::new(generics).replace(output_ty.as_ref().clone());
+            let concrete_ty = dispatch_return_type(&concrete_output, fn_by_val);
+            let erased_ty = dispatch_return_type(&erased_output, fn_by_val);
             let erased_out = gen_retype(&quote!(__co3_arm_out), &concrete_ty, &erased_ty);
 
             let erased_err = match failure_mode {
@@ -1242,24 +1248,23 @@ pub(crate) fn set_token_stream_span(tokens: TokenStream, span: Span) -> TokenStr
         .collect()
 }
 
+fn dispatch_return_type(ty: &syn::Type, fn_by_val: bool) -> syn::Type {
+    if fn_by_val || ffi_fn::is_identity_primitive(ty) {
+        item_fn_output_type(ty)
+    } else {
+        parse_quote!(<<#ty as co3::borrow::Borrow>::Borrowed as co3::ReprC>::CType)
+    }
+}
+
 pub(crate) fn gen_return_derase_expr(
     generics: &syn::Generics,
     output_ty: &syn::Type,
     value: TokenStream,
     fn_by_val: bool,
 ) -> TokenStream {
-    let concrete_ty = item_fn_output_type(output_ty);
     let erased_output_ty = ErasedParamReplacer::new(generics).replace(output_ty.clone());
-    let erased_ty = item_fn_output_type(&erased_output_ty);
-
-    let (concrete_ty, erased_ty) = if fn_by_val {
-        (concrete_ty, erased_ty)
-    } else {
-        (
-            parse_quote!(<#concrete_ty as co3::borrow::BorrowCast>::AsConst),
-            parse_quote!(<#erased_ty as co3::borrow::BorrowCast>::AsConst),
-        )
-    };
+    let concrete_ty = dispatch_return_type(output_ty, fn_by_val);
+    let erased_ty = dispatch_return_type(&erased_output_ty, fn_by_val);
 
     gen_retype(&value, &erased_ty, &concrete_ty)
 }

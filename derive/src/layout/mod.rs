@@ -20,7 +20,7 @@ mod wide;
 
 const FFI_TYPE_ATTR: &str = "repr_c";
 
-#[derive(Default)]
+#[derive(Clone, Default)]
 pub(super) struct ReprCAttrs {
     pub(super) niche_value: Option<syn::Expr>,
     pub(super) is_valid: Option<syn::ExprClosure>,
