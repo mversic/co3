@@ -1,4 +1,5 @@
 //! Regression tests for paths that must not invoke field converters.
+use crate::transmute::AbiCompatibleValidate;
 use crate::{
     ReprC,
     primitives::CBool,
@@ -15,11 +16,12 @@ impl ReprC for Direct {
     type CType = u8;
 }
 // SAFETY: Direct is a transparent, robust u8.
-unsafe impl AbiCompatible for Direct {
+unsafe impl AbiCompatibleValidate for Direct {
     unsafe fn is_valid(_: &u8) -> bool {
         true
     }
 }
+unsafe impl AbiCompatible for Direct {}
 // These deliberately panic: aggregate fast paths must not invoke them.
 unsafe impl EncodeMoveUnchecked for Direct {
     type SoftStore = ();
@@ -179,11 +181,12 @@ fn manually_drop_robust_interior_decodes_without_visiting_payload() {
         type CType = UnsafeCell<u8>;
     }
     // SAFETY: Interior is a transparent wrapper around its carrier.
-    unsafe impl AbiCompatible for Interior {
+    unsafe impl AbiCompatibleValidate for Interior {
         unsafe fn is_valid(_: &Self::CType) -> bool {
             panic!("visited robust interior validator")
         }
     }
+    unsafe impl AbiCompatible for Interior {}
     unsafe impl<'d> DecodeOwned<'d> for Interior {
         type Store = ();
         unsafe fn soft_decode<'itm: 'd>(_: Self::CType, _: &'itm mut ()) -> Option<Self> {

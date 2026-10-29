@@ -1,5 +1,6 @@
 #[cfg(feature = "alloc")]
 use crate::stored::Owned;
+use crate::transmute::AbiCompatibleValidate;
 use crate::{
     CFnArg, CFnReturn, CType, Decode, Encode, EncodeUnchecked, ReprC,
     borrow::{Borrow, BorrowCast, BorrowCastMut, Borrowed},
@@ -77,12 +78,13 @@ macro_rules! non_zero_derive {
         impl EncodeUnchecked for NonZero<$primitive> {}
         impl Encode for NonZero<$primitive> {}
 
-        unsafe impl AbiCompatible for NonZero<$primitive> {
+        unsafe impl AbiCompatibleValidate for NonZero<$primitive> {
             #[inline(always)]
             unsafe fn is_valid(target: &Self::CType) -> bool {
                 *target != 0
             }
         }
+unsafe impl AbiCompatible for NonZero<$primitive> {}
 
         impl Niche for NonZero<$primitive> {
             const NICHE: Self::CType = 0;
@@ -142,12 +144,13 @@ impl Decode<'_> for () {}
 impl EncodeUnchecked for () {}
 impl Encode for () {}
 
-unsafe impl AbiCompatible for () {
+unsafe impl AbiCompatibleValidate for () {
     #[inline(always)]
     unsafe fn is_valid(_: &Self::CType) -> bool {
         true
     }
 }
+unsafe impl AbiCompatible for () {}
 
 unsafe impl CType for () {}
 unsafe impl CFnReturn for () {}
@@ -176,12 +179,13 @@ unsafe impl<T: ?Sized> Borrow for PhantomData<T> {
 impl<T: ?Sized> ReprC for PhantomData<T> {
     type CType = Self;
 }
-unsafe impl<T: ?Sized> AbiCompatible for PhantomData<T> {
+unsafe impl<T: ?Sized> AbiCompatibleValidate for PhantomData<T> {
     #[inline(always)]
     unsafe fn is_valid(_: &Self::CType) -> bool {
         true
     }
 }
+unsafe impl<T: ?Sized> AbiCompatible for PhantomData<T> {}
 unsafe impl<T: ?Sized> EncodeMove for PhantomData<T> {
     type Store = ();
 
@@ -288,7 +292,7 @@ impl<T: CType + ?Sized> Decode<'_> for NonNull<T> {}
 impl<T: CType + ?Sized> EncodeUnchecked for NonNull<T> {}
 impl<T: CType + ?Sized> Encode for NonNull<T> {}
 
-unsafe impl<T: CType + ?Sized> AbiCompatible for NonNull<T>
+unsafe impl<T: CType + ?Sized> AbiCompatibleValidate for NonNull<T>
 where
     T: RustSpec<Size: crate::Thin>,
     Self: ReprC<CType = *mut T>,
@@ -297,6 +301,12 @@ where
     unsafe fn is_valid(target: &Self::CType) -> bool {
         !target.is_null()
     }
+}
+unsafe impl<T: CType + ?Sized> AbiCompatible for NonNull<T>
+where
+    T: RustSpec<Size: crate::Thin>,
+    Self: ReprC<CType = *mut T>,
+{
 }
 #[cfg(feature = "alloc")]
 impl Owned for str {
@@ -456,12 +466,13 @@ impl<T: AbiCompatible<CType: Sized>> EncodeUnchecked for MaybeUninit<T> {}
 impl<T: AbiCompatible<CType: Sized> + EncodeMove<Store: EmptyStore>> Encode for MaybeUninit<T> {}
 
 // TODO: Technically all bits are valid, but using T: CType feels safer
-unsafe impl<T: AbiCompatible<CType: Sized>> AbiCompatible for MaybeUninit<T> {
+unsafe impl<T: AbiCompatible<CType: Sized>> AbiCompatibleValidate for MaybeUninit<T> {
     #[inline(always)]
     unsafe fn is_valid(_: &Self::CType) -> bool {
         true
     }
 }
+unsafe impl<T: AbiCompatible<CType: Sized>> AbiCompatible for MaybeUninit<T> {}
 
 unsafe impl<T: CType> CType for MaybeUninit<T> {}
 unsafe impl<T: CFnArg> CFnArg for MaybeUninit<T> where

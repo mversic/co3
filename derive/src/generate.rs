@@ -3378,12 +3378,13 @@ fn gen_extern_type_impls(
             #tag_impl
 
             unsafe impl #impl_generics co3::CType for #ident #ty_generics #where_clause {}
-            unsafe impl #impl_generics co3::transmute::AbiCompatible for #ident #ty_generics #where_clause {
+            unsafe impl #impl_generics co3::transmute::AbiCompatibleValidate for #ident #ty_generics #where_clause {
                 #[inline(always)]
                 unsafe fn is_valid(_: &Self::CType) -> bool {
                     true
                 }
             }
+            unsafe impl #impl_generics co3::transmute::AbiCompatible for #ident #ty_generics #where_clause {}
 
             impl #impl_generics co3::ReprC for #ident #ty_generics #where_clause {
                 type CType = Self;
@@ -3478,12 +3479,13 @@ fn gen_owned_repr_c_impls(ident: &syn::Ident, generics: &syn::Generics) -> Token
         impl #impl_generics #co3::Decode<'_> for #owned_repr_c_name #ty_generics #where_clause {}
 
 
-        unsafe impl #impl_generics #co3::transmute::AbiCompatible for #owned_repr_c_name #ty_generics #where_clause {
+        unsafe impl #impl_generics #co3::transmute::AbiCompatibleValidate for #owned_repr_c_name #ty_generics #where_clause {
             #[inline(always)]
             unsafe fn is_valid(_: &Self::CType) -> bool {
                 true
             }
         }
+        unsafe impl #impl_generics #co3::transmute::AbiCompatible for #owned_repr_c_name #ty_generics #where_clause {}
 
         unsafe impl #impl_generics #co3::CType for #owned_repr_c_name #ty_generics #where_clause {}
         unsafe impl #impl_generics #co3::CFnArg for #owned_repr_c_name #ty_generics #where_clause {}
@@ -3685,13 +3687,14 @@ fn gen_owned_extern_type_impls(
         #ord_impl
 
 
-        unsafe impl #impl_generics #co3::transmute::AbiCompatible for #owned_ident #ty_generics #where_clause {
+        unsafe impl #impl_generics #co3::transmute::AbiCompatibleValidate for #owned_ident #ty_generics #where_clause {
             #[inline(always)]
             unsafe fn is_valid(target: &Self::CType) -> bool {
                 // The Rust owner stores NonNull; null is reserved for Option::None.
                 !target.is_none()
             }
         }
+        unsafe impl #impl_generics #co3::transmute::AbiCompatible for #owned_ident #ty_generics #where_clause {}
 
         impl #impl_generics #co3::ReprC for #owned_ident #ty_generics #where_clause {
             type CType = #owned_repr_c_name #ty_generics;
@@ -3802,12 +3805,13 @@ fn derive_opaque_item(
         #tag_family_impl
 
         unsafe impl #impl_generics co3::CType for #ident #ty_generics #where_clause {}
-        unsafe impl #impl_generics co3::transmute::AbiCompatible for #ident #ty_generics #where_clause {
+        unsafe impl #impl_generics co3::transmute::AbiCompatibleValidate for #ident #ty_generics #where_clause {
             #[inline(always)]
             unsafe fn is_valid(_: &Self::CType) -> bool {
                 true
             }
         }
+        unsafe impl #impl_generics co3::transmute::AbiCompatible for #ident #ty_generics #where_clause {}
 
         impl #impl_generics co3::ReprC for #ident #ty_generics #where_clause {
             type CType = Self;

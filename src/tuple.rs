@@ -51,6 +51,7 @@
 //! assert_eq!(encode(none_value_3), COption::None());
 //! ```
 
+use crate::transmute::AbiCompatibleValidate;
 use disjoint_impls::disjoint_impls;
 use rust_spec::{
     RustSpec,
@@ -366,7 +367,7 @@ macro_rules! impl_tuple {
         }
 
 
-        unsafe impl<$($head: AbiCompatible<CType: Copy>,)* $last: AbiCompatible + ?Sized> AbiCompatible for $ffi_ty<$($head,)* $last> {
+        unsafe impl<$($head: AbiCompatibleValidate<CType: Copy>,)* $last: AbiCompatibleValidate + ?Sized> AbiCompatibleValidate for $ffi_ty<$($head,)* $last> {
             #[inline(always)]
             #[expect(non_snake_case)]
             unsafe fn is_valid(target: &Self::CType) -> bool {
@@ -374,6 +375,7 @@ macro_rules! impl_tuple {
                 true $(&& unsafe { $head::is_valid($head) })* && unsafe { $last::is_valid($last) }
             }
         }
+unsafe impl<$($head: AbiCompatible<CType: Copy>,)* $last: AbiCompatible + ?Sized> AbiCompatible for $ffi_ty<$($head,)* $last> {}
 
         unsafe impl<$($head: BorrowCast<AsConst: Sized>,)* $last: BorrowCast + ?Sized> BorrowCast for $ffi_ty<$($head,)* $last> {
             type AsConst = $ffi_ty<$($head::AsConst,)* $last::AsConst>;

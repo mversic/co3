@@ -144,7 +144,7 @@ fn shared_vector_requires_robust_cells_not_robust_elements() {
         header.as_ptr().cast_const().cast::<Element>(),
         values.as_ptr()
     );
-    assert_eq!(header.metadata(), values.len());
+    assert_eq!(header.len(), values.len());
 }
 
 #[test]

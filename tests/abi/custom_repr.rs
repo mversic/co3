@@ -75,14 +75,14 @@ fn checked_field_encoding_asserts_custom_validity() {
 
 #[test]
 #[cfg(debug_assertions)]
-#[should_panic(expected = "encoding failed AbiCompatible::is_valid")]
+#[should_panic(expected = "encoding failed AbiCompatibleValidate::is_valid")]
 fn checked_reference_encoding_asserts_pointee_validity() {
     let _ = co3::encode(&ValidatedByte(10));
 }
 
 #[test]
 #[cfg(debug_assertions)]
-#[should_panic(expected = "encoding failed AbiCompatible::is_valid")]
+#[should_panic(expected = "encoding failed AbiCompatibleValidate::is_valid")]
 fn checked_mut_reference_encoding_asserts_pointee_validity() {
     let mut value = ValidatedByte(10);
     let _ = co3::encode(&mut value);
@@ -90,7 +90,7 @@ fn checked_mut_reference_encoding_asserts_pointee_validity() {
 
 #[test]
 #[cfg(debug_assertions)]
-#[should_panic(expected = "encoding failed AbiCompatible::is_valid")]
+#[should_panic(expected = "encoding failed AbiCompatibleValidate::is_valid")]
 fn checked_wide_reference_encoding_asserts_each_pointee() {
     let values = [ValidatedByte(11), ValidatedByte(10)];
     let _ = co3::encode(&values[..]);
@@ -98,7 +98,7 @@ fn checked_wide_reference_encoding_asserts_each_pointee() {
 
 #[test]
 #[cfg(debug_assertions)]
-#[should_panic(expected = "encoding failed AbiCompatible::is_valid")]
+#[should_panic(expected = "encoding failed AbiCompatibleValidate::is_valid")]
 fn checked_mut_wide_reference_encoding_asserts_each_pointee() {
     let mut values = [ValidatedByte(11), ValidatedByte(10)];
     let _ = co3::encode(&mut values[..]);
@@ -106,7 +106,7 @@ fn checked_mut_wide_reference_encoding_asserts_each_pointee() {
 
 #[test]
 #[cfg(debug_assertions)]
-#[should_panic(expected = "encoding failed AbiCompatible::is_valid")]
+#[should_panic(expected = "encoding failed AbiCompatibleValidate::is_valid")]
 fn checked_interior_wide_reference_encoding_asserts_each_pointee() {
     let values = [
         UnsafeCell::new(ValidatedByte(11)),
@@ -117,7 +117,7 @@ fn checked_interior_wide_reference_encoding_asserts_each_pointee() {
 
 #[test]
 #[cfg(debug_assertions)]
-#[should_panic(expected = "encoding failed AbiCompatible::is_valid")]
+#[should_panic(expected = "encoding failed AbiCompatibleValidate::is_valid")]
 fn checked_mut_interior_wide_reference_encoding_asserts_each_pointee() {
     let mut values = [
         UnsafeCell::new(ValidatedByte(11)),
@@ -137,7 +137,7 @@ fn checked_mut_nonrobust_wide_reference_asserts_original_pointee_validity() {
 
 #[test]
 #[cfg(debug_assertions)]
-#[should_panic(expected = "encoding failed AbiCompatible::is_valid")]
+#[should_panic(expected = "encoding failed AbiCompatibleValidate::is_valid")]
 fn checked_wide_box_encoding_asserts_each_pointee() {
     let values = [ValidatedByte(11), ValidatedByte(10)];
     let _ = co3::stored::encode_owned(Vec::from(values).into_boxed_slice());
@@ -145,7 +145,7 @@ fn checked_wide_box_encoding_asserts_each_pointee() {
 
 #[test]
 #[cfg(debug_assertions)]
-#[should_panic(expected = "encoding failed AbiCompatible::is_valid")]
+#[should_panic(expected = "encoding failed AbiCompatibleValidate::is_valid")]
 fn checked_box_encoding_asserts_pointee_validity() {
     let _ = co3::encode(Box::new(ValidatedByte(10)));
 }
@@ -216,10 +216,14 @@ fn field_representation_maps_owned_conversion_and_transmutation() {
     assert_impl_all!(CFieldHandle: co3::stored::EncodeMoveUnchecked);
     assert_impl_all!(TransparentFieldHandle: co3::stored::EncodeMoveUnchecked);
     assert!(!unsafe {
-        <ValidatedByte as co3::transmute::AbiCompatible>::is_valid(&CValidatedByte::from_fields(10))
+        <ValidatedByte as co3::transmute::AbiCompatibleValidate>::is_valid(
+            &CValidatedByte::from_fields(10),
+        )
     });
     assert!(unsafe {
-        <ValidatedByte as co3::transmute::AbiCompatible>::is_valid(&CValidatedByte::from_fields(11))
+        <ValidatedByte as co3::transmute::AbiCompatibleValidate>::is_valid(
+            &CValidatedByte::from_fields(11),
+        )
     });
     assert!(unsafe { co3::decode::<ValidatedByte>(CValidatedByte::from_fields(10)) }.is_none());
     assert_eq!(
@@ -228,8 +232,8 @@ fn field_representation_maps_owned_conversion_and_transmutation() {
             .0,
         11
     );
-    assert!(!unsafe { <NonZeroField as co3::transmute::AbiCompatible>::is_valid(&0) });
-    assert!(unsafe { <NonZeroField as co3::transmute::AbiCompatible>::is_valid(&1) });
+    assert!(!unsafe { <NonZeroField as co3::transmute::AbiCompatibleValidate>::is_valid(&0) });
+    assert!(unsafe { <NonZeroField as co3::transmute::AbiCompatibleValidate>::is_valid(&1) });
     assert_impl_all!(FieldSlice<u8>: ReprC<CType = [u8]>);
     assert_impl_all!(FieldSlice<u8>: co3::transmute::AbiCompatible);
     assert_impl_all!(FieldSlice<core::mem::MaybeUninit<u8>>: ReprC<CType = [core::mem::MaybeUninit<u8>]>);

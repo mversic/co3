@@ -1,4 +1,5 @@
 //! C-compatible representation of [`core::result::Result`].
+use crate::transmute::AbiCompatibleValidate;
 use core::result::Result as CoreResult;
 use core::{mem::MaybeUninit, ops::Add};
 
@@ -239,8 +240,8 @@ impl<T: EncodeUnchecked<CType: Copy>, E: EncodeUnchecked<CType: Copy>> EncodeUnc
 }
 impl<'d, T: Decode<'d, CType: Copy>, E: Decode<'d, CType: Copy>> Decode<'d> for Result<T, E> {}
 
-unsafe impl<T: AbiCompatible<CType: Copy>, E: AbiCompatible<CType: Copy>> AbiCompatible
-    for Result<T, E>
+unsafe impl<T: AbiCompatibleValidate<CType: Copy>, E: AbiCompatibleValidate<CType: Copy>>
+    AbiCompatibleValidate for Result<T, E>
 {
     unsafe fn is_valid(target: &Self::CType) -> bool {
         match target.tag() {
@@ -249,6 +250,10 @@ unsafe impl<T: AbiCompatible<CType: Copy>, E: AbiCompatible<CType: Copy>> AbiCom
             _ => false,
         }
     }
+}
+unsafe impl<T: AbiCompatible<CType: Copy>, E: AbiCompatible<CType: Copy>> AbiCompatible
+    for Result<T, E>
+{
 }
 
 impl<T: core::fmt::Debug + Copy, E: core::fmt::Debug + Copy> core::fmt::Debug for CResult<T, E> {

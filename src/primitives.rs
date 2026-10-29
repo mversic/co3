@@ -102,12 +102,13 @@ macro_rules! primitive_derive {
         impl $crate::EncodeUnchecked for $primitive {}
         impl Decode<'_> for $primitive {}
 
-        unsafe impl AbiCompatible for $primitive {
+        unsafe impl $crate::transmute::AbiCompatibleValidate for $primitive {
             #[inline(always)]
             unsafe fn is_valid(_: &Self::CType) -> bool {
                 true
             }
         }
+        unsafe impl AbiCompatible for $primitive {}
 
         unsafe impl CType for $primitive {}
         unsafe impl CFnArg for $primitive {}
@@ -175,7 +176,7 @@ macro_rules! raw_pointer_derive {
         impl<R: CType + ?Sized> Decode<'_> for *$mutability R {}
 
 
-        unsafe impl<R: CType + ?Sized> AbiCompatible for *$mutability R
+        unsafe impl<R: CType + ?Sized> $crate::transmute::AbiCompatibleValidate for *$mutability R
         where
             R: rust_spec::RustSpec<Size: crate::Thin>,
         {
@@ -184,6 +185,10 @@ macro_rules! raw_pointer_derive {
                 true
             }
         }
+unsafe impl<R: CType + ?Sized> AbiCompatible for *$mutability R
+        where
+            R: rust_spec::RustSpec<Size: crate::Thin>,
+        {}
 
         unsafe impl<R: CType + ?Sized> CType for *$mutability R {}
         unsafe impl<R: CType> CFnArg for *$mutability R {}
@@ -292,9 +297,10 @@ macro_rules! impl_fn_types {
         impl<$($arg,)* R> Niche for $fn_type where Self: ReprC<CType = Option<Self>> {
             const NICHE: Self::CType = None;
         }
-        unsafe impl<$($arg,)* R> AbiCompatible for $fn_type where Self: ReprC<CType = Option<Self>> {
+        unsafe impl<$($arg,)* R> $crate::transmute::AbiCompatibleValidate for $fn_type where Self: ReprC<CType = Option<Self>> {
             unsafe fn is_valid(target: &Self::CType) -> bool { target.is_some() }
         }
+unsafe impl<$($arg,)* R> AbiCompatible for $fn_type where Self: ReprC<CType = Option<Self>> {}
     };
 }
 
@@ -357,12 +363,13 @@ macro_rules! fieldless_enum_derive {
         impl Decode<'_> for $src {}
 
 
-        unsafe impl AbiCompatible for $src {
+        unsafe impl $crate::transmute::AbiCompatibleValidate for $src {
             #[inline(always)]
             unsafe fn is_valid(target: &Self::CType) -> bool {
                 $validity_fn(target)
             }
         }
+unsafe impl AbiCompatible for $src {}
 
         impl Niche for $src {
             const NICHE: Self::CType = $niche_val;

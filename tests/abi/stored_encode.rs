@@ -1,3 +1,4 @@
+use co3::transmute::AbiCompatibleValidate;
 use core::{
     cell::UnsafeCell,
     mem::{ManuallyDrop, MaybeUninit},
@@ -51,11 +52,12 @@ unsafe impl EncodeMoveUnchecked for RawProbe {
 }
 
 #[cfg(feature = "alloc")]
-unsafe impl AbiCompatible for RawProbe {
+unsafe impl AbiCompatibleValidate for RawProbe {
     unsafe fn is_valid(_: &Self::CType) -> bool {
         true
     }
 }
+unsafe impl AbiCompatible for RawProbe {}
 
 #[cfg(feature = "alloc")]
 impl co3::EncodeUnchecked for RawProbe {}
