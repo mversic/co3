@@ -15,10 +15,10 @@ error[E0277]: the trait bound `(): CFnArg` is not satisfied
              *mut R
              CBool
              CBox<C>
-             CBoxCell<C>
              CNoRepr
-             CNoReprConstView
-             CNoReprMutView
+             CNoReprView
+             COption<T>
+             COrdering
            and $N others
    = note: required for `extern "C" fn(())` to implement `ReprC`
    = note: this error originates in the macro `ffi` (in Nightly builds, run with -Z macro-backtrace for more info)
@@ -41,9 +41,9 @@ error[E0277]: the trait bound `[u32; 2]: CFnReturn` is not satisfied
              *mut R
              CBool
              CBox<C>
-             CBoxCell<C>
              CNoRepr
-             CNoReprConstView
+             CNoReprView
+             COption<T>
            and $N others
    = note: required for `extern "C" fn() -> [u32; 2]` to implement `ReprC`
    = note: this error originates in the macro `ffi` (in Nightly builds, run with -Z macro-backtrace for more info)
@@ -60,7 +60,7 @@ error[E0271]: type mismatch resolving `<Option<extern "C" fn(NoRepr)> as RustSpe
 16 | | }
    | |_^ expected `Stable`, found `Unstable`
    |
-   = note: required for `Option<extern "C" fn(NoRepr)>` to implement `CType`
+   = note: required for `std::option::Option<extern "C" fn(NoRepr)>` to implement `CType`
    = note: required for `extern "C" fn(NoRepr)` to implement `ReprC`
    = note: this error originates in the macro `ffi` (in Nightly builds, run with -Z macro-backtrace for more info)
 

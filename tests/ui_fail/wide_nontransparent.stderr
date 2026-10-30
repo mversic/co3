@@ -42,10 +42,13 @@ help: the trait `Wide` is not implemented for `NonTransparentDst`
    = help: the following other types implement trait `Wide`:
              Cell<T>
              ManuallyDrop<R>
-             UnsafeCell<T>
-             Utf8Str
-             [R]
-             str
+             Tuple10<A, B, C, D, E, F, G, H, I, J>
+             Tuple11<A, B, C, D, E, F, G, H, I, J, K>
+             Tuple12<A, B, C, D, E, F, G, H, I, J, K, L>
+             Tuple2<A, B>
+             Tuple3<A, B, C>
+             Tuple4<A, B, C, D>
+           and $N others
 note: required by a bound in `require_wide`
   --> tests/ui_fail/wide_nontransparent.rs:13:20
    |
@@ -66,10 +69,13 @@ help: the trait `Wide` is not implemented for `GenericNonTransparentDst<[u8]>`
    = help: the following other types implement trait `Wide`:
              Cell<T>
              ManuallyDrop<R>
-             UnsafeCell<T>
-             Utf8Str
-             [R]
-             str
+             Tuple10<A, B, C, D, E, F, G, H, I, J>
+             Tuple11<A, B, C, D, E, F, G, H, I, J, K>
+             Tuple12<A, B, C, D, E, F, G, H, I, J, K, L>
+             Tuple2<A, B>
+             Tuple3<A, B, C>
+             Tuple4<A, B, C, D>
+           and $N others
 note: required by a bound in `require_wide`
   --> tests/ui_fail/wide_nontransparent.rs:13:20
    |

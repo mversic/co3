@@ -1133,7 +1133,7 @@ mod tests {
     //#[test]
     //#[cfg(feature = "alloc")]
     //fn encode_stored_ref_mut_slice() {
-    //    use tuple::ReprCTuple2;
+    //    use tuple::Tuple2;
 
     //    let mut tuples = [(1_u32, true)];
     //    let slice_ref: &mut [_] = &mut tuples;
@@ -1144,7 +1144,7 @@ mod tests {
     //        let encoded = soft_encode(slice_ref, &mut store);
     //        let c_slice = unsafe { encoded.into_mut().unwrap() };
 
-    //        c_slice[0] = ReprCTuple2(100, CBool::TRUE);
+    //        c_slice[0] = Tuple2(100, CBool::TRUE);
     //        store.sync().unwrap();
     //    }
 
@@ -1157,7 +1157,7 @@ mod tests {
     // from one side to the other: https://github.com/mversic/co3/issues/182
     fn encode_stored_mut_box_allows_pointer_replacement() {
         use boxed::CBox;
-        use tuple::ReprCTuple2;
+        use tuple::Tuple2;
 
         let mut value = Box::new((1_u32, true));
 
@@ -1165,7 +1165,7 @@ mod tests {
             let mut store = Default::default();
             let encoded = soft_encode(&mut value, &mut store);
             let original_data = unsafe { (*encoded.as_ptr()).as_ptr() };
-            let replacement = CBox::from_box(Box::new(ReprCTuple2(100, CBool::TRUE)));
+            let replacement = CBox::from_box(Box::new(Tuple2(100, CBool::TRUE)));
             let replacement_data = replacement.as_ptr();
 
             unsafe {
@@ -1182,9 +1182,9 @@ mod tests {
     #[test]
     #[cfg(feature = "alloc")]
     fn decode_stored_ref_mut_slice() {
-        use tuple::ReprCTuple2;
+        use tuple::Tuple2;
 
-        let mut tuples = [ReprCTuple2(10_u32, CBool::TRUE)];
+        let mut tuples = [Tuple2(10_u32, CBool::TRUE)];
         let c_slice = encode(&mut tuples[..]);
 
         {

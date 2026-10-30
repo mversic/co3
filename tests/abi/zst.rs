@@ -1,6 +1,9 @@
 use co3::{
-    CFnArg, CFnReturn, CType, Decode, Encode, ReprC, borrow::Borrow, reference::CRefMut,
-    rust_spec::RustSpec, transmute::AbiCompatible,
+    CFnArg, CFnReturn, CType, Decode, Encode, ReprC,
+    borrow::{Borrow, Borrowed},
+    reference::CRefMut,
+    rust_spec::RustSpec,
+    transmute::AbiCompatible,
 };
 use core::{
     cell::{Cell, UnsafeCell},
@@ -102,6 +105,7 @@ fn boxed_zst_traits() {
 
 #[test]
 fn zero_sized_wrappers_are_not_function_values() {
+    assert_not_impl_any!(Borrowed<()>: CFnArg, CFnReturn);
     assert_not_impl_any!(UnsafeCell<()>: CFnArg, CFnReturn);
     assert_not_impl_any!(Cell<()>: CFnArg, CFnReturn);
     assert_not_impl_any!(MaybeUninit<()>: CFnArg, CFnReturn);

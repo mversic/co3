@@ -1,4 +1,4 @@
-use co3::{ffi, tuple::ReprCTuple2};
+use co3::{ffi, tuple::Tuple2};
 
 ffi! {
     #![unsafe(export("C"))]
@@ -19,17 +19,17 @@ ffi! {
 ffi! {
     #![unsafe(extern("C"))]
 
-    fn missing_types(#[unpack] value: ReprCTuple2<u8, u8>);
-    fn missing_types_try(#[unpack] value: ReprCTuple2<u8, u8>);
-    fn missing_erased_type(#[unpack(u8 => _, u8)] value: ReprCTuple2<u8, u8>);
+    fn missing_types(#[unpack] value: Tuple2<u8, u8>);
+    fn missing_types_try(#[unpack] value: Tuple2<u8, u8>);
+    fn missing_erased_type(#[unpack(u8 => _, u8)] value: Tuple2<u8, u8>);
     fn nested_option(#[unpack(_, _)] value: Option<Option<&[u8]>>);
 }
 
 ffi! {
     #![unsafe(extern("C"))]
 
-    fn missing_into(#[unpack(u32, String)] value: ReprCTuple2<u8, u8>);
-    fn missing_into_try(#[unpack(u32, String)] value: ReprCTuple2<u8, u8>);
+    fn missing_into(#[unpack(u32, String)] value: Tuple2<u8, u8>);
+    fn missing_into_try(#[unpack(u32, String)] value: Tuple2<u8, u8>);
 }
 
 ffi! {

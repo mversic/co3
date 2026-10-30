@@ -21,7 +21,7 @@ use crate::{
     reference::{CRef, CRefMut},
     result::CResult,
     slice::{CWideRef, CWideRefMut},
-    tuple::ReprCTuple2,
+    tuple::Tuple2,
     wide::{Wide, WideHeader},
 };
 
@@ -145,7 +145,7 @@ disjoint_impls! {
     where
         A: RustSpec<Niche = WithNiche<N>>,
     {
-        const NICHE: Self::CType = ReprCTuple2(A::NICHE, unsafe { core::mem::zeroed() });
+        const NICHE: Self::CType = Tuple2(A::NICHE, unsafe { core::mem::zeroed() });
     }
 
     impl<A: ReprC<CType: Copy>, B: Niche<CType: Copy>, N: LayoutKind> Niche for (A, B)
@@ -153,7 +153,7 @@ disjoint_impls! {
         A: RustSpec<Niche = WithoutNiche>,
         B: RustSpec<Niche = WithNiche<N>>,
     {
-        const NICHE: Self::CType = ReprCTuple2(unsafe { core::mem::zeroed() }, B::NICHE);
+        const NICHE: Self::CType = Tuple2(unsafe { core::mem::zeroed() }, B::NICHE);
     }
 }
 
@@ -190,7 +190,7 @@ mod tests {
     use static_assertions::{assert_impl_all, assert_not_impl_any};
 
     use super::*;
-    use crate::{CType, Decode, Encode, tuple::ReprCTuple2};
+    use crate::{CType, Decode, Encode, tuple::Tuple2};
 
     #[test]
     fn nested_option_niche_family() {
@@ -207,7 +207,7 @@ mod tests {
 
         );
         assert_impl_all!(Option<(u8, NonZero<u8>)>:
-            ReprC<CType = ReprCTuple2<u8, u8>>,
+            ReprC<CType = Tuple2<u8, u8>>,
             Decode<'static>,
             Encode,
         );

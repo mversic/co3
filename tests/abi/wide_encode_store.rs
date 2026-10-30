@@ -2,7 +2,7 @@ use co3::{
     primitives::CBool,
     stored::Store,
     sync::{RefMutWideEncodeStore, RefWideEncodeStore},
-    tuple::{ReprCTuple2, ReprCTuple3},
+    tuple::{Tuple2, Tuple3},
     wide::Wide,
 };
 
@@ -83,8 +83,8 @@ fn stores_can_move_before_writeback() {
 
 #[test]
 fn wide_tuple_preserves_data_and_metadata() {
-    let value: Box<ReprCTuple3<u8, u64, [u32]>> = Box::new(ReprCTuple3(5, 17, [23, 29, 31]));
-    type Tuple = ReprCTuple3<u8, u64, [u32]>;
+    let value: Box<Tuple3<u8, u64, [u32]>> = Box::new(Tuple3(5, 17, [23, 29, 31]));
+    type Tuple = Tuple3<u8, u64, [u32]>;
 
     let ptr = core::ptr::from_ref::<Tuple>(&value);
     let len = Tuple::metadata(ptr);
@@ -104,25 +104,25 @@ fn wide_tuple_preserves_data_and_metadata() {
 #[test]
 fn one_field_wide_tuples_are_unsupported() {
     use co3::stored::{EncodeMut, EncodeMutUnchecked, EncodeRef, EncodeRefUnchecked};
-    use co3::tuple::ReprCTuple1;
-    assert_not_shared_encoder!(ReprCTuple1<[u8]>: EncodeRef<'static>, EncodeRefUnchecked<'static>);
-    static_assertions::assert_not_impl_any!(ReprCTuple1<[u8]>: Wide, EncodeMut<'static>, EncodeMutUnchecked<'static>);
+    use co3::tuple::Tuple1;
+    assert_not_shared_encoder!(Tuple1<[u8]>: EncodeRef<'static>, EncodeRefUnchecked<'static>);
+    static_assertions::assert_not_impl_any!(Tuple1<[u8]>: Wide, EncodeMut<'static>, EncodeMutUnchecked<'static>);
     assert_not_shared_encoder!(([u8],): EncodeRef<'static>, EncodeRefUnchecked<'static>);
     static_assertions::assert_not_impl_any!(([u8],): EncodeMut<'static>, EncodeMutUnchecked<'static>);
     assert_not_shared_encoder!((u32, [u8]): EncodeRef<'static>, EncodeRefUnchecked<'static>);
     static_assertions::assert_not_impl_any!((u32, [u8]): EncodeMut<'static>, EncodeMutUnchecked<'static>);
-    assert_not_shared_encoder!(ReprCTuple2<u32, [u8]>: EncodeRef<'static>, EncodeRefUnchecked<'static>);
-    static_assertions::assert_not_impl_any!(ReprCTuple2<u32, [u8]>: EncodeMut<'static>, EncodeMutUnchecked<'static>);
-    assert_shared_encoder!(ReprCTuple1<u8>: EncodeRef<'static>, EncodeRefUnchecked<'static>);
-    assert_not_shared_encoder!(ReprCTuple1<core::ffi::CStr>: EncodeRef<'static>, EncodeRefUnchecked<'static>);
-    assert_not_shared_encoder!(ReprCTuple2<u32, core::ffi::CStr>: EncodeRef<'static>, EncodeRefUnchecked<'static>);
+    assert_not_shared_encoder!(Tuple2<u32, [u8]>: EncodeRef<'static>, EncodeRefUnchecked<'static>);
+    static_assertions::assert_not_impl_any!(Tuple2<u32, [u8]>: EncodeMut<'static>, EncodeMutUnchecked<'static>);
+    assert_shared_encoder!(Tuple1<u8>: EncodeRef<'static>, EncodeRefUnchecked<'static>);
+    assert_not_shared_encoder!(Tuple1<core::ffi::CStr>: EncodeRef<'static>, EncodeRefUnchecked<'static>);
+    assert_not_shared_encoder!(Tuple2<u32, core::ffi::CStr>: EncodeRef<'static>, EncodeRefUnchecked<'static>);
     assert_not_shared_encoder!((u32, core::ffi::CStr): EncodeRef<'static>, EncodeRefUnchecked<'static>);
 }
 
 #[test]
 fn nested_wide_tuples_preserve_tail_metadata() {
-    type Nested = ReprCTuple2<u16, ReprCTuple2<u8, [u32]>>;
-    let value: Box<Nested> = Box::new(ReprCTuple2(7, ReprCTuple2(3, [11, 13])));
+    type Nested = Tuple2<u16, Tuple2<u8, [u32]>>;
+    let value: Box<Nested> = Box::new(Tuple2(7, Tuple2(3, [11, 13])));
     let ptr = core::ptr::from_ref::<Nested>(&value);
     let recovered = unsafe { Nested::from_raw_parts(Nested::as_ptr(ptr), Nested::metadata(ptr)) };
     assert_eq!(recovered.0, 7);

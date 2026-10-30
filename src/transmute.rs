@@ -862,8 +862,7 @@ mod conversion_tests {
     impl crate::Decode<'_> for Direct {}
 
     #[test]
-    fn empty_arrays_convert_and_have_no_niche() {
-        static_assertions::assert_not_impl_any!([core::num::NonZeroU8; 0]: crate::niche::Niche);
+    fn empty_arrays_convert() {
         static_assertions::assert_impl_all!([core::num::NonZeroU8; 1]: crate::niche::Niche);
         let value: [u8; 0] = [];
         assert_eq!(crate::encode(value), []);

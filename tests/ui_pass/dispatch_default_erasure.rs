@@ -1,4 +1,4 @@
-use co3::{ReprC, Tag, ffi, rust_spec::RustSpec, pack::Unpack2, tuple::ReprCTuple2};
+use co3::{ReprC, Tag, ffi, rust_spec::RustSpec, pack::Unpack2, tuple::Tuple2};
 
 #[derive(RustSpec, ReprC, Tag)]
 #[tag(u8, unsafe(1))]
@@ -8,7 +8,7 @@ struct Value(u16);
 #[derive(RustSpec, ReprC, Tag)]
 #[tag(u8, unsafe(2))]
 #[repr(transparent)]
-struct Pair(ReprCTuple2<u8, u8>);
+struct Pair(Tuple2<u8, u8>);
 
 impl Unpack2<u16, u16> for Pair {
     type Error = core::convert::Infallible;
@@ -41,5 +41,5 @@ ffi! {
 
 fn main() {
     erased(Value(2));
-    unpack_wins(Pair(ReprCTuple2(1, 2)));
+    unpack_wins(Pair(Tuple2(1, 2)));
 }

@@ -37,19 +37,19 @@ error: the first `_` unpack argument is only supported for two-element tuples, r
 error: #[unpack] expects exactly two parts
   --> tests/ui_fail/unpack_type.rs:22:22
    |
-22 |     fn missing_types(#[unpack] value: ReprCTuple2<u8, u8>);
+22 |     fn missing_types(#[unpack] value: Tuple2<u8, u8>);
    |                      ^^^^^^^^^
 
 error: #[unpack] expects exactly two parts
   --> tests/ui_fail/unpack_type.rs:23:26
    |
-23 |     fn missing_types_try(#[unpack] value: ReprCTuple2<u8, u8>);
+23 |     fn missing_types_try(#[unpack] value: Tuple2<u8, u8>);
    |                          ^^^^^^^^^
 
 error: the ABI type after `=>` cannot be `_`
   --> tests/ui_fail/unpack_type.rs:24:43
    |
-24 |     fn missing_erased_type(#[unpack(u8 => _, u8)] value: ReprCTuple2<u8, u8>);
+24 |     fn missing_erased_type(#[unpack(u8 => _, u8)] value: Tuple2<u8, u8>);
    |                                           ^
 
 error: the first `_` unpack argument is only supported for two-element tuples, references or raw pointers to `Wide` types, and `Box`es of `Wide` types
@@ -82,25 +82,25 @@ error: runtime-dispatched #[unpack] arguments cannot use `_` placeholders
 50 |     fn missing_payload_unpack_try<dyn(u8) T = (u8, u8)>(#[unpack(_, _)] value: T)
    |                                                         ^^^^^^^^^^^^^^^
 
-error[E0277]: the trait bound `ReprCTuple2<u8, u8>: Unpack2<u32, CWideBox<Utf8Str>>` is not satisfied
+error[E0277]: the trait bound `Tuple2<u8, u8>: Unpack2<u32, CWideBox<Utf8Str>>` is not satisfied
   --> tests/ui_fail/unpack_type.rs:28:1
    |
 28 | / ffi! {
 29 | |     #![unsafe(extern("C"))]
 30 | |
-31 | |     fn missing_into(#[unpack(u32, String)] value: ReprCTuple2<u8, u8>);
-32 | |     fn missing_into_try(#[unpack(u32, String)] value: ReprCTuple2<u8, u8>);
+31 | |     fn missing_into(#[unpack(u32, String)] value: Tuple2<u8, u8>);
+32 | |     fn missing_into_try(#[unpack(u32, String)] value: Tuple2<u8, u8>);
 33 | | }
-   | |_^ the trait `Unpack2<u32, CWideBox<Utf8Str>>` is not implemented for `ReprCTuple2<u8, u8>`
+   | |_^ the trait `Unpack2<u32, CWideBox<Utf8Str>>` is not implemented for `Tuple2<u8, u8>`
    |
    = help: the following other types implement trait `Unpack2<Part1, Part2>`:
-             `&R` implements `Unpack2<*const C, U>`
-             `&R` implements `Unpack2<*mut C, U>`
-             `&mut R` implements `Unpack2<*mut C, U>`
+             `&R` implements `Unpack2<*const <<P as Wide>::Header as WideHeader>::Data, U>`
+             `&R` implements `Unpack2<*mut <<P as Wide>::Header as WideHeader>::Data, U>`
+             `&mut R` implements `Unpack2<*mut <<P as Wide>::Header as WideHeader>::Data, U>`
              `(A, B)` implements `Unpack2<Part1, Part2>`
-             `*const R` implements `Unpack2<*const C, U>`
-             `*mut R` implements `Unpack2<*mut C, U>`
-             `Box<R>` implements `Unpack2<K, U>`
+             `*const R` implements `Unpack2<*const <<R as Wide>::Header as WideHeader>::Data, U>`
+             `*mut R` implements `Unpack2<*mut <<R as Wide>::Header as WideHeader>::Data, U>`
+             `Box<_TŠČ2>` implements `Unpack2<_TŠČ0, _TŠČ1>`
              `Cell<T>` implements `Unpack2<Part1, Part2>`
            and $N others
    = note: this error originates in the macro `ffi` (in Nightly builds, run with -Z macro-backtrace for more info)

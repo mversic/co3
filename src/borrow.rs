@@ -116,7 +116,10 @@ impl<T> crate::Encode for Borrowed<T> where Self: EncodeMove {}
 
 unsafe impl<C: CType> CType for Borrowed<C> {}
 unsafe impl<C: CFnArg> CFnArg for Borrowed<C> {}
-unsafe impl<C: CFnReturn> CFnReturn for Borrowed<C> {}
+unsafe impl<C: CFnReturn> CFnReturn for Borrowed<C> where
+    Self: RustSpec<Size = rust_spec::size::Sized<rust_spec::Gt<rust_spec::Zero>>>
+{
+}
 
 unsafe impl<T: AbiCompatibleValidate<CType: Sized>> AbiCompatibleValidate for Borrowed<T> {
     #[inline(always)]

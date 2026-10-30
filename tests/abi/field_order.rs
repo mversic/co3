@@ -7,7 +7,7 @@ use co3::{
         DecodeMove, EncodeMove, EncodeMoveUnchecked, EncodeMut, EncodeMutUnchecked, EncodeRef,
         EncodeRefUnchecked,
     },
-    tuple::ReprCTuple3,
+    tuple::Tuple3,
 };
 
 thread_local! {
@@ -124,7 +124,7 @@ fn assert_prefix_order() {
 #[test]
 fn owned_tuple_and_derived_fields_encode_and_decode_in_order() {
     let values = (Probe(1), Probe(2), Probe(3));
-    let encoded: ReprCTuple3<u8, u8, u8> = co3::soft_encode(values, &mut ((), (), ()));
+    let encoded: Tuple3<u8, u8, u8> = co3::soft_encode(values, &mut ((), (), ()));
     assert_order();
     let _ =
         unsafe { co3::soft_decode::<(Probe, Probe, Probe)>(encoded, &mut ((), (), ())) }.unwrap();

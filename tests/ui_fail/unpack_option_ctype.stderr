@@ -1,4 +1,4 @@
-error[E0271]: type mismatch resolving `<Option<(u8, u8)> as ReprC>::CType == ReprCTuple2<u8, u8>`
+error[E0271]: type mismatch resolving `<Option<(u8, u8)> as ReprC>::CType == Tuple2<u8, u8>`
  --> tests/ui_fail/unpack_option_ctype.rs:3:1
   |
 3 | / ffi! {
@@ -6,9 +6,9 @@ error[E0271]: type mismatch resolving `<Option<(u8, u8)> as ReprC>::CType == Rep
 5 | |
 6 | |     fn tagged_option(#[unpack(_, _)] value: Option<(u8, u8)>);
 7 | | }
-  | |_^ expected `ReprCTuple2<u8, u8>`, found `COption<ReprCTuple2<u8, u8>>`
+  | |_^ expected `Tuple2<u8, u8>`, found `COption<Tuple2<u8, u8>>`
   |
-  = note: expected struct `ReprCTuple2<u8, u8>`
-             found struct `COption<ReprCTuple2<u8, u8>>`
-  = note: required for `Option<(u8, u8)>` to implement `Unpack2<u8, u8>`
+  = note: expected struct `Tuple2<u8, u8>`
+             found struct `COption<Tuple2<u8, u8>>`
+  = note: required for `std::option::Option<(u8, u8)>` to implement `Unpack2<u8, u8>`
   = note: this error originates in the macro `ffi` (in Nightly builds, run with -Z macro-backtrace for more info)

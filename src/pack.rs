@@ -13,7 +13,7 @@ use rust_spec::{RustSpec, drop::NoDrop};
 use crate::{
     CType, NeedsDrop, ReprC,
     slice::{CWideRef, CWideRefMut},
-    tuple::ReprCTuple2,
+    tuple::Tuple2,
     wide::{Wide, WideHeader},
 };
 
@@ -278,7 +278,7 @@ impl<T: Pack2<Part1, Part2>, Part1: CType, Part2: CType> Pack2<Part1, Part2> for
 
 impl<A, B, Part1: CType, Part2: CType> Unpack2<Part1, Part2> for (A, B)
 where
-    Self: ReprC<CType = ReprCTuple2<Part1, Part2>>,
+    Self: ReprC<CType = Tuple2<Part1, Part2>>,
 {
     type Error = core::convert::Infallible;
 
@@ -290,13 +290,13 @@ where
 
 impl<A, B, Part1: CType, Part2: CType> Pack2<Part1, Part2> for (A, B)
 where
-    Self: ReprC<CType = ReprCTuple2<Part1, Part2>>,
+    Self: ReprC<CType = Tuple2<Part1, Part2>>,
 {
     type Error = core::convert::Infallible;
 
     #[inline(always)]
     unsafe fn pack(part1: Part1, part2: Part2) -> Result<Self::CType, Self::Error> {
-        Ok(ReprCTuple2(part1, part2))
+        Ok(Tuple2(part1, part2))
     }
 }
 

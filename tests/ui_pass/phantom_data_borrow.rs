@@ -19,8 +19,8 @@ struct CStaticMarker(PhantomData<()>);
 
 fn assert_transparent_identity<T: 'static>()
 where
-    TransparentMarker<T>: Borrow<Borrowed<'static> = TransparentMarker<T>, Owner = ()>,
-    TransparentStaticMarker: Borrow<Borrowed<'static> = TransparentStaticMarker, Owner = ()>,
+    TransparentMarker<T>: Borrow<Borrowed = TransparentMarker<T>>,
+    TransparentStaticMarker: Borrow<Borrowed = TransparentStaticMarker>,
 {
 }
 
