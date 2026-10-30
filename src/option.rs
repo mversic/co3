@@ -283,7 +283,11 @@ impl<T> COption<T> {
 
     /// Borrow only the active payload, rejecting invalid tags.
     pub(crate) fn as_option(&self) -> CoreOption<CoreOption<&T>> {
-        match self.tag { 0 => Some(None), 1 => Some(Some(unsafe { self.payload.assume_init_ref() })), _ => None }
+        match self.tag {
+            0 => Some(None),
+            1 => Some(Some(unsafe { self.payload.assume_init_ref() })),
+            _ => None,
+        }
     }
 
     /// Return the represented `core::option::Option<T>`, or `None` for an invalid tag.
@@ -334,7 +338,6 @@ unsafe impl<T: RustSpec> RustSpec for COption<T> {
 }
 
 crate::slice::impl_identity_carrier! { COption, [T: CType], [T] }
-
 
 unsafe impl<T: EmptyStore> EmptyStore for CoreOption<T> {}
 

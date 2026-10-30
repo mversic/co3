@@ -28,6 +28,10 @@ unsafe impl co3::borrow::Borrow for Probe {
     }
 }
 
+impl co3::EncodeUnchecked for Probe {}
+impl co3::Encode for Probe {}
+impl co3::Decode<'_> for Probe {}
+
 impl ReprC for Probe {
     type CType = u8;
 }
@@ -120,37 +124,28 @@ fn assert_prefix_order() {
 #[test]
 fn owned_tuple_and_derived_fields_encode_and_decode_in_order() {
     let values = (Probe(1), Probe(2), Probe(3));
-    let encoded: ReprCTuple3<u8, u8, u8> = EncodeMove::soft_encode(values, &mut ((), (), ()));
+    let encoded: ReprCTuple3<u8, u8, u8> = co3::soft_encode(values, &mut ((), (), ()));
     assert_order();
     let _ =
-        unsafe { <(Probe, Probe, Probe) as DecodeMove>::soft_decode(encoded, &mut ((), (), ())) }
-            .unwrap();
+        unsafe { co3::soft_decode::<(Probe, Probe, Probe)>(encoded, &mut ((), (), ())) }.unwrap();
     assert_order();
 
-    let encoded = unsafe {
-        EncodeMoveUnchecked::soft_encode_unchecked(
-            (Probe(1), Probe(2), Probe(3)),
-            &mut ((), (), ()),
-        )
-    };
+    let encoded =
+        unsafe { co3::soft_encode_unchecked((Probe(1), Probe(2), Probe(3)), &mut ((), (), ())) };
     assert_order();
-    let _ = unsafe {
-        <(Probe, Probe, Probe) as DecodeMove>::soft_decode_unchecked(encoded, &mut ((), (), ()))
-    };
+    let _ =
+        unsafe { co3::soft_decode_unchecked::<(Probe, Probe, Probe)>(encoded, &mut ((), (), ())) };
     assert_order();
 
-    let encoded = EncodeMove::soft_encode(Record(Probe(1), Probe(2), [3]), &mut Default::default());
+    let encoded = co3::soft_encode(Record(Probe(1), Probe(2), [3]), &mut Default::default());
     assert_prefix_order();
-    let _ = unsafe { Record::soft_decode(encoded, &mut Default::default()) }.unwrap();
+    let _ = unsafe { co3::soft_decode::<Record>(encoded, &mut Default::default()) }.unwrap();
     assert_prefix_order();
 
     let encoded = unsafe {
-        EncodeMoveUnchecked::soft_encode_unchecked(
-            Record(Probe(1), Probe(2), [3]),
-            &mut Default::default(),
-        )
+        co3::soft_encode_unchecked(Record(Probe(1), Probe(2), [3]), &mut Default::default())
     };
     assert_prefix_order();
-    let _ = unsafe { Record::soft_decode_unchecked(encoded, &mut Default::default()) };
+    let _ = unsafe { co3::soft_decode_unchecked::<Record>(encoded, &mut Default::default()) };
     assert_prefix_order();
 }

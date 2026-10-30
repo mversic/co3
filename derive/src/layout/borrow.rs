@@ -58,6 +58,8 @@ pub(super) fn gen_item_view(
             if data.fields.iter().next_back().is_some_and(|field|
                 classify_tail(&field.ty, &input.generics).is_known_unsized())
     );
+    let view_name = &view_def.ident;
+    let (_, view_ty_generics, _) = view_def.generics.split_for_impl();
     let inherited_niche = attrs
         .niche_value
         .as_ref()
@@ -65,7 +67,7 @@ pub(super) fn gen_item_view(
         .map(|_| {
             quote! {
                 #[repr_c(NICHE = unsafe {
-                    core::mem::transmute_copy(
+                    core::mem::transmute_copy::<_, <#view_name #view_ty_generics as co3::ReprC>::CType>(
                         &<#owner_name #owner_ty_generics as co3::niche::Niche>::NICHE
                     )
                 })]
@@ -177,12 +179,13 @@ pub(super) fn gen_item_borrow_impls(input: &DeriveInput) -> TokenStream {
     };
     let whole = gen_with_drop_borrow_impls(&input.ident, &input.generics);
     quote! {
+        // These private dispatch traits inherit the original traits' safety contracts.
+        #[allow(clippy::missing_safety_doc)]
         const _: () = {
             use co3::borrow::Borrow;
 
             co3::disjoint_impls! {
                 #[disjoint_impls(remote)]
-                #[allow(clippy::missing_safety_doc)]
                 pub unsafe trait Borrow: Sized {
                     type Borrowed;
 
@@ -592,7 +595,7 @@ fn rewrite_view_generics(input: &mut DeriveInput) {
         .collect::<Vec<syn::WherePredicate>>();
 
     let tail_bound: Option<syn::WherePredicate> = if let syn::Data::Struct(data) = &input.data {
-        data.fields.iter().last().map(|field| {
+        data.fields.iter().next_back().map(|field| {
             let ty = &field.ty;
             let speculative = speculative_marker(!is_parametrized(ty, &input.generics));
             parse_quote!(#speculative #ty: Sized)

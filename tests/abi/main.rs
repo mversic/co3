@@ -1,3 +1,35 @@
+// Unlike static_assertions' generic helper, this helper carries the
+// reference-mapping prerequisite of EncodeRef and EncodeRefUnchecked.
+macro_rules! assert_not_shared_encoder {
+    ($ty:ty: $($encoder:path),+ $(,)?) => {
+        const _: fn() = || {
+            $(
+                {
+                    trait AmbiguousIfImpl<A> { fn check() {} }
+                    impl<T: ?Sized> AmbiguousIfImpl<()> for T {}
+                    impl<T: ?Sized + $encoder> AmbiguousIfImpl<u8> for T
+                    where
+                        &'static T: co3::ReprC<CType: Sized>,
+                    {}
+                    let _ = <$ty as AmbiguousIfImpl<_>>::check;
+                }
+            )+
+        };
+    };
+}
+
+macro_rules! assert_shared_encoder {
+    ($ty:ty: $($encoder:path),+ $(,)?) => {
+        const _: fn() = || {
+            fn check<T: ?Sized $(+ $encoder)+>()
+            where
+                &'static T: co3::ReprC<CType: Sized>,
+            {}
+            check::<$ty>();
+        };
+    };
+}
+
 mod alignment;
 mod borrowed;
 mod boxed_mutability;

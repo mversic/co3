@@ -25,6 +25,7 @@ pub(super) struct ReprCAttrs {
     pub(super) niche_value: Option<syn::Expr>,
     pub(super) is_valid: Option<syn::ExprClosure>,
     pub(super) is_identity: bool,
+    pub(super) is_move: bool,
     pub(super) is_transparent: bool,
     pub(super) is_view: bool,
     pub(super) is_wide_data: bool,
@@ -53,6 +54,14 @@ fn parse_repr_c_attrs(attrs: &[Attribute]) -> syn::Result<ReprCAttrs> {
                     return Err(meta.error("Duplicate `identity` within attribute"));
                 }
                 repr_c.is_identity = true;
+                return Ok(());
+            }
+
+            if meta.path.is_ident("move") {
+                if repr_c.is_move {
+                    return Err(meta.error("Duplicate `move` within attribute"));
+                }
+                repr_c.is_move = true;
                 return Ok(());
             }
 
@@ -115,6 +124,7 @@ fn parse_repr_c_attrs(attrs: &[Attribute]) -> syn::Result<ReprCAttrs> {
     if repr_c.niche_value.is_none()
         && repr_c.is_valid.is_none()
         && !repr_c.is_identity
+        && !repr_c.is_move
         && !repr_c.is_transparent
         && !repr_c.is_view
         && !repr_c.is_wide_data
@@ -229,6 +239,15 @@ pub(crate) fn derive_repr_c(input: &syn::DeriveInput) -> syn::Result<TokenStream
         }
     }
     if repr_c_attrs.is_identity {
+        if repr_c_attrs.is_move {
+            push_error(
+                &mut errors,
+                syn::Error::new_spanned(
+                    &input.ident,
+                    "`repr_c(identity)` cannot be combined with `move`",
+                ),
+            );
+        }
         match &input.data {
             syn::Data::Struct(_)
                 if !matches!(repr_attr, Some(ReprKind::C(None) | ReprKind::Transparent)) =>
@@ -376,6 +395,10 @@ pub(crate) fn derive_repr_c(input: &syn::DeriveInput) -> syn::Result<TokenStream
                     let err_msg = "`repr_c(identity)` is only supported on types";
                     push_error(&mut errors, syn::Error::new(variant.span(), err_msg));
                 }
+                if variant_repr_c_attrs.is_move {
+                    let err_msg = "`repr_c(move)` is only supported on types";
+                    push_error(&mut errors, syn::Error::new(variant.span(), err_msg));
+                }
                 variant_attrs.push(VariantReprCAttrs {
                     is_valid: variant_repr_c_attrs.is_valid,
                     allow_zero_tag: variant_repr_c_attrs.allow_zero_tag,
@@ -517,6 +540,7 @@ pub(crate) fn derive_repr_c(input: &syn::DeriveInput) -> syn::Result<TokenStream
                     repr_alignment,
                     input,
                     repr_c_attrs.is_transparent,
+                    repr_c_attrs.is_move,
                 )
             } else {
                 derive_item(
@@ -701,6 +725,12 @@ pub(super) fn is_parametrized(ty: &syn::Type, generics: &syn::Generics) -> bool 
     }
 
     impl Visit<'_> for LifetimeUse<'_> {
+        fn visit_macro(&mut self, _: &syn::Macro) {
+            // Macro tokens are opaque to syn's type visitor. In a generic
+            // context they may expand to a use of any enclosing parameter.
+            self.found |= !self.generics.params.is_empty();
+        }
+
         fn visit_lifetime(&mut self, lifetime: &syn::Lifetime) {
             if self
                 .generics
@@ -720,7 +750,11 @@ pub(super) fn is_parametrized(ty: &syn::Type, generics: &syn::Generics) -> bool 
         syn::GenericParam::Const(param) => Some(&param.ident),
         syn::GenericParam::Lifetime(_) => None,
     });
-    if ParamUseDetector::new(type_or_const).type_mentions_param(ty) {
+    // `Self` includes the enclosing type's parameters even when none are
+    // written explicitly in the field type (for example, `*const Self`).
+    let self_ident = syn::Ident::new("Self", proc_macro2::Span::call_site());
+    let self_param = (!generics.params.is_empty()).then_some(&self_ident);
+    if ParamUseDetector::new(type_or_const.chain(self_param)).type_mentions_param(ty) {
         return true;
     }
 
@@ -1002,6 +1036,63 @@ mod tests {
     }
 
     #[test]
+    fn generated_reference_bounds_are_not_speculative() {
+        use syn::visit::Visit;
+
+        struct Check;
+        impl<'ast> Visit<'ast> for Check {
+            fn visit_item_impl(&mut self, item: &'ast syn::ItemImpl) {
+                for predicate in item
+                    .generics
+                    .where_clause
+                    .iter()
+                    .flat_map(|w| &w.predicates)
+                {
+                    let syn::WherePredicate::Type(predicate) = predicate else {
+                        continue;
+                    };
+                    if predicate.lifetimes.is_some()
+                        && matches!(predicate.bounded_ty, syn::Type::Reference(_))
+                    {
+                        assert!(
+                            !is_parametrized(&predicate.bounded_ty, &item.generics),
+                            "speculative bound on a parameterized reference: {}",
+                            quote::quote!(#predicate),
+                        );
+                    }
+                }
+                syn::visit::visit_item_impl(self, item);
+            }
+        }
+
+        for input in [
+            syn::parse_quote!(
+                #[repr(C)]
+                struct Concrete(u32);
+            ),
+            syn::parse_quote!(
+                #[repr(C)]
+                struct Generic<T>(T);
+            ),
+            syn::parse_quote!(
+                #[repr_c(transparent)]
+                struct Transparent(u32);
+            ),
+            syn::parse_quote!(
+                #[repr(u8)]
+                enum Choice {
+                    A(u32),
+                    B(u8),
+                }
+            ),
+        ] {
+            let generated = derive_repr_c(&input).unwrap();
+            let file = syn::parse2::<syn::File>(generated).unwrap();
+            Check.visit_file(&file);
+        }
+    }
+
+    #[test]
     fn detects_type_lifetime_and_const_arguments() {
         let generics = syn::parse_quote!(<'a, T, const N: usize>);
 
@@ -1010,5 +1101,34 @@ mod tests {
         assert!(is_parametrized(&syn::parse_quote!(Wrapper<N>), &generics));
         assert!(is_parametrized(&syn::parse_quote!([u8; N]), &generics));
         assert!(!is_parametrized(&syn::parse_quote!(Wrapper<1>), &generics));
+        assert!(is_parametrized(&syn::parse_quote!(*const Self), &generics));
+        assert!(is_parametrized(
+            &syn::parse_quote!(field_type!(T)),
+            &generics
+        ));
+        assert!(is_parametrized(
+            &syn::parse_quote!([u8; length!(N)]),
+            &generics
+        ));
+        assert!(is_parametrized(&syn::parse_quote!(Self::Item), &generics));
+        assert!(!is_parametrized(
+            &syn::parse_quote!(*const Self),
+            &syn::Generics::default(),
+        ));
+    }
+
+    #[test]
+    fn identity_rejects_move() {
+        let input = syn::parse_quote! {
+            #[repr(C)]
+            #[repr_c(identity, move)]
+            struct Identity(u32);
+        };
+        let error = derive_repr_c(&input).unwrap_err();
+        assert!(
+            error
+                .to_string()
+                .contains("`repr_c(identity)` cannot be combined with `move`")
+        );
     }
 }

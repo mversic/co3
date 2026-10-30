@@ -219,6 +219,14 @@ impl<T: CType> CVec<T> {
         }
     }
 
+    /// Constructs a vector carrier from its allocation and initialized length.
+    ///
+    /// # Safety
+    /// For a non-null pointer, `data`, `len`, and `capacity` must describe valid
+    /// vector storage, with `len <= capacity`. This includes the aligned dangling
+    /// pointer used for zero-capacity vectors and zero-sized elements. The storage
+    /// must remain valid while the carrier is used. A null pointer represents no
+    /// allocation. This constructor does not transfer ownership by itself.
     pub const unsafe fn from_raw_parts(data: *mut T, len: usize, capacity: usize) -> Self {
         Self {
             data,

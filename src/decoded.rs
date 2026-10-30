@@ -639,7 +639,7 @@ disjoint_impls! {
                     let value = unsafe { <&'d T>::soft_decode(carrier, field)? };
                     values.push(T::clone(value));
                 }
-                Some(values.into())
+                Some(values)
             })
         }
 
@@ -661,7 +661,7 @@ disjoint_impls! {
                         let value = unsafe { <&'d T>::soft_decode_unchecked(carrier, field) };
                         values.push(T::clone(value));
                     }
-                    Some(values.into())
+                    Some(values)
                 })
                 .expect("unchecked decoding produces a value")
         }
@@ -739,13 +739,12 @@ disjoint_impls! {
             source: <&'d Self as ReprC>::CType,
             store: &'itm mut Self::Store,
         ) -> Option<&'d Self> {
-            crate::assert_arr_has_non_zero_len::<N>();
             let source: &'d [<T as ReprC>::CType; N] = unsafe { source.into_ref()? };
             store.decode(|fields| {
                 let mut fields = fields.0.iter_mut();
                 let values: [Option<T>; N] = core::array::from_fn(|i| {
                     let carrier = crate::reference::CRef::from_ref(&source[i]);
-                    unsafe { <&'d T>::soft_decode(carrier, fields.next().unwrap()) }.map(T::clone)
+                    unsafe { <&'d T>::soft_decode(carrier, fields.next().unwrap()) }.cloned()
                 });
                 if values.iter().any(Option::is_none) {
                     return None;
@@ -758,7 +757,6 @@ disjoint_impls! {
             source: <&'d Self as ReprC>::CType,
             store: &'itm mut Self::Store,
         ) -> &'d Self {
-            crate::assert_arr_has_non_zero_len::<N>();
             let source: &'d [<T as ReprC>::CType; N] = unsafe { source.into_ref().unwrap_unchecked() };
             store
                 .decode(|fields| {
@@ -1000,7 +998,7 @@ disjoint_impls! {
                     }
                     Some(value) => {
                         let field = fields.insert(Default::default());
-                        let value = unsafe { decode_mut_field::<T>(*value, field) }?;
+                        let value = decode_mut_field::<T>(*value, field)?;
                         Some(Self::Some(value))
                     }
                 })
@@ -1020,7 +1018,7 @@ disjoint_impls! {
                     }
                     Some(value) => {
                         let field = fields.insert(Default::default());
-                        let value = unsafe { decode_mut_field_unchecked::<T>(*value, field) };
+                        let value = decode_mut_field_unchecked::<T>(*value, field);
                         Some(Self::Some(value))
                     }
                 })
@@ -1054,7 +1052,7 @@ disjoint_impls! {
                     }
                     Some(value) => {
                         let field = fields.insert(Default::default());
-                        let value = unsafe { decode_mut_field::<T>(*value, field) }?;
+                        let value = decode_mut_field::<T>(*value, field)?;
                         Some(Self::Some(value))
                     }
                 })
@@ -1074,7 +1072,7 @@ disjoint_impls! {
                     }
                     Some(value) => {
                         let field = fields.insert(Default::default());
-                        let value = unsafe { decode_mut_field_unchecked::<T>(*value, field) };
+                        let value = decode_mut_field_unchecked::<T>(*value, field);
                         Some(Self::Some(value))
                     }
                 })
@@ -1122,14 +1120,14 @@ disjoint_impls! {
                         let Ok(field) = fields.insert(Ok(Default::default())) else {
                             unreachable!()
                         };
-                        let value = unsafe { decode_mut_field::<T>(*value, field) }?;
+                        let value = decode_mut_field::<T>(*value, field)?;
                         Some(Self::Ok(value))
                     }
                     Err(value) => {
                         let Err(field) = fields.insert(Err(Default::default())) else {
                             unreachable!()
                         };
-                        let value = unsafe { decode_mut_field::<E>(*value, field) }?;
+                        let value = decode_mut_field::<E>(*value, field)?;
                         Some(Self::Err(value))
                     }
                 })
@@ -1147,14 +1145,14 @@ disjoint_impls! {
                         let Ok(field) = fields.insert(Ok(Default::default())) else {
                             unreachable!()
                         };
-                        let value = unsafe { decode_mut_field_unchecked::<T>(*value, field) };
+                        let value = decode_mut_field_unchecked::<T>(*value, field);
                         Some(Self::Ok(value))
                     }
                     Err(value) => {
                         let Err(field) = fields.insert(Err(Default::default())) else {
                             unreachable!()
                         };
-                        let value = unsafe { decode_mut_field_unchecked::<E>(*value, field) };
+                        let value = decode_mut_field_unchecked::<E>(*value, field);
                         Some(Self::Err(value))
                     }
                 })
@@ -1199,14 +1197,14 @@ disjoint_impls! {
                         let Ok(field) = fields.insert(Ok(Default::default())) else {
                             unreachable!()
                         };
-                        let value = unsafe { decode_mut_field::<T>(*value, field) }?;
+                        let value = decode_mut_field::<T>(*value, field)?;
                         Some(Self::Ok(value))
                     }
                     Err(value) => {
                         let Err(field) = fields.insert(Err(Default::default())) else {
                             unreachable!()
                         };
-                        let value = unsafe { decode_mut_field::<E>(*value, field) }?;
+                        let value = decode_mut_field::<E>(*value, field)?;
                         Some(Self::Err(value))
                     }
                 })
@@ -1224,14 +1222,14 @@ disjoint_impls! {
                         let Ok(field) = fields.insert(Ok(Default::default())) else {
                             unreachable!()
                         };
-                        let value = unsafe { decode_mut_field_unchecked::<T>(*value, field) };
+                        let value = decode_mut_field_unchecked::<T>(*value, field);
                         Some(Self::Ok(value))
                     }
                     Err(value) => {
                         let Err(field) = fields.insert(Err(Default::default())) else {
                             unreachable!()
                         };
-                        let value = unsafe { decode_mut_field_unchecked::<E>(*value, field) };
+                        let value = decode_mut_field_unchecked::<E>(*value, field);
                         Some(Self::Err(value))
                     }
                 })
@@ -1266,7 +1264,7 @@ disjoint_impls! {
                         return Some(None);
                     }
                     let value =
-                        unsafe { decode_mut_field::<T>(*value, field.insert(Default::default())) }?;
+                        decode_mut_field::<T>(*value, field.insert(Default::default()))?;
                     Some(Some(value))
                 })
             }
@@ -1283,9 +1281,8 @@ disjoint_impls! {
                         *field = None;
                         return Some(None);
                     }
-                    let value = unsafe {
-                        decode_mut_field_unchecked::<T>(*value, field.insert(Default::default()))
-                    };
+                    let value =
+                        decode_mut_field_unchecked::<T>(*value, field.insert(Default::default()));
                     Some(Some(value))
                 })
             }
@@ -1324,7 +1321,7 @@ disjoint_impls! {
                         return Some(Err(E::default()));
                     }
                     let value =
-                        unsafe { decode_mut_field::<T>(*value, field.insert(Default::default())) }?;
+                        decode_mut_field::<T>(*value, field.insert(Default::default()))?;
                     Some(Ok(value))
                 })
             }
@@ -1341,9 +1338,8 @@ disjoint_impls! {
                         *field = None;
                         return Some(Err(E::default()));
                     }
-                    let value = unsafe {
-                        decode_mut_field_unchecked::<T>(*value, field.insert(Default::default()))
-                    };
+                    let value =
+                        decode_mut_field_unchecked::<T>(*value, field.insert(Default::default()));
                     Some(Ok(value))
                 })
             }
@@ -1382,7 +1378,7 @@ disjoint_impls! {
                         return Some(Ok(T::default()));
                     }
                     let value =
-                        unsafe { decode_mut_field::<E>(*value, field.insert(Default::default())) }?;
+                        decode_mut_field::<E>(*value, field.insert(Default::default()))?;
                     Some(Err(value))
                 })
             }
@@ -1399,9 +1395,8 @@ disjoint_impls! {
                         *field = None;
                         return Some(Ok(T::default()));
                     }
-                    let value = unsafe {
-                        decode_mut_field_unchecked::<E>(*value, field.insert(Default::default()))
-                    };
+                    let value =
+                        decode_mut_field_unchecked::<E>(*value, field.insert(Default::default()));
                     Some(Err(value))
                 })
             }
@@ -1568,7 +1563,6 @@ disjoint_impls! {
             source: <&'d mut Self as ReprC>::CType,
             store: &'itm mut Self::Store,
         ) -> Option<&'d mut Self> {
-            crate::assert_arr_has_non_zero_len::<N>();
             let source = source.as_ptr();
             unsafe {
                 store.decode(source, |fields| {
@@ -1589,7 +1583,6 @@ disjoint_impls! {
             source: <&'d mut Self as ReprC>::CType,
             store: &'itm mut Self::Store,
         ) -> &'d mut Self {
-            crate::assert_arr_has_non_zero_len::<N>();
             let source = source.as_ptr();
             unsafe {
                 store.decode(source, |fields| {
@@ -1779,14 +1772,13 @@ disjoint_impls! {
                             destinations.push(core::ptr::from_mut(value));
                         }
                         let capacity = values.capacity();
-                        Some((values.into(), (destinations.into_boxed_slice(), capacity)))
+                        Some((values, (destinations.into_boxed_slice(), capacity)))
                     },
                     |values, (destinations, capacity)| {
                         // A borrowed vector cannot replace the foreign allocation or its shape.
                         if values.len() != destinations.len() || values.capacity() != capacity {
                             return None;
                         }
-                        let values: Vec<T> = values.into();
                         for (value, destination) in values.into_iter().zip(destinations.iter()) {
                             **destination = value;
                         }
@@ -1815,14 +1807,13 @@ disjoint_impls! {
                             destinations.push(core::ptr::from_mut(value));
                         }
                         let capacity = values.capacity();
-                        Some((values.into(), (destinations.into_boxed_slice(), capacity)))
+                        Some((values, (destinations.into_boxed_slice(), capacity)))
                     },
                     |values, (destinations, capacity)| {
                         // A borrowed vector cannot replace the foreign allocation or its shape.
                         if values.len() != destinations.len() || values.capacity() != capacity {
                             return None;
                         }
-                        let values: Vec<T> = values.into();
                         for (value, destination) in values.into_iter().zip(destinations.iter()) {
                             **destination = value;
                         }
@@ -1931,8 +1922,12 @@ unsafe impl<'d, 'a: 'd, T: ReprC<CType: crate::CType + Sized> + 'a> DecodeMut<'d
 where
     Self: RustSpec<Layout = Unstable>
         + DecodeMove<'d, CType = crate::reference::CRefMut<<T as ReprC>::CType, true>>,
-    &'d mut Self:
-        ReprC<CType = crate::reference::CRefMut<crate::reference::CRefMut<<T as ReprC>::CType, true>, true>>,
+    &'d mut Self: ReprC<
+        CType = crate::reference::CRefMut<
+            crate::reference::CRefMut<<T as ReprC>::CType, true>,
+            true,
+        >,
+    >,
 {
     type Store = RefMutSizedDecodeStore<Self, Box<<Self as DecodeMove<'d>>::Store>, *mut T>;
     unsafe fn decode_mut<'itm: 'd>(

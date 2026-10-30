@@ -52,12 +52,9 @@
 //! ```
 
 use crate::transmute::AbiCompatibleValidate;
-use disjoint_impls::disjoint_impls;
 use rust_spec::{
     RustSpec,
-    layout::LayoutKind,
     mutability::{Exclusive, ExclusiveKind},
-    niche::{WithNiche, WithoutNiche},
 };
 
 use crate::{
@@ -271,6 +268,7 @@ macro_rules! impl_tuple {
             $(&'a $ty: EncodeMove + ReprC<CType = crate::reference::CRef<<$ty as ReprC>::CType>>),*
         {
             type Store = crate::sync::RefSizedEncodeStore<Self, ($(<&'a $ty as EncodeMove>::Store,)*)>;
+            #[expect(non_snake_case)]
             fn encode_ref<'itm>(&'a self, store: &'itm mut Self::Store) -> <&'a Self as ReprC>::CType  where 'a: 'itm {
                 store.encode(|fields| {
                     impl_tuple! {@decl_priv_store $($ty),*}
@@ -287,6 +285,7 @@ macro_rules! impl_tuple {
             $(&'a $ty: EncodeMove + ReprC<CType = crate::reference::CRef<<$ty as ReprC>::CType>>),*
         {
             type Store = crate::sync::RefSizedEncodeStore<Self, ($(<&'a $ty as EncodeMove>::Store,)*)>;
+            #[expect(non_snake_case)]
             fn encode_ref<'itm>(&'a self, store: &'itm mut Self::Store) -> <&'a Self as ReprC>::CType  where 'a: 'itm {
                 store.encode(|fields| {
                     impl_tuple! {@decl_priv_store $($ty),*}
@@ -304,6 +303,7 @@ macro_rules! impl_tuple {
             $(&'a $ty: EncodeMoveUnchecked + ReprC<CType = crate::reference::CRef<<$ty as ReprC>::CType>>),*
         {
             type SoftStore = crate::sync::RefSizedEncodeStore<Self, ($(<&'a $ty as EncodeMoveUnchecked>::SoftStore,)*)>;
+            #[expect(non_snake_case)]
             unsafe fn encode_ref_unchecked<'itm>(&'a self, store: &'itm mut Self::SoftStore) -> <&'a Self as ReprC>::CType  where 'a: 'itm {
                 store.encode(|fields| {
                     impl_tuple! {@decl_priv_store $($ty),*}
@@ -320,6 +320,7 @@ macro_rules! impl_tuple {
             $(&'a $ty: EncodeMoveUnchecked + ReprC<CType = crate::reference::CRef<<$ty as ReprC>::CType>>),*
         {
             type SoftStore = crate::sync::RefSizedEncodeStore<Self, ($(<&'a $ty as EncodeMoveUnchecked>::SoftStore,)*)>;
+            #[expect(non_snake_case)]
             unsafe fn encode_ref_unchecked<'itm>(&'a self, store: &'itm mut Self::SoftStore) -> <&'a Self as ReprC>::CType  where 'a: 'itm {
                 store.encode(|fields| {
                     impl_tuple! {@decl_priv_store $($ty),*}
@@ -506,6 +507,8 @@ unsafe impl<$($head: AbiCompatible<CType: Copy>,)* $last: AbiCompatible + ?Sized
 
     // NOTE: This is a trick to index tuples
     ( @decl_priv_store $( $ty:ident ),+) => {
+        // Field names mirror type parameters so the macro can address tuple stores.
+        #[allow(non_snake_case)]
         mod private_store {
             pub struct Store<'itm, $($ty),+> {
                 $(pub $ty: &'itm mut $ty),+
@@ -581,11 +584,7 @@ mod tests {
     use alloc::{boxed::Box, vec::Vec};
     use core::num::NonZero as StdNonZero;
 
-    use rust_spec::size::{Sized as Co3Sized, Zero};
-    use static_assertions::assert_impl_all;
     #[cfg(feature = "alloc")]
-    use static_assertions::assert_not_impl_any;
-
     use super::*;
     #[cfg(feature = "alloc")]
     use crate::boxed::{CBox, CWideBox};
@@ -596,6 +595,9 @@ mod tests {
         slice::{CWideRef, CWideRefMut},
         stored::{DecodeMove, EncodeMove},
     };
+    use rust_spec::size::{Sized as Co3Sized, Zero};
+    use static_assertions::assert_impl_all;
+    use static_assertions::assert_not_impl_any;
 
     #[test]
     fn tuple_size_family_tracks_zst_fields() {
@@ -670,14 +672,17 @@ mod tests {
 
     #[cfg(feature = "alloc")]
     #[test]
+    fn unstable_boxes_do_not_expose_public_conversion() {
+        assert_not_impl_any!(Box<(u8, u8, u8)>: Encode, Decode<'static>);
+        assert_not_impl_any!(Box<[(u8, u8, u8)]>: Encode, Decode<'static>);
+    }
+
+    #[cfg(feature = "alloc")]
+    #[test]
     fn unstable_sized_box_decode_releases_source_allocation() {
         type Value = Box<(u8, u8, u8)>;
-
-        let mut encode_store = Default::default();
-        let source = <Value as EncodeMove>::soft_encode(Box::new((1, 2, 3)), &mut encode_store);
-        let mut decode_store = Default::default();
-        let decoded = unsafe { <Value as DecodeMove>::soft_decode(source, &mut decode_store) };
-
+        let source = crate::stored::encode_move::<Value>(Box::new((1, 2, 3)));
+        let decoded = unsafe { crate::stored::decode_move::<Value>(source) };
         assert_eq!(decoded, Some(Box::new((1, 2, 3))));
     }
 
@@ -685,17 +690,31 @@ mod tests {
     #[test]
     fn unstable_slice_box_owned_round_trip() {
         type Value = Box<[(u8, u8, u8)]>;
-
         let input: Value = Vec::from([(1, 2, 3), (4, 5, 6)]).into_boxed_slice();
-        let mut encode_store = Default::default();
-        let source = <Value as EncodeMove>::soft_encode(input, &mut encode_store);
-        let mut decode_store = Default::default();
-        let decoded = unsafe { <Value as DecodeMove>::soft_decode(source, &mut decode_store) };
-
+        let source = crate::stored::encode_move(input);
+        let decoded = unsafe { crate::stored::decode_move::<Value>(source) };
         assert_eq!(
             decoded,
             Some(Vec::from([(1, 2, 3), (4, 5, 6)]).into_boxed_slice())
         );
+    }
+
+    #[cfg(feature = "alloc")]
+    #[test]
+    fn unstable_boxed_slice_uses_box_allocation_layout() {
+        let value = Vec::from([(1u32,), (2,)]).into_boxed_slice();
+        let carrier = crate::stored::encode_move(value);
+        let decoded = unsafe { crate::stored::decode_move::<Box<[(u32,)]>>(carrier) }.unwrap();
+        assert_eq!(&*decoded, &[(1,), (2,)]);
+    }
+
+    #[cfg(feature = "alloc")]
+    #[test]
+    fn unstable_interior_box_checked_round_trip() {
+        use core::cell::Cell;
+        let encoded = crate::stored::encode_move(Box::new(Cell::new((7_u8,))));
+        let decoded = unsafe { crate::stored::decode_move::<Box<Cell<(u8,)>>>(encoded) }.unwrap();
+        assert_eq!(decoded.get(), (7,));
     }
 
     #[test]

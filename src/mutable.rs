@@ -20,7 +20,6 @@ disjoint_impls! {
     /// later access. Synchronization must validate changes before restoring Rust
     /// values. Encoding must leave `self` valid even if the store is never synced.
     /// If `SoftStore` implements `EmptyStore`, the carrier must not borrow from it.
-
     pub unsafe trait EncodeMutUnchecked<'a>: ReprC + 'a {
         type SoftStore: Store + Default;
 
@@ -165,7 +164,6 @@ disjoint_impls! {
     /// The returned carrier must satisfy the checked mutable-reference contract.
     /// It grants borrowed access, without transferring ownership to the caller.
     /// If `Store` implements `EmptyStore`, the carrier must not borrow from it.
-
     pub unsafe trait EncodeMut<'a>: EncodeMutUnchecked<'a> {
         type Store: Store + Default;
 
@@ -587,7 +585,6 @@ impl_direct_mut!([C: crate::CType] crate::boxed::CBox<C>);
 #[cfg(feature = "alloc")]
 impl_direct_mut!([P: crate::wide::Wide<Header: crate::wide::WideHeader<Data: crate::CType>, Metadata: crate::CType> + ?Sized] crate::boxed::CWideBox<P>);
 #[cfg(feature = "alloc")]
-
 macro_rules! impl_move_out_mut {
     ([$($params:tt)*] $ty:ty where $($bounds:tt)*) => {
         unsafe impl<'_mut, $($params)*> $crate::stored::EncodeMutUnchecked<'_mut> for $ty

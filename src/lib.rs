@@ -867,7 +867,7 @@ impl<'d, R: Decode<'d>, const N: usize> Decode<'d> for [R; N] where Self: Decode
 
 /// Perform the conversion from `T` into [`ReprC::CType`].
 pub fn encode<T: Encode<Store: EmptyStore>>(item: T) -> T::CType {
-    stored::encode_owned(item)
+    stored::encode_move(item)
 }
 
 /// Perform the conversion from [`T::CType`](ReprC::CType) into `T`.
@@ -878,7 +878,7 @@ pub fn encode<T: Encode<Store: EmptyStore>>(item: T) -> T::CType {
 /// the caller must uphold the validity, lifetime, aliasing, ownership and allocation requirements
 /// of the resulting value.
 pub unsafe fn decode<'d, T: Decode<'d, Store: EmptyStore> + 'd>(source: T::CType) -> Option<T> {
-    unsafe { stored::decode_owned(source) }
+    unsafe { stored::decode_move(source) }
 }
 
 /// Perform the conversion from `T` into [`ReprC::CType`] using external storage.
@@ -911,7 +911,7 @@ pub unsafe fn soft_decode<'d, T: Decode<'d>>(
 /// The caller must ensure that foreign code preserves every invariant of the
 /// original Rust value, including validity of any pointees it can mutate.
 pub unsafe fn encode_unchecked<T: EncodeUnchecked<SoftStore: EmptyStore>>(item: T) -> T::CType {
-    unsafe { stored::encode_owned_unchecked(item) }
+    unsafe { stored::encode_move_unchecked(item) }
 }
 
 /// Decode a value known to be accepted by [`decode`].
@@ -926,7 +926,7 @@ pub unsafe fn encode_unchecked<T: EncodeUnchecked<SoftStore: EmptyStore>>(item: 
 /// - The caller must uphold all of the safety obligations of [`decode`]. Additionally,
 /// - for the same values of `store` and `source` arguments, [`decode`] must return `Some`.
 pub unsafe fn decode_unchecked<'d, T: Decode<'d, Store: EmptyStore> + 'd>(source: T::CType) -> T {
-    unsafe { stored::decode_owned_unchecked(source) }
+    unsafe { stored::decode_move_unchecked(source) }
 }
 
 /// Encode `T` using its unchecked conversion store.
@@ -959,9 +959,6 @@ pub unsafe fn soft_decode_unchecked<'d, T: Decode<'d>>(
 }
 
 // TODO: Check https://github.com/mversic/co3/issues/13
-const fn assert_arr_has_non_zero_len<const N: usize>() {
-    assert!(N != 0, "empty array is a ZST");
-}
 
 #[cfg(test)]
 #[cfg(feature = "alloc")]
@@ -1052,26 +1049,26 @@ mod tests {
 
         let value = StableOption::Some(alloc::vec![1_u32, 2]);
         let mut store = Default::default();
-        let carrier = crate::stored::EncodeRef::encode_ref(&value, &mut store);
+        let carrier = crate::soft_encode(&value, &mut store);
         assert_eq!(unsafe { (*carrier.as_ptr()).tag() }, 1);
         assert_eq!(store.sync(), Some(()));
 
         let value = StableResult::<alloc::vec::Vec<u32>, u8>::Ok(alloc::vec![3]);
         let mut store = Default::default();
-        let carrier = crate::stored::EncodeRef::encode_ref(&value, &mut store);
+        let carrier = crate::soft_encode(&value, &mut store);
         assert_eq!(unsafe { (*carrier.as_ptr()).tag() }, 0);
         assert_eq!(store.sync(), Some(()));
 
         let mut value = StableOption::Some(true);
         let mut store = Default::default();
-        let carrier = crate::stored::EncodeMut::encode_mut(&mut value, &mut store);
+        let carrier = crate::soft_encode(&mut value, &mut store);
         unsafe { *carrier.as_ptr() = COption::None() };
         assert_eq!(store.sync(), Some(()));
         assert_eq!(value, StableOption::None);
 
         let mut value = StableResult::<u32, bool>::Ok(4);
         let mut store = Default::default();
-        let carrier = crate::stored::EncodeMut::encode_mut(&mut value, &mut store);
+        let carrier = crate::soft_encode(&mut value, &mut store);
         unsafe { *carrier.as_ptr() = CResult::Err(CBool::TRUE) };
         assert_eq!(store.sync(), Some(()));
         assert_eq!(value, StableResult::Err(true));
@@ -1202,4 +1199,3 @@ mod tests {
         assert_eq!(tuples[0].0, 100);
     }
 }
-

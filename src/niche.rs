@@ -15,7 +15,7 @@ use rust_spec::{
 #[cfg(feature = "alloc")]
 use crate::boxed::{CBox, CWideBox};
 use crate::{
-    CType, NeedsDrop, ReprC, assert_arr_has_non_zero_len,
+    CType, NeedsDrop, ReprC,
     option::COption,
     primitives::CBool,
     reference::{CRef, CRefMut},
@@ -170,14 +170,8 @@ impl<T: ReprC<CType: Copy>, E: ReprC<CType: Copy>> Niche for crate::result::Resu
     const NICHE: Self::CType = CResult::niche();
 }
 
-impl<R: Niche, const N: usize> Niche for [R; N]
-where
-    Self: ReprC<CType = [R::CType; N]>,
-{
-    const NICHE: Self::CType = {
-        assert_arr_has_non_zero_len::<N>();
-        [R::NICHE; N]
-    };
+impl<R: Niche, const N: usize> Niche for [R; N] {
+    const NICHE: Self::CType = { [R::NICHE; N] };
 }
 
 impl<R, E, C: CType + Copy, D: CType + Copy> Niche for Result<R, E>

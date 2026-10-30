@@ -65,17 +65,19 @@ pub(super) fn derive_field_repr_c(
         .make_where_clause()
         .predicates
         .push(parse_quote!(#field_ty: co3::ReprC));
-    // A transparent conversion must not skip a custom Drop implementation.
-    repr_generics
-        .make_where_clause()
-        .predicates
-        .push(parse_quote!(#name #ty_generics: co3::rust_spec::RustSpec));
-    repr_generics
-        .make_where_clause()
-        .predicates
-        .push(parse_quote!(
-            <#name #ty_generics as co3::rust_spec::RustSpec>::Drop: __Co3NonCustomDrop
-        ));
+    // A transparent conversion skips the wrapper's Drop implementation.
+    if !attrs.is_move {
+        repr_generics
+            .make_where_clause()
+            .predicates
+            .push(parse_quote!(#name #ty_generics: co3::rust_spec::RustSpec));
+        repr_generics
+            .make_where_clause()
+            .predicates
+            .push(parse_quote!(
+                <#name #ty_generics as co3::rust_spec::RustSpec>::Drop: __Co3NonCustomDrop
+            ));
+    }
     let (repr_impl_generics, _, repr_where_clause) = repr_generics.split_for_impl();
 
     let niche_bound: Option<WherePredicate> = attrs
@@ -268,6 +270,14 @@ pub(super) fn derive_field_repr_c(
         };
         let mut decode_trait_generics = decode_generics.clone();
         decode_trait_generics.make_where_clause().predicates.push(parse_quote!(
+            #speculative Self: co3::rust_spec::RustSpec
+        ));
+        if !attrs.is_move {
+            decode_trait_generics.make_where_clause().predicates.push(parse_quote!(
+                #speculative <Self as co3::rust_spec::RustSpec>::Drop: __Co3NonCustomDrop
+            ));
+        }
+        decode_trait_generics.make_where_clause().predicates.push(parse_quote!(
             #speculative #name #ty_generics: co3::stored::DecodeMove<'_dšč>
         ));
         decode_trait_generics.make_where_clause().predicates.push(parse_quote!(
@@ -275,6 +285,10 @@ pub(super) fn derive_field_repr_c(
         ));
         let (decode_trait_impl_generics, _, decode_trait_where_clause) =
             decode_trait_generics.split_for_impl();
+
+        let drop_bound = (!attrs.is_move).then(|| quote! {
+            #speculative <Self as co3::rust_spec::RustSpec>::Drop: __Co3NonCustomDrop,
+        });
 
         quote! {
             #niche_impl
@@ -287,12 +301,16 @@ pub(super) fn derive_field_repr_c(
 
             impl #impl_generics co3::Encode for #name #ty_generics
             where
+                #speculative Self: co3::rust_spec::RustSpec,
+                #drop_bound
                 #speculative #name #ty_generics: co3::stored::EncodeMove,
                 #field_speculative #field_ty: co3::Encode,
                 #predicates
             {}
             impl #impl_generics co3::EncodeUnchecked for #name #ty_generics
             where
+                #speculative Self: co3::rust_spec::RustSpec,
+                #drop_bound
                 #speculative #name #ty_generics: co3::stored::EncodeMoveUnchecked,
                 #field_speculative #field_ty: co3::EncodeUnchecked,
                 #predicates
@@ -312,10 +330,11 @@ pub(super) fn derive_field_repr_c(
             impl #repr_impl_generics co3::ReprC for #name #ty_generics #repr_where_clause {
                 type CType = <#field_ty as co3::ReprC>::CType;
             }
+
+            #codecs
         };
 
         #checked
-        #codecs
         #references
     }
 }

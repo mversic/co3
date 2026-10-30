@@ -1,5 +1,5 @@
 use co3::ffi::c_char;
-use co3::{ReprC, boxed::CBox, ffi, rust_spec::RustSpec, stored::EncodeMove};
+use co3::{ReprC, boxed::CBox, ffi, rust_spec::RustSpec};
 use core::ffi::CStr;
 use static_assertions::assert_impl_all;
 use std::ffi::CString;
@@ -52,10 +52,7 @@ unsafe extern "C" {
 
 #[test]
 fn regular_drop_decodes_owned_carrier() {
-    let carrier = CString::new("battery")
-        .unwrap()
-        .into_boxed_c_str()
-        .soft_encode(&mut Default::default());
+    let carrier = co3::encode(CString::new("battery").unwrap());
     unsafe { drop_cstr(carrier) };
 }
 
@@ -66,6 +63,94 @@ fn regular_drop_import_calls_export() {
 }
 
 static FIELDLESS_DROPS: AtomicUsize = AtomicUsize::new(0);
+static MOVABLE_DROPS: AtomicUsize = AtomicUsize::new(0);
+
+#[derive(RustSpec, ReprC)]
+#[repr(C)]
+#[repr_c(move)]
+#[rust_spec(custom_drop)]
+struct MovableDrop(u32);
+
+impl Drop for MovableDrop {
+    fn drop(&mut self) {
+        MOVABLE_DROPS.fetch_add(1, Ordering::Relaxed);
+    }
+}
+
+#[derive(RustSpec, ReprC)]
+#[repr(transparent)]
+#[repr_c(transparent, move)]
+#[rust_spec(custom_drop)]
+struct MovableTransparentDrop(u32);
+
+impl Drop for MovableTransparentDrop {
+    fn drop(&mut self) {
+        MOVABLE_DROPS.fetch_add(1, Ordering::Relaxed);
+    }
+}
+
+#[derive(RustSpec, ReprC)]
+#[repr(u8)]
+#[repr_c(move)]
+#[rust_spec(custom_drop)]
+enum MovableFieldlessDrop {
+    Value = 3,
+}
+
+impl Drop for MovableFieldlessDrop {
+    fn drop(&mut self) {
+        MOVABLE_DROPS.fetch_add(1, Ordering::Relaxed);
+    }
+}
+
+#[derive(RustSpec, ReprC)]
+#[repr(u8)]
+#[repr_c(transparent, move)]
+#[rust_spec(custom_drop)]
+enum MovableTransparentFieldlessDrop {
+    Value = 4,
+}
+
+impl Drop for MovableTransparentFieldlessDrop {
+    fn drop(&mut self) {
+        MOVABLE_DROPS.fetch_add(1, Ordering::Relaxed);
+    }
+}
+
+#[test]
+fn move_opt_in_enables_checked_and_unchecked_custom_drop_moves() {
+    let before = MOVABLE_DROPS.load(Ordering::Relaxed);
+
+    let carrier = co3::encode(MovableDrop(7));
+    assert_eq!(MOVABLE_DROPS.load(Ordering::Relaxed), before);
+    let decoded: MovableDrop = unsafe { co3::decode(carrier) }.unwrap();
+    assert_eq!(decoded.0, 7);
+    drop(decoded);
+
+    let carrier = unsafe { co3::encode_unchecked(MovableDrop(9)) };
+    assert_eq!(MOVABLE_DROPS.load(Ordering::Relaxed), before + 1);
+    let decoded: MovableDrop = unsafe { co3::decode(carrier) }.unwrap();
+    assert_eq!(decoded.0, 9);
+    drop(decoded);
+
+    let carrier = co3::encode(MovableFieldlessDrop::Value);
+    assert_eq!(MOVABLE_DROPS.load(Ordering::Relaxed), before + 2);
+    let decoded: MovableFieldlessDrop = unsafe { co3::decode(carrier) }.unwrap();
+    drop(decoded);
+
+    let carrier = co3::encode(MovableTransparentDrop(11));
+    assert_eq!(MOVABLE_DROPS.load(Ordering::Relaxed), before + 3);
+    let decoded: MovableTransparentDrop = unsafe { co3::decode(carrier) }.unwrap();
+    assert_eq!(decoded.0, 11);
+    drop(decoded);
+
+    let carrier = co3::encode(MovableTransparentFieldlessDrop::Value);
+    assert_eq!(MOVABLE_DROPS.load(Ordering::Relaxed), before + 4);
+    let decoded: MovableTransparentFieldlessDrop = unsafe { co3::decode(carrier) }.unwrap();
+    drop(decoded);
+
+    assert_eq!(MOVABLE_DROPS.load(Ordering::Relaxed), before + 5);
+}
 
 #[derive(RustSpec, ReprC)]
 #[repr(C)]
@@ -93,10 +178,7 @@ struct InheritedDrop(Box<u32>);
 fn inherited_drop_borrows_fields() {
     use co3::borrow::Borrow;
 
-    static_assertions::assert_type_eq_all!(
-        <CInheritedDrop as Borrow>::Borrowed,
-        CInheritedDrop
-    );
+    static_assertions::assert_type_eq_all!(<CInheritedDrop as Borrow>::Borrowed, CInheritedDrop);
 
     let borrowed = Borrow::borrow(InheritedDrop(Box::new(7)));
     let borrowed: InheritedDropView = borrowed;
@@ -125,7 +207,6 @@ fn custom_and_inherited_drop_borrows_whole_value() {
 
 #[test]
 fn custom_drop_companion_borrows_as_self() {
-
     static_assertions::assert_type_eq_all!(
         <CCustomAndInheritedDrop as co3::borrow::Borrow>::Borrowed,
         CCustomAndInheritedDrop
@@ -179,23 +260,14 @@ impl Drop for InferredFieldlessDrop {
 }
 
 #[test]
-fn fieldless_enums_with_drop_convert_and_borrow() {
+fn fieldless_enums_with_drop_borrow() {
     use co3::borrow::Borrow;
 
     let before = FIELDLESS_DROPS.load(Ordering::Relaxed);
-    assert_eq!(co3::encode(ExplicitFieldlessDrop::Second).0, 5);
-    assert_eq!(co3::encode(InferredFieldlessDrop::Second).0, 3);
-    assert_eq!(FIELDLESS_DROPS.load(Ordering::Relaxed) - before, 2);
-
-    let decoded =
-        unsafe { co3::decode::<ExplicitFieldlessDrop>(CExplicitFieldlessDrop(2)) }.unwrap();
-    assert!(matches!(decoded, ExplicitFieldlessDrop::First));
-    drop(decoded);
-    assert!(unsafe { co3::decode::<ExplicitFieldlessDrop>(CExplicitFieldlessDrop(3)) }.is_none());
 
     let borrowed = Borrow::borrow(ExplicitFieldlessDrop::Second);
     let cloned = <ExplicitFieldlessDrop as Borrow>::from_borrow(borrowed);
     assert!(matches!(cloned, ExplicitFieldlessDrop::Second));
     drop(cloned);
-    assert_eq!(FIELDLESS_DROPS.load(Ordering::Relaxed) - before, 4);
+    assert_eq!(FIELDLESS_DROPS.load(Ordering::Relaxed) - before, 1);
 }

@@ -311,7 +311,7 @@ fn gen_regular_drop_import_body<const DISPATCHED: bool>(
     } else {
         quote! {
             #(#receiver_cfg)*
-            let __co3_self = co3::stored::encode_owned(__co3_self);
+            let __co3_self = co3::stored::encode_move(__co3_self);
         }
     };
 

@@ -33,8 +33,16 @@ fn pointer_carriers_borrow_without_borrowing_the_pointee() {
 
     assert!(identity(CBox::<UnsafeCell<u8>>::null()).as_ptr().is_null());
     assert!(identity(CBox::<UnsafeCell<u8>>::null()).as_ptr().is_null());
-    assert!(identity(CWideBox::<[UnsafeCell<u8>]>::null()).as_ptr().is_null());
-    assert!(identity(CWideBox::<[UnsafeCell<u8>]>::null()).as_ptr().is_null());
+    assert!(
+        identity(CWideBox::<[UnsafeCell<u8>]>::null())
+            .as_ptr()
+            .is_null()
+    );
+    assert!(
+        identity(CWideBox::<[UnsafeCell<u8>]>::null())
+            .as_ptr()
+            .is_null()
+    );
     assert!(identity(CVec::<UnsafeCell<u8>>::null()).as_ptr().is_null());
     assert!(identity(CBox::<Borrowed<u8>>::null()).as_ptr().is_null());
     assert!(identity(CVec::<Borrowed<u8>>::null()).as_ptr().is_null());

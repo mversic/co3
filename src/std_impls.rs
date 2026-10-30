@@ -153,7 +153,7 @@ unsafe impl AbiCompatibleValidate for () {
 unsafe impl AbiCompatible for () {}
 
 unsafe impl CType for () {}
-crate::mutable::impl_direct_mut!([] ());
+crate::mutable::impl_direct_mut!([]());
 unsafe impl CFnReturn for () {}
 
 unsafe impl EmptyStore for () {}
@@ -333,7 +333,6 @@ unsafe impl<T: Borrow> Borrow for UnsafeCell<T> {
     }
 }
 
-
 impl<R: ReprC + ?Sized> ReprC for UnsafeCell<R> {
     type CType = UnsafeCell<R::CType>;
 }
@@ -461,7 +460,6 @@ unsafe impl<T: CFnReturn> CFnReturn for MaybeUninit<T> where
 {
 }
 
-
 unsafe impl<T: EmptyStore> EmptyStore for MaybeUninit<T> {}
 
 unsafe impl<T> Borrow for ManuallyDrop<T> {
@@ -524,12 +522,12 @@ mod tests {
             <Vec<(u8,)> as EncodeMove>::Store
         );
         let mut encode_store = Default::default();
-        let encoded = ManuallyDrop::new(vec![(3_u8,), (5_u8,)]).soft_encode(&mut encode_store);
+        let encoded =
+            crate::soft_encode(ManuallyDrop::new(vec![(3_u8,), (5_u8,)]), &mut encode_store);
         let mut decode_store = Default::default();
-        let decoded = unsafe {
-            <ManuallyDrop<Vec<(u8,)>> as DecodeMove>::soft_decode(encoded, &mut decode_store)
-        }
-        .unwrap();
+        let decoded =
+            unsafe { crate::soft_decode::<ManuallyDrop<Vec<(u8,)>>>(encoded, &mut decode_store) }
+                .unwrap();
         assert_eq!(ManuallyDrop::into_inner(decoded), vec![(3,), (5,)]);
     }
 
@@ -628,7 +626,6 @@ mod tests {
     #[test]
     #[cfg(feature = "alloc")]
     fn manually_drop_inner_with_drop() {
-
         assert_impl_all!(ManuallyDrop<String>:
             ReprC<CType = ManuallyDrop<CWideBox<Utf8Str>>>,
             Decode<'static>,
@@ -859,18 +856,13 @@ mod tests {
     #[cfg(feature = "alloc")]
     #[test]
     fn interior_mutable_slice_carriers_round_trip() {
-
         let mut cells = [UnsafeCell::new(3_u8), UnsafeCell::new(4_u8)];
         let view = crate::encode(&mut cells[..]);
         unsafe { view.data().write(UnsafeCell::new(9)) };
         assert_eq!(unsafe { *cells[0].get() }, 9);
 
         let boxed = crate::encode(vec![UnsafeCell::new(5_u8)].into_boxed_slice());
-        unsafe {
-            boxed
-                .as_ptr()
-                .write(UnsafeCell::new(7))
-        };
+        unsafe { boxed.as_ptr().write(UnsafeCell::new(7)) };
         let boxed = unsafe { crate::decode::<Box<[UnsafeCell<u8>]>>(boxed) }.unwrap();
         assert_eq!(unsafe { *boxed[0].get() }, 7);
 
@@ -882,7 +874,6 @@ mod tests {
     #[cfg(feature = "alloc")]
     #[test]
     fn boxed_cell_borrow_and_round_trip() {
-
         let encoded = crate::encode(Box::new(UnsafeCell::new(4u8)));
         let borrowed = encoded.borrow();
         unsafe { borrowed.as_ptr().write(UnsafeCell::new(8)) };
@@ -890,11 +881,7 @@ mod tests {
         assert_eq!((*decoded).into_inner(), 8);
 
         let encoded = crate::encode(Box::new(Cell::new(4u8)));
-        unsafe {
-            encoded
-                .as_ptr()
-                .write(UnsafeCell::new(6))
-        };
+        unsafe { encoded.as_ptr().write(UnsafeCell::new(6)) };
         let decoded = unsafe { crate::decode::<Box<Cell<u8>>>(encoded) }.unwrap();
         assert_eq!(decoded.get(), 6);
 
@@ -912,7 +899,7 @@ mod tests {
 
         let mut value = Cell::new(NonZero::new(3_u8).unwrap());
         let mut store = Default::default();
-        let encoded = <&mut Cell<NonZero<u8>> as EncodeMove>::soft_encode(&mut value, &mut store);
+        let encoded = crate::soft_encode(&mut value, &mut store);
         unsafe { encoded.as_ptr().write(UnsafeCell::new(4)) };
         assert_eq!(store.sync(), Some(()));
         assert_eq!(value.get().get(), 4);

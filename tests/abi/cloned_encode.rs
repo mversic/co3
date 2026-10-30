@@ -118,37 +118,37 @@ unsafe impl<'a> EncodeMut<'a> for Probe {
 fn reference_and_borrowed_encoding_avoid_clones_and_sync_nested_state() {
     let mut store = Default::default();
     let value = Probe(7);
-    let encoded = (&value).soft_encode(&mut store);
+    let encoded = co3::soft_encode(&value, &mut store);
     assert_eq!(unsafe { *encoded.as_ptr() }, 7);
     assert_eq!(store.sync(), Some(()));
 
     let mut store = Default::default();
     let value = Probe(8);
-    let encoded = unsafe { (&value).soft_encode_unchecked(&mut store) };
+    let encoded = unsafe { co3::soft_encode_unchecked(&value, &mut store) };
     assert_eq!(unsafe { *encoded.as_ptr() }, 8);
     assert_eq!(store.sync(), Some(()));
 
     let mut store = Default::default();
     assert_eq!(
-        Borrowed::into_inner(Borrowed::new(Probe(9)).soft_encode(&mut store)),
+        Borrowed::into_inner(co3::soft_encode(Borrowed::new(Probe(9)), &mut store)),
         9
     );
     assert_eq!(store.sync(), Some(()));
 
     let mut store = Default::default();
-    let encoded = unsafe { Borrowed::new(Probe(10)).soft_encode_unchecked(&mut store) };
+    let encoded = unsafe { co3::soft_encode_unchecked(Borrowed::new(Probe(10)), &mut store) };
     assert_eq!(Borrowed::into_inner(encoded), 10);
     assert_eq!(store.sync(), Some(()));
 
     let mut value = Probe(11);
     let mut store = Default::default();
-    let encoded = (&mut value).soft_encode(&mut store);
+    let encoded = co3::soft_encode(&mut value, &mut store);
     unsafe { *encoded.as_ptr() = 12 };
     assert_eq!(store.sync(), Some(()));
     assert_eq!(value.0, 12);
 
     let mut store = Default::default();
-    let encoded = unsafe { (&mut value).soft_encode_unchecked(&mut store) };
+    let encoded = unsafe { co3::soft_encode_unchecked(&mut value, &mut store) };
     unsafe { *encoded.as_ptr() = 13 };
     assert_eq!(store.sync(), Some(()));
     assert_eq!(value.0, 13);

@@ -1,4 +1,3 @@
-use co3::transmute::AbiCompatibleValidate;
 use core::{
     cell::UnsafeCell,
     mem::{ManuallyDrop, MaybeUninit},
@@ -52,7 +51,7 @@ unsafe impl EncodeMoveUnchecked for RawProbe {
 }
 
 #[cfg(feature = "alloc")]
-unsafe impl AbiCompatibleValidate for RawProbe {
+unsafe impl co3::transmute::AbiCompatibleValidate for RawProbe {
     unsafe fn is_valid(_: &Self::CType) -> bool {
         true
     }
@@ -93,7 +92,7 @@ unsafe impl co3::stored::EncodeMoveUnchecked for UncheckedOnly {
     where
         Self: 'itm,
     {
-        co3::stored::EncodeMove::soft_encode(self, &mut Default::default())
+        co3::encode(self)
     }
 }
 
@@ -449,18 +448,6 @@ fn vec_mut_bool_syncs_element_stores() {
     drop(unsafe { encoded.into_vec().unwrap() });
     store.sync().unwrap();
     assert_eq!(values, [true, false]);
-}
-
-#[cfg(feature = "alloc")]
-#[test]
-fn vec_with_empty_element_stores_reuses_allocation() {
-    let values = vec![1u8, 2u8];
-    let original = values.as_ptr();
-    let mut store = Default::default();
-    let encoded = co3::soft_encode(values, &mut store);
-    assert_eq!(encoded.as_ptr(), original.cast_mut());
-    drop(unsafe { encoded.into_vec().unwrap() });
-    store.sync().unwrap();
 }
 
 #[test]

@@ -3,7 +3,7 @@ use co3::{
     borrow::Borrow,
     reference::{CRef, CRefMut},
     rust_spec::RustSpec,
-    stored::{DecodeMut, DecodeMove, DecodeRef, Store},
+    stored::{DecodeMove, DecodeMut, DecodeRef, Store},
 };
 use static_assertions::assert_not_impl_any;
 
@@ -93,19 +93,22 @@ fn downstream_shared_decoder_is_used_without_owned_decoding() {
     let source = 7;
     let mut store = Default::default();
     let value =
-        unsafe { <&ReferenceOnly>::soft_decode(CRef::from_ref(&source), &mut store) }.unwrap();
+        unsafe { co3::soft_decode::<&ReferenceOnly>(CRef::from_ref(&source), &mut store) }.unwrap();
     assert_eq!(value.0, 7);
     store.sync().unwrap();
 
     let mut store = Default::default();
-    assert!(unsafe { <&ReferenceOnly>::soft_decode(CRef::null(), &mut store) }.is_none());
+    assert!(unsafe { co3::soft_decode::<&ReferenceOnly>(CRef::null(), &mut store) }.is_none());
     let mut store = Default::default();
     let zero = 0;
-    assert!(unsafe { <&ReferenceOnly>::soft_decode(CRef::from_ref(&zero), &mut store) }.is_none());
+    assert!(
+        unsafe { co3::soft_decode::<&ReferenceOnly>(CRef::from_ref(&zero), &mut store) }.is_none()
+    );
     // Exercise unchecked dispatch with a valid source as well.
     let mut store = Default::default();
-    let value =
-        unsafe { <&ReferenceOnly>::soft_decode_unchecked(CRef::from_ref(&source), &mut store) };
+    let value = unsafe {
+        co3::soft_decode_unchecked::<&ReferenceOnly>(CRef::from_ref(&source), &mut store)
+    };
     assert_eq!(value.0, 7);
 }
 
@@ -116,30 +119,32 @@ fn downstream_mutable_decoder_synchronizes_the_source() {
         let mut store = Default::default();
         let carrier = CRefMut::from_mut(&mut source);
         let value = if unchecked {
-            unsafe { <&mut ReferenceOnly>::soft_decode_unchecked(carrier, &mut store) }
+            unsafe { co3::soft_decode_unchecked::<&mut ReferenceOnly>(carrier, &mut store) }
         } else {
-            unsafe { <&mut ReferenceOnly>::soft_decode(carrier, &mut store) }.unwrap()
+            unsafe { co3::soft_decode::<&mut ReferenceOnly>(carrier, &mut store) }.unwrap()
         };
         value.0 = 11;
         store.sync().unwrap();
         assert_eq!(source, 11);
     }
     let mut store = Default::default();
-    assert!(unsafe { <&mut ReferenceOnly>::soft_decode(CRefMut::null(), &mut store) }.is_none());
+    assert!(
+        unsafe { co3::soft_decode::<&mut ReferenceOnly>(CRefMut::null(), &mut store) }.is_none()
+    );
 }
 
 #[test]
 fn stable_references_keep_the_direct_decoding_path() {
     assert_not_impl_any!(u8: DecodeRef<'static>, DecodeMut<'static>);
     let source = 7u8;
-    let mut store = Default::default();
-    let value = unsafe { <&u8>::soft_decode(CRef::from_ref(&source), &mut store) }.unwrap();
+    let mut store = ();
+    let value = unsafe { co3::soft_decode::<&u8>(CRef::from_ref(&source), &mut store) }.unwrap();
     assert!(core::ptr::eq(value, &source));
     let mut source = 7u8;
     let original = core::ptr::from_mut(&mut source);
-    let mut store = Default::default();
+    let mut store = ();
     let value =
-        unsafe { <&mut u8>::soft_decode(CRefMut::from_mut(&mut source), &mut store) }.unwrap();
+        unsafe { co3::soft_decode::<&mut u8>(CRefMut::from_mut(&mut source), &mut store) }.unwrap();
     assert_eq!(core::ptr::from_mut(value), original);
     *value = 9;
     assert_eq!(source, 9);
@@ -154,13 +159,15 @@ struct Derived(u8, bool);
 fn derived_unstable_referents_use_temporary_storage_and_writeback() {
     let mut carrier = co3::encode(Derived(3, true));
     let mut store = Default::default();
-    let value = unsafe { Derived::decode_ref(CRef::from_ref(&carrier), &mut store) }.unwrap();
+    let value =
+        unsafe { co3::soft_decode::<&Derived>(CRef::from_ref(&carrier), &mut store) }.unwrap();
     assert_eq!(value, &Derived(3, true));
     store.sync().unwrap();
 
     let mut store = Default::default();
     let value =
-        unsafe { Derived::decode_mut(CRefMut::from_mut(&mut carrier), &mut store) }.unwrap();
+        unsafe { co3::soft_decode::<&mut Derived>(CRefMut::from_mut(&mut carrier), &mut store) }
+            .unwrap();
     value.0 = 9;
     value.1 = false;
     store.sync().unwrap();
@@ -188,7 +195,9 @@ fn stable_wide_referents_bypass_decode_traits() {
 fn unstable_shared_decoder_rejects_invalid_fields() {
     let carrier = co3::tuple::ReprCTuple2(7u8, co3::primitives::CBool(2));
     let mut store = Default::default();
-    assert!(unsafe { <(u8, bool)>::decode_ref(CRef::from_ref(&carrier), &mut store) }.is_none());
+    assert!(
+        unsafe { co3::soft_decode::<&(u8, bool)>(CRef::from_ref(&carrier), &mut store) }.is_none()
+    );
 }
 
 #[test]
@@ -200,50 +209,50 @@ fn stable_mutable_encoder_preserves_pointer_identity() {
     static_assertions::assert_impl_all!(co3::boxed::CBox<u8>: EncodeMut<'static>, EncodeMutUnchecked<'static>);
     let mut value = 7_u32;
     let original = core::ptr::from_mut(&mut value);
-    let encoded = value.encode_mut(&mut Default::default());
+    let encoded = co3::soft_encode(&mut value, &mut Default::default());
     assert_eq!(encoded.as_ptr(), original);
 
     let mut values = [1_u32, 2];
     let original = values.as_mut_ptr();
-    let encoded = values.as_mut_slice().encode_mut(&mut Default::default());
+    let encoded = co3::encode(values.as_mut_slice());
     assert_eq!(encoded.as_ptr(), original);
     assert_eq!(encoded.metadata(), 2);
-
 }
 
 #[test]
 fn mutable_array_with_exclusive_reference_writes_back() {
-    use co3::stored::EncodeMut;
     let mut value = false;
     let mut values = [&mut value];
     let mut store = Default::default();
-    let encoded = values.encode_mut(&mut store);
-    unsafe { (*encoded.as_ptr())[0].as_ptr().write(co3::primitives::CBool(1)) };
+    let encoded = co3::soft_encode(&mut values, &mut store);
+    unsafe {
+        (*encoded.as_ptr())[0]
+            .as_ptr()
+            .write(co3::primitives::CBool(1))
+    };
     assert_eq!(store.sync(), Some(()));
     assert!(value);
 }
 
 #[test]
 fn mutable_vec_with_exclusive_reference_writes_back() {
-    use co3::stored::{EncodeMut, EncodeMutUnchecked};
     let mut value = false;
     let mut values = co3::vec::Vec::with_capacity(4);
     values.push(&mut value);
     let capacity = values.capacity();
     let mut store = Default::default();
-    let encoded = values.encode_mut(&mut store);
+    let encoded = co3::soft_encode(&mut values, &mut store);
     let vector = unsafe { *encoded.as_ptr() };
     let field = unsafe { *vector.as_ptr() };
     unsafe { field.as_ptr().write(co3::primitives::CBool(1)) };
     assert_eq!(store.sync(), Some(()));
     assert_eq!(values.capacity(), capacity);
 
-    let mut store = Default::default();
-    let encoded = unsafe { values.encode_mut_unchecked(&mut store) };
+    let encoded = unsafe { co3::soft_encode_unchecked(&mut values, &mut ()) };
     let vector = unsafe { *encoded.as_ptr() };
     let field = unsafe { *vector.as_ptr() };
     unsafe { field.as_ptr().write(co3::primitives::CBool(0)) };
-    assert_eq!(store.sync(), Some(()));
+    assert_eq!(().sync(), Some(()));
     assert_eq!(values.capacity(), capacity);
     drop(values);
     assert!(!value);
@@ -287,14 +296,13 @@ fn mutable_nonrobust_array_validates_before_writeback() {
 
 #[test]
 fn standard_mutable_vec_keeps_original_references() {
-    use co3::stored::{EncodeMut, EncodeMutUnchecked};
     let mut value = false;
     let mut values = Vec::with_capacity(7);
     values.push(&mut value);
     let original = values.as_ptr();
     let capacity = values.capacity();
     let mut store = Default::default();
-    let encoded = values.encode_mut(&mut store);
+    let encoded = co3::soft_encode(&mut values, &mut store);
     let header = unsafe { *encoded.as_ptr() };
     assert_eq!(header.len(), 1);
     assert_eq!(header.capacity(), capacity);
@@ -304,7 +312,7 @@ fn standard_mutable_vec_keeps_original_references() {
     assert!(**values.first().unwrap());
 
     let mut store = Default::default();
-    let encoded = unsafe { values.encode_mut_unchecked(&mut store) };
+    let encoded = unsafe { co3::soft_encode_unchecked(&mut values, &mut store) };
     let header = unsafe { *encoded.as_ptr() };
     unsafe { (*header.as_ptr()).as_ptr().write(co3::primitives::CBool(0)) };
     assert_eq!(store.sync(), Some(()));
@@ -316,13 +324,12 @@ fn standard_mutable_vec_keeps_original_references() {
 
 #[test]
 fn mutable_vec_rejects_invalid_values_and_header_replacement() {
-    use co3::stored::EncodeMut;
     let mut values = co3::vec::Vec::with_capacity(5);
     values.push(true);
     let original = values.as_ptr();
     let capacity = values.capacity();
     let mut store = Default::default();
-    let encoded = values.encode_mut(&mut store);
+    let encoded = co3::soft_encode(&mut values, &mut store);
     let header = unsafe { *encoded.as_ptr() };
     unsafe { header.as_ptr().write(co3::primitives::CBool(2)) };
     assert_eq!(store.sync(), None);
@@ -330,7 +337,7 @@ fn mutable_vec_rejects_invalid_values_and_header_replacement() {
     assert_eq!(values.as_ptr(), original);
 
     let mut store = Default::default();
-    let encoded = values.encode_mut(&mut store);
+    let encoded = co3::soft_encode(&mut values, &mut store);
     unsafe { encoded.as_ptr().write(co3::vec::CVec::null()) };
     assert_eq!(store.sync(), None);
     assert_eq!(&*values, &[true]);
@@ -340,11 +347,10 @@ fn mutable_vec_rejects_invalid_values_and_header_replacement() {
 
 #[test]
 fn mutable_vec_preserves_empty_and_zero_sized_capacity() {
-    use co3::stored::EncodeMut;
     let mut empty = co3::vec::Vec::<u32>::with_capacity(9);
     let capacity = empty.capacity();
     let mut store = Default::default();
-    let encoded = empty.encode_mut(&mut store);
+    let encoded = co3::soft_encode(&mut empty, &mut store);
     let header = unsafe { *encoded.as_ptr() };
     assert_eq!(header.len(), 0);
     assert_eq!(header.capacity(), capacity);
@@ -353,7 +359,7 @@ fn mutable_vec_preserves_empty_and_zero_sized_capacity() {
 
     let mut values = co3::vec::Vec::from(vec![(); 3]);
     let mut store = Default::default();
-    let encoded = values.encode_mut(&mut store);
+    let encoded = co3::soft_encode(&mut values, &mut store);
     let header = unsafe { *encoded.as_ptr() };
     assert_eq!(header.len(), 3);
     assert_eq!(header.capacity(), usize::MAX);
@@ -369,14 +375,20 @@ fn shared_vector_decoding_preserves_foreign_ownership() {
     for unchecked in [false, true] {
         let mut store = Default::default();
         let value = if unchecked {
-            unsafe { Vec::<(u8, bool)>::decode_ref_unchecked(CRef::from_ref(&carrier), &mut store) }
+            unsafe {
+                co3::soft_decode_unchecked::<&Vec<(u8, bool)>>(CRef::from_ref(&carrier), &mut store)
+            }
         } else {
-            unsafe { Vec::<(u8, bool)>::decode_ref(CRef::from_ref(&carrier), &mut store) }.unwrap()
+            unsafe { co3::soft_decode::<&Vec<(u8, bool)>>(CRef::from_ref(&carrier), &mut store) }
+                .unwrap()
         };
         assert_eq!(value, &[(7, true)]);
         assert_eq!(store.sync(), Some(()));
         let mut store = Default::default();
-        let value = unsafe { co3::vec::Vec::<(u8, bool)>::decode_ref(CRef::from_ref(&carrier), &mut store) }.unwrap();
+        let value = unsafe {
+            co3::soft_decode::<&co3::vec::Vec<(u8, bool)>>(CRef::from_ref(&carrier), &mut store)
+        }
+        .unwrap();
         assert_eq!(&**value, &[(7, true)]);
         assert_eq!(store.sync(), Some(()));
     }
@@ -386,7 +398,10 @@ fn shared_vector_decoding_preserves_foreign_ownership() {
 
     let carrier = co3::vec::CVec::from_vec(vec![ReprCTuple2(7u8, CBool(2))]);
     let mut store = Default::default();
-    assert!(unsafe { Vec::<(u8, bool)>::decode_ref(CRef::from_ref(&carrier), &mut store) }.is_none());
+    assert!(
+        unsafe { co3::soft_decode::<&Vec::<(u8, bool)>>(CRef::from_ref(&carrier), &mut store) }
+            .is_none()
+    );
     assert_eq!(store.sync(), Some(()));
     drop(unsafe { carrier.into_vec() }.unwrap());
 }
@@ -399,9 +414,12 @@ fn shared_box_decoding_preserves_foreign_ownership() {
     for unchecked in [false, true] {
         let mut store = Default::default();
         let value = if unchecked {
-            unsafe { Box::<(u8, bool)>::decode_ref_unchecked(CRef::from_ref(&carrier), &mut store) }
+            unsafe {
+                co3::soft_decode_unchecked::<&Box<(u8, bool)>>(CRef::from_ref(&carrier), &mut store)
+            }
         } else {
-            unsafe { Box::<(u8, bool)>::decode_ref(CRef::from_ref(&carrier), &mut store) }.unwrap()
+            unsafe { co3::soft_decode::<&Box<(u8, bool)>>(CRef::from_ref(&carrier), &mut store) }
+                .unwrap()
         };
         assert_eq!(**value, (9, true));
         assert_eq!(store.sync(), Some(()));
@@ -419,18 +437,35 @@ fn array_decoders_validate_elements_and_write_back() {
         let mut carrier = [ReprCTuple2(1u8, CBool::TRUE), ReprCTuple2(2, CBool::FALSE)];
         let mut shared = Default::default();
         let values = if unchecked {
-            unsafe { <[(u8, bool); 2]>::decode_ref_unchecked(CRef::from_ref(&carrier), &mut shared) }
+            unsafe {
+                co3::soft_decode_unchecked::<&[(u8, bool); 2]>(
+                    CRef::from_ref(&carrier),
+                    &mut shared,
+                )
+            }
         } else {
-            unsafe { <[(u8, bool); 2]>::decode_ref(CRef::from_ref(&carrier), &mut shared) }.unwrap()
+            unsafe { co3::soft_decode::<&[(u8, bool); 2]>(CRef::from_ref(&carrier), &mut shared) }
+                .unwrap()
         };
         assert_eq!(values, &[(1, true), (2, false)]);
         assert_eq!(shared.sync(), Some(()));
 
         let mut mutable = Default::default();
         let values = if unchecked {
-            unsafe { <[(u8, bool); 2]>::decode_mut_unchecked(CRefMut::from_mut(&mut carrier), &mut mutable) }
+            unsafe {
+                co3::soft_decode_unchecked::<&mut [(u8, bool); 2]>(
+                    CRefMut::from_mut(&mut carrier),
+                    &mut mutable,
+                )
+            }
         } else {
-            unsafe { <[(u8, bool); 2]>::decode_mut(CRefMut::from_mut(&mut carrier), &mut mutable) }.unwrap()
+            unsafe {
+                co3::soft_decode::<&mut [(u8, bool); 2]>(
+                    CRefMut::from_mut(&mut carrier),
+                    &mut mutable,
+                )
+            }
+            .unwrap()
         };
         values[0] = (8, false);
         values[1] = (9, true);
@@ -443,9 +478,17 @@ fn array_decoders_validate_elements_and_write_back() {
 
     let mut carrier = [ReprCTuple2(1u8, CBool(2))];
     let mut shared = Default::default();
-    assert!(unsafe { <[(u8, bool); 1]>::decode_ref(CRef::from_ref(&carrier), &mut shared) }.is_none());
+    assert!(
+        unsafe { co3::soft_decode::<&[(u8, bool); 1]>(CRef::from_ref(&carrier), &mut shared) }
+            .is_none()
+    );
     let mut mutable = Default::default();
-    assert!(unsafe { <[(u8, bool); 1]>::decode_mut(CRefMut::from_mut(&mut carrier), &mut mutable) }.is_none());
+    assert!(
+        unsafe {
+            co3::soft_decode::<&mut [(u8, bool); 1]>(CRefMut::from_mut(&mut carrier), &mut mutable)
+        }
+        .is_none()
+    );
     assert_eq!(mutable.sync(), None);
     assert_eq!(carrier[0].1, CBool(2));
 }
@@ -456,13 +499,20 @@ fn shared_enum_decoders_handle_tags_and_niches() {
 
     let tagged = COption::Some(ReprCTuple2(3u8, 5u8));
     let mut store = Default::default();
-    let decoded = unsafe { <Option<(u8, u8)>>::decode_ref(CRef::from_ref(&tagged), &mut store) }.unwrap();
+    let decoded =
+        unsafe { co3::soft_decode::<&Option<(u8, u8)>>(CRef::from_ref(&tagged), &mut store) }
+            .unwrap();
     assert_eq!(decoded, &Some((3, 5)));
     store.sync().unwrap();
 
     let tagged = COption::Some(ReprCTuple2(3u8, CBool::TRUE));
     let mut store = Default::default();
-    let decoded = unsafe { <co3::option::Option<(u8, bool)>>::decode_ref_unchecked(CRef::from_ref(&tagged), &mut store) };
+    let decoded = unsafe {
+        co3::soft_decode_unchecked::<&co3::option::Option<(u8, bool)>>(
+            CRef::from_ref(&tagged),
+            &mut store,
+        )
+    };
     assert_eq!(decoded, &co3::option::Option::Some((3, true)));
     store.sync().unwrap();
 
@@ -471,32 +521,51 @@ fn shared_enum_decoders_handle_tags_and_niches() {
     let some = co3::encode(Some((true, 9u8)));
     for (carrier, expected) in [(none, None), (some, Some((true, 9)))] {
         let mut store = Default::default();
-        let decoded = unsafe { <Option<(bool, u8)>>::decode_ref(CRef::from_ref(&carrier), &mut store) }.unwrap();
+        let decoded = unsafe {
+            co3::soft_decode::<&Option<(bool, u8)>>(CRef::from_ref(&carrier), &mut store)
+        }
+        .unwrap();
         assert_eq!(*decoded, expected);
         store.sync().unwrap();
     }
 
     let carrier: CResult<ReprCTuple2<u8, CBool>, u8> = CResult::Err(7);
     let mut store = Default::default();
-    let decoded = unsafe { <Result<(u8, bool), u8>>::decode_ref(CRef::from_ref(&carrier), &mut store) }.unwrap();
+    let decoded = unsafe {
+        co3::soft_decode::<&Result<(u8, bool), u8>>(CRef::from_ref(&carrier), &mut store)
+    }
+    .unwrap();
     assert_eq!(decoded, &Err(7));
     store.sync().unwrap();
     let mut store = Default::default();
-    let decoded = unsafe { <co3::result::Result<(u8, bool), u8>>::decode_ref_unchecked(CRef::from_ref(&carrier), &mut store) };
+    let decoded = unsafe {
+        co3::soft_decode_unchecked::<&co3::result::Result<(u8, bool), u8>>(
+            CRef::from_ref(&carrier),
+            &mut store,
+        )
+    };
     assert_eq!(decoded, &co3::result::Result::Err(7));
     store.sync().unwrap();
 
     for value in [Ok((true, 4u8)), Err(())] {
         let carrier = co3::encode(value);
         let mut store = Default::default();
-        let decoded = unsafe { <Result<(bool, u8), ()>>::decode_ref(CRef::from_ref(&carrier), &mut store) }.unwrap();
+        let decoded = unsafe {
+            co3::soft_decode::<&Result<(bool, u8), ()>>(CRef::from_ref(&carrier), &mut store)
+        }
+        .unwrap();
         assert_eq!(*decoded, value);
         store.sync().unwrap();
     }
     for value in [Ok(()), Err((true, 4u8))] {
         let carrier = co3::encode(value);
         let mut store = Default::default();
-        let decoded = unsafe { <Result<(), (bool, u8)>>::decode_ref_unchecked(CRef::from_ref(&carrier), &mut store) };
+        let decoded = unsafe {
+            co3::soft_decode_unchecked::<&Result<(), (bool, u8)>>(
+                CRef::from_ref(&carrier),
+                &mut store,
+            )
+        };
         assert_eq!(*decoded, value);
         store.sync().unwrap();
     }
@@ -504,26 +573,49 @@ fn shared_enum_decoders_handle_tags_and_niches() {
     // Invalid active payloads and tags are rejected without inspecting an inactive payload.
     let invalid = COption::Some(ReprCTuple2(3u8, CBool(3)));
     let mut store = Default::default();
-    assert!(unsafe { <co3::option::Option<(u8, bool)>>::decode_ref(CRef::from_ref(&invalid), &mut store) }.is_none());
+    assert!(
+        unsafe {
+            co3::soft_decode::<&co3::option::Option<(u8, bool)>>(
+                CRef::from_ref(&invalid),
+                &mut store,
+            )
+        }
+        .is_none()
+    );
     let mut invalid = COption::<ReprCTuple2<u8, CBool>>::None();
-    unsafe { core::ptr::from_mut(&mut invalid).cast::<u8>().write(2); }
+    unsafe {
+        core::ptr::from_mut(&mut invalid).cast::<u8>().write(2);
+    }
     let mut store = Default::default();
-    assert!(unsafe { <co3::option::Option<(u8, bool)>>::decode_ref(CRef::from_ref(&invalid), &mut store) }.is_none());
+    assert!(
+        unsafe {
+            co3::soft_decode::<&co3::option::Option<(u8, bool)>>(
+                CRef::from_ref(&invalid),
+                &mut store,
+            )
+        }
+        .is_none()
+    );
 }
 
 #[test]
 fn transparent_reference_decoders_delegate_to_inner_storage() {
-    use core::mem::ManuallyDrop;
     use co3::borrow::Borrowed;
+    use core::mem::ManuallyDrop;
     let carrier = co3::encode((3u8, true));
     let mut store = Default::default();
-    let value = unsafe { <ManuallyDrop<(u8, bool)>>::decode_ref(CRef::from_ref(&carrier), &mut store) }.unwrap();
+    let value = unsafe {
+        co3::soft_decode::<&ManuallyDrop<(u8, bool)>>(CRef::from_ref(&carrier), &mut store)
+    }
+    .unwrap();
     assert_eq!(**value, (3, true));
     store.sync().unwrap();
 
     let carrier = Borrowed::new(carrier);
     let mut store = Default::default();
-    let value = unsafe { <Borrowed<(u8, bool)>>::decode_ref_unchecked(CRef::from_ref(&carrier), &mut store) };
+    let value = unsafe {
+        co3::soft_decode_unchecked::<&Borrowed<(u8, bool)>>(CRef::from_ref(&carrier), &mut store)
+    };
     assert_eq!(Borrowed::into_inner(*value), (3, true));
     store.sync().unwrap();
 }
@@ -545,18 +637,24 @@ fn derived_shared_decoders_validate_active_fields() {
         Pair(u8, bool),
         Named { value: (u8, bool) },
     }
-    for expected in [Message::Empty, Message::Pair(4, true), Message::Named { value: (8, false) }] {
+    for expected in [
+        Message::Empty,
+        Message::Pair(4, true),
+        Message::Named { value: (8, false) },
+    ] {
         let carrier = match &expected {
             Message::Empty => co3::encode(Message::Empty),
             Message::Pair(a, b) => co3::encode(Message::Pair(*a, *b)),
             Message::Named { value } => co3::encode(Message::Named { value: *value }),
         };
         let mut store = Default::default();
-        let value = unsafe { Message::decode_ref(CRef::from_ref(&carrier), &mut store) }.unwrap();
+        let value =
+            unsafe { co3::soft_decode::<&Message>(CRef::from_ref(&carrier), &mut store) }.unwrap();
         assert_eq!(value, &expected);
         store.sync().unwrap();
         let mut store = Default::default();
-        let value = unsafe { Message::decode_ref_unchecked(CRef::from_ref(&carrier), &mut store) };
+        let value =
+            unsafe { co3::soft_decode_unchecked::<&Message>(CRef::from_ref(&carrier), &mut store) };
         assert_eq!(value, &expected);
         store.sync().unwrap();
     }
@@ -566,7 +664,9 @@ fn derived_shared_decoders_validate_active_fields() {
     struct NonZero(u8);
     let carrier = CNonZero(0);
     let mut store = Default::default();
-    assert!(unsafe { NonZero::decode_ref(CRef::from_ref(&carrier), &mut store) }.is_none());
+    assert!(
+        unsafe { co3::soft_decode::<&NonZero>(CRef::from_ref(&carrier), &mut store) }.is_none()
+    );
 }
 
 #[cfg(feature = "derive")]
@@ -575,25 +675,47 @@ fn mutable_aggregates_accept_noncopy_nonclone_fields() {
     assert_not_impl_any!(Derived: Copy, Clone);
     let mut carrier = co3::encode([Derived(1, true), Derived(2, false)]);
     let mut store = Default::default();
-    let values = unsafe { <[Derived; 2]>::decode_mut(CRefMut::from_mut(&mut carrier), &mut store) }.unwrap();
+    let values = unsafe {
+        co3::soft_decode::<&mut [Derived; 2]>(CRefMut::from_mut(&mut carrier), &mut store)
+    }
+    .unwrap();
     values[0].0 = 7;
     values[1].1 = true;
     store.sync().unwrap();
-    assert_eq!(unsafe { co3::decode::<[Derived; 2]>(carrier) }, Some([Derived(7, true), Derived(2, true)]));
+    assert_eq!(
+        unsafe { co3::decode::<[Derived; 2]>(carrier) },
+        Some([Derived(7, true), Derived(2, true)])
+    );
 
     let mut carrier = co3::encode((Derived(3, true),));
     let mut store = Default::default();
-    let value = unsafe { <(Derived,)>::decode_mut_unchecked(CRefMut::from_mut(&mut carrier), &mut store) };
+    let value = unsafe {
+        co3::soft_decode_unchecked::<&mut (Derived,)>(CRefMut::from_mut(&mut carrier), &mut store)
+    };
     value.0.0 = 9;
     store.sync().unwrap();
-    assert_eq!(unsafe { co3::decode::<(Derived,)>(carrier) }, Some((Derived(9, true),)));
+    assert_eq!(
+        unsafe { co3::decode::<(Derived,)>(carrier) },
+        Some((Derived(9, true),))
+    );
 
     let mut carrier = co3::encode(co3::option::Option::Some(Derived(3, true)));
     let mut store = Default::default();
-    let value = unsafe { <co3::option::Option<Derived>>::decode_mut(CRefMut::from_mut(&mut carrier), &mut store) }.unwrap();
-    if let co3::option::Option::Some(value) = value { value.0 = 11; }
+    let value = unsafe {
+        co3::soft_decode::<&mut co3::option::Option<Derived>>(
+            CRefMut::from_mut(&mut carrier),
+            &mut store,
+        )
+    }
+    .unwrap();
+    if let co3::option::Option::Some(value) = value {
+        value.0 = 11;
+    }
     store.sync().unwrap();
-    assert_eq!(unsafe { co3::decode::<co3::option::Option<Derived>>(carrier) }, Some(co3::option::Option::Some(Derived(11, true))));
+    assert_eq!(
+        unsafe { co3::decode::<co3::option::Option<Derived>>(carrier) },
+        Some(co3::option::Option::Some(Derived(11, true)))
+    );
 }
 
 #[test]
@@ -601,7 +723,10 @@ fn mutable_aggregate_fields_can_be_exclusive_references() {
     let mut target = 3u32;
     let mut carrier = co3::tuple::ReprCTuple1(CRefMut::from_mut(&mut target));
     let mut store = Default::default();
-    let value = unsafe { <(&mut u32,)>::decode_mut(CRefMut::from_mut(&mut carrier), &mut store) }.unwrap();
+    let value = unsafe {
+        co3::soft_decode::<&mut (&mut u32,)>(CRefMut::from_mut(&mut carrier), &mut store)
+    }
+    .unwrap();
     *value.0 = 17;
     store.sync().unwrap();
     assert_eq!(target, 17);

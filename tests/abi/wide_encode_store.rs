@@ -1,6 +1,6 @@
 use co3::{
     primitives::CBool,
-    stored::{EncodeMut, Store},
+    stored::Store,
     sync::{RefMutWideEncodeStore, RefWideEncodeStore},
     tuple::{ReprCTuple2, ReprCTuple3},
     wide::Wide,
@@ -74,8 +74,8 @@ fn sync_after_move<S: Store>(store: S) -> Option<()> {
 #[test]
 fn stores_can_move_before_writeback() {
     let mut values = [1_u32, 2];
-    let mut store = Default::default();
-    let encoded = values[..].encode_mut(&mut store);
+    let mut store = ();
+    let encoded = co3::soft_encode(&mut values[..], &mut store);
     unsafe { encoded.as_ptr().cast::<u32>().write(3) };
     assert_eq!(sync_after_move(store), Some(()));
     assert_eq!(values, [3, 2]);
@@ -105,14 +105,18 @@ fn wide_tuple_preserves_data_and_metadata() {
 fn one_field_wide_tuples_are_unsupported() {
     use co3::stored::{EncodeMut, EncodeMutUnchecked, EncodeRef, EncodeRefUnchecked};
     use co3::tuple::ReprCTuple1;
-    static_assertions::assert_not_impl_any!(ReprCTuple1<[u8]>: Wide, EncodeRef<'static>, EncodeRefUnchecked<'static>, EncodeMut<'static>, EncodeMutUnchecked<'static>);
-    static_assertions::assert_not_impl_any!(([u8],): EncodeRef<'static>, EncodeRefUnchecked<'static>, EncodeMut<'static>, EncodeMutUnchecked<'static>);
-    static_assertions::assert_not_impl_any!((u32, [u8]): EncodeRef<'static>, EncodeRefUnchecked<'static>, EncodeMut<'static>, EncodeMutUnchecked<'static>);
-    static_assertions::assert_not_impl_any!(ReprCTuple2<u32, [u8]>: EncodeRef<'static>, EncodeRefUnchecked<'static>, EncodeMut<'static>, EncodeMutUnchecked<'static>);
-    static_assertions::assert_impl_all!(ReprCTuple1<u8>: EncodeRef<'static>, EncodeRefUnchecked<'static>);
-    static_assertions::assert_not_impl_any!(ReprCTuple1<core::ffi::CStr>: EncodeRef<'static>, EncodeRefUnchecked<'static>);
-    static_assertions::assert_not_impl_any!(ReprCTuple2<u32, core::ffi::CStr>: EncodeRef<'static>, EncodeRefUnchecked<'static>);
-    static_assertions::assert_not_impl_any!((u32, core::ffi::CStr): EncodeRef<'static>, EncodeRefUnchecked<'static>);
+    assert_not_shared_encoder!(ReprCTuple1<[u8]>: EncodeRef<'static>, EncodeRefUnchecked<'static>);
+    static_assertions::assert_not_impl_any!(ReprCTuple1<[u8]>: Wide, EncodeMut<'static>, EncodeMutUnchecked<'static>);
+    assert_not_shared_encoder!(([u8],): EncodeRef<'static>, EncodeRefUnchecked<'static>);
+    static_assertions::assert_not_impl_any!(([u8],): EncodeMut<'static>, EncodeMutUnchecked<'static>);
+    assert_not_shared_encoder!((u32, [u8]): EncodeRef<'static>, EncodeRefUnchecked<'static>);
+    static_assertions::assert_not_impl_any!((u32, [u8]): EncodeMut<'static>, EncodeMutUnchecked<'static>);
+    assert_not_shared_encoder!(ReprCTuple2<u32, [u8]>: EncodeRef<'static>, EncodeRefUnchecked<'static>);
+    static_assertions::assert_not_impl_any!(ReprCTuple2<u32, [u8]>: EncodeMut<'static>, EncodeMutUnchecked<'static>);
+    assert_shared_encoder!(ReprCTuple1<u8>: EncodeRef<'static>, EncodeRefUnchecked<'static>);
+    assert_not_shared_encoder!(ReprCTuple1<core::ffi::CStr>: EncodeRef<'static>, EncodeRefUnchecked<'static>);
+    assert_not_shared_encoder!(ReprCTuple2<u32, core::ffi::CStr>: EncodeRef<'static>, EncodeRefUnchecked<'static>);
+    assert_not_shared_encoder!((u32, core::ffi::CStr): EncodeRef<'static>, EncodeRefUnchecked<'static>);
 }
 
 #[test]

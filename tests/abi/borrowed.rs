@@ -5,7 +5,7 @@ use std::sync::atomic::{AtomicUsize, Ordering};
 #[test]
 fn retained_owners_expose_borrowed_views_without_changing_the_carrier() {
     use co3::borrow::Borrowed;
-    use co3::stored::{DecodeMove, EncodeMove, Store};
+    use co3::stored::Store;
     assert_type_eq_all!(<Box<u32> as Borrow>::Borrowed, Borrowed<Box<u32>>);
     assert_type_eq_all!(<Vec<u32> as Borrow>::Borrowed, Borrowed<Vec<u32>>);
     assert_type_eq_all!(
@@ -20,13 +20,14 @@ fn retained_owners_expose_borrowed_views_without_changing_the_carrier() {
     let value = Box::new(42_u32);
     let original = core::ptr::from_ref(&*value);
     let mut store = Default::default();
-    let encoded = value.borrow().soft_encode(&mut store);
+    let encoded = co3::soft_encode(value.borrow(), &mut store);
     assert_eq!(
         Borrowed::into_inner(encoded).as_ptr().cast_const(),
         original
     );
     let mut decode_store = Default::default();
-    let decoded = unsafe { Borrowed::<Box<u32>>::soft_decode(encoded, &mut decode_store) }.unwrap();
+    let decoded =
+        unsafe { co3::soft_decode::<Borrowed<Box<u32>>>(encoded, &mut decode_store) }.unwrap();
     let cloned = Borrowed::into_inner(decoded);
     assert_eq!(*cloned, 42);
     assert_ne!(core::ptr::from_ref(&*cloned), original);
@@ -55,13 +56,13 @@ impl Drop for RetainedDrop {
 #[test]
 fn custom_drop_keeps_the_original_alive_and_clones_on_restore() {
     use co3::borrow::Borrowed;
-    use co3::stored::{DecodeMove, EncodeMove, Store};
+    use co3::stored::Store;
     assert_type_eq_all!(<RetainedDrop as Borrow>::Borrowed, Borrowed<RetainedDrop>);
     let mut store = Default::default();
-    let encoded = RetainedDrop(7).borrow().soft_encode(&mut store);
+    let encoded = co3::soft_encode(RetainedDrop(7).borrow(), &mut store);
     let mut decode_store = Default::default();
     let cloned = Borrowed::into_inner(
-        unsafe { Borrowed::<RetainedDrop>::soft_decode(encoded, &mut decode_store) }.unwrap(),
+        unsafe { co3::soft_decode::<Borrowed<RetainedDrop>>(encoded, &mut decode_store) }.unwrap(),
     );
     assert_eq!(cloned.0, 7);
     assert_eq!(DROPS.load(Ordering::Relaxed), 0);
