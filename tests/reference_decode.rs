@@ -611,7 +611,7 @@ fn transparent_reference_decoders_delegate_to_inner_storage() {
     assert_eq!(**value, (3, true));
     store.sync().unwrap();
 
-    let carrier = Borrowed::new(carrier);
+    let carrier = carrier.into();
     let mut store = Default::default();
     let value = unsafe {
         co3::soft_decode_unchecked::<&Borrowed<(u8, bool)>>(CRef::from_ref(&carrier), &mut store)

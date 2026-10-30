@@ -100,7 +100,7 @@ error[E0277]: the trait bound `Tuple2<u8, u8>: Unpack2<u32, CWideBox<Utf8Str>>` 
              `(A, B)` implements `Unpack2<Part1, Part2>`
              `*const R` implements `Unpack2<*const <<R as Wide>::Header as WideHeader>::Data, U>`
              `*mut R` implements `Unpack2<*mut <<R as Wide>::Header as WideHeader>::Data, U>`
-             `Box<_TŠČ2>` implements `Unpack2<_TŠČ0, _TŠČ1>`
+             `Box<R>` implements `Unpack2<K, U>`
              `Cell<T>` implements `Unpack2<Part1, Part2>`
            and $N others
    = note: this error originates in the macro `ffi` (in Nightly builds, run with -Z macro-backtrace for more info)

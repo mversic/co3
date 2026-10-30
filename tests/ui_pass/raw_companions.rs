@@ -76,7 +76,7 @@ fn main() {
     let _: unsafe extern "system" fn(u8) -> u8 = callback;
     let unpacked: UnpackedCallback = overwrite_raw;
     let mut bytes = [0_u8; 3];
-    assert_eq!(unsafe { unpacked(bytes.as_mut_ptr(), bytes.len()) }, 3);
+    assert_eq!(unsafe { unpacked(bytes.as_mut_ptr().into(), bytes.len()) }, 3);
     assert_eq!(bytes, [7; 3]);
 
     assert_eq!(unsafe { c(1) }, 2);

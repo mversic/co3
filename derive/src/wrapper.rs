@@ -108,6 +108,15 @@ pub(crate) fn wrap_fn_definition(
         false,
         &item.sig,
     );
+    let return_borrow_check = if item.sig.generics.params.is_empty() {
+        ffi_fn::fn_return_ty(&item.sig).map(|ty| {
+            let check = gen_return_borrow_check(ty, item.attrs.iter().any(is_by_val_attr));
+            let cfg = cfg_attrs(&item.attrs);
+            quote! { #(#cfg)* const _: () = { #check }; }
+        })
+    } else {
+        None
+    };
     let co3 = co3_path();
 
     ffi_fn::normalize_fn_signature(&mut item.sig, None);
@@ -120,6 +129,7 @@ pub(crate) fn wrap_fn_definition(
     let extern_fn_decl = gen_extern_decl(abi, block_attrs, &item.attrs, decl);
 
     quote! {
+        #return_borrow_check
         #(#wrapper_attrs)*
         #vis #wrapper_sig {
             use #co3 as co3;
@@ -846,9 +856,15 @@ fn gen_unpack_input_stmts(
             ffi_fn::unpack_abi_parts(attrs, &ty).expect("validated #[unpack] attribute");
         let (part1, part2) =
             ffi_fn::unpack_parts(attrs).expect("validated #[unpack] attribute").unwrap();
+        let borrowed = ffi_fn::borrowed_wide_unpack(attrs, &ty);
         {
+            let unpack1_ty = if borrowed {
+                quote!(co3::borrow::Borrowed<#target1_ty>)
+            } else {
+                quote!(#target1_ty)
+            };
             let conversion = quote! {
-                <#unpack_ty as co3::pack::Unpack2<#target1_ty, #target2_ty>>::unpack(#arg_name)
+                <#unpack_ty as co3::pack::Unpack2<#unpack1_ty, #target2_ty>>::unpack(#arg_name)
             };
             let conversion = match failure_mode {
                 FailureMode::Panic => quote! { #conversion.unwrap_or_else(|_| panic!("co3 generated FFI unpack conversion failure")) },
@@ -856,7 +872,7 @@ fn gen_unpack_input_stmts(
             };
             let erase1 = gen_unpack_erase_stmt(
                 &data_name,
-                &target1_ty,
+                &syn::parse_quote!(#unpack1_ty),
                 &abi1_ty,
                 part1.abi.is_some(),
             );

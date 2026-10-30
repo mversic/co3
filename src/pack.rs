@@ -175,19 +175,6 @@ disjoint_impls! {
             T::unpack(ManuallyDrop::into_inner(value))
         }
     }
-
-    #[cfg(feature = "alloc")]
-    impl<R: ?Sized, P: Wide<Header: WideHeader<Data: CType + Sized>, Metadata: TryInto<U>> + ?Sized, K: CType, U: CType> Unpack2<K, U> for Box<R>
-    where
-        Self: ReprC<CType = CWideBox<P>>,
-        CBox<<<P as Wide>::Header as WideHeader>::Data>: Into<K>,
-    {
-        type Error = <<P as Wide>::Metadata as TryInto<U>>::Error;
-        fn unpack(value: Self::CType) -> Result<(K, U), Self::Error> {
-            Ok((unsafe { CBox::from_raw(value.as_ptr()) }.into(), value.metadata().try_into()?))
-        }
-    }
-
 }
 
 disjoint_impls! {
@@ -228,20 +215,44 @@ disjoint_impls! {
             unsafe { T::pack(part1, part2) }.map(ManuallyDrop::new)
         }
     }
+}
 
-    #[cfg(feature = "alloc")]
-    impl<R: ?Sized, P: Wide<Header: WideHeader<Data: CType + Sized>, Metadata: CType + Sized> + ?Sized, K: CType, U: CType + TryInto<<P as Wide>::Metadata>> Pack2<K, U> for Box<R>
-    where
-        Self: ReprC<CType = CWideBox<P>>,
-        K: Into<CBox<<<P as Wide>::Header as WideHeader>::Data>>,
-    {
-        type Error = <U as TryInto<<P as Wide>::Metadata>>::Error;
-        unsafe fn pack(data: K, metadata: U) -> Result<Self::CType, Self::Error> {
-            let data: CBox<<<P as Wide>::Header as WideHeader>::Data> = data.into();
-            Ok(unsafe { CWideBox::from_raw_nullable(data.as_ptr(), metadata.try_into()?) })
-        }
+#[cfg(feature = "alloc")]
+impl<
+    R: ?Sized,
+    P: Wide<Header: WideHeader<Data: CType + Sized>, Metadata: TryInto<U>> + ?Sized,
+    K: CType,
+    U: CType,
+> Unpack2<K, U> for Box<R>
+where
+    Self: ReprC<CType = CWideBox<P>>,
+    CBox<<<P as Wide>::Header as WideHeader>::Data>: Into<K>,
+{
+    type Error = <<P as Wide>::Metadata as TryInto<U>>::Error;
+    fn unpack(value: Self::CType) -> Result<(K, U), Self::Error> {
+        Ok((
+            unsafe { CBox::from_raw(value.as_ptr()) }.into(),
+            value.metadata().try_into()?,
+        ))
     }
+}
 
+#[cfg(feature = "alloc")]
+impl<
+    R: ?Sized,
+    P: Wide<Header: WideHeader<Data: CType + Sized>, Metadata: CType + Sized> + ?Sized,
+    K: CType,
+    U: CType + TryInto<<P as Wide>::Metadata>,
+> Pack2<K, U> for Box<R>
+where
+    Self: ReprC<CType = CWideBox<P>>,
+    K: Into<CBox<<<P as Wide>::Header as WideHeader>::Data>>,
+{
+    type Error = <U as TryInto<<P as Wide>::Metadata>>::Error;
+    unsafe fn pack(data: K, metadata: U) -> Result<Self::CType, Self::Error> {
+        let data: CBox<<<P as Wide>::Header as WideHeader>::Data> = data.into();
+        Ok(unsafe { CWideBox::from_raw_nullable(data.as_ptr(), metadata.try_into()?) })
+    }
 }
 
 impl<T: Unpack2<Part1, Part2>, Part1: CType, Part2: CType> Unpack2<Part1, Part2> for UnsafeCell<T> {
@@ -300,18 +311,24 @@ where
     }
 }
 
-impl<T: Unpack2<A, B>, A: CType, B: CType> Unpack2<A, B> for crate::borrow::Borrowed<T> {
+impl<T: Unpack2<A, B>, A: CType, B: CType> Unpack2<crate::borrow::Borrowed<A>, B>
+    for crate::borrow::Borrowed<T>
+{
     type Error = T::Error;
 
-    fn unpack(value: Self::CType) -> Result<(A, B), Self::Error> {
+    fn unpack(value: Self::CType) -> Result<(crate::borrow::Borrowed<A>, B), Self::Error> {
         T::unpack(crate::borrow::Borrowed::into_inner(value))
+            .map(|(data, metadata)| (crate::borrow::Borrowed::new(data), metadata))
     }
 }
 
-impl<T: Pack2<A, B>, A: CType, B: CType> Pack2<A, B> for crate::borrow::Borrowed<T> {
+impl<T: Pack2<A, B>, A: CType, B: CType> Pack2<crate::borrow::Borrowed<A>, B>
+    for crate::borrow::Borrowed<T>
+{
     type Error = T::Error;
 
-    unsafe fn pack(a: A, b: B) -> Result<Self::CType, Self::Error> {
-        unsafe { T::pack(a, b) }.map(crate::borrow::Borrowed::new)
+    unsafe fn pack(a: crate::borrow::Borrowed<A>, b: B) -> Result<Self::CType, Self::Error> {
+        unsafe { T::pack(crate::borrow::Borrowed::into_inner(a), b) }
+            .map(crate::borrow::Borrowed::new)
     }
 }

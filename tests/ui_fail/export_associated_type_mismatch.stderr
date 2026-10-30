@@ -144,8 +144,8 @@ error[E0308]: mismatched types
 239 | |     }
     | |_____^ expected `PhantomData<*mut Option<u8>>`, found `PhantomData<*mut Option<u16>>`
     |
-    = note: expected struct `PhantomData<*mut Option<u8>>`
-               found struct `PhantomData<*mut Option<u16>>`
+    = note: expected struct `PhantomData<*mut std::option::Option<u8>>`
+               found struct `PhantomData<*mut std::option::Option<u16>>`
     = note: this error originates in the macro `ffi` (in Nightly builds, run with -Z macro-backtrace for more info)
 
 error[E0308]: mismatched types

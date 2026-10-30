@@ -10,7 +10,7 @@ ffi! {
 
     // These outer attributes are forwarded, not interpreted by preprocessing.
     #[cfg(all())]
-    #[cfg_attr(all(), doc = "kept", doc = "kept")]
+    #[cfg_attr(all(), allow(unused_doc_comments), doc = "kept", doc = "kept")]
     fn increment(
         #[cfg(all())] value: u8,
         #[cfg(any())] extra: MissingType,

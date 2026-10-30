@@ -1,4 +1,4 @@
-use co3::{ffi, utf8::Utf8Str, ReprC};
+use co3::{ReprC, ffi, utf8::Utf8Str};
 
 ffi! {
     #![unsafe(extern("C"))]
@@ -7,6 +7,8 @@ ffi! {
     type InheritedAbi = raw fn(u8);
     type Ordinary = core::num::NonZeroU8;
     type Regular = extern "C" fn(u8);
+    type SharedUnpacked = extern "C" fn(#[unpack(_, _)] &[u8]) -> usize;
+    type InteriorUnpacked = extern "C" fn(#[unpack(co3::borrow::Borrowed<*mut core::cell::UnsafeCell<u8>>, usize)] &[core::cell::Cell<u8>]) -> usize;
     type RegularUnpacked = extern "C" fn(#[unpack(_, _)] &mut [u8]) -> usize;
     type Composite = (String, raw fn(String));
     type Optional = Option<raw fn(u8)>;
@@ -14,6 +16,12 @@ ffi! {
     type Nested = raw extern "C" fn(raw extern "system" fn(u8));
     type Returned = raw fn() -> raw fn(u8);
     type RawNested = raw extern "C" fn(extern "system" fn(u8));
+}
+
+ffi! {
+    #![unsafe(extern("C"))]
+
+    fn interior_slice(#[unpack(co3::borrow::Borrowed<*mut core::cell::UnsafeCell<u8>>, usize)] values: &[core::cell::Cell<u8>]) -> usize;
 }
 
 ffi! {
@@ -39,12 +47,23 @@ fn main() {
     static_assertions::assert_type_eq_all!(Ordinary, u8);
     static_assertions::assert_type_eq_all!(Regular, Option<extern "C" fn(u8)>);
     static_assertions::assert_type_eq_all!(
+        SharedUnpacked,
+        Option<unsafe extern "C" fn(*const u8, usize) -> usize>
+    );
+    static_assertions::assert_type_eq_all!(
+        InteriorUnpacked,
+        Option<unsafe extern "C" fn(co3::borrow::Borrowed<*mut core::cell::UnsafeCell<u8>>, usize) -> usize>
+    );
+    static_assertions::assert_type_eq_all!(
         RegularUnpacked,
-        Option<unsafe extern "C" fn(*mut u8, usize) -> usize>
+        Option<unsafe extern "C" fn(co3::borrow::Borrowed<*mut u8>, usize) -> usize>
     );
     static_assertions::assert_type_eq_all!(
         Composite,
-        <(String, unsafe extern "C" fn(co3::slice::CWideRef<Utf8Str>)) as ReprC>::CType
+        <(
+            String,
+            unsafe extern "C" fn(co3::borrow::Borrowed<co3::boxed::CWideBox<Utf8Str>>)
+        ) as ReprC>::CType
     );
     static_assertions::assert_type_eq_all!(Optional, Option<unsafe extern "C" fn(u8)>);
     static_assertions::assert_type_eq_all!(

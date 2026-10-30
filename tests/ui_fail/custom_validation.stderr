@@ -34,51 +34,6 @@ error: Unions are not supported
 50 | | }
    | |_^
 
-error[E0277]: the trait bound `T: ReprC` is not satisfied
-  --> tests/ui_fail/custom_validation.rs:52:10
-   |
-52 | #[derive(ReprC)]
-   |          ^^^^^ the trait `ReprC` is not implemented for `T`
-   |
-note: required for `ParametrizedView<'_dšč, T>` to implement `ReprC`
-  --> tests/ui_fail/custom_validation.rs:52:10
-   |
-52 | #[derive(ReprC)]
-   |          ^^^^^ type parameter would need to implement `ReprC`
-   = help: consider manually implementing `ReprC` to avoid undesired bounds caused by "imperfect derives"
-   = note: to learn more, visit <https://github.com/rust-lang/rust/issues/26925>
-   = note: this error originates in the derive macro `co3::ReprC` which comes from the expansion of the derive macro `ReprC` (in Nightly builds, run with -Z macro-backtrace for more info)
-help: consider further restricting type parameter `T` with trait `ReprC`
-   |
-54 | pub struct Parametrized<T: ?Sized + co3::ReprC>(T);
-   |                                   ++++++++++++
-
-error[E0277]: the trait bound `T: ReprC` is not satisfied
-  --> tests/ui_fail/custom_validation.rs:52:10
-   |
-52 | #[derive(ReprC)]
-   |          ^^^^^ the trait `ReprC` is not implemented for `T`
-   |
-note: required for `ParametrizedView<'_dšč, T>` to implement `ReprC`
-  --> tests/ui_fail/custom_validation.rs:52:10
-   |
-52 | #[derive(ReprC)]
-   |          ^^^^^ type parameter would need to implement `ReprC`
-   = help: consider manually implementing `ReprC` to avoid undesired bounds caused by "imperfect derives"
-   = note: to learn more, visit <https://github.com/rust-lang/rust/issues/26925>
-note: the requirement `ParametrizedView<'_dšč, T>: ReprC` appears on the `impl`'s associated constant `NICHE` but not on the corresponding trait's associated constant
-  --> src/niche.rs
-   |
-   |     pub trait Niche: ReprC<CType: Copy> {
-   |               ----- in this trait
-   |         const NICHE: Self::CType;
-   |               ^^^^^ this trait's associated constant doesn't have the requirement `ParametrizedView<'_dšč, T>: ReprC`
-   = note: this error originates in the derive macro `co3::ReprC` which comes from the expansion of the derive macro `ReprC` (in Nightly builds, run with -Z macro-backtrace for more info)
-help: consider further restricting type parameter `T` with trait `ReprC`
-   |
-54 | pub struct Parametrized<T: ?Sized + co3::ReprC>(T);
-   |                                   ++++++++++++
-
 error[E0277]: the trait bound `UnsizedSlice<u8>: Niche` is not satisfied
   --> tests/ui_fail/custom_validation.rs:62:21
    |

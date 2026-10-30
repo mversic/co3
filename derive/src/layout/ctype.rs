@@ -475,7 +475,7 @@ fn gen_tagged_union_partial_eq(
         .iter()
         .map(|field| &field.ty)
         .collect::<Vec<_>>();
-    let bounds = gen_field_trait_bounds(&union.generics, &fields, quote!(core::cmp::PartialEq));
+    let bounds = gen_partial_eq_bounds(&fields);
     let tag_values = super::enum_variant_tag_exprs(variants, tag_type);
     let arms = variants.iter().enumerate().map(|(index, variant)| {
         let tag = &tag_values[index];
@@ -769,7 +769,7 @@ fn gen_tagged_payload_partial_eq(
         .iter()
         .map(|field| &field.ty)
         .collect::<Vec<_>>();
-    let bounds = gen_field_trait_bounds(&ctype.generics, &fields, quote!(core::cmp::PartialEq));
+    let bounds = gen_partial_eq_bounds(&fields);
     let tag_values = super::enum_variant_tag_exprs(variants, tag_type);
     let arms = variants.iter().enumerate().map(|(index, variant)| {
         let tag = &tag_values[index];
@@ -1004,35 +1004,22 @@ fn gen_struct_ctype_impls<const GEN_PARTIAL_EQ: bool>(
     let fields = ctype.fields.iter().map(|f| &f.ty).collect::<Vec<_>>();
     let copy_impls = gen_copy_impls(&ctype.ident, &ctype.generics, &fields, known_unsized_tail);
     let partial_eq_impl = GEN_PARTIAL_EQ.then(|| gen_struct_partial_eq(ctype));
-    let default_impl = gen_default_impl(&ctype.ident, &ctype.generics, &fields, known_unsized_tail);
     let robust_impls = gen_robust_impls(&ctype.ident, &ctype.generics, &fields, known_unsized_tail);
     let type_spec_impl =
         generate_spec.then(|| gen_type_spec(&ctype.ident, &ctype.generics, &fields, alignment));
     quote! {
         #copy_impls
         #partial_eq_impl
-        #default_impl
         #robust_impls
         #type_spec_impl
 
     }
 }
 
-// Only a concrete final field may defer its trait requirement. All preceding
-// fields and parameterized tails impose ordinary, strong bounds.
-fn gen_field_trait_bounds(
-    generics: &syn::Generics,
-    fields: &[&syn::Type],
-    bound: TokenStream,
-) -> Vec<TokenStream> {
+fn gen_partial_eq_bounds(fields: &[&syn::Type]) -> Vec<TokenStream> {
     fields
         .iter()
-        .enumerate()
-        .map(|(index, ty)| {
-            let speculative =
-                speculative_marker(index + 1 == fields.len() && !is_parametrized(ty, generics));
-            quote!(#speculative #ty: #bound)
-        })
+        .map(|ty| quote!(for<'_dummy> #ty: core::cmp::PartialEq))
         .collect()
 }
 
@@ -1045,7 +1032,7 @@ fn gen_struct_partial_eq(ctype: &syn::ItemStruct) -> TokenStream {
         .iter()
         .map(|field| &field.ty)
         .collect::<Vec<_>>();
-    let bounds = gen_field_trait_bounds(&ctype.generics, &fields, quote!(core::cmp::PartialEq));
+    let bounds = gen_partial_eq_bounds(&fields);
     let comparisons = ctype
         .fields
         .members()
@@ -1068,12 +1055,10 @@ fn gen_union_ctype_impls(ctype: &syn::ItemUnion, alignment: Option<&syn::LitInt>
     let fields = ctype.fields.named.iter().map(|f| &f.ty).collect::<Vec<_>>();
 
     let copy_impls = gen_copy_impls(&ctype.ident, &ctype.generics, &fields, false);
-    let default_impl = gen_default_impl(&ctype.ident, &ctype.generics, &fields, false);
     let robust_impls = gen_robust_impls(&ctype.ident, &ctype.generics, &fields, false);
     let type_spec_impl = gen_type_spec(&ctype.ident, &ctype.generics, &fields, alignment);
     quote! {
         #copy_impls
-        #default_impl
         #robust_impls
         #type_spec_impl
 
@@ -1415,7 +1400,7 @@ fn gen_copy_impls(
         return quote! {};
     }
 
-    let copy_bounds = gen_copy_bounds(generics, fields);
+    let copy_bounds = gen_copy_bounds(fields);
 
     quote! {
         impl #impl_generics Clone for #ident #ty_generics
@@ -1436,41 +1421,11 @@ fn gen_copy_impls(
     }
 }
 
-fn gen_copy_bounds(generics: &syn::Generics, fields: &[&syn::Type]) -> Vec<TokenStream> {
+fn gen_copy_bounds(fields: &[&syn::Type]) -> Vec<TokenStream> {
     fields
         .iter()
-        .map(|ty| {
-            let speculative = speculative_marker(!is_parametrized(ty, generics));
-            quote!(#speculative #ty: Copy)
-        })
+        .map(|ty| quote!(for<'_dummy> #ty: Copy))
         .collect()
-}
-
-fn gen_default_impl(
-    ident: &syn::Ident,
-    generics: &syn::Generics,
-    fields: &[&syn::Type],
-    known_unsized_tail: bool,
-) -> TokenStream {
-    let (impl_generics, ty_generics, where_clause) = generics.split_for_impl();
-    let predicates = where_clause.as_ref().map(|w| &w.predicates);
-    let (sized_bound, omit_impl) = c_fn_last_field_bounds(fields, generics);
-    if known_unsized_tail || omit_impl {
-        return quote! {};
-    }
-
-    quote! {
-        impl #impl_generics Default for #ident #ty_generics
-        where
-            #sized_bound
-            #predicates
-        {
-            #[inline(always)]
-            fn default() -> Self {
-                unsafe { core::mem::zeroed() }
-            }
-        }
-    }
 }
 
 pub(super) fn gen_ctype_name(item_name: &syn::Ident) -> syn::Ident {
@@ -1743,40 +1698,19 @@ mod tail_tests {
     use syn::parse_quote;
 
     #[test]
-    fn copy_and_partial_eq_use_their_respective_speculative_policies() {
-        let generics = parse_quote!(<'a, T, const N: usize>);
-        for (types, expected_copy, expected_eq) in [
-            (vec![], vec![], vec![]),
-            (vec![parse_quote!(Opaque)], vec![true], vec![true]),
-            (
-                vec![parse_quote!(Opaque), parse_quote!(u8)],
-                vec![true, true],
-                vec![false, true],
-            ),
-            (
-                vec![parse_quote!(u8), parse_quote!(T)],
-                vec![true, false],
-                vec![false, false],
-            ),
-            (
-                vec![parse_quote!(u8), parse_quote!(&'a u8)],
-                vec![true, false],
-                vec![false, false],
-            ),
-            (
-                vec![parse_quote!(u8), parse_quote!([u8; N])],
-                vec![true, false],
-                vec![false, false],
-            ),
+    fn copy_and_partial_eq_bounds_are_speculative() {
+        for types in [
+            vec![],
+            vec![parse_quote!(Opaque)],
+            vec![parse_quote!(Opaque), parse_quote!(u8)],
+            vec![parse_quote!(u8), parse_quote!(T)],
+            vec![parse_quote!(u8), parse_quote!(&'a u8)],
+            vec![parse_quote!(u8), parse_quote!([u8; N])],
         ] {
             let refs = types.iter().collect::<Vec<_>>();
-            let copy = super::gen_copy_bounds(&generics, &refs);
-            let eq = super::gen_field_trait_bounds(
-                &generics,
-                &refs,
-                quote::quote!(core::cmp::PartialEq),
-            );
-            for (bounds, expected) in [(copy, expected_copy), (eq, expected_eq)] {
+            let copy = super::gen_copy_bounds(&refs);
+            let eq = super::gen_partial_eq_bounds(&refs);
+            for bounds in [copy, eq] {
                 let actual = bounds
                     .into_iter()
                     .map(|bound| {
@@ -1787,7 +1721,7 @@ mod tail_tests {
                         predicate.lifetimes.is_some()
                     })
                     .collect::<Vec<_>>();
-                assert_eq!(actual, expected);
+                assert_eq!(actual, vec![true; refs.len()]);
             }
         }
     }

@@ -106,6 +106,13 @@ impl<T> Borrowed<T> {
     }
 }
 
+impl<T> From<T> for Borrowed<T> {
+    #[inline]
+    fn from(value: T) -> Self {
+        Self::new(value)
+    }
+}
+
 impl<T: ReprC<CType: Sized>> ReprC for Borrowed<T> {
     type CType = Borrowed<T::CType>;
 }

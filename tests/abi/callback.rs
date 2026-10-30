@@ -124,7 +124,7 @@ fn borrow_rust_value(value: RustValue) -> RustValue {
 }
 
 extern "C" fn borrowed_return() -> co3::borrow::Borrowed<co3::boxed::CBox<Value>> {
-    co3::borrow::Borrowed::new(co3::boxed::CBox::null())
+    co3::boxed::CBox::null().into()
 }
 
 ffi! {

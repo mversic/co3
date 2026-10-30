@@ -277,8 +277,14 @@ fn gen_pack_input_stmts(
             let (part1, part2) = unpack_parts(attrs)
                 .expect("validated #[unpack] attribute")
                 .expect("two-part unpack attribute was found");
+            let borrowed = borrowed_wide_unpack(attrs, ty);
+            let packed1: Type = if borrowed {
+                parse_quote!(co3::borrow::Borrowed<#logical1>)
+            } else {
+                logical1.clone()
+            };
             let data = if part1.abi.is_some() {
-                crate::abi_retype::gen_retype(quote!(#data_name), &abi1, &logical1)
+                crate::abi_retype::gen_retype(quote!(#data_name), &abi1, &packed1)
             } else {
                 quote!(#data_name)
             };
@@ -287,7 +293,7 @@ fn gen_pack_input_stmts(
             } else {
                 quote!(#metadata_name)
             };
-            quote!(unsafe { <#decode_ty as co3::pack::Pack2<#logical1, #logical2>>::pack(#data, #metadata) })
+            quote!(unsafe { <#decode_ty as co3::pack::Pack2<#packed1, #logical2>>::pack(#data, #metadata) })
         };
         Some(quote! {
             #(#cfg)*
@@ -568,8 +574,8 @@ pub(crate) fn unpack_logical_parts(
 ) -> syn::Result<(Type, Type)> {
     let (part1, part2) = unpack_parts(attrs)?.expect("unpack attribute was validated");
     Ok((
-        logical_unpack_part(attrs, arg_ty, &part1.logical, 1)?,
-        logical_unpack_part(attrs, arg_ty, &part2.logical, 2)?,
+        logical_unpack_part(arg_ty, &part1.logical, 1)?,
+        logical_unpack_part(arg_ty, &part2.logical, 2)?,
     ))
 }
 
@@ -581,41 +587,49 @@ fn abi_unpack_part(
 ) -> syn::Result<Type> {
     match part.abi {
         Some(abi) => Ok(parse_quote!(<#abi as co3::ReprC>::CType)),
-        None => logical_unpack_part(attrs, arg_ty, &part.logical, position),
+        None => {
+            let logical = logical_unpack_part(arg_ty, &part.logical, position)?;
+            if position == 1 && borrowed_wide_unpack(attrs, arg_ty) {
+                Ok(parse_quote!(co3::borrow::Borrowed<#logical>))
+            } else {
+                Ok(logical)
+            }
+        }
     }
 }
 
-fn logical_unpack_part(
-    attrs: &[syn::Attribute],
-    arg_ty: &Type,
-    part: &Type,
-    position: u8,
-) -> syn::Result<Type> {
+fn logical_unpack_part(arg_ty: &Type, part: &Type, position: u8) -> syn::Result<Type> {
     if matches!(part, Type::Infer(_)) {
-        inferred_unpack_part(arg_ty, position, ownership_mode_for_arg(attrs, arg_ty))
+        inferred_unpack_part(arg_ty, position)
     } else {
         Ok(parse_quote!(<#part as co3::ReprC>::CType))
     }
 }
 
-fn inferred_unpack_part(arg_ty: &Type, part: u8, ownership: OwnershipMode) -> syn::Result<Type> {
+pub(crate) fn borrowed_wide_unpack(attrs: &[syn::Attribute], arg_ty: &Type) -> bool {
+    if ownership_mode_for_arg(attrs, arg_ty) != OwnershipMode::Borrow {
+        return false;
+    }
+    let arg_ty = peel_grouped_type(arg_ty);
+    let arg_ty = option_inner_type(arg_ty).unwrap_or(arg_ty);
+    boxed_wide_type(arg_ty).is_some()
+        || matches!(arg_ty, Type::Reference(reference) if reference.mutability.is_some())
+}
+
+fn inferred_unpack_part(arg_ty: &Type, part: u8) -> syn::Result<Type> {
     let arg_ty = peel_grouped_type(arg_ty);
 
     if let Some(inner_ty) = option_inner_type(arg_ty) {
-        return inferred_non_option_unpack_part(inner_ty, part, ownership);
+        return inferred_non_option_unpack_part(inner_ty, part);
     }
 
-    inferred_non_option_unpack_part(arg_ty, part, ownership)
+    inferred_non_option_unpack_part(arg_ty, part)
 }
 
-fn inferred_non_option_unpack_part(
-    arg_ty: &Type,
-    part: u8,
-    ownership: OwnershipMode,
-) -> syn::Result<Type> {
+fn inferred_non_option_unpack_part(arg_ty: &Type, part: u8) -> syn::Result<Type> {
     match arg_ty {
-        Type::Paren(paren) => return inferred_non_option_unpack_part(&paren.elem, part, ownership),
-        Type::Group(group) => return inferred_non_option_unpack_part(&group.elem, part, ownership),
+        Type::Paren(paren) => return inferred_non_option_unpack_part(&paren.elem, part),
+        Type::Group(group) => return inferred_non_option_unpack_part(&group.elem, part),
         _ => {}
     }
 
@@ -629,11 +643,7 @@ fn inferred_non_option_unpack_part(
 
     if let Some(wide_ty) = boxed_wide_type(arg_ty) {
         return Ok(if part == 1 {
-            if ownership == OwnershipMode::ByValue {
-                parse_quote!(co3::boxed::CBox<<<<#wide_ty as co3::wide::Wide>::Header as co3::wide::WideHeader>::Data as co3::ReprC>::CType>)
-            } else {
-                parse_quote!(*const <<<#wide_ty as co3::wide::Wide>::Header as co3::wide::WideHeader>::Data as co3::ReprC>::CType)
-            }
+            parse_quote!(co3::boxed::CBox<<<<#wide_ty as co3::wide::Wide>::Header as co3::wide::WideHeader>::Data as co3::ReprC>::CType>)
         } else {
             parse_quote!(<#wide_ty as co3::wide::Wide>::Metadata)
         });
@@ -970,6 +980,19 @@ pub fn gen_impl_definition(
             .any(|input| matches!(input, syn::FnArg::Receiver(_)));
         normalize_fn_signature(&mut item.sig, Some(self_ty));
 
+        let return_borrow_check =
+            if impl_.generics.params.is_empty() && item.sig.generics.params.is_empty() {
+                fn_return_ty(&item.sig).map(|ty| {
+                    let mut ty = ty.clone();
+                    ConcreteSelfType(self_ty).visit_type_mut(&mut ty);
+                    let check = gen_return_borrow_check(&ty, item.attrs.iter().any(is_by_val_attr));
+                    let cfg = cfg_attrs(&item.attrs);
+                    quote! { #(#cfg)* const _: () = { #check }; }
+                })
+            } else {
+                None
+            };
+
         let fn_name = &item.sig.ident;
         let callee = impl_method_callee(self_ty, trait_, fn_name);
 
@@ -1024,13 +1047,9 @@ pub fn gen_impl_definition(
             #body
         }};
 
-        Some(emit_extern_definition(
-            abi,
-            &item.attrs,
-            failure_mode,
-            fn_signature,
-            ffi_fn_body,
-        ))
+        let definition =
+            emit_extern_definition(abi, &item.attrs, failure_mode, fn_signature, ffi_fn_body);
+        Some(quote! { #return_borrow_check #definition })
     });
 
     quote! {
@@ -1038,6 +1057,21 @@ pub fn gen_impl_definition(
         const _: () = {
             #(#definitions)*
         };
+    }
+}
+
+struct ConcreteSelfType<'a>(&'a Type);
+
+impl VisitMut for ConcreteSelfType<'_> {
+    fn visit_type_mut(&mut self, ty: &mut Type) {
+        if let Type::Path(path) = ty
+            && path.qself.is_none()
+            && path.path.is_ident("Self")
+        {
+            *ty = self.0.clone();
+        } else {
+            syn::visit_mut::visit_type_mut(self, ty);
+        }
     }
 }
 
@@ -1092,11 +1126,22 @@ pub fn gen_fn_definition(
 ) -> TokenStream {
     normalize_fn_signature(&mut item.sig, None);
 
+    let return_borrow_check = if item.sig.generics.params.is_empty() {
+        fn_return_ty(&item.sig).map(|ty| {
+            let check = gen_return_borrow_check(ty, item.attrs.iter().any(is_by_val_attr));
+            let cfg = cfg_attrs(&item.attrs);
+            quote! { #(#cfg)* const _: () = { #check }; }
+        })
+    } else {
+        None
+    };
     let ffi_fn_body = gen_fn_definition_body(&item, failure_mode, callee);
     let fn_by_val = item.attrs.iter().any(is_by_val_attr);
     let fn_signature = gen_extern_fn_signature(item.sig, failure_mode, fn_by_val);
 
-    emit_extern_definition(abi, &item.attrs, failure_mode, fn_signature, ffi_fn_body)
+    let definition =
+        emit_extern_definition(abi, &item.attrs, failure_mode, fn_signature, ffi_fn_body);
+    quote! { #return_borrow_check #definition }
 }
 
 pub(crate) fn gen_extern_fn_signature(
