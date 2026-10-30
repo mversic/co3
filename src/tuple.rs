@@ -12,7 +12,7 @@
 //! Values of all the other tuple elements of the niche are zeroed (NOT a stable guarantee yet)
 //!
 //! When none of the tuple elements have a niche value, `Option<(A, B, ...)>` is represented as a
-//! `COption<ReprCTupleN<A, B, ...>>`.
+//! `COption<TupleN<A, B, ...>>`.
 //!
 //! # Example
 //!
@@ -21,7 +21,7 @@
 //!
 //! use co3::{
 //!     encode, niche::Niche, option::COption, primitives::CBool,
-//!     reference::CRef, tuple::ReprCTuple3, ReprC,
+//!     reference::CRef, tuple::Tuple3, ReprC,
 //! };
 //!
 //! type TupleWithNiche1<'a> = (u8, bool, &'a bool);
@@ -42,10 +42,10 @@
 //! );
 //!
 //! let none_value_1: Option<TupleWithNiche1> = None;
-//! assert_eq!(encode(none_value_1), ReprCTuple3(0, bool::NICHE, CRef::null()));
+//! assert_eq!(encode(none_value_1), Tuple3(0, bool::NICHE, CRef::null()));
 //!
 //! let none_value_2: Option<TupleWithNiche2> = None;
-//! assert_eq!(encode(none_value_2), ReprCTuple3(0, CRef::null(), CBool::FALSE));
+//! assert_eq!(encode(none_value_2), Tuple3(0, CRef::null(), CBool::FALSE));
 //!
 //! let none_value_3: Option<TupleWithoutNiche> = None;
 //! assert_eq!(encode(none_value_3), COption::None());
@@ -523,28 +523,28 @@ unsafe impl<$($head: AbiCompatible<CType: Copy>,)* $last: AbiCompatible + ?Sized
     };
 }
 
-impl_tuple! {(A:0) -> ReprCTuple1}
-impl_tuple! {(A:0, B:1) -> ReprCTuple2}
-impl_tuple! {(A:0, B:1, C:2) -> ReprCTuple3}
-impl_tuple! {(A:0, B:1, C:2, D:3) -> ReprCTuple4}
-impl_tuple! {(A:0, B:1, C:2, D:3, E:4) -> ReprCTuple5}
-impl_tuple! {(A:0, B:1, C:2, D:3, E:4, F:5) -> ReprCTuple6}
-impl_tuple! {(A:0, B:1, C:2, D:3, E:4, F:5, G:6) -> ReprCTuple7}
-impl_tuple! {(A:0, B:1, C:2, D:3, E:4, F:5, G:6, H:7) -> ReprCTuple8}
-impl_tuple! {(A:0, B:1, C:2, D:3, E:4, F:5, G:6, H:7, I:8) -> ReprCTuple9}
-impl_tuple! {(A:0, B:1, C:2, D:3, E:4, F:5, G:6, H:7, I:8, J:9) -> ReprCTuple10}
-impl_tuple! {(A:0, B:1, C:2, D:3, E:4, F:5, G:6, H:7, I:8, J:9, K:10) -> ReprCTuple11}
-impl_tuple! {(A:0, B:1, C:2, D:3, E:4, F:5, G:6, H:7, I:8, J:9, K:10, L:11) -> ReprCTuple12}
+impl_tuple! {(A:0) -> Tuple1}
+impl_tuple! {(A:0, B:1) -> Tuple2}
+impl_tuple! {(A:0, B:1, C:2) -> Tuple3}
+impl_tuple! {(A:0, B:1, C:2, D:3) -> Tuple4}
+impl_tuple! {(A:0, B:1, C:2, D:3, E:4) -> Tuple5}
+impl_tuple! {(A:0, B:1, C:2, D:3, E:4, F:5) -> Tuple6}
+impl_tuple! {(A:0, B:1, C:2, D:3, E:4, F:5, G:6) -> Tuple7}
+impl_tuple! {(A:0, B:1, C:2, D:3, E:4, F:5, G:6, H:7) -> Tuple8}
+impl_tuple! {(A:0, B:1, C:2, D:3, E:4, F:5, G:6, H:7, I:8) -> Tuple9}
+impl_tuple! {(A:0, B:1, C:2, D:3, E:4, F:5, G:6, H:7, I:8, J:9) -> Tuple10}
+impl_tuple! {(A:0, B:1, C:2, D:3, E:4, F:5, G:6, H:7, I:8, J:9, K:10) -> Tuple11}
+impl_tuple! {(A:0, B:1, C:2, D:3, E:4, F:5, G:6, H:7, I:8, J:9, K:10, L:11) -> Tuple12}
 
 impl<A: Niche> Niche for (A,) {
-    const NICHE: Self::CType = ReprCTuple1(A::NICHE);
+    const NICHE: Self::CType = Tuple1(A::NICHE);
 }
 
 impl<A: ReprC<CType: Copy>, B: ReprC<CType: Copy>, C: ReprC<CType: Copy>> Niche for (A, B, C)
 where
-    (A, (B, C)): Niche<CType = ReprCTuple2<A::CType, <(B, C) as ReprC>::CType>>,
+    (A, (B, C)): Niche<CType = Tuple2<A::CType, <(B, C) as ReprC>::CType>>,
 {
-    const NICHE: Self::CType = ReprCTuple3(
+    const NICHE: Self::CType = Tuple3(
         <(A, (B, C))>::NICHE.0,
         <(A, (B, C))>::NICHE.1.0,
         <(A, (B, C))>::NICHE.1.1,
@@ -556,7 +556,7 @@ macro_rules! impl_tuple_niche_recursive {
         $(
             impl<$($all: ReprC<CType: Copy>),+> Niche for ($($all,)+)
             where
-                ($left, $right): Niche<CType = ReprCTuple2<<$left as ReprC>::CType, <$right as ReprC>::CType>>,
+                ($left, $right): Niche<CType = Tuple2<<$left as ReprC>::CType, <$right as ReprC>::CType>>,
             {
                 const NICHE: Self::CType = $ffi_ty(
                     $(<($left, $right)>::NICHE.$field),+
@@ -567,15 +567,15 @@ macro_rules! impl_tuple_niche_recursive {
 }
 
 impl_tuple_niche_recursive! {
-    (A, B, C, D) => ((A, B), (C, D)) : ReprCTuple4(0.0, 0.1, 1.0, 1.1),
-    (A, B, C, D, E) => ((A, B), (C, D, E)) : ReprCTuple5(0.0, 0.1, 1.0, 1.1, 1.2),
-    (A, B, C, D, E, F) => ((A, B, C), (D, E, F)) : ReprCTuple6(0.0, 0.1, 0.2, 1.0, 1.1, 1.2),
-    (A, B, C, D, E, F, G) => ((A, B, C), (D, E, F, G)) : ReprCTuple7(0.0, 0.1, 0.2, 1.0, 1.1, 1.2, 1.3),
-    (A, B, C, D, E, F, G, H) => ((A, B, C, D), (E, F, G, H)) : ReprCTuple8(0.0, 0.1, 0.2, 0.3, 1.0, 1.1, 1.2, 1.3),
-    (A, B, C, D, E, F, G, H, I) => ((A, B, C, D), (E, F, G, H, I)) : ReprCTuple9(0.0, 0.1, 0.2, 0.3, 1.0, 1.1, 1.2, 1.3, 1.4),
-    (A, B, C, D, E, F, G, H, I, J) => ((A, B, C, D, E), (F, G, H, I, J)) : ReprCTuple10(0.0, 0.1, 0.2, 0.3, 0.4, 1.0, 1.1, 1.2, 1.3, 1.4),
-    (A, B, C, D, E, F, G, H, I, J, K) => ((A, B, C, D, E), (F, G, H, I, J, K)) : ReprCTuple11(0.0, 0.1, 0.2, 0.3, 0.4, 1.0, 1.1, 1.2, 1.3, 1.4, 1.5),
-    (A, B, C, D, E, F, G, H, I, J, K, L) => ((A, B, C, D, E, F), (G, H, I, J, K, L)) : ReprCTuple12(0.0, 0.1, 0.2, 0.3, 0.4, 0.5, 1.0, 1.1, 1.2, 1.3, 1.4, 1.5)
+    (A, B, C, D) => ((A, B), (C, D)) : Tuple4(0.0, 0.1, 1.0, 1.1),
+    (A, B, C, D, E) => ((A, B), (C, D, E)) : Tuple5(0.0, 0.1, 1.0, 1.1, 1.2),
+    (A, B, C, D, E, F) => ((A, B, C), (D, E, F)) : Tuple6(0.0, 0.1, 0.2, 1.0, 1.1, 1.2),
+    (A, B, C, D, E, F, G) => ((A, B, C), (D, E, F, G)) : Tuple7(0.0, 0.1, 0.2, 1.0, 1.1, 1.2, 1.3),
+    (A, B, C, D, E, F, G, H) => ((A, B, C, D), (E, F, G, H)) : Tuple8(0.0, 0.1, 0.2, 0.3, 1.0, 1.1, 1.2, 1.3),
+    (A, B, C, D, E, F, G, H, I) => ((A, B, C, D), (E, F, G, H, I)) : Tuple9(0.0, 0.1, 0.2, 0.3, 1.0, 1.1, 1.2, 1.3, 1.4),
+    (A, B, C, D, E, F, G, H, I, J) => ((A, B, C, D, E), (F, G, H, I, J)) : Tuple10(0.0, 0.1, 0.2, 0.3, 0.4, 1.0, 1.1, 1.2, 1.3, 1.4),
+    (A, B, C, D, E, F, G, H, I, J, K) => ((A, B, C, D, E), (F, G, H, I, J, K)) : Tuple11(0.0, 0.1, 0.2, 0.3, 0.4, 1.0, 1.1, 1.2, 1.3, 1.4, 1.5),
+    (A, B, C, D, E, F, G, H, I, J, K, L) => ((A, B, C, D, E, F), (G, H, I, J, K, L)) : Tuple12(0.0, 0.1, 0.2, 0.3, 0.4, 0.5, 1.0, 1.1, 1.2, 1.3, 1.4, 1.5)
 }
 
 #[cfg(test)]
@@ -601,65 +601,65 @@ mod tests {
 
     #[test]
     fn tuple_size_family_tracks_zst_fields() {
-        assert_impl_all!(ReprCTuple2<(), ()>: RustSpec<Size = Co3Sized<Zero>>);
-        assert_impl_all!(ReprCTuple3<(), (), ()>: RustSpec<Size = Co3Sized<Zero>>);
+        assert_impl_all!(Tuple2<(), ()>: RustSpec<Size = Co3Sized<Zero>>);
+        assert_impl_all!(Tuple3<(), (), ()>: RustSpec<Size = Co3Sized<Zero>>);
     }
 
     #[test]
     fn tuple_size_family_tracks_non_zst_fields() {
-        assert_impl_all!(ReprCTuple2<(), u8>: RustSpec<Size = rust_spec::size::Sized<rust_spec::Gt<rust_spec::Zero>>>);
-        assert_impl_all!(ReprCTuple2<u8, ()>: RustSpec<Size = rust_spec::size::Sized<rust_spec::Gt<rust_spec::Zero>>>);
-        assert_impl_all!(ReprCTuple3<(), u8, ()>: RustSpec<Size = rust_spec::size::Sized<rust_spec::Gt<rust_spec::Zero>>>);
+        assert_impl_all!(Tuple2<(), u8>: RustSpec<Size = rust_spec::size::Sized<rust_spec::Gt<rust_spec::Zero>>>);
+        assert_impl_all!(Tuple2<u8, ()>: RustSpec<Size = rust_spec::size::Sized<rust_spec::Gt<rust_spec::Zero>>>);
+        assert_impl_all!(Tuple3<(), u8, ()>: RustSpec<Size = rust_spec::size::Sized<rust_spec::Gt<rust_spec::Zero>>>);
     }
 
     #[test]
     fn stored_tuple_3_without_niche() {
         assert_impl_all!((u8, u8, u8):
-            ReprC<CType = ReprCTuple3<u8, u8, u8>>,
+            ReprC<CType = Tuple3<u8, u8, u8>>,
             Decode<'static>,
             Encode,
         );
 
         assert_impl_all!(&(u8, u8, u8):
-            Niche<CType = CRef<ReprCTuple3<u8, u8, u8>>>,
+            Niche<CType = CRef<Tuple3<u8, u8, u8>>>,
             Decode<'static>,
             Encode,
         );
         assert_impl_all!(&mut (u8, u8, u8):
-        Niche<CType = CRefMut<ReprCTuple3<u8, u8, u8>, true>>,
+        Niche<CType = CRefMut<Tuple3<u8, u8, u8>, true>>,
         );
         #[cfg(feature = "alloc")]
         assert_impl_all!(Box<(u8, u8, u8)>:
-            Niche<CType = CBox<ReprCTuple3<u8, u8, u8>>>,
+            Niche<CType = CBox<Tuple3<u8, u8, u8>>>,
             EncodeMove,
         );
         #[cfg(feature = "alloc")]
         assert_impl_all!(&[(u8, u8, u8)]:
-            Niche<CType = CWideRef<[ReprCTuple3<u8, u8, u8>]>>,
+            Niche<CType = CWideRef<[Tuple3<u8, u8, u8>]>>,
             Encode,
         );
         #[cfg(feature = "alloc")]
         assert_impl_all!(&mut [(u8, u8, u8)]:
-            Niche<CType = CWideRefMut<[ReprCTuple3<u8, u8, u8>], true>>,
+            Niche<CType = CWideRefMut<[Tuple3<u8, u8, u8>], true>>,
         );
         #[cfg(feature = "alloc")]
         assert_impl_all!(Box<[(u8, u8, u8)]>:
-            Niche<CType = CWideBox<[ReprCTuple3<u8, u8, u8>]>>,
+            Niche<CType = CWideBox<[Tuple3<u8, u8, u8>]>>,
             EncodeMove,
         );
         #[cfg(feature = "alloc")]
         assert_impl_all!(Vec<(u8, u8, u8)>:
-            Niche<CType = crate::vec::CVec<ReprCTuple3<u8, u8, u8>>>,
+            Niche<CType = crate::vec::CVec<Tuple3<u8, u8, u8>>>,
             DecodeMove<'static>,
             EncodeMove,
         );
         assert_impl_all!([(u8, u8, u8); 2]:
-            ReprC<CType = [ReprCTuple3<u8, u8, u8>; 2]>,
+            ReprC<CType = [Tuple3<u8, u8, u8>; 2]>,
             Decode<'static>,
             Encode,
         );
         assert_impl_all!(Option<(u8, u8, u8)>:
-            Niche<CType = COption<ReprCTuple3<u8, u8, u8>>>,
+            Niche<CType = COption<Tuple3<u8, u8, u8>>>,
             Decode<'static>,
             Encode,
         );
@@ -722,61 +722,61 @@ mod tests {
         // NOTE: Confirms niche is taken from the first available element
         assert_eq!(
             <(u8, StdNonZero<u8>, bool)>::NICHE,
-            ReprCTuple3(0, 0, crate::primitives::CBool::FALSE)
+            Tuple3(0, 0, crate::primitives::CBool::FALSE)
         );
 
         assert_impl_all!((u8, StdNonZero<u8>, bool):
-            Niche<CType = ReprCTuple3<u8, u8, crate::primitives::CBool>>,
+            Niche<CType = Tuple3<u8, u8, crate::primitives::CBool>>,
             Decode<'static>,
             Encode,
         );
 
         assert_impl_all!(&(u8, StdNonZero<u8>, bool):
-            Niche<CType = CRef<ReprCTuple3<u8, u8, crate::primitives::CBool>>>,
+            Niche<CType = CRef<Tuple3<u8, u8, crate::primitives::CBool>>>,
             Decode<'static>,
             Encode,
         );
         assert_impl_all!(&mut (u8, StdNonZero<u8>, bool):
-            Niche<CType = CRefMut<ReprCTuple3<u8, u8, crate::primitives::CBool>, true>>,
+            Niche<CType = CRefMut<Tuple3<u8, u8, crate::primitives::CBool>, true>>,
             Decode<'static>,
         );
         #[cfg(feature = "alloc")]
         assert_impl_all!(Box<(u8, StdNonZero<u8>, bool)>:
-            Niche<CType = CBox<ReprCTuple3<u8, u8, crate::primitives::CBool>>>,
+            Niche<CType = CBox<Tuple3<u8, u8, crate::primitives::CBool>>>,
             DecodeMove<'static>,
             EncodeMove,
         );
         #[cfg(feature = "alloc")]
         assert_impl_all!(&[(u8, StdNonZero<u8>, bool)]:
-            Niche<CType = CWideRef<[ReprCTuple3<u8, u8, crate::primitives::CBool>]>>,
+            Niche<CType = CWideRef<[Tuple3<u8, u8, crate::primitives::CBool>]>>,
             Decode<'static>,
             Encode,
         );
         #[cfg(feature = "alloc")]
         assert_impl_all!(&mut [(u8, StdNonZero<u8>, bool)]:
-            Niche<CType = CWideRefMut<[ReprCTuple3<u8, u8, crate::primitives::CBool>], true>>,
+            Niche<CType = CWideRefMut<[Tuple3<u8, u8, crate::primitives::CBool>], true>>,
             Decode<'static>,
         );
         #[cfg(feature = "alloc")]
         assert_impl_all!(Box<[(u8, StdNonZero<u8>, bool)]>:
-            Niche<CType = CWideBox<[ReprCTuple3<u8, u8, crate::primitives::CBool>]>>,
+            Niche<CType = CWideBox<[Tuple3<u8, u8, crate::primitives::CBool>]>>,
             DecodeMove<'static>,
             EncodeMove,
         );
         #[cfg(feature = "alloc")]
         assert_impl_all!(Vec<(u8, StdNonZero<u8>, bool)>:
-            Niche<CType = crate::vec::CVec<ReprCTuple3<u8, u8, crate::primitives::CBool>>>,
+            Niche<CType = crate::vec::CVec<Tuple3<u8, u8, crate::primitives::CBool>>>,
             DecodeMove<'static>,
             EncodeMove,
         );
         assert_impl_all!([(u8, StdNonZero<u8>, bool); 2]:
-            Niche<CType = [ReprCTuple3<u8, u8, crate::primitives::CBool>; 2]>,
+            Niche<CType = [Tuple3<u8, u8, crate::primitives::CBool>; 2]>,
             Decode<'static>,
             Encode,
         );
         assert_impl_all!(Option<(u8, StdNonZero<u8>, bool)>:
             // TODO: Depends on: https://github.com/mversic/co3/issues/33
-            //Niche<CType = ReprCTuple3<u8, u8, u8>>,
+            //Niche<CType = Tuple3<u8, u8, u8>>,
             Decode<'static>,
             Encode,
         );

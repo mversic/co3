@@ -385,11 +385,11 @@ mod tests {
             }
             ExpectedNode::Tuple(children) => {
                 let syn::Type::Path(ty) = ty else {
-                    panic!("expected ReprCTuple{} type, got {ty:?}", children.len());
+                    panic!("expected Tuple{} type, got {ty:?}", children.len());
                 };
                 assert!(ty.qself.is_none());
-                let segment = ty.path.segments.last().expect("ReprCTuple path");
-                let expected_name = format!("ReprCTuple{}", children.len());
+                let segment = ty.path.segments.last().expect("Tuple path");
+                let expected_name = format!("Tuple{}", children.len());
                 assert_eq!(
                     ["co3", "tuple", expected_name.as_str()],
                     ty.path
@@ -401,12 +401,12 @@ mod tests {
                 );
 
                 let syn::PathArguments::AngleBracketed(arguments) = &segment.arguments else {
-                    panic!("expected ReprCTuple type arguments");
+                    panic!("expected Tuple type arguments");
                 };
                 assert_eq!(children.len(), arguments.args.len());
                 for (argument, expected_child) in arguments.args.iter().zip(children) {
                     let syn::GenericArgument::Type(child) = argument else {
-                        panic!("expected ReprCTuple type argument, got {argument:?}");
+                        panic!("expected Tuple type argument, got {argument:?}");
                     };
                     assert_c_tuple_tree(child, expected_child);
                 }

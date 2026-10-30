@@ -6,7 +6,7 @@ error[E0277]: `Option` must resolve to `core::option::Option`
 7 | |
 8 | |     fn shadowed_option(#[unpack(_, _)] value: Option<&[u8]>);
 9 | | }
-  | |_^ the trait `_::ExactType` is not implemented for `Result<(), ()>`
+  | |_^ the trait `_::ExactType` is not implemented for `std::result::Result<(), ()>`
   |
 help: the trait `_::ExactType` is implemented for `std::option::Option<()>`
  --> tests/ui_fail/unpack_option_shadow.rs:5:1

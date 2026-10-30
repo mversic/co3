@@ -372,7 +372,7 @@ fn sized_aggregate_mutable_encoder_coverage() {
     use co3::stored::{EncodeMut, EncodeMutUnchecked};
     static_assertions::assert_impl_all!([bool; 2]: EncodeMut<'static>, EncodeMutUnchecked<'static>);
     static_assertions::assert_not_impl_any!((u32, bool): EncodeMut<'static>, EncodeMutUnchecked<'static>);
-    static_assertions::assert_not_impl_any!(co3::tuple::ReprCTuple2<u32, bool>: EncodeMut<'static>, EncodeMutUnchecked<'static>);
+    static_assertions::assert_not_impl_any!(co3::tuple::Tuple2<u32, bool>: EncodeMut<'static>, EncodeMutUnchecked<'static>);
     static_assertions::assert_not_impl_any!(Record: EncodeMut<'static>, EncodeMutUnchecked<'static>);
     static_assertions::assert_not_impl_any!(DerivedMutable: EncodeMut<'static>, EncodeMutUnchecked<'static>);
     static_assertions::assert_not_impl_any!(GenericMutable<u32>: EncodeMut<'static>, EncodeMutUnchecked<'static>);

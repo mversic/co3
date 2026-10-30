@@ -163,7 +163,7 @@ pub fn build_extern_c_type_tuple(types: &[&Type]) -> (TokenStream, TokenStream, 
                     quote!(#index)
                 })
                 .collect();
-            let c_tuple_ident = format_ident!("ReprCTuple{}", chunk.len());
+            let c_tuple_ident = format_ident!("Tuple{}", chunk.len());
 
             (
                 quote!((#(#chunk,)*)),
@@ -204,7 +204,7 @@ fn pack_tuple_nodes(
     let tuple_elems = nodes.iter().map(|(tuple, _, _)| tuple);
     let c_tuple_elems = nodes.iter().map(|(_, c_tuple, _)| c_tuple);
     let tuple = quote!((#(#tuple_elems,)*));
-    let c_tuple_ident = format_ident!("ReprCTuple{}", nodes.len());
+    let c_tuple_ident = format_ident!("Tuple{}", nodes.len());
     let c_tuple = quote!(co3::tuple::#c_tuple_ident<#(#c_tuple_elems),*>);
     let accessors = nodes
         .into_iter()

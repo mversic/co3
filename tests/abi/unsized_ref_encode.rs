@@ -8,15 +8,15 @@ use co3::{
 
 #[test]
 fn mutable_slice_decode_writes_changes_back() {
-    use co3::{slice::CWideRefMut, tuple::ReprCTuple2};
+    use co3::{slice::CWideRefMut, tuple::Tuple2};
 
-    let mut values = [ReprCTuple2(1_u8, 2_u8)];
+    let mut values = [Tuple2(1_u8, 2_u8)];
     let source = CWideRefMut::from_mut(&mut values[..]);
     let mut store = Default::default();
     let decoded = unsafe { co3::soft_decode::<&mut [(u8, u8)]>(source, &mut store) }.unwrap();
     decoded[0] = (3, 4);
     assert_eq!(store.sync(), Some(()));
-    assert_eq!(values[0], ReprCTuple2(3, 4));
+    assert_eq!(values[0], Tuple2(3, 4));
 }
 
 // Neither the element nor its owned slice supports cloning.
