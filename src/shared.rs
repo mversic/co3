@@ -601,7 +601,6 @@ disjoint_impls! {
         where
             'a: 'itm,
         {
-            crate::assert_arr_has_non_zero_len::<N>();
             // SAFETY: Array layout preserves the ABI-compatible element layout.
             // Only the pointer is converted; no element is read or copied.
             unsafe { CRef::from_raw(core::ptr::from_ref(self).cast()) }
@@ -625,7 +624,6 @@ disjoint_impls! {
             'a: 'itm,
         {
             store.encode(|fields| {
-                crate::assert_arr_has_non_zero_len::<N>();
                 core::array::from_fn(|i| unsafe {
                     crate::stored::encode_ref_field_unchecked(&self[i], &mut fields.0[i])
                 })
@@ -1159,7 +1157,6 @@ disjoint_impls! {
         where
             'a: 'itm,
         {
-            crate::assert_arr_has_non_zero_len::<N>();
             // SAFETY: Array layout preserves the ABI-compatible element layout.
             // Only the pointer is converted; no element is read or copied.
             unsafe { CRef::from_raw(core::ptr::from_ref(self).cast()) }
@@ -1178,7 +1175,6 @@ disjoint_impls! {
             'a: 'itm,
         {
             store.encode(|fields| {
-                crate::assert_arr_has_non_zero_len::<N>();
                 core::array::from_fn(|i| crate::stored::encode_ref_field(&self[i], &mut fields.0[i]))
             })
         }

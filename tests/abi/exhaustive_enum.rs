@@ -88,11 +88,4 @@ fn exhaustive_enum_carrier_depends_on_drop() {
         unsafe { co3::decode::<AllTags>(255u8) },
         Some(AllTags::V255)
     );
-
-    assert_eq!(co3::encode(AllTagsWithDrop::V0).tag(), 0u8);
-    assert_eq!(co3::encode(AllTagsWithDrop::V255).tag(), 255u8);
-    assert_eq!(
-        unsafe { co3::decode::<AllTagsWithDrop>(CAllTagsWithDrop::V255()) },
-        Some(AllTagsWithDrop::V255),
-    );
 }

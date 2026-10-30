@@ -24,7 +24,8 @@ struct NonCTypeField(MaybeUninit<NonZeroU32>);
 
 #[derive(RustSpec, ReprC)]
 #[repr(C)]
-struct GenericNonCTypeField<T>(MaybeUninit<NonZeroU32>, PhantomData<T>);
+// Optional concrete trait support is deferred only for the final field.
+struct GenericNonCTypeField<T>(PhantomData<T>, MaybeUninit<NonZeroU32>);
 
 #[derive(RustSpec, ReprC)]
 #[repr(C)]

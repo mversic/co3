@@ -339,7 +339,7 @@ macro_rules! fieldless_enum_derive {
 
             #[inline(always)]
             unsafe fn soft_decode<'itm: 'd>(source: Self::CType, (): &mut ()) -> Option<Self> {
-                let source = unsafe { crate::stored::decode_owned::<$dst>(source)? };
+                let source = unsafe { crate::stored::decode_move::<$dst>(source)? };
                 $decode_fn(source)
             }
 
@@ -401,7 +401,6 @@ impl<R: ReprC<CType: Sized>, const N: usize> ReprC for [R; N] {
 }
 
 unsafe impl<R: CType, const N: usize> CType for [R; N] {}
-
 
 unsafe impl<T: EmptyStore, const N: usize> EmptyStore for [T; N] {}
 // TODO: It's not possbile to implement for specific len yet: https://github.com/mversic/co3/issues/13
@@ -543,11 +542,11 @@ mod tests {
         assert_impl_all!(Option<SystemCallback>: CFnArg);
 
         let encoded = increment as Callback;
-        let encoded = encoded.soft_encode(&mut Default::default());
-        let decoded = unsafe { Callback::soft_decode(encoded, &mut Default::default()) }.unwrap();
+        let encoded = crate::encode(encoded);
+        let decoded = unsafe { crate::decode::<Callback>(encoded) }.unwrap();
         assert_eq!(decoded(41), 42);
-        assert!(unsafe { Callback::soft_decode(None, &mut Default::default()) }.is_none());
-        assert!(Option::<Callback>::None.soft_encode(&mut None).is_none());
+        assert!(unsafe { crate::decode::<Callback>(None) }.is_none());
+        assert!(crate::soft_encode(Option::<Callback>::None, &mut None).is_none());
 
         type VoidCallback = extern "C" fn();
         assert_impl_all!(VoidCallback: ReprC, Encode, Decode<'static>);

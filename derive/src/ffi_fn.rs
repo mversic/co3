@@ -368,7 +368,7 @@ pub(crate) fn gen_regular_drop_definition_body(
 
     if !soft {
         return quote! {{
-            let Some(__co3_value) = (unsafe { co3::stored::decode_owned::<#self_ty>(__co3_self) }) else {
+            let Some(__co3_value) = (unsafe { co3::stored::decode_move::<#self_ty>(__co3_self) }) else {
                 #decode_error
             };
             core::mem::drop(__co3_value);

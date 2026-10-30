@@ -32,7 +32,7 @@ use crate::{
 };
 
 use crate::{
-    CType, NeedsDrop, ReprC, Thin, assert_arr_has_non_zero_len,
+    CType, NeedsDrop, ReprC, Thin,
     borrow::{Borrowed, BorrowedDecodeStore, BorrowedEncodeStore, BorrowedOwnerEncode},
     niche::Niche,
     reference::{CRef, CRefMut, FromRawRef},
@@ -431,7 +431,6 @@ disjoint_impls! {
     {
         type SoftStore = ();
         unsafe fn soft_encode_unchecked<'itm>(self, _: &'itm mut ()) -> Self::CType where Self: 'itm {
-            assert_arr_has_non_zero_len::<N>();
             // SAFETY: The owned wrapper/array preserves its ABI-compatible payload layout.
             unsafe { crate::transmute::transmute_owned(self) }
         }
@@ -1851,12 +1850,10 @@ disjoint_impls! {
     {
         type Store = ();
         unsafe fn soft_decode<'itm: 'd>(source: Self::CType, _: &'itm mut ()) -> Option<Self> {
-            assert_arr_has_non_zero_len::<N>();
             // SAFETY: Robust, ABI-compatible payloads have no invalid bit patterns to inspect.
             Some(unsafe { crate::transmute::transmute_owned(source) })
         }
         unsafe fn soft_decode_unchecked<'itm: 'd>(source: Self::CType, _: &'itm mut ()) -> Self {
-            assert_arr_has_non_zero_len::<N>();
             unsafe { crate::transmute::transmute_owned(source) }
         }
     }
@@ -2163,17 +2160,19 @@ where
     }
 }
 
-/// Encode using an empty owned-conversion store.
+/// Perform the conversion from `T` into [`ReprC::CType`].
 ///
 /// Prefer using [`crate::encode`] whenever possible.
 #[doc(hidden)]
 #[inline(always)]
-pub fn encode_owned<T: EncodeMove<Store: EmptyStore>>(item: T) -> T::CType {
+pub fn encode_move<T: EncodeMove<Store: EmptyStore>>(item: T) -> T::CType {
     let mut store = Default::default();
     T::soft_encode(item, &mut store)
 }
 
-/// Decode using an empty owned-conversion store.
+/// Perform the conversion from [`T::CType`](ReprC::CType) into `T`.
+///
+/// This function allows you to encode/decode unstable owned types
 ///
 /// Prefer using [`crate::decode`] whenever possible.
 ///
@@ -2182,7 +2181,7 @@ pub fn encode_owned<T: EncodeMove<Store: EmptyStore>>(item: T) -> T::CType {
 /// See the safety section in [`crate::decode`].
 #[doc(hidden)]
 #[inline(always)]
-pub unsafe fn decode_owned<'d, T: DecodeMove<'d, Store: EmptyStore + 'd>>(
+pub unsafe fn decode_move<'d, T: DecodeMove<'d, Store: EmptyStore + 'd>>(
     source: T::CType,
 ) -> Option<T> {
     unsafe { with_empty_decode_store::<T, _>(|store| T::soft_decode(source, store)) }
@@ -2190,7 +2189,7 @@ pub unsafe fn decode_owned<'d, T: DecodeMove<'d, Store: EmptyStore + 'd>>(
 
 #[doc(hidden)]
 #[inline(always)]
-pub(crate) unsafe fn encode_owned_unchecked<T: EncodeMoveUnchecked<SoftStore: EmptyStore>>(
+pub(crate) unsafe fn encode_move_unchecked<T: EncodeMoveUnchecked<SoftStore: EmptyStore>>(
     item: T,
 ) -> T::CType {
     let mut store = Default::default();
@@ -2199,7 +2198,7 @@ pub(crate) unsafe fn encode_owned_unchecked<T: EncodeMoveUnchecked<SoftStore: Em
 
 #[doc(hidden)]
 #[inline(always)]
-pub(crate) unsafe fn decode_owned_unchecked<'d, T: DecodeMove<'d, Store: EmptyStore + 'd>>(
+pub(crate) unsafe fn decode_move_unchecked<'d, T: DecodeMove<'d, Store: EmptyStore + 'd>>(
     source: T::CType,
 ) -> T {
     unsafe { with_empty_decode_store::<T, _>(|store| T::soft_decode_unchecked(source, store)) }
@@ -2443,8 +2442,6 @@ unsafe fn encode_unchecked_array_elements<R: EncodeMoveUnchecked, const N: usize
     value: [R; N],
     store: &mut ArrayStore<R::SoftStore, N>,
 ) -> [R::CType; N] {
-    assert_arr_has_non_zero_len::<N>();
-
     let mut items = value.into_iter();
     let mut stores = store.0.iter_mut();
 
@@ -2460,8 +2457,6 @@ fn encode_array_elements<'itm, R: EncodeMove + 'itm, const N: usize>(
     value: [R; N],
     store: &'itm mut ArrayStore<R::Store, N>,
 ) -> [R::CType; N] {
-    assert_arr_has_non_zero_len::<N>();
-
     let store = &mut store.0;
 
     let mut items = value.into_iter();
@@ -2479,8 +2474,6 @@ unsafe fn decode_array_elements<'d, 'itm: 'd, R: DecodeMove<'d>, const N: usize>
     source: [R::CType; N],
     store: &'itm mut ArrayStore<R::Store, N>,
 ) -> Option<[R; N]> {
-    assert_arr_has_non_zero_len::<N>();
-
     let mut stores = store.0.iter_mut();
     let decoded = source.map(|item| unsafe { R::soft_decode(item, stores.next().unwrap()) });
 
@@ -2495,8 +2488,6 @@ unsafe fn decode_unchecked_array_elements<'d, 'itm: 'd, R: DecodeMove<'d>, const
     source: [R::CType; N],
     store: &'itm mut ArrayStore<R::Store, N>,
 ) -> [R; N] {
-    assert_arr_has_non_zero_len::<N>();
-
     let mut stores = store.0.iter_mut();
     source.map(|item| unsafe { R::soft_decode_unchecked(item, stores.next().unwrap()) })
 }

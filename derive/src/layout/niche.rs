@@ -5,8 +5,7 @@ use crate::{
     layout::{
         attr::ReprKind,
         ctype::{classify_tail, gen_copy_extern_c_bounds_for_ctype, gen_ctype_name},
-        enum_tag_type, enum_variant_tag_exprs, is_exhaustive_enum,
-        is_transparent_enum_repr,
+        enum_tag_type, enum_variant_tag_exprs, is_exhaustive_enum, is_transparent_enum_repr,
     },
     utils::{build_extern_c_type_tuple, speculative_marker},
 };

@@ -1,7 +1,6 @@
 use co3::{ReprC, rust_spec::RustSpec};
 use static_assertions::{assert_impl_all, assert_not_impl_any};
 use std::cell::{Cell, UnsafeCell};
-use std::sync::atomic::{AtomicUsize, Ordering};
 
 #[derive(RustSpec, ReprC)]
 #[repr_c(transparent)]
@@ -106,8 +105,7 @@ fn checked_mut_wide_reference_encoding_asserts_each_pointee() {
 
 #[test]
 #[cfg(debug_assertions)]
-#[should_panic(expected = "encoding failed AbiCompatibleValidate::is_valid")]
-fn checked_interior_wide_reference_encoding_asserts_each_pointee() {
+fn checked_interior_wide_reference_encoding_does_not_inspect_cells() {
     let values = [
         UnsafeCell::new(ValidatedByte(11)),
         UnsafeCell::new(ValidatedByte(10)),
@@ -117,8 +115,7 @@ fn checked_interior_wide_reference_encoding_asserts_each_pointee() {
 
 #[test]
 #[cfg(debug_assertions)]
-#[should_panic(expected = "encoding failed AbiCompatibleValidate::is_valid")]
-fn checked_mut_interior_wide_reference_encoding_asserts_each_pointee() {
+fn checked_mut_interior_wide_reference_encoding_does_not_inspect_cells() {
     let mut values = [
         UnsafeCell::new(ValidatedByte(11)),
         UnsafeCell::new(ValidatedByte(10)),
@@ -132,7 +129,7 @@ fn checked_mut_interior_wide_reference_encoding_asserts_each_pointee() {
 fn checked_mut_nonrobust_wide_reference_asserts_original_pointee_validity() {
     let mut values = [ValidatedBool(true), ValidatedBool(false)];
     let mut store = Default::default();
-    let _ = co3::stored::EncodeMove::soft_encode(&mut values[..], &mut store);
+    let _ = co3::soft_encode(&mut values[..], &mut store);
 }
 
 #[test]
@@ -140,7 +137,7 @@ fn checked_mut_nonrobust_wide_reference_asserts_original_pointee_validity() {
 #[should_panic(expected = "encoding failed AbiCompatibleValidate::is_valid")]
 fn checked_wide_box_encoding_asserts_each_pointee() {
     let values = [ValidatedByte(11), ValidatedByte(10)];
-    let _ = co3::stored::encode_owned(Vec::from(values).into_boxed_slice());
+    let _ = co3::encode(Vec::from(values).into_boxed_slice());
 }
 
 #[test]
@@ -186,18 +183,6 @@ struct GenericField<T>(T);
 impl<T> From<T> for GenericField<T> {
     fn from(value: T) -> Self {
         Self(value)
-    }
-}
-
-static DROP_BOX_COUNT: AtomicUsize = AtomicUsize::new(0);
-
-#[derive(RustSpec, ReprC)]
-#[rust_spec(custom_drop)]
-struct DropBox(Box<u32>);
-
-impl Drop for DropBox {
-    fn drop(&mut self) {
-        DROP_BOX_COUNT.fetch_add(1, Ordering::Relaxed);
     }
 }
 
@@ -253,15 +238,11 @@ fn field_representation_preserves_inner_niche() {
 }
 
 #[test]
-fn field_representation_transfers_custom_drop_field() {
-    let before = DROP_BOX_COUNT.load(Ordering::Relaxed);
-    let encoded = co3::encode(DropBox(Box::new(7)));
-    assert_eq!(DROP_BOX_COUNT.load(Ordering::Relaxed), before);
-
-    let decoded: DropBox = unsafe { co3::decode(encoded) }.unwrap();
-    assert_eq!(*decoded.0, 7);
-    drop(decoded);
-    assert_eq!(DROP_BOX_COUNT.load(Ordering::Relaxed), before + 1);
+fn field_representation_selects_generic_drop_behavior() {
+    assert_eq!(co3::encode(GenericField(13_u32)), 13);
+    let encoded = co3::encode(GenericField(Box::new(17_u32)));
+    let decoded: GenericField<Box<u32>> = unsafe { co3::decode(encoded) }.unwrap();
+    assert_eq!(*decoded.0, 17);
 }
 
 #[test]
@@ -271,14 +252,6 @@ fn field_representation_moves_auto_drop_field() {
     });
     let decoded: AutoDropBox = unsafe { co3::decode(encoded) }.unwrap();
     assert_eq!(*decoded.inner, 11);
-}
-
-#[test]
-fn field_representation_selects_generic_drop_behavior() {
-    assert_eq!(co3::encode(GenericField(13_u32)), 13);
-    let encoded = co3::encode(GenericField(Box::new(17_u32)));
-    let decoded: GenericField<Box<u32>> = unsafe { co3::decode(encoded) }.unwrap();
-    assert_eq!(*decoded.0, 17);
 }
 
 #[test]

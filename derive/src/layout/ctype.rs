@@ -469,9 +469,13 @@ fn gen_tagged_union_partial_eq(
     let name = &union.ident;
     let (impl_generics, ty_generics, where_clause) = union.generics.split_for_impl();
     let predicates = where_clause.as_ref().map(|clause| &clause.predicates);
-    let bounds = union.fields.named.iter().flat_map(|field| {
-        gen_conditional_trait_bounds(&field.ty, &union.generics, quote!(core::cmp::PartialEq))
-    });
+    let fields = union
+        .fields
+        .named
+        .iter()
+        .map(|field| &field.ty)
+        .collect::<Vec<_>>();
+    let bounds = gen_field_trait_bounds(&union.generics, &fields, quote!(core::cmp::PartialEq));
     let tag_values = super::enum_variant_tag_exprs(variants, tag_type);
     let arms = variants.iter().enumerate().map(|(index, variant)| {
         let tag = &tag_values[index];
@@ -759,9 +763,13 @@ fn gen_tagged_payload_partial_eq(
     let name = &ctype.ident;
     let (impl_generics, ty_generics, where_clause) = ctype.generics.split_for_impl();
     let predicates = where_clause.as_ref().map(|clause| &clause.predicates);
-    let bounds = payload.fields.named.iter().flat_map(|field| {
-        gen_conditional_trait_bounds(&field.ty, &ctype.generics, quote!(core::cmp::PartialEq))
-    });
+    let fields = payload
+        .fields
+        .named
+        .iter()
+        .map(|field| &field.ty)
+        .collect::<Vec<_>>();
+    let bounds = gen_field_trait_bounds(&ctype.generics, &fields, quote!(core::cmp::PartialEq));
     let tag_values = super::enum_variant_tag_exprs(variants, tag_type);
     let arms = variants.iter().enumerate().map(|(index, variant)| {
         let tag = &tag_values[index];
@@ -1010,32 +1018,34 @@ fn gen_struct_ctype_impls<const GEN_PARTIAL_EQ: bool>(
     }
 }
 
-fn gen_conditional_trait_bounds(
-    ty: &syn::Type,
+// Only a concrete final field may defer its trait requirement. All preceding
+// fields and parameterized tails impose ordinary, strong bounds.
+fn gen_field_trait_bounds(
     generics: &syn::Generics,
+    fields: &[&syn::Type],
     bound: TokenStream,
 ) -> Vec<TokenStream> {
-    if is_parametrized(ty, generics) {
-        vec![quote!(#ty: #bound)]
-    } else {
-        let speculative = speculative_marker(true);
-        let mut bounds = vec![quote!(#speculative #ty: #bound)];
-        bounds.extend(
-            gen_hrtb_projection_bounds(ty, generics, bound)
-                .into_iter()
-                .map(|predicate| quote!(#predicate)),
-        );
-        bounds
-    }
+    fields
+        .iter()
+        .enumerate()
+        .map(|(index, ty)| {
+            let speculative =
+                speculative_marker(index + 1 == fields.len() && !is_parametrized(ty, generics));
+            quote!(#speculative #ty: #bound)
+        })
+        .collect()
 }
 
 fn gen_struct_partial_eq(ctype: &syn::ItemStruct) -> TokenStream {
     let name = &ctype.ident;
     let (impl_generics, ty_generics, where_clause) = ctype.generics.split_for_impl();
     let predicates = where_clause.as_ref().map(|clause| &clause.predicates);
-    let bounds = ctype.fields.iter().flat_map(|field| {
-        gen_conditional_trait_bounds(&field.ty, &ctype.generics, quote!(core::cmp::PartialEq))
-    });
+    let fields = ctype
+        .fields
+        .iter()
+        .map(|field| &field.ty)
+        .collect::<Vec<_>>();
+    let bounds = gen_field_trait_bounds(&ctype.generics, &fields, quote!(core::cmp::PartialEq));
     let comparisons = ctype
         .fields
         .members()
@@ -1427,31 +1437,15 @@ fn gen_copy_impls(
 }
 
 fn gen_copy_bounds(generics: &syn::Generics, fields: &[&syn::Type]) -> Vec<TokenStream> {
-    let Some((last, fields)) = fields.split_last() else {
-        return Vec::new();
-    };
-
-    let mut predicates = fields
+    fields
         .iter()
-        .map(|&ty| {
-            if is_parametrized(ty, generics) {
-                parse_quote! { #ty: Copy }
-            } else {
-                let speculative = speculative_marker(true);
-                parse_quote! { #speculative #ty: Copy }
-            }
+        .map(|ty| {
+            let speculative = speculative_marker(!is_parametrized(ty, generics));
+            quote!(#speculative #ty: Copy)
         })
-        .collect::<Vec<_>>();
-
-    if is_parametrized(last, generics) {
-        predicates.push(quote!(#last: Copy));
-    } else {
-        let speculative = speculative_marker(true);
-        predicates.push(quote!(#speculative #last: Copy));
-    }
-
-    predicates
+        .collect()
 }
+
 fn gen_default_impl(
     ident: &syn::Ident,
     generics: &syn::Generics,
@@ -1747,6 +1741,56 @@ fn gen_hrtb_projection_bounds(
 mod tail_tests {
     use super::{TailClass, UnsizedTail, classify_tail};
     use syn::parse_quote;
+
+    #[test]
+    fn copy_and_partial_eq_use_their_respective_speculative_policies() {
+        let generics = parse_quote!(<'a, T, const N: usize>);
+        for (types, expected_copy, expected_eq) in [
+            (vec![], vec![], vec![]),
+            (vec![parse_quote!(Opaque)], vec![true], vec![true]),
+            (
+                vec![parse_quote!(Opaque), parse_quote!(u8)],
+                vec![true, true],
+                vec![false, true],
+            ),
+            (
+                vec![parse_quote!(u8), parse_quote!(T)],
+                vec![true, false],
+                vec![false, false],
+            ),
+            (
+                vec![parse_quote!(u8), parse_quote!(&'a u8)],
+                vec![true, false],
+                vec![false, false],
+            ),
+            (
+                vec![parse_quote!(u8), parse_quote!([u8; N])],
+                vec![true, false],
+                vec![false, false],
+            ),
+        ] {
+            let refs = types.iter().collect::<Vec<_>>();
+            let copy = super::gen_copy_bounds(&generics, &refs);
+            let eq = super::gen_field_trait_bounds(
+                &generics,
+                &refs,
+                quote::quote!(core::cmp::PartialEq),
+            );
+            for (bounds, expected) in [(copy, expected_copy), (eq, expected_eq)] {
+                let actual = bounds
+                    .into_iter()
+                    .map(|bound| {
+                        let syn::WherePredicate::Type(predicate) = syn::parse2(bound).unwrap()
+                        else {
+                            unreachable!()
+                        };
+                        predicate.lifetimes.is_some()
+                    })
+                    .collect::<Vec<_>>();
+                assert_eq!(actual, expected);
+            }
+        }
+    }
 
     #[test]
     fn tuple_classification_follows_the_final_element() {

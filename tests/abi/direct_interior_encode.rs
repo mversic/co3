@@ -91,7 +91,7 @@ fn non_robust_interior_references_are_direct_only() {
     let _tuple = unsafe { co3::encode_unchecked((&value, 1_u8)) };
     let _array = unsafe { co3::encode_unchecked([&value]) };
 
-    let mut store = Default::default();
+    let mut store = ();
     let encoded = unsafe { co3::soft_encode_unchecked(vec![UnsafeCell::new(7_u8)], &mut store) };
     assert_eq!(encoded.len(), 1);
     assert_eq!(store, ());

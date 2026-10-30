@@ -187,21 +187,19 @@ mod statics;
 
 #[test]
 fn box_shared_encoders_preserve_headers() {
-    use co3::stored::{EncodeRef, EncodeRefUnchecked};
-
     macro_rules! check {
         ($value:expr $(, len = $len:expr)?) => {{
             let value = $value;
             let expected = core::ptr::from_ref(&*value).cast::<()>();
             let mut store = Default::default();
-            let encoded = EncodeRef::encode_ref(&value, &mut store);
+            let encoded = co3::soft_encode(&value, &mut store);
             // Every concrete Box carrier tested here is Copy; only its header is read.
             let header = unsafe { *encoded.as_ptr() };
             assert_eq!(header.as_ptr().cast::<()>().cast_const(), expected);
             $(assert_eq!(header.metadata(), $len);)?
 
             let mut store = Default::default();
-            let encoded = unsafe { EncodeRefUnchecked::encode_ref_unchecked(&value, &mut store) };
+            let encoded = unsafe { co3::soft_encode_unchecked(&value, &mut store) };
             let header = unsafe { *encoded.as_ptr() };
             assert_eq!(header.as_ptr().cast::<()>().cast_const(), expected);
             $(assert_eq!(header.metadata(), $len);)?
@@ -211,6 +209,9 @@ fn box_shared_encoders_preserve_headers() {
     check!(Box::new(7_u8));
     check!(Box::new(UnsafeCell::new(7_u8)));
     check!(Box::<[u8]>::from([1, 2, 3]), len = 3);
-    check!(Box::<[UnsafeCell<u8>]>::from([UnsafeCell::new(1), UnsafeCell::new(2)]), len = 2);
+    check!(
+        Box::<[UnsafeCell<u8>]>::from([UnsafeCell::new(1), UnsafeCell::new(2)]),
+        len = 2
+    );
     check!(std::ffi::CString::new("hello").unwrap().into_boxed_c_str());
 }

@@ -145,7 +145,7 @@ fn stable_mutable_encoder_uses_the_original_pointer() {
         EncodeMut<'static, Store = ()>, EncodeMutUnchecked<'static, SoftStore = ()>);
     let mut value = TransparentStruct::new(GenericTransparentStruct::new(42));
     let original = core::ptr::from_mut(&mut value);
-    let encoded = value.encode_mut(&mut Default::default());
+    let encoded = co3::soft_encode(&mut value, &mut Default::default());
     assert_eq!(encoded.as_ptr(), original);
 }
 

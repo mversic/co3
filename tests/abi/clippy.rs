@@ -1,5 +1,6 @@
 use co3::{ReprC, rust_spec::RustSpec};
 
+#[allow(dead_code)]
 #[derive(RustSpec, ReprC)]
 #[repr(C)]
 struct ManyFields {

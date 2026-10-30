@@ -32,8 +32,6 @@ impl<C: CType> FromBox<C> for CBox<C> {
     }
 }
 
-
-
 pub(crate) trait FromWideBox<P: Wide<Header: WideHeader<Data: CType>, Metadata: CType> + ?Sized>:
     CType + Sized
 {
@@ -60,8 +58,6 @@ impl<P: Wide<Header: WideHeader<Data: CType>, Metadata: CType> + ?Sized> FromWid
     }
 }
 
-
-
 /// Owned pointer derived from `Box<C>`.
 ///
 /// If the data pointer is set to `null`, the struct represents `Option<Box<C>>`.
@@ -70,8 +66,6 @@ impl<P: Wide<Header: WideHeader<Data: CType>, Metadata: CType> + ?Sized> FromWid
 pub struct CBox<C> {
     data: *mut C,
 }
-
-
 
 /// Owned wide pointee with a defined C ABI layout.
 ///
@@ -82,8 +76,6 @@ pub struct CWideBox<P: Wide + ?Sized> {
     data: *mut PointeeData<P>,
     metadata: P::Metadata,
 }
-
-
 
 macro_rules! impl_boxed_pointer {
     ($ty:ident) => {
@@ -182,7 +174,6 @@ macro_rules! impl_boxed_pointer {
                 self.data.is_null()
             }
         }
-
     };
 }
 

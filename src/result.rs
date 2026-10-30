@@ -352,7 +352,11 @@ impl<T: Copy, E: Copy> CResult<T, E> {
 
     /// Borrow only the active payload, rejecting invalid tags.
     pub(crate) fn as_result(&self) -> Option<CoreResult<&T, &E>> {
-        match self.tag() { 0 => Some(Ok(unsafe { self.ok.1.assume_init_ref() })), 1 => Some(Err(unsafe { self.err.1.assume_init_ref() })), _ => None }
+        match self.tag() {
+            0 => Some(Ok(unsafe { self.ok.1.assume_init_ref() })),
+            1 => Some(Err(unsafe { self.err.1.assume_init_ref() })),
+            _ => None,
+        }
     }
 
     /// Return the represented `core::result::Result<T, E>`, or `None` for an invalid tag.
@@ -427,7 +431,6 @@ unsafe impl<T, E> CFnReturn for CoreResult<T, E> where
     Self: CType + RustSpec<Size = rust_spec::size::Sized<rust_spec::Gt<rust_spec::Zero>>>
 {
 }
-
 
 impl<R: Encode, E: Encode> Encode for CoreResult<R, E> where Self: EncodeMove {}
 impl<R: EncodeUnchecked, E: EncodeUnchecked> EncodeUnchecked for CoreResult<R, E> where

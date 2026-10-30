@@ -16,7 +16,10 @@ use co3::{
 struct OverlappingCustomNiche(u8);
 
 #[test]
-#[cfg_attr(debug_assertions, should_panic(expected = "encoding produced NICHE value"))]
+#[cfg_attr(
+    debug_assertions,
+    should_panic(expected = "encoding produced NICHE value")
+)]
 fn custom_niche_must_not_overlap_an_encoded_value() {
     let _ = encode(Some(OverlappingCustomNiche(1)));
 }

@@ -676,9 +676,9 @@ mod tests {
     fn cstr_box_round_trip() {
         let original = CString::new("owned").unwrap().into_boxed_c_str();
         let ptr = original.as_ptr();
-        let encoded = crate::stored::encode_owned(original);
+        let encoded = crate::stored::encode_move(original);
         assert_eq!(encoded.as_ptr().cast_const().cast(), ptr);
-        let decoded: Box<CStr> = unsafe { crate::stored::decode_owned(encoded) }.unwrap();
+        let decoded: Box<CStr> = unsafe { crate::stored::decode_move(encoded) }.unwrap();
         assert_eq!(decoded.as_ptr(), ptr);
         assert_eq!(&*decoded, c"owned");
     }

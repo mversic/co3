@@ -15,9 +15,9 @@ use rust_spec::{
 };
 
 #[cfg(feature = "alloc")]
-use crate::boxed::{CBox};
+use crate::boxed::CBox;
 use crate::{
-    NeedsDrop, ReprC, assert_arr_has_non_zero_len,
+    NeedsDrop, ReprC,
     niche::Niche,
     reference::{CRef, CRefMut},
     utf8::Utf8Str,
@@ -52,7 +52,6 @@ disjoint_impls! {
 ///
 /// # Safety
 /// `Self` and `Self::CType` must be compatible with the same stable ABI.
-
     pub unsafe trait AbiCompatible: ReprC {}
 
     unsafe impl<R: AbiCompatible + ?Sized, __Interior: ExclusiveKind> AbiCompatible for &R
@@ -89,14 +88,14 @@ disjoint_impls! {
             <R as ReprC>::CType: Sized,
         {}
 
-    unsafe impl<R: AbiCompatible<CType: Copy> + ReprC, E: ReprC> AbiCompatible for Result<R, E>
+    unsafe impl<R: AbiCompatible<CType: Copy + PartialEq> + Niche + ReprC, E: ReprC> AbiCompatible for Result<R, E>
         where
             Self: RustSpec<Layout = Stable> + ReprC<CType = <R as ReprC>::CType>,
             R: RustSpec<Size = RustSpecSized<Gt<Zero>>>,
             E: RustSpec<Size = RustSpecSized<Zero>>,
         {}
 
-    unsafe impl<R: ReprC, E: AbiCompatible<CType: Copy>> AbiCompatible for Result<R, E>
+    unsafe impl<R: ReprC, E: AbiCompatible<CType: Copy + PartialEq> + Niche> AbiCompatible for Result<R, E>
         where
             Self: RustSpec<Layout = Stable> + ReprC<CType = <E as ReprC>::CType>,
             R: RustSpec<Size = RustSpecSized<Zero>>,
@@ -224,7 +223,8 @@ disjoint_impls! {
     }
 
 
-    unsafe impl<R: AbiCompatibleValidate<CType: Copy> + ReprC, E: ReprC> AbiCompatibleValidate for Result<R, E>
+    unsafe impl<R: AbiCompatibleValidate<CType: Copy + PartialEq> + Niche + ReprC, E: ReprC>
+        AbiCompatibleValidate for Result<R, E>
     where
         Self: RustSpec<Layout = Stable> + ReprC<CType = <R as ReprC>::CType>,
         R: RustSpec<Size = RustSpecSized<Gt<Zero>>>,
@@ -232,11 +232,12 @@ disjoint_impls! {
     {
         #[inline(always)]
         unsafe fn is_valid(target: &Self::CType) -> bool {
-            unsafe { R::is_valid(target) }
+            *target == R::NICHE || unsafe { R::is_valid(target) }
         }
     }
 
-    unsafe impl<R: ReprC, E: AbiCompatibleValidate<CType: Copy>> AbiCompatibleValidate for Result<R, E>
+    unsafe impl<R: ReprC, E: AbiCompatibleValidate<CType: Copy + PartialEq> + Niche>
+        AbiCompatibleValidate for Result<R, E>
     where
         Self: RustSpec<Layout = Stable> + ReprC<CType = <E as ReprC>::CType>,
         R: RustSpec<Size = RustSpecSized<Zero>>,
@@ -244,7 +245,7 @@ disjoint_impls! {
     {
         #[inline(always)]
         unsafe fn is_valid(target: &Self::CType) -> bool {
-            unsafe { E::is_valid(target) }
+            *target == E::NICHE || unsafe { E::is_valid(target) }
         }
     }
 
@@ -342,8 +343,6 @@ where
 {
     #[inline(always)]
     unsafe fn is_valid(target: &Self::CType) -> bool {
-        assert_arr_has_non_zero_len::<N>();
-
         for t in target {
             if unsafe { !R::is_valid(t) } {
                 return false;
@@ -810,7 +809,7 @@ mod conversion_tests {
     use crate::{
         ReprC,
         primitives::CBool,
-        stored::{DecodeMove, EncodeMove, EncodeMoveUnchecked, EncodeRef, EncodeRefUnchecked, Store},
+        stored::{DecodeMove, EncodeMove, EncodeMoveUnchecked, Store},
         transmute::AbiCompatible,
     };
     use core::cell::{Cell, UnsafeCell};
@@ -858,66 +857,94 @@ mod conversion_tests {
         }
     }
 
+    impl crate::EncodeUnchecked for Direct {}
+    impl crate::Encode for Direct {}
+    impl crate::Decode<'_> for Direct {}
+
+    #[test]
+    fn empty_arrays_convert_and_have_no_niche() {
+        static_assertions::assert_not_impl_any!([core::num::NonZeroU8; 0]: crate::niche::Niche);
+        static_assertions::assert_impl_all!([core::num::NonZeroU8; 1]: crate::niche::Niche);
+        let value: [u8; 0] = [];
+        assert_eq!(crate::encode(value), []);
+        assert_eq!(unsafe { crate::decode::<[u8; 0]>([]) }, Some([]));
+        assert!(unsafe { <[u8; 0] as AbiCompatibleValidate>::is_valid(&[]) });
+    }
+
     #[test]
     fn stable_robust_arrays_encode_elements() {
-        assert_eq!([3u8, 4].soft_encode(&mut Default::default()), [3, 4]);
-        assert_eq!(
-            unsafe { [5u8, 6].soft_encode_unchecked(&mut Default::default()) },
-            [5, 6]
-        );
-        let values = unsafe { <[Direct; 2] as DecodeMove>::soft_decode([7, 8], &mut Default::default()) }.unwrap();
+        assert_eq!(crate::encode([3u8, 4]), [3, 4]);
+        assert_eq!(unsafe { crate::encode_unchecked([5u8, 6]) }, [5, 6]);
+        let values =
+            unsafe { crate::soft_decode::<[Direct; 2]>([7, 8], &mut Default::default()) }.unwrap();
         assert_eq!(values.map(|x| x.0), [7, 8]);
-        let values = unsafe { <[Direct; 2] as DecodeMove>::soft_decode_unchecked([9, 10], &mut Default::default()) };
+        let values = unsafe {
+            crate::soft_decode_unchecked::<[Direct; 2]>([9, 10], &mut Default::default())
+        };
         assert_eq!(values.map(|x| x.0), [9, 10]);
     }
 
     #[test]
     fn owned_cells_move_without_visiting_contents() {
-        assert_eq!(Cell::new(Direct(3)).soft_encode(&mut Default::default()).into_inner(), 3);
-        assert_eq!(
-            UnsafeCell::new(Direct(4)).soft_encode(&mut Default::default()).into_inner(),
-            4
-        );
-        let cell = unsafe { Cell::new(Direct(5)).soft_encode_unchecked(&mut Default::default()) };
+        assert_eq!(crate::encode(Cell::new(Direct(3))).into_inner(), 3);
+        assert_eq!(crate::encode(UnsafeCell::new(Direct(4))).into_inner(), 4);
+        let cell = unsafe { crate::encode_unchecked(Cell::new(Direct(5))) };
         assert_eq!(cell.into_inner(), 5);
-        let cell =
-            unsafe { <UnsafeCell<Direct> as DecodeMove>::soft_decode(UnsafeCell::new(6), &mut Default::default()) }
-                .unwrap();
+        let cell = unsafe {
+            crate::soft_decode::<UnsafeCell<Direct>>(UnsafeCell::new(6), &mut Default::default())
+        }
+        .unwrap();
         assert_eq!(cell.into_inner().0, 6);
         let cell = unsafe {
-            <Cell<Direct> as DecodeMove>::soft_decode_unchecked(UnsafeCell::new(7), &mut Default::default())
+            crate::soft_decode_unchecked::<Cell<Direct>>(
+                UnsafeCell::new(7),
+                &mut Default::default(),
+            )
         };
         assert_eq!(cell.into_inner().0, 7);
         // Non-Copy carriers are moved, not read through &UnsafeCell.
-        let cells = [UnsafeCell::new(Direct(8)), UnsafeCell::new(Direct(9))]
-            .soft_encode(&mut Default::default());
+        let cells = crate::encode([UnsafeCell::new(Direct(8)), UnsafeCell::new(Direct(9))]);
         assert_eq!(cells.map(UnsafeCell::into_inner), [8, 9]);
     }
 
     #[test]
     fn stable_shared_arrays_preserve_the_original_pointer() {
         let values = [Direct(3), Direct(4)];
-        let encoded = values.encode_ref(&mut Default::default());
+        let encoded = crate::soft_encode(&values, &mut Default::default());
         assert_eq!(encoded.as_ptr().cast::<u8>(), values.as_ptr().cast::<u8>());
-        let encoded = unsafe { values.encode_ref_unchecked(&mut Default::default()) };
+        let encoded = unsafe { crate::soft_encode_unchecked(&values, &mut Default::default()) };
         assert_eq!(encoded.as_ptr().cast::<u8>(), values.as_ptr().cast::<u8>());
+    }
+
+    #[test]
+    fn result_niche_is_valid_for_error() {
+        use core::num::NonZeroU8;
+        assert!(unsafe { <Result<NonZeroU8, ()> as AbiCompatibleValidate>::is_valid(&0) });
+        assert!(unsafe { <Result<NonZeroU8, ()> as AbiCompatibleValidate>::is_valid(&1) });
+    }
+
+    #[test]
+    fn result_niche_is_valid_for_success() {
+        use core::num::NonZeroU8;
+        assert!(unsafe { <Result<(), NonZeroU8> as AbiCompatibleValidate>::is_valid(&0) });
+        assert!(unsafe { <Result<(), NonZeroU8> as AbiCompatibleValidate>::is_valid(&1) });
     }
 
     #[test]
     fn nonrobust_checked_conversions_still_validate() {
         let mut store = Default::default();
         assert!(
-            unsafe { <[bool; 2] as DecodeMove>::soft_decode([CBool(1), CBool(2)], &mut store) }
-                .is_none()
+            unsafe { crate::soft_decode::<[bool; 2]>([CBool(1), CBool(2)], &mut store) }.is_none()
         );
         assert!(
-            unsafe { <Cell<bool> as DecodeMove>::soft_decode(UnsafeCell::new(CBool(2)), &mut Default::default()) }
-                .is_none()
+            unsafe {
+                crate::soft_decode::<Cell<bool>>(UnsafeCell::new(CBool(2)), &mut Default::default())
+            }
+            .is_none()
         );
         let mut store = Default::default();
         let values =
-            unsafe { <[bool; 2] as DecodeMove>::soft_decode([CBool(1), CBool(0)], &mut store) }
-                .unwrap();
+            unsafe { crate::soft_decode::<[bool; 2]>([CBool(1), CBool(0)], &mut store) }.unwrap();
         assert_eq!(values, [true, false]);
     }
 
@@ -925,7 +952,7 @@ mod conversion_tests {
     fn checked_arrays_keep_mutable_reference_writeback() {
         let mut value = true;
         let mut store = Default::default();
-        let encoded = [&mut value].soft_encode(&mut store);
+        let encoded = crate::soft_encode([&mut value], &mut store);
         // SAFETY: The mutable carrier refers to the live conversion store.
         unsafe { encoded[0].as_ptr().write(CBool::FALSE) };
         assert_eq!(store.sync(), Some(()));
@@ -936,7 +963,7 @@ mod conversion_tests {
     fn manually_drop_keeps_mutable_reference_writeback() {
         let mut value = true;
         let mut store = Default::default();
-        let encoded = core::mem::ManuallyDrop::new(&mut value).soft_encode(&mut store);
+        let encoded = crate::soft_encode(core::mem::ManuallyDrop::new(&mut value), &mut store);
         unsafe { encoded.as_ptr().write(CBool::FALSE) };
         assert_eq!(store.sync(), Some(()));
         assert!(!value);
@@ -946,13 +973,12 @@ mod conversion_tests {
     fn unstable_arrays_keep_field_conversion_and_stores() {
         let values = [(true, 3u8), (false, 4u8)];
         let mut store = Default::default();
-        let encoded = values.soft_encode(&mut store);
+        let encoded = crate::soft_encode(values, &mut store);
         assert_eq!(encoded[0].0, CBool::TRUE);
         assert_eq!(encoded[1].1, 4);
         let mut decode_store = Default::default();
         let decoded =
-            unsafe { <[(bool, u8); 2] as DecodeMove>::soft_decode(encoded, &mut decode_store) }
-                .unwrap();
+            unsafe { crate::soft_decode::<[(bool, u8); 2]>(encoded, &mut decode_store) }.unwrap();
         assert_eq!(decoded, values);
     }
 
@@ -980,7 +1006,7 @@ mod conversion_tests {
         use core::num::NonZeroU8;
         let cell = UnsafeCell::new(NonZeroU8::new(3).unwrap());
         let mut store = Default::default();
-        let encoded = unsafe { [&cell].soft_encode_unchecked(&mut store) };
+        let encoded = unsafe { crate::soft_encode_unchecked([&cell], &mut store) };
         assert_eq!(
             encoded[0].as_ptr().cast::<()>(),
             core::ptr::from_ref(&cell).cast_mut().cast::<()>()
@@ -1015,20 +1041,28 @@ mod conversion_tests {
             }
         }
 
+        impl crate::Decode<'_> for Interior {}
+
         let decoded = unsafe {
-            <ManuallyDrop<Interior> as DecodeMove>::soft_decode(UnsafeCell::new(3), &mut Default::default())
+            crate::soft_decode::<ManuallyDrop<Interior>>(
+                UnsafeCell::new(3),
+                &mut Default::default(),
+            )
         }
         .unwrap();
         assert_eq!(ManuallyDrop::into_inner(decoded).0.into_inner(), 3);
         let decoded = unsafe {
-            <ManuallyDrop<Interior> as DecodeMove>::soft_decode_unchecked(UnsafeCell::new(4), &mut Default::default())
+            crate::soft_decode_unchecked::<ManuallyDrop<Interior>>(
+                UnsafeCell::new(4),
+                &mut Default::default(),
+            )
         };
         assert_eq!(ManuallyDrop::into_inner(decoded).0.into_inner(), 4);
 
         // Non-robust interior still delegates to the payload's validating decoder.
         assert!(
             unsafe {
-                <ManuallyDrop<Cell<bool>> as DecodeMove>::soft_decode(
+                crate::soft_decode::<ManuallyDrop<Cell<bool>>>(
                     UnsafeCell::new(CBool(2)),
                     &mut Default::default(),
                 )
@@ -1036,7 +1070,10 @@ mod conversion_tests {
             .is_none()
         );
         let decoded = unsafe {
-            <ManuallyDrop<Cell<bool>> as DecodeMove>::soft_decode(UnsafeCell::new(CBool(1)), &mut Default::default())
+            crate::soft_decode::<ManuallyDrop<Cell<bool>>>(
+                UnsafeCell::new(CBool(1)),
+                &mut Default::default(),
+            )
         }
         .unwrap();
         assert!(ManuallyDrop::into_inner(decoded).into_inner());

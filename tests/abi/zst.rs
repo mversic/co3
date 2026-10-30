@@ -1,9 +1,6 @@
 use co3::{
-    CFnArg, CFnReturn, CType, Decode, Encode, ReprC,
-    borrow::Borrow,
-    reference::CRefMut,
-    rust_spec::RustSpec,
-    transmute::AbiCompatible,
+    CFnArg, CFnReturn, CType, Decode, Encode, ReprC, borrow::Borrow, reference::CRefMut,
+    rust_spec::RustSpec, transmute::AbiCompatible,
 };
 use core::{
     cell::{Cell, UnsafeCell},
@@ -72,10 +69,8 @@ type CTransparentEnumZst = <TransparentEnum<()> as ReprC>::CType;
 fn boxed_zst_traits() {
     macro_rules! assert_traits {
         ($ty:ty, $ctype:ty) => {
-            assert_impl_all!($ty:
-                Decode<'static>,
-                Encode,
-            );
+            assert_impl_all!($ty: Decode<'static>, Encode);
+            assert_impl_all!($ty: co3::stored::DecodeMove<'static>, co3::stored::EncodeMove);
 
             assert_impl_all!($ctype:
                 CType,
