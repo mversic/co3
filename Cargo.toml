@@ -41,8 +41,8 @@ default = ["alloc", "derive"]
 [dependencies]
 co3-derive = { version = "0.8.2", path = "derive", optional = true }
 
-rust-spec = { version = "0.6.1", default-features = false, features = ["derive"] }
-disjoint_impls = "1.4.3"
+rust-spec = { version = "0.7.1", default-features = false, features = ["derive"] }
+disjoint_impls = "1.4.5"
 impls = "1.0.3"
 
 [dev-dependencies]

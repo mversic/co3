@@ -10,8 +10,8 @@ error[E0277]: the trait bound `(dyn Trait + '__co3_0): RustSpec` is not satisfie
    | |_^ the trait `RustSpec` is not implemented for `(dyn Trait + '__co3_0)`
    |
    = help: the following other types implement trait `RustSpec`:
-             &'_lšč0 _TŠČ0
-             &'_lšč0 mut _TŠČ0
+             &R
+             &mut R
              ()
              (A, B)
              (A, B, C)
@@ -19,10 +19,10 @@ error[E0277]: the trait bound `(dyn Trait + '__co3_0): RustSpec` is not satisfie
              (A, B, C, D, E)
              (A, B, C, D, E, F)
            and $N others
-   = note: required for `&'__co3_0 (dyn Trait + '__co3_0)` to implement `ReprC`
+   = note: required for `&'__co3_0 (dyn Trait + '__co3_0)` to implement `co3::borrow::Borrow`
    = note: this error originates in the macro `ffi` (in Nightly builds, run with -Z macro-backtrace for more info)
 
-error[E0277]: the trait bound `&(dyn Trait + '__co3_0): co3::_::ReprC0<_, _>` is not satisfied
+error[E0277]: the trait bound `&(dyn Trait + '__co3_0): co3::borrow::_::Borrow0<_>` is not satisfied
   --> tests/ui_fail/dyn_trait.rs:7:1
    |
  7 | / ffi! {
@@ -31,16 +31,26 @@ error[E0277]: the trait bound `&(dyn Trait + '__co3_0): co3::_::ReprC0<_, _>` is
 10 | |     impl dyn Trait {
 ...  |
 13 | | }
-   | |_^ the trait `co3::_::ReprC0<_, _>` is not implemented for `&(dyn Trait + '__co3_0)`
+   | |_^ the trait `co3::borrow::_::Borrow0<_>` is not implemented for `&(dyn Trait + '__co3_0)`
    |
-   = help: `&'_lšč0 R` implements trait `co3::_::ReprC0<_TŠČ0, _TŠČ1>`:
-             co3::_::ReprC0<NulTerminated, Exclusive>
-             co3::_::ReprC0<NulTerminated, WithInterior>
-             co3::_::ReprC0<_TŠČ0, Exclusive>
-             co3::_::ReprC0<_TŠČ0, WithInterior>
-             co3::_::ReprC0<co3::rust_spec::size::MetaSized<SliceLike>, Exclusive>
-             co3::_::ReprC0<co3::rust_spec::size::MetaSized<SliceLike>, WithInterior>
-   = note: required for `&'__co3_0 (dyn Trait + '__co3_0)` to implement `ReprC`
+help: `&'_lšč0 R` implements trait `co3::borrow::_::Borrow0<_TŠČ0>`
+  --> src/borrow.rs
+   |
+   | /     unsafe impl<R: ?Sized> Borrow for &R
+   | |     where
+   | |         R: RustSpec<Mutability = Exclusive<WithoutInterior>>
+   | |____________________________________________________________^ `co3::borrow::_::Borrow0<Exclusive<WithoutInterior>>`
+...
+   | /     unsafe impl<R: ?Sized, I> Borrow for &R
+   | |     where
+   | |         R: RustSpec<Mutability = Exclusive<WithInterior<I>>>
+   | |____________________________________________________________^ `co3::borrow::_::Borrow0<Exclusive<WithInterior<I>>>`
+...
+   | /     unsafe impl<R: ?Sized, I> Borrow for &R
+   | |     where
+   | |         R: RustSpec<Mutability = WithInterior<I>>
+   | |_________________________________________________^ `co3::borrow::_::Borrow0<WithInterior<I>>`
+   = note: required for `&'__co3_0 (dyn Trait + '__co3_0)` to implement `co3::borrow::Borrow`
    = note: this error originates in the macro `ffi` (in Nightly builds, run with -Z macro-backtrace for more info)
 
 error[E0308]: mismatched types
@@ -58,55 +68,3 @@ error[E0308]: mismatched types
    |
    = note: expected fn pointer `for<'a> fn(&'a (dyn Trait + 'a)) -> u8`
                  found fn item `for<'a> fn(&'a dyn Trait) -> u8 {<dyn Trait as Trait>::value}`
-
-error[E0277]: the trait bound `&dyn Trait: rust_spec::_::RustSpec0<_>` is not satisfied
-  --> tests/ui_fail/dyn_trait.rs:7:1
-   |
- 7 | / ffi! {
- 8 | |     #![unsafe(export("C"))]
- 9 | |
-10 | |     impl dyn Trait {
-...  |
-13 | | }
-   | |_^ the trait `rust_spec::_::RustSpec0<_>` is not implemented for `&dyn Trait`
-   |
-help: `&'_lšč0 R` implements trait `rust_spec::_::RustSpec0<_TŠČ0>`
-  --> $RUST_SPEC/src/lib.rs
-   |
-   | /     unsafe impl<R: ?Sized> RustSpec for &R
-   | |     where
-   | |         R: RustSpec<Size: size::Thin>,
-   | |______________________________________^ `rust_spec::_::RustSpec0<_TŠČ0>`
-...
-   | /     unsafe impl<R: ?Sized, U: MetadataKind> RustSpec for &R
-   | |     where
-   | |         R: RustSpec<Size = size::MetaSized<U>>,
-   | |_______________________________________________^ `rust_spec::_::RustSpec0<co3::rust_spec::size::MetaSized<U>>`
-...
-   | /     unsafe impl<R: ?Sized> RustSpec for &R
-   | |     where
-   | |         R: RustSpec<Size = size::NulTerminated>,
-   | |________________________________________________^ `rust_spec::_::RustSpec0<NulTerminated>`
-   = note: required for `&dyn Trait` to implement `RustSpec`
-   = note: required for `&dyn Trait` to implement `DecodeMove<'_>`
-   = note: this error originates in the macro `ffi` (in Nightly builds, run with -Z macro-backtrace for more info)
-
-error[E0277]: the trait bound `&dyn Trait: stored::_::DecodeMove0<'_, _, _, _, _>` is not satisfied
-  --> tests/ui_fail/dyn_trait.rs:7:1
-   |
- 7 | / ffi! {
- 8 | |     #![unsafe(export("C"))]
- 9 | |
-10 | |     impl dyn Trait {
-...  |
-13 | | }
-   | |_^ the trait `stored::_::DecodeMove0<'_, _, _, _, _>` is not implemented for `&dyn Trait`
-   |
-   = help: the following other types implement trait `stored::_::DecodeMove0<'d, _TŠČ1, _TŠČ2, _TŠČ3, _TŠČ4>`:
-             `&'d R` implements `stored::_::DecodeMove0<'d, Stable, Stable, _TŠČ0, Exclusive>`
-             `&'d R` implements `stored::_::DecodeMove0<'d, Unstable, Stable, co3::rust_spec::size::MetaSized<SliceLike>, Exclusive>`
-             `&'d R` implements `stored::_::DecodeMove0<'d, Unstable, Unstable, NulTerminated, Exclusive>`
-             `&'d R` implements `stored::_::DecodeMove0<'d, Unstable, Unstable, co3::rust_spec::size::Sized<S>, Exclusive>`
-             `&'d [R]` implements `stored::_::DecodeMove0<'d, Unstable, Unstable, co3::rust_spec::size::MetaSized<SliceLike>, Exclusive>`
-   = note: required for `&dyn Trait` to implement `DecodeMove<'_>`
-   = note: this error originates in the macro `ffi` (in Nightly builds, run with -Z macro-backtrace for more info)

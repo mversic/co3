@@ -129,14 +129,16 @@ fn reference_and_borrowed_encoding_avoid_clones_and_sync_nested_state() {
     assert_eq!(store.sync(), Some(()));
 
     let mut store = Default::default();
+    let borrowed: Borrowed<Probe> = Probe(9).into();
     assert_eq!(
-        Borrowed::into_inner(co3::soft_encode(Borrowed::new(Probe(9)), &mut store)),
+        Borrowed::into_inner(co3::soft_encode(borrowed, &mut store)),
         9
     );
     assert_eq!(store.sync(), Some(()));
 
     let mut store = Default::default();
-    let encoded = unsafe { co3::soft_encode_unchecked(Borrowed::new(Probe(10)), &mut store) };
+    let borrowed: Borrowed<Probe> = Probe(10).into();
+    let encoded = unsafe { co3::soft_encode_unchecked(borrowed, &mut store) };
     assert_eq!(Borrowed::into_inner(encoded), 10);
     assert_eq!(store.sync(), Some(()));
 

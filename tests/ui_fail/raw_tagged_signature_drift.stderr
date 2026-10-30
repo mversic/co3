@@ -16,13 +16,13 @@ error[E0308]: mismatched types
    |
 13 | / raw! {
 14 | |     fn source<dyn(u8) T = u8>(value: move T) -> u8
+   | |                                                 -- this return type influences the call expression's return type
 15 | |     where use<T> @ <First>;
 16 | | }
    | | ^
    | | |
-   | | expected `&u8`, found `&First`
-   | |_arguments to this function are incorrect
-   |   this return type influences the call expression's return type
+   | |_expected `&u8`, found `&First`
+   |   arguments to this function are incorrect
    |
    = note: expected reference `&u8`
               found reference `&First`

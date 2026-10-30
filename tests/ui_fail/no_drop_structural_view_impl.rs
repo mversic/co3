@@ -7,5 +7,5 @@ struct NoDrop(u32);
 fn require_repr_c<T: ReprC>() {}
 
 fn main() {
-    require_repr_c::<NoDropView<'static>>();
+    require_repr_c::<NoDropView>();
 }

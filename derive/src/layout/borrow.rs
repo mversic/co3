@@ -39,6 +39,17 @@ pub(super) fn gen_item_view(
 
     view_def.ident = gen_view_name(&input.ident);
 
+    // The view is always referenced with explicit arguments. Retaining an
+    // owner's default here would force it to satisfy view-only bounds at the
+    // view's definition, even when the owner's default is unsized.
+    for param in &mut view_def.generics.params {
+        match param {
+            syn::GenericParam::Type(param) => param.default = None,
+            syn::GenericParam::Const(param) => param.default = None,
+            syn::GenericParam::Lifetime(_) => {}
+        }
+    }
+
     rewrite_view_generics(&mut view_def);
     rewrite_view_fields(&mut view_def.data);
     let rust_spec_impl = gen_view_rust_spec(input, &view_def);

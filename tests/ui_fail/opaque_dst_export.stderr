@@ -50,7 +50,7 @@ note: required by a bound in `EncodeMove`
   --> src/stored.rs
    |
    |     pub unsafe trait EncodeMove: EncodeMoveUnchecked {
-   |                                   ^^^^^^^^^^^^^^^^^ required by this bound in `EncodeMove`
+   |                                  ^^^^^^^^^^^^^^^^^^^ required by this bound in `EncodeMove`
    = note: this error originates in the macro `ffi` (in Nightly builds, run with -Z macro-backtrace for more info)
 
 error[E0277]: the size for values of type `[T]` cannot be known at compilation time
@@ -69,7 +69,7 @@ note: required by a bound in `EncodeMoveUnchecked`
   --> src/stored.rs
    |
    |     pub unsafe trait EncodeMoveUnchecked: ReprC<CType: Sized> + Sized {
-   |                                                      ^^^^^ required by this bound in `EncodeMoveUnchecked`
+   |                                                        ^^^^^ required by this bound in `EncodeMoveUnchecked`
 
 error[E0277]: the size for values of type `[T]` cannot be known at compilation time
   --> tests/ui_fail/opaque_dst_export.rs:11:1
@@ -88,7 +88,7 @@ note: required because it appears within the type `OpaqueSlice<T>`
    |
  9 | struct OpaqueSlice<T>([T]);
    |        ^^^^^^^^^^^
-note: required by an implicit `Sized` bound in `Option`
+note: required by an implicit `Sized` bound in `std::option::Option`
   --> $RUST/core/src/option.rs
    |
    | pub enum Option<T> {
@@ -111,7 +111,7 @@ note: required by a bound in `DecodeMove`
   --> src/stored.rs
    |
    |     pub unsafe trait DecodeMove<'d>: ReprC<CType: Sized> + Sized {
-   |                                                    ^^^^^ required by this bound in `DecodeMove`
+   |                                                   ^^^^^ required by this bound in `DecodeMove`
 
 error[E0277]: the size for values of type `[T]` cannot be known at compilation time
   --> tests/ui_fail/opaque_dst_export.rs:15:10
@@ -142,7 +142,7 @@ note: required by a bound in `Encode`
   --> src/lib.rs
    |
    | pub trait Encode: EncodeMove + EncodeUnchecked {}
-   |                                 ^^^^^^^^^^^^ required by this bound in `Encode`
+   |                                ^^^^^^^^^^^^^^^ required by this bound in `Encode`
    = note: this error originates in the macro `ffi` (in Nightly builds, run with -Z macro-backtrace for more info)
 
 error[E0277]: the size for values of type `[T]` cannot be known at compilation time
@@ -173,7 +173,7 @@ note: required by a bound in `EncodeUnchecked`
   --> src/lib.rs
    |
    | pub trait EncodeUnchecked: EncodeMoveUnchecked {}
-   |                         ^^^^^^^^^^^^^^^^^ required by this bound in `EncodeUnchecked`
+   |                            ^^^^^^^^^^^^^^^^^^^ required by this bound in `EncodeUnchecked`
    = note: this error originates in the macro `ffi` (in Nightly builds, run with -Z macro-backtrace for more info)
 
 error[E0277]: the size for values of type `[T]` cannot be known at compilation time
@@ -204,7 +204,7 @@ note: required by a bound in `Decode`
   --> src/lib.rs
    |
    | pub trait Decode<'d>: DecodeMove<'d> {}
-   |                       ^^^^^^^^^^^^^^^ required by this bound in `Decode`
+   |                       ^^^^^^^^^^^^^^ required by this bound in `Decode`
    = note: this error originates in the macro `ffi` (in Nightly builds, run with -Z macro-backtrace for more info)
 
 error[E0277]: the size for values of type `[T]` cannot be known at compilation time

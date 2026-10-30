@@ -1074,6 +1074,11 @@ fn prepare_dispatch_wrapper_sig(
                 .expect("unpack attribute was found");
             let (source_part1, source_part2) =
                 ffi_fn::unpack_logical_parts(attrs, ty).expect("validated #[unpack] attribute");
+            let source_part1: syn::Type = if ffi_fn::borrowed_wide_unpack(attrs, ty) {
+                syn::parse_quote!(#co3::borrow::Borrowed<#source_part1>)
+            } else {
+                source_part1
+            };
             let (abi_part1, abi_part2) =
                 ffi_fn::unpack_abi_parts(attrs, ty).expect("validated #[unpack] attribute");
             if matches!(part1, syn::Type::Infer(_)) {

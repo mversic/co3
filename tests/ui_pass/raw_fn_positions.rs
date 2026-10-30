@@ -45,6 +45,6 @@ fn main() {
     let _: InsideMacro = 0u8;
     static_assertions::assert_type_eq_all!(
         Unpacked,
-        unsafe extern "C" fn(*mut u8, usize) -> c_int
+        unsafe extern "C" fn(co3::borrow::Borrowed<*mut u8>, usize) -> c_int
     );
 }
