@@ -244,11 +244,11 @@ note: required because it appears within the type `OpaqueSlice<u8>`
    |
  9 | struct OpaqueSlice<T>([T]);
    |        ^^^^^^^^^^^
-note: required by an implicit `Sized` bound in `CBox`
+note: required by a bound in `CBox`
   --> src/boxed.rs
    |
-   | pub struct CBox<C> {
-   |                 ^ required by the implicit `Sized` requirement on this type parameter in `CBox`
+   | pub struct CBox<R: ReprC<CType: Sized> + ?Sized> {
+   |                                 ^^^^^ required by this bound in `CBox`
    = note: this error originates in the macro `ffi` (in Nightly builds, run with -Z macro-backtrace for more info)
 
 error[E0277]: the size for values of type `[T]` cannot be known at compilation time

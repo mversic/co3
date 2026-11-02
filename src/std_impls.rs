@@ -1,15 +1,4 @@
 #[cfg(feature = "alloc")]
-use crate::stored::Owned;
-use crate::transmute::AbiCompatibleValidate;
-use crate::{
-    CFnArg, CFnReturn, CType, Decode, Encode, EncodeUnchecked, ReprC,
-    borrow::{Borrow, Borrowed},
-    niche::Niche,
-    stored::{DecodeMove, EmptyStore, EncodeMove, EncodeMoveUnchecked},
-    transmute::AbiCompatible,
-    utf8::Utf8Str,
-};
-#[cfg(feature = "alloc")]
 use alloc::string::String;
 use core::{
     cell::{Cell, UnsafeCell},
@@ -18,7 +7,19 @@ use core::{
     num::NonZero,
     ptr::NonNull,
 };
+
 use rust_spec::RustSpec;
+
+use crate::{
+    CFnArg, CFnReturn, CType, Decode, Encode, EncodeUnchecked, ReprC,
+    borrow::Borrow,
+    niche::Niche,
+    stored::{DecodeMove, EmptyStore, EncodeMove, EncodeMoveUnchecked},
+    transmute::{AbiCompatible, AbiCompatibleValidate},
+    utf8::Utf8Str,
+};
+#[cfg(feature = "alloc")]
+use crate::{borrow::Borrowed, stored::Owned};
 
 macro_rules! non_zero_derive {
     ($($primitive:ty),+ $(,)?) => {$(
@@ -497,6 +498,7 @@ mod tests {
     #[cfg(feature = "alloc")]
     use alloc::{boxed::Box, vec, vec::Vec};
 
+    use rust_spec::niche::WithNiche;
     #[cfg(feature = "alloc")]
     use static_assertions::assert_type_eq_all;
     use static_assertions::{assert_impl_all, assert_not_impl_any};
@@ -574,7 +576,7 @@ mod tests {
     #[test]
     fn maybe_uninit_lowers_without_validating_or_encoding_the_inner_value() {
         assert_impl_all!(MaybeUninit<bool>:
-            ReprC<CType = MaybeUninit<crate::primitives::Bool>>,
+            ReprC<CType = MaybeUninit<crate::primitives::CBool>>,
             AbiCompatible,
             Decode<'static>,
             Encode,
@@ -598,36 +600,36 @@ mod tests {
             Encode,
         );
         assert_impl_all!(&ManuallyDrop<u8>:
-            Niche<CType = CRef<u8>>,
-            RustSpec<Niche = rust_spec::niche::WithNiche<rust_spec::Stable>>,
+            RustSpec<Niche = WithNiche<rust_spec::Stable>>,
+            Niche<CType = CRef<ManuallyDrop<u8>>>,
             Decode<'static>,
             Encode,
         );
         assert_impl_all!(&mut ManuallyDrop<u8>:
-            Niche<CType = CRefMut<u8, true>>,
-            RustSpec<Niche = rust_spec::niche::WithNiche<rust_spec::Stable>>,
+            RustSpec<Niche = WithNiche<rust_spec::Stable>>,
+            Niche<CType = CRefMut<ManuallyDrop<u8>, true>>,
             Decode<'static>,
             Encode,
         );
         #[cfg(feature = "alloc")]
         assert_impl_all!(Box<ManuallyDrop<u8>>:
-            Niche<CType = CBox<u8>>,
+            Niche<CType = CBox<ManuallyDrop<u8>>>,
             Decode<'static>,
             Encode,
         );
         assert_impl_all!(&[ManuallyDrop<u8>]:
-            Niche<CType = CWideRef<[u8]>>,
+            Niche<CType = CWideRef<[ManuallyDrop<u8>]>>,
             Decode<'static>,
             Encode,
         );
         assert_impl_all!(&mut [ManuallyDrop<u8>]:
-            Niche<CType = CWideRefMut<[u8], true>>,
+            Niche<CType = CWideRefMut<[ManuallyDrop<u8>], true>>,
             Decode<'static>,
             Encode,
         );
         #[cfg(feature = "alloc")]
         assert_impl_all!(Box<[ManuallyDrop<u8>]>:
-            Niche<CType = CWideBox<[u8]>>,
+            Niche<CType = CWideBox<[ManuallyDrop<u8>]>>,
             Decode<'static>,
             Encode,
         );
@@ -655,34 +657,33 @@ mod tests {
     #[cfg(feature = "alloc")]
     fn manually_drop_inner_with_drop() {
         assert_impl_all!(ManuallyDrop<String>:
-            ReprC<CType = ManuallyDrop<CWideBox<Utf8Str>>>,
+            ReprC<CType = ManuallyDrop<crate::utf8::Utf8String>>,
             Decode<'static>,
             Encode,
         );
         assert_impl_all!(ManuallyDrop<Box<u8>>:
             Niche<CType = ManuallyDrop<CBox<u8>>>,
-            ReprC<CType = ManuallyDrop<CBox<u8>>>,
             Decode<'static>,
             Encode,
         );
         assert_impl_all!(&ManuallyDrop<Box<u8>>:
-            Niche<CType = CRef<ManuallyDrop<CBox<u8>>>>,
+            Niche<CType = CRef<ManuallyDrop<Box<u8>>>>,
         );
         assert_impl_all!(&mut ManuallyDrop<Box<u8>>:
-            Niche<CType = CRefMut<ManuallyDrop<CBox<u8>>, true>>,
+            Niche<CType = CRefMut<ManuallyDrop<Box<u8>>, true>>,
         );
         assert_impl_all!(Box<ManuallyDrop<Box<u8>>>:
-            Niche<CType = CBox<ManuallyDrop<CBox<u8>>>>,
-            RustSpec<Niche = rust_spec::niche::WithNiche<rust_spec::Stable>>,
+            RustSpec<Niche = WithNiche<rust_spec::Stable>>,
+            Niche<CType = CBox<ManuallyDrop<Box<u8>>>>,
         );
         assert_impl_all!(&[ManuallyDrop<Box<u8>>]:
-            Niche<CType = CWideRef<[ManuallyDrop<CBox<u8>>]>>,
+            Niche<CType = CWideRef<[ManuallyDrop<Box<u8>>]>>,
         );
         assert_impl_all!(&mut [ManuallyDrop<Box<u8>>]:
-            Niche<CType = CWideRefMut<[ManuallyDrop<CBox<u8>>], true>>,
+            Niche<CType = CWideRefMut<[ManuallyDrop<Box<u8>>], true>>,
         );
         assert_impl_all!(Box<[ManuallyDrop<Box<u8>>]>:
-            Niche<CType = CWideBox<[ManuallyDrop<CBox<u8>>]>>,
+            Niche<CType = CWideBox<[ManuallyDrop<Box<u8>>]>>,
         );
         assert_impl_all!(Vec<ManuallyDrop<Box<u8>>>:
             Niche<CType = crate::vec::CVec<ManuallyDrop<Box<u8>>>>,
@@ -709,24 +710,24 @@ mod tests {
     fn str_is_supported() {
         assert_impl_all!(str: ReprC<CType = Utf8Str>);
         #[cfg(feature = "alloc")]
-        assert_impl_all!(String: ReprC<CType = CWideBox<Utf8Str>>);
+        assert_impl_all!(String: ReprC<CType = crate::utf8::Utf8String>);
 
         assert_impl_all!(&str:
-            Niche<CType = CWideRef<Utf8Str>>,
+            Niche<CType = CWideRef<str>>,
             Decode<'static>,
             Encode,
         );
 
         #[cfg(feature = "alloc")]
         assert_impl_all!(&mut str:
-            Niche<CType = CWideRefMut<Utf8Str, true>>,
+            Niche<CType = CWideRefMut<str, true>>,
             Decode<'static>,
             Encode,
         );
 
         #[cfg(feature = "alloc")]
         assert_impl_all!(Box<str>:
-            Niche<CType = CWideBox<Utf8Str>>,
+            Niche<CType = CWideBox<str>>,
             Decode<'static>,
             Encode,
         );
@@ -750,7 +751,7 @@ mod tests {
         #[cfg(feature = "alloc")]
         {
             let allocation = Box::into_non_null(Box::new([0xff_u8])).cast();
-            let source = unsafe { CWideBox::<Utf8Str>::from_raw_parts(allocation, 1) };
+            let source = unsafe { CWideBox::<str>::from_raw_parts(allocation, 1) };
             let decoded = unsafe { crate::decode::<Box<str>>(source) };
             assert!(decoded.is_none());
         }
@@ -773,6 +774,26 @@ mod tests {
         );
     }
 
+    #[cfg(feature = "alloc")]
+    #[test]
+    fn owned_string_preserves_allocation_and_capacity() {
+        let mut text = String::with_capacity(128);
+        text.push_str("hello 🍃");
+        let pointer = text.as_ptr();
+        let capacity = text.capacity();
+        let carrier = crate::encode(text);
+        assert_eq!(carrier.as_ptr(), pointer.cast_mut());
+        assert_eq!(carrier.capacity(), capacity);
+        let decoded = unsafe { crate::decode::<String>(carrier) }.unwrap();
+        assert_eq!(decoded, "hello 🍃");
+        assert_eq!(decoded.as_ptr(), pointer);
+        assert_eq!(decoded.capacity(), capacity);
+
+        let invalid = crate::utf8::Utf8String(crate::vec::CVec::from_vec(alloc::vec![0xff]));
+        assert!(unsafe { crate::decode::<String>(invalid) }.is_none());
+        assert!(unsafe { crate::decode::<String>(crate::utf8::Utf8String::null()) }.is_none());
+    }
+
     #[test]
     fn robust_unsafe_cell() {
         assert_impl_all!(UnsafeCell<u8>: AbiCompatible);
@@ -788,8 +809,8 @@ mod tests {
         );
         assert_impl_all!(&UnsafeCell<u8>:
             Niche<CType = CRefMut<UnsafeCell<u8>, false>>,
-            Encode,
             AbiCompatible,
+            Encode,
         );
         assert_impl_all!(&UnsafeCell<u8>: Decode<'static>);
         assert_impl_all!(&mut UnsafeCell<u8>:
@@ -943,16 +964,16 @@ mod tests {
             Encode,
         );
         assert_impl_all!(&UnsafeCell<NonZero<u8>>:
-            Niche<CType = CRefMut<UnsafeCell<crate::NonZero<u8>>, false>>,
+            Niche<CType = CRefMut<UnsafeCell<NonZero<u8>>, false>>,
         );
         assert_not_impl_any!(&UnsafeCell<NonZero<u8>>: Decode<'static>, AbiCompatible);
         assert_impl_all!(&mut UnsafeCell<NonZero<u8>>:
-            Niche<CType = CRefMut<UnsafeCell<crate::NonZero<u8>>, true>>,
+            Niche<CType = CRefMut<UnsafeCell<NonZero<u8>>, true>>,
             Decode<'static>,
         );
         #[cfg(feature = "alloc")]
         assert_impl_all!(Box<UnsafeCell<NonZero<u8>>>:
-            Niche<CType = CBox<UnsafeCell<crate::NonZero<u8>>>>,
+            Niche<CType = CBox<UnsafeCell<NonZero<u8>>>>,
             Decode<'static>,
             Encode,
         );
@@ -969,16 +990,16 @@ mod tests {
             assert!(unsafe { crate::decode::<Box<UnsafeCell<NonZero<u8>>>>(invalid) }.is_none());
         }
         assert_impl_all!(&[UnsafeCell<NonZero<u8>>]:
-            Niche<CType = CWideRefMut<[UnsafeCell<crate::NonZero<u8>>], false>>,
+            Niche<CType = CWideRefMut<[UnsafeCell<NonZero<u8>>], false>>,
         );
         assert_not_impl_any!(&[UnsafeCell<NonZero<u8>>]: Decode<'static>);
         assert_impl_all!(&mut [UnsafeCell<NonZero<u8>>]:
-            Niche<CType = CWideRefMut<[UnsafeCell<crate::NonZero<u8>>], true>>,
+            Niche<CType = CWideRefMut<[UnsafeCell<NonZero<u8>>], true>>,
             Decode<'static>,
         );
         #[cfg(feature = "alloc")]
         assert_impl_all!(Box<[UnsafeCell<NonZero<u8>>]>:
-            Niche<CType = CWideBox<[UnsafeCell<crate::NonZero<u8>>]>>,
+            Niche<CType = CWideBox<[UnsafeCell<NonZero<u8>>]>>,
             Decode<'static>,
             Encode,
         );

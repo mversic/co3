@@ -1,8 +1,9 @@
-use crate::TransparentCarrier;
 use co3::{
     rust_spec::RustSpec,
     stored::{EncodeMove, EncodeMoveUnchecked, Store},
 };
+
+use crate::TransparentCarrier;
 
 // No Clone implementation: the stable vector path must not require one.
 #[derive(RustSpec, co3::ReprC)]
@@ -232,6 +233,7 @@ fn derived_struct_and_transparent_wrapper_delegate_without_clone() {
     let fields = unsafe { &*encoded.as_ptr() };
     assert_eq!(fields.values.as_ptr().cast_const(), value.values.as_ptr());
     assert_eq!(fields.text.as_ptr().cast_const(), value.text.as_ptr());
+    assert_eq!(fields.text.capacity(), value.text.capacity());
     assert_eq!(unsafe { (*fields.boxed.as_ptr()).0 }, 43);
     assert_eq!(store.sync(), Some(()));
     assert_eq!(value.values[0].0, 41);
@@ -409,8 +411,9 @@ fn derived_shared_encoding_preserves_custom_validation() {
 
 #[test]
 fn cells_cannot_be_snapshotted_by_shared_encoders() {
-    use co3::stored::{EncodeRef, EncodeRefUnchecked};
     use core::cell::{Cell, UnsafeCell};
+
+    use co3::stored::{EncodeRef, EncodeRefUnchecked};
     use static_assertions::{assert_impl_all, assert_not_impl_any};
 
     assert_not_shared_encoder!(Cell<u32>: EncodeRefUnchecked<'static>, EncodeRef<'static>);

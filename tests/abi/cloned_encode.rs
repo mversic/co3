@@ -1,3 +1,5 @@
+use std::sync::atomic::{AtomicUsize, Ordering};
+
 use co3::{
     ReprC,
     borrow::Borrowed,
@@ -7,7 +9,6 @@ use co3::{
         EncodeRefUnchecked, Store,
     },
 };
-use std::sync::atomic::{AtomicUsize, Ordering};
 
 static CLONES: AtomicUsize = AtomicUsize::new(0);
 static SYNCS: AtomicUsize = AtomicUsize::new(0);

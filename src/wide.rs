@@ -41,7 +41,7 @@ pub unsafe trait Wide {
     type Header: WideHeader;
 
     /// Metadata component of a pointer.
-    type Metadata: Debug + Copy + Send + Sync + Ord + Hash + Unpin + Zeroable;
+    type Metadata: Debug + Copy + Send + Sync + Ord + Hash + Unpin + CType + Zeroable;
 
     /// Extracts the metadata component of a pointer.
     fn metadata(ptr: *const Self) -> Self::Metadata;

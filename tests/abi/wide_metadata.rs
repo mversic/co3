@@ -1,4 +1,5 @@
-use crate::TransparentCarrier;
+use core::{marker::PhantomData, ptr::NonNull};
+
 use co3::{
     CType,
     boxed::{CBox, CWideBox},
@@ -8,7 +9,8 @@ use co3::{
     sync::{RefMutWideEncodeStore, RefWideEncodeStore},
     wide::Wide,
 };
-use core::{marker::PhantomData, ptr::NonNull};
+
+use crate::TransparentCarrier;
 
 #[repr(C)]
 #[derive(Copy, Clone, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
@@ -18,10 +20,6 @@ struct Metadata {
 }
 unsafe impl CType for Metadata {}
 unsafe impl co3::Zeroable for Metadata {}
-
-#[derive(Copy, Clone, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
-struct NonCMetadata(usize);
-unsafe impl co3::Zeroable for NonCMetadata {}
 
 #[repr(transparent)]
 #[derive(co3::rust_spec::RustSpec)]
@@ -79,7 +77,6 @@ impl_custom_wide!(
     |length| Metadata { length, marker: 7 },
     |m: Metadata| m.length
 );
-impl_custom_wide!(NonCMetadata, NonCMetadata, |m: NonCMetadata| m.0);
 impl_custom_wide!(usize, |length| length, |length| length);
 unsafe impl CType for Custom<usize> {}
 impl co3::ReprC for Custom<usize> {
@@ -142,11 +139,11 @@ fn wide_boxes_preserve_custom_metadata() {
         length: 3,
         marker: 7,
     };
-    let carrier = CWideBox::from_box(boxed());
+    let carrier = CWideBox::<Pointee>::from_box(boxed());
     assert_eq!(carrier.metadata(), expected);
     assert_eq!(&unsafe { carrier.into_box() }.unwrap().1, &[1, 2, 3]);
 
-    let carrier = CWideBox::from_box(boxed());
+    let carrier = CWideBox::<Pointee>::from_box(boxed());
     assert_eq!(carrier.metadata(), expected);
     assert_eq!(&unsafe { carrier.into_box() }.unwrap().1, &[1, 2, 3]);
     assert_eq!(
@@ -176,10 +173,10 @@ fn owned_slice_pack_handles_both_mutability_kinds() {
 
     type Element = UnsafeCell<u8>;
     let inner = vec![Element::new(3), Element::new(5)].into_boxed_slice();
-    let carrier = CWideBox::from_box(inner);
-    let (data, len) = <Box<[Cell<u8>]> as Unpack2<CBox<Element>, usize>>::unpack(carrier).unwrap();
+    let carrier = CWideBox::<[Cell<u8>]>::from_box(inner);
+    let (data, len) = <Box<[Cell<u8>]> as Unpack2<CBox<Cell<u8>>, usize>>::unpack(carrier).unwrap();
     let carrier =
-        unsafe { <Box<[Cell<u8>]> as Pack2<CBox<Element>, usize>>::pack(data, len) }.unwrap();
+        unsafe { <Box<[Cell<u8>]> as Pack2<CBox<Cell<u8>>, usize>>::pack(data, len) }.unwrap();
     let mut boxed = unsafe { carrier.into_box() }.unwrap();
     assert_eq!(
         boxed.iter_mut().map(|v| *v.get_mut()).collect::<Vec<_>>(),
@@ -190,7 +187,7 @@ fn owned_slice_pack_handles_both_mutability_kinds() {
     static_assertions::assert_not_impl_any!(Vec<u8>:
         Unpack2<CBox<u8>, usize>, Pack2<CBox<u8>, usize>);
     static_assertions::assert_not_impl_any!(Vec<Cell<u8>>:
-        Unpack2<CBox<Element>, usize>, Pack2<CBox<Element>, usize>);
+        Unpack2<CBox<Cell<u8>>, usize>, Pack2<CBox<Cell<u8>>, usize>);
 }
 
 #[test]
@@ -212,7 +209,7 @@ fn carriers_preserve_non_slice_metadata() {
     type Pointee = Custom<Metadata>;
     let mut source = [3_u8, 5, 8];
     let value = unsafe { &mut *(source.as_mut_slice() as *mut [u8] as *mut Pointee) };
-    let shared = CWideRef::from_ref(&*value);
+    let shared = CWideRef::<Pointee>::from_ref(&*value);
     assert_eq!(
         shared.metadata(),
         Metadata {
@@ -250,13 +247,6 @@ fn carriers_preserve_non_slice_metadata() {
         unsafe { co3::soft_decode::<CWideRef<Pointee>>(null, &mut Default::default()) }.unwrap();
     assert!(unsafe { decoded.into_ref() }.is_none());
     static_assertions::assert_impl_all!(CWideRef<Pointee>: CType, Copy);
-}
-
-#[test]
-fn representation_does_not_require_metadata_to_be_ctype() {
-    type Pointee = Custom<NonCMetadata>;
-    let _: Option<CWideRef<Pointee>> = None;
-    let _: Option<CWideRefMut<Pointee, true>> = None;
 }
 
 #[test]

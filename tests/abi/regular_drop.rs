@@ -1,9 +1,11 @@
-use co3::ffi::c_char;
-use co3::{ReprC, boxed::CBox, ffi, rust_spec::RustSpec};
 use core::ffi::CStr;
+use std::{
+    ffi::CString,
+    sync::atomic::{AtomicUsize, Ordering},
+};
+
+use co3::{ReprC, boxed::CBox, ffi, rust_spec::RustSpec};
 use static_assertions::assert_impl_all;
-use std::ffi::CString;
-use std::sync::atomic::{AtomicUsize, Ordering};
 
 type BatteryString = CString;
 type BatteryCStr = Box<CStr>;
@@ -11,7 +13,7 @@ type BatteryCStr = Box<CStr>;
 #[derive(RustSpec, ReprC)]
 #[repr(transparent)]
 #[rust_spec(custom_drop)]
-struct RemoteString(CBox<c_char>);
+struct RemoteString(CBox<CStr>);
 
 impl Clone for RemoteString {
     fn clone(&self) -> Self {
@@ -46,7 +48,7 @@ ffi! {
 
 unsafe extern "C" {
     #[link_name = "abi_regular_drop_cstr"]
-    fn drop_cstr(value: CBox<c_char>);
+    fn drop_cstr(value: CBox<CStr>);
 
 }
 

@@ -35,8 +35,7 @@ ffi! {
 }
 
 mod provider {
-    use co3::ffi;
-    use co3::rust_spec::RustSpec;
+    use co3::{ffi, rust_spec::RustSpec};
 
     #[derive(Debug, PartialEq, Eq, RustSpec)]
     #[rust_spec(opaque)]
@@ -155,8 +154,9 @@ fn imported_opaque_drop_sends_pointer() {
 
 #[test]
 fn owned_handle_has_null_niche() {
-    use co3::{ReprC, niche::Niche};
     use core::mem::{align_of, size_of};
+
+    use co3::{ReprC, niche::Niche};
 
     type Carrier = <OwnedOpaqueStruct as ReprC>::CType;
     assert_eq!(size_of::<Option<OwnedOpaqueStruct>>(), size_of::<Carrier>());

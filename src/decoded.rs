@@ -3,11 +3,11 @@
 use alloc::{boxed::Box, vec::Vec};
 
 use disjoint_impls::disjoint_impls;
+use rust_spec::{RustSpec, Unstable};
 #[cfg(feature = "alloc")]
-use rust_spec::size::{MetaSized, SliceLike};
 use rust_spec::{
-    RustSpec, Unstable,
     mutability::{Exclusive, ExclusiveKind},
+    size::{MetaSized, SliceLike},
 };
 
 use crate::{
@@ -18,13 +18,13 @@ use crate::{
     option::{COption, COptionSome},
     reference::{CRef, CRefMut},
     result::{CResult, CResultErr, CResultOk},
-    slice::CWideRef,
     stored::{DecodeMove, EmptyStore, EncodeMove, Store},
     sync::{ArrayStore, RefMutSizedDecodeStore, RefSizedDecodeStore},
 };
 #[cfg(feature = "alloc")]
 use crate::{
     boxed::{CBox, CWideBox},
+    slice::CWideRef,
     sync::{RefDstDecodeStore, RefMutSliceDecodeStore},
     vec::CVec,
 };
@@ -72,10 +72,10 @@ disjoint_impls! {
     #[cfg(feature = "alloc")]
     unsafe impl<'d, T: Clone + 'd, S: rust_spec::size::SizedKind> DecodeRef<'d> for Box<T>
     where
-        Self: RustSpec<Layout = Unstable> + ReprC<CType = CBox<<T as ReprC>::CType>>,
+        Self: RustSpec<Layout = Unstable> + ReprC<CType = CBox<T>>,
         T: ReprC<CType: CType + Sized> + RustSpec<Size = rust_spec::size::Sized<S>>,
-        &'d Self: ReprC<CType = CRef<CBox<<T as ReprC>::CType>>>,
-        &'d T: DecodeMove<'d> + ReprC<CType = CRef<<T as ReprC>::CType>>,
+        &'d Self: ReprC<CType = CRef<Self>>,
+        &'d T: DecodeMove<'d> + ReprC<CType = CRef<T>>,
     {
         type Store = RefSizedDecodeStore<Self, <&'d T as DecodeMove<'d>>::Store>;
 
@@ -105,16 +105,16 @@ disjoint_impls! {
     #[cfg(feature = "alloc")]
     unsafe impl<'d, T: ?Sized + alloc::borrow::ToOwned + 'd> DecodeRef<'d> for Box<T>
     where
-        Self: RustSpec<Layout = Unstable> + ReprC<CType = CWideBox<<T as ReprC>::CType>>,
+        Self: RustSpec<Layout = Unstable> + ReprC<CType = CWideBox<T>>,
         T: ReprC<
                 CType: crate::wide::Wide<
                     Header: crate::wide::WideHeader<Data: CType>,
                     Metadata = usize,
                 >,
             > + RustSpec<Size = rust_spec::size::MetaSized<rust_spec::size::SliceLike>>,
-        &'d Self: ReprC<CType = CRef<CWideBox<<T as ReprC>::CType>>>,
-        &'d T: DecodeMove<'d> + ReprC<CType = CWideRef<<T as ReprC>::CType>>,
-        Box<T>: From<<T as alloc::borrow::ToOwned>::Owned>,
+        &'d Self: ReprC<CType = CRef<Self>>,
+        &'d T: DecodeMove<'d> + ReprC<CType = CWideRef<T>>,
+        Self: From<<T as alloc::borrow::ToOwned>::Owned>,
     {
         type Store = RefSizedDecodeStore<Self, <&'d T as DecodeMove<'d>>::Store>;
         unsafe fn decode_ref<'itm: 'd>(
@@ -149,7 +149,7 @@ disjoint_impls! {
     where
         &'d Self: RustSpec<Layout = Unstable>,
         [R]: RustSpec<Layout = Unstable, Size = MetaSized<SliceLike>, Mutability = Exclusive<__Interior>>,
-        &'d R: DecodeMove<'d> + ReprC<CType = CRef<<R as ReprC>::CType>>,
+        &'d R: DecodeMove<'d> + ReprC<CType = CRef<R>>,
     {
         type Store = RefDstDecodeStore<[R], Box<[<&'d R as DecodeMove<'d>>::Store]>>;
 
@@ -201,9 +201,9 @@ disjoint_impls! {
     unsafe impl<'d, T: ReprC<CType: CType + Copy> + Clone + 'd> DecodeRef<'d> for Option<T>
     where
         Self: RustSpec<Layout = Unstable> + ReprC<CType = COption<T>>,
-        &'d Self: ReprC<CType = CRef<COption<T>>>,
+        &'d Self: ReprC<CType = CRef<Self>>,
         T: RustSpec<Niche = rust_spec::niche::WithoutNiche>,
-        &'d T: DecodeMove<'d> + ReprC<CType = CRef<<T as ReprC>::CType>>,
+        &'d T: DecodeMove<'d> + ReprC<CType = CRef<T>>,
     {
         type Store = RefSizedDecodeStore<Self, Option<<&'d T as DecodeMove<'d>>::Store>>;
         unsafe fn decode_ref<'itm: 'd>(
@@ -249,8 +249,8 @@ disjoint_impls! {
         for crate::option::Option<T>
     where
         Self: RustSpec<Layout = Unstable> + ReprC<CType = COption<T>>,
-        &'d Self: ReprC<CType = CRef<COption<T>>>,
-        &'d T: DecodeMove<'d> + ReprC<CType = CRef<<T as ReprC>::CType>>,
+        &'d Self: ReprC<CType = CRef<Self>>,
+        &'d T: DecodeMove<'d> + ReprC<CType = CRef<T>>,
     {
         type Store = RefSizedDecodeStore<Self, Option<<&'d T as DecodeMove<'d>>::Store>>;
         unsafe fn decode_ref<'itm: 'd>(
@@ -300,11 +300,11 @@ disjoint_impls! {
     > DecodeRef<'d> for Result<T, E>
     where
         Self: RustSpec<Layout = Unstable> + ReprC<CType = CResult<T, E>>,
-        &'d Self: ReprC<CType = CRef<CResult<T, E>>>,
+        &'d Self: ReprC<CType = CRef<Self>>,
         T: RustSpec<Size = rust_spec::size::Sized<K>>,
         E: RustSpec<Size = rust_spec::size::Sized<K>>,
-        &'d T: DecodeMove<'d> + ReprC<CType = CRef<<T as ReprC>::CType>>,
-        &'d E: DecodeMove<'d> + ReprC<CType = CRef<<E as ReprC>::CType>>,
+        &'d T: DecodeMove<'d> + ReprC<CType = CRef<T>>,
+        &'d E: DecodeMove<'d> + ReprC<CType = CRef<E>>,
     {
         type Store = RefSizedDecodeStore<
             Self,
@@ -367,9 +367,9 @@ disjoint_impls! {
     > DecodeRef<'d> for crate::result::Result<T, E>
     where
         Self: RustSpec<Layout = Unstable> + ReprC<CType = CResult<T, E>>,
-        &'d Self: ReprC<CType = CRef<CResult<T, E>>>,
-        &'d T: DecodeMove<'d> + ReprC<CType = CRef<<T as ReprC>::CType>>,
-        &'d E: DecodeMove<'d> + ReprC<CType = CRef<<E as ReprC>::CType>>,
+        &'d Self: ReprC<CType = CRef<Self>>,
+        &'d T: DecodeMove<'d> + ReprC<CType = CRef<T>>,
+        &'d E: DecodeMove<'d> + ReprC<CType = CRef<E>>,
     {
         type Store = RefSizedDecodeStore<
             Self,
@@ -432,8 +432,8 @@ disjoint_impls! {
     where
         T: RustSpec<Niche = rust_spec::niche::WithNiche<N>>,
         Self: RustSpec<Layout = Unstable> + ReprC<CType = COptionSome<T>>,
-        &'d Self: ReprC<CType = CRef<COptionSome<T>>>,
-        &'d T: DecodeMove<'d> + ReprC<CType = CRef<<T as ReprC>::CType>>,
+        &'d Self: ReprC<CType = CRef<Self>>,
+        &'d T: DecodeMove<'d> + ReprC<CType = CRef<T>>,
     {
         type Store = RefSizedDecodeStore<Self, Option<<&'d T as DecodeMove<'d>>::Store>>;
         unsafe fn decode_ref<'itm: 'd>(
@@ -490,8 +490,8 @@ disjoint_impls! {
             >,
         E: RustSpec<Size = rust_spec::size::Sized<rust_spec::Zero>>,
         Self: RustSpec<Layout = Unstable> + ReprC<CType = CResultOk<T, E>>,
-        &'d Self: ReprC<CType = CRef<CResultOk<T, E>>>,
-        &'d T: DecodeMove<'d> + ReprC<CType = CRef<<T as ReprC>::CType>>,
+        &'d Self: ReprC<CType = CRef<Self>>,
+        &'d T: DecodeMove<'d> + ReprC<CType = CRef<T>>,
     {
         type Store = RefSizedDecodeStore<Self, Option<<&'d T as DecodeMove<'d>>::Store>>;
         unsafe fn decode_ref<'itm: 'd>(
@@ -548,8 +548,8 @@ disjoint_impls! {
             >,
         T: RustSpec<Size = rust_spec::size::Sized<rust_spec::Zero>>,
         Self: RustSpec<Layout = Unstable> + ReprC<CType = CResultErr<T, E>>,
-        &'d Self: ReprC<CType = CRef<CResultErr<T, E>>>,
-        &'d E: DecodeMove<'d> + ReprC<CType = CRef<<E as ReprC>::CType>>,
+        &'d Self: ReprC<CType = CRef<Self>>,
+        &'d E: DecodeMove<'d> + ReprC<CType = CRef<E>>,
     {
         type Store = RefSizedDecodeStore<Self, Option<<&'d E as DecodeMove<'d>>::Store>>;
         unsafe fn decode_ref<'itm: 'd>(
@@ -598,8 +598,8 @@ disjoint_impls! {
     unsafe impl<'d, T: ReprC<CType: CType + Sized> + Clone + 'd> DecodeRef<'d> for alloc::vec::Vec<T>
     where
         Self: RustSpec<Layout = Unstable> + ReprC<CType = CVec<T>>,
-        &'d Self: ReprC<CType = CRef<CVec<T>>>,
-        &'d T: DecodeMove<'d> + ReprC<CType = CRef<<T as ReprC>::CType>>,
+        &'d Self: ReprC<CType = CRef<Self>>,
+        &'d T: DecodeMove<'d> + ReprC<CType = CRef<T>>,
     {
         type Store = RefSizedDecodeStore<Self, Box<[<&'d T as DecodeMove<'d>>::Store]>>;
 
@@ -652,8 +652,8 @@ disjoint_impls! {
     unsafe impl<'d, T: ReprC<CType: CType + Sized> + Clone + 'd> DecodeRef<'d> for crate::vec::Vec<T>
     where
         Self: RustSpec<Layout = Unstable> + ReprC<CType = CVec<T>>,
-        &'d Self: ReprC<CType = CRef<CVec<T>>>,
-        &'d T: DecodeMove<'d> + ReprC<CType = CRef<<T as ReprC>::CType>>,
+        &'d Self: ReprC<CType = CRef<Self>>,
+        &'d T: DecodeMove<'d> + ReprC<CType = CRef<T>>,
     {
         type Store = RefSizedDecodeStore<Self, Box<[<&'d T as DecodeMove<'d>>::Store]>>;
 
@@ -706,8 +706,8 @@ disjoint_impls! {
         for [T; N]
     where
         Self: RustSpec<Layout = Unstable> + ReprC<CType = [<T as ReprC>::CType; N]>,
-        &'d Self: ReprC<CType = CRef<[<T as ReprC>::CType; N]>>,
-        &'d T: DecodeMove<'d> + ReprC<CType = CRef<<T as ReprC>::CType>>,
+        &'d Self: ReprC<CType = CRef<Self>>,
+        &'d T: DecodeMove<'d> + ReprC<CType = CRef<T>>,
     {
         type Store = RefSizedDecodeStore<Self, ArrayStore<<&'d T as DecodeMove<'d>>::Store, N>>;
 
@@ -751,8 +751,8 @@ disjoint_impls! {
     unsafe impl<'d, T: ReprC<CType: CType + Sized> + 'd> DecodeRef<'d> for core::mem::ManuallyDrop<T>
     where
         Self: RustSpec<Layout = Unstable> + ReprC<CType: Sized>,
-        &'d Self: ReprC<CType = CRef<<Self as ReprC>::CType>>,
-        &'d T: DecodeMove<'d> + ReprC<CType = CRef<<T as ReprC>::CType>>,
+        &'d Self: ReprC<CType = CRef<Self>>,
+        &'d T: DecodeMove<'d> + ReprC<CType = CRef<T>>,
     {
         type Store = <&'d T as DecodeMove<'d>>::Store;
         unsafe fn decode_ref<'itm: 'd>(
@@ -777,8 +777,8 @@ disjoint_impls! {
     unsafe impl<'d, T: ReprC<CType: CType + Sized> + 'd> DecodeRef<'d> for crate::borrow::Borrowed<T>
     where
         Self: RustSpec<Layout = Unstable> + ReprC<CType: Sized>,
-        &'d Self: ReprC<CType = CRef<<Self as ReprC>::CType>>,
-        &'d T: DecodeMove<'d> + ReprC<CType = CRef<<T as ReprC>::CType>>,
+        &'d Self: ReprC<CType = CRef<Self>>,
+        &'d T: DecodeMove<'d> + ReprC<CType = CRef<T>>,
     {
         type Store = <&'d T as DecodeMove<'d>>::Store;
         unsafe fn decode_ref<'itm: 'd>(
@@ -803,7 +803,7 @@ disjoint_impls! {
     unsafe impl<'d, 'a: 'd, T: ?Sized + 'a> DecodeRef<'d> for &'a T
     where
         Self: RustSpec<Layout = Unstable> + DecodeMove<'d, CType: Copy>,
-        &'d Self: ReprC<CType = CRef<<Self as ReprC>::CType>>,
+        &'d Self: ReprC<CType = CRef<Self>>,
     {
         type Store = RefSizedDecodeStore<Self, <Self as DecodeMove<'d>>::Store>;
         unsafe fn decode_ref<'itm: 'd>(
@@ -953,7 +953,7 @@ disjoint_impls! {
     where
         Borrowed<T>: DecodeMove<'d> + ReprC<CType = Borrowed<<T as ReprC>::CType>>,
         Self: EncodeMove<Store: EmptyStore> + RustSpec<Layout = Unstable> + ReprC<CType = COption<T>>,
-        &'d mut Self: ReprC<CType = CRefMut<COption<T>, true>>,
+        &'d mut Self: ReprC<CType = CRefMut<Self, true>>,
         T: RustSpec<Niche = rust_spec::niche::WithoutNiche>,
     {
         type Store = RefMutSizedDecodeStore<Self, Option<<Borrowed<T> as DecodeMove<'d>>::Store>>;
@@ -1004,7 +1004,7 @@ disjoint_impls! {
     where
         Borrowed<T>: DecodeMove<'d> + ReprC<CType = Borrowed<<T as ReprC>::CType>>,
         Self: EncodeMove<Store: EmptyStore> + RustSpec<Layout = Unstable> + ReprC<CType = COption<T>>,
-        &'d mut Self: ReprC<CType = CRefMut<COption<T>, true>>,
+        &'d mut Self: ReprC<CType = CRefMut<Self, true>>,
     {
         type Store = RefMutSizedDecodeStore<Self, Option<<Borrowed<T> as DecodeMove<'d>>::Store>>;
         unsafe fn decode_mut<'itm: 'd>(
@@ -1061,7 +1061,7 @@ disjoint_impls! {
         Borrowed<E>: DecodeMove<'d> + ReprC<CType = Borrowed<<E as ReprC>::CType>>,
         Self:
             EncodeMove<Store: EmptyStore> + RustSpec<Layout = Unstable> + ReprC<CType = CResult<T, E>>,
-        &'d mut Self: ReprC<CType = CRefMut<CResult<T, E>, true>>,
+        &'d mut Self: ReprC<CType = CRefMut<Self, true>>,
         T: RustSpec<Size = rust_spec::size::Sized<K>>,
         E: RustSpec<Size = rust_spec::size::Sized<K>>,
     {
@@ -1131,7 +1131,7 @@ disjoint_impls! {
         Borrowed<E>: DecodeMove<'d> + ReprC<CType = Borrowed<<E as ReprC>::CType>>,
         Self:
             EncodeMove<Store: EmptyStore> + RustSpec<Layout = Unstable> + ReprC<CType = CResult<T, E>>,
-        &'d mut Self: ReprC<CType = CRefMut<CResult<T, E>, true>>,
+        &'d mut Self: ReprC<CType = CRefMut<Self, true>>,
     {
         type Store = RefMutSizedDecodeStore<
             Self,
@@ -1201,7 +1201,7 @@ disjoint_impls! {
         T: RustSpec<Niche = rust_spec::niche::WithNiche<N>>,
         Self:
             EncodeMove<Store: EmptyStore> + RustSpec<Layout = Unstable> + ReprC<CType = COptionSome<T>>,
-        &'d mut Self: ReprC<CType = CRefMut<COptionSome<T>, true>>,
+        &'d mut Self: ReprC<CType = CRefMut<Self, true>>,
     {
         type Store = RefMutSizedDecodeStore<Self, Option<<Borrowed<T> as DecodeMove<'d>>::Store>>;
         unsafe fn decode_mut<'itm: 'd>(
@@ -1260,7 +1260,7 @@ disjoint_impls! {
         Self: EncodeMove<Store: EmptyStore>
             + RustSpec<Layout = Unstable>
             + ReprC<CType = CResultOk<T, E>>,
-        &'d mut Self: ReprC<CType = CRefMut<CResultOk<T, E>, true>>,
+        &'d mut Self: ReprC<CType = CRefMut<Self, true>>,
     {
         type Store = RefMutSizedDecodeStore<Self, Option<<Borrowed<T> as DecodeMove<'d>>::Store>>;
         unsafe fn decode_mut<'itm: 'd>(
@@ -1319,7 +1319,7 @@ disjoint_impls! {
         Self: EncodeMove<Store: EmptyStore>
             + RustSpec<Layout = Unstable>
             + ReprC<CType = CResultErr<T, E>>,
-        &'d mut Self: ReprC<CType = CRefMut<CResultErr<T, E>, true>>,
+        &'d mut Self: ReprC<CType = CRefMut<Self, true>>,
     {
         type Store = RefMutSizedDecodeStore<Self, Option<<Borrowed<E> as DecodeMove<'d>>::Store>>;
         unsafe fn decode_mut<'itm: 'd>(
@@ -1366,9 +1366,9 @@ disjoint_impls! {
     #[cfg(feature = "alloc")]
     unsafe impl<'d, T: ReprC<CType: CType + Sized> + Clone + 'd> DecodeMut<'d> for Box<T>
     where
-        Self: RustSpec<Layout = Unstable> + ReprC<CType = CBox<<T as ReprC>::CType>>,
-        &'d mut Self: ReprC<CType = CRefMut<CBox<<T as ReprC>::CType>, true>>,
-        &'d mut T: DecodeMove<'d> + ReprC<CType = CRefMut<<T as ReprC>::CType, true>>,
+        Self: RustSpec<Layout = Unstable> + ReprC<CType = CBox<T>>,
+        &'d mut Self: ReprC<CType = CRefMut<Self, true>>,
+        &'d mut T: DecodeMove<'d> + ReprC<CType = CRefMut<T, true>>,
     {
         type Store = RefMutSizedDecodeStore<Self, Box<<&'d mut T as DecodeMove<'d>>::Store>, *mut T>;
         unsafe fn decode_mut<'itm: 'd>(
@@ -1415,9 +1415,9 @@ disjoint_impls! {
     #[cfg(feature = "alloc")]
     unsafe impl<'d, T: ReprC<CType: CType + Sized> + Clone + 'd> DecodeMut<'d> for Box<[T]>
     where
-        Self: RustSpec<Layout = Unstable> + ReprC<CType = CWideBox<[<T as ReprC>::CType]>>,
-        &'d mut Self: ReprC<CType = CRefMut<CWideBox<[<T as ReprC>::CType]>, true>>,
-        &'d mut T: DecodeMove<'d> + ReprC<CType = CRefMut<<T as ReprC>::CType, true>>,
+        Self: RustSpec<Layout = Unstable> + ReprC<CType = CWideBox<[T]>>,
+        &'d mut Self: ReprC<CType = CRefMut<Self, true>>,
+        &'d mut T: DecodeMove<'d> + ReprC<CType = CRefMut<T, true>>,
     {
         type Store =
             RefMutSizedDecodeStore<Self, Box<[<&'d mut T as DecodeMove<'d>>::Store]>, Box<[*mut T]>>;
@@ -1508,7 +1508,7 @@ disjoint_impls! {
         Self: RustSpec<Layout = Unstable>
             + ReprC<CType = [<T as ReprC>::CType; N]>
             + EncodeMove<Store: EmptyStore>,
-        &'d mut Self: ReprC<CType = CRefMut<[<T as ReprC>::CType; N], true>>,
+        &'d mut Self: ReprC<CType = CRefMut<Self, true>>,
     {
         type Store =
             RefMutSizedDecodeStore<Self, ArrayStore<<Borrowed<T> as DecodeMove<'d>>::Store, N>>;
@@ -1562,8 +1562,8 @@ disjoint_impls! {
     unsafe impl<'d, T: ReprC<CType: CType + Sized> + 'd> DecodeMut<'d> for core::mem::ManuallyDrop<T>
     where
         Self: RustSpec<Layout = Unstable> + ReprC<CType: Sized>,
-        &'d mut Self: ReprC<CType = CRefMut<<Self as ReprC>::CType, true>>,
-        &'d mut T: DecodeMove<'d> + ReprC<CType = CRefMut<<T as ReprC>::CType, true>>,
+        &'d mut Self: ReprC<CType = CRefMut<Self, true>>,
+        &'d mut T: DecodeMove<'d> + ReprC<CType = CRefMut<T, true>>,
     {
         type Store = <&'d mut T as DecodeMove<'d>>::Store;
         unsafe fn decode_mut<'itm: 'd>(
@@ -1588,8 +1588,8 @@ disjoint_impls! {
     unsafe impl<'d, T: ReprC<CType: CType + Sized> + 'd> DecodeMut<'d> for crate::borrow::Borrowed<T>
     where
         Self: RustSpec<Layout = Unstable> + ReprC<CType: Sized>,
-        &'d mut Self: ReprC<CType = CRefMut<<Self as ReprC>::CType, true>>,
-        &'d mut T: DecodeMove<'d> + ReprC<CType = CRefMut<<T as ReprC>::CType, true>>,
+        &'d mut Self: ReprC<CType = CRefMut<Self, true>>,
+        &'d mut T: DecodeMove<'d> + ReprC<CType = CRefMut<T, true>>,
     {
         type Store = <&'d mut T as DecodeMove<'d>>::Store;
         unsafe fn decode_mut<'itm: 'd>(
@@ -1614,8 +1614,8 @@ disjoint_impls! {
     unsafe impl<'d, T: ReprC<CType: CType + Sized> + 'd> DecodeMut<'d> for core::cell::Cell<T>
     where
         Self: RustSpec<Layout = Unstable> + ReprC<CType: Sized>,
-        &'d mut Self: ReprC<CType = CRefMut<<Self as ReprC>::CType, true>>,
-        &'d mut T: DecodeMove<'d> + ReprC<CType = CRefMut<<T as ReprC>::CType, true>>,
+        &'d mut Self: ReprC<CType = CRefMut<Self, true>>,
+        &'d mut T: DecodeMove<'d> + ReprC<CType = CRefMut<T, true>>,
     {
         type Store = <&'d mut T as DecodeMove<'d>>::Store;
         unsafe fn decode_mut<'itm: 'd>(
@@ -1640,8 +1640,8 @@ disjoint_impls! {
     unsafe impl<'d, T: ReprC<CType: CType + Sized> + 'd> DecodeMut<'d> for core::cell::UnsafeCell<T>
     where
         Self: RustSpec<Layout = Unstable> + ReprC<CType: Sized>,
-        &'d mut Self: ReprC<CType = CRefMut<<Self as ReprC>::CType, true>>,
-        &'d mut T: DecodeMove<'d> + ReprC<CType = CRefMut<<T as ReprC>::CType, true>>,
+        &'d mut Self: ReprC<CType = CRefMut<Self, true>>,
+        &'d mut T: DecodeMove<'d> + ReprC<CType = CRefMut<T, true>>,
     {
         type Store = <&'d mut T as DecodeMove<'d>>::Store;
         unsafe fn decode_mut<'itm: 'd>(
@@ -1666,7 +1666,7 @@ disjoint_impls! {
     unsafe impl<'d, 'a: 'd, T: ?Sized + 'a> DecodeMut<'d> for &'a T
     where
         Self: RustSpec<Layout = Unstable> + DecodeMove<'d, CType: Copy> + EncodeMove<Store: EmptyStore>,
-        &'d mut Self: ReprC<CType = CRefMut<<Self as ReprC>::CType, true>>,
+        &'d mut Self: ReprC<CType = CRefMut<Self, true>>,
     {
         type Store = RefMutSizedDecodeStore<Self, <Self as DecodeMove<'d>>::Store>;
         unsafe fn decode_mut<'itm: 'd>(
@@ -1694,8 +1694,8 @@ disjoint_impls! {
     unsafe impl<'d, T: ReprC<CType: CType + Sized> + Clone + 'd> DecodeMut<'d> for alloc::vec::Vec<T>
     where
         Self: RustSpec<Layout = Unstable> + ReprC<CType = CVec<T>>,
-        &'d mut Self: ReprC<CType = CRefMut<CVec<T>, true>>,
-        &'d mut T: DecodeMove<'d> + ReprC<CType = CRefMut<<T as ReprC>::CType, true>>,
+        &'d mut Self: ReprC<CType = CRefMut<Self, true>>,
+        &'d mut T: DecodeMove<'d> + ReprC<CType = CRefMut<T, true>>,
     {
         type Store = RefMutSizedDecodeStore<
             Self,
@@ -1782,8 +1782,8 @@ disjoint_impls! {
     unsafe impl<'d, T: ReprC<CType: CType + Sized> + Clone + 'd> DecodeMut<'d> for crate::vec::Vec<T>
     where
         Self: RustSpec<Layout = Unstable> + ReprC<CType = CVec<T>>,
-        &'d mut Self: ReprC<CType = CRefMut<CVec<T>, true>>,
-        &'d mut T: DecodeMove<'d> + ReprC<CType = CRefMut<<T as ReprC>::CType, true>>,
+        &'d mut Self: ReprC<CType = CRefMut<Self, true>>,
+        &'d mut T: DecodeMove<'d> + ReprC<CType = CRefMut<T, true>>,
     {
         type Store = RefMutSizedDecodeStore<
             Self,
@@ -1872,8 +1872,8 @@ disjoint_impls! {
 #[cfg(feature = "alloc")]
 unsafe impl<'d, 'a: 'd, T: ReprC<CType: CType + Sized> + 'a> DecodeMut<'d> for &'a mut T
 where
-    Self: RustSpec<Layout = Unstable> + DecodeMove<'d, CType = CRefMut<<T as ReprC>::CType, true>>,
-    &'d mut Self: ReprC<CType = CRefMut<CRefMut<<T as ReprC>::CType, true>, true>>,
+    Self: RustSpec<Layout = Unstable> + DecodeMove<'d, CType = CRefMut<T, true>>,
+    &'d mut Self: ReprC<CType = CRefMut<Self, true>>,
 {
     type Store = RefMutSizedDecodeStore<Self, Box<<Self as DecodeMove<'d>>::Store>, *mut T>;
     unsafe fn decode_mut<'itm: 'd>(

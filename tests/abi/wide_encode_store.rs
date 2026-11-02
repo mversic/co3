@@ -1,5 +1,5 @@
 use co3::{
-    primitives::Bool,
+    primitives::CBool,
     stored::Store,
     sync::{RefMutWideEncodeStore, RefWideEncodeStore},
     tuple::{Tuple2, Tuple3},
@@ -11,10 +11,10 @@ fn mutable_store_uses_rust_pointee_and_its_c_representation() {
     let mut result = false;
     let mut store = RefMutWideEncodeStore::<[bool], (), &mut bool>::default();
     let carrier = store.encode(
-        |_| (vec![Bool::FALSE].into_boxed_slice(), &mut result),
-        |value, result| *result = value[0] == Bool::TRUE,
+        |_| (vec![CBool::FALSE].into_boxed_slice(), &mut result),
+        |value, result| *result = value[0] == CBool::TRUE,
     );
-    unsafe { carrier.into_mut().unwrap()[0] = Bool::TRUE };
+    unsafe { carrier.into_mut().unwrap()[0] = CBool::TRUE };
     assert_eq!(store.sync(), Some(()));
     assert!(result);
 }
@@ -103,8 +103,10 @@ fn wide_tuple_preserves_data_and_metadata() {
 
 #[test]
 fn one_field_wide_tuples_are_unsupported() {
-    use co3::stored::{EncodeMut, EncodeMutUnchecked, EncodeRef, EncodeRefUnchecked};
-    use co3::tuple::Tuple1;
+    use co3::{
+        stored::{EncodeMut, EncodeMutUnchecked, EncodeRef, EncodeRefUnchecked},
+        tuple::Tuple1,
+    };
     assert_not_shared_encoder!(Tuple1<[u8]>: EncodeRef<'static>, EncodeRefUnchecked<'static>);
     static_assertions::assert_not_impl_any!(Tuple1<[u8]>: Wide, EncodeMut<'static>, EncodeMutUnchecked<'static>);
     assert_not_shared_encoder!(([u8],): EncodeRef<'static>, EncodeRefUnchecked<'static>);

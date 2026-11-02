@@ -1,14 +1,15 @@
+use core::{
+    cell::{Cell, UnsafeCell},
+    mem::{ManuallyDrop, MaybeUninit},
+    num::NonZero,
+};
+
 use co3::{
     CFnArg, CFnReturn, CType, Decode, Encode, ReprC,
     borrow::{Borrow, Borrowed},
     reference::CRefMut,
     rust_spec::RustSpec,
     transmute::AbiCompatible,
-};
-use core::{
-    cell::{Cell, UnsafeCell},
-    mem::{ManuallyDrop, MaybeUninit},
-    num::NonZero,
 };
 use static_assertions::{assert_impl_all, assert_not_impl_any, assert_type_eq_all};
 

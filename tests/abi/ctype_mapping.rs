@@ -1,10 +1,15 @@
-use crate::TransparentCarrier;
+use core::{
+    marker::PhantomData,
+    mem::MaybeUninit,
+    num::{NonZeroI64, NonZeroIsize, NonZeroU8, NonZeroU32, NonZeroUsize},
+};
+
 use co3::{CType, ReprC, rust_spec::RustSpec};
-use core::num::{NonZeroI64, NonZeroIsize, NonZeroU8, NonZeroU32, NonZeroUsize};
-use core::{marker::PhantomData, mem::MaybeUninit};
 use static_assertions::{
     assert_impl_all, assert_not_impl_any, assert_type_eq_all, assert_type_ne_all,
 };
+
+use crate::TransparentCarrier;
 
 #[derive(RustSpec, ReprC)]
 #[repr(C)]
@@ -84,15 +89,15 @@ assert_type_eq_all!(
 assert_type_eq_all!(<co3::result::Result<bool, u8> as ReprC>::CType, co3::result::CResult<bool, u8>);
 assert_type_eq_all!(<Vec<bool> as ReprC>::CType, co3::vec::CVec<bool>);
 assert_type_eq_all!(
-    <Vec<co3::primitives::Bool> as ReprC>::CType,
-    co3::vec::CVec<co3::primitives::Bool>
+    <Vec<co3::primitives::CBool> as ReprC>::CType,
+    co3::vec::CVec<co3::primitives::CBool>
 );
 assert_type_ne_all!(
     co3::option::COption<bool>,
-    co3::option::COption<co3::primitives::Bool>
+    co3::option::COption<co3::primitives::CBool>
 );
-assert_type_ne_all!(co3::result::CResult<bool, u8>, co3::result::CResult<co3::primitives::Bool, u8>);
-assert_type_ne_all!(co3::vec::CVec<bool>, co3::vec::CVec<co3::primitives::Bool>);
+assert_type_ne_all!(co3::result::CResult<bool, u8>, co3::result::CResult<co3::primitives::CBool, u8>);
+assert_type_ne_all!(co3::vec::CVec<bool>, co3::vec::CVec<co3::primitives::CBool>);
 
 assert_not_impl_any!(Option<u32>: CType);
 assert_not_impl_any!(Option<Box<u32>>: CType);
@@ -157,8 +162,9 @@ fn nonzero_carrier_preserves_integer_abi_and_niche() {
 
 #[test]
 fn result_niche_carriers_distinguish_arms() {
-    use co3::result::{CResultErr, CResultOk};
     use core::mem::{align_of, size_of};
+
+    use co3::result::{CResultErr, CResultOk};
 
     assert_eq!(
         size_of::<CResultOk<Box<u32>, ()>>(),

@@ -1,31 +1,31 @@
 error[E0271]: type mismatch resolving `<(NonZero<u8>,) as RustSpec>::Niche == WithoutNiche`
-  --> tests/ui_fail/custom_niche_override.rs:6:20
-   |
- 6 | #[derive(RustSpec, ReprC)]
-   |                    ^^^^^ expected `WithoutNiche`, found `WithNiche<Stable>`
-   |
-   = note: expected enum `WithoutNiche`
-            found struct `WithNiche<Stable>`
+ --> tests/ui_fail/custom_niche_override.rs:5:20
+  |
+5 | #[derive(RustSpec, ReprC)]
+  |                    ^^^^^ expected `WithoutNiche`, found `WithNiche<Stable>`
+  |
+  = note: expected enum `WithoutNiche`
+           found struct `WithNiche<Stable>`
 note: required for `OverridesInferredNiche` to implement `Niche`
-  --> tests/ui_fail/custom_niche_override.rs:10:12
-   |
- 6 | #[derive(RustSpec, ReprC)]
-   |                    ----- type parameter would need to implement `Niche`
+ --> tests/ui_fail/custom_niche_override.rs:9:12
+  |
+5 | #[derive(RustSpec, ReprC)]
+  |                    ----- type parameter would need to implement `Niche`
 ...
-10 | pub struct OverridesInferredNiche(NonZeroU8);
-   |            ^^^^^^^^^^^^^^^^^^^^^^
-   = help: consider manually implementing `Niche` to avoid undesired bounds caused by "imperfect derives"
-   = note: to learn more, visit <https://github.com/rust-lang/rust/issues/26925>
-   = note: associated types for the current `impl` cannot be restricted in `where` clauses
-   = note: associated types for the current `impl` cannot be restricted in `where` clauses
-   = note: associated types for the current `impl` cannot be restricted in `where` clauses
-   = note: associated types for the current `impl` cannot be restricted in `where` clauses
-   = note: this error originates in the derive macro `ReprC` (in Nightly builds, run with -Z macro-backtrace for more info)
+9 | pub struct OverridesInferredNiche(NonZeroU8);
+  |            ^^^^^^^^^^^^^^^^^^^^^^
+  = help: consider manually implementing `Niche` to avoid undesired bounds caused by "imperfect derives"
+  = note: to learn more, visit <https://github.com/rust-lang/rust/issues/26925>
+  = note: associated types for the current `impl` cannot be restricted in `where` clauses
+  = note: associated types for the current `impl` cannot be restricted in `where` clauses
+  = note: associated types for the current `impl` cannot be restricted in `where` clauses
+  = note: associated types for the current `impl` cannot be restricted in `where` clauses
+  = note: this error originates in the derive macro `ReprC` (in Nightly builds, run with -Z macro-backtrace for more info)
 
 error[E0271]: type mismatch resolving `<(NonZero<u8>,) as RustSpec>::Niche == WithoutNiche`
- --> tests/ui_fail/custom_niche_override.rs:6:20
+ --> tests/ui_fail/custom_niche_override.rs:5:20
   |
-6 | #[derive(RustSpec, ReprC)]
+5 | #[derive(RustSpec, ReprC)]
   |                    ^^^^^ expected `WithoutNiche`, found `WithNiche<Stable>`
   |
   = note: expected enum `WithoutNiche`
@@ -33,25 +33,25 @@ error[E0271]: type mismatch resolving `<(NonZero<u8>,) as RustSpec>::Niche == Wi
   = note: this error originates in the derive macro `ReprC` (in Nightly builds, run with -Z macro-backtrace for more info)
 
 error[E0271]: type mismatch resolving `<CustomNicheRequiresUnstable as RustSpec>::Niche == WithNiche<Unstable>`
-  --> tests/ui_fail/custom_niche_override.rs:12:20
+  --> tests/ui_fail/custom_niche_override.rs:11:20
    |
-12 | #[derive(RustSpec, ReprC)]
+11 | #[derive(RustSpec, ReprC)]
    |                    ^^^^^ type mismatch resolving `<CustomNicheRequiresUnstable as RustSpec>::Niche == WithNiche<Unstable>`
    |
 note: expected this to be `WithNiche<Unstable>`
-  --> tests/ui_fail/custom_niche_override.rs:12:10
+  --> tests/ui_fail/custom_niche_override.rs:11:10
    |
-12 | #[derive(RustSpec, ReprC)]
+11 | #[derive(RustSpec, ReprC)]
    |          ^^^^^^^^
    = note: expected struct `WithNiche<Unstable>`
                 found enum `WithoutNiche`
 note: required for `CustomNicheRequiresUnstable` to implement `Niche`
-  --> tests/ui_fail/custom_niche_override.rs:14:8
+  --> tests/ui_fail/custom_niche_override.rs:13:8
    |
-12 | #[derive(RustSpec, ReprC)]
+11 | #[derive(RustSpec, ReprC)]
    |                    ----- type parameter would need to implement `Niche`
-13 | #[repr_c(NICHE = CCustomNicheRequiresUnstable(1))]
-14 | struct CustomNicheRequiresUnstable(u8);
+12 | #[repr_c(NICHE = CCustomNicheRequiresUnstable(1))]
+13 | struct CustomNicheRequiresUnstable(u8);
    |        ^^^^^^^^^^^^^^^^^^^^^^^^^^^
    = help: consider manually implementing `Niche` to avoid undesired bounds caused by "imperfect derives"
    = note: to learn more, visit <https://github.com/rust-lang/rust/issues/26925>
@@ -61,39 +61,39 @@ note: required for `CustomNicheRequiresUnstable` to implement `Niche`
    = note: this error originates in the derive macro `ReprC` which comes from the expansion of the derive macro `RustSpec` (in Nightly builds, run with -Z macro-backtrace for more info)
 
 error[E0271]: type mismatch resolving `<CustomNicheRequiresUnstable as RustSpec>::Niche == WithNiche<Unstable>`
-  --> tests/ui_fail/custom_niche_override.rs:12:20
+  --> tests/ui_fail/custom_niche_override.rs:11:20
    |
-12 | #[derive(RustSpec, ReprC)]
+11 | #[derive(RustSpec, ReprC)]
    |                    ^^^^^ type mismatch resolving `<CustomNicheRequiresUnstable as RustSpec>::Niche == WithNiche<Unstable>`
    |
 note: expected this to be `WithNiche<Unstable>`
-  --> tests/ui_fail/custom_niche_override.rs:12:10
+  --> tests/ui_fail/custom_niche_override.rs:11:10
    |
-12 | #[derive(RustSpec, ReprC)]
+11 | #[derive(RustSpec, ReprC)]
    |          ^^^^^^^^
    = note: expected struct `WithNiche<Unstable>`
                 found enum `WithoutNiche`
    = note: this error originates in the derive macro `ReprC` which comes from the expansion of the derive macro `RustSpec` (in Nightly builds, run with -Z macro-backtrace for more info)
 
 error[E0271]: type mismatch resolving `<(NonZero<u8>,) as RustSpec>::Niche == WithoutNiche`
-  --> tests/ui_fail/custom_niche_override.rs:10:12
-   |
-10 | pub struct OverridesInferredNiche(NonZeroU8);
-   |            ^^^^^^^^^^^^^^^^^^^^^^ expected `WithoutNiche`, found `WithNiche<Stable>`
-   |
-   = note: expected enum `WithoutNiche`
-            found struct `WithNiche<Stable>`
+ --> tests/ui_fail/custom_niche_override.rs:9:12
+  |
+9 | pub struct OverridesInferredNiche(NonZeroU8);
+  |            ^^^^^^^^^^^^^^^^^^^^^^ expected `WithoutNiche`, found `WithNiche<Stable>`
+  |
+  = note: expected enum `WithoutNiche`
+           found struct `WithNiche<Stable>`
 note: required for `OverridesInferredNiche` to implement `Niche`
-  --> tests/ui_fail/custom_niche_override.rs:10:12
-   |
- 6 | #[derive(RustSpec, ReprC)]
-   |                    ----- type parameter would need to implement `Niche`
+ --> tests/ui_fail/custom_niche_override.rs:9:12
+  |
+5 | #[derive(RustSpec, ReprC)]
+  |                    ----- type parameter would need to implement `Niche`
 ...
-10 | pub struct OverridesInferredNiche(NonZeroU8);
-   |            ^^^^^^^^^^^^^^^^^^^^^^
-   = help: consider manually implementing `Niche` to avoid undesired bounds caused by "imperfect derives"
-   = note: to learn more, visit <https://github.com/rust-lang/rust/issues/26925>
-   = note: associated types for the current `impl` cannot be restricted in `where` clauses
-   = note: associated types for the current `impl` cannot be restricted in `where` clauses
-   = note: associated types for the current `impl` cannot be restricted in `where` clauses
-   = note: associated types for the current `impl` cannot be restricted in `where` clauses
+9 | pub struct OverridesInferredNiche(NonZeroU8);
+  |            ^^^^^^^^^^^^^^^^^^^^^^
+  = help: consider manually implementing `Niche` to avoid undesired bounds caused by "imperfect derives"
+  = note: to learn more, visit <https://github.com/rust-lang/rust/issues/26925>
+  = note: associated types for the current `impl` cannot be restricted in `where` clauses
+  = note: associated types for the current `impl` cannot be restricted in `where` clauses
+  = note: associated types for the current `impl` cannot be restricted in `where` clauses
+  = note: associated types for the current `impl` cannot be restricted in `where` clauses

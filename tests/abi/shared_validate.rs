@@ -1,3 +1,9 @@
+use core::{
+    cell::{Cell, UnsafeCell},
+    mem::{ManuallyDrop, MaybeUninit},
+    num::NonZeroU8,
+};
+
 use co3::{
     ReprC,
     rust_spec::{
@@ -7,11 +13,6 @@ use co3::{
     },
     stored::{DecodeMove, EncodeMove},
     transmute::AbiCompatible,
-};
-use core::{
-    cell::{Cell, UnsafeCell},
-    mem::{ManuallyDrop, MaybeUninit},
-    num::NonZeroU8,
 };
 use static_assertions::{assert_impl_all, assert_not_impl_any};
 
@@ -156,7 +157,7 @@ fn robust_cells_do_not_hide_other_invalid_fields() {
 
     // The invalid boolean exists only in the robust C representation.
     let invalid = unsafe {
-        CMixed::<UnsafeCell<u8>>::from_fields(co3::primitives::Bool(2), UnsafeCell::new(7))
+        CMixed::<UnsafeCell<u8>>::from_fields(co3::primitives::CBool(2), UnsafeCell::new(7))
     };
     let encoded =
         unsafe { co3::reference::CRefMut::from_raw(core::ptr::from_ref(&invalid).cast_mut()) };

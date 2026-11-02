@@ -3,8 +3,10 @@ use quote::{format_ident, quote, quote_spanned};
 use syn::{Attribute, spanned::Spanned as _, visit::Visit};
 
 use crate::{
-    layout::attr::{ReprKind, parse_repr},
-    layout::item::{derive_fieldless_enum, derive_item},
+    layout::{
+        attr::{ReprKind, parse_repr},
+        item::{derive_fieldless_enum, derive_item},
+    },
     utils::{ParamUseDetector, push_error, speculative_marker},
 };
 

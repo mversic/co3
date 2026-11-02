@@ -1,14 +1,18 @@
-use co3::ffi::c_char;
-use std::cmp::Ordering;
-use std::ffi::CStr;
+use std::{cmp::Ordering, ffi::CStr};
+
+use co3::{
+    ReprC,
+    cmp::COrdering as Co3Ordering,
+    encode, ffi,
+    niche::Niche,
+    option::COption,
+    primitives::CBool,
+    reference::{CRef, CRefMut},
+    rust_spec::RustSpec,
+    soft_decode, soft_encode,
+};
 
 use crate::TransparentCarrier;
-use co3::reference::{CRef, CRefMut};
-use co3::{
-    ReprC, encode, ffi, niche::Niche, option::COption, rust_spec::RustSpec, soft_decode,
-    soft_encode,
-};
-use co3::{cmp::Ordering as Co3Ordering, primitives::Bool};
 
 #[derive(Clone, Copy, PartialEq, Eq, RustSpec, ReprC)]
 #[repr(transparent)]
@@ -60,7 +64,7 @@ fn thin_extern_reference_niche() {
     static_assertions::assert_impl_all!(&mut Extern: Niche<CType = CRefMut<Extern, true>>);
     // CStr is unsized but also has a thin pointer representation. This catches
     // an accidental Sized bound on the pointer-backed reference Niche impls.
-    static_assertions::assert_impl_all!(&CStr: Niche<CType = CRef<c_char>>);
+    static_assertions::assert_impl_all!(&CStr: Niche<CType = CRef<CStr>>);
 
     assert_eq!(encode(None::<&Extern>).payload(), CRef::null());
     assert_eq!(
@@ -486,11 +490,11 @@ fn fieldless_enum_explicit_discriminants_round_trip() {
 fn fieldless_enum_carrier_conversions() {
     use static_assertions::{assert_impl_all, assert_not_impl_any};
 
-    assert_impl_all!(Bool: From<bool>, TryFrom<bool>);
+    assert_impl_all!(CBool: From<bool>, TryFrom<bool>);
     assert_impl_all!(Co3Ordering: From<Ordering>, TryFrom<Ordering>);
-    assert_not_impl_any!(Bool: From<u8>, TryFrom<u8>);
-    assert_impl_all!(bool: TryFrom<Bool>);
-    assert_not_impl_any!(bool: From<Bool>);
+    assert_not_impl_any!(CBool: From<u8>, TryFrom<u8>);
+    assert_impl_all!(bool: TryFrom<CBool>);
+    assert_not_impl_any!(bool: From<CBool>);
     assert_not_impl_any!(Co3Ordering: From<i8>, TryFrom<i8>);
     assert_impl_all!(Ordering: TryFrom<Co3Ordering>);
     assert_not_impl_any!(Ordering: From<Co3Ordering>);
@@ -499,9 +503,9 @@ fn fieldless_enum_carrier_conversions() {
     assert_not_impl_any!(CFieldlessNoReprEnum: From<FieldlessNoReprEnum>, TryFrom<FieldlessNoReprEnum>);
     assert_not_impl_any!(FieldlessNoReprEnum: From<CFieldlessNoReprEnum>, TryFrom<CFieldlessNoReprEnum>);
 
-    assert_eq!(Bool::TRUE, encode(true));
-    assert_eq!(Bool::FALSE, encode(false));
-    assert_eq!(Bool(1), encode(true));
+    assert_eq!(CBool::TRUE, encode(true));
+    assert_eq!(CBool::FALSE, encode(false));
+    assert_eq!(CBool(1), encode(true));
     assert_eq!(Co3Ordering::LESS, encode(Ordering::Less));
     assert_eq!(Co3Ordering::EQUAL, encode(Ordering::Equal));
     assert_eq!(Co3Ordering::GREATER, encode(Ordering::Greater));

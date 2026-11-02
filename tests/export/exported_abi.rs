@@ -1,7 +1,6 @@
-use co3::rust_spec::RustSpec;
 use core::ffi::c_void;
 
-use co3::{ReprC, ffi, reference::CRef};
+use co3::{ReprC, ffi, reference::CRef, rust_spec::RustSpec};
 
 trait AmbiguousX<T, const N: usize> {
     type U;
@@ -206,7 +205,7 @@ fn exported_abi() {
         fn export_opaque_clone_bool(handle: *const c_void) -> *mut c_void;
         #[link_name = "nclone"]
         fn export_non_opaque_clone_bool(
-            handle_ptr: CRef<<NonOpaqueStruct<bool> as co3::ReprC>::CType>,
+            handle_ptr: CRef<NonOpaqueStruct<bool>>,
         ) -> <NonOpaqueStruct<bool> as co3::ReprC>::CType;
         #[link_name = "xor_u8"]
         fn export_opaque_xor_u8(handle_ptr: *const c_void, by: u8) -> *mut c_void;
@@ -226,7 +225,7 @@ fn exported_abi() {
 
         #[link_name = "export__Clone__NonOpaqueStruct_u8__clone"]
         fn export_non_opaque_clone_u8(
-            handle: CRef<<NonOpaqueStruct<u8> as co3::ReprC>::CType>,
+            handle: CRef<NonOpaqueStruct<u8>>,
         ) -> <NonOpaqueStruct<u8> as co3::ReprC>::CType;
         #[link_name = "clone"]
         fn export_opaque_clone_u8(handle: *const c_void) -> *mut c_void;

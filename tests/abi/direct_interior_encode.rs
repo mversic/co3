@@ -1,7 +1,9 @@
 use core::{cell::UnsafeCell, mem::ManuallyDrop, num::NonZeroU8};
 
-use co3::stored::{DecodeMove, EncodeMove, EncodeMoveUnchecked};
-use co3::{Decode, Encode, EncodeUnchecked};
+use co3::{
+    Decode, Encode, EncodeUnchecked,
+    stored::{DecodeMove, EncodeMove, EncodeMoveUnchecked},
+};
 use static_assertions::{assert_impl_all, assert_not_impl_any};
 
 #[derive(co3::rust_spec::RustSpec, co3::ReprC)]

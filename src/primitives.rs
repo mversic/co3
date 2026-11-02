@@ -20,7 +20,7 @@ use crate::{
 /// Every byte value is valid for this carrier; conversion to `bool` accepts only 0 and 1.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, RustSpec)]
 #[repr(transparent)]
-pub struct Bool(pub u8);
+pub struct CBool(pub u8);
 
 /// C-compatible carrier for a Unicode scalar value (`char`).
 ///
@@ -29,7 +29,7 @@ pub struct Bool(pub u8);
 #[repr(transparent)]
 pub struct UnicodeChar(pub u32);
 
-unsafe impl crate::Zeroable for Bool {}
+unsafe impl crate::Zeroable for CBool {}
 unsafe impl crate::Zeroable for UnicodeChar {}
 
 impl From<char> for UnicodeChar {
@@ -48,23 +48,23 @@ impl TryFrom<UnicodeChar> for char {
     }
 }
 
-impl From<bool> for Bool {
+impl From<bool> for CBool {
     #[inline(always)]
     fn from(value: bool) -> Self {
         Self(value.into())
     }
 }
 
-impl TryFrom<Bool> for bool {
+impl TryFrom<CBool> for bool {
     type Error = <bool as TryFrom<u8>>::Error;
 
     #[inline(always)]
-    fn try_from(value: Bool) -> Result<Self, Self::Error> {
+    fn try_from(value: CBool) -> Result<Self, Self::Error> {
         bool::try_from(value.0)
     }
 }
 
-impl Bool {
+impl CBool {
     pub const FALSE: Self = Self(0);
     pub const TRUE: Self = Self(1);
 }
@@ -402,7 +402,7 @@ primitive_derive! { u128 }
 primitive_derive! { i128 }
 primitive_derive! { f32 }
 primitive_derive! { f64 }
-primitive_derive! { Bool }
+primitive_derive! { CBool }
 primitive_derive! { UnicodeChar }
 
 raw_pointer_derive! { const }
@@ -451,15 +451,15 @@ fieldless_enum_derive! {
 }
 
 fieldless_enum_derive! {
-    bool => Bool: {Bool(2)}:
-    |i: &Bool| i.0 == 0 || i.0 == 1;
-    |source: Bool| match source.0 {
+    bool => CBool: {CBool(2)}:
+    |i: &CBool| i.0 == 0 || i.0 == 1;
+    |source: CBool| match source.0 {
         0 => Some(false),
         1 => Some(true),
         _ => None,
     };
-    |source: bool| Bool(source as u8);
-    |source: Bool| unsafe { core::mem::transmute::<Bool, bool>(source) }
+    |source: bool| CBool(source as u8);
+    |source: CBool| unsafe { core::mem::transmute::<CBool, bool>(source) }
 }
 pub(crate) use fieldless_enum_derive;
 pub(crate) use primitive_derive;
@@ -477,7 +477,7 @@ mod tests {
     use crate::boxed::{CBox, CWideBox};
     use crate::{
         Encode,
-        cmp::Ordering as Co3Ordering,
+        cmp::COrdering,
         option::COption,
         reference::{CRef, CRefMut},
         slice::{CWideRef, CWideRefMut},
@@ -485,28 +485,28 @@ mod tests {
 
     #[test]
     fn scalar_carriers_accept_all_values_without_niches() {
-        assert_impl_all!(Bool: CType, ReprC<CType = Bool>);
-        assert_impl_all!(Co3Ordering: CType, ReprC<CType = Co3Ordering>);
+        assert_impl_all!(CBool: CType, ReprC<CType = CBool>);
+        assert_impl_all!(COrdering: CType, ReprC<CType = COrdering>);
         assert_impl_all!(UnicodeChar: CType, ReprC<CType = UnicodeChar>);
-        assert_not_impl_any!(Bool: Niche);
-        assert_not_impl_any!(Co3Ordering: Niche);
+        assert_not_impl_any!(CBool: Niche);
+        assert_not_impl_any!(COrdering: Niche);
         assert_not_impl_any!(UnicodeChar: Niche);
-        assert_impl_all!(Option<Bool>: ReprC<CType = COption<Bool>>);
-        assert_impl_all!(Option<Co3Ordering>: ReprC<CType = COption<Co3Ordering>>);
+        assert_impl_all!(Option<CBool>: ReprC<CType = COption<CBool>>);
+        assert_impl_all!(Option<COrdering>: ReprC<CType = COption<COrdering>>);
         assert_impl_all!(Option<UnicodeChar>: ReprC<CType = COption<UnicodeChar>>);
 
         for raw in u8::MIN..=u8::MAX {
-            let boolean = Bool(raw);
+            let boolean = CBool(raw);
             assert_eq!(boolean.0, raw);
-            assert_eq!(unsafe { crate::decode::<Bool>(boolean) }, Some(boolean));
+            assert_eq!(unsafe { crate::decode::<CBool>(boolean) }, Some(boolean));
             assert_eq!(
                 unsafe { crate::decode::<bool>(boolean) }.is_some(),
                 raw <= 1
             );
-            let ordering = Co3Ordering(raw as i8);
+            let ordering = COrdering(raw as i8);
             assert_eq!(ordering.0, raw as i8);
             assert_eq!(
-                unsafe { crate::decode::<Co3Ordering>(ordering) },
+                unsafe { crate::decode::<COrdering>(ordering) },
                 Some(ordering)
             );
             assert_eq!(

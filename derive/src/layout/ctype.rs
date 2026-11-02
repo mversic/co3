@@ -2,16 +2,19 @@ use proc_macro2::TokenStream;
 use quote::{format_ident, quote};
 use syn::{parse_quote, visit::Visit};
 
-use crate::layout::{
-    attr::ReprKind,
-    borrow::gen_identity_borrow_impls,
-    infer_repr, is_parametrized, is_phantom_data, is_transparent_enum_repr, primitive_tag_type,
-    wide::{
-        gen_alloc_methods, gen_data_struct_name, gen_dst_methods, gen_identity_header_impl,
-        header_repr_c_predicate, last_field, wide_predicate, wide_tail_type, wide_usize_predicate,
+use crate::{
+    layout::{
+        attr::ReprKind,
+        borrow::gen_identity_borrow_impls,
+        infer_repr, is_parametrized, is_phantom_data, is_transparent_enum_repr, primitive_tag_type,
+        wide::{
+            gen_alloc_methods, gen_data_struct_name, gen_dst_methods, gen_identity_header_impl,
+            header_repr_c_predicate, last_field, wide_predicate, wide_tail_type,
+            wide_usize_predicate,
+        },
     },
+    utils::{co3_path, speculative_marker},
 };
-use crate::utils::{co3_path, speculative_marker};
 
 #[derive(Clone, Copy, PartialEq, Eq)]
 pub(super) enum TailClass {
@@ -169,6 +172,7 @@ pub(super) fn gen_fieldless_enum_ctype(
     vis: &syn::Visibility,
     name: &syn::Ident,
     generics: &syn::Generics,
+    variants: &syn::punctuated::Punctuated<syn::Variant, syn::Token![,]>,
 ) -> TokenStream {
     let ctype_name = gen_ctype_name(name);
     let (impl_generics, ty_generics, where_clause) = generics.split_for_impl();
@@ -213,6 +217,21 @@ pub(super) fn gen_fieldless_enum_ctype(
         _ => unreachable!("fieldless enum tag is a primitive or unit type"),
     };
 
+    let niche_check = (variants.len() != 1 && !super::is_exhaustive_enum(variants.len(), tag_type))
+        .then(|| {
+            let niche_tag = super::niche::gen_enum_niche_tag(name, variants, tag_type, true);
+            quote! {
+                const fn niche() -> Self {
+                    Self(#niche_tag)
+                }
+
+                #[allow(dead_code)]
+                pub(crate) const fn is_niche(&self) -> bool {
+                    self.tag() == Self::niche().tag()
+                }
+            }
+        });
+
     quote! {
         #ctype
         #impls
@@ -220,6 +239,7 @@ pub(super) fn gen_fieldless_enum_ctype(
 
         impl #impl_generics #ctype_name #ty_generics #where_clause {
             #primitive_constructor
+            #niche_check
 
             /// Return the raw discriminant.
             pub const fn tag(&self) -> #tag_type { self.0 }
@@ -505,15 +525,42 @@ fn gen_enum_variant_constructors(
             }
         }
     };
-    let niche_constructor = (!super::is_exhaustive_enum(variants.len(), tag_type)).then(|| {
-        let speculative = speculative_marker(generics.params.is_empty());
+    let niche_check = (!super::is_exhaustive_enum(variants.len(), tag_type)).then(|| {
+        let niche_tag = super::niche::gen_enum_niche_tag(enum_name, variants, tag_type, false);
+
+        let niche_value = if payload_name.is_some() {
+            quote! { Self { tag: #niche_tag, payload: core::mem::MaybeUninit::zeroed() } }
+        } else {
+            let variant = &variants[0];
+            let variant_name = &variant.ident;
+            let variant_struct = gen_variant_struct_name(enum_name, variant_name);
+            let field_values = variant
+                .fields
+                .iter()
+                .map(|_| quote!(core::mem::MaybeUninit::zeroed()));
+
+            let body = match &variant.fields {
+                syn::Fields::Named(fields) => {
+                    let names = fields
+                        .named
+                        .iter()
+                        .map(|field| field.ident.as_ref().unwrap());
+                    quote!(#variant_struct { tag: #niche_tag, #(#names: #field_values),* })
+                }
+                syn::Fields::Unnamed(_) => quote!(#variant_struct(#niche_tag, #(#field_values),*)),
+                syn::Fields::Unit => quote!(#variant_struct { tag: #niche_tag }),
+            };
+
+            quote!(Self { #variant_name: #body })
+        };
         quote! {
             #[allow(dead_code)]
-            const fn niche() -> Self
-            where
-                #speculative #enum_name #ty_generics: co3::niche::Niche<CType = Self>,
-            {
-                <#enum_name #ty_generics as co3::niche::Niche>::NICHE
+            const fn niche() -> Self {
+                #niche_value
+            }
+            #[allow(dead_code)]
+            pub(crate) const fn is_niche(&self) -> bool {
+                self.tag() == Self::niche().tag()
             }
         }
     });
@@ -585,7 +632,7 @@ fn gen_enum_variant_constructors(
         impl #impl_generics #ctype_name #ty_generics #where_clause {
             #tag_accessor
             #raw_constructor
-            #niche_constructor
+            #niche_check
             #(#methods)*
         }
     }
@@ -729,8 +776,15 @@ pub(super) fn gen_fields_methods(
             }
         })
         .collect::<Vec<_>>();
+    let named_values = arg_names.iter().zip(&values).map(|(name, value)| {
+        if syn::parse2::<syn::Ident>(value.clone()).is_ok_and(|ident| ident == **name) {
+            quote!(#name)
+        } else {
+            quote!(#name: #value)
+        }
+    });
     let body = match fields {
-        syn::Fields::Named(_) => quote!(Self { #(#arg_names: #values),* }),
+        syn::Fields::Named(_) => quote!(Self { #(#named_values),* }),
         syn::Fields::Unnamed(_) => quote!(Self(#(#values),*)),
         syn::Fields::Unit => quote!(Self),
     };
@@ -1897,8 +1951,9 @@ fn gen_hrtb_projection_bounds(
 
 #[cfg(test)]
 mod tail_tests {
-    use super::{TailClass, UnsizedTail, classify_tail};
     use syn::parse_quote;
+
+    use super::{TailClass, UnsizedTail, classify_tail};
 
     #[test]
     fn copy_and_partial_eq_bounds_are_speculative() {

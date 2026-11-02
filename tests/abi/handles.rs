@@ -87,8 +87,7 @@ mod provider {
         atomic::{AtomicUsize, Ordering},
     };
 
-    use co3::ffi;
-    use co3::rust_spec::RustSpec;
+    use co3::{ffi, rust_spec::RustSpec};
 
     use super::*;
 

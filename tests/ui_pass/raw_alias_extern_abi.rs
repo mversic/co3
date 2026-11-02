@@ -1,4 +1,4 @@
-use co3::{ReprC, ffi, utf8::Utf8Str};
+use co3::{ReprC, ffi};
 
 ffi! {
     #![unsafe(extern("C"))]
@@ -64,7 +64,7 @@ fn main() {
         Composite,
         <(
             String,
-            unsafe extern "C" fn(co3::borrow::Borrowed<co3::boxed::CWideBox<Utf8Str>>)
+            unsafe extern "C" fn(co3::borrow::Borrowed<co3::utf8::Utf8String>)
         ) as ReprC>::CType
     );
     static_assertions::assert_type_eq_all!(MaybeCallback, co3::option::COptionSome<unsafe extern "C" fn(u8)>);
