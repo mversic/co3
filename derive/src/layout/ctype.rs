@@ -196,7 +196,16 @@ pub(super) fn gen_fieldless_enum_ctype(
     };
     // Keep the normal non-ZST CFnArg size guard. In particular, a one-variant
     // fieldless enum is represented by `CEnum(())` and must not become a CFnArg.
-    let impls = gen_struct_ctype_impls::<true>(&ctype, false, alignment, false);
+    let impls = gen_struct_ctype_impls::<false>(&ctype, false, alignment, false);
+    let is_valid_tag = if matches!(tag_type, syn::Type::Tuple(_)) {
+        quote!(true)
+    } else {
+        let tags = variants.iter().map(|variant| {
+            let ident = format_ident!("__CO3_TAG_{}", variant.ident);
+            quote!(self.0 == <#name #ty_generics>::#ident)
+        });
+        quote!(false #(|| #tags)*)
+    };
     let fields = ctype
         .fields
         .iter()
@@ -236,6 +245,12 @@ pub(super) fn gen_fieldless_enum_ctype(
         #ctype
         #impls
         #type_spec_impl
+
+        impl #impl_generics core::cmp::PartialEq for #ctype_name #ty_generics #where_clause {
+            fn eq(&self, other: &Self) -> bool {
+                self.0 == other.0 && (#is_valid_tag)
+            }
+        }
 
         impl #impl_generics #ctype_name #ty_generics #where_clause {
             #primitive_constructor
@@ -462,7 +477,7 @@ fn gen_tagged_union_inspection(
                 if left != right {
                     return if is_valid(left) && is_valid(right) { left.partial_cmp(&right) } else { None };
                 }
-                match left { #(#arms,)* _ => Some(core::cmp::Ordering::Equal) }
+                match left { #(#arms,)* _ => None }
             }
         }
         impl #impl_generics core::fmt::Debug for #name #ty_generics
@@ -693,7 +708,7 @@ fn gen_tagged_union_partial_eq(
                 let other_tag = other.tag();
                 self_tag == other_tag && match self_tag {
                     #(#arms,)*
-                    _ => true,
+                    _ => false,
                 }
             }
         }
@@ -1026,7 +1041,7 @@ fn gen_tagged_payload_partial_eq(
             fn eq(&self, other: &Self) -> bool {
                 self.tag == other.tag && match self.tag {
                     #(#arms,)*
-                    _ => true,
+                    _ => false,
                 }
             }
         }

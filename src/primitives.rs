@@ -18,16 +18,28 @@ use crate::{
 /// C-compatible carrier for [`bool`].
 ///
 /// Every byte value is valid for this carrier; conversion to `bool` accepts only 0 and 1.
-#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, RustSpec)]
+#[derive(Debug, Clone, Copy, Default, RustSpec)]
 #[repr(transparent)]
 pub struct CBool(pub u8);
 
 /// C-compatible carrier for a Unicode scalar value (`char`).
 ///
 /// Every `u32` value is valid for this carrier; conversion to `char` validates the scalar value.
-#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, RustSpec)]
+#[derive(Debug, Clone, Copy, Default, RustSpec)]
 #[repr(transparent)]
 pub struct UnicodeChar(pub u32);
+
+impl PartialEq for UnicodeChar {
+    fn eq(&self, other: &Self) -> bool {
+        char::from_u32(self.0).is_some() && self.0 == other.0
+    }
+}
+
+impl PartialEq for CBool {
+    fn eq(&self, other: &Self) -> bool {
+        self.0 <= 1 && self.0 == other.0
+    }
+}
 
 unsafe impl crate::Zeroable for CBool {}
 unsafe impl crate::Zeroable for UnicodeChar {}
@@ -307,6 +319,10 @@ macro_rules! impl_fn_types {
 
         impl<$($arg,)* R> Niche for $fn_type where Self: ReprC<CType = Option<Self>> {
             const NICHE: Self::CType = None;
+
+            fn is_niche(value: &Self::CType) -> bool {
+                value.is_none()
+            }
         }
         unsafe impl<$($arg,)* R> $crate::transmute::AbiCompatibleValidate for $fn_type where Self: ReprC<CType = Option<Self>> {
             unsafe fn is_valid(target: &Self::CType) -> bool { target.is_some() }
@@ -384,6 +400,10 @@ unsafe impl AbiCompatible for $src {}
 
         impl Niche for $src {
             const NICHE: Self::CType = $niche_val;
+
+            fn is_niche(value: &Self::CType) -> bool {
+                value.0 == ($niche_val).0
+            }
         }
     };
 }
@@ -488,6 +508,7 @@ mod tests {
         assert_impl_all!(CBool: CType, ReprC<CType = CBool>);
         assert_impl_all!(COrdering: CType, ReprC<CType = COrdering>);
         assert_impl_all!(UnicodeChar: CType, ReprC<CType = UnicodeChar>);
+        assert_not_impl_any!(UnicodeChar: Eq, Ord);
         assert_not_impl_any!(CBool: Niche);
         assert_not_impl_any!(COrdering: Niche);
         assert_not_impl_any!(UnicodeChar: Niche);
@@ -498,7 +519,11 @@ mod tests {
         for raw in u8::MIN..=u8::MAX {
             let boolean = CBool(raw);
             assert_eq!(boolean.0, raw);
-            assert_eq!(unsafe { crate::decode::<CBool>(boolean) }, Some(boolean));
+            assert_eq!(boolean == boolean, raw <= 1);
+            assert_eq!(
+                unsafe { crate::decode::<CBool>(boolean) }.map(|v| v.0),
+                Some(raw)
+            );
             assert_eq!(
                 unsafe { crate::decode::<bool>(boolean) }.is_some(),
                 raw <= 1
@@ -506,8 +531,8 @@ mod tests {
             let ordering = COrdering(raw as i8);
             assert_eq!(ordering.0, raw as i8);
             assert_eq!(
-                unsafe { crate::decode::<COrdering>(ordering) },
-                Some(ordering)
+                unsafe { crate::decode::<COrdering>(ordering) }.map(|v| v.0),
+                Some(ordering.0)
             );
             assert_eq!(
                 unsafe { crate::decode::<Ordering>(ordering) }.is_some(),
@@ -518,9 +543,10 @@ mod tests {
         for raw in [0, 0xd800, 0x10ffff, 0x110000, u32::MAX] {
             let scalar = UnicodeChar(raw);
             assert_eq!(scalar.0, raw);
+            assert_eq!(scalar == scalar, char::from_u32(raw).is_some());
             assert_eq!(
-                unsafe { crate::decode::<UnicodeChar>(scalar) },
-                Some(scalar)
+                unsafe { crate::decode::<UnicodeChar>(scalar) }.map(|value| value.0),
+                Some(raw)
             );
             assert_eq!(
                 unsafe { crate::decode::<char>(scalar) },
@@ -533,12 +559,11 @@ mod tests {
                 value
             );
         }
-        assert_eq!(crate::encode(None::<bool>).into_carrier(), bool::NICHE);
-        assert_eq!(
-            crate::encode(None::<Ordering>).into_carrier(),
-            Ordering::NICHE
-        );
-        assert_eq!(crate::encode(None::<char>).into_carrier(), char::NICHE);
+        assert!(bool::is_niche(&crate::encode(None::<bool>).into_carrier()));
+        assert!(Ordering::is_niche(
+            &crate::encode(None::<Ordering>).into_carrier()
+        ));
+        assert!(char::is_niche(&crate::encode(None::<char>).into_carrier()));
     }
 
     #[test]

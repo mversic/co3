@@ -314,14 +314,20 @@ fn comparisons_use_pointer_then_arbitrary_metadata() {
     let different_pointer = unsafe { CWideRef::<Pointee>::from_raw_parts(second, a) };
     assert!(one < same_pointer);
     assert_ne!(one, different_pointer);
-    assert_eq!(one.cmp(&different_pointer), first.cmp(&second));
+    assert_eq!(
+        one.partial_cmp(&different_pointer),
+        Some(first.cmp(&second))
+    );
 
     let one = unsafe { CWideRefMut::<Pointee, true>::from_raw_parts_mut(first, a) };
     let same_pointer = unsafe { CWideRefMut::<Pointee, true>::from_raw_parts_mut(first, b) };
     let different_pointer = unsafe { CWideRefMut::<Pointee, true>::from_raw_parts_mut(second, a) };
     assert!(one < same_pointer);
     assert_ne!(one, different_pointer);
-    assert_eq!(one.cmp(&different_pointer), first.cmp(&second));
+    assert_eq!(
+        one.partial_cmp(&different_pointer),
+        Some(first.cmp(&second))
+    );
 
     let null = CWideRef::<Pointee>::null();
     let other_null = unsafe { CWideRef::<Pointee>::from_raw_parts(core::ptr::null(), a) };

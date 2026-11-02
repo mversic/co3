@@ -426,7 +426,7 @@ disjoint_impls! {
     }
     unsafe impl<
         'd,
-        T: Niche<CType: CType + PartialEq + Sized> + Clone + 'd,
+        T: Niche<CType: CType + Sized> + Clone + 'd,
         N: rust_spec::layout::LayoutKind,
     > DecodeRef<'d> for Option<T>
     where
@@ -479,7 +479,7 @@ disjoint_impls! {
     }
     unsafe impl<
         'd,
-        T: Niche<CType: CType + PartialEq + Sized> + Clone + 'd,
+        T: Niche<CType: CType + Sized> + Clone + 'd,
         N: rust_spec::layout::LayoutKind,
         E: Default + ReprC + 'd,
     > DecodeRef<'d> for Result<T, E>
@@ -537,7 +537,7 @@ disjoint_impls! {
     }
     unsafe impl<
         'd,
-        E: Niche<CType: CType + PartialEq + Sized> + Clone + 'd,
+        E: Niche<CType: CType + Sized> + Clone + 'd,
         N: rust_spec::layout::LayoutKind,
         T: Default + ReprC + 'd,
     > DecodeRef<'d> for Result<T, E>
@@ -1193,7 +1193,7 @@ disjoint_impls! {
     }
     unsafe impl<
         'd,
-        T: Niche<CType: CType + Copy + PartialEq + Sized> + 'd,
+        T: Niche<CType: CType + Copy + Sized> + 'd,
         N: rust_spec::layout::LayoutKind,
     > DecodeMut<'d> for Option<T>
     where
@@ -1246,7 +1246,7 @@ disjoint_impls! {
     }
     unsafe impl<
         'd,
-        T: Niche<CType: CType + Copy + PartialEq + Sized> + 'd,
+        T: Niche<CType: CType + Copy + Sized> + 'd,
         N: rust_spec::layout::LayoutKind,
         E: Default + ReprC + 'd,
     > DecodeMut<'d> for Result<T, E>
@@ -1305,7 +1305,7 @@ disjoint_impls! {
     }
     unsafe impl<
         'd,
-        E: Niche<CType: CType + Copy + PartialEq + Sized> + 'd,
+        E: Niche<CType: CType + Copy + Sized> + 'd,
         N: rust_spec::layout::LayoutKind,
         T: Default + ReprC + 'd,
     > DecodeMut<'d> for Result<T, E>

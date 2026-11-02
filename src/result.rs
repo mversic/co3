@@ -52,9 +52,9 @@ macro_rules! niche_result_carrier {
             /// Return whether the carrier contains the payload type's niche value.
             pub(crate) fn is_niche(&self) -> bool
             where
-                $payload: Niche<CType: PartialEq>,
+                $payload: Niche,
             {
-                self.0 == <$payload as Niche>::NICHE
+                <$payload as Niche>::is_niche(&self.0)
             }
         }
 
@@ -444,7 +444,6 @@ impl<T: ReprC<CType: PartialEq + Copy>, E: ReprC<CType: PartialEq + Copy>> Parti
 
                 self_payload == other_payload
             }
-            (left, right) if left >= 2 && right >= 2 => left == right,
             _ => false,
         }
     }

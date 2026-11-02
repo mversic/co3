@@ -529,6 +529,10 @@ impl_tuple! {(A:0, B:1, C:2, D:3, E:4, F:5, G:6, H:7, I:8, J:9, K:10, L:11) -> T
 
 impl<A: Niche> Niche for (A,) {
     const NICHE: Self::CType = Tuple1(A::NICHE);
+
+    fn is_niche(value: &Self::CType) -> bool {
+        A::is_niche(&value.0)
+    }
 }
 
 impl<A: ReprC<CType: Copy>, B: ReprC<CType: Copy>, C: ReprC<CType: Copy>> Niche for (A, B, C)
@@ -540,10 +544,14 @@ where
         <(A, (B, C))>::NICHE.1.0,
         <(A, (B, C))>::NICHE.1.1,
     );
+
+    fn is_niche(value: &Self::CType) -> bool {
+        <(A, (B, C)) as Niche>::is_niche(&Tuple2(value.0, Tuple2(value.1, value.2)))
+    }
 }
 
 macro_rules! impl_tuple_niche_recursive {
-    ($(($($all:ident),+) => ($left:ty, $right:ty) : $ffi_ty:ident($($field:tt),+)),+ $(,)?) => {
+    ($(($($all:ident),+) => ($left:ty, $right:ty) : $ffi_ty:ident($($field:tt),+): ($left_val:expr, $right_val:expr)),+ $(,)?) => {
         $(
             impl<$($all: ReprC<CType: Copy>),+> Niche for ($($all,)+)
             where
@@ -552,21 +560,25 @@ macro_rules! impl_tuple_niche_recursive {
                 const NICHE: Self::CType = $ffi_ty(
                     $(<($left, $right)>::NICHE.$field),+
                 );
+
+                fn is_niche(value: &Self::CType) -> bool {
+                    <($left, $right) as Niche>::is_niche(&Tuple2(($left_val)(value), ($right_val)(value)))
+                }
             }
         )+
     };
 }
 
 impl_tuple_niche_recursive! {
-    (A, B, C, D) => ((A, B), (C, D)) : Tuple4(0.0, 0.1, 1.0, 1.1),
-    (A, B, C, D, E) => ((A, B), (C, D, E)) : Tuple5(0.0, 0.1, 1.0, 1.1, 1.2),
-    (A, B, C, D, E, F) => ((A, B, C), (D, E, F)) : Tuple6(0.0, 0.1, 0.2, 1.0, 1.1, 1.2),
-    (A, B, C, D, E, F, G) => ((A, B, C), (D, E, F, G)) : Tuple7(0.0, 0.1, 0.2, 1.0, 1.1, 1.2, 1.3),
-    (A, B, C, D, E, F, G, H) => ((A, B, C, D), (E, F, G, H)) : Tuple8(0.0, 0.1, 0.2, 0.3, 1.0, 1.1, 1.2, 1.3),
-    (A, B, C, D, E, F, G, H, I) => ((A, B, C, D), (E, F, G, H, I)) : Tuple9(0.0, 0.1, 0.2, 0.3, 1.0, 1.1, 1.2, 1.3, 1.4),
-    (A, B, C, D, E, F, G, H, I, J) => ((A, B, C, D, E), (F, G, H, I, J)) : Tuple10(0.0, 0.1, 0.2, 0.3, 0.4, 1.0, 1.1, 1.2, 1.3, 1.4),
-    (A, B, C, D, E, F, G, H, I, J, K) => ((A, B, C, D, E), (F, G, H, I, J, K)) : Tuple11(0.0, 0.1, 0.2, 0.3, 0.4, 1.0, 1.1, 1.2, 1.3, 1.4, 1.5),
-    (A, B, C, D, E, F, G, H, I, J, K, L) => ((A, B, C, D, E, F), (G, H, I, J, K, L)) : Tuple12(0.0, 0.1, 0.2, 0.3, 0.4, 0.5, 1.0, 1.1, 1.2, 1.3, 1.4, 1.5)
+    (A, B, C, D) => ((A, B), (C, D)) : Tuple4(0.0, 0.1, 1.0, 1.1): (|value: &Self::CType| Tuple2(value.0, value.1), |value: &Self::CType| Tuple2(value.2, value.3)),
+    (A, B, C, D, E) => ((A, B), (C, D, E)) : Tuple5(0.0, 0.1, 1.0, 1.1, 1.2): (|value: &Self::CType| Tuple2(value.0, value.1), |value: &Self::CType| Tuple3(value.2, value.3, value.4)),
+    (A, B, C, D, E, F) => ((A, B, C), (D, E, F)) : Tuple6(0.0, 0.1, 0.2, 1.0, 1.1, 1.2): (|value: &Self::CType| Tuple3(value.0, value.1, value.2), |value: &Self::CType| Tuple3(value.3, value.4, value.5)),
+    (A, B, C, D, E, F, G) => ((A, B, C), (D, E, F, G)) : Tuple7(0.0, 0.1, 0.2, 1.0, 1.1, 1.2, 1.3): (|value: &Self::CType| Tuple3(value.0, value.1, value.2), |value: &Self::CType| Tuple4(value.3, value.4, value.5, value.6)),
+    (A, B, C, D, E, F, G, H) => ((A, B, C, D), (E, F, G, H)) : Tuple8(0.0, 0.1, 0.2, 0.3, 1.0, 1.1, 1.2, 1.3): (|value: &Self::CType| Tuple4(value.0, value.1, value.2, value.3), |value: &Self::CType| Tuple4(value.4, value.5, value.6, value.7)),
+    (A, B, C, D, E, F, G, H, I) => ((A, B, C, D), (E, F, G, H, I)) : Tuple9(0.0, 0.1, 0.2, 0.3, 1.0, 1.1, 1.2, 1.3, 1.4): (|value: &Self::CType| Tuple4(value.0, value.1, value.2, value.3), |value: &Self::CType| Tuple5(value.4, value.5, value.6, value.7, value.8)),
+    (A, B, C, D, E, F, G, H, I, J) => ((A, B, C, D, E), (F, G, H, I, J)) : Tuple10(0.0, 0.1, 0.2, 0.3, 0.4, 1.0, 1.1, 1.2, 1.3, 1.4): (|value: &Self::CType| Tuple5(value.0, value.1, value.2, value.3, value.4), |value: &Self::CType| Tuple5(value.5, value.6, value.7, value.8, value.9)),
+    (A, B, C, D, E, F, G, H, I, J, K) => ((A, B, C, D, E), (F, G, H, I, J, K)) : Tuple11(0.0, 0.1, 0.2, 0.3, 0.4, 1.0, 1.1, 1.2, 1.3, 1.4, 1.5): (|value: &Self::CType| Tuple5(value.0, value.1, value.2, value.3, value.4), |value: &Self::CType| Tuple6(value.5, value.6, value.7, value.8, value.9, value.10)),
+    (A, B, C, D, E, F, G, H, I, J, K, L) => ((A, B, C, D, E, F), (G, H, I, J, K, L)) : Tuple12(0.0, 0.1, 0.2, 0.3, 0.4, 0.5, 1.0, 1.1, 1.2, 1.3, 1.4, 1.5): (|value: &Self::CType| Tuple6(value.0, value.1, value.2, value.3, value.4, value.5), |value: &Self::CType| Tuple6(value.6, value.7, value.8, value.9, value.10, value.11))
 }
 
 #[cfg(test)]
@@ -714,9 +726,10 @@ mod tests {
     #[test]
     fn stored_tuple_3_with_niche() {
         // NOTE: Confirms niche is taken from the first available element
+        let niche = <(u8, StdNonZero<u8>, bool)>::NICHE;
         assert_eq!(
-            <(u8, StdNonZero<u8>, bool)>::NICHE,
-            Tuple3(0, crate::NonZero(0), crate::primitives::CBool::FALSE)
+            (niche.0, niche.1.0, niche.2),
+            (0, 0, crate::primitives::CBool::FALSE)
         );
 
         assert_impl_all!((u8, StdNonZero<u8>, bool):

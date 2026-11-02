@@ -20,6 +20,19 @@ use crate::TransparentCarrier;
 #[repr_c(NICHE = COverlappingCustomNiche(1))]
 struct OverlappingCustomNiche(u8);
 
+#[derive(Clone, Copy, RustSpec, ReprC)]
+#[rust_spec(custom_niche)]
+#[repr_c(NICHE = CNonReflexiveCustomNiche(f32::NAN))]
+struct NonReflexiveCustomNiche(f32);
+
+#[test]
+#[cfg(debug_assertions)]
+#[should_panic(expected = "custom niche must compare equal to itself")]
+fn custom_niche_must_be_reflexive() {
+    let value = NonReflexiveCustomNiche::NICHE;
+    let _ = NonReflexiveCustomNiche::is_niche(&value);
+}
+
 #[test]
 #[cfg_attr(
     debug_assertions,
@@ -66,12 +79,11 @@ fn thin_extern_reference_niche() {
     // an accidental Sized bound on the pointer-backed reference Niche impls.
     static_assertions::assert_impl_all!(&CStr: Niche<CType = CRef<CStr>>);
 
-    assert_eq!(encode(None::<&Extern>).payload(), CRef::null());
-    assert_eq!(
-        soft_encode(None::<&mut Extern>, &mut None).payload(),
-        unsafe { CRefMut::from_raw(std::ptr::null_mut()) }
-    );
-    assert_eq!(encode(None::<&CStr>).payload(), CRef::null());
+    assert!(<&Extern>::is_niche(&encode(None::<&Extern>).payload()));
+    assert!(<&mut Extern>::is_niche(
+        &soft_encode(None::<&mut Extern>, &mut None).payload()
+    ));
+    assert!(<&CStr>::is_niche(&encode(None::<&CStr>).payload()));
 }
 
 #[derive(Clone, Copy, RustSpec, ReprC)]
@@ -421,8 +433,8 @@ pub enum FieldlessLargeEnum {
 
 #[test]
 fn verify_enum_niche_value() {
-    assert_eq!(bool::NICHE, encode(None::<bool>).payload());
-    assert_eq!(Ordering::NICHE, encode(None::<Ordering>).payload());
+    assert!(bool::is_niche(&encode(None::<bool>).payload()));
+    assert!(Ordering::is_niche(&encode(None::<Ordering>).payload()));
 
     assert_eq!(encode(None::<Opaque>), COption::None());
     assert!(encode(None::<OwnedExtern>).payload().0.is_null());
@@ -454,7 +466,8 @@ fn verify_enum_niche_value() {
 
     let encoded = soft_encode(None::<ReprCDataEnum<&u8>>, &mut Default::default()).payload();
     assert_eq!(expected_niche_enum_discriminant_i, encoded.tag);
-    assert!(encoded == <ReprCDataEnum<&u8> as Niche>::NICHE);
+    assert!(<ReprCDataEnum<&u8> as Niche>::is_niche(&encoded));
+    assert!(encoded != encoded);
 
     let encoded = soft_encode(None::<DataEnum<&u8>>, &mut Default::default()).payload();
     assert_eq!(expected_niche_enum_discriminant_i, unsafe { encoded.D.tag });

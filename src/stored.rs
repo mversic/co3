@@ -926,8 +926,7 @@ disjoint_impls! {
             crate::option::Option::from(self).soft_encode(store)
         }
     }
-    // NOTE: PartialEq is only required for decoding, Here it is only used by `debug_assert!`
-    unsafe impl<R: EncodeMove + Niche<CType: PartialEq>, N: LayoutKind> EncodeMove
+    unsafe impl<R: EncodeMove + Niche, N: LayoutKind> EncodeMove
         for Option<R>
     where
         R: RustSpec<Niche = WithNiche<N>>,
@@ -941,7 +940,7 @@ disjoint_impls! {
         {
             if let Some(value) = self {
                 let encoded = value.soft_encode(store.insert(Default::default()));
-                debug_assert!(encoded != R::NICHE, "encoding produced NICHE value");
+                debug_assert!(!R::is_niche(&encoded), "encoding produced NICHE value");
                 return COptionSome::from_carrier(encoded);
             }
 
@@ -1583,7 +1582,7 @@ disjoint_impls! {
             unsafe { <crate::option::Option<R> as DecodeMove<'d>>::soft_decode_unchecked(source, store) }.into()
         }
     }
-    unsafe impl<'d, R: DecodeMove<'d> + Niche<CType: PartialEq>, N: LayoutKind>
+    unsafe impl<'d, R: DecodeMove<'d> + Niche, N: LayoutKind>
         DecodeMove<'d> for Option<R>
     where
         R: RustSpec<Niche = WithNiche<N>>,
@@ -1642,7 +1641,7 @@ disjoint_impls! {
             unsafe { <crate::result::Result<R, E> as DecodeMove<'d>>::soft_decode_unchecked(source, store) }.into()
         }
     }
-    unsafe impl<'d, R: DecodeMove<'d> + Niche<CType: PartialEq>, E: Default + ReprC, N: LayoutKind>
+    unsafe impl<'d, R: DecodeMove<'d> + Niche, E: Default + ReprC, N: LayoutKind>
         DecodeMove<'d> for Result<R, E>
     where
         Self: ReprC<CType = CResultOk<R, E>>,
@@ -1672,7 +1671,7 @@ disjoint_impls! {
             Ok(unsafe { R::soft_decode_unchecked(source, store) })
         }
     }
-    unsafe impl<'d, R: Default + ReprC, E: DecodeMove<'d> + Niche<CType: PartialEq>, N: LayoutKind>
+    unsafe impl<'d, R: Default + ReprC, E: DecodeMove<'d> + Niche, N: LayoutKind>
         DecodeMove<'d> for Result<R, E>
     where
         Self: ReprC<CType = CResultErr<R, E>>,

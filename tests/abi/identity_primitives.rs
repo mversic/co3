@@ -116,7 +116,8 @@ fn c_alias_enum_field_round_trips() {
 fn c_alias_field_preserves_inferred_niche() {
     let niche = <AliasWithNiche as co3::niche::Niche>::NICHE;
     let _: c_int = niche.0;
-    assert_eq!(niche.1, <Option<bool> as co3::niche::Niche>::NICHE);
+    assert!(<Option<bool> as co3::niche::Niche>::is_niche(&niche.1));
+    assert!(<AliasWithNiche as co3::niche::Niche>::is_niche(&niche));
 }
 
 #[test]
@@ -187,7 +188,7 @@ fn safe_carrier_constructors_accept_lowered_storage() {
 
     let value = 8_u8;
     assert_eq!(CRef::from_ref(&value), co3::encode(&value));
-    assert_eq!(CRef::<u8>::null(), co3::encode(None::<&u8>).payload());
+    assert!(co3::encode(None::<&u8>).payload().as_ptr().is_null());
 
     let raw = Box::into_raw(Box::new(10_u8));
     let boxed = unsafe { CBox::from_non_null(core::ptr::NonNull::new(raw).unwrap()) };
@@ -198,24 +199,17 @@ fn safe_carrier_constructors_accept_lowered_storage() {
         &*unsafe { co3::decode::<Box<[u8]>>(boxed_slice) }.unwrap(),
         &[4, 5]
     );
-    assert_eq!(CBox::<u8>::null(), co3::encode(None::<Box<u8>>).payload());
-    assert_eq!(
-        CWideBox::<[u8]>::null(),
-        co3::encode(None::<Box<[u8]>>).payload()
-    );
-    assert_eq!(
-        CWideRef::<[u8]>::null(),
-        co3::encode(None::<&[u8]>).payload()
-    );
-    assert_eq!(
-        CRefMut::<_, true>::null(),
-        co3::soft_encode(None::<&mut u8>, &mut Default::default()).payload()
+    assert!(co3::encode(None::<Box<u8>>).payload().as_ptr().is_null());
+    assert!(co3::encode(None::<Box<[u8]>>).payload().as_ptr().is_null());
+    assert!(co3::encode(None::<&[u8]>).payload().as_ptr().is_null());
+    assert!(
+        co3::soft_encode(None::<&mut u8>, &mut Default::default())
+            .payload()
+            .as_ptr()
+            .is_null()
     );
     let _: CWideRefMut<[u8], true> = CWideRefMut::null();
-    assert_eq!(
-        co3::utf8::Utf8String::null(),
-        co3::encode(None::<String>).payload()
-    );
+    assert!(co3::encode(None::<String>).payload().as_ptr().is_null());
 
     let bytes: Box<[u8]> = Box::from("hello".as_bytes());
     let utf8 = co3::utf8::Utf8String(co3::vec::CVec::from_vec(bytes.into_vec()));

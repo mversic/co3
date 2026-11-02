@@ -487,7 +487,7 @@ fn array_decoders_validate_elements_and_write_back() {
         .is_none()
     );
     assert_eq!(mutable.sync(), None);
-    assert_eq!(carrier[0].1, CBool(2));
+    assert_eq!(carrier[0].1.0, 2);
 }
 
 #[test]

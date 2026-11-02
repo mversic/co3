@@ -3703,6 +3703,7 @@ fn gen_owned_extern_type_impls(
         }
         impl #impl_generics #co3::niche::Niche for #owned_ident #ty_generics #where_clause {
             const NICHE: Self::CType = #owned_repr_c_name(core::ptr::null_mut());
+            fn is_niche(value: &Self::CType) -> bool { value.0.is_null() }
         }
 
         unsafe impl #impl_generics #co3::stored::EncodeMove for #owned_ident #ty_generics #where_clause {

@@ -208,6 +208,10 @@ fn gen_item_niche_impls(
             &input.generics,
             quote!(#value),
             quote! {
+                let owner = unsafe { core::mem::transmute_copy(value) };
+                <#owner_ty as co3::niche::Niche>::is_niche(&owner)
+            },
+            quote! {
                 #owner_ty: co3::niche::Niche,
                 #speculative Self: co3::ReprC<CType: Copy>,
             },

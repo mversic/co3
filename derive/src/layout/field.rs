@@ -193,6 +193,12 @@ pub(super) fn derive_field_repr_c(
             quote! {
                 impl #impl_generics co3::niche::Niche for #name #ty_generics #where_clause {
                     const NICHE: Self::CType = #value;
+
+                    fn is_niche(value: &Self::CType) -> bool {
+                        let niche = Self::NICHE;
+                        debug_assert!(niche == Self::NICHE, "custom niche must compare equal to itself");
+                        *value == niche
+                    }
                 }
             }
         } else {
@@ -205,6 +211,10 @@ pub(super) fn derive_field_repr_c(
             quote! {
                 impl #impl_generics co3::niche::Niche for #name #ty_generics #where_clause {
                     const NICHE: Self::CType = <#field_ty as co3::niche::Niche>::NICHE;
+
+                    fn is_niche(value: &Self::CType) -> bool {
+                        <#field_ty as co3::niche::Niche>::is_niche(value)
+                    }
                 }
             }
         };

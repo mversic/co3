@@ -155,9 +155,7 @@ fn nonzero_carrier_preserves_integer_abi_and_niche() {
         unsafe { co3::decode::<NonZeroU8>(core::mem::zeroed()) },
         None
     );
-    assert_eq!(co3::encode(None::<NonZeroU8>).payload(), unsafe {
-        core::mem::zeroed()
-    });
+    assert_eq!(co3::encode(None::<NonZeroU8>).payload().0, 0);
 }
 
 #[test]

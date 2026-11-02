@@ -85,12 +85,15 @@ macro_rules! non_zero_derive {
                 target.0 != 0
             }
         }
-unsafe impl AbiCompatible for NonZero<$primitive> {}
+        unsafe impl AbiCompatible for NonZero<$primitive> {}
 
         impl Niche for NonZero<$primitive> {
             const NICHE: Self::CType = crate::NonZero(0);
-        }
-        )+
+
+            fn is_niche(value: &Self::CType) -> bool {
+                value.0 == 0
+            }
+        })+
     }
 }
 
@@ -589,7 +592,7 @@ mod tests {
         let decoded = unsafe { crate::decode::<MaybeUninit<bool>>(source) }.unwrap();
         let encoded = crate::encode(decoded);
 
-        assert_eq!(unsafe { encoded.assume_init() }, bool::NICHE);
+        assert!(bool::is_niche(&unsafe { encoded.assume_init() }));
     }
 
     #[test]

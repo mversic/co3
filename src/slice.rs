@@ -208,21 +208,19 @@ macro_rules! impl_wide_raw_methods {
             }
         }
 
-        impl<$($params)*> Eq for $ty<$($args)*> {}
         impl<$($params)*> PartialEq for $ty<$($args)*> {
             fn eq(&self, other: &Self) -> bool {
-                self.data == other.data && self.metadata == other.metadata
+                !self.data.is_null() && self.data == other.data && self.metadata == other.metadata
             }
         }
 
-        impl<$($params)*> Ord for $ty<$($args)*> {
-            fn cmp(&self, other: &Self) -> core::cmp::Ordering {
-                self.data.cmp(&other.data).then_with(|| self.metadata.cmp(&other.metadata))
-            }
-        }
         impl<$($params)*> PartialOrd for $ty<$($args)*> {
             fn partial_cmp(&self, other: &Self) -> Option<core::cmp::Ordering> {
-                Some(self.cmp(other))
+                if self.data.is_null() || other.data.is_null() {
+                    None
+                } else {
+                    Some(self.data.cmp(&other.data).then_with(|| self.metadata.cmp(&other.metadata)))
+                }
             }
         }
 

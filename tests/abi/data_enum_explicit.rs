@@ -9,12 +9,16 @@ fn tagged_carrier_constructors_preserve_active_payloads() {
     assert_eq!(COption::<u32>::new(Some(7)).into_option(), Some(Some(7)));
     assert_eq!(COption::<u32>::new(None).into_option(), Some(None));
     let option = unsafe { COption::<u32>::from_raw_parts(2, MaybeUninit::uninit()) };
+    assert!(option != option);
+    assert_eq!(option.partial_cmp(&option), None);
     assert_eq!(option.into_option(), None);
     let option = unsafe { COption::<u32>::from_raw_parts(1, MaybeUninit::new(9)) };
     assert_eq!(option.into_option(), Some(Some(9)));
     assert_eq!(CResult::<u32, u16>::new(Ok(7)).into_result(), Some(Ok(7)));
     assert_eq!(CResult::<u32, u16>::new(Err(4)).into_result(), Some(Err(4)));
     let result = unsafe { CResult::<u32, u16>::from_raw_parts(2, Ok(MaybeUninit::uninit())) };
+    assert!(result != result);
+    assert_eq!(result.partial_cmp(&result), None);
     assert_eq!(result.into_result(), None);
     let result = unsafe { CResult::<u32, u16>::from_raw_parts(1, Err(MaybeUninit::new(5))) };
     assert_eq!(result.into_result(), Some(Err(5)));
@@ -79,6 +83,8 @@ fn explicit_tags_drive_encoding_decoding_and_niches() {
     static_assertions::assert_not_impl_any!(CSparseFieldless: Eq, Ord);
     assert!(<SparseFieldless as Niche>::NICHE.is_niche());
     assert!(CONST_FIELDLESS_NICHE.is_niche());
+    assert!(CONST_FIELDLESS_NICHE != CONST_FIELDLESS_NICHE);
+    assert!(CSparseFieldless::from_u8(3) != CSparseFieldless::from_u8(3));
     assert_eq!(
         CONST_FIELDLESS_NICHE.tag(),
         <SparseFieldless as Niche>::NICHE.tag()
@@ -102,7 +108,7 @@ fn explicit_tags_drive_encoding_decoding_and_niches() {
     assert!(raw == a);
     let raw_niche = unsafe { CSparseInt::from_raw_parts(0, core::mem::MaybeUninit::uninit()) };
     assert!(raw_niche.is_niche());
-    assert!(raw_niche == <SparseInt as Niche>::NICHE);
+    assert!(raw_niche != <SparseInt as Niche>::NICHE);
     let borrowed: CSparseInt = co3::borrow::Borrow::borrow(a);
     assert!(<CSparseInt as co3::borrow::Borrow>::from_borrow(borrowed) == a);
     let b = encode(SparseInt::B);
@@ -115,7 +121,7 @@ fn explicit_tags_drive_encoding_decoding_and_niches() {
     assert!(CSparseInt::A(42) < CSparseInt::B());
     assert_eq!(format!("{:?}", CSparseInt::A(42)), "CSparseInt::A(42)");
     let niche = <SparseInt as Niche>::NICHE;
-    assert_eq!(niche.partial_cmp(&niche), Some(core::cmp::Ordering::Equal));
+    assert_eq!(niche.partial_cmp(&niche), None);
     assert_eq!(niche.partial_cmp(&a), None);
     assert_eq!(format!("{:?}", niche), "CSparseInt::<invalid> { tag: 0 }");
     assert_eq!(
@@ -156,7 +162,7 @@ fn explicit_tags_drive_encoding_decoding_and_niches() {
     assert!(uninitialized.is_niche());
     let other_invalid = unsafe { CSparseC::from_raw_parts(3, core::mem::MaybeUninit::uninit()) };
     assert!(!other_invalid.is_niche());
-    assert!(uninitialized == <SparseC as Niche>::NICHE);
+    assert!(uninitialized != <SparseC as Niche>::NICHE);
     assert_eq!(
         unsafe { soft_decode::<SparseC>(uninitialized, &mut None) },
         None

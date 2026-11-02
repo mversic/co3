@@ -41,7 +41,7 @@ macro_rules! c_alias_carrier {
         }
 
         impl core::fmt::Display for $name {
-            fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> Result {
+            fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
                 core::fmt::Display::fmt(&self.0, f)
             }
         }
@@ -147,25 +147,25 @@ macro_rules! c_integer_conversions {
         }
 
         impl core::fmt::Binary for $name {
-            fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> Result {
+            fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
                 core::fmt::Binary::fmt(&self.0, f)
             }
         }
 
         impl core::fmt::Octal for $name {
-            fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> Result {
+            fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
                 core::fmt::Octal::fmt(&self.0, f)
             }
         }
 
         impl core::fmt::LowerHex for $name {
-            fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> Result {
+            fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
                 core::fmt::LowerHex::fmt(&self.0, f)
             }
         }
 
         impl core::fmt::UpperHex for $name {
-            fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> Result {
+            fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
                 core::fmt::UpperHex::fmt(&self.0, f)
             }
         }
@@ -406,25 +406,25 @@ c_signed_ops! { c_float }
 c_signed_ops! { c_double }
 
 impl core::fmt::LowerExp for c_float {
-    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> Result {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
         core::fmt::LowerExp::fmt(&self.0, f)
     }
 }
 
 impl core::fmt::UpperExp for c_float {
-    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> Result {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
         core::fmt::UpperExp::fmt(&self.0, f)
     }
 }
 
 impl core::fmt::LowerExp for c_double {
-    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> Result {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
         core::fmt::LowerExp::fmt(&self.0, f)
     }
 }
 
 impl core::fmt::UpperExp for c_double {
-    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> Result {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
         core::fmt::UpperExp::fmt(&self.0, f)
     }
 }
@@ -580,6 +580,10 @@ impl Decode<'_> for CString {}
 #[cfg(feature = "alloc")]
 impl Niche for CString {
     const NICHE: Self::CType = CBox::null();
+
+    fn is_niche(value: &Self::CType) -> bool {
+        value.as_ptr().is_null()
+    }
 }
 
 unsafe impl Borrow for c_void {

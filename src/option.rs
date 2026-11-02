@@ -58,9 +58,9 @@ impl<R: ReprC<CType: Sized>> COptionSome<R> {
     /// Return whether the carrier contains the source type's niche value.
     pub(crate) fn is_niche(&self) -> bool
     where
-        R: Niche<CType: PartialEq>,
+        R: Niche,
     {
-        self.0 == R::NICHE
+        R::is_niche(&self.0)
     }
 }
 
@@ -343,7 +343,6 @@ impl<T: ReprC<CType: PartialEq + Sized>> PartialEq for COption<T> {
 
                 self_payload == other_payload
             }
-            (left, right) if left >= 2 && right >= 2 => left == right,
             _ => false,
         }
     }

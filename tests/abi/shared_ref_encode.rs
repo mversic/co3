@@ -381,9 +381,7 @@ fn tagged_wrappers_delegate_and_clear_inactive_stores() {
 
     let _ = co3::soft_encode(&Ok::<_, ()>(core::num::NonZeroU8::new(1).unwrap()), &mut ());
     let encoded = co3::soft_encode(&Err::<core::num::NonZeroU8, _>(()), &mut ());
-    assert_eq!(unsafe { *encoded.as_ptr() }.payload(), unsafe {
-        core::mem::zeroed()
-    });
+    assert_eq!(unsafe { *encoded.as_ptr() }.payload().0, 0);
     assert_eq!(().sync(), Some(()));
 }
 

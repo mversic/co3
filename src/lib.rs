@@ -704,13 +704,35 @@ unsafe impl<T: Sized> Zeroable for *mut T {}
 /// Transparent C carrier for an integer that is nonzero in its Rust source type.
 ///
 /// The carrier accepts zero so it can also represent a surrounding enum's niche.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, RustSpec)]
+/// Comparisons require the inner zero value to compare equal to itself; otherwise
+/// equality returns false and ordering returns `None`.
+#[derive(Debug, Clone, Copy, Hash, RustSpec)]
 #[repr(transparent)]
 pub struct NonZero<C>(pub C);
 
+impl<C: Zeroable + PartialEq> PartialEq for NonZero<C> {
+    fn eq(&self, other: &Self) -> bool {
+        let zero = unsafe { core::mem::zeroed() };
+        PartialEq::eq(&zero, &zero) && self.0 != zero && self.0 == other.0
+    }
+}
+
+impl<C: Zeroable + PartialOrd> PartialOrd for NonZero<C> {
+    fn partial_cmp(&self, other: &Self) -> Option<core::cmp::Ordering> {
+        let zero = unsafe { core::mem::zeroed() };
+        if !PartialEq::eq(&zero, &zero) || self.0 == zero || other.0 == zero {
+            None
+        } else {
+            self.0.partial_cmp(&other.0)
+        }
+    }
+}
+
 impl<C: Zeroable + PartialEq> NonZero<C> {
+    /// Returns `None` for zero or when zero does not compare equal to itself.
     pub fn new(value: C) -> Option<Self> {
-        if value == unsafe { core::mem::zeroed() } {
+        let zero = unsafe { core::mem::zeroed() };
+        if !PartialEq::eq(&zero, &zero) || value == zero {
             return None;
         }
 
@@ -1099,12 +1121,12 @@ mod tests {
         static_assertions::assert_type_eq_all!(<Wrapped as ReprC>::CType, Carrier);
 
         let value = NonZero(NonZeroU8::new(7).unwrap());
-        assert_eq!(encode(value), NonZero(NonZero(7)));
+        assert_eq!(encode(value).0.0, 7);
         assert_eq!(
-            unsafe { decode::<Wrapped>(NonZero(NonZero(7))) },
-            Some(value)
+            unsafe { decode::<Wrapped>(NonZero(NonZero(7))) }.map(|wrapped| wrapped.0.get()),
+            Some(value.0.get())
         );
-        assert_eq!(unsafe { decode::<Wrapped>(core::mem::zeroed()) }, None);
+        assert!(unsafe { decode::<Wrapped>(core::mem::zeroed()) }.is_none());
     }
 
     #[test]
@@ -1129,7 +1151,9 @@ mod tests {
             unsafe { decode::<TaggedOption<NonZeroU8>>(tagged) },
             Some(TaggedOption::Some(value))
         );
-        assert_eq!(encode(None::<NonZeroU8>).into_carrier(), NonZero(0_u8));
+        assert!(<NonZeroU8 as crate::niche::Niche>::is_niche(
+            &encode(None::<NonZeroU8>).into_carrier()
+        ));
 
         let native: result::CResultOk<NonZeroU8, ()> = encode(Result::<NonZeroU8, ()>::Err(()));
         assert_eq!(
@@ -1141,7 +1165,9 @@ mod tests {
             NonZero(7)
         );
         let tagged: CResult<NonZeroU8, ()> = encode(TaggedResult::<NonZeroU8, ()>::Err(()));
-        assert_eq!(native.into_carrier(), NonZero(0));
+        assert!(<NonZeroU8 as crate::niche::Niche>::is_niche(
+            &native.into_carrier()
+        ));
         assert_eq!(
             unsafe { decode::<TaggedResult<NonZeroU8, ()>>(tagged) },
             Some(TaggedResult::Err(()))
