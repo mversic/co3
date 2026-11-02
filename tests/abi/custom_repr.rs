@@ -235,9 +235,7 @@ fn field_representation_maps_owned_conversion_and_transmutation() {
 #[test]
 fn field_representation_preserves_inner_niche() {
     assert_impl_all!(NonZeroField: co3::niche::Niche<CType = co3::NonZero<u8>>);
-    assert_eq!(<NonZeroField as co3::niche::Niche>::NICHE, unsafe {
-        core::mem::zeroed()
-    });
+    assert_eq!(<NonZeroField as co3::niche::Niche>::NICHE.0, 0);
     assert!(matches!(
         unsafe { co3::decode::<Option<NonZeroField>>(core::mem::zeroed()) },
         Some(None)

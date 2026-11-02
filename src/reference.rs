@@ -185,19 +185,19 @@ macro_rules! impl_thin_pointer_traits {
             fn clone(&self) -> Self { *self }
         }
 
-        impl<$($params)*> Eq for $ty<$($args)*> {}
         impl<$($params)*> PartialEq for $ty<$($args)*> {
-            fn eq(&self, other: &Self) -> bool { core::ptr::eq(self.data, other.data) }
-        }
-        impl<$($params)*> Ord for $ty<$($args)*> {
-            fn cmp(&self, other: &Self) -> core::cmp::Ordering {
-                #[allow(ambiguous_wide_pointer_comparisons)]
-                self.data.cmp(&other.data)
+            fn eq(&self, other: &Self) -> bool {
+                !self.data.is_null() && core::ptr::eq(self.data, other.data)
             }
         }
         impl<$($params)*> PartialOrd for $ty<$($args)*> {
             fn partial_cmp(&self, other: &Self) -> Option<core::cmp::Ordering> {
-                Some(self.cmp(other))
+                if self.data.is_null() || other.data.is_null() {
+                    None
+                } else {
+                    #[allow(ambiguous_wide_pointer_comparisons)]
+                    self.data.partial_cmp(&other.data)
+                }
             }
         }
     };
@@ -208,7 +208,7 @@ macro_rules! impl_reference_carrier {
         impl_thin_pointer_traits! { $ty, [$($params)*], [$($args)*] }
 
         impl<$($params)*> core::fmt::Debug for $ty<$($args)*> {
-            fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> Result {
+            fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
                 f.debug_tuple(stringify!($ty)).field(&self.data).finish()
             }
         }

@@ -953,8 +953,7 @@ disjoint_impls! {
             })
         }
     }
-    // NOTE: PartialEq is only required for decoding, Here it is only used by `debug_assert!`
-    unsafe impl<'a, R: Niche<CType: Copy + PartialEq>, N: LayoutKind, __Interior: ExclusiveKind>
+    unsafe impl<'a, R: Niche<CType: Copy>, N: LayoutKind, __Interior: ExclusiveKind>
         EncodeRef<'a> for Option<R>
     where
         R: RustSpec<Niche = WithNiche<N>>,
@@ -973,7 +972,7 @@ disjoint_impls! {
                 if let Some(value) = self {
                     let encoded =
                         encode_ref_field(value, store.insert(Default::default()));
-                    debug_assert!(encoded != R::NICHE, "encoding produced NICHE value");
+                    debug_assert!(!R::is_niche(&encoded), "encoding produced NICHE value");
                     COptionSome::from_carrier(encoded)
                 } else {
                     *store = None;

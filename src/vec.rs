@@ -121,7 +121,7 @@ impl<T: Clone> Clone for Vec<T> {
     }
 }
 impl<T: core::fmt::Debug> core::fmt::Debug for Vec<T> {
-    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> Result {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
         core::fmt::Debug::fmt(&**self, f)
     }
 }
@@ -367,6 +367,10 @@ impl<T> crate::EncodeUnchecked for Vec<T> where Self: EncodeMoveUnchecked {}
 impl<'d, T> Decode<'d> for Vec<T> where Self: DecodeMove<'d> {}
 impl<T: ReprC<CType: CType + Sized>> crate::niche::Niche for Vec<T> {
     const NICHE: Self::CType = CVec::null();
+
+    fn is_niche(value: &Self::CType) -> bool {
+        value.as_ptr().is_null()
+    }
 }
 unsafe impl<T: AbiCompatibleValidate<CType: CType + Sized>> AbiCompatibleValidate for Vec<T>
 where
@@ -386,7 +390,7 @@ unsafe impl<T: AbiCompatible<CType: CType + Sized>> AbiCompatible for Vec<T> whe
 {
 }
 impl<T: ReprC<CType: Sized>> core::fmt::Debug for CVec<T> {
-    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> Result {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
         f.debug_struct("CVec")
             .field("data", &self.data)
             .field("len", &self.len)
@@ -395,23 +399,26 @@ impl<T: ReprC<CType: Sized>> core::fmt::Debug for CVec<T> {
     }
 }
 
-impl<T: ReprC<CType: Sized>> Eq for CVec<T> {}
 impl<T: ReprC<CType: Sized>> PartialEq for CVec<T> {
     fn eq(&self, other: &Self) -> bool {
-        self.data == other.data && self.len == other.len && self.capacity == other.capacity
+        !self.data.is_null()
+            && self.data == other.data
+            && self.len == other.len
+            && self.capacity == other.capacity
     }
 }
 
-impl<T: ReprC<CType: Sized>> Ord for CVec<T> {
-    fn cmp(&self, other: &Self) -> core::cmp::Ordering {
-        self.data
-            .cmp(&other.data)
-            .then_with(|| self.len.cmp(&other.len))
-            .then_with(|| self.capacity.cmp(&other.capacity))
-    }
-}
 impl<T: ReprC<CType: Sized>> PartialOrd for CVec<T> {
     fn partial_cmp(&self, other: &Self) -> Option<core::cmp::Ordering> {
-        Some(self.cmp(other))
+        if self.data.is_null() || other.data.is_null() {
+            None
+        } else {
+            Some(
+                self.data
+                    .cmp(&other.data)
+                    .then_with(|| self.len.cmp(&other.len))
+                    .then_with(|| self.capacity.cmp(&other.capacity)),
+            )
+        }
     }
 }

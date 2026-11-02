@@ -1,5 +1,5 @@
 //! C-compatible representations of comparison types.
-use core::cmp::{Ordering as RustOrdering, Reverse};
+use core::cmp::{Ordering, Reverse};
 
 use rust_spec::RustSpec;
 
@@ -19,7 +19,7 @@ use crate::{
 /// C-compatible carrier for [`core::cmp::Ordering`].
 ///
 /// Every byte value is valid for this carrier; conversion to `Ordering` accepts only -1, 0, and 1.
-#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, RustSpec)]
+#[derive(Debug, Clone, Copy, Default, RustSpec)]
 #[repr(transparent)]
 pub struct COrdering(pub i8);
 
@@ -31,14 +31,20 @@ impl COrdering {
     pub const GREATER: Self = Self(1);
 }
 
-impl From<RustOrdering> for COrdering {
+impl PartialEq for COrdering {
+    fn eq(&self, other: &Self) -> bool {
+        matches!(self.0, -1..=1) && self.0 == other.0
+    }
+}
+
+impl From<Ordering> for COrdering {
     #[inline(always)]
-    fn from(value: RustOrdering) -> Self {
+    fn from(value: Ordering) -> Self {
         Self(value as i8)
     }
 }
 
-impl TryFrom<COrdering> for RustOrdering {
+impl TryFrom<COrdering> for Ordering {
     type Error = COrdering;
 
     #[inline(always)]
@@ -54,11 +60,11 @@ impl TryFrom<COrdering> for RustOrdering {
 
 primitive_derive! { COrdering }
 fieldless_enum_derive! {
-    RustOrdering => COrdering: {COrdering(-2)}:
-    |i: &COrdering| RustOrdering::try_from(*i).is_ok();
-    |source: COrdering| RustOrdering::try_from(source).ok();
-    |source: RustOrdering| COrdering::from(source);
-    |source: COrdering| unsafe { RustOrdering::try_from(source).unwrap_unchecked() }
+    Ordering => COrdering: {COrdering(-2)}:
+    |i: &COrdering| Ordering::try_from(*i).is_ok();
+    |source: COrdering| Ordering::try_from(source).ok();
+    |source: Ordering| COrdering::from(source);
+    |source: COrdering| unsafe { Ordering::try_from(source).unwrap_unchecked() }
 }
 
 impl<T: ReprC<CType: Sized>> ReprC for Reverse<T> {
@@ -79,6 +85,10 @@ unsafe impl<T: Borrow> Borrow for Reverse<T> {
 
 impl<T: Niche<CType: Sized>> Niche for Reverse<T> {
     const NICHE: Self::CType = Reverse(T::NICHE);
+
+    fn is_niche(value: &Self::CType) -> bool {
+        T::is_niche(&value.0)
+    }
 }
 
 unsafe impl<T: EncodeMoveUnchecked<CType: Sized>> EncodeMoveUnchecked for Reverse<T> {
@@ -271,27 +281,23 @@ mod tests {
 
     #[test]
     fn ordering_conversions_validate_the_carrier() {
-        for value in [
-            RustOrdering::Less,
-            RustOrdering::Equal,
-            RustOrdering::Greater,
-        ] {
+        for value in [Ordering::Less, Ordering::Equal, Ordering::Greater] {
             let carrier = COrdering::from(value);
-            assert_eq!(RustOrdering::try_from(carrier), Ok(value));
+            assert_eq!(Ordering::try_from(carrier), Ok(value));
             assert_eq!(encode(value), carrier);
-            assert_eq!(unsafe { decode::<RustOrdering>(carrier) }, Some(value));
+            assert_eq!(unsafe { decode::<Ordering>(carrier) }, Some(value));
         }
         for raw in i8::MIN..=i8::MAX {
             let carrier = COrdering(raw);
+            assert_eq!(carrier == carrier, (-1..=1).contains(&raw));
+            assert_eq!(Ordering::try_from(carrier).is_ok(), (-1..=1).contains(&raw));
             assert_eq!(
-                RustOrdering::try_from(carrier).is_ok(),
-                (-1..=1).contains(&raw)
-            );
-            assert_eq!(
-                unsafe { decode::<RustOrdering>(carrier) }.is_some(),
+                unsafe { decode::<Ordering>(carrier) }.is_some(),
                 (-1..=1).contains(&raw)
             );
         }
+        assert_ne!(COrdering::LESS, COrdering::EQUAL);
+        assert_ne!(COrdering::EQUAL, COrdering::GREATER);
     }
 
     #[test]
@@ -306,7 +312,7 @@ mod tests {
         );
         assert_eq!(unsafe { decode::<Reverse<bool>>(Reverse(CBool(2))) }, None);
         let none: COptionSome<Reverse<bool>> = encode(None::<Reverse<bool>>);
-        assert_eq!(none.into_carrier(), Reverse(<bool as Niche>::NICHE));
+        assert!(<Reverse<bool> as Niche>::is_niche(&none.into_carrier()));
     }
 
     #[cfg(feature = "alloc")]

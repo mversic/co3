@@ -91,14 +91,14 @@ disjoint_impls! {
             <R as ReprC>::CType: Sized,
         {}
 
-    unsafe impl<R: AbiCompatible<CType: Copy + PartialEq> + Niche, E: ReprC> AbiCompatible for Result<R, E>
+    unsafe impl<R: AbiCompatible<CType: Copy> + Niche, E: ReprC> AbiCompatible for Result<R, E>
         where
             Self: RustSpec<Layout = Stable> + ReprC,
             R: RustSpec<Size = RustSpecSized<Gt<Zero>>>,
             E: RustSpec<Size = RustSpecSized<Zero>>,
         {}
 
-    unsafe impl<R: ReprC, E: AbiCompatible<CType: Copy + PartialEq> + Niche> AbiCompatible for Result<R, E>
+    unsafe impl<R: ReprC, E: AbiCompatible<CType: Copy> + Niche> AbiCompatible for Result<R, E>
         where
             Self: RustSpec<Layout = Stable> + ReprC,
             R: RustSpec<Size = RustSpecSized<Zero>>,
@@ -226,7 +226,7 @@ disjoint_impls! {
     }
 
 
-    unsafe impl<R: AbiCompatibleValidate<CType: Copy + PartialEq> + Niche, E: ReprC>
+    unsafe impl<R: AbiCompatibleValidate<CType: Copy> + Niche, E: ReprC>
         AbiCompatibleValidate for Result<R, E>
     where
         Self: RustSpec<Layout = Stable> + ReprC<CType = CResultOk<R, E>>,
@@ -239,7 +239,7 @@ disjoint_impls! {
         }
     }
 
-    unsafe impl<R: ReprC, E: AbiCompatibleValidate<CType: Copy + PartialEq> + Niche>
+    unsafe impl<R: ReprC, E: AbiCompatibleValidate<CType: Copy> + Niche>
         AbiCompatibleValidate for Result<R, E>
     where
         Self: RustSpec<Layout = Stable> + ReprC<CType = CResultErr<R, E>>,
@@ -391,7 +391,7 @@ unsafe impl AbiCompatibleValidate for str {
 }
 unsafe impl AbiCompatible for str {}
 
-unsafe impl<R: AbiCompatibleValidate + Niche<CType: PartialEq>> AbiCompatibleValidate for Option<R>
+unsafe impl<R: AbiCompatibleValidate + Niche> AbiCompatibleValidate for Option<R>
 where
     Self: RustSpec<Layout = Stable> + ReprC<CType = COptionSome<R>>,
 {
@@ -400,7 +400,7 @@ where
         target.is_niche() || unsafe { R::is_valid(target.carrier()) }
     }
 }
-unsafe impl<R: AbiCompatible + Niche<CType: PartialEq>> AbiCompatible for Option<R> where
+unsafe impl<R: AbiCompatible + Niche> AbiCompatible for Option<R> where
     Self: RustSpec<Layout = Stable> + ReprC<CType = COptionSome<R>>
 {
 }

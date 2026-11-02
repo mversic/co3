@@ -85,7 +85,7 @@ unsafe impl Wide for Utf8Str {
 ///
 /// The carrier permits any byte values. Decoding as a `String` checks UTF-8.
 #[cfg(feature = "alloc")]
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, RustSpec)]
+#[derive(Debug, Clone, Copy, PartialEq, PartialOrd, RustSpec)]
 #[repr(transparent)]
 pub struct Utf8String(pub CVec<u8>);
 
@@ -192,4 +192,8 @@ impl Decode<'_> for String {}
 #[cfg(feature = "alloc")]
 impl Niche for String {
     const NICHE: Self::CType = Utf8String::null();
+
+    fn is_niche(value: &Self::CType) -> bool {
+        value.as_ptr().is_null()
+    }
 }

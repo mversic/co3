@@ -137,6 +137,10 @@ unsafe impl<T: AbiCompatible<CType: Sized>> AbiCompatible for Borrowed<T> {}
 
 impl<T: Niche> Niche for Borrowed<T> {
     const NICHE: Self::CType = Borrowed(T::NICHE);
+
+    fn is_niche(value: &Self::CType) -> bool {
+        T::is_niche(&value.0)
+    }
 }
 
 unsafe impl<R: ?Sized> Borrow for &mut R {
