@@ -338,7 +338,7 @@ fn gen_transparent_enum_constructor(
             pub const fn tag(&self) {}
 
             #[expect(non_snake_case)]
-            pub fn #variant_name(#(#arg_names: #arg_types),*) -> Self {
+            pub const fn #variant_name(#(#arg_names: #arg_types),*) -> Self {
                 #body
             }
         }
@@ -365,6 +365,7 @@ fn derive_data_enum_ctype(
     );
     let union_impls = gen_union_ctype_impls(&union_def, alignment);
     let partial_eq_impl = gen_tagged_union_partial_eq(&union_def, &tag_type, variants);
+    let inspection_impls = gen_tagged_union_inspection(&union_def, &tag_type, variants);
     let constructors = gen_enum_variant_constructors(
         &union_def.ident,
         &union_def.generics,
@@ -373,7 +374,88 @@ fn derive_data_enum_ctype(
         Some(&tag_type),
         None,
     );
-    quote! { #(#variant_structs)* #union_def #union_impls #partial_eq_impl #constructors }
+    quote! { #(#variant_structs)* #union_def #union_impls #partial_eq_impl #inspection_impls #constructors }
+}
+
+fn gen_tagged_union_inspection(
+    union: &syn::ItemUnion,
+    tag_type: &syn::Type,
+    variants: &syn::punctuated::Punctuated<syn::Variant, syn::Token![,]>,
+) -> TokenStream {
+    let name = &union.ident;
+    let (impl_generics, ty_generics, where_clause) = union.generics.split_for_impl();
+    let predicates = where_clause.as_ref().map(|clause| &clause.predicates);
+    let field_types = variants
+        .iter()
+        .flat_map(|v| v.fields.iter().map(|f| lowered_field_ty(&f.ty)))
+        .collect::<Vec<_>>();
+    let ord_bounds = field_types
+        .iter()
+        .map(|ty| quote!(for<'_dummy> #ty: core::cmp::PartialOrd));
+    let debug_bounds = field_types
+        .iter()
+        .map(|ty| quote!(for<'_dummy> #ty: core::fmt::Debug));
+    let tags = super::enum_variant_tag_exprs(variants, tag_type);
+    let arms = variants.iter().zip(&tags).map(|(variant, tag)| {
+        let v = &variant.ident;
+        let members = variant.fields.members().map(|member| match member {
+            syn::Member::Unnamed(mut index) => { index.index += 1; syn::Member::Unnamed(index) },
+            other => other,
+        }).collect::<Vec<_>>();
+        let comparisons = members.iter().map(|member| quote! {
+            match unsafe { self.#v.#member.assume_init_ref().partial_cmp(other.#v.#member.assume_init_ref()) } {
+                Some(core::cmp::Ordering::Equal) => {},
+                result => return result,
+            }
+        });
+        quote! { value if value == #tag => { #(#comparisons)* Some(core::cmp::Ordering::Equal) } }
+    });
+    let valid_tags = tags
+        .iter()
+        .map(|tag| quote!(tag == #tag))
+        .collect::<Vec<_>>();
+    let debug_arms = variants.iter().zip(&tags).map(|(variant, tag)| {
+        let v = &variant.ident;
+        let label = format!("{}::{}", name, v);
+        let members = variant.fields.members().map(|member| match member {
+            syn::Member::Unnamed(mut index) => { index.index += 1; syn::Member::Unnamed(index) },
+            other => other,
+        }).collect::<Vec<_>>();
+        let body = match &variant.fields {
+            syn::Fields::Named(fields) => {
+                let names = fields.named.iter().map(|field| field.ident.as_ref().unwrap().to_string()).collect::<Vec<_>>();
+                quote! { let mut debug = f.debug_struct(#label); #(debug.field(#names, unsafe { self.#v.#members.assume_init_ref() });)* debug.finish() }
+            },
+            syn::Fields::Unnamed(_) => quote! { let mut debug = f.debug_tuple(#label); #(debug.field(unsafe { self.#v.#members.assume_init_ref() });)* debug.finish() },
+            syn::Fields::Unit => quote!(f.write_str(#label)),
+        };
+        quote!(value if value == #tag => { #body })
+    });
+    quote! {
+        impl #impl_generics core::cmp::PartialOrd for #name #ty_generics
+        where #(#ord_bounds,)* #predicates
+        {
+            fn partial_cmp(&self, other: &Self) -> Option<core::cmp::Ordering> {
+                let left = self.tag();
+                let right = other.tag();
+                let is_valid = |tag: #tag_type| false #(|| #valid_tags)*;
+                if left != right {
+                    return if is_valid(left) && is_valid(right) { left.partial_cmp(&right) } else { None };
+                }
+                match left { #(#arms,)* _ => Some(core::cmp::Ordering::Equal) }
+            }
+        }
+        impl #impl_generics core::fmt::Debug for #name #ty_generics
+        where #(#debug_bounds,)* #predicates
+        {
+            fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+                match self.tag() {
+                    #(#debug_arms,)*
+                    tag => f.debug_struct(concat!(stringify!(#name), "::<invalid>")).field("tag", &tag).finish(),
+                }
+            }
+        }
+    }
 }
 
 fn gen_enum_variant_constructors(
@@ -394,11 +476,47 @@ fn gen_enum_variant_constructors(
     } else {
         quote! {
             /// Return the raw discriminant.
-            pub fn tag(&self) -> #tag_type {
+            pub const fn tag(&self) -> #tag_type {
                 unsafe { *core::ptr::from_ref(self).cast::<#tag_type>() }
             }
         }
     };
+    let raw_constructor = if let Some(payload_name) = payload_name {
+        quote! {
+            /// Construct a carrier from a raw tag and payload union.
+            ///
+            /// # Safety
+            /// When the tag selects a variant, its payload must be initialized.
+            pub const unsafe fn from_raw_parts(tag: #tag_type, payload: core::mem::MaybeUninit<#payload_name #ty_generics>) -> Self {
+                Self { tag, payload }
+            }
+        }
+    } else {
+        quote! {
+            /// Construct a carrier from a tag and raw union storage.
+            ///
+            /// # Safety
+            /// When the tag selects a variant, its payload fields must be initialized.
+            pub unsafe fn from_raw_parts(tag: #tag_type, mut payload: core::mem::MaybeUninit<Self>) -> Self {
+                unsafe {
+                    payload.as_mut_ptr().cast::<#tag_type>().write(tag);
+                    payload.assume_init()
+                }
+            }
+        }
+    };
+    let niche_constructor = (!super::is_exhaustive_enum(variants.len(), tag_type)).then(|| {
+        let speculative = speculative_marker(generics.params.is_empty());
+        quote! {
+            #[allow(dead_code)]
+            const fn niche() -> Self
+            where
+                #speculative #enum_name #ty_generics: co3::niche::Niche<CType = Self>,
+            {
+                <#enum_name #ty_generics as co3::niche::Niche>::NICHE
+            }
+        }
+    });
     let tag_values = super::enum_variant_tag_exprs(variants, tag_type);
     let methods = variants.iter().enumerate().map(|(index, variant)| {
         let variant_name = &variant.ident;
@@ -423,12 +541,22 @@ fn gen_enum_variant_constructors(
         } else {
             None
         };
+        let arg_values = args
+            .iter()
+            .map(|(name, _)| {
+                if tag_value.is_some() {
+                    quote!(core::mem::MaybeUninit::new(#name))
+                } else {
+                    quote!(#name)
+                }
+            })
+            .collect::<Vec<_>>();
         let body = match (&variant.fields, tag_value.as_ref()) {
             (syn::Fields::Named(_), Some(tag)) => {
-                quote!(#variant_struct_name { tag: #tag, #(#arg_names),* })
+                quote!(#variant_struct_name { tag: #tag, #(#arg_names: #arg_values),* })
             }
             (syn::Fields::Unnamed(_), Some(tag)) => {
-                quote!(#variant_struct_name(#tag, #(#arg_names),*))
+                quote!(#variant_struct_name(#tag, #(#arg_values),*))
             }
             (syn::Fields::Unit, Some(tag)) => quote!(#variant_struct_name { tag: #tag }),
             (syn::Fields::Named(_), None) => quote!(#variant_struct_name { #(#arg_names),* }),
@@ -439,7 +567,7 @@ fn gen_enum_variant_constructors(
             let tag_type = variant_tag.expect("tagged payload has a tag type");
             quote!(Self {
                 tag: #tag as #tag_type,
-                payload: #payload_name { #variant_name: #body },
+                payload: core::mem::MaybeUninit::new(#payload_name { #variant_name: #body }),
             })
         } else {
             quote!(Self { #variant_name: #body })
@@ -447,7 +575,7 @@ fn gen_enum_variant_constructors(
 
         quote! {
             #[expect(non_snake_case)]
-            pub fn #variant_name(#(#arg_names: #arg_types),*) -> Self {
+            pub const fn #variant_name(#(#arg_names: #arg_types),*) -> Self {
                 #result
             }
         }
@@ -456,6 +584,8 @@ fn gen_enum_variant_constructors(
     quote! {
         impl #impl_generics #ctype_name #ty_generics #where_clause {
             #tag_accessor
+            #raw_constructor
+            #niche_constructor
             #(#methods)*
         }
     }
@@ -469,29 +599,51 @@ fn gen_tagged_union_partial_eq(
     let name = &union.ident;
     let (impl_generics, ty_generics, where_clause) = union.generics.split_for_impl();
     let predicates = where_clause.as_ref().map(|clause| &clause.predicates);
-    let fields = union
-        .fields
-        .named
+    let field_types = variants
         .iter()
-        .map(|field| &field.ty)
+        .flat_map(|variant| {
+            variant
+                .fields
+                .iter()
+                .map(|field| lowered_field_ty(&field.ty))
+        })
         .collect::<Vec<_>>();
-    let bounds = gen_partial_eq_bounds(&fields);
-    let tag_values = super::enum_variant_tag_exprs(variants, tag_type);
-    let arms = variants.iter().enumerate().map(|(index, variant)| {
-        let tag = &tag_values[index];
-        let member = &variant.ident;
-        quote!(value if value == #tag => unsafe { self.#member == other.#member })
+    let bounds = field_types
+        .iter()
+        .map(|ty| quote!(for<'_dummy> #ty: core::cmp::PartialEq));
+    let tags = super::enum_variant_tag_exprs(variants, tag_type);
+    let arms = variants.iter().zip(tags).map(|(variant, tag)| {
+        let variant_member = &variant.ident;
+        let payload_members = variant
+            .fields
+            .members()
+            .map(|member| match member {
+                syn::Member::Unnamed(mut index) => {
+                    index.index += 1;
+                    syn::Member::Unnamed(index)
+                }
+                other => other,
+            })
+            .collect::<Vec<_>>();
+        let comparisons = payload_members.iter().map(|member| {
+            quote! {
+                unsafe {
+                    // Generated constructors initialize fields for active tags.
+                    self.#variant_member.#member.assume_init_ref()
+                        == other.#variant_member.#member.assume_init_ref()
+                }
+            }
+        });
+        quote!(value if value == #tag => true #(&& #comparisons)*)
     });
 
     quote! {
         impl #impl_generics core::cmp::PartialEq for #name #ty_generics
-        where
-            #(#bounds,)*
-            #predicates
+        where #(#bounds,)* #predicates
         {
             fn eq(&self, other: &Self) -> bool {
-                let self_tag = unsafe { *core::ptr::from_ref(self).cast::<#tag_type>() };
-                let other_tag = unsafe { *core::ptr::from_ref(other).cast::<#tag_type>() };
+                let self_tag = self.tag();
+                let other_tag = other.tag();
                 self_tag == other_tag && match self_tag {
                     #(#arms,)*
                     _ => true,
@@ -522,6 +674,7 @@ fn derive_ctype_struct(
         &ctype_def.generics,
         &ctype_def.fields,
         known_unsized_tail,
+        false,
     );
     let ctype_impls =
         gen_struct_ctype_impls::<true>(&ctype_def, generate_spec, alignment, known_unsized_tail);
@@ -543,6 +696,7 @@ pub(super) fn gen_fields_methods(
     generics: &syn::Generics,
     fields: &syn::Fields,
     known_unsized_tail: bool,
+    wrap_payload: bool,
 ) -> TokenStream {
     let (impl_generics, ty_generics, where_clause) = generics.split_for_impl();
     let args = fields
@@ -564,19 +718,49 @@ pub(super) fn gen_fields_methods(
         return quote! {};
     }
     let members = fields.members().collect::<Vec<_>>();
+    let values = arg_names
+        .iter()
+        .enumerate()
+        .map(|(index, name)| {
+            if wrap_payload && index > 0 {
+                quote!(core::mem::MaybeUninit::new(#name))
+            } else {
+                quote!(#name)
+            }
+        })
+        .collect::<Vec<_>>();
     let body = match fields {
-        syn::Fields::Named(_) => quote!(Self { #(#arg_names),* }),
-        syn::Fields::Unnamed(_) => quote!(Self(#(#arg_names),*)),
+        syn::Fields::Named(_) => quote!(Self { #(#arg_names: #values),* }),
+        syn::Fields::Unnamed(_) => quote!(Self(#(#values),*)),
         syn::Fields::Unit => quote!(Self),
     };
+    let read_fields = members
+        .iter()
+        .enumerate()
+        .map(|(index, member)| {
+            if wrap_payload && index > 0 {
+                quote!(unsafe { core::ptr::read(&this.#member).assume_init() })
+            } else {
+                quote!(unsafe { core::ptr::read(&this.#member) })
+            }
+        })
+        .collect::<Vec<_>>();
     let into_body = if fields.is_empty() {
         quote! { let _this = core::mem::ManuallyDrop::new(self); }
     } else {
         quote! {
             let this = core::mem::ManuallyDrop::new(self);
-            ( #(unsafe { core::ptr::read(&this.#members) },)* )
+            ( #(#read_fields,)* )
         }
     };
+    let into_fields_safety = wrap_payload.then(|| quote!(unsafe));
+    let into_fields_safety_doc = wrap_payload.then(|| {
+        quote! {
+            ///
+            /// # Safety
+            /// All payload fields must be initialized before this method is called.
+        }
+    });
 
     quote! {
         impl #impl_generics #name #ty_generics #where_clause {
@@ -595,7 +779,8 @@ pub(super) fn gen_fields_methods(
             }
 
             /// Consume this generated struct and return its fields in declaration order.
-            pub fn into_fields(self) -> (#(#arg_types,)*)
+            #into_fields_safety_doc
+            pub #into_fields_safety fn into_fields(self) -> (#(#arg_types,)*)
             where
                 #last_field_sized_bound
             {
@@ -718,7 +903,7 @@ fn derive_repr_c_data_enum_ctype(
             #predicates
         {
             tag: #tag_type,
-            payload: #payload_name #ty_generics,
+            payload: core::mem::MaybeUninit<#payload_name #ty_generics>,
         }
     };
 
@@ -727,6 +912,7 @@ fn derive_repr_c_data_enum_ctype(
         &ctype_def.ident,
         &ctype_def.generics,
         &ctype_def.fields,
+        false,
         false,
     );
     let partial_eq_impl =
@@ -774,7 +960,7 @@ fn gen_tagged_payload_partial_eq(
     let arms = variants.iter().enumerate().map(|(index, variant)| {
         let tag = &tag_values[index];
         let member = &variant.ident;
-        quote!(value if value == #tag => unsafe { self.payload.#member == other.payload.#member })
+        quote!(value if value == #tag => unsafe { self.payload.assume_init_ref().#member == other.payload.assume_init_ref().#member })
     });
 
     quote! {
@@ -919,9 +1105,26 @@ fn gen_variant_struct(
         .predicates
         .extend(gen_sized_extern_c_bounds_for_ctype(generics, &field_types));
 
-    let ctype = gen_ctype_struct_item(repr, None, vis, &name, &variant_generics, &fields);
-    let fields_methods = gen_fields_methods(&ctype.ident, &ctype.generics, &ctype.fields, false);
-    let ctype_impls = gen_struct_ctype_impls::<true>(&ctype, true, None, false);
+    let mut ctype = gen_ctype_struct_item(repr, None, vis, &name, &variant_generics, &fields);
+    let unwrapped = ctype.clone();
+    if tag_type.is_some() {
+        for field in ctype.fields.iter_mut().skip(1) {
+            let ty = &field.ty;
+            field.ty = parse_quote!(core::mem::MaybeUninit<#ty>);
+        }
+    }
+    let fields_methods = gen_fields_methods(
+        &unwrapped.ident,
+        &unwrapped.generics,
+        &unwrapped.fields,
+        false,
+        tag_type.is_some(),
+    );
+    let ctype_impls = if tag_type.is_some() {
+        gen_struct_ctype_impls::<false>(&ctype, true, None, false)
+    } else {
+        gen_struct_ctype_impls::<true>(&ctype, true, None, false)
+    };
     quote! { #ctype #fields_methods #ctype_impls }
 }
 

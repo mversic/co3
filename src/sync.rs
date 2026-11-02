@@ -773,13 +773,13 @@ mod owned_encode_state_tests {
 
 /// Owns converted vector elements while a shared carrier borrows their allocation.
 #[cfg(feature = "alloc")]
-pub struct RefVecEncodeStore<T, S> {
-    elements: Vec<T>,
+pub struct RefVecEncodeStore<T: ReprC<CType: Sized>, S> {
+    elements: Vec<T::CType>,
     fields: S,
 }
 
 #[cfg(feature = "alloc")]
-impl<T, S: Default> Default for RefVecEncodeStore<T, S> {
+impl<T: ReprC<CType: Sized>, S: Default> Default for RefVecEncodeStore<T, S> {
     fn default() -> Self {
         Self {
             elements: Vec::new(),
@@ -789,11 +789,11 @@ impl<T, S: Default> Default for RefVecEncodeStore<T, S> {
 }
 
 #[cfg(feature = "alloc")]
-impl<T: CType, S> RefVecEncodeStore<T, S> {
-    pub fn encode(&mut self, encode: impl FnOnce(&mut S) -> Vec<T>) -> crate::vec::CVec<T> {
+impl<T: ReprC<CType: CType + Sized>, S> RefVecEncodeStore<T, S> {
+    pub fn encode(&mut self, encode: impl FnOnce(&mut S) -> Vec<T::CType>) -> crate::vec::CVec<T> {
         self.elements = encode(&mut self.fields);
         unsafe {
-            crate::vec::CVec::from_raw_parts(
+            crate::vec::CVec::<T>::from_raw_parts(
                 self.elements.as_mut_ptr(),
                 self.elements.len(),
                 self.elements.capacity(),
@@ -803,7 +803,7 @@ impl<T: CType, S> RefVecEncodeStore<T, S> {
 }
 
 #[cfg(feature = "alloc")]
-impl<T, S: Store> Store for RefVecEncodeStore<T, S> {
+impl<T: ReprC<CType: Sized>, S: Store> Store for RefVecEncodeStore<T, S> {
     fn sync(self) -> Option<()> {
         self.fields.sync()
     }

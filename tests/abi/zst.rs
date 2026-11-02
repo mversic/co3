@@ -131,16 +131,16 @@ fn source_types_get_function_markers_only_when_nonzero() {
 
 #[test]
 fn niche_optimized_option_and_result_are_function_values() {
-    type Optional = Option<NonZero<u8>>;
+    type MaybeNonZero = Option<NonZero<u8>>;
     type Callback = Option<extern "C" fn()>;
     type Success = Result<NonZero<u8>, ()>;
     type Failure = Result<(), NonZero<u8>>;
 
-    assert_impl_all!(Optional: CType, CFnArg, CFnReturn, Borrow);
+    assert_impl_all!(MaybeNonZero: CType, CFnArg, CFnReturn, Borrow);
     assert_impl_all!(Callback: CType, CFnArg, CFnReturn, Borrow);
     assert_impl_all!(Success: CType, CFnArg, CFnReturn, Borrow);
     assert_impl_all!(Failure: CType, CFnArg, CFnReturn, Borrow);
-    assert_type_eq_all!(<Optional as Borrow>::Borrowed, Optional);
+    assert_type_eq_all!(<MaybeNonZero as Borrow>::Borrowed, MaybeNonZero);
     assert_type_eq_all!(<Success as Borrow>::Borrowed, Success);
     assert_type_eq_all!(<Failure as Borrow>::Borrowed, Failure);
 }

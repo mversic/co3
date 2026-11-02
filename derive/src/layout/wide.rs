@@ -187,7 +187,7 @@ fn gen_data_def(input: &syn::DeriveInput, fields: &syn::Fields) -> TokenStream {
         field.ty = data_field_ty(&field.ty, index == fields_len - 1);
         field.vis = syn::Visibility::Inherited;
     }
-    let fields_methods = gen_fields_methods(&name, &generics, &data_fields, false);
+    let fields_methods = gen_fields_methods(&name, &generics, &data_fields, false, false);
 
     let suffix =
         match fields {

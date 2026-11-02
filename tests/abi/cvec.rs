@@ -6,7 +6,7 @@ fn raw_vector_roundtrip_preserves_allocation_and_capacity() {
     value.extend([1u32, 2, 3]);
     let data = value.as_ptr();
     let capacity = value.capacity();
-    let carrier = CVec::from_vec(value);
+    let carrier = CVec::<u32>::from_vec(value);
     assert_eq!(carrier.as_ptr(), data.cast_mut());
     assert_eq!(carrier.capacity(), capacity);
     let value = unsafe { carrier.into_vec() }.unwrap();
@@ -16,9 +16,9 @@ fn raw_vector_roundtrip_preserves_allocation_and_capacity() {
 
 #[test]
 fn empty_and_zero_sized_vectors_roundtrip() {
-    let empty = CVec::from_vec(Vec::<u8>::new());
+    let empty = CVec::<u8>::from_vec(Vec::<u8>::new());
     assert!(unsafe { empty.into_vec() }.unwrap().is_empty());
-    let zst = CVec::from_vec(vec![(); 3]);
+    let zst = CVec::<()>::from_vec(vec![(); 3]);
     assert_eq!(unsafe { zst.into_vec() }.unwrap().len(), 3);
     assert!(unsafe { CVec::<u8>::null().into_vec() }.is_none());
 }
@@ -89,7 +89,7 @@ fn owned_encoding_preserves_capacity_and_validates_elements() {
     assert_eq!(value.capacity(), cap);
     assert_eq!(&*value, &[1, 2, 3]);
     assert_eq!(encode_store.sync(), Some(()));
-    let invalid = CVec::from_vec(vec![co3::primitives::CBool(2)]);
+    let invalid = CVec::<bool>::from_vec(vec![co3::primitives::Bool(2)]);
     assert!(
         unsafe { co3::soft_decode::<co3::vec::Vec::<bool>>(invalid, &mut Default::default()) }
             .is_none()
@@ -165,7 +165,7 @@ fn mutable_slice_writeback_uses_an_explicit_slice_header() {
     let carrier = co3::soft_encode(values.as_mut_slice(), &mut store);
     assert_eq!(carrier.metadata(), 2);
     unsafe {
-        carrier.as_ptr().write(co3::primitives::CBool(1));
+        carrier.as_ptr().write(co3::primitives::Bool(1));
     }
     assert_eq!(store.sync(), Some(()));
     assert_eq!(values, [true, true]);

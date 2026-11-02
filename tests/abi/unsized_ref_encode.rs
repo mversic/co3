@@ -240,7 +240,7 @@ fn wide_mutable_wrappers_delegate_to_inner_encoder() {
         unsafe { &mut *(values.as_mut_slice() as *mut [bool] as *mut core::cell::Cell<[bool]>) };
     let mut store = Default::default();
     let encoded = co3::soft_encode(&mut *wrapped, &mut store);
-    unsafe { *encoded.as_ptr() = co3::primitives::CBool::FALSE };
+    unsafe { *encoded.as_ptr() = co3::primitives::Bool::FALSE };
     assert_eq!(store.sync(), Some(()));
     assert_eq!(values, [false]);
 
@@ -250,7 +250,7 @@ fn wide_mutable_wrappers_delegate_to_inner_encoder() {
     };
     let mut store = Default::default();
     let encoded = co3::soft_encode(&mut *wrapped, &mut store);
-    unsafe { *encoded.as_ptr() = co3::primitives::CBool::FALSE };
+    unsafe { *encoded.as_ptr() = co3::primitives::Bool::FALSE };
     assert_eq!(store.sync(), Some(()));
     assert_eq!(values, [false]);
 }

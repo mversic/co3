@@ -1,14 +1,13 @@
 //! ABI carriers for pointers derived from references.
-
-use crate::transmute::AbiCompatibleValidate;
 use core::cell::UnsafeCell;
+
 use rust_spec::RustSpec;
 
 use crate::{
     CFnArg, CFnReturn, CType, Decode, Encode, ReprC,
     borrow::Borrow,
     stored::{DecodeMove, EncodeMove, EncodeMoveUnchecked},
-    transmute::AbiCompatible,
+    transmute::{AbiCompatible, AbiCompatibleValidate},
 };
 
 /// Constructs the carrier selected by `ReprC` for a shared reference without reading it.
@@ -50,6 +49,9 @@ pub struct CRef<C: ?Sized> {
 pub struct CRefMut<C: ?Sized, const EXCLUSIVE: bool> {
     data: *mut C,
 }
+
+unsafe impl<C: Sized> crate::Zeroable for CRef<C> {}
+unsafe impl<C: Sized, const EXCLUSIVE: bool> crate::Zeroable for CRefMut<C, EXCLUSIVE> {}
 
 impl<C: CType> CRef<C> {
     /// Construct a carrier with a null data pointer.
@@ -128,7 +130,7 @@ impl<C: ?Sized> CRef<C> {
     /// # Safety
     ///
     /// A non-null pointer must refer to a live `C` for the returned lifetime.
-    pub unsafe fn into_ref<'a>(self) -> Option<&'a C> {
+    pub const unsafe fn into_ref<'a>(self) -> Option<&'a C> {
         if self.data.is_null() {
             return None;
         }
@@ -149,7 +151,7 @@ impl<C: ?Sized> CRefMut<C, true> {
     /// # Safety
     ///
     /// The pointer must refer to a live `C` that is exclusively accessible for the returned lifetime.
-    pub unsafe fn into_mut<'a>(self) -> Option<&'a mut C> {
+    pub const unsafe fn into_mut<'a>(self) -> Option<&'a mut C> {
         if self.data.is_null() {
             return None;
         }
@@ -164,7 +166,7 @@ impl<C: ?Sized, const EXCLUSIVE: bool> CRefMut<C, EXCLUSIVE> {
     /// # Safety
     ///
     /// The pointer must refer to a live `C` that is accessible for the returned lifetime.
-    pub unsafe fn into_ref<'a>(self) -> Option<&'a UnsafeCell<C>> {
+    pub const unsafe fn into_ref<'a>(self) -> Option<&'a UnsafeCell<C>> {
         if self.data.is_null() {
             return None;
         }
@@ -173,14 +175,8 @@ impl<C: ?Sized, const EXCLUSIVE: bool> CRefMut<C, EXCLUSIVE> {
     }
 }
 
-macro_rules! impl_reference_carrier {
+macro_rules! impl_thin_pointer_traits {
     ($ty:ident, [$($params:tt)*], [$($args:tt)*]) => {
-        impl<$($params)*> core::fmt::Debug for $ty<$($args)*> {
-            fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
-                f.debug_tuple(stringify!($ty)).field(&self.data).finish()
-            }
-        }
-
         impl<$($params)*> Copy for $ty<$($args)*> {}
         impl<$($params)*> Clone for $ty<$($args)*> {
             fn clone(&self) -> Self { *self }
@@ -192,13 +188,25 @@ macro_rules! impl_reference_carrier {
         }
         impl<$($params)*> Ord for $ty<$($args)*> {
             fn cmp(&self, other: &Self) -> core::cmp::Ordering {
-                #[expect(ambiguous_wide_pointer_comparisons, reason = "consistent with pointer equality")]
+                #[allow(ambiguous_wide_pointer_comparisons)]
                 self.data.cmp(&other.data)
             }
         }
         impl<$($params)*> PartialOrd for $ty<$($args)*> {
             fn partial_cmp(&self, other: &Self) -> Option<core::cmp::Ordering> {
                 Some(self.cmp(other))
+            }
+        }
+    };
+}
+
+macro_rules! impl_reference_carrier {
+    ($ty:ident, [$($params:tt)*], [$($args:tt)*]) => {
+        impl_thin_pointer_traits! { $ty, [$($params)*], [$($args)*] }
+
+        impl<$($params)*> core::fmt::Debug for $ty<$($args)*> {
+            fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+                f.debug_tuple(stringify!($ty)).field(&self.data).finish()
             }
         }
 
@@ -255,6 +263,8 @@ const fn assert_thin_pointer<C: ?Sized>() {
         );
     }
 }
+
+pub(crate) use impl_thin_pointer_traits;
 
 #[cfg(test)]
 mod tests {

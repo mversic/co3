@@ -1,9 +1,9 @@
 use co3::ffi;
 
 #[unsafe(export_name = "static__VERSION")]
-pub static VERSION: StaticAbi = 1;
+pub static VERSION: StaticAbi = co3::NonZero(1);
 #[unsafe(export_name = "static_test_flags")]
-pub static mut FLAGS: StaticAbi = 1;
+pub static mut FLAGS: StaticAbi = co3::NonZero(1);
 
 ffi! {
     #![unsafe(export("C"))]
@@ -35,7 +35,7 @@ fn main() {
     let _ = imported::VERSION.read();
     let _ = unsafe { imported::VERSION.get_unchecked() };
     let _ = unsafe { FLAGS };
-    unsafe { FLAGS = 1 };
+    unsafe { FLAGS = co3::NonZero(1) };
     let _ = unsafe { imported::FLAGS.read() };
     unsafe { imported::FLAGS.set(core::num::NonZeroU8::new(1).unwrap()) };
 }

@@ -481,7 +481,7 @@ impl_cell_mut!(UnsafeCell, UnsafeCell::get_mut);
 impl_copy_mut!(['r, T: ?Sized] &'r T);
 impl_copy_mut!([R: Copy] Option<R>);
 impl_copy_mut!([T: Copy, E: Copy] Result<T, E>);
-impl_copy_mut!([T: Copy, E: Copy] crate::result::CResult<T, E>);
+impl_copy_mut!([T: ReprC<CType: Copy>, E: ReprC<CType: Copy>] crate::result::CResult<T, E>);
 impl_copy_mut!([T: Copy, E: Copy] crate::result::Result<T, E>);
 // Arrays may contain exclusive references, so encode each element through its
 // mutable reference and retain all element stores until synchronization.
@@ -578,7 +578,7 @@ impl_direct_mut!([C: crate::CType + ?Sized, const EXCLUSIVE: bool] crate::refere
 impl_direct_mut!([P: crate::wide::Wide<Header: crate::wide::WideHeader<Data: crate::CType>, Metadata: crate::CType> + ?Sized] crate::slice::CWideRef<P>);
 impl_direct_mut!([P: crate::wide::Wide<Header: crate::wide::WideHeader<Data: crate::CType>, Metadata: crate::CType> + ?Sized, const EXCLUSIVE: bool] crate::slice::CWideRefMut<P, EXCLUSIVE>);
 #[cfg(feature = "alloc")]
-impl_direct_mut!([T: crate::CType] crate::vec::CVec<T>);
+impl_direct_mut!([T: ReprC<CType: crate::CType + Sized>] crate::vec::CVec<T>);
 #[cfg(feature = "alloc")]
 impl_direct_mut!([C: crate::CType] crate::boxed::CBox<C>);
 #[cfg(feature = "alloc")]
@@ -619,7 +619,7 @@ macro_rules! impl_move_out_mut {
         }
     };
 }
-impl_move_out_mut!([T] crate::option::COption<T> where Self: Default);
+impl_move_out_mut!([T: ReprC<CType: crate::CType + Sized>] crate::option::COption<T> where Self: Default);
 impl_move_out_mut!([T] crate::option::Option<T> where);
 // Keep the original vector and its elements alive: decoding an owned carrier
 // before synchronizing element stores can restore references into freed storage.
@@ -631,11 +631,10 @@ macro_rules! impl_vec_mut {
         where
             &'a mut T:
                 EncodeMoveUnchecked + ReprC<CType = crate::reference::CRefMut<T::CType, true>>,
-            &'a mut Self:
-                ReprC<CType = crate::reference::CRefMut<crate::vec::CVec<T::CType>, true>>,
+            &'a mut Self: ReprC<CType = crate::reference::CRefMut<crate::vec::CVec<T>, true>>,
         {
             type SoftStore = crate::sync::RefMutReferenceEncodeStore<
-                crate::vec::CVec<T::CType>,
+                crate::vec::CVec<T>,
                 crate::sync::RefMutWideEncodeStore<
                     'a,
                     [T],
@@ -687,11 +686,10 @@ macro_rules! impl_vec_mut {
         unsafe impl<'a, T: ReprC<CType: crate::CType + Copy + Sized> + 'a> EncodeMut<'a> for $vec
         where
             &'a mut T: EncodeMove + ReprC<CType = crate::reference::CRefMut<T::CType, true>>,
-            &'a mut Self:
-                ReprC<CType = crate::reference::CRefMut<crate::vec::CVec<T::CType>, true>>,
+            &'a mut Self: ReprC<CType = crate::reference::CRefMut<crate::vec::CVec<T>, true>>,
         {
             type Store = crate::sync::RefMutReferenceEncodeStore<
-                crate::vec::CVec<T::CType>,
+                crate::vec::CVec<T>,
                 crate::sync::RefMutWideEncodeStore<
                     'a,
                     [T],

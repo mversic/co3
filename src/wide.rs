@@ -11,7 +11,7 @@ use core::{
 
 use rust_spec::size::{MetaSized, SliceLike};
 
-use crate::{CType, transmute::AbiCompatible};
+use crate::{CType, Zeroable, transmute::AbiCompatible};
 
 pub(crate) type WideData<R> = <<R as Wide>::Header as WideHeader>::Data;
 
@@ -41,7 +41,7 @@ pub unsafe trait Wide {
     type Header: WideHeader;
 
     /// Metadata component of a pointer.
-    type Metadata: Debug + Copy + Send + Sync + Ord + Hash + Unpin;
+    type Metadata: Debug + Copy + Send + Sync + Ord + Hash + Unpin + Zeroable;
 
     /// Extracts the metadata component of a pointer.
     fn metadata(ptr: *const Self) -> Self::Metadata;

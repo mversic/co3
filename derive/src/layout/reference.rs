@@ -389,9 +389,17 @@ fn gen_structural_decode(
                 let carrier = if mutable {
                     // Only the C field is copied; the transparent wrapper marks
                     // borrowed ownership without a layout cast.
-                    quote!(co3::borrow::Borrowed::new(source.#member))
+                    if inline_tag {
+                        quote!(co3::borrow::Borrowed::new(unsafe { source.#member.assume_init() }))
+                    } else {
+                        quote!(co3::borrow::Borrowed::new(source.#member))
+                    }
                 } else {
-                    quote!(co3::reference::CRef::from_ref(&source.#member))
+                    if inline_tag {
+                        quote!(co3::reference::CRef::from_ref(unsafe { source.#member.assume_init_ref() }))
+                    } else {
+                        quote!(co3::reference::CRef::from_ref(&source.#member))
+                    }
                 };
                 let decode = quote!(unsafe {
                     <#field_decoder as co3::stored::DecodeMove<'_dšč>>::#method(
@@ -431,7 +439,7 @@ fn gen_structural_decode(
             let tags = super::enum_variant_tag_exprs(&data.variants, &tag_ty);
             let arms = data.variants.iter().zip(tags).zip(bodies).map(|((v, tag), body)| {
                 let v = &v.ident;
-                let payload = if inline_tag { quote!(&source.#v) } else { quote!(&source.payload.#v) };
+                let payload = if inline_tag { quote!(&source.#v) } else { quote!(&source.payload.assume_init_ref().#v) };
                 quote!(tag if tag == #tag => {
                     let source = unsafe { #payload };
                     #body

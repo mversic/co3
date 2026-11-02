@@ -43,6 +43,17 @@ enum AlignedDataEnum {
 }
 
 #[derive(RustSpec, ReprC)]
+#[repr(u8)]
+enum MixedDataEnum {
+    #[repr_c(allow_zero_tag)]
+    First(u8, u32),
+    Second {
+        small: u16,
+        large: u64,
+    },
+}
+
+#[derive(RustSpec, ReprC)]
 #[repr(C, u8, align(32))]
 enum ExplicitCAlignedDataEnum {
     #[repr_c(allow_zero_tag)]
@@ -73,6 +84,7 @@ fn explicit_repr_alignment_is_preserved_by_companion_types() {
     assert_same_layout::<SeparatelyAlignedStruct>();
     assert_same_layout::<AlignedFieldlessEnum>();
     assert_same_layout::<AlignedDataEnum>();
+    assert_same_layout::<MixedDataEnum>();
     assert_same_layout::<ExplicitCAlignedDataEnum>();
 
     assert_nontrivial_alignment::<<AlignedStruct as ReprC>::CType>();
@@ -94,6 +106,22 @@ fn data_enum_carriers_construct_variants_and_report_tags() {
     assert_eq!(CAlignedDataEnum::Second().tag(), 1);
     assert_eq!(CExplicitCAlignedDataEnum::First(7).tag(), 0);
     assert_eq!(CExplicitCAlignedDataEnum::Second().tag(), 1);
+    assert_eq!(CMixedDataEnum::First(3, 7).tag(), 0);
+    assert_eq!(CMixedDataEnum::Second(5, 11).tag(), 1);
+    assert_eq!(
+        format!("{:?}", CMixedDataEnum::Second(5, 11)),
+        "CMixedDataEnum::Second { small: 5, large: 11 }"
+    );
+    assert!(CMixedDataEnum::First(3, 7) < CMixedDataEnum::First(3, 8));
+
+    let first = unsafe { CMixedDataEnumFirst::from_fields(0, 3, 7) };
+    assert_eq!(unsafe { first.into_fields() }, (0, 3, 7));
+    let second = unsafe { CMixedDataEnumSecond::from_fields(1, 5, 11) };
+    assert_eq!(unsafe { second.into_fields() }, (1, 5, 11));
+
+    let niche = <MixedDataEnum as co3::niche::Niche>::NICHE;
+    assert_eq!(niche.tag(), u8::MAX);
+    assert!(unsafe { co3::decode::<MixedDataEnum>(niche) }.is_none());
 
     let carrier = unsafe { CAlignedStruct::from_fields(3) };
     let decoded: AlignedStruct = unsafe { co3::decode(carrier).unwrap() };

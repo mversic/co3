@@ -1,5 +1,5 @@
 use co3::{
-    primitives::CBool,
+    primitives::Bool,
     stored::Store,
     sync::{RefMutWideEncodeStore, RefWideEncodeStore},
     tuple::{Tuple2, Tuple3},
@@ -11,10 +11,10 @@ fn mutable_store_uses_rust_pointee_and_its_c_representation() {
     let mut result = false;
     let mut store = RefMutWideEncodeStore::<[bool], (), &mut bool>::default();
     let carrier = store.encode(
-        |_| (vec![CBool::FALSE].into_boxed_slice(), &mut result),
-        |value, result| *result = value[0] == CBool::TRUE,
+        |_| (vec![Bool::FALSE].into_boxed_slice(), &mut result),
+        |value, result| *result = value[0] == Bool::TRUE,
     );
-    unsafe { carrier.into_mut().unwrap()[0] = CBool::TRUE };
+    unsafe { carrier.into_mut().unwrap()[0] = Bool::TRUE };
     assert_eq!(store.sync(), Some(()));
     assert!(result);
 }

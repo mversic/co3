@@ -1,3 +1,4 @@
+use crate::TransparentCarrier;
 use co3::{
     CType,
     boxed::{CBox, CWideBox},
@@ -16,9 +17,11 @@ struct Metadata {
     marker: u32,
 }
 unsafe impl CType for Metadata {}
+unsafe impl co3::Zeroable for Metadata {}
 
 #[derive(Copy, Clone, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
 struct NonCMetadata(usize);
+unsafe impl co3::Zeroable for NonCMetadata {}
 
 #[repr(transparent)]
 #[derive(co3::rust_spec::RustSpec)]
@@ -99,10 +102,10 @@ fn raw_wide_unpack_preserves_custom_metadata() {
     let (data, metadata) = <*mut Pointee as Unpack2<*mut u8, Metadata>>::unpack(ptr).unwrap();
     assert_eq!((data, metadata), (bytes.as_mut_ptr(), expected));
     let (data, metadata) =
-        <NonNull<Pointee> as Unpack2<*const u8, Metadata>>::unpack(nonnull.as_ptr()).unwrap();
+        <NonNull<Pointee> as Unpack2<*const u8, Metadata>>::unpack(co3::encode(nonnull)).unwrap();
     assert_eq!((data, metadata), (bytes.as_ptr(), expected));
     let (data, metadata) =
-        <NonNull<Pointee> as Unpack2<*mut u8, Metadata>>::unpack(nonnull.as_ptr()).unwrap();
+        <NonNull<Pointee> as Unpack2<*mut u8, Metadata>>::unpack(co3::encode(nonnull)).unwrap();
     assert_eq!((data, metadata), (bytes.as_mut_ptr(), expected));
 }
 
@@ -197,7 +200,7 @@ fn owned_pack_preserves_null_pointer_and_metadata() {
     let carrier =
         unsafe { <Option<Box<Pointee>> as Pack2<CBox<u8>, usize>>::pack(CBox::null(), metadata) }
             .unwrap();
-    assert!(carrier.as_ptr().is_null());
+    assert!(carrier.payload().as_ptr().is_null());
     let (pointer, unpacked) =
         <Option<Box<Pointee>> as Unpack2<CBox<u8>, usize>>::unpack(carrier).unwrap();
     assert!(pointer.as_ptr().is_null());

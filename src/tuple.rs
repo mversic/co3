@@ -20,7 +20,7 @@
 //! use core::mem::size_of;
 //!
 //! use co3::{
-//!     encode, niche::Niche, option::COption, primitives::CBool,
+//!     encode, niche::Niche, option::COption, primitives::Bool,
 //!     reference::CRef, tuple::Tuple3, ReprC,
 //! };
 //!
@@ -42,10 +42,10 @@
 //! );
 //!
 //! let none_value_1: Option<TupleWithNiche1> = None;
-//! assert_eq!(encode(none_value_1), Tuple3(0, bool::NICHE, CRef::null()));
+//! assert_eq!(encode(none_value_1).into_inner(), Tuple3(0, bool::NICHE, CRef::null()));
 //!
 //! let none_value_2: Option<TupleWithNiche2> = None;
-//! assert_eq!(encode(none_value_2), Tuple3(0, CRef::null(), CBool::FALSE));
+//! assert_eq!(encode(none_value_2).into_inner(), Tuple3(0, CRef::null(), Bool::FALSE));
 //!
 //! let none_value_3: Option<TupleWithoutNiche> = None;
 //! assert_eq!(encode(none_value_3), COption::None());
@@ -210,11 +210,8 @@ macro_rules! impl_tuple {
             where
                 Self: 'itm
             {
-                impl_tuple! {@decl_priv_store $($ty),*}
-
                 let ($($ty,)*) = self;
-                let store: private_store::Store<$($ty::Store,)*> = store.into();
-                $ffi_ty($( $ty.soft_encode(store.$ty) ),*)
+                $ffi_ty($($ty),*).soft_encode(store)
             }
 
         }
@@ -241,11 +238,8 @@ macro_rules! impl_tuple {
 
             #[expect(non_snake_case)]
             unsafe fn soft_encode_unchecked<'itm>(self, store: &'itm mut Self::SoftStore) -> Self::CType where Self: 'itm {
-                impl_tuple! {@decl_priv_store $($ty),*}
-
                 let ($($ty,)*) = self;
-                let store: private_store::Store<$($ty::SoftStore,)*> = store.into();
-                $ffi_ty($(unsafe { $ty.soft_encode_unchecked(store.$ty) }),*)
+                unsafe { $ffi_ty($($ty),*).soft_encode_unchecked(store) }
             }
         }
 
@@ -338,21 +332,19 @@ macro_rules! impl_tuple {
             #[inline(always)]
             #[expect(non_snake_case)]
             unsafe fn soft_decode<'itm: 'd>(source: Self::CType, store: &'itm mut Self::Store) -> Option<Self> {
-                impl_tuple! {@decl_priv_store $($ty),*}
-
-                let $ffi_ty($($ty),*) = source;
-                let store: private_store::Store<$($ty::Store),*> = store.into();
-                Some(unsafe { ($( $ty::soft_decode($ty, store.$ty)?, )*) })
+                let $ffi_ty($($ty),*) = unsafe {
+                    <$ffi_ty<$($ty),*> as DecodeMove<'d>>::soft_decode(source, store)
+                }?;
+                Some(($($ty,)*))
             }
 
             #[inline(always)]
             #[expect(non_snake_case)]
             unsafe fn soft_decode_unchecked<'itm: 'd>(source: Self::CType, store: &'itm mut Self::Store) -> Self {
-                impl_tuple! {@decl_priv_store $($ty),*}
-
-                let $ffi_ty($($ty),*) = source;
-                let store: private_store::Store<$($ty::Store),*> = store.into();
-                unsafe { ($( $ty::soft_decode_unchecked($ty, store.$ty), )*) }
+                let $ffi_ty($($ty),*) = unsafe {
+                    <$ffi_ty<$($ty),*> as DecodeMove<'d>>::soft_decode_unchecked(source, store)
+                };
+                ($($ty,)*)
             }
         }
         unsafe impl<'d, $($ty: DecodeMove<'d>),*> DecodeMove<'d> for $ffi_ty<$($ty),*> {
@@ -649,7 +641,7 @@ mod tests {
         );
         #[cfg(feature = "alloc")]
         assert_impl_all!(Vec<(u8, u8, u8)>:
-            Niche<CType = crate::vec::CVec<Tuple3<u8, u8, u8>>>,
+            Niche<CType = crate::vec::CVec<(u8, u8, u8)>>,
             DecodeMove<'static>,
             EncodeMove,
         );
@@ -659,7 +651,7 @@ mod tests {
             Encode,
         );
         assert_impl_all!(Option<(u8, u8, u8)>:
-            Niche<CType = COption<Tuple3<u8, u8, u8>>>,
+            Niche<CType = COption<(u8, u8, u8)>>,
             Decode<'static>,
             Encode,
         );
@@ -722,55 +714,55 @@ mod tests {
         // NOTE: Confirms niche is taken from the first available element
         assert_eq!(
             <(u8, StdNonZero<u8>, bool)>::NICHE,
-            Tuple3(0, 0, crate::primitives::CBool::FALSE)
+            Tuple3(0, crate::NonZero(0), crate::primitives::Bool::FALSE)
         );
 
         assert_impl_all!((u8, StdNonZero<u8>, bool):
-            Niche<CType = Tuple3<u8, u8, crate::primitives::CBool>>,
+            Niche<CType = Tuple3<u8, crate::NonZero<u8>, crate::primitives::Bool>>,
             Decode<'static>,
             Encode,
         );
 
         assert_impl_all!(&(u8, StdNonZero<u8>, bool):
-            Niche<CType = CRef<Tuple3<u8, u8, crate::primitives::CBool>>>,
+            Niche<CType = CRef<Tuple3<u8, crate::NonZero<u8>, crate::primitives::Bool>>>,
             Decode<'static>,
             Encode,
         );
         assert_impl_all!(&mut (u8, StdNonZero<u8>, bool):
-            Niche<CType = CRefMut<Tuple3<u8, u8, crate::primitives::CBool>, true>>,
+            Niche<CType = CRefMut<Tuple3<u8, crate::NonZero<u8>, crate::primitives::Bool>, true>>,
             Decode<'static>,
         );
         #[cfg(feature = "alloc")]
         assert_impl_all!(Box<(u8, StdNonZero<u8>, bool)>:
-            Niche<CType = CBox<Tuple3<u8, u8, crate::primitives::CBool>>>,
+            Niche<CType = CBox<Tuple3<u8, crate::NonZero<u8>, crate::primitives::Bool>>>,
             DecodeMove<'static>,
             EncodeMove,
         );
         #[cfg(feature = "alloc")]
         assert_impl_all!(&[(u8, StdNonZero<u8>, bool)]:
-            Niche<CType = CWideRef<[Tuple3<u8, u8, crate::primitives::CBool>]>>,
+            Niche<CType = CWideRef<[Tuple3<u8, crate::NonZero<u8>, crate::primitives::Bool>]>>,
             Decode<'static>,
             Encode,
         );
         #[cfg(feature = "alloc")]
         assert_impl_all!(&mut [(u8, StdNonZero<u8>, bool)]:
-            Niche<CType = CWideRefMut<[Tuple3<u8, u8, crate::primitives::CBool>], true>>,
+            Niche<CType = CWideRefMut<[Tuple3<u8, crate::NonZero<u8>, crate::primitives::Bool>], true>>,
             Decode<'static>,
         );
         #[cfg(feature = "alloc")]
         assert_impl_all!(Box<[(u8, StdNonZero<u8>, bool)]>:
-            Niche<CType = CWideBox<[Tuple3<u8, u8, crate::primitives::CBool>]>>,
+            Niche<CType = CWideBox<[Tuple3<u8, crate::NonZero<u8>, crate::primitives::Bool>]>>,
             DecodeMove<'static>,
             EncodeMove,
         );
         #[cfg(feature = "alloc")]
         assert_impl_all!(Vec<(u8, StdNonZero<u8>, bool)>:
-            Niche<CType = crate::vec::CVec<Tuple3<u8, u8, crate::primitives::CBool>>>,
+            Niche<CType = crate::vec::CVec<(u8, core::num::NonZeroU8, bool)>>,
             DecodeMove<'static>,
             EncodeMove,
         );
         assert_impl_all!([(u8, StdNonZero<u8>, bool); 2]:
-            Niche<CType = [Tuple3<u8, u8, crate::primitives::CBool>; 2]>,
+            Niche<CType = [Tuple3<u8, crate::NonZero<u8>, crate::primitives::Bool>; 2]>,
             Decode<'static>,
             Encode,
         );
