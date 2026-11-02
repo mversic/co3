@@ -2,12 +2,13 @@ use co3::ffi::c_char;
 use std::cmp::Ordering;
 use std::ffi::CStr;
 
-use co3::primitives::{CBool, COrdering};
+use crate::TransparentCarrier;
 use co3::reference::{CRef, CRefMut};
 use co3::{
     ReprC, encode, ffi, niche::Niche, option::COption, rust_spec::RustSpec, soft_decode,
     soft_encode,
 };
+use co3::{cmp::Ordering as Co3Ordering, primitives::Bool};
 
 #[derive(Clone, Copy, PartialEq, Eq, RustSpec, ReprC)]
 #[repr(transparent)]
@@ -61,11 +62,12 @@ fn thin_extern_reference_niche() {
     // an accidental Sized bound on the pointer-backed reference Niche impls.
     static_assertions::assert_impl_all!(&CStr: Niche<CType = CRef<c_char>>);
 
-    assert_eq!(encode(None::<&Extern>), CRef::null());
-    assert_eq!(soft_encode(None::<&mut Extern>, &mut None), unsafe {
-        CRefMut::from_raw(std::ptr::null_mut())
-    });
-    assert_eq!(encode(None::<&CStr>), CRef::null());
+    assert_eq!(encode(None::<&Extern>).payload(), CRef::null());
+    assert_eq!(
+        soft_encode(None::<&mut Extern>, &mut None).payload(),
+        unsafe { CRefMut::from_raw(std::ptr::null_mut()) }
+    );
+    assert_eq!(encode(None::<&CStr>).payload(), CRef::null());
 }
 
 #[derive(Clone, Copy, RustSpec, ReprC)]
@@ -415,49 +417,49 @@ pub enum FieldlessLargeEnum {
 
 #[test]
 fn verify_enum_niche_value() {
-    assert_eq!(bool::NICHE, encode(None::<bool>));
-    assert_eq!(Ordering::NICHE, encode(None::<Ordering>));
+    assert_eq!(bool::NICHE, encode(None::<bool>).payload());
+    assert_eq!(Ordering::NICHE, encode(None::<Ordering>).payload());
 
     assert_eq!(encode(None::<Opaque>), COption::None());
-    assert!(encode(None::<OwnedExtern>).0.is_null());
+    assert!(encode(None::<OwnedExtern>).payload().0.is_null());
 
     let expected_niche_enum_discriminant_u = u8::MAX;
     let expected_niche_enum_discriminant_i = -1_i8;
 
-    assert_eq!(encode(Ok::<(), FieldlessThreeEnum>(())).0, u8::MAX);
-    assert_eq!(encode(Ok::<(), FieldlessNoReprEnum>(())).0, u8::MAX);
+    assert_eq!(
+        encode(Ok::<(), FieldlessThreeEnum>(())).payload().0,
+        u8::MAX
+    );
+    assert_eq!(
+        encode(Ok::<(), FieldlessNoReprEnum>(())).payload().0,
+        u8::MAX
+    );
 
     assert_eq!(
         expected_niche_enum_discriminant_u,
-        encode(None::<FieldlessUEnum>).0
+        encode(None::<FieldlessUEnum>).payload().0
     );
     assert_eq!(
         expected_niche_enum_discriminant_i,
-        encode(None::<FieldlessIEnum>).0
+        encode(None::<FieldlessIEnum>).payload().0
     );
     assert_eq!(
         expected_niche_enum_discriminant_u,
-        encode(None::<FieldlessNoReprEnum>).0
+        encode(None::<FieldlessNoReprEnum>).payload().0
     );
 
-    let encoded = soft_encode(None::<ReprCDataEnum<&u8>>, &mut Default::default());
+    let encoded = soft_encode(None::<ReprCDataEnum<&u8>>, &mut Default::default()).payload();
     assert_eq!(expected_niche_enum_discriminant_i, encoded.tag);
-    let bytes = unsafe {
-        core::slice::from_raw_parts(
-            core::ptr::from_ref(&encoded.payload).cast::<u8>(),
-            core::mem::size_of_val(&encoded.payload),
-        )
-    };
-    assert!(bytes.iter().all(|&byte| byte == 0));
+    assert!(encoded == <ReprCDataEnum<&u8> as Niche>::NICHE);
 
-    let encoded = soft_encode(None::<DataEnum<&u8>>, &mut Default::default());
+    let encoded = soft_encode(None::<DataEnum<&u8>>, &mut Default::default()).payload();
     assert_eq!(expected_niche_enum_discriminant_i, unsafe { encoded.D.tag });
 
     let expected_fieldless_large_enum = u16::MAX;
 
     assert_eq!(
         expected_fieldless_large_enum,
-        encode(None::<FieldlessLargeEnum>).0
+        encode(None::<FieldlessLargeEnum>).payload().0
     );
 }
 
@@ -477,31 +479,33 @@ fn fieldless_enum_explicit_discriminants_round_trip() {
         None
     );
     // Zero is occupied, so the generated niche searches backward for an invalid tag.
-    assert_eq!(encode(None::<FieldlessExplicitEnum>).0, -1);
+    assert_eq!(encode(None::<FieldlessExplicitEnum>).payload().0, -1);
 }
 
 #[test]
 fn fieldless_enum_carrier_conversions() {
-    use static_assertions::assert_not_impl_any;
+    use static_assertions::{assert_impl_all, assert_not_impl_any};
 
-    assert_not_impl_any!(CBool: From<bool>, TryFrom<bool>);
-    assert_not_impl_any!(COrdering: From<Ordering>, TryFrom<Ordering>);
-    assert_not_impl_any!(CBool: From<u8>, TryFrom<u8>);
-    assert_not_impl_any!(bool: From<CBool>, TryFrom<CBool>);
-    assert_not_impl_any!(COrdering: From<i8>, TryFrom<i8>);
-    assert_not_impl_any!(Ordering: From<COrdering>, TryFrom<COrdering>);
+    assert_impl_all!(Bool: From<bool>, TryFrom<bool>);
+    assert_impl_all!(Co3Ordering: From<Ordering>, TryFrom<Ordering>);
+    assert_not_impl_any!(Bool: From<u8>, TryFrom<u8>);
+    assert_impl_all!(bool: TryFrom<Bool>);
+    assert_not_impl_any!(bool: From<Bool>);
+    assert_not_impl_any!(Co3Ordering: From<i8>, TryFrom<i8>);
+    assert_impl_all!(Ordering: TryFrom<Co3Ordering>);
+    assert_not_impl_any!(Ordering: From<Co3Ordering>);
     assert_not_impl_any!(CFieldlessExplicitEnum: From<FieldlessExplicitEnum>, TryFrom<FieldlessExplicitEnum>);
     assert_not_impl_any!(FieldlessExplicitEnum: From<CFieldlessExplicitEnum>, TryFrom<CFieldlessExplicitEnum>);
     assert_not_impl_any!(CFieldlessNoReprEnum: From<FieldlessNoReprEnum>, TryFrom<FieldlessNoReprEnum>);
     assert_not_impl_any!(FieldlessNoReprEnum: From<CFieldlessNoReprEnum>, TryFrom<CFieldlessNoReprEnum>);
 
-    assert_eq!(CBool::TRUE, encode(true));
-    assert_eq!(CBool::FALSE, encode(false));
-    assert_eq!(CBool(1), encode(true));
-    assert_eq!(COrdering::LESS, encode(Ordering::Less));
-    assert_eq!(COrdering::EQUAL, encode(Ordering::Equal));
-    assert_eq!(COrdering::GREATER, encode(Ordering::Greater));
-    assert_eq!(COrdering(-1), encode(Ordering::Less));
+    assert_eq!(Bool::TRUE, encode(true));
+    assert_eq!(Bool::FALSE, encode(false));
+    assert_eq!(Bool(1), encode(true));
+    assert_eq!(Co3Ordering::LESS, encode(Ordering::Less));
+    assert_eq!(Co3Ordering::EQUAL, encode(Ordering::Equal));
+    assert_eq!(Co3Ordering::GREATER, encode(Ordering::Greater));
+    assert_eq!(Co3Ordering(-1), encode(Ordering::Less));
     assert_eq!(CFieldlessExplicitEnum::Negative().tag(), -2);
     assert_eq!(CFieldlessExplicitEnum::Zero().tag(), 0);
     assert_eq!(CFieldlessExplicitEnum::Five().tag(), 5);

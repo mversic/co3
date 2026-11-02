@@ -38,11 +38,11 @@ error[E0277]: the trait bound `bool: CType` is not satisfied
              ()
              *const R
              *mut R
-             CBool
              CBox<C>
              COption<T>
-             COrdering
+             COptionSome<R>
              CRef<C>
+             CRefMut<C, EXCLUSIVE>
            and $N others
    = note: this error originates in the derive macro `ReprC` (in Nightly builds, run with -Z macro-backtrace for more info)
 
@@ -56,10 +56,10 @@ error[E0277]: the trait bound `bool: CType` is not satisfied
              ()
              *const R
              *mut R
-             CBool
              CBox<C>
              COption<T>
-             COrdering
+             COptionSome<R>
              CRef<C>
+             CRefMut<C, EXCLUSIVE>
            and $N others
    = note: this error originates in the macro `co3::disjoint_impls` (in Nightly builds, run with -Z macro-backtrace for more info)

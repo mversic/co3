@@ -353,7 +353,7 @@ fn gen_struct_codec_impls(
         };
 
         let (encode_body, direct_encode_body, decode_body, decode_unchecked_body) =
-            gen_record_conversion(mode, None, quote!(Self), fields, is_valid);
+            gen_record_conversion(mode, None, quote!(Self), fields, is_valid, false);
 
         let field_vars = field_vars(fields);
         let encode_validation = gen_encode_is_valid_assert(fields, is_valid);
@@ -491,6 +491,7 @@ fn gen_enum_codec_impls(
                 quote!(Self::#variant_name),
                 &variant.fields,
                 custom_is_valid,
+                !matches!(repr, Some(ReprKind::C(Some(_)))),
             );
 
             let decode_destructure = match repr {
@@ -513,13 +514,18 @@ fn gen_enum_codec_impls(
                 },
                 None | Some(ReprKind::Primitive(_)) => {
                     let field_vars = field_vars(&variant.fields);
+                    let unwrap_fields = field_vars.iter().map(|field| quote! {
+                        let #field = unsafe { #field.assume_init() };
+                    }).collect::<Vec<_>>();
 
                     match &variant.fields {
                         syn::Fields::Named(_) => quote! {
                             let #variant_struct { tag: _, #(#field_vars),* } = source;
+                            #(#unwrap_fields)*
                         },
                         syn::Fields::Unnamed(_) => quote! {
                             let #variant_struct(_, #(#field_vars),*) = source;
+                            #(#unwrap_fields)*
                         },
                         syn::Fields::Unit => quote! {
                             let #variant_struct { tag: _ } = source;
@@ -534,7 +540,7 @@ fn gen_enum_codec_impls(
                     quote! {
                         #ctype_name {
                             tag: #tag_value as #tag_type,
-                            payload: #payload_name { #variant_name: #variant_struct_name #encode_body },
+                            payload: core::mem::MaybeUninit::new(#payload_name { #variant_name: #variant_struct_name #encode_body }),
                         }
                     }
                 }
@@ -549,7 +555,7 @@ fn gen_enum_codec_impls(
                 Some(ReprKind::C(Some(_))) => quote! {
                     #ctype_name {
                         tag: #tag_value as #tag_type,
-                        payload: #payload_name { #variant_name: #variant_struct_name #direct_encode_body },
+                        payload: core::mem::MaybeUninit::new(#payload_name { #variant_name: #variant_struct_name #direct_encode_body }),
                     }
                 },
                 None | Some(ReprKind::Primitive(_)) => quote! {
@@ -561,7 +567,7 @@ fn gen_enum_codec_impls(
             };
 
             let decode_source = match repr {
-                Some(ReprKind::C(Some(_))) => quote! { unsafe { source.payload.#variant_name } },
+                Some(ReprKind::C(Some(_))) => quote! { unsafe { source.payload.assume_init().#variant_name } },
                 None | Some(ReprKind::Primitive(_)) => quote! { unsafe { source.#variant_name } },
                 _ => unreachable!(),
             };
@@ -756,6 +762,7 @@ fn gen_transparent_enum_codec_impls(
             quote!(Self::#variant_name),
             &variant.fields,
             custom_is_valid,
+            false,
         );
 
     let mut bounded_generics = generics.clone();
@@ -899,12 +906,12 @@ fn gen_repr_c_data_enum_impls(
             Some(ReprKind::C(Some(_))) => match &variant.fields {
                 syn::Fields::Named(_) | syn::Fields::Unit => quote! {
                     let #variant_struct_type { #(#field_names),* } = unsafe {
-                        &target.payload.#variant_name
+                        &target.payload.assume_init_ref().#variant_name
                     };
                 },
                 syn::Fields::Unnamed(_) => quote! {
                     let #variant_struct_type(#(#field_names),*) = unsafe {
-                        &target.payload.#variant_name
+                        &target.payload.assume_init_ref().#variant_name
                     };
                 },
             },
@@ -929,10 +936,23 @@ fn gen_repr_c_data_enum_impls(
 
         let is_valid = variant_attrs[variant_idx].is_valid.as_ref();
         let is_valid_body = gen_record_is_valid(&field_names, &variant_fields, is_valid, None);
+        let unwrap_fields = if matches!(repr, Some(ReprKind::C(Some(_)))) {
+            Vec::new()
+        } else {
+            field_names
+                .iter()
+                .map(|field| {
+                    quote! {
+                        let #field = unsafe { #field.assume_init_ref() };
+                    }
+                })
+                .collect::<Vec<_>>()
+        };
 
         quote! {
             value if value == #tag_value => {
                 #destructure_target
+                #(#unwrap_fields)*
                 #is_valid_body
             }
         }
@@ -1511,6 +1531,7 @@ fn gen_record_conversion(
     source_head: TokenStream,
     fields: &syn::Fields,
     is_valid: Option<&syn::ExprClosure>,
+    wrap_fields: bool,
 ) -> (TokenStream, TokenStream, TokenStream, TokenStream) {
     let (encode_fn, direct_fn) = match mode {
         EncodeMode::Ref => (
@@ -1525,6 +1546,30 @@ fn gen_record_conversion(
     let store_vars = tuple_field_exprs(fields.len());
     let field_vars = field_vars(fields);
     let field_types = fields.iter().map(|field| &field.ty).collect::<Vec<_>>();
+    let encoded = field_vars
+        .iter()
+        .zip(&store_vars)
+        .map(|(field, store)| {
+            let value = quote!(#encode_fn(#field, #store));
+            if wrap_fields {
+                quote!(core::mem::MaybeUninit::new(#value))
+            } else {
+                value
+            }
+        })
+        .collect::<Vec<_>>();
+    let direct_encoded = field_vars
+        .iter()
+        .zip(&store_vars)
+        .map(|(field, store)| {
+            let value = quote!(unsafe { #direct_fn(#field, #store) });
+            if wrap_fields {
+                quote!(core::mem::MaybeUninit::new(#value))
+            } else {
+                value
+            }
+        })
+        .collect::<Vec<_>>();
 
     let tag_field = tag.as_ref().map(|tag| quote! { tag: #tag, });
     let tag_element = tag.as_ref().map(|tag| quote! { #tag, });
@@ -1547,13 +1592,13 @@ fn gen_record_conversion(
             quote! {
                 {
                     #tag_field
-                    #(#field_vars: #encode_fn(#field_vars, #store_vars)),*
+                    #(#field_vars: #encoded),*
                 }
             },
             quote! {
                 {
                     #tag_field
-                    #(#field_vars: unsafe { #direct_fn(#field_vars, #store_vars) }),*
+                    #(#field_vars: #direct_encoded),*
                 }
             },
             quote! { #(
@@ -1580,13 +1625,13 @@ fn gen_record_conversion(
             quote! {
                 (
                     #tag_element
-                    #(#encode_fn(#field_vars, #store_vars)),*
+                    #(#encoded),*
                 )
             },
             quote! {
                 (
                     #tag_element
-                    #(unsafe { #direct_fn(#field_vars, #store_vars) }),*
+                    #(#direct_encoded),*
                 )
             },
             quote! { #(

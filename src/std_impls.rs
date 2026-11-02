@@ -40,7 +40,7 @@ macro_rules! non_zero_derive {
 
 
         impl ReprC for NonZero<$primitive> {
-            type CType = $primitive;
+            type CType = crate::NonZero<$primitive>;
         }
         unsafe impl EncodeMove for NonZero<$primitive> {
             type Store = ();
@@ -57,7 +57,7 @@ macro_rules! non_zero_derive {
             type SoftStore = ();
 
             unsafe fn soft_encode_unchecked<'itm>(self, (): &'itm mut ()) -> Self::CType where Self: 'itm {
-                self.get()
+                crate::NonZero(self.get())
             }
         }
         unsafe impl<'d> DecodeMove<'d> for NonZero<$primitive> {
@@ -65,12 +65,12 @@ macro_rules! non_zero_derive {
 
             #[inline(always)]
             unsafe fn soft_decode<'itm: 'd>(source: Self::CType, (): &mut ()) -> Option<Self> {
-                Self::new(source)
+                Self::new(source.0)
             }
 
             #[inline(always)]
             unsafe fn soft_decode_unchecked<'itm: 'd>(source: Self::CType, (): &mut ()) -> Self {
-                unsafe { Self::new_unchecked(source) }
+                unsafe { Self::new_unchecked(source.0) }
             }
         }
 
@@ -81,13 +81,13 @@ macro_rules! non_zero_derive {
         unsafe impl AbiCompatibleValidate for NonZero<$primitive> {
             #[inline(always)]
             unsafe fn is_valid(target: &Self::CType) -> bool {
-                *target != 0
+                target.0 != 0
             }
         }
 unsafe impl AbiCompatible for NonZero<$primitive> {}
 
         impl Niche for NonZero<$primitive> {
-            const NICHE: Self::CType = 0;
+            const NICHE: Self::CType = crate::NonZero(0);
         }
         )+
     }
@@ -95,6 +95,7 @@ unsafe impl AbiCompatible for NonZero<$primitive> {}
 
 non_zero_derive! {
     u8, i8, u16, i16, u32, i32, u64, i64, u128, i128,
+    usize, isize,
 }
 unsafe impl Borrow for () {
     type Borrowed = Self;
@@ -231,8 +232,7 @@ unsafe impl<T: ?Sized> Borrow for NonNull<T> {
 }
 
 impl<T: CType + ?Sized> ReprC for NonNull<T> {
-    // TODO: afaik the pointer is not necessarily mutable just non-null
-    type CType = <*mut T as ReprC>::CType;
+    type CType = crate::NonZero<*mut T>;
 }
 unsafe impl<T: CType + ?Sized> EncodeMove for NonNull<T> {
     type Store = <*mut T as EncodeMove>::Store;
@@ -252,7 +252,7 @@ unsafe impl<T: CType + ?Sized> EncodeMoveUnchecked for NonNull<T> {
     where
         Self: 'itm,
     {
-        unsafe { self.as_ptr().soft_encode_unchecked(&mut ()) }
+        crate::NonZero(self.as_ptr())
     }
 }
 unsafe impl<'d, T: CType + ?Sized> DecodeMove<'d> for NonNull<T> {
@@ -263,7 +263,7 @@ unsafe impl<'d, T: CType + ?Sized> DecodeMove<'d> for NonNull<T> {
         source: Self::CType,
         store: &'itm mut Self::Store,
     ) -> Option<Self> {
-        let ptr = unsafe { DecodeMove::soft_decode(source, store)? };
+        let ptr = unsafe { DecodeMove::soft_decode(source.0, store)? };
         NonNull::new(ptr)
     }
 
@@ -272,7 +272,7 @@ unsafe impl<'d, T: CType + ?Sized> DecodeMove<'d> for NonNull<T> {
         source: Self::CType,
         store: &'itm mut Self::Store,
     ) -> Self {
-        let ptr = unsafe { <*mut T as DecodeMove>::soft_decode_unchecked(source, store) };
+        let ptr = unsafe { <*mut T as DecodeMove>::soft_decode_unchecked(source.0, store) };
         unsafe { NonNull::new_unchecked(ptr) }
     }
 }
@@ -284,17 +284,17 @@ impl<T: CType + ?Sized> Encode for NonNull<T> {}
 unsafe impl<T: CType + ?Sized> AbiCompatibleValidate for NonNull<T>
 where
     T: RustSpec<Size: crate::Thin>,
-    Self: ReprC<CType = *mut T>,
+    Self: ReprC<CType = crate::NonZero<*mut T>>,
 {
     #[inline(always)]
     unsafe fn is_valid(target: &Self::CType) -> bool {
-        !target.is_null()
+        !target.0.is_null()
     }
 }
 unsafe impl<T: CType + ?Sized> AbiCompatible for NonNull<T>
 where
     T: RustSpec<Size: crate::Thin>,
-    Self: ReprC<CType = *mut T>,
+    Self: ReprC<CType = crate::NonZero<*mut T>>,
 {
 }
 #[cfg(feature = "alloc")]
@@ -512,6 +512,34 @@ mod tests {
     };
 
     #[test]
+    fn nonnull_carrier_preserves_nonnull_source_and_null_niche() {
+        static_assertions::assert_type_eq_all!(
+            <NonNull<u32> as ReprC>::CType,
+            crate::NonZero<*mut u32>
+        );
+        static_assertions::assert_type_eq_all!(
+            <Option<NonNull<u32>> as ReprC>::CType,
+            crate::option::COptionSome<NonNull<u32>>
+        );
+
+        let mut value = 7_u32;
+        let pointer = NonNull::from(&mut value);
+        let encoded = crate::encode(pointer);
+        assert_eq!(encoded.0, pointer.as_ptr());
+        assert_eq!(
+            unsafe { crate::decode::<NonNull<u32>>(encoded) },
+            Some(pointer)
+        );
+
+        let absent = crate::encode(None::<NonNull<u32>>);
+        assert!(absent.into_carrier().0.is_null());
+        assert_eq!(
+            unsafe { crate::decode::<Option<NonNull<u32>>>(absent) },
+            Some(None)
+        );
+    }
+
+    #[test]
     #[cfg(feature = "alloc")]
     fn manually_drop_stable_and_unstable_conversions() {
         assert_type_eq_all!(<ManuallyDrop<bool> as EncodeMove>::Store, ());
@@ -546,7 +574,7 @@ mod tests {
     #[test]
     fn maybe_uninit_lowers_without_validating_or_encoding_the_inner_value() {
         assert_impl_all!(MaybeUninit<bool>:
-            ReprC<CType = MaybeUninit<crate::primitives::CBool>>,
+            ReprC<CType = MaybeUninit<crate::primitives::Bool>>,
             AbiCompatible,
             Decode<'static>,
             Encode,
@@ -605,7 +633,7 @@ mod tests {
         );
         #[cfg(feature = "alloc")]
         assert_impl_all!(Vec<ManuallyDrop<u8>>:
-            Niche<CType = crate::vec::CVec<u8>>,
+            Niche<CType = crate::vec::CVec<ManuallyDrop<u8>>>,
             Decode<'static>,
             Encode,
         );
@@ -615,7 +643,7 @@ mod tests {
             Encode,
         );
         assert_impl_all!(Option<ManuallyDrop<u8>>:
-            Niche<CType = COption<u8>>,
+            Niche<CType = COption<ManuallyDrop<u8>>>,
             Decode<'static>,
             Encode,
         );
@@ -657,13 +685,13 @@ mod tests {
             Niche<CType = CWideBox<[ManuallyDrop<CBox<u8>>]>>,
         );
         assert_impl_all!(Vec<ManuallyDrop<Box<u8>>>:
-            Niche<CType = crate::vec::CVec<ManuallyDrop<CBox<u8>>>>,
+            Niche<CType = crate::vec::CVec<ManuallyDrop<Box<u8>>>>,
         );
         assert_impl_all!([ManuallyDrop<Box<u8>>; 2]:
             Niche<CType = [ManuallyDrop<CBox<u8>>; 2]>,
         );
         assert_impl_all!(Option<ManuallyDrop<Box<u8>>>:
-            ReprC<CType = ManuallyDrop<CBox<u8>>>,
+            ReprC<CType = crate::option::COptionSome<ManuallyDrop<Box<u8>>>>,
         );
         assert_not_impl_any!(ManuallyDrop<Box<u8>>: CType);
 
@@ -826,12 +854,14 @@ mod tests {
         assert_eq!(*cell.get_mut(), 11);
 
         let value = UnsafeCell::new(NonZero::new(3_u8).unwrap());
-        let source = unsafe { CRefMut::from_raw(value.get().cast::<UnsafeCell<u8>>()) };
+        let source =
+            unsafe { CRefMut::from_raw(value.get().cast::<UnsafeCell<crate::NonZero<u8>>>()) };
         let decoded = unsafe { crate::decode::<&mut UnsafeCell<NonZero<u8>>>(source) }.unwrap();
         assert_eq!(decoded.get_mut().get(), 3);
 
         let invalid = UnsafeCell::new(0_u8);
-        let source = unsafe { CRefMut::from_raw(invalid.get().cast::<UnsafeCell<u8>>()) };
+        let source =
+            unsafe { CRefMut::from_raw(invalid.get().cast::<UnsafeCell<crate::NonZero<u8>>>()) };
         assert!(unsafe { crate::decode::<&mut UnsafeCell<NonZero<u8>>>(source) }.is_none());
     }
 
@@ -886,7 +916,7 @@ mod tests {
         assert_eq!(decoded.get(), 6);
 
         let none = crate::encode(None::<Box<UnsafeCell<u8>>>);
-        assert!(none.as_ptr().is_null());
+        assert!(none.carrier().as_ptr().is_null());
         assert!(matches!(
             unsafe { crate::decode::<Option<Box<UnsafeCell<u8>>>>(none) },
             Some(None)
@@ -900,7 +930,7 @@ mod tests {
         let mut value = Cell::new(NonZero::new(3_u8).unwrap());
         let mut store = Default::default();
         let encoded = crate::soft_encode(&mut value, &mut store);
-        unsafe { encoded.as_ptr().write(UnsafeCell::new(4)) };
+        unsafe { encoded.as_ptr().write(UnsafeCell::new(crate::NonZero(4))) };
         assert_eq!(store.sync(), Some(()));
         assert_eq!(value.get().get(), 4);
     }
@@ -908,21 +938,21 @@ mod tests {
     #[test]
     fn non_robust_unsafe_cell() {
         assert_impl_all!(UnsafeCell<NonZero<u8>>:
-            ReprC<CType = UnsafeCell<u8>>,
+            ReprC<CType = UnsafeCell<crate::NonZero<u8>>>,
             Decode<'static>,
             Encode,
         );
         assert_impl_all!(&UnsafeCell<NonZero<u8>>:
-            Niche<CType = CRefMut<UnsafeCell<u8>, false>>,
+            Niche<CType = CRefMut<UnsafeCell<crate::NonZero<u8>>, false>>,
         );
         assert_not_impl_any!(&UnsafeCell<NonZero<u8>>: Decode<'static>, AbiCompatible);
         assert_impl_all!(&mut UnsafeCell<NonZero<u8>>:
-            Niche<CType = CRefMut<UnsafeCell<u8>, true>>,
+            Niche<CType = CRefMut<UnsafeCell<crate::NonZero<u8>>, true>>,
             Decode<'static>,
         );
         #[cfg(feature = "alloc")]
         assert_impl_all!(Box<UnsafeCell<NonZero<u8>>>:
-            Niche<CType = CBox<UnsafeCell<u8>>>,
+            Niche<CType = CBox<UnsafeCell<crate::NonZero<u8>>>>,
             Decode<'static>,
             Encode,
         );
@@ -930,49 +960,50 @@ mod tests {
         #[cfg(feature = "alloc")]
         {
             // SAFETY: this test constructs the carrier for an interior-mutable cell value.
-            let valid = CBox::from_box(Box::new(UnsafeCell::new(7u8)));
+            let valid = CBox::from_box(Box::new(UnsafeCell::new(crate::NonZero(7u8))));
             let decoded = unsafe { crate::decode::<Box<UnsafeCell<NonZero<u8>>>>(valid) }.unwrap();
             assert_eq!((*decoded).into_inner().get(), 7);
 
             // SAFETY: this test constructs the carrier for an interior-mutable cell value.
-            let invalid = CBox::from_box(Box::new(UnsafeCell::new(0u8)));
+            let invalid = CBox::from_box(Box::new(UnsafeCell::new(crate::NonZero(0u8))));
             assert!(unsafe { crate::decode::<Box<UnsafeCell<NonZero<u8>>>>(invalid) }.is_none());
         }
         assert_impl_all!(&[UnsafeCell<NonZero<u8>>]:
-            Niche<CType = CWideRefMut<[UnsafeCell<u8>], false>>,
+            Niche<CType = CWideRefMut<[UnsafeCell<crate::NonZero<u8>>], false>>,
         );
         assert_not_impl_any!(&[UnsafeCell<NonZero<u8>>]: Decode<'static>);
         assert_impl_all!(&mut [UnsafeCell<NonZero<u8>>]:
-            Niche<CType = CWideRefMut<[UnsafeCell<u8>], true>>,
+            Niche<CType = CWideRefMut<[UnsafeCell<crate::NonZero<u8>>], true>>,
             Decode<'static>,
         );
         #[cfg(feature = "alloc")]
         assert_impl_all!(Box<[UnsafeCell<NonZero<u8>>]>:
-            Niche<CType = CWideBox<[UnsafeCell<u8>]>>,
+            Niche<CType = CWideBox<[UnsafeCell<crate::NonZero<u8>>]>>,
             Decode<'static>,
             Encode,
         );
         #[cfg(feature = "alloc")]
         assert_impl_all!(Vec<UnsafeCell<NonZero<u8>>>:
-            Niche<CType = crate::vec::CVec<UnsafeCell<u8>>>,
+            Niche<CType = crate::vec::CVec<UnsafeCell<core::num::NonZeroU8>>>,
             Decode<'static>,
             Encode,
         );
         #[cfg(feature = "alloc")]
         {
-            let invalid = crate::vec::CVec::from_vec(vec![UnsafeCell::new(0_u8)]);
+            let invalid = crate::vec::CVec::from_vec(vec![UnsafeCell::new(crate::NonZero(0_u8))]);
             assert!(unsafe { crate::decode::<Vec<UnsafeCell<NonZero<u8>>>>(invalid) }.is_none());
 
-            let invalid = CWideBox::from_box(vec![UnsafeCell::new(0_u8)].into_boxed_slice());
+            let invalid =
+                CWideBox::from_box(vec![UnsafeCell::new(crate::NonZero(0_u8))].into_boxed_slice());
             assert!(unsafe { crate::decode::<Box<[UnsafeCell<NonZero<u8>>]>>(invalid) }.is_none());
         }
         assert_impl_all!([UnsafeCell<NonZero<u8>>; 2]:
-            ReprC<CType = [UnsafeCell<u8>; 2]>,
+            ReprC<CType = [UnsafeCell<crate::NonZero<u8>>; 2]>,
             Decode<'static>,
             Encode,
         );
         assert_impl_all!(Option<UnsafeCell<NonZero<u8>>>:
-            ReprC<CType = COption<UnsafeCell<u8>>>,
+            ReprC<CType = COption<UnsafeCell<core::num::NonZeroU8>>>,
             Decode<'static>,
             Encode,
         );

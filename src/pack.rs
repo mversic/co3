@@ -36,7 +36,9 @@ pub trait Pack<Part: CType>: ReprC<CType: Sized> {
 }
 
 macro_rules! impl_raw_wide_unpack {
-    ($source:ty, *$pointer:ident, $accessor:ident) => {
+    (@unwrap $value:ident identity) => { $value };
+    (@unwrap $value:ident into_inner) => { $value.0 };
+    ($source:ty, *$pointer:ident, $accessor:ident, $unwrap:ident) => {
         impl<R: Wide<Header: WideHeader<Data: CType>, Metadata: TryInto<U>> + CType + ?Sized, U: CType>
             Unpack2<*$pointer <R::Header as WideHeader>::Data, U> for $source
         {
@@ -44,6 +46,7 @@ macro_rules! impl_raw_wide_unpack {
 
             #[inline(always)]
             fn unpack(value: Self::CType) -> Result<(*$pointer <R::Header as WideHeader>::Data, U), Self::Error> {
+                let value = impl_raw_wide_unpack!(@unwrap value $unwrap);
                 Ok((R::$accessor(value).cast(), R::metadata(value).try_into()?))
             }
         }
@@ -51,10 +54,10 @@ macro_rules! impl_raw_wide_unpack {
     };
 }
 
-impl_raw_wide_unpack!(*const R, *const, as_ptr);
-impl_raw_wide_unpack!(*mut R, *mut, as_mut_ptr);
-impl_raw_wide_unpack!(NonNull<R>, *const, as_ptr);
-impl_raw_wide_unpack!(NonNull<R>, *mut, as_mut_ptr);
+impl_raw_wide_unpack!(*const R, *const, as_ptr, identity);
+impl_raw_wide_unpack!(*mut R, *mut, as_mut_ptr, identity);
+impl_raw_wide_unpack!(NonNull<R>, *const, as_ptr, into_inner);
+impl_raw_wide_unpack!(NonNull<R>, *mut, as_mut_ptr, into_inner);
 
 macro_rules! impl_ref_wide_pack {
     ($reference:ty, $carrier:ty, *$pointer:ident, $constructor:ident) => {
@@ -117,25 +120,25 @@ where
 
 impl<T: Pack2<Part1, Part2>, Part1: CType, Part2: CType> Pack2<Part1, Part2> for Option<T>
 where
-    Self: ReprC<CType = T::CType>,
+    Self: ReprC<CType = crate::option::COptionSome<T>>,
 {
     type Error = T::Error;
 
     #[inline(always)]
     unsafe fn pack(part1: Part1, part2: Part2) -> Result<Self::CType, Self::Error> {
-        unsafe { T::pack(part1, part2) }
+        unsafe { T::pack(part1, part2) }.map(crate::option::COptionSome::from_carrier)
     }
 }
 
 impl<T: Unpack2<Part1, Part2>, Part1: CType, Part2: CType> Unpack2<Part1, Part2> for Option<T>
 where
-    Self: ReprC<CType = T::CType>,
+    Self: ReprC<CType = crate::option::COptionSome<T>>,
 {
     type Error = T::Error;
 
     #[inline(always)]
     fn unpack(value: Self::CType) -> Result<(Part1, Part2), Self::Error> {
-        T::unpack(value)
+        T::unpack(value.into_carrier())
     }
 }
 

@@ -217,8 +217,12 @@ fn field_representation_maps_owned_conversion_and_transmutation() {
             .0,
         11
     );
-    assert!(!unsafe { <NonZeroField as co3::transmute::AbiCompatibleValidate>::is_valid(&0) });
-    assert!(unsafe { <NonZeroField as co3::transmute::AbiCompatibleValidate>::is_valid(&1) });
+    assert!(!unsafe {
+        <NonZeroField as co3::transmute::AbiCompatibleValidate>::is_valid(&core::mem::zeroed())
+    });
+    assert!(unsafe {
+        <NonZeroField as co3::transmute::AbiCompatibleValidate>::is_valid(&co3::NonZero(1))
+    });
     assert_impl_all!(FieldSlice<u8>: ReprC<CType = [u8]>);
     assert_impl_all!(FieldSlice<u8>: co3::transmute::AbiCompatible);
     assert_impl_all!(FieldSlice<core::mem::MaybeUninit<u8>>: ReprC<CType = [core::mem::MaybeUninit<u8>]>);
@@ -229,10 +233,12 @@ fn field_representation_maps_owned_conversion_and_transmutation() {
 
 #[test]
 fn field_representation_preserves_inner_niche() {
-    assert_impl_all!(NonZeroField: co3::niche::Niche<CType = u8>);
-    assert_eq!(<NonZeroField as co3::niche::Niche>::NICHE, 0_u8);
+    assert_impl_all!(NonZeroField: co3::niche::Niche<CType = co3::NonZero<u8>>);
+    assert_eq!(<NonZeroField as co3::niche::Niche>::NICHE, unsafe {
+        core::mem::zeroed()
+    });
     assert!(matches!(
-        unsafe { co3::decode::<Option<NonZeroField>>(0) },
+        unsafe { co3::decode::<Option<NonZeroField>>(core::mem::zeroed()) },
         Some(None)
     ));
 }

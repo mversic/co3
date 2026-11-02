@@ -54,9 +54,13 @@ pub(super) fn gen_item_view(
     rewrite_view_fields(&mut view_def.data);
     let rust_spec_impl = gen_view_rust_spec(input, &view_def);
     let fields_methods = match &view_def.data {
-        syn::Data::Struct(data) => {
-            gen_fields_methods(&view_def.ident, &view_def.generics, &data.fields, false)
-        }
+        syn::Data::Struct(data) => gen_fields_methods(
+            &view_def.ident,
+            &view_def.generics,
+            &data.fields,
+            false,
+            false,
+        ),
         syn::Data::Enum(_) => quote! {},
         syn::Data::Union(_) => unreachable!(),
     };

@@ -4,7 +4,10 @@ use quote::{format_ident, quote};
 use crate::{
     layout::{
         attr::ReprKind,
-        ctype::{classify_tail, gen_copy_extern_c_bounds_for_ctype, gen_ctype_name},
+        ctype::{
+            classify_tail, gen_copy_extern_c_bounds_for_ctype, gen_ctype_name,
+            gen_variant_struct_name,
+        },
         enum_tag_type, enum_variant_tag_exprs, is_exhaustive_enum, is_transparent_enum_repr,
     },
     utils::{build_extern_c_type_tuple, speculative_marker},
@@ -180,14 +183,12 @@ pub fn gen_enum_niche_ir(
                 Some(ReprKind::C(Some(_))) => quote! {
                     Self::CType {
                         tag: #niche_tag,
-                        payload: unsafe { core::mem::zeroed() },
+                        payload: core::mem::MaybeUninit::zeroed(),
                     }
                 },
-                None | Some(ReprKind::Primitive(_)) => quote! {{
-                    let mut value: Self::CType = unsafe { core::mem::zeroed() };
-                    unsafe { *<*mut Self::CType>::cast::<#tag_ty>(core::ptr::from_mut(&mut value)) = #niche_tag };
-                    value
-                }},
+                None | Some(ReprKind::Primitive(_)) => {
+                    gen_union_enum_niche_value(enum_name, &variants[0], niche_tag)
+                }
                 Some(ReprKind::Transparent | ReprKind::C(None)) => unreachable!(),
             }
         }
@@ -201,17 +202,12 @@ pub fn gen_enum_niche_ir(
             Some(ReprKind::C(Some(_))) => quote! {
                 Self::CType {
                     tag: #niche_tag_value,
-                    payload: unsafe { core::mem::zeroed() },
+                    payload: core::mem::MaybeUninit::zeroed(),
                 }
             },
-            None | Some(ReprKind::Primitive(_)) => quote! {{
-                let mut value: Self::CType = unsafe { core::mem::zeroed() };
-
-                // SAFETY: The CType is a union of variant structs with the tag as first field.
-                unsafe { *<*mut Self::CType>::cast::<#tag_ty>(core::ptr::from_mut(&mut value)) = #niche_tag_value };
-
-                value
-            }},
+            None | Some(ReprKind::Primitive(_)) => {
+                gen_union_enum_niche_value(enum_name, &variants[0], niche_tag_value)
+            }
             Some(ReprKind::Transparent) => unreachable!(),
             Some(ReprKind::C(None)) => unreachable!(),
         }
@@ -231,6 +227,31 @@ pub fn gen_enum_niche_ir(
             const NICHE: <Self as co3::ReprC>::CType = #niche_value;
         }
     }
+}
+
+fn gen_union_enum_niche_value(
+    enum_name: &syn::Ident,
+    variant: &syn::Variant,
+    tag: TokenStream,
+) -> TokenStream {
+    let variant_name = &variant.ident;
+    let variant_struct = gen_variant_struct_name(enum_name, variant_name);
+    let field_values = variant
+        .fields
+        .iter()
+        .map(|_| quote!(core::mem::MaybeUninit::zeroed()));
+    let body = match &variant.fields {
+        syn::Fields::Named(fields) => {
+            let names = fields
+                .named
+                .iter()
+                .map(|field| field.ident.as_ref().unwrap());
+            quote!(#variant_struct { tag: #tag, #(#names: #field_values),* })
+        }
+        syn::Fields::Unnamed(_) => quote!(#variant_struct(#tag, #(#field_values),*)),
+        syn::Fields::Unit => quote!(#variant_struct { tag: #tag }),
+    };
+    quote!(Self::CType { #variant_name: #body })
 }
 
 #[cfg(test)]

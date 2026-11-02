@@ -16,8 +16,8 @@ use rust_spec::{
 use crate::boxed::{CBox, CWideBox};
 use crate::{
     CType, NeedsDrop, ReprC,
-    option::COption,
-    primitives::CBool,
+    option::{COption, COptionSome},
+    primitives::Bool,
     reference::{CRef, CRefMut},
     result::CResult,
     slice::{CWideRef, CWideRefMut},
@@ -96,9 +96,9 @@ disjoint_impls! {
 
     impl<T: ?Sized, C: CType> Niche for NonNull<T>
     where
-        Self: ReprC<CType = *mut C>,
+        Self: ReprC<CType = crate::NonZero<*mut C>>,
     {
-        const NICHE: Self::CType = core::ptr::null_mut();
+        const NICHE: Self::CType = crate::NonZero(core::ptr::null_mut());
     }
     // TODO: Support ?Sized
     //impl<R: ?C> Niche for NonNull<R>
@@ -108,24 +108,24 @@ disjoint_impls! {
     //    const NICHE: Self::CType = CWideBox::none();
     //}
 
-    impl<R, C: CType + Copy> Niche for Option<R>
+    impl<R: ReprC<CType: CType + Copy>> Niche for Option<R>
     where
-        Self: ReprC<CType = COption<C>>,
+        Self: ReprC<CType = COption<R>>,
     {
         const NICHE: Self::CType = COption::niche();
     }
     // TODO: Depends on: https://github.com/mversic/co3/issues/33
     impl Niche for Option<bool>
     where
-        Self: ReprC<CType = <bool as ReprC>::CType>,
+        Self: ReprC<CType = COptionSome<bool>>,
     {
-        const NICHE: Self::CType = CBool(3);
+        const NICHE: Self::CType = COptionSome::from_carrier(Bool(3));
     }
     impl Niche for Option<Option<bool>>
     where
-        Self: ReprC<CType = <bool as ReprC>::CType>,
+        Self: ReprC<CType = COptionSome<Option<bool>>>,
     {
-        const NICHE: Self::CType = CBool(4);
+        const NICHE: Self::CType = COptionSome::from_carrier(COptionSome::from_carrier(Bool(4)));
     }
 
     impl<R: Niche> Niche for ManuallyDrop<R>
@@ -174,9 +174,9 @@ impl<R: Niche, const N: usize> Niche for [R; N] {
     const NICHE: Self::CType = { [R::NICHE; N] };
 }
 
-impl<R, E, C: CType + Copy, D: CType + Copy> Niche for Result<R, E>
+impl<R: ReprC<CType: CType + Copy>, E: ReprC<CType: CType + Copy>> Niche for Result<R, E>
 where
-    Self: ReprC<CType = CResult<C, D>>,
+    Self: ReprC<CType = CResult<R, E>>,
 {
     const NICHE: Self::CType = CResult::niche();
 }
@@ -190,24 +190,24 @@ mod tests {
     use static_assertions::{assert_impl_all, assert_not_impl_any};
 
     use super::*;
-    use crate::{CType, Decode, Encode, tuple::Tuple2};
+    use crate::{CType, Decode, Encode};
 
     #[test]
     fn nested_option_niche_family() {
         assert_impl_all!(Option<bool>:
-            Niche<CType = CBool>,
+            Niche<CType = COptionSome<bool>>,
             Decode<'static>,
             Encode,
 
         );
         assert_impl_all!(Option<Option<bool>>:
-            Niche<CType = CBool>,
+            Niche<CType = COptionSome<Option<bool>>>,
             Decode<'static>,
             Encode,
 
         );
         assert_impl_all!(Option<(u8, NonZero<u8>)>:
-            ReprC<CType = Tuple2<u8, u8>>,
+            ReprC<CType = COptionSome<(u8, NonZero<u8>)>>,
             Decode<'static>,
             Encode,
         );
@@ -218,26 +218,41 @@ mod tests {
 
     #[test]
     fn niche_values() {
-        assert_eq!(CRef::<CBool>::null(), crate::encode(None::<&bool>));
+        assert_eq!(
+            CRef::<Bool>::null(),
+            crate::encode(None::<&bool>).into_carrier()
+        );
         assert_eq!(
             <&mut bool as Niche>::NICHE,
-            co3::soft_encode(None::<&mut bool>, &mut Default::default())
+            co3::soft_encode(None::<&mut bool>, &mut Default::default()).into_carrier()
         );
 
         #[cfg(feature = "alloc")]
-        assert_eq!(<String as Niche>::NICHE, crate::encode(None::<String>));
+        assert_eq!(
+            <String as Niche>::NICHE,
+            crate::encode(None::<String>).into_carrier()
+        );
         #[cfg(feature = "alloc")]
-        assert_eq!(<Box<str> as Niche>::NICHE, crate::encode(None::<Box<str>>));
+        assert_eq!(
+            <Box<str> as Niche>::NICHE,
+            crate::encode(None::<Box<str>>).into_carrier()
+        );
 
-        assert_eq!(<&str as Niche>::NICHE, crate::encode(None::<&str>));
+        assert_eq!(
+            <&str as Niche>::NICHE,
+            crate::encode(None::<&str>).into_carrier()
+        );
 
         #[cfg(feature = "alloc")]
         assert_eq!(
             <&mut str as Niche>::NICHE,
-            crate::soft_encode(None::<&mut str>, &mut Default::default())
+            crate::soft_encode(None::<&mut str>, &mut Default::default()).into_carrier()
         );
 
-        assert_eq!(core::ptr::null_mut(), crate::encode(None::<NonNull<u32>>));
+        assert_eq!(
+            core::ptr::null_mut(),
+            crate::encode(None::<NonNull<u32>>).into_carrier().0
+        );
 
         #[cfg(feature = "alloc")]
         assert_eq!(
@@ -247,7 +262,7 @@ mod tests {
 
         assert_eq!(
             <core::mem::ManuallyDrop<bool> as Niche>::NICHE,
-            crate::encode(None::<core::mem::ManuallyDrop<bool>>)
+            crate::encode(None::<core::mem::ManuallyDrop<bool>>).into_carrier()
         );
     }
 }

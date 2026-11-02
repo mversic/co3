@@ -11,7 +11,9 @@ ffi! {
     type InteriorUnpacked = extern "C" fn(#[unpack(co3::borrow::Borrowed<*mut core::cell::UnsafeCell<u8>>, usize)] &[core::cell::Cell<u8>]) -> usize;
     type RegularUnpacked = extern "C" fn(#[unpack(_, _)] &mut [u8]) -> usize;
     type Composite = (String, raw fn(String));
-    type Optional = Option<raw fn(u8)>;
+    type MaybeCallback = Option<raw fn(u8)>;
+    type NicheOk = Result<core::num::NonZeroU8, ()>;
+    type NicheErr = Result<(), core::num::NonZeroU8>;
     type CompositeReturn = (u8, raw fn() -> u8);
     type Nested = raw extern "C" fn(raw extern "system" fn(u8));
     type Returned = raw fn() -> raw fn(u8);
@@ -44,7 +46,7 @@ fn main() {
     let _: Option<ExplicitAbi> = None;
     static_assertions::assert_type_eq_all!(ExplicitAbi, unsafe extern "system" fn(u8));
     static_assertions::assert_type_eq_all!(InheritedAbi, unsafe extern "C" fn(u8));
-    static_assertions::assert_type_eq_all!(Ordinary, u8);
+    static_assertions::assert_type_eq_all!(Ordinary, co3::NonZero<u8>);
     static_assertions::assert_type_eq_all!(Regular, Option<extern "C" fn(u8)>);
     static_assertions::assert_type_eq_all!(
         SharedUnpacked,
@@ -65,7 +67,9 @@ fn main() {
             unsafe extern "C" fn(co3::borrow::Borrowed<co3::boxed::CWideBox<Utf8Str>>)
         ) as ReprC>::CType
     );
-    static_assertions::assert_type_eq_all!(Optional, Option<unsafe extern "C" fn(u8)>);
+    static_assertions::assert_type_eq_all!(MaybeCallback, co3::option::COptionSome<unsafe extern "C" fn(u8)>);
+    static_assertions::assert_type_eq_all!(NicheOk, co3::result::CResultOk<core::num::NonZeroU8, ()>);
+    static_assertions::assert_type_eq_all!(NicheErr, co3::result::CResultErr<(), core::num::NonZeroU8>);
     static_assertions::assert_type_eq_all!(
         CompositeReturn,
         <(u8, unsafe extern "C" fn() -> u8) as ReprC>::CType

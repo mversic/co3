@@ -20,7 +20,7 @@ fn mutable_non_robust_wrappers_validate_writeback() {
     let mut manual = ManuallyDrop::new(true);
     let mut store = Default::default();
     let encoded = co3::soft_encode(&mut manual, &mut store);
-    unsafe { *encoded.as_ptr() = co3::primitives::CBool(2) };
+    unsafe { *encoded.as_ptr() = co3::primitives::Bool(2) };
     assert_eq!(store.sync(), None);
     assert!(*manual);
 
@@ -33,21 +33,21 @@ fn mutable_non_robust_wrappers_validate_writeback() {
     let mut cell = Cell::new(true);
     let mut store = Default::default();
     let encoded = co3::soft_encode(&mut cell, &mut store);
-    unsafe { *(*encoded.as_ptr()).get() = co3::primitives::CBool::FALSE };
+    unsafe { *(*encoded.as_ptr()).get() = co3::primitives::Bool::FALSE };
     assert_eq!(store.sync(), Some(()));
     assert!(!cell.get());
 
     let mut nonzero_cell = Cell::new(core::num::NonZeroU8::new(3).unwrap());
     let mut store = Default::default();
     let encoded = co3::soft_encode(&mut nonzero_cell, &mut store);
-    unsafe { *(*encoded.as_ptr()).get() = 0 };
+    unsafe { *(*encoded.as_ptr()).get() = core::mem::zeroed() };
     assert_eq!(store.sync(), None);
     assert_eq!(nonzero_cell.get().get(), 3);
 
     let mut unsafe_cell = UnsafeCell::new(true);
     let mut store = Default::default();
     let encoded = co3::soft_encode(&mut unsafe_cell, &mut store);
-    unsafe { *(*encoded.as_ptr()).get() = co3::primitives::CBool(2) };
+    unsafe { *(*encoded.as_ptr()).get() = co3::primitives::Bool(2) };
     assert_eq!(store.sync(), None);
     assert!(unsafe { *unsafe_cell.get() });
 }
@@ -97,14 +97,14 @@ fn mutable_copy_result_can_change_variant() {
     let mut value: Result<u32, bool> = Ok(7);
     let mut store = Default::default();
     let encoded = co3::soft_encode(&mut value, &mut store);
-    unsafe { *encoded.as_ptr() = co3::result::CResult::Err(co3::primitives::CBool::TRUE) };
+    unsafe { *encoded.as_ptr() = co3::result::CResult::Err(co3::primitives::Bool::TRUE) };
     assert_eq!(store.sync(), Some(()));
     assert_eq!(value, Err(true));
 
     let mut value: co3::result::Result<u32, bool> = co3::result::Result::Ok(4);
     let mut store = Default::default();
     let encoded = co3::soft_encode(&mut value, &mut store);
-    unsafe { *encoded.as_ptr() = co3::result::CResult::Err(co3::primitives::CBool::TRUE) };
+    unsafe { *encoded.as_ptr() = co3::result::CResult::Err(co3::primitives::Bool::TRUE) };
     assert_eq!(store.sync(), Some(()));
     assert_eq!(value, co3::result::Result::Err(true));
 }
@@ -287,24 +287,24 @@ fn mutable_non_robust_buffer_validates_writeback() {
 
 #[test]
 fn mutable_dst_store_commits_only_on_sync() {
-    use co3::primitives::CBool;
+    use co3::primitives::Bool;
 
     let mut value = [false, true];
     let mut store = Default::default();
     let encoded = co3::soft_encode(&mut value[..], &mut store);
-    unsafe { encoded.as_ptr().write(CBool::TRUE) };
+    unsafe { encoded.as_ptr().write(Bool::TRUE) };
     drop(store);
     assert_eq!(value, [false, true]);
 
     let mut store = Default::default();
     let encoded = co3::soft_encode(&mut value[..], &mut store);
-    unsafe { encoded.as_ptr().write(CBool::TRUE) };
+    unsafe { encoded.as_ptr().write(Bool::TRUE) };
     assert_eq!(store.sync(), Some(()));
     assert_eq!(value, [true, true]);
 
     let mut store = Default::default();
     let encoded = co3::soft_encode(&mut value[..], &mut store);
-    unsafe { encoded.as_ptr().write(CBool(2)) };
+    unsafe { encoded.as_ptr().write(Bool(2)) };
     assert_eq!(store.sync(), None);
     assert_eq!(value, [true, true]);
 }
@@ -353,7 +353,7 @@ fn nested_mutable_reference_validates_pointee_and_retains_borrowed_elements() {
     let mut reference = &mut values;
     let mut store = Default::default();
     let encoded = co3::soft_encode(&mut reference, &mut store);
-    unsafe { *(*(*encoded.as_ptr()).as_ptr()).as_ptr() = co3::primitives::CBool(2) };
+    unsafe { *(*(*encoded.as_ptr()).as_ptr()).as_ptr() = co3::primitives::Bool(2) };
     assert_eq!(store.sync(), None);
     // Rejected writeback preserves the original valid boolean.
     assert_eq!(**reference, [true]);

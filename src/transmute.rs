@@ -19,8 +19,11 @@ use crate::boxed::CBox;
 use crate::{
     NeedsDrop, ReprC,
     niche::Niche,
+    option::COptionSome,
     reference::{CRef, CRefMut},
+    result::{CResultErr, CResultOk},
     utf8::Utf8Str,
+    wide::Wide as _,
 };
 #[doc(hidden)]
 pub use interior::InteriorTrap;
@@ -88,16 +91,16 @@ disjoint_impls! {
             <R as ReprC>::CType: Sized,
         {}
 
-    unsafe impl<R: AbiCompatible<CType: Copy + PartialEq> + Niche + ReprC, E: ReprC> AbiCompatible for Result<R, E>
+    unsafe impl<R: AbiCompatible<CType: Copy + PartialEq> + Niche, E: ReprC> AbiCompatible for Result<R, E>
         where
-            Self: RustSpec<Layout = Stable> + ReprC<CType = <R as ReprC>::CType>,
+            Self: RustSpec<Layout = Stable> + ReprC,
             R: RustSpec<Size = RustSpecSized<Gt<Zero>>>,
             E: RustSpec<Size = RustSpecSized<Zero>>,
         {}
 
     unsafe impl<R: ReprC, E: AbiCompatible<CType: Copy + PartialEq> + Niche> AbiCompatible for Result<R, E>
         where
-            Self: RustSpec<Layout = Stable> + ReprC<CType = <E as ReprC>::CType>,
+            Self: RustSpec<Layout = Stable> + ReprC,
             R: RustSpec<Size = RustSpecSized<Zero>>,
             E: RustSpec<Size = RustSpecSized<Gt<Zero>>>,
         {}
@@ -223,29 +226,29 @@ disjoint_impls! {
     }
 
 
-    unsafe impl<R: AbiCompatibleValidate<CType: Copy + PartialEq> + Niche + ReprC, E: ReprC>
+    unsafe impl<R: AbiCompatibleValidate<CType: Copy + PartialEq> + Niche, E: ReprC>
         AbiCompatibleValidate for Result<R, E>
     where
-        Self: RustSpec<Layout = Stable> + ReprC<CType = <R as ReprC>::CType>,
+        Self: RustSpec<Layout = Stable> + ReprC<CType = CResultOk<R, E>>,
         R: RustSpec<Size = RustSpecSized<Gt<Zero>>>,
         E: RustSpec<Size = RustSpecSized<Zero>>,
     {
         #[inline(always)]
         unsafe fn is_valid(target: &Self::CType) -> bool {
-            *target == R::NICHE || unsafe { R::is_valid(target) }
+            target.is_niche() || unsafe { R::is_valid(target.carrier()) }
         }
     }
 
     unsafe impl<R: ReprC, E: AbiCompatibleValidate<CType: Copy + PartialEq> + Niche>
         AbiCompatibleValidate for Result<R, E>
     where
-        Self: RustSpec<Layout = Stable> + ReprC<CType = <E as ReprC>::CType>,
+        Self: RustSpec<Layout = Stable> + ReprC<CType = CResultErr<R, E>>,
         R: RustSpec<Size = RustSpecSized<Zero>>,
         E: RustSpec<Size = RustSpecSized<Gt<Zero>>>,
     {
         #[inline(always)]
         unsafe fn is_valid(target: &Self::CType) -> bool {
-            *target == E::NICHE || unsafe { E::is_valid(target) }
+            target.is_niche() || unsafe { E::is_valid(target.carrier()) }
         }
     }
 
@@ -381,7 +384,7 @@ unsafe impl AbiCompatibleValidate for str {
     #[inline(always)]
     unsafe fn is_valid(target: &Self::CType) -> bool {
         let ptr = core::ptr::from_ref(target);
-        let len = <Utf8Str as crate::wide::Wide>::metadata(ptr);
+        let len = Utf8Str::metadata(ptr);
         let bytes = unsafe { core::slice::from_raw_parts(ptr.cast::<u8>(), len) };
         core::str::from_utf8(bytes).is_ok()
     }
@@ -390,15 +393,15 @@ unsafe impl AbiCompatible for str {}
 
 unsafe impl<R: AbiCompatibleValidate + Niche<CType: PartialEq>> AbiCompatibleValidate for Option<R>
 where
-    Self: RustSpec<Layout = Stable> + ReprC<CType = R::CType>,
+    Self: RustSpec<Layout = Stable> + ReprC<CType = COptionSome<R>>,
 {
     #[inline(always)]
     unsafe fn is_valid(target: &Self::CType) -> bool {
-        *target == R::NICHE || unsafe { R::is_valid(target) }
+        target.is_niche() || unsafe { R::is_valid(target.carrier()) }
     }
 }
 unsafe impl<R: AbiCompatible + Niche<CType: PartialEq>> AbiCompatible for Option<R> where
-    Self: RustSpec<Layout = Stable> + ReprC<CType = R::CType>
+    Self: RustSpec<Layout = Stable> + ReprC<CType = COptionSome<R>>
 {
 }
 
@@ -464,14 +467,32 @@ mod tests {
 
     #[test]
     fn option_validation_accepts_none_and_checks_some() {
-        use crate::primitives::CBool;
+        use crate::primitives::Bool;
         use core::num::NonZeroU8;
 
-        assert!(unsafe { <Option<NonZeroU8>>::is_valid(&0) });
-        assert!(unsafe { <Option<NonZeroU8>>::is_valid(&7) });
-        assert!(unsafe { <Option<&bool>>::is_valid(&CRef::null()) });
-        assert!(unsafe { <Option<&bool>>::is_valid(&CRef::from_ref(&CBool(1))) });
-        assert!(!unsafe { <Option<&bool>>::is_valid(&CRef::from_ref(&CBool(3))) });
+        assert!(unsafe {
+            <Option<NonZeroU8>>::is_valid(&crate::option::COptionSome::from_carrier(
+                crate::NonZero(0),
+            ))
+        });
+        assert!(unsafe {
+            <Option<NonZeroU8>>::is_valid(&crate::option::COptionSome::from_carrier(
+                crate::NonZero(7),
+            ))
+        });
+        assert!(unsafe {
+            <Option<&bool>>::is_valid(&crate::option::COptionSome::from_carrier(CRef::null()))
+        });
+        assert!(unsafe {
+            <Option<&bool>>::is_valid(&crate::option::COptionSome::from_carrier(CRef::from_ref(
+                &Bool(1),
+            )))
+        });
+        assert!(!unsafe {
+            <Option<&bool>>::is_valid(&crate::option::COptionSome::from_carrier(CRef::from_ref(
+                &Bool(3),
+            )))
+        });
 
         let none = None::<NonZeroU8>;
         let encoded = crate::encode(&none);
@@ -494,14 +515,14 @@ mod tests {
             &Cell<[NonZeroU8]>: Encode, Decode<'static>
         );
 
-        let mut storage = UnsafeCell::new([1_u8, 2]);
-        let target: &mut UnsafeCell<[u8]> = &mut storage;
+        let mut storage = UnsafeCell::new([crate::NonZero(1_u8), crate::NonZero(2)]);
+        let target: &mut UnsafeCell<[crate::NonZero<u8>]> = &mut storage;
         // SAFETY: The local backing storage remains exclusively accessible.
         unsafe {
             assert!(<UnsafeCell<[NonZeroU8]>>::is_valid(target));
             assert!(<Cell<[NonZeroU8]>>::is_valid(target));
         }
-        target.get_mut()[1] = 0;
+        target.get_mut()[1] = crate::NonZero(0);
         unsafe {
             assert!(!<UnsafeCell<[NonZeroU8]>>::is_valid(target));
             assert!(!<Cell<[NonZeroU8]>>::is_valid(target));
@@ -538,56 +559,56 @@ mod tests {
     #[test]
     fn transparent_type() {
         assert_impl_all!(bool:
-            Niche<CType = crate::primitives::CBool>,
+            Niche<CType = crate::primitives::Bool>,
             Decode<'static>,
             Encode,
         );
         assert_impl_all!(&bool:
-            Niche<CType = CRef<crate::primitives::CBool>>,
+            Niche<CType = CRef<crate::primitives::Bool>>,
             Decode<'static>,
             Encode,
         );
         assert_impl_all!(&mut bool:
-            Niche<CType = CRefMut<crate::primitives::CBool, true>>,
+            Niche<CType = CRefMut<crate::primitives::Bool, true>>,
             Decode<'static>,
             Encode,
         );
         #[cfg(feature = "alloc")]
         assert_impl_all!(Box<bool>:
-            Niche<CType = CBox<crate::primitives::CBool>>,
+            Niche<CType = CBox<crate::primitives::Bool>>,
             Decode<'static>,
             Encode,
         );
         assert_impl_all!(&[bool]:
-            Niche<CType = CWideRef<[crate::primitives::CBool]>>,
+            Niche<CType = CWideRef<[crate::primitives::Bool]>>,
             Decode<'static>,
             Encode,
         );
         #[cfg(feature = "alloc")]
         assert_impl_all!(&mut [bool]:
-            Niche<CType = CWideRefMut<[crate::primitives::CBool], true>>,
+            Niche<CType = CWideRefMut<[crate::primitives::Bool], true>>,
             Decode<'static>,
             Encode,
         );
         #[cfg(feature = "alloc")]
         assert_impl_all!(Box<[bool]>:
-            Niche<CType = CWideBox<[crate::primitives::CBool]>>,
+            Niche<CType = CWideBox<[crate::primitives::Bool]>>,
             Decode<'static>,
             Encode,
         );
         #[cfg(feature = "alloc")]
         assert_impl_all!(Vec<bool>:
-            Niche<CType = crate::vec::CVec<crate::primitives::CBool>>,
+            Niche<CType = crate::vec::CVec<bool>>,
             Decode<'static>,
             Encode,
         );
         assert_impl_all!([bool; 2]:
-            Niche<CType = [crate::primitives::CBool; 2]>,
+            Niche<CType = [crate::primitives::Bool; 2]>,
             Decode<'static>,
             Encode,
         );
         assert_impl_all!(Option<bool>:
-            Niche<CType = crate::primitives::CBool>,
+            Niche<CType = crate::option::COptionSome<bool>>,
             Decode<'static>,
             Encode,
         );
@@ -607,7 +628,7 @@ mod tests {
         );
         #[cfg(feature = "alloc")]
         assert_impl_all!(Box<&bool>:
-            Niche<CType = CBox<CRef<crate::primitives::CBool>>>,
+            Niche<CType = CBox<CRef<crate::primitives::Bool>>>,
             Decode<'static>,
             Encode,
         );
@@ -628,7 +649,7 @@ mod tests {
         );
         #[cfg(feature = "alloc")]
         assert_impl_all!(Vec<&u8>:
-            Niche<CType = crate::vec::CVec<CRef<u8>>>,
+            Niche<CType = crate::vec::CVec<&'static u8>>,
             Decode<'static>,
             Encode,
         );
@@ -638,7 +659,7 @@ mod tests {
             Encode,
         );
         assert_impl_all!(Option<&u8>:
-            ReprC<CType = CRef<u8>>,
+            ReprC<CType = crate::option::COptionSome<&'static u8>>,
             Decode<'static>,
             Encode,
         );
@@ -649,51 +670,51 @@ mod tests {
     #[test]
     fn transparent_ref() {
         assert_impl_all!(&&bool:
-            Niche<CType = CRef<CRef<crate::primitives::CBool>>>,
+            Niche<CType = CRef<CRef<crate::primitives::Bool>>>,
             Decode<'static>,
             Encode,
         );
         assert_impl_all!(&mut &bool:
-            Niche<CType = CRefMut<CRef<crate::primitives::CBool>, true>>,
+            Niche<CType = CRefMut<CRef<crate::primitives::Bool>, true>>,
             Decode<'static>,
             Encode,
         );
         #[cfg(feature = "alloc")]
         assert_impl_all!(Box<&bool>:
-            Niche<CType = CBox<CRef<crate::primitives::CBool>>>,
+            Niche<CType = CBox<CRef<crate::primitives::Bool>>>,
             Decode<'static>,
             Encode,
         );
         assert_impl_all!(&[&bool]:
-            Niche<CType = CWideRef<[CRef<crate::primitives::CBool>]>>,
+            Niche<CType = CWideRef<[CRef<crate::primitives::Bool>]>>,
             Decode<'static>,
             Encode,
         );
         #[cfg(feature = "alloc")]
         assert_impl_all!(&mut [&bool]:
-            Niche<CType = CWideRefMut<[CRef<crate::primitives::CBool>], true>>,
+            Niche<CType = CWideRefMut<[CRef<crate::primitives::Bool>], true>>,
             Decode<'static>,
             Encode,
         );
         #[cfg(feature = "alloc")]
         assert_impl_all!(Box<[&bool]>:
-            Niche<CType = CWideBox<[CRef<crate::primitives::CBool>]>>,
+            Niche<CType = CWideBox<[CRef<crate::primitives::Bool>]>>,
             Decode<'static>,
             Encode,
         );
         #[cfg(feature = "alloc")]
         assert_impl_all!(Vec<&bool>:
-            Niche<CType = crate::vec::CVec<CRef<crate::primitives::CBool>>>,
+            Niche<CType = crate::vec::CVec<&'static bool>>,
             Decode<'static>,
             Encode,
         );
         assert_impl_all!([&bool; 2]:
-            Niche<CType = [CRef<crate::primitives::CBool>; 2]>,
+            Niche<CType = [CRef<crate::primitives::Bool>; 2]>,
             Decode<'static>,
             Encode,
         );
         assert_impl_all!(Option<&bool>:
-            ReprC<CType = CRef<crate::primitives::CBool>>,
+            ReprC<CType = crate::option::COptionSome<&'static bool>>,
             Decode<'static>,
             Encode,
         );
@@ -733,7 +754,7 @@ mod tests {
         );
         #[cfg(feature = "alloc")]
         assert_impl_all!(Vec<&mut u8>:
-            Niche<CType = crate::vec::CVec<CRefMut<u8, true>>>,
+            Niche<CType = crate::vec::CVec<&'static mut u8>>,
             Decode<'static>,
             Encode,
         );
@@ -743,7 +764,7 @@ mod tests {
             Encode,
         );
         assert_impl_all!(Option<&mut u8>:
-            ReprC<CType = CRefMut<u8, true>>,
+            ReprC<CType = crate::option::COptionSome<&'static mut u8>>,
             Decode<'static>,
             Encode,
         );
@@ -754,48 +775,48 @@ mod tests {
     #[test]
     fn transparent_ref_mut() {
         assert_impl_all!(&&mut bool:
-            Niche<CType = CRef<CRefMut<crate::primitives::CBool, true>>>,
+            Niche<CType = CRef<CRefMut<crate::primitives::Bool, true>>>,
             Decode<'static>,
             Encode,
         );
         assert_impl_all!(&mut &mut bool:
-            Niche<CType = CRefMut<CRefMut<crate::primitives::CBool, true>, true>>,
+            Niche<CType = CRefMut<CRefMut<crate::primitives::Bool, true>, true>>,
             Decode<'static>,
         );
         #[cfg(feature = "alloc")]
         assert_impl_all!(Box<&mut bool>:
-            Niche<CType = CBox<CRefMut<crate::primitives::CBool, true>>>,
+            Niche<CType = CBox<CRefMut<crate::primitives::Bool, true>>>,
             Decode<'static>,
             Encode,
         );
         assert_impl_all!(&[&mut bool]:
-            Niche<CType = CWideRef<[CRefMut<crate::primitives::CBool, true>]>>,
+            Niche<CType = CWideRef<[CRefMut<crate::primitives::Bool, true>]>>,
             Decode<'static>,
             Encode,
         );
         assert_impl_all!(&mut [&mut bool]:
-            Niche<CType = CWideRefMut<[CRefMut<crate::primitives::CBool, true>], true>>,
+            Niche<CType = CWideRefMut<[CRefMut<crate::primitives::Bool, true>], true>>,
             Decode<'static>,
         );
         #[cfg(feature = "alloc")]
         assert_impl_all!(Box<[&mut bool]>:
-            Niche<CType = CWideBox<[CRefMut<crate::primitives::CBool, true>]>>,
+            Niche<CType = CWideBox<[CRefMut<crate::primitives::Bool, true>]>>,
             Decode<'static>,
             Encode,
         );
         #[cfg(feature = "alloc")]
         assert_impl_all!(Vec<&mut bool>:
-            Niche<CType = crate::vec::CVec<CRefMut<crate::primitives::CBool, true>>>,
+            Niche<CType = crate::vec::CVec<&'static mut bool>>,
             Decode<'static>,
             Encode
         );
         assert_impl_all!([&mut bool; 2]:
-            Niche<CType = [CRefMut<crate::primitives::CBool, true>; 2]>,
+            Niche<CType = [CRefMut<crate::primitives::Bool, true>; 2]>,
             Decode<'static>,
             Encode
         );
         assert_impl_all!(Option<&mut bool>:
-            ReprC<CType = CRefMut<crate::primitives::CBool, true>>,
+            ReprC<CType = crate::option::COptionSome<&'static mut bool>>,
             Decode<'static>,
             Encode
         );
@@ -808,7 +829,7 @@ mod conversion_tests {
     use crate::transmute::AbiCompatibleValidate;
     use crate::{
         ReprC,
-        primitives::CBool,
+        primitives::Bool,
         stored::{DecodeMove, EncodeMove, EncodeMoveUnchecked, Store},
         transmute::AbiCompatible,
     };
@@ -865,7 +886,7 @@ mod conversion_tests {
     fn empty_arrays_convert() {
         static_assertions::assert_impl_all!([core::num::NonZeroU8; 1]: crate::niche::Niche);
         let value: [u8; 0] = [];
-        assert_eq!(crate::encode(value), []);
+        assert_eq!(crate::encode(value), [] as [u8; 0]);
         assert_eq!(unsafe { crate::decode::<[u8; 0]>([]) }, Some([]));
         assert!(unsafe { <[u8; 0] as AbiCompatibleValidate>::is_valid(&[]) });
     }
@@ -918,32 +939,48 @@ mod conversion_tests {
     #[test]
     fn result_niche_is_valid_for_error() {
         use core::num::NonZeroU8;
-        assert!(unsafe { <Result<NonZeroU8, ()> as AbiCompatibleValidate>::is_valid(&0) });
-        assert!(unsafe { <Result<NonZeroU8, ()> as AbiCompatibleValidate>::is_valid(&1) });
+        assert!(unsafe {
+            <Result<NonZeroU8, ()> as AbiCompatibleValidate>::is_valid(
+                &crate::result::CResultOk::from_carrier(crate::NonZero(0)),
+            )
+        });
+        assert!(unsafe {
+            <Result<NonZeroU8, ()> as AbiCompatibleValidate>::is_valid(
+                &crate::result::CResultOk::from_carrier(crate::NonZero(1)),
+            )
+        });
     }
 
     #[test]
     fn result_niche_is_valid_for_success() {
         use core::num::NonZeroU8;
-        assert!(unsafe { <Result<(), NonZeroU8> as AbiCompatibleValidate>::is_valid(&0) });
-        assert!(unsafe { <Result<(), NonZeroU8> as AbiCompatibleValidate>::is_valid(&1) });
+        assert!(unsafe {
+            <Result<(), NonZeroU8> as AbiCompatibleValidate>::is_valid(
+                &crate::result::CResultErr::from_carrier(crate::NonZero(0)),
+            )
+        });
+        assert!(unsafe {
+            <Result<(), NonZeroU8> as AbiCompatibleValidate>::is_valid(
+                &crate::result::CResultErr::from_carrier(crate::NonZero(1)),
+            )
+        });
     }
 
     #[test]
     fn nonrobust_checked_conversions_still_validate() {
         let mut store = Default::default();
         assert!(
-            unsafe { crate::soft_decode::<[bool; 2]>([CBool(1), CBool(2)], &mut store) }.is_none()
+            unsafe { crate::soft_decode::<[bool; 2]>([Bool(1), Bool(2)], &mut store) }.is_none()
         );
         assert!(
             unsafe {
-                crate::soft_decode::<Cell<bool>>(UnsafeCell::new(CBool(2)), &mut Default::default())
+                crate::soft_decode::<Cell<bool>>(UnsafeCell::new(Bool(2)), &mut Default::default())
             }
             .is_none()
         );
         let mut store = Default::default();
         let values =
-            unsafe { crate::soft_decode::<[bool; 2]>([CBool(1), CBool(0)], &mut store) }.unwrap();
+            unsafe { crate::soft_decode::<[bool; 2]>([Bool(1), Bool(0)], &mut store) }.unwrap();
         assert_eq!(values, [true, false]);
     }
 
@@ -953,7 +990,7 @@ mod conversion_tests {
         let mut store = Default::default();
         let encoded = crate::soft_encode([&mut value], &mut store);
         // SAFETY: The mutable carrier refers to the live conversion store.
-        unsafe { encoded[0].as_ptr().write(CBool::FALSE) };
+        unsafe { encoded[0].as_ptr().write(Bool::FALSE) };
         assert_eq!(store.sync(), Some(()));
         assert!(!value);
     }
@@ -963,7 +1000,7 @@ mod conversion_tests {
         let mut value = true;
         let mut store = Default::default();
         let encoded = crate::soft_encode(core::mem::ManuallyDrop::new(&mut value), &mut store);
-        unsafe { encoded.as_ptr().write(CBool::FALSE) };
+        unsafe { encoded.as_ptr().write(Bool::FALSE) };
         assert_eq!(store.sync(), Some(()));
         assert!(!value);
     }
@@ -973,7 +1010,7 @@ mod conversion_tests {
         let values = [(true, 3u8), (false, 4u8)];
         let mut store = Default::default();
         let encoded = crate::soft_encode(values, &mut store);
-        assert_eq!(encoded[0].0, CBool::TRUE);
+        assert_eq!(encoded[0].0, Bool::TRUE);
         assert_eq!(encoded[1].1, 4);
         let mut decode_store = Default::default();
         let decoded =
@@ -1062,7 +1099,7 @@ mod conversion_tests {
         assert!(
             unsafe {
                 crate::soft_decode::<ManuallyDrop<Cell<bool>>>(
-                    UnsafeCell::new(CBool(2)),
+                    UnsafeCell::new(Bool(2)),
                     &mut Default::default(),
                 )
             }
@@ -1070,7 +1107,7 @@ mod conversion_tests {
         );
         let decoded = unsafe {
             crate::soft_decode::<ManuallyDrop<Cell<bool>>>(
-                UnsafeCell::new(CBool(1)),
+                UnsafeCell::new(Bool(1)),
                 &mut Default::default(),
             )
         }

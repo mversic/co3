@@ -15,6 +15,6 @@ fn initialized_carrier_borrow_preserves_its_pointer() {
 
 #[test]
 fn uninitialized_carrier_can_be_borrowed_without_initializing_it() {
-    let borrowed: MaybeUninit<CBox<u32>> = MaybeUninit::uninit().borrow();
+    let borrowed: MaybeUninit<CBox<u32>> = MaybeUninit::zeroed().borrow();
     let _: MaybeUninit<CBox<u32>> = Borrow::from_borrow(borrowed);
 }

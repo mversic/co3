@@ -1,13 +1,6 @@
 //! Stable vector ownership and its robust C-compatible representation.
 
-use crate::transmute::AbiCompatibleValidate;
-use crate::{
-    CFnArg, CFnReturn, CType, Decode, Encode, EncodeUnchecked, ReprC,
-    borrow::Borrowed,
-    slice::impl_identity_carrier,
-    stored::{DecodeMove, EncodeMove, EncodeMoveUnchecked},
-    transmute::AbiCompatible,
-};
+use alloc::vec::Vec as RustVec;
 use core::{
     hash::Hash,
     mem::ManuallyDrop,
@@ -15,6 +8,14 @@ use core::{
     ptr::NonNull,
 };
 use rust_spec::RustSpec;
+
+use crate::{
+    CFnArg, CFnReturn, CType, Decode, Encode, EncodeUnchecked, ReprC,
+    borrow::Borrowed,
+    slice::impl_identity_carrier,
+    stored::{DecodeMove, EncodeMove, EncodeMoveUnchecked},
+    transmute::{AbiCompatible, AbiCompatibleValidate},
+};
 
 /// A vector with a stable three-field representation.
 #[repr(C)]
@@ -26,17 +27,20 @@ pub struct Vec<T> {
 
 /// An owned allocation represented by its data pointer, length, and capacity.
 /// A null pointer is reserved as a niche and does not represent a vector.
+/// `T` names the Rust element type; the allocation contains `T::CType` elements.
 #[repr(C)]
 #[derive(RustSpec)]
-pub struct CVec<T> {
-    data: *mut T,
+pub struct CVec<T: ReprC<CType: Sized>> {
+    data: *mut T::CType,
     capacity: usize,
     len: usize,
 }
 
+unsafe impl<T: ReprC<CType: Sized>> crate::Zeroable for CVec<T> {}
+
 struct VecOwner<'a, T> {
     target: &'a mut Vec<T>,
-    value: Option<alloc::vec::Vec<T>>,
+    value: Option<RustVec<T>>,
 }
 
 impl<T> Vec<T> {
@@ -53,7 +57,7 @@ impl<T> Vec<T> {
     }
 
     pub fn with_capacity(capacity: usize) -> Self {
-        alloc::vec::Vec::with_capacity(capacity).into()
+        RustVec::with_capacity(capacity).into()
     }
 
     pub const fn len(&self) -> usize {
@@ -68,7 +72,7 @@ impl<T> Vec<T> {
     pub const fn as_ptr(&self) -> *const T {
         self.data.as_ptr()
     }
-    pub fn as_mut_ptr(&mut self) -> *mut T {
+    pub const fn as_mut_ptr(&mut self) -> *mut T {
         self.data.as_ptr()
     }
 
@@ -120,13 +124,13 @@ impl<T: core::fmt::Debug> core::fmt::Debug for Vec<T> {
         core::fmt::Debug::fmt(&**self, f)
     }
 }
-// SAFETY: Vec uniquely owns its elements, just like alloc::vec::Vec.
+// SAFETY: Vec uniquely owns its elements, just like RustVec.
 unsafe impl<T: Send> Send for Vec<T> {}
 unsafe impl<T: Sync> Sync for Vec<T> {}
 
 impl<T> FromIterator<T> for Vec<T> {
     fn from_iter<I: IntoIterator<Item = T>>(iter: I) -> Self {
-        iter.into_iter().collect::<alloc::vec::Vec<T>>().into()
+        iter.into_iter().collect::<RustVec<T>>().into()
     }
 }
 impl<T> IntoIterator for Vec<T> {
@@ -134,7 +138,7 @@ impl<T> IntoIterator for Vec<T> {
     type IntoIter = alloc::vec::IntoIter<T>;
 
     fn into_iter(self) -> Self::IntoIter {
-        alloc::vec::Vec::from(self).into_iter()
+        RustVec::from(self).into_iter()
     }
 }
 impl<'a, T> IntoIterator for &'a Vec<T> {
@@ -167,9 +171,7 @@ unsafe impl<T> crate::borrow::Borrow for Vec<T> {
 impl<T> Drop for Vec<T> {
     fn drop(&mut self) {
         // SAFETY: This wrapper uniquely owns the original allocation.
-        drop(unsafe {
-            alloc::vec::Vec::from_raw_parts(self.data.as_ptr(), self.len, self.capacity)
-        });
+        drop(unsafe { RustVec::from_raw_parts(self.data.as_ptr(), self.len, self.capacity) });
     }
 }
 
@@ -188,20 +190,20 @@ impl<T> DerefMut for Vec<T> {
     }
 }
 
-impl<T> Copy for CVec<T> {}
-impl<T> Clone for CVec<T> {
+impl<T: ReprC<CType: Sized>> Copy for CVec<T> {}
+impl<T: ReprC<CType: Sized>> Clone for CVec<T> {
     fn clone(&self) -> Self {
         *self
     }
 }
 
-impl<T: CType> Default for CVec<T> {
+impl<T: ReprC<CType: CType + Sized>> Default for CVec<T> {
     fn default() -> Self {
         Self::null()
     }
 }
 
-impl<T: CType> CVec<T> {
+impl<T: ReprC<CType: CType + Sized>> CVec<T> {
     pub const fn null() -> Self {
         Self {
             data: core::ptr::null_mut(),
@@ -210,7 +212,7 @@ impl<T: CType> CVec<T> {
         }
     }
 
-    pub fn from_vec(value: alloc::vec::Vec<T>) -> Self {
+    pub fn from_vec(value: RustVec<T::CType>) -> Self {
         let (data, len, capacity) = value.into_raw_parts();
         Self {
             data,
@@ -227,7 +229,7 @@ impl<T: CType> CVec<T> {
     /// pointer used for zero-capacity vectors and zero-sized elements. The storage
     /// must remain valid while the carrier is used. A null pointer represents no
     /// allocation. This constructor does not transfer ownership by itself.
-    pub const unsafe fn from_raw_parts(data: *mut T, len: usize, capacity: usize) -> Self {
+    pub const unsafe fn from_raw_parts(data: *mut T::CType, len: usize, capacity: usize) -> Self {
         Self {
             data,
             len,
@@ -236,8 +238,8 @@ impl<T: CType> CVec<T> {
     }
 }
 
-impl<T> CVec<T> {
-    pub const fn as_ptr(self) -> *mut T {
+impl<T: ReprC<CType: Sized>> CVec<T> {
+    pub const fn as_ptr(self) -> *mut T::CType {
         self.data
     }
     pub const fn len(self) -> usize {
@@ -252,23 +254,24 @@ impl<T> CVec<T> {
     /// Reconstructs an owning vector, rejecting null pointers and lengths above capacity.
     ///
     /// # Safety
+    ///
     /// For a non-null pointer with `len <= capacity`, the parts must satisfy
-    /// `alloc::vec::Vec::from_raw_parts`, including initialized elements, correct
+    /// `RustVec::from_raw_parts`, including initialized elements, correct
     /// allocation layout, and unique ownership. Copying this header does not
     /// duplicate ownership; reconstruct the allocation at most once.
-    pub unsafe fn into_vec(self) -> Option<alloc::vec::Vec<T>> {
+    pub unsafe fn into_vec(self) -> Option<RustVec<T::CType>> {
         let data = NonNull::new(self.data)?;
         if self.len > self.capacity {
             return None;
         }
-        Some(unsafe { alloc::vec::Vec::from_raw_parts(data.as_ptr(), self.len, self.capacity) })
+        Some(unsafe { RustVec::from_raw_parts(data.as_ptr(), self.len, self.capacity) })
     }
 }
-impl_identity_carrier! { CVec, [T: CType], [T] }
-crate::slice::impl_carrier_borrow! { CVec, [T: CType], [T] }
+impl_identity_carrier! { CVec, [T: ReprC<CType: CType + Sized>], [T] }
+crate::slice::impl_carrier_borrow! { CVec, [T: ReprC<CType: CType + Sized>], [T] }
 
-impl<T> From<alloc::vec::Vec<T>> for Vec<T> {
-    fn from(value: alloc::vec::Vec<T>) -> Self {
+impl<T> From<RustVec<T>> for Vec<T> {
+    fn from(value: RustVec<T>) -> Self {
         let (data, len, capacity) = value.into_raw_parts();
         Self {
             // SAFETY: Vec always provides a non-null data pointer, including for ZSTs.
@@ -279,28 +282,28 @@ impl<T> From<alloc::vec::Vec<T>> for Vec<T> {
     }
 }
 
-impl<T> From<Vec<T>> for alloc::vec::Vec<T> {
+impl<T> From<Vec<T>> for RustVec<T> {
     fn from(value: Vec<T>) -> Self {
         let (data, len, capacity) = value.into_raw_parts();
         // SAFETY: The consumed wrapper transfers its uniquely owned allocation.
-        unsafe { alloc::vec::Vec::from_raw_parts(data, len, capacity) }
+        unsafe { RustVec::from_raw_parts(data, len, capacity) }
     }
 }
 
 impl<T: ReprC<CType: Sized>> ReprC for Vec<T> {
-    type CType = CVec<T::CType>;
+    type CType = CVec<T>;
 }
 
 #[cfg(feature = "alloc")]
-impl<R: ReprC<CType: Sized>> ReprC for alloc::vec::Vec<R> {
+impl<R: ReprC<CType: Sized>> ReprC for RustVec<R> {
     type CType = <Vec<R> as ReprC>::CType;
 }
 #[cfg(feature = "alloc")]
-impl<R> Encode for alloc::vec::Vec<R> where Self: EncodeMove {}
+impl<R> Encode for RustVec<R> where Self: EncodeMove {}
 #[cfg(feature = "alloc")]
-impl<R> EncodeUnchecked for alloc::vec::Vec<R> where Self: EncodeMoveUnchecked {}
+impl<R> EncodeUnchecked for RustVec<R> where Self: EncodeMoveUnchecked {}
 #[cfg(feature = "alloc")]
-impl<'d, R> Decode<'d> for alloc::vec::Vec<R> where Self: DecodeMove<'d> {}
+impl<'d, R> Decode<'d> for RustVec<R> where Self: DecodeMove<'d> {}
 
 // The header has C layout; reachable element layout and mutability follow T.
 unsafe impl<T: RustSpec<Mutability: rust_spec::mutability::PointerMutability>> RustSpec for Vec<T> {
@@ -381,7 +384,7 @@ unsafe impl<T: AbiCompatible<CType: CType + Sized>> AbiCompatible for Vec<T> whe
     T: RustSpec<Layout = rust_spec::Stable, Mutability: rust_spec::mutability::PointerMutability>
 {
 }
-impl<T> core::fmt::Debug for CVec<T> {
+impl<T: ReprC<CType: Sized>> core::fmt::Debug for CVec<T> {
     fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
         f.debug_struct("CVec")
             .field("data", &self.data)
@@ -391,8 +394,8 @@ impl<T> core::fmt::Debug for CVec<T> {
     }
 }
 
-impl<T> Eq for CVec<T> {}
-impl<T> PartialEq for CVec<T> {
+impl<T: ReprC<CType: Sized>> Eq for CVec<T> {}
+impl<T: ReprC<CType: Sized>> PartialEq for CVec<T> {
     fn eq(&self, other: &Self) -> bool {
         self.data == other.data && self.len == other.len && self.capacity == other.capacity
     }

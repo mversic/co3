@@ -1,4 +1,4 @@
-use co3::{option::COption, primitives::CBool, reference::CRefMut, stored::Store};
+use co3::{option::COption, primitives::Bool, reference::CRefMut, stored::Store};
 
 #[test]
 fn decoding_none_has_no_active_store() {
@@ -13,14 +13,19 @@ fn decoding_none_has_no_active_store() {
     assert_eq!(untagged.sync(), Some(()));
 
     let mut niche = Default::default();
-    let mut source = CBool::TRUE;
-    let encoded = unsafe { CRefMut::<CBool, true>::from_raw(&mut source) };
-    let decoded = unsafe { co3::soft_decode::<Option<&mut bool>>(encoded, &mut niche) };
+    let mut source = Bool::TRUE;
+    let encoded = unsafe { CRefMut::<Bool, true>::from_raw(&mut source) };
+    let decoded = unsafe {
+        co3::soft_decode::<Option<&mut bool>>(co3::option::COptionSome::new(encoded), &mut niche)
+    };
     assert!(matches!(decoded, Some(Some(true))));
     assert!(niche.is_some());
 
     let decoded = unsafe {
-        co3::soft_decode::<Option<&mut bool>>(CRefMut::<CBool, true>::null(), &mut niche)
+        co3::soft_decode::<Option<&mut bool>>(
+            co3::option::COptionSome::new(CRefMut::<Bool, true>::null()),
+            &mut niche,
+        )
     };
     assert!(matches!(decoded, Some(None)));
     assert!(niche.is_none());

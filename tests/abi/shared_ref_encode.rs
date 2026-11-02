@@ -1,3 +1,4 @@
+use crate::TransparentCarrier;
 use co3::{
     rust_spec::RustSpec,
     stored::{EncodeMove, EncodeMoveUnchecked, Store},
@@ -267,7 +268,7 @@ fn tuples_arrays_options_results_and_manually_drop_delegate() {
     let mut store = Default::default();
     let header = co3::soft_encode(&value, &mut store);
     let header = unsafe { &*header.as_ptr() };
-    assert_eq!(header.as_ptr().cast_const(), pointer);
+    assert_eq!(header.payload().as_ptr().cast_const(), pointer);
     assert_eq!(store.sync(), Some(()));
 
     let Some(value) = value else { unreachable!() };
@@ -275,7 +276,7 @@ fn tuples_arrays_options_results_and_manually_drop_delegate() {
     let mut store = Default::default();
     let header = co3::soft_encode(&value, &mut store);
     let header = unsafe { &*header.as_ptr() };
-    assert_eq!(header.as_ptr().cast_const(), pointer);
+    assert_eq!(header.payload().as_ptr().cast_const(), pointer);
     assert_eq!(store.sync(), Some(()));
 
     let Ok(value) = value else { unreachable!() };
@@ -378,7 +379,9 @@ fn tagged_wrappers_delegate_and_clear_inactive_stores() {
 
     let _ = co3::soft_encode(&Ok::<_, ()>(core::num::NonZeroU8::new(1).unwrap()), &mut ());
     let encoded = co3::soft_encode(&Err::<core::num::NonZeroU8, _>(()), &mut ());
-    assert_eq!(unsafe { *encoded.as_ptr() }, 0);
+    assert_eq!(unsafe { *encoded.as_ptr() }.payload(), unsafe {
+        core::mem::zeroed()
+    });
     assert_eq!(().sync(), Some(()));
 }
 

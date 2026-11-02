@@ -587,6 +587,7 @@ use crate::boxed::{CBox, CWideBox};
 #[cfg(feature = "alloc")]
 use crate::ffi::NulTerminatedBuf;
 use crate::{
+    niche::Niche,
     reference::{CRef, CRefMut},
     slice::{CWideRef, CWideRefMut},
     stored::{DecodeMove, EmptyStore, EncodeMove, EncodeMoveUnchecked, Store},
@@ -596,6 +597,7 @@ use crate::{
 pub mod borrow;
 #[cfg(feature = "alloc")]
 pub mod boxed;
+pub mod cmp;
 #[doc(hidden)]
 pub mod decoded;
 #[doc(hidden)]
@@ -669,6 +671,117 @@ pub unsafe trait CFnArg: CType + Sized {}
 ///
 /// Type must be allowed as a foreign function return type. In particular, ZSTs are not allowed.
 pub unsafe trait CFnReturn: CType + Sized {}
+
+/// A type for which an all-zero bit pattern is a valid value.
+///
+/// # Safety
+///
+/// `core::mem::zeroed::<Self>()` must produce a fully initialized, valid value.
+// TODO: Consider using this crate instead:
+// https://docs.rs/bytemuck/latest/bytemuck/trait.Zeroable.html
+pub unsafe trait Zeroable: Sized {}
+
+macro_rules! impl_zeroable {
+    ($($ty:ty),+ $(,)?) => {
+        $(unsafe impl Zeroable for $ty {})+
+    };
+}
+
+impl_zeroable! {
+    (), bool, char, f32, f64,
+    u8, i8, u16, i16, u32, i32, u64, i64, u128, i128, usize, isize,
+}
+
+unsafe impl<T: Zeroable, const N: usize> Zeroable for [T; N] {}
+unsafe impl<T: Zeroable> Zeroable for core::mem::MaybeUninit<T> {}
+unsafe impl<T: ?Sized> Zeroable for core::marker::PhantomData<T> {}
+// TODO: it is unsettled yet whether dyn trait metadata must be valid
+// for a raw pointer. if not, then we can implement for wide pointers
+// https://doc.rust-lang.org/reference/behavior-considered-undefined.html#invalid-values
+unsafe impl<T: Sized> Zeroable for *const T {}
+unsafe impl<T: Sized> Zeroable for *mut T {}
+
+/// Transparent C carrier for an integer that is nonzero in its Rust source type.
+///
+/// The carrier accepts zero so it can also represent a surrounding enum's niche.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, RustSpec)]
+#[repr(transparent)]
+pub struct NonZero<C>(pub C);
+
+impl<C: Zeroable + PartialEq> NonZero<C> {
+    pub fn new(value: C) -> Option<Self> {
+        if value == unsafe { core::mem::zeroed() } {
+            return None;
+        }
+
+        Some(Self(value))
+    }
+}
+
+impl<R: ReprC<CType: Sized>> ReprC for NonZero<R> {
+    type CType = NonZero<R::CType>;
+}
+unsafe impl<C: CType> CType for NonZero<C> {}
+unsafe impl<C: CFnArg> CFnArg for NonZero<C> {}
+unsafe impl<C: CFnReturn> CFnReturn for NonZero<C> {}
+
+unsafe impl<R: borrow::Borrow> borrow::Borrow for NonZero<R> {
+    type Borrowed = NonZero<R::Borrowed>;
+
+    fn borrow(self) -> Self::Borrowed {
+        NonZero(self.0.borrow())
+    }
+
+    fn from_borrow(source: Self::Borrowed) -> Self {
+        NonZero(R::from_borrow(source.0))
+    }
+}
+
+unsafe impl<R: EncodeMoveUnchecked> EncodeMoveUnchecked for NonZero<R> {
+    type SoftStore = R::SoftStore;
+
+    unsafe fn soft_encode_unchecked<'a>(self, store: &'a mut Self::SoftStore) -> Self::CType
+    where
+        Self: 'a,
+    {
+        NonZero(unsafe { self.0.soft_encode_unchecked(store) })
+    }
+}
+unsafe impl<R: EncodeMove> EncodeMove for NonZero<R> {
+    type Store = R::Store;
+
+    fn soft_encode<'a>(self, store: &'a mut Self::Store) -> Self::CType
+    where
+        Self: 'a,
+    {
+        NonZero(self.0.soft_encode(store))
+    }
+}
+unsafe impl<'d, R: DecodeMove<'d>> DecodeMove<'d> for NonZero<R> {
+    type Store = R::Store;
+
+    unsafe fn soft_decode<'a: 'd>(source: Self::CType, store: &'a mut Self::Store) -> Option<Self> {
+        Some(NonZero(unsafe { R::soft_decode(source.0, store)? }))
+    }
+
+    unsafe fn soft_decode_unchecked<'a: 'd>(
+        source: Self::CType,
+        store: &'a mut Self::Store,
+    ) -> Self {
+        NonZero(unsafe { R::soft_decode_unchecked(source.0, store) })
+    }
+}
+impl<R: Encode> Encode for NonZero<R> {}
+impl<R: EncodeUnchecked> EncodeUnchecked for NonZero<R> {}
+impl<'d, R: Decode<'d>> Decode<'d> for NonZero<R> {}
+unsafe impl<R: transmute::AbiCompatibleValidate<CType: Sized>> transmute::AbiCompatibleValidate
+    for NonZero<R>
+{
+    unsafe fn is_valid(target: &Self::CType) -> bool {
+        unsafe { R::is_valid(&target.0) }
+    }
+}
+unsafe impl<R: transmute::AbiCompatible<CType: Sized>> transmute::AbiCompatible for NonZero<R> {}
 
 /// Pointers to types implementing this trait alias are “thin”.
 ///
@@ -772,11 +885,12 @@ disjoint_impls! {
     {
         type CType = <option::Option<R> as ReprC>::CType;
     }
-    impl<R: ReprC, N: LayoutKind> ReprC for Option<R>
+    impl<R: Niche, N: LayoutKind> ReprC for Option<R>
     where
         R: RustSpec<Niche = WithNiche<N>>,
+        <R as ReprC>::CType: Sized,
     {
-        type CType = R::CType;
+        type CType = option::COptionSome<R>;
     }
 
     impl<R: ReprC, E: ReprC, K: SizedKind> ReprC for Result<R, E>
@@ -790,25 +904,21 @@ disjoint_impls! {
     {
         type CType = <result::Result<R, E> as ReprC>::CType;
     }
-    impl<R: ReprC, E: ReprC, N: LayoutKind> ReprC for Result<R, E>
+    impl<R: Niche, E: ReprC> ReprC for Result<R, E>
     where
-        R: RustSpec<
-                Size = rust_spec::size::Sized<rust_spec::Gt<rust_spec::Zero>>,
-                Niche = WithNiche<N>,
-            >,
+        R: RustSpec<Size = rust_spec::size::Sized<rust_spec::Gt<rust_spec::Zero>>>,
         E: RustSpec<Size = rust_spec::size::Sized<Zero>>,
+        <R as ReprC>::CType: Sized,
     {
-        type CType = R::CType;
+        type CType = result::CResultOk<R, E>;
     }
-    impl<R: ReprC, E: ReprC, N: LayoutKind> ReprC for Result<R, E>
+    impl<R: ReprC, E: Niche> ReprC for Result<R, E>
     where
         R: RustSpec<Size = rust_spec::size::Sized<Zero>>,
-        E: RustSpec<
-                Size = rust_spec::size::Sized<rust_spec::Gt<rust_spec::Zero>>,
-                Niche = WithNiche<N>,
-            >,
+        E: RustSpec<Size = rust_spec::size::Sized<rust_spec::Gt<rust_spec::Zero>>>,
+        <E as ReprC>::CType: Sized,
     {
-        type CType = E::CType;
+        type CType = result::CResultErr<R, E>;
     }
 
     impl<R: ReprC + ?Sized> ReprC for ManuallyDrop<R>
@@ -965,7 +1075,37 @@ pub unsafe fn soft_decode_unchecked<'d, T: Decode<'d>>(
 mod tests {
     use super::*;
     use crate::option::COption;
-    use crate::primitives::CBool;
+    use crate::primitives::Bool;
+
+    #[test]
+    fn carrier_types_are_zeroable() {
+        static_assertions::assert_impl_all!(reference::CRef<u8>: Zeroable);
+        static_assertions::assert_impl_all!(reference::CRefMut<u8, true>: Zeroable);
+        static_assertions::assert_impl_all!(boxed::CBox<u8>: Zeroable);
+        static_assertions::assert_impl_all!(slice::CWideRef<[u8]>: Zeroable);
+        static_assertions::assert_impl_all!(slice::CWideRefMut<[u8], true>: Zeroable);
+        static_assertions::assert_impl_all!(boxed::CWideBox<[u8]>: Zeroable);
+        static_assertions::assert_impl_all!(vec::CVec<u8>: Zeroable);
+    }
+
+    #[test]
+    fn nonzero_wrapper_converts_non_ctype_inner_value() {
+        use core::num::NonZeroU8;
+
+        type Wrapped = NonZero<NonZeroU8>;
+        type Carrier = NonZero<NonZero<u8>>;
+
+        static_assertions::assert_not_impl_any!(Wrapped: CType);
+        static_assertions::assert_type_eq_all!(<Wrapped as ReprC>::CType, Carrier);
+
+        let value = NonZero(NonZeroU8::new(7).unwrap());
+        assert_eq!(encode(value), NonZero(NonZero(7)));
+        assert_eq!(
+            unsafe { decode::<Wrapped>(NonZero(NonZero(7))) },
+            Some(value)
+        );
+        assert_eq!(unsafe { decode::<Wrapped>(core::mem::zeroed()) }, None);
+    }
 
     #[test]
     fn native_niches_and_explicit_enum_carriers_remain_distinct() {
@@ -979,19 +1119,28 @@ mod tests {
         static_assertions::assert_impl_all!(TaggedOption<NonZeroU8>: AbiCompatible);
         static_assertions::assert_impl_all!(TaggedResult<NonZeroU8, ()>: AbiCompatible);
         let value = NonZeroU8::new(7).unwrap();
-        let native: u8 = encode(Some(value));
-        let tagged: COption<u8> = encode(TaggedOption::Some(value));
-        assert_eq!(native, 7);
-        assert_eq!(tagged.into_option(), Some(Some(7)));
+        let native: option::COptionSome<NonZeroU8> = encode(Some(value));
+        assert_eq!(option::COptionSome::new(NonZero(7)), native);
+        let tagged: COption<NonZeroU8> = encode(TaggedOption::Some(value));
+        assert_eq!(native.into_carrier().0, 7);
+        assert_eq!(tagged.into_option(), Some(Some(NonZero(7))));
         assert_eq!(
             unsafe { decode::<TaggedOption<NonZeroU8>>(tagged) },
             Some(TaggedOption::Some(value))
         );
-        assert_eq!(encode(None::<NonZeroU8>), 0_u8);
+        assert_eq!(encode(None::<NonZeroU8>).into_carrier(), NonZero(0_u8));
 
-        let native: u8 = encode(Result::<NonZeroU8, ()>::Err(()));
-        let tagged: CResult<u8, ()> = encode(TaggedResult::<NonZeroU8, ()>::Err(()));
-        assert_eq!(native, 0);
+        let native: result::CResultOk<NonZeroU8, ()> = encode(Result::<NonZeroU8, ()>::Err(()));
+        assert_eq!(
+            result::CResultOk::<NonZeroU8, ()>::new(NonZero(7)).into_carrier(),
+            NonZero(7)
+        );
+        assert_eq!(
+            result::CResultErr::<(), NonZeroU8>::new(NonZero(7)).into_carrier(),
+            NonZero(7)
+        );
+        let tagged: CResult<NonZeroU8, ()> = encode(TaggedResult::<NonZeroU8, ()>::Err(()));
+        assert_eq!(native.into_carrier(), NonZero(0));
         assert_eq!(
             unsafe { decode::<TaggedResult<NonZeroU8, ()>>(tagged) },
             Some(TaggedResult::Err(()))
@@ -1018,7 +1167,7 @@ mod tests {
         };
 
         let encoded = encode(StableOption::Some(true));
-        assert_eq!(encoded.into_option(), Some(Some(CBool::TRUE)));
+        assert_eq!(encoded.into_option(), Some(Some(Bool::TRUE)));
         assert_eq!(
             unsafe { decode::<StableOption<bool>>(encoded) },
             Some(StableOption::Some(true))
@@ -1069,7 +1218,7 @@ mod tests {
         let mut value = StableResult::<u32, bool>::Ok(4);
         let mut store = Default::default();
         let carrier = crate::soft_encode(&mut value, &mut store);
-        unsafe { *carrier.as_ptr() = CResult::Err(CBool::TRUE) };
+        unsafe { *carrier.as_ptr() = CResult::Err(Bool::TRUE) };
         assert_eq!(store.sync(), Some(()));
         assert_eq!(value, StableResult::Err(true));
     }
@@ -1165,7 +1314,7 @@ mod tests {
             let mut store = Default::default();
             let encoded = soft_encode(&mut value, &mut store);
             let original_data = unsafe { (*encoded.as_ptr()).as_ptr() };
-            let replacement = CBox::from_box(Box::new(Tuple2(100, CBool::TRUE)));
+            let replacement = CBox::from_box(Box::new(Tuple2(100, Bool::TRUE)));
             let replacement_data = replacement.as_ptr();
 
             unsafe {
@@ -1184,7 +1333,7 @@ mod tests {
     fn decode_stored_ref_mut_slice() {
         use tuple::Tuple2;
 
-        let mut tuples = [Tuple2(10_u32, CBool::TRUE)];
+        let mut tuples = [Tuple2(10_u32, Bool::TRUE)];
         let c_slice = encode(&mut tuples[..]);
 
         {

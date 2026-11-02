@@ -67,11 +67,13 @@ fn non_null_wide_unpacks_pointer_metadata() {
     let slice = core::ptr::NonNull::slice_from_raw_parts(core::ptr::NonNull::<u8>::dangling(), 3);
     let ptr = core::ptr::NonNull::new(slice.as_ptr() as *mut RawBytes).unwrap();
     let (data, len): (*mut u8, usize) =
-        <core::ptr::NonNull<RawBytes> as Unpack2<*mut u8, usize>>::unpack(ptr.as_ptr()).unwrap();
+        <core::ptr::NonNull<RawBytes> as Unpack2<*mut u8, usize>>::unpack(co3::encode(ptr))
+            .unwrap();
     assert_eq!(data, slice.as_ptr() as *mut u8);
     assert_eq!(len, 3);
     let (const_data, const_len): (*const u8, usize) =
-        <core::ptr::NonNull<RawBytes> as Unpack2<*const u8, usize>>::unpack(ptr.as_ptr()).unwrap();
+        <core::ptr::NonNull<RawBytes> as Unpack2<*const u8, usize>>::unpack(co3::encode(ptr))
+            .unwrap();
     assert_eq!(const_data, slice.as_ptr() as *const u8);
     assert_eq!(const_len, 3);
     let (raw_const_data, raw_const_len): (*const u8, usize) =

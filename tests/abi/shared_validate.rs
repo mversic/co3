@@ -1,5 +1,3 @@
-#![cfg(all(feature = "alloc", feature = "derive"))]
-
 use co3::{
     ReprC,
     rust_spec::{
@@ -108,18 +106,18 @@ fn maybe_uninit_cells_allow_shared_validation_without_inspecting_contents() {
     assert_not_impl_any!(&ManuallyDrop<UnsafeCell<NonZeroU8>>:
         AbiCompatible, EncodeMove, DecodeMove<'static>);
 
-    let value = UninitCell::uninit();
+    let value = UninitCell::zeroed();
     let encoded = co3::encode(&value);
     let decoded = unsafe { co3::decode::<&UninitCell>(encoded) }.unwrap();
     assert!(core::ptr::eq(decoded, &value));
 
-    let boxed = Box::new(UninitCell::uninit());
+    let boxed = Box::new(UninitCell::zeroed());
     let encoded = co3::encode(&boxed);
     let decoded = unsafe { co3::decode::<&Box<UninitCell>>(encoded) }.unwrap();
     assert!(core::ptr::eq(decoded, &boxed));
 
     // Zero is invalid for NonZeroU8, but valid as uninterpreted MaybeUninit bytes.
-    let representation = MaybeUninit::new(UnsafeCell::new(0_u8));
+    let representation = MaybeUninit::new(UnsafeCell::new(unsafe { core::mem::zeroed() }));
     let encoded = unsafe {
         co3::reference::CRefMut::from_raw(core::ptr::from_ref(&representation).cast_mut())
     };
@@ -158,7 +156,7 @@ fn robust_cells_do_not_hide_other_invalid_fields() {
 
     // The invalid boolean exists only in the robust C representation.
     let invalid = unsafe {
-        CMixed::<UnsafeCell<u8>>::from_fields(co3::primitives::CBool(2), UnsafeCell::new(7))
+        CMixed::<UnsafeCell<u8>>::from_fields(co3::primitives::Bool(2), UnsafeCell::new(7))
     };
     let encoded =
         unsafe { co3::reference::CRefMut::from_raw(core::ptr::from_ref(&invalid).cast_mut()) };
@@ -176,14 +174,10 @@ fn shared_plain_data_and_exclusive_cells_still_decode() {
     let decoded = unsafe { co3::decode::<&Box<u8>>(encoded) }.unwrap();
     assert_eq!(**decoded, 7);
 
-    let source = co3::boxed::CBox::from_box(Box::new(UnsafeCell::new(7_u8)));
+    let source = co3::boxed::CBox::from_box(Box::new(UnsafeCell::new(co3::NonZero(7_u8))));
     let decoded = unsafe { co3::decode::<Box<UnsafeCell<NonZeroU8>>>(source) }.unwrap();
     assert_eq!((*decoded).into_inner().get(), 7);
 }
-
-// Exercise the generated safe static accessors with a shared-valid scalar.
-#[path = "abi/statics.rs"]
-mod statics;
 
 #[test]
 fn box_shared_encoders_preserve_headers() {

@@ -58,6 +58,19 @@ pub struct CWideRefMut<P: Wide + ?Sized, const EXCLUSIVE: bool> {
     metadata: P::Metadata,
 }
 
+unsafe impl<P: Wide + ?Sized> crate::Zeroable for CWideRef<P>
+where
+    PointeeData<P>: Sized,
+    P::Metadata: crate::Zeroable,
+{
+}
+unsafe impl<P: Wide + ?Sized, const EXCLUSIVE: bool> crate::Zeroable for CWideRefMut<P, EXCLUSIVE>
+where
+    PointeeData<P>: Sized,
+    P::Metadata: crate::Zeroable,
+{
+}
+
 impl<P: Wide<Header: WideHeader<Data: CType>, Metadata: CType> + ?Sized> CWideRef<P> {
     /// Construct an absent carrier with initialized metadata.
     pub const fn null() -> Self {

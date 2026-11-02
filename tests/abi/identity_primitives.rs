@@ -1,5 +1,6 @@
 use co3::ffi::{c_int, c_long};
 
+use crate::TransparentCarrier;
 use co3::{ReprC, ffi, raw, rust_spec::RustSpec};
 
 #[derive(Clone, Copy, RustSpec, ReprC)]
@@ -183,7 +184,7 @@ fn safe_carrier_constructors_accept_lowered_storage() {
 
     let value = 8_u8;
     assert_eq!(CRef::from_ref(&value), co3::encode(&value));
-    assert_eq!(CRef::<u8>::null(), co3::encode(None::<&u8>));
+    assert_eq!(CRef::<u8>::null(), co3::encode(None::<&u8>).payload());
 
     let raw = Box::into_raw(Box::new(10_u8));
     let boxed = unsafe { CBox::from_non_null(core::ptr::NonNull::new(raw).unwrap()) };
@@ -194,15 +195,24 @@ fn safe_carrier_constructors_accept_lowered_storage() {
         &*unsafe { co3::decode::<Box<[u8]>>(boxed_slice) }.unwrap(),
         &[4, 5]
     );
-    assert_eq!(CBox::<u8>::null(), co3::encode(None::<Box<u8>>));
-    assert_eq!(CWideBox::<[u8]>::null(), co3::encode(None::<Box<[u8]>>));
-    assert_eq!(CWideRef::<[u8]>::null(), co3::encode(None::<&[u8]>));
+    assert_eq!(CBox::<u8>::null(), co3::encode(None::<Box<u8>>).payload());
+    assert_eq!(
+        CWideBox::<[u8]>::null(),
+        co3::encode(None::<Box<[u8]>>).payload()
+    );
+    assert_eq!(
+        CWideRef::<[u8]>::null(),
+        co3::encode(None::<&[u8]>).payload()
+    );
     assert_eq!(
         CRefMut::<_, true>::null(),
-        co3::soft_encode(None::<&mut u8>, &mut Default::default())
+        co3::soft_encode(None::<&mut u8>, &mut Default::default()).payload()
     );
     let _: CWideRefMut<[u8], true> = CWideRefMut::null();
-    assert_eq!(CWideBox::<Utf8Str>::null(), co3::encode(None::<String>));
+    assert_eq!(
+        CWideBox::<Utf8Str>::null(),
+        co3::encode(None::<String>).payload()
+    );
 
     let bytes: Box<[u8]> = Box::from("hello".as_bytes());
     let utf8 = unsafe { CWideBox::<Utf8Str>::from_raw_parts(Box::into_non_null(bytes).cast(), 5) };
