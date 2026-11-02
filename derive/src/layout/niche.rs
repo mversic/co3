@@ -4,10 +4,7 @@ use quote::{format_ident, quote};
 use crate::{
     layout::{
         attr::ReprKind,
-        ctype::{
-            classify_tail, gen_copy_extern_c_bounds_for_ctype, gen_ctype_name,
-            gen_variant_struct_name,
-        },
+        ctype::{classify_tail, gen_copy_extern_c_bounds_for_ctype, gen_ctype_name},
         enum_tag_type, enum_variant_tag_exprs, is_exhaustive_enum, is_transparent_enum_repr,
     },
     utils::{build_extern_c_type_tuple, speculative_marker},
@@ -101,6 +98,41 @@ pub fn gen_struct_niche_ir(
     )
 }
 
+pub(super) fn gen_enum_niche_tag(
+    enum_name: &syn::Ident,
+    variants: &syn::punctuated::Punctuated<syn::Variant, syn::Token![,]>,
+    tag_ty: &syn::Type,
+    is_fieldless: bool,
+) -> TokenStream {
+    if variants
+        .iter()
+        .any(|variant| variant.discriminant.is_some())
+    {
+        let tag_values = enum_variant_tag_exprs(variants, tag_ty);
+        let variant_tags = variants.iter().zip(&tag_values).map(|(variant, value)| {
+            if is_fieldless {
+                let tag = format_ident!("__CO3_TAG_{}", variant.ident);
+                quote! { __co3_niche_tag != #enum_name::#tag }
+            } else {
+                quote! { __co3_niche_tag != #value }
+            }
+        });
+        quote! {{
+            let mut __co3_niche_tag: #tag_ty = 0;
+            loop {
+                if true #(&& #variant_tags)* {
+                    break __co3_niche_tag;
+                }
+                __co3_niche_tag = __co3_niche_tag.wrapping_sub(1);
+            }
+        }}
+    } else if variants.is_empty() {
+        quote! { 0 as #tag_ty }
+    } else {
+        quote! { (0 as #tag_ty).wrapping_sub(1) }
+    }
+}
+
 pub fn gen_enum_niche_ir(
     repr: Option<&ReprKind>,
     enum_name: &syn::Ident,
@@ -143,74 +175,16 @@ pub fn gen_enum_niche_ir(
         .collect::<Vec<_>>();
     let extern_c_bounds = gen_copy_extern_c_bounds_for_ctype(generics, &variant_field_types);
 
-    // Implicit tags occupy 0..variants.len(), leaving the wrapping predecessor
-    // of zero available as a niche.
-    let niche_tag_value = if variants.is_empty() {
-        quote! { 0 as #tag_ty }
-    } else {
-        quote! { (0 as #tag_ty).wrapping_sub(1) }
-    };
-
-    let has_explicit_discriminant = variants
-        .iter()
-        .any(|variant| variant.discriminant.is_some());
-    let tag_values = enum_variant_tag_exprs(variants, &tag_ty);
-    let niche_value = if has_explicit_discriminant {
-        let ctype_name = gen_ctype_name(enum_name);
-        let variant_tags = variants.iter().zip(&tag_values).map(|(variant, value)| {
-            if is_fieldless {
-                let tag = format_ident!("__CO3_TAG_{}", variant.ident);
-                quote! { __co3_niche_tag != Self::#tag }
-            } else {
-                quote! { __co3_niche_tag != #value }
-            }
-        });
-        let niche_tag = quote! {{
-            let mut __co3_niche_tag: #tag_ty = 0;
-            loop {
-                if true #(&& #variant_tags)* {
-                    break __co3_niche_tag;
-                }
-                __co3_niche_tag = __co3_niche_tag.wrapping_sub(1);
-            }
-        }};
-        if is_fieldless && transparent {
-            niche_tag
-        } else if is_fieldless {
-            quote! { #ctype_name(#niche_tag) }
+    let niche_value = if is_fieldless {
+        if transparent {
+            gen_enum_niche_tag(enum_name, variants, &tag_ty, true)
         } else {
-            match repr {
-                Some(ReprKind::C(Some(_))) => quote! {
-                    Self::CType {
-                        tag: #niche_tag,
-                        payload: core::mem::MaybeUninit::zeroed(),
-                    }
-                },
-                None | Some(ReprKind::Primitive(_)) => {
-                    gen_union_enum_niche_value(enum_name, &variants[0], niche_tag)
-                }
-                Some(ReprKind::Transparent | ReprKind::C(None)) => unreachable!(),
-            }
+            let ctype_name = gen_ctype_name(enum_name);
+            quote! { <#ctype_name #ty_generics>::niche() }
         }
-    } else if is_fieldless && transparent {
-        niche_tag_value
-    } else if is_fieldless {
-        let ctype_name = gen_ctype_name(enum_name);
-        quote! { #ctype_name(#niche_tag_value) }
     } else {
-        match repr {
-            Some(ReprKind::C(Some(_))) => quote! {
-                Self::CType {
-                    tag: #niche_tag_value,
-                    payload: core::mem::MaybeUninit::zeroed(),
-                }
-            },
-            None | Some(ReprKind::Primitive(_)) => {
-                gen_union_enum_niche_value(enum_name, &variants[0], niche_tag_value)
-            }
-            Some(ReprKind::Transparent) => unreachable!(),
-            Some(ReprKind::C(None)) => unreachable!(),
-        }
+        let ctype_name = gen_ctype_name(enum_name);
+        quote! { <#ctype_name #ty_generics>::niche() }
     };
 
     let self_bounds = generics
@@ -227,31 +201,6 @@ pub fn gen_enum_niche_ir(
             const NICHE: <Self as co3::ReprC>::CType = #niche_value;
         }
     }
-}
-
-fn gen_union_enum_niche_value(
-    enum_name: &syn::Ident,
-    variant: &syn::Variant,
-    tag: TokenStream,
-) -> TokenStream {
-    let variant_name = &variant.ident;
-    let variant_struct = gen_variant_struct_name(enum_name, variant_name);
-    let field_values = variant
-        .fields
-        .iter()
-        .map(|_| quote!(core::mem::MaybeUninit::zeroed()));
-    let body = match &variant.fields {
-        syn::Fields::Named(fields) => {
-            let names = fields
-                .named
-                .iter()
-                .map(|field| field.ident.as_ref().unwrap());
-            quote!(#variant_struct { tag: #tag, #(#names: #field_values),* })
-        }
-        syn::Fields::Unnamed(_) => quote!(#variant_struct(#tag, #(#field_values),*)),
-        syn::Fields::Unit => quote!(#variant_struct { tag: #tag }),
-    };
-    quote!(Self::CType { #variant_name: #body })
 }
 
 #[cfg(test)]

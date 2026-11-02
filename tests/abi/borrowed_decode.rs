@@ -1,9 +1,10 @@
-use co3::{borrow::Borrowed, primitives::Bool, reference::CRefMut, stored::Store};
 use core::cell::UnsafeCell;
+
+use co3::{borrow::Borrowed, primitives::CBool, reference::CRefMut, stored::Store};
 
 #[test]
 fn mutable_reference_decode_validates() {
-    let mut carrier = Bool(1);
+    let mut carrier = CBool(1);
     let mut store = ();
     let decoded = unsafe {
         co3::soft_decode::<Borrowed<&mut bool>>(CRefMut::from_mut(&mut carrier).into(), &mut store)
@@ -11,7 +12,7 @@ fn mutable_reference_decode_validates() {
     .unwrap();
     assert!(*Borrowed::into_inner(decoded));
     assert_eq!(store.sync(), Some(()));
-    let mut invalid = Bool(2);
+    let mut invalid = CBool(2);
     let mut store = ();
     assert!(
         unsafe {

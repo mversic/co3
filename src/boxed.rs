@@ -23,17 +23,17 @@ pub(crate) trait FromBox<C: CType>: CType + Copy {
     unsafe fn from_non_null(data: NonNull<C>) -> Self;
 }
 
-impl<C: CType> FromBox<C> for CBox<C> {
-    fn data(self) -> *mut C {
+impl<R: ReprC<CType: CType + Sized> + ?Sized> FromBox<R::CType> for CBox<R> {
+    fn data(self) -> *mut R::CType {
         self.as_ptr()
     }
 
-    unsafe fn from_non_null(data: NonNull<C>) -> Self {
-        unsafe { CBox::from_non_null(data) }
+    unsafe fn from_non_null(data: NonNull<R::CType>) -> Self {
+        unsafe { Self::from_non_null(data) }
     }
 }
 
-pub(crate) trait FromWideBox<P: Wide<Header: WideHeader<Data: CType>, Metadata: CType> + ?Sized>:
+pub(crate) trait FromWideBox<P: Wide<Header: WideHeader<Data: CType>> + ?Sized>:
     CType + Sized
 {
     unsafe fn from_raw_parts(data: NonNull<PointeeData<P>>, len: P::Metadata) -> Self;
@@ -43,11 +43,13 @@ pub(crate) trait FromWideBox<P: Wide<Header: WideHeader<Data: CType>, Metadata: 
     fn metadata(&self) -> P::Metadata;
 }
 
-impl<P: Wide<Header: WideHeader<Data: CType>, Metadata: CType> + ?Sized> FromWideBox<P>
-    for CWideBox<P>
+impl<R, P> FromWideBox<P> for CWideBox<R>
+where
+    R: ReprC<CType = P> + ?Sized,
+    P: Wide<Header: WideHeader<Data: CType>> + ?Sized,
 {
     fn data(&self) -> *mut PointeeData<P> {
-        CWideBox::as_ptr(*self)
+        Self::as_ptr(*self)
     }
 
     fn metadata(&self) -> P::Metadata {
@@ -55,7 +57,7 @@ impl<P: Wide<Header: WideHeader<Data: CType>, Metadata: CType> + ?Sized> FromWid
     }
 
     unsafe fn from_raw_parts(data: NonNull<PointeeData<P>>, len: P::Metadata) -> Self {
-        unsafe { CWideBox::from_raw_parts(data, len) }
+        unsafe { Self::from_raw_parts(data, len) }
     }
 }
 
@@ -65,34 +67,34 @@ pub(crate) trait OwnedBoxCarrier<B>: Sized {
     unsafe fn into_box_carrier(self) -> B;
 }
 impl<C> OwnedBoxCarrier<C> for C {
-    unsafe fn from_box_carrier(value: C) -> Option<Self> {
+    unsafe fn from_box_carrier(value: Self) -> Option<Self> {
         Some(value)
     }
-    unsafe fn into_box_carrier(self) -> C {
+    unsafe fn into_box_carrier(self) -> Self {
         self
     }
 }
 
-/// Owned pointer derived from `Box<C>`.
+/// Owned pointer carrying a lowered `Box<R>` pointee.
 ///
-/// If the data pointer is set to `null`, the struct represents `Option<Box<C>>`.
+/// If the data pointer is set to `null`, the struct represents `Option<Box<R>>`.
 #[derive(RustSpec)]
 #[repr(transparent)]
-pub struct CBox<C> {
-    data: *mut C,
+pub struct CBox<R: ReprC<CType: Sized> + ?Sized> {
+    data: *mut R::CType,
 }
 
 /// Owned wide pointee with a defined C ABI layout.
 ///
-/// If the data pointer is set to `null`, the struct represents `Option<Box<[C]>>`.
+/// If the data pointer is set to `null`, the struct represents an absent box.
 #[derive(RustSpec)]
 #[repr(C)]
-pub struct CWideBox<P: Wide + ?Sized> {
-    data: *mut PointeeData<P>,
-    metadata: P::Metadata,
+pub struct CWideBox<R: ReprC<CType: Wide> + ?Sized> {
+    data: *mut PointeeData<R::CType>,
+    metadata: <R::CType as Wide>::Metadata,
 }
 
-impl<C> core::fmt::Debug for CBox<C> {
+impl<R: ReprC<CType: Sized> + ?Sized> core::fmt::Debug for CBox<R> {
     fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
         f.debug_struct("CBox")
             .field("data", &self.data)
@@ -100,13 +102,13 @@ impl<C> core::fmt::Debug for CBox<C> {
     }
 }
 
-impl<C: CType> Default for CBox<C> {
+impl<R: ReprC<CType: CType + Sized> + ?Sized> Default for CBox<R> {
     fn default() -> Self {
         Self::null()
     }
 }
 
-impl<C: CType> CBox<C> {
+impl<R: ReprC<CType: CType + Sized> + ?Sized> CBox<R> {
     /// Construct a carrier with a null data pointer.
     pub const fn null() -> Self {
         Self {
@@ -114,8 +116,8 @@ impl<C: CType> CBox<C> {
         }
     }
 
-    /// Create [`Self`] from a [`Box<C>`].
-    pub fn from_box(source: Box<C>) -> Self {
+    /// Create [`Self`] from a box containing the lowered pointee.
+    pub fn from_box(source: Box<R::CType>) -> Self {
         Self {
             data: Box::into_raw(source),
         }
@@ -127,20 +129,20 @@ impl<C: CType> CBox<C> {
     ///
     /// `data` must retain unique ownership and provenance of a live allocation
     /// compatible with the owning type later recovered from this carrier.
-    pub const unsafe fn from_non_null(data: NonNull<C>) -> Self {
+    pub const unsafe fn from_non_null(data: NonNull<R::CType>) -> Self {
         Self {
             data: data.as_ptr(),
         }
     }
 
-    pub(crate) const unsafe fn from_raw(data: *mut C) -> Self {
+    pub(crate) const unsafe fn from_raw(data: *mut R::CType) -> Self {
         Self { data }
     }
 }
 
-impl<C> CBox<C> {
+impl<R: ReprC<CType: Sized> + ?Sized> CBox<R> {
     /// Return the stored data pointer.
-    pub const fn as_ptr(self) -> *mut C {
+    pub const fn as_ptr(self) -> *mut R::CType {
         self.data
     }
 
@@ -148,8 +150,8 @@ impl<C> CBox<C> {
     ///
     /// # Safety
     ///
-    /// A non-null pointer must uniquely own a live allocation compatible with `Box<C>`.
-    pub unsafe fn into_box(self) -> Option<Box<C>> {
+    /// A non-null pointer must uniquely own a live allocation compatible with `Box<R::CType>`.
+    pub unsafe fn into_box(self) -> Option<Box<R::CType>> {
         if self.data.is_null() {
             None
         } else {
@@ -163,13 +165,13 @@ impl<C> CBox<C> {
     }
 }
 
-impl<P: Wide<Header: WideHeader<Data: CType>, Metadata: CType> + ?Sized> Default for CWideBox<P> {
+impl<R: ReprC<CType: Wide<Header: WideHeader<Data: CType>>> + ?Sized> Default for CWideBox<R> {
     fn default() -> Self {
         Self::null()
     }
 }
 
-impl<P: Wide<Header: WideHeader<Data: CType>, Metadata: CType> + ?Sized> CWideBox<P> {
+impl<R: ReprC<CType: Wide<Header: WideHeader<Data: CType>>> + ?Sized> CWideBox<R> {
     /// Construct an absent carrier with initialized metadata.
     pub const fn null() -> Self {
         Self {
@@ -183,8 +185,8 @@ impl<P: Wide<Header: WideHeader<Data: CType>, Metadata: CType> + ?Sized> CWideBo
     ///
     /// The parts must retain unique ownership of a live allocation compatible with `P`.
     pub const unsafe fn from_raw_parts(
-        data: NonNull<PointeeData<P>>,
-        metadata: P::Metadata,
+        data: NonNull<PointeeData<R::CType>>,
+        metadata: <R::CType as Wide>::Metadata,
     ) -> Self {
         Self {
             data: data.as_ptr(),
@@ -192,9 +194,9 @@ impl<P: Wide<Header: WideHeader<Data: CType>, Metadata: CType> + ?Sized> CWideBo
         }
     }
     /// Create a carrier from a boxed value.
-    pub fn from_box(source: Box<P>) -> Self {
-        let metadata = P::metadata(&*source);
-        let data = P::into_non_null(source).cast();
+    pub fn from_box(source: Box<R::CType>) -> Self {
+        let metadata = R::CType::metadata(&*source);
+        let data = R::CType::into_non_null(source).cast();
         Self {
             data: data.as_ptr(),
             metadata,
@@ -205,53 +207,51 @@ impl<P: Wide<Header: WideHeader<Data: CType>, Metadata: CType> + ?Sized> CWideBo
     /// # Safety
     ///
     /// The parts must retain unique ownership of a live allocation compatible with `P`.
-    pub unsafe fn into_box(self) -> Option<Box<P>> {
-        let data = NonNull::<P::Header>::new(self.data.cast())?;
-        Some(unsafe { P::from_non_null(data, self.metadata) })
+    pub unsafe fn into_box(self) -> Option<Box<R::CType>> {
+        let data = NonNull::<<R::CType as Wide>::Header>::new(self.data.cast())?;
+        Some(unsafe { R::CType::from_non_null(data, self.metadata) })
     }
 
     pub(crate) const unsafe fn from_raw_nullable(
-        data: *mut PointeeData<P>,
-        metadata: P::Metadata,
+        data: *mut PointeeData<R::CType>,
+        metadata: <R::CType as Wide>::Metadata,
     ) -> Self {
         Self { data, metadata }
     }
 }
 
-impl<P: Wide + ?Sized> CWideBox<P> {
-    pub const fn as_ptr(self) -> *mut PointeeData<P> {
+impl<R: ReprC<CType: Wide> + ?Sized> CWideBox<R> {
+    pub const fn as_ptr(self) -> *mut PointeeData<R::CType> {
         self.data
     }
 
-    pub const fn metadata(&self) -> P::Metadata {
+    pub const fn metadata(&self) -> <R::CType as Wide>::Metadata {
         self.metadata
     }
 }
 
-impl_thin_pointer_traits! { CBox, [C], [C] }
-impl_wide_raw_methods! { CWideBox, [P: Wide + ?Sized], [P] }
+impl_thin_pointer_traits! { CBox, [R: ReprC<CType: Sized> + ?Sized], [R] }
+impl_wide_raw_methods! { CWideBox, [R: ReprC<CType: Wide> + ?Sized], [R] }
 
-impl_identity_carrier! { CBox, [C: CType], [C] }
-impl_identity_carrier! { CWideBox, [P: Wide<Header: WideHeader<Data: CType>, Metadata: CType> + ?Sized], [P] }
+impl_identity_carrier! { CBox, [R: ReprC<CType: CType + Sized> + ?Sized], [R] }
+impl_identity_carrier! { CWideBox, [R: ReprC<CType: Wide<Header: WideHeader<Data: CType>>> + ?Sized], [R] }
 
-impl_carrier_borrow! { CBox, [C: CType], [C] }
-impl_carrier_borrow! { CWideBox, [P: Wide<Header: WideHeader<Data: CType>, Metadata: CType> + ?Sized], [P] }
+impl_carrier_borrow! { CBox, [R: ReprC<CType: CType + Sized> + ?Sized], [R] }
+impl_carrier_borrow! { CWideBox, [R: ReprC<CType: Wide<Header: WideHeader<Data: CType>>> + ?Sized], [R] }
 
-unsafe impl<C> Zeroable for CBox<C> {}
-unsafe impl<P: Wide + ?Sized> Zeroable for CWideBox<P> {}
+unsafe impl<R: ReprC<CType: Sized> + ?Sized> Zeroable for CBox<R> {}
+unsafe impl<R: ReprC<CType: Wide> + ?Sized> Zeroable for CWideBox<R> {}
 
 macro_rules! impl_vec_box_carrier {
     ($boxed:ident) => {
-        impl<R: ReprC<CType: CType + Sized>> OwnedBoxCarrier<$boxed<[R::CType]>>
-            for crate::vec::CVec<R>
-        {
-            unsafe fn from_box_carrier(value: $boxed<[R::CType]>) -> Option<Self> {
+        impl<R: ReprC<CType: CType + Sized>> OwnedBoxCarrier<$boxed<[R]>> for crate::vec::CVec<R> {
+            unsafe fn from_box_carrier(value: $boxed<[R]>) -> Option<Self> {
                 let data = NonNull::new(value.as_ptr())?;
                 let slice = core::ptr::slice_from_raw_parts_mut(data.as_ptr(), value.metadata());
                 // SAFETY: The caller transfers ownership of the boxed allocation.
                 Some(Self::from_vec(unsafe { Box::from_raw(slice) }.into_vec()))
             }
-            unsafe fn into_box_carrier(self) -> $boxed<[R::CType]> {
+            unsafe fn into_box_carrier(self) -> $boxed<[R]> {
                 // Shrink before discarding capacity, so Box deallocates with the correct layout.
                 let value = unsafe { self.into_vec().expect("encoded owned vector is valid") };
                 $boxed::from_box(value.into_boxed_slice())

@@ -1,7 +1,6 @@
-use co3::ffi::c_char;
-use co3::{ReprC, ffi, raw, reference::CRef, rust_spec::RustSpec};
-use core::ffi::CStr;
-use core::marker::PhantomData;
+use core::{ffi::CStr, marker::PhantomData};
+
+use co3::{ReprC, ffi, ffi::c_char, raw, reference::CRef, rust_spec::RustSpec};
 
 #[repr(transparent)]
 #[derive(RustSpec, ReprC)]
@@ -20,6 +19,16 @@ struct NamedWrappedCStr {
 
 #[test]
 fn transparent_cstr_uses_char_data() {
+    static_assertions::assert_type_eq_all!(<CStr as ReprC>::CType, co3::ffi::CStr);
+    static_assertions::assert_type_ne_all!(co3::ffi::CStr, c_char);
+    assert_eq!(
+        core::mem::size_of::<co3::ffi::CStr>(),
+        core::mem::size_of::<c_char>()
+    );
+    assert_eq!(
+        core::mem::align_of::<co3::ffi::CStr>(),
+        core::mem::align_of::<c_char>()
+    );
     static_assertions::assert_impl_all!(WrappedCStr: co3::ffi::NulTerminatedBuf<Header = c_char>);
     static_assertions::assert_impl_all!(Box<WrappedCStr>: co3::stored::EncodeMove, co3::stored::DecodeMove<'static>);
     static_assertions::assert_impl_all!(WrappedCStrWithMarkers: co3::ffi::NulTerminatedBuf<Header = c_char>);
@@ -46,7 +55,7 @@ raw! {
 
 #[test]
 fn raw_cstr_uses_thin_char_pointer() {
-    let callback: unsafe extern "C" fn(CRef<c_char>) -> usize = cstr_len_raw;
+    let callback: unsafe extern "C" fn(CRef<CStr>) -> usize = cstr_len_raw;
     assert_eq!(unsafe { callback(co3::encode(c"hello")) }, 5);
 }
 
@@ -70,7 +79,7 @@ ffi! {
 
 #[test]
 fn imported_cstr_uses_thin_char_pointer() {
-    let callback: unsafe extern "C" fn(CRef<c_char>) -> CRef<c_char> = borrowed;
+    let callback: unsafe extern "C" fn(CRef<CStr>) -> CRef<CStr> = borrowed;
     let original = c"hello";
     assert_eq!(
         unsafe { callback(co3::encode(original)) }

@@ -85,14 +85,14 @@ pub(super) fn gen_stable_direct_mut_impls(input: &syn::DeriveInput) -> TokenStre
         let (trait_name, move_trait, store_name, method, move_method) =
             encoder_names(true, unchecked);
         let unsafe_fn = unchecked.then(|| quote!(unsafe));
-        let encode = encoding_call(quote!(<#name #ty_generics as #move_trait>::#move_method(value, fields)), unchecked);
+        let encode = encoding_call(quote!(<Self as #move_trait>::#move_method(value, fields)), unchecked);
         quote! {
             unsafe impl #impl_generics #trait_name<'_ršč> for #name #ty_generics
             where
                 #speculative Self: co3::transmute::AbiCompatibleValidate
                     + co3::rust_spec::RustSpec<Layout = co3::rust_spec::Stable, Trap = co3::rust_spec::layout::Robust>
                     + co3::ReprC<CType: co3::CType + Sized> + Sized + '_ršč,
-                &'_ršč mut Self: co3::ReprC<CType = co3::reference::CRefMut<<Self as co3::ReprC>::CType, true>>
+                &'_ršč mut Self: co3::ReprC<CType = co3::reference::CRefMut<Self, true>>
                     + co3::transmute::AbiCompatibleValidate,
                 #(#field_bounds)*
                 #predicates
@@ -114,7 +114,7 @@ pub(super) fn gen_stable_direct_mut_impls(input: &syn::DeriveInput) -> TokenStre
                 #speculative Self: co3::rust_spec::RustSpec<Layout = co3::rust_spec::Stable, Trap = co3::rust_spec::layout::NonRobust>
                     + co3::ReprC<CType: co3::CType + Sized> + Clone + #move_trait
                     + co3::stored::DecodeMove<'_ršč, Store: co3::stored::EmptyStore + '_ršč> + '_ršč,
-                &'_ršč mut Self: co3::ReprC<CType = co3::reference::CRefMut<<Self as co3::ReprC>::CType, true>>,
+                &'_ršč mut Self: co3::ReprC<CType = co3::reference::CRefMut<Self, true>>,
                 #(#field_bounds)*
                 #predicates
             {
@@ -258,10 +258,11 @@ pub(super) fn gen_field_ref_impls(
             implementations.push(quote! {
                 unsafe impl #impl_generics #trait_name<'_ršč> for #name #ty_generics
                 where
-                    #speculative Self: co3::ReprC<CType = <#field_ty as co3::ReprC>::CType> + '_ršč,
-                    #field_speculative #field_ty: co3::ReprC + '_ršč,
-                    &'_ršč #mutability #field_ty: #move_trait + co3::ReprC<CType: Sized>,
-                    &'_ršč #mutability Self: co3::ReprC<CType = <&'_ršč #mutability #field_ty as co3::ReprC>::CType>,
+                    #speculative Self: co3::ReprC<CType = <#field_ty as co3::ReprC>::CType>
+                        + co3::rust_spec::RustSpec<Size = <#field_ty as co3::rust_spec::RustSpec>::Size, Mutability = <#field_ty as co3::rust_spec::RustSpec>::Mutability> + '_ršč,
+                    #field_speculative #field_ty: co3::ReprC + co3::rust_spec::RustSpec + '_ršč,
+                    &'_ršč #mutability #field_ty: #move_trait + co3::ReprC<CType: Sized + Copy>,
+                    &'_ršč #mutability Self: co3::ReprC<CType: Sized + Copy>,
                     #predicates
                 {
                     type #store_name = <&'_ršč #mutability #field_ty as #move_trait>::#store_name;
@@ -269,7 +270,11 @@ pub(super) fn gen_field_ref_impls(
                     where
                         '_ršč: 'itm,
                     {
-                        #call
+                        let carrier = #call;
+                        // Both reference carriers have the same pointer kind and
+                        // point to the same C type, including wide metadata.
+                        assert_eq!(core::mem::size_of_val(&carrier), core::mem::size_of::<<&'_ršč #mutability Self as co3::ReprC>::CType>());
+                        unsafe { core::mem::transmute_copy(&carrier) }
                     }
                 }
             });
@@ -368,7 +373,7 @@ fn gen_structural_decode(
                 bounds.push(quote! {
                     #spec #ty: Clone + #repr_bound + '_dšč,
                     &'_dšč #ty: co3::stored::DecodeMove<'_dšč>
-                        + co3::ReprC<CType = co3::reference::CRef<<#ty as co3::ReprC>::CType>>,
+                        + co3::ReprC<CType = co3::reference::CRef<#ty>>,
                 });
             }
             stores.push(quote!(Option<<#field_decoder as co3::stored::DecodeMove<'_dšč>>::Store>));
@@ -484,9 +489,9 @@ fn gen_structural_decode(
     };
     let mutability = mutable.then(|| quote!(mut));
     let reference = if mutable {
-        quote!(co3::reference::CRefMut<<Self as co3::ReprC>::CType, true>)
+        quote!(co3::reference::CRefMut<Self, true>)
     } else {
-        quote!(co3::reference::CRef<<Self as co3::ReprC>::CType>)
+        quote!(co3::reference::CRef<Self>)
     };
     let writeback = mutable.then(
         || quote!(#speculative Self: co3::stored::EncodeMove<Store: co3::stored::EmptyStore>,),

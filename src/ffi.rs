@@ -5,7 +5,7 @@ use alloc::{boxed::Box, ffi::CString};
 #[cfg(feature = "alloc")]
 use core::ptr::NonNull;
 use core::{
-    ffi::{CStr, c_void},
+    ffi::{CStr as RustCStr, c_void},
     mem::ManuallyDrop,
 };
 
@@ -18,12 +18,14 @@ use crate::{
     stored::{DecodeMove, EncodeMove, EncodeMoveUnchecked},
     transmute::AbiCompatible,
 };
+#[cfg(feature = "alloc")]
+use crate::{boxed::CBox, niche::Niche};
 
 macro_rules! c_alias_carrier {
     ($name:ident, $alias:ty) => {
         #[repr(transparent)]
         #[allow(non_camel_case_types)]
-        #[derive(Clone, Copy, Debug, Default, PartialEq, PartialOrd, RustSpec)]
+        #[derive(Debug, Clone, Copy, Default, PartialEq, PartialOrd, RustSpec)]
         pub struct $name(
             // NOTE: The wrapped type must remain private to prevent Rust literals to coerce to it.
             // Privacy helps keep the use of the type always portable to different architectures.
@@ -39,7 +41,7 @@ macro_rules! c_alias_carrier {
         }
 
         impl core::fmt::Display for $name {
-            fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+            fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> Result {
                 core::fmt::Display::fmt(&self.0, f)
             }
         }
@@ -145,25 +147,25 @@ macro_rules! c_integer_conversions {
         }
 
         impl core::fmt::Binary for $name {
-            fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+            fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> Result {
                 core::fmt::Binary::fmt(&self.0, f)
             }
         }
 
         impl core::fmt::Octal for $name {
-            fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+            fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> Result {
                 core::fmt::Octal::fmt(&self.0, f)
             }
         }
 
         impl core::fmt::LowerHex for $name {
-            fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+            fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> Result {
                 core::fmt::LowerHex::fmt(&self.0, f)
             }
         }
 
         impl core::fmt::UpperHex for $name {
-            fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+            fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> Result {
                 core::fmt::UpperHex::fmt(&self.0, f)
             }
         }
@@ -404,25 +406,25 @@ c_signed_ops! { c_float }
 c_signed_ops! { c_double }
 
 impl core::fmt::LowerExp for c_float {
-    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> Result {
         core::fmt::LowerExp::fmt(&self.0, f)
     }
 }
 
 impl core::fmt::UpperExp for c_float {
-    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> Result {
         core::fmt::UpperExp::fmt(&self.0, f)
     }
 }
 
 impl core::fmt::LowerExp for c_double {
-    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> Result {
         core::fmt::LowerExp::fmt(&self.0, f)
     }
 }
 
 impl core::fmt::UpperExp for c_double {
-    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> Result {
         core::fmt::UpperExp::fmt(&self.0, f)
     }
 }
@@ -432,9 +434,6 @@ impl From<c_float> for f64 {
         Self::from(value.0)
     }
 }
-
-#[cfg(feature = "alloc")]
-use crate::{boxed::CBox, niche::Niche};
 
 /// A nul-terminated value represented across the ABI by a pointer to its data.
 ///
@@ -497,11 +496,22 @@ unsafe impl<R: NulTerminatedBuf + ?Sized> NulTerminatedBuf for ManuallyDrop<R> {
     }
 }
 
-impl ReprC for CStr {
-    type CType = c_char;
+/// A character in a nul-terminated C string.
+///
+/// This carrier identifies a C string at the ABI boundary; individual characters
+/// have the same representation as `c_char`.
+#[derive(Debug, Clone, Copy, Default, PartialEq, PartialOrd, RustSpec)]
+#[repr(transparent)]
+pub struct CStr(pub c_char);
+
+unsafe impl crate::Zeroable for CStr {}
+primitive_derive! { CStr }
+
+impl ReprC for RustCStr {
+    type CType = CStr;
 }
 
-unsafe impl NulTerminatedBuf for CStr {
+unsafe impl NulTerminatedBuf for RustCStr {
     type Header = c_char;
 
     fn as_ptr(value: &Self) -> *const Self::Header {
@@ -509,7 +519,7 @@ unsafe impl NulTerminatedBuf for CStr {
     }
 
     unsafe fn from_raw<'a>(ptr: *const Self::Header) -> &'a Self {
-        unsafe { CStr::from_ptr(ptr.cast()) }
+        unsafe { Self::from_ptr(ptr.cast()) }
     }
 
     #[cfg(feature = "alloc")]
@@ -526,7 +536,7 @@ unsafe impl NulTerminatedBuf for CStr {
 
 #[cfg(feature = "alloc")]
 impl ReprC for CString {
-    type CType = CBox<c_char>;
+    type CType = CBox<RustCStr>;
 }
 #[cfg(feature = "alloc")]
 unsafe impl EncodeMove for CString {
@@ -556,7 +566,7 @@ unsafe impl<'d> DecodeMove<'d> for CString {
     type Store = ();
 
     unsafe fn soft_decode<'itm: 'd>(source: Self::CType, (): &mut ()) -> Option<Self> {
-        unsafe { Box::<CStr>::soft_decode(source, &mut ()) }.map(Into::into)
+        unsafe { Box::<RustCStr>::soft_decode(source, &mut ()) }.map(Into::into)
     }
 }
 
@@ -644,16 +654,16 @@ mod tests {
 
     #[test]
     fn nul_terminated_buf_wrapper_impls() {
-        assert_impl_all!(CStr: NulTerminatedBuf);
-        assert_not_impl_any!(UnsafeCell<CStr>: NulTerminatedBuf);
-        assert_not_impl_any!(Cell<CStr>: NulTerminatedBuf);
-        assert_impl_all!(ManuallyDrop<CStr>: NulTerminatedBuf);
-        assert_impl_all!(&ManuallyDrop<CStr>: Encode, Decode<'static>);
-        assert_not_impl_any!(&mut CStr: ReprC);
-        assert_not_impl_any!(&mut CStr: Encode, Decode<'static>);
+        assert_impl_all!(RustCStr: NulTerminatedBuf);
+        assert_not_impl_any!(UnsafeCell<RustCStr>: NulTerminatedBuf);
+        assert_not_impl_any!(Cell<RustCStr>: NulTerminatedBuf);
+        assert_impl_all!(ManuallyDrop<RustCStr>: NulTerminatedBuf);
+        assert_impl_all!(&ManuallyDrop<RustCStr>: Encode, Decode<'static>);
+        assert_not_impl_any!(&mut RustCStr: ReprC);
+        assert_not_impl_any!(&mut RustCStr: Encode, Decode<'static>);
         #[cfg(feature = "alloc")]
         {
-            assert_impl_all!(Box<ManuallyDrop<CStr>>: EncodeMove, crate::stored::DecodeMove<'static>);
+            assert_impl_all!(Box<ManuallyDrop<RustCStr>>: EncodeMove, crate::stored::DecodeMove<'static>);
             assert_impl_all!(CString: Encode);
         }
     }
@@ -664,10 +674,11 @@ mod tests {
         let encoded = crate::encode(original);
         assert_eq!(encoded.as_ptr().cast(), original.as_ptr());
 
-        let decoded: &CStr = unsafe { crate::decode(encoded) }.unwrap();
+        let decoded: &RustCStr = unsafe { crate::decode(encoded) }.unwrap();
         assert_eq!(decoded, original);
 
-        let none: Option<&CStr> = unsafe { crate::decode(crate::encode(None::<&CStr>)) }.unwrap();
+        let none: Option<&RustCStr> =
+            unsafe { crate::decode(crate::encode(None::<&RustCStr>)) }.unwrap();
         assert!(none.is_none());
     }
 
@@ -678,7 +689,7 @@ mod tests {
         let ptr = original.as_ptr();
         let encoded = crate::stored::encode_move(original);
         assert_eq!(encoded.as_ptr().cast_const().cast(), ptr);
-        let decoded: Box<CStr> = unsafe { crate::stored::decode_move(encoded) }.unwrap();
+        let decoded: Box<RustCStr> = unsafe { crate::stored::decode_move(encoded) }.unwrap();
         assert_eq!(decoded.as_ptr(), ptr);
         assert_eq!(&*decoded, c"owned");
     }

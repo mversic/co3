@@ -562,8 +562,9 @@ fn sanitize_symbol_component(input: &str) -> String {
 
 #[cfg(test)]
 mod symbol_name_tests {
-    use super::*;
     use syn::parse_quote;
+
+    use super::*;
 
     #[test]
     fn path_symbol_name_preserves_namespace_segments() {

@@ -1,17 +1,20 @@
 //! Conversion between C-compatible representations and ABI arguments.
 
-#[cfg(feature = "alloc")]
-use crate::boxed::{Box, CBox, CWideBox};
 use core::{
     cell::{Cell, UnsafeCell},
     mem::ManuallyDrop,
     ptr::NonNull,
 };
+
 use disjoint_impls::disjoint_impls;
 use rust_spec::{RustSpec, drop::NoDrop};
 
+#[cfg(feature = "alloc")]
+use crate::boxed::{Box, CBox, CWideBox};
 use crate::{
     CType, NeedsDrop, ReprC,
+    borrow::Borrowed,
+    option::COptionSome,
     slice::{CWideRef, CWideRefMut},
     tuple::Tuple2,
     wide::{Wide, WideHeader},
@@ -61,7 +64,7 @@ impl_raw_wide_unpack!(NonNull<R>, *mut, as_mut_ptr, into_inner);
 
 macro_rules! impl_ref_wide_pack {
     ($reference:ty, $carrier:ty, *$pointer:ident, $constructor:ident) => {
-        impl<R: ?Sized, P: Wide<Header: WideHeader<Data: CType>, Metadata: TryInto<U>> + ?Sized, U: CType>
+        impl<R: ReprC<CType = P> + Wide + ?Sized, P: Wide<Header: WideHeader<Data: CType>, Metadata: TryInto<U>> + ?Sized, U: CType>
             Unpack2<*$pointer <P::Header as WideHeader>::Data, U> for $reference
         where
             Self: ReprC<CType = $carrier>,
@@ -74,7 +77,7 @@ macro_rules! impl_ref_wide_pack {
             }
         }
 
-        impl<R: ?Sized, P: Wide<Header: WideHeader<Data: CType>, Metadata: CType> + ?Sized, U: CType + TryInto<P::Metadata>>
+        impl<R: ReprC<CType = P> + Wide + ?Sized, P: Wide<Header: WideHeader<Data: CType>> + ?Sized, U: CType + TryInto<P::Metadata>>
             Pack2<*$pointer <P::Header as WideHeader>::Data, U> for $reference
         where
             Self: ReprC<CType = $carrier>,
@@ -90,9 +93,9 @@ macro_rules! impl_ref_wide_pack {
     };
 }
 
-impl_ref_wide_pack!(&R, CWideRef<P>, *const, from_raw_parts);
-impl_ref_wide_pack!(&R, CWideRefMut<P, false>, *mut, from_raw_parts_mut);
-impl_ref_wide_pack!(&mut R, CWideRefMut<P, true>, *mut, from_raw_parts_mut);
+impl_ref_wide_pack!(&R, CWideRef<R>, *const, from_raw_parts);
+impl_ref_wide_pack!(&R, CWideRefMut<R, false>, *mut, from_raw_parts_mut);
+impl_ref_wide_pack!(&mut R, CWideRefMut<R, true>, *mut, from_raw_parts_mut);
 
 impl<T, Part: CType + TryInto<Self::CType>> Pack<Part> for T
 where
@@ -120,19 +123,19 @@ where
 
 impl<T: Pack2<Part1, Part2>, Part1: CType, Part2: CType> Pack2<Part1, Part2> for Option<T>
 where
-    Self: ReprC<CType = crate::option::COptionSome<T>>,
+    Self: ReprC<CType = COptionSome<T>>,
 {
     type Error = T::Error;
 
     #[inline(always)]
     unsafe fn pack(part1: Part1, part2: Part2) -> Result<Self::CType, Self::Error> {
-        unsafe { T::pack(part1, part2) }.map(crate::option::COptionSome::from_carrier)
+        unsafe { T::pack(part1, part2) }.map(COptionSome::from_carrier)
     }
 }
 
 impl<T: Unpack2<Part1, Part2>, Part1: CType, Part2: CType> Unpack2<Part1, Part2> for Option<T>
 where
-    Self: ReprC<CType = crate::option::COptionSome<T>>,
+    Self: ReprC<CType = COptionSome<T>>,
 {
     type Error = T::Error;
 
@@ -222,14 +225,16 @@ disjoint_impls! {
 
 #[cfg(feature = "alloc")]
 impl<
-    R: ?Sized,
+    R: ReprC<CType = P> + Wide + ?Sized,
     P: Wide<Header: WideHeader<Data: CType + Sized>, Metadata: TryInto<U>> + ?Sized,
     K: CType,
     U: CType,
 > Unpack2<K, U> for Box<R>
 where
-    Self: ReprC<CType = CWideBox<P>>,
-    CBox<<<P as Wide>::Header as WideHeader>::Data>: Into<K>,
+    Self: ReprC<CType = CWideBox<R>>,
+    <<R as Wide>::Header as WideHeader>::Data:
+        ReprC<CType = <<P as Wide>::Header as WideHeader>::Data>,
+    CBox<<<R as Wide>::Header as WideHeader>::Data>: Into<K>,
 {
     type Error = <<P as Wide>::Metadata as TryInto<U>>::Error;
     fn unpack(value: Self::CType) -> Result<(K, U), Self::Error> {
@@ -242,18 +247,20 @@ where
 
 #[cfg(feature = "alloc")]
 impl<
-    R: ?Sized,
-    P: Wide<Header: WideHeader<Data: CType + Sized>, Metadata: CType + Sized> + ?Sized,
+    R: ReprC<CType = P> + Wide + ?Sized,
+    P: Wide<Header: WideHeader<Data: CType + Sized>> + ?Sized,
     K: CType,
     U: CType + TryInto<<P as Wide>::Metadata>,
 > Pack2<K, U> for Box<R>
 where
-    Self: ReprC<CType = CWideBox<P>>,
-    K: Into<CBox<<<P as Wide>::Header as WideHeader>::Data>>,
+    Self: ReprC<CType = CWideBox<R>>,
+    <<R as Wide>::Header as WideHeader>::Data:
+        ReprC<CType = <<P as Wide>::Header as WideHeader>::Data>,
+    K: Into<CBox<<<R as Wide>::Header as WideHeader>::Data>>,
 {
     type Error = <U as TryInto<<P as Wide>::Metadata>>::Error;
     unsafe fn pack(data: K, metadata: U) -> Result<Self::CType, Self::Error> {
-        let data: CBox<<<P as Wide>::Header as WideHeader>::Data> = data.into();
+        let data: CBox<<<R as Wide>::Header as WideHeader>::Data> = data.into();
         Ok(unsafe { CWideBox::from_raw_nullable(data.as_ptr(), metadata.try_into()?) })
     }
 }
@@ -314,24 +321,19 @@ where
     }
 }
 
-impl<T: Unpack2<A, B>, A: CType, B: CType> Unpack2<crate::borrow::Borrowed<A>, B>
-    for crate::borrow::Borrowed<T>
-{
+impl<T: Unpack2<A, B>, A: CType, B: CType> Unpack2<Borrowed<A>, B> for Borrowed<T> {
     type Error = T::Error;
 
-    fn unpack(value: Self::CType) -> Result<(crate::borrow::Borrowed<A>, B), Self::Error> {
-        T::unpack(crate::borrow::Borrowed::into_inner(value))
-            .map(|(data, metadata)| (crate::borrow::Borrowed::new(data), metadata))
+    fn unpack(value: Self::CType) -> Result<(Borrowed<A>, B), Self::Error> {
+        T::unpack(Borrowed::into_inner(value))
+            .map(|(data, metadata)| (Borrowed::new(data), metadata))
     }
 }
 
-impl<T: Pack2<A, B>, A: CType, B: CType> Pack2<crate::borrow::Borrowed<A>, B>
-    for crate::borrow::Borrowed<T>
-{
+impl<T: Pack2<A, B>, A: CType, B: CType> Pack2<Borrowed<A>, B> for Borrowed<T> {
     type Error = T::Error;
 
-    unsafe fn pack(a: crate::borrow::Borrowed<A>, b: B) -> Result<Self::CType, Self::Error> {
-        unsafe { T::pack(crate::borrow::Borrowed::into_inner(a), b) }
-            .map(crate::borrow::Borrowed::new)
+    unsafe fn pack(a: Borrowed<A>, b: B) -> Result<Self::CType, Self::Error> {
+        unsafe { T::pack(Borrowed::into_inner(a), b) }.map(Borrowed::new)
     }
 }

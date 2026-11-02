@@ -1,8 +1,6 @@
 use proc_macro2::TokenStream;
 use quote::{format_ident, quote};
-use syn::visit::Visit;
-use syn::visit_mut::VisitMut;
-use syn::{ItemFn, Result, parse_quote};
+use syn::{ItemFn, Result, parse_quote, visit::Visit, visit_mut::VisitMut};
 
 use crate::{
     ffi_fn,

@@ -19,25 +19,25 @@ pub(crate) trait FromRawRef<C: ?Sized>: CType + Sized {
     unsafe fn from_raw_reference(data: *const C) -> Self;
 }
 
-impl<C: CType + ?Sized> FromRawRef<C> for CRef<C> {
-    unsafe fn from_raw_reference(data: *const C) -> Self {
+impl<R: ReprC<CType: CType> + ?Sized> FromRawRef<R::CType> for CRef<R> {
+    unsafe fn from_raw_reference(data: *const R::CType) -> Self {
         unsafe { Self::from_raw(data) }
     }
 }
 
-impl<C: CType + ?Sized> FromRawRef<C> for CRefMut<C, false> {
-    unsafe fn from_raw_reference(data: *const C) -> Self {
+impl<R: ReprC<CType: CType> + ?Sized> FromRawRef<R::CType> for CRefMut<R, false> {
+    unsafe fn from_raw_reference(data: *const R::CType) -> Self {
         unsafe { Self::from_raw(data.cast_mut()) }
     }
 }
 
-/// A thin shared reference pointer carrier with the same ABI as `*const C`.
+/// A thin shared reference pointer carrier with the same ABI as `*const R::CType`.
 ///
 /// A null pointer represents an absent reference.
 #[derive(RustSpec)]
 #[repr(transparent)]
-pub struct CRef<C: ?Sized> {
-    data: *const C,
+pub struct CRef<R: ReprC + ?Sized> {
+    data: *const R::CType,
 }
 
 /// A thin mutable pointer carrier with a defined C ABI layout.
@@ -46,14 +46,17 @@ pub struct CRef<C: ?Sized> {
 /// - `EXCLUSIVE = false` represents access that comes from `&UnsafeCell<T>`.
 #[derive(RustSpec)]
 #[repr(transparent)]
-pub struct CRefMut<C: ?Sized, const EXCLUSIVE: bool> {
-    data: *mut C,
+pub struct CRefMut<R: ReprC + ?Sized, const EXCLUSIVE: bool> {
+    data: *mut R::CType,
 }
 
-unsafe impl<C: Sized> crate::Zeroable for CRef<C> {}
-unsafe impl<C: Sized, const EXCLUSIVE: bool> crate::Zeroable for CRefMut<C, EXCLUSIVE> {}
+unsafe impl<R: ReprC<CType: Sized> + ?Sized> crate::Zeroable for CRef<R> {}
+unsafe impl<R: ReprC<CType: Sized> + ?Sized, const EXCLUSIVE: bool> crate::Zeroable
+    for CRefMut<R, EXCLUSIVE>
+{
+}
 
-impl<C: CType> CRef<C> {
+impl<R: ReprC<CType: CType + Sized> + ?Sized> CRef<R> {
     /// Construct a carrier with a null data pointer.
     pub const fn null() -> Self {
         Self {
@@ -63,7 +66,7 @@ impl<C: CType> CRef<C> {
     }
 }
 
-impl<C: CType, const EXCLUSIVE: bool> CRefMut<C, EXCLUSIVE> {
+impl<R: ReprC<CType: CType + Sized> + ?Sized, const EXCLUSIVE: bool> CRefMut<R, EXCLUSIVE> {
     /// Construct a carrier with a null data pointer.
     pub const fn null() -> Self {
         Self {
@@ -73,55 +76,55 @@ impl<C: CType, const EXCLUSIVE: bool> CRefMut<C, EXCLUSIVE> {
     }
 }
 
-impl<C: CType + ?Sized> CRef<C> {
+impl<R: ReprC<CType: CType> + ?Sized> CRef<R> {
     /// Wrap a pointer that follows the validity and aliasing rules of a shared reference.
     ///
     /// # Safety
     ///
-    /// A non-null thin pointer must refer to a live `C` for any later dereference.
-    pub const unsafe fn from_raw(data: *const C) -> Self {
-        assert_thin_pointer::<C>();
+    /// A non-null thin pointer must refer to a live `R::CType` for any later dereference.
+    pub const unsafe fn from_raw(data: *const R::CType) -> Self {
+        assert_thin_pointer::<R::CType>();
         Self { data }
     }
 
     /// Wrap an existing shared reference to lowered data.
-    pub const fn from_ref(data: &C) -> Self {
-        assert_thin_pointer::<C>();
+    pub const fn from_ref(data: &R::CType) -> Self {
+        assert_thin_pointer::<R::CType>();
         Self { data }
     }
 }
 
-impl<C: CType + ?Sized, const EXCLUSIVE: bool> CRefMut<C, EXCLUSIVE> {
+impl<R: ReprC<CType: CType> + ?Sized, const EXCLUSIVE: bool> CRefMut<R, EXCLUSIVE> {
     /// Wrap a pointer in a mutable ABI carrier.
     ///
     /// # Safety
     ///
     /// The thin pointer must satisfy the validity and aliasing rules of the source
     /// reference. If `EXCLUSIVE` is `true`, accesses must be exclusive.
-    pub const unsafe fn from_raw(data: *mut C) -> Self {
-        assert_thin_pointer::<C>();
+    pub const unsafe fn from_raw(data: *mut R::CType) -> Self {
+        assert_thin_pointer::<R::CType>();
         Self { data }
     }
 }
 
-impl<C: CType + ?Sized, const EXCLUSIVE: bool> CRefMut<C, EXCLUSIVE> {
+impl<R: ReprC<CType: CType> + ?Sized, const EXCLUSIVE: bool> CRefMut<R, EXCLUSIVE> {
     /// Wrap an existing mutable reference to lowered data.
-    pub const fn from_mut(data: &mut C) -> Self {
-        assert_thin_pointer::<C>();
+    pub const fn from_mut(data: &mut R::CType) -> Self {
+        assert_thin_pointer::<R::CType>();
         Self { data }
     }
 }
 
-impl<C: CType + ?Sized> CRefMut<C, false> {
+impl<R: ReprC<CType: CType> + ?Sized> CRefMut<R, false> {
     /// Create a carrier for shared access with interior mutability.
-    pub const fn from_ref(cell: &UnsafeCell<C>) -> Self {
-        assert_thin_pointer::<C>();
+    pub const fn from_ref(cell: &UnsafeCell<R::CType>) -> Self {
+        assert_thin_pointer::<R::CType>();
         Self { data: cell.get() }
     }
 }
 
-impl<C: ?Sized> CRef<C> {
-    pub const fn as_ptr(self) -> *const C {
+impl<R: ReprC + ?Sized> CRef<R> {
+    pub const fn as_ptr(self) -> *const R::CType {
         self.data
     }
 
@@ -130,7 +133,7 @@ impl<C: ?Sized> CRef<C> {
     /// # Safety
     ///
     /// A non-null pointer must refer to a live `C` for the returned lifetime.
-    pub const unsafe fn into_ref<'a>(self) -> Option<&'a C> {
+    pub const unsafe fn into_ref<'a>(self) -> Option<&'a R::CType> {
         if self.data.is_null() {
             return None;
         }
@@ -139,19 +142,19 @@ impl<C: ?Sized> CRef<C> {
     }
 }
 
-impl<C: ?Sized, const EXCLUSIVE: bool> CRefMut<C, EXCLUSIVE> {
-    pub const fn as_ptr(self) -> *mut C {
+impl<R: ReprC + ?Sized, const EXCLUSIVE: bool> CRefMut<R, EXCLUSIVE> {
+    pub const fn as_ptr(self) -> *mut R::CType {
         self.data
     }
 }
 
-impl<C: ?Sized> CRefMut<C, true> {
+impl<R: ReprC + ?Sized> CRefMut<R, true> {
     /// Recover the mutable reference, returning `None` for a null pointer.
     ///
     /// # Safety
     ///
     /// The pointer must refer to a live `C` that is exclusively accessible for the returned lifetime.
-    pub const unsafe fn into_mut<'a>(self) -> Option<&'a mut C> {
+    pub const unsafe fn into_mut<'a>(self) -> Option<&'a mut R::CType> {
         if self.data.is_null() {
             return None;
         }
@@ -160,18 +163,18 @@ impl<C: ?Sized> CRefMut<C, true> {
     }
 }
 
-impl<C: ?Sized, const EXCLUSIVE: bool> CRefMut<C, EXCLUSIVE> {
+impl<R: ReprC + ?Sized, const EXCLUSIVE: bool> CRefMut<R, EXCLUSIVE> {
     /// Recover the interior-mutable reference, returning `None` for a null pointer.
     ///
     /// # Safety
     ///
     /// The pointer must refer to a live `C` that is accessible for the returned lifetime.
-    pub const unsafe fn into_ref<'a>(self) -> Option<&'a UnsafeCell<C>> {
+    pub const unsafe fn into_ref<'a>(self) -> Option<&'a UnsafeCell<R::CType>> {
         if self.data.is_null() {
             return None;
         }
 
-        Some(unsafe { &*(self.data as *const UnsafeCell<C>) })
+        Some(unsafe { &*(self.data as *const UnsafeCell<R::CType>) })
     }
 }
 
@@ -205,7 +208,7 @@ macro_rules! impl_reference_carrier {
         impl_thin_pointer_traits! { $ty, [$($params)*], [$($args)*] }
 
         impl<$($params)*> core::fmt::Debug for $ty<$($args)*> {
-            fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+            fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> Result {
                 f.debug_tuple(stringify!($ty)).field(&self.data).finish()
             }
         }
@@ -250,10 +253,10 @@ unsafe impl<$($params)*> AbiCompatible for $ty<$($args)*> {}
     };
 }
 
-impl_reference_carrier! { CRef, [C: ?Sized], [C] }
-impl_reference_carrier! { CRefMut, [C: ?Sized, const EXCLUSIVE: bool], [C, EXCLUSIVE] }
-impl_reference_identity! { CRef, [C: CType + ?Sized], [C] }
-impl_reference_identity! { CRefMut, [C: CType + ?Sized, const EXCLUSIVE: bool], [C, EXCLUSIVE] }
+impl_reference_carrier! { CRef, [R: ReprC + ?Sized], [R] }
+impl_reference_carrier! { CRefMut, [R: ReprC + ?Sized, const EXCLUSIVE: bool], [R, EXCLUSIVE] }
+impl_reference_identity! { CRef, [R: ReprC<CType: CType> + ?Sized], [R] }
+impl_reference_identity! { CRefMut, [R: ReprC<CType: CType> + ?Sized, const EXCLUSIVE: bool], [R, EXCLUSIVE] }
 
 const fn assert_thin_pointer<C: ?Sized>() {
     const {
@@ -264,6 +267,7 @@ const fn assert_thin_pointer<C: ?Sized>() {
     }
 }
 
+#[cfg(feature = "alloc")]
 pub(crate) use impl_thin_pointer_traits;
 
 #[cfg(test)]

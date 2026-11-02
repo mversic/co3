@@ -7,10 +7,11 @@ use core::{
     ops::{Deref, DerefMut},
     ptr::NonNull,
 };
+
 use rust_spec::RustSpec;
 
 use crate::{
-    CFnArg, CFnReturn, CType, Decode, Encode, EncodeUnchecked, ReprC,
+    CFnArg, CFnReturn, CType, Decode, Encode, EncodeUnchecked, ReprC, Zeroable,
     borrow::Borrowed,
     slice::impl_identity_carrier,
     stored::{DecodeMove, EncodeMove, EncodeMoveUnchecked},
@@ -36,7 +37,7 @@ pub struct CVec<T: ReprC<CType: Sized>> {
     len: usize,
 }
 
-unsafe impl<T: ReprC<CType: Sized>> crate::Zeroable for CVec<T> {}
+unsafe impl<T: ReprC<CType: Sized>> Zeroable for CVec<T> {}
 
 struct VecOwner<'a, T> {
     target: &'a mut Vec<T>,
@@ -120,7 +121,7 @@ impl<T: Clone> Clone for Vec<T> {
     }
 }
 impl<T: core::fmt::Debug> core::fmt::Debug for Vec<T> {
-    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> Result {
         core::fmt::Debug::fmt(&**self, f)
     }
 }
@@ -385,7 +386,7 @@ unsafe impl<T: AbiCompatible<CType: CType + Sized>> AbiCompatible for Vec<T> whe
 {
 }
 impl<T: ReprC<CType: Sized>> core::fmt::Debug for CVec<T> {
-    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> Result {
         f.debug_struct("CVec")
             .field("data", &self.data)
             .field("len", &self.len)
@@ -398,5 +399,19 @@ impl<T: ReprC<CType: Sized>> Eq for CVec<T> {}
 impl<T: ReprC<CType: Sized>> PartialEq for CVec<T> {
     fn eq(&self, other: &Self) -> bool {
         self.data == other.data && self.len == other.len && self.capacity == other.capacity
+    }
+}
+
+impl<T: ReprC<CType: Sized>> Ord for CVec<T> {
+    fn cmp(&self, other: &Self) -> core::cmp::Ordering {
+        self.data
+            .cmp(&other.data)
+            .then_with(|| self.len.cmp(&other.len))
+            .then_with(|| self.capacity.cmp(&other.capacity))
+    }
+}
+impl<T: ReprC<CType: Sized>> PartialOrd for CVec<T> {
+    fn partial_cmp(&self, other: &Self) -> Option<core::cmp::Ordering> {
+        Some(self.cmp(other))
     }
 }

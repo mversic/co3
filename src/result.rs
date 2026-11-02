@@ -58,14 +58,14 @@ macro_rules! niche_result_carrier {
             }
         }
 
-        impl<$($generics)*> ReprC for $name<Ok, Err> where $payload: Niche, $other: RustSpec<Size = rust_spec::size::Sized<rust_spec::Zero>>, <$payload as ReprC>::CType: CType {
+        impl<$($generics)*> ReprC for $name<Ok, Err> where $payload: Niche, $other: RustSpec<Size = rust_spec::size::Sized<rust_spec::Zero>> {
             type CType = Self;
         }
-        unsafe impl<$($generics)*> CType for $name<Ok, Err> where $payload: Niche, $other: RustSpec<Size = rust_spec::size::Sized<rust_spec::Zero>>, <$payload as ReprC>::CType: CType {}
+        unsafe impl<$($generics)*> CType for $name<Ok, Err> where $payload: Niche, $other: RustSpec<Size = rust_spec::size::Sized<rust_spec::Zero>> {}
         unsafe impl<$($generics)*> CFnArg for $name<Ok, Err> where $payload: Niche, $other: RustSpec<Size = rust_spec::size::Sized<rust_spec::Zero>>, <$payload as ReprC>::CType: CFnArg {}
         unsafe impl<$($generics)*> CFnReturn for $name<Ok, Err> where $payload: Niche, $other: RustSpec<Size = rust_spec::size::Sized<rust_spec::Zero>>, <$payload as ReprC>::CType: CFnReturn {}
 
-        unsafe impl<$($generics)*> Borrow for $name<Ok, Err> where $payload: Niche, $other: RustSpec<Size = rust_spec::size::Sized<rust_spec::Zero>>, <$payload as ReprC>::CType: CType {
+        unsafe impl<$($generics)*> Borrow for $name<Ok, Err> where $payload: Niche, $other: RustSpec<Size = rust_spec::size::Sized<rust_spec::Zero>> {
             type Borrowed = Self;
 
             fn borrow(self) -> Self {
@@ -77,7 +77,7 @@ macro_rules! niche_result_carrier {
             }
         }
 
-        unsafe impl<$($generics)*> EncodeMoveUnchecked for $name<Ok, Err> where $payload: Niche, $other: RustSpec<Size = rust_spec::size::Sized<rust_spec::Zero>>, <$payload as ReprC>::CType: CType {
+        unsafe impl<$($generics)*> EncodeMoveUnchecked for $name<Ok, Err> where $payload: Niche, $other: RustSpec<Size = rust_spec::size::Sized<rust_spec::Zero>> {
             type SoftStore = ();
 
             unsafe fn soft_encode_unchecked<'a>(self, _: &'a mut ()) -> Self::CType
@@ -87,7 +87,7 @@ macro_rules! niche_result_carrier {
                 self
             }
         }
-        unsafe impl<$($generics)*> EncodeMove for $name<Ok, Err> where $payload: Niche, $other: RustSpec<Size = rust_spec::size::Sized<rust_spec::Zero>>, <$payload as ReprC>::CType: CType {
+        unsafe impl<$($generics)*> EncodeMove for $name<Ok, Err> where $payload: Niche, $other: RustSpec<Size = rust_spec::size::Sized<rust_spec::Zero>> {
             type Store = ();
 
             fn soft_encode<'a>(self, _: &'a mut ()) -> Self::CType
@@ -97,22 +97,22 @@ macro_rules! niche_result_carrier {
                 self
             }
         }
-        unsafe impl<'d, $($generics)*> DecodeMove<'d> for $name<Ok, Err> where $payload: Niche, $other: RustSpec<Size = rust_spec::size::Sized<rust_spec::Zero>>, <$payload as ReprC>::CType: CType {
+        unsafe impl<'d, $($generics)*> DecodeMove<'d> for $name<Ok, Err> where $payload: Niche, $other: RustSpec<Size = rust_spec::size::Sized<rust_spec::Zero>> {
             type Store = ();
 
             unsafe fn soft_decode<'a: 'd>(source: Self::CType, _: &'a mut ()) -> Option<Self> {
                 Some(source)
             }
         }
-        impl<$($generics)*> Encode for $name<Ok, Err> where $payload: Niche, $other: RustSpec<Size = rust_spec::size::Sized<rust_spec::Zero>>, <$payload as ReprC>::CType: CType {}
-        impl<$($generics)*> EncodeUnchecked for $name<Ok, Err> where $payload: Niche, $other: RustSpec<Size = rust_spec::size::Sized<rust_spec::Zero>>, <$payload as ReprC>::CType: CType {}
-        impl<'d, $($generics)*> Decode<'d> for $name<Ok, Err> where $payload: Niche, $other: RustSpec<Size = rust_spec::size::Sized<rust_spec::Zero>>, <$payload as ReprC>::CType: CType {}
-        unsafe impl<$($generics)*> AbiCompatibleValidate for $name<Ok, Err> where $payload: Niche, $other: RustSpec<Size = rust_spec::size::Sized<rust_spec::Zero>>, <$payload as ReprC>::CType: CType {
+        impl<$($generics)*> Encode for $name<Ok, Err> where $payload: Niche, $other: RustSpec<Size = rust_spec::size::Sized<rust_spec::Zero>> {}
+        impl<$($generics)*> EncodeUnchecked for $name<Ok, Err> where $payload: Niche, $other: RustSpec<Size = rust_spec::size::Sized<rust_spec::Zero>> {}
+        impl<'d, $($generics)*> Decode<'d> for $name<Ok, Err> where $payload: Niche, $other: RustSpec<Size = rust_spec::size::Sized<rust_spec::Zero>> {}
+        unsafe impl<$($generics)*> AbiCompatibleValidate for $name<Ok, Err> where $payload: Niche, $other: RustSpec<Size = rust_spec::size::Sized<rust_spec::Zero>> {
             unsafe fn is_valid(_: &Self::CType) -> bool {
                 true
             }
         }
-        unsafe impl<$($generics)*> AbiCompatible for $name<Ok, Err> where $payload: Niche, $other: RustSpec<Size = rust_spec::size::Sized<rust_spec::Zero>>, <$payload as ReprC>::CType: CType {}
+        unsafe impl<$($generics)*> AbiCompatible for $name<Ok, Err> where $payload: Niche, $other: RustSpec<Size = rust_spec::size::Sized<rust_spec::Zero>> {}
 
         impl<$($generics)*> Copy for $name<Ok, Err> where <$payload as ReprC>::CType: Copy {}
         impl<$($generics)*> Clone for $name<Ok, Err> where <$payload as ReprC>::CType: Clone {
@@ -125,20 +125,22 @@ macro_rules! niche_result_carrier {
                 f.debug_tuple(stringify!($name)).field(&self.0).finish()
             }
         }
+
+        impl<$($generics)*> Eq for $name<Ok, Err> where <$payload as ReprC>::CType: Eq {}
         impl<$($generics)*> PartialEq for $name<Ok, Err> where <$payload as ReprC>::CType: PartialEq {
             fn eq(&self, other: &Self) -> bool {
                 self.0 == other.0
             }
         }
-        impl<$($generics)*> Eq for $name<Ok, Err> where <$payload as ReprC>::CType: Eq {}
-        impl<$($generics)*> PartialOrd for $name<Ok, Err> where <$payload as ReprC>::CType: PartialOrd {
-            fn partial_cmp(&self, other: &Self) -> Option<core::cmp::Ordering> {
-                self.0.partial_cmp(&other.0)
-            }
-        }
+
         impl<$($generics)*> Ord for $name<Ok, Err> where <$payload as ReprC>::CType: Ord {
             fn cmp(&self, other: &Self) -> core::cmp::Ordering {
                 self.0.cmp(&other.0)
+            }
+        }
+        impl<$($generics)*> PartialOrd for $name<Ok, Err> where <$payload as ReprC>::CType: PartialOrd {
+            fn partial_cmp(&self, other: &Self) -> Option<core::cmp::Ordering> {
+                self.0.partial_cmp(&other.0)
             }
         }
         impl<$($generics)*> core::hash::Hash for $name<Ok, Err> where <$payload as ReprC>::CType: core::hash::Hash {
@@ -268,8 +270,8 @@ unsafe impl<'a, T: ReprC<CType: Copy> + 'a, E: ReprC<CType: Copy> + 'a, __Interi
     EncodeRefUnchecked<'a> for Result<T, E>
 where
     Self: RustSpec<Mutability = Exclusive<__Interior>, Size: Thin> + 'a,
-    &'a T: EncodeMoveUnchecked<CType = CRef<T::CType>>,
-    &'a E: EncodeMoveUnchecked<CType = CRef<E::CType>>,
+    &'a T: EncodeMoveUnchecked<CType = CRef<T>>,
+    &'a E: EncodeMoveUnchecked<CType = CRef<E>>,
 {
     type SoftStore = RefSizedEncodeStore<
         Self,
@@ -309,8 +311,8 @@ unsafe impl<'a, T: ReprC<CType: Copy> + 'a, E: ReprC<CType: Copy> + 'a, __Interi
     EncodeRef<'a> for Result<T, E>
 where
     Self: RustSpec<Mutability = Exclusive<__Interior>, Size: Thin> + 'a,
-    &'a T: EncodeMove<CType = CRef<T::CType>>,
-    &'a E: EncodeMove<CType = CRef<E::CType>>,
+    &'a T: EncodeMove<CType = CRef<T>>,
+    &'a E: EncodeMove<CType = CRef<E>>,
 {
     type Store = RefSizedEncodeStore<
         Self,
@@ -472,7 +474,7 @@ impl<T: ReprC<CType: PartialOrd + Copy>, E: ReprC<CType: PartialOrd + Copy>> Par
     }
 }
 
-impl<T: ReprC<CType: CType + Copy>, E: ReprC<CType: CType + Copy>> CResult<T, E> {
+impl<T: ReprC<CType: Copy>, E: ReprC<CType: Copy>> CResult<T, E> {
     pub(crate) const fn niche() -> Self {
         Self {
             ok: CResultVariant(2, MaybeUninit::zeroed()),
@@ -531,6 +533,10 @@ impl<T: ReprC<CType: Copy>, E: ReprC<CType: Copy>> CResult<T, E> {
         unsafe { *core::ptr::from_ref(self).cast::<u8>() }
     }
 
+    pub(crate) const fn is_niche(&self) -> bool {
+        self.tag() == Self::niche().tag()
+    }
+
     /// Return the represented `core::result::Result<T, E>`, or `None` for an invalid tag.
     pub const fn into_result(self) -> Option<RustResult<T::CType, E::CType>> {
         match self.tag() {
@@ -585,7 +591,7 @@ where
     >>::Output;
 }
 
-unsafe impl<T: ReprC<CType: CType + Copy>, E: ReprC<CType: CType + Copy>> Borrow for CResult<T, E> {
+unsafe impl<T: ReprC<CType: Copy>, E: ReprC<CType: Copy>> Borrow for CResult<T, E> {
     type Borrowed = Self;
 
     fn borrow(self) -> Self {
@@ -596,7 +602,7 @@ unsafe impl<T: ReprC<CType: CType + Copy>, E: ReprC<CType: CType + Copy>> Borrow
     }
 }
 
-crate::slice::impl_identity_carrier! { CResult, [T: ReprC<CType: CType + Copy>, E: ReprC<CType: CType + Copy>], [T, E] }
+crate::slice::impl_identity_carrier! { CResult, [T: ReprC<CType: Copy>, E: ReprC<CType: Copy>], [T, E] }
 
 unsafe impl<T: EmptyStore, E: EmptyStore> EmptyStore for RustResult<T, E> {}
 

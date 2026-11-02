@@ -6,7 +6,11 @@ use proc_macro2::TokenStream;
 use quote::quote;
 use syn::{Attribute, TypePath, visit::Visit};
 
-use crate::{ForeignItem, parse::ParsedAlias, parse::RawFnDecl, utils::cfg_attrs};
+use crate::{
+    ForeignItem,
+    parse::{ParsedAlias, RawFnDecl},
+    utils::cfg_attrs,
+};
 
 #[derive(Default)]
 pub(crate) struct TypeChecks {
@@ -207,8 +211,9 @@ impl<'ast> Visit<'ast> for TypeChecks {
 
 #[cfg(test)]
 mod tests {
-    use super::TypeChecks;
     use syn::parse_quote;
+
+    use super::TypeChecks;
 
     #[test]
     fn collects_nested_special_types_once() {

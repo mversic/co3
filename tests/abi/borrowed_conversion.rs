@@ -1,5 +1,7 @@
-use co3::borrow::{Borrow, Borrowed};
-use co3::stored::Store;
+use co3::{
+    borrow::{Borrow, Borrowed},
+    stored::Store,
+};
 
 #[test]
 fn owned_containers_preserve_their_type_and_allocation_when_borrowed() {

@@ -2,14 +2,15 @@ use proc_macro2::TokenStream;
 use quote::{format_ident, quote};
 use syn::{DeriveInput, Ident, parse_quote};
 
-use crate::utils::speculative_marker;
-
-use crate::layout::{
-    ReprCAttrs, VariantReprCAttrs,
-    attr::ReprKind,
-    ctype::{classify_tail, gen_ctype_name, gen_fields_methods},
-    generic_param_idents, is_parametrized, is_phantom_data,
-    item::{field_vars, gen_fields_destructure},
+use crate::{
+    layout::{
+        ReprCAttrs, VariantReprCAttrs,
+        attr::ReprKind,
+        ctype::{classify_tail, gen_ctype_name, gen_fields_methods},
+        generic_param_idents, is_parametrized, is_phantom_data,
+        item::{field_vars, gen_fields_destructure},
+    },
+    utils::speculative_marker,
 };
 
 pub(super) fn gen_item_view(

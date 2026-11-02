@@ -17,12 +17,14 @@ use rust_spec::{Stable, Unstable, layout::Robust, mutability::WithInterior};
 use crate::{
     CType, ReprC,
     niche::Niche,
-    option::COption,
+    option::{COption, COptionSome},
     reference::CRef,
-    result::CResult,
+    result::{CResult, CResultErr, CResultOk},
     slice::CWideRef,
-    stored::{EncodeMove, EncodeMoveUnchecked, Store},
-    sync::RefSizedEncodeStore,
+    stored::{
+        EncodeMove, EncodeMoveUnchecked, Store, encode_ref_field, encode_ref_field_unchecked,
+    },
+    sync::{ArrayStore, RefSizedEncodeStore},
     transmute::AbiCompatible,
     wide::{PointeeData, Wide, WideHeader},
 };
@@ -61,13 +63,13 @@ disjoint_impls! {
     }
 
     #[cfg(feature = "alloc")]
-    unsafe impl<'a, R: RustSpec + 'a, C: CType, S: SizedKind, __Interior: ExclusiveKind>
+    unsafe impl<'a, R: RustSpec + ReprC<CType = C> + 'a, C: CType, S: SizedKind, __Interior: ExclusiveKind>
         EncodeRefUnchecked<'a> for Box<R>
     where
         R: RustSpec<Size = RustSpecSized<S>, Mutability = Exclusive<__Interior>>,
-        &'a R: EncodeMoveUnchecked + ReprC<CType = CRef<C>>,
-        Self: ReprC<CType = CBox<C>>,
-        &'a Self: ReprC<CType = CRef<<Self as ReprC>::CType>>,
+        &'a R: EncodeMoveUnchecked + ReprC<CType = CRef<R>>,
+        Self: ReprC<CType = CBox<R>>,
+        &'a Self: ReprC<CType = CRef<Self>>,
     {
         type SoftStore = RefSizedEncodeStore<Self, <&'a R as EncodeMoveUnchecked>::SoftStore>;
 
@@ -86,12 +88,12 @@ disjoint_impls! {
         }
     }
     #[cfg(feature = "alloc")]
-    unsafe impl<'a, R: RustSpec + 'a, C: CType, S: SizedKind, __Trap> EncodeRefUnchecked<'a> for Box<R>
+    unsafe impl<'a, R: RustSpec + ReprC<CType = C> + 'a, C: CType, S: SizedKind, __Trap> EncodeRefUnchecked<'a> for Box<R>
     where
         R: RustSpec<Size = RustSpecSized<S>, Mutability = WithInterior<__Trap>>,
-        &'a R: EncodeMoveUnchecked + ReprC<CType = CRefMut<C, false>>,
-        &'a Self: ReprC<CType = CRef<<Self as ReprC>::CType>>,
-        Self: ReprC<CType = CBox<C>>,
+        &'a R: EncodeMoveUnchecked + ReprC<CType = CRefMut<R, false>>,
+        &'a Self: ReprC<CType = CRef<Self>>,
+        Self: ReprC<CType = CBox<R>>,
     {
         type SoftStore = RefSizedEncodeStore<Self, <&'a R as EncodeMoveUnchecked>::SoftStore>;
 
@@ -113,14 +115,14 @@ disjoint_impls! {
     unsafe impl<
         'a,
         R: RustSpec + 'a + ?Sized,
-        P: Wide<Header: WideHeader<Data: CType>, Metadata: CType + Sized> + ?Sized,
+        P: Wide<Header: WideHeader<Data: CType>> + ?Sized,
         __Interior: ExclusiveKind,
     > EncodeRefUnchecked<'a> for Box<R>
     where
-        R: RustSpec<Size = MetaSized<SliceLike>, Mutability = Exclusive<__Interior>>,
-        &'a R: EncodeMoveUnchecked + ReprC<CType = CWideRef<P>>,
-        Self: ReprC<CType = CWideBox<P>>,
-        &'a Self: ReprC<CType = CRef<<Self as ReprC>::CType>>,
+        R: RustSpec<Size = MetaSized<SliceLike>, Mutability = Exclusive<__Interior>> + ReprC<CType = P>,
+        &'a R: EncodeMoveUnchecked + ReprC<CType = CWideRef<R>>,
+        Self: ReprC<CType = CWideBox<R>>,
+        &'a Self: ReprC<CType = CRef<Self>>,
     {
         type SoftStore = RefSizedEncodeStore<Self, <&'a R as EncodeMoveUnchecked>::SoftStore>;
 
@@ -142,14 +144,14 @@ disjoint_impls! {
     unsafe impl<
         'a,
         R: RustSpec + 'a + ?Sized,
-        P: Wide<Header: WideHeader<Data: CType>, Metadata: CType + Sized> + ?Sized,
+        P: Wide<Header: WideHeader<Data: CType>> + ?Sized,
         __Trap,
     > EncodeRefUnchecked<'a> for Box<R>
     where
-        R: RustSpec<Size = MetaSized<SliceLike>, Mutability = WithInterior<__Trap>>,
-        &'a R: EncodeMoveUnchecked + ReprC<CType = CWideRefMut<P, false>>,
-        Self: ReprC<CType = CWideBox<P>>,
-        &'a Self: ReprC<CType = CRef<<Self as ReprC>::CType>>,
+        R: RustSpec<Size = MetaSized<SliceLike>, Mutability = WithInterior<__Trap>> + ReprC<CType = P>,
+        &'a R: EncodeMoveUnchecked + ReprC<CType = CWideRefMut<R, false>>,
+        Self: ReprC<CType = CWideBox<R>>,
+        &'a Self: ReprC<CType = CRef<Self>>,
     {
         type SoftStore = RefSizedEncodeStore<Self, <&'a R as EncodeMoveUnchecked>::SoftStore>;
 
@@ -168,13 +170,14 @@ disjoint_impls! {
         }
     }
     #[cfg(feature = "alloc")]
-    unsafe impl<'a, R: RustSpec + 'a + ?Sized, C: CType, __Interior: ExclusiveKind>
+    unsafe impl<'a, R: ReprC + 'a + ?Sized, __Interior: ExclusiveKind>
         EncodeRefUnchecked<'a> for Box<R>
     where
         R: RustSpec<Size = NulTerminated, Mutability = Exclusive<__Interior>>,
-        &'a R: EncodeMoveUnchecked + ReprC<CType = CRef<C>>,
-        Self: ReprC<CType = CBox<C>>,
-        &'a Self: ReprC<CType = CRef<<Self as ReprC>::CType>>,
+        &'a R: EncodeMoveUnchecked + ReprC<CType = CRef<R>>,
+        <R as ReprC>::CType: Sized,
+        Self: ReprC<CType = CBox<R>>,
+        &'a Self: ReprC<CType = CRef<Self>>,
     {
         type SoftStore = RefSizedEncodeStore<Self, <&'a R as EncodeMoveUnchecked>::SoftStore>;
 
@@ -193,12 +196,13 @@ disjoint_impls! {
         }
     }
     #[cfg(feature = "alloc")]
-    unsafe impl<'a, R: RustSpec + 'a + ?Sized, C: CType, __Trap> EncodeRefUnchecked<'a> for Box<R>
+    unsafe impl<'a, R: ReprC + 'a + ?Sized, __Trap> EncodeRefUnchecked<'a> for Box<R>
     where
         R: RustSpec<Size = NulTerminated, Mutability = WithInterior<__Trap>>,
-        &'a R: EncodeMoveUnchecked + ReprC<CType = CRefMut<C, false>>,
-        Self: ReprC<CType = CBox<C>>,
-        &'a Self: ReprC<CType = CRef<<Self as ReprC>::CType>>,
+        &'a R: EncodeMoveUnchecked + ReprC<CType = CRefMut<R, false>>,
+        Self: ReprC<CType = CBox<R>>,
+        <R as ReprC>::CType: Sized,
+        &'a Self: ReprC<CType = CRef<Self>>,
     {
         type SoftStore = RefSizedEncodeStore<Self, <&'a R as EncodeMoveUnchecked>::SoftStore>;
 
@@ -218,11 +222,11 @@ disjoint_impls! {
     }
 
     #[cfg(feature = "alloc")]
-    unsafe impl<'a, T: AbiCompatible<CType: CType + Sized>, __Interior: ExclusiveKind>
-        EncodeRefUnchecked<'a> for crate::vec::Vec<T>
+    unsafe impl<'a, R: AbiCompatible, __Interior: ExclusiveKind> EncodeRefUnchecked<'a> for crate::vec::Vec<R>
     where
-        T: RustSpec<Layout = Stable>,
-        Self: ReprC<CType = CVec<T>>,
+        R: RustSpec<Layout = Stable>,
+        Self: ReprC<CType = CVec<R>>,
+        <R as ReprC>::CType: Sized,
         Self: RustSpec<Mutability = Exclusive<__Interior>, Size: crate::Thin> + 'a,
     {
         type SoftStore = RefSizedEncodeStore<Self, ()>;
@@ -240,17 +244,17 @@ disjoint_impls! {
         }
     }
     #[cfg(feature = "alloc")]
-    unsafe impl<'a, T: ReprC<CType: CType + Copy + Sized>, __Interior: ExclusiveKind>
-        EncodeRefUnchecked<'a> for crate::vec::Vec<T>
+    unsafe impl<'a, R: ReprC, __Interior: ExclusiveKind> EncodeRefUnchecked<'a> for crate::vec::Vec<R>
     where
-        T: RustSpec<Layout = Unstable>,
-        Self: ReprC<CType = CVec<T>>,
+        R: RustSpec<Layout = Unstable>,
+        Self: ReprC<CType = CVec<R>>,
+        <R as ReprC>::CType: Copy,
         Self: RustSpec<Mutability = Exclusive<__Interior>, Size: crate::Thin> + 'a,
-        &'a T: EncodeMoveUnchecked + ReprC<CType = CRef<<T as ReprC>::CType>>,
+        &'a R: EncodeMoveUnchecked + ReprC<CType = CRef<R>>,
     {
         type SoftStore = RefSizedEncodeStore<
             Self,
-            RefVecEncodeStore<T, Box<[<&'a T as EncodeMoveUnchecked>::SoftStore]>>,
+            RefVecEncodeStore<R, Box<[<&'a R as EncodeMoveUnchecked>::SoftStore]>>,
         >;
 
         unsafe fn encode_ref_unchecked<'itm>(
@@ -269,12 +273,12 @@ disjoint_impls! {
     }
 
     #[cfg(feature = "alloc")]
-    unsafe impl<'a, T: AbiCompatible<CType: CType + Sized>, __Interior: ExclusiveKind>
-        EncodeRefUnchecked<'a> for Vec<T>
+    unsafe impl<'a, R: AbiCompatible, __Interior: ExclusiveKind> EncodeRefUnchecked<'a> for Vec<R>
     where
-        T: RustSpec<Layout = Stable>,
+        <R as ReprC>::CType: Sized,
+        R: RustSpec<Layout = Stable>,
         Self: RustSpec<Mutability = Exclusive<__Interior>, Size: crate::Thin>,
-        Self: ReprC<CType = CVec<T>> + 'a,
+        Self: ReprC<CType = CVec<R>> + 'a,
     {
         type SoftStore = RefSizedEncodeStore<Self, ()>;
 
@@ -291,17 +295,17 @@ disjoint_impls! {
         }
     }
     #[cfg(feature = "alloc")]
-    unsafe impl<'a, T: ReprC<CType: CType + Copy + Sized>, __Interior: ExclusiveKind>
-        EncodeRefUnchecked<'a> for Vec<T>
+    unsafe impl<'a, R: ReprC, __Interior: ExclusiveKind> EncodeRefUnchecked<'a> for Vec<R>
     where
-        T: RustSpec<Layout = Unstable>,
+        <R as ReprC>::CType: Copy,
+        R: RustSpec<Layout = Unstable>,
         Self: RustSpec<Mutability = Exclusive<__Interior>, Size: crate::Thin>,
-        &'a T: EncodeMoveUnchecked + ReprC<CType = CRef<<T as ReprC>::CType>>,
-        Self: ReprC<CType = CVec<T>> + 'a,
+        &'a R: EncodeMoveUnchecked + ReprC<CType = CRef<R>>,
+        Self: ReprC<CType = CVec<R>> + 'a,
     {
         type SoftStore = RefSizedEncodeStore<
             Self,
-            RefVecEncodeStore<T, Box<[<&'a T as EncodeMoveUnchecked>::SoftStore]>>,
+            RefVecEncodeStore<R, Box<[<&'a R as EncodeMoveUnchecked>::SoftStore]>>,
         >;
 
         unsafe fn encode_ref_unchecked<'itm>(
@@ -319,12 +323,12 @@ disjoint_impls! {
         }
     }
 
-    unsafe impl<'a, R: ReprC<CType: CType + Copy>, __Interior: ExclusiveKind> EncodeRefUnchecked<'a>
-        for Option<R>
+    unsafe impl<'a, R: ReprC, __Interior: ExclusiveKind> EncodeRefUnchecked<'a> for Option<R>
     where
         R: RustSpec<Niche = WithoutNiche>,
         Self: RustSpec<Mutability = Exclusive<__Interior>, Size: crate::Thin> + 'a,
-        &'a R: EncodeMoveUnchecked + ReprC<CType = CRef<<R as ReprC>::CType>>,
+        &'a R: EncodeMoveUnchecked + ReprC<CType = CRef<R>>,
+        <R as ReprC>::CType: Copy,
     {
         type SoftStore = RefSizedEncodeStore<Self, Option<<&'a R as EncodeMoveUnchecked>::SoftStore>>;
 
@@ -340,7 +344,7 @@ disjoint_impls! {
 
                 match self {
                     Some(value) => COption::Some(unsafe {
-                        crate::stored::encode_ref_field_unchecked(
+                        encode_ref_field_unchecked(
                             value,
                             store.insert(Default::default()),
                         )
@@ -358,7 +362,7 @@ disjoint_impls! {
     where
         R: RustSpec<Niche = WithNiche<N>>,
         Self: RustSpec<Mutability = Exclusive<__Interior>, Size: crate::Thin> + 'a,
-        &'a R: EncodeMoveUnchecked + ReprC<CType = CRef<<R as ReprC>::CType>>,
+        &'a R: EncodeMoveUnchecked + ReprC<CType = CRef<R>>,
     {
         type SoftStore = RefSizedEncodeStore<Self, Option<<&'a R as EncodeMoveUnchecked>::SoftStore>>;
 
@@ -373,35 +377,32 @@ disjoint_impls! {
                 let store = fields;
 
                 match self {
-                    Some(value) => crate::option::COptionSome::from_carrier(unsafe {
-                        crate::stored::encode_ref_field_unchecked(
+                    Some(value) => COptionSome::from_carrier(unsafe {
+                        encode_ref_field_unchecked(
                             value,
                             store.insert(Default::default()),
                         )
                     }),
                     None => {
                         *store = None;
-                        crate::option::COptionSome::from_carrier(R::NICHE)
+                        COptionSome::from_carrier(R::NICHE)
                     }
                 }
             })
         }
     }
 
-    unsafe impl<
-        'a,
-        R: ReprC<CType: CType + Copy>,
-        E: ReprC<CType: CType + Copy>,
-        K: SizedKind,
-        __Interior: ExclusiveKind,
-    > EncodeRefUnchecked<'a> for Result<R, E>
+    unsafe impl<'a, R: ReprC, E: ReprC, K: SizedKind, __Interior: ExclusiveKind>
+        EncodeRefUnchecked<'a> for Result<R, E>
     where
+        Self: RustSpec<Mutability = Exclusive<__Interior>, Size: crate::Thin> + 'a,
+        <R as ReprC>::CType: Copy,
+        <E as ReprC>::CType: Copy,
         Self: ReprC<CType = CResult<R, E>>,
         R: RustSpec<Size = RustSpecSized<K>>,
         E: RustSpec<Size = RustSpecSized<K>>,
-        Self: RustSpec<Mutability = Exclusive<__Interior>, Size: crate::Thin> + 'a,
-        &'a R: EncodeMoveUnchecked + ReprC<CType = CRef<<R as ReprC>::CType>>,
-        &'a E: EncodeMoveUnchecked + ReprC<CType = CRef<<E as ReprC>::CType>>,
+        &'a R: EncodeMoveUnchecked + ReprC<CType = CRef<R>>,
+        &'a E: EncodeMoveUnchecked + ReprC<CType = CRef<E>>,
     {
         type SoftStore = RefSizedEncodeStore<
             Self,
@@ -428,13 +429,13 @@ disjoint_impls! {
                         let Result::Ok(inner) = store.insert(Ok(Default::default())) else {
                             unreachable!()
                         };
-                        CResult::Ok(unsafe { crate::stored::encode_ref_field_unchecked(ok, inner) })
+                        CResult::Ok(unsafe { encode_ref_field_unchecked(ok, inner) })
                     }
                     Err(err) => {
                         let Result::Err(inner) = store.insert(Err(Default::default())) else {
                             unreachable!()
                         };
-                        CResult::Err(unsafe { crate::stored::encode_ref_field_unchecked(err, inner) })
+                        CResult::Err(unsafe { encode_ref_field_unchecked(err, inner) })
                     }
                 }
             })
@@ -444,11 +445,11 @@ disjoint_impls! {
     unsafe impl<'a, R: Niche, E: ReprC, N: LayoutKind, __Interior: ExclusiveKind> EncodeRefUnchecked<'a>
         for Result<R, E>
     where
-        Self: ReprC<CType = crate::result::CResultOk<R, E>>,
+        Self: ReprC<CType = CResultOk<R, E>>,
         R: RustSpec<Size = RustSpecSized<rust_spec::Gt<Zero>>, Niche = WithNiche<N>>,
         E: RustSpec<Size = RustSpecSized<Zero>>,
         Self: RustSpec<Mutability = Exclusive<__Interior>, Size: crate::Thin> + 'a,
-        &'a R: EncodeMoveUnchecked + ReprC<CType = CRef<<R as ReprC>::CType>>,
+        &'a R: EncodeMoveUnchecked + ReprC<CType = CRef<R>>,
     {
         type SoftStore = RefSizedEncodeStore<Self, Option<<&'a R as EncodeMoveUnchecked>::SoftStore>>;
 
@@ -463,12 +464,12 @@ disjoint_impls! {
                 let store = fields;
 
                 match self {
-                    Ok(ok) => crate::result::CResultOk::from_carrier(unsafe {
-                        crate::stored::encode_ref_field_unchecked(ok, store.insert(Default::default()))
+                    Ok(ok) => CResultOk::from_carrier(unsafe {
+                        encode_ref_field_unchecked(ok, store.insert(Default::default()))
                     }),
                     Err(_) => {
                         *store = None;
-                        crate::result::CResultOk::from_carrier(R::NICHE)
+                        CResultOk::from_carrier(R::NICHE)
                     }
                 }
             })
@@ -478,11 +479,11 @@ disjoint_impls! {
     unsafe impl<'a, R: ReprC, E: Niche, N: LayoutKind, __Interior: ExclusiveKind> EncodeRefUnchecked<'a>
         for Result<R, E>
     where
-        Self: ReprC<CType = crate::result::CResultErr<R, E>>,
+        Self: ReprC<CType = CResultErr<R, E>>,
         R: RustSpec<Size = RustSpecSized<Zero>>,
         E: RustSpec<Size = RustSpecSized<rust_spec::Gt<Zero>>, Niche = WithNiche<N>>,
         Self: RustSpec<Mutability = Exclusive<__Interior>, Size: crate::Thin> + 'a,
-        &'a E: EncodeMoveUnchecked + ReprC<CType = CRef<<E as ReprC>::CType>>,
+        &'a E: EncodeMoveUnchecked + ReprC<CType = CRef<E>>,
     {
         type SoftStore = RefSizedEncodeStore<Self, Option<<&'a E as EncodeMoveUnchecked>::SoftStore>>;
 
@@ -499,10 +500,10 @@ disjoint_impls! {
                 match self {
                     Ok(_) => {
                         *store = None;
-                        crate::result::CResultErr::from_carrier(E::NICHE)
+                        CResultErr::from_carrier(E::NICHE)
                     }
-                    Err(err) => crate::result::CResultErr::from_carrier(unsafe {
-                        crate::stored::encode_ref_field_unchecked(err, store.insert(Default::default()))
+                    Err(err) => CResultErr::from_carrier(unsafe {
+                        encode_ref_field_unchecked(err, store.insert(Default::default()))
                     }),
                 }
             })
@@ -515,8 +516,8 @@ disjoint_impls! {
         Self: ReprC<CType: CType + Sized>
             + RustSpec<Size: crate::Thin, Mutability = Exclusive<__Interior>>
             + 'a,
-        &'a Self: ReprC<CType = CRef<<Self as ReprC>::CType>>,
-        &'a R: ReprC<CType = CRef<<R as ReprC>::CType>>,
+        &'a Self: ReprC<CType = CRef<Self>>,
+        &'a R: ReprC<CType = CRef<R>>,
         &'a R: EncodeMoveUnchecked,
     {
         type SoftStore = <&'a R as EncodeMoveUnchecked>::SoftStore;
@@ -539,8 +540,8 @@ disjoint_impls! {
         Self: ReprC<CType: CType + Sized>
             + RustSpec<Size = NulTerminated, Mutability = Exclusive<__Interior>>
             + 'a,
-        &'a Self: ReprC<CType = CRef<<Self as ReprC>::CType>>,
-        &'a R: ReprC<CType = CRef<<R as ReprC>::CType>>,
+        &'a Self: ReprC<CType = CRef<Self>>,
+        &'a R: ReprC<CType = CRef<R>>,
         &'a R: EncodeMoveUnchecked,
     {
         type SoftStore = <&'a R as EncodeMoveUnchecked>::SoftStore;
@@ -566,8 +567,8 @@ disjoint_impls! {
         Self: ReprC<CType: Wide<Header: WideHeader<Data: CType + Sized>, Metadata = usize>>
             + RustSpec<Size = MetaSized<SliceLike>, Mutability = Exclusive<__Interior>>
             + 'a,
-        &'a Self: ReprC<CType = CWideRef<<Self as ReprC>::CType>>,
-        &'a R: ReprC<CType = CWideRef<<R as ReprC>::CType>>,
+        &'a Self: ReprC<CType = CWideRef<Self>>,
+        &'a R: ReprC<CType = CWideRef<R>>,
         &'a R: EncodeMoveUnchecked,
     {
         type SoftStore = <&'a R as EncodeMoveUnchecked>::SoftStore;
@@ -589,12 +590,13 @@ disjoint_impls! {
         }
     }
 
-    unsafe impl<'a, T: AbiCompatible<CType: CType + Sized> + 'a, const N: usize> EncodeRefUnchecked<'a>
+    unsafe impl<'a, T: AbiCompatible + 'a, const N: usize> EncodeRefUnchecked<'a>
         for [T; N]
     where
+        <T as ReprC>::CType: Sized,
         T: RustSpec<Layout = rust_spec::Stable>,
-        &'a Self: ReprC<CType = CRef<[<T as ReprC>::CType; N]>>,
-        &'a T: EncodeMoveUnchecked + ReprC<CType = CRef<<T as ReprC>::CType>>,
+        &'a Self: ReprC<CType = CRef<Self>>,
+        &'a T: EncodeMoveUnchecked + ReprC<CType = CRef<T>>,
     {
         type SoftStore = ();
         unsafe fn encode_ref_unchecked<'itm>(&'a self, _: &'itm mut ()) -> <&'a Self as ReprC>::CType
@@ -609,12 +611,12 @@ disjoint_impls! {
     unsafe impl<'a, T: ReprC<CType: Copy> + 'a, const N: usize> EncodeRefUnchecked<'a> for [T; N]
     where
         T: RustSpec<Layout = rust_spec::Unstable>,
-        &'a Self: ReprC<CType = CRef<[<T as ReprC>::CType; N]>>,
-        &'a T: EncodeMoveUnchecked + ReprC<CType = CRef<<T as ReprC>::CType>>,
+        &'a Self: ReprC<CType = CRef<Self>>,
+        &'a T: EncodeMoveUnchecked + ReprC<CType = CRef<T>>,
     {
         type SoftStore = RefSizedEncodeStore<
             Self,
-            crate::sync::ArrayStore<<&'a T as EncodeMoveUnchecked>::SoftStore, N>,
+            ArrayStore<<&'a T as EncodeMoveUnchecked>::SoftStore, N>,
         >;
         unsafe fn encode_ref_unchecked<'itm>(
             &'a self,
@@ -625,7 +627,7 @@ disjoint_impls! {
         {
             store.encode(|fields| {
                 core::array::from_fn(|i| unsafe {
-                    crate::stored::encode_ref_field_unchecked(&self[i], &mut fields.0[i])
+                    encode_ref_field_unchecked(&self[i], &mut fields.0[i])
                 })
             })
         }
@@ -656,13 +658,13 @@ disjoint_impls! {
     }
 
     #[cfg(feature = "alloc")]
-    unsafe impl<'a, R: RustSpec + 'a, C: CType, S: SizedKind, __Interior: ExclusiveKind> EncodeRef<'a>
+    unsafe impl<'a, R: RustSpec + ReprC<CType = C> + 'a, C: CType, S: SizedKind, __Interior: ExclusiveKind> EncodeRef<'a>
         for Box<R>
     where
         R: RustSpec<Size = RustSpecSized<S>, Mutability = Exclusive<__Interior>>,
-        &'a R: EncodeMove + ReprC<CType = CRef<C>>,
-        Self: ReprC<CType = CBox<C>>,
-        &'a Self: ReprC<CType = CRef<<Self as ReprC>::CType>>,
+        &'a R: EncodeMove + ReprC<CType = CRef<R>>,
+        Self: ReprC<CType = CBox<R>>,
+        &'a Self: ReprC<CType = CRef<Self>>,
     {
         type Store = RefSizedEncodeStore<Self, <&'a R as EncodeMove>::Store>;
 
@@ -678,12 +680,12 @@ disjoint_impls! {
         }
     }
     #[cfg(feature = "alloc")]
-    unsafe impl<'a, R: RustSpec + 'a, C: CType, S: SizedKind, __Trap> EncodeRef<'a> for Box<R>
+    unsafe impl<'a, R: RustSpec + ReprC<CType = C> + 'a, C: CType, S: SizedKind, __Trap> EncodeRef<'a> for Box<R>
     where
         R: RustSpec<Size = RustSpecSized<S>, Mutability = WithInterior<__Trap>>,
-        &'a R: EncodeMove + ReprC<CType = CRefMut<C, false>>,
-        Self: ReprC<CType = CBox<C>>,
-        &'a Self: ReprC<CType = CRef<<Self as ReprC>::CType>>,
+        &'a R: EncodeMove + ReprC<CType = CRefMut<R, false>>,
+        Self: ReprC<CType = CBox<R>>,
+        &'a Self: ReprC<CType = CRef<Self>>,
     {
         type Store = RefSizedEncodeStore<Self, <&'a R as EncodeMove>::Store>;
 
@@ -702,14 +704,14 @@ disjoint_impls! {
     unsafe impl<
         'a,
         R: RustSpec + 'a + ?Sized,
-        P: Wide<Header: WideHeader<Data: CType>, Metadata: CType + Sized> + ?Sized,
+        P: Wide<Header: WideHeader<Data: CType>> + ?Sized,
         __Interior: ExclusiveKind,
     > EncodeRef<'a> for Box<R>
     where
-        R: RustSpec<Size = MetaSized<SliceLike>, Mutability = Exclusive<__Interior>>,
-        &'a R: EncodeMove + ReprC<CType = CWideRef<P>>,
-        Self: ReprC<CType = CWideBox<P>>,
-        &'a Self: ReprC<CType = CRef<<Self as ReprC>::CType>>,
+        R: RustSpec<Size = MetaSized<SliceLike>, Mutability = Exclusive<__Interior>> + ReprC<CType = P>,
+        &'a R: EncodeMove + ReprC<CType = CWideRef<R>>,
+        Self: ReprC<CType = CWideBox<R>>,
+        &'a Self: ReprC<CType = CRef<Self>>,
     {
         type Store = RefSizedEncodeStore<Self, <&'a R as EncodeMove>::Store>;
 
@@ -728,14 +730,14 @@ disjoint_impls! {
     unsafe impl<
         'a,
         R: RustSpec + 'a + ?Sized,
-        P: Wide<Header: WideHeader<Data: CType>, Metadata: CType + Sized> + ?Sized,
+        P: Wide<Header: WideHeader<Data: CType>> + ?Sized,
         __Trap,
     > EncodeRef<'a> for Box<R>
     where
-        R: RustSpec<Size = MetaSized<SliceLike>, Mutability = WithInterior<__Trap>>,
-        &'a R: EncodeMove + ReprC<CType = CWideRefMut<P, false>>,
-        Self: ReprC<CType = CWideBox<P>>,
-        &'a Self: ReprC<CType = CRef<<Self as ReprC>::CType>>,
+        R: RustSpec<Size = MetaSized<SliceLike>, Mutability = WithInterior<__Trap>> + ReprC<CType = P>,
+        &'a R: EncodeMove + ReprC<CType = CWideRefMut<R, false>>,
+        Self: ReprC<CType = CWideBox<R>>,
+        &'a Self: ReprC<CType = CRef<Self>>,
     {
         type Store = RefSizedEncodeStore<Self, <&'a R as EncodeMove>::Store>;
 
@@ -751,13 +753,13 @@ disjoint_impls! {
         }
     }
     #[cfg(feature = "alloc")]
-    unsafe impl<'a, R: RustSpec + 'a + ?Sized, C: CType, __Interior: ExclusiveKind> EncodeRef<'a>
+    unsafe impl<'a, R: RustSpec + ReprC<CType: CType + Sized> + 'a + ?Sized, __Interior: ExclusiveKind> EncodeRef<'a>
         for Box<R>
     where
         R: RustSpec<Size = NulTerminated, Mutability = Exclusive<__Interior>>,
-        &'a R: EncodeMove + ReprC<CType = CRef<C>>,
-        Self: ReprC<CType = CBox<C>>,
-        &'a Self: ReprC<CType = CRef<<Self as ReprC>::CType>>,
+        &'a R: EncodeMove + ReprC<CType = CRef<R>>,
+        Self: ReprC<CType = CBox<R>>,
+        &'a Self: ReprC<CType = CRef<Self>>,
     {
         type Store = RefSizedEncodeStore<Self, <&'a R as EncodeMove>::Store>;
 
@@ -773,12 +775,12 @@ disjoint_impls! {
         }
     }
     #[cfg(feature = "alloc")]
-    unsafe impl<'a, R: RustSpec + 'a + ?Sized, C: CType, __Trap> EncodeRef<'a> for Box<R>
+    unsafe impl<'a, R: RustSpec + ReprC<CType: CType + Sized> + 'a + ?Sized, __Trap> EncodeRef<'a> for Box<R>
     where
         R: RustSpec<Size = NulTerminated, Mutability = WithInterior<__Trap>>,
-        &'a R: EncodeMove + ReprC<CType = CRefMut<C, false>>,
-        Self: ReprC<CType = CBox<C>>,
-        &'a Self: ReprC<CType = CRef<<Self as ReprC>::CType>>,
+        &'a R: EncodeMove + ReprC<CType = CRefMut<R, false>>,
+        Self: ReprC<CType = CBox<R>>,
+        &'a Self: ReprC<CType = CRef<Self>>,
     {
         type Store = RefSizedEncodeStore<Self, <&'a R as EncodeMove>::Store>;
 
@@ -839,7 +841,7 @@ disjoint_impls! {
         T: RustSpec<Layout = Unstable>,
         Self: EncodeRefUnchecked<'a> + ReprC<CType = CVec<T>>,
         Self: RustSpec<Mutability = Exclusive<__Interior>, Size: crate::Thin> + 'a,
-        &'a T: EncodeMove + ReprC<CType = CRef<<T as ReprC>::CType>>,
+        &'a T: EncodeMove + ReprC<CType = CRef<T>>,
     {
         type Store = RefSizedEncodeStore<
             Self,
@@ -903,7 +905,7 @@ disjoint_impls! {
         T: RustSpec<Layout = Unstable>,
         Self: EncodeRefUnchecked<'a> + ReprC<CType = CVec<T>>,
         Self: RustSpec<Mutability = Exclusive<__Interior>, Size: crate::Thin> + 'a,
-        &'a T: EncodeMove + ReprC<CType = CRef<<T as ReprC>::CType>>,
+        &'a T: EncodeMove + ReprC<CType = CRef<T>>,
     {
         type Store = RefSizedEncodeStore<
             Self,
@@ -927,7 +929,7 @@ disjoint_impls! {
     where
         R: RustSpec<Niche = WithoutNiche>,
         Self: RustSpec<Mutability = Exclusive<__Interior>, Size: crate::Thin> + 'a,
-        &'a R: EncodeMove + ReprC<CType = CRef<<R as ReprC>::CType>>,
+        &'a R: EncodeMove + ReprC<CType = CRef<R>>,
     {
         type Store = RefSizedEncodeStore<Self, Option<<&'a R as EncodeMove>::Store>>;
 
@@ -939,7 +941,7 @@ disjoint_impls! {
                 let store = fields;
 
                 match self {
-                    Some(value) => COption::Some(crate::stored::encode_ref_field(
+                    Some(value) => COption::Some(encode_ref_field(
                         value,
                         store.insert(Default::default()),
                     )),
@@ -957,7 +959,7 @@ disjoint_impls! {
     where
         R: RustSpec<Niche = WithNiche<N>>,
         Self: RustSpec<Mutability = Exclusive<__Interior>, Size: crate::Thin> + 'a,
-        &'a R: EncodeMove + ReprC<CType = CRef<<R as ReprC>::CType>>,
+        &'a R: EncodeMove + ReprC<CType = CRef<R>>,
     {
         type Store = RefSizedEncodeStore<Self, Option<<&'a R as EncodeMove>::Store>>;
 
@@ -970,12 +972,12 @@ disjoint_impls! {
 
                 if let Some(value) = self {
                     let encoded =
-                        crate::stored::encode_ref_field(value, store.insert(Default::default()));
+                        encode_ref_field(value, store.insert(Default::default()));
                     debug_assert!(encoded != R::NICHE, "encoding produced NICHE value");
-                    crate::option::COptionSome::from_carrier(encoded)
+                    COptionSome::from_carrier(encoded)
                 } else {
                     *store = None;
-                    crate::option::COptionSome::from_carrier(R::NICHE)
+                    COptionSome::from_carrier(R::NICHE)
                 }
             })
         }
@@ -993,8 +995,8 @@ disjoint_impls! {
         R: RustSpec<Size = RustSpecSized<K>>,
         E: RustSpec<Size = RustSpecSized<K>>,
         Self: RustSpec<Mutability = Exclusive<__Interior>, Size: crate::Thin> + 'a,
-        &'a R: EncodeMove + ReprC<CType = CRef<<R as ReprC>::CType>>,
-        &'a E: EncodeMove + ReprC<CType = CRef<<E as ReprC>::CType>>,
+        &'a R: EncodeMove + ReprC<CType = CRef<R>>,
+        &'a E: EncodeMove + ReprC<CType = CRef<E>>,
     {
         type Store = RefSizedEncodeStore<
             Self,
@@ -1015,11 +1017,11 @@ disjoint_impls! {
     unsafe impl<'a, R: Niche, E: ReprC, N: LayoutKind, __Interior: ExclusiveKind> EncodeRef<'a>
         for Result<R, E>
     where
-        Self: ReprC<CType = crate::result::CResultOk<R, E>>,
+        Self: ReprC<CType = CResultOk<R, E>>,
         R: RustSpec<Size = RustSpecSized<rust_spec::Gt<Zero>>, Niche = WithNiche<N>>,
         E: RustSpec<Size = RustSpecSized<Zero>>,
         Self: RustSpec<Mutability = Exclusive<__Interior>, Size: crate::Thin> + 'a,
-        &'a R: EncodeMove + ReprC<CType = CRef<<R as ReprC>::CType>>,
+        &'a R: EncodeMove + ReprC<CType = CRef<R>>,
     {
         type Store = RefSizedEncodeStore<Self, Option<<&'a R as EncodeMove>::Store>>;
 
@@ -1031,10 +1033,10 @@ disjoint_impls! {
                 let store = fields;
 
                 match self {
-                    Ok(ok) => crate::result::CResultOk::from_carrier(crate::stored::encode_ref_field(ok, store.insert(Default::default()))),
+                    Ok(ok) => CResultOk::from_carrier(encode_ref_field(ok, store.insert(Default::default()))),
                     Err(_) => {
                         *store = None;
-                        crate::result::CResultOk::from_carrier(R::NICHE)
+                        CResultOk::from_carrier(R::NICHE)
                     }
                 }
             })
@@ -1043,11 +1045,11 @@ disjoint_impls! {
     unsafe impl<'a, R: ReprC, E: Niche, N: LayoutKind, __Interior: ExclusiveKind> EncodeRef<'a>
         for Result<R, E>
     where
-        Self: ReprC<CType = crate::result::CResultErr<R, E>>,
+        Self: ReprC<CType = CResultErr<R, E>>,
         R: RustSpec<Size = RustSpecSized<Zero>>,
         E: RustSpec<Size = RustSpecSized<rust_spec::Gt<Zero>>, Niche = WithNiche<N>>,
         Self: RustSpec<Mutability = Exclusive<__Interior>, Size: crate::Thin> + 'a,
-        &'a E: EncodeMove + ReprC<CType = CRef<<E as ReprC>::CType>>,
+        &'a E: EncodeMove + ReprC<CType = CRef<E>>,
     {
         type Store = RefSizedEncodeStore<Self, Option<<&'a E as EncodeMove>::Store>>;
 
@@ -1061,9 +1063,9 @@ disjoint_impls! {
                 match self {
                     Ok(_) => {
                         *store = None;
-                        crate::result::CResultErr::from_carrier(E::NICHE)
+                        CResultErr::from_carrier(E::NICHE)
                     }
-                    Err(err) => crate::result::CResultErr::from_carrier(crate::stored::encode_ref_field(err, store.insert(Default::default()))),
+                    Err(err) => CResultErr::from_carrier(encode_ref_field(err, store.insert(Default::default()))),
                 }
             })
         }
@@ -1075,8 +1077,8 @@ disjoint_impls! {
         Self: ReprC<CType: CType + Sized>
             + RustSpec<Size: crate::Thin, Mutability = Exclusive<__Interior>>
             + 'a,
-        &'a Self: ReprC<CType = CRef<<Self as ReprC>::CType>>,
-        &'a R: EncodeMoveUnchecked + ReprC<CType = CRef<<R as ReprC>::CType>>,
+        &'a Self: ReprC<CType = CRef<Self>>,
+        &'a R: EncodeMoveUnchecked + ReprC<CType = CRef<R>>,
     {
         type Store = R::Store;
 
@@ -1097,8 +1099,8 @@ disjoint_impls! {
         Self: ReprC<CType: CType + Sized>
             + RustSpec<Size = NulTerminated, Mutability = Exclusive<__Interior>>
             + 'a,
-        &'a Self: ReprC<CType = CRef<<Self as ReprC>::CType>>,
-        &'a R: EncodeMoveUnchecked + ReprC<CType = CRef<<R as ReprC>::CType>>,
+        &'a Self: ReprC<CType = CRef<Self>>,
+        &'a R: EncodeMoveUnchecked + ReprC<CType = CRef<R>>,
     {
         type Store = R::Store;
 
@@ -1123,8 +1125,8 @@ disjoint_impls! {
         Self: ReprC<CType: Wide<Header: WideHeader<Data: CType + Sized>, Metadata = usize>>
             + RustSpec<Size = MetaSized<SliceLike>, Mutability = Exclusive<__Interior>>
             + 'a,
-        &'a Self: ReprC<CType = CWideRef<<Self as ReprC>::CType>>,
-        &'a R: EncodeMoveUnchecked + ReprC<CType = CWideRef<<R as ReprC>::CType>>,
+        &'a Self: ReprC<CType = CWideRef<Self>>,
+        &'a R: EncodeMoveUnchecked + ReprC<CType = CWideRef<R>>,
     {
         type Store = R::Store;
 
@@ -1149,8 +1151,8 @@ disjoint_impls! {
         for [T; N]
     where
         T: RustSpec<Layout = rust_spec::Stable>,
-        &'a Self: ReprC<CType = CRef<[<T as ReprC>::CType; N]>>,
-        &'a T: EncodeMove + ReprC<CType = CRef<<T as ReprC>::CType>>,
+        &'a Self: ReprC<CType = CRef<Self>>,
+        &'a T: EncodeMove + ReprC<CType = CRef<T>>,
     {
         type Store = ();
         fn encode_ref<'itm>(&'a self, _: &'itm mut ()) -> <&'a Self as ReprC>::CType
@@ -1165,17 +1167,17 @@ disjoint_impls! {
     unsafe impl<'a, T: ReprC<CType: Copy> + 'a, const N: usize> EncodeRef<'a> for [T; N]
     where
         T: RustSpec<Layout = rust_spec::Unstable>,
-        &'a Self: ReprC<CType = CRef<[<T as ReprC>::CType; N]>>,
-        &'a T: EncodeMove + ReprC<CType = CRef<<T as ReprC>::CType>>,
+        &'a Self: ReprC<CType = CRef<Self>>,
+        &'a T: EncodeMove + ReprC<CType = CRef<T>>,
     {
         type Store =
-            RefSizedEncodeStore<Self, crate::sync::ArrayStore<<&'a T as EncodeMove>::Store, N>>;
+            RefSizedEncodeStore<Self, ArrayStore<<&'a T as EncodeMove>::Store, N>>;
         fn encode_ref<'itm>(&'a self, store: &'itm mut Self::Store) -> <&'a Self as ReprC>::CType
         where
             'a: 'itm,
         {
             store.encode(|fields| {
-                core::array::from_fn(|i| crate::stored::encode_ref_field(&self[i], &mut fields.0[i]))
+                core::array::from_fn(|i| encode_ref_field(&self[i], &mut fields.0[i]))
             })
         }
     }
@@ -1184,10 +1186,10 @@ disjoint_impls! {
 #[cfg(feature = "alloc")]
 unsafe impl<'a, T: ReprC<CType: CType + Copy + Sized> + 'a> EncodeRefUnchecked<'a> for [T]
 where
-    &'a T: EncodeMoveUnchecked + ReprC<CType = CRef<<T as ReprC>::CType>>,
-    &'a Self: ReprC<CType = CWideRef<[<T as ReprC>::CType]>>,
+    &'a T: EncodeMoveUnchecked + ReprC<CType = CRef<T>>,
+    &'a Self: ReprC<CType = CWideRef<Self>>,
 {
-    type SoftStore = RefWideEncodeStore<[T], Box<[<&'a T as EncodeMoveUnchecked>::SoftStore]>>;
+    type SoftStore = RefWideEncodeStore<Self, Box<[<&'a T as EncodeMoveUnchecked>::SoftStore]>>;
 
     unsafe fn encode_ref_unchecked<'itm>(
         &'a self,
@@ -1203,10 +1205,10 @@ where
 #[cfg(feature = "alloc")]
 unsafe impl<'a, T: ReprC<CType: CType + Copy + Sized> + 'a> EncodeRef<'a> for [T]
 where
-    &'a T: EncodeMove + ReprC<CType = CRef<<T as ReprC>::CType>>,
-    &'a Self: ReprC<CType = CWideRef<[<T as ReprC>::CType]>>,
+    &'a T: EncodeMove + ReprC<CType = CRef<T>>,
+    &'a Self: ReprC<CType = CWideRef<Self>>,
 {
-    type Store = RefWideEncodeStore<[T], Box<[<&'a T as EncodeMove>::Store]>>;
+    type Store = RefWideEncodeStore<Self, Box<[<&'a T as EncodeMove>::Store]>>;
 
     fn encode_ref<'itm>(&'a self, store: &'itm mut Self::Store) -> <&'a Self as ReprC>::CType
     where
@@ -1243,21 +1245,21 @@ fn encode_shared_result<'a, R: ReprC<CType: Copy> + 'a, E: ReprC<CType: Copy> + 
     store: &mut Option<Result<<&'a R as EncodeMove>::Store, <&'a E as EncodeMove>::Store>>,
 ) -> CResult<R, E>
 where
-    &'a R: EncodeMove<CType = CRef<R::CType>>,
-    &'a E: EncodeMove<CType = CRef<E::CType>>,
+    &'a R: EncodeMove<CType = CRef<R>>,
+    &'a E: EncodeMove<CType = CRef<E>>,
 {
     match value {
         Ok(ok) => {
             let Ok(store) = store.insert(Ok(Default::default())) else {
                 unreachable!()
             };
-            CResult::Ok(crate::stored::encode_ref_field(ok, store))
+            CResult::Ok(encode_ref_field(ok, store))
         }
         Err(err) => {
             let Err(store) = store.insert(Err(Default::default())) else {
                 unreachable!()
             };
-            CResult::Err(crate::stored::encode_ref_field(err, store))
+            CResult::Err(encode_ref_field(err, store))
         }
     }
 }
@@ -1361,7 +1363,7 @@ where
 
 #[cfg(feature = "alloc")]
 macro_rules! impl_buffer_shared {
-    ($ty:ty, $view:ident) => {
+    ($ty:ty, $carrier:expr) => {
         unsafe impl<'a> EncodeRefUnchecked<'a> for $ty {
             type SoftStore = RefSizedEncodeStore<Self, ()>;
             unsafe fn encode_ref_unchecked<'itm>(
@@ -1371,11 +1373,7 @@ macro_rules! impl_buffer_shared {
             where
                 'a: 'itm,
             {
-                store.encode(|_fields| {
-                    let view = unsafe { self.$view().soft_encode_unchecked(&mut ()) };
-                    // The pointee remains borrowed; only its raw pointer carrier changes.
-                    unsafe { core::mem::transmute_copy(&view) }
-                })
+                store.encode(|_fields| ($carrier)(self))
             }
         }
         unsafe impl<'a> EncodeRef<'a> for $ty {
@@ -1387,18 +1385,26 @@ macro_rules! impl_buffer_shared {
             where
                 'a: 'itm,
             {
-                store.encode(|_fields| {
-                    let view = self.$view().soft_encode(&mut ());
-                    unsafe { core::mem::transmute_copy(&view) }
-                })
+                store.encode(|_fields| ($carrier)(self))
             }
         }
     };
 }
 #[cfg(feature = "alloc")]
-impl_buffer_shared!(alloc::string::String, as_str);
+impl_buffer_shared!(
+    alloc::string::String,
+    |value: &alloc::string::String| unsafe {
+        crate::utf8::Utf8String(CVec::from_raw_parts(
+            value.as_ptr().cast_mut(),
+            value.len(),
+            value.capacity(),
+        ))
+    }
+);
 #[cfg(feature = "alloc")]
-impl_buffer_shared!(alloc::ffi::CString, as_c_str);
+impl_buffer_shared!(alloc::ffi::CString, |value: &alloc::ffi::CString| unsafe {
+    CBox::from_raw(value.as_ptr().cast_mut().cast())
+});
 
 #[cfg(feature = "alloc")]
 fn encode_slice<'a, T: ReprC<CType: CType + Copy> + 'a, S: Store + Default>(
@@ -1406,7 +1412,7 @@ fn encode_slice<'a, T: ReprC<CType: CType + Copy> + 'a, S: Store + Default>(
     stores: &mut Box<[S]>,
 ) -> Box<[T::CType]>
 where
-    &'a T: EncodeMove<CType = CRef<T::CType>, Store = S>,
+    &'a T: EncodeMove<CType = CRef<T>, Store = S>,
 {
     *stores = core::iter::repeat_with(Default::default)
         .take(source.len())
@@ -1414,7 +1420,7 @@ where
     source
         .iter()
         .zip(stores.iter_mut())
-        .map(|(item, store)| crate::stored::encode_ref_field(item, store))
+        .map(|(item, store)| encode_ref_field(item, store))
         .collect()
 }
 
@@ -1424,7 +1430,7 @@ unsafe fn encode_slice_unchecked<'a, T: ReprC<CType: CType + Copy> + 'a, S: Stor
     stores: &mut Box<[S]>,
 ) -> Box<[T::CType]>
 where
-    &'a T: EncodeMoveUnchecked<CType = CRef<T::CType>, SoftStore = S>,
+    &'a T: EncodeMoveUnchecked<CType = CRef<T>, SoftStore = S>,
 {
     *stores = core::iter::repeat_with(Default::default)
         .take(source.len())
@@ -1432,7 +1438,7 @@ where
     source
         .iter()
         .zip(stores.iter_mut())
-        .map(|(item, store)| unsafe { crate::stored::encode_ref_field_unchecked(item, store) })
+        .map(|(item, store)| unsafe { encode_ref_field_unchecked(item, store) })
         .collect()
 }
 
@@ -1443,7 +1449,7 @@ fn encode_vec<'a, T: ReprC<CType: CType + Copy> + 'a, S: Store + Default>(
     stores: &mut Box<[S]>,
 ) -> Vec<T::CType>
 where
-    &'a T: EncodeMove<CType = CRef<T::CType>, Store = S>,
+    &'a T: EncodeMove<CType = CRef<T>, Store = S>,
 {
     *stores = core::iter::repeat_with(Default::default)
         .take(source.len())
@@ -1453,7 +1459,7 @@ where
         source
             .iter()
             .zip(stores.iter_mut())
-            .map(|(item, store)| crate::stored::encode_ref_field(item, store)),
+            .map(|(item, store)| encode_ref_field(item, store)),
     );
     encoded
 }
@@ -1465,7 +1471,7 @@ unsafe fn encode_vec_unchecked<'a, T: ReprC<CType: CType + Copy> + 'a, S: Store 
     stores: &mut Box<[S]>,
 ) -> Vec<T::CType>
 where
-    &'a T: EncodeMoveUnchecked<CType = CRef<T::CType>, SoftStore = S>,
+    &'a T: EncodeMoveUnchecked<CType = CRef<T>, SoftStore = S>,
 {
     *stores = core::iter::repeat_with(Default::default)
         .take(source.len())
@@ -1475,7 +1481,7 @@ where
         source
             .iter()
             .zip(stores.iter_mut())
-            .map(|(item, store)| unsafe { crate::stored::encode_ref_field_unchecked(item, store) }),
+            .map(|(item, store)| unsafe { encode_ref_field_unchecked(item, store) }),
     );
     encoded
 }

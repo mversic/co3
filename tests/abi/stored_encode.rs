@@ -3,14 +3,15 @@ use core::{
     mem::{ManuallyDrop, MaybeUninit},
 };
 
-use crate::TransparentCarrier;
 use co3::{
     Decode, Encode,
-    primitives::Bool,
+    primitives::CBool,
     stored::{EmptyStore, EncodeMove, EncodeMoveUnchecked, Store},
     transmute::AbiCompatible,
 };
 use static_assertions::{assert_impl_all, assert_not_impl_any};
+
+use crate::TransparentCarrier;
 // FIXME: Restore these fixtures with the disabled fast-path tests below.
 /*
 #[cfg(feature = "alloc")]
@@ -264,10 +265,10 @@ fn shared_interior_and_mutable_non_robust_refs_have_direct_paths() {
 #[test]
 fn unchecked_encode_exposes_the_original_mutable_bool() {
     let mut value = false;
-    let original = core::ptr::from_mut(&mut value).cast::<Bool>();
+    let original = core::ptr::from_mut(&mut value).cast::<CBool>();
     let encoded = unsafe { co3::encode_unchecked(&mut value) };
     assert_eq!(encoded.as_ptr(), original);
-    unsafe { *encoded.as_ptr() = Bool::TRUE };
+    unsafe { *encoded.as_ptr() = CBool::TRUE };
     assert!(value);
 
     let encoded = unsafe { co3::encode_unchecked(TransparentMut(&mut value)) };
@@ -282,7 +283,7 @@ fn unchecked_encode_reuses_a_boxed_mutable_bool_reference() {
     let original = core::ptr::from_ref(&*boxed).cast_mut().cast();
     let encoded = unsafe { co3::encode_unchecked(boxed) };
     assert_eq!(encoded.as_ptr(), original);
-    unsafe { *(*encoded.as_ptr()).as_ptr() = Bool::TRUE };
+    unsafe { *(*encoded.as_ptr()).as_ptr() = CBool::TRUE };
     drop(unsafe { encoded.into_box().unwrap() });
     assert!(value);
 }
@@ -295,7 +296,7 @@ fn unchecked_encode_reuses_a_boxed_slice_of_mutable_bool_references() {
     let original = boxed.as_ptr().cast_mut().cast();
     let encoded = unsafe { co3::encode_unchecked(boxed) };
     assert_eq!(encoded.as_ptr(), original);
-    unsafe { *(*encoded.as_ptr()).as_ptr() = Bool::TRUE };
+    unsafe { *(*encoded.as_ptr()).as_ptr() = CBool::TRUE };
     drop(unsafe { encoded.into_box().unwrap() });
     assert!(value);
 }
@@ -303,7 +304,7 @@ fn unchecked_encode_reuses_a_boxed_slice_of_mutable_bool_references() {
 #[test]
 fn unchecked_encode_propagates_through_wrappers() {
     let mut value = false;
-    let original = core::ptr::from_mut(&mut value).cast::<Bool>();
+    let original = core::ptr::from_mut(&mut value).cast::<CBool>();
 
     let optional = unsafe { co3::encode_unchecked(Some(&mut value)) };
     assert_eq!(optional.payload().as_ptr(), original);
@@ -318,7 +319,7 @@ fn unchecked_encode_propagates_through_wrappers() {
         })
     };
     assert_eq!(record.value.as_ptr(), original);
-    unsafe { *record.value.as_ptr() = Bool::TRUE };
+    unsafe { *record.value.as_ptr() = CBool::TRUE };
     assert!(value);
 
     let tuple = unsafe { co3::encode_unchecked((&mut value, 7_u8)) };
@@ -422,7 +423,7 @@ fn manually_drop_mut_bool_syncs_its_store() {
     let mut value = false;
     let mut store = Default::default();
     let encoded = co3::soft_encode(ManuallyDrop::new(&mut value), &mut store);
-    unsafe { *encoded.as_ptr() = Bool::TRUE };
+    unsafe { *encoded.as_ptr() = CBool::TRUE };
     store.sync().unwrap();
     assert!(value);
 }
@@ -433,7 +434,7 @@ fn manually_drop_boxed_mut_bool_syncs_its_store() {
     let mut value = false;
     let mut store = Default::default();
     let encoded = co3::soft_encode(ManuallyDrop::new(Box::new(&mut value)), &mut store);
-    unsafe { *(*encoded.as_ptr()).as_ptr() = Bool::TRUE };
+    unsafe { *(*encoded.as_ptr()).as_ptr() = CBool::TRUE };
     drop(unsafe { ManuallyDrop::into_inner(encoded).into_box().unwrap() });
     store.sync().unwrap();
     assert!(value);
@@ -445,7 +446,7 @@ fn vec_mut_bool_syncs_element_stores() {
     let mut values = [false, false];
     let mut store = Default::default();
     let encoded = co3::soft_encode(values.iter_mut().collect::<Vec<_>>(), &mut store);
-    unsafe { *(*encoded.as_ptr()).as_ptr() = Bool::TRUE };
+    unsafe { *(*encoded.as_ptr()).as_ptr() = CBool::TRUE };
     drop(unsafe { encoded.into_vec().unwrap() });
     store.sync().unwrap();
     assert_eq!(values, [true, false]);
@@ -456,7 +457,7 @@ fn optional_mut_bool_syncs_only_present_values() {
     let mut value = false;
     let mut store = Default::default();
     let encoded = co3::soft_encode(Some(&mut value), &mut store);
-    unsafe { *encoded.payload().as_ptr() = Bool::TRUE };
+    unsafe { *encoded.payload().as_ptr() = CBool::TRUE };
     store.sync().unwrap();
     assert!(value);
 
@@ -472,7 +473,7 @@ fn vec_of_optional_mut_bool_syncs_present_elements() {
     let mut value = false;
     let mut store = Default::default();
     let encoded = co3::soft_encode(vec![Some(&mut value), None], &mut store);
-    unsafe { *(*encoded.as_ptr()).payload().as_ptr() = Bool::TRUE };
+    unsafe { *(*encoded.as_ptr()).payload().as_ptr() = CBool::TRUE };
     drop(unsafe { encoded.into_vec().unwrap() });
     store.sync().unwrap();
     assert!(value);
@@ -505,7 +506,7 @@ fn derived_transparent_mut_bool_syncs_its_store() {
     let mut value = false;
     let mut store = Default::default();
     let encoded = co3::soft_encode(TransparentMut(&mut value), &mut store);
-    unsafe { *encoded.as_ptr() = Bool::TRUE };
+    unsafe { *encoded.as_ptr() = CBool::TRUE };
     store.sync().unwrap();
     assert!(value);
 }
@@ -515,7 +516,7 @@ fn optional_derived_transparent_syncs_only_present_values() {
     let mut value = false;
     let mut store = Default::default();
     let encoded = co3::soft_encode(Some(TransparentMut(&mut value)), &mut store);
-    unsafe { *encoded.payload().as_ptr() = Bool::TRUE };
+    unsafe { *encoded.payload().as_ptr() = CBool::TRUE };
     store.sync().unwrap();
     assert!(value);
 
@@ -536,7 +537,7 @@ fn derived_record_mut_bool_syncs_its_field_store() {
         },
         &mut store,
     );
-    unsafe { *encoded.value.as_ptr() = Bool::TRUE };
+    unsafe { *encoded.value.as_ptr() = CBool::TRUE };
     assert_eq!(encoded.tag, 7);
     store.sync().unwrap();
     assert!(value);
@@ -554,7 +555,7 @@ fn vec_of_derived_records_syncs_field_stores() {
         }],
         &mut store,
     );
-    unsafe { *(*encoded.as_ptr()).value.as_ptr() = Bool::TRUE };
+    unsafe { *(*encoded.as_ptr()).value.as_ptr() = CBool::TRUE };
     drop(unsafe { encoded.into_vec().unwrap() });
     store.sync().unwrap();
     assert!(value);

@@ -59,6 +59,7 @@ macro_rules! assert_shared_encoder {
 
 mod alignment;
 mod borrowed;
+mod borrowed_conversion;
 mod borrowed_decode;
 mod boxed_mutability;
 mod callback;
@@ -67,8 +68,9 @@ mod clippy;
 mod cloned_encode;
 mod cstr;
 mod ctype_mapping;
-mod cvec;
+mod custom_drop_borrow;
 mod custom_repr;
+mod cvec;
 mod data_enum_explicit;
 mod direct_interior_encode;
 mod exhaustive_enum;
@@ -83,8 +85,8 @@ mod option_decode_store;
 mod raw_selected;
 mod raw_tagged_dispatch;
 mod raw_wrapper_abi;
-mod regular_drop;
 mod reference_decode;
+mod regular_drop;
 mod shared_ref_encode;
 mod shared_validate;
 mod statics;

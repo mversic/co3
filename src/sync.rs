@@ -55,7 +55,7 @@ pub struct RefSizedDecodeStore<R, S> {
 }
 
 impl<R: ReprC<CType: Sized>, S: Store> RefSizedEncodeStore<R, S> {
-    pub fn encode(&mut self, encode: impl FnOnce(&mut S) -> R::CType) -> CRef<R::CType> {
+    pub fn encode(&mut self, encode: impl FnOnce(&mut S) -> R::CType) -> CRef<R> {
         self.ctype = None;
         let value = encode(&mut self.store);
         CRef::from_ref(self.ctype.insert(value))
@@ -123,7 +123,7 @@ impl<'d, R: DecodeMove<'d, Store: EmptyStore + 'd>, S: Store + Default>
         &mut self,
         original: &'d mut R,
         encode: impl FnOnce(&mut R, &mut S) -> R::CType,
-    ) -> CRefMut<R::CType, true> {
+    ) -> CRefMut<R, true> {
         drop(self.finish());
         let ctype = encode(&mut *original, &mut self.store);
         self.original = Some(original);
@@ -268,10 +268,8 @@ pub struct RefDstDecodeStore<R: ToOwned + ?Sized, S> {
 }
 
 #[cfg(feature = "alloc")]
-impl<R: ReprC<CType: Wide<Header: WideHeader<Data: CType>, Metadata: CType>> + ?Sized, S>
-    RefWideEncodeStore<R, S>
-{
-    pub fn encode(&mut self, encode: impl FnOnce(&mut S) -> Box<R::CType>) -> CWideRef<R::CType> {
+impl<R: ReprC<CType: Wide<Header: WideHeader<Data: CType>>> + ?Sized, S> RefWideEncodeStore<R, S> {
+    pub fn encode(&mut self, encode: impl FnOnce(&mut S) -> Box<R::CType>) -> CWideRef<R> {
         let previous = self.ctype.take();
         self.ctype = Some(encode(&mut self.fields));
         drop(previous);
@@ -376,7 +374,7 @@ where
 pub struct RefMutSliceDecodeStore<R: ReprC<CType: Sized>, S> {
     value: Option<Vec<R>>,
     store: S,
-    source: Option<CWideRefMut<[R::CType], true>>,
+    source: Option<CWideRefMut<[R], true>>,
 }
 
 #[cfg(feature = "alloc")]
@@ -384,7 +382,7 @@ impl<R: ReprC<CType: Sized>, S> RefMutSliceDecodeStore<R, S> {
     /// The source must remain valid and exclusively accessible until synchronization.
     pub(crate) unsafe fn decode<'a>(
         &'a mut self,
-        source: CWideRefMut<[R::CType], true>,
+        source: CWideRefMut<[R], true>,
         decode: impl FnOnce(&'a [R::CType], &'a mut S) -> Option<Vec<R>>,
     ) -> Option<&'a mut [R]> {
         self.source = Some(source);
@@ -520,7 +518,7 @@ impl<R: EncodeMove<CType: Sized, Store: EmptyStore>, S: Store> Store
 #[cfg(feature = "alloc")]
 impl<
     'a,
-    R: ReprC<CType: Wide<Header: WideHeader<Data: CType>, Metadata: CType>> + ?Sized,
+    R: ReprC<CType: Wide<Header: WideHeader<Data: CType>>> + ?Sized,
     S: Store,
     P,
     B: core::ops::DerefMut<Target = R::CType>,
@@ -533,7 +531,7 @@ impl<
         &mut self,
         build: impl FnOnce(&mut S) -> (B, P),
         copy_back: fn(&R::CType, P),
-    ) -> CWideRefMut<R::CType, true> {
+    ) -> CWideRefMut<R, true> {
         self.writeback = None;
         let previous = self.ctype.take();
         let (value, state) = build(&mut self.fields);
@@ -629,7 +627,6 @@ pub struct ArrayStore<D, const N: usize>(pub(crate) [D; N]);
 mod owned_encode_state_tests {
     extern crate std;
 
-    use super::*;
     use std::{
         panic::{AssertUnwindSafe, catch_unwind},
         sync::{
@@ -637,6 +634,8 @@ mod owned_encode_state_tests {
             atomic::{AtomicUsize, Ordering},
         },
     };
+
+    use super::*;
 
     #[derive(Clone)]
     struct Tracked {

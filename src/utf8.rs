@@ -1,6 +1,5 @@
 //! Unsized C representation of a UTF-8 string.
 
-use crate::transmute::AbiCompatibleValidate;
 #[cfg(feature = "alloc")]
 use alloc::{boxed::Box, string::String};
 #[cfg(feature = "alloc")]
@@ -8,13 +7,20 @@ use core::ptr::NonNull;
 
 use rust_spec::RustSpec;
 
-use crate::{CType, ReprC, transmute::AbiCompatible, wide::Wide};
 #[cfg(feature = "alloc")]
 use crate::{
-    Decode, Encode,
-    boxed::CWideBox,
+    CFnArg, CFnReturn, Decode, Encode,
+    borrow::Borrow,
+    boxed::{CWideBox, OwnedBoxCarrier},
     niche::Niche,
+    primitives::primitive_derive,
     stored::{DecodeMove, EncodeMove, EncodeMoveUnchecked},
+    vec::CVec,
+};
+use crate::{
+    CType, ReprC,
+    transmute::{AbiCompatible, AbiCompatibleValidate},
+    wide::Wide,
 };
 
 /// C-compatible byte region used as the representation of `str`.
@@ -75,9 +81,67 @@ unsafe impl Wide for Utf8Str {
     }
 }
 
+/// Owned UTF-8 string carrier, including the capacity of its allocation.
+///
+/// The carrier permits any byte values. Decoding as a `String` checks UTF-8.
+#[cfg(feature = "alloc")]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, RustSpec)]
+#[repr(transparent)]
+pub struct Utf8String(pub CVec<u8>);
+
+#[cfg(feature = "alloc")]
+impl Utf8String {
+    pub const fn null() -> Self {
+        Self(CVec::null())
+    }
+
+    pub fn from_string(value: String) -> Self {
+        Self(CVec::from_vec(value.into_bytes()))
+    }
+
+    pub const fn as_ptr(self) -> *mut u8 {
+        self.0.as_ptr()
+    }
+    pub const fn len(self) -> usize {
+        self.0.len()
+    }
+    pub const fn capacity(self) -> usize {
+        self.0.capacity()
+    }
+    pub const fn is_empty(self) -> bool {
+        self.0.is_empty()
+    }
+}
+
+#[cfg(feature = "alloc")]
+unsafe impl crate::Zeroable for Utf8String {}
+#[cfg(feature = "alloc")]
+primitive_derive! { Utf8String }
+
+#[cfg(feature = "alloc")]
+impl OwnedBoxCarrier<CWideBox<str>> for Utf8String {
+    unsafe fn from_box_carrier(value: CWideBox<str>) -> Option<Self> {
+        let data = NonNull::new(value.as_ptr())?;
+        let slice = core::ptr::slice_from_raw_parts_mut(data.as_ptr(), value.metadata());
+        let bytes = unsafe { Box::from_raw(slice) }.into_vec();
+        Some(Self(CVec::from_vec(bytes)))
+    }
+
+    unsafe fn into_box_carrier(self) -> CWideBox<str> {
+        let bytes = unsafe {
+            self.0
+                .into_vec()
+                .expect("encoded string allocation is valid")
+        };
+        let bytes = bytes.into_boxed_slice();
+        let len = bytes.len();
+        unsafe { CWideBox::from_raw_parts(Box::into_non_null(bytes).cast(), len) }
+    }
+}
+
 #[cfg(feature = "alloc")]
 impl ReprC for String {
-    type CType = CWideBox<Utf8Str>;
+    type CType = Utf8String;
 }
 
 #[cfg(feature = "alloc")]
@@ -99,10 +163,7 @@ unsafe impl EncodeMoveUnchecked for String {
     where
         Self: 'itm,
     {
-        let bytes = self.into_bytes().into_boxed_slice();
-        let len = bytes.len();
-        let data = Box::into_non_null(bytes).cast::<u8>();
-        unsafe { CWideBox::from_raw_parts(data, len) }
+        Utf8String::from_string(self)
     }
 }
 
@@ -111,26 +172,13 @@ unsafe impl<'d> DecodeMove<'d> for String {
     type Store = ();
 
     unsafe fn soft_decode<'itm: 'd>(source: Self::CType, (): &mut ()) -> Option<Self> {
-        if source.as_ptr().is_null() {
-            return None;
-        }
-        let bytes = unsafe {
-            Box::from_raw(core::ptr::slice_from_raw_parts_mut(
-                source.as_ptr(),
-                source.metadata(),
-            ))
-        };
-        String::from_utf8(bytes.into_vec()).ok()
+        let bytes = unsafe { source.0.into_vec()? };
+        Self::from_utf8(bytes).ok()
     }
 
     unsafe fn soft_decode_unchecked<'itm: 'd>(source: Self::CType, (): &mut ()) -> Self {
-        let bytes = unsafe {
-            Box::from_raw(core::ptr::slice_from_raw_parts_mut(
-                source.as_ptr(),
-                source.metadata(),
-            ))
-        };
-        unsafe { String::from_utf8_unchecked(bytes.into_vec()) }
+        let bytes = unsafe { source.0.into_vec().unwrap_unchecked() };
+        unsafe { Self::from_utf8_unchecked(bytes) }
     }
 }
 
@@ -143,5 +191,5 @@ impl Decode<'_> for String {}
 
 #[cfg(feature = "alloc")]
 impl Niche for String {
-    const NICHE: Self::CType = CWideBox::null();
+    const NICHE: Self::CType = Utf8String::null();
 }

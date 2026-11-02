@@ -1,6 +1,7 @@
+use std::cell::{Cell, UnsafeCell};
+
 use co3::{ReprC, rust_spec::RustSpec};
 use static_assertions::{assert_impl_all, assert_not_impl_any};
-use std::cell::{Cell, UnsafeCell};
 
 #[derive(RustSpec, ReprC)]
 #[repr_c(transparent)]

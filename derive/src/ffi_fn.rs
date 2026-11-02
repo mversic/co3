@@ -643,7 +643,7 @@ fn inferred_non_option_unpack_part(arg_ty: &Type, part: u8) -> syn::Result<Type>
 
     if let Some(wide_ty) = boxed_wide_type(arg_ty) {
         return Ok(if part == 1 {
-            parse_quote!(co3::boxed::CBox<<<<#wide_ty as co3::wide::Wide>::Header as co3::wide::WideHeader>::Data as co3::ReprC>::CType>)
+            parse_quote!(co3::boxed::CBox<<<#wide_ty as co3::wide::Wide>::Header as co3::wide::WideHeader>::Data>)
         } else {
             parse_quote!(<#wide_ty as co3::wide::Wide>::Metadata)
         });

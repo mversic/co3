@@ -88,7 +88,8 @@ unsafe impl<'a> EncodeRefUnchecked<'a> for SliceView {
     where
         'a: 'itm,
     {
-        unsafe { co3::soft_encode_unchecked(&self.0, store) }
+        let inner = unsafe { co3::soft_encode_unchecked(&self.0, store) };
+        unsafe { co3::slice::CWideRef::<Self>::from_raw_parts(inner.as_ptr(), inner.metadata()) }
     }
 }
 unsafe impl<'a> EncodeRef<'a> for SliceView {
@@ -97,7 +98,8 @@ unsafe impl<'a> EncodeRef<'a> for SliceView {
     where
         'a: 'itm,
     {
-        co3::soft_encode(&self.0, store)
+        let inner = co3::soft_encode(&self.0, store);
+        unsafe { co3::slice::CWideRef::<Self>::from_raw_parts(inner.as_ptr(), inner.metadata()) }
     }
 }
 
@@ -201,7 +203,13 @@ unsafe impl<'a> EncodeMutUnchecked<'a> for MutSliceView {
     where
         'a: 'itm,
     {
-        unsafe { co3::encode_unchecked(&mut self.0) }
+        let inner = unsafe { co3::encode_unchecked(&mut self.0) };
+        unsafe {
+            co3::slice::CWideRefMut::<Self, true>::from_raw_parts_mut(
+                inner.as_ptr(),
+                inner.metadata(),
+            )
+        }
     }
 }
 unsafe impl<'a> EncodeMut<'a> for MutSliceView {
@@ -210,7 +218,13 @@ unsafe impl<'a> EncodeMut<'a> for MutSliceView {
     where
         'a: 'itm,
     {
-        co3::encode(&mut self.0)
+        let inner = co3::encode(&mut self.0);
+        unsafe {
+            co3::slice::CWideRefMut::<Self, true>::from_raw_parts_mut(
+                inner.as_ptr(),
+                inner.metadata(),
+            )
+        }
     }
 }
 #[test]
@@ -240,7 +254,7 @@ fn wide_mutable_wrappers_delegate_to_inner_encoder() {
         unsafe { &mut *(values.as_mut_slice() as *mut [bool] as *mut core::cell::Cell<[bool]>) };
     let mut store = Default::default();
     let encoded = co3::soft_encode(&mut *wrapped, &mut store);
-    unsafe { *encoded.as_ptr() = co3::primitives::Bool::FALSE };
+    unsafe { *encoded.as_ptr() = co3::primitives::CBool::FALSE };
     assert_eq!(store.sync(), Some(()));
     assert_eq!(values, [false]);
 
@@ -250,7 +264,7 @@ fn wide_mutable_wrappers_delegate_to_inner_encoder() {
     };
     let mut store = Default::default();
     let encoded = co3::soft_encode(&mut *wrapped, &mut store);
-    unsafe { *encoded.as_ptr() = co3::primitives::Bool::FALSE };
+    unsafe { *encoded.as_ptr() = co3::primitives::CBool::FALSE };
     assert_eq!(store.sync(), Some(()));
     assert_eq!(values, [false]);
 }

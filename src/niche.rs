@@ -17,7 +17,7 @@ use crate::boxed::{CBox, CWideBox};
 use crate::{
     CType, NeedsDrop, ReprC,
     option::{COption, COptionSome},
-    primitives::Bool,
+    primitives::CBool,
     reference::{CRef, CRefMut},
     result::CResult,
     slice::{CWideRef, CWideRefMut},
@@ -36,63 +36,58 @@ disjoint_impls! {
         const NICHE: Self::CType;
     }
 
-    impl<R: ?Sized, C: CType> Niche for &R
+    impl<R: ReprC<CType: CType + Sized> + ?Sized> Niche for &R
     where
-        Self: ReprC<CType = CRef<C>>,
+        Self: ReprC<CType = CRef<R>>,
     {
         const NICHE: Self::CType = CRef::null();
     }
-    impl<R: ?Sized, C: CType> Niche for &R
+    impl<R: ReprC<CType: CType + Sized> + ?Sized> Niche for &R
     where
-        Self: ReprC<CType = CRefMut<C, false>>,
+        Self: ReprC<CType = CRefMut<R, false>>,
     {
         const NICHE: Self::CType = CRefMut::null();
     }
-    impl<R: ?Sized, C: Wide<Header: WideHeader<Data: CType>> + ?Sized> Niche for &R
+    impl<R: ReprC<CType: Wide<Header: WideHeader<Data: CType>>> + ?Sized> Niche for &R
     where
-        Self: ReprC<CType = CWideRef<C>>,
-        <C as Wide>::Metadata: CType,
+        Self: ReprC<CType = CWideRef<R>>,
     {
         const NICHE: Self::CType = CWideRef::null();
     }
-    impl<R: ?Sized, C: Wide<Header: WideHeader<Data: CType>> + ?Sized> Niche for &R
+    impl<R: ReprC<CType: Wide<Header: WideHeader<Data: CType>>> + ?Sized> Niche for &R
     where
-        Self: ReprC<CType = CWideRefMut<C, false>>,
-        <C as Wide>::Metadata: CType,
+        Self: ReprC<CType = CWideRefMut<R, false>>,
     {
         const NICHE: Self::CType = CWideRefMut::null();
     }
 
-    impl<R: ?Sized, C: CType> Niche for &mut R
+    impl<R: ReprC<CType: CType + Sized> + ?Sized> Niche for &mut R
     where
-        Self: ReprC<CType = CRefMut<C, true>>,
+        Self: ReprC<CType = CRefMut<R, true>>,
     {
         const NICHE: Self::CType = CRefMut::null();
     }
-    impl<R: ?Sized, C: Wide<Header: WideHeader<Data: CType>> + ?Sized> Niche for &mut R
+    impl<R: ReprC<CType: Wide<Header: WideHeader<Data: CType>>> + ?Sized> Niche for &mut R
     where
-        Self: ReprC<CType = CWideRefMut<C, true>>,
-        <C as Wide>::Metadata: CType,
+        Self: ReprC<CType = CWideRefMut<R, true>>,
     {
         const NICHE: Self::CType = CWideRefMut::null();
     }
 
     #[cfg(feature = "alloc")]
-    impl<R: ?Sized, C: CType> Niche for Box<R>
+    impl<R: ?Sized, C: ReprC<CType: CType + Sized>> Niche for Box<R>
     where
         Self: ReprC<CType = CBox<C>>,
     {
         const NICHE: Self::CType = CBox::null();
     }
     #[cfg(feature = "alloc")]
-    impl<R: ?Sized, C: Wide<Header: WideHeader<Data: CType>> + ?Sized> Niche for Box<R>
+    impl<R: ?Sized, C: ReprC<CType: Wide<Header: WideHeader<Data: CType>>> + ?Sized> Niche for Box<R>
     where
         Self: ReprC<CType = CWideBox<C>>,
-        <C as Wide>::Metadata: CType,
     {
         const NICHE: Self::CType = CWideBox::null();
     }
-
 
     impl<T: ?Sized, C: CType> Niche for NonNull<T>
     where
@@ -119,13 +114,13 @@ disjoint_impls! {
     where
         Self: ReprC<CType = COptionSome<bool>>,
     {
-        const NICHE: Self::CType = COptionSome::from_carrier(Bool(3));
+        const NICHE: Self::CType = COptionSome::from_carrier(CBool(3));
     }
     impl Niche for Option<Option<bool>>
     where
         Self: ReprC<CType = COptionSome<Option<bool>>>,
     {
-        const NICHE: Self::CType = COptionSome::from_carrier(COptionSome::from_carrier(Bool(4)));
+        const NICHE: Self::CType = COptionSome::from_carrier(COptionSome::from_carrier(CBool(4)));
     }
 
     impl<R: Niche> Niche for ManuallyDrop<R>
@@ -219,7 +214,7 @@ mod tests {
     #[test]
     fn niche_values() {
         assert_eq!(
-            CRef::<Bool>::null(),
+            CRef::<bool>::null(),
             crate::encode(None::<&bool>).into_carrier()
         );
         assert_eq!(

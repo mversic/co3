@@ -89,7 +89,7 @@ fn owned_encoding_preserves_capacity_and_validates_elements() {
     assert_eq!(value.capacity(), cap);
     assert_eq!(&*value, &[1, 2, 3]);
     assert_eq!(encode_store.sync(), Some(()));
-    let invalid = CVec::<bool>::from_vec(vec![co3::primitives::Bool(2)]);
+    let invalid = CVec::<bool>::from_vec(vec![co3::primitives::CBool(2)]);
     assert!(
         unsafe { co3::soft_decode::<co3::vec::Vec::<bool>>(invalid, &mut Default::default()) }
             .is_none()
@@ -165,7 +165,7 @@ fn mutable_slice_writeback_uses_an_explicit_slice_header() {
     let carrier = co3::soft_encode(values.as_mut_slice(), &mut store);
     assert_eq!(carrier.metadata(), 2);
     unsafe {
-        carrier.as_ptr().write(co3::primitives::Bool(1));
+        carrier.as_ptr().write(co3::primitives::CBool(1));
     }
     assert_eq!(store.sync(), Some(()));
     assert_eq!(values, [true, true]);

@@ -2,25 +2,26 @@ use proc_macro2::TokenStream;
 use quote::{format_ident, quote};
 use syn::{Ident, parse_quote};
 
-use crate::layout::reference::{encoder_names, group_aggregate_ref_impls};
-use crate::utils::speculative_marker;
-
-use crate::layout::{
-    ReprCAttrs, VariantReprCAttrs,
-    attr::ReprKind,
-    borrow::{
-        either_variant_name, gen_either_name, gen_identity_borrow_impls, gen_item_borrow_impls,
-        gen_item_view, gen_view_ctype_name, gen_view_owner_name,
+use crate::{
+    layout::{
+        ReprCAttrs, VariantReprCAttrs,
+        attr::ReprKind,
+        borrow::{
+            either_variant_name, gen_either_name, gen_identity_borrow_impls, gen_item_borrow_impls,
+            gen_item_view, gen_view_ctype_name, gen_view_owner_name,
+        },
+        ctype::{
+            TailClass, UnsizedTail, c_fn_last_field_bounds, classify_tail, gen_ctype_name,
+            gen_extern_c_bounds_for_ctype, gen_fieldless_enum_ctype, gen_identity_repr_c_impls,
+            gen_item_ctype, gen_variant_struct_name,
+        },
+        enum_tag_type, enum_variant_tag_exprs, generic_param_idents, infer_repr,
+        is_exhaustive_enum, is_parametrized, is_phantom_data, is_transparent_enum_repr,
+        niche::{gen_enum_niche_ir, gen_niche_value_ir, gen_struct_niche_ir},
+        primitive_tag_type,
+        reference::{encoder_names, group_aggregate_ref_impls},
     },
-    ctype::{
-        TailClass, UnsizedTail, c_fn_last_field_bounds, classify_tail, gen_ctype_name,
-        gen_extern_c_bounds_for_ctype, gen_fieldless_enum_ctype, gen_identity_repr_c_impls,
-        gen_item_ctype, gen_variant_struct_name,
-    },
-    enum_tag_type, enum_variant_tag_exprs, generic_param_idents, infer_repr, is_exhaustive_enum,
-    is_parametrized, is_phantom_data, is_transparent_enum_repr,
-    niche::{gen_enum_niche_ir, gen_niche_value_ir, gen_struct_niche_ir},
-    primitive_tag_type,
+    utils::speculative_marker,
 };
 
 pub(super) fn derive_item(
@@ -1248,7 +1249,7 @@ pub(super) fn derive_fieldless_enum(
         quote!(#ctype_name #ty_generics)
     };
     let ctype_def = (!transparent)
-        .then(|| gen_fieldless_enum_ctype(&tag_ctype, alignment, vis, name, generics));
+        .then(|| gen_fieldless_enum_ctype(&tag_ctype, alignment, vis, name, generics, variants));
     let variant_ctors = variants.iter().enumerate().map(|(index, variant)| {
         let variant_name = &variant.ident;
         let value = if tag_type.is_none() {
@@ -1780,7 +1781,7 @@ fn gen_codec_impls(
                 };
                 quote! {
                     #speculative #ty: #repr_bound + '_ršč,
-                    &'_ršč #ty: #move_trait + co3::ReprC<CType = co3::reference::CRef<<#ty as co3::ReprC>::CType>>
+                    &'_ršč #ty: #move_trait + co3::ReprC<CType = co3::reference::CRef<#ty>>
                 }
             });
             quote! {
@@ -1789,7 +1790,7 @@ fn gen_codec_impls(
                     #sized_bound
                     #speculative Self: co3::ReprC<CType = #ctype_name #ctype_ty_generics>
                         + co3::rust_spec::RustSpec<Size: Thin> + '_ršč,
-                    &'_ršč Self: co3::ReprC<CType = co3::reference::CRef<<Self as co3::ReprC>::CType>>,
+                    &'_ršč Self: co3::ReprC<CType = co3::reference::CRef<Self>>,
 
                     #(#repr_c_bounds,)*
                     #(#field_bounds,)*
