@@ -176,9 +176,10 @@ fn lowered_aggregates_use_codecs_without_conversion_traits() {
 #[test]
 fn safe_carrier_constructors_accept_lowered_storage() {
     use co3::{
-        boxed::{CBox, CWideBox},
+        boxed::CBox,
         reference::{CRef, CRefMut},
-        slice::{CWideRef, CWideRefMut},
+        wide::CWideBox,
+        wide::{CWideRef, CWideRefMut},
     };
 
     let boxed = CBox::from_box(Box::new(9_u8));

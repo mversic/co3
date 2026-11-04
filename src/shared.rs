@@ -20,21 +20,22 @@ use crate::{
     option::{COption, COptionSome},
     reference::CRef,
     result::{CResult, CResultErr, CResultOk},
-    slice::CWideRef,
     stored::{
         EncodeMove, EncodeMoveUnchecked, Store, encode_ref_field, encode_ref_field_unchecked,
     },
     sync::{ArrayStore, RefSizedEncodeStore},
     transmute::AbiCompatible,
-    wide::{PointeeData, Wide, WideHeader},
+    wide::CWideRef,
+    wide::{Wide, WideHeader},
 };
 #[cfg(feature = "alloc")]
 use crate::{
-    boxed::{CBox, CWideBox},
+    boxed::CBox,
     reference::CRefMut,
-    slice::CWideRefMut,
     sync::{RefVecEncodeStore, RefWideEncodeStore},
     vec::CVec,
+    wide::CWideBox,
+    wide::CWideRefMut,
 };
 
 disjoint_impls! {
@@ -531,7 +532,8 @@ disjoint_impls! {
         {
             let inner = unsafe { (&**self).soft_encode_unchecked(store) };
             // ManuallyDrop's C representation is the inner CType or its transparent wrapper.
-            unsafe { CRef::from_raw(inner.as_ptr().cast()) }
+            // SAFETY: ManuallyDrop preserves the inner layout and metadata.
+            unsafe { inner.cast() }
         }
     }
     unsafe impl<'a, R: ReprC<CType: Sized> + ?Sized, __Interior: ExclusiveKind>
@@ -554,7 +556,8 @@ disjoint_impls! {
             'a: 'itm,
         {
             let inner = unsafe { (&**self).soft_encode_unchecked(store) };
-            unsafe { CRef::from_raw(inner.as_ptr().cast()) }
+            // SAFETY: ManuallyDrop preserves the inner layout and metadata.
+            unsafe { inner.cast() }
         }
     }
     unsafe impl<
@@ -581,12 +584,8 @@ disjoint_impls! {
             'a: 'itm,
         {
             let inner = unsafe { (&**self).soft_encode_unchecked(store) };
-            unsafe {
-                CWideRef::from_raw_parts(
-                    inner.as_ptr().cast::<PointeeData<Self::CType>>(),
-                    inner.metadata(),
-                )
-            }
+            // SAFETY: ManuallyDrop preserves the inner layout and metadata.
+            unsafe { inner.cast() }
         }
     }
 
@@ -1089,7 +1088,8 @@ disjoint_impls! {
             'a: 'itm,
         {
             let inner = R::encode_ref(&**self, store);
-            unsafe { CRef::from_raw(inner.as_ptr().cast()) }
+            // SAFETY: ManuallyDrop preserves the inner layout and metadata.
+            unsafe { inner.cast() }
         }
     }
     unsafe impl<'a, R: EncodeRef<'a> + RustSpec + ReprC<CType: Sized> + ?Sized, __Interior: ExclusiveKind>
@@ -1111,7 +1111,8 @@ disjoint_impls! {
             'a: 'itm,
         {
             let inner = R::encode_ref(&**self, store);
-            unsafe { CRef::from_raw(inner.as_ptr().cast()) }
+            // SAFETY: ManuallyDrop preserves the inner layout and metadata.
+            unsafe { inner.cast() }
         }
     }
     unsafe impl<
@@ -1137,12 +1138,8 @@ disjoint_impls! {
             'a: 'itm,
         {
             let inner = R::encode_ref(&**self, store);
-            unsafe {
-                CWideRef::from_raw_parts(
-                    inner.as_ptr().cast::<PointeeData<Self::CType>>(),
-                    inner.metadata(),
-                )
-            }
+            // SAFETY: ManuallyDrop preserves the inner layout and metadata.
+            unsafe { inner.cast() }
         }
     }
 

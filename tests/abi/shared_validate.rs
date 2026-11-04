@@ -163,7 +163,7 @@ fn robust_cells_do_not_hide_other_invalid_fields() {
         unsafe { co3::reference::CRefMut::from_raw(core::ptr::from_ref(&invalid).cast_mut()) };
     assert!(unsafe { co3::decode::<&Mixed<UnsafeCell<u8>>>(encoded) }.is_none());
     let encoded = unsafe {
-        co3::slice::CWideRefMut::from_raw_parts_mut(core::ptr::from_ref(&invalid).cast_mut(), 1)
+        co3::wide::CWideRefMut::from_raw_parts_mut(core::ptr::from_ref(&invalid).cast_mut(), 1)
     };
     assert!(unsafe { co3::decode::<&[Mixed<UnsafeCell<u8>>]>(encoded) }.is_none());
 }

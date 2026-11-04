@@ -443,7 +443,7 @@ mod tests {
 
     use super::*;
     #[cfg(feature = "alloc")]
-    use crate::boxed::CWideBox;
+    use crate::wide::CWideBox;
 
     #[repr(transparent)]
     struct LayoutOnly(());
@@ -462,7 +462,7 @@ mod tests {
     }
     use crate::{
         CType, Decode, Encode,
-        slice::{CWideRef, CWideRefMut},
+        wide::{CWideRef, CWideRefMut},
     };
 
     #[test]

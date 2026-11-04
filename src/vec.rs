@@ -13,9 +13,9 @@ use rust_spec::RustSpec;
 use crate::{
     CFnArg, CFnReturn, CType, Decode, Encode, EncodeUnchecked, ReprC, Zeroable,
     borrow::Borrowed,
-    slice::impl_identity_carrier,
     stored::{DecodeMove, EncodeMove, EncodeMoveUnchecked},
     transmute::{AbiCompatible, AbiCompatibleValidate},
+    wide::impl_identity_carrier,
 };
 
 /// A vector with a stable three-field representation.
@@ -269,7 +269,7 @@ impl<T: ReprC<CType: Sized>> CVec<T> {
     }
 }
 impl_identity_carrier! { CVec, [T: ReprC<CType: CType + Sized>], [T] }
-crate::slice::impl_carrier_borrow! { CVec, [T: ReprC<CType: CType + Sized>], [T] }
+crate::wide::impl_carrier_borrow! { CVec, [T: ReprC<CType: CType + Sized>], [T] }
 
 impl<T> From<RustVec<T>> for Vec<T> {
     fn from(value: RustVec<T>) -> Self {

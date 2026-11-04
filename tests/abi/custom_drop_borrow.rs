@@ -25,10 +25,7 @@ fn custom_drop_borrows_whole_while_carriers_borrow_as_self() {
 fn pointer_carriers_borrow_without_borrowing_the_pointee() {
     use core::cell::{Cell, UnsafeCell};
 
-    use co3::{
-        boxed::{CBox, CWideBox},
-        vec::CVec,
-    };
+    use co3::{boxed::CBox, vec::CVec, wide::CWideBox};
 
     fn identity<C: Borrow<Borrowed = C>>(carrier: C) -> C {
         C::from_borrow(carrier.borrow())

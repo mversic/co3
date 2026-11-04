@@ -601,7 +601,7 @@ unsafe impl<T: ReprC<CType: Copy>, E: ReprC<CType: Copy>> Borrow for CResult<T, 
     }
 }
 
-crate::slice::impl_identity_carrier! { CResult, [T: ReprC<CType: Copy>, E: ReprC<CType: Copy>], [T, E] }
+crate::wide::impl_identity_carrier! { CResult, [T: ReprC<CType: Copy>, E: ReprC<CType: Copy>], [T, E] }
 
 unsafe impl<T: EmptyStore, E: EmptyStore> EmptyStore for RustResult<T, E> {}
 

@@ -2,12 +2,13 @@ use core::{marker::PhantomData, ptr::NonNull};
 
 use co3::{
     CType,
-    boxed::{CBox, CWideBox},
+    boxed::CBox,
     pack::{Pack2, Unpack2},
-    slice::{CWideRef, CWideRefMut},
     stored::Store,
     sync::{RefMutWideEncodeStore, RefWideEncodeStore},
+    wide::CWideBox,
     wide::Wide,
+    wide::{CWideRef, CWideRefMut},
 };
 
 use crate::TransparentCarrier;

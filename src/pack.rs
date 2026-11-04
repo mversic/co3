@@ -9,15 +9,18 @@ use core::{
 use disjoint_impls::disjoint_impls;
 use rust_spec::{RustSpec, drop::NoDrop};
 
-#[cfg(feature = "alloc")]
-use crate::boxed::{Box, CBox, CWideBox};
 use crate::{
     CType, NeedsDrop, ReprC,
     borrow::Borrowed,
     option::COptionSome,
-    slice::{CWideRef, CWideRefMut},
     tuple::Tuple2,
+    wide::{CWideRef, CWideRefMut},
     wide::{Wide, WideHeader},
+};
+#[cfg(feature = "alloc")]
+use crate::{
+    boxed::{Box, CBox},
+    wide::CWideBox,
 };
 
 /// Fallibly converts a C-compatible representation into one ABI argument.

@@ -181,11 +181,11 @@ fn derived_unstable_referents_use_temporary_storage_and_writeback() {
 fn stable_wide_referents_bypass_decode_traits() {
     assert_not_impl_any!([u8]: DecodeRef<'static>, DecodeMut<'static>);
     let mut source = [3u8, 7];
-    let carrier = co3::slice::CWideRef::from_ref(source.as_slice());
+    let carrier = co3::wide::CWideRef::from_ref(source.as_slice());
     let value = unsafe { co3::decode::<&[u8]>(carrier) }.unwrap();
     assert_eq!(value.as_ptr(), source.as_ptr());
     assert_eq!(value, &[3, 7]);
-    let carrier = co3::slice::CWideRefMut::from_mut(source.as_mut_slice());
+    let carrier = co3::wide::CWideRefMut::from_mut(source.as_mut_slice());
     let value = unsafe { co3::decode::<&mut [u8]>(carrier) }.unwrap();
     value[1] = 9;
     assert_eq!(source, [3, 9]);

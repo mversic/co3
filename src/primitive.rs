@@ -493,15 +493,15 @@ mod tests {
     use static_assertions::{assert_impl_all, assert_not_impl_any};
 
     use super::*;
-    #[cfg(feature = "alloc")]
-    use crate::boxed::{CBox, CWideBox};
     use crate::{
         Encode,
         cmp::COrdering,
         option::COption,
         reference::{CRef, CRefMut},
-        slice::{CWideRef, CWideRefMut},
+        wide::{CWideRef, CWideRefMut},
     };
+    #[cfg(feature = "alloc")]
+    use crate::{boxed::CBox, wide::CWideBox};
 
     #[test]
     fn scalar_carriers_accept_all_values_without_niches() {
