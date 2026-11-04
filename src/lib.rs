@@ -333,7 +333,7 @@
 //!
 //! # Unpacking at the ABI boundary
 //!
-//! Rust slices are lowered into [`slice::CWideRef`] or [`slice::CWideRefMut`], C-ABI
+//! Rust slices are lowered into [`wide::CWideRef`] or [`wide::CWideRefMut`], C-ABI
 //! containers holding a data pointer and a length.
 //!
 //! Some FFI APIs accept the pointer and length as separate arguments; mark an
@@ -583,14 +583,14 @@ use rust_spec::{
 use rust_spec::{Stable, Unstable, size::MetadataKind};
 
 #[cfg(feature = "alloc")]
-use crate::boxed::{CBox, CWideBox};
-#[cfg(feature = "alloc")]
 use crate::ffi::NulTerminatedBuf;
+#[cfg(feature = "alloc")]
+use crate::{boxed::CBox, wide::CWideBox};
 use crate::{
     niche::Niche,
     reference::{CRef, CRefMut},
-    slice::{CWideRef, CWideRefMut},
     stored::{DecodeMove, EmptyStore, EncodeMove, EncodeMoveUnchecked, Store},
+    wide::{CWideRef, CWideRefMut},
     wide::{Wide, WideHeader},
 };
 
@@ -608,11 +608,11 @@ pub mod niche;
 pub mod ops;
 pub mod option;
 pub mod pack;
+#[path = "primitive.rs"]
 pub mod primitives;
 pub mod reference;
 pub mod result;
 mod shared;
-pub mod slice;
 mod std_impls;
 pub mod stored;
 pub mod sync;
@@ -1104,9 +1104,9 @@ mod tests {
         static_assertions::assert_impl_all!(reference::CRef<u8>: Zeroable);
         static_assertions::assert_impl_all!(reference::CRefMut<u8, true>: Zeroable);
         static_assertions::assert_impl_all!(boxed::CBox<u8>: Zeroable);
-        static_assertions::assert_impl_all!(slice::CWideRef<[u8]>: Zeroable);
-        static_assertions::assert_impl_all!(slice::CWideRefMut<[u8], true>: Zeroable);
-        static_assertions::assert_impl_all!(boxed::CWideBox<[u8]>: Zeroable);
+        static_assertions::assert_impl_all!(wide::CWideRef<[u8]>: Zeroable);
+        static_assertions::assert_impl_all!(wide::CWideRefMut<[u8], true>: Zeroable);
+        static_assertions::assert_impl_all!(wide::CWideBox<[u8]>: Zeroable);
         static_assertions::assert_impl_all!(vec::CVec<u8>: Zeroable);
     }
 

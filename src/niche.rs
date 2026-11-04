@@ -12,18 +12,18 @@ use rust_spec::{
     niche::{WithNiche, WithoutNiche},
 };
 
-#[cfg(feature = "alloc")]
-use crate::boxed::{CBox, CWideBox};
 use crate::{
     CType, NeedsDrop, ReprC,
     option::{COption, COptionSome},
     primitives::CBool,
     reference::{CRef, CRefMut},
     result::CResult,
-    slice::{CWideRef, CWideRefMut},
     tuple::Tuple2,
+    wide::{CWideRef, CWideRefMut},
     wide::{Wide, WideHeader},
 };
+#[cfg(feature = "alloc")]
+use crate::{boxed::CBox, wide::CWideBox};
 
 disjoint_impls! {
     /// Type that has a trap representation that can be used as a niche value.

@@ -472,7 +472,7 @@ unsafe impl<T: ReprC<CType: RustSpec + Sized>> RustSpec for COption<T> {
     type __IndirectTrap = <T::CType as RustSpec>::__IndirectTrap;
 }
 
-crate::slice::impl_identity_carrier! { COption, [T: ReprC<CType: Sized>], [T] }
+crate::wide::impl_identity_carrier! { COption, [T: ReprC<CType: Sized>], [T] }
 
 unsafe impl<T: EmptyStore> EmptyStore for RustOption<T> {}
 

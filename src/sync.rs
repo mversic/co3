@@ -6,8 +6,8 @@ use core::marker::PhantomData;
 #[cfg(feature = "alloc")]
 use crate::{
     CType,
-    slice::{CWideRef, CWideRefMut},
     stored::AssignFromOwned,
+    wide::{CWideRef, CWideRefMut},
     wide::{Wide, WideHeader},
 };
 use crate::{

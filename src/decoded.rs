@@ -23,10 +23,11 @@ use crate::{
 };
 #[cfg(feature = "alloc")]
 use crate::{
-    boxed::{CBox, CWideBox},
-    slice::CWideRef,
+    boxed::CBox,
     sync::{RefDstDecodeStore, RefMutSliceDecodeStore},
     vec::CVec,
+    wide::CWideBox,
+    wide::CWideRef,
 };
 
 disjoint_impls! {
@@ -759,7 +760,8 @@ disjoint_impls! {
             source: <&'d Self as ReprC>::CType,
             store: &'itm mut Self::Store,
         ) -> Option<&'d Self> {
-            let source = unsafe { CRef::from_raw(source.as_ptr().cast()) };
+            // SAFETY: The wrapper preserves the inner representation and access kind.
+            let source = unsafe { source.cast() };
             let inner = unsafe { <&'d T>::soft_decode(source, store)? };
             // Both Rust and C wrappers are transparent; this does not read the value.
             Some(unsafe { &*core::ptr::from_ref(inner).cast::<Self>() })
@@ -768,7 +770,8 @@ disjoint_impls! {
             source: <&'d Self as ReprC>::CType,
             store: &'itm mut Self::Store,
         ) -> &'d Self {
-            let source = unsafe { CRef::from_raw(source.as_ptr().cast()) };
+            // SAFETY: The wrapper preserves the inner representation and access kind.
+            let source = unsafe { source.cast() };
             let inner = unsafe { <&'d T>::soft_decode_unchecked(source, store) };
             unsafe { &*core::ptr::from_ref(inner).cast::<Self>() }
         }
@@ -785,7 +788,8 @@ disjoint_impls! {
             source: <&'d Self as ReprC>::CType,
             store: &'itm mut Self::Store,
         ) -> Option<&'d Self> {
-            let source = unsafe { CRef::from_raw(source.as_ptr().cast()) };
+            // SAFETY: The wrapper preserves the inner representation and access kind.
+            let source = unsafe { source.cast() };
             let inner = unsafe { <&'d T>::soft_decode(source, store)? };
             // Both Rust and C wrappers are transparent; this does not read the value.
             Some(unsafe { &*core::ptr::from_ref(inner).cast::<Self>() })
@@ -794,7 +798,8 @@ disjoint_impls! {
             source: <&'d Self as ReprC>::CType,
             store: &'itm mut Self::Store,
         ) -> &'d Self {
-            let source = unsafe { CRef::from_raw(source.as_ptr().cast()) };
+            // SAFETY: The wrapper preserves the inner representation and access kind.
+            let source = unsafe { source.cast() };
             let inner = unsafe { <&'d T>::soft_decode_unchecked(source, store) };
             unsafe { &*core::ptr::from_ref(inner).cast::<Self>() }
         }
@@ -1570,7 +1575,8 @@ disjoint_impls! {
             source: <&'d mut Self as ReprC>::CType,
             store: &'itm mut Self::Store,
         ) -> Option<&'d mut Self> {
-            let source = unsafe { CRefMut::from_raw(source.as_ptr().cast()) };
+            // SAFETY: The wrapper preserves the inner representation and access kind.
+            let source = unsafe { source.cast() };
             let inner = unsafe { <&'d mut T>::soft_decode(source, store)? };
             // The exclusive borrow permits delegation into a cell; no shared cell is read.
             Some(unsafe { &mut *core::ptr::from_mut(inner).cast::<Self>() })
@@ -1579,7 +1585,8 @@ disjoint_impls! {
             source: <&'d mut Self as ReprC>::CType,
             store: &'itm mut Self::Store,
         ) -> &'d mut Self {
-            let source = unsafe { CRefMut::from_raw(source.as_ptr().cast()) };
+            // SAFETY: The wrapper preserves the inner representation and access kind.
+            let source = unsafe { source.cast() };
             let inner = unsafe { <&'d mut T>::soft_decode_unchecked(source, store) };
             unsafe { &mut *core::ptr::from_mut(inner).cast::<Self>() }
         }
@@ -1596,7 +1603,8 @@ disjoint_impls! {
             source: <&'d mut Self as ReprC>::CType,
             store: &'itm mut Self::Store,
         ) -> Option<&'d mut Self> {
-            let source = unsafe { CRefMut::from_raw(source.as_ptr().cast()) };
+            // SAFETY: The wrapper preserves the inner representation and access kind.
+            let source = unsafe { source.cast() };
             let inner = unsafe { <&'d mut T>::soft_decode(source, store)? };
             // The exclusive borrow permits delegation into a cell; no shared cell is read.
             Some(unsafe { &mut *core::ptr::from_mut(inner).cast::<Self>() })
@@ -1605,7 +1613,8 @@ disjoint_impls! {
             source: <&'d mut Self as ReprC>::CType,
             store: &'itm mut Self::Store,
         ) -> &'d mut Self {
-            let source = unsafe { CRefMut::from_raw(source.as_ptr().cast()) };
+            // SAFETY: The wrapper preserves the inner representation and access kind.
+            let source = unsafe { source.cast() };
             let inner = unsafe { <&'d mut T>::soft_decode_unchecked(source, store) };
             unsafe { &mut *core::ptr::from_mut(inner).cast::<Self>() }
         }
@@ -1622,7 +1631,8 @@ disjoint_impls! {
             source: <&'d mut Self as ReprC>::CType,
             store: &'itm mut Self::Store,
         ) -> Option<&'d mut Self> {
-            let source = unsafe { CRefMut::from_raw(source.as_ptr().cast()) };
+            // SAFETY: The wrapper preserves the inner representation and access kind.
+            let source = unsafe { source.cast() };
             let inner = unsafe { <&'d mut T>::soft_decode(source, store)? };
             // The exclusive borrow permits delegation into a cell; no shared cell is read.
             Some(unsafe { &mut *core::ptr::from_mut(inner).cast::<Self>() })
@@ -1631,7 +1641,8 @@ disjoint_impls! {
             source: <&'d mut Self as ReprC>::CType,
             store: &'itm mut Self::Store,
         ) -> &'d mut Self {
-            let source = unsafe { CRefMut::from_raw(source.as_ptr().cast()) };
+            // SAFETY: The wrapper preserves the inner representation and access kind.
+            let source = unsafe { source.cast() };
             let inner = unsafe { <&'d mut T>::soft_decode_unchecked(source, store) };
             unsafe { &mut *core::ptr::from_mut(inner).cast::<Self>() }
         }
@@ -1648,7 +1659,8 @@ disjoint_impls! {
             source: <&'d mut Self as ReprC>::CType,
             store: &'itm mut Self::Store,
         ) -> Option<&'d mut Self> {
-            let source = unsafe { CRefMut::from_raw(source.as_ptr().cast()) };
+            // SAFETY: The wrapper preserves the inner representation and access kind.
+            let source = unsafe { source.cast() };
             let inner = unsafe { <&'d mut T>::soft_decode(source, store)? };
             // The exclusive borrow permits delegation into a cell; no shared cell is read.
             Some(unsafe { &mut *core::ptr::from_mut(inner).cast::<Self>() })
@@ -1657,7 +1669,8 @@ disjoint_impls! {
             source: <&'d mut Self as ReprC>::CType,
             store: &'itm mut Self::Store,
         ) -> &'d mut Self {
-            let source = unsafe { CRefMut::from_raw(source.as_ptr().cast()) };
+            // SAFETY: The wrapper preserves the inner representation and access kind.
+            let source = unsafe { source.cast() };
             let inner = unsafe { <&'d mut T>::soft_decode_unchecked(source, store) };
             unsafe { &mut *core::ptr::from_mut(inner).cast::<Self>() }
         }

@@ -470,8 +470,6 @@ unsafe impl<$($head: AbiCompatible<CType: Copy>,)* $last: AbiCompatible + ?Sized
             unsafe fn from_raw_parts<'a>(data: *const Self::Header, len: usize) -> &'a Self {
                 let slice = core::ptr::slice_from_raw_parts(data.cast::<crate::wide::PointeeData<$last>>(), len);
                 assert_eq!(core::mem::size_of::<*const Self>(), core::mem::size_of_val(&slice));
-                // A slice-like DST has a data pointer and usize metadata. The
-                // repr(C) tuple has the same metadata as its unsized last field.
                 let ptr = unsafe { core::mem::transmute_copy::<_, *const Self>(&slice) };
                 unsafe { &*ptr }
             }
@@ -490,7 +488,9 @@ unsafe impl<$($head: AbiCompatible<CType: Copy>,)* $last: AbiCompatible + ?Sized
 
             #[cfg(feature = "alloc")]
             unsafe fn from_non_null(data: core::ptr::NonNull<Self::Header>, len: usize) -> alloc::boxed::Box<Self> {
-                let ptr = unsafe { Self::from_raw_parts_mut(data.as_ptr(), len) } as *mut Self;
+                let slice = core::ptr::slice_from_raw_parts_mut(data.as_ptr().cast::<crate::wide::PointeeData<$last>>(), len);
+                assert_eq!(core::mem::size_of::<*mut Self>(), core::mem::size_of_val(&slice));
+                let ptr = unsafe { core::mem::transmute_copy::<_, *mut Self>(&slice) };
                 unsafe { alloc::boxed::Box::from_raw(ptr) }
             }
         }
@@ -584,6 +584,27 @@ impl_tuple_niche_recursive! {
 #[cfg(test)]
 mod tests {
     #[cfg(feature = "alloc")]
+    #[test]
+    fn wide_tuple_box_preserves_allocation_and_metadata() {
+        use crate::wide::Wide;
+
+        fn round_trip<const N: usize>(tail: [u64; N]) {
+            let value: alloc::boxed::Box<super::Tuple2<u8, [u64]>> =
+                alloc::boxed::Box::new(super::Tuple2(7, tail));
+            let original = core::ptr::from_ref(&*value);
+            let len = <super::Tuple2<u8, [u64]> as Wide>::metadata(original);
+            let data = Wide::into_non_null(value);
+            let value = unsafe { <super::Tuple2<u8, [u64]> as Wide>::from_non_null(data, len) };
+            assert!(core::ptr::eq(original, &*value));
+            assert_eq!(value.0, 7);
+            assert_eq!(&value.1, &tail);
+        }
+
+        round_trip([]);
+        round_trip([11, 22, 33]);
+    }
+
+    #[cfg(feature = "alloc")]
     use alloc::{boxed::Box, vec::Vec};
     use core::num::NonZero as StdNonZero;
 
@@ -592,17 +613,17 @@ mod tests {
 
     #[cfg(feature = "alloc")]
     use super::*;
-    #[cfg(feature = "alloc")]
-    use crate::boxed::{CBox, CWideBox};
     use crate::{
         Decode, Encode,
         option::COption,
         reference::{CRef, CRefMut},
     };
     #[cfg(feature = "alloc")]
+    use crate::{boxed::CBox, wide::CWideBox};
+    #[cfg(feature = "alloc")]
     use crate::{
-        slice::{CWideRef, CWideRefMut},
         stored::{DecodeMove, EncodeMove},
+        wide::{CWideRef, CWideRefMut},
     };
 
     #[test]

@@ -10,27 +10,6 @@ use crate::{
     transmute::{AbiCompatible, AbiCompatibleValidate},
 };
 
-/// Constructs the carrier selected by `ReprC` for a shared reference without reading it.
-pub(crate) trait FromRawRef<C: ?Sized>: CType + Sized {
-    /// # Safety
-    ///
-    /// The thin pointer must satisfy the validity and aliasing requirements of the
-    /// selected carrier. Interior-mutability access must remain synchronized.
-    unsafe fn from_raw_reference(data: *const C) -> Self;
-}
-
-impl<R: ReprC<CType: CType> + ?Sized> FromRawRef<R::CType> for CRef<R> {
-    unsafe fn from_raw_reference(data: *const R::CType) -> Self {
-        unsafe { Self::from_raw(data) }
-    }
-}
-
-impl<R: ReprC<CType: CType> + ?Sized> FromRawRef<R::CType> for CRefMut<R, false> {
-    unsafe fn from_raw_reference(data: *const R::CType) -> Self {
-        unsafe { Self::from_raw(data.cast_mut()) }
-    }
-}
-
 /// A thin shared reference pointer carrier with the same ABI as `*const R::CType`.
 ///
 /// A null pointer represents an absent reference.
@@ -124,6 +103,17 @@ impl<R: ReprC<CType: CType> + ?Sized> CRefMut<R, false> {
 }
 
 impl<R: ReprC + ?Sized> CRef<R> {
+    /// Cast the pointee type without accessing or validating the pointee.
+    ///
+    /// # Safety
+    ///
+    /// The resulting carrier must satisfy the destination's raw constructor contract
+    pub(crate) const unsafe fn cast<U: ReprC<CType: Sized> + ?Sized>(self) -> CRef<U> {
+        CRef {
+            data: self.data.cast(),
+        }
+    }
+
     pub const fn as_ptr(self) -> *const R::CType {
         self.data
     }
@@ -143,6 +133,19 @@ impl<R: ReprC + ?Sized> CRef<R> {
 }
 
 impl<R: ReprC + ?Sized, const EXCLUSIVE: bool> CRefMut<R, EXCLUSIVE> {
+    /// Cast the pointee type without accessing or validating the pointee.
+    ///
+    /// # Safety
+    ///
+    /// The resulting carrier must satisfy the destination's raw constructor contract
+    pub(crate) const unsafe fn cast<U: ReprC<CType: Sized> + ?Sized>(
+        self,
+    ) -> CRefMut<U, EXCLUSIVE> {
+        CRefMut {
+            data: self.data.cast(),
+        }
+    }
+
     pub const fn as_ptr(self) -> *mut R::CType {
         self.data
     }
@@ -277,7 +280,7 @@ mod tests {
     use static_assertions::assert_impl_all;
 
     use super::*;
-    use crate::{niche::Niche, slice::CWideRefMut};
+    use crate::{niche::Niche, wide::CWideRefMut};
 
     #[test]
     fn shared_reference_carrier_preserves_pointer_abi() {

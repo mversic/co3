@@ -11,11 +11,12 @@ use rust_spec::RustSpec;
 use crate::{
     CFnArg, CFnReturn, Decode, Encode,
     borrow::Borrow,
-    boxed::{CWideBox, OwnedBoxCarrier},
+    boxed::OwnedBoxCarrier,
     niche::Niche,
     primitives::primitive_derive,
     stored::{DecodeMove, EncodeMove, EncodeMoveUnchecked},
     vec::CVec,
+    wide::CWideBox,
 };
 use crate::{
     CType, ReprC,

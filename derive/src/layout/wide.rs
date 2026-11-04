@@ -319,7 +319,12 @@ pub(super) fn wide_predicate(field_ty: &syn::Type, generics: &syn::Generics) -> 
 
 pub(super) fn wide_usize_predicate(field_ty: &syn::Type, generics: &syn::Generics) -> TokenStream {
     let for_dummy = (!is_parametrized(field_ty, generics)).then(|| quote! { for<'__dummy> });
-    quote! { #for_dummy #field_ty: co3::wide::Wide<Metadata = usize> }
+
+    quote! {
+        #for_dummy #field_ty: co3::wide::Wide<Metadata = usize> + co3::rust_spec::RustSpec<
+            Size = co3::rust_spec::size::MetaSized<co3::rust_spec::size::SliceLike>
+        >
+    }
 }
 
 pub(super) fn header_repr_c_predicate(
@@ -361,7 +366,6 @@ pub(super) fn gen_dst_methods(is_transparent: bool, field_ty: &syn::Type) -> Tok
             ) -> &'__rust_spec Self {
                 let raw = core::ptr::slice_from_raw_parts(data.cast::<#tail_data_ty>(), metadata);
                 const { assert!(core::mem::size_of::<*const Self>() == core::mem::size_of::<*const [#tail_data_ty]>()); }
-                // The slice-like tail supplies usize metadata. Raw pointers are Copy.
                 let ptr: *const Self = unsafe { core::mem::transmute_copy(&raw) };
                 unsafe { &*ptr }
             }
@@ -407,8 +411,10 @@ pub(super) fn gen_alloc_methods(is_transparent: bool, field_ty: &syn::Type) -> T
     let tail_data_ty = data_bound_ty(field_ty, true);
     let constructor = if is_transparent {
         quote! {
-            let ptr = unsafe { <Self as co3::wide::Wide>::from_raw_parts_mut(data.as_ptr(), metadata) }
-                as *mut Self;
+            let inner = unsafe {
+                <#field_ty as co3::wide::Wide>::from_non_null(data.cast(), metadata)
+            };
+            let ptr = co3::boxed::Box::into_raw(inner) as *mut Self;
         }
     } else {
         quote! {

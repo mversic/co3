@@ -1,7 +1,7 @@
 use std::marker::PhantomData;
 
 use co3::{
-    ReprC, ffi, option::COption, reference::CRef, rust_spec::RustSpec, slice::CWideRef, vec::CVec,
+    ReprC, ffi, option::COption, reference::CRef, rust_spec::RustSpec, vec::CVec, wide::CWideRef,
 };
 
 #[derive(Clone, Copy, PartialEq, Eq, Debug, RustSpec, ReprC)]

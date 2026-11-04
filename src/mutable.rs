@@ -11,16 +11,17 @@ use rust_spec::{RustSpec, size::SizedKind};
 use crate::{
     CType, ReprC,
     reference::{CRef, CRefMut},
-    slice::{CWideRef, CWideRefMut},
     stored::{EncodeMove, EncodeMoveUnchecked, Store},
     transmute::AbiCompatibleValidate,
+    wide::{CWideRef, CWideRefMut},
     wide::{Wide, WideHeader},
 };
 #[cfg(feature = "alloc")]
 use crate::{
-    boxed::{CBox, CWideBox},
+    boxed::CBox,
     sync::{RefMutDstEncodeStore, RefMutReferenceEncodeStore, RefMutWideEncodeStore},
     vec::CVec,
+    wide::CWideBox,
 };
 
 disjoint_impls! {

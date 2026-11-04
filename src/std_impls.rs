@@ -507,14 +507,14 @@ mod tests {
     use static_assertions::{assert_impl_all, assert_not_impl_any};
 
     use super::*;
-    #[cfg(feature = "alloc")]
-    use crate::boxed::{CBox, CWideBox};
     use crate::{
         CFnArg, CFnReturn, Decode, Encode,
         option::COption,
         reference::{CRef, CRefMut},
-        slice::{CWideRef, CWideRefMut},
+        wide::{CWideRef, CWideRefMut},
     };
+    #[cfg(feature = "alloc")]
+    use crate::{boxed::CBox, wide::CWideBox};
 
     #[test]
     fn nonnull_carrier_preserves_nonnull_source_and_null_niche() {
