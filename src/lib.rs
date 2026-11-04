@@ -333,7 +333,7 @@
 //!
 //! # Unpacking at the ABI boundary
 //!
-//! Rust slices are lowered into [`wide::CWideRef`] or [`wide::CWideRefMut`], C-ABI
+//! Rust slices are lowered into [`wide::CSoftWideRef`] or [`wide::CSoftWideRefMut`], C-ABI
 //! containers holding a data pointer and a length.
 //!
 //! Some FFI APIs accept the pointer and length as separate arguments; mark an
@@ -588,9 +588,9 @@ use crate::ffi::NulTerminatedBuf;
 use crate::{boxed::CBox, wide::CWideBox};
 use crate::{
     niche::Niche,
-    reference::{CRef, CRefMut},
+    reference::{CSoftRefMut, CSoftRef},
     stored::{DecodeMove, EmptyStore, EncodeMove, EncodeMoveUnchecked, Store},
-    wide::{CWideRef, CWideRefMut},
+    wide::{CSoftWideRefMut, CSoftWideRef},
     wide::{Wide, WideHeader},
 };
 
@@ -827,53 +827,53 @@ disjoint_impls! {
     where
         R: RustSpec<Size: Thin, Mutability = Exclusive<__Interior>>,
     {
-        type CType = CRef<R>;
+        type CType = CSoftRef<R>;
     }
     impl<R: ReprC<CType: Sized> + ?Sized, __Interior: ExclusiveKind> ReprC for &R
     where
         R: RustSpec<Size = NulTerminated, Mutability = Exclusive<__Interior>>,
         <R as ReprC>::CType: CType + Sized,
     {
-        type CType = CRef<R>;
+        type CType = CSoftRef<R>;
     }
     impl<R: ReprC<CType: Wide<Header: WideHeader<Data: CType>, Metadata = usize>> + ?Sized, __Interior: ExclusiveKind> ReprC for &R
     where
         R: RustSpec<Size = MetaSized<SliceLike>, Mutability = Exclusive<__Interior>>,
     {
-        type CType = CWideRef<R>;
+        type CType = CSoftWideRef<R>;
     }
 
     impl<R: ReprC + ?Sized, __Trap> ReprC for &R
     where
         R: RustSpec<Size: Thin, Mutability = WithInterior<__Trap>>,
     {
-        type CType = CRefMut<R, false>;
+        type CType = CSoftRefMut<R, false>;
     }
     impl<R: ReprC<CType: Sized> + ?Sized, __Trap> ReprC for &R
     where
         R: RustSpec<Size = NulTerminated, Mutability = WithInterior<__Trap>>,
         <R as ReprC>::CType: CType + Sized,
     {
-        type CType = CRefMut<R, false>;
+        type CType = CSoftRefMut<R, false>;
     }
     impl<R: ReprC<CType: Wide<Header: WideHeader<Data: CType>, Metadata = usize>> + ?Sized, __Trap> ReprC for &R
     where
         R: RustSpec<Size = MetaSized<SliceLike>, Mutability = WithInterior<__Trap>>,
     {
-        type CType = CWideRefMut<R, false>;
+        type CType = CSoftWideRefMut<R, false>;
     }
 
     impl<R: ReprC + ?Sized> ReprC for &mut R
     where
         R: RustSpec<Size: Thin>,
     {
-        type CType = CRefMut<R, true>;
+        type CType = CSoftRefMut<R, true>;
     }
     impl<R: ReprC<CType: Wide<Header: WideHeader<Data: CType>, Metadata = usize>> + ?Sized> ReprC for &mut R
     where
         R: RustSpec<Size = MetaSized<SliceLike>>,
     {
-        type CType = CWideRefMut<R, true>;
+        type CType = CSoftWideRefMut<R, true>;
     }
 
     #[cfg(feature = "alloc")]
@@ -1101,11 +1101,11 @@ mod tests {
 
     #[test]
     fn carrier_types_are_zeroable() {
-        static_assertions::assert_impl_all!(reference::CRef<u8>: Zeroable);
-        static_assertions::assert_impl_all!(reference::CRefMut<u8, true>: Zeroable);
+        static_assertions::assert_impl_all!(reference::CSoftRef<u8>: Zeroable);
+        static_assertions::assert_impl_all!(reference::CSoftRefMut<u8, true>: Zeroable);
         static_assertions::assert_impl_all!(boxed::CBox<u8>: Zeroable);
-        static_assertions::assert_impl_all!(wide::CWideRef<[u8]>: Zeroable);
-        static_assertions::assert_impl_all!(wide::CWideRefMut<[u8], true>: Zeroable);
+        static_assertions::assert_impl_all!(wide::CSoftWideRef<[u8]>: Zeroable);
+        static_assertions::assert_impl_all!(wide::CSoftWideRefMut<[u8], true>: Zeroable);
         static_assertions::assert_impl_all!(wide::CWideBox<[u8]>: Zeroable);
         static_assertions::assert_impl_all!(vec::CVec<u8>: Zeroable);
     }
@@ -1289,7 +1289,7 @@ mod tests {
     #[test]
     fn decode_stored_mut_ref() {
         let mut c_opt = COption::Some(1u8);
-        let c_ptr = CRefMut::<Option<u8>, true>::from_mut(&mut c_opt);
+        let c_ptr = CSoftRefMut::<Option<u8>, true>::from_mut(&mut c_opt);
         let new_val: u8 = 42;
         {
             let mut store = Default::default();
@@ -1301,7 +1301,7 @@ mod tests {
         assert_eq!(c_opt, COption::Some(42u8));
 
         let mut c_opts = [COption::Some(1u8)];
-        let c_slice = CWideRefMut::<[Option<u8>], true>::from_mut(&mut c_opts[..]);
+        let c_slice = CSoftWideRefMut::<[Option<u8>], true>::from_mut(&mut c_opts[..]);
         let x: u8 = 10;
         {
             let mut store = Default::default();
@@ -1369,7 +1369,7 @@ mod tests {
         use tuple::Tuple2;
 
         let mut tuples = [Tuple2(10_u32, CBool::TRUE)];
-        let c_slice = CWideRefMut::<[(u32, bool)], true>::from_mut(&mut tuples[..]);
+        let c_slice = CSoftWideRefMut::<[(u32, bool)], true>::from_mut(&mut tuples[..]);
 
         {
             let mut store = Default::default();

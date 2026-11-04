@@ -14,7 +14,7 @@ use crate::{
     borrow::Borrowed,
     option::COptionSome,
     tuple::Tuple2,
-    wide::{CWideRef, CWideRefMut},
+    wide::{CSoftWideRefMut, CSoftWideRef},
     wide::{Wide, WideHeader},
 };
 #[cfg(feature = "alloc")]
@@ -96,9 +96,9 @@ macro_rules! impl_ref_wide_pack {
     };
 }
 
-impl_ref_wide_pack!(&R, CWideRef<R>, *const, from_raw_parts);
-impl_ref_wide_pack!(&R, CWideRefMut<R, false>, *mut, from_raw_parts_mut);
-impl_ref_wide_pack!(&mut R, CWideRefMut<R, true>, *mut, from_raw_parts_mut);
+impl_ref_wide_pack!(&R, CSoftWideRef<R>, *const, from_raw_parts);
+impl_ref_wide_pack!(&R, CSoftWideRefMut<R, false>, *mut, from_raw_parts_mut);
+impl_ref_wide_pack!(&mut R, CSoftWideRefMut<R, true>, *mut, from_raw_parts_mut);
 
 impl<T, Part: CType + TryInto<Self::CType>> Pack<Part> for T
 where

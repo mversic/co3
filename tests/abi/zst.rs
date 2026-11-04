@@ -7,7 +7,7 @@ use core::{
 use co3::{
     CFnArg, CFnReturn, CType, Decode, Encode, ReprC,
     borrow::{Borrow, Borrowed},
-    reference::CRefMut,
+    reference::CSoftRefMut,
     rust_spec::RustSpec,
     transmute::AbiCompatible,
 };
@@ -154,8 +154,8 @@ fn wrappers_preserve_their_borrowed_representations() {
     assert_impl_all!(ManuallyDrop<u8>: Borrow);
     assert_type_eq_all!(<ManuallyDrop<u8> as Borrow>::Borrowed, ManuallyDrop<u8>);
 
-    assert_impl_all!(CRefMut<u8, true>: Borrow);
-    assert_type_eq_all!(<CRefMut<u8, true> as Borrow>::Borrowed, CRefMut<u8, true>);
+    assert_impl_all!(CSoftRefMut<u8, true>: Borrow);
+    assert_type_eq_all!(<CSoftRefMut<u8, true> as Borrow>::Borrowed, CSoftRefMut<u8, true>);
 }
 
 #[test]

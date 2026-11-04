@@ -16,10 +16,10 @@ use crate::{
     CType, NeedsDrop, ReprC,
     option::{COption, COptionSome},
     primitives::CBool,
-    reference::{CRef, CRefMut},
+    reference::{CSoftRefMut, CSoftRef},
     result::CResult,
     tuple::Tuple2,
-    wide::{CWideRef, CWideRefMut},
+    wide::{CSoftWideRefMut, CSoftWideRef},
     wide::{Wide, WideHeader},
 };
 #[cfg(feature = "alloc")]
@@ -44,9 +44,9 @@ disjoint_impls! {
 
     impl<R: ReprC<CType: CType + Sized> + ?Sized> Niche for &R
     where
-        Self: ReprC<CType = CRef<R>>,
+        Self: ReprC<CType = CSoftRef<R>>,
     {
-        const NICHE: Self::CType = CRef::null();
+        const NICHE: Self::CType = CSoftRef::null();
 
         fn is_niche(value: &Self::CType) -> bool {
             value.as_ptr().is_null()
@@ -54,9 +54,9 @@ disjoint_impls! {
     }
     impl<R: ReprC<CType: CType + Sized> + ?Sized> Niche for &R
     where
-        Self: ReprC<CType = CRefMut<R, false>>,
+        Self: ReprC<CType = CSoftRefMut<R, false>>,
     {
-        const NICHE: Self::CType = CRefMut::null();
+        const NICHE: Self::CType = CSoftRefMut::null();
 
         fn is_niche(value: &Self::CType) -> bool {
             value.as_ptr().is_null()
@@ -64,9 +64,9 @@ disjoint_impls! {
     }
     impl<R: ReprC<CType: Wide<Header: WideHeader<Data: CType>>> + ?Sized> Niche for &R
     where
-        Self: ReprC<CType = CWideRef<R>>,
+        Self: ReprC<CType = CSoftWideRef<R>>,
     {
-        const NICHE: Self::CType = CWideRef::null();
+        const NICHE: Self::CType = CSoftWideRef::null();
 
         fn is_niche(value: &Self::CType) -> bool {
             value.as_ptr().is_null()
@@ -74,9 +74,9 @@ disjoint_impls! {
     }
     impl<R: ReprC<CType: Wide<Header: WideHeader<Data: CType>>> + ?Sized> Niche for &R
     where
-        Self: ReprC<CType = CWideRefMut<R, false>>,
+        Self: ReprC<CType = CSoftWideRefMut<R, false>>,
     {
-        const NICHE: Self::CType = CWideRefMut::null();
+        const NICHE: Self::CType = CSoftWideRefMut::null();
 
         fn is_niche(value: &Self::CType) -> bool {
             value.as_ptr().is_null()
@@ -85,9 +85,9 @@ disjoint_impls! {
 
     impl<R: ReprC<CType: CType + Sized> + ?Sized> Niche for &mut R
     where
-        Self: ReprC<CType = CRefMut<R, true>>,
+        Self: ReprC<CType = CSoftRefMut<R, true>>,
     {
-        const NICHE: Self::CType = CRefMut::null();
+        const NICHE: Self::CType = CSoftRefMut::null();
 
         fn is_niche(value: &Self::CType) -> bool {
             value.as_ptr().is_null()
@@ -95,9 +95,9 @@ disjoint_impls! {
     }
     impl<R: ReprC<CType: Wide<Header: WideHeader<Data: CType>>> + ?Sized> Niche for &mut R
     where
-        Self: ReprC<CType = CWideRefMut<R, true>>,
+        Self: ReprC<CType = CSoftWideRefMut<R, true>>,
     {
-        const NICHE: Self::CType = CWideRefMut::null();
+        const NICHE: Self::CType = CSoftWideRefMut::null();
 
         fn is_niche(value: &Self::CType) -> bool {
             value.as_ptr().is_null()
@@ -362,10 +362,10 @@ mod tests {
 
         check(crate::NonZero(0u32));
         check(crate::NonZero(core::ptr::null_mut::<u32>()));
-        check(CRef::<u8>::null());
-        check(CRefMut::<u8, true>::null());
-        check(CWideRef::<[u8]>::null());
-        check(CWideRefMut::<[u8], true>::null());
+        check(CSoftRef::<u8>::null());
+        check(CSoftRefMut::<u8, true>::null());
+        check(CSoftWideRef::<[u8]>::null());
+        check(CSoftWideRefMut::<[u8], true>::null());
         #[cfg(feature = "alloc")]
         {
             check(CBox::<u8>::null());
@@ -390,7 +390,7 @@ mod tests {
             Some(None)
         );
         let value = 7u8;
-        let reference = CRef::<u8>::from_ref(&value);
+        let reference = CSoftRef::<u8>::from_ref(&value);
         assert!(reference == reference);
         assert!(crate::NonZero::new(reference).is_none());
         check(crate::NonZero(reference));

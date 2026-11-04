@@ -1,7 +1,8 @@
 use std::marker::PhantomData;
 
 use co3::{
-    ReprC, ffi, option::COption, reference::CRef, rust_spec::RustSpec, vec::CVec, wide::CWideRef,
+    ReprC, ffi, option::COption, reference::CSoftRef, rust_spec::RustSpec, vec::CVec,
+    wide::CSoftWideRef,
 };
 
 #[derive(Clone, Copy, PartialEq, Eq, Debug, RustSpec, ReprC)]
@@ -90,7 +91,9 @@ pub fn slice_to_slice(value: &[TransparentStruct]) -> &[TransparentStruct] {
 
 unsafe extern "C" {
     #[link_name = "export_transparent__array_of_transparent"]
-    fn array_of_transparent_raw(arr: CRef<[TransparentStruct; 1]>) -> CRef<[TransparentStruct; 1]>;
+    fn array_of_transparent_raw(
+        arr: CSoftRef<[TransparentStruct; 1]>,
+    ) -> CSoftRef<[TransparentStruct; 1]>;
 
     #[link_name = "export_transparent__transparent_option"]
     fn transparent_option_raw(
@@ -104,7 +107,9 @@ unsafe extern "C" {
     fn vec_to_vec_raw(value: CVec<TransparentStruct>) -> CVec<TransparentStruct>;
 
     #[link_name = "export_transparent__slice_to_slice"]
-    fn slice_to_slice_raw(value: CWideRef<[TransparentStruct]>) -> CWideRef<[TransparentStruct]>;
+    fn slice_to_slice_raw(
+        value: CSoftWideRef<[TransparentStruct]>,
+    ) -> CSoftWideRef<[TransparentStruct]>;
 
     #[link_name = "export_transparent__TransparentStruct__with_payload"]
     fn with_payload_raw(
@@ -113,7 +118,9 @@ unsafe extern "C" {
     ) -> TransparentStruct;
 
     #[link_name = "export_transparent__TransparentStruct__payload"]
-    fn payload_raw(value: CRef<TransparentStruct>) -> CRef<GenericTransparentStruct<()>>;
+    fn payload_raw(
+        value: CSoftRef<TransparentStruct>,
+    ) -> CSoftRef<GenericTransparentStruct<()>>;
 }
 
 #[test]

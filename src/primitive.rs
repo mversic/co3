@@ -497,8 +497,8 @@ mod tests {
         Encode,
         cmp::COrdering,
         option::COption,
-        reference::{CRef, CRefMut},
-        wide::{CWideRef, CWideRefMut},
+        reference::{CSoftRefMut, CSoftRef},
+        wide::{CSoftWideRefMut, CSoftWideRef},
     };
     #[cfg(feature = "alloc")]
     use crate::{boxed::CBox, wide::CWideBox};
@@ -626,12 +626,12 @@ mod tests {
             CType,
         );
         assert_impl_all!(&u8:
-            Niche<CType = CRef<u8>>,
+            Niche<CType = CSoftRef<u8>>,
             Decode<'static>,
             Encode,
         );
         assert_impl_all!(&mut u8:
-            Niche<CType = CRefMut<u8, true>>,
+            Niche<CType = CSoftRefMut<u8, true>>,
             Decode<'static>,
             Encode,
         );
@@ -642,12 +642,12 @@ mod tests {
             Encode,
         );
         assert_impl_all!(&[u8]:
-            Niche<CType = CWideRef<[u8]>>,
+            Niche<CType = CSoftWideRef<[u8]>>,
             Decode<'static>,
             Encode,
         );
         assert_impl_all!(&mut [u8]:
-            Niche<CType = CWideRefMut<[u8], true>>,
+            Niche<CType = CSoftWideRefMut<[u8], true>>,
             Decode<'static>,
             Encode,
         );

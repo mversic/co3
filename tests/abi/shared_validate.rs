@@ -120,7 +120,7 @@ fn maybe_uninit_cells_allow_shared_validation_without_inspecting_contents() {
     // Zero is invalid for NonZeroU8, but valid as uninterpreted MaybeUninit bytes.
     let representation = MaybeUninit::new(UnsafeCell::new(unsafe { core::mem::zeroed() }));
     let encoded = unsafe {
-        co3::reference::CRefMut::from_raw(core::ptr::from_ref(&representation).cast_mut())
+        co3::reference::CSoftRefMut::from_raw(core::ptr::from_ref(&representation).cast_mut())
     };
     assert!(unsafe { co3::decode::<&UninitCell>(encoded) }.is_some());
 }
@@ -159,11 +159,15 @@ fn robust_cells_do_not_hide_other_invalid_fields() {
     let invalid = unsafe {
         CMixed::<UnsafeCell<u8>>::from_fields(co3::primitives::CBool(2), UnsafeCell::new(7))
     };
-    let encoded =
-        unsafe { co3::reference::CRefMut::from_raw(core::ptr::from_ref(&invalid).cast_mut()) };
+    let encoded = unsafe {
+        co3::reference::CSoftRefMut::from_raw(core::ptr::from_ref(&invalid).cast_mut())
+    };
     assert!(unsafe { co3::decode::<&Mixed<UnsafeCell<u8>>>(encoded) }.is_none());
     let encoded = unsafe {
-        co3::wide::CWideRefMut::from_raw_parts_mut(core::ptr::from_ref(&invalid).cast_mut(), 1)
+        co3::wide::CSoftWideRefMut::from_raw_parts_mut(
+            core::ptr::from_ref(&invalid).cast_mut(),
+            1,
+        )
     };
     assert!(unsafe { co3::decode::<&[Mixed<UnsafeCell<u8>>]>(encoded) }.is_none());
 }

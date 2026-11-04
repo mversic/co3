@@ -1785,7 +1785,7 @@ fn gen_codec_impls(
                 };
                 quote! {
                     #speculative #ty: #repr_bound + '_ršč,
-                    &'_ršč #ty: #move_trait + co3::ReprC<CType = co3::reference::CRef<#ty>>
+                    &'_ršč #ty: #move_trait + co3::ReprC<CType = co3::reference::CSoftRef<#ty>>
                 }
             });
             quote! {
@@ -1794,7 +1794,7 @@ fn gen_codec_impls(
                     #sized_bound
                     #speculative Self: co3::ReprC<CType = #ctype_name #ctype_ty_generics>
                         + co3::rust_spec::RustSpec<Size: Thin> + '_ršč,
-                    &'_ršč Self: co3::ReprC<CType = co3::reference::CRef<Self>>,
+                    &'_ršč Self: co3::ReprC<CType = co3::reference::CSoftRef<Self>>,
 
                     #(#repr_c_bounds,)*
                     #(#field_bounds,)*

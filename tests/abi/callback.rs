@@ -3,14 +3,14 @@ use co3::{
     ops::{CFn0, CFn1, CFn2, CFn12},
     option::COption,
     raw,
-    reference::{CRef, CRefMut},
+    reference::{CSoftRefMut, CSoftRef},
     rust_spec::RustSpec,
 };
 
 #[derive(Clone, Copy, RustSpec, ReprC)]
 #[repr_c(identity)]
 #[repr(C)]
-struct StructWithCallback(Option<unsafe extern "C" fn(CRef<u32>) -> u32>);
+struct StructWithCallback(Option<unsafe extern "C" fn(CSoftRef<u32>) -> u32>);
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, RustSpec, ReprC)]
 #[repr_c(identity)]
@@ -40,17 +40,17 @@ mod raw {
 
 type CompanionPathAlias = raw::Existing;
 
-unsafe extern "C" fn increment_pointer(value: CRef<u32>) -> u32 {
+unsafe extern "C" fn increment_pointer(value: CSoftRef<u32>) -> u32 {
     (unsafe { *value.as_ptr() }) + 1
 }
 
-unsafe extern "C" fn return_pointer(value: CRef<u32>) -> CRef<u32> {
+unsafe extern "C" fn return_pointer(value: CSoftRef<u32>) -> CSoftRef<u32> {
     value
 }
 
-unsafe extern "C" fn ignore_pointer(_: CRef<u32>) {}
+unsafe extern "C" fn ignore_pointer(_: CSoftRef<u32>) {}
 
-unsafe extern "C" fn update_option(value: CRefMut<Option<u8>, true>) -> u32 {
+unsafe extern "C" fn update_option(value: CSoftRefMut<Option<u8>, true>) -> u32 {
     let value = value.as_ptr();
     unsafe { *value = COption::Some(42) };
     7
@@ -60,11 +60,11 @@ extern "C" fn return_forty_two() -> u32 {
     42
 }
 
-extern "system" fn increment_system(value: CRef<u32>) -> u32 {
+extern "system" fn increment_system(value: CSoftRef<u32>) -> u32 {
     (unsafe { *value.as_ptr() }) + 2
 }
 
-unsafe extern "C" fn add_from_pointer(value: CRef<u32>, offset: u32) -> u32 {
+unsafe extern "C" fn add_from_pointer(value: CSoftRef<u32>, offset: u32) -> u32 {
     (unsafe { *value.as_ptr() }) + offset
 }
 
@@ -266,12 +266,12 @@ fn zero_argument_callback_decodes_result() {
 
 #[test]
 fn stored_c_callback_accepts_rust_reference() {
-    fn assert_first_arg<T: CFn1<Arg1 = CRef<u32>>>()
+    fn assert_first_arg<T: CFn1<Arg1 = CSoftRef<u32>>>()
     where
         Option<T>: CType,
     {
     }
-    assert_first_arg::<unsafe extern "C" fn(CRef<u32>) -> u32>();
+    assert_first_arg::<unsafe extern "C" fn(CSoftRef<u32>) -> u32>();
 
     let callback = StructWithCallback(Some(increment_pointer));
     let value = 41_u32;
@@ -309,12 +309,12 @@ fn soft_call_synchronizes_mutable_argument() {
 
 #[test]
 fn multi_argument_callbacks_encode_each_argument() {
-    fn assert_two_args<T: CFn2<Arg1 = CRef<u32>, Arg2 = u32>>()
+    fn assert_two_args<T: CFn2<Arg1 = CSoftRef<u32>, Arg2 = u32>>()
     where
         Option<T>: CType,
     {
     }
-    assert_two_args::<unsafe extern "C" fn(CRef<u32>, u32) -> u32>();
+    assert_two_args::<unsafe extern "C" fn(CSoftRef<u32>, u32) -> u32>();
 
     let value = 40_u32;
     let callback: unsafe extern "C" fn(_, _) -> _ = add_from_pointer;
@@ -351,7 +351,7 @@ fn c_callback_crosses_export_and_import() {
         Some(RustValue(42))
     );
     let encoded = co3::encode(RustValue(7));
-    let raw_result = unsafe { RustValue::scaled_raw(CRef::from_ref(&encoded), 6) };
+    let raw_result = unsafe { RustValue::scaled_raw(CSoftRef::from_ref(&encoded), 6) };
     assert_eq!(
         unsafe { co3::decode::<RustValue>(raw_result) },
         Some(RustValue(42))

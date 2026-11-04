@@ -15,7 +15,7 @@ use crate::{
 /// A null pointer represents an absent reference.
 #[derive(RustSpec)]
 #[repr(transparent)]
-pub struct CRef<R: ReprC + ?Sized> {
+pub struct CSoftRef<R: ReprC + ?Sized> {
     data: *const R::CType,
 }
 
@@ -25,17 +25,17 @@ pub struct CRef<R: ReprC + ?Sized> {
 /// - `EXCLUSIVE = false` represents access that comes from `&UnsafeCell<T>`.
 #[derive(RustSpec)]
 #[repr(transparent)]
-pub struct CRefMut<R: ReprC + ?Sized, const EXCLUSIVE: bool> {
+pub struct CSoftRefMut<R: ReprC + ?Sized, const EXCLUSIVE: bool> {
     data: *mut R::CType,
 }
 
-unsafe impl<R: ReprC<CType: Sized> + ?Sized> crate::Zeroable for CRef<R> {}
+unsafe impl<R: ReprC<CType: Sized> + ?Sized> crate::Zeroable for CSoftRef<R> {}
 unsafe impl<R: ReprC<CType: Sized> + ?Sized, const EXCLUSIVE: bool> crate::Zeroable
-    for CRefMut<R, EXCLUSIVE>
+    for CSoftRefMut<R, EXCLUSIVE>
 {
 }
 
-impl<R: ReprC<CType: CType + Sized> + ?Sized> CRef<R> {
+impl<R: ReprC<CType: CType + Sized> + ?Sized> CSoftRef<R> {
     /// Construct a carrier with a null data pointer.
     pub const fn null() -> Self {
         Self {
@@ -45,7 +45,7 @@ impl<R: ReprC<CType: CType + Sized> + ?Sized> CRef<R> {
     }
 }
 
-impl<R: ReprC<CType: CType + Sized> + ?Sized, const EXCLUSIVE: bool> CRefMut<R, EXCLUSIVE> {
+impl<R: ReprC<CType: CType + Sized> + ?Sized, const EXCLUSIVE: bool> CSoftRefMut<R, EXCLUSIVE> {
     /// Construct a carrier with a null data pointer.
     pub const fn null() -> Self {
         Self {
@@ -55,7 +55,7 @@ impl<R: ReprC<CType: CType + Sized> + ?Sized, const EXCLUSIVE: bool> CRefMut<R, 
     }
 }
 
-impl<R: ReprC<CType: CType> + ?Sized> CRef<R> {
+impl<R: ReprC<CType: CType> + ?Sized> CSoftRef<R> {
     /// Wrap a pointer that follows the validity and aliasing rules of a shared reference.
     ///
     /// # Safety
@@ -73,7 +73,7 @@ impl<R: ReprC<CType: CType> + ?Sized> CRef<R> {
     }
 }
 
-impl<R: ReprC<CType: CType> + ?Sized, const EXCLUSIVE: bool> CRefMut<R, EXCLUSIVE> {
+impl<R: ReprC<CType: CType> + ?Sized, const EXCLUSIVE: bool> CSoftRefMut<R, EXCLUSIVE> {
     /// Wrap a pointer in a mutable ABI carrier.
     ///
     /// # Safety
@@ -86,7 +86,7 @@ impl<R: ReprC<CType: CType> + ?Sized, const EXCLUSIVE: bool> CRefMut<R, EXCLUSIV
     }
 }
 
-impl<R: ReprC<CType: CType> + ?Sized, const EXCLUSIVE: bool> CRefMut<R, EXCLUSIVE> {
+impl<R: ReprC<CType: CType> + ?Sized, const EXCLUSIVE: bool> CSoftRefMut<R, EXCLUSIVE> {
     /// Wrap an existing mutable reference to lowered data.
     pub const fn from_mut(data: &mut R::CType) -> Self {
         assert_thin_pointer::<R::CType>();
@@ -94,7 +94,7 @@ impl<R: ReprC<CType: CType> + ?Sized, const EXCLUSIVE: bool> CRefMut<R, EXCLUSIV
     }
 }
 
-impl<R: ReprC<CType: CType> + ?Sized> CRefMut<R, false> {
+impl<R: ReprC<CType: CType> + ?Sized> CSoftRefMut<R, false> {
     /// Create a carrier for shared access with interior mutability.
     pub const fn from_ref(cell: &UnsafeCell<R::CType>) -> Self {
         assert_thin_pointer::<R::CType>();
@@ -102,14 +102,14 @@ impl<R: ReprC<CType: CType> + ?Sized> CRefMut<R, false> {
     }
 }
 
-impl<R: ReprC + ?Sized> CRef<R> {
+impl<R: ReprC + ?Sized> CSoftRef<R> {
     /// Cast the pointee type without accessing or validating the pointee.
     ///
     /// # Safety
     ///
     /// The resulting carrier must satisfy the destination's raw constructor contract
-    pub(crate) const unsafe fn cast<U: ReprC<CType: Sized> + ?Sized>(self) -> CRef<U> {
-        CRef {
+    pub(crate) const unsafe fn cast<U: ReprC<CType: Sized> + ?Sized>(self) -> CSoftRef<U> {
+        CSoftRef {
             data: self.data.cast(),
         }
     }
@@ -132,7 +132,7 @@ impl<R: ReprC + ?Sized> CRef<R> {
     }
 }
 
-impl<R: ReprC + ?Sized, const EXCLUSIVE: bool> CRefMut<R, EXCLUSIVE> {
+impl<R: ReprC + ?Sized, const EXCLUSIVE: bool> CSoftRefMut<R, EXCLUSIVE> {
     /// Cast the pointee type without accessing or validating the pointee.
     ///
     /// # Safety
@@ -140,8 +140,8 @@ impl<R: ReprC + ?Sized, const EXCLUSIVE: bool> CRefMut<R, EXCLUSIVE> {
     /// The resulting carrier must satisfy the destination's raw constructor contract
     pub(crate) const unsafe fn cast<U: ReprC<CType: Sized> + ?Sized>(
         self,
-    ) -> CRefMut<U, EXCLUSIVE> {
-        CRefMut {
+    ) -> CSoftRefMut<U, EXCLUSIVE> {
+        CSoftRefMut {
             data: self.data.cast(),
         }
     }
@@ -151,7 +151,7 @@ impl<R: ReprC + ?Sized, const EXCLUSIVE: bool> CRefMut<R, EXCLUSIVE> {
     }
 }
 
-impl<R: ReprC + ?Sized> CRefMut<R, true> {
+impl<R: ReprC + ?Sized> CSoftRefMut<R, true> {
     /// Recover the mutable reference, returning `None` for a null pointer.
     ///
     /// # Safety
@@ -166,7 +166,7 @@ impl<R: ReprC + ?Sized> CRefMut<R, true> {
     }
 }
 
-impl<R: ReprC + ?Sized, const EXCLUSIVE: bool> CRefMut<R, EXCLUSIVE> {
+impl<R: ReprC + ?Sized, const EXCLUSIVE: bool> CSoftRefMut<R, EXCLUSIVE> {
     /// Recover the interior-mutable reference, returning `None` for a null pointer.
     ///
     /// # Safety
@@ -256,10 +256,10 @@ unsafe impl<$($params)*> AbiCompatible for $ty<$($args)*> {}
     };
 }
 
-impl_reference_carrier! { CRef, [R: ReprC + ?Sized], [R] }
-impl_reference_carrier! { CRefMut, [R: ReprC + ?Sized, const EXCLUSIVE: bool], [R, EXCLUSIVE] }
-impl_reference_identity! { CRef, [R: ReprC<CType: CType> + ?Sized], [R] }
-impl_reference_identity! { CRefMut, [R: ReprC<CType: CType> + ?Sized, const EXCLUSIVE: bool], [R, EXCLUSIVE] }
+impl_reference_carrier! { CSoftRef, [R: ReprC + ?Sized], [R] }
+impl_reference_carrier! { CSoftRefMut, [R: ReprC + ?Sized, const EXCLUSIVE: bool], [R, EXCLUSIVE] }
+impl_reference_identity! { CSoftRef, [R: ReprC<CType: CType> + ?Sized], [R] }
+impl_reference_identity! { CSoftRefMut, [R: ReprC<CType: CType> + ?Sized, const EXCLUSIVE: bool], [R, EXCLUSIVE] }
 
 const fn assert_thin_pointer<C: ?Sized>() {
     const {
@@ -280,47 +280,47 @@ mod tests {
     use static_assertions::assert_impl_all;
 
     use super::*;
-    use crate::{niche::Niche, wide::CWideRefMut};
+    use crate::{niche::Niche, wide::CSoftWideRefMut};
 
     #[test]
     fn shared_reference_carrier_preserves_pointer_abi() {
-        assert_impl_all!(&u8: Niche<CType = CRef<u8>>, Encode, Decode<'static>);
-        assert_impl_all!(&CRef<u8>: Niche<CType = CRef<CRef<u8>>>, Encode, Decode<'static>);
+        assert_impl_all!(&u8: Niche<CType = CSoftRef<u8>>, Encode, Decode<'static>);
+        assert_impl_all!(&CSoftRef<u8>: Niche<CType = CSoftRef<CSoftRef<u8>>>, Encode, Decode<'static>);
         assert_eq!(
-            core::mem::size_of::<CRef<u8>>(),
+            core::mem::size_of::<CSoftRef<u8>>(),
             core::mem::size_of::<*const u8>()
         );
         assert_eq!(
-            core::mem::align_of::<CRef<u8>>(),
+            core::mem::align_of::<CSoftRef<u8>>(),
             core::mem::align_of::<*const u8>()
         );
 
         let value = 7_u8;
         let carrier = crate::encode(&value);
-        assert_eq!(carrier, CRef::from_ref(&value));
+        assert_eq!(carrier, CSoftRef::from_ref(&value));
         assert_eq!(unsafe { crate::decode::<&u8>(carrier) }, Some(&value));
     }
 
     #[test]
     fn exclusive_and_shared_mutable_references_have_distinct_carriers() {
-        assert_impl_all!(&mut u8: Niche<CType = CRefMut<u8, true>>);
-        assert_impl_all!(&UnsafeCell<u8>: Niche<CType = CRefMut<UnsafeCell<u8>, false>>);
-        assert_impl_all!(&mut UnsafeCell<u8>: Niche<CType = CRefMut<UnsafeCell<u8>, true>>);
-        assert_impl_all!(&mut [u8]: Niche<CType = CWideRefMut<[u8], true>>);
-        assert_impl_all!(&[UnsafeCell<u8>]: Niche<CType = CWideRefMut<[UnsafeCell<u8>], false>>);
-        assert_impl_all!(&mut [UnsafeCell<u8>]: Niche<CType = CWideRefMut<[UnsafeCell<u8>], true>>);
+        assert_impl_all!(&mut u8: Niche<CType = CSoftRefMut<u8, true>>);
+        assert_impl_all!(&UnsafeCell<u8>: Niche<CType = CSoftRefMut<UnsafeCell<u8>, false>>);
+        assert_impl_all!(&mut UnsafeCell<u8>: Niche<CType = CSoftRefMut<UnsafeCell<u8>, true>>);
+        assert_impl_all!(&mut [u8]: Niche<CType = CSoftWideRefMut<[u8], true>>);
+        assert_impl_all!(&[UnsafeCell<u8>]: Niche<CType = CSoftWideRefMut<[UnsafeCell<u8>], false>>);
+        assert_impl_all!(&mut [UnsafeCell<u8>]: Niche<CType = CSoftWideRefMut<[UnsafeCell<u8>], true>>);
 
         assert_eq!(
-            core::mem::size_of::<CRefMut<u8, true>>(),
+            core::mem::size_of::<CSoftRefMut<u8, true>>(),
             core::mem::size_of::<*mut u8>()
         );
         assert_eq!(
-            core::mem::align_of::<CRefMut<u8, true>>(),
+            core::mem::align_of::<CSoftRefMut<u8, true>>(),
             core::mem::align_of::<*mut u8>()
         );
 
         let mut cell = UnsafeCell::new(1_u8);
-        let exclusive: CRefMut<UnsafeCell<u8>, true> = crate::encode(&mut cell);
+        let exclusive: CSoftRefMut<UnsafeCell<u8>, true> = crate::encode(&mut cell);
         assert_eq!(exclusive.as_ptr(), cell.get().cast::<UnsafeCell<u8>>());
         unsafe { exclusive.as_ptr().write(UnsafeCell::new(2)) };
         assert_eq!(cell.into_inner(), 2);

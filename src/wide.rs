@@ -280,7 +280,7 @@ impl<T> WideHeader for [T; 0] {
 /// A null data pointer represents an absent reference.
 #[derive(RustSpec)]
 #[repr(C)]
-pub struct CWideRef<R: ReprC<CType: Wide> + ?Sized> {
+pub struct CSoftWideRef<R: ReprC<CType: Wide> + ?Sized> {
     data: *const PointeeData<R::CType>,
     metadata: <R::CType as Wide>::Metadata,
 }
@@ -295,12 +295,12 @@ pub struct CWideRef<R: ReprC<CType: Wide> + ?Sized> {
 /// user's responsibility to ensure any access of the pointer is well synchronized.
 #[derive(RustSpec)]
 #[repr(C)]
-pub struct CWideRefMut<R: ReprC<CType: Wide> + ?Sized, const EXCLUSIVE: bool> {
+pub struct CSoftWideRefMut<R: ReprC<CType: Wide> + ?Sized, const EXCLUSIVE: bool> {
     data: *mut PointeeData<R::CType>,
     metadata: <R::CType as Wide>::Metadata,
 }
 
-impl<R: ReprC<CType: Wide<Header: WideHeader<Data: CType>>> + ?Sized> CWideRef<R> {
+impl<R: ReprC<CType: Wide<Header: WideHeader<Data: CType>>> + ?Sized> CSoftWideRef<R> {
     /// Construct an absent carrier with initialized metadata.
     pub const fn null() -> Self {
         Self {
@@ -331,7 +331,7 @@ impl<R: ReprC<CType: Wide<Header: WideHeader<Data: CType>>> + ?Sized> CWideRef<R
 }
 
 impl<R: ReprC<CType: Wide<Header: WideHeader<Data: CType>>> + ?Sized, const EXCLUSIVE: bool>
-    CWideRefMut<R, EXCLUSIVE>
+    CSoftWideRefMut<R, EXCLUSIVE>
 {
     /// Construct an absent carrier with initialized metadata.
     pub const fn null() -> Self {
@@ -363,17 +363,17 @@ impl<R: ReprC<CType: Wide<Header: WideHeader<Data: CType>>> + ?Sized, const EXCL
     }
 }
 
-impl<R: ReprC<CType: Wide> + ?Sized> CWideRef<R> {
+impl<R: ReprC<CType: Wide> + ?Sized> CSoftWideRef<R> {
     /// Cast the pointee type, preserving the data address and metadata unchanged.
     ///
     /// # Safety
     ///
     /// The resulting carrier must satisfy the destination's raw constructor contract
-    pub(crate) const unsafe fn cast<U>(self) -> CWideRef<U>
+    pub(crate) const unsafe fn cast<U>(self) -> CSoftWideRef<U>
     where
         U: ReprC<CType: Wide<Metadata = <R::CType as Wide>::Metadata>> + ?Sized,
     {
-        CWideRef {
+        CSoftWideRef {
             data: self.data.cast(),
             metadata: self.metadata,
         }
@@ -392,18 +392,18 @@ impl<R: ReprC<CType: Wide> + ?Sized> CWideRef<R> {
     }
 }
 
-impl<R: ReprC<CType: Wide> + ?Sized, const EXCLUSIVE: bool> CWideRefMut<R, EXCLUSIVE> {
+impl<R: ReprC<CType: Wide> + ?Sized, const EXCLUSIVE: bool> CSoftWideRefMut<R, EXCLUSIVE> {
     /// Cast the pointee type, preserving the data address and metadata unchanged.
     ///
     /// # Safety
     ///
     /// The resulting carrier must satisfy the destination's raw constructor contract
     #[allow(dead_code)]
-    pub(crate) const unsafe fn cast<U>(self) -> CWideRefMut<U, EXCLUSIVE>
+    pub(crate) const unsafe fn cast<U>(self) -> CSoftWideRefMut<U, EXCLUSIVE>
     where
         U: ReprC<CType: Wide<Metadata = <R::CType as Wide>::Metadata>> + ?Sized,
     {
-        CWideRefMut {
+        CSoftWideRefMut {
             data: self.data.cast(),
             metadata: self.metadata,
         }
@@ -425,7 +425,7 @@ impl<R: ReprC<CType: Wide> + ?Sized, const EXCLUSIVE: bool> CWideRefMut<R, EXCLU
     }
 }
 
-impl<R: ReprC<CType: Wide> + ?Sized> CWideRef<R> {
+impl<R: ReprC<CType: Wide> + ?Sized> CSoftWideRef<R> {
     /// Recover a shared wide reference, returning `None` for a null pointer.
     ///
     /// # Safety
@@ -443,7 +443,7 @@ impl<R: ReprC<CType: Wide> + ?Sized> CWideRef<R> {
     }
 }
 
-impl<R: ReprC<CType: Wide> + ?Sized> CWideRefMut<R, true> {
+impl<R: ReprC<CType: Wide> + ?Sized> CSoftWideRefMut<R, true> {
     /// Recover a mutable wide reference, returning `None` for a null pointer.
     ///
     /// # Safety
@@ -568,22 +568,24 @@ macro_rules! impl_carrier_borrow {
     };
 }
 
-impl_wide_raw_methods! { CWideRef, [R: ReprC<CType: Wide> + ?Sized], [R] }
-impl_wide_raw_methods! { CWideRefMut, [R: ReprC<CType: Wide> + ?Sized, const EXCLUSIVE: bool], [R, EXCLUSIVE] }
+impl_wide_raw_methods! { CSoftWideRef, [R: ReprC<CType: Wide> + ?Sized], [R] }
+impl_wide_raw_methods! { CSoftWideRefMut, [R: ReprC<CType: Wide> + ?Sized, const EXCLUSIVE: bool], [R, EXCLUSIVE] }
 
-impl_carrier_borrow! { CWideRef, [R: ReprC<CType: Wide> + ?Sized], [R] }
-impl_carrier_borrow! { CWideRefMut, [R: ReprC<CType: Wide> + ?Sized, const EXCLUSIVE: bool], [R, EXCLUSIVE] }
+impl_carrier_borrow! { CSoftWideRef, [R: ReprC<CType: Wide> + ?Sized], [R] }
+impl_carrier_borrow! { CSoftWideRefMut, [R: ReprC<CType: Wide> + ?Sized, const EXCLUSIVE: bool], [R, EXCLUSIVE] }
 
-impl_identity_carrier! { CWideRef, [R: ReprC<CType: Wide<Header: WideHeader<Data: CType>>> + ?Sized], [R] }
-impl_identity_carrier! { CWideRefMut, [R: ReprC<CType: Wide<Header: WideHeader<Data: CType>>> + ?Sized, const EXCLUSIVE: bool], [R, EXCLUSIVE] }
+impl_identity_carrier! { CSoftWideRef, [R: ReprC<CType: Wide<Header: WideHeader<Data: CType>>> + ?Sized], [R] }
+impl_identity_carrier! { CSoftWideRefMut, [R: ReprC<CType: Wide<Header: WideHeader<Data: CType>>> + ?Sized, const EXCLUSIVE: bool], [R, EXCLUSIVE] }
 
-impl<R: ReprC<CType: Wide<Header: WideHeader<Data: CType>>> + ?Sized> Default for CWideRef<R> {
+impl<R: ReprC<CType: Wide<Header: WideHeader<Data: CType>>> + ?Sized> Default
+    for CSoftWideRef<R>
+{
     fn default() -> Self {
         Self::null()
     }
 }
 impl<R: ReprC<CType: Wide<Header: WideHeader<Data: CType>>> + ?Sized, const EXCLUSIVE: bool> Default
-    for CWideRefMut<R, EXCLUSIVE>
+    for CSoftWideRefMut<R, EXCLUSIVE>
 {
     fn default() -> Self {
         Self::null()
@@ -676,9 +678,9 @@ impl_identity_carrier! { CWideBox, [R: ReprC<CType: Wide<Header: WideHeader<Data
 #[cfg(feature = "alloc")]
 impl_carrier_borrow! { CWideBox, [R: ReprC<CType: Wide<Header: WideHeader<Data: CType>>> + ?Sized], [R] }
 
-unsafe impl<R: ReprC<CType: Wide> + ?Sized> Zeroable for CWideRef<R> {}
+unsafe impl<R: ReprC<CType: Wide> + ?Sized> Zeroable for CSoftWideRef<R> {}
 unsafe impl<R: ReprC<CType: Wide> + ?Sized, const EXCLUSIVE: bool> Zeroable
-    for CWideRefMut<R, EXCLUSIVE>
+    for CSoftWideRefMut<R, EXCLUSIVE>
 {
 }
 #[cfg(feature = "alloc")]

@@ -170,7 +170,7 @@ fn result_niche_carriers_distinguish_arms() {
     );
     assert_eq!(
         align_of::<CResultErr<(), &u32>>(),
-        align_of::<co3::reference::CRef<u32>>()
+        align_of::<co3::reference::CSoftRef<u32>>()
     );
     assert_impl_all!(CResultOk<Box<u32>, ()>: CType, co3::CFnArg, co3::CFnReturn);
     assert_impl_all!(CResultErr<(), &u32>: CType, co3::CFnArg, co3::CFnReturn);

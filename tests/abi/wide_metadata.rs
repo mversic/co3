@@ -8,7 +8,7 @@ use co3::{
     sync::{RefMutWideEncodeStore, RefWideEncodeStore},
     wide::CWideBox,
     wide::Wide,
-    wide::{CWideRef, CWideRefMut},
+    wide::{CSoftWideRefMut, CSoftWideRef},
 };
 
 use crate::TransparentCarrier;
@@ -210,7 +210,7 @@ fn carriers_preserve_non_slice_metadata() {
     type Pointee = Custom<Metadata>;
     let mut source = [3_u8, 5, 8];
     let value = unsafe { &mut *(source.as_mut_slice() as *mut [u8] as *mut Pointee) };
-    let shared = CWideRef::<Pointee>::from_ref(&*value);
+    let shared = CSoftWideRef::<Pointee>::from_ref(&*value);
     assert_eq!(
         shared.metadata(),
         Metadata {
@@ -218,13 +218,15 @@ fn carriers_preserve_non_slice_metadata() {
             marker: 7
         }
     );
-    let raw = unsafe { CWideRef::<Pointee>::from_raw_parts(shared.as_ptr(), shared.metadata()) };
+    let raw =
+        unsafe { CSoftWideRef::<Pointee>::from_raw_parts(shared.as_ptr(), shared.metadata()) };
     let decoded =
-        unsafe { co3::soft_decode::<CWideRef<Pointee>>(raw, &mut Default::default()) }.unwrap();
+        unsafe { co3::soft_decode::<CSoftWideRef<Pointee>>(raw, &mut Default::default()) }
+            .unwrap();
     assert_eq!(decoded.metadata(), shared.metadata());
     assert_eq!(unsafe { &shared.into_ref().unwrap().1 }, &[3, 5, 8]);
 
-    let mutable = CWideRefMut::<Pointee, true>::from_mut(value);
+    let mutable = CSoftWideRefMut::<Pointee, true>::from_mut(value);
     assert_eq!(
         mutable.metadata(),
         Metadata {
@@ -235,7 +237,7 @@ fn carriers_preserve_non_slice_metadata() {
     unsafe { mutable.into_mut().unwrap().1[1] = 9 };
     assert_eq!(source, [3, 9, 8]);
 
-    let null = CWideRef::<Pointee>::null();
+    let null = CSoftWideRef::<Pointee>::null();
     assert!(null.as_ptr().is_null());
     assert_eq!(
         null.metadata(),
@@ -245,9 +247,10 @@ fn carriers_preserve_non_slice_metadata() {
         }
     );
     let decoded =
-        unsafe { co3::soft_decode::<CWideRef<Pointee>>(null, &mut Default::default()) }.unwrap();
+        unsafe { co3::soft_decode::<CSoftWideRef<Pointee>>(null, &mut Default::default()) }
+            .unwrap();
     assert!(unsafe { decoded.into_ref() }.is_none());
-    static_assertions::assert_impl_all!(CWideRef<Pointee>: CType, Copy);
+    static_assertions::assert_impl_all!(CSoftWideRef<Pointee>: CType, Copy);
 }
 
 #[test]
@@ -310,9 +313,9 @@ fn comparisons_use_pointer_then_arbitrary_metadata() {
         marker: 2,
     };
 
-    let one = unsafe { CWideRef::<Pointee>::from_raw_parts(first, a) };
-    let same_pointer = unsafe { CWideRef::<Pointee>::from_raw_parts(first, b) };
-    let different_pointer = unsafe { CWideRef::<Pointee>::from_raw_parts(second, a) };
+    let one = unsafe { CSoftWideRef::<Pointee>::from_raw_parts(first, a) };
+    let same_pointer = unsafe { CSoftWideRef::<Pointee>::from_raw_parts(first, b) };
+    let different_pointer = unsafe { CSoftWideRef::<Pointee>::from_raw_parts(second, a) };
     assert!(one < same_pointer);
     assert_ne!(one, different_pointer);
     assert_eq!(
@@ -320,9 +323,10 @@ fn comparisons_use_pointer_then_arbitrary_metadata() {
         Some(first.cmp(&second))
     );
 
-    let one = unsafe { CWideRefMut::<Pointee, true>::from_raw_parts_mut(first, a) };
-    let same_pointer = unsafe { CWideRefMut::<Pointee, true>::from_raw_parts_mut(first, b) };
-    let different_pointer = unsafe { CWideRefMut::<Pointee, true>::from_raw_parts_mut(second, a) };
+    let one = unsafe { CSoftWideRefMut::<Pointee, true>::from_raw_parts_mut(first, a) };
+    let same_pointer = unsafe { CSoftWideRefMut::<Pointee, true>::from_raw_parts_mut(first, b) };
+    let different_pointer =
+        unsafe { CSoftWideRefMut::<Pointee, true>::from_raw_parts_mut(second, a) };
     assert!(one < same_pointer);
     assert_ne!(one, different_pointer);
     assert_eq!(
@@ -330,8 +334,8 @@ fn comparisons_use_pointer_then_arbitrary_metadata() {
         Some(first.cmp(&second))
     );
 
-    let null = CWideRef::<Pointee>::null();
-    let other_null = unsafe { CWideRef::<Pointee>::from_raw_parts(core::ptr::null(), a) };
+    let null = CSoftWideRef::<Pointee>::null();
+    let other_null = unsafe { CSoftWideRef::<Pointee>::from_raw_parts(core::ptr::null(), a) };
     assert_ne!(null, other_null);
 }
 
@@ -353,9 +357,10 @@ fn wide_carrier_hashes_include_data_and_metadata() {
         length: 1,
         marker: 7,
     };
-    let shared = unsafe { CWideRef::<Pointee>::from_raw_parts(data, metadata) };
-    let mutable = unsafe { CWideRefMut::<Pointee, true>::from_raw_parts_mut(data, metadata) };
-    let nonexclusive = unsafe { CWideRefMut::<Pointee, false>::from_raw_parts_mut(data, metadata) };
+    let shared = unsafe { CSoftWideRef::<Pointee>::from_raw_parts(data, metadata) };
+    let mutable = unsafe { CSoftWideRefMut::<Pointee, true>::from_raw_parts_mut(data, metadata) };
+    let nonexclusive =
+        unsafe { CSoftWideRefMut::<Pointee, false>::from_raw_parts_mut(data, metadata) };
 
     assert_eq!(hash(&shared), hash(&(data as *const u8, metadata)));
     assert_eq!(hash(&mutable), hash(&(data, metadata)));

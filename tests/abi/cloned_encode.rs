@@ -3,7 +3,7 @@ use std::sync::atomic::{AtomicUsize, Ordering};
 use co3::{
     ReprC,
     borrow::Borrowed,
-    reference::{CRef, CRefMut},
+    reference::{CSoftRefMut, CSoftRef},
     stored::{
         EncodeMove, EncodeMoveUnchecked, EncodeMut, EncodeMutUnchecked, EncodeRef,
         EncodeRefUnchecked, Store,
@@ -75,7 +75,7 @@ unsafe impl<'a> EncodeRefUnchecked<'a> for Probe {
     where
         'a: 'itm,
     {
-        CRef::from_ref(&self.0)
+        CSoftRef::from_ref(&self.0)
     }
 }
 
@@ -86,7 +86,7 @@ unsafe impl<'a> EncodeRef<'a> for Probe {
     where
         'a: 'itm,
     {
-        CRef::from_ref(&self.0)
+        CSoftRef::from_ref(&self.0)
     }
 }
 
@@ -100,7 +100,7 @@ unsafe impl<'a> EncodeMutUnchecked<'a> for Probe {
     where
         'a: 'itm,
     {
-        CRefMut::from_mut(&mut self.0)
+        CSoftRefMut::from_mut(&mut self.0)
     }
 }
 
@@ -111,7 +111,7 @@ unsafe impl<'a> EncodeMut<'a> for Probe {
     where
         'a: 'itm,
     {
-        CRefMut::from_mut(&mut self.0)
+        CSoftRefMut::from_mut(&mut self.0)
     }
 }
 

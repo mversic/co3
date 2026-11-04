@@ -12,7 +12,7 @@ use crate::{
     CFnArg, CFnReturn, CType, Decode, Encode, EncodeUnchecked, ReprC, Thin,
     borrow::Borrow,
     niche::Niche,
-    reference::CRef,
+    reference::CSoftRef,
     stored::{
         DecodeMove, EmptyStore, EncodeMove, EncodeMoveUnchecked, EncodeRef, EncodeRefUnchecked,
     },
@@ -270,8 +270,8 @@ unsafe impl<'a, T: ReprC<CType: Copy> + 'a, E: ReprC<CType: Copy> + 'a, __Interi
     EncodeRefUnchecked<'a> for Result<T, E>
 where
     Self: RustSpec<Mutability = Exclusive<__Interior>, Size: Thin> + 'a,
-    &'a T: EncodeMoveUnchecked<CType = CRef<T>>,
-    &'a E: EncodeMoveUnchecked<CType = CRef<E>>,
+    &'a T: EncodeMoveUnchecked<CType = CSoftRef<T>>,
+    &'a E: EncodeMoveUnchecked<CType = CSoftRef<E>>,
 {
     type SoftStore = RefSizedEncodeStore<
         Self,
@@ -311,8 +311,8 @@ unsafe impl<'a, T: ReprC<CType: Copy> + 'a, E: ReprC<CType: Copy> + 'a, __Interi
     EncodeRef<'a> for Result<T, E>
 where
     Self: RustSpec<Mutability = Exclusive<__Interior>, Size: Thin> + 'a,
-    &'a T: EncodeMove<CType = CRef<T>>,
-    &'a E: EncodeMove<CType = CRef<E>>,
+    &'a T: EncodeMove<CType = CSoftRef<T>>,
+    &'a E: EncodeMove<CType = CSoftRef<E>>,
 {
     type Store = RefSizedEncodeStore<
         Self,
