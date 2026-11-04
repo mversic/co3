@@ -342,7 +342,7 @@ fn nested_mutable_reference_rejects_pointer_replacement() {
     let mut reference = &mut values;
     let mut store = Default::default();
     let encoded = co3::soft_encode(&mut reference, &mut store);
-    unsafe { *encoded.as_ptr() = co3::reference::CRefMut::null() };
+    unsafe { *encoded.as_ptr() = co3::reference::CSoftRefMut::null() };
     assert_eq!(store.sync(), None);
     assert_eq!(*reference, [1, 2]);
 }

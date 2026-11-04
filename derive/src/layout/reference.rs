@@ -92,7 +92,7 @@ pub(super) fn gen_stable_direct_mut_impls(input: &syn::DeriveInput) -> TokenStre
                 #speculative Self: co3::transmute::AbiCompatibleValidate
                     + co3::rust_spec::RustSpec<Layout = co3::rust_spec::Stable, Trap = co3::rust_spec::layout::Robust>
                     + co3::ReprC<CType: co3::CType + Sized> + Sized + '_ršč,
-                &'_ršč mut Self: co3::ReprC<CType = co3::reference::CRefMut<Self, true>>
+                &'_ršč mut Self: co3::ReprC<CType = co3::reference::CSoftRefMut<Self, true>>
                     + co3::transmute::AbiCompatibleValidate,
                 #(#field_bounds)*
                 #predicates
@@ -103,7 +103,7 @@ pub(super) fn gen_stable_direct_mut_impls(input: &syn::DeriveInput) -> TokenStre
                     // Do not delegate back to EncodeMove for &mut Self: its stored
                     // branch requires EncodeMut and would create a trait-solver cycle.
                     let encoded = unsafe {
-                        co3::reference::CRefMut::from_raw(core::ptr::from_mut(self).cast())
+                        co3::reference::CSoftRefMut::from_raw(core::ptr::from_mut(self).cast())
                     };
                     debug_assert!(unsafe { <&'_ršč mut Self as co3::transmute::AbiCompatibleValidate>::is_valid(&encoded) }, "encoding failed AbiCompatibleValidate::is_valid");
                     encoded
@@ -114,7 +114,7 @@ pub(super) fn gen_stable_direct_mut_impls(input: &syn::DeriveInput) -> TokenStre
                 #speculative Self: co3::rust_spec::RustSpec<Layout = co3::rust_spec::Stable, Trap = co3::rust_spec::layout::NonRobust>
                     + co3::ReprC<CType: co3::CType + Sized> + Clone + #move_trait
                     + co3::stored::DecodeMove<'_ršč, Store: co3::stored::EmptyStore + '_ršč> + '_ršč,
-                &'_ršč mut Self: co3::ReprC<CType = co3::reference::CRefMut<Self, true>>,
+                &'_ršč mut Self: co3::ReprC<CType = co3::reference::CSoftRefMut<Self, true>>,
                 #(#field_bounds)*
                 #predicates
             {
@@ -373,7 +373,7 @@ fn gen_structural_decode(
                 bounds.push(quote! {
                     #spec #ty: Clone + #repr_bound + '_dšč,
                     &'_dšč #ty: co3::stored::DecodeMove<'_dšč>
-                        + co3::ReprC<CType = co3::reference::CRef<#ty>>,
+                        + co3::ReprC<CType = co3::reference::CSoftRef<#ty>>,
                 });
             }
             stores.push(quote!(Option<<#field_decoder as co3::stored::DecodeMove<'_dšč>>::Store>));
@@ -401,9 +401,9 @@ fn gen_structural_decode(
                     }
                 } else {
                     if inline_tag {
-                        quote!(co3::reference::CRef::from_ref(unsafe { source.#member.assume_init_ref() }))
+                        quote!(co3::reference::CSoftRef::from_ref(unsafe { source.#member.assume_init_ref() }))
                     } else {
-                        quote!(co3::reference::CRef::from_ref(&source.#member))
+                        quote!(co3::reference::CSoftRef::from_ref(&source.#member))
                     }
                 };
                 let decode = quote!(unsafe {
@@ -489,9 +489,9 @@ fn gen_structural_decode(
     };
     let mutability = mutable.then(|| quote!(mut));
     let reference = if mutable {
-        quote!(co3::reference::CRefMut<Self, true>)
+        quote!(co3::reference::CSoftRefMut<Self, true>)
     } else {
-        quote!(co3::reference::CRef<Self>)
+        quote!(co3::reference::CSoftRef<Self>)
     };
     let writeback = mutable.then(
         || quote!(#speculative Self: co3::stored::EncodeMove<Store: co3::stored::EmptyStore>,),

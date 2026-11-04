@@ -1,4 +1,4 @@
-use co3::{borrow::Borrowed, ffi, raw, reference::CRef};
+use co3::{borrow::Borrowed, ffi, raw, reference::CSoftRef};
 
 fn overwrite(bytes: &mut [u8]) -> usize {
     bytes.fill(7);
@@ -60,12 +60,12 @@ ffi! {
 fn explicit_abi_wraps_raw_imports() {
     let _: unsafe extern "Rust" fn(u8) -> u8 = value;
     let _: unsafe extern "system" fn(u8) -> u8 = Host::method;
-    let _: unsafe extern "C" fn(CRef<u8>) -> CRef<u8> = borrowed;
+    let _: unsafe extern "C" fn(CSoftRef<u8>) -> CSoftRef<u8> = borrowed;
     assert_eq!(unsafe { value(4) }, 5);
     assert_eq!(unsafe { Host::method(4) }, 6);
     let input = 7;
     assert_eq!(
-        unsafe { borrowed(CRef::from_ref(&input)) },
-        CRef::from_ref(&input)
+        unsafe { borrowed(CSoftRef::from_ref(&input)) },
+        CSoftRef::from_ref(&input)
     );
 }

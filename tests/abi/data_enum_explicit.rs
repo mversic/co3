@@ -58,7 +58,7 @@ const CONST_OPTION: Option<Option<u32>> = co3::option::COption::<u32>::Some(7).i
 const CONST_RESULT: Option<Result<u32, u16>> =
     co3::result::CResult::<u32, u16>::Err(4).into_result();
 const CONST_NULL_REF: Option<&'static u8> =
-    unsafe { co3::reference::CRef::<u8>::null().into_ref() };
+    unsafe { co3::reference::CSoftRef::<u8>::null().into_ref() };
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, RustSpec, ReprC)]
 #[repr(u8)]

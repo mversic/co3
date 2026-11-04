@@ -1,6 +1,6 @@
 use core::{ffi::CStr, marker::PhantomData};
 
-use co3::{ReprC, ffi, ffi::c_char, raw, reference::CRef, rust_spec::RustSpec};
+use co3::{ReprC, ffi, ffi::c_char, raw, reference::CSoftRef, rust_spec::RustSpec};
 
 #[repr(transparent)]
 #[derive(RustSpec, ReprC)]
@@ -55,7 +55,7 @@ raw! {
 
 #[test]
 fn raw_cstr_uses_thin_char_pointer() {
-    let callback: unsafe extern "C" fn(CRef<CStr>) -> usize = cstr_len_raw;
+    let callback: unsafe extern "C" fn(CSoftRef<CStr>) -> usize = cstr_len_raw;
     assert_eq!(unsafe { callback(co3::encode(c"hello")) }, 5);
 }
 
@@ -79,7 +79,7 @@ ffi! {
 
 #[test]
 fn imported_cstr_uses_thin_char_pointer() {
-    let callback: unsafe extern "C" fn(CRef<CStr>) -> CRef<CStr> = borrowed;
+    let callback: unsafe extern "C" fn(CSoftRef<CStr>) -> CSoftRef<CStr> = borrowed;
     let original = c"hello";
     assert_eq!(
         unsafe { callback(co3::encode(original)) }

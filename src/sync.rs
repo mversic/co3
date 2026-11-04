@@ -7,12 +7,12 @@ use core::marker::PhantomData;
 use crate::{
     CType,
     stored::AssignFromOwned,
-    wide::{CWideRef, CWideRefMut},
+    wide::{CSoftWideRefMut, CSoftWideRef},
     wide::{Wide, WideHeader},
 };
 use crate::{
     ReprC,
-    reference::{CRef, CRefMut},
+    reference::{CSoftRefMut, CSoftRef},
     stored::{DecodeMove, EmptyStore, EncodeMove, Store, decode_move, encode_move},
 };
 
@@ -55,10 +55,10 @@ pub struct RefSizedDecodeStore<R, S> {
 }
 
 impl<R: ReprC<CType: Sized>, S: Store> RefSizedEncodeStore<R, S> {
-    pub fn encode(&mut self, encode: impl FnOnce(&mut S) -> R::CType) -> CRef<R> {
+    pub fn encode(&mut self, encode: impl FnOnce(&mut S) -> R::CType) -> CSoftRef<R> {
         self.ctype = None;
         let value = encode(&mut self.store);
-        CRef::from_ref(self.ctype.insert(value))
+        CSoftRef::from_ref(self.ctype.insert(value))
     }
 }
 
@@ -123,11 +123,11 @@ impl<'d, R: DecodeMove<'d, Store: EmptyStore + 'd>, S: Store + Default>
         &mut self,
         original: &'d mut R,
         encode: impl FnOnce(&mut R, &mut S) -> R::CType,
-    ) -> CRefMut<R, true> {
+    ) -> CSoftRefMut<R, true> {
         drop(self.finish());
         let ctype = encode(&mut *original, &mut self.store);
         self.original = Some(original);
-        CRefMut::from_mut(self.ctype.insert(ctype))
+        CSoftRefMut::from_mut(self.ctype.insert(ctype))
     }
 
     fn finish(&mut self) -> Option<(&'d mut R, R)> {
@@ -269,13 +269,13 @@ pub struct RefDstDecodeStore<R: ToOwned + ?Sized, S> {
 
 #[cfg(feature = "alloc")]
 impl<R: ReprC<CType: Wide<Header: WideHeader<Data: CType>>> + ?Sized, S> RefWideEncodeStore<R, S> {
-    pub fn encode(&mut self, encode: impl FnOnce(&mut S) -> Box<R::CType>) -> CWideRef<R> {
+    pub fn encode(&mut self, encode: impl FnOnce(&mut S) -> Box<R::CType>) -> CSoftWideRef<R> {
         let previous = self.ctype.take();
         self.ctype = Some(encode(&mut self.fields));
         drop(previous);
         let value = &**self.ctype.as_ref().unwrap();
         unsafe {
-            CWideRef::from_raw_parts(
+            CSoftWideRef::from_raw_parts(
                 <R::CType as Wide>::as_ptr(value).cast(),
                 <R::CType as Wide>::metadata(value),
             )
@@ -374,7 +374,7 @@ where
 pub struct RefMutSliceDecodeStore<R: ReprC<CType: Sized>, S> {
     value: Option<Vec<R>>,
     store: S,
-    source: Option<CWideRefMut<[R], true>>,
+    source: Option<CSoftWideRefMut<[R], true>>,
 }
 
 #[cfg(feature = "alloc")]
@@ -382,7 +382,7 @@ impl<R: ReprC<CType: Sized>, S> RefMutSliceDecodeStore<R, S> {
     /// The source must remain valid and exclusively accessible until synchronization.
     pub(crate) unsafe fn decode<'a>(
         &'a mut self,
-        source: CWideRefMut<[R], true>,
+        source: CSoftWideRefMut<[R], true>,
         decode: impl FnOnce(&'a [R::CType], &'a mut S) -> Option<Vec<R>>,
     ) -> Option<&'a mut [R]> {
         self.source = Some(source);
@@ -531,7 +531,7 @@ impl<
         &mut self,
         build: impl FnOnce(&mut S) -> (B, P),
         copy_back: fn(&R::CType, P),
-    ) -> CWideRefMut<R, true> {
+    ) -> CSoftWideRefMut<R, true> {
         self.writeback = None;
         let previous = self.ctype.take();
         let (value, state) = build(&mut self.fields);
@@ -540,7 +540,7 @@ impl<
         drop(previous);
         let value = &mut **self.ctype.as_mut().unwrap();
         unsafe {
-            CWideRefMut::from_raw_parts_mut(
+            CSoftWideRefMut::from_raw_parts_mut(
                 <R::CType as Wide>::as_mut_ptr(value).cast(),
                 <R::CType as Wide>::metadata(value),
             )

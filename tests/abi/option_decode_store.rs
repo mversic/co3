@@ -1,4 +1,4 @@
-use co3::{option::COption, primitives::CBool, reference::CRefMut, stored::Store};
+use co3::{option::COption, primitives::CBool, reference::CSoftRefMut, stored::Store};
 
 #[test]
 fn decoding_none_has_no_active_store() {
@@ -14,7 +14,7 @@ fn decoding_none_has_no_active_store() {
 
     let mut niche = Default::default();
     let mut source = CBool::TRUE;
-    let encoded = unsafe { CRefMut::<bool, true>::from_raw(&mut source) };
+    let encoded = unsafe { CSoftRefMut::<bool, true>::from_raw(&mut source) };
     let decoded = unsafe {
         co3::soft_decode::<Option<&mut bool>>(co3::option::COptionSome::new(encoded), &mut niche)
     };
@@ -23,7 +23,7 @@ fn decoding_none_has_no_active_store() {
 
     let decoded = unsafe {
         co3::soft_decode::<Option<&mut bool>>(
-            co3::option::COptionSome::new(CRefMut::<bool, true>::null()),
+            co3::option::COptionSome::new(CSoftRefMut::<bool, true>::null()),
             &mut niche,
         )
     };

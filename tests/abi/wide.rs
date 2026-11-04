@@ -127,7 +127,7 @@ fn exclusive_unsafe_cell_wide_uses_mutable_carrier() {
     let mut cell = UnsafeCell::new([1u8, 2, 3]);
     let original: &mut UnsafeCell<[u8]> = &mut cell;
 
-    let carrier: co3::wide::CWideRefMut<UnsafeCell<[u8]>, true> = co3::encode(original);
+    let carrier: co3::wide::CSoftWideRefMut<UnsafeCell<[u8]>, true> = co3::encode(original);
     let (data, len) = <&mut UnsafeCell<[u8]> as Unpack2<*mut u8, usize>>::unpack(carrier).unwrap();
     assert_eq!(data, cell.get().cast());
     assert_eq!(len, 3);

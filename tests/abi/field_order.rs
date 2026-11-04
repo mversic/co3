@@ -71,7 +71,7 @@ unsafe impl<'a> EncodeRefUnchecked<'a> for Probe {
         'a: 'itm,
     {
         EVENTS.with(|events| events.borrow_mut().push(self.0));
-        co3::reference::CRef::from_ref(&self.0)
+        co3::reference::CSoftRef::from_ref(&self.0)
     }
 }
 unsafe impl<'a> EncodeRef<'a> for Probe {
@@ -81,7 +81,7 @@ unsafe impl<'a> EncodeRef<'a> for Probe {
         'a: 'itm,
     {
         EVENTS.with(|events| events.borrow_mut().push(self.0));
-        co3::reference::CRef::from_ref(&self.0)
+        co3::reference::CSoftRef::from_ref(&self.0)
     }
 }
 unsafe impl<'a> EncodeMutUnchecked<'a> for Probe {
@@ -94,7 +94,7 @@ unsafe impl<'a> EncodeMutUnchecked<'a> for Probe {
         'a: 'itm,
     {
         EVENTS.with(|events| events.borrow_mut().push(self.0));
-        co3::reference::CRefMut::from_mut(&mut self.0)
+        co3::reference::CSoftRefMut::from_mut(&mut self.0)
     }
 }
 unsafe impl<'a> EncodeMut<'a> for Probe {
@@ -104,7 +104,7 @@ unsafe impl<'a> EncodeMut<'a> for Probe {
         'a: 'itm,
     {
         EVENTS.with(|events| events.borrow_mut().push(self.0));
-        co3::reference::CRefMut::from_mut(&mut self.0)
+        co3::reference::CSoftRefMut::from_mut(&mut self.0)
     }
 }
 

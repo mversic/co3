@@ -7,7 +7,7 @@ use co3::{
     niche::Niche,
     option::COption,
     primitives::CBool,
-    reference::{CRef, CRefMut},
+    reference::{CSoftRefMut, CSoftRef},
     rust_spec::RustSpec,
     soft_decode, soft_encode,
 };
@@ -73,11 +73,11 @@ ffi! {
 
 #[test]
 fn thin_extern_reference_niche() {
-    static_assertions::assert_impl_all!(&Extern: Niche<CType = CRef<Extern>>);
-    static_assertions::assert_impl_all!(&mut Extern: Niche<CType = CRefMut<Extern, true>>);
+    static_assertions::assert_impl_all!(&Extern: Niche<CType = CSoftRef<Extern>>);
+    static_assertions::assert_impl_all!(&mut Extern: Niche<CType = CSoftRefMut<Extern, true>>);
     // CStr is unsized but also has a thin pointer representation. This catches
     // an accidental Sized bound on the pointer-backed reference Niche impls.
-    static_assertions::assert_impl_all!(&CStr: Niche<CType = CRef<CStr>>);
+    static_assertions::assert_impl_all!(&CStr: Niche<CType = CSoftRef<CStr>>);
 
     assert!(<&Extern>::is_niche(&encode(None::<&Extern>).payload()));
     assert!(<&mut Extern>::is_niche(

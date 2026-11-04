@@ -177,18 +177,18 @@ fn lowered_aggregates_use_codecs_without_conversion_traits() {
 fn safe_carrier_constructors_accept_lowered_storage() {
     use co3::{
         boxed::CBox,
-        reference::{CRef, CRefMut},
+        reference::{CSoftRefMut, CSoftRef},
         wide::CWideBox,
-        wide::{CWideRef, CWideRefMut},
+        wide::{CSoftWideRefMut, CSoftWideRef},
     };
 
     let boxed = CBox::from_box(Box::new(9_u8));
-    let borrowed = unsafe { CRef::<u8>::from_raw(boxed.as_ptr()) };
+    let borrowed = unsafe { CSoftRef::<u8>::from_raw(boxed.as_ptr()) };
     assert_eq!(borrowed.as_ptr(), boxed.as_ptr());
     assert_eq!(*unsafe { co3::decode::<Box<u8>>(boxed) }.unwrap(), 9);
 
     let value = 8_u8;
-    assert_eq!(CRef::from_ref(&value), co3::encode(&value));
+    assert_eq!(CSoftRef::from_ref(&value), co3::encode(&value));
     assert!(co3::encode(None::<&u8>).payload().as_ptr().is_null());
 
     let raw = Box::into_raw(Box::new(10_u8));
@@ -209,7 +209,7 @@ fn safe_carrier_constructors_accept_lowered_storage() {
             .as_ptr()
             .is_null()
     );
-    let _: CWideRefMut<[u8], true> = CWideRefMut::null();
+    let _: CSoftWideRefMut<[u8], true> = CSoftWideRefMut::null();
     assert!(co3::encode(None::<String>).payload().as_ptr().is_null());
 
     let bytes: Box<[u8]> = Box::from("hello".as_bytes());
@@ -223,12 +223,12 @@ fn safe_carrier_constructors_accept_lowered_storage() {
     assert_eq!(unsafe { co3::decode::<String>(utf8) }.unwrap(), "world");
 
     let bytes = [1_u8, 2];
-    let _slice = CWideRef::<[u8]>::from_ref(&bytes[..]);
+    let _slice = CSoftWideRef::<[u8]>::from_ref(&bytes[..]);
     assert_eq!(
-        unsafe { CWideRef::<str>::from_raw_parts("hello".as_ptr(), "hello".len()) },
+        unsafe { CSoftWideRef::<str>::from_raw_parts("hello".as_ptr(), "hello".len()) },
         co3::encode("hello")
     );
     let mut bytes = [3_u8, 4];
-    let _slice_mut = CWideRefMut::<[u8], true>::from_mut(&mut bytes[..]);
-    let _ref_mut = CRefMut::<u8, true>::from_mut(&mut bytes[0]);
+    let _slice_mut = CSoftWideRefMut::<[u8], true>::from_mut(&mut bytes[..]);
+    let _ref_mut = CSoftRefMut::<u8, true>::from_mut(&mut bytes[0]);
 }

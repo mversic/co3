@@ -322,7 +322,7 @@ pub trait BorrowedOwnerEncode: ReprC<CType: Copy> + Sized {
 impl<T: ReprC<CType: Copy>, S: Store + Default> BorrowedOwnerEncode for T
 where
     for<'a> &'a mut Self:
-        EncodeMoveUnchecked<SoftStore = S, CType = crate::reference::CRefMut<Self, true>>,
+        EncodeMoveUnchecked<SoftStore = S, CType = crate::reference::CSoftRefMut<Self, true>>,
 {
     type ReferenceStore = S;
     fn encode_borrowed(
