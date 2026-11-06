@@ -45,6 +45,7 @@ disjoint_impls! {
             &'a mut Self: ReprC<CType: Sized>,
             'a: 'itm;
     }
+
     unsafe impl<
         'a,
         T: AbiCompatibleValidate<CType: CType + Sized>

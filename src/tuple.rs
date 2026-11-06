@@ -74,19 +74,19 @@ macro_rules! impl_tuple {
         where
             Self: RustSpec<Layout = rust_spec::Unstable> + ReprC<CType = $ffi_ty<$(<$ty as ReprC>::CType),*>>,
             &'d Self: ReprC<CType = crate::reference::CSoftRef<Self>>,
-            $(&'d $ty: DecodeMove<'d> + ReprC<CType = crate::reference::CSoftRef<$ty>>,)+
+            $(&'d $ty: DecodeMove<'d> + ReprC<CType: crate::reference::SharedRefCarrier<$ty>>,)+
         {
             type Store = crate::sync::RefSizedDecodeStore<Self, ($(<&'d $ty as DecodeMove<'d>>::Store,)*)>;
             unsafe fn decode_ref<'itm: 'd>(source: <&'d Self as ReprC>::CType, store: &'itm mut Self::Store) -> Option<&'d Self> {
                 let source = unsafe { source.into_ref()? };
                 store.decode(|fields| Some(($(
-                    $ty::clone(unsafe { <&'d $ty>::soft_decode(crate::reference::CSoftRef::from_ref(&source.$idx), &mut fields.$idx)? }),
+                    $ty::clone(unsafe { <&'d $ty>::soft_decode(crate::reference::SharedRefCarrier::from_shared_ptr(&source.$idx), &mut fields.$idx)? }),
                 )*)))
             }
             unsafe fn decode_ref_unchecked<'itm: 'd>(source: <&'d Self as ReprC>::CType, store: &'itm mut Self::Store) -> &'d Self {
                 let source = unsafe { source.into_ref().unwrap_unchecked() };
                 store.decode(|fields| Some(($(
-                    $ty::clone(unsafe { <&'d $ty>::soft_decode_unchecked(crate::reference::CSoftRef::from_ref(&source.$idx), &mut fields.$idx) }),
+                    $ty::clone(unsafe { <&'d $ty>::soft_decode_unchecked(crate::reference::SharedRefCarrier::from_shared_ptr(&source.$idx), &mut fields.$idx) }),
                 )*))).expect("unchecked decoding produces a value")
             }
         }
@@ -95,19 +95,19 @@ macro_rules! impl_tuple {
         where
             Self: RustSpec<Layout = rust_spec::Unstable> + ReprC<CType = $ffi_ty<$(<$ty as ReprC>::CType),*>>,
             &'d Self: ReprC<CType = crate::reference::CSoftRef<Self>>,
-            $(&'d $ty: DecodeMove<'d> + ReprC<CType = crate::reference::CSoftRef<$ty>>,)+
+            $(&'d $ty: DecodeMove<'d> + ReprC<CType: crate::reference::SharedRefCarrier<$ty>>,)+
         {
             type Store = crate::sync::RefSizedDecodeStore<Self, ($(<&'d $ty as DecodeMove<'d>>::Store,)*)>;
             unsafe fn decode_ref<'itm: 'd>(source: <&'d Self as ReprC>::CType, store: &'itm mut Self::Store) -> Option<&'d Self> {
                 let source = unsafe { source.into_ref()? };
                 store.decode(|fields| Some($ffi_ty($(
-                    $ty::clone(unsafe { <&'d $ty>::soft_decode(crate::reference::CSoftRef::from_ref(&source.$idx), &mut fields.$idx)? }),
+                    $ty::clone(unsafe { <&'d $ty>::soft_decode(crate::reference::SharedRefCarrier::from_shared_ptr(&source.$idx), &mut fields.$idx)? }),
                 )*)))
             }
             unsafe fn decode_ref_unchecked<'itm: 'd>(source: <&'d Self as ReprC>::CType, store: &'itm mut Self::Store) -> &'d Self {
                 let source = unsafe { source.into_ref().unwrap_unchecked() };
                 store.decode(|fields| Some($ffi_ty($(
-                    $ty::clone(unsafe { <&'d $ty>::soft_decode_unchecked(crate::reference::CSoftRef::from_ref(&source.$idx), &mut fields.$idx) }),
+                    $ty::clone(unsafe { <&'d $ty>::soft_decode_unchecked(crate::reference::SharedRefCarrier::from_shared_ptr(&source.$idx), &mut fields.$idx) }),
                 )*))).expect("unchecked decoding produces a value")
             }
         }
@@ -257,8 +257,9 @@ macro_rules! impl_tuple {
 
         unsafe impl<'a, $($ty: ReprC<CType: Copy> + 'a),*, __Interior: ExclusiveKind> EncodeRef<'a> for ($($ty,)*)
         where
+        &'a Self: crate::ReprC<CType = crate::reference::CSoftRef<Self>>,
             Self: RustSpec<Mutability = Exclusive<__Interior>, Size: crate::Thin>,
-            $(&'a $ty: EncodeMove + ReprC<CType = crate::reference::CSoftRef<$ty>>),*
+            $(&'a $ty: EncodeMove + ReprC<CType: crate::reference::SharedRefCarrier<$ty>>),*
         {
             type Store = crate::sync::RefSizedEncodeStore<Self, ($(<&'a $ty as EncodeMove>::Store,)*)>;
             #[expect(non_snake_case)]
@@ -274,8 +275,9 @@ macro_rules! impl_tuple {
 
         unsafe impl<'a, $($ty: ReprC<CType: Copy> + 'a),*, __Interior: ExclusiveKind> EncodeRef<'a> for $ffi_ty<$($ty),*>
         where
+        &'a Self: crate::ReprC<CType = crate::reference::CSoftRef<Self>>,
             Self: RustSpec<Mutability = Exclusive<__Interior>, Size: crate::Thin>,
-            $(&'a $ty: EncodeMove + ReprC<CType = crate::reference::CSoftRef<$ty>>),*
+            $(&'a $ty: EncodeMove + ReprC<CType: crate::reference::SharedRefCarrier<$ty>>),*
         {
             type Store = crate::sync::RefSizedEncodeStore<Self, ($(<&'a $ty as EncodeMove>::Store,)*)>;
             #[expect(non_snake_case)]
@@ -292,8 +294,9 @@ macro_rules! impl_tuple {
 
         unsafe impl<'a, $($ty: ReprC<CType: Copy> + 'a),*, __Interior: ExclusiveKind> EncodeRefUnchecked<'a> for ($($ty,)*)
         where
+        &'a Self: crate::ReprC<CType = crate::reference::CSoftRef<Self>>,
             Self: RustSpec<Mutability = Exclusive<__Interior>, Size: crate::Thin>,
-            $(&'a $ty: EncodeMoveUnchecked + ReprC<CType = crate::reference::CSoftRef<$ty>>),*
+            $(&'a $ty: EncodeMoveUnchecked + ReprC<CType: crate::reference::SharedRefCarrier<$ty>>),*
         {
             type SoftStore = crate::sync::RefSizedEncodeStore<Self, ($(<&'a $ty as EncodeMoveUnchecked>::SoftStore,)*)>;
             #[expect(non_snake_case)]
@@ -309,8 +312,9 @@ macro_rules! impl_tuple {
 
         unsafe impl<'a, $($ty: ReprC<CType: Copy> + 'a),*, __Interior: ExclusiveKind> EncodeRefUnchecked<'a> for $ffi_ty<$($ty),*>
         where
+        &'a Self: crate::ReprC<CType = crate::reference::CSoftRef<Self>>,
             Self: RustSpec<Mutability = Exclusive<__Interior>, Size: crate::Thin>,
-            $(&'a $ty: EncodeMoveUnchecked + ReprC<CType = crate::reference::CSoftRef<$ty>>),*
+            $(&'a $ty: EncodeMoveUnchecked + ReprC<CType: crate::reference::SharedRefCarrier<$ty>>),*
         {
             type SoftStore = crate::sync::RefSizedEncodeStore<Self, ($(<&'a $ty as EncodeMoveUnchecked>::SoftStore,)*)>;
             #[expect(non_snake_case)]

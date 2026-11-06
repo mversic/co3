@@ -24,11 +24,11 @@ use crate::{
     borrow::{Borrowed, BorrowedDecodeStore, BorrowedEncodeStore, BorrowedOwnerEncode},
     niche::Niche,
     option::COptionSome,
-    reference::{CSoftRefMut, CSoftRef},
+    reference::{CRef, CRefMut, CSoftRefMut, CSoftRef, SharedRefCarrier},
     result::{CResult, CResultErr, CResultOk},
     sync::ArrayStore,
     transmute::{AbiCompatible, AbiCompatibleValidate, InteriorTrap, transmute_owned},
-    wide::{CSoftWideRefMut, CSoftWideRef, PointeeData, Wide, WideData, WideHeader},
+    wide::{CWideRef, CWideRefMut, CSoftWideRefMut, CSoftWideRef, PointeeData, Wide, WideData, WideHeader},
 };
 #[cfg(feature = "alloc")]
 use crate::{
@@ -83,7 +83,7 @@ trait FromSharedRef<C: ?Sized>: CType + Sized {
     /// # Safety
     ///
     /// The thin pointer must satisfy the validity and aliasing requirements of the
-    /// selected carrier. Interior-mutability access must remain synchronized.
+    /// selected carrier, including its tracked lifetime. Interior-mutability access must remain synchronized.
     unsafe fn from_shared_ref(data: *const C) -> Self;
 }
 
@@ -92,7 +92,7 @@ trait FromSharedWideRef<P: Wide<Metadata = usize> + ?Sized>: CType + Sized {
     /// # Safety
     ///
     /// The pointer and length must satisfy the validity and aliasing requirements
-    /// of the selected carrier. Interior-mutability access must remain synchronized.
+    /// of the selected carrier, including its tracked lifetime. Interior-mutability access must remain synchronized.
     unsafe fn from_shared_ref(data: *const PointeeData<P>, metadata: usize) -> Self;
 }
 
@@ -105,6 +105,38 @@ impl<R: ReprC<CType: CType> + ?Sized> FromSharedRef<R::CType> for CSoftRef<R> {
 impl<R: ReprC<CType: CType> + ?Sized> FromSharedRef<R::CType> for CSoftRefMut<R, false> {
     unsafe fn from_shared_ref(data: *const R::CType) -> Self {
         unsafe { Self::from_raw(data.cast_mut()) }
+    }
+}
+
+impl<'a, R: ReprC<CType: CType> + ?Sized> FromSharedRef<R::CType> for CRef<'a, R> {
+    unsafe fn from_shared_ref(data: *const R::CType) -> Self {
+        unsafe { Self::from_raw(data) }
+    }
+}
+
+impl<'a, R: ReprC<CType: CType> + ?Sized> FromSharedRef<R::CType> for CRefMut<'a, R, false> {
+    unsafe fn from_shared_ref(data: *const R::CType) -> Self {
+        unsafe { Self::from_raw(data.cast_mut()) }
+    }
+}
+
+impl<'a, R, P> FromSharedWideRef<P> for CWideRef<'a, R>
+where
+    R: ReprC<CType = P> + ?Sized,
+    P: Wide<Header: WideHeader<Data: CType>, Metadata = usize> + ?Sized,
+{
+    unsafe fn from_shared_ref(data: *const PointeeData<P>, metadata: usize) -> Self {
+        unsafe { Self::from_raw_parts(data, metadata) }
+    }
+}
+
+impl<'a, R, P> FromSharedWideRef<P> for CWideRefMut<'a, R, false>
+where
+    R: ReprC<CType = P> + ?Sized,
+    P: Wide<Header: WideHeader<Data: CType>, Metadata = usize> + ?Sized,
+{
+    unsafe fn from_shared_ref(data: *const PointeeData<P>, metadata: usize) -> Self {
+        unsafe { Self::from_raw_parts_mut(data.cast_mut(), metadata) }
     }
 }
 
@@ -636,7 +668,7 @@ disjoint_impls! {
 
     unsafe impl<R: AbiCompatibleValidate + ?Sized, __Interior: ExclusiveKind> EncodeMove for &R
     where
-        Self: RustSpec<Layout = Stable> + ReprC<CType = CSoftRef<R>>,
+        Self: AbiCompatibleValidate + RustSpec<Layout = Stable> + ReprC<CType: FromSharedRef<<R as ReprC>::CType>>,
         R: RustSpec<Layout = Stable, Size: Thin, Mutability = Exclusive<__Interior>>,
         <R as RustSpec>::Mutability: InteriorTrap<Trap = Robust>,
     {
@@ -691,7 +723,7 @@ disjoint_impls! {
 
     unsafe impl<R: AbiCompatibleValidate + ?Sized, __Trap> EncodeMove for &R
     where
-        Self: RustSpec<Layout = Stable> + ReprC<CType = CSoftRefMut<R, false>>,
+        Self: AbiCompatibleValidate + RustSpec<Layout = Stable> + ReprC<CType: FromSharedRef<<R as ReprC>::CType>>,
         R: RustSpec<Layout = Stable, Size: Thin, Mutability = WithInterior<__Trap>>,
         <R as RustSpec>::Mutability: InteriorTrap<Trap = Robust>,
     {
@@ -1232,7 +1264,7 @@ disjoint_impls! {
 
     unsafe impl<'d, 'r: 'd, R: AbiCompatibleValidate + ?Sized, __Interior: ExclusiveKind> DecodeMove<'d> for &'r R
     where
-        Self: RustSpec<Layout = Stable> + ReprC<CType = CSoftRef<R>>,
+        Self: RustSpec<Layout = Stable> + ReprC<CType: SharedRefCarrier<R>>,
         R: RustSpec<Layout = Stable, Size: Thin, Mutability = Exclusive<__Interior>>,
         <R as RustSpec>::Mutability: InteriorTrap<Trap = Robust>,
     {
@@ -2073,7 +2105,7 @@ disjoint_impls! {
     unsafe impl<'d, T: Clone + ReprC<CType: CType + Sized> + 'd> DecodeMove<'d> for Borrowed<T>
     where
         T: RustSpec<Drop: NeedsDrop>,
-        &'d T: DecodeMove<'d, CType = CSoftRef<T>>,
+        &'d T: DecodeMove<'d, CType: SharedRefCarrier<T>>,
     {
         type Store = BorrowedDecodeStore<T::CType, <&'d T as DecodeMove<'d>>::Store>;
 
@@ -2082,7 +2114,7 @@ disjoint_impls! {
             store: &'itm mut Self::Store,
         ) -> Option<Self> {
             let (carrier, reference) = store.insert(Borrowed::into_inner(source));
-            let carrier = CSoftRef::from_ref(carrier);
+            let carrier = unsafe { SharedRefCarrier::from_shared_ptr(carrier) };
             // SAFETY: The caller supplies a valid borrowed carrier; storage survives for 'd.
             let value = unsafe { <&'d T>::soft_decode(carrier, reference)? };
             Some(Borrowed::new(T::clone(value)))
@@ -2093,7 +2125,7 @@ disjoint_impls! {
             store: &'itm mut Self::Store,
         ) -> Self {
             let (carrier, reference) = store.insert(Borrowed::into_inner(source));
-            let carrier = CSoftRef::from_ref(carrier);
+            let carrier = unsafe { SharedRefCarrier::from_shared_ptr(carrier) };
             // SAFETY: The unchecked contract guarantees validity; the carrier is retained.
             let value = unsafe { <&'d T>::soft_decode_unchecked(carrier, reference) };
             Borrowed::new(T::clone(value))
@@ -2464,12 +2496,12 @@ unsafe fn decode_vec_elements_unchecked<'d, 'itm: 'd, R: DecodeMove<'d>>(
 /// Copy an exclusively borrowed field representation into an aggregate's temporary value.
 /// Its backing storage remains borrowed and must be kept alive by the aggregate store.
 #[doc(hidden)]
-pub fn encode_ref_field<'a, R: ReprC<CType: Copy> + 'a>(
+pub(crate) fn encode_ref_field<'a, R: ReprC<CType: Copy> + 'a>(
     value: &'a R,
     store: &mut <&'a R as EncodeMove>::Store,
 ) -> R::CType
 where
-    &'a R: EncodeMove<CType = CSoftRef<R>>,
+    &'a R: EncodeMove<CType: crate::reference::SharedRefCarrier<R>>,
 {
     let encoded = value.soft_encode(store);
     // CSoftRef guarantees shared access to initialized storage, and Copy permits
@@ -2482,12 +2514,12 @@ where
 /// # Safety
 /// The caller must uphold the unchecked encoding contract for the field.
 #[doc(hidden)]
-pub unsafe fn encode_ref_field_unchecked<'a, R: ReprC<CType: Copy> + 'a>(
+pub(crate) unsafe fn encode_ref_field_unchecked<'a, R: ReprC<CType: Copy> + 'a>(
     value: &'a R,
     store: &mut <&'a R as EncodeMoveUnchecked>::SoftStore,
 ) -> R::CType
 where
-    &'a R: EncodeMoveUnchecked<CType = CSoftRef<R>>,
+    &'a R: EncodeMoveUnchecked<CType: crate::reference::SharedRefCarrier<R>>,
 {
     let encoded = unsafe { value.soft_encode_unchecked(store) };
     unsafe { encoded.as_ptr().read() }
@@ -2546,4 +2578,30 @@ unsafe fn decode_unchecked_array_elements<'d, 'itm: 'd, R: DecodeMove<'d>, const
 ) -> [R; N] {
     let mut stores = store.0.iter_mut();
     source.map(|item| unsafe { R::soft_decode_unchecked(item, stores.next().unwrap()) })
+}
+
+#[cfg(test)]
+mod shared_carrier_tests {
+    use super::{CRef, CRefMut, CWideRef, CWideRefMut, FromSharedRef, FromSharedWideRef};
+    use core::cell::UnsafeCell;
+
+    #[test]
+    fn constructs_lifetime_bearing_shared_carriers() {
+        let value = 7_u8;
+        let carrier: CRef<'_, u8> = unsafe { FromSharedRef::from_shared_ref(&value) };
+        assert_eq!(unsafe { carrier.into_ref() }, Some(&value));
+        let cell = UnsafeCell::new(5_u8);
+        let carrier: CRefMut<'_, UnsafeCell<u8>, false> =
+            unsafe { FromSharedRef::from_shared_ref(&cell) };
+        assert_eq!(carrier.as_ptr(), core::ptr::from_ref(&cell).cast_mut());
+        let values = [1_u8, 2, 3];
+        let carrier: CWideRef<'_, [u8]> =
+            unsafe { FromSharedWideRef::from_shared_ref(values.as_ptr(), values.len()) };
+        assert_eq!(unsafe { carrier.into_ref() }, Some(&values[..]));
+        let cells = [UnsafeCell::new(1_u8), UnsafeCell::new(2)];
+        let carrier: CWideRefMut<'_, [UnsafeCell<u8>], false> =
+            unsafe { FromSharedWideRef::from_shared_ref(cells.as_ptr(), cells.len()) };
+        assert_eq!(carrier.as_ptr(), cells.as_ptr().cast_mut());
+        assert_eq!(carrier.metadata(), cells.len());
+    }
 }

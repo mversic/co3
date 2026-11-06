@@ -11,9 +11,9 @@ use crate::{
             gen_item_view, gen_view_ctype_name, gen_view_owner_name,
         },
         ctype::{
-            TailClass, UnsizedTail, c_fn_last_field_bounds, classify_tail, gen_ctype_name,
-            gen_extern_c_bounds_for_ctype, gen_fieldless_enum_ctype, gen_identity_repr_c_impls,
-            gen_item_ctype, gen_variant_struct_name,
+            c_fn_last_field_bounds, classify_tail, gen_ctype_name, gen_extern_c_bounds_for_ctype,
+            gen_fieldless_enum_ctype, gen_identity_repr_c_impls, gen_item_ctype,
+            gen_variant_struct_name,
         },
         enum_tag_type, enum_variant_tag_exprs, generic_param_idents, infer_repr,
         is_exhaustive_enum, is_parametrized, is_phantom_data, is_transparent_enum_repr,
@@ -269,14 +269,7 @@ fn gen_item_codec_impls(
     };
     let owned = generate(EncodeMode::Owned);
     let shared = generate(EncodeMode::Ref);
-    // Only unresolved tails can have competing thin and wide implementations.
-    let dispatch = !is_view
-        && !attrs.is_wide_data
-        && matches!(&input.data,
-        syn::Data::Struct(data) if data.fields.iter().next_back().is_some_and(|field|
-            matches!(classify_tail(&field.ty, &input.generics),
-                TailClass::Unknown | TailClass::Unsized(UnsizedTail::Unknown))));
-    let references = group_aggregate_ref_impls(shared, dispatch);
+    let references = group_aggregate_ref_impls(shared, true);
     let stable_mut = super::reference::gen_stable_direct_mut_impls(input);
     quote! { #owned #references #stable_mut }
 }
@@ -484,7 +477,7 @@ fn gen_enum_codec_impls(
             let encode_validation = gen_encode_is_valid_assert(&variant.fields, custom_is_valid);
             let variant_tag = match repr {
                 None | Some(ReprKind::Primitive(_)) => {
-                    Some(quote!(#tag_value as #tag_type))
+                    Some(quote!(co3::encode(#tag_value as #tag_type)))
                 }
                 Some(ReprKind::Transparent | ReprKind::C(Some(_))) => None,
                 Some(ReprKind::C(None)) => unreachable!(),
@@ -1416,6 +1409,44 @@ pub(super) fn derive_fieldless_enum(
     }
     let (_, _, marker_where_clause) = marker_generics.split_for_impl();
 
+    let predicates = input
+        .generics
+        .where_clause
+        .as_ref()
+        .map(|clause| &clause.predicates);
+    let shared_ref_impls = [true, false].into_iter().map(|unchecked| {
+        let (trait_name, _, store_name, method, _) = encoder_names(false, unchecked);
+        let unsafe_fn = unchecked.then(|| quote!(unsafe));
+        quote! {
+            unsafe impl #ref_impl_generics #trait_name<'_ršč> for #name #ty_generics
+            where
+                #drop_speculative Self: co3::ReprC<CType = #ctype_ty>
+                    + co3::rust_spec::RustSpec<Layout = co3::rust_spec::Unstable>,
+                &'_ršč Self: co3::ReprC<CType = co3::reference::CSoftRef<Self>>,
+                #predicates
+            {
+                type #store_name = co3::sync::RefSizedEncodeStore<Self, ()>;
+                #unsafe_fn fn #method<'itm>(&'_ršč self, store: &'itm mut Self::#store_name) -> <&'_ršč Self as co3::ReprC>::CType where '_ršč: 'itm {
+                    store.encode(|_| { #encode_body })
+                }
+            }
+            unsafe impl #ref_impl_generics #trait_name<'_ršč> for #name #ty_generics
+            where
+                #drop_speculative Self: co3::ReprC<CType: co3::CType + Sized>
+                    + co3::transmute::AbiCompatibleValidate
+                    + co3::rust_spec::RustSpec<Layout = co3::rust_spec::Stable> + '_ršč,
+                &'_ršč Self: co3::ReprC<CType = co3::reference::CRef<'_ršč, Self>>,
+                #predicates
+            {
+                type #store_name = ();
+                #unsafe_fn fn #method<'itm>(&'_ršč self, _: &'itm mut ()) -> <&'_ršč Self as co3::ReprC>::CType where '_ršč: 'itm {
+                    unsafe { co3::reference::CRef::from_raw(core::ptr::from_ref(self).cast()) }
+                }
+            }
+        }
+    });
+    let shared_ref_impls = group_aggregate_ref_impls(quote!(#(#shared_ref_impls)*), false);
+
     quote! {
         #tag_const_impl
         #ctype_def
@@ -1426,18 +1457,7 @@ pub(super) fn derive_fieldless_enum(
 
         #repr_c_impl
         #stable_mut_impls
-        unsafe impl #ref_impl_generics co3::stored::EncodeRefUnchecked<'_ršč> for #name #ty_generics #where_clause {
-            type SoftStore = co3::sync::RefSizedEncodeStore<Self, ()>;
-            unsafe fn encode_ref_unchecked<'itm>(&'_ršč self, store: &'itm mut Self::SoftStore) -> <&'_ršč Self as co3::ReprC>::CType  where '_ršč: 'itm {
-                store.encode(|_| { #encode_body })
-            }
-        }
-        unsafe impl #ref_impl_generics co3::stored::EncodeRef<'_ršč> for #name #ty_generics #where_clause {
-            type Store = co3::sync::RefSizedEncodeStore<Self, ()>;
-            fn encode_ref<'itm>(&'_ršč self, store: &'itm mut Self::Store) -> <&'_ršč Self as co3::ReprC>::CType  where '_ršč: 'itm {
-                store.encode(|_| { #encode_body })
-            }
-        }
+        #shared_ref_impls
 
         unsafe impl #impl_generics co3::stored::EncodeMove for #name #ty_generics #where_clause {
             type Store = ();
@@ -1540,8 +1560,8 @@ fn gen_record_conversion(
 ) -> (TokenStream, TokenStream, TokenStream, TokenStream) {
     let (encode_fn, direct_fn) = match mode {
         EncodeMode::Ref => (
-            quote!(co3::stored::encode_ref_field),
-            quote!(co3::stored::encode_ref_field_unchecked),
+            quote!(__Co3EncodeField::encode_field),
+            quote!(__Co3EncodeFieldUnchecked::encode_field_unchecked),
         ),
         EncodeMode::Owned => (
             quote!(co3::stored::EncodeMove::soft_encode),
@@ -1554,8 +1574,13 @@ fn gen_record_conversion(
     let encoded = field_vars
         .iter()
         .zip(&store_vars)
-        .map(|(field, store)| {
-            let value = quote!(#encode_fn(#field, #store));
+        .zip(&field_types)
+        .map(|((field, store), ty)| {
+            let value = if mode == EncodeMode::Ref && is_phantom_data(ty) {
+                quote!(core::marker::PhantomData)
+            } else {
+                quote!(#encode_fn(#field, #store))
+            };
             if wrap_fields {
                 quote!(core::mem::MaybeUninit::new(#value))
             } else {
@@ -1566,8 +1591,13 @@ fn gen_record_conversion(
     let direct_encoded = field_vars
         .iter()
         .zip(&store_vars)
-        .map(|(field, store)| {
-            let value = quote!(unsafe { #direct_fn(#field, #store) });
+        .zip(&field_types)
+        .map(|((field, store), ty)| {
+            let value = if mode == EncodeMode::Ref && is_phantom_data(ty) {
+                quote!(core::marker::PhantomData)
+            } else {
+                quote!(unsafe { #direct_fn(#field, #store) })
+            };
             if wrap_fields {
                 quote!(core::mem::MaybeUninit::new(#value))
             } else {
@@ -1769,31 +1799,29 @@ fn gen_codec_impls(
         let (ref_impl_generics, _, _) = ref_generics.split_for_impl();
         let speculative = speculative_marker(generics.params.is_empty());
         let implementations = [true, false].into_iter().map(|unchecked| {
-            let (trait_name, move_trait, store_name, method, _) = encoder_names(false, unchecked);
+            let (trait_name, _, store_name, method, _) = encoder_names(false, unchecked);
             let unsafe_fn = unchecked.then(|| quote!(unsafe));
             let (field_store, encode_body) = if unchecked {
                 (&direct_store, &direct_encode_impl)
             } else {
                 (&encode_store, &encode_impl)
             };
-            let field_bounds = fields.iter().map(|ty| {
+            let field_trait = if unchecked { quote!(__Co3EncodeFieldUnchecked) } else { quote!(__Co3EncodeField) };
+            let field_bounds = fields.iter().filter(|ty| !is_phantom_data(ty)).map(|ty| {
                 let speculative = speculative_marker(!is_parametrized(ty, generics));
                 let repr_bound = if is_phantom_data(ty) {
                     quote!(co3::ReprC<CType = #ty>)
                 } else {
-                    quote!(co3::ReprC<CType: Copy>)
+                    quote!(co3::ReprC<CType: co3::CType + Copy>)
                 };
-                quote! {
-                    #speculative #ty: #repr_bound + '_ršč,
-                    &'_ršč #ty: #move_trait + co3::ReprC<CType = co3::reference::CSoftRef<#ty>>
-                }
+                quote!(#speculative #ty: #repr_bound + #field_trait<'_ršč>)
             });
             quote! {
                 unsafe impl #ref_impl_generics #trait_name<'_ršč> for #name #ty_generics
                 where
                     #sized_bound
                     #speculative Self: co3::ReprC<CType = #ctype_name #ctype_ty_generics>
-                        + co3::rust_spec::RustSpec<Size: Thin> + '_ršč,
+                        + co3::rust_spec::RustSpec<Layout = co3::rust_spec::Unstable, Size: Thin> + '_ršč,
                     &'_ršč Self: co3::ReprC<CType = co3::reference::CSoftRef<Self>>,
 
                     #(#repr_c_bounds,)*
@@ -1804,6 +1832,21 @@ fn gen_codec_impls(
                     type #store_name = co3::sync::RefSizedEncodeStore<Self, #field_store>;
                     #unsafe_fn fn #method<'itm>(&'_ršč self, store: &'itm mut Self::#store_name) -> <&'_ršč Self as co3::ReprC>::CType where '_ršč: 'itm {
                         store.encode(|store| { #encode_body })
+                    }
+                }
+                unsafe impl #ref_impl_generics #trait_name<'_ršč> for #name #ty_generics
+                where
+                    #sized_bound
+                    #speculative Self: co3::ReprC<CType: co3::CType + Sized>
+                        + co3::transmute::AbiCompatibleValidate
+                        + co3::rust_spec::RustSpec<Layout = co3::rust_spec::Stable, Size: Thin>
+                        + Sized + '_ršč,
+                    &'_ršč Self: co3::ReprC<CType = co3::reference::CRef<'_ršč, Self>>,
+                    #predicates
+                {
+                    type #store_name = ();
+                    #unsafe_fn fn #method<'itm>(&'_ršč self, _: &'itm mut ()) -> <&'_ršč Self as co3::ReprC>::CType where '_ršč: 'itm {
+                        unsafe { co3::reference::CRef::from_raw(core::ptr::from_ref(self).cast()) }
                     }
                 }
             }
@@ -1942,8 +1985,10 @@ fn gen_field_decode_bounds<'a>(
 
 fn encode_store_type(fields: &syn::Fields, mode: EncodeMode) -> TokenStream {
     let fields = fields.iter().map(|syn::Field { ty, .. }| {
-        if mode == EncodeMode::Ref {
-            quote! { <&'_ršč #ty as co3::stored::EncodeMove>::Store }
+        if mode == EncodeMode::Ref && is_phantom_data(ty) {
+            quote!(())
+        } else if mode == EncodeMode::Ref {
+            quote! { <#ty as __Co3EncodeField<'_ršč>>::Store }
         } else {
             quote! { <#ty as co3::stored::EncodeMove>::Store }
         }
@@ -1954,8 +1999,10 @@ fn encode_store_type(fields: &syn::Fields, mode: EncodeMode) -> TokenStream {
 
 fn direct_store_type(fields: &syn::Fields, mode: EncodeMode) -> TokenStream {
     let fields = fields.iter().map(|syn::Field { ty, .. }| {
-        if mode == EncodeMode::Ref {
-            quote! { <&'_ršč #ty as co3::stored::EncodeMoveUnchecked>::SoftStore }
+        if mode == EncodeMode::Ref && is_phantom_data(ty) {
+            quote!(())
+        } else if mode == EncodeMode::Ref {
+            quote! { <#ty as __Co3EncodeFieldUnchecked<'_ršč>>::SoftStore }
         } else {
             quote! { <#ty as co3::stored::EncodeMoveUnchecked>::SoftStore }
         }

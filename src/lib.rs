@@ -588,7 +588,7 @@ use crate::ffi::NulTerminatedBuf;
 use crate::{boxed::CBox, wide::CWideBox};
 use crate::{
     niche::Niche,
-    reference::{CSoftRefMut, CSoftRef},
+    reference::{CRef, CSoftRefMut, CSoftRef},
     stored::{DecodeMove, EmptyStore, EncodeMove, EncodeMoveUnchecked, Store},
     wide::{CSoftWideRefMut, CSoftWideRef},
     wide::{Wide, WideHeader},
@@ -823,9 +823,15 @@ disjoint_impls! {
         type CType: CType + ?Sized;
     }
 
+    impl<'a, R: ReprC + ?Sized, __Interior: ExclusiveKind> ReprC for &'a R
+    where
+        R: RustSpec<Layout = rust_spec::Stable, Size: Thin, Mutability = Exclusive<__Interior>>,
+    {
+        type CType = CRef<'a, R>;
+    }
     impl<R: ReprC + ?Sized, __Interior: ExclusiveKind> ReprC for &R
     where
-        R: RustSpec<Size: Thin, Mutability = Exclusive<__Interior>>,
+        R: RustSpec<Layout = rust_spec::Unstable, Size: Thin, Mutability = Exclusive<__Interior>>,
     {
         type CType = CSoftRef<R>;
     }

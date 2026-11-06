@@ -219,8 +219,9 @@ unsafe impl<T: EncodeMove> EncodeMove for Option<T> {
 unsafe impl<'a, T: ReprC<CType: Copy> + 'a, __Interior: ExclusiveKind> EncodeRefUnchecked<'a>
     for Option<T>
 where
+        &'a Self: crate::ReprC<CType = crate::reference::CSoftRef<Self>>,
     Self: RustSpec<Mutability = Exclusive<__Interior>, Size: Thin> + 'a,
-    &'a T: EncodeMoveUnchecked<CType = crate::reference::CSoftRef<T>>,
+    &'a T: EncodeMoveUnchecked<CType: crate::reference::SharedRefCarrier<T>>,
 {
     type SoftStore =
         RefSizedEncodeStore<Self, RustOption<<&'a T as EncodeMoveUnchecked>::SoftStore>>;
@@ -246,8 +247,9 @@ where
 
 unsafe impl<'a, T: ReprC<CType: Copy> + 'a, __Interior: ExclusiveKind> EncodeRef<'a> for Option<T>
 where
+        &'a Self: crate::ReprC<CType = crate::reference::CSoftRef<Self>>,
     Self: RustSpec<Mutability = Exclusive<__Interior>, Size: Thin> + 'a,
-    &'a T: EncodeMove<CType = crate::reference::CSoftRef<T>>,
+    &'a T: EncodeMove<CType: crate::reference::SharedRefCarrier<T>>,
 {
     type Store = RefSizedEncodeStore<Self, RustOption<<&'a T as EncodeMove>::Store>>;
 

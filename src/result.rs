@@ -12,7 +12,6 @@ use crate::{
     CFnArg, CFnReturn, CType, Decode, Encode, EncodeUnchecked, ReprC, Thin,
     borrow::Borrow,
     niche::Niche,
-    reference::CSoftRef,
     stored::{
         DecodeMove, EmptyStore, EncodeMove, EncodeMoveUnchecked, EncodeRef, EncodeRefUnchecked,
     },
@@ -269,9 +268,10 @@ unsafe impl<T: EncodeMove<CType: Copy>, E: EncodeMove<CType: Copy>> EncodeMove f
 unsafe impl<'a, T: ReprC<CType: Copy> + 'a, E: ReprC<CType: Copy> + 'a, __Interior: ExclusiveKind>
     EncodeRefUnchecked<'a> for Result<T, E>
 where
+        &'a Self: crate::ReprC<CType = crate::reference::CSoftRef<Self>>,
     Self: RustSpec<Mutability = Exclusive<__Interior>, Size: Thin> + 'a,
-    &'a T: EncodeMoveUnchecked<CType = CSoftRef<T>>,
-    &'a E: EncodeMoveUnchecked<CType = CSoftRef<E>>,
+    &'a T: EncodeMoveUnchecked<CType: crate::reference::SharedRefCarrier<T>>,
+    &'a E: EncodeMoveUnchecked<CType: crate::reference::SharedRefCarrier<E>>,
 {
     type SoftStore = RefSizedEncodeStore<
         Self,
@@ -310,9 +310,10 @@ where
 unsafe impl<'a, T: ReprC<CType: Copy> + 'a, E: ReprC<CType: Copy> + 'a, __Interior: ExclusiveKind>
     EncodeRef<'a> for Result<T, E>
 where
+        &'a Self: crate::ReprC<CType = crate::reference::CSoftRef<Self>>,
     Self: RustSpec<Mutability = Exclusive<__Interior>, Size: Thin> + 'a,
-    &'a T: EncodeMove<CType = CSoftRef<T>>,
-    &'a E: EncodeMove<CType = CSoftRef<E>>,
+    &'a T: EncodeMove<CType: crate::reference::SharedRefCarrier<T>>,
+    &'a E: EncodeMove<CType: crate::reference::SharedRefCarrier<E>>,
 {
     type Store = RefSizedEncodeStore<
         Self,

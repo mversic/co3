@@ -497,7 +497,7 @@ mod tests {
         Encode,
         cmp::COrdering,
         option::COption,
-        reference::{CSoftRefMut, CSoftRef},
+        reference::{CRef, CSoftRefMut},
         wide::{CSoftWideRefMut, CSoftWideRef},
     };
     #[cfg(feature = "alloc")]
@@ -626,7 +626,7 @@ mod tests {
             CType,
         );
         assert_impl_all!(&u8:
-            Niche<CType = CSoftRef<u8>>,
+            Niche<CType = CRef<'static, u8>>,
             Decode<'static>,
             Encode,
         );

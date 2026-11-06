@@ -16,7 +16,7 @@ use crate::{
     CType, NeedsDrop, ReprC,
     option::{COption, COptionSome},
     primitives::CBool,
-    reference::{CSoftRefMut, CSoftRef},
+    reference::{CRef, CSoftRefMut, CSoftRef},
     result::CResult,
     tuple::Tuple2,
     wide::{CSoftWideRefMut, CSoftWideRef},
@@ -42,6 +42,16 @@ disjoint_impls! {
         fn is_niche(value: &Self::CType) -> bool;
     }
 
+    impl<'a, R: ReprC<CType: CType + Sized> + ?Sized> Niche for &'a R
+    where
+        Self: ReprC<CType = CRef<'a, R>>,
+    {
+        const NICHE: Self::CType = CRef::null();
+
+        fn is_niche(value: &Self::CType) -> bool {
+            value.as_ptr().is_null()
+        }
+    }
     impl<R: ReprC<CType: CType + Sized> + ?Sized> Niche for &R
     where
         Self: ReprC<CType = CSoftRef<R>>,
