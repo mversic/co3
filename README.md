@@ -4,56 +4,38 @@
 [<img alt="docs.rs" src="https://img.shields.io/badge/docs.rs-co3-66c2a5?style=for-the-badge&labelColor=555555&logo=docs.rs" height="20">](https://docs.rs/co3)
 [<img alt="CI" src="https://img.shields.io/github/actions/workflow/status/mversic/co3/main.yaml?style=for-the-badge&label=CI" height="20">](https://github.com/mversic/co3/actions/workflows/main.yaml)
 
-_Safely_ export and/or import FFI bindings:
+Cross-language Rust interop through a stable ABI
 
 1. **Native-Rust ergonomics**
+   - Ergonomics of APIs and generated wrappers are idiomatic to Rust users.
+   - Language boundary mechanics follow the zero-cost abstraction principle.
+   - **No custom conversion code** should be required beyond `CO3` declarations.
+   - High-level Rust features, such as **generics, and custom DSTs, are supported**.
 
-   - ergonomics of APIs and generated wrappers are idiomatic to Rust users.
-   - FFI boundary mechanics are zero-cost abstracted yet remain configurable.
-   - **Export declarations are completely interchangeable with import declarations**
-
-2. **Soundness-first FFI interoperability**
-
-   - **Soundness is never relaxed** for performance or memory footprint in the default configuration.
-   - if preserving soundness requires additional validation, temporary storage, or cloning, that cost is accepted.
-   - only explicit opt-in modes prioritize performance by explicitly shifting soundness responsibility to the user.
-
-## Why Bother?
-
-Ain't nobody got time for this, just give me a tldr:
-
-1. CO3 is **ergonomic and expressive yet safe**
-
-   - which crate allows using **native Rust types**? Those claiming so still require wrappers
-   - while many claim expressivity, have you ever seen a **runtime tagged-dispatch** in Rust?
-
-2. If you're exporting FFI from Rust, `CO3` **makes it a breeze**
-
-   - `CO3` aims to make the complex process of FFI generation completely painless
-   - literally, just write down the export declarations as if writing native `Rust`
-
-3. Although recent, `CO3` is already **feature rich and well tested**
-
-   - the initial release of `CO3` required it reached feature parity with the ecosystem
-   - which crate allows you to use **generics in FFI or custom DSTs**? `CO3` does
+2. **Soundness-first design**
+   - By default, **soundness is never relaxed** for performance or memory usage.
+   - If preserving soundness requires validation or cloning, that cost is accepted.
+   - Explicit opt-in performace modes delegate soundness responsibility to the user.
+   - Control over **ownership transfer** across the FFI boundary **is made explicit**.
 
 Check the [release article](https://mversic.github.io/co3/) for the motivation behind `CO3` and in-depth analysis of its features.
 
 ## ABI Stability
 
-Although this crate is pre-1.0.0, its **ABI is considered stable**. This does not mean the API is stable. In practice:
+Although this crate is pre-1.0.0, its **ABI is considered stable**. This does not imply the API (aside from declaration syntax) of this crate is stable. In practice:
 
 - **ABI stability** means FFI contracts (symbol names, calling conventions, and data layout expectations) are intended to remain compatible across updates.
 - **API instability** means Rust-facing items (fns, trait shapes, modules, and type signatures) may still change and require source updates when upgrading.
 
 In other words, external binaries that integrate through the defined ABI should keep working, while Rust code using this crate directly may need refactoring between releases.
 
-## Example
+## Exports
 
-Using `CO3` is super-duper **simple yet highly expressive**. In a nutshell:
-
-- mark Rust types that cross the boundary with `#[derive(ReprC)]`
+Typically, the crate is developed without concern for FFI, with export declarations added separately when ready. To expose its API:
+- **mark Rust types** that cross the boundary with `#[derive(ReprC)]`
 - describe the boundary API with `ffi!` (fns, impls and types)
+
+_Opaque types_ allow implementation details to remain on the exporting side, as with `Camera` below:
 
 ```rust
 use co3::{ffi, rust_spec::RustSpec, ReprC};
@@ -65,6 +47,8 @@ struct Vec2 {
     y: f32,
 }
 
+#[derive(RustSpec)]
+#[rust_spec(opaque)]
 struct Camera {
     position: Vec2,
 }
@@ -112,9 +96,19 @@ ffi! {
 }
 ```
 
-Note that type deriving `ReprC`, although recommended, **is not required to have a stable representation**.
+Types deriving `ReprC` are **not required to have a stable representation**, but a stable representation enables optimized conversions.
 
-### Tagged Dispatch
+## Imports
+
+**Export declarations are fully interchangeable as import declarations**, providing the Rust client API alongside the `cdylib`:
+* `CO3` strives to **keep the API uniform** whether crate is linked as an `rlib` or a `cdylib`.
+* Switch between static and dynamic linking should require as few changes as possible.
+
+In the previous example just change `#![unsafe(export("C"))]` to `#![unsafe(extern("C"))]` to use the declarations as imports. As simple as that.
+
+## Tagged Dispatch
+
+Beyond native Rust features, `CO3` provides **tagged dispatch** to customize the boundary ABI.
 
 It is common in FFI for several concrete types to share one C representation. Think of FFI functions
 like [SQLAllocHandle](https://learn.microsoft.com/en-us/sql/odbc/reference/syntax/sqlallochandle-function)
@@ -172,42 +166,41 @@ To see what `CO3` is capable of and what using it looks like in practice, check 
 
 ## Related Projects
 
-### [cxx](https://github.com/dtolnay/cxx)
+### ABI-stable Rust-to-Rust interop
 
-This crate generates a `C++` API and bridge code, with **compile-time checks** for supported declarations against `C++` headers.
+* [abi_stable](https://docs.rs/abi_stable/latest/abi_stable/)
+* [stabby](https://github.com/ZettaScaleLabs/stabby)
 
-If your FFI is `Rust <-> C++`, using this crate is preferable because it gives **deep cross-language integration**. As always, considering the author, this is a very well made crate. I think both crates could learn from each other.
+Define stable interfaces between separately compiled Rust components, with ABI-stable types, dynamic library loading, and compatibility checks.
 
-### [bindgen](https://github.com/rust-lang/rust-bindgen)
+### Cross-language interface generators
 
-This crate generates **`Rust` bindings from `C` headers**.
+* [safer_ffi](https://github.com/getditto/safer_ffi)
+* [Diplomat](https://github.com/rust-diplomat/diplomat)
+* [Interoptopus](https://github.com/ralfbiedert/interoptopus)
+* [BoltFFI](https://github.com/boltffi/boltffi)
+* [UniFFI](https://github.com/mozilla/uniffi-rs)
 
-I would generally not recommend using this approach because **`C` APIs communicate many invariants through informal ways** that automated translation into `Rust` bindings cannot capture. Likewise, you are also very likely to find yourself writing wrappers around the generated code in Rust anyways, which makes me question what the whole point of automatic generation of bindings is.
+These projects primarily **expose Rust-defined interfaces to other languages**.
 
-Because `Rust`'s type system is much more expressive than `C`'s, you might consider it better to **write an authoritative layer in `Rust`**.
+`Interoptopus` also provides plugin imports with dynamic library loading and interface compatibility checks, generating Rust wrappers for foreign implementations of a declared interface, though this feature remains experimental.
 
-### [cbindgen](https://github.com/mozilla/cbindgen)
+`CO3` treats imports as interchangeable with exports, supporting both existing foreign APIs and Rust-defined interfaces.
 
-Use this crate to build **`C` headers from `CO3` export declarations**.
+### Importing C APIs into Rust
 
-### [cheadergen](https://docs.rs/cheadergen/latest/cheadergen/)
+* [bindgen](https://github.com/rust-lang/rust-bindgen)
 
-The same as `cbindgen` but newer. **I'd prefer it** if it were at the same feature parity level.
+Generates **`Rust` bindings from `C` headers**.
 
-### [safer_ffi](https://github.com/getditto/safer_ffi)
+Generated bindings still require manually written wrappers to express ownership, lifetimes, and other invariants that C headers leave implicit.
+Considering this, the effort of using `bindgen` can be **comparable to writing import declarations directly with `CO3`**.
 
-While I appreciate the work done, **this crate looks more like an attempt than a real solution**. Given the existence of `CO3`, aside from being a more mature project, I cannot find a reason to recommend using this crate. The API is too complicated while expressivity just isn't there.
+### Generating C headers
 
-If there is anything found missing in `CO3` that `safer-ffi` can do, report it and **the gap should be closed immediately**.
+* [cbindgen](https://github.com/mozilla/cbindgen)
+* [cheadergen](https://docs.rs/cheadergen/latest/cheadergen/)
 
-### [Diplomat](https://github.com/rust-diplomat/diplomat)
+Generate **C headers from Rust code**.
 
-Generates not only C API glue for your `Rust` exports but also **bindings for supported target languages**.
-
-I don't think `CO3` would aim to match that functionality, but I do think **they'd benefit a lot from building on top of `CO3`**.
-
-### [Interoptopus](https://github.com/ralfbiedert/interoptopus)
-
-Quite similar to `Diplomat` in scope.
-
-Likewise, I believe this crate could build on top of `CO3`.
+With some adjustments, they **could be used to generate headers from `CO3`** export declarations.
