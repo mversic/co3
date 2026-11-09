@@ -3,3 +3,4 @@
 
 - all pointer reads should be protected by Copy because to prevent reading opaque types with &mut or a custom Drop.
 - the contents of a `&UnsafeCell<T>` must never be read (including through `Cell`) during conversion or validation.
+- speculative bounds are emitted only for concrete types and usually only for the last inner field of a type

@@ -40,7 +40,7 @@ help: the trait `Wide` is not implemented for `NonTransparentDst`
  7 | struct NonTransparentDst(Bytes);
    | ^^^^^^^^^^^^^^^^^^^^^^^^
    = help: the following other types implement trait `Wide`:
-             Cell<T>
+             Cell<R>
              ManuallyDrop<R>
              Tuple10<A, B, C, D, E, F, G, H, I, J>
              Tuple11<A, B, C, D, E, F, G, H, I, J, K>
@@ -67,7 +67,7 @@ help: the trait `Wide` is not implemented for `GenericNonTransparentDst<[u8]>`
 11 | struct GenericNonTransparentDst<T: ?Sized>(T);
    | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
    = help: the following other types implement trait `Wide`:
-             Cell<T>
+             Cell<R>
              ManuallyDrop<R>
              Tuple10<A, B, C, D, E, F, G, H, I, J>
              Tuple11<A, B, C, D, E, F, G, H, I, J, K>

@@ -122,6 +122,7 @@ struct DerivedMutable {
 struct GenericMutable<T>(T, bool);
 
 #[derive(RustSpec, co3::ReprC)]
+#[rust_spec(non_robust)]
 #[repr_c(is_valid = |value| *value != 0)]
 struct ValidatedMutable(u32);
 

@@ -510,7 +510,7 @@ mod tests {
     use crate::{
         CFnArg, CFnReturn, Decode, Encode,
         option::COption,
-        reference::{CSoftRefMut, CSoftRef},
+        reference::{CRef, CSoftRefMut},
         wide::{CSoftWideRefMut, CSoftWideRef},
     };
     #[cfg(feature = "alloc")]
@@ -604,7 +604,7 @@ mod tests {
         );
         assert_impl_all!(&ManuallyDrop<u8>:
             RustSpec<Niche = WithNiche<rust_spec::Stable>>,
-            Niche<CType = CSoftRef<ManuallyDrop<u8>>>,
+            Niche<CType = CRef<'static, ManuallyDrop<u8>>>,
             Decode<'static>,
             Encode,
         );
@@ -670,7 +670,7 @@ mod tests {
             Encode,
         );
         assert_impl_all!(&ManuallyDrop<Box<u8>>:
-            Niche<CType = CSoftRef<ManuallyDrop<Box<u8>>>>,
+            Niche<CType = CRef<'static, ManuallyDrop<Box<u8>>>>,
         );
         assert_impl_all!(&mut ManuallyDrop<Box<u8>>:
             Niche<CType = CSoftRefMut<ManuallyDrop<Box<u8>>, true>>,

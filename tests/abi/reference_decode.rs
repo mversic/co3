@@ -1,7 +1,7 @@
 use co3::{
     ReprC,
     borrow::Borrow,
-    reference::{CSoftRefMut, CSoftRef},
+    reference::{CRef, CSoftRefMut, CSoftRef},
     rust_spec::RustSpec,
     stored::{DecodeMove, DecodeMut, DecodeRef, Store},
 };
@@ -144,7 +144,7 @@ fn stable_references_keep_the_direct_decoding_path() {
     let source = 7u8;
     let mut store = ();
     let value =
-        unsafe { co3::soft_decode::<&u8>(CSoftRef::from_ref(&source), &mut store) }.unwrap();
+        unsafe { co3::soft_decode::<&u8>(CRef::from_ref(&source), &mut store) }.unwrap();
     assert!(core::ptr::eq(value, &source));
     let mut source = 7u8;
     let original = core::ptr::from_mut(&mut source);
@@ -694,6 +694,7 @@ fn derived_shared_decoders_validate_active_fields() {
     }
 
     #[derive(RustSpec, co3::ReprC)]
+    #[rust_spec(non_robust)]
     #[repr_c(is_valid = |value| *value != 0)]
     struct NonZero(u8);
     let carrier = CNonZero(0);

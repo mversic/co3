@@ -397,6 +397,7 @@ fn boxed_borrowed_fields_do_not_require_static_lifetimes() {
 }
 
 #[derive(RustSpec, co3::ReprC)]
+#[rust_spec(non_robust)]
 #[repr_c(is_valid = |value| *value != 0)]
 struct Validated(u32);
 

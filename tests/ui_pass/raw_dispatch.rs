@@ -42,15 +42,15 @@ extern "C" fn static_u16_provider(value: u16) -> u16 {
 
 #[unsafe(export_name = "raw_dispatch_owned_string")]
 extern "C" fn owned_string_provider(
-    value: co3::wide::CWideBox<[u8]>,
-) -> co3::wide::CWideBox<[u8]> {
+    value: <String as ReprC>::CType,
+) -> <String as ReprC>::CType {
     value
 }
 
 #[unsafe(export_name = "raw_dispatch_owned_bytes")]
 extern "C" fn owned_bytes_provider(
-    value: co3::wide::CWideBox<[u8]>,
-) -> co3::wide::CWideBox<[u8]> {
+    value: <Vec<u8> as ReprC>::CType,
+) -> <Vec<u8> as ReprC>::CType {
     value
 }
 

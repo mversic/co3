@@ -61,6 +61,11 @@ pub(super) fn derive_field_repr_c(
     };
 
     let mut repr_generics = input.generics.clone();
+    if attrs.is_valid.is_some() {
+        repr_generics.make_where_clause().predicates.push(parse_quote!(
+            #name #ty_generics: co3::rust_spec::RustSpec<Trap = co3::rust_spec::layout::NonRobust>
+        ));
+    }
     repr_generics
         .make_where_clause()
         .predicates

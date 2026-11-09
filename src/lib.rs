@@ -572,7 +572,7 @@ pub use impls::impls;
 #[doc(hidden)]
 pub use rust_spec;
 use rust_spec::{
-    RustSpec,
+    RustSpec, Unstable,
     drop::{DropKind, NoDrop},
     layout::LayoutKind,
     mutability::{Exclusive, ExclusiveKind, WithInterior},
@@ -580,7 +580,7 @@ use rust_spec::{
     size::{ExternTypeLike, MetaSized, NulTerminated, SizedKind, SliceLike, Zero},
 };
 #[cfg(feature = "alloc")]
-use rust_spec::{Stable, Unstable, size::MetadataKind};
+use rust_spec::{Stable, size::MetadataKind};
 
 #[cfg(feature = "alloc")]
 use crate::ffi::NulTerminatedBuf;
@@ -588,9 +588,9 @@ use crate::ffi::NulTerminatedBuf;
 use crate::{boxed::CBox, wide::CWideBox};
 use crate::{
     niche::Niche,
-    reference::{CSoftRefMut, CSoftRef},
+    reference::{CRef, CSoftRef, CSoftRefMut},
     stored::{DecodeMove, EmptyStore, EncodeMove, EncodeMoveUnchecked, Store},
-    wide::{CSoftWideRefMut, CSoftWideRef},
+    wide::{CSoftWideRef, CSoftWideRefMut},
     wide::{Wide, WideHeader},
 };
 
@@ -706,7 +706,7 @@ unsafe impl<T: Sized> Zeroable for *mut T {}
 /// The carrier accepts zero so it can also represent a surrounding enum's niche.
 /// Comparisons require the inner zero value to compare equal to itself; otherwise
 /// equality returns false and ordering returns `None`.
-#[derive(Debug, Clone, Copy, Hash, RustSpec)]
+#[derive(Debug, Clone, Copy, RustSpec)]
 #[repr(transparent)]
 pub struct NonZero<C>(pub C);
 
@@ -825,9 +825,15 @@ disjoint_impls! {
         type CType: CType + ?Sized;
     }
 
+    impl<'a, R: ReprC + ?Sized, __Interior: ExclusiveKind> ReprC for &'a R
+    where
+        R: RustSpec<Layout = rust_spec::Stable, Size: Thin, Mutability = Exclusive<__Interior>>,
+    {
+        type CType = CRef<'a, R>;
+    }
     impl<R: ReprC + ?Sized, __Interior: ExclusiveKind> ReprC for &R
     where
-        R: RustSpec<Size: Thin, Mutability = Exclusive<__Interior>>,
+        R: RustSpec<Layout = Unstable, Size: Thin, Mutability = Exclusive<__Interior>>,
     {
         type CType = CSoftRef<R>;
     }
@@ -1167,9 +1173,7 @@ mod tests {
             NonZero(7)
         );
         let tagged: CResult<NonZeroU8, ()> = encode(TaggedResult::<NonZeroU8, ()>::Err(()));
-        assert!(<NonZeroU8 as crate::niche::Niche>::is_niche(
-            &native.0
-        ));
+        assert!(<NonZeroU8 as crate::niche::Niche>::is_niche(&native.0));
         assert_eq!(
             unsafe { decode::<TaggedResult<NonZeroU8, ()>>(tagged) },
             Some(TaggedResult::Err(()))

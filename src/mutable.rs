@@ -45,6 +45,7 @@ disjoint_impls! {
             &'a mut Self: ReprC<CType: Sized>,
             'a: 'itm;
     }
+
     unsafe impl<
         'a,
         T: AbiCompatibleValidate<CType: CType + Sized>
@@ -314,17 +315,16 @@ macro_rules! impl_direct_mut {
     ([$($params:tt)*] $ty:ty) => {
         unsafe impl<'_mut, $($params)*> $crate::stored::EncodeMutUnchecked<'_mut> for $ty
         where
-            Self: $crate::transmute::AbiCompatibleValidate
+            Self: $crate::transmute::AbiCompatible
                 + $crate::rust_spec::RustSpec<Layout = $crate::rust_spec::Stable, Trap = $crate::rust_spec::layout::Robust> + '_mut,
             &'_mut mut Self: $crate::ReprC<CType: Sized>
-                + $crate::transmute::AbiCompatibleValidate
+                + $crate::transmute::AbiCompatible
                 + $crate::stored::EncodeMoveUnchecked<SoftStore = ()>,
         {
             type SoftStore = ();
             unsafe fn encode_mut_unchecked<'itm>(&'_mut mut self, store: &'itm mut ()) -> <&'_mut mut Self as $crate::ReprC>::CType
             where '_mut: 'itm {
                 let encoded = unsafe { $crate::stored::EncodeMoveUnchecked::soft_encode_unchecked(self, store) };
-                debug_assert!(unsafe { <&'_mut mut Self as $crate::transmute::AbiCompatibleValidate>::is_valid(&encoded) }, "encoding failed AbiCompatibleValidate::is_valid");
                 encoded
             }
         }

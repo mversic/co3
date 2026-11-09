@@ -30,7 +30,8 @@ impl From<u32> for TransparentFieldHandle {
 }
 
 #[repr(transparent)]
-#[derive(RustSpec, ReprC)]
+#[derive(Clone, RustSpec, ReprC)]
+#[rust_spec(non_robust)]
 #[repr_c(is_valid = |value| *value > 10)]
 struct ValidatedByte(u8);
 
@@ -38,14 +39,17 @@ struct ValidatedByte(u8);
 
 #[repr(transparent)]
 #[derive(Clone, RustSpec, ReprC)]
+#[rust_spec(non_robust)]
 #[repr_c(is_valid = |value| *value)]
 struct ValidatedBool(bool);
 
 #[derive(RustSpec, ReprC)]
+#[rust_spec(non_robust)]
 #[repr_c(is_valid = |value| *value > 10)]
 struct ValidatedOwned(u8);
 
 #[derive(RustSpec, ReprC)]
+#[rust_spec(non_robust)]
 enum ValidatedVariant {
     #[repr_c(is_valid = |value| *value > 10)]
     Value(u8),
@@ -82,10 +86,11 @@ fn checked_reference_encoding_asserts_pointee_validity() {
 
 #[test]
 #[cfg(debug_assertions)]
-#[should_panic(expected = "encoding failed AbiCompatibleValidate::is_valid")]
+#[should_panic(expected = "encoding failed custom is_valid")]
 fn checked_mut_reference_encoding_asserts_pointee_validity() {
     let mut value = ValidatedByte(10);
-    let _ = co3::encode(&mut value);
+    let mut store = Default::default();
+    let _ = co3::soft_encode(&mut value, &mut store);
 }
 
 #[test]
@@ -98,18 +103,19 @@ fn checked_wide_reference_encoding_asserts_each_pointee() {
 
 #[test]
 #[cfg(debug_assertions)]
-#[should_panic(expected = "encoding failed AbiCompatibleValidate::is_valid")]
+#[should_panic(expected = "encoding failed custom is_valid")]
 fn checked_mut_wide_reference_encoding_asserts_each_pointee() {
     let mut values = [ValidatedByte(11), ValidatedByte(10)];
-    let _ = co3::encode(&mut values[..]);
+    let mut store = Default::default();
+    let _ = co3::soft_encode(&mut values[..], &mut store);
 }
 
 #[test]
 #[cfg(debug_assertions)]
 fn checked_interior_wide_reference_encoding_does_not_inspect_cells() {
     let values = [
-        UnsafeCell::new(ValidatedByte(11)),
-        UnsafeCell::new(ValidatedByte(10)),
+        UnsafeCell::new(11_u8),
+        UnsafeCell::new(10_u8),
     ];
     let _ = co3::encode(&values[..]);
 }
@@ -118,8 +124,8 @@ fn checked_interior_wide_reference_encoding_does_not_inspect_cells() {
 #[cfg(debug_assertions)]
 fn checked_mut_interior_wide_reference_encoding_does_not_inspect_cells() {
     let mut values = [
-        UnsafeCell::new(ValidatedByte(11)),
-        UnsafeCell::new(ValidatedByte(10)),
+        UnsafeCell::new(11_u8),
+        UnsafeCell::new(10_u8),
     ];
     let _ = co3::encode(&mut values[..]);
 }
@@ -135,7 +141,7 @@ fn checked_mut_nonrobust_wide_reference_asserts_original_pointee_validity() {
 
 #[test]
 #[cfg(debug_assertions)]
-#[should_panic(expected = "encoding failed AbiCompatibleValidate::is_valid")]
+#[should_panic(expected = "encoding failed custom is_valid")]
 fn checked_wide_box_encoding_asserts_each_pointee() {
     let values = [ValidatedByte(11), ValidatedByte(10)];
     let _ = co3::encode(Vec::from(values).into_boxed_slice());
@@ -143,7 +149,7 @@ fn checked_wide_box_encoding_asserts_each_pointee() {
 
 #[test]
 #[cfg(debug_assertions)]
-#[should_panic(expected = "encoding failed AbiCompatibleValidate::is_valid")]
+#[should_panic(expected = "encoding failed custom is_valid")]
 fn checked_box_encoding_asserts_pointee_validity() {
     let _ = co3::encode(Box::new(ValidatedByte(10)));
 }

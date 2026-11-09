@@ -600,13 +600,13 @@ fn rewrite_view_generics(input: &mut DeriveInput) {
     let borrow_bounds = field_tys
         .iter()
         .enumerate()
-        .map(|(index, ty)| {
-            let speculative = speculative_marker(
-                last_is_tail
-                    && index + 1 == field_tys.len()
-                    && !is_parametrized(ty, &input.generics),
-            );
-            parse_quote!(#speculative #ty: co3::borrow::Borrow)
+        .filter_map(|(index, ty)| {
+            let parametrized = is_parametrized(ty, &input.generics);
+            if !parametrized && (!last_is_tail || index + 1 != field_tys.len()) {
+                return None;
+            }
+            let speculative = speculative_marker(!parametrized);
+            Some(parse_quote!(#speculative #ty: co3::borrow::Borrow))
         })
         .collect::<Vec<syn::WherePredicate>>();
 

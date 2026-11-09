@@ -283,7 +283,7 @@ impl<T, S: Store> Store for BorrowedEncodeStore<T, S> {
 }
 // Keep the higher-ranked bound outside disjoint_impls, which cannot expand its binder.
 #[doc(hidden)]
-// FIXME: This trait should be removed IMO
+// FIXME: This trait should be removed IMO or at least private
 pub trait BorrowedOwnerEncode: ReprC<CType: Copy> + Sized {
     type ReferenceStore: Store + Default;
     fn encode_borrowed(

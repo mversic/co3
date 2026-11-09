@@ -29,6 +29,7 @@ struct Transparent<T>(T);
 
 #[derive(RustSpec, ReprC)]
 #[repr(C)]
+#[rust_spec(non_robust)]
 #[repr_c(is_valid = |value| *value != 0)]
 struct Custom {
     value: u8,
@@ -56,6 +57,7 @@ enum Choice<T> {
 
 #[derive(RustSpec, ReprC)]
 #[repr(C)]
+#[rust_spec(non_robust)]
 #[repr_c(is_valid = |value| *value != 0)]
 struct AuditedCustom {
     value: u8,

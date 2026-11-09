@@ -371,6 +371,15 @@ pub(crate) fn derive_repr_c(input: &syn::DeriveInput) -> syn::Result<TokenStream
                 validate_fields_no_ffi_type_attr(&variant.fields, &mut errors);
 
                 let variant_repr_c_attrs = parse_repr_c_attrs(&variant.attrs)?;
+                if is_fieldless && variant_repr_c_attrs.is_valid.is_some() {
+                    push_error(
+                        &mut errors,
+                        syn::Error::new_spanned(
+                            &variant.ident,
+                            "`is_valid` is not supported on variants of a fieldless enum",
+                        ),
+                    );
+                }
                 if repr_c_attrs.is_identity && variant_repr_c_attrs.is_valid.is_some() {
                     push_error(
                         &mut errors,

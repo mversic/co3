@@ -188,7 +188,7 @@ fn safe_carrier_constructors_accept_lowered_storage() {
     assert_eq!(*unsafe { co3::decode::<Box<u8>>(boxed) }.unwrap(), 9);
 
     let value = 8_u8;
-    assert_eq!(CSoftRef::from_ref(&value), co3::encode(&value));
+    assert_eq!(co3::reference::CRef::from_ref(&value), co3::encode(&value));
     assert!(co3::encode(None::<&u8>).payload().as_ptr().is_null());
 
     let raw = Box::into_raw(Box::new(10_u8));

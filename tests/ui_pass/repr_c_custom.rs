@@ -20,11 +20,13 @@ mod validation {
     use co3::{ReprC, rust_spec::RustSpec};
 
     #[derive(RustSpec, ReprC)]
+    #[rust_spec(non_robust)]
     #[repr_c(is_valid = |value| value.is_power_of_two())]
     struct PowerOfTwo(u32);
 
     #[derive(RustSpec, ReprC)]
     #[repr(u8)]
+    #[rust_spec(non_robust)]
     enum Number {
         #[repr_c(allow_zero_tag)]
         #[repr_c(is_valid = |value| value.is_power_of_two())]

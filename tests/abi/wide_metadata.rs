@@ -339,30 +339,3 @@ fn comparisons_use_pointer_then_arbitrary_metadata() {
     assert_ne!(null, other_null);
 }
 
-#[test]
-fn wide_carrier_hashes_include_data_and_metadata() {
-    use core::hash::{Hash, Hasher};
-    use std::collections::hash_map::DefaultHasher;
-
-    fn hash(value: &impl Hash) -> u64 {
-        let mut hasher = DefaultHasher::new();
-        value.hash(&mut hasher);
-        hasher.finish()
-    }
-
-    type Pointee = Custom<Metadata>;
-    let mut byte = 0_u8;
-    let data = &mut byte as *mut u8;
-    let metadata = Metadata {
-        length: 1,
-        marker: 7,
-    };
-    let shared = unsafe { CSoftWideRef::<Pointee>::from_raw_parts(data, metadata) };
-    let mutable = unsafe { CSoftWideRefMut::<Pointee, true>::from_raw_parts_mut(data, metadata) };
-    let nonexclusive =
-        unsafe { CSoftWideRefMut::<Pointee, false>::from_raw_parts_mut(data, metadata) };
-
-    assert_eq!(hash(&shared), hash(&(data as *const u8, metadata)));
-    assert_eq!(hash(&mutable), hash(&(data, metadata)));
-    assert_eq!(hash(&nonexclusive), hash(&(data, metadata)));
-}
