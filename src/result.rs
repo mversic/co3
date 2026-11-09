@@ -41,22 +41,7 @@ macro_rules! niche_result_carrier {
         #[doc = $description]
         #[repr(transparent)]
         #[derive(RustSpec)]
-        pub struct $name<$($generics)*>(<$payload as ReprC>::CType, PhantomData<$other>);
-
-        impl<$($generics)*> $name<Ok, Err> {
-            pub(crate) const fn from_carrier(value: <$payload as ReprC>::CType) -> Self {
-                Self(value, PhantomData)
-            }
-            pub(crate) const fn carrier(&self) -> &<$payload as ReprC>::CType { &self.0 }
-            pub(crate) fn into_carrier(self) -> <$payload as ReprC>::CType { self.0 }
-            /// Return whether the carrier contains the payload type's niche value.
-            pub(crate) fn is_niche(&self) -> bool
-            where
-                $payload: Niche,
-            {
-                <$payload as Niche>::is_niche(&self.0)
-            }
-        }
+        pub struct $name<$($generics)*>(pub <$payload as ReprC>::CType, pub PhantomData<$other>);
 
         impl<$($generics)*> ReprC for $name<Ok, Err> where $payload: Niche, $other: RustSpec<Size = rust_spec::size::Sized<rust_spec::Zero>> {
             type CType = Self;
@@ -165,26 +150,6 @@ niche_result_carrier!(
     [Ok: ReprC, Err: ReprC<CType: Sized>],
     "Carrier for a native `Result<T, E>` whose `Err` value has a niche representing `Ok`."
 );
-
-impl<Ok: Niche<CType: Sized>, Err: ReprC> CResultOk<Ok, Err>
-where
-    Err: RustSpec<Size = rust_spec::size::Sized<rust_spec::Zero>>,
-{
-    /// Constructs a carrier when `R` has a niche and `E` is zero-sized.
-    pub const fn new(value: Ok::CType) -> Self {
-        Self::from_carrier(value)
-    }
-}
-
-impl<Ok: ReprC, Err: Niche<CType: Sized>> CResultErr<Ok, Err>
-where
-    Ok: RustSpec<Size = rust_spec::size::Sized<rust_spec::Zero>>,
-{
-    /// Constructs a carrier when `E` has a niche and `R` is zero-sized.
-    pub const fn new(value: Err::CType) -> Self {
-        Self::from_carrier(value)
-    }
-}
 
 #[repr(C)]
 struct CResultVariant<T: ReprC<CType: Copy>>(u8, MaybeUninit<T::CType>);

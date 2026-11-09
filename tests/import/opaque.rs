@@ -172,7 +172,7 @@ fn owned_handle_has_null_niche() {
     assert!(matches!(
         unsafe {
             co3::soft_decode::<Option<OwnedOpaqueStruct>>(
-                co3::option::COptionSome::new(null),
+                co3::option::COptionSome(null),
                 &mut None,
             )
         },

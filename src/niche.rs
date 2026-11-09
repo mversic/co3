@@ -161,20 +161,20 @@ disjoint_impls! {
     where
         Self: ReprC<CType = COptionSome<bool>>,
     {
-        const NICHE: Self::CType = COptionSome::from_carrier(CBool(3));
+        const NICHE: Self::CType = COptionSome(CBool(3));
 
         fn is_niche(value: &Self::CType) -> bool {
-            value.carrier().0 == 3
+            value.0.0 == 3
         }
     }
     impl Niche for Option<Option<bool>>
     where
         Self: ReprC<CType = COptionSome<Option<bool>>>,
     {
-        const NICHE: Self::CType = COptionSome::from_carrier(COptionSome::from_carrier(CBool(4)));
+        const NICHE: Self::CType = COptionSome(COptionSome(CBool(4)));
 
         fn is_niche(value: &Self::CType) -> bool {
-            value.carrier().carrier().0 == 4
+            value.0.0.0 == 4
         }
     }
 
@@ -399,33 +399,33 @@ mod tests {
     #[test]
     fn niche_values() {
         assert!(<&bool>::is_niche(
-            &crate::encode(None::<&bool>).into_carrier()
+            &crate::encode(None::<&bool>).0
         ));
         assert!(<&mut bool>::is_niche(
-            &co3::soft_encode(None::<&mut bool>, &mut Default::default()).into_carrier()
+            &co3::soft_encode(None::<&mut bool>, &mut Default::default()).0
         ));
 
         #[cfg(feature = "alloc")]
         assert!(String::is_niche(
-            &crate::encode(None::<String>).into_carrier()
+            &crate::encode(None::<String>).0
         ));
         #[cfg(feature = "alloc")]
         assert!(<Box<str>>::is_niche(
-            &crate::encode(None::<Box<str>>).into_carrier()
+            &crate::encode(None::<Box<str>>).0
         ));
 
         assert!(<&str>::is_niche(
-            &crate::encode(None::<&str>).into_carrier()
+            &crate::encode(None::<&str>).0
         ));
 
         #[cfg(feature = "alloc")]
         assert!(<&mut str>::is_niche(
-            &crate::soft_encode(None::<&mut str>, &mut Default::default()).into_carrier()
+            &crate::soft_encode(None::<&mut str>, &mut Default::default()).0
         ));
 
         assert_eq!(
             core::ptr::null_mut(),
-            crate::encode(None::<NonNull<u32>>).into_carrier().0
+            crate::encode(None::<NonNull<u32>>).0.0
         );
 
         #[cfg(feature = "alloc")]
@@ -434,7 +434,7 @@ mod tests {
         )));
 
         assert!(<ManuallyDrop<bool> as Niche>::is_niche(
-            &crate::encode(None::<ManuallyDrop<bool>>).into_carrier()
+            &crate::encode(None::<ManuallyDrop<bool>>).0
         ));
     }
 }

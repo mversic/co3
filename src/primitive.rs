@@ -559,11 +559,11 @@ mod tests {
                 value
             );
         }
-        assert!(bool::is_niche(&crate::encode(None::<bool>).into_carrier()));
+        assert!(bool::is_niche(&crate::encode(None::<bool>).0));
         assert!(Ordering::is_niche(
-            &crate::encode(None::<Ordering>).into_carrier()
+            &crate::encode(None::<Ordering>).0
         ));
-        assert!(char::is_niche(&crate::encode(None::<char>).into_carrier()));
+        assert!(char::is_niche(&crate::encode(None::<char>).0));
     }
 
     #[test]
@@ -586,7 +586,7 @@ mod tests {
         assert!(unsafe { crate::decode::<Callback>(None) }.is_none());
         assert!(
             crate::soft_encode(Option::<Callback>::None, &mut None)
-                .into_carrier()
+                .0
                 .is_none()
         );
 

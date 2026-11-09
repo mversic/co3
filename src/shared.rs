@@ -1,7 +1,7 @@
 //! Referent-specific encoding for the unstable shared-reference path.
 #[cfg(feature = "alloc")]
 use alloc::{boxed::Box, vec::Vec};
-use core::mem::ManuallyDrop;
+use core::{marker::PhantomData, mem::ManuallyDrop};
 
 use disjoint_impls::disjoint_impls;
 use rust_spec::{
@@ -378,7 +378,7 @@ disjoint_impls! {
                 let store = fields;
 
                 match self {
-                    Some(value) => COptionSome::from_carrier(unsafe {
+                    Some(value) => COptionSome(unsafe {
                         encode_ref_field_unchecked(
                             value,
                             store.insert(Default::default()),
@@ -386,7 +386,7 @@ disjoint_impls! {
                     }),
                     None => {
                         *store = None;
-                        COptionSome::from_carrier(R::NICHE)
+                        COptionSome(R::NICHE)
                     }
                 }
             })
@@ -465,12 +465,12 @@ disjoint_impls! {
                 let store = fields;
 
                 match self {
-                    Ok(ok) => CResultOk::from_carrier(unsafe {
+                    Ok(ok) => CResultOk(unsafe {
                         encode_ref_field_unchecked(ok, store.insert(Default::default()))
-                    }),
+                    }, PhantomData),
                     Err(_) => {
                         *store = None;
-                        CResultOk::from_carrier(R::NICHE)
+                        CResultOk(R::NICHE, PhantomData)
                     }
                 }
             })
@@ -501,11 +501,11 @@ disjoint_impls! {
                 match self {
                     Ok(_) => {
                         *store = None;
-                        CResultErr::from_carrier(E::NICHE)
+                        CResultErr(E::NICHE, PhantomData)
                     }
-                    Err(err) => CResultErr::from_carrier(unsafe {
+                    Err(err) => CResultErr(unsafe {
                         encode_ref_field_unchecked(err, store.insert(Default::default()))
-                    }),
+                    }, PhantomData),
                 }
             })
         }
@@ -972,10 +972,10 @@ disjoint_impls! {
                     let encoded =
                         encode_ref_field(value, store.insert(Default::default()));
                     debug_assert!(!R::is_niche(&encoded), "encoding produced NICHE value");
-                    COptionSome::from_carrier(encoded)
+                    COptionSome(encoded)
                 } else {
                     *store = None;
-                    COptionSome::from_carrier(R::NICHE)
+                    COptionSome(R::NICHE)
                 }
             })
         }
@@ -1031,10 +1031,10 @@ disjoint_impls! {
                 let store = fields;
 
                 match self {
-                    Ok(ok) => CResultOk::from_carrier(encode_ref_field(ok, store.insert(Default::default()))),
+                    Ok(ok) => CResultOk(encode_ref_field(ok, store.insert(Default::default())), PhantomData),
                     Err(_) => {
                         *store = None;
-                        CResultOk::from_carrier(R::NICHE)
+                        CResultOk(R::NICHE, PhantomData)
                     }
                 }
             })
@@ -1061,9 +1061,9 @@ disjoint_impls! {
                 match self {
                     Ok(_) => {
                         *store = None;
-                        CResultErr::from_carrier(E::NICHE)
+                        CResultErr(E::NICHE, PhantomData)
                     }
-                    Err(err) => CResultErr::from_carrier(encode_ref_field(err, store.insert(Default::default()))),
+                    Err(err) => CResultErr(encode_ref_field(err, store.insert(Default::default())), PhantomData),
                 }
             })
         }

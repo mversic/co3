@@ -269,7 +269,7 @@
 //! agreeing on the allocator and who is responsible for freeing the allocation.
 //!
 //! Because it is designed to eliminate common footguns in FFI, `CO3` takes an opinionated stance here.
-//! **By default, all owned values (e.g. `Vec<T>`) are exported as references** and immediately cloned
+//! **By default, owned values with drop glue are exported as borrowed views** and cloned
 //! on the importing side. The universal guarantee is that **any reference be valid for the duration of
 //! the function call**; past that, it is the user's responsibility to ensure reference validity.
 //!
@@ -284,7 +284,7 @@
 //!    input
 //! }
 //!
-//! fn clone_into(input: Vec<u8>) {
+//! fn clone_into(input: Box<u8>) {
 //!    drop(input);
 //! }
 //!
@@ -294,8 +294,8 @@
 //!    // `input` and the return both transfer ownership
 //!    fn passthrough(input: move Vec<u8>) -> move Vec<u8>;
 //!
-//!    // `input` is passed by reference
-//!    fn clone_into(input: Vec<u8>);
+//!    // `input` is borrowed and cloned
+//!    fn clone_into(input: Box<u8>);
 //! }
 //! # fn main() {}
 //! # }
@@ -732,6 +732,8 @@ impl<C: Zeroable + PartialEq> NonZero<C> {
     /// Returns `None` for zero or when zero does not compare equal to itself.
     pub fn new(value: C) -> Option<Self> {
         let zero = unsafe { core::mem::zeroed() };
+
+        // NOTE: Assert the relation is symmetric first
         if !PartialEq::eq(&zero, &zero) || value == zero {
             return None;
         }
@@ -1143,30 +1145,30 @@ mod tests {
         static_assertions::assert_impl_all!(TaggedResult<NonZeroU8, ()>: AbiCompatible);
         let value = NonZeroU8::new(7).unwrap();
         let native: option::COptionSome<NonZeroU8> = encode(Some(value));
-        assert_eq!(option::COptionSome::new(NonZero(7)), native);
+        assert_eq!(option::COptionSome(NonZero(7)), native);
         let tagged: COption<NonZeroU8> = encode(TaggedOption::Some(value));
-        assert_eq!(native.into_carrier().0, 7);
+        assert_eq!(native.0.0, 7);
         assert_eq!(tagged.into_option(), Some(Some(NonZero(7))));
         assert_eq!(
             unsafe { decode::<TaggedOption<NonZeroU8>>(tagged) },
             Some(TaggedOption::Some(value))
         );
         assert!(<NonZeroU8 as crate::niche::Niche>::is_niche(
-            &encode(None::<NonZeroU8>).into_carrier()
+            &encode(None::<NonZeroU8>).0
         ));
 
         let native: result::CResultOk<NonZeroU8, ()> = encode(Result::<NonZeroU8, ()>::Err(()));
         assert_eq!(
-            result::CResultOk::<NonZeroU8, ()>::new(NonZero(7)).into_carrier(),
+            result::CResultOk::<NonZeroU8, ()>(NonZero(7), core::marker::PhantomData).0,
             NonZero(7)
         );
         assert_eq!(
-            result::CResultErr::<(), NonZeroU8>::new(NonZero(7)).into_carrier(),
+            result::CResultErr::<(), NonZeroU8>(NonZero(7), core::marker::PhantomData).0,
             NonZero(7)
         );
         let tagged: CResult<NonZeroU8, ()> = encode(TaggedResult::<NonZeroU8, ()>::Err(()));
         assert!(<NonZeroU8 as crate::niche::Niche>::is_niche(
-            &native.into_carrier()
+            &native.0
         ));
         assert_eq!(
             unsafe { decode::<TaggedResult<NonZeroU8, ()>>(tagged) },

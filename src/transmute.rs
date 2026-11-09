@@ -235,7 +235,7 @@ disjoint_impls! {
     {
         #[inline(always)]
         unsafe fn is_valid(target: &Self::CType) -> bool {
-            target.is_niche() || unsafe { R::is_valid(target.carrier()) }
+            R::is_niche(&target.0) || unsafe { R::is_valid(&target.0) }
         }
     }
 
@@ -248,7 +248,7 @@ disjoint_impls! {
     {
         #[inline(always)]
         unsafe fn is_valid(target: &Self::CType) -> bool {
-            target.is_niche() || unsafe { E::is_valid(target.carrier()) }
+            E::is_niche(&target.0) || unsafe { E::is_valid(&target.0) }
         }
     }
 
@@ -397,7 +397,7 @@ where
 {
     #[inline(always)]
     unsafe fn is_valid(target: &Self::CType) -> bool {
-        target.is_niche() || unsafe { R::is_valid(target.carrier()) }
+        R::is_niche(&target.0) || unsafe { R::is_valid(&target.0) }
     }
 }
 unsafe impl<R: AbiCompatible + Niche> AbiCompatible for Option<R> where
@@ -472,25 +472,25 @@ mod tests {
         use crate::primitives::CBool;
 
         assert!(unsafe {
-            <Option<NonZeroU8>>::is_valid(&crate::option::COptionSome::from_carrier(
+            <Option<NonZeroU8>>::is_valid(&crate::option::COptionSome(
                 crate::NonZero(0),
             ))
         });
         assert!(unsafe {
-            <Option<NonZeroU8>>::is_valid(&crate::option::COptionSome::from_carrier(
+            <Option<NonZeroU8>>::is_valid(&crate::option::COptionSome(
                 crate::NonZero(7),
             ))
         });
         assert!(unsafe {
-            <Option<&bool>>::is_valid(&crate::option::COptionSome::from_carrier(CSoftRef::null()))
+            <Option<&bool>>::is_valid(&crate::option::COptionSome(CSoftRef::null()))
         });
         assert!(unsafe {
-            <Option<&bool>>::is_valid(&crate::option::COptionSome::from_carrier(
+            <Option<&bool>>::is_valid(&crate::option::COptionSome(
                 CSoftRef::from_ref(&CBool(1)),
             ))
         });
         assert!(!unsafe {
-            <Option<&bool>>::is_valid(&crate::option::COptionSome::from_carrier(
+            <Option<&bool>>::is_valid(&crate::option::COptionSome(
                 CSoftRef::from_ref(&CBool(3)),
             ))
         });
@@ -942,12 +942,12 @@ mod conversion_tests {
         use core::num::NonZeroU8;
         assert!(unsafe {
             <Result<NonZeroU8, ()> as AbiCompatibleValidate>::is_valid(
-                &crate::result::CResultOk::from_carrier(crate::NonZero(0)),
+                &crate::result::CResultOk(crate::NonZero(0), core::marker::PhantomData),
             )
         });
         assert!(unsafe {
             <Result<NonZeroU8, ()> as AbiCompatibleValidate>::is_valid(
-                &crate::result::CResultOk::from_carrier(crate::NonZero(1)),
+                &crate::result::CResultOk(crate::NonZero(1), core::marker::PhantomData),
             )
         });
     }
@@ -957,12 +957,12 @@ mod conversion_tests {
         use core::num::NonZeroU8;
         assert!(unsafe {
             <Result<(), NonZeroU8> as AbiCompatibleValidate>::is_valid(
-                &crate::result::CResultErr::from_carrier(crate::NonZero(0)),
+                &crate::result::CResultErr(crate::NonZero(0), core::marker::PhantomData),
             )
         });
         assert!(unsafe {
             <Result<(), NonZeroU8> as AbiCompatibleValidate>::is_valid(
-                &crate::result::CResultErr::from_carrier(crate::NonZero(1)),
+                &crate::result::CResultErr(crate::NonZero(1), core::marker::PhantomData),
             )
         });
     }

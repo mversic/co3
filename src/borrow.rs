@@ -259,22 +259,12 @@ unsafe impl<T: Borrow, E: Borrow> Borrow for Result<T, E> {
 }
 
 /// Retains the original value until reference conversion and synchronization finish.
+/// This store must not implement `EmptyStore`: the encoded carrier can point
+/// into `value`, which is dropped when the store is dropped.
 pub struct BorrowedEncodeStore<T, S> {
     value: Option<T>,
     reference: S,
 }
-/// Keeps the carrier alive for references produced during borrowed decoding.
-pub struct BorrowedDecodeStore<C, S> {
-    carrier: Option<C>,
-    reference: S,
-}
-
-impl<C, S> BorrowedDecodeStore<C, S> {
-    pub(crate) fn insert(&mut self, carrier: C) -> (&C, &mut S) {
-        (self.carrier.insert(carrier), &mut self.reference)
-    }
-}
-
 impl<T, S: Default> Default for BorrowedEncodeStore<T, S> {
     fn default() -> Self {
         Self {
@@ -283,15 +273,6 @@ impl<T, S: Default> Default for BorrowedEncodeStore<T, S> {
         }
     }
 }
-impl<C, S: Default> Default for BorrowedDecodeStore<C, S> {
-    fn default() -> Self {
-        Self {
-            carrier: None,
-            reference: S::default(),
-        }
-    }
-}
-
 impl<T, S: Store> Store for BorrowedEncodeStore<T, S> {
     fn sync(self) -> Option<()> {
         let Self { value, reference } = self;
@@ -300,15 +281,6 @@ impl<T, S: Store> Store for BorrowedEncodeStore<T, S> {
         result
     }
 }
-impl<C, S: Store> Store for BorrowedDecodeStore<C, S> {
-    fn sync(self) -> Option<()> {
-        let Self { carrier, reference } = self;
-        let result = reference.sync();
-        drop(carrier);
-        result
-    }
-}
-
 // Keep the higher-ranked bound outside disjoint_impls, which cannot expand its binder.
 #[doc(hidden)]
 // FIXME: This trait should be removed IMO

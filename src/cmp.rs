@@ -312,7 +312,7 @@ mod tests {
         );
         assert_eq!(unsafe { decode::<Reverse<bool>>(Reverse(CBool(2))) }, None);
         let none: COptionSome<Reverse<bool>> = encode(None::<Reverse<bool>>);
-        assert!(<Reverse<bool> as Niche>::is_niche(&none.into_carrier()));
+        assert!(<Reverse<bool> as Niche>::is_niche(&none.0));
     }
 
     #[cfg(feature = "alloc")]

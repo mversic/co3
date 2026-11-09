@@ -20,8 +20,7 @@
 //! use core::mem::size_of;
 //!
 //! use co3::{
-//!     encode, niche::Niche, option::COption, primitives::Bool,
-//!     reference::CSoftRef, tuple::Tuple3, ReprC,
+//!     encode, niche::Niche, option::{COption, COptionSome}, primitives::CBool, ReprC,
 //! };
 //!
 //! type TupleWithNiche1<'a> = (u8, bool, &'a bool);
@@ -42,10 +41,18 @@
 //! );
 //!
 //! let none_value_1: Option<TupleWithNiche1> = None;
-//! assert_eq!(encode(none_value_1).into_inner(), Tuple3(0, bool::NICHE, CSoftRef::null()));
+//! let encoded_none_value_1: COptionSome<TupleWithNiche1> = encode(none_value_1);
+//! let payload_1 = &encoded_none_value_1.0;
+//! assert_eq!(payload_1.0, 0);
+//! assert!(bool::is_niche(&payload_1.1));
+//! assert!(payload_1.2.as_ptr().is_null());
 //!
 //! let none_value_2: Option<TupleWithNiche2> = None;
-//! assert_eq!(encode(none_value_2).into_inner(), Tuple3(0, CSoftRef::null(), Bool::FALSE));
+//! let encoded_none_value_2: COptionSome<TupleWithNiche2> = encode(none_value_2);
+//! let payload_2 = &encoded_none_value_2.0;
+//! assert_eq!(payload_2.0, 0);
+//! assert!(payload_2.1.as_ptr().is_null());
+//! assert_eq!(payload_2.2, CBool::FALSE);
 //!
 //! let none_value_3: Option<TupleWithoutNiche> = None;
 //! assert_eq!(encode(none_value_3), COption::None());
@@ -429,7 +436,7 @@ macro_rules! impl_tuple {
                 true $(&& unsafe { $head::is_valid($head) })* && unsafe { $last::is_valid($last) }
             }
         }
-unsafe impl<$($head: AbiCompatible<CType: Copy>,)* $last: AbiCompatible + ?Sized> AbiCompatible for $ffi_ty<$($head,)* $last> {}
+        unsafe impl<$($head: AbiCompatible<CType: Copy>,)* $last: AbiCompatible + ?Sized> AbiCompatible for $ffi_ty<$($head,)* $last> {}
 
         unsafe impl<$($head: CType,)* $last: CType + ?Sized> CType for $ffi_ty<$($head,)* $last> {}
 
@@ -616,14 +623,14 @@ mod tests {
     use crate::{
         Decode, Encode,
         option::COption,
-        reference::{CSoftRefMut, CSoftRef},
+        reference::{CSoftRef, CSoftRefMut},
     };
     #[cfg(feature = "alloc")]
     use crate::{boxed::CBox, wide::CWideBox};
     #[cfg(feature = "alloc")]
     use crate::{
         stored::{DecodeMove, EncodeMove},
-        wide::{CSoftWideRefMut, CSoftWideRef},
+        wide::{CSoftWideRef, CSoftWideRefMut},
     };
 
     #[test]

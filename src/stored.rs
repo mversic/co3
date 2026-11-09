@@ -4,6 +4,7 @@ use alloc::{borrow::ToOwned, boxed::Box, vec::Vec};
 use core::ptr::NonNull;
 use core::{
     cell::{Cell, UnsafeCell},
+    marker::PhantomData,
     mem::ManuallyDrop,
 };
 
@@ -21,14 +22,14 @@ use rust_spec::{
 
 use crate::{
     CType, NeedsDrop, ReprC, Thin,
-    borrow::{Borrowed, BorrowedDecodeStore, BorrowedEncodeStore, BorrowedOwnerEncode},
+    borrow::{Borrowed, BorrowedEncodeStore, BorrowedOwnerEncode},
     niche::Niche,
     option::COptionSome,
-    reference::{CSoftRefMut, CSoftRef},
+    reference::{CSoftRef, CSoftRefMut},
     result::{CResult, CResultErr, CResultOk},
-    sync::ArrayStore,
+    sync::{ArrayStore, TakeDecoded},
     transmute::{AbiCompatible, AbiCompatibleValidate, InteriorTrap, transmute_owned},
-    wide::{CSoftWideRefMut, CSoftWideRef, PointeeData, Wide, WideData, WideHeader},
+    wide::{CSoftWideRef, CSoftWideRefMut, PointeeData, Wide, WideData, WideHeader},
 };
 #[cfg(feature = "alloc")]
 use crate::{
@@ -377,10 +378,10 @@ disjoint_impls! {
         #[inline(always)]
         unsafe fn soft_encode_unchecked<'itm>(self, store: &'itm mut Self::SoftStore) -> Self::CType where Self: 'itm {
             match self {
-                Some(value) => COptionSome::from_carrier(unsafe { value.soft_encode_unchecked(store.insert(Default::default())) }),
+                Some(value) => COptionSome(unsafe { value.soft_encode_unchecked(store.insert(Default::default())) }),
                 None => {
                     *store = None;
-                    COptionSome::from_carrier(R::NICHE)
+                    COptionSome(R::NICHE)
                 }
             }
         }
@@ -412,10 +413,10 @@ disjoint_impls! {
         #[inline(always)]
         unsafe fn soft_encode_unchecked<'itm>(self, store: &'itm mut Self::SoftStore) -> Self::CType where Self: 'itm {
             match self {
-                Ok(ok) => CResultOk::from_carrier(unsafe { ok.soft_encode_unchecked(store.insert(Default::default())) }),
+                Ok(ok) => CResultOk(unsafe { ok.soft_encode_unchecked(store.insert(Default::default())) }, PhantomData),
                 Err(_) => {
                     *store = None;
-                    CResultOk::from_carrier(R::NICHE)
+                    CResultOk(R::NICHE, PhantomData)
                 }
             }
         }
@@ -434,9 +435,9 @@ disjoint_impls! {
             match self {
                 Ok(_) => {
                     *store = None;
-                    CResultErr::from_carrier(E::NICHE)
+                    CResultErr(E::NICHE, PhantomData)
                 }
-                Err(err) => CResultErr::from_carrier(unsafe { err.soft_encode_unchecked(store.insert(Default::default())) }),
+                Err(err) => CResultErr(unsafe { err.soft_encode_unchecked(store.insert(Default::default())) }, PhantomData),
             }
         }
     }
@@ -998,11 +999,11 @@ disjoint_impls! {
             if let Some(value) = self {
                 let encoded = value.soft_encode(store.insert(Default::default()));
                 debug_assert!(!R::is_niche(&encoded), "encoding produced NICHE value");
-                return COptionSome::from_carrier(encoded);
+                return COptionSome(encoded);
             }
 
             *store = None;
-            COptionSome::from_carrier(R::NICHE)
+            COptionSome(R::NICHE)
         }
     }
 
@@ -1037,8 +1038,8 @@ disjoint_impls! {
             Self: 'itm,
         {
             match self {
-                Ok(ok) => CResultOk::from_carrier(ok.soft_encode(store.insert(Default::default()))),
-                Err(_) => CResultOk::from_carrier(R::NICHE),
+                Ok(ok) => CResultOk(ok.soft_encode(store.insert(Default::default())), PhantomData),
+                Err(_) => CResultOk(R::NICHE, PhantomData),
             }
         }
     }
@@ -1056,8 +1057,8 @@ disjoint_impls! {
             Self: 'itm,
         {
             match self {
-                Ok(_) => CResultErr::from_carrier(E::NICHE),
-                Err(err) => CResultErr::from_carrier(err.soft_encode(store.insert(Default::default()))),
+                Ok(_) => CResultErr(E::NICHE, PhantomData),
+                Err(err) => CResultErr(err.soft_encode(store.insert(Default::default())), PhantomData),
             }
         }
     }
@@ -1155,6 +1156,7 @@ disjoint_impls! {
         T: RustSpec<Drop: NeedsDrop>,
     {
         type Store = BorrowedEncodeStore<T, <T as BorrowedOwnerEncode>::ReferenceStore>;
+
         fn soft_encode<'itm>(self, store: &'itm mut Self::Store) -> Self::CType
         where
             Self: 'itm,
@@ -1168,6 +1170,7 @@ disjoint_impls! {
         &'r mut T: EncodeMoveUnchecked,
     {
         type Store = <&'r mut T as EncodeMoveUnchecked>::SoftStore;
+
         fn soft_encode<'itm>(self, store: &'itm mut Self::Store) -> Self::CType
         where
             Self: 'itm,
@@ -1182,6 +1185,7 @@ disjoint_impls! {
         &'r T: EncodeMoveUnchecked,
     {
         type Store = <&'r T as EncodeMoveUnchecked>::SoftStore;
+
         fn soft_encode<'itm>(self, store: &'itm mut Self::Store) -> Self::CType
         where
             Self: 'itm,
@@ -1654,11 +1658,11 @@ disjoint_impls! {
             source: Self::CType,
             store: &'itm mut Self::Store,
         ) -> Option<Self> {
-            if source.is_niche() {
+            if R::is_niche(&source.0) {
                 *store = None;
                 return Some(None);
             }
-            let source = source.into_carrier();
+            let source = source.0;
             unsafe { R::soft_decode(source, store.insert(Default::default())) }.map(Some)
         }
 
@@ -1667,11 +1671,11 @@ disjoint_impls! {
             source: Self::CType,
             store: &'itm mut Self::Store,
         ) -> Self {
-            if source.is_niche() {
+            if R::is_niche(&source.0) {
                 *store = None;
                 return None;
             }
-            let source = source.into_carrier();
+            let source = source.0;
             Some(unsafe { R::soft_decode_unchecked(source, store.insert(Default::default())) })
         }
     }
@@ -1715,19 +1719,19 @@ disjoint_impls! {
             source: Self::CType,
             store: &'itm mut Self::Store,
         ) -> Option<Self> {
-            if source.is_niche() {
+            if R::is_niche(&source.0) {
                 return Some(Err(E::default()));
             }
-            let source = source.into_carrier();
+            let source = source.0;
             unsafe { R::soft_decode(source, store) }.map(Ok)
         }
 
         #[inline(always)]
         unsafe fn soft_decode_unchecked<'itm: 'd>(source: Self::CType, store: &'itm mut Self::Store) -> Self {
-            if source.is_niche() {
+            if R::is_niche(&source.0) {
                 return Err(E::default());
             }
-            let source = source.into_carrier();
+            let source = source.0;
             Ok(unsafe { R::soft_decode_unchecked(source, store) })
         }
     }
@@ -1745,19 +1749,19 @@ disjoint_impls! {
             source: Self::CType,
             store: &'itm mut Self::Store,
         ) -> Option<Self> {
-            if source.is_niche() {
+            if E::is_niche(&source.0) {
                 return Some(Ok(R::default()));
             }
-            let source = source.into_carrier();
+            let source = source.0;
             unsafe { E::soft_decode(source, store) }.map(Err)
         }
 
         #[inline(always)]
         unsafe fn soft_decode_unchecked<'itm: 'd>(source: Self::CType, store: &'itm mut Self::Store) -> Self {
-            if source.is_niche() {
+            if E::is_niche(&source.0) {
                 return Ok(R::default());
             }
-            let source = source.into_carrier();
+            let source = source.0;
             Err(unsafe { E::soft_decode_unchecked(source, store) })
         }
     }
@@ -2072,31 +2076,67 @@ disjoint_impls! {
 
     unsafe impl<'d, T: Clone + ReprC<CType: CType + Sized> + 'd> DecodeMove<'d> for Borrowed<T>
     where
-        T: RustSpec<Drop: NeedsDrop>,
-        &'d T: DecodeMove<'d, CType = CSoftRef<T>>,
+        T: RustSpec<Layout = Stable, Drop: NeedsDrop>,
+        &'d T: DecodeMove<'d, CType = CSoftRef<T>, Store = ()>,
     {
-        type Store = BorrowedDecodeStore<T::CType, <&'d T as DecodeMove<'d>>::Store>;
+        type Store = ();
+
+        unsafe fn soft_decode<'itm: 'd>(
+            source: Self::CType,
+            store: &'itm mut (),
+        ) -> Option<Self> {
+            let source = Borrowed::into_inner(source);
+            let carrier = core::ptr::from_ref(&source);
+
+            let carrier = unsafe { CSoftRef::from_raw(carrier) };
+            let value = unsafe { <&'d T>::soft_decode(carrier, store)? };
+            Some(Borrowed::new(T::clone(value)))
+        }
+
+        unsafe fn soft_decode_unchecked<'itm: 'd>(
+            source: Self::CType,
+            store: &'itm mut (),
+        ) -> Self {
+            let source = Borrowed::into_inner(source);
+            let carrier = core::ptr::from_ref(&source);
+
+            let carrier = unsafe { CSoftRef::from_raw(carrier) };
+            let value = unsafe { <&'d T>::soft_decode_unchecked(carrier, store) };
+            Borrowed::new(T::clone(value))
+        }
+    }
+    unsafe impl<'d, T: ReprC<CType: CType + Sized> + 'd> DecodeMove<'d> for Borrowed<T>
+    where
+        T: RustSpec<Layout = Unstable, Drop: NeedsDrop>,
+        &'d T: DecodeMove<'d, CType = CSoftRef<T>>,
+        <&'d T as DecodeMove<'d>>::Store: TakeDecoded<Value = T>,
+    {
+        type Store = <&'d T as DecodeMove<'d>>::Store;
 
         unsafe fn soft_decode<'itm: 'd>(
             source: Self::CType,
             store: &'itm mut Self::Store,
         ) -> Option<Self> {
-            let (carrier, reference) = store.insert(Borrowed::into_inner(source));
-            let carrier = CSoftRef::from_ref(carrier);
-            // SAFETY: The caller supplies a valid borrowed carrier; storage survives for 'd.
-            let value = unsafe { <&'d T>::soft_decode(carrier, reference)? };
-            Some(Borrowed::new(T::clone(value)))
+            let store_ptr = core::ptr::from_mut(store);
+            let source = Borrowed::into_inner(source);
+            // SAFETY: The source is live through decoding. TakeDecoded guarantees
+            // that the extracted value does not depend on this temporary carrier.
+            let carrier = unsafe { CSoftRef::from_raw(core::ptr::from_ref(&source)) };
+            let _ = unsafe { <&'d T>::soft_decode(carrier, store)? };
+            unsafe { <<&'d T as DecodeMove<'d>>::Store as TakeDecoded>::take_decoded(store_ptr) }.map(Borrowed::new)
         }
 
         unsafe fn soft_decode_unchecked<'itm: 'd>(
             source: Self::CType,
             store: &'itm mut Self::Store,
         ) -> Self {
-            let (carrier, reference) = store.insert(Borrowed::into_inner(source));
-            let carrier = CSoftRef::from_ref(carrier);
-            // SAFETY: The unchecked contract guarantees validity; the carrier is retained.
-            let value = unsafe { <&'d T>::soft_decode_unchecked(carrier, reference) };
-            Borrowed::new(T::clone(value))
+            let store_ptr = core::ptr::from_mut(store);
+            let source = Borrowed::into_inner(source);
+            // SAFETY: The caller guarantees validity; TakeDecoded guarantees
+            // independence from this temporary carrier.
+            let carrier = unsafe { CSoftRef::from_raw(core::ptr::from_ref(&source)) };
+            let _ = unsafe { <&'d T>::soft_decode_unchecked(carrier, store) };
+            Borrowed::new(unsafe { <<&'d T as DecodeMove<'d>>::Store as TakeDecoded>::take_decoded(store_ptr) }.expect("unchecked decoding produces a value"))
         }
     }
     // NoDrop values (including reference values) delegate to their value decoder.
@@ -2106,6 +2146,7 @@ disjoint_impls! {
         T: RustSpec<Drop = NoDrop>,
     {
         type Store = <T as DecodeMove<'d>>::Store;
+
         unsafe fn soft_decode<'itm: 'd>(source: Self::CType, store: &'itm mut Self::Store) -> Option<Self> {
             unsafe { T::soft_decode(Borrowed::into_inner(source), store) }.map(Borrowed::new)
         }
@@ -2113,7 +2154,6 @@ disjoint_impls! {
             Borrowed::new(unsafe { T::soft_decode_unchecked(Borrowed::into_inner(source), store) })
         }
     }
-
 }
 
 // ManuallyDrop preserves the encoded payload's layout, but its payload may

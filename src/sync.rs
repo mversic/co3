@@ -62,6 +62,26 @@ impl<R: ReprC<CType: Sized>, S: Store> RefSizedEncodeStore<R, S> {
     }
 }
 
+/// Extract an independently owned result from a reference decoding store.
+///
+/// # Safety
+/// The returned value must remain valid after the source carrier is dropped.
+pub unsafe trait TakeDecoded {
+    type Value;
+    /// # Safety
+    /// No reference returned by decoding from this store may be used afterward.
+    unsafe fn take_decoded(store: *mut Self) -> Option<Self::Value>;
+}
+
+// A 'static value cannot contain references into the temporary source carrier.
+unsafe impl<R: 'static, S> TakeDecoded for RefSizedDecodeStore<R, S> {
+    type Value = R;
+
+    unsafe fn take_decoded(store: *mut Self) -> Option<R> {
+        unsafe { (*core::ptr::addr_of_mut!((*store).value)).take() }
+    }
+}
+
 impl<R, S> RefSizedDecodeStore<R, S> {
     pub fn decode<'a>(&'a mut self, decode: impl FnOnce(&'a mut S) -> Option<R>) -> Option<&'a R> {
         self.value = None;

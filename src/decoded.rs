@@ -443,13 +443,13 @@ disjoint_impls! {
         ) -> Option<&'d Self> {
             let value = unsafe { source.into_ref()? };
             store.decode(|field| {
-                if value.is_niche() {
+                if T::is_niche(&value.0) {
                     *field = None;
                     return Some(None);
                 }
                 let value = unsafe {
                     <&'d T>::soft_decode(
-                        CSoftRef::from_ref(value.carrier()),
+                        CSoftRef::from_ref(&value.0),
                         field.insert(Default::default()),
                     )
                 }?;
@@ -463,13 +463,13 @@ disjoint_impls! {
             let value = unsafe { source.into_ref().unwrap_unchecked() };
             store
                 .decode(|field| {
-                    if value.is_niche() {
+                    if T::is_niche(&value.0) {
                         *field = None;
                         return Some(None);
                     }
                     let value = unsafe {
                         <&'d T>::soft_decode_unchecked(
-                            CSoftRef::from_ref(value.carrier()),
+                            CSoftRef::from_ref(&value.0),
                             field.insert(Default::default()),
                         )
                     };
@@ -501,13 +501,13 @@ disjoint_impls! {
         ) -> Option<&'d Self> {
             let value = unsafe { source.into_ref()? };
             store.decode(|field| {
-                if value.is_niche() {
+                if T::is_niche(&value.0) {
                     *field = None;
                     return Some(Err(E::default()));
                 }
                 let value = unsafe {
                     <&'d T>::soft_decode(
-                        CSoftRef::from_ref(value.carrier()),
+                        CSoftRef::from_ref(&value.0),
                         field.insert(Default::default()),
                     )
                 }?;
@@ -521,13 +521,13 @@ disjoint_impls! {
             let value = unsafe { source.into_ref().unwrap_unchecked() };
             store
                 .decode(|field| {
-                    if value.is_niche() {
+                    if T::is_niche(&value.0) {
                         *field = None;
                         return Some(Err(E::default()));
                     }
                     let value = unsafe {
                         <&'d T>::soft_decode_unchecked(
-                            CSoftRef::from_ref(value.carrier()),
+                            CSoftRef::from_ref(&value.0),
                             field.insert(Default::default()),
                         )
                     };
@@ -559,13 +559,13 @@ disjoint_impls! {
         ) -> Option<&'d Self> {
             let value = unsafe { source.into_ref()? };
             store.decode(|field| {
-                if value.is_niche() {
+                if E::is_niche(&value.0) {
                     *field = None;
                     return Some(Ok(T::default()));
                 }
                 let value = unsafe {
                     <&'d E>::soft_decode(
-                        CSoftRef::from_ref(value.carrier()),
+                        CSoftRef::from_ref(&value.0),
                         field.insert(Default::default()),
                     )
                 }?;
@@ -579,13 +579,13 @@ disjoint_impls! {
             let value = unsafe { source.into_ref().unwrap_unchecked() };
             store
                 .decode(|field| {
-                    if value.is_niche() {
+                    if E::is_niche(&value.0) {
                         *field = None;
                         return Some(Ok(T::default()));
                     }
                     let value = unsafe {
                         <&'d E>::soft_decode_unchecked(
-                            CSoftRef::from_ref(value.carrier()),
+                            CSoftRef::from_ref(&value.0),
                             field.insert(Default::default()),
                         )
                     };
@@ -1217,12 +1217,12 @@ disjoint_impls! {
             let value = unsafe { pointer.as_ref()? };
             unsafe {
                 store.decode(pointer, |field| {
-                    if value.is_niche() {
+                    if T::is_niche(&value.0) {
                         *field = None;
                         return Some(None);
                     }
                     let value =
-                        decode_mut_field::<T>(*value.carrier(), field.insert(Default::default()))?;
+                        decode_mut_field::<T>(value.0, field.insert(Default::default()))?;
                     Some(Some(value))
                 })
             }
@@ -1235,12 +1235,12 @@ disjoint_impls! {
             let value = unsafe { &*pointer };
             unsafe {
                 store.decode(pointer, |field| {
-                    if value.is_niche() {
+                    if T::is_niche(&value.0) {
                         *field = None;
                         return Some(None);
                     }
                     let value = decode_mut_field_unchecked::<T>(
-                        *value.carrier(),
+                        value.0,
                         field.insert(Default::default()),
                     );
                     Some(Some(value))
@@ -1276,12 +1276,12 @@ disjoint_impls! {
             let value = unsafe { pointer.as_ref()? };
             unsafe {
                 store.decode(pointer, |field| {
-                    if value.is_niche() {
+                    if T::is_niche(&value.0) {
                         *field = None;
                         return Some(Err(E::default()));
                     }
                     let value =
-                        decode_mut_field::<T>(*value.carrier(), field.insert(Default::default()))?;
+                        decode_mut_field::<T>(value.0, field.insert(Default::default()))?;
                     Some(Ok(value))
                 })
             }
@@ -1294,12 +1294,12 @@ disjoint_impls! {
             let value = unsafe { &*pointer };
             unsafe {
                 store.decode(pointer, |field| {
-                    if value.is_niche() {
+                    if T::is_niche(&value.0) {
                         *field = None;
                         return Some(Err(E::default()));
                     }
                     let value = decode_mut_field_unchecked::<T>(
-                        *value.carrier(),
+                        value.0,
                         field.insert(Default::default()),
                     );
                     Some(Ok(value))
@@ -1335,12 +1335,12 @@ disjoint_impls! {
             let value = unsafe { pointer.as_ref()? };
             unsafe {
                 store.decode(pointer, |field| {
-                    if value.is_niche() {
+                    if E::is_niche(&value.0) {
                         *field = None;
                         return Some(Ok(T::default()));
                     }
                     let value =
-                        decode_mut_field::<E>(*value.carrier(), field.insert(Default::default()))?;
+                        decode_mut_field::<E>(value.0, field.insert(Default::default()))?;
                     Some(Err(value))
                 })
             }
@@ -1353,12 +1353,12 @@ disjoint_impls! {
             let value = unsafe { &*pointer };
             unsafe {
                 store.decode(pointer, |field| {
-                    if value.is_niche() {
+                    if E::is_niche(&value.0) {
                         *field = None;
                         return Some(Ok(T::default()));
                     }
                     let value = decode_mut_field_unchecked::<E>(
-                        *value.carrier(),
+                        value.0,
                         field.insert(Default::default()),
                     );
                     Some(Err(value))

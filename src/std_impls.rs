@@ -537,7 +537,7 @@ mod tests {
         );
 
         let absent = crate::encode(None::<NonNull<u32>>);
-        assert!(absent.into_carrier().0.is_null());
+        assert!(absent.0.0.is_null());
         assert_eq!(
             unsafe { crate::decode::<Option<NonNull<u32>>>(absent) },
             Some(None)
@@ -942,7 +942,7 @@ mod tests {
         assert_eq!(decoded.get(), 6);
 
         let none = crate::encode(None::<Box<UnsafeCell<u8>>>);
-        assert!(none.carrier().as_ptr().is_null());
+        assert!(none.0.as_ptr().is_null());
         assert!(matches!(
             unsafe { crate::decode::<Option<Box<UnsafeCell<u8>>>>(none) },
             Some(None)

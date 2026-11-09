@@ -1,7 +1,13 @@
 use co3::{
-    borrow::{Borrow, Borrowed},
+    borrow::{Borrow, Borrowed, BorrowedEncodeStore},
     stored::Store,
 };
+
+#[test]
+fn borrowed_encode_store_retains_its_owner() {
+    use co3::stored::EmptyStore;
+    static_assertions::assert_not_impl_any!(BorrowedEncodeStore<Box<u8>, ()>: EmptyStore);
+}
 
 #[test]
 fn owned_containers_preserve_their_type_and_allocation_when_borrowed() {

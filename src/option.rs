@@ -41,34 +41,7 @@ pub struct COption<T: ReprC<CType: Sized>> {
 /// The absent value is defined by `T::NICHE`; it need not be a null pointer or zero.
 #[derive(RustSpec)]
 #[repr(transparent)]
-pub struct COptionSome<R: ReprC<CType: Sized>>(R::CType);
-
-impl<R: ReprC<CType: Sized>> COptionSome<R> {
-    pub(crate) const fn from_carrier(value: R::CType) -> Self {
-        Self(value)
-    }
-    pub(crate) const fn carrier(&self) -> &R::CType {
-        &self.0
-    }
-
-    pub(crate) fn into_carrier(self) -> R::CType {
-        self.0
-    }
-
-    /// Return whether the carrier contains the source type's niche value.
-    pub(crate) fn is_niche(&self) -> bool
-    where
-        R: Niche,
-    {
-        R::is_niche(&self.0)
-    }
-}
-
-impl<R: Niche<CType: Sized>> COptionSome<R> {
-    pub const fn new(value: R::CType) -> Self {
-        Self(value)
-    }
-}
+pub struct COptionSome<R: ReprC<CType: Sized>>(pub R::CType);
 
 impl<R: Niche<CType: Sized>> ReprC for COptionSome<R> {
     type CType = Self;

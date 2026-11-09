@@ -16,14 +16,14 @@ fn decoding_none_has_no_active_store() {
     let mut source = CBool::TRUE;
     let encoded = unsafe { CSoftRefMut::<bool, true>::from_raw(&mut source) };
     let decoded = unsafe {
-        co3::soft_decode::<Option<&mut bool>>(co3::option::COptionSome::new(encoded), &mut niche)
+        co3::soft_decode::<Option<&mut bool>>(co3::option::COptionSome(encoded), &mut niche)
     };
     assert!(matches!(decoded, Some(Some(true))));
     assert!(niche.is_some());
 
     let decoded = unsafe {
         co3::soft_decode::<Option<&mut bool>>(
-            co3::option::COptionSome::new(CSoftRefMut::<bool, true>::null()),
+            co3::option::COptionSome(CSoftRefMut::<bool, true>::null()),
             &mut niche,
         )
     };

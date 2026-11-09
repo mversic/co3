@@ -132,7 +132,7 @@ where
 
     #[inline(always)]
     unsafe fn pack(part1: Part1, part2: Part2) -> Result<Self::CType, Self::Error> {
-        unsafe { T::pack(part1, part2) }.map(COptionSome::from_carrier)
+        unsafe { T::pack(part1, part2) }.map(COptionSome)
     }
 }
 
@@ -144,7 +144,7 @@ where
 
     #[inline(always)]
     fn unpack(value: Self::CType) -> Result<(Part1, Part2), Self::Error> {
-        T::unpack(value.into_carrier())
+        T::unpack(value.0)
     }
 }
 
