@@ -14,6 +14,7 @@ mod attr;
 mod borrow;
 mod ctype;
 mod field;
+mod fields;
 mod item;
 mod niche;
 mod nul_terminated;
@@ -617,7 +618,7 @@ fn gen_source_ctype_impl(input: &syn::DeriveInput, attrs: &ReprCAttrs) -> TokenS
         let speculative =
             (!is_parametrized(field_type, generics)).then_some(quote!(for<'_co3_field>));
         quote!(#speculative #field_type: co3::CType,)
-    });
+    }).collect::<Vec<_>>();
 
     let c_fn_impls = (!omit_c_fn_impls).then(|| {
         quote! {
@@ -640,6 +641,20 @@ fn gen_source_ctype_impl(input: &syn::DeriveInput, attrs: &ReprCAttrs) -> TokenS
         }
     });
 
+    let projection_impl = (!omit_c_fn_impls).then(|| quote! {
+        unsafe impl #impl_generics co3::encode_repr::EncodeRepr for #name #ty_generics
+        where
+            #speculative Self: Sized,
+            #speculative Self: co3::rust_spec::RustSpec<
+                Layout = co3::rust_spec::Stable,
+                Trap = co3::rust_spec::layout::Robust,
+                Drop = co3::rust_spec::drop::NoDrop,
+            >,
+            #(#field_bounds)*
+            #predicates
+        { type Encoded = Self; }
+    });
+
     quote! {
         unsafe impl #impl_generics co3::CType for #name #ty_generics
         where
@@ -651,6 +666,7 @@ fn gen_source_ctype_impl(input: &syn::DeriveInput, attrs: &ReprCAttrs) -> TokenS
             #(#field_bounds)*
             #predicates
         {}
+        #projection_impl
 
         #c_fn_impls
 

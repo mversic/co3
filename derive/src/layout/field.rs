@@ -46,6 +46,9 @@ pub(super) fn derive_field_repr_c(
         (Some(variant), Some(ident)) => quote! { Self::#variant { #ident: value } },
         (Some(variant), None) => quote! { Self::#variant(value) },
     };
+    // Move the Rust field, which may contain an exclusive reference, before
+    // encoding it into a CType. Each caller consumes self into ManuallyDrop
+    // and never uses the source again, so this does not duplicate ownership.
     let take_field = match (variant, &field.ident) {
         (None, _) => quote! { unsafe { core::ptr::read(&raw const (*owner).#member) } },
         (Some(variant), Some(ident)) => quote! {
@@ -236,14 +239,14 @@ pub(super) fn derive_field_repr_c(
             {
                 type Store = <#field_ty as co3::stored::EncodeMove>::Store;
 
-                fn soft_encode<'_išč>(self, store: &'_išč mut Self::Store) -> Self::CType
+                fn soft_encode<'_išč>(self, store: &'_išč mut Self::Store) -> co3::encode_repr::Encoded<Self>
                 where Self: '_išč {
                     let owner = core::mem::ManuallyDrop::new(self);
                     let value = #take_field;
                     #encode_custom_check
-                    let encoded = co3::stored::EncodeMove::soft_encode(value, store);
+                    let encoded = co3::encode_repr::encode_field(value, store);
                     #encode_niche_check
-                    encoded
+                    co3::encode_repr::project(encoded)
                 }
             }
         };

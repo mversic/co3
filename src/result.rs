@@ -46,6 +46,7 @@ macro_rules! niche_result_carrier {
             type CType = Self;
         }
         unsafe impl<$($generics)*> CType for $name<Ok, Err> where $payload: Niche, $other: RustSpec<Size = rust_spec::size::Sized<rust_spec::Zero>> {}
+unsafe impl<$($generics)*> crate::encode_repr::EncodeRepr for $name<Ok, Err> where $payload: Niche, $other: RustSpec<Size = rust_spec::size::Sized<rust_spec::Zero>>, Self: Sized { type Encoded = Self; }
         unsafe impl<$($generics)*> CFnArg for $name<Ok, Err> where $payload: Niche, $other: RustSpec<Size = rust_spec::size::Sized<rust_spec::Zero>>, <$payload as ReprC>::CType: CFnArg {}
         unsafe impl<$($generics)*> CFnReturn for $name<Ok, Err> where $payload: Niche, $other: RustSpec<Size = rust_spec::size::Sized<rust_spec::Zero>>, <$payload as ReprC>::CType: CFnReturn {}
 
@@ -74,7 +75,7 @@ macro_rules! niche_result_carrier {
         unsafe impl<$($generics)*> EncodeMove for $name<Ok, Err> where $payload: Niche, $other: RustSpec<Size = rust_spec::size::Sized<rust_spec::Zero>> {
             type Store = ();
 
-            fn soft_encode<'a>(self, _: &'a mut ()) -> Self::CType
+            fn soft_encode<'a>(self, _: &'a mut ()) -> crate::encode_repr::Encoded<Self>
             where
                 Self: 'a,
             {
@@ -209,7 +210,7 @@ unsafe impl<T: EncodeMoveUnchecked<CType: Copy>, E: EncodeMoveUnchecked<CType: C
 unsafe impl<T: EncodeMove<CType: Copy>, E: EncodeMove<CType: Copy>> EncodeMove for Result<T, E> {
     type Store = Option<RustResult<T::Store, E::Store>>;
 
-    fn soft_encode<'a>(self, store: &'a mut Self::Store) -> Self::CType
+    fn soft_encode<'a>(self, store: &'a mut Self::Store) -> crate::encode_repr::Encoded<Self>
     where
         Self: 'a,
     {
@@ -218,13 +219,13 @@ unsafe impl<T: EncodeMove<CType: Copy>, E: EncodeMove<CType: Copy>> EncodeMove f
                 let Ok(inner) = store.insert(Ok(Default::default())) else {
                     unreachable!()
                 };
-                CResult::Ok(value.soft_encode(inner))
+                CResult::Ok(crate::encode_repr::encode_field(value, inner))
             }
             Self::Err(value) => {
                 let Err(inner) = store.insert(Err(Default::default())) else {
                     unreachable!()
                 };
-                CResult::Err(value.soft_encode(inner))
+                CResult::Err(crate::encode_repr::encode_field(value, inner))
             }
         }
     }
@@ -285,7 +286,7 @@ where
         Option<RustResult<<&'a T as EncodeMove>::Store, <&'a E as EncodeMove>::Store>>,
     >;
 
-    fn encode_ref<'itm>(&'a self, store: &'itm mut Self::Store) -> <&'a Self as ReprC>::CType
+    fn encode_ref<'itm>(&'a self, store: &'itm mut Self::Store) -> crate::encode_repr::Encoded<&'a Self>
     where
         'a: 'itm,
     {
@@ -575,6 +576,7 @@ unsafe impl<T, E> CType for RustResult<T, E> where
     Self: RustSpec<Layout = rust_spec::Stable, Trap = rust_spec::layout::Robust, Drop = NoDrop>
 {
 }
+unsafe impl<T, E> crate::encode_repr::EncodeRepr for RustResult<T, E> where Self: CType { type Encoded = Self; }
 
 unsafe impl<T, E> CFnArg for RustResult<T, E> where
     Self: CType + RustSpec<Size = rust_spec::size::Sized<rust_spec::Gt<rust_spec::Zero>>>

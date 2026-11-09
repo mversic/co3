@@ -76,7 +76,7 @@ unsafe impl<'a> EncodeRefUnchecked<'a> for Probe {
 }
 unsafe impl<'a> EncodeRef<'a> for Probe {
     type Store = ();
-    fn encode_ref<'itm>(&'a self, _: &'itm mut ()) -> <&'a Self as ReprC>::CType
+    fn encode_ref<'itm>(&'a self, _: &'itm mut ()) -> co3::encode_repr::Encoded<&'a Self>
     where
         'a: 'itm,
     {
@@ -99,7 +99,7 @@ unsafe impl<'a> EncodeMutUnchecked<'a> for Probe {
 }
 unsafe impl<'a> EncodeMut<'a> for Probe {
     type Store = ();
-    fn encode_mut<'itm>(&'a mut self, _: &'itm mut ()) -> <&'a mut Self as ReprC>::CType
+    fn encode_mut<'itm>(&'a mut self, _: &'itm mut ()) -> co3::encode_repr::Encoded<&'a mut Self>
     where
         'a: 'itm,
     {

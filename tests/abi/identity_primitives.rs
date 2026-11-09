@@ -225,7 +225,7 @@ fn safe_carrier_constructors_accept_lowered_storage() {
     let bytes = [1_u8, 2];
     let _slice = CSoftWideRef::<[u8]>::from_ref(&bytes[..]);
     assert_eq!(
-        unsafe { CSoftWideRef::<str>::from_raw_parts("hello".as_ptr(), "hello".len()) },
+        unsafe { co3::wide::CWideRef::<str>::from_raw_parts("hello".as_ptr(), "hello".len()) },
         co3::encode("hello")
     );
     let mut bytes = [3_u8, 4];

@@ -167,8 +167,7 @@ macro_rules! impl_tuple {
             #[expect(non_snake_case)]
             fn sync(self) -> Option<()> {
                 let ($($ty,)+) = self;
-                $( $ty.sync()?; )+
-                Some(())
+                crate::sync::sync_all([$($ty.sync(),)+])
             }
         }
 
@@ -212,7 +211,7 @@ macro_rules! impl_tuple {
 
             #[inline(always)]
             #[expect(non_snake_case)]
-            fn soft_encode<'itm>(self, store: &mut Self::Store) -> Self::CType
+            fn soft_encode<'itm>(self, store: &mut Self::Store) -> crate::encode_repr::Encoded<Self>
             where
                 Self: 'itm
             {
@@ -226,7 +225,7 @@ macro_rules! impl_tuple {
 
             #[inline(always)]
             #[expect(non_snake_case)]
-            fn soft_encode<'itm>(self, store: &'itm mut Self::Store) -> Self::CType
+            fn soft_encode<'itm>(self, store: &'itm mut Self::Store) -> crate::encode_repr::Encoded<Self>
             where
                 Self: 'itm,
             {
@@ -234,7 +233,7 @@ macro_rules! impl_tuple {
 
                 let $ffi_ty($($ty),*) = self;
                 let store: private_store::Store<$($ty::Store,)*> = store.into();
-                $ffi_ty($( $ty.soft_encode(store.$ty) ),*)
+                $ffi_ty($( crate::encode_repr::encode_field($ty, store.$ty) ),*)
             }
 
         }
@@ -270,7 +269,7 @@ macro_rules! impl_tuple {
         {
             type Store = crate::sync::RefSizedEncodeStore<Self, ($(<&'a $ty as EncodeMove>::Store,)*)>;
             #[expect(non_snake_case)]
-            fn encode_ref<'itm>(&'a self, store: &'itm mut Self::Store) -> <&'a Self as ReprC>::CType  where 'a: 'itm {
+            fn encode_ref<'itm>(&'a self, store: &'itm mut Self::Store) -> crate::encode_repr::Encoded<&'a Self>  where 'a: 'itm {
                 store.encode(|fields| {
                     impl_tuple! {@decl_priv_store $($ty),*}
                     let ($($ty,)*) = self;
@@ -288,7 +287,7 @@ macro_rules! impl_tuple {
         {
             type Store = crate::sync::RefSizedEncodeStore<Self, ($(<&'a $ty as EncodeMove>::Store,)*)>;
             #[expect(non_snake_case)]
-            fn encode_ref<'itm>(&'a self, store: &'itm mut Self::Store) -> <&'a Self as ReprC>::CType  where 'a: 'itm {
+            fn encode_ref<'itm>(&'a self, store: &'itm mut Self::Store) -> crate::encode_repr::Encoded<&'a Self>  where 'a: 'itm {
                 store.encode(|fields| {
                     impl_tuple! {@decl_priv_store $($ty),*}
                     let $ffi_ty($($ty),*) = self;
@@ -443,6 +442,7 @@ macro_rules! impl_tuple {
         unsafe impl<$($head: AbiCompatible<CType: Copy>,)* $last: AbiCompatible + ?Sized> AbiCompatible for $ffi_ty<$($head,)* $last> {}
 
         unsafe impl<$($head: CType,)* $last: CType + ?Sized> CType for $ffi_ty<$($head,)* $last> {}
+unsafe impl<$($head: CType,)* $last: CType + ?Sized> crate::encode_repr::EncodeRepr for $ffi_ty<$($head,)* $last> where Self: Sized { type Encoded = Self; }
 
         unsafe impl<$($head: crate::stored::EmptyStore,)* $last: crate::stored::EmptyStore> crate::stored::EmptyStore for ($($head,)* $last,) {}
         unsafe impl<$($head: crate::stored::EmptyStore,)* $last: crate::stored::EmptyStore> crate::stored::EmptyStore for $ffi_ty<$($head,)* $last> {}
@@ -620,9 +620,10 @@ mod tests {
     use core::num::NonZero as StdNonZero;
 
     use rust_spec::size::{Sized as Co3Sized, Zero};
-    use static_assertions::{assert_impl_all, assert_not_impl_any};
-
+    use static_assertions::assert_impl_all;
     #[cfg(feature = "alloc")]
+    use static_assertions::assert_not_impl_any;
+
     use super::*;
     use crate::{
         Decode, Encode,

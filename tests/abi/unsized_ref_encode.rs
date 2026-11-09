@@ -96,7 +96,7 @@ unsafe impl<'a> EncodeRefUnchecked<'a> for SliceView {
 }
 unsafe impl<'a> EncodeRef<'a> for SliceView {
     type Store = <[Element] as EncodeRef<'a>>::Store;
-    fn encode_ref<'itm>(&'a self, store: &'itm mut Self::Store) -> <&'a Self as ReprC>::CType
+    fn encode_ref<'itm>(&'a self, store: &'itm mut Self::Store) -> co3::encode_repr::Encoded<&'a Self>
     where
         'a: 'itm,
     {
@@ -176,7 +176,7 @@ unsafe impl<'a> EncodeMutUnchecked<'a> for Explicit {
 }
 unsafe impl<'a> EncodeMut<'a> for Explicit {
     type Store = ();
-    fn encode_mut<'itm>(&'a mut self, _: &'itm mut ()) -> <&'a mut Self as ReprC>::CType
+    fn encode_mut<'itm>(&'a mut self, _: &'itm mut ()) -> co3::encode_repr::Encoded<&'a mut Self>
     where
         'a: 'itm,
     {
@@ -218,7 +218,7 @@ unsafe impl<'a> EncodeMutUnchecked<'a> for MutSliceView {
 }
 unsafe impl<'a> EncodeMut<'a> for MutSliceView {
     type Store = ();
-    fn encode_mut<'itm>(&'a mut self, _: &'itm mut ()) -> <&'a mut Self as ReprC>::CType
+    fn encode_mut<'itm>(&'a mut self, _: &'itm mut ()) -> co3::encode_repr::Encoded<&'a mut Self>
     where
         'a: 'itm,
     {

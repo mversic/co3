@@ -150,7 +150,7 @@ fn stable_references_keep_the_direct_decoding_path() {
     let original = core::ptr::from_mut(&mut source);
     let mut store = ();
     let value =
-        unsafe { co3::soft_decode::<&mut u8>(CSoftRefMut::from_mut(&mut source), &mut store) }
+        unsafe { co3::soft_decode::<&mut u8>(co3::reference::CRefMut::from_mut(&mut source), &mut store) }
             .unwrap();
     assert_eq!(core::ptr::from_mut(value), original);
     *value = 9;
@@ -189,11 +189,11 @@ fn derived_unstable_referents_use_temporary_storage_and_writeback() {
 fn stable_wide_referents_bypass_decode_traits() {
     assert_not_impl_any!([u8]: DecodeRef<'static>, DecodeMut<'static>);
     let mut source = [3u8, 7];
-    let carrier = co3::wide::CSoftWideRef::from_ref(source.as_slice());
+    let carrier = co3::wide::CWideRef::from_ref(source.as_slice());
     let value = unsafe { co3::decode::<&[u8]>(carrier) }.unwrap();
     assert_eq!(value.as_ptr(), source.as_ptr());
     assert_eq!(value, &[3, 7]);
-    let carrier = co3::wide::CSoftWideRefMut::from_mut(source.as_mut_slice());
+    let carrier = co3::wide::CWideRefMut::from_mut(source.as_mut_slice());
     let value = unsafe { co3::decode::<&mut [u8]>(carrier) }.unwrap();
     value[1] = 9;
     assert_eq!(source, [3, 9]);
@@ -760,7 +760,8 @@ fn mutable_aggregates_accept_noncopy_nonclone_fields() {
 #[test]
 fn mutable_aggregate_fields_can_be_exclusive_references() {
     let mut target = 3u32;
-    let mut carrier = co3::tuple::Tuple1(CSoftRefMut::from_mut(&mut target));
+    let pointer = core::ptr::from_mut(&mut target);
+    let mut carrier = co3::tuple::Tuple1(co3::reference::CRefMut::from_mut(&mut target));
     let mut store = Default::default();
     let value = unsafe {
         co3::soft_decode::<&mut (&mut u32,)>(CSoftRefMut::from_mut(&mut carrier), &mut store)
@@ -768,6 +769,6 @@ fn mutable_aggregate_fields_can_be_exclusive_references() {
     .unwrap();
     *value.0 = 17;
     store.sync().unwrap();
+    assert_eq!(carrier.0.as_ptr(), pointer);
     assert_eq!(target, 17);
-    assert_eq!(carrier.0.as_ptr(), core::ptr::from_mut(&mut target));
 }

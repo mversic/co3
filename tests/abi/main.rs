@@ -92,6 +92,7 @@ mod shared_validate;
 mod statics;
 mod status_return;
 mod stored_encode;
+mod string_ref_decode;
 mod unsized_ref_encode;
 mod vec_mutability;
 mod wide;

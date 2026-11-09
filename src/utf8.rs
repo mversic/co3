@@ -33,6 +33,7 @@ pub struct Utf8Str(pub [u8]);
 
 unsafe impl CType for Utf8Str {}
 
+
 impl ReprC for Utf8Str {
     type CType = Self;
 }
@@ -149,7 +150,7 @@ impl ReprC for String {
 unsafe impl EncodeMove for String {
     type Store = ();
 
-    fn soft_encode<'itm>(self, (): &mut ()) -> Self::CType
+    fn soft_encode<'itm>(self, (): &mut ()) -> crate::encode_repr::Encoded<Self>
     where
         Self: 'itm,
     {

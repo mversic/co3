@@ -16,6 +16,11 @@ use crate::{
     stored::{DecodeMove, EmptyStore, EncodeMove, Store, decode_move, encode_move},
 };
 
+/// Combine synchronization results, exhausting the iterator even after a failure.
+pub(crate) fn sync_all(results: impl IntoIterator<Item = Option<()>>) -> Option<()> {
+    results.into_iter().fold(Some(()), Option::and)
+}
+
 impl Store for () {
     fn sync(self) -> Option<()> {
         Some(())
@@ -32,15 +37,7 @@ impl<D: Store> Store for Box<D> {
 #[cfg(feature = "alloc")]
 impl<D: Store> Store for Box<[D]> {
     fn sync(self) -> Option<()> {
-        let mut is_valid = true;
-
-        for store in self {
-            if store.sync().is_none() {
-                is_valid = false;
-            }
-        }
-
-        is_valid.then_some(())
+        sync_all(self.into_iter().map(Store::sync))
     }
 }
 
@@ -175,7 +172,7 @@ impl<R: EncodeMove<Store: EmptyStore>, S: Store + Default> RefMutSizedDecodeStor
             self.decode_with_order(
                 |fields| build(fields).map(|value| (value, source)),
                 |value, source| {
-                    source.write(encode_move(value));
+                    source.write(crate::encode_repr::unproject::<R::CType>(encode_move(value)));
                     Some(())
                 },
                 true,
@@ -529,7 +526,7 @@ impl<R: EncodeMove<CType: Sized, Store: EmptyStore>, S: Store> Store
 
         let source = unsafe { source.into_mut()? };
         for (destination, value) in source.iter_mut().zip(value) {
-            *destination = encode_move(value);
+            *destination = crate::encode_repr::unproject::<R::CType>(encode_move(value));
         }
         Some(())
     }
@@ -608,15 +605,7 @@ impl<D: Default, const N: usize> Default for ArrayStore<D, N> {
 
 impl<D: Store, const N: usize> Store for ArrayStore<D, N> {
     fn sync(self) -> Option<()> {
-        let mut is_valid = true;
-
-        for store in self.0 {
-            if store.sync().is_none() {
-                is_valid = false;
-            }
-        }
-
-        is_valid.then_some(())
+        sync_all(self.0.into_iter().map(Store::sync))
     }
 }
 
@@ -832,7 +821,71 @@ impl<T: ReprC<CType: Sized>, S: Store> Store for RefVecEncodeStore<T, S> {
 mod tests {
     extern crate std;
 
-    use super::{RefMutSizedDecodeStore, RefSizedDecodeStore, RefSizedEncodeStore, Store};
+    use std::{cell::RefCell, vec::Vec};
+
+    use super::{ArrayStore, RefMutSizedDecodeStore, RefSizedDecodeStore, RefSizedEncodeStore, Store};
+
+    #[test]
+    fn aggregate_stores_sync_every_child_in_order() {
+        struct Probe<'a> {
+            calls: &'a RefCell<Vec<usize>>,
+            index: usize,
+            fail: bool,
+        }
+
+        impl Store for Probe<'_> {
+            fn sync(self) -> Option<()> {
+                self.calls.borrow_mut().push(self.index);
+                (!self.fail).then_some(())
+            }
+        }
+
+        for failure in [None, Some(0), Some(1), Some(2)] {
+            let calls = RefCell::new(Vec::new());
+            let probe = |index| Probe {
+                calls: &calls,
+                index,
+                fail: failure == Some(index),
+            };
+            let expected = failure.is_none().then_some(());
+
+            assert_eq!((probe(0), (probe(1), probe(2))).sync(), expected);
+            assert_eq!(*calls.borrow(), [0, 1, 2]);
+            calls.borrow_mut().clear();
+
+            assert_eq!(ArrayStore([probe(0), probe(1), probe(2)]).sync(), expected);
+            assert_eq!(*calls.borrow(), [0, 1, 2]);
+
+            #[cfg(feature = "alloc")]
+            {
+                calls.borrow_mut().clear();
+                let stores = Vec::from([probe(0), probe(1), probe(2)]).into_boxed_slice();
+                assert_eq!(stores.sync(), expected);
+                assert_eq!(*calls.borrow(), [0, 1, 2]);
+            }
+        }
+
+        assert_eq!(ArrayStore::<(), 0>([]).sync(), Some(()));
+        #[cfg(feature = "alloc")]
+        assert_eq!(Vec::<()>::new().into_boxed_slice().sync(), Some(()));
+    }
+
+    #[test]
+    fn tuple_writeback_continues_after_invalid_field() {
+        let (mut first, mut second) = (false, false);
+        let mut store = Default::default();
+        let encoded = crate::soft_encode((&mut first, &mut second), &mut store);
+        unsafe {
+            // Both carriers point into live conversion stores. Only the first
+            // carrier contains an invalid Rust bool representation.
+            *encoded.0.as_ptr() = crate::primitives::CBool(2);
+            *encoded.1.as_ptr() = crate::primitives::CBool::TRUE;
+        }
+
+        assert_eq!(store.sync(), None);
+        assert!(!first);
+        assert!(second);
+    }
 
     #[test]
     fn failed_build_clears_carrier_and_allows_reuse() {

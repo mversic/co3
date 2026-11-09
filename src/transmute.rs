@@ -22,7 +22,7 @@ use crate::{
     NeedsDrop, ReprC,
     niche::Niche,
     option::COptionSome,
-    reference::{CSoftRefMut, SharedRefCarrier},
+    reference::{SharedRefCarrier, MutRefCarrier},
     result::{CResultErr, CResultOk},
     utf8::Utf8Str,
     wide::Wide as _,
@@ -70,7 +70,7 @@ disjoint_impls! {
             Self: RustSpec<Layout = Stable>,
             R: RustSpec<Mutability = WithInterior<__Trap>>,
             WithInterior<__Trap>: InteriorTrap<Trap = Robust>,
-            Self: ReprC<CType = CSoftRefMut<R, false>>,
+            Self: ReprC<CType: MutRefCarrier<R, false>>,
         {}
 
     #[cfg(feature = "alloc")]
@@ -151,7 +151,8 @@ disjoint_impls! {
         ///
         /// # Safety
         ///
-        /// Any pointers dereferenced while checking `target` must be valid for reads.
+        /// * Any pointers dereferenced while checking `target` must be valid for reads.
+        /// * Inspecting non-robust interior-mutable contents requires exclusive access.
         unsafe fn is_valid(target: &Self::CType) -> bool;
     }
 
@@ -179,7 +180,7 @@ disjoint_impls! {
         Self: RustSpec<Layout = Stable>,
         R: RustSpec<Mutability = WithInterior<__Trap>>,
         WithInterior<__Trap>: InteriorTrap<Trap = Robust>,
-        Self: ReprC<CType = CSoftRefMut<R, false>>,
+        Self: ReprC<CType: MutRefCarrier<R, false>>,
     {
         #[inline(always)]
         unsafe fn is_valid(target: &Self::CType) -> bool {
@@ -293,6 +294,7 @@ disjoint_impls! {
     {
         #[inline(always)]
         unsafe fn is_valid(target: &Self::CType) -> bool {
+            // SAFETY: The validation contract requires exclusive access to these contents.
             unsafe { T::is_valid(&*target.get()) }
         }
     }
@@ -314,6 +316,7 @@ disjoint_impls! {
     {
         #[inline(always)]
         unsafe fn is_valid(target: &Self::CType) -> bool {
+            // SAFETY: The validation contract requires exclusive access to these contents.
             unsafe { T::is_valid(&*target.get()) }
         }
     }
@@ -322,7 +325,7 @@ disjoint_impls! {
 
 unsafe impl<R: AbiCompatibleValidate + ?Sized> AbiCompatibleValidate for &mut R
 where
-    Self: RustSpec<Layout = Stable> + ReprC<CType = CSoftRefMut<R, true>>,
+    Self: RustSpec<Layout = Stable> + ReprC<CType: MutRefCarrier<R, true>>,
 {
     #[inline(always)]
     unsafe fn is_valid(target: &Self::CType) -> bool {
@@ -336,7 +339,7 @@ where
     }
 }
 unsafe impl<R: AbiCompatible + ?Sized> AbiCompatible for &mut R where
-    Self: RustSpec<Layout = Stable> + ReprC<CType = CSoftRefMut<R, true>>
+    Self: RustSpec<Layout = Stable> + ReprC<CType: MutRefCarrier<R, true>>
 {
 }
 
@@ -463,7 +466,6 @@ mod tests {
     }
     use crate::{
         CType, Decode, Encode,
-        wide::{CSoftWideRefMut, CSoftWideRef},
     };
 
     #[test]
@@ -554,7 +556,7 @@ mod tests {
         assert_eq!(encoded.as_ptr(), core::ptr::from_ref(&cell).cast_mut());
         assert!(unsafe { <&UnsafeCell<u8> as AbiCompatibleValidate>::is_valid(&encoded) });
 
-        let null = CSoftRefMut::<UnsafeCell<u8>, false>::null();
+        let null = crate::reference::CRefMut::<UnsafeCell<u8>, false>::null();
         assert!(!unsafe { <&UnsafeCell<u8> as AbiCompatibleValidate>::is_valid(&null) });
     }
 
@@ -571,7 +573,7 @@ mod tests {
             Encode,
         );
         assert_impl_all!(&mut bool:
-            Niche<CType = CSoftRefMut<bool, true>>,
+            Niche<CType = crate::reference::CRefMut<'static, bool, true>>,
             Decode<'static>,
             Encode,
         );
@@ -582,13 +584,13 @@ mod tests {
             Encode,
         );
         assert_impl_all!(&[bool]:
-            Niche<CType = CSoftWideRef<[bool]>>,
+            Niche<CType = crate::wide::CWideRef<'static, [bool]>>,
             Decode<'static>,
             Encode,
         );
         #[cfg(feature = "alloc")]
         assert_impl_all!(&mut [bool]:
-            Niche<CType = CSoftWideRefMut<[bool], true>>,
+            Niche<CType = crate::wide::CWideRefMut<'static, [bool], true>>,
             Decode<'static>,
             Encode,
         );
@@ -624,7 +626,7 @@ mod tests {
             Encode,
         );
         assert_impl_all!(&mut &u8:
-            Niche<CType = CSoftRefMut<&'static u8, true>>,
+            Niche<CType = crate::reference::CRefMut<'static, &'static u8, true>>,
             Decode<'static>,
             Encode,
         );
@@ -635,12 +637,12 @@ mod tests {
             Encode,
         );
         assert_impl_all!(&[&u8]:
-            Niche<CType = CSoftWideRef<[&'static u8]>>,
+            Niche<CType = crate::wide::CWideRef<'static, [&'static u8]>>,
             Decode<'static>,
             Encode,
         );
         assert_impl_all!(&mut [&u8]:
-            Niche<CType = CSoftWideRefMut<[&'static u8], true>>,
+            Niche<CType = crate::wide::CWideRefMut<'static, [&'static u8], true>>,
             Decode<'static>,
         );
         #[cfg(feature = "alloc")]
@@ -677,7 +679,7 @@ mod tests {
             Encode,
         );
         assert_impl_all!(&mut &bool:
-            Niche<CType = CSoftRefMut<&'static bool, true>>,
+            Niche<CType = crate::reference::CRefMut<'static, &'static bool, true>>,
             Decode<'static>,
             Encode,
         );
@@ -688,13 +690,13 @@ mod tests {
             Encode,
         );
         assert_impl_all!(&[&bool]:
-            Niche<CType = CSoftWideRef<[&'static bool]>>,
+            Niche<CType = crate::wide::CWideRef<'static, [&'static bool]>>,
             Decode<'static>,
             Encode,
         );
         #[cfg(feature = "alloc")]
         assert_impl_all!(&mut [&bool]:
-            Niche<CType = CSoftWideRefMut<[&'static bool], true>>,
+            Niche<CType = crate::wide::CWideRefMut<'static, [&'static bool], true>>,
             Decode<'static>,
             Encode,
         );
@@ -730,7 +732,7 @@ mod tests {
             Encode,
         );
         assert_impl_all!(&mut &mut u8:
-            Niche<CType = CSoftRefMut<&'static mut u8, true>>,
+            Niche<CType = crate::reference::CRefMut<'static, &'static mut u8, true>>,
             Decode<'static>,
         );
         #[cfg(feature = "alloc")]
@@ -740,12 +742,12 @@ mod tests {
             Encode,
         );
         assert_impl_all!(&[&mut u8]:
-            Niche<CType = CSoftWideRef<[&'static mut u8]>>,
+            Niche<CType = crate::wide::CWideRef<'static, [&'static mut u8]>>,
             Decode<'static>,
             Encode,
         );
         assert_impl_all!(&mut [&mut u8]:
-            Niche<CType = CSoftWideRefMut<[&'static mut u8], true>>,
+            Niche<CType = crate::wide::CWideRefMut<'static, [&'static mut u8], true>>,
             Decode<'static>,
         );
         #[cfg(feature = "alloc")]
@@ -761,7 +763,7 @@ mod tests {
             Encode,
         );
         assert_impl_all!([&mut u8; 2]:
-            Niche<CType = [CSoftRefMut<u8, true>; 2]>,
+            Niche<CType = [crate::reference::CRefMut<'static, u8, true>; 2]>,
             Decode<'static>,
             Encode,
         );
@@ -782,7 +784,7 @@ mod tests {
             Encode,
         );
         assert_impl_all!(&mut &mut bool:
-            Niche<CType = CSoftRefMut<&'static mut bool, true>>,
+            Niche<CType = crate::reference::CRefMut<'static, &'static mut bool, true>>,
             Decode<'static>,
         );
         #[cfg(feature = "alloc")]
@@ -792,12 +794,12 @@ mod tests {
             Encode,
         );
         assert_impl_all!(&[&mut bool]:
-            Niche<CType = CSoftWideRef<[&'static mut bool]>>,
+            Niche<CType = crate::wide::CWideRef<'static, [&'static mut bool]>>,
             Decode<'static>,
             Encode,
         );
         assert_impl_all!(&mut [&mut bool]:
-            Niche<CType = CSoftWideRefMut<[&'static mut bool], true>>,
+            Niche<CType = crate::wide::CWideRefMut<'static, [&'static mut bool], true>>,
             Decode<'static>,
         );
         #[cfg(feature = "alloc")]
@@ -813,7 +815,7 @@ mod tests {
             Encode
         );
         assert_impl_all!([&mut bool; 2]:
-            Niche<CType = [CSoftRefMut<bool, true>; 2]>,
+            Niche<CType = [crate::reference::CRefMut<'static, bool, true>; 2]>,
             Decode<'static>,
             Encode
         );

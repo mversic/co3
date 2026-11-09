@@ -545,7 +545,7 @@ fn synthesize_dispatch_export_fn(
     }
     let definition = match emission {
         DispatchEmission::Export => {
-            emit_extern_definition(abi, attrs, failure_mode, quote!(#lowered_sig), fn_body)
+            emit_extern_definition(abi, attrs, failure_mode, lowered_sig, fn_body)
         }
         DispatchEmission::Companion(vis) => {
             let mut sig = lowered_sig;

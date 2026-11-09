@@ -170,3 +170,33 @@ fn mutable_slice_writeback_uses_an_explicit_slice_header() {
     assert_eq!(store.sync(), Some(()));
     assert_eq!(values, [true, true]);
 }
+
+#[test]
+fn derived_carrier_spec_preserves_header_and_pointee_properties() {
+    use co3::rust_spec::{
+        self, RustSpec, Stable,
+        layout::Robust,
+        mutability::{Exclusive, WithInterior, WithoutInterior},
+    };
+    use core::cell::UnsafeCell;
+    use static_assertions::assert_impl_all;
+
+    assert_impl_all!(CVec<()>: RustSpec<
+        Layout = Stable,
+        Size = rust_spec::size::Sized<rust_spec::Gt<rust_spec::Zero>>,
+        __Alignment = <usize as RustSpec>::__Alignment,
+        Trap = Robust,
+        Niche = rust_spec::niche::WithoutNiche,
+        Drop = rust_spec::drop::NoDrop,
+        Mutability = Exclusive<WithoutInterior>,
+        Opacity = rust_spec::NonOpaque,
+        __IndirectTrap = Robust,
+    >);
+    // bool lowers to the robust CBool carrier, including inside UnsafeCell.
+    assert_impl_all!(CVec<UnsafeCell<bool>>: RustSpec<
+        Layout = Stable,
+        Trap = Robust,
+        Mutability = Exclusive<WithInterior<Robust>>,
+        __IndirectTrap = Robust,
+    >);
+}

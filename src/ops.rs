@@ -64,7 +64,7 @@ macro_rules! impl_fn_pointer {
                 $( $arg_ty: Encode<CType = $c_ty, Store: EmptyStore>, )*
                 B: Decode<'d, CType = U, Store: EmptyStore> + 'd,
             {
-                let result = unsafe { self($(crate::encode($arg)),*) };
+                let result = unsafe { self($(crate::encode_repr::unproject::<$c_ty>(crate::encode($arg))),*) };
                 unsafe { crate::decode(result) }
             }
 
@@ -75,7 +75,7 @@ macro_rules! impl_fn_pointer {
                 B: for<'r> Decode<'r, CType = U, Store: EmptyStore>,
             {
                 $(let mut $arg_ty = Default::default();)*
-                let result = unsafe { self($(crate::soft_encode($arg, &mut $arg_ty)),*) };
+                let result = unsafe { self($(crate::encode_repr::unproject::<$c_ty>(crate::soft_encode($arg, &mut $arg_ty))),*) };
                 #[allow(unused_mut)]
                 let mut sync_ok = true;
                 $(sync_ok &= Store::sync($arg_ty).is_some();)*

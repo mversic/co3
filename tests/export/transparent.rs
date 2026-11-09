@@ -2,7 +2,7 @@ use std::marker::PhantomData;
 
 use co3::{
     ReprC, ffi, option::COption, reference::CRef, rust_spec::RustSpec, vec::CVec,
-    wide::CSoftWideRef,
+    wide::CWideRef,
 };
 
 #[derive(Clone, Copy, PartialEq, Eq, Debug, RustSpec, ReprC)]
@@ -107,9 +107,9 @@ unsafe extern "C" {
     fn vec_to_vec_raw(value: CVec<TransparentStruct>) -> CVec<TransparentStruct>;
 
     #[link_name = "export_transparent__slice_to_slice"]
-    fn slice_to_slice_raw(
-        value: CSoftWideRef<[TransparentStruct]>,
-    ) -> CSoftWideRef<[TransparentStruct]>;
+    fn slice_to_slice_raw<'a>(
+        value: CWideRef<'a, [TransparentStruct]>,
+    ) -> CWideRef<'a, [TransparentStruct]>;
 
     #[link_name = "export_transparent__TransparentStruct__with_payload"]
     fn with_payload_raw(

@@ -244,7 +244,7 @@ fn gen_import_wrapper(
         pub unsafe fn set(&self, value: #ty)
         where for<'_dummy> #ty: #co3::Encode<Store: #co3::stored::EmptyStore>,
         {
-            let value = #co3::encode(value);
+            let value = #co3::encode_repr::unproject::<<#ty as #co3::ReprC>::CType>(#co3::encode(value));
             unsafe { core::ptr::write(core::ptr::addr_of_mut!(#raw_ident), value); }
         }
 
@@ -254,7 +254,7 @@ fn gen_import_wrapper(
             for<'_dummy> #ty: #co3::Encode<Store: #co3::stored::EmptyStore> + core::default::Default,
             #decode_bounds
         {
-            let replacement = #co3::encode(<#ty as core::default::Default>::default());
+            let replacement = #co3::encode_repr::unproject::<<#ty as #co3::ReprC>::CType>(#co3::encode(<#ty as core::default::Default>::default()));
             let old = unsafe { core::ptr::replace(core::ptr::addr_of_mut!(#raw_ident), replacement) };
             unsafe { #co3::decode::<#ty>(old) }
         }

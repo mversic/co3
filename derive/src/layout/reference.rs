@@ -40,6 +40,14 @@ pub(super) fn encoder_names(
     )
 }
 
+pub(super) fn encoder_output(reference: TokenStream, unchecked: bool) -> TokenStream {
+    if unchecked {
+        quote!(<#reference as co3::ReprC>::CType)
+    } else {
+        quote!(co3::encode_repr::Encoded<#reference>)
+    }
+}
+
 fn encoding_call(call: TokenStream, unchecked: bool) -> TokenStream {
     if unchecked {
         quote!(unsafe { #call })
@@ -82,9 +90,12 @@ pub(super) fn gen_stable_direct_mut_impls(input: &syn::DeriveInput) -> TokenStre
         .collect::<Vec<_>>();
 
     let implementations = [true, false].into_iter().map(|unchecked| {
-        let (trait_name, move_trait, store_name, method, move_method) =
+        let (trait_name, move_trait, store_name, method, _) =
             encoder_names(true, unchecked);
         let unsafe_fn = unchecked.then(|| quote!(unsafe));
+        let output = encoder_output(quote!(&'_ršč mut Self), unchecked);
+        let trap = (!unchecked).then(|| quote!(, Trap = co3::rust_spec::layout::Robust));
+        let finish = if unchecked { quote!(encoded) } else { quote!(co3::encode_repr::project(encoded)) };
         let abi_bound = if unchecked {
             quote!(co3::transmute::AbiCompatible)
         } else {
@@ -93,41 +104,19 @@ pub(super) fn gen_stable_direct_mut_impls(input: &syn::DeriveInput) -> TokenStre
         let validation = (!unchecked).then(|| quote! {
             debug_assert!(unsafe { <&'_ršč mut Self as co3::transmute::AbiCompatibleValidate>::is_valid(&encoded) }, "encoding failed AbiCompatibleValidate::is_valid");
         });
-        let encode = encoding_call(quote!(<Self as #move_trait>::#move_method(value, fields)), unchecked);
-        quote! {
-            unsafe impl #impl_generics #trait_name<'_ršč> for #name #ty_generics
-            where
-                #speculative Self: #abi_bound
-                    + co3::rust_spec::RustSpec<Layout = co3::rust_spec::Stable, Trap = co3::rust_spec::layout::Robust>
-                    + co3::ReprC<CType: co3::CType + Sized> + Sized + '_ršč,
-                &'_ršč mut Self: co3::ReprC<CType = co3::reference::CSoftRefMut<Self, true>>
-                    + #abi_bound,
-                #(#field_bounds)*
-                #predicates
-            {
-                type #store_name = ();
-                #unsafe_fn fn #method<'itm>(&'_ršč mut self, _: &'itm mut ()) -> <&'_ršč mut Self as co3::ReprC>::CType
-                where '_ršč: 'itm {
-                    // Do not delegate back to EncodeMove for &mut Self: its stored
-                    // branch requires EncodeMut and would create a trait-solver cycle.
-                    let encoded = unsafe {
-                        co3::reference::CSoftRefMut::from_raw(core::ptr::from_mut(self).cast())
-                    };
-                    #validation
-                    encoded
-                }
-            }
+        let encode = quote!(co3::encode_repr::encode_field(value, fields));
+        let nonrobust = (!unchecked).then(|| quote! {
             unsafe impl #impl_generics #trait_name<'_ršč> for #name #ty_generics
             where
                 #speculative Self: co3::rust_spec::RustSpec<Layout = co3::rust_spec::Stable, Trap = co3::rust_spec::layout::NonRobust>
-                    + co3::ReprC<CType: co3::CType + Sized> + Clone + #move_trait
+                    + co3::ReprC<CType: co3::CType + co3::encode_repr::EncodeRepr> + Clone + #move_trait + co3::transmute::AbiCompatible
                     + co3::stored::DecodeMove<'_ršč, Store: co3::stored::EmptyStore + '_ršč> + '_ršč,
-                &'_ršč mut Self: co3::ReprC<CType = co3::reference::CSoftRefMut<Self, true>>,
+                &'_ršč mut Self: co3::ReprC<CType = co3::reference::CRefMut<'_ršč, Self, true>> + co3::transmute::AbiCompatible,
                 #(#field_bounds)*
                 #predicates
             {
                 type #store_name = co3::sync::RefMutSizedEncodeStore<'_ršč, Self, <Self as #move_trait>::#store_name>;
-                #unsafe_fn fn #method<'itm>(&'_ršč mut self, store: &'itm mut Self::#store_name) -> <&'_ršč mut Self as co3::ReprC>::CType
+                #unsafe_fn fn #method<'itm>(&'_ršč mut self, store: &'itm mut Self::#store_name) -> #output
                 where '_ršč: 'itm {
                     store.encode(self, |original, fields| {
                         let value = Self::clone(original);
@@ -135,6 +124,32 @@ pub(super) fn gen_stable_direct_mut_impls(input: &syn::DeriveInput) -> TokenStre
                     })
                 }
             }
+        });
+        quote! {
+            unsafe impl #impl_generics #trait_name<'_ršč> for #name #ty_generics
+            where
+                #speculative Self: #abi_bound
+                    + co3::rust_spec::RustSpec<Layout = co3::rust_spec::Stable #trap>
+                    + co3::ReprC<CType: co3::CType + Sized> + Sized + '_ršč,
+                &'_ršč mut Self: co3::ReprC<CType = co3::reference::CRefMut<'_ršč, Self, true>>
+                    + #abi_bound,
+                #(#field_bounds)*
+                #predicates
+            {
+                type #store_name = ();
+                #unsafe_fn fn #method<'itm>(&'_ršč mut self, _: &'itm mut ()) -> #output
+                where '_ršč: 'itm {
+                    // Do not delegate back to EncodeMove for &mut Self: its stored
+                    // branch requires EncodeMut and would create a trait-solver cycle.
+                    let encoded = unsafe {
+                        co3::reference::CRefMut::from_raw(core::ptr::from_mut(self).cast())
+                    };
+                    #validation
+                    #finish
+                }
+            }
+            #nonrobust
+
 
         }
     });
@@ -194,6 +209,8 @@ pub(super) fn group_aggregate_ref_impls(
         }
         let mutability = mutable.then(|| quote!(mut));
         let unsafe_fn = unchecked.then(|| quote!(unsafe));
+        let output = encoder_output(quote!(&'a #mutability Self), unchecked);
+        let projection_bound = (!unchecked).then(|| quote!(+ co3::encode_repr::EncodeRepr));
         let supertrait = match (mutable, unchecked) {
             (_, true) => quote!(co3::ReprC + 'a),
             (false, false) => quote!(co3::stored::EncodeRefUnchecked<'a>),
@@ -207,9 +224,9 @@ pub(super) fn group_aggregate_ref_impls(
                 where &'a #mutability Self: co3::ReprC<CType: Sized>
                 {
                     type #store_name: co3::stored::Store + Default;
-                    #unsafe_fn fn #method<'itm>(&'a #mutability self, store: &'itm mut Self::#store_name) -> <&'a #mutability Self as co3::ReprC>::CType
+                    #unsafe_fn fn #method<'itm>(&'a #mutability self, store: &'itm mut Self::#store_name) -> #output
                     where
-                        &'a #mutability Self: co3::ReprC<CType: Sized>,
+                        &'a #mutability Self: co3::ReprC<CType: Sized #projection_bound>,
                         'a: 'itm;
                 }
                 #(#implementations)*
@@ -258,6 +275,8 @@ pub(super) fn gen_field_ref_impls(
                 (Some(variant), None) => quote!(match self { Self::#variant(field) => field }),
             };
             let call = encoding_call(quote!(#move_trait::#encode(#borrow, store)), unchecked);
+            let output = encoder_output(quote!(&'_ršč #mutability Self), unchecked);
+            let projection_bound = (!unchecked).then(|| quote!(+ co3::encode_repr::EncodeRepr));
             implementations.push(quote! {
                 unsafe impl #impl_generics #trait_name<'_ršč> for #name #ty_generics
                 where
@@ -265,11 +284,11 @@ pub(super) fn gen_field_ref_impls(
                         + co3::rust_spec::RustSpec<Size = <#field_ty as co3::rust_spec::RustSpec>::Size, Mutability = <#field_ty as co3::rust_spec::RustSpec>::Mutability> + '_ršč,
                     #field_speculative #field_ty: co3::ReprC + co3::rust_spec::RustSpec + '_ršč,
                     &'_ršč #mutability #field_ty: #move_trait + co3::ReprC<CType: Sized + Copy>,
-                    &'_ršč #mutability Self: co3::ReprC<CType: Sized + Copy>,
+                    &'_ršč #mutability Self: co3::ReprC<CType: Sized + Copy #projection_bound>,
                     #predicates
                 {
                     type #store_name = <&'_ršč #mutability #field_ty as #move_trait>::#store_name;
-                    #unsafe_fn fn #method<'itm>(&'_ršč #mutability self, store: &'itm mut Self::#store_name) -> <&'_ršč #mutability Self as co3::ReprC>::CType
+                    #unsafe_fn fn #method<'itm>(&'_ršč #mutability self, store: &'itm mut Self::#store_name) -> #output
                     where
                         '_ršč: 'itm,
                     {
@@ -578,7 +597,7 @@ fn gen_shared_field_encoders() -> TokenStream {
             } else {
                 (quote!(co3::rust_spec::Unstable), quote!(co3::reference::CSoftRef<R>))
             };
-            let encode = encoding_call(quote!(<&'a R as #move_trait>::#move_method(self, store)), unchecked);
+            let encode = if unchecked { encoding_call(quote!(<&'a R as #move_trait>::#move_method(self, store)), true) } else { quote!(co3::encode_repr::encode_field(self, store)) };
             quote! {
                 unsafe impl<'a, R: co3::ReprC<CType: co3::CType + Copy> + 'a> #name<'a> for R
                 where

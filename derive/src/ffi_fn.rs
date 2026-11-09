@@ -14,6 +14,7 @@ use syn::{
 };
 
 use crate::{
+    argument::{self, Argument, Unpack},
     dispatch::{StaticLifetimeNormalizer, set_token_stream_span, tag_id},
     generate::OwnershipMode,
     parse::FailureMode,
@@ -108,13 +109,11 @@ pub(crate) fn emit_extern_definition(
     abi: &syn::Abi,
     attrs: &[syn::Attribute],
     failure_mode: FailureMode,
-    fn_signature: TokenStream,
+    mut signature: syn::Signature,
     ffi_fn_body: TokenStream,
 ) -> TokenStream {
     let fn_by_val = attrs.iter().any(is_by_val_attr);
     let attrs = export_definition_attrs(attrs);
-    let mut signature: syn::Signature =
-        syn::parse2(fn_signature.clone()).expect("generated FFI signature must parse");
     let abi_assertions = gen_abi_assertions(&signature);
     signature.ident = raw_definition_name(&signature.ident);
     signature.safety = syn::Safety::Unsafe(Default::default());
@@ -198,21 +197,18 @@ pub(crate) fn gen_definition_body(
     fn_by_val: bool,
     failure_mode: FailureMode,
 ) -> TokenStream {
-    let inputs = &sig.inputs;
+    let inputs = argument::analyze(&sig.inputs);
     let return_ty = fn_return_ty(&sig);
 
-    let pack_input_stmts = gen_pack_input_stmts(inputs, failure_mode);
-    let decode_input_stmts = gen_input_decode_stmts(inputs, failure_mode);
+    let pack_input_stmts = gen_pack_input_stmts(&inputs, failure_mode);
+    let decode_input_stmts = gen_analyzed_input_decode_stmts(&inputs, failure_mode);
     let store_sync_stmts = gen_store_sync_stmts(inputs.len());
     let sync_error = gen_sync_error(failure_mode);
     let sync_check = gen_sync_check(store_sync_stmts, sync_error);
 
-    let arg_names = inputs.iter().map(|arg| {
-        let (attrs, name) = match arg {
-            syn::FnArg::Typed(arg) => (&arg.attrs, item_fn_input_ident(&arg.pat).clone()),
-            syn::FnArg::Receiver(arg) => (&arg.attrs, format_ident!("__co3_self")),
-        };
-        let cfg = cfg_attrs(attrs);
+    let arg_names = inputs.iter().map(|input| {
+        let name = input.name();
+        let cfg = input.cfg();
         quote!(#(#cfg)* #name)
     });
 
@@ -250,50 +246,35 @@ pub(crate) fn gen_definition_body(
 }
 
 fn gen_pack_input_stmts(
-    inputs: &Punctuated<syn::FnArg, syn::Token![,]>,
+    inputs: &[Argument<'_>],
     failure_mode: FailureMode,
 ) -> TokenStream {
     let decode_error = gen_decode_error(failure_mode);
     let stmts = inputs.iter().filter_map(|input| {
-        let syn::FnArg::Typed(syn::PatType { attrs, pat, ty, .. }) = input else {
-            return None;
-        };
-        if !attrs.iter().any(is_unpack_attr) {
-            return None;
-        }
-        let name = item_fn_input_ident(pat);
-        let decode_ty = borrowed_arg_ty(attrs, ty);
-        let cfg = cfg_attrs(attrs).collect::<Vec<_>>();
-        let conversion = if is_single_unpack_arg(attrs) {
-            let part_ty = single_unpack_part(attrs, ty)
-                .expect("validated #[unpack] attribute")
-                .expect("one-part unpack attribute was found");
-            quote!(<#decode_ty as co3::pack::Pack<<#part_ty as co3::ReprC>::CType>>::pack(#name))
-        } else {
-            let (data_name, metadata_name) = unpack_arg_names(name);
-            let (logical1, logical2) =
-                unpack_logical_parts(attrs, ty).expect("validated #[unpack] attribute");
-            let (abi1, abi2) = unpack_abi_parts(attrs, ty).expect("validated #[unpack] attribute");
-            let (part1, part2) = unpack_parts(attrs)
-                .expect("validated #[unpack] attribute")
-                .expect("two-part unpack attribute was found");
-            let borrowed = borrowed_wide_unpack(attrs, ty);
-            let packed1: Type = if borrowed {
-                parse_quote!(co3::borrow::Borrowed<#logical1>)
-            } else {
-                logical1.clone()
-            };
-            let data = if part1.abi.is_some() {
-                crate::abi_retype::gen_retype(quote!(#data_name), &abi1, &packed1)
-            } else {
-                quote!(#data_name)
-            };
-            let metadata = if part2.abi.is_some() {
-                crate::abi_retype::gen_retype(quote!(#metadata_name), &abi2, &logical2)
-            } else {
-                quote!(#metadata_name)
-            };
-            quote!(unsafe { <#decode_ty as co3::pack::Pack2<#packed1, #logical2>>::pack(#data, #metadata) })
+        let name = input.name();
+        let decode_ty = input.conversion_ty();
+        let cfg = input.cfg().collect::<Vec<_>>();
+        let conversion = match &input.unpack {
+            Unpack::None => return None,
+            Unpack::Single(part) => quote! {
+                <#decode_ty as co3::pack::Pack<<#part as co3::ReprC>::CType>>::pack(#name)
+            },
+            Unpack::Pair(pair) => {
+                let (data_name, metadata_name) = unpack_arg_names(name);
+                let first = &pair.first.logical;
+                let second = &pair.second.logical;
+                let data = if pair.first.erased {
+                    crate::abi_retype::gen_retype(quote!(#data_name), &pair.first.abi, first)
+                } else {
+                    quote!(#data_name)
+                };
+                let metadata = if pair.second.erased {
+                    crate::abi_retype::gen_retype(quote!(#metadata_name), &pair.second.abi, second)
+                } else {
+                    quote!(#metadata_name)
+                };
+                quote!(unsafe { <#decode_ty as co3::pack::Pack2<#first, #second>>::pack(#data, #metadata) })
+            }
         };
         Some(quote! {
             #(#cfg)*
@@ -308,9 +289,9 @@ fn gen_pack_input_stmts(
 
 pub(crate) fn gen_abi_return_encode(value: TokenStream, borrow_output: bool) -> TokenStream {
     if borrow_output {
-        quote!(co3::encode(co3::borrow::Borrow::borrow(#value)))
+        quote!(co3::encode_repr::unproject(co3::encode(co3::borrow::Borrow::borrow(#value))))
     } else {
-        quote!(co3::encode(#value))
+        quote!(co3::encode_repr::unproject(co3::encode(#value)))
     }
 }
 
@@ -488,23 +469,34 @@ impl Parse for UnpackPart {
     }
 }
 
-pub(crate) fn unpack_parts(
-    attrs: &[syn::Attribute],
-) -> syn::Result<Option<(UnpackPart, UnpackPart)>> {
+pub(crate) fn parse_unpack_parts(attrs: &[syn::Attribute]) -> syn::Result<Option<Vec<UnpackPart>>> {
     let Some(attr) = attrs.iter().find(|attr| is_unpack_attr(attr)) else {
         return Ok(None);
     };
-    let syntax_err = || format!("{} expects exactly two parts", unpack_attr_name(attr));
-    let parts = match &attr.meta {
-        Meta::List(_) => attr.parse_args_with(Punctuated::<UnpackPart, Comma>::parse_terminated)?,
-        Meta::NameValue(_) | Meta::Path(_) => {
-            return Err(syn::Error::new_spanned(attr, syntax_err()));
-        }
+    let Meta::List(_) = &attr.meta else {
+        return Err(syn::Error::new_spanned(
+            attr,
+            "#[unpack] expects exactly two parts",
+        ));
     };
-    if parts.len() != 2 {
-        return Err(syn::Error::new_spanned(attr, syntax_err()));
-    }
-    Ok(Some((parts[0].clone(), parts[1].clone())))
+    Ok(Some(
+        attr.parse_args_with(Punctuated::<UnpackPart, Comma>::parse_terminated)?
+            .into_iter()
+            .collect(),
+    ))
+}
+
+pub(crate) fn unpack_parts(
+    attrs: &[syn::Attribute],
+) -> syn::Result<Option<(UnpackPart, UnpackPart)>> {
+    let Some(parts) = parse_unpack_parts(attrs)? else {
+        return Ok(None);
+    };
+    let [first, second]: [UnpackPart; 2] = parts.try_into().map_err(|_| {
+        let attr = attrs.iter().find(|attr| is_unpack_attr(attr)).unwrap();
+        syn::Error::new_spanned(attr, "#[unpack] expects exactly two parts")
+    })?;
+    Ok(Some((first, second)))
 }
 
 pub(crate) fn validate_single_unpack(attrs: &[syn::Attribute]) -> syn::Result<bool> {
@@ -561,44 +553,13 @@ pub(crate) fn unpack_abi_parts(
     attrs: &[syn::Attribute],
     arg_ty: &Type,
 ) -> syn::Result<(Type, Type)> {
-    let (part1, part2) = unpack_parts(attrs)?.expect("unpack attribute was validated");
-    Ok((
-        abi_unpack_part(attrs, arg_ty, part1, 1)?,
-        abi_unpack_part(attrs, arg_ty, part2, 2)?,
-    ))
+    let Unpack::Pair(pair) = Unpack::resolve(attrs, arg_ty)? else {
+        unreachable!("two-part unpack attribute was validated");
+    };
+    Ok((pair.first.abi, pair.second.abi))
 }
 
-pub(crate) fn unpack_logical_parts(
-    attrs: &[syn::Attribute],
-    arg_ty: &Type,
-) -> syn::Result<(Type, Type)> {
-    let (part1, part2) = unpack_parts(attrs)?.expect("unpack attribute was validated");
-    Ok((
-        logical_unpack_part(arg_ty, &part1.logical, 1)?,
-        logical_unpack_part(arg_ty, &part2.logical, 2)?,
-    ))
-}
-
-fn abi_unpack_part(
-    attrs: &[syn::Attribute],
-    arg_ty: &Type,
-    part: UnpackPart,
-    position: u8,
-) -> syn::Result<Type> {
-    match part.abi {
-        Some(abi) => Ok(parse_quote!(<#abi as co3::ReprC>::CType)),
-        None => {
-            let logical = logical_unpack_part(arg_ty, &part.logical, position)?;
-            if position == 1 && borrowed_wide_unpack(attrs, arg_ty) {
-                Ok(parse_quote!(co3::borrow::Borrowed<#logical>))
-            } else {
-                Ok(logical)
-            }
-        }
-    }
-}
-
-fn logical_unpack_part(arg_ty: &Type, part: &Type, position: u8) -> syn::Result<Type> {
+pub(crate) fn logical_unpack_part(arg_ty: &Type, part: &Type, position: u8) -> syn::Result<Type> {
     if matches!(part, Type::Infer(_)) {
         inferred_unpack_part(arg_ty, position)
     } else {
@@ -684,24 +645,7 @@ fn inferred_non_option_unpack_part(arg_ty: &Type, part: u8) -> syn::Result<Type>
     ))
 }
 
-pub(crate) fn inferred_unpack_option_inner<'a>(
-    attrs: &[syn::Attribute],
-    arg_ty: &'a Type,
-) -> syn::Result<Option<&'a Type>> {
-    if validate_single_unpack(attrs)? {
-        return Ok(None);
-    }
-    let Some((part1, part2)) = unpack_parts(attrs)? else {
-        return Ok(None);
-    };
-    if !matches!(part1.logical, Type::Infer(_)) && !matches!(part2.logical, Type::Infer(_)) {
-        return Ok(None);
-    }
-
-    Ok(option_inner_type(peel_grouped_type(arg_ty)))
-}
-
-fn peel_grouped_type(mut ty: &Type) -> &Type {
+pub(crate) fn peel_grouped_type(mut ty: &Type) -> &Type {
     loop {
         ty = match ty {
             Type::Paren(paren) => &paren.elem,
@@ -757,15 +701,6 @@ fn tuple_parts(ty: &Type) -> Option<(&Type, &Type)> {
     }
 }
 
-fn borrowed_arg_ty(attrs: &[syn::Attribute], arg_ty: &Type) -> TokenStream {
-    match ownership_mode_for_arg(attrs, arg_ty) {
-        OwnershipMode::ByValue => quote!(#arg_ty),
-        OwnershipMode::Borrow => quote! {
-            <#arg_ty as co3::borrow::Borrow>::Borrowed
-        },
-    }
-}
-
 pub(crate) fn unpack_arg_names(arg_name: &Ident) -> (Ident, Ident) {
     (
         format_ident!("__co3_{arg_name}_data"),
@@ -791,8 +726,11 @@ pub(crate) fn gen_input_decode_stmts<'a>(
     inputs: impl IntoIterator<Item = &'a syn::FnArg>,
     failure_mode: FailureMode,
 ) -> TokenStream {
-    let inputs = inputs.into_iter().collect::<Vec<_>>();
+    let inputs = argument::analyze(inputs);
+    gen_analyzed_input_decode_stmts(&inputs, failure_mode)
+}
 
+fn gen_analyzed_input_decode_stmts(inputs: &[Argument<'_>], failure_mode: FailureMode) -> TokenStream {
     let mut stmts = quote! {};
     let mut value_initializers = Vec::with_capacity(inputs.len());
     let mut store_initializers = Vec::with_capacity(inputs.len());
@@ -805,18 +743,9 @@ pub(crate) fn gen_input_decode_stmts<'a>(
     for (idx, input) in inputs.iter().enumerate() {
         let idx = syn::Index::from(idx);
 
-        let (attrs, arg_name, arg_ty) = match input {
-            syn::FnArg::Receiver(receiver) => (
-                &receiver.attrs,
-                format_ident!("__co3_self"),
-                crate::utils::receiver_ty(receiver),
-            ),
-            syn::FnArg::Typed(arg) => {
-                let arg_name = item_fn_input_ident(&arg.pat);
-                let arg_ty = (*arg.ty).clone();
-                (&arg.attrs, arg_name.clone(), arg_ty)
-            }
-        };
+        let attrs = input.attrs;
+        let arg_name = input.name();
+        let arg_ty = &input.ty;
 
         let cfg = parameter_cfg(attrs);
         let enabled = cfg.as_ref().map(|(enabled, _)| enabled);
@@ -825,18 +754,18 @@ pub(crate) fn gen_input_decode_stmts<'a>(
         let inactive_value = disabled.map(|disabled| quote!(#disabled Some(()),));
         let inactive_store = disabled.map(|disabled| quote!(#disabled (),));
 
-        let decode_ty = borrowed_arg_ty(attrs, &arg_ty);
+        let decode_ty = input.conversion_ty();
         let decode_arg = quote! { #arg_name };
 
-        let decode_call = if is_identity_primitive(&arg_ty) {
+        let decode_call = if input.identity {
             quote! { Some(#decode_arg) }
-        } else if soft_for_arg(attrs) {
+        } else if input.soft {
             quote! { co3::soft_decode(#decode_arg, &mut __co3_input_stores.#idx) }
         } else {
             quote! { co3::decode(#decode_arg) }
         };
 
-        let from_borrow = match ownership_mode_for_arg(attrs, &arg_ty) {
+        let from_borrow = match input.ownership {
             OwnershipMode::ByValue => quote!(#arg_name),
             OwnershipMode::Borrow => quote! {
                 #arg_name.map(co3::borrow::Borrow::from_borrow)
@@ -856,7 +785,7 @@ pub(crate) fn gen_input_decode_stmts<'a>(
         });
 
         value_initializers.push(quote!(#enabled <Option<#arg_ty> as core::default::Default>::default(), #inactive_value));
-        let store_ty = if soft_for_arg(attrs) {
+        let store_ty = if input.soft {
             quote!(<#decode_ty as co3::stored::DecodeMove<'_>>::Store)
         } else {
             quote!(())
@@ -1026,9 +955,9 @@ pub fn gen_impl_definition(
                 })
                 .expect("opaque Drop requires a receiver");
             receiver.ty = syn::parse_quote!(co3::boxed::CBox<#self_ty>);
-            quote!(#sig)
+            sig
         } else {
-            gen_extern_fn_signature(abi_sig, failure_mode, fn_by_val)
+            lower_abi_fn_signature(abi_sig, failure_mode, fn_by_val)
         };
         let signature_drift_check =
             // NOTE: `Drop::drop` has a fixed signature enforced by `validate_drop_impl`
@@ -1137,20 +1066,11 @@ pub fn gen_fn_definition(
     };
     let ffi_fn_body = gen_fn_definition_body(&item, failure_mode, callee);
     let fn_by_val = item.attrs.iter().any(is_by_val_attr);
-    let fn_signature = gen_extern_fn_signature(item.sig, failure_mode, fn_by_val);
+    let fn_signature = lower_abi_fn_signature(item.sig, failure_mode, fn_by_val);
 
     let definition =
         emit_extern_definition(abi, &item.attrs, failure_mode, fn_signature, ffi_fn_body);
     quote! { #return_borrow_check #definition }
-}
-
-pub(crate) fn gen_extern_fn_signature(
-    sig: syn::Signature,
-    failure_mode: FailureMode,
-    fn_by_val: bool,
-) -> TokenStream {
-    let sig = lower_abi_fn_signature(sig, failure_mode, fn_by_val);
-    quote! { #sig }
 }
 
 pub(crate) fn lower_extern_fn_signature(
@@ -1212,41 +1132,22 @@ fn lower_signature_inputs(sig: &mut syn::Signature) {
 }
 
 fn lower_signature_input(input: syn::FnArg) -> Vec<syn::FnArg> {
-    let (pat, attrs, arg_ty) = match input {
-        syn::FnArg::Receiver(receiver) => {
-            let arg_ty = crate::utils::receiver_ty(&receiver);
-            (parse_quote!(__co3_self), receiver.attrs, arg_ty)
+    let input = Argument::new(&input);
+    let pat = &input.pat;
+    let cfg = input.cfg().collect::<Vec<_>>();
+    let ffi_ty = match &input.unpack {
+        Unpack::Pair(pair) => {
+            let (data_name, metadata_name) = unpack_arg_names(input.name());
+            let first = &pair.first.abi;
+            let second = &pair.second.abi;
+            return vec![
+                parse_quote!(#(#cfg)* #data_name: #first),
+                parse_quote!(#(#cfg)* #metadata_name: #second),
+            ];
         }
-        syn::FnArg::Typed(arg) => {
-            let syn::PatType { attrs, pat, ty, .. } = arg;
-            (parse_quote!(#pat), attrs, *ty)
-        }
+        Unpack::Single(target) => parse_quote!(<#target as co3::ReprC>::CType),
+        Unpack::None => input.abi_ty(),
     };
-
-    let cfg = cfg_attrs(&attrs).collect::<Vec<_>>();
-
-    if is_unpack_arg(&attrs) {
-        let arg_name = item_fn_input_ident(&pat);
-        let (data_name, metadata_name) = unpack_arg_names(arg_name);
-        let (source_part1_ty, source_part2_ty) =
-            unpack_abi_parts(&attrs, &arg_ty).expect("validated #[unpack] attribute");
-        let (part1_ty, part2_ty) = (source_part1_ty, source_part2_ty);
-
-        return vec![
-            parse_quote!(#(#cfg)* #data_name: #part1_ty),
-            parse_quote!(#(#cfg)* #metadata_name: #part2_ty),
-        ];
-    }
-
-    if let Some(target_ty) =
-        single_unpack_part(&attrs, &arg_ty).expect("validated one-part unpack attribute")
-    {
-        let ffi_ty = quote!(<#target_ty as co3::ReprC>::CType);
-        return vec![parse_quote!(#(#cfg)* #pat: #ffi_ty)];
-    }
-
-    let ffi_ty = item_fn_input_arg_type(&attrs, &arg_ty);
-
     vec![parse_quote!(#(#cfg)* #pat: #ffi_ty)]
 }
 
@@ -1721,7 +1622,7 @@ mod tests {
             &abi,
             &attrs,
             FailureMode::Panic,
-            quote!(fn example(value: u8) -> u8),
+            parse_quote!(fn example(value: u8) -> u8),
             quote!(Ok::<_, ()>(value)),
         );
         let item: syn::ItemFn = syn::parse2(definition).unwrap();

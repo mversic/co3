@@ -5,14 +5,16 @@ use quote::{format_ident, quote};
 use syn::{FnArg, ImplItem, ImplItemFn, ItemImpl, punctuated::Punctuated, visit_mut::VisitMut};
 
 use crate::{
-    Co3Fn, Co3Impl, DispatchGroups, ForeignItem, ForeignItemType, co3_path,
+    Co3Fn, Co3Impl, DispatchGroups, ForeignItem, ForeignItemType,
+    argument::{Argument, Unpack},
+    co3_path,
     dispatch::{
         StaticLifetimeNormalizer, erase_dispatch_signature, gen_dispatch_erased_layout_checks,
         gen_dispatch_export, gen_dispatch_fn_export, gen_retype, gen_tag_erase_stmts,
         gen_tag_id_type_checks,
     },
     ffi_fn::{
-        self, gen_extern_fn_signature, merge_generics, normalize_fn_signature,
+        self, gen_abi_assertions, lower_abi_fn_signature, merge_generics, normalize_fn_signature,
         strip_dispatch_params,
     },
     parse::{FailureMode, MacroFeatures},
@@ -20,10 +22,10 @@ use crate::{
     utils::{
         DispatchMonomorphizer, ParamUseDetector, cfg_attrs, erased_id_repr,
         has_non_lifetime_generics, has_runtime_dispatch, is_payload_erased, is_type_erased,
-        soft_for_arg, speculative_marker, strip_internal_generic_param,
+        speculative_marker, strip_internal_generic_param,
     },
     wrapper::{
-        gen_decl_abi_assertions, gen_extern_decl, gen_owned_drop_wrapper_body, gen_wrapper_body,
+        gen_extern_decl, gen_owned_drop_wrapper_body, gen_wrapper_body,
         gen_wrapper_body_with_callee, strip_internal_arg_attrs, wrap_fn_definition,
         wrap_impl_definition,
     },
@@ -876,8 +878,8 @@ fn gen_dispatch_set(
                 let mut attrs = delegate.fn_attrs.to_vec();
                 monomorphizer.interpolate_symbol_attrs(&mut attrs, delegate.symbol_fragments);
                 let extern_decl =
-                    gen_extern_decl(delegate.abi, delegate.block_attrs, &attrs, quote!(#raw_sig));
-                let abi_assertions = gen_decl_abi_assertions(&quote!(#raw_sig));
+                    gen_extern_decl(delegate.abi, delegate.block_attrs, &attrs, &raw_sig);
+                let abi_assertions = gen_abi_assertions(&raw_sig);
 
                 // Generate conversion and erasure while the dispatch
                 // parameters are still visible, then monomorphize the whole
@@ -911,19 +913,19 @@ fn gen_dispatch_set(
                     )
                 };
                 let co3 = co3_path();
-                let method_tokens = quote! {
-                    #sig {
+                let mut method = syn::ImplItemFn {
+                    attrs: Vec::new(),
+                    vis: syn::Visibility::Inherited,
+                    modifiers: Default::default(),
+                    sig,
+                    block: syn::parse_quote!({
                         use #co3 as co3;
                         #abi_assertions
                         #extern_decl
                         #(#id_assignments)*
                         #wrapper_body
-                    }
+                    }),
                 };
-                let mut method: syn::ImplItemFn = syn::parse2(method_tokens.clone())
-                    .unwrap_or_else(|error| {
-                        panic!("invalid dispatch delegate `{method_tokens}`: {error}")
-                    });
                 monomorphizer.visit_impl_item_fn_mut(&mut method);
                 if let Some(self_ty) = delegate.self_ty {
                     ffi_fn::SelfConcretizer::new(self_ty).visit_impl_item_fn_mut(&mut method);
@@ -1042,22 +1044,14 @@ fn prepare_dispatch_wrapper_sig(
 
     let detector = ParamUseDetector::new(dispatch_tys.iter().chain(erased_tys.iter()));
     for input in &sig.inputs {
-        let FnArg::Typed(input) = input else { continue };
-        let (attrs, ty) = (&input.attrs[..], &*input.ty);
-        if let Some(target_ty) =
-            ffi_fn::single_unpack_part(attrs, ty).expect("validated one-part unpack attribute")
-        {
+        let FnArg::Typed(_) = input else { continue };
+        let input = Argument::new(input);
+        let ty = &input.ty;
+        let conversion_ty = input.conversion_ty();
+        if let Unpack::Single(target_ty) = &input.unpack {
             let target_part = quote!(<#target_ty as #co3::ReprC>::CType);
             let unpack_trait = quote!(#co3::pack::Unpack<#target_part>);
-            let unpack_bound =
-                if ffi_fn::ownership_mode_for_arg(attrs, ty) == OwnershipMode::ByValue {
-                    syn::parse_quote!(#ty: #unpack_trait)
-                } else {
-                    syn::parse_quote!(
-                        <#ty as #co3::borrow::Borrow>::Borrowed:
-                            #unpack_trait
-                    )
-                };
+            let unpack_bound = syn::parse_quote!(#conversion_ty: #unpack_trait);
             where_clause.predicates.push(unpack_bound);
             where_clause
                 .predicates
@@ -1067,20 +1061,14 @@ fn prepare_dispatch_wrapper_sig(
                 .push(syn::parse_quote!(#target_part: #co3::CType + Sized));
         }
         let parameterized_unpack =
-            ffi_fn::is_unpack_arg(attrs) && parameter_detector.type_mentions_param(ty);
+            matches!(input.unpack, Unpack::Pair(_)) && parameter_detector.type_mentions_param(ty);
         if parameterized_unpack {
-            let (part1, part2) = ffi_fn::unpack_types(attrs)
-                .expect("validated #[unpack] attribute")
-                .expect("unpack attribute was found");
-            let (source_part1, source_part2) =
-                ffi_fn::unpack_logical_parts(attrs, ty).expect("validated #[unpack] attribute");
-            let source_part1: syn::Type = if ffi_fn::borrowed_wide_unpack(attrs, ty) {
-                syn::parse_quote!(#co3::borrow::Borrowed<#source_part1>)
-            } else {
-                source_part1
+            let Unpack::Pair(pair) = &input.unpack else {
+                unreachable!()
             };
-            let (abi_part1, abi_part2) =
-                ffi_fn::unpack_abi_parts(attrs, ty).expect("validated #[unpack] attribute");
+            let (part1, part2) = (&pair.first.source, &pair.second.source);
+            let (source_part1, source_part2) = (&pair.first.logical, &pair.second.logical);
+            let (abi_part1, abi_part2) = (&pair.first.abi, &pair.second.abi);
             if matches!(part1, syn::Type::Infer(_)) {
                 where_clause.predicates.push(syn::parse_quote!(
                     #source_part1: #co3::CType + Sized
@@ -1106,17 +1094,7 @@ fn prepare_dispatch_wrapper_sig(
                 ));
             }
             let unpack_trait = quote!(#co3::pack::Unpack2<#source_part1, #source_part2>);
-            let unpack_bound =
-                if ffi_fn::ownership_mode_for_arg(attrs, ty) == OwnershipMode::ByValue {
-                    syn::parse_quote!(
-                        #ty: #unpack_trait
-                    )
-                } else {
-                    syn::parse_quote!(
-                        <#ty as #co3::borrow::Borrow>::Borrowed:
-                            #unpack_trait
-                    )
-                };
+            let unpack_bound = syn::parse_quote!(#conversion_ty: #unpack_trait);
             where_clause.predicates.push(unpack_bound);
             where_clause
                 .predicates
@@ -1128,8 +1106,8 @@ fn prepare_dispatch_wrapper_sig(
         if crate::dispatch::tag_id(ty).is_none()
             && (detector.type_mentions_param(ty) || parameterized_unpack)
         {
-            if ffi_fn::ownership_mode_for_arg(attrs, ty) == OwnershipMode::ByValue {
-                let bound = if soft_for_arg(attrs) {
+            if !input.is_borrowed() {
+                let bound = if input.soft {
                     syn::parse_quote!(#ty: #co3::Encode)
                 } else {
                     syn::parse_quote!(#ty: #co3::Encode<Store: #co3::stored::EmptyStore>)
@@ -1232,10 +1210,12 @@ fn emit_import_dispatch_items(
     parts: &DispatchImportParts,
     self_binding: TokenStream,
     module_cfg: bool,
-) -> (TokenStream, TokenStream) {
+) -> (TokenStream, syn::ImplItemFn) {
     let wrapper_attrs = fn_attrs
         .iter()
-        .filter(|attr| !crate::is_symbol_name_attr(attr) && !ffi_fn::is_by_val_attr(attr));
+        .filter(|attr| !crate::is_symbol_name_attr(attr) && !ffi_fn::is_by_val_attr(attr))
+        .cloned()
+        .collect();
     let wrapper_body = gen_dispatch_import_wrapper_body(parts, self_binding);
     let module = gen_dispatch_import_module(module_name, parts, TokenStream::new());
     let module_attrs = (module_cfg && !module.is_empty())
@@ -1247,11 +1227,12 @@ fn emit_import_dispatch_items(
             #(#module_attrs)*
             #module
         },
-        quote! {
-            #(#wrapper_attrs)*
-            #vis #wrapper_sig {
-                #wrapper_body
-            }
+        syn::ImplItemFn {
+            attrs: wrapper_attrs,
+            vis: vis.clone(),
+            modifiers: Default::default(),
+            sig: wrapper_sig.clone(),
+            block: syn::parse_quote!({ #wrapper_body }),
         },
     )
 }
@@ -1467,7 +1448,7 @@ fn prepare_dispatch_import(
             if raw {
                 decl.ident = format_ident!("__co3_raw");
             }
-            let abi_assertions = gen_decl_abi_assertions(&quote!(#decl));
+            let abi_assertions = gen_abi_assertions(&decl);
             let wrapper_body = if raw {
                 raw_dispatch_call(
                     &wrapper_source_sig,
@@ -1885,8 +1866,7 @@ fn synthesize_impl_extern_decls(
             let decl = if import_mode == crate::ImportMode::Raw {
                 item.sig.abi = None;
                 item.sig.safety = syn::Safety::Default;
-                let sig = item.sig;
-                quote!(#sig)
+                item.sig
             } else if opaque_drop {
                 let pointer_ty = item
                     .sig
@@ -1915,15 +1895,15 @@ fn synthesize_impl_extern_decls(
                     })
                     .expect("opaque Drop requires a receiver");
                 receiver.ty = pointer_ty;
-                quote!(#sig)
+                sig
             } else {
-                gen_extern_fn_signature(
+                lower_abi_fn_signature(
                     item.sig,
                     failure_mode,
                     item.attrs.iter().any(ffi_fn::is_by_val_attr),
                 )
             };
-            let abi_assertions = gen_decl_abi_assertions(&decl);
+            let abi_assertions = gen_abi_assertions(&decl);
             let extern_decl = gen_extern_decl(abi, attrs, &item.attrs, decl);
 
             Some((
@@ -2120,8 +2100,7 @@ pub(crate) fn expand_extern_decls(
                         self_binding,
                         false,
                     );
-                    *method = syn::parse2(wrapper_fn)
-                        .expect("generated dispatch wrapper must be a valid method");
+                    *method = wrapper_fn;
                 }
                 (concrete_wrapper, Vec::new())
             } else {
@@ -3371,11 +3350,17 @@ fn gen_extern_type_impls(
     let tag_family_impl = id.map(|id| gen_tag_family_impl(ident, generics, id));
     let tag_impl = id_value.map(|value| gen_tag_impl(ident, generics, value));
 
+    let projection_speculative = speculative_marker(generics.params.is_empty());
+    let projection_predicates = generics.where_clause.as_ref().map(|w| &w.predicates);
     quote! {
             #tag_family_impl
             #tag_impl
 
             unsafe impl #impl_generics co3::CType for #ident #ty_generics #where_clause {}
+        unsafe impl #impl_generics co3::encode_repr::EncodeRepr for #ident #ty_generics
+        where #projection_speculative Self: Sized, #projection_predicates
+        { type Encoded = Self; }
+
             unsafe impl #impl_generics co3::transmute::AbiCompatibleValidate for #ident #ty_generics #where_clause {
                 #[inline(always)]
                 unsafe fn is_valid(_: &Self::CType) -> bool {
@@ -3479,6 +3464,7 @@ fn gen_owned_repr_c_impls(ident: &syn::Ident, generics: &syn::Generics) -> Token
         unsafe impl #impl_generics #co3::transmute::AbiCompatible for #owned_repr_c_name #ty_generics #where_clause {}
 
         unsafe impl #impl_generics #co3::CType for #owned_repr_c_name #ty_generics #where_clause {}
+        unsafe impl #impl_generics #co3::encode_repr::EncodeRepr for #owned_repr_c_name #ty_generics #where_clause { type Encoded = Self; }
         unsafe impl #impl_generics #co3::CFnArg for #owned_repr_c_name #ty_generics #where_clause {}
         unsafe impl #impl_generics #co3::CFnReturn for #owned_repr_c_name #ty_generics #where_clause {}
 
@@ -3799,10 +3785,16 @@ fn derive_opaque_item(
     let (impl_generics, ty_generics, where_clause) = opaque_generics.split_for_impl();
     let tag_family_impl = id.map(|id| gen_tag_family_impl(ident, generics, id));
 
+    let projection_speculative = speculative_marker(generics.params.is_empty());
+    let projection_predicates = opaque_generics.where_clause.as_ref().map(|w| &w.predicates);
     quote! {
         #tag_family_impl
 
         unsafe impl #impl_generics co3::CType for #ident #ty_generics #where_clause {}
+        unsafe impl #impl_generics co3::encode_repr::EncodeRepr for #ident #ty_generics
+        where #projection_speculative Self: Sized, #projection_predicates
+        { type Encoded = Self; }
+
         unsafe impl #impl_generics co3::transmute::AbiCompatibleValidate for #ident #ty_generics #where_clause {
             #[inline(always)]
             unsafe fn is_valid(_: &Self::CType) -> bool {

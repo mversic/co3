@@ -16,10 +16,10 @@ use crate::{
     CType, NeedsDrop, ReprC,
     option::{COption, COptionSome},
     primitives::CBool,
-    reference::{CRef, CSoftRefMut, CSoftRef},
+    reference::{CRefMut, CRef, CSoftRefMut, CSoftRef},
     result::CResult,
     tuple::Tuple2,
-    wide::{CSoftWideRefMut, CSoftWideRef},
+    wide::{CWideRef, CWideRefMut, CSoftWideRefMut, CSoftWideRef},
     wide::{Wide, WideHeader},
 };
 #[cfg(feature = "alloc")]
@@ -62,6 +62,16 @@ disjoint_impls! {
             value.as_ptr().is_null()
         }
     }
+    impl<'a, R: ReprC<CType: CType + Sized> + ?Sized> Niche for &'a R
+    where
+        Self: ReprC<CType = CRefMut<'a, R, false>>,
+    {
+        const NICHE: Self::CType = CRefMut::null();
+
+        fn is_niche(value: &Self::CType) -> bool {
+            value.as_ptr().is_null()
+        }
+    }
     impl<R: ReprC<CType: CType + Sized> + ?Sized> Niche for &R
     where
         Self: ReprC<CType = CSoftRefMut<R, false>>,
@@ -72,11 +82,31 @@ disjoint_impls! {
             value.as_ptr().is_null()
         }
     }
+    impl<'a, R: ReprC<CType: Wide<Header: WideHeader<Data: CType>>> + ?Sized> Niche for &'a R
+    where
+        Self: ReprC<CType = CWideRef<'a, R>>,
+    {
+        const NICHE: Self::CType = CWideRef::null();
+
+        fn is_niche(value: &Self::CType) -> bool {
+            value.as_ptr().is_null()
+        }
+    }
     impl<R: ReprC<CType: Wide<Header: WideHeader<Data: CType>>> + ?Sized> Niche for &R
     where
         Self: ReprC<CType = CSoftWideRef<R>>,
     {
         const NICHE: Self::CType = CSoftWideRef::null();
+
+        fn is_niche(value: &Self::CType) -> bool {
+            value.as_ptr().is_null()
+        }
+    }
+    impl<'a, R: ReprC<CType: Wide<Header: WideHeader<Data: CType>>> + ?Sized> Niche for &'a R
+    where
+        Self: ReprC<CType = CWideRefMut<'a, R, false>>,
+    {
+        const NICHE: Self::CType = CWideRefMut::null();
 
         fn is_niche(value: &Self::CType) -> bool {
             value.as_ptr().is_null()
@@ -93,11 +123,31 @@ disjoint_impls! {
         }
     }
 
+    impl<'a, R: ReprC<CType: CType + Sized> + ?Sized> Niche for &'a mut R
+    where
+        Self: ReprC<CType = CRefMut<'a, R, true>>,
+    {
+        const NICHE: Self::CType = CRefMut::null();
+
+        fn is_niche(value: &Self::CType) -> bool {
+            value.as_ptr().is_null()
+        }
+    }
     impl<R: ReprC<CType: CType + Sized> + ?Sized> Niche for &mut R
     where
         Self: ReprC<CType = CSoftRefMut<R, true>>,
     {
         const NICHE: Self::CType = CSoftRefMut::null();
+
+        fn is_niche(value: &Self::CType) -> bool {
+            value.as_ptr().is_null()
+        }
+    }
+    impl<'a, R: ReprC<CType: Wide<Header: WideHeader<Data: CType>>> + ?Sized> Niche for &'a mut R
+    where
+        Self: ReprC<CType = CWideRefMut<'a, R, true>>,
+    {
+        const NICHE: Self::CType = CWideRefMut::null();
 
         fn is_niche(value: &Self::CType) -> bool {
             value.as_ptr().is_null()

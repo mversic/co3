@@ -1,6 +1,6 @@
 use core::cell::UnsafeCell;
 
-use co3::{borrow::Borrowed, primitives::CBool, reference::CSoftRefMut, stored::Store};
+use co3::{borrow::Borrowed, primitives::CBool, reference::CRefMut, stored::Store};
 
 #[test]
 fn mutable_reference_decode_validates() {
@@ -8,7 +8,7 @@ fn mutable_reference_decode_validates() {
     let mut store = ();
     let decoded = unsafe {
         co3::soft_decode::<Borrowed<&mut bool>>(
-            CSoftRefMut::from_mut(&mut carrier).into(),
+            CRefMut::from_mut(&mut carrier).into(),
             &mut store,
         )
     }
@@ -20,7 +20,7 @@ fn mutable_reference_decode_validates() {
     assert!(
         unsafe {
             co3::soft_decode::<Borrowed<&mut bool>>(
-                CSoftRefMut::from_mut(&mut invalid).into(),
+                CRefMut::from_mut(&mut invalid).into(),
                 &mut store,
             )
         }
@@ -35,7 +35,7 @@ fn mutable_reference_unchecked_decode_preserves_pointer() {
     let mut store = ();
     let decoded = unsafe {
         co3::soft_decode_unchecked::<Borrowed<&mut u32>>(
-            CSoftRefMut::from_mut(&mut value).into(),
+            co3::reference::CRefMut::from_mut(&mut value).into(),
             &mut store,
         )
     };
@@ -48,7 +48,7 @@ fn shared_interior_reference_decodes_directly() {
     let mut store = ();
     let decoded = unsafe {
         co3::soft_decode::<Borrowed<&UnsafeCell<u8>>>(
-            CSoftRefMut::from_raw(core::ptr::from_ref(&value).cast_mut()).into(),
+            co3::reference::CRefMut::from_raw(core::ptr::from_ref(&value).cast_mut()).into(),
             &mut store,
         )
     }

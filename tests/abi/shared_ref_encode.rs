@@ -177,7 +177,7 @@ unsafe impl<'a> co3::stored::EncodeRefUnchecked<'a> for RefOnly {
 }
 unsafe impl<'a> co3::stored::EncodeRef<'a> for RefOnly {
     type Store = co3::sync::RefSizedEncodeStore<Self, CheckedStore>;
-    fn encode_ref<'itm>(&'a self, store: &'itm mut Self::Store) -> <&'a Self as co3::ReprC>::CType
+    fn encode_ref<'itm>(&'a self, store: &'itm mut Self::Store) -> co3::encode_repr::Encoded<&'a Self>
     where
         'a: 'itm,
     {

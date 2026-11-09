@@ -121,6 +121,7 @@ impl<T> crate::EncodeUnchecked for Borrowed<T> where Self: EncodeMoveUnchecked {
 impl<T> crate::Encode for Borrowed<T> where Self: EncodeMove {}
 
 unsafe impl<C: CType> CType for Borrowed<C> {}
+unsafe impl<C: CType> crate::encode_repr::EncodeRepr for Borrowed<C> where Self: Sized { type Encoded = Self; }
 unsafe impl<C: CFnArg> CFnArg for Borrowed<C> {}
 unsafe impl<C: CFnReturn> CFnReturn for Borrowed<C> where
     Self: RustSpec<Size = rust_spec::size::Sized<rust_spec::Gt<rust_spec::Zero>>>
@@ -294,7 +295,7 @@ pub trait BorrowedOwnerEncode: ReprC<CType: Copy> + Sized {
 impl<T: ReprC<CType: Copy>, S: Store + Default> BorrowedOwnerEncode for T
 where
     for<'a> &'a mut Self:
-        EncodeMoveUnchecked<SoftStore = S, CType = crate::reference::CSoftRefMut<Self, true>>,
+        EncodeMoveUnchecked<SoftStore = S, CType: crate::reference::MutRefCarrier<Self, true>>,
 {
     type ReferenceStore = S;
     fn encode_borrowed(
@@ -305,6 +306,6 @@ where
         // SAFETY: The returned borrowed carrier permits only read-only foreign access.
         let encoded = unsafe { value.soft_encode_unchecked(&mut store.reference) };
         // SAFETY: The encoded carrier is initialized and Copy, with its owner retained.
-        Borrowed::new(unsafe { encoded.as_ptr().read() })
+        Borrowed::new(unsafe { crate::reference::MutRefCarrier::as_ptr(&encoded).read() })
     }
 }

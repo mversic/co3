@@ -16,10 +16,11 @@ use crate::{
             gen_variant_struct_name,
         },
         enum_tag_type, enum_variant_tag_exprs, generic_param_idents, infer_repr,
+        fields::{FieldType, field_types},
         is_exhaustive_enum, is_parametrized, is_phantom_data, is_transparent_enum_repr,
         niche::{gen_enum_niche_ir, gen_niche_value_ir, gen_struct_niche_ir},
         primitive_tag_type,
-        reference::{encoder_names, group_aggregate_ref_impls},
+        reference::{encoder_names, encoder_output, group_aggregate_ref_impls},
     },
     utils::speculative_marker,
 };
@@ -478,7 +479,9 @@ fn gen_enum_codec_impls(
             let encode_validation = gen_encode_is_valid_assert(&variant.fields, custom_is_valid);
             let variant_tag = match repr {
                 None | Some(ReprKind::Primitive(_)) => {
-                    Some(quote!(co3::encode(#tag_value as #tag_type)))
+                    // The integer discriminant is already valid; preserve its ReprC projection
+                    // without requiring checked-encoding bounds on payload fields.
+                    Some(quote!(unsafe { co3::soft_encode_unchecked(#tag_value as #tag_type, &mut ()) }))
                 }
                 Some(ReprKind::Transparent | ReprKind::C(Some(_))) => None,
                 Some(ReprKind::C(None)) => unreachable!(),
@@ -1026,27 +1029,18 @@ fn gen_checked_transmute_bounds(
         return Vec::new();
     };
 
-    let mut predicates = fields
-        .iter()
-        .filter(|ty| !is_phantom_data(ty))
-        .map(|&ty| {
-            let for_dummy = speculative_marker(!is_parametrized(ty, generics));
-
-            if validate {
-                parse_quote! { #for_dummy #ty: co3::transmute::AbiCompatibleValidate<CType: Sized> }
-            } else {
-                parse_quote! { #for_dummy #ty: co3::transmute::AbiCompatible<CType: Sized> }
-            }
-        })
+    let trait_ = if validate {
+        quote!(co3::transmute::AbiCompatibleValidate)
+    } else {
+        quote!(co3::transmute::AbiCompatible)
+    };
+    let mut predicates = field_types(fields, generics)
+        .filter(|field| !field.phantom)
+        .map(|field| field.bound(quote!(#trait_<CType: Sized>)))
         .collect::<Vec<_>>();
-
-    if !is_phantom_data(last) {
-        let for_dummy = speculative_marker(!is_parametrized(last, generics));
-        predicates.push(if validate {
-            parse_quote! { #for_dummy #last: co3::transmute::AbiCompatibleValidate }
-        } else {
-            parse_quote! { #for_dummy #last: co3::transmute::AbiCompatible }
-        });
+    let last = FieldType::new(last, generics);
+    if !last.phantom {
+        predicates.push(last.bound(trait_));
     }
 
     predicates
@@ -1419,6 +1413,7 @@ pub(super) fn derive_fieldless_enum(
         .map(|clause| &clause.predicates);
     let shared_ref_impls = [true, false].into_iter().map(|unchecked| {
         let (trait_name, _, store_name, method, _) = encoder_names(false, unchecked);
+        let output = encoder_output(quote!(&'_ršč Self), unchecked);
         let unsafe_fn = unchecked.then(|| quote!(unsafe));
         let abi_bound = if unchecked {
             quote!(co3::transmute::AbiCompatible)
@@ -1440,7 +1435,7 @@ pub(super) fn derive_fieldless_enum(
                 #predicates
             {
                 type #store_name = co3::sync::RefSizedEncodeStore<Self, ()>;
-                #unsafe_fn fn #method<'itm>(&'_ršč self, store: &'itm mut Self::#store_name) -> <&'_ršč Self as co3::ReprC>::CType where '_ršč: 'itm {
+                #unsafe_fn fn #method<'itm>(&'_ršč self, store: &'itm mut Self::#store_name) -> #output where '_ršč: 'itm {
                     store.encode(|_| { #encode_body })
                 }
             }
@@ -1454,7 +1449,7 @@ pub(super) fn derive_fieldless_enum(
                 #predicates
             {
                 type #store_name = ();
-                #unsafe_fn fn #method<'itm>(&'_ršč self, _: &'itm mut ()) -> <&'_ršč Self as co3::ReprC>::CType where '_ršč: 'itm {
+                #unsafe_fn fn #method<'itm>(&'_ršč self, _: &'itm mut ()) -> #output where '_ršč: 'itm {
                     let encoded = unsafe { co3::reference::CRef::from_raw(core::ptr::from_ref(self).cast()) };
                     #validation
                     encoded
@@ -1479,7 +1474,7 @@ pub(super) fn derive_fieldless_enum(
         unsafe impl #impl_generics co3::stored::EncodeMove for #name #ty_generics #where_clause {
             type Store = ();
 
-            fn soft_encode<'_išč>(self, (): &mut ()) -> Self::CType
+            fn soft_encode<'_išč>(self, (): &mut ()) -> co3::encode_repr::Encoded<Self>
             where
                 Self: '_išč,
             {
@@ -1581,7 +1576,7 @@ fn gen_record_conversion(
             quote!(__Co3EncodeFieldUnchecked::encode_field_unchecked),
         ),
         EncodeMode::Owned => (
-            quote!(co3::stored::EncodeMove::soft_encode),
+            quote!(co3::encode_repr::encode_field),
             quote!(co3::stored::EncodeMoveUnchecked::soft_encode_unchecked),
         ),
     };
@@ -1826,6 +1821,7 @@ fn gen_codec_impls(
         let speculative = speculative_marker(generics.params.is_empty());
         let implementations = [true, false].into_iter().map(|unchecked| {
             let (trait_name, _, store_name, method, _) = encoder_names(false, unchecked);
+            let output = encoder_output(quote!(&'_ršč Self), unchecked);
             let unsafe_fn = unchecked.then(|| quote!(unsafe));
             let abi_bound = if unchecked {
                 quote!(co3::transmute::AbiCompatible)
@@ -1866,7 +1862,7 @@ fn gen_codec_impls(
 
                 {
                     type #store_name = co3::sync::RefSizedEncodeStore<Self, #field_store>;
-                    #unsafe_fn fn #method<'itm>(&'_ršč self, store: &'itm mut Self::#store_name) -> <&'_ršč Self as co3::ReprC>::CType where '_ršč: 'itm {
+                    #unsafe_fn fn #method<'itm>(&'_ršč self, store: &'itm mut Self::#store_name) -> #output where '_ršč: 'itm {
                         store.encode(|store| { #encode_body })
                     }
                 }
@@ -1883,7 +1879,7 @@ fn gen_codec_impls(
                     #validation_bound
                 {
                     type #store_name = ();
-                    #unsafe_fn fn #method<'itm>(&'_ršč self, _: &'itm mut ()) -> <&'_ršč Self as co3::ReprC>::CType where '_ršč: 'itm {
+                    #unsafe_fn fn #method<'itm>(&'_ršč self, _: &'itm mut ()) -> #output where '_ršč: 'itm {
                         let encoded = unsafe { co3::reference::CRef::from_raw(core::ptr::from_ref(self).cast()) };
                         #validation
                         encoded
@@ -1906,7 +1902,7 @@ fn gen_codec_impls(
         {
             type Store = #encode_store;
 
-            fn soft_encode<'_išč>(self, store: &'_išč mut Self::Store) -> Self::CType where Self: '_išč {
+            fn soft_encode<'_išč>(self, store: &'_išč mut Self::Store) -> co3::encode_repr::Encoded<Self> where Self: '_išč {
                 #encode_impl
             }
 
@@ -2001,13 +1997,9 @@ fn gen_field_encode_bounds<'a>(
     fields: &'a [&syn::Type],
     bound: TokenStream,
 ) -> impl Iterator<Item = syn::WherePredicate> + use<'a> {
-    fields
-        .iter()
-        .filter(move |ty| !is_phantom_data(ty))
-        .map(move |ty| {
-            let for_dummy = speculative_marker(!is_parametrized(ty, generics));
-            parse_quote! { #for_dummy #ty: #bound }
-        })
+    field_types(fields, generics)
+        .filter(|field| !field.phantom)
+        .map(move |field| field.bound(&bound))
 }
 
 fn gen_field_decode_bounds<'a>(
@@ -2015,13 +2007,7 @@ fn gen_field_decode_bounds<'a>(
     fields: &'a [&syn::Type],
     bound: TokenStream,
 ) -> impl Iterator<Item = syn::WherePredicate> + use<'a> {
-    fields
-        .iter()
-        .filter(move |ty| !is_phantom_data(ty))
-        .map(move |ty| {
-            let for_dummy = speculative_marker(!is_parametrized(ty, generics));
-            parse_quote! { #for_dummy #ty: #bound<'_dšč> }
-        })
+    gen_field_encode_bounds(generics, fields, quote!(#bound<'_dšč>))
 }
 
 fn encode_store_type(fields: &syn::Fields, mode: EncodeMode) -> TokenStream {

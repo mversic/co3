@@ -1,15 +1,15 @@
 use proc_macro2::TokenStream;
 use quote::{format_ident, quote};
-use syn::{FnArg, ItemImpl, punctuated::Punctuated, visit_mut::VisitMut};
+use syn::{FnArg, ItemImpl, visit_mut::VisitMut};
 
 use crate::{
     ImportMode,
+    argument::{self, Argument, Unpack},
     dispatch::{TagId, gen_return_derase_expr, gen_tag_erase_stmts, is_tag_id_arg, tag_id},
     ffi_fn::{
         self, gen_return_borrow_check, gen_soft_sync_error_value, gen_trap_value, is_by_val_attr,
-        is_unpack_arg, item_fn_input_ident, ownership_mode_for_arg, unpack_arg_names,
+        item_fn_input_ident, unpack_arg_names,
     },
-    generate::OwnershipMode,
     is_symbol_name_attr,
     parse::FailureMode,
     symbol_name_value,
@@ -120,12 +120,12 @@ pub(crate) fn wrap_fn_definition(
     let co3 = co3_path();
 
     ffi_fn::normalize_fn_signature(&mut item.sig, None);
-    let decl = ffi_fn::gen_extern_fn_signature(
+    let decl = ffi_fn::lower_abi_fn_signature(
         item.sig,
         failure_mode,
         item.attrs.iter().any(is_by_val_attr),
     );
-    let abi_assertions = gen_decl_abi_assertions(&decl);
+    let abi_assertions = ffi_fn::gen_abi_assertions(&decl);
     let extern_fn_decl = gen_extern_decl(abi, block_attrs, &item.attrs, decl);
 
     quote! {
@@ -433,7 +433,7 @@ fn gen_impl_wrapper_body_with_self_binding<const DISPATCHED: bool>(
             &item.sig,
             WrapperBodyCode {
                 callee: quote!(#name),
-                input_convert,
+                input_convert: Some(input_convert),
             },
         )
     } else {
@@ -460,7 +460,7 @@ pub(crate) fn gen_extern_decl(
     abi: &syn::Abi,
     block_attrs: &[syn::Attribute],
     attrs: &[syn::Attribute],
-    decl: TokenStream,
+    decl: impl quote::ToTokens,
 ) -> TokenStream {
     let decl_attrs = attrs.iter().filter_map(|attr| {
         let value = symbol_name_value(attr)?;
@@ -474,12 +474,6 @@ pub(crate) fn gen_extern_decl(
             #decl;
         }
     }
-}
-
-pub(crate) fn gen_decl_abi_assertions(decl: &TokenStream) -> TokenStream {
-    let sig: syn::Signature =
-        syn::parse2(decl.clone()).expect("generated FFI declaration must parse");
-    ffi_fn::gen_abi_assertions(&sig)
 }
 
 pub(crate) fn gen_wrapper_body<const DISPATCHED: bool>(
@@ -511,7 +505,6 @@ pub(crate) fn gen_wrapper_body_with_callee<const DISPATCHED: bool>(
     sig: &syn::Signature,
     callee: TokenStream,
 ) -> TokenStream {
-    let input_convert = gen_input_conversion_stmts(&sig.inputs);
     gen_wrapper_body_with_input_conversion::<DISPATCHED>(
         failure_mode,
         fn_by_val,
@@ -521,14 +514,14 @@ pub(crate) fn gen_wrapper_body_with_callee<const DISPATCHED: bool>(
         sig,
         WrapperBodyCode {
             callee,
-            input_convert,
+            input_convert: None,
         },
     )
 }
 
 struct WrapperBodyCode {
     callee: TokenStream,
-    input_convert: TokenStream,
+    input_convert: Option<TokenStream>,
 }
 
 fn gen_wrapper_body_with_input_conversion<const DISPATCHED: bool>(
@@ -544,6 +537,8 @@ fn gen_wrapper_body_with_input_conversion<const DISPATCHED: bool>(
         callee,
         input_convert,
     } = code;
+    let inputs = argument::analyze(&sig.inputs);
+    let input_convert = input_convert.unwrap_or_else(|| gen_input_conversion_stmts(&inputs));
     let tag_erase_stmts = if DISPATCHED {
         self_ty
             .zip(dispatch_generics)
@@ -555,8 +550,8 @@ fn gen_wrapper_body_with_input_conversion<const DISPATCHED: bool>(
         Default::default()
     };
 
-    let single_unpack_inputs = gen_single_unpack_input_stmts(failure_mode, &sig.inputs);
-    let unpack_inputs = gen_unpack_input_stmts(failure_mode, &sig.inputs);
+    let single_unpack_inputs = gen_single_unpack_input_stmts(failure_mode, &inputs);
+    let unpack_inputs = gen_unpack_input_stmts(failure_mode, &inputs);
     let declared_receiver_erase = if !DISPATCHED
         && erase_declared_receiver
         && crate::dispatch::has_declared_self_input(self_ty.unwrap(), sig)
@@ -565,10 +560,10 @@ fn gen_wrapper_body_with_input_conversion<const DISPATCHED: bool>(
     } else {
         Default::default()
     };
-    let store_sync_stmts = gen_store_sync_stmts(&sig.inputs);
+    let store_sync_stmts = gen_store_sync_stmts(&inputs);
     let sync_check = gen_wrapper_sync_check(failure_mode, sig.inputs.len(), store_sync_stmts);
 
-    let ffi_fn_call = gen_ffi_fn_call(sig, &callee);
+    let ffi_fn_call = gen_ffi_fn_call(&inputs, &callee);
     if let syn::ReturnType::Type(_, output_ty) = &sig.output {
         let return_derase =
             gen_return_derase::<DISPATCHED>(self_ty, dispatch_generics, output_ty, fn_by_val);
@@ -623,37 +618,16 @@ fn gen_wrapper_body_with_input_conversion<const DISPATCHED: bool>(
     }
 }
 
-fn unpack_input(input: &FnArg) -> (&[syn::Attribute], syn::Ident, syn::Type) {
-    match input {
-        FnArg::Typed(arg) => (
-            &arg.attrs,
-            item_fn_input_ident(&arg.pat).clone(),
-            (*arg.ty).clone(),
-        ),
-        FnArg::Receiver(receiver) => (
-            &receiver.attrs,
-            format_ident!("__co3_self"),
-            crate::utils::receiver_ty(receiver),
-        ),
-    }
-}
-
 fn gen_single_unpack_input_stmts(
     failure_mode: FailureMode,
-    inputs: &Punctuated<FnArg, syn::Token![,]>,
+    inputs: &[Argument<'_>],
 ) -> TokenStream {
     let stmts = inputs.iter().filter_map(|input| {
-        let (attrs, arg_name, ty) = unpack_input(input);
-        if !ffi_fn::is_single_unpack_arg(attrs) {
+        let Unpack::Single(target_ty) = &input.unpack else {
             return None;
-        }
-        let unpack_ty = match ownership_mode_for_arg(attrs, &ty) {
-            OwnershipMode::ByValue => quote!(#ty),
-            OwnershipMode::Borrow => quote!(<#ty as co3::borrow::Borrow>::Borrowed),
         };
-        let target_ty = ffi_fn::single_unpack_part(attrs, &ty)
-            .expect("validated one-part unpack attribute")
-            .expect("one-part unpack attribute was found");
+        let arg_name = input.name();
+        let unpack_ty = input.conversion_ty();
         let part_ty = quote!(<#target_ty as co3::ReprC>::CType);
         let conversion = quote! {
             <#unpack_ty as co3::pack::Unpack<#part_ty>>::unpack(#arg_name)
@@ -662,7 +636,7 @@ fn gen_single_unpack_input_stmts(
             FailureMode::Panic => quote! { #conversion.unwrap_or_else(|_| panic!("co3 generated FFI unpack conversion failure")) },
             FailureMode::Error => quote! { #conversion.map_err(|_| co3::Error::trap_value())? },
         };
-        let cfg = crate::utils::cfg_attrs(attrs);
+        let cfg = input.cfg();
         Some(quote!(#(#cfg)* let #arg_name = #conversion;))
     });
     quote!(#(#stmts)*)
@@ -739,161 +713,84 @@ fn gen_return_derase<const DISPATCHED: bool>(
         .unwrap_or_else(|| quote!(__co3_out))
 }
 
-fn gen_store_sync_stmts(inputs: &Punctuated<FnArg, syn::Token![,]>) -> TokenStream {
+fn gen_store_sync_stmts(inputs: &[Argument<'_>]) -> TokenStream {
     let input_len = inputs.len();
-    let mut store_sync_stmts = quote! {};
-
-    for (idx, input) in inputs.iter().enumerate() {
-        let receiver_ty;
-        let (attrs, arg_name, ty) = match input {
-            FnArg::Typed(arg) => (
-                &arg.attrs,
-                item_fn_input_ident(&arg.pat).clone(),
-                arg.ty.as_ref(),
-            ),
-            FnArg::Receiver(receiver) => {
-                receiver_ty = crate::utils::receiver_ty(receiver);
-                (&receiver.attrs, format_ident!("__co3_self"), &receiver_ty)
-            }
-        };
-
-        if soft_for_arg(attrs)
-            || (!ffi_fn::is_identity_primitive(ty)
-                && OwnershipMode::Borrow == ownership_mode_for_arg(attrs, ty))
-        {
-            let store_name = gen_store_name(&arg_name);
-            let cfg = crate::utils::cfg_attrs(attrs);
-
-            store_sync_stmts.extend(quote! {
-                #(#cfg)*
-                if co3::stored::Store::sync(#store_name).is_none() {
-                    __co3_sync_errors[#idx] = true;
-                }
-            });
+    let store_sync_stmts = inputs.iter().enumerate().filter_map(|(idx, input)| {
+        if !input.needs_encode_store() {
+            return None;
         }
-    }
-
+        let store_name = gen_store_name(input.name());
+        let cfg = input.cfg();
+        Some(quote! {
+            #(#cfg)*
+            if co3::stored::Store::sync(#store_name).is_none() {
+                __co3_sync_errors[#idx] = true;
+            }
+        })
+    });
     quote! {{
         let mut __co3_sync_errors = [false; #input_len];
-
-        #store_sync_stmts
+        #(#store_sync_stmts)*
         __co3_sync_errors
     }}
 }
 
-fn gen_input_conversion_stmts(inputs: &Punctuated<FnArg, syn::Token![,]>) -> TokenStream {
-    let mut stmts = quote! {};
-
-    for input in inputs {
-        let receiver_ty;
-        let (attrs, arg_name, ty) = match input {
-            FnArg::Typed(syn::PatType { attrs, pat, ty, .. }) => {
-                (attrs, item_fn_input_ident(pat).clone(), ty.as_ref())
-            }
-            FnArg::Receiver(receiver) => {
-                receiver_ty = crate::utils::receiver_ty(receiver);
-                (&receiver.attrs, format_ident!("__co3_self"), &receiver_ty)
-            }
-        };
-        let cfg = crate::utils::cfg_attrs(attrs).collect::<Vec<_>>();
-        let store_name = gen_store_name(&arg_name);
-        let borrowed = !ffi_fn::is_identity_primitive(ty)
-            && OwnershipMode::Borrow == ownership_mode_for_arg(attrs, ty);
-        if borrowed {
-            stmts.extend(quote! {
-                #(#cfg)*
-                let #arg_name = co3::borrow::Borrow::borrow(#arg_name);
-            });
-        }
-
-        stmts.extend(if ffi_fn::is_identity_primitive(ty) {
-            quote! {}
-        } else if soft_for_arg(attrs) || borrowed {
+fn gen_input_conversion_stmts(inputs: &[Argument<'_>]) -> TokenStream {
+    let stmts = inputs.iter().filter(|input| !input.identity).map(|input| {
+        let arg_name = input.name();
+        let cfg = input.cfg().collect::<Vec<_>>();
+        let borrow = input.is_borrowed().then(|| quote! {
+            #(#cfg)*
+            let #arg_name = co3::borrow::Borrow::borrow(#arg_name);
+        });
+        let encode = if input.needs_encode_store() {
+            let store_name = gen_store_name(arg_name);
             quote! {
                 #(#cfg)*
                 let mut #store_name = Default::default();
-
                 #(#cfg)*
-                let #arg_name = co3::soft_encode(
-                    #arg_name, &mut #store_name
-                );
+                let #arg_name = co3::encode_repr::soft_encode_abi(#arg_name, &mut #store_name);
             }
         } else {
-            quote! { #(#cfg)* let #arg_name = co3::encode(#arg_name); }
-        });
-    }
-
-    stmts
+            quote!(#(#cfg)* let #arg_name = co3::encode_repr::encode_abi(#arg_name);)
+        };
+        quote!(#borrow #encode)
+    });
+    quote!(#(#stmts)*)
 }
 
 fn gen_unpack_input_stmts(
     failure_mode: FailureMode,
-    inputs: &Punctuated<FnArg, syn::Token![,]>,
+    inputs: &[Argument<'_>],
 ) -> TokenStream {
     let stmts = inputs.iter().filter_map(|input| {
-        let (attrs, arg_name, ty) = unpack_input(input);
-        if !is_unpack_arg(attrs) {
+        let Unpack::Pair(pair) = &input.unpack else {
             return None;
-        }
-        let (data_name, metadata_name) = unpack_arg_names(&arg_name);
-        let (target1_ty, target2_ty) = ffi_fn::unpack_logical_parts(attrs, &ty)
-            .expect("validated #[unpack] attribute")
-            ;
-        let inferred_option_ty = ffi_fn::inferred_unpack_option_inner(attrs, &ty)
-            .expect("validated #[unpack] attribute")
-            .map(|inner_ty| quote!(core::option::Option<#inner_ty>));
-        let unpack_ty = match (ownership_mode_for_arg(attrs, &ty), inferred_option_ty) {
-            (OwnershipMode::ByValue, Some(option_ty)) => option_ty,
-            (OwnershipMode::ByValue, None) => quote!(#ty),
-            (OwnershipMode::Borrow, Some(option_ty)) => {
-                quote!(<#option_ty as co3::borrow::Borrow>::Borrowed)
-            }
-            (OwnershipMode::Borrow, None) => {
-                quote!(<#ty as co3::borrow::Borrow>::Borrowed)
-            }
         };
-        let (abi1_ty, abi2_ty) =
-            ffi_fn::unpack_abi_parts(attrs, &ty).expect("validated #[unpack] attribute");
-        let (part1, part2) =
-            ffi_fn::unpack_parts(attrs).expect("validated #[unpack] attribute").unwrap();
-        let borrowed = ffi_fn::borrowed_wide_unpack(attrs, &ty);
-        {
-            let unpack1_ty = if borrowed {
-                quote!(co3::borrow::Borrowed<#target1_ty>)
-            } else {
-                quote!(#target1_ty)
-            };
-            let conversion = quote! {
-                <#unpack_ty as co3::pack::Unpack2<#unpack1_ty, #target2_ty>>::unpack(#arg_name)
-            };
-            let conversion = match failure_mode {
-                FailureMode::Panic => quote! { #conversion.unwrap_or_else(|_| panic!("co3 generated FFI unpack conversion failure")) },
-                FailureMode::Error => quote! { #conversion.map_err(|_| co3::Error::trap_value())? },
-            };
-            let erase1 = gen_unpack_erase_stmt(
-                &data_name,
-                &syn::parse_quote!(#unpack1_ty),
-                &abi1_ty,
-                part1.abi.is_some(),
-            );
-            let erase2 = gen_unpack_erase_stmt(
-                &metadata_name,
-                &target2_ty,
-                &abi2_ty,
-                part2.abi.is_some(),
-            );
-            let cfg = crate::utils::cfg_attrs(attrs).collect::<Vec<_>>();
-            let erase1 = (!erase1.is_empty()).then(|| quote!(#(#cfg)* #erase1));
-            let erase2 = (!erase2.is_empty()).then(|| quote!(#(#cfg)* #erase2));
-            Some(quote! {
-                #(#cfg)*
-                let (#data_name, #metadata_name) = #conversion;
-                #erase1
-                #erase2
-            })
-        }
+        let arg_name = input.name();
+        let (data_name, metadata_name) = unpack_arg_names(arg_name);
+        let unpack_ty = input.unpack_ty();
+        let first = &pair.first.logical;
+        let second = &pair.second.logical;
+        let conversion = quote! {
+            <#unpack_ty as co3::pack::Unpack2<#first, #second>>::unpack(#arg_name)
+        };
+        let conversion = match failure_mode {
+            FailureMode::Panic => quote! { #conversion.unwrap_or_else(|_| panic!("co3 generated FFI unpack conversion failure")) },
+            FailureMode::Error => quote! { #conversion.map_err(|_| co3::Error::trap_value())? },
+        };
+        let erase1 = gen_unpack_erase_stmt(&data_name, first, &pair.first.abi, pair.first.erased);
+        let erase2 = gen_unpack_erase_stmt(&metadata_name, second, &pair.second.abi, pair.second.erased);
+        let cfg = input.cfg().collect::<Vec<_>>();
+        let erase1 = (!erase1.is_empty()).then(|| quote!(#(#cfg)* #erase1));
+        let erase2 = (!erase2.is_empty()).then(|| quote!(#(#cfg)* #erase2));
+        Some(quote! {
+            #(#cfg)*
+            let (#data_name, #metadata_name) = #conversion;
+            #erase1
+            #erase2
+        })
     });
-
     quote!(#(#stmts)*)
 }
 
@@ -913,29 +810,8 @@ fn gen_unpack_erase_stmt(
     }
 }
 
-fn gen_ffi_fn_call(sig: &syn::Signature, callee: &TokenStream) -> TokenStream {
-    let arg_names = sig.inputs.iter().map(|input| match input {
-        FnArg::Receiver(receiver) => {
-            let cfg = crate::utils::cfg_attrs(&receiver.attrs).collect::<Vec<_>>();
-            if is_unpack_arg(&receiver.attrs) {
-                let (data_name, metadata_name) = unpack_arg_names(&format_ident!("__co3_self"));
-                quote!(#(#cfg)* #data_name, #(#cfg)* #metadata_name)
-            } else {
-                quote!(#(#cfg)* __co3_self)
-            }
-        }
-        FnArg::Typed(syn::PatType { attrs, pat, .. }) => {
-            let arg_name = item_fn_input_ident(pat);
-            let cfg = crate::utils::cfg_attrs(attrs).collect::<Vec<_>>();
-            if is_unpack_arg(attrs) {
-                let (data_name, metadata_name) = unpack_arg_names(arg_name);
-                quote!(#(#cfg)* #data_name, #(#cfg)* #metadata_name)
-            } else {
-                quote!(#(#cfg)* #arg_name)
-            }
-        }
-    });
-
+fn gen_ffi_fn_call(inputs: &[Argument<'_>], callee: &TokenStream) -> TokenStream {
+    let arg_names = inputs.iter().map(Argument::forwarded);
     quote! {
         unsafe { #callee(#(#arg_names),*) }
     }

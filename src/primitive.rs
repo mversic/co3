@@ -105,7 +105,7 @@ macro_rules! primitive_derive {
             type Store = ();
 
             #[inline(always)]
-            fn soft_encode<'itm>(self, (): &mut ()) -> Self::CType
+            fn soft_encode<'itm>(self, (): &mut ()) -> crate::encode_repr::Encoded<Self>
             where
                 Self: 'itm,
             {
@@ -145,6 +145,7 @@ macro_rules! primitive_derive {
         unsafe impl AbiCompatible for $primitive {}
 
         unsafe impl CType for $primitive {}
+unsafe impl crate::encode_repr::EncodeRepr for $primitive where Self: Sized { type Encoded = Self; }
         unsafe impl CFnArg for $primitive {}
         unsafe impl CFnReturn for $primitive {}
 
@@ -177,7 +178,7 @@ macro_rules! raw_pointer_derive {
             type Store = ();
 
             #[inline(always)]
-            fn soft_encode<'itm>(self, (): &mut ()) -> Self::CType
+            fn soft_encode<'itm>(self, (): &mut ()) -> crate::encode_repr::Encoded<Self>
             where
                 Self: 'itm,
             {
@@ -220,6 +221,7 @@ unsafe impl<R: CType + ?Sized> AbiCompatible for *$mutability R
         {}
 
         unsafe impl<R: CType + ?Sized> CType for *$mutability R {}
+unsafe impl<R: CType + ?Sized> crate::encode_repr::EncodeRepr for *$mutability R where Self: Sized { type Encoded = Self; }
         unsafe impl<R: CType> CFnArg for *$mutability R {}
         unsafe impl<R: CType> CFnReturn for *$mutability R {}
 
@@ -286,22 +288,22 @@ macro_rules! impl_fn_types {
         impl<$($arg: CFnArg,)* R: CFnReturn> ReprC for $fn_type where Option<Self>: CType {
             type CType = Option<Self>;
         }
-        unsafe impl<$($arg,)* R> EncodeMove for $fn_type where Self: ReprC<CType = Option<Self>> {
+        unsafe impl<$($arg,)* R> EncodeMove for $fn_type where Self: ReprC<CType = Option<Self>>, Option<Self>: CType {
             type Store = ();
 
-            fn soft_encode<'itm>(self, (): &mut ()) -> Self::CType where Self: 'itm {
+            fn soft_encode<'itm>(self, (): &mut ()) -> crate::encode_repr::Encoded<Self> where Self: 'itm {
                 unsafe { self.soft_encode_unchecked(&mut ()) }
             }
         }
         crate::mutable::impl_copy_mut!([$($arg,)* R] $fn_type);
-        unsafe impl<$($arg,)* R> EncodeMoveUnchecked for $fn_type where Self: ReprC<CType = Option<Self>> {
+        unsafe impl<$($arg,)* R> EncodeMoveUnchecked for $fn_type where Self: ReprC<CType = Option<Self>>, Option<Self>: CType {
             type SoftStore = ();
 
             unsafe fn soft_encode_unchecked<'itm>(self, (): &'itm mut ()) -> Self::CType where Self: 'itm {
                 Some(self)
             }
         }
-        unsafe impl<'d, $($arg,)* R> DecodeMove<'d> for $fn_type where Self: ReprC<CType = Option<Self>> {
+        unsafe impl<'d, $($arg,)* R> DecodeMove<'d> for $fn_type where Self: ReprC<CType = Option<Self>>, Option<Self>: CType {
             type Store = ();
 
             unsafe fn soft_decode<'itm: 'd>(source: Self::CType, (): &mut ()) -> Option<Self> {
@@ -313,21 +315,21 @@ macro_rules! impl_fn_types {
             }
         }
 
-        impl<$($arg,)* R> Encode for $fn_type where Self: ReprC<CType = Option<Self>> {}
-        impl<$($arg,)* R> $crate::EncodeUnchecked for $fn_type where Self: ReprC<CType = Option<Self>> {}
-        impl<$($arg,)* R> Decode<'_> for $fn_type where Self: ReprC<CType = Option<Self>> {}
+        impl<$($arg,)* R> Encode for $fn_type where Self: ReprC<CType = Option<Self>>, Option<Self>: CType {}
+        impl<$($arg,)* R> $crate::EncodeUnchecked for $fn_type where Self: ReprC<CType = Option<Self>>, Option<Self>: CType {}
+        impl<$($arg,)* R> Decode<'_> for $fn_type where Self: ReprC<CType = Option<Self>>, Option<Self>: CType {}
 
-        impl<$($arg,)* R> Niche for $fn_type where Self: ReprC<CType = Option<Self>> {
+        impl<$($arg,)* R> Niche for $fn_type where Self: ReprC<CType = Option<Self>>, Option<Self>: CType {
             const NICHE: Self::CType = None;
 
             fn is_niche(value: &Self::CType) -> bool {
                 value.is_none()
             }
         }
-        unsafe impl<$($arg,)* R> $crate::transmute::AbiCompatibleValidate for $fn_type where Self: ReprC<CType = Option<Self>> {
+        unsafe impl<$($arg,)* R> $crate::transmute::AbiCompatibleValidate for $fn_type where Self: ReprC<CType = Option<Self>>, Option<Self>: CType {
             unsafe fn is_valid(target: &Self::CType) -> bool { target.is_some() }
         }
-unsafe impl<$($arg,)* R> AbiCompatible for $fn_type where Self: ReprC<CType = Option<Self>> {}
+unsafe impl<$($arg,)* R> AbiCompatible for $fn_type where Self: ReprC<CType = Option<Self>>, Option<Self>: CType {}
     };
 }
 
@@ -356,7 +358,7 @@ macro_rules! fieldless_enum_derive {
             type Store = ();
 
             #[inline(always)]
-            fn soft_encode<'itm>(self, (): &mut ()) -> Self::CType
+            fn soft_encode<'itm>(self, (): &mut ()) -> crate::encode_repr::Encoded<Self>
             where
                 Self: 'itm,
             {
@@ -433,6 +435,7 @@ impl<R> Owned for [R] {
     type Owned = Vec<R>;
 }
 unsafe impl<R: CType> CType for [R] {}
+
 impl<R: ReprC<CType: Sized>> ReprC for [R] {
     type CType = [R::CType];
 }
@@ -441,6 +444,7 @@ impl<R: ReprC<CType: Sized>, const N: usize> ReprC for [R; N] {
 }
 
 unsafe impl<R: CType, const N: usize> CType for [R; N] {}
+unsafe impl<R: CType, const N: usize> crate::encode_repr::EncodeRepr for [R; N] where Self: Sized { type Encoded = Self; }
 
 unsafe impl<T: EmptyStore, const N: usize> EmptyStore for [T; N] {}
 // TODO: It's not possbile to implement for specific len yet: https://github.com/mversic/co3/issues/13
@@ -497,8 +501,7 @@ mod tests {
         Encode,
         cmp::COrdering,
         option::COption,
-        reference::{CRef, CSoftRefMut},
-        wide::{CSoftWideRefMut, CSoftWideRef},
+        reference::CRef,
     };
     #[cfg(feature = "alloc")]
     use crate::{boxed::CBox, wide::CWideBox};
@@ -631,7 +634,7 @@ mod tests {
             Encode,
         );
         assert_impl_all!(&mut u8:
-            Niche<CType = CSoftRefMut<u8, true>>,
+            Niche<CType = crate::reference::CRefMut<'static, u8, true>>,
             Decode<'static>,
             Encode,
         );
@@ -642,12 +645,12 @@ mod tests {
             Encode,
         );
         assert_impl_all!(&[u8]:
-            Niche<CType = CSoftWideRef<[u8]>>,
+            Niche<CType = crate::wide::CWideRef<'static, [u8]>>,
             Decode<'static>,
             Encode,
         );
         assert_impl_all!(&mut [u8]:
-            Niche<CType = CSoftWideRefMut<[u8], true>>,
+            Niche<CType = crate::wide::CWideRefMut<'static, [u8], true>>,
             Decode<'static>,
             Encode,
         );

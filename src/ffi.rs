@@ -543,7 +543,7 @@ unsafe impl EncodeMove for CString {
     type Store = ();
 
     #[inline(always)]
-    fn soft_encode<'itm>(self, (): &mut ()) -> Self::CType
+    fn soft_encode<'itm>(self, (): &mut ()) -> crate::encode_repr::Encoded<Self>
     where
         Self: 'itm,
     {
@@ -602,6 +602,7 @@ impl ReprC for c_void {
     type CType = Self;
 }
 unsafe impl CType for c_void {}
+unsafe impl crate::encode_repr::EncodeRepr for c_void where Self: Sized { type Encoded = Self; }
 
 #[cfg(test)]
 mod tests {

@@ -47,6 +47,7 @@ impl<R: Niche<CType: Sized>> ReprC for COptionSome<R> {
     type CType = Self;
 }
 unsafe impl<R: Niche<CType: Sized>> CType for COptionSome<R> {}
+unsafe impl<R: Niche<CType: Sized>> crate::encode_repr::EncodeRepr for COptionSome<R> where Self: Sized { type Encoded = Self; }
 unsafe impl<R: Niche<CType: CFnArg + Sized>> CFnArg for COptionSome<R> {}
 unsafe impl<R: Niche<CType: CFnReturn + Sized>> CFnReturn for COptionSome<R> {}
 
@@ -75,7 +76,7 @@ unsafe impl<R: Niche<CType: Sized>> EncodeMoveUnchecked for COptionSome<R> {
 unsafe impl<R: Niche<CType: Sized>> EncodeMove for COptionSome<R> {
     type Store = ();
 
-    fn soft_encode<'a>(self, _: &'a mut ()) -> Self::CType
+    fn soft_encode<'a>(self, _: &'a mut ()) -> crate::encode_repr::Encoded<Self>
     where
         Self: 'a,
     {
@@ -175,7 +176,7 @@ unsafe impl<T: EncodeMoveUnchecked> EncodeMoveUnchecked for Option<T> {
 unsafe impl<T: EncodeMove> EncodeMove for Option<T> {
     type Store = RustOption<T::Store>;
 
-    fn soft_encode<'a>(self, store: &'a mut Self::Store) -> Self::CType
+    fn soft_encode<'a>(self, store: &'a mut Self::Store) -> crate::encode_repr::Encoded<Self>
     where
         Self: 'a,
     {
@@ -184,7 +185,7 @@ unsafe impl<T: EncodeMove> EncodeMove for Option<T> {
                 *store = None;
                 COption::None()
             }
-            Self::Some(value) => COption::Some(value.soft_encode(store.insert(Default::default()))),
+            Self::Some(value) => COption::Some(crate::encode_repr::encode_field(value, store.insert(Default::default()))),
         }
     }
 }
@@ -226,7 +227,7 @@ where
 {
     type Store = RefSizedEncodeStore<Self, RustOption<<&'a T as EncodeMove>::Store>>;
 
-    fn encode_ref<'itm>(&'a self, store: &'itm mut Self::Store) -> <&'a Self as ReprC>::CType
+    fn encode_ref<'itm>(&'a self, store: &'itm mut Self::Store) -> crate::encode_repr::Encoded<&'a Self>
     where
         'a: 'itm,
     {
@@ -455,6 +456,7 @@ unsafe impl<T> CType for RustOption<T> where
     Self: RustSpec<Layout = rust_spec::Stable, Trap = Robust, Drop = NoDrop>
 {
 }
+unsafe impl<T> crate::encode_repr::EncodeRepr for RustOption<T> where Self: CType { type Encoded = Self; }
 unsafe impl<T> CFnArg for RustOption<T> where
     Self: CType + RustSpec<Size = rust_spec::size::Sized<rust_spec::Gt<rust_spec::Zero>>>
 {

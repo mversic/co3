@@ -29,8 +29,8 @@ pub struct Vec<T> {
 /// An owned allocation represented by its data pointer, length, and capacity.
 /// A null pointer is reserved as a niche and does not represent a vector.
 /// `T` names the Rust element type; the allocation contains `T::CType` elements.
-#[repr(C)]
 #[derive(RustSpec)]
+#[repr(C)]
 pub struct CVec<T: ReprC<CType: Sized>> {
     data: *mut T::CType,
     capacity: usize,

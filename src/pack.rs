@@ -14,7 +14,7 @@ use crate::{
     borrow::Borrowed,
     option::COptionSome,
     tuple::Tuple2,
-    wide::{CSoftWideRefMut, CSoftWideRef},
+    wide::WideRefCarrier,
     wide::{Wide, WideHeader},
 };
 #[cfg(feature = "alloc")]
@@ -66,39 +66,33 @@ impl_raw_wide_unpack!(NonNull<R>, *const, as_ptr, into_inner);
 impl_raw_wide_unpack!(NonNull<R>, *mut, as_mut_ptr, into_inner);
 
 macro_rules! impl_ref_wide_pack {
-    ($reference:ty, $carrier:ty, *$pointer:ident, $constructor:ident) => {
-        impl<R: ReprC<CType = P> + Wide + ?Sized, P: Wide<Header: WideHeader<Data: CType>, Metadata: TryInto<U>> + ?Sized, U: CType>
-            Unpack2<*$pointer <P::Header as WideHeader>::Data, U> for $reference
+    ($reference:ty) => {
+        impl<R: ReprC<CType = P> + Wide + ?Sized, P: Wide<Metadata: TryInto<U>> + ?Sized, U: CType, Pointer: CType>
+            Unpack2<Pointer, U> for $reference
         where
-            Self: ReprC<CType = $carrier>,
+            Self: ReprC<CType: WideRefCarrier<R, Pointer = Pointer>>,
         {
             type Error = <P::Metadata as TryInto<U>>::Error;
-
             #[inline(always)]
-            fn unpack(value: Self::CType) -> Result<(*$pointer <P::Header as WideHeader>::Data, U), Self::Error> {
+            fn unpack(value: Self::CType) -> Result<(Pointer, U), Self::Error> {
                 Ok((value.as_ptr(), value.metadata().try_into()?))
             }
         }
-
-        impl<R: ReprC<CType = P> + Wide + ?Sized, P: Wide<Header: WideHeader<Data: CType>> + ?Sized, U: CType + TryInto<P::Metadata>>
-            Pack2<*$pointer <P::Header as WideHeader>::Data, U> for $reference
+        impl<R: ReprC<CType = P> + Wide + ?Sized, P: Wide + ?Sized, U: CType + TryInto<P::Metadata>, Pointer: CType>
+            Pack2<Pointer, U> for $reference
         where
-            Self: ReprC<CType = $carrier>,
+            Self: ReprC<CType: WideRefCarrier<R, Pointer = Pointer>>,
         {
             type Error = <U as TryInto<P::Metadata>>::Error;
-
             #[inline(always)]
-            unsafe fn pack(data: *$pointer <P::Header as WideHeader>::Data, metadata: U) -> Result<Self::CType, Self::Error> {
-                let metadata = metadata.try_into()?;
-                Ok(unsafe { <$carrier>::$constructor(data, metadata) })
+            unsafe fn pack(data: Pointer, metadata: U) -> Result<Self::CType, Self::Error> {
+                Ok(unsafe { Self::CType::from_parts(data, metadata.try_into()?) })
             }
         }
     };
 }
-
-impl_ref_wide_pack!(&R, CSoftWideRef<R>, *const, from_raw_parts);
-impl_ref_wide_pack!(&R, CSoftWideRefMut<R, false>, *mut, from_raw_parts_mut);
-impl_ref_wide_pack!(&mut R, CSoftWideRefMut<R, true>, *mut, from_raw_parts_mut);
+impl_ref_wide_pack!(&R);
+impl_ref_wide_pack!(&mut R);
 
 impl<T, Part: CType + TryInto<Self::CType>> Pack<Part> for T
 where

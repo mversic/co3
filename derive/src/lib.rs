@@ -49,6 +49,7 @@ use crate::{
 };
 
 mod abi_retype;
+mod argument;
 mod callback;
 mod cfg_attr;
 mod dispatch;
