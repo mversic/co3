@@ -2,10 +2,15 @@
 
 use proc_macro2::TokenStream;
 use quote::quote;
-use syn::{FnArg, Ident, Type, parse_quote};
+use syn::{
+    FnArg, Ident, Type,
+    parse::{Parse, ParseStream},
+    parse_quote,
+    punctuated::Punctuated,
+};
 
 use crate::{
-    ffi_fn::{self, UnpackPart},
+    ffi_fn,
     generate::OwnershipMode,
     utils::{cfg_attrs, co3_path, receiver_ty, soft_for_arg},
 };
@@ -24,6 +29,39 @@ pub(crate) enum Unpack {
     None,
     Single(Type),
     Pair(Box<UnpackPair>),
+}
+
+/// Parsed before type substitution; inference is resolved separately for each
+/// signature stage. Validation and generation use the same attribute grammar.
+pub(crate) enum UnpackSyntax {
+    None,
+    Single(Type),
+    Pair([UnpackPart; 2]),
+}
+
+pub(crate) struct UnpackPart {
+    logical: Type,
+    abi: Option<Type>,
+}
+
+impl Parse for UnpackPart {
+    fn parse(input: ParseStream<'_>) -> syn::Result<Self> {
+        let logical = input.parse()?;
+        let abi = if input.peek(syn::Token![=>]) {
+            input.parse::<syn::Token![=>]>()?;
+            let abi: Type = input.parse()?;
+            if matches!(abi, Type::Infer(_)) {
+                return Err(syn::Error::new_spanned(
+                    abi,
+                    "the ABI type after `=>` cannot be `_`",
+                ));
+            }
+            Some(abi)
+        } else {
+            None
+        };
+        Ok(Self { logical, abi })
+    }
 }
 
 pub(crate) struct UnpackPair {
@@ -50,6 +88,10 @@ impl<'a> Argument<'a> {
                 receiver_ty(receiver),
             ),
         };
+        Self::from_parts(attrs, pat, ty)
+    }
+
+    fn from_parts(attrs: &'a [syn::Attribute], pat: syn::Pat, ty: Type) -> Self {
         let ownership = ffi_fn::ownership_mode_for_arg(attrs, &ty);
         let unpack = Unpack::resolve(attrs, &ty).expect("validated #[unpack] attribute");
         Self {
@@ -65,6 +107,14 @@ impl<'a> Argument<'a> {
 
     pub(crate) fn name(&self) -> &Ident {
         ffi_fn::item_fn_input_ident(&self.pat)
+    }
+
+    pub(crate) fn is_receiver(&self) -> bool {
+        matches!(&self.pat, syn::Pat::Ident(pat) if pat.ident == "__co3_self")
+    }
+
+    pub(crate) fn with_type(&self, ty: Type) -> Self {
+        Self::from_parts(self.attrs, self.pat.clone(), ty)
     }
 
     pub(crate) fn cfg(&self) -> impl Iterator<Item = &syn::Attribute> {
@@ -123,32 +173,53 @@ impl<'a> Argument<'a> {
 
 impl Unpack {
     pub(crate) fn resolve(attrs: &[syn::Attribute], ty: &Type) -> syn::Result<Self> {
-        let Some(parts) = ffi_fn::parse_unpack_parts(attrs)? else {
+        UnpackSyntax::parse(attrs)?.resolve(attrs, ty)
+    }
+}
+
+impl UnpackSyntax {
+    pub(crate) fn parse(attrs: &[syn::Attribute]) -> syn::Result<Self> {
+        let Some(attr) = attrs.iter().find(|attr| ffi_fn::is_unpack_attr(attr)) else {
             return Ok(Self::None);
         };
-        let attr = attrs
-            .iter()
-            .find(|attr| ffi_fn::is_unpack_attr(attr))
-            .unwrap();
+        let syntax_error = || syn::Error::new_spanned(attr, "#[unpack] expects exactly two parts");
+        if !matches!(attr.meta, syn::Meta::List(_)) {
+            return Err(syntax_error());
+        }
+        let mut parts = attr
+            .parse_args_with(Punctuated::<UnpackPart, syn::Token![,]>::parse_terminated)?
+            .into_iter()
+            .collect::<Vec<_>>();
         if parts.len() == 1 {
-            let part = &parts[0];
+            let part = parts.pop().unwrap();
             if part.abi.is_some() {
                 return Err(syn::Error::new_spanned(
                     attr,
                     "the one-part #[unpack] form does not support ABI erasure",
                 ));
             }
-            return Ok(Self::Single(if matches!(part.logical, Type::Infer(_)) {
-                ty.clone()
-            } else {
-                part.logical.clone()
-            }));
+            return Ok(Self::Single(part.logical));
         }
-        let [first, second]: [UnpackPart; 2] = parts
-            .try_into()
-            .map_err(|_| syn::Error::new_spanned(attr, "#[unpack] expects exactly two parts"))?;
-        let inferred =
-            matches!(first.logical, Type::Infer(_)) || matches!(second.logical, Type::Infer(_));
+        Ok(Self::Pair(parts.try_into().map_err(|_| syntax_error())?))
+    }
+
+    pub(crate) fn has_inferred_parts(&self) -> bool {
+        matches!(self, Self::Pair(parts) if parts.iter().any(|part| matches!(part.logical, Type::Infer(_))))
+    }
+
+    pub(crate) fn resolve(self, attrs: &[syn::Attribute], ty: &Type) -> syn::Result<Unpack> {
+        let inferred = self.has_inferred_parts();
+        let [first, second] = match self {
+            Self::None => return Ok(Unpack::None),
+            Self::Single(part) => {
+                return Ok(Unpack::Single(if matches!(part, Type::Infer(_)) {
+                    ty.clone()
+                } else {
+                    part
+                }));
+            }
+            Self::Pair(parts) => parts,
+        };
         let inferred_option = inferred
             .then(|| {
                 ffi_fn::option_inner_type(ffi_fn::peel_grouped_type(ty))
@@ -173,7 +244,7 @@ impl Unpack {
                 erased,
             })
         };
-        Ok(Self::Pair(Box::new(UnpackPair {
+        Ok(Unpack::Pair(Box::new(UnpackPair {
             first: resolve(first, 1)?,
             second: resolve(second, 2)?,
             inferred_option,

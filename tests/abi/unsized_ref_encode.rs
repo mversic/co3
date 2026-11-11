@@ -3,7 +3,7 @@ use core::ffi::CStr;
 use co3::{
     ReprC,
     rust_spec::RustSpec,
-    stored::{EncodeMut, EncodeMutUnchecked, EncodeRef, EncodeRefUnchecked, Store},
+    stored::{SoftEncodeMut, SoftEncodeMutUnchecked, SoftEncodeRef, SoftEncodeRefUnchecked, Store},
 };
 
 #[test]
@@ -79,9 +79,9 @@ struct SliceView([Element]);
 impl ReprC for SliceView {
     type CType = <[Element] as ReprC>::CType;
 }
-unsafe impl<'a> EncodeRefUnchecked<'a> for SliceView {
-    type SoftStore = <[Element] as EncodeRefUnchecked<'a>>::SoftStore;
-    unsafe fn encode_ref_unchecked<'itm>(
+unsafe impl<'a> SoftEncodeRefUnchecked<'a> for SliceView {
+    type SoftStore = <[Element] as SoftEncodeRefUnchecked<'a>>::SoftStore;
+    unsafe fn soft_encode_ref_unchecked<'itm>(
         &'a self,
         store: &'itm mut Self::SoftStore,
     ) -> <&'a Self as ReprC>::CType
@@ -94,9 +94,9 @@ unsafe impl<'a> EncodeRefUnchecked<'a> for SliceView {
         }
     }
 }
-unsafe impl<'a> EncodeRef<'a> for SliceView {
-    type Store = <[Element] as EncodeRef<'a>>::Store;
-    fn encode_ref<'itm>(&'a self, store: &'itm mut Self::Store) -> co3::encode_repr::Encoded<&'a Self>
+unsafe impl<'a> SoftEncodeRef<'a> for SliceView {
+    type Store = <[Element] as SoftEncodeRef<'a>>::Store;
+    fn soft_encode_ref<'itm>(&'a self, store: &'itm mut Self::Store) -> co3::encode_repr::Encoded<&'a Self>
     where
         'a: 'itm,
     {
@@ -162,9 +162,9 @@ struct Explicit(u32);
 impl ReprC for Explicit {
     type CType = u32;
 }
-unsafe impl<'a> EncodeMutUnchecked<'a> for Explicit {
+unsafe impl<'a> SoftEncodeMutUnchecked<'a> for Explicit {
     type SoftStore = ();
-    unsafe fn encode_mut_unchecked<'itm>(
+    unsafe fn soft_encode_mut_unchecked<'itm>(
         &'a mut self,
         _: &'itm mut (),
     ) -> <&'a mut Self as ReprC>::CType
@@ -174,9 +174,9 @@ unsafe impl<'a> EncodeMutUnchecked<'a> for Explicit {
         co3::reference::CSoftRefMut::from_mut(&mut self.0)
     }
 }
-unsafe impl<'a> EncodeMut<'a> for Explicit {
+unsafe impl<'a> SoftEncodeMut<'a> for Explicit {
     type Store = ();
-    fn encode_mut<'itm>(&'a mut self, _: &'itm mut ()) -> co3::encode_repr::Encoded<&'a mut Self>
+    fn soft_encode_mut<'itm>(&'a mut self, _: &'itm mut ()) -> co3::encode_repr::Encoded<&'a mut Self>
     where
         'a: 'itm,
     {
@@ -198,9 +198,9 @@ struct MutSliceView([u32]);
 impl ReprC for MutSliceView {
     type CType = [u32];
 }
-unsafe impl<'a> EncodeMutUnchecked<'a> for MutSliceView {
+unsafe impl<'a> SoftEncodeMutUnchecked<'a> for MutSliceView {
     type SoftStore = ();
-    unsafe fn encode_mut_unchecked<'itm>(
+    unsafe fn soft_encode_mut_unchecked<'itm>(
         &'a mut self,
         _: &'itm mut (),
     ) -> <&'a mut Self as ReprC>::CType
@@ -216,9 +216,9 @@ unsafe impl<'a> EncodeMutUnchecked<'a> for MutSliceView {
         }
     }
 }
-unsafe impl<'a> EncodeMut<'a> for MutSliceView {
+unsafe impl<'a> SoftEncodeMut<'a> for MutSliceView {
     type Store = ();
-    fn encode_mut<'itm>(&'a mut self, _: &'itm mut ()) -> co3::encode_repr::Encoded<&'a mut Self>
+    fn soft_encode_mut<'itm>(&'a mut self, _: &'itm mut ()) -> co3::encode_repr::Encoded<&'a mut Self>
     where
         'a: 'itm,
     {
@@ -238,7 +238,7 @@ fn explicit_unsized_mutable_encoder_needs_no_value_helper() {
     let encoded = co3::soft_encode(view, &mut Default::default());
     unsafe { encoded.as_ptr().write(29) };
     assert_eq!(values, [29]);
-    static_assertions::assert_not_impl_any!([Element]: EncodeMut<'static>, EncodeMutUnchecked<'static>);
+    static_assertions::assert_not_impl_any!([Element]: SoftEncodeMut<'static>, SoftEncodeMutUnchecked<'static>);
 }
 
 #[test]
@@ -288,9 +288,9 @@ struct WrappedCStr(CStr);
 #[test]
 fn transparent_cstr_has_nul_terminated_buffer() {
     static_assertions::assert_impl_all!(WrappedCStr: co3::ffi::NulTerminatedBuf);
-    assert_shared_encoder!(WrappedCStr: co3::stored::EncodeRef<'static>, co3::stored::EncodeRefUnchecked<'static>);
+    assert_shared_encoder!(WrappedCStr: co3::stored::SoftEncodeRef<'static>, co3::stored::SoftEncodeRefUnchecked<'static>);
     static_assertions::assert_not_impl_any!(WrappedCStr:
-        co3::stored::EncodeMut<'static>, co3::stored::EncodeMutUnchecked<'static>);
+        co3::stored::SoftEncodeMut<'static>, co3::stored::SoftEncodeMutUnchecked<'static>);
 
     let value = c"hello";
     let wrapper = unsafe { &*(value as *const CStr as *const WrappedCStr) };
@@ -306,8 +306,8 @@ fn transparent_cstr_has_nul_terminated_buffer() {
 
 #[test]
 fn nontransparent_nul_tail_has_no_reference_encoder() {
-    assert_not_shared_encoder!(CStrTail: co3::stored::EncodeRef<'static>, co3::stored::EncodeRefUnchecked<'static>);
-    static_assertions::assert_not_impl_any!(CStrTail: co3::stored::EncodeMut<'static>, co3::stored::EncodeMutUnchecked<'static>);
+    assert_not_shared_encoder!(CStrTail: co3::stored::SoftEncodeRef<'static>, co3::stored::SoftEncodeRefUnchecked<'static>);
+    static_assertions::assert_not_impl_any!(CStrTail: co3::stored::SoftEncodeMut<'static>, co3::stored::SoftEncodeMutUnchecked<'static>);
 }
 
 #[repr(C)]
@@ -324,16 +324,16 @@ struct WrappedSlice<T: ?Sized>(T);
 
 #[test]
 fn transparent_wide_wrapper_delegates_reference_encoding() {
-    use co3::stored::{EncodeMut, EncodeMutUnchecked, EncodeRefUnchecked};
-    assert_shared_encoder!(WrappedSlice<u32>: EncodeRef<'static>, EncodeRefUnchecked<'static>,
-        EncodeMut<'static>, EncodeMutUnchecked<'static>);
-    assert_shared_encoder!(WrappedSlice<core::ffi::CStr>: EncodeRef<'static>, EncodeRefUnchecked<'static>);
+    use co3::stored::{SoftEncodeMut, SoftEncodeMutUnchecked, SoftEncodeRefUnchecked};
+    assert_shared_encoder!(WrappedSlice<u32>: SoftEncodeRef<'static>, SoftEncodeRefUnchecked<'static>,
+        SoftEncodeMut<'static>, SoftEncodeMutUnchecked<'static>);
+    assert_shared_encoder!(WrappedSlice<core::ffi::CStr>: SoftEncodeRef<'static>, SoftEncodeRefUnchecked<'static>);
     static_assertions::assert_not_impl_any!(WrappedSlice<core::ffi::CStr>:
-        EncodeMut<'static>, EncodeMutUnchecked<'static>);
-    assert_shared_encoder!(WrappedSlice<[u32]>: EncodeRef<'static>, EncodeRefUnchecked<'static>,
-        EncodeMut<'static>, EncodeMutUnchecked<'static>);
-    assert_shared_encoder!(WrappedSlice<Packet>: EncodeRef<'static>, EncodeRefUnchecked<'static>,
-        EncodeMut<'static>, EncodeMutUnchecked<'static>);
+        SoftEncodeMut<'static>, SoftEncodeMutUnchecked<'static>);
+    assert_shared_encoder!(WrappedSlice<[u32]>: SoftEncodeRef<'static>, SoftEncodeRefUnchecked<'static>,
+        SoftEncodeMut<'static>, SoftEncodeMutUnchecked<'static>);
+    assert_shared_encoder!(WrappedSlice<Packet>: SoftEncodeRef<'static>, SoftEncodeRefUnchecked<'static>,
+        SoftEncodeMut<'static>, SoftEncodeMutUnchecked<'static>);
     let mut values = [1_u32, 2];
     let wrapper = unsafe { &mut *(&mut values[..] as *mut [u32] as *mut WrappedSlice<[u32]>) };
     let mut store = ();
@@ -356,12 +356,12 @@ struct GenericPacket<T: ?Sized> {
 
 #[test]
 fn derived_wide_aggregate_reference_encoders_are_unsupported() {
-    use co3::stored::{EncodeMut, EncodeMutUnchecked, EncodeRefUnchecked};
-    assert_not_shared_encoder!(Packet: EncodeRef<'static>, EncodeRefUnchecked<'static>);
-    static_assertions::assert_not_impl_any!(Packet: EncodeMut<'static>, EncodeMutUnchecked<'static>);
-    assert_shared_encoder!(GenericPacket<u8>: EncodeRef<'static>, EncodeRefUnchecked<'static>);
-    assert_not_shared_encoder!(GenericPacket<[u8]>: EncodeRef<'static>, EncodeRefUnchecked<'static>);
-    static_assertions::assert_not_impl_any!(GenericPacket<[u8]>: EncodeMut<'static>, EncodeMutUnchecked<'static>);
-    assert_not_shared_encoder!(GenericPacket<str>: EncodeRef<'static>, EncodeRefUnchecked<'static>);
-    static_assertions::assert_not_impl_any!(GenericPacket<str>: EncodeMut<'static>, EncodeMutUnchecked<'static>);
+    use co3::stored::{SoftEncodeMut, SoftEncodeMutUnchecked, SoftEncodeRefUnchecked};
+    assert_not_shared_encoder!(Packet: SoftEncodeRef<'static>, SoftEncodeRefUnchecked<'static>);
+    static_assertions::assert_not_impl_any!(Packet: SoftEncodeMut<'static>, SoftEncodeMutUnchecked<'static>);
+    assert_shared_encoder!(GenericPacket<u8>: SoftEncodeRef<'static>, SoftEncodeRefUnchecked<'static>);
+    assert_not_shared_encoder!(GenericPacket<[u8]>: SoftEncodeRef<'static>, SoftEncodeRefUnchecked<'static>);
+    static_assertions::assert_not_impl_any!(GenericPacket<[u8]>: SoftEncodeMut<'static>, SoftEncodeMutUnchecked<'static>);
+    assert_not_shared_encoder!(GenericPacket<str>: SoftEncodeRef<'static>, SoftEncodeRefUnchecked<'static>);
+    static_assertions::assert_not_impl_any!(GenericPacket<str>: SoftEncodeMut<'static>, SoftEncodeMutUnchecked<'static>);
 }

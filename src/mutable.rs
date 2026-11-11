@@ -34,12 +34,12 @@ disjoint_impls! {
     /// later access. Synchronization must validate changes before restoring Rust
     /// values. Encoding must leave `self` valid even if the store is never synced.
     /// If `SoftStore` implements `EmptyStore`, the carrier must not borrow from it.
-    pub unsafe trait EncodeMutUnchecked<'a>: ReprC + 'a {
+    pub unsafe trait SoftEncodeMutUnchecked<'a>: ReprC + 'a {
         type SoftStore: Store + Default;
 
         /// # Safety
         /// See [`crate::soft_encode_unchecked`].
-        unsafe fn encode_mut_unchecked<'itm>(
+        unsafe fn soft_encode_mut_unchecked<'itm>(
             &'a mut self,
             store: &'itm mut Self::SoftStore,
         ) -> <&'a mut Self as ReprC>::CType
@@ -55,13 +55,13 @@ disjoint_impls! {
                 Layout = rust_spec::Stable,
                 Drop: rust_spec::drop::DropKind,
             > + 'a,
-    > EncodeMutUnchecked<'a> for [T]
+    > SoftEncodeMutUnchecked<'a> for [T]
     where
         &'a mut Self: ReprC<CType = crate::wide::CWideRefMut<'a, Self, true>>
             + EncodeMoveUnchecked<SoftStore = ()>,
     {
         type SoftStore = ();
-        unsafe fn encode_mut_unchecked<'itm>(
+        unsafe fn soft_encode_mut_unchecked<'itm>(
             &'a mut self,
             store: &'itm mut (),
         ) -> <&'a mut Self as ReprC>::CType
@@ -74,7 +74,7 @@ disjoint_impls! {
         }
     }
     #[cfg(feature = "alloc")]
-    unsafe impl<'a, T: ReprC<CType: CType + Copy + Sized> + 'a> EncodeMutUnchecked<'a> for [T]
+    unsafe impl<'a, T: ReprC<CType: CType + Copy + Sized> + 'a> SoftEncodeMutUnchecked<'a> for [T]
     where
         T: rust_spec::RustSpec<Layout = rust_spec::Unstable, Trap = rust_spec::layout::NonRobust>,
         &'a mut T: EncodeMoveUnchecked
@@ -88,7 +88,7 @@ disjoint_impls! {
             alloc::boxed::Box<[CSoftRefMut<T, true>]>,
         >;
 
-        unsafe fn encode_mut_unchecked<'itm>(
+        unsafe fn soft_encode_mut_unchecked<'itm>(
             &'a mut self,
             store: &'itm mut Self::SoftStore,
         ) -> <&'a mut Self as ReprC>::CType
@@ -118,7 +118,7 @@ disjoint_impls! {
         }
     }
     #[cfg(feature = "alloc")]
-    unsafe impl<'a, T: ReprC<CType: CType + Copy + Sized> + 'a> EncodeMutUnchecked<'a> for [T]
+    unsafe impl<'a, T: ReprC<CType: CType + Copy + Sized> + 'a> SoftEncodeMutUnchecked<'a> for [T]
     where
         T: rust_spec::RustSpec<Layout = rust_spec::Unstable, Trap = rust_spec::layout::Robust>,
         &'a mut T: EncodeMoveUnchecked
@@ -132,7 +132,7 @@ disjoint_impls! {
             alloc::boxed::Box<[CSoftRefMut<T, true>]>,
         >;
 
-        unsafe fn encode_mut_unchecked<'itm>(
+        unsafe fn soft_encode_mut_unchecked<'itm>(
             &'a mut self,
             store: &'itm mut Self::SoftStore,
         ) -> <&'a mut Self as ReprC>::CType
@@ -164,15 +164,15 @@ disjoint_impls! {
 
     #[cfg(feature = "alloc")]
     unsafe impl<'a, 'b: 'a, R: ReprC + RustSpec<Layout = rust_spec::Stable, Trap = rust_spec::layout::Robust, Size = rust_spec::size::Sized<K>>, K: SizedKind>
-        EncodeMutUnchecked<'a> for &'b mut R
+        SoftEncodeMutUnchecked<'a> for &'b mut R
     where
-        R: EncodeMutUnchecked<'a>,
+        R: SoftEncodeMutUnchecked<'a>,
         Self: RustSpec<Size: crate::Thin>,
         &'a mut Self: ReprC<CType = crate::reference::CRefMut<'a, Self, true>> + EncodeMoveUnchecked<SoftStore = ()>,
     {
         type SoftStore = ();
 
-        unsafe fn encode_mut_unchecked<'itm>(
+        unsafe fn soft_encode_mut_unchecked<'itm>(
             &'a mut self,
             store: &'itm mut Self::SoftStore,
         ) -> <&'a mut Self as ReprC>::CType
@@ -184,15 +184,15 @@ disjoint_impls! {
     }
     #[cfg(feature = "alloc")]
     unsafe impl<'a, 'b: 'a, R: ReprC + RustSpec<Layout = rust_spec::Stable, Trap = rust_spec::layout::NonRobust, Size = rust_spec::size::Sized<K>>, K: SizedKind>
-        EncodeMutUnchecked<'a> for &'b mut R
+        SoftEncodeMutUnchecked<'a> for &'b mut R
     where
-        R: EncodeMutUnchecked<'a>,
+        R: SoftEncodeMutUnchecked<'a>,
         Self: RustSpec<Size: crate::Thin>,
         &'a mut Self: ReprC<CType = crate::reference::CRefMut<'a, Self, true>> + EncodeMoveUnchecked<SoftStore = ()>,
     {
         type SoftStore = ();
 
-        unsafe fn encode_mut_unchecked<'itm>(
+        unsafe fn soft_encode_mut_unchecked<'itm>(
             &'a mut self,
             store: &'itm mut Self::SoftStore,
         ) -> <&'a mut Self as ReprC>::CType
@@ -204,22 +204,22 @@ disjoint_impls! {
     }
     #[cfg(feature = "alloc")]
     unsafe impl<'a, 'b: 'a, R: ReprC + RustSpec<Layout = rust_spec::Unstable, Size = rust_spec::size::Sized<K>>, K: SizedKind>
-        EncodeMutUnchecked<'a> for &'b mut R
+        SoftEncodeMutUnchecked<'a> for &'b mut R
     where
-        R: EncodeMutUnchecked<'a>,
+        R: SoftEncodeMutUnchecked<'a>,
         Self: RustSpec<Size: crate::Thin>,
         &'a mut Self: ReprC<CType = CSoftRefMut<Self, true>>,
     {
         type SoftStore = RefMutReferenceEncodeStore<CSoftRefMut<R, true>, R::SoftStore>;
 
-        unsafe fn encode_mut_unchecked<'itm>(
+        unsafe fn soft_encode_mut_unchecked<'itm>(
             &'a mut self,
             store: &'itm mut Self::SoftStore,
         ) -> <&'a mut Self as ReprC>::CType
         where
             'a: 'itm,
         {
-            let value = unsafe { R::encode_mut_unchecked(&mut **self, &mut store.inner) };
+            let value = unsafe { R::soft_encode_mut_unchecked(&mut **self, &mut store.inner) };
             let value = unsafe { CSoftRefMut::<R, true>::from_raw(value.as_ptr()) };
             store.original = Some(value);
             // Both inner carriers have the same raw pointer ABI. The outer carrier is soft.
@@ -227,7 +227,7 @@ disjoint_impls! {
         }
     }
     #[cfg(feature = "alloc")]
-    unsafe impl<'a, T: ReprC<CType: CType + Copy + Sized> + 'a, const N: usize> EncodeMutUnchecked<'a>
+    unsafe impl<'a, T: ReprC<CType: CType + Copy + Sized> + 'a, const N: usize> SoftEncodeMutUnchecked<'a>
         for [T; N]
     where
         Self: RustSpec<Layout = rust_spec::Unstable>,
@@ -241,7 +241,7 @@ disjoint_impls! {
             alloc::boxed::Box<[CSoftRefMut<T, true>]>,
         >;
 
-        unsafe fn encode_mut_unchecked<'itm>(
+        unsafe fn soft_encode_mut_unchecked<'itm>(
             &'a mut self,
             store: &'itm mut Self::SoftStore,
         ) -> <&'a mut Self as ReprC>::CType
@@ -270,13 +270,13 @@ disjoint_impls! {
         }
     }
 
-    unsafe impl<'a, T, const N: usize> EncodeMutUnchecked<'a> for [T; N]
+    unsafe impl<'a, T, const N: usize> SoftEncodeMutUnchecked<'a> for [T; N]
     where
         Self: crate::transmute::AbiCompatible + RustSpec<Layout = rust_spec::Stable> + 'a,
         &'a mut Self: ReprC<CType = crate::reference::CRefMut<'a, Self, true>> + EncodeMoveUnchecked<SoftStore = ()>,
     {
         type SoftStore = ();
-        unsafe fn encode_mut_unchecked<'itm>(&'a mut self, store: &'itm mut ()) -> <&'a mut Self as ReprC>::CType where 'a: 'itm {
+        unsafe fn soft_encode_mut_unchecked<'itm>(&'a mut self, store: &'itm mut ()) -> <&'a mut Self as ReprC>::CType where 'a: 'itm {
             unsafe { EncodeMoveUnchecked::soft_encode_unchecked(self, store) }
         }
     }
@@ -289,10 +289,10 @@ disjoint_impls! {
     /// The returned carrier must satisfy the checked mutable-reference contract.
     /// It grants borrowed access, without transferring ownership to the caller.
     /// If `Store` implements `EmptyStore`, the carrier must not borrow from it.
-    pub unsafe trait EncodeMut<'a>: EncodeMutUnchecked<'a> {
+    pub unsafe trait SoftEncodeMut<'a>: SoftEncodeMutUnchecked<'a> {
         type Store: Store + Default;
 
-        fn encode_mut<'itm>(
+        fn soft_encode_mut<'itm>(
             &'a mut self,
             store: &'itm mut Self::Store,
         ) -> crate::encode_repr::Encoded<&'a mut Self>
@@ -308,14 +308,14 @@ disjoint_impls! {
                 Trap = rust_spec::layout::Robust,
                 Drop: rust_spec::drop::DropKind,
             > + 'a,
-    > EncodeMut<'a> for [T]
+    > SoftEncodeMut<'a> for [T]
     where
         &'a mut Self: ReprC<CType = crate::wide::CWideRefMut<'a, Self, true>>
             + EncodeMoveUnchecked<SoftStore = ()>
             + EncodeMove<Store = ()>,
     {
         type Store = ();
-        fn encode_mut<'itm>(&'a mut self, store: &'itm mut ()) -> crate::encode_repr::Encoded<&'a mut Self>
+        fn soft_encode_mut<'itm>(&'a mut self, store: &'itm mut ()) -> crate::encode_repr::Encoded<&'a mut Self>
         where
             'a: 'itm,
         {
@@ -332,10 +332,10 @@ disjoint_impls! {
         }
     }
     #[cfg(feature = "alloc")]
-    unsafe impl<'a, T: ReprC<CType: CType + Copy + Sized> + 'a> EncodeMut<'a> for [T]
+    unsafe impl<'a, T: ReprC<CType: CType + Copy + Sized> + 'a> SoftEncodeMut<'a> for [T]
     where
         T: rust_spec::RustSpec<Trap = rust_spec::layout::NonRobust>,
-        Self: EncodeMutUnchecked<'a> + ReprC<CType = [<T as ReprC>::CType]>,
+        Self: SoftEncodeMutUnchecked<'a> + ReprC<CType = [<T as ReprC>::CType]>,
         &'a mut T: EncodeMove
             + ReprC<CType: MutRefCarrier<T, true>>,
         &'a mut Self: ReprC<CType: crate::encode_repr::EncodeRepr<Encoded = CSoftWideRefMut<Self, true>>>,
@@ -347,7 +347,7 @@ disjoint_impls! {
             alloc::boxed::Box<[CSoftRefMut<T, true>]>,
         >;
 
-        fn encode_mut<'itm>(
+        fn soft_encode_mut<'itm>(
             &'a mut self,
             store: &'itm mut Self::Store,
         ) -> crate::encode_repr::Encoded<&'a mut Self>
@@ -377,7 +377,7 @@ disjoint_impls! {
         }
     }
     #[cfg(feature = "alloc")]
-    unsafe impl<'a, T: ReprC<CType: CType + Copy + Sized> + 'a> EncodeMut<'a> for [T]
+    unsafe impl<'a, T: ReprC<CType: CType + Copy + Sized> + 'a> SoftEncodeMut<'a> for [T]
     where
         T: rust_spec::RustSpec<Layout = rust_spec::Unstable, Trap = rust_spec::layout::Robust>,
         &'a mut T: EncodeMove
@@ -391,7 +391,7 @@ disjoint_impls! {
             alloc::boxed::Box<[CSoftRefMut<T, true>]>,
         >;
 
-        fn encode_mut<'itm>(
+        fn soft_encode_mut<'itm>(
             &'a mut self,
             store: &'itm mut Self::Store,
         ) -> crate::encode_repr::Encoded<&'a mut Self>
@@ -423,22 +423,22 @@ disjoint_impls! {
 
     #[cfg(feature = "alloc")]
     unsafe impl<'a, 'b: 'a, R: ReprC + RustSpec<Layout = rust_spec::Stable, Trap = rust_spec::layout::Robust, Size = rust_spec::size::Sized<K>>, K: SizedKind>
-        EncodeMut<'a> for &'b mut R
+        SoftEncodeMut<'a> for &'b mut R
     where
-        R: EncodeMut<'a>,
+        R: SoftEncodeMut<'a>,
         Self: RustSpec<Size: crate::Thin>,
         &'a mut Self: ReprC<CType = crate::reference::CRefMut<'a, Self, true>> + EncodeMoveUnchecked<SoftStore = ()>,
     {
         type Store = RefMutReferenceEncodeStore<CSoftRefMut<R, true>, R::Store>;
 
-        fn encode_mut<'itm>(
+        fn soft_encode_mut<'itm>(
             &'a mut self,
             store: &'itm mut Self::Store,
         ) -> crate::encode_repr::Encoded<&'a mut Self>
         where
             'a: 'itm,
         {
-            let value = R::encode_mut(&mut **self, &mut store.inner);
+            let value = R::soft_encode_mut(&mut **self, &mut store.inner);
             let value = unsafe { CSoftRefMut::<R, true>::from_raw(value.as_ptr()) };
             store.original = Some(value);
             // Both inner carriers have the same raw pointer ABI. The outer carrier is soft.
@@ -447,22 +447,22 @@ disjoint_impls! {
     }
     #[cfg(feature = "alloc")]
     unsafe impl<'a, 'b: 'a, R: ReprC + RustSpec<Layout = rust_spec::Stable, Trap = rust_spec::layout::NonRobust, Size = rust_spec::size::Sized<K>>, K: SizedKind>
-        EncodeMut<'a> for &'b mut R
+        SoftEncodeMut<'a> for &'b mut R
     where
-        R: EncodeMut<'a>,
+        R: SoftEncodeMut<'a>,
         Self: RustSpec<Size: crate::Thin>,
         &'a mut Self: ReprC<CType = crate::reference::CRefMut<'a, Self, true>> + EncodeMoveUnchecked<SoftStore = ()>,
     {
         type Store = RefMutReferenceEncodeStore<CSoftRefMut<R, true>, R::Store>;
 
-        fn encode_mut<'itm>(
+        fn soft_encode_mut<'itm>(
             &'a mut self,
             store: &'itm mut Self::Store,
         ) -> crate::encode_repr::Encoded<&'a mut Self>
         where
             'a: 'itm,
         {
-            let value = R::encode_mut(&mut **self, &mut store.inner);
+            let value = R::soft_encode_mut(&mut **self, &mut store.inner);
             let value = unsafe { CSoftRefMut::<R, true>::from_raw(value.as_ptr()) };
             store.original = Some(value);
             // Both inner carriers have the same raw pointer ABI. The outer carrier is soft.
@@ -471,22 +471,22 @@ disjoint_impls! {
     }
     #[cfg(feature = "alloc")]
     unsafe impl<'a, 'b: 'a, R: ReprC + RustSpec<Layout = rust_spec::Unstable, Size = rust_spec::size::Sized<K>>, K: SizedKind>
-        EncodeMut<'a> for &'b mut R
+        SoftEncodeMut<'a> for &'b mut R
     where
-        R: EncodeMut<'a>,
+        R: SoftEncodeMut<'a>,
         Self: RustSpec<Size: crate::Thin>,
         &'a mut Self: ReprC<CType = CSoftRefMut<Self, true>>,
     {
         type Store = RefMutReferenceEncodeStore<CSoftRefMut<R, true>, R::Store>;
 
-        fn encode_mut<'itm>(
+        fn soft_encode_mut<'itm>(
             &'a mut self,
             store: &'itm mut Self::Store,
         ) -> crate::encode_repr::Encoded<&'a mut Self>
         where
             'a: 'itm,
         {
-            let value = R::encode_mut(&mut **self, &mut store.inner);
+            let value = R::soft_encode_mut(&mut **self, &mut store.inner);
             let value = unsafe { CSoftRefMut::<R, true>::from_raw(value.as_ptr()) };
             store.original = Some(value);
             // Both inner carriers have the same raw pointer ABI. The outer carrier is soft.
@@ -494,7 +494,7 @@ disjoint_impls! {
         }
     }
     #[cfg(feature = "alloc")]
-    unsafe impl<'a, T: ReprC<CType: CType + Copy + Sized> + 'a, const N: usize> EncodeMut<'a> for [T; N]
+    unsafe impl<'a, T: ReprC<CType: CType + Copy + Sized> + 'a, const N: usize> SoftEncodeMut<'a> for [T; N]
     where
         Self: RustSpec<Layout = rust_spec::Unstable>,
         &'a mut T: EncodeMove + ReprC<CType: MutRefCarrier<T, true>>,
@@ -507,7 +507,7 @@ disjoint_impls! {
             alloc::boxed::Box<[CSoftRefMut<T, true>]>,
         >;
 
-        fn encode_mut<'itm>(
+        fn soft_encode_mut<'itm>(
             &'a mut self,
             store: &'itm mut Self::Store,
         ) -> crate::encode_repr::Encoded<&'a mut Self>
@@ -536,9 +536,9 @@ disjoint_impls! {
         }
     }
     #[cfg(feature = "alloc")]
-    unsafe impl<'a, T: ReprC<CType: CType + Copy + Sized> + 'a, const N: usize> EncodeMut<'a> for [T; N]
+    unsafe impl<'a, T: ReprC<CType: CType + Copy + Sized> + 'a, const N: usize> SoftEncodeMut<'a> for [T; N]
     where
-        Self: RustSpec<Layout = rust_spec::Stable, Trap = rust_spec::layout::NonRobust> + EncodeMutUnchecked<'a> + ReprC<CType = [<T as ReprC>::CType; N]>,
+        Self: RustSpec<Layout = rust_spec::Stable, Trap = rust_spec::layout::NonRobust> + SoftEncodeMutUnchecked<'a> + ReprC<CType = [<T as ReprC>::CType; N]>,
         &'a mut T: EncodeMove + ReprC<CType: MutRefCarrier<T, true>>,
         &'a mut Self: ReprC<CType = crate::reference::CRefMut<'a, Self, true>>,
     {
@@ -549,7 +549,7 @@ disjoint_impls! {
             alloc::boxed::Box<[CSoftRefMut<T, true>]>,
         >;
 
-        fn encode_mut<'itm>(
+        fn soft_encode_mut<'itm>(
             &'a mut self,
             store: &'itm mut Self::Store,
         ) -> crate::encode_repr::Encoded<&'a mut Self>
@@ -577,13 +577,13 @@ disjoint_impls! {
             unsafe { CSoftRefMut::from_raw(wide.as_ptr().cast::<[T::CType; N]>()) }
         }
     }
-    unsafe impl<'a, T, const N: usize> EncodeMut<'a> for [T; N]
+    unsafe impl<'a, T, const N: usize> SoftEncodeMut<'a> for [T; N]
     where
         Self: crate::transmute::AbiCompatibleValidate + RustSpec<Layout = rust_spec::Stable, Trap = rust_spec::layout::Robust> + 'a,
         &'a mut Self: ReprC<CType = crate::reference::CRefMut<'a, Self, true>> + EncodeMove<Store = ()> + EncodeMoveUnchecked<SoftStore = ()>,
     {
         type Store = ();
-        fn encode_mut<'itm>(&'a mut self, store: &'itm mut ()) -> crate::encode_repr::Encoded<&'a mut Self> where 'a: 'itm {
+        fn soft_encode_mut<'itm>(&'a mut self, store: &'itm mut ()) -> crate::encode_repr::Encoded<&'a mut Self> where 'a: 'itm {
             EncodeMove::soft_encode(self, store)
         }
     }
@@ -593,7 +593,7 @@ disjoint_impls! {
 // Keeping this per-type avoids a stable-layout blanket impl overlapping downstream impls.
 macro_rules! impl_direct_mut {
     ([$($params:tt)*] $ty:ty) => {
-        unsafe impl<'_mut, $($params)*> $crate::stored::EncodeMutUnchecked<'_mut> for $ty
+        unsafe impl<'_mut, $($params)*> $crate::stored::SoftEncodeMutUnchecked<'_mut> for $ty
         where
             Self: $crate::transmute::AbiCompatible
                 + $crate::rust_spec::RustSpec<Layout = $crate::rust_spec::Stable, Trap = $crate::rust_spec::layout::Robust> + '_mut,
@@ -602,13 +602,13 @@ macro_rules! impl_direct_mut {
                 + $crate::stored::EncodeMoveUnchecked<SoftStore = ()>,
         {
             type SoftStore = ();
-            unsafe fn encode_mut_unchecked<'itm>(&'_mut mut self, store: &'itm mut ()) -> <&'_mut mut Self as $crate::ReprC>::CType
+            unsafe fn soft_encode_mut_unchecked<'itm>(&'_mut mut self, store: &'itm mut ()) -> <&'_mut mut Self as $crate::ReprC>::CType
             where '_mut: 'itm {
                 let encoded = unsafe { $crate::stored::EncodeMoveUnchecked::soft_encode_unchecked(self, store) };
                 encoded
             }
         }
-        unsafe impl<'_mut, $($params)*> $crate::stored::EncodeMut<'_mut> for $ty
+        unsafe impl<'_mut, $($params)*> $crate::stored::SoftEncodeMut<'_mut> for $ty
         where
             Self: $crate::transmute::AbiCompatibleValidate
                 + $crate::rust_spec::RustSpec<Layout = $crate::rust_spec::Stable, Trap = $crate::rust_spec::layout::Robust> + '_mut,
@@ -618,7 +618,7 @@ macro_rules! impl_direct_mut {
                 + $crate::stored::EncodeMove<Store = ()>,
         {
             type Store = ();
-            fn encode_mut<'itm>(&'_mut mut self, store: &'itm mut ()) -> $crate::encode_repr::Encoded<&'_mut mut Self>
+            fn soft_encode_mut<'itm>(&'_mut mut self, store: &'itm mut ()) -> $crate::encode_repr::Encoded<&'_mut mut Self>
             where '_mut: 'itm {
                 let encoded = $crate::encode_repr::encode_field(self, store);
                 debug_assert!(unsafe { <&'_mut mut Self as $crate::transmute::AbiCompatibleValidate>::is_valid(&encoded) }, "encoding failed AbiCompatibleValidate::is_valid");
@@ -633,17 +633,17 @@ macro_rules! impl_copy_mut {
     ([$($params:tt)+] $ty:ty) => { $crate::mutable::impl_copy_mut!(@impl [] [$($params)+] $ty); };
     (@impl [$($spec:tt)*] [$($params:tt)*] $ty:ty) => {
         const _: () = {
-            use $crate::stored::EncodeMutUnchecked;
+            use $crate::stored::SoftEncodeMutUnchecked;
             $crate::disjoint_impls! {
                 #[disjoint_impls(remote)]
-                pub unsafe trait EncodeMutUnchecked<'a>: $crate::ReprC + 'a {
+                pub unsafe trait SoftEncodeMutUnchecked<'a>: $crate::ReprC + 'a {
                     type SoftStore: $crate::stored::Store + Default;
-                    unsafe fn encode_mut_unchecked<'itm>(
+                    unsafe fn soft_encode_mut_unchecked<'itm>(
                         &'a mut self, store: &'itm mut Self::SoftStore,
                     ) -> <&'a mut Self as $crate::ReprC>::CType
                     where &'a mut Self: $crate::ReprC<CType: Sized>, 'a: 'itm;
                 }
-                unsafe impl<'_mut, $($params)*> EncodeMutUnchecked<'_mut> for $ty
+                unsafe impl<'_mut, $($params)*> SoftEncodeMutUnchecked<'_mut> for $ty
                 where
                     $($spec)* Self: $crate::transmute::AbiCompatible
                         + $crate::rust_spec::RustSpec<Layout = $crate::rust_spec::Stable> + '_mut,
@@ -651,12 +651,12 @@ macro_rules! impl_copy_mut {
                         + $crate::stored::EncodeMoveUnchecked<SoftStore = ()>,
                 {
                     type SoftStore = ();
-                    unsafe fn encode_mut_unchecked<'itm>(&'_mut mut self, store: &'itm mut ()) -> <&'_mut mut Self as $crate::ReprC>::CType
+                    unsafe fn soft_encode_mut_unchecked<'itm>(&'_mut mut self, store: &'itm mut ()) -> <&'_mut mut Self as $crate::ReprC>::CType
                     where '_mut: 'itm {
                         unsafe { $crate::stored::EncodeMoveUnchecked::soft_encode_unchecked(self, store) }
                     }
                 }
-                unsafe impl<'_mut, $($params)*> EncodeMutUnchecked<'_mut> for $ty
+                unsafe impl<'_mut, $($params)*> SoftEncodeMutUnchecked<'_mut> for $ty
                 where
                     $($spec)* Self: $crate::ReprC<CType: Sized> + $crate::stored::EncodeMoveUnchecked
                         + $crate::rust_spec::RustSpec<Layout = $crate::rust_spec::Unstable>
@@ -664,7 +664,7 @@ macro_rules! impl_copy_mut {
                     &'_mut mut Self: $crate::ReprC<CType = $crate::reference::CSoftRefMut<Self, true>>,
                 {
                     type SoftStore = $crate::sync::RefMutSizedEncodeStore<'_mut, Self, <Self as $crate::stored::EncodeMoveUnchecked>::SoftStore>;
-                    unsafe fn encode_mut_unchecked<'itm>(&'_mut mut self, store: &'itm mut Self::SoftStore) -> <&'_mut mut Self as $crate::ReprC>::CType
+                    unsafe fn soft_encode_mut_unchecked<'itm>(&'_mut mut self, store: &'itm mut Self::SoftStore) -> <&'_mut mut Self as $crate::ReprC>::CType
                     where '_mut: 'itm {
                         store.encode(self, |original, fields| {
                             unsafe { $crate::stored::EncodeMoveUnchecked::soft_encode_unchecked(*original, fields) }
@@ -673,15 +673,15 @@ macro_rules! impl_copy_mut {
                 }
             }
         };
-        unsafe impl<'_mut, $($params)*> $crate::stored::EncodeMut<'_mut> for $ty
+        unsafe impl<'_mut, $($params)*> $crate::stored::SoftEncodeMut<'_mut> for $ty
         where
             Self: $crate::stored::EncodeMove
                 + $crate::stored::DecodeMove<'_mut, Store: $crate::stored::EmptyStore + '_mut>
-                + $crate::stored::EncodeMutUnchecked<'_mut> + Copy + '_mut,
+                + $crate::stored::SoftEncodeMutUnchecked<'_mut> + Copy + '_mut,
             &'_mut mut Self: $crate::ReprC<CType: $crate::encode_repr::EncodeRepr<Encoded = $crate::reference::CSoftRefMut<Self, true>>>,
         {
             type Store = $crate::sync::RefMutSizedEncodeStore<'_mut, Self, <Self as $crate::stored::EncodeMove>::Store>;
-            fn encode_mut<'itm>(&'_mut mut self, store: &'itm mut Self::Store) -> $crate::encode_repr::Encoded<&'_mut mut Self>
+            fn soft_encode_mut<'itm>(&'_mut mut self, store: &'itm mut Self::Store) -> $crate::encode_repr::Encoded<&'_mut mut Self>
             where '_mut: 'itm {
                 store.encode(self, |original, fields| $crate::encode_repr::encode_field(*original, fields))
             }
@@ -689,21 +689,21 @@ macro_rules! impl_copy_mut {
     };
 }
 
-unsafe impl<'a, R: EncodeMutUnchecked<'a> + ?Sized> EncodeMutUnchecked<'a> for ManuallyDrop<R>
+unsafe impl<'a, R: SoftEncodeMutUnchecked<'a> + ?Sized> SoftEncodeMutUnchecked<'a> for ManuallyDrop<R>
 where
     Self: ReprC + 'a,
     &'a mut Self: ReprC<CType: Copy + Sized>,
     &'a mut R: ReprC<CType: Copy + Sized>,
 {
     type SoftStore = R::SoftStore;
-    unsafe fn encode_mut_unchecked<'itm>(
+    unsafe fn soft_encode_mut_unchecked<'itm>(
         &'a mut self,
         store: &'itm mut Self::SoftStore,
     ) -> <&'a mut Self as ReprC>::CType
     where
         'a: 'itm,
     {
-        let inner = unsafe { R::encode_mut_unchecked(&mut **self, store) };
+        let inner = unsafe { R::soft_encode_mut_unchecked(&mut **self, store) };
         const {
             assert!(
                 core::mem::size_of::<<&mut Self as ReprC>::CType>()
@@ -715,21 +715,21 @@ where
     }
 }
 
-unsafe impl<'a, R: EncodeMut<'a> + ?Sized> EncodeMut<'a> for ManuallyDrop<R>
+unsafe impl<'a, R: SoftEncodeMut<'a> + ?Sized> SoftEncodeMut<'a> for ManuallyDrop<R>
 where
     Self: ReprC + 'a,
     &'a mut Self: ReprC<CType: Copy + crate::encode_repr::EncodeRepr>,
     &'a mut R: ReprC<CType: Copy + crate::encode_repr::EncodeRepr>,
 {
     type Store = R::Store;
-    fn encode_mut<'itm>(
+    fn soft_encode_mut<'itm>(
         &'a mut self,
         store: &'itm mut Self::Store,
     ) -> crate::encode_repr::Encoded<&'a mut Self>
     where
         'a: 'itm,
     {
-        let inner = R::encode_mut(&mut **self, store);
+        let inner = R::soft_encode_mut(&mut **self, store);
         const {
             assert!(
                 core::mem::size_of::<<&mut Self as ReprC>::CType>()
@@ -742,21 +742,21 @@ where
 
 macro_rules! impl_cell_mut {
     ($wrapper:ident, $field:expr) => {
-        unsafe impl<'a, R: EncodeMutUnchecked<'a> + ?Sized> EncodeMutUnchecked<'a> for $wrapper<R>
+        unsafe impl<'a, R: SoftEncodeMutUnchecked<'a> + ?Sized> SoftEncodeMutUnchecked<'a> for $wrapper<R>
         where
             Self: ReprC + 'a,
             &'a mut Self: ReprC<CType: Copy + Sized>,
             &'a mut R: ReprC<CType: Copy + Sized>,
         {
             type SoftStore = R::SoftStore;
-            unsafe fn encode_mut_unchecked<'itm>(
+            unsafe fn soft_encode_mut_unchecked<'itm>(
                 &'a mut self,
                 store: &'itm mut Self::SoftStore,
             ) -> <&'a mut Self as ReprC>::CType
             where
                 'a: 'itm,
             {
-                let inner = unsafe { R::encode_mut_unchecked($field(self), store) };
+                let inner = unsafe { R::soft_encode_mut_unchecked($field(self), store) };
                 const {
                     assert!(
                         core::mem::size_of::<<&mut Self as ReprC>::CType>()
@@ -767,21 +767,21 @@ macro_rules! impl_cell_mut {
                 unsafe { core::mem::transmute_copy(&inner) }
             }
         }
-        unsafe impl<'a, R: EncodeMut<'a> + ?Sized> EncodeMut<'a> for $wrapper<R>
+        unsafe impl<'a, R: SoftEncodeMut<'a> + ?Sized> SoftEncodeMut<'a> for $wrapper<R>
         where
             Self: ReprC + 'a,
             &'a mut Self: ReprC<CType: Copy + crate::encode_repr::EncodeRepr>,
             &'a mut R: ReprC<CType: Copy + crate::encode_repr::EncodeRepr>,
         {
             type Store = R::Store;
-            fn encode_mut<'itm>(
+            fn soft_encode_mut<'itm>(
                 &'a mut self,
                 store: &'itm mut Self::Store,
             ) -> crate::encode_repr::Encoded<&'a mut Self>
             where
                 'a: 'itm,
             {
-                let inner = R::encode_mut($field(self), store);
+                let inner = R::soft_encode_mut($field(self), store);
                 const {
                     assert!(
                         core::mem::size_of::<<&mut Self as ReprC>::CType>()
@@ -822,17 +822,17 @@ macro_rules! impl_move_out_mut {
     ([$($params:tt)+] $ty:ty where $($bounds:tt)*) => { impl_move_out_mut!(@impl [] [$($params)+] $ty where $($bounds)*); };
     (@impl [$($spec:tt)*] [$($params:tt)*] $ty:ty where $($bounds:tt)*) => {
         const _: () = {
-            use $crate::stored::EncodeMutUnchecked;
+            use $crate::stored::SoftEncodeMutUnchecked;
             $crate::disjoint_impls! {
                 #[disjoint_impls(remote)]
-                pub unsafe trait EncodeMutUnchecked<'a>: $crate::ReprC + 'a {
+                pub unsafe trait SoftEncodeMutUnchecked<'a>: $crate::ReprC + 'a {
                     type SoftStore: $crate::stored::Store + Default;
-                    unsafe fn encode_mut_unchecked<'itm>(
+                    unsafe fn soft_encode_mut_unchecked<'itm>(
                         &'a mut self, store: &'itm mut Self::SoftStore,
                     ) -> <&'a mut Self as $crate::ReprC>::CType
                     where &'a mut Self: $crate::ReprC<CType: Sized>, 'a: 'itm;
                 }
-                unsafe impl<'_mut, $($params)*> EncodeMutUnchecked<'_mut> for $ty
+                unsafe impl<'_mut, $($params)*> SoftEncodeMutUnchecked<'_mut> for $ty
                 where
                     $($bounds)*
                     $($spec)* Self: $crate::transmute::AbiCompatible
@@ -841,12 +841,12 @@ macro_rules! impl_move_out_mut {
                         + $crate::stored::EncodeMoveUnchecked<SoftStore = ()>,
                 {
                     type SoftStore = ();
-                    unsafe fn encode_mut_unchecked<'itm>(&'_mut mut self, store: &'itm mut ()) -> <&'_mut mut Self as $crate::ReprC>::CType
+                    unsafe fn soft_encode_mut_unchecked<'itm>(&'_mut mut self, store: &'itm mut ()) -> <&'_mut mut Self as $crate::ReprC>::CType
                     where '_mut: 'itm {
                         unsafe { $crate::stored::EncodeMoveUnchecked::soft_encode_unchecked(self, store) }
                     }
                 }
-                unsafe impl<'_mut, $($params)*> EncodeMutUnchecked<'_mut> for $ty
+                unsafe impl<'_mut, $($params)*> SoftEncodeMutUnchecked<'_mut> for $ty
                 where
                     $($bounds)*
                     $($spec)* Self: $crate::ReprC<CType: Sized> + $crate::stored::EncodeMoveUnchecked
@@ -855,7 +855,7 @@ macro_rules! impl_move_out_mut {
                     &'_mut mut Self: $crate::ReprC<CType = $crate::reference::CSoftRefMut<Self, true>>,
                 {
                     type SoftStore = $crate::sync::RefMutSizedEncodeStore<'_mut, Self, <Self as $crate::stored::EncodeMoveUnchecked>::SoftStore>;
-                    unsafe fn encode_mut_unchecked<'itm>(&'_mut mut self, store: &'itm mut Self::SoftStore) -> <&'_mut mut Self as $crate::ReprC>::CType
+                    unsafe fn soft_encode_mut_unchecked<'itm>(&'_mut mut self, store: &'itm mut Self::SoftStore) -> <&'_mut mut Self as $crate::ReprC>::CType
                     where '_mut: 'itm {
                         store.encode(self, |original, fields| {
                             unsafe { $crate::stored::EncodeMoveUnchecked::soft_encode_unchecked(core::mem::take(original), fields) }
@@ -864,16 +864,16 @@ macro_rules! impl_move_out_mut {
                 }
             }
         };
-        unsafe impl<'_mut, $($params)*> $crate::stored::EncodeMut<'_mut> for $ty
+        unsafe impl<'_mut, $($params)*> $crate::stored::SoftEncodeMut<'_mut> for $ty
         where
             $($bounds)*
             Self: $crate::stored::EncodeMove
                 + $crate::stored::DecodeMove<'_mut, Store: $crate::stored::EmptyStore + '_mut>
-                + $crate::stored::EncodeMutUnchecked<'_mut> + Default + '_mut,
+                + $crate::stored::SoftEncodeMutUnchecked<'_mut> + Default + '_mut,
             &'_mut mut Self: $crate::ReprC<CType: $crate::encode_repr::EncodeRepr<Encoded = $crate::reference::CSoftRefMut<Self, true>>>,
         {
             type Store = $crate::sync::RefMutSizedEncodeStore<'_mut, Self, <Self as $crate::stored::EncodeMove>::Store>;
-            fn encode_mut<'itm>(&'_mut mut self, store: &'itm mut Self::Store) -> $crate::encode_repr::Encoded<&'_mut mut Self>
+            fn soft_encode_mut<'itm>(&'_mut mut self, store: &'itm mut Self::Store) -> $crate::encode_repr::Encoded<&'_mut mut Self>
             where '_mut: 'itm {
                 store.encode(self, |original, fields| $crate::encode_repr::encode_field(core::mem::take(original), fields))
             }
@@ -889,15 +889,15 @@ impl_move_out_mut!([T] crate::option::Option<T> where);
 macro_rules! impl_vec_mut {
     ($vec:path) => {
         const _: () = {
-            use crate::stored::EncodeMutUnchecked;
+            use crate::stored::SoftEncodeMutUnchecked;
             crate::disjoint_impls! {
                 #[disjoint_impls(remote)]
-                pub unsafe trait EncodeMutUnchecked<'a>: ReprC + 'a {
+                pub unsafe trait SoftEncodeMutUnchecked<'a>: ReprC + 'a {
                     type SoftStore: Store + Default;
-                    unsafe fn encode_mut_unchecked<'itm>(&'a mut self, store: &'itm mut Self::SoftStore) -> <&'a mut Self as ReprC>::CType
+                    unsafe fn soft_encode_mut_unchecked<'itm>(&'a mut self, store: &'itm mut Self::SoftStore) -> <&'a mut Self as ReprC>::CType
                     where &'a mut Self: ReprC<CType: Sized>, 'a: 'itm;
                 }
-        unsafe impl<'a, T: ReprC<CType: CType + Copy + Sized> + 'a> EncodeMutUnchecked<'a> for $vec
+        unsafe impl<'a, T: ReprC<CType: CType + Copy + Sized> + 'a> SoftEncodeMutUnchecked<'a> for $vec
         where
             Self: RustSpec<Layout = rust_spec::Unstable>,
             &'a mut T: EncodeMoveUnchecked + ReprC<CType: MutRefCarrier<T, true>>,
@@ -914,7 +914,7 @@ macro_rules! impl_vec_mut {
                 >,
             >;
 
-            unsafe fn encode_mut_unchecked<'itm>(
+            unsafe fn soft_encode_mut_unchecked<'itm>(
                 &'a mut self,
                 store: &'itm mut Self::SoftStore,
             ) -> <&'a mut Self as ReprC>::CType
@@ -952,22 +952,22 @@ macro_rules! impl_vec_mut {
                 CSoftRefMut::from_mut(store.value.insert(header))
             }
         }
-        unsafe impl<'a, T: ReprC<CType: CType + Copy + Sized> + 'a> EncodeMutUnchecked<'a> for $vec
+        unsafe impl<'a, T: ReprC<CType: CType + Copy + Sized> + 'a> SoftEncodeMutUnchecked<'a> for $vec
         where
             Self: crate::transmute::AbiCompatible + RustSpec<Layout = rust_spec::Stable>,
             &'a mut Self: ReprC<CType = crate::reference::CRefMut<'a, Self, true>> + EncodeMoveUnchecked<SoftStore = ()>,
         {
             type SoftStore = ();
-            unsafe fn encode_mut_unchecked<'itm>(&'a mut self, store: &'itm mut ()) -> <&'a mut Self as ReprC>::CType
+            unsafe fn soft_encode_mut_unchecked<'itm>(&'a mut self, store: &'itm mut ()) -> <&'a mut Self as ReprC>::CType
             where 'a: 'itm {
                 unsafe { self.soft_encode_unchecked(store) }
             }
         }
             }
         };
-        unsafe impl<'a, T: ReprC<CType: CType + Copy + Sized> + 'a> EncodeMut<'a> for $vec
+        unsafe impl<'a, T: ReprC<CType: CType + Copy + Sized> + 'a> SoftEncodeMut<'a> for $vec
         where
-            Self: EncodeMutUnchecked<'a> + ReprC<CType = CVec<T>>,
+            Self: SoftEncodeMutUnchecked<'a> + ReprC<CType = CVec<T>>,
             &'a mut T: EncodeMove + ReprC<CType: MutRefCarrier<T, true>>,
             &'a mut Self: ReprC<CType: crate::encode_repr::EncodeRepr<Encoded = CSoftRefMut<Self, true>>>,
         {
@@ -982,7 +982,7 @@ macro_rules! impl_vec_mut {
                 >,
             >;
 
-            fn encode_mut<'itm>(
+            fn soft_encode_mut<'itm>(
                 &'a mut self,
                 store: &'itm mut Self::Store,
             ) -> crate::encode_repr::Encoded<&'a mut Self>
@@ -1041,10 +1041,10 @@ impl_move_out_mut!([] alloc::boxed::Box<str> where);
 impl_move_out_mut!([] alloc::boxed::Box<core::ffi::CStr> where);
 
 #[cfg(feature = "alloc")]
-unsafe impl<'a> EncodeMutUnchecked<'a> for str {
+unsafe impl<'a> SoftEncodeMutUnchecked<'a> for str {
     type SoftStore = ();
 
-    unsafe fn encode_mut_unchecked<'itm>(
+    unsafe fn soft_encode_mut_unchecked<'itm>(
         &'a mut self,
         store: &'itm mut Self::SoftStore,
     ) -> <&'a mut Self as ReprC>::CType
@@ -1057,10 +1057,10 @@ unsafe impl<'a> EncodeMutUnchecked<'a> for str {
 }
 
 #[cfg(feature = "alloc")]
-unsafe impl<'a> EncodeMut<'a> for str {
+unsafe impl<'a> SoftEncodeMut<'a> for str {
     type Store = RefMutDstEncodeStore<'a, str, ()>;
 
-    fn encode_mut<'itm>(
+    fn soft_encode_mut<'itm>(
         &'a mut self,
         store: &'itm mut Self::Store,
     ) -> crate::encode_repr::Encoded<&'a mut Self>

@@ -7,8 +7,8 @@ use crate::{
         ReprCAttrs, VariantReprCAttrs,
         attr::ReprKind,
         ctype::{classify_tail, gen_ctype_name, gen_fields_methods},
-        generic_param_idents, is_parametrized, is_phantom_data,
-        fields::field_types,
+        generic_param_idents, is_phantom_data,
+        fields::{FieldType, field_types},
         item::{field_vars, gen_fields_destructure},
     },
     utils::speculative_marker,
@@ -129,7 +129,8 @@ fn gen_view_rust_spec(owner: &DeriveInput, view: &DeriveInput) -> TokenStream {
     };
     let (mutability, mutability_bounds) = if let [field] = fields.as_slice() {
         let speculative = speculative_marker(
-            matches!(&owner.data, syn::Data::Struct(_)) && !is_parametrized(field, &owner.generics),
+            matches!(&owner.data, syn::Data::Struct(_))
+                && FieldType::new(field, &owner.generics).concrete,
         );
         (
             quote!(<#field as co3::rust_spec::RustSpec>::Mutability),
@@ -419,8 +420,8 @@ fn gen_borrow_impls<const ADD_SIZED: bool>(
     let speculative = speculative_marker(generics.params.is_empty());
     let sized_bound = ADD_SIZED.then(|| {
         let tail_bound = fields.last().map(|ty| {
-            let speculative = speculative_marker(!is_parametrized(ty, generics));
-            quote!(#speculative #ty: Sized,)
+            let bound = FieldType::new(ty, generics).bound(quote!(Sized));
+            quote!(#bound,)
         });
         quote! { #speculative Self: Sized, #tail_bound }
     });
@@ -598,24 +599,19 @@ fn rewrite_view_generics(input: &mut DeriveInput) {
     };
 
     let last_is_tail = matches!(&input.data, syn::Data::Struct(_));
-    let borrow_bounds = field_tys
-        .iter()
+    let borrow_bounds = field_types(&field_tys, &input.generics)
         .enumerate()
-        .filter_map(|(index, ty)| {
-            let parametrized = is_parametrized(ty, &input.generics);
-            if !parametrized && (!last_is_tail || index + 1 != field_tys.len()) {
+        .filter_map(|(index, field)| {
+            if field.concrete && (!last_is_tail || index + 1 != field_tys.len()) {
                 return None;
             }
-            let speculative = speculative_marker(!parametrized);
-            Some(parse_quote!(#speculative #ty: co3::borrow::Borrow))
+            Some(field.bound(quote!(co3::borrow::Borrow)))
         })
         .collect::<Vec<syn::WherePredicate>>();
 
     let tail_bound: Option<syn::WherePredicate> = if let syn::Data::Struct(data) = &input.data {
         data.fields.iter().next_back().map(|field| {
-            let ty = &field.ty;
-            let speculative = speculative_marker(!is_parametrized(ty, &input.generics));
-            parse_quote!(#speculative #ty: Sized)
+            FieldType::new(&field.ty, &input.generics).bound(quote!(Sized))
         })
     } else {
         None

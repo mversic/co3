@@ -1021,7 +1021,11 @@ mod tests {
 
             // SAFETY: this test constructs the carrier for an interior-mutable cell value.
             let invalid = CBox::from_box(Box::new(UnsafeCell::new(crate::NonZero(0u8))));
+            // Miri verifies that rejection also releases this owned allocation.
             assert!(unsafe { crate::decode::<Box<UnsafeCell<NonZero<u8>>>>(invalid) }.is_none());
+
+            // A null carrier is rejected without attempting to reclaim an allocation.
+            assert!(unsafe { crate::decode::<Box<UnsafeCell<NonZero<u8>>>>(CBox::null()) }.is_none());
         }
         assert_impl_all!(&[UnsafeCell<NonZero<u8>>]:
             Niche<CType = crate::wide::CWideRefMut<'static, [UnsafeCell<NonZero<u8>>], false>>,

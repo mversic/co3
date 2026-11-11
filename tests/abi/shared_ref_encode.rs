@@ -163,9 +163,9 @@ impl Store for CheckedStore {
 
 // This downstream type needs neither Clone nor owned encoding. Its checked
 // shared conversion has state, whereas its unchecked conversion has none.
-unsafe impl<'a> co3::stored::EncodeRefUnchecked<'a> for RefOnly {
+unsafe impl<'a> co3::stored::SoftEncodeRefUnchecked<'a> for RefOnly {
     type SoftStore = co3::sync::RefSizedEncodeStore<Self, ()>;
-    unsafe fn encode_ref_unchecked<'itm>(
+    unsafe fn soft_encode_ref_unchecked<'itm>(
         &'a self,
         store: &'itm mut Self::SoftStore,
     ) -> <&'a Self as co3::ReprC>::CType
@@ -175,9 +175,9 @@ unsafe impl<'a> co3::stored::EncodeRefUnchecked<'a> for RefOnly {
         store.encode(|_fields| self.0)
     }
 }
-unsafe impl<'a> co3::stored::EncodeRef<'a> for RefOnly {
+unsafe impl<'a> co3::stored::SoftEncodeRef<'a> for RefOnly {
     type Store = co3::sync::RefSizedEncodeStore<Self, CheckedStore>;
-    fn encode_ref<'itm>(&'a self, store: &'itm mut Self::Store) -> co3::encode_repr::Encoded<&'a Self>
+    fn soft_encode_ref<'itm>(&'a self, store: &'itm mut Self::Store) -> co3::encode_repr::Encoded<&'a Self>
     where
         'a: 'itm,
     {
@@ -412,13 +412,13 @@ fn derived_shared_encoding_preserves_custom_validation() {
 fn cells_cannot_be_snapshotted_by_shared_encoders() {
     use core::cell::{Cell, UnsafeCell};
 
-    use co3::stored::{EncodeRef, EncodeRefUnchecked};
+    use co3::stored::{SoftEncodeRef, SoftEncodeRefUnchecked};
     use static_assertions::{assert_impl_all, assert_not_impl_any};
 
-    assert_not_shared_encoder!(Cell<u32>: EncodeRefUnchecked<'static>, EncodeRef<'static>);
-    assert_not_shared_encoder!(UnsafeCell<u32>: EncodeRefUnchecked<'static>, EncodeRef<'static>);
+    assert_not_shared_encoder!(Cell<u32>: SoftEncodeRefUnchecked<'static>, SoftEncodeRef<'static>);
+    assert_not_shared_encoder!(UnsafeCell<u32>: SoftEncodeRefUnchecked<'static>, SoftEncodeRef<'static>);
     assert_not_impl_any!(&Vec<Cell<bool>>: EncodeMove);
-    assert_not_shared_encoder!(Box<Cell<bool>>: EncodeRef<'static>);
+    assert_not_shared_encoder!(Box<Cell<bool>>: SoftEncodeRef<'static>);
     assert_not_impl_any!(&Box<[Cell<bool>]>: EncodeMove);
     assert_not_impl_any!(&Vec<UnsafeCell<bool>>: EncodeMove);
     assert_not_impl_any!(&Record<Cell<u32>>: EncodeMove, EncodeMoveUnchecked);
@@ -451,11 +451,11 @@ fn checked_boxes_of_cells_preserve_storage() {
 
 #[test]
 fn aggregates_encode_stable_fields_without_encode_ref_impls() {
-    use co3::stored::{EncodeRef, EncodeRefUnchecked};
-    assert_not_shared_encoder!(u32: EncodeRefUnchecked<'static>, EncodeRef<'static>);
+    use co3::stored::{SoftEncodeRef, SoftEncodeRefUnchecked};
+    assert_not_shared_encoder!(u32: SoftEncodeRefUnchecked<'static>, SoftEncodeRef<'static>);
 
-    assert_not_shared_encoder!(Record<NoClone>: EncodeRefUnchecked<'static>, EncodeRef<'static>);
-    assert_not_shared_encoder!((NoClone,): EncodeRefUnchecked<'static>, EncodeRef<'static>);
+    assert_not_shared_encoder!(Record<NoClone>: SoftEncodeRefUnchecked<'static>, SoftEncodeRef<'static>);
+    assert_not_shared_encoder!((NoClone,): SoftEncodeRefUnchecked<'static>, SoftEncodeRef<'static>);
 
     let value = Record(109_u32);
     let mut store = Default::default();
@@ -512,7 +512,7 @@ fn shared_borrow_of_mutable_reference_keeps_vec_shared() {
 #[test]
 fn shared_borrow_of_mutable_slice_reference_preserves_metadata() {
     assert_not_shared_encoder!(&mut Vec<core::cell::Cell<bool>>:
-        co3::stored::EncodeRef<'static>);
+        co3::stored::SoftEncodeRef<'static>);
     let mut values = [NoClone(3), NoClone(5)];
     let pointer = values.as_ptr();
     let reference = &mut values[..];

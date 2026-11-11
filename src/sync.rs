@@ -119,9 +119,60 @@ impl<R, S: Store> Store for RefSizedDecodeStore<R, S> {
 
 pub struct RefMutSizedEncodeStore<'d, R: DecodeMove<'d, Store: EmptyStore + 'd>, S: Store + Default>
 {
-    ctype: Option<R::CType>,
+    state: OwnedEncodeState<'d, R, R, S>,
+}
+
+/// Owns one pending carrier. Finishing consumes it exactly once; callers decide
+/// whether to commit the decoded value or drop it during cleanup and reuse.
+struct OwnedEncodeState<'d, R: ?Sized, V: DecodeMove<'d, Store: EmptyStore + 'd>, S: Store + Default>
+{
+    ctype: Option<V::CType>,
     store: S,
     original: Option<&'d mut R>,
+}
+
+impl<'d, R: ?Sized, V: DecodeMove<'d, Store: EmptyStore + 'd>, S: Store + Default>
+    OwnedEncodeState<'d, R, V, S>
+{
+    fn encode(
+        &mut self,
+        original: &'d mut R,
+        build: impl FnOnce(&mut R, &mut S) -> V::CType,
+    ) -> &mut V::CType {
+        drop(self.finish());
+        let ctype = build(&mut *original, &mut self.store);
+        self.original = Some(original);
+        self.ctype.insert(ctype)
+    }
+
+    fn finish(&mut self) -> Option<(&'d mut R, V)> {
+        let ctype = self.ctype.take()?;
+        let value = unsafe { decode_move(ctype) };
+        let synced = core::mem::take(&mut self.store).sync();
+        let original = self.original.take()?;
+        synced?;
+        Some((original, value?))
+    }
+}
+
+impl<'d, R: ?Sized, V: DecodeMove<'d, Store: EmptyStore + 'd>, S: Store + Default> Default
+    for OwnedEncodeState<'d, R, V, S>
+{
+    fn default() -> Self {
+        Self {
+            ctype: None,
+            store: S::default(),
+            original: None,
+        }
+    }
+}
+
+impl<'d, R: ?Sized, V: DecodeMove<'d, Store: EmptyStore + 'd>, S: Store + Default> Drop
+    for OwnedEncodeState<'d, R, V, S>
+{
+    fn drop(&mut self) {
+        drop(self.finish());
+    }
 }
 
 type DecodeWriteback<R, P> = (P, fn(R, P) -> Option<()>, bool);
@@ -141,19 +192,7 @@ impl<'d, R: DecodeMove<'d, Store: EmptyStore + 'd>, S: Store + Default>
         original: &'d mut R,
         encode: impl FnOnce(&mut R, &mut S) -> R::CType,
     ) -> CSoftRefMut<R, true> {
-        drop(self.finish());
-        let ctype = encode(&mut *original, &mut self.store);
-        self.original = Some(original);
-        CSoftRefMut::from_mut(self.ctype.insert(ctype))
-    }
-
-    fn finish(&mut self) -> Option<(&'d mut R, R)> {
-        let ctype = self.ctype.take()?;
-        let value = unsafe { decode_move(ctype) };
-        let synced = core::mem::take(&mut self.store).sync();
-        let original = self.original.take()?;
-        synced?;
-        Some((original, value?))
+        CSoftRefMut::from_mut(self.state.encode(original, encode))
     }
 }
 
@@ -231,9 +270,7 @@ impl<'d, R: DecodeMove<'d, Store: EmptyStore + 'd>, S: Store + Default> Default
 {
     fn default() -> Self {
         Self {
-            ctype: None,
-            store: S::default(),
-            original: None,
+            state: OwnedEncodeState::default(),
         }
     }
 }
@@ -252,7 +289,7 @@ impl<'d, R: DecodeMove<'d, Store: EmptyStore + 'd>, S: Store + Default> Store
     for RefMutSizedEncodeStore<'d, R, S>
 {
     fn sync(mut self) -> Option<()> {
-        let (original, value) = self.finish()?;
+        let (original, value) = self.state.finish()?;
         *original = value;
         Some(())
     }
@@ -261,14 +298,6 @@ impl<'d, R: DecodeMove<'d, Store: EmptyStore + 'd>, S: Store + Default> Store
 impl<R: ReprC, S: Store + Default, P> Store for RefMutSizedDecodeStore<R, S, P> {
     fn sync(mut self) -> Option<()> {
         self.finish()
-    }
-}
-
-impl<'d, R: DecodeMove<'d, Store: EmptyStore + 'd>, S: Store + Default> Drop
-    for RefMutSizedEncodeStore<'d, R, S>
-{
-    fn drop(&mut self) {
-        drop(self.finish());
     }
 }
 
@@ -382,9 +411,7 @@ pub struct RefMutDstEncodeStore<'d, R, S: Store + Default>
 where
     R: ToOwned<Owned: DecodeMove<'d, Store: EmptyStore + 'd>> + ?Sized,
 {
-    ctype: Option<<R::Owned as ReprC>::CType>,
-    store: S,
-    original: Option<&'d mut R>,
+    state: OwnedEncodeState<'d, R, R::Owned, S>,
 }
 
 #[cfg(feature = "alloc")]
@@ -449,19 +476,7 @@ where
         original: &'d mut R,
         build: impl FnOnce(&mut R, &mut S) -> <R::Owned as ReprC>::CType,
     ) -> &mut <R::Owned as ReprC>::CType {
-        drop(self.finish());
-        let ctype = build(&mut *original, &mut self.store);
-        self.original = Some(original);
-        self.ctype.insert(ctype)
-    }
-
-    fn finish(&mut self) -> Option<(&'d mut R, R::Owned)> {
-        let ctype = self.ctype.take()?;
-        let value = unsafe { decode_move::<'d, R::Owned>(ctype) };
-        let synced = core::mem::take(&mut self.store).sync();
-        let original = self.original.take()?;
-        synced?;
-        Some((original, value?))
+        self.state.encode(original, build)
     }
 }
 
@@ -472,9 +487,7 @@ where
 {
     fn default() -> Self {
         Self {
-            ctype: None,
-            store: S::default(),
-            original: None,
+            state: OwnedEncodeState::default(),
         }
     }
 }
@@ -485,18 +498,8 @@ where
     R: AssignFromOwned + ToOwned<Owned: DecodeMove<'d, Store: EmptyStore + 'd>> + ?Sized,
 {
     fn sync(mut self) -> Option<()> {
-        let (original, owned) = self.finish()?;
+        let (original, owned) = self.state.finish()?;
         original.assign_from_owned(owned)
-    }
-}
-
-#[cfg(feature = "alloc")]
-impl<'d, R, S: Store + Default> Drop for RefMutDstEncodeStore<'d, R, S>
-where
-    R: ToOwned<Owned: DecodeMove<'d, Store: EmptyStore + 'd>> + ?Sized,
-{
-    fn drop(&mut self) {
-        drop(self.finish());
     }
 }
 

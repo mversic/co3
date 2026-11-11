@@ -6,7 +6,8 @@ use crate::{
     layout::{
         attr::ReprKind,
         borrow::gen_identity_borrow_impls,
-        infer_repr, is_parametrized, is_phantom_data, is_transparent_enum_repr, primitive_tag_type,
+        fields::{FieldType, field_types},
+        infer_repr, is_phantom_data, is_transparent_enum_repr, primitive_tag_type,
         wide::{
             gen_alloc_methods, gen_data_struct_name, gen_dst_methods, gen_identity_header_impl,
             header_repr_c_predicate, last_field, wide_predicate, wide_tail_type,
@@ -338,8 +339,7 @@ fn gen_transparent_enum_constructor(
         .collect::<Vec<_>>();
     let mut bounds = gen_extern_c_bounds_for_ctype(generics, &field_types);
     if let Some(last) = field_types.last().filter(|ty| !is_phantom_data(ty)) {
-        let speculative = speculative_marker(!is_parametrized(last, generics));
-        bounds.push(parse_quote!(#speculative #last: co3::ReprC<CType: Sized>));
+        bounds.push(FieldType::new(last, generics).bound(quote!(co3::ReprC<CType: Sized>)));
     }
     let mut impl_generics_with_bounds = generics.clone();
     impl_generics_with_bounds
@@ -1253,17 +1253,8 @@ pub(super) fn gen_sized_extern_c_bounds_for_ctype(
     generics: &syn::Generics,
     fields: &[&syn::Type],
 ) -> Vec<syn::WherePredicate> {
-    fields
-        .iter()
-        .flat_map(|&ty| {
-            if is_phantom_data(ty) {
-                Vec::new()
-            } else if is_parametrized(ty, generics) {
-                vec![parse_quote!(#ty: co3::ReprC<CType: Sized>)]
-            } else {
-                gen_hrtb_projection_bounds(ty, generics, quote!(co3::ReprC<CType: Sized>))
-            }
-        })
+    field_types(fields, generics)
+        .flat_map(|field| gen_field_ctype_bounds(field, generics, quote!(co3::ReprC<CType: Sized>)))
         .collect()
 }
 
@@ -1447,11 +1438,10 @@ fn gen_type_spec(
         quote! { Mutability },
         quote! { co3::rust_spec::mutability::Exclusive<co3::rust_spec::mutability::WithoutInterior> },
     );
-    let rust_spec_bounds = fields
-        .iter()
-        .filter(|field| !is_parametrized(field, generics))
+    let rust_spec_bounds = field_types(fields, generics)
+        .filter(|field| field.concrete)
         .flat_map(|field| {
-            gen_hrtb_projection_bounds(field, generics, quote! { co3::rust_spec::RustSpec })
+            gen_hrtb_projection_bounds(field.ty, generics, quote! { co3::rust_spec::RustSpec })
         });
 
     quote! {
@@ -1506,12 +1496,10 @@ fn gen_field_family_parts(
     fields: &[&syn::Type],
 ) -> (Option<TokenStream>, Option<TokenStream>, Vec<TokenStream>) {
     let mut bounds = Vec::new();
-    let (concrete_fields, parametrized_fields): (Vec<_>, Vec<_>) = fields
-        .iter()
-        .copied()
-        .partition(|field| !is_parametrized(field, generics));
+    let (concrete_fields, parametrized_fields): (Vec<_>, Vec<_>) =
+        field_types(fields, generics).partition(|field| field.concrete);
 
-    let mut concrete_fields = concrete_fields.into_iter();
+    let mut concrete_fields = concrete_fields.into_iter().map(|field| field.ty);
     let concrete_family = concrete_fields.next().map(|first| {
         let mut family = quote! { <#first as co3::rust_spec::RustSpec>::#axis };
 
@@ -1523,7 +1511,7 @@ fn gen_field_family_parts(
         family
     });
 
-    let mut parametrized_fields = parametrized_fields.into_iter();
+    let mut parametrized_fields = parametrized_fields.into_iter().map(|field| field.ty);
     let parametrized_family = parametrized_fields.next().map(|first| {
         bounds.push(quote! { #first: co3::rust_spec::RustSpec });
         let mut family = quote! { <#first as co3::rust_spec::RustSpec>::#axis };
@@ -1859,45 +1847,40 @@ pub(super) fn gen_extern_c_bounds_for_ctype(
     generics: &syn::Generics,
     fields: &[&syn::Type],
 ) -> Vec<syn::WherePredicate> {
-    let gen_bound = |ty: &syn::Type, ctype_bound: TokenStream| {
-        if is_phantom_data(ty) {
-            return vec![];
-        }
-
-        if is_parametrized(ty, generics) {
-            vec![parse_quote! { #ty: co3::ReprC #ctype_bound }]
-        } else {
-            gen_hrtb_projection_bounds(ty, generics, quote! { co3::ReprC #ctype_bound })
-        }
-    };
-
     let Some((last, fields)) = fields.split_last() else {
         return Vec::new();
     };
 
-    fields
-        .iter()
-        .flat_map(|&ty| gen_bound(ty, quote!(<CType: Sized>)))
-        .chain(gen_bound(last, quote!()))
-        .collect::<Vec<_>>()
+    let mut bounds = gen_sized_extern_c_bounds_for_ctype(generics, fields);
+    bounds.extend(gen_field_ctype_bounds(
+        FieldType::new(last, generics),
+        generics,
+        quote!(co3::ReprC),
+    ));
+    bounds
 }
 
 pub(super) fn gen_copy_extern_c_bounds_for_ctype(
     generics: &syn::Generics,
     fields: &[&syn::Type],
 ) -> Vec<syn::WherePredicate> {
-    fields
-        .iter()
-        .flat_map(|&ty| {
-            if is_phantom_data(ty) {
-                Vec::new()
-            } else if is_parametrized(ty, generics) {
-                vec![parse_quote!(#ty: co3::ReprC<CType: Copy>)]
-            } else {
-                gen_hrtb_projection_bounds(ty, generics, quote!(co3::ReprC<CType: Copy>))
-            }
-        })
+    field_types(fields, generics)
+        .flat_map(|field| gen_field_ctype_bounds(field, generics, quote!(co3::ReprC<CType: Copy>)))
         .collect()
+}
+
+fn gen_field_ctype_bounds(
+    field: FieldType<'_>,
+    generics: &syn::Generics,
+    bound: TokenStream,
+) -> Vec<syn::WherePredicate> {
+    if field.phantom {
+        Vec::new()
+    } else if field.concrete {
+        gen_hrtb_projection_bounds(field.ty, generics, bound)
+    } else {
+        vec![field.bound(bound)]
+    }
 }
 
 fn gen_hrtb_projection_bounds(

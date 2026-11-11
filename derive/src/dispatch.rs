@@ -9,11 +9,12 @@ use syn::{
 
 use crate::{
     Co3Fn, Co3Impl, DispatchGroups,
+    argument::{self, Argument, Unpack},
     ffi_fn::{
         self, emit_extern_definition, gen_definition_body, gen_failure_panic,
         gen_input_decode_stmts, gen_static_fn_signature_drift_check, gen_store_sync_stmts,
-        gen_sync_check, gen_sync_error, gen_unknown_tag_error, is_unpack_arg,
-        item_fn_input_arg_type, item_fn_output_type, merge_generics, normalize_fn_signature,
+        gen_sync_check, gen_sync_error, gen_unknown_tag_error,
+        item_fn_output_type, merge_generics, normalize_fn_signature,
         strip_dispatch_params,
     },
     parse::FailureMode,
@@ -636,21 +637,12 @@ pub(crate) fn gen_dispatch_erased_layout_checks(
             .map(|p| &p.ident),
     );
     let mut checks = Vec::new();
+    let inputs = argument::analyze(&sig.inputs);
     args.for_each_combination(|selections| {
-        for input in &sig.inputs {
-            let receiver_ty;
-            let (attrs, ty) = match input {
-                syn::FnArg::Receiver(receiver) => {
-                    receiver_ty = crate::utils::receiver_ty(receiver);
-                    (&receiver.attrs[..], &receiver_ty)
-                }
-                syn::FnArg::Typed(syn::PatType { attrs, ty, .. }) => (&attrs[..], &**ty),
-            };
+        for input in &inputs {
+            let ty = &input.ty;
 
-            if tag_id(ty).is_some()
-                || is_unpack_arg(attrs)
-                || crate::ffi_fn::is_single_unpack_arg(attrs)
-            {
+            if tag_id(ty).is_some() || !matches!(input.unpack, Unpack::None) {
                 continue;
             }
 
@@ -659,16 +651,11 @@ pub(crate) fn gen_dispatch_erased_layout_checks(
                 let mut concrete_ty = layout_ty.clone();
                 DispatchMonomorphizer::for_dispatch_group(generics, selections)
                     .visit_type_mut(&mut concrete_ty);
-                let concrete_tys = input_abi_tys(attrs, &concrete_ty);
+                let concrete_ty = input.with_type(concrete_ty).abi_ty();
                 let erased_ty = ErasedParamReplacer::new(generics).replace(layout_ty);
-                let erased_tys = input_abi_tys(attrs, &erased_ty);
+                let erased_ty = input.with_type(erased_ty).abi_ty();
 
-                checks.extend(dispatch_layout_checks(
-                    concrete_tys
-                        .into_iter()
-                        .zip(erased_tys)
-                        .map(|pair| (pair, span)),
-                ));
+                checks.extend(dispatch_layout_checks([((concrete_ty, erased_ty), span)]));
             }
         }
 
@@ -819,17 +806,6 @@ impl VisitMut for StaticLifetimeNormalizer {
             syn::visit_mut::visit_predicate_type_mut(this, node);
         });
     }
-}
-
-fn input_abi_tys(attrs: &[syn::Attribute], ty: &syn::Type) -> Vec<syn::Type> {
-    if is_unpack_arg(attrs) {
-        let (part1, part2) =
-            crate::ffi_fn::unpack_abi_parts(attrs, ty).expect("validated #[unpack] attribute");
-        return vec![part1, part2];
-    }
-
-    let abi_ty = item_fn_input_arg_type(attrs, ty);
-    vec![parse_quote!(#abi_ty)]
 }
 
 pub(crate) fn synthesize_dispatch_tag_ids(
@@ -1085,27 +1061,37 @@ pub(crate) fn erase_dispatch_signature(
         .collect::<Vec<_>>();
 
     for input in &mut sig.inputs {
-        match input {
+        let argument = Argument::new(input);
+        let replacement = match &*input {
             syn::FnArg::Receiver(rec) => {
-                if let syn::ReceiverKind::Typed(_, ty) = &mut rec.kind {
-                    **ty = erased_params.replace((**ty).clone());
-                }
+                let syn::ReceiverKind::Typed(_, ty) = &rec.kind else {
+                    continue;
+                };
+                erased_params.replace((**ty).clone())
             }
-            syn::FnArg::Typed(syn::PatType { attrs, pat, ty, .. }) => {
-                if let Some(target_ty) = crate::ffi_fn::single_unpack_part(attrs, ty)
-                    .expect("validated one-part unpack attribute")
-                {
-                    **ty = target_ty;
-                } else if !is_unpack_arg(attrs) {
-                    **ty = erased_params.replace((**ty).clone());
-                }
+            syn::FnArg::Typed(_) => {
+                let mut ty = match &argument.unpack {
+                    Unpack::Single(target) => target.clone(),
+                    Unpack::Pair(_) => argument.ty.clone(),
+                    Unpack::None => erased_params.replace(argument.ty.clone()),
+                };
 
                 if receiver.is_dyn_self()
-                    && (is_synthetic_receiver(pat)
-                        || is_declared_self_type(receiver.ty().unwrap(), ty))
+                    && (argument.is_receiver()
+                        || is_declared_self_type(receiver.ty().unwrap(), &ty))
                 {
-                    **ty = erase_dyn_self_type(receiver.ty().unwrap(), ty);
+                    ty = erase_dyn_self_type(receiver.ty().unwrap(), &ty);
                 }
+                ty
+            }
+        };
+        match input {
+            syn::FnArg::Typed(arg) => *arg.ty = replacement,
+            syn::FnArg::Receiver(rec) => {
+                let syn::ReceiverKind::Typed(_, ty) = &mut rec.kind else {
+                    unreachable!()
+                };
+                **ty = replacement;
             }
         }
     }
@@ -1167,10 +1153,6 @@ pub(crate) fn gen_dyn_self_erase_stmts(
         &sig,
         false,
     )
-}
-
-fn is_synthetic_receiver(pat: &syn::Pat) -> bool {
-    matches!(pat, syn::Pat::Ident(ident) if ident.ident == "__co3_self")
 }
 
 pub(crate) fn is_declared_self_type(self_ty: &syn::Type, ty: &syn::Type) -> bool {
@@ -1296,27 +1278,14 @@ fn gen_tag_retype_stmts(
     let detector = ParamUseDetector::new(erased_idents);
 
     let mut stmts = vec![];
-    for input in args {
-        let receiver_ty;
-        let (attrs, arg_name, ty, is_self) = match input {
-            syn::FnArg::Receiver(receiver) => {
-                receiver_ty = crate::utils::receiver_ty(receiver);
-                (&receiver.attrs, quote!(__co3_self), &receiver_ty, true)
-            }
-            syn::FnArg::Typed(syn::PatType { attrs, pat, ty, .. }) => (
-                attrs,
-                quote!(#pat),
-                &**ty,
-                is_synthetic_receiver(pat)
-                    || (receiver.is_dyn_self()
-                        && is_declared_self_type(receiver.ty().unwrap(), ty)),
-            ),
-        };
+    for input in argument::analyze(args) {
+        let ty = &input.ty;
+        let pat = &input.pat;
+        let arg_name = quote!(#pat);
+        let is_self = input.is_receiver()
+            || (receiver.is_dyn_self() && is_declared_self_type(receiver.ty().unwrap(), ty));
 
-        if (skip_self && is_self)
-            || is_unpack_arg(attrs)
-            || crate::ffi_fn::is_single_unpack_arg(attrs)
-        {
+        if (skip_self && is_self) || !matches!(input.unpack, Unpack::None) {
             continue;
         }
 
@@ -1331,17 +1300,13 @@ fn gen_tag_retype_stmts(
             }
         }
 
-        let c_ty = item_fn_input_arg_type(attrs, ty);
-        let c_ty: syn::Type = parse_quote! { #c_ty };
+        let c_ty = input.abi_ty();
         let erased_ty = if receiver.is_dyn_self() && is_self {
-            let erased_self_ty = erase_dyn_self_type(receiver.ty().unwrap(), ty);
-            let erased_c_ty = item_fn_input_arg_type(attrs, &erased_self_ty);
-            parse_quote!(#erased_c_ty)
+            erase_dyn_self_type(receiver.ty().unwrap(), ty)
         } else {
-            let erased_input_ty = erased_params.replace(ty.clone());
-            let erased_c_ty = item_fn_input_arg_type(attrs, &erased_input_ty);
-            parse_quote!(#erased_c_ty)
+            erased_params.replace(ty.clone())
         };
+        let erased_ty = input.with_type(erased_ty).abi_ty();
 
         let retype = match direction {
             RetypeDirection::Erase => gen_retype(&arg_name, &c_ty, &erased_ty),

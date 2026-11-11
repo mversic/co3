@@ -17,7 +17,7 @@ use crate::{
         },
         enum_tag_type, enum_variant_tag_exprs, generic_param_idents, infer_repr,
         fields::{FieldType, field_types},
-        is_exhaustive_enum, is_parametrized, is_phantom_data, is_transparent_enum_repr,
+        is_exhaustive_enum, is_phantom_data, is_transparent_enum_repr,
         niche::{gen_enum_niche_ir, gen_niche_value_ir, gen_struct_niche_ir},
         primitive_tag_type,
         reference::{encoder_names, encoder_output, group_aggregate_ref_impls},
@@ -97,12 +97,13 @@ pub(super) fn derive_item(
             .next_back()
             .expect("wide data has a tail")
             .ty;
-        let speculative = speculative_marker(!is_parametrized(header_ty, &input.generics));
+        let bound = FieldType::new(header_ty, &input.generics)
+            .bound(quote!(co3::ReprC<CType: Sized>));
         bounded_impl_input
             .generics
             .make_where_clause()
             .predicates
-            .push(parse_quote!(#speculative #header_ty: co3::ReprC<CType: Sized>));
+            .push(bound);
     }
     if is_view {
         let fields: Vec<_> = match &input.data {
@@ -111,16 +112,15 @@ pub(super) fn derive_item(
             syn::Data::Union(_) => unreachable!(),
         };
         for field in fields {
-            let ty = &field.ty;
-            if is_phantom_data(ty) {
+            let field = FieldType::new(&field.ty, &input.generics);
+            if field.phantom {
                 continue;
             }
-            let speculative = speculative_marker(!is_parametrized(ty, &input.generics));
             bounded_impl_input
                 .generics
                 .make_where_clause()
                 .predicates
-                .insert(0, parse_quote!(#speculative #ty: co3::ReprC<CType: Sized>));
+                .insert(0, field.bound(quote!(co3::ReprC<CType: Sized>)));
         }
     }
     let impl_input = if is_view || is_wide_data {
@@ -297,13 +297,13 @@ fn gen_item_repr_c_impls(
             let is_valid = variant_attrs[0].is_valid.as_ref();
             let mut generics = input.generics.clone();
             if !is_view && let Some(last) = variant.fields.iter().next_back() {
-                let ty = &last.ty;
-                if !is_phantom_data(ty) {
-                    let speculative = speculative_marker(!is_parametrized(ty, &generics));
+                let field = FieldType::new(&last.ty, &generics);
+                if !field.phantom {
+                    let bound = field.bound(quote!(co3::ReprC<CType: Sized>));
                     generics
                         .make_where_clause()
                         .predicates
-                        .push(parse_quote!(#speculative #ty: co3::ReprC<CType: Sized>));
+                        .push(bound);
                 }
             }
 
@@ -770,11 +770,11 @@ fn gen_transparent_enum_codec_impls(
 
     let mut bounded_generics = generics.clone();
     if !is_view && let Some(last) = field_types.last().filter(|ty| !is_phantom_data(ty)) {
-        let speculative = speculative_marker(!is_parametrized(last, generics));
+        let bound = FieldType::new(last, generics).bound(quote!(co3::ReprC<CType: Sized>));
         bounded_generics
             .make_where_clause()
             .predicates
-            .push(parse_quote!(#speculative #last: co3::ReprC<CType: Sized>));
+            .push(bound);
     }
 
     let encode_head = if mode != EncodeMode::Owned {
@@ -1840,15 +1840,11 @@ fn gen_codec_impls(
                 (&encode_store, &encode_impl)
             };
             let field_trait = if unchecked { quote!(__Co3EncodeFieldUnchecked) } else { quote!(__Co3EncodeField) };
-            let field_bounds = fields.iter().filter(|ty| !is_phantom_data(ty)).map(|ty| {
-                let speculative = speculative_marker(!is_parametrized(ty, generics));
-                let repr_bound = if is_phantom_data(ty) {
-                    quote!(co3::ReprC<CType = #ty>)
-                } else {
-                    quote!(co3::ReprC<CType: co3::CType + Copy>)
-                };
-                quote!(#speculative #ty: #repr_bound + #field_trait<'_ršč>)
-            });
+            let field_bounds = field_types(fields, generics)
+                .filter(|field| !field.phantom)
+                .map(|field| field.bound(quote!(
+                    co3::ReprC<CType: co3::CType + Copy> + #field_trait<'_ršč>
+                )));
             quote! {
                 unsafe impl #ref_impl_generics #trait_name<'_ršč> for #name #ty_generics
                 where

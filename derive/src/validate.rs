@@ -4,8 +4,9 @@ use syn::{Attribute, Error, Expr, Result, Type, visit::Visit};
 
 use crate::{
     Co3Static,
+    argument::UnpackSyntax,
     dispatch::{TagId, tag_id},
-    ffi_fn::{is_by_val_attr, is_unpack_attr, unpack_attr_name, unpack_types},
+    ffi_fn::{is_by_val_attr, is_unpack_attr},
     is_symbol_name_attr,
     parse::validate_symbol_text,
     symbol_name_value,
@@ -1301,12 +1302,10 @@ fn validate_unpack_export(sig: &syn::Signature) -> Result<()> {
             continue;
         };
         if let Some(attr) = input.attrs.iter().find(|attr| is_unpack_attr(attr)) {
-            let err_msg = format!(
-                "{} is only supported in extern declarations",
-                unpack_attr_name(attr)
-            );
-
-            return Err(Error::new_spanned(attr, err_msg));
+            return Err(Error::new_spanned(
+                attr,
+                "#[unpack] is only supported in extern declarations",
+            ));
         }
     }
     Ok(())
@@ -1331,32 +1330,26 @@ pub(crate) fn validate_unpack(sig: &syn::Signature, outer: Option<&syn::Generics
             }
         };
         let mut unpack_attrs = attrs.iter().filter(|attr| is_unpack_attr(attr));
-        if let Some(first) = unpack_attrs.next()
+        if unpack_attrs.next().is_some()
             && let Some(duplicate) = unpack_attrs.next()
         {
             return Err(Error::new_spanned(
                 duplicate,
-                format!("duplicate {} attribute", unpack_attr_name(first)),
+                "duplicate #[unpack] attribute",
             ));
         }
         let Some(attr) = attrs.iter().find(|attr| is_unpack_attr(attr)) else {
             continue;
         };
-        if crate::ffi_fn::validate_single_unpack(attrs)? {
-            continue;
-        }
-        let (part1, part2) = unpack_types(attrs)?.expect("unpack attribute was found");
-        if detector.type_mentions_param(ty)
-            && (matches!(part1, syn::Type::Infer(_)) || matches!(part2, syn::Type::Infer(_)))
-        {
-            let err_msg = format!(
-                "runtime-dispatched {} arguments cannot use `_` placeholders",
-                unpack_attr_name(attr),
-            );
-            return Err(Error::new_spanned(attr, err_msg));
-        }
-        if matches!(part1, syn::Type::Infer(_)) || matches!(part2, syn::Type::Infer(_)) {
-            crate::ffi_fn::unpack_abi_parts(attrs, ty)?;
+        let unpack = UnpackSyntax::parse(attrs)?;
+        if unpack.has_inferred_parts() {
+            if detector.type_mentions_param(ty) {
+                return Err(Error::new_spanned(
+                    attr,
+                    "runtime-dispatched #[unpack] arguments cannot use `_` placeholders",
+                ));
+            }
+            unpack.resolve(attrs, ty)?;
         }
     }
 

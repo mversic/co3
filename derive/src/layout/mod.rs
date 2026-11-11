@@ -615,8 +615,9 @@ fn gen_source_ctype_impl(input: &syn::DeriveInput, attrs: &ReprCAttrs) -> TokenS
     let (last_field_sized_bound, omit_c_fn_impls) =
         ctype::c_fn_last_field_bounds(&field_types, generics);
     let field_bounds = field_types.iter().map(|field_type| {
-        let speculative =
-            (!is_parametrized(field_type, generics)).then_some(quote!(for<'_co3_field>));
+        let speculative = fields::FieldType::new(field_type, generics)
+            .concrete
+            .then_some(quote!(for<'_co3_field>));
         quote!(#speculative #field_type: co3::CType,)
     }).collect::<Vec<_>>();
 

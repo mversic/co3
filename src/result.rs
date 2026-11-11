@@ -13,7 +13,7 @@ use crate::{
     borrow::Borrow,
     niche::Niche,
     stored::{
-        DecodeMove, EmptyStore, EncodeMove, EncodeMoveUnchecked, EncodeRef, EncodeRefUnchecked,
+        DecodeMove, EmptyStore, EncodeMove, EncodeMoveUnchecked, SoftEncodeRef, SoftEncodeRefUnchecked,
     },
     sync::RefSizedEncodeStore,
     transmute::{AbiCompatible, AbiCompatibleValidate},
@@ -232,7 +232,7 @@ unsafe impl<T: EncodeMove<CType: Copy>, E: EncodeMove<CType: Copy>> EncodeMove f
 }
 
 unsafe impl<'a, T: ReprC<CType: Copy> + 'a, E: ReprC<CType: Copy> + 'a, __Interior: ExclusiveKind>
-    EncodeRefUnchecked<'a> for Result<T, E>
+    SoftEncodeRefUnchecked<'a> for Result<T, E>
 where
         &'a Self: crate::ReprC<CType = crate::reference::CSoftRef<Self>>,
     Self: RustSpec<Mutability = Exclusive<__Interior>, Size: Thin> + 'a,
@@ -249,7 +249,7 @@ where
         >,
     >;
 
-    unsafe fn encode_ref_unchecked<'itm>(
+    unsafe fn soft_encode_ref_unchecked<'itm>(
         &'a self,
         store: &'itm mut Self::SoftStore,
     ) -> <&'a Self as ReprC>::CType
@@ -274,7 +274,7 @@ where
 }
 
 unsafe impl<'a, T: ReprC<CType: Copy> + 'a, E: ReprC<CType: Copy> + 'a, __Interior: ExclusiveKind>
-    EncodeRef<'a> for Result<T, E>
+    SoftEncodeRef<'a> for Result<T, E>
 where
         &'a Self: crate::ReprC<CType = crate::reference::CSoftRef<Self>>,
     Self: RustSpec<Mutability = Exclusive<__Interior>, Size: Thin> + 'a,
@@ -286,7 +286,7 @@ where
         Option<RustResult<<&'a T as EncodeMove>::Store, <&'a E as EncodeMove>::Store>>,
     >;
 
-    fn encode_ref<'itm>(&'a self, store: &'itm mut Self::Store) -> crate::encode_repr::Encoded<&'a Self>
+    fn soft_encode_ref<'itm>(&'a self, store: &'itm mut Self::Store) -> crate::encode_repr::Encoded<&'a Self>
     where
         'a: 'itm,
     {

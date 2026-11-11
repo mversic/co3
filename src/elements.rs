@@ -26,21 +26,37 @@ pub(crate) fn try_map_array<'a, T, U, S, const N: usize>(
 }
 
 #[cfg(feature = "alloc")]
+fn zip_stores<'a, I: ExactSizeIterator, S: Default>(
+    values: I,
+    stores: &'a mut Box<[S]>,
+) -> impl ExactSizeIterator<Item = (I::Item, &'a mut S)> {
+    *stores = core::iter::repeat_with(S::default)
+        .take(values.len())
+        .collect();
+    values.zip(stores.iter_mut())
+}
+
+#[cfg(feature = "alloc")]
+pub(crate) fn map_boxed_slice<'a, I: ExactSizeIterator, U, S: Default>(
+    values: I,
+    stores: &'a mut Box<[S]>,
+    mut convert: impl FnMut(I::Item, &'a mut S) -> U,
+) -> Box<[U]> {
+    zip_stores(values, stores)
+        .map(|(value, store)| convert(value, store))
+        .collect()
+}
+
+#[cfg(feature = "alloc")]
 pub(crate) fn map_vec<'a, I: ExactSizeIterator, U, S: Default>(
     values: I,
     capacity: usize,
     stores: &'a mut Box<[S]>,
     mut convert: impl FnMut(I::Item, &'a mut S) -> U,
 ) -> Vec<U> {
-    *stores = core::iter::repeat_with(S::default)
-        .take(values.len())
-        .collect();
+    let values = zip_stores(values, stores);
     let mut converted = Vec::with_capacity(capacity);
-    converted.extend(
-        values
-            .zip(stores.iter_mut())
-            .map(|(value, store)| convert(value, store)),
-    );
+    converted.extend(values.map(|(value, store)| convert(value, store)));
     converted
 }
 
@@ -53,12 +69,10 @@ pub(crate) fn try_map_vec<'a, I: ExactSizeIterator, U, S: Default>(
     stores: &'a mut Box<[S]>,
     mut convert: impl FnMut(I::Item, &'a mut S) -> Option<U>,
 ) -> Option<Vec<U>> {
-    *stores = core::iter::repeat_with(S::default)
-        .take(values.len())
-        .collect();
+    let values = zip_stores(values, stores);
     let mut converted = Vec::with_capacity(capacity);
     let mut valid = true;
-    for (value, store) in values.zip(stores.iter_mut()) {
+    for (value, store) in values {
         if let Some(value) = convert(value, store) {
             converted.push(value);
         } else {

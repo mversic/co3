@@ -2350,24 +2350,19 @@ pub(crate) fn expand_extern_decls(
             .iter()
             .any(|input| matches!(input, FnArg::Receiver(_)))
             .then(|| quote!(let __co3_self = self;));
-        let ItemImpl {
-            attrs: impl_attrs,
-            modifiers,
-            unsafety,
-            trait_,
-            self_ty,
-            ..
-        } = &*dispatch;
-        let trait_ = trait_
-            .as_ref()
-            .map(|(path, _)| quote!(#path for))
-            .unwrap_or_default();
-        let defaultness = &modifiers.defaultness;
-        let mut wrapper_impl_generics = dispatch.generics.clone();
-        wrapper_impl_generics
-            .type_params_mut()
-            .for_each(strip_internal_generic_param);
-        let (impl_generics, _, where_clause) = wrapper_impl_generics.split_for_impl();
+        let mut wrapper = dispatch.item.clone();
+        wrapper.attrs.push(syn::parse_quote!(#[allow(unused_braces)]));
+        wrapper.modifiers.polarity = None;
+        for param in &mut wrapper.generics.params {
+            match param {
+                syn::GenericParam::Type(param) => {
+                    strip_internal_generic_param(param);
+                    param.default = None;
+                }
+                syn::GenericParam::Const(param) => param.default = None,
+                syn::GenericParam::Lifetime(_) => {}
+            }
+        }
         let mut wrapper_sig = parts.wrapper_sig.clone();
         if let Some(position) = wrapper_sig
             .inputs
@@ -2391,14 +2386,7 @@ pub(crate) fn expand_extern_decls(
             false,
         );
 
-        let wrapper: ItemImpl = syn::parse2(quote! {
-            #(#impl_attrs)*
-            #[allow(unused_braces)]
-            #defaultness #unsafety impl #impl_generics #trait_ #self_ty #where_clause {
-                #wrapper_fn
-            }
-        })
-        .expect("generated dispatch wrapper must be a valid impl");
+        wrapper.items = vec![ImplItem::Fn(wrapper_fn)];
         let mut wrappers = Vec::new();
         impl_dispatch_args.for_each_combination(|selections| {
             let mut selected = wrapper.clone();

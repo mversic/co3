@@ -147,9 +147,9 @@ fn transparent_values_cross_exported_abi() {
 
 #[test]
 fn stable_mutable_encoder_uses_the_original_pointer() {
-    use co3::stored::{EncodeMut, EncodeMutUnchecked};
+    use co3::stored::{SoftEncodeMut, SoftEncodeMutUnchecked};
     static_assertions::assert_impl_all!(TransparentStruct:
-        EncodeMut<'static, Store = ()>, EncodeMutUnchecked<'static, SoftStore = ()>);
+        SoftEncodeMut<'static, Store = ()>, SoftEncodeMutUnchecked<'static, SoftStore = ()>);
     let mut value = TransparentStruct::new(GenericTransparentStruct::new(42));
     let original = core::ptr::from_mut(&mut value);
     let encoded = co3::soft_encode(&mut value, &mut Default::default());

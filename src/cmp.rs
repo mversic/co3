@@ -8,10 +8,10 @@ use crate::{
     borrow::Borrow,
     niche::Niche,
     primitives::{fieldless_enum_derive, primitive_derive},
-    shared::{EncodeRef, EncodeRefUnchecked},
+    shared::{SoftEncodeRef, SoftEncodeRefUnchecked},
     stored::{
-        DecodeMove, DecodeMut, DecodeRef, EncodeMove, EncodeMoveUnchecked, EncodeMut,
-        EncodeMutUnchecked,
+        DecodeMove, SoftDecodeMut, SoftDecodeRef, EncodeMove, EncodeMoveUnchecked, SoftEncodeMut,
+        SoftEncodeMutUnchecked,
     },
     transmute::{AbiCompatible, AbiCompatibleValidate, transmute_owned},
 };
@@ -144,7 +144,7 @@ unsafe impl<T: CFnArg> CFnArg for Reverse<T> {}
 unsafe impl<T: CFnReturn> CFnReturn for Reverse<T> {}
 unsafe impl<T: Zeroable> Zeroable for Reverse<T> {}
 
-unsafe impl<'a, T: EncodeRefUnchecked<'a> + 'a> EncodeRefUnchecked<'a> for Reverse<T>
+unsafe impl<'a, T: SoftEncodeRefUnchecked<'a> + 'a> SoftEncodeRefUnchecked<'a> for Reverse<T>
 where
     T: RustSpec<Size: crate::Thin> + ReprC<CType: Sized>,
     &'a Self: ReprC<CType: Sized>,
@@ -152,20 +152,20 @@ where
 {
     type SoftStore = T::SoftStore;
 
-    unsafe fn encode_ref_unchecked<'b>(
+    unsafe fn soft_encode_ref_unchecked<'b>(
         &'a self,
         store: &'b mut Self::SoftStore,
     ) -> <&'a Self as ReprC>::CType
     where
         'a: 'b,
     {
-        let carrier = unsafe { self.0.encode_ref_unchecked(store) };
+        let carrier = unsafe { self.0.soft_encode_ref_unchecked(store) };
         // Reverse<T::CType> is transparent over T::CType.
         unsafe { transmute_owned(carrier) }
     }
 }
 
-unsafe impl<'a, T: EncodeRef<'a> + 'a> EncodeRef<'a> for Reverse<T>
+unsafe impl<'a, T: SoftEncodeRef<'a> + 'a> SoftEncodeRef<'a> for Reverse<T>
 where
     T: RustSpec<Size: crate::Thin> + ReprC<CType: crate::encode_repr::EncodeRepr>,
     &'a Self: ReprC<CType: crate::encode_repr::EncodeRepr>,
@@ -173,16 +173,16 @@ where
 {
     type Store = T::Store;
 
-    fn encode_ref<'b>(&'a self, store: &'b mut Self::Store) -> crate::encode_repr::Encoded<&'a Self>
+    fn soft_encode_ref<'b>(&'a self, store: &'b mut Self::Store) -> crate::encode_repr::Encoded<&'a Self>
     where
         'a: 'b,
     {
-        let carrier = self.0.encode_ref(store);
+        let carrier = self.0.soft_encode_ref(store);
         unsafe { transmute_owned(carrier) }
     }
 }
 
-unsafe impl<'a, T: EncodeMutUnchecked<'a> + 'a> EncodeMutUnchecked<'a> for Reverse<T>
+unsafe impl<'a, T: SoftEncodeMutUnchecked<'a> + 'a> SoftEncodeMutUnchecked<'a> for Reverse<T>
 where
     T: RustSpec<Size: crate::Thin> + ReprC<CType: Sized>,
     &'a mut Self: ReprC<CType: Sized>,
@@ -190,19 +190,19 @@ where
 {
     type SoftStore = T::SoftStore;
 
-    unsafe fn encode_mut_unchecked<'b>(
+    unsafe fn soft_encode_mut_unchecked<'b>(
         &'a mut self,
         store: &'b mut Self::SoftStore,
     ) -> <&'a mut Self as ReprC>::CType
     where
         'a: 'b,
     {
-        let carrier = unsafe { self.0.encode_mut_unchecked(store) };
+        let carrier = unsafe { self.0.soft_encode_mut_unchecked(store) };
         unsafe { transmute_owned(carrier) }
     }
 }
 
-unsafe impl<'a, T: EncodeMut<'a> + 'a> EncodeMut<'a> for Reverse<T>
+unsafe impl<'a, T: SoftEncodeMut<'a> + 'a> SoftEncodeMut<'a> for Reverse<T>
 where
     T: RustSpec<Size: crate::Thin> + ReprC<CType: crate::encode_repr::EncodeRepr>,
     &'a mut Self: ReprC<CType: crate::encode_repr::EncodeRepr>,
@@ -210,16 +210,16 @@ where
 {
     type Store = T::Store;
 
-    fn encode_mut<'b>(&'a mut self, store: &'b mut Self::Store) -> crate::encode_repr::Encoded<&'a mut Self>
+    fn soft_encode_mut<'b>(&'a mut self, store: &'b mut Self::Store) -> crate::encode_repr::Encoded<&'a mut Self>
     where
         'a: 'b,
     {
-        let carrier = self.0.encode_mut(store);
+        let carrier = self.0.soft_encode_mut(store);
         unsafe { transmute_owned(carrier) }
     }
 }
 
-unsafe impl<'d, T: DecodeRef<'d> + 'd> DecodeRef<'d> for Reverse<T>
+unsafe impl<'d, T: SoftDecodeRef<'d> + 'd> SoftDecodeRef<'d> for Reverse<T>
 where
     T: RustSpec<Size: crate::Thin> + ReprC<CType: Sized>,
     &'d Self: ReprC<CType: Sized>,
@@ -227,26 +227,26 @@ where
 {
     type Store = T::Store;
 
-    unsafe fn decode_ref<'a: 'd>(
+    unsafe fn soft_decode_ref<'a: 'd>(
         source: <&'d Self as ReprC>::CType,
         store: &'a mut Self::Store,
     ) -> Option<&'d Self> {
         let source = unsafe { transmute_owned(source) };
-        unsafe { T::decode_ref(source, store) }
+        unsafe { T::soft_decode_ref(source, store) }
             .map(|value| unsafe { &*core::ptr::from_ref(value).cast::<Self>() })
     }
 
-    unsafe fn decode_ref_unchecked<'a: 'd>(
+    unsafe fn soft_decode_ref_unchecked<'a: 'd>(
         source: <&'d Self as ReprC>::CType,
         store: &'a mut Self::Store,
     ) -> &'d Self {
         let source = unsafe { transmute_owned(source) };
-        let value = unsafe { T::decode_ref_unchecked(source, store) };
+        let value = unsafe { T::soft_decode_ref_unchecked(source, store) };
         unsafe { &*core::ptr::from_ref(value).cast::<Self>() }
     }
 }
 
-unsafe impl<'d, T: DecodeMut<'d> + 'd> DecodeMut<'d> for Reverse<T>
+unsafe impl<'d, T: SoftDecodeMut<'d> + 'd> SoftDecodeMut<'d> for Reverse<T>
 where
     T: RustSpec<Size: crate::Thin> + ReprC<CType: Sized>,
     &'d mut T: ReprC<CType: Sized>,
@@ -254,21 +254,21 @@ where
 {
     type Store = T::Store;
 
-    unsafe fn decode_mut<'a: 'd>(
+    unsafe fn soft_decode_mut<'a: 'd>(
         source: <&'d mut Self as ReprC>::CType,
         store: &'a mut Self::Store,
     ) -> Option<&'d mut Self> {
         let source = unsafe { transmute_owned(source) };
-        unsafe { T::decode_mut(source, store) }
+        unsafe { T::soft_decode_mut(source, store) }
             .map(|value| unsafe { &mut *core::ptr::from_mut(value).cast::<Self>() })
     }
 
-    unsafe fn decode_mut_unchecked<'a: 'd>(
+    unsafe fn soft_decode_mut_unchecked<'a: 'd>(
         source: <&'d mut Self as ReprC>::CType,
         store: &'a mut Self::Store,
     ) -> &'d mut Self {
         let source = unsafe { transmute_owned(source) };
-        let value = unsafe { T::decode_mut_unchecked(source, store) };
+        let value = unsafe { T::soft_decode_mut_unchecked(source, store) };
         unsafe { &mut *core::ptr::from_mut(value).cast::<Self>() }
     }
 }

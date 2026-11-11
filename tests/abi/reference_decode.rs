@@ -3,7 +3,7 @@ use co3::{
     borrow::Borrow,
     reference::{CRef, CSoftRefMut, CSoftRef},
     rust_spec::RustSpec,
-    stored::{DecodeMove, DecodeMut, DecodeRef, Store},
+    stored::{DecodeMove, SoftDecodeMut, SoftDecodeRef, Store},
 };
 use static_assertions::assert_not_impl_any;
 
@@ -22,10 +22,10 @@ impl Store for SharedStore {
     }
 }
 
-unsafe impl<'d> DecodeRef<'d> for ReferenceOnly {
+unsafe impl<'d> SoftDecodeRef<'d> for ReferenceOnly {
     type Store = SharedStore;
 
-    unsafe fn decode_ref<'itm: 'd>(
+    unsafe fn soft_decode_ref<'itm: 'd>(
         source: <&'d Self as ReprC>::CType,
         store: &'itm mut SharedStore,
     ) -> Option<&'d Self> {
@@ -36,7 +36,7 @@ unsafe impl<'d> DecodeRef<'d> for ReferenceOnly {
         Some(store.0.insert(Self(value)))
     }
 
-    unsafe fn decode_ref_unchecked<'itm: 'd>(
+    unsafe fn soft_decode_ref_unchecked<'itm: 'd>(
         source: <&'d Self as ReprC>::CType,
         store: &'itm mut SharedStore,
     ) -> &'d Self {
@@ -60,10 +60,10 @@ impl Store for MutableStore {
     }
 }
 
-unsafe impl<'d> DecodeMut<'d> for ReferenceOnly {
+unsafe impl<'d> SoftDecodeMut<'d> for ReferenceOnly {
     type Store = MutableStore;
 
-    unsafe fn decode_mut<'itm: 'd>(
+    unsafe fn soft_decode_mut<'itm: 'd>(
         source: <&'d mut Self as ReprC>::CType,
         store: &'itm mut Self::Store,
     ) -> Option<&'d mut Self> {
@@ -76,7 +76,7 @@ unsafe impl<'d> DecodeMut<'d> for ReferenceOnly {
         Some(store.value.insert(value))
     }
 
-    unsafe fn decode_mut_unchecked<'itm: 'd>(
+    unsafe fn soft_decode_mut_unchecked<'itm: 'd>(
         source: <&'d mut Self as ReprC>::CType,
         store: &'itm mut Self::Store,
     ) -> &'d mut Self {
@@ -140,7 +140,7 @@ fn downstream_mutable_decoder_synchronizes_the_source() {
 
 #[test]
 fn stable_references_keep_the_direct_decoding_path() {
-    assert_not_impl_any!(u8: DecodeRef<'static>, DecodeMut<'static>);
+    assert_not_impl_any!(u8: SoftDecodeRef<'static>, SoftDecodeMut<'static>);
     let source = 7u8;
     let mut store = ();
     let value =
@@ -187,7 +187,7 @@ fn derived_unstable_referents_use_temporary_storage_and_writeback() {
 
 #[test]
 fn stable_wide_referents_bypass_decode_traits() {
-    assert_not_impl_any!([u8]: DecodeRef<'static>, DecodeMut<'static>);
+    assert_not_impl_any!([u8]: SoftDecodeRef<'static>, SoftDecodeMut<'static>);
     let mut source = [3u8, 7];
     let carrier = co3::wide::CWideRef::from_ref(source.as_slice());
     let value = unsafe { co3::decode::<&[u8]>(carrier) }.unwrap();
@@ -211,11 +211,11 @@ fn unstable_shared_decoder_rejects_invalid_fields() {
 
 #[test]
 fn stable_mutable_encoder_preserves_pointer_identity() {
-    use co3::stored::{EncodeMut, EncodeMutUnchecked};
-    static_assertions::assert_impl_all!(u32: EncodeMut<'static>, EncodeMutUnchecked<'static>);
-    static_assertions::assert_impl_all!([u32; 2]: EncodeMut<'static>, EncodeMutUnchecked<'static>);
-    static_assertions::assert_impl_all!(co3::vec::CVec<u8>: EncodeMut<'static>, EncodeMutUnchecked<'static>);
-    static_assertions::assert_impl_all!(co3::boxed::CBox<u8>: EncodeMut<'static>, EncodeMutUnchecked<'static>);
+    use co3::stored::{SoftEncodeMut, SoftEncodeMutUnchecked};
+    static_assertions::assert_impl_all!(u32: SoftEncodeMut<'static>, SoftEncodeMutUnchecked<'static>);
+    static_assertions::assert_impl_all!([u32; 2]: SoftEncodeMut<'static>, SoftEncodeMutUnchecked<'static>);
+    static_assertions::assert_impl_all!(co3::vec::CVec<u8>: SoftEncodeMut<'static>, SoftEncodeMutUnchecked<'static>);
+    static_assertions::assert_impl_all!(co3::boxed::CBox<u8>: SoftEncodeMut<'static>, SoftEncodeMutUnchecked<'static>);
     let mut value = 7_u32;
     let original = core::ptr::from_mut(&mut value);
     let encoded = co3::soft_encode(&mut value, &mut Default::default());
@@ -655,9 +655,9 @@ fn transparent_reference_decoders_delegate_to_inner_storage() {
 #[test]
 fn shared_decoders_do_not_reconstruct_cells_or_exclusive_references() {
     use core::cell::{Cell, UnsafeCell};
-    assert_not_impl_any!(Cell<(u8, bool)>: DecodeRef<'static>);
-    assert_not_impl_any!(UnsafeCell<(u8, bool)>: DecodeRef<'static>);
-    assert_not_impl_any!(&'static mut (u8, bool): DecodeRef<'static>);
+    assert_not_impl_any!(Cell<(u8, bool)>: SoftDecodeRef<'static>);
+    assert_not_impl_any!(UnsafeCell<(u8, bool)>: SoftDecodeRef<'static>);
+    assert_not_impl_any!(&'static mut (u8, bool): SoftDecodeRef<'static>);
 }
 
 #[cfg(feature = "derive")]

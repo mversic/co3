@@ -4,8 +4,8 @@ use co3::{
     ReprC,
     rust_spec::RustSpec,
     stored::{
-        DecodeMove, EncodeMove, EncodeMoveUnchecked, EncodeMut, EncodeMutUnchecked, EncodeRef,
-        EncodeRefUnchecked,
+        DecodeMove, EncodeMove, EncodeMoveUnchecked, SoftEncodeMut, SoftEncodeMutUnchecked, SoftEncodeRef,
+        SoftEncodeRefUnchecked,
     },
     tuple::Tuple3,
 };
@@ -64,9 +64,9 @@ unsafe impl<'d> DecodeMove<'d> for Probe {
     }
 }
 
-unsafe impl<'a> EncodeRefUnchecked<'a> for Probe {
+unsafe impl<'a> SoftEncodeRefUnchecked<'a> for Probe {
     type SoftStore = ();
-    unsafe fn encode_ref_unchecked<'itm>(&'a self, _: &'itm mut ()) -> <&'a Self as ReprC>::CType
+    unsafe fn soft_encode_ref_unchecked<'itm>(&'a self, _: &'itm mut ()) -> <&'a Self as ReprC>::CType
     where
         'a: 'itm,
     {
@@ -74,9 +74,9 @@ unsafe impl<'a> EncodeRefUnchecked<'a> for Probe {
         co3::reference::CSoftRef::from_ref(&self.0)
     }
 }
-unsafe impl<'a> EncodeRef<'a> for Probe {
+unsafe impl<'a> SoftEncodeRef<'a> for Probe {
     type Store = ();
-    fn encode_ref<'itm>(&'a self, _: &'itm mut ()) -> co3::encode_repr::Encoded<&'a Self>
+    fn soft_encode_ref<'itm>(&'a self, _: &'itm mut ()) -> co3::encode_repr::Encoded<&'a Self>
     where
         'a: 'itm,
     {
@@ -84,9 +84,9 @@ unsafe impl<'a> EncodeRef<'a> for Probe {
         co3::reference::CSoftRef::from_ref(&self.0)
     }
 }
-unsafe impl<'a> EncodeMutUnchecked<'a> for Probe {
+unsafe impl<'a> SoftEncodeMutUnchecked<'a> for Probe {
     type SoftStore = ();
-    unsafe fn encode_mut_unchecked<'itm>(
+    unsafe fn soft_encode_mut_unchecked<'itm>(
         &'a mut self,
         _: &'itm mut (),
     ) -> <&'a mut Self as ReprC>::CType
@@ -97,9 +97,9 @@ unsafe impl<'a> EncodeMutUnchecked<'a> for Probe {
         co3::reference::CSoftRefMut::from_mut(&mut self.0)
     }
 }
-unsafe impl<'a> EncodeMut<'a> for Probe {
+unsafe impl<'a> SoftEncodeMut<'a> for Probe {
     type Store = ();
-    fn encode_mut<'itm>(&'a mut self, _: &'itm mut ()) -> co3::encode_repr::Encoded<&'a mut Self>
+    fn soft_encode_mut<'itm>(&'a mut self, _: &'itm mut ()) -> co3::encode_repr::Encoded<&'a mut Self>
     where
         'a: 'itm,
     {

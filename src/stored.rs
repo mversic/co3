@@ -40,9 +40,9 @@ use crate::{
     wide::CWideBox,
 };
 pub use crate::{
-    decoded::{DecodeMut, DecodeRef},
-    mutable::{EncodeMut, EncodeMutUnchecked},
-    shared::{EncodeRef, EncodeRefUnchecked},
+    decoded::{SoftDecodeMut, SoftDecodeRef},
+    mutable::{SoftEncodeMut, SoftEncodeMutUnchecked},
+    shared::{SoftEncodeRef, SoftEncodeRefUnchecked},
 };
 
 // TODO: Could the store just be synced on drop?
@@ -236,7 +236,7 @@ disjoint_impls! {
         }
     }
 
-    unsafe impl<'a, R: EncodeRefUnchecked<'a> + ?Sized, __Interior: ExclusiveKind> EncodeMoveUnchecked
+    unsafe impl<'a, R: SoftEncodeRefUnchecked<'a> + ?Sized, __Interior: ExclusiveKind> EncodeMoveUnchecked
         for &'a R
     where
         Self: RustSpec<Layout = Unstable> + ReprC<CType: Sized>,
@@ -246,7 +246,7 @@ disjoint_impls! {
 
         #[inline(always)]
         unsafe fn soft_encode_unchecked<'itm>(self, store: &'itm mut Self::SoftStore) -> Self::CType where Self: 'itm {
-            unsafe { self.encode_ref_unchecked(store) }
+            unsafe { self.soft_encode_ref_unchecked(store) }
         }
     }
 
@@ -286,14 +286,14 @@ disjoint_impls! {
         }
     }
 
-    unsafe impl<'a, R: EncodeMutUnchecked<'a> + ?Sized> EncodeMoveUnchecked for &'a mut R
+    unsafe impl<'a, R: SoftEncodeMutUnchecked<'a> + ?Sized> EncodeMoveUnchecked for &'a mut R
     where
         Self: RustSpec<Layout = Unstable> + ReprC<CType: Sized>,
         R: RustSpec<Layout = Unstable>,
     {
         type SoftStore = R::SoftStore;
         unsafe fn soft_encode_unchecked<'itm>(self, store: &'itm mut Self::SoftStore) -> Self::CType where Self: 'itm {
-            unsafe { self.encode_mut_unchecked(store) }
+            unsafe { self.soft_encode_mut_unchecked(store) }
         }
     }
 
@@ -721,7 +721,7 @@ disjoint_impls! {
         }
     }
 
-    unsafe impl<'a, R: EncodeRef<'a> + ?Sized, __Interior: ExclusiveKind> EncodeMove for &'a R
+    unsafe impl<'a, R: SoftEncodeRef<'a> + ?Sized, __Interior: ExclusiveKind> EncodeMove for &'a R
     where
         Self: RustSpec<Layout = Unstable> + ReprC<CType: Sized>,
         R: RustSpec<Layout = Unstable, Mutability = Exclusive<__Interior>>,
@@ -734,7 +734,7 @@ disjoint_impls! {
         where
             Self: 'itm,
         {
-            self.encode_ref(store)
+            self.soft_encode_ref(store)
         }
     }
 
@@ -796,7 +796,7 @@ disjoint_impls! {
             crate::encode_repr::project(encoded)
         }
     }
-    unsafe impl<'a, R: AbiCompatibleValidate + EncodeMut<'a>> EncodeMove for &'a mut R
+    unsafe impl<'a, R: AbiCompatibleValidate + SoftEncodeMut<'a>> EncodeMove for &'a mut R
     where
         Self: RustSpec<Layout = Stable> + ReprC<CType: MutRefCarrier<R, true>>,
         R: RustSpec<Layout = Stable, Size: Thin, Trap = NonRobust>,
@@ -809,7 +809,7 @@ disjoint_impls! {
         where
             Self: 'itm,
         {
-            let encoded = crate::encode_repr::unproject::<Self::CType>(self.encode_mut(store));
+            let encoded = crate::encode_repr::unproject::<Self::CType>(self.soft_encode_mut(store));
             debug_assert_encoded_valid::<Self>(&encoded);
             crate::encode_repr::project(encoded)
         }
@@ -834,7 +834,7 @@ disjoint_impls! {
         }
     }
     #[cfg(feature = "alloc")]
-    unsafe impl<'a, R: AbiCompatibleValidate + EncodeMut<'a> + Wide<Metadata = usize> + ?Sized> EncodeMove
+    unsafe impl<'a, R: AbiCompatibleValidate + SoftEncodeMut<'a> + Wide<Metadata = usize> + ?Sized> EncodeMove
         for &'a mut R
     where
         Self: RustSpec<Layout = Unstable> + ReprC<CType: MutWideRefCarrier<R>>,
@@ -849,14 +849,14 @@ disjoint_impls! {
         where
             Self: 'itm,
         {
-            let encoded = self.encode_mut(store);
+            let encoded = self.soft_encode_mut(store);
             // TODO:
             //debug_assert_wide_pointee_valid::<R>(encoded.data(), encoded.metadata());
             encoded
         }
     }
 
-    unsafe impl<'a, R: EncodeMut<'a> + ?Sized> EncodeMove for &'a mut R
+    unsafe impl<'a, R: SoftEncodeMut<'a> + ?Sized> EncodeMove for &'a mut R
     where
         Self: RustSpec<Layout = Unstable> + ReprC<CType: Sized>,
         R: RustSpec<Layout = Unstable>,
@@ -867,7 +867,7 @@ disjoint_impls! {
         where
             Self: 'itm,
         {
-            self.encode_mut(store)
+            self.soft_encode_mut(store)
         }
     }
 
@@ -1457,35 +1457,35 @@ disjoint_impls! {
         }
     }
 
-    unsafe impl<'d, R: DecodeRef<'d> + ?Sized> DecodeMove<'d> for &'d R
+    unsafe impl<'d, R: SoftDecodeRef<'d> + ?Sized> DecodeMove<'d> for &'d R
     where
         R: RustSpec<Layout = Unstable>,
         Self: RustSpec<Layout = Unstable> + ReprC<CType: Sized>,
     {
-        type Store = <R as DecodeRef<'d>>::Store;
+        type Store = <R as SoftDecodeRef<'d>>::Store;
 
         unsafe fn soft_decode<'itm: 'd>(source: Self::CType, store: &'itm mut Self::Store) -> Option<Self> {
-            unsafe { R::decode_ref(source, store) }
+            unsafe { R::soft_decode_ref(source, store) }
         }
 
         unsafe fn soft_decode_unchecked<'itm: 'd>(source: Self::CType, store: &'itm mut Self::Store) -> Self {
-            unsafe { R::decode_ref_unchecked(source, store) }
+            unsafe { R::soft_decode_ref_unchecked(source, store) }
         }
     }
 
-    unsafe impl<'d, R: DecodeMut<'d> + ?Sized> DecodeMove<'d> for &'d mut R
+    unsafe impl<'d, R: SoftDecodeMut<'d> + ?Sized> DecodeMove<'d> for &'d mut R
     where
         R: RustSpec<Layout = Unstable>,
         Self: RustSpec<Layout = Unstable> + ReprC<CType: Sized>,
     {
-        type Store = <R as DecodeMut<'d>>::Store;
+        type Store = <R as SoftDecodeMut<'d>>::Store;
 
         unsafe fn soft_decode<'itm: 'd>(source: Self::CType, store: &'itm mut Self::Store) -> Option<Self> {
-            unsafe { R::decode_mut(source, store) }
+            unsafe { R::soft_decode_mut(source, store) }
         }
 
         unsafe fn soft_decode_unchecked<'itm: 'd>(source: Self::CType, store: &'itm mut Self::Store) -> Self {
-            unsafe { R::decode_mut_unchecked(source, store) }
+            unsafe { R::soft_decode_mut_unchecked(source, store) }
         }
     }
 
@@ -1503,6 +1503,9 @@ disjoint_impls! {
         #[inline(always)]
         unsafe fn soft_decode<'itm: 'd>(source: Self::CType, (): &mut ()) -> Option<Self> {
             if !unsafe { Self::is_valid(&source) } {
+                // Reclaim the owned carrier without constructing the rejected Rust value.
+                // SAFETY: Non-null sources own an allocation of R::CType; null owns nothing.
+                drop(unsafe { source.into_box() });
                 return None;
             }
 

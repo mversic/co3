@@ -5,8 +5,8 @@ use co3::{
     borrow::Borrowed,
     reference::{CSoftRefMut, CSoftRef},
     stored::{
-        EncodeMove, EncodeMoveUnchecked, EncodeMut, EncodeMutUnchecked, EncodeRef,
-        EncodeRefUnchecked, Store,
+        EncodeMove, EncodeMoveUnchecked, SoftEncodeMut, SoftEncodeMutUnchecked, SoftEncodeRef,
+        SoftEncodeRefUnchecked, Store,
     },
 };
 
@@ -65,10 +65,10 @@ unsafe impl EncodeMove for Probe {
 }
 
 // Borrow the actual byte: no snapshot, clone, or deferred writeback is needed.
-unsafe impl<'a> EncodeRefUnchecked<'a> for Probe {
+unsafe impl<'a> SoftEncodeRefUnchecked<'a> for Probe {
     type SoftStore = ProbeStore;
 
-    unsafe fn encode_ref_unchecked<'itm>(
+    unsafe fn soft_encode_ref_unchecked<'itm>(
         &'a self,
         _: &'itm mut ProbeStore,
     ) -> <&'a Self as ReprC>::CType
@@ -79,10 +79,10 @@ unsafe impl<'a> EncodeRefUnchecked<'a> for Probe {
     }
 }
 
-unsafe impl<'a> EncodeRef<'a> for Probe {
+unsafe impl<'a> SoftEncodeRef<'a> for Probe {
     type Store = ProbeStore;
 
-    fn encode_ref<'itm>(&'a self, _: &'itm mut ProbeStore) -> co3::encode_repr::Encoded<&'a Self>
+    fn soft_encode_ref<'itm>(&'a self, _: &'itm mut ProbeStore) -> co3::encode_repr::Encoded<&'a Self>
     where
         'a: 'itm,
     {
@@ -90,10 +90,10 @@ unsafe impl<'a> EncodeRef<'a> for Probe {
     }
 }
 
-unsafe impl<'a> EncodeMutUnchecked<'a> for Probe {
+unsafe impl<'a> SoftEncodeMutUnchecked<'a> for Probe {
     type SoftStore = ProbeStore;
 
-    unsafe fn encode_mut_unchecked<'itm>(
+    unsafe fn soft_encode_mut_unchecked<'itm>(
         &'a mut self,
         _: &'itm mut ProbeStore,
     ) -> <&'a mut Self as ReprC>::CType
@@ -104,10 +104,10 @@ unsafe impl<'a> EncodeMutUnchecked<'a> for Probe {
     }
 }
 
-unsafe impl<'a> EncodeMut<'a> for Probe {
+unsafe impl<'a> SoftEncodeMut<'a> for Probe {
     type Store = ProbeStore;
 
-    fn encode_mut<'itm>(&'a mut self, _: &'itm mut ProbeStore) -> co3::encode_repr::Encoded<&'a mut Self>
+    fn soft_encode_mut<'itm>(&'a mut self, _: &'itm mut ProbeStore) -> co3::encode_repr::Encoded<&'a mut Self>
     where
         'a: 'itm,
     {

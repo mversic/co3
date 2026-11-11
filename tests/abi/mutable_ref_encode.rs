@@ -14,8 +14,8 @@ fn mutable_non_robust_wrappers_validate_writeback() {
         mem::ManuallyDrop,
     };
 
-    assert_not_shared_encoder!(Cell<bool>: co3::stored::EncodeRef<'static>);
-    assert_not_shared_encoder!(UnsafeCell<bool>: co3::stored::EncodeRef<'static>);
+    assert_not_shared_encoder!(Cell<bool>: co3::stored::SoftEncodeRef<'static>);
+    assert_not_shared_encoder!(UnsafeCell<bool>: co3::stored::SoftEncodeRef<'static>);
 
     let mut manual = ManuallyDrop::new(true);
     let mut store = Default::default();
@@ -129,7 +129,7 @@ struct ValidatedMutable(u32);
 #[test]
 fn derived_mutable_encoding_respects_custom_validation_boundary() {
     static_assertions::assert_not_impl_any!(ValidatedMutable:
-        co3::stored::EncodeMutUnchecked<'static>, co3::stored::EncodeMut<'static>);
+        co3::stored::SoftEncodeMutUnchecked<'static>, co3::stored::SoftEncodeMut<'static>);
 }
 
 // FIXME:
@@ -189,14 +189,14 @@ fn mutable_boxed_slice_has_no_element_store_and_vec_writes_back() {
         'a,
         T: co3::ReprC<CType: Sized>
             + co3::stored::DecodeMove<'a, Store: co3::stored::EmptyStore + 'a>
-            + co3::stored::EncodeMut<'a, Store = co3::sync::RefMutSizedEncodeStore<'a, T, ()>>,
+            + co3::stored::SoftEncodeMut<'a, Store = co3::sync::RefMutSizedEncodeStore<'a, T, ()>>,
     >() {
     }
     fn empty_direct<
         'a,
         T: co3::ReprC<CType: Sized>
             + co3::stored::DecodeMove<'a, Store: co3::stored::EmptyStore + 'a>
-            + co3::stored::EncodeMutUnchecked<
+            + co3::stored::SoftEncodeMutUnchecked<
                 'a,
                 SoftStore = co3::sync::RefMutSizedEncodeStore<'a, T, ()>,
             >,
@@ -239,7 +239,7 @@ fn stable_mutable_vec_converts_non_clone_elements() {
     static_assertions::assert_not_impl_any!(NoClone: Copy, Clone);
     static_assertions::assert_type_eq_all!(<NoClone as co3::ReprC>::CType, u32);
     static_assertions::assert_impl_all!(NoClone:
-        co3::stored::EncodeMutUnchecked<'static>, co3::stored::EncodeMut<'static>);
+        co3::stored::SoftEncodeMutUnchecked<'static>, co3::stored::SoftEncodeMut<'static>);
 
     let mut values = Box::<[NoClone]>::from([NoClone(41)]).into_vec();
     let values_len = values.len();
@@ -370,11 +370,11 @@ fn nested_mutable_reference_validates_pointee_and_retains_borrowed_elements() {
 
 #[test]
 fn sized_aggregate_mutable_encoder_coverage() {
-    use co3::stored::{EncodeMut, EncodeMutUnchecked};
-    static_assertions::assert_impl_all!([bool; 2]: EncodeMut<'static>, EncodeMutUnchecked<'static>);
-    static_assertions::assert_not_impl_any!((u32, bool): EncodeMut<'static>, EncodeMutUnchecked<'static>);
-    static_assertions::assert_not_impl_any!(co3::tuple::Tuple2<u32, bool>: EncodeMut<'static>, EncodeMutUnchecked<'static>);
-    static_assertions::assert_not_impl_any!(Record: EncodeMut<'static>, EncodeMutUnchecked<'static>);
-    static_assertions::assert_not_impl_any!(DerivedMutable: EncodeMut<'static>, EncodeMutUnchecked<'static>);
-    static_assertions::assert_not_impl_any!(GenericMutable<u32>: EncodeMut<'static>, EncodeMutUnchecked<'static>);
+    use co3::stored::{SoftEncodeMut, SoftEncodeMutUnchecked};
+    static_assertions::assert_impl_all!([bool; 2]: SoftEncodeMut<'static>, SoftEncodeMutUnchecked<'static>);
+    static_assertions::assert_not_impl_any!((u32, bool): SoftEncodeMut<'static>, SoftEncodeMutUnchecked<'static>);
+    static_assertions::assert_not_impl_any!(co3::tuple::Tuple2<u32, bool>: SoftEncodeMut<'static>, SoftEncodeMutUnchecked<'static>);
+    static_assertions::assert_not_impl_any!(Record: SoftEncodeMut<'static>, SoftEncodeMutUnchecked<'static>);
+    static_assertions::assert_not_impl_any!(DerivedMutable: SoftEncodeMut<'static>, SoftEncodeMutUnchecked<'static>);
+    static_assertions::assert_not_impl_any!(GenericMutable<u32>: SoftEncodeMut<'static>, SoftEncodeMutUnchecked<'static>);
 }

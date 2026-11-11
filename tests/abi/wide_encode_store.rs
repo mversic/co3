@@ -104,24 +104,24 @@ fn wide_tuple_preserves_data_and_metadata() {
 #[test]
 fn one_field_wide_tuples_are_unsupported() {
     use co3::{
-        stored::{EncodeMut, EncodeMutUnchecked, EncodeRef, EncodeRefUnchecked},
+        stored::{SoftEncodeMut, SoftEncodeMutUnchecked, SoftEncodeRef, SoftEncodeRefUnchecked},
         tuple::Tuple1,
     };
-    assert_not_shared_encoder!(Tuple1<[u8]>: EncodeRef<'static>, EncodeRefUnchecked<'static>);
-    static_assertions::assert_not_impl_any!(Tuple1<[u8]>: Wide, EncodeMut<'static>, EncodeMutUnchecked<'static>);
-    assert_not_shared_encoder!(([u8],): EncodeRef<'static>, EncodeRefUnchecked<'static>);
-    static_assertions::assert_not_impl_any!(([u8],): EncodeMut<'static>, EncodeMutUnchecked<'static>);
-    assert_not_shared_encoder!((u32, [u8]): EncodeRef<'static>, EncodeRefUnchecked<'static>);
-    static_assertions::assert_not_impl_any!((u32, [u8]): EncodeMut<'static>, EncodeMutUnchecked<'static>);
-    assert_not_shared_encoder!(Tuple2<u32, [u8]>: EncodeRef<'static>, EncodeRefUnchecked<'static>);
-    static_assertions::assert_not_impl_any!(Tuple2<u32, [u8]>: EncodeMut<'static>, EncodeMutUnchecked<'static>);
+    assert_not_shared_encoder!(Tuple1<[u8]>: SoftEncodeRef<'static>, SoftEncodeRefUnchecked<'static>);
+    static_assertions::assert_not_impl_any!(Tuple1<[u8]>: Wide, SoftEncodeMut<'static>, SoftEncodeMutUnchecked<'static>);
+    assert_not_shared_encoder!(([u8],): SoftEncodeRef<'static>, SoftEncodeRefUnchecked<'static>);
+    static_assertions::assert_not_impl_any!(([u8],): SoftEncodeMut<'static>, SoftEncodeMutUnchecked<'static>);
+    assert_not_shared_encoder!((u32, [u8]): SoftEncodeRef<'static>, SoftEncodeRefUnchecked<'static>);
+    static_assertions::assert_not_impl_any!((u32, [u8]): SoftEncodeMut<'static>, SoftEncodeMutUnchecked<'static>);
+    assert_not_shared_encoder!(Tuple2<u32, [u8]>: SoftEncodeRef<'static>, SoftEncodeRefUnchecked<'static>);
+    static_assertions::assert_not_impl_any!(Tuple2<u32, [u8]>: SoftEncodeMut<'static>, SoftEncodeMutUnchecked<'static>);
     static_assertions::assert_impl_all!(&'static Tuple1<u8>: co3::Encode, co3::EncodeUnchecked);
     let tuple = Tuple1(7_u8);
     let carrier: co3::reference::CRef<'_, Tuple1<u8>> = co3::encode(&tuple);
     assert_eq!(carrier.as_ptr(), core::ptr::from_ref(&tuple));
-    assert_not_shared_encoder!(Tuple1<core::ffi::CStr>: EncodeRef<'static>, EncodeRefUnchecked<'static>);
-    assert_not_shared_encoder!(Tuple2<u32, core::ffi::CStr>: EncodeRef<'static>, EncodeRefUnchecked<'static>);
-    assert_not_shared_encoder!((u32, core::ffi::CStr): EncodeRef<'static>, EncodeRefUnchecked<'static>);
+    assert_not_shared_encoder!(Tuple1<core::ffi::CStr>: SoftEncodeRef<'static>, SoftEncodeRefUnchecked<'static>);
+    assert_not_shared_encoder!(Tuple2<u32, core::ffi::CStr>: SoftEncodeRef<'static>, SoftEncodeRefUnchecked<'static>);
+    assert_not_shared_encoder!((u32, core::ffi::CStr): SoftEncodeRef<'static>, SoftEncodeRefUnchecked<'static>);
 }
 
 #[test]

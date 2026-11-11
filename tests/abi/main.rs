@@ -1,5 +1,5 @@
 // Unlike static_assertions' generic helper, this helper carries the
-// reference-mapping prerequisite of EncodeRef and EncodeRefUnchecked.
+// reference-mapping prerequisite of SoftEncodeRef and SoftEncodeRefUnchecked.
 trait TransparentCarrier: Copy {
     type Payload: Copy;
 

@@ -3,18 +3,15 @@ use std::collections::{BTreeMap, BTreeSet};
 use proc_macro2::{Span, TokenStream};
 use quote::{format_ident, quote};
 use syn::{
-    Ident, Meta, Path, Type,
-    parse::{Parse, ParseStream},
+    Ident, Path, Type,
     parse_quote,
-    punctuated::Punctuated,
     spanned::Spanned,
-    token::Comma,
     visit::{Visit, visit_type},
     visit_mut::VisitMut,
 };
 
 use crate::{
-    argument::{self, Argument, Unpack},
+    argument::{self, Argument, Unpack, UnpackSyntax},
     dispatch::{StaticLifetimeNormalizer, set_token_stream_span, tag_id},
     generate::OwnershipMode,
     parse::FailureMode,
@@ -424,139 +421,6 @@ pub(crate) fn item_fn_input_ident(input: &syn::Pat) -> &Ident {
 
 pub(crate) fn is_unpack_attr(attr: &syn::Attribute) -> bool {
     attr.path().is_ident("unpack")
-}
-
-pub(crate) fn unpack_attr_name(_attr: &syn::Attribute) -> &'static str {
-    "#[unpack]"
-}
-
-pub(crate) fn is_unpack_arg(attrs: &[syn::Attribute]) -> bool {
-    attrs.iter().any(|attr| {
-        if !is_unpack_attr(attr) {
-            return false;
-        }
-        let Meta::List(_) = &attr.meta else {
-            return true;
-        };
-        attr.parse_args_with(Punctuated::<UnpackPart, Comma>::parse_terminated)
-            .is_ok_and(|parts| parts.len() != 1)
-    })
-}
-
-#[derive(Clone)]
-pub(crate) struct UnpackPart {
-    pub(crate) logical: Type,
-    pub(crate) abi: Option<Type>,
-}
-
-impl Parse for UnpackPart {
-    fn parse(input: ParseStream<'_>) -> syn::Result<Self> {
-        let logical = input.parse()?;
-        let abi = if input.peek(syn::Token![=>]) {
-            input.parse::<syn::Token![=>]>()?;
-            let abi: Type = input.parse()?;
-            if matches!(abi, Type::Infer(_)) {
-                return Err(syn::Error::new_spanned(
-                    abi,
-                    "the ABI type after `=>` cannot be `_`",
-                ));
-            }
-            Some(abi)
-        } else {
-            None
-        };
-        Ok(Self { logical, abi })
-    }
-}
-
-pub(crate) fn parse_unpack_parts(attrs: &[syn::Attribute]) -> syn::Result<Option<Vec<UnpackPart>>> {
-    let Some(attr) = attrs.iter().find(|attr| is_unpack_attr(attr)) else {
-        return Ok(None);
-    };
-    let Meta::List(_) = &attr.meta else {
-        return Err(syn::Error::new_spanned(
-            attr,
-            "#[unpack] expects exactly two parts",
-        ));
-    };
-    Ok(Some(
-        attr.parse_args_with(Punctuated::<UnpackPart, Comma>::parse_terminated)?
-            .into_iter()
-            .collect(),
-    ))
-}
-
-pub(crate) fn unpack_parts(
-    attrs: &[syn::Attribute],
-) -> syn::Result<Option<(UnpackPart, UnpackPart)>> {
-    let Some(parts) = parse_unpack_parts(attrs)? else {
-        return Ok(None);
-    };
-    let [first, second]: [UnpackPart; 2] = parts.try_into().map_err(|_| {
-        let attr = attrs.iter().find(|attr| is_unpack_attr(attr)).unwrap();
-        syn::Error::new_spanned(attr, "#[unpack] expects exactly two parts")
-    })?;
-    Ok(Some((first, second)))
-}
-
-pub(crate) fn validate_single_unpack(attrs: &[syn::Attribute]) -> syn::Result<bool> {
-    let Some(attr) = attrs.iter().find(|attr| is_unpack_attr(attr)) else {
-        return Ok(false);
-    };
-    let Meta::List(_) = &attr.meta else {
-        return Ok(false);
-    };
-    let parts = attr.parse_args_with(Punctuated::<UnpackPart, Comma>::parse_terminated)?;
-    if parts.len() != 1 {
-        return Ok(false);
-    }
-    let part = &parts[0];
-    if part.abi.is_some() {
-        return Err(syn::Error::new_spanned(
-            attr,
-            format!(
-                "the one-part {} form does not support ABI erasure",
-                unpack_attr_name(attr)
-            ),
-        ));
-    }
-    Ok(true)
-}
-
-pub(crate) fn single_unpack_part(
-    attrs: &[syn::Attribute],
-    arg_ty: &Type,
-) -> syn::Result<Option<Type>> {
-    if !validate_single_unpack(attrs)? {
-        return Ok(None);
-    }
-    let attr = attrs.iter().find(|attr| is_unpack_attr(attr)).unwrap();
-    let parts = attr.parse_args_with(Punctuated::<UnpackPart, Comma>::parse_terminated)?;
-    let part = &parts[0];
-    Ok(Some(if matches!(part.logical, Type::Infer(_)) {
-        arg_ty.clone()
-    } else {
-        part.logical.clone()
-    }))
-}
-
-pub(crate) fn is_single_unpack_arg(attrs: &[syn::Attribute]) -> bool {
-    validate_single_unpack(attrs).unwrap_or(false)
-}
-
-pub(crate) fn unpack_types(attrs: &[syn::Attribute]) -> syn::Result<Option<(Type, Type)>> {
-    Ok(unpack_parts(attrs)?.map(|(part1, part2)| (part1.logical, part2.logical)))
-}
-
-/// Returns the C representation of the value being split.
-pub(crate) fn unpack_abi_parts(
-    attrs: &[syn::Attribute],
-    arg_ty: &Type,
-) -> syn::Result<(Type, Type)> {
-    let Unpack::Pair(pair) = Unpack::resolve(attrs, arg_ty)? else {
-        unreachable!("two-part unpack attribute was validated");
-    };
-    Ok((pair.first.abi, pair.second.abi))
 }
 
 pub(crate) fn logical_unpack_part(arg_ty: &Type, part: &Type, position: u8) -> syn::Result<Type> {
@@ -1345,7 +1209,10 @@ fn synthesize_lifetime_bounds(sig: &mut syn::Signature) {
             // Unpacked arguments are replaced by their two ABI parts below. Bounds implied by
             // the source type therefore do not belong to the raw declaration and, for dispatch
             // parameters, can refer to a generic that has already been erased from it.
-            syn::FnArg::Typed(arg) if !is_unpack_arg(&arg.attrs) => {
+            syn::FnArg::Typed(arg) if !matches!(
+                UnpackSyntax::parse(&arg.attrs).expect("validated #[unpack] attribute"),
+                UnpackSyntax::Pair(_)
+            ) => {
                 lifetime_collector.visit_type(&arg.ty)
             }
             syn::FnArg::Typed(_) => {}
@@ -1377,21 +1244,6 @@ fn synthesize_lifetime_bounds(sig: &mut syn::Signature) {
             .make_where_clause()
             .predicates
             .push(parse_quote!(#lhs: #(#rhs)+*));
-    }
-}
-
-pub(crate) fn item_fn_input_arg_type(attrs: &[syn::Attribute], arg_ty: &Type) -> TokenStream {
-    if is_identity_primitive(arg_ty) {
-        return quote!(#arg_ty);
-    }
-
-    let c_type = quote! { <#arg_ty as co3::ReprC>::CType };
-
-    match ownership_mode_for_arg(attrs, arg_ty) {
-        OwnershipMode::ByValue => quote! { #c_type },
-        OwnershipMode::Borrow => quote! {
-            <<#arg_ty as co3::borrow::Borrow>::Borrowed as co3::ReprC>::CType
-        },
     }
 }
 

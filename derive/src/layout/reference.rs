@@ -4,7 +4,7 @@ use proc_macro2::TokenStream;
 use quote::{format_ident, quote};
 use syn::{Ident, parse_quote};
 
-use super::is_parametrized;
+use super::fields::FieldType;
 use crate::utils::speculative_marker;
 
 /// Select the reference trait, value trait, store, and their encoding methods.
@@ -20,7 +20,7 @@ pub(super) fn encoder_names(
 ) {
     let borrow = if mutable { "Mut" } else { "Ref" };
     let suffix = if unchecked { "Unchecked" } else { "" };
-    let trait_name = format_ident!("Encode{borrow}{suffix}");
+    let trait_name = format_ident!("SoftEncode{borrow}{suffix}");
     let move_trait = format_ident!("EncodeMove{suffix}");
     let store = if unchecked {
         quote!(SoftStore)
@@ -29,7 +29,7 @@ pub(super) fn encoder_names(
     };
     let borrow = if mutable { "mut" } else { "ref" };
     let suffix = if unchecked { "_unchecked" } else { "" };
-    let method = format_ident!("encode_{borrow}{suffix}");
+    let method = format_ident!("soft_encode_{borrow}{suffix}");
     let move_method = format_ident!("soft_encode{suffix}");
     (
         quote!(co3::stored::#trait_name),
@@ -79,14 +79,9 @@ pub(super) fn gen_stable_direct_mut_impls(input: &syn::DeriveInput) -> TokenStre
     };
     let field_bounds = fields
         .into_iter()
-        .filter_map(|field| {
-            let ty = &field.ty;
-            if super::is_phantom_data(ty) {
-                return None;
-            }
-            let speculative = speculative_marker(!super::is_parametrized(ty, &input.generics));
-            Some(quote!(#speculative #ty: co3::ReprC<CType: Sized>,))
-        })
+        .map(|field| FieldType::new(&field.ty, &input.generics))
+        .filter(|field| !field.phantom)
+        .map(|field| field.bound(quote!(co3::ReprC<CType: Sized>)))
         .collect::<Vec<_>>();
 
     let implementations = [true, false].into_iter().map(|unchecked| {
@@ -112,7 +107,7 @@ pub(super) fn gen_stable_direct_mut_impls(input: &syn::DeriveInput) -> TokenStre
                     + co3::ReprC<CType: co3::CType + co3::encode_repr::EncodeRepr> + Clone + #move_trait + co3::transmute::AbiCompatible
                     + co3::stored::DecodeMove<'_ršč, Store: co3::stored::EmptyStore + '_ršč> + '_ršč,
                 &'_ršč mut Self: co3::ReprC<CType = co3::reference::CRefMut<'_ršč, Self, true>> + co3::transmute::AbiCompatible,
-                #(#field_bounds)*
+                #(#field_bounds,)*
                 #predicates
             {
                 type #store_name = co3::sync::RefMutSizedEncodeStore<'_ršč, Self, <Self as #move_trait>::#store_name>;
@@ -133,14 +128,14 @@ pub(super) fn gen_stable_direct_mut_impls(input: &syn::DeriveInput) -> TokenStre
                     + co3::ReprC<CType: co3::CType + Sized> + Sized + '_ršč,
                 &'_ršč mut Self: co3::ReprC<CType = co3::reference::CRefMut<'_ršč, Self, true>>
                     + #abi_bound,
-                #(#field_bounds)*
+                #(#field_bounds,)*
                 #predicates
             {
                 type #store_name = ();
                 #unsafe_fn fn #method<'itm>(&'_ršč mut self, _: &'itm mut ()) -> #output
                 where '_ršč: 'itm {
                     // Do not delegate back to EncodeMove for &mut Self: its stored
-                    // branch requires EncodeMut and would create a trait-solver cycle.
+                    // branch requires SoftEncodeMut and would create a trait-solver cycle.
                     let encoded = unsafe {
                         co3::reference::CRefMut::from_raw(core::ptr::from_mut(self).cast())
                     };
@@ -183,10 +178,10 @@ pub(super) fn group_aggregate_ref_impls(
         let path = &mut implementation.trait_.as_mut().expect("trait impl").0;
         let segment = path.segments.last().unwrap().clone();
         let index = match segment.ident.to_string().as_str() {
-            "EncodeRefUnchecked" => 0,
-            "EncodeRef" => 1,
-            "EncodeMutUnchecked" => 2,
-            "EncodeMut" => 3,
+            "SoftEncodeRefUnchecked" => 0,
+            "SoftEncodeRef" => 1,
+            "SoftEncodeMutUnchecked" => 2,
+            "SoftEncodeMut" => 3,
             _ => unreachable!("reference encoder trait"),
         };
         *path = parse_quote!(#segment);
@@ -213,8 +208,8 @@ pub(super) fn group_aggregate_ref_impls(
         let projection_bound = (!unchecked).then(|| quote!(+ co3::encode_repr::EncodeRepr));
         let supertrait = match (mutable, unchecked) {
             (_, true) => quote!(co3::ReprC + 'a),
-            (false, false) => quote!(co3::stored::EncodeRefUnchecked<'a>),
-            (true, false) => quote!(co3::stored::EncodeMutUnchecked<'a>),
+            (false, false) => quote!(co3::stored::SoftEncodeRefUnchecked<'a>),
+            (true, false) => quote!(co3::stored::SoftEncodeMutUnchecked<'a>),
         };
         Some(quote! {
             use #trait_path;
@@ -258,7 +253,8 @@ pub(super) fn gen_field_ref_impls(
     let (_, ty_generics, _) = input.generics.split_for_impl();
     let predicates = where_clause.as_ref().map(|clause| &clause.predicates);
     let speculative = speculative_marker(input.generics.params.is_empty());
-    let field_speculative = speculative_marker(!is_parametrized(field_ty, &input.generics));
+    let field_bound = FieldType::new(field_ty, &input.generics)
+        .bound(quote!(co3::ReprC + co3::rust_spec::RustSpec + '_ršč));
 
     let mut implementations = Vec::new();
     for mutable in [false, true] {
@@ -282,7 +278,7 @@ pub(super) fn gen_field_ref_impls(
                 where
                     #speculative Self: co3::ReprC<CType = <#field_ty as co3::ReprC>::CType>
                         + co3::rust_spec::RustSpec<Size = <#field_ty as co3::rust_spec::RustSpec>::Size, Mutability = <#field_ty as co3::rust_spec::RustSpec>::Mutability> + '_ršč,
-                    #field_speculative #field_ty: co3::ReprC + co3::rust_spec::RustSpec + '_ršč,
+                    #field_bound,
                     &'_ršč #mutability #field_ty: #move_trait + co3::ReprC<CType: Sized + Copy>,
                     &'_ršč #mutability Self: co3::ReprC<CType: Sized + Copy #projection_bound>,
                     #predicates
@@ -369,39 +365,43 @@ fn gen_structural_decode(
         let mut calls = [Vec::new(), Vec::new()];
         for (i, field) in fields.iter().enumerate() {
             let ty = &field.ty;
+            let field_type = FieldType::new(ty, &input.generics);
             let index = syn::Index::from(types.len());
             types.push(ty);
-            let spec = speculative_marker(!is_parametrized(ty, &input.generics));
-            let repr_bound = if super::is_phantom_data(ty) {
+            let repr_bound = if field_type.phantom {
                 quote!(co3::ReprC<CType = #ty>)
             } else if tagged_enum || mutable {
                 quote!(co3::ReprC<CType: co3::CType + Copy + Sized>)
             } else {
                 quote!(co3::ReprC<CType: co3::CType + Sized>)
             };
+            let field_bound = field_type.bound(quote!(#repr_bound + '_dšč));
             let field_decoder = if mutable {
                 quote!(co3::borrow::Borrowed<#ty>)
             } else {
                 quote!(&'_dšč #ty)
             };
             if mutable {
+                let sized_bound = field_type.bound(quote!(Sized));
+                let spec = speculative_marker(field_type.concrete);
                 bounds.push(quote! {
-                    #spec #ty: Sized,
-                    #spec #ty: #repr_bound + '_dšč,
+                    #sized_bound,
+                    #field_bound,
                     #spec #field_decoder: co3::stored::DecodeMove<'_dšč> + co3::ReprC<
                         CType = co3::borrow::Borrowed<<#ty as co3::ReprC>::CType>>,
                 });
-            } else if !super::is_phantom_data(ty) {
+            } else if !field_type.phantom {
+                let decode_bound = field_type.bound(quote!(__Co3DecodeField<'_dšč>));
                 bounds.push(quote! {
-                    #spec #ty: #repr_bound + '_dšč,
-                    #spec #ty: __Co3DecodeField<'_dšč>,
+                    #field_bound,
+                    #decode_bound,
                 });
             }
             if mutable {
                 stores.push(
                     quote!(Option<<#field_decoder as co3::stored::DecodeMove<'_dšč>>::Store>),
                 );
-            } else if super::is_phantom_data(ty) {
+            } else if field_type.phantom {
                 stores.push(quote!(()));
             } else {
                 stores.push(quote!(Option<<#ty as __Co3DecodeField<'_dšč>>::Store>));
@@ -442,7 +442,7 @@ fn gen_structural_decode(
                 }#check);
                 let decode = if mutable {
                     quote!(co3::borrow::Borrowed::into_inner(#decode))
-                } else if super::is_phantom_data(ty) {
+                } else if field_type.phantom {
                     quote!(core::marker::PhantomData)
                 } else {
                     {
@@ -499,8 +499,8 @@ fn gen_structural_decode(
             }
         } else { bodies.into_iter().next().unwrap_or_else(|| quote!(None)) };
         let method = match (mutable, unchecked) {
-            (false, 0) => quote!(decode_ref), (false, _) => quote!(decode_ref_unchecked),
-            (true, 0) => quote!(decode_mut), (true, _) => quote!(decode_mut_unchecked),
+            (false, 0) => quote!(soft_decode_ref), (false, _) => quote!(soft_decode_ref_unchecked),
+            (true, 0) => quote!(soft_decode_mut), (true, _) => quote!(soft_decode_mut_unchecked),
         };
         let mutability = mutable.then(|| quote!(mut));
         let ret = if unchecked == 1 { quote!(&'_dšč #mutability Self) }
@@ -520,9 +520,9 @@ fn gen_structural_decode(
         }
     });
     let trait_name = if mutable {
-        quote!(DecodeMut)
+        quote!(SoftDecodeMut)
     } else {
-        quote!(DecodeRef)
+        quote!(SoftDecodeRef)
     };
     let store = if mutable {
         quote!(RefMutSizedDecodeStore)
@@ -556,8 +556,8 @@ fn gen_structural_decode(
         return quote! { const _: () = { use co3::stored::#trait_name; #implementation }; };
     }
     let field_decoder = gen_shared_field_decoder();
-    let method = quote!(decode_ref);
-    let unchecked = quote!(decode_ref_unchecked);
+    let method = quote!(soft_decode_ref);
+    let unchecked = quote!(soft_decode_ref_unchecked);
     quote! {
         const _: () = {
             use co3::stored::#trait_name;

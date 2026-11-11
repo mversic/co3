@@ -162,8 +162,8 @@ struct NoDropValue(u32);
 fn no_drop_borrows_itself_without_owner() {
     use co3::borrow::Borrow;
     static_assertions::assert_impl_all!(NoDropValue:
-        co3::stored::EncodeMut<'static, Store = ()>,
-        co3::stored::EncodeMutUnchecked<'static, SoftStore = ()>);
+        co3::stored::SoftEncodeMut<'static, Store = ()>,
+        co3::stored::SoftEncodeMutUnchecked<'static, SoftStore = ()>);
 
     static_assertions::assert_type_eq_all!(<CNoDropValue as Borrow>::Borrowed, CNoDropValue);
 
