@@ -1,151 +1,87 @@
 use std::cell::RefCell;
 
-use co3::{
-    ReprC,
-    rust_spec::RustSpec,
-    stored::{
-        DecodeMove, EncodeMove, EncodeMoveUnchecked, SoftEncodeMut, SoftEncodeMutUnchecked, SoftEncodeRef,
-        SoftEncodeRefUnchecked,
-    },
-    tuple::Tuple3,
-};
+use co3::{ReprC, ffi, raw, rust_spec::RustSpec, tuple::Tuple3};
 
 thread_local! {
     static EVENTS: RefCell<Vec<u8>> = const { RefCell::new(Vec::new()) };
 }
 
-#[derive(RustSpec)]
+fn validate(value: &u8) -> bool {
+    EVENTS.with(|events| events.borrow_mut().push(*value));
+    true
+}
+
+#[derive(RustSpec, ReprC)]
+#[repr(transparent)]
+#[rust_spec(non_robust)]
+#[repr_c(is_valid = |value| validate(value))]
 struct Probe(u8);
-
-unsafe impl co3::borrow::Borrow for Probe {
-    type Borrowed = Self;
-
-    fn borrow(self) -> Self {
-        self
-    }
-    fn from_borrow(source: Self) -> Self {
-        source
-    }
-}
-
-impl co3::EncodeUnchecked for Probe {}
-impl co3::Encode for Probe {}
-impl co3::Decode<'_> for Probe {}
-
-impl ReprC for Probe {
-    type CType = u8;
-}
-
-unsafe impl EncodeMoveUnchecked for Probe {
-    type SoftStore = ();
-    unsafe fn soft_encode_unchecked<'itm>(self, _: &'itm mut ()) -> u8
-    where
-        Self: 'itm,
-    {
-        EVENTS.with(|events| events.borrow_mut().push(self.0));
-        self.0
-    }
-}
-unsafe impl EncodeMove for Probe {
-    type Store = ();
-    fn soft_encode<'a>(self, _: &'a mut ()) -> u8
-    where
-        Self: 'a,
-    {
-        EVENTS.with(|events| events.borrow_mut().push(self.0));
-        self.0
-    }
-}
-unsafe impl<'d> DecodeMove<'d> for Probe {
-    type Store = ();
-    unsafe fn soft_decode<'a: 'd>(source: u8, _: &'a mut ()) -> Option<Self> {
-        EVENTS.with(|events| events.borrow_mut().push(source));
-        Some(Self(source))
-    }
-}
-
-unsafe impl<'a> SoftEncodeRefUnchecked<'a> for Probe {
-    type SoftStore = ();
-    unsafe fn soft_encode_ref_unchecked<'itm>(&'a self, _: &'itm mut ()) -> <&'a Self as ReprC>::CType
-    where
-        'a: 'itm,
-    {
-        EVENTS.with(|events| events.borrow_mut().push(self.0));
-        co3::reference::CSoftRef::from_ref(&self.0)
-    }
-}
-unsafe impl<'a> SoftEncodeRef<'a> for Probe {
-    type Store = ();
-    fn soft_encode_ref<'itm>(&'a self, _: &'itm mut ()) -> co3::encode_repr::Encoded<&'a Self>
-    where
-        'a: 'itm,
-    {
-        EVENTS.with(|events| events.borrow_mut().push(self.0));
-        co3::reference::CSoftRef::from_ref(&self.0)
-    }
-}
-unsafe impl<'a> SoftEncodeMutUnchecked<'a> for Probe {
-    type SoftStore = ();
-    unsafe fn soft_encode_mut_unchecked<'itm>(
-        &'a mut self,
-        _: &'itm mut (),
-    ) -> <&'a mut Self as ReprC>::CType
-    where
-        'a: 'itm,
-    {
-        EVENTS.with(|events| events.borrow_mut().push(self.0));
-        co3::reference::CSoftRefMut::from_mut(&mut self.0)
-    }
-}
-unsafe impl<'a> SoftEncodeMut<'a> for Probe {
-    type Store = ();
-    fn soft_encode_mut<'itm>(&'a mut self, _: &'itm mut ()) -> co3::encode_repr::Encoded<&'a mut Self>
-    where
-        'a: 'itm,
-    {
-        EVENTS.with(|events| events.borrow_mut().push(self.0));
-        co3::reference::CSoftRefMut::from_mut(&mut self.0)
-    }
-}
 
 #[derive(RustSpec, ReprC)]
 struct Record(Probe, Probe, [u8; 1]);
 
-fn assert_order() {
-    EVENTS.with(|events| assert_eq!(&*events.borrow(), &[1, 2, 3]));
-    EVENTS.with(|events| events.borrow_mut().clear());
+fn tuple(values: (Probe, Probe, Probe)) -> u8 {
+    values.0.0 + values.1.0 + values.2.0
 }
 
-fn assert_prefix_order() {
-    EVENTS.with(|events| assert_eq!(&*events.borrow(), &[1, 2]));
-    EVENTS.with(|events| events.borrow_mut().clear());
+fn record(value: Record) -> u8 {
+    value.0.0 + value.1.0 + value.2[0]
+}
+
+raw! {
+    fn tuple(values: (Probe, Probe, Probe)) -> u8;
+    fn record(value: Record) -> u8;
+}
+
+#[unsafe(export_name = "field_order_tuple")]
+extern "C" fn receive_tuple(values: Tuple3<CProbe, CProbe, CProbe>) -> u8 {
+    values.0.0 + values.1.0 + values.2.0
+}
+
+#[unsafe(export_name = "field_order_record")]
+extern "C" fn receive_record(value: CRecord) -> u8 {
+    value.0.0 + value.1.0 + value.2[0]
+}
+
+mod imported {
+    use super::*;
+
+    ffi! {
+        #![unsafe(extern("C"))]
+
+        #[symbol_name = "field_order_tuple"]
+        pub fn tuple(values: (Probe, Probe, Probe)) -> u8;
+
+        #[symbol_name = "field_order_record"]
+        pub fn record(value: Record) -> u8;
+    }
+}
+
+fn assert_events(expected: &[u8]) {
+    EVENTS.with(|events| {
+        assert_eq!(&*events.borrow(), expected);
+        events.borrow_mut().clear();
+    });
 }
 
 #[test]
-fn owned_tuple_and_derived_fields_encode_and_decode_in_order() {
-    let values = (Probe(1), Probe(2), Probe(3));
-    let encoded: Tuple3<u8, u8, u8> = co3::soft_encode(values, &mut ((), (), ()));
-    assert_order();
-    let _ =
-        unsafe { co3::soft_decode::<(Probe, Probe, Probe)>(encoded, &mut ((), (), ())) }.unwrap();
-    assert_order();
+#[cfg(debug_assertions)]
+fn imported_arguments_validate_fields_in_declaration_order() {
+    assert_eq!(imported::tuple((Probe(1), Probe(2), Probe(3))), 6);
+    assert_events(&[1, 2, 3]);
 
-    let encoded =
-        unsafe { co3::soft_encode_unchecked((Probe(1), Probe(2), Probe(3)), &mut ((), (), ())) };
-    assert_order();
-    let _ =
-        unsafe { co3::soft_decode_unchecked::<(Probe, Probe, Probe)>(encoded, &mut ((), (), ())) };
-    assert_order();
+    assert_eq!(imported::record(Record(Probe(1), Probe(2), [3])), 6);
+    assert_events(&[1, 2]);
+}
 
-    let encoded = co3::soft_encode(Record(Probe(1), Probe(2), [3]), &mut Default::default());
-    assert_prefix_order();
-    let _ = unsafe { co3::soft_decode::<Record>(encoded, &mut Default::default()) }.unwrap();
-    assert_prefix_order();
+#[test]
+fn raw_companions_validate_fields_in_declaration_order() {
+    assert_eq!(
+        unsafe { tuple_raw(Tuple3(CProbe(1), CProbe(2), CProbe(3))) },
+        6
+    );
+    assert_events(&[1, 2, 3]);
 
-    let encoded = unsafe {
-        co3::soft_encode_unchecked(Record(Probe(1), Probe(2), [3]), &mut Default::default())
-    };
-    assert_prefix_order();
-    let _ = unsafe { co3::soft_decode_unchecked::<Record>(encoded, &mut Default::default()) };
-    assert_prefix_order();
+    assert_eq!(unsafe { record_raw(CRecord(CProbe(1), CProbe(2), [3])) }, 6);
+    assert_events(&[1, 2]);
 }

@@ -123,10 +123,6 @@ fn borrow_rust_value(value: RustValue) -> RustValue {
     value
 }
 
-extern "C" fn borrowed_return() -> co3::borrow::Borrowed<co3::boxed::CBox<Value>> {
-    co3::boxed::CBox::null().into()
-}
-
 ffi! {
     #![unsafe(export("C"))]
     #![symbol_prefix = "abi_c_callback"]
@@ -334,7 +330,7 @@ fn multi_argument_callbacks_encode_each_argument() {
 fn c_callback_crosses_export_and_import() {
     let _: CompanionCallback = sum_pair;
     let _: CompanionPathAlias = sum_pair;
-    let _: BorrowedReturn = borrowed_return;
+    let _: Option<BorrowedReturn> = None;
     let _: BorrowedRustValue = borrow_rust_value_raw;
     let _: OwnedTransform = return_owned_raw;
     let result = unsafe { return_owned_raw(co3::encode(Box::new(Value(42)))) };

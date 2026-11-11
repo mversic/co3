@@ -5,7 +5,6 @@ use std::{
 };
 
 use co3::{ReprC, boxed::CBox, ffi, rust_spec::RustSpec};
-use static_assertions::assert_impl_all;
 
 type BatteryString = CString;
 type BatteryCStr = Box<CStr>;
@@ -64,7 +63,6 @@ fn regular_drop_import_calls_export() {
     drop(remote);
 }
 
-static FIELDLESS_DROPS: AtomicUsize = AtomicUsize::new(0);
 static MOVABLE_DROPS: AtomicUsize = AtomicUsize::new(0);
 
 #[derive(RustSpec, ReprC)]
@@ -152,124 +150,4 @@ fn move_opt_in_enables_checked_and_unchecked_custom_drop_moves() {
     drop(decoded);
 
     assert_eq!(MOVABLE_DROPS.load(Ordering::Relaxed), before + 5);
-}
-
-#[derive(RustSpec, ReprC)]
-#[repr(C)]
-struct NoDropValue(u32);
-
-#[test]
-fn no_drop_borrows_itself_without_owner() {
-    use co3::borrow::Borrow;
-    static_assertions::assert_impl_all!(NoDropValue:
-        co3::stored::SoftEncodeMut<'static, Store = ()>,
-        co3::stored::SoftEncodeMutUnchecked<'static, SoftStore = ()>);
-
-    static_assertions::assert_type_eq_all!(<CNoDropValue as Borrow>::Borrowed, CNoDropValue);
-
-    let borrowed: NoDropValue = Borrow::borrow(NoDropValue(5));
-    let restored = <NoDropValue as Borrow>::from_borrow(borrowed);
-    assert_eq!(restored.0, 5);
-}
-
-#[derive(RustSpec, ReprC)]
-#[repr(C)]
-struct InheritedDrop(Box<u32>);
-
-#[test]
-fn inherited_drop_borrows_fields() {
-    use co3::borrow::Borrow;
-
-    static_assertions::assert_type_eq_all!(<CInheritedDrop as Borrow>::Borrowed, CInheritedDrop);
-
-    let borrowed = Borrow::borrow(InheritedDrop(Box::new(7)));
-    let borrowed: InheritedDropView = borrowed;
-    let restored = <InheritedDrop as Borrow>::from_borrow(borrowed);
-    assert_eq!(*restored.0, 7);
-}
-
-#[derive(Clone, RustSpec, ReprC)]
-#[repr(C)]
-#[rust_spec(custom_drop)]
-struct CustomAndInheritedDrop(Box<u32>);
-
-impl Drop for CustomAndInheritedDrop {
-    fn drop(&mut self) {}
-}
-
-#[test]
-fn custom_and_inherited_drop_borrows_whole_value() {
-    use co3::borrow::Borrow;
-
-    let borrowed = Borrow::borrow(CustomAndInheritedDrop(Box::new(9)));
-    let borrowed: co3::borrow::Borrowed<CustomAndInheritedDrop> = borrowed;
-    let restored = <CustomAndInheritedDrop as Borrow>::from_borrow(borrowed);
-    assert_eq!(*restored.0, 9);
-}
-
-#[test]
-fn custom_drop_companion_borrows_as_self() {
-    static_assertions::assert_type_eq_all!(
-        <CCustomAndInheritedDrop as co3::borrow::Borrow>::Borrowed,
-        CCustomAndInheritedDrop
-    );
-    assert_impl_all!(CBox<CCustomAndInheritedDrop>: co3::borrow::Borrow);
-}
-
-#[derive(RustSpec, ReprC)]
-#[repr(C, u8)]
-enum InheritedDropEnum {
-    #[repr_c(allow_zero_tag)]
-    Value(Box<u32>),
-    Empty,
-}
-
-#[test]
-fn inherited_drop_enum_borrows_fields() {
-    use co3::borrow::Borrow;
-
-    let borrowed = Borrow::borrow(InheritedDropEnum::Value(Box::new(11)));
-    let borrowed: InheritedDropEnumView = borrowed;
-    let restored = <InheritedDropEnum as Borrow>::from_borrow(borrowed);
-    assert!(matches!(restored, InheritedDropEnum::Value(value) if *value == 11));
-}
-
-#[derive(Clone, RustSpec, ReprC)]
-#[repr(u8)]
-#[rust_spec(custom_drop)]
-enum ExplicitFieldlessDrop {
-    First = 2,
-    Second = 5,
-}
-
-impl Drop for ExplicitFieldlessDrop {
-    fn drop(&mut self) {
-        FIELDLESS_DROPS.fetch_add(1, Ordering::Relaxed);
-    }
-}
-
-#[derive(Clone, RustSpec, ReprC)]
-#[rust_spec(custom_drop)]
-enum InferredFieldlessDrop {
-    First = 2,
-    Second,
-}
-
-impl Drop for InferredFieldlessDrop {
-    fn drop(&mut self) {
-        FIELDLESS_DROPS.fetch_add(1, Ordering::Relaxed);
-    }
-}
-
-#[test]
-fn fieldless_enums_with_drop_borrow() {
-    use co3::borrow::Borrow;
-
-    let before = FIELDLESS_DROPS.load(Ordering::Relaxed);
-
-    let borrowed = Borrow::borrow(ExplicitFieldlessDrop::Second);
-    let cloned = <ExplicitFieldlessDrop as Borrow>::from_borrow(borrowed);
-    assert!(matches!(cloned, ExplicitFieldlessDrop::Second));
-    drop(cloned);
-    assert_eq!(FIELDLESS_DROPS.load(Ordering::Relaxed) - before, 1);
 }

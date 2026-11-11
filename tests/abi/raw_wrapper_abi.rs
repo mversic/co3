@@ -1,4 +1,4 @@
-use co3::{borrow::Borrowed, ffi, raw, reference::CRef};
+use co3::{ffi, raw, reference::CRef};
 
 fn overwrite(bytes: &mut [u8]) -> usize {
     bytes.fill(7);
@@ -16,7 +16,7 @@ raw! {
 
 #[test]
 fn raw_companion_reconstructs_unpacked_slice() {
-    let callback: unsafe extern "C" fn(Borrowed<*mut u8>, usize) -> usize = overwrite_raw;
+    let callback: unsafe extern "C" fn(_, usize) -> usize = overwrite_raw;
     let mut bytes = [0_u8; 3];
     assert_eq!(
         unsafe { callback(bytes.as_mut_ptr().into(), bytes.len()) },

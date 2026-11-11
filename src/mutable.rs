@@ -1076,3 +1076,137 @@ unsafe impl<'a> SoftEncodeMut<'a> for str {
 
 pub(crate) use impl_copy_mut;
 pub(crate) use impl_direct_mut;
+
+#[cfg(all(test, feature = "alloc", feature = "derive"))]
+mod tests {
+    use alloc::{vec, vec::Vec};
+    use co3::{
+        ReprC,
+        rust_spec::RustSpec,
+        stored::{SoftEncodeMut, SoftEncodeMutUnchecked, Store},
+    };
+
+    // Explicit reference encoders do not require an owned decoder or value helper.
+    #[derive(RustSpec)]
+    struct Explicit(u32);
+    impl ReprC for Explicit {
+        type CType = u32;
+    }
+    unsafe impl<'a> SoftEncodeMutUnchecked<'a> for Explicit {
+        type SoftStore = ();
+        unsafe fn soft_encode_mut_unchecked<'itm>(
+            &'a mut self,
+            _: &'itm mut (),
+        ) -> <&'a mut Self as ReprC>::CType
+        where
+            'a: 'itm,
+        {
+            co3::reference::CSoftRefMut::from_mut(&mut self.0)
+        }
+    }
+    unsafe impl<'a> SoftEncodeMut<'a> for Explicit {
+        type Store = ();
+        fn soft_encode_mut<'itm>(
+            &'a mut self,
+            _: &'itm mut (),
+        ) -> co3::encode_repr::Encoded<&'a mut Self>
+        where
+            'a: 'itm,
+        {
+            co3::reference::CSoftRefMut::from_mut(&mut self.0)
+        }
+    }
+
+    #[test]
+    fn explicit_sized_mutable_reference_encoder_needs_no_owned_decoder() {
+        let mut value = Explicit(41);
+        let encoded = co3::soft_encode(&mut value, &mut Default::default());
+        unsafe { encoded.as_ptr().write(43) };
+        assert_eq!(value.0, 43);
+    }
+
+    // A custom unstable DST can still supply its own reference encoder.
+    #[derive(RustSpec)]
+    struct MutSliceView([u32]);
+    impl ReprC for MutSliceView {
+        type CType = [u32];
+    }
+    unsafe impl<'a> SoftEncodeMutUnchecked<'a> for MutSliceView {
+        type SoftStore = ();
+        unsafe fn soft_encode_mut_unchecked<'itm>(
+            &'a mut self,
+            _: &'itm mut (),
+        ) -> <&'a mut Self as ReprC>::CType
+        where
+            'a: 'itm,
+        {
+            let inner = unsafe { co3::encode_unchecked(&mut self.0) };
+            unsafe {
+                co3::wide::CSoftWideRefMut::<Self, true>::from_raw_parts_mut(
+                    inner.as_ptr(),
+                    inner.metadata(),
+                )
+            }
+        }
+    }
+    unsafe impl<'a> SoftEncodeMut<'a> for MutSliceView {
+        type Store = ();
+        fn soft_encode_mut<'itm>(
+            &'a mut self,
+            _: &'itm mut (),
+        ) -> co3::encode_repr::Encoded<&'a mut Self>
+        where
+            'a: 'itm,
+        {
+            let inner = co3::encode(&mut self.0);
+            unsafe {
+                co3::wide::CSoftWideRefMut::<Self, true>::from_raw_parts_mut(
+                    inner.as_ptr(),
+                    inner.metadata(),
+                )
+            }
+        }
+    }
+    #[test]
+    fn explicit_unsized_mutable_encoder_needs_no_value_helper() {
+        let mut values = [23_u32];
+        let view = unsafe { &mut *(values.as_mut_slice() as *mut [u32] as *mut MutSliceView) };
+        let encoded = co3::soft_encode(view, &mut Default::default());
+        unsafe { encoded.as_ptr().write(29) };
+        assert_eq!(values, [29]);
+    }
+
+    #[test]
+    fn wide_mutable_wrappers_delegate_to_inner_encoder() {
+        let mut values = [vec![3_u32]];
+        let wrapped: &mut core::mem::ManuallyDrop<[Vec<u32>]> = unsafe {
+            &mut *(values.as_mut_slice() as *mut [Vec<u32>]
+                as *mut core::mem::ManuallyDrop<[Vec<u32>]>)
+        };
+        let mut store = Default::default();
+        let encoded = co3::soft_encode(&mut *wrapped, &mut store);
+        assert_eq!(encoded.metadata(), 1);
+        assert_eq!(store.sync(), Some(()));
+        assert_eq!(values[0], [3]);
+
+        let mut values = [true];
+        let wrapped: &mut core::cell::Cell<[bool]> = unsafe {
+            &mut *(values.as_mut_slice() as *mut [bool] as *mut core::cell::Cell<[bool]>)
+        };
+        let mut store = Default::default();
+        let encoded = co3::soft_encode(&mut *wrapped, &mut store);
+        unsafe { *encoded.as_ptr() = co3::primitives::CBool::FALSE };
+        assert_eq!(store.sync(), Some(()));
+        assert_eq!(values, [false]);
+
+        let mut values = [true];
+        let wrapped: &mut core::cell::UnsafeCell<[bool]> = unsafe {
+            &mut *(values.as_mut_slice() as *mut [bool] as *mut core::cell::UnsafeCell<[bool]>)
+        };
+        let mut store = Default::default();
+        let encoded = co3::soft_encode(&mut *wrapped, &mut store);
+        unsafe { *encoded.as_ptr() = co3::primitives::CBool::FALSE };
+        assert_eq!(store.sync(), Some(()));
+        assert_eq!(values, [false]);
+    }
+}

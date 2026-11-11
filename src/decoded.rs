@@ -1957,3 +1957,159 @@ where
         Borrowed::<T>::soft_decode_unchecked(Borrowed::new(source), store)
     })
 }
+
+#[cfg(all(test, feature = "alloc", feature = "derive"))]
+mod tests {
+    use co3::{
+        ReprC,
+        borrow::Borrow,
+        reference::{CSoftRef, CSoftRefMut},
+        rust_spec::RustSpec,
+        stored::{DecodeMove, SoftDecodeMut, SoftDecodeRef, Store},
+    };
+    use static_assertions::assert_not_impl_any;
+
+    // Reference-only downstream decoding must not require Borrow or DecodeMove.
+    #[derive(RustSpec)]
+    struct ReferenceOnly(u8);
+    impl ReprC for ReferenceOnly {
+        type CType = u8;
+    }
+
+    #[derive(Default)]
+    struct SharedStore(Option<ReferenceOnly>);
+    impl Store for SharedStore {
+        fn sync(self) -> Option<()> {
+            Some(())
+        }
+    }
+
+    unsafe impl<'d> SoftDecodeRef<'d> for ReferenceOnly {
+        type Store = SharedStore;
+
+        unsafe fn soft_decode_ref<'itm: 'd>(
+            source: <&'d Self as ReprC>::CType,
+            store: &'itm mut SharedStore,
+        ) -> Option<&'d Self> {
+            let value = *unsafe { source.into_ref()? };
+            if value == 0 {
+                return None;
+            }
+            Some(store.0.insert(Self(value)))
+        }
+
+        unsafe fn soft_decode_ref_unchecked<'itm: 'd>(
+            source: <&'d Self as ReprC>::CType,
+            store: &'itm mut SharedStore,
+        ) -> &'d Self {
+            let value = *unsafe { source.into_ref().unwrap_unchecked() };
+            store.0.insert(Self(value))
+        }
+    }
+
+    #[derive(Default)]
+    struct MutableStore {
+        source: Option<core::ptr::NonNull<u8>>,
+        value: Option<ReferenceOnly>,
+    }
+    impl Store for MutableStore {
+        fn sync(self) -> Option<()> {
+            if let (Some(source), Some(value)) = (self.source, self.value) {
+                // The decode contract keeps the foreign storage exclusively accessible through sync.
+                unsafe { source.as_ptr().write(value.0) };
+            }
+            Some(())
+        }
+    }
+
+    unsafe impl<'d> SoftDecodeMut<'d> for ReferenceOnly {
+        type Store = MutableStore;
+
+        unsafe fn soft_decode_mut<'itm: 'd>(
+            source: <&'d mut Self as ReprC>::CType,
+            store: &'itm mut Self::Store,
+        ) -> Option<&'d mut Self> {
+            let source = unsafe { source.into_mut()? };
+            if *source == 0 {
+                return None;
+            }
+            let value = ReferenceOnly(*source);
+            store.source = Some(core::ptr::NonNull::from(source));
+            Some(store.value.insert(value))
+        }
+
+        unsafe fn soft_decode_mut_unchecked<'itm: 'd>(
+            source: <&'d mut Self as ReprC>::CType,
+            store: &'itm mut Self::Store,
+        ) -> &'d mut Self {
+            let source = unsafe { source.into_mut().unwrap_unchecked() };
+            let value = ReferenceOnly(*source);
+            store.source = Some(core::ptr::NonNull::from(source));
+            store.value.insert(value)
+        }
+    }
+
+    #[test]
+    fn downstream_shared_decoder_is_used_without_owned_decoding() {
+        assert_not_impl_any!(ReferenceOnly: Borrow, DecodeMove<'static>);
+        let source = 7;
+        let mut store = Default::default();
+        let value =
+            unsafe { co3::soft_decode::<&ReferenceOnly>(CSoftRef::from_ref(&source), &mut store) }
+                .unwrap();
+        assert_eq!(value.0, 7);
+        store.sync().unwrap();
+
+        let mut store = Default::default();
+        assert!(
+            unsafe { co3::soft_decode::<&ReferenceOnly>(CSoftRef::null(), &mut store) }.is_none()
+        );
+        let mut store = Default::default();
+        let zero = 0;
+        assert!(
+            unsafe { co3::soft_decode::<&ReferenceOnly>(CSoftRef::from_ref(&zero), &mut store) }
+                .is_none()
+        );
+        // Exercise unchecked dispatch with a valid source as well.
+        let mut store = Default::default();
+        let value = unsafe {
+            co3::soft_decode_unchecked::<&ReferenceOnly>(CSoftRef::from_ref(&source), &mut store)
+        };
+        assert_eq!(value.0, 7);
+    }
+
+    #[test]
+    fn downstream_mutable_decoder_synchronizes_the_source() {
+        for unchecked in [false, true] {
+            let mut source = 7;
+            let mut store = Default::default();
+            let carrier = CSoftRefMut::from_mut(&mut source);
+            let value = if unchecked {
+                unsafe { co3::soft_decode_unchecked::<&mut ReferenceOnly>(carrier, &mut store) }
+            } else {
+                unsafe { co3::soft_decode::<&mut ReferenceOnly>(carrier, &mut store) }.unwrap()
+            };
+            value.0 = 11;
+            store.sync().unwrap();
+            assert_eq!(source, 11);
+        }
+        let mut store = Default::default();
+        assert!(
+            unsafe { co3::soft_decode::<&mut ReferenceOnly>(CSoftRefMut::null(), &mut store) }
+                .is_none()
+        );
+    }
+
+    #[test]
+    fn mutable_slice_decode_writes_changes_back() {
+        use co3::{tuple::Tuple2, wide::CSoftWideRefMut};
+
+        let mut values = [Tuple2(1_u8, 2_u8)];
+        let source = CSoftWideRefMut::from_mut(&mut values[..]);
+        let mut store = Default::default();
+        let decoded = unsafe { co3::soft_decode::<&mut [(u8, u8)]>(source, &mut store) }.unwrap();
+        decoded[0] = (3, 4);
+        assert_eq!(store.sync(), Some(()));
+        assert_eq!(values[0], Tuple2(3, 4));
+    }
+}

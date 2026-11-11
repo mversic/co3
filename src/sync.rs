@@ -637,15 +637,8 @@ pub struct ArrayStore<D, const N: usize>(pub(crate) [D; N]);
 
 #[cfg(all(test, feature = "alloc"))]
 mod owned_encode_state_tests {
-    extern crate std;
-
-    use std::{
-        panic::{AssertUnwindSafe, catch_unwind},
-        sync::{
-            Arc,
-            atomic::{AtomicUsize, Ordering},
-        },
-    };
+    use alloc::sync::Arc;
+    use core::sync::atomic::{AtomicUsize, Ordering};
 
     use super::*;
 
@@ -707,6 +700,21 @@ mod owned_encode_state_tests {
         }
     }
 
+    struct CheckCleanup {
+        decodes: Arc<AtomicUsize>,
+        drops: Arc<AtomicUsize>,
+        second_decodes: Arc<AtomicUsize>,
+    }
+
+    impl Drop for CheckCleanup {
+        fn drop(&mut self) {
+            assert_eq!(self.decodes.load(Ordering::SeqCst), 1);
+            // One temporary and the original source were dropped.
+            assert_eq!(self.drops.load(Ordering::SeqCst), 2);
+            assert_eq!(self.second_decodes.load(Ordering::SeqCst), 0);
+        }
+    }
+
     macro_rules! state_tests {
         ($module:ident, $store:ident) => {
             mod $module {
@@ -741,24 +749,21 @@ mod owned_encode_state_tests {
                 }
 
                 #[test]
+                #[should_panic(expected = "build failed")]
                 fn reuse_then_builder_panic_cannot_reuse_old_carrier() {
-                    let mut first = Tracked::new();
-                    let mut second = Tracked::new();
-                    let decodes = first.decodes.clone();
-                    let drops = first.drops.clone();
-                    let second_decodes = second.decodes.clone();
-                    assert!(
-                        catch_unwind(AssertUnwindSafe(move || {
-                            let mut store = $store::<Tracked, ()>::default();
-                            store.encode(&mut first, |source, _| source.carrier());
-                            store.encode(&mut second, |_, _| panic!("build failed"));
-                        }))
-                        .is_err()
-                    );
-                    assert_eq!(decodes.load(Ordering::SeqCst), 1);
-                    // One temporary and the original source were dropped.
-                    assert_eq!(drops.load(Ordering::SeqCst), 2);
-                    assert_eq!(second_decodes.load(Ordering::SeqCst), 0);
+                    let first = Tracked::new();
+                    let second = Tracked::new();
+                    // This guard runs after the store and both moved sources unwind.
+                    let _cleanup = CheckCleanup {
+                        decodes: first.decodes.clone(),
+                        drops: first.drops.clone(),
+                        second_decodes: second.decodes.clone(),
+                    };
+                    let mut first = first;
+                    let mut second = second;
+                    let mut store = $store::<Tracked, ()>::default();
+                    store.encode(&mut first, |source, _| source.carrier());
+                    store.encode(&mut second, |_, _| panic!("build failed"));
                 }
 
                 #[test]
@@ -822,29 +827,32 @@ impl<T: ReprC<CType: Sized>, S: Store> Store for RefVecEncodeStore<T, S> {
 
 #[cfg(test)]
 mod tests {
-    extern crate std;
-
-    use std::{cell::RefCell, vec::Vec};
+    #[cfg(feature = "alloc")]
+    use alloc::vec::Vec;
+    use core::cell::RefCell;
 
     use super::{ArrayStore, RefMutSizedDecodeStore, RefSizedDecodeStore, RefSizedEncodeStore, Store};
 
     #[test]
     fn aggregate_stores_sync_every_child_in_order() {
         struct Probe<'a> {
-            calls: &'a RefCell<Vec<usize>>,
+            calls: &'a RefCell<([usize; 3], usize)>,
             index: usize,
             fail: bool,
         }
 
         impl Store for Probe<'_> {
             fn sync(self) -> Option<()> {
-                self.calls.borrow_mut().push(self.index);
+                let mut calls = self.calls.borrow_mut();
+                let next = calls.1;
+                calls.0[next] = self.index;
+                calls.1 += 1;
                 (!self.fail).then_some(())
             }
         }
 
         for failure in [None, Some(0), Some(1), Some(2)] {
-            let calls = RefCell::new(Vec::new());
+            let calls = RefCell::new(([0; 3], 0));
             let probe = |index| Probe {
                 calls: &calls,
                 index,
@@ -853,18 +861,18 @@ mod tests {
             let expected = failure.is_none().then_some(());
 
             assert_eq!((probe(0), (probe(1), probe(2))).sync(), expected);
-            assert_eq!(*calls.borrow(), [0, 1, 2]);
-            calls.borrow_mut().clear();
+            assert_eq!(*calls.borrow(), ([0, 1, 2], 3));
+            *calls.borrow_mut() = ([0; 3], 0);
 
             assert_eq!(ArrayStore([probe(0), probe(1), probe(2)]).sync(), expected);
-            assert_eq!(*calls.borrow(), [0, 1, 2]);
+            assert_eq!(*calls.borrow(), ([0, 1, 2], 3));
 
             #[cfg(feature = "alloc")]
             {
-                calls.borrow_mut().clear();
+                *calls.borrow_mut() = ([0; 3], 0);
                 let stores = Vec::from([probe(0), probe(1), probe(2)]).into_boxed_slice();
                 assert_eq!(stores.sync(), expected);
-                assert_eq!(*calls.borrow(), [0, 1, 2]);
+                assert_eq!(*calls.borrow(), ([0, 1, 2], 3));
             }
         }
 
@@ -891,17 +899,21 @@ mod tests {
     }
 
     #[test]
+    #[should_panic(expected = "encoding failed")]
     fn failed_build_clears_carrier_and_allows_reuse() {
-        let mut store = RefSizedEncodeStore::<u32, ()>::default();
-        store.encode(|_| 7);
-        let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-            store.encode(|_| panic!("encoding failed"));
-        }));
-        assert!(result.is_err());
-        assert!(store.ctype.is_none());
+        struct CheckReuse(RefSizedEncodeStore<u32, ()>);
 
-        let encoded = store.encode(|_| 11);
-        assert_eq!(unsafe { *encoded.as_ptr() }, 11);
+        impl Drop for CheckReuse {
+            fn drop(&mut self) {
+                assert!(self.0.ctype.is_none());
+                let encoded = self.0.encode(|_| 11);
+                assert_eq!(unsafe { *encoded.as_ptr() }, 11);
+            }
+        }
+
+        let mut store = CheckReuse(RefSizedEncodeStore::default());
+        store.0.encode(|_| 7);
+        store.0.encode(|_| panic!("encoding failed"));
     }
 
     #[test]

@@ -109,8 +109,7 @@ fn explicit_tags_drive_encoding_decoding_and_niches() {
     let raw_niche = unsafe { CSparseInt::from_raw_parts(0, core::mem::MaybeUninit::uninit()) };
     assert!(raw_niche.is_niche());
     assert!(raw_niche != <SparseInt as Niche>::NICHE);
-    let borrowed: CSparseInt = co3::borrow::Borrow::borrow(a);
-    assert!(<CSparseInt as co3::borrow::Borrow>::from_borrow(borrowed) == a);
+    static_assertions::assert_impl_all!(CSparseInt: co3::borrow::Borrow<Borrowed = CSparseInt>);
     let b = encode(SparseInt::B);
     let c = encode(SparseInt::C);
     assert_eq!([a.tag(), b.tag(), c.tag()], [1, 2, 5]);

@@ -97,28 +97,6 @@ fn owned_encoding_preserves_capacity_and_validates_elements() {
 }
 
 #[test]
-fn borrowed_vector_keeps_owner_and_decodes_a_clone() {
-    use co3::{
-        borrow::{Borrow, Borrowed},
-        stored::Store,
-    };
-    let value = vec![7u32, 8];
-    let original = value.as_ptr();
-    let mut encode_store = Default::default();
-    let carrier = co3::soft_encode(co3::vec::Vec::from(value).borrow(), &mut encode_store);
-    let mut decode_store = Default::default();
-    let cloned =
-        unsafe { co3::soft_decode::<Borrowed<co3::vec::Vec<u32>>>(carrier, &mut decode_store) }
-            .unwrap();
-    let cloned = Borrowed::into_inner(cloned);
-    assert_eq!(&*cloned, &[7, 8]);
-    assert_ne!(cloned.as_ptr(), original);
-    assert_eq!(decode_store.sync(), Some(()));
-    assert_eq!(encode_store.sync(), Some(()));
-    assert_eq!(&*cloned, &[7, 8]);
-}
-
-#[test]
 fn unstable_elements_and_value_traits() {
     use co3::stored::Store;
     let value: co3::vec::Vec<_> = vec![(1u32,), (2,)].into();

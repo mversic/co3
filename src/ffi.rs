@@ -606,6 +606,7 @@ unsafe impl crate::encode_repr::EncodeRepr for c_void where Self: Sized { type E
 
 #[cfg(test)]
 mod tests {
+
     use core::cell::{Cell, UnsafeCell};
 
     use static_assertions::{assert_impl_all, assert_not_impl_any};
@@ -706,5 +707,76 @@ mod tests {
         let encoded = crate::encode(original.clone());
         let decoded: CString = unsafe { crate::decode(encoded) }.unwrap();
         assert_eq!(decoded, original);
+    }
+
+    #[cfg(all(feature = "alloc", feature = "derive"))]
+    use alloc::string::String;
+
+    #[cfg(all(feature = "alloc", feature = "derive"))]
+    #[derive(Clone, Copy, RustSpec, ReprC)]
+    #[repr(C)]
+    struct AliasFields<T>(c_int, T, c_long);
+
+    #[cfg(all(feature = "alloc", feature = "derive"))]
+    #[test]
+    fn alias_fields_preserve_borrowed_types_and_values() {
+        let view = co3::borrow::Borrow::borrow(AliasFields(c_int::new(3), 4_u32, c_long::new(5)));
+        let borrowed_lowered = co3::encode(view);
+        let _: c_int = borrowed_lowered.0;
+        let _: c_long = borrowed_lowered.2;
+        let view = co3::borrow::Borrow::borrow(AliasFields(c_int::new(3), 4_u32, c_long::new(5)));
+        let recovered: AliasFields<u32> = co3::borrow::Borrow::from_borrow(view);
+        assert_eq!(
+            (recovered.0, recovered.1, recovered.2),
+            (c_int::new(3), 4, c_long::new(5))
+        );
+    }
+
+    #[cfg(all(feature = "alloc", feature = "derive"))]
+    #[derive(Clone, Copy, RustSpec, ReprC)]
+    #[repr_c(identity)]
+    #[repr(C)]
+    struct Value(u8);
+
+    #[cfg(all(feature = "alloc", feature = "derive"))]
+    extern "C" fn borrowed_return() -> co3::borrow::Borrowed<co3::boxed::CBox<Value>> {
+        co3::boxed::CBox::null().into()
+    }
+
+    #[cfg(all(feature = "alloc", feature = "derive"))]
+    co3::ffi! {
+        #![unsafe(extern("C"))]
+        type BorrowedReturn = raw extern "C" fn() -> Box<Value>;
+        type InteriorUnpacked = extern "C" fn(#[unpack(co3::borrow::Borrowed<*mut core::cell::UnsafeCell<u8>>, usize)] &[core::cell::Cell<u8>]) -> usize;
+        type RegularUnpacked = extern "C" fn(#[unpack(_, _)] &mut [u8]) -> usize;
+        type Composite = (String, raw fn(String));
+
+        fn interior_slice(#[unpack(co3::borrow::Borrowed<*mut core::cell::UnsafeCell<u8>>, usize)] values: &[core::cell::Cell<u8>]) -> usize;
+    }
+
+    #[cfg(all(feature = "alloc", feature = "derive"))]
+    #[test]
+    fn generated_callbacks_use_borrowed_carriers() {
+        let _: BorrowedReturn = borrowed_return;
+        static_assertions::assert_type_eq_all!(
+            InteriorUnpacked,
+            Option<
+                unsafe extern "C" fn(
+                    co3::borrow::Borrowed<*mut core::cell::UnsafeCell<u8>>,
+                    usize,
+                ) -> usize,
+            >
+        );
+        static_assertions::assert_type_eq_all!(
+            RegularUnpacked,
+            Option<unsafe extern "C" fn(co3::borrow::Borrowed<*mut u8>, usize) -> usize>
+        );
+        static_assertions::assert_type_eq_all!(
+            Composite,
+            <(
+                String,
+                unsafe extern "C" fn(co3::borrow::Borrowed<co3::utf8::Utf8String>)
+            ) as ReprC>::CType
+        );
     }
 }
