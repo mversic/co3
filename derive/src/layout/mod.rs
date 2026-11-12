@@ -11,9 +11,8 @@ use crate::{
 };
 
 mod attr;
-mod borrow;
+pub(crate) mod borrow;
 mod ctype;
-mod field;
 mod fields;
 mod item;
 mod niche;
@@ -29,8 +28,6 @@ pub(super) struct ReprCAttrs {
     pub(super) is_valid: Option<syn::ExprClosure>,
     pub(super) is_identity: bool,
     pub(super) is_move: bool,
-    pub(super) is_transparent: bool,
-    pub(super) is_view: bool,
     pub(super) is_wide_data: bool,
     pub(super) allow_zero_tag: bool,
 }
@@ -65,22 +62,6 @@ fn parse_repr_c_attrs(attrs: &[Attribute]) -> syn::Result<ReprCAttrs> {
                     return Err(meta.error("Duplicate `move` within attribute"));
                 }
                 repr_c.is_move = true;
-                return Ok(());
-            }
-
-            if meta.path.is_ident("transparent") {
-                if repr_c.is_transparent {
-                    return Err(meta.error("Duplicate `transparent` within attribute"));
-                }
-                repr_c.is_transparent = true;
-                return Ok(());
-            }
-
-            if meta.path.is_ident("view") {
-                if repr_c.is_view {
-                    return Err(meta.error("Duplicate `view` within attribute"));
-                }
-                repr_c.is_view = true;
                 return Ok(());
             }
 
@@ -128,8 +109,6 @@ fn parse_repr_c_attrs(attrs: &[Attribute]) -> syn::Result<ReprCAttrs> {
         && repr_c.is_valid.is_none()
         && !repr_c.is_identity
         && !repr_c.is_move
-        && !repr_c.is_transparent
-        && !repr_c.is_view
         && !repr_c.is_wide_data
         && !repr_c.allow_zero_tag
     {
@@ -184,63 +163,6 @@ pub(crate) fn derive_repr_c(input: &syn::DeriveInput) -> syn::Result<TokenStream
     let mut variant_attrs = Vec::new();
     let mut zero_discriminant_check = TokenStream::new();
 
-    if repr_c_attrs.is_transparent {
-        if repr_c_attrs.niche_value.is_some() {
-            push_error(
-                &mut errors,
-                syn::Error::new_spanned(
-                    &input.ident,
-                    "`repr_c(transparent)` cannot be combined with `NICHE`",
-                ),
-            );
-        }
-        if repr_c_attrs.is_valid.is_some() {
-            push_error(
-                &mut errors,
-                syn::Error::new_spanned(
-                    &input.ident,
-                    "`repr_c(transparent)` cannot be combined with `is_valid`",
-                ),
-            );
-        }
-        if repr_c_attrs.is_identity || repr_c_attrs.is_view || repr_c_attrs.is_wide_data {
-            return Err(syn::Error::new_spanned(
-                &input.ident,
-                "`repr_c(transparent)` cannot be combined with other representation options",
-            ));
-        }
-        let fieldless_enum = matches!(&input.data, syn::Data::Enum(data)
-            if !data.variants.is_empty()
-                && data.variants.iter().all(|variant| matches!(variant.fields, syn::Fields::Unit)));
-        let fields = match &input.data {
-            syn::Data::Struct(data) => Some(&data.fields),
-            syn::Data::Enum(data) if data.variants.len() == 1 || fieldless_enum => {
-                Some(&data.variants[0].fields)
-            }
-            _ => None,
-        };
-        let Some(fields) = fields else {
-            return Err(syn::Error::new_spanned(
-                &input.ident,
-                "`repr_c(transparent)` requires a struct, a fieldless enum, or a single-variant enum",
-            ));
-        };
-        if fields.len() != 1 && !(matches!(input.data, syn::Data::Enum(_)) && fields.is_empty()) {
-            return Err(syn::Error::new_spanned(
-                &input.ident,
-                "`repr_c(transparent)` requires exactly one field (or a fieldless enum variant)",
-            ));
-        }
-        if matches!(input.data, syn::Data::Enum(_))
-            && !fieldless_enum
-            && !matches!(repr_attr, Some(ReprKind::Transparent))
-        {
-            return Err(syn::Error::new_spanned(
-                &input.ident,
-                "`repr_c(transparent)` on a data-carrying enum requires `#[repr(transparent)]`",
-            ));
-        }
-    }
     if repr_c_attrs.is_identity {
         if repr_c_attrs.is_move {
             push_error(
@@ -298,15 +220,7 @@ pub(crate) fn derive_repr_c(input: &syn::DeriveInput) -> syn::Result<TokenStream
                 ),
             );
         }
-        if repr_c_attrs.is_view {
-            push_error(
-                &mut errors,
-                syn::Error::new_spanned(
-                    &input.ident,
-                    "`repr_c(identity)` cannot be combined with `view`",
-                ),
-            );
-        }
+
         if repr_c_attrs.is_wide_data {
             push_error(
                 &mut errors,
@@ -399,10 +313,7 @@ pub(crate) fn derive_repr_c(input: &syn::DeriveInput) -> syn::Result<TokenStream
                     let err_msg = "`NICHE` is only supported on types";
                     push_error(&mut errors, syn::Error::new(variant.span(), err_msg));
                 }
-                if variant_repr_c_attrs.is_view {
-                    let err_msg = "`view` is only supported on types";
-                    push_error(&mut errors, syn::Error::new(variant.span(), err_msg));
-                }
+
                 if variant_repr_c_attrs.is_identity {
                     let err_msg = "`repr_c(identity)` is only supported on types";
                     push_error(&mut errors, syn::Error::new(variant.span(), err_msg));
@@ -502,26 +413,16 @@ pub(crate) fn derive_repr_c(input: &syn::DeriveInput) -> syn::Result<TokenStream
         return Err(errors);
     }
 
-    let type_checks = (!repr_c_attrs.is_view && !repr_c_attrs.is_wide_data)
-        .then(|| crate::type_checks::TypeChecks::for_derive(input));
-
-    if repr_c_attrs.is_transparent
-        && !matches!(&input.data, syn::Data::Enum(data) if data.variants.iter().all(|variant| variant.fields.is_empty()))
-    {
-        let item = field::derive_field_repr_c(input, repr_attr, &repr_c_attrs);
-        let wide = wide::expand(input, repr_attr)?;
-        let nul_terminated = nul_terminated::expand(input, repr_attr)?;
-        let ctype_impl = gen_source_ctype_impl(input, &repr_c_attrs);
-        return Ok(quote! { #type_checks #item #wide #nul_terminated #ctype_impl });
-    }
+    let type_checks =
+        (!repr_c_attrs.is_wide_data).then(|| crate::type_checks::TypeChecks::for_derive(input));
 
     let tokens = match &input.data {
         syn::Data::Struct(_) => {
             let item = derive_item(repr_attr, repr_alignment, input, &repr_c_attrs, &[]);
-            let wide = (!repr_c_attrs.is_view && !repr_c_attrs.is_wide_data)
+            let wide = (!repr_c_attrs.is_wide_data)
                 .then(|| wide::expand(input, repr_attr))
                 .transpose()?;
-            let nul_terminated = (!repr_c_attrs.is_view && !repr_c_attrs.is_wide_data)
+            let nul_terminated = (!repr_c_attrs.is_wide_data)
                 .then(|| nul_terminated::expand(input, repr_attr))
                 .transpose()?;
             quote! { #item #wide #nul_terminated }
@@ -547,13 +448,7 @@ pub(crate) fn derive_repr_c(input: &syn::DeriveInput) -> syn::Result<TokenStream
                 .iter()
                 .all(|v| matches!(v.fields, syn::Fields::Unit))
             {
-                derive_fieldless_enum(
-                    repr_attr,
-                    repr_alignment,
-                    input,
-                    repr_c_attrs.is_transparent,
-                    repr_c_attrs.is_move,
-                )
+                derive_fieldless_enum(repr_attr, repr_alignment, input, repr_c_attrs.is_move)
             } else {
                 derive_item(
                     repr_attr,
@@ -580,17 +475,21 @@ pub(crate) fn derive_repr_c(input: &syn::DeriveInput) -> syn::Result<TokenStream
         };
 
         if repr_c_attrs.is_wide_data {
+            // The enclosing derive already supplies the anonymous scope. Its
+            // carrier's Wide impl also needs to name this header's companion.
             Ok(body)
         } else {
             Ok(quote! {
-                #body
+                const _: () = {
+                    #body
+                };
             })
         }
     }
 }
 
 fn gen_source_ctype_impl(input: &syn::DeriveInput, attrs: &ReprCAttrs) -> TokenStream {
-    if attrs.is_identity || attrs.is_view || attrs.is_wide_data {
+    if attrs.is_identity || attrs.is_wide_data {
         return quote! {};
     }
 
@@ -614,12 +513,15 @@ fn gen_source_ctype_impl(input: &syn::DeriveInput, attrs: &ReprCAttrs) -> TokenS
     let speculative = speculative_marker(generics.params.is_empty());
     let (last_field_sized_bound, omit_c_fn_impls) =
         ctype::c_fn_last_field_bounds(&field_types, generics);
-    let field_bounds = field_types.iter().map(|field_type| {
-        let speculative = fields::FieldType::new(field_type, generics)
-            .concrete
-            .then_some(quote!(for<'_co3_field>));
-        quote!(#speculative #field_type: co3::CType,)
-    }).collect::<Vec<_>>();
+    let field_bounds = field_types
+        .iter()
+        .map(|field_type| {
+            let speculative = fields::FieldType::new(field_type, generics)
+                .concrete
+                .then_some(quote!(for<'_co3_field>));
+            quote!(#speculative #field_type: co3::CType,)
+        })
+        .collect::<Vec<_>>();
 
     let c_fn_impls = (!omit_c_fn_impls).then(|| {
         quote! {
@@ -711,23 +613,8 @@ fn validate_fields_no_ffi_type_attr(fields: &syn::Fields, errors: &mut Option<sy
 /// Proc macros cannot resolve type aliases, so aliases deliberately remain subject to normal
 /// lowering. Direct `PhantomData` fields are always zero-sized and alignment-1.
 pub(super) fn is_phantom_data(ty: &syn::Type) -> bool {
-    let syn::Type::Path(type_path) = ty else {
-        return false;
-    };
-    if type_path.qself.is_some() {
-        return false;
-    }
-
-    let segments = &type_path.path.segments;
-    match segments.len() {
-        1 => segments[0].ident == "PhantomData",
-        3 => {
-            (segments[0].ident == "core" || segments[0].ident == "std")
-                && segments[1].ident == "marker"
-                && segments[2].ident == "PhantomData"
-        }
-        _ => false,
-    }
+    crate::known_type::recognize(ty)
+        .is_some_and(|known| known.kind == crate::known_type::Kind::PhantomData)
 }
 
 /// Check whether a type mentions any type, lifetime, or const parameter.
@@ -894,58 +781,21 @@ pub(super) fn is_exhaustive_enum(num_variants: usize, repr: &syn::Type) -> bool 
     num_variants as u64 == max_values
 }
 
-fn generic_param_idents<'a>(
-    generics: impl IntoIterator<Item = &'a syn::GenericParam>,
-) -> impl Iterator<Item = TokenStream> {
-    generics.into_iter().map(|param| match param {
-        syn::GenericParam::Lifetime(syn::LifetimeParam { lifetime, .. }) => quote! { #lifetime },
-        syn::GenericParam::Type(syn::TypeParam { ident, .. }) => quote! { #ident },
-        syn::GenericParam::Const(syn::ConstParam { ident, .. }) => quote! { #ident },
-    })
-}
-
 #[cfg(test)]
 mod tests {
     use super::{derive_repr_c, is_parametrized};
 
     #[test]
-    fn transparent_data_enum_requires_transparent_rust_repr() {
-        for repr in [
-            quote::quote!(),
-            quote::quote!(#[repr(C)]),
-            quote::quote!(#[repr(u8)]),
-        ] {
-            let input = syn::parse_quote! {
-                #repr
-                #[repr_c(transparent)]
-                enum Wrapper { Value(u32) }
-            };
-            assert_eq!(
-                derive_repr_c(&input).unwrap_err().to_string(),
-                "`repr_c(transparent)` on a data-carrying enum requires `#[repr(transparent)]`",
-            );
-        }
+    fn removed_transparent_mapping_is_rejected() {
         let input = syn::parse_quote! {
             #[repr(transparent)]
             #[repr_c(transparent)]
-            enum Wrapper { Value(u32) }
+            struct Wrapper(u32);
         };
-        assert!(derive_repr_c(&input).is_ok());
-    }
-
-    #[test]
-    fn transparent_fieldless_enum_keeps_its_exception() {
-        let unit = syn::parse_quote! {
-            #[repr_c(transparent)]
-            enum Unit { Only }
-        };
-        let tags = syn::parse_quote! {
-            #[repr(u8)]
-            #[repr_c(transparent)]
-            enum Tags { First = 1, Second = 2 }
-        };
-        assert!(derive_repr_c(&unit).is_ok());
-        assert!(derive_repr_c(&tags).is_ok());
+        assert_eq!(
+            derive_repr_c(&input).unwrap_err().to_string(),
+            "unknown type kind"
+        );
     }
 
     #[test]
@@ -1088,7 +938,7 @@ mod tests {
                 struct Generic<T>(T);
             ),
             syn::parse_quote!(
-                #[repr_c(transparent)]
+                #[repr(transparent)]
                 struct Transparent(u32);
             ),
             syn::parse_quote!(

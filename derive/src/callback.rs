@@ -363,16 +363,15 @@ fn add_generic_companion_bounds(
                 ));
             }
         } else {
-            predicates.push(parse_quote!(#ty: co3::borrow::Borrow));
-            let borrowed = quote!(<#ty as co3::borrow::Borrow>::Borrowed);
+            let borrowed = quote!(#ty);
             let store_bound =
                 (!soft_for_arg(&arg.attrs)).then(|| quote!(, Store: co3::stored::EmptyStore));
             if let Some(lifetime) = decode_lifetime {
                 predicates
-                    .push(parse_quote!(#borrowed: co3::Decode<#lifetime #store_bound> + #lifetime));
+                    .push(parse_quote!(#borrowed: co3::borrow::BorrowedDecode<#lifetime #store_bound> + #lifetime));
             } else {
                 predicates.push(
-                    parse_quote!(for<'__co3_d> #borrowed: co3::Decode<'__co3_d #store_bound>),
+                    parse_quote!(for<'__co3_d> #borrowed: co3::borrow::BorrowedDecode<'__co3_d #store_bound>),
                 );
             }
         }
@@ -383,8 +382,9 @@ fn add_generic_companion_bounds(
         if fn_by_val {
             predicates.push(parse_quote!(#ty: co3::Encode<Store: co3::stored::EmptyStore>));
         } else {
-            predicates.push(parse_quote!(#ty: co3::borrow::Borrow));
-            predicates.push(parse_quote!(<#ty as co3::borrow::Borrow>::Borrowed: co3::Encode<Store: co3::stored::EmptyStore>));
+            predicates.push(
+                parse_quote!(#ty: co3::borrow::BorrowedEncode<Store: co3::stored::EmptyStore>),
+            );
         }
     }
     raw_sig

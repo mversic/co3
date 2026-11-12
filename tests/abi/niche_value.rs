@@ -492,7 +492,11 @@ fn fieldless_enum_explicit_discriminants_round_trip() {
         Some(FieldlessExplicitEnum::Five)
     );
     assert_eq!(
-        unsafe { co3::decode::<FieldlessExplicitEnum>(CFieldlessExplicitEnum::from_i8(1)) },
+        unsafe {
+            co3::decode::<FieldlessExplicitEnum>(
+                <FieldlessExplicitEnum as co3::ReprC>::CType::from_i8(1),
+            )
+        },
         None
     );
     // Zero is occupied, so the generated niche searches backward for an invalid tag.
@@ -511,10 +515,10 @@ fn fieldless_enum_carrier_conversions() {
     assert_not_impl_any!(Co3Ordering: From<i8>, TryFrom<i8>);
     assert_impl_all!(Ordering: TryFrom<Co3Ordering>);
     assert_not_impl_any!(Ordering: From<Co3Ordering>);
-    assert_not_impl_any!(CFieldlessExplicitEnum: From<FieldlessExplicitEnum>, TryFrom<FieldlessExplicitEnum>);
-    assert_not_impl_any!(FieldlessExplicitEnum: From<CFieldlessExplicitEnum>, TryFrom<CFieldlessExplicitEnum>);
-    assert_not_impl_any!(CFieldlessNoReprEnum: From<FieldlessNoReprEnum>, TryFrom<FieldlessNoReprEnum>);
-    assert_not_impl_any!(FieldlessNoReprEnum: From<CFieldlessNoReprEnum>, TryFrom<CFieldlessNoReprEnum>);
+    assert_not_impl_any!(<FieldlessExplicitEnum as co3::ReprC>::CType: From<FieldlessExplicitEnum>, TryFrom<FieldlessExplicitEnum>);
+    assert_not_impl_any!(FieldlessExplicitEnum: From<<FieldlessExplicitEnum as co3::ReprC>::CType>, TryFrom<<FieldlessExplicitEnum as co3::ReprC>::CType>);
+    assert_not_impl_any!(<FieldlessNoReprEnum as co3::ReprC>::CType: From<FieldlessNoReprEnum>, TryFrom<FieldlessNoReprEnum>);
+    assert_not_impl_any!(FieldlessNoReprEnum: From<<FieldlessNoReprEnum as co3::ReprC>::CType>, TryFrom<<FieldlessNoReprEnum as co3::ReprC>::CType>);
 
     assert_eq!(CBool::TRUE, encode(true));
     assert_eq!(CBool::FALSE, encode(false));
@@ -523,16 +527,31 @@ fn fieldless_enum_carrier_conversions() {
     assert_eq!(Co3Ordering::EQUAL, encode(Ordering::Equal));
     assert_eq!(Co3Ordering::GREATER, encode(Ordering::Greater));
     assert_eq!(Co3Ordering(-1), encode(Ordering::Less));
-    assert_eq!(CFieldlessExplicitEnum::Negative().tag(), -2);
-    assert_eq!(CFieldlessExplicitEnum::Zero().tag(), 0);
-    assert_eq!(CFieldlessExplicitEnum::Five().tag(), 5);
-    assert_eq!(CFieldlessExplicitEnum::Six().tag(), 6);
-    assert_eq!(CFieldlessNoReprEnum::A().tag(), 0);
-    assert_eq!(CFieldlessNoReprEnum::from_u8(1).tag(), 1);
-    assert_eq!(CFieldlessLargeEnum::from_u16(256).tag(), 256);
-    assert_eq!(CFieldlessNoReprEnum::B().tag(), 1);
-    assert_eq!(CFieldlessNoReprEnum::C().tag(), 2);
-    assert_eq!(CFieldlessNoReprEnum::D().tag(), 3);
+    assert_eq!(
+        <FieldlessExplicitEnum as co3::ReprC>::CType::Negative().tag(),
+        -2
+    );
+    assert_eq!(
+        <FieldlessExplicitEnum as co3::ReprC>::CType::Zero().tag(),
+        0
+    );
+    assert_eq!(
+        <FieldlessExplicitEnum as co3::ReprC>::CType::Five().tag(),
+        5
+    );
+    assert_eq!(<FieldlessExplicitEnum as co3::ReprC>::CType::Six().tag(), 6);
+    assert_eq!(<FieldlessNoReprEnum as co3::ReprC>::CType::A().tag(), 0);
+    assert_eq!(
+        <FieldlessNoReprEnum as co3::ReprC>::CType::from_u8(1).tag(),
+        1
+    );
+    assert_eq!(
+        <FieldlessLargeEnum as co3::ReprC>::CType::from_u16(256).tag(),
+        256
+    );
+    assert_eq!(<FieldlessNoReprEnum as co3::ReprC>::CType::B().tag(), 1);
+    assert_eq!(<FieldlessNoReprEnum as co3::ReprC>::CType::C().tag(), 2);
+    assert_eq!(<FieldlessNoReprEnum as co3::ReprC>::CType::D().tag(), 3);
     let explicit = encode(FieldlessExplicitEnum::Five);
     assert_eq!(explicit.0, 5);
     assert_eq!(
@@ -540,7 +559,11 @@ fn fieldless_enum_carrier_conversions() {
         Some(FieldlessExplicitEnum::Five)
     );
     assert_eq!(
-        unsafe { co3::decode::<FieldlessExplicitEnum>(CFieldlessExplicitEnum(1)) },
+        unsafe {
+            co3::decode::<FieldlessExplicitEnum>(
+                <FieldlessExplicitEnum as co3::ReprC>::CType::from_i8(1),
+            )
+        },
         None
     );
 
@@ -550,7 +573,11 @@ fn fieldless_enum_carrier_conversions() {
         Some(FieldlessNoReprEnum::C)
     );
     assert_eq!(
-        unsafe { co3::decode::<FieldlessNoReprEnum>(CFieldlessNoReprEnum(4)) },
+        unsafe {
+            co3::decode::<FieldlessNoReprEnum>(<FieldlessNoReprEnum as co3::ReprC>::CType::from_u8(
+                4,
+            ))
+        },
         None
     );
 }

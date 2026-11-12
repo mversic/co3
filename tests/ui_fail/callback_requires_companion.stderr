@@ -16,11 +16,13 @@ error[E0277]: the trait bound `(): CFnArg` is not satisfied
              CBool
              CBox<R>
              CNoRepr
-             CNoReprView
              COption<T>
              COptionSome<R>
+             COrdering
            and $N others
    = note: required for `extern "C" fn(())` to implement `ReprC`
+   = note: 1 redundant requirement hidden
+   = note: required for `co3::borrow::Borrowed<extern "C" fn(())>` to implement `ReprC`
    = note: this error originates in the macro `ffi` (in Nightly builds, run with -Z macro-backtrace for more info)
 
 error[E0277]: the trait bound `[u32; 2]: CFnReturn` is not satisfied
@@ -42,10 +44,12 @@ error[E0277]: the trait bound `[u32; 2]: CFnReturn` is not satisfied
              CBool
              CBox<R>
              CNoRepr
-             CNoReprView
              COption<T>
+             COptionSome<R>
            and $N others
    = note: required for `extern "C" fn() -> [u32; 2]` to implement `ReprC`
+   = note: 1 redundant requirement hidden
+   = note: required for `co3::borrow::Borrowed<extern "C" fn() -> [u32; 2]>` to implement `ReprC`
    = note: this error originates in the macro `ffi` (in Nightly builds, run with -Z macro-backtrace for more info)
 
 error[E0271]: type mismatch resolving `<Option<extern "C" fn(NoRepr)> as RustSpec>::Layout == Stable`
@@ -62,6 +66,8 @@ error[E0271]: type mismatch resolving `<Option<extern "C" fn(NoRepr)> as RustSpe
    |
    = note: required for `std::option::Option<extern "C" fn(NoRepr)>` to implement `CType`
    = note: required for `extern "C" fn(NoRepr)` to implement `ReprC`
+   = note: 1 redundant requirement hidden
+   = note: required for `co3::borrow::Borrowed<extern "C" fn(NoRepr)>` to implement `ReprC`
    = note: this error originates in the macro `ffi` (in Nightly builds, run with -Z macro-backtrace for more info)
 
 error[E0271]: type mismatch resolving `<NoRepr as RustSpec>::Layout == Stable`
@@ -102,25 +108,6 @@ note: required for `NoRepr` to implement `CFnArg`
    = help: consider manually implementing `CFnArg` to avoid undesired bounds caused by "imperfect derives"
    = note: to learn more, visit <https://github.com/rust-lang/rust/issues/26925>
    = note: required for `extern "C" fn(NoRepr)` to implement `ReprC`
+   = note: 1 redundant requirement hidden
+   = note: required for `co3::borrow::Borrowed<extern "C" fn(NoRepr)>` to implement `ReprC`
    = note: this error originates in the macro `ffi` which comes from the expansion of the derive macro `RustSpec` (in Nightly builds, run with -Z macro-backtrace for more info)
-
-error[E0271]: type mismatch resolving `<Option<extern "C" fn(NoRepr)> as RustSpec>::Layout == Stable`
-  --> tests/ui_fail/callback_requires_companion.rs:15:28
-   |
-10 | / ffi! {
-11 | |     #![unsafe(extern("C"))]
-12 | |
-13 | |     fn callback_with_bad_argument(callback: BadArgument);
-14 | |     fn callback_with_bad_return(callback: BadReturn);
-15 | |     fn non_stable_callback(callback: NonStable);
-   | |                            ^^^^^^^^ expected `Stable`, found `Unstable`
-16 | | }
-   | |_- required by a bound introduced by this call
-   |
-   = note: required for `std::option::Option<extern "C" fn(NoRepr)>` to implement `CType`
-   = note: required for `extern "C" fn(NoRepr)` to implement `Encode`
-note: required by a bound in `co3::soft_encode`
-  --> src/lib.rs
-   |
-   | pub fn soft_encode<T: Encode>(item: T, store: &mut T::Store) -> T::CType {
-   |                       ^^^^^^ required by this bound in `soft_encode`

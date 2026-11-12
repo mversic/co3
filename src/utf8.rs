@@ -10,7 +10,6 @@ use rust_spec::RustSpec;
 #[cfg(feature = "alloc")]
 use crate::{
     CFnArg, CFnReturn, Decode, Encode,
-    borrow::Borrow,
     boxed::OwnedBoxCarrier,
     niche::Niche,
     primitives::primitive_derive,
@@ -32,7 +31,6 @@ use crate::{
 pub struct Utf8Str(pub [u8]);
 
 unsafe impl CType for Utf8Str {}
-
 
 impl ReprC for Utf8Str {
     type CType = Self;

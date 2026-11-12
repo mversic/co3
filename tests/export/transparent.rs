@@ -1,9 +1,6 @@
 use std::marker::PhantomData;
 
-use co3::{
-    ReprC, ffi, option::COption, reference::CRef, rust_spec::RustSpec, vec::CVec,
-    wide::CWideRef,
-};
+use co3::{ReprC, ffi, rust_spec::RustSpec};
 
 #[derive(Clone, Copy, PartialEq, Eq, Debug, RustSpec, ReprC)]
 #[repr_c(identity)]
@@ -89,38 +86,24 @@ pub fn slice_to_slice(value: &[TransparentStruct]) -> &[TransparentStruct] {
     value
 }
 
-unsafe extern "C" {
-    #[link_name = "export_transparent__array_of_transparent"]
-    fn array_of_transparent_raw(
-        arr: CRef<'_, [TransparentStruct; 1]>,
-    ) -> CRef<'_, [TransparentStruct; 1]>;
+mod imported {
+    use super::*;
 
-    #[link_name = "export_transparent__transparent_option"]
-    fn transparent_option_raw(
-        arr: COption<TransparentWithoutNiche>,
-    ) -> COption<TransparentWithoutNiche>;
+    ffi! {
+        #![unsafe(extern("C"))]
+        #![symbol_prefix = "export_transparent"]
 
-    #[link_name = "export_transparent__self_to_self"]
-    fn self_to_self_raw(value: TransparentStruct) -> TransparentStruct;
+        pub fn array_of_transparent(arr: &[TransparentStruct; 1]) -> &[TransparentStruct; 1];
+        pub fn transparent_option(arr: Option<TransparentWithoutNiche>) -> Option<TransparentWithoutNiche>;
+        pub fn self_to_self(value: TransparentStruct) -> TransparentStruct;
+        pub fn vec_to_vec(value: move Vec<TransparentStruct>) -> move Vec<TransparentStruct>;
+        pub fn slice_to_slice(value: &[TransparentStruct]) -> &[TransparentStruct];
 
-    #[link_name = "export_transparent__vec_to_vec"]
-    fn vec_to_vec_raw(value: CVec<TransparentStruct>) -> CVec<TransparentStruct>;
-
-    #[link_name = "export_transparent__slice_to_slice"]
-    fn slice_to_slice_raw<'a>(
-        value: CWideRef<'a, [TransparentStruct]>,
-    ) -> CWideRef<'a, [TransparentStruct]>;
-
-    #[link_name = "export_transparent__TransparentStruct__with_payload"]
-    fn with_payload_raw(
-        value: TransparentStruct,
-        payload: GenericTransparentStruct<()>,
-    ) -> TransparentStruct;
-
-    #[link_name = "export_transparent__TransparentStruct__payload"]
-    fn payload_raw(
-        value: CRef<'_, TransparentStruct>,
-    ) -> CRef<'_, GenericTransparentStruct<()>>;
+        #[symbol_name = "export_transparent__TransparentStruct__with_payload"]
+        pub fn with_payload(value: TransparentStruct, payload: GenericTransparentStruct<()>) -> TransparentStruct;
+        #[symbol_name = "export_transparent__TransparentStruct__payload"]
+        pub fn payload(value: &TransparentStruct) -> &GenericTransparentStruct<()>;
+    }
 }
 
 #[test]
@@ -128,21 +111,11 @@ fn transparent_values_cross_exported_abi() {
     let value = TransparentStruct::new(GenericTransparentStruct::new(42));
     let array = [value];
 
-    let output = unsafe { array_of_transparent_raw(co3::encode(&array)) };
-    assert_eq!(
-        &array,
-        unsafe { co3::decode::<&[TransparentStruct; 1]>(output) }.unwrap()
-    );
+    assert_eq!(&array, imported::array_of_transparent(&array));
 
     let option = Some(TransparentWithoutNiche(42));
-    let output = unsafe { transparent_option_raw(co3::encode(option)) };
-    assert_eq!(
-        option,
-        unsafe { co3::decode::<Option<TransparentWithoutNiche>>(output) }.unwrap()
-    );
-
-    let output = unsafe { self_to_self_raw(co3::encode(value)) };
-    assert_eq!(Some(value), unsafe { co3::decode(output) });
+    assert_eq!(option, imported::transparent_option(option));
+    assert_eq!(value, imported::self_to_self(value));
 }
 
 #[test]
@@ -164,17 +137,8 @@ fn transparent_collections_cross_exported_abi() {
         TransparentStruct::new(GenericTransparentStruct::new(4)),
     ];
 
-    let output = unsafe { vec_to_vec_raw(co3::encode(values.clone())) };
-    assert_eq!(
-        values,
-        unsafe { co3::decode::<Vec<TransparentStruct>>(output) }.unwrap()
-    );
-
-    let output = unsafe { slice_to_slice_raw(co3::encode(values.as_slice())) };
-    assert_eq!(
-        values.as_slice(),
-        unsafe { co3::decode::<&[TransparentStruct]>(output) }.unwrap()
-    );
+    assert_eq!(values, imported::vec_to_vec(values.clone()));
+    assert_eq!(values.as_slice(), imported::slice_to_slice(&values));
 }
 
 #[test]
@@ -182,10 +146,7 @@ fn transparent_methods_cross_exported_abi() {
     let value = TransparentStruct::new(GenericTransparentStruct::new(42));
     let replacement = GenericTransparentStruct::new(24);
 
-    let output = unsafe { with_payload_raw(co3::encode(value), co3::encode(replacement)) };
-    let output = unsafe { co3::decode::<TransparentStruct>(output) }.unwrap();
+    let output = imported::with_payload(value, replacement);
     assert_eq!(replacement, output.payload);
-
-    let payload = unsafe { payload_raw(co3::encode(&output)) };
-    assert_eq!(Some(&replacement), unsafe { co3::decode(payload) });
+    assert_eq!(&replacement, imported::payload(&output));
 }

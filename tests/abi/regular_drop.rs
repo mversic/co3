@@ -45,10 +45,10 @@ ffi! {
     }
 }
 
-unsafe extern "C" {
-    #[link_name = "abi_regular_drop_cstr"]
-    fn drop_cstr(value: CBox<CStr>);
-
+ffi! {
+    #![unsafe(extern("C"))]
+    #[symbol_name = "abi_regular_drop_cstr"]
+    raw fn drop_cstr(value: move BatteryCStr);
 }
 
 #[test]
@@ -79,7 +79,7 @@ impl Drop for MovableDrop {
 
 #[derive(RustSpec, ReprC)]
 #[repr(transparent)]
-#[repr_c(transparent, move)]
+#[repr_c(move)]
 #[rust_spec(custom_drop)]
 struct MovableTransparentDrop(u32);
 
@@ -105,7 +105,7 @@ impl Drop for MovableFieldlessDrop {
 
 #[derive(RustSpec, ReprC)]
 #[repr(u8)]
-#[repr_c(transparent, move)]
+#[repr_c(move)]
 #[rust_spec(custom_drop)]
 enum MovableTransparentFieldlessDrop {
     Value = 4,

@@ -8,7 +8,6 @@ use core::{
     cell::{Cell, UnsafeCell},
     fmt::Debug,
     hash::Hash,
-    mem::ManuallyDrop,
 };
 
 use rust_spec::{
@@ -92,60 +91,6 @@ pub unsafe trait Wide {
     #[cfg(feature = "alloc")]
     unsafe fn from_non_null(data: NonNull<Self::Header>, metadata: Self::Metadata) -> Box<Self>;
 }
-
-macro_rules! impl_wide_for_transparent_wrapper {
-    ($($wrapper:ident),+ $(,)?) => {$(
-        unsafe impl<R: Wide + ?Sized> Wide for $wrapper<R> {
-            type Header = R::Header;
-            type Metadata = R::Metadata;
-
-            fn metadata(ptr: *const Self) -> Self::Metadata {
-                R::metadata(ptr as *const R)
-            }
-
-            fn as_ptr(ptr: *const Self) -> *const Self::Header {
-                R::as_ptr(ptr as *const R)
-            }
-
-            fn as_mut_ptr(ptr: *mut Self) -> *mut Self::Header {
-                R::as_mut_ptr(ptr as *mut R)
-            }
-
-            unsafe fn from_raw_parts<'a>(
-                data: *const Self::Header,
-                metadata: Self::Metadata,
-            ) -> &'a Self {
-                let inner = unsafe { R::from_raw_parts(data, metadata) };
-                unsafe { &*(inner as *const R as *const Self) }
-            }
-
-            unsafe fn from_raw_parts_mut<'a>(
-                data: *mut Self::Header,
-                metadata: Self::Metadata,
-            ) -> &'a mut Self {
-                let inner = unsafe { R::from_raw_parts_mut(data, metadata) };
-                unsafe { &mut *(inner as *mut R as *mut Self) }
-            }
-
-            #[cfg(feature = "alloc")]
-            fn into_non_null(self: Box<Self>) -> NonNull<Self::Header> {
-                Box::into_non_null(self).cast()
-            }
-
-            #[cfg(feature = "alloc")]
-            unsafe fn from_non_null(
-                data: NonNull<Self::Header>,
-                metadata: Self::Metadata,
-            ) -> Box<Self> {
-                let inner = unsafe { R::from_non_null(data, metadata) };
-                let inner = Box::into_raw(inner) as *mut Self;
-                unsafe { Box::from_raw(inner) }
-            }
-        }
-    )+};
-}
-
-impl_wide_for_transparent_wrapper!(ManuallyDrop);
 
 macro_rules! impl_wide_for_cell {
     ($($wrapper:ident),+ $(,)?) => {$(
@@ -280,6 +225,7 @@ impl<T> WideHeader for [T; 0] {
 /// A null data pointer represents an absent reference.
 #[derive(RustSpec)]
 #[repr(C)]
+#[doc(hidden)]
 pub struct CSoftWideRef<R: ReprC<CType: Wide> + ?Sized> {
     data: *const PointeeData<R::CType>,
     metadata: <R::CType as Wide>::Metadata,
@@ -295,6 +241,7 @@ pub struct CSoftWideRef<R: ReprC<CType: Wide> + ?Sized> {
 /// user's responsibility to ensure any access of the pointer is well synchronized.
 #[derive(RustSpec)]
 #[repr(C)]
+#[doc(hidden)]
 pub struct CSoftWideRefMut<R: ReprC<CType: Wide> + ?Sized, const EXCLUSIVE: bool> {
     data: *mut PointeeData<R::CType>,
     metadata: <R::CType as Wide>::Metadata,
@@ -405,6 +352,7 @@ impl<R: ReprC<CType: Wide> + ?Sized> CSoftWideRefMut<R, true> {
 /// A null data pointer represents an absent reference.
 #[derive(RustSpec)]
 #[repr(C)]
+#[doc(hidden)]
 pub struct CWideRef<'a, R: ReprC<CType: Wide> + ?Sized> {
     data: *const PointeeData<R::CType>,
     metadata: <R::CType as Wide>::Metadata,
@@ -421,6 +369,7 @@ pub struct CWideRef<'a, R: ReprC<CType: Wide> + ?Sized> {
 /// user's responsibility to ensure any access of the pointer is well synchronized.
 #[derive(RustSpec)]
 #[repr(C)]
+#[doc(hidden)]
 pub struct CWideRefMut<'a, R: ReprC<CType: Wide> + ?Sized, const EXCLUSIVE: bool> {
     data: *mut PointeeData<R::CType>,
     metadata: <R::CType as Wide>::Metadata,
@@ -667,17 +616,7 @@ macro_rules! impl_identity_carrier {
 
 macro_rules! impl_carrier_borrow {
     ($ty:ident, [$($params:tt)*], [$($args:tt)*]) => {
-        unsafe impl<$($params)*> $crate::borrow::Borrow for $ty<$($args)*> {
-            type Borrowed = Self;
-
-            fn borrow(self) -> Self::Borrowed {
-                self
-            }
-
-            fn from_borrow(source: Self) -> Self {
-                source
-            }
-        }
+        $crate::__impl_borrowed_identity!([$($params)*] $ty<$($args)*>);
     };
 }
 
@@ -717,9 +656,7 @@ impl_carrier_borrow! { CSoftWideRefMut, [R: ReprC<CType: Wide> + ?Sized, const E
 impl_identity_carrier! { CSoftWideRef, [R: ReprC<CType: Wide<Header: WideHeader<Data: CType>>> + ?Sized], [R] }
 impl_identity_carrier! { CSoftWideRefMut, [R: ReprC<CType: Wide<Header: WideHeader<Data: CType>>> + ?Sized, const EXCLUSIVE: bool], [R, EXCLUSIVE] }
 
-impl<R: ReprC<CType: Wide<Header: WideHeader<Data: CType>>> + ?Sized> Default
-    for CSoftWideRef<R>
-{
+impl<R: ReprC<CType: Wide<Header: WideHeader<Data: CType>>> + ?Sized> Default for CSoftWideRef<R> {
     fn default() -> Self {
         Self::null()
     }
@@ -738,6 +675,7 @@ impl<R: ReprC<CType: Wide<Header: WideHeader<Data: CType>>> + ?Sized, const EXCL
 /// If the data pointer is set to `null`, the struct represents an absent box.
 #[derive(RustSpec)]
 #[repr(C)]
+#[doc(hidden)]
 pub struct CWideBox<R: ReprC<CType: Wide> + ?Sized> {
     data: *mut PointeeData<R::CType>,
     metadata: <R::CType as Wide>::Metadata,
@@ -888,7 +826,9 @@ unsafe impl<R: ReprC<CType: Wide<Header: WideHeader<Data: CType>>> + ?Sized, con
 }
 unsafe impl<'a, R: ReprC<CType: Wide<Header: WideHeader<Data: CType>>> + ?Sized, const E: bool>
     WideRefCarrier<R> for CWideRefMut<'a, R, E>
-where Self: CType {
+where
+    Self: CType,
+{
     type Pointer = *mut PointeeData<R::CType>;
     fn as_ptr(&self) -> Self::Pointer {
         self.data
@@ -932,7 +872,9 @@ unsafe impl<R: ReprC<CType: Wide<Header: WideHeader<Data: CType>, Metadata = usi
 }
 unsafe impl<'a, R: ReprC<CType: Wide<Header: WideHeader<Data: CType>, Metadata = usize>> + ?Sized>
     MutWideRefCarrier<R> for CWideRefMut<'a, R, true>
-where Self: CType {
+where
+    Self: CType,
+{
     fn data(&self) -> *mut PointeeData<R::CType> {
         self.data
     }
@@ -945,7 +887,25 @@ where Self: CType {
 }
 
 #[cfg(test)]
-mod tests {
+pub(crate) mod tests {
+    #[cfg(all(feature = "derive", feature = "alloc"))]
+    #[test]
+    fn box_tail_does_not_generate_wide_headers() {
+        // These names would collide if the derive emitted speculative headers.
+        struct PacketData;
+        struct CPacketData;
+        #[derive(crate::ReprC, rust_spec::RustSpec)]
+        struct Packet { tag: u8, tail: alloc::boxed::Box<(u32,)> }
+        let _ = (PacketData, CPacketData);
+        static_assertions::assert_not_impl_any!(Packet: super::Wide);
+        let source = Packet { tag: 7, tail: alloc::boxed::Box::new((42,)) };
+        let mut encode_store = Default::default();
+        let encoded = crate::stored::EncodeMove::soft_encode(source, &mut encode_store);
+        let mut decode_store = Default::default();
+        let decoded = unsafe { <Packet as crate::stored::DecodeMove>::soft_decode(encoded, &mut decode_store) }.unwrap();
+        assert_eq!((decoded.tag, decoded.tail.0), (7, 42));
+    }
+
     use core::{
         cell::{Cell, UnsafeCell},
         mem::ManuallyDrop,
@@ -955,9 +915,186 @@ mod tests {
 
     use super::Wide;
 
+    #[cfg(feature = "alloc")]
+    use super::CWideBox;
+    use super::{CSoftWideRef, CSoftWideRefMut};
+    use crate::CType;
+    #[cfg(feature = "alloc")]
+    use alloc::{boxed::Box, vec};
+    #[cfg(feature = "alloc")]
+    use core::ptr::NonNull;
+
+    #[repr(C)]
+    #[derive(Copy, Clone, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
+    pub(crate) struct Metadata {
+        pub(crate) length: usize,
+        pub(crate) marker: u32,
+    }
+    unsafe impl CType for Metadata {}
+    unsafe impl crate::Zeroable for Metadata {}
+
+    #[repr(transparent)]
+    #[derive(crate::rust_spec::RustSpec)]
+    pub(crate) struct Custom(pub(crate) [u8]);
+    unsafe impl CType for Custom {}
+    impl crate::ReprC for Custom {
+        type CType = Self;
+    }
+
+    unsafe impl Wide for Custom {
+        type Header = [u8; 0];
+        type Metadata = Metadata;
+
+        fn metadata(ptr: *const Self) -> Metadata {
+            Metadata {
+                length: (ptr as *const [u8]).len(),
+                marker: 7,
+            }
+        }
+        fn as_ptr(ptr: *const Self) -> *const Self::Header {
+            ptr.cast()
+        }
+        fn as_mut_ptr(ptr: *mut Self) -> *mut Self::Header {
+            ptr.cast()
+        }
+        unsafe fn from_raw_parts<'a>(data: *const Self::Header, metadata: Metadata) -> &'a Self {
+            let slice = core::ptr::slice_from_raw_parts(data.cast::<u8>(), metadata.length);
+            unsafe { &*(slice as *const Self) }
+        }
+        unsafe fn from_raw_parts_mut<'a>(
+            data: *mut Self::Header,
+            metadata: Metadata,
+        ) -> &'a mut Self {
+            let slice = core::ptr::slice_from_raw_parts_mut(data.cast::<u8>(), metadata.length);
+            unsafe { &mut *(slice as *mut Self) }
+        }
+        #[cfg(feature = "alloc")]
+        fn into_non_null(self: Box<Self>) -> NonNull<Self::Header> {
+            Box::into_non_null(self).cast()
+        }
+        #[cfg(feature = "alloc")]
+        unsafe fn from_non_null(data: NonNull<Self::Header>, metadata: Metadata) -> Box<Self> {
+            let value = unsafe { Self::from_raw_parts_mut(data.as_ptr(), metadata) };
+            unsafe { Box::from_raw(value as *mut Self) }
+        }
+    }
+
+    #[cfg(feature = "alloc")]
+    #[test]
+    fn wide_boxes_preserve_custom_metadata() {
+        type Pointee = Custom;
+        fn boxed() -> Box<Pointee> {
+            let bytes = vec![1_u8, 2, 3].into_boxed_slice();
+            unsafe { Box::from_raw(Box::into_raw(bytes) as *mut Pointee) }
+        }
+        let expected = Metadata {
+            length: 3,
+            marker: 7,
+        };
+        let carrier = CWideBox::<Pointee>::from_box(boxed());
+        assert_eq!(carrier.metadata(), expected);
+        assert_eq!(&unsafe { carrier.into_box() }.unwrap().0, &[1, 2, 3]);
+        assert_eq!(
+            CWideBox::<Pointee>::null().metadata(),
+            Metadata {
+                length: 0,
+                marker: 0
+            }
+        );
+    }
+
+    #[test]
+    fn carriers_preserve_non_slice_metadata() {
+        type Pointee = Custom;
+        let mut source = [3_u8, 5, 8];
+        let value = unsafe { &mut *(source.as_mut_slice() as *mut [u8] as *mut Pointee) };
+        let shared = CSoftWideRef::<Pointee>::from_ref(&*value);
+        assert_eq!(
+            shared.metadata(),
+            Metadata {
+                length: 3,
+                marker: 7
+            }
+        );
+        let raw =
+            unsafe { CSoftWideRef::<Pointee>::from_raw_parts(shared.as_ptr(), shared.metadata()) };
+        let decoded =
+            unsafe { crate::soft_decode::<CSoftWideRef<Pointee>>(raw, &mut Default::default()) }
+                .unwrap();
+        assert_eq!(decoded.metadata(), shared.metadata());
+        assert_eq!(unsafe { &shared.into_ref().unwrap().0 }, &[3, 5, 8]);
+
+        let mutable = CSoftWideRefMut::<Pointee, true>::from_mut(value);
+        assert_eq!(
+            mutable.metadata(),
+            Metadata {
+                length: 3,
+                marker: 7
+            }
+        );
+        unsafe { mutable.into_mut().unwrap().0[1] = 9 };
+        assert_eq!(source, [3, 9, 8]);
+
+        let null = CSoftWideRef::<Pointee>::null();
+        assert!(null.as_ptr().is_null());
+        assert_eq!(
+            null.metadata(),
+            Metadata {
+                length: 0,
+                marker: 0
+            }
+        );
+        let decoded =
+            unsafe { crate::soft_decode::<CSoftWideRef<Pointee>>(null, &mut Default::default()) }
+                .unwrap();
+        assert!(unsafe { decoded.into_ref() }.is_none());
+        static_assertions::assert_impl_all!(CSoftWideRef<Pointee>: CType, Copy);
+    }
+
+    #[test]
+    fn comparisons_use_pointer_then_arbitrary_metadata() {
+        type Pointee = Custom;
+        let mut bytes = [0_u8; 2];
+        let first = bytes.as_mut_ptr();
+        let second = unsafe { first.add(1) };
+        let a = Metadata {
+            length: 0,
+            marker: 1,
+        };
+        let b = Metadata {
+            length: 0,
+            marker: 2,
+        };
+
+        let one = unsafe { CSoftWideRef::<Pointee>::from_raw_parts(first, a) };
+        let same_pointer = unsafe { CSoftWideRef::<Pointee>::from_raw_parts(first, b) };
+        let different_pointer = unsafe { CSoftWideRef::<Pointee>::from_raw_parts(second, a) };
+        assert!(one < same_pointer);
+        assert_ne!(one, different_pointer);
+        assert_eq!(
+            one.partial_cmp(&different_pointer),
+            Some(first.cmp(&second))
+        );
+
+        let one = unsafe { CSoftWideRefMut::<Pointee, true>::from_raw_parts_mut(first, a) };
+        let same_pointer =
+            unsafe { CSoftWideRefMut::<Pointee, true>::from_raw_parts_mut(first, b) };
+        let different_pointer =
+            unsafe { CSoftWideRefMut::<Pointee, true>::from_raw_parts_mut(second, a) };
+        assert!(one < same_pointer);
+        assert_ne!(one, different_pointer);
+        assert_eq!(
+            one.partial_cmp(&different_pointer),
+            Some(first.cmp(&second))
+        );
+
+        let null = CSoftWideRef::<Pointee>::null();
+        let other_null = unsafe { CSoftWideRef::<Pointee>::from_raw_parts(core::ptr::null(), a) };
+        assert_ne!(null, other_null);
+    }
     #[test]
     fn lifetime_wide_carriers_preserve_layout_and_metadata() {
-        use super::{CWideRef, CWideRefMut, CSoftWideRefMut, CSoftWideRef};
+        use super::{CSoftWideRef, CSoftWideRefMut, CWideRef, CWideRefMut};
         use core::mem::{align_of, size_of};
         assert_eq!(
             size_of::<CWideRef<'_, [u8]>>(),

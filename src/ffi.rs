@@ -13,7 +13,6 @@ use rust_spec::RustSpec;
 
 use crate::{
     CFnArg, CFnReturn, CType, Decode, Encode, ReprC,
-    borrow::Borrow,
     primitives::primitive_derive,
     stored::{DecodeMove, EncodeMove, EncodeMoveUnchecked},
     transmute::AbiCompatible,
@@ -496,19 +495,8 @@ unsafe impl<R: NulTerminatedBuf + ?Sized> NulTerminatedBuf for ManuallyDrop<R> {
     }
 }
 
-/// A character in a nul-terminated C string.
-///
-/// This carrier identifies a C string at the ABI boundary; individual characters
-/// have the same representation as `c_char`.
-#[derive(Debug, Clone, Copy, Default, PartialEq, PartialOrd, RustSpec)]
-#[repr(transparent)]
-pub struct CStr(pub c_char);
-
-unsafe impl crate::Zeroable for CStr {}
-primitive_derive! { CStr }
-
 impl ReprC for RustCStr {
-    type CType = CStr;
+    type CType = c_char;
 }
 
 unsafe impl NulTerminatedBuf for RustCStr {
@@ -586,17 +574,7 @@ impl Niche for CString {
     }
 }
 
-unsafe impl Borrow for c_void {
-    type Borrowed = Self;
-
-    fn borrow(self) -> Self::Borrowed {
-        self
-    }
-
-    fn from_borrow(source: Self) -> Self {
-        source
-    }
-}
+crate::__impl_borrowed_identity!([] c_void);
 
 impl ReprC for c_void {
     type CType = Self;
@@ -719,12 +697,12 @@ mod tests {
     #[cfg(all(feature = "alloc", feature = "derive"))]
     #[test]
     fn alias_fields_preserve_borrowed_types_and_values() {
-        let view = co3::borrow::Borrow::borrow(AliasFields(c_int::new(3), 4_u32, c_long::new(5)));
-        let borrowed_lowered = co3::encode(view);
+        let view = AliasFields(c_int::new(3), 4_u32, c_long::new(5));
+        let borrowed_lowered = co3::borrow::encode(view).0;
         let _: c_int = borrowed_lowered.0;
         let _: c_long = borrowed_lowered.2;
-        let view = co3::borrow::Borrow::borrow(AliasFields(c_int::new(3), 4_u32, c_long::new(5)));
-        let recovered: AliasFields<u32> = co3::borrow::Borrow::from_borrow(view);
+        let view = AliasFields(c_int::new(3), 4_u32, c_long::new(5));
+        let recovered: AliasFields<u32> = view;
         assert_eq!(
             (recovered.0, recovered.1, recovered.2),
             (c_int::new(3), 4, c_long::new(5))
@@ -738,19 +716,19 @@ mod tests {
     struct Value(u8);
 
     #[cfg(all(feature = "alloc", feature = "derive"))]
-    extern "C" fn borrowed_return() -> co3::borrow::Borrowed<co3::boxed::CBox<Value>> {
-        co3::boxed::CBox::null().into()
+    extern "C" fn borrowed_return() -> co3::borrow::CBorrowed<Box<Value>> {
+        co3::borrow::CBorrowed(co3::boxed::CBox::null())
     }
 
     #[cfg(all(feature = "alloc", feature = "derive"))]
     co3::ffi! {
         #![unsafe(extern("C"))]
         type BorrowedReturn = raw extern "C" fn() -> Box<Value>;
-        type InteriorUnpacked = extern "C" fn(#[unpack(*mut core::cell::UnsafeCell<u8>, usize)] &[core::cell::Cell<u8>]) -> usize;
+        type InteriorUnpacked = extern "C" fn(#[unpack(*mut core::cell::Cell<u8>, usize)] &[core::cell::Cell<u8>]) -> usize;
         type RegularUnpacked = extern "C" fn(#[unpack(_, _)] &mut [u8]) -> usize;
         type Composite = (String, raw fn(String));
 
-        fn interior_slice(#[unpack(*mut core::cell::UnsafeCell<u8>, usize)] values: &[core::cell::Cell<u8>]) -> usize;
+        fn interior_slice(#[unpack(*mut core::cell::Cell<u8>, usize)] values: &[core::cell::Cell<u8>]) -> usize;
     }
 
     #[cfg(all(feature = "alloc", feature = "derive"))]
@@ -759,12 +737,7 @@ mod tests {
         let _: BorrowedReturn = borrowed_return;
         static_assertions::assert_type_eq_all!(
             InteriorUnpacked,
-            Option<
-                unsafe extern "C" fn(
-                    *mut core::cell::UnsafeCell<u8>,
-                    usize,
-                ) -> usize,
-            >
+            Option<unsafe extern "C" fn(*mut core::cell::Cell<u8>, usize) -> usize>
         );
         static_assertions::assert_type_eq_all!(
             RegularUnpacked,
@@ -772,10 +745,1291 @@ mod tests {
         );
         static_assertions::assert_type_eq_all!(
             Composite,
-            <(
-                String,
-                unsafe extern "C" fn(co3::borrow::Borrowed<co3::utf8::Utf8String>)
-            ) as ReprC>::CType
+            <(String, unsafe extern "C" fn(co3::borrow::CBorrowed<String>)) as ReprC>::CType
         );
+    }
+    #[cfg(all(feature = "alloc", feature = "derive"))]
+    #[unsafe(export_name = "co3_unit_borrowed_import")]
+    extern "C" fn borrowed_import_source(value: *const u8) -> *const u8 {
+        value
+    }
+
+    #[cfg(all(feature = "alloc", feature = "derive"))]
+    co3::ffi! {
+        #![unsafe(extern("C"))]
+        #[symbol_name = "co3_unit_borrowed_import"]
+        raw fn borrowed_import<'a>(value: &'a u8) -> &'a u8;
+    }
+
+    #[cfg(all(feature = "alloc", feature = "derive"))]
+    #[test]
+    fn raw_import_preserves_uniform_borrowed_carrier_signature() {
+        use co3::{CBorrowed, reference::CRef};
+        fn check<'a>() {
+            let _: unsafe extern "C" fn(CBorrowed<&'a u8>) -> CBorrowed<&'a u8> = borrowed_import;
+        }
+        check();
+        let input = 7;
+        let output = unsafe { borrowed_import(CBorrowed::new(CRef::from_ref(&input))) };
+        assert_eq!(
+            CBorrowed::into_inner(output).as_ptr(),
+            core::ptr::from_ref(&input)
+        );
+    }
+
+    #[cfg(all(feature = "alloc", feature = "derive"))]
+    use crate::{
+        CBorrowed, Error, ffi,
+        ops::{CFn0, CFn1, CFn2, CFn12},
+        option::COption,
+        raw,
+        reference::{CRef, CSoftRef, CSoftRefMut},
+        tuple::Tuple3,
+        utf8::Utf8String,
+    };
+    #[cfg(all(feature = "alloc", feature = "derive"))]
+    use alloc::{vec, vec::Vec};
+    #[cfg(all(feature = "alloc", feature = "derive"))]
+    use core::{
+        ffi::CStr,
+        num::NonZeroU8,
+        sync::atomic::{AtomicUsize, Ordering},
+    };
+
+    #[cfg(all(feature = "alloc", feature = "derive"))]
+    type Text = String;
+    #[cfg(all(feature = "alloc", feature = "derive"))]
+    fn string_len(input: &String) -> usize {
+        input.len()
+    }
+    #[cfg(all(feature = "alloc", feature = "derive"))]
+    fn alias_len(input: &Text) -> usize {
+        input.len()
+    }
+    #[cfg(all(feature = "alloc", feature = "derive"))]
+    co3::raw! {
+        fn string_len(#[soft] input: &String) -> usize;
+        fn alias_len(#[soft] input: &Text) -> usize;
+    }
+
+    #[test]
+    #[cfg(all(feature = "alloc", feature = "derive"))]
+    fn exported_shared_string_and_alias_use_the_decoder() {
+        let source = Utf8String::from_string(String::from("héllo"));
+        assert_eq!(
+            unsafe { string_len_raw(CBorrowed::new(CSoftRef::from_ref(&source))) },
+            "héllo".len()
+        );
+        assert_eq!(
+            unsafe { alias_len_raw(CBorrowed::new(CSoftRef::from_ref(&source))) },
+            "héllo".len()
+        );
+        assert_eq!(unsafe { source.0.into_vec() }.unwrap(), "héllo".as_bytes());
+    }
+
+    #[derive(Clone, Copy, RustSpec, ReprC)]
+    #[repr_c(identity)]
+    #[repr(C)]
+    #[cfg(all(feature = "alloc", feature = "derive"))]
+    struct StructWithCallback<'a>(Option<unsafe extern "C" fn(CRef<'a, u32>) -> u32>);
+
+    #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, RustSpec, ReprC)]
+    #[repr_c(identity)]
+    #[repr(C)]
+    #[cfg(all(feature = "alloc", feature = "derive"))]
+    struct CallbackValue(u8);
+
+    #[derive(Debug, Clone, Copy, PartialEq, Eq, RustSpec, ReprC)]
+    #[cfg(all(feature = "alloc", feature = "derive"))]
+    struct CallbackRustValue(u8);
+
+    #[cfg(all(feature = "alloc", feature = "derive"))]
+    impl CallbackRustValue {
+        fn scaled(&self, factor: u8) -> Self {
+            Self(self.0 * factor)
+        }
+    }
+
+    #[cfg(all(feature = "alloc", feature = "derive"))]
+    trait Echo: Sized + ReprC<CType: Sized> {
+        fn echo(self) -> Self {
+            self
+        }
+
+        unsafe extern "C" fn echo_raw(value: CBorrowed<Self>) -> CBorrowed<Self>;
+    }
+
+    #[cfg(all(feature = "alloc", feature = "derive"))]
+    type CallbackPathExisting = CCallback;
+
+    #[cfg(all(feature = "alloc", feature = "derive"))]
+    type CompanionPathAlias = CallbackPathExisting;
+
+    #[cfg(all(feature = "alloc", feature = "derive"))]
+    unsafe extern "C" fn increment_pointer(value: CRef<'_, u32>) -> u32 {
+        (unsafe { *value.as_ptr() }) + 1
+    }
+
+    #[cfg(all(feature = "alloc", feature = "derive"))]
+    unsafe extern "C" fn return_pointer(value: CRef<'_, u32>) -> CRef<'_, u32> {
+        value
+    }
+
+    #[cfg(all(feature = "alloc", feature = "derive"))]
+    unsafe extern "C" fn ignore_pointer(_: CRef<'_, u32>) {}
+
+    #[cfg(all(feature = "alloc", feature = "derive"))]
+    unsafe extern "C" fn update_option(value: CSoftRefMut<Option<u8>, true>) -> u32 {
+        let value = value.as_ptr();
+        unsafe { *value = COption::Some(42) };
+        7
+    }
+
+    #[cfg(all(feature = "alloc", feature = "derive"))]
+    extern "C" fn return_forty_two() -> u32 {
+        42
+    }
+
+    #[cfg(all(feature = "alloc", feature = "derive"))]
+    extern "system" fn increment_system(value: CRef<'_, u32>) -> u32 {
+        (unsafe { *value.as_ptr() }) + 2
+    }
+
+    #[cfg(all(feature = "alloc", feature = "derive"))]
+    unsafe extern "C" fn add_from_pointer(value: CRef<'_, u32>, offset: u32) -> u32 {
+        (unsafe { *value.as_ptr() }) + offset
+    }
+
+    #[cfg(all(feature = "alloc", feature = "derive"))]
+    extern "C" fn sum_twelve(
+        a0: u32,
+        a1: u32,
+        a2: u32,
+        a3: u32,
+        a4: u32,
+        a5: u32,
+        a6: u32,
+        a7: u32,
+        a8: u32,
+        a9: u32,
+        a10: u32,
+        a11: u32,
+    ) -> u32 {
+        a0 + a1 + a2 + a3 + a4 + a5 + a6 + a7 + a8 + a9 + a10 + a11
+    }
+
+    #[cfg(all(feature = "alloc", feature = "derive"))]
+    fn double_rust(value: CallbackRustValue) -> CallbackRustValue {
+        CallbackRustValue(value.0 * 2)
+    }
+
+    #[cfg(all(feature = "alloc", feature = "derive"))]
+    extern "C" fn sum_pair(
+        left: CBorrowed<CallbackValue>,
+        right: CBorrowed<CallbackValue>,
+    ) -> CBorrowed<CallbackValue> {
+        CBorrowed::new(CallbackValue(
+            CBorrowed::into_inner(left).0 + CBorrowed::into_inner(right).0,
+        ))
+    }
+
+    #[cfg(all(feature = "alloc", feature = "derive"))]
+    fn apply_callback(
+        callback: CCallback,
+        left: CallbackValue,
+        right: CallbackValue,
+    ) -> CallbackValue {
+        CBorrowed::into_inner(unsafe { callback(CBorrowed::new(left), CBorrowed::new(right)) })
+    }
+
+    #[cfg(all(feature = "alloc", feature = "derive"))]
+    fn apply_optional_callback(callback: Option<CCallback>, value: CallbackValue) -> CallbackValue {
+        callback.map_or(value, |call| {
+            CBorrowed::into_inner(unsafe {
+                call(CBorrowed::new(value), CBorrowed::new(CallbackValue(1)))
+            })
+        })
+    }
+
+    #[cfg(all(feature = "alloc", feature = "derive"))]
+    fn sum_native(left: CallbackValue, right: CallbackValue) -> CallbackValue {
+        CallbackValue(left.0 + right.0)
+    }
+
+    #[unsafe(export_name = "abi_c_callback_raw_method")]
+    #[cfg(all(feature = "alloc", feature = "derive"))]
+    extern "C" fn add_values(left: CallbackValue, right: CallbackValue) -> CallbackValue {
+        CallbackValue(left.0 + right.0)
+    }
+
+    #[unsafe(export_name = "abi_system_callback")]
+    #[cfg(all(feature = "alloc", feature = "derive"))]
+    extern "system" fn add_system_values(
+        left: CallbackValue,
+        right: CallbackValue,
+    ) -> CallbackValue {
+        CallbackValue(left.0 + right.0)
+    }
+
+    #[cfg(all(feature = "alloc", feature = "derive"))]
+    fn return_owned(value: Box<CallbackValue>) -> Box<CallbackValue> {
+        value
+    }
+
+    #[cfg(all(feature = "alloc", feature = "derive"))]
+    fn borrow_rust_value(value: CallbackRustValue) -> CallbackRustValue {
+        value
+    }
+
+    #[cfg(all(feature = "alloc", feature = "derive"))]
+    ffi! {
+        #![unsafe(export("C"))]
+        #![symbol_prefix = "abi_c_callback"]
+
+        type CCallback = raw extern "C" fn(CallbackValue, CallbackValue) -> CallbackValue;
+
+        fn apply_callback(callback: CCallback, left: CallbackValue, right: CallbackValue) -> CallbackValue;
+        fn apply_optional_callback(callback: Option<CCallback>, value: CallbackValue) -> CallbackValue;
+        #[symbol_name = "abi_borrowed_value"]
+        fn borrow_rust_value(value: CallbackRustValue) -> CallbackRustValue;
+    }
+
+    #[cfg(all(feature = "alloc", feature = "derive"))]
+    ffi! {
+        #![unsafe(extern("C"))]
+        #![symbol_prefix = "abi_c_callback"]
+
+        #[symbol_name = "abi_borrowed_value"]
+        pub fn imported_borrow_rust_value(value: CallbackRustValue) -> CallbackRustValue;
+    }
+
+    #[test]
+    #[cfg(all(feature = "alloc", feature = "derive"))]
+    fn borrowed_return_round_trips_through_custom_symbol() {
+        let input = CallbackRustValue(7);
+        assert_eq!(imported_borrow_rust_value(input), input);
+    }
+
+    #[cfg(all(feature = "alloc", feature = "derive"))]
+    ffi! {
+        #![unsafe(extern("C"))]
+        #![symbol_prefix = "abi_c_callback_exported_raw"]
+
+        #[symbol_name = "abi_c_callback_exported_raw__sum_native"]
+
+        pub fn imported_sum_native(left: CallbackValue, right: CallbackValue) -> CallbackValue;
+        #[symbol_name = "abi_c_callback_exported_raw__sum_native"]
+        pub raw fn imported_sum_native_raw(left: CallbackValue, right: CallbackValue) -> CallbackValue;
+    }
+
+    #[cfg(all(feature = "alloc", feature = "derive"))]
+    ffi! {
+        #![unsafe(extern("system"))]
+        #![symbol_prefix = "abi_system_callback"]
+
+        #[symbol_name = "abi_system_callback"]
+        pub raw fn imported_system_sum_native(left: CallbackValue, right: CallbackValue) -> CallbackValue;
+    }
+
+    #[cfg(all(feature = "alloc", feature = "derive"))]
+    ffi! {
+        #![unsafe(export("C"))]
+        #![symbol_prefix = "abi_c_callback_exported_raw"]
+
+        fn sum_native(left: CallbackValue, right: CallbackValue) -> CallbackValue;
+    }
+
+    #[cfg(all(feature = "alloc", feature = "derive"))]
+    ffi! {
+        #![unsafe(extern("C"))]
+        #![symbol_prefix = "abi_c_callback"]
+
+        type ImportedCallback = raw extern "C" fn(CallbackValue, CallbackValue) -> CallbackValue;
+
+        #[symbol_name = "abi_c_callback__apply_callback"]
+
+        pub fn imported_apply_callback(callback: ImportedCallback, left: CallbackValue, right: CallbackValue) -> CallbackValue;
+        #[symbol_name = "abi_c_callback__apply_callback"]
+        pub raw fn imported_apply_callback_raw(callback: ImportedCallback, left: CallbackValue, right: CallbackValue) -> CallbackValue;
+        #[symbol_name = "abi_c_callback__apply_optional_callback"]
+        pub fn imported_apply_optional_callback(callback: Option<ImportedCallback>, value: CallbackValue) -> CallbackValue;
+    }
+
+    #[cfg(all(feature = "alloc", feature = "derive"))]
+    ffi! {
+        #![unsafe(extern("C"))]
+        #![symbol_prefix = "abi_c_callback"]
+
+        #[symbol_name = "abi_c_callback__apply_callback"]
+
+        pub raw fn raw_only_apply_callback(callback: CCallback, left: CallbackValue, right: CallbackValue) -> CallbackValue;
+    }
+
+    #[cfg(all(feature = "alloc", feature = "derive"))]
+    ffi! {
+        #![unsafe(extern("C"))]
+
+        impl CallbackValue {
+            #[symbol_name = "abi_c_callback_raw_method"]
+            pub raw fn add_raw(self, other: CallbackValue) -> CallbackValue;
+        }
+    }
+
+    #[cfg(all(feature = "alloc", feature = "derive"))]
+    ffi! {
+        #![unsafe(extern("C"))]
+
+        type CallbackBorrowedReturn = raw extern "C" fn() -> Box<CallbackValue>;
+        type BorrowedRustValue = raw extern "C" fn(CallbackRustValue) -> CallbackRustValue;
+        type OwnedTransform = raw extern "C" fn(move Box<CallbackValue>) -> move Box<CallbackValue>;
+        type CompanionCallback = raw extern "C" fn(CallbackValue, CallbackValue) -> CallbackValue;
+    }
+
+    #[cfg(all(feature = "alloc", feature = "derive"))]
+    raw! {
+        fn borrow_rust_value(value: CallbackRustValue) -> CallbackRustValue;
+        fn return_owned(value: move Box<CallbackValue>) -> move Box<CallbackValue>;
+        fn double_rust(value: CallbackRustValue) -> move CallbackRustValue;
+        pub fn sum_native(left: CallbackValue, right: CallbackValue) -> CallbackValue;
+
+        impl Echo for CallbackValue {
+            fn echo(self) -> CallbackValue;
+        }
+
+        impl CallbackRustValue {
+            pub fn scaled(#[soft] &self, factor: u8) -> move CallbackRustValue;
+        }
+    }
+
+    #[test]
+    #[cfg(all(feature = "alloc", feature = "derive"))]
+    fn zero_argument_callback_decodes_result() {
+        let callback: unsafe extern "C" fn() -> _ = return_forty_two;
+        let result: Option<u32> = unsafe { callback.call() };
+        assert_eq!(result, Some(42));
+    }
+
+    #[test]
+    #[cfg(all(feature = "alloc", feature = "derive"))]
+    fn stored_c_callback_accepts_rust_reference() {
+        fn assert_first_arg<'a, T: CFn1<Arg1 = CRef<'a, u32>>>()
+        where
+            Option<T>: CType,
+        {
+        }
+        assert_first_arg::<unsafe extern "C" fn(CRef<'static, u32>) -> u32>();
+
+        let callback = StructWithCallback(Some(increment_pointer));
+        let value = 41_u32;
+        let result: Option<u32> = unsafe { callback.0.unwrap().call(&value) };
+        assert_eq!(result, Some(42));
+
+        let void_callback: unsafe extern "C" fn(_) = ignore_pointer;
+        let result: Option<()> = unsafe { void_callback.call(&value) };
+        assert_eq!(result, Some(()));
+
+        let system_callback: unsafe extern "system" fn(_) -> _ = increment_system;
+        let result: Option<u32> = unsafe { system_callback.call(&value) };
+        assert_eq!(result, Some(43));
+    }
+
+    #[test]
+    #[cfg(all(feature = "alloc", feature = "derive"))]
+    fn callback_returns_rust_reference() {
+        let callback: unsafe extern "C" fn(_) -> _ = return_pointer;
+        let value = 42_u32;
+        let result: Option<&u32> = unsafe { callback.call(&value) };
+
+        assert_eq!(result, Some(&value));
+    }
+
+    #[test]
+    #[cfg(all(feature = "alloc", feature = "derive"))]
+    fn soft_call_synchronizes_mutable_argument() {
+        let callback: unsafe extern "C" fn(_) -> _ = update_option;
+        let mut value = Some(1_u8);
+
+        let result: Option<u32> = unsafe { callback.soft_call(&mut value) };
+
+        assert_eq!(result, Some(7));
+        assert_eq!(value, Some(42));
+    }
+
+    #[test]
+    #[cfg(all(feature = "alloc", feature = "derive"))]
+    fn multi_argument_callbacks_encode_each_argument() {
+        fn assert_two_args<'a, T: CFn2<Arg1 = CRef<'a, u32>, Arg2 = u32>>()
+        where
+            Option<T>: CType,
+        {
+        }
+        assert_two_args::<unsafe extern "C" fn(CRef<'static, u32>, u32) -> u32>();
+
+        let value = 40_u32;
+        let callback: unsafe extern "C" fn(_, _) -> _ = add_from_pointer;
+        let result: Option<u32> = unsafe { callback.call(&value, 2_u32) };
+        assert_eq!(result, Some(42));
+
+        let callback: unsafe extern "C" fn(_, _, _, _, _, _, _, _, _, _, _, _) -> _ = sum_twelve;
+        let result: Option<u32> = unsafe {
+            callback.call(
+                1_u32, 2_u32, 3_u32, 4_u32, 5_u32, 6_u32, 7_u32, 8_u32, 9_u32, 10_u32, 11_u32,
+                12_u32,
+            )
+        };
+        assert_eq!(result, Some(78));
+    }
+
+    #[test]
+    #[cfg(all(feature = "alloc", feature = "derive"))]
+    fn c_callback_crosses_export_and_import() {
+        let _: CompanionCallback = sum_pair;
+        let _: CompanionPathAlias = sum_pair;
+        let _: Option<CallbackBorrowedReturn> = None;
+        let _: BorrowedRustValue = borrow_rust_value_raw;
+        let _: OwnedTransform = return_owned_raw;
+        let result = unsafe { return_owned_raw(co3::encode(Box::new(CallbackValue(42)))) };
+        assert_eq!(
+            unsafe { co3::decode::<Box<CallbackValue>>(result) },
+            Some(Box::new(CallbackValue(42)))
+        );
+        fn assert_existing_fn_pointer_impls<T>(_: T) {}
+        assert_existing_fn_pointer_impls(sum_native_raw as CCallback);
+        let raw_value = co3::encode(CallbackRustValue(21));
+        let raw_result = unsafe { double_rust_raw(CBorrowed::new(raw_value)) };
+        assert_eq!(
+            unsafe { co3::decode::<CallbackRustValue>(raw_result) },
+            Some(CallbackRustValue(42))
+        );
+        let encoded = co3::encode(CallbackRustValue(7));
+        let raw_result = unsafe {
+            CallbackRustValue::scaled_raw(CBorrowed::new(CSoftRef::from_ref(&encoded)), 6)
+        };
+        assert_eq!(
+            unsafe { co3::decode::<CallbackRustValue>(raw_result) },
+            Some(CallbackRustValue(42))
+        );
+        assert_eq!(
+            CBorrowed::into_inner(unsafe {
+                <CallbackValue as Echo>::echo_raw(CBorrowed::new(CallbackValue(42)))
+            }),
+            CallbackValue(42)
+        );
+        assert_eq!(
+            imported_apply_callback(sum_pair, CallbackValue(19), CallbackValue(23)),
+            CallbackValue(42)
+        );
+        assert_eq!(
+            CBorrowed::into_inner(unsafe {
+                imported_apply_callback_raw(
+                    CBorrowed::new(Some(sum_pair as CCallback)),
+                    CBorrowed::new(CallbackValue(19)),
+                    CBorrowed::new(CallbackValue(23)),
+                )
+            }),
+            CallbackValue(42)
+        );
+        assert_eq!(
+            CBorrowed::into_inner(unsafe {
+                raw_only_apply_callback(
+                    CBorrowed::new(Some(sum_pair as CCallback)),
+                    CBorrowed::new(CallbackValue(19)),
+                    CBorrowed::new(CallbackValue(23)),
+                )
+            }),
+            CallbackValue(42)
+        );
+        assert_eq!(
+            CBorrowed::into_inner(unsafe {
+                CallbackValue::add_raw(
+                    CBorrowed::new(CallbackValue(19)),
+                    CBorrowed::new(CallbackValue(23)),
+                )
+            }),
+            CallbackValue(42)
+        );
+        let system_raw: unsafe extern "system" fn(
+            CBorrowed<CallbackValue>,
+            CBorrowed<CallbackValue>,
+        ) -> CBorrowed<CallbackValue> = imported_system_sum_native;
+        assert_eq!(
+            CBorrowed::into_inner(unsafe {
+                system_raw(
+                    CBorrowed::new(CallbackValue(19)),
+                    CBorrowed::new(CallbackValue(23)),
+                )
+            }),
+            CallbackValue(42)
+        );
+        assert_eq!(
+            imported_sum_native(CallbackValue(19), CallbackValue(23)),
+            CallbackValue(42)
+        );
+        assert_eq!(
+            CBorrowed::into_inner(unsafe {
+                imported_sum_native_raw(
+                    CBorrowed::new(CallbackValue(19)),
+                    CBorrowed::new(CallbackValue(23)),
+                )
+            }),
+            CallbackValue(42)
+        );
+        assert_eq!(
+            imported_apply_callback(sum_native_raw, CallbackValue(19), CallbackValue(23)),
+            CallbackValue(42)
+        );
+        assert_eq!(
+            imported_apply_optional_callback(Some(sum_pair), CallbackValue(41)),
+            CallbackValue(42)
+        );
+        assert_eq!(
+            imported_apply_optional_callback(None, CallbackValue(41)),
+            CallbackValue(41)
+        );
+    }
+
+    #[cfg(all(feature = "alloc", feature = "derive"))]
+    fn cstr_len(value: &CStr) -> usize {
+        value.to_bytes().len()
+    }
+
+    #[cfg(all(feature = "alloc", feature = "derive"))]
+    raw! {
+        fn cstr_len(value: &CStr) -> usize;
+    }
+
+    #[test]
+    #[cfg(all(feature = "alloc", feature = "derive"))]
+    fn raw_cstr_uses_thin_char_pointer() {
+        let callback: unsafe extern "C" fn(CBorrowed<&'static CStr>) -> usize = cstr_len_raw;
+        assert_eq!(
+            unsafe { callback(CBorrowed::new(co3::encode(c"hello"))) },
+            5
+        );
+    }
+
+    #[unsafe(export_name = "abi_cstr__borrowed")]
+    #[cfg(all(feature = "alloc", feature = "derive"))]
+    extern "C" fn borrowed_source(value: *const c_char) -> *const c_char {
+        value
+    }
+
+    #[unsafe(export_name = "abi_cstr__borrowed_native")]
+    #[cfg(all(feature = "alloc", feature = "derive"))]
+    extern "C" fn borrowed_native_source(value: *const c_char) -> *const c_char {
+        value
+    }
+
+    #[cfg(all(feature = "alloc", feature = "derive"))]
+    ffi! {
+        #![unsafe(extern("C"))]
+        #![symbol_prefix = "abi_cstr"]
+
+        raw fn borrowed<'a>(value: &'a CStr) -> &'a CStr;
+        fn borrowed_native<'a>(value: &'a CStr) -> &'a CStr;
+    }
+
+    #[test]
+    #[cfg(all(feature = "alloc", feature = "derive"))]
+    fn imported_cstr_uses_thin_char_pointer() {
+        let callback: unsafe extern "C" fn(CBorrowed<&'static CStr>) -> CBorrowed<&'static CStr> =
+            borrowed;
+        let original = c"hello";
+        assert_eq!(
+            CBorrowed::into_inner(unsafe { callback(CBorrowed::new(co3::encode(original))) })
+                .as_ptr()
+                .cast::<u8>(),
+            original.as_ptr().cast::<u8>()
+        );
+        assert_eq!(borrowed_native(original), original);
+    }
+
+    #[cfg(all(feature = "alloc", feature = "derive"))]
+    fn flip(value: bool) -> bool {
+        !value
+    }
+
+    #[cfg(all(feature = "alloc", feature = "derive"))]
+    fn next_ascii(value: char) -> char {
+        char::from_u32(value as u32 + 1).unwrap()
+    }
+
+    #[cfg(all(feature = "alloc", feature = "derive"))]
+    raw! {
+        fn flip(value: bool) -> bool;
+        fn next_ascii(value: char) -> char;
+    }
+
+    #[test]
+    #[cfg(all(feature = "alloc", feature = "derive"))]
+    fn copy_primitives_with_custom_carriers_use_value_conversion() {
+        let raw_flip: unsafe extern "C" fn(_) -> _ = flip_raw;
+        let raw_next_ascii: unsafe extern "C" fn(_) -> _ = next_ascii_raw;
+
+        let flipped = unsafe { raw_flip(co3::encode(true)) };
+        assert_eq!(
+            unsafe { co3::decode::<bool>(CBorrowed::into_inner(flipped)) },
+            Some(false)
+        );
+        assert_eq!(
+            CBorrowed::into_inner(unsafe { raw_next_ascii(co3::encode('a')) }),
+            co3::encode('b')
+        );
+    }
+
+    #[cfg(all(feature = "alloc", feature = "derive"))]
+    static RAW_ORDER_EVENTS: AtomicUsize = AtomicUsize::new(0);
+    #[cfg(all(feature = "alloc", feature = "derive"))]
+    fn validate_raw_order(value: &u8) -> bool {
+        RAW_ORDER_EVENTS
+            .try_update(Ordering::SeqCst, Ordering::SeqCst, |previous| {
+                Some(previous * 10 + usize::from(*value))
+            })
+            .unwrap();
+        true
+    }
+
+    #[derive(RustSpec, ReprC)]
+    #[repr(transparent)]
+    #[rust_spec(non_robust)]
+    #[repr_c(is_valid = |value| validate_raw_order(value))]
+    #[cfg(all(feature = "alloc", feature = "derive"))]
+    struct RawOrderProbe(u8);
+
+    #[derive(RustSpec, ReprC)]
+    #[cfg(all(feature = "alloc", feature = "derive"))]
+    struct RawOrderRecord(RawOrderProbe, RawOrderProbe, [u8; 1]);
+
+    #[cfg(all(feature = "alloc", feature = "derive"))]
+    fn raw_order_tuple(values: (RawOrderProbe, RawOrderProbe, RawOrderProbe)) -> u8 {
+        values.0.0 + values.1.0 + values.2.0
+    }
+
+    #[cfg(all(feature = "alloc", feature = "derive"))]
+    fn raw_order_record(value: RawOrderRecord) -> u8 {
+        value.0.0 + value.1.0 + value.2[0]
+    }
+
+    #[cfg(all(feature = "alloc", feature = "derive"))]
+    raw! {
+        fn raw_order_tuple(values: (RawOrderProbe, RawOrderProbe, RawOrderProbe)) -> u8;
+        fn raw_order_record(value: RawOrderRecord) -> u8;
+    }
+
+    #[test]
+    #[cfg(all(feature = "alloc", feature = "derive"))]
+    fn raw_companions_validate_fields_in_declaration_order() {
+        assert_eq!(
+            unsafe {
+                raw_order_tuple_raw(CBorrowed::new(Tuple3(
+                    <RawOrderProbe as co3::ReprC>::CType::from_fields(1),
+                    <RawOrderProbe as co3::ReprC>::CType::from_fields(2),
+                    <RawOrderProbe as co3::ReprC>::CType::from_fields(3),
+                )))
+            },
+            6
+        );
+        assert_eq!(RAW_ORDER_EVENTS.swap(0, Ordering::SeqCst), 123);
+
+        assert_eq!(
+            unsafe {
+                raw_order_record_raw(CBorrowed::new(<RawOrderRecord as co3::ReprC>::CType::from_fields(
+                    <RawOrderProbe as co3::ReprC>::CType::from_fields(1),
+                    <RawOrderProbe as co3::ReprC>::CType::from_fields(2),
+                    [3],
+                )))
+            },
+            6
+        );
+        assert_eq!(RAW_ORDER_EVENTS.swap(0, Ordering::SeqCst), 12);
+    }
+
+    #[cfg(all(feature = "alloc", feature = "derive"))]
+    fn generic_identity<T>(value: T) -> T {
+        value
+    }
+
+    #[cfg(all(feature = "alloc", feature = "derive"))]
+    fn generic_cloned<T: Clone>(value: T) -> T {
+        value.clone()
+    }
+
+    #[cfg(all(feature = "alloc", feature = "derive"))]
+    fn generic_const_value<const N: usize>() -> usize {
+        N
+    }
+
+    #[cfg(all(feature = "alloc", feature = "derive"))]
+    fn generic_borrowed<'a>(value: &'a u8) -> &'a u8 {
+        value
+    }
+
+    #[cfg(all(feature = "alloc", feature = "derive"))]
+    struct GenericCallbackHost<T>(core::marker::PhantomData<T>);
+
+    #[cfg(all(feature = "alloc", feature = "derive"))]
+    impl<T: Clone> GenericCallbackHost<T> {
+        fn echo(value: T) -> T {
+            value
+        }
+
+        fn method<U: Clone>(value: U) -> U {
+            value.clone()
+        }
+    }
+
+    #[cfg(all(feature = "alloc", feature = "derive"))]
+    raw! {
+        pub fn generic_identity<T>(value: move T) -> move T;
+        pub fn generic_cloned<T: Clone>(value: T) -> move T;
+        pub fn generic_const_value<const N: usize>() -> usize;
+        pub fn generic_borrowed<'a>(value: &'a u8) -> &'a u8;
+
+        impl<T: Clone> GenericCallbackHost<T> {
+            pub fn echo(value: move T) -> move T;
+            pub fn method<U: Clone>(value: move U) -> move U;
+        }
+    }
+
+    #[cfg(all(feature = "alloc", feature = "derive"))]
+    ffi! {
+        #![unsafe(extern("C"))]
+
+        type StringRaw = raw extern "C" fn(move String) -> move String;
+        type BytesRaw = raw extern "C" fn(move Vec<u8>) -> move Vec<u8>;
+    }
+
+    #[test]
+    #[cfg(all(feature = "alloc", feature = "derive"))]
+    fn generic_companions_preserve_borrowing() {
+        let generic_identity: StringRaw = generic_identity_raw::<String>;
+        let value: String = unsafe { generic_identity.call(String::from("hello")) }.unwrap();
+        assert_eq!(value, "hello");
+
+        assert_eq!(unsafe { generic_cloned_raw::<u8>(CBorrowed::new(7)) }, 7);
+        assert_eq!(unsafe { generic_const_value_raw::<4>() }, 4);
+        let byte = 9_u8;
+        assert_eq!(
+            unsafe {
+                *CBorrowed::into_inner(generic_borrowed_raw(CBorrowed::new(CRef::from_ref(&byte))))
+                    .as_ptr()
+            },
+            9
+        );
+
+        let echo: BytesRaw = GenericCallbackHost::<Vec<u8>>::echo_raw;
+        let value: Vec<u8> = unsafe { echo.call(vec![1_u8, 2, 3]) }.unwrap();
+        assert_eq!(value, [1, 2, 3]);
+
+        let method: StringRaw = GenericCallbackHost::<u8>::method_raw::<String>;
+        let value: String = unsafe { method.call(String::from("method")) }.unwrap();
+        assert_eq!(value, "method");
+    }
+
+    #[cfg(all(feature = "alloc", feature = "derive"))]
+    fn existing(value: u8) -> u8 {
+        value
+    }
+
+    #[cfg(all(feature = "alloc", feature = "derive"))]
+    raw! {
+        fn existing(value: u8) -> u8;
+    }
+
+    #[cfg(all(feature = "alloc", feature = "derive"))]
+    fn signature_identity<T>(value: T) -> T {
+        value
+    }
+
+    #[cfg(all(feature = "alloc", feature = "derive"))]
+    raw! {
+        fn signature_identity<T>(value: move T) -> move T;
+    }
+
+    #[allow(improper_ctypes_definitions)]
+    #[cfg(all(feature = "alloc", feature = "derive"))]
+    type ArrayCompanion = unsafe extern "C" fn([u8; 2]) -> [u8; 2];
+
+    #[cfg(all(feature = "alloc", feature = "derive"))]
+    static_assertions::assert_not_impl_any!(ArrayCompanion: ReprC);
+
+    #[cfg(all(feature = "alloc", feature = "derive"))]
+    fn accept(_callback: for<'a> unsafe extern "C" fn()) {}
+
+    #[cfg(all(feature = "alloc", feature = "derive"))]
+    raw! {
+        pub fn accept(callback: for<'a> unsafe extern "C" fn());
+    }
+
+    #[cfg(all(feature = "alloc", feature = "derive"))]
+    fn borrowed_generic<'a, T>(value: &'a T) -> &'a T {
+        value
+    }
+
+    #[cfg(all(feature = "alloc", feature = "derive"))]
+    raw! {
+        fn borrowed_generic<'a, T>(value: &'a T) -> &'a T;
+    }
+
+    #[cfg(all(feature = "alloc", feature = "derive"))]
+    fn take<'a, T>(_value: &'a T) {}
+
+    #[cfg(all(feature = "alloc", feature = "derive"))]
+    struct ArgumentHost;
+
+    #[cfg(all(feature = "alloc", feature = "derive"))]
+    impl ArgumentHost {
+        fn take<'a, T>(_value: &'a T) {}
+    }
+
+    #[cfg(all(feature = "alloc", feature = "derive"))]
+    raw! {
+        fn take<'a, T>(value: &'a T);
+
+        impl ArgumentHost {
+            fn take<'a, T>(value: &'a T);
+        }
+    }
+
+    #[cfg(all(feature = "alloc", feature = "derive"))]
+    struct MethodHost;
+
+    #[cfg(all(feature = "alloc", feature = "derive"))]
+    impl MethodHost {
+        fn borrowed_generic<'a, T>(value: &'a T) -> &'a T {
+            value
+        }
+    }
+
+    #[cfg(all(feature = "alloc", feature = "derive"))]
+    raw! {
+        impl MethodHost {
+            fn borrowed_generic<'a, T>(value: &'a T) -> &'a T;
+        }
+    }
+
+    #[test]
+    #[cfg(all(feature = "alloc", feature = "derive"))]
+    fn generic_reference_companions_preserve_borrowing() {
+        assert_eq!(unsafe { existing_raw(7) }, 7);
+        let _ = accept_raw;
+        let _ = borrowed_generic_raw::<u8>;
+        let _ = MethodHost::borrowed_generic_raw::<u8>;
+        let _: ArrayCompanion = signature_identity_raw::<[u8; 2]>;
+
+        let value = 7_u8;
+        unsafe {
+            take_raw::<u8>(CBorrowed::new(CRef::from_ref(&value)));
+            ArgumentHost::take_raw::<u8>(CBorrowed::new(CRef::from_ref(&value)));
+        }
+    }
+
+    #[cfg(all(feature = "alloc", feature = "derive"))]
+    extern "system" fn system_source(value: u8) -> u8 {
+        value + 1
+    }
+
+    #[cfg(all(feature = "alloc", feature = "derive"))]
+    extern "Rust" fn explicit_rust_source(value: u8) -> u8 {
+        value + 4
+    }
+
+    #[cfg(all(feature = "alloc", feature = "derive"))]
+    fn rust_source(value: u8) -> u8 {
+        value + 2
+    }
+
+    #[cfg(all(feature = "alloc", feature = "derive"))]
+    fn default_source(value: u8) -> u8 {
+        value + 3
+    }
+
+    #[cfg(all(feature = "alloc", feature = "derive"))]
+    fn overwrite(bytes: &mut [u8]) -> usize {
+        bytes.fill(7);
+        bytes.len()
+    }
+
+    #[derive(Clone, Copy, RustSpec, ReprC)]
+    #[repr_c(identity)]
+    #[repr(transparent)]
+    #[cfg(all(feature = "alloc", feature = "derive"))]
+    struct CompanionValue(u8);
+
+    #[cfg(all(feature = "alloc", feature = "derive"))]
+    impl CompanionValue {
+        fn add(self, amount: u8) -> u8 {
+            self.0 + amount
+        }
+
+        extern "system" fn add_system(self, amount: u8) -> u8 {
+            self.0 + amount + 1
+        }
+    }
+
+    #[cfg(all(feature = "alloc", feature = "derive"))]
+    raw! {
+        pub fn default_source(value: u8) -> u8;
+        pub fn overwrite(#[unpack(_, _)] bytes: &mut [u8]) -> usize;
+
+        impl CompanionValue {
+            pub fn add(self, amount: u8) -> u8;
+        }
+    }
+
+    #[cfg(all(feature = "alloc", feature = "derive"))]
+    raw! {
+        pub fn rust_source(value: u8) -> u8;
+        pub extern "system" fn system_source(value: u8) -> u8;
+        pub extern "Rust" fn explicit_rust_source(value: u8) -> u8;
+
+        impl CompanionValue {
+            pub extern "system" fn add_system(self, amount: u8) -> u8;
+        }
+    }
+
+    #[cfg(all(feature = "alloc", feature = "derive"))]
+    type OrdinaryAlias<T> = Option<T>;
+
+    #[cfg(all(feature = "alloc", feature = "derive"))]
+    co3::ffi! {
+        #![unsafe(export("C"))]
+        type SystemCallback = raw extern "system" fn(u8) -> u8;
+        type UnpackedCallback = raw fn(#[unpack(_, _)] &mut [u8]) -> usize;
+    }
+
+    #[test]
+    #[cfg(all(feature = "alloc", feature = "derive"))]
+    fn companions_preserve_borrowing_and_calling_conventions() {
+        let c: unsafe extern "system" fn(u8) -> u8 = system_source;
+        let system: unsafe extern "C" fn(u8) -> u8 = rust_source_raw;
+        let default: unsafe extern "C" fn(u8) -> u8 = default_source_raw;
+        let method: unsafe extern "C" fn(CBorrowed<CompanionValue>, u8) -> u8 =
+            CompanionValue::add_raw;
+        let callback: SystemCallback = system_source;
+        let system_companion: unsafe extern "C" fn(u8) -> u8 = system_source_raw;
+        let rust_companion: unsafe extern "C" fn(u8) -> u8 = explicit_rust_source_raw;
+        let method_companion: unsafe extern "C" fn(CBorrowed<CompanionValue>, u8) -> u8 =
+            CompanionValue::add_system_raw;
+        let _: OrdinaryAlias<CompanionValue> = Some(CompanionValue(1));
+        let _: unsafe extern "system" fn(u8) -> u8 = callback;
+        let unpacked: UnpackedCallback = overwrite_raw;
+        let mut bytes = [0_u8; 3];
+        assert_eq!(unsafe { unpacked(bytes.as_mut_ptr(), bytes.len()) }, 3);
+        assert_eq!(bytes, [7; 3]);
+
+        assert_eq!(unsafe { c(1) }, 2);
+        assert_eq!(unsafe { system(1) }, 3);
+        assert_eq!(unsafe { default(1) }, 4);
+        assert_eq!(unsafe { method(CBorrowed::new(CompanionValue(1)), 2) }, 3);
+        assert_eq!(unsafe { callback(1) }, 2);
+        assert_eq!(unsafe { system_companion(1) }, 2);
+        assert_eq!(unsafe { rust_companion(1) }, 5);
+        assert_eq!(
+            unsafe { method_companion(CBorrowed::new(CompanionValue(1)), 2) },
+            4
+        );
+    }
+
+    #[cfg(all(feature = "alloc", feature = "derive"))]
+    ffi! {
+        #![unsafe(extern("C"))]
+
+        type AliasExplicitAbi = raw extern "system" fn(u8);
+        type AliasInheritedAbi = raw fn(u8);
+        type AliasOrdinary = core::num::NonZeroU8;
+        type AliasRegular = extern "C" fn(u8);
+        type AliasSharedUnpacked = extern "C" fn(#[unpack(_, _)] &[u8]) -> usize;
+        type AliasInteriorUnpacked = raw extern "C" fn(#[unpack(*mut core::cell::Cell<u8>, usize)] &[core::cell::Cell<u8>]) -> usize;
+        type AliasRegularUnpacked = extern "C" fn(#[unpack(_, _)] &mut [u8]) -> usize;
+        type AliasComposite = (String, raw fn(String));
+        type AliasMaybeCallback = Option<raw fn(u8)>;
+        type AliasNicheOk = Result<core::num::NonZeroU8, ()>;
+        type AliasNicheErr = Result<(), core::num::NonZeroU8>;
+        type AliasCompositeReturn = (u8, raw fn() -> u8);
+        type AliasNested = raw extern "C" fn(raw extern "system" fn(u8));
+        type AliasReturned = raw fn() -> raw fn(u8);
+        type AliasRawNested = raw extern "C" fn(extern "system" fn(u8));
+    }
+
+    #[cfg(all(feature = "alloc", feature = "derive"))]
+    ffi! {
+        #![unsafe(extern("C"))]
+
+        fn alias_interior_slice(#[unpack(*mut core::cell::Cell<u8>, usize)] values: &[core::cell::Cell<u8>]) -> usize;
+    }
+
+    #[cfg(all(feature = "alloc", feature = "derive"))]
+    ffi! {
+        #![unsafe(extern("C"))]
+
+        type AliasBadArg = raw extern "C" fn(move [u8; 2]);
+        type AliasBadReturn = raw extern "C" fn() -> move [u8; 2];
+    }
+
+    #[cfg(all(feature = "alloc", feature = "derive"))]
+    ffi! {
+        #![unsafe(export("C"))]
+
+        type AliasMoved<T> = raw extern "C" fn(move T) -> move T;
+        type AliasBorrowed<T> = raw extern "C" fn(T) -> T;
+        type AliasArray<const N: usize> = raw extern "C" fn(move [u8; N]) -> move [u8; N];
+        type AliasCombined<T, const N: usize> = raw extern "C" fn(move [T; N]);
+    }
+
+    #[test]
+    #[cfg(all(feature = "alloc", feature = "derive"))]
+    fn raw_aliases_preserve_lowered_signatures() {
+        let _: Option<AliasExplicitAbi> = None;
+        static_assertions::assert_type_eq_all!(AliasExplicitAbi, unsafe extern "system" fn(u8));
+        static_assertions::assert_type_eq_all!(AliasInheritedAbi, unsafe extern "C" fn(u8));
+        static_assertions::assert_type_eq_all!(AliasOrdinary, co3::num::NonZero<u8>);
+        static_assertions::assert_type_eq_all!(AliasRegular, Option<extern "C" fn(u8)>);
+        static_assertions::assert_type_eq_all!(
+            AliasSharedUnpacked,
+            Option<unsafe extern "C" fn(*const u8, usize) -> usize>
+        );
+        static_assertions::assert_type_eq_all!(
+            AliasInteriorUnpacked,
+            unsafe extern "C" fn(*mut core::cell::Cell<u8>, usize) -> usize
+        );
+        static_assertions::assert_type_eq_all!(
+            AliasRegularUnpacked,
+            Option<unsafe extern "C" fn(*mut u8, usize) -> usize>
+        );
+        let _: Option<AliasComposite> = None;
+        static_assertions::assert_type_eq_all!(
+            AliasMaybeCallback,
+            co3::option::COptionSome<unsafe extern "C" fn(u8)>
+        );
+        static_assertions::assert_type_eq_all!(AliasNicheOk, co3::result::CResultOk<core::num::NonZeroU8, ()>);
+        static_assertions::assert_type_eq_all!(AliasNicheErr, co3::result::CResultErr<(), core::num::NonZeroU8>);
+        static_assertions::assert_type_eq_all!(
+            AliasCompositeReturn,
+            <(u8, unsafe extern "C" fn() -> u8) as ReprC>::CType
+        );
+        static_assertions::assert_type_eq_all!(
+            AliasNested,
+            unsafe extern "C" fn(Option<unsafe extern "system" fn(u8)>)
+        );
+        static_assertions::assert_type_eq_all!(
+            AliasReturned,
+            unsafe extern "C" fn() -> CBorrowed<unsafe extern "C" fn(u8)>
+        );
+        let _: Option<AliasRawNested> = None;
+
+        static_assertions::assert_type_eq_all!(AliasBadArg, unsafe extern "C" fn([u8; 2]));
+        static_assertions::assert_type_eq_all!(AliasBadReturn, unsafe extern "C" fn() -> [u8; 2]);
+        static_assertions::assert_not_impl_any!(AliasBadArg: ReprC);
+        static_assertions::assert_not_impl_any!(AliasBadReturn: ReprC);
+
+        type AliasStringC = <String as ReprC>::CType;
+        static_assertions::assert_type_eq_all!(
+            AliasMoved<String>,
+            unsafe extern "C" fn(AliasStringC) -> AliasStringC
+        );
+        static_assertions::assert_type_eq_all!(
+            AliasBorrowed<u8>,
+            unsafe extern "C" fn(CBorrowed<u8>) -> CBorrowed<u8>
+        );
+        static_assertions::assert_type_eq_all!(
+            AliasArray<2>,
+            unsafe extern "C" fn([u8; 2]) -> [u8; 2]
+        );
+        static_assertions::assert_type_eq_all!(AliasCombined<u8, 2>, unsafe extern "C" fn([u8; 2]));
+    }
+
+    #[derive(Debug, PartialEq, Eq, RustSpec, ReprC)]
+    #[repr(u8)]
+    #[cfg(all(feature = "alloc", feature = "derive"))]
+    enum CustomStatus {
+        #[repr_c(allow_zero_tag)]
+        Ok,
+        TrapValue,
+        UnknownHandle,
+        SoftSyncError,
+    }
+
+    #[cfg(all(feature = "alloc", feature = "derive"))]
+    impl Error for CustomStatus {
+        fn trap_value() -> Self {
+            Self::TrapValue
+        }
+
+        fn unknown_tag() -> Self {
+            Self::UnknownHandle
+        }
+
+        fn soft_sync_error() -> Self {
+            Self::SoftSyncError
+        }
+    }
+
+    #[cfg(all(feature = "alloc", feature = "derive"))]
+    fn export_error_input(value: NonZeroU8) -> CustomStatus {
+        if value.get() == 11 {
+            CustomStatus::UnknownHandle
+        } else {
+            CustomStatus::Ok
+        }
+    }
+
+    #[cfg(all(feature = "alloc", feature = "derive"))]
+    ffi! {
+        #![unsafe(export("C"))]
+        #![failure = "error"]
+        #![symbol_prefix = "kita_failure"]
+
+        fn export_error_input(value: NonZeroU8) -> CustomStatus;
+    }
+
+    #[unsafe(export_name = "kita_failure__extern_error_invalid_return")]
+    #[cfg(all(feature = "alloc", feature = "derive"))]
+    unsafe extern "C" fn extern_error_invalid_return() -> <CustomStatus as ReprC>::CType {
+        <CustomStatus as co3::ReprC>::CType::from_u8(7)
+    }
+
+    #[cfg(all(feature = "alloc", feature = "derive"))]
+    ffi! {
+        #![unsafe(extern("C"))]
+        #![failure = "error"]
+        #![symbol_prefix = "kita_failure"]
+
+        #[symbol_name = "kita_failure__extern_error_invalid_return"]
+
+        pub fn imported_invalid_return() -> CustomStatus;
+    }
+
+    #[cfg(all(feature = "alloc", feature = "derive"))]
+    unsafe extern "C" {
+        #[link_name = "kita_failure__export_error_input"]
+        fn export_error_input_raw(value: u8) -> <CustomStatus as ReprC>::CType;
+    }
+
+    #[cfg(all(feature = "alloc", feature = "derive"))]
+    fn decode_status(source: <CustomStatus as ReprC>::CType) -> CustomStatus {
+        unsafe { co3::decode(source) }.expect("status should decode")
+    }
+
+    #[test]
+    #[cfg(all(feature = "alloc", feature = "derive"))]
+    fn fieldless_enum_variant_constructors_expose_tags() {
+        assert_eq!(
+            <CustomStatus as co3::ReprC>::CType::UnknownHandle().tag(),
+            CustomStatus::UnknownHandle as u8
+        );
+        assert_eq!(
+            <CustomStatus as co3::ReprC>::CType::SoftSyncError().tag(),
+            CustomStatus::SoftSyncError as u8
+        );
+    }
+
+    #[test]
+    #[cfg(all(feature = "alloc", feature = "derive"))]
+    fn error_failure_mode_returns_status_on_export_decode_failure() {
+        let status = unsafe { export_error_input_raw(0) };
+
+        assert_eq!(CustomStatus::trap_value(), decode_status(status));
+    }
+
+    #[test]
+    #[cfg(all(feature = "alloc", feature = "derive"))]
+    fn error_failure_mode_preserves_export_success_value() {
+        let status = unsafe { export_error_input_raw(11) };
+
+        assert_eq!(CustomStatus::UnknownHandle, decode_status(status));
+    }
+
+    #[test]
+    #[cfg(all(feature = "alloc", feature = "derive"))]
+    fn error_failure_mode_returns_status_on_extern_return_decode_failure() {
+        assert_eq!(CustomStatus::trap_value(), imported_invalid_return());
+    }
+
+    #[cfg(all(feature = "alloc", feature = "derive"))]
+    static IMPORTED_ORDER_EVENTS: AtomicUsize = AtomicUsize::new(0);
+
+    #[cfg(all(feature = "alloc", feature = "derive"))]
+    fn validate_imported_order(value: &u8) -> bool {
+        IMPORTED_ORDER_EVENTS
+            .try_update(Ordering::SeqCst, Ordering::SeqCst, |events| {
+                Some(events * 10 + usize::from(*value))
+            })
+            .unwrap();
+        true
+    }
+
+    #[derive(RustSpec, ReprC)]
+    #[repr(transparent)]
+    #[rust_spec(non_robust)]
+    #[repr_c(is_valid = |value| validate_imported_order(value))]
+    #[cfg(all(feature = "alloc", feature = "derive"))]
+    struct ImportedOrderProbe(u8);
+
+    #[derive(RustSpec, ReprC)]
+    #[cfg(all(feature = "alloc", feature = "derive"))]
+    struct ImportedOrderRecord(ImportedOrderProbe, ImportedOrderProbe, [u8; 1]);
+
+    #[unsafe(export_name = "field_order_tuple")]
+    #[cfg(all(feature = "alloc", feature = "derive"))]
+    extern "C" fn receive_tuple(
+        values: Tuple3<
+            <ImportedOrderProbe as crate::ReprC>::CType,
+            <ImportedOrderProbe as crate::ReprC>::CType,
+            <ImportedOrderProbe as crate::ReprC>::CType,
+            false,
+        >,
+    ) -> u8 {
+        values.0.0 + values.1.0 + values.2.0
+    }
+
+    #[unsafe(export_name = "field_order_record")]
+    #[cfg(all(feature = "alloc", feature = "derive"))]
+    extern "C" fn receive_record(value: <ImportedOrderRecord as co3::ReprC>::CType) -> u8 {
+        value.0.0 + value.1.0 + value.2[0]
+    }
+
+    #[cfg(all(feature = "alloc", feature = "derive"))]
+    ffi! {
+        #![unsafe(extern("C"))]
+
+        #[symbol_name = "field_order_tuple"]
+        pub fn imported_order_tuple(values: (ImportedOrderProbe, ImportedOrderProbe, ImportedOrderProbe)) -> u8;
+
+        #[symbol_name = "field_order_record"]
+        pub fn imported_order_record(value: ImportedOrderRecord) -> u8;
+    }
+
+    #[cfg(all(feature = "alloc", feature = "derive"))]
+    fn assert_events(expected: &[u8]) {
+        let expected = expected
+            .iter()
+            .fold(0, |events, value| events * 10 + usize::from(*value));
+        assert_eq!(IMPORTED_ORDER_EVENTS.swap(0, Ordering::SeqCst), expected);
+    }
+
+    #[test]
+    #[cfg(debug_assertions)]
+    #[cfg(all(feature = "alloc", feature = "derive"))]
+    fn imported_arguments_validate_fields_in_declaration_order() {
+        assert_eq!(
+            imported_order_tuple((
+                ImportedOrderProbe(1),
+                ImportedOrderProbe(2),
+                ImportedOrderProbe(3)
+            )),
+            6
+        );
+        assert_events(&[1, 2, 3]);
+
+        assert_eq!(
+            imported_order_record(ImportedOrderRecord(
+                ImportedOrderProbe(1),
+                ImportedOrderProbe(2),
+                [3]
+            )),
+            6
+        );
+        assert_events(&[1, 2]);
     }
 }

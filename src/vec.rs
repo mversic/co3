@@ -12,7 +12,6 @@ use rust_spec::RustSpec;
 
 use crate::{
     CFnArg, CFnReturn, CType, Decode, Encode, EncodeUnchecked, ReprC, Zeroable,
-    borrow::Borrowed,
     stored::{DecodeMove, EncodeMove, EncodeMoveUnchecked},
     transmute::{AbiCompatible, AbiCompatibleValidate},
     wide::impl_identity_carrier,
@@ -30,14 +29,16 @@ pub struct Vec<T> {
 /// A null pointer is reserved as a niche and does not represent a vector.
 /// `T` names the Rust element type; the allocation contains `T::CType` elements.
 #[derive(RustSpec)]
+/// `STABLE` identifies the co3 source family (`true`) or native Rust family (`false`).
 #[repr(C)]
-pub struct CVec<T: ReprC<CType: Sized>> {
+#[doc(hidden)]
+pub struct CVec<T: ReprC<CType: Sized>, const STABLE: bool = false> {
     data: *mut T::CType,
     capacity: usize,
     len: usize,
 }
 
-unsafe impl<T: ReprC<CType: Sized>> Zeroable for CVec<T> {}
+unsafe impl<T: ReprC<CType: Sized>, const STABLE: bool> Zeroable for CVec<T, STABLE> {}
 
 struct VecOwner<'a, T> {
     target: &'a mut Vec<T>,
@@ -158,16 +159,6 @@ impl<'a, T> IntoIterator for &'a mut Vec<T> {
         self.iter_mut()
     }
 }
-unsafe impl<T> crate::borrow::Borrow for Vec<T> {
-    type Borrowed = Borrowed<Self>;
-
-    fn borrow(self) -> Self::Borrowed {
-        Borrowed::new(self)
-    }
-    fn from_borrow(value: Self::Borrowed) -> Self {
-        Borrowed::into_inner(value)
-    }
-}
 
 impl<T> Drop for Vec<T> {
     fn drop(&mut self) {
@@ -191,20 +182,20 @@ impl<T> DerefMut for Vec<T> {
     }
 }
 
-impl<T: ReprC<CType: Sized>> Copy for CVec<T> {}
-impl<T: ReprC<CType: Sized>> Clone for CVec<T> {
+impl<T: ReprC<CType: Sized>, const STABLE: bool> Copy for CVec<T, STABLE> {}
+impl<T: ReprC<CType: Sized>, const STABLE: bool> Clone for CVec<T, STABLE> {
     fn clone(&self) -> Self {
         *self
     }
 }
 
-impl<T: ReprC<CType: CType + Sized>> Default for CVec<T> {
+impl<T: ReprC<CType: CType + Sized>, const STABLE: bool> Default for CVec<T, STABLE> {
     fn default() -> Self {
         Self::null()
     }
 }
 
-impl<T: ReprC<CType: CType + Sized>> CVec<T> {
+impl<T: ReprC<CType: CType + Sized>, const STABLE: bool> CVec<T, STABLE> {
     pub const fn null() -> Self {
         Self {
             data: core::ptr::null_mut(),
@@ -239,7 +230,12 @@ impl<T: ReprC<CType: CType + Sized>> CVec<T> {
     }
 }
 
-impl<T: ReprC<CType: Sized>> CVec<T> {
+impl<T: ReprC<CType: Sized>, const STABLE: bool> CVec<T, STABLE> {
+    pub(crate) fn with_source<const OTHER: bool>(self) -> CVec<T, OTHER> {
+        // The source discriminator has no storage and does not affect layout.
+        unsafe { crate::transmute::transmute_owned(self) }
+    }
+
     pub const fn as_ptr(self) -> *mut T::CType {
         self.data
     }
@@ -268,8 +264,8 @@ impl<T: ReprC<CType: Sized>> CVec<T> {
         Some(unsafe { RustVec::from_raw_parts(data.as_ptr(), self.len, self.capacity) })
     }
 }
-impl_identity_carrier! { CVec, [T: ReprC<CType: CType + Sized>], [T] }
-crate::wide::impl_carrier_borrow! { CVec, [T: ReprC<CType: CType + Sized>], [T] }
+impl_identity_carrier! { CVec, [T: ReprC<CType: CType + Sized>, const STABLE: bool], [T, STABLE] }
+crate::wide::impl_carrier_borrow! { CVec, [T: ReprC<CType: CType + Sized>, const STABLE: bool], [T, STABLE] }
 
 impl<T> From<RustVec<T>> for Vec<T> {
     fn from(value: RustVec<T>) -> Self {
@@ -292,12 +288,12 @@ impl<T> From<Vec<T>> for RustVec<T> {
 }
 
 impl<T: ReprC<CType: Sized>> ReprC for Vec<T> {
-    type CType = CVec<T>;
+    type CType = CVec<T, true>;
 }
 
 #[cfg(feature = "alloc")]
 impl<R: ReprC<CType: Sized>> ReprC for RustVec<R> {
-    type CType = <Vec<R> as ReprC>::CType;
+    type CType = CVec<R>;
 }
 #[cfg(feature = "alloc")]
 impl<R> Encode for RustVec<R> where Self: EncodeMove {}
@@ -389,7 +385,7 @@ unsafe impl<T: AbiCompatible<CType: CType + Sized>> AbiCompatible for Vec<T> whe
     T: RustSpec<Layout = rust_spec::Stable, Mutability: rust_spec::mutability::PointerMutability>
 {
 }
-impl<T: ReprC<CType: Sized>> core::fmt::Debug for CVec<T> {
+impl<T: ReprC<CType: Sized>, const STABLE: bool> core::fmt::Debug for CVec<T, STABLE> {
     fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
         f.debug_struct("CVec")
             .field("data", &self.data)
@@ -399,7 +395,7 @@ impl<T: ReprC<CType: Sized>> core::fmt::Debug for CVec<T> {
     }
 }
 
-impl<T: ReprC<CType: Sized>> PartialEq for CVec<T> {
+impl<T: ReprC<CType: Sized>, const STABLE: bool> PartialEq for CVec<T, STABLE> {
     fn eq(&self, other: &Self) -> bool {
         !self.data.is_null()
             && self.data == other.data
@@ -408,7 +404,7 @@ impl<T: ReprC<CType: Sized>> PartialEq for CVec<T> {
     }
 }
 
-impl<T: ReprC<CType: Sized>> PartialOrd for CVec<T> {
+impl<T: ReprC<CType: Sized>, const STABLE: bool> PartialOrd for CVec<T, STABLE> {
     fn partial_cmp(&self, other: &Self) -> Option<core::cmp::Ordering> {
         if self.data.is_null() || other.data.is_null() {
             None

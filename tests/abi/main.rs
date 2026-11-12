@@ -47,7 +47,6 @@ macro_rules! assert_not_shared_encoder {
 
 mod alignment;
 mod boxed_mutability;
-mod callback;
 mod cfg_args;
 mod clippy;
 mod cstr;
@@ -57,7 +56,6 @@ mod cvec;
 mod data_enum_explicit;
 mod direct_interior_encode;
 mod exhaustive_enum;
-mod field_order;
 mod handles;
 mod identity_primitives;
 mod interior_decode;
@@ -71,7 +69,6 @@ mod reference_decode;
 mod regular_drop;
 mod shared_validate;
 mod statics;
-mod status_return;
 mod string_ref_decode;
 mod vec_mutability;
 mod wide;

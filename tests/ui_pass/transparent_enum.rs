@@ -24,27 +24,23 @@ enum ImplicitTransparentTupleEnum {
 }
 
 #[derive(Clone, Copy, RustSpec, ReprC)]
-#[repr_c(transparent)]
 #[repr(transparent)]
 enum ExplicitTransparentTupleEnum {
     A(u8),
 }
 
 #[derive(Clone, Copy, RustSpec, ReprC)]
-#[repr_c(transparent)]
 #[repr(transparent)]
 enum ExplicitTransparentNamedEnum {
     A { value: u8 },
 }
 
 #[derive(Clone, Copy, RustSpec, ReprC)]
-#[repr_c(transparent)]
 enum ExplicitTransparentUnitEnum {
     A,
 }
 
 #[derive(Clone, Copy, RustSpec, ReprC)]
-#[repr_c(transparent)]
 #[repr(u8)]
 enum ExplicitTransparentFieldlessEnum {
     #[repr_c(allow_zero_tag)]
@@ -52,10 +48,22 @@ enum ExplicitTransparentFieldlessEnum {
     B = 1,
 }
 
-static_assertions::assert_type_eq_all!(<ExplicitTransparentTupleEnum as ReprC>::CType, u8);
-static_assertions::assert_type_eq_all!(<ExplicitTransparentNamedEnum as ReprC>::CType, u8);
-static_assertions::assert_type_eq_all!(<ExplicitTransparentUnitEnum as ReprC>::CType, ());
-static_assertions::assert_type_eq_all!(<ExplicitTransparentFieldlessEnum as ReprC>::CType, u8);
+static_assertions::assert_type_eq_all!(
+    <<ExplicitTransparentTupleEnum as ReprC>::CType as ReprC>::CType,
+    <ExplicitTransparentTupleEnum as ReprC>::CType
+);
+static_assertions::assert_type_eq_all!(
+    <<ExplicitTransparentNamedEnum as ReprC>::CType as ReprC>::CType,
+    <ExplicitTransparentNamedEnum as ReprC>::CType
+);
+static_assertions::assert_type_eq_all!(
+    <<ExplicitTransparentUnitEnum as ReprC>::CType as ReprC>::CType,
+    <ExplicitTransparentUnitEnum as ReprC>::CType
+);
+static_assertions::assert_type_eq_all!(
+    <<ExplicitTransparentFieldlessEnum as ReprC>::CType as ReprC>::CType,
+    <ExplicitTransparentFieldlessEnum as ReprC>::CType
+);
 
 const _: () = assert!(
     core::mem::size_of::<<TransparentTupleEnum as ReprC>::CType>() == core::mem::size_of::<u8>()

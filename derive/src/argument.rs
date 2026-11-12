@@ -67,7 +67,7 @@ impl Parse for UnpackPart {
 pub(crate) struct UnpackPair {
     pub(crate) first: ResolvedPart,
     pub(crate) second: ResolvedPart,
-    pub(crate) inferred_option: Option<Type>,
+    pub(crate) inferred_source: Option<Type>,
 }
 
 pub(crate) struct ResolvedPart {
@@ -131,23 +131,23 @@ impl<'a> Argument<'a> {
     }
 
     pub(crate) fn conversion_ty(&self) -> Type {
-        self.with_ownership(&self.ty)
+        self.ty.clone()
     }
 
     pub(crate) fn unpack_ty(&self) -> Type {
         if let Unpack::Pair(pair) = &self.unpack
-            && let Some(ty) = &pair.inferred_option
+            && let Some(ty) = &pair.inferred_source
         {
             return self.with_ownership(ty);
         }
-        self.conversion_ty()
+        self.with_ownership(&self.ty)
     }
 
     fn with_ownership(&self, ty: &Type) -> Type {
         let co3 = co3_path();
         match self.ownership {
             OwnershipMode::ByValue => ty.clone(),
-            OwnershipMode::Borrow => parse_quote!(<#ty as #co3::borrow::Borrow>::Borrowed),
+            OwnershipMode::Borrow => parse_quote!(#co3::borrow::CBorrowed<#ty>),
         }
     }
 
@@ -155,8 +155,12 @@ impl<'a> Argument<'a> {
         if self.identity {
             return self.ty.clone();
         }
-        let ty = self.conversion_ty();
-        parse_quote!(<#ty as co3::ReprC>::CType)
+        let ty = &self.ty;
+        if self.is_borrowed() {
+            parse_quote!(co3::borrow::CBorrowed<#ty>)
+        } else {
+            parse_quote!(<#ty as co3::ReprC>::CType)
+        }
     }
 
     pub(crate) fn forwarded(&self) -> TokenStream {
@@ -220,10 +224,23 @@ impl UnpackSyntax {
             }
             Self::Pair(parts) => parts,
         };
-        let inferred_option = inferred
+        let inferred_source = inferred
             .then(|| {
                 ffi_fn::option_inner_type(ffi_fn::peel_grouped_type(ty))
                     .map(|inner| parse_quote!(core::option::Option<#inner>))
+                    .or_else(|| {
+                        ffi_fn::inferred_result_type(ffi_fn::peel_grouped_type(ty))
+                            .map(|(source, _)| source)
+                    })
+                    .or_else(|| {
+                        ffi_fn::transparent_unpack_inner_type(ffi_fn::peel_grouped_type(ty))
+                            .map(|(name, inner)| match name.to_string().as_str() {
+                                "ManuallyDrop" => parse_quote!(core::mem::ManuallyDrop<#inner>),
+                                "Cell" => parse_quote!(core::cell::Cell<#inner>),
+                                "UnsafeCell" => parse_quote!(core::cell::UnsafeCell<#inner>),
+                                _ => unreachable!("unrecognized transparent unpack wrapper"),
+                            })
+                    })
             })
             .flatten();
         let resolve = |part: UnpackPart, position| -> syn::Result<ResolvedPart> {
@@ -243,7 +260,7 @@ impl UnpackSyntax {
         Ok(Unpack::Pair(Box::new(UnpackPair {
             first: resolve(first, 1)?,
             second: resolve(second, 2)?,
-            inferred_option,
+            inferred_source,
         })))
     }
 }

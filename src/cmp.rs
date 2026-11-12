@@ -5,12 +5,11 @@ use rust_spec::RustSpec;
 
 use crate::{
     CFnArg, CFnReturn, CType, Decode, Encode, ReprC, Zeroable,
-    borrow::Borrow,
     niche::Niche,
     primitives::{fieldless_enum_derive, primitive_derive},
     shared::{SoftEncodeRef, SoftEncodeRefUnchecked},
     stored::{
-        DecodeMove, SoftDecodeMut, SoftDecodeRef, EncodeMove, EncodeMoveUnchecked, SoftEncodeMut,
+        DecodeMove, EncodeMove, EncodeMoveUnchecked, SoftDecodeMut, SoftDecodeRef, SoftEncodeMut,
         SoftEncodeMutUnchecked,
     },
     transmute::{AbiCompatible, AbiCompatibleValidate, transmute_owned},
@@ -21,6 +20,7 @@ use crate::{
 /// Every byte value is valid for this carrier; conversion to `Ordering` accepts only -1, 0, and 1.
 #[derive(Debug, Clone, Copy, Default, RustSpec)]
 #[repr(transparent)]
+#[doc(hidden)]
 pub struct COrdering(pub i8);
 
 unsafe impl Zeroable for COrdering {}
@@ -68,65 +68,63 @@ fieldless_enum_derive! {
 }
 
 impl<T: ReprC<CType: Sized>> ReprC for Reverse<T> {
-    type CType = Reverse<T::CType>;
-}
-
-unsafe impl<T: Borrow> Borrow for Reverse<T> {
-    type Borrowed = Reverse<T::Borrowed>;
-
-    fn borrow(self) -> Self::Borrowed {
-        Reverse(self.0.borrow())
-    }
-
-    fn from_borrow(source: Self::Borrowed) -> Self {
-        Self(T::from_borrow(source.0))
-    }
+    type CType = core::cmp::Reverse<T::CType>;
 }
 
 impl<T: Niche<CType: Sized>> Niche for Reverse<T> {
-    const NICHE: Self::CType = Reverse(T::NICHE);
+    const NICHE: Self::CType = core::cmp::Reverse(T::NICHE);
 
     fn is_niche(value: &Self::CType) -> bool {
         T::is_niche(&value.0)
     }
 }
 
-unsafe impl<T: EncodeMoveUnchecked<CType: Sized>> EncodeMoveUnchecked for Reverse<T> {
-    type SoftStore = T::SoftStore;
+macro_rules! reverse_codecs {
+    ($encode:ident, $unchecked:ident, $decode:ident) => {
+        unsafe impl<T: $unchecked<CType: Sized>> $unchecked for Reverse<T> {
+            type SoftStore = T::SoftStore;
 
-    unsafe fn soft_encode_unchecked<'a>(self, store: &'a mut Self::SoftStore) -> Self::CType
-    where
-        Self: 'a,
-    {
-        unsafe { Reverse(self.0.soft_encode_unchecked(store)) }
-    }
+            unsafe fn soft_encode_unchecked<'a>(self, store: &'a mut Self::SoftStore) -> Self::CType
+            where
+                Self: 'a,
+            {
+                unsafe { core::cmp::Reverse(self.0.soft_encode_unchecked(store)) }
+            }
+        }
+        unsafe impl<T: $encode<CType: Sized>> $encode for Reverse<T> {
+            type Store = T::Store;
+
+            fn soft_encode<'a>(self, store: &'a mut Self::Store) -> Self::CType
+            where
+                Self: 'a,
+            {
+                core::cmp::Reverse($encode::soft_encode(self.0, store))
+            }
+        }
+        unsafe impl<'d, T: $decode<'d, CType: Sized>> $decode<'d> for Reverse<T> {
+            type Store = T::Store;
+
+            unsafe fn soft_decode<'a: 'd>(
+                source: Self::CType,
+                store: &'a mut Self::Store,
+            ) -> Option<Self> {
+                unsafe { T::soft_decode(source.0, store) }.map(Self)
+            }
+
+            unsafe fn soft_decode_unchecked<'a: 'd>(
+                source: Self::CType,
+                store: &'a mut Self::Store,
+            ) -> Self {
+                Self(unsafe { T::soft_decode_unchecked(source.0, store) })
+            }
+        }
+    };
 }
-
-unsafe impl<T: EncodeMove<CType: Sized>> EncodeMove for Reverse<T> {
-    type Store = T::Store;
-
-    fn soft_encode<'a>(self, store: &'a mut Self::Store) -> Self::CType
-    where
-        Self: 'a,
-    {
-        Reverse(crate::stored::EncodeMove::soft_encode(self.0, store))
-    }
-}
-
-unsafe impl<'d, T: DecodeMove<'d, CType: Sized>> DecodeMove<'d> for Reverse<T> {
-    type Store = T::Store;
-
-    unsafe fn soft_decode<'a: 'd>(source: Self::CType, store: &'a mut Self::Store) -> Option<Self> {
-        unsafe { T::soft_decode(source.0, store) }.map(Self)
-    }
-
-    unsafe fn soft_decode_unchecked<'a: 'd>(
-        source: Self::CType,
-        store: &'a mut Self::Store,
-    ) -> Self {
-        Self(unsafe { T::soft_decode_unchecked(source.0, store) })
-    }
-}
+reverse_codecs!(EncodeMove, EncodeMoveUnchecked, DecodeMove);
+const _: () = {
+    use crate::borrow::{BorrowedDecode, BorrowedEncode, BorrowedEncodeUnchecked};
+    reverse_codecs!(BorrowedEncode, BorrowedEncodeUnchecked, BorrowedDecode);
+};
 
 impl<T: Encode<CType: Sized>> Encode for Reverse<T> {}
 impl<T: crate::EncodeUnchecked<CType: Sized>> crate::EncodeUnchecked for Reverse<T> {}
@@ -172,7 +170,10 @@ where
 {
     type Store = T::Store;
 
-    fn soft_encode_ref<'b>(&'a self, store: &'b mut Self::Store) -> <&'a Self as crate::ReprC>::CType
+    fn soft_encode_ref<'b>(
+        &'a self,
+        store: &'b mut Self::Store,
+    ) -> <&'a Self as crate::ReprC>::CType
     where
         'a: 'b,
     {
@@ -209,7 +210,10 @@ where
 {
     type Store = T::Store;
 
-    fn soft_encode_mut<'b>(&'a mut self, store: &'b mut Self::Store) -> <&'a mut Self as crate::ReprC>::CType
+    fn soft_encode_mut<'b>(
+        &'a mut self,
+        store: &'b mut Self::Store,
+    ) -> <&'a mut Self as crate::ReprC>::CType
     where
         'a: 'b,
     {
@@ -302,15 +306,21 @@ mod tests {
 
     #[test]
     fn reverse_delegates_to_inner_carrier_and_niche() {
-        assert_type_eq_all!(<Reverse<bool> as ReprC>::CType, Reverse<CBool>);
+        assert_type_eq_all!(
+            <Reverse<bool> as ReprC>::CType,
+            core::cmp::Reverse<crate::primitives::CBool>
+        );
         assert_impl_all!(Reverse<bool>: Encode, Decode<'static>, Niche, AbiCompatible);
         assert_impl_all!(&'static Reverse<bool>: Encode, Decode<'static>);
-        assert_eq!(encode(Reverse(true)), Reverse(CBool::TRUE));
+        assert_eq!(encode(Reverse(true)), core::cmp::Reverse(CBool::TRUE));
         assert_eq!(
-            unsafe { decode::<Reverse<bool>>(Reverse(CBool::TRUE)) },
+            unsafe { decode::<Reverse<bool>>(core::cmp::Reverse(CBool::TRUE)) },
             Some(Reverse(true))
         );
-        assert_eq!(unsafe { decode::<Reverse<bool>>(Reverse(CBool(2))) }, None);
+        assert_eq!(
+            unsafe { decode::<Reverse<bool>>(core::cmp::Reverse(CBool(2))) },
+            None
+        );
         let none: COptionSome<Reverse<bool>> = encode(None::<Reverse<bool>>);
         assert!(<Reverse<bool> as Niche>::is_niche(&none.0));
     }

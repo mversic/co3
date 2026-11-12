@@ -1,5 +1,3 @@
-use core::cell::Cell;
-
 use co3::{ReprC, rust_spec::RustSpec, transmute::AbiCompatible};
 use static_assertions::{assert_impl_all, assert_not_impl_any};
 
@@ -22,9 +20,6 @@ struct ViewFields {
     first: u8,
     second: u32,
 }
-
-#[derive(RustSpec, ReprC)]
-struct InteriorMutableField(Cell<u8>);
 
 #[derive(RustSpec, ReprC)]
 #[repr(u8, align(16))]
@@ -102,66 +97,51 @@ fn explicit_repr_alignment_is_preserved_by_companion_types() {
 
 #[test]
 fn data_enum_carriers_construct_variants_and_report_tags() {
-    assert_eq!(CAlignedDataEnum::First(7).tag(), 0);
-    assert_eq!(CAlignedDataEnum::Second().tag(), 1);
-    assert_eq!(CExplicitCAlignedDataEnum::First(7).tag(), 0);
-    assert_eq!(CExplicitCAlignedDataEnum::Second().tag(), 1);
-    assert_eq!(CMixedDataEnum::First(3, 7).tag(), 0);
-    assert_eq!(CMixedDataEnum::Second(5, 11).tag(), 1);
+    assert_eq!(<AlignedDataEnum as co3::ReprC>::CType::First(7).tag(), 0);
+    assert_eq!(<AlignedDataEnum as co3::ReprC>::CType::Second().tag(), 1);
     assert_eq!(
-        format!("{:?}", CMixedDataEnum::Second(5, 11)),
+        <ExplicitCAlignedDataEnum as co3::ReprC>::CType::First(7).tag(),
+        0
+    );
+    assert_eq!(
+        <ExplicitCAlignedDataEnum as co3::ReprC>::CType::Second().tag(),
+        1
+    );
+    assert_eq!(<MixedDataEnum as co3::ReprC>::CType::First(3, 7).tag(), 0);
+    assert_eq!(<MixedDataEnum as co3::ReprC>::CType::Second(5, 11).tag(), 1);
+    assert_eq!(
+        format!("{:?}", <MixedDataEnum as co3::ReprC>::CType::Second(5, 11)),
         "CMixedDataEnum::Second { small: 5, large: 11 }"
     );
-    assert!(CMixedDataEnum::First(3, 7) < CMixedDataEnum::First(3, 8));
-
-    let first = unsafe { CMixedDataEnumFirst::from_fields(0, 3, 7) };
-    assert_eq!(unsafe { first.into_fields() }, (0, 3, 7));
-    let second = unsafe { CMixedDataEnumSecond::from_fields(1, 5, 11) };
-    assert_eq!(unsafe { second.into_fields() }, (1, 5, 11));
+    assert!(
+        <MixedDataEnum as co3::ReprC>::CType::First(3, 7)
+            < <MixedDataEnum as co3::ReprC>::CType::First(3, 8)
+    );
 
     let niche = <MixedDataEnum as co3::niche::Niche>::NICHE;
     assert_eq!(niche.tag(), u8::MAX);
     assert!(unsafe { co3::decode::<MixedDataEnum>(niche) }.is_none());
 
-    let carrier = unsafe { CAlignedStruct::from_fields(3) };
+    let carrier = unsafe { <AlignedStruct as co3::ReprC>::CType::from_fields(3) };
     let decoded: AlignedStruct = unsafe { co3::decode(carrier).unwrap() };
     assert_eq!(decoded.0, 3);
 
-    let carrier = unsafe { CGenericCarrier::<u32>::from_fields(5) };
+    let carrier = unsafe { <GenericCarrier<u32> as co3::ReprC>::CType::from_fields(5) };
     let (field,) = carrier.into_fields();
     assert_eq!(field, 5);
 
-    let carrier = unsafe { CGenericCarrier::<u32>::from_fields(field) };
+    let carrier = unsafe { <GenericCarrier<u32> as co3::ReprC>::CType::from_fields(field) };
     let decoded: GenericCarrier<u32> = unsafe { co3::decode(carrier).unwrap() };
     assert_eq!(decoded.0, 5);
 }
 
 #[test]
-fn generated_view_structs_expose_fields_methods() {
-    let view = unsafe { ViewFieldsView::from_fields(1, 2) };
-    assert_eq!(view.into_fields(), (1, 2));
-
-    let carrier = unsafe { CViewFieldsView::from_fields(3, 4) };
+fn generated_carrier_exposes_fields_methods() {
+    let carrier = co3::encode(ViewFields {
+        first: 3,
+        second: 4,
+    });
     assert_eq!(carrier.into_fields(), (3, 4));
-}
-
-#[test]
-fn generated_view_keeps_owner_axes_and_recomputes_mutability() {
-    assert_impl_all!(InteriorMutableField:
-        RustSpec<Mutability = co3::rust_spec::mutability::WithInterior<co3::rust_spec::layout::Robust>>,
-    );
-    assert_impl_all!(InteriorMutableFieldView:
-        RustSpec<
-            Layout = <InteriorMutableField as RustSpec>::Layout,
-            Size = <InteriorMutableField as RustSpec>::Size,
-            __Alignment = <InteriorMutableField as RustSpec>::__Alignment,
-            Trap = <InteriorMutableField as RustSpec>::Trap,
-            Niche = <InteriorMutableField as RustSpec>::Niche,
-            Drop = co3::rust_spec::drop::NoDrop,
-            Mutability = co3::rust_spec::mutability::WithInterior<co3::rust_spec::layout::Robust>,
-            __IndirectTrap = <InteriorMutableField as RustSpec>::__IndirectTrap,
-        >,
-    );
 }
 
 #[test]

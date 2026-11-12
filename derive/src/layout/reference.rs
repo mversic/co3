@@ -62,8 +62,7 @@ pub(super) fn gen_stable_direct_mut_impls(input: &syn::DeriveInput) -> TokenStre
     let predicates = where_clause.as_ref().map(|clause| &clause.predicates);
     let speculative = speculative_marker(input.generics.params.is_empty());
 
-    // The reference encoder uses the source's sized C carrier. For views,
-    // each field here is already `<Field as Borrow>::Borrowed`.
+    // The reference encoder uses the source's sized C carrier.
     let fields: Vec<_> = match &input.data {
         syn::Data::Struct(data) => data.fields.iter().collect(),
         syn::Data::Enum(data) => data
@@ -243,68 +242,6 @@ pub(super) fn group_aggregate_ref_impls(
     }
 }
 
-/// Transparent wrappers delegate reference encoding to the borrowed inner field.
-pub(super) fn gen_field_ref_impls(
-    input: &syn::DeriveInput,
-    field: &syn::Field,
-    variant: Option<&Ident>,
-) -> TokenStream {
-    let name = &input.ident;
-    let field_ty = &field.ty;
-    let member = field_member(0, field);
-    let mut generics = input.generics.clone();
-    generics.params.insert(0, parse_quote!('_ršč));
-    let (impl_generics, _, where_clause) = generics.split_for_impl();
-    let (_, ty_generics, _) = input.generics.split_for_impl();
-    let predicates = where_clause.as_ref().map(|clause| &clause.predicates);
-    let speculative = speculative_marker(input.generics.params.is_empty());
-    let field_bound = FieldType::new(field_ty, &input.generics)
-        .bound(quote!(co3::ReprC + co3::rust_spec::RustSpec + '_ršč));
-
-    let mut implementations = Vec::new();
-    for mutable in [false, true] {
-        for unchecked in [true, false] {
-            let (trait_name, move_trait, store_name, method, encode) =
-                encoder_names(mutable, unchecked);
-            let mutability = mutable.then(|| quote!(mut));
-            let unsafe_fn = unchecked.then(|| quote!(unsafe));
-            let borrow = match (variant, &field.ident) {
-                (None, _) => quote!(&#mutability self.#member),
-                (Some(variant), Some(ident)) => {
-                    quote!(match self { Self::#variant { #ident: field } => field })
-                }
-                (Some(variant), None) => quote!(match self { Self::#variant(field) => field }),
-            };
-            let call = encoding_call(quote!(#move_trait::#encode(#borrow, store)), unchecked);
-            let output = encoder_output(quote!(&'_ršč #mutability Self));
-            implementations.push(quote! {
-                unsafe impl #impl_generics #trait_name<'_ršč> for #name #ty_generics
-                where
-                    #speculative Self: co3::ReprC<CType = <#field_ty as co3::ReprC>::CType>
-                        + co3::rust_spec::RustSpec<Size = <#field_ty as co3::rust_spec::RustSpec>::Size, Mutability = <#field_ty as co3::rust_spec::RustSpec>::Mutability> + '_ršč,
-                    #field_bound,
-                    &'_ršč #mutability #field_ty: #move_trait + co3::ReprC<CType: Sized + Copy>,
-                    &'_ršč #mutability Self: co3::ReprC<CType: Sized + Copy>,
-                    #predicates
-                {
-                    type #store_name = <&'_ršč #mutability #field_ty as #move_trait>::#store_name;
-                    #unsafe_fn fn #method<'itm>(&'_ršč #mutability self, store: &'itm mut Self::#store_name) -> #output
-                    where
-                        '_ršč: 'itm,
-                    {
-                        let carrier = #call;
-                        // Both reference carriers have the same pointer kind and
-                        // point to the same C type, including wide metadata.
-                        assert_eq!(core::mem::size_of_val(&carrier), core::mem::size_of::<<&'_ršč #mutability Self as co3::ReprC>::CType>());
-                        unsafe { core::mem::transmute_copy(&carrier) }
-                    }
-                }
-            });
-        }
-    }
-    quote!(#(#implementations)*)
-}
-
 /// Generate sized reference decoders without a blanket implementation.
 pub(super) fn gen_sized_decode_impls(
     input: &syn::DeriveInput,
@@ -332,11 +269,7 @@ fn gen_structural_decode(
         return quote!();
     }
     let name = &input.ident;
-    let carrier = if attrs.is_view {
-        super::borrow::gen_view_ctype_name(name)
-    } else {
-        super::ctype::gen_ctype_name(name)
-    };
+    let carrier = super::ctype::gen_ctype_name(name);
     let mut generics = input.generics.clone();
     generics.params.insert(0, parse_quote!('_dšč));
     let (impl_generics, _, where_clause) = generics.split_for_impl();
@@ -381,7 +314,7 @@ fn gen_structural_decode(
             };
             let field_bound = field_type.bound(quote!(#repr_bound + '_dšč));
             let field_decoder = if mutable {
-                quote!(co3::borrow::Borrowed<#ty>)
+                quote!(#ty)
             } else {
                 quote!(&'_dšč #ty)
             };
@@ -391,8 +324,7 @@ fn gen_structural_decode(
                 bounds.push(quote! {
                     #sized_bound,
                     #field_bound,
-                    #spec #field_decoder: co3::stored::DecodeMove<'_dšč> + co3::ReprC<
-                        CType = co3::borrow::Borrowed<<#ty as co3::ReprC>::CType>>,
+                    #spec #field_decoder: co3::borrow::BorrowedDecode<'_dšč>,
                 });
             } else if !field_type.phantom {
                 let decode_bound = field_type.bound(quote!(__Co3DecodeField<'_dšč>));
@@ -403,7 +335,7 @@ fn gen_structural_decode(
             }
             if mutable {
                 stores.push(
-                    quote!(Option<<#field_decoder as co3::stored::DecodeMove<'_dšč>>::Store>),
+                    quote!(Option<<#field_decoder as co3::borrow::BorrowedDecode<'_dšč>>::Store>),
                 );
             } else if field_type.phantom {
                 stores.push(quote!(()));
@@ -428,9 +360,9 @@ fn gen_structural_decode(
                     // Only the C field is copied; the transparent wrapper marks
                     // borrowed ownership without a layout cast.
                     if inline_tag {
-                        quote!(co3::borrow::Borrowed::new(unsafe { source.#member.assume_init() }))
+                        quote!(unsafe { source.#member.assume_init() })
                     } else {
-                        quote!(co3::borrow::Borrowed::new(source.#member))
+                        quote!(source.#member)
                     }
                 } else {
                     if inline_tag {
@@ -439,13 +371,18 @@ fn gen_structural_decode(
                         quote!(&source.#member)
                     }
                 };
+                let decoder_trait = if mutable {
+                    quote!(co3::borrow::BorrowedDecode)
+                } else {
+                    quote!(co3::stored::DecodeMove)
+                };
                 let decode = quote!(unsafe {
-                    <#field_decoder as co3::stored::DecodeMove<'_dšč>>::#method(
+                    <#field_decoder as #decoder_trait<'_dšč>>::#method(
                         #carrier, fields.#index.insert(Default::default()),
                     )
                 }#check);
                 let decode = if mutable {
-                    quote!(co3::borrow::Borrowed::into_inner(#decode))
+                    decode
                 } else if field_type.phantom {
                     quote!(core::marker::PhantomData)
                 } else {
@@ -671,4 +608,66 @@ fn gen_shared_field_decoder() -> TokenStream {
             #(#implementations)*
         }
     }
+}
+
+/// Transparent wrappers delegate reference encoding to the borrowed inner field.
+pub(super) fn gen_transparent_ref_impls(
+    input: &syn::DeriveInput,
+    field: &syn::Field,
+    variant: Option<&Ident>,
+) -> TokenStream {
+    let name = &input.ident;
+    let field_ty = &field.ty;
+    let member = field_member(0, field);
+    let mut generics = input.generics.clone();
+    generics.params.insert(0, parse_quote!('_ršč));
+    let (impl_generics, _, where_clause) = generics.split_for_impl();
+    let (_, ty_generics, _) = input.generics.split_for_impl();
+    let predicates = where_clause.as_ref().map(|clause| &clause.predicates);
+    let speculative = speculative_marker(input.generics.params.is_empty());
+    let field_bound = FieldType::new(field_ty, &input.generics)
+        .bound(quote!(co3::ReprC + co3::rust_spec::RustSpec + '_ršč));
+
+    let mut implementations = Vec::new();
+    for mutable in [false, true] {
+        for unchecked in [true, false] {
+            let (trait_name, move_trait, store_name, method, encode) =
+                encoder_names(mutable, unchecked);
+            let mutability = mutable.then(|| quote!(mut));
+            let unsafe_fn = unchecked.then(|| quote!(unsafe));
+            let borrow = match (variant, &field.ident) {
+                (None, _) => quote!(&#mutability self.#member),
+                (Some(variant), Some(ident)) => {
+                    quote!(match self { Self::#variant { #ident: field } => field })
+                }
+                (Some(variant), None) => quote!(match self { Self::#variant(field) => field }),
+            };
+            let call = encoding_call(quote!(#move_trait::#encode(#borrow, store)), unchecked);
+            let output = encoder_output(quote!(&'_ršč #mutability Self));
+            implementations.push(quote! {
+                unsafe impl #impl_generics #trait_name<'_ršč> for #name #ty_generics
+                where
+                    #speculative Self: co3::ReprC
+                        + co3::rust_spec::RustSpec<Size = <#field_ty as co3::rust_spec::RustSpec>::Size, Mutability = <#field_ty as co3::rust_spec::RustSpec>::Mutability> + '_ršč,
+                    #field_bound,
+                    &'_ršč #mutability #field_ty: #move_trait + co3::ReprC<CType: Sized + Copy>,
+                    &'_ršč #mutability Self: co3::ReprC<CType: Sized + Copy>,
+                    #predicates
+                {
+                    type #store_name = <&'_ršč #mutability #field_ty as #move_trait>::#store_name;
+                    #unsafe_fn fn #method<'itm>(&'_ršč #mutability self, store: &'itm mut Self::#store_name) -> #output
+                    where
+                        '_ršč: 'itm,
+                    {
+                        let carrier = #call;
+                        // Rust repr(transparent) preserves field layout and metadata;
+                        // the named C companion is transparent over the field carrier.
+                        assert_eq!(core::mem::size_of_val(&carrier), core::mem::size_of::<<&'_ršč #mutability Self as co3::ReprC>::CType>());
+                        unsafe { core::mem::transmute_copy(&carrier) }
+                    }
+                }
+            });
+        }
+    }
+    group_aggregate_ref_impls(quote!(#(#implementations)*), false)
 }

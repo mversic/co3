@@ -112,8 +112,18 @@ pub fn gen_struct_niche_ir(
                 quote!(value.#member)
             })
             .collect::<Vec<_>>();
-        let ctype: syn::Type = syn::parse2(c_fields_tuple.clone()).expect("generated tuple type");
-        let tuple_value = build_tuple_value(&ctype, &mut members.into_iter());
+        let paths = accessors
+            .iter()
+            .map(|accessor| {
+                accessor
+                    .to_string()
+                    .split('.')
+                    .map(|index| index.trim().parse::<usize>().unwrap())
+                    .collect::<Vec<_>>()
+            })
+            .zip(members)
+            .collect::<Vec<_>>();
+        let tuple_value = build_tuple_value(&paths, 0);
         (
             niche_value,
             quote!(<#fields_tuple as co3::niche::Niche>::is_niche(&#tuple_value)),
@@ -138,29 +148,24 @@ pub fn gen_struct_niche_ir(
     )
 }
 
-fn build_tuple_value(
-    ty: &syn::Type,
-    members: &mut impl Iterator<Item = TokenStream>,
-) -> TokenStream {
-    if let syn::Type::Tuple(tuple) = ty
-        && tuple.elems.is_empty()
-    {
+fn build_tuple_value(fields: &[(Vec<usize>, TokenStream)], depth: usize) -> TokenStream {
+    if fields.len() == 1 && fields[0].0.len() == depth {
+        return fields[0].1.clone();
+    }
+    if fields.is_empty() {
         return quote!(());
     }
-    if let syn::Type::Path(path) = ty
-        && path.qself.is_none()
-        && let Some(segment) = path.path.segments.last()
-        && segment.ident.to_string().starts_with("Tuple")
-        && let syn::PathArguments::AngleBracketed(args) = &segment.arguments
-    {
-        let ident = &segment.ident;
-        let fields = args.args.iter().filter_map(|arg| match arg {
-            syn::GenericArgument::Type(ty) => Some(build_tuple_value(ty, members)),
-            _ => None,
-        });
-        return quote!(co3::tuple::#ident(#(#fields),*));
-    }
-    members.next().expect("tuple field")
+    let count = fields.last().unwrap().0[depth] + 1;
+    let ident = quote::format_ident!("Tuple{count}");
+    let members = (0..count).map(|index| {
+        let group = fields
+            .iter()
+            .filter(|(path, _)| path[depth] == index)
+            .cloned()
+            .collect::<Vec<_>>();
+        build_tuple_value(&group, depth + 1)
+    });
+    quote!(co3::tuple::#ident(#(#members),*))
 }
 
 pub(super) fn gen_enum_niche_tag(
@@ -399,24 +404,9 @@ mod tests {
     fn assert_c_tuple_tree(ty: &syn::Type, expected: &ExpectedNode) {
         match expected {
             ExpectedNode::Leaf(index) => {
-                let syn::Type::Path(ty) = ty else {
-                    panic!("expected associated CType for T{index}, got {ty:?}");
-                };
-                let qself = ty.qself.as_ref().expect("CType must be qualified");
-                let syn::Type::Path(source) = qself.ty.as_ref() else {
-                    panic!("expected source type path, got {:?}", qself.ty);
-                };
-                let ident = &source.path.segments.last().expect("source type path").ident;
-                assert_eq!(format!("T{index}"), ident.to_string());
-                assert_eq!(
-                    ["co3", "ReprC", "CType"],
-                    ty.path
-                        .segments
-                        .iter()
-                        .map(|part| part.ident.to_string())
-                        .collect::<Vec<_>>()
-                        .as_slice()
-                );
+                let ident = quote::format_ident!("T{index}");
+                let projected: syn::Type = syn::parse_quote!(<#ident as co3::ReprC>::CType);
+                assert_eq!(ty, &projected);
             }
             ExpectedNode::Tuple(children) if children.is_empty() => {
                 let syn::Type::Tuple(tuple) = ty else {
@@ -444,7 +434,9 @@ mod tests {
                 let syn::PathArguments::AngleBracketed(arguments) = &segment.arguments else {
                     panic!("expected Tuple type arguments");
                 };
-                assert_eq!(children.len(), arguments.args.len());
+                assert_eq!(children.len() + 1, arguments.args.len());
+                let flag: syn::GenericArgument = syn::parse_quote!(false);
+                assert_eq!(arguments.args.last(), Some(&flag));
                 for (argument, expected_child) in arguments.args.iter().zip(children) {
                     let syn::GenericArgument::Type(child) = argument else {
                         panic!("expected Tuple type argument, got {argument:?}");

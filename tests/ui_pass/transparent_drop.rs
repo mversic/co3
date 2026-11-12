@@ -7,20 +7,29 @@ use co3::{
 };
 
 #[derive(RustSpec, ReprC)]
-#[repr_c(transparent)]
 struct Transparent<T>(T);
 
 #[derive(RustSpec, ReprC)]
-#[repr_c(transparent)]
 struct ConcreteBox(Box<u8>);
 
 static_assertions::assert_impl_all!(Transparent<u8>: RustSpec<Drop = NoDrop>);
 static_assertions::assert_impl_all!(Transparent<Box<u8>>: RustSpec<Drop = AutoDrop>);
-static_assertions::assert_type_eq_all!(<Transparent<u8> as ReprC>::CType, u8);
 static_assertions::assert_type_eq_all!(
-    <Transparent<Box<u8>> as ReprC>::CType,
-    <ConcreteBox as ReprC>::CType,
-    <Box<u8> as ReprC>::CType
+    <<Transparent<u8> as ReprC>::CType as ReprC>::CType,
+    <Transparent<u8> as ReprC>::CType
+);
+static_assertions::assert_type_eq_all!(
+    <<Transparent<Box<u8>> as ReprC>::CType as ReprC>::CType,
+    <Transparent<Box<u8>> as ReprC>::CType
+);
+static_assertions::assert_type_eq_all!(
+    <<ConcreteBox as ReprC>::CType as ReprC>::CType,
+    <ConcreteBox as ReprC>::CType
+);
+static_assertions::assert_type_ne_all!(
+    <Transparent<Box<u8>> as co3::ReprC>::CType,
+    <ConcreteBox as co3::ReprC>::CType,
+    co3::boxed::CBox<u8>
 );
 
 fn main() {

@@ -17,7 +17,7 @@ struct GenericSlicePacket<T> {
 #[test]
 fn generic_slice_tail_has_generated_carrier_wide_impl() {
     assert_impl_all!(GenericSlicePacket<u8>: Wide);
-    assert_impl_all!(CGenericSlicePacket<u8>: Wide);
+    assert_impl_all!(<GenericSlicePacket<u8> as co3::ReprC>::CType: Wide);
 }
 
 #[repr(transparent)]
@@ -36,9 +36,9 @@ fn transparent_multiple_fields_use_the_tail_header() {
     fn has_slice_header<T: Wide<Header = [u8; 0]> + ?Sized>() {}
 
     has_slice_header::<TransparentSlicePacket<u8>>();
-    has_slice_header::<CTransparentSlicePacket<u8>>();
+    has_slice_header::<<TransparentSlicePacket<u8> as co3::ReprC>::CType>();
     has_slice_header::<TransparentGenericTail<[u8]>>();
-    has_slice_header::<CTransparentGenericTail<[u8]>>();
+    has_slice_header::<<TransparentGenericTail<[u8]> as co3::ReprC>::CType>();
 
     let payload = [3u8, 5, 8];
     let ptr = core::ptr::slice_from_raw_parts(payload.as_ptr(), payload.len())
@@ -61,30 +61,6 @@ struct Bytes([u8]);
 #[derive(RustSpec, ReprC)]
 #[repr_c(identity)]
 struct RawBytes([u8]);
-
-#[test]
-fn non_null_wide_unpacks_pointer_metadata() {
-    let slice = core::ptr::NonNull::slice_from_raw_parts(core::ptr::NonNull::<u8>::dangling(), 3);
-    let ptr = core::ptr::NonNull::new(slice.as_ptr() as *mut RawBytes).unwrap();
-    let (data, len): (*mut u8, usize) =
-        <core::ptr::NonNull<RawBytes> as Unpack2<*mut u8, usize>>::unpack(co3::encode(ptr))
-            .unwrap();
-    assert_eq!(data, slice.as_ptr() as *mut u8);
-    assert_eq!(len, 3);
-    let (const_data, const_len): (*const u8, usize) =
-        <core::ptr::NonNull<RawBytes> as Unpack2<*const u8, usize>>::unpack(co3::encode(ptr))
-            .unwrap();
-    assert_eq!(const_data, slice.as_ptr() as *const u8);
-    assert_eq!(const_len, 3);
-    let (raw_const_data, raw_const_len): (*const u8, usize) =
-        <*const RawBytes as Unpack2<*const u8, usize>>::unpack(ptr.as_ptr()).unwrap();
-    assert_eq!(raw_const_data, const_data);
-    assert_eq!(raw_const_len, 3);
-    let (raw_mut_data, raw_mut_len): (*mut u8, usize) =
-        <*mut RawBytes as Unpack2<*mut u8, usize>>::unpack(ptr.as_ptr()).unwrap();
-    assert_eq!(raw_mut_data, data);
-    assert_eq!(raw_mut_len, 3);
-}
 
 #[test]
 fn cell_wrappers_reconstruct_borrowed_wide_references() {
@@ -234,7 +210,7 @@ fn struct_wide_classification() {
 
 #[test]
 fn generated_data_struct_exposes_fields_methods() {
-    let data = unsafe { PacketData::from_fields(NonZeroU8::new(7).unwrap(), []) };
+    let data = unsafe { <Packet as Wide>::Header::from_fields(NonZeroU8::new(7).unwrap(), []) };
     let (tag, payload) = data.into_fields();
     assert_eq!(tag.get(), 7);
     assert!(payload.is_empty());

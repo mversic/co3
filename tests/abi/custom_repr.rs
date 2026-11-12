@@ -4,13 +4,11 @@ use co3::{ReprC, rust_spec::RustSpec};
 use static_assertions::{assert_impl_all, assert_not_impl_any};
 
 #[derive(RustSpec, ReprC)]
-#[repr_c(transparent)]
 struct FieldHandle(u32);
 
 #[derive(RustSpec, ReprC)]
 #[repr(C)]
-#[repr_c(transparent)]
-struct CFieldHandle(u32);
+struct StableFieldHandle(u32);
 
 impl From<u32> for FieldHandle {
     fn from(value: u32) -> Self {
@@ -20,7 +18,6 @@ impl From<u32> for FieldHandle {
 
 #[repr(transparent)]
 #[derive(RustSpec, ReprC)]
-#[repr_c(transparent)]
 struct TransparentFieldHandle(u32);
 
 impl From<u32> for TransparentFieldHandle {
@@ -113,20 +110,14 @@ fn checked_mut_wide_reference_encoding_asserts_each_pointee() {
 #[test]
 #[cfg(debug_assertions)]
 fn checked_interior_wide_reference_encoding_does_not_inspect_cells() {
-    let values = [
-        UnsafeCell::new(11_u8),
-        UnsafeCell::new(10_u8),
-    ];
+    let values = [UnsafeCell::new(11_u8), UnsafeCell::new(10_u8)];
     let _ = co3::encode(&values[..]);
 }
 
 #[test]
 #[cfg(debug_assertions)]
 fn checked_mut_interior_wide_reference_encoding_does_not_inspect_cells() {
-    let mut values = [
-        UnsafeCell::new(11_u8),
-        UnsafeCell::new(10_u8),
-    ];
+    let mut values = [UnsafeCell::new(11_u8), UnsafeCell::new(10_u8)];
     let _ = co3::encode(&mut values[..]);
 }
 
@@ -162,7 +153,6 @@ impl From<u8> for ValidatedByte {
 
 #[repr(transparent)]
 #[derive(RustSpec, ReprC)]
-#[repr_c(transparent)]
 struct NonZeroField(core::num::NonZeroU8);
 
 impl From<core::num::NonZeroU8> for NonZeroField {
@@ -172,7 +162,6 @@ impl From<core::num::NonZeroU8> for NonZeroField {
 }
 
 #[derive(RustSpec, ReprC)]
-#[repr_c(transparent)]
 struct AutoDropBox {
     inner: Box<u32>,
 }
@@ -184,7 +173,6 @@ impl From<Box<u32>> for AutoDropBox {
 }
 
 #[derive(RustSpec, ReprC)]
-#[repr_c(transparent)]
 struct GenericField<T>(T);
 
 impl<T> From<T> for GenericField<T> {
@@ -195,53 +183,66 @@ impl<T> From<T> for GenericField<T> {
 
 #[repr(transparent)]
 #[derive(RustSpec, ReprC)]
-#[repr_c(transparent)]
 struct FieldSlice<T>([T]);
 
 #[test]
 fn field_representation_maps_owned_conversion_and_transmutation() {
-    assert_impl_all!(FieldHandle: ReprC<CType = u32>);
+    assert_impl_all!(<FieldHandle as ReprC>::CType: ReprC<CType = <FieldHandle as ReprC>::CType>);
     assert_not_impl_any!(FieldHandle: co3::transmute::AbiCompatible);
-    assert_not_impl_any!(CFieldHandle: co3::transmute::AbiCompatible);
+    assert_impl_all!(StableFieldHandle: co3::transmute::AbiCompatible);
     assert_impl_all!(TransparentFieldHandle: co3::transmute::AbiCompatible);
     assert_impl_all!(FieldHandle: co3::stored::EncodeMoveUnchecked);
-    assert_impl_all!(CFieldHandle: co3::stored::EncodeMoveUnchecked);
+    assert_impl_all!(StableFieldHandle: co3::stored::EncodeMoveUnchecked);
     assert_impl_all!(TransparentFieldHandle: co3::stored::EncodeMoveUnchecked);
     assert!(!unsafe {
         <ValidatedByte as co3::transmute::AbiCompatibleValidate>::is_valid(
-            &CValidatedByte::from_fields(10),
+            &<ValidatedByte as co3::ReprC>::CType::from_fields(10),
         )
     });
     assert!(unsafe {
         <ValidatedByte as co3::transmute::AbiCompatibleValidate>::is_valid(
-            &CValidatedByte::from_fields(11),
+            &<ValidatedByte as co3::ReprC>::CType::from_fields(11),
         )
     });
-    assert!(unsafe { co3::decode::<ValidatedByte>(CValidatedByte::from_fields(10)) }.is_none());
+    assert!(
+        unsafe {
+            co3::decode::<ValidatedByte>(<ValidatedByte as co3::ReprC>::CType::from_fields(10))
+        }
+        .is_none()
+    );
     assert_eq!(
-        unsafe { co3::decode::<ValidatedByte>(CValidatedByte::from_fields(11)) }
-            .unwrap()
-            .0,
+        unsafe {
+            co3::decode::<ValidatedByte>(<ValidatedByte as co3::ReprC>::CType::from_fields(11))
+        }
+        .unwrap()
+        .0,
         11
     );
     assert!(!unsafe {
         <NonZeroField as co3::transmute::AbiCompatibleValidate>::is_valid(&core::mem::zeroed())
     });
     assert!(unsafe {
-        <NonZeroField as co3::transmute::AbiCompatibleValidate>::is_valid(&co3::NonZero(1))
+        <NonZeroField as co3::transmute::AbiCompatibleValidate>::is_valid(
+            &<NonZeroField as co3::ReprC>::CType::from_fields(co3::num::NonZero(1)),
+        )
     });
-    assert_impl_all!(FieldSlice<u8>: ReprC<CType = [u8]>);
+    assert_impl_all!(<FieldSlice<u8> as ReprC>::CType: ReprC<CType = <FieldSlice<u8> as ReprC>::CType>);
     assert_impl_all!(FieldSlice<u8>: co3::transmute::AbiCompatible);
-    assert_impl_all!(FieldSlice<core::mem::MaybeUninit<u8>>: ReprC<CType = [core::mem::MaybeUninit<u8>]>);
+    assert_impl_all!(<FieldSlice<core::mem::MaybeUninit<u8>> as ReprC>::CType: ReprC<CType = <FieldSlice<core::mem::MaybeUninit<u8>> as ReprC>::CType>);
     assert_impl_all!(FieldSlice<core::mem::MaybeUninit<u8>>: co3::transmute::AbiCompatible);
-    assert_eq!(co3::encode(FieldHandle(7)), 7);
-    assert_eq!(unsafe { co3::decode::<FieldHandle>(7) }.unwrap().0, 7);
+    assert_eq!(co3::encode(FieldHandle(7)).0, 7);
+    assert_eq!(
+        unsafe { co3::decode::<FieldHandle>(<FieldHandle as co3::ReprC>::CType::from_fields(7)) }
+            .unwrap()
+            .0,
+        7
+    );
 }
 
 #[test]
 fn field_representation_preserves_inner_niche() {
-    assert_impl_all!(NonZeroField: co3::niche::Niche<CType = co3::NonZero<u8>>);
-    assert_eq!(<NonZeroField as co3::niche::Niche>::NICHE.0, 0);
+    assert_impl_all!(NonZeroField: co3::niche::Niche<CType = <NonZeroField as co3::ReprC>::CType>);
+    assert_eq!(<NonZeroField as co3::niche::Niche>::NICHE.0.0, 0);
     assert!(matches!(
         unsafe { co3::decode::<Option<NonZeroField>>(core::mem::zeroed()) },
         Some(None)
@@ -250,7 +251,7 @@ fn field_representation_preserves_inner_niche() {
 
 #[test]
 fn field_representation_selects_generic_drop_behavior() {
-    assert_eq!(co3::encode(GenericField(13_u32)), 13);
+    assert_eq!(co3::encode(GenericField(13_u32)).0, 13);
     let encoded = co3::encode(GenericField(Box::new(17_u32)));
     let decoded: GenericField<Box<u32>> = unsafe { co3::decode(encoded) }.unwrap();
     assert_eq!(*decoded.0, 17);

@@ -12,22 +12,18 @@ struct Wrapped<'a>(&'a UnsafeCell<NonZeroU8>);
 
 #[derive(co3::rust_spec::RustSpec, co3::ReprC)]
 #[repr(transparent)]
-#[repr_c(transparent)]
 struct TransparentVec<T>(Vec<T>);
 
 #[derive(co3::rust_spec::RustSpec, co3::ReprC)]
 #[repr(transparent)]
-#[repr_c(transparent)]
 struct ConcreteTransparentVec(Vec<(u8,)>);
 
 #[derive(co3::rust_spec::RustSpec, co3::ReprC)]
 #[repr(transparent)]
-#[repr_c(transparent)]
 struct ConcreteTransparentByte(u8);
 
 #[derive(co3::rust_spec::RustSpec, co3::ReprC)]
 #[repr(transparent)]
-#[repr_c(transparent)]
 struct TransparentBox<T>(Box<T>);
 
 #[derive(co3::rust_spec::RustSpec, co3::ReprC)]

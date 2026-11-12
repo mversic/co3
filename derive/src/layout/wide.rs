@@ -5,7 +5,7 @@ use syn::parse_quote;
 use super::{
     ReprKind,
     ctype::{TailClass, UnsizedTail, classify_tail, gen_fields_methods},
-    generic_param_idents, is_parametrized,
+    is_parametrized,
 };
 
 pub(super) fn gen_data_struct_name(ident: &syn::Ident) -> syn::Ident {
@@ -125,48 +125,6 @@ fn gen_data_struct_ty(input: &syn::DeriveInput) -> TokenStream {
 }
 
 fn gen_data_def(input: &syn::DeriveInput, fields: &syn::Fields) -> TokenStream {
-    if let Some((last, ..)) = last_field(fields)
-        && matches!(
-            classify_tail(&last.ty, &input.generics),
-            TailClass::Unknown
-                | TailClass::Unsized(UnsizedTail::Unknown | UnsizedTail::DynTraitLike)
-        )
-        && !is_parametrized(&last.ty, &input.generics)
-    {
-        let tail_ty = &last.ty;
-        let tail_param = format_ident!("__Co3WideTail");
-        let mut internal_input = input.clone();
-        internal_input.ident = format_ident!("__Co3{}", input.ident);
-        internal_input
-            .generics
-            .params
-            .push(parse_quote!(#tail_param: ?Sized));
-        let mut internal_fields = fields.clone();
-        internal_fields
-            .iter_mut()
-            .next_back()
-            .expect("wide data has a tail")
-            .ty = parse_quote!(#tail_param);
-        let internal_def = gen_data_def(&internal_input, &internal_fields);
-
-        let name = gen_data_struct_name(&input.ident);
-        let internal_name = gen_data_struct_name(&internal_input.ident);
-        let ctype_name = format_ident!("C{name}");
-        let internal_ctype_name = format_ident!("C{internal_name}");
-        let mut alias_generics = input.generics.clone();
-        alias_generics
-            .params
-            .push(parse_quote!(#tail_param: ?Sized = #tail_ty));
-        let args = generic_param_idents(alias_generics.params.iter()).collect::<Vec<_>>();
-        let vis = &input.vis;
-
-        return quote! {
-            #internal_def
-            #vis type #name #alias_generics = #internal_name<#(#args),*>;
-            #vis type #ctype_name #alias_generics = #internal_ctype_name<#(#args),*>;
-        };
-    }
-
     let name = gen_data_struct_name(&input.ident);
 
     let attrs = input
@@ -282,7 +240,16 @@ fn regular_derives(input: &syn::DeriveInput) -> Vec<syn::Path> {
                 return Ok(());
             };
 
+            let modules: &[&str] = match name.as_str() {
+                "Clone" => &["core", "std", "core::clone", "std::clone"],
+                "Copy" => &["core", "std", "core::marker", "std::marker"],
+                "Debug" => &["core", "std", "core::fmt", "std::fmt"],
+                "Default" => &["core", "std", "core::default", "std::default"],
+                "Hash" => &["core", "std", "core::hash", "std::hash"],
+                _ => &["core", "std", "core::cmp", "std::cmp"],
+            };
             if SUPPORTED.contains(&name.as_str())
+                && crate::utils::builtin_path(&meta.path, &name, modules)
                 && !derives.iter().any(|path: &syn::Path| {
                     path.segments.last().map(|segment| &segment.ident)
                         == meta.path.segments.last().map(|segment| &segment.ident)

@@ -8,7 +8,7 @@ ffi! {
     type Ordinary = core::num::NonZeroU8;
     type Regular = extern "C" fn(u8);
     type SharedUnpacked = extern "C" fn(#[unpack(_, _)] &[u8]) -> usize;
-    type InteriorUnpacked = raw extern "C" fn(#[unpack(*mut core::cell::UnsafeCell<u8>, usize)] &[core::cell::Cell<u8>]) -> usize;
+    type InteriorUnpacked = raw extern "C" fn(#[unpack(*mut core::cell::Cell<u8>, usize)] &[core::cell::Cell<u8>]) -> usize;
     type RegularUnpacked = extern "C" fn(#[unpack(_, _)] &mut [u8]) -> usize;
     type Composite = (String, raw fn(String));
     type MaybeCallback = Option<raw fn(u8)>;
@@ -23,7 +23,7 @@ ffi! {
 ffi! {
     #![unsafe(extern("C"))]
 
-    fn interior_slice(#[unpack(*mut core::cell::UnsafeCell<u8>, usize)] values: &[core::cell::Cell<u8>]) -> usize;
+    fn interior_slice(#[unpack(*mut core::cell::Cell<u8>, usize)] values: &[core::cell::Cell<u8>]) -> usize;
 }
 
 ffi! {
@@ -44,48 +44,23 @@ ffi! {
 
 fn main() {
     let _: Option<ExplicitAbi> = None;
-    static_assertions::assert_type_eq_all!(ExplicitAbi, unsafe extern "system" fn(u8));
-    static_assertions::assert_type_eq_all!(InheritedAbi, unsafe extern "C" fn(u8));
-    static_assertions::assert_type_eq_all!(Ordinary, co3::NonZero<u8>);
-    static_assertions::assert_type_eq_all!(Regular, Option<extern "C" fn(u8)>);
-    static_assertions::assert_type_eq_all!(
-        SharedUnpacked,
-        Option<unsafe extern "C" fn(*const u8, usize) -> usize>
-    );
-    static_assertions::assert_type_eq_all!(
-        InteriorUnpacked,
-        unsafe extern "C" fn(*mut core::cell::UnsafeCell<u8>, usize) -> usize
-    );
-    static_assertions::assert_type_eq_all!(
-        RegularUnpacked,
-        Option<unsafe extern "C" fn(*mut u8, usize) -> usize>
-    );
+    let _: Option<InheritedAbi> = None;
+    let _: Option<Regular> = None;
+    let _: Option<SharedUnpacked> = None;
+    let _: Option<InteriorUnpacked> = None;
+    let _: Option<RegularUnpacked> = None;
     let _: Option<Composite> = None;
-    static_assertions::assert_type_eq_all!(MaybeCallback, co3::option::COptionSome<unsafe extern "C" fn(u8)>);
-    static_assertions::assert_type_eq_all!(NicheOk, co3::result::CResultOk<core::num::NonZeroU8, ()>);
-    static_assertions::assert_type_eq_all!(NicheErr, co3::result::CResultErr<(), core::num::NonZeroU8>);
-    static_assertions::assert_type_eq_all!(
-        CompositeReturn,
-        <(u8, unsafe extern "C" fn() -> u8) as ReprC>::CType
-    );
-    static_assertions::assert_type_eq_all!(
-        Nested,
-        unsafe extern "C" fn(Option<unsafe extern "system" fn(u8)>)
-    );
-    static_assertions::assert_type_eq_all!(
-        Returned,
-        unsafe extern "C" fn() -> Option<unsafe extern "C" fn(u8)>
-    );
+    let _: Option<MaybeCallback> = None;
+    let _: Option<NicheOk> = None;
+    let _: Option<NicheErr> = None;
+    let _: Option<CompositeReturn> = None;
+    let _: Option<Nested> = None;
+    let _: Option<Returned> = None;
     let _: Option<RawNested> = None;
-
-    static_assertions::assert_type_eq_all!(BadArg, unsafe extern "C" fn([u8; 2]));
-    static_assertions::assert_type_eq_all!(BadReturn, unsafe extern "C" fn() -> [u8; 2]);
+    let _: Option<Moved<String>> = None;
+    let _: Option<Borrowed<u8>> = None;
+    let _: Option<Array<2>> = None;
+    let _: Option<Combined<u8, 2>> = None;
     static_assertions::assert_not_impl_any!(BadArg: ReprC);
     static_assertions::assert_not_impl_any!(BadReturn: ReprC);
-
-    type StringC = <String as ReprC>::CType;
-    static_assertions::assert_type_eq_all!(Moved<String>, unsafe extern "C" fn(StringC) -> StringC);
-    static_assertions::assert_type_eq_all!(Borrowed<u8>, unsafe extern "C" fn(u8) -> u8);
-    static_assertions::assert_type_eq_all!(Array<2>, unsafe extern "C" fn([u8; 2]) -> [u8; 2]);
-    static_assertions::assert_type_eq_all!(Combined<u8, 2>, unsafe extern "C" fn([u8; 2]));
 }

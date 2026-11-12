@@ -89,7 +89,7 @@ fn owned_encoding_preserves_capacity_and_validates_elements() {
     assert_eq!(value.capacity(), cap);
     assert_eq!(&*value, &[1, 2, 3]);
     assert_eq!(encode_store.sync(), Some(()));
-    let invalid = CVec::<bool>::from_vec(vec![co3::primitives::CBool(2)]);
+    let invalid = CVec::<bool, true>::from_vec(vec![co3::primitives::CBool(2)]);
     assert!(
         unsafe { co3::soft_decode::<co3::vec::Vec::<bool>>(invalid, &mut Default::default()) }
             .is_none()

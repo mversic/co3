@@ -24,7 +24,6 @@ struct Record<T> {
 
 #[derive(RustSpec, ReprC)]
 #[repr(transparent)]
-#[repr_c(transparent)]
 struct Transparent<T>(T);
 
 #[derive(RustSpec, ReprC)]
@@ -93,9 +92,9 @@ fn shared_validation_is_transitive() {
     assert_impl_all!(&Mixed<UnsafeCell<u8>>: EncodeMove, DecodeMove<'static>);
     assert_impl_all!(&[Mixed<UnsafeCell<u8>>]: EncodeMove, DecodeMove<'static>);
     assert_not_impl_any!(&Mixed<UnsafeCell<NonZeroU8>>: EncodeMove, DecodeMove<'static>);
-    assert_impl_all!(MixedView<Box<UnsafeCell<NonZeroU8>>>:
+    assert_impl_all!(Mixed<Box<UnsafeCell<NonZeroU8>>>:
         RustSpec<Mutability = Exclusive<WithInterior<NonRobust>>>);
-    assert_not_impl_any!(&MixedView<Box<UnsafeCell<NonZeroU8>>>: EncodeMove, DecodeMove<'static>);
+    assert_not_impl_any!(&Mixed<Box<UnsafeCell<NonZeroU8>>>: EncodeMove, DecodeMove<'static>);
 }
 
 #[test]
@@ -120,7 +119,9 @@ fn maybe_uninit_cells_allow_shared_validation_without_inspecting_contents() {
     assert!(core::ptr::eq(decoded, &boxed));
 
     // Zero is invalid for NonZeroU8, but valid as uninterpreted MaybeUninit bytes.
-    let representation = MaybeUninit::new(UnsafeCell::new(unsafe { core::mem::zeroed() }));
+    let representation = core::mem::MaybeUninit::<UnsafeCell<co3::NonZero<u8>>>::new(
+        core::cell::UnsafeCell::new(unsafe { core::mem::zeroed() }),
+    );
     let encoded = unsafe {
         co3::reference::CRefMut::from_raw(core::ptr::from_ref(&representation).cast_mut())
     };
@@ -159,17 +160,16 @@ fn robust_cells_do_not_hide_other_invalid_fields() {
 
     // The invalid boolean exists only in the robust C representation.
     let invalid = unsafe {
-        CMixed::<UnsafeCell<u8>>::from_fields(co3::primitives::CBool(2), UnsafeCell::new(7))
+        <Mixed<UnsafeCell<u8>> as co3::ReprC>::CType::from_fields(
+            co3::primitives::CBool(2),
+            core::cell::UnsafeCell::new(7),
+        )
     };
-    let encoded = unsafe {
-        co3::reference::CRefMut::from_raw(core::ptr::from_ref(&invalid).cast_mut())
-    };
+    let encoded =
+        unsafe { co3::reference::CRefMut::from_raw(core::ptr::from_ref(&invalid).cast_mut()) };
     assert!(unsafe { co3::decode::<&Mixed<UnsafeCell<u8>>>(encoded) }.is_none());
     let encoded = unsafe {
-        co3::wide::CWideRefMut::from_raw_parts_mut(
-            core::ptr::from_ref(&invalid).cast_mut(),
-            1,
-        )
+        co3::wide::CWideRefMut::from_raw_parts_mut(core::ptr::from_ref(&invalid).cast_mut(), 1)
     };
     assert!(unsafe { co3::decode::<&[Mixed<UnsafeCell<u8>>]>(encoded) }.is_none());
 }
@@ -181,7 +181,9 @@ fn shared_plain_data_and_exclusive_cells_still_decode() {
     let decoded = unsafe { co3::decode::<&Box<u8>>(encoded) }.unwrap();
     assert_eq!(**decoded, 7);
 
-    let source = co3::boxed::CBox::from_box(Box::new(UnsafeCell::new(co3::NonZero(7_u8))));
+    let source = co3::boxed::CBox::from_box(Box::new(core::cell::UnsafeCell::new(
+        co3::num::NonZero(7_u8),
+    )));
     let decoded = unsafe { co3::decode::<Box<UnsafeCell<NonZeroU8>>>(source) }.unwrap();
     assert_eq!((*decoded).into_inner().get(), 7);
 }

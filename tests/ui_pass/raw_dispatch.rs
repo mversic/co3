@@ -40,18 +40,19 @@ extern "C" fn static_u16_provider(value: u16) -> u16 {
     value + 2
 }
 
-#[unsafe(export_name = "raw_dispatch_owned_string")]
-extern "C" fn owned_string_provider(
-    value: <String as ReprC>::CType,
-) -> <String as ReprC>::CType {
+fn owned_string_provider(value: String) -> String {
+    value
+}
+fn owned_bytes_provider(value: Vec<u8>) -> Vec<u8> {
     value
 }
 
-#[unsafe(export_name = "raw_dispatch_owned_bytes")]
-extern "C" fn owned_bytes_provider(
-    value: <Vec<u8> as ReprC>::CType,
-) -> <Vec<u8> as ReprC>::CType {
-    value
+ffi! {
+    #![unsafe(export("C"))]
+    #[symbol_name = "raw_dispatch_owned_string"]
+    fn owned_string_provider(value: move String) -> move String;
+    #[symbol_name = "raw_dispatch_owned_bytes"]
+    fn owned_bytes_provider(value: move Vec<u8>) -> move Vec<u8>;
 }
 
 #[unsafe(export_name = "raw_dispatch_method")]
@@ -220,6 +221,12 @@ fn main() {
     assert_eq!(unsafe { GenericHost::<u8>::from_value(3) }, 43);
     assert_eq!(unsafe { GenericHost::<u16>::from_value(3) }, 53);
     assert_eq!(GenericHost::<u32>::from_value(3), 63);
-    assert_eq!(unsafe { GenericHost::<First>::dynamic_from_value(First(3)) }.0, 74);
-    assert_eq!(unsafe { GenericHost::<Second>::dynamic_from_value(Second(3)) }.0, 75);
+    assert_eq!(
+        unsafe { GenericHost::<First>::dynamic_from_value(First(3)) }.0,
+        74
+    );
+    assert_eq!(
+        unsafe { GenericHost::<Second>::dynamic_from_value(Second(3)) }.0,
+        75
+    );
 }

@@ -35,7 +35,6 @@ struct GenericAliasFields<T>(c_char, T, u32);
 struct Bytes([u8]);
 
 static_assertions::assert_type_eq_all!(<Bytes as ReprC>::CType, Bytes);
-static_assertions::assert_not_impl_any!(Bytes: co3::borrow::Borrow);
 
 static_assertions::assert_type_eq_all!(<Integer as ReprC>::CType, Integer);
 static_assertions::assert_type_eq_all!(<NonCopy as ReprC>::CType, NonCopy);

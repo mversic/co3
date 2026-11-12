@@ -31,8 +31,8 @@ use crate::{
 use crate::{
     boxed::CBox,
     reference::CSoftRefMut,
-    transmute::AbiCompatible,
     sync::{RefVecEncodeStore, RefWideEncodeStore},
+    transmute::AbiCompatible,
     vec::CVec,
     wide::CWideBox,
 };
@@ -437,7 +437,7 @@ disjoint_impls! {
             'a: 'itm,
         {
             let inner = unsafe { (&**self).soft_encode_unchecked(store) };
-            // ManuallyDrop's C representation is the inner CType or its transparent wrapper.
+            // ManuallyDrop's C representation transparently wraps the inner CType.
             // SAFETY: ManuallyDrop preserves the inner layout and metadata.
             unsafe { inner.cast() }
         }
@@ -902,10 +902,11 @@ disjoint_impls! {
 }
 
 #[cfg(feature = "alloc")]
-unsafe impl<'a, R: ReprC, __Interior: ExclusiveKind> SoftEncodeRefUnchecked<'a> for crate::vec::Vec<R>
+unsafe impl<'a, R: ReprC, __Interior: ExclusiveKind> SoftEncodeRefUnchecked<'a>
+    for crate::vec::Vec<R>
 where
     &'a Self: crate::ReprC<CType = crate::reference::CSoftRef<Self>>,
-    Self: ReprC<CType = CVec<R>>,
+    Self: ReprC<CType = CVec<R, true>>,
     <R as ReprC>::CType: Copy,
     Self: RustSpec<Mutability = Exclusive<__Interior>, Size: crate::Thin> + 'a,
     &'a R: EncodeMoveUnchecked + ReprC<CType = CSoftRef<R>>,
@@ -925,7 +926,9 @@ where
         store.encode(|fields| {
             let store = fields;
 
-            store.encode(|stores| unsafe { encode_vec_unchecked(self, self.capacity(), stores) })
+            store
+                .encode(|stores| unsafe { encode_vec_unchecked(self, self.capacity(), stores) })
+                .with_source()
         })
     }
 }
@@ -935,21 +938,26 @@ unsafe impl<'a, T: ReprC<CType: CType + Copy + Sized>, __Interior: ExclusiveKind
     for crate::vec::Vec<T>
 where
     &'a Self: crate::ReprC<CType = crate::reference::CSoftRef<Self>>,
-    Self: crate::stored::SoftEncodeRefUnchecked<'a> + ReprC<CType = CVec<T>>,
+    Self: crate::stored::SoftEncodeRefUnchecked<'a> + ReprC<CType = CVec<T, true>>,
     Self: RustSpec<Mutability = Exclusive<__Interior>, Size: crate::Thin> + 'a,
     &'a T: EncodeMove + ReprC<CType = CSoftRef<T>>,
 {
     type Store =
         RefSizedEncodeStore<Self, RefVecEncodeStore<T, Box<[<&'a T as EncodeMove>::Store]>>>;
 
-    fn soft_encode_ref<'itm>(&'a self, store: &'itm mut Self::Store) -> <&'a Self as crate::ReprC>::CType
+    fn soft_encode_ref<'itm>(
+        &'a self,
+        store: &'itm mut Self::Store,
+    ) -> <&'a Self as crate::ReprC>::CType
     where
         'a: 'itm,
     {
         store.encode(|fields| {
             let store = fields;
 
-            store.encode(|stores| encode_vec(self, self.capacity(), stores))
+            store
+                .encode(|stores| encode_vec(self, self.capacity(), stores))
+                .with_source()
         })
     }
 }
@@ -982,7 +990,10 @@ where
     &'a T: EncodeMove + ReprC<CType = CSoftRef<T>>,
 {
     type Store = RefSizedEncodeStore<Self, ArrayStore<<&'a T as EncodeMove>::Store, N>>;
-    fn soft_encode_ref<'itm>(&'a self, store: &'itm mut Self::Store) -> <&'a Self as crate::ReprC>::CType
+    fn soft_encode_ref<'itm>(
+        &'a self,
+        store: &'itm mut Self::Store,
+    ) -> <&'a Self as crate::ReprC>::CType
     where
         'a: 'itm,
     {
@@ -1022,7 +1033,10 @@ where
 {
     type Store = RefWideEncodeStore<Self, Box<[<&'a T as EncodeMove>::Store]>>;
 
-    fn soft_encode_ref<'itm>(&'a self, store: &'itm mut Self::Store) -> <&'a Self as crate::ReprC>::CType
+    fn soft_encode_ref<'itm>(
+        &'a self,
+        store: &'itm mut Self::Store,
+    ) -> <&'a Self as crate::ReprC>::CType
     where
         'a: 'itm,
     {
@@ -1035,7 +1049,10 @@ where
 unsafe impl<'a> SoftEncodeRefUnchecked<'a> for core::ffi::CStr {
     type SoftStore = ();
 
-    unsafe fn soft_encode_ref_unchecked<'itm>(&'a self, _: &'itm mut ()) -> <&'a Self as ReprC>::CType
+    unsafe fn soft_encode_ref_unchecked<'itm>(
+        &'a self,
+        _: &'itm mut (),
+    ) -> <&'a Self as ReprC>::CType
     where
         'a: 'itm,
     {
@@ -1085,7 +1102,10 @@ where
 {
     type Store = RefSizedEncodeStore<Self, <Self as EncodeMove>::Store>;
 
-    fn soft_encode_ref<'itm>(&'a self, store: &'itm mut Self::Store) -> <&'a Self as crate::ReprC>::CType
+    fn soft_encode_ref<'itm>(
+        &'a self,
+        store: &'itm mut Self::Store,
+    ) -> <&'a Self as crate::ReprC>::CType
     where
         'a: 'itm,
     {
@@ -1127,7 +1147,8 @@ where
     }
 }
 
-unsafe impl<'a, 'b: 'a, R: RustSpec + ?Sized, __Interior: ExclusiveKind> SoftEncodeRef<'a> for &'b mut R
+unsafe impl<'a, 'b: 'a, R: RustSpec + ?Sized, __Interior: ExclusiveKind> SoftEncodeRef<'a>
+    for &'b mut R
 where
     &'a Self: crate::ReprC<CType = crate::reference::CSoftRef<Self>>,
     Self: ReprC<CType: Copy + Sized>
@@ -1136,7 +1157,10 @@ where
 {
     type Store = RefSizedEncodeStore<Self, <&'a R as EncodeMove>::Store>;
 
-    fn soft_encode_ref<'itm>(&'a self, store: &'itm mut Self::Store) -> <&'a Self as crate::ReprC>::CType
+    fn soft_encode_ref<'itm>(
+        &'a self,
+        store: &'itm mut Self::Store,
+    ) -> <&'a Self as crate::ReprC>::CType
     where
         'a: 'itm,
     {
@@ -1402,16 +1426,7 @@ mod tests {
     #[derive(RustSpec)]
     struct RefOnly(u32);
 
-    unsafe impl co3::borrow::Borrow for RefOnly {
-        type Borrowed = Self;
-
-        fn borrow(self) -> Self {
-            self
-        }
-        fn from_borrow(source: Self) -> Self {
-            source
-        }
-    }
+    crate::__impl_borrowed_identity!([] RefOnly);
 
     impl co3::ReprC for RefOnly {
         type CType = u32;
@@ -1477,7 +1492,6 @@ mod tests {
     }
 
     #[derive(RustSpec, co3::ReprC)]
-    #[repr_c(transparent)]
     struct Transparent<T>(T);
 
     #[derive(RustSpec, co3::ReprC)]
@@ -1509,7 +1523,7 @@ mod tests {
         let mut store = Default::default();
         let header = co3::soft_encode(&wrapped, &mut store);
         let header = unsafe { &*header.as_ptr() };
-        assert_eq!(header.as_ptr().cast_const(), wrapped.0.as_ptr());
+        assert_eq!(header.0.as_ptr().cast_const(), wrapped.0.as_ptr());
         assert_eq!(store.sync(), Some(()));
     }
 
@@ -1841,7 +1855,9 @@ mod tests {
             &*(value as *const core::ffi::CStr as *const core::mem::ManuallyDrop<core::ffi::CStr>)
         };
         assert_eq!(
-            co3::soft_encode(wrapped, &mut Default::default()).as_ptr(),
+            co3::soft_encode(wrapped, &mut Default::default())
+                .as_ptr()
+                .cast(),
             encoded.as_ptr()
         );
     }
@@ -1943,7 +1959,6 @@ mod tests {
 
     #[repr(transparent)]
     #[derive(RustSpec, ReprC)]
-    #[repr_c(transparent)]
     struct WrappedCStr(CStr);
 
     #[test]
@@ -1980,7 +1995,6 @@ mod tests {
 
     #[repr(transparent)]
     #[derive(RustSpec, ReprC)]
-    #[repr_c(transparent)]
     struct WrappedSlice<T: ?Sized>(T);
 
     #[test]
@@ -1999,7 +2013,7 @@ mod tests {
         let wrapper = unsafe { &mut *(&mut values[..] as *mut [u32] as *mut WrappedSlice<[u32]>) };
         let mut store = ();
         let encoded = co3::soft_encode(&*wrapper, &mut store);
-        assert_eq!(unsafe { encoded.into_ref().unwrap() }, &[1, 2]);
+        assert_eq!(&unsafe { encoded.into_ref().unwrap() }.0, &[1, 2]);
         assert_eq!(store.sync(), Some(()));
         let mut store = ();
         let encoded = co3::soft_encode(&mut *wrapper, &mut store);

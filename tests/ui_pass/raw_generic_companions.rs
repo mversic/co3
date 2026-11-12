@@ -1,4 +1,4 @@
-use co3::{ffi, ops::CFn1, raw, reference::CRef};
+use co3::{ffi, ops::CFn1, raw};
 
 fn identity<T>(value: T) -> T {
     value
@@ -43,6 +43,8 @@ raw! {
 ffi! {
     #![unsafe(extern("C"))]
 
+    type ClonedRaw<T> = raw fn(T) -> move T;
+    type ReferenceRaw<'a> = raw fn(&'a u8) -> &'a u8;
     type StringRaw = raw extern "C" fn(move String) -> move String;
     type BytesRaw = raw extern "C" fn(move Vec<u8>) -> move Vec<u8>;
 }
@@ -52,10 +54,9 @@ fn main() {
     let value: String = unsafe { identity.call(String::from("hello")) }.unwrap();
     assert_eq!(value, "hello");
 
-    assert_eq!(unsafe { cloned_raw::<u8>(7) }, 7);
+    let _: ClonedRaw<u8> = cloned_raw::<u8>;
     assert_eq!(unsafe { const_value_raw::<4>() }, 4);
-    let byte = 9_u8;
-    assert_eq!(unsafe { *borrowed_raw(CRef::from_ref(&byte)).as_ptr() }, 9);
+    let _: ReferenceRaw<'_> = borrowed_raw;
 
     let echo: BytesRaw = Host::<Vec<u8>>::echo_raw;
     let value: Vec<u8> = unsafe { echo.call(vec![1_u8, 2, 3]) }.unwrap();

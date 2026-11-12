@@ -63,7 +63,7 @@ fn tail_type_param<'a>(ty: &syn::Type, generics: &'a syn::Generics) -> Option<&'
 fn has_maybe_sized_bound(param: &syn::TypeParam, generics: &syn::Generics) -> bool {
     let maybe_sized = |bound: &syn::TypeParamBound| {
         matches!(bound, syn::TypeParamBound::Trait(bound)
-            if bound.maybe.is_some() && bound.path.is_ident("Sized"))
+            if bound.maybe.is_some() && crate::utils::builtin_path(&bound.path, "Sized", &["core::marker", "std::marker"]))
     };
     param.bounds.iter().any(maybe_sized)
         || generics
@@ -86,10 +86,6 @@ pub(super) fn classify_tail(ty: &syn::Type, generics: &syn::Generics) -> TailCla
             TailClass::Sized
         };
     }
-    if is_phantom_data(ty) {
-        return TailClass::Sized;
-    }
-
     match ty {
         syn::Type::Paren(ty) => classify_tail(&ty.elem, generics),
         syn::Type::Group(ty) => classify_tail(&ty.elem, generics),
@@ -102,35 +98,16 @@ pub(super) fn classify_tail(ty: &syn::Type, generics: &syn::Generics) -> TailCla
             .elems
             .last()
             .map_or(TailClass::Sized, |tail| classify_tail(tail, generics)),
-        syn::Type::Path(path)
-            if path
-                .path
-                .segments
-                .last()
-                .is_some_and(|segment| segment.ident == "str") =>
-        {
-            TailClass::Unsized(UnsizedTail::SliceLike)
-        }
-        syn::Type::Path(path)
-            if path
-                .path
-                .segments
-                .last()
-                .is_some_and(|segment| segment.ident == "CStr") =>
-        {
-            TailClass::Unsized(UnsizedTail::NulTerminated)
-        }
         syn::Type::Path(path) => {
-            if path.qself.is_some() {
-                return TailClass::Unknown;
-            }
-            if crate::ffi_fn::option_inner_type(ty).is_some() {
-                return TailClass::Sized;
-            }
-            if crate::ffi_fn::copy_primitive_type(path).is_some() {
-                TailClass::Sized
-            } else {
-                TailClass::Unknown
+            match crate::known_type::recognize_path(path) {
+                Some(known) if known.is_sized() => TailClass::Sized,
+                Some(known) if known.is_transparent_wrapper() =>
+                    classify_tail(known.inner.expect("wrapper element"), generics),
+                Some(known) if known.kind == crate::known_type::Kind::Str =>
+                    TailClass::Unsized(UnsizedTail::SliceLike),
+                Some(known) if known.kind == crate::known_type::Kind::CStr =>
+                    TailClass::Unsized(UnsizedTail::NulTerminated),
+                _ => TailClass::Unknown,
             }
         }
         _ => TailClass::Unknown,
@@ -1558,7 +1535,7 @@ fn gen_identity_codec_impls(
                 Self: 'itm,
             {
                 use co3::stored::EncodeMoveUnchecked as _;
-                unsafe { self.soft_encode_unchecked(&mut ()) }
+                unsafe { co3::stored::EncodeMoveUnchecked::soft_encode_unchecked(self, &mut ()) }
             }
         }
         unsafe impl #impl_generics co3::stored::EncodeMoveUnchecked for #ident #ty_generics
@@ -1948,7 +1925,7 @@ fn gen_hrtb_projection_bounds(
 }
 
 #[cfg(test)]
-mod tail_tests {
+mod tests {
     use syn::parse_quote;
 
     use super::{TailClass, UnsizedTail, classify_tail};

@@ -1,0 +1,535 @@
+//! C-compatible representations and conversions for [`core::mem`].
+use crate::stored::{DecodeMove, EncodeMove, EncodeMoveUnchecked};
+use crate::transmute::{AbiCompatible, AbiCompatibleValidate};
+use crate::{CFnArg, CFnReturn, CType, Decode, Encode, ReprC};
+use core::mem::{ManuallyDrop, MaybeUninit};
+use rust_spec::RustSpec;
+impl<R: ReprC + ?Sized> ReprC for ManuallyDrop<R> {
+    type CType = core::mem::ManuallyDrop<<R as ReprC>::CType>;
+}
+
+crate::__impl_borrowed_identity!([T] MaybeUninit<T>);
+
+impl<T: AbiCompatible<CType: Sized>> ReprC for MaybeUninit<T> {
+    type CType = core::mem::MaybeUninit<T::CType>;
+}
+unsafe impl<T: AbiCompatible<CType: Sized> + EncodeMove<Store: EmptyStore>> EncodeMove
+    for MaybeUninit<T>
+{
+    type Store = ();
+
+    #[inline(always)]
+    fn soft_encode<'itm>(self, (): &mut ()) -> Self::CType
+    where
+        Self: 'itm,
+    {
+        unsafe { self.soft_encode_unchecked(&mut ()) }
+    }
+}
+unsafe impl<T: AbiCompatible<CType: Sized>> EncodeMoveUnchecked for MaybeUninit<T> {
+    type SoftStore = ();
+
+    unsafe fn soft_encode_unchecked<'itm>(self, (): &'itm mut ()) -> Self::CType
+    where
+        Self: 'itm,
+    {
+        unsafe { core::mem::transmute_copy(&self) }
+    }
+}
+unsafe impl<'d, T: AbiCompatible<CType: Sized>> DecodeMove<'d> for MaybeUninit<T> {
+    type Store = ();
+
+    #[inline(always)]
+    unsafe fn soft_decode<'itm: 'd>(source: Self::CType, (): &mut ()) -> Option<Self> {
+        Some(unsafe { core::mem::transmute_copy(&source) })
+    }
+}
+
+// TODO: Weird bounds here
+impl<'d, T: AbiCompatible<CType: Sized>> Decode<'d> for MaybeUninit<T> {}
+impl<T: AbiCompatible<CType: Sized>> EncodeUnchecked for MaybeUninit<T> {}
+impl<T: AbiCompatible<CType: Sized> + EncodeMove<Store: EmptyStore>> Encode for MaybeUninit<T> {}
+
+// TODO: Technically all bits are valid, but using T: CType feels safer
+unsafe impl<T: AbiCompatible<CType: Sized>> AbiCompatibleValidate for MaybeUninit<T> {
+    #[inline(always)]
+    unsafe fn is_valid(_: &Self::CType) -> bool {
+        true
+    }
+}
+unsafe impl<T: AbiCompatible<CType: Sized>> AbiCompatible for MaybeUninit<T> {}
+
+unsafe impl<T: CType> CType for MaybeUninit<T> {}
+unsafe impl<T: CFnArg> CFnArg for MaybeUninit<T> where
+    Self: RustSpec<Size = rust_spec::size::Sized<rust_spec::Gt<rust_spec::Zero>>>
+{
+}
+unsafe impl<T: CFnReturn> CFnReturn for MaybeUninit<T> where
+    Self: RustSpec<Size = rust_spec::size::Sized<rust_spec::Gt<rust_spec::Zero>>>
+{
+}
+
+unsafe impl<T: EmptyStore> EmptyStore for MaybeUninit<T> {}
+
+crate::__impl_borrowed_identity!([T] ManuallyDrop<T>);
+
+impl<T: Encode> Encode for ManuallyDrop<T> where Self: EncodeMove {}
+impl<T: EncodeUnchecked> EncodeUnchecked for ManuallyDrop<T> where Self: EncodeMoveUnchecked {}
+impl<'d, T: Decode<'d>> Decode<'d> for ManuallyDrop<T> where Self: DecodeMove<'d> {}
+
+unsafe impl<T: CType + ?Sized> CType for ManuallyDrop<T> {}
+unsafe impl<T: CFnArg> CFnArg for ManuallyDrop<T> where
+    Self: RustSpec<Size = rust_spec::size::Sized<rust_spec::Gt<rust_spec::Zero>>>
+{
+}
+unsafe impl<T: CFnReturn> CFnReturn for ManuallyDrop<T> where
+    Self: RustSpec<Size = rust_spec::size::Sized<rust_spec::Gt<rust_spec::Zero>>>
+{
+}
+
+unsafe impl<T: EmptyStore> EmptyStore for ManuallyDrop<T> {}
+
+use crate::{EncodeUnchecked, stored::EmptyStore};
+
+use crate::{
+    niche::Niche,
+    stored::Store,
+    transmute::transmute_owned,
+    wide::Wide,
+};
+use disjoint_impls::disjoint_impls;
+use rust_spec::{
+    Stable, Unstable,
+    layout::{NonRobust, Robust},
+    mutability::{Exclusive, ExclusiveKind, WithInterior},
+};
+
+unsafe impl<R: EncodeMove> EncodeMove for ManuallyDrop<R>
+where
+    Self: EncodeMoveUnchecked + ReprC<CType = core::mem::ManuallyDrop<<R as ReprC>::CType>>,
+{
+    type Store = R::Store;
+
+    fn soft_encode<'itm>(self, store: &'itm mut Self::Store) -> Self::CType
+    where
+        Self: 'itm,
+    {
+        core::mem::ManuallyDrop::new(Self::into_inner(self).soft_encode(store))
+    }
+}
+
+disjoint_impls! {
+#[disjoint_impls(remote)]
+pub unsafe trait DecodeMove<'d>: ReprC<CType: Sized> + Sized {
+        type Store: Store + Default;
+
+        /// Perform the conversion from an [`ReprC::CType`] into [`Self`].
+        ///
+        /// Prefer using [`crate::soft_decode`] whenever possible
+        ///
+        /// # Safety
+        ///
+        /// See the safety section in [`crate::soft_decode`].
+        unsafe fn soft_decode<'itm: 'd>(
+            source: Self::CType,
+            store: &'itm mut Self::Store,
+        ) -> Option<Self>;
+
+        /// Perform the unchecked conversion from a [`ReprC::CType`] into [`Self`].
+        ///
+        /// The default implementation calls `soft_decode` and panics on `None`. Override it to
+        /// skip validation for your type
+        ///
+        /// # Safety
+        ///
+        /// See the safety section in [`crate::soft_decode_unchecked`].
+        unsafe fn soft_decode_unchecked<'itm: 'd>(
+            source: Self::CType,
+            store: &'itm mut Self::Store,
+        ) -> Self {
+            unsafe { Self::soft_decode(source, store) }.unwrap()
+        }
+    }
+    unsafe impl<'d, R, __Interior: ExclusiveKind> DecodeMove<'d> for ManuallyDrop<R>
+    where
+        R: RustSpec<Layout = Stable, Mutability = Exclusive<__Interior>>,
+        Self: AbiCompatibleValidate<CType: Sized>,
+    {
+        type Store = ();
+
+        unsafe fn soft_decode<'itm: 'd>(source: Self::CType, (): &'itm mut ()) -> Option<Self> {
+            if !unsafe { Self::is_valid(&source) } {
+                return None;
+            }
+            Some(unsafe { Self::soft_decode_unchecked(source, &mut ()) })
+        }
+
+        unsafe fn soft_decode_unchecked<'itm: 'd>(source: Self::CType, (): &'itm mut ()) -> Self {
+            let source = ManuallyDrop::new(source);
+            unsafe { core::mem::transmute_copy(&source) }
+        }
+    }
+    unsafe impl<'d, R, __Interior> DecodeMove<'d> for ManuallyDrop<R>
+    where
+        R: RustSpec<Layout = Stable, Trap = Robust, Mutability = WithInterior<__Interior>>,
+        Self: AbiCompatibleValidate<CType: Sized>,
+    {
+        type Store = ();
+
+        unsafe fn soft_decode<'itm: 'd>(source: Self::CType, (): &'itm mut ()) -> Option<Self> {
+            // SAFETY: Robust, ABI-compatible values need no validation or payload reads.
+            Some(unsafe { transmute_owned(source) })
+        }
+
+        unsafe fn soft_decode_unchecked<'itm: 'd>(source: Self::CType, (): &'itm mut ()) -> Self {
+            // SAFETY: Ownership is transferred using the ABI-compatible wrapper layout.
+            unsafe { transmute_owned(source) }
+        }
+    }
+    unsafe impl<'d, R: DecodeMove<'d>, __Trap> DecodeMove<'d> for ManuallyDrop<R>
+    where
+        R: RustSpec<
+                Layout = Stable,
+                Trap = NonRobust,
+                Mutability = WithInterior<__Trap>,
+            >,
+    {
+        type Store = R::Store;
+
+        #[inline(always)]
+        unsafe fn soft_decode<'itm: 'd>(
+            source: Self::CType,
+            store: &'itm mut Self::Store,
+        ) -> Option<Self> {
+            unsafe { R::soft_decode(ManuallyDrop::into_inner(source), store) }.map(Self::new)
+        }
+
+        #[inline(always)]
+        unsafe fn soft_decode_unchecked<'itm: 'd>(
+            source: Self::CType,
+            store: &'itm mut Self::Store,
+        ) -> Self {
+            Self::new(unsafe { R::soft_decode_unchecked(ManuallyDrop::into_inner(source), store) })
+        }
+    }
+    unsafe impl<'d, R: DecodeMove<'d>> DecodeMove<'d> for ManuallyDrop<R>
+    where
+        R: RustSpec<Layout = Unstable>,
+    {
+        type Store = R::Store;
+
+        #[inline(always)]
+        unsafe fn soft_decode<'itm: 'd>(
+            source: Self::CType,
+            store: &'itm mut Self::Store,
+        ) -> Option<Self> {
+            unsafe { R::soft_decode(ManuallyDrop::into_inner(source), store) }.map(Self::new)
+        }
+
+        #[inline(always)]
+        unsafe fn soft_decode_unchecked<'itm: 'd>(
+            source: Self::CType,
+            store: &'itm mut Self::Store,
+        ) -> Self {
+            Self::new(unsafe { R::soft_decode_unchecked(ManuallyDrop::into_inner(source), store) })
+        }
+    }
+}
+
+disjoint_impls! {
+#[disjoint_impls(remote)]
+pub unsafe trait EncodeMoveUnchecked: ReprC<CType: Sized> + Sized {
+        /// Storage for the unchecked encoding path.
+        type SoftStore: Store + Default;
+
+        /// Encode using the unchecked path and its independent store.
+        ///
+        /// Prefer using [`crate::soft_encode_unchecked`] whenever possible
+        ///
+        /// # Safety
+        ///
+        /// See safety section in [`crate::soft_encode_unchecked`].
+        unsafe fn soft_encode_unchecked<'itm>(self, store: &'itm mut Self::SoftStore) -> Self::CType
+        where
+            Self: 'itm;
+    }
+    unsafe impl<R> EncodeMoveUnchecked for ManuallyDrop<R>
+    where
+        R: RustSpec<Layout = Stable>,
+        Self: AbiCompatible<CType: Sized>,
+    {
+        type SoftStore = ();
+        unsafe fn soft_encode_unchecked<'itm>(self, (): &'itm mut ()) -> Self::CType where Self: 'itm {
+            unsafe { core::mem::transmute_copy(&self) }
+        }
+    }
+    unsafe impl<R: EncodeMoveUnchecked> EncodeMoveUnchecked for ManuallyDrop<R>
+    where
+        R: RustSpec<Layout = Unstable>,
+    {
+        type SoftStore = R::SoftStore;
+
+        #[inline(always)]
+        unsafe fn soft_encode_unchecked<'itm>(self, store: &'itm mut Self::SoftStore) -> Self::CType where Self: 'itm {
+            core::mem::ManuallyDrop::new(unsafe { Self::into_inner(self).soft_encode_unchecked(store) })
+        }
+    }
+}
+
+unsafe impl<R: AbiCompatibleValidate + ?Sized> AbiCompatibleValidate for ManuallyDrop<R>
+where
+    Self: RustSpec<Layout = Stable>,
+{
+    #[inline(always)]
+    unsafe fn is_valid(target: &Self::CType) -> bool {
+        unsafe { R::is_valid(target) }
+    }
+}
+
+unsafe impl<R: AbiCompatible + ?Sized> AbiCompatible for ManuallyDrop<R> where
+    Self: RustSpec<Layout = Stable>
+{
+}
+
+impl<R: Niche> Niche for ManuallyDrop<R> {
+    const NICHE: Self::CType = core::mem::ManuallyDrop::new(R::NICHE);
+
+    fn is_niche(value: &Self::CType) -> bool {
+        R::is_niche(value)
+    }
+}
+
+macro_rules! impl_wide_for_transparent_wrapper {
+    ($($wrapper:ident),+ $(,)?) => {$(
+        unsafe impl<R: Wide + ?Sized> Wide for $wrapper<R> {
+            type Header = R::Header;
+            type Metadata = R::Metadata;
+
+            fn metadata(ptr: *const Self) -> Self::Metadata {
+                R::metadata(ptr as *const R)
+            }
+
+            fn as_ptr(ptr: *const Self) -> *const Self::Header {
+                R::as_ptr(ptr as *const R)
+            }
+
+            fn as_mut_ptr(ptr: *mut Self) -> *mut Self::Header {
+                R::as_mut_ptr(ptr as *mut R)
+            }
+
+            unsafe fn from_raw_parts<'a>(
+                data: *const Self::Header,
+                metadata: Self::Metadata,
+            ) -> &'a Self {
+                let inner = unsafe { R::from_raw_parts(data, metadata) };
+                unsafe { &*(inner as *const R as *const Self) }
+            }
+
+            unsafe fn from_raw_parts_mut<'a>(
+                data: *mut Self::Header,
+                metadata: Self::Metadata,
+            ) -> &'a mut Self {
+                let inner = unsafe { R::from_raw_parts_mut(data, metadata) };
+                unsafe { &mut *(inner as *mut R as *mut Self) }
+            }
+
+            #[cfg(feature = "alloc")]
+            fn into_non_null(self: alloc::boxed::Box<Self>) -> core::ptr::NonNull<Self::Header> {
+                alloc::boxed::Box::into_non_null(self).cast()
+            }
+
+            #[cfg(feature = "alloc")]
+            unsafe fn from_non_null(
+                data: core::ptr::NonNull<Self::Header>,
+                metadata: Self::Metadata,
+            ) -> alloc::boxed::Box<Self> {
+                let inner = unsafe { R::from_non_null(data, metadata) };
+                let inner = alloc::boxed::Box::into_raw(inner) as *mut Self;
+                unsafe { alloc::boxed::Box::from_raw(inner) }
+            }
+        }
+    )+};
+}
+
+impl_wide_for_transparent_wrapper!(ManuallyDrop);
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    #[cfg(feature = "alloc")]
+    use crate::{boxed::CBox, wide::CWideBox};
+    use crate::{option::COption, reference::CRef};
+    #[cfg(feature = "alloc")]
+    use alloc::{boxed::Box, string::String, vec, vec::Vec};
+    use rust_spec::niche::WithNiche;
+    use static_assertions::assert_impl_all;
+    #[cfg(feature = "alloc")]
+    use static_assertions::assert_not_impl_any;
+    #[cfg(feature = "alloc")]
+    use static_assertions::assert_type_eq_all;
+
+    #[test]
+    #[cfg(feature = "alloc")]
+    fn manually_drop_stable_and_unstable_conversions() {
+        assert_type_eq_all!(<ManuallyDrop<bool> as EncodeMove>::Store, ());
+        assert_type_eq_all!(<ManuallyDrop<Box<u8>> as EncodeMove>::Store, ());
+        assert_type_eq_all!(<ManuallyDrop<Box<u8>> as DecodeMove<'static>>::Store, ());
+        assert_type_eq_all!(
+            <ManuallyDrop<Vec<(u8,)>> as EncodeMove>::Store,
+            <Vec<(u8,)> as EncodeMove>::Store
+        );
+        let mut encode_store = Default::default();
+        let encoded =
+            crate::soft_encode(ManuallyDrop::new(vec![(3_u8,), (5_u8,)]), &mut encode_store);
+        let mut decode_store = Default::default();
+        let decoded =
+            unsafe { crate::soft_decode::<ManuallyDrop<Vec<(u8,)>>>(encoded, &mut decode_store) }
+                .unwrap();
+        assert_eq!(ManuallyDrop::into_inner(decoded), vec![(3,), (5,)]);
+    }
+
+    #[test]
+    fn manually_drop_decode_rejects_invalid_inner_representation() {
+        assert_impl_all!(ManuallyDrop<bool>: Decode<'static>, Encode);
+
+        let invalid = core::mem::ManuallyDrop::new(bool::NICHE);
+        assert!(unsafe { crate::decode::<ManuallyDrop<bool>>(invalid) }.is_none());
+
+        let encoded = crate::encode(ManuallyDrop::new(true));
+        let decoded = unsafe { crate::decode::<ManuallyDrop<bool>>(encoded) }.unwrap();
+        assert!(*decoded);
+    }
+
+    #[test]
+    fn maybe_uninit_lowers_without_validating_or_encoding_the_inner_value() {
+        assert_impl_all!(MaybeUninit<bool>:
+            ReprC<CType = core::mem::MaybeUninit<crate::primitives::CBool>>,
+            AbiCompatible,
+            Decode<'static>,
+            Encode,
+        );
+        assert_impl_all!(MaybeUninit<u8>: CType, CFnArg, CFnReturn);
+
+        let source = core::mem::MaybeUninit::new(bool::NICHE);
+        assert!(unsafe { MaybeUninit::<bool>::is_valid(&source) });
+
+        let decoded = unsafe { crate::decode::<MaybeUninit<bool>>(source) }.unwrap();
+        let encoded = crate::encode(decoded);
+
+        assert!(bool::is_niche(&unsafe { encoded.assume_init() }));
+    }
+
+    #[test]
+    fn manually_drop_inner_without_drop() {
+        assert_impl_all!(ManuallyDrop<u8>:
+            ReprC<CType = core::mem::ManuallyDrop<u8>>,
+            Decode<'static>,
+            Encode,
+        );
+        assert_impl_all!(&ManuallyDrop<u8>:
+            RustSpec<Niche = WithNiche<rust_spec::Stable>>,
+            Niche<CType = CRef<'static, ManuallyDrop<u8>>>,
+            Decode<'static>,
+            Encode,
+        );
+        assert_impl_all!(&mut ManuallyDrop<u8>:
+            RustSpec<Niche = WithNiche<rust_spec::Stable>>,
+            Niche<CType = crate::reference::CRefMut<'static, ManuallyDrop<u8>, true>>,
+            Decode<'static>,
+            Encode,
+        );
+        #[cfg(feature = "alloc")]
+        assert_impl_all!(Box<ManuallyDrop<u8>>:
+            Niche<CType = CBox<ManuallyDrop<u8>>>,
+            Decode<'static>,
+            Encode,
+        );
+        assert_impl_all!(&[ManuallyDrop<u8>]:
+            Niche<CType = crate::wide::CWideRef<'static, [ManuallyDrop<u8>]>>,
+            Decode<'static>,
+            Encode,
+        );
+        assert_impl_all!(&mut [ManuallyDrop<u8>]:
+            Niche<CType = crate::wide::CWideRefMut<'static, [ManuallyDrop<u8>], true>>,
+            Decode<'static>,
+            Encode,
+        );
+        #[cfg(feature = "alloc")]
+        assert_impl_all!(Box<[ManuallyDrop<u8>]>:
+            Niche<CType = CWideBox<[ManuallyDrop<u8>]>>,
+            Decode<'static>,
+            Encode,
+        );
+        #[cfg(feature = "alloc")]
+        assert_impl_all!(Vec<ManuallyDrop<u8>>:
+            Niche<CType = crate::vec::CVec<ManuallyDrop<u8>>>,
+            Decode<'static>,
+            Encode,
+        );
+        assert_impl_all!([ManuallyDrop<u8>; 2]:
+            ReprC<CType = [core::mem::ManuallyDrop<u8>; 2]>,
+            Decode<'static>,
+            Encode,
+        );
+        assert_impl_all!(Option<ManuallyDrop<u8>>:
+            Niche<CType = COption<ManuallyDrop<u8>>>,
+            Decode<'static>,
+            Encode,
+        );
+
+        assert_impl_all!(ManuallyDrop<u8>: CType);
+    }
+
+    #[test]
+    #[cfg(feature = "alloc")]
+    fn manually_drop_inner_with_drop() {
+        assert_impl_all!(ManuallyDrop<String>:
+            ReprC<CType = core::mem::ManuallyDrop<<String as ReprC>::CType>>,
+            Decode<'static>,
+            Encode,
+        );
+        assert_impl_all!(ManuallyDrop<Box<u8>>:
+            Niche<CType = core::mem::ManuallyDrop<crate::boxed::CBox<u8>>>,
+            Decode<'static>,
+            Encode,
+        );
+        assert_impl_all!(&ManuallyDrop<Box<u8>>:
+            Niche<CType = CRef<'static, ManuallyDrop<Box<u8>>>>,
+        );
+        assert_impl_all!(&mut ManuallyDrop<Box<u8>>:
+            Niche<CType = crate::reference::CSoftRefMut<ManuallyDrop<Box<u8>>, true>>,
+        );
+        assert_impl_all!(Box<ManuallyDrop<Box<u8>>>:
+            RustSpec<Niche = WithNiche<rust_spec::Stable>>,
+            Niche<CType = CBox<ManuallyDrop<Box<u8>>>>,
+        );
+        assert_impl_all!(&[ManuallyDrop<Box<u8>>]:
+            Niche<CType = crate::wide::CWideRef<'static, [ManuallyDrop<Box<u8>>]>>,
+        );
+        assert_impl_all!(&mut [ManuallyDrop<Box<u8>>]:
+            Niche<CType = crate::wide::CSoftWideRefMut<[ManuallyDrop<Box<u8>>], true>>,
+        );
+        assert_impl_all!(Box<[ManuallyDrop<Box<u8>>]>:
+            Niche<CType = CWideBox<[ManuallyDrop<Box<u8>>]>>,
+        );
+        assert_impl_all!(Vec<ManuallyDrop<Box<u8>>>:
+            Niche<CType = crate::vec::CVec<ManuallyDrop<Box<u8>>>>,
+        );
+        assert_impl_all!([ManuallyDrop<Box<u8>>; 2]:
+            Niche<CType = [core::mem::ManuallyDrop<crate::boxed::CBox<u8>>; 2]>,
+        );
+        assert_impl_all!(Option<ManuallyDrop<Box<u8>>>:
+            ReprC<CType = crate::option::COptionSome<ManuallyDrop<Box<u8>>>>,
+        );
+        assert_not_impl_any!(ManuallyDrop<Box<u8>>: CType);
+
+        let encoded = crate::encode(ManuallyDrop::new(Box::new(42u8)));
+        let decoded = unsafe { crate::decode::<ManuallyDrop<Box<u8>>>(encoded) }.unwrap();
+        let decoded = ManuallyDrop::into_inner(decoded);
+        assert_eq!(*decoded, 42);
+
+        let encoded = crate::encode(ManuallyDrop::new(String::from("hello")));
+        let decoded = unsafe { crate::decode::<ManuallyDrop<String>>(encoded) }.unwrap();
+        assert_eq!(ManuallyDrop::into_inner(decoded), "hello");
+    }
+}

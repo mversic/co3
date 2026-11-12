@@ -32,6 +32,7 @@ impl<C> OwnedBoxCarrier<C> for C {
 /// If the data pointer is set to `null`, the struct represents `Option<Box<R>>`.
 #[derive(RustSpec)]
 #[repr(transparent)]
+#[doc(hidden)]
 pub struct CBox<R: ReprC<CType: Sized> + ?Sized> {
     data: *mut R::CType,
 }

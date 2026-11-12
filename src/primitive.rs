@@ -9,7 +9,6 @@ use rust_spec::RustSpec;
 use crate::stored::Owned;
 use crate::{
     CFnArg, CFnReturn, CType, Decode, Encode, ReprC,
-    borrow::Borrow,
     niche::Niche,
     stored::{DecodeMove, EmptyStore, EncodeMove, EncodeMoveUnchecked},
     transmute::AbiCompatible,
@@ -20,6 +19,7 @@ use crate::{
 /// Every byte value is valid for this carrier; conversion to `bool` accepts only 0 and 1.
 #[derive(Debug, Clone, Copy, Default, RustSpec)]
 #[repr(transparent)]
+#[doc(hidden)]
 pub struct CBool(pub u8);
 
 /// C-compatible carrier for a Unicode scalar value (`char`).
@@ -84,19 +84,7 @@ impl CBool {
 macro_rules! primitive_derive {
     ( $primitive:ty ) => {
         $crate::mutable::impl_direct_mut!([] $primitive);
-        unsafe impl Borrow for $primitive {
-            type Borrowed = Self;
-
-            #[inline(always)]
-            fn borrow(self) -> Self::Borrowed {
-                self
-            }
-
-            #[inline(always)]
-            fn from_borrow(source: Self) -> Self {
-                source
-            }
-        }
+        crate::__impl_borrowed_identity!([] $primitive);
 
         impl ReprC for $primitive {
             type CType = Self;
@@ -154,20 +142,7 @@ macro_rules! primitive_derive {
 macro_rules! raw_pointer_derive {
     ( $mutability:tt ) => {
         $crate::mutable::impl_direct_mut!([R: CType + ?Sized] *$mutability R);
-        unsafe impl<R: ?Sized> Borrow for *$mutability R {
-            type Borrowed = Self;
-
-            #[inline(always)]
-            fn borrow(self) -> Self::Borrowed
-            {
-                self
-            }
-
-            #[inline(always)]
-            fn from_borrow(source: Self) -> Self {
-                source
-            }
-        }
+        crate::__impl_borrowed_identity!([R: ?Sized] *$mutability R);
 
 
         impl<R: CType + ?Sized> ReprC for *$mutability R {
@@ -271,17 +246,7 @@ macro_rules! impl_fn_types {
         impl_fn_types!(@impl [$($arg),*] unsafe extern $abi fn($($arg),*) -> R);
     };
     (@impl [$($arg:ident),*] $fn_type:ty) => {
-        unsafe impl<$($arg,)* R> Borrow for $fn_type {
-
-            type Borrowed = Self;
-            fn borrow(self) -> Self::Borrowed {
-                self
-            }
-
-            fn from_borrow(source: Self) -> Self {
-                source
-            }
-        }
+        crate::__impl_borrowed_identity!([$($arg,)* R] $fn_type);
 
         impl<$($arg: CFnArg,)* R: CFnReturn> ReprC for $fn_type where Option<Self>: CType {
             type CType = Option<Self>;
@@ -333,19 +298,7 @@ unsafe impl<$($arg,)* R> AbiCompatible for $fn_type where Self: ReprC<CType = Op
 
 macro_rules! fieldless_enum_derive {
     ( $src:ty => $dst:ty: {$niche_val:expr}: $validity_fn:expr; $decode_fn:expr; $encode_fn:expr $(; $unchecked_fn:expr)? ) => {
-        unsafe impl Borrow for $src {
-            type Borrowed = Self;
-
-            #[inline(always)]
-            fn borrow(self) -> Self::Borrowed {
-                self
-            }
-
-            #[inline(always)]
-            fn from_borrow(source: Self::Borrowed) -> Self {
-                source
-            }
-        }
+        crate::__impl_borrowed_identity!([] $src);
 
 
         crate::mutable::impl_copy_mut!([] $src);
@@ -494,12 +447,7 @@ mod tests {
     use static_assertions::{assert_impl_all, assert_not_impl_any};
 
     use super::*;
-    use crate::{
-        Encode,
-        cmp::COrdering,
-        option::COption,
-        reference::CRef,
-    };
+    use crate::{Encode, cmp::COrdering, option::COption, reference::CRef};
     #[cfg(feature = "alloc")]
     use crate::{boxed::CBox, wide::CWideBox};
 
@@ -560,9 +508,7 @@ mod tests {
             );
         }
         assert!(bool::is_niche(&crate::encode(None::<bool>).0));
-        assert!(Ordering::is_niche(
-            &crate::encode(None::<Ordering>).0
-        ));
+        assert!(Ordering::is_niche(&crate::encode(None::<Ordering>).0));
         assert!(char::is_niche(&crate::encode(None::<char>).0));
     }
 

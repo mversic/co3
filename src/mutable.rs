@@ -11,10 +11,10 @@ use rust_spec::size::SizedKind;
 
 use crate::{
     CType, ReprC,
-    reference::{CSoftRefMut, CSoftRef},
+    reference::{CSoftRef, CSoftRefMut},
     stored::{EncodeMove, EncodeMoveUnchecked, Store},
     transmute::AbiCompatibleValidate,
-    wide::{CSoftWideRefMut, CSoftWideRef},
+    wide::{CSoftWideRef, CSoftWideRefMut},
     wide::{Wide, WideHeader},
 };
 #[cfg(feature = "alloc")]
@@ -265,7 +265,7 @@ disjoint_impls! {
                     }
                 },
             );
-            unsafe { CSoftRefMut::from_raw(wide.as_ptr().cast::<[T::CType; N]>()) }
+            unsafe { CSoftRefMut::from_raw(wide.as_ptr().cast::<[<T as ReprC>::CType; N]>()) }
         }
     }
 
@@ -531,7 +531,7 @@ disjoint_impls! {
                     }
                 },
             );
-            unsafe { CSoftRefMut::from_raw(wide.as_ptr().cast::<[T::CType; N]>()) }
+            unsafe { CSoftRefMut::from_raw(wide.as_ptr().cast::<[<T as ReprC>::CType; N]>()) }
         }
     }
     #[cfg(feature = "alloc")]
@@ -573,7 +573,7 @@ disjoint_impls! {
                     }
                 },
             );
-            unsafe { CSoftRefMut::from_raw(wide.as_ptr().cast::<[T::CType; N]>()) }
+            unsafe { CSoftRefMut::from_raw(wide.as_ptr().cast::<[<T as ReprC>::CType; N]>()) }
         }
     }
     unsafe impl<'a, T, const N: usize> SoftEncodeMut<'a> for [T; N]
@@ -712,7 +712,8 @@ macro_rules! impl_copy_mut {
     };
 }
 
-unsafe impl<'a, R: SoftEncodeMutUnchecked<'a> + ?Sized> SoftEncodeMutUnchecked<'a> for ManuallyDrop<R>
+unsafe impl<'a, R: SoftEncodeMutUnchecked<'a> + ?Sized> SoftEncodeMutUnchecked<'a>
+    for ManuallyDrop<R>
 where
     Self: ReprC + 'a,
     &'a mut Self: ReprC<CType: Copy + Sized>,
@@ -765,7 +766,8 @@ where
 
 macro_rules! impl_cell_mut {
     ($wrapper:ident, $field:expr) => {
-        unsafe impl<'a, R: SoftEncodeMutUnchecked<'a> + ?Sized> SoftEncodeMutUnchecked<'a> for $wrapper<R>
+        unsafe impl<'a, R: SoftEncodeMutUnchecked<'a> + ?Sized> SoftEncodeMutUnchecked<'a>
+            for $wrapper<R>
         where
             Self: ReprC + 'a,
             &'a mut Self: ReprC<CType: Copy + Sized>,
@@ -822,7 +824,7 @@ impl_cell_mut!(UnsafeCell, UnsafeCell::get_mut);
 impl_copy_mut!(['r, T: ?Sized] &'r T);
 impl_copy_mut!([R: Copy] Option<R>);
 impl_copy_mut!([T: Copy, E: Copy] Result<T, E>);
-impl_copy_mut!([T: ReprC<CType: Copy>, E: ReprC<CType: Copy>] crate::result::CResult<T, E>);
+impl_copy_mut!([T: ReprC<CType: Copy>, E: ReprC<CType: Copy>, const STABLE: bool] crate::result::CResult<T, E, STABLE>);
 impl_copy_mut!([T: Copy, E: Copy] crate::result::Result<T, E>);
 impl_direct_mut!([T: ?Sized] core::marker::PhantomData<T>);
 impl_direct_mut!([T] core::mem::MaybeUninit<T>);
@@ -835,7 +837,7 @@ impl_direct_mut!([C: ReprC<CType: CType> + ?Sized, const EXCLUSIVE: bool] CSoftR
 impl_direct_mut!([P: ReprC<CType: Wide<Header: WideHeader<Data: CType>>> + ?Sized] CSoftWideRef<P>);
 impl_direct_mut!([P: ReprC<CType: Wide<Header: WideHeader<Data: CType>>> + ?Sized, const EXCLUSIVE: bool] CSoftWideRefMut<P, EXCLUSIVE>);
 #[cfg(feature = "alloc")]
-impl_direct_mut!([T: ReprC<CType: CType + Sized>] CVec<T>);
+impl_direct_mut!([T: ReprC<CType: CType + Sized>, const STABLE: bool] CVec<T, STABLE>);
 #[cfg(feature = "alloc")]
 impl_direct_mut!([C: ReprC<CType: CType + Sized>] CBox<C>);
 #[cfg(feature = "alloc")]
@@ -929,13 +931,13 @@ macro_rules! impl_move_out_mut {
     };
 }
 
-impl_move_out_mut!([T: ReprC<CType: CType + Sized>] crate::option::COption<T> where Self: Default,);
+impl_move_out_mut!([T: ReprC<CType: CType + Sized>, const STABLE: bool] crate::option::COption<T, STABLE> where Self: Default,);
 impl_move_out_mut!([T] crate::option::Option<T> where);
 // Keep the original vector and its elements alive: decoding an owned carrier
 // before synchronizing element stores can restore references into freed storage.
 #[cfg(feature = "alloc")]
 macro_rules! impl_vec_mut {
-    ($vec:path) => {
+    ($vec:path, $stable:literal) => {
         const _: () = {
             use crate::stored::SoftEncodeMutUnchecked;
             crate::disjoint_impls! {
@@ -952,7 +954,7 @@ macro_rules! impl_vec_mut {
             &'a mut Self: ReprC<CType = CSoftRefMut<Self, true>>,
         {
             type SoftStore = RefMutReferenceEncodeStore<
-                CVec<T>,
+                CVec<T, $stable>,
                 RefMutWideEncodeStore<
                     'a,
                     [T],
@@ -1015,12 +1017,12 @@ macro_rules! impl_vec_mut {
         };
         unsafe impl<'a, T: ReprC<CType: CType + Copy + Sized> + 'a> SoftEncodeMut<'a> for $vec
         where
-            Self: crate::stored::SoftEncodeMutUnchecked<'a> + ReprC<CType = CVec<T>>,
+            Self: crate::stored::SoftEncodeMutUnchecked<'a> + ReprC<CType = CVec<T, $stable>>,
             &'a mut T: EncodeMove + ReprC<CType: MutRefCarrier<T, true>>,
             &'a mut Self: ReprC<CType = CSoftRefMut<Self, true>>,
         {
             type Store = RefMutReferenceEncodeStore<
-                CVec<T>,
+                CVec<T, $stable>,
                 RefMutWideEncodeStore<
                     'a,
                     [T],
@@ -1072,9 +1074,9 @@ macro_rules! impl_vec_mut {
 }
 
 #[cfg(feature = "alloc")]
-impl_vec_mut!(alloc::vec::Vec<T>);
+impl_vec_mut!(alloc::vec::Vec<T>, false);
 #[cfg(feature = "alloc")]
-impl_vec_mut!(crate::vec::Vec<T>);
+impl_vec_mut!(crate::vec::Vec<T>, true);
 #[cfg(feature = "alloc")]
 impl_move_out_mut!([T] alloc::boxed::Box<[T]> where T: crate::ReprC<CType: CType + Sized>,);
 #[cfg(feature = "alloc")]

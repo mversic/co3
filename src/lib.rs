@@ -562,7 +562,6 @@ extern crate self as co3;
 
 #[cfg(feature = "alloc")]
 use alloc::boxed::Box;
-use core::mem::ManuallyDrop;
 
 #[cfg(feature = "derive")]
 pub use co3_derive::*;
@@ -574,7 +573,7 @@ pub use impls::impls;
 pub use rust_spec;
 use rust_spec::{
     RustSpec, Unstable,
-    drop::{DropKind, NoDrop},
+    drop::DropKind,
     layout::{LayoutKind, NonRobust, Robust},
     mutability::{Exclusive, ExclusiveKind, WithInterior},
     niche::{WithNiche, WithoutNiche},
@@ -591,27 +590,30 @@ use crate::{
     niche::Niche,
     reference::{CRef, CRefMut, CSoftRef, CSoftRefMut},
     stored::{DecodeMove, EmptyStore, EncodeMove, EncodeMoveUnchecked, Store},
-    wide::{CWideRef, CWideRefMut, CSoftWideRef, CSoftWideRefMut},
+    wide::{CSoftWideRef, CSoftWideRefMut, CWideRef, CWideRefMut},
     wide::{Wide, WideHeader},
 };
 
 pub mod borrow;
 #[cfg(feature = "alloc")]
 pub mod boxed;
+mod cell;
 pub mod cmp;
-#[doc(hidden)]
 pub mod decoded;
 #[doc(hidden)]
 pub mod either;
 mod elements;
 pub mod ffi;
+mod mem;
 mod mutable;
 pub mod niche;
+pub mod num;
 pub mod ops;
 pub mod option;
 pub mod pack;
 #[path = "primitive.rs"]
 pub mod primitives;
+mod ptr;
 pub mod reference;
 pub mod result;
 mod shared;
@@ -703,111 +705,7 @@ unsafe impl<T: ?Sized> Zeroable for core::marker::PhantomData<T> {}
 unsafe impl<T: Sized> Zeroable for *const T {}
 unsafe impl<T: Sized> Zeroable for *mut T {}
 
-/// Transparent C carrier for an integer that is nonzero in its Rust source type.
-///
-/// The carrier accepts zero so it can also represent a surrounding enum's niche.
-/// Comparisons require the inner zero value to compare equal to itself; otherwise
-/// equality returns false and ordering returns `None`.
-#[derive(Debug, Clone, Copy, RustSpec)]
-#[repr(transparent)]
-pub struct NonZero<C>(pub C);
-
-impl<C: Zeroable + PartialEq> PartialEq for NonZero<C> {
-    fn eq(&self, other: &Self) -> bool {
-        let zero = unsafe { core::mem::zeroed() };
-        PartialEq::eq(&zero, &zero) && self.0 != zero && self.0 == other.0
-    }
-}
-
-impl<C: Zeroable + PartialOrd> PartialOrd for NonZero<C> {
-    fn partial_cmp(&self, other: &Self) -> Option<core::cmp::Ordering> {
-        let zero = unsafe { core::mem::zeroed() };
-        if !PartialEq::eq(&zero, &zero) || self.0 == zero || other.0 == zero {
-            None
-        } else {
-            self.0.partial_cmp(&other.0)
-        }
-    }
-}
-
-impl<C: Zeroable + PartialEq> NonZero<C> {
-    /// Returns `None` for zero or when zero does not compare equal to itself.
-    pub fn new(value: C) -> Option<Self> {
-        let zero = unsafe { core::mem::zeroed() };
-
-        // NOTE: Assert the relation is symmetric first
-        if !PartialEq::eq(&zero, &zero) || value == zero {
-            return None;
-        }
-
-        Some(Self(value))
-    }
-}
-
-impl<R: ReprC<CType: Sized>> ReprC for NonZero<R> {
-    type CType = NonZero<R::CType>;
-}
-unsafe impl<C: CType> CType for NonZero<C> {}
-unsafe impl<C: CFnArg> CFnArg for NonZero<C> {}
-unsafe impl<C: CFnReturn> CFnReturn for NonZero<C> {}
-
-unsafe impl<R: borrow::Borrow> borrow::Borrow for NonZero<R> {
-    type Borrowed = NonZero<R::Borrowed>;
-
-    fn borrow(self) -> Self::Borrowed {
-        NonZero(self.0.borrow())
-    }
-
-    fn from_borrow(source: Self::Borrowed) -> Self {
-        NonZero(R::from_borrow(source.0))
-    }
-}
-
-unsafe impl<R: EncodeMoveUnchecked> EncodeMoveUnchecked for NonZero<R> {
-    type SoftStore = R::SoftStore;
-
-    unsafe fn soft_encode_unchecked<'a>(self, store: &'a mut Self::SoftStore) -> Self::CType
-    where
-        Self: 'a,
-    {
-        NonZero(unsafe { self.0.soft_encode_unchecked(store) })
-    }
-}
-unsafe impl<R: EncodeMove> EncodeMove for NonZero<R> {
-    type Store = R::Store;
-
-    fn soft_encode<'a>(self, store: &'a mut Self::Store) -> Self::CType
-    where
-        Self: 'a,
-    {
-        NonZero(crate::stored::EncodeMove::soft_encode(self.0, store))
-    }
-}
-unsafe impl<'d, R: DecodeMove<'d>> DecodeMove<'d> for NonZero<R> {
-    type Store = R::Store;
-
-    unsafe fn soft_decode<'a: 'd>(source: Self::CType, store: &'a mut Self::Store) -> Option<Self> {
-        Some(NonZero(unsafe { R::soft_decode(source.0, store)? }))
-    }
-
-    unsafe fn soft_decode_unchecked<'a: 'd>(
-        source: Self::CType,
-        store: &'a mut Self::Store,
-    ) -> Self {
-        NonZero(unsafe { R::soft_decode_unchecked(source.0, store) })
-    }
-}
-impl<R: Encode> Encode for NonZero<R> {}
-impl<R: EncodeUnchecked> EncodeUnchecked for NonZero<R> {}
-impl<'d, R: Decode<'d>> Decode<'d> for NonZero<R> {}
-unsafe impl<R: transmute::AbiCompatibleValidate<CType: Sized>> transmute::AbiCompatibleValidate
-    for NonZero<R>
-{
-    unsafe fn is_valid(target: &Self::CType) -> bool {
-        unsafe { R::is_valid(&target.0) }
-    }
-}
-unsafe impl<R: transmute::AbiCompatible<CType: Sized>> transmute::AbiCompatible for NonZero<R> {}
+pub use num::NonZero;
 
 /// Pointers to types implementing this trait alias are “thin”.
 ///
@@ -956,7 +854,7 @@ disjoint_impls! {
         R: RustSpec<Niche = WithoutNiche>,
         <R as ReprC>::CType: Sized,
     {
-        type CType = <option::Option<R> as ReprC>::CType;
+        type CType = option::COption<R>;
     }
     impl<R: Niche, N: LayoutKind> ReprC for Option<R>
     where
@@ -975,7 +873,7 @@ disjoint_impls! {
         <R as ReprC>::CType: CType + Copy,
         <E as ReprC>::CType: CType + Copy,
     {
-        type CType = <result::Result<R, E> as ReprC>::CType;
+        type CType = result::CResult<R, E>;
     }
     impl<R: Niche, E: ReprC> ReprC for Result<R, E>
     where
@@ -994,18 +892,6 @@ disjoint_impls! {
         type CType = result::CResultErr<R, E>;
     }
 
-    impl<R: ReprC + ?Sized> ReprC for ManuallyDrop<R>
-    where
-        R: RustSpec<Drop = NoDrop>
-    {
-        type CType = R::CType;
-    }
-    impl<R: ReprC + ?Sized> ReprC for ManuallyDrop<R>
-    where
-        R: RustSpec<Drop: NeedsDrop>,
-    {
-        type CType = ManuallyDrop<R::CType>;
-    }
 }
 
 /// Facilitates unchecked conversion from a Rust type into a C-compatible representation.
@@ -1197,7 +1083,7 @@ mod tests {
         let value = NonZeroU8::new(7).unwrap();
         let native: option::COptionSome<NonZeroU8> = encode(Some(value));
         assert_eq!(option::COptionSome(NonZero(7)), native);
-        let tagged: COption<NonZeroU8> = encode(TaggedOption::Some(value));
+        let tagged: COption<NonZeroU8, true> = encode(TaggedOption::Some(value));
         assert_eq!(native.0.0, 7);
         assert_eq!(tagged.into_option(), Some(Some(NonZero(7))));
         assert_eq!(
@@ -1217,7 +1103,7 @@ mod tests {
             result::CResultErr::<(), NonZeroU8>(NonZero(7), core::marker::PhantomData).0,
             NonZero(7)
         );
-        let tagged: CResult<NonZeroU8, ()> = encode(TaggedResult::<NonZeroU8, ()>::Err(()));
+        let tagged: CResult<NonZeroU8, (), true> = encode(TaggedResult::<NonZeroU8, ()>::Err(()));
         assert!(<NonZeroU8 as crate::niche::Niche>::is_niche(&native.0));
         assert_eq!(
             unsafe { decode::<TaggedResult<NonZeroU8, ()>>(tagged) },
@@ -1250,11 +1136,12 @@ mod tests {
             unsafe { decode::<StableOption<bool>>(encoded) },
             Some(StableOption::Some(true))
         );
-        let niche = unsafe { COption::<bool>::from_raw_parts(2, core::mem::MaybeUninit::uninit()) };
+        let niche =
+            unsafe { COption::<bool, true>::from_raw_parts(2, core::mem::MaybeUninit::uninit()) };
         assert!(niche.is_niche());
-        assert!(!COption::<bool>::None().is_niche());
+        assert!(!COption::<bool, true>::None().is_niche());
         let other_tag =
-            unsafe { COption::<bool>::from_raw_parts(3, core::mem::MaybeUninit::uninit()) };
+            unsafe { COption::<bool, true>::from_raw_parts(3, core::mem::MaybeUninit::uninit()) };
         assert!(!other_tag.is_niche());
         assert_eq!(unsafe { decode::<StableOption<bool>>(niche) }, None);
 
@@ -1263,12 +1150,13 @@ mod tests {
             unsafe { decode::<StableResult<bool, u8>>(encoded) },
             Some(StableResult::Err(7))
         );
-        let niche =
-            unsafe { CResult::<bool, u8>::from_raw_parts(2, Ok(core::mem::MaybeUninit::uninit())) };
+        let niche = unsafe {
+            CResult::<bool, u8, true>::from_raw_parts(2, Ok(core::mem::MaybeUninit::uninit()))
+        };
         assert!(niche.is_niche());
-        assert!(!CResult::<bool, u8>::Err(7).is_niche());
+        assert!(!CResult::<bool, u8, true>::Err(7).is_niche());
         let other_tag = unsafe {
-            CResult::<bool, u8>::from_raw_parts(3, Err(core::mem::MaybeUninit::uninit()))
+            CResult::<bool, u8, true>::from_raw_parts(3, Err(core::mem::MaybeUninit::uninit()))
         };
         assert!(!other_tag.is_niche());
         assert_eq!(unsafe { decode::<StableResult<bool, u8>>(niche) }, None);
@@ -1432,5 +1320,141 @@ mod tests {
         }
 
         assert_eq!(tuples[0].0, 100);
+    }
+}
+
+#[doc(hidden)]
+pub use borrow::CBorrowed;
+
+#[cfg(test)]
+mod carrier_tests {
+    use super::*;
+    use core::cmp::Reverse;
+    use core::{
+        cell::{Cell, UnsafeCell},
+        mem::{ManuallyDrop, MaybeUninit},
+    };
+    use static_assertions::{
+        assert_impl_all, assert_not_impl_any, assert_type_eq_all, assert_type_ne_all,
+    };
+
+    #[test]
+    fn wrappers_lower_contents_structurally() {
+        assert_type_eq_all!(
+            <ManuallyDrop<bool> as ReprC>::CType,
+            core::mem::ManuallyDrop<crate::primitives::CBool>
+        );
+        assert_type_eq_all!(
+            <Cell<bool> as ReprC>::CType,
+            core::cell::Cell<crate::primitives::CBool>
+        );
+        assert_type_eq_all!(
+            <UnsafeCell<bool> as ReprC>::CType,
+            core::cell::UnsafeCell<crate::primitives::CBool>
+        );
+        assert_type_eq_all!(
+            <MaybeUninit<bool> as ReprC>::CType,
+            core::mem::MaybeUninit<crate::primitives::CBool>
+        );
+        assert_type_eq_all!(
+            <Reverse<bool> as ReprC>::CType,
+            core::cmp::Reverse<crate::primitives::CBool>
+        );
+        assert_type_eq_all!(
+            <core::mem::ManuallyDrop<crate::primitives::CBool> as ReprC>::CType,
+            core::mem::ManuallyDrop<crate::primitives::CBool>
+        );
+        assert_type_eq_all!(
+            <core::cell::Cell<crate::primitives::CBool> as ReprC>::CType,
+            core::cell::Cell<crate::primitives::CBool>
+        );
+        assert_type_eq_all!(
+            <core::cell::UnsafeCell<crate::primitives::CBool> as ReprC>::CType,
+            core::cell::UnsafeCell<crate::primitives::CBool>
+        );
+        assert_type_eq_all!(
+            <core::mem::MaybeUninit<crate::primitives::CBool> as ReprC>::CType,
+            core::mem::MaybeUninit<crate::primitives::CBool>
+        );
+        assert_type_eq_all!(
+            <core::cmp::Reverse<crate::primitives::CBool> as ReprC>::CType,
+            core::cmp::Reverse<crate::primitives::CBool>
+        );
+        assert_type_eq_all!(
+            <CBorrowed<crate::primitives::CBool> as ReprC>::CType,
+            CBorrowed<crate::primitives::CBool>
+        );
+        assert_not_impl_any!(core::cell::Cell<crate::primitives::CBool>: Copy);
+        assert_not_impl_any!(core::cell::UnsafeCell<crate::primitives::CBool>: Copy);
+        assert_impl_all!(core::mem::ManuallyDrop<crate::primitives::CBool>: Copy);
+        assert_not_impl_any!(core::mem::ManuallyDrop<UnsafeCell<bool>>: Copy);
+        assert_type_ne_all!(
+            core::cell::Cell<crate::primitives::CBool>,
+            core::cell::UnsafeCell<crate::primitives::CBool>
+        );
+    }
+
+    #[test]
+    fn source_family_discriminators_do_not_change_layout() {
+        use crate::{option::COption, result::CResult, tuple::Tuple2};
+        assert_type_eq_all!(<(u8, bool) as ReprC>::CType, Tuple2<<u8 as crate::ReprC>::CType, <bool as crate::ReprC>::CType, false>);
+        assert_type_eq_all!(<Tuple2<u8, bool> as ReprC>::CType, Tuple2<<u8 as crate::ReprC>::CType, <bool as crate::ReprC>::CType, true>);
+        assert_type_eq_all!(<Option<u8> as ReprC>::CType, COption<u8>);
+        assert_type_eq_all!(<crate::option::Option<u8> as ReprC>::CType, COption<u8, true>);
+        assert_type_eq_all!(<Result<u8, u8> as ReprC>::CType, CResult<u8, u8>);
+        assert_type_eq_all!(<crate::result::Result<u8, u8> as ReprC>::CType, CResult<u8, u8, true>);
+        assert_type_eq_all!(<core::num::NonZeroU8 as ReprC>::CType, NonZero<u8>);
+        assert_type_eq_all!(<crate::NonZero<u8> as ReprC>::CType, NonZero<u8>);
+        assert_type_ne_all!(Tuple2<<u8 as crate::ReprC>::CType, <bool as crate::ReprC>::CType, false>, Tuple2<<u8 as crate::ReprC>::CType, <bool as crate::ReprC>::CType, true>);
+        assert_eq!(
+            core::mem::size_of::<
+                Tuple2<<u8 as crate::ReprC>::CType, <bool as crate::ReprC>::CType, false>,
+            >(),
+            core::mem::size_of::<
+                Tuple2<<u8 as crate::ReprC>::CType, <bool as crate::ReprC>::CType, true>,
+            >()
+        );
+        let source = Tuple2(7_u8, true);
+        let encoded = crate::encode(source);
+        assert_eq!(
+            unsafe { crate::decode::<Tuple2<u8, bool>>(encoded) },
+            Some(source)
+        );
+    }
+
+    #[cfg(feature = "alloc")]
+    #[test]
+    fn nested_vector_sources_round_trip_without_collapsing_identity() {
+        use crate::vec::CVec;
+        use alloc::vec::Vec;
+        assert_type_eq_all!(<Vec<bool> as ReprC>::CType, CVec<bool>);
+        assert_type_eq_all!(<crate::vec::Vec<bool> as ReprC>::CType, CVec<bool, true>);
+        assert_type_eq_all!(
+            <ManuallyDrop<Vec<bool>> as ReprC>::CType,
+            core::mem::ManuallyDrop<crate::vec::CVec<bool>>
+        );
+        assert_type_ne_all!(
+            core::mem::ManuallyDrop<crate::vec::CVec<bool>>,
+            core::mem::ManuallyDrop<crate::vec::CVec<bool, true>>
+        );
+        let source = Cell::new(Vec::from([true, false]));
+        let mut store = Default::default();
+        let encoded = crate::soft_encode(source, &mut store);
+        let mut decoded_store = Default::default();
+        let decoded =
+            unsafe { crate::soft_decode::<Cell<Vec<bool>>>(encoded, &mut decoded_store) }.unwrap();
+        assert_eq!(decoded.into_inner(), [true, false]);
+        crate::Store::sync(decoded_store).unwrap();
+        crate::Store::sync(store).unwrap();
+        let stable: crate::vec::Vec<bool> = Vec::from([true, false]).into();
+        let mut store = Default::default();
+        let encoded = crate::soft_encode(stable, &mut store);
+        let mut decoded_store = Default::default();
+        let decoded =
+            unsafe { crate::soft_decode::<crate::vec::Vec<bool>>(encoded, &mut decoded_store) }
+                .unwrap();
+        assert_eq!(&*decoded, &[true, false]);
+        crate::Store::sync(decoded_store).unwrap();
+        crate::Store::sync(store).unwrap();
     }
 }

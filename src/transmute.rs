@@ -10,7 +10,6 @@ use disjoint_impls::disjoint_impls;
 pub use interior::InteriorTrap;
 use rust_spec::{
     Gt, RustSpec, Stable,
-    drop::NoDrop,
     layout::{NonRobust, Robust},
     mutability::{Exclusive, ExclusiveKind, WithInterior, WithoutInterior},
     size::{Sized as RustSpecSized, Zero},
@@ -19,10 +18,10 @@ use rust_spec::{
 #[cfg(feature = "alloc")]
 use crate::boxed::CBox;
 use crate::{
-    NeedsDrop, ReprC,
+    ReprC,
     niche::Niche,
     option::COptionSome,
-    reference::{SharedRefCarrier, MutRefCarrier},
+    reference::{MutRefCarrier, SharedRefCarrier},
     result::{CResultErr, CResultOk},
     utf8::Utf8Str,
     wide::Wide as _,
@@ -105,17 +104,7 @@ disjoint_impls! {
             E: RustSpec<Size = RustSpecSized<Gt<Zero>>>,
         {}
 
-    unsafe impl<R: AbiCompatible + ?Sized> AbiCompatible for ManuallyDrop<R>
-        where
-            Self: RustSpec<Layout = Stable>,
-            R: RustSpec<Drop = NoDrop>,
-        {}
 
-    unsafe impl<R: AbiCompatible + ?Sized> AbiCompatible for ManuallyDrop<R>
-        where
-            Self: RustSpec<Layout = Stable>,
-            R: RustSpec<Drop: NeedsDrop>,
-        {}
 
     unsafe impl<T: AbiCompatible + ?Sized> AbiCompatible for UnsafeCell<T>
         where
@@ -189,7 +178,6 @@ disjoint_impls! {
         }
     }
 
-
     #[cfg(feature = "alloc")]
     unsafe impl<R: AbiCompatibleValidate, __Interior: ExclusiveKind> AbiCompatibleValidate for Box<R>
     where
@@ -226,7 +214,6 @@ disjoint_impls! {
         }
     }
 
-
     unsafe impl<R: AbiCompatibleValidate<CType: Copy> + Niche, E: ReprC>
         AbiCompatibleValidate for Result<R, E>
     where
@@ -254,29 +241,6 @@ disjoint_impls! {
     }
 
 
-    unsafe impl<R: AbiCompatibleValidate + ?Sized> AbiCompatibleValidate for ManuallyDrop<R>
-    where
-        Self: RustSpec<Layout = Stable>,
-        R: RustSpec<Drop = NoDrop>,
-    {
-        #[inline(always)]
-        unsafe fn is_valid(target: &Self::CType) -> bool {
-            unsafe { R::is_valid(target) }
-        }
-    }
-
-
-    unsafe impl<R: AbiCompatibleValidate + ?Sized> AbiCompatibleValidate for ManuallyDrop<R>
-    where
-        Self: RustSpec<Layout = Stable>,
-        R: RustSpec<Drop: NeedsDrop>,
-    {
-        #[inline(always)]
-        unsafe fn is_valid(target: &Self::CType) -> bool {
-            unsafe { R::is_valid(target) }
-        }
-    }
-
 
     unsafe impl<T: AbiCompatibleValidate + ?Sized> AbiCompatibleValidate for UnsafeCell<T>
     where
@@ -299,7 +263,6 @@ disjoint_impls! {
         }
     }
 
-
     unsafe impl<T: AbiCompatibleValidate + ?Sized> AbiCompatibleValidate for Cell<T>
     where
         Self: RustSpec<Layout = Stable, Trap = Robust>
@@ -317,7 +280,7 @@ disjoint_impls! {
         #[inline(always)]
         unsafe fn is_valid(target: &Self::CType) -> bool {
             // SAFETY: The validation contract requires exclusive access to these contents.
-            unsafe { T::is_valid(&*target.get()) }
+            unsafe { T::is_valid(&*target.as_ptr()) }
         }
     }
 
@@ -464,9 +427,7 @@ mod tests {
         assert_impl_all!(LayoutOnly: AbiCompatible);
         assert_not_impl_any!(LayoutOnly: AbiCompatibleValidate);
     }
-    use crate::{
-        CType, Decode, Encode,
-    };
+    use crate::{CType, Decode, Encode};
 
     #[test]
     fn option_validation_accepts_none_and_checks_some() {
@@ -475,27 +436,17 @@ mod tests {
         use crate::primitives::CBool;
 
         assert!(unsafe {
-            <Option<NonZeroU8>>::is_valid(&crate::option::COptionSome(
-                crate::NonZero(0),
-            ))
+            <Option<NonZeroU8>>::is_valid(&crate::option::COptionSome(crate::num::NonZero(0)))
         });
         assert!(unsafe {
-            <Option<NonZeroU8>>::is_valid(&crate::option::COptionSome(
-                crate::NonZero(7),
-            ))
+            <Option<NonZeroU8>>::is_valid(&crate::option::COptionSome(crate::num::NonZero(7)))
         });
+        assert!(unsafe { <Option<&bool>>::is_valid(&crate::option::COptionSome(CRef::null())) });
         assert!(unsafe {
-            <Option<&bool>>::is_valid(&crate::option::COptionSome(CRef::null()))
-        });
-        assert!(unsafe {
-            <Option<&bool>>::is_valid(&crate::option::COptionSome(
-                CRef::from_ref(&CBool(1)),
-            ))
+            <Option<&bool>>::is_valid(&crate::option::COptionSome(CRef::from_ref(&CBool(1))))
         });
         assert!(!unsafe {
-            <Option<&bool>>::is_valid(&crate::option::COptionSome(
-                CRef::from_ref(&CBool(3)),
-            ))
+            <Option<&bool>>::is_valid(&crate::option::COptionSome(CRef::from_ref(&CBool(3))))
         });
 
         let none = None::<NonZeroU8>;
@@ -519,28 +470,43 @@ mod tests {
             &Cell<[NonZeroU8]>: Encode, Decode<'static>
         );
 
-        let mut storage = UnsafeCell::new([crate::NonZero(1_u8), crate::NonZero(2)]);
-        let target: &mut UnsafeCell<[crate::NonZero<u8>]> = &mut storage;
+        let storage = UnsafeCell::new([crate::num::NonZero::<u8>(1_u8), crate::num::NonZero(2)]);
+        let target: &mut core::cell::UnsafeCell<[crate::num::NonZero<u8>]> =
+            unsafe { crate::wide::Wide::from_raw_parts_mut(storage.get().cast(), 2) };
         // SAFETY: The local backing storage remains exclusively accessible.
         unsafe {
             assert!(<UnsafeCell<[NonZeroU8]>>::is_valid(target));
-            assert!(<Cell<[NonZeroU8]>>::is_valid(target));
+            assert!(<Cell<[NonZeroU8]>>::is_valid({
+                <core::cell::Cell<[crate::num::NonZero<u8>]> as crate::wide::Wide>::from_raw_parts_mut(
+                    target.get().cast(),
+                    2,
+                )
+            }));
         }
-        target.get_mut()[1] = crate::NonZero(0);
+        target.get_mut()[1] = crate::num::NonZero(0);
         unsafe {
             assert!(!<UnsafeCell<[NonZeroU8]>>::is_valid(target));
-            assert!(!<Cell<[NonZeroU8]>>::is_valid(target));
+            assert!(!<Cell<[NonZeroU8]>>::is_valid({
+                <core::cell::Cell<[crate::num::NonZero<u8>]> as crate::wide::Wide>::from_raw_parts_mut(
+                    target.get().cast(),
+                    2,
+                )
+            }));
         }
     }
 
     #[test]
     fn manually_drop_validates_inner_representation() {
         let invalid_bool = <bool as Niche>::NICHE;
-        assert!(!unsafe { <ManuallyDrop<bool> as AbiCompatibleValidate>::is_valid(&invalid_bool) });
+        assert!(!unsafe {
+            <ManuallyDrop<bool> as AbiCompatibleValidate>::is_valid(&core::mem::ManuallyDrop::new(
+                invalid_bool,
+            ))
+        });
 
         #[cfg(feature = "alloc")]
         {
-            let null_box = ManuallyDrop::new(CBox::<u8>::null());
+            let null_box = core::mem::ManuallyDrop::new(CBox::<u8>::null());
             assert!(!unsafe {
                 <ManuallyDrop<Box<u8>> as AbiCompatibleValidate>::is_valid(&null_box)
             });
@@ -553,7 +519,10 @@ mod tests {
 
         let cell = UnsafeCell::new(7_u8);
         let encoded = crate::encode(&cell);
-        assert_eq!(encoded.as_ptr(), core::ptr::from_ref(&cell).cast_mut());
+        assert_eq!(
+            encoded.as_ptr(),
+            core::ptr::from_ref(&cell).cast_mut().cast()
+        );
         assert!(unsafe { <&UnsafeCell<u8> as AbiCompatibleValidate>::is_valid(&encoded) });
 
         let null = crate::reference::CRefMut::<UnsafeCell<u8>, false>::null();
@@ -825,11 +794,6 @@ mod tests {
             Encode
         );
     }
-}
-
-#[cfg(test)]
-mod conversion_tests {
-    //! Regression tests for conversion and writeback paths.
     use core::cell::{Cell, UnsafeCell};
 
     use crate::{
@@ -915,20 +879,23 @@ mod conversion_tests {
         let cell = unsafe { crate::encode_unchecked(Cell::new(Direct(5))) };
         assert_eq!(cell.into_inner(), 5);
         let cell = unsafe {
-            crate::soft_decode::<UnsafeCell<Direct>>(UnsafeCell::new(6), &mut Default::default())
+            crate::soft_decode::<UnsafeCell<Direct>>(
+                core::cell::UnsafeCell::new(6),
+                &mut Default::default(),
+            )
         }
         .unwrap();
         assert_eq!(cell.into_inner().0, 6);
         let cell = unsafe {
             crate::soft_decode_unchecked::<Cell<Direct>>(
-                UnsafeCell::new(7),
+                core::cell::Cell::new(7),
                 &mut Default::default(),
             )
         };
         assert_eq!(cell.into_inner().0, 7);
         // Non-Copy carriers are moved, not read through &UnsafeCell.
         let cells = crate::encode([UnsafeCell::new(Direct(8)), UnsafeCell::new(Direct(9))]);
-        assert_eq!(cells.map(UnsafeCell::into_inner), [8, 9]);
+        assert_eq!(cells.map(core::cell::UnsafeCell::into_inner), [8, 9]);
     }
 
     #[test]
@@ -944,14 +911,16 @@ mod conversion_tests {
     fn result_niche_is_valid_for_error() {
         use core::num::NonZeroU8;
         assert!(unsafe {
-            <Result<NonZeroU8, ()> as AbiCompatibleValidate>::is_valid(
-                &crate::result::CResultOk(crate::NonZero(0), core::marker::PhantomData),
-            )
+            <Result<NonZeroU8, ()> as AbiCompatibleValidate>::is_valid(&crate::result::CResultOk(
+                crate::num::NonZero(0),
+                core::marker::PhantomData,
+            ))
         });
         assert!(unsafe {
-            <Result<NonZeroU8, ()> as AbiCompatibleValidate>::is_valid(
-                &crate::result::CResultOk(crate::NonZero(1), core::marker::PhantomData),
-            )
+            <Result<NonZeroU8, ()> as AbiCompatibleValidate>::is_valid(&crate::result::CResultOk(
+                crate::num::NonZero(1),
+                core::marker::PhantomData,
+            ))
         });
     }
 
@@ -959,14 +928,16 @@ mod conversion_tests {
     fn result_niche_is_valid_for_success() {
         use core::num::NonZeroU8;
         assert!(unsafe {
-            <Result<(), NonZeroU8> as AbiCompatibleValidate>::is_valid(
-                &crate::result::CResultErr(crate::NonZero(0), core::marker::PhantomData),
-            )
+            <Result<(), NonZeroU8> as AbiCompatibleValidate>::is_valid(&crate::result::CResultErr(
+                crate::num::NonZero(0),
+                core::marker::PhantomData,
+            ))
         });
         assert!(unsafe {
-            <Result<(), NonZeroU8> as AbiCompatibleValidate>::is_valid(
-                &crate::result::CResultErr(crate::NonZero(1), core::marker::PhantomData),
-            )
+            <Result<(), NonZeroU8> as AbiCompatibleValidate>::is_valid(&crate::result::CResultErr(
+                crate::num::NonZero(1),
+                core::marker::PhantomData,
+            ))
         });
     }
 
@@ -974,11 +945,14 @@ mod conversion_tests {
     fn nonrobust_checked_conversions_still_validate() {
         let mut store = Default::default();
         assert!(
-            unsafe { crate::soft_decode::<[bool; 2]>([CBool(1), CBool(2)], &mut store) }.is_none()
+            unsafe { crate::soft_decode::<[bool; 2]>([CBool(1), CBool(2)], &mut store,) }.is_none()
         );
         assert!(
             unsafe {
-                crate::soft_decode::<Cell<bool>>(UnsafeCell::new(CBool(2)), &mut Default::default())
+                crate::soft_decode::<Cell<bool>>(
+                    core::cell::Cell::new(CBool(2)),
+                    &mut Default::default(),
+                )
             }
             .is_none()
         );
@@ -1062,7 +1036,7 @@ mod conversion_tests {
         struct Interior(UnsafeCell<u8>);
 
         impl ReprC for Interior {
-            type CType = UnsafeCell<u8>;
+            type CType = core::cell::UnsafeCell<u8>;
         }
         // SAFETY: Interior is a transparent wrapper around its carrier.
         unsafe impl AbiCompatibleValidate for Interior {
@@ -1085,7 +1059,7 @@ mod conversion_tests {
 
         let decoded = unsafe {
             crate::soft_decode::<ManuallyDrop<Interior>>(
-                UnsafeCell::new(3),
+                core::mem::ManuallyDrop::new(core::cell::UnsafeCell::new(3)),
                 &mut Default::default(),
             )
         }
@@ -1093,7 +1067,7 @@ mod conversion_tests {
         assert_eq!(ManuallyDrop::into_inner(decoded).0.into_inner(), 3);
         let decoded = unsafe {
             crate::soft_decode_unchecked::<ManuallyDrop<Interior>>(
-                UnsafeCell::new(4),
+                core::mem::ManuallyDrop::new(core::cell::UnsafeCell::new(4)),
                 &mut Default::default(),
             )
         };
@@ -1103,7 +1077,7 @@ mod conversion_tests {
         assert!(
             unsafe {
                 crate::soft_decode::<ManuallyDrop<Cell<bool>>>(
-                    UnsafeCell::new(CBool(2)),
+                    core::mem::ManuallyDrop::new(core::cell::Cell::new(CBool(2))),
                     &mut Default::default(),
                 )
             }
@@ -1111,7 +1085,7 @@ mod conversion_tests {
         );
         let decoded = unsafe {
             crate::soft_decode::<ManuallyDrop<Cell<bool>>>(
-                UnsafeCell::new(CBool(1)),
+                core::mem::ManuallyDrop::new(core::cell::Cell::new(CBool(1))),
                 &mut Default::default(),
             )
         }

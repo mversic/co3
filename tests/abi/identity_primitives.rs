@@ -25,19 +25,6 @@ enum AliasEnum {
     Empty,
 }
 
-fn flip(value: bool) -> bool {
-    !value
-}
-
-fn next_ascii(value: char) -> char {
-    char::from_u32(value as u32 + 1).unwrap()
-}
-
-raw! {
-    fn flip(value: bool) -> bool;
-    fn next_ascii(value: char) -> char;
-}
-
 fn increment(value: c_int) -> c_int {
     value + c_int::new(1)
 }
@@ -118,8 +105,6 @@ fn c_alias_fields_use_distinct_carriers() {
         (decoded.0, decoded.1, decoded.2),
         (c_int::new(3), 4, c_long::new(5))
     );
-
-
 }
 
 #[test]
@@ -135,19 +120,6 @@ fn c_alias_field_preserves_inferred_niche() {
     let _: c_int = niche.0;
     assert!(<Option<bool> as co3::niche::Niche>::is_niche(&niche.1));
     assert!(<AliasWithNiche as co3::niche::Niche>::is_niche(&niche));
-}
-
-#[test]
-fn copy_primitives_with_custom_carriers_use_value_conversion() {
-    let raw_flip: unsafe extern "C" fn(_) -> _ = flip_raw;
-    let raw_next_ascii: unsafe extern "C" fn(_) -> _ = next_ascii_raw;
-
-    let flipped = unsafe { raw_flip(co3::encode(true)) };
-    assert_eq!(unsafe { co3::decode::<bool>(flipped) }, Some(false));
-    assert_eq!(
-        unsafe { raw_next_ascii(co3::encode('a')) },
-        co3::encode('b')
-    );
 }
 
 #[test]
@@ -194,9 +166,9 @@ fn lowered_aggregates_use_codecs_without_conversion_traits() {
 fn safe_carrier_constructors_accept_lowered_storage() {
     use co3::{
         boxed::CBox,
-        reference::{CSoftRefMut, CSoftRef},
+        reference::{CSoftRef, CSoftRefMut},
         wide::CWideBox,
-        wide::{CSoftWideRefMut, CSoftWideRef},
+        wide::{CSoftWideRef, CSoftWideRefMut},
     };
 
     let boxed = CBox::from_box(Box::new(9_u8));

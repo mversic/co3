@@ -12,7 +12,7 @@ ffi! {
     #[tag(u8, unsafe(1))]
     type Opaque;
 
-    impl<dyn(u8) T = CRegular> Drop for T
+    impl<dyn(u8) T = <Regular as co3::ReprC>::CType> Drop for T
     where
         use<T> @ (<Opaque> | <Regular>),
     {

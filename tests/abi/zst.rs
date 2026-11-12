@@ -5,13 +5,9 @@ use core::{
 };
 
 use co3::{
-    CFnArg, CFnReturn, CType, Decode, Encode, ReprC,
-    borrow::{Borrow, Borrowed},
-    reference::CSoftRefMut,
-    rust_spec::RustSpec,
-    transmute::AbiCompatible,
+    CFnArg, CFnReturn, CType, Decode, Encode, ReprC, rust_spec::RustSpec, transmute::AbiCompatible,
 };
-use static_assertions::{assert_impl_all, assert_not_impl_any, assert_type_eq_all};
+use static_assertions::{assert_impl_all, assert_not_impl_any};
 
 #[derive(Debug, Clone, PartialEq, Eq, RustSpec, ReprC)]
 pub struct NoReprStruct<T: ?Sized> {
@@ -106,7 +102,6 @@ fn boxed_zst_traits() {
 
 #[test]
 fn zero_sized_wrappers_are_not_function_values() {
-    assert_not_impl_any!(Borrowed<()>: CFnArg, CFnReturn);
     assert_not_impl_any!(UnsafeCell<()>: CFnArg, CFnReturn);
     assert_not_impl_any!(Cell<()>: CFnArg, CFnReturn);
     assert_not_impl_any!(MaybeUninit<()>: CFnArg, CFnReturn);
@@ -121,12 +116,11 @@ fn zero_sized_wrappers_are_not_function_values() {
 
 #[test]
 fn source_types_get_function_markers_only_when_nonzero() {
-    assert_impl_all!(Source<u32>: CType, CFnArg, CFnReturn, Borrow);
-    assert_type_eq_all!(<Source<u32> as Borrow>::Borrowed, Source<u32>);
+    assert_impl_all!(Source<u32>: CType, CFnArg, CFnReturn);
 
-    assert_impl_all!(Source<()>: CType, Borrow);
+    assert_impl_all!(Source<()>: CType);
     assert_not_impl_any!(Source<()>: CFnArg, CFnReturn);
-    assert_impl_all!(SourceZst: CType, Borrow);
+    assert_impl_all!(SourceZst: CType);
     assert_not_impl_any!(SourceZst: CFnArg, CFnReturn);
 }
 
@@ -137,30 +131,16 @@ fn niche_optimized_option_and_result_are_function_values() {
     type Success = Result<NonZero<u8>, ()>;
     type Failure = Result<(), NonZero<u8>>;
 
-    assert_impl_all!(MaybeNonZero: CType, CFnArg, CFnReturn, Borrow);
-    assert_impl_all!(Callback: CType, CFnArg, CFnReturn, Borrow);
-    assert_impl_all!(Success: CType, CFnArg, CFnReturn, Borrow);
-    assert_impl_all!(Failure: CType, CFnArg, CFnReturn, Borrow);
-    assert_type_eq_all!(<MaybeNonZero as Borrow>::Borrowed, MaybeNonZero);
-    assert_type_eq_all!(<Success as Borrow>::Borrowed, Success);
-    assert_type_eq_all!(<Failure as Borrow>::Borrowed, Failure);
-}
-
-#[test]
-fn wrappers_preserve_their_borrowed_representations() {
-    assert_impl_all!(Cell<u8>: Borrow);
-    assert_type_eq_all!(<Cell<u8> as Borrow>::Borrowed, Cell<u8>);
-
-    assert_impl_all!(ManuallyDrop<u8>: Borrow);
-    assert_type_eq_all!(<ManuallyDrop<u8> as Borrow>::Borrowed, ManuallyDrop<u8>);
-
-    assert_impl_all!(CSoftRefMut<u8, true>: Borrow);
-    assert_type_eq_all!(<CSoftRefMut<u8, true> as Borrow>::Borrowed, CSoftRefMut<u8, true>);
+    assert_impl_all!(MaybeNonZero: CType, CFnArg, CFnReturn);
+    assert_impl_all!(Callback: CType, CFnArg, CFnReturn);
+    assert_impl_all!(Success: CType, CFnArg, CFnReturn);
+    assert_impl_all!(Failure: CType, CFnArg, CFnReturn);
 }
 
 #[test]
 fn transparent_enum_carrier_constructs_its_variant() {
-    let carrier = CTransparentEnum::<()>::A(co3::boxed::CBox::from_box(Box::new(())));
+    let carrier =
+        <TransparentEnum<()> as ReprC>::CType::A(co3::boxed::CBox::from_box(Box::new(())));
     assert_eq!(carrier.tag(), ());
     let decoded = unsafe { co3::decode::<TransparentEnum<()>>(carrier) }.unwrap();
     assert_eq!(decoded, TransparentEnum::A(Box::new(())));

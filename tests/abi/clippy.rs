@@ -19,6 +19,8 @@ struct ManyFields {
 
 #[test]
 fn generated_many_field_constructor() {
-    let fields = unsafe { CManyFields::from_fields(1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11) };
+    let fields = unsafe {
+        <ManyFields as co3::ReprC>::CType::from_fields(1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11)
+    };
     assert_eq!(fields.into_fields(), (1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11));
 }

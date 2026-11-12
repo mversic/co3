@@ -3,8 +3,7 @@ use std::collections::{BTreeMap, BTreeSet};
 use proc_macro2::{Span, TokenStream};
 use quote::{format_ident, quote};
 use syn::{
-    Ident, Path, Type,
-    parse_quote,
+    Ident, Path, Type, parse_quote,
     spanned::Spanned,
     visit::{Visit, visit_type},
     visit_mut::VisitMut,
@@ -142,6 +141,9 @@ pub(crate) fn emit_abi_function(
 ) -> TokenStream {
     let error_handler = match failure_mode {
         FailureMode::Panic => gen_failure_panic(quote!(err)),
+        FailureMode::Error if fn_return_ty(signature).is_none_or(is_identity_primitive) => {
+            quote!(err)
+        }
         FailureMode::Error => gen_abi_return_encode(quote!(err), !fn_by_val),
     };
 
@@ -214,7 +216,7 @@ pub(crate) fn gen_definition_body(
     } else {
         quote! {}
     };
-    let encoded_output = if return_ty.is_some_and(is_identity_primitive) {
+    let encoded_output = if return_ty.is_none_or(is_identity_primitive) {
         quote!(__co3_output)
     } else {
         gen_abi_return_encode(quote!(__co3_output), !fn_by_val)
@@ -242,19 +244,18 @@ pub(crate) fn gen_definition_body(
     }}
 }
 
-fn gen_pack_input_stmts(
-    inputs: &[Argument<'_>],
-    failure_mode: FailureMode,
-) -> TokenStream {
+fn gen_pack_input_stmts(inputs: &[Argument<'_>], failure_mode: FailureMode) -> TokenStream {
     let decode_error = gen_decode_error(failure_mode);
     let stmts = inputs.iter().filter_map(|input| {
         let name = input.name();
-        let decode_ty = input.conversion_ty();
+        let decode_ty = input.unpack_ty();
         let cfg = input.cfg().collect::<Vec<_>>();
         let conversion = match &input.unpack {
             Unpack::None => return None,
-            Unpack::Single(part) => quote! {
-                <#decode_ty as co3::pack::Pack<<#part as co3::ReprC>::CType>>::pack(#name)
+            Unpack::Single(part) => {
+                let source_ty = input.conversion_ty();
+                let packed = quote!(<#source_ty as co3::pack::Pack<<#part as co3::ReprC>::CType>>::pack(#name));
+                if input.is_borrowed() && !input.identity { quote!((#packed).map(co3::borrow::CBorrowed)) } else { packed }
             },
             Unpack::Pair(pair) => {
                 let (data_name, metadata_name) = unpack_arg_names(name);
@@ -286,7 +287,7 @@ fn gen_pack_input_stmts(
 
 pub(crate) fn gen_abi_return_encode(value: TokenStream, borrow_output: bool) -> TokenStream {
     if borrow_output {
-        quote!(co3::encode(co3::borrow::Borrow::borrow(#value)))
+        quote!(co3::borrow::encode(#value))
     } else {
         quote!(co3::encode(#value))
     }
@@ -404,7 +405,7 @@ pub(crate) fn gen_return_borrow_check(return_ty: &syn::Type, fn_by_val: bool) ->
     quote! {
         const {
             assert!(
-                co3::impls!((<#return_ty as co3::borrow::Borrow>::Borrowed): co3::Encode<Store: co3::stored::EmptyStore>),
+                co3::impls!((#return_ty): co3::borrow::BorrowedEncode<Store: co3::stored::EmptyStore>),
                 "Mark the return type with `move` to transfer ownership",
             );
         }
@@ -437,6 +438,12 @@ fn inferred_unpack_part(arg_ty: &Type, part: u8) -> syn::Result<Type> {
     if let Some(inner_ty) = option_inner_type(arg_ty) {
         return inferred_non_option_unpack_part(inner_ty, part);
     }
+    if let Some((_, payload)) = inferred_result_type(arg_ty) {
+        return inferred_non_option_unpack_part(payload, part);
+    }
+    if let Some((_, inner)) = transparent_unpack_inner_type(arg_ty) {
+        return inferred_unpack_part(inner, part);
+    }
 
     inferred_non_option_unpack_part(arg_ty, part)
 }
@@ -458,7 +465,7 @@ fn inferred_non_option_unpack_part(arg_ty: &Type, part: u8) -> syn::Result<Type>
 
     if let Some(wide_ty) = boxed_wide_type(arg_ty) {
         return Ok(if part == 1 {
-            parse_quote!(co3::boxed::CBox<<<#wide_ty as co3::wide::Wide>::Header as co3::wide::WideHeader>::Data>)
+            parse_quote!(*mut <<<#wide_ty as co3::wide::Wide>::Header as co3::wide::WideHeader>::Data as co3::ReprC>::CType)
         } else {
             parse_quote!(<#wide_ty as co3::wide::Wide>::Metadata)
         });
@@ -466,8 +473,11 @@ fn inferred_non_option_unpack_part(arg_ty: &Type, part: u8) -> syn::Result<Type>
 
     if let Type::Reference(reference) = arg_ty {
         let wide_ty = &reference.elem;
+        let interior_mutable = crate::known_type::recognize(peel_grouped_type(wide_ty))
+            .is_some_and(|known| matches!(known.kind,
+                crate::known_type::Kind::Cell | crate::known_type::Kind::UnsafeCell));
         return Ok(if part == 1 {
-            if reference.mutability.is_some() {
+            if reference.mutability.is_some() || interior_mutable {
                 parse_quote!(*mut <<<#wide_ty as co3::wide::Wide>::Header as co3::wide::WideHeader>::Data as co3::ReprC>::CType)
             } else {
                 parse_quote!(*const <<<#wide_ty as co3::wide::Wide>::Header as co3::wide::WideHeader>::Data as co3::ReprC>::CType)
@@ -510,42 +520,50 @@ pub(crate) fn peel_grouped_type(mut ty: &Type) -> &Type {
 }
 
 pub(crate) fn option_inner_type(ty: &Type) -> Option<&Type> {
-    let Type::Path(path) = ty else {
+    let known = crate::known_type::recognize(ty)?;
+    (known.kind == crate::known_type::Kind::Option)
+        .then_some(known.inner)
+        .flatten()
+}
+
+pub(crate) fn transparent_unpack_inner_type(ty: &Type) -> Option<(&syn::Ident, &Type)> {
+    let Type::Path(path) = ty else { return None };
+    let known = crate::known_type::recognize_path(path)?;
+    if !known.is_transparent_wrapper() {
+        return None;
+    }
+    Some((&path.path.segments.last()?.ident, known.inner?))
+}
+
+pub(crate) fn inferred_result_type(ty: &Type) -> Option<(Type, &Type)> {
+    let Type::Path(path) = ty else { return None };
+    let known = crate::known_type::recognize_path(path)?;
+    if known.kind != crate::known_type::Kind::Result {
+        return None;
+    }
+    let syn::PathArguments::AngleBracketed(args) = &path.path.segments.last()?.arguments else {
         return None;
     };
-    let segment = path.path.segments.last()?;
-    if segment.ident != "Option" {
-        return None;
-    }
-    let syn::PathArguments::AngleBracketed(arguments) = &segment.arguments else {
+    let mut args = args.args.iter();
+    let (Some(syn::GenericArgument::Type(ok)), Some(syn::GenericArgument::Type(err))) =
+        (args.next(), args.next())
+    else {
         return None;
     };
-    if arguments.args.len() != 1 {
-        return None;
-    }
-    match arguments.args.first()? {
-        syn::GenericArgument::Type(inner) => Some(inner),
-        _ => None,
-    }
+    let unit = |ty: &Type| matches!(ty, Type::Tuple(tuple) if tuple.elems.is_empty());
+    let payload = match (unit(ok), unit(err)) {
+        (false, true) => ok,
+        (true, false) => err,
+        _ => return None,
+    };
+    Some((parse_quote!(core::result::Result<#ok, #err>), payload))
 }
 
 fn boxed_wide_type(ty: &Type) -> Option<&Type> {
-    let Type::Path(path) = ty else {
-        return None;
-    };
-    let segment = path.path.segments.last()?;
-    if segment.ident != "Box" {
-        return None;
-    }
-    let syn::PathArguments::AngleBracketed(arguments) = &segment.arguments else {
-        return None;
-    };
-    let mut types = arguments.args.iter().filter_map(|argument| match argument {
-        syn::GenericArgument::Type(ty) => Some(ty),
-        _ => None,
-    });
-    let wide = types.next()?;
-    types.next().is_none().then_some(wide)
+    let known = crate::known_type::recognize(ty)?;
+    (known.kind == crate::known_type::Kind::Box)
+        .then_some(known.inner)
+        .flatten()
 }
 
 fn tuple_parts(ty: &Type) -> Option<(&Type, &Type)> {
@@ -584,7 +602,10 @@ pub(crate) fn gen_input_decode_stmts<'a>(
     gen_analyzed_input_decode_stmts(&inputs, failure_mode)
 }
 
-fn gen_analyzed_input_decode_stmts(inputs: &[Argument<'_>], failure_mode: FailureMode) -> TokenStream {
+fn gen_analyzed_input_decode_stmts(
+    inputs: &[Argument<'_>],
+    failure_mode: FailureMode,
+) -> TokenStream {
     let mut stmts = quote! {};
     let mut value_initializers = Vec::with_capacity(inputs.len());
     let mut store_initializers = Vec::with_capacity(inputs.len());
@@ -612,19 +633,19 @@ fn gen_analyzed_input_decode_stmts(inputs: &[Argument<'_>], failure_mode: Failur
         let decode_arg = quote! { #arg_name };
 
         let decode_call = if input.identity {
-            quote! { Some(#decode_arg) }
+            quote!(Some(#decode_arg))
+        } else if input.is_borrowed() {
+            if input.soft {
+                quote!(<#decode_ty as co3::borrow::BorrowedDecode<'_>>::soft_decode(#decode_arg.0, &mut __co3_input_stores.#idx))
+            } else {
+                quote!(co3::borrow::decode(#decode_arg))
+            }
         } else if input.soft {
-            quote! { co3::soft_decode(#decode_arg, &mut __co3_input_stores.#idx) }
+            quote!(co3::soft_decode(#decode_arg, &mut __co3_input_stores.#idx))
         } else {
-            quote! { co3::decode(#decode_arg) }
+            quote!(co3::decode(#decode_arg))
         };
-
-        let from_borrow = match input.ownership {
-            OwnershipMode::ByValue => quote!(#arg_name),
-            OwnershipMode::Borrow => quote! {
-                #arg_name.map(co3::borrow::Borrow::from_borrow)
-            },
-        };
+        let from_borrow = quote!(#arg_name);
 
         stmts.extend(quote! {
             #enabled
@@ -640,7 +661,11 @@ fn gen_analyzed_input_decode_stmts(inputs: &[Argument<'_>], failure_mode: Failur
 
         value_initializers.push(quote!(#enabled <Option<#arg_ty> as core::default::Default>::default(), #inactive_value));
         let store_ty = if input.soft {
-            quote!(<#decode_ty as co3::stored::DecodeMove<'_>>::Store)
+            if input.is_borrowed() {
+                quote!(<#decode_ty as co3::borrow::BorrowedDecode<'_>>::Store)
+            } else {
+                quote!(<#decode_ty as co3::stored::DecodeMove<'_>>::Store)
+            }
         } else {
             quote!(())
         };
@@ -973,7 +998,7 @@ pub(crate) fn lower_abi_fn_signature(
     };
     let mut sig = lower_extern_fn_signature(sig, failure_mode);
     if let Some(ty) = borrowed_output {
-        sig.output = parse_quote!(-> <<#ty as co3::borrow::Borrow>::Borrowed as co3::ReprC>::CType);
+        sig.output = parse_quote!(-> co3::borrow::CBorrowed<#ty>);
     }
     sig
 }
@@ -1199,10 +1224,12 @@ fn synthesize_lifetime_bounds(sig: &mut syn::Signature) {
             // Unpacked arguments are replaced by their two ABI parts below. Bounds implied by
             // the source type therefore do not belong to the raw declaration and, for dispatch
             // parameters, can refer to a generic that has already been erased from it.
-            syn::FnArg::Typed(arg) if !matches!(
-                UnpackSyntax::parse(&arg.attrs).expect("validated #[unpack] attribute"),
-                UnpackSyntax::Pair(_)
-            ) => {
+            syn::FnArg::Typed(arg)
+                if !matches!(
+                    UnpackSyntax::parse(&arg.attrs).expect("validated #[unpack] attribute"),
+                    UnpackSyntax::Pair(_)
+                ) =>
+            {
                 lifetime_collector.visit_type(&arg.ty)
             }
             syn::FnArg::Typed(_) => {}
@@ -1290,27 +1317,8 @@ fn is_implicitly_by_value(ty: &Type) -> bool {
 }
 
 pub(crate) fn copy_primitive_type(path: &syn::TypePath) -> Option<Type> {
-    if path.qself.is_some() {
-        return None;
-    }
-
-    let segment = path.path.segments.last()?;
-    if !segment.arguments.is_empty() {
-        return None;
-    }
-
-    let ident = &segment.ident;
-    match ident.to_string().as_str() {
-        "bool" | "char" | "u8" | "u16" | "u32" | "u64" | "u128" | "usize" | "i8" | "i16"
-        | "i32" | "i64" | "i128" | "isize" | "f32" | "f64" => {
-            Some(parse_quote!(core::primitive::#ident))
-        }
-        "c_char" | "c_schar" | "c_uchar" | "c_short" | "c_ushort" | "c_int" | "c_uint"
-        | "c_long" | "c_ulong" | "c_longlong" | "c_ulonglong" | "c_float" | "c_double" => {
-            Some(parse_quote!(co3::ffi::#ident))
-        }
-        _ => None,
-    }
+    let known = crate::known_type::recognize_path(path)?;
+    (known.kind == crate::known_type::Kind::Primitive).then_some(known.canonical)
 }
 
 pub(crate) fn is_identity_primitive(ty: &Type) -> bool {

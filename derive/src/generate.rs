@@ -851,7 +851,7 @@ fn gen_dispatch_set(
                             .into_iter()
                             .filter(|bound| {
                                 !matches!(bound, syn::TypeParamBound::Trait(bound)
-                                    if bound.maybe.is_some() && bound.path.is_ident("Sized"))
+                                    if bound.maybe.is_some() && crate::utils::builtin_path(&bound.path, "Sized", &["core::marker", "std::marker"]))
                             })
                             .collect();
                         if predicate.bounds.is_empty() {
@@ -1114,11 +1114,8 @@ fn prepare_dispatch_wrapper_sig(
                 };
                 where_clause.predicates.push(bound);
             } else {
-                where_clause
-                    .predicates
-                    .push(syn::parse_quote!(#ty: #co3::borrow::Borrow));
                 let bound = syn::parse_quote!(
-                    <#ty as #co3::borrow::Borrow>::Borrowed: #co3::Encode
+                    #ty: #co3::borrow::BorrowedEncode
                 );
                 where_clause.predicates.push(bound);
             }
@@ -2351,7 +2348,9 @@ pub(crate) fn expand_extern_decls(
             .any(|input| matches!(input, FnArg::Receiver(_)))
             .then(|| quote!(let __co3_self = self;));
         let mut wrapper = dispatch.item.clone();
-        wrapper.attrs.push(syn::parse_quote!(#[allow(unused_braces)]));
+        wrapper
+            .attrs
+            .push(syn::parse_quote!(#[allow(unused_braces)]));
         wrapper.modifiers.polarity = None;
         for param in &mut wrapper.generics.params {
             match param {
@@ -2971,7 +2970,7 @@ fn expand_dispatch_drop_import(
         .inputs
         .iter_mut()
         .filter_map(|input| {
-            let FnArg::Typed(syn::PatType { pat, ty, .. }) = input else {
+            let FnArg::Typed(syn::PatType { attrs, pat, ty, .. }) = input else {
                 return None;
             };
             let (tag_ty, id_ty) = match crate::dispatch::tag_id(ty)? {
@@ -2984,6 +2983,7 @@ fn expand_dispatch_drop_import(
                 }
             };
             **ty = id_ty.clone();
+            attrs.push(syn::parse_quote!(#[by_val]));
             Some(quote! {
                 let #pat: #id_ty = {
                     // FIXME: https://github.com/mversic/co3/issues/93
@@ -3300,14 +3300,13 @@ fn wrap_extern_type_decl(
         #vis struct #owned_ident #impl_generics (core::ptr::NonNull<#ident #ty_generics>) #where_clause;
 
         #(#type_cfg_attrs)*
-        #[doc(hidden)]
-        #[repr(transparent)]
-        #[doc = #owned_repr_c_doc]
-        #vis struct #owned_repr_c_name #impl_generics (*mut #ident #ty_generics) #where_clause;
-
-        #(#type_cfg_attrs)*
         const _: () = {
             use #co3 as co3;
+
+            #[doc(hidden)]
+            #[repr(transparent)]
+            #[doc = #owned_repr_c_doc]
+            #vis struct #owned_repr_c_name #impl_generics (*mut #ident #ty_generics) #where_clause;
 
             #ident_impls
             #owned_impls
@@ -3378,6 +3377,8 @@ fn gen_owned_repr_c_impls(ident: &syn::Ident, generics: &syn::Generics) -> Token
     let (decode_impl_generics, _, _) = decode_generics.split_for_impl();
     let owned_repr_c_name = gen_owned_repr_c_name(ident);
 
+    let borrowed_impls =
+        crate::layout::borrow::gen_identity_borrow_impls(&owned_repr_c_name, generics);
     quote! {
         impl #impl_generics #owned_repr_c_name #ty_generics #where_clause {
             fn is_none(&self) -> bool {
@@ -3450,17 +3451,7 @@ fn gen_owned_repr_c_impls(ident: &syn::Ident, generics: &syn::Generics) -> Token
         unsafe impl #impl_generics #co3::CFnArg for #owned_repr_c_name #ty_generics #where_clause {}
         unsafe impl #impl_generics #co3::CFnReturn for #owned_repr_c_name #ty_generics #where_clause {}
 
-        unsafe impl #impl_generics #co3::borrow::Borrow for #owned_repr_c_name #ty_generics #where_clause {
-            type Borrowed = Self;
-
-            fn borrow(self) -> Self {
-                self
-            }
-
-            fn from_borrow(source: Self) -> Self {
-                source
-            }
-        }
+        #borrowed_impls
 
     }
 }

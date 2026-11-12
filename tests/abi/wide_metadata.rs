@@ -1,341 +1,137 @@
-use core::{marker::PhantomData, ptr::NonNull};
+use core::cell::Cell;
 
 use co3::{
-    CType,
-    boxed::CBox,
+    ReprC,
+    ffi,
     pack::{Pack2, Unpack2},
-    stored::Store,
-    sync::{RefMutWideEncodeStore, RefWideEncodeStore},
-    wide::CWideBox,
-    wide::Wide,
-    wide::{CSoftWideRefMut, CSoftWideRef},
+    rust_spec::RustSpec,
 };
 
-use crate::TransparentCarrier;
-
-#[repr(C)]
-#[derive(Copy, Clone, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
-struct Metadata {
-    length: usize,
-    marker: u32,
-}
-unsafe impl CType for Metadata {}
-unsafe impl co3::Zeroable for Metadata {}
-
 #[repr(transparent)]
-#[derive(co3::rust_spec::RustSpec)]
-struct Custom<M>(PhantomData<M>, [u8]);
-unsafe impl CType for Custom<Metadata> {}
-impl co3::ReprC for Custom<Metadata> {
-    type CType = Self;
+#[derive(RustSpec, ReprC)]
+#[repr_c(identity)]
+struct Bytes([u8]);
+
+mod exported {
+    use super::*;
+    use co3::wide::CWideBox;
+
+    fn shared(value: &Bytes, expected: *const u8) -> usize {
+        assert_eq!(value.0.as_ptr(), expected);
+        assert_eq!(&value.0, &[1, 2, 3]);
+        value.0.len()
+    }
+
+    fn mutable(value: &mut Bytes, expected: *mut u8) -> usize {
+        assert_eq!(value.0.as_mut_ptr(), expected);
+        assert_eq!(&value.0, &[1, 2, 3]);
+        value.0[0] = 9;
+        value.0.len()
+    }
+
+    fn owned(value: Box<[u8]>, expected: *const u8) -> Box<[u8]> {
+        assert_eq!(value.as_ptr(), expected);
+        value
+    }
+
+    fn cells(value: Box<[Cell<u8>]>, expected: *const Cell<u8>) -> Box<[Cell<u8>]> {
+        assert_eq!(value.as_ptr(), expected);
+        value
+    }
+
+    co3::raw! {
+        fn shared(#[unpack(*const u8, usize)] value: &Bytes, expected: *const u8) -> usize;
+        fn mutable(#[unpack(*mut u8, usize)] value: &mut Bytes, expected: *mut u8) -> usize;
+        fn owned(#[unpack(_, _)] value: move Box<[u8]>, expected: *const u8) -> move Box<[u8]>;
+        fn cells(#[unpack(_, _)] value: move Box<[Cell<u8>]>, expected: *const Cell<u8>) -> move Box<[Cell<u8>]>;
+    }
+
+    ffi! {
+        #![unsafe(export("C"))]
+
+        #[symbol_name = "wide_metadata__shared"]
+        unsafe extern "C" fn shared_raw(data: *const u8, len: usize, expected: *const u8) -> usize;
+        #[symbol_name = "wide_metadata__mutable"]
+        unsafe extern "C" fn mutable_raw(data: *mut u8, len: usize, expected: *mut u8) -> usize;
+        #[symbol_name = "wide_metadata__owned"]
+        unsafe extern "C" fn owned_raw(data: *mut u8, len: usize, expected: *const u8) -> CWideBox<[u8]>;
+        #[symbol_name = "wide_metadata__cells"]
+        unsafe extern "C" fn cells_raw(data: *mut Cell<u8>, len: usize, expected: *const Cell<u8>) -> CWideBox<[Cell<u8>]>;
+    }
 }
 
-macro_rules! impl_custom_wide {
-    ($metadata:ty, $make:expr, $length:expr) => {
-        unsafe impl Wide for Custom<$metadata> {
-            type Header = [u8; 0];
-            type Metadata = $metadata;
+ffi! {
+    #![unsafe(extern("C"))]
+    #![symbol_prefix = "wide_metadata"]
 
-            fn metadata(ptr: *const Self) -> Self::Metadata {
-                ($make)((ptr as *const [u8]).len())
-            }
-            fn as_ptr(ptr: *const Self) -> *const Self::Header {
-                ptr.cast()
-            }
-            fn as_mut_ptr(ptr: *mut Self) -> *mut Self::Header {
-                ptr.cast()
-            }
-            unsafe fn from_raw_parts<'a>(
-                data: *const Self::Header,
-                metadata: Self::Metadata,
-            ) -> &'a Self {
-                let slice = core::ptr::slice_from_raw_parts(data.cast::<u8>(), ($length)(metadata));
-                unsafe { &*(slice as *const Self) }
-            }
-            unsafe fn from_raw_parts_mut<'a>(
-                data: *mut Self::Header,
-                metadata: Self::Metadata,
-            ) -> &'a mut Self {
-                let slice =
-                    core::ptr::slice_from_raw_parts_mut(data.cast::<u8>(), ($length)(metadata));
-                unsafe { &mut *(slice as *mut Self) }
-            }
-            fn into_non_null(self: Box<Self>) -> NonNull<Self::Header> {
-                Box::into_non_null(self).cast()
-            }
-            unsafe fn from_non_null(
-                data: NonNull<Self::Header>,
-                metadata: Self::Metadata,
-            ) -> Box<Self> {
-                let value = unsafe { Self::from_raw_parts_mut(data.as_ptr(), metadata) };
-                unsafe { Box::from_raw(value as *mut Self) }
-            }
-        }
-    };
-}
-impl_custom_wide!(
-    Metadata,
-    |length| Metadata { length, marker: 7 },
-    |m: Metadata| m.length
-);
-impl_custom_wide!(usize, |length| length, |length| length);
-unsafe impl CType for Custom<usize> {}
-impl co3::ReprC for Custom<usize> {
-    type CType = Self;
+    fn shared(#[unpack(*const u8, usize)] value: &Bytes, expected: *const u8) -> usize;
+    fn mutable(#[unpack(*mut u8, usize)] value: &mut Bytes, expected: *mut u8) -> usize;
+    fn owned(#[unpack(_, _)] value: move Box<[u8]>, expected: *const u8) -> move Box<[u8]>;
+    fn cells(#[unpack(_, _)] value: move Box<[Cell<u8>]>, expected: *const Cell<u8>) -> move Box<[Cell<u8>]>;
 }
 
-#[test]
-fn raw_wide_unpack_preserves_custom_metadata() {
-    type Pointee = Custom<Metadata>;
-    let mut bytes = [1_u8, 2, 3];
-    let ptr = bytes.as_mut_slice() as *mut [u8] as *mut Pointee;
-    let expected = Metadata {
-        length: 3,
-        marker: 7,
-    };
-    let nonnull = NonNull::new(ptr).unwrap();
+mod raw {
+    use super::*;
 
-    let (data, metadata) = <*const Pointee as Unpack2<*const u8, Metadata>>::unpack(ptr).unwrap();
-    assert_eq!((data, metadata), (bytes.as_ptr(), expected));
-    let (data, metadata) = <*mut Pointee as Unpack2<*mut u8, Metadata>>::unpack(ptr).unwrap();
-    assert_eq!((data, metadata), (bytes.as_mut_ptr(), expected));
-    let (data, metadata) =
-        <NonNull<Pointee> as Unpack2<*const u8, Metadata>>::unpack(co3::encode(nonnull)).unwrap();
-    assert_eq!((data, metadata), (bytes.as_ptr(), expected));
-    let (data, metadata) =
-        <NonNull<Pointee> as Unpack2<*mut u8, Metadata>>::unpack(co3::encode(nonnull)).unwrap();
-    assert_eq!((data, metadata), (bytes.as_mut_ptr(), expected));
+    ffi! {
+        #![unsafe(extern("C"))]
+        #![symbol_prefix = "wide_metadata"]
+
+        pub(super) raw fn shared(#[unpack(*const u8, usize)] value: &Bytes, expected: *const u8) -> usize;
+        pub(super) raw fn mutable(#[unpack(*mut u8, usize)] value: &mut Bytes, expected: *mut u8) -> usize;
+    }
 }
 
 #[test]
-fn wide_reference_pack_preserves_slice_length() {
-    type Pointee = Custom<usize>;
+fn wide_reference_unpack_preserves_pointer_length_and_mutation() {
     let mut bytes = [1_u8, 2, 3];
-    let expected = 3_usize;
-    let shared =
-        unsafe { <&Pointee as Pack2<*const u8, usize>>::pack(bytes.as_ptr(), expected) }.unwrap();
-    assert_eq!(shared.metadata(), expected);
-    assert_eq!(unsafe { &shared.into_ref().unwrap().1 }, &bytes);
-    let (data, metadata) = <&Pointee as Unpack2<*const u8, usize>>::unpack(shared).unwrap();
-    assert_eq!((data, metadata), (bytes.as_ptr(), expected));
+    let expected = bytes.as_ptr();
+    let value = unsafe { &*(bytes.as_slice() as *const [u8] as *const Bytes) };
+    assert_eq!(shared(value, expected), 3);
 
-    let mutable =
-        unsafe { <&mut Pointee as Pack2<*mut u8, usize>>::pack(bytes.as_mut_ptr(), expected) }
-            .unwrap();
-    assert_eq!(mutable.metadata(), expected);
-    let (data, metadata) = <&mut Pointee as Unpack2<*mut u8, usize>>::unpack(mutable).unwrap();
-    assert_eq!((data, metadata), (bytes.as_mut_ptr(), expected));
-    unsafe { mutable.into_mut().unwrap().1[0] = 9 };
+    let expected = bytes.as_mut_ptr();
+    let value = unsafe { &mut *(bytes.as_mut_slice() as *mut [u8] as *mut Bytes) };
+    assert_eq!(mutable(value, expected), 3);
     assert_eq!(bytes, [9, 2, 3]);
 }
 
 #[test]
-fn wide_boxes_preserve_custom_metadata() {
-    type Pointee = Custom<Metadata>;
-    fn boxed() -> Box<Pointee> {
-        let bytes = vec![1_u8, 2, 3].into_boxed_slice();
-        unsafe { Box::from_raw(Box::into_raw(bytes) as *mut Pointee) }
-    }
-    let expected = Metadata {
-        length: 3,
-        marker: 7,
-    };
-    let carrier = CWideBox::<Pointee>::from_box(boxed());
-    assert_eq!(carrier.metadata(), expected);
-    assert_eq!(&unsafe { carrier.into_box() }.unwrap().1, &[1, 2, 3]);
-
-    let carrier = CWideBox::<Pointee>::from_box(boxed());
-    assert_eq!(carrier.metadata(), expected);
-    assert_eq!(&unsafe { carrier.into_box() }.unwrap().1, &[1, 2, 3]);
+fn wide_reference_pack_reconstructs_unpacked_arguments() {
+    let mut bytes = [1_u8, 2, 3];
     assert_eq!(
-        CWideBox::<Pointee>::null().metadata(),
-        Metadata {
-            length: 0,
-            marker: 0
-        }
+        unsafe { raw::shared(bytes.as_ptr(), bytes.len(), bytes.as_ptr()) },
+        3
     );
     assert_eq!(
-        CWideBox::<Pointee>::null().metadata(),
-        Metadata {
-            length: 0,
-            marker: 0
-        }
+        unsafe { raw::mutable(bytes.as_mut_ptr(), bytes.len(), bytes.as_mut_ptr()) },
+        3
     );
+    assert_eq!(bytes, [9, 2, 3]);
 }
 
 #[test]
-fn owned_slice_pack_handles_both_mutability_kinds() {
-    use core::cell::{Cell, UnsafeCell};
+fn owned_slice_unpack_round_trip_handles_both_mutability_kinds() {
+    let values = vec![3_u8, 5].into_boxed_slice();
+    let expected = values.as_ptr();
+    let values = owned(values, expected);
+    assert_eq!(values.as_ptr(), expected);
+    assert_eq!(&*values, &[3, 5]);
 
-    let plain = CWideBox::from_box(vec![3_u8, 5].into_boxed_slice());
-    let (data, len) = <Box<[u8]> as Unpack2<CBox<u8>, usize>>::unpack(plain).unwrap();
-    let carrier = unsafe { <Box<[u8]> as Pack2<CBox<u8>, usize>>::pack(data, len) }.unwrap();
-    assert_eq!(&*unsafe { carrier.into_box() }.unwrap(), &[3, 5]);
-
-    type Element = UnsafeCell<u8>;
-    let inner = vec![Element::new(3), Element::new(5)].into_boxed_slice();
-    let carrier = CWideBox::<[Cell<u8>]>::from_box(inner);
-    let (data, len) = <Box<[Cell<u8>]> as Unpack2<CBox<Cell<u8>>, usize>>::unpack(carrier).unwrap();
-    let carrier =
-        unsafe { <Box<[Cell<u8>]> as Pack2<CBox<Cell<u8>>, usize>>::pack(data, len) }.unwrap();
-    let mut boxed = unsafe { carrier.into_box() }.unwrap();
+    let values = vec![Cell::new(3_u8), Cell::new(5)].into_boxed_slice();
+    let expected = values.as_ptr();
+    let mut values = cells(values, expected);
+    assert_eq!(values.as_ptr(), expected);
     assert_eq!(
-        boxed.iter_mut().map(|v| *v.get_mut()).collect::<Vec<_>>(),
+        values
+            .iter_mut()
+            .map(|value| *value.get_mut())
+            .collect::<Vec<_>>(),
         [3, 5]
     );
 
     // A vector's capacity cannot be represented by a pointer/length pair.
     static_assertions::assert_not_impl_any!(Vec<u8>:
-        Unpack2<CBox<u8>, usize>, Pack2<CBox<u8>, usize>);
+        Unpack2<*mut u8, usize>, Pack2<*mut u8, usize>);
     static_assertions::assert_not_impl_any!(Vec<Cell<u8>>:
-        Unpack2<CBox<Cell<u8>>, usize>, Pack2<CBox<Cell<u8>>, usize>);
+        Unpack2<*mut Cell<u8>, usize>, Pack2<*mut Cell<u8>, usize>);
 }
-
-#[test]
-fn owned_pack_preserves_null_pointer_and_metadata() {
-    type Pointee = [u8];
-    let metadata = 3_usize;
-    let carrier =
-        unsafe { <Option<Box<Pointee>> as Pack2<CBox<u8>, usize>>::pack(CBox::null(), metadata) }
-            .unwrap();
-    assert!(carrier.payload().as_ptr().is_null());
-    let (pointer, unpacked) =
-        <Option<Box<Pointee>> as Unpack2<CBox<u8>, usize>>::unpack(carrier).unwrap();
-    assert!(pointer.as_ptr().is_null());
-    assert_eq!(unpacked, metadata);
-}
-
-#[test]
-fn carriers_preserve_non_slice_metadata() {
-    type Pointee = Custom<Metadata>;
-    let mut source = [3_u8, 5, 8];
-    let value = unsafe { &mut *(source.as_mut_slice() as *mut [u8] as *mut Pointee) };
-    let shared = CSoftWideRef::<Pointee>::from_ref(&*value);
-    assert_eq!(
-        shared.metadata(),
-        Metadata {
-            length: 3,
-            marker: 7
-        }
-    );
-    let raw =
-        unsafe { CSoftWideRef::<Pointee>::from_raw_parts(shared.as_ptr(), shared.metadata()) };
-    let decoded =
-        unsafe { co3::soft_decode::<CSoftWideRef<Pointee>>(raw, &mut Default::default()) }
-            .unwrap();
-    assert_eq!(decoded.metadata(), shared.metadata());
-    assert_eq!(unsafe { &shared.into_ref().unwrap().1 }, &[3, 5, 8]);
-
-    let mutable = CSoftWideRefMut::<Pointee, true>::from_mut(value);
-    assert_eq!(
-        mutable.metadata(),
-        Metadata {
-            length: 3,
-            marker: 7
-        }
-    );
-    unsafe { mutable.into_mut().unwrap().1[1] = 9 };
-    assert_eq!(source, [3, 9, 8]);
-
-    let null = CSoftWideRef::<Pointee>::null();
-    assert!(null.as_ptr().is_null());
-    assert_eq!(
-        null.metadata(),
-        Metadata {
-            length: 0,
-            marker: 0
-        }
-    );
-    let decoded =
-        unsafe { co3::soft_decode::<CSoftWideRef<Pointee>>(null, &mut Default::default()) }
-            .unwrap();
-    assert!(unsafe { decoded.into_ref() }.is_none());
-    static_assertions::assert_impl_all!(CSoftWideRef<Pointee>: CType, Copy);
-}
-
-#[test]
-fn wide_store_returns_custom_metadata() {
-    type Pointee = Custom<Metadata>;
-    let mut store = RefWideEncodeStore::<Pointee, ()>::default();
-    let carrier = store.encode(|_| {
-        let bytes: Box<[u8]> = vec![2, 4].into_boxed_slice();
-        let ptr = Box::into_raw(bytes) as *mut Pointee;
-        unsafe { Box::from_raw(ptr) }
-    });
-    assert_eq!(
-        carrier.metadata(),
-        Metadata {
-            length: 2,
-            marker: 7
-        }
-    );
-    assert_eq!(unsafe { &carrier.into_ref().unwrap().1 }, &[2, 4]);
-    assert_eq!(store.sync(), Some(()));
-}
-
-#[test]
-fn mutable_wide_store_returns_custom_metadata_and_syncs() {
-    type Pointee = Custom<Metadata>;
-    let mut result = 0;
-    let mut store = RefMutWideEncodeStore::<Pointee, (), &mut u8>::default();
-    let carrier = store.encode(
-        |_| {
-            let bytes = vec![2_u8, 4].into_boxed_slice();
-            let ptr = Box::into_raw(bytes) as *mut Pointee;
-            (unsafe { Box::from_raw(ptr) }, &mut result)
-        },
-        |value, result| *result = value.1[0],
-    );
-    assert_eq!(
-        carrier.metadata(),
-        Metadata {
-            length: 2,
-            marker: 7
-        }
-    );
-    unsafe { carrier.into_mut().unwrap().1[0] = 9 };
-    assert_eq!(store.sync(), Some(()));
-    assert_eq!(result, 9);
-}
-
-#[test]
-fn comparisons_use_pointer_then_arbitrary_metadata() {
-    type Pointee = Custom<Metadata>;
-    let mut bytes = [0_u8; 2];
-    let first = bytes.as_mut_ptr();
-    let second = unsafe { first.add(1) };
-    let a = Metadata {
-        length: 0,
-        marker: 1,
-    };
-    let b = Metadata {
-        length: 0,
-        marker: 2,
-    };
-
-    let one = unsafe { CSoftWideRef::<Pointee>::from_raw_parts(first, a) };
-    let same_pointer = unsafe { CSoftWideRef::<Pointee>::from_raw_parts(first, b) };
-    let different_pointer = unsafe { CSoftWideRef::<Pointee>::from_raw_parts(second, a) };
-    assert!(one < same_pointer);
-    assert_ne!(one, different_pointer);
-    assert_eq!(
-        one.partial_cmp(&different_pointer),
-        Some(first.cmp(&second))
-    );
-
-    let one = unsafe { CSoftWideRefMut::<Pointee, true>::from_raw_parts_mut(first, a) };
-    let same_pointer = unsafe { CSoftWideRefMut::<Pointee, true>::from_raw_parts_mut(first, b) };
-    let different_pointer =
-        unsafe { CSoftWideRefMut::<Pointee, true>::from_raw_parts_mut(second, a) };
-    assert!(one < same_pointer);
-    assert_ne!(one, different_pointer);
-    assert_eq!(
-        one.partial_cmp(&different_pointer),
-        Some(first.cmp(&second))
-    );
-
-    let null = CSoftWideRef::<Pointee>::null();
-    let other_null = unsafe { CSoftWideRef::<Pointee>::from_raw_parts(core::ptr::null(), a) };
-    assert_ne!(null, other_null);
-}
-

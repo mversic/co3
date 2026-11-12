@@ -18,7 +18,6 @@ struct Kita2(Opaque);
 struct Kita3(Opaque);
 
 #[derive(RustSpec, ReprC)]
-#[repr_c(transparent)]
 #[repr(transparent)]
 struct Kita4(Opaque);
 

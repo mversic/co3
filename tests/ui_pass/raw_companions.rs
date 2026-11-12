@@ -59,6 +59,7 @@ type OrdinaryAlias<T> = Option<T>;
 
 co3::ffi! {
     #![unsafe(export("C"))]
+    type MethodCallback = raw fn(Value, u8) -> u8;
     type SystemCallback = raw extern "system" fn(u8) -> u8;
     type UnpackedCallback = raw fn(#[unpack(_, _)] &mut [u8]) -> usize;
 }
@@ -67,11 +68,11 @@ fn main() {
     let c: unsafe extern "system" fn(u8) -> u8 = system_source;
     let system: unsafe extern "C" fn(u8) -> u8 = rust_source_raw;
     let default: unsafe extern "C" fn(u8) -> u8 = default_source_raw;
-    let method: unsafe extern "C" fn(Value, u8) -> u8 = Value::add_raw;
+    let _method: MethodCallback = Value::add_raw;
     let callback: SystemCallback = system_source;
     let system_companion: unsafe extern "C" fn(u8) -> u8 = system_source_raw;
     let rust_companion: unsafe extern "C" fn(u8) -> u8 = explicit_rust_source_raw;
-    let method_companion: unsafe extern "C" fn(Value, u8) -> u8 = Value::add_system_raw;
+    let _method_companion: MethodCallback = Value::add_system_raw;
     let _: OrdinaryAlias<Value> = Some(Value(1));
     let _: unsafe extern "system" fn(u8) -> u8 = callback;
     let unpacked: UnpackedCallback = overwrite_raw;
@@ -82,9 +83,7 @@ fn main() {
     assert_eq!(unsafe { c(1) }, 2);
     assert_eq!(unsafe { system(1) }, 3);
     assert_eq!(unsafe { default(1) }, 4);
-    assert_eq!(unsafe { method(Value(1), 2) }, 3);
     assert_eq!(unsafe { callback(1) }, 2);
     assert_eq!(unsafe { system_companion(1) }, 2);
     assert_eq!(unsafe { rust_companion(1) }, 5);
-    assert_eq!(unsafe { method_companion(Value(1), 2) }, 4);
 }

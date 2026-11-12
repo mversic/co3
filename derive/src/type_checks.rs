@@ -82,14 +82,20 @@ impl TypeChecks {
         self.cfg.truncate(len);
     }
 
-    fn add(&mut self, actual: TokenStream, expected: TokenStream, message: &str) {
+    fn add(&mut self, actual: TokenStream, expected: &[syn::Type], message: &str, use_alloc: bool) {
         let cfg = &self.cfg;
+        let alloc = use_alloc.then(|| {
+            quote!(
+                extern crate alloc;
+            )
+        });
         let check = quote! {
             #(#cfg)*
             {
+                #alloc
                 #[diagnostic::on_unimplemented(message = #message)]
                 trait ExactType {}
-                impl ExactType for #expected {}
+                #(impl ExactType for #expected {})*
                 fn check<T: ExactType + ?Sized>() {}
                 let _ = check::<#actual>;
             }
@@ -145,65 +151,44 @@ impl<'ast> Visit<'ast> for TypeChecks {
     }
 
     fn visit_type_path(&mut self, ty: &'ast TypePath) {
-        if ty.qself.is_none() {
-            if let Some(identity) = crate::ffi_fn::copy_primitive_type(ty) {
-                let name = ty.path.segments.last().unwrap().ident.to_string();
-                let canonical = if name.starts_with("c_") {
-                    format!("co3::ffi::{name}")
-                } else {
-                    format!("core::primitive::{name}")
+        if let Some(known) = crate::known_type::recognize_path(ty) {
+            let name = &ty.path.segments.last().unwrap().ident;
+            let mut actual = ty.clone();
+            if known.arity > 0 {
+                let syn::Type::Path(canonical) = &known.canonical else {
+                    unreachable!()
                 };
-                self.add(
-                    quote!(#ty),
-                    quote!(#identity),
-                    &format!("`{name}` must resolve to `{canonical}`"),
-                );
-            } else if let Some(last) = ty.path.segments.last() {
-                let name = last.ident.to_string();
-                match name.as_str() {
-                    "str" if last.arguments.is_empty() => {
-                        self.add(
-                            quote!(#ty),
-                            quote!(core::primitive::str),
-                            "`str` must resolve to `core::primitive::str`",
-                        );
-                    }
-                    "CStr" if last.arguments.is_empty() => {
-                        self.add(
-                            quote!(#ty),
-                            quote!(core::ffi::CStr),
-                            "`CStr` must resolve to `core::ffi::CStr`",
-                        );
-                    }
-                    "Option" | "PhantomData" | "Box" => {
-                        if let syn::PathArguments::AngleBracketed(args) = &last.arguments
-                            && args.args.len() == 1
-                            && matches!(args.args.first(), Some(syn::GenericArgument::Type(_)))
-                        {
-                            let mut actual = ty.clone();
-                            actual.path.segments.last_mut().unwrap().arguments =
-                                syn::PathArguments::AngleBracketed(syn::parse_quote!(<()>));
-                            let (expected, canonical) = match name.as_str() {
-                                "Option" => {
-                                    (quote!(core::option::Option<()>), "core::option::Option")
-                                }
-                                "PhantomData" => (
-                                    quote!(core::marker::PhantomData<()>),
-                                    "core::marker::PhantomData",
-                                ),
-                                "Box" => (quote!(co3::boxed::Box<()>), "co3::boxed::Box"),
-                                _ => unreachable!(),
-                            };
-                            self.add(
-                                quote!(#actual),
-                                expected,
-                                &format!("`{name}` must resolve to `{canonical}`"),
-                            );
-                        }
-                    }
-                    _ => {}
-                }
+                actual.path.segments.last_mut().unwrap().arguments =
+                    canonical.path.segments.last().unwrap().arguments.clone();
             }
+            let mut expected = vec![known.canonical];
+            if let Some(alternate) = known.alternate {
+                expected.push(alternate);
+            }
+            let message = match known.kind {
+                crate::known_type::Kind::Option => {
+                    "`Option` must resolve to `core::option::Option` or `co3::option::Option`"
+                        .to_owned()
+                }
+                crate::known_type::Kind::Vec => {
+                    "`Vec` must resolve to `alloc::vec::Vec` or `co3::vec::Vec`".to_owned()
+                }
+                crate::known_type::Kind::Result => {
+                    "`Result` must resolve to `core::result::Result` or `co3::result::Result`"
+                        .to_owned()
+                }
+                crate::known_type::Kind::NonZero => {
+                    "`NonZero` must resolve to `core::num::NonZero` or `co3::num::NonZero`"
+                        .to_owned()
+                }
+                _ => format!("`{name}` must resolve to `{}`", known.canonical_name),
+            };
+            self.add(
+                quote!(#actual),
+                &expected,
+                &message,
+                known.kind == crate::known_type::Kind::Vec,
+            );
         }
         syn::visit::visit_type_path(self, ty);
     }
@@ -218,15 +203,22 @@ mod tests {
     #[test]
     fn collects_nested_special_types_once() {
         let item = parse_quote! {
-            struct Fields<T>(Option<u32>, Option<u32>, core::marker::PhantomData<T>);
+            struct Fields<T>(Option<u32>, Option<u32>, core::marker::PhantomData<T>, Box<[u32]>, core::mem::MaybeUninit<T>);
         };
         let checks = TypeChecks::for_derive(&item).to_string();
-        assert_eq!(checks.matches("trait ExactType").count(), 3);
+        assert_eq!(checks.matches("trait ExactType").count(), 5);
         assert!(checks.contains("core :: option :: Option < () >"));
         assert!(checks.contains("core :: primitive :: u32"));
         assert!(checks.contains("core :: marker :: PhantomData < () >"));
-        assert!(checks.contains("`Option` must resolve to `core::option::Option`"));
+        assert!(
+            checks.contains(
+                "`Option` must resolve to `core::option::Option` or `co3::option::Option`"
+            )
+        );
         assert!(checks.contains("`u32` must resolve to `core::primitive::u32`"));
+        assert!(checks.contains("`Box` must resolve to `co3::boxed::Box`"));
+        assert!(checks.contains("core :: mem :: MaybeUninit < () >"));
+        assert!(checks.contains("`MaybeUninit` must resolve to `core::mem::MaybeUninit`"));
         assert!(!checks.contains("check :: < T >"));
     }
 

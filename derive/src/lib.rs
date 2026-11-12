@@ -56,6 +56,7 @@ mod dispatch;
 mod ffi_fn;
 mod generate;
 mod layout;
+mod known_type;
 mod normalize;
 mod parse;
 mod statics;
@@ -435,7 +436,7 @@ impl DispatchGroups {
 /// * `#[repr_c(NICHE = <expr>)]` on a struct customizes [`co3::niche::Niche::NICHE`](https://docs.rs/co3/latest/co3/niche/trait.Niche.html#associatedconstant.NICHE) and requires `RustSpec::Niche = WithNiche<Unstable>`
 /// * `#[repr_c(is_valid = |[fieldN]| ...)]` on a struct or enum variant customizes validation and requires `RustSpec::Trap = NonRobust`
 /// * `#[repr_c(identity)]` uses a `repr(C)` or `repr(transparent)` type directly as its `CType`
-/// * `#[repr_c(transparent)]` uses the `CType` of the inner field as its `CType`.
+/// * Transparent Rust types retain a named C companion.
 ///
 /// # Example
 ///
@@ -1295,7 +1296,7 @@ fn ensure_symbol_name_on_impl_fn(
 }
 
 #[cfg(test)]
-mod dyn_self_tag_id_tests {
+mod tests {
     use super::*;
 
     fn id_type(item: &ItemImpl) -> &Type {

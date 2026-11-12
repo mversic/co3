@@ -1,6 +1,6 @@
 #![allow(improper_ctypes_definitions)]
 
-use co3::{raw, reference::CRef, ReprC};
+use co3::{ReprC, raw};
 
 fn existing(value: u8) -> u8 {
     value
@@ -18,7 +18,12 @@ raw! {
     fn identity<T>(value: move T) -> move T;
 }
 
-type ArrayCompanion = unsafe extern "C" fn([u8; 2]) -> [u8; 2];
+co3::ffi! {
+    #![unsafe(extern("C"))]
+    type ArrayCompanion = raw fn(move [u8; 2]) -> move [u8; 2];
+    type TakesReference<'a, T> = raw fn(&'a T);
+    type ReturnsReference<'a, T> = raw fn(&'a T) -> &'a T;
+}
 
 static_assertions::assert_not_impl_any!(ArrayCompanion: ReprC);
 
@@ -69,9 +74,10 @@ raw! {
 fn main() {
     let _: ArrayCompanion = identity_raw::<[u8; 2]>;
 
-    let value = 7_u8;
-    unsafe {
-        take_raw::<u8>(CRef::from_ref(&value));
-        ArgumentHost::take_raw::<u8>(CRef::from_ref(&value));
-    }
+    let _: TakesReference<'_, u8> = take_raw::<u8>;
+    let _: TakesReference<'_, u8> = ArgumentHost::take_raw::<u8>;
+    let _: ReturnsReference<'_, u8> = borrowed_generic_raw::<u8>;
+    let _: ReturnsReference<'_, u8> = MethodHost::borrowed_generic_raw::<u8>;
+    let _ = accept_raw;
+    assert_eq!(unsafe { existing_raw(7) }, 7);
 }

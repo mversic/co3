@@ -47,12 +47,13 @@ enum SparseFieldless {
     B = 5,
 }
 
-const CONST_INT: CSparseInt = CSparseInt::A(42);
-const CONST_INT_NICHE: CSparseInt = CSparseInt::niche();
-const CONST_FIELDLESS_NICHE: CSparseFieldless = CSparseFieldless::niche();
+const CONST_INT: <SparseInt as co3::ReprC>::CType = <SparseInt as co3::ReprC>::CType::A(42);
+const CONST_INT_NICHE: <SparseInt as co3::ReprC>::CType = <SparseInt as co3::ReprC>::CType::niche();
+const CONST_FIELDLESS_NICHE: <SparseFieldless as co3::ReprC>::CType =
+    <SparseFieldless as co3::ReprC>::CType::niche();
 const CONST_INT_TAG: u8 = CONST_INT.tag();
-const CONST_C: CSparseC = CSparseC::A(42);
-const CONST_C_NICHE: CSparseC = CSparseC::niche();
+const CONST_C: <SparseC as co3::ReprC>::CType = <SparseC as co3::ReprC>::CType::A(42);
+const CONST_C_NICHE: <SparseC as co3::ReprC>::CType = <SparseC as co3::ReprC>::CType::niche();
 const CONST_C_TAG: u8 = CONST_C.tag();
 const CONST_OPTION: Option<Option<u32>> = co3::option::COption::<u32>::Some(7).into_option();
 const CONST_RESULT: Option<Result<u32, u16>> =
@@ -78,13 +79,16 @@ enum WithZeroAndMax {
 
 #[test]
 fn explicit_tags_drive_encoding_decoding_and_niches() {
-    static_assertions::assert_not_impl_any!(CSparseInt: Eq, Ord);
-    static_assertions::assert_not_impl_any!(CSparseC: Eq, Ord);
-    static_assertions::assert_not_impl_any!(CSparseFieldless: Eq, Ord);
+    static_assertions::assert_not_impl_any!(<SparseInt as co3::ReprC>::CType: Eq, Ord);
+    static_assertions::assert_not_impl_any!(<SparseC as co3::ReprC>::CType: Eq, Ord);
+    static_assertions::assert_not_impl_any!(<SparseFieldless as co3::ReprC>::CType: Eq, Ord);
     assert!(<SparseFieldless as Niche>::NICHE.is_niche());
     assert!(CONST_FIELDLESS_NICHE.is_niche());
     assert!(CONST_FIELDLESS_NICHE != CONST_FIELDLESS_NICHE);
-    assert!(CSparseFieldless::from_u8(3) != CSparseFieldless::from_u8(3));
+    assert!(
+        <SparseFieldless as co3::ReprC>::CType::from_u8(3)
+            != <SparseFieldless as co3::ReprC>::CType::from_u8(3)
+    );
     assert_eq!(
         CONST_FIELDLESS_NICHE.tag(),
         <SparseFieldless as Niche>::NICHE.tag()
@@ -104,21 +108,27 @@ fn explicit_tags_drive_encoding_decoding_and_niches() {
     assert_eq!(CONST_NULL_REF, None);
     let a = encode(SparseInt::A(42));
     assert!(!a.is_niche());
-    let raw = unsafe { CSparseInt::from_raw_parts(1, core::mem::MaybeUninit::new(a)) };
+    let raw = unsafe {
+        <SparseInt as co3::ReprC>::CType::from_raw_parts(1, core::mem::MaybeUninit::new(a))
+    };
     assert!(raw == a);
-    let raw_niche = unsafe { CSparseInt::from_raw_parts(0, core::mem::MaybeUninit::uninit()) };
+    let raw_niche = unsafe {
+        <SparseInt as co3::ReprC>::CType::from_raw_parts(0, core::mem::MaybeUninit::uninit())
+    };
     assert!(raw_niche.is_niche());
     assert!(raw_niche != <SparseInt as Niche>::NICHE);
-    static_assertions::assert_impl_all!(CSparseInt: co3::borrow::Borrow<Borrowed = CSparseInt>);
     let b = encode(SparseInt::B);
     let c = encode(SparseInt::C);
     assert_eq!([a.tag(), b.tag(), c.tag()], [1, 2, 5]);
-    assert!(a == CSparseInt::A(42));
-    assert!(b == CSparseInt::B());
-    assert!(c == CSparseInt::C());
-    assert!(CSparseInt::A(1) < CSparseInt::A(2));
-    assert!(CSparseInt::A(42) < CSparseInt::B());
-    assert_eq!(format!("{:?}", CSparseInt::A(42)), "CSparseInt::A(42)");
+    assert!(a == <SparseInt as co3::ReprC>::CType::A(42));
+    assert!(b == <SparseInt as co3::ReprC>::CType::B());
+    assert!(c == <SparseInt as co3::ReprC>::CType::C());
+    assert!(<SparseInt as co3::ReprC>::CType::A(1) < <SparseInt as co3::ReprC>::CType::A(2));
+    assert!(<SparseInt as co3::ReprC>::CType::A(42) < <SparseInt as co3::ReprC>::CType::B());
+    assert_eq!(
+        format!("{:?}", <SparseInt as co3::ReprC>::CType::A(42)),
+        "CSparseInt::A(42)"
+    );
     let niche = <SparseInt as Niche>::NICHE;
     assert_eq!(niche.partial_cmp(&niche), None);
     assert_eq!(niche.partial_cmp(&a), None);
@@ -141,9 +151,9 @@ fn explicit_tags_drive_encoding_decoding_and_niches() {
     let b = encode(SparseC::B);
     let c = encode(SparseC::C);
     assert_eq!([a.tag(), b.tag(), c.tag()], [1, 2, 5]);
-    assert!(a == CSparseC::A(42));
-    assert!(b == CSparseC::B());
-    assert!(c == CSparseC::C());
+    assert!(a == <SparseC as co3::ReprC>::CType::A(42));
+    assert!(b == <SparseC as co3::ReprC>::CType::B());
+    assert!(c == <SparseC as co3::ReprC>::CType::C());
     assert_eq!(
         unsafe { soft_decode::<SparseC>(a, &mut None) },
         Some(SparseC::A(42))
@@ -157,9 +167,13 @@ fn explicit_tags_drive_encoding_decoding_and_niches() {
         Some(SparseC::C)
     );
     assert_eq!(<SparseC as Niche>::NICHE.tag(), 0);
-    let uninitialized = unsafe { CSparseC::from_raw_parts(0, core::mem::MaybeUninit::uninit()) };
+    let uninitialized = unsafe {
+        <SparseC as co3::ReprC>::CType::from_raw_parts(0, core::mem::MaybeUninit::uninit())
+    };
     assert!(uninitialized.is_niche());
-    let other_invalid = unsafe { CSparseC::from_raw_parts(3, core::mem::MaybeUninit::uninit()) };
+    let other_invalid = unsafe {
+        <SparseC as co3::ReprC>::CType::from_raw_parts(3, core::mem::MaybeUninit::uninit())
+    };
     assert!(!other_invalid.is_niche());
     assert!(uninitialized != <SparseC as Niche>::NICHE);
     assert_eq!(

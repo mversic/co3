@@ -20,7 +20,7 @@ fn mutable_non_robust_wrappers_validate_writeback() {
     let mut manual = ManuallyDrop::new(true);
     let mut store = Default::default();
     let encoded = co3::soft_encode(&mut manual, &mut store);
-    unsafe { *encoded.as_ptr() = co3::primitives::CBool(2) };
+    unsafe { **encoded.as_ptr() = co3::primitives::CBool(2) };
     assert_eq!(store.sync(), None);
     assert!(*manual);
 
@@ -33,14 +33,14 @@ fn mutable_non_robust_wrappers_validate_writeback() {
     let mut cell = Cell::new(true);
     let mut store = Default::default();
     let encoded = co3::soft_encode(&mut cell, &mut store);
-    unsafe { *(*encoded.as_ptr()).get() = co3::primitives::CBool::FALSE };
+    unsafe { (*encoded.as_ptr()).set(co3::primitives::CBool::FALSE) };
     assert_eq!(store.sync(), Some(()));
     assert!(!cell.get());
 
     let mut nonzero_cell = Cell::new(core::num::NonZeroU8::new(3).unwrap());
     let mut store = Default::default();
     let encoded = co3::soft_encode(&mut nonzero_cell, &mut store);
-    unsafe { *(*encoded.as_ptr()).get() = core::mem::zeroed() };
+    unsafe { (*encoded.as_ptr()).set(co3::num::NonZero(0)) };
     assert_eq!(store.sync(), None);
     assert_eq!(nonzero_cell.get().get(), 3);
 
@@ -231,13 +231,12 @@ fn mutable_vec_rejects_header_length_changes() {
 
 #[derive(RustSpec, co3::ReprC)]
 #[repr(transparent)]
-#[repr_c(transparent)]
 struct NoClone(u32);
 
 #[test]
 fn stable_mutable_vec_converts_non_clone_elements() {
     static_assertions::assert_not_impl_any!(NoClone: Copy, Clone);
-    static_assertions::assert_type_eq_all!(<NoClone as co3::ReprC>::CType, u32);
+    static_assertions::assert_type_eq_all!(<NoClone as co3::ReprC>::CType, <NoClone as co3::ReprC>::CType);
     static_assertions::assert_impl_all!(NoClone:
         co3::stored::SoftEncodeMutUnchecked<'static>, co3::stored::SoftEncodeMut<'static>);
 
@@ -247,7 +246,7 @@ fn stable_mutable_vec_converts_non_clone_elements() {
     let encoded = co3::soft_encode(&mut values, &mut store);
     let header = unsafe { &*encoded.as_ptr() };
     assert_eq!(header.len(), values_len);
-    unsafe { *header.as_ptr() = 42 };
+    unsafe { *header.as_ptr() = <NoClone as co3::ReprC>::CType::from_fields(42) };
     assert_eq!(store.sync(), Some(()));
     assert_eq!(values[0].0, 42);
 }
@@ -263,7 +262,7 @@ fn stable_identity_mutable_reference_needs_no_referent_encoder() {
 }
 
 #[derive(RustSpec, co3::ReprC)]
-#[repr_c(transparent)]
+#[repr(transparent)]
 struct TransparentBuffer(Vec<u32>);
 
 #[test]
@@ -271,7 +270,7 @@ fn transparent_mutable_wrapper_delegates_writeback() {
     let mut value = TransparentBuffer(vec![61]);
     let mut store = Default::default();
     let encoded = co3::soft_encode(&mut value, &mut store);
-    unsafe { (*encoded.as_ptr()).as_ptr().write(62) };
+    unsafe { (*encoded.as_ptr()).0.as_ptr().write(62) };
     assert_eq!(store.sync(), Some(()));
     assert_eq!(value.0, [62]);
 }

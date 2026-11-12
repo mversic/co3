@@ -32,8 +32,10 @@ struct NonCTypeField(MaybeUninit<NonZeroU32>);
 
 #[derive(RustSpec, ReprC)]
 #[repr(C)]
-// Optional concrete trait support is deferred only for the final field.
+// A known sized tail must not generate a speculative wide header.
 struct GenericNonCTypeField<T>(PhantomData<T>, MaybeUninit<NonZeroU32>);
+
+assert_not_impl_any!(GenericNonCTypeField<()>: co3::wide::Wide);
 
 #[derive(RustSpec, ReprC)]
 #[repr(C)]
@@ -55,10 +57,10 @@ impl Drop for HasDrop {
 type Callback = extern "C" fn(u8) -> u8;
 
 assert_impl_all!(Option<NonZeroU32>: CType);
-assert_type_eq_all!(<NonZeroU8 as ReprC>::CType, co3::NonZero<u8>);
-assert_type_eq_all!(<NonZeroI64 as ReprC>::CType, co3::NonZero<i64>);
-assert_type_eq_all!(<NonZeroUsize as ReprC>::CType, co3::NonZero<usize>);
-assert_type_eq_all!(<NonZeroIsize as ReprC>::CType, co3::NonZero<isize>);
+assert_type_eq_all!(<NonZeroU8 as ReprC>::CType, co3::num::NonZero<u8>);
+assert_type_eq_all!(<NonZeroI64 as ReprC>::CType, co3::num::NonZero<i64>);
+assert_type_eq_all!(<NonZeroUsize as ReprC>::CType, co3::num::NonZero<usize>);
+assert_type_eq_all!(<NonZeroIsize as ReprC>::CType, co3::num::NonZero<isize>);
 assert_type_eq_all!(
     <Option<NonZeroU8> as ReprC>::CType,
     co3::option::COptionSome<NonZeroU8>
@@ -84,9 +86,9 @@ assert_impl_all!(Generic<u32>: CType);
 assert_impl_all!(ConditionalField: CType);
 assert_type_eq_all!(
     <co3::option::Option<bool> as ReprC>::CType,
-    co3::option::COption<bool>
+    co3::option::COption<bool, true>
 );
-assert_type_eq_all!(<co3::result::Result<bool, u8> as ReprC>::CType, co3::result::CResult<bool, u8>);
+assert_type_eq_all!(<co3::result::Result<bool, u8> as ReprC>::CType, co3::result::CResult<bool, u8, true>);
 assert_type_eq_all!(<Vec<bool> as ReprC>::CType, co3::vec::CVec<bool>);
 assert_type_eq_all!(
     <Vec<co3::primitives::CBool> as ReprC>::CType,
@@ -141,14 +143,14 @@ assert_impl_all!(co3::result::CResultOk<u8, core::cell::Cell<u8>>: Copy);
 fn nonzero_carrier_preserves_integer_abi_and_niche() {
     use core::mem::{align_of, size_of};
 
-    assert_eq!(size_of::<co3::NonZero<u8>>(), size_of::<u8>());
-    assert_eq!(align_of::<co3::NonZero<u8>>(), align_of::<u8>());
-    assert_impl_all!(co3::NonZero<u8>: CType, co3::CFnArg, co3::CFnReturn);
+    assert_eq!(size_of::<co3::num::NonZero<u8>>(), size_of::<u8>());
+    assert_eq!(align_of::<co3::num::NonZero<u8>>(), align_of::<u8>());
+    assert_impl_all!(co3::num::NonZero<u8>: CType, co3::CFnArg, co3::CFnReturn);
 
     let value = NonZeroU8::new(7).unwrap();
-    assert_eq!(co3::encode(value), co3::NonZero(7));
+    assert_eq!(co3::encode(value), co3::num::NonZero(7));
     assert_eq!(
-        unsafe { co3::decode::<NonZeroU8>(co3::NonZero(7)) },
+        unsafe { co3::decode::<NonZeroU8>(co3::num::NonZero(7)) },
         Some(value)
     );
     assert_eq!(

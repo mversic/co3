@@ -13,9 +13,8 @@ use crate::{
     ffi_fn::{
         self, emit_extern_definition, gen_definition_body, gen_failure_panic,
         gen_input_decode_stmts, gen_static_fn_signature_drift_check, gen_store_sync_stmts,
-        gen_sync_check, gen_sync_error, gen_unknown_tag_error,
-        item_fn_output_type, merge_generics, normalize_fn_signature,
-        strip_dispatch_params,
+        gen_sync_check, gen_sync_error, gen_unknown_tag_error, item_fn_output_type, merge_generics,
+        normalize_fn_signature, strip_dispatch_params,
     },
     parse::FailureMode,
     utils::{
@@ -492,7 +491,7 @@ fn synthesize_dispatch_export_fn(
         (!selector_names.is_empty()).then(|| quote!(#[deny(unreachable_patterns)]));
     let selector_inputs = selector_inputs
         .iter()
-        .map(|(pat, id_ty)| parse_quote!(#pat: #id_ty))
+        .map(|(pat, id_ty)| parse_quote!(#[by_val] #pat: #id_ty))
         .collect::<Vec<_>>();
 
     let dispatch_arms = synthesize_dispatch_arms(
@@ -965,8 +964,11 @@ fn synthesize_dispatch_arms(
                 }
                 FailureMode::Error => {
                     let erased_err = gen_retype(&quote!(__co3_arm_err), &concrete_ty, &erased_ty);
-                    let encoded_err =
-                        ffi_fn::gen_abi_return_encode(quote!(__co3_arm_err), !fn_by_val);
+                    let encoded_err = if ffi_fn::is_identity_primitive(&concrete_output) {
+                        quote!(__co3_arm_err)
+                    } else {
+                        ffi_fn::gen_abi_return_encode(quote!(__co3_arm_err), !fn_by_val)
+                    };
 
                     quote! {
                         Err(__co3_arm_err) => {
@@ -1101,10 +1103,12 @@ pub(crate) fn erase_dispatch_signature(
     }
 
     for (idx, lowered_ty) in tag_ids {
-        let syn::FnArg::Typed(syn::PatType { ty, .. }) = &mut sig.inputs[idx] else {
+        let syn::FnArg::Typed(syn::PatType { attrs, ty, .. }) = &mut sig.inputs[idx] else {
             continue;
         };
 
+        // A selector remains a value even when its tag type is a named alias.
+        attrs.push(parse_quote!(#[by_val]));
         **ty = lowered_ty;
     }
 }
@@ -1244,7 +1248,7 @@ fn dispatch_return_type(ty: &syn::Type, fn_by_val: bool) -> syn::Type {
     if fn_by_val || ffi_fn::is_identity_primitive(ty) {
         item_fn_output_type(ty)
     } else {
-        parse_quote!(<<#ty as co3::borrow::Borrow>::Borrowed as co3::ReprC>::CType)
+        parse_quote!(co3::borrow::CBorrowed<#ty>)
     }
 }
 
@@ -1722,7 +1726,7 @@ fn inject_predicate_unnamed_lifetimes(
 }
 
 #[cfg(test)]
-mod static_lifetime_normalizer_tests {
+mod tests {
     use super::*;
 
     #[test]
@@ -1752,11 +1756,6 @@ mod static_lifetime_normalizer_tests {
             quote!(for<'a> &'a u8: Trait<&'static u8>).to_string()
         );
     }
-}
-
-#[cfg(test)]
-mod erased_param_replacer_tests {
-    use super::*;
 
     fn erase(ty: syn::Type) -> String {
         let generics = syn::parse_quote!(<#[erased(u8)] T>);

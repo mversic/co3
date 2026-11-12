@@ -2,24 +2,24 @@
 
 #[cfg(feature = "alloc")]
 use alloc::{boxed::Box, vec::Vec};
-use core::{mem::ManuallyDrop, ptr::NonNull};
+use core::ptr::NonNull;
 
 use disjoint_impls::disjoint_impls;
 use rust_spec::{
     RustSpec,
-    drop::NoDrop,
     layout::LayoutKind,
     niche::{WithNiche, WithoutNiche},
 };
 
 use crate::{
-    CType, NeedsDrop, ReprC,
+    CType, ReprC,
+    num::NonZero,
     option::{COption, COptionSome},
     primitives::CBool,
-    reference::{CRefMut, CRef, CSoftRefMut, CSoftRef},
+    reference::{CRef, CRefMut, CSoftRef, CSoftRefMut},
     result::CResult,
     tuple::Tuple2,
-    wide::{CWideRef, CWideRefMut, CSoftWideRefMut, CSoftWideRef},
+    wide::{CSoftWideRef, CSoftWideRefMut, CWideRef, CWideRefMut},
     wide::{Wide, WideHeader},
 };
 #[cfg(feature = "alloc")]
@@ -189,9 +189,9 @@ disjoint_impls! {
 
     impl<T: ?Sized, C: CType> Niche for NonNull<T>
     where
-        Self: ReprC<CType = crate::NonZero<*mut C>>,
+        Self: ReprC<CType = NonZero<*mut C>>,
     {
-        const NICHE: Self::CType = crate::NonZero(core::ptr::null_mut());
+        const NICHE: Self::CType = NonZero(core::ptr::null_mut());
 
         fn is_niche(value: &Self::CType) -> bool {
             value.0.is_null()
@@ -238,28 +238,9 @@ disjoint_impls! {
         }
     }
 
-    impl<R: Niche> Niche for ManuallyDrop<R>
-    where
-        R: RustSpec<Drop = NoDrop>,
-    {
-        const NICHE: Self::CType = R::NICHE;
 
-        fn is_niche(value: &Self::CType) -> bool {
-            R::is_niche(value)
-        }
-    }
-    impl<R: Niche> Niche for ManuallyDrop<R>
-    where
-        R: RustSpec<Drop: NeedsDrop>,
-    {
-        const NICHE: Self::CType = ManuallyDrop::new(R::NICHE);
 
-        fn is_niche(value: &Self::CType) -> bool {
-            R::is_niche(value)
-        }
-    }
-
-    impl<A: Niche<CType: Copy>, B: ReprC<CType: Copy>, N: LayoutKind> Niche for (A, B)
+    impl<A: Niche<CType: CType + Copy>, B: ReprC<CType: CType + Copy>, N: LayoutKind> Niche for (A, B)
     where
         A: RustSpec<Niche = WithNiche<N>>,
     {
@@ -270,7 +251,7 @@ disjoint_impls! {
         }
     }
 
-    impl<A: ReprC<CType: Copy>, B: Niche<CType: Copy>, N: LayoutKind> Niche for (A, B)
+    impl<A: ReprC<CType: CType + Copy>, B: Niche<CType: CType + Copy>, N: LayoutKind> Niche for (A, B)
     where
         A: RustSpec<Niche = WithoutNiche>,
         B: RustSpec<Niche = WithNiche<N>>,
@@ -285,10 +266,10 @@ disjoint_impls! {
 
 #[cfg(feature = "alloc")]
 impl<R: ReprC<CType: CType + Sized>> Niche for Vec<R> {
-    const NICHE: Self::CType = <crate::vec::Vec<R> as Niche>::NICHE;
+    const NICHE: Self::CType = crate::vec::CVec::null();
 
     fn is_niche(value: &Self::CType) -> bool {
-        <crate::vec::Vec<R> as Niche>::is_niche(value)
+        value.as_ptr().is_null()
     }
 }
 
@@ -319,7 +300,7 @@ impl<R: Niche, const N: usize> Niche for [R; N] {
     }
 }
 
-impl<R: ReprC<CType: CType + Copy>, E: ReprC<CType: CType + Copy>> Niche for Result<R, E>
+impl<R: ReprC<CType: Copy>, E: ReprC<CType: Copy>> Niche for Result<R, E>
 where
     Self: ReprC<CType = CResult<R, E>>,
 {
@@ -334,6 +315,7 @@ where
 mod tests {
     #[cfg(feature = "alloc")]
     use alloc::string::String;
+    use core::mem::ManuallyDrop;
     use core::num::NonZero;
 
     use static_assertions::{assert_impl_all, assert_not_impl_any};
@@ -458,40 +440,29 @@ mod tests {
 
     #[test]
     fn niche_values() {
-        assert!(<&bool>::is_niche(
-            &crate::encode(None::<&bool>).0
-        ));
+        assert!(<&bool>::is_niche(&crate::encode(None::<&bool>).0));
         assert!(<&mut bool>::is_niche(
             &co3::soft_encode(None::<&mut bool>, &mut Default::default()).0
         ));
 
         #[cfg(feature = "alloc")]
-        assert!(String::is_niche(
-            &crate::encode(None::<String>).0
-        ));
+        assert!(String::is_niche(&crate::encode(None::<String>).0));
         #[cfg(feature = "alloc")]
-        assert!(<Box<str>>::is_niche(
-            &crate::encode(None::<Box<str>>).0
-        ));
+        assert!(<Box<str>>::is_niche(&crate::encode(None::<Box<str>>).0));
 
-        assert!(<&str>::is_niche(
-            &crate::encode(None::<&str>).0
-        ));
+        assert!(<&str>::is_niche(&crate::encode(None::<&str>).0));
 
         #[cfg(feature = "alloc")]
         assert!(<&mut str>::is_niche(
             &crate::soft_encode(None::<&mut str>, &mut Default::default()).0
         ));
 
-        assert_eq!(
-            core::ptr::null_mut(),
-            crate::encode(None::<NonNull<u32>>).0.0
-        );
+        assert_eq!(core::ptr::null_mut(), crate::encode(None::<NonNull<u32>>).0.0);
 
         #[cfg(feature = "alloc")]
-        assert!(<ManuallyDrop<String>>::is_niche(&ManuallyDrop::new(
-            <String as Niche>::NICHE
-        )));
+        assert!(<ManuallyDrop<String>>::is_niche(
+            &core::mem::ManuallyDrop::new(<String as Niche>::NICHE)
+        ));
 
         assert!(<ManuallyDrop<bool> as Niche>::is_niche(
             &crate::encode(None::<ManuallyDrop<bool>>).0

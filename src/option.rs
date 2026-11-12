@@ -11,10 +11,10 @@ use rust_spec::{
 
 use crate::{
     CFnArg, CFnReturn, CType, Decode, Encode, EncodeUnchecked, ReprC, Thin,
-    borrow::Borrow,
     niche::Niche,
     stored::{
-        DecodeMove, EmptyStore, EncodeMove, EncodeMoveUnchecked, SoftEncodeRef, SoftEncodeRefUnchecked,
+        DecodeMove, EmptyStore, EncodeMove, EncodeMoveUnchecked, SoftEncodeRef,
+        SoftEncodeRefUnchecked,
     },
     sync::RefSizedEncodeStore,
     transmute::{AbiCompatible, AbiCompatibleValidate},
@@ -30,8 +30,10 @@ pub enum Option<T> {
 }
 
 /// FFI-safe equivalent of [`core::option::Option`].
+/// `STABLE` identifies the co3 source family (`true`) or native Rust family (`false`).
 #[repr(C)]
-pub struct COption<T: ReprC<CType: Sized>> {
+#[doc(hidden)]
+pub struct COption<T: ReprC<CType: Sized>, const STABLE: bool = false> {
     tag: u8,
     payload: MaybeUninit<T::CType>,
 }
@@ -41,6 +43,7 @@ pub struct COption<T: ReprC<CType: Sized>> {
 /// The absent value is defined by `T::NICHE`; it need not be a null pointer or zero.
 #[derive(RustSpec)]
 #[repr(transparent)]
+#[doc(hidden)]
 pub struct COptionSome<R: ReprC<CType: Sized>>(pub R::CType);
 
 impl<R: Niche<CType: Sized>> ReprC for COptionSome<R> {
@@ -50,17 +53,7 @@ unsafe impl<R: Niche<CType: Sized>> CType for COptionSome<R> {}
 unsafe impl<R: Niche<CType: CFnArg + Sized>> CFnArg for COptionSome<R> {}
 unsafe impl<R: Niche<CType: CFnReturn + Sized>> CFnReturn for COptionSome<R> {}
 
-unsafe impl<R: Niche<CType: Sized>> Borrow for COptionSome<R> {
-    type Borrowed = Self;
-
-    fn borrow(self) -> Self {
-        self
-    }
-
-    fn from_borrow(source: Self) -> Self {
-        source
-    }
-}
+crate::__impl_borrowed_identity!([R: Niche<CType: Sized>] COptionSome<R>);
 
 unsafe impl<R: Niche<CType: Sized>> EncodeMoveUnchecked for COptionSome<R> {
     type SoftStore = ();
@@ -132,67 +125,97 @@ impl<R: ReprC<CType: core::hash::Hash + Sized>> core::hash::Hash for COptionSome
     }
 }
 
-unsafe impl<T: Borrow> Borrow for Option<T> {
-    type Borrowed = Option<T::Borrowed>;
-
-    fn borrow(self) -> Self::Borrowed {
-        match self {
-            Self::None => Option::None,
-            Self::Some(v) => Option::Some(v.borrow()),
-        }
-    }
-    fn from_borrow(source: Self::Borrowed) -> Self {
-        match source {
-            Option::None => Self::None,
-            Option::Some(v) => Self::Some(T::from_borrow(v)),
-        }
-    }
-}
-
 impl<T: ReprC<CType: Sized>> ReprC for Option<T> {
-    type CType = COption<T>;
+    type CType = COption<T, true>;
 }
 
-unsafe impl<T: EncodeMoveUnchecked> EncodeMoveUnchecked for Option<T> {
-    type SoftStore = RustOption<T::SoftStore>;
+macro_rules! option_codecs {
+    ($encode:ident, $unchecked:ident, $decode:ident) => {
+        unsafe impl<T: $unchecked> $unchecked for Option<T> {
+            type SoftStore = RustOption<T::SoftStore>;
 
-    unsafe fn soft_encode_unchecked<'itm>(self, store: &'itm mut Self::SoftStore) -> Self::CType
-    where
-        Self: 'itm,
-    {
-        match self {
-            Self::None => {
-                *store = None;
-                COption::None()
+            unsafe fn soft_encode_unchecked<'itm>(
+                self,
+                store: &'itm mut Self::SoftStore,
+            ) -> Self::CType
+            where
+                Self: 'itm,
+            {
+                match self {
+                    Self::None => {
+                        *store = None;
+                        COption::None()
+                    }
+                    Self::Some(value) => COption::Some(unsafe {
+                        value.soft_encode_unchecked(store.insert(Default::default()))
+                    }),
+                }
             }
-            Self::Some(value) => COption::Some(unsafe {
-                value.soft_encode_unchecked(store.insert(Default::default()))
-            }),
         }
-    }
-}
+        unsafe impl<T: $encode> $encode for Option<T> {
+            type Store = RustOption<T::Store>;
 
-unsafe impl<T: EncodeMove> EncodeMove for Option<T> {
-    type Store = RustOption<T::Store>;
-
-    fn soft_encode<'a>(self, store: &'a mut Self::Store) -> Self::CType
-    where
-        Self: 'a,
-    {
-        match self {
-            Self::None => {
-                *store = None;
-                COption::None()
+            fn soft_encode<'a>(self, store: &'a mut Self::Store) -> Self::CType
+            where
+                Self: 'a,
+            {
+                match self {
+                    Self::None => {
+                        *store = None;
+                        COption::None()
+                    }
+                    Self::Some(value) => COption::Some($encode::soft_encode(
+                        value,
+                        store.insert(Default::default()),
+                    )),
+                }
             }
-            Self::Some(value) => COption::Some(crate::stored::EncodeMove::soft_encode(value, store.insert(Default::default()))),
         }
-    }
+        unsafe impl<'d, T: $decode<'d>> $decode<'d> for Option<T> {
+            type Store = RustOption<T::Store>;
+
+            unsafe fn soft_decode<'a: 'd>(
+                source: Self::CType,
+                store: &'a mut Self::Store,
+            ) -> RustOption<Self> {
+                match source.into_option()? {
+                    None => {
+                        *store = None;
+                        Some(Self::None)
+                    }
+                    Some(value) => Some(Self::Some(unsafe {
+                        T::soft_decode(value, store.insert(Default::default()))?
+                    })),
+                }
+            }
+
+            unsafe fn soft_decode_unchecked<'a: 'd>(
+                source: Self::CType,
+                store: &'a mut Self::Store,
+            ) -> Self {
+                match unsafe { source.into_option().unwrap_unchecked() } {
+                    None => {
+                        *store = None;
+                        Self::None
+                    }
+                    Some(value) => Self::Some(unsafe {
+                        T::soft_decode_unchecked(value, store.insert(Default::default()))
+                    }),
+                }
+            }
+        }
+    };
 }
+option_codecs!(EncodeMove, EncodeMoveUnchecked, DecodeMove);
+const _: () = {
+    use crate::borrow::{BorrowedDecode, BorrowedEncode, BorrowedEncodeUnchecked};
+    option_codecs!(BorrowedEncode, BorrowedEncodeUnchecked, BorrowedDecode);
+};
 
 unsafe impl<'a, T: ReprC<CType: Copy> + 'a, __Interior: ExclusiveKind> SoftEncodeRefUnchecked<'a>
     for Option<T>
 where
-        &'a Self: crate::ReprC<CType = crate::reference::CSoftRef<Self>>,
+    &'a Self: crate::ReprC<CType = crate::reference::CSoftRef<Self>>,
     Self: RustSpec<Mutability = Exclusive<__Interior>, Size: Thin> + 'a,
     &'a T: EncodeMoveUnchecked<CType: crate::reference::SharedRefCarrier<T>>,
 {
@@ -218,15 +241,19 @@ where
     }
 }
 
-unsafe impl<'a, T: ReprC<CType: Copy> + 'a, __Interior: ExclusiveKind> SoftEncodeRef<'a> for Option<T>
+unsafe impl<'a, T: ReprC<CType: Copy> + 'a, __Interior: ExclusiveKind> SoftEncodeRef<'a>
+    for Option<T>
 where
-        &'a Self: crate::ReprC<CType = crate::reference::CSoftRef<Self>>,
+    &'a Self: crate::ReprC<CType = crate::reference::CSoftRef<Self>>,
     Self: RustSpec<Mutability = Exclusive<__Interior>, Size: Thin> + 'a,
     &'a T: EncodeMove<CType: crate::reference::SharedRefCarrier<T>>,
 {
     type Store = RefSizedEncodeStore<Self, RustOption<<&'a T as EncodeMove>::Store>>;
 
-    fn soft_encode_ref<'itm>(&'a self, store: &'itm mut Self::Store) -> <&'a Self as crate::ReprC>::CType
+    fn soft_encode_ref<'itm>(
+        &'a self,
+        store: &'itm mut Self::Store,
+    ) -> <&'a Self as crate::ReprC>::CType
     where
         'a: 'itm,
     {
@@ -240,40 +267,6 @@ where
                 fields.insert(Default::default()),
             )),
         })
-    }
-}
-
-unsafe impl<'d, T: DecodeMove<'d>> DecodeMove<'d> for Option<T> {
-    type Store = RustOption<T::Store>;
-
-    unsafe fn soft_decode<'a: 'd>(
-        source: Self::CType,
-        store: &'a mut Self::Store,
-    ) -> RustOption<Self> {
-        match source.into_option()? {
-            None => {
-                *store = None;
-                Some(Self::None)
-            }
-            Some(value) => Some(Self::Some(unsafe {
-                T::soft_decode(value, store.insert(Default::default()))?
-            })),
-        }
-    }
-
-    unsafe fn soft_decode_unchecked<'a: 'd>(
-        source: Self::CType,
-        store: &'a mut Self::Store,
-    ) -> Self {
-        match unsafe { source.into_option().unwrap_unchecked() } {
-            None => {
-                *store = None;
-                Self::None
-            }
-            Some(value) => Self::Some(unsafe {
-                T::soft_decode_unchecked(value, store.insert(Default::default()))
-            }),
-        }
     }
 }
 
@@ -292,7 +285,9 @@ unsafe impl<T: AbiCompatibleValidate<CType: Copy>> AbiCompatibleValidate for Opt
 }
 unsafe impl<T: AbiCompatible<CType: Copy>> AbiCompatible for Option<T> {}
 
-impl<T: ReprC<CType: core::fmt::Debug + Sized>> core::fmt::Debug for COption<T> {
+impl<T: ReprC<CType: core::fmt::Debug + Sized>, const STABLE: bool> core::fmt::Debug
+    for COption<T, STABLE>
+{
     fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
         match self.tag() {
             0 => f.write_str("COption::None"),
@@ -308,7 +303,7 @@ impl<T: ReprC<CType: core::fmt::Debug + Sized>> core::fmt::Debug for COption<T> 
     }
 }
 
-impl<T: ReprC<CType: PartialEq + Sized>> PartialEq for COption<T> {
+impl<T: ReprC<CType: PartialEq + Sized>, const STABLE: bool> PartialEq for COption<T, STABLE> {
     fn eq(&self, other: &Self) -> bool {
         match (self.tag(), other.tag) {
             (0, 0) => true,
@@ -322,7 +317,7 @@ impl<T: ReprC<CType: PartialEq + Sized>> PartialEq for COption<T> {
         }
     }
 }
-impl<T: ReprC<CType: PartialOrd + Sized>> PartialOrd for COption<T> {
+impl<T: ReprC<CType: PartialOrd + Sized>, const STABLE: bool> PartialOrd for COption<T, STABLE> {
     fn partial_cmp(&self, other: &Self) -> RustOption<core::cmp::Ordering> {
         match (self.tag(), other.tag) {
             (0, 0) => Some(core::cmp::Ordering::Equal),
@@ -339,13 +334,18 @@ impl<T: ReprC<CType: PartialOrd + Sized>> PartialOrd for COption<T> {
     }
 }
 
-impl<T: ReprC<CType: Sized>> Default for COption<T> {
+impl<T: ReprC<CType: Sized>, const STABLE: bool> Default for COption<T, STABLE> {
     fn default() -> Self {
         Self::None()
     }
 }
 
-impl<T: ReprC<CType: Sized>> COption<T> {
+impl<T: ReprC<CType: Sized>, const STABLE: bool> COption<T, STABLE> {
+    pub(crate) fn with_source<const OTHER: bool>(self) -> COption<T, OTHER> {
+        // The source discriminator has no storage and does not affect layout.
+        unsafe { crate::transmute::transmute_owned(self) }
+    }
+
     pub(crate) const fn niche() -> Self {
         Self {
             tag: 2,
@@ -389,7 +389,7 @@ impl<T: ReprC<CType: Sized>> COption<T> {
     }
 }
 
-impl<T: ReprC<CType: Sized>> COption<T> {
+impl<T: ReprC<CType: Sized>, const STABLE: bool> COption<T, STABLE> {
     pub(crate) const fn is_niche(&self) -> bool {
         self.tag() == Self::niche().tag()
     }
@@ -418,24 +418,15 @@ impl<T: ReprC<CType: Sized>> COption<T> {
     }
 }
 
-impl<T: ReprC<CType: Copy + Sized>> Copy for COption<T> {}
-impl<T: ReprC<CType: Copy + Sized>> Clone for COption<T> {
+impl<T: ReprC<CType: Copy + Sized>, const STABLE: bool> Copy for COption<T, STABLE> {}
+impl<T: ReprC<CType: Copy + Sized>, const STABLE: bool> Clone for COption<T, STABLE> {
     fn clone(&self) -> Self {
         *self
     }
 }
-unsafe impl<T: ReprC<CType: Sized>> Borrow for COption<T> {
-    type Borrowed = Self;
+crate::__impl_borrowed_identity!([T: ReprC<CType: Sized>, const STABLE: bool] COption<T, STABLE>);
 
-    fn borrow(self) -> Self {
-        self
-    }
-    fn from_borrow(source: Self) -> Self {
-        source
-    }
-}
-
-unsafe impl<T: ReprC<CType: RustSpec + Sized>> RustSpec for COption<T> {
+unsafe impl<T: ReprC<CType: RustSpec + Sized>, const STABLE: bool> RustSpec for COption<T, STABLE> {
     type Layout = <T::CType as RustSpec>::Layout;
     type Size = rust_spec::size::Sized<rust_spec::Gt<rust_spec::Zero>>;
     type __Alignment = <T::CType as RustSpec>::__Alignment;
@@ -447,7 +438,7 @@ unsafe impl<T: ReprC<CType: RustSpec + Sized>> RustSpec for COption<T> {
     type __IndirectTrap = <T::CType as RustSpec>::__IndirectTrap;
 }
 
-crate::wide::impl_identity_carrier! { COption, [T: ReprC<CType: Sized>], [T] }
+crate::wide::impl_identity_carrier! { COption, [T: ReprC<CType: Sized>, const STABLE: bool], [T, STABLE] }
 
 unsafe impl<T: EmptyStore> EmptyStore for RustOption<T> {}
 

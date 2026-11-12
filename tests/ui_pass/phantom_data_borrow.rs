@@ -1,6 +1,6 @@
 use core::marker::PhantomData;
 
-use co3::{ReprC, borrow::Borrow, rust_spec::RustSpec};
+use co3::{ReprC, raw, rust_spec::RustSpec};
 
 #[derive(RustSpec, ReprC)]
 #[repr(transparent)]
@@ -17,15 +17,17 @@ struct TransparentWithData<T>(u32, PhantomData<T>);
 #[derive(RustSpec, ReprC)]
 struct CStaticMarker(PhantomData<()>);
 
-fn assert_transparent_identity<T: 'static>()
-where
-    TransparentMarker<T>: Borrow<Borrowed = TransparentMarker<T>>,
-    TransparentStaticMarker: Borrow<Borrowed = TransparentStaticMarker>,
-{
+fn accept_marker<T>(_value: TransparentMarker<T>) {}
+fn accept_static_marker(_value: TransparentStaticMarker) {}
+
+raw! {
+    fn accept_marker<T>(value: TransparentMarker<T>);
+    fn accept_static_marker(value: TransparentStaticMarker);
 }
 
 fn main() {
-    assert_transparent_identity::<u8>();
+    let _ = accept_marker_raw::<u8>;
+    let _ = accept_static_marker_raw;
 
     let _ = TransparentWithData::<u8>(0, PhantomData);
     let _ = CStaticMarker(PhantomData);

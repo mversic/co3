@@ -10,6 +10,29 @@ use syn::{
 
 const MAX_TUPLE_ARITY: usize = 12;
 
+/// Match a bare built-in name, a supported full path, or a relative module suffix.
+pub(crate) fn builtin_path(path: &syn::Path, name: &str, modules: &[&str]) -> bool {
+    let Some(last) = path.segments.last() else { return false };
+    if last.ident != name {
+        return false;
+    }
+    if path.segments.len() == 1 {
+        return path.leading_colon.is_none();
+    }
+    modules.iter().any(|module| {
+        let parts: Vec<_> = module.split("::").collect();
+        let prefix_len = path.segments.len() - 1;
+        if prefix_len > parts.len()
+            || (path.leading_colon.is_some() && prefix_len != parts.len())
+        {
+            return false;
+        }
+        path.segments.iter().zip(&parts[parts.len() - prefix_len..]).all(|(segment, part)| {
+                segment.ident == *part && segment.arguments.is_none()
+            })
+    })
+}
+
 pub(crate) fn co3_path() -> TokenStream {
     match crate_name("co3") {
         Ok(FoundCrate::Itself) => quote!(::co3),
@@ -167,7 +190,7 @@ pub fn build_extern_c_type_tuple(types: &[&Type]) -> (TokenStream, TokenStream, 
 
             (
                 quote!((#(#chunk,)*)),
-                quote!(co3::tuple::#c_tuple_ident<#(#c_types),*>),
+                quote!(co3::tuple::#c_tuple_ident<#(#c_types),*, false>),
                 accessors,
             )
         })
@@ -205,7 +228,7 @@ fn pack_tuple_nodes(
     let c_tuple_elems = nodes.iter().map(|(_, c_tuple, _)| c_tuple);
     let tuple = quote!((#(#tuple_elems,)*));
     let c_tuple_ident = format_ident!("Tuple{}", nodes.len());
-    let c_tuple = quote!(co3::tuple::#c_tuple_ident<#(#c_tuple_elems),*>);
+    let c_tuple = quote!(co3::tuple::#c_tuple_ident<#(#c_tuple_elems),*, false>);
     let accessors = nodes
         .into_iter()
         .enumerate()
@@ -368,7 +391,7 @@ pub(crate) fn is_drop_impl(impl_: &syn::ItemImpl) -> bool {
     impl_
         .trait_
         .as_ref()
-        .is_some_and(|(path, _)| path.segments.last().is_some_and(|seg| seg.ident == "Drop"))
+        .is_some_and(|(path, _)| builtin_path(path, "Drop", &["core::ops", "std::ops"]))
 }
 
 pub(crate) fn is_blanket_drop_impl(impl_: &syn::ItemImpl) -> bool {
@@ -561,7 +584,7 @@ fn sanitize_symbol_component(input: &str) -> String {
 }
 
 #[cfg(test)]
-mod symbol_name_tests {
+mod tests {
     use syn::parse_quote;
 
     use super::*;

@@ -7,12 +7,12 @@ use core::marker::PhantomData;
 use crate::{
     CType,
     stored::AssignFromOwned,
-    wide::{CSoftWideRefMut, CSoftWideRef},
+    wide::{CSoftWideRef, CSoftWideRefMut},
     wide::{Wide, WideHeader},
 };
 use crate::{
     ReprC,
-    reference::{CSoftRefMut, CSoftRef},
+    reference::{CSoftRef, CSoftRefMut},
     stored::{DecodeMove, EmptyStore, EncodeMove, Store, decode_move, encode_move},
 };
 
@@ -124,8 +124,12 @@ pub struct RefMutSizedEncodeStore<'d, R: DecodeMove<'d, Store: EmptyStore + 'd>,
 
 /// Owns one pending carrier. Finishing consumes it exactly once; callers decide
 /// whether to commit the decoded value or drop it during cleanup and reuse.
-struct OwnedEncodeState<'d, R: ?Sized, V: DecodeMove<'d, Store: EmptyStore + 'd>, S: Store + Default>
-{
+struct OwnedEncodeState<
+    'd,
+    R: ?Sized,
+    V: DecodeMove<'d, Store: EmptyStore + 'd>,
+    S: Store + Default,
+> {
     ctype: Option<V::CType>,
     store: S,
     original: Option<&'d mut R>,
@@ -635,158 +639,6 @@ impl<T: Store, E: Store> Store for Result<T, E> {
 /// This struct exists only because [arrays don't yet implement Default](https://github.com/rust-lang/rust/issues/61415)
 pub struct ArrayStore<D, const N: usize>(pub(crate) [D; N]);
 
-#[cfg(all(test, feature = "alloc"))]
-mod owned_encode_state_tests {
-    use alloc::sync::Arc;
-    use core::sync::atomic::{AtomicUsize, Ordering};
-
-    use super::*;
-
-    #[derive(Clone)]
-    struct Tracked {
-        drops: Arc<AtomicUsize>,
-        decodes: Arc<AtomicUsize>,
-    }
-
-    impl Tracked {
-        fn new() -> Self {
-            Self {
-                drops: Arc::new(AtomicUsize::new(0)),
-                decodes: Arc::new(AtomicUsize::new(0)),
-            }
-        }
-
-        fn carrier(&self) -> *mut u8 {
-            Box::into_raw(Box::new(self.clone())).cast()
-        }
-    }
-
-    impl Drop for Tracked {
-        fn drop(&mut self) {
-            self.drops.fetch_add(1, Ordering::SeqCst);
-        }
-    }
-
-    impl ReprC for Tracked {
-        type CType = *mut u8;
-    }
-
-    unsafe impl<'d> DecodeMove<'d> for Tracked {
-        type Store = ();
-        unsafe fn soft_decode<'itm: 'd>(source: *mut u8, _: &'itm mut ()) -> Option<Self> {
-            if source.is_null() {
-                return None;
-            }
-            let value = *unsafe { Box::from_raw(source.cast::<Tracked>()) };
-            value.decodes.fetch_add(1, Ordering::SeqCst);
-            Some(value)
-        }
-    }
-
-    impl AssignFromOwned for Tracked {
-        fn assign_from_owned(&mut self, owned: Self) -> Option<()> {
-            *self = owned;
-            Some(())
-        }
-    }
-
-    #[derive(Default)]
-    struct Auxiliary {
-        fail: bool,
-    }
-    impl Store for Auxiliary {
-        fn sync(self) -> Option<()> {
-            (!self.fail).then_some(())
-        }
-    }
-
-    struct CheckCleanup {
-        decodes: Arc<AtomicUsize>,
-        drops: Arc<AtomicUsize>,
-        second_decodes: Arc<AtomicUsize>,
-    }
-
-    impl Drop for CheckCleanup {
-        fn drop(&mut self) {
-            assert_eq!(self.decodes.load(Ordering::SeqCst), 1);
-            // One temporary and the original source were dropped.
-            assert_eq!(self.drops.load(Ordering::SeqCst), 2);
-            assert_eq!(self.second_decodes.load(Ordering::SeqCst), 0);
-        }
-    }
-
-    macro_rules! state_tests {
-        ($module:ident, $store:ident) => {
-            mod $module {
-                use super::*;
-
-                #[test]
-                fn drop_decodes_once_without_writeback() {
-                    let mut source = Tracked::new();
-                    let drops = source.drops.clone();
-                    let decodes = source.decodes.clone();
-                    let mut store = $store::<Tracked, ()>::default();
-                    store.encode(&mut source, |source, _| source.carrier());
-                    drop(store);
-                    assert_eq!(decodes.load(Ordering::SeqCst), 1);
-                    assert_eq!(drops.load(Ordering::SeqCst), 1);
-                    drop(source);
-                    assert_eq!(drops.load(Ordering::SeqCst), 2);
-                }
-
-                #[test]
-                fn sync_decodes_once_and_writes_back() {
-                    let mut source = Tracked::new();
-                    let drops = source.drops.clone();
-                    let decodes = source.decodes.clone();
-                    let mut store = $store::<Tracked, ()>::default();
-                    store.encode(&mut source, |source, _| source.carrier());
-                    assert_eq!(store.sync(), Some(()));
-                    assert_eq!(decodes.load(Ordering::SeqCst), 1);
-                    assert_eq!(drops.load(Ordering::SeqCst), 1);
-                    drop(source);
-                    assert_eq!(drops.load(Ordering::SeqCst), 2);
-                }
-
-                #[test]
-                #[should_panic(expected = "build failed")]
-                fn reuse_then_builder_panic_cannot_reuse_old_carrier() {
-                    let first = Tracked::new();
-                    let second = Tracked::new();
-                    // This guard runs after the store and both moved sources unwind.
-                    let _cleanup = CheckCleanup {
-                        decodes: first.decodes.clone(),
-                        drops: first.drops.clone(),
-                        second_decodes: second.decodes.clone(),
-                    };
-                    let mut first = first;
-                    let mut second = second;
-                    let mut store = $store::<Tracked, ()>::default();
-                    store.encode(&mut first, |source, _| source.carrier());
-                    store.encode(&mut second, |_, _| panic!("build failed"));
-                }
-
-                #[test]
-                fn auxiliary_failure_releases_decoded_value() {
-                    let mut source = Tracked::new();
-                    let drops = source.drops.clone();
-                    let decodes = source.decodes.clone();
-                    let mut store = $store::<Tracked, Auxiliary>::default();
-                    store.encode(&mut source, |source, fields| {
-                        fields.fail = true;
-                        source.carrier()
-                    });
-                    assert_eq!(store.sync(), None);
-                    assert_eq!(decodes.load(Ordering::SeqCst), 1);
-                    assert_eq!(drops.load(Ordering::SeqCst), 1);
-                }
-            }
-        };
-    }
-    state_tests!(sized, RefMutSizedEncodeStore);
-    state_tests!(dst, RefMutDstEncodeStore);
-}
-
 /// Owns converted vector elements while a shared carrier borrows their allocation.
 #[cfg(feature = "alloc")]
 pub struct RefVecEncodeStore<T: ReprC<CType: Sized>, S> {
@@ -828,10 +680,237 @@ impl<T: ReprC<CType: Sized>, S: Store> Store for RefVecEncodeStore<T, S> {
 #[cfg(test)]
 mod tests {
     #[cfg(feature = "alloc")]
+    use super::*;
+    #[cfg(feature = "alloc")]
+    use alloc::sync::Arc;
+    #[cfg(feature = "alloc")]
+    use core::sync::atomic::{AtomicUsize, Ordering};
+
+    #[cfg(feature = "alloc")]
+    #[derive(Clone)]
+    struct Tracked {
+        drops: Arc<AtomicUsize>,
+        decodes: Arc<AtomicUsize>,
+    }
+
+    #[cfg(feature = "alloc")]
+    impl Tracked {
+        fn new() -> Self {
+            Self {
+                drops: Arc::new(AtomicUsize::new(0)),
+                decodes: Arc::new(AtomicUsize::new(0)),
+            }
+        }
+
+        fn carrier(&self) -> *mut u8 {
+            Box::into_raw(Box::new(self.clone())).cast()
+        }
+    }
+
+    #[cfg(feature = "alloc")]
+    impl Drop for Tracked {
+        fn drop(&mut self) {
+            self.drops.fetch_add(1, Ordering::SeqCst);
+        }
+    }
+
+    #[cfg(feature = "alloc")]
+    impl ReprC for Tracked {
+        type CType = *mut u8;
+    }
+
+    #[cfg(feature = "alloc")]
+    unsafe impl<'d> DecodeMove<'d> for Tracked {
+        type Store = ();
+        unsafe fn soft_decode<'itm: 'd>(source: *mut u8, _: &'itm mut ()) -> Option<Self> {
+            if source.is_null() {
+                return None;
+            }
+            let value = *unsafe { Box::from_raw(source.cast::<Tracked>()) };
+            value.decodes.fetch_add(1, Ordering::SeqCst);
+            Some(value)
+        }
+    }
+
+    #[cfg(feature = "alloc")]
+    impl AssignFromOwned for Tracked {
+        fn assign_from_owned(&mut self, owned: Self) -> Option<()> {
+            *self = owned;
+            Some(())
+        }
+    }
+
+    #[cfg(feature = "alloc")]
+    #[derive(Default)]
+    struct Auxiliary {
+        fail: bool,
+    }
+    #[cfg(feature = "alloc")]
+    impl Store for Auxiliary {
+        fn sync(self) -> Option<()> {
+            (!self.fail).then_some(())
+        }
+    }
+
+    #[cfg(feature = "alloc")]
+    struct CheckCleanup {
+        decodes: Arc<AtomicUsize>,
+        drops: Arc<AtomicUsize>,
+        second_decodes: Arc<AtomicUsize>,
+    }
+
+    #[cfg(feature = "alloc")]
+    impl Drop for CheckCleanup {
+        fn drop(&mut self) {
+            assert_eq!(self.decodes.load(Ordering::SeqCst), 1);
+            // One temporary and the original source were dropped.
+            assert_eq!(self.drops.load(Ordering::SeqCst), 2);
+            assert_eq!(self.second_decodes.load(Ordering::SeqCst), 0);
+        }
+    }
+
+    #[cfg(feature = "alloc")]
+    macro_rules! state_tests {
+        ($store:ident, $drop_test:ident, $sync_test:ident, $panic_test:ident, $failure_test:ident) => {
+            #[test]
+            fn $drop_test() {
+                let mut source = Tracked::new();
+                let drops = source.drops.clone();
+                let decodes = source.decodes.clone();
+                let mut store = $store::<Tracked, ()>::default();
+                store.encode(&mut source, |source, _| source.carrier());
+                drop(store);
+                assert_eq!(decodes.load(Ordering::SeqCst), 1);
+                assert_eq!(drops.load(Ordering::SeqCst), 1);
+                drop(source);
+                assert_eq!(drops.load(Ordering::SeqCst), 2);
+            }
+
+            #[test]
+            fn $sync_test() {
+                let mut source = Tracked::new();
+                let drops = source.drops.clone();
+                let decodes = source.decodes.clone();
+                let mut store = $store::<Tracked, ()>::default();
+                store.encode(&mut source, |source, _| source.carrier());
+                assert_eq!(store.sync(), Some(()));
+                assert_eq!(decodes.load(Ordering::SeqCst), 1);
+                assert_eq!(drops.load(Ordering::SeqCst), 1);
+                drop(source);
+                assert_eq!(drops.load(Ordering::SeqCst), 2);
+            }
+
+            #[test]
+            #[should_panic(expected = "build failed")]
+            fn $panic_test() {
+                let first = Tracked::new();
+                let second = Tracked::new();
+                // This guard runs after the store and both moved sources unwind.
+                let _cleanup = CheckCleanup {
+                    decodes: first.decodes.clone(),
+                    drops: first.drops.clone(),
+                    second_decodes: second.decodes.clone(),
+                };
+                let mut first = first;
+                let mut second = second;
+                let mut store = $store::<Tracked, ()>::default();
+                store.encode(&mut first, |source, _| source.carrier());
+                store.encode(&mut second, |_, _| panic!("build failed"));
+            }
+
+            #[test]
+            fn $failure_test() {
+                let mut source = Tracked::new();
+                let drops = source.drops.clone();
+                let decodes = source.decodes.clone();
+                let mut store = $store::<Tracked, Auxiliary>::default();
+                store.encode(&mut source, |source, fields| {
+                    fields.fail = true;
+                    source.carrier()
+                });
+                assert_eq!(store.sync(), None);
+                assert_eq!(decodes.load(Ordering::SeqCst), 1);
+                assert_eq!(drops.load(Ordering::SeqCst), 1);
+            }
+        };
+    }
+    #[cfg(feature = "alloc")]
+    state_tests!(
+        RefMutSizedEncodeStore,
+        sized_drop,
+        sized_sync,
+        sized_panic,
+        sized_failure
+    );
+    #[cfg(feature = "alloc")]
+    state_tests!(
+        RefMutDstEncodeStore,
+        dst_drop,
+        dst_sync,
+        dst_panic,
+        dst_failure
+    );
+    #[cfg(feature = "alloc")]
     use alloc::vec::Vec;
     use core::cell::RefCell;
 
-    use super::{ArrayStore, RefMutSizedDecodeStore, RefSizedDecodeStore, RefSizedEncodeStore, Store};
+    use super::{
+        ArrayStore, RefMutSizedDecodeStore, RefSizedDecodeStore, RefSizedEncodeStore, Store,
+    };
+
+    #[cfg(feature = "alloc")]
+    use super::{RefMutWideEncodeStore, RefWideEncodeStore};
+    #[cfg(feature = "alloc")]
+    use crate::wide::tests::{Custom, Metadata};
+    #[cfg(feature = "alloc")]
+    use alloc::{boxed::Box, vec};
+
+    #[cfg(feature = "alloc")]
+    #[test]
+    fn wide_store_returns_custom_metadata() {
+        type Pointee = Custom;
+        let mut store = RefWideEncodeStore::<Pointee, ()>::default();
+        let carrier = store.encode(|_| {
+            let bytes: Box<[u8]> = vec![2, 4].into_boxed_slice();
+            let ptr = Box::into_raw(bytes) as *mut Pointee;
+            unsafe { Box::from_raw(ptr) }
+        });
+        assert_eq!(
+            carrier.metadata(),
+            Metadata {
+                length: 2,
+                marker: 7
+            }
+        );
+        assert_eq!(unsafe { &carrier.into_ref().unwrap().0 }, &[2, 4]);
+        assert_eq!(store.sync(), Some(()));
+    }
+
+    #[cfg(feature = "alloc")]
+    #[test]
+    fn mutable_wide_store_returns_custom_metadata_and_syncs() {
+        type Pointee = Custom;
+        let mut result = 0;
+        let mut store = RefMutWideEncodeStore::<Pointee, (), &mut u8>::default();
+        let carrier = store.encode(
+            |_| {
+                let bytes = vec![2_u8, 4].into_boxed_slice();
+                let ptr = Box::into_raw(bytes) as *mut Pointee;
+                (unsafe { Box::from_raw(ptr) }, &mut result)
+            },
+            |value, result| *result = value.0[0],
+        );
+        assert_eq!(
+            carrier.metadata(),
+            Metadata {
+                length: 2,
+                marker: 7
+            }
+        );
+        unsafe { carrier.into_mut().unwrap().0[0] = 9 };
+        assert_eq!(store.sync(), Some(()));
+        assert_eq!(result, 9);
+    }
 
     #[test]
     fn aggregate_stores_sync_every_child_in_order() {

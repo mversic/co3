@@ -5,7 +5,6 @@ use rust_spec::RustSpec;
 
 use crate::{
     CFnArg, CFnReturn, CType, Decode, Encode, ReprC,
-    borrow::Borrow,
     stored::{DecodeMove, EncodeMove, EncodeMoveUnchecked},
     transmute::{AbiCompatible, AbiCompatibleValidate},
 };
@@ -16,24 +15,41 @@ use crate::{
 ///
 /// Implementations must preserve the raw pointer ABI and shared access contract.
 pub(crate) unsafe trait SharedRefCarrier<R: ?Sized>: CType + Copy {
-    fn as_ptr(&self) -> *const R::CType where R: ReprC;
+    fn as_ptr(&self) -> *const R::CType
+    where
+        R: ReprC;
     /// # Safety
     /// The pointer must satisfy the carrier's validity and lifetime contract.
-    unsafe fn from_shared_ptr(data: *const R::CType) -> Self where R: ReprC;
+    unsafe fn from_shared_ptr(data: *const R::CType) -> Self
+    where
+        R: ReprC;
     /// # Safety
     /// The result must satisfy the destination carrier's raw constructor contract.
-    unsafe fn cast_shared<U: ReprC<CType: Sized> + ?Sized, Target: SharedRefCarrier<U>>(self) -> Target where R: ReprC {
+    unsafe fn cast_shared<U: ReprC<CType: Sized> + ?Sized, Target: SharedRefCarrier<U>>(
+        self,
+    ) -> Target
+    where
+        R: ReprC,
+    {
         unsafe { Target::from_shared_ptr(self.as_ptr().cast()) }
     }
 }
 
 unsafe impl<R: ReprC + ?Sized> SharedRefCarrier<R> for CSoftRef<R> {
-    fn as_ptr(&self) -> *const R::CType { self.data }
-    unsafe fn from_shared_ptr(data: *const R::CType) -> Self { unsafe { Self::from_raw(data) } }
+    fn as_ptr(&self) -> *const R::CType {
+        self.data
+    }
+    unsafe fn from_shared_ptr(data: *const R::CType) -> Self {
+        unsafe { Self::from_raw(data) }
+    }
 }
 unsafe impl<'a, R: ReprC + ?Sized> SharedRefCarrier<R> for CRef<'a, R> {
-    fn as_ptr(&self) -> *const R::CType { self.data }
-    unsafe fn from_shared_ptr(data: *const R::CType) -> Self { unsafe { Self::from_raw(data) } }
+    fn as_ptr(&self) -> *const R::CType {
+        self.data
+    }
+    unsafe fn from_shared_ptr(data: *const R::CType) -> Self {
+        unsafe { Self::from_raw(data) }
+    }
 }
 
 /// Operations shared by ordinary and soft thin mutable carriers.
@@ -56,7 +72,10 @@ unsafe impl<R: ReprC + ?Sized, const E: bool> MutRefCarrier<R, E> for CSoftRefMu
         unsafe { Self::from_raw(data) }
     }
 }
-unsafe impl<'a, R: ReprC + ?Sized, const E: bool> MutRefCarrier<R, E> for CRefMut<'a, R, E> where Self: CType {
+unsafe impl<'a, R: ReprC + ?Sized, const E: bool> MutRefCarrier<R, E> for CRefMut<'a, R, E>
+where
+    Self: CType,
+{
     fn as_ptr(&self) -> *mut R::CType {
         self.data
     }
@@ -70,6 +89,7 @@ unsafe impl<'a, R: ReprC + ?Sized, const E: bool> MutRefCarrier<R, E> for CRefMu
 /// A null pointer represents an absent reference.
 #[derive(RustSpec)]
 #[repr(transparent)]
+#[doc(hidden)]
 pub struct CSoftRef<R: ReprC + ?Sized> {
     data: *const R::CType,
 }
@@ -80,6 +100,7 @@ pub struct CSoftRef<R: ReprC + ?Sized> {
 /// - `EXCLUSIVE = false` represents access that comes from `&UnsafeCell<T>`.
 #[derive(RustSpec)]
 #[repr(transparent)]
+#[doc(hidden)]
 pub struct CSoftRefMut<R: ReprC + ?Sized, const EXCLUSIVE: bool> {
     data: *mut R::CType,
 }
@@ -163,7 +184,10 @@ impl<R: ReprC + ?Sized> CSoftRef<R> {
     /// # Safety
     ///
     /// A non-null pointer must refer to a live `C` for the returned lifetime.
-    pub const unsafe fn into_ref<'a>(self) -> Option<&'a R::CType> where R: ReprC {
+    pub const unsafe fn into_ref<'a>(self) -> Option<&'a R::CType>
+    where
+        R: ReprC,
+    {
         if self.data.is_null() {
             return None;
         }
@@ -209,6 +233,7 @@ impl<R: ReprC + ?Sized, const EXCLUSIVE: bool> CSoftRefMut<R, EXCLUSIVE> {
 /// A null pointer represents an absent reference.
 #[derive(RustSpec)]
 #[repr(transparent)]
+#[doc(hidden)]
 pub struct CRef<'a, R: ReprC + ?Sized> {
     data: *const R::CType,
     lifetime: core::marker::PhantomData<&'a ()>,
@@ -220,6 +245,7 @@ pub struct CRef<'a, R: ReprC + ?Sized> {
 /// - `EXCLUSIVE = false` represents access from `&UnsafeCell<T>`.
 #[derive(RustSpec)]
 #[repr(transparent)]
+#[doc(hidden)]
 pub struct CRefMut<'a, R: ReprC + ?Sized, const EXCLUSIVE: bool> {
     data: *mut R::CType,
     lifetime: core::marker::PhantomData<&'a ()>,
@@ -420,12 +446,7 @@ macro_rules! impl_reference_carrier {
             }
         }
 
-        unsafe impl<$($params)*> Borrow for $ty<$($args)*> {
-            type Borrowed = Self;
-
-            fn borrow(self) -> Self::Borrowed { self }
-            fn from_borrow(source: Self::Borrowed) -> Self { source }
-        }
+        crate::__impl_borrowed_identity!([$($params)*] $ty<$($args)*>);
 
     };
 }
@@ -551,10 +572,10 @@ mod tests {
         );
 
         let mut cell = UnsafeCell::new(1_u8);
-        let pointer = cell.get().cast::<UnsafeCell<u8>>();
+        let pointer = cell.get().cast::<core::cell::UnsafeCell<u8>>();
         let exclusive: CRefMut<'_, UnsafeCell<u8>, true> = crate::encode(&mut cell);
         assert_eq!(exclusive.as_ptr(), pointer);
-        unsafe { exclusive.as_ptr().write(UnsafeCell::new(2)) };
+        unsafe { exclusive.as_ptr().write(core::cell::UnsafeCell::new(2)) };
         assert_eq!(cell.into_inner(), 2);
     }
 }
