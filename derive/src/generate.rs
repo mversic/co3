@@ -3338,16 +3338,11 @@ fn gen_extern_type_impls(
     let tag_family_impl = id.map(|id| gen_tag_family_impl(ident, generics, id));
     let tag_impl = id_value.map(|value| gen_tag_impl(ident, generics, value));
 
-    let projection_speculative = speculative_marker(generics.params.is_empty());
-    let projection_predicates = generics.where_clause.as_ref().map(|w| &w.predicates);
     quote! {
             #tag_family_impl
             #tag_impl
 
             unsafe impl #impl_generics co3::CType for #ident #ty_generics #where_clause {}
-        unsafe impl #impl_generics co3::encode_repr::EncodeRepr for #ident #ty_generics
-        where #projection_speculative Self: Sized, #projection_predicates
-        { type Encoded = Self; }
 
             unsafe impl #impl_generics co3::transmute::AbiCompatibleValidate for #ident #ty_generics #where_clause {
                 #[inline(always)]
@@ -3452,7 +3447,6 @@ fn gen_owned_repr_c_impls(ident: &syn::Ident, generics: &syn::Generics) -> Token
         unsafe impl #impl_generics #co3::transmute::AbiCompatible for #owned_repr_c_name #ty_generics #where_clause {}
 
         unsafe impl #impl_generics #co3::CType for #owned_repr_c_name #ty_generics #where_clause {}
-        unsafe impl #impl_generics #co3::encode_repr::EncodeRepr for #owned_repr_c_name #ty_generics #where_clause { type Encoded = Self; }
         unsafe impl #impl_generics #co3::CFnArg for #owned_repr_c_name #ty_generics #where_clause {}
         unsafe impl #impl_generics #co3::CFnReturn for #owned_repr_c_name #ty_generics #where_clause {}
 
@@ -3773,15 +3767,10 @@ fn derive_opaque_item(
     let (impl_generics, ty_generics, where_clause) = opaque_generics.split_for_impl();
     let tag_family_impl = id.map(|id| gen_tag_family_impl(ident, generics, id));
 
-    let projection_speculative = speculative_marker(generics.params.is_empty());
-    let projection_predicates = opaque_generics.where_clause.as_ref().map(|w| &w.predicates);
     quote! {
         #tag_family_impl
 
         unsafe impl #impl_generics co3::CType for #ident #ty_generics #where_clause {}
-        unsafe impl #impl_generics co3::encode_repr::EncodeRepr for #ident #ty_generics
-        where #projection_speculative Self: Sized, #projection_predicates
-        { type Encoded = Self; }
 
         unsafe impl #impl_generics co3::transmute::AbiCompatibleValidate for #ident #ty_generics #where_clause {
             #[inline(always)]

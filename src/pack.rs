@@ -318,19 +318,19 @@ where
     }
 }
 
-impl<T: Unpack2<A, B>, A: CType, B: CType> Unpack2<Borrowed<A>, B> for Borrowed<T> {
+// Borrowing applies to the carrier; the unpacked ABI parts remain unchanged.
+impl<T: Unpack2<A, B>, A: CType, B: CType> Unpack2<A, B> for Borrowed<T> {
     type Error = T::Error;
 
-    fn unpack(value: Self::CType) -> Result<(Borrowed<A>, B), Self::Error> {
+    fn unpack(value: Self::CType) -> Result<(A, B), Self::Error> {
         T::unpack(Borrowed::into_inner(value))
-            .map(|(data, metadata)| (Borrowed::new(data), metadata))
     }
 }
 
-impl<T: Pack2<A, B>, A: CType, B: CType> Pack2<Borrowed<A>, B> for Borrowed<T> {
+impl<T: Pack2<A, B>, A: CType, B: CType> Pack2<A, B> for Borrowed<T> {
     type Error = T::Error;
 
-    unsafe fn pack(a: Borrowed<A>, b: B) -> Result<Self::CType, Self::Error> {
-        unsafe { T::pack(Borrowed::into_inner(a), b) }.map(Borrowed::new)
+    unsafe fn pack(a: A, b: B) -> Result<Self::CType, Self::Error> {
+        unsafe { T::pack(a, b) }.map(Borrowed::new)
     }
 }

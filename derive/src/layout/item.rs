@@ -1413,7 +1413,7 @@ pub(super) fn derive_fieldless_enum(
         .map(|clause| &clause.predicates);
     let shared_ref_impls = [true, false].into_iter().map(|unchecked| {
         let (trait_name, _, store_name, method, _) = encoder_names(false, unchecked);
-        let output = encoder_output(quote!(&'_ršč Self), unchecked);
+        let output = encoder_output(quote!(&'_ršč Self));
         let unsafe_fn = unchecked.then(|| quote!(unsafe));
         let abi_bound = if unchecked {
             quote!(co3::transmute::AbiCompatible)
@@ -1474,7 +1474,7 @@ pub(super) fn derive_fieldless_enum(
         unsafe impl #impl_generics co3::stored::EncodeMove for #name #ty_generics #where_clause {
             type Store = ();
 
-            fn soft_encode<'_išč>(self, (): &mut ()) -> co3::encode_repr::Encoded<Self>
+            fn soft_encode<'_išč>(self, (): &mut ()) -> Self::CType
             where
                 Self: '_išč,
             {
@@ -1576,7 +1576,7 @@ fn gen_record_conversion(
             quote!(__Co3EncodeFieldUnchecked::encode_field_unchecked),
         ),
         EncodeMode::Owned => (
-            quote!(co3::encode_repr::encode_field),
+            quote!(co3::stored::EncodeMove::soft_encode),
             quote!(co3::stored::EncodeMoveUnchecked::soft_encode_unchecked),
         ),
     };
@@ -1821,7 +1821,7 @@ fn gen_codec_impls(
         let speculative = speculative_marker(generics.params.is_empty());
         let implementations = [true, false].into_iter().map(|unchecked| {
             let (trait_name, _, store_name, method, _) = encoder_names(false, unchecked);
-            let output = encoder_output(quote!(&'_ršč Self), unchecked);
+            let output = encoder_output(quote!(&'_ršč Self));
             let unsafe_fn = unchecked.then(|| quote!(unsafe));
             let abi_bound = if unchecked {
                 quote!(co3::transmute::AbiCompatible)
@@ -1898,7 +1898,7 @@ fn gen_codec_impls(
         {
             type Store = #encode_store;
 
-            fn soft_encode<'_išč>(self, store: &'_išč mut Self::Store) -> co3::encode_repr::Encoded<Self> where Self: '_išč {
+            fn soft_encode<'_išč>(self, store: &'_išč mut Self::Store) -> Self::CType where Self: '_išč {
                 #encode_impl
             }
 

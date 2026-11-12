@@ -543,7 +543,7 @@ unsafe impl EncodeMove for CString {
     type Store = ();
 
     #[inline(always)]
-    fn soft_encode<'itm>(self, (): &mut ()) -> crate::encode_repr::Encoded<Self>
+    fn soft_encode<'itm>(self, (): &mut ()) -> Self::CType
     where
         Self: 'itm,
     {
@@ -602,7 +602,6 @@ impl ReprC for c_void {
     type CType = Self;
 }
 unsafe impl CType for c_void {}
-unsafe impl crate::encode_repr::EncodeRepr for c_void where Self: Sized { type Encoded = Self; }
 
 #[cfg(test)]
 mod tests {
@@ -747,11 +746,11 @@ mod tests {
     co3::ffi! {
         #![unsafe(extern("C"))]
         type BorrowedReturn = raw extern "C" fn() -> Box<Value>;
-        type InteriorUnpacked = extern "C" fn(#[unpack(co3::borrow::Borrowed<*mut core::cell::UnsafeCell<u8>>, usize)] &[core::cell::Cell<u8>]) -> usize;
+        type InteriorUnpacked = extern "C" fn(#[unpack(*mut core::cell::UnsafeCell<u8>, usize)] &[core::cell::Cell<u8>]) -> usize;
         type RegularUnpacked = extern "C" fn(#[unpack(_, _)] &mut [u8]) -> usize;
         type Composite = (String, raw fn(String));
 
-        fn interior_slice(#[unpack(co3::borrow::Borrowed<*mut core::cell::UnsafeCell<u8>>, usize)] values: &[core::cell::Cell<u8>]) -> usize;
+        fn interior_slice(#[unpack(*mut core::cell::UnsafeCell<u8>, usize)] values: &[core::cell::Cell<u8>]) -> usize;
     }
 
     #[cfg(all(feature = "alloc", feature = "derive"))]
@@ -762,14 +761,14 @@ mod tests {
             InteriorUnpacked,
             Option<
                 unsafe extern "C" fn(
-                    co3::borrow::Borrowed<*mut core::cell::UnsafeCell<u8>>,
+                    *mut core::cell::UnsafeCell<u8>,
                     usize,
                 ) -> usize,
             >
         );
         static_assertions::assert_type_eq_all!(
             RegularUnpacked,
-            Option<unsafe extern "C" fn(co3::borrow::Borrowed<*mut u8>, usize) -> usize>
+            Option<unsafe extern "C" fn(*mut u8, usize) -> usize>
         );
         static_assertions::assert_type_eq_all!(
             Composite,

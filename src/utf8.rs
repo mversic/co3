@@ -150,7 +150,7 @@ impl ReprC for String {
 unsafe impl EncodeMove for String {
     type Store = ();
 
-    fn soft_encode<'itm>(self, (): &mut ()) -> crate::encode_repr::Encoded<Self>
+    fn soft_encode<'itm>(self, (): &mut ()) -> Self::CType
     where
         Self: 'itm,
     {

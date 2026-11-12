@@ -1,12 +1,5 @@
 //! A data-carrying enum must be usable as an exported function argument.
 //!
-//! Decoding an owned argument requires `EncodeMove::Store: EmptyStore`. The
-//! store of a data-carrying enum is an `EitherN`, one slot per variant, so
-//! `EitherN` has to forward `EmptyStore` the way `Result` and the tuples
-//! already do. Without that impl the `ffi!` block below fails to resolve
-//! `Either2<(), ((), (), (), (), ())>: EmptyStore`, even though both of its
-//! constituents are empty stores.
-//!
 //! The enum here has one unit variant and one struct variant carrying
 //! borrowed data, which is the shape that motivated the impl: configuration
 //! that belongs to exactly one of several backends.

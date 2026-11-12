@@ -105,7 +105,7 @@ macro_rules! primitive_derive {
             type Store = ();
 
             #[inline(always)]
-            fn soft_encode<'itm>(self, (): &mut ()) -> crate::encode_repr::Encoded<Self>
+            fn soft_encode<'itm>(self, (): &mut ()) -> Self::CType
             where
                 Self: 'itm,
             {
@@ -145,7 +145,6 @@ macro_rules! primitive_derive {
         unsafe impl AbiCompatible for $primitive {}
 
         unsafe impl CType for $primitive {}
-unsafe impl crate::encode_repr::EncodeRepr for $primitive where Self: Sized { type Encoded = Self; }
         unsafe impl CFnArg for $primitive {}
         unsafe impl CFnReturn for $primitive {}
 
@@ -178,7 +177,7 @@ macro_rules! raw_pointer_derive {
             type Store = ();
 
             #[inline(always)]
-            fn soft_encode<'itm>(self, (): &mut ()) -> crate::encode_repr::Encoded<Self>
+            fn soft_encode<'itm>(self, (): &mut ()) -> Self::CType
             where
                 Self: 'itm,
             {
@@ -221,7 +220,6 @@ unsafe impl<R: CType + ?Sized> AbiCompatible for *$mutability R
         {}
 
         unsafe impl<R: CType + ?Sized> CType for *$mutability R {}
-unsafe impl<R: CType + ?Sized> crate::encode_repr::EncodeRepr for *$mutability R where Self: Sized { type Encoded = Self; }
         unsafe impl<R: CType> CFnArg for *$mutability R {}
         unsafe impl<R: CType> CFnReturn for *$mutability R {}
 
@@ -291,7 +289,7 @@ macro_rules! impl_fn_types {
         unsafe impl<$($arg,)* R> EncodeMove for $fn_type where Self: ReprC<CType = Option<Self>>, Option<Self>: CType {
             type Store = ();
 
-            fn soft_encode<'itm>(self, (): &mut ()) -> crate::encode_repr::Encoded<Self> where Self: 'itm {
+            fn soft_encode<'itm>(self, (): &mut ()) -> Self::CType where Self: 'itm {
                 unsafe { self.soft_encode_unchecked(&mut ()) }
             }
         }
@@ -358,7 +356,7 @@ macro_rules! fieldless_enum_derive {
             type Store = ();
 
             #[inline(always)]
-            fn soft_encode<'itm>(self, (): &mut ()) -> crate::encode_repr::Encoded<Self>
+            fn soft_encode<'itm>(self, (): &mut ()) -> Self::CType
             where
                 Self: 'itm,
             {
@@ -444,7 +442,6 @@ impl<R: ReprC<CType: Sized>, const N: usize> ReprC for [R; N] {
 }
 
 unsafe impl<R: CType, const N: usize> CType for [R; N] {}
-unsafe impl<R: CType, const N: usize> crate::encode_repr::EncodeRepr for [R; N] where Self: Sized { type Encoded = Self; }
 
 unsafe impl<T: EmptyStore, const N: usize> EmptyStore for [T; N] {}
 // TODO: It's not possbile to implement for specific len yet: https://github.com/mversic/co3/issues/13

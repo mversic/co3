@@ -749,10 +749,10 @@ fn gen_input_conversion_stmts(inputs: &[Argument<'_>]) -> TokenStream {
                 #(#cfg)*
                 let mut #store_name = Default::default();
                 #(#cfg)*
-                let #arg_name = co3::encode_repr::soft_encode_abi(#arg_name, &mut #store_name);
+                let #arg_name = co3::soft_encode(#arg_name, &mut #store_name);
             }
         } else {
-            quote!(#(#cfg)* let #arg_name = co3::encode_repr::encode_abi(#arg_name);)
+            quote!(#(#cfg)* let #arg_name = co3::encode(#arg_name);)
         };
         quote!(#borrow #encode)
     });

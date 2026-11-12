@@ -122,7 +122,6 @@ impl<T> crate::EncodeUnchecked for Borrowed<T> where Self: EncodeMoveUnchecked {
 impl<T> crate::Encode for Borrowed<T> where Self: EncodeMove {}
 
 unsafe impl<C: CType> CType for Borrowed<C> {}
-unsafe impl<C: CType> crate::encode_repr::EncodeRepr for Borrowed<C> where Self: Sized { type Encoded = Self; }
 unsafe impl<C: CFnArg> CFnArg for Borrowed<C> {}
 unsafe impl<C: CFnReturn> CFnReturn for Borrowed<C> where
     Self: RustSpec<Size = rust_spec::size::Sized<rust_spec::Gt<rust_spec::Zero>>>
@@ -327,7 +326,7 @@ mod tests {
         ReprC,
         boxed::CBox,
         primitives::CBool,
-        reference::{CRefMut, CSoftRef, CSoftRefMut},
+        reference::{CSoftRef, CSoftRefMut},
         stored::{
             EncodeMove, EncodeMoveUnchecked, SoftEncodeMut, SoftEncodeMutUnchecked, SoftEncodeRef,
             SoftEncodeRefUnchecked, Store,
@@ -539,7 +538,7 @@ mod tests {
         let mut store = ();
         let decoded = unsafe {
             co3::soft_decode::<Borrowed<&mut bool>>(
-                CRefMut::from_mut(&mut carrier).into(),
+                CSoftRefMut::from_mut(&mut carrier).into(),
                 &mut store,
             )
         }
@@ -551,7 +550,7 @@ mod tests {
         assert!(
             unsafe {
                 co3::soft_decode::<Borrowed<&mut bool>>(
-                    CRefMut::from_mut(&mut invalid).into(),
+                    CSoftRefMut::from_mut(&mut invalid).into(),
                     &mut store,
                 )
             }
@@ -665,7 +664,7 @@ mod tests {
         fn soft_encode_ref<'itm>(
             &'a self,
             _: &'itm mut ProbeStore,
-        ) -> co3::encode_repr::Encoded<&'a Self>
+        ) -> <&'a Self as co3::ReprC>::CType
         where
             'a: 'itm,
         {
@@ -693,7 +692,7 @@ mod tests {
         fn soft_encode_mut<'itm>(
             &'a mut self,
             _: &'itm mut ProbeStore,
-        ) -> co3::encode_repr::Encoded<&'a mut Self>
+        ) -> <&'a mut Self as co3::ReprC>::CType
         where
             'a: 'itm,
         {

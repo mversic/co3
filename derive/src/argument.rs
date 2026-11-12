@@ -72,7 +72,7 @@ pub(crate) struct UnpackPair {
 
 pub(crate) struct ResolvedPart {
     pub(crate) source: Type,
-    /// The carrier expected by Pack2/Unpack2, including borrowed data headers.
+    /// The ABI part expected by Pack2/Unpack2 before any explicit erasure.
     pub(crate) logical: Type,
     pub(crate) abi: Type,
     pub(crate) erased: bool,
@@ -173,7 +173,7 @@ impl<'a> Argument<'a> {
 
 impl Unpack {
     pub(crate) fn resolve(attrs: &[syn::Attribute], ty: &Type) -> syn::Result<Self> {
-        UnpackSyntax::parse(attrs)?.resolve(attrs, ty)
+        UnpackSyntax::parse(attrs)?.resolve(ty)
     }
 }
 
@@ -207,7 +207,7 @@ impl UnpackSyntax {
         matches!(self, Self::Pair(parts) if parts.iter().any(|part| matches!(part.logical, Type::Infer(_))))
     }
 
-    pub(crate) fn resolve(self, attrs: &[syn::Attribute], ty: &Type) -> syn::Result<Unpack> {
+    pub(crate) fn resolve(self, ty: &Type) -> syn::Result<Unpack> {
         let inferred = self.has_inferred_parts();
         let [first, second] = match self {
             Self::None => return Ok(Unpack::None),
@@ -226,12 +226,8 @@ impl UnpackSyntax {
                     .map(|inner| parse_quote!(core::option::Option<#inner>))
             })
             .flatten();
-        let borrowed = ffi_fn::borrowed_wide_unpack(attrs, ty);
         let resolve = |part: UnpackPart, position| -> syn::Result<ResolvedPart> {
-            let mut logical = ffi_fn::logical_unpack_part(ty, &part.logical, position)?;
-            if position == 1 && borrowed {
-                logical = parse_quote!(co3::borrow::Borrowed<#logical>);
-            }
+            let logical = ffi_fn::logical_unpack_part(ty, &part.logical, position)?;
             let erased = part.abi.is_some();
             let abi = part.abi.map_or_else(
                 || logical.clone(),

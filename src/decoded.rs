@@ -27,8 +27,7 @@ use crate::{
     boxed::CBox,
     sync::{RefDstDecodeStore, RefMutSliceDecodeStore},
     vec::CVec,
-    wide::CWideBox,
-    wide::CSoftWideRef,
+    wide::{CWideBox, PointeeData, WideRefCarrier},
 };
 
 disjoint_impls! {
@@ -115,7 +114,8 @@ disjoint_impls! {
                 >,
             > + RustSpec<Size = rust_spec::size::MetaSized<rust_spec::size::SliceLike>>,
         &'d Self: ReprC<CType = CSoftRef<Self>>,
-        &'d T: DecodeMove<'d> + ReprC<CType = CSoftWideRef<T>>,
+        &'d T: DecodeMove<'d>
+            + ReprC<CType: WideRefCarrier<T, Pointer = *const PointeeData<<T as ReprC>::CType>>>,
         Self: From<<T as alloc::borrow::ToOwned>::Owned>,
     {
         type Store = RefSizedDecodeStore<Self, <&'d T as DecodeMove<'d>>::Store>;
@@ -124,7 +124,9 @@ disjoint_impls! {
             store: &'itm mut Self::Store,
         ) -> Option<&'d Self> {
             let header = unsafe { *source.into_ref()? };
-            let carrier = unsafe { CSoftWideRef::from_raw_parts(header.as_ptr(), header.metadata()) };
+            let carrier = unsafe {
+                WideRefCarrier::from_parts(header.as_ptr().cast_const(), header.metadata())
+            };
             store.decode(|field| {
                 let value = unsafe { <&'d T>::soft_decode(carrier, field)? };
                 Some(alloc::borrow::ToOwned::to_owned(value).into())
@@ -135,7 +137,9 @@ disjoint_impls! {
             store: &'itm mut Self::Store,
         ) -> &'d Self {
             let header = unsafe { *source.into_ref().unwrap_unchecked() };
-            let carrier = unsafe { CSoftWideRef::from_raw_parts(header.as_ptr(), header.metadata()) };
+            let carrier = unsafe {
+                WideRefCarrier::from_parts(header.as_ptr().cast_const(), header.metadata())
+            };
             store
                 .decode(|field| {
                     let value = unsafe { <&'d T>::soft_decode_unchecked(carrier, field) };
@@ -1960,14 +1964,94 @@ where
 
 #[cfg(all(test, feature = "alloc", feature = "derive"))]
 mod tests {
+    use alloc::{boxed::Box, vec};
     use co3::{
         ReprC,
-        borrow::Borrow,
+        borrow::{Borrow, Borrowed},
         reference::{CSoftRef, CSoftRefMut},
         rust_spec::RustSpec,
         stored::{DecodeMove, SoftDecodeMut, SoftDecodeRef, Store},
     };
     use static_assertions::assert_not_impl_any;
+
+    #[test]
+    fn borrowed_boxed_stable_slice_clones_without_consuming_source() {
+        use co3::wide::CWideBox;
+
+        assert_not_impl_any!(Box<[core::cell::Cell<u8>]>: SoftDecodeRef<'static>);
+        for unchecked in [false, true] {
+            let source = CWideBox::<[u8]>::from_box(vec![7, 11].into_boxed_slice());
+            let mut store = Default::default();
+            let decoded = if unchecked {
+                unsafe {
+                    co3::soft_decode_unchecked::<Borrowed<Box<[u8]>>>(source.into(), &mut store)
+                }
+            } else {
+                unsafe { co3::soft_decode::<Borrowed<Box<[u8]>>>(source.into(), &mut store) }.unwrap()
+            };
+            let decoded = Borrowed::into_inner(decoded);
+            assert_eq!(&*decoded, &[7, 11]);
+            assert_ne!(decoded.as_ptr(), source.as_ptr().cast_const());
+            drop(decoded);
+            store.sync().unwrap();
+            let original = unsafe { source.into_box() }.unwrap();
+            assert_eq!(&*original, &[7, 11]);
+        }
+    }
+
+    #[test]
+    fn borrowed_boxed_stable_slice_validates_elements() {
+        use co3::{primitives::CBool, wide::CWideBox};
+
+        for raw in [0, 1, 2] {
+            let source = CWideBox::<[bool]>::from_box(vec![CBool(raw)].into_boxed_slice());
+            let mut store = Default::default();
+            let decoded =
+                unsafe { co3::soft_decode::<Borrowed<Box<[bool]>>>(source.into(), &mut store) };
+            if raw < 2 {
+                assert_eq!(&*Borrowed::into_inner(decoded.unwrap()), &[raw != 0]);
+            } else {
+                assert!(decoded.is_none());
+            }
+            store.sync().unwrap();
+            let original = unsafe { source.into_box() }.unwrap();
+            assert_eq!(original[0].0, raw);
+        }
+    }
+
+    #[test]
+    fn borrowed_boxed_unstable_slice_clones_without_consuming_source() {
+        use co3::{tuple::Tuple2, wide::CWideBox};
+
+        for unchecked in [false, true] {
+            let source =
+                CWideBox::<[(u8, u16)]>::from_box(vec![Tuple2(7, 11)].into_boxed_slice());
+            let mut store = Default::default();
+            let decoded = if unchecked {
+                unsafe {
+                    co3::soft_decode_unchecked::<Borrowed<Box<[(u8, u16)]>>>(
+                        source.into(),
+                        &mut store,
+                    )
+                }
+            } else {
+                unsafe {
+                    co3::soft_decode::<Borrowed<Box<[(u8, u16)]>>>(source.into(), &mut store)
+                }
+                .unwrap()
+            };
+            let decoded = Borrowed::into_inner(decoded);
+            assert_eq!(&*decoded, &[(7, 11)]);
+            assert_ne!(
+                decoded.as_ptr().cast::<()>(),
+                source.as_ptr().cast_const().cast::<()>()
+            );
+            drop(decoded);
+            store.sync().unwrap();
+            let original = unsafe { source.into_box() }.unwrap();
+            assert_eq!(original[0], Tuple2(7, 11));
+        }
+    }
 
     // Reference-only downstream decoding must not require Borrow or DecodeMove.
     #[derive(RustSpec)]

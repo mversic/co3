@@ -662,7 +662,7 @@ disjoint_impls! {
     ///
     /// If [`Self::Store`] implements [`EmptyStore`], [`EncodeMove::soft_encode`] must not
     /// return references into the store. [`crate::soft_encode`] correctness relies on it.
-    pub unsafe trait EncodeMove: EncodeMoveUnchecked + ReprC<CType: crate::encode_repr::EncodeRepr> {
+    pub unsafe trait EncodeMove: EncodeMoveUnchecked {
         /// Auxiliary storage used during conversion. If storage is not used, set the type to `()`.
         ///
         /// Use cases include:
@@ -672,10 +672,10 @@ disjoint_impls! {
         /// Conceptually, serves a role similar to the "context" captured by a closure.
         type Store: Store + Default;
 
-        /// Convert [`Self`] into its checked carrier, [`crate::encode_repr::Encoded<Self>`].
+        /// Convert [`Self`] into its checked carrier, [`Self::CType`].
         ///
         /// Prefer using [`crate::soft_encode`] whenever possible
-        fn soft_encode<'itm>(self, store: &'itm mut Self::Store) -> crate::encode_repr::Encoded<Self>
+        fn soft_encode<'itm>(self, store: &'itm mut Self::Store) -> Self::CType
         where
             Self: 'itm;
     }
@@ -685,18 +685,17 @@ disjoint_impls! {
         Self: AbiCompatibleValidate + RustSpec<Layout = Stable> + ReprC<CType: FromSharedRef<<R as ReprC>::CType>>,
         R: RustSpec<Layout = Stable, Size: Thin, Mutability = Exclusive<__Interior>>,
         <R as RustSpec>::Mutability: InteriorTrap<Trap = Robust>,
-        Self: ReprC<CType: crate::encode_repr::EncodeRepr>,
     {
         type Store = ();
 
         #[inline(always)]
-        fn soft_encode<'itm>(self, (): &mut ()) -> crate::encode_repr::Encoded<Self>
+        fn soft_encode<'itm>(self, (): &mut ()) -> Self::CType
         where
             Self: 'itm,
         {
             let encoded = unsafe { self.soft_encode_unchecked(&mut ()) };
             debug_assert_encoded_valid::<Self>(&encoded);
-            crate::encode_repr::project(encoded)
+            encoded
         }
     }
     unsafe impl<R: AbiCompatibleValidate + Wide<Metadata = usize> + ?Sized, __Interior: ExclusiveKind>
@@ -706,18 +705,17 @@ disjoint_impls! {
         R: RustSpec<Layout = Stable, Size = MetaSized<SliceLike>, Mutability = Exclusive<__Interior>>,
         <R as ReprC>::CType: Wide<Header: WideHeader<Data: CType>, Metadata = usize>,
         <R as RustSpec>::Mutability: InteriorTrap<Trap = Robust>,
-        Self: ReprC<CType: crate::encode_repr::EncodeRepr>,
     {
         type Store = ();
 
         #[inline(always)]
-        fn soft_encode<'itm>(self, (): &mut ()) -> crate::encode_repr::Encoded<Self>
+        fn soft_encode<'itm>(self, (): &mut ()) -> Self::CType
         where
             Self: 'itm,
         {
             let encoded = unsafe { self.soft_encode_unchecked(&mut ()) };
             debug_assert_wide_pointee_valid::<R>(encoded.data(), encoded.metadata());
-            crate::encode_repr::project(encoded)
+            encoded
         }
     }
 
@@ -725,12 +723,11 @@ disjoint_impls! {
     where
         Self: RustSpec<Layout = Unstable> + ReprC<CType: Sized>,
         R: RustSpec<Layout = Unstable, Mutability = Exclusive<__Interior>>,
-        Self: ReprC<CType: crate::encode_repr::EncodeRepr>,
     {
         type Store = R::Store;
 
         #[inline(always)]
-        fn soft_encode<'itm>(self, store: &'itm mut Self::Store) -> crate::encode_repr::Encoded<Self>
+        fn soft_encode<'itm>(self, store: &'itm mut Self::Store) -> Self::CType
         where
             Self: 'itm,
         {
@@ -743,18 +740,17 @@ disjoint_impls! {
         Self: AbiCompatibleValidate + RustSpec<Layout = Stable> + ReprC<CType: FromSharedRef<<R as ReprC>::CType>>,
         R: RustSpec<Layout = Stable, Size: Thin, Mutability = WithInterior<__Trap>>,
         <R as RustSpec>::Mutability: InteriorTrap<Trap = Robust>,
-        Self: ReprC<CType: crate::encode_repr::EncodeRepr>,
     {
         type Store = ();
 
         #[inline(always)]
-        fn soft_encode<'itm>(self, (): &mut ()) -> crate::encode_repr::Encoded<Self>
+        fn soft_encode<'itm>(self, (): &mut ()) -> Self::CType
         where
             Self: 'itm,
         {
             let encoded = unsafe { self.soft_encode_unchecked(&mut ()) };
             debug_assert_encoded_valid::<Self>(&encoded);
-            crate::encode_repr::project(encoded)
+            encoded
         }
     }
     unsafe impl<R: AbiCompatibleValidate + Wide<Metadata = usize> + ?Sized, __Trap> EncodeMove for &R
@@ -763,18 +759,17 @@ disjoint_impls! {
         R: RustSpec<Layout = Stable, Size = MetaSized<SliceLike>, Mutability = WithInterior<__Trap>>,
         <R as ReprC>::CType: Wide<Header: WideHeader<Data: CType>, Metadata = usize>,
         <R as RustSpec>::Mutability: InteriorTrap<Trap = Robust>,
-        Self: ReprC<CType: crate::encode_repr::EncodeRepr>,
     {
         type Store = ();
 
         #[inline(always)]
-        fn soft_encode<'itm>(self, (): &mut ()) -> crate::encode_repr::Encoded<Self>
+        fn soft_encode<'itm>(self, (): &mut ()) -> Self::CType
         where
             Self: 'itm,
         {
             let encoded = unsafe { self.soft_encode_unchecked(&mut ()) };
             debug_assert_wide_pointee_valid::<R>(encoded.data(), encoded.metadata());
-            crate::encode_repr::project(encoded)
+            encoded
         }
     }
 
@@ -782,36 +777,34 @@ disjoint_impls! {
     where
         Self: RustSpec<Layout = Stable> + ReprC<CType: MutRefCarrier<R, true>>,
         R: RustSpec<Layout = Stable, Size: Thin, Trap = Robust>,
-        Self: ReprC<CType: crate::encode_repr::EncodeRepr>,
     {
         type Store = ();
 
         #[inline(always)]
-        fn soft_encode<'itm>(self, (): &mut ()) -> crate::encode_repr::Encoded<Self>
+        fn soft_encode<'itm>(self, (): &mut ()) -> Self::CType
         where
             Self: 'itm,
         {
             let encoded = unsafe { self.soft_encode_unchecked(&mut ()) };
             debug_assert_encoded_valid::<Self>(&encoded);
-            crate::encode_repr::project(encoded)
+            encoded
         }
     }
     unsafe impl<'a, R: AbiCompatibleValidate + SoftEncodeMut<'a>> EncodeMove for &'a mut R
     where
         Self: RustSpec<Layout = Stable> + ReprC<CType: MutRefCarrier<R, true>>,
         R: RustSpec<Layout = Stable, Size: Thin, Trap = NonRobust>,
-        Self: ReprC<CType: crate::encode_repr::EncodeRepr>,
     {
         type Store = R::Store;
 
         #[inline(always)]
-        fn soft_encode<'itm>(self, store: &'itm mut Self::Store) -> crate::encode_repr::Encoded<Self>
+        fn soft_encode<'itm>(self, store: &'itm mut Self::Store) -> Self::CType
         where
             Self: 'itm,
         {
-            let encoded = crate::encode_repr::unproject::<Self::CType>(self.soft_encode_mut(store));
+            let encoded = self.soft_encode_mut(store);
             debug_assert_encoded_valid::<Self>(&encoded);
-            crate::encode_repr::project(encoded)
+            encoded
         }
     }
     unsafe impl<R: AbiCompatibleValidate + Wide<Metadata = usize> + ?Sized> EncodeMove for &mut R
@@ -819,18 +812,17 @@ disjoint_impls! {
         Self: RustSpec<Layout = Unstable> + ReprC<CType: MutWideRefCarrier<R>>,
         R: RustSpec<Layout = Stable, Size = MetaSized<SliceLike>, Trap = Robust>,
         <R as ReprC>::CType: Wide<Header: WideHeader<Data: CType>, Metadata = usize>,
-        Self: ReprC<CType: crate::encode_repr::EncodeRepr>,
     {
         type Store = ();
 
         #[inline(always)]
-        fn soft_encode<'itm>(self, (): &mut ()) -> crate::encode_repr::Encoded<Self>
+        fn soft_encode<'itm>(self, (): &mut ()) -> Self::CType
         where
             Self: 'itm,
         {
             let encoded = unsafe { self.soft_encode_unchecked(&mut ()) };
             debug_assert_wide_pointee_valid::<R>(encoded.data(), encoded.metadata());
-            crate::encode_repr::project(encoded)
+            encoded
         }
     }
     #[cfg(feature = "alloc")]
@@ -840,12 +832,11 @@ disjoint_impls! {
         Self: RustSpec<Layout = Unstable> + ReprC<CType: MutWideRefCarrier<R>>,
         R: RustSpec<Layout = Stable, Size = MetaSized<SliceLike>, Trap = NonRobust>,
         <R as ReprC>::CType: Wide<Header: WideHeader<Data: CType>, Metadata = usize>,
-        Self: ReprC<CType: crate::encode_repr::EncodeRepr>,
     {
         type Store = R::Store;
 
         #[inline(always)]
-        fn soft_encode<'itm>(self, store: &'itm mut Self::Store) -> crate::encode_repr::Encoded<Self>
+        fn soft_encode<'itm>(self, store: &'itm mut Self::Store) -> Self::CType
         where
             Self: 'itm,
         {
@@ -860,10 +851,9 @@ disjoint_impls! {
     where
         Self: RustSpec<Layout = Unstable> + ReprC<CType: Sized>,
         R: RustSpec<Layout = Unstable>,
-        Self: ReprC<CType: crate::encode_repr::EncodeRepr>,
     {
         type Store = R::Store;
-        fn soft_encode<'itm>(self, store: &'itm mut Self::Store) -> crate::encode_repr::Encoded<Self>
+        fn soft_encode<'itm>(self, store: &'itm mut Self::Store) -> Self::CType
         where
             Self: 'itm,
         {
@@ -882,13 +872,13 @@ disjoint_impls! {
         type Store = ();
 
         #[inline(always)]
-        fn soft_encode<'itm>(self, (): &mut ()) -> crate::encode_repr::Encoded<Self>
+        fn soft_encode<'itm>(self, (): &mut ()) -> Self::CType
         where
             Self: 'itm,
         {
             let encoded = unsafe { self.soft_encode_unchecked(&mut ()) };
             debug_assert_encoded_valid::<Self>(&encoded);
-            crate::encode_repr::project(encoded)
+            encoded
         }
     }
     #[cfg(feature = "alloc")]
@@ -902,7 +892,7 @@ disjoint_impls! {
         type Store = Box<R::Store>;
 
         #[inline(always)]
-        fn soft_encode<'itm>(self, store: &'itm mut Self::Store) -> crate::encode_repr::Encoded<Self>
+        fn soft_encode<'itm>(self, store: &'itm mut Self::Store) -> Self::CType
         where
             Self: 'itm,
         {
@@ -913,7 +903,7 @@ disjoint_impls! {
                 return encoded;
             }
 
-            let source = Box::new(crate::encode_repr::encode_field(*self, store));
+            let source = Box::new(crate::stored::EncodeMove::soft_encode(*self, store));
             unsafe { Self::CType::from_non_null(Box::into_non_null(source)) }
         }
     }
@@ -928,7 +918,7 @@ disjoint_impls! {
         type Store = ();
 
         #[inline(always)]
-        fn soft_encode<'itm>(self, (): &mut ()) -> crate::encode_repr::Encoded<Self>
+        fn soft_encode<'itm>(self, (): &mut ()) -> Self::CType
         where
             Self: 'itm,
         {
@@ -951,7 +941,7 @@ disjoint_impls! {
         type Store = <R::Owned as EncodeMove>::Store;
 
         #[inline(always)]
-        fn soft_encode<'itm>(self, store: &'itm mut Self::Store) -> crate::encode_repr::Encoded<Self>
+        fn soft_encode<'itm>(self, store: &'itm mut Self::Store) -> Self::CType
         where
             Self: 'itm,
         {
@@ -962,7 +952,7 @@ disjoint_impls! {
                 return encoded;
             }
 
-            crate::encode_repr::project(encode_box_owned::<R>(self, store))
+            encode_box_owned::<R>(self, store)
         }
     }
 
@@ -977,11 +967,11 @@ disjoint_impls! {
         type Store = Box<R::Store>;
 
         #[inline(always)]
-        fn soft_encode<'itm>(self, store: &'itm mut Self::Store) -> crate::encode_repr::Encoded<Self>
+        fn soft_encode<'itm>(self, store: &'itm mut Self::Store) -> Self::CType
         where
             Self: 'itm,
         {
-            let source = Box::new(crate::encode_repr::encode_field(*self, store));
+            let source = Box::new(crate::stored::EncodeMove::soft_encode(*self, store));
             unsafe { Self::CType::from_non_null(Box::into_non_null(source)) }
         }
     }
@@ -998,7 +988,7 @@ disjoint_impls! {
         type Store = ();
 
         #[inline(always)]
-        fn soft_encode<'itm>(self, (): &mut ()) -> crate::encode_repr::Encoded<Self>
+        fn soft_encode<'itm>(self, (): &mut ()) -> Self::CType
         where
             Self: 'itm,
         {
@@ -1013,16 +1003,15 @@ disjoint_impls! {
         R: RustSpec<Layout = Unstable, Size: Dst>,
         Self: ReprC<CType: Sized>,
         <<R as Owned>::Owned as ReprC>::CType: OwnedBoxCarrier<<Self as ReprC>::CType>,
-        Self: ReprC<CType: crate::encode_repr::EncodeRepr>,
     {
         type Store = <R::Owned as EncodeMove>::Store;
 
         #[inline(always)]
-        fn soft_encode<'itm>(self, store: &'itm mut Self::Store) -> crate::encode_repr::Encoded<Self>
+        fn soft_encode<'itm>(self, store: &'itm mut Self::Store) -> Self::CType
         where
             Self: 'itm,
         {
-            crate::encode_repr::project(encode_box_owned::<R>(self, store))
+            encode_box_owned::<R>(self, store)
         }
     }
 
@@ -1032,7 +1021,7 @@ disjoint_impls! {
         type Store = <crate::option::Option<R> as EncodeMove>::Store;
 
         #[inline(always)]
-        fn soft_encode<'itm>(self, store: &mut Self::Store) -> crate::encode_repr::Encoded<Self>
+        fn soft_encode<'itm>(self, store: &mut Self::Store) -> Self::CType
         where
             Self: 'itm,
         {
@@ -1046,12 +1035,12 @@ disjoint_impls! {
         type Store = Option<R::Store>;
 
         #[inline(always)]
-        fn soft_encode<'itm>(self, store: &'itm mut Self::Store) -> crate::encode_repr::Encoded<Self>
+        fn soft_encode<'itm>(self, store: &'itm mut Self::Store) -> Self::CType
         where
             Self: 'itm,
         {
             if let Some(value) = self {
-                let encoded = crate::encode_repr::encode_field(value, store.insert(Default::default()));
+                let encoded = crate::stored::EncodeMove::soft_encode(value, store.insert(Default::default()));
                 debug_assert!(!R::is_niche(&encoded), "encoding produced NICHE value");
                 return COptionSome(encoded);
             }
@@ -1071,7 +1060,7 @@ disjoint_impls! {
         type Store = <crate::result::Result<R, E> as EncodeMove>::Store;
 
         #[inline(always)]
-        fn soft_encode<'itm>(self, store: &'itm mut Self::Store) -> crate::encode_repr::Encoded<Self>
+        fn soft_encode<'itm>(self, store: &'itm mut Self::Store) -> Self::CType
         where
             Self: 'itm,
         {
@@ -1087,12 +1076,12 @@ disjoint_impls! {
         type Store = Option<R::Store>;
 
         #[inline(always)]
-        fn soft_encode<'itm>(self, store: &'itm mut Self::Store) -> crate::encode_repr::Encoded<Self>
+        fn soft_encode<'itm>(self, store: &'itm mut Self::Store) -> Self::CType
         where
             Self: 'itm,
         {
             match self {
-                Ok(ok) => CResultOk(crate::encode_repr::encode_field(ok, store.insert(Default::default())), PhantomData),
+                Ok(ok) => CResultOk(crate::stored::EncodeMove::soft_encode(ok, store.insert(Default::default())), PhantomData),
                 Err(_) => CResultOk(R::NICHE, PhantomData),
             }
         }
@@ -1106,13 +1095,13 @@ disjoint_impls! {
         type Store = Option<E::Store>;
 
         #[inline(always)]
-        fn soft_encode<'itm>(self, store: &'itm mut Self::Store) -> crate::encode_repr::Encoded<Self>
+        fn soft_encode<'itm>(self, store: &'itm mut Self::Store) -> Self::CType
         where
             Self: 'itm,
         {
             match self {
                 Ok(_) => CResultErr(E::NICHE, PhantomData),
-                Err(err) => CResultErr(crate::encode_repr::encode_field(err, store.insert(Default::default())), PhantomData),
+                Err(err) => CResultErr(crate::stored::EncodeMove::soft_encode(err, store.insert(Default::default())), PhantomData),
             }
         }
     }
@@ -1123,7 +1112,7 @@ disjoint_impls! {
         Self: EncodeMoveUnchecked + ReprC<CType = UnsafeCell<<R as ReprC>::CType>>,
     {
         type Store = ();
-        fn soft_encode<'itm>(self, _: &mut ()) -> crate::encode_repr::Encoded<Self>
+        fn soft_encode<'itm>(self, _: &mut ()) -> Self::CType
         where
             Self: 'itm,
         {
@@ -1139,11 +1128,11 @@ disjoint_impls! {
         type Store = R::Store;
 
         #[inline(always)]
-        fn soft_encode<'itm>(self, store: &'itm mut Self::Store) -> crate::encode_repr::Encoded<Self>
+        fn soft_encode<'itm>(self, store: &'itm mut Self::Store) -> Self::CType
         where
             Self: 'itm,
         {
-            UnsafeCell::new(crate::encode_repr::encode_field(self.into_inner(), store))
+            UnsafeCell::new(crate::stored::EncodeMove::soft_encode(self.into_inner(), store))
         }
     }
     unsafe impl<R: EncodeMove> EncodeMove for UnsafeCell<R>
@@ -1154,11 +1143,11 @@ disjoint_impls! {
         type Store = R::Store;
 
         #[inline(always)]
-        fn soft_encode<'itm>(self, store: &'itm mut Self::Store) -> crate::encode_repr::Encoded<Self>
+        fn soft_encode<'itm>(self, store: &'itm mut Self::Store) -> Self::CType
         where
             Self: 'itm,
         {
-            UnsafeCell::new(crate::encode_repr::encode_field(self.into_inner(), store))
+            UnsafeCell::new(crate::stored::EncodeMove::soft_encode(self.into_inner(), store))
         }
     }
 
@@ -1168,7 +1157,7 @@ disjoint_impls! {
         Self: EncodeMoveUnchecked + ReprC<CType = UnsafeCell<<R as ReprC>::CType>>,
     {
         type Store = ();
-        fn soft_encode<'itm>(self, _: &mut ()) -> crate::encode_repr::Encoded<Self>
+        fn soft_encode<'itm>(self, _: &mut ()) -> Self::CType
         where
             Self: 'itm,
         {
@@ -1184,11 +1173,11 @@ disjoint_impls! {
         type Store = R::Store;
 
         #[inline(always)]
-        fn soft_encode<'itm>(self, store: &'itm mut Self::Store) -> crate::encode_repr::Encoded<Self>
+        fn soft_encode<'itm>(self, store: &'itm mut Self::Store) -> Self::CType
         where
             Self: 'itm,
         {
-            UnsafeCell::new(crate::encode_repr::encode_field(self.into_inner(), store))
+            UnsafeCell::new(crate::stored::EncodeMove::soft_encode(self.into_inner(), store))
         }
     }
     unsafe impl<R: EncodeMove> EncodeMove for Cell<R>
@@ -1199,11 +1188,11 @@ disjoint_impls! {
         type Store = R::Store;
 
         #[inline(always)]
-        fn soft_encode<'itm>(self, store: &'itm mut Self::Store) -> crate::encode_repr::Encoded<Self>
+        fn soft_encode<'itm>(self, store: &'itm mut Self::Store) -> Self::CType
         where
             Self: 'itm,
         {
-            UnsafeCell::new(crate::encode_repr::encode_field(self.into_inner(), store))
+            UnsafeCell::new(crate::stored::EncodeMove::soft_encode(self.into_inner(), store))
         }
     }
 
@@ -1212,7 +1201,7 @@ disjoint_impls! {
         T: RustSpec<Drop: NeedsDrop>, Self: ReprC<CType = Borrowed<<T as ReprC>::CType>>, {
         type Store = BorrowedEncodeStore<T, <T as BorrowedOwnerEncode>::ReferenceStore>;
 
-        fn soft_encode<'itm>(self, store: &'itm mut Self::Store) -> crate::encode_repr::Encoded<Self>
+        fn soft_encode<'itm>(self, store: &'itm mut Self::Store) -> Self::CType
         where
             Self: 'itm,
         {
@@ -1225,7 +1214,7 @@ disjoint_impls! {
         &'r mut T: EncodeMoveUnchecked, {
         type Store = <&'r mut T as EncodeMoveUnchecked>::SoftStore;
 
-        fn soft_encode<'itm>(self, store: &'itm mut Self::Store) -> crate::encode_repr::Encoded<Self>
+        fn soft_encode<'itm>(self, store: &'itm mut Self::Store) -> Self::CType
         where
             Self: 'itm,
         {
@@ -1239,7 +1228,7 @@ disjoint_impls! {
         &'r T: EncodeMoveUnchecked, {
         type Store = <&'r T as EncodeMoveUnchecked>::SoftStore;
 
-        fn soft_encode<'itm>(self, store: &'itm mut Self::Store) -> crate::encode_repr::Encoded<Self>
+        fn soft_encode<'itm>(self, store: &'itm mut Self::Store) -> Self::CType
         where
             Self: 'itm,
         {
@@ -2217,11 +2206,10 @@ disjoint_impls! {
 unsafe impl<R: EncodeMove> EncodeMove for ManuallyDrop<R>
 where
     Self: EncodeMoveUnchecked + ReprC<CType: Sized>,
-        Self: ReprC<CType: crate::encode_repr::EncodeRepr>,
-    {
+{
     type Store = R::Store;
 
-    fn soft_encode<'itm>(self, store: &'itm mut Self::Store) -> crate::encode_repr::Encoded<Self>
+    fn soft_encode<'itm>(self, store: &'itm mut Self::Store) -> Self::CType
     where
         Self: 'itm,
     {
@@ -2241,7 +2229,7 @@ where
     {
     type Store = Box<[R::Store]>;
 
-    fn soft_encode<'itm>(self, store: &'itm mut Self::Store) -> crate::encode_repr::Encoded<Self>
+    fn soft_encode<'itm>(self, store: &'itm mut Self::Store) -> Self::CType
     where
         Self: 'itm,
     {
@@ -2255,7 +2243,7 @@ where
     {
     type Store = ArrayStore<R::Store, N>;
 
-    fn soft_encode<'itm>(self, store: &'itm mut Self::Store) -> crate::encode_repr::Encoded<Self>
+    fn soft_encode<'itm>(self, store: &'itm mut Self::Store) -> Self::CType
     where
         Self: 'itm,
     {
@@ -2284,7 +2272,7 @@ where
     crate::vec::Vec<R>: EncodeMove, Self: ReprC<CType = <crate::vec::Vec<R> as ReprC>::CType>, {
     type Store = <crate::vec::Vec<R> as EncodeMove>::Store;
 
-    fn soft_encode<'itm>(self, store: &'itm mut Self::Store) -> crate::encode_repr::Encoded<Self>
+    fn soft_encode<'itm>(self, store: &'itm mut Self::Store) -> Self::CType
     where
         Self: 'itm,
     {
@@ -2312,12 +2300,12 @@ where
     }
 }
 
-/// Convert `T` into [`crate::encode_repr::Encoded<T>`].
+/// Convert `T` into [`T::CType`].
 ///
 /// Prefer using [`crate::encode`] whenever possible.
 #[doc(hidden)]
 #[inline(always)]
-pub fn encode_move<T: EncodeMove<Store: EmptyStore>>(item: T) -> crate::encode_repr::Encoded<T> {
+pub fn encode_move<T: EncodeMove<Store: EmptyStore>>(item: T) -> T::CType {
     let mut store = Default::default();
     T::soft_encode(item, &mut store)
 }
@@ -2443,7 +2431,7 @@ where
     Box<R>: ReprC<CType: Sized>,
     <R::Owned as ReprC>::CType: OwnedBoxCarrier<<Box<R> as ReprC>::CType>,
 {
-    unsafe { crate::encode_repr::encode_field(value.into(), store).into_box_carrier() }
+    unsafe { crate::stored::EncodeMove::soft_encode(value.into(), store).into_box_carrier() }
 }
 
 #[cfg(feature = "alloc")]
@@ -2487,7 +2475,7 @@ fn encode_vec_elements<R: EncodeMove>(
         value.into_iter(),
         capacity,
         store,
-        crate::encode_repr::encode_field,
+        crate::stored::EncodeMove::soft_encode,
     )
 }
 
@@ -2537,7 +2525,7 @@ pub(crate) fn encode_ref_field<'a, R: ReprC<CType: Copy> + 'a>(
 where
     &'a R: EncodeMove<CType: crate::reference::SharedRefCarrier<R>>,
 {
-    let encoded = crate::encode_repr::encode_field(value, store);
+    let encoded = crate::stored::EncodeMove::soft_encode(value, store);
     // CSoftRef guarantees shared access to initialized storage, and Copy permits
     // duplicating the field representation without moving out of that storage.
     unsafe { encoded.as_ptr().read() }
@@ -2573,7 +2561,7 @@ fn encode_array_elements<'itm, R: EncodeMove + 'itm, const N: usize>(
     value: [R; N],
     store: &'itm mut ArrayStore<R::Store, N>,
 ) -> [R::CType; N] {
-    crate::elements::map_array(value, &mut store.0, crate::encode_repr::encode_field)
+    crate::elements::map_array(value, &mut store.0, crate::stored::EncodeMove::soft_encode)
 }
 
 unsafe fn decode_array_elements<'d, 'itm: 'd, R: DecodeMove<'d>, const N: usize>(

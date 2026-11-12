@@ -1372,13 +1372,6 @@ fn gen_robust_impls(
     let (impl_generics, ty_generics, where_clause) = generics.split_for_impl();
     let borrow_impls = (!known_unsized_tail).then(|| gen_identity_borrow_impls(ident, generics));
     let codec_impls = gen_identity_codec_impls(ident, generics, true);
-    let projection_impl = {
-        let mut generics = generics.clone();
-        let speculative = speculative_marker(generics.params.is_empty());
-        generics.make_where_clause().predicates.push(parse_quote!(#speculative Self: Sized));
-        let (impl_generics, ty_generics, where_clause) = generics.split_for_impl();
-        quote!(unsafe impl #impl_generics #co3::encode_repr::EncodeRepr for #ident #ty_generics #where_clause { type Encoded = Self; })
-    };
     let c_fn_impls = if known_unsized_tail {
         quote! {}
     } else {
@@ -1387,7 +1380,6 @@ fn gen_robust_impls(
 
     quote! {
         unsafe impl #impl_generics #co3::CType for #ident #ty_generics #where_clause {}
-        #projection_impl
 
         #c_fn_impls
 
@@ -1561,7 +1553,7 @@ fn gen_identity_codec_impls(
             type Store = ();
 
             #[inline(always)]
-            fn soft_encode<'itm>(self, (): &mut ()) -> co3::encode_repr::Encoded<Self>
+            fn soft_encode<'itm>(self, (): &mut ()) -> Self::CType
             where
                 Self: 'itm,
             {
@@ -1619,14 +1611,9 @@ pub(super) fn gen_identity_repr_c_impls(
     let (impl_generics, ty_generics, where_clause) = generics.split_for_impl();
     let codec_impls = gen_identity_codec_impls(ident, generics, true);
     let c_fn_impls = gen_c_fn_impls(ident, generics, fields);
-    let mut projection_generics = generics.clone();
-    let speculative = speculative_marker(generics.params.is_empty());
-    projection_generics.make_where_clause().predicates.push(parse_quote!(#speculative Self: Sized));
-    let (_, _, projection_where_clause) = projection_generics.split_for_impl();
 
     quote! {
         unsafe impl #impl_generics co3::CType for #ident #ty_generics #where_clause {}
-        unsafe impl #impl_generics co3::encode_repr::EncodeRepr for #ident #ty_generics #projection_where_clause { type Encoded = Self; }
 
         #c_fn_impls
 

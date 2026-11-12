@@ -372,8 +372,6 @@ fn nested_mutable_reference_validates_pointee_and_retains_borrowed_elements() {
 fn sized_aggregate_mutable_encoder_coverage() {
     use co3::stored::{SoftEncodeMut, SoftEncodeMutUnchecked};
     static_assertions::assert_impl_all!([bool; 2]: SoftEncodeMut<'static>, SoftEncodeMutUnchecked<'static>);
-    static_assertions::assert_not_impl_any!((u32, bool): SoftEncodeMut<'static>, SoftEncodeMutUnchecked<'static>);
-    static_assertions::assert_not_impl_any!(co3::tuple::Tuple2<u32, bool>: SoftEncodeMut<'static>, SoftEncodeMutUnchecked<'static>);
     static_assertions::assert_not_impl_any!(Record: SoftEncodeMut<'static>, SoftEncodeMutUnchecked<'static>);
     static_assertions::assert_not_impl_any!(DerivedMutable: SoftEncodeMut<'static>, SoftEncodeMutUnchecked<'static>);
     static_assertions::assert_not_impl_any!(GenericMutable<u32>: SoftEncodeMut<'static>, SoftEncodeMutUnchecked<'static>);

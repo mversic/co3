@@ -286,9 +286,9 @@ fn gen_pack_input_stmts(
 
 pub(crate) fn gen_abi_return_encode(value: TokenStream, borrow_output: bool) -> TokenStream {
     if borrow_output {
-        quote!(co3::encode_repr::unproject(co3::encode(co3::borrow::Borrow::borrow(#value))))
+        quote!(co3::encode(co3::borrow::Borrow::borrow(#value)))
     } else {
-        quote!(co3::encode_repr::unproject(co3::encode(#value)))
+        quote!(co3::encode(#value))
     }
 }
 
@@ -429,16 +429,6 @@ pub(crate) fn logical_unpack_part(arg_ty: &Type, part: &Type, position: u8) -> s
     } else {
         Ok(parse_quote!(<#part as co3::ReprC>::CType))
     }
-}
-
-pub(crate) fn borrowed_wide_unpack(attrs: &[syn::Attribute], arg_ty: &Type) -> bool {
-    if ownership_mode_for_arg(attrs, arg_ty) != OwnershipMode::Borrow {
-        return false;
-    }
-    let arg_ty = peel_grouped_type(arg_ty);
-    let arg_ty = option_inner_type(arg_ty).unwrap_or(arg_ty);
-    boxed_wide_type(arg_ty).is_some()
-        || matches!(arg_ty, Type::Reference(reference) if reference.mutability.is_some())
 }
 
 fn inferred_unpack_part(arg_ty: &Type, part: u8) -> syn::Result<Type> {

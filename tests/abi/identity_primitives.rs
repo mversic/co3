@@ -55,11 +55,23 @@ fn double(value: c_long) -> c_long {
     value + value
 }
 
+fn update(seed: u32, value: &mut u32) -> u32 {
+    *value += seed;
+    *value
+}
+
 ffi! {
     #![unsafe(export("C"))]
     #![symbol_prefix = "identity_primitives"]
 
     fn double(value: c_long) -> c_long;
+
+    #[symbol_name = "argument_conversion_update"]
+    fn update(
+        #[soft] seed: u32,
+        #[cfg(any())] absent: MissingType,
+        #[soft] value: &mut u32,
+    ) -> u32;
 }
 
 ffi! {
@@ -67,6 +79,20 @@ ffi! {
 
     #[symbol_name = "identity_primitives__double"]
     fn imported_double(value: c_long) -> c_long;
+
+    #[symbol_name = "argument_conversion_update"]
+    fn imported_update(
+        #[soft] seed: u32,
+        #[cfg(any())] absent: MissingType,
+        #[soft] value: &mut u32,
+    ) -> u32;
+}
+
+#[test]
+fn identity_arguments_skip_stores_without_skipping_reference_conversion() {
+    let mut value = 7;
+    assert_eq!(imported_update(5, &mut value), 12);
+    assert_eq!(value, 12);
 }
 
 #[test]

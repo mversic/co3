@@ -105,11 +105,11 @@ unsafe impl<T: EncodeMoveUnchecked<CType: Sized>> EncodeMoveUnchecked for Revers
 unsafe impl<T: EncodeMove<CType: Sized>> EncodeMove for Reverse<T> {
     type Store = T::Store;
 
-    fn soft_encode<'a>(self, store: &'a mut Self::Store) -> crate::encode_repr::Encoded<Self>
+    fn soft_encode<'a>(self, store: &'a mut Self::Store) -> Self::CType
     where
         Self: 'a,
     {
-        Reverse(crate::encode_repr::encode_field(self.0, store))
+        Reverse(crate::stored::EncodeMove::soft_encode(self.0, store))
     }
 }
 
@@ -139,7 +139,6 @@ unsafe impl<T: AbiCompatibleValidate<CType: Sized>> AbiCompatibleValidate for Re
 }
 unsafe impl<T: AbiCompatible<CType: Sized>> AbiCompatible for Reverse<T> {}
 unsafe impl<T: CType> CType for Reverse<T> {}
-unsafe impl<T: CType> crate::encode_repr::EncodeRepr for Reverse<T> where Self: Sized { type Encoded = Self; }
 unsafe impl<T: CFnArg> CFnArg for Reverse<T> {}
 unsafe impl<T: CFnReturn> CFnReturn for Reverse<T> {}
 unsafe impl<T: Zeroable> Zeroable for Reverse<T> {}
@@ -167,13 +166,13 @@ where
 
 unsafe impl<'a, T: SoftEncodeRef<'a> + 'a> SoftEncodeRef<'a> for Reverse<T>
 where
-    T: RustSpec<Size: crate::Thin> + ReprC<CType: crate::encode_repr::EncodeRepr>,
-    &'a Self: ReprC<CType: crate::encode_repr::EncodeRepr>,
-    &'a T: ReprC<CType: crate::encode_repr::EncodeRepr>,
+    T: RustSpec<Size: crate::Thin> + ReprC<CType: Sized>,
+    &'a Self: ReprC<CType: Sized>,
+    &'a T: ReprC<CType: Sized>,
 {
     type Store = T::Store;
 
-    fn soft_encode_ref<'b>(&'a self, store: &'b mut Self::Store) -> crate::encode_repr::Encoded<&'a Self>
+    fn soft_encode_ref<'b>(&'a self, store: &'b mut Self::Store) -> <&'a Self as crate::ReprC>::CType
     where
         'a: 'b,
     {
@@ -204,13 +203,13 @@ where
 
 unsafe impl<'a, T: SoftEncodeMut<'a> + 'a> SoftEncodeMut<'a> for Reverse<T>
 where
-    T: RustSpec<Size: crate::Thin> + ReprC<CType: crate::encode_repr::EncodeRepr>,
-    &'a mut Self: ReprC<CType: crate::encode_repr::EncodeRepr>,
-    &'a mut T: ReprC<CType: crate::encode_repr::EncodeRepr>,
+    T: RustSpec<Size: crate::Thin> + ReprC<CType: Sized>,
+    &'a mut Self: ReprC<CType: Sized>,
+    &'a mut T: ReprC<CType: Sized>,
 {
     type Store = T::Store;
 
-    fn soft_encode_mut<'b>(&'a mut self, store: &'b mut Self::Store) -> crate::encode_repr::Encoded<&'a mut Self>
+    fn soft_encode_mut<'b>(&'a mut self, store: &'b mut Self::Store) -> <&'a mut Self as crate::ReprC>::CType
     where
         'a: 'b,
     {

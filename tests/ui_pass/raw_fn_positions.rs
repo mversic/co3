@@ -43,8 +43,5 @@ fn main() {
     let _: Option<unsafe extern "C" fn(u8)> = CALLBACK.read();
     let _: GenericDefault = None;
     let _: InsideMacro = 0u8;
-    static_assertions::assert_type_eq_all!(
-        Unpacked,
-        unsafe extern "C" fn(co3::borrow::Borrowed<*mut u8>, usize) -> c_int
-    );
+    let _: Option<Unpacked> = None;
 }

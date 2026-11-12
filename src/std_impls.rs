@@ -47,7 +47,7 @@ macro_rules! non_zero_derive {
             type Store = ();
 
             #[inline(always)]
-            fn soft_encode<'itm>(self, (): &mut ()) -> crate::encode_repr::Encoded<Self>
+            fn soft_encode<'itm>(self, (): &mut ()) -> Self::CType
             where
                 Self: 'itm
             {
@@ -118,7 +118,7 @@ unsafe impl EncodeMove for () {
     type Store = ();
 
     #[inline(always)]
-    fn soft_encode<'itm>(self, (): &'itm mut Self::Store) -> crate::encode_repr::Encoded<Self>
+    fn soft_encode<'itm>(self, (): &'itm mut Self::Store) -> Self::CType
     where
         Self: 'itm,
     {
@@ -158,7 +158,6 @@ unsafe impl AbiCompatibleValidate for () {
 unsafe impl AbiCompatible for () {}
 
 unsafe impl CType for () {}
-unsafe impl crate::encode_repr::EncodeRepr for () where Self: Sized { type Encoded = Self; }
 crate::mutable::impl_direct_mut!([]());
 unsafe impl CFnReturn for () {}
 
@@ -191,7 +190,7 @@ unsafe impl<T: ?Sized> EncodeMove for PhantomData<T> {
     type Store = ();
 
     #[inline(always)]
-    fn soft_encode<'itm>(self, (): &'itm mut Self::Store) -> crate::encode_repr::Encoded<Self>
+    fn soft_encode<'itm>(self, (): &'itm mut Self::Store) -> Self::CType
     where
         Self: 'itm,
     {
@@ -222,7 +221,6 @@ impl<T: ?Sized> EncodeUnchecked for PhantomData<T> {}
 impl<T: ?Sized> Encode for PhantomData<T> {}
 
 unsafe impl<T: ?Sized> CType for PhantomData<T> {}
-unsafe impl<T: ?Sized> crate::encode_repr::EncodeRepr for PhantomData<T> where Self: Sized { type Encoded = Self; }
 unsafe impl<T: ?Sized> Borrow for NonNull<T> {
     type Borrowed = Self;
 
@@ -244,7 +242,7 @@ unsafe impl<T: CType + ?Sized> EncodeMove for NonNull<T> {
     type Store = <*mut T as EncodeMove>::Store;
 
     #[inline(always)]
-    fn soft_encode<'itm>(self, store: &'itm mut Self::Store) -> crate::encode_repr::Encoded<Self>
+    fn soft_encode<'itm>(self, store: &'itm mut Self::Store) -> Self::CType
     where
         Self: 'itm,
     {
@@ -350,7 +348,6 @@ impl<'d, R: Decode<'d>> Decode<'d> for UnsafeCell<R> where Self: DecodeMove<'d> 
 unsafe impl<T: EmptyStore> EmptyStore for UnsafeCell<T> {}
 
 unsafe impl<R: CType + ?Sized> CType for UnsafeCell<R> {}
-unsafe impl<R: CType + ?Sized> crate::encode_repr::EncodeRepr for UnsafeCell<R> where Self: Sized { type Encoded = Self; }
 unsafe impl<T: CFnArg> CFnArg for UnsafeCell<T> where
     Self: RustSpec<Size = rust_spec::size::Sized<rust_spec::Gt<rust_spec::Zero>>>
 {
@@ -385,7 +382,6 @@ impl<'d, R: Decode<'d>> Decode<'d> for Cell<R> where Self: DecodeMove<'d> {}
 unsafe impl<T: EmptyStore> EmptyStore for Cell<T> {}
 
 unsafe impl<R: CType + ?Sized> CType for Cell<R> {}
-unsafe impl<R: CType + ?Sized> crate::encode_repr::EncodeRepr for Cell<R> where Self: Sized { type Encoded = Self; }
 unsafe impl<T: CFnArg> CFnArg for Cell<T> where
     Self: RustSpec<Size = rust_spec::size::Sized<rust_spec::Gt<rust_spec::Zero>>>
 {
@@ -418,7 +414,7 @@ unsafe impl<T: AbiCompatible<CType: Sized> + EncodeMove<Store: EmptyStore>> Enco
     type Store = ();
 
     #[inline(always)]
-    fn soft_encode<'itm>(self, (): &mut ()) -> crate::encode_repr::Encoded<Self>
+    fn soft_encode<'itm>(self, (): &mut ()) -> Self::CType
     where
         Self: 'itm,
     {
@@ -459,7 +455,6 @@ unsafe impl<T: AbiCompatible<CType: Sized>> AbiCompatibleValidate for MaybeUnini
 unsafe impl<T: AbiCompatible<CType: Sized>> AbiCompatible for MaybeUninit<T> {}
 
 unsafe impl<T: CType> CType for MaybeUninit<T> {}
-unsafe impl<T: CType> crate::encode_repr::EncodeRepr for MaybeUninit<T> where Self: Sized { type Encoded = Self; }
 unsafe impl<T: CFnArg> CFnArg for MaybeUninit<T> where
     Self: RustSpec<Size = rust_spec::size::Sized<rust_spec::Gt<rust_spec::Zero>>>
 {
@@ -490,7 +485,6 @@ impl<T: EncodeUnchecked> EncodeUnchecked for ManuallyDrop<T> where Self: EncodeM
 impl<'d, T: Decode<'d>> Decode<'d> for ManuallyDrop<T> where Self: DecodeMove<'d> {}
 
 unsafe impl<T: CType + ?Sized> CType for ManuallyDrop<T> {}
-unsafe impl<T: CType + ?Sized> crate::encode_repr::EncodeRepr for ManuallyDrop<T> where Self: Sized { type Encoded = Self; }
 unsafe impl<T: CFnArg> CFnArg for ManuallyDrop<T> where
     Self: RustSpec<Size = rust_spec::size::Sized<rust_spec::Gt<rust_spec::Zero>>>
 {
@@ -678,7 +672,7 @@ mod tests {
             Niche<CType = CRef<'static, ManuallyDrop<Box<u8>>>>,
         );
         assert_impl_all!(&mut ManuallyDrop<Box<u8>>:
-            Niche<CType = crate::reference::CRefMut<'static, ManuallyDrop<Box<u8>>, true>>,
+            Niche<CType = crate::reference::CSoftRefMut<ManuallyDrop<Box<u8>>, true>>,
         );
         assert_impl_all!(Box<ManuallyDrop<Box<u8>>>:
             RustSpec<Niche = WithNiche<rust_spec::Stable>>,
@@ -688,7 +682,7 @@ mod tests {
             Niche<CType = crate::wide::CWideRef<'static, [ManuallyDrop<Box<u8>>]>>,
         );
         assert_impl_all!(&mut [ManuallyDrop<Box<u8>>]:
-            Niche<CType = crate::wide::CWideRefMut<'static, [ManuallyDrop<Box<u8>>], true>>,
+            Niche<CType = crate::wide::CSoftWideRefMut<[ManuallyDrop<Box<u8>>], true>>,
         );
         assert_impl_all!(Box<[ManuallyDrop<Box<u8>>]>:
             Niche<CType = CWideBox<[ManuallyDrop<Box<u8>>]>>,
@@ -728,7 +722,7 @@ mod tests {
 
         #[cfg(feature = "alloc")]
         assert_impl_all!(&mut str:
-            Niche<CType = crate::wide::CWideRefMut<'static, str, true>>,
+            Niche<CType = crate::wide::CSoftWideRefMut<str, true>>,
             Decode<'static>,
             Encode,
         );
@@ -751,7 +745,7 @@ mod tests {
 
         let mut invalid = [0xff];
         let source = unsafe {
-            crate::wide::CWideRefMut::<_, true>::from_raw_parts_mut(invalid.as_mut_ptr(), invalid.len())
+            crate::wide::CSoftWideRefMut::<_, true>::from_raw_parts_mut(invalid.as_mut_ptr(), invalid.len())
         };
         let decoded = unsafe { crate::decode::<&mut str>(source) };
         assert!(decoded.is_none());
@@ -884,14 +878,14 @@ mod tests {
 
         let value = UnsafeCell::new(NonZero::new(3_u8).unwrap());
         let source = unsafe {
-            crate::reference::CRefMut::from_raw(value.get().cast::<UnsafeCell<crate::NonZero<u8>>>())
+            crate::reference::CSoftRefMut::from_raw(value.get().cast::<UnsafeCell<crate::NonZero<u8>>>())
         };
         let decoded = unsafe { crate::decode::<&mut UnsafeCell<NonZero<u8>>>(source) }.unwrap();
         assert_eq!(decoded.get_mut().get(), 3);
 
         let invalid = UnsafeCell::new(0_u8);
         let source = unsafe {
-            crate::reference::CRefMut::from_raw(invalid.get().cast::<UnsafeCell<crate::NonZero<u8>>>())
+            crate::reference::CSoftRefMut::from_raw(invalid.get().cast::<UnsafeCell<crate::NonZero<u8>>>())
         };
         assert!(unsafe { crate::decode::<&mut UnsafeCell<NonZero<u8>>>(source) }.is_none());
     }
@@ -967,17 +961,17 @@ mod tests {
     }
 
     #[test]
-    fn mutable_non_robust_projection_keeps_unchecked_encoding_direct() {
+    fn mutable_non_robust_soft_carrier_keeps_unchecked_encoding_direct() {
         use crate::stored::Store;
         type CellValue = UnsafeCell<NonZero<u8>>;
         assert_impl_all!(&'static mut CellValue:
             crate::stored::EncodeMoveUnchecked<SoftStore = ()>,
-            ReprC<CType = crate::reference::CRefMut<'static, CellValue, true>>
+            ReprC<CType = crate::reference::CSoftRefMut<CellValue, true>>
         );
 
         let mut value = UnsafeCell::new(NonZero::new(3_u8).unwrap());
         let original = core::ptr::from_mut(&mut value).cast();
-        let unchecked: crate::reference::CRefMut<'_, CellValue, true> =
+        let unchecked: crate::reference::CSoftRefMut<CellValue, true> =
             unsafe { crate::soft_encode_unchecked(&mut value, &mut ()) };
         assert_eq!(unchecked.as_ptr(), original);
 
@@ -1002,7 +996,7 @@ mod tests {
         );
         assert_not_impl_any!(&UnsafeCell<NonZero<u8>>: Decode<'static>, AbiCompatible);
         assert_impl_all!(&mut UnsafeCell<NonZero<u8>>:
-            Niche<CType = crate::reference::CRefMut<'static, UnsafeCell<NonZero<u8>>, true>>,
+            Niche<CType = crate::reference::CSoftRefMut<UnsafeCell<NonZero<u8>>, true>>,
             Decode<'static>,
         );
         #[cfg(feature = "alloc")]
@@ -1032,7 +1026,7 @@ mod tests {
         );
         assert_not_impl_any!(&[UnsafeCell<NonZero<u8>>]: Decode<'static>);
         assert_impl_all!(&mut [UnsafeCell<NonZero<u8>>]:
-            Niche<CType = crate::wide::CWideRefMut<'static, [UnsafeCell<NonZero<u8>>], true>>,
+            Niche<CType = crate::wide::CSoftWideRefMut<[UnsafeCell<NonZero<u8>>], true>>,
             Decode<'static>,
         );
         #[cfg(feature = "alloc")]

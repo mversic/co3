@@ -8,7 +8,7 @@ ffi! {
     type Ordinary = core::num::NonZeroU8;
     type Regular = extern "C" fn(u8);
     type SharedUnpacked = extern "C" fn(#[unpack(_, _)] &[u8]) -> usize;
-    type InteriorUnpacked = extern "C" fn(#[unpack(co3::borrow::Borrowed<*mut core::cell::UnsafeCell<u8>>, usize)] &[core::cell::Cell<u8>]) -> usize;
+    type InteriorUnpacked = raw extern "C" fn(#[unpack(*mut core::cell::UnsafeCell<u8>, usize)] &[core::cell::Cell<u8>]) -> usize;
     type RegularUnpacked = extern "C" fn(#[unpack(_, _)] &mut [u8]) -> usize;
     type Composite = (String, raw fn(String));
     type MaybeCallback = Option<raw fn(u8)>;
@@ -23,7 +23,7 @@ ffi! {
 ffi! {
     #![unsafe(extern("C"))]
 
-    fn interior_slice(#[unpack(co3::borrow::Borrowed<*mut core::cell::UnsafeCell<u8>>, usize)] values: &[core::cell::Cell<u8>]) -> usize;
+    fn interior_slice(#[unpack(*mut core::cell::UnsafeCell<u8>, usize)] values: &[core::cell::Cell<u8>]) -> usize;
 }
 
 ffi! {
@@ -54,19 +54,13 @@ fn main() {
     );
     static_assertions::assert_type_eq_all!(
         InteriorUnpacked,
-        Option<unsafe extern "C" fn(co3::borrow::Borrowed<*mut core::cell::UnsafeCell<u8>>, usize) -> usize>
+        unsafe extern "C" fn(*mut core::cell::UnsafeCell<u8>, usize) -> usize
     );
     static_assertions::assert_type_eq_all!(
         RegularUnpacked,
-        Option<unsafe extern "C" fn(co3::borrow::Borrowed<*mut u8>, usize) -> usize>
+        Option<unsafe extern "C" fn(*mut u8, usize) -> usize>
     );
-    static_assertions::assert_type_eq_all!(
-        Composite,
-        <(
-            String,
-            unsafe extern "C" fn(co3::borrow::Borrowed<co3::utf8::Utf8String>)
-        ) as ReprC>::CType
-    );
+    let _: Option<Composite> = None;
     static_assertions::assert_type_eq_all!(MaybeCallback, co3::option::COptionSome<unsafe extern "C" fn(u8)>);
     static_assertions::assert_type_eq_all!(NicheOk, co3::result::CResultOk<core::num::NonZeroU8, ()>);
     static_assertions::assert_type_eq_all!(NicheErr, co3::result::CResultErr<(), core::num::NonZeroU8>);

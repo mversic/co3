@@ -239,14 +239,14 @@ pub(super) fn derive_field_repr_c(
             {
                 type Store = <#field_ty as co3::stored::EncodeMove>::Store;
 
-                fn soft_encode<'_išč>(self, store: &'_išč mut Self::Store) -> co3::encode_repr::Encoded<Self>
+                fn soft_encode<'_išč>(self, store: &'_išč mut Self::Store) -> Self::CType
                 where Self: '_išč {
                     let owner = core::mem::ManuallyDrop::new(self);
                     let value = #take_field;
                     #encode_custom_check
-                    let encoded = co3::encode_repr::encode_field(value, store);
+                    let encoded = co3::stored::EncodeMove::soft_encode(value, store);
                     #encode_niche_check
-                    co3::encode_repr::project(encoded)
+                    encoded
                 }
             }
         };

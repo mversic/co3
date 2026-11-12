@@ -1349,7 +1349,7 @@ pub(crate) fn validate_unpack(sig: &syn::Signature, outer: Option<&syn::Generics
                     "runtime-dispatched #[unpack] arguments cannot use `_` placeholders",
                 ));
             }
-            unpack.resolve(attrs, ty)?;
+            unpack.resolve(ty)?;
         }
     }
 

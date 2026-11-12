@@ -432,15 +432,11 @@ macro_rules! impl_reference_carrier {
 
 macro_rules! impl_reference_identity {
     ($ty:ident, [$($params:tt)*], [$($args:tt)*]) => {
-        unsafe impl<$($params)*> $crate::encode_repr::EncodeRepr for $ty<$($args)*> { type Encoded = Self; }
-        impl_reference_identity!(@base $ty, [$($params)*], [$($args)*]);
-    };
-    (@base $ty:ident, [$($params:tt)*], [$($args:tt)*]) => {
         impl<$($params)*> ReprC for $ty<$($args)*> { type CType = Self; }
-        unsafe impl<$($params)*> EncodeMove for $ty<$($args)*> where Self: $crate::encode_repr::EncodeRepr {
+        unsafe impl<$($params)*> EncodeMove for $ty<$($args)*> {
             type Store = ();
-            fn soft_encode<'itm>(self, (): &mut ()) -> crate::encode_repr::Encoded<Self> where Self: 'itm {
-                crate::encode_repr::project(self)
+            fn soft_encode<'itm>(self, (): &mut ()) -> Self::CType where Self: 'itm {
+                self
             }
         }
         unsafe impl<$($params)*> EncodeMoveUnchecked for $ty<$($args)*> {
@@ -451,7 +447,7 @@ macro_rules! impl_reference_identity {
             type Store = ();
             unsafe fn soft_decode<'itm: 'd>(source: Self::CType, (): &mut ()) -> Option<Self> { Some(source) }
         }
-        impl<$($params)*> Encode for $ty<$($args)*> where Self: $crate::encode_repr::EncodeRepr {}
+        impl<$($params)*> Encode for $ty<$($args)*> {}
         impl<$($params)*> crate::EncodeUnchecked for $ty<$($args)*> {}
         impl<'d, $($params)*> Decode<'d> for $ty<$($args)*> {}
         unsafe impl<$($params)*> CType for $ty<$($args)*> {}
@@ -472,9 +468,7 @@ impl_reference_identity! { CSoftRefMut, [R: ReprC<CType: CType> + ?Sized, const 
 impl_reference_carrier! { CRef, ['a, R: ReprC + ?Sized], ['a, R] }
 impl_reference_carrier! { CRefMut, ['a, R: ReprC + ?Sized, const EXCLUSIVE: bool], ['a, R, EXCLUSIVE] }
 impl_reference_identity! { CRef, ['a, R: ReprC<CType: CType> + ?Sized], ['a, R] }
-impl_reference_identity! { @base CRefMut, ['a, R: ReprC<CType: CType> + ?Sized, const EXCLUSIVE: bool], ['a, R, EXCLUSIVE] }
-unsafe impl<'a, R: ReprC<CType: CType> + ?Sized> crate::encode_repr::EncodeRepr for CRefMut<'a, R, false> { type Encoded = Self; }
-unsafe impl<'a, R: ReprC<CType: CType> + ?Sized> crate::encode_repr::EncodeRepr for CRefMut<'a, R, true> { type Encoded = CSoftRefMut<R, true>; }
+impl_reference_identity! { CRefMut, ['a, R: ReprC<CType: CType> + ?Sized, const EXCLUSIVE: bool], ['a, R, EXCLUSIVE] }
 
 const fn assert_thin_pointer<C: ?Sized>() {
     const {
@@ -558,7 +552,7 @@ mod tests {
 
         let mut cell = UnsafeCell::new(1_u8);
         let pointer = cell.get().cast::<UnsafeCell<u8>>();
-        let exclusive: CSoftRefMut<UnsafeCell<u8>, true> = crate::encode(&mut cell);
+        let exclusive: CRefMut<'_, UnsafeCell<u8>, true> = crate::encode(&mut cell);
         assert_eq!(exclusive.as_ptr(), pointer);
         unsafe { exclusive.as_ptr().write(UnsafeCell::new(2)) };
         assert_eq!(cell.into_inner(), 2);

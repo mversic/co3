@@ -575,7 +575,7 @@ pub use rust_spec;
 use rust_spec::{
     RustSpec, Unstable,
     drop::{DropKind, NoDrop},
-    layout::LayoutKind,
+    layout::{LayoutKind, NonRobust, Robust},
     mutability::{Exclusive, ExclusiveKind, WithInterior},
     niche::{WithNiche, WithoutNiche},
     size::{ExternTypeLike, MetaSized, NulTerminated, SizedKind, SliceLike, Zero},
@@ -596,7 +596,6 @@ use crate::{
 };
 
 pub mod borrow;
-pub mod encode_repr;
 #[cfg(feature = "alloc")]
 pub mod boxed;
 pub mod cmp;
@@ -749,7 +748,6 @@ impl<R: ReprC<CType: Sized>> ReprC for NonZero<R> {
     type CType = NonZero<R::CType>;
 }
 unsafe impl<C: CType> CType for NonZero<C> {}
-unsafe impl<C: CType> crate::encode_repr::EncodeRepr for NonZero<C> where Self: Sized { type Encoded = Self; }
 unsafe impl<C: CFnArg> CFnArg for NonZero<C> {}
 unsafe impl<C: CFnReturn> CFnReturn for NonZero<C> {}
 
@@ -778,11 +776,11 @@ unsafe impl<R: EncodeMoveUnchecked> EncodeMoveUnchecked for NonZero<R> {
 unsafe impl<R: EncodeMove> EncodeMove for NonZero<R> {
     type Store = R::Store;
 
-    fn soft_encode<'a>(self, store: &'a mut Self::Store) -> crate::encode_repr::Encoded<Self>
+    fn soft_encode<'a>(self, store: &'a mut Self::Store) -> Self::CType
     where
         Self: 'a,
     {
-        NonZero(crate::encode_repr::encode_field(self.0, store))
+        NonZero(crate::stored::EncodeMove::soft_encode(self.0, store))
     }
 }
 unsafe impl<'d, R: DecodeMove<'d>> DecodeMove<'d> for NonZero<R> {
@@ -894,9 +892,15 @@ disjoint_impls! {
 
     impl<'a, R: ReprC + ?Sized> ReprC for &'a mut R
     where
-        R: RustSpec<Layout = rust_spec::Stable, Size: Thin>,
+        R: RustSpec<Layout = rust_spec::Stable, Trap = Robust, Size: Thin>,
     {
         type CType = CRefMut<'a, R, true>;
+    }
+    impl<R: ReprC + ?Sized> ReprC for &mut R
+    where
+        R: RustSpec<Layout = rust_spec::Stable, Trap = NonRobust, Size: Thin>,
+    {
+        type CType = CSoftRefMut<R, true>;
     }
     impl<R: ReprC + ?Sized> ReprC for &mut R
     where
@@ -906,9 +910,15 @@ disjoint_impls! {
     }
     impl<'a, R: ReprC<CType: Wide<Header: WideHeader<Data: CType>, Metadata = usize>> + ?Sized> ReprC for &'a mut R
     where
-        R: RustSpec<Layout = rust_spec::Stable, Size = MetaSized<SliceLike>>,
+        R: RustSpec<Layout = rust_spec::Stable, Trap = Robust, Size = MetaSized<SliceLike>>,
     {
         type CType = CWideRefMut<'a, R, true>;
+    }
+    impl<R: ReprC<CType: Wide<Header: WideHeader<Data: CType>, Metadata = usize>> + ?Sized> ReprC for &mut R
+    where
+        R: RustSpec<Layout = rust_spec::Stable, Trap = NonRobust, Size = MetaSized<SliceLike>>,
+    {
+        type CType = CSoftWideRefMut<R, true>;
     }
     impl<R: ReprC<CType: Wide<Header: WideHeader<Data: CType>, Metadata = usize>> + ?Sized> ReprC for &mut R
     where
@@ -1038,8 +1048,8 @@ impl<R: Encode, const N: usize> Encode for [R; N] where Self: EncodeMove {}
 impl<R: EncodeUnchecked, const N: usize> EncodeUnchecked for [R; N] where Self: EncodeMoveUnchecked {}
 impl<'d, R: Decode<'d>, const N: usize> Decode<'d> for [R; N] where Self: DecodeMove<'d> {}
 
-/// Convert `T` into its checked encoding representation, [`encode_repr::Encoded<T>`].
-pub fn encode<T: Encode<Store: EmptyStore>>(item: T) -> encode_repr::Encoded<T> {
+/// Convert `T` into its C-compatible representation, [`T::CType`](ReprC::CType).
+pub fn encode<T: Encode<Store: EmptyStore>>(item: T) -> T::CType {
     stored::encode_move(item)
 }
 
@@ -1054,10 +1064,10 @@ pub unsafe fn decode<'d, T: Decode<'d, Store: EmptyStore> + 'd>(source: T::CType
     unsafe { stored::decode_move(source) }
 }
 
-/// Convert `T` into [`encode_repr::Encoded<T>`] using external storage.
+/// Convert `T` into [`T::CType`](ReprC::CType) using external storage.
 ///
 /// Prefer using [`encode`] whenever possible
-pub fn soft_encode<T: Encode>(item: T, store: &mut T::Store) -> encode_repr::Encoded<T> {
+pub fn soft_encode<T: Encode>(item: T, store: &mut T::Store) -> T::CType {
     item.soft_encode(store)
 }
 

@@ -211,7 +211,7 @@ impl<R: EncodeMove<Store: EmptyStore>, S: Store + Default> RefMutSizedDecodeStor
             self.decode_with_order(
                 |fields| build(fields).map(|value| (value, source)),
                 |value, source| {
-                    source.write(crate::encode_repr::unproject::<R::CType>(encode_move(value)));
+                    source.write(encode_move(value));
                     Some(())
                 },
                 true,
@@ -529,7 +529,7 @@ impl<R: EncodeMove<CType: Sized, Store: EmptyStore>, S: Store> Store
 
         let source = unsafe { source.into_mut()? };
         for (destination, value) in source.iter_mut().zip(value) {
-            *destination = crate::encode_repr::unproject::<R::CType>(encode_move(value));
+            *destination = encode_move(value);
         }
         Some(())
     }
