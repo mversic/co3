@@ -19,6 +19,21 @@ use crate::{
     transmute::{AbiCompatible, AbiCompatibleValidate},
 };
 
+/// A transparent `Ok` payload with no Rust result discriminant.
+/// Lowers to `ResultOk<T::CType>` and preserves the payload's validity requirements.
+#[repr(transparent)]
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, PartialOrd, Ord, Hash, RustSpec)]
+pub struct ResultOk<T>(pub T);
+
+/// A transparent `Err` payload with no Rust result discriminant.
+/// Lowers to `ResultErr<E::CType>` and preserves the payload's validity requirements.
+#[repr(transparent)]
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, PartialOrd, Ord, Hash, RustSpec)]
+pub struct ResultErr<E>(pub E);
+
+crate::option::impl_niche_payload!(ResultOk);
+crate::option::impl_niche_payload!(ResultErr);
+
 /// A result with an explicit, stable discriminant representation.
 #[repr(u8)]
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, RustSpec)]

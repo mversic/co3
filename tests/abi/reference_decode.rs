@@ -68,7 +68,7 @@ fn stable_wide_referents_bypass_decode_traits() {
 
 #[test]
 fn unstable_shared_decoder_rejects_invalid_fields() {
-    let carrier = co3::tuple::Tuple2(7u8, co3::primitives::CBool(2));
+    let carrier = co3::tuple::CTuple2(7u8, co3::primitives::CBool(2));
     let mut store = Default::default();
     assert!(
         unsafe { co3::soft_decode::<&(u8, bool)>(CSoftRef::from_ref(&carrier), &mut store) }
@@ -245,8 +245,8 @@ fn mutable_vec_preserves_empty_and_zero_sized_capacity() {
 
 #[test]
 fn shared_vector_decoding_preserves_foreign_ownership() {
-    use co3::{primitives::CBool, tuple::Tuple2};
-    let carrier = co3::vec::CVec::from_vec(vec![Tuple2(7u8, CBool::TRUE)]);
+    use co3::{primitives::CBool, tuple::CTuple2};
+    let carrier = co3::vec::CVec::from_vec(vec![CTuple2(7u8, CBool::TRUE)]);
     for unchecked in [false, true] {
         let mut store = Default::default();
         let value = if unchecked {
@@ -286,7 +286,7 @@ fn shared_vector_decoding_preserves_foreign_ownership() {
     assert_eq!(original[0].0, 7);
     assert_eq!(original[0].1, CBool::TRUE);
 
-    let carrier = co3::vec::CVec::from_vec(vec![Tuple2(7u8, CBool(2))]);
+    let carrier = co3::vec::CVec::from_vec(vec![CTuple2(7u8, CBool(2))]);
     let mut store = Default::default();
     assert!(
         unsafe { co3::soft_decode::<&Vec<(u8, bool)>>(CSoftRef::from_ref(&carrier), &mut store) }
@@ -298,8 +298,8 @@ fn shared_vector_decoding_preserves_foreign_ownership() {
 
 #[test]
 fn shared_box_decoding_preserves_foreign_ownership() {
-    use co3::{primitives::CBool, tuple::Tuple2};
-    let carrier = co3::boxed::CBox::from_box(Box::new(Tuple2(9u8, CBool::TRUE)));
+    use co3::{primitives::CBool, tuple::CTuple2};
+    let carrier = co3::boxed::CBox::from_box(Box::new(CTuple2(9u8, CBool::TRUE)));
     for unchecked in [false, true] {
         let mut store = Default::default();
         let value = if unchecked {
@@ -325,9 +325,9 @@ fn shared_box_decoding_preserves_foreign_ownership() {
 
 #[test]
 fn array_decoders_validate_elements_and_write_back() {
-    use co3::{primitives::CBool, tuple::Tuple2};
+    use co3::{primitives::CBool, tuple::CTuple2};
     for unchecked in [false, true] {
-        let mut carrier = [Tuple2(1u8, CBool::TRUE), Tuple2(2, CBool::FALSE)];
+        let mut carrier = [CTuple2(1u8, CBool::TRUE), CTuple2(2, CBool::FALSE)];
         let mut shared = Default::default();
         let values = if unchecked {
             unsafe {
@@ -371,7 +371,7 @@ fn array_decoders_validate_elements_and_write_back() {
         assert_eq!(carrier[1].1, CBool::TRUE);
     }
 
-    let mut carrier = [Tuple2(1u8, CBool(2))];
+    let mut carrier = [CTuple2(1u8, CBool(2))];
     let mut shared = Default::default();
     assert!(
         unsafe { co3::soft_decode::<&[(u8, bool); 1]>(CSoftRef::from_ref(&carrier), &mut shared) }
@@ -393,9 +393,9 @@ fn array_decoders_validate_elements_and_write_back() {
 
 #[test]
 fn shared_enum_decoders_handle_tags_and_niches() {
-    use co3::{option::COption, primitives::CBool, result::CResult, tuple::Tuple2};
+    use co3::{option::COption, primitives::CBool, result::CResult, tuple::CTuple2};
 
-    let tagged = COption::<(u8, u8)>::Some(Tuple2(3u8, 5u8));
+    let tagged = COption::<(u8, u8)>::Some(CTuple2(3u8, 5u8));
     let mut store = Default::default();
     let decoded =
         unsafe { co3::soft_decode::<&Option<(u8, u8)>>(CSoftRef::from_ref(&tagged), &mut store) }
@@ -403,7 +403,7 @@ fn shared_enum_decoders_handle_tags_and_niches() {
     assert_eq!(decoded, &Some((3, 5)));
     store.sync().unwrap();
 
-    let tagged = COption::<(u8, bool), true>::Some(Tuple2(3u8, CBool::TRUE));
+    let tagged = COption::<(u8, bool), true>::Some(CTuple2(3u8, CBool::TRUE));
     let mut store = Default::default();
     let decoded = unsafe {
         co3::soft_decode_unchecked::<&co3::option::Option<(u8, bool)>>(
@@ -470,7 +470,7 @@ fn shared_enum_decoders_handle_tags_and_niches() {
     }
 
     // Invalid active payloads and tags are rejected without inspecting an inactive payload.
-    let invalid = COption::Some(Tuple2(3u8, CBool(3)));
+    let invalid = COption::Some(CTuple2(3u8, CBool(3)));
     let mut store = Default::default();
     assert!(
         unsafe {
@@ -520,7 +520,7 @@ fn manually_drop_reference_decoder_delegates_to_inner_storage() {
     assert_eq!(**value, (3, true));
     store.sync().unwrap();
 
-    let invalid = core::mem::ManuallyDrop::new(co3::tuple::Tuple2(3u8, co3::primitives::CBool(3)));
+    let invalid = core::mem::ManuallyDrop::new(co3::tuple::CTuple2(3u8, co3::primitives::CBool(3)));
     let mut store = Default::default();
     assert!(
         unsafe {
@@ -642,7 +642,7 @@ fn mutable_aggregates_accept_noncopy_nonclone_fields() {
 fn mutable_aggregate_fields_can_be_exclusive_references() {
     let mut target = 3u32;
     let pointer = core::ptr::from_mut(&mut target);
-    let mut carrier = co3::tuple::Tuple1(co3::reference::CRefMut::from_mut(&mut target));
+    let mut carrier = co3::tuple::CTuple1(co3::reference::CRefMut::from_mut(&mut target));
     let mut store = Default::default();
     let value = unsafe {
         co3::soft_decode::<&mut (&mut u32,)>(CSoftRefMut::from_mut(&mut carrier), &mut store)

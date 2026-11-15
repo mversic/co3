@@ -12,7 +12,9 @@ const MAX_TUPLE_ARITY: usize = 12;
 
 /// Match a bare built-in name, a supported full path, or a relative module suffix.
 pub(crate) fn builtin_path(path: &syn::Path, name: &str, modules: &[&str]) -> bool {
-    let Some(last) = path.segments.last() else { return false };
+    let Some(last) = path.segments.last() else {
+        return false;
+    };
     if last.ident != name {
         return false;
     }
@@ -22,14 +24,13 @@ pub(crate) fn builtin_path(path: &syn::Path, name: &str, modules: &[&str]) -> bo
     modules.iter().any(|module| {
         let parts: Vec<_> = module.split("::").collect();
         let prefix_len = path.segments.len() - 1;
-        if prefix_len > parts.len()
-            || (path.leading_colon.is_some() && prefix_len != parts.len())
-        {
+        if prefix_len > parts.len() || (path.leading_colon.is_some() && prefix_len != parts.len()) {
             return false;
         }
-        path.segments.iter().zip(&parts[parts.len() - prefix_len..]).all(|(segment, part)| {
-                segment.ident == *part && segment.arguments.is_none()
-            })
+        path.segments
+            .iter()
+            .zip(&parts[parts.len() - prefix_len..])
+            .all(|(segment, part)| segment.ident == *part && segment.arguments.is_none())
     })
 }
 
@@ -179,18 +180,17 @@ pub fn build_extern_c_type_tuple(types: &[&Type]) -> (TokenStream, TokenStream, 
     let mut nodes = types
         .chunks(MAX_TUPLE_ARITY)
         .map(|chunk| {
-            let c_types = chunk.iter().map(|ty| quote!(<#ty as co3::ReprC>::CType));
             let accessors = (0..chunk.len())
                 .map(|index| {
                     let index = Literal::usize_unsuffixed(index);
                     quote!(#index)
                 })
                 .collect();
-            let c_tuple_ident = format_ident!("Tuple{}", chunk.len());
+            let c_tuple_ident = format_ident!("CTuple{}", chunk.len());
 
             (
                 quote!((#(#chunk,)*)),
-                quote!(co3::tuple::#c_tuple_ident<#(#c_types),*, false>),
+                quote!(co3::tuple::#c_tuple_ident<#(#chunk),*>),
                 accessors,
             )
         })
@@ -225,10 +225,10 @@ fn pack_tuple_nodes(
     }
 
     let tuple_elems = nodes.iter().map(|(tuple, _, _)| tuple);
-    let c_tuple_elems = nodes.iter().map(|(_, c_tuple, _)| c_tuple);
+    let c_tuple_elems = nodes.iter().map(|(tuple, _, _)| tuple);
     let tuple = quote!((#(#tuple_elems,)*));
-    let c_tuple_ident = format_ident!("Tuple{}", nodes.len());
-    let c_tuple = quote!(co3::tuple::#c_tuple_ident<#(#c_tuple_elems),*, false>);
+    let c_tuple_ident = format_ident!("CTuple{}", nodes.len());
+    let c_tuple = quote!(co3::tuple::#c_tuple_ident<#(#c_tuple_elems),*>);
     let accessors = nodes
         .into_iter()
         .enumerate()

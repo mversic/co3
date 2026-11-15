@@ -895,14 +895,23 @@ pub(crate) mod tests {
         struct PacketData;
         struct CPacketData;
         #[derive(crate::ReprC, rust_spec::RustSpec)]
-        struct Packet { tag: u8, tail: alloc::boxed::Box<(u32,)> }
+        struct Packet {
+            tag: u8,
+            tail: alloc::boxed::Box<(u32,)>,
+        }
         let _ = (PacketData, CPacketData);
         static_assertions::assert_not_impl_any!(Packet: super::Wide);
-        let source = Packet { tag: 7, tail: alloc::boxed::Box::new((42,)) };
+        let source = Packet {
+            tag: 7,
+            tail: alloc::boxed::Box::new((42,)),
+        };
         let mut encode_store = Default::default();
         let encoded = crate::stored::EncodeMove::soft_encode(source, &mut encode_store);
         let mut decode_store = Default::default();
-        let decoded = unsafe { <Packet as crate::stored::DecodeMove>::soft_decode(encoded, &mut decode_store) }.unwrap();
+        let decoded = unsafe {
+            <Packet as crate::stored::DecodeMove>::soft_decode(encoded, &mut decode_store)
+        }
+        .unwrap();
         assert_eq!((decoded.tag, decoded.tail.0), (7, 42));
     }
 
@@ -937,6 +946,8 @@ pub(crate) mod tests {
     #[derive(crate::rust_spec::RustSpec)]
     pub(crate) struct Custom(pub(crate) [u8]);
     unsafe impl CType for Custom {}
+    // Identity lowering preserves the complete pointee ABI.
+    unsafe impl crate::transmute::AbiCompatible for Custom {}
     impl crate::ReprC for Custom {
         type CType = Self;
     }

@@ -764,7 +764,7 @@ mod tests {
     #[cfg(all(feature = "alloc", feature = "derive"))]
     #[test]
     fn raw_import_preserves_uniform_borrowed_carrier_signature() {
-        use co3::{CBorrowed, reference::CRef};
+        use co3::{borrow::CBorrowed, reference::CRef};
         fn check<'a>() {
             let _: unsafe extern "C" fn(CBorrowed<&'a u8>) -> CBorrowed<&'a u8> = borrowed_import;
         }
@@ -779,12 +779,12 @@ mod tests {
 
     #[cfg(all(feature = "alloc", feature = "derive"))]
     use crate::{
-        CBorrowed, Error, ffi,
+        Error, borrow::CBorrowed, ffi,
         ops::{CFn0, CFn1, CFn2, CFn12},
         option::COption,
         raw,
         reference::{CRef, CSoftRef, CSoftRefMut},
-        tuple::Tuple3,
+        tuple::CTuple3,
         utf8::Utf8String,
     };
     #[cfg(all(feature = "alloc", feature = "derive"))]
@@ -1421,7 +1421,7 @@ mod tests {
     fn raw_companions_validate_fields_in_declaration_order() {
         assert_eq!(
             unsafe {
-                raw_order_tuple_raw(CBorrowed::new(Tuple3(
+                raw_order_tuple_raw(CBorrowed::new(CTuple3(
                     <RawOrderProbe as co3::ReprC>::CType::from_fields(1),
                     <RawOrderProbe as co3::ReprC>::CType::from_fields(2),
                     <RawOrderProbe as co3::ReprC>::CType::from_fields(3),
@@ -1973,12 +1973,7 @@ mod tests {
     #[unsafe(export_name = "field_order_tuple")]
     #[cfg(all(feature = "alloc", feature = "derive"))]
     extern "C" fn receive_tuple(
-        values: Tuple3<
-            <ImportedOrderProbe as crate::ReprC>::CType,
-            <ImportedOrderProbe as crate::ReprC>::CType,
-            <ImportedOrderProbe as crate::ReprC>::CType,
-            false,
-        >,
+        values: CTuple3<ImportedOrderProbe, ImportedOrderProbe, ImportedOrderProbe>,
     ) -> u8 {
         values.0.0 + values.1.0 + values.2.0
     }

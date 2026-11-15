@@ -705,8 +705,6 @@ unsafe impl<T: ?Sized> Zeroable for core::marker::PhantomData<T> {}
 unsafe impl<T: Sized> Zeroable for *const T {}
 unsafe impl<T: Sized> Zeroable for *mut T {}
 
-pub use num::NonZero;
-
 /// Pointers to types implementing this trait alias are “thin”.
 ///
 /// See [`core::ptr::Thin`]
@@ -1033,6 +1031,7 @@ pub unsafe fn soft_decode_unchecked<'d, T: Decode<'d>>(
 #[cfg(feature = "alloc")]
 mod tests {
     use super::*;
+    use crate::num::NonZero;
     use crate::{option::COption, primitives::CBool};
 
     #[test]
@@ -1280,7 +1279,7 @@ mod tests {
     // from one side to the other: https://github.com/mversic/co3/issues/182
     fn encode_stored_mut_box_allows_pointer_replacement() {
         use boxed::CBox;
-        use tuple::Tuple2;
+        use tuple::CTuple2;
 
         let mut value = Box::new((1_u32, true));
 
@@ -1288,7 +1287,7 @@ mod tests {
             let mut store = Default::default();
             let encoded = soft_encode(&mut value, &mut store);
             let original_data = unsafe { (*encoded.as_ptr()).as_ptr() };
-            let replacement = CBox::from_box(Box::new(Tuple2(100, CBool::TRUE)));
+            let replacement = CBox::from_box(Box::new(CTuple2(100, CBool::TRUE)));
             let replacement_data = replacement.as_ptr();
 
             unsafe {
@@ -1305,9 +1304,9 @@ mod tests {
     #[test]
     #[cfg(feature = "alloc")]
     fn decode_stored_ref_mut_slice() {
-        use tuple::Tuple2;
+        use tuple::CTuple2;
 
-        let mut tuples = [Tuple2(10_u32, CBool::TRUE)];
+        let mut tuples = [CTuple2(10_u32, CBool::TRUE)];
         let c_slice = CSoftWideRefMut::<[(u32, bool)], true>::from_mut(&mut tuples[..]);
 
         {
@@ -1323,12 +1322,11 @@ mod tests {
     }
 }
 
-#[doc(hidden)]
-pub use borrow::CBorrowed;
-
 #[cfg(test)]
 mod carrier_tests {
     use super::*;
+    use crate::borrow::CBorrowed;
+    use crate::num::NonZero;
     use core::cmp::Reverse;
     use core::{
         cell::{Cell, UnsafeCell},
@@ -1396,22 +1394,22 @@ mod carrier_tests {
 
     #[test]
     fn source_family_discriminators_do_not_change_layout() {
-        use crate::{option::COption, result::CResult, tuple::Tuple2};
-        assert_type_eq_all!(<(u8, bool) as ReprC>::CType, Tuple2<<u8 as crate::ReprC>::CType, <bool as crate::ReprC>::CType, false>);
-        assert_type_eq_all!(<Tuple2<u8, bool> as ReprC>::CType, Tuple2<<u8 as crate::ReprC>::CType, <bool as crate::ReprC>::CType, true>);
+        use crate::{option::COption, result::CResult, tuple::{Tuple2, CTuple2}};
+        assert_type_eq_all!(<(u8, bool) as ReprC>::CType, CTuple2<u8, bool>);
+        assert_type_eq_all!(<Tuple2<u8, bool> as ReprC>::CType, Tuple2<u8, crate::primitives::CBool>);
         assert_type_eq_all!(<Option<u8> as ReprC>::CType, COption<u8>);
         assert_type_eq_all!(<crate::option::Option<u8> as ReprC>::CType, COption<u8, true>);
         assert_type_eq_all!(<Result<u8, u8> as ReprC>::CType, CResult<u8, u8>);
         assert_type_eq_all!(<crate::result::Result<u8, u8> as ReprC>::CType, CResult<u8, u8, true>);
         assert_type_eq_all!(<core::num::NonZeroU8 as ReprC>::CType, NonZero<u8>);
-        assert_type_eq_all!(<crate::NonZero<u8> as ReprC>::CType, NonZero<u8>);
-        assert_type_ne_all!(Tuple2<<u8 as crate::ReprC>::CType, <bool as crate::ReprC>::CType, false>, Tuple2<<u8 as crate::ReprC>::CType, <bool as crate::ReprC>::CType, true>);
+        assert_type_eq_all!(<crate::num::NonZero<u8> as ReprC>::CType, NonZero<u8>);
+        assert_type_ne_all!(CTuple2<u8, bool>, Tuple2<u8, crate::primitives::CBool>);
         assert_eq!(
             core::mem::size_of::<
-                Tuple2<<u8 as crate::ReprC>::CType, <bool as crate::ReprC>::CType, false>,
+                CTuple2<u8, bool>,
             >(),
             core::mem::size_of::<
-                Tuple2<<u8 as crate::ReprC>::CType, <bool as crate::ReprC>::CType, true>,
+                Tuple2<u8, crate::primitives::CBool>,
             >()
         );
         let source = Tuple2(7_u8, true);

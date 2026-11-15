@@ -13,16 +13,14 @@ error[E0277]: the trait bound `(): CFnArg` is not satisfied
    = help: the following other types implement trait `CFnArg`:
              *const R
              *mut R
-             CBool
-             CBox<R>
              CNoRepr
-             COption<T>
-             COptionSome<R>
-             COrdering
+             Cell<T>
+             ManuallyDrop<T>
+             MaybeUninit<T>
+             NoRepr
+             OptionSome<T>
            and $N others
    = note: required for `extern "C" fn(())` to implement `ReprC`
-   = note: 1 redundant requirement hidden
-   = note: required for `co3::borrow::Borrowed<extern "C" fn(())>` to implement `ReprC`
    = note: this error originates in the macro `ffi` (in Nightly builds, run with -Z macro-backtrace for more info)
 
 error[E0277]: the trait bound `[u32; 2]: CFnReturn` is not satisfied
@@ -41,15 +39,13 @@ error[E0277]: the trait bound `[u32; 2]: CFnReturn` is not satisfied
              ()
              *const R
              *mut R
-             CBool
-             CBox<R>
              CNoRepr
-             COption<T>
-             COptionSome<R>
+             Cell<T>
+             ManuallyDrop<T>
+             MaybeUninit<T>
+             NoRepr
            and $N others
    = note: required for `extern "C" fn() -> [u32; 2]` to implement `ReprC`
-   = note: 1 redundant requirement hidden
-   = note: required for `co3::borrow::Borrowed<extern "C" fn() -> [u32; 2]>` to implement `ReprC`
    = note: this error originates in the macro `ffi` (in Nightly builds, run with -Z macro-backtrace for more info)
 
 error[E0271]: type mismatch resolving `<Option<extern "C" fn(NoRepr)> as RustSpec>::Layout == Stable`
@@ -66,8 +62,6 @@ error[E0271]: type mismatch resolving `<Option<extern "C" fn(NoRepr)> as RustSpe
    |
    = note: required for `std::option::Option<extern "C" fn(NoRepr)>` to implement `CType`
    = note: required for `extern "C" fn(NoRepr)` to implement `ReprC`
-   = note: 1 redundant requirement hidden
-   = note: required for `co3::borrow::Borrowed<extern "C" fn(NoRepr)>` to implement `ReprC`
    = note: this error originates in the macro `ffi` (in Nightly builds, run with -Z macro-backtrace for more info)
 
 error[E0271]: type mismatch resolving `<NoRepr as RustSpec>::Layout == Stable`
@@ -108,6 +102,126 @@ note: required for `NoRepr` to implement `CFnArg`
    = help: consider manually implementing `CFnArg` to avoid undesired bounds caused by "imperfect derives"
    = note: to learn more, visit <https://github.com/rust-lang/rust/issues/26925>
    = note: required for `extern "C" fn(NoRepr)` to implement `ReprC`
-   = note: 1 redundant requirement hidden
-   = note: required for `co3::borrow::Borrowed<extern "C" fn(NoRepr)>` to implement `ReprC`
    = note: this error originates in the macro `ffi` which comes from the expansion of the derive macro `RustSpec` (in Nightly builds, run with -Z macro-backtrace for more info)
+
+error[E0277]: the trait bound `(): CFnArg` is not satisfied
+  --> tests/ui_fail/callback_requires_companion.rs:10:1
+   |
+10 | / ffi! {
+11 | |     #![unsafe(extern("C"))]
+12 | |
+13 | |     fn callback_with_bad_argument(callback: BadArgument);
+14 | |     fn callback_with_bad_return(callback: BadReturn);
+15 | |     fn non_stable_callback(callback: NonStable);
+16 | | }
+   | |_^ the trait `CFnArg` is not implemented for `()`
+   |
+   = help: the following other types implement trait `CFnArg`:
+             *const R
+             *mut R
+             CNoRepr
+             Cell<T>
+             ManuallyDrop<T>
+             MaybeUninit<T>
+             NoRepr
+             OptionSome<T>
+           and $N others
+   = note: required for `extern "C" fn(())` to implement `ReprC`
+   = note: this error originates in the macro `_impls` which comes from the expansion of the macro `ffi` (in Nightly builds, run with -Z macro-backtrace for more info)
+
+error[E0277]: the trait bound `[u32; 2]: CFnReturn` is not satisfied
+  --> tests/ui_fail/callback_requires_companion.rs:10:1
+   |
+10 | / ffi! {
+11 | |     #![unsafe(extern("C"))]
+12 | |
+13 | |     fn callback_with_bad_argument(callback: BadArgument);
+14 | |     fn callback_with_bad_return(callback: BadReturn);
+15 | |     fn non_stable_callback(callback: NonStable);
+16 | | }
+   | |_^ the trait `CFnReturn` is not implemented for `[u32; 2]`
+   |
+   = help: the following other types implement trait `CFnReturn`:
+             ()
+             *const R
+             *mut R
+             CNoRepr
+             Cell<T>
+             ManuallyDrop<T>
+             MaybeUninit<T>
+             NoRepr
+           and $N others
+   = note: required for `extern "C" fn() -> [u32; 2]` to implement `ReprC`
+   = note: this error originates in the macro `_impls` which comes from the expansion of the macro `ffi` (in Nightly builds, run with -Z macro-backtrace for more info)
+
+error[E0271]: type mismatch resolving `<Option<extern "C" fn(NoRepr)> as RustSpec>::Layout == Stable`
+  --> tests/ui_fail/callback_requires_companion.rs:10:1
+   |
+10 | / ffi! {
+11 | |     #![unsafe(extern("C"))]
+12 | |
+13 | |     fn callback_with_bad_argument(callback: BadArgument);
+14 | |     fn callback_with_bad_return(callback: BadReturn);
+15 | |     fn non_stable_callback(callback: NonStable);
+16 | | }
+   | |_^ expected `Stable`, found `Unstable`
+   |
+   = note: required for `std::option::Option<extern "C" fn(NoRepr)>` to implement `CType`
+   = note: required for `extern "C" fn(NoRepr)` to implement `ReprC`
+   = note: this error originates in the macro `_impls` which comes from the expansion of the macro `ffi` (in Nightly builds, run with -Z macro-backtrace for more info)
+
+error[E0271]: type mismatch resolving `<NoRepr as RustSpec>::Layout == Stable`
+  --> tests/ui_fail/callback_requires_companion.rs:10:1
+   |
+10 | / ffi! {
+11 | |     #![unsafe(extern("C"))]
+12 | |
+13 | |     fn callback_with_bad_argument(callback: BadArgument);
+14 | |     fn callback_with_bad_return(callback: BadReturn);
+15 | |     fn non_stable_callback(callback: NonStable);
+16 | | }
+   | |_^ type mismatch resolving `<NoRepr as RustSpec>::Layout == Stable`
+   |
+note: expected this to be `Stable`
+  --> tests/ui_fail/callback_requires_companion.rs:3:10
+   |
+ 3 | #[derive(RustSpec, ReprC)]
+   |          ^^^^^^^^
+note: required for `NoRepr` to implement `CType`
+  --> tests/ui_fail/callback_requires_companion.rs:4:8
+   |
+ 3 | #[derive(RustSpec, ReprC)]
+   |                    ----- type parameter would need to implement `CType`
+ 4 | struct NoRepr(u8);
+   |        ^^^^^^
+   = help: consider manually implementing `CType` to avoid undesired bounds caused by "imperfect derives"
+   = note: to learn more, visit <https://github.com/rust-lang/rust/issues/26925>
+   = note: associated types for the current `impl` cannot be restricted in `where` clauses
+   = note: associated types for the current `impl` cannot be restricted in `where` clauses
+note: required for `NoRepr` to implement `CFnArg`
+  --> tests/ui_fail/callback_requires_companion.rs:4:8
+   |
+ 3 | #[derive(RustSpec, ReprC)]
+   |                    ----- type parameter would need to implement `CFnArg`
+ 4 | struct NoRepr(u8);
+   |        ^^^^^^
+   = help: consider manually implementing `CFnArg` to avoid undesired bounds caused by "imperfect derives"
+   = note: to learn more, visit <https://github.com/rust-lang/rust/issues/26925>
+   = note: required for `extern "C" fn(NoRepr)` to implement `ReprC`
+   = note: this error originates in the macro `_impls` which comes from the expansion of the derive macro `RustSpec` (in Nightly builds, run with -Z macro-backtrace for more info)
+
+error[E0271]: type mismatch resolving `<Option<extern "C" fn(NoRepr)> as RustSpec>::Layout == Stable`
+  --> tests/ui_fail/callback_requires_companion.rs:10:1
+   |
+10 | / ffi! {
+11 | |     #![unsafe(extern("C"))]
+12 | |
+13 | |     fn callback_with_bad_argument(callback: BadArgument);
+14 | |     fn callback_with_bad_return(callback: BadReturn);
+15 | |     fn non_stable_callback(callback: NonStable);
+16 | | }
+   | |_^ expected `Stable`, found `Unstable`
+   |
+   = note: required for `std::option::Option<extern "C" fn(NoRepr)>` to implement `CType`
+   = note: required for `extern "C" fn(NoRepr)` to implement `EncodeMove`
+   = note: this error originates in the macro `ffi` (in Nightly builds, run with -Z macro-backtrace for more info)

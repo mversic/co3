@@ -13,15 +13,12 @@ use crate::{
     num::NonZero,
     option::COptionSome,
     result::{CResultErr, CResultOk},
-    tuple::Tuple2,
+    tuple::CTuple2,
     wide::WideRefCarrier,
     wide::{Wide, WideHeader},
 };
 #[cfg(feature = "alloc")]
-use crate::{
-    boxed::Box,
-    wide::CWideBox,
-};
+use crate::{boxed::Box, wide::CWideBox};
 
 /// Fallibly converts a C-compatible representation into one ABI argument.
 pub trait Unpack<Part: CType>: ReprC<CType: Sized> {
@@ -43,15 +40,15 @@ pub trait Pack<Part: CType>: ReprC<CType: Sized> {
 
 macro_rules! impl_raw_wide_unpack {
     ($source:ty, *$pointer:ident, $accessor:ident $(, $field:tt)?) => {
-        impl<R: Wide<Header: WideHeader<Data: CType>, Metadata: TryInto<U>> + CType + ?Sized, U: CType>
-            Unpack2<*$pointer <R::Header as WideHeader>::Data, U> for $source
+        impl<R: ReprC<CType = P> + ?Sized, P: Wide<Header: WideHeader<Data: CType>, Metadata: TryInto<U>> + CType + ?Sized, U: CType>
+            Unpack2<*$pointer <P::Header as WideHeader>::Data, U> for $source
         {
-            type Error = <R::Metadata as TryInto<U>>::Error;
+            type Error = <P::Metadata as TryInto<U>>::Error;
 
             #[inline(always)]
-            fn unpack(value: Self::CType) -> Result<(*$pointer <R::Header as WideHeader>::Data, U), Self::Error> {
+            fn unpack(value: Self::CType) -> Result<(*$pointer <P::Header as WideHeader>::Data, U), Self::Error> {
                 let value = value$(.$field)?;
-                Ok((R::$accessor(value).cast(), R::metadata(value).try_into()?))
+                Ok((P::$accessor(value).cast(), P::metadata(value).try_into()?))
             }
         }
         // TODO: Implement Pack2
@@ -242,7 +239,9 @@ where
         ReprC<CType = <<P as Wide>::Header as WideHeader>::Data>,
 {
     type Error = <<P as Wide>::Metadata as TryInto<U>>::Error;
-    fn unpack(value: Self::CType) -> Result<(*mut <P::Header as WideHeader>::Data, U), Self::Error> {
+    fn unpack(
+        value: Self::CType,
+    ) -> Result<(*mut <P::Header as WideHeader>::Data, U), Self::Error> {
         Ok((value.as_ptr(), value.metadata().try_into()?))
     }
 }
@@ -270,7 +269,7 @@ where
 impl<A: ReprC<CType = Part1>, B: ReprC<CType = Part2>, Part1: CType, Part2: CType>
     Unpack2<Part1, Part2> for (A, B)
 where
-    Self: ReprC<CType = Tuple2<Part1, Part2, false>>,
+    Self: ReprC<CType = CTuple2<A, B>>,
 {
     type Error = core::convert::Infallible;
 
@@ -283,13 +282,13 @@ where
 impl<A: ReprC<CType = Part1>, B: ReprC<CType = Part2>, Part1: CType, Part2: CType>
     Pack2<Part1, Part2> for (A, B)
 where
-    Self: ReprC<CType = Tuple2<Part1, Part2, false>>,
+    Self: ReprC<CType = CTuple2<A, B>>,
 {
     type Error = core::convert::Infallible;
 
     #[inline(always)]
     unsafe fn pack(part1: Part1, part2: Part2) -> Result<Self::CType, Self::Error> {
-        Ok(Tuple2(part1, part2))
+        Ok(CTuple2(part1, part2))
     }
 }
 

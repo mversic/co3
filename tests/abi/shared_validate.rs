@@ -119,7 +119,7 @@ fn maybe_uninit_cells_allow_shared_validation_without_inspecting_contents() {
     assert!(core::ptr::eq(decoded, &boxed));
 
     // Zero is invalid for NonZeroU8, but valid as uninterpreted MaybeUninit bytes.
-    let representation = core::mem::MaybeUninit::<UnsafeCell<co3::NonZero<u8>>>::new(
+    let representation = core::mem::MaybeUninit::<UnsafeCell<co3::num::NonZero<u8>>>::new(
         core::cell::UnsafeCell::new(unsafe { core::mem::zeroed() }),
     );
     let encoded = unsafe {

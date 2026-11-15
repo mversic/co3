@@ -18,7 +18,7 @@ use crate::{
     primitives::CBool,
     reference::{CRef, CRefMut, CSoftRef, CSoftRefMut},
     result::CResult,
-    tuple::Tuple2,
+    tuple::CTuple2,
     wide::{CSoftWideRef, CSoftWideRefMut, CWideRef, CWideRefMut},
     wide::{Wide, WideHeader},
 };
@@ -244,7 +244,7 @@ disjoint_impls! {
     where
         A: RustSpec<Niche = WithNiche<N>>,
     {
-        const NICHE: Self::CType = Tuple2(A::NICHE, unsafe { core::mem::zeroed() });
+        const NICHE: Self::CType = CTuple2(A::NICHE, unsafe { core::mem::zeroed() });
 
         fn is_niche(value: &Self::CType) -> bool {
             A::is_niche(&value.0)
@@ -256,7 +256,7 @@ disjoint_impls! {
         A: RustSpec<Niche = WithoutNiche>,
         B: RustSpec<Niche = WithNiche<N>>,
     {
-        const NICHE: Self::CType = Tuple2(unsafe { core::mem::zeroed() }, B::NICHE);
+        const NICHE: Self::CType = CTuple2(unsafe { core::mem::zeroed() }, B::NICHE);
 
         fn is_niche(value: &Self::CType) -> bool {
             B::is_niche(&value.1)
@@ -402,8 +402,8 @@ mod tests {
             assert!(value.partial_cmp(&value).is_none());
         }
 
-        check(crate::NonZero(0u32));
-        check(crate::NonZero(core::ptr::null_mut::<u32>()));
+        check(crate::num::NonZero(0u32));
+        check(crate::num::NonZero(core::ptr::null_mut::<u32>()));
         check(CSoftRef::<u8>::null());
         check(CSoftRefMut::<u8, true>::null());
         check(CSoftWideRef::<[u8]>::null());
@@ -416,8 +416,8 @@ mod tests {
             check(crate::utf8::Utf8String::null());
         }
 
-        assert!(crate::NonZero(1u32) == crate::NonZero(1u32));
-        assert!(crate::NonZero(1u32) < crate::NonZero(2u32));
+        assert!(crate::num::NonZero(1u32) == crate::num::NonZero(1u32));
+        assert!(crate::num::NonZero(1u32) < crate::num::NonZero(2u32));
         assert_eq!(
             unsafe {
                 crate::decode::<Option<core::num::NonZeroU32>>(crate::encode(
@@ -434,8 +434,8 @@ mod tests {
         let value = 7u8;
         let reference = CSoftRef::<u8>::from_ref(&value);
         assert!(reference == reference);
-        assert!(crate::NonZero::new(reference).is_none());
-        check(crate::NonZero(reference));
+        assert!(crate::num::NonZero::new(reference).is_none());
+        check(crate::num::NonZero(reference));
     }
 
     #[test]

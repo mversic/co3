@@ -2088,10 +2088,10 @@ mod tests {
 
     #[test]
     fn borrowed_boxed_unstable_slice_clones_without_consuming_source() {
-        use co3::{tuple::Tuple2, wide::CWideBox};
+        use co3::{tuple::CTuple2, wide::CWideBox};
 
         for unchecked in [false, true] {
-            let source = CWideBox::<[(u8, u16)]>::from_box(vec![Tuple2(7, 11)].into_boxed_slice());
+            let source = CWideBox::<[(u8, u16)]>::from_box(vec![CTuple2(7, 11)].into_boxed_slice());
             let mut store = Default::default();
             let decoded = if unchecked {
                 unsafe {
@@ -2118,7 +2118,7 @@ mod tests {
             drop(decoded);
             store.sync().unwrap();
             let original = unsafe { source.into_box() }.unwrap();
-            assert_eq!(original[0], Tuple2(7, 11));
+            assert_eq!(original[0], CTuple2(7, 11));
         }
     }
 
@@ -2255,14 +2255,14 @@ mod tests {
 
     #[test]
     fn mutable_slice_decode_writes_changes_back() {
-        use co3::{tuple::Tuple2, wide::CSoftWideRefMut};
+        use co3::{tuple::CTuple2, wide::CSoftWideRefMut};
 
-        let mut values = [Tuple2(1_u8, 2_u8)];
+        let mut values = [CTuple2(1_u8, 2_u8)];
         let source = CSoftWideRefMut::from_mut(&mut values[..]);
         let mut store = Default::default();
         let decoded = unsafe { co3::soft_decode::<&mut [(u8, u8)]>(source, &mut store) }.unwrap();
         decoded[0] = (3, 4);
         assert_eq!(store.sync(), Some(()));
-        assert_eq!(values[0], Tuple2(3, 4));
+        assert_eq!(values[0], CTuple2(3, 4));
     }
 }

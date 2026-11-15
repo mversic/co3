@@ -156,7 +156,7 @@ fn build_tuple_value(fields: &[(Vec<usize>, TokenStream)], depth: usize) -> Toke
         return quote!(());
     }
     let count = fields.last().unwrap().0[depth] + 1;
-    let ident = quote::format_ident!("Tuple{count}");
+    let ident = quote::format_ident!("CTuple{count}");
     let members = (0..count).map(|index| {
         let group = fields
             .iter()
@@ -420,7 +420,7 @@ mod tests {
                 };
                 assert!(ty.qself.is_none());
                 let segment = ty.path.segments.last().expect("Tuple path");
-                let expected_name = format!("Tuple{}", children.len());
+                let expected_name = format!("CTuple{}", children.len());
                 assert_eq!(
                     ["co3", "tuple", expected_name.as_str()],
                     ty.path
@@ -434,14 +434,12 @@ mod tests {
                 let syn::PathArguments::AngleBracketed(arguments) = &segment.arguments else {
                     panic!("expected Tuple type arguments");
                 };
-                assert_eq!(children.len() + 1, arguments.args.len());
-                let flag: syn::GenericArgument = syn::parse_quote!(false);
-                assert_eq!(arguments.args.last(), Some(&flag));
+                assert_eq!(children.len(), arguments.args.len());
                 for (argument, expected_child) in arguments.args.iter().zip(children) {
                     let syn::GenericArgument::Type(child) = argument else {
                         panic!("expected Tuple type argument, got {argument:?}");
                     };
-                    assert_c_tuple_tree(child, expected_child);
+                    assert_rust_tuple_tree(child, expected_child);
                 }
             }
         }
