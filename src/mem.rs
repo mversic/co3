@@ -91,18 +91,8 @@ unsafe impl<T: EmptyStore> EmptyStore for ManuallyDrop<T> {}
 
 use crate::{EncodeUnchecked, stored::EmptyStore};
 
-use crate::{
-    niche::Niche,
-    stored::Store,
-    transmute::transmute_owned,
-    wide::Wide,
-};
-use disjoint_impls::disjoint_impls;
-use rust_spec::{
-    Stable, Unstable,
-    layout::{NonRobust, Robust},
-    mutability::{Exclusive, ExclusiveKind, WithInterior},
-};
+use crate::{niche::Niche, wide::Wide};
+use rust_spec::Stable;
 
 unsafe impl<R: EncodeMove> EncodeMove for ManuallyDrop<R>
 where
@@ -115,164 +105,6 @@ where
         Self: 'itm,
     {
         core::mem::ManuallyDrop::new(Self::into_inner(self).soft_encode(store))
-    }
-}
-
-disjoint_impls! {
-#[disjoint_impls(remote)]
-pub unsafe trait DecodeMove<'d>: ReprC<CType: Sized> + Sized {
-        type Store: Store + Default;
-
-        /// Perform the conversion from an [`ReprC::CType`] into [`Self`].
-        ///
-        /// Prefer using [`crate::soft_decode`] whenever possible
-        ///
-        /// # Safety
-        ///
-        /// See the safety section in [`crate::soft_decode`].
-        unsafe fn soft_decode<'itm: 'd>(
-            source: Self::CType,
-            store: &'itm mut Self::Store,
-        ) -> Option<Self>;
-
-        /// Perform the unchecked conversion from a [`ReprC::CType`] into [`Self`].
-        ///
-        /// The default implementation calls `soft_decode` and panics on `None`. Override it to
-        /// skip validation for your type
-        ///
-        /// # Safety
-        ///
-        /// See the safety section in [`crate::soft_decode_unchecked`].
-        unsafe fn soft_decode_unchecked<'itm: 'd>(
-            source: Self::CType,
-            store: &'itm mut Self::Store,
-        ) -> Self {
-            unsafe { Self::soft_decode(source, store) }.unwrap()
-        }
-    }
-    unsafe impl<'d, R, __Interior: ExclusiveKind> DecodeMove<'d> for ManuallyDrop<R>
-    where
-        R: RustSpec<Layout = Stable, Mutability = Exclusive<__Interior>>,
-        Self: AbiCompatibleValidate<CType: Sized>,
-    {
-        type Store = ();
-
-        unsafe fn soft_decode<'itm: 'd>(source: Self::CType, (): &'itm mut ()) -> Option<Self> {
-            if !unsafe { Self::is_valid(&source) } {
-                return None;
-            }
-            Some(unsafe { Self::soft_decode_unchecked(source, &mut ()) })
-        }
-
-        unsafe fn soft_decode_unchecked<'itm: 'd>(source: Self::CType, (): &'itm mut ()) -> Self {
-            let source = ManuallyDrop::new(source);
-            unsafe { core::mem::transmute_copy(&source) }
-        }
-    }
-    unsafe impl<'d, R, __Interior> DecodeMove<'d> for ManuallyDrop<R>
-    where
-        R: RustSpec<Layout = Stable, Trap = Robust, Mutability = WithInterior<__Interior>>,
-        Self: AbiCompatibleValidate<CType: Sized>,
-    {
-        type Store = ();
-
-        unsafe fn soft_decode<'itm: 'd>(source: Self::CType, (): &'itm mut ()) -> Option<Self> {
-            // SAFETY: Robust, ABI-compatible values need no validation or payload reads.
-            Some(unsafe { transmute_owned(source) })
-        }
-
-        unsafe fn soft_decode_unchecked<'itm: 'd>(source: Self::CType, (): &'itm mut ()) -> Self {
-            // SAFETY: Ownership is transferred using the ABI-compatible wrapper layout.
-            unsafe { transmute_owned(source) }
-        }
-    }
-    unsafe impl<'d, R: DecodeMove<'d>, __Trap> DecodeMove<'d> for ManuallyDrop<R>
-    where
-        R: RustSpec<
-                Layout = Stable,
-                Trap = NonRobust,
-                Mutability = WithInterior<__Trap>,
-            >,
-    {
-        type Store = R::Store;
-
-        #[inline(always)]
-        unsafe fn soft_decode<'itm: 'd>(
-            source: Self::CType,
-            store: &'itm mut Self::Store,
-        ) -> Option<Self> {
-            unsafe { R::soft_decode(ManuallyDrop::into_inner(source), store) }.map(Self::new)
-        }
-
-        #[inline(always)]
-        unsafe fn soft_decode_unchecked<'itm: 'd>(
-            source: Self::CType,
-            store: &'itm mut Self::Store,
-        ) -> Self {
-            Self::new(unsafe { R::soft_decode_unchecked(ManuallyDrop::into_inner(source), store) })
-        }
-    }
-    unsafe impl<'d, R: DecodeMove<'d>> DecodeMove<'d> for ManuallyDrop<R>
-    where
-        R: RustSpec<Layout = Unstable>,
-    {
-        type Store = R::Store;
-
-        #[inline(always)]
-        unsafe fn soft_decode<'itm: 'd>(
-            source: Self::CType,
-            store: &'itm mut Self::Store,
-        ) -> Option<Self> {
-            unsafe { R::soft_decode(ManuallyDrop::into_inner(source), store) }.map(Self::new)
-        }
-
-        #[inline(always)]
-        unsafe fn soft_decode_unchecked<'itm: 'd>(
-            source: Self::CType,
-            store: &'itm mut Self::Store,
-        ) -> Self {
-            Self::new(unsafe { R::soft_decode_unchecked(ManuallyDrop::into_inner(source), store) })
-        }
-    }
-}
-
-disjoint_impls! {
-#[disjoint_impls(remote)]
-pub unsafe trait EncodeMoveUnchecked: ReprC<CType: Sized> + Sized {
-        /// Storage for the unchecked encoding path.
-        type SoftStore: Store + Default;
-
-        /// Encode using the unchecked path and its independent store.
-        ///
-        /// Prefer using [`crate::soft_encode_unchecked`] whenever possible
-        ///
-        /// # Safety
-        ///
-        /// See safety section in [`crate::soft_encode_unchecked`].
-        unsafe fn soft_encode_unchecked<'itm>(self, store: &'itm mut Self::SoftStore) -> Self::CType
-        where
-            Self: 'itm;
-    }
-    unsafe impl<R> EncodeMoveUnchecked for ManuallyDrop<R>
-    where
-        R: RustSpec<Layout = Stable>,
-        Self: AbiCompatible<CType: Sized>,
-    {
-        type SoftStore = ();
-        unsafe fn soft_encode_unchecked<'itm>(self, (): &'itm mut ()) -> Self::CType where Self: 'itm {
-            unsafe { core::mem::transmute_copy(&self) }
-        }
-    }
-    unsafe impl<R: EncodeMoveUnchecked> EncodeMoveUnchecked for ManuallyDrop<R>
-    where
-        R: RustSpec<Layout = Unstable>,
-    {
-        type SoftStore = R::SoftStore;
-
-        #[inline(always)]
-        unsafe fn soft_encode_unchecked<'itm>(self, store: &'itm mut Self::SoftStore) -> Self::CType where Self: 'itm {
-            core::mem::ManuallyDrop::new(unsafe { Self::into_inner(self).soft_encode_unchecked(store) })
-        }
     }
 }
 
@@ -317,10 +149,7 @@ macro_rules! impl_wide_for_transparent_wrapper {
                 R::as_mut_ptr(ptr as *mut R)
             }
 
-            unsafe fn from_raw_parts<'a>(
-                data: *const Self::Header,
-                metadata: Self::Metadata,
-            ) -> &'a Self {
+            unsafe fn from_raw_parts<'a>(data: *const Self::Header, metadata: Self::Metadata) -> &'a Self {
                 let inner = unsafe { R::from_raw_parts(data, metadata) };
                 unsafe { &*(inner as *const R as *const Self) }
             }

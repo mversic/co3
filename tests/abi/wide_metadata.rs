@@ -1,8 +1,7 @@
 use core::cell::Cell;
 
 use co3::{
-    ReprC,
-    ffi,
+    ReprC, ffi,
     pack::{Pack2, Unpack2},
     rust_spec::RustSpec,
 };

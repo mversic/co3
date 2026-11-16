@@ -1114,9 +1114,11 @@ fn prepare_dispatch_wrapper_sig(
                 };
                 where_clause.predicates.push(bound);
             } else {
-                let bound = syn::parse_quote!(
-                    #ty: #co3::borrow::BorrowedEncode
-                );
+                let bound = if input.soft {
+                    syn::parse_quote!(#ty: #co3::borrow::BorrowedEncode)
+                } else {
+                    syn::parse_quote!(#ty: #co3::borrow::BorrowedEncode<Store: #co3::stored::EmptyStore>)
+                };
                 where_clause.predicates.push(bound);
             }
         }

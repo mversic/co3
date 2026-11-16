@@ -1250,7 +1250,7 @@ pub(super) fn derive_fieldless_enum(
             unsafe impl #ref_impl_generics #trait_name<'_ršč> for #name #ty_generics
             where
                 #drop_speculative Self: co3::ReprC<CType = #ctype_ty>
-                    + co3::rust_spec::RustSpec<Layout = co3::rust_spec::Unstable>,
+                    + co3::rust_spec::RustSpec,
                 &'_ršč Self: co3::ReprC<CType = co3::reference::CSoftRef<Self>>,
                 #predicates
             {
@@ -1639,7 +1639,7 @@ fn gen_codec_impls(
                     #(#field_bounds,)*
                     #leading_predicates
                     #speculative Self: co3::ReprC<CType = #ctype_name #ctype_ty_generics>
-                        + co3::rust_spec::RustSpec<Layout = co3::rust_spec::Unstable, Size: Thin> + '_ršč,
+                        + co3::rust_spec::RustSpec<Size: Thin> + '_ršč,
                     &'_ršč Self: co3::ReprC<CType = co3::reference::CSoftRef<Self>>,
 
                 {

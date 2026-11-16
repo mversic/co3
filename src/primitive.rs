@@ -210,70 +210,52 @@ unsafe impl<R: AbiCompatible + crate::ptr::PointerMetadata + ?Sized> AbiCompatib
 }
 
 macro_rules! impl_fn_types {
-    ( $( ( $( $arg:ident ),* ) ),* $(,)? ) => {
-        $(
-            impl_fn_types!(@abi "C"; $($arg),*);
-            impl_fn_types!(@abi "C-unwind"; $($arg),*);
-            impl_fn_types!(@abi "system"; $($arg),*);
-            impl_fn_types!(@abi "system-unwind"; $($arg),*);
-            #[cfg(target_arch = "x86")]
-            impl_fn_types!(@abi "cdecl"; $($arg),*);
-            #[cfg(target_arch = "x86")]
-            impl_fn_types!(@abi "cdecl-unwind"; $($arg),*);
-            #[cfg(target_arch = "x86")]
-            impl_fn_types!(@abi "stdcall"; $($arg),*);
-            #[cfg(target_arch = "x86")]
-            impl_fn_types!(@abi "stdcall-unwind"; $($arg),*);
-            #[cfg(target_arch = "x86")]
-            impl_fn_types!(@abi "fastcall"; $($arg),*);
-            #[cfg(target_arch = "x86")]
-            impl_fn_types!(@abi "fastcall-unwind"; $($arg),*);
-            #[cfg(target_arch = "x86")]
-            impl_fn_types!(@abi "thiscall"; $($arg),*);
-            #[cfg(target_arch = "x86")]
-            impl_fn_types!(@abi "thiscall-unwind"; $($arg),*);
-            #[cfg(target_arch = "x86_64")]
-            impl_fn_types!(@abi "sysv64"; $($arg),*);
-            #[cfg(target_arch = "x86_64")]
-            impl_fn_types!(@abi "sysv64-unwind"; $($arg),*);
-            #[cfg(target_arch = "x86_64")]
-            impl_fn_types!(@abi "win64"; $($arg),*);
-            #[cfg(target_arch = "x86_64")]
-            impl_fn_types!(@abi "win64-unwind"; $($arg),*);
-            #[cfg(target_arch = "arm")]
-            impl_fn_types!(@abi "aapcs"; $($arg),*);
-            #[cfg(target_arch = "arm")]
-            impl_fn_types!(@abi "aapcs-unwind"; $($arg),*);
-            #[cfg(any(target_arch = "x86", target_arch = "x86_64", target_arch = "arm", target_arch = "aarch64"))]
-            impl_fn_types!(@abi "efiapi"; $($arg),*);
-        )*
-    };
-    (@abi $abi:literal; $($arg:ident),*) => {
-        impl_fn_types!(@impl [$($arg),*] extern $abi fn($($arg),*) -> R);
-        impl_fn_types!(@impl [$($arg),*] unsafe extern $abi fn($($arg),*) -> R);
-    };
+    ([$($(#[$attr:meta])* [($($arg:ident),*)] $fn_type:ty;)*]) => {$(
+        $(#[$attr])*
+        impl_fn_types!(@impl [$($arg),*] $fn_type);
+    )*};
     (@impl [$($arg:ident),*] $fn_type:ty) => {
         crate::__impl_borrowed_identity!([$($arg,)* R] $fn_type);
 
-        impl<$($arg: CFnArg,)* R: CFnReturn> ReprC for $fn_type where Option<Self>: CType {
+        impl<$($arg: CFnArg,)* R: CFnReturn> ReprC for $fn_type
+        where
+            Option<Self>: CType,
+        {
             type CType = Option<Self>;
         }
-        unsafe impl<$($arg,)* R> EncodeMove for $fn_type where Self: ReprC<CType = Option<Self>>, Option<Self>: CType {
+        unsafe impl<$($arg,)* R> EncodeMove for $fn_type
+        where
+            Self: ReprC<CType = Option<Self>>,
+            Option<Self>: CType,
+        {
             type Store = ();
 
-            fn soft_encode<'itm>(self, (): &mut ()) -> Self::CType where Self: 'itm {
+            fn soft_encode<'itm>(self, (): &mut ()) -> Self::CType
+            where
+                Self: 'itm,
+            {
                 unsafe { self.soft_encode_unchecked(&mut ()) }
             }
         }
-        crate::mutable::impl_copy_mut!([$($arg,)* R] $fn_type);
-        unsafe impl<$($arg,)* R> EncodeMoveUnchecked for $fn_type where Self: ReprC<CType = Option<Self>>, Option<Self>: CType {
+        unsafe impl<$($arg,)* R> EncodeMoveUnchecked for $fn_type
+        where
+            Self: ReprC<CType = Option<Self>>,
+            Option<Self>: CType,
+        {
             type SoftStore = ();
 
-            unsafe fn soft_encode_unchecked<'itm>(self, (): &'itm mut ()) -> Self::CType where Self: 'itm {
+            unsafe fn soft_encode_unchecked<'itm>(self, (): &'itm mut ()) -> Self::CType
+            where
+                Self: 'itm,
+            {
                 Some(self)
             }
         }
-        unsafe impl<'d, $($arg,)* R> DecodeMove<'d> for $fn_type where Self: ReprC<CType = Option<Self>>, Option<Self>: CType {
+        unsafe impl<'d, $($arg,)* R> DecodeMove<'d> for $fn_type
+        where
+            Self: ReprC<CType = Option<Self>>,
+            Option<Self>: CType,
+        {
             type Store = ();
 
             unsafe fn soft_decode<'itm: 'd>(source: Self::CType, (): &mut ()) -> Option<Self> {
@@ -285,21 +267,51 @@ macro_rules! impl_fn_types {
             }
         }
 
-        impl<$($arg,)* R> Encode for $fn_type where Self: ReprC<CType = Option<Self>>, Option<Self>: CType {}
-        impl<$($arg,)* R> $crate::EncodeUnchecked for $fn_type where Self: ReprC<CType = Option<Self>>, Option<Self>: CType {}
-        impl<$($arg,)* R> Decode<'_> for $fn_type where Self: ReprC<CType = Option<Self>>, Option<Self>: CType {}
+        impl<$($arg,)* R> Encode for $fn_type
+        where
+            Self: ReprC<CType = Option<Self>>,
+            Option<Self>: CType,
+        {
+        }
+        impl<$($arg,)* R> $crate::EncodeUnchecked for $fn_type
+        where
+            Self: ReprC<CType = Option<Self>>,
+            Option<Self>: CType,
+        {
+        }
+        impl<$($arg,)* R> Decode<'_> for $fn_type
+        where
+            Self: ReprC<CType = Option<Self>>,
+            Option<Self>: CType,
+        {
+        }
 
-        impl<$($arg,)* R> Niche for $fn_type where Self: ReprC<CType = Option<Self>>, Option<Self>: CType {
+        impl<$($arg,)* R> Niche for $fn_type
+        where
+            Self: ReprC<CType = Option<Self>>,
+            Option<Self>: CType,
+        {
             const NICHE: Self::CType = None;
 
             fn is_niche(value: &Self::CType) -> bool {
                 value.is_none()
             }
         }
-        unsafe impl<$($arg,)* R> $crate::transmute::AbiCompatibleValidate for $fn_type where Self: ReprC<CType = Option<Self>>, Option<Self>: CType {
-            unsafe fn is_valid(target: &Self::CType) -> bool { target.is_some() }
+        unsafe impl<$($arg,)* R> $crate::transmute::AbiCompatibleValidate for $fn_type
+        where
+            Self: ReprC<CType = Option<Self>>,
+            Option<Self>: CType,
+        {
+            unsafe fn is_valid(target: &Self::CType) -> bool {
+                target.is_some()
+            }
         }
-unsafe impl<$($arg,)* R> AbiCompatible for $fn_type where Self: ReprC<CType = Option<Self>>, Option<Self>: CType {}
+unsafe impl<$($arg,)* R> AbiCompatible for $fn_type
+where
+    Self: ReprC<CType = Option<Self>>,
+    Option<Self>: CType,
+{
+}
     };
 }
 
@@ -308,7 +320,6 @@ macro_rules! fieldless_enum_derive {
         crate::__impl_borrowed_identity!([] $src);
 
 
-        crate::mutable::impl_copy_mut!([] $src);
         impl ReprC for $src {
             type CType = $dst;
         }
@@ -327,7 +338,10 @@ macro_rules! fieldless_enum_derive {
             type SoftStore = ();
 
             #[inline(always)]
-            unsafe fn soft_encode_unchecked<'itm>(self, (): &'itm mut ()) -> Self::CType where Self: 'itm {
+            unsafe fn soft_encode_unchecked<'itm>(self, (): &'itm mut ()) -> Self::CType
+            where
+                Self: 'itm,
+            {
                 $encode_fn(self)
             }
         }
@@ -407,21 +421,7 @@ unsafe impl<T: EmptyStore, const N: usize> EmptyStore for [T; N] {}
 // TODO: It's not possbile to implement for specific len yet: https://github.com/mversic/co3/issues/13
 //unsafe impl<T> EmptyStore for [T; 0] {}
 
-impl_fn_types! {
-    (),
-    (A),
-    (A, B),
-    (A, B, C),
-    (A, B, C, D),
-    (A, B, C, D, E),
-    (A, B, C, D, E, F),
-    (A, B, C, D, E, F, G),
-    (A, B, C, D, E, F, G, H),
-    (A, B, C, D, E, F, G, H, I),
-    (A, B, C, D, E, F, G, H, I, J),
-    (A, B, C, D, E, F, G, H, I, J, K),
-    (A, B, C, D, E, F, G, H, I, J, K, L),
-}
+crate::fn_types::with_fn_types!(impl_fn_types, {});
 
 fieldless_enum_derive! {
     char => UnicodeChar: {UnicodeChar(0x110000)}:

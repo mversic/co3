@@ -254,8 +254,7 @@ fn gen_pack_input_stmts(inputs: &[Argument<'_>], failure_mode: FailureMode) -> T
             Unpack::None => return None,
             Unpack::Single(part) => {
                 let source_ty = input.conversion_ty();
-                let packed = quote!(<#source_ty as co3::pack::Pack<<#part as co3::ReprC>::CType>>::pack(#name));
-                if input.is_borrowed() && !input.identity { quote!((#packed).map(co3::borrow::CBorrowed)) } else { packed }
+                quote!(<#source_ty as co3::pack::Pack<<#part as co3::ReprC>::CType>>::pack(#name))
             },
             Unpack::Pair(pair) => {
                 let (data_name, metadata_name) = unpack_arg_names(name);
@@ -287,7 +286,7 @@ fn gen_pack_input_stmts(inputs: &[Argument<'_>], failure_mode: FailureMode) -> T
 
 pub(crate) fn gen_abi_return_encode(value: TokenStream, borrow_output: bool) -> TokenStream {
     if borrow_output {
-        quote!(co3::borrow::encode(#value))
+        quote!(co3::borrow::CBorrowed(co3::borrow::BorrowedEncode::encode(#value, &mut Default::default())))
     } else {
         quote!(co3::encode(#value))
     }
@@ -405,7 +404,8 @@ pub(crate) fn gen_return_borrow_check(return_ty: &syn::Type, fn_by_val: bool) ->
     quote! {
         const {
             assert!(
-                co3::impls!((#return_ty): co3::borrow::BorrowedEncode<Store: co3::stored::EmptyStore>),
+                co3::impls!((#return_ty): co3::borrow::BorrowedEncode<Store: co3::stored::EmptyStore>)
+                    && co3::impls!((#return_ty): co3::borrow::BorrowedEncodeUnchecked<Owner: co3::stored::EmptyStore>),
                 "Mark the return type with `move` to transfer ownership",
             );
         }
@@ -474,8 +474,12 @@ fn inferred_non_option_unpack_part(arg_ty: &Type, part: u8) -> syn::Result<Type>
     if let Type::Reference(reference) = arg_ty {
         let wide_ty = &reference.elem;
         let interior_mutable = crate::known_type::recognize(peel_grouped_type(wide_ty))
-            .is_some_and(|known| matches!(known.kind,
-                crate::known_type::Kind::Cell | crate::known_type::Kind::UnsafeCell));
+            .is_some_and(|known| {
+                matches!(
+                    known.kind,
+                    crate::known_type::Kind::Cell | crate::known_type::Kind::UnsafeCell
+                )
+            });
         return Ok(if part == 1 {
             if reference.mutability.is_some() || interior_mutable {
                 parse_quote!(*mut <<<#wide_ty as co3::wide::Wide>::Header as co3::wide::WideHeader>::Data as co3::ReprC>::CType)
@@ -638,7 +642,7 @@ fn gen_analyzed_input_decode_stmts(
             if input.soft {
                 quote!(<#decode_ty as co3::borrow::BorrowedDecode<'_>>::soft_decode(#decode_arg.0, &mut __co3_input_stores.#idx))
             } else {
-                quote!(co3::borrow::decode(#decode_arg))
+                quote!(<#decode_ty as co3::borrow::BorrowedDecode<'_>>::decode(#decode_arg.0))
             }
         } else if input.soft {
             quote!(co3::soft_decode(#decode_arg, &mut __co3_input_stores.#idx))

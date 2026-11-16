@@ -27,7 +27,7 @@ pub(crate) struct Argument<'a> {
 
 pub(crate) enum Unpack {
     None,
-    Single(Type),
+    Single(Box<Type>),
     Pair(Box<UnpackPair>),
 }
 
@@ -35,8 +35,8 @@ pub(crate) enum Unpack {
 /// signature stage. Validation and generation use the same attribute grammar.
 pub(crate) enum UnpackSyntax {
     None,
-    Single(Type),
-    Pair([UnpackPart; 2]),
+    Single(Box<Type>),
+    Pair(Box<[UnpackPart; 2]>),
 }
 
 pub(crate) struct UnpackPart {
@@ -127,7 +127,7 @@ impl<'a> Argument<'a> {
 
     /// Import conversion and synchronization must agree on whether a store exists.
     pub(crate) fn needs_encode_store(&self) -> bool {
-        !self.identity && (self.soft || self.is_borrowed())
+        !self.identity && self.soft
     }
 
     pub(crate) fn conversion_ty(&self) -> Type {
@@ -202,9 +202,9 @@ impl UnpackSyntax {
                     "the one-part #[unpack] form does not support ABI erasure",
                 ));
             }
-            return Ok(Self::Single(part.logical));
+            return Ok(Self::Single(Box::new(part.logical)));
         }
-        Ok(Self::Pair(parts.try_into().map_err(|_| syntax_error())?))
+        Ok(Self::Pair(Box::new(parts.try_into().map_err(|_| syntax_error())?)))
     }
 
     pub(crate) fn has_inferred_parts(&self) -> bool {
@@ -216,13 +216,13 @@ impl UnpackSyntax {
         let [first, second] = match self {
             Self::None => return Ok(Unpack::None),
             Self::Single(part) => {
-                return Ok(Unpack::Single(if matches!(part, Type::Infer(_)) {
-                    ty.clone()
+                return Ok(Unpack::Single(if matches!(*part, Type::Infer(_)) {
+                    Box::new(ty.clone())
                 } else {
                     part
                 }));
             }
-            Self::Pair(parts) => parts,
+            Self::Pair(parts) => *parts,
         };
         let inferred_source = inferred
             .then(|| {
@@ -233,13 +233,14 @@ impl UnpackSyntax {
                             .map(|(source, _)| source)
                     })
                     .or_else(|| {
-                        ffi_fn::transparent_unpack_inner_type(ffi_fn::peel_grouped_type(ty))
-                            .map(|(name, inner)| match name.to_string().as_str() {
+                        ffi_fn::transparent_unpack_inner_type(ffi_fn::peel_grouped_type(ty)).map(
+                            |(name, inner)| match name.to_string().as_str() {
                                 "ManuallyDrop" => parse_quote!(core::mem::ManuallyDrop<#inner>),
                                 "Cell" => parse_quote!(core::cell::Cell<#inner>),
                                 "UnsafeCell" => parse_quote!(core::cell::UnsafeCell<#inner>),
                                 _ => unreachable!("unrecognized transparent unpack wrapper"),
-                            })
+                            },
+                        )
                     })
             })
             .flatten();

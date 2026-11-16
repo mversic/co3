@@ -97,11 +97,11 @@ disjoint_impls! {
     }
     #[cfg(feature = "alloc")]
     unsafe impl<'a, R: 'a + RustSpec + ?Sized,
-        P: Wide<Header: WideHeader<Data: CType>> + ?Sized,
         __Interior: ExclusiveKind,
     > SoftEncodeRefUnchecked<'a> for Box<R>
     where
-        R: RustSpec<Size = MetaSized<SliceLike>, Mutability = Exclusive<__Interior>> + ReprC<CType = P>,
+        R: RustSpec<Size = MetaSized<SliceLike>, Mutability = Exclusive<__Interior>>
+            + ReprC<CType: Wide<Header: WideHeader<Data: CType>>>,
         &'a R: EncodeMoveUnchecked + ReprC<CType: WideRefCarrier<R, Pointer = *const crate::wide::PointeeData<<R as ReprC>::CType>>>,
         Self: ReprC<CType = CWideBox<R>>,
         &'a Self: ReprC<CType = CSoftRef<Self>>,
@@ -126,11 +126,11 @@ disjoint_impls! {
     unsafe impl<
         'a,
         R: RustSpec + 'a + ?Sized,
-        P: Wide<Header: WideHeader<Data: CType>> + ?Sized,
         __Trap,
     > SoftEncodeRefUnchecked<'a> for Box<R>
     where
-        R: RustSpec<Size = MetaSized<SliceLike>, Mutability = WithInterior<__Trap>> + ReprC<CType = P>,
+        R: RustSpec<Size = MetaSized<SliceLike>, Mutability = WithInterior<__Trap>>
+            + ReprC<CType: Wide<Header: WideHeader<Data: CType>>>,
         &'a R: EncodeMoveUnchecked + ReprC<CType: WideRefCarrier<R, Pointer = *mut crate::wide::PointeeData<<R as ReprC>::CType>>>,
         Self: ReprC<CType = CWideBox<R>>,
         &'a Self: ReprC<CType = CSoftRef<Self>>,
@@ -544,11 +544,11 @@ disjoint_impls! {
     unsafe impl<
         'a,
         R: RustSpec + 'a + ?Sized,
-        P: Wide<Header: WideHeader<Data: CType>> + ?Sized,
         __Interior: ExclusiveKind,
     > SoftEncodeRef<'a> for Box<R>
     where
-        R: RustSpec<Size = MetaSized<SliceLike>, Mutability = Exclusive<__Interior>> + ReprC<CType = P>,
+        R: RustSpec<Size = MetaSized<SliceLike>, Mutability = Exclusive<__Interior>>
+            + ReprC<CType: Wide<Header: WideHeader<Data: CType>>>,
         &'a R: EncodeMove + ReprC<CType: WideRefCarrier<R, Pointer = *const crate::wide::PointeeData<<R as ReprC>::CType>>>,
         Self: ReprC<CType = CWideBox<R>>,
         &'a Self: ReprC<CType = CSoftRef<Self>>,
@@ -570,11 +570,11 @@ disjoint_impls! {
     unsafe impl<
         'a,
         R: RustSpec + 'a + ?Sized,
-        P: Wide<Header: WideHeader<Data: CType>> + ?Sized,
         __Trap,
     > SoftEncodeRef<'a> for Box<R>
     where
-        R: RustSpec<Size = MetaSized<SliceLike>, Mutability = WithInterior<__Trap>> + ReprC<CType = P>,
+        R: RustSpec<Size = MetaSized<SliceLike>, Mutability = WithInterior<__Trap>>
+            + ReprC<CType: Wide<Header: WideHeader<Data: CType>>>,
         &'a R: EncodeMove + ReprC<CType: WideRefCarrier<R, Pointer = *mut crate::wide::PointeeData<<R as ReprC>::CType>>>,
         Self: ReprC<CType = CWideBox<R>>,
         &'a Self: ReprC<CType = CSoftRef<Self>>,
@@ -620,11 +620,10 @@ disjoint_impls! {
         'a,
         T: AbiCompatible<CType: CType + Sized>,
         __Interior: ExclusiveKind,
-        M: SharedVecMutability,
     > SoftEncodeRef<'a> for Vec<T>
     where
         &'a Self: crate::ReprC<CType = crate::reference::CSoftRef<Self>>,
-        T: RustSpec<Layout = Stable, Mutability = M>,
+        T: RustSpec<Layout = Stable, Mutability: SharedVecMutability>,
         Self: ReprC<CType = CVec<T>>,
         Self: RustSpec<Mutability = Exclusive<__Interior>, Size: crate::Thin> + 'a,
     {
@@ -829,7 +828,7 @@ disjoint_impls! {
 
     unsafe impl<
         'a,
-        R: SoftEncodeRef<'a> + RustSpec + ReprC<CType: CType + Sized> + ?Sized,
+        R: RustSpec + 'a + ReprC<CType: CType + Sized> + ?Sized,
         __Interior: ExclusiveKind,
     > SoftEncodeRef<'a> for ManuallyDrop<R>
     where
@@ -837,22 +836,22 @@ disjoint_impls! {
             + RustSpec<Size: crate::Thin, Mutability = Exclusive<__Interior>>
             + 'a,
         &'a Self: ReprC<CType = CSoftRef<Self>>,
-        &'a R: EncodeMoveUnchecked + ReprC<CType = CSoftRef<R>>,
+        &'a R: EncodeMove + ReprC<CType = CSoftRef<R>>,
     {
-        type Store = R::Store;
+        type Store = <&'a R as EncodeMove>::Store;
 
         fn soft_encode_ref<'itm>(&'a self, store: &'itm mut Self::Store) -> <&'a Self as crate::ReprC>::CType
         where
             'a: 'itm,
         {
-            let inner = R::soft_encode_ref(&**self, store);
+            let inner = EncodeMove::soft_encode(&**self, store);
             // SAFETY: ManuallyDrop preserves the inner layout and metadata.
             unsafe { inner.cast() }
         }
     }
     unsafe impl<
         'a,
-        R: SoftEncodeRef<'a> + RustSpec + ReprC<CType: CType + Sized> + ?Sized,
+        R: RustSpec + 'a + ReprC<CType: CType + Sized> + ?Sized,
         __Interior: ExclusiveKind,
     > SoftEncodeRef<'a> for ManuallyDrop<R>
     where
@@ -860,23 +859,22 @@ disjoint_impls! {
             + RustSpec<Size = NulTerminated, Mutability = Exclusive<__Interior>>
             + 'a,
         &'a Self: ReprC<CType = CSoftRef<Self>>,
-        &'a R: EncodeMoveUnchecked + ReprC<CType = CSoftRef<R>>,
+        &'a R: EncodeMove + ReprC<CType = CSoftRef<R>>,
     {
-        type Store = R::Store;
+        type Store = <&'a R as EncodeMove>::Store;
 
         fn soft_encode_ref<'itm>(&'a self, store: &'itm mut Self::Store) -> <&'a Self as crate::ReprC>::CType
         where
             'a: 'itm,
         {
-            let inner = R::soft_encode_ref(&**self, store);
+            let inner = EncodeMove::soft_encode(&**self, store);
             // SAFETY: ManuallyDrop preserves the inner layout and metadata.
             unsafe { inner.cast() }
         }
     }
     unsafe impl<
         'a,
-        R: SoftEncodeRef<'a>
-            + RustSpec
+        R: RustSpec + 'a
             + ReprC<CType: Wide<Header: WideHeader<Data: CType + Sized>, Metadata = usize>>
             + ?Sized,
         __Interior: ExclusiveKind,
@@ -886,15 +884,15 @@ disjoint_impls! {
             + RustSpec<Size = MetaSized<SliceLike>, Mutability = Exclusive<__Interior>>
             + 'a,
         &'a Self: ReprC<CType = CSoftWideRef<Self>>,
-        &'a R: EncodeMoveUnchecked + ReprC<CType: WideRefCarrier<R, Pointer = *const crate::wide::PointeeData<<R as ReprC>::CType>>>,
+        &'a R: EncodeMove + ReprC<CType: WideRefCarrier<R, Pointer = *const crate::wide::PointeeData<<R as ReprC>::CType>>>,
     {
-        type Store = R::Store;
+        type Store = <&'a R as EncodeMove>::Store;
 
         fn soft_encode_ref<'itm>(&'a self, store: &'itm mut Self::Store) -> <&'a Self as crate::ReprC>::CType
         where
             'a: 'itm,
         {
-            let inner = R::soft_encode_ref(&**self, store);
+            let inner = EncodeMove::soft_encode(&**self, store);
             // SAFETY: ManuallyDrop preserves the inner layout and metadata.
             unsafe { CSoftWideRef::from_raw_parts(inner.as_ptr().cast(), inner.metadata()) }
         }

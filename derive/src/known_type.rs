@@ -35,7 +35,10 @@ impl KnownType<'_> {
     }
 
     pub fn is_transparent_wrapper(&self) -> bool {
-        matches!(self.kind, Kind::ManuallyDrop | Kind::Cell | Kind::UnsafeCell)
+        matches!(
+            self.kind,
+            Kind::ManuallyDrop | Kind::Cell | Kind::UnsafeCell
+        )
     }
 }
 
@@ -155,7 +158,9 @@ pub(crate) fn recognize_path(path: &TypePath) -> Option<KnownType<'_>> {
         _ => return None,
     };
     let modules: &[&str] = match kind {
-        Kind::Primitive if name.starts_with("c_") => &["core::ffi", "std::ffi", "std::os::raw", "co3::ffi"],
+        Kind::Primitive if name.starts_with("c_") => {
+            &["core::ffi", "std::ffi", "std::os::raw", "co3::ffi"]
+        }
         Kind::Primitive | Kind::Str => &["core::primitive", "std::primitive"],
         Kind::NonZeroInt => &["core::num", "std::num"],
         Kind::CStr => &["core::ffi", "std::ffi"],

@@ -96,7 +96,52 @@ macro_rules! nonzero_codecs {
 nonzero_codecs!(EncodeMove, EncodeMoveUnchecked, DecodeMove);
 const _: () = {
     use crate::borrow::{BorrowedDecode, BorrowedEncode, BorrowedEncodeUnchecked};
-    nonzero_codecs!(BorrowedEncode, BorrowedEncodeUnchecked, BorrowedDecode);
+    unsafe impl<R: BorrowedEncodeUnchecked> BorrowedEncodeUnchecked for NonZero<R> {
+        type Owner = R::Owner;
+        type SoftStore = R::SoftStore;
+
+        unsafe fn soft_encode_unchecked<'a>(
+            self,
+            store: &'a mut Self::SoftStore,
+            owner: &'a mut Self::Owner,
+        ) -> Self::CType
+        where
+            Self: 'a,
+        {
+            NonZero(unsafe { self.0.soft_encode_unchecked(store, owner) })
+        }
+    }
+    unsafe impl<R: BorrowedEncode> BorrowedEncode for NonZero<R> {
+        type Store = R::Store;
+
+        fn soft_encode<'a>(
+            self,
+            store: &'a mut Self::Store,
+            owner: &'a mut Self::Owner,
+        ) -> Self::CType
+        where
+            Self: 'a,
+        {
+            NonZero(BorrowedEncode::soft_encode(self.0, store, owner))
+        }
+    }
+    unsafe impl<'d, R: BorrowedDecode<'d>> BorrowedDecode<'d> for NonZero<R> {
+        type Store = R::Store;
+
+        unsafe fn soft_decode<'a: 'd>(
+            source: Self::CType,
+            store: &'a mut Self::Store,
+        ) -> Option<Self> {
+            Some(NonZero(unsafe { R::soft_decode(source.0, store)? }))
+        }
+
+        unsafe fn soft_decode_unchecked<'a: 'd>(
+            source: Self::CType,
+            store: &'a mut Self::Store,
+        ) -> Self {
+            NonZero(unsafe { R::soft_decode_unchecked(source.0, store) })
+        }
+    }
 };
 
 impl<R: Encode> Encode for NonZero<R> {}
@@ -113,7 +158,6 @@ unsafe impl<R: transmute::AbiCompatible<CType: Sized>> transmute::AbiCompatible 
 
 macro_rules! non_zero_derive {
     ($($primitive:ty),+ $(,)?) => {$(
-        crate::mutable::impl_copy_mut!([] core::num::NonZero<$primitive>);
         crate::__impl_borrowed_identity!([] core::num::NonZero<$primitive>);
 
         impl ReprC for core::num::NonZero<$primitive> {

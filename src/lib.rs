@@ -573,7 +573,6 @@ pub use impls::impls;
 pub use rust_spec;
 use rust_spec::{
     RustSpec, Unstable,
-    drop::DropKind,
     layout::{LayoutKind, NonRobust, Robust},
     mutability::{Exclusive, ExclusiveKind, WithInterior},
     niche::{WithNiche, WithoutNiche},
@@ -595,6 +594,7 @@ use crate::{
 };
 
 pub mod borrow;
+pub(crate) use borrow::__impl_borrowed_identity;
 #[cfg(feature = "alloc")]
 pub mod boxed;
 mod cell;
@@ -604,6 +604,7 @@ pub mod decoded;
 pub mod either;
 mod elements;
 pub mod ffi;
+mod fn_types;
 mod mem;
 mod mutable;
 pub mod niche;
@@ -711,10 +712,6 @@ unsafe impl<T: Sized> Zeroable for *mut T {}
 trait Thin {}
 impl<K: SizedKind> Thin for rust_spec::size::Sized<K> {}
 impl Thin for ExternTypeLike {}
-
-trait NeedsDrop {}
-impl NeedsDrop for rust_spec::drop::AutoDrop {}
-impl<K: DropKind> NeedsDrop for rust_spec::drop::CustomDrop<K> {}
 
 disjoint_impls! {
     /// A Rust type that has a C-compatible companion type.
@@ -1394,7 +1391,11 @@ mod carrier_tests {
 
     #[test]
     fn source_family_discriminators_do_not_change_layout() {
-        use crate::{option::COption, result::CResult, tuple::{Tuple2, CTuple2}};
+        use crate::{
+            option::COption,
+            result::CResult,
+            tuple::{CTuple2, Tuple2},
+        };
         assert_type_eq_all!(<(u8, bool) as ReprC>::CType, CTuple2<u8, bool>);
         assert_type_eq_all!(<Tuple2<u8, bool> as ReprC>::CType, Tuple2<u8, crate::primitives::CBool>);
         assert_type_eq_all!(<Option<u8> as ReprC>::CType, COption<u8>);
@@ -1405,12 +1406,8 @@ mod carrier_tests {
         assert_type_eq_all!(<crate::num::NonZero<u8> as ReprC>::CType, NonZero<u8>);
         assert_type_ne_all!(CTuple2<u8, bool>, Tuple2<u8, crate::primitives::CBool>);
         assert_eq!(
-            core::mem::size_of::<
-                CTuple2<u8, bool>,
-            >(),
-            core::mem::size_of::<
-                Tuple2<u8, crate::primitives::CBool>,
-            >()
+            core::mem::size_of::<CTuple2<u8, bool>>(),
+            core::mem::size_of::<Tuple2<u8, crate::primitives::CBool>>()
         );
         let source = Tuple2(7_u8, true);
         let encoded = crate::encode(source);

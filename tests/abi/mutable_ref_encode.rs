@@ -236,7 +236,10 @@ struct NoClone(u32);
 #[test]
 fn stable_mutable_vec_converts_non_clone_elements() {
     static_assertions::assert_not_impl_any!(NoClone: Copy, Clone);
-    static_assertions::assert_type_eq_all!(<NoClone as co3::ReprC>::CType, <NoClone as co3::ReprC>::CType);
+    static_assertions::assert_type_eq_all!(
+        <NoClone as co3::ReprC>::CType,
+        <NoClone as co3::ReprC>::CType
+    );
     static_assertions::assert_impl_all!(NoClone:
         co3::stored::SoftEncodeMutUnchecked<'static>, co3::stored::SoftEncodeMut<'static>);
 

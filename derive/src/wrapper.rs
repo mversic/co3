@@ -568,7 +568,7 @@ fn gen_wrapper_body_with_input_conversion<const DISPATCHED: bool>(
             }
         } else {
             quote! {
-                let __co3_out: Option<#output_ty> = unsafe { co3::borrow::decode(__co3_out) };
+                let __co3_out: Option<#output_ty> = unsafe { <#output_ty as co3::borrow::BorrowedDecode<'_>>::decode(__co3_out.0) };
             }
         };
 
@@ -617,10 +617,9 @@ fn gen_single_unpack_input_stmts(
         };
         let arg_name = input.name();
         let unpack_ty = input.conversion_ty();
-        let payload = if input.is_borrowed() && !input.identity { quote!(#arg_name.0) } else { quote!(#arg_name) };
         let part_ty = quote!(<#target_ty as co3::ReprC>::CType);
         let conversion = quote! {
-            <#unpack_ty as co3::pack::Unpack<#part_ty>>::unpack(#payload)
+            <#unpack_ty as co3::pack::Unpack<#part_ty>>::unpack(#arg_name)
         };
         let conversion = match failure_mode {
             FailureMode::Panic => quote! { #conversion.unwrap_or_else(|_| panic!("co3 generated FFI unpack conversion failure")) },
@@ -729,18 +728,41 @@ fn gen_input_conversion_stmts(inputs: &[Argument<'_>]) -> TokenStream {
     let stmts = inputs.iter().filter(|input| !input.identity).map(|input| {
         let arg_name = input.name();
         let cfg = input.cfg().collect::<Vec<_>>();
-        let encode_fn = if input.is_borrowed() {
-            quote!(co3::borrow::soft_encode)
-        } else {
-            quote!(co3::soft_encode)
-        };
-        let encode = if input.needs_encode_store() {
-            let store_name = gen_store_name(arg_name);
+        let store_name = gen_store_name(arg_name);
+        let encode = if input.is_borrowed() {
+            let ty = input.conversion_ty();
+            let owner_name = format_ident!("__co3_owner_{}", arg_name);
+            let conversion = if input.needs_encode_store() {
+                quote! {
+                    #(#cfg)*
+                    let mut #store_name = Default::default();
+                    #(#cfg)*
+                    let #arg_name = co3::borrow::CBorrowed(
+                        <#ty as co3::borrow::BorrowedEncode>::soft_encode(
+                            #arg_name, &mut #store_name, &mut #owner_name,
+                        )
+                    );
+                }
+            } else {
+                quote! {
+                    #(#cfg)*
+                    let #arg_name = co3::borrow::CBorrowed(
+                        <#ty as co3::borrow::BorrowedEncode>::encode(#arg_name, &mut #owner_name)
+                    );
+                }
+            };
+            quote! {
+                // Declare the owner first so conversion storage is dropped first.
+                #(#cfg)*
+                let mut #owner_name = Default::default();
+                #conversion
+            }
+        } else if input.needs_encode_store() {
             quote! {
                 #(#cfg)*
                 let mut #store_name = Default::default();
                 #(#cfg)*
-                let #arg_name = #encode_fn(#arg_name, &mut #store_name);
+                let #arg_name = co3::soft_encode(#arg_name, &mut #store_name);
             }
         } else {
             quote!(#(#cfg)* let #arg_name = co3::encode(#arg_name);)

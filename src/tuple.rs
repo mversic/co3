@@ -189,53 +189,178 @@ macro_rules! impl_tuple {
         impl_tuple!(@codecs [$($ty:$idx),+] -> $ffi_ty, $carrier, EncodeMove, EncodeMoveUnchecked, DecodeMove);
         const _: () = {
             use crate::borrow::{BorrowedEncode, BorrowedEncodeUnchecked, BorrowedDecode};
-            impl_tuple!(@codecs [$($ty:$idx),+] -> $ffi_ty, $carrier, BorrowedEncode, BorrowedEncodeUnchecked, BorrowedDecode);
+            unsafe impl<$($ty: BorrowedEncode),*> BorrowedEncode for ($($ty,)*) {
+            type Store = ($( $ty::Store, )*);
+
+            #[inline(always)]
+            #[expect(non_snake_case)]
+            fn soft_encode<'itm>(self, store: &mut Self::Store, owner: &'itm mut Self::Owner) -> Self::CType
+            where
+                Self: 'itm
+            {
+                let ($($ty,)*) = self;
+                $carrier::from_fields($ffi_ty::<$($ty),*>($($ty),*).soft_encode(store, owner))
+            }
+
+        }
+        unsafe impl<$($ty: BorrowedEncode),*> BorrowedEncode for $ffi_ty<$($ty),*> {
+            type Store = ($( $ty::Store, )*);
+
+            #[inline(always)]
+            #[expect(non_snake_case)]
+            fn soft_encode<'itm>(self, store: &'itm mut Self::Store, owner: &'itm mut Self::Owner) -> Self::CType
+            where
+                Self: 'itm,
+            {
+                impl_tuple! {@decl_priv_store $($ty),*}
+
+                let $ffi_ty($($ty),*) = self;
+                let store: private_store::Store<$($ty::Store,)*> = store.into();
+                        let owner: private_store::Store<$($ty::Owner,)*> = owner.into();
+                $ffi_ty($( BorrowedEncode::soft_encode($ty, store.$ty, owner.$ty) ),*)
+            }
+
+        }
+        unsafe impl<$($ty: BorrowedEncodeUnchecked),*> BorrowedEncodeUnchecked for ($($ty,)*) {
+            type Owner = ($($ty::Owner,)*);
+            type SoftStore = ($($ty::SoftStore,)*);
+
+            #[expect(non_snake_case)]
+            unsafe fn soft_encode_unchecked<'itm>(self, store: &'itm mut Self::SoftStore, owner: &'itm mut Self::Owner) -> Self::CType where Self: 'itm {
+                let ($($ty,)*) = self;
+                unsafe { $carrier::from_fields($ffi_ty::<$($ty),*>($($ty),*).soft_encode_unchecked(store, owner)) }
+            }
+        }
+        unsafe impl<$($ty: BorrowedEncodeUnchecked),*> BorrowedEncodeUnchecked for $ffi_ty<$($ty),*> {
+            type Owner = ($($ty::Owner,)*);
+            type SoftStore = ($($ty::SoftStore,)*);
+
+            #[expect(non_snake_case)]
+            unsafe fn soft_encode_unchecked<'itm>(self, store: &'itm mut Self::SoftStore, owner: &'itm mut Self::Owner) -> Self::CType where Self: 'itm {
+                impl_tuple! {@decl_priv_store $($ty),*}
+
+                let $ffi_ty($($ty),*) = self;
+                let store: private_store::Store<$($ty::SoftStore,)*> = store.into();
+                        let owner: private_store::Store<$($ty::Owner,)*> = owner.into();
+                $ffi_ty($(unsafe { $ty.soft_encode_unchecked(store.$ty, owner.$ty) }),*)
+            }
+        }
+        unsafe impl<'d, $($ty: BorrowedDecode<'d>),*> BorrowedDecode<'d> for ($($ty,)*) {
+            type Store = ($( $ty::Store, )*);
+
+            #[inline(always)]
+            #[expect(non_snake_case)]
+            unsafe fn soft_decode<'itm: 'd>(source: Self::CType, store: &'itm mut Self::Store) -> Option<Self> {
+                let $ffi_ty($($ty),*) = unsafe {
+                    <$ffi_ty<$($ty),*> as BorrowedDecode<'d>>::soft_decode(source.into_fields(), store)
+                }?;
+                Some(($($ty,)*))
+            }
+
+            #[inline(always)]
+            #[expect(non_snake_case)]
+            unsafe fn soft_decode_unchecked<'itm: 'd>(source: Self::CType, store: &'itm mut Self::Store) -> Self {
+                let $ffi_ty($($ty),*) = unsafe {
+                    <$ffi_ty<$($ty),*> as BorrowedDecode<'d>>::soft_decode_unchecked(source.into_fields(), store)
+                };
+                ($($ty,)*)
+            }
+        }
+        unsafe impl<'d, $($ty: BorrowedDecode<'d>),*> BorrowedDecode<'d> for $ffi_ty<$($ty),*> {
+            type Store = ($( $ty::Store, )*);
+
+            #[inline(always)]
+            #[expect(non_snake_case)]
+            unsafe fn soft_decode<'itm: 'd>(source: Self::CType, store: &'itm mut Self::Store) -> Option<Self> {
+                impl_tuple! {@decl_priv_store $($ty),*}
+
+                let $ffi_ty($($ty),*) = source;
+                let store: private_store::Store<$($ty::Store,)*> = store.into();
+                Some(unsafe { $ffi_ty($( $ty::soft_decode($ty, store.$ty)? ),*) })
+            }
+
+            #[inline(always)]
+            #[expect(non_snake_case)]
+            unsafe fn soft_decode_unchecked<'itm: 'd>(source: Self::CType, store: &'itm mut Self::Store) -> Self {
+                impl_tuple! {@decl_priv_store $($ty),*}
+
+                let $ffi_ty($($ty),*) = source;
+                let store: private_store::Store<$($ty::Store),*> = store.into();
+                unsafe { $ffi_ty($( $ty::soft_decode_unchecked($ty, store.$ty) ),*) }
+            }
+        }
         };
-        unsafe impl<'d, $($ty: ReprC<CType: crate::CType + Sized> + Clone + 'd),+> crate::stored::SoftDecodeRef<'d> for ($($ty,)*)
+        unsafe impl<'d, $($ty: ReprC<CType: crate::CType + Sized> + RustSpec + 'd),+> crate::stored::SoftDecodeRef<'d> for ($($ty,)*)
         where
-            Self: RustSpec<Layout = rust_spec::Unstable> + ReprC<CType = $carrier<$($ty),*>>,
+            Self: RustSpec + ReprC<CType = $carrier<$($ty),*>>,
             &'d Self: ReprC<CType = crate::reference::CSoftRef<Self>>,
             $(&'d $ty: DecodeMove<'d> + ReprC<CType: crate::reference::SharedRefCarrier<$ty>>,)+
+            $(crate::sync::DecodedField<
+                'd, $ty, <&'d $ty as DecodeMove<'d>>::Store, <$ty as RustSpec>::Layout,
+            >: crate::sync::TakeDecoded<Value = $ty>,)+
         {
             type Store = crate::sync::RefSizedDecodeStore<Self, ($(<&'d $ty as DecodeMove<'d>>::Store,)*)>;
             unsafe fn soft_decode_ref<'itm: 'd>(source: <&'d Self as ReprC>::CType, store: &'itm mut Self::Store) -> Option<&'d Self> {
                 let source = unsafe { source.into_ref()? };
                 store.decode(|fields| Some(($(
-                    $ty::clone(unsafe { <&'d $ty>::soft_decode(crate::reference::SharedRefCarrier::from_shared_ptr(&source.$idx), &mut fields.$idx)? }),
+                    unsafe {
+                        crate::decoded::decode_ref_field::<$ty>(
+                            crate::reference::SharedRefCarrier::from_shared_ptr(&source.$idx),
+                            &mut fields.$idx,
+                        )
+                    }?,
                 )*)))
             }
             unsafe fn soft_decode_ref_unchecked<'itm: 'd>(source: <&'d Self as ReprC>::CType, store: &'itm mut Self::Store) -> &'d Self {
                 let source = unsafe { source.into_ref().unwrap_unchecked() };
                 store.decode(|fields| Some(($(
-                    $ty::clone(unsafe { <&'d $ty>::soft_decode_unchecked(crate::reference::SharedRefCarrier::from_shared_ptr(&source.$idx), &mut fields.$idx) }),
+                    unsafe {
+                        crate::decoded::decode_ref_field_unchecked::<$ty>(
+                            crate::reference::SharedRefCarrier::from_shared_ptr(&source.$idx),
+                            &mut fields.$idx,
+                        )
+                    },
                 )*))).expect("unchecked decoding produces a value")
             }
         }
 
-        unsafe impl<'d, $($ty: ReprC<CType: crate::CType + Sized> + Clone + 'd),+> crate::stored::SoftDecodeRef<'d> for $ffi_ty<$($ty),*>
+        unsafe impl<'d, $($ty: ReprC<CType: crate::CType + Sized> + RustSpec + 'd),+> crate::stored::SoftDecodeRef<'d> for $ffi_ty<$($ty),*>
         where
-            Self: RustSpec<Layout = rust_spec::Unstable> + ReprC<CType = $ffi_ty<$(<$ty as ReprC>::CType),*>>,
+            Self: RustSpec + ReprC<CType = $ffi_ty<$(<$ty as ReprC>::CType),*>>,
             &'d Self: ReprC<CType = crate::reference::CSoftRef<Self>>,
             $(&'d $ty: DecodeMove<'d> + ReprC<CType: crate::reference::SharedRefCarrier<$ty>>,)+
+            $(crate::sync::DecodedField<
+                'd, $ty, <&'d $ty as DecodeMove<'d>>::Store, <$ty as RustSpec>::Layout,
+            >: crate::sync::TakeDecoded<Value = $ty>,)+
         {
             type Store = crate::sync::RefSizedDecodeStore<Self, ($(<&'d $ty as DecodeMove<'d>>::Store,)*)>;
             unsafe fn soft_decode_ref<'itm: 'd>(source: <&'d Self as ReprC>::CType, store: &'itm mut Self::Store) -> Option<&'d Self> {
                 let source = unsafe { source.into_ref()? };
                 store.decode(|fields| Some($ffi_ty($(
-                    $ty::clone(unsafe { <&'d $ty>::soft_decode(crate::reference::SharedRefCarrier::from_shared_ptr(&source.$idx), &mut fields.$idx)? }),
+                    unsafe {
+                        crate::decoded::decode_ref_field::<$ty>(
+                            crate::reference::SharedRefCarrier::from_shared_ptr(&source.$idx),
+                            &mut fields.$idx,
+                        )
+                    }?,
                 )*)))
             }
             unsafe fn soft_decode_ref_unchecked<'itm: 'd>(source: <&'d Self as ReprC>::CType, store: &'itm mut Self::Store) -> &'d Self {
                 let source = unsafe { source.into_ref().unwrap_unchecked() };
                 store.decode(|fields| Some($ffi_ty($(
-                    $ty::clone(unsafe { <&'d $ty>::soft_decode_unchecked(crate::reference::SharedRefCarrier::from_shared_ptr(&source.$idx), &mut fields.$idx) }),
+                    unsafe {
+                        crate::decoded::decode_ref_field_unchecked::<$ty>(
+                            crate::reference::SharedRefCarrier::from_shared_ptr(&source.$idx),
+                            &mut fields.$idx,
+                        )
+                    },
                 )*))).expect("unchecked decoding produces a value")
             }
         }
         unsafe impl<'d, $($ty: ReprC<CType: crate::CType + Copy> + 'd),+> crate::stored::SoftDecodeMut<'d> for ($($ty,)*)
         where
             $($ty: crate::borrow::BorrowedDecode<'d>,)*
-            Self: EncodeMove<Store: crate::stored::EmptyStore> + RustSpec<Layout = rust_spec::Unstable> + ReprC<CType = $carrier<$($ty),*>>,
+            Self: EncodeMove<Store: crate::stored::EmptyStore> + RustSpec + ReprC<CType = $carrier<$($ty),*>>,
             &'d mut Self: ReprC<CType = crate::reference::CSoftRefMut<Self, true>>,
         {
             type Store = crate::sync::RefMutSizedDecodeStore<Self, ($(<$ty as crate::borrow::BorrowedDecode<'d>>::Store,)*)>;
@@ -258,7 +383,7 @@ macro_rules! impl_tuple {
         unsafe impl<'d, $($ty: ReprC<CType: crate::CType + Copy> + 'd),+> crate::stored::SoftDecodeMut<'d> for $ffi_ty<$($ty),*>
         where
             $($ty: crate::borrow::BorrowedDecode<'d>,)*
-            Self: EncodeMove<Store: crate::stored::EmptyStore> + RustSpec<Layout = rust_spec::Unstable> + ReprC<CType = $ffi_ty<$(<$ty as ReprC>::CType),*>>,
+            Self: EncodeMove<Store: crate::stored::EmptyStore> + RustSpec + ReprC<CType = $ffi_ty<$(<$ty as ReprC>::CType),*>>,
             &'d mut Self: ReprC<CType = crate::reference::CSoftRefMut<Self, true>>,
         {
             type Store = crate::sync::RefMutSizedDecodeStore<Self, ($(<$ty as crate::borrow::BorrowedDecode<'d>>::Store,)*)>;

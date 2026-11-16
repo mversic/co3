@@ -27,3 +27,4 @@
 //    let _: [(); core::mem::size_of::<WithAliasedTailData>()] =
 //        [(); core::mem::size_of::<WithSliceTailData>()];
 //}
+fn main() {}

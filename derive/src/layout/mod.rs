@@ -234,6 +234,16 @@ pub(crate) fn derive_repr_c(input: &syn::DeriveInput) -> syn::Result<TokenStream
 
     match &input.data {
         syn::Data::Struct(data) => {
+            if let Some(niche) = &repr_c_attrs.niche_value
+                && data.fields.iter().next_back().is_some_and(|field| {
+                    ctype::classify_tail(&field.ty, &input.generics).is_known_unsized()
+                })
+            {
+                push_error(
+                    &mut errors,
+                    syn::Error::new_spanned(niche, "`NICHE` is not supported on unsized structs"),
+                );
+            }
             if repr_c_attrs.allow_zero_tag {
                 push_error(
                     &mut errors,
@@ -784,6 +794,16 @@ pub(super) fn is_exhaustive_enum(num_variants: usize, repr: &syn::Type) -> bool 
 #[cfg(test)]
 mod tests {
     use super::{derive_repr_c, is_parametrized};
+
+    #[test]
+    fn const_generic_phantom_data_derives() {
+        let input = syn::parse_quote! {
+            #[derive(RustSpec, ReprC)]
+            #[repr(transparent)]
+            struct Host<const N: usize>(u32, PhantomData<[u32; N]>);
+        };
+        derive_repr_c(&input).unwrap();
+    }
 
     #[test]
     fn removed_transparent_mapping_is_rejected() {

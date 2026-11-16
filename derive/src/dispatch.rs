@@ -1073,7 +1073,7 @@ pub(crate) fn erase_dispatch_signature(
             }
             syn::FnArg::Typed(_) => {
                 let mut ty = match &argument.unpack {
-                    Unpack::Single(target) => target.clone(),
+                    Unpack::Single(target) => (**target).clone(),
                     Unpack::Pair(_) => argument.ty.clone(),
                     Unpack::None => erased_params.replace(argument.ty.clone()),
                 };

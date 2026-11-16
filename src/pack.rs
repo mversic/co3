@@ -47,7 +47,7 @@ macro_rules! impl_raw_wide_unpack {
 
             #[inline(always)]
             fn unpack(value: Self::CType) -> Result<(*$pointer <P::Header as WideHeader>::Data, U), Self::Error> {
-                let value = value$(.$field)?;
+                $(let value = value.$field;)?
                 Ok((P::$accessor(value).cast(), P::metadata(value).try_into()?))
             }
         }

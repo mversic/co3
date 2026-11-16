@@ -98,18 +98,19 @@ pub(super) fn classify_tail(ty: &syn::Type, generics: &syn::Generics) -> TailCla
             .elems
             .last()
             .map_or(TailClass::Sized, |tail| classify_tail(tail, generics)),
-        syn::Type::Path(path) => {
-            match crate::known_type::recognize_path(path) {
-                Some(known) if known.is_sized() => TailClass::Sized,
-                Some(known) if known.is_transparent_wrapper() =>
-                    classify_tail(known.inner.expect("wrapper element"), generics),
-                Some(known) if known.kind == crate::known_type::Kind::Str =>
-                    TailClass::Unsized(UnsizedTail::SliceLike),
-                Some(known) if known.kind == crate::known_type::Kind::CStr =>
-                    TailClass::Unsized(UnsizedTail::NulTerminated),
-                _ => TailClass::Unknown,
+        syn::Type::Path(path) => match crate::known_type::recognize_path(path) {
+            Some(known) if known.is_sized() => TailClass::Sized,
+            Some(known) if known.is_transparent_wrapper() => {
+                classify_tail(known.inner.expect("wrapper element"), generics)
             }
-        }
+            Some(known) if known.kind == crate::known_type::Kind::Str => {
+                TailClass::Unsized(UnsizedTail::SliceLike)
+            }
+            Some(known) if known.kind == crate::known_type::Kind::CStr => {
+                TailClass::Unsized(UnsizedTail::NulTerminated)
+            }
+            _ => TailClass::Unknown,
+        },
         _ => TailClass::Unknown,
     }
 }

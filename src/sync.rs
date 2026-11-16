@@ -70,8 +70,48 @@ pub unsafe trait TakeDecoded {
     unsafe fn take_decoded(store: *mut Self) -> Option<Self::Value>;
 }
 
-// A 'static value cannot contain references into the temporary source carrier.
-unsafe impl<R: 'static, S> TakeDecoded for RefSizedDecodeStore<R, S> {
+/// Field extraction adapter used by generated aggregate decoders.
+#[doc(hidden)]
+pub struct DecodedField<'d, T, S, L> {
+    value: &'d T,
+    store: *mut S,
+    layout: core::marker::PhantomData<L>,
+}
+
+impl<'d, T, S, L> DecodedField<'d, T, S, L> {
+    /// # Safety
+    /// `value` must be the result of decoding into `store`. The store pointer
+    /// must be captured before decoding and remain valid through extraction.
+    /// Extraction must have exclusive access to the store; no decoded reference
+    /// may be used afterward.
+    pub unsafe fn new(value: &'d T, store: *mut S) -> Self {
+        Self {
+            value,
+            store,
+            layout: core::marker::PhantomData,
+        }
+    }
+}
+
+unsafe impl<T: Clone, S> TakeDecoded for DecodedField<'_, T, S, rust_spec::Stable> {
+    type Value = T;
+
+    unsafe fn take_decoded(field: *mut Self) -> Option<T> {
+        Some(T::clone(unsafe { (*field).value }))
+    }
+}
+
+unsafe impl<T, S: TakeDecoded<Value = T>> TakeDecoded
+    for DecodedField<'_, T, S, rust_spec::Unstable>
+{
+    type Value = T;
+
+    unsafe fn take_decoded(field: *mut Self) -> Option<T> {
+        unsafe { S::take_decoded((*field).store) }
+    }
+}
+
+unsafe impl<R, S> TakeDecoded for RefSizedDecodeStore<R, S> {
     type Value = R;
 
     unsafe fn take_decoded(store: *mut Self) -> Option<R> {
@@ -679,6 +719,18 @@ impl<T: ReprC<CType: Sized>, S: Store> Store for RefVecEncodeStore<T, S> {
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn take_decoded_preserves_non_static_borrows_and_extracts_once() {
+        let value = 7;
+        let mut store = super::RefSizedDecodeStore {
+            value: Some(&value),
+            store: (),
+        };
+        let decoded = unsafe { super::TakeDecoded::take_decoded(&mut store) }.unwrap();
+        assert!(core::ptr::eq(decoded, &value));
+        assert!(unsafe { super::TakeDecoded::take_decoded(&mut store) }.is_none());
+    }
+
     #[cfg(feature = "alloc")]
     use super::*;
     #[cfg(feature = "alloc")]

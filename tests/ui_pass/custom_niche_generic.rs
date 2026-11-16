@@ -17,6 +17,15 @@ struct MissingCustomNiche<T>(u8, PhantomData<T>);
 #[repr_c(NICHE = unsafe { core::mem::zeroed() })]
 struct OverridesInferredNiche<T>(NonZeroU8, PhantomData<T>);
 
+#[derive(RustSpec, ReprC)]
+#[rust_spec(custom_niche)]
+#[repr_c(NICHE = unsafe { core::mem::zeroed() })]
+struct MaybeUnsized<T: ?Sized>(T);
+
+static_assertions::assert_impl_all!(MaybeUnsized<u8>: co3::niche::Niche);
+static_assertions::assert_not_impl_any!(MaybeUnsized<[u8]>: co3::niche::Niche);
+static_assertions::assert_not_impl_any!(MaybeUnsized<str>: co3::niche::Niche);
+
 static_assertions::assert_impl_all!(Valid<()>: co3::niche::Niche);
 static_assertions::assert_not_impl_any!(MissingCustomNiche<()>: co3::niche::Niche);
 static_assertions::assert_not_impl_any!(OverridesInferredNiche<()>: co3::niche::Niche);

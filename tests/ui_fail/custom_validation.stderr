@@ -34,29 +34,41 @@ error: Unions are not supported
 50 | | }
    | |_^
 
-error[E0277]: the trait bound `UnsizedSlice<u8>: Niche` is not satisfied
-  --> tests/ui_fail/custom_validation.rs:62:21
+error: `NICHE` is not supported on unsized structs
+  --> tests/ui_fail/custom_validation.rs:58:18
    |
-62 |     require_niche::<UnsizedSlice<u8>>();
-   |                     ^^^^^^^^^^^^^^^^ unsatisfied trait bound
+58 | #[repr_c(NICHE = unsafe { core::mem::zeroed() })]
+   |                  ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+error: `NICHE` is not supported on unsized structs
+  --> tests/ui_fail/custom_validation.rs:62:18
    |
-help: the trait `Niche` is not implemented for `UnsizedSlice<u8>`
-  --> tests/ui_fail/custom_validation.rs:58:1
+62 | #[repr_c(NICHE = unsafe { core::mem::zeroed() })]
+   |                  ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+error[E0277]: the trait bound `[u8]: Copy` is not satisfied
+  --> tests/ui_fail/custom_validation.rs:67:21
    |
-58 | pub struct UnsizedSlice<T>([T]);
-   | ^^^^^^^^^^^^^^^^^^^^^^^^^^
-   = help: the following other types implement trait `Niche`:
-             &'_lšč0 _TŠČ0
-             &'_lšč0 mut _TŠČ0
-             (A, B, C)
-             (A, B, C, D)
-             (A, B, C, D, E)
-             (A, B, C, D, E, F)
-             (A, B, C, D, E, F, G)
-             (A, B, C, D, E, F, G, H)
-           and $N others
+67 |     require_niche::<Parametrized<[u8]>>();
+   |                     ^^^^^^^^^^^^^^^^^^ the trait `Copy` is not implemented for `[u8]`
+   |
+help: the trait `Copy` is implemented for `[T; N]`
+  --> $RUST/core/src/array/mod.rs
+   |
+   | impl<T: Copy, const N: usize> Copy for [T; N] {}
+   | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+note: required for `Parametrized<[u8]>` to implement `Niche`
+  --> tests/ui_fail/custom_validation.rs:55:12
+   |
+52 | #[derive(RustSpec, ReprC)]
+   |                    ----- type parameter would need to implement `Niche`
+...
+55 | pub struct Parametrized<T: ?Sized>(T);
+   |            ^^^^^^^^^^^^^^^^^^^^^^^
+   = help: consider manually implementing `Niche` to avoid undesired bounds caused by "imperfect derives"
+   = note: to learn more, visit <https://github.com/rust-lang/rust/issues/26925>
 note: required by a bound in `require_niche`
-  --> tests/ui_fail/custom_validation.rs:61:25
+  --> tests/ui_fail/custom_validation.rs:66:25
    |
-61 |     fn require_niche<T: co3::niche::Niche + ?Sized>() {}
+66 |     fn require_niche<T: co3::niche::Niche + ?Sized>() {}
    |                         ^^^^^^^^^^^^^^^^^ required by this bound in `require_niche`

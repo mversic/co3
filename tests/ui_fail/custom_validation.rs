@@ -49,7 +49,8 @@ pub union CustomUnion2 {
     a: u32,
 }
 
-#[derive(ReprC)]
+#[derive(RustSpec, ReprC)]
+#[rust_spec(custom_niche)]
 #[repr_c(NICHE = unsafe { core::mem::zeroed() })]
 pub struct Parametrized<T: ?Sized>(T);
 
@@ -57,10 +58,13 @@ pub struct Parametrized<T: ?Sized>(T);
 #[repr_c(NICHE = unsafe { core::mem::zeroed() })]
 pub struct UnsizedSlice<T>([T]);
 
+#[derive(ReprC)]
+#[repr_c(NICHE = unsafe { core::mem::zeroed() })]
+pub struct UnsizedStr(str);
+
 fn unsized_niches_cannot_be_used() {
     fn require_niche<T: co3::niche::Niche + ?Sized>() {}
-    require_niche::<UnsizedSlice<u8>>();
-    require_niche::<UnsizedStr>();
+    require_niche::<Parametrized<[u8]>>();
 }
 
 fn main() {}

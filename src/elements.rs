@@ -26,10 +26,10 @@ pub(crate) fn try_map_array<'a, T, U, S, const N: usize>(
 }
 
 #[cfg(feature = "alloc")]
-fn zip_stores<'a, I: ExactSizeIterator, S: Default>(
+fn zip_stores<I: ExactSizeIterator, S: Default>(
     values: I,
-    stores: &'a mut Box<[S]>,
-) -> impl ExactSizeIterator<Item = (I::Item, &'a mut S)> {
+    stores: &mut Box<[S]>,
+) -> impl ExactSizeIterator<Item = (I::Item, &mut S)> {
     *stores = core::iter::repeat_with(S::default)
         .take(values.len())
         .collect();

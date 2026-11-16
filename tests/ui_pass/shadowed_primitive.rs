@@ -13,4 +13,8 @@ raw! {
     fn identity(value: shadow::i32) -> shadow::i32;
 }
 
-fn main() {}
+fn main() {
+    let identity: unsafe extern "C" fn(u64) -> u64 = identity_raw;
+    let value = u64::MAX;
+    assert_eq!(unsafe { identity(value) }, value);
+}

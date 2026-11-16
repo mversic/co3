@@ -457,7 +457,10 @@ mod tests {
             &crate::soft_encode(None::<&mut str>, &mut Default::default()).0
         ));
 
-        assert_eq!(core::ptr::null_mut(), crate::encode(None::<NonNull<u32>>).0.0);
+        assert_eq!(
+            core::ptr::null_mut(),
+            crate::encode(None::<NonNull<u32>>).0.0
+        );
 
         #[cfg(feature = "alloc")]
         assert!(<ManuallyDrop<String>>::is_niche(

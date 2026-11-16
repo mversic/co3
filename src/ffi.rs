@@ -698,7 +698,7 @@ mod tests {
     #[test]
     fn alias_fields_preserve_borrowed_types_and_values() {
         let view = AliasFields(c_int::new(3), 4_u32, c_long::new(5));
-        let borrowed_lowered = co3::borrow::encode(view).0;
+        let borrowed_lowered = co3::borrow::BorrowedEncode::encode(view, &mut ());
         let _: c_int = borrowed_lowered.0;
         let _: c_long = borrowed_lowered.2;
         let view = AliasFields(c_int::new(3), 4_u32, c_long::new(5));
@@ -779,7 +779,9 @@ mod tests {
 
     #[cfg(all(feature = "alloc", feature = "derive"))]
     use crate::{
-        Error, borrow::CBorrowed, ffi,
+        Error,
+        borrow::CBorrowed,
+        ffi,
         ops::{CFn0, CFn1, CFn2, CFn12},
         option::COption,
         raw,
@@ -1433,11 +1435,13 @@ mod tests {
 
         assert_eq!(
             unsafe {
-                raw_order_record_raw(CBorrowed::new(<RawOrderRecord as co3::ReprC>::CType::from_fields(
-                    <RawOrderProbe as co3::ReprC>::CType::from_fields(1),
-                    <RawOrderProbe as co3::ReprC>::CType::from_fields(2),
-                    [3],
-                )))
+                raw_order_record_raw(CBorrowed::new(
+                    <RawOrderRecord as co3::ReprC>::CType::from_fields(
+                        <RawOrderProbe as co3::ReprC>::CType::from_fields(1),
+                        <RawOrderProbe as co3::ReprC>::CType::from_fields(2),
+                        [3],
+                    ),
+                ))
             },
             6
         );
