@@ -125,6 +125,19 @@ impl<'a> Argument<'a> {
         self.ownership == OwnershipMode::Borrow
     }
 
+    pub(crate) fn is_wrapped(&self) -> bool {
+        !ffi_fn::is_implicitly_by_value(&self.ty)
+    }
+
+    pub(crate) fn wrapper(&self) -> TokenStream {
+        let co3 = co3_path();
+        if self.is_borrowed() {
+            quote!(#co3::borrow::CBorrowed)
+        } else {
+            quote!(#co3::borrow::CMoved)
+        }
+    }
+
     /// Import conversion and synchronization must agree on whether a store exists.
     pub(crate) fn needs_encode_store(&self) -> bool {
         !self.identity && self.soft
@@ -144,11 +157,11 @@ impl<'a> Argument<'a> {
     }
 
     fn with_ownership(&self, ty: &Type) -> Type {
-        let co3 = co3_path();
-        match self.ownership {
-            OwnershipMode::ByValue => ty.clone(),
-            OwnershipMode::Borrow => parse_quote!(#co3::borrow::CBorrowed<#ty>),
+        if ffi_fn::is_implicitly_by_value(ty) {
+            return ty.clone();
         }
+        let wrapper = self.wrapper();
+        parse_quote!(#wrapper<#ty>)
     }
 
     pub(crate) fn abi_ty(&self) -> Type {
@@ -156,8 +169,9 @@ impl<'a> Argument<'a> {
             return self.ty.clone();
         }
         let ty = &self.ty;
-        if self.is_borrowed() {
-            parse_quote!(co3::borrow::CBorrowed<#ty>)
+        if self.is_wrapped() {
+            let wrapper = self.wrapper();
+            parse_quote!(#wrapper<#ty>)
         } else {
             parse_quote!(<#ty as co3::ReprC>::CType)
         }
@@ -270,4 +284,41 @@ impl UnpackSyntax {
 
 pub(crate) fn analyze<'a>(inputs: impl IntoIterator<Item = &'a FnArg>) -> Vec<Argument<'a>> {
     inputs.into_iter().map(Argument::new).collect()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn ownership_markers_are_symmetric() {
+        let cases: [(Type, bool); 9] = [
+            (parse_quote!(u32), false),
+            (parse_quote!((u8, u32)), false),
+            (parse_quote!(&u32), false),
+            (parse_quote!(&String), false),
+            (parse_quote!(&mut Box<u8>), true),
+            (parse_quote!(&core::cell::UnsafeCell<Box<u8>>), true),
+            (parse_quote!(Alias), true),
+            (parse_quote!((T, U)), true),
+            (parse_quote!((Vec<u8>, u32)), true),
+        ];
+        for (ty, wrapped) in cases {
+            let borrowed = Argument::from_parts(&[], parse_quote!(value), ty.clone());
+            let attrs = [parse_quote!(#[by_val])];
+            let moved = Argument::from_parts(&attrs, parse_quote!(value), ty.clone());
+            assert_eq!(borrowed.is_wrapped(), wrapped);
+            assert_eq!(moved.is_wrapped(), wrapped);
+            if wrapped {
+                let co3 = co3_path();
+                assert_eq!(
+                    borrowed.abi_ty(),
+                    parse_quote!(#co3::borrow::CBorrowed<#ty>)
+                );
+                assert_eq!(moved.abi_ty(), parse_quote!(#co3::borrow::CMoved<#ty>));
+            } else {
+                assert_eq!(borrowed.abi_ty(), moved.abi_ty());
+            }
+        }
+    }
 }

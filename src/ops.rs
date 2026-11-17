@@ -5,6 +5,75 @@ use crate::{
     stored::{EmptyStore, Store},
 };
 
+#[doc(hidden)]
+pub struct PlainCall;
+#[doc(hidden)]
+pub struct MovedCall;
+#[doc(hidden)]
+pub struct BorrowedCall;
+
+#[doc(hidden)]
+pub trait CallEncode<C, M>: Sized {
+    type Owner: Default;
+    type Store: Store + Default;
+    fn encode(self, store: &mut Self::Store, owner: &mut Self::Owner) -> C;
+}
+impl<T: Encode> CallEncode<T::CType, PlainCall> for T {
+    type Owner = ();
+    type Store = T::Store;
+    fn encode(self, store: &mut Self::Store, _: &mut Self::Owner) -> T::CType {
+        crate::soft_encode(self, store)
+    }
+}
+impl<T: Encode> CallEncode<crate::borrow::CMoved<T>, MovedCall> for T {
+    type Owner = ();
+    type Store = T::Store;
+    fn encode(self, store: &mut Self::Store, _: &mut Self::Owner) -> crate::borrow::CMoved<T> {
+        crate::borrow::CMoved(crate::soft_encode(self, store))
+    }
+}
+
+impl<T: crate::borrow::BorrowedEncode> CallEncode<crate::borrow::CBorrowed<T>, BorrowedCall> for T {
+    type Owner = T::Owner;
+    type Store = T::Store;
+    fn encode(
+        self,
+        store: &mut Self::Store,
+        owner: &mut Self::Owner,
+    ) -> crate::borrow::CBorrowed<T> {
+        crate::borrow::CBorrowed(crate::borrow::BorrowedEncode::soft_encode(
+            self, store, owner,
+        ))
+    }
+}
+
+#[doc(hidden)]
+pub trait CallDecode<'d, C, M>: Sized {
+    /// # Safety
+    /// The input must satisfy the source type's decoding contract.
+    unsafe fn decode(source: C) -> Option<Self>;
+}
+impl<'d, T: Decode<'d, Store: EmptyStore> + 'd> CallDecode<'d, T::CType, PlainCall> for T {
+    unsafe fn decode(source: T::CType) -> Option<Self> {
+        unsafe { crate::decode(source) }
+    }
+}
+impl<'d, T: Decode<'d, Store: EmptyStore> + 'd> CallDecode<'d, crate::borrow::CMoved<T>, MovedCall>
+    for T
+{
+    unsafe fn decode(source: crate::borrow::CMoved<T>) -> Option<Self> {
+        unsafe { crate::decode(source.0) }
+    }
+}
+
+impl<'d, T: crate::borrow::BorrowedDecode<'d, Store: EmptyStore> + 'd>
+    CallDecode<'d, crate::borrow::CBorrowed<T>, BorrowedCall> for T
+{
+    unsafe fn decode(source: crate::borrow::CBorrowed<T>) -> Option<Self> {
+        unsafe { crate::borrow::BorrowedDecode::decode(source.0) }
+    }
+}
+
 macro_rules! define_fn_trait {
     ($name:ident, $arity:tt; $( $arg_ty:ident : $carg:ident : $arg:ident : $c_ty:ident ),* $(,)?) => {
         #[doc = concat!("The _C fn_ call operator of arity ", stringify!($arity), " that accepts Rust values.")]
@@ -19,16 +88,24 @@ macro_rules! define_fn_trait {
             /// Performs the call operation.
             ///
             /// Encodes arguments, calls the function, decodes and returns the result.
+            /// Ownership markers select moved or borrowed conversion; borrowed argument
+            /// owners remain alive until result decoding finishes.
             ///
             /// # Safety
             ///
             /// The caller must uphold the safety requirements of calling `self` and of
-            /// decoding its return value with [`crate::decode`].
+            /// decoding its return value according to the ABI ownership contract.
             #[allow(clippy::too_many_arguments)]
-            unsafe fn call<'d, $( $arg_ty, )* B>(self $(, $arg: $arg_ty)*) -> Option<B>
+            unsafe fn call<'d, $( $arg_ty, $carg, )* B, ReturnMode>(self $(, $arg: $arg_ty)*) -> Option<B>
             where $(
-                $arg_ty: Encode<CType = Self::$carg, Store: EmptyStore>, )*
-                B: Decode<'d, CType = Self::Output, Store: EmptyStore> + 'd;
+                $arg_ty: CallEncode<Self::$carg, $carg>,
+                <$arg_ty as CallEncode<Self::$carg, $carg>>::Store: EmptyStore, )*
+                B: CallDecode<'d, Self::Output, ReturnMode> + 'd,
+            {
+                $(#[allow(non_snake_case)] let mut $carg = <$arg_ty as CallEncode<Self::$carg, $carg>>::Owner::default();)*
+                let result = unsafe { self.call_raw($(<$arg_ty as CallEncode<Self::$carg, $carg>>::encode($arg, &mut Default::default(), &mut $carg)),*) };
+                unsafe { B::decode(result) }
+            }
 
             /// Performs the call operation where some arguments contain soft references.
             ///
@@ -38,12 +115,27 @@ macro_rules! define_fn_trait {
             /// # Safety
             ///
             /// The caller must uphold the safety requirements of calling `self` and of
-            /// decoding its return value with [`crate::decode`].
+            /// decoding its return value according to the ABI ownership contract.
             #[allow(clippy::too_many_arguments)]
-            unsafe fn soft_call<$( $arg_ty, )* B>(self $(, $arg: $arg_ty)*) -> Option<B>
+            unsafe fn soft_call<$( $arg_ty, $carg, )* B, ReturnMode>(self $(, $arg: $arg_ty)*) -> Option<B>
             where $(
-                $arg_ty: Encode<CType = Self::$carg>, )*
-                B: for<'r> Decode<'r, CType = Self::Output, Store: EmptyStore>;
+                $arg_ty: CallEncode<Self::$carg, $carg>, )*
+                B: for<'r> CallDecode<'r, Self::Output, ReturnMode>,
+            {
+                $(#[allow(non_snake_case)] let mut $carg = <$arg_ty as CallEncode<Self::$carg, $carg>>::Owner::default();)*
+                $(#[allow(non_snake_case)] let mut $arg_ty = <$arg_ty as CallEncode<Self::$carg, $carg>>::Store::default();)*
+                let result = unsafe { self.call_raw($(<$arg_ty as CallEncode<Self::$carg, $carg>>::encode($arg, &mut $arg_ty, &mut $carg)),*) };
+                #[allow(unused_mut)]
+                let mut sync_ok = true;
+                $(sync_ok &= Store::sync($arg_ty).is_some();)*
+                unsafe { B::decode(result) }.filter(|_| sync_ok)
+            }
+
+            /// # Safety
+            /// The arguments and return value must obey this function's ABI contract.
+            #[doc(hidden)]
+            #[allow(clippy::too_many_arguments)]
+            unsafe fn call_raw(self, $($arg: Self::$carg),*) -> Self::Output;
         }
 
         impl_fn_pointer_for_all_abis!($name; $( $arg_ty : $carg : $arg : $c_ty ),*);
@@ -59,28 +151,10 @@ macro_rules! impl_fn_pointer {
             type Output = U;
 
             #[allow(clippy::too_many_arguments)]
-            unsafe fn call<'d, $( $arg_ty, )* B>(self $(, $arg: $arg_ty)*) -> Option<B>
-            where
-                $( $arg_ty: Encode<CType = $c_ty, Store: EmptyStore>, )*
-                B: Decode<'d, CType = U, Store: EmptyStore> + 'd,
-            {
-                let result = unsafe { self($(crate::encode($arg)),*) };
-                unsafe { crate::decode(result) }
+            unsafe fn call_raw(self, $($arg: Self::$carg),*) -> Self::Output {
+                unsafe { self($($arg),*) }
             }
 
-            #[allow(clippy::too_many_arguments, non_snake_case)]
-            unsafe fn soft_call<$( $arg_ty, )* B>(self $(, $arg: $arg_ty)*) -> Option<B>
-            where
-                $( $arg_ty: Encode<CType = $c_ty>, )*
-                B: for<'r> Decode<'r, CType = U, Store: EmptyStore>,
-            {
-                $(let mut $arg_ty = Default::default();)*
-                let result = unsafe { self($(crate::soft_encode($arg, &mut $arg_ty)),*) };
-                #[allow(unused_mut)]
-                let mut sync_ok = true;
-                $(sync_ok &= Store::sync($arg_ty).is_some();)*
-                unsafe { crate::decode(result) }.filter(|_| sync_ok)
-            }
         }
     };
 }

@@ -2377,4 +2377,80 @@ impl<T: ReprC<CType: PartialEq + Sized>> PartialEq for CBorrowed<T> {
 }
 impl<T: ReprC<CType: Eq + Sized>> Eq for CBorrowed<T> {}
 
+/// Carrier marking ownership transfer of the original Rust type.
+#[repr(transparent)]
+#[derive(RustSpec)]
+#[doc(hidden)]
+pub struct CMoved<T: ReprC<CType: Sized>>(pub T::CType);
+impl<T: ReprC<CType: Sized>> ReprC for CMoved<T> {
+    type CType = Self;
+}
+unsafe impl<T: ReprC<CType: Sized>> CType for CMoved<T> {}
+unsafe impl<T: ReprC<CType: Sized>> AbiCompatibleValidate for CMoved<T> {
+    unsafe fn is_valid(_: &Self) -> bool {
+        true
+    }
+}
+unsafe impl<T: ReprC<CType: Sized>> AbiCompatible for CMoved<T> {}
+unsafe impl<T: ReprC<CType: Sized>> CFnArg for CMoved<T> where T::CType: CFnArg {}
+unsafe impl<T: ReprC<CType: Sized>> CFnReturn for CMoved<T>
+where
+    T::CType: CFnReturn,
+    Self: RustSpec<Size = rust_spec::size::Sized<rust_spec::Gt<rust_spec::Zero>>>,
+{
+}
+impl<T: ReprC<CType: Sized>> CMoved<T> {
+    pub const fn new(value: T::CType) -> Self {
+        Self(value)
+    }
+    pub fn into_inner(self) -> T::CType {
+        self.0
+    }
+}
+unsafe impl<T: ReprC<CType: Sized>> EncodeMoveUnchecked for CMoved<T> {
+    type SoftStore = ();
+    unsafe fn soft_encode_unchecked<'a>(self, _: &'a mut ()) -> Self
+    where
+        Self: 'a,
+    {
+        self
+    }
+}
+unsafe impl<T: ReprC<CType: Sized>> EncodeMove for CMoved<T> {
+    type Store = ();
+    fn soft_encode<'a>(self, _: &'a mut ()) -> Self
+    where
+        Self: 'a,
+    {
+        self
+    }
+}
+unsafe impl<'d, T: ReprC<CType: Sized>> DecodeMove<'d> for CMoved<T> {
+    type Store = ();
+    unsafe fn soft_decode<'a: 'd>(value: Self, _: &'a mut ()) -> Option<Self> {
+        Some(value)
+    }
+}
+impl<T: ReprC<CType: Sized>> Encode for CMoved<T> {}
+impl<T: ReprC<CType: Sized>> crate::EncodeUnchecked for CMoved<T> {}
+impl<'d, T: ReprC<CType: Sized>> Decode<'d> for CMoved<T> {}
+crate::__impl_borrowed_identity!([T: ReprC<CType: Sized>] CMoved<T>);
+impl<T: ReprC<CType: Copy>> Copy for CMoved<T> {}
+impl<T: ReprC<CType: Copy>> Clone for CMoved<T> {
+    fn clone(&self) -> Self {
+        *self
+    }
+}
+impl<T: ReprC<CType: core::fmt::Debug + Sized>> core::fmt::Debug for CMoved<T> {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        f.debug_tuple("CMoved").field(&self.0).finish()
+    }
+}
+impl<T: ReprC<CType: PartialEq + Sized>> PartialEq for CMoved<T> {
+    fn eq(&self, other: &Self) -> bool {
+        self.0 == other.0
+    }
+}
+impl<T: ReprC<CType: Eq + Sized>> Eq for CMoved<T> {}
+
 pub(crate) use __impl_borrowed_identity;

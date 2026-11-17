@@ -144,7 +144,12 @@ pub(crate) fn emit_abi_function(
         FailureMode::Error if fn_return_ty(signature).is_none_or(is_identity_primitive) => {
             quote!(err)
         }
-        FailureMode::Error => gen_abi_return_encode(quote!(err), borrow_output),
+        FailureMode::Error => {
+            let encoded = gen_abi_return_encode(quote!(err), borrow_output);
+            if fn_return_ty(signature).is_some_and(|ty| matches!(ty, Type::Path(path) if path.path.segments.last().is_some_and(|s| s.ident == "CMoved"))) {
+                quote!(co3::borrow::CMoved(#encoded))
+            } else { encoded }
+        }
     };
 
     quote! {
@@ -219,7 +224,7 @@ pub(crate) fn gen_definition_body(
     let encoded_output = if return_ty.is_none_or(is_identity_primitive) {
         quote!(__co3_output)
     } else {
-        gen_abi_return_encode(quote!(__co3_output), borrows_return(&sig, fn_by_val))
+        gen_return_encode(quote!(__co3_output), return_ty.unwrap(), fn_by_val)
     };
     let output = match failure_mode {
         FailureMode::Panic => quote! { Ok::<_, ()>(#encoded_output) },
@@ -255,8 +260,9 @@ fn gen_pack_input_stmts(inputs: &[Argument<'_>], failure_mode: FailureMode) -> T
             Unpack::Single(part) => {
                 let source_ty = input.conversion_ty();
                 let packed = quote!(<#source_ty as co3::pack::Pack<<#part as co3::ReprC>::CType>>::pack(#name));
-                if input.is_borrowed() && !input.identity {
-                    quote!((#packed).map(co3::borrow::CBorrowed::<#source_ty>))
+                if input.is_wrapped() {
+                    let wrapper = input.wrapper();
+                    quote!((#packed).map(#wrapper::<#source_ty>))
                 } else {
                     packed
                 }
@@ -287,6 +293,15 @@ fn gen_pack_input_stmts(inputs: &[Argument<'_>], failure_mode: FailureMode) -> T
         })
     });
     quote!(#(#stmts)*)
+}
+
+pub(crate) fn gen_return_encode(value: TokenStream, ty: &Type, moved: bool) -> TokenStream {
+    let encoded = gen_abi_return_encode(value, ownership_mode(ty, moved) == OwnershipMode::Borrow);
+    if moved && !is_implicitly_by_value(ty) {
+        quote!(co3::borrow::CMoved(#encoded))
+    } else {
+        encoded
+    }
 }
 
 pub(crate) fn gen_abi_return_encode(value: TokenStream, borrow_output: bool) -> TokenStream {
@@ -357,7 +372,7 @@ pub(crate) fn gen_regular_drop_definition_body(
 
     if !soft {
         return quote! {{
-            let Some(__co3_value) = (unsafe { co3::stored::decode_move::<#self_ty>(__co3_self) }) else {
+            let Some(__co3_value) = (unsafe { co3::stored::decode_move::<#self_ty>(__co3_self.0) }) else {
                 #decode_error
             };
             core::mem::drop(__co3_value);
@@ -369,7 +384,7 @@ pub(crate) fn gen_regular_drop_definition_body(
     quote! {{
         let mut __co3_store = <#self_ty as co3::stored::DecodeMove<'_>>::Store::default();
         let __co3_value = unsafe {
-            <#self_ty as co3::stored::DecodeMove>::soft_decode(__co3_self, &mut __co3_store)
+            <#self_ty as co3::stored::DecodeMove>::soft_decode(__co3_self.0, &mut __co3_store)
         };
         let Some(__co3_value) = __co3_value else {
             #decode_error
@@ -639,7 +654,11 @@ fn gen_analyzed_input_decode_stmts(
         let inactive_store = disabled.map(|disabled| quote!(#disabled (),));
 
         let decode_ty = input.conversion_ty();
-        let decode_arg = quote! { #arg_name };
+        let decode_arg = if input.is_wrapped() && !input.is_borrowed() {
+            quote!(#arg_name.0)
+        } else {
+            quote!(#arg_name)
+        };
 
         let decode_call = if input.identity {
             quote!(Some(#decode_arg))
@@ -1011,12 +1030,16 @@ pub(crate) fn lower_abi_fn_signature(
 ) -> syn::Signature {
     let mut sig = sig;
     explicitize_signature_lifetimes(&mut sig);
-    let borrowed_output = fn_return_ty(&sig)
-        .filter(|ty| ownership_mode(ty, move_fn) == OwnershipMode::Borrow)
+    let wrapped_output = fn_return_ty(&sig)
+        .filter(|ty| !is_implicitly_by_value(ty))
         .cloned();
     let mut sig = lower_extern_fn_signature(sig, failure_mode);
-    if let Some(ty) = borrowed_output {
-        sig.output = parse_quote!(-> co3::borrow::CBorrowed<#ty>);
+    if let Some(ty) = wrapped_output {
+        sig.output = if move_fn {
+            parse_quote!(-> co3::borrow::CMoved<#ty>)
+        } else {
+            parse_quote!(-> co3::borrow::CBorrowed<#ty>)
+        };
     }
     sig
 }
@@ -1322,7 +1345,7 @@ pub(crate) fn ownership_mode(ty: &Type, explicitly_moved: bool) -> OwnershipMode
     OwnershipMode::Borrow
 }
 
-fn is_implicitly_by_value(ty: &Type) -> bool {
+pub(crate) fn is_implicitly_by_value(ty: &Type) -> bool {
     use crate::known_type::{self, Kind};
 
     struct ByValueVisitor {

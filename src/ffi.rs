@@ -1188,9 +1188,13 @@ mod tests {
         let _: Option<CallbackBorrowedReturn> = None;
         let _: BorrowedRustValue = borrow_rust_value_raw;
         let _: OwnedTransform = return_owned_raw;
-        let result = unsafe { return_owned_raw(co3::encode(Box::new(CallbackValue(42)))) };
+        let result = unsafe {
+            return_owned_raw(co3::borrow::CMoved(co3::encode(Box::new(CallbackValue(
+                42,
+            )))))
+        };
         assert_eq!(
-            unsafe { co3::decode::<Box<CallbackValue>>(result) },
+            unsafe { co3::decode::<Box<CallbackValue>>(result.0) },
             Some(Box::new(CallbackValue(42)))
         );
         fn assert_existing_fn_pointer_impls<T>(_: T) {}
@@ -1198,7 +1202,7 @@ mod tests {
         let raw_value = co3::encode(CallbackRustValue(21));
         let raw_result = unsafe { double_rust_raw(CBorrowed::new(raw_value)) };
         assert_eq!(
-            unsafe { co3::decode::<CallbackRustValue>(raw_result) },
+            unsafe { co3::decode::<CallbackRustValue>(raw_result.0) },
             Some(CallbackRustValue(42))
         );
         let encoded = co3::encode(CallbackRustValue(7));
@@ -1206,7 +1210,7 @@ mod tests {
             CallbackRustValue::scaled_raw(CBorrowed::new(CSoftRef::from_ref(&encoded)), 6)
         };
         assert_eq!(
-            unsafe { co3::decode::<CallbackRustValue>(raw_result) },
+            unsafe { co3::decode::<CallbackRustValue>(raw_result.0) },
             Some(CallbackRustValue(42))
         );
         assert_eq!(
@@ -1497,8 +1501,11 @@ mod tests {
         let value: String = unsafe { generic_identity.call(String::from("hello")) }.unwrap();
         assert_eq!(value, "hello");
 
-        assert_eq!(unsafe { generic_cloned_raw::<u8>(CBorrowed::new(7)) }, 7);
-        assert_eq!(unsafe { generic_const_value_raw::<4>() }, 4);
+        let cloned: unsafe extern "C" fn(CBorrowed<u8>) -> co3::borrow::CMoved<u8> =
+            generic_cloned_raw::<u8>;
+        assert_eq!(unsafe { cloned.call(7u8) }, Some(7u8));
+        let callback: unsafe extern "C" fn() -> usize = generic_const_value_raw::<4>;
+        assert_eq!(unsafe { callback.call() }, Some(4usize));
         let byte = 9_u8;
         assert_eq!(
             unsafe { *generic_borrowed_raw(co3::encode(&byte)).as_ptr() },
@@ -1599,11 +1606,13 @@ mod tests {
     #[test]
     #[cfg(all(feature = "alloc", feature = "derive"))]
     fn generic_reference_companions_preserve_borrowing() {
-        assert_eq!(unsafe { existing_raw(7) }, 7);
+        let callback: unsafe extern "C" fn(u8) -> u8 = existing_raw;
+        assert_eq!(unsafe { callback.call(7u8) }, Some(7u8));
         let _ = accept_raw;
         let _ = borrowed_generic_raw::<u8>;
         let _ = MethodHost::borrowed_generic_raw::<u8>;
-        let _: ArrayCompanion = signature_identity_raw::<[u8; 2]>;
+        let _: unsafe extern "C" fn(co3::borrow::CMoved<[u8; 2]>) -> co3::borrow::CMoved<[u8; 2]> =
+            signature_identity_raw::<[u8; 2]>;
 
         let value = 7_u8;
         unsafe {
@@ -1811,7 +1820,7 @@ mod tests {
         static_assertions::assert_not_impl_any!(AliasBadArg: ReprC);
         static_assertions::assert_not_impl_any!(AliasBadReturn: ReprC);
 
-        type AliasStringC = <String as ReprC>::CType;
+        type AliasStringC = co3::borrow::CMoved<String>;
         static_assertions::assert_type_eq_all!(
             AliasMoved<String>,
             unsafe extern "C" fn(AliasStringC) -> AliasStringC
@@ -1824,7 +1833,7 @@ mod tests {
             AliasArray<2>,
             unsafe extern "C" fn([u8; 2]) -> [u8; 2]
         );
-        static_assertions::assert_type_eq_all!(AliasCombined<u8, 2>, unsafe extern "C" fn([u8; 2]));
+        static_assertions::assert_type_eq_all!(AliasCombined<u8, 2>, unsafe extern "C" fn(co3::borrow::CMoved<[u8; 2]>));
     }
 
     #[derive(Debug, PartialEq, Eq, RustSpec, ReprC)]
@@ -1878,9 +1887,9 @@ mod tests {
             fn accept(#[unpack(u16)] value: Byte) -> move CustomStatus;
         }
 
-        assert_eq!(decode_status(unsafe { accept_raw(7) }), CustomStatus::Ok);
+        assert_eq!(decode_status(unsafe { accept_raw(7) }.0), CustomStatus::Ok);
         assert_eq!(
-            decode_status(unsafe { accept_raw(256) }),
+            decode_status(unsafe { accept_raw(256) }.0),
             CustomStatus::TrapValue
         );
 

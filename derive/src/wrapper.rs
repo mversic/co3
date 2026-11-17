@@ -293,7 +293,7 @@ fn gen_regular_drop_import_body<const DISPATCHED: bool>(
         .collect::<Vec<_>>();
     let forwarded_args = arg_names.iter().map(|name| {
         if name == "__co3_self" {
-            quote!(core::mem::ManuallyDrop::into_inner(#name))
+            quote!(co3::borrow::CMoved(core::mem::ManuallyDrop::into_inner(#name)))
         } else {
             quote!(#name)
         }
@@ -565,8 +565,13 @@ fn gen_wrapper_body_with_input_conversion<const DISPATCHED: bool>(
         } else if ffi_fn::ownership_mode(output_ty, fn_by_val)
             == crate::generate::OwnershipMode::ByValue
         {
+            let payload = if ffi_fn::is_implicitly_by_value(output_ty) {
+                quote!(__co3_out)
+            } else {
+                quote!(__co3_out.0)
+            };
             quote! {
-                let __co3_out: Option<#output_ty> = unsafe { co3::decode(__co3_out) };
+                let __co3_out: Option<#output_ty> = unsafe { co3::decode(#payload) };
             }
         } else {
             quote! {
@@ -619,7 +624,7 @@ fn gen_single_unpack_input_stmts(
         };
         let arg_name = input.name();
         let unpack_ty = input.conversion_ty();
-        let payload = if input.is_borrowed() && !input.identity {
+        let payload = if input.is_wrapped() {
             quote!(#arg_name.0)
         } else {
             quote!(#arg_name)
@@ -782,7 +787,11 @@ fn gen_input_conversion_stmts(inputs: &[Argument<'_>]) -> TokenStream {
         } else {
             quote!(#(#cfg)* let #arg_name = co3::encode(#arg_name);)
         };
-        quote!(#encode)
+        let wrap = (input.is_wrapped() && !input.is_borrowed()).then(|| {
+            let ty = &input.ty;
+            quote!(#(#cfg)* let #arg_name = co3::borrow::CMoved::<#ty>(#arg_name);)
+        });
+        quote!(#encode #wrap)
     });
     quote!(#(#stmts)*)
 }

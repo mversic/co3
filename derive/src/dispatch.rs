@@ -973,10 +973,10 @@ fn synthesize_dispatch_arms(
                     let encoded_err = if ffi_fn::is_identity_primitive(&concrete_output) {
                         quote!(__co3_arm_err)
                     } else {
-                        ffi_fn::gen_abi_return_encode(
+                        ffi_fn::gen_return_encode(
                             quote!(__co3_arm_err),
-                            ffi_fn::ownership_mode(&concrete_output, fn_by_val)
-                                == crate::generate::OwnershipMode::Borrow,
+                            &concrete_output,
+                            fn_by_val,
                         )
                     };
 
@@ -1255,8 +1255,10 @@ pub(crate) fn set_token_stream_span(tokens: TokenStream, span: Span) -> TokenStr
 }
 
 fn dispatch_return_type(ty: &syn::Type, fn_by_val: bool) -> syn::Type {
-    if ffi_fn::ownership_mode(ty, fn_by_val) == crate::generate::OwnershipMode::ByValue {
+    if ffi_fn::is_implicitly_by_value(ty) {
         item_fn_output_type(ty)
+    } else if fn_by_val {
+        parse_quote!(co3::borrow::CMoved<#ty>)
     } else {
         parse_quote!(co3::borrow::CBorrowed<#ty>)
     }
