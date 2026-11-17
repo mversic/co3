@@ -1925,43 +1925,6 @@ mod tests {
         drop(encode_owner);
     }
 
-    static DROPS: AtomicUsize = AtomicUsize::new(0);
-    #[derive(Clone, RustSpec, ReprC)]
-    #[rust_spec(custom_drop)]
-    #[repr(C)]
-    struct Owner(u8);
-    impl Drop for Owner {
-        fn drop(&mut self) {
-            DROPS.fetch_add(1, Ordering::SeqCst);
-        }
-    }
-
-    #[test]
-    fn custom_drop_owner_is_retained_separately_from_conversion_store() {
-        DROPS.store(0, Ordering::SeqCst);
-        let mut encode_owner = Default::default();
-        let mut encode_store: () = Default::default();
-        let encoded = crate::borrow::BorrowedEncode::soft_encode(
-            Owner(4),
-            &mut encode_store,
-            &mut encode_owner,
-        );
-        assert_eq!(DROPS.load(Ordering::SeqCst), 0);
-        let mut decode_store: () = Default::default();
-        let decoded = unsafe {
-            <Owner as crate::borrow::BorrowedDecode>::soft_decode(encoded, &mut decode_store)
-        }
-        .unwrap();
-        assert_eq!(decoded.0, 4);
-        drop(decoded);
-        assert_eq!(DROPS.load(Ordering::SeqCst), 1);
-        decode_store.sync().unwrap();
-        encode_store.sync().unwrap();
-        assert_eq!(DROPS.load(Ordering::SeqCst), 1);
-        drop(encode_owner);
-        assert_eq!(DROPS.load(Ordering::SeqCst), 2);
-    }
-
     #[test]
     fn borrowed_vectors_decode_directly_without_soft() {
         use crate::borrow::BorrowedDecode;
@@ -2075,12 +2038,12 @@ mod tests {
             fn drop(&mut self) {}
         }
 
-        static_assertions::assert_impl_all!(GenericOwner<u8>: crate::borrow::BorrowedDecode<'static>);
+        static_assertions::assert_not_impl_any!(GenericOwner<u8>: crate::borrow::BorrowedDecode<'static>, crate::borrow::BorrowedEncode, crate::borrow::BorrowedEncodeUnchecked);
         static_assertions::assert_not_impl_any!(GenericOwner<bool>:
             crate::stored::SoftDecodeRef<'static>, crate::stored::SoftDecodeMut<'static>);
         static_assertions::assert_not_impl_any!(GenericOwner<u8>:
             crate::stored::SoftDecodeRef<'static>, crate::stored::SoftDecodeMut<'static>);
-        static_assertions::assert_impl_all!(GenericOwner<bool>: crate::borrow::BorrowedDecode<'static>);
+        static_assertions::assert_not_impl_any!(GenericOwner<bool>: crate::borrow::BorrowedDecode<'static>, crate::borrow::BorrowedEncode, crate::borrow::BorrowedEncodeUnchecked);
         static_assertions::assert_impl_all!(&'static GenericOwner<bool>: crate::stored::DecodeMove<'static>);
         static_assertions::assert_impl_all!(&'static mut GenericOwner<u8>: crate::stored::DecodeMove<'static>);
 
@@ -2100,8 +2063,8 @@ mod tests {
             crate::borrow::BorrowedDecode<'static>);
         static_assertions::assert_not_impl_any!(&'static StringOwner: crate::stored::DecodeMove<'static>);
         static_assertions::assert_not_impl_any!(&'static mut StringOwner: crate::stored::DecodeMove<'static>);
-        static_assertions::assert_impl_all!(StringOwner:
-            crate::stored::DecodeMove<'static>, crate::borrow::BorrowedEncode);
+        static_assertions::assert_impl_all!(StringOwner: crate::stored::DecodeMove<'static>);
+        static_assertions::assert_not_impl_any!(StringOwner: crate::borrow::BorrowedEncode, crate::borrow::BorrowedEncodeUnchecked);
         static_assertions::assert_impl_all!(Aggregate: crate::stored::DecodeMove<'static>);
         static_assertions::assert_impl_all!(Choice: crate::stored::DecodeMove<'static>);
 
@@ -2275,31 +2238,6 @@ mod tests {
         assert_eq!(imported_bytes(alloc::vec![7]), 7);
         assert_eq!(imported_tuples(alloc::vec![(11,)]), 11);
         assert_eq!(imported_boxed(Box::new((13,))), 13);
-    }
-
-    #[test]
-    fn imported_stable_owner_needs_no_soft_conversion_store() {
-        #[derive(RustSpec, ReprC)]
-        #[rust_spec(custom_drop)]
-        #[repr(transparent)]
-        struct StableOwner(u8);
-
-        impl Drop for StableOwner {
-            fn drop(&mut self) {}
-        }
-
-        #[unsafe(export_name = "co3_unit_stable_owner_value")]
-        extern "C" fn owner_value(value: crate::borrow::CBorrowed<StableOwner>) -> u8 {
-            value.0.0
-        }
-
-        crate::ffi! {
-            #![unsafe(extern("C"))]
-            #[symbol_name = "co3_unit_stable_owner_value"]
-            fn imported_owner_value(value: StableOwner) -> u8;
-        }
-
-        assert_eq!(imported_owner_value(StableOwner(17)), 17);
     }
 
     #[derive(RustSpec, ReprC)]

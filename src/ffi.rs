@@ -698,7 +698,7 @@ mod tests {
     #[test]
     fn alias_fields_preserve_borrowed_types_and_values() {
         let view = AliasFields(c_int::new(3), 4_u32, c_long::new(5));
-        let borrowed_lowered = co3::borrow::BorrowedEncode::encode(view, &mut ());
+        let borrowed_lowered = co3::borrow::BorrowedEncode::encode(view, &mut Default::default());
         let _: c_int = borrowed_lowered.0;
         let _: c_long = borrowed_lowered.2;
         let view = AliasFields(c_int::new(3), 4_u32, c_long::new(5));

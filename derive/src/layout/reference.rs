@@ -322,59 +322,38 @@ fn gen_transparent_decode_ref(
         (Some(variant), None) => quote!(#name::#variant(value)),
         (Some(variant), Some(member)) => quote!(#name::#variant { #member: value }),
     };
-    let impls = [true, false].into_iter().map(|stable| {
+    let field_bound = FieldType::new(ty, &input.generics).bound(quote!(
+        co3::ReprC<CType: co3::CType + Sized + '_co3_decode>
+            + co3::rust_spec::RustSpec + Sized + '_co3_decode
+    ));
+    let field_impls = [true, false].into_iter().map(|stable| {
         let (layout, carrier) = if stable {
-            (quote!(co3::rust_spec::Stable), quote!(co3::reference::CRef<'_co3_decode, #ty>))
+            (quote!(co3::rust_spec::Stable), quote!(co3::reference::CRef<'d, R>))
         } else {
-            (quote!(co3::rust_spec::Unstable), quote!(co3::reference::CSoftRef<#ty>))
+            (quote!(co3::rust_spec::Unstable), quote!(co3::reference::CSoftRef<R>))
         };
-        let field_bound = FieldType::new(ty, &input.generics).bound(quote!(
-            co3::ReprC<CType: co3::CType + Sized + '_co3_decode>
-                + co3::rust_spec::RustSpec<Layout = #layout> + Sized + '_co3_decode
-        ));
         quote! {
-            unsafe impl #decode_generics SoftDecodeRef<'_co3_decode> for #name #args
+            impl<'d, R> __Co3TransparentFieldDecode<'d, R> for #layout
             where
-                #speculative Self: co3::ReprC<CType = #companion #args> + Sized + '_co3_decode,
-                #speculative Self: co3::rust_spec::RustSpec<Drop: __Co3NonCustomDrop>,
-                #field_bound,
-                &'_co3_decode Self: co3::ReprC<CType = co3::reference::CSoftRef<Self>>,
-                &'_co3_decode #ty: co3::stored::DecodeMove<'_co3_decode>
+                R: co3::ReprC<CType: co3::CType + Sized + 'd>
+                    + co3::rust_spec::RustSpec<Layout = #layout> + Sized + 'd,
+                &'d R: co3::stored::DecodeMove<'d>
                     + co3::ReprC<CType = #carrier>,
-                #predicates
             {
-                type Store = __Co3TransparentDecodeStore<
-                    Self, <&'_co3_decode #ty as co3::stored::DecodeMove<'_co3_decode>>::Store,
-                >;
-
-                unsafe fn soft_decode_ref<'itm: '_co3_decode>(
-                    source: <&'_co3_decode Self as co3::ReprC>::CType,
-                    store: &'itm mut Self::Store,
-                ) -> Option<&'_co3_decode Self> {
-                    let source = unsafe { source.into_ref()? };
-                    let carrier = <#carrier>::from_ref(&source.#member);
-                    let value = unsafe {
-                        <&'_co3_decode #ty as co3::stored::DecodeMove<'_co3_decode>>::soft_decode(
-                            carrier, &mut store.0,
-                        )?
-                    };
-                    // Both Rust types are transparent over this single field. The field
-                    // decoder established validity; the reference keeps its original lifetime.
-                    Some(unsafe { &*core::ptr::from_ref(value).cast::<Self>() })
+                unsafe fn decode<'itm: 'd>(
+                    source: &'d R::CType,
+                    store: &'itm mut <&'d R as co3::stored::DecodeMove<'d>>::Store,
+                ) -> Option<&'d R> {
+                    let carrier = <#carrier>::from_ref(source);
+                    unsafe { <&'d R as co3::stored::DecodeMove<'d>>::soft_decode(carrier, store) }
                 }
 
-                unsafe fn soft_decode_ref_unchecked<'itm: '_co3_decode>(
-                    source: <&'_co3_decode Self as co3::ReprC>::CType,
-                    store: &'itm mut Self::Store,
-                ) -> &'_co3_decode Self {
-                    let source = unsafe { source.into_ref().unwrap_unchecked() };
-                    let carrier = <#carrier>::from_ref(&source.#member);
-                    let value = unsafe {
-                        <&'_co3_decode #ty as co3::stored::DecodeMove<'_co3_decode>>::soft_decode_unchecked(
-                            carrier, &mut store.0,
-                        )
-                    };
-                    unsafe { &*core::ptr::from_ref(value).cast::<Self>() }
+                unsafe fn decode_unchecked<'itm: 'd>(
+                    source: &'d R::CType,
+                    store: &'itm mut <&'d R as co3::stored::DecodeMove<'d>>::Store,
+                ) -> &'d R {
+                    let carrier = <#carrier>::from_ref(source);
+                    unsafe { <&'d R as co3::stored::DecodeMove<'d>>::soft_decode_unchecked(carrier, store) }
                 }
             }
         }
@@ -382,6 +361,23 @@ fn gen_transparent_decode_ref(
     quote! {
         const _: () = {
             use co3::stored::SoftDecodeRef;
+
+            trait __Co3TransparentFieldDecode<'d, R>
+            where
+                R: co3::ReprC<CType: Sized> + 'd,
+                &'d R: co3::stored::DecodeMove<'d>,
+            {
+                unsafe fn decode<'itm: 'd>(
+                    source: &'d R::CType,
+                    store: &'itm mut <&'d R as co3::stored::DecodeMove<'d>>::Store,
+                ) -> Option<&'d R>;
+                unsafe fn decode_unchecked<'itm: 'd>(
+                    source: &'d R::CType,
+                    store: &'itm mut <&'d R as co3::stored::DecodeMove<'d>>::Store,
+                ) -> &'d R;
+            }
+
+            #(#field_impls)*
 
             #[doc(hidden)]
             pub struct __Co3TransparentDecodeStore<R, S>(S, core::marker::PhantomData<fn() -> R>);
@@ -421,26 +417,48 @@ fn gen_transparent_decode_ref(
                 }
             }
 
-            co3::disjoint_impls! {
-                #[disjoint_impls(remote)]
-                pub unsafe trait SoftDecodeRef<'d>: co3::ReprC + 'd {
-                    type Store: co3::stored::Store + Default;
+            unsafe impl #decode_generics SoftDecodeRef<'_co3_decode> for #name #args
+            where
+                #speculative Self: co3::ReprC<CType = #companion #args> + Sized + '_co3_decode,
+                #speculative Self: co3::rust_spec::RustSpec<Drop: __Co3NonCustomDrop>,
+                #field_bound,
+                &'_co3_decode Self: co3::ReprC<CType = co3::reference::CSoftRef<Self>>,
+                &'_co3_decode #ty: co3::stored::DecodeMove<'_co3_decode>,
+                <#ty as co3::rust_spec::RustSpec>::Layout:
+                    __Co3TransparentFieldDecode<'_co3_decode, #ty>,
+                #predicates
+            {
+                type Store = __Co3TransparentDecodeStore<
+                    Self, <&'_co3_decode #ty as co3::stored::DecodeMove<'_co3_decode>>::Store,
+                >;
 
-                    unsafe fn soft_decode_ref<'itm: 'd>(
-                        source: <&'d Self as co3::ReprC>::CType,
-                        store: &'itm mut Self::Store,
-                    ) -> Option<&'d Self>
-                    where
-                        &'d Self: co3::ReprC<CType: Sized>;
-
-                    unsafe fn soft_decode_ref_unchecked<'itm: 'd>(
-                        source: <&'d Self as co3::ReprC>::CType,
-                        store: &'itm mut Self::Store,
-                    ) -> &'d Self
-                    where
-                        &'d Self: co3::ReprC<CType: Sized>;
+                unsafe fn soft_decode_ref<'itm: '_co3_decode>(
+                    source: <&'_co3_decode Self as co3::ReprC>::CType,
+                    store: &'itm mut Self::Store,
+                ) -> Option<&'_co3_decode Self> {
+                    let source = unsafe { source.into_ref()? };
+                    let value = unsafe {
+                        <<#ty as co3::rust_spec::RustSpec>::Layout as __Co3TransparentFieldDecode<'_co3_decode, #ty>>::decode(
+                            &source.#member, &mut store.0,
+                        )?
+                    };
+                    // Both Rust types are transparent over this single field. The field
+                    // decoder established validity; the reference keeps its original lifetime.
+                    Some(unsafe { &*core::ptr::from_ref(value).cast::<Self>() })
                 }
-                #(#impls)*
+
+                unsafe fn soft_decode_ref_unchecked<'itm: '_co3_decode>(
+                    source: <&'_co3_decode Self as co3::ReprC>::CType,
+                    store: &'itm mut Self::Store,
+                ) -> &'_co3_decode Self {
+                    let source = unsafe { source.into_ref().unwrap_unchecked() };
+                    let value = unsafe {
+                        <<#ty as co3::rust_spec::RustSpec>::Layout as __Co3TransparentFieldDecode<'_co3_decode, #ty>>::decode_unchecked(
+                            &source.#member, &mut store.0,
+                        )
+                    };
+                    unsafe { &*core::ptr::from_ref(value).cast::<Self>() }
+                }
             }
         };
     }

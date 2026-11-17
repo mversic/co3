@@ -1,4 +1,4 @@
-use co3::raw;
+use co3::{borrow::CBorrowed, raw};
 
 mod shadow {
     #[allow(non_camel_case_types)]
@@ -14,7 +14,10 @@ raw! {
 }
 
 fn main() {
-    let identity: unsafe extern "C" fn(u64) -> u64 = identity_raw;
+    let identity: unsafe extern "C" fn(CBorrowed<u64>) -> CBorrowed<u64> = identity_raw;
     let value = u64::MAX;
-    assert_eq!(unsafe { identity(value) }, value);
+    assert_eq!(
+        unsafe { identity(CBorrowed::new(value)) }.into_inner(),
+        value
+    );
 }

@@ -24,11 +24,9 @@ fn stable_references_keep_the_direct_decoding_path() {
     assert_eq!(source, 9);
 }
 
-#[cfg(feature = "derive")]
 #[derive(RustSpec, co3::ReprC, Debug, PartialEq)]
 struct Derived(u8, bool);
 
-#[cfg(feature = "derive")]
 #[test]
 fn derived_unstable_referents_use_temporary_storage_and_writeback() {
     let mut carrier = co3::encode(Derived(3, true));
@@ -50,6 +48,26 @@ fn derived_unstable_referents_use_temporary_storage_and_writeback() {
         unsafe { co3::decode::<Derived>(carrier) },
         Some(Derived(9, false))
     );
+}
+
+#[derive(RustSpec, co3::ReprC)]
+#[repr(transparent)]
+struct TransparentTuple((u8,));
+
+fn read_transparent_tuple(value: &TransparentTuple) -> u8 {
+    value.0.0
+}
+
+co3::raw! {
+    fn read_transparent_tuple(#[soft] value: &TransparentTuple) -> u8;
+}
+
+#[test]
+fn transparent_shared_decoder_reconstructs_the_inner_field() {
+    let carrier = co3::encode(TransparentTuple((17,)));
+    let value =
+        unsafe { read_transparent_tuple_raw(co3::borrow::CBorrowed(CSoftRef::from_ref(&carrier))) };
+    assert_eq!(value, 17);
 }
 
 #[test]
