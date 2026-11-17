@@ -292,7 +292,7 @@ mod tests {
 
     #[test]
     fn ownership_markers_are_symmetric() {
-        let cases: [(Type, bool); 9] = [
+        let cases: [(Type, bool); 11] = [
             (parse_quote!(u32), false),
             (parse_quote!((u8, u32)), false),
             (parse_quote!(&u32), false),
@@ -302,6 +302,8 @@ mod tests {
             (parse_quote!(Alias), true),
             (parse_quote!((T, U)), true),
             (parse_quote!((Vec<u8>, u32)), true),
+            (parse_quote!(Tuple2<u8, u8>), false),
+            (parse_quote!(Tuple2<String, u8>), true),
         ];
         for (ty, wrapped) in cases {
             let borrowed = Argument::from_parts(&[], parse_quote!(value), ty.clone());
@@ -319,6 +321,11 @@ mod tests {
             } else {
                 assert_eq!(borrowed.abi_ty(), moved.abi_ty());
             }
+        }
+        for arity in 1..=12 {
+            let args = vec!["u8"; arity].join(", ");
+            let ty: Type = syn::parse_str(&format!("Tuple{arity}<{args}>")).unwrap();
+            assert!(!Argument::from_parts(&[], parse_quote!(value), ty).is_wrapped());
         }
     }
 }

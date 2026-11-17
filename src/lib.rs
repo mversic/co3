@@ -425,7 +425,7 @@
 //!
 //! fn apply_callback(callback: Callback, value: Value) -> Value {
 //!     // `CFn2::call` encodes the Rust arguments and decodes the callback's return value.
-//!     // Use `CFn2::soft_call` when any of the input arguments requires a non-empty store.
+//!     // `call` manages temporary conversion storage and synchronizes argument updates.
 //!     unsafe { callback.call(value, 1_u8) }.expect("callback returned an invalid Value")
 //! }
 //!

@@ -1,4 +1,8 @@
-use co3::{ffi, ops::CFn1, raw};
+use co3::{
+    ffi,
+    ops::{CFn0, CFn1},
+    raw,
+};
 
 fn identity<T>(value: T) -> T {
     value
@@ -55,7 +59,8 @@ fn main() {
     assert_eq!(value, "hello");
 
     let _: ClonedRaw<u8> = cloned_raw::<u8>;
-    assert_eq!(unsafe { const_value_raw::<4>() }, 4);
+    let callback: unsafe extern "C" fn() -> _ = const_value_raw::<4>;
+    assert_eq!(unsafe { callback.call() }, Some(4usize));
     let _: ReferenceRaw<'_> = borrowed_raw;
 
     let echo: BytesRaw = Host::<Vec<u8>>::echo_raw;

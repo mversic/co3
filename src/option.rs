@@ -26,8 +26,8 @@ use crate::{
 /// lowers structurally to `OptionSome<T::CType>`; it is distinct from the hidden
 /// carrier used to encode native `Option<T>`. A custom niche does not add a tag.
 /// Robustness follows `T`, including any `rust-spec` custom-niche classification.
-#[repr(transparent)]
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, PartialOrd, Ord, Hash, RustSpec)]
+#[repr(transparent)]
 pub struct OptionSome<T>(pub T);
 
 macro_rules! impl_niche_payload {

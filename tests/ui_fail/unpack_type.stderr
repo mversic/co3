@@ -94,13 +94,13 @@ error[E0277]: the trait bound `Tuple2<u8, u8>: Unpack2<u32, Utf8String>` is not 
    | |_^ the trait `Unpack2<u32, Utf8String>` is not implemented for `Tuple2<u8, u8>`
    |
    = help: the following other types implement trait `Unpack2<Part1, Part2>`:
-             `&R` implements `Unpack2<*const <<P as Wide>::Header as WideHeader>::Data, U>`
-             `&R` implements `Unpack2<*mut <<P as Wide>::Header as WideHeader>::Data, U>`
-             `&mut R` implements `Unpack2<*mut <<P as Wide>::Header as WideHeader>::Data, U>`
+             `&R` implements `Unpack2<Pointer, U>`
+             `&mut R` implements `Unpack2<Pointer, U>`
              `(A, B)` implements `Unpack2<Part1, Part2>`
-             `*const R` implements `Unpack2<*const <<R as Wide>::Header as WideHeader>::Data, U>`
-             `*mut R` implements `Unpack2<*mut <<R as Wide>::Header as WideHeader>::Data, U>`
-             `Box<R>` implements `Unpack2<K, U>`
-             `Cell<T>` implements `Unpack2<Part1, Part2>`
+             `*const R` implements `Unpack2<*const <<P as Wide>::Header as WideHeader>::Data, U>`
+             `*mut R` implements `Unpack2<*mut <<P as Wide>::Header as WideHeader>::Data, U>`
+             `Box<R>` implements `Unpack2<*mut <<P as Wide>::Header as WideHeader>::Data, U>`
+             `Cell<T>` implements `Unpack2<A, B>`
+             `ManuallyDrop<T>` implements `Unpack2<A, B>`
            and $N others
    = note: this error originates in the macro `ffi` (in Nightly builds, run with -Z macro-backtrace for more info)

@@ -84,10 +84,10 @@ fn identity_arguments_skip_stores_without_skipping_reference_conversion() {
 
 #[test]
 fn identity_primitives_keep_their_abi_types() {
-    let raw_increment: unsafe extern "C" fn(c_int) -> c_int = increment_raw;
+    let raw_increment: unsafe extern "C" fn(_) -> _ = increment_raw;
     assert_eq!(unsafe { raw_increment(c_int::new(20)) }, c_int::new(21));
     assert_eq!(imported_double(c_long::new(21)), c_long::new(42));
-    let raw_carrier: unsafe extern "C" fn(c_int) -> c_int = increment_carrier_raw;
+    let raw_carrier: unsafe extern "C" fn(_) -> _ = increment_carrier_raw;
     let result = unsafe { raw_carrier(c_int::new(20)) };
     assert_eq!(result, c_int::new(21));
 }

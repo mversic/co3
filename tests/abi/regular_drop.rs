@@ -4,7 +4,7 @@ use std::{
     sync::atomic::{AtomicUsize, Ordering},
 };
 
-use co3::{ReprC, boxed::CBox, ffi, rust_spec::RustSpec};
+use co3::{ReprC, boxed::CBox, ffi, ops::CFn1, rust_spec::RustSpec};
 
 type BatteryString = CString;
 type BatteryCStr = Box<CStr>;
@@ -53,8 +53,13 @@ ffi! {
 
 #[test]
 fn regular_drop_decodes_owned_carrier() {
-    let carrier = co3::encode(CString::new("battery").unwrap());
-    unsafe { drop_cstr(carrier) };
+    let callback: unsafe extern "C" fn(_) = drop_cstr;
+    let result: Option<()> = unsafe {
+        callback.call(co3::borrow::CMoved::<BatteryCStr>(co3::encode(
+            CString::new("battery").unwrap(),
+        )))
+    };
+    assert_eq!(result, Some(()));
 }
 
 #[test]

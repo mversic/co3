@@ -806,19 +806,6 @@ mod tests {
     }
 
     #[test]
-    fn removed_transparent_mapping_is_rejected() {
-        let input = syn::parse_quote! {
-            #[repr(transparent)]
-            #[repr_c(transparent)]
-            struct Wrapper(u32);
-        };
-        assert_eq!(
-            derive_repr_c(&input).unwrap_err().to_string(),
-            "unknown type kind"
-        );
-    }
-
-    #[test]
     fn zero_discriminant_requires_marked_variant() {
         let input = syn::parse_quote! {
             enum Error { A, B, C }

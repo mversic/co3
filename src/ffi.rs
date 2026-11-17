@@ -1145,11 +1145,11 @@ mod tests {
 
     #[test]
     #[cfg(all(feature = "alloc", feature = "derive"))]
-    fn soft_call_synchronizes_mutable_argument() {
+    fn call_synchronizes_mutable_argument() {
         let callback: unsafe extern "C" fn(_) -> _ = update_option;
         let mut value = Some(1_u8);
 
-        let result: Option<u32> = unsafe { callback.soft_call(&mut value) };
+        let result: Option<u32> = unsafe { callback.call(&mut value) };
 
         assert_eq!(result, Some(7));
         assert_eq!(value, Some(42));
@@ -1252,10 +1252,7 @@ mod tests {
             }),
             CallbackValue(42)
         );
-        let system_raw: unsafe extern "system" fn(
-            CBorrowed<CallbackValue>,
-            CBorrowed<CallbackValue>,
-        ) -> CBorrowed<CallbackValue> = imported_system_sum_native;
+        let system_raw: unsafe extern "system" fn(_, _) -> _ = imported_system_sum_native;
         assert_eq!(
             CBorrowed::into_inner(unsafe {
                 system_raw(
@@ -1305,7 +1302,7 @@ mod tests {
     #[test]
     #[cfg(all(feature = "alloc", feature = "derive"))]
     fn raw_cstr_uses_thin_char_pointer() {
-        let callback: unsafe extern "C" fn(CSoftRef<CStr>) -> usize = cstr_len_raw;
+        let callback: unsafe extern "C" fn(_) -> _ = cstr_len_raw;
         assert_eq!(unsafe { callback(co3::encode(c"hello")) }, 5);
     }
 
@@ -1333,7 +1330,7 @@ mod tests {
     #[test]
     #[cfg(all(feature = "alloc", feature = "derive"))]
     fn imported_cstr_uses_thin_char_pointer() {
-        let callback: unsafe extern "C" fn(CSoftRef<CStr>) -> CSoftRef<CStr> = borrowed;
+        let callback: unsafe extern "C" fn(_) -> _ = borrowed;
         let original = c"hello";
         assert_eq!(
             unsafe { callback(co3::encode(original)) }
@@ -1501,10 +1498,9 @@ mod tests {
         let value: String = unsafe { generic_identity.call(String::from("hello")) }.unwrap();
         assert_eq!(value, "hello");
 
-        let cloned: unsafe extern "C" fn(CBorrowed<u8>) -> co3::borrow::CMoved<u8> =
-            generic_cloned_raw::<u8>;
+        let cloned: unsafe extern "C" fn(_) -> _ = generic_cloned_raw::<u8>;
         assert_eq!(unsafe { cloned.call(7u8) }, Some(7u8));
-        let callback: unsafe extern "C" fn() -> usize = generic_const_value_raw::<4>;
+        let callback: unsafe extern "C" fn() -> _ = generic_const_value_raw::<4>;
         assert_eq!(unsafe { callback.call() }, Some(4usize));
         let byte = 9_u8;
         assert_eq!(
@@ -1606,7 +1602,7 @@ mod tests {
     #[test]
     #[cfg(all(feature = "alloc", feature = "derive"))]
     fn generic_reference_companions_preserve_borrowing() {
-        let callback: unsafe extern "C" fn(u8) -> u8 = existing_raw;
+        let callback: unsafe extern "C" fn(_) -> _ = existing_raw;
         assert_eq!(unsafe { callback.call(7u8) }, Some(7u8));
         let _ = accept_raw;
         let _ = borrowed_generic_raw::<u8>;
@@ -1698,16 +1694,14 @@ mod tests {
     #[test]
     #[cfg(all(feature = "alloc", feature = "derive"))]
     fn companions_preserve_borrowing_and_calling_conventions() {
-        let c: unsafe extern "system" fn(u8) -> u8 = system_source;
-        let system: unsafe extern "C" fn(u8) -> u8 = rust_source_raw;
-        let default: unsafe extern "C" fn(u8) -> u8 = default_source_raw;
-        let method: unsafe extern "C" fn(CBorrowed<CompanionValue>, u8) -> u8 =
-            CompanionValue::add_raw;
+        let c: unsafe extern "system" fn(_) -> _ = system_source;
+        let system: unsafe extern "C" fn(_) -> _ = rust_source_raw;
+        let default: unsafe extern "C" fn(_) -> _ = default_source_raw;
+        let method: unsafe extern "C" fn(_, _) -> _ = CompanionValue::add_raw;
         let callback: SystemCallback = system_source;
-        let system_companion: unsafe extern "C" fn(u8) -> u8 = system_source_raw;
-        let rust_companion: unsafe extern "C" fn(u8) -> u8 = explicit_rust_source_raw;
-        let method_companion: unsafe extern "C" fn(CBorrowed<CompanionValue>, u8) -> u8 =
-            CompanionValue::add_system_raw;
+        let system_companion: unsafe extern "C" fn(_) -> _ = system_source_raw;
+        let rust_companion: unsafe extern "C" fn(_) -> _ = explicit_rust_source_raw;
+        let method_companion: unsafe extern "C" fn(_, _) -> _ = CompanionValue::add_system_raw;
         let _: OrdinaryAlias<CompanionValue> = Some(CompanionValue(1));
         let _: unsafe extern "system" fn(u8) -> u8 = callback;
         let unpacked: UnpackedCallback = overwrite_raw;

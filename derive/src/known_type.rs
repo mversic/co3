@@ -20,6 +20,7 @@ pub(crate) enum Kind {
     MaybeUninit,
     NonNull,
     PhantomData,
+    Tuple,
 }
 
 pub(crate) struct KnownType<'a> {
@@ -56,6 +57,10 @@ pub(crate) fn recognize_path(path: &TypePath) -> Option<KnownType<'_>> {
     let segment = path.path.segments.last()?;
     let name = segment.ident.to_string();
     let ident = &segment.ident;
+    let tuple_arity = name
+        .strip_prefix("Tuple")
+        .and_then(|suffix| suffix.parse::<usize>().ok())
+        .filter(|arity| (1..=12).contains(arity));
     let (kind, canonical, canonical_name, arity) = match name.as_str() {
         "bool" | "char" | "u8" | "u16" | "u32" | "u64" | "u128" | "usize" | "i8" | "i16"
         | "i32" | "i64" | "i128" | "isize" | "f32" | "f64" => (
@@ -169,6 +174,16 @@ pub(crate) fn recognize_path(path: &TypePath) -> Option<KnownType<'_>> {
             "core::marker::PhantomData".into(),
             1,
         ),
+        _ if tuple_arity.is_some() => (
+            Kind::Tuple,
+            syn::parse_str(&format!(
+                "co3::tuple::{name}<{}>",
+                vec!["()"; tuple_arity.unwrap()].join(", ")
+            ))
+            .expect("valid tuple family type"),
+            format!("co3::tuple::{name}"),
+            tuple_arity.unwrap(),
+        ),
         _ => return None,
     };
     let modules: &[&str] = match kind {
@@ -189,6 +204,7 @@ pub(crate) fn recognize_path(path: &TypePath) -> Option<KnownType<'_>> {
         Kind::Cell | Kind::UnsafeCell => &["core::cell", "std::cell"],
         Kind::NonNull => &["core::ptr", "std::ptr"],
         Kind::PhantomData => &["core::marker", "std::marker"],
+        Kind::Tuple => &["co3::tuple"],
     };
     if !crate::utils::builtin_path(&path.path, &name, modules) {
         return None;
@@ -275,5 +291,19 @@ mod tests {
         ] {
             assert!(recognize(&ty).is_none());
         }
+    }
+
+    #[test]
+    fn recognizes_entire_tuple_family() {
+        for arity in 1..=12 {
+            let name = format!("Tuple{arity}");
+            let args = vec!["u8"; arity].join(", ");
+            let ty: Type = syn::parse_str(&format!("co3::tuple::{name}<{args}>")).unwrap();
+            let known = recognize(&ty).unwrap();
+            assert_eq!(known.kind, Kind::Tuple);
+            assert_eq!(known.arity, arity);
+            assert_eq!(known.canonical_name, format!("co3::tuple::{name}"));
+        }
+        assert!(recognize(&syn::parse_quote!(Tuple13<u8>)).is_none());
     }
 }

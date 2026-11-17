@@ -1,5 +1,6 @@
 use co3::{
     ReprC,
+    ops::CFn1,
     option::OptionSome,
     result::{ResultErr, ResultOk},
     rust_spec::{
@@ -59,23 +60,17 @@ co3::raw! {
 fn public_payload_wrappers_preserve_custom_niches_without_a_tag() {
     for value in [7, 255] {
         let input = OptionSome(CustomNiche(value));
-        let output = unsafe { option_payload_raw(co3::encode(input)) };
-        assert_eq!(
-            unsafe { co3::decode::<OptionSome<CustomNiche>>(output) },
-            Some(input)
-        );
+        let callback: unsafe extern "C" fn(_) -> _ = option_payload_raw;
+        let output: Option<OptionSome<CustomNiche>> = unsafe { callback.call(input) };
+        assert_eq!(output, Some(input));
         let input = ResultOk(CustomNiche(value));
-        let output = unsafe { ok_payload_raw(co3::encode(input)) };
-        assert_eq!(
-            unsafe { co3::decode::<ResultOk<CustomNiche>>(output) },
-            Some(input)
-        );
+        let callback: unsafe extern "C" fn(_) -> _ = ok_payload_raw;
+        let output: Option<ResultOk<CustomNiche>> = unsafe { callback.call(input) };
+        assert_eq!(output, Some(input));
         let input = ResultErr(CustomNiche(value));
-        let output = unsafe { err_payload_raw(co3::encode(input)) };
-        assert_eq!(
-            unsafe { co3::decode::<ResultErr<CustomNiche>>(output) },
-            Some(input)
-        );
+        let callback: unsafe extern "C" fn(_) -> _ = err_payload_raw;
+        let output: Option<ResultErr<CustomNiche>> = unsafe { callback.call(input) };
+        assert_eq!(output, Some(input));
     }
     assert_eq!(core::mem::size_of::<OptionSome<CustomNiche>>(), 1);
     assert_eq!(core::mem::size_of::<ResultOk<CustomNiche>>(), 1);

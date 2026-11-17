@@ -2,6 +2,7 @@ use core::cell::Cell;
 
 use co3::{
     ReprC, ffi,
+    ops::CFn3,
     pack::{Pack2, Unpack2},
     rust_spec::RustSpec,
 };
@@ -13,7 +14,6 @@ struct Bytes([u8]);
 
 mod exported {
     use super::*;
-    use co3::wide::CWideBox;
 
     fn shared(value: &Bytes, expected: *const u8) -> usize {
         assert_eq!(value.0.as_ptr(), expected);
@@ -53,9 +53,9 @@ mod exported {
         #[symbol_name = "wide_metadata__mutable"]
         unsafe extern "C" fn mutable_raw(data: *mut u8, len: usize, expected: *mut u8) -> usize;
         #[symbol_name = "wide_metadata__owned"]
-        unsafe extern "C" fn owned_raw(data: *mut u8, len: usize, expected: *const u8) -> CWideBox<[u8]>;
+        unsafe extern "C" fn owned_raw(data: *mut u8, len: usize, expected: *const u8) -> co3::borrow::CMoved<Box<[u8]>>;
         #[symbol_name = "wide_metadata__cells"]
-        unsafe extern "C" fn cells_raw(data: *mut Cell<u8>, len: usize, expected: *const Cell<u8>) -> CWideBox<[Cell<u8>]>;
+        unsafe extern "C" fn cells_raw(data: *mut Cell<u8>, len: usize, expected: *const Cell<u8>) -> co3::borrow::CMoved<Box<[Cell<u8>]>>;
     }
 }
 
@@ -97,13 +97,15 @@ fn wide_reference_unpack_preserves_pointer_length_and_mutation() {
 #[test]
 fn wide_reference_pack_reconstructs_unpacked_arguments() {
     let mut bytes = [1_u8, 2, 3];
+    let callback: unsafe extern "C" fn(_, _, _) -> _ = raw::shared;
     assert_eq!(
-        unsafe { raw::shared(bytes.as_ptr(), bytes.len(), bytes.as_ptr()) },
-        3
+        unsafe { callback.call(bytes.as_ptr(), bytes.len(), bytes.as_ptr()) },
+        Some(3usize)
     );
+    let callback: unsafe extern "C" fn(_, _, _) -> _ = raw::mutable;
     assert_eq!(
-        unsafe { raw::mutable(bytes.as_mut_ptr(), bytes.len(), bytes.as_mut_ptr()) },
-        3
+        unsafe { callback.call(bytes.as_mut_ptr(), bytes.len(), bytes.as_mut_ptr()) },
+        Some(3usize)
     );
     assert_eq!(bytes, [9, 2, 3]);
 }

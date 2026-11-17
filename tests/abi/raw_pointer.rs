@@ -1,4 +1,4 @@
-use co3::{ReprC, primitives::CBool, transmute::AbiCompatible};
+use co3::{ReprC, ops::CFn1, primitives::CBool, transmute::AbiCompatible};
 use core::{cell::UnsafeCell, ptr::NonNull};
 use static_assertions::{assert_impl_all, assert_not_impl_any, assert_type_eq_all};
 
@@ -41,13 +41,12 @@ fn raw_pointer_companions_lower_pointees_without_moving_them() {
     let source = core::ptr::from_mut(&mut value);
     let encoded: *mut CBool = co3::encode(source);
     assert_eq!(encoded.cast::<bool>(), source);
-    let output = unsafe { identity_mut_raw(encoded) };
-    assert_eq!(unsafe { co3::decode::<*mut bool>(output) }, Some(source));
-    let output = unsafe { identity_const_raw(encoded.cast_const()) };
-    assert_eq!(
-        unsafe { co3::decode::<*const bool>(output) },
-        Some(source.cast_const())
-    );
+    let callback: unsafe extern "C" fn(_) -> _ = identity_mut_raw;
+    let output: Option<*mut bool> = unsafe { callback.call(source) };
+    assert_eq!(output, Some(source));
+    let callback: unsafe extern "C" fn(_) -> _ = identity_const_raw;
+    let output: Option<*const bool> = unsafe { callback.call(source.cast_const()) };
+    assert_eq!(output, Some(source.cast_const()));
     let nonnull = NonNull::new(source).unwrap();
     let encoded = co3::encode(nonnull);
     assert_eq!(encoded.0.cast::<bool>(), source);

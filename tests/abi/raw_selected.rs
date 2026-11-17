@@ -1,4 +1,4 @@
-use co3::{ReprC, Tag, ffi, rust_spec::RustSpec};
+use co3::{ReprC, Tag, ffi, ops::CFn1, rust_spec::RustSpec};
 
 struct Host<T>(core::marker::PhantomData<T>);
 
@@ -24,9 +24,11 @@ trait RegularSelected<T> {
     fn regular(value: T) -> T;
 }
 
-trait RuntimeSelected: Sized {
-    unsafe extern "C" fn runtime(value: Self) -> Self;
-    unsafe extern "C" fn runtime_second(value: Self) -> Self;
+trait RuntimeSelected: Sized + ReprC<CType: Sized> {
+    unsafe extern "C" fn runtime(value: co3::borrow::CMoved<Self>) -> co3::borrow::CMoved<Self>;
+    unsafe extern "C" fn runtime_second(
+        value: co3::borrow::CMoved<Self>,
+    ) -> co3::borrow::CMoved<Self>;
 }
 
 #[unsafe(export_name = "raw_selected_inherent_u8")]
@@ -120,24 +122,38 @@ ffi! {
 
 #[test]
 fn selected_raw_methods_call_the_matching_foreign_symbol() {
-    assert_eq!(unsafe { Host::<u8>::selected(10) }, 11);
-    assert_eq!(unsafe { Host::<u16>::selected(10) }, 12);
-    assert_eq!(unsafe { <Host<u8> as Selected<u8>>::selected(10) }, 13);
-    assert_eq!(unsafe { <Host<u16> as Selected<u16>>::selected(10) }, 14);
+    let first: unsafe extern "C" fn(_) -> _ = Host::<u8>::selected;
+    let second: unsafe extern "C" fn(_) -> _ = Host::<u16>::selected;
+    let first_trait: unsafe extern "C" fn(_) -> _ = <Host<u8> as Selected<u8>>::selected;
+    let second_trait: unsafe extern "C" fn(_) -> _ = <Host<u16> as Selected<u16>>::selected;
+    assert_eq!(unsafe { first.call(10u8) }, Some(11u8));
+    assert_eq!(unsafe { second.call(10u16) }, Some(12u16));
+    assert_eq!(unsafe { first_trait.call(10u8) }, Some(13u8));
+    assert_eq!(unsafe { second_trait.call(10u16) }, Some(14u16));
     assert_eq!(<Host<u8> as RegularSelected<u8>>::regular(10), 15);
     assert_eq!(<Host<u16> as RegularSelected<u16>>::regular(10), 16);
-    assert_eq!(unsafe { DynHost::<First>::dispatch(First(10)) }.0, 11);
-    assert_eq!(unsafe { DynHost::<Second>::dispatch(Second(10)) }.0, 12);
-    assert_eq!(
-        unsafe { DynHost::<First>::dispatch_second(First(10)) }.0,
-        21
-    );
-    assert_eq!(
-        unsafe { DynHost::<Second>::dispatch_second(Second(10)) }.0,
-        22
-    );
-    assert_eq!(unsafe { First::runtime(First(10)) }.0, 11);
-    assert_eq!(unsafe { Second::runtime(Second(10)) }.0, 12);
-    assert_eq!(unsafe { First::runtime_second(First(10)) }.0, 21);
-    assert_eq!(unsafe { Second::runtime_second(Second(10)) }.0, 22);
+    let callback: unsafe extern "C" fn(_) -> _ = DynHost::<First>::dispatch;
+    let result: First = unsafe { callback.call(First(10)) }.unwrap();
+    assert_eq!(result.0, 11);
+    let callback: unsafe extern "C" fn(_) -> _ = DynHost::<Second>::dispatch;
+    let result: Second = unsafe { callback.call(Second(10)) }.unwrap();
+    assert_eq!(result.0, 12);
+    let callback: unsafe extern "C" fn(_) -> _ = DynHost::<First>::dispatch_second;
+    let result: First = unsafe { callback.call(First(10)) }.unwrap();
+    assert_eq!(result.0, 21);
+    let callback: unsafe extern "C" fn(_) -> _ = DynHost::<Second>::dispatch_second;
+    let result: Second = unsafe { callback.call(Second(10)) }.unwrap();
+    assert_eq!(result.0, 22);
+    let callback: unsafe extern "C" fn(_) -> _ = First::runtime;
+    let result: First = unsafe { callback.call(First(10)) }.unwrap();
+    assert_eq!(result.0, 11);
+    let callback: unsafe extern "C" fn(_) -> _ = Second::runtime;
+    let result: Second = unsafe { callback.call(Second(10)) }.unwrap();
+    assert_eq!(result.0, 12);
+    let callback: unsafe extern "C" fn(_) -> _ = First::runtime_second;
+    let result: First = unsafe { callback.call(First(10)) }.unwrap();
+    assert_eq!(result.0, 21);
+    let callback: unsafe extern "C" fn(_) -> _ = Second::runtime_second;
+    let result: Second = unsafe { callback.call(Second(10)) }.unwrap();
+    assert_eq!(result.0, 22);
 }

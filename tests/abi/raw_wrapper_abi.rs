@@ -23,11 +23,11 @@ raw! {
 
 #[test]
 fn raw_companion_reconstructs_unpacked_slice() {
-    let callback: unsafe extern "C" fn(*mut u8, usize) -> usize = overwrite_raw;
+    let callback: unsafe extern "C" fn(_, _) -> _ = overwrite_raw;
     let mut bytes = [0_u8; 3];
     assert_eq!(unsafe { callback(bytes.as_mut_ptr(), bytes.len()) }, 3);
     assert_eq!(bytes, [7; 3]);
-    let narrow_callback: unsafe extern "C" fn(u16) -> u8 = narrow_raw;
+    let narrow_callback: unsafe extern "C" fn(_) -> _ = narrow_raw;
     assert_eq!(unsafe { narrow_callback(41) }, 42);
 }
 

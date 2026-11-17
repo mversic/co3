@@ -1406,7 +1406,8 @@ pub(crate) fn is_implicitly_by_value(ty: &Type) -> bool {
                         | Kind::Result
                         | Kind::ManuallyDrop
                         | Kind::MaybeUninit
-                        | Kind::NonZero => {
+                        | Kind::NonZero
+                        | Kind::Tuple => {
                             syn::visit::visit_type_path(self, path);
                         }
                     }

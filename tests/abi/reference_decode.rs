@@ -64,10 +64,11 @@ co3::raw! {
 
 #[test]
 fn transparent_shared_decoder_reconstructs_the_inner_field() {
-    let carrier = co3::encode(TransparentTuple((17,)));
-    let value =
-        unsafe { read_transparent_tuple_raw(co3::borrow::CBorrowed(CSoftRef::from_ref(&carrier))) };
-    assert_eq!(value, 17);
+    use co3::ops::CFn1;
+    type Callback<'a> = unsafe extern "C" fn(co3::borrow::CBorrowed<&'a TransparentTuple>) -> u8;
+    let callback: Callback<'_> = read_transparent_tuple_raw;
+    let value: Option<u8> = unsafe { callback.call(&TransparentTuple((17,))) };
+    assert_eq!(value, Some(17));
 }
 
 #[test]

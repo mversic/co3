@@ -65,13 +65,13 @@ co3::ffi! {
 }
 
 fn main() {
-    let c: unsafe extern "system" fn(u8) -> u8 = system_source;
-    let system: unsafe extern "C" fn(u8) -> u8 = rust_source_raw;
-    let default: unsafe extern "C" fn(u8) -> u8 = default_source_raw;
+    let c: unsafe extern "system" fn(_) -> _ = system_source;
+    let system: unsafe extern "C" fn(_) -> _ = rust_source_raw;
+    let default: unsafe extern "C" fn(_) -> _ = default_source_raw;
     let _method: MethodCallback = Value::add_raw;
     let callback: SystemCallback = system_source;
-    let system_companion: unsafe extern "C" fn(u8) -> u8 = system_source_raw;
-    let rust_companion: unsafe extern "C" fn(u8) -> u8 = explicit_rust_source_raw;
+    let system_companion: unsafe extern "C" fn(_) -> _ = system_source_raw;
+    let rust_companion: unsafe extern "C" fn(_) -> _ = explicit_rust_source_raw;
     let _method_companion: MethodCallback = Value::add_system_raw;
     let _: OrdinaryAlias<Value> = Some(Value(1));
     let _: unsafe extern "system" fn(u8) -> u8 = callback;

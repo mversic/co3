@@ -1,4 +1,4 @@
-error[E0277]: `Option` must resolve to `core::option::Option`
+error[E0277]: `Option` must resolve to `core::option::Option` or `co3::option::Option`
  --> tests/ui_fail/unpack_option_shadow.rs:5:1
   |
 5 | / ffi! {
@@ -8,7 +8,7 @@ error[E0277]: `Option` must resolve to `core::option::Option`
 9 | | }
   | |_^ the trait `_::ExactType` is not implemented for `std::result::Result<(), ()>`
   |
-help: the trait `_::ExactType` is implemented for `std::option::Option<()>`
+help: the following other types implement trait `_::ExactType`
  --> tests/ui_fail/unpack_option_shadow.rs:5:1
   |
 5 | / ffi! {
@@ -16,7 +16,10 @@ help: the trait `_::ExactType` is implemented for `std::option::Option<()>`
 7 | |
 8 | |     fn shadowed_option(#[unpack(_, _)] value: Option<&[u8]>);
 9 | | }
-  | |_^
+  | | ^
+  | | |
+  | |_`co3::option::Option<()>`
+  |   `std::option::Option<()>`
 note: required by a bound in `_::check`
  --> tests/ui_fail/unpack_option_shadow.rs:5:1
   |
@@ -39,8 +42,8 @@ error[E0308]: mismatched types
 9 | | }
   | |_- arguments to this function are incorrect
   |
-  = note: expected struct `COptionSome<&[u8]>`
-             found struct `CResultOk<&[u8], ()>`
+  = note: expected struct `co3::option::COptionSome<&[u8]>`
+             found struct `co3::result::CResultOk<&[u8], ()>`
 note: associated function defined here
  --> src/pack.rs
   |

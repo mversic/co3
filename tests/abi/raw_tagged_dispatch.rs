@@ -66,9 +66,9 @@ raw! {
 
 #[test]
 fn companions_dispatch_by_tag() {
-    let free: unsafe extern "C" fn(u8, u8) -> u8 = read_raw;
-    let method: unsafe extern "C" fn(u8, u8) -> u8 = Host::read_raw;
-    let generic_method: unsafe extern "C" fn(u8, u8) -> u8 = GenericHost::<First>::read_raw;
+    let free: unsafe extern "C" fn(_, _) -> _ = read_raw;
+    let method: unsafe extern "C" fn(_, _) -> _ = Host::read_raw;
+    let generic_method: unsafe extern "C" fn(_, _) -> _ = GenericHost::<First>::read_raw;
     assert_eq!(unsafe { free(First::TAG, 3) }, 13);
     assert_eq!(unsafe { free(Second::TAG, 3) }, 23);
     assert_eq!(unsafe { method(First::TAG, 3) }, 14);

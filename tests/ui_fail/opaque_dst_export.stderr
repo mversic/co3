@@ -244,7 +244,7 @@ note: required because it appears within the type `OpaqueSlice<u8>`
    |
  9 | struct OpaqueSlice<T>([T]);
    |        ^^^^^^^^^^^
-note: required by a bound in `CBox`
+note: required by a bound in `co3::boxed::CBox`
   --> src/boxed.rs
    |
    | pub struct CBox<R: ReprC<CType: Sized> + ?Sized> {

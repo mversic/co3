@@ -8,7 +8,7 @@ error[E0271]: type mismatch resolving `<Option<(u8, u8)> as ReprC>::CType == COp
 7 | | }
   | |_^ expected `COptionSome<(u8, u8)>`, found `COption<(u8, u8)>`
   |
-  = note: expected struct `COptionSome<(u8, u8)>`
-             found struct `COption<(u8, u8)>`
+  = note: expected struct `co3::option::COptionSome<(u8, u8)>`
+             found struct `co3::option::COption<(u8, u8)>`
   = note: required for `std::option::Option<(u8, u8)>` to implement `Unpack2<u8, u8>`
   = note: this error originates in the macro `ffi` (in Nightly builds, run with -Z macro-backtrace for more info)

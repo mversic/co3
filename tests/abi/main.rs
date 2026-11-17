@@ -78,3 +78,5 @@ mod wide;
 mod wide_encode_store;
 mod wide_metadata;
 mod zst;
+
+mod ownership_call;

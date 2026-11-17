@@ -238,4 +238,17 @@ mod tests {
         let checks = TypeChecks::for_derive(&item).to_string();
         assert!(checks.contains("cfg (feature = \"maybe\")"));
     }
+
+    #[test]
+    fn checks_co3_tuple_identity() {
+        let item = parse_quote! {
+            struct Fields(co3::tuple::Tuple1<u8>, Tuple2<u8, u16>, co3::tuple::Tuple12<u8, u8, u8, u8, u8, u8, u8, u8, u8, u8, u8, u8>);
+        };
+        let checks = TypeChecks::for_derive(&item).to_string();
+        for arity in [1, 2, 12] {
+            assert!(checks.contains(&format!(
+                "`Tuple{arity}` must resolve to `co3::tuple::Tuple{arity}`"
+            )));
+        }
+    }
 }

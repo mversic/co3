@@ -43,5 +43,7 @@ ffi! {
 
 fn main() {
     assert_eq!(imported::increment(41), 42);
-    assert_eq!(unsafe { increment_raw(41) }, 42);
+    use co3::ops::CFn1;
+    let callback: unsafe extern "C" fn(_) -> _ = increment_raw;
+    assert_eq!(unsafe { callback.call(41u8) }, Some(42u8));
 }

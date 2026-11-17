@@ -1,6 +1,6 @@
 #![allow(improper_ctypes_definitions)]
 
-use co3::{ReprC, raw};
+use co3::{ReprC, ops::CFn1, raw};
 
 fn existing(value: u8) -> u8 {
     value
@@ -72,12 +72,14 @@ raw! {
 }
 
 fn main() {
-    let _: ArrayCompanion = identity_raw::<[u8; 2]>;
+    let _: unsafe extern "C" fn(co3::borrow::CMoved<[u8; 2]>) -> co3::borrow::CMoved<[u8; 2]> =
+        identity_raw::<[u8; 2]>;
 
     let _: TakesReference<'_, u8> = take_raw::<u8>;
     let _: TakesReference<'_, u8> = ArgumentHost::take_raw::<u8>;
     let _: ReturnsReference<'_, u8> = borrowed_generic_raw::<u8>;
     let _: ReturnsReference<'_, u8> = MethodHost::borrowed_generic_raw::<u8>;
     let _ = accept_raw;
-    assert_eq!(unsafe { existing_raw(7) }, 7);
+    let callback: unsafe extern "C" fn(_) -> _ = existing_raw;
+    assert_eq!(unsafe { callback.call(7u8) }, Some(7u8));
 }
