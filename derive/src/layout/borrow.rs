@@ -463,6 +463,114 @@ pub(super) fn gen_item_borrow_impls(input: &DeriveInput, codecs: TokenStream) ->
     group_borrowed_impls(quote!(#(#implementations)* #no_drop #owner #decode_owner))
 }
 
+fn group_borrowed_impls(implementations: TokenStream) -> TokenStream {
+    // Bare const arguments parse as types. disjoint_impls can mistake them for
+    // type parameters when generalizing impls with different dispatch bounds.
+    // Braces preserve their const identity across the macro's parse boundary.
+    struct ConstArguments(Vec<Ident>);
+    impl VisitMut for ConstArguments {
+        fn visit_generic_argument_mut(&mut self, argument: &mut syn::GenericArgument) {
+            if let syn::GenericArgument::Type(syn::Type::Path(path)) = argument
+                && path.qself.is_none()
+                && let Some(ident) = path.path.get_ident()
+                && self.0.contains(ident)
+            {
+                *argument = parse_quote!({ #ident });
+            } else {
+                syn::visit_mut::visit_generic_argument_mut(self, argument);
+            }
+        }
+    }
+
+    let file: syn::File = syn::parse2(implementations).expect("borrowed codecs");
+    let mut groups: [Vec<syn::ItemImpl>; 3] = Default::default();
+    for item in file.items {
+        let syn::Item::Impl(mut item) = item else {
+            unreachable!()
+        };
+        let mut const_arguments = ConstArguments(
+            item.generics
+                .const_params()
+                .map(|p| p.ident.clone())
+                .collect(),
+        );
+        const_arguments.visit_generics_mut(&mut item.generics);
+        const_arguments.visit_type_mut(&mut item.self_ty);
+        let path = &mut item.trait_.as_mut().unwrap().0;
+        const_arguments.visit_path_mut(path);
+        let segment = path.segments.last().unwrap().clone();
+        let index = match segment.ident.to_string().as_str() {
+            "BorrowedEncodeUnchecked" => 0,
+            "BorrowedEncode" => 1,
+            "BorrowedDecode" => 2,
+            _ => unreachable!(),
+        };
+        *path = parse_quote!(#segment);
+        groups[index].push(item);
+    }
+    let [unchecked, checked, decode] = groups;
+    quote! {
+        #[allow(clippy::missing_safety_doc)]
+        const _: () = {
+            use co3::borrow::{BorrowedEncodeUnchecked, BorrowedEncode, BorrowedDecode};
+
+            trait __Co3BorrowedCarrier<T: co3::ReprC<CType: Sized>> {
+                fn as_ptr(&self) -> *const T::CType;
+            }
+
+            impl<'a, T: co3::ReprC<CType: Sized>> __Co3BorrowedCarrier<T>
+                for co3::reference::CRef<'a, T>
+            {
+                fn as_ptr(&self) -> *const T::CType {
+                    co3::reference::CRef::as_ptr(*self)
+                }
+            }
+
+            impl<T: co3::ReprC<CType: Sized>> __Co3BorrowedCarrier<T>
+                for co3::reference::CSoftRef<T>
+            {
+                fn as_ptr(&self) -> *const T::CType {
+                    co3::reference::CSoftRef::as_ptr(*self)
+                }
+            }
+            co3::disjoint_impls! {
+                #[disjoint_impls(remote)]
+                pub unsafe trait BorrowedEncodeUnchecked: co3::ReprC<CType: Sized> + Sized {
+                    type Owner: Default;
+                    type SoftStore: co3::stored::Store + Default;
+                    unsafe fn soft_encode_unchecked<'itm>(
+                        self,
+                        store: &'itm mut Self::SoftStore,
+                        owner: &'itm mut <Self as co3::borrow::BorrowedEncodeUnchecked>::Owner,
+                    ) -> Self::CType where Self: 'itm;
+                }
+                #(#unchecked)*
+            }
+            co3::disjoint_impls! {
+                #[disjoint_impls(remote)]
+                pub unsafe trait BorrowedEncode: co3::borrow::BorrowedEncodeUnchecked {
+                    type Store: co3::stored::Store + Default;
+                    fn soft_encode<'itm>(
+                        self,
+                        store: &'itm mut Self::Store,
+                        owner: &'itm mut <Self as co3::borrow::BorrowedEncodeUnchecked>::Owner,
+                    ) -> Self::CType where Self: 'itm;
+                }
+                #(#checked)*
+            }
+            co3::disjoint_impls! {
+                #[disjoint_impls(remote)]
+                pub unsafe trait BorrowedDecode<'d>: co3::ReprC<CType: Sized> + Sized {
+                    type Store: co3::stored::Store + Default;
+                    unsafe fn soft_decode<'itm: 'd>(source: Self::CType, store: &'itm mut Self::Store) -> Option<Self>;
+                    unsafe fn soft_decode_unchecked<'itm: 'd>(source: Self::CType, store: &'itm mut Self::Store) -> Self { unsafe { Self::soft_decode(source, store) }.unwrap() }
+                }
+                #(#decode)*
+            }
+        };
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -625,113 +733,5 @@ mod tests {
         let converted = quote!(#implementation).to_string();
         assert!(converted.contains(&quote!(#validator).to_string()));
         assert!(converted.contains("co3 :: borrow :: BorrowedEncode :: soft_encode"));
-    }
-}
-
-fn group_borrowed_impls(implementations: TokenStream) -> TokenStream {
-    // Bare const arguments parse as types. disjoint_impls can mistake them for
-    // type parameters when generalizing impls with different dispatch bounds.
-    // Braces preserve their const identity across the macro's parse boundary.
-    struct ConstArguments(Vec<Ident>);
-    impl VisitMut for ConstArguments {
-        fn visit_generic_argument_mut(&mut self, argument: &mut syn::GenericArgument) {
-            if let syn::GenericArgument::Type(syn::Type::Path(path)) = argument
-                && path.qself.is_none()
-                && let Some(ident) = path.path.get_ident()
-                && self.0.contains(ident)
-            {
-                *argument = parse_quote!({ #ident });
-            } else {
-                syn::visit_mut::visit_generic_argument_mut(self, argument);
-            }
-        }
-    }
-
-    let file: syn::File = syn::parse2(implementations).expect("borrowed codecs");
-    let mut groups: [Vec<syn::ItemImpl>; 3] = Default::default();
-    for item in file.items {
-        let syn::Item::Impl(mut item) = item else {
-            unreachable!()
-        };
-        let mut const_arguments = ConstArguments(
-            item.generics
-                .const_params()
-                .map(|p| p.ident.clone())
-                .collect(),
-        );
-        const_arguments.visit_generics_mut(&mut item.generics);
-        const_arguments.visit_type_mut(&mut item.self_ty);
-        let path = &mut item.trait_.as_mut().unwrap().0;
-        const_arguments.visit_path_mut(path);
-        let segment = path.segments.last().unwrap().clone();
-        let index = match segment.ident.to_string().as_str() {
-            "BorrowedEncodeUnchecked" => 0,
-            "BorrowedEncode" => 1,
-            "BorrowedDecode" => 2,
-            _ => unreachable!(),
-        };
-        *path = parse_quote!(#segment);
-        groups[index].push(item);
-    }
-    let [unchecked, checked, decode] = groups;
-    quote! {
-        #[allow(clippy::missing_safety_doc)]
-        const _: () = {
-            use co3::borrow::{BorrowedEncodeUnchecked, BorrowedEncode, BorrowedDecode};
-
-            trait __Co3BorrowedCarrier<T: co3::ReprC<CType: Sized>> {
-                fn as_ptr(&self) -> *const T::CType;
-            }
-
-            impl<'a, T: co3::ReprC<CType: Sized>> __Co3BorrowedCarrier<T>
-                for co3::reference::CRef<'a, T>
-            {
-                fn as_ptr(&self) -> *const T::CType {
-                    co3::reference::CRef::as_ptr(*self)
-                }
-            }
-
-            impl<T: co3::ReprC<CType: Sized>> __Co3BorrowedCarrier<T>
-                for co3::reference::CSoftRef<T>
-            {
-                fn as_ptr(&self) -> *const T::CType {
-                    co3::reference::CSoftRef::as_ptr(*self)
-                }
-            }
-            co3::disjoint_impls! {
-                #[disjoint_impls(remote)]
-                pub unsafe trait BorrowedEncodeUnchecked: co3::ReprC<CType: Sized> + Sized {
-                    type Owner: Default;
-                    type SoftStore: co3::stored::Store + Default;
-                    unsafe fn soft_encode_unchecked<'itm>(
-                        self,
-                        store: &'itm mut Self::SoftStore,
-                        owner: &'itm mut <Self as co3::borrow::BorrowedEncodeUnchecked>::Owner,
-                    ) -> Self::CType where Self: 'itm;
-                }
-                #(#unchecked)*
-            }
-            co3::disjoint_impls! {
-                #[disjoint_impls(remote)]
-                pub unsafe trait BorrowedEncode: co3::borrow::BorrowedEncodeUnchecked {
-                    type Store: co3::stored::Store + Default;
-                    fn soft_encode<'itm>(
-                        self,
-                        store: &'itm mut Self::Store,
-                        owner: &'itm mut <Self as co3::borrow::BorrowedEncodeUnchecked>::Owner,
-                    ) -> Self::CType where Self: 'itm;
-                }
-                #(#checked)*
-            }
-            co3::disjoint_impls! {
-                #[disjoint_impls(remote)]
-                pub unsafe trait BorrowedDecode<'d>: co3::ReprC<CType: Sized> + Sized {
-                    type Store: co3::stored::Store + Default;
-                    unsafe fn soft_decode<'itm: 'd>(source: Self::CType, store: &'itm mut Self::Store) -> Option<Self>;
-                    unsafe fn soft_decode_unchecked<'itm: 'd>(source: Self::CType, store: &'itm mut Self::Store) -> Self { unsafe { Self::soft_decode(source, store) }.unwrap() }
-                }
-                #(#decode)*
-            }
-        };
     }
 }

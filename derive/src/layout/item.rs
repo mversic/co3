@@ -1409,7 +1409,7 @@ fn gen_record_conversion(
         .zip(&field_types)
         .map(|((field, store), ty)| {
             let value = if mode == EncodeMode::Ref && is_phantom_data(ty) {
-                quote!(core::marker::PhantomData)
+                quote!({ let _ = #field; core::marker::PhantomData })
             } else {
                 quote!(#encode_fn(#field, #store))
             };
@@ -1426,7 +1426,7 @@ fn gen_record_conversion(
         .zip(&field_types)
         .map(|((field, store), ty)| {
             let value = if mode == EncodeMode::Ref && is_phantom_data(ty) {
-                quote!(core::marker::PhantomData)
+                quote!({ let _ = #field; core::marker::PhantomData })
             } else {
                 quote!(unsafe { #direct_fn(#field, #store) })
             };

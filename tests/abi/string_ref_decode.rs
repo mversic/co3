@@ -43,7 +43,7 @@ fn shared_string_validates_carrier_headers() {
     assert!(
         unsafe { co3::soft_decode::<&String>(CSoftRef::from_ref(&null), &mut store) }.is_none()
     );
-    let bytes = [b'a'];
+    let bytes = *b"a";
     let invalid = Utf8String(unsafe { CVec::from_raw_parts(bytes.as_ptr().cast_mut(), 2, 1) });
     assert!(
         unsafe { co3::soft_decode::<&String>(CSoftRef::from_ref(&invalid), &mut store) }.is_none()

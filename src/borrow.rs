@@ -1765,7 +1765,7 @@ mod tests {
             drop(owner);
 
             let mut owner = Default::default();
-            let mut store = Default::default();
+            let mut store: () = Default::default();
             let carrier = unsafe {
                 BorrowedEncodeUnchecked::soft_encode_unchecked(
                     String::from(text),
@@ -1795,7 +1795,7 @@ mod tests {
             let value = CString::new(text).unwrap();
             let original = value.as_ptr();
             let mut owner = Default::default();
-            let mut store = Default::default();
+            let mut store: () = Default::default();
             let carrier = unsafe {
                 BorrowedEncodeUnchecked::soft_encode_unchecked(value, &mut store, &mut owner)
             };
@@ -1835,7 +1835,6 @@ mod tests {
             <Args<'_> as crate::borrow::BorrowedDecode>::soft_decode(carrier, &mut decode_store)
         }
         .unwrap();
-        let decoded = decoded;
         assert_eq!(*decoded.owner, 7);
         assert_ne!(core::ptr::from_ref(&*decoded.owner), original);
         assert_eq!(*decoded.target, 9);
@@ -1845,9 +1844,15 @@ mod tests {
         drop(encode_owner);
     }
 
+    // The validator deliberately checks that it receives the original Box field.
+    #[allow(clippy::borrowed_box)]
+    fn nonzero_box(value: &Box<u32>) -> bool {
+        **value != 0
+    }
+
     #[derive(RustSpec, ReprC)]
     #[rust_spec(non_robust)]
-    #[repr_c(is_valid = |value: &Box<u32>| **value != 0)]
+    #[repr_c(is_valid = |value| nonzero_box(value))]
     struct NonZeroBox(Box<u32>);
 
     #[test]
@@ -1935,14 +1940,14 @@ mod tests {
     fn custom_drop_owner_is_retained_separately_from_conversion_store() {
         DROPS.store(0, Ordering::SeqCst);
         let mut encode_owner = Default::default();
-        let mut encode_store = Default::default();
+        let mut encode_store: () = Default::default();
         let encoded = crate::borrow::BorrowedEncode::soft_encode(
             Owner(4),
             &mut encode_store,
             &mut encode_owner,
         );
         assert_eq!(DROPS.load(Ordering::SeqCst), 0);
-        let mut decode_store = Default::default();
+        let mut decode_store: () = Default::default();
         let decoded = unsafe {
             <Owner as crate::borrow::BorrowedDecode>::soft_decode(encoded, &mut decode_store)
         }

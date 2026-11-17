@@ -1435,7 +1435,7 @@ mod carrier_tests {
         let source = Cell::new(Vec::from([true, false]));
         let mut store = Default::default();
         let encoded = crate::soft_encode(source, &mut store);
-        let mut decoded_store = Default::default();
+        let mut decoded_store: () = Default::default();
         let decoded =
             unsafe { crate::soft_decode::<Cell<Vec<bool>>>(encoded, &mut decoded_store) }.unwrap();
         assert_eq!(decoded.into_inner(), [true, false]);
@@ -1444,7 +1444,7 @@ mod carrier_tests {
         let stable: crate::vec::Vec<bool> = Vec::from([true, false]).into();
         let mut store = Default::default();
         let encoded = crate::soft_encode(stable, &mut store);
-        let mut decoded_store = Default::default();
+        let mut decoded_store: () = Default::default();
         let decoded =
             unsafe { crate::soft_decode::<crate::vec::Vec<bool>>(encoded, &mut decoded_store) }
                 .unwrap();

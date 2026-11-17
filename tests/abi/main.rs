@@ -68,6 +68,7 @@ mod raw_selected;
 mod raw_tagged_dispatch;
 mod raw_wrapper_abi;
 mod reference_decode;
+mod reference_ownership;
 mod regular_drop;
 mod shared_validate;
 mod statics;

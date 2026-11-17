@@ -271,13 +271,17 @@ pub(super) fn gen_sized_decode_impls(
     } else {
         None
     };
-    let shared = if let Some((field, variant)) = field {
+    // PhantomData is reconstructed directly by the structural decoder.
+    let shared = if let Some((field, variant)) =
+        field.filter(|(field, _)| !super::is_phantom_data(&field.ty))
+    {
         gen_transparent_decode_ref(input, field, variant)
     } else {
         gen_structural_decode(input, repr, attrs, variant_attrs, false)
     };
     let mutable = gen_structural_decode(input, repr, attrs, variant_attrs, true);
     quote! {
+        #[allow(clippy::missing_safety_doc)]
         const _: () = {
             trait __Co3NonCustomDrop {}
             impl __Co3NonCustomDrop for co3::rust_spec::drop::NoDrop {}

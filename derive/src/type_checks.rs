@@ -187,7 +187,12 @@ impl<'ast> Visit<'ast> for TypeChecks {
                 quote!(#actual),
                 &expected,
                 &message,
-                known.kind == crate::known_type::Kind::Vec,
+                matches!(
+                    known.kind,
+                    crate::known_type::Kind::Vec
+                        | crate::known_type::Kind::String
+                        | crate::known_type::Kind::CString
+                ),
             );
         }
         syn::visit::visit_type_path(self, ty);

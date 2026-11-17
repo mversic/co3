@@ -204,7 +204,9 @@ impl UnpackSyntax {
             }
             return Ok(Self::Single(Box::new(part.logical)));
         }
-        Ok(Self::Pair(Box::new(parts.try_into().map_err(|_| syntax_error())?)))
+        Ok(Self::Pair(Box::new(
+            parts.try_into().map_err(|_| syntax_error())?,
+        )))
     }
 
     pub(crate) fn has_inferred_parts(&self) -> bool {

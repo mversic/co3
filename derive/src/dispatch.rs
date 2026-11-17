@@ -529,6 +529,7 @@ fn synthesize_dispatch_export_fn(
     }};
 
     erase_dispatch_signature(generics, receiver, &mut sig);
+    let borrow_output = ffi_fn::borrows_return(&sig, fn_by_val);
     let mut lowered_sig = ffi_fn::lower_abi_fn_signature(sig, failure_mode, fn_by_val);
     if opaque_drop {
         let receiver = lowered_sig
@@ -544,9 +545,14 @@ fn synthesize_dispatch_export_fn(
         receiver.ty = parse_quote!(co3::boxed::CBox<core::ffi::c_void>);
     }
     let definition = match emission {
-        DispatchEmission::Export => {
-            emit_extern_definition(abi, attrs, failure_mode, lowered_sig, fn_body)
-        }
+        DispatchEmission::Export => emit_extern_definition(
+            abi,
+            attrs,
+            failure_mode,
+            lowered_sig,
+            fn_body,
+            borrow_output,
+        ),
         DispatchEmission::Companion(vis) => {
             let mut sig = lowered_sig;
             sig.safety = syn::Safety::Unsafe(Default::default());
@@ -559,7 +565,7 @@ fn synthesize_dispatch_export_fn(
                 sig,
                 quote!(#layout_checks #checks),
                 fn_body,
-                fn_by_val,
+                borrow_output,
             )
         }
     };
@@ -967,7 +973,11 @@ fn synthesize_dispatch_arms(
                     let encoded_err = if ffi_fn::is_identity_primitive(&concrete_output) {
                         quote!(__co3_arm_err)
                     } else {
-                        ffi_fn::gen_abi_return_encode(quote!(__co3_arm_err), !fn_by_val)
+                        ffi_fn::gen_abi_return_encode(
+                            quote!(__co3_arm_err),
+                            ffi_fn::ownership_mode(&concrete_output, fn_by_val)
+                                == crate::generate::OwnershipMode::Borrow,
+                        )
                     };
 
                     quote! {
@@ -1245,7 +1255,7 @@ pub(crate) fn set_token_stream_span(tokens: TokenStream, span: Span) -> TokenStr
 }
 
 fn dispatch_return_type(ty: &syn::Type, fn_by_val: bool) -> syn::Type {
-    if fn_by_val || ffi_fn::is_identity_primitive(ty) {
+    if ffi_fn::ownership_mode(ty, fn_by_val) == crate::generate::OwnershipMode::ByValue {
         item_fn_output_type(ty)
     } else {
         parse_quote!(co3::borrow::CBorrowed<#ty>)

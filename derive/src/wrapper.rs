@@ -562,7 +562,9 @@ fn gen_wrapper_body_with_input_conversion<const DISPATCHED: bool>(
         let decode_error = gen_return_decode_error(failure_mode, output_ty);
         let decode_output = if ffi_fn::is_identity_primitive(output_ty) {
             quote! { let __co3_out: Option<#output_ty> = Some(__co3_out); }
-        } else if fn_by_val {
+        } else if ffi_fn::ownership_mode(output_ty, fn_by_val)
+            == crate::generate::OwnershipMode::ByValue
+        {
             quote! {
                 let __co3_out: Option<#output_ty> = unsafe { co3::decode(__co3_out) };
             }
@@ -617,13 +619,26 @@ fn gen_single_unpack_input_stmts(
         };
         let arg_name = input.name();
         let unpack_ty = input.conversion_ty();
+        let payload = if input.is_borrowed() && !input.identity {
+            quote!(#arg_name.0)
+        } else {
+            quote!(#arg_name)
+        };
         let part_ty = quote!(<#target_ty as co3::ReprC>::CType);
         let conversion = quote! {
-            <#unpack_ty as co3::pack::Unpack<#part_ty>>::unpack(#arg_name)
+            <#unpack_ty as co3::pack::Unpack<#part_ty>>::unpack(#payload)
         };
         let conversion = match failure_mode {
             FailureMode::Panic => quote! { #conversion.unwrap_or_else(|_| panic!("co3 generated FFI unpack conversion failure")) },
-            FailureMode::Error => quote! { #conversion.map_err(|_| co3::Error::trap_value())? },
+            FailureMode::Error => {
+                let error = gen_trap_value();
+                quote! {
+                    match #conversion {
+                        Ok(value) => value,
+                        Err(_) => return #error,
+                    }
+                }
+            },
         };
         let cfg = input.cfg();
         Some(quote!(#(#cfg)* let #arg_name = #conversion;))
@@ -737,7 +752,7 @@ fn gen_input_conversion_stmts(inputs: &[Argument<'_>]) -> TokenStream {
                     #(#cfg)*
                     let mut #store_name = Default::default();
                     #(#cfg)*
-                    let #arg_name = co3::borrow::CBorrowed(
+                    let #arg_name = co3::borrow::CBorrowed::<#ty>(
                         <#ty as co3::borrow::BorrowedEncode>::soft_encode(
                             #arg_name, &mut #store_name, &mut #owner_name,
                         )
@@ -746,7 +761,7 @@ fn gen_input_conversion_stmts(inputs: &[Argument<'_>]) -> TokenStream {
             } else {
                 quote! {
                     #(#cfg)*
-                    let #arg_name = co3::borrow::CBorrowed(
+                    let #arg_name = co3::borrow::CBorrowed::<#ty>(
                         <#ty as co3::borrow::BorrowedEncode>::encode(#arg_name, &mut #owner_name)
                     );
                 }
@@ -787,7 +802,15 @@ fn gen_unpack_input_stmts(failure_mode: FailureMode, inputs: &[Argument<'_>]) ->
         };
         let conversion = match failure_mode {
             FailureMode::Panic => quote! { #conversion.unwrap_or_else(|_| panic!("co3 generated FFI unpack conversion failure")) },
-            FailureMode::Error => quote! { #conversion.map_err(|_| co3::Error::trap_value())? },
+            FailureMode::Error => {
+                let error = gen_trap_value();
+                quote! {
+                    match #conversion {
+                        Ok(value) => value,
+                        Err(_) => return #error,
+                    }
+                }
+            },
         };
         let erase1 = gen_unpack_erase_stmt(&data_name, first, &pair.first.abi, pair.first.erased);
         let erase2 = gen_unpack_erase_stmt(&metadata_name, second, &pair.second.abi, pair.second.erased);

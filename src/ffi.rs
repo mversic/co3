@@ -763,18 +763,15 @@ mod tests {
 
     #[cfg(all(feature = "alloc", feature = "derive"))]
     #[test]
-    fn raw_import_preserves_uniform_borrowed_carrier_signature() {
-        use co3::{borrow::CBorrowed, reference::CRef};
-        fn check<'a>() {
-            let _: unsafe extern "C" fn(CBorrowed<&'a u8>) -> CBorrowed<&'a u8> = borrowed_import;
+    fn raw_import_uses_plain_reference_carrier_without_ownership() {
+        use co3::reference::CRef;
+        fn check<'a>(_: &'a u8) {
+            let _: unsafe extern "C" fn(CRef<'a, u8>) -> CRef<'a, u8> = borrowed_import;
         }
-        check();
         let input = 7;
-        let output = unsafe { borrowed_import(CBorrowed::new(CRef::from_ref(&input))) };
-        assert_eq!(
-            CBorrowed::into_inner(output).as_ptr(),
-            core::ptr::from_ref(&input)
-        );
+        check(&input);
+        let output = unsafe { borrowed_import(co3::encode(&input)) };
+        assert_eq!(output.as_ptr(), core::ptr::from_ref(&input));
     }
 
     #[cfg(all(feature = "alloc", feature = "derive"))]
@@ -801,6 +798,7 @@ mod tests {
     #[cfg(all(feature = "alloc", feature = "derive"))]
     type Text = String;
     #[cfg(all(feature = "alloc", feature = "derive"))]
+    #[allow(clippy::ptr_arg)] // Exercise the String reference ABI.
     fn string_len(input: &String) -> usize {
         input.len()
     }
@@ -819,7 +817,7 @@ mod tests {
     fn exported_shared_string_and_alias_use_the_decoder() {
         let source = Utf8String::from_string(String::from("héllo"));
         assert_eq!(
-            unsafe { string_len_raw(CBorrowed::new(CSoftRef::from_ref(&source))) },
+            unsafe { string_len_raw(CSoftRef::from_ref(&source)) },
             "héllo".len()
         );
         assert_eq!(
@@ -1303,11 +1301,8 @@ mod tests {
     #[test]
     #[cfg(all(feature = "alloc", feature = "derive"))]
     fn raw_cstr_uses_thin_char_pointer() {
-        let callback: unsafe extern "C" fn(CBorrowed<&'static CStr>) -> usize = cstr_len_raw;
-        assert_eq!(
-            unsafe { callback(CBorrowed::new(co3::encode(c"hello"))) },
-            5
-        );
+        let callback: unsafe extern "C" fn(CSoftRef<CStr>) -> usize = cstr_len_raw;
+        assert_eq!(unsafe { callback(co3::encode(c"hello")) }, 5);
     }
 
     #[unsafe(export_name = "abi_cstr__borrowed")]
@@ -1334,11 +1329,10 @@ mod tests {
     #[test]
     #[cfg(all(feature = "alloc", feature = "derive"))]
     fn imported_cstr_uses_thin_char_pointer() {
-        let callback: unsafe extern "C" fn(CBorrowed<&'static CStr>) -> CBorrowed<&'static CStr> =
-            borrowed;
+        let callback: unsafe extern "C" fn(CSoftRef<CStr>) -> CSoftRef<CStr> = borrowed;
         let original = c"hello";
         assert_eq!(
-            CBorrowed::into_inner(unsafe { callback(CBorrowed::new(co3::encode(original))) })
+            unsafe { callback(co3::encode(original)) }
                 .as_ptr()
                 .cast::<u8>(),
             original.as_ptr().cast::<u8>()
@@ -1368,15 +1362,8 @@ mod tests {
         let raw_flip: unsafe extern "C" fn(_) -> _ = flip_raw;
         let raw_next_ascii: unsafe extern "C" fn(_) -> _ = next_ascii_raw;
 
-        let flipped = unsafe { raw_flip(co3::encode(true)) };
-        assert_eq!(
-            unsafe { co3::decode::<bool>(CBorrowed::into_inner(flipped)) },
-            Some(false)
-        );
-        assert_eq!(
-            CBorrowed::into_inner(unsafe { raw_next_ascii(co3::encode('a')) }),
-            co3::encode('b')
-        );
+        assert_eq!(unsafe { raw_flip.call(true) }, Some(false));
+        assert_eq!(unsafe { raw_next_ascii.call('a') }, Some('b'));
     }
 
     #[cfg(all(feature = "alloc", feature = "derive"))]
@@ -1464,7 +1451,7 @@ mod tests {
     }
 
     #[cfg(all(feature = "alloc", feature = "derive"))]
-    fn generic_borrowed<'a>(value: &'a u8) -> &'a u8 {
+    fn generic_borrowed(value: &u8) -> &u8 {
         value
     }
 
@@ -1485,13 +1472,13 @@ mod tests {
     #[cfg(all(feature = "alloc", feature = "derive"))]
     raw! {
         pub fn generic_identity<T>(value: move T) -> move T;
-        pub fn generic_cloned<T: Clone>(value: T) -> move T;
+        pub fn generic_cloned<T>(value: T) -> move T where T: Clone;
         pub fn generic_const_value<const N: usize>() -> usize;
         pub fn generic_borrowed<'a>(value: &'a u8) -> &'a u8;
 
         impl<T: Clone> GenericCallbackHost<T> {
             pub fn echo(value: move T) -> move T;
-            pub fn method<U: Clone>(value: move U) -> move U;
+            pub fn method<U>(value: move U) -> move U where U: Clone;
         }
     }
 
@@ -1514,10 +1501,7 @@ mod tests {
         assert_eq!(unsafe { generic_const_value_raw::<4>() }, 4);
         let byte = 9_u8;
         assert_eq!(
-            unsafe {
-                *CBorrowed::into_inner(generic_borrowed_raw(CBorrowed::new(CRef::from_ref(&byte))))
-                    .as_ptr()
-            },
+            unsafe { *generic_borrowed_raw(co3::encode(&byte)).as_ptr() },
             9
         );
 
@@ -1566,7 +1550,7 @@ mod tests {
     }
 
     #[cfg(all(feature = "alloc", feature = "derive"))]
-    fn borrowed_generic<'a, T>(value: &'a T) -> &'a T {
+    fn borrowed_generic<T>(value: &T) -> &T {
         value
     }
 
@@ -1576,14 +1560,14 @@ mod tests {
     }
 
     #[cfg(all(feature = "alloc", feature = "derive"))]
-    fn take<'a, T>(_value: &'a T) {}
+    fn take<T>(_value: &T) {}
 
     #[cfg(all(feature = "alloc", feature = "derive"))]
     struct ArgumentHost;
 
     #[cfg(all(feature = "alloc", feature = "derive"))]
     impl ArgumentHost {
-        fn take<'a, T>(_value: &'a T) {}
+        fn take<T>(_value: &T) {}
     }
 
     #[cfg(all(feature = "alloc", feature = "derive"))]
@@ -1600,7 +1584,7 @@ mod tests {
 
     #[cfg(all(feature = "alloc", feature = "derive"))]
     impl MethodHost {
-        fn borrowed_generic<'a, T>(value: &'a T) -> &'a T {
+        fn borrowed_generic<T>(value: &T) -> &T {
             value
         }
     }
@@ -1818,7 +1802,7 @@ mod tests {
         );
         static_assertions::assert_type_eq_all!(
             AliasReturned,
-            unsafe extern "C" fn() -> CBorrowed<unsafe extern "C" fn(u8)>
+            unsafe extern "C" fn() -> Option<unsafe extern "C" fn(u8)>
         );
         let _: Option<AliasRawNested> = None;
 
@@ -1876,6 +1860,48 @@ mod tests {
         } else {
             CustomStatus::Ok
         }
+    }
+
+    #[test]
+    #[cfg(all(feature = "alloc", feature = "derive"))]
+    fn single_part_borrowed_unpack_preserves_conversion_errors() {
+        type Byte = u8;
+        type Word = u16;
+
+        fn accept(value: Byte) -> CustomStatus {
+            assert_eq!(value, 7);
+            CustomStatus::Ok
+        }
+
+        raw! {
+            #![failure = "error"]
+            fn accept(#[unpack(u16)] value: Byte) -> move CustomStatus;
+        }
+
+        assert_eq!(decode_status(unsafe { accept_raw(7) }), CustomStatus::Ok);
+        assert_eq!(
+            decode_status(unsafe { accept_raw(256) }),
+            CustomStatus::TrapValue
+        );
+
+        #[unsafe(export_name = "co3_unit_single_part_borrowed")]
+        extern "C" fn foreign(value: u8) -> <CustomStatus as ReprC>::CType {
+            co3::encode(accept(value))
+        }
+
+        ffi! {
+            #![unsafe(extern("C"))]
+            #![failure = "error"]
+            #[symbol_name = "co3_unit_single_part_borrowed"]
+            fn imported(#[unpack(u8)] value: Word) -> move CustomStatus;
+            #[symbol_name = "co3_unit_single_part_borrowed"]
+            fn imported_soft(#[soft] #[unpack(u8)] value: Word) -> move CustomStatus;
+        }
+
+        assert_eq!(imported(7), CustomStatus::Ok);
+        assert_eq!(imported(256), CustomStatus::TrapValue);
+        assert_eq!(imported_soft(7), CustomStatus::Ok);
+        assert_eq!(imported_soft(256), CustomStatus::TrapValue);
     }
 
     #[cfg(all(feature = "alloc", feature = "derive"))]

@@ -107,8 +107,8 @@ pub(crate) fn emit_extern_definition(
     failure_mode: FailureMode,
     mut signature: syn::Signature,
     ffi_fn_body: TokenStream,
+    borrow_output: bool,
 ) -> TokenStream {
-    let fn_by_val = attrs.iter().any(is_by_val_attr);
     let attrs = export_definition_attrs(attrs);
     let abi_assertions = gen_abi_assertions(&signature);
     signature.ident = raw_definition_name(&signature.ident);
@@ -122,7 +122,7 @@ pub(crate) fn emit_extern_definition(
         &signature,
         abi_assertions,
         ffi_fn_body,
-        fn_by_val,
+        borrow_output,
     )
 }
 
@@ -137,14 +137,14 @@ pub(crate) fn emit_abi_function(
     signature: &syn::Signature,
     setup: TokenStream,
     body: TokenStream,
-    fn_by_val: bool,
+    borrow_output: bool,
 ) -> TokenStream {
     let error_handler = match failure_mode {
         FailureMode::Panic => gen_failure_panic(quote!(err)),
         FailureMode::Error if fn_return_ty(signature).is_none_or(is_identity_primitive) => {
             quote!(err)
         }
-        FailureMode::Error => gen_abi_return_encode(quote!(err), !fn_by_val),
+        FailureMode::Error => gen_abi_return_encode(quote!(err), borrow_output),
     };
 
     quote! {
@@ -219,7 +219,7 @@ pub(crate) fn gen_definition_body(
     let encoded_output = if return_ty.is_none_or(is_identity_primitive) {
         quote!(__co3_output)
     } else {
-        gen_abi_return_encode(quote!(__co3_output), !fn_by_val)
+        gen_abi_return_encode(quote!(__co3_output), borrows_return(&sig, fn_by_val))
     };
     let output = match failure_mode {
         FailureMode::Panic => quote! { Ok::<_, ()>(#encoded_output) },
@@ -254,7 +254,12 @@ fn gen_pack_input_stmts(inputs: &[Argument<'_>], failure_mode: FailureMode) -> T
             Unpack::None => return None,
             Unpack::Single(part) => {
                 let source_ty = input.conversion_ty();
-                quote!(<#source_ty as co3::pack::Pack<<#part as co3::ReprC>::CType>>::pack(#name))
+                let packed = quote!(<#source_ty as co3::pack::Pack<<#part as co3::ReprC>::CType>>::pack(#name));
+                if input.is_borrowed() && !input.identity {
+                    quote!((#packed).map(co3::borrow::CBorrowed::<#source_ty>))
+                } else {
+                    packed
+                }
             },
             Unpack::Pair(pair) => {
                 let (data_name, metadata_name) = unpack_arg_names(name);
@@ -397,7 +402,7 @@ pub(crate) fn drop_owned_receiver(sig: &mut syn::Signature, owned_ty: Option<&Ty
 }
 
 pub(crate) fn gen_return_borrow_check(return_ty: &syn::Type, fn_by_val: bool) -> TokenStream {
-    if fn_by_val || is_identity_primitive(return_ty) {
+    if ownership_mode(return_ty, fn_by_val) == OwnershipMode::ByValue {
         return quote! {};
     }
 
@@ -816,6 +821,7 @@ pub fn gen_impl_definition(
         let check_callee = callee.clone();
 
         let fn_by_val = item.attrs.iter().any(is_by_val_attr);
+        let borrow_output = borrows_return(&item.sig, fn_by_val);
         let mut abi_sig = item.sig.clone();
         if drop_impl {
             if declared_self {
@@ -859,8 +865,14 @@ pub fn gen_impl_definition(
             #body
         }};
 
-        let definition =
-            emit_extern_definition(abi, &item.attrs, failure_mode, fn_signature, ffi_fn_body);
+        let definition = emit_extern_definition(
+            abi,
+            &item.attrs,
+            failure_mode,
+            fn_signature,
+            ffi_fn_body,
+            borrow_output,
+        );
         Some(quote! { #return_borrow_check #definition })
     });
 
@@ -949,10 +961,17 @@ pub fn gen_fn_definition(
     };
     let ffi_fn_body = gen_fn_definition_body(&item, failure_mode, callee);
     let fn_by_val = item.attrs.iter().any(is_by_val_attr);
+    let borrow_output = borrows_return(&item.sig, fn_by_val);
     let fn_signature = lower_abi_fn_signature(item.sig, failure_mode, fn_by_val);
 
-    let definition =
-        emit_extern_definition(abi, &item.attrs, failure_mode, fn_signature, ffi_fn_body);
+    let definition = emit_extern_definition(
+        abi,
+        &item.attrs,
+        failure_mode,
+        fn_signature,
+        ffi_fn_body,
+        borrow_output,
+    );
     quote! { #return_borrow_check #definition }
 }
 
@@ -992,14 +1011,9 @@ pub(crate) fn lower_abi_fn_signature(
 ) -> syn::Signature {
     let mut sig = sig;
     explicitize_signature_lifetimes(&mut sig);
-    let borrowed_output = if !move_fn {
-        match &sig.output {
-            syn::ReturnType::Type(_, ty) if !is_identity_primitive(ty) => Some(ty.clone()),
-            _ => None,
-        }
-    } else {
-        None
-    };
+    let borrowed_output = fn_return_ty(&sig)
+        .filter(|ty| ownership_mode(ty, move_fn) == OwnershipMode::Borrow)
+        .cloned();
     let mut sig = lower_extern_fn_signature(sig, failure_mode);
     if let Some(ty) = borrowed_output {
         sig.output = parse_quote!(-> co3::borrow::CBorrowed<#ty>);
@@ -1292,7 +1306,16 @@ pub(crate) fn normalize_fn_signature(sig: &mut syn::Signature, self_ty: Option<&
 }
 
 pub(crate) fn ownership_mode_for_arg(attrs: &[syn::Attribute], ty: &Type) -> OwnershipMode {
-    if attrs.iter().any(is_by_val_attr) || is_implicitly_by_value(ty) {
+    ownership_mode(ty, attrs.iter().any(is_by_val_attr))
+}
+
+pub(crate) fn borrows_return(sig: &syn::Signature, move_fn: bool) -> bool {
+    fn_return_ty(sig).is_some_and(|ty| ownership_mode(ty, move_fn) == OwnershipMode::Borrow)
+}
+
+/// Use the same ownership classification for arguments and return values.
+pub(crate) fn ownership_mode(ty: &Type, explicitly_moved: bool) -> OwnershipMode {
+    if explicitly_moved || is_implicitly_by_value(ty) {
         return OwnershipMode::ByValue;
     }
 
@@ -1300,24 +1323,82 @@ pub(crate) fn ownership_mode_for_arg(attrs: &[syn::Attribute], ty: &Type) -> Own
 }
 
 fn is_implicitly_by_value(ty: &Type) -> bool {
-    let ty = peel_grouped_type(ty);
+    use crate::known_type::{self, Kind};
 
-    if tag_id(ty).is_some() {
-        return true;
+    struct ByValueVisitor {
+        by_value: bool,
+        shared: bool,
     }
 
-    match ty {
-        Type::Reference(_) => false,
-        Type::Ptr(_) | Type::FnPtr(_) => true,
-        Type::Path(path) => {
-            copy_primitive_type(path).is_some()
-                || option_inner_type(ty).is_some_and(is_implicitly_by_value)
+    impl ByValueVisitor {
+        fn with_access(&mut self, ty: &Type, shared: bool) {
+            let previous = core::mem::replace(&mut self.shared, shared);
+            self.visit_type(ty);
+            self.shared = previous;
         }
-        Type::Tuple(tuple) => {
-            !tuple.elems.is_empty() && tuple.elems.iter().all(is_implicitly_by_value)
-        }
-        _ => false,
     }
+
+    impl<'ast> Visit<'ast> for ByValueVisitor {
+        fn visit_type(&mut self, ty: &'ast Type) {
+            if !self.by_value {
+                return;
+            }
+            let ty = peel_grouped_type(ty);
+            if tag_id(ty).is_some() {
+                return;
+            }
+            match ty {
+                Type::Reference(reference) => {
+                    // A shared outer borrow cannot grant mutable access through &mut.
+                    self.with_access(
+                        &reference.elem,
+                        self.shared || reference.mutability.is_none(),
+                    );
+                }
+                Type::Ptr(_) | Type::FnPtr(_) => {}
+                Type::Tuple(tuple) => syn::visit::visit_type_tuple(self, tuple),
+                Type::Array(array) => self.visit_type(&array.elem),
+                Type::Slice(slice) => self.visit_type(&slice.elem),
+                Type::Path(path) => {
+                    let Some(known) = known_type::recognize_path(path) else {
+                        self.by_value = false;
+                        return;
+                    };
+                    match known.kind {
+                        Kind::Primitive
+                        | Kind::NonZeroInt
+                        | Kind::Str
+                        | Kind::CStr
+                        | Kind::NonNull
+                        | Kind::PhantomData => {}
+                        Kind::String | Kind::CString => self.by_value = self.shared,
+                        Kind::Box | Kind::Vec if !self.shared => self.by_value = false,
+                        Kind::Cell | Kind::UnsafeCell => {
+                            // Interior mutability permits ownership transfer even under &T.
+                            self.with_access(known.inner.unwrap(), false);
+                        }
+                        Kind::Box
+                        | Kind::Vec
+                        | Kind::Option
+                        | Kind::Result
+                        | Kind::ManuallyDrop
+                        | Kind::MaybeUninit
+                        | Kind::NonZero => {
+                            syn::visit::visit_type_path(self, path);
+                        }
+                    }
+                }
+                _ => self.by_value = false,
+            }
+        }
+    }
+
+    let mut visitor = ByValueVisitor {
+        by_value: true,
+        shared: false,
+    };
+    visitor.visit_type(ty);
+    visitor.by_value
 }
 
 pub(crate) fn copy_primitive_type(path: &syn::TypePath) -> Option<Type> {
@@ -1478,6 +1559,7 @@ mod tests {
             FailureMode::Panic,
             parse_quote!(fn example(value: u8) -> u8),
             quote!(Ok::<_, ()>(value)),
+            false,
         );
         let item: syn::ItemFn = syn::parse2(definition).unwrap();
 
@@ -1614,6 +1696,19 @@ mod tests {
             parse_quote!(u32),
             parse_quote!(bool),
             parse_quote!(core::primitive::char),
+            parse_quote!(&u8),
+            parse_quote!(&mut str),
+            parse_quote!(Option<&u8>),
+            parse_quote!(Option<Option<&u8>>),
+            parse_quote!(Option<&mut u8>),
+            parse_quote!((<dyn Trait>::TAG, Option<&u8>, (u32, fn()))),
+            parse_quote!((&u8)),
+            parse_quote!((&u8, &mut u8)),
+            parse_quote!([u8; 4]),
+            parse_quote!(()),
+            parse_quote!(&[u8]),
+            parse_quote!(Result<u32, bool>),
+            parse_quote!(core::marker::PhantomData<Box<T>>),
         ];
 
         for ty in by_value {
@@ -1637,19 +1732,16 @@ mod tests {
     fn leaves_other_argument_types_borrowed_by_default() {
         let borrowed: &[Type] = &[
             parse_quote!(String),
-            parse_quote!(&u8),
-            parse_quote!(&mut str),
-            parse_quote!(Option<&u8>),
-            parse_quote!(Option<Option<&u8>>),
-            parse_quote!(Option<&mut u8>),
-            parse_quote!((<dyn Trait>::TAG, Option<&u8>, (u32, fn()))),
-            parse_quote!((&u8)),
-            parse_quote!((&u8, &mut u8)),
             parse_quote!(Option<String>),
             parse_quote!((&u8, String)),
-            parse_quote!([u8; 4]),
-            parse_quote!(()),
-            parse_quote!(str),
+            parse_quote!([Box<u8>; 4]),
+            parse_quote!(Result<u32, String>),
+            parse_quote!(T),
+            parse_quote!(&T),
+            parse_quote!(&mut T),
+            parse_quote!(&alias::String),
+            parse_quote!(alias::u32),
+            parse_quote!(&<T as Trait>::Output),
         ];
 
         for ty in borrowed {
@@ -1674,5 +1766,52 @@ mod tests {
             ownership_mode_for_arg(&attrs, &parse_quote!(&u8)),
             OwnershipMode::ByValue,
         );
+    }
+
+    #[test]
+    fn reference_ownership_tracks_access_to_nested_owners() {
+        for ty in [
+            parse_quote!(&String),
+            parse_quote!(&alloc::string::String),
+            parse_quote!(&CString),
+            parse_quote!(&Box<u32>),
+            parse_quote!(&Vec<String>),
+            parse_quote!(&mut [u8]),
+            parse_quote!(&Cell<u32>),
+            parse_quote!(&UnsafeCell<u32>),
+            parse_quote!(&&mut Box<u32>),
+            parse_quote!(&mut &String),
+            parse_quote!(&UnsafeCell<&String>),
+            parse_quote!((&UnsafeCell<u32>, &Box<u32>)),
+        ] {
+            assert_eq!(
+                ownership_mode(&ty, false),
+                OwnershipMode::ByValue,
+                "{}",
+                quote!(#ty)
+            );
+        }
+        for ty in [
+            parse_quote!(&mut Box<T>),
+            parse_quote!(&mut String),
+            parse_quote!(&UnsafeCell<Box<T>>),
+            parse_quote!(&core::cell::UnsafeCell<Box<T>>),
+            parse_quote!(&Cell<Box<T>>),
+            parse_quote!(&UnsafeCell<&mut Box<T>>),
+            parse_quote!(&Box<UnsafeCell<Box<T>>>),
+            parse_quote!(&Vec<Cell<Box<T>>>),
+            parse_quote!(&[UnsafeCell<Box<T>>]),
+            parse_quote!(&Option<UnsafeCell<Box<T>>>),
+            parse_quote!(&mut [Box<T>]),
+            parse_quote!((&String, Box<u32>)),
+            parse_quote!((&String, &mut Box<u32>)),
+        ] {
+            assert_eq!(
+                ownership_mode(&ty, false),
+                OwnershipMode::Borrow,
+                "{}",
+                quote!(#ty)
+            );
+        }
     }
 }

@@ -2171,7 +2171,6 @@ mod tests {
                 }
                 .unwrap()
             };
-            let decoded = decoded;
             assert_eq!(&*decoded, &[7, 11]);
             assert_ne!(decoded.as_ptr(), source.as_ptr().cast_const());
             drop(decoded);
@@ -2223,7 +2222,6 @@ mod tests {
                 }
                 .unwrap()
             };
-            let decoded = decoded;
             assert_eq!(&*decoded, &[(7, 11)]);
             assert_ne!(
                 decoded.as_ptr().cast::<()>(),

@@ -271,7 +271,7 @@ pub(crate) fn expand_companion(
         raw_sig,
         signature_check,
         body,
-        fn_by_val,
+        ffi_fn::borrows_return(&item.sig, fn_by_val),
     ))
 }
 
@@ -282,7 +282,7 @@ pub(crate) fn emit_companion(
     sig: syn::Signature,
     setup: TokenStream,
     body: TokenStream,
-    fn_by_val: bool,
+    borrow_output: bool,
 ) -> TokenStream {
     let cfg = cfg_attrs(attrs);
     let co3 = co3_path();
@@ -301,7 +301,7 @@ pub(crate) fn emit_companion(
         &sig,
         quote!(use #co3 as co3; #setup),
         body,
-        fn_by_val,
+        borrow_output,
     )
 }
 
@@ -379,12 +379,13 @@ fn add_generic_companion_bounds(
     if let syn::ReturnType::Type(_, ty) = &source_sig.output
         && detector.type_mentions_param(ty)
     {
-        if fn_by_val {
+        if ffi_fn::ownership_mode(ty, fn_by_val) == crate::generate::OwnershipMode::ByValue {
             predicates.push(parse_quote!(#ty: co3::Encode<Store: co3::stored::EmptyStore>));
         } else {
-            predicates.push(
-                parse_quote!(#ty: co3::borrow::BorrowedEncode<Store: co3::stored::EmptyStore>),
-            );
+            predicates.push(parse_quote!(#ty: co3::borrow::BorrowedEncode<
+                    Store: co3::stored::EmptyStore,
+                    Owner: co3::stored::EmptyStore,
+                >));
         }
     }
     raw_sig
