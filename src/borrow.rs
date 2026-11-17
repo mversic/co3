@@ -34,9 +34,35 @@ use rust_spec::{
 
 use crate::{
     CFnArg, CFnReturn, CType, Decode, Encode, ReprC,
-    stored::{DecodeMove, EncodeMove, EncodeMoveUnchecked, Store},
+    stored::{DecodeMove, EmptyStore, EncodeMove, EncodeMoveUnchecked, Store},
     transmute::{AbiCompatible, AbiCompatibleValidate},
 };
+
+/// Encode a borrowed carrier without retaining conversion storage.
+///
+/// Keep the owner alive and unchanged while the carrier is in use.
+pub fn encode<T: BorrowedEncode<Store: EmptyStore>>(
+    value: T,
+    owner: &mut T::Owner,
+) -> CBorrowed<T> {
+    CBorrowed(T::soft_encode(value, &mut Default::default(), owner))
+}
+
+/// Decode a borrowed carrier without retaining conversion storage.
+///
+/// # Safety
+///
+/// The source must satisfy the access and validity requirements of
+/// [`BorrowedDecode::soft_decode`], including the lifetime and aliasing requirements
+/// of any references in the result.
+pub unsafe fn decode<'d, T: BorrowedDecode<'d, Store: EmptyStore + 'd>>(
+    source: CBorrowed<T>,
+) -> Option<T> {
+    let mut store = T::Store::default();
+    // An empty store cannot back any references in the decoded result.
+    let store = unsafe { core::mem::transmute::<&mut T::Store, &'d mut T::Store>(&mut store) };
+    unsafe { T::soft_decode(source.0, store) }
+}
 
 disjoint_impls! {
     /// Encodes a value without transferring its owned resources across FFI.
@@ -45,7 +71,6 @@ disjoint_impls! {
     /// The carrier must obey borrowed access and remain valid while both owner and
     /// conversion storage are retained. Conversion storage must be released before
     /// its owner. An empty conversion store must not retain required backing storage.
-    #[doc(hidden)]
     pub unsafe trait BorrowedEncodeUnchecked: ReprC<CType: Sized> + Sized {
         /// Retained ownership shared by checked and unchecked encoding.
         type Owner: Default;
@@ -457,7 +482,6 @@ disjoint_impls! {
     /// # Safety
     /// The carrier must satisfy the checked borrowed-access contract and the unchecked
     /// trait's storage requirements.
-    #[doc(hidden)]
     pub unsafe trait BorrowedEncode: BorrowedEncodeUnchecked {
         /// Auxiliary storage used during conversion. If storage is not used, set the type to `()`.
         ///
@@ -468,18 +492,9 @@ disjoint_impls! {
         /// Conceptually, serves a role similar to the "context" captured by a closure.
         type Store: Store + Default;
 
-        /// Encode without retaining conversion storage.
-        fn encode(self, owner: &mut Self::Owner) -> Self::CType
-        where
-            Self: Sized,
-            Self::Store: crate::stored::EmptyStore,
-        {
-            Self::soft_encode(self, &mut Default::default(), owner)
-        }
-
         /// Convert [`Self`] into its checked carrier, [`Self::CType`].
         ///
-        /// Prefer using [`crate::soft_encode`] whenever possible
+        /// Use [`encode`] when no conversion storage is required.
         fn soft_encode<'itm>(
             self,
             store: &'itm mut Self::Store,
@@ -913,30 +928,12 @@ disjoint_impls! {
     /// # Safety
     /// Decoding must preserve the source's ownership and reference access requirements.
     /// As with [`DecodeMove`], an empty store must not back references in the result.
-    #[doc(hidden)]
     pub unsafe trait BorrowedDecode<'d>: ReprC<CType: Sized> + Sized {
         type Store: Store + Default;
 
-        /// Decode without retaining conversion storage.
-        ///
-        /// # Safety
-        /// The source must satisfy the access and validity requirements of
-        /// [`Self::soft_decode`].
-        unsafe fn decode(source: Self::CType) -> Option<Self>
-        where
-            Self::Store: crate::stored::EmptyStore + 'd,
-        {
-            let mut store = Self::Store::default();
-            // EmptyStore forbids references into the store from escaping decoding.
-            let store = unsafe {
-                core::mem::transmute::<&mut Self::Store, &'d mut Self::Store>(&mut store)
-            };
-            unsafe { Self::soft_decode(source, store) }
-        }
-
         /// Perform the conversion from an [`ReprC::CType`] into [`Self`].
         ///
-        /// Prefer using [`crate::soft_decode`] whenever possible
+        /// Use [`decode`] when no conversion storage is required.
         ///
         /// # Safety
         ///
@@ -1754,12 +1751,12 @@ mod tests {
 
     #[test]
     fn strings_borrow_through_their_owned_buffers_without_soft() {
-        use crate::borrow::{BorrowedEncode, BorrowedEncodeUnchecked};
+        use crate::borrow::{BorrowedEncodeUnchecked, encode};
         use alloc::{ffi::CString, string::String};
 
         for text in ["", "héllo"] {
             let mut owner = Default::default();
-            let carrier = BorrowedEncode::encode(String::from(text), &mut owner);
+            let carrier = encode(String::from(text), &mut owner).0;
             let bytes = unsafe { core::slice::from_raw_parts(carrier.0.as_ptr(), carrier.0.len()) };
             assert_eq!(bytes, text.as_bytes());
             drop(owner);
@@ -1781,7 +1778,7 @@ mod tests {
             let value = CString::new(text).unwrap();
             let original = value.as_ptr();
             let mut owner = Default::default();
-            let carrier = BorrowedEncode::encode(value, &mut owner);
+            let carrier = encode(value, &mut owner).0;
             assert_eq!(
                 carrier.as_ptr().cast::<core::ffi::c_char>().cast_const(),
                 original
@@ -1927,9 +1924,9 @@ mod tests {
 
     #[test]
     fn borrowed_vectors_decode_directly_without_soft() {
-        use crate::borrow::BorrowedDecode;
+        use crate::borrow::{CBorrowed, decode};
         let foreign = crate::encode(alloc::vec![3_u8, 5, 8]);
-        let decoded = unsafe { alloc::vec::Vec::<u8>::decode(foreign) }.unwrap();
+        let decoded = unsafe { decode(CBorrowed::<alloc::vec::Vec<u8>>(foreign)) }.unwrap();
         assert_eq!(decoded, [3, 5, 8]);
         assert_ne!(decoded.as_ptr(), foreign.as_ptr().cast_const());
         drop(decoded);
@@ -1939,7 +1936,7 @@ mod tests {
         );
 
         let foreign = crate::encode(alloc::vec![(3_u8,), (5,)]);
-        let decoded = unsafe { alloc::vec::Vec::<(u8,)>::decode(foreign) }.unwrap();
+        let decoded = unsafe { decode(CBorrowed::<alloc::vec::Vec<(u8,)>>(foreign)) }.unwrap();
         assert_eq!(decoded, [(3,), (5,)]);
         drop(decoded);
         assert_eq!(
@@ -1950,14 +1947,18 @@ mod tests {
 
     #[test]
     fn borrowed_container_decode_rejects_bad_headers_and_values() {
-        use crate::{borrow::BorrowedDecode, primitives::CBool, vec::CVec};
-        assert!(unsafe { alloc::vec::Vec::<u8>::decode(CVec::null()) }.is_none());
-        assert!(unsafe { Box::<u8>::decode(crate::boxed::CBox::null()) }.is_none());
+        use crate::{
+            borrow::{CBorrowed, decode},
+            primitives::CBool,
+            vec::CVec,
+        };
+        assert!(unsafe { decode(CBorrowed::<alloc::vec::Vec<u8>>(CVec::null())) }.is_none());
+        assert!(unsafe { decode(CBorrowed::<Box<u8>>(crate::boxed::CBox::null())) }.is_none());
         let mut foreign = alloc::vec![CBool(1), CBool(2)];
         let header = unsafe {
             CVec::<bool>::from_raw_parts(foreign.as_mut_ptr(), foreign.len(), foreign.capacity())
         };
-        assert!(unsafe { alloc::vec::Vec::<bool>::decode(header) }.is_none());
+        assert!(unsafe { decode(CBorrowed::<alloc::vec::Vec<bool>>(header)) }.is_none());
         assert_eq!(foreign[1].0, 2);
         let invalid = unsafe {
             CVec::<bool>::from_raw_parts(
@@ -1966,7 +1967,7 @@ mod tests {
                 foreign.capacity(),
             )
         };
-        assert!(unsafe { alloc::vec::Vec::<bool>::decode(invalid) }.is_none());
+        assert!(unsafe { decode(CBorrowed::<alloc::vec::Vec<bool>>(invalid)) }.is_none());
     }
 
     #[test]
@@ -2109,7 +2110,7 @@ mod tests {
 
         fn encode<T: BorrowedEncode<Store: crate::stored::EmptyStore>>(value: T) {
             let mut owner = Default::default();
-            let _ = T::encode(value, &mut owner);
+            let _ = crate::borrow::encode(value, &mut owner);
         }
 
         encode(Box::new(7_u8));
@@ -2306,6 +2307,7 @@ mod tests {
 #[derive(RustSpec)]
 #[doc(hidden)]
 pub struct CBorrowed<T: ReprC<CType: Sized>>(pub T::CType);
+
 impl<T: ReprC<CType: Sized>> ReprC for CBorrowed<T> {
     type CType = Self;
 }
@@ -2376,81 +2378,5 @@ impl<T: ReprC<CType: PartialEq + Sized>> PartialEq for CBorrowed<T> {
     }
 }
 impl<T: ReprC<CType: Eq + Sized>> Eq for CBorrowed<T> {}
-
-/// Carrier marking ownership transfer of the original Rust type.
-#[repr(transparent)]
-#[derive(RustSpec)]
-#[doc(hidden)]
-pub struct CMoved<T: ReprC<CType: Sized>>(pub T::CType);
-impl<T: ReprC<CType: Sized>> ReprC for CMoved<T> {
-    type CType = Self;
-}
-unsafe impl<T: ReprC<CType: Sized>> CType for CMoved<T> {}
-unsafe impl<T: ReprC<CType: Sized>> AbiCompatibleValidate for CMoved<T> {
-    unsafe fn is_valid(_: &Self) -> bool {
-        true
-    }
-}
-unsafe impl<T: ReprC<CType: Sized>> AbiCompatible for CMoved<T> {}
-unsafe impl<T: ReprC<CType: Sized>> CFnArg for CMoved<T> where T::CType: CFnArg {}
-unsafe impl<T: ReprC<CType: Sized>> CFnReturn for CMoved<T>
-where
-    T::CType: CFnReturn,
-    Self: RustSpec<Size = rust_spec::size::Sized<rust_spec::Gt<rust_spec::Zero>>>,
-{
-}
-impl<T: ReprC<CType: Sized>> CMoved<T> {
-    pub const fn new(value: T::CType) -> Self {
-        Self(value)
-    }
-    pub fn into_inner(self) -> T::CType {
-        self.0
-    }
-}
-unsafe impl<T: ReprC<CType: Sized>> EncodeMoveUnchecked for CMoved<T> {
-    type SoftStore = ();
-    unsafe fn soft_encode_unchecked<'a>(self, _: &'a mut ()) -> Self
-    where
-        Self: 'a,
-    {
-        self
-    }
-}
-unsafe impl<T: ReprC<CType: Sized>> EncodeMove for CMoved<T> {
-    type Store = ();
-    fn soft_encode<'a>(self, _: &'a mut ()) -> Self
-    where
-        Self: 'a,
-    {
-        self
-    }
-}
-unsafe impl<'d, T: ReprC<CType: Sized>> DecodeMove<'d> for CMoved<T> {
-    type Store = ();
-    unsafe fn soft_decode<'a: 'd>(value: Self, _: &'a mut ()) -> Option<Self> {
-        Some(value)
-    }
-}
-impl<T: ReprC<CType: Sized>> Encode for CMoved<T> {}
-impl<T: ReprC<CType: Sized>> crate::EncodeUnchecked for CMoved<T> {}
-impl<'d, T: ReprC<CType: Sized>> Decode<'d> for CMoved<T> {}
-crate::__impl_borrowed_identity!([T: ReprC<CType: Sized>] CMoved<T>);
-impl<T: ReprC<CType: Copy>> Copy for CMoved<T> {}
-impl<T: ReprC<CType: Copy>> Clone for CMoved<T> {
-    fn clone(&self) -> Self {
-        *self
-    }
-}
-impl<T: ReprC<CType: core::fmt::Debug + Sized>> core::fmt::Debug for CMoved<T> {
-    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
-        f.debug_tuple("CMoved").field(&self.0).finish()
-    }
-}
-impl<T: ReprC<CType: PartialEq + Sized>> PartialEq for CMoved<T> {
-    fn eq(&self, other: &Self) -> bool {
-        self.0 == other.0
-    }
-}
-impl<T: ReprC<CType: Eq + Sized>> Eq for CMoved<T> {}
 
 pub(crate) use __impl_borrowed_identity;

@@ -54,11 +54,8 @@ ffi! {
 #[test]
 fn regular_drop_decodes_owned_carrier() {
     let callback: unsafe extern "C" fn(_) = drop_cstr;
-    let result: Option<()> = unsafe {
-        callback.call(co3::borrow::CMoved::<BatteryCStr>(co3::encode(
-            CString::new("battery").unwrap(),
-        )))
-    };
+    let result: Option<()> =
+        unsafe { callback.call(co3::encode(CString::new("battery").unwrap())) };
     assert_eq!(result, Some(()));
 }
 

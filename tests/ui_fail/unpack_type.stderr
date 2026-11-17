@@ -83,6 +83,23 @@ error: runtime-dispatched #[unpack] arguments cannot use `_` placeholders
    |                                                         ^^^^^^^^^^^^^^^
 
 error[E0277]: the trait bound `Tuple2<u8, u8>: Unpack2<u32, Utf8String>` is not satisfied
+  --> tests/ui_fail/unpack_type.rs:31:51
+   |
+31 |     fn missing_into(#[unpack(u32, String)] value: Tuple2<u8, u8>);
+   |                                                   ^^^^^^^^^^^^^^ the trait `Unpack2<u32, Utf8String>` is not implemented for `Tuple2<u8, u8>`
+   |
+   = help: the following other types implement trait `Unpack2<Part1, Part2>`:
+             `&R` implements `Unpack2<Pointer, U>`
+             `&mut R` implements `Unpack2<Pointer, U>`
+             `(A, B)` implements `Unpack2<Part1, Part2>`
+             `*const R` implements `Unpack2<*const <<P as Wide>::Header as WideHeader>::Data, U>`
+             `*mut R` implements `Unpack2<*mut <<P as Wide>::Header as WideHeader>::Data, U>`
+             `Box<R>` implements `Unpack2<*mut <<P as Wide>::Header as WideHeader>::Data, U>`
+             `Cell<T>` implements `Unpack2<A, B>`
+             `ManuallyDrop<T>` implements `Unpack2<A, B>`
+           and $N others
+
+error[E0277]: the trait bound `Tuple2<u8, u8>: Unpack2<u32, Utf8String>` is not satisfied
   --> tests/ui_fail/unpack_type.rs:28:1
    |
 28 | / ffi! {
@@ -104,3 +121,20 @@ error[E0277]: the trait bound `Tuple2<u8, u8>: Unpack2<u32, Utf8String>` is not 
              `ManuallyDrop<T>` implements `Unpack2<A, B>`
            and $N others
    = note: this error originates in the macro `ffi` (in Nightly builds, run with -Z macro-backtrace for more info)
+
+error[E0277]: the trait bound `Tuple2<u8, u8>: Unpack2<u32, Utf8String>` is not satisfied
+  --> tests/ui_fail/unpack_type.rs:32:55
+   |
+32 |     fn missing_into_try(#[unpack(u32, String)] value: Tuple2<u8, u8>);
+   |                                                       ^^^^^^^^^^^^^^ the trait `Unpack2<u32, Utf8String>` is not implemented for `Tuple2<u8, u8>`
+   |
+   = help: the following other types implement trait `Unpack2<Part1, Part2>`:
+             `&R` implements `Unpack2<Pointer, U>`
+             `&mut R` implements `Unpack2<Pointer, U>`
+             `(A, B)` implements `Unpack2<Part1, Part2>`
+             `*const R` implements `Unpack2<*const <<P as Wide>::Header as WideHeader>::Data, U>`
+             `*mut R` implements `Unpack2<*mut <<P as Wide>::Header as WideHeader>::Data, U>`
+             `Box<R>` implements `Unpack2<*mut <<P as Wide>::Header as WideHeader>::Data, U>`
+             `Cell<T>` implements `Unpack2<A, B>`
+             `ManuallyDrop<T>` implements `Unpack2<A, B>`
+           and $N others

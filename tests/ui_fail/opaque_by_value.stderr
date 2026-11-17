@@ -1,33 +1,36 @@
-error[E0277]: the trait bound `Opaque: Copy` is not satisfied
-  --> tests/ui_fail/opaque_by_value.rs:15:1
+error[E0277]: the trait bound `Opaque: co3::borrow::BorrowedDecode<'_>` is not satisfied
+  --> tests/ui_fail/opaque_by_value.rs:21:39
    |
-15 | / ffi! {
-16 | |     #![unsafe(export("C"))]
-17 | |
-18 | |     type Opaque;
-...  |
-23 | |     fn takes_kita5_slice_mut(#[soft] value: &mut [Kita5]);
-24 | | }
-   | |_^ the trait `Copy` is not implemented for `Opaque`
+21 |     fn takes_kita5_mut(#[soft] value: &mut Kita5);
+   |                                       ^^^^^^^^^^ unsatisfied trait bound
    |
-   = help: the following other types implement trait `stored::_::DecodeMove0<'d, _TŠČ1, _TŠČ2, _TŠČ3, _TŠČ4>`:
-             `&'d R` implements `stored::_::DecodeMove0<'d, Stable, Stable, _TŠČ0, Exclusive>`
-             `&'d R` implements `stored::_::DecodeMove0<'d, Unstable, Stable, rust_spec::size::MetaSized<SliceLike>, Exclusive>`
-             `&'d R` implements `stored::_::DecodeMove0<'d, Unstable, Unstable, NulTerminated, Exclusive>`
-             `&'d R` implements `stored::_::DecodeMove0<'d, Unstable, Unstable, rust_spec::size::Sized<S>, Exclusive>`
-             `&'d [R]` implements `stored::_::DecodeMove0<'d, Unstable, Unstable, rust_spec::size::MetaSized<SliceLike>, Exclusive>`
-note: required for `CKita5` to implement `Copy`
-  --> tests/ui_fail/opaque_by_value.rs:7:27
+help: the trait `co3::borrow::BorrowedDecode<'_>` is not implemented for `Opaque`
+  --> tests/ui_fail/opaque_by_value.rs:5:1
+   |
+ 5 | struct Opaque(u32);
+   | ^^^^^^^^^^^^^
+   = help: the following other types implement trait `co3::borrow::BorrowedDecode<'d>`:
+             `&'a T` implements `co3::borrow::BorrowedDecode<'d>`
+             `&'a mut T` implements `co3::borrow::BorrowedDecode<'d>`
+             `()` implements `co3::borrow::BorrowedDecode<'_co3_d>`
+             `(A, B)` implements `co3::borrow::BorrowedDecode<'d>`
+             `(A, B, C)` implements `co3::borrow::BorrowedDecode<'d>`
+             `(A, B, C, D)` implements `co3::borrow::BorrowedDecode<'d>`
+             `(A, B, C, D, E)` implements `co3::borrow::BorrowedDecode<'d>`
+             `(A, B, C, D, E, F)` implements `co3::borrow::BorrowedDecode<'d>`
+           and $N others
+note: required for `Kita5` to implement `SoftDecodeMut<'_>`
+  --> tests/ui_fail/opaque_by_value.rs:8:8
    |
  7 | #[derive(Clone, RustSpec, ReprC)]
-   |                           ^^^^^ type parameter would need to implement `Copy`
-   = note: required for `&Kita5` to implement `stored::_::DecodeMove0<'_, Unstable, Unstable, rust_spec::size::Sized<Gt<rust_spec::Zero>>, Exclusive>`
-   = note: this error originates in the macro `ffi` which comes from the expansion of the derive macro `ReprC` (in Nightly builds, run with -Z macro-backtrace for more info)
-help: consider annotating `Opaque` with `#[derive(Copy)]`
-   |
- 5 + #[derive(Copy)]
- 6 | struct Opaque(u32);
-   |
+   |                           ----- type parameter would need to implement `SoftDecodeMut<'_>`
+ 8 | struct Kita5(u32, Opaque);
+   |        ^^^^^
+   = help: consider manually implementing `SoftDecodeMut<'_>` to avoid undesired bounds caused by "imperfect derives"
+   = note: to learn more, visit <https://github.com/rust-lang/rust/issues/26925>
+   = note: required for `&mut Kita5` to implement `stored::_::DecodeMove_cfg1<'_, co3::reference::CSoftRefMut<Kita5, true>, Unstable, Unstable, rust_spec::size::Sized<Gt<rust_spec::Zero>>>`
+   = note: required for `&mut Kita5` to implement `DecodeMove<'_>`
+   = note: required for `&mut Kita5` to implement `co3::borrow::BorrowedDecode<'_>`
 
 error[E0277]: the trait bound `Opaque: Copy` is not satisfied
   --> tests/ui_fail/opaque_by_value.rs:15:1
@@ -41,49 +44,141 @@ error[E0277]: the trait bound `Opaque: Copy` is not satisfied
 24 | | }
    | |_^ the trait `Copy` is not implemented for `Opaque`
    |
-help: the following other types implement trait `stored::_::DecodeMove1<'d, _TŠČ1, _TŠČ2, _TŠČ3>`
-  --> src/stored.rs
-   |
-   | /     unsafe impl<'d, R: AbiCompatible + RustSpec<Size: Thin> + ?Sized> DecodeMove<'d> for &'d mut R
-   | |     where
-   | |         Self: RustSpec<Layout = Stable> + ReprC<CType = CRefMut<<R as ReprC>::CType, true>>,
-   | |____________________________________________________________________________________________^ `&'d mut R` implements `stored::_::DecodeMove1<'d, Stable, _TŠČ0, <R as RustSpec>::Layout>`
-...
-   | /     unsafe impl<'d, R: AbiCompatible<CType: Wide<Metadata = usize>> + ?Sized> DecodeMove<'d> for &'d mut R
-   | |     where
-   | |         Self: RustSpec<Layout = Unstable>,
-   | |         R: RustSpec<Layout = Stable, Size = MetaSized<SliceLike>>,
-   | |         WideData<<R as ReprC>::CType>: CType,
-   | |         R: Wide<Metadata = usize>,
-   | |__________________________________^ `&'d mut R` implements `stored::_::DecodeMove1<'d, Unstable, rust_spec::size::MetaSized<SliceLike>, Stable>`
-...
-   | /     unsafe impl<'d, R: ReprC<CType: BorrowCast<AsConst: Copy> + Copy> + FromBorrow<'d>, S: SizedKind>
-   | |         DecodeMove<'d> for &'d mut R
-   | |     where
-   | |         Self: RustSpec<Layout = Unstable>,
-   | |         R: RustSpec<Layout = Unstable, Size = RustSpecSized<S>> + EncodeMove<Store: EmptyStore>,
-   | |         <R as Borrow>::Borrowed<'d>: DecodeMove<'d, CType = <<R as ReprC>::CType as BorrowCast>::AsConst>,
-   | |___________________________________________________________________________________________________________^ `&'d mut R` implements `stored::_::DecodeMove1<'d, Unstable, rust_spec::size::Sized<S>, Unstable>`
-...
-   | /     unsafe impl<'d, R: DecodeMove<'d, CType: BorrowCast<AsConst: Copy> + Copy> + FromBorrow<'d> + EncodeMove<Store: EmptyStore>>
-   | |         DecodeMove<'d> for &'d mut [R]
-   | |     where
-   | |         Self: RustSpec<Layout = Unstable>,
-   | |         [R]: RustSpec<Layout = Unstable, Size = MetaSized<SliceLike>>,
-   | |         <R as Borrow>::Borrowed<'d>: DecodeMove<'d, CType = <<R as ReprC>::CType as BorrowCast>::AsConst>,
-   | |___________________________________________________________________________________________________________^ `&'d mut [R]` implements `stored::_::DecodeMove1<'d, Unstable, rust_spec::size::MetaSized<SliceLike>, Unstable>`
-note: required for `CKita5` to implement `Copy`
+help: the trait `SoftDecodeMut<'_>` is conditionally implemented for `Kita5`
   --> tests/ui_fail/opaque_by_value.rs:7:27
    |
  7 | #[derive(Clone, RustSpec, ReprC)]
-   |                           ^^^^^ type parameter would need to implement `Copy`
-   = note: required for `&mut Kita5` to implement `stored::_::DecodeMove1<'_, Unstable, rust_spec::size::Sized<Gt<rust_spec::Zero>>, Unstable>`
+   |                           ^^^^^
+   |                           |
+   |                           unsatisfied requirement introduced here: `Opaque: co3::borrow::BorrowedDecode<'_>`
+   |                           unsatisfied requirement introduced here: `<Opaque as ReprC>::CType: Copy`
+note: required for `Kita5` to implement `SoftDecodeMut<'_>`
+  --> tests/ui_fail/opaque_by_value.rs:8:8
+   |
+ 7 | #[derive(Clone, RustSpec, ReprC)]
+   |                           ----- type parameter would need to implement `SoftDecodeMut<'_>`
+ 8 | struct Kita5(u32, Opaque);
+   |        ^^^^^
+   = help: consider manually implementing `SoftDecodeMut<'_>` to avoid undesired bounds caused by "imperfect derives"
+   = note: to learn more, visit <https://github.com/rust-lang/rust/issues/26925>
    = note: this error originates in the macro `ffi` which comes from the expansion of the derive macro `ReprC` (in Nightly builds, run with -Z macro-backtrace for more info)
 help: consider annotating `Opaque` with `#[derive(Copy)]`
    |
  5 + #[derive(Copy)]
  6 | struct Opaque(u32);
    |
+
+error[E0277]: the trait bound `Opaque: co3::borrow::BorrowedDecode<'_>` is not satisfied
+  --> tests/ui_fail/opaque_by_value.rs:15:1
+   |
+15 | / ffi! {
+16 | |     #![unsafe(export("C"))]
+17 | |
+18 | |     type Opaque;
+...  |
+23 | |     fn takes_kita5_slice_mut(#[soft] value: &mut [Kita5]);
+24 | | }
+   | |_^ unsatisfied trait bound
+   |
+help: the trait `co3::borrow::BorrowedDecode<'_>` is not implemented for `Opaque`
+  --> tests/ui_fail/opaque_by_value.rs:5:1
+   |
+ 5 | struct Opaque(u32);
+   | ^^^^^^^^^^^^^
+   = help: the following other types implement trait `co3::borrow::BorrowedDecode<'d>`:
+             `&'a T` implements `co3::borrow::BorrowedDecode<'d>`
+             `&'a mut T` implements `co3::borrow::BorrowedDecode<'d>`
+             `()` implements `co3::borrow::BorrowedDecode<'_co3_d>`
+             `(A, B)` implements `co3::borrow::BorrowedDecode<'d>`
+             `(A, B, C)` implements `co3::borrow::BorrowedDecode<'d>`
+             `(A, B, C, D)` implements `co3::borrow::BorrowedDecode<'d>`
+             `(A, B, C, D, E)` implements `co3::borrow::BorrowedDecode<'d>`
+             `(A, B, C, D, E, F)` implements `co3::borrow::BorrowedDecode<'d>`
+           and $N others
+note: required for `Kita5` to implement `SoftDecodeMut<'_>`
+  --> tests/ui_fail/opaque_by_value.rs:8:8
+   |
+ 7 | #[derive(Clone, RustSpec, ReprC)]
+   |                           ----- type parameter would need to implement `SoftDecodeMut<'_>`
+ 8 | struct Kita5(u32, Opaque);
+   |        ^^^^^
+   = help: consider manually implementing `SoftDecodeMut<'_>` to avoid undesired bounds caused by "imperfect derives"
+   = note: to learn more, visit <https://github.com/rust-lang/rust/issues/26925>
+   = note: this error originates in the macro `ffi` (in Nightly builds, run with -Z macro-backtrace for more info)
+
+error[E0277]: the trait bound `Opaque: co3::borrow::BorrowedDecode<'_>` is not satisfied
+  --> tests/ui_fail/opaque_by_value.rs:23:45
+   |
+23 |     fn takes_kita5_slice_mut(#[soft] value: &mut [Kita5]);
+   |                                             ^^^^^^^^^^^^ unsatisfied trait bound
+   |
+help: the trait `co3::borrow::BorrowedDecode<'_>` is not implemented for `Opaque`
+  --> tests/ui_fail/opaque_by_value.rs:5:1
+   |
+ 5 | struct Opaque(u32);
+   | ^^^^^^^^^^^^^
+   = help: the following other types implement trait `co3::borrow::BorrowedDecode<'d>`:
+             `&'a T` implements `co3::borrow::BorrowedDecode<'d>`
+             `&'a mut T` implements `co3::borrow::BorrowedDecode<'d>`
+             `()` implements `co3::borrow::BorrowedDecode<'_co3_d>`
+             `(A, B)` implements `co3::borrow::BorrowedDecode<'d>`
+             `(A, B, C)` implements `co3::borrow::BorrowedDecode<'d>`
+             `(A, B, C, D)` implements `co3::borrow::BorrowedDecode<'d>`
+             `(A, B, C, D, E)` implements `co3::borrow::BorrowedDecode<'d>`
+             `(A, B, C, D, E, F)` implements `co3::borrow::BorrowedDecode<'d>`
+           and $N others
+note: required for `Kita5` to implement `co3::borrow::BorrowedDecode<'_>`
+  --> tests/ui_fail/opaque_by_value.rs:8:8
+   |
+ 7 | #[derive(Clone, RustSpec, ReprC)]
+   |                           ----- type parameter would need to implement `co3::borrow::BorrowedDecode<'_>`
+ 8 | struct Kita5(u32, Opaque);
+   |        ^^^^^
+   = help: consider manually implementing `co3::borrow::BorrowedDecode<'_>` to avoid undesired bounds caused by "imperfect derives"
+   = note: to learn more, visit <https://github.com/rust-lang/rust/issues/26925>
+   = note: required for `[Kita5]` to implement `SoftDecodeMut<'_>`
+   = note: required for `&mut [Kita5]` to implement `stored::_::DecodeMove_cfg1<'_, co3::wide::CSoftWideRefMut<[Kita5], true>, Unstable, Unstable, rust_spec::size::MetaSized<SliceLike>>`
+   = note: required for `&mut [Kita5]` to implement `DecodeMove<'_>`
+   = note: 1 redundant requirement hidden
+   = note: required for `&mut [Kita5]` to implement `co3::borrow::BorrowedDecode<'_>`
+
+error[E0277]: the trait bound `Opaque: co3::borrow::BorrowedDecode<'_>` is not satisfied
+  --> tests/ui_fail/opaque_by_value.rs:15:1
+   |
+15 | / ffi! {
+16 | |     #![unsafe(export("C"))]
+17 | |
+18 | |     type Opaque;
+...  |
+23 | |     fn takes_kita5_slice_mut(#[soft] value: &mut [Kita5]);
+24 | | }
+   | |_^ unsatisfied trait bound
+   |
+help: the trait `co3::borrow::BorrowedDecode<'_>` is not implemented for `Opaque`
+  --> tests/ui_fail/opaque_by_value.rs:5:1
+   |
+ 5 | struct Opaque(u32);
+   | ^^^^^^^^^^^^^
+   = help: the following other types implement trait `co3::borrow::BorrowedDecode<'d>`:
+             `&'a T` implements `co3::borrow::BorrowedDecode<'d>`
+             `&'a mut T` implements `co3::borrow::BorrowedDecode<'d>`
+             `()` implements `co3::borrow::BorrowedDecode<'_co3_d>`
+             `(A, B)` implements `co3::borrow::BorrowedDecode<'d>`
+             `(A, B, C)` implements `co3::borrow::BorrowedDecode<'d>`
+             `(A, B, C, D)` implements `co3::borrow::BorrowedDecode<'d>`
+             `(A, B, C, D, E)` implements `co3::borrow::BorrowedDecode<'d>`
+             `(A, B, C, D, E, F)` implements `co3::borrow::BorrowedDecode<'d>`
+           and $N others
+note: required for `Kita5` to implement `co3::borrow::BorrowedDecode<'_>`
+  --> tests/ui_fail/opaque_by_value.rs:8:8
+   |
+ 7 | #[derive(Clone, RustSpec, ReprC)]
+   |                           ----- type parameter would need to implement `co3::borrow::BorrowedDecode<'_>`
+ 8 | struct Kita5(u32, Opaque);
+   |        ^^^^^
+   = help: consider manually implementing `co3::borrow::BorrowedDecode<'_>` to avoid undesired bounds caused by "imperfect derives"
+   = note: to learn more, visit <https://github.com/rust-lang/rust/issues/26925>
+   = note: this error originates in the macro `ffi` (in Nightly builds, run with -Z macro-backtrace for more info)
 
 error[E0277]: the trait bound `Opaque: Copy` is not satisfied
   --> tests/ui_fail/opaque_by_value.rs:15:1
@@ -97,63 +192,29 @@ error[E0277]: the trait bound `Opaque: Copy` is not satisfied
 24 | | }
    | |_^ the trait `Copy` is not implemented for `Opaque`
    |
-help: the trait `stored::_::DecodeMove0<'_, Unstable, Unstable, rust_spec::size::MetaSized<SliceLike>, Exclusive>` is conditionally implemented for `&[R]`
-  --> src/stored.rs
+help: the following other types implement trait `SoftDecodeMut<'d>`
+  --> src/decoded.rs
    |
-   |       unsafe impl<'d, R: DecodeMove<'d, CType: BorrowCast<AsConst: Copy> + Copy> + FromBorrow<'d> + Clone>
-   |       ^                                                                     ---- unsatisfied requirement introduced here: `CKita5: Copy`
-   |  _____|
-   | |
-   | |         DecodeMove<'d> for &'d [R]
-   | |     where
-   | |         Self: RustSpec<Layout = Unstable>,
-   | |         [R]: RustSpec<Layout = Unstable, Size = MetaSized<SliceLike>, Mutability = Exclusive>,
-   | |         <R as Borrow>::Borrowed<'d>: DecodeMove<'d, CType = <<R as ReprC>::CType as BorrowCast>::AsConst>,
-   | |___________________________________________________________________________________________________________^
+   | / unsafe impl<'d, R: ReprC<CType: CType + Copy> + EncodeMove<Store: EmptyStore> + 'd>
+   | |     SoftDecodeMut<'d> for [R]
+   | | where
+   | |     R: crate::borrow::BorrowedDecode<'d>,
+   | |     &'d mut Self: ReprC<CType = crate::CSoftWideRefMut<Self, true>>,
+   | |     [R]: RustSpec<Size = MetaSized<SliceLike>>,
+   | |_______________________________________________^ `[R]`
+...
+   | / unsafe impl<'d, T: ReprC<CType: CType + Copy> + 'd, const N: usize> SoftDecodeMut<'d> for [T; N]
+   | | where
+   | |     T: crate::borrow::BorrowedDecode<'d>,
+   | |     Self: RustSpec + ReprC<CType = [<T as ReprC>::CType; N]> + EncodeMove<Store: EmptyStore>,
+   | |     &'d mut Self: ReprC<CType = CSoftRefMut<Self, true>>,
+   | |_________________________________________________________^ `[T; N]`
 note: required for `CKita5` to implement `Copy`
   --> tests/ui_fail/opaque_by_value.rs:7:27
    |
  7 | #[derive(Clone, RustSpec, ReprC)]
    |                           ^^^^^ type parameter would need to implement `Copy`
-   = note: required for `&[Kita5]` to implement `stored::_::DecodeMove0<'_, Unstable, Unstable, rust_spec::size::MetaSized<SliceLike>, Exclusive>`
-   = note: this error originates in the macro `ffi` which comes from the expansion of the derive macro `ReprC` (in Nightly builds, run with -Z macro-backtrace for more info)
-help: consider annotating `Opaque` with `#[derive(Copy)]`
-   |
- 5 + #[derive(Copy)]
- 6 | struct Opaque(u32);
-   |
-
-error[E0277]: the trait bound `Opaque: Copy` is not satisfied
-  --> tests/ui_fail/opaque_by_value.rs:15:1
-   |
-15 | / ffi! {
-16 | |     #![unsafe(export("C"))]
-17 | |
-18 | |     type Opaque;
-...  |
-23 | |     fn takes_kita5_slice_mut(#[soft] value: &mut [Kita5]);
-24 | | }
-   | |_^ the trait `Copy` is not implemented for `Opaque`
-   |
-help: the trait `stored::_::DecodeMove1<'_, Unstable, rust_spec::size::MetaSized<SliceLike>, Unstable>` is conditionally implemented for `&mut [R]`
-  --> src/stored.rs
-   |
-   |       unsafe impl<'d, R: DecodeMove<'d, CType: BorrowCast<AsConst: Copy> + Copy> + FromBorrow<'d> + EncodeMove<Store: EmptyStore>>
-   |       ^                                                                     ---- unsatisfied requirement introduced here: `CKita5: Copy`
-   |  _____|
-   | |
-   | |         DecodeMove<'d> for &'d mut [R]
-   | |     where
-   | |         Self: RustSpec<Layout = Unstable>,
-   | |         [R]: RustSpec<Layout = Unstable, Size = MetaSized<SliceLike>>,
-   | |         <R as Borrow>::Borrowed<'d>: DecodeMove<'d, CType = <<R as ReprC>::CType as BorrowCast>::AsConst>,
-   | |___________________________________________________________________________________________________________^
-note: required for `CKita5` to implement `Copy`
-  --> tests/ui_fail/opaque_by_value.rs:7:27
-   |
- 7 | #[derive(Clone, RustSpec, ReprC)]
-   |                           ^^^^^ type parameter would need to implement `Copy`
-   = note: required for `&mut [Kita5]` to implement `stored::_::DecodeMove1<'_, Unstable, rust_spec::size::MetaSized<SliceLike>, Unstable>`
+   = note: required for `[Kita5]` to implement `SoftDecodeMut<'_>`
    = note: this error originates in the macro `ffi` which comes from the expansion of the derive macro `ReprC` (in Nightly builds, run with -Z macro-backtrace for more info)
 help: consider annotating `Opaque` with `#[derive(Copy)]`
    |

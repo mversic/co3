@@ -1,43 +1,69 @@
-error[E0277]: the trait bound `NoBorrow: co3::borrow::Borrow` is not satisfied
-  --> tests/ui_fail/defaulted_view_field_without_borrow.rs:24:22
+error[E0277]: the trait bound `NoBorrow: co3::borrow::BorrowedDecode<'_>` is not satisfied
+  --> tests/ui_fail/defaulted_view_field_without_borrow.rs:25:22
    |
-24 |     require_borrow::<SizedWrapper>();
+25 |     fn accept(value: SizedWrapper);
    |                      ^^^^^^^^^^^^ unsatisfied trait bound
    |
-help: the trait `co3::borrow::Borrow` is not implemented for `NoBorrow`
+help: the trait `co3::borrow::BorrowedDecode<'_>` is not implemented for `NoBorrow`
   --> tests/ui_fail/defaulted_view_field_without_borrow.rs:9:1
    |
  9 | struct NoBorrow(u8);
    | ^^^^^^^^^^^^^^^
-   = help: the following other types implement trait `co3::borrow::Borrow`:
-             &'_lšč0 _TŠČ0
-             &mut R
-             ()
-             (A, B)
-             (A, B, C)
-             (A, B, C, D)
-             (A, B, C, D, E)
-             (A, B, C, D, E, F)
+   = help: the following other types implement trait `co3::borrow::BorrowedDecode<'d>`:
+             `&'a T` implements `co3::borrow::BorrowedDecode<'d>`
+             `&'a mut T` implements `co3::borrow::BorrowedDecode<'d>`
+             `()` implements `co3::borrow::BorrowedDecode<'_co3_d>`
+             `(A, B)` implements `co3::borrow::BorrowedDecode<'d>`
+             `(A, B, C)` implements `co3::borrow::BorrowedDecode<'d>`
+             `(A, B, C, D)` implements `co3::borrow::BorrowedDecode<'d>`
+             `(A, B, C, D, E)` implements `co3::borrow::BorrowedDecode<'d>`
+             `(A, B, C, D, E, F)` implements `co3::borrow::BorrowedDecode<'d>`
            and $N others
-note: required for `SizedWrapper` to implement `_::_::Borrow0<AutoDrop>`
-  --> tests/ui_fail/defaulted_view_field_without_borrow.rs:19:20
-   |
-19 | #[derive(RustSpec, ReprC)]
-   |                    ^^^^^ unsatisfied trait bound introduced here
-20 | struct SizedWrapper<T = NoBorrow>(T);
-   |        ^^^^^^^^^^^^^^^^^^^^^^^^^^
-note: required for `SizedWrapper` to implement `co3::borrow::Borrow`
+note: required for `SizedWrapper` to implement `co3::borrow::BorrowedDecode<'_>`
   --> tests/ui_fail/defaulted_view_field_without_borrow.rs:20:8
    |
 19 | #[derive(RustSpec, ReprC)]
-   |                    ----- unsatisfied trait bound
+   |                    ----- type parameter would need to implement `co3::borrow::BorrowedDecode<'_>`
 20 | struct SizedWrapper<T = NoBorrow>(T);
    |        ^^^^^^^^^^^^^^^^^^^^^^^^^^
-   = help: consider manually implementing `co3::borrow::Borrow` to avoid undesired bounds caused by "imperfect derives"
+   = help: consider manually implementing `co3::borrow::BorrowedDecode<'_>` to avoid undesired bounds caused by "imperfect derives"
    = note: to learn more, visit <https://github.com/rust-lang/rust/issues/26925>
-note: required by a bound in `require_borrow`
-  --> tests/ui_fail/defaulted_view_field_without_borrow.rs:23:26
+note: required by a bound in `co3::borrow::decode`
+  --> src/borrow.rs
    |
-23 |     fn require_borrow<T: co3::borrow::Borrow>() {}
-   |                          ^^^^^^^^^^^^^^^^^^^ required by this bound in `require_borrow`
-   = note: this error originates in the macro `co3::disjoint_impls` (in Nightly builds, run with -Z macro-backtrace for more info)
+   | pub unsafe fn decode<'d, T: BorrowedDecode<'d, Store: EmptyStore + 'd>>(
+   |                             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ required by this bound in `decode`
+
+error[E0277]: the trait bound `NoBorrow: co3::borrow::BorrowedDecode<'_>` is not satisfied
+  --> tests/ui_fail/defaulted_view_field_without_borrow.rs:24:1
+   |
+24 | / co3::raw! {
+25 | |     fn accept(value: SizedWrapper);
+26 | | }
+   | |_^ unsatisfied trait bound
+   |
+help: the trait `co3::borrow::BorrowedDecode<'_>` is not implemented for `NoBorrow`
+  --> tests/ui_fail/defaulted_view_field_without_borrow.rs:9:1
+   |
+ 9 | struct NoBorrow(u8);
+   | ^^^^^^^^^^^^^^^
+   = help: the following other types implement trait `co3::borrow::BorrowedDecode<'d>`:
+             `&'a T` implements `co3::borrow::BorrowedDecode<'d>`
+             `&'a mut T` implements `co3::borrow::BorrowedDecode<'d>`
+             `()` implements `co3::borrow::BorrowedDecode<'_co3_d>`
+             `(A, B)` implements `co3::borrow::BorrowedDecode<'d>`
+             `(A, B, C)` implements `co3::borrow::BorrowedDecode<'d>`
+             `(A, B, C, D)` implements `co3::borrow::BorrowedDecode<'d>`
+             `(A, B, C, D, E)` implements `co3::borrow::BorrowedDecode<'d>`
+             `(A, B, C, D, E, F)` implements `co3::borrow::BorrowedDecode<'d>`
+           and $N others
+note: required for `SizedWrapper` to implement `co3::borrow::BorrowedDecode<'_>`
+  --> tests/ui_fail/defaulted_view_field_without_borrow.rs:20:8
+   |
+19 | #[derive(RustSpec, ReprC)]
+   |                    ----- type parameter would need to implement `co3::borrow::BorrowedDecode<'_>`
+20 | struct SizedWrapper<T = NoBorrow>(T);
+   |        ^^^^^^^^^^^^^^^^^^^^^^^^^^
+   = help: consider manually implementing `co3::borrow::BorrowedDecode<'_>` to avoid undesired bounds caused by "imperfect derives"
+   = note: to learn more, visit <https://github.com/rust-lang/rust/issues/26925>
+   = note: this error originates in the macro `co3::raw` (in Nightly builds, run with -Z macro-backtrace for more info)

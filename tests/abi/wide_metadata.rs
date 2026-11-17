@@ -53,9 +53,9 @@ mod exported {
         #[symbol_name = "wide_metadata__mutable"]
         unsafe extern "C" fn mutable_raw(data: *mut u8, len: usize, expected: *mut u8) -> usize;
         #[symbol_name = "wide_metadata__owned"]
-        unsafe extern "C" fn owned_raw(data: *mut u8, len: usize, expected: *const u8) -> co3::borrow::CMoved<Box<[u8]>>;
+        unsafe extern "C" fn owned_raw(data: *mut u8, len: usize, expected: *const u8) -> <Box<[u8]> as co3::ReprC>::CType;
         #[symbol_name = "wide_metadata__cells"]
-        unsafe extern "C" fn cells_raw(data: *mut Cell<u8>, len: usize, expected: *const Cell<u8>) -> co3::borrow::CMoved<Box<[Cell<u8>]>>;
+        unsafe extern "C" fn cells_raw(data: *mut Cell<u8>, len: usize, expected: *const Cell<u8>) -> <Box<[Cell<u8>]> as co3::ReprC>::CType;
     }
 }
 

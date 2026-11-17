@@ -19,7 +19,10 @@ impl ReprC for NoBorrow {
 #[derive(RustSpec, ReprC)]
 struct SizedWrapper<T = NoBorrow>(T);
 
-fn main() {
-    fn require_borrow<T: co3::borrow::Borrow>() {}
-    require_borrow::<SizedWrapper>();
+fn accept(_value: SizedWrapper) {}
+
+co3::raw! {
+    fn accept(value: SizedWrapper);
 }
+
+fn main() {}

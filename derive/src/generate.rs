@@ -14,8 +14,7 @@ use crate::{
         gen_tag_id_type_checks,
     },
     ffi_fn::{
-        self, gen_abi_assertions, lower_abi_fn_signature, merge_generics, normalize_fn_signature,
-        strip_dispatch_params,
+        self, gen_abi_assertions, merge_generics, normalize_fn_signature, strip_dispatch_params,
     },
     parse::{FailureMode, MacroFeatures},
     trait_object_single_trait_bound,
@@ -1360,6 +1359,11 @@ fn prepare_dispatch_import(
                 crate::dispatch::DispatchReceiver::Impl { ty, id: None }
             }
         });
+    let tag_selectors =
+        crate::dispatch::resolved_tag_selector_inputs(&extern_generics, receiver, &extern_sig)
+            .iter()
+            .map(|(pat, _)| ffi_fn::item_fn_input_ident(pat).clone())
+            .collect::<Vec<_>>();
     erase_dispatch_signature(&extern_generics, receiver, &mut extern_sig);
     strip_dispatch_params(&mut extern_sig.generics);
 
@@ -1379,10 +1383,11 @@ fn prepare_dispatch_import(
     match mode {
         DispatchImportMode::Static(symbol_fragments) => {
             let trait_args = dispatch_trait_args(&dispatch_generics);
-            let raw_sig = ffi_fn::lower_abi_fn_signature(
+            let raw_sig = ffi_fn::lower_abi_fn_signature_with_plain_inputs(
                 extern_sig,
                 failure_mode,
                 fn_attrs.iter().any(ffi_fn::is_by_val_attr),
+                &tag_selectors,
             );
             let delegate_name = &wrapper_source_sig.ident;
             let delegate_callee = quote!(<() as #dispatch_set_path<#trait_args>>::#delegate_name);
@@ -1439,10 +1444,11 @@ fn prepare_dispatch_import(
                     &wrapper_source_sig,
                 )
             });
-            let mut decl = ffi_fn::lower_abi_fn_signature(
+            let mut decl = ffi_fn::lower_abi_fn_signature_with_plain_inputs(
                 extern_sig,
                 failure_mode,
                 fn_attrs.iter().any(ffi_fn::is_by_val_attr),
+                &tag_selectors,
             );
             if raw {
                 decl.ident = format_ident!("__co3_raw");
@@ -1801,6 +1807,19 @@ fn synthesize_impl_extern_decls(
                 return None;
             };
 
+            let tag_selectors = item
+                .sig
+                .inputs
+                .iter()
+                .filter_map(|input| {
+                    let FnArg::Typed(arg) = input else {
+                        return None;
+                    };
+                    crate::dispatch::tag_id(&arg.ty)
+                        .map(|_| ffi_fn::item_fn_input_ident(&arg.pat).clone())
+                })
+                .collect::<Vec<_>>();
+
             let has_receiver = item
                 .sig
                 .inputs
@@ -1880,7 +1899,12 @@ fn synthesize_impl_extern_decls(
                         _ => None,
                     })
                     .expect("opaque Drop requires a receiver");
-                let mut sig = ffi_fn::lower_abi_fn_signature(item.sig, failure_mode, false);
+                let mut sig = ffi_fn::lower_abi_fn_signature_with_plain_inputs(
+                    item.sig,
+                    failure_mode,
+                    false,
+                    &tag_selectors,
+                );
                 let receiver = sig
                     .inputs
                     .iter_mut()
@@ -1896,10 +1920,11 @@ fn synthesize_impl_extern_decls(
                 receiver.ty = pointer_ty;
                 sig
             } else {
-                lower_abi_fn_signature(
+                ffi_fn::lower_abi_fn_signature_with_plain_inputs(
                     item.sig,
                     failure_mode,
                     item.attrs.iter().any(ffi_fn::is_by_val_attr),
+                    &tag_selectors,
                 )
             };
             let abi_assertions = gen_abi_assertions(&decl);
@@ -2967,12 +2992,23 @@ fn expand_dispatch_drop_import(
 
     let mut lowered_method = method.clone();
     lowered_method.sig.output = syn::ReturnType::Default;
+    let tag_selectors = lowered_method
+        .sig
+        .inputs
+        .iter()
+        .filter_map(|input| {
+            let FnArg::Typed(arg) = input else {
+                return None;
+            };
+            crate::dispatch::tag_id(&arg.ty).map(|_| ffi_fn::item_fn_input_ident(&arg.pat).clone())
+        })
+        .collect::<Vec<_>>();
     let selector_assignments = lowered_method
         .sig
         .inputs
         .iter_mut()
         .filter_map(|input| {
-            let FnArg::Typed(syn::PatType { attrs, pat, ty, .. }) = input else {
+            let FnArg::Typed(syn::PatType { pat, ty, .. }) = input else {
                 return None;
             };
             let (tag_ty, id_ty) = match crate::dispatch::tag_id(ty)? {
@@ -2985,7 +3021,6 @@ fn expand_dispatch_drop_import(
                 }
             };
             **ty = id_ty.clone();
-            attrs.push(syn::parse_quote!(#[by_val]));
             Some(quote! {
                 let #pat: #id_ty = {
                     // FIXME: https://github.com/mversic/co3/issues/93
@@ -3001,6 +3036,7 @@ fn expand_dispatch_drop_import(
         &declared_self_ty,
         generics,
         declared_self,
+        &tag_selectors,
     );
     let abi_assertions = extern_decls.iter().map(|(_, _, assertions)| assertions);
     let extern_decl_tokens = extern_decls.iter().map(|(_, decl, _)| decl);
@@ -3075,6 +3111,7 @@ fn expand_plain_drop_import(
         &declared_self_ty,
         generics,
         !declared_generics.params.is_empty(),
+        &[],
     );
     let mut wrapper_generics = generics.clone();
     add_missing_decl_lifetimes(&mut wrapper_generics, declared_generics);

@@ -306,20 +306,6 @@ impl<T: Pack2<A, B>, A: CType, B: CType> Pack2<A, B> for crate::borrow::CBorrowe
     }
 }
 
-// Moved ownership preserves the unpacked ABI parts.
-impl<T: Unpack2<A, B>, A: CType, B: CType> Unpack2<A, B> for crate::borrow::CMoved<T> {
-    type Error = T::Error;
-    fn unpack(value: Self::CType) -> Result<(A, B), Self::Error> {
-        T::unpack(value.0)
-    }
-}
-impl<T: Pack2<A, B>, A: CType, B: CType> Pack2<A, B> for crate::borrow::CMoved<T> {
-    type Error = T::Error;
-    unsafe fn pack(a: A, b: B) -> Result<Self::CType, Self::Error> {
-        unsafe { T::pack(a, b) }.map(crate::borrow::CMoved)
-    }
-}
-
 macro_rules! impl_transparent_pack2 {
     ($($wrapper:ident),+ $(,)?) => {$ (
         impl<T: Unpack2<A, B>, A: CType, B: CType> Unpack2<A, B> for $wrapper<T> {

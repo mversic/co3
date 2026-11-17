@@ -144,12 +144,7 @@ pub(crate) fn emit_abi_function(
         FailureMode::Error if fn_return_ty(signature).is_none_or(is_identity_primitive) => {
             quote!(err)
         }
-        FailureMode::Error => {
-            let encoded = gen_abi_return_encode(quote!(err), borrow_output);
-            if fn_return_ty(signature).is_some_and(|ty| matches!(ty, Type::Path(path) if path.path.segments.last().is_some_and(|s| s.ident == "CMoved"))) {
-                quote!(co3::borrow::CMoved(#encoded))
-            } else { encoded }
-        }
+        FailureMode::Error => gen_abi_return_encode(quote!(err), borrow_output),
     };
 
     quote! {
@@ -224,7 +219,7 @@ pub(crate) fn gen_definition_body(
     let encoded_output = if return_ty.is_none_or(is_identity_primitive) {
         quote!(__co3_output)
     } else {
-        gen_return_encode(quote!(__co3_output), return_ty.unwrap(), fn_by_val)
+        gen_abi_return_encode(quote!(__co3_output), borrows_return(&sig, fn_by_val))
     };
     let output = match failure_mode {
         FailureMode::Panic => quote! { Ok::<_, ()>(#encoded_output) },
@@ -260,9 +255,8 @@ fn gen_pack_input_stmts(inputs: &[Argument<'_>], failure_mode: FailureMode) -> T
             Unpack::Single(part) => {
                 let source_ty = input.conversion_ty();
                 let packed = quote!(<#source_ty as co3::pack::Pack<<#part as co3::ReprC>::CType>>::pack(#name));
-                if input.is_wrapped() {
-                    let wrapper = input.wrapper();
-                    quote!((#packed).map(#wrapper::<#source_ty>))
+                if input.is_borrowed() && !input.identity {
+                    quote!((#packed).map(co3::borrow::CBorrowed::<#source_ty>))
                 } else {
                     packed
                 }
@@ -295,18 +289,9 @@ fn gen_pack_input_stmts(inputs: &[Argument<'_>], failure_mode: FailureMode) -> T
     quote!(#(#stmts)*)
 }
 
-pub(crate) fn gen_return_encode(value: TokenStream, ty: &Type, moved: bool) -> TokenStream {
-    let encoded = gen_abi_return_encode(value, ownership_mode(ty, moved) == OwnershipMode::Borrow);
-    if moved && !is_implicitly_by_value(ty) {
-        quote!(co3::borrow::CMoved(#encoded))
-    } else {
-        encoded
-    }
-}
-
 pub(crate) fn gen_abi_return_encode(value: TokenStream, borrow_output: bool) -> TokenStream {
     if borrow_output {
-        quote!(co3::borrow::CBorrowed(co3::borrow::BorrowedEncode::encode(#value, &mut Default::default())))
+        quote!(co3::borrow::encode(#value, &mut Default::default()))
     } else {
         quote!(co3::encode(#value))
     }
@@ -372,7 +357,7 @@ pub(crate) fn gen_regular_drop_definition_body(
 
     if !soft {
         return quote! {{
-            let Some(__co3_value) = (unsafe { co3::stored::decode_move::<#self_ty>(__co3_self.0) }) else {
+            let Some(__co3_value) = (unsafe { co3::stored::decode_move::<#self_ty>(__co3_self) }) else {
                 #decode_error
             };
             core::mem::drop(__co3_value);
@@ -384,7 +369,7 @@ pub(crate) fn gen_regular_drop_definition_body(
     quote! {{
         let mut __co3_store = <#self_ty as co3::stored::DecodeMove<'_>>::Store::default();
         let __co3_value = unsafe {
-            <#self_ty as co3::stored::DecodeMove>::soft_decode(__co3_self.0, &mut __co3_store)
+            <#self_ty as co3::stored::DecodeMove>::soft_decode(__co3_self, &mut __co3_store)
         };
         let Some(__co3_value) = __co3_value else {
             #decode_error
@@ -618,15 +603,7 @@ fn parameter_cfg(attrs: &[syn::Attribute]) -> Option<(TokenStream, TokenStream)>
     })
 }
 
-pub(crate) fn gen_input_decode_stmts<'a>(
-    inputs: impl IntoIterator<Item = &'a syn::FnArg>,
-    failure_mode: FailureMode,
-) -> TokenStream {
-    let inputs = argument::analyze(inputs);
-    gen_analyzed_input_decode_stmts(&inputs, failure_mode)
-}
-
-fn gen_analyzed_input_decode_stmts(
+pub(crate) fn gen_analyzed_input_decode_stmts(
     inputs: &[Argument<'_>],
     failure_mode: FailureMode,
 ) -> TokenStream {
@@ -654,11 +631,7 @@ fn gen_analyzed_input_decode_stmts(
         let inactive_store = disabled.map(|disabled| quote!(#disabled (),));
 
         let decode_ty = input.conversion_ty();
-        let decode_arg = if input.is_wrapped() && !input.is_borrowed() {
-            quote!(#arg_name.0)
-        } else {
-            quote!(#arg_name)
-        };
+        let decode_arg = quote! { #arg_name };
 
         let decode_call = if input.identity {
             quote!(Some(#decode_arg))
@@ -666,7 +639,7 @@ fn gen_analyzed_input_decode_stmts(
             if input.soft {
                 quote!(<#decode_ty as co3::borrow::BorrowedDecode<'_>>::soft_decode(#decode_arg.0, &mut __co3_input_stores.#idx))
             } else {
-                quote!(<#decode_ty as co3::borrow::BorrowedDecode<'_>>::decode(#decode_arg.0))
+                quote!(co3::borrow::decode::<#decode_ty>(#decode_arg))
             }
         } else if input.soft {
             quote!(co3::soft_decode(#decode_arg, &mut __co3_input_stores.#idx))
@@ -994,9 +967,10 @@ pub fn gen_fn_definition(
     quote! { #return_borrow_check #definition }
 }
 
-pub(crate) fn lower_extern_fn_signature(
+fn lower_extern_fn_signature_with_plain_inputs(
     mut sig: syn::Signature,
     failure_mode: FailureMode,
+    plain_inputs: &[Ident],
 ) -> syn::Signature {
     if let syn::ReturnType::Type(_, return_type) = &sig.output
         && matches!(failure_mode, FailureMode::Error)
@@ -1012,7 +986,8 @@ pub(crate) fn lower_extern_fn_signature(
     // FIXME: This feels like a HACK
     synthesize_lifetime_bounds(&mut sig);
 
-    lower_signature_inputs(&mut sig);
+    let inputs = argument::analyze_with_plain_inputs(&sig.inputs, plain_inputs);
+    sig.inputs = inputs.iter().flat_map(lower_signature_input).collect();
     lower_signature_output(&mut sig);
 
     sig.constness = None;
@@ -1028,31 +1003,28 @@ pub(crate) fn lower_abi_fn_signature(
     failure_mode: FailureMode,
     move_fn: bool,
 ) -> syn::Signature {
+    lower_abi_fn_signature_with_plain_inputs(sig, failure_mode, move_fn, &[])
+}
+
+pub(crate) fn lower_abi_fn_signature_with_plain_inputs(
+    sig: syn::Signature,
+    failure_mode: FailureMode,
+    move_fn: bool,
+    plain_inputs: &[Ident],
+) -> syn::Signature {
     let mut sig = sig;
     explicitize_signature_lifetimes(&mut sig);
-    let wrapped_output = fn_return_ty(&sig)
-        .filter(|ty| !is_implicitly_by_value(ty))
+    let borrowed_output = fn_return_ty(&sig)
+        .filter(|ty| ownership_mode(ty, move_fn) == OwnershipMode::Borrow)
         .cloned();
-    let mut sig = lower_extern_fn_signature(sig, failure_mode);
-    if let Some(ty) = wrapped_output {
-        sig.output = if move_fn {
-            parse_quote!(-> co3::borrow::CMoved<#ty>)
-        } else {
-            parse_quote!(-> co3::borrow::CBorrowed<#ty>)
-        };
+    let mut sig = lower_extern_fn_signature_with_plain_inputs(sig, failure_mode, plain_inputs);
+    if let Some(ty) = borrowed_output {
+        sig.output = parse_quote!(-> co3::borrow::CBorrowed<#ty>);
     }
     sig
 }
 
-fn lower_signature_inputs(sig: &mut syn::Signature) {
-    sig.inputs = core::mem::take(&mut sig.inputs)
-        .into_iter()
-        .flat_map(lower_signature_input)
-        .collect();
-}
-
-fn lower_signature_input(input: syn::FnArg) -> Vec<syn::FnArg> {
-    let input = Argument::new(&input);
+fn lower_signature_input(input: &Argument<'_>) -> Vec<syn::FnArg> {
     let pat = &input.pat;
     let cfg = input.cfg().collect::<Vec<_>>();
     let ffi_ty = match &input.unpack {
@@ -1393,6 +1365,7 @@ pub(crate) fn is_implicitly_by_value(ty: &Type) -> bool {
                         | Kind::Str
                         | Kind::CStr
                         | Kind::NonNull
+                        | Kind::MaybeUninit
                         | Kind::PhantomData => {}
                         Kind::String | Kind::CString => self.by_value = self.shared,
                         Kind::Box | Kind::Vec if !self.shared => self.by_value = false,
@@ -1405,7 +1378,6 @@ pub(crate) fn is_implicitly_by_value(ty: &Type) -> bool {
                         | Kind::Option
                         | Kind::Result
                         | Kind::ManuallyDrop
-                        | Kind::MaybeUninit
                         | Kind::NonZero
                         | Kind::Tuple => {
                             syn::visit::visit_type_path(self, path);
@@ -1733,6 +1705,10 @@ mod tests {
             parse_quote!(&[u8]),
             parse_quote!(Result<u32, bool>),
             parse_quote!(core::marker::PhantomData<Box<T>>),
+            parse_quote!(MaybeUninit<Box<T>>),
+            parse_quote!(core::mem::MaybeUninit<T>),
+            parse_quote!(&mut MaybeUninit<String>),
+            parse_quote!(Option<MaybeUninit<T>>),
         ];
 
         for ty in by_value {

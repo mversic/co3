@@ -293,7 +293,7 @@ fn gen_regular_drop_import_body<const DISPATCHED: bool>(
         .collect::<Vec<_>>();
     let forwarded_args = arg_names.iter().map(|name| {
         if name == "__co3_self" {
-            quote!(co3::borrow::CMoved(core::mem::ManuallyDrop::into_inner(#name)))
+            quote!(core::mem::ManuallyDrop::into_inner(#name))
         } else {
             quote!(#name)
         }
@@ -342,6 +342,7 @@ fn gen_regular_drop_import_body<const DISPATCHED: bool>(
             };
         }),
         Some(input_convert),
+        &[],
     )
 }
 
@@ -367,6 +368,7 @@ pub(crate) fn gen_impl_wrapper_body<const DISPATCHED: bool>(
         erase_declared_receiver,
         self_binding,
         None,
+        &[],
     )
 }
 
@@ -376,6 +378,7 @@ pub(crate) fn gen_owned_drop_wrapper_body<const DISPATCHED: bool>(
     self_ty: &syn::Type,
     generics: &syn::Generics,
     erase_declared_receiver: bool,
+    plain_inputs: &[syn::Ident],
 ) -> TokenStream {
     let mut pointer_item = item.clone();
     ffi_fn::normalize_fn_signature(&mut pointer_item.sig, Some(self_ty));
@@ -389,6 +392,7 @@ pub(crate) fn gen_owned_drop_wrapper_body<const DISPATCHED: bool>(
         erase_declared_receiver,
         Some(quote! { let __co3_self = self.0.as_ptr(); }),
         None,
+        plain_inputs,
     )
 }
 
@@ -400,6 +404,7 @@ fn gen_impl_wrapper_body_with_self_binding<const DISPATCHED: bool>(
     erase_declared_receiver: bool,
     self_binding: Option<TokenStream>,
     input_convert: Option<TokenStream>,
+    plain_inputs: &[syn::Ident],
 ) -> TokenStream {
     let id_assignments = item.sig.inputs.iter().filter_map(|input| {
         let FnArg::Typed(syn::PatType { pat, ty, .. }) = input else {
@@ -413,7 +418,7 @@ fn gen_impl_wrapper_body_with_self_binding<const DISPATCHED: bool>(
 
         Some(quote! { let #pat = <#tag_ty as co3::tag::Tagged>::TAG; })
     });
-    let wrapper_body = if let Some(input_convert) = input_convert {
+    let wrapper_body = {
         let name = &item.sig.ident;
         gen_wrapper_body_with_input_conversion::<DISPATCHED>(
             failure_mode,
@@ -424,17 +429,9 @@ fn gen_impl_wrapper_body_with_self_binding<const DISPATCHED: bool>(
             &item.sig,
             WrapperBodyCode {
                 callee: quote!(#name),
-                input_convert: Some(input_convert),
+                input_convert,
+                plain_inputs: plain_inputs.to_vec(),
             },
-        )
-    } else {
-        gen_wrapper_body::<DISPATCHED>(
-            failure_mode,
-            item.attrs.iter().any(is_by_val_attr),
-            Some(self_ty),
-            Some(generics),
-            erase_declared_receiver,
-            &item.sig,
         )
     };
     let co3 = co3_path();
@@ -506,6 +503,7 @@ pub(crate) fn gen_wrapper_body_with_callee<const DISPATCHED: bool>(
         WrapperBodyCode {
             callee,
             input_convert: None,
+            plain_inputs: Vec::new(),
         },
     )
 }
@@ -513,6 +511,7 @@ pub(crate) fn gen_wrapper_body_with_callee<const DISPATCHED: bool>(
 struct WrapperBodyCode {
     callee: TokenStream,
     input_convert: Option<TokenStream>,
+    plain_inputs: Vec<syn::Ident>,
 }
 
 fn gen_wrapper_body_with_input_conversion<const DISPATCHED: bool>(
@@ -527,8 +526,9 @@ fn gen_wrapper_body_with_input_conversion<const DISPATCHED: bool>(
     let WrapperBodyCode {
         callee,
         input_convert,
+        plain_inputs,
     } = code;
-    let inputs = argument::analyze(&sig.inputs);
+    let inputs = argument::analyze_with_plain_inputs(&sig.inputs, &plain_inputs);
     let input_convert = input_convert.unwrap_or_else(|| gen_input_conversion_stmts(&inputs));
     let tag_erase_stmts = if DISPATCHED {
         self_ty
@@ -565,17 +565,12 @@ fn gen_wrapper_body_with_input_conversion<const DISPATCHED: bool>(
         } else if ffi_fn::ownership_mode(output_ty, fn_by_val)
             == crate::generate::OwnershipMode::ByValue
         {
-            let payload = if ffi_fn::is_implicitly_by_value(output_ty) {
-                quote!(__co3_out)
-            } else {
-                quote!(__co3_out.0)
-            };
             quote! {
-                let __co3_out: Option<#output_ty> = unsafe { co3::decode(#payload) };
+                let __co3_out: Option<#output_ty> = unsafe { co3::decode(__co3_out) };
             }
         } else {
             quote! {
-                let __co3_out: Option<#output_ty> = unsafe { <#output_ty as co3::borrow::BorrowedDecode<'_>>::decode(__co3_out.0) };
+                let __co3_out: Option<#output_ty> = unsafe { co3::borrow::decode(__co3_out) };
             }
         };
 
@@ -624,7 +619,7 @@ fn gen_single_unpack_input_stmts(
         };
         let arg_name = input.name();
         let unpack_ty = input.conversion_ty();
-        let payload = if input.is_wrapped() {
+        let payload = if input.is_borrowed() && !input.identity {
             quote!(#arg_name.0)
         } else {
             quote!(#arg_name)
@@ -766,9 +761,7 @@ fn gen_input_conversion_stmts(inputs: &[Argument<'_>]) -> TokenStream {
             } else {
                 quote! {
                     #(#cfg)*
-                    let #arg_name = co3::borrow::CBorrowed::<#ty>(
-                        <#ty as co3::borrow::BorrowedEncode>::encode(#arg_name, &mut #owner_name)
-                    );
+                    let #arg_name = co3::borrow::encode::<#ty>(#arg_name, &mut #owner_name);
                 }
             };
             quote! {
@@ -787,11 +780,7 @@ fn gen_input_conversion_stmts(inputs: &[Argument<'_>]) -> TokenStream {
         } else {
             quote!(#(#cfg)* let #arg_name = co3::encode(#arg_name);)
         };
-        let wrap = (input.is_wrapped() && !input.is_borrowed()).then(|| {
-            let ty = &input.ty;
-            quote!(#(#cfg)* let #arg_name = co3::borrow::CMoved::<#ty>(#arg_name);)
-        });
-        quote!(#encode #wrap)
+        quote!(#encode)
     });
     quote!(#(#stmts)*)
 }

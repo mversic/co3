@@ -698,7 +698,7 @@ mod tests {
     #[test]
     fn alias_fields_preserve_borrowed_types_and_values() {
         let view = AliasFields(c_int::new(3), 4_u32, c_long::new(5));
-        let borrowed_lowered = co3::borrow::BorrowedEncode::encode(view, &mut Default::default());
+        let borrowed_lowered = co3::borrow::encode(view, &mut Default::default()).0;
         let _: c_int = borrowed_lowered.0;
         let _: c_long = borrowed_lowered.2;
         let view = AliasFields(c_int::new(3), 4_u32, c_long::new(5));
@@ -1188,13 +1188,9 @@ mod tests {
         let _: Option<CallbackBorrowedReturn> = None;
         let _: BorrowedRustValue = borrow_rust_value_raw;
         let _: OwnedTransform = return_owned_raw;
-        let result = unsafe {
-            return_owned_raw(co3::borrow::CMoved(co3::encode(Box::new(CallbackValue(
-                42,
-            )))))
-        };
+        let result = unsafe { return_owned_raw(co3::encode(Box::new(CallbackValue(42)))) };
         assert_eq!(
-            unsafe { co3::decode::<Box<CallbackValue>>(result.0) },
+            unsafe { co3::decode::<Box<CallbackValue>>(result) },
             Some(Box::new(CallbackValue(42)))
         );
         fn assert_existing_fn_pointer_impls<T>(_: T) {}
@@ -1202,7 +1198,7 @@ mod tests {
         let raw_value = co3::encode(CallbackRustValue(21));
         let raw_result = unsafe { double_rust_raw(CBorrowed::new(raw_value)) };
         assert_eq!(
-            unsafe { co3::decode::<CallbackRustValue>(raw_result.0) },
+            unsafe { co3::decode::<CallbackRustValue>(raw_result) },
             Some(CallbackRustValue(42))
         );
         let encoded = co3::encode(CallbackRustValue(7));
@@ -1210,7 +1206,7 @@ mod tests {
             CallbackRustValue::scaled_raw(CBorrowed::new(CSoftRef::from_ref(&encoded)), 6)
         };
         assert_eq!(
-            unsafe { co3::decode::<CallbackRustValue>(raw_result.0) },
+            unsafe { co3::decode::<CallbackRustValue>(raw_result) },
             Some(CallbackRustValue(42))
         );
         assert_eq!(
@@ -1607,8 +1603,9 @@ mod tests {
         let _ = accept_raw;
         let _ = borrowed_generic_raw::<u8>;
         let _ = MethodHost::borrowed_generic_raw::<u8>;
-        let _: unsafe extern "C" fn(co3::borrow::CMoved<[u8; 2]>) -> co3::borrow::CMoved<[u8; 2]> =
-            signature_identity_raw::<[u8; 2]>;
+        let _: unsafe extern "C" fn(
+            <[u8; 2] as co3::ReprC>::CType,
+        ) -> <[u8; 2] as co3::ReprC>::CType = signature_identity_raw::<[u8; 2]>;
 
         let value = 7_u8;
         unsafe {
@@ -1814,7 +1811,7 @@ mod tests {
         static_assertions::assert_not_impl_any!(AliasBadArg: ReprC);
         static_assertions::assert_not_impl_any!(AliasBadReturn: ReprC);
 
-        type AliasStringC = co3::borrow::CMoved<String>;
+        type AliasStringC = <String as ReprC>::CType;
         static_assertions::assert_type_eq_all!(
             AliasMoved<String>,
             unsafe extern "C" fn(AliasStringC) -> AliasStringC
@@ -1827,7 +1824,7 @@ mod tests {
             AliasArray<2>,
             unsafe extern "C" fn([u8; 2]) -> [u8; 2]
         );
-        static_assertions::assert_type_eq_all!(AliasCombined<u8, 2>, unsafe extern "C" fn(co3::borrow::CMoved<[u8; 2]>));
+        static_assertions::assert_type_eq_all!(AliasCombined<u8, 2>, unsafe extern "C" fn([u8; 2]));
     }
 
     #[derive(Debug, PartialEq, Eq, RustSpec, ReprC)]
@@ -1881,9 +1878,9 @@ mod tests {
             fn accept(#[unpack(u16)] value: Byte) -> move CustomStatus;
         }
 
-        assert_eq!(decode_status(unsafe { accept_raw(7) }.0), CustomStatus::Ok);
+        assert_eq!(decode_status(unsafe { accept_raw(7) }), CustomStatus::Ok);
         assert_eq!(
-            decode_status(unsafe { accept_raw(256) }.0),
+            decode_status(unsafe { accept_raw(256) }),
             CustomStatus::TrapValue
         );
 

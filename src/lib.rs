@@ -318,14 +318,14 @@
 //! # mod _doctest {
 //! use co3::ffi;
 //!
-//! fn increment(value: (&(u8, u32), u32)) -> u8 {
-//!    value.0.0 + 1
+//! fn increment(value: &(u8, u32)) -> u8 {
+//!    value.0 + 1
 //! }
 //!
 //! ffi! {
 //!    #![unsafe(export("C"))]
 //!
-//!    fn increment(#[soft] value: (&(u8, u32), u32)) -> u8;
+//!    fn increment(#[soft] value: &(u8, u32)) -> u8;
 //! }
 //! # fn main() {}
 //! # }
@@ -486,7 +486,7 @@
 //! # extern "C" fn callback_receiver(_: Callback) {}
 //! #
 //! # #[unsafe(export_name = "doc_register_method_callback")]
-//! # extern "C" fn method_callback_receiver(_: MethodCallback) {}
+//! # extern "C" fn method_callback_receiver<'a>(_: MethodCallback<'a>) {}
 //!
 //! #[derive(RustSpec, ReprC)]
 //! #[repr(transparent)]
@@ -518,12 +518,12 @@
 //!     #![unsafe(extern("C"))]
 //!
 //!     type Callback = raw extern "C" fn(move Box<u8>) -> Value;
-//!     type MethodCallback = raw extern "C" fn(&Value) -> Value;
+//!     type MethodCallback<'a> = raw extern "C" fn(&'a Value) -> Value;
 //!
 //!     #[symbol_name = "doc_register_callback"]
 //!     fn register_callback(callback: Callback);
 //!     #[symbol_name = "doc_register_method_callback"]
-//!     fn register_method_callback(callback: MethodCallback);
+//!     fn register_method_callback<'a>(callback: MethodCallback<'a>);
 //! }
 //!
 //! fn run() {

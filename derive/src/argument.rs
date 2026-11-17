@@ -11,7 +11,6 @@ use syn::{
 
 use crate::{
     ffi_fn,
-    generate::OwnershipMode,
     utils::{cfg_attrs, co3_path, receiver_ty, soft_for_arg},
 };
 
@@ -19,10 +18,29 @@ pub(crate) struct Argument<'a> {
     pub(crate) attrs: &'a [syn::Attribute],
     pub(crate) pat: syn::Pat,
     pub(crate) ty: Type,
-    pub(crate) ownership: OwnershipMode,
+    pub(crate) kind: ValueKind,
+    by_val: bool,
     pub(crate) soft: bool,
     pub(crate) identity: bool,
     pub(crate) unpack: Unpack,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) enum ValueKind {
+    /// Ordinary value conversion without an ownership marker; not a Rust Copy bound.
+    Plain,
+    /// Borrowed conversion by default, or moved conversion when by_val is requested.
+    RequiresMove,
+}
+
+impl ValueKind {
+    pub(crate) fn for_type(ty: &Type) -> Self {
+        if ffi_fn::is_implicitly_by_value(ty) {
+            Self::Plain
+        } else {
+            Self::RequiresMove
+        }
+    }
 }
 
 pub(crate) enum Unpack {
@@ -92,12 +110,13 @@ impl<'a> Argument<'a> {
     }
 
     fn from_parts(attrs: &'a [syn::Attribute], pat: syn::Pat, ty: Type) -> Self {
-        let ownership = ffi_fn::ownership_mode_for_arg(attrs, &ty);
+        let kind = ValueKind::for_type(&ty);
         let unpack = Unpack::resolve(attrs, &ty).expect("validated #[unpack] attribute");
         Self {
             attrs,
             pat,
-            ownership,
+            kind,
+            by_val: attrs.iter().any(ffi_fn::is_by_val_attr),
             soft: soft_for_arg(attrs),
             identity: ffi_fn::is_identity_primitive(&ty),
             ty,
@@ -122,20 +141,7 @@ impl<'a> Argument<'a> {
     }
 
     pub(crate) fn is_borrowed(&self) -> bool {
-        self.ownership == OwnershipMode::Borrow
-    }
-
-    pub(crate) fn is_wrapped(&self) -> bool {
-        !ffi_fn::is_implicitly_by_value(&self.ty)
-    }
-
-    pub(crate) fn wrapper(&self) -> TokenStream {
-        let co3 = co3_path();
-        if self.is_borrowed() {
-            quote!(#co3::borrow::CBorrowed)
-        } else {
-            quote!(#co3::borrow::CMoved)
-        }
+        self.kind == ValueKind::RequiresMove && !self.by_val
     }
 
     /// Import conversion and synchronization must agree on whether a store exists.
@@ -157,11 +163,11 @@ impl<'a> Argument<'a> {
     }
 
     fn with_ownership(&self, ty: &Type) -> Type {
-        if ffi_fn::is_implicitly_by_value(ty) {
+        if !self.is_borrowed() || ffi_fn::is_implicitly_by_value(ty) {
             return ty.clone();
         }
-        let wrapper = self.wrapper();
-        parse_quote!(#wrapper<#ty>)
+        let co3 = co3_path();
+        parse_quote!(#co3::borrow::CBorrowed<#ty>)
     }
 
     pub(crate) fn abi_ty(&self) -> Type {
@@ -169,9 +175,9 @@ impl<'a> Argument<'a> {
             return self.ty.clone();
         }
         let ty = &self.ty;
-        if self.is_wrapped() {
-            let wrapper = self.wrapper();
-            parse_quote!(#wrapper<#ty>)
+        if self.is_borrowed() {
+            let co3 = co3_path();
+            parse_quote!(#co3::borrow::CBorrowed<#ty>)
         } else {
             parse_quote!(<#ty as co3::ReprC>::CType)
         }
@@ -286,13 +292,29 @@ pub(crate) fn analyze<'a>(inputs: impl IntoIterator<Item = &'a FnArg>) -> Vec<Ar
     inputs.into_iter().map(Argument::new).collect()
 }
 
+/// Apply facts established by the use site, such as the Copy contract of tag IDs.
+pub(crate) fn analyze_with_plain_inputs<'a>(
+    inputs: impl IntoIterator<Item = &'a FnArg>,
+    plain_inputs: &[Ident],
+) -> Vec<Argument<'a>> {
+    analyze(inputs)
+        .into_iter()
+        .map(|mut input| {
+            if plain_inputs.contains(input.name()) {
+                input.kind = ValueKind::Plain;
+            }
+            input
+        })
+        .collect()
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
 
     #[test]
-    fn ownership_markers_are_symmetric() {
-        let cases: [(Type, bool); 11] = [
+    fn by_val_selects_ordinary_representation() {
+        let cases: [(Type, bool); 14] = [
             (parse_quote!(u32), false),
             (parse_quote!((u8, u32)), false),
             (parse_quote!(&u32), false),
@@ -304,20 +326,24 @@ mod tests {
             (parse_quote!((Vec<u8>, u32)), true),
             (parse_quote!(Tuple2<u8, u8>), false),
             (parse_quote!(Tuple2<String, u8>), true),
+            (parse_quote!(ManuallyDrop<u8>), false),
+            (parse_quote!(ManuallyDrop<Box<T>>), true),
+            (parse_quote!(MaybeUninit<T>), false),
         ];
         for (ty, wrapped) in cases {
             let borrowed = Argument::from_parts(&[], parse_quote!(value), ty.clone());
             let attrs = [parse_quote!(#[by_val])];
             let moved = Argument::from_parts(&attrs, parse_quote!(value), ty.clone());
-            assert_eq!(borrowed.is_wrapped(), wrapped);
-            assert_eq!(moved.is_wrapped(), wrapped);
+            assert_eq!(borrowed.kind, moved.kind);
+            assert_eq!(borrowed.is_borrowed(), wrapped);
+            assert!(!moved.is_borrowed());
             if wrapped {
                 let co3 = co3_path();
                 assert_eq!(
                     borrowed.abi_ty(),
                     parse_quote!(#co3::borrow::CBorrowed<#ty>)
                 );
-                assert_eq!(moved.abi_ty(), parse_quote!(#co3::borrow::CMoved<#ty>));
+                assert_eq!(moved.abi_ty(), parse_quote!(<#ty as co3::ReprC>::CType));
             } else {
                 assert_eq!(borrowed.abi_ty(), moved.abi_ty());
             }
@@ -325,7 +351,21 @@ mod tests {
         for arity in 1..=12 {
             let args = vec!["u8"; arity].join(", ");
             let ty: Type = syn::parse_str(&format!("Tuple{arity}<{args}>")).unwrap();
-            assert!(!Argument::from_parts(&[], parse_quote!(value), ty).is_wrapped());
+            assert!(!Argument::from_parts(&[], parse_quote!(value), ty).is_borrowed());
         }
+    }
+
+    #[test]
+    fn use_site_classifies_tag_alias_without_changing_other_aliases() {
+        let inputs: [FnArg; 2] = [parse_quote!(id: TagKind), parse_quote!(value: TagKind)];
+        let arguments = analyze_with_plain_inputs(&inputs, &[parse_quote!(id)]);
+        assert_eq!(arguments[0].kind, ValueKind::Plain);
+        assert!(!arguments[0].is_borrowed());
+        assert_eq!(
+            arguments[0].abi_ty(),
+            parse_quote!(<TagKind as co3::ReprC>::CType)
+        );
+        assert_eq!(arguments[1].kind, ValueKind::RequiresMove);
+        assert!(arguments[1].is_borrowed());
     }
 }

@@ -8,8 +8,6 @@ use crate::{
 #[doc(hidden)]
 pub struct PlainCall;
 #[doc(hidden)]
-pub struct MovedCall;
-#[doc(hidden)]
 pub struct BorrowedCall;
 
 #[doc(hidden)]
@@ -23,13 +21,6 @@ impl<T: Encode> CallEncode<T::CType, PlainCall> for T {
     type Store = T::Store;
     fn encode(self, store: &mut Self::Store, _: &mut Self::Owner) -> T::CType {
         crate::soft_encode(self, store)
-    }
-}
-impl<T: Encode> CallEncode<crate::borrow::CMoved<T>, MovedCall> for T {
-    type Owner = ();
-    type Store = T::Store;
-    fn encode(self, store: &mut Self::Store, _: &mut Self::Owner) -> crate::borrow::CMoved<T> {
-        crate::borrow::CMoved(crate::soft_encode(self, store))
     }
 }
 
@@ -58,19 +49,12 @@ impl<'d, T: Decode<'d, Store: EmptyStore> + 'd> CallDecode<'d, T::CType, PlainCa
         unsafe { crate::decode(source) }
     }
 }
-impl<'d, T: Decode<'d, Store: EmptyStore> + 'd> CallDecode<'d, crate::borrow::CMoved<T>, MovedCall>
-    for T
-{
-    unsafe fn decode(source: crate::borrow::CMoved<T>) -> Option<Self> {
-        unsafe { crate::decode(source.0) }
-    }
-}
 
 impl<'d, T: crate::borrow::BorrowedDecode<'d, Store: EmptyStore> + 'd>
     CallDecode<'d, crate::borrow::CBorrowed<T>, BorrowedCall> for T
 {
     unsafe fn decode(source: crate::borrow::CBorrowed<T>) -> Option<Self> {
-        unsafe { crate::borrow::BorrowedDecode::decode(source.0) }
+        unsafe { crate::borrow::decode(source) }
     }
 }
 
@@ -88,7 +72,7 @@ macro_rules! define_fn_trait {
             /// Calls the function with Rust arguments.
             ///
             /// Encodes arguments, calls the function, synchronizes conversion stores, and
-            /// decodes the result. Ownership markers select moved or borrowed conversion;
+            /// decodes the result. `CBorrowed` selects borrowed conversion; other carriers use ordinary conversion;
             /// borrowed argument owners remain alive until result decoding finishes.
             ///
             /// # Safety

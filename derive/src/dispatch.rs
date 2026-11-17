@@ -12,9 +12,8 @@ use crate::{
     argument::{self, Argument, Unpack},
     ffi_fn::{
         self, emit_extern_definition, gen_definition_body, gen_failure_panic,
-        gen_input_decode_stmts, gen_static_fn_signature_drift_check, gen_store_sync_stmts,
-        gen_sync_check, gen_sync_error, gen_unknown_tag_error, item_fn_output_type, merge_generics,
-        normalize_fn_signature, strip_dispatch_params,
+        gen_static_fn_signature_drift_check, gen_unknown_tag_error, item_fn_output_type,
+        merge_generics, normalize_fn_signature, strip_dispatch_params,
     },
     parse::FailureMode,
     utils::{
@@ -477,22 +476,22 @@ fn synthesize_dispatch_export_fn(
     if drop_impl && !opaque_drop {
         ffi_fn::drop_owned_receiver(&mut sig, None);
     }
-    let selector_inputs = dispatch_selector_inputs(&sig.inputs)
-        .filter_map(|(_, pat, tag_id)| {
-            let tag_id_ty = resolve_tag_id_type(generics, receiver, tag_id)?;
-            Some((pat, tag_id_ty))
-        })
-        .collect::<Vec<_>>();
+    let selector_inputs = resolved_tag_selector_inputs(generics, receiver, &sig);
     let selector_names = selector_inputs
         .iter()
-        .map(|(pat, _)| pat)
+        .map(|(pat, _)| ffi_fn::item_fn_input_ident(pat).clone())
         .collect::<Vec<_>>();
     let deny_unreachable =
         (!selector_names.is_empty()).then(|| quote!(#[deny(unreachable_patterns)]));
     let selector_inputs = selector_inputs
         .iter()
-        .map(|(pat, id_ty)| parse_quote!(#[by_val] #pat: #id_ty))
+        .map(|(pat, id_ty)| parse_quote!(#pat: #id_ty))
         .collect::<Vec<_>>();
+    let selectors = argument::analyze_with_plain_inputs(&selector_inputs, &selector_names);
+    let decode_selector_stmts = ffi_fn::gen_analyzed_input_decode_stmts(&selectors, failure_mode);
+    let sync_selector_stores = ffi_fn::gen_store_sync_stmts(selectors.len());
+    let selector_sync_check =
+        ffi_fn::gen_sync_check(sync_selector_stores, ffi_fn::gen_sync_error(failure_mode));
 
     let dispatch_arms = synthesize_dispatch_arms(
         &arm_generics,
@@ -507,11 +506,7 @@ fn synthesize_dispatch_export_fn(
         opaque_drop,
     );
 
-    let decode_selector_stmts = gen_input_decode_stmts(&selector_inputs, failure_mode);
-    let sync_selector_stores = gen_store_sync_stmts(selector_inputs.len());
     let unknown_tag = gen_unknown_tag_error(failure_mode);
-    let sync_error = gen_sync_error(failure_mode);
-    let selector_sync_check = gen_sync_check(sync_selector_stores, sync_error);
 
     let fn_body = quote! {{
         #decode_selector_stmts
@@ -530,7 +525,12 @@ fn synthesize_dispatch_export_fn(
 
     erase_dispatch_signature(generics, receiver, &mut sig);
     let borrow_output = ffi_fn::borrows_return(&sig, fn_by_val);
-    let mut lowered_sig = ffi_fn::lower_abi_fn_signature(sig, failure_mode, fn_by_val);
+    let mut lowered_sig = ffi_fn::lower_abi_fn_signature_with_plain_inputs(
+        sig,
+        failure_mode,
+        fn_by_val,
+        &selector_names,
+    );
     if opaque_drop {
         let receiver = lowered_sig
             .inputs
@@ -973,10 +973,10 @@ fn synthesize_dispatch_arms(
                     let encoded_err = if ffi_fn::is_identity_primitive(&concrete_output) {
                         quote!(__co3_arm_err)
                     } else {
-                        ffi_fn::gen_return_encode(
+                        ffi_fn::gen_abi_return_encode(
                             quote!(__co3_arm_err),
-                            &concrete_output,
-                            fn_by_val,
+                            ffi_fn::ownership_mode(&concrete_output, fn_by_val)
+                                == crate::generate::OwnershipMode::Borrow,
                         )
                     };
 
@@ -1113,14 +1113,28 @@ pub(crate) fn erase_dispatch_signature(
     }
 
     for (idx, lowered_ty) in tag_ids {
-        let syn::FnArg::Typed(syn::PatType { attrs, ty, .. }) = &mut sig.inputs[idx] else {
+        let syn::FnArg::Typed(syn::PatType { ty, .. }) = &mut sig.inputs[idx] else {
             continue;
         };
 
-        // A selector remains a value even when its tag type is a named alias.
-        attrs.push(parse_quote!(#[by_val]));
+        // Tag selectors are Copy values; their ABI types are lowered at the dispatch use site.
         **ty = lowered_ty;
     }
+}
+
+pub(crate) fn resolved_tag_selector_inputs(
+    generics: &syn::Generics,
+    receiver: DispatchReceiver<'_>,
+    sig: &syn::Signature,
+) -> Vec<(syn::Pat, syn::Type)> {
+    dispatch_selector_inputs(&sig.inputs)
+        .filter_map(|(_, pat, tag_id)| {
+            Some((
+                pat.clone(),
+                resolve_tag_id_type(generics, receiver, tag_id)?,
+            ))
+        })
+        .collect()
 }
 
 pub(crate) fn gen_tag_erase_stmts(
@@ -1255,10 +1269,8 @@ pub(crate) fn set_token_stream_span(tokens: TokenStream, span: Span) -> TokenStr
 }
 
 fn dispatch_return_type(ty: &syn::Type, fn_by_val: bool) -> syn::Type {
-    if ffi_fn::is_implicitly_by_value(ty) {
+    if ffi_fn::ownership_mode(ty, fn_by_val) == crate::generate::OwnershipMode::ByValue {
         item_fn_output_type(ty)
-    } else if fn_by_val {
-        parse_quote!(co3::borrow::CMoved<#ty>)
     } else {
         parse_quote!(co3::borrow::CBorrowed<#ty>)
     }

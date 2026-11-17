@@ -71,7 +71,63 @@ unsafe impl<T: CFnReturn> CFnReturn for MaybeUninit<T> where
 
 unsafe impl<T: EmptyStore> EmptyStore for MaybeUninit<T> {}
 
-crate::__impl_borrowed_identity!([T] ManuallyDrop<T>);
+const _: () = {
+    use crate::borrow::{BorrowedDecode, BorrowedEncode, BorrowedEncodeUnchecked};
+
+    unsafe impl<T: BorrowedEncodeUnchecked<CType: Sized>> BorrowedEncodeUnchecked for ManuallyDrop<T> {
+        type Owner = T::Owner;
+        type SoftStore = T::SoftStore;
+
+        unsafe fn soft_encode_unchecked<'a>(
+            self,
+            store: &'a mut Self::SoftStore,
+            owner: &'a mut Self::Owner,
+        ) -> Self::CType
+        where
+            Self: 'a,
+        {
+            ManuallyDrop::new(unsafe {
+                T::soft_encode_unchecked(ManuallyDrop::into_inner(self), store, owner)
+            })
+        }
+    }
+
+    unsafe impl<T: BorrowedEncode<CType: Sized>> BorrowedEncode for ManuallyDrop<T> {
+        type Store = T::Store;
+
+        fn soft_encode<'a>(
+            self,
+            store: &'a mut Self::Store,
+            owner: &'a mut Self::Owner,
+        ) -> Self::CType
+        where
+            Self: 'a,
+        {
+            ManuallyDrop::new(T::soft_encode(ManuallyDrop::into_inner(self), store, owner))
+        }
+    }
+
+    unsafe impl<'d, T: BorrowedDecode<'d, CType: Sized>> BorrowedDecode<'d> for ManuallyDrop<T> {
+        type Store = T::Store;
+
+        unsafe fn soft_decode<'a: 'd>(
+            source: Self::CType,
+            store: &'a mut Self::Store,
+        ) -> Option<Self> {
+            unsafe { T::soft_decode(ManuallyDrop::into_inner(source), store) }
+                .map(ManuallyDrop::new)
+        }
+
+        unsafe fn soft_decode_unchecked<'a: 'd>(
+            source: Self::CType,
+            store: &'a mut Self::Store,
+        ) -> Self {
+            ManuallyDrop::new(unsafe {
+                T::soft_decode_unchecked(ManuallyDrop::into_inner(source), store)
+            })
+        }
+    }
+};
 
 impl<T: Encode> Encode for ManuallyDrop<T> where Self: EncodeMove {}
 impl<T: EncodeUnchecked> EncodeUnchecked for ManuallyDrop<T> where Self: EncodeMoveUnchecked {}
@@ -196,6 +252,49 @@ mod tests {
     use static_assertions::assert_not_impl_any;
     #[cfg(feature = "alloc")]
     use static_assertions::assert_type_eq_all;
+
+    #[test]
+    #[cfg(feature = "alloc")]
+    fn manually_drop_borrowed_box_retains_owner_and_decodes_independently() {
+        use crate::borrow::{BorrowedDecode, BorrowedEncode, BorrowedEncodeUnchecked};
+
+        assert_type_eq_all!(
+            <ManuallyDrop<Box<u8>> as BorrowedEncodeUnchecked>::Owner,
+            <Box<u8> as BorrowedEncodeUnchecked>::Owner
+        );
+
+        for unchecked in [false, true] {
+            let value = Box::new(42_u8);
+            let original = core::ptr::from_ref(&*value);
+            let mut owner = Default::default();
+            let mut encode_store = Default::default();
+            let mut unchecked_store = Default::default();
+            let value = ManuallyDrop::new(value);
+            let encoded = if unchecked {
+                unsafe {
+                    BorrowedEncodeUnchecked::soft_encode_unchecked(
+                        value,
+                        &mut unchecked_store,
+                        &mut owner,
+                    )
+                }
+            } else {
+                BorrowedEncode::soft_encode(value, &mut encode_store, &mut owner)
+            };
+            assert_eq!(encoded.as_ptr().cast_const(), original);
+            let mut decode_store = Default::default();
+            let decoded: ManuallyDrop<Box<u8>> = if unchecked {
+                unsafe { BorrowedDecode::soft_decode_unchecked(encoded, &mut decode_store) }
+            } else {
+                unsafe { BorrowedDecode::soft_decode(encoded, &mut decode_store) }.unwrap()
+            };
+            assert_eq!(**decoded, 42);
+            assert_ne!(core::ptr::from_ref(&**decoded), original);
+            drop(ManuallyDrop::into_inner(decoded));
+            // The retained encode owner still owns the original allocation.
+            assert_eq!(unsafe { *original }, 42);
+        }
+    }
 
     #[test]
     #[cfg(feature = "alloc")]

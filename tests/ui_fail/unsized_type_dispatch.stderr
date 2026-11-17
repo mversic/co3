@@ -1,18 +1,18 @@
-error[E0277]: the trait bound `take_export_raw::{constant#1}::Wrapper<[std::ffi::c_void]>: ReprC` is not satisfied
-  --> tests/ui_fail/unsized_type_dispatch.rs:62:36
+error[E0277]: the trait bound `take_export_raw::{constant#1}::Wrapper<[u8]>: ReprC` is not satisfied
+  --> tests/ui_fail/unsized_type_dispatch.rs:28:32
    |
-62 |         impl<dyn(u8) T = [c_void]> Wrapper<T>
-   |                                    ^^^^^^^^^^ unsatisfied trait bound
+28 |         impl<dyn(u8) T = [u8]> Wrapper<T>
+   |                                ^^^^^^^^^^ unsatisfied trait bound
    |
-help: the trait `ReprC` is not implemented for `take_export_raw::{constant#1}::Wrapper<[std::ffi::c_void]>`
-  --> tests/ui_fail/unsized_type_dispatch.rs:59:5
+help: the trait `ReprC` is not implemented for `take_export_raw::{constant#1}::Wrapper<[u8]>`
+  --> tests/ui_fail/unsized_type_dispatch.rs:25:5
    |
-59 | /     ffi! {
-60 | |         #![unsafe(export("C"))]
-61 | |
-62 | |         impl<dyn(u8) T = [c_void]> Wrapper<T>
+25 | /     ffi! {
+26 | |         #![unsafe(export("C"))]
+27 | |
+28 | |         impl<dyn(u8) T = [u8]> Wrapper<T>
 ...  |
-68 | |     }
+34 | |     }
    | |_____^
    = help: the following other types implement trait `ReprC`:
              &'_lšč0 _TŠČ0
@@ -26,26 +26,26 @@ help: the trait `ReprC` is not implemented for `take_export_raw::{constant#1}::W
            and $N others
    = note: this error originates in the macro `_impls` which comes from the expansion of the macro `ffi` (in Nightly builds, run with -Z macro-backtrace for more info)
 
-error[E0277]: the trait bound `take_export_raw::{constant#1}::Wrapper<[std::ffi::c_void]>: ReprC` is not satisfied
-  --> tests/ui_fail/unsized_type_dispatch.rs:59:5
+error[E0277]: the trait bound `take_export_raw::{constant#1}::Wrapper<[u8]>: ReprC` is not satisfied
+  --> tests/ui_fail/unsized_type_dispatch.rs:25:5
    |
-59 | /     ffi! {
-60 | |         #![unsafe(export("C"))]
-61 | |
-62 | |         impl<dyn(u8) T = [c_void]> Wrapper<T>
+25 | /     ffi! {
+26 | |         #![unsafe(export("C"))]
+27 | |
+28 | |         impl<dyn(u8) T = [u8]> Wrapper<T>
 ...  |
-68 | |     }
+34 | |     }
    | |_____^ unsatisfied trait bound
    |
-help: the trait `ReprC` is not implemented for `take_export_raw::{constant#1}::Wrapper<[std::ffi::c_void]>`
-  --> tests/ui_fail/unsized_type_dispatch.rs:59:5
+help: the trait `ReprC` is not implemented for `take_export_raw::{constant#1}::Wrapper<[u8]>`
+  --> tests/ui_fail/unsized_type_dispatch.rs:25:5
    |
-59 | /     ffi! {
-60 | |         #![unsafe(export("C"))]
-61 | |
-62 | |         impl<dyn(u8) T = [c_void]> Wrapper<T>
+25 | /     ffi! {
+26 | |         #![unsafe(export("C"))]
+27 | |
+28 | |         impl<dyn(u8) T = [u8]> Wrapper<T>
 ...  |
-68 | |     }
+34 | |     }
    | |_____^
    = help: the following other types implement trait `ReprC`:
              &'_lšč0 _TŠČ0
@@ -59,49 +59,49 @@ help: the trait `ReprC` is not implemented for `take_export_raw::{constant#1}::W
            and $N others
    = note: this error originates in the macro `_impls` which comes from the expansion of the macro `ffi` (in Nightly builds, run with -Z macro-backtrace for more info)
 
-error[E0277]: the size for values of type `str` cannot be known at compilation time
-  --> tests/ui_fail/unsized_type_dispatch.rs:71:1
+error[E0277]: the size for values of type `[u8]` cannot be known at compilation time
+  --> tests/ui_fail/unsized_type_dispatch.rs:37:1
    |
-71 | / ffi! {
-72 | |     #![unsafe(extern("C"))]
-73 | |
-74 | |     #![symbol_prefix = "kita"]
+37 | / ffi! {
+38 | |     #![unsafe(extern("C"))]
+39 | |
+40 | |     #![symbol_prefix = "kita"]
 ...  |
-82 | | }
+48 | | }
    | |_^ doesn't have a size known at compile-time
    |
-   = help: within `Unsized<str>`, the trait `std::marker::Sized` is not implemented for `str`
-note: required because it appears within the type `Unsized<str>`
-  --> tests/ui_fail/unsized_type_dispatch.rs:8:8
+   = help: within `Unsized<[u8]>`, the trait `std::marker::Sized` is not implemented for `[u8]`
+note: required because it appears within the type `Unsized<[u8]>`
+  --> tests/ui_fail/unsized_type_dispatch.rs:6:8
    |
- 8 | struct Unsized<T: ?Sized>(T);
+ 6 | struct Unsized<T: ?Sized>(T);
    |        ^^^^^^^
 note: required by an implicit `Sized` bound in `__Co3DispatchParams`
-  --> tests/ui_fail/unsized_type_dispatch.rs:76:18
+  --> tests/ui_fail/unsized_type_dispatch.rs:42:18
    |
-76 |     impl<dyn(u8) T = [c_void]> Wrapper<T>
+42 |     impl<dyn(u8) T = [u8]> Wrapper<T>
    |                  ^ required by the implicit `Sized` requirement on this type parameter in `__Co3DispatchParams`
    = note: this error originates in the macro `ffi` (in Nightly builds, run with -Z macro-backtrace for more info)
 help: consider relaxing the implicit `Sized` restriction
    |
-76 |     impl<dyn(u8) T: ?Sized = [c_void]> Wrapper<T>
+42 |     impl<dyn(u8) T: ?Sized = [u8]> Wrapper<T>
    |                   ++++++++
 
-error[E0277]: the trait bound `_::_::<impl Wrapper<Unsized<str>>>::take::{constant#0}::Wrapper<[std::ffi::c_void]>: ReprC` is not satisfied
-  --> tests/ui_fail/unsized_type_dispatch.rs:76:32
+error[E0277]: the trait bound `_::_::<impl Wrapper<Unsized<[u8]>>>::take::{constant#0}::Wrapper<[u8]>: ReprC` is not satisfied
+  --> tests/ui_fail/unsized_type_dispatch.rs:42:28
    |
-76 |     impl<dyn(u8) T = [c_void]> Wrapper<T>
-   |                                ^^^^^^^^^^ unsatisfied trait bound
+42 |     impl<dyn(u8) T = [u8]> Wrapper<T>
+   |                            ^^^^^^^^^^ unsatisfied trait bound
    |
-help: the trait `ReprC` is not implemented for `_::_::<impl Wrapper<Unsized<str>>>::take::{constant#0}::Wrapper<[std::ffi::c_void]>`
-  --> tests/ui_fail/unsized_type_dispatch.rs:71:1
+help: the trait `ReprC` is not implemented for `_::_::<impl Wrapper<Unsized<[u8]>>>::take::{constant#0}::Wrapper<[u8]>`
+  --> tests/ui_fail/unsized_type_dispatch.rs:37:1
    |
-71 | / ffi! {
-72 | |     #![unsafe(extern("C"))]
-73 | |
-74 | |     #![symbol_prefix = "kita"]
+37 | / ffi! {
+38 | |     #![unsafe(extern("C"))]
+39 | |
+40 | |     #![symbol_prefix = "kita"]
 ...  |
-82 | | }
+48 | | }
    | |_^
    = help: the following other types implement trait `ReprC`:
              &'_lšč0 _TŠČ0
@@ -115,26 +115,26 @@ help: the trait `ReprC` is not implemented for `_::_::<impl Wrapper<Unsized<str>
            and $N others
    = note: this error originates in the macro `_impls` which comes from the expansion of the macro `ffi` (in Nightly builds, run with -Z macro-backtrace for more info)
 
-error[E0277]: the trait bound `_::_::<impl Wrapper<Unsized<str>>>::take::{constant#0}::Wrapper<[std::ffi::c_void]>: ReprC` is not satisfied
-  --> tests/ui_fail/unsized_type_dispatch.rs:71:1
+error[E0277]: the trait bound `_::_::<impl Wrapper<Unsized<[u8]>>>::take::{constant#0}::Wrapper<[u8]>: ReprC` is not satisfied
+  --> tests/ui_fail/unsized_type_dispatch.rs:37:1
    |
-71 | / ffi! {
-72 | |     #![unsafe(extern("C"))]
-73 | |
-74 | |     #![symbol_prefix = "kita"]
+37 | / ffi! {
+38 | |     #![unsafe(extern("C"))]
+39 | |
+40 | |     #![symbol_prefix = "kita"]
 ...  |
-82 | | }
+48 | | }
    | |_^ unsatisfied trait bound
    |
-help: the trait `ReprC` is not implemented for `_::_::<impl Wrapper<Unsized<str>>>::take::{constant#0}::Wrapper<[std::ffi::c_void]>`
-  --> tests/ui_fail/unsized_type_dispatch.rs:71:1
+help: the trait `ReprC` is not implemented for `_::_::<impl Wrapper<Unsized<[u8]>>>::take::{constant#0}::Wrapper<[u8]>`
+  --> tests/ui_fail/unsized_type_dispatch.rs:37:1
    |
-71 | / ffi! {
-72 | |     #![unsafe(extern("C"))]
-73 | |
-74 | |     #![symbol_prefix = "kita"]
+37 | / ffi! {
+38 | |     #![unsafe(extern("C"))]
+39 | |
+40 | |     #![symbol_prefix = "kita"]
 ...  |
-82 | | }
+48 | | }
    | |_^
    = help: the following other types implement trait `ReprC`:
              &'_lšč0 _TŠČ0

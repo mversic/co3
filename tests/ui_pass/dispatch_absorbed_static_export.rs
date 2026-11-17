@@ -2,6 +2,8 @@ use core::marker::PhantomData;
 
 use co3::{ffi, rust_spec::RustSpec};
 
+type TagKind = u8;
+
 trait Mixed<T> {
     fn hidden(&self);
     fn exposed(&self, value: &T);
@@ -36,7 +38,7 @@ unsafe impl co3::tag::Tagged for Resource<u16> {
 ffi! {
     #![unsafe(export("C"))]
 
-    #[tag(u8)]
+    #[tag(TagKind)]
     type Resource<T>;
 
     impl<T> Drop for dyn Resource<T>
