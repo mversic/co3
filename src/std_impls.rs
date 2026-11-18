@@ -147,7 +147,7 @@ mod tests {
 
         #[cfg(feature = "alloc")]
         assert_impl_all!(&mut str:
-            Niche<CType = crate::wide::CSoftWideRefMut<str, true>>,
+            Niche<CType = crate::wide::CSoftWideRefMut<str>>,
             Decode<'static>,
             Encode,
         );
@@ -171,7 +171,7 @@ mod tests {
 
         let mut invalid = [0xff];
         let source = unsafe {
-            crate::wide::CSoftWideRefMut::<_, true>::from_raw_parts_mut(
+            crate::wide::CSoftWideRefMut::<_>::from_raw_parts_mut(
                 invalid.as_mut_ptr(),
                 invalid.len(),
             )

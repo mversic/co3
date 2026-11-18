@@ -121,7 +121,7 @@ fn maybe_uninit_cells_allow_shared_validation_without_inspecting_contents() {
     let representation = core::mem::MaybeUninit::<UnsafeCell<co3::num::NonZero<u8>>>::new(
         core::cell::UnsafeCell::new(unsafe { core::mem::zeroed() }),
     );
-    let encoded = unsafe { co3::reference::CRef::from_raw(core::ptr::from_ref(&representation)) };
+    let encoded = unsafe { co3::reference::Ref::from_raw(core::ptr::from_ref(&representation)) };
     assert!(unsafe { co3::decode::<&UninitCell>(encoded) }.is_some());
 }
 
@@ -162,11 +162,9 @@ fn robust_cells_do_not_hide_other_invalid_fields() {
             core::cell::UnsafeCell::new(7),
         )
     };
-    let encoded = unsafe { co3::reference::CRef::from_raw(core::ptr::from_ref(&invalid)) };
+    let encoded = unsafe { co3::reference::Ref::from_raw(core::ptr::from_ref(&invalid)) };
     assert!(unsafe { co3::decode::<&Mixed<UnsafeCell<u8>>>(encoded) }.is_none());
-    let encoded = unsafe {
-        co3::wide::CWideRef::from_raw_parts(core::ptr::from_ref(&invalid), 1)
-    };
+    let encoded = unsafe { co3::wide::CWideRef::from_raw_parts(core::ptr::from_ref(&invalid), 1) };
     assert!(unsafe { co3::decode::<&[Mixed<UnsafeCell<u8>>]>(encoded) }.is_none());
 }
 
@@ -177,7 +175,7 @@ fn shared_plain_data_and_exclusive_cells_still_decode() {
     let decoded = unsafe { co3::decode::<&Box<u8>>(encoded) }.unwrap();
     assert_eq!(**decoded, 7);
 
-    let source = co3::boxed::CBox::from_box(Box::new(core::cell::UnsafeCell::new(
+    let source = co3::boxed::Box::from_box(Box::new(core::cell::UnsafeCell::new(
         co3::num::NonZero(7_u8),
     )));
     let decoded = unsafe { co3::decode::<Box<UnsafeCell<NonZeroU8>>>(source) }.unwrap();

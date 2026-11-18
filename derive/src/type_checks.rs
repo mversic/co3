@@ -181,6 +181,9 @@ impl<'ast> Visit<'ast> for TypeChecks {
                     "`NonZero` must resolve to `core::num::NonZero` or `co3::num::NonZero`"
                         .to_owned()
                 }
+                crate::known_type::Kind::Box if name == "Box" => {
+                    "`Box` must resolve to `co3::boxed::RustBox` or `co3::boxed::Box`".to_owned()
+                }
                 _ => format!("`{name}` must resolve to `{}`", known.canonical_name),
             };
             self.add(
@@ -221,7 +224,9 @@ mod tests {
             )
         );
         assert!(checks.contains("`u32` must resolve to `core::primitive::u32`"));
-        assert!(checks.contains("`Box` must resolve to `co3::boxed::Box`"));
+        assert!(
+            checks.contains("`Box` must resolve to `co3::boxed::RustBox` or `co3::boxed::Box`")
+        );
         assert!(checks.contains("core :: mem :: MaybeUninit < () >"));
         assert!(checks.contains("`MaybeUninit` must resolve to `core::mem::MaybeUninit`"));
         assert!(!checks.contains("check :: < T >"));

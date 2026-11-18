@@ -1,5 +1,7 @@
 use co3::{
-    ReprC, ffi,
+    ReprC,
+    boxed::RustBox,
+    ffi,
     ffi::{c_int, c_long},
     niche::Niche,
     raw,
@@ -166,31 +168,41 @@ fn lowered_aggregates_use_codecs_without_conversion_traits() {
 #[test]
 fn safe_carrier_constructors_accept_lowered_storage() {
     use co3::{
-        boxed::CBox,
-        reference::{CSoftRef, CSoftRefMut},
+        boxed::Box,
+        reference::{SoftRef, SoftRefMut},
         wide::{CSoftWideRef, CSoftWideRefMut, CWideBox},
     };
 
-    let boxed = CBox::from_box(Box::new(9_u8));
-    let borrowed = unsafe { CSoftRef::<u8>::from_raw(boxed.as_ptr()) };
+    let boxed = Box::from_box(RustBox::new(9_u8));
+    let borrowed = unsafe { SoftRef::<u8>::from_raw(boxed.as_ptr()) };
     assert_eq!(borrowed.as_ptr(), boxed.as_ptr());
-    assert_eq!(*unsafe { co3::decode::<Box<u8>>(boxed) }.unwrap(), 9);
+    assert_eq!(*unsafe { co3::decode::<RustBox<u8>>(boxed) }.unwrap(), 9);
 
     let value = 8_u8;
-    assert_eq!(co3::reference::CRef::from_ref(&value), co3::encode(&value));
+    assert_eq!(co3::reference::Ref::from_ref(&value), co3::encode(&value));
     assert!(co3::encode(None::<&u8>).payload().as_ptr().is_null());
 
-    let raw = Box::into_raw(Box::new(10_u8));
-    let boxed = unsafe { CBox::from_non_null(core::ptr::NonNull::new(raw).unwrap()) };
-    assert_eq!(*unsafe { co3::decode::<Box<u8>>(boxed) }.unwrap(), 10);
+    let raw = RustBox::into_raw(RustBox::new(10_u8));
+    let boxed = unsafe { Box::from_non_null(core::ptr::NonNull::new(raw).unwrap()) };
+    assert_eq!(*unsafe { co3::decode::<RustBox<u8>>(boxed) }.unwrap(), 10);
 
-    let boxed_slice = CWideBox::from_box(Box::<[u8]>::from([4_u8, 5]));
+    let boxed_slice = CWideBox::from_box(RustBox::<[u8]>::from([4_u8, 5]));
     assert_eq!(
-        &*unsafe { co3::decode::<Box<[u8]>>(boxed_slice) }.unwrap(),
+        &*unsafe { co3::decode::<RustBox<[u8]>>(boxed_slice) }.unwrap(),
         &[4, 5]
     );
-    assert!(co3::encode(None::<Box<u8>>).payload().as_ptr().is_null());
-    assert!(co3::encode(None::<Box<[u8]>>).payload().as_ptr().is_null());
+    assert!(
+        co3::encode(None::<RustBox<u8>>)
+            .payload()
+            .as_ptr()
+            .is_null()
+    );
+    assert!(
+        co3::encode(None::<RustBox<[u8]>>)
+            .payload()
+            .as_ptr()
+            .is_null()
+    );
     assert!(co3::encode(None::<&[u8]>).payload().as_ptr().is_null());
     assert!(
         co3::soft_encode(None::<&mut u8>, &mut Default::default())
@@ -198,14 +210,14 @@ fn safe_carrier_constructors_accept_lowered_storage() {
             .as_ptr()
             .is_null()
     );
-    let _: CSoftWideRefMut<[u8], true> = CSoftWideRefMut::null();
+    let _: CSoftWideRefMut<[u8]> = CSoftWideRefMut::null();
     assert!(co3::encode(None::<String>).payload().as_ptr().is_null());
 
-    let bytes: Box<[u8]> = Box::from("hello".as_bytes());
+    let bytes: RustBox<[u8]> = RustBox::from("hello".as_bytes());
     let utf8 = co3::utf8::Utf8String(co3::vec::CVec::from_vec(bytes.into_vec()));
     assert_eq!(unsafe { co3::decode::<String>(utf8) }.unwrap(), "hello");
 
-    let bytes: Box<[u8]> = Box::from("world".as_bytes());
+    let bytes: RustBox<[u8]> = RustBox::from("world".as_bytes());
     let len = bytes.len();
     let utf8 = co3::utf8::Utf8String(co3::vec::CVec::from_vec(bytes.into_vec()));
     assert_eq!(utf8.len(), len);
@@ -218,6 +230,29 @@ fn safe_carrier_constructors_accept_lowered_storage() {
         co3::encode("hello")
     );
     let mut bytes = [3_u8, 4];
-    let _slice_mut = CSoftWideRefMut::<[u8], true>::from_mut(&mut bytes[..]);
-    let _ref_mut = CSoftRefMut::<u8, true>::from_mut(&mut bytes[0]);
+    let _slice_mut = CSoftWideRefMut::<[u8]>::from_mut(&mut bytes[..]);
+    let _ref_mut = SoftRefMut::<u8>::from_mut(&mut bytes[0]);
+}
+
+fn round_trip_native_box(value: RustBox<bool>) -> RustBox<bool> {
+    value
+}
+
+fn pass_abi_box(
+    value: co3::boxed::Box<co3::primitives::Bool>,
+) -> co3::boxed::Box<co3::primitives::Bool> {
+    value
+}
+
+co3::raw! {
+    fn round_trip_native_box(value: move RustBox<bool>) -> move RustBox<bool>;
+    fn pass_abi_box(value: move co3::boxed::Box<co3::primitives::Bool>) -> move co3::boxed::Box<co3::primitives::Bool>;
+}
+
+#[test]
+fn raw_functions_distinguish_native_and_abi_boxes() {
+    let carrier = co3::encode(RustBox::new(true));
+    let carrier = unsafe { pass_abi_box_raw(carrier) };
+    let carrier = unsafe { round_trip_native_box_raw(carrier) };
+    assert!(*unsafe { co3::decode::<RustBox<bool>>(carrier) }.unwrap());
 }

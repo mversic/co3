@@ -1,5 +1,10 @@
 use co3::{ReprC, rust_spec::RustSpec};
 
+// Even an inapplicable non-robust mutable encoder branch must be well-formed.
+// This ordinary Rust-layout type previously overflowed while resolving CType.
+#[derive(RustSpec, ReprC)]
+struct Native(u32);
+
 #[derive(RustSpec, ReprC)]
 struct UninitField(core::mem::MaybeUninit<u8>);
 
@@ -13,6 +18,7 @@ static_assertions::assert_not_impl_any!(<UninitField as ReprC>::CType: PartialEq
 static_assertions::assert_not_impl_any!(<UninitVariant as ReprC>::CType: PartialEq);
 
 fn main() {
+    assert_eq!(Native(7).0, 7);
     validation::check();
 }
 

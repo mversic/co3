@@ -170,11 +170,11 @@ fn result_niche_carriers_distinguish_arms() {
 
     assert_eq!(
         size_of::<CResultOk<Box<u32>, ()>>(),
-        size_of::<co3::boxed::CBox<u32>>()
+        size_of::<co3::boxed::Box<u32>>()
     );
     assert_eq!(
         align_of::<CResultErr<(), &u32>>(),
-        align_of::<co3::reference::CSoftRef<u32>>()
+        align_of::<co3::reference::SoftRef<u32>>()
     );
     assert_impl_all!(CResultOk<Box<u32>, ()>: CType, CFnArg, CFnReturn);
     assert_impl_all!(CResultErr<(), &u32>: CType, CFnArg, CFnReturn);
@@ -204,11 +204,11 @@ fn optional_preserves_carrier_abi() {
 
     assert_eq!(
         size_of::<co3::option::COptionSome<Box<u32>>>(),
-        size_of::<co3::boxed::CBox<u32>>()
+        size_of::<co3::boxed::Box<u32>>()
     );
     assert_eq!(
         align_of::<co3::option::COptionSome<Box<u32>>>(),
-        align_of::<co3::boxed::CBox<u32>>()
+        align_of::<co3::boxed::Box<u32>>()
     );
     assert_impl_all!(co3::option::COptionSome<Box<u32>>: CType, CFnArg, CFnReturn);
 

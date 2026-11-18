@@ -132,10 +132,10 @@ pub(crate) fn recognize_path(path: &TypePath) -> Option<KnownType<'_>> {
             "core::num::NonZero".into(),
             1,
         ),
-        "Box" => (
+        "Box" | "RustBox" => (
             Kind::Box,
-            parse_quote!(co3::boxed::Box<()>),
-            "co3::boxed::Box".into(),
+            parse_quote!(co3::boxed::RustBox<()>),
+            "co3::boxed::RustBox".into(),
             1,
         ),
         "ManuallyDrop" => (
@@ -199,7 +199,8 @@ pub(crate) fn recognize_path(path: &TypePath) -> Option<KnownType<'_>> {
         Kind::Vec => &["alloc::vec", "std::vec", "co3::vec"],
         Kind::Result => &["core::result", "std::result", "co3::result"],
         Kind::NonZero => &["core::num", "std::num", "co3::num"],
-        Kind::Box => &["alloc::boxed", "std::boxed", "co3::boxed"],
+        Kind::Box if name == "RustBox" => &["co3::boxed"],
+        Kind::Box => &["alloc::boxed", "std::boxed"],
         Kind::MaybeUninit | Kind::ManuallyDrop => &["core::mem", "std::mem"],
         Kind::Cell | Kind::UnsafeCell => &["core::cell", "std::cell"],
         Kind::NonNull => &["core::ptr", "std::ptr"],
@@ -247,6 +248,7 @@ pub(crate) fn recognize_path(path: &TypePath) -> Option<KnownType<'_>> {
             Kind::Vec => Some(parse_quote!(co3::vec::Vec<()>)),
             Kind::Result => Some(parse_quote!(co3::result::Result<(), ()>)),
             Kind::NonZero => Some(parse_quote!(co3::num::NonZero<u8>)),
+            Kind::Box if name == "Box" => Some(parse_quote!(co3::boxed::Box<()>)),
             _ => None,
         },
         canonical_name,
@@ -276,14 +278,17 @@ mod tests {
         for ty in [
             parse_quote!(Box<[u8]>),
             parse_quote!(alloc::boxed::Box<(u32,)>),
+            parse_quote!(RustBox<bool>),
+            parse_quote!(co3::boxed::RustBox<[u8]>),
         ] {
             let known = recognize(&ty).unwrap();
             assert_eq!(known.kind, Kind::Box);
             assert!(known.is_sized());
-            assert_eq!(known.canonical, parse_quote!(co3::boxed::Box<()>));
+            assert_eq!(known.canonical, parse_quote!(co3::boxed::RustBox<()>));
             assert!(known.inner.is_some());
         }
         for ty in [
+            parse_quote!(co3::boxed::Box<u8>),
             parse_quote!(<T as Trait>::Box<u8>),
             parse_quote!(Box<u8, Allocator>),
             parse_quote!(Box<'a>),

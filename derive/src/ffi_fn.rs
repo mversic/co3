@@ -327,7 +327,7 @@ pub(crate) fn gen_opaque_drop_definition_body(
     };
 
     quote! {{
-        let Some(__co3_value) = (unsafe { co3::decode::<co3::boxed::Box<#self_ty>>(__co3_self) }) else {
+        let Some(__co3_value) = (unsafe { co3::decode::<co3::boxed::RustBox<#self_ty>>(__co3_self) }) else {
             #decode_error
         };
         core::mem::drop(__co3_value);
@@ -822,7 +822,7 @@ pub fn gen_impl_definition(
         let mut abi_sig = item.sig.clone();
         if drop_impl {
             if declared_self {
-                let owned_ty: Type = syn::parse_quote!(co3::boxed::Box<#self_ty>);
+                let owned_ty: Type = syn::parse_quote!(co3::boxed::RustBox<#self_ty>);
                 drop_owned_receiver(&mut abi_sig, Some(&owned_ty));
             } else {
                 drop_owned_receiver(&mut abi_sig, None);
@@ -840,7 +840,7 @@ pub fn gen_impl_definition(
                     _ => None,
                 })
                 .expect("opaque Drop requires a receiver");
-            receiver.ty = syn::parse_quote!(co3::boxed::CBox<#self_ty>);
+            receiver.ty = syn::parse_quote!(co3::boxed::Box<<#self_ty as co3::ReprC>::CType>);
             sig
         } else {
             lower_abi_fn_signature(abi_sig, failure_mode, fn_by_val)

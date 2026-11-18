@@ -1,7 +1,7 @@
 //! Conversions for types in [`core::ffi`].
 
 #[cfg(feature = "alloc")]
-use alloc::{boxed::Box, ffi::CString};
+use alloc::{boxed::Box as RustBox, ffi::CString};
 #[cfg(feature = "alloc")]
 use core::ptr::NonNull;
 use core::{
@@ -18,7 +18,7 @@ use crate::{
     transmute::AbiCompatible,
 };
 #[cfg(feature = "alloc")]
-use crate::{boxed::CBox, niche::Niche};
+use crate::{boxed::Box, niche::Niche};
 
 macro_rules! c_alias_carrier {
     ($name:ident, $alias:ty) => {
@@ -456,9 +456,9 @@ pub unsafe trait NulTerminatedBuf {
     /// `'a`.
     unsafe fn from_raw<'a>(ptr: *const Self::Header) -> &'a Self;
 
-    /// Consumes the `Box`, returning a wrapped `NonNull` pointer.
+    /// Consumes the `RustBox`, returning a wrapped `NonNull` pointer.
     #[cfg(feature = "alloc")]
-    fn into_non_null(self: Box<Self>) -> NonNull<Self::Header>;
+    fn into_non_null(self: RustBox<Self>) -> NonNull<Self::Header>;
 
     /// Constructs a box from a `NonNull` pointer.
     ///
@@ -467,7 +467,7 @@ pub unsafe trait NulTerminatedBuf {
     /// `ptr` must come from `Self::into_non_null`, retain its allocation provenance,
     /// and still own the complete allocation.
     #[cfg(feature = "alloc")]
-    unsafe fn from_non_null(ptr: NonNull<Self::Header>) -> Box<Self>;
+    unsafe fn from_non_null(ptr: NonNull<Self::Header>) -> RustBox<Self>;
 }
 
 unsafe impl<R: NulTerminatedBuf + ?Sized> NulTerminatedBuf for ManuallyDrop<R> {
@@ -483,15 +483,15 @@ unsafe impl<R: NulTerminatedBuf + ?Sized> NulTerminatedBuf for ManuallyDrop<R> {
     }
 
     #[cfg(feature = "alloc")]
-    fn into_non_null(self: Box<Self>) -> NonNull<Self::Header> {
-        let inner = unsafe { Box::from_raw(Box::into_raw(self) as *mut R) };
+    fn into_non_null(self: RustBox<Self>) -> NonNull<Self::Header> {
+        let inner = unsafe { RustBox::from_raw(RustBox::into_raw(self) as *mut R) };
         R::into_non_null(inner)
     }
 
     #[cfg(feature = "alloc")]
-    unsafe fn from_non_null(ptr: NonNull<Self::Header>) -> Box<Self> {
+    unsafe fn from_non_null(ptr: NonNull<Self::Header>) -> RustBox<Self> {
         let inner = unsafe { R::from_non_null(ptr) };
-        unsafe { Box::from_raw(Box::into_raw(inner) as *mut Self) }
+        unsafe { RustBox::from_raw(RustBox::into_raw(inner) as *mut Self) }
     }
 }
 
@@ -511,20 +511,20 @@ unsafe impl NulTerminatedBuf for RustCStr {
     }
 
     #[cfg(feature = "alloc")]
-    fn into_non_null(self: Box<Self>) -> NonNull<Self::Header> {
+    fn into_non_null(self: RustBox<Self>) -> NonNull<Self::Header> {
         let raw = self.into_c_string().into_raw();
         unsafe { NonNull::new_unchecked(raw.cast()) }
     }
 
     #[cfg(feature = "alloc")]
-    unsafe fn from_non_null(ptr: NonNull<Self::Header>) -> Box<Self> {
+    unsafe fn from_non_null(ptr: NonNull<Self::Header>) -> RustBox<Self> {
         unsafe { CString::from_raw(ptr.cast().as_ptr()) }.into_boxed_c_str()
     }
 }
 
 #[cfg(feature = "alloc")]
 impl ReprC for CString {
-    type CType = CBox<RustCStr>;
+    type CType = Box<<RustCStr as crate::ReprC>::CType>;
 }
 #[cfg(feature = "alloc")]
 unsafe impl EncodeMove for CString {
@@ -554,7 +554,7 @@ unsafe impl<'d> DecodeMove<'d> for CString {
     type Store = ();
 
     unsafe fn soft_decode<'itm: 'd>(source: Self::CType, (): &mut ()) -> Option<Self> {
-        unsafe { Box::<RustCStr>::soft_decode(source, &mut ()) }.map(Into::into)
+        unsafe { RustBox::<RustCStr>::soft_decode(source, &mut ()) }.map(Into::into)
     }
 }
 
@@ -567,7 +567,7 @@ impl Decode<'_> for CString {}
 
 #[cfg(feature = "alloc")]
 impl Niche for CString {
-    const NICHE: Self::CType = CBox::null();
+    const NICHE: Self::CType = Box::null();
 
     fn is_niche(value: &Self::CType) -> bool {
         value.as_ptr().is_null()
@@ -646,7 +646,7 @@ mod tests {
         assert_not_impl_any!(&mut RustCStr: Encode, Decode<'static>);
         #[cfg(feature = "alloc")]
         {
-            assert_impl_all!(Box<ManuallyDrop<RustCStr>>: EncodeMove, crate::convert::DecodeMove<'static>);
+            assert_impl_all!(RustBox<ManuallyDrop<RustCStr>>: EncodeMove, crate::convert::DecodeMove<'static>);
             assert_impl_all!(CString: Encode);
         }
     }
@@ -672,7 +672,7 @@ mod tests {
         let ptr = original.as_ptr();
         let encoded = crate::convert::encode_move(original);
         assert_eq!(encoded.as_ptr().cast_const().cast(), ptr);
-        let decoded: Box<RustCStr> = unsafe { crate::convert::decode_move(encoded) }.unwrap();
+        let decoded: RustBox<RustCStr> = unsafe { crate::convert::decode_move(encoded) }.unwrap();
         assert_eq!(decoded.as_ptr(), ptr);
         assert_eq!(&*decoded, c"owned");
     }
@@ -716,14 +716,15 @@ mod tests {
     struct Value(u8);
 
     #[cfg(all(feature = "alloc", feature = "derive"))]
-    extern "C" fn borrowed_return() -> co3::borrow::Borrowed<<Box<Value> as co3::ReprC>::CType> {
-        co3::borrow::Borrowed(co3::boxed::CBox::null())
+    extern "C" fn borrowed_return() -> co3::borrow::Borrowed<<RustBox<Value> as co3::ReprC>::CType>
+    {
+        co3::borrow::Borrowed(co3::boxed::Box::null())
     }
 
     #[cfg(all(feature = "alloc", feature = "derive"))]
     co3::ffi! {
         #![unsafe(extern("C"))]
-        type BorrowedReturn = raw extern "C" fn() -> Box<Value>;
+        type BorrowedReturn = raw extern "C" fn() -> RustBox<Value>;
         type InteriorUnpacked = extern "C" fn(#[unpack(*const core::cell::Cell<u8>, usize)] &[core::cell::Cell<u8>]) -> usize;
         type RegularUnpacked = extern "C" fn(#[unpack(_, _)] &mut [u8]) -> usize;
         type Composite = (String, raw fn(String));
@@ -767,9 +768,9 @@ mod tests {
     #[cfg(all(feature = "alloc", feature = "derive"))]
     #[test]
     fn raw_import_uses_plain_reference_carrier_without_ownership() {
-        use co3::reference::CRef;
+        use co3::reference::Ref;
         fn check<'a>(_: &'a u8) {
-            let _: unsafe extern "C" fn(CRef<'a, u8>) -> CRef<'a, u8> = borrowed_import;
+            let _: unsafe extern "C" fn(Ref<'a, u8>) -> Ref<'a, u8> = borrowed_import;
         }
         let input = 7;
         check(&input);
@@ -794,7 +795,7 @@ mod tests {
         ops::{CFn0, CFn1, CFn2, CFn12},
         option::COption,
         raw,
-        reference::{CRef, CSoftRef, CSoftRefMut},
+        reference::{SoftRef, SoftRefMut, Ref},
         tuple::CTuple3,
         utf8::Utf8String,
     };
@@ -821,11 +822,11 @@ mod tests {
     fn exported_shared_string_and_alias_use_the_decoder() {
         let source = Utf8String::from_string(String::from("héllo"));
         assert_eq!(
-            unsafe { string_len_raw(CSoftRef::from_ref(&source)) },
+            unsafe { string_len_raw(SoftRef::from_ref(&source)) },
             "héllo".len()
         );
         assert_eq!(
-            unsafe { alias_len_raw(Borrowed::new(CSoftRef::from_ref(&source))) },
+            unsafe { alias_len_raw(Borrowed::new(SoftRef::from_ref(&source))) },
             "héllo".len()
         );
         assert_eq!(unsafe { source.0.into_vec() }.unwrap(), "héllo".as_bytes());
@@ -835,7 +836,7 @@ mod tests {
     #[repr_c(identity)]
     #[repr(C)]
     #[cfg(all(feature = "alloc", feature = "derive"))]
-    struct StructWithCallback<'a>(Option<unsafe extern "C" fn(CRef<'a, u32>) -> u32>);
+    struct StructWithCallback<'a>(Option<unsafe extern "C" fn(Ref<'a, u32>) -> u32>);
 
     #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, RustSpec, ReprC)]
     #[repr_c(identity)]
@@ -872,20 +873,20 @@ mod tests {
     type CompanionPathAlias = CallbackPathExisting;
 
     #[cfg(all(feature = "alloc", feature = "derive"))]
-    unsafe extern "C" fn increment_pointer(value: CRef<'_, u32>) -> u32 {
+    unsafe extern "C" fn increment_pointer(value: Ref<'_, u32>) -> u32 {
         (unsafe { *value.as_ptr() }) + 1
     }
 
     #[cfg(all(feature = "alloc", feature = "derive"))]
-    unsafe extern "C" fn return_pointer(value: CRef<'_, u32>) -> CRef<'_, u32> {
+    unsafe extern "C" fn return_pointer(value: Ref<'_, u32>) -> Ref<'_, u32> {
         value
     }
 
     #[cfg(all(feature = "alloc", feature = "derive"))]
-    unsafe extern "C" fn ignore_pointer(_: CRef<'_, u32>) {}
+    unsafe extern "C" fn ignore_pointer(_: Ref<'_, u32>) {}
 
     #[cfg(all(feature = "alloc", feature = "derive"))]
-    unsafe extern "C" fn update_option(value: CSoftRefMut<Option<u8>, true>) -> u32 {
+    unsafe extern "C" fn update_option(value: SoftRefMut<<Option<u8> as crate::ReprC>::CType>) -> u32 {
         let value = value.as_ptr();
         unsafe { *value = COption::Some(42) };
         7
@@ -897,12 +898,12 @@ mod tests {
     }
 
     #[cfg(all(feature = "alloc", feature = "derive"))]
-    extern "system" fn increment_system(value: CRef<'_, u32>) -> u32 {
+    extern "system" fn increment_system(value: Ref<'_, u32>) -> u32 {
         (unsafe { *value.as_ptr() }) + 2
     }
 
     #[cfg(all(feature = "alloc", feature = "derive"))]
-    unsafe extern "C" fn add_from_pointer(value: CRef<'_, u32>, offset: u32) -> u32 {
+    unsafe extern "C" fn add_from_pointer(value: Ref<'_, u32>, offset: u32) -> u32 {
         (unsafe { *value.as_ptr() }) + offset
     }
 
@@ -978,7 +979,7 @@ mod tests {
     }
 
     #[cfg(all(feature = "alloc", feature = "derive"))]
-    fn return_owned(value: Box<CallbackValue>) -> Box<CallbackValue> {
+    fn return_owned(value: RustBox<CallbackValue>) -> RustBox<CallbackValue> {
         value
     }
 
@@ -1085,16 +1086,16 @@ mod tests {
     ffi! {
         #![unsafe(extern("C"))]
 
-        type CallbackBorrowedReturn = raw extern "C" fn() -> Box<CallbackValue>;
+        type CallbackBorrowedReturn = raw extern "C" fn() -> RustBox<CallbackValue>;
         type BorrowedRustValue = raw extern "C" fn(CallbackRustValue) -> CallbackRustValue;
-        type OwnedTransform = raw extern "C" fn(move Box<CallbackValue>) -> move Box<CallbackValue>;
+        type OwnedTransform = raw extern "C" fn(move RustBox<CallbackValue>) -> move RustBox<CallbackValue>;
         type CompanionCallback = raw extern "C" fn(CallbackValue, CallbackValue) -> CallbackValue;
     }
 
     #[cfg(all(feature = "alloc", feature = "derive"))]
     raw! {
         fn borrow_rust_value(value: CallbackRustValue) -> CallbackRustValue;
-        fn return_owned(value: move Box<CallbackValue>) -> move Box<CallbackValue>;
+        fn return_owned(value: move RustBox<CallbackValue>) -> move RustBox<CallbackValue>;
         fn double_rust(value: CallbackRustValue) -> move CallbackRustValue;
         pub fn sum_native(left: CallbackValue, right: CallbackValue) -> CallbackValue;
 
@@ -1118,12 +1119,12 @@ mod tests {
     #[test]
     #[cfg(all(feature = "alloc", feature = "derive"))]
     fn stored_c_callback_accepts_rust_reference() {
-        fn assert_first_arg<'a, T: CFn1<Arg1 = CRef<'a, u32>>>()
+        fn assert_first_arg<'a, T: CFn1<Arg1 = Ref<'a, u32>>>()
         where
             Option<T>: CType,
         {
         }
-        assert_first_arg::<unsafe extern "C" fn(CRef<'static, u32>) -> u32>();
+        assert_first_arg::<unsafe extern "C" fn(Ref<'static, u32>) -> u32>();
 
         let callback = StructWithCallback(Some(increment_pointer));
         let value = 41_u32;
@@ -1164,12 +1165,12 @@ mod tests {
     #[test]
     #[cfg(all(feature = "alloc", feature = "derive"))]
     fn multi_argument_callbacks_encode_each_argument() {
-        fn assert_two_args<'a, T: CFn2<Arg1 = CRef<'a, u32>, Arg2 = u32>>()
+        fn assert_two_args<'a, T: CFn2<Arg1 = Ref<'a, u32>, Arg2 = u32>>()
         where
             Option<T>: CType,
         {
         }
-        assert_two_args::<unsafe extern "C" fn(CRef<'static, u32>, u32) -> u32>();
+        assert_two_args::<unsafe extern "C" fn(Ref<'static, u32>, u32) -> u32>();
 
         let value = 40_u32;
         let callback: unsafe extern "C" fn(_, _) -> _ = add_from_pointer;
@@ -1194,10 +1195,10 @@ mod tests {
         let _: Option<CallbackBorrowedReturn> = None;
         let _: BorrowedRustValue = borrow_rust_value_raw;
         let _: OwnedTransform = return_owned_raw;
-        let result = unsafe { return_owned_raw(co3::encode(Box::new(CallbackValue(42)))) };
+        let result = unsafe { return_owned_raw(co3::encode(RustBox::new(CallbackValue(42)))) };
         assert_eq!(
-            unsafe { co3::decode::<Box<CallbackValue>>(result) },
-            Some(Box::new(CallbackValue(42)))
+            unsafe { co3::decode::<RustBox<CallbackValue>>(result) },
+            Some(RustBox::new(CallbackValue(42)))
         );
         fn assert_existing_fn_pointer_impls<T>(_: T) {}
         assert_existing_fn_pointer_impls(sum_native_raw as CCallback);
@@ -1209,7 +1210,7 @@ mod tests {
         );
         let encoded = co3::encode(CallbackRustValue(7));
         let raw_result = unsafe {
-            CallbackRustValue::scaled_raw(Borrowed::new(CSoftRef::from_ref(&encoded)), 6)
+            CallbackRustValue::scaled_raw(Borrowed::new(SoftRef::from_ref(&encoded)), 6)
         };
         assert_eq!(
             unsafe { co3::decode::<CallbackRustValue>(raw_result) },
@@ -1615,8 +1616,8 @@ mod tests {
 
         let value = 7_u8;
         unsafe {
-            take_raw::<u8>(Borrowed::new(CRef::from_ref(&value)));
-            ArgumentHost::take_raw::<u8>(Borrowed::new(CRef::from_ref(&value)));
+            take_raw::<u8>(Borrowed::new(Ref::from_ref(&value)));
+            ArgumentHost::take_raw::<u8>(Borrowed::new(Ref::from_ref(&value)));
         }
     }
 

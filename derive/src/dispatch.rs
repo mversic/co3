@@ -542,7 +542,7 @@ fn synthesize_dispatch_export_fn(
                 _ => None,
             })
             .expect("opaque Drop requires a receiver");
-        receiver.ty = parse_quote!(co3::boxed::CBox<core::ffi::c_void>);
+        receiver.ty = parse_quote!(co3::boxed::Box<core::ffi::c_void>);
     }
     let definition = match emission {
         DispatchEmission::Export => emit_extern_definition(
@@ -942,8 +942,8 @@ fn synthesize_dispatch_arms(
                     _ => None,
                 })
                 .expect("opaque Drop requires a receiver");
-            let erased_ty = parse_quote!(co3::boxed::CBox<core::ffi::c_void>);
-            let concrete_ty = parse_quote!(co3::boxed::CBox<#self_ty>);
+            let erased_ty = parse_quote!(co3::boxed::Box<core::ffi::c_void>);
+            let concrete_ty = parse_quote!(co3::boxed::Box<<#self_ty as co3::ReprC>::CType>);
             let retype = gen_retype(&quote!(__co3_self), &erased_ty, &concrete_ty);
             quote!(let __co3_self = #retype;)
         });

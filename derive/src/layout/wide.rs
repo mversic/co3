@@ -381,7 +381,7 @@ pub(super) fn gen_alloc_methods(is_transparent: bool, field_ty: &syn::Type) -> T
             let inner = unsafe {
                 <#field_ty as co3::wide::Wide>::from_non_null(data.cast(), metadata)
             };
-            let ptr = co3::boxed::Box::into_raw(inner) as *mut Self;
+            let ptr = co3::boxed::RustBox::into_raw(inner) as *mut Self;
         }
     } else {
         quote! {
@@ -393,17 +393,17 @@ pub(super) fn gen_alloc_methods(is_transparent: bool, field_ty: &syn::Type) -> T
 
     quote! {
         #[inline(always)]
-        fn into_non_null(self: co3::boxed::Box<Self>) -> core::ptr::NonNull<Self::Header> {
-            co3::boxed::Box::into_non_null(self).cast()
+        fn into_non_null(self: co3::boxed::RustBox<Self>) -> core::ptr::NonNull<Self::Header> {
+            co3::boxed::RustBox::into_non_null(self).cast()
         }
 
         #[inline(always)]
         unsafe fn from_non_null(
             data: core::ptr::NonNull<Self::Header>,
             metadata: Self::Metadata,
-        ) -> co3::boxed::Box<Self> {
+        ) -> co3::boxed::RustBox<Self> {
             #constructor
-            unsafe { co3::boxed::Box::from_raw(ptr) }
+            unsafe { co3::boxed::RustBox::from_raw(ptr) }
         }
     }
 }

@@ -388,7 +388,7 @@ const _: () = {
 unsafe impl<'a, T: ReprC<CType: Copy> + 'a, __Interior: ExclusiveKind> SoftEncodeRefUnchecked<'a>
     for Option<T>
 where
-    &'a Self: crate::ReprC<CType = crate::reference::CSoftRef<Self>>,
+    &'a Self: crate::ReprC<CType = crate::reference::SoftRef<<Self as crate::ReprC>::CType>>,
     Self: RustSpec<Mutability = Exclusive<__Interior>, Size: Thin> + 'a,
     &'a T: EncodeMoveUnchecked<CType: crate::reference::RefCarrier<T>>,
 {
@@ -417,7 +417,7 @@ where
 unsafe impl<'a, T: ReprC<CType: Copy> + 'a, __Interior: ExclusiveKind> SoftEncodeRef<'a>
     for Option<T>
 where
-    &'a Self: crate::ReprC<CType = crate::reference::CSoftRef<Self>>,
+    &'a Self: crate::ReprC<CType = crate::reference::SoftRef<<Self as crate::ReprC>::CType>>,
     Self: RustSpec<Mutability = Exclusive<__Interior>, Size: Thin> + 'a,
     &'a T: EncodeMove<CType: crate::reference::RefCarrier<T>>,
 {

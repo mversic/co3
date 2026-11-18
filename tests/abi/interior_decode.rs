@@ -35,6 +35,6 @@ fn shared_interior_slice_decode_preserves_identity_and_mutations() {
 
 #[test]
 fn shared_interior_decode_rejects_null() {
-    assert!(unsafe { co3::decode::<&Cell<u8>>(co3::reference::CRef::null()) }.is_none());
+    assert!(unsafe { co3::decode::<&Cell<u8>>(co3::reference::Ref::null()) }.is_none());
     assert!(unsafe { co3::decode::<&[Cell<u8>]>(co3::wide::CWideRef::null()) }.is_none());
 }

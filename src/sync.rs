@@ -13,7 +13,7 @@ use crate::{
 use crate::{
     ReprC,
     convert::{DecodeMove, EmptyStore, EncodeMove, Store, decode_move, encode_move},
-    reference::{CSoftRef, CSoftRefMut},
+    reference::{SoftRef, SoftRefMut},
 };
 
 /// Combine synchronization results, exhausting the iterator even after a failure.
@@ -52,10 +52,10 @@ pub struct RefSizedDecodeStore<R, S> {
 }
 
 impl<R: ReprC<CType: Sized>, S: Store> RefSizedEncodeStore<R, S> {
-    pub fn encode(&mut self, encode: impl FnOnce(&mut S) -> R::CType) -> CSoftRef<R> {
+    pub fn encode(&mut self, encode: impl FnOnce(&mut S) -> R::CType) -> SoftRef<<R as crate::ReprC>::CType> {
         self.ctype = None;
         let value = encode(&mut self.store);
-        CSoftRef::from_ref(self.ctype.insert(value))
+        SoftRef::from_ref(self.ctype.insert(value))
     }
 }
 
@@ -235,8 +235,8 @@ impl<'d, R: DecodeMove<'d, Store: EmptyStore + 'd>, S: Store + Default>
         &mut self,
         original: &'d mut R,
         encode: impl FnOnce(&mut R, &mut S) -> R::CType,
-    ) -> CSoftRefMut<R, true> {
-        CSoftRefMut::from_mut(self.state.encode(original, encode))
+    ) -> SoftRefMut<<R as crate::ReprC>::CType> {
+        SoftRefMut::from_mut(self.state.encode(original, encode))
     }
 }
 
@@ -462,7 +462,7 @@ where
 pub struct RefMutSliceDecodeStore<R: ReprC<CType: Sized>, S> {
     value: Option<Vec<R>>,
     store: S,
-    source: Option<CSoftWideRefMut<[R], true>>,
+    source: Option<CSoftWideRefMut<[R]>>,
 }
 
 #[cfg(feature = "alloc")]
@@ -470,7 +470,7 @@ impl<R: ReprC<CType: Sized>, S> RefMutSliceDecodeStore<R, S> {
     /// The source must remain valid and exclusively accessible until synchronization.
     pub(crate) unsafe fn decode<'a>(
         &'a mut self,
-        source: CSoftWideRefMut<[R], true>,
+        source: CSoftWideRefMut<[R]>,
         decode: impl FnOnce(&'a [R::CType], &'a mut S) -> Option<Vec<R>>,
     ) -> Option<&'a mut [R]> {
         self.source = Some(source);
@@ -595,7 +595,7 @@ impl<
         &mut self,
         build: impl FnOnce(&mut S) -> (B, P),
         copy_back: fn(&R::CType, P),
-    ) -> CSoftWideRefMut<R, true> {
+    ) -> CSoftWideRefMut<R> {
         self.writeback = None;
         let previous = self.ctype.take();
         let (value, state) = build(&mut self.fields);

@@ -331,7 +331,8 @@ fn gen_regular_drop_import_body<const DISPATCHED: bool>(
         self_ty,
         generics,
         false,
-        Some(quote! {
+        ImplWrapperCode {
+            self_binding: Some(quote! {
             fn __co3_require_custom_drop<T: co3::rust_spec::RustSpec<
                 Drop = co3::rust_spec::drop::CustomDrop<co3::rust_spec::drop::NoDrop>
             >>() {}
@@ -340,9 +341,10 @@ fn gen_regular_drop_import_body<const DISPATCHED: bool>(
             let __co3_drop_encoded = |#(#arg_names),*| unsafe {
                 #imported_name(#(#forwarded_args),*)
             };
-        }),
-        Some(input_convert),
-        &[],
+            }),
+            input_convert: Some(input_convert),
+            plain_inputs: &[],
+        },
     )
 }
 
@@ -366,9 +368,11 @@ pub(crate) fn gen_impl_wrapper_body<const DISPATCHED: bool>(
         self_ty,
         generics,
         erase_declared_receiver,
-        self_binding,
-        None,
-        &[],
+        ImplWrapperCode {
+            self_binding,
+            input_convert: None,
+            plain_inputs: &[],
+        },
     )
 }
 
@@ -390,10 +394,18 @@ pub(crate) fn gen_owned_drop_wrapper_body<const DISPATCHED: bool>(
         self_ty,
         generics,
         erase_declared_receiver,
-        Some(quote! { let __co3_self = self.0.as_ptr(); }),
-        None,
-        plain_inputs,
+        ImplWrapperCode {
+            self_binding: Some(quote! { let __co3_self = self.0.as_ptr(); }),
+            input_convert: None,
+            plain_inputs,
+        },
     )
+}
+
+struct ImplWrapperCode<'a> {
+    self_binding: Option<TokenStream>,
+    input_convert: Option<TokenStream>,
+    plain_inputs: &'a [syn::Ident],
 }
 
 fn gen_impl_wrapper_body_with_self_binding<const DISPATCHED: bool>(
@@ -402,10 +414,13 @@ fn gen_impl_wrapper_body_with_self_binding<const DISPATCHED: bool>(
     self_ty: &syn::Type,
     generics: &syn::Generics,
     erase_declared_receiver: bool,
-    self_binding: Option<TokenStream>,
-    input_convert: Option<TokenStream>,
-    plain_inputs: &[syn::Ident],
+    code: ImplWrapperCode<'_>,
 ) -> TokenStream {
+    let ImplWrapperCode {
+        self_binding,
+        input_convert,
+        plain_inputs,
+    } = code;
     let id_assignments = item.sig.inputs.iter().filter_map(|input| {
         let FnArg::Typed(syn::PatType { pat, ty, .. }) = input else {
             return None;

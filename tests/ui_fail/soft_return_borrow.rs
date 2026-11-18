@@ -1,4 +1,4 @@
-use co3::{ffi, ops::CFn1, raw, reference::CRef};
+use co3::{ffi, ops::CFn1, raw, reference::Ref};
 
 ffi! {
     #![unsafe(extern("C"))]
@@ -53,7 +53,7 @@ raw! {
 
 fn escape() -> &'static u32 {
     let value = 42_u32;
-    type Callback<'a> = unsafe extern "C" fn(CRef<'a, u32>) -> CRef<'a, u32>;
+    type Callback<'a> = unsafe extern "C" fn(Ref<'a, u32>) -> Ref<'a, u32>;
     let callback: Callback<'_> = echo_raw;
     unsafe { callback.call(&value) }.unwrap()
 }

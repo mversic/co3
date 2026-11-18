@@ -131,32 +131,33 @@ impl Ownership {
             };
         }
         let definition = self.definition(generics, &bounds);
-        let mut custom_generics = generics.clone();
-        custom_generics
-            .params
-            .push(syn::parse_quote!(__Co3Drop: co3::rust_spec::drop::DropKind));
-        let (custom_impl_generics, _, _) = custom_generics.split_for_impl();
         quote! {
             #definition
             const _: () = {
-                use co3::ReprC;
-                co3::disjoint_impls! {
-                    #[disjoint_impls(remote)]
-                    pub trait ReprC {
-                        type CType: co3::CType + ?Sized;
-                    }
-                    impl #impl_generics ReprC for #source
-                    where for<'__co3_drop> #source: co3::rust_spec::RustSpec<Drop = co3::rust_spec::drop::NoDrop>, #bounds {
-                        type CType = #payload;
-                    }
-                    impl #impl_generics ReprC for #source
-                    where for<'__co3_drop> #source: co3::rust_spec::RustSpec<Drop = co3::rust_spec::drop::AutoDrop>, #bounds {
-                        type CType = #payload;
-                    }
-                    impl #custom_impl_generics ReprC for #source
-                    where for<'__co3_drop> #source: co3::rust_spec::RustSpec<Drop = co3::rust_spec::drop::CustomDrop<__Co3Drop>>, #bounds {
-                        type CType = co3::owned::Owned<#payload>;
-                    }
+                trait PlainDrop {}
+                impl PlainDrop for co3::rust_spec::drop::NoDrop {}
+                impl PlainDrop for co3::rust_spec::drop::AutoDrop {}
+
+                pub trait SelectCarrier<P: co3::CType + ?Sized> {
+                    type Output: co3::CType + ?Sized;
+                }
+                impl<D: PlainDrop, P: co3::CType + ?Sized> SelectCarrier<P> for D {
+                    type Output = P;
+                }
+                impl<I: co3::rust_spec::drop::DropKind, P: co3::CType + ?Sized>
+                    SelectCarrier<P> for co3::rust_spec::drop::CustomDrop<I>
+                {
+                    type Output = co3::owned::Owned<P>;
+                }
+
+                impl #impl_generics co3::ReprC for #source
+                where
+                    #source: co3::rust_spec::RustSpec,
+                    <#source as co3::rust_spec::RustSpec>::Drop:
+                        SelectCarrier<#payload>,
+                    #bounds
+                {
+                    type CType = <<#source as co3::rust_spec::RustSpec>::Drop as SelectCarrier<#payload>>::Output;
                 }
             };
         }

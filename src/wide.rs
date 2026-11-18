@@ -445,20 +445,11 @@ pub struct CSoftWideRef<R: ReprC<CType: Wide> + ?Sized, const STABLE: bool = fal
 
 /// Mutable wide-reference carrier with a defined C ABI layout.
 ///
-/// - `EXCLUSIVE = true` represents exclusive access that comes from `&mut T`.
-/// - `EXCLUSIVE = false` represents access that comes from `&UnsafeCell<T>`.
-///
-/// `EXCLUSIVE == false` should be read as unknown. For all is known to this wrapper the access
-/// is exclusive. You have to use `UnsafeCell` in `P` to assert non-exclusive access. It is the
-/// user's responsibility to ensure any access of the pointer is well synchronized.
+/// Represents exclusive access that comes from `&mut T`.
 #[derive(RustSpec)]
 #[repr(C)]
 #[doc(hidden)]
-pub struct CSoftWideRefMut<
-    R: ReprC<CType: Wide> + ?Sized,
-    const EXCLUSIVE: bool,
-    const STABLE: bool = false,
-> {
+pub struct CSoftWideRefMut<R: ReprC<CType: Wide> + ?Sized, const STABLE: bool = false> {
     data: *mut PointeeData<R::CType>,
     metadata: <R::CType as Wide>::Metadata,
 }
@@ -495,11 +486,8 @@ impl<R: ReprC<CType: Wide<Header: WideHeader<Data: CType>>> + ?Sized, const STAB
     }
 }
 
-impl<
-    R: ReprC<CType: Wide<Header: WideHeader<Data: CType>>> + ?Sized,
-    const EXCLUSIVE: bool,
-    const STABLE: bool,
-> CSoftWideRefMut<R, EXCLUSIVE, STABLE>
+impl<R: ReprC<CType: Wide<Header: WideHeader<Data: CType>>> + ?Sized, const STABLE: bool>
+    CSoftWideRefMut<R, STABLE>
 {
     /// Construct an absent carrier with initialized metadata.
     pub const fn null() -> Self {
@@ -513,8 +501,7 @@ impl<
     /// Create a mutable carrier from a data pointer and metadata.
     ///
     /// # Safety
-    /// The pointer and metadata must describe a valid P; when EXCLUSIVE is true,
-    /// accesses must satisfy exclusive access.
+    /// The pointer and metadata must describe a valid, exclusively accessible P.
     pub const unsafe fn from_raw_parts_mut(
         data: *mut PointeeData<R::CType>,
         metadata: <R::CType as Wide>::Metadata,
@@ -549,7 +536,7 @@ impl<R: ReprC<CType: Wide> + ?Sized, const STABLE: bool> CSoftWideRef<R, STABLE>
     }
 }
 
-impl<R: ReprC<CType: Wide> + ?Sized, const STABLE: bool> CSoftWideRefMut<R, true, STABLE> {
+impl<R: ReprC<CType: Wide> + ?Sized, const STABLE: bool> CSoftWideRefMut<R, STABLE> {
     /// Recover a mutable wide reference, returning `None` for a null pointer.
     ///
     /// # Safety
@@ -583,8 +570,8 @@ pub struct CWideRef<'a, R: ReprC<CType: Wide> + ?Sized, const STABLE: bool = fal
 
 /// Wide carrier with a writable data pointer.
 ///
-/// `STABLE = true` identifies an exclusive `WideRefMut`. The native shared
-/// interior-mutable path uses `STABLE = false`.
+/// `STABLE = true` identifies an exclusive `WideRefMut`. Native exclusive wide
+/// references use `CWideRef` with `STABLE = false`.
 #[derive(RustSpec)]
 #[repr(C)]
 #[doc(hidden)]
@@ -726,7 +713,7 @@ macro_rules! impl_wide_ref_pointer_methods {
     };
 }
 impl_wide_ref_pointer_methods! { CSoftWideRef, [R: ReprC<CType: Wide> + ?Sized, const STABLE: bool], [R, STABLE], [], [, STABLE], const, [] }
-impl_wide_ref_pointer_methods! { CSoftWideRefMut, [R: ReprC<CType: Wide> + ?Sized, const EXCLUSIVE: bool, const STABLE: bool], [R, EXCLUSIVE, STABLE], [], [, EXCLUSIVE, STABLE], mut, [] }
+impl_wide_ref_pointer_methods! { CSoftWideRefMut, [R: ReprC<CType: Wide> + ?Sized, const STABLE: bool], [R, STABLE], [], [, STABLE], mut, [] }
 impl_wide_ref_pointer_methods! { CWideRef, ['a, R: ReprC<CType: Wide> + ?Sized, const STABLE: bool], ['a, R, STABLE], ['a,], [, STABLE], const, [lifetime: PhantomData,] }
 impl_wide_ref_pointer_methods! { CWideRefMut, ['a, R: ReprC<CType: Wide> + ?Sized, const STABLE: bool], ['a, R, STABLE], ['a,], [, STABLE], mut, [lifetime: PhantomData,] }
 
@@ -938,13 +925,13 @@ unsafe impl<'a, R: ReprC<CType: Wide> + ?Sized, const STABLE: bool> Zeroable
 }
 
 impl_wide_raw_methods! { CSoftWideRef, [R: ReprC<CType: Wide> + ?Sized, const STABLE: bool], [R, STABLE] }
-impl_wide_raw_methods! { CSoftWideRefMut, [R: ReprC<CType: Wide> + ?Sized, const EXCLUSIVE: bool, const STABLE: bool], [R, EXCLUSIVE, STABLE] }
+impl_wide_raw_methods! { CSoftWideRefMut, [R: ReprC<CType: Wide> + ?Sized, const STABLE: bool], [R, STABLE] }
 
 impl_carrier_borrow! { CSoftWideRef, [R: ReprC<CType: Wide> + ?Sized, const STABLE: bool], [R, STABLE] }
-impl_carrier_borrow! { CSoftWideRefMut, [R: ReprC<CType: Wide> + ?Sized, const EXCLUSIVE: bool, const STABLE: bool], [R, EXCLUSIVE, STABLE] }
+impl_carrier_borrow! { CSoftWideRefMut, [R: ReprC<CType: Wide> + ?Sized, const STABLE: bool], [R, STABLE] }
 
 impl_identity_carrier! { CSoftWideRef, [R: ReprC<CType: Wide<Header: WideHeader<Data: CType>>> + ?Sized, const STABLE: bool], [R, STABLE] }
-impl_identity_carrier! { CSoftWideRefMut, [R: ReprC<CType: Wide<Header: WideHeader<Data: CType>>> + ?Sized, const EXCLUSIVE: bool, const STABLE: bool], [R, EXCLUSIVE, STABLE] }
+impl_identity_carrier! { CSoftWideRefMut, [R: ReprC<CType: Wide<Header: WideHeader<Data: CType>>> + ?Sized, const STABLE: bool], [R, STABLE] }
 
 impl<R: ReprC<CType: Wide<Header: WideHeader<Data: CType>>> + ?Sized, const STABLE: bool> Default
     for CSoftWideRef<R, STABLE>
@@ -953,11 +940,8 @@ impl<R: ReprC<CType: Wide<Header: WideHeader<Data: CType>>> + ?Sized, const STAB
         Self::null()
     }
 }
-impl<
-    R: ReprC<CType: Wide<Header: WideHeader<Data: CType>>> + ?Sized,
-    const EXCLUSIVE: bool,
-    const STABLE: bool,
-> Default for CSoftWideRefMut<R, EXCLUSIVE, STABLE>
+impl<R: ReprC<CType: Wide<Header: WideHeader<Data: CType>>> + ?Sized, const STABLE: bool> Default
+    for CSoftWideRefMut<R, STABLE>
 {
     fn default() -> Self {
         Self::null()
@@ -1060,8 +1044,8 @@ unsafe impl<R: ReprC<CType: Wide> + ?Sized, const STABLE: bool> Zeroable
     for CSoftWideRef<R, STABLE>
 {
 }
-unsafe impl<R: ReprC<CType: Wide> + ?Sized, const EXCLUSIVE: bool, const STABLE: bool> Zeroable
-    for CSoftWideRefMut<R, EXCLUSIVE, STABLE>
+unsafe impl<R: ReprC<CType: Wide> + ?Sized, const STABLE: bool> Zeroable
+    for CSoftWideRefMut<R, STABLE>
 {
 }
 #[cfg(feature = "alloc")]
@@ -1142,8 +1126,8 @@ unsafe impl<'a, R: ReprC<CType: Wide<Header: WideHeader<Data: CType>>> + ?Sized>
         unsafe { Self::from_raw_parts(data, metadata) }
     }
 }
-unsafe impl<R: ReprC<CType: Wide<Header: WideHeader<Data: CType>>> + ?Sized, const E: bool>
-    WideRefCarrier<R> for CSoftWideRefMut<R, E>
+unsafe impl<R: ReprC<CType: Wide<Header: WideHeader<Data: CType>>> + ?Sized> WideRefCarrier<R>
+    for CSoftWideRefMut<R>
 {
     type Pointer = *mut PointeeData<R::CType>;
     fn as_ptr(&self) -> Self::Pointer {
@@ -1214,7 +1198,7 @@ pub(crate) unsafe trait WideRefMutCarrier<R: ReprC<CType: Wide> + ?Sized>:
     ) -> Self;
 }
 unsafe impl<R: ReprC<CType: Wide<Header: WideHeader<Data: CType>>> + ?Sized> WideRefMutCarrier<R>
-    for CSoftWideRefMut<R, true>
+    for CSoftWideRefMut<R>
 {
     fn data(&self) -> *mut PointeeData<R::CType> {
         self.data
@@ -1370,11 +1354,11 @@ pub(crate) mod tests {
         type Unstable = WideRefMut<'static, [(u8,)]>;
         static_assertions::assert_type_eq_all!(
             <Stable as ReprC>::CType,
-            CSoftWideRefMut<[bool], true, true>
+            CSoftWideRefMut<[bool], true>
         );
         static_assertions::assert_type_eq_all!(
             <Unstable as ReprC>::CType,
-            CSoftWideRefMut<[(u8,)], true, true>
+            CSoftWideRefMut<[(u8,)], true>
         );
         assert!(Stable::is_niche(&<Stable as Niche>::NICHE));
         assert!(Unstable::is_niche(&<Unstable as Niche>::NICHE));
@@ -1533,7 +1517,7 @@ pub(crate) mod tests {
         assert_eq!(decoded.metadata(), shared.metadata());
         assert_eq!(unsafe { &shared.into_ref().unwrap().0 }, &[3, 5, 8]);
 
-        let mutable = CSoftWideRefMut::<Pointee, true>::from_mut(value);
+        let mutable = CSoftWideRefMut::<Pointee>::from_mut(value);
         assert_eq!(
             mutable.metadata(),
             Metadata {
@@ -1585,11 +1569,10 @@ pub(crate) mod tests {
             Some(first.cmp(&second))
         );
 
-        let one = unsafe { CSoftWideRefMut::<Pointee, true>::from_raw_parts_mut(first, a) };
-        let same_pointer =
-            unsafe { CSoftWideRefMut::<Pointee, true>::from_raw_parts_mut(first, b) };
+        let one = unsafe { CSoftWideRefMut::<Pointee>::from_raw_parts_mut(first, a) };
+        let same_pointer = unsafe { CSoftWideRefMut::<Pointee>::from_raw_parts_mut(first, b) };
         let different_pointer =
-            unsafe { CSoftWideRefMut::<Pointee, true>::from_raw_parts_mut(second, a) };
+            unsafe { CSoftWideRefMut::<Pointee>::from_raw_parts_mut(second, a) };
         assert!(one < same_pointer);
         assert_ne!(one, different_pointer);
         assert_eq!(
@@ -1616,7 +1599,7 @@ pub(crate) mod tests {
         );
         assert_eq!(
             size_of::<CWideRefMut<'_, [u8]>>(),
-            size_of::<CSoftWideRefMut<[u8], true>>()
+            size_of::<CSoftWideRefMut<[u8]>>()
         );
         let values = [1_u8, 2, 3];
         let shared = CWideRef::<[u8]>::from_ref(&values);

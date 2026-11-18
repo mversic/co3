@@ -9,7 +9,7 @@ error[E0308]: mismatched types
 37 | | }
    | |_- expected due to this
    |
-   = note: expected fn pointer `for<'a> fn(&'a Box<u32>)`
+   = note: expected fn pointer `for<'a> fn(&'a RustBox<u32>)`
                  found fn item `for<'a> fn(&'a u32) {kita}`
 
 error[E0308]: mismatched types
@@ -25,7 +25,7 @@ error[E0308]: mismatched types
 45 | | }
    | |_- expected due to this
    |
-   = note: expected fn pointer `for<'a> fn(&'a Box<u32>)`
+   = note: expected fn pointer `for<'a> fn(&'a RustBox<u32>)`
                  found fn item `for<'a> fn(&'a u32) {<u32 as Kita>::kita2}`
 
 error[E0308]: mismatched types

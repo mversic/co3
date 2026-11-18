@@ -1721,7 +1721,7 @@ fn gen_export_owned_type_alias(ty: &syn::ForeignItemType) -> TokenStream {
         #(#type_cfg_attrs)*
         #[allow(type_alias_bounds)]
         #[doc = #owned_doc]
-        #vis type #owned_ident #impl_generics #where_clause = #co3::boxed::Box<#ident #ty_generics>;
+        #vis type #owned_ident #impl_generics #where_clause = #co3::boxed::RustBox<#ident #ty_generics>;
     }
 }
 

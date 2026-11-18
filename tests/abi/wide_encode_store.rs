@@ -113,7 +113,7 @@ fn one_field_wide_tuples_are_unsupported() {
     static_assertions::assert_not_impl_any!(Tuple2<u32, [u8]>: co3::convert::SoftEncodeMut<'static>, co3::convert::SoftEncodeMutUnchecked<'static>);
     static_assertions::assert_impl_all!(&'static Tuple1<u8>: co3::convert::Encode, co3::convert::EncodeUnchecked);
     let tuple = Tuple1(7_u8);
-    let carrier: co3::reference::CRef<'_, Tuple1<u8>> = co3::encode(&tuple);
+    let carrier: co3::reference::Ref<'_, <Tuple1<u8> as co3::ReprC>::CType> = co3::encode(&tuple);
     assert_eq!(
         carrier.as_ptr().cast::<()>(),
         core::ptr::from_ref(&tuple).cast::<()>()

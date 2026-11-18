@@ -1220,7 +1220,7 @@ pub(super) fn derive_fieldless_enum(
     let moved_encode_body = if is_move {
         quote! {
             let encoded = { #encode_body };
-            core::mem::forget(self);
+            let _ = core::mem::ManuallyDrop::new(self);
             encoded
         }
     } else {
@@ -1317,7 +1317,7 @@ pub(super) fn derive_fieldless_enum(
             unsafe impl #ref_impl_generics #trait_name<'_ršč> for #name #ty_generics
             where
                 Self: #reference_repr,
-                &'_ršč Self: co3::ReprC<CType = co3::reference::CSoftRef<Self>>,
+                &'_ršč Self: co3::ReprC<CType = co3::reference::SoftRef<<Self as co3::ReprC>::CType>>,
                 #predicates
             {
                 type #store_name = co3::sync::RefSizedEncodeStore<Self, ()>;
@@ -1329,13 +1329,13 @@ pub(super) fn derive_fieldless_enum(
             where
                 #drop_speculative Self: co3::ReprC<CType: co3::CType + Sized>
                     + #abi_bound + '_ršč,
-                &'_ršč Self: co3::ReprC<CType = co3::reference::CRef<'_ršč, Self>>,
+                &'_ršč Self: co3::ReprC<CType = co3::reference::Ref<'_ršč, <Self as co3::ReprC>::CType>>,
                 #validation_bound
                 #predicates
             {
                 type #store_name = ();
                 #unsafe_fn fn #method<'itm>(&'_ršč self, _: &'itm mut ()) -> #output where '_ršč: 'itm {
-                    let encoded = unsafe { co3::reference::CRef::from_raw(core::ptr::from_ref(self).cast()) };
+                    let encoded = unsafe { co3::reference::Ref::from_raw(core::ptr::from_ref(self).cast()) };
                     #validation
                     encoded
                 }
@@ -1721,7 +1721,7 @@ fn gen_codec_impls(
                     #(#field_bounds,)*
                     #leading_predicates
                     #speculative Self: #reference_repr + '_ršč,
-                    &'_ršč Self: co3::ReprC<CType = co3::reference::CSoftRef<Self>>,
+                    &'_ršč Self: co3::ReprC<CType = co3::reference::SoftRef<<Self as co3::ReprC>::CType>>,
 
                 {
                     type #store_name = co3::sync::RefSizedEncodeStore<Self, #field_store>;
@@ -1737,12 +1737,12 @@ fn gen_codec_impls(
                     #speculative Self: co3::ReprC<CType: co3::CType + Sized>
                         + #abi_bound
                         + Sized + '_ršč,
-                    &'_ršč Self: co3::ReprC<CType = co3::reference::CRef<'_ršč, Self>>,
+                    &'_ršč Self: co3::ReprC<CType = co3::reference::Ref<'_ršč, <Self as co3::ReprC>::CType>>,
                     #validation_bound
                 {
                     type #store_name = ();
                     #unsafe_fn fn #method<'itm>(&'_ršč self, _: &'itm mut ()) -> #output where '_ršč: 'itm {
-                        let encoded = unsafe { co3::reference::CRef::from_raw(core::ptr::from_ref(self).cast()) };
+                        let encoded = unsafe { co3::reference::Ref::from_raw(core::ptr::from_ref(self).cast()) };
                         #validation
                         encoded
                     }

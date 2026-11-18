@@ -447,15 +447,15 @@ pub(crate) use primitive_derive;
 #[cfg(test)]
 mod tests {
     #[cfg(feature = "alloc")]
-    use alloc::{boxed::Box, vec::Vec};
+    use alloc::{boxed::Box as RustBox, vec::Vec};
     use core::cmp::Ordering;
 
     use static_assertions::{assert_impl_all, assert_not_impl_any};
 
     use super::*;
     #[cfg(feature = "alloc")]
-    use crate::{boxed::CBox, wide::CWideBox};
-    use crate::{cmp::Ordering as COrdering, convert::Encode, option::COption, reference::CRef};
+    use crate::{boxed::Box, wide::CWideBox};
+    use crate::{cmp::Ordering as COrdering, convert::Encode, option::COption, reference::Ref};
 
     #[test]
     fn scalar_carriers_accept_all_values_without_niches() {
@@ -561,10 +561,10 @@ mod tests {
 
         #[cfg(feature = "alloc")]
         {
-            assert_not_impl_any!(extern "C" fn(Box<u8>) -> (): ReprC);
-            assert_not_impl_any!(extern "C" fn() -> Box<u8>: ReprC);
-            assert_not_impl_any!(fn(Box<u8>) -> u8: ReprC);
-            type OwnedCallback = extern "C" fn(CBox<u8>) -> CBox<u8>;
+            assert_not_impl_any!(extern "C" fn(RustBox<u8>) -> (): ReprC);
+            assert_not_impl_any!(extern "C" fn() -> RustBox<u8>: ReprC);
+            assert_not_impl_any!(fn(RustBox<u8>) -> u8: ReprC);
+            type OwnedCallback = extern "C" fn(Box<u8>) -> Box<u8>;
             assert_impl_all!(OwnedCallback: ReprC<CType = Option<OwnedCallback>>, Encode, Decode<'static>);
         }
     }
@@ -578,18 +578,18 @@ mod tests {
             CType,
         );
         assert_impl_all!(&u8:
-            Niche<CType = CRef<'static, u8>>,
+            Niche<CType = Ref<'static, u8>>,
             Decode<'static>,
             Encode,
         );
         assert_impl_all!(&mut u8:
-            Niche<CType = crate::reference::CRefMut<'static, u8>>,
+            Niche<CType = crate::reference::RefMut<'static, u8>>,
             Decode<'static>,
             Encode,
         );
         #[cfg(feature = "alloc")]
-        assert_impl_all!(Box<u8>:
-            Niche<CType = CBox<u8>>,
+        assert_impl_all!(RustBox<u8>:
+            Niche<CType = Box<u8>>,
             Decode<'static>,
             Encode,
         );
@@ -604,7 +604,7 @@ mod tests {
             Encode,
         );
         #[cfg(feature = "alloc")]
-        assert_impl_all!(Box<[u8]>:
+        assert_impl_all!(RustBox<[u8]>:
             Niche<CType = CWideBox<[u8]>>,
             Decode<'static>,
             Encode,

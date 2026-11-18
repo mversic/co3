@@ -88,9 +88,9 @@ pub(super) fn gen_stable_direct_mut_impls(input: &syn::DeriveInput) -> TokenStre
         let unsafe_fn = unchecked.then(|| quote!(unsafe));
         let output = encoder_output(quote!(&'_ršč mut Self));
         let carrier = if robust {
-            quote!(co3::reference::CRefMut<'_ršč, Self>)
+            quote!(co3::reference::RefMut<'_ršč, <Self as co3::ReprC>::CType>)
         } else {
-            quote!(co3::reference::CSoftRefMut<Self, true>)
+            quote!(co3::reference::SoftRefMut<<Self as co3::ReprC>::CType>)
         };
         let abi_bound = if unchecked {
             quote!(co3::transmute::AbiCompatible)
@@ -105,8 +105,9 @@ pub(super) fn gen_stable_direct_mut_impls(input: &syn::DeriveInput) -> TokenStre
             unsafe impl #impl_generics #trait_name<'_ršč> for #name #ty_generics
             where
                 #speculative Self: Clone + #move_trait + co3::transmute::AbiCompatible
+                    + co3::ReprC<CType: co3::CType + Sized>
                     + co3::convert::DecodeMove<'_ršč, Store: co3::convert::EmptyStore + '_ršč> + '_ršč,
-                &'_ršč mut Self: co3::ReprC<CType = co3::reference::CSoftRefMut<Self, true>> + co3::transmute::AbiCompatible,
+                &'_ršč mut Self: co3::ReprC<CType = co3::reference::SoftRefMut<<Self as co3::ReprC>::CType>> + co3::transmute::AbiCompatible,
                 #(#field_bounds,)*
                 #predicates
             {
@@ -327,9 +328,9 @@ fn gen_transparent_decode_ref(
     ));
     let field_impls = [true, false].into_iter().map(|stable| {
         let (layout, carrier) = if stable {
-            (quote!(co3::rust_spec::Stable), quote!(co3::reference::CRef<'d, R>))
+            (quote!(co3::rust_spec::Stable), quote!(co3::reference::Ref<'d, <R as co3::ReprC>::CType>))
         } else {
-            (quote!(co3::rust_spec::Unstable), quote!(co3::reference::CSoftRef<R>))
+            (quote!(co3::rust_spec::Unstable), quote!(co3::reference::SoftRef<<R as co3::ReprC>::CType>))
         };
         quote! {
             impl<'d, R> __Co3TransparentFieldDecode<'d, R> for #layout
@@ -423,7 +424,7 @@ fn gen_transparent_decode_ref(
                 #speculative <Self as co3::rust_spec::RustSpec>::Drop: __Co3NonCustomDrop,
                 #ty: co3::ReprC + co3::rust_spec::RustSpec,
                 #field_bound,
-                &'_co3_decode Self: co3::ReprC<CType = co3::reference::CSoftRef<Self>>,
+                &'_co3_decode Self: co3::ReprC<CType = co3::reference::SoftRef<<Self as co3::ReprC>::CType>>,
                 &'_co3_decode #ty: co3::convert::DecodeMove<'_co3_decode>,
                 <#ty as co3::rust_spec::RustSpec>::Layout:
                     __Co3TransparentFieldDecode<'_co3_decode, #ty>,
@@ -696,9 +697,9 @@ fn gen_structural_decode(
     };
     let mutability = mutable.then(|| quote!(mut));
     let reference = if mutable {
-        quote!(co3::reference::CSoftRefMut<Self, true>)
+        quote!(co3::reference::SoftRefMut<<Self as co3::ReprC>::CType>)
     } else {
-        quote!(co3::reference::CSoftRef<Self>)
+        quote!(co3::reference::SoftRef<<Self as co3::ReprC>::CType>)
     };
     let writeback = mutable.then(
         || quote!(#speculative Self: co3::convert::EncodeMove<Store: co3::convert::EmptyStore>,),
@@ -752,9 +753,9 @@ fn gen_shared_field_encoders() -> TokenStream {
         };
         let implementations = [true, false].into_iter().map(|stable| {
             let carrier = if stable {
-                quote!(co3::reference::CRef<'a, R>)
+                quote!(co3::reference::Ref<'a, <R as co3::ReprC>::CType>)
             } else {
-                quote!(co3::reference::CSoftRef<R>)
+                quote!(co3::reference::SoftRef<<R as co3::ReprC>::CType>)
             };
             let encode = if unchecked { encoding_call(quote!(<&'a R as #move_trait>::#move_method(self, store)), true) } else { quote!(co3::convert::EncodeMove::soft_encode(self, store)) };
             quote! {
@@ -791,9 +792,9 @@ fn gen_shared_field_encoders() -> TokenStream {
 fn gen_shared_field_decoder() -> TokenStream {
     let implementations = [true, false].into_iter().map(|stable| {
         let (layout, carrier) = if stable {
-            (quote!(co3::rust_spec::Stable), quote!(co3::reference::CRef<'d, R>))
+            (quote!(co3::rust_spec::Stable), quote!(co3::reference::Ref<'d, <R as co3::ReprC>::CType>))
         } else {
-            (quote!(co3::rust_spec::Unstable), quote!(co3::reference::CSoftRef<R>))
+            (quote!(co3::rust_spec::Unstable), quote!(co3::reference::SoftRef<<R as co3::ReprC>::CType>))
         };
         quote! {
             unsafe impl<'d, R: co3::ReprC<CType: co3::CType + Sized + 'd> + 'd> __Co3DecodeField<'d> for R

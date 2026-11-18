@@ -284,7 +284,7 @@
 //!    input
 //! }
 //!
-//! fn clone_into(input: Box<u8>) {
+//! fn clone_into(input: RustBox<u8>) {
 //!    drop(input);
 //! }
 //!
@@ -295,7 +295,7 @@
 //!    fn passthrough(input: move Vec<u8>) -> move Vec<u8>;
 //!
 //!    // `input` is borrowed and cloned
-//!    fn clone_into(input: Box<u8>);
+//!    fn clone_into(input: RustBox<u8>);
 //! }
 //! # fn main() {}
 //! # }
@@ -500,13 +500,13 @@
 //! }
 //!
 //! // If you have an existing function
-//! fn increment(value: Box<u8>) -> Value {
+//! fn increment(value: RustBox<u8>) -> Value {
 //!     Value(*value + 1)
 //! }
 //!
 //! raw! {
 //!     // The generated companion uses the C calling convention.
-//!     fn increment(value: move Box<u8>) -> Value;
+//!     fn increment(value: move RustBox<u8>) -> Value;
 //!
 //!     impl Value {
 //!         // Synthesize its C ABI companion method.
@@ -517,7 +517,7 @@
 //! ffi! {
 //!     #![unsafe(extern("C"))]
 //!
-//!     type Callback = raw extern "C" fn(move Box<u8>) -> Value;
+//!     type Callback = raw extern "C" fn(move RustBox<u8>) -> Value;
 //!     type MethodCallback<'a> = raw extern "C" fn(&'a Value) -> Value;
 //!
 //!     #[symbol_name = "doc_register_callback"]
@@ -561,7 +561,7 @@ extern crate alloc;
 extern crate self as co3;
 
 #[cfg(feature = "alloc")]
-use alloc::boxed::Box;
+use alloc::boxed::Box as RustBox;
 
 #[cfg(feature = "derive")]
 pub use co3_derive::*;
@@ -577,7 +577,6 @@ use rust_spec::size::MetadataKind;
 use rust_spec::{
     RustSpec, Stable, Unstable,
     layout::{LayoutKind, NonRobust, Robust},
-    mutability::{Exclusive, ExclusiveKind, WithInterior},
     niche::{WithNiche, WithoutNiche},
     size::{ExternTypeLike, MetaSized, NulTerminated, SizedKind, SliceLike, Zero},
 };
@@ -585,11 +584,11 @@ use rust_spec::{
 #[cfg(feature = "alloc")]
 use crate::ffi::NulTerminatedBuf;
 #[cfg(feature = "alloc")]
-use crate::{boxed::CBox, wide::CWideBox};
+use crate::{boxed::Box, wide::CWideBox};
 use crate::{
     convert::Store,
     niche::Niche,
-    reference::{CRef, CRefMut, CSoftRef, CSoftRefMut},
+    reference::{SoftRef, SoftRefMut, Ref, RefMut},
     wide::{CSoftWideRef, CSoftWideRefMut, CWideRef, Wide, WideHeader},
 };
 
@@ -726,20 +725,20 @@ disjoint_impls! {
     where
         R: RustSpec<Layout = Stable, Size: Thin>,
     {
-        type CType = CRef<'a, R>;
+        type CType = Ref<'a, <R as crate::ReprC>::CType>;
     }
-    impl<R: ReprC + ?Sized, __Interior: ExclusiveKind> ReprC for &R
+    impl<R: ReprC + ?Sized> ReprC for &R
     where
-        R: RustSpec<Layout = Unstable, Size: Thin, Mutability = Exclusive<__Interior>>,
+        R: RustSpec<Layout = Unstable, Size: Thin>,
     {
-        type CType = CSoftRef<R>;
+        type CType = SoftRef<<R as crate::ReprC>::CType>;
     }
-    impl<R: ReprC + ?Sized, __Interior: ExclusiveKind> ReprC for &R
+    impl<R: ReprC + ?Sized> ReprC for &R
     where
-        R: RustSpec<Size = NulTerminated, Mutability = Exclusive<__Interior>>,
+        R: RustSpec<Size = NulTerminated>,
         <R as ReprC>::CType: Sized,
     {
-        type CType = CSoftRef<R>;
+        type CType = SoftRef<<R as crate::ReprC>::CType>;
     }
     impl<'a, R: ReprC<CType: Wide<Header: WideHeader<Data: CType>, Metadata = usize>> + ?Sized> ReprC for &'a R
     where
@@ -747,49 +746,29 @@ disjoint_impls! {
     {
         type CType = CWideRef<'a, R>;
     }
-    impl<R: ReprC<CType: Wide<Header: WideHeader<Data: CType>, Metadata = usize>> + ?Sized, __Interior: ExclusiveKind> ReprC for &R
+    impl<R: ReprC<CType: Wide<Header: WideHeader<Data: CType>, Metadata = usize>> + ?Sized> ReprC for &R
     where
-        R: RustSpec<Layout = Unstable, Size = MetaSized<SliceLike>, Mutability = Exclusive<__Interior>>,
+        R: RustSpec<Layout = Unstable, Size = MetaSized<SliceLike>>,
     {
         type CType = CSoftWideRef<R>;
     }
-    impl<R: ReprC + ?Sized, __Trap> ReprC for &R
-    where
-        R: RustSpec<Layout = Unstable, Size: Thin, Mutability = WithInterior<__Trap>>,
-    {
-        type CType = CSoftRefMut<R, false>;
-    }
-    impl<R: ReprC + ?Sized, __Trap> ReprC for &R
-    where
-        R: RustSpec<Size = NulTerminated, Mutability = WithInterior<__Trap>>,
-        <R as ReprC>::CType: Sized,
-    {
-        type CType = CSoftRefMut<R, false>;
-    }
-    impl<R: ReprC<CType: Wide<Header: WideHeader<Data: CType>, Metadata = usize>> + ?Sized, __Trap> ReprC for &R
-    where
-        R: RustSpec<Layout = Unstable, Size = MetaSized<SliceLike>, Mutability = WithInterior<__Trap>>,
-    {
-        type CType = CSoftWideRefMut<R, false>;
-    }
-
     impl<'a, R: ReprC + ?Sized> ReprC for &'a mut R
     where
         R: RustSpec<Layout = Stable, Trap = Robust, Size: Thin>,
     {
-        type CType = CRefMut<'a, R>;
+        type CType = RefMut<'a, <R as crate::ReprC>::CType>;
     }
     impl<R: ReprC + ?Sized> ReprC for &mut R
     where
         R: RustSpec<Layout = Stable, Trap = NonRobust, Size: Thin>,
     {
-        type CType = CSoftRefMut<R, true>;
+        type CType = SoftRefMut<<R as crate::ReprC>::CType>;
     }
     impl<R: ReprC + ?Sized> ReprC for &mut R
     where
         R: RustSpec<Layout = Unstable, Size: Thin>,
     {
-        type CType = CSoftRefMut<R, true>;
+        type CType = SoftRefMut<<R as crate::ReprC>::CType>;
     }
     impl<'a, R: ReprC<CType: Wide<Header: WideHeader<Data: CType>, Metadata = usize>> + ?Sized> ReprC for &'a mut R
     where
@@ -801,34 +780,34 @@ disjoint_impls! {
     where
         R: RustSpec<Layout = Stable, Trap = NonRobust, Size = MetaSized<SliceLike>>,
     {
-        type CType = CSoftWideRefMut<R, true>;
+        type CType = CSoftWideRefMut<R>;
     }
     impl<R: ReprC<CType: Wide<Header: WideHeader<Data: CType>, Metadata = usize>> + ?Sized> ReprC for &mut R
     where
         R: RustSpec<Layout = Unstable, Size = MetaSized<SliceLike>>,
     {
-        type CType = CSoftWideRefMut<R, true>;
+        type CType = CSoftWideRefMut<R>;
     }
 
     #[cfg(feature = "alloc")]
-    impl<R: ReprC, S: SizedKind> ReprC for Box<R>
+    impl<R: ReprC, S: SizedKind> ReprC for RustBox<R>
     where
         R: RustSpec<Size = rust_spec::size::Sized<S>>,
         <R as ReprC>::CType: Sized,
     {
-        type CType = CBox<R>;
+        type CType = Box<<R as crate::ReprC>::CType>;
     }
     #[cfg(feature = "alloc")]
-    impl<R: NulTerminatedBuf<Header: ReprC> + ReprC<CType: CType + Sized> + ?Sized> ReprC for Box<R>
+    impl<R: NulTerminatedBuf<Header: ReprC> + ReprC<CType: CType + Sized> + ?Sized> ReprC for RustBox<R>
     where
         R: RustSpec<Size = NulTerminated>,
         <R as NulTerminatedBuf>::Header: Sized,
         <<R as NulTerminatedBuf>::Header as ReprC>::CType: Sized,
     {
-        type CType = CBox<R>;
+        type CType = Box<<R as crate::ReprC>::CType>;
     }
     #[cfg(feature = "alloc")]
-    impl<R: ReprC<CType: Wide<Header: WideHeader<Data: CType + Sized>, Metadata = usize>> + ?Sized> ReprC for Box<R>
+    impl<R: ReprC<CType: Wide<Header: WideHeader<Data: CType + Sized>, Metadata = usize>> + ?Sized> ReprC for RustBox<R>
     where
         R: RustSpec<Size = MetaSized<SliceLike>>,
     {
@@ -905,14 +884,14 @@ disjoint_impls! {
         R: ReprC<CType: wide::Wide<Header: CType + wide::WideHeader<Data: CType>>>
             + wide::Wide + RustSpec<Layout = Stable, Trap = rust_spec::layout::NonRobust>,
     {
-        type CType = wide::CSoftWideRefMut<R, true, true>;
+        type CType = wide::CSoftWideRefMut<R, true>;
     }
     impl<'a, R: ?Sized> ReprC for wide::WideRefMut<'a, R>
     where
         R: ReprC<CType: wide::Wide<Header: CType + wide::WideHeader<Data: CType>>>
             + wide::Wide + RustSpec<Layout = rust_spec::Unstable>,
     {
-        type CType = wide::CSoftWideRefMut<R, true, true>;
+        type CType = wide::CSoftWideRefMut<R, true>;
     }
 }
 
@@ -923,18 +902,18 @@ disjoint_impls! {
 mod tests {
     use super::*;
     use crate::{
-        num::NonZero, option::COption, primitives::Bool, reference::CSoftRefMut,
+        num::NonZero, option::COption, primitives::Bool, reference::SoftRefMut,
         wide::CSoftWideRefMut,
     };
 
     #[test]
     fn carrier_types_are_zeroable() {
-        static_assertions::assert_impl_all!(reference::CSoftRef<u8>: Zeroable);
-        static_assertions::assert_impl_all!(reference::CSoftRefMut<u8, true>: Zeroable);
+        static_assertions::assert_impl_all!(reference::SoftRef<u8>: Zeroable);
+        static_assertions::assert_impl_all!(reference::SoftRefMut<u8>: Zeroable);
         static_assertions::assert_impl_all!(wide::CSoftWideRef<[u8]>: Zeroable);
-        static_assertions::assert_impl_all!(wide::CSoftWideRefMut<[u8], true>: Zeroable);
-        static_assertions::assert_impl_all!(crate::reference::CRefMut<'static, u8>: Zeroable);
-        static_assertions::assert_impl_all!(boxed::CBox<u8>: Zeroable);
+        static_assertions::assert_impl_all!(wide::CSoftWideRefMut<[u8]>: Zeroable);
+        static_assertions::assert_impl_all!(crate::reference::RefMut<'static, u8>: Zeroable);
+        static_assertions::assert_impl_all!(boxed::Box<u8>: Zeroable);
         static_assertions::assert_impl_all!(crate::wide::CWideRef<'static, [u8]>: Zeroable);
         static_assertions::assert_impl_all!(crate::wide::CWideRefMut<'static, [u8]>: Zeroable);
         static_assertions::assert_impl_all!(wide::CWideBox<[u8]>: Zeroable);
@@ -1120,7 +1099,7 @@ mod tests {
     #[test]
     fn decode_stored_mut_ref() {
         let mut c_opt = COption::Some(1u8);
-        let c_ptr = CSoftRefMut::<Option<u8>, true>::from_mut(&mut c_opt);
+        let c_ptr = SoftRefMut::<<Option<u8> as crate::ReprC>::CType>::from_mut(&mut c_opt);
         let new_val: u8 = 42;
         {
             let mut store = Default::default();
@@ -1132,7 +1111,7 @@ mod tests {
         assert_eq!(c_opt, COption::Some(42u8));
 
         let mut c_opts = [COption::Some(1u8)];
-        let c_slice = CSoftWideRefMut::<[Option<u8>], true>::from_mut(&mut c_opts[..]);
+        let c_slice = CSoftWideRefMut::<[Option<u8>]>::from_mut(&mut c_opts[..]);
         let x: u8 = 10;
         {
             let mut store = Default::default();
@@ -1168,19 +1147,19 @@ mod tests {
 
     #[test]
     #[cfg(feature = "alloc")]
-    // FIXME: This test demonstrates that ownership of &mut Box<(u32,)> is leaked
+    // FIXME: This test demonstrates that ownership of &mut RustBox<(u32,)> is leaked
     // from one side to the other: https://github.com/mversic/co3/issues/182
     fn encode_stored_mut_box_allows_pointer_replacement() {
-        use boxed::CBox;
+        use boxed::Box;
         use tuple::CTuple2;
 
-        let mut value = Box::new((1_u32, true));
+        let mut value = RustBox::new((1_u32, true));
 
         {
             let mut store = Default::default();
             let encoded = soft_encode(&mut value, &mut store);
             let original_data = unsafe { (*encoded.as_ptr()).as_ptr() };
-            let replacement = CBox::from_box(Box::new(CTuple2(100, Bool::TRUE)));
+            let replacement = Box::from_box(RustBox::new(CTuple2(100, Bool::TRUE)));
             let replacement_data = replacement.as_ptr();
 
             unsafe {
@@ -1200,7 +1179,7 @@ mod tests {
         use tuple::CTuple2;
 
         let mut tuples = [CTuple2(10_u32, Bool::TRUE)];
-        let c_slice = CSoftWideRefMut::<[(u32, bool)], true>::from_mut(&mut tuples[..]);
+        let c_slice = CSoftWideRefMut::<[(u32, bool)]>::from_mut(&mut tuples[..]);
 
         {
             let mut store = Default::default();

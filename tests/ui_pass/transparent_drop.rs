@@ -29,7 +29,7 @@ static_assertions::assert_type_eq_all!(
 static_assertions::assert_type_ne_all!(
     <Transparent<Box<u8>> as ReprC>::CType,
     <ConcreteBox as ReprC>::CType,
-    co3::boxed::CBox<u8>
+    co3::boxed::Box<u8>
 );
 
 fn main() {
