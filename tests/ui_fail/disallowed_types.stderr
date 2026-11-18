@@ -15,8 +15,8 @@ help: the trait `ReprC` is not implemented for `StableButNotCStatic`
  25 | struct StableButNotCStatic(u32);
     | ^^^^^^^^^^^^^^^^^^^^^^^^^^
     = help: the following other types implement trait `ReprC`:
-              &'a R
-              &'a mut R
+              &'_lšč0 _TŠČ0
+              &'_lšč0 mut _TŠČ0
               ()
               (A, B)
               (A, B, C)

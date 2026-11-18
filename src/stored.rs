@@ -27,14 +27,11 @@ use crate::{
     },
     niche::Niche,
     option::COptionSome,
-    reference::{CRef, CSoftRef, CSoftRefMut, MutRefCarrier, SharedRefCarrier},
+    reference::{MutRefCarrier, RefCarrier},
     result::{CResult, CResultErr, CResultOk},
     sync::ArrayStore,
     transmute::{AbiCompatible, AbiCompatibleValidate, InteriorTrap, transmute_owned},
-    wide::{
-        CSoftWideRef, CSoftWideRefMut, CWideRef, CWideRefMut, MutWideRefCarrier, PointeeData, Wide,
-        WideData, WideHeader,
-    },
+    wide::{Wide, WideData, WideHeader, WideRefCarrier, WideRefMutCarrier},
 };
 #[cfg(feature = "alloc")]
 use crate::{
@@ -82,108 +79,6 @@ pub trait AssignFromOwned: ToOwned {
     fn assign_from_owned(&mut self, owned: Self::Owned) -> Option<()>;
 }
 
-/// Constructs the carrier selected by `ReprC` for a shared reference without reading it.
-trait FromSharedRef<C: ?Sized>: CType + Sized {
-    /// # Safety
-    ///
-    /// The thin pointer must satisfy the validity and aliasing requirements of the
-    /// selected carrier, including its tracked lifetime. Interior-mutability access must remain synchronized.
-    unsafe fn from_shared_ref(data: *const C) -> Self;
-}
-
-/// Helper trait to construct wide shared carrier from a wide raw pointer
-trait FromSharedWideRef<P: Wide<Metadata = usize> + ?Sized>: CType + Sized {
-    fn data(&self) -> *const PointeeData<P>;
-    fn metadata(&self) -> usize;
-    /// # Safety
-    ///
-    /// The pointer and length must satisfy the validity and aliasing requirements
-    /// of the selected carrier, including its tracked lifetime. Interior-mutability access must remain synchronized.
-    unsafe fn from_shared_ref(data: *const PointeeData<P>, metadata: usize) -> Self;
-}
-
-impl<R: ReprC<CType: CType> + ?Sized> FromSharedRef<R::CType> for CSoftRef<R> {
-    unsafe fn from_shared_ref(data: *const R::CType) -> Self {
-        unsafe { Self::from_raw(data) }
-    }
-}
-
-impl<R: ReprC<CType: CType> + ?Sized> FromSharedRef<R::CType> for CSoftRefMut<R, false> {
-    unsafe fn from_shared_ref(data: *const R::CType) -> Self {
-        unsafe { Self::from_raw(data.cast_mut()) }
-    }
-}
-
-impl<'a, R: ReprC<CType: CType> + ?Sized> FromSharedRef<R::CType> for CRef<'a, R> {
-    unsafe fn from_shared_ref(data: *const R::CType) -> Self {
-        unsafe { Self::from_raw(data) }
-    }
-}
-
-impl<'a, R, P> FromSharedWideRef<P> for CWideRef<'a, R>
-where
-    R: ReprC<CType = P> + ?Sized,
-    P: Wide<Header: WideHeader<Data: CType>, Metadata = usize> + ?Sized,
-{
-    fn data(&self) -> *const PointeeData<P> {
-        self.as_ptr() as *const _
-    }
-    fn metadata(&self) -> usize {
-        self.metadata()
-    }
-    unsafe fn from_shared_ref(data: *const PointeeData<P>, metadata: usize) -> Self {
-        unsafe { Self::from_raw_parts(data, metadata) }
-    }
-}
-
-impl<'a, R, P> FromSharedWideRef<P> for CWideRefMut<'a, R>
-where
-    R: ReprC<CType = P> + ?Sized,
-    P: Wide<Header: WideHeader<Data: CType>, Metadata = usize> + ?Sized,
-{
-    fn data(&self) -> *const PointeeData<P> {
-        self.as_ptr() as *const _
-    }
-    fn metadata(&self) -> usize {
-        self.metadata()
-    }
-    unsafe fn from_shared_ref(data: *const PointeeData<P>, metadata: usize) -> Self {
-        unsafe { Self::from_raw_parts_mut(data.cast_mut(), metadata) }
-    }
-}
-
-impl<R, P> FromSharedWideRef<P> for CSoftWideRef<R>
-where
-    R: ReprC<CType = P> + ?Sized,
-    P: Wide<Header: WideHeader<Data: CType>, Metadata = usize> + ?Sized,
-{
-    fn data(&self) -> *const PointeeData<P> {
-        self.as_ptr() as *const _
-    }
-    fn metadata(&self) -> usize {
-        self.metadata()
-    }
-    unsafe fn from_shared_ref(data: *const PointeeData<P>, metadata: usize) -> Self {
-        unsafe { Self::from_raw_parts(data, metadata) }
-    }
-}
-
-impl<R, P> FromSharedWideRef<P> for CSoftWideRefMut<R, false>
-where
-    R: ReprC<CType = P> + ?Sized,
-    P: Wide<Header: WideHeader<Data: CType>, Metadata = usize> + ?Sized,
-{
-    fn data(&self) -> *const PointeeData<P> {
-        self.as_ptr() as *const _
-    }
-    fn metadata(&self) -> usize {
-        self.metadata()
-    }
-    unsafe fn from_shared_ref(data: *const PointeeData<P>, metadata: usize) -> Self {
-        unsafe { Self::from_raw_parts_mut(data.cast_mut(), metadata) }
-    }
-}
-
 disjoint_impls! {
     /// Encodes a value using storage chosen independently from [`EncodeMove::Store`].
     ///
@@ -208,7 +103,7 @@ disjoint_impls! {
     }
     unsafe impl<R: AbiCompatible + ?Sized> EncodeMoveUnchecked for &R
     where
-        Self: RustSpec<Layout = Stable> + ReprC<CType: FromSharedRef<<R as ReprC>::CType>>,
+        Self: RustSpec<Layout = Stable> + ReprC<CType: RefCarrier<R>>,
         R: RustSpec<Layout = Stable, Size: Thin>,
     {
         type SoftStore = ();
@@ -225,12 +120,12 @@ disjoint_impls! {
             // https://github.com/rust-lang/rust/issues/81513
             let val = unsafe { core::mem::transmute_copy::<*const R, *const R::CType>(&ptr) };
 
-            unsafe { Self::CType::from_shared_ref(val) }
+            unsafe { Self::CType::from_shared_ptr(val) }
         }
     }
     unsafe impl<R: AbiCompatible + Wide<Metadata = usize> + ?Sized> EncodeMoveUnchecked for &R
     where
-        Self: RustSpec<Layout = Unstable> + ReprC<CType: FromSharedWideRef<<R as ReprC>::CType>>,
+        Self: RustSpec<Layout = Unstable> + ReprC<CType: WideRefCarrier<R>>,
         R: RustSpec<Layout = Stable, Size = MetaSized<SliceLike>>,
         <R as ReprC>::CType: Wide<Header: WideHeader, Metadata = usize>,
         <<<R as ReprC>::CType as Wide>::Header as WideHeader>::Data: CType,
@@ -247,7 +142,7 @@ disjoint_impls! {
             let len = R::metadata(source);
             let data = R::as_ptr(source).cast();
 
-            unsafe { Self::CType::from_shared_ref(data, len) }
+            unsafe { Self::CType::from_const_parts(data, len) }
         }
     }
 
@@ -292,7 +187,7 @@ disjoint_impls! {
     }
     unsafe impl<R: AbiCompatible + Wide<Metadata = usize> + ?Sized> EncodeMoveUnchecked for &mut R
     where
-        Self: RustSpec<Layout = Unstable> + ReprC<CType: MutWideRefCarrier<R>>,
+        Self: RustSpec<Layout = Unstable> + ReprC<CType: WideRefMutCarrier<R>>,
         R: RustSpec<Layout = Stable, Size = MetaSized<SliceLike>>,
         <R as ReprC>::CType: Wide<Header: WideHeader, Metadata = usize>,
         <<<R as ReprC>::CType as Wide>::Header as WideHeader>::Data: CType,
@@ -741,12 +636,12 @@ disjoint_impls! {
         where
             Self: 'itm;
     }
-    unsafe impl<R: AbiCompatibleValidate + ?Sized, __Interior: ExclusiveKind> EncodeMove for &R
+    unsafe impl<R: AbiCompatibleValidate + ?Sized> EncodeMove for &R
     where
         Self: AbiCompatibleValidate
             + RustSpec<Layout = Stable>
-            + ReprC<CType: FromSharedRef<<R as ReprC>::CType>>,
-        R: RustSpec<Layout = Stable, Size: Thin, Mutability = Exclusive<__Interior>>,
+            + ReprC<CType: RefCarrier<R>>,
+        R: RustSpec<Layout = Stable, Size: Thin>,
         <R as RustSpec>::Mutability: InteriorTrap<Trap = Robust>,
     {
         type Store = ();
@@ -761,11 +656,11 @@ disjoint_impls! {
             encoded
         }
     }
-    unsafe impl<R: AbiCompatibleValidate + Wide<Metadata = usize> + ?Sized, __Interior: ExclusiveKind>
+    unsafe impl<R: AbiCompatibleValidate + Wide<Metadata = usize> + ?Sized>
         EncodeMove for &R
     where
-        Self: RustSpec<Layout = Unstable> + ReprC<CType: FromSharedWideRef<<R as ReprC>::CType>>,
-        R: RustSpec<Layout = Stable, Size = MetaSized<SliceLike>, Mutability = Exclusive<__Interior>>,
+        Self: RustSpec<Layout = Unstable> + ReprC<CType: WideRefCarrier<R>>,
+        R: RustSpec<Layout = Stable, Size = MetaSized<SliceLike>>,
         <R as ReprC>::CType: Wide<Header: WideHeader<Data: CType>, Metadata = usize>,
         <R as RustSpec>::Mutability: InteriorTrap<Trap = Robust>,
     {
@@ -795,46 +690,6 @@ disjoint_impls! {
             Self: 'itm,
         {
             self.soft_encode_ref(store)
-        }
-    }
-
-    unsafe impl<R: AbiCompatibleValidate + ?Sized, __Trap> EncodeMove for &R
-    where
-        Self: AbiCompatibleValidate
-            + RustSpec<Layout = Stable>
-            + ReprC<CType: FromSharedRef<<R as ReprC>::CType>>,
-        R: RustSpec<Layout = Stable, Size: Thin, Mutability = WithInterior<__Trap>>,
-        <R as RustSpec>::Mutability: InteriorTrap<Trap = Robust>,
-    {
-        type Store = ();
-
-        #[inline(always)]
-        fn soft_encode<'itm>(self, (): &mut ()) -> Self::CType
-        where
-            Self: 'itm,
-        {
-            let encoded = unsafe { self.soft_encode_unchecked(&mut ()) };
-            debug_assert_encoded_valid::<Self>(&encoded);
-            encoded
-        }
-    }
-    unsafe impl<R: AbiCompatibleValidate + Wide<Metadata = usize> + ?Sized, __Trap> EncodeMove for &R
-    where
-        Self: RustSpec<Layout = Unstable> + ReprC<CType: FromSharedWideRef<<R as ReprC>::CType>>,
-        R: RustSpec<Layout = Stable, Size = MetaSized<SliceLike>, Mutability = WithInterior<__Trap>>,
-        <R as ReprC>::CType: Wide<Header: WideHeader<Data: CType>, Metadata = usize>,
-        <R as RustSpec>::Mutability: InteriorTrap<Trap = Robust>,
-    {
-        type Store = ();
-
-        #[inline(always)]
-        fn soft_encode<'itm>(self, (): &mut ()) -> Self::CType
-        where
-            Self: 'itm,
-        {
-            let encoded = unsafe { self.soft_encode_unchecked(&mut ()) };
-            debug_assert_wide_pointee_valid::<R>(encoded.data(), encoded.metadata());
-            encoded
         }
     }
 
@@ -874,7 +729,7 @@ disjoint_impls! {
     }
     unsafe impl<R: AbiCompatibleValidate + Wide<Metadata = usize> + ?Sized> EncodeMove for &mut R
     where
-        Self: RustSpec<Layout = Unstable> + ReprC<CType: MutWideRefCarrier<R>>,
+        Self: RustSpec<Layout = Unstable> + ReprC<CType: WideRefMutCarrier<R>>,
         R: RustSpec<Layout = Stable, Size = MetaSized<SliceLike>, Trap = Robust>,
         <R as ReprC>::CType: Wide<Header: WideHeader<Data: CType>, Metadata = usize>,
     {
@@ -894,7 +749,7 @@ disjoint_impls! {
     unsafe impl<'a, R: AbiCompatibleValidate + SoftEncodeMut<'a> + Wide<Metadata = usize> + ?Sized>
         EncodeMove for &'a mut R
     where
-        Self: RustSpec<Layout = Unstable> + ReprC<CType: MutWideRefCarrier<R>>,
+        Self: RustSpec<Layout = Unstable> + ReprC<CType: WideRefMutCarrier<R>>,
         R: RustSpec<Layout = Stable, Size = MetaSized<SliceLike>, Trap = NonRobust>,
         <R as ReprC>::CType: Wide<Header: WideHeader<Data: CType>, Metadata = usize>,
     {
@@ -1325,11 +1180,11 @@ disjoint_impls! {
                 .expect("called `Option::unwrap()` on a `None` value")
         }
     }
-    unsafe impl<'d, 'r: 'd, R: AbiCompatibleValidate + ?Sized, __Interior: ExclusiveKind> DecodeMove<'d>
+    unsafe impl<'d, 'r: 'd, R: AbiCompatibleValidate + ?Sized> DecodeMove<'d>
         for &'r R
     where
-        Self: RustSpec<Layout = Stable> + ReprC<CType: SharedRefCarrier<R>>,
-        R: RustSpec<Layout = Stable, Size: Thin, Mutability = Exclusive<__Interior>>,
+        Self: RustSpec<Layout = Stable> + ReprC<CType: RefCarrier<R>>,
+        R: RustSpec<Layout = Stable, Size: Thin>,
         <R as RustSpec>::Mutability: InteriorTrap<Trap = Robust>,
     {
         type Store = ();
@@ -1357,11 +1212,10 @@ disjoint_impls! {
         'd,
         'r: 'd,
         R: AbiCompatibleValidate<CType: Wide<Metadata = usize>> + ?Sized,
-        __Interior: ExclusiveKind,
     > DecodeMove<'d> for &'r R
     where
         Self: RustSpec<Layout = Unstable>,
-        R: RustSpec<Layout = Stable, Size = MetaSized<SliceLike>, Mutability = Exclusive<__Interior>>,
+        R: RustSpec<Layout = Stable, Size = MetaSized<SliceLike>>,
         WideData<<R as ReprC>::CType>: CType,
         R: Wide<Metadata = usize>,
         <R as RustSpec>::Mutability: InteriorTrap<Trap = Robust>,
@@ -1376,60 +1230,6 @@ disjoint_impls! {
                 return None;
             }
 
-            Some(unsafe { Self::soft_decode_unchecked(source, store) })
-        }
-
-        #[inline(always)]
-        unsafe fn soft_decode_unchecked<'itm: 'd>(source: Self::CType, (): &mut ()) -> Self {
-            unsafe { R::from_raw_parts(source.data().cast::<R::Header>(), source.metadata()) }
-        }
-    }
-    unsafe impl<'d, 'r: 'd, R: AbiCompatibleValidate + ?Sized, __Trap> DecodeMove<'d> for &'r R
-    where
-        Self: RustSpec<Layout = Stable> + ReprC<CType: MutRefCarrier<R, false>>,
-        R: RustSpec<Layout = Stable, Size: Thin, Mutability = WithInterior<__Trap>>,
-        <R as RustSpec>::Mutability: InteriorTrap<Trap = Robust>,
-    {
-        type Store = ();
-
-        #[inline(always)]
-        unsafe fn soft_decode<'itm: 'd>(source: Self::CType, store: &'itm mut ()) -> Option<Self> {
-            if !unsafe { Self::is_valid(&source) } {
-                return None;
-            }
-
-            Some(unsafe { Self::soft_decode_unchecked(source, store) })
-        }
-
-        #[inline(always)]
-        unsafe fn soft_decode_unchecked<'itm: 'd>(source: Self::CType, (): &mut ()) -> Self {
-            let ptr = source.as_ptr().cast_const();
-
-            // TODO: Hack before `Thin` trait is available in stable:
-            // https://doc.rust-lang.org/std/ptr/traitalias.Thin.html
-            // https://github.com/rust-lang/rust/issues/81513
-            unsafe { &*core::mem::transmute_copy::<*const R::CType, *const R>(&ptr) }
-        }
-    }
-    unsafe impl<'d, 'r: 'd, R: AbiCompatibleValidate + Wide<Metadata = usize> + ?Sized, __Trap>
-        DecodeMove<'d> for &'r R
-    where
-        Self: RustSpec<Layout = Unstable>,
-        R: RustSpec<Layout = Stable, Size = MetaSized<SliceLike>, Mutability = WithInterior<__Trap>>,
-        <R as ReprC>::CType: Wide<Header: WideHeader<Data: CType>, Metadata = usize>,
-        <R as RustSpec>::Mutability: InteriorTrap<Trap = Robust>,
-    {
-        type Store = ();
-
-        #[inline(always)]
-        unsafe fn soft_decode<'itm: 'd>(source: Self::CType, store: &'itm mut ()) -> Option<Self> {
-            if source.is_null() {
-                return None;
-            }
-
-            if !unsafe { wide_pointee_is_valid::<R>(source.data(), source.metadata()) } {
-                return None;
-            }
             Some(unsafe { Self::soft_decode_unchecked(source, store) })
         }
 
@@ -1467,7 +1267,7 @@ disjoint_impls! {
     unsafe impl<'d, 'r: 'd, R: AbiCompatibleValidate<CType: Wide<Metadata = usize>> + ?Sized>
         DecodeMove<'d> for &'r mut R
     where
-        Self: RustSpec<Layout = Unstable> + ReprC<CType: MutWideRefCarrier<R>>,
+        Self: RustSpec<Layout = Unstable> + ReprC<CType: WideRefMutCarrier<R>>,
         R: RustSpec<Layout = Stable, Size = MetaSized<SliceLike>>,
         WideData<<R as ReprC>::CType>: CType,
         R: Wide<Metadata = usize>,
@@ -2464,7 +2264,7 @@ pub(crate) fn encode_ref_field<'a, R: ReprC<CType: Copy> + 'a>(
     store: &mut <&'a R as EncodeMove>::Store,
 ) -> R::CType
 where
-    &'a R: EncodeMove<CType: crate::reference::SharedRefCarrier<R>>,
+    &'a R: EncodeMove<CType: crate::reference::RefCarrier<R>>,
 {
     let encoded = crate::stored::EncodeMove::soft_encode(value, store);
     // CSoftRef guarantees shared access to initialized storage, and Copy permits
@@ -2482,7 +2282,7 @@ pub(crate) unsafe fn encode_ref_field_unchecked<'a, R: ReprC<CType: Copy> + 'a>(
     store: &mut <&'a R as EncodeMoveUnchecked>::SoftStore,
 ) -> R::CType
 where
-    &'a R: EncodeMoveUnchecked<CType: crate::reference::SharedRefCarrier<R>>,
+    &'a R: EncodeMoveUnchecked<CType: crate::reference::RefCarrier<R>>,
 {
     let encoded = unsafe { value.soft_encode_unchecked(store) };
     unsafe { encoded.as_ptr().read() }
@@ -2529,24 +2329,26 @@ mod tests {
     fn constructs_lifetime_bearing_shared_carriers() {
         use core::cell::UnsafeCell;
 
-        use super::{CRef, CWideRef, CWideRefMut, FromSharedRef, FromSharedWideRef};
+        use super::{RefCarrier, WideRefCarrier};
+        use crate::reference::CRef;
+        use crate::wide::CWideRef;
 
         let value = 7_u8;
-        let carrier: CRef<'_, u8> = unsafe { FromSharedRef::from_shared_ref(&value) };
+        let carrier: CRef<'_, u8> = unsafe { RefCarrier::from_shared_ptr(&value) };
         assert_eq!(unsafe { carrier.into_ref() }, Some(&value));
         let cell = core::cell::UnsafeCell::<u8>::new(5_u8);
-        let carrier: CRef<'_, UnsafeCell<u8>> = unsafe { FromSharedRef::from_shared_ref(&cell) };
+        let carrier: CRef<'_, UnsafeCell<u8>> = unsafe { RefCarrier::from_shared_ptr(&cell) };
         assert_eq!(carrier.as_ptr(), core::ptr::from_ref(&cell).cast_mut());
         let values = [1_u8, 2, 3];
         let carrier: CWideRef<'_, [u8]> =
-            unsafe { FromSharedWideRef::from_shared_ref(values.as_ptr(), values.len()) };
+            unsafe { WideRefCarrier::from_const_parts(values.as_ptr(), values.len()) };
         assert_eq!(unsafe { carrier.into_ref() }, Some(&values[..]));
         let cells = [
             core::cell::UnsafeCell::<u8>::new(1_u8),
             core::cell::UnsafeCell::new(2),
         ];
-        let carrier: CWideRefMut<'_, [UnsafeCell<u8>]> =
-            unsafe { FromSharedWideRef::from_shared_ref(cells.as_ptr(), cells.len()) };
+        let carrier: CWideRef<'_, [UnsafeCell<u8>]> =
+            unsafe { WideRefCarrier::from_const_parts(cells.as_ptr(), cells.len()) };
         assert_eq!(carrier.as_ptr(), cells.as_ptr().cast_mut());
         assert_eq!(carrier.metadata(), cells.len());
     }

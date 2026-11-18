@@ -8,7 +8,7 @@ ffi! {
     type Ordinary = core::num::NonZeroU8;
     type Regular = extern "C" fn(u8);
     type SharedUnpacked = extern "C" fn(#[unpack(_, _)] &[u8]) -> usize;
-    type InteriorUnpacked = raw extern "C" fn(#[unpack(*mut core::cell::Cell<u8>, usize)] &[core::cell::Cell<u8>]) -> usize;
+    type InteriorUnpacked = raw extern "C" fn(#[unpack(*const core::cell::Cell<u8>, usize)] &[core::cell::Cell<u8>]) -> usize;
     type RegularUnpacked = extern "C" fn(#[unpack(_, _)] &mut [u8]) -> usize;
     type Composite = (String, raw fn(String));
     type MaybeCallback = Option<raw fn(u8)>;
@@ -23,7 +23,7 @@ ffi! {
 ffi! {
     #![unsafe(extern("C"))]
 
-    fn interior_slice(#[unpack(*mut core::cell::Cell<u8>, usize)] values: &[core::cell::Cell<u8>]) -> usize;
+    fn interior_slice(#[unpack(*const core::cell::Cell<u8>, usize)] values: &[core::cell::Cell<u8>]) -> usize;
 }
 
 ffi! {

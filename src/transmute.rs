@@ -21,7 +21,7 @@ use crate::{
     ReprC,
     niche::Niche,
     option::COptionSome,
-    reference::{MutRefCarrier, SharedRefCarrier},
+    reference::{MutRefCarrier, RefCarrier},
     result::{CResultErr, CResultOk},
     utf8::Utf8Str,
     wide::Wide as _,
@@ -55,40 +55,6 @@ disjoint_impls! {
 /// # Safety
 /// `Self` and `Self::CType` must be compatible with the same stable ABI.
     pub unsafe trait AbiCompatible: ReprC {}
-
-    unsafe impl<R: AbiCompatible + ?Sized, __Interior: ExclusiveKind> AbiCompatible for &R
-        where
-            Self: RustSpec<Layout = Stable>,
-            R: RustSpec<Mutability = Exclusive<__Interior>>,
-            Exclusive<__Interior>: InteriorTrap<Trap = Robust>,
-            Self: ReprC<CType: SharedRefCarrier<R>>,
-        {}
-
-    unsafe impl<R: AbiCompatible + ?Sized, __Trap> AbiCompatible for &R
-        where
-            Self: RustSpec<Layout = Stable>,
-            R: RustSpec<Mutability = WithInterior<__Trap>>,
-            WithInterior<__Trap>: InteriorTrap<Trap = Robust>,
-            Self: ReprC<CType: MutRefCarrier<R, false>>,
-        {}
-
-    #[cfg(feature = "alloc")]
-    unsafe impl<R: AbiCompatible, __Interior: ExclusiveKind> AbiCompatible for Box<R>
-        where
-            Self: RustSpec<Layout = Stable>,
-            R: RustSpec<Mutability = Exclusive<__Interior>>,
-            Self: ReprC<CType = CBox<R>>,
-            <R as ReprC>::CType: Sized,
-        {}
-
-    #[cfg(feature = "alloc")]
-    unsafe impl<R: AbiCompatible, __Trap> AbiCompatible for Box<R>
-        where
-            Self: RustSpec<Layout = Stable>,
-            R: RustSpec<Mutability = WithInterior<__Trap>>,
-            Self: ReprC<CType = CBox<R>>,
-            <R as ReprC>::CType: Sized,
-        {}
 
     unsafe impl<R: AbiCompatible<CType: Copy> + Niche, E: ReprC> AbiCompatible for Result<R, E>
         where
@@ -143,75 +109,6 @@ disjoint_impls! {
         /// * Any pointers dereferenced while checking `target` must be valid for reads.
         /// * Inspecting non-robust interior-mutable contents requires exclusive access.
         unsafe fn is_valid(target: &Self::CType) -> bool;
-    }
-
-    unsafe impl<R: AbiCompatibleValidate + ?Sized, __Interior: ExclusiveKind> AbiCompatibleValidate for &R
-    where
-        Self: RustSpec<Layout = Stable>,
-        R: RustSpec<Mutability = Exclusive<__Interior>>,
-        Exclusive<__Interior>: InteriorTrap<Trap = Robust>,
-        Self: ReprC<CType: SharedRefCarrier<R>>,
-    {
-        #[inline(always)]
-        unsafe fn is_valid(target: &Self::CType) -> bool {
-            let ptr = target.as_ptr();
-
-            if ptr.is_null() {
-                return false;
-            }
-
-            unsafe { R::is_valid(&*ptr) }
-        }
-    }
-
-    unsafe impl<R: AbiCompatibleValidate + ?Sized, __Trap> AbiCompatibleValidate for &R
-    where
-        Self: RustSpec<Layout = Stable>,
-        R: RustSpec<Mutability = WithInterior<__Trap>>,
-        WithInterior<__Trap>: InteriorTrap<Trap = Robust>,
-        Self: ReprC<CType: MutRefCarrier<R, false>>,
-    {
-        #[inline(always)]
-        unsafe fn is_valid(target: &Self::CType) -> bool {
-            let ptr = target.as_ptr();
-            !ptr.is_null() && unsafe { R::is_valid(&*ptr) }
-        }
-    }
-
-    #[cfg(feature = "alloc")]
-    unsafe impl<R: AbiCompatibleValidate, __Interior: ExclusiveKind> AbiCompatibleValidate for Box<R>
-    where
-        Self: RustSpec<Layout = Stable>,
-        R: RustSpec<Mutability = Exclusive<__Interior>>,
-        Self: ReprC<CType = CBox<R>>,
-        <R as ReprC>::CType: Sized,
-    {
-        #[inline(always)]
-        unsafe fn is_valid(target: &Self::CType) -> bool {
-            if target.is_null() {
-                return false;
-            }
-
-            unsafe { R::is_valid(&*target.as_ptr()) }
-        }
-    }
-
-    #[cfg(feature = "alloc")]
-    unsafe impl<R: AbiCompatibleValidate, __Trap> AbiCompatibleValidate for Box<R>
-    where
-        Self: RustSpec<Layout = Stable>,
-        R: RustSpec<Mutability = WithInterior<__Trap>>,
-        Self: ReprC<CType = CBox<R>>,
-        <R as ReprC>::CType: Sized,
-    {
-        #[inline(always)]
-        unsafe fn is_valid(target: &Self::CType) -> bool {
-            if target.is_null() {
-                return false;
-            }
-
-            unsafe { R::is_valid(&*target.as_ptr()) }
-        }
     }
 
     unsafe impl<R: AbiCompatibleValidate<CType: Copy> + Niche, E: ReprC>
@@ -283,7 +180,32 @@ disjoint_impls! {
             unsafe { T::is_valid(&*target.as_ptr()) }
         }
     }
+}
 
+unsafe impl<R: AbiCompatible + RustSpec + ?Sized> AbiCompatible for &R
+where
+    Self: RustSpec<Layout = Stable>,
+    <R as RustSpec>::Mutability: InteriorTrap<Trap = Robust>,
+    Self: ReprC<CType: RefCarrier<R>>,
+{
+}
+
+unsafe impl<R: AbiCompatibleValidate + RustSpec + ?Sized> AbiCompatibleValidate for &R
+where
+    Self: RustSpec<Layout = Stable>,
+    <R as RustSpec>::Mutability: InteriorTrap<Trap = Robust>,
+    Self: ReprC<CType: RefCarrier<R>>,
+{
+    #[inline(always)]
+    unsafe fn is_valid(target: &Self::CType) -> bool {
+        let ptr = target.as_ptr();
+
+        if ptr.is_null() {
+            return false;
+        }
+
+        unsafe { R::is_valid(&*ptr) }
+    }
 }
 
 unsafe impl<R: AbiCompatibleValidate + ?Sized> AbiCompatibleValidate for &mut R
@@ -304,6 +226,26 @@ where
 unsafe impl<R: AbiCompatible + ?Sized> AbiCompatible for &mut R where
     Self: RustSpec<Layout = Stable> + ReprC<CType: MutRefCarrier<R, true>>
 {
+}
+
+#[cfg(feature = "alloc")]
+unsafe impl<R: AbiCompatible<CType: Sized>> AbiCompatible for Box<R>
+where
+    Self: RustSpec<Layout = Stable> + ReprC<CType = CBox<R>>,
+{
+}
+#[cfg(feature = "alloc")]
+unsafe impl<R: AbiCompatibleValidate<CType: Sized>> AbiCompatibleValidate for Box<R>
+where
+    Self: RustSpec<Layout = Stable> + ReprC<CType = CBox<R>>,
+{
+    #[inline(always)]
+    unsafe fn is_valid(target: &Self::CType) -> bool {
+        if target.is_null() {
+            return false;
+        }
+        unsafe { R::is_valid(&*target.as_ptr()) }
+    }
 }
 
 unsafe impl<R: AbiCompatibleValidate<CType: Sized>, const N: usize> AbiCompatibleValidate for [R; N]

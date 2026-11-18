@@ -24,15 +24,17 @@ impl<T: Encode> CallEncode<T::CType, PlainCall> for T {
     }
 }
 
-impl<T: crate::borrow::BorrowedEncode> CallEncode<crate::borrow::CBorrowed<T>, BorrowedCall> for T {
+impl<T: crate::borrow::BorrowedEncode> CallEncode<crate::borrow::Borrowed<T::CType>, BorrowedCall>
+    for T
+{
     type Owner = T::Owner;
     type Store = T::Store;
     fn encode(
         self,
         store: &mut Self::Store,
         owner: &mut Self::Owner,
-    ) -> crate::borrow::CBorrowed<T> {
-        crate::borrow::CBorrowed(crate::borrow::BorrowedEncode::soft_encode(
+    ) -> crate::borrow::Borrowed<T::CType> {
+        crate::borrow::Borrowed(crate::borrow::BorrowedEncode::soft_encode(
             self, store, owner,
         ))
     }
@@ -51,9 +53,9 @@ impl<'d, T: Decode<'d, Store: EmptyStore> + 'd> CallDecode<'d, T::CType, PlainCa
 }
 
 impl<'d, T: crate::borrow::BorrowedDecode<'d, Store: EmptyStore> + 'd>
-    CallDecode<'d, crate::borrow::CBorrowed<T>, BorrowedCall> for T
+    CallDecode<'d, crate::borrow::Borrowed<T::CType>, BorrowedCall> for T
 {
-    unsafe fn decode(source: crate::borrow::CBorrowed<T>) -> Option<Self> {
+    unsafe fn decode(source: crate::borrow::Borrowed<T::CType>) -> Option<Self> {
         unsafe { crate::borrow::decode(source) }
     }
 }
@@ -72,7 +74,7 @@ macro_rules! define_fn_trait {
             /// Calls the function with Rust arguments.
             ///
             /// Encodes arguments, calls the function, synchronizes conversion stores, and
-            /// decodes the result. `CBorrowed` selects borrowed conversion; other carriers use ordinary conversion;
+            /// decodes the result. `Borrowed` selects borrowed conversion; other carriers use ordinary conversion;
             /// borrowed argument owners remain alive until result decoding finishes.
             ///
             /// # Safety

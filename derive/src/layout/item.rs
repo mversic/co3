@@ -100,20 +100,10 @@ pub(super) fn derive_item(
             .predicates
             .push(bound);
     }
-    let marked = input.generics.params.is_empty()
-        && !is_wide_data
+    let marked = !is_wide_data
         && !matches!(&input.data, syn::Data::Struct(data) if data.fields.iter().next_back().is_some_and(
             |last| matches!(classify_tail(&last.ty, &input.generics), super::ctype::TailClass::Unsized(_))
         ));
-    if marked {
-        let bounds = Ownership::bounds(&input.ident, &input.generics, true);
-        bounded_impl_input.generics.make_where_clause().predicates.extend(
-            syn::parse::Parser::parse2(
-                syn::punctuated::Punctuated::<syn::WherePredicate, syn::Token![,]>::parse_terminated,
-                bounds,
-            ).expect("ownership bounds"),
-        );
-    }
     let ctype_input = if is_wide_data {
         &bounded_impl_input
     } else {
@@ -948,7 +938,8 @@ fn gen_repr_c_impls(
 
     let ownership = Ownership::new(name, generics, marked);
     let target = ownership.apply("payload", quote!(target));
-    let selected = marked.then(|| quote!(Self: co3::ReprC<CType: Sized>,));
+    let carrier_bound = ownership.repr_bound(quote!(+ Sized));
+    let selected = marked.then(|| quote!(Self: #carrier_bound,));
 
     quote! {
         unsafe impl #impl_generics co3::transmute::AbiCompatibleValidate for #name #ty_generics
@@ -1055,20 +1046,16 @@ pub(super) fn derive_fieldless_enum(
     let ctype_name = gen_ctype_name(name);
     let ownership = Ownership::new(name, generics, is_move);
     let carrier = ownership.carrier(quote!(#ctype_name #ty_generics));
-    let bounds = Ownership::bounds(name, generics, is_move);
     let predicates = where_clause.as_ref().map(|w| &w.predicates);
-    let source_where = quote!(where #bounds #predicates);
-    let mut source_generics = generics.clone();
-    source_generics.make_where_clause().predicates.extend(
-        syn::parse::Parser::parse2(
-            syn::punctuated::Punctuated::<syn::WherePredicate, syn::Token![,]>::parse_terminated,
-            bounds.clone(),
-        )
-        .expect("ownership bounds"),
-    );
+    let source_bound = is_move.then(|| {
+        let carrier_bound = ownership.repr_bound(quote!(+ Sized));
+        quote!(Self: #carrier_bound,)
+    });
+    let source_where = quote!(where #source_bound #predicates);
+    let source_generics = generics.clone();
     let unwrap = ownership.apply("unwrap", quote!(source));
     let reference_repr = if ownership.marked {
-        quote!(co3::ReprC<CType: Sized>)
+        ownership.repr_bound(quote!(+ Sized))
     } else {
         quote!(co3::ReprC<CType = #carrier>)
     };
@@ -1275,7 +1262,7 @@ pub(super) fn derive_fieldless_enum(
         }
     });
 
-    let repr_c_impl = ownership.repr_c(generics, quote!(#bounds #predicates));
+    let repr_c_impl = ownership.repr_c(generics, quote!(#predicates));
 
     let ctype_variant_ctors = {
         quote! {
@@ -1292,13 +1279,11 @@ pub(super) fn derive_fieldless_enum(
 
     let drop_speculative = speculative_marker(generics.params.is_empty());
     let mut marker_generics = source_generics;
-    marker_generics
-        .make_where_clause()
-        .predicates
-        .push(parse_quote!(
-            #drop_speculative Self: co3::rust_spec::RustSpec
-        ));
     if !is_move {
+        marker_generics
+            .make_where_clause()
+            .predicates
+            .push(parse_quote!(Self: co3::rust_spec::RustSpec));
         marker_generics
             .make_where_clause()
             .predicates
@@ -1331,10 +1316,8 @@ pub(super) fn derive_fieldless_enum(
         quote! {
             unsafe impl #ref_impl_generics #trait_name<'_ršč> for #name #ty_generics
             where
-                Self: #reference_repr
-                    + co3::rust_spec::RustSpec,
+                Self: #reference_repr,
                 &'_ršč Self: co3::ReprC<CType = co3::reference::CSoftRef<Self>>,
-                #bounds
                 #predicates
             {
                 type #store_name = co3::sync::RefSizedEncodeStore<Self, ()>;
@@ -1345,8 +1328,7 @@ pub(super) fn derive_fieldless_enum(
             unsafe impl #ref_impl_generics #trait_name<'_ršč> for #name #ty_generics
             where
                 #drop_speculative Self: co3::ReprC<CType: co3::CType + Sized>
-                    + #abi_bound
-                    + co3::rust_spec::RustSpec<Layout = co3::rust_spec::Stable> + '_ršč,
+                    + #abi_bound + '_ršč,
                 &'_ršč Self: co3::ReprC<CType = co3::reference::CRef<'_ršč, Self>>,
                 #validation_bound
                 #predicates
@@ -1668,11 +1650,12 @@ fn gen_codec_impls(
     let wrap_unchecked = ownership.apply("wrap", quote!({ #direct_encode_impl }));
     let unwrap = ownership.apply("unwrap", quote!(source));
     let reference_repr = if ownership.marked {
-        quote!(co3::ReprC<CType: Sized>)
+        ownership.repr_bound(quote!(+ Sized))
     } else {
         quote!(co3::ReprC<CType = #carrier>)
     };
-    let selected = marked.then(|| quote!(Self: co3::ReprC<CType: Sized>,));
+    let carrier_bound = ownership.repr_bound(quote!(+ Sized));
+    let selected = marked.then(|| quote!(Self: #carrier_bound,));
 
     let extern_c_bounds = gen_extern_c_bounds_for_ctype(generics, fields);
 
@@ -1737,8 +1720,7 @@ fn gen_codec_impls(
                     #(#repr_c_bounds,)*
                     #(#field_bounds,)*
                     #leading_predicates
-                    Self: #reference_repr
-                        + co3::rust_spec::RustSpec<Size: Thin> + '_ršč,
+                    #speculative Self: #reference_repr + '_ršč,
                     &'_ršč Self: co3::ReprC<CType = co3::reference::CSoftRef<Self>>,
 
                 {
@@ -1754,7 +1736,6 @@ fn gen_codec_impls(
                     #(#repr_c_bounds,)*
                     #speculative Self: co3::ReprC<CType: co3::CType + Sized>
                         + #abi_bound
-                        + co3::rust_spec::RustSpec<Layout = co3::rust_spec::Stable, Size: Thin>
                         + Sized + '_ršč,
                     &'_ršč Self: co3::ReprC<CType = co3::reference::CRef<'_ršč, Self>>,
                     #validation_bound

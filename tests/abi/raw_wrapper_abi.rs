@@ -18,7 +18,7 @@ fn sum_cells(values: &[Cell<u8>]) -> u8 {
 raw! {
     fn overwrite(#[unpack(_, _)] bytes: &mut [u8]) -> usize;
     fn narrow(#[unpack(u16)] value: u8) -> u8;
-    fn sum_cells(#[unpack(*mut core::cell::Cell<u8>, usize)] values: &[Cell<u8>]) -> u8;
+    fn sum_cells(#[unpack(*const core::cell::Cell<u8>, usize)] values: &[Cell<u8>]) -> u8;
 }
 
 #[test]
@@ -42,7 +42,7 @@ extern "C" fn method_source(value: u8) -> u8 {
 }
 
 #[unsafe(export_name = "raw_wrapper__interior")]
-extern "C" fn interior_source(data: *mut core::cell::Cell<u8>, len: usize) -> u8 {
+extern "C" fn interior_source(data: *const core::cell::Cell<u8>, len: usize) -> u8 {
     unsafe { core::slice::from_raw_parts(data, len) }
         .iter()
         .map(|cell| cell.get())
@@ -57,8 +57,8 @@ ffi! {
 
     raw extern "Rust" fn value(value: u8) -> u8;
 
-    type InteriorUnpacked = raw extern "C" fn(#[unpack(*mut core::cell::Cell<u8>, usize)] &[Cell<u8>]) -> u8;
-    fn interior(#[unpack(*mut core::cell::Cell<u8>, usize)] values: &[Cell<u8>]) -> u8;
+    type InteriorUnpacked = raw extern "C" fn(#[unpack(*const core::cell::Cell<u8>, usize)] &[Cell<u8>]) -> u8;
+    fn interior(#[unpack(*const core::cell::Cell<u8>, usize)] values: &[Cell<u8>]) -> u8;
 
     impl Host {
         raw extern "system" fn method(value: u8) -> u8;
@@ -66,11 +66,11 @@ ffi! {
 }
 
 #[test]
-fn interior_slice_unpack_uses_plain_mutable_pointer() {
+fn interior_slice_unpack_uses_plain_const_pointer() {
     let values = [Cell::new(7), Cell::new(11)];
     let callback: InteriorUnpacked = sum_cells_raw;
     assert_eq!(
-        unsafe { callback(values.as_ptr().cast_mut().cast(), values.len(),) },
+        unsafe { callback(values.as_ptr(), values.len(),) },
         18
     );
     assert_eq!(interior(&values), 18);

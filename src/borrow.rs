@@ -38,8 +38,8 @@ use crate::{
 pub fn encode<T: BorrowedEncode<Store: EmptyStore>>(
     value: T,
     owner: &mut T::Owner,
-) -> CBorrowed<T> {
-    CBorrowed(T::soft_encode(value, &mut Default::default(), owner))
+) -> Borrowed<T::CType> {
+    Borrowed(T::soft_encode(value, &mut Default::default(), owner))
 }
 
 /// Decode a borrowed carrier without retaining conversion storage.
@@ -50,7 +50,7 @@ pub fn encode<T: BorrowedEncode<Store: EmptyStore>>(
 /// [`BorrowedDecode::soft_decode`], including the lifetime and aliasing requirements
 /// of any references in the result.
 pub unsafe fn decode<'d, T: BorrowedDecode<'d, Store: EmptyStore + 'd>>(
-    source: CBorrowed<T>,
+    source: Borrowed<T::CType>,
 ) -> Option<T> {
     let mut store = T::Store::default();
     // An empty store cannot back any references in the decoded result.
@@ -1920,9 +1920,9 @@ mod tests {
 
     #[test]
     fn borrowed_vectors_decode_directly_without_soft() {
-        use crate::borrow::{CBorrowed, decode};
+        use crate::borrow::{Borrowed, decode};
         let foreign = crate::encode(alloc::vec![3_u8, 5, 8]);
-        let decoded = unsafe { decode(CBorrowed::<alloc::vec::Vec<u8>>(foreign)) }.unwrap();
+        let decoded = unsafe { decode::<alloc::vec::Vec<u8>>(Borrowed(foreign)) }.unwrap();
         assert_eq!(decoded, [3, 5, 8]);
         assert_ne!(decoded.as_ptr(), foreign.as_ptr().cast_const());
         drop(decoded);
@@ -1932,7 +1932,7 @@ mod tests {
         );
 
         let foreign = crate::encode(alloc::vec![(3_u8,), (5,)]);
-        let decoded = unsafe { decode(CBorrowed::<alloc::vec::Vec<(u8,)>>(foreign)) }.unwrap();
+        let decoded = unsafe { decode::<alloc::vec::Vec<(u8,)>>(Borrowed(foreign)) }.unwrap();
         assert_eq!(decoded, [(3,), (5,)]);
         drop(decoded);
         assert_eq!(
@@ -1944,17 +1944,17 @@ mod tests {
     #[test]
     fn borrowed_container_decode_rejects_bad_headers_and_values() {
         use crate::{
-            borrow::{CBorrowed, decode},
+            borrow::{Borrowed, decode},
             primitives::Bool,
             vec::CVec,
         };
-        assert!(unsafe { decode(CBorrowed::<alloc::vec::Vec<u8>>(CVec::null())) }.is_none());
-        assert!(unsafe { decode(CBorrowed::<Box<u8>>(crate::boxed::CBox::null())) }.is_none());
+        assert!(unsafe { decode::<alloc::vec::Vec<u8>>(Borrowed(CVec::null())) }.is_none());
+        assert!(unsafe { decode::<Box<u8>>(Borrowed(crate::boxed::CBox::null())) }.is_none());
         let mut foreign = alloc::vec![Bool(1), Bool(2)];
         let header = unsafe {
             CVec::<bool>::from_raw_parts(foreign.as_mut_ptr(), foreign.len(), foreign.capacity())
         };
-        assert!(unsafe { decode(CBorrowed::<alloc::vec::Vec<bool>>(header)) }.is_none());
+        assert!(unsafe { decode::<alloc::vec::Vec<bool>>(Borrowed(header)) }.is_none());
         assert_eq!(foreign[1].0, 2);
         let invalid = unsafe {
             CVec::<bool>::from_raw_parts(
@@ -1963,7 +1963,7 @@ mod tests {
                 foreign.capacity(),
             )
         };
-        assert!(unsafe { decode(CBorrowed::<alloc::vec::Vec<bool>>(invalid)) }.is_none());
+        assert!(unsafe { decode::<alloc::vec::Vec<bool>>(Borrowed(invalid)) }.is_none());
     }
 
     #[test]
@@ -2210,17 +2210,23 @@ mod tests {
     #[test]
     fn imports_encode_owned_bytes_and_tuples_without_soft() {
         #[unsafe(export_name = "co3_unit_owned_bytes")]
-        extern "C" fn bytes(value: crate::borrow::CBorrowed<alloc::vec::Vec<u8>>) -> u8 {
+        extern "C" fn bytes(
+            value: crate::borrow::Borrowed<<alloc::vec::Vec<u8> as co3::ReprC>::CType>,
+        ) -> u8 {
             assert_eq!(value.0.len(), 1);
             unsafe { *value.0.as_ptr() }
         }
         #[unsafe(export_name = "co3_unit_owned_tuples")]
-        extern "C" fn tuples(value: crate::borrow::CBorrowed<alloc::vec::Vec<(u8,)>>) -> u8 {
+        extern "C" fn tuples(
+            value: crate::borrow::Borrowed<<alloc::vec::Vec<(u8,)> as co3::ReprC>::CType>,
+        ) -> u8 {
             assert_eq!(value.0.len(), 1);
             unsafe { (*value.0.as_ptr()).0 }
         }
         #[unsafe(export_name = "co3_unit_owned_box_tuple")]
-        extern "C" fn boxed(value: crate::borrow::CBorrowed<Box<(u8,)>>) -> u8 {
+        extern "C" fn boxed(
+            value: crate::borrow::Borrowed<<Box<(u8,)> as co3::ReprC>::CType>,
+        ) -> u8 {
             unsafe { (*value.0.as_ptr()).0 }
         }
         crate::ffi! {
@@ -2245,7 +2251,7 @@ mod tests {
         static_assertions::assert_impl_all!(InteriorMutableField:
             RustSpec<Mutability = co3::rust_spec::mutability::WithInterior<co3::rust_spec::layout::Robust>>,
         );
-        static_assertions::assert_impl_all!(co3::borrow::CBorrowed<InteriorMutableField>:
+        static_assertions::assert_impl_all!(co3::borrow::Borrowed< <InteriorMutableField as co3::ReprC>::CType >:
             RustSpec<
                 Layout = rust_spec::Stable,
                 Size = <InteriorMutableField as RustSpec>::Size,
@@ -2296,42 +2302,41 @@ mod tests {
             Result<NonZero<u8>, ()>, Result<(), NonZero<u8>>,
             Cell<u8>, ManuallyDrop<u8>, CSoftRefMut<u8, true>);
         assert_not_impl_any!(Bytes: BorrowedEncode);
-        assert_not_impl_any!(crate::borrow::CBorrowed<()>: crate::CFnArg, crate::CFnReturn);
+        assert_not_impl_any!(crate::borrow::Borrowed< <() as co3::ReprC>::CType >: crate::CFnArg, crate::CFnReturn);
     }
 }
 
-/// Carrier retaining the original Rust type parameter.
+/// Marks a lowered ABI value that is borrowed across the FFI boundary.
 #[repr(transparent)]
 #[derive(RustSpec)]
-#[doc(hidden)]
-pub struct CBorrowed<T: ReprC<CType: Sized>>(pub T::CType);
+pub struct Borrowed<T: CType>(pub T);
 
-impl<T: ReprC<CType: Sized>> ReprC for CBorrowed<T> {
+impl<T: CType> ReprC for Borrowed<T> {
     type CType = Self;
 }
-unsafe impl<T: ReprC<CType: Sized>> CType for CBorrowed<T> {}
-unsafe impl<T: ReprC<CType: Sized>> AbiCompatibleValidate for CBorrowed<T> {
+unsafe impl<T: CType> CType for Borrowed<T> {}
+unsafe impl<T: CType> AbiCompatibleValidate for Borrowed<T> {
     unsafe fn is_valid(_: &Self) -> bool {
         true
     }
 }
-unsafe impl<T: ReprC<CType: Sized>> AbiCompatible for CBorrowed<T> {}
-unsafe impl<T: ReprC<CType: Sized>> CFnArg for CBorrowed<T> where T::CType: CFnArg {}
-unsafe impl<T: ReprC<CType: Sized>> CFnReturn for CBorrowed<T>
+unsafe impl<T: CType> AbiCompatible for Borrowed<T> {}
+unsafe impl<T: CType> CFnArg for Borrowed<T> where T: CFnArg {}
+unsafe impl<T: CType> CFnReturn for Borrowed<T>
 where
-    T::CType: CFnReturn,
+    T: CFnReturn,
     Self: RustSpec<Size = rust_spec::size::Sized<rust_spec::Gt<rust_spec::Zero>>>,
 {
 }
-impl<T: ReprC<CType: Sized>> CBorrowed<T> {
-    pub const fn new(value: T::CType) -> Self {
+impl<T: CType> Borrowed<T> {
+    pub const fn new(value: T) -> Self {
         Self(value)
     }
-    pub fn into_inner(self) -> T::CType {
+    pub fn into_inner(self) -> T {
         self.0
     }
 }
-unsafe impl<T: ReprC<CType: Sized>> EncodeMoveUnchecked for CBorrowed<T> {
+unsafe impl<T: CType> EncodeMoveUnchecked for Borrowed<T> {
     type SoftStore = ();
     unsafe fn soft_encode_unchecked<'a>(self, _: &'a mut ()) -> Self
     where
@@ -2340,7 +2345,7 @@ unsafe impl<T: ReprC<CType: Sized>> EncodeMoveUnchecked for CBorrowed<T> {
         self
     }
 }
-unsafe impl<T: ReprC<CType: Sized>> EncodeMove for CBorrowed<T> {
+unsafe impl<T: CType> EncodeMove for Borrowed<T> {
     type Store = ();
     fn soft_encode<'a>(self, _: &'a mut ()) -> Self
     where
@@ -2349,32 +2354,32 @@ unsafe impl<T: ReprC<CType: Sized>> EncodeMove for CBorrowed<T> {
         self
     }
 }
-unsafe impl<'d, T: ReprC<CType: Sized>> DecodeMove<'d> for CBorrowed<T> {
+unsafe impl<'d, T: CType> DecodeMove<'d> for Borrowed<T> {
     type Store = ();
     unsafe fn soft_decode<'a: 'd>(value: Self, _: &'a mut ()) -> Option<Self> {
         Some(value)
     }
 }
-impl<T: ReprC<CType: Sized>> Encode for CBorrowed<T> {}
-impl<T: ReprC<CType: Sized>> crate::convert::EncodeUnchecked for CBorrowed<T> {}
-impl<'d, T: ReprC<CType: Sized>> Decode<'d> for CBorrowed<T> {}
-crate::__impl_borrowed_identity!([T: ReprC<CType: Sized>] CBorrowed<T>);
-impl<T: ReprC<CType: Copy>> Copy for CBorrowed<T> {}
-impl<T: ReprC<CType: Copy>> Clone for CBorrowed<T> {
+impl<T: CType> Encode for Borrowed<T> {}
+impl<T: CType> crate::convert::EncodeUnchecked for Borrowed<T> {}
+impl<'d, T: CType> Decode<'d> for Borrowed<T> {}
+crate::__impl_borrowed_identity!([T: CType] Borrowed<T>);
+impl<T: CType + Copy> Copy for Borrowed<T> {}
+impl<T: CType + Copy> Clone for Borrowed<T> {
     fn clone(&self) -> Self {
         *self
     }
 }
-impl<T: ReprC<CType: core::fmt::Debug + Sized>> core::fmt::Debug for CBorrowed<T> {
+impl<T: CType + core::fmt::Debug> core::fmt::Debug for Borrowed<T> {
     fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
-        f.debug_tuple("CBorrowed").field(&self.0).finish()
+        f.debug_tuple("Borrowed").field(&self.0).finish()
     }
 }
-impl<T: ReprC<CType: PartialEq + Sized>> PartialEq for CBorrowed<T> {
+impl<T: CType + PartialEq> PartialEq for Borrowed<T> {
     fn eq(&self, other: &Self) -> bool {
         self.0 == other.0
     }
 }
-impl<T: ReprC<CType: Eq + Sized>> Eq for CBorrowed<T> {}
+impl<T: CType + Eq> Eq for Borrowed<T> {}
 
 pub(crate) use __impl_borrowed_identity;

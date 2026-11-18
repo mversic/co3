@@ -1,8 +1,10 @@
 use co3::{
-    borrow::CBorrowed,
+    borrow::Borrowed,
+    boxed::CBox,
     ffi,
     ops::{CFn1, CFn2},
     raw,
+    vec::CVec,
 };
 
 type Number = u32;
@@ -70,7 +72,7 @@ fn call_synchronizes_before_releasing_storage() {
 }
 
 #[unsafe(export_name = "co3_borrowed_vector_echo")]
-extern "C" fn echo_carrier(value: CBorrowed<Vec<u32>>) -> CBorrowed<Vec<u32>> {
+extern "C" fn echo_carrier(value: Borrowed<CVec<u32>>) -> Borrowed<CVec<u32>> {
     value
 }
 ffi! {
@@ -88,7 +90,7 @@ fn borrowed_result_is_reconstructed_before_argument_owner_is_dropped() {
 
 #[test]
 fn soft_borrowed_call_retains_owner_until_writeback() {
-    type Callback<'a> = unsafe extern "C" fn(CBorrowed<Box<&'a mut bool>>) -> CBorrowed<Number>;
+    type Callback<'a> = unsafe extern "C" fn(Borrowed<CBox<&'a mut bool>>) -> Borrowed<Number>;
     let callback: Callback<'_> = update_box_raw;
     let mut value = false;
     let result: Number = unsafe { callback.call(Box::new(&mut value)) }.unwrap();

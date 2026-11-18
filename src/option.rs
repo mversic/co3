@@ -390,7 +390,7 @@ unsafe impl<'a, T: ReprC<CType: Copy> + 'a, __Interior: ExclusiveKind> SoftEncod
 where
     &'a Self: crate::ReprC<CType = crate::reference::CSoftRef<Self>>,
     Self: RustSpec<Mutability = Exclusive<__Interior>, Size: Thin> + 'a,
-    &'a T: EncodeMoveUnchecked<CType: crate::reference::SharedRefCarrier<T>>,
+    &'a T: EncodeMoveUnchecked<CType: crate::reference::RefCarrier<T>>,
 {
     type SoftStore =
         RefSizedEncodeStore<Self, RustOption<<&'a T as EncodeMoveUnchecked>::SoftStore>>;
@@ -419,7 +419,7 @@ unsafe impl<'a, T: ReprC<CType: Copy> + 'a, __Interior: ExclusiveKind> SoftEncod
 where
     &'a Self: crate::ReprC<CType = crate::reference::CSoftRef<Self>>,
     Self: RustSpec<Mutability = Exclusive<__Interior>, Size: Thin> + 'a,
-    &'a T: EncodeMove<CType: crate::reference::SharedRefCarrier<T>>,
+    &'a T: EncodeMove<CType: crate::reference::RefCarrier<T>>,
 {
     type Store = RefSizedEncodeStore<Self, RustOption<<&'a T as EncodeMove>::Store>>;
 

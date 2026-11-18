@@ -752,7 +752,7 @@ fn gen_input_conversion_stmts(inputs: &[Argument<'_>]) -> TokenStream {
                     #(#cfg)*
                     let mut #store_name = Default::default();
                     #(#cfg)*
-                    let #arg_name = co3::borrow::CBorrowed::<#ty>(
+                    let #arg_name = co3::borrow::Borrowed::< <#ty as co3::ReprC>::CType >(
                         <#ty as co3::borrow::BorrowedEncode>::soft_encode(
                             #arg_name, &mut #store_name, &mut #owner_name,
                         )
@@ -795,8 +795,13 @@ fn gen_unpack_input_stmts(failure_mode: FailureMode, inputs: &[Argument<'_>]) ->
         let unpack_ty = input.unpack_ty();
         let first = &pair.first.logical;
         let second = &pair.second.logical;
+        let value = if input.is_borrowed() && !input.identity {
+            quote!(#arg_name.0)
+        } else {
+            quote!(#arg_name)
+        };
         let conversion = quote! {
-            <#unpack_ty as co3::pack::Unpack2<#first, #second>>::unpack(#arg_name)
+            <#unpack_ty as co3::pack::Unpack2<#first, #second>>::unpack(#value)
         };
         let conversion = match failure_mode {
             FailureMode::Panic => quote! { #conversion.unwrap_or_else(|_| panic!("co3 generated FFI unpack conversion failure")) },

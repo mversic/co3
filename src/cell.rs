@@ -111,7 +111,7 @@ mod tests {
         #[cfg(feature = "alloc")]
         assert_impl_all!(Box<UnsafeCell<u8>>: AbiCompatible);
         assert_impl_all!(&[UnsafeCell<u8>]:
-            Niche<CType = crate::wide::CWideRefMut<'static, [UnsafeCell<u8>]>>,
+            Niche<CType = crate::wide::CWideRef<'static, [UnsafeCell<u8>]>>,
             Encode,
         );
         assert_impl_all!(&[UnsafeCell<u8>]: Decode<'static>);
@@ -335,7 +335,7 @@ mod tests {
             );
         }
         assert_impl_all!(&[UnsafeCell<NonZero<u8>>]:
-            Niche<CType = crate::wide::CWideRefMut<'static, [UnsafeCell<NonZero<u8>>]>>,
+            Niche<CType = crate::wide::CWideRef<'static, [UnsafeCell<NonZero<u8>>]>>,
         );
         assert_not_impl_any!(&[UnsafeCell<NonZero<u8>>]: Decode<'static>);
         assert_impl_all!(&mut [UnsafeCell<NonZero<u8>>]:

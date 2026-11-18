@@ -24,6 +24,7 @@ mod wide;
 pub(super) struct Ownership {
     source: TokenStream,
     payload: TokenStream,
+    trait_name: syn::Ident,
     marked: bool,
 }
 
@@ -34,15 +35,9 @@ impl Ownership {
         Self {
             source: quote!(#name #args),
             payload: quote!(#ctype #args),
+            trait_name: format_ident!("__Co3{}Carrier", name),
             marked,
         }
-    }
-
-    fn bounds(name: &syn::Ident, generics: &syn::Generics, marked: bool) -> TokenStream {
-        let (_, args, _) = generics.split_for_impl();
-        marked
-            .then(|| quote!(#name #args: co3::rust_spec::RustSpec,))
-            .unwrap_or_default()
     }
 
     fn carrier(&self, plain: TokenStream) -> TokenStream {
@@ -54,36 +49,68 @@ impl Ownership {
         }
     }
 
+    fn repr_bound(&self, extra: TokenStream) -> TokenStream {
+        let trait_name = &self.trait_name;
+        let payload = &self.payload;
+        quote!(co3::ReprC<CType: #trait_name<Payload = #payload> #extra>)
+    }
+
     fn apply(&self, method: &str, value: TokenStream) -> TokenStream {
         if !self.marked {
             return value;
         }
         let source = &self.source;
+        let value = if method == "wrap" {
+            let payload = &self.payload;
+            quote!({ let payload: #payload = #value; payload })
+        } else {
+            value
+        };
+        let borrowed_payload = method == "payload";
+        let method = format_ident!("{method}");
+        let trait_name = &self.trait_name;
+        let call = quote!(<<#source as co3::ReprC>::CType as #trait_name>::#method(#value));
+        if borrowed_payload {
+            let payload = &self.payload;
+            quote!({ let payload: &#payload = #call; payload })
+        } else {
+            call
+        }
+    }
+
+    fn definition(&self, generics: &syn::Generics, bounds: &TokenStream) -> TokenStream {
         let payload = &self.payload;
-        match method {
-            "wrap" => quote!({
-                let payload = core::mem::ManuallyDrop::new(#value);
-                // ReprC selects either the payload or its transparent Owned wrapper.
-                // Consume the payload once without running its destructor.
-                unsafe { core::ptr::from_ref(&*payload).cast::<<#source as co3::ReprC>::CType>().read() }
-            }),
-            "unwrap" => quote!({
-                let carrier = core::mem::ManuallyDrop::new(#value);
-                // The selected carrier has the payload's layout and valid bit patterns.
-                unsafe { core::ptr::from_ref(&*carrier).cast::<#payload>().read() }
-            }),
-            "payload" => quote!({
-                // Owned is transparent; validation retains the original shared access.
-                unsafe { &*core::ptr::from_ref(#value).cast::<#payload>() }
-            }),
-            _ => unreachable!("ownership conversion"),
+        let trait_name = &self.trait_name;
+        let (impl_generics, _, _) = generics.split_for_impl();
+        quote! {
+            trait #trait_name: co3::CType + Sized {
+                type Payload;
+                fn wrap(value: Self::Payload) -> Self;
+                fn unwrap(self) -> Self::Payload;
+                fn payload(&self) -> &Self::Payload;
+            }
+
+            impl #impl_generics #trait_name for #payload where #payload: Sized, #bounds {
+                type Payload = #payload;
+                fn wrap(value: #payload) -> Self { value }
+                fn unwrap(self) -> #payload { self }
+                fn payload(&self) -> &#payload { self }
+            }
+
+            impl #impl_generics #trait_name for co3::owned::Owned<#payload> where #payload: Sized, #bounds {
+                type Payload = #payload;
+                fn wrap(value: #payload) -> Self { co3::owned::Owned(value) }
+                fn unwrap(self) -> #payload { self.0 }
+                fn payload(&self) -> &#payload { &self.0 }
+            }
         }
     }
 
     fn niche(&self, _: &syn::Ident, _: &syn::Generics, value: TokenStream) -> TokenStream {
         if self.marked {
+            let payload = &self.payload;
             quote!({
-                let payload = #value;
+                let payload: #payload = #value;
                 // Niche bounds require Copy for both representations.
                 unsafe { core::mem::transmute_copy(&payload) }
             })
@@ -103,12 +130,14 @@ impl Ownership {
                 }
             };
         }
+        let definition = self.definition(generics, &bounds);
         let mut custom_generics = generics.clone();
         custom_generics
             .params
             .push(syn::parse_quote!(__Co3Drop: co3::rust_spec::drop::DropKind));
         let (custom_impl_generics, _, _) = custom_generics.split_for_impl();
         quote! {
+            #definition
             const _: () = {
                 use co3::ReprC;
                 co3::disjoint_impls! {
@@ -553,7 +582,7 @@ pub(crate) fn derive_repr_c(input: &syn::DeriveInput) -> syn::Result<TokenStream
                     repr_attr,
                     repr_alignment,
                     input,
-                    input.generics.params.is_empty(),
+                    true,
                 )
             } else {
                 derive_item(

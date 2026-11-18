@@ -135,7 +135,13 @@ pub fn gen_struct_niche_ir(
     let ownership = Ownership::new(struct_name, generics, marked);
     let niche_value = ownership.niche(struct_name, generics, niche_value);
     let payload = ownership.apply("payload", quote!(value));
-    let selected = marked.then(|| quote!(#for_dummy Self: co3::ReprC<CType: Copy>,));
+    let carrier_bound = ownership.repr_bound(quote!());
+    let selected = marked.then(|| {
+        quote!(
+            Self: #carrier_bound,
+            #for_dummy <Self as co3::ReprC>::CType: Copy,
+        )
+    });
     let detector = quote! {{ let value = #payload; #detector }};
 
     gen_niche_value_ir(
@@ -274,13 +280,17 @@ pub fn gen_enum_niche_ir(
     let niche_value = ownership.niche(enum_name, generics, niche_value);
     let payload = ownership.apply("payload", quote!(value));
     let speculative = speculative_marker(generics.params.is_empty());
-    let selected = marked.then(|| quote!(#speculative Self: co3::ReprC<CType: Copy>,));
+    let carrier_bound = ownership.repr_bound(quote!());
+    let selected = marked.then(|| {
+        quote!(
+            Self: #carrier_bound,
+            #speculative <Self as co3::ReprC>::CType: Copy,
+        )
+    });
     let detector = quote! {{ let value = #payload; #detector }};
 
-    let self_bounds = generics
-        .params
-        .is_empty()
-        .then(|| quote! { Self: co3::ReprC<CType: Copy>, });
+    let self_bounds =
+        (!marked && generics.params.is_empty()).then(|| quote! { Self: co3::ReprC<CType: Copy>, });
 
     quote! {
         impl #impl_generics co3::niche::Niche for #enum_name #ty_generics where

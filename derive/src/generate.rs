@@ -1077,7 +1077,7 @@ fn prepare_dispatch_wrapper_sig(
                     .predicates
                     .push(syn::parse_quote!(#part1: #co3::ReprC));
                 where_clause.predicates.push(syn::parse_quote!(
-                    <#part1 as #co3::ReprC>::CType: #co3::CType + Sized
+                    <#part1 as #co3::ReprC>::CType: Sized
                 ));
             }
             if matches!(part2, syn::Type::Infer(_)) {
@@ -1089,7 +1089,7 @@ fn prepare_dispatch_wrapper_sig(
                     .predicates
                     .push(syn::parse_quote!(#part2: #co3::ReprC));
                 where_clause.predicates.push(syn::parse_quote!(
-                    <#part2 as #co3::ReprC>::CType: #co3::CType + Sized
+                    <#part2 as #co3::ReprC>::CType: Sized
                 ));
             }
             let unpack_trait = quote!(#co3::pack::Unpack2<#source_part1, #source_part2>);

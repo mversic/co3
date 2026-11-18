@@ -863,7 +863,6 @@ fn gen_ctype_wide_impl(
     let predicates = where_clause.as_ref().map(|w| &w.predicates);
 
     let data_name = gen_data_struct_name(&source_name);
-    let data_ctype_name = gen_ctype_name(&data_name);
 
     let ctype_wide_predicate = is_transparent.then(|| {
         let predicate = wide_predicate(field_ty, &ctype.generics);
@@ -877,22 +876,8 @@ fn gen_ctype_wide_impl(
         quote!(#predicate,)
     });
     let source_header_predicate = header_repr_c_predicate(source_field_ty, source_generics);
-    let source_slice_tail = if let syn::Type::Slice(slice) = source_field_ty {
-        let element = &slice.elem;
-        Some(quote! {
-            #element: co3::ReprC<CType: Sized>,
-            [#element]: co3::ReprC<CType = [<#element as co3::ReprC>::CType]>,
-        })
-    } else {
-        None
-    };
     let for_dummy = speculative_marker(ctype.generics.params.is_empty());
 
-    let data_bound = (!is_transparent).then(|| {
-        quote! {
-            #for_dummy #data_name #ty_generics: co3::ReprC<CType = #data_ctype_name #ty_generics>,
-        }
-    });
     let data_ty = if is_transparent {
         quote!(<<#source_field_ty as co3::wide::Wide>::Header as co3::ReprC>::CType)
     } else {
@@ -905,8 +890,6 @@ fn gen_ctype_wide_impl(
         unsafe impl #impl_generics co3::wide::Wide for #name #ty_generics
         where
             #source_header_predicate,
-            #source_slice_tail
-            #data_bound
             #transparent_header_predicate
             #ctype_wide_predicate
             #usize_predicate

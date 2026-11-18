@@ -362,7 +362,7 @@ where
         <R::Metadata as RustSpec>::__Alignment,
     >;
     type Trap = rust_spec::layout::NonRobust;
-    type Niche = rust_spec::niche::WithNiche<rust_spec::Stable>;
+    type Niche = rust_spec::niche::WithNiche<rust_spec::Unstable>;
     type Drop = rust_spec::drop::CustomDrop<rust_spec::drop::AutoDrop>;
     type Mutability =
         <<R::Mutability as rust_spec::mutability::PointerMutability>::Output as core::ops::Add<
@@ -592,16 +592,6 @@ pub struct CWideRefMut<'a, R: ReprC<CType: Wide> + ?Sized, const STABLE: bool = 
     data: *mut PointeeData<R::CType>,
     metadata: <R::CType as Wide>::Metadata,
     lifetime: PhantomData<&'a ()>,
-}
-
-impl<R: ReprC<CType: Wide> + ?Sized, const STABLE: bool> CWideRefMut<'_, R, STABLE> {
-    pub(crate) const fn data(&self) -> *mut PointeeData<R::CType> {
-        self.data
-    }
-
-    pub(crate) const fn is_null(&self) -> bool {
-        self.data.is_null()
-    }
 }
 
 impl<'a, R: ReprC<CType: Wide<Header: WideHeader<Data: CType>>> + ?Sized, const STABLE: bool>
@@ -1091,6 +1081,15 @@ pub(crate) unsafe trait WideRefCarrier<R: ReprC<CType: Wide> + ?Sized>:
     type Pointer: CType + Copy;
     fn as_ptr(&self) -> Self::Pointer;
     fn metadata(&self) -> <R::CType as Wide>::Metadata;
+    /// Read the data pointer without granting mutable access to the pointee.
+    fn data(&self) -> *const PointeeData<R::CType>;
+    /// # Safety
+    /// The parts must satisfy the destination carrier's lifetime and aliasing contract,
+    /// including exclusive access when required, regardless of the pointer's constness.
+    unsafe fn from_const_parts(
+        data: *const PointeeData<R::CType>,
+        metadata: <R::CType as Wide>::Metadata,
+    ) -> Self;
     /// # Safety
     /// The parts must satisfy the destination carrier's lifetime and aliasing contract.
     unsafe fn from_parts(data: Self::Pointer, metadata: <R::CType as Wide>::Metadata) -> Self;
@@ -1105,6 +1104,16 @@ unsafe impl<R: ReprC<CType: Wide<Header: WideHeader<Data: CType>>> + ?Sized> Wid
     fn metadata(&self) -> <R::CType as Wide>::Metadata {
         self.metadata
     }
+    fn data(&self) -> *const PointeeData<R::CType> {
+        self.data as *const _
+    }
+    unsafe fn from_const_parts(
+        data: *const PointeeData<R::CType>,
+        metadata: <R::CType as Wide>::Metadata,
+    ) -> Self {
+        unsafe { Self::from_parts(data, metadata) }
+    }
+
     unsafe fn from_parts(data: Self::Pointer, metadata: <R::CType as Wide>::Metadata) -> Self {
         unsafe { Self::from_raw_parts(data, metadata) }
     }
@@ -1119,6 +1128,16 @@ unsafe impl<'a, R: ReprC<CType: Wide<Header: WideHeader<Data: CType>>> + ?Sized>
     fn metadata(&self) -> <R::CType as Wide>::Metadata {
         self.metadata
     }
+    fn data(&self) -> *const PointeeData<R::CType> {
+        self.data as *const _
+    }
+    unsafe fn from_const_parts(
+        data: *const PointeeData<R::CType>,
+        metadata: <R::CType as Wide>::Metadata,
+    ) -> Self {
+        unsafe { Self::from_parts(data, metadata) }
+    }
+
     unsafe fn from_parts(data: Self::Pointer, metadata: <R::CType as Wide>::Metadata) -> Self {
         unsafe { Self::from_raw_parts(data, metadata) }
     }
@@ -1133,6 +1152,16 @@ unsafe impl<R: ReprC<CType: Wide<Header: WideHeader<Data: CType>>> + ?Sized, con
     fn metadata(&self) -> <R::CType as Wide>::Metadata {
         self.metadata
     }
+    fn data(&self) -> *const PointeeData<R::CType> {
+        self.data as *const _
+    }
+    unsafe fn from_const_parts(
+        data: *const PointeeData<R::CType>,
+        metadata: <R::CType as Wide>::Metadata,
+    ) -> Self {
+        unsafe { Self::from_parts(data.cast_mut(), metadata) }
+    }
+
     unsafe fn from_parts(data: Self::Pointer, metadata: <R::CType as Wide>::Metadata) -> Self {
         unsafe { Self::from_raw_parts_mut(data, metadata) }
     }
@@ -1150,6 +1179,16 @@ where
     fn metadata(&self) -> <R::CType as Wide>::Metadata {
         self.metadata
     }
+    fn data(&self) -> *const PointeeData<R::CType> {
+        self.data as *const _
+    }
+    unsafe fn from_const_parts(
+        data: *const PointeeData<R::CType>,
+        metadata: <R::CType as Wide>::Metadata,
+    ) -> Self {
+        unsafe { Self::from_parts(data.cast_mut(), metadata) }
+    }
+
     unsafe fn from_parts(data: Self::Pointer, metadata: <R::CType as Wide>::Metadata) -> Self {
         unsafe { Self::from_raw_parts_mut(data, metadata) }
     }
@@ -1159,7 +1198,7 @@ where
 ///
 /// # Safety
 /// Implementations must preserve the wide pointer ABI and exclusive access contract.
-pub(crate) unsafe trait MutWideRefCarrier<R: ReprC<CType: Wide> + ?Sized>:
+pub(crate) unsafe trait WideRefMutCarrier<R: ReprC<CType: Wide> + ?Sized>:
     CType + Copy
 {
     fn data(&self) -> *mut PointeeData<R::CType>;
@@ -1174,7 +1213,7 @@ pub(crate) unsafe trait MutWideRefCarrier<R: ReprC<CType: Wide> + ?Sized>:
         metadata: <R::CType as Wide>::Metadata,
     ) -> Self;
 }
-unsafe impl<R: ReprC<CType: Wide<Header: WideHeader<Data: CType>>> + ?Sized> MutWideRefCarrier<R>
+unsafe impl<R: ReprC<CType: Wide<Header: WideHeader<Data: CType>>> + ?Sized> WideRefMutCarrier<R>
     for CSoftWideRefMut<R, true>
 {
     fn data(&self) -> *mut PointeeData<R::CType> {
@@ -1191,7 +1230,7 @@ unsafe impl<R: ReprC<CType: Wide<Header: WideHeader<Data: CType>>> + ?Sized> Mut
     }
 }
 unsafe impl<'a, R: ReprC<CType: Wide<Header: WideHeader<Data: CType>>> + ?Sized>
-    MutWideRefCarrier<R> for CWideRef<'a, R>
+    WideRefMutCarrier<R> for CWideRef<'a, R>
 where
     Self: CType,
 {
@@ -1401,6 +1440,10 @@ pub(crate) mod tests {
         use super::WideBox;
 
         assert_impl_all!(WideBox<[u8]>: crate::ReprC<CType = CWideBox<[u8], true>>);
+        assert_impl_all!(WideBox<[u8]>: rust_spec::RustSpec<
+            Niche = rust_spec::niche::WithNiche<rust_spec::Unstable>,
+        >);
+        assert_impl_all!(Option<WideBox<[u8]>>: rust_spec::RustSpec<Layout = rust_spec::Unstable>);
         assert_not_impl_any!(WideBox<[u8]>: Copy);
         assert_not_impl_any!(WideBox<[bool]>: CType);
 

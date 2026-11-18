@@ -1,18 +1,12 @@
 //! ABI carriers and conversion traits for Rust references.
 use core::cell::UnsafeCell;
 
-use rust_spec::{
-    RustSpec, Stable, Unstable,
-    layout::{NonRobust, Robust},
-    mutability::{Exclusive, ExclusiveKind, WithInterior},
-    size::{MetaSized, NulTerminated, SliceLike},
-};
+use rust_spec::RustSpec;
 
 use crate::{
     CFnArg, CFnReturn, CType, ReprC,
     convert::{Decode, DecodeMove, Encode, EncodeMove, EncodeMoveUnchecked},
     transmute::{AbiCompatible, AbiCompatibleValidate},
-    wide::{CSoftWideRef, CSoftWideRefMut, CWideRef, CWideRefMut, Wide, WideHeader},
 };
 pub(crate) use crate::{
     decoded::{
@@ -21,158 +15,12 @@ pub(crate) use crate::{
     mutable::impl_direct_mut,
 };
 
-mod selection {
-    use super::*;
-
-    /// Selects the ABI carrier from a shared referent's layout, size and mutability.
-    pub trait NativeRefCarrier<'a, R: ?Sized> {
-        type Carrier: CType;
-    }
-
-    /// Selects the ABI carrier from an exclusive referent's layout, size and validity.
-    pub trait NativeRefMutCarrier<'a, R: ?Sized> {
-        type Carrier: CType;
-    }
-
-    impl<'a, R: ReprC + ?Sized, __Interior: ExclusiveKind, S: crate::Thin> NativeRefCarrier<'a, R>
-        for (Stable, S, Exclusive<__Interior>)
-    {
-        type Carrier = CRef<'a, R>;
-    }
-
-    impl<'a, R: ReprC + ?Sized, __Interior: ExclusiveKind, S: crate::Thin> NativeRefCarrier<'a, R>
-        for (Unstable, S, Exclusive<__Interior>)
-    {
-        type Carrier = CSoftRef<R>;
-    }
-
-    impl<'a, R: ReprC<CType: Sized> + ?Sized, __Interior: ExclusiveKind, L> NativeRefCarrier<'a, R>
-        for (L, NulTerminated, Exclusive<__Interior>)
-    {
-        type Carrier = CSoftRef<R>;
-    }
-
-    impl<
-        'a,
-        R: ReprC<CType: Wide<Header: WideHeader<Data: CType>, Metadata = usize>> + ?Sized,
-        __Interior: ExclusiveKind,
-    > NativeRefCarrier<'a, R> for (Stable, MetaSized<SliceLike>, Exclusive<__Interior>)
-    {
-        type Carrier = CWideRef<'a, R>;
-    }
-
-    impl<
-        'a,
-        R: ReprC<CType: Wide<Header: WideHeader<Data: CType>, Metadata = usize>> + ?Sized,
-        __Interior: ExclusiveKind,
-    > NativeRefCarrier<'a, R> for (Unstable, MetaSized<SliceLike>, Exclusive<__Interior>)
-    {
-        type Carrier = CSoftWideRef<R>;
-    }
-
-    impl<'a, R: ReprC + ?Sized, __Trap, S: crate::Thin> NativeRefCarrier<'a, R>
-        for (Stable, S, WithInterior<__Trap>)
-    {
-        type Carrier = CRef<'a, R>;
-    }
-
-    impl<'a, R: ReprC + ?Sized, __Trap, S: crate::Thin> NativeRefCarrier<'a, R>
-        for (Unstable, S, WithInterior<__Trap>)
-    {
-        type Carrier = CSoftRefMut<R, false>;
-    }
-
-    impl<'a, R: ReprC<CType: Sized> + ?Sized, __Trap, L> NativeRefCarrier<'a, R>
-        for (L, NulTerminated, WithInterior<__Trap>)
-    {
-        type Carrier = CSoftRefMut<R, false>;
-    }
-
-    impl<
-        'a,
-        R: ReprC<CType: Wide<Header: WideHeader<Data: CType>, Metadata = usize>> + ?Sized,
-        __Trap,
-    > NativeRefCarrier<'a, R> for (Stable, MetaSized<SliceLike>, WithInterior<__Trap>)
-    {
-        type Carrier = CWideRefMut<'a, R>;
-    }
-
-    impl<
-        'a,
-        R: ReprC<CType: Wide<Header: WideHeader<Data: CType>, Metadata = usize>> + ?Sized,
-        __Trap,
-    > NativeRefCarrier<'a, R> for (Unstable, MetaSized<SliceLike>, WithInterior<__Trap>)
-    {
-        type Carrier = CSoftWideRefMut<R, false>;
-    }
-
-    impl<'a, R: ReprC + ?Sized, S: crate::Thin> NativeRefMutCarrier<'a, R> for (Stable, S, Robust) {
-        type Carrier = CRefMut<'a, R>;
-    }
-
-    impl<'a, R: ReprC + ?Sized, S: crate::Thin> NativeRefMutCarrier<'a, R> for (Stable, S, NonRobust) {
-        type Carrier = CSoftRefMut<R, true>;
-    }
-
-    impl<'a, R: ReprC + ?Sized, S: crate::Thin, T> NativeRefMutCarrier<'a, R> for (Unstable, S, T) {
-        type Carrier = CSoftRefMut<R, true>;
-    }
-
-    impl<'a, R: ReprC<CType: Wide<Header: WideHeader<Data: CType>, Metadata = usize>> + ?Sized>
-        NativeRefMutCarrier<'a, R> for (Stable, MetaSized<SliceLike>, Robust)
-    {
-        type Carrier = CWideRef<'a, R>;
-    }
-
-    impl<'a, R: ReprC<CType: Wide<Header: WideHeader<Data: CType>, Metadata = usize>> + ?Sized>
-        NativeRefMutCarrier<'a, R> for (Stable, MetaSized<SliceLike>, NonRobust)
-    {
-        type Carrier = CSoftWideRefMut<R, true>;
-    }
-
-    impl<'a, R: ReprC<CType: Wide<Header: WideHeader<Data: CType>, Metadata = usize>> + ?Sized, T>
-        NativeRefMutCarrier<'a, R> for (Unstable, MetaSized<SliceLike>, T)
-    {
-        type Carrier = CSoftWideRefMut<R, true>;
-    }
-
-    impl<'a, R: RustSpec + ?Sized> ReprC for &'a R
-    where
-        (
-            <R as RustSpec>::Layout,
-            <R as RustSpec>::Size,
-            <R as RustSpec>::Mutability,
-        ): NativeRefCarrier<'a, R>,
-    {
-        type CType = <(
-            <R as RustSpec>::Layout,
-            <R as RustSpec>::Size,
-            <R as RustSpec>::Mutability,
-        ) as NativeRefCarrier<'a, R>>::Carrier;
-    }
-
-    impl<'a, R: RustSpec + ?Sized> ReprC for &'a mut R
-    where
-        (
-            <R as RustSpec>::Layout,
-            <R as RustSpec>::Size,
-            <R as RustSpec>::Trap,
-        ): NativeRefMutCarrier<'a, R>,
-    {
-        type CType = <(
-            <R as RustSpec>::Layout,
-            <R as RustSpec>::Size,
-            <R as RustSpec>::Trap,
-        ) as NativeRefMutCarrier<'a, R>>::Carrier;
-    }
-}
-
 /// Shared carrier operations used by internal conversion helpers.
 ///
 /// # Safety
 ///
 /// Implementations must preserve the raw pointer ABI and shared access contract.
-pub(crate) unsafe trait SharedRefCarrier<R: ?Sized>: CType + Copy {
+pub(crate) unsafe trait RefCarrier<R: ?Sized>: CType + Copy {
     fn as_ptr(&self) -> *const R::CType
     where
         R: ReprC;
@@ -183,9 +31,7 @@ pub(crate) unsafe trait SharedRefCarrier<R: ?Sized>: CType + Copy {
         R: ReprC;
     /// # Safety
     /// The result must satisfy the destination carrier's raw constructor contract.
-    unsafe fn cast_shared<U: ReprC<CType: Sized> + ?Sized, Target: SharedRefCarrier<U>>(
-        self,
-    ) -> Target
+    unsafe fn cast_shared<U: ReprC<CType: Sized> + ?Sized, Target: RefCarrier<U>>(self) -> Target
     where
         R: ReprC,
     {
@@ -193,7 +39,7 @@ pub(crate) unsafe trait SharedRefCarrier<R: ?Sized>: CType + Copy {
     }
 }
 
-unsafe impl<R: ReprC + ?Sized> SharedRefCarrier<R> for CSoftRef<R> {
+unsafe impl<R: ReprC + ?Sized> RefCarrier<R> for CSoftRef<R> {
     fn as_ptr(&self) -> *const R::CType {
         self.data
     }
@@ -201,7 +47,7 @@ unsafe impl<R: ReprC + ?Sized> SharedRefCarrier<R> for CSoftRef<R> {
         unsafe { Self::from_raw(data) }
     }
 }
-unsafe impl<'a, R: ReprC + ?Sized> SharedRefCarrier<R> for CRef<'a, R> {
+unsafe impl<'a, R: ReprC + ?Sized> RefCarrier<R> for CRef<'a, R> {
     fn as_ptr(&self) -> *const R::CType {
         self.data
     }
@@ -239,15 +85,6 @@ where
     }
     unsafe fn from_mut_ptr(data: *mut R::CType) -> Self {
         unsafe { Self::from_raw(data) }
-    }
-}
-
-unsafe impl<'a, R: ReprC + ?Sized> MutRefCarrier<R, false> for CRef<'a, R> {
-    fn as_ptr(&self) -> *mut R::CType {
-        self.data.cast_mut()
-    }
-    unsafe fn from_mut_ptr(data: *mut R::CType) -> Self {
-        unsafe { Self::from_raw(data.cast_const()) }
     }
 }
 
@@ -707,7 +544,7 @@ mod tests {
         assert_impl_all!(&UnsafeCell<u8>: Niche<CType = crate::reference::CRef<'static, UnsafeCell<u8>>>);
         assert_impl_all!(&mut UnsafeCell<u8>: Niche<CType = crate::reference::CRefMut<'static, UnsafeCell<u8>>>);
         assert_impl_all!(&mut [u8]: Niche<CType = crate::wide::CWideRef<'static, [u8]>>);
-        assert_impl_all!(&[UnsafeCell<u8>]: Niche<CType = crate::wide::CWideRefMut<'static, [UnsafeCell<u8>]>>);
+        assert_impl_all!(&[UnsafeCell<u8>]: Niche<CType = crate::wide::CWideRef<'static, [UnsafeCell<u8>]>>);
         assert_impl_all!(&mut [UnsafeCell<u8>]: Niche<CType = crate::wide::CWideRef<'static, [UnsafeCell<u8>]>>);
 
         assert_eq!(

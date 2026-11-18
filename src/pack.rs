@@ -14,7 +14,7 @@ use crate::{
     option::COptionSome,
     result::{CResultErr, CResultOk},
     tuple::CTuple2,
-    wide::{MutWideRefCarrier, PointeeData, Wide, WideHeader, WideRefCarrier},
+    wide::{PointeeData, Wide, WideHeader, WideRefCarrier, WideRefMutCarrier},
 };
 #[cfg(feature = "alloc")]
 use crate::{boxed::Box, wide::CWideBox};
@@ -99,7 +99,7 @@ where
     R: ReprC<CType = P> + Wide + ?Sized,
     P: Wide<Header: WideHeader<Data: CType>, Metadata: TryInto<U>> + ?Sized,
     U: CType,
-    Self: ReprC<CType: MutWideRefCarrier<R>>,
+    Self: ReprC<CType: WideRefMutCarrier<R>>,
 {
     type Error = <P::Metadata as TryInto<U>>::Error;
 
@@ -113,7 +113,7 @@ where
     R: ReprC<CType = P> + Wide + ?Sized,
     P: Wide<Header: WideHeader<Data: CType>> + ?Sized,
     U: CType + TryInto<P::Metadata>,
-    Self: ReprC<CType: MutWideRefCarrier<R>>,
+    Self: ReprC<CType: WideRefMutCarrier<R>>,
 {
     type Error = <U as TryInto<P::Metadata>>::Error;
 
@@ -314,20 +314,6 @@ where
     #[inline(always)]
     unsafe fn pack(part1: Part1, part2: Part2) -> Result<Self::CType, Self::Error> {
         Ok(CTuple2(part1, part2))
-    }
-}
-
-// Borrowed ownership changes the marker, not the unpacked ABI parts.
-impl<T: Unpack2<A, B>, A: CType, B: CType> Unpack2<A, B> for crate::borrow::CBorrowed<T> {
-    type Error = T::Error;
-    fn unpack(value: Self::CType) -> Result<(A, B), Self::Error> {
-        T::unpack(value.0)
-    }
-}
-impl<T: Pack2<A, B>, A: CType, B: CType> Pack2<A, B> for crate::borrow::CBorrowed<T> {
-    type Error = T::Error;
-    unsafe fn pack(a: A, b: B) -> Result<Self::CType, Self::Error> {
-        unsafe { T::pack(a, b) }.map(crate::borrow::CBorrowed)
     }
 }
 

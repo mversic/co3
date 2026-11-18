@@ -1,7 +1,8 @@
 use core::cell::UnsafeCell;
 
 use co3::{
-    borrow::CBorrowed,
+    ReprC,
+    borrow::Borrowed,
     ffi,
     ops::CFn1,
     raw,
@@ -31,17 +32,21 @@ assert_type_eq_all!(
 );
 assert_type_eq_all!(
     ExclusiveBox<'static>,
-    unsafe extern "C" fn(CBorrowed<&'static mut Box<u32>>) -> CBorrowed<&'static mut Box<u32>>
+    unsafe extern "C" fn(
+        Borrowed<<&'static mut Box<u32> as ReprC>::CType>,
+    ) -> Borrowed<<&'static mut Box<u32> as ReprC>::CType>
 );
 assert_type_eq_all!(
     InteriorBox<'static>,
     unsafe extern "C" fn(
-        CBorrowed<&'static UnsafeCell<Box<u32>>>,
-    ) -> CBorrowed<&'static UnsafeCell<Box<u32>>>
+        Borrowed<<&'static UnsafeCell<Box<u32>> as ReprC>::CType>,
+    ) -> Borrowed<<&'static UnsafeCell<Box<u32>> as ReprC>::CType>
 );
 assert_type_eq_all!(
     SharedAlias<'static>,
-    unsafe extern "C" fn(CBorrowed<&'static Text>) -> CBorrowed<&'static Text>
+    unsafe extern "C" fn(
+        Borrowed<<&'static Text as ReprC>::CType>,
+    ) -> Borrowed<<&'static Text as ReprC>::CType>
 );
 
 fn echo(value: &u32) -> &u32 {

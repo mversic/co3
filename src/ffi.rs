@@ -716,19 +716,19 @@ mod tests {
     struct Value(u8);
 
     #[cfg(all(feature = "alloc", feature = "derive"))]
-    extern "C" fn borrowed_return() -> co3::borrow::CBorrowed<Box<Value>> {
-        co3::borrow::CBorrowed(co3::boxed::CBox::null())
+    extern "C" fn borrowed_return() -> co3::borrow::Borrowed<<Box<Value> as co3::ReprC>::CType> {
+        co3::borrow::Borrowed(co3::boxed::CBox::null())
     }
 
     #[cfg(all(feature = "alloc", feature = "derive"))]
     co3::ffi! {
         #![unsafe(extern("C"))]
         type BorrowedReturn = raw extern "C" fn() -> Box<Value>;
-        type InteriorUnpacked = extern "C" fn(#[unpack(*mut core::cell::Cell<u8>, usize)] &[core::cell::Cell<u8>]) -> usize;
+        type InteriorUnpacked = extern "C" fn(#[unpack(*const core::cell::Cell<u8>, usize)] &[core::cell::Cell<u8>]) -> usize;
         type RegularUnpacked = extern "C" fn(#[unpack(_, _)] &mut [u8]) -> usize;
         type Composite = (String, raw fn(String));
 
-        fn interior_slice(#[unpack(*mut core::cell::Cell<u8>, usize)] values: &[core::cell::Cell<u8>]) -> usize;
+        fn interior_slice(#[unpack(*const core::cell::Cell<u8>, usize)] values: &[core::cell::Cell<u8>]) -> usize;
     }
 
     #[cfg(all(feature = "alloc", feature = "derive"))]
@@ -737,7 +737,7 @@ mod tests {
         let _: BorrowedReturn = borrowed_return;
         static_assertions::assert_type_eq_all!(
             InteriorUnpacked,
-            Option<unsafe extern "C" fn(*mut core::cell::Cell<u8>, usize) -> usize>
+            Option<unsafe extern "C" fn(*const core::cell::Cell<u8>, usize) -> usize>
         );
         static_assertions::assert_type_eq_all!(
             RegularUnpacked,
@@ -745,7 +745,10 @@ mod tests {
         );
         static_assertions::assert_type_eq_all!(
             Composite,
-            <(String, unsafe extern "C" fn(co3::borrow::CBorrowed<String>)) as ReprC>::CType
+            <(
+                String,
+                unsafe extern "C" fn(co3::borrow::Borrowed<<String as co3::ReprC>::CType>)
+            ) as ReprC>::CType
         );
     }
     #[cfg(all(feature = "alloc", feature = "derive"))]
@@ -786,7 +789,7 @@ mod tests {
     #[cfg(all(feature = "alloc", feature = "derive"))]
     use crate::{
         Error,
-        borrow::CBorrowed,
+        borrow::Borrowed,
         ffi,
         ops::{CFn0, CFn1, CFn2, CFn12},
         option::COption,
@@ -822,7 +825,7 @@ mod tests {
             "héllo".len()
         );
         assert_eq!(
-            unsafe { alias_len_raw(CBorrowed::new(CSoftRef::from_ref(&source))) },
+            unsafe { alias_len_raw(Borrowed::new(CSoftRef::from_ref(&source))) },
             "héllo".len()
         );
         assert_eq!(unsafe { source.0.into_vec() }.unwrap(), "héllo".as_bytes());
@@ -857,7 +860,9 @@ mod tests {
             self
         }
 
-        unsafe extern "C" fn echo_raw(value: CBorrowed<Self>) -> CBorrowed<Self>;
+        unsafe extern "C" fn echo_raw(
+            value: Borrowed<<Self as co3::ReprC>::CType>,
+        ) -> Borrowed<<Self as co3::ReprC>::CType>;
     }
 
     #[cfg(all(feature = "alloc", feature = "derive"))]
@@ -926,11 +931,11 @@ mod tests {
 
     #[cfg(all(feature = "alloc", feature = "derive"))]
     extern "C" fn sum_pair(
-        left: CBorrowed<CallbackValue>,
-        right: CBorrowed<CallbackValue>,
-    ) -> CBorrowed<CallbackValue> {
-        CBorrowed::new(CallbackValue(
-            CBorrowed::into_inner(left).0 + CBorrowed::into_inner(right).0,
+        left: Borrowed<<CallbackValue as co3::ReprC>::CType>,
+        right: Borrowed<<CallbackValue as co3::ReprC>::CType>,
+    ) -> Borrowed<<CallbackValue as co3::ReprC>::CType> {
+        Borrowed::new(CallbackValue(
+            Borrowed::into_inner(left).0 + Borrowed::into_inner(right).0,
         ))
     }
 
@@ -940,14 +945,14 @@ mod tests {
         left: CallbackValue,
         right: CallbackValue,
     ) -> CallbackValue {
-        CBorrowed::into_inner(unsafe { callback(CBorrowed::new(left), CBorrowed::new(right)) })
+        Borrowed::into_inner(unsafe { callback(Borrowed::new(left), Borrowed::new(right)) })
     }
 
     #[cfg(all(feature = "alloc", feature = "derive"))]
     fn apply_optional_callback(callback: Option<CCallback>, value: CallbackValue) -> CallbackValue {
         callback.map_or(value, |call| {
-            CBorrowed::into_inner(unsafe {
-                call(CBorrowed::new(value), CBorrowed::new(CallbackValue(1)))
+            Borrowed::into_inner(unsafe {
+                call(Borrowed::new(value), Borrowed::new(CallbackValue(1)))
             })
         })
     }
@@ -1197,22 +1202,22 @@ mod tests {
         fn assert_existing_fn_pointer_impls<T>(_: T) {}
         assert_existing_fn_pointer_impls(sum_native_raw as CCallback);
         let raw_value = co3::encode(CallbackRustValue(21));
-        let raw_result = unsafe { double_rust_raw(CBorrowed::new(raw_value)) };
+        let raw_result = unsafe { double_rust_raw(Borrowed::new(raw_value)) };
         assert_eq!(
             unsafe { co3::decode::<CallbackRustValue>(raw_result) },
             Some(CallbackRustValue(42))
         );
         let encoded = co3::encode(CallbackRustValue(7));
         let raw_result = unsafe {
-            CallbackRustValue::scaled_raw(CBorrowed::new(CSoftRef::from_ref(&encoded)), 6)
+            CallbackRustValue::scaled_raw(Borrowed::new(CSoftRef::from_ref(&encoded)), 6)
         };
         assert_eq!(
             unsafe { co3::decode::<CallbackRustValue>(raw_result) },
             Some(CallbackRustValue(42))
         );
         assert_eq!(
-            CBorrowed::into_inner(unsafe {
-                <CallbackValue as Echo>::echo_raw(CBorrowed::new(CallbackValue(42)))
+            Borrowed::into_inner(unsafe {
+                <CallbackValue as Echo>::echo_raw(Borrowed::new(CallbackValue(42)))
             }),
             CallbackValue(42)
         );
@@ -1221,40 +1226,40 @@ mod tests {
             CallbackValue(42)
         );
         assert_eq!(
-            CBorrowed::into_inner(unsafe {
+            Borrowed::into_inner(unsafe {
                 imported_apply_callback_raw(
-                    CBorrowed::new(Some(sum_pair as CCallback)),
-                    CBorrowed::new(CallbackValue(19)),
-                    CBorrowed::new(CallbackValue(23)),
+                    Borrowed::new(Some(sum_pair as CCallback)),
+                    Borrowed::new(CallbackValue(19)),
+                    Borrowed::new(CallbackValue(23)),
                 )
             }),
             CallbackValue(42)
         );
         assert_eq!(
-            CBorrowed::into_inner(unsafe {
+            Borrowed::into_inner(unsafe {
                 raw_only_apply_callback(
-                    CBorrowed::new(Some(sum_pair as CCallback)),
-                    CBorrowed::new(CallbackValue(19)),
-                    CBorrowed::new(CallbackValue(23)),
+                    Borrowed::new(Some(sum_pair as CCallback)),
+                    Borrowed::new(CallbackValue(19)),
+                    Borrowed::new(CallbackValue(23)),
                 )
             }),
             CallbackValue(42)
         );
         assert_eq!(
-            CBorrowed::into_inner(unsafe {
+            Borrowed::into_inner(unsafe {
                 CallbackValue::add_raw(
-                    CBorrowed::new(CallbackValue(19)),
-                    CBorrowed::new(CallbackValue(23)),
+                    Borrowed::new(CallbackValue(19)),
+                    Borrowed::new(CallbackValue(23)),
                 )
             }),
             CallbackValue(42)
         );
         let system_raw: unsafe extern "system" fn(_, _) -> _ = imported_system_sum_native;
         assert_eq!(
-            CBorrowed::into_inner(unsafe {
+            Borrowed::into_inner(unsafe {
                 system_raw(
-                    CBorrowed::new(CallbackValue(19)),
-                    CBorrowed::new(CallbackValue(23)),
+                    Borrowed::new(CallbackValue(19)),
+                    Borrowed::new(CallbackValue(23)),
                 )
             }),
             CallbackValue(42)
@@ -1264,10 +1269,10 @@ mod tests {
             CallbackValue(42)
         );
         assert_eq!(
-            CBorrowed::into_inner(unsafe {
+            Borrowed::into_inner(unsafe {
                 imported_sum_native_raw(
-                    CBorrowed::new(CallbackValue(19)),
-                    CBorrowed::new(CallbackValue(23)),
+                    Borrowed::new(CallbackValue(19)),
+                    Borrowed::new(CallbackValue(23)),
                 )
             }),
             CallbackValue(42)
@@ -1408,7 +1413,7 @@ mod tests {
     fn raw_companions_validate_fields_in_declaration_order() {
         assert_eq!(
             unsafe {
-                raw_order_tuple_raw(CBorrowed::new(CTuple3(
+                raw_order_tuple_raw(Borrowed::new(CTuple3(
                     <RawOrderProbe as co3::ReprC>::CType::from_fields(1),
                     <RawOrderProbe as co3::ReprC>::CType::from_fields(2),
                     <RawOrderProbe as co3::ReprC>::CType::from_fields(3),
@@ -1420,7 +1425,7 @@ mod tests {
 
         assert_eq!(
             unsafe {
-                raw_order_record_raw(CBorrowed::new(
+                raw_order_record_raw(Borrowed::new(
                     <RawOrderRecord as co3::ReprC>::CType::from_fields(
                         <RawOrderProbe as co3::ReprC>::CType::from_fields(1),
                         <RawOrderProbe as co3::ReprC>::CType::from_fields(2),
@@ -1610,8 +1615,8 @@ mod tests {
 
         let value = 7_u8;
         unsafe {
-            take_raw::<u8>(CBorrowed::new(CRef::from_ref(&value)));
-            ArgumentHost::take_raw::<u8>(CBorrowed::new(CRef::from_ref(&value)));
+            take_raw::<u8>(Borrowed::new(CRef::from_ref(&value)));
+            ArgumentHost::take_raw::<u8>(Borrowed::new(CRef::from_ref(&value)));
         }
     }
 
@@ -1710,12 +1715,12 @@ mod tests {
         assert_eq!(unsafe { c(1) }, 2);
         assert_eq!(unsafe { system(1) }, 3);
         assert_eq!(unsafe { default(1) }, 4);
-        assert_eq!(unsafe { method(CBorrowed::new(CompanionValue(1)), 2) }, 3);
+        assert_eq!(unsafe { method(Borrowed::new(CompanionValue(1)), 2) }, 3);
         assert_eq!(unsafe { callback(1) }, 2);
         assert_eq!(unsafe { system_companion(1) }, 2);
         assert_eq!(unsafe { rust_companion(1) }, 5);
         assert_eq!(
-            unsafe { method_companion(CBorrowed::new(CompanionValue(1)), 2) },
+            unsafe { method_companion(Borrowed::new(CompanionValue(1)), 2) },
             4
         );
     }
@@ -1729,7 +1734,7 @@ mod tests {
         type AliasOrdinary = core::num::NonZeroU8;
         type AliasRegular = extern "C" fn(u8);
         type AliasSharedUnpacked = extern "C" fn(#[unpack(_, _)] &[u8]) -> usize;
-        type AliasInteriorUnpacked = raw extern "C" fn(#[unpack(*mut core::cell::Cell<u8>, usize)] &[core::cell::Cell<u8>]) -> usize;
+        type AliasInteriorUnpacked = raw extern "C" fn(#[unpack(*const core::cell::Cell<u8>, usize)] &[core::cell::Cell<u8>]) -> usize;
         type AliasRegularUnpacked = extern "C" fn(#[unpack(_, _)] &mut [u8]) -> usize;
         type AliasComposite = (String, raw fn(String));
         type AliasMaybeCallback = Option<raw fn(u8)>;
@@ -1745,7 +1750,7 @@ mod tests {
     ffi! {
         #![unsafe(extern("C"))]
 
-        fn alias_interior_slice(#[unpack(*mut core::cell::Cell<u8>, usize)] values: &[core::cell::Cell<u8>]) -> usize;
+        fn alias_interior_slice(#[unpack(*const core::cell::Cell<u8>, usize)] values: &[core::cell::Cell<u8>]) -> usize;
     }
 
     #[cfg(all(feature = "alloc", feature = "derive"))]
@@ -1780,7 +1785,7 @@ mod tests {
         );
         static_assertions::assert_type_eq_all!(
             AliasInteriorUnpacked,
-            unsafe extern "C" fn(*mut core::cell::Cell<u8>, usize) -> usize
+            unsafe extern "C" fn(*const core::cell::Cell<u8>, usize) -> usize
         );
         static_assertions::assert_type_eq_all!(
             AliasRegularUnpacked,
@@ -1819,7 +1824,9 @@ mod tests {
         );
         static_assertions::assert_type_eq_all!(
             AliasBorrowed<u8>,
-            unsafe extern "C" fn(CBorrowed<u8>) -> CBorrowed<u8>
+            unsafe extern "C" fn(
+                Borrowed<<u8 as co3::ReprC>::CType>,
+            ) -> Borrowed<<u8 as co3::ReprC>::CType>
         );
         static_assertions::assert_type_eq_all!(
             AliasArray<2>,

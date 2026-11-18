@@ -572,26 +572,26 @@ pub use disjoint_impls::disjoint_impls;
 pub use impls::impls;
 #[doc(hidden)]
 pub use rust_spec;
-use rust_spec::{
-    RustSpec,
-    layout::LayoutKind,
-    niche::{WithNiche, WithoutNiche},
-    size::{ExternTypeLike, SizedKind, Zero},
-};
 #[cfg(feature = "alloc")]
+use rust_spec::size::MetadataKind;
 use rust_spec::{
-    Stable, Unstable,
-    size::{MetaSized, MetadataKind, NulTerminated, SliceLike},
+    RustSpec, Stable, Unstable,
+    layout::{LayoutKind, NonRobust, Robust},
+    mutability::{Exclusive, ExclusiveKind, WithInterior},
+    niche::{WithNiche, WithoutNiche},
+    size::{ExternTypeLike, MetaSized, NulTerminated, SizedKind, SliceLike, Zero},
 };
 
 #[cfg(feature = "alloc")]
 use crate::ffi::NulTerminatedBuf;
 #[cfg(feature = "alloc")]
+use crate::{boxed::CBox, wide::CWideBox};
 use crate::{
-    boxed::CBox,
-    wide::{CWideBox, Wide, WideHeader},
+    convert::Store,
+    niche::Niche,
+    reference::{CRef, CRefMut, CSoftRef, CSoftRefMut},
+    wide::{CSoftWideRef, CSoftWideRefMut, CWideRef, Wide, WideHeader},
 };
-use crate::{convert::Store, niche::Niche};
 
 pub mod borrow;
 pub(crate) use borrow::__impl_borrowed_identity;
@@ -722,44 +722,92 @@ disjoint_impls! {
         type CType: CType + ?Sized;
     }
 
-    impl<'a, R: ?Sized> ReprC for wide::WideRef<'a, R>
+    impl<'a, R: ReprC + ?Sized> ReprC for &'a R
     where
-        R: ReprC<CType: wide::Wide<Header: CType + wide::WideHeader<Data: CType>>>
-            + wide::Wide + RustSpec<Layout = rust_spec::Stable>,
+        R: RustSpec<Layout = Stable, Size: Thin>,
     {
-        type CType = wide::CWideRef<'a, R, true>;
+        type CType = CRef<'a, R>;
+    }
+    impl<R: ReprC + ?Sized, __Interior: ExclusiveKind> ReprC for &R
+    where
+        R: RustSpec<Layout = Unstable, Size: Thin, Mutability = Exclusive<__Interior>>,
+    {
+        type CType = CSoftRef<R>;
+    }
+    impl<R: ReprC + ?Sized, __Interior: ExclusiveKind> ReprC for &R
+    where
+        R: RustSpec<Size = NulTerminated, Mutability = Exclusive<__Interior>>,
+        <R as ReprC>::CType: Sized,
+    {
+        type CType = CSoftRef<R>;
+    }
+    impl<'a, R: ReprC<CType: Wide<Header: WideHeader<Data: CType>, Metadata = usize>> + ?Sized> ReprC for &'a R
+    where
+        R: RustSpec<Layout = Stable, Size = MetaSized<SliceLike>>,
+    {
+        type CType = CWideRef<'a, R>;
+    }
+    impl<R: ReprC<CType: Wide<Header: WideHeader<Data: CType>, Metadata = usize>> + ?Sized, __Interior: ExclusiveKind> ReprC for &R
+    where
+        R: RustSpec<Layout = Unstable, Size = MetaSized<SliceLike>, Mutability = Exclusive<__Interior>>,
+    {
+        type CType = CSoftWideRef<R>;
+    }
+    impl<R: ReprC + ?Sized, __Trap> ReprC for &R
+    where
+        R: RustSpec<Layout = Unstable, Size: Thin, Mutability = WithInterior<__Trap>>,
+    {
+        type CType = CSoftRefMut<R, false>;
+    }
+    impl<R: ReprC + ?Sized, __Trap> ReprC for &R
+    where
+        R: RustSpec<Size = NulTerminated, Mutability = WithInterior<__Trap>>,
+        <R as ReprC>::CType: Sized,
+    {
+        type CType = CSoftRefMut<R, false>;
+    }
+    impl<R: ReprC<CType: Wide<Header: WideHeader<Data: CType>, Metadata = usize>> + ?Sized, __Trap> ReprC for &R
+    where
+        R: RustSpec<Layout = Unstable, Size = MetaSized<SliceLike>, Mutability = WithInterior<__Trap>>,
+    {
+        type CType = CSoftWideRefMut<R, false>;
     }
 
-    impl<'a, R: ?Sized> ReprC for wide::WideRef<'a, R>
+    impl<'a, R: ReprC + ?Sized> ReprC for &'a mut R
     where
-        R: ReprC<CType: wide::Wide<Header: CType + wide::WideHeader<Data: CType>>>
-            + wide::Wide + RustSpec<Layout = rust_spec::Unstable>,
+        R: RustSpec<Layout = Stable, Trap = Robust, Size: Thin>,
     {
-        type CType = wide::CSoftWideRef<R, true>;
+        type CType = CRefMut<'a, R>;
     }
-
-    impl<'a, R: ?Sized> ReprC for wide::WideRefMut<'a, R>
+    impl<R: ReprC + ?Sized> ReprC for &mut R
     where
-        R: ReprC<CType: wide::Wide<Header: CType + wide::WideHeader<Data: CType>>>
-            + wide::Wide + RustSpec<Layout = rust_spec::Stable, Trap = rust_spec::layout::Robust>,
+        R: RustSpec<Layout = Stable, Trap = NonRobust, Size: Thin>,
     {
-        type CType = wide::CWideRefMut<'a, R, true>;
+        type CType = CSoftRefMut<R, true>;
     }
-
-    impl<'a, R: ?Sized> ReprC for wide::WideRefMut<'a, R>
+    impl<R: ReprC + ?Sized> ReprC for &mut R
     where
-        R: ReprC<CType: wide::Wide<Header: CType + wide::WideHeader<Data: CType>>>
-            + wide::Wide + RustSpec<Layout = rust_spec::Stable, Trap = rust_spec::layout::NonRobust>,
+        R: RustSpec<Layout = Unstable, Size: Thin>,
     {
-        type CType = wide::CSoftWideRefMut<R, true, true>;
+        type CType = CSoftRefMut<R, true>;
     }
-
-    impl<'a, R: ?Sized> ReprC for wide::WideRefMut<'a, R>
+    impl<'a, R: ReprC<CType: Wide<Header: WideHeader<Data: CType>, Metadata = usize>> + ?Sized> ReprC for &'a mut R
     where
-        R: ReprC<CType: wide::Wide<Header: CType + wide::WideHeader<Data: CType>>>
-            + wide::Wide + RustSpec<Layout = rust_spec::Unstable>,
+        R: RustSpec<Layout = Stable, Trap = Robust, Size = MetaSized<SliceLike>>,
     {
-        type CType = wide::CSoftWideRefMut<R, true, true>;
+        type CType = CWideRef<'a, R>;
+    }
+    impl<R: ReprC<CType: Wide<Header: WideHeader<Data: CType>, Metadata = usize>> + ?Sized> ReprC for &mut R
+    where
+        R: RustSpec<Layout = Stable, Trap = NonRobust, Size = MetaSized<SliceLike>>,
+    {
+        type CType = CSoftWideRefMut<R, true>;
+    }
+    impl<R: ReprC<CType: Wide<Header: WideHeader<Data: CType>, Metadata = usize>> + ?Sized> ReprC for &mut R
+    where
+        R: RustSpec<Layout = Unstable, Size = MetaSized<SliceLike>>,
+    {
+        type CType = CSoftWideRefMut<R, true>;
     }
 
     #[cfg(feature = "alloc")]
@@ -830,6 +878,42 @@ disjoint_impls! {
         type CType = result::CResultErr<R, E>;
     }
 
+    impl<'a, R: ?Sized> ReprC for wide::WideRef<'a, R>
+    where
+        R: ReprC<CType: wide::Wide<Header: CType + wide::WideHeader<Data: CType>>>
+            + wide::Wide + RustSpec<Layout = Stable>,
+    {
+        type CType = wide::CWideRef<'a, R, true>;
+    }
+    impl<'a, R: ?Sized> ReprC for wide::WideRef<'a, R>
+    where
+        R: ReprC<CType: wide::Wide<Header: CType + wide::WideHeader<Data: CType>>>
+            + wide::Wide + RustSpec<Layout = rust_spec::Unstable>,
+    {
+        type CType = wide::CSoftWideRef<R, true>;
+    }
+
+    impl<'a, R: ?Sized> ReprC for wide::WideRefMut<'a, R>
+    where
+        R: ReprC<CType: wide::Wide<Header: CType + wide::WideHeader<Data: CType>>>
+            + wide::Wide + RustSpec<Layout = Stable, Trap = rust_spec::layout::Robust>,
+    {
+        type CType = wide::CWideRefMut<'a, R, true>;
+    }
+    impl<'a, R: ?Sized> ReprC for wide::WideRefMut<'a, R>
+    where
+        R: ReprC<CType: wide::Wide<Header: CType + wide::WideHeader<Data: CType>>>
+            + wide::Wide + RustSpec<Layout = Stable, Trap = rust_spec::layout::NonRobust>,
+    {
+        type CType = wide::CSoftWideRefMut<R, true, true>;
+    }
+    impl<'a, R: ?Sized> ReprC for wide::WideRefMut<'a, R>
+    where
+        R: ReprC<CType: wide::Wide<Header: CType + wide::WideHeader<Data: CType>>>
+            + wide::Wide + RustSpec<Layout = rust_spec::Unstable>,
+    {
+        type CType = wide::CSoftWideRefMut<R, true, true>;
+    }
 }
 
 // TODO: Check https://github.com/mversic/co3/issues/13
@@ -1144,7 +1228,7 @@ mod carrier_tests {
     };
 
     use super::*;
-    use crate::{borrow::CBorrowed, num::NonZero};
+    use crate::{borrow::Borrowed, num::NonZero};
 
     #[test]
     fn wrappers_lower_contents_structurally() {
@@ -1189,8 +1273,8 @@ mod carrier_tests {
             core::cmp::Reverse<crate::primitives::Bool>
         );
         assert_type_eq_all!(
-            <CBorrowed<crate::primitives::Bool> as ReprC>::CType,
-            CBorrowed<crate::primitives::Bool>
+            <Borrowed<crate::primitives::Bool> as ReprC>::CType,
+            Borrowed<crate::primitives::Bool>
         );
         assert_not_impl_any!(core::cell::Cell<crate::primitives::Bool>: Copy);
         assert_not_impl_any!(core::cell::UnsafeCell<crate::primitives::Bool>: Copy);

@@ -294,7 +294,7 @@ pub(super) fn gen_item_borrow_impls(input: &DeriveInput, codecs: TokenStream) ->
             .make_where_clause()
             .predicates
             .push(parse_quote!(
-                #speculative Self: co3::rust_spec::RustSpec
+                Self: co3::rust_spec::RustSpec
             ));
         implementation
             .generics

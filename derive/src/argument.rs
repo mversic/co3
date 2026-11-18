@@ -157,17 +157,9 @@ impl<'a> Argument<'a> {
         if let Unpack::Pair(pair) = &self.unpack
             && let Some(ty) = &pair.inferred_source
         {
-            return self.with_ownership(ty);
-        }
-        self.with_ownership(&self.ty)
-    }
-
-    fn with_ownership(&self, ty: &Type) -> Type {
-        if !self.is_borrowed() || ffi_fn::is_implicitly_by_value(ty) {
             return ty.clone();
         }
-        let co3 = co3_path();
-        parse_quote!(#co3::borrow::CBorrowed<#ty>)
+        self.ty.clone()
     }
 
     pub(crate) fn abi_ty(&self) -> Type {
@@ -177,7 +169,7 @@ impl<'a> Argument<'a> {
         let ty = &self.ty;
         if self.is_borrowed() {
             let co3 = co3_path();
-            parse_quote!(#co3::borrow::CBorrowed<#ty>)
+            parse_quote!(#co3::borrow::Borrowed< <#ty as #co3::ReprC>::CType >)
         } else {
             parse_quote!(<#ty as co3::ReprC>::CType)
         }
@@ -341,7 +333,7 @@ mod tests {
                 let co3 = co3_path();
                 assert_eq!(
                     borrowed.abi_ty(),
-                    parse_quote!(#co3::borrow::CBorrowed<#ty>)
+                    parse_quote!(#co3::borrow::Borrowed< <#ty as #co3::ReprC>::CType >)
                 );
                 assert_eq!(moved.abi_ty(), parse_quote!(<#ty as co3::ReprC>::CType));
             } else {
