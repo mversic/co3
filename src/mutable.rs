@@ -429,7 +429,7 @@ macro_rules! define_mutable_encoders {
                             Layout = $crate::rust_spec::Stable,
                             Trap = $crate::rust_spec::layout::Robust,
                         > + $crate::convert::SoftEncodeMutUnchecked<'_mut>,
-                    &'_mut mut Self: $crate::ReprC<CType = $crate::reference::CRefMut<'_mut, Self, true>>
+                    &'_mut mut Self: $crate::ReprC<CType = $crate::reference::CRefMut<'_mut, Self>>
                         + $crate::convert::EncodeMove<Store = ()>,
                 {
                     type Store = ();
@@ -479,7 +479,7 @@ macro_rules! define_mutable_encoders {
                             Layout = $crate::rust_spec::Stable,
                             Trap = $crate::rust_spec::layout::Robust,
                         > + $crate::convert::SoftEncodeMutUnchecked<'_mut>,
-                    &'_mut mut Self: $crate::ReprC<CType = $crate::reference::CRefMut<'_mut, Self, true>>
+                    &'_mut mut Self: $crate::ReprC<CType = $crate::reference::CRefMut<'_mut, Self>>
                         + $crate::convert::EncodeMove<Store = ()>,
                 {
                     type Store = ();
@@ -529,7 +529,7 @@ macro_rules! define_mutable_encoders {
                             Layout = $crate::rust_spec::Stable,
                             Trap = $crate::rust_spec::layout::Robust,
                         > + $crate::convert::SoftEncodeMutUnchecked<'_mut>,
-                    &'_mut mut Self: $crate::ReprC<CType = $crate::reference::CRefMut<'_mut, Self, true>>
+                    &'_mut mut Self: $crate::ReprC<CType = $crate::reference::CRefMut<'_mut, Self>>
                         + $crate::convert::EncodeMove<Store = ()>,
                 {
                     type Store = ();
@@ -1209,7 +1209,7 @@ crate::fn_types::with_fn_types! { define_mutable_encoders, {
             Self: crate::transmute::AbiCompatibleValidate
                 + RustSpec<Layout = rust_spec::Stable, Trap = rust_spec::layout::Robust>
                 + 'a,
-            &'a mut Self: ReprC<CType = crate::reference::CRefMut<'a, Self, true>>
+            &'a mut Self: ReprC<CType = crate::reference::CRefMut<'a, Self>>
                 + EncodeMove<Store = ()>
                 + EncodeMoveUnchecked<SoftStore = ()>,
         {
@@ -1401,7 +1401,7 @@ impl_cell_mut!(UnsafeCell, UnsafeCell::get_mut);
 impl_direct_mut!([T: ?Sized] core::marker::PhantomData<T>);
 impl_direct_mut!([T] core::mem::MaybeUninit<T>);
 impl_direct_mut!(['r, C: ReprC<CType: CType> + ?Sized] crate::reference::CRef<'r, C>);
-impl_direct_mut!(['r, C: ReprC<CType: CType> + ?Sized, const EXCLUSIVE: bool] crate::reference::CRefMut<'r, C, EXCLUSIVE>);
+impl_direct_mut!(['r, C: ReprC<CType: CType> + ?Sized] crate::reference::CRefMut<'r, C>);
 impl_direct_mut!(['r, P: ReprC<CType: Wide<Header: WideHeader<Data: CType>>> + ?Sized] crate::wide::CWideRef<'r, P>);
 impl_direct_mut!(['r, P: ReprC<CType: Wide<Header: WideHeader<Data: CType>>> + ?Sized] crate::wide::CWideRefMut<'r, P>);
 impl_direct_mut!([C: ReprC<CType: CType> + ?Sized] CSoftRef<C>);

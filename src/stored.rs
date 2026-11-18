@@ -27,7 +27,7 @@ use crate::{
     },
     niche::Niche,
     option::COptionSome,
-    reference::{CRef, CRefMut, CSoftRef, CSoftRefMut, MutRefCarrier, SharedRefCarrier},
+    reference::{CRef, CSoftRef, CSoftRefMut, MutRefCarrier, SharedRefCarrier},
     result::{CResult, CResultErr, CResultOk},
     sync::ArrayStore,
     transmute::{AbiCompatible, AbiCompatibleValidate, InteriorTrap, transmute_owned},
@@ -117,12 +117,6 @@ impl<R: ReprC<CType: CType> + ?Sized> FromSharedRef<R::CType> for CSoftRefMut<R,
 impl<'a, R: ReprC<CType: CType> + ?Sized> FromSharedRef<R::CType> for CRef<'a, R> {
     unsafe fn from_shared_ref(data: *const R::CType) -> Self {
         unsafe { Self::from_raw(data) }
-    }
-}
-
-impl<'a, R: ReprC<CType: CType> + ?Sized> FromSharedRef<R::CType> for CRefMut<'a, R, false> {
-    unsafe fn from_shared_ref(data: *const R::CType) -> Self {
-        unsafe { Self::from_raw(data.cast_mut()) }
     }
 }
 
@@ -2535,14 +2529,13 @@ mod tests {
     fn constructs_lifetime_bearing_shared_carriers() {
         use core::cell::UnsafeCell;
 
-        use super::{CRef, CRefMut, CWideRef, CWideRefMut, FromSharedRef, FromSharedWideRef};
+        use super::{CRef, CWideRef, CWideRefMut, FromSharedRef, FromSharedWideRef};
 
         let value = 7_u8;
         let carrier: CRef<'_, u8> = unsafe { FromSharedRef::from_shared_ref(&value) };
         assert_eq!(unsafe { carrier.into_ref() }, Some(&value));
         let cell = core::cell::UnsafeCell::<u8>::new(5_u8);
-        let carrier: CRefMut<'_, UnsafeCell<u8>, false> =
-            unsafe { FromSharedRef::from_shared_ref(&cell) };
+        let carrier: CRef<'_, UnsafeCell<u8>> = unsafe { FromSharedRef::from_shared_ref(&cell) };
         assert_eq!(carrier.as_ptr(), core::ptr::from_ref(&cell).cast_mut());
         let values = [1_u8, 2, 3];
         let carrier: CWideRef<'_, [u8]> =

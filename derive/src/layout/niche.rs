@@ -3,6 +3,7 @@ use quote::{format_ident, quote};
 
 use crate::{
     layout::{
+        Ownership,
         attr::ReprKind,
         ctype::{classify_tail, gen_copy_extern_c_bounds_for_ctype, gen_ctype_name},
         enum_tag_type, enum_variant_tag_exprs, is_exhaustive_enum, is_parametrized,
@@ -36,6 +37,7 @@ pub fn gen_struct_niche_ir(
     generics: &syn::Generics,
     fields: &syn::Fields,
     niche_value: Option<&syn::Expr>,
+    marked: bool,
 ) -> TokenStream {
     if fields
         .iter()
@@ -63,74 +65,78 @@ pub fn gen_struct_niche_ir(
     let extern_c_bounds = gen_copy_extern_c_bounds_for_ctype(generics, &types);
     let (fields_tuple, c_fields_tuple, accessors) = build_extern_c_type_tuple(&types);
 
-    let (niche_value, detector, inferred_niche_bounds, custom_niche_bounds) = if let Some(
-        niche_value,
-    ) = niche_value
-    {
-        let custom_niche_bounds = quote! {
-            #struct_name #ty_generics: co3::rust_spec::RustSpec<
-                Niche = co3::rust_spec::niche::WithNiche<co3::rust_spec::Unstable>
-            >,
-            #fields_tuple: co3::rust_spec::RustSpec<
-                Niche = co3::rust_spec::niche::WithoutNiche
-            >,
-            #for_dummy #ctype_name #ty_generics: PartialEq,
+    let (niche_value, detector, inferred_niche_bounds, custom_niche_bounds) =
+        if let Some(niche_value) = niche_value {
+            let custom_niche_bounds = quote! {
+                #struct_name #ty_generics: co3::rust_spec::RustSpec<
+                    Niche = co3::rust_spec::niche::WithNiche<co3::rust_spec::Unstable>
+                >,
+                #fields_tuple: co3::rust_spec::RustSpec<
+                    Niche = co3::rust_spec::niche::WithoutNiche
+                >,
+                #for_dummy #ctype_name #ty_generics: PartialEq,
+            };
+
+            (
+                quote! { #niche_value },
+                quote! {{
+                    let niche = #niche_value;
+                    debug_assert!(niche == niche, "custom niche must compare equal to itself");
+                    *value == niche
+                }},
+                quote! {},
+                custom_niche_bounds,
+            )
+        } else {
+            let niche_field_values = accessors.iter().map(|accessor| {
+                quote! { <#fields_tuple as co3::niche::Niche>::NICHE.#accessor }
+            });
+            let niche_value = match fields {
+                syn::Fields::Named(_) | syn::Fields::Unit => {
+                    let field_names = fields.iter().map(|f| &f.ident);
+                    quote! { #ctype_name { #(#field_names: #niche_field_values),* } }
+                }
+                syn::Fields::Unnamed(_) => {
+                    quote! { #ctype_name(#(#niche_field_values),*) }
+                }
+            };
+            let members = fields
+                .iter()
+                .enumerate()
+                .map(|(i, field)| {
+                    let member = field
+                        .ident
+                        .clone()
+                        .map(syn::Member::Named)
+                        .unwrap_or_else(|| syn::Member::Unnamed(i.into()));
+                    quote!(value.#member)
+                })
+                .collect::<Vec<_>>();
+            let paths = accessors
+                .iter()
+                .map(|accessor| {
+                    accessor
+                        .to_string()
+                        .split('.')
+                        .map(|index| index.trim().parse::<usize>().unwrap())
+                        .collect::<Vec<_>>()
+                })
+                .zip(members)
+                .collect::<Vec<_>>();
+            let tuple_value = build_tuple_value(&paths, 0);
+            (
+                niche_value,
+                quote!(<#fields_tuple as co3::niche::Niche>::is_niche(&#tuple_value)),
+                quote! { #for_dummy #fields_tuple: co3::niche::Niche<CType = #c_fields_tuple>, },
+                quote! {},
+            )
         };
 
-        (
-            quote! { #niche_value },
-            quote! {{
-                let niche = Self::NICHE;
-                debug_assert!(niche == Self::NICHE, "custom niche must compare equal to itself");
-                *value == niche
-            }},
-            quote! {},
-            custom_niche_bounds,
-        )
-    } else {
-        let niche_field_values = accessors.iter().map(|accessor| {
-            quote! { <#fields_tuple as co3::niche::Niche>::NICHE.#accessor }
-        });
-        let niche_value = match fields {
-            syn::Fields::Named(_) | syn::Fields::Unit => {
-                let field_names = fields.iter().map(|f| &f.ident);
-                quote! { #ctype_name { #(#field_names: #niche_field_values),* } }
-            }
-            syn::Fields::Unnamed(_) => {
-                quote! { #ctype_name(#(#niche_field_values),*) }
-            }
-        };
-        let members = fields
-            .iter()
-            .enumerate()
-            .map(|(i, field)| {
-                let member = field
-                    .ident
-                    .clone()
-                    .map(syn::Member::Named)
-                    .unwrap_or_else(|| syn::Member::Unnamed(i.into()));
-                quote!(value.#member)
-            })
-            .collect::<Vec<_>>();
-        let paths = accessors
-            .iter()
-            .map(|accessor| {
-                accessor
-                    .to_string()
-                    .split('.')
-                    .map(|index| index.trim().parse::<usize>().unwrap())
-                    .collect::<Vec<_>>()
-            })
-            .zip(members)
-            .collect::<Vec<_>>();
-        let tuple_value = build_tuple_value(&paths, 0);
-        (
-            niche_value,
-            quote!(<#fields_tuple as co3::niche::Niche>::is_niche(&#tuple_value)),
-            quote! { #for_dummy #fields_tuple: co3::niche::Niche<CType = #c_fields_tuple>, },
-            quote! {},
-        )
-    };
+    let ownership = Ownership::new(struct_name, generics, marked);
+    let niche_value = ownership.niche(struct_name, generics, niche_value);
+    let payload = ownership.apply("payload", quote!(value));
+    let selected = marked.then(|| quote!(#for_dummy Self: co3::ReprC<CType: Copy>,));
+    let detector = quote! {{ let value = #payload; #detector }};
 
     gen_niche_value_ir(
         struct_name,
@@ -138,6 +144,7 @@ pub fn gen_struct_niche_ir(
         niche_value,
         detector,
         quote! {
+            #selected
             #for_dummy #ctype_name #ty_generics: Copy,
             #last_field_sized
             #inferred_niche_bounds
@@ -209,6 +216,7 @@ pub fn gen_enum_niche_ir(
     generics: &syn::Generics,
     variants: &syn::punctuated::Punctuated<syn::Variant, syn::Token![,]>,
     transparent: bool,
+    marked: bool,
 ) -> TokenStream {
     let (impl_generics, ty_generics, where_clause) = generics.split_for_impl();
 
@@ -224,7 +232,7 @@ pub fn gen_enum_niche_ir(
             return quote! {};
         }
 
-        return gen_struct_niche_ir(enum_name, generics, &variant.fields, None);
+        return gen_struct_niche_ir(enum_name, generics, &variant.fields, None, marked);
     }
     let tag_ty = enum_tag_type(repr, variants.len());
     if is_exhaustive_enum(variants.len(), &tag_ty) {
@@ -262,6 +270,13 @@ pub fn gen_enum_niche_ir(
         quote!(value.is_niche())
     };
 
+    let ownership = Ownership::new(enum_name, generics, marked);
+    let niche_value = ownership.niche(enum_name, generics, niche_value);
+    let payload = ownership.apply("payload", quote!(value));
+    let speculative = speculative_marker(generics.params.is_empty());
+    let selected = marked.then(|| quote!(#speculative Self: co3::ReprC<CType: Copy>,));
+    let detector = quote! {{ let value = #payload; #detector }};
+
     let self_bounds = generics
         .params
         .is_empty()
@@ -271,6 +286,7 @@ pub fn gen_enum_niche_ir(
         impl #impl_generics co3::niche::Niche for #enum_name #ty_generics where
             #(#extern_c_bounds,)*
             #self_bounds
+            #selected
             #predicates
         {
             const NICHE: <Self as co3::ReprC>::CType = #niche_value;

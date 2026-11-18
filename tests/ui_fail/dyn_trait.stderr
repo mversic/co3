@@ -1,27 +1,3 @@
-error[E0277]: the trait bound `(dyn Trait + '__co3_0): ReprC` is not satisfied
-  --> tests/ui_fail/dyn_trait.rs:7:1
-   |
- 7 | / ffi! {
- 8 | |     #![unsafe(export("C"))]
- 9 | |
-10 | |     impl dyn Trait {
-...  |
-13 | | }
-   | |_^ the trait `ReprC` is not implemented for `(dyn Trait + '__co3_0)`
-   |
-   = help: the following other types implement trait `ReprC`:
-             &'_lšč0 _TŠČ0
-             &'_lšč0 mut _TŠČ0
-             ()
-             (A, B)
-             (A, B, C)
-             (A, B, C, D)
-             (A, B, C, D, E)
-             (A, B, C, D, E, F)
-           and $N others
-   = note: required for `&'__co3_0 (dyn Trait + '__co3_0)` to implement `ReprC`
-   = note: this error originates in the macro `ffi` (in Nightly builds, run with -Z macro-backtrace for more info)
-
 error[E0277]: the trait bound `(dyn Trait + '__co3_0): RustSpec` is not satisfied
   --> tests/ui_fail/dyn_trait.rs:7:1
    |
@@ -46,7 +22,7 @@ error[E0277]: the trait bound `(dyn Trait + '__co3_0): RustSpec` is not satisfie
    = note: required for `&'__co3_0 (dyn Trait + '__co3_0)` to implement `ReprC`
    = note: this error originates in the macro `ffi` (in Nightly builds, run with -Z macro-backtrace for more info)
 
-error[E0277]: the trait bound `&(dyn Trait + '__co3_0): co3::_::ReprC_cfg0<_, _, _, _>` is not satisfied
+error[E0277]: the trait bound `(_, _, _): reference::selection::NativeRefCarrier<'_, (dyn Trait + '__co3_0)>` is not satisfied
   --> tests/ui_fail/dyn_trait.rs:7:1
    |
  7 | / ffi! {
@@ -55,44 +31,20 @@ error[E0277]: the trait bound `&(dyn Trait + '__co3_0): co3::_::ReprC_cfg0<_, _,
 10 | |     impl dyn Trait {
 ...  |
 13 | | }
-   | |_^ the trait `co3::_::ReprC_cfg0<_, _, _, _>` is not implemented for `&(dyn Trait + '__co3_0)`
+   | |_^ the trait `reference::selection::NativeRefCarrier<'_, (dyn Trait + '__co3_0)>` is not implemented for `(_, _, _)`
    |
-   = help: the following other types implement trait `co3::_::ReprC_cfg0<_TŠČ0, _TŠČ1, _TŠČ2, _TŠČ3>`:
-             `&'_lšč0 R` implements `co3::_::ReprC_cfg0<<R as ReprC>::CType, Unstable, Exclusive<__Interior>, _TŠČ0>`
-             `&'_lšč0 R` implements `co3::_::ReprC_cfg0<<R as ReprC>::CType, Unstable, WithInterior<__Trap>, _TŠČ0>`
-             `&'_lšč0 R` implements `co3::_::ReprC_cfg0<_TŠČ0, <R as RustSpec>::Layout, Exclusive<__Interior>, NulTerminated>`
-             `&'_lšč0 R` implements `co3::_::ReprC_cfg0<_TŠČ0, <R as RustSpec>::Layout, WithInterior<__Trap>, NulTerminated>`
-             `&'_lšč0 R` implements `co3::_::ReprC_cfg0<_TŠČ0, Unstable, Exclusive<__Interior>, co3::rust_spec::size::MetaSized<SliceLike>>`
-             `&'_lšč0 R` implements `co3::_::ReprC_cfg0<_TŠČ0, Unstable, WithInterior<__Trap>, co3::rust_spec::size::MetaSized<SliceLike>>`
-             `&'a R` implements `co3::_::ReprC_cfg0<<R as ReprC>::CType, Stable, Exclusive<__Interior>, _TŠČ0>`
-             `&'a R` implements `co3::_::ReprC_cfg0<<R as ReprC>::CType, Stable, WithInterior<__Trap>, _TŠČ0>`
+   = help: the following other types implement trait `reference::selection::NativeRefCarrier<'a, R>`:
+             (L, NulTerminated, Exclusive<__Interior>)
+             (L, NulTerminated, WithInterior<__Trap>)
+             (Stable, S, Exclusive<__Interior>)
+             (Stable, S, WithInterior<__Trap>)
+             (Stable, co3::rust_spec::size::MetaSized<SliceLike>, Exclusive<__Interior>)
+             (Stable, co3::rust_spec::size::MetaSized<SliceLike>, WithInterior<__Trap>)
+             (Unstable, S, Exclusive<__Interior>)
+             (Unstable, S, WithInterior<__Trap>)
            and $N others
    = note: required for `&'__co3_0 (dyn Trait + '__co3_0)` to implement `ReprC`
    = note: this error originates in the macro `ffi` (in Nightly builds, run with -Z macro-backtrace for more info)
-
-error[E0277]: the trait bound `(dyn Trait + 'static): ReprC` is not satisfied
-  --> tests/ui_fail/dyn_trait.rs:7:1
-   |
- 7 | / ffi! {
- 8 | |     #![unsafe(export("C"))]
- 9 | |
-10 | |     impl dyn Trait {
-...  |
-13 | | }
-   | |_^ the trait `ReprC` is not implemented for `(dyn Trait + 'static)`
-   |
-   = help: the following other types implement trait `ReprC`:
-             &'_lšč0 _TŠČ0
-             &'_lšč0 mut _TŠČ0
-             ()
-             (A, B)
-             (A, B, C)
-             (A, B, C, D)
-             (A, B, C, D, E)
-             (A, B, C, D, E, F)
-           and $N others
-   = note: required for `&'static (dyn Trait + 'static)` to implement `ReprC`
-   = note: this error originates in the macro `_impls` which comes from the expansion of the macro `ffi` (in Nightly builds, run with -Z macro-backtrace for more info)
 
 error[E0277]: the trait bound `(dyn Trait + 'static): RustSpec` is not satisfied
   --> tests/ui_fail/dyn_trait.rs:7:1
@@ -118,7 +70,7 @@ error[E0277]: the trait bound `(dyn Trait + 'static): RustSpec` is not satisfied
    = note: required for `&'static (dyn Trait + 'static)` to implement `ReprC`
    = note: this error originates in the macro `_impls` which comes from the expansion of the macro `ffi` (in Nightly builds, run with -Z macro-backtrace for more info)
 
-error[E0277]: the trait bound `&(dyn Trait + 'static): co3::_::ReprC_cfg0<_, _, _, _>` is not satisfied
+error[E0277]: the trait bound `(_, _, _): reference::selection::NativeRefCarrier<'_, (dyn Trait + 'static)>` is not satisfied
   --> tests/ui_fail/dyn_trait.rs:7:1
    |
  7 | / ffi! {
@@ -127,22 +79,22 @@ error[E0277]: the trait bound `&(dyn Trait + 'static): co3::_::ReprC_cfg0<_, _, 
 10 | |     impl dyn Trait {
 ...  |
 13 | | }
-   | |_^ the trait `co3::_::ReprC_cfg0<_, _, _, _>` is not implemented for `&(dyn Trait + 'static)`
+   | |_^ the trait `reference::selection::NativeRefCarrier<'_, (dyn Trait + 'static)>` is not implemented for `(_, _, _)`
    |
-   = help: the following other types implement trait `co3::_::ReprC_cfg0<_TŠČ0, _TŠČ1, _TŠČ2, _TŠČ3>`:
-             `&'_lšč0 R` implements `co3::_::ReprC_cfg0<<R as ReprC>::CType, Unstable, Exclusive<__Interior>, _TŠČ0>`
-             `&'_lšč0 R` implements `co3::_::ReprC_cfg0<<R as ReprC>::CType, Unstable, WithInterior<__Trap>, _TŠČ0>`
-             `&'_lšč0 R` implements `co3::_::ReprC_cfg0<_TŠČ0, <R as RustSpec>::Layout, Exclusive<__Interior>, NulTerminated>`
-             `&'_lšč0 R` implements `co3::_::ReprC_cfg0<_TŠČ0, <R as RustSpec>::Layout, WithInterior<__Trap>, NulTerminated>`
-             `&'_lšč0 R` implements `co3::_::ReprC_cfg0<_TŠČ0, Unstable, Exclusive<__Interior>, co3::rust_spec::size::MetaSized<SliceLike>>`
-             `&'_lšč0 R` implements `co3::_::ReprC_cfg0<_TŠČ0, Unstable, WithInterior<__Trap>, co3::rust_spec::size::MetaSized<SliceLike>>`
-             `&'a R` implements `co3::_::ReprC_cfg0<<R as ReprC>::CType, Stable, Exclusive<__Interior>, _TŠČ0>`
-             `&'a R` implements `co3::_::ReprC_cfg0<<R as ReprC>::CType, Stable, WithInterior<__Trap>, _TŠČ0>`
+   = help: the following other types implement trait `reference::selection::NativeRefCarrier<'a, R>`:
+             (L, NulTerminated, Exclusive<__Interior>)
+             (L, NulTerminated, WithInterior<__Trap>)
+             (Stable, S, Exclusive<__Interior>)
+             (Stable, S, WithInterior<__Trap>)
+             (Stable, co3::rust_spec::size::MetaSized<SliceLike>, Exclusive<__Interior>)
+             (Stable, co3::rust_spec::size::MetaSized<SliceLike>, WithInterior<__Trap>)
+             (Unstable, S, Exclusive<__Interior>)
+             (Unstable, S, WithInterior<__Trap>)
            and $N others
    = note: required for `&'static (dyn Trait + 'static)` to implement `ReprC`
    = note: this error originates in the macro `_impls` which comes from the expansion of the macro `ffi` (in Nightly builds, run with -Z macro-backtrace for more info)
 
-error[E0277]: the trait bound `&(dyn Trait + 'static): co3::_::ReprC_cfg0<_, _, _, _>` is not satisfied
+error[E0277]: the trait bound `(_, _, _): reference::selection::NativeRefCarrier<'_, (dyn Trait + 'static)>` is not satisfied
   --> tests/ui_fail/dyn_trait.rs:7:1
    |
  7 | / ffi! {
@@ -151,17 +103,17 @@ error[E0277]: the trait bound `&(dyn Trait + 'static): co3::_::ReprC_cfg0<_, _, 
 10 | |     impl dyn Trait {
 ...  |
 13 | | }
-   | |_^ the trait `co3::_::ReprC_cfg0<_, _, _, _>` is not implemented for `&(dyn Trait + 'static)`
+   | |_^ the trait `reference::selection::NativeRefCarrier<'_, (dyn Trait + 'static)>` is not implemented for `(_, _, _)`
    |
-   = help: the following other types implement trait `co3::_::ReprC_cfg0<_TŠČ0, _TŠČ1, _TŠČ2, _TŠČ3>`:
-             `&'_lšč0 R` implements `co3::_::ReprC_cfg0<<R as ReprC>::CType, Unstable, Exclusive<__Interior>, _TŠČ0>`
-             `&'_lšč0 R` implements `co3::_::ReprC_cfg0<<R as ReprC>::CType, Unstable, WithInterior<__Trap>, _TŠČ0>`
-             `&'_lšč0 R` implements `co3::_::ReprC_cfg0<_TŠČ0, <R as RustSpec>::Layout, Exclusive<__Interior>, NulTerminated>`
-             `&'_lšč0 R` implements `co3::_::ReprC_cfg0<_TŠČ0, <R as RustSpec>::Layout, WithInterior<__Trap>, NulTerminated>`
-             `&'_lšč0 R` implements `co3::_::ReprC_cfg0<_TŠČ0, Unstable, Exclusive<__Interior>, co3::rust_spec::size::MetaSized<SliceLike>>`
-             `&'_lšč0 R` implements `co3::_::ReprC_cfg0<_TŠČ0, Unstable, WithInterior<__Trap>, co3::rust_spec::size::MetaSized<SliceLike>>`
-             `&'a R` implements `co3::_::ReprC_cfg0<<R as ReprC>::CType, Stable, Exclusive<__Interior>, _TŠČ0>`
-             `&'a R` implements `co3::_::ReprC_cfg0<<R as ReprC>::CType, Stable, WithInterior<__Trap>, _TŠČ0>`
+   = help: the following other types implement trait `reference::selection::NativeRefCarrier<'a, R>`:
+             (L, NulTerminated, Exclusive<__Interior>)
+             (L, NulTerminated, WithInterior<__Trap>)
+             (Stable, S, Exclusive<__Interior>)
+             (Stable, S, WithInterior<__Trap>)
+             (Stable, co3::rust_spec::size::MetaSized<SliceLike>, Exclusive<__Interior>)
+             (Stable, co3::rust_spec::size::MetaSized<SliceLike>, WithInterior<__Trap>)
+             (Unstable, S, Exclusive<__Interior>)
+             (Unstable, S, WithInterior<__Trap>)
            and $N others
    = note: required for `&'static (dyn Trait + 'static)` to implement `ReprC`
 note: required by a bound in `co3::borrow::CBorrowed`
@@ -231,7 +183,7 @@ error[E0277]: the trait bound `&dyn Trait: co3::stored::_::DecodeMove_cfg0<'_, _
    = note: required for `&dyn Trait` to implement `DecodeMove<'_>`
    = note: this error originates in the macro `ffi` (in Nightly builds, run with -Z macro-backtrace for more info)
 
-error[E0277]: the trait bound `dyn Trait: ReprC` is not satisfied
+error[E0277]: the trait bound `(_, _, _): reference::selection::NativeRefCarrier<'_, dyn Trait>` is not satisfied
   --> tests/ui_fail/dyn_trait.rs:7:1
    |
  7 | / ffi! {
@@ -240,41 +192,17 @@ error[E0277]: the trait bound `dyn Trait: ReprC` is not satisfied
 10 | |     impl dyn Trait {
 ...  |
 13 | | }
-   | |_^ the trait `ReprC` is not implemented for `dyn Trait`
+   | |_^ the trait `reference::selection::NativeRefCarrier<'_, dyn Trait>` is not implemented for `(_, _, _)`
    |
-   = help: the following other types implement trait `ReprC`:
-             &'_lšč0 _TŠČ0
-             &'_lšč0 mut _TŠČ0
-             ()
-             (A, B)
-             (A, B, C)
-             (A, B, C, D)
-             (A, B, C, D, E)
-             (A, B, C, D, E, F)
-           and $N others
-   = note: required for `&dyn Trait` to implement `ReprC`
-   = note: this error originates in the macro `ffi` (in Nightly builds, run with -Z macro-backtrace for more info)
-
-error[E0277]: the trait bound `&dyn Trait: co3::_::ReprC_cfg0<_, _, _, _>` is not satisfied
-  --> tests/ui_fail/dyn_trait.rs:7:1
-   |
- 7 | / ffi! {
- 8 | |     #![unsafe(export("C"))]
- 9 | |
-10 | |     impl dyn Trait {
-...  |
-13 | | }
-   | |_^ the trait `co3::_::ReprC_cfg0<_, _, _, _>` is not implemented for `&dyn Trait`
-   |
-   = help: the following other types implement trait `co3::_::ReprC_cfg0<_TŠČ0, _TŠČ1, _TŠČ2, _TŠČ3>`:
-             `&'_lšč0 R` implements `co3::_::ReprC_cfg0<<R as ReprC>::CType, Unstable, Exclusive<__Interior>, _TŠČ0>`
-             `&'_lšč0 R` implements `co3::_::ReprC_cfg0<<R as ReprC>::CType, Unstable, WithInterior<__Trap>, _TŠČ0>`
-             `&'_lšč0 R` implements `co3::_::ReprC_cfg0<_TŠČ0, <R as RustSpec>::Layout, Exclusive<__Interior>, NulTerminated>`
-             `&'_lšč0 R` implements `co3::_::ReprC_cfg0<_TŠČ0, <R as RustSpec>::Layout, WithInterior<__Trap>, NulTerminated>`
-             `&'_lšč0 R` implements `co3::_::ReprC_cfg0<_TŠČ0, Unstable, Exclusive<__Interior>, co3::rust_spec::size::MetaSized<SliceLike>>`
-             `&'_lšč0 R` implements `co3::_::ReprC_cfg0<_TŠČ0, Unstable, WithInterior<__Trap>, co3::rust_spec::size::MetaSized<SliceLike>>`
-             `&'a R` implements `co3::_::ReprC_cfg0<<R as ReprC>::CType, Stable, Exclusive<__Interior>, _TŠČ0>`
-             `&'a R` implements `co3::_::ReprC_cfg0<<R as ReprC>::CType, Stable, WithInterior<__Trap>, _TŠČ0>`
+   = help: the following other types implement trait `reference::selection::NativeRefCarrier<'a, R>`:
+             (L, NulTerminated, Exclusive<__Interior>)
+             (L, NulTerminated, WithInterior<__Trap>)
+             (Stable, S, Exclusive<__Interior>)
+             (Stable, S, WithInterior<__Trap>)
+             (Stable, co3::rust_spec::size::MetaSized<SliceLike>, Exclusive<__Interior>)
+             (Stable, co3::rust_spec::size::MetaSized<SliceLike>, WithInterior<__Trap>)
+             (Unstable, S, Exclusive<__Interior>)
+             (Unstable, S, WithInterior<__Trap>)
            and $N others
    = note: required for `&dyn Trait` to implement `ReprC`
    = note: this error originates in the macro `ffi` (in Nightly builds, run with -Z macro-backtrace for more info)

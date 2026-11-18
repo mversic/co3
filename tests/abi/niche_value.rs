@@ -74,7 +74,7 @@ ffi! {
 #[test]
 fn thin_extern_reference_niche() {
     static_assertions::assert_impl_all!(&Extern: Niche<CType = CRef<'static, Extern>>);
-    static_assertions::assert_impl_all!(&mut Extern: Niche<CType = co3::reference::CRefMut<'static, Extern, true>>);
+    static_assertions::assert_impl_all!(&mut Extern: Niche<CType = co3::reference::CRefMut<'static, Extern>>);
     // CStr is unsized but also has a thin pointer representation. This catches
     // an accidental Sized bound on the pointer-backed reference Niche impls.
     static_assertions::assert_impl_all!(&CStr: Niche<CType = CSoftRef<CStr>>);
@@ -437,7 +437,9 @@ fn verify_enum_niche_value() {
     assert!(Ordering::is_niche(&encode(None::<Ordering>).payload()));
 
     assert_eq!(encode(None::<Opaque>), COption::None());
-    assert!(encode(None::<OwnedExtern>).payload().0.is_null());
+    assert!(OwnedExtern::is_niche(
+        &encode(None::<OwnedExtern>).payload()
+    ));
 
     let expected_niche_enum_discriminant_u = u8::MAX;
     let expected_niche_enum_discriminant_i = -1_i8;

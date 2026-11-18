@@ -92,13 +92,13 @@ mod tests {
             Encode,
         );
         assert_impl_all!(&UnsafeCell<u8>:
-            Niche<CType = crate::reference::CRefMut<'static, UnsafeCell<u8>, false>>,
+            Niche<CType = crate::reference::CRef<'static, UnsafeCell<u8>>>,
             AbiCompatible,
             Encode,
         );
         assert_impl_all!(&UnsafeCell<u8>: Decode<'static>);
         assert_impl_all!(&mut UnsafeCell<u8>:
-            Niche<CType = crate::reference::CRefMut<'static, UnsafeCell<u8>, true>>,
+            Niche<CType = crate::reference::CRefMut<'static, UnsafeCell<u8>>>,
             Decode<'static>,
             Encode,
         );
@@ -299,7 +299,7 @@ mod tests {
             Encode,
         );
         assert_impl_all!(&UnsafeCell<NonZero<u8>>:
-            Niche<CType = crate::reference::CRefMut<'static, UnsafeCell<NonZero<u8>>, false>>,
+            Niche<CType = crate::reference::CRef<'static, UnsafeCell<NonZero<u8>>>>,
         );
         assert_not_impl_any!(&UnsafeCell<NonZero<u8>>: Decode<'static>, AbiCompatible);
         assert_impl_all!(&mut UnsafeCell<NonZero<u8>>:

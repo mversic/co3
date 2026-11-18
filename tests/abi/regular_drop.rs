@@ -4,7 +4,14 @@ use std::{
     sync::atomic::{AtomicUsize, Ordering},
 };
 
-use co3::{ReprC, boxed::CBox, ffi, ops::CFn1, rust_spec::RustSpec};
+use co3::{
+    CType, ReprC,
+    boxed::CBox,
+    ffi,
+    ops::CFn1,
+    owned::Owned,
+    rust_spec::{self, RustSpec},
+};
 
 type BatteryString = CString;
 type BatteryCStr = Box<CStr>;
@@ -69,7 +76,6 @@ static MOVABLE_DROPS: AtomicUsize = AtomicUsize::new(0);
 
 #[derive(RustSpec, ReprC)]
 #[repr(C)]
-#[repr_c(move)]
 #[rust_spec(custom_drop)]
 struct MovableDrop(u32);
 
@@ -79,11 +85,22 @@ impl Drop for MovableDrop {
     }
 }
 
-#[derive(RustSpec, ReprC)]
+#[derive(ReprC)]
 #[repr(transparent)]
-#[repr_c(move)]
-#[rust_spec(custom_drop)]
 struct MovableTransparentDrop(u32);
+
+// The ownership marker follows this classification even without a derive attribute.
+unsafe impl RustSpec for MovableTransparentDrop {
+    type Layout = <u32 as RustSpec>::Layout;
+    type Size = <u32 as RustSpec>::Size;
+    type __Alignment = <u32 as RustSpec>::__Alignment;
+    type Trap = <u32 as RustSpec>::Trap;
+    type Niche = <u32 as RustSpec>::Niche;
+    type Drop = rust_spec::drop::CustomDrop<rust_spec::drop::NoDrop>;
+    type Mutability = <u32 as RustSpec>::Mutability;
+    type Opacity = <u32 as RustSpec>::Opacity;
+    type __IndirectTrap = <u32 as RustSpec>::__IndirectTrap;
+}
 
 impl Drop for MovableTransparentDrop {
     fn drop(&mut self) {
@@ -93,7 +110,6 @@ impl Drop for MovableTransparentDrop {
 
 #[derive(RustSpec, ReprC)]
 #[repr(u8)]
-#[repr_c(move)]
 #[rust_spec(custom_drop)]
 enum MovableFieldlessDrop {
     Value = 3,
@@ -107,7 +123,6 @@ impl Drop for MovableFieldlessDrop {
 
 #[derive(RustSpec, ReprC)]
 #[repr(u8)]
-#[repr_c(move)]
 #[rust_spec(custom_drop)]
 enum MovableTransparentFieldlessDrop {
     Value = 4,
@@ -120,10 +135,13 @@ impl Drop for MovableTransparentFieldlessDrop {
 }
 
 #[test]
-fn move_opt_in_enables_checked_and_unchecked_custom_drop_moves() {
+fn custom_drop_types_use_owned_carriers() {
     let before = MOVABLE_DROPS.load(Ordering::Relaxed);
 
+    fn assert_owned<T: CType>(_: &Owned<T>) {}
+
     let carrier = co3::encode(MovableDrop(7));
+    assert_owned(&carrier);
     assert_eq!(MOVABLE_DROPS.load(Ordering::Relaxed), before);
     let decoded: MovableDrop = unsafe { co3::decode(carrier) }.unwrap();
     assert_eq!(decoded.0, 7);
@@ -136,11 +154,13 @@ fn move_opt_in_enables_checked_and_unchecked_custom_drop_moves() {
     drop(decoded);
 
     let carrier = co3::encode(MovableFieldlessDrop::Value);
+    assert_owned(&carrier);
     assert_eq!(MOVABLE_DROPS.load(Ordering::Relaxed), before + 2);
     let decoded: MovableFieldlessDrop = unsafe { co3::decode(carrier) }.unwrap();
     drop(decoded);
 
     let carrier = co3::encode(MovableTransparentDrop(11));
+    assert_owned(&carrier);
     assert_eq!(MOVABLE_DROPS.load(Ordering::Relaxed), before + 3);
     let decoded: MovableTransparentDrop = unsafe { co3::decode(carrier) }.unwrap();
     assert_eq!(decoded.0, 11);

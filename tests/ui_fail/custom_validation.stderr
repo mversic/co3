@@ -68,5 +68,5 @@ note: required for `Parametrized<[u8]>` to implement `Niche`
 note: required by a bound in `require_niche`
   --> tests/ui_fail/custom_validation.rs:66:25
    |
-66 |     fn require_niche<T: co3::niche::Niche + ?Sized>() {}
-   |                         ^^^^^^^^^^^^^^^^^ required by this bound in `require_niche`
+66 |     fn require_niche<T: Niche + ?Sized>() {}
+   |                         ^^^^^ required by this bound in `require_niche`

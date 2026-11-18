@@ -88,7 +88,7 @@ pub(super) fn gen_stable_direct_mut_impls(input: &syn::DeriveInput) -> TokenStre
         let (trap, carrier) = if robust {
             (
                 quote!(co3::rust_spec::layout::Robust),
-                quote!(co3::reference::CRefMut<'_ršč, Self, true>),
+                quote!(co3::reference::CRefMut<'_ršč, Self>),
             )
         } else {
             (

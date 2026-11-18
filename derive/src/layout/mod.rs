@@ -20,6 +20,120 @@ mod nul_terminated;
 mod reference;
 mod wide;
 
+// Ownership is selected by the generated ReprC implementations.
+pub(super) struct Ownership {
+    source: TokenStream,
+    payload: TokenStream,
+    marked: bool,
+}
+
+impl Ownership {
+    fn new(name: &syn::Ident, generics: &syn::Generics, marked: bool) -> Self {
+        let ctype = ctype::gen_ctype_name(name);
+        let (_, args, _) = generics.split_for_impl();
+        Self {
+            source: quote!(#name #args),
+            payload: quote!(#ctype #args),
+            marked,
+        }
+    }
+
+    fn bounds(name: &syn::Ident, generics: &syn::Generics, marked: bool) -> TokenStream {
+        let (_, args, _) = generics.split_for_impl();
+        marked
+            .then(|| quote!(#name #args: co3::rust_spec::RustSpec,))
+            .unwrap_or_default()
+    }
+
+    fn carrier(&self, plain: TokenStream) -> TokenStream {
+        let source = &self.source;
+        if self.marked {
+            quote!(<#source as co3::ReprC>::CType)
+        } else {
+            plain
+        }
+    }
+
+    fn apply(&self, method: &str, value: TokenStream) -> TokenStream {
+        if !self.marked {
+            return value;
+        }
+        let source = &self.source;
+        let payload = &self.payload;
+        match method {
+            "wrap" => quote!({
+                let payload = core::mem::ManuallyDrop::new(#value);
+                // ReprC selects either the payload or its transparent Owned wrapper.
+                // Consume the payload once without running its destructor.
+                unsafe { core::ptr::from_ref(&*payload).cast::<<#source as co3::ReprC>::CType>().read() }
+            }),
+            "unwrap" => quote!({
+                let carrier = core::mem::ManuallyDrop::new(#value);
+                // The selected carrier has the payload's layout and valid bit patterns.
+                unsafe { core::ptr::from_ref(&*carrier).cast::<#payload>().read() }
+            }),
+            "payload" => quote!({
+                // Owned is transparent; validation retains the original shared access.
+                unsafe { &*core::ptr::from_ref(#value).cast::<#payload>() }
+            }),
+            _ => unreachable!("ownership conversion"),
+        }
+    }
+
+    fn niche(&self, _: &syn::Ident, _: &syn::Generics, value: TokenStream) -> TokenStream {
+        if self.marked {
+            quote!({
+                let payload = #value;
+                // Niche bounds require Copy for both representations.
+                unsafe { core::mem::transmute_copy(&payload) }
+            })
+        } else {
+            value
+        }
+    }
+
+    fn repr_c(&self, generics: &syn::Generics, bounds: TokenStream) -> TokenStream {
+        let source = &self.source;
+        let payload = &self.payload;
+        let (impl_generics, _, _) = generics.split_for_impl();
+        if !self.marked {
+            return quote! {
+                impl #impl_generics co3::ReprC for #source where #bounds {
+                    type CType = #payload;
+                }
+            };
+        }
+        let mut custom_generics = generics.clone();
+        custom_generics
+            .params
+            .push(syn::parse_quote!(__Co3Drop: co3::rust_spec::drop::DropKind));
+        let (custom_impl_generics, _, _) = custom_generics.split_for_impl();
+        quote! {
+            const _: () = {
+                use co3::ReprC;
+                co3::disjoint_impls! {
+                    #[disjoint_impls(remote)]
+                    pub trait ReprC {
+                        type CType: co3::CType + ?Sized;
+                    }
+                    impl #impl_generics ReprC for #source
+                    where for<'__co3_drop> #source: co3::rust_spec::RustSpec<Drop = co3::rust_spec::drop::NoDrop>, #bounds {
+                        type CType = #payload;
+                    }
+                    impl #impl_generics ReprC for #source
+                    where for<'__co3_drop> #source: co3::rust_spec::RustSpec<Drop = co3::rust_spec::drop::AutoDrop>, #bounds {
+                        type CType = #payload;
+                    }
+                    impl #custom_impl_generics ReprC for #source
+                    where for<'__co3_drop> #source: co3::rust_spec::RustSpec<Drop = co3::rust_spec::drop::CustomDrop<__Co3Drop>>, #bounds {
+                        type CType = co3::owned::Owned<#payload>;
+                    }
+                }
+            };
+        }
+    }
+}
+
 const FFI_TYPE_ATTR: &str = "repr_c";
 
 #[derive(Clone, Default)]
@@ -27,7 +141,6 @@ pub(super) struct ReprCAttrs {
     pub(super) niche_value: Option<syn::Expr>,
     pub(super) is_valid: Option<syn::ExprClosure>,
     pub(super) is_identity: bool,
-    pub(super) is_move: bool,
     pub(super) is_wide_data: bool,
     pub(super) allow_zero_tag: bool,
 }
@@ -54,14 +167,6 @@ fn parse_repr_c_attrs(attrs: &[Attribute]) -> syn::Result<ReprCAttrs> {
                     return Err(meta.error("Duplicate `identity` within attribute"));
                 }
                 repr_c.is_identity = true;
-                return Ok(());
-            }
-
-            if meta.path.is_ident("move") {
-                if repr_c.is_move {
-                    return Err(meta.error("Duplicate `move` within attribute"));
-                }
-                repr_c.is_move = true;
                 return Ok(());
             }
 
@@ -108,7 +213,6 @@ fn parse_repr_c_attrs(attrs: &[Attribute]) -> syn::Result<ReprCAttrs> {
     if repr_c.niche_value.is_none()
         && repr_c.is_valid.is_none()
         && !repr_c.is_identity
-        && !repr_c.is_move
         && !repr_c.is_wide_data
         && !repr_c.allow_zero_tag
     {
@@ -164,15 +268,6 @@ pub(crate) fn derive_repr_c(input: &syn::DeriveInput) -> syn::Result<TokenStream
     let mut zero_discriminant_check = TokenStream::new();
 
     if repr_c_attrs.is_identity {
-        if repr_c_attrs.is_move {
-            push_error(
-                &mut errors,
-                syn::Error::new_spanned(
-                    &input.ident,
-                    "`repr_c(identity)` cannot be combined with `move`",
-                ),
-            );
-        }
         match &input.data {
             syn::Data::Struct(_)
                 if !matches!(repr_attr, Some(ReprKind::C(None) | ReprKind::Transparent)) =>
@@ -328,10 +423,6 @@ pub(crate) fn derive_repr_c(input: &syn::DeriveInput) -> syn::Result<TokenStream
                     let err_msg = "`repr_c(identity)` is only supported on types";
                     push_error(&mut errors, syn::Error::new(variant.span(), err_msg));
                 }
-                if variant_repr_c_attrs.is_move {
-                    let err_msg = "`repr_c(move)` is only supported on types";
-                    push_error(&mut errors, syn::Error::new(variant.span(), err_msg));
-                }
                 variant_attrs.push(VariantReprCAttrs {
                     is_valid: variant_repr_c_attrs.is_valid,
                     allow_zero_tag: variant_repr_c_attrs.allow_zero_tag,
@@ -458,7 +549,12 @@ pub(crate) fn derive_repr_c(input: &syn::DeriveInput) -> syn::Result<TokenStream
                 .iter()
                 .all(|v| matches!(v.fields, syn::Fields::Unit))
             {
-                derive_fieldless_enum(repr_attr, repr_alignment, input, repr_c_attrs.is_move)
+                derive_fieldless_enum(
+                    repr_attr,
+                    repr_alignment,
+                    input,
+                    input.generics.params.is_empty(),
+                )
             } else {
                 derive_item(
                     repr_attr,
@@ -988,17 +1084,12 @@ mod tests {
     }
 
     #[test]
-    fn identity_rejects_move() {
+    fn identity_does_not_need_move_opt_in() {
         let input = syn::parse_quote! {
             #[repr(C)]
-            #[repr_c(identity, move)]
+            #[repr_c(identity)]
             struct Identity(u32);
         };
-        let error = derive_repr_c(&input).unwrap_err();
-        assert!(
-            error
-                .to_string()
-                .contains("`repr_c(identity)` cannot be combined with `move`")
-        );
+        assert!(derive_repr_c(&input).is_ok());
     }
 }

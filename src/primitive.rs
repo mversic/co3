@@ -583,7 +583,7 @@ mod tests {
             Encode,
         );
         assert_impl_all!(&mut u8:
-            Niche<CType = crate::reference::CRefMut<'static, u8, true>>,
+            Niche<CType = crate::reference::CRefMut<'static, u8>>,
             Decode<'static>,
             Encode,
         );

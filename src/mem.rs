@@ -371,7 +371,7 @@ mod tests {
         );
         assert_impl_all!(&mut ManuallyDrop<u8>:
             RustSpec<Niche = WithNiche<rust_spec::Stable>>,
-            Niche<CType = crate::reference::CRefMut<'static, ManuallyDrop<u8>, true>>,
+            Niche<CType = crate::reference::CRefMut<'static, ManuallyDrop<u8>>>,
             Decode<'static>,
             Encode,
         );

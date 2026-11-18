@@ -1760,10 +1760,7 @@ mod tests {
         let value = InteriorIdentity(core::cell::UnsafeCell::new(127));
         let mut store = ();
         let encoded = co3::soft_encode(&value, &mut store);
-        assert_eq!(
-            encoded.as_ptr().cast_const(),
-            &value as *const InteriorIdentity
-        );
+        assert_eq!(encoded.as_ptr(), &value as *const InteriorIdentity);
         unsafe { *(*encoded.as_ptr()).0.get() = 131 };
         assert_eq!(unsafe { *value.0.get() }, 131);
     }

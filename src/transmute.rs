@@ -528,7 +528,7 @@ mod tests {
         );
         assert!(unsafe { <&UnsafeCell<u8> as AbiCompatibleValidate>::is_valid(&encoded) });
 
-        let null = crate::reference::CRefMut::<UnsafeCell<u8>, false>::null();
+        let null = crate::reference::CRef::<UnsafeCell<u8>>::null();
         assert!(!unsafe { <&UnsafeCell<u8> as AbiCompatibleValidate>::is_valid(&null) });
     }
 
@@ -735,7 +735,7 @@ mod tests {
             Encode,
         );
         assert_impl_all!([&mut u8; 2]:
-            Niche<CType = [crate::reference::CRefMut<'static, u8, true>; 2]>,
+            Niche<CType = [crate::reference::CRefMut<'static, u8>; 2]>,
             Decode<'static>,
             Encode,
         );

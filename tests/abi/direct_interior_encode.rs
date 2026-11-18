@@ -72,13 +72,7 @@ fn non_robust_interior_references_are_direct_only() {
 
     let value = UnsafeCell::new(NonZeroU8::new(7).unwrap());
     let encoded = unsafe { co3::encode_unchecked(&value) };
-    assert_eq!(
-        encoded
-            .as_ptr()
-            .cast_const()
-            .cast::<UnsafeCell<NonZeroU8>>(),
-        &value
-    );
+    assert_eq!(encoded.as_ptr().cast::<UnsafeCell<NonZeroU8>>(), &value);
 
     let _wrapped = unsafe { co3::encode_unchecked(Wrapped(&value)) };
     let _optional = unsafe { co3::encode_unchecked(Some(&value)) };

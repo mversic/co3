@@ -73,7 +73,7 @@ mod selection {
     impl<'a, R: ReprC + ?Sized, __Trap, S: crate::Thin> NativeRefCarrier<'a, R>
         for (Stable, S, WithInterior<__Trap>)
     {
-        type Carrier = CRefMut<'a, R, false>;
+        type Carrier = CRef<'a, R>;
     }
 
     impl<'a, R: ReprC + ?Sized, __Trap, S: crate::Thin> NativeRefCarrier<'a, R>
@@ -107,7 +107,7 @@ mod selection {
     }
 
     impl<'a, R: ReprC + ?Sized, S: crate::Thin> NativeRefMutCarrier<'a, R> for (Stable, S, Robust) {
-        type Carrier = CRefMut<'a, R, true>;
+        type Carrier = CRefMut<'a, R>;
     }
 
     impl<'a, R: ReprC + ?Sized, S: crate::Thin> NativeRefMutCarrier<'a, R> for (Stable, S, NonRobust) {
@@ -230,7 +230,7 @@ unsafe impl<R: ReprC + ?Sized, const E: bool> MutRefCarrier<R, E> for CSoftRefMu
         unsafe { Self::from_raw(data) }
     }
 }
-unsafe impl<'a, R: ReprC + ?Sized, const E: bool> MutRefCarrier<R, E> for CRefMut<'a, R, E>
+unsafe impl<'a, R: ReprC + ?Sized> MutRefCarrier<R, true> for CRefMut<'a, R>
 where
     Self: CType,
 {
@@ -239,6 +239,15 @@ where
     }
     unsafe fn from_mut_ptr(data: *mut R::CType) -> Self {
         unsafe { Self::from_raw(data) }
+    }
+}
+
+unsafe impl<'a, R: ReprC + ?Sized> MutRefCarrier<R, false> for CRef<'a, R> {
+    fn as_ptr(&self) -> *mut R::CType {
+        self.data.cast_mut()
+    }
+    unsafe fn from_mut_ptr(data: *mut R::CType) -> Self {
+        unsafe { Self::from_raw(data.cast_const()) }
     }
 }
 
@@ -397,23 +406,17 @@ pub struct CRef<'a, R: ReprC + ?Sized> {
     lifetime: core::marker::PhantomData<&'a ()>,
 }
 
-/// A thin mutable carrier whose source borrow lasts for `'a`.
-///
-/// - `EXCLUSIVE = true` represents access from `&mut T`.
-/// - `EXCLUSIVE = false` represents access from `&UnsafeCell<T>`.
+/// A thin exclusive carrier whose source borrow lasts for `'a`.
 #[derive(RustSpec)]
 #[repr(transparent)]
 #[doc(hidden)]
-pub struct CRefMut<'a, R: ReprC + ?Sized, const EXCLUSIVE: bool> {
+pub struct CRefMut<'a, R: ReprC + ?Sized> {
     data: *mut R::CType,
     lifetime: core::marker::PhantomData<&'a ()>,
 }
 
 unsafe impl<'a, R: ReprC<CType: Sized> + ?Sized> crate::Zeroable for CRef<'a, R> {}
-unsafe impl<'a, R: ReprC<CType: Sized> + ?Sized, const EXCLUSIVE: bool> crate::Zeroable
-    for CRefMut<'a, R, EXCLUSIVE>
-{
-}
+unsafe impl<'a, R: ReprC<CType: Sized> + ?Sized> crate::Zeroable for CRefMut<'a, R> {}
 
 impl<'a, R: ReprC<CType: CType + Sized> + ?Sized> CRef<'a, R> {
     /// Construct a carrier with a null data pointer.
@@ -426,7 +429,7 @@ impl<'a, R: ReprC<CType: CType + Sized> + ?Sized> CRef<'a, R> {
     }
 }
 
-impl<'a, R: ReprC<CType: CType + Sized> + ?Sized, const EXCLUSIVE: bool> CRefMut<'a, R, EXCLUSIVE> {
+impl<'a, R: ReprC<CType: CType + Sized> + ?Sized> CRefMut<'a, R> {
     /// Construct a carrier with a null data pointer.
     pub const fn null() -> Self {
         Self {
@@ -461,13 +464,13 @@ impl<'a, R: ReprC<CType: CType> + ?Sized> CRef<'a, R> {
     }
 }
 
-impl<'a, R: ReprC<CType: CType> + ?Sized, const EXCLUSIVE: bool> CRefMut<'a, R, EXCLUSIVE> {
+impl<'a, R: ReprC<CType: CType> + ?Sized> CRefMut<'a, R> {
     /// Wrap a pointer in a mutable ABI carrier.
     ///
     /// # Safety
     ///
     /// The thin pointer must satisfy the validity and aliasing rules of the source
-    /// reference for 'a. If `EXCLUSIVE` is `true`, accesses must be exclusive.
+    /// reference for 'a. Access must be exclusive.
     pub const unsafe fn from_raw(data: *mut R::CType) -> Self {
         assert_thin_pointer::<R::CType>();
         Self {
@@ -477,23 +480,12 @@ impl<'a, R: ReprC<CType: CType> + ?Sized, const EXCLUSIVE: bool> CRefMut<'a, R, 
     }
 }
 
-impl<'a, R: ReprC<CType: CType> + ?Sized, const EXCLUSIVE: bool> CRefMut<'a, R, EXCLUSIVE> {
+impl<'a, R: ReprC<CType: CType> + ?Sized> CRefMut<'a, R> {
     /// Wrap an existing mutable reference to lowered data.
     pub const fn from_mut(data: &'a mut R::CType) -> Self {
         assert_thin_pointer::<R::CType>();
         Self {
             data,
-            lifetime: core::marker::PhantomData,
-        }
-    }
-}
-
-impl<'a, R: ReprC<CType: CType> + ?Sized> CRefMut<'a, R, false> {
-    /// Create a carrier for shared access with interior mutability.
-    pub const fn from_ref(cell: &'a UnsafeCell<R::CType>) -> Self {
-        assert_thin_pointer::<R::CType>();
-        Self {
-            data: cell.get(),
             lifetime: core::marker::PhantomData,
         }
     }
@@ -514,9 +506,7 @@ impl<'a, R: ReprC + ?Sized> CRef<'a, R> {
     }
 }
 
-impl<'a, R: ReprC + ?Sized, const EXCLUSIVE: bool> CRefMut<'a, R, EXCLUSIVE> {}
-
-impl<'a, R: ReprC + ?Sized> CRefMut<'a, R, true> {
+impl<'a, R: ReprC + ?Sized> CRefMut<'a, R> {
     /// Recover the mutable reference, returning `None` for a null pointer.
     ///
     /// # Safety
@@ -531,7 +521,7 @@ impl<'a, R: ReprC + ?Sized> CRefMut<'a, R, true> {
     }
 }
 
-impl<'a, R: ReprC + ?Sized, const EXCLUSIVE: bool> CRefMut<'a, R, EXCLUSIVE> {
+impl<'a, R: ReprC + ?Sized> CRefMut<'a, R> {
     /// Recover the interior-mutable reference, returning `None` for a null pointer.
     ///
     /// # Safety
@@ -567,7 +557,7 @@ macro_rules! impl_ref_pointer_methods {
 impl_ref_pointer_methods! { CSoftRef, [R: ReprC + ?Sized], [R], [], [], const, [] }
 impl_ref_pointer_methods! { CSoftRefMut, [R: ReprC + ?Sized, const EXCLUSIVE: bool], [R, EXCLUSIVE], [], [, EXCLUSIVE], mut, [] }
 impl_ref_pointer_methods! { CRef, ['a, R: ReprC + ?Sized], ['a, R], ['a,], [], const, [lifetime: core::marker::PhantomData,] }
-impl_ref_pointer_methods! { CRefMut, ['a, R: ReprC + ?Sized, const EXCLUSIVE: bool], ['a, R, EXCLUSIVE], ['a,], [, EXCLUSIVE], mut, [lifetime: core::marker::PhantomData,] }
+impl_ref_pointer_methods! { CRefMut, ['a, R: ReprC + ?Sized], ['a, R], ['a,], [], mut, [lifetime: core::marker::PhantomData,] }
 
 macro_rules! impl_thin_pointer_traits {
     ($ty:ident, [$($params:tt)*], [$($args:tt)*]) => {
@@ -645,9 +635,9 @@ impl_reference_identity! { CSoftRef, [R: ReprC<CType: CType> + ?Sized], [R] }
 impl_reference_identity! { CSoftRefMut, [R: ReprC<CType: CType> + ?Sized, const EXCLUSIVE: bool], [R, EXCLUSIVE] }
 
 impl_reference_carrier! { CRef, ['a, R: ReprC + ?Sized], ['a, R] }
-impl_reference_carrier! { CRefMut, ['a, R: ReprC + ?Sized, const EXCLUSIVE: bool], ['a, R, EXCLUSIVE] }
+impl_reference_carrier! { CRefMut, ['a, R: ReprC + ?Sized], ['a, R] }
 impl_reference_identity! { CRef, ['a, R: ReprC<CType: CType> + ?Sized], ['a, R] }
-impl_reference_identity! { CRefMut, ['a, R: ReprC<CType: CType> + ?Sized, const EXCLUSIVE: bool], ['a, R, EXCLUSIVE] }
+impl_reference_identity! { CRefMut, ['a, R: ReprC<CType: CType> + ?Sized], ['a, R] }
 
 const fn assert_thin_pointer<C: ?Sized>() {
     const {
@@ -676,18 +666,18 @@ mod tests {
         assert_eq!(size_of::<CRef<'_, u8>>(), size_of::<CSoftRef<u8>>());
         assert_eq!(align_of::<CRef<'_, u8>>(), align_of::<CSoftRef<u8>>());
         assert_eq!(
-            size_of::<CRefMut<'_, u8, true>>(),
+            size_of::<CRefMut<'_, u8>>(),
             size_of::<CSoftRefMut<u8, true>>()
         );
         let value = 7_u8;
         let shared = CRef::<u8>::from_ref(&value);
         assert_eq!(unsafe { shared.into_ref() }, Some(&7));
         let mut value = 8_u8;
-        let exclusive = CRefMut::<u8, true>::from_mut(&mut value);
+        let exclusive = CRefMut::<u8>::from_mut(&mut value);
         *unsafe { exclusive.into_mut().unwrap() } = 9;
         assert_eq!(value, 9);
         let cell = UnsafeCell::new(2_u8);
-        let shared_cell = CRefMut::<u8, false>::from_ref(&cell);
+        let shared_cell = CRef::<UnsafeCell<u8>>::from_ref(&cell);
         assert_eq!(unsafe { shared_cell.into_ref().unwrap() }.get(), cell.get());
         assert!(unsafe { CRef::<u8>::null().into_ref() }.is_none());
     }
@@ -713,25 +703,25 @@ mod tests {
 
     #[test]
     fn exclusive_and_shared_mutable_references_have_distinct_carriers() {
-        assert_impl_all!(&mut u8: Niche<CType = crate::reference::CRefMut<'static, u8, true>>);
-        assert_impl_all!(&UnsafeCell<u8>: Niche<CType = crate::reference::CRefMut<'static, UnsafeCell<u8>, false>>);
-        assert_impl_all!(&mut UnsafeCell<u8>: Niche<CType = crate::reference::CRefMut<'static, UnsafeCell<u8>, true>>);
+        assert_impl_all!(&mut u8: Niche<CType = crate::reference::CRefMut<'static, u8>>);
+        assert_impl_all!(&UnsafeCell<u8>: Niche<CType = crate::reference::CRef<'static, UnsafeCell<u8>>>);
+        assert_impl_all!(&mut UnsafeCell<u8>: Niche<CType = crate::reference::CRefMut<'static, UnsafeCell<u8>>>);
         assert_impl_all!(&mut [u8]: Niche<CType = crate::wide::CWideRef<'static, [u8]>>);
         assert_impl_all!(&[UnsafeCell<u8>]: Niche<CType = crate::wide::CWideRefMut<'static, [UnsafeCell<u8>]>>);
         assert_impl_all!(&mut [UnsafeCell<u8>]: Niche<CType = crate::wide::CWideRef<'static, [UnsafeCell<u8>]>>);
 
         assert_eq!(
-            core::mem::size_of::<crate::reference::CRefMut<'static, u8, true>>(),
+            core::mem::size_of::<crate::reference::CRefMut<'static, u8>>(),
             core::mem::size_of::<*mut u8>()
         );
         assert_eq!(
-            core::mem::align_of::<crate::reference::CRefMut<'static, u8, true>>(),
+            core::mem::align_of::<crate::reference::CRefMut<'static, u8>>(),
             core::mem::align_of::<*mut u8>()
         );
 
         let mut cell = UnsafeCell::new(1_u8);
         let pointer = cell.get().cast::<core::cell::UnsafeCell<u8>>();
-        let exclusive: CRefMut<'_, UnsafeCell<u8>, true> = crate::encode(&mut cell);
+        let exclusive: CRefMut<'_, UnsafeCell<u8>> = crate::encode(&mut cell);
         assert_eq!(exclusive.as_ptr(), pointer);
         unsafe { exclusive.as_ptr().write(core::cell::UnsafeCell::new(2)) };
         assert_eq!(cell.into_inner(), 2);

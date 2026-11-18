@@ -90,7 +90,7 @@ error[E0277]: the trait bound `Tuple2<u8, u8>: Unpack2<u32, Utf8String>` is not 
    |
    = help: the following other types implement trait `Unpack2<Part1, Part2>`:
              `&R` implements `Unpack2<Pointer, U>`
-             `&mut R` implements `Unpack2<Pointer, U>`
+             `&mut R` implements `Unpack2<*mut <<P as Wide>::Header as WideHeader>::Data, U>`
              `(A, B)` implements `Unpack2<Part1, Part2>`
              `*const R` implements `Unpack2<*const <<P as Wide>::Header as WideHeader>::Data, U>`
              `*mut R` implements `Unpack2<*mut <<P as Wide>::Header as WideHeader>::Data, U>`
@@ -112,7 +112,7 @@ error[E0277]: the trait bound `Tuple2<u8, u8>: Unpack2<u32, Utf8String>` is not 
    |
    = help: the following other types implement trait `Unpack2<Part1, Part2>`:
              `&R` implements `Unpack2<Pointer, U>`
-             `&mut R` implements `Unpack2<Pointer, U>`
+             `&mut R` implements `Unpack2<*mut <<P as Wide>::Header as WideHeader>::Data, U>`
              `(A, B)` implements `Unpack2<Part1, Part2>`
              `*const R` implements `Unpack2<*const <<P as Wide>::Header as WideHeader>::Data, U>`
              `*mut R` implements `Unpack2<*mut <<P as Wide>::Header as WideHeader>::Data, U>`
@@ -130,7 +130,7 @@ error[E0277]: the trait bound `Tuple2<u8, u8>: Unpack2<u32, Utf8String>` is not 
    |
    = help: the following other types implement trait `Unpack2<Part1, Part2>`:
              `&R` implements `Unpack2<Pointer, U>`
-             `&mut R` implements `Unpack2<Pointer, U>`
+             `&mut R` implements `Unpack2<*mut <<P as Wide>::Header as WideHeader>::Data, U>`
              `(A, B)` implements `Unpack2<Part1, Part2>`
              `*const R` implements `Unpack2<*const <<P as Wide>::Header as WideHeader>::Data, U>`
              `*mut R` implements `Unpack2<*mut <<P as Wide>::Header as WideHeader>::Data, U>`

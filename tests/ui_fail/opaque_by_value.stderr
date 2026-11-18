@@ -189,7 +189,7 @@ help: the following other types implement trait `SoftDecodeMut<'d>`
    | |     SoftDecodeMut<'d> for [R]
    | | where
    | |     R: crate::borrow::BorrowedDecode<'d>,
-   | |     &'d mut Self: ReprC<CType = crate::CSoftWideRefMut<Self, true>>,
+   | |     &'d mut Self: ReprC<CType = crate::wide::CSoftWideRefMut<Self, true>>,
    | |     [R]: RustSpec<Size = MetaSized<SliceLike>>,
    | |_______________________________________________^ `[R]`
 ...

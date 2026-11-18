@@ -612,6 +612,7 @@ pub mod niche;
 pub mod num;
 pub mod ops;
 pub mod option;
+pub mod owned;
 pub mod pack;
 #[path = "primitive.rs"]
 pub mod primitives;
@@ -721,6 +722,46 @@ disjoint_impls! {
         type CType: CType + ?Sized;
     }
 
+    impl<'a, R: ?Sized> ReprC for wide::WideRef<'a, R>
+    where
+        R: ReprC<CType: wide::Wide<Header: CType + wide::WideHeader<Data: CType>>>
+            + wide::Wide + RustSpec<Layout = rust_spec::Stable>,
+    {
+        type CType = wide::CWideRef<'a, R, true>;
+    }
+
+    impl<'a, R: ?Sized> ReprC for wide::WideRef<'a, R>
+    where
+        R: ReprC<CType: wide::Wide<Header: CType + wide::WideHeader<Data: CType>>>
+            + wide::Wide + RustSpec<Layout = rust_spec::Unstable>,
+    {
+        type CType = wide::CSoftWideRef<R, true>;
+    }
+
+    impl<'a, R: ?Sized> ReprC for wide::WideRefMut<'a, R>
+    where
+        R: ReprC<CType: wide::Wide<Header: CType + wide::WideHeader<Data: CType>>>
+            + wide::Wide + RustSpec<Layout = rust_spec::Stable, Trap = rust_spec::layout::Robust>,
+    {
+        type CType = wide::CWideRefMut<'a, R, true>;
+    }
+
+    impl<'a, R: ?Sized> ReprC for wide::WideRefMut<'a, R>
+    where
+        R: ReprC<CType: wide::Wide<Header: CType + wide::WideHeader<Data: CType>>>
+            + wide::Wide + RustSpec<Layout = rust_spec::Stable, Trap = rust_spec::layout::NonRobust>,
+    {
+        type CType = wide::CSoftWideRefMut<R, true, true>;
+    }
+
+    impl<'a, R: ?Sized> ReprC for wide::WideRefMut<'a, R>
+    where
+        R: ReprC<CType: wide::Wide<Header: CType + wide::WideHeader<Data: CType>>>
+            + wide::Wide + RustSpec<Layout = rust_spec::Unstable>,
+    {
+        type CType = wide::CSoftWideRefMut<R, true, true>;
+    }
+
     #[cfg(feature = "alloc")]
     impl<R: ReprC, S: SizedKind> ReprC for Box<R>
     where
@@ -808,7 +849,7 @@ mod tests {
         static_assertions::assert_impl_all!(reference::CSoftRefMut<u8, true>: Zeroable);
         static_assertions::assert_impl_all!(wide::CSoftWideRef<[u8]>: Zeroable);
         static_assertions::assert_impl_all!(wide::CSoftWideRefMut<[u8], true>: Zeroable);
-        static_assertions::assert_impl_all!(crate::reference::CRefMut<'static, u8, true>: Zeroable);
+        static_assertions::assert_impl_all!(crate::reference::CRefMut<'static, u8>: Zeroable);
         static_assertions::assert_impl_all!(boxed::CBox<u8>: Zeroable);
         static_assertions::assert_impl_all!(crate::wide::CWideRef<'static, [u8]>: Zeroable);
         static_assertions::assert_impl_all!(crate::wide::CWideRefMut<'static, [u8]>: Zeroable);
