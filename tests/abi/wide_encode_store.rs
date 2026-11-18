@@ -75,7 +75,7 @@ fn stores_can_move_before_writeback() {
     let mut values = [1_u32, 2];
     let mut store = ();
     let encoded = co3::soft_encode(&mut values[..], &mut store);
-    unsafe { encoded.as_ptr().cast::<u32>().write(3) };
+    unsafe { encoded.as_ptr().cast_mut().cast::<u32>().write(3) };
     assert_eq!(sync_after_move(store), Some(()));
     assert_eq!(values, [3, 2]);
 }

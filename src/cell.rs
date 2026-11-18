@@ -111,12 +111,12 @@ mod tests {
         #[cfg(feature = "alloc")]
         assert_impl_all!(Box<UnsafeCell<u8>>: AbiCompatible);
         assert_impl_all!(&[UnsafeCell<u8>]:
-            Niche<CType = crate::wide::CWideRefMut<'static, [UnsafeCell<u8>], false>>,
+            Niche<CType = crate::wide::CWideRefMut<'static, [UnsafeCell<u8>]>>,
             Encode,
         );
         assert_impl_all!(&[UnsafeCell<u8>]: Decode<'static>);
         assert_impl_all!(&mut [UnsafeCell<u8>]:
-            Niche<CType = crate::wide::CWideRefMut<'static, [UnsafeCell<u8>], true>>,
+            Niche<CType = crate::wide::CWideRef<'static, [UnsafeCell<u8>]>>,
             Decode<'static>,
             Encode,
         );
@@ -186,12 +186,16 @@ mod tests {
     fn exclusive_slice_pointers_cover_cells_and_empty_slices() {
         let mut cells = [UnsafeCell::new(1_u8)];
         let view = crate::encode(&mut cells[..]);
-        unsafe { view.as_ptr().write(core::cell::UnsafeCell::new(2)) };
+        unsafe {
+            view.as_ptr()
+                .cast_mut()
+                .write(core::cell::UnsafeCell::new(2))
+        };
         assert_eq!(unsafe { *cells[0].get() }, 2);
 
         let mut cells = [Cell::new(3_u8)];
         let view = crate::encode(&mut cells[..]);
-        unsafe { view.as_ptr().write(core::cell::Cell::new(4)) };
+        unsafe { view.as_ptr().cast_mut().write(core::cell::Cell::new(4)) };
         assert_eq!(cells[0].get(), 4);
 
         let mut empty_unsafe_cells: [UnsafeCell<u8>; 0] = [];
@@ -205,7 +209,11 @@ mod tests {
     fn interior_mutable_slice_carriers_round_trip() {
         let mut cells = [UnsafeCell::new(3_u8), UnsafeCell::new(4_u8)];
         let view = crate::encode(&mut cells[..]);
-        unsafe { view.as_ptr().write(core::cell::UnsafeCell::new(9)) };
+        unsafe {
+            view.as_ptr()
+                .cast_mut()
+                .write(core::cell::UnsafeCell::new(9))
+        };
         assert_eq!(unsafe { *cells[0].get() }, 9);
 
         let boxed = crate::encode(vec![UnsafeCell::new(5_u8)].into_boxed_slice());
@@ -327,7 +335,7 @@ mod tests {
             );
         }
         assert_impl_all!(&[UnsafeCell<NonZero<u8>>]:
-            Niche<CType = crate::wide::CWideRefMut<'static, [UnsafeCell<NonZero<u8>>], false>>,
+            Niche<CType = crate::wide::CWideRefMut<'static, [UnsafeCell<NonZero<u8>>]>>,
         );
         assert_not_impl_any!(&[UnsafeCell<NonZero<u8>>]: Decode<'static>);
         assert_impl_all!(&mut [UnsafeCell<NonZero<u8>>]:

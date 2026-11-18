@@ -103,7 +103,7 @@ disjoint_impls! {
     }
     impl<'a, R: ReprC<CType: Wide<Header: WideHeader<Data: CType>>> + ?Sized> Niche for &'a R
     where
-        Self: ReprC<CType = CWideRefMut<'a, R, false>>,
+        Self: ReprC<CType = CWideRefMut<'a, R>>,
     {
         const NICHE: Self::CType = CWideRefMut::null();
 
@@ -144,9 +144,9 @@ disjoint_impls! {
     }
     impl<'a, R: ReprC<CType: Wide<Header: WideHeader<Data: CType>>> + ?Sized> Niche for &'a mut R
     where
-        Self: ReprC<CType = CWideRefMut<'a, R, true>>,
+        Self: ReprC<CType = CWideRef<'a, R>>,
     {
-        const NICHE: Self::CType = CWideRefMut::null();
+        const NICHE: Self::CType = CWideRef::null();
 
         fn is_niche(value: &Self::CType) -> bool {
             value.as_ptr().is_null()

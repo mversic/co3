@@ -14,7 +14,7 @@ use crate::{
     option::COptionSome,
     result::{CResultErr, CResultOk},
     tuple::CTuple2,
-    wide::{Wide, WideHeader, WideRefCarrier},
+    wide::{MutWideRefCarrier, PointeeData, Wide, WideHeader, WideRefCarrier},
 };
 #[cfg(feature = "alloc")]
 use crate::{boxed::Box, wide::CWideBox};
@@ -94,7 +94,33 @@ macro_rules! impl_ref_wide_pack {
     };
 }
 impl_ref_wide_pack!(&R);
-impl_ref_wide_pack!(&mut R);
+impl<R, P, U> Unpack2<*mut PointeeData<P>, U> for &mut R
+where
+    R: ReprC<CType = P> + Wide + ?Sized,
+    P: Wide<Header: WideHeader<Data: CType>, Metadata: TryInto<U>> + ?Sized,
+    U: CType,
+    Self: ReprC<CType: MutWideRefCarrier<R>>,
+{
+    type Error = <P::Metadata as TryInto<U>>::Error;
+
+    fn unpack(value: Self::CType) -> Result<(*mut PointeeData<P>, U), Self::Error> {
+        Ok((value.data(), value.metadata().try_into()?))
+    }
+}
+
+impl<R, P, U> Pack2<*mut PointeeData<P>, U> for &mut R
+where
+    R: ReprC<CType = P> + Wide + ?Sized,
+    P: Wide<Header: WideHeader<Data: CType>> + ?Sized,
+    U: CType + TryInto<P::Metadata>,
+    Self: ReprC<CType: MutWideRefCarrier<R>>,
+{
+    type Error = <U as TryInto<P::Metadata>>::Error;
+
+    unsafe fn pack(data: *mut PointeeData<P>, metadata: U) -> Result<Self::CType, Self::Error> {
+        Ok(unsafe { Self::CType::from_raw_parts_mut(data, metadata.try_into()?) })
+    }
+}
 
 impl<T, Part: CType + TryInto<Self::CType>> Pack<Part> for T
 where

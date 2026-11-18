@@ -1799,7 +1799,7 @@ mod tests {
         let mut store = Default::default();
         let encoded = co3::soft_encode(&reference, &mut store);
         let header = unsafe { &*encoded.as_ptr() };
-        assert_eq!(header.as_ptr().cast_const(), pointer);
+        assert_eq!(header.as_ptr(), pointer);
         assert_eq!(header.metadata(), 2);
         assert_eq!(store.sync(), Some(()));
         assert_eq!(reference[1].0, 5);
@@ -2016,7 +2016,7 @@ mod tests {
         assert_eq!(store.sync(), Some(()));
         let mut store = ();
         let encoded = co3::soft_encode(&mut *wrapper, &mut store);
-        unsafe { encoded.as_ptr().cast::<u32>().write(3) };
+        unsafe { encoded.as_ptr().cast_mut().cast::<u32>().write(3) };
         assert_eq!(store.sync(), Some(()));
         assert_eq!(values, [3, 2]);
     }

@@ -573,25 +573,25 @@ pub use impls::impls;
 #[doc(hidden)]
 pub use rust_spec;
 use rust_spec::{
-    RustSpec, Unstable,
-    layout::{LayoutKind, NonRobust, Robust},
-    mutability::{Exclusive, ExclusiveKind, WithInterior},
+    RustSpec,
+    layout::LayoutKind,
     niche::{WithNiche, WithoutNiche},
-    size::{ExternTypeLike, MetaSized, NulTerminated, SizedKind, SliceLike, Zero},
+    size::{ExternTypeLike, SizedKind, Zero},
 };
 #[cfg(feature = "alloc")]
-use rust_spec::{Stable, size::MetadataKind};
+use rust_spec::{
+    Stable, Unstable,
+    size::{MetaSized, MetadataKind, NulTerminated, SliceLike},
+};
 
 #[cfg(feature = "alloc")]
 use crate::ffi::NulTerminatedBuf;
 #[cfg(feature = "alloc")]
-use crate::{boxed::CBox, wide::CWideBox};
 use crate::{
-    convert::Store,
-    niche::Niche,
-    reference::{CRef, CRefMut, CSoftRef, CSoftRefMut},
-    wide::{CSoftWideRef, CSoftWideRefMut, CWideRef, CWideRefMut, Wide, WideHeader},
+    boxed::CBox,
+    wide::{CWideBox, Wide, WideHeader},
 };
+use crate::{convert::Store, niche::Niche};
 
 pub mod borrow;
 pub(crate) use borrow::__impl_borrowed_identity;
@@ -721,105 +721,6 @@ disjoint_impls! {
         type CType: CType + ?Sized;
     }
 
-    impl<'a, R: ReprC + ?Sized, __Interior: ExclusiveKind> ReprC for &'a R
-    where
-        R: RustSpec<Layout = rust_spec::Stable, Size: Thin, Mutability = Exclusive<__Interior>>,
-    {
-        type CType = CRef<'a, R>;
-    }
-    impl<R: ReprC + ?Sized, __Interior: ExclusiveKind> ReprC for &R
-    where
-        R: RustSpec<Layout = Unstable, Size: Thin, Mutability = Exclusive<__Interior>>,
-    {
-        type CType = CSoftRef<R>;
-    }
-    impl<R: ReprC<CType: Sized> + ?Sized, __Interior: ExclusiveKind> ReprC for &R
-    where
-        R: RustSpec<Size = NulTerminated, Mutability = Exclusive<__Interior>>,
-        <R as ReprC>::CType: CType + Sized,
-    {
-        type CType = CSoftRef<R>;
-    }
-    impl<'a, R: ReprC<CType: Wide<Header: WideHeader<Data: CType>, Metadata = usize>> + ?Sized, __Interior: ExclusiveKind> ReprC for &'a R
-    where
-        R: RustSpec<Layout = rust_spec::Stable, Size = MetaSized<SliceLike>, Mutability = Exclusive<__Interior>>,
-    {
-        type CType = CWideRef<'a, R>;
-    }
-    impl<R: ReprC<CType: Wide<Header: WideHeader<Data: CType>, Metadata = usize>> + ?Sized, __Interior: ExclusiveKind> ReprC for &R
-    where
-        R: RustSpec<Layout = Unstable, Size = MetaSized<SliceLike>, Mutability = Exclusive<__Interior>>,
-    {
-        type CType = CSoftWideRef<R>;
-    }
-    impl<'a, R: ReprC + ?Sized, __Trap> ReprC for &'a R
-    where
-        R: RustSpec<Layout = rust_spec::Stable, Size: Thin, Mutability = WithInterior<__Trap>>,
-    {
-        type CType = CRefMut<'a, R, false>;
-    }
-    impl<R: ReprC + ?Sized, __Trap> ReprC for &R
-    where
-        R: RustSpec<Layout = Unstable, Size: Thin, Mutability = WithInterior<__Trap>>,
-    {
-        type CType = CSoftRefMut<R, false>;
-    }
-    impl<R: ReprC<CType: Sized> + ?Sized, __Trap> ReprC for &R
-    where
-        R: RustSpec<Size = NulTerminated, Mutability = WithInterior<__Trap>>,
-        <R as ReprC>::CType: CType + Sized,
-    {
-        type CType = CSoftRefMut<R, false>;
-    }
-    impl<'a, R: ReprC<CType: Wide<Header: WideHeader<Data: CType>, Metadata = usize>> + ?Sized, __Trap> ReprC for &'a R
-    where
-        R: RustSpec<Layout = rust_spec::Stable, Size = MetaSized<SliceLike>, Mutability = WithInterior<__Trap>>,
-    {
-        type CType = CWideRefMut<'a, R, false>;
-    }
-    impl<R: ReprC<CType: Wide<Header: WideHeader<Data: CType>, Metadata = usize>> + ?Sized, __Trap> ReprC for &R
-    where
-        R: RustSpec<Layout = Unstable, Size = MetaSized<SliceLike>, Mutability = WithInterior<__Trap>>,
-    {
-        type CType = CSoftWideRefMut<R, false>;
-    }
-
-    impl<'a, R: ReprC + ?Sized> ReprC for &'a mut R
-    where
-        R: RustSpec<Layout = rust_spec::Stable, Trap = Robust, Size: Thin>,
-    {
-        type CType = CRefMut<'a, R, true>;
-    }
-    impl<R: ReprC + ?Sized> ReprC for &mut R
-    where
-        R: RustSpec<Layout = rust_spec::Stable, Trap = NonRobust, Size: Thin>,
-    {
-        type CType = CSoftRefMut<R, true>;
-    }
-    impl<R: ReprC + ?Sized> ReprC for &mut R
-    where
-        R: RustSpec<Layout = Unstable, Size: Thin>,
-    {
-        type CType = CSoftRefMut<R, true>;
-    }
-    impl<'a, R: ReprC<CType: Wide<Header: WideHeader<Data: CType>, Metadata = usize>> + ?Sized> ReprC for &'a mut R
-    where
-        R: RustSpec<Layout = rust_spec::Stable, Trap = Robust, Size = MetaSized<SliceLike>>,
-    {
-        type CType = CWideRefMut<'a, R, true>;
-    }
-    impl<R: ReprC<CType: Wide<Header: WideHeader<Data: CType>, Metadata = usize>> + ?Sized> ReprC for &mut R
-    where
-        R: RustSpec<Layout = rust_spec::Stable, Trap = NonRobust, Size = MetaSized<SliceLike>>,
-    {
-        type CType = CSoftWideRefMut<R, true>;
-    }
-    impl<R: ReprC<CType: Wide<Header: WideHeader<Data: CType>, Metadata = usize>> + ?Sized> ReprC for &mut R
-    where
-        R: RustSpec<Layout = Unstable, Size = MetaSized<SliceLike>>,
-    {
-        type CType = CSoftWideRefMut<R, true>;
-    }
     #[cfg(feature = "alloc")]
     impl<R: ReprC, S: SizedKind> ReprC for Box<R>
     where
@@ -896,7 +797,10 @@ disjoint_impls! {
 #[cfg(feature = "alloc")]
 mod tests {
     use super::*;
-    use crate::{num::NonZero, option::COption, primitives::Bool};
+    use crate::{
+        num::NonZero, option::COption, primitives::Bool, reference::CSoftRefMut,
+        wide::CSoftWideRefMut,
+    };
 
     #[test]
     fn carrier_types_are_zeroable() {
@@ -907,7 +811,7 @@ mod tests {
         static_assertions::assert_impl_all!(crate::reference::CRefMut<'static, u8, true>: Zeroable);
         static_assertions::assert_impl_all!(boxed::CBox<u8>: Zeroable);
         static_assertions::assert_impl_all!(crate::wide::CWideRef<'static, [u8]>: Zeroable);
-        static_assertions::assert_impl_all!(crate::wide::CWideRefMut<'static, [u8], true>: Zeroable);
+        static_assertions::assert_impl_all!(crate::wide::CWideRefMut<'static, [u8]>: Zeroable);
         static_assertions::assert_impl_all!(wide::CWideBox<[u8]>: Zeroable);
         static_assertions::assert_impl_all!(vec::CVec<u8>: Zeroable);
     }

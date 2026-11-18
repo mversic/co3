@@ -599,7 +599,7 @@ mod tests {
             Encode,
         );
         assert_impl_all!(&mut [u8]:
-            Niche<CType = crate::wide::CWideRefMut<'static, [u8], true>>,
+            Niche<CType = crate::wide::CWideRef<'static, [u8]>>,
             Decode<'static>,
             Encode,
         );

@@ -909,7 +909,7 @@ crate::fn_types::with_fn_types! { define_mutable_encoders, {
                 > + 'a,
         > SoftEncodeMut<'a> for [T]
         where
-            &'a mut Self: ReprC<CType = crate::wide::CWideRefMut<'a, Self, true>>
+            &'a mut Self: ReprC<CType = crate::wide::CWideRef<'a, Self>>
                 + EncodeMoveUnchecked<SoftStore = ()>
                 + EncodeMove<Store = ()>,
         {
@@ -1403,7 +1403,7 @@ impl_direct_mut!([T] core::mem::MaybeUninit<T>);
 impl_direct_mut!(['r, C: ReprC<CType: CType> + ?Sized] crate::reference::CRef<'r, C>);
 impl_direct_mut!(['r, C: ReprC<CType: CType> + ?Sized, const EXCLUSIVE: bool] crate::reference::CRefMut<'r, C, EXCLUSIVE>);
 impl_direct_mut!(['r, P: ReprC<CType: Wide<Header: WideHeader<Data: CType>>> + ?Sized] crate::wide::CWideRef<'r, P>);
-impl_direct_mut!(['r, P: ReprC<CType: Wide<Header: WideHeader<Data: CType>>> + ?Sized, const EXCLUSIVE: bool] crate::wide::CWideRefMut<'r, P, EXCLUSIVE>);
+impl_direct_mut!(['r, P: ReprC<CType: Wide<Header: WideHeader<Data: CType>>> + ?Sized] crate::wide::CWideRefMut<'r, P>);
 impl_direct_mut!([C: ReprC<CType: CType> + ?Sized] CSoftRef<C>);
 impl_direct_mut!([C: ReprC<CType: CType> + ?Sized, const EXCLUSIVE: bool] CSoftRefMut<C, EXCLUSIVE>);
 impl_direct_mut!([P: ReprC<CType: Wide<Header: WideHeader<Data: CType>>> + ?Sized] CSoftWideRef<P>);
@@ -1558,7 +1558,7 @@ mod tests {
             let inner = unsafe { co3::encode_unchecked(&mut self.0) };
             unsafe {
                 co3::wide::CSoftWideRefMut::<Self, true>::from_raw_parts_mut(
-                    inner.as_ptr(),
+                    inner.as_ptr().cast_mut(),
                     inner.metadata(),
                 )
             }
@@ -1576,7 +1576,7 @@ mod tests {
             let inner = co3::encode(&mut self.0);
             unsafe {
                 co3::wide::CSoftWideRefMut::<Self, true>::from_raw_parts_mut(
-                    inner.as_ptr(),
+                    inner.as_ptr().cast_mut(),
                     inner.metadata(),
                 )
             }

@@ -142,7 +142,7 @@ where
     }
 }
 
-impl<'a, R, P> FromSharedWideRef<P> for CWideRefMut<'a, R, false>
+impl<'a, R, P> FromSharedWideRef<P> for CWideRefMut<'a, R>
 where
     R: ReprC<CType = P> + ?Sized,
     P: Wide<Header: WideHeader<Data: CType>, Metadata = usize> + ?Sized,
@@ -2552,7 +2552,7 @@ mod tests {
             core::cell::UnsafeCell::<u8>::new(1_u8),
             core::cell::UnsafeCell::new(2),
         ];
-        let carrier: CWideRefMut<'_, [UnsafeCell<u8>], false> =
+        let carrier: CWideRefMut<'_, [UnsafeCell<u8>]> =
             unsafe { FromSharedWideRef::from_shared_ref(cells.as_ptr(), cells.len()) };
         assert_eq!(carrier.as_ptr(), cells.as_ptr().cast_mut());
         assert_eq!(carrier.metadata(), cells.len());

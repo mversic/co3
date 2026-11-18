@@ -956,7 +956,7 @@ where
     crate::sync::DecodedField<'d, R, <&'d R as DecodeMove<'d>>::Store, <R as RustSpec>::Layout>:
         TakeDecoded<Value = R>,
     [R]: RustSpec<Size = MetaSized<SliceLike>, Mutability = Exclusive<__Interior>>,
-    &'d Self: ReprC<CType = crate::CSoftWideRef<Self>>,
+    &'d Self: ReprC<CType = crate::wide::CSoftWideRef<Self>>,
     &'d R: DecodeMove<'d, Store: Store + Default + Sized>
         + ReprC<CType: crate::reference::SharedRefCarrier<R>>,
 {
@@ -1418,7 +1418,7 @@ unsafe impl<'d, R: ReprC<CType: CType + Copy> + EncodeMove<Store: EmptyStore> + 
     SoftDecodeMut<'d> for [R]
 where
     R: crate::borrow::BorrowedDecode<'d>,
-    &'d mut Self: ReprC<CType = crate::CSoftWideRefMut<Self, true>>,
+    &'d mut Self: ReprC<CType = crate::wide::CSoftWideRefMut<Self, true>>,
     [R]: RustSpec<Size = MetaSized<SliceLike>>,
 {
     type Store = RefMutSliceDecodeStore<R, Box<[<R as crate::borrow::BorrowedDecode<'d>>::Store]>>;
