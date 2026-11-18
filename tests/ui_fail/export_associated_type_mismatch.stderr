@@ -1,12 +1,14 @@
 error[E0576]: cannot find associated type `Other` in trait `Assoc`
    --> tests/ui_fail/export_associated_type_mismatch.rs:299:18
     |
-286 |         type Item;
-    |         ---------- associated type `Item` defined here
-...
 299 |             type Other = u8;
     |                  ^^^^^ not found in `Assoc`
     |
+note: associated type `Item` defined here
+   --> tests/ui_fail/export_associated_type_mismatch.rs:286:9
+    |
+286 |         type Item;
+    |         ^^^^^^^^^^
 help: maybe you meant this associated type
     |
 299 -             type Other = u8;

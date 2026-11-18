@@ -6,14 +6,14 @@ use core::marker::PhantomData;
 #[cfg(feature = "alloc")]
 use crate::{
     CType,
-    stored::AssignFromOwned,
+    convert::AssignFromOwned,
     wide::{CSoftWideRef, CSoftWideRefMut},
     wide::{Wide, WideHeader},
 };
 use crate::{
     ReprC,
+    convert::{DecodeMove, EmptyStore, EncodeMove, Store, decode_move, encode_move},
     reference::{CSoftRef, CSoftRefMut},
-    stored::{DecodeMove, EmptyStore, EncodeMove, Store, decode_move, encode_move},
 };
 
 /// Combine synchronization results, exhausting the iterator even after a failure.
@@ -422,7 +422,7 @@ impl<R: ToOwned + ?Sized, S: Store> Store for RefDstDecodeStore<R, S> {
 /// Owns a slice or slice-tailed C pointee and retains its source borrow until writeback.
 ///
 /// ```compile_fail,E0506
-/// use co3::stored::Store;
+/// use co3::convert::Store;
 /// let mut values = [false, true];
 /// let mut store = Default::default();
 /// co3::soft_encode(&mut values[..], &mut store);
@@ -732,11 +732,12 @@ mod tests {
     }
 
     #[cfg(feature = "alloc")]
-    use super::*;
-    #[cfg(feature = "alloc")]
     use alloc::sync::Arc;
     #[cfg(feature = "alloc")]
     use core::sync::atomic::{AtomicUsize, Ordering};
+
+    #[cfg(feature = "alloc")]
+    use super::*;
 
     #[cfg(feature = "alloc")]
     #[derive(Clone)]
@@ -904,18 +905,17 @@ mod tests {
     );
     #[cfg(feature = "alloc")]
     use alloc::vec::Vec;
+    #[cfg(feature = "alloc")]
+    use alloc::{boxed::Box, vec};
     use core::cell::RefCell;
 
     use super::{
         ArrayStore, RefMutSizedDecodeStore, RefSizedDecodeStore, RefSizedEncodeStore, Store,
     };
-
     #[cfg(feature = "alloc")]
     use super::{RefMutWideEncodeStore, RefWideEncodeStore};
     #[cfg(feature = "alloc")]
     use crate::wide::tests::{Custom, Metadata};
-    #[cfg(feature = "alloc")]
-    use alloc::{boxed::Box, vec};
 
     #[cfg(feature = "alloc")]
     #[test]
@@ -1020,8 +1020,8 @@ mod tests {
         unsafe {
             // Both carriers point into live conversion stores. Only the first
             // carrier contains an invalid Rust bool representation.
-            *encoded.0.as_ptr() = crate::primitives::CBool(2);
-            *encoded.1.as_ptr() = crate::primitives::CBool::TRUE;
+            *encoded.0.as_ptr() = crate::primitives::Bool(2);
+            *encoded.1.as_ptr() = crate::primitives::Bool::TRUE;
         }
 
         assert_eq!(store.sync(), None);

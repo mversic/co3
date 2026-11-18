@@ -16,8 +16,6 @@ note: required for `CZeroLenArrayZst` to implement `CFnArg`
    |
 27 | #[derive(Clone, Copy, RustSpec, ReprC)]
    |                                 ^^^^^ type parameter would need to implement `CFnArg`
-   = help: consider manually implementing `CFnArg` to avoid undesired bounds caused by "imperfect derives"
-   = note: to learn more, visit <https://github.com/rust-lang/rust/issues/26925>
    = note: associated types for the current `impl` cannot be restricted in `where` clauses
    = note: associated types for the current `impl` cannot be restricted in `where` clauses
 note: required by a bound in `require_arg`
@@ -45,8 +43,6 @@ note: required for `CZeroLenArrayZst` to implement `CFnReturn`
    |
 27 | #[derive(Clone, Copy, RustSpec, ReprC)]
    |                                 ^^^^^ type parameter would need to implement `CFnReturn`
-   = help: consider manually implementing `CFnReturn` to avoid undesired bounds caused by "imperfect derives"
-   = note: to learn more, visit <https://github.com/rust-lang/rust/issues/26925>
    = note: associated types for the current `impl` cannot be restricted in `where` clauses
    = note: associated types for the current `impl` cannot be restricted in `where` clauses
 note: required by a bound in `require_return`
@@ -74,8 +70,6 @@ note: required for `CReprCZst` to implement `CFnArg`
    |
 38 | #[derive(Clone, Copy, RustSpec, ReprC)]
    |                                 ^^^^^ type parameter would need to implement `CFnArg`
-   = help: consider manually implementing `CFnArg` to avoid undesired bounds caused by "imperfect derives"
-   = note: to learn more, visit <https://github.com/rust-lang/rust/issues/26925>
    = note: associated types for the current `impl` cannot be restricted in `where` clauses
    = note: associated types for the current `impl` cannot be restricted in `where` clauses
 note: required by a bound in `require_arg`
@@ -103,8 +97,6 @@ note: required for `CReprCZst` to implement `CFnReturn`
    |
 38 | #[derive(Clone, Copy, RustSpec, ReprC)]
    |                                 ^^^^^ type parameter would need to implement `CFnReturn`
-   = help: consider manually implementing `CFnReturn` to avoid undesired bounds caused by "imperfect derives"
-   = note: to learn more, visit <https://github.com/rust-lang/rust/issues/26925>
    = note: associated types for the current `impl` cannot be restricted in `where` clauses
    = note: associated types for the current `impl` cannot be restricted in `where` clauses
 note: required by a bound in `require_return`
@@ -132,8 +124,6 @@ note: required for `CTransparentZst` to implement `CFnArg`
    |
 45 | #[derive(Clone, Copy, RustSpec, ReprC)]
    |                                 ^^^^^ type parameter would need to implement `CFnArg`
-   = help: consider manually implementing `CFnArg` to avoid undesired bounds caused by "imperfect derives"
-   = note: to learn more, visit <https://github.com/rust-lang/rust/issues/26925>
    = note: associated types for the current `impl` cannot be restricted in `where` clauses
    = note: associated types for the current `impl` cannot be restricted in `where` clauses
 note: required by a bound in `require_arg`
@@ -161,8 +151,6 @@ note: required for `CTransparentZst` to implement `CFnReturn`
    |
 45 | #[derive(Clone, Copy, RustSpec, ReprC)]
    |                                 ^^^^^ type parameter would need to implement `CFnReturn`
-   = help: consider manually implementing `CFnReturn` to avoid undesired bounds caused by "imperfect derives"
-   = note: to learn more, visit <https://github.com/rust-lang/rust/issues/26925>
    = note: associated types for the current `impl` cannot be restricted in `where` clauses
    = note: associated types for the current `impl` cannot be restricted in `where` clauses
 note: required by a bound in `require_return`
@@ -190,8 +178,6 @@ note: required for `CNoReprZst` to implement `CFnArg`
    |
 51 | #[derive(Clone, Copy, RustSpec, ReprC)]
    |                                 ^^^^^ type parameter would need to implement `CFnArg`
-   = help: consider manually implementing `CFnArg` to avoid undesired bounds caused by "imperfect derives"
-   = note: to learn more, visit <https://github.com/rust-lang/rust/issues/26925>
    = note: associated types for the current `impl` cannot be restricted in `where` clauses
    = note: associated types for the current `impl` cannot be restricted in `where` clauses
 note: required by a bound in `require_arg`
@@ -219,8 +205,6 @@ note: required for `CNoReprZst` to implement `CFnReturn`
    |
 51 | #[derive(Clone, Copy, RustSpec, ReprC)]
    |                                 ^^^^^ type parameter would need to implement `CFnReturn`
-   = help: consider manually implementing `CFnReturn` to avoid undesired bounds caused by "imperfect derives"
-   = note: to learn more, visit <https://github.com/rust-lang/rust/issues/26925>
    = note: associated types for the current `impl` cannot be restricted in `where` clauses
    = note: associated types for the current `impl` cannot be restricted in `where` clauses
 note: required by a bound in `require_return`
@@ -248,8 +232,6 @@ note: required for `CParamReprCZst<()>` to implement `CFnArg`
    |
  3 | #[derive(Clone, Copy, RustSpec, ReprC)]
    |                                 ^^^^^ type parameter would need to implement `CFnArg`
-   = help: consider manually implementing `CFnArg` to avoid undesired bounds caused by "imperfect derives"
-   = note: to learn more, visit <https://github.com/rust-lang/rust/issues/26925>
    = note: associated types for the current `impl` cannot be restricted in `where` clauses
    = note: associated types for the current `impl` cannot be restricted in `where` clauses
    = note: associated types for the current `impl` cannot be restricted in `where` clauses
@@ -278,8 +260,6 @@ note: required for `CParamReprCZst<()>` to implement `CFnReturn`
    |
  3 | #[derive(Clone, Copy, RustSpec, ReprC)]
    |                                 ^^^^^ type parameter would need to implement `CFnReturn`
-   = help: consider manually implementing `CFnReturn` to avoid undesired bounds caused by "imperfect derives"
-   = note: to learn more, visit <https://github.com/rust-lang/rust/issues/26925>
    = note: associated types for the current `impl` cannot be restricted in `where` clauses
    = note: associated types for the current `impl` cannot be restricted in `where` clauses
    = note: associated types for the current `impl` cannot be restricted in `where` clauses
@@ -308,8 +288,6 @@ note: required for `CParamTransparentZst<()>` to implement `CFnArg`
    |
 10 | #[derive(Clone, Copy, RustSpec, ReprC)]
    |                                 ^^^^^ type parameter would need to implement `CFnArg`
-   = help: consider manually implementing `CFnArg` to avoid undesired bounds caused by "imperfect derives"
-   = note: to learn more, visit <https://github.com/rust-lang/rust/issues/26925>
    = note: associated types for the current `impl` cannot be restricted in `where` clauses
    = note: associated types for the current `impl` cannot be restricted in `where` clauses
    = note: associated types for the current `impl` cannot be restricted in `where` clauses
@@ -338,8 +316,6 @@ note: required for `CParamTransparentZst<()>` to implement `CFnReturn`
    |
 10 | #[derive(Clone, Copy, RustSpec, ReprC)]
    |                                 ^^^^^ type parameter would need to implement `CFnReturn`
-   = help: consider manually implementing `CFnReturn` to avoid undesired bounds caused by "imperfect derives"
-   = note: to learn more, visit <https://github.com/rust-lang/rust/issues/26925>
    = note: associated types for the current `impl` cannot be restricted in `where` clauses
    = note: associated types for the current `impl` cannot be restricted in `where` clauses
    = note: associated types for the current `impl` cannot be restricted in `where` clauses
@@ -368,8 +344,6 @@ note: required for `CParamNoReprZst<()>` to implement `CFnArg`
    |
 32 | #[derive(Clone, Copy, RustSpec, ReprC)]
    |                                 ^^^^^ type parameter would need to implement `CFnArg`
-   = help: consider manually implementing `CFnArg` to avoid undesired bounds caused by "imperfect derives"
-   = note: to learn more, visit <https://github.com/rust-lang/rust/issues/26925>
    = note: associated types for the current `impl` cannot be restricted in `where` clauses
    = note: associated types for the current `impl` cannot be restricted in `where` clauses
    = note: associated types for the current `impl` cannot be restricted in `where` clauses
@@ -398,8 +372,6 @@ note: required for `CParamNoReprZst<()>` to implement `CFnReturn`
    |
 32 | #[derive(Clone, Copy, RustSpec, ReprC)]
    |                                 ^^^^^ type parameter would need to implement `CFnReturn`
-   = help: consider manually implementing `CFnReturn` to avoid undesired bounds caused by "imperfect derives"
-   = note: to learn more, visit <https://github.com/rust-lang/rust/issues/26925>
    = note: associated types for the current `impl` cannot be restricted in `where` clauses
    = note: associated types for the current `impl` cannot be restricted in `where` clauses
    = note: associated types for the current `impl` cannot be restricted in `where` clauses
@@ -428,8 +400,6 @@ note: required for `CParamTransparentEnum<()>` to implement `CFnArg`
    |
 16 | #[derive(Clone, Copy, RustSpec, ReprC)]
    |                                 ^^^^^ type parameter would need to implement `CFnArg`
-   = help: consider manually implementing `CFnArg` to avoid undesired bounds caused by "imperfect derives"
-   = note: to learn more, visit <https://github.com/rust-lang/rust/issues/26925>
    = note: associated types for the current `impl` cannot be restricted in `where` clauses
    = note: associated types for the current `impl` cannot be restricted in `where` clauses
    = note: associated types for the current `impl` cannot be restricted in `where` clauses
@@ -458,8 +428,6 @@ note: required for `CParamTransparentEnum<()>` to implement `CFnReturn`
    |
 16 | #[derive(Clone, Copy, RustSpec, ReprC)]
    |                                 ^^^^^ type parameter would need to implement `CFnReturn`
-   = help: consider manually implementing `CFnReturn` to avoid undesired bounds caused by "imperfect derives"
-   = note: to learn more, visit <https://github.com/rust-lang/rust/issues/26925>
    = note: associated types for the current `impl` cannot be restricted in `where` clauses
    = note: associated types for the current `impl` cannot be restricted in `where` clauses
    = note: associated types for the current `impl` cannot be restricted in `where` clauses
@@ -488,8 +456,6 @@ note: required for `CParamFieldlessEnum` to implement `CFnArg`
    |
 22 | #[derive(Clone, Copy, RustSpec, ReprC)]
    |                                 ^^^^^ type parameter would need to implement `CFnArg`
-   = help: consider manually implementing `CFnArg` to avoid undesired bounds caused by "imperfect derives"
-   = note: to learn more, visit <https://github.com/rust-lang/rust/issues/26925>
    = note: associated types for the current `impl` cannot be restricted in `where` clauses
 note: required by a bound in `require_arg`
   --> tests/ui_fail/zst_c_fn_arg.rs:67:19
@@ -516,8 +482,6 @@ note: required for `CParamFieldlessEnum` to implement `CFnReturn`
    |
 22 | #[derive(Clone, Copy, RustSpec, ReprC)]
    |                                 ^^^^^ type parameter would need to implement `CFnReturn`
-   = help: consider manually implementing `CFnReturn` to avoid undesired bounds caused by "imperfect derives"
-   = note: to learn more, visit <https://github.com/rust-lang/rust/issues/26925>
    = note: associated types for the current `impl` cannot be restricted in `where` clauses
 note: required by a bound in `require_return`
   --> tests/ui_fail/zst_c_fn_arg.rs:68:22

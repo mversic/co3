@@ -1,6 +1,6 @@
 //! Utilities for opaque pointer handles required for tagged dispatch.
 
-use crate::Encode;
+use crate::convert::Encode;
 
 /// Groups tagged types that use the same tag type.
 pub trait TagFamily {

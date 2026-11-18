@@ -4,9 +4,7 @@ use core::{
     num::NonZero,
 };
 
-use co3::{
-    CFnArg, CFnReturn, CType, Decode, Encode, ReprC, rust_spec::RustSpec, transmute::AbiCompatible,
-};
+use co3::{CFnArg, CFnReturn, CType, ReprC, rust_spec::RustSpec, transmute::AbiCompatible};
 use static_assertions::{assert_impl_all, assert_not_impl_any};
 
 #[derive(Debug, Clone, PartialEq, Eq, RustSpec, ReprC)]
@@ -69,8 +67,8 @@ type CTransparentEnumZst = <TransparentEnum<()> as ReprC>::CType;
 fn boxed_zst_traits() {
     macro_rules! assert_traits {
         ($ty:ty, $ctype:ty) => {
-            assert_impl_all!($ty: Decode<'static>, Encode);
-            assert_impl_all!($ty: co3::stored::DecodeMove<'static>, co3::stored::EncodeMove);
+            assert_impl_all!($ty: co3::convert::Decode<'static>, co3::convert::Encode);
+            assert_impl_all!($ty: co3::convert::DecodeMove<'static>, co3::convert::EncodeMove);
 
             assert_impl_all!($ctype:
                 CType,

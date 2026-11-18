@@ -2,6 +2,7 @@
 //! dispatch method implementation. The view store is empty for each format.
 
 use std::marker::PhantomData;
+
 use co3::{ReprC, ffi, rust_spec::RustSpec};
 
 #[derive(RustSpec, ReprC)]

@@ -314,14 +314,14 @@ fn gen_regular_drop_import_body<const DISPATCHED: bool>(
             #(#receiver_cfg)*
             let mut #store_name = Default::default();
             #(#receiver_cfg)*
-            let __co3_self = co3::stored::EncodeMove::soft_encode(
+            let __co3_self = co3::convert::EncodeMove::soft_encode(
                 __co3_self, &mut #store_name
             );
         }
     } else {
         quote! {
             #(#receiver_cfg)*
-            let __co3_self = co3::stored::encode_move(__co3_self);
+            let __co3_self = co3::convert::encode_move(__co3_self);
         }
     };
 
@@ -727,7 +727,7 @@ fn gen_store_sync_stmts(inputs: &[Argument<'_>]) -> TokenStream {
         let cfg = input.cfg();
         Some(quote! {
             #(#cfg)*
-            if co3::stored::Store::sync(#store_name).is_none() {
+            if co3::convert::Store::sync(#store_name).is_none() {
                 __co3_sync_errors[#idx] = true;
             }
         })

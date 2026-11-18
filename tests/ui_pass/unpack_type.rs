@@ -1,6 +1,6 @@
 #![allow(unused_parens)]
 
-use co3::{ReprC, ffi, rust_spec::RustSpec, pack::Unpack2};
+use co3::{ReprC, ffi, pack::Unpack2, rust_spec::RustSpec, wide::Wide};
 
 trait ExportUnpackLen {
     fn export_trait_unpack_len(&self, _: *const u32, len: usize) -> usize;
@@ -236,7 +236,7 @@ fn main() {
 
     let mut bytes = [1u8, 2, 3];
     let bytes = unsafe {
-        <OdbcStr<u8> as co3::wide::Wide>::from_raw_parts_mut(bytes.as_mut_ptr().cast(), bytes.len())
+        <OdbcStr<u8> as Wide>::from_raw_parts_mut(bytes.as_mut_ptr().cast(), bytes.len())
     };
     assert_eq!(bytes.unpack_receiver_ref(), 6);
     assert_eq!(bytes.unpack_receiver_mut(), 3);

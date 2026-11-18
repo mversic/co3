@@ -6,10 +6,10 @@ error[E0277]: the size for values of type `[T]` cannot be known at compilation t
    |
    = help: within `OpaqueSlice<T>`, the trait `std::marker::Sized` is not implemented for `[T]`
 note: required because it appears within the type `OpaqueSlice<T>`
-  --> tests/ui_fail/opaque_dst_export.rs:9:8
+  --> tests/ui_fail/opaque_dst_export.rs:9:23
    |
  9 | struct OpaqueSlice<T>([T]);
-   |        ^^^^^^^^^^^
+   |                       ^^^ required by this field
 note: required by an implicit `Sized` bound in `__Co3AssertSized`
   --> tests/ui_fail/opaque_dst_export.rs:11:1
    |
@@ -17,7 +17,14 @@ note: required by an implicit `Sized` bound in `__Co3AssertSized`
 12 | |     #![unsafe(export("C"))]
 13 | |
 14 | |     #[tag(u8)]
-...  |
+15 | |     type OpaqueSlice<T>;
+16 | |
+17 | |     impl<T> Drop for dyn OpaqueSlice<T>
+18 | |     where
+19 | |         use<T> @ <u8>,
+20 | |     {
+21 | |         fn drop(&mut self);
+22 | |     }
 23 | | }
    | |_^ required by the implicit `Sized` requirement on this type parameter in `__Co3AssertSized`
    = note: this error originates in the macro `ffi` (in Nightly builds, run with -Z macro-backtrace for more info)
@@ -41,10 +48,10 @@ help: the trait `EncodeMoveUnchecked` is not implemented for `OpaqueSlice<T>`
 23 | | }
    | |_^
 note: required because it appears within the type `OpaqueSlice<T>`
-  --> tests/ui_fail/opaque_dst_export.rs:9:8
+  --> tests/ui_fail/opaque_dst_export.rs:9:23
    |
  9 | struct OpaqueSlice<T>([T]);
-   |        ^^^^^^^^^^^
+   |                       ^^^ required by this field
    = note: required for `OpaqueSlice<T>` to implement `EncodeMoveUnchecked`
 note: required by a bound in `EncodeMove`
   --> src/stored.rs
@@ -61,10 +68,10 @@ error[E0277]: the size for values of type `[T]` cannot be known at compilation t
    |
    = help: within `OpaqueSlice<T>`, the trait `std::marker::Sized` is not implemented for `[T]`
 note: required because it appears within the type `OpaqueSlice<T>`
-  --> tests/ui_fail/opaque_dst_export.rs:9:8
+  --> tests/ui_fail/opaque_dst_export.rs:9:23
    |
  9 | struct OpaqueSlice<T>([T]);
-   |        ^^^^^^^^^^^
+   |                       ^^^ required by this field
 note: required by a bound in `EncodeMoveUnchecked`
   --> src/stored.rs
    |
@@ -84,10 +91,10 @@ error[E0277]: the size for values of type `[T]` cannot be known at compilation t
    |
    = help: within `OpaqueSlice<T>`, the trait `std::marker::Sized` is not implemented for `[T]`
 note: required because it appears within the type `OpaqueSlice<T>`
-  --> tests/ui_fail/opaque_dst_export.rs:9:8
+  --> tests/ui_fail/opaque_dst_export.rs:9:23
    |
  9 | struct OpaqueSlice<T>([T]);
-   |        ^^^^^^^^^^^
+   |                       ^^^ required by this field
 note: required by an implicit `Sized` bound in `std::option::Option`
   --> $RUST/core/src/option.rs
    |
@@ -103,10 +110,10 @@ error[E0277]: the size for values of type `[T]` cannot be known at compilation t
    |
    = help: within `OpaqueSlice<T>`, the trait `std::marker::Sized` is not implemented for `[T]`
 note: required because it appears within the type `OpaqueSlice<T>`
-  --> tests/ui_fail/opaque_dst_export.rs:9:8
+  --> tests/ui_fail/opaque_dst_export.rs:9:23
    |
  9 | struct OpaqueSlice<T>([T]);
-   |        ^^^^^^^^^^^
+   |                       ^^^ required by this field
 note: required by a bound in `DecodeMove`
   --> src/stored.rs
    |
@@ -132,14 +139,14 @@ help: the trait `EncodeUnchecked` is not implemented for `OpaqueSlice<T>`
 23 | | }
    | |_^
 note: required because it appears within the type `OpaqueSlice<T>`
-  --> tests/ui_fail/opaque_dst_export.rs:9:8
+  --> tests/ui_fail/opaque_dst_export.rs:9:23
    |
  9 | struct OpaqueSlice<T>([T]);
-   |        ^^^^^^^^^^^
+   |                       ^^^ required by this field
    = note: required for `OpaqueSlice<T>` to implement `EncodeMoveUnchecked`
    = note: required for `OpaqueSlice<T>` to implement `EncodeUnchecked`
 note: required by a bound in `Encode`
-  --> src/lib.rs
+  --> src/convert.rs
    |
    | pub trait Encode: EncodeMove + EncodeUnchecked {}
    |                                ^^^^^^^^^^^^^^^ required by this bound in `Encode`
@@ -164,13 +171,13 @@ help: the trait `EncodeMoveUnchecked` is not implemented for `OpaqueSlice<T>`
 23 | | }
    | |_^
 note: required because it appears within the type `OpaqueSlice<T>`
-  --> tests/ui_fail/opaque_dst_export.rs:9:8
+  --> tests/ui_fail/opaque_dst_export.rs:9:23
    |
  9 | struct OpaqueSlice<T>([T]);
-   |        ^^^^^^^^^^^
+   |                       ^^^ required by this field
    = note: required for `OpaqueSlice<T>` to implement `EncodeMoveUnchecked`
 note: required by a bound in `EncodeUnchecked`
-  --> src/lib.rs
+  --> src/convert.rs
    |
    | pub trait EncodeUnchecked: EncodeMoveUnchecked {}
    |                            ^^^^^^^^^^^^^^^^^^^ required by this bound in `EncodeUnchecked`
@@ -195,13 +202,13 @@ help: the trait `DecodeMove<'_>` is not implemented for `OpaqueSlice<T>`
 23 | | }
    | |_^
 note: required because it appears within the type `OpaqueSlice<T>`
-  --> tests/ui_fail/opaque_dst_export.rs:9:8
+  --> tests/ui_fail/opaque_dst_export.rs:9:23
    |
  9 | struct OpaqueSlice<T>([T]);
-   |        ^^^^^^^^^^^
+   |                       ^^^ required by this field
    = note: required for `OpaqueSlice<T>` to implement `DecodeMove<'_>`
 note: required by a bound in `Decode`
-  --> src/lib.rs
+  --> src/convert.rs
    |
    | pub trait Decode<'d>: DecodeMove<'d> {}
    |                       ^^^^^^^^^^^^^^ required by this bound in `Decode`
@@ -220,10 +227,10 @@ error[E0277]: the size for values of type `[T]` cannot be known at compilation t
    |
    = help: within `OpaqueSlice<T>`, the trait `std::marker::Sized` is not implemented for `[T]`
 note: required because it appears within the type `OpaqueSlice<T>`
-  --> tests/ui_fail/opaque_dst_export.rs:9:8
+  --> tests/ui_fail/opaque_dst_export.rs:9:23
    |
  9 | struct OpaqueSlice<T>([T]);
-   |        ^^^^^^^^^^^
+   |                       ^^^ required by this field
    = note: the return type of a function must have a statically known size
    = note: this error originates in the macro `ffi` (in Nightly builds, run with -Z macro-backtrace for more info)
 
@@ -240,10 +247,10 @@ error[E0277]: the size for values of type `[u8]` cannot be known at compilation 
    |
    = help: within `OpaqueSlice<u8>`, the trait `std::marker::Sized` is not implemented for `[u8]`
 note: required because it appears within the type `OpaqueSlice<u8>`
-  --> tests/ui_fail/opaque_dst_export.rs:9:8
+  --> tests/ui_fail/opaque_dst_export.rs:9:23
    |
  9 | struct OpaqueSlice<T>([T]);
-   |        ^^^^^^^^^^^
+   |                       ^^^ required by this field
 note: required by a bound in `co3::boxed::CBox`
   --> src/boxed.rs
    |
@@ -264,10 +271,10 @@ error[E0277]: the size for values of type `[T]` cannot be known at compilation t
    |
    = help: within `OpaqueSlice<T>`, the trait `std::marker::Sized` is not implemented for `[T]`
 note: required because it appears within the type `OpaqueSlice<T>`
-  --> tests/ui_fail/opaque_dst_export.rs:9:8
+  --> tests/ui_fail/opaque_dst_export.rs:9:23
    |
  9 | struct OpaqueSlice<T>([T]);
-   |        ^^^^^^^^^^^
+   |                       ^^^ required by this field
    = note: this error originates in the macro `ffi` (in Nightly builds, run with -Z macro-backtrace for more info)
 help: function arguments must have a statically known size, borrowed types always have a known size
    |

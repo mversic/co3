@@ -642,7 +642,7 @@ fn raw_dispatch_wrapper_sig(
             .push(syn::parse_quote!(#ident: #co3::tag::Tagged));
         where_clause.predicates.push(syn::parse_quote!(
             <#ident as #co3::tag::TagFamily>::Kind:
-                #co3::Encode<CType = #id_repr, Store: #co3::stored::EmptyStore>
+                #co3::convert::Encode<CType = #id_repr, Store: #co3::convert::EmptyStore>
         ));
     }
     let mut source = sig.clone();
@@ -1037,7 +1037,7 @@ fn prepare_dispatch_wrapper_sig(
         ));
         where_clause.predicates.push(syn::parse_quote!(
             <#ident as #co3::tag::TagFamily>::Kind:
-                #co3::Encode<CType = #id_repr, Store: #co3::stored::EmptyStore>
+                #co3::convert::Encode<CType = #id_repr, Store: #co3::convert::EmptyStore>
         ));
     }
 
@@ -1107,16 +1107,16 @@ fn prepare_dispatch_wrapper_sig(
         {
             if !input.is_borrowed() {
                 let bound = if input.soft {
-                    syn::parse_quote!(#ty: #co3::Encode)
+                    syn::parse_quote!(#ty: #co3::convert::Encode)
                 } else {
-                    syn::parse_quote!(#ty: #co3::Encode<Store: #co3::stored::EmptyStore>)
+                    syn::parse_quote!(#ty: #co3::convert::Encode<Store: #co3::convert::EmptyStore>)
                 };
                 where_clause.predicates.push(bound);
             } else {
                 let bound = if input.soft {
                     syn::parse_quote!(#ty: #co3::borrow::BorrowedEncode)
                 } else {
-                    syn::parse_quote!(#ty: #co3::borrow::BorrowedEncode<Store: #co3::stored::EmptyStore>)
+                    syn::parse_quote!(#ty: #co3::borrow::BorrowedEncode<Store: #co3::convert::EmptyStore>)
                 };
                 where_clause.predicates.push(bound);
             }
@@ -1127,7 +1127,7 @@ fn prepare_dispatch_wrapper_sig(
         && detector.type_mentions_param(output_ty)
     {
         where_clause.predicates.push(syn::parse_quote!(
-            for<'a> #output_ty: #co3::Decode<'a, Store: #co3::stored::EmptyStore>
+            for<'a> #output_ty: #co3::convert::Decode<'a, Store: #co3::convert::EmptyStore>
         ));
     }
 
@@ -1611,7 +1611,7 @@ pub(crate) fn expand_export_decls(
                     #covariance_checks
                     #drop_check
 
-                    unsafe impl #impl_generics co3::stored::EncodeMove for #ident #ty_generics #where_clause {
+                    unsafe impl #impl_generics co3::convert::EncodeMove for #ident #ty_generics #where_clause {
                         type Store = ();
 
                         #[inline(always)]
@@ -1619,18 +1619,18 @@ pub(crate) fn expand_export_decls(
                         where
                             Self: 'itm
                         {
-                            use co3::stored::EncodeMoveUnchecked as _;
+                            use co3::convert::EncodeMoveUnchecked as _;
                             unsafe { self.soft_encode_unchecked(&mut ()) }
                         }
                     }
-                    unsafe impl #impl_generics co3::stored::EncodeMoveUnchecked for #ident #ty_generics #where_clause {
+                    unsafe impl #impl_generics co3::convert::EncodeMoveUnchecked for #ident #ty_generics #where_clause {
                         type SoftStore = ();
 
                         unsafe fn soft_encode_unchecked<'itm>(self, (): &'itm mut ()) -> Self::CType where Self: 'itm {
                             self
                         }
                     }
-                    unsafe impl #decode_impl_generics co3::stored::DecodeMove<'_dšč> for #ident #ty_generics #where_clause {
+                    unsafe impl #decode_impl_generics co3::convert::DecodeMove<'_dšč> for #ident #ty_generics #where_clause {
                         type Store = ();
 
                         #[inline(always)]
@@ -1639,9 +1639,9 @@ pub(crate) fn expand_export_decls(
                         }
                     }
 
-                    impl #impl_generics co3::Encode for #ident #ty_generics #where_clause {}
-                    impl #impl_generics co3::EncodeUnchecked for #ident #ty_generics #where_clause {}
-                    impl #impl_generics co3::Decode<'_> for #ident #ty_generics #where_clause {}
+                    impl #impl_generics co3::convert::Encode for #ident #ty_generics #where_clause {}
+                    impl #impl_generics co3::convert::EncodeUnchecked for #ident #ty_generics #where_clause {}
+                    impl #impl_generics co3::convert::Decode<'_> for #ident #ty_generics #where_clause {}
 
                     #(#dispatch)*
                 };
@@ -3445,7 +3445,7 @@ fn gen_owned_repr_c_impls(ident: &syn::Ident, generics: &syn::Generics) -> Token
         impl #impl_generics #co3::ReprC for #owned_repr_c_name #ty_generics #where_clause {
             type CType = Self;
         }
-        unsafe impl #impl_generics #co3::stored::EncodeMove for #owned_repr_c_name #ty_generics #where_clause {
+        unsafe impl #impl_generics #co3::convert::EncodeMove for #owned_repr_c_name #ty_generics #where_clause {
             type Store = ();
 
             #[inline(always)]
@@ -3453,18 +3453,18 @@ fn gen_owned_repr_c_impls(ident: &syn::Ident, generics: &syn::Generics) -> Token
             where
                 Self: 'itm,
             {
-                use #co3::stored::EncodeMoveUnchecked as _;
+                use #co3::convert::EncodeMoveUnchecked as _;
                 unsafe { self.soft_encode_unchecked(&mut ()) }
             }
         }
-        unsafe impl #impl_generics #co3::stored::EncodeMoveUnchecked for #owned_repr_c_name #ty_generics #where_clause {
+        unsafe impl #impl_generics #co3::convert::EncodeMoveUnchecked for #owned_repr_c_name #ty_generics #where_clause {
             type SoftStore = ();
 
             unsafe fn soft_encode_unchecked<'itm>(self, (): &'itm mut ()) -> Self::CType where Self: 'itm {
                 self
             }
         }
-        unsafe impl #decode_impl_generics #co3::stored::DecodeMove<'d> for #owned_repr_c_name #ty_generics #where_clause {
+        unsafe impl #decode_impl_generics #co3::convert::DecodeMove<'d> for #owned_repr_c_name #ty_generics #where_clause {
             type Store = ();
 
             #[inline(always)]
@@ -3473,9 +3473,9 @@ fn gen_owned_repr_c_impls(ident: &syn::Ident, generics: &syn::Generics) -> Token
             }
         }
 
-        impl #impl_generics #co3::Encode for #owned_repr_c_name #ty_generics #where_clause {}
-        impl #impl_generics #co3::EncodeUnchecked for #owned_repr_c_name #ty_generics #where_clause {}
-        impl #impl_generics #co3::Decode<'_> for #owned_repr_c_name #ty_generics #where_clause {}
+        impl #impl_generics #co3::convert::Encode for #owned_repr_c_name #ty_generics #where_clause {}
+        impl #impl_generics #co3::convert::EncodeUnchecked for #owned_repr_c_name #ty_generics #where_clause {}
+        impl #impl_generics #co3::convert::Decode<'_> for #owned_repr_c_name #ty_generics #where_clause {}
 
 
         unsafe impl #impl_generics #co3::transmute::AbiCompatibleValidate for #owned_repr_c_name #ty_generics #where_clause {
@@ -3704,7 +3704,7 @@ fn gen_owned_extern_type_impls(
             fn is_niche(value: &Self::CType) -> bool { value.0.is_null() }
         }
 
-        unsafe impl #impl_generics #co3::stored::EncodeMove for #owned_ident #ty_generics #where_clause {
+        unsafe impl #impl_generics #co3::convert::EncodeMove for #owned_ident #ty_generics #where_clause {
             type Store = ();
 
             #[inline(always)]
@@ -3712,18 +3712,18 @@ fn gen_owned_extern_type_impls(
             where
                 Self: 'itm,
             {
-                use #co3::stored::EncodeMoveUnchecked as _;
+                use #co3::convert::EncodeMoveUnchecked as _;
                 unsafe { self.soft_encode_unchecked(&mut ()) }
             }
         }
-        unsafe impl #impl_generics #co3::stored::EncodeMoveUnchecked for #owned_ident #ty_generics #where_clause {
+        unsafe impl #impl_generics #co3::convert::EncodeMoveUnchecked for #owned_ident #ty_generics #where_clause {
             type SoftStore = ();
 
             unsafe fn soft_encode_unchecked<'itm>(self, (): &'itm mut ()) -> Self::CType where Self: 'itm {
                 #owned_repr_c_name(core::mem::ManuallyDrop::new(self).0.as_ptr())
             }
         }
-        unsafe impl #decode_impl_generics #co3::stored::DecodeMove<'d> for #owned_ident #ty_generics #where_clause {
+        unsafe impl #decode_impl_generics #co3::convert::DecodeMove<'d> for #owned_ident #ty_generics #where_clause {
             type Store = ();
 
             #[inline(always)]
@@ -3737,9 +3737,9 @@ fn gen_owned_extern_type_impls(
             }
         }
 
-        impl #impl_generics #co3::Encode for #owned_ident #ty_generics #where_clause {}
-        impl #impl_generics #co3::EncodeUnchecked for #owned_ident #ty_generics #where_clause {}
-        impl #impl_generics #co3::Decode<'_> for #owned_ident #ty_generics #where_clause {}
+        impl #impl_generics #co3::convert::Encode for #owned_ident #ty_generics #where_clause {}
+        impl #impl_generics #co3::convert::EncodeUnchecked for #owned_ident #ty_generics #where_clause {}
+        impl #impl_generics #co3::convert::Decode<'_> for #owned_ident #ty_generics #where_clause {}
 
         impl #impl_generics core::ops::Deref for #owned_ident #ty_generics #where_clause {
             type Target = #ident #ty_generics;

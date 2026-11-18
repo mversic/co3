@@ -1,8 +1,8 @@
 //! Conversion between C-compatible representations and ABI arguments.
 
-use core::marker::PhantomData;
 use core::{
     cell::{Cell, UnsafeCell},
+    marker::PhantomData,
     mem::ManuallyDrop,
 };
 
@@ -14,8 +14,7 @@ use crate::{
     option::COptionSome,
     result::{CResultErr, CResultOk},
     tuple::CTuple2,
-    wide::WideRefCarrier,
-    wide::{Wide, WideHeader},
+    wide::{Wide, WideHeader, WideRefCarrier},
 };
 #[cfg(feature = "alloc")]
 use crate::{boxed::Box, wide::CWideBox};

@@ -1,10 +1,14 @@
 //! C-compatible representations and conversions for [`core::ptr`].
-use crate::num::NonZero;
-use crate::stored::{DecodeMove, EncodeMove, EncodeMoveUnchecked};
-use crate::transmute::{AbiCompatible, AbiCompatibleValidate};
-use crate::{Decode, Encode, ReprC};
 use core::ptr::NonNull;
+
 use rust_spec::RustSpec;
+
+use crate::{
+    ReprC,
+    convert::{Decode, DecodeMove, Encode, EncodeMove, EncodeMoveUnchecked},
+    num::NonZero,
+    transmute::{AbiCompatible, AbiCompatibleValidate},
+};
 // Stable-Rust description of pointer metadata. Thin pointees use unit; wide
 // pointees use the metadata guaranteed by the unsafe Wide contract.
 pub(crate) trait PointerMetadata {
@@ -115,7 +119,7 @@ unsafe impl<T: AbiCompatible + PointerMetadata + ?Sized> AbiCompatible for NonNu
 {
 }
 
-use crate::EncodeUnchecked;
+use crate::convert::EncodeUnchecked;
 
 #[cfg(test)]
 mod tests {

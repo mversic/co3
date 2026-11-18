@@ -11,11 +11,11 @@ use alloc::vec::Vec;
 use rust_spec::RustSpec;
 
 #[cfg(feature = "alloc")]
-use crate::stored::Owned;
+use crate::convert::Owned;
 use crate::{
-    CFnArg, CFnReturn, CType, Decode, Encode, ReprC,
+    CFnArg, CFnReturn, CType, ReprC,
+    convert::{Decode, DecodeMove, EmptyStore, Encode, EncodeMove, EncodeMoveUnchecked},
     niche::Niche,
-    stored::{DecodeMove, EmptyStore, EncodeMove, EncodeMoveUnchecked},
     transmute::AbiCompatible,
 };
 
@@ -24,8 +24,7 @@ use crate::{
 /// Every byte value is valid for this carrier; conversion to `bool` accepts only 0 and 1.
 #[derive(Debug, Clone, Copy, Default, RustSpec)]
 #[repr(transparent)]
-#[doc(hidden)]
-pub struct CBool(pub u8);
+pub struct Bool(pub u8);
 
 /// C-compatible carrier for a Unicode scalar value (`char`).
 ///
@@ -40,13 +39,13 @@ impl PartialEq for UnicodeChar {
     }
 }
 
-impl PartialEq for CBool {
+impl PartialEq for Bool {
     fn eq(&self, other: &Self) -> bool {
         self.0 <= 1 && self.0 == other.0
     }
 }
 
-unsafe impl crate::Zeroable for CBool {}
+unsafe impl crate::Zeroable for Bool {}
 unsafe impl crate::Zeroable for UnicodeChar {}
 
 impl From<char> for UnicodeChar {
@@ -65,30 +64,30 @@ impl TryFrom<UnicodeChar> for char {
     }
 }
 
-impl From<bool> for CBool {
+impl From<bool> for Bool {
     #[inline(always)]
     fn from(value: bool) -> Self {
         Self(value.into())
     }
 }
 
-impl TryFrom<CBool> for bool {
+impl TryFrom<Bool> for bool {
     type Error = <bool as TryFrom<u8>>::Error;
 
     #[inline(always)]
-    fn try_from(value: CBool) -> Result<Self, Self::Error> {
+    fn try_from(value: Bool) -> Result<Self, Self::Error> {
         bool::try_from(value.0)
     }
 }
 
-impl CBool {
+impl Bool {
     pub const FALSE: Self = Self(0);
     pub const TRUE: Self = Self(1);
 }
 
 macro_rules! primitive_derive {
     ( $primitive:ty ) => {
-        $crate::mutable::impl_direct_mut!([] $primitive);
+        $crate::reference::impl_direct_mut!([] $primitive);
         crate::__impl_borrowed_identity!([] $primitive);
 
         impl ReprC for $primitive {
@@ -105,7 +104,7 @@ macro_rules! primitive_derive {
                 unsafe { self.soft_encode_unchecked(&mut ()) }
             }
         }
-        unsafe impl $crate::stored::EncodeMoveUnchecked for $primitive {
+        unsafe impl $crate::convert::EncodeMoveUnchecked for $primitive {
             type SoftStore = ();
 
             #[inline(always)]
@@ -126,7 +125,7 @@ macro_rules! primitive_derive {
         }
 
         impl Encode for $primitive {}
-        impl $crate::EncodeUnchecked for $primitive {}
+        impl $crate::convert::EncodeUnchecked for $primitive {}
         impl Decode<'_> for $primitive {}
 
         unsafe impl $crate::transmute::AbiCompatibleValidate for $primitive {
@@ -146,7 +145,7 @@ macro_rules! primitive_derive {
 
 macro_rules! raw_pointer_derive {
     ( $mutability:tt ) => {
-        $crate::mutable::impl_direct_mut!([R: ReprC + ?Sized] *$mutability R);
+        $crate::reference::impl_direct_mut!([R: ReprC + ?Sized] *$mutability R);
         crate::__impl_borrowed_identity!([R: ?Sized] *$mutability R);
 
 
@@ -183,7 +182,7 @@ macro_rules! raw_pointer_derive {
         }
 
         impl<R: AbiCompatible + crate::ptr::PointerMetadata + ?Sized> Encode for *$mutability R where R::CType: crate::ptr::PointerMetadata<Metadata = <R as crate::ptr::PointerMetadata>::Metadata> {}
-        impl<R: AbiCompatible + crate::ptr::PointerMetadata + ?Sized> $crate::EncodeUnchecked for *$mutability R where R::CType: crate::ptr::PointerMetadata<Metadata = <R as crate::ptr::PointerMetadata>::Metadata> {}
+        impl<R: AbiCompatible + crate::ptr::PointerMetadata + ?Sized> $crate::convert::EncodeUnchecked for *$mutability R where R::CType: crate::ptr::PointerMetadata<Metadata = <R as crate::ptr::PointerMetadata>::Metadata> {}
         impl<R: AbiCompatible + crate::ptr::PointerMetadata + ?Sized> Decode<'_> for *$mutability R where R::CType: crate::ptr::PointerMetadata<Metadata = <R as crate::ptr::PointerMetadata>::Metadata> {}
 
 
@@ -273,7 +272,7 @@ macro_rules! impl_fn_types {
             Option<Self>: CType,
         {
         }
-        impl<$($arg,)* R> $crate::EncodeUnchecked for $fn_type
+        impl<$($arg,)* R> $crate::convert::EncodeUnchecked for $fn_type
         where
             Self: ReprC<CType = Option<Self>>,
             Option<Self>: CType,
@@ -350,7 +349,7 @@ macro_rules! fieldless_enum_derive {
 
             #[inline(always)]
             unsafe fn soft_decode<'itm: 'd>(source: Self::CType, (): &mut ()) -> Option<Self> {
-                let source = unsafe { crate::stored::decode_move::<$dst>(source)? };
+                let source = unsafe { crate::convert::decode_move::<$dst>(source)? };
                 $decode_fn(source)
             }
 
@@ -360,7 +359,7 @@ macro_rules! fieldless_enum_derive {
         }
 
         impl Encode for $src {}
-        impl $crate::EncodeUnchecked for $src {}
+        impl $crate::convert::EncodeUnchecked for $src {}
         impl Decode<'_> for $src {}
 
 
@@ -396,7 +395,7 @@ primitive_derive! { u128 }
 primitive_derive! { i128 }
 primitive_derive! { f32 }
 primitive_derive! { f64 }
-primitive_derive! { CBool }
+primitive_derive! { Bool }
 primitive_derive! { UnicodeChar }
 
 raw_pointer_derive! { const }
@@ -432,15 +431,15 @@ fieldless_enum_derive! {
 }
 
 fieldless_enum_derive! {
-    bool => CBool: {CBool(2)}:
-    |i: &CBool| i.0 == 0 || i.0 == 1;
-    |source: CBool| match source.0 {
+    bool => Bool: {Bool(2)}:
+    |i: &Bool| i.0 == 0 || i.0 == 1;
+    |source: Bool| match source.0 {
         0 => Some(false),
         1 => Some(true),
         _ => None,
     };
-    |source: bool| CBool(source as u8);
-    |source: CBool| unsafe { core::mem::transmute::<CBool, bool>(source) }
+    |source: bool| Bool(source as u8);
+    |source: Bool| unsafe { core::mem::transmute::<Bool, bool>(source) }
 }
 pub(crate) use fieldless_enum_derive;
 pub(crate) use primitive_derive;
@@ -454,29 +453,29 @@ mod tests {
     use static_assertions::{assert_impl_all, assert_not_impl_any};
 
     use super::*;
-    use crate::{Encode, cmp::COrdering, option::COption, reference::CRef};
     #[cfg(feature = "alloc")]
     use crate::{boxed::CBox, wide::CWideBox};
+    use crate::{cmp::Ordering as COrdering, convert::Encode, option::COption, reference::CRef};
 
     #[test]
     fn scalar_carriers_accept_all_values_without_niches() {
-        assert_impl_all!(CBool: CType, ReprC<CType = CBool>);
+        assert_impl_all!(Bool: CType, ReprC<CType = Bool>);
         assert_impl_all!(COrdering: CType, ReprC<CType = COrdering>);
         assert_impl_all!(UnicodeChar: CType, ReprC<CType = UnicodeChar>);
         assert_not_impl_any!(UnicodeChar: Eq, Ord);
-        assert_not_impl_any!(CBool: Niche);
+        assert_not_impl_any!(Bool: Niche);
         assert_not_impl_any!(COrdering: Niche);
         assert_not_impl_any!(UnicodeChar: Niche);
-        assert_impl_all!(Option<CBool>: ReprC<CType = COption<CBool>>);
+        assert_impl_all!(Option<Bool>: ReprC<CType = COption<Bool>>);
         assert_impl_all!(Option<COrdering>: ReprC<CType = COption<COrdering>>);
         assert_impl_all!(Option<UnicodeChar>: ReprC<CType = COption<UnicodeChar>>);
 
         for raw in u8::MIN..=u8::MAX {
-            let boolean = CBool(raw);
+            let boolean = Bool(raw);
             assert_eq!(boolean.0, raw);
             assert_eq!(boolean == boolean, raw <= 1);
             assert_eq!(
-                unsafe { crate::decode::<CBool>(boolean) }.map(|v| v.0),
+                unsafe { crate::decode::<Bool>(boolean) }.map(|v| v.0),
                 Some(raw)
             );
             assert_eq!(

@@ -8,6 +8,7 @@ use core::{
     cell::{Cell, UnsafeCell},
     fmt::Debug,
     hash::Hash,
+    marker::PhantomData,
 };
 
 use rust_spec::{
@@ -16,8 +17,8 @@ use rust_spec::{
 };
 
 use crate::{
-    CFnArg, CFnReturn, CType, Decode, Encode, ReprC, Zeroable,
-    stored::{DecodeMove, EncodeMove, EncodeMoveUnchecked},
+    CFnArg, CFnReturn, CType, ReprC, Zeroable,
+    convert::{Decode, DecodeMove, Encode, EncodeMove, EncodeMoveUnchecked},
     transmute::AbiCompatible,
 };
 
@@ -356,7 +357,7 @@ impl<R: ReprC<CType: Wide> + ?Sized> CSoftWideRefMut<R, true> {
 pub struct CWideRef<'a, R: ReprC<CType: Wide> + ?Sized> {
     data: *const PointeeData<R::CType>,
     metadata: <R::CType as Wide>::Metadata,
-    lifetime: core::marker::PhantomData<&'a ()>,
+    lifetime: PhantomData<&'a ()>,
 }
 
 /// Mutable wide-reference carrier with a defined C ABI layout.
@@ -373,7 +374,7 @@ pub struct CWideRef<'a, R: ReprC<CType: Wide> + ?Sized> {
 pub struct CWideRefMut<'a, R: ReprC<CType: Wide> + ?Sized, const EXCLUSIVE: bool> {
     data: *mut PointeeData<R::CType>,
     metadata: <R::CType as Wide>::Metadata,
-    lifetime: core::marker::PhantomData<&'a ()>,
+    lifetime: PhantomData<&'a ()>,
 }
 
 impl<'a, R: ReprC<CType: Wide<Header: WideHeader<Data: CType>>> + ?Sized> CWideRef<'a, R> {
@@ -383,7 +384,7 @@ impl<'a, R: ReprC<CType: Wide<Header: WideHeader<Data: CType>>> + ?Sized> CWideR
             data: core::ptr::null(),
             // CType requires every bit pattern to be valid.
             metadata: unsafe { core::mem::zeroed() },
-            lifetime: core::marker::PhantomData,
+            lifetime: PhantomData,
         }
     }
 
@@ -398,7 +399,7 @@ impl<'a, R: ReprC<CType: Wide<Header: WideHeader<Data: CType>>> + ?Sized> CWideR
         Self {
             data,
             metadata,
-            lifetime: core::marker::PhantomData,
+            lifetime: PhantomData,
         }
     }
 
@@ -407,7 +408,7 @@ impl<'a, R: ReprC<CType: Wide<Header: WideHeader<Data: CType>>> + ?Sized> CWideR
         Self {
             data: R::CType::as_ptr(source).cast(),
             metadata: R::CType::metadata(source),
-            lifetime: core::marker::PhantomData,
+            lifetime: PhantomData,
         }
     }
 }
@@ -421,7 +422,7 @@ impl<'a, R: ReprC<CType: Wide<Header: WideHeader<Data: CType>>> + ?Sized, const 
             data: core::ptr::null_mut(),
             // CType requires every bit pattern to be valid.
             metadata: unsafe { core::mem::zeroed() },
-            lifetime: core::marker::PhantomData,
+            lifetime: PhantomData,
         }
     }
 
@@ -437,7 +438,7 @@ impl<'a, R: ReprC<CType: Wide<Header: WideHeader<Data: CType>>> + ?Sized, const 
         Self {
             data,
             metadata,
-            lifetime: core::marker::PhantomData,
+            lifetime: PhantomData,
         }
     }
 
@@ -446,7 +447,7 @@ impl<'a, R: ReprC<CType: Wide<Header: WideHeader<Data: CType>>> + ?Sized, const 
         Self {
             data: R::CType::as_mut_ptr(source).cast(),
             metadata: R::CType::metadata(source),
-            lifetime: core::marker::PhantomData,
+            lifetime: PhantomData,
         }
     }
 }
@@ -528,8 +529,8 @@ macro_rules! impl_wide_ref_pointer_methods {
 }
 impl_wide_ref_pointer_methods! { CSoftWideRef, [R: ReprC<CType: Wide> + ?Sized], [R], [], [], const, [] }
 impl_wide_ref_pointer_methods! { CSoftWideRefMut, [R: ReprC<CType: Wide> + ?Sized, const EXCLUSIVE: bool], [R, EXCLUSIVE], [], [, EXCLUSIVE], mut, [] }
-impl_wide_ref_pointer_methods! { CWideRef, ['a, R: ReprC<CType: Wide> + ?Sized], ['a, R], ['a,], [], const, [lifetime: core::marker::PhantomData,] }
-impl_wide_ref_pointer_methods! { CWideRefMut, ['a, R: ReprC<CType: Wide> + ?Sized, const EXCLUSIVE: bool], ['a, R, EXCLUSIVE], ['a,], [, EXCLUSIVE], mut, [lifetime: core::marker::PhantomData,] }
+impl_wide_ref_pointer_methods! { CWideRef, ['a, R: ReprC<CType: Wide> + ?Sized], ['a, R], ['a,], [], const, [lifetime: PhantomData,] }
+impl_wide_ref_pointer_methods! { CWideRefMut, ['a, R: ReprC<CType: Wide> + ?Sized, const EXCLUSIVE: bool], ['a, R, EXCLUSIVE], ['a,], [, EXCLUSIVE], mut, [lifetime: PhantomData,] }
 
 macro_rules! impl_wide_raw_methods {
     ($ty:ident, [$($params:tt)*], [$($args:tt)*]) => {
@@ -596,7 +597,7 @@ macro_rules! impl_identity_carrier {
         }
 
         impl<$($params)*> Encode for $ty<$($args)*> {}
-        impl<$($params)*> crate::EncodeUnchecked for $ty<$($args)*> {}
+        impl<$($params)*> crate::convert::EncodeUnchecked for $ty<$($args)*> {}
         impl<'d, $($params)*> Decode<'d> for $ty<$($args)*> {}
 
 
@@ -906,15 +907,19 @@ pub(crate) mod tests {
             tail: alloc::boxed::Box::new((42,)),
         };
         let mut encode_store = Default::default();
-        let encoded = crate::stored::EncodeMove::soft_encode(source, &mut encode_store);
+        let encoded = crate::convert::EncodeMove::soft_encode(source, &mut encode_store);
         let mut decode_store = Default::default();
         let decoded = unsafe {
-            <Packet as crate::stored::DecodeMove>::soft_decode(encoded, &mut decode_store)
+            <Packet as crate::convert::DecodeMove>::soft_decode(encoded, &mut decode_store)
         }
         .unwrap();
         assert_eq!((decoded.tag, decoded.tail.0), (7, 42));
     }
 
+    #[cfg(feature = "alloc")]
+    use alloc::{boxed::Box, vec};
+    #[cfg(feature = "alloc")]
+    use core::ptr::NonNull;
     use core::{
         cell::{Cell, UnsafeCell},
         mem::ManuallyDrop,
@@ -922,16 +927,10 @@ pub(crate) mod tests {
 
     use static_assertions::{assert_impl_all, assert_not_impl_any};
 
-    use super::Wide;
-
     #[cfg(feature = "alloc")]
     use super::CWideBox;
-    use super::{CSoftWideRef, CSoftWideRefMut};
+    use super::{CSoftWideRef, CSoftWideRefMut, Wide};
     use crate::CType;
-    #[cfg(feature = "alloc")]
-    use alloc::{boxed::Box, vec};
-    #[cfg(feature = "alloc")]
-    use core::ptr::NonNull;
 
     #[repr(C)]
     #[derive(Copy, Clone, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
@@ -1105,8 +1104,9 @@ pub(crate) mod tests {
     }
     #[test]
     fn lifetime_wide_carriers_preserve_layout_and_metadata() {
-        use super::{CSoftWideRef, CSoftWideRefMut, CWideRef, CWideRefMut};
         use core::mem::{align_of, size_of};
+
+        use super::{CSoftWideRef, CSoftWideRefMut, CWideRef, CWideRefMut};
         assert_eq!(
             size_of::<CWideRef<'_, [u8]>>(),
             size_of::<CSoftWideRef<[u8]>>()

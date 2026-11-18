@@ -24,9 +24,7 @@ impl Attribute for Custom1 {}
 impl Attribute for Custom2<'_> {}
 
 mod provider {
-    use super::{Tag, ffi};
-
-    use super::*;
+    use super::{Tag, ffi, *};
 
     #[derive(RustSpec, Tag, ReprC)]
     #[tag(u16, unsafe(1))]

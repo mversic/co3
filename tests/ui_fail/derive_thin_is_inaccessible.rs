@@ -1,4 +1,4 @@
-use co3::{rust_spec::RustSpec, ReprC};
+use co3::{ReprC, rust_spec::RustSpec};
 
 #[derive(RustSpec, ReprC)]
 struct Record(u32);

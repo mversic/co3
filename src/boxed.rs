@@ -5,12 +5,11 @@ use core::ptr::NonNull;
 use rust_spec::RustSpec;
 
 use crate::{
-    CFnArg, CFnReturn, CType, Decode, Encode, ReprC, Zeroable,
+    CFnArg, CFnReturn, CType, ReprC, Zeroable,
+    convert::{Decode, DecodeMove, Encode, EncodeMove, EncodeMoveUnchecked},
     reference::impl_thin_pointer_traits,
-    stored::{DecodeMove, EncodeMove, EncodeMoveUnchecked},
     transmute::AbiCompatible,
-    wide::CWideBox,
-    wide::{impl_carrier_borrow, impl_identity_carrier},
+    wide::{CWideBox, impl_carrier_borrow, impl_identity_carrier},
 };
 
 /// Converts owned carrier allocations without assuming their headers have equal layout.

@@ -18,7 +18,8 @@ note: required by a bound in `__co3_require_custom_drop`
  9 | |     #![unsafe(extern("C"))]
 10 | |
 11 | |     impl Drop for CustomAndInner {
-...  |
+12 | |         fn drop(&mut self);
+13 | |     }
 14 | | }
    | |_^ required by this bound in `__co3_require_custom_drop`
    = note: this error originates in the derive macro `RustSpec` which comes from the expansion of the macro `ffi` (in Nightly builds, run with -Z macro-backtrace for more info)

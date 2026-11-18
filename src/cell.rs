@@ -1,8 +1,13 @@
 //! C-compatible representations and conversions for [`core::cell`].
-use crate::stored::{DecodeMove, EncodeMove, EncodeMoveUnchecked};
-use crate::{CFnArg, CFnReturn, CType, Decode, Encode, ReprC};
 use core::cell::{Cell, UnsafeCell};
+
 use rust_spec::RustSpec;
+
+use crate::{
+    CFnArg, CFnReturn, CType, ReprC,
+    convert::{Decode, DecodeMove, Encode, EncodeMove, EncodeMoveUnchecked},
+};
+
 impl<R: ReprC + ?Sized> ReprC for UnsafeCell<R> {
     type CType = core::cell::UnsafeCell<R::CType>;
 }
@@ -43,33 +48,34 @@ unsafe impl<T: CFnReturn> CFnReturn for Cell<T> where
 {
 }
 
-use crate::{EncodeUnchecked, stored::EmptyStore};
+use crate::convert::{EmptyStore, EncodeUnchecked};
 
 #[cfg(test)]
 mod tests {
-    use super::*;
-    use crate::transmute::AbiCompatible;
-    #[cfg(feature = "alloc")]
-    use crate::{boxed::CBox, wide::CWideBox};
-    use crate::{niche::Niche, option::COption};
     #[cfg(feature = "alloc")]
     use alloc::{boxed::Box, vec, vec::Vec};
     use core::{mem::ManuallyDrop, num::NonZero};
+
     use static_assertions::{assert_impl_all, assert_not_impl_any};
+
+    use super::*;
+    #[cfg(feature = "alloc")]
+    use crate::{boxed::CBox, wide::CWideBox};
+    use crate::{niche::Niche, option::COption, transmute::AbiCompatible};
 
     #[test]
     fn cell_preserves_its_constructor_in_the_carrier() {
-        use crate::primitives::CBool;
+        use crate::primitives::Bool;
 
-        assert_impl_all!(Cell<bool>: ReprC<CType = core::cell::Cell<crate::primitives::CBool>>);
-        assert_impl_all!(UnsafeCell<bool>: ReprC<CType = core::cell::UnsafeCell<crate::primitives::CBool>>);
+        assert_impl_all!(Cell<bool>: ReprC<CType = core::cell::Cell<crate::primitives::Bool>>);
+        assert_impl_all!(UnsafeCell<bool>: ReprC<CType = core::cell::UnsafeCell<crate::primitives::Bool>>);
 
         let encoded = crate::encode(Cell::new(true));
-        assert_eq!(encoded.into_inner(), CBool::TRUE);
+        assert_eq!(encoded.into_inner(), Bool::TRUE);
         let decoded =
-            unsafe { crate::decode::<Cell<bool>>(core::cell::Cell::new(CBool::TRUE)) }.unwrap();
+            unsafe { crate::decode::<Cell<bool>>(core::cell::Cell::new(Bool::TRUE)) }.unwrap();
         assert!(decoded.into_inner());
-        assert!(unsafe { crate::decode::<Cell<bool>>(core::cell::Cell::new(CBool(2))) }.is_none());
+        assert!(unsafe { crate::decode::<Cell<bool>>(core::cell::Cell::new(Bool(2))) }.is_none());
     }
 
     #[test]
@@ -235,7 +241,7 @@ mod tests {
 
     #[test]
     fn non_robust_mutable_cell_syncs_after_soft_encode() {
-        use crate::stored::Store;
+        use crate::convert::Store;
 
         let mut value = Cell::new(NonZero::new(3_u8).unwrap());
         let mut store = Default::default();
@@ -251,10 +257,10 @@ mod tests {
 
     #[test]
     fn mutable_non_robust_soft_carrier_keeps_unchecked_encoding_direct() {
-        use crate::stored::Store;
+        use crate::convert::Store;
         type CellValue = UnsafeCell<NonZero<u8>>;
         assert_impl_all!(&'static mut CellValue:
-            crate::stored::EncodeMoveUnchecked<SoftStore = ()>,
+            crate::convert::EncodeMoveUnchecked<SoftStore = ()>,
             ReprC<CType = crate::reference::CSoftRefMut<CellValue, true>>
         );
 

@@ -1,6 +1,6 @@
 //! Anonymous sum types used by generated glue.
 
-use crate::{Store, stored::EmptyStore};
+use crate::{Store, convert::EmptyStore};
 
 macro_rules! impl_either {
     (($( $ty:ident : $variant:ident ),+) -> $either:ident) => {

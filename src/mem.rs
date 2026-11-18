@@ -1,9 +1,13 @@
 //! C-compatible representations and conversions for [`core::mem`].
-use crate::stored::{DecodeMove, EncodeMove, EncodeMoveUnchecked};
-use crate::transmute::{AbiCompatible, AbiCompatibleValidate};
-use crate::{CFnArg, CFnReturn, CType, Decode, Encode, ReprC};
 use core::mem::{ManuallyDrop, MaybeUninit};
+
 use rust_spec::RustSpec;
+
+use crate::{
+    CFnArg, CFnReturn, CType, ReprC,
+    convert::{Decode, DecodeMove, Encode, EncodeMove, EncodeMoveUnchecked},
+    transmute::{AbiCompatible, AbiCompatibleValidate},
+};
 impl<R: ReprC + ?Sized> ReprC for ManuallyDrop<R> {
     type CType = core::mem::ManuallyDrop<<R as ReprC>::CType>;
 }
@@ -145,10 +149,13 @@ unsafe impl<T: CFnReturn> CFnReturn for ManuallyDrop<T> where
 
 unsafe impl<T: EmptyStore> EmptyStore for ManuallyDrop<T> {}
 
-use crate::{EncodeUnchecked, stored::EmptyStore};
-
-use crate::{niche::Niche, wide::Wide};
 use rust_spec::Stable;
+
+use crate::{
+    convert::{EmptyStore, EncodeUnchecked},
+    niche::Niche,
+    wide::Wide,
+};
 
 unsafe impl<R: EncodeMove> EncodeMove for ManuallyDrop<R>
 where
@@ -240,18 +247,20 @@ impl_wide_for_transparent_wrapper!(ManuallyDrop);
 
 #[cfg(test)]
 mod tests {
-    use super::*;
-    #[cfg(feature = "alloc")]
-    use crate::{boxed::CBox, wide::CWideBox};
-    use crate::{option::COption, reference::CRef};
     #[cfg(feature = "alloc")]
     use alloc::{boxed::Box, string::String, vec, vec::Vec};
+
     use rust_spec::niche::WithNiche;
     use static_assertions::assert_impl_all;
     #[cfg(feature = "alloc")]
     use static_assertions::assert_not_impl_any;
     #[cfg(feature = "alloc")]
     use static_assertions::assert_type_eq_all;
+
+    use super::*;
+    #[cfg(feature = "alloc")]
+    use crate::{boxed::CBox, wide::CWideBox};
+    use crate::{option::COption, reference::CRef};
 
     #[test]
     #[cfg(feature = "alloc")]
@@ -331,7 +340,7 @@ mod tests {
     #[test]
     fn maybe_uninit_lowers_without_validating_or_encoding_the_inner_value() {
         assert_impl_all!(MaybeUninit<bool>:
-            ReprC<CType = core::mem::MaybeUninit<crate::primitives::CBool>>,
+            ReprC<CType = core::mem::MaybeUninit<crate::primitives::Bool>>,
             AbiCompatible,
             Decode<'static>,
             Encode,

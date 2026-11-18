@@ -1,4 +1,5 @@
 use core::cell::UnsafeCell;
+
 use co3::ffi;
 
 #[derive(co3::rust_spec::RustSpec)]

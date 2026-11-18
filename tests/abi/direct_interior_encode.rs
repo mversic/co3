@@ -1,9 +1,6 @@
 use core::{cell::UnsafeCell, mem::ManuallyDrop, num::NonZeroU8};
 
-use co3::{
-    Decode, Encode, EncodeUnchecked,
-    stored::{DecodeMove, EncodeMove, EncodeMoveUnchecked},
-};
+use co3::transmute::AbiCompatible;
 use static_assertions::{assert_impl_all, assert_not_impl_any};
 
 #[derive(co3::rust_spec::RustSpec, co3::ReprC)]
@@ -34,44 +31,44 @@ struct RecordVec<T> {
 
 #[test]
 fn transparent_wrappers_preserve_owned_marker_restrictions() {
-    assert_impl_all!(TransparentVec<(u8,)>: EncodeMove, EncodeMoveUnchecked, DecodeMove<'static>);
-    assert_impl_all!(TransparentVec<(u8,)>: Encode, EncodeUnchecked, Decode<'static>);
-    assert_impl_all!(TransparentVec<u8>: Encode, EncodeUnchecked, Decode<'static>);
-    assert_impl_all!(ConcreteTransparentVec: EncodeMove, EncodeMoveUnchecked, DecodeMove<'static>);
-    assert_impl_all!(ConcreteTransparentVec: Encode, EncodeUnchecked, Decode<'static>);
-    assert_impl_all!(ConcreteTransparentByte: co3::transmute::AbiCompatible);
+    assert_impl_all!(TransparentVec<(u8,)>: co3::convert::EncodeMove, co3::convert::EncodeMoveUnchecked, co3::convert::DecodeMove<'static>);
+    assert_impl_all!(TransparentVec<(u8,)>: co3::convert::Encode, co3::convert::EncodeUnchecked, co3::convert::Decode<'static>);
+    assert_impl_all!(TransparentVec<u8>: co3::convert::Encode, co3::convert::EncodeUnchecked, co3::convert::Decode<'static>);
+    assert_impl_all!(ConcreteTransparentVec: co3::convert::EncodeMove, co3::convert::EncodeMoveUnchecked, co3::convert::DecodeMove<'static>);
+    assert_impl_all!(ConcreteTransparentVec: co3::convert::Encode, co3::convert::EncodeUnchecked, co3::convert::Decode<'static>);
+    assert_impl_all!(ConcreteTransparentByte: AbiCompatible);
 
-    assert_impl_all!(TransparentBox<(u8,)>: EncodeMove, EncodeMoveUnchecked, DecodeMove<'static>);
-    assert_not_impl_any!(TransparentBox<(u8,)>: Encode, EncodeUnchecked, Decode<'static>);
-    assert_impl_all!(TransparentBox<u8>: Encode, EncodeUnchecked, Decode<'static>);
+    assert_impl_all!(TransparentBox<(u8,)>: co3::convert::EncodeMove, co3::convert::EncodeMoveUnchecked, co3::convert::DecodeMove<'static>);
+    assert_not_impl_any!(TransparentBox<(u8,)>: co3::convert::Encode, co3::convert::EncodeUnchecked, co3::convert::Decode<'static>);
+    assert_impl_all!(TransparentBox<u8>: co3::convert::Encode, co3::convert::EncodeUnchecked, co3::convert::Decode<'static>);
 
-    assert_impl_all!(RecordVec<(u8,)>: Encode, EncodeUnchecked, Decode<'static>);
-    assert_impl_all!(RecordVec<u8>: Encode, EncodeUnchecked, Decode<'static>);
+    assert_impl_all!(RecordVec<(u8,)>: co3::convert::Encode, co3::convert::EncodeUnchecked, co3::convert::Decode<'static>);
+    assert_impl_all!(RecordVec<u8>: co3::convert::Encode, co3::convert::EncodeUnchecked, co3::convert::Decode<'static>);
 }
 
 #[test]
 fn non_robust_interior_references_are_direct_only() {
-    assert_impl_all!(&UnsafeCell<NonZeroU8>: EncodeMoveUnchecked);
-    assert_impl_all!(&UnsafeCell<NonZeroU8>: EncodeUnchecked);
-    assert_not_impl_any!(&UnsafeCell<NonZeroU8>: EncodeMove);
-    assert_impl_all!(&[UnsafeCell<NonZeroU8>]: EncodeMoveUnchecked);
-    assert_not_impl_any!(&[UnsafeCell<NonZeroU8>]: EncodeMove);
-    assert_impl_all!(Option<&UnsafeCell<NonZeroU8>>: EncodeMoveUnchecked);
-    assert_impl_all!(Result<&UnsafeCell<NonZeroU8>, ()>: EncodeMoveUnchecked);
-    assert_impl_all!((&UnsafeCell<NonZeroU8>, u8): EncodeMoveUnchecked);
-    assert_impl_all!([&UnsafeCell<NonZeroU8>; 1]: EncodeMoveUnchecked);
+    assert_impl_all!(&UnsafeCell<NonZeroU8>: co3::convert::EncodeMoveUnchecked);
+    assert_impl_all!(&UnsafeCell<NonZeroU8>: co3::convert::EncodeUnchecked);
+    assert_not_impl_any!(&UnsafeCell<NonZeroU8>: co3::convert::EncodeMove);
+    assert_impl_all!(&[UnsafeCell<NonZeroU8>]: co3::convert::EncodeMoveUnchecked);
+    assert_not_impl_any!(&[UnsafeCell<NonZeroU8>]: co3::convert::EncodeMove);
+    assert_impl_all!(Option<&UnsafeCell<NonZeroU8>>: co3::convert::EncodeMoveUnchecked);
+    assert_impl_all!(Result<&UnsafeCell<NonZeroU8>, ()>: co3::convert::EncodeMoveUnchecked);
+    assert_impl_all!((&UnsafeCell<NonZeroU8>, u8): co3::convert::EncodeMoveUnchecked);
+    assert_impl_all!([&UnsafeCell<NonZeroU8>; 1]: co3::convert::EncodeMoveUnchecked);
     // TODO: Restore owned-container coverage after separating layout compatibility
     // from validation of shared interior-mutable contents.
-    assert_not_impl_any!(Box<&UnsafeCell<NonZeroU8>>: EncodeMoveUnchecked);
-    assert_not_impl_any!(Vec<&UnsafeCell<NonZeroU8>>: EncodeMoveUnchecked);
-    assert_not_impl_any!(Vec<Option<&UnsafeCell<NonZeroU8>>>: EncodeMoveUnchecked);
-    assert_impl_all!(Wrapped<'static>: EncodeMoveUnchecked);
-    assert_impl_all!(Wrapped<'static>: EncodeUnchecked);
-    assert_not_impl_any!(Wrapped<'static>: EncodeMove);
-    assert_impl_all!(Box<(u8,)>: EncodeMoveUnchecked);
-    assert_not_impl_any!(Box<(u8,)>: EncodeUnchecked);
-    assert_impl_all!(ManuallyDrop<Box<(u8,)>>: EncodeMoveUnchecked, EncodeMove);
-    assert_not_impl_any!(ManuallyDrop<Box<(u8,)>>: EncodeUnchecked, Encode, Decode<'static>);
+    assert_not_impl_any!(Box<&UnsafeCell<NonZeroU8>>: co3::convert::EncodeMoveUnchecked);
+    assert_not_impl_any!(Vec<&UnsafeCell<NonZeroU8>>: co3::convert::EncodeMoveUnchecked);
+    assert_not_impl_any!(Vec<Option<&UnsafeCell<NonZeroU8>>>: co3::convert::EncodeMoveUnchecked);
+    assert_impl_all!(Wrapped<'static>: co3::convert::EncodeMoveUnchecked);
+    assert_impl_all!(Wrapped<'static>: co3::convert::EncodeUnchecked);
+    assert_not_impl_any!(Wrapped<'static>: co3::convert::EncodeMove);
+    assert_impl_all!(Box<(u8,)>: co3::convert::EncodeMoveUnchecked);
+    assert_not_impl_any!(Box<(u8,)>: co3::convert::EncodeUnchecked);
+    assert_impl_all!(ManuallyDrop<Box<(u8,)>>: co3::convert::EncodeMoveUnchecked, co3::convert::EncodeMove);
+    assert_not_impl_any!(ManuallyDrop<Box<(u8,)>>: co3::convert::EncodeUnchecked, co3::convert::Encode, co3::convert::Decode<'static>);
 
     let value = UnsafeCell::new(NonZeroU8::new(7).unwrap());
     let encoded = unsafe { co3::encode_unchecked(&value) };

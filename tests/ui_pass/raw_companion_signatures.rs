@@ -72,7 +72,7 @@ raw! {
 }
 
 fn main() {
-    let _: unsafe extern "C" fn(<[u8; 2] as co3::ReprC>::CType) -> <[u8; 2] as co3::ReprC>::CType =
+    let _: unsafe extern "C" fn(<[u8; 2] as ReprC>::CType) -> <[u8; 2] as ReprC>::CType =
         identity_raw::<[u8; 2]>;
 
     let _: TakesReference<'_, u8> = take_raw::<u8>;

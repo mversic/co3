@@ -12,9 +12,9 @@ use core::{
 use rust_spec::RustSpec;
 
 use crate::{
-    CFnArg, CFnReturn, CType, Decode, Encode, ReprC,
+    CFnArg, CFnReturn, CType, ReprC,
+    convert::{Decode, DecodeMove, Encode, EncodeMove, EncodeMoveUnchecked},
     primitives::primitive_derive,
-    stored::{DecodeMove, EncodeMove, EncodeMoveUnchecked},
     transmute::AbiCompatible,
 };
 #[cfg(feature = "alloc")]
@@ -561,7 +561,7 @@ unsafe impl<'d> DecodeMove<'d> for CString {
 #[cfg(feature = "alloc")]
 impl Encode for CString {}
 #[cfg(feature = "alloc")]
-impl crate::EncodeUnchecked for CString {}
+impl crate::convert::EncodeUnchecked for CString {}
 #[cfg(feature = "alloc")]
 impl Decode<'_> for CString {}
 
@@ -589,7 +589,7 @@ mod tests {
     use static_assertions::{assert_impl_all, assert_not_impl_any};
 
     use super::*;
-    use crate::Decode;
+    use crate::convert::Decode;
 
     #[test]
     fn c_int_checked_length_conversion() {
@@ -646,7 +646,7 @@ mod tests {
         assert_not_impl_any!(&mut RustCStr: Encode, Decode<'static>);
         #[cfg(feature = "alloc")]
         {
-            assert_impl_all!(Box<ManuallyDrop<RustCStr>>: EncodeMove, crate::stored::DecodeMove<'static>);
+            assert_impl_all!(Box<ManuallyDrop<RustCStr>>: EncodeMove, crate::convert::DecodeMove<'static>);
             assert_impl_all!(CString: Encode);
         }
     }
@@ -670,9 +670,9 @@ mod tests {
     fn cstr_box_round_trip() {
         let original = CString::new("owned").unwrap().into_boxed_c_str();
         let ptr = original.as_ptr();
-        let encoded = crate::stored::encode_move(original);
+        let encoded = crate::convert::encode_move(original);
         assert_eq!(encoded.as_ptr().cast_const().cast(), ptr);
-        let decoded: Box<RustCStr> = unsafe { crate::stored::decode_move(encoded) }.unwrap();
+        let decoded: Box<RustCStr> = unsafe { crate::convert::decode_move(encoded) }.unwrap();
         assert_eq!(decoded.as_ptr(), ptr);
         assert_eq!(&*decoded, c"owned");
     }
@@ -775,6 +775,15 @@ mod tests {
     }
 
     #[cfg(all(feature = "alloc", feature = "derive"))]
+    use alloc::{vec, vec::Vec};
+    #[cfg(all(feature = "alloc", feature = "derive"))]
+    use core::{
+        ffi::CStr,
+        num::NonZeroU8,
+        sync::atomic::{AtomicUsize, Ordering},
+    };
+
+    #[cfg(all(feature = "alloc", feature = "derive"))]
     use crate::{
         Error,
         borrow::CBorrowed,
@@ -785,14 +794,6 @@ mod tests {
         reference::{CRef, CSoftRef, CSoftRefMut},
         tuple::CTuple3,
         utf8::Utf8String,
-    };
-    #[cfg(all(feature = "alloc", feature = "derive"))]
-    use alloc::{vec, vec::Vec};
-    #[cfg(all(feature = "alloc", feature = "derive"))]
-    use core::{
-        ffi::CStr,
-        num::NonZeroU8,
-        sync::atomic::{AtomicUsize, Ordering},
     };
 
     #[cfg(all(feature = "alloc", feature = "derive"))]

@@ -25,11 +25,8 @@ trait RegularSelected<T> {
 }
 
 trait RuntimeSelected: Sized + ReprC<CType: Sized> {
-    unsafe extern "C" fn runtime(value: <Self as co3::ReprC>::CType)
-    -> <Self as co3::ReprC>::CType;
-    unsafe extern "C" fn runtime_second(
-        value: <Self as co3::ReprC>::CType,
-    ) -> <Self as co3::ReprC>::CType;
+    unsafe extern "C" fn runtime(value: <Self as ReprC>::CType) -> <Self as ReprC>::CType;
+    unsafe extern "C" fn runtime_second(value: <Self as ReprC>::CType) -> <Self as ReprC>::CType;
 }
 
 #[unsafe(export_name = "raw_selected_inherent_u8")]

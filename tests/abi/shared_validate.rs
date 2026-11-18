@@ -11,7 +11,6 @@ use co3::{
         layout::{NonRobust, Robust},
         mutability::{Exclusive, WithInterior},
     },
-    stored::{DecodeMove, EncodeMove},
     transmute::AbiCompatible,
 };
 use static_assertions::{assert_impl_all, assert_not_impl_any};
@@ -69,44 +68,44 @@ fn shared_validation_is_transitive() {
         RustSpec<Mutability = Exclusive<WithInterior<NonRobust>>>);
     assert_impl_all!(UnsafeCell<NonZeroU8>: AbiCompatible);
     assert_impl_all!(Cell<NonZeroU8>: AbiCompatible);
-    assert_impl_all!(&Record<Box<u8>>: EncodeMove, DecodeMove<'static>);
-    assert_impl_all!(&Transparent<Box<u8>>: EncodeMove, DecodeMove<'static>);
-    assert_impl_all!(&UnsafeCell<u8>: EncodeMove, DecodeMove<'static>);
-    assert_impl_all!(&Cell<u8>: EncodeMove, DecodeMove<'static>);
-    assert_impl_all!(&Custom: EncodeMove, DecodeMove<'static>);
-    assert_impl_all!(&AuditedCustom: EncodeMove, DecodeMove<'static>);
-    assert_not_impl_any!(&UnsafeCell<NonZeroU8>: EncodeMove, DecodeMove<'static>);
-    assert_not_impl_any!(&Cell<NonZeroU8>: EncodeMove, DecodeMove<'static>);
-    assert_not_impl_any!(&Record<Box<UnsafeCell<NonZeroU8>>>: EncodeMove, DecodeMove<'static>);
-    assert_not_impl_any!(&Transparent<Box<UnsafeCell<NonZeroU8>>>: EncodeMove, DecodeMove<'static>);
-    assert_not_impl_any!(&ConcreteCellOwner: EncodeMove, DecodeMove<'static>);
-    assert_not_impl_any!(&Choice<Box<UnsafeCell<NonZeroU8>>>: EncodeMove, DecodeMove<'static>);
-    assert_not_impl_any!(&[Box<UnsafeCell<NonZeroU8>>]: EncodeMove, DecodeMove<'static>);
-    assert_not_impl_any!(&[Box<UnsafeCell<NonZeroU8>>; 2]: EncodeMove, DecodeMove<'static>);
-    assert_not_impl_any!(&Option<Box<UnsafeCell<NonZeroU8>>>: EncodeMove, DecodeMove<'static>);
-    assert_not_impl_any!(&Box<UnsafeCell<NonZeroU8>>: AbiCompatible, EncodeMove, DecodeMove<'static>);
-    assert_not_impl_any!(&&mut UnsafeCell<NonZeroU8>: AbiCompatible, EncodeMove, DecodeMove<'static>);
+    assert_impl_all!(&Record<Box<u8>>: co3::convert::EncodeMove, co3::convert::DecodeMove<'static>);
+    assert_impl_all!(&Transparent<Box<u8>>: co3::convert::EncodeMove, co3::convert::DecodeMove<'static>);
+    assert_impl_all!(&UnsafeCell<u8>: co3::convert::EncodeMove, co3::convert::DecodeMove<'static>);
+    assert_impl_all!(&Cell<u8>: co3::convert::EncodeMove, co3::convert::DecodeMove<'static>);
+    assert_impl_all!(&Custom: co3::convert::EncodeMove, co3::convert::DecodeMove<'static>);
+    assert_impl_all!(&AuditedCustom: co3::convert::EncodeMove, co3::convert::DecodeMove<'static>);
+    assert_not_impl_any!(&UnsafeCell<NonZeroU8>: co3::convert::EncodeMove, co3::convert::DecodeMove<'static>);
+    assert_not_impl_any!(&Cell<NonZeroU8>: co3::convert::EncodeMove, co3::convert::DecodeMove<'static>);
+    assert_not_impl_any!(&Record<Box<UnsafeCell<NonZeroU8>>>: co3::convert::EncodeMove, co3::convert::DecodeMove<'static>);
+    assert_not_impl_any!(&Transparent<Box<UnsafeCell<NonZeroU8>>>: co3::convert::EncodeMove, co3::convert::DecodeMove<'static>);
+    assert_not_impl_any!(&ConcreteCellOwner: co3::convert::EncodeMove, co3::convert::DecodeMove<'static>);
+    assert_not_impl_any!(&Choice<Box<UnsafeCell<NonZeroU8>>>: co3::convert::EncodeMove, co3::convert::DecodeMove<'static>);
+    assert_not_impl_any!(&[Box<UnsafeCell<NonZeroU8>>]: co3::convert::EncodeMove, co3::convert::DecodeMove<'static>);
+    assert_not_impl_any!(&[Box<UnsafeCell<NonZeroU8>>; 2]: co3::convert::EncodeMove, co3::convert::DecodeMove<'static>);
+    assert_not_impl_any!(&Option<Box<UnsafeCell<NonZeroU8>>>: co3::convert::EncodeMove, co3::convert::DecodeMove<'static>);
+    assert_not_impl_any!(&Box<UnsafeCell<NonZeroU8>>: AbiCompatible, co3::convert::EncodeMove, co3::convert::DecodeMove<'static>);
+    assert_not_impl_any!(&&mut UnsafeCell<NonZeroU8>: AbiCompatible, co3::convert::EncodeMove, co3::convert::DecodeMove<'static>);
     assert_not_impl_any!(&mut &Box<UnsafeCell<NonZeroU8>>: AbiCompatible);
-    assert_impl_all!(&mut UnsafeCell<NonZeroU8>: AbiCompatible, DecodeMove<'static>);
-    assert_impl_all!(Box<UnsafeCell<NonZeroU8>>: AbiCompatible, DecodeMove<'static>);
-    assert_impl_all!(&Mixed<UnsafeCell<u8>>: EncodeMove, DecodeMove<'static>);
-    assert_impl_all!(&[Mixed<UnsafeCell<u8>>]: EncodeMove, DecodeMove<'static>);
-    assert_not_impl_any!(&Mixed<UnsafeCell<NonZeroU8>>: EncodeMove, DecodeMove<'static>);
+    assert_impl_all!(&mut UnsafeCell<NonZeroU8>: AbiCompatible, co3::convert::DecodeMove<'static>);
+    assert_impl_all!(Box<UnsafeCell<NonZeroU8>>: AbiCompatible, co3::convert::DecodeMove<'static>);
+    assert_impl_all!(&Mixed<UnsafeCell<u8>>: co3::convert::EncodeMove, co3::convert::DecodeMove<'static>);
+    assert_impl_all!(&[Mixed<UnsafeCell<u8>>]: co3::convert::EncodeMove, co3::convert::DecodeMove<'static>);
+    assert_not_impl_any!(&Mixed<UnsafeCell<NonZeroU8>>: co3::convert::EncodeMove, co3::convert::DecodeMove<'static>);
     assert_impl_all!(Mixed<Box<UnsafeCell<NonZeroU8>>>:
         RustSpec<Mutability = Exclusive<WithInterior<NonRobust>>>);
-    assert_not_impl_any!(&Mixed<Box<UnsafeCell<NonZeroU8>>>: EncodeMove, DecodeMove<'static>);
+    assert_not_impl_any!(&Mixed<Box<UnsafeCell<NonZeroU8>>>: co3::convert::EncodeMove, co3::convert::DecodeMove<'static>);
 }
 
 #[test]
 fn maybe_uninit_cells_allow_shared_validation_without_inspecting_contents() {
     type UninitCell = MaybeUninit<UnsafeCell<NonZeroU8>>;
-    assert_impl_all!(&UninitCell: AbiCompatible, EncodeMove, DecodeMove<'static>);
-    assert_impl_all!(&MaybeUninit<Cell<NonZeroU8>>: AbiCompatible, EncodeMove, DecodeMove<'static>);
-    assert_impl_all!(&Box<UninitCell>: AbiCompatible, EncodeMove, DecodeMove<'static>);
+    assert_impl_all!(&UninitCell: AbiCompatible, co3::convert::EncodeMove, co3::convert::DecodeMove<'static>);
+    assert_impl_all!(&MaybeUninit<Cell<NonZeroU8>>: AbiCompatible, co3::convert::EncodeMove, co3::convert::DecodeMove<'static>);
+    assert_impl_all!(&Box<UninitCell>: AbiCompatible, co3::convert::EncodeMove, co3::convert::DecodeMove<'static>);
     assert_impl_all!(&MaybeUninit<Box<UnsafeCell<NonZeroU8>>>:
-        AbiCompatible, EncodeMove, DecodeMove<'static>);
+        AbiCompatible, co3::convert::EncodeMove, co3::convert::DecodeMove<'static>);
     assert_not_impl_any!(&ManuallyDrop<UnsafeCell<NonZeroU8>>:
-        AbiCompatible, EncodeMove, DecodeMove<'static>);
+        AbiCompatible, co3::convert::EncodeMove, co3::convert::DecodeMove<'static>);
 
     let value = UninitCell::zeroed();
     let encoded = co3::encode(&value);
@@ -132,8 +131,8 @@ fn maybe_uninit_cells_allow_shared_validation_without_inspecting_contents() {
 fn shared_vector_requires_robust_cells_not_robust_elements() {
     type Element = Mixed<UnsafeCell<u8>>;
     assert_impl_all!(Element: RustSpec<Trap = NonRobust, Mutability = WithInterior<Robust>>);
-    assert_impl_all!(&Vec<Element>: EncodeMove);
-    assert_not_impl_any!(&Vec<Mixed<UnsafeCell<NonZeroU8>>>: EncodeMove);
+    assert_impl_all!(&Vec<Element>: co3::convert::EncodeMove);
+    assert_not_impl_any!(&Vec<Mixed<UnsafeCell<NonZeroU8>>>: co3::convert::EncodeMove);
 
     let values = vec![Mixed {
         flag: true,
@@ -160,8 +159,8 @@ fn robust_cells_do_not_hide_other_invalid_fields() {
 
     // The invalid boolean exists only in the robust C representation.
     let invalid = unsafe {
-        <Mixed<UnsafeCell<u8>> as co3::ReprC>::CType::from_fields(
-            co3::primitives::CBool(2),
+        <Mixed<UnsafeCell<u8>> as ReprC>::CType::from_fields(
+            co3::primitives::Bool(2),
             core::cell::UnsafeCell::new(7),
         )
     };

@@ -1291,18 +1291,18 @@ pub(super) fn derive_fieldless_enum(
         #stable_mut_impls
         #shared_ref_impls
 
-        unsafe impl #impl_generics co3::stored::EncodeMove for #name #ty_generics #where_clause {
+        unsafe impl #impl_generics co3::convert::EncodeMove for #name #ty_generics #where_clause {
             type Store = ();
 
             fn soft_encode<'_išč>(self, (): &mut ()) -> Self::CType
             where
                 Self: '_išč,
             {
-                use co3::stored::EncodeMoveUnchecked as _;
-                unsafe { co3::stored::EncodeMoveUnchecked::soft_encode_unchecked(self, &mut ()) }
+                use co3::convert::EncodeMoveUnchecked as _;
+                unsafe { co3::convert::EncodeMoveUnchecked::soft_encode_unchecked(self, &mut ()) }
             }
         }
-        unsafe impl #impl_generics co3::stored::EncodeMoveUnchecked for #name #ty_generics #where_clause {
+        unsafe impl #impl_generics co3::convert::EncodeMoveUnchecked for #name #ty_generics #where_clause {
             type SoftStore = ();
 
             unsafe fn soft_encode_unchecked<'itm>(self, (): &'itm mut ()) -> Self::CType where Self: 'itm {
@@ -1310,7 +1310,7 @@ pub(super) fn derive_fieldless_enum(
             }
         }
 
-        unsafe impl #decode_impl_generics co3::stored::DecodeMove<'_dšč> for #name #ty_generics #where_clause {
+        unsafe impl #decode_impl_generics co3::convert::DecodeMove<'_dšč> for #name #ty_generics #where_clause {
             type Store = ();
 
             unsafe fn soft_decode<'_išč: '_dšč>(source: Self::CType, (): &mut ()) -> Option<Self> {
@@ -1327,9 +1327,9 @@ pub(super) fn derive_fieldless_enum(
             impl __Co3NonCustomDrop for co3::rust_spec::drop::NoDrop {}
             impl __Co3NonCustomDrop for co3::rust_spec::drop::AutoDrop {}
 
-            impl #impl_generics co3::Encode for #name #ty_generics #marker_where_clause {}
-            impl #impl_generics co3::EncodeUnchecked for #name #ty_generics #marker_where_clause {}
-            impl #impl_generics co3::Decode<'_> for #name #ty_generics #marker_where_clause {}
+            impl #impl_generics co3::convert::Encode for #name #ty_generics #marker_where_clause {}
+            impl #impl_generics co3::convert::EncodeUnchecked for #name #ty_generics #marker_where_clause {}
+            impl #impl_generics co3::convert::Decode<'_> for #name #ty_generics #marker_where_clause {}
         };
 
         #checked_transmute_impl
@@ -1396,8 +1396,8 @@ fn gen_record_conversion(
             quote!(__Co3EncodeFieldUnchecked::encode_field_unchecked),
         ),
         EncodeMode::Owned => (
-            quote!(co3::stored::EncodeMove::soft_encode),
-            quote!(co3::stored::EncodeMoveUnchecked::soft_encode_unchecked),
+            quote!(co3::convert::EncodeMove::soft_encode),
+            quote!(co3::convert::EncodeMoveUnchecked::soft_encode_unchecked),
         ),
     };
     let store_vars = tuple_field_exprs(fields.len());
@@ -1470,7 +1470,7 @@ fn gen_record_conversion(
             },
             quote! { #(
                 let #field_vars = unsafe {
-                    co3::stored::DecodeMove::soft_decode(#field_vars, #store_vars)?
+                    co3::convert::DecodeMove::soft_decode(#field_vars, #store_vars)?
                 }; )*
 
                 #custom_validation
@@ -1480,7 +1480,7 @@ fn gen_record_conversion(
             },
             quote! { #(
                 let #field_vars = unsafe {
-                    co3::stored::DecodeMove::soft_decode_unchecked(#field_vars, #store_vars)
+                    co3::convert::DecodeMove::soft_decode_unchecked(#field_vars, #store_vars)
                 }; )*
 
                 #source_head {
@@ -1503,7 +1503,7 @@ fn gen_record_conversion(
             },
             quote! { #(
                 let #field_vars = unsafe {
-                    co3::stored::DecodeMove::soft_decode(#field_vars, #store_vars)?
+                    co3::convert::DecodeMove::soft_decode(#field_vars, #store_vars)?
                 }; )*
 
                 #custom_validation
@@ -1513,7 +1513,7 @@ fn gen_record_conversion(
             },
             quote! { #(
                 let #field_vars = unsafe {
-                    co3::stored::DecodeMove::soft_decode_unchecked(#field_vars, #store_vars)
+                    co3::convert::DecodeMove::soft_decode_unchecked(#field_vars, #store_vars)
                 }; )*
 
                 #source_head(
@@ -1579,18 +1579,19 @@ fn gen_codec_impls(
     let extern_c_bounds = gen_extern_c_bounds_for_ctype(generics, fields);
 
     let encode_move_bounds =
-        gen_field_encode_bounds(generics, fields, quote! { co3::stored::EncodeMove });
+        gen_field_encode_bounds(generics, fields, quote! { co3::convert::EncodeMove });
     let direct_encode_bounds = gen_field_encode_bounds(
         generics,
         fields,
-        quote! { co3::stored::EncodeMoveUnchecked },
+        quote! { co3::convert::EncodeMoveUnchecked },
     );
     let decode_move_bounds =
-        gen_field_decode_bounds(generics, fields, quote! { co3::stored::DecodeMove });
+        gen_field_decode_bounds(generics, fields, quote! { co3::convert::DecodeMove });
 
-    let encode_bounds = gen_field_encode_bounds(generics, fields, quote! { co3::Encode });
-    let direct_bounds = gen_field_encode_bounds(generics, fields, quote! { co3::EncodeUnchecked });
-    let decode_bounds = gen_field_decode_bounds(generics, fields, quote! { co3::Decode });
+    let encode_bounds = gen_field_encode_bounds(generics, fields, quote! { co3::convert::Encode });
+    let direct_bounds =
+        gen_field_encode_bounds(generics, fields, quote! { co3::convert::EncodeUnchecked });
+    let decode_bounds = gen_field_decode_bounds(generics, fields, quote! { co3::convert::Decode });
 
     let (sized_bound, omit_sized_impls) = c_fn_last_field_bounds(fields, generics);
     let mut decode_generics = generics.clone();
@@ -1673,7 +1674,7 @@ fn gen_codec_impls(
     }
 
     let sized_impls = (!omit_sized_impls).then(|| quote! {
-        unsafe impl #impl_generics co3::stored::EncodeMove for #name #ty_generics
+        unsafe impl #impl_generics co3::convert::EncodeMove for #name #ty_generics
         where
             #sized_bound
 
@@ -1689,7 +1690,7 @@ fn gen_codec_impls(
             }
 
         }
-        unsafe impl #impl_generics co3::stored::EncodeMoveUnchecked for #name #ty_generics
+        unsafe impl #impl_generics co3::convert::EncodeMoveUnchecked for #name #ty_generics
         where
             #sized_bound
 
@@ -1700,11 +1701,11 @@ fn gen_codec_impls(
         {
             type SoftStore = #direct_store;
 
-            unsafe fn soft_encode_unchecked<'itm>(self, store: &'itm mut <Self as co3::stored::EncodeMoveUnchecked>::SoftStore) -> Self::CType where Self: 'itm {
+            unsafe fn soft_encode_unchecked<'itm>(self, store: &'itm mut <Self as co3::convert::EncodeMoveUnchecked>::SoftStore) -> Self::CType where Self: 'itm {
                 #direct_encode_impl
             }
         }
-        unsafe impl #decode_impl_generics co3::stored::DecodeMove<'_dšč> for #name #ty_generics
+        unsafe impl #decode_impl_generics co3::convert::DecodeMove<'_dšč> for #name #ty_generics
         where
             #sized_bound
 
@@ -1724,7 +1725,7 @@ fn gen_codec_impls(
             }
         }
 
-        impl #impl_generics co3::Encode for #name #ty_generics where
+        impl #impl_generics co3::convert::Encode for #name #ty_generics where
             #direct_drop_bound
             #sized_bound
 
@@ -1733,7 +1734,7 @@ fn gen_codec_impls(
 
             #predicates
         {}
-        impl #impl_generics co3::EncodeUnchecked for #name #ty_generics where
+        impl #impl_generics co3::convert::EncodeUnchecked for #name #ty_generics where
             #direct_drop_bound
             #sized_bound
 
@@ -1742,7 +1743,7 @@ fn gen_codec_impls(
 
             #predicates
         {}
-        impl #decode_impl_generics co3::Decode<'_dšč> for #name #ty_generics where
+        impl #decode_impl_generics co3::convert::Decode<'_dšč> for #name #ty_generics where
             #direct_drop_bound
             #sized_bound
 
@@ -1799,7 +1800,7 @@ fn encode_store_type(fields: &syn::Fields, mode: EncodeMode) -> TokenStream {
         } else if mode == EncodeMode::Ref {
             quote! { <#ty as __Co3EncodeField<'_ršč>>::Store }
         } else {
-            quote! { <#ty as co3::stored::EncodeMove>::Store }
+            quote! { <#ty as co3::convert::EncodeMove>::Store }
         }
     });
 
@@ -1813,7 +1814,7 @@ fn direct_store_type(fields: &syn::Fields, mode: EncodeMode) -> TokenStream {
         } else if mode == EncodeMode::Ref {
             quote! { <#ty as __Co3EncodeFieldUnchecked<'_ršč>>::SoftStore }
         } else {
-            quote! { <#ty as co3::stored::EncodeMoveUnchecked>::SoftStore }
+            quote! { <#ty as co3::convert::EncodeMoveUnchecked>::SoftStore }
         }
     });
 
@@ -1822,7 +1823,7 @@ fn direct_store_type(fields: &syn::Fields, mode: EncodeMode) -> TokenStream {
 
 fn decode_store_type(fields: &syn::Fields) -> TokenStream {
     let fields = fields.iter().map(|syn::Field { ty, .. }| {
-        quote! { <#ty as co3::stored::DecodeMove<'_dšč>>::Store }
+        quote! { <#ty as co3::convert::DecodeMove<'_dšč>>::Store }
     });
 
     quote!((#(#fields,)*))

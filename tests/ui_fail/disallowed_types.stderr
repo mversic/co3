@@ -26,70 +26,6 @@ help: the trait `ReprC` is not implemented for `StableButNotCStatic`
             and $N others
     = note: this error originates in the macro `ffi` (in Nightly builds, run with -Z macro-backtrace for more info)
 
-error[E0277]: the trait bound `OwnedMyType: co3::borrow::Borrow` is not satisfied
-   --> tests/ui_fail/disallowed_types.rs:174:1
-    |
-174 | / ffi! {
-175 | |     #![unsafe(extern("C"))]
-176 | |
-177 | |     #![symbol_prefix = "kita"]
-178 | |
-179 | |     pub extern "C" fn disallowed_opaque_args(arg1: OwnedMyType);
-180 | | }
-    | |_^ unsatisfied trait bound
-    |
-help: the trait `co3::borrow::Borrow` is not implemented for `OwnedMyType`
-   --> tests/ui_fail/disallowed_types.rs:133:1
-    |
-133 | / ffi! {
-134 | |     #![unsafe(extern("C"))]
-135 | |     #![symbol_prefix = "kita"]
-...   |
-145 | | }
-    | |_^
-    = help: the following other types implement trait `co3::borrow::Borrow`:
-              &'_lšč0 _TŠČ0
-              &mut R
-              ()
-              (A, B)
-              (A, B, C)
-              (A, B, C, D)
-              (A, B, C, D, E)
-              (A, B, C, D, E, F)
-            and $N others
-    = note: this error originates in the macro `ffi` (in Nightly builds, run with -Z macro-backtrace for more info)
-
-error[E0277]: the trait bound `OwnedMyType: co3::borrow::Borrow` is not satisfied
-   --> tests/ui_fail/disallowed_types.rs:181:1
-    |
-181 | / ffi! {
-182 | |     #![unsafe(extern("C"))]
-183 | |
-184 | |     pub extern "C" fn disallowed_opaque_return() -> OwnedMyType;
-185 | | }
-    | |_^ unsatisfied trait bound
-    |
-help: the trait `co3::borrow::Borrow` is not implemented for `OwnedMyType`
-   --> tests/ui_fail/disallowed_types.rs:133:1
-    |
-133 | / ffi! {
-134 | |     #![unsafe(extern("C"))]
-135 | |     #![symbol_prefix = "kita"]
-...   |
-145 | | }
-    | |_^
-    = help: the following other types implement trait `co3::borrow::Borrow`:
-              &'_lšč0 _TŠČ0
-              &mut R
-              ()
-              (A, B)
-              (A, B, C)
-              (A, B, C, D)
-              (A, B, C, D, E)
-              (A, B, C, D, E, F)
-            and $N others
-    = note: this error originates in the macro `ffi` (in Nightly builds, run with -Z macro-backtrace for more info)
-
 error[E0080]: evaluation panicked: OpaqueZst must not be zero-sized
   --> tests/ui_fail/disallowed_types.rs:64:5
    |
@@ -102,58 +38,6 @@ error[E0080]: evaluation panicked: OpaqueZst must not be zero-sized
    | |_____^ evaluation of `provider::_::_::_::_` failed here
 
 error[E0080]: evaluation panicked: Mark the return type with `move` to transfer ownership
-  --> tests/ui_fail/disallowed_types.rs:64:5
-   |
-64 | /     ffi! {
-65 | |         #![unsafe(export("C"))]
-66 | |
-67 | |         type OpaqueZst;
-...  |
-75 | |     }
-   | |_____^ evaluation of `provider::_::_::_::{constant#0}` failed here
-
-note: erroneous constant encountered
-  --> tests/ui_fail/disallowed_types.rs:64:5
-   |
-64 | /     ffi! {
-65 | |         #![unsafe(export("C"))]
-66 | |
-67 | |         type OpaqueZst;
-...  |
-75 | |     }
-   | |_____^
-   |
-   = note: this note originates in the macro `ffi` (in Nightly builds, run with -Z macro-backtrace for more info)
-
-error[E0277]: the trait bound `BorrowedEncodeStore<Box<provider::OpaqueZst>, ()>: co3::stored::EmptyStore` is not satisfied
-  --> tests/ui_fail/disallowed_types.rs:64:5
-   |
-64 | /     ffi! {
-65 | |         #![unsafe(export("C"))]
-66 | |
-67 | |         type OpaqueZst;
-...  |
-75 | |     }
-   | |_____^ the trait `co3::stored::EmptyStore` is not implemented for `BorrowedEncodeStore<Box<provider::OpaqueZst>, ()>`
-   |
-   = help: the following other types implement trait `co3::stored::EmptyStore`:
-             ()
-             (A,)
-             (A, B)
-             (A, B, C)
-             (A, B, C, D)
-             (A, B, C, D, E)
-             (A, B, C, D, E, F)
-             (A, B, C, D, E, F, G)
-           and $N others
-note: required by a bound in `encode`
-  --> src/lib.rs
-   |
-   | pub fn encode<T: Encode<Store: EmptyStore>>(item: T) -> T::CType {
-   |                                ^^^^^^^^^^ required by this bound in `encode`
-   = note: this error originates in the macro `ffi` (in Nightly builds, run with -Z macro-backtrace for more info)
-
-error[E0080]: evaluation panicked: Mark the return type with `move` to transfer ownership
   --> tests/ui_fail/disallowed_types.rs:93:5
    |
 93 | /     ffi! {
@@ -175,32 +59,96 @@ note: erroneous constant encountered
    |
    = note: this note originates in the macro `ffi` (in Nightly builds, run with -Z macro-backtrace for more info)
 
-error[E0277]: the trait bound `BorrowedEncodeStore<Box<[u8]>, RefMutSizedEncodeStore<'_, Box<[u8]>, ()>>: co3::stored::EmptyStore` is not satisfied
-  --> tests/ui_fail/disallowed_types.rs:93:5
-   |
-93 | /     ffi! {
-94 | |         #![unsafe(export("C"))]
-95 | |
-96 | |         extern "C" fn disallowed_return2() -> Box<[u8]>;
-97 | |     }
-   | |_____^ the trait `co3::stored::EmptyStore` is not implemented for `BorrowedEncodeStore<Box<[u8]>, RefMutSizedEncodeStore<'_, Box<[u8]>, ()>>`
-   |
-   = help: the following other types implement trait `co3::stored::EmptyStore`:
-             ()
-             (A,)
-             (A, B)
-             (A, B, C)
-             (A, B, C, D)
-             (A, B, C, D, E)
-             (A, B, C, D, E, F)
-             (A, B, C, D, E, F, G)
-           and $N others
-note: required by a bound in `encode`
-  --> src/lib.rs
-   |
-   | pub fn encode<T: Encode<Store: EmptyStore>>(item: T) -> T::CType {
-   |                                ^^^^^^^^^^ required by this bound in `encode`
-   = note: this error originates in the macro `ffi` (in Nightly builds, run with -Z macro-backtrace for more info)
+error[E0277]: the trait bound `provider::OpaqueZst: Copy` is not satisfied
+   --> tests/ui_fail/disallowed_types.rs:102:52
+    |
+102 |         extern "C" fn disallowed_opaque_args(arg1: OwnedOpaqueZst);
+    |                                                    ^^^^^^^^^^^^^^ the trait `Copy` is not implemented for `provider::OpaqueZst`
+    |
+help: the following other types implement trait `BorrowedDecode<'d>`
+   --> src/borrow.rs
+    |
+    | / disjoint_impls! {
+    | |     /// Decodes a borrowed carrier into the original Rust type.
+    | |     ///
+    | |     /// # Safety
+...   |
+    | | }
+    | | ^
+    | | |
+    | |_`Box<_TŠČ0>`
+    |   `Box<str>`
+    = note: required for `Box<provider::OpaqueZst>` to implement `co3::borrow::_::BorrowedDecode_cfg0<'_, co3::boxed::CBox<provider::OpaqueZst>>`
+    = note: required for `Box<provider::OpaqueZst>` to implement `BorrowedDecode<'_>`
+note: required by a bound in `co3::borrow::decode`
+   --> src/borrow.rs
+    |
+    | pub unsafe fn decode<'d, T: BorrowedDecode<'d, Store: EmptyStore + 'd>>(
+    |                             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ required by this bound in `decode`
+    = note: this error originates in the macro `disjoint_impls` (in Nightly builds, run with -Z macro-backtrace for more info)
+help: consider annotating `provider::OpaqueZst` with `#[derive(Copy)]`
+    |
+ 33 +     #[derive(Copy)]
+ 34 |     struct OpaqueZst;
+    |
+
+error[E0277]: the trait bound `provider::OpaqueZst: BorrowedDecode<'_>` is not satisfied
+   --> tests/ui_fail/disallowed_types.rs:102:52
+    |
+102 |         extern "C" fn disallowed_opaque_args(arg1: OwnedOpaqueZst);
+    |                                                    ^^^^^^^^^^^^^^ unsatisfied trait bound
+    |
+help: the trait `BorrowedDecode<'_>` is not implemented for `provider::OpaqueZst`
+   --> tests/ui_fail/disallowed_types.rs:33:5
+    |
+ 33 |     struct OpaqueZst;
+    |     ^^^^^^^^^^^^^^^^
+    = help: the following other types implement trait `BorrowedDecode<'d>`:
+              `&'a T` implements `BorrowedDecode<'d>`
+              `&'a mut T` implements `BorrowedDecode<'d>`
+              `()` implements `BorrowedDecode<'_co3_d>`
+              `(A, B)` implements `BorrowedDecode<'d>`
+              `(A, B, C)` implements `BorrowedDecode<'d>`
+              `(A, B, C, D)` implements `BorrowedDecode<'d>`
+              `(A, B, C, D, E)` implements `BorrowedDecode<'d>`
+              `(A, B, C, D, E, F)` implements `BorrowedDecode<'d>`
+            and $N others
+    = note: required for `Box<provider::OpaqueZst>` to implement `co3::borrow::_::BorrowedDecode_cfg1<'_, provider::OpaqueZst, rust_spec::size::Sized<Gt<rust_spec::Zero>>>`
+    = note: required for `Box<provider::OpaqueZst>` to implement `co3::borrow::_::BorrowedDecode_cfg0<'_, co3::boxed::CBox<provider::OpaqueZst>>`
+    = note: required for `Box<provider::OpaqueZst>` to implement `BorrowedDecode<'_>`
+note: required by a bound in `co3::borrow::decode`
+   --> src/borrow.rs
+    |
+    | pub unsafe fn decode<'d, T: BorrowedDecode<'d, Store: EmptyStore + 'd>>(
+    |                             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ required by this bound in `decode`
+
+error[E0277]: the trait bound `provider::OpaqueZst: BorrowedDecode<'_>` is not satisfied
+   --> tests/ui_fail/disallowed_types.rs:99:5
+    |
+ 99 | /     ffi! {
+100 | |         #![unsafe(export("C"))]
+101 | |
+102 | |         extern "C" fn disallowed_opaque_args(arg1: OwnedOpaqueZst);
+103 | |     }
+    | |_____^ unsatisfied trait bound
+    |
+help: the trait `BorrowedDecode<'_>` is not implemented for `provider::OpaqueZst`
+   --> tests/ui_fail/disallowed_types.rs:33:5
+    |
+ 33 |     struct OpaqueZst;
+    |     ^^^^^^^^^^^^^^^^
+    = help: the following other types implement trait `BorrowedDecode<'d>`:
+              `&'a T` implements `BorrowedDecode<'d>`
+              `&'a mut T` implements `BorrowedDecode<'d>`
+              `()` implements `BorrowedDecode<'_co3_d>`
+              `(A, B)` implements `BorrowedDecode<'d>`
+              `(A, B, C)` implements `BorrowedDecode<'d>`
+              `(A, B, C, D)` implements `BorrowedDecode<'d>`
+              `(A, B, C, D, E)` implements `BorrowedDecode<'d>`
+              `(A, B, C, D, E, F)` implements `BorrowedDecode<'d>`
+            and $N others
+    = note: required for `Box<provider::OpaqueZst>` to implement `co3::borrow::_::BorrowedDecode_cfg1<'_, provider::OpaqueZst, rust_spec::size::Sized<Gt<rust_spec::Zero>>>`
+    = note: this error originates in the macro `ffi` (in Nightly builds, run with -Z macro-backtrace for more info)
 
 error[E0080]: evaluation panicked: Mark the return type with `move` to transfer ownership
    --> tests/ui_fail/disallowed_types.rs:104:5
@@ -224,7 +172,7 @@ note: erroneous constant encountered
     |
     = note: this note originates in the macro `ffi` (in Nightly builds, run with -Z macro-backtrace for more info)
 
-error[E0277]: the trait bound `BorrowedEncodeStore<Box<provider::OpaqueZst>, ()>: co3::stored::EmptyStore` is not satisfied
+error[E0277]: the trait bound `provider::OpaqueZst: BorrowedEncode` is not satisfied
    --> tests/ui_fail/disallowed_types.rs:104:5
     |
 104 | /     ffi! {
@@ -232,23 +180,24 @@ error[E0277]: the trait bound `BorrowedEncodeStore<Box<provider::OpaqueZst>, ()>
 106 | |
 107 | |         extern "C" fn disallowed_opaque_return() -> OwnedOpaqueZst;
 108 | |     }
-    | |_____^ the trait `co3::stored::EmptyStore` is not implemented for `BorrowedEncodeStore<Box<provider::OpaqueZst>, ()>`
+    | |_____^ unsatisfied trait bound
     |
-    = help: the following other types implement trait `co3::stored::EmptyStore`:
+help: the trait `BorrowedEncode` is not implemented for `provider::OpaqueZst`
+   --> tests/ui_fail/disallowed_types.rs:33:5
+    |
+ 33 |     struct OpaqueZst;
+    |     ^^^^^^^^^^^^^^^^
+    = help: the following other types implement trait `BorrowedEncode`:
+              &'_lšč0 _TŠČ0
+              &mut T
               ()
-              (A,)
               (A, B)
               (A, B, C)
               (A, B, C, D)
               (A, B, C, D, E)
               (A, B, C, D, E, F)
-              (A, B, C, D, E, F, G)
             and $N others
-note: required by a bound in `encode`
-   --> src/lib.rs
-    |
-    | pub fn encode<T: Encode<Store: EmptyStore>>(item: T) -> T::CType {
-    |                                ^^^^^^^^^^ required by this bound in `encode`
+    = note: required for `Box<provider::OpaqueZst>` to implement `co3::borrow::_::BorrowedEncode_cfg0<co3::boxed::CBox<provider::OpaqueZst>, Stable, rust_spec::size::Sized<Gt<rust_spec::Zero>>>`
     = note: this error originates in the macro `ffi` (in Nightly builds, run with -Z macro-backtrace for more info)
 
 error[E0080]: evaluation panicked: ABI retype size mismatch
@@ -297,40 +246,13 @@ note: erroneous constant encountered
     |
     = note: this note originates in the macro `ffi` (in Nightly builds, run with -Z macro-backtrace for more info)
 
-error[E0277]: the trait bound `RefSizedDecodeStore<Box<[u8]>, ()>: co3::stored::EmptyStore` is not satisfied
-   --> tests/ui_fail/disallowed_types.rs:168:1
-    |
-168 | / ffi! {
-169 | |     #![unsafe(extern("C"))]
-170 | |
-171 | |     pub extern "C" fn disallowed_return2() -> Box<[u8]>;
-172 | | }
-    | |_^ the trait `co3::stored::EmptyStore` is not implemented for `RefSizedDecodeStore<Box<[u8]>, ()>`
-    |
-    = help: the following other types implement trait `co3::stored::EmptyStore`:
-              ()
-              (A,)
-              (A, B)
-              (A, B, C)
-              (A, B, C, D)
-              (A, B, C, D, E)
-              (A, B, C, D, E, F)
-              (A, B, C, D, E, F, G)
-            and $N others
-note: required by a bound in `decode`
-   --> src/lib.rs
-    |
-    | pub unsafe fn decode<'d, T: Decode<'d, Store: EmptyStore> + 'd>(source: T::CType) -> Option<T> {
-    |                                               ^^^^^^^^^^ required by this bound in `decode`
-    = note: this error originates in the macro `ffi` (in Nightly builds, run with -Z macro-backtrace for more info)
-
-error[E0277]: the trait bound `OwnedMyType: co3::borrow::Borrow` is not satisfied
+error[E0277]: the trait bound `OwnedMyType: BorrowedEncode` is not satisfied
    --> tests/ui_fail/disallowed_types.rs:179:52
     |
 179 |     pub extern "C" fn disallowed_opaque_args(arg1: OwnedMyType);
     |                                                    ^^^^^^^^^^^ unsatisfied trait bound
     |
-help: the trait `co3::borrow::Borrow` is not implemented for `OwnedMyType`
+help: the trait `BorrowedEncode` is not implemented for `OwnedMyType`
    --> tests/ui_fail/disallowed_types.rs:133:1
     |
 133 | / ffi! {
@@ -339,9 +261,9 @@ help: the trait `co3::borrow::Borrow` is not implemented for `OwnedMyType`
 ...   |
 145 | | }
     | |_^
-    = help: the following other types implement trait `co3::borrow::Borrow`:
+    = help: the following other types implement trait `BorrowedEncode`:
               &'_lšč0 _TŠČ0
-              &mut R
+              &mut T
               ()
               (A, B)
               (A, B, C)
@@ -349,9 +271,14 @@ help: the trait `co3::borrow::Borrow` is not implemented for `OwnedMyType`
               (A, B, C, D, E)
               (A, B, C, D, E, F)
             and $N others
+note: required by a bound in `co3::borrow::encode`
+   --> src/borrow.rs
+    |
+    | pub fn encode<T: BorrowedEncode<Store: EmptyStore>>(
+    |                  ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ required by this bound in `encode`
     = note: this error originates in the macro `ffi` (in Nightly builds, run with -Z macro-backtrace for more info)
 
-error[E0277]: the trait bound `OwnedMyType: co3::borrow::Borrow` is not satisfied
+error[E0277]: the trait bound `OwnedMyType: BorrowedEncodeUnchecked` is not satisfied
    --> tests/ui_fail/disallowed_types.rs:174:1
     |
 174 | / ffi! {
@@ -363,7 +290,7 @@ error[E0277]: the trait bound `OwnedMyType: co3::borrow::Borrow` is not satisfie
 180 | | }
     | |_^ unsatisfied trait bound
     |
-help: the trait `co3::borrow::Borrow` is not implemented for `OwnedMyType`
+help: the trait `BorrowedEncodeUnchecked` is not implemented for `OwnedMyType`
    --> tests/ui_fail/disallowed_types.rs:133:1
     |
 133 | / ffi! {
@@ -372,56 +299,9 @@ help: the trait `co3::borrow::Borrow` is not implemented for `OwnedMyType`
 ...   |
 145 | | }
     | |_^
-    = help: the following other types implement trait `co3::borrow::Borrow`:
-              &'_lšč0 _TŠČ0
-              &mut R
-              ()
-              (A, B)
-              (A, B, C)
-              (A, B, C, D)
-              (A, B, C, D, E)
-              (A, B, C, D, E, F)
-            and $N others
-    = note: this error originates in the macro `_impls` which comes from the expansion of the macro `ffi` (in Nightly builds, run with -Z macro-backtrace for more info)
-
-error[E0277]: the trait bound `OwnedMyType: co3::borrow::Borrow` is not satisfied
-   --> tests/ui_fail/disallowed_types.rs:179:46
-    |
-174 | / ffi! {
-175 | |     #![unsafe(extern("C"))]
-176 | |
-177 | |     #![symbol_prefix = "kita"]
-178 | |
-179 | |     pub extern "C" fn disallowed_opaque_args(arg1: OwnedMyType);
-    | |                                              ^^^^ the trait `co3::borrow::Borrow` is not implemented for `OwnedMyType`
-180 | | }
-    | |_- required by a bound introduced by this call
-    |
-help: consider borrowing here
-    |
-179 |     pub extern "C" fn disallowed_opaque_args(&arg1: OwnedMyType);
-    |                                              +
-179 |     pub extern "C" fn disallowed_opaque_args(&mut arg1: OwnedMyType);
-    |                                              ++++
-
-error[E0277]: the trait bound `OwnedMyType: co3::borrow::Borrow` is not satisfied
-   --> tests/ui_fail/disallowed_types.rs:184:53
-    |
-184 |     pub extern "C" fn disallowed_opaque_return() -> OwnedMyType;
-    |                                                     ^^^^^^^^^^^ unsatisfied trait bound
-    |
-help: the trait `co3::borrow::Borrow` is not implemented for `OwnedMyType`
-   --> tests/ui_fail/disallowed_types.rs:133:1
-    |
-133 | / ffi! {
-134 | |     #![unsafe(extern("C"))]
-135 | |     #![symbol_prefix = "kita"]
-...   |
-145 | | }
-    | |_^
-    = help: the following other types implement trait `co3::borrow::Borrow`:
-              &'_lšč0 _TŠČ0
-              &mut R
+    = help: the following other types implement trait `BorrowedEncodeUnchecked`:
+              &'a T
+              &'a mut T
               ()
               (A, B)
               (A, B, C)
@@ -431,7 +311,29 @@ help: the trait `co3::borrow::Borrow` is not implemented for `OwnedMyType`
             and $N others
     = note: this error originates in the macro `ffi` (in Nightly builds, run with -Z macro-backtrace for more info)
 
-error[E0277]: the trait bound `OwnedMyType: co3::borrow::Borrow` is not satisfied
+error[E0080]: evaluation panicked: Mark the return type with `move` to transfer ownership
+   --> tests/ui_fail/disallowed_types.rs:181:1
+    |
+181 | / ffi! {
+182 | |     #![unsafe(extern("C"))]
+183 | |
+184 | |     pub extern "C" fn disallowed_opaque_return() -> OwnedMyType;
+185 | | }
+    | |_^ evaluation of `_::{constant#0}` failed here
+
+note: erroneous constant encountered
+   --> tests/ui_fail/disallowed_types.rs:181:1
+    |
+181 | / ffi! {
+182 | |     #![unsafe(extern("C"))]
+183 | |
+184 | |     pub extern "C" fn disallowed_opaque_return() -> OwnedMyType;
+185 | | }
+    | |_^
+    |
+    = note: this note originates in the macro `ffi` (in Nightly builds, run with -Z macro-backtrace for more info)
+
+error[E0277]: the trait bound `OwnedMyType: BorrowedDecode<'_>` is not satisfied
    --> tests/ui_fail/disallowed_types.rs:181:1
     |
 181 | / ffi! {
@@ -441,7 +343,7 @@ error[E0277]: the trait bound `OwnedMyType: co3::borrow::Borrow` is not satisfie
 185 | | }
     | |_^ unsatisfied trait bound
     |
-help: the trait `co3::borrow::Borrow` is not implemented for `OwnedMyType`
+help: the trait `BorrowedDecode<'_>` is not implemented for `OwnedMyType`
    --> tests/ui_fail/disallowed_types.rs:133:1
     |
 133 | / ffi! {
@@ -450,17 +352,22 @@ help: the trait `co3::borrow::Borrow` is not implemented for `OwnedMyType`
 ...   |
 145 | | }
     | |_^
-    = help: the following other types implement trait `co3::borrow::Borrow`:
-              &'_lšč0 _TŠČ0
-              &mut R
-              ()
-              (A, B)
-              (A, B, C)
-              (A, B, C, D)
-              (A, B, C, D, E)
-              (A, B, C, D, E, F)
+    = help: the following other types implement trait `BorrowedDecode<'d>`:
+              `&'a T` implements `BorrowedDecode<'d>`
+              `&'a mut T` implements `BorrowedDecode<'d>`
+              `()` implements `BorrowedDecode<'_co3_d>`
+              `(A, B)` implements `BorrowedDecode<'d>`
+              `(A, B, C)` implements `BorrowedDecode<'d>`
+              `(A, B, C, D)` implements `BorrowedDecode<'d>`
+              `(A, B, C, D, E)` implements `BorrowedDecode<'d>`
+              `(A, B, C, D, E, F)` implements `BorrowedDecode<'d>`
             and $N others
-    = note: this error originates in the macro `_impls` which comes from the expansion of the macro `ffi` (in Nightly builds, run with -Z macro-backtrace for more info)
+note: required by a bound in `co3::borrow::decode`
+   --> src/borrow.rs
+    |
+    | pub unsafe fn decode<'d, T: BorrowedDecode<'d, Store: EmptyStore + 'd>>(
+    |                             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ required by this bound in `decode`
+    = note: this error originates in the macro `ffi` (in Nightly builds, run with -Z macro-backtrace for more info)
 
 error[E0080]: evaluation panicked: ABI retype size mismatch
    --> tests/ui_fail/disallowed_types.rs:192:46
@@ -583,6 +490,16 @@ note: erroneous constant encountered
    |
    = note: this note originates in the macro `ffi` (in Nightly builds, run with -Z macro-backtrace for more info)
 
+error[E0080]: evaluation panicked: Mark the return type with `move` to transfer ownership
+  --> tests/ui_fail/disallowed_types.rs:93:5
+   |
+93 | /     ffi! {
+94 | |         #![unsafe(export("C"))]
+95 | |
+96 | |         extern "C" fn disallowed_return2() -> Box<[u8]>;
+97 | |     }
+   | |_____^ evaluation of `provider::_::_::disallowed_return2_raw::{closure#0}::{constant#0}` failed here
+
 error[E0080]: evaluation panicked: co3 FFI argument must implement CFnArg
    --> tests/ui_fail/disallowed_types.rs:147:1
     |
@@ -680,3 +597,13 @@ note: erroneous constant encountered
     | |_^
     |
     = note: this note originates in the macro `ffi` (in Nightly builds, run with -Z macro-backtrace for more info)
+
+error[E0080]: evaluation panicked: Mark the return type with `move` to transfer ownership
+   --> tests/ui_fail/disallowed_types.rs:168:1
+    |
+168 | / ffi! {
+169 | |     #![unsafe(extern("C"))]
+170 | |
+171 | |     pub extern "C" fn disallowed_return2() -> Box<[u8]>;
+172 | | }
+    | |_^ evaluation of `disallowed_return2::{constant#1}` failed here

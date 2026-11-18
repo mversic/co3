@@ -1,3 +1,5 @@
+use core::num::NonZeroU8;
+
 use co3::{
     ReprC,
     ops::CFn1,
@@ -8,7 +10,6 @@ use co3::{
         layout::{NonRobust, Robust},
     },
 };
-use core::num::NonZeroU8;
 use static_assertions::{assert_impl_all, assert_type_eq_all, assert_type_ne_all};
 
 #[repr(transparent)]

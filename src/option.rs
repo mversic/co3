@@ -10,12 +10,12 @@ use rust_spec::{
 };
 
 use crate::{
-    CFnArg, CFnReturn, CType, Decode, Encode, EncodeUnchecked, ReprC, Thin,
-    niche::Niche,
-    stored::{
-        DecodeMove, EmptyStore, EncodeMove, EncodeMoveUnchecked, SoftEncodeRef,
-        SoftEncodeRefUnchecked,
+    CFnArg, CFnReturn, CType, ReprC, Thin,
+    convert::{
+        Decode, DecodeMove, EmptyStore, Encode, EncodeMove, EncodeMoveUnchecked, EncodeUnchecked,
+        SoftEncodeRef, SoftEncodeRefUnchecked,
     },
+    niche::Niche,
     sync::RefSizedEncodeStore,
     transmute::{AbiCompatible, AbiCompatibleValidate},
 };
@@ -38,9 +38,9 @@ macro_rules! impl_niche_payload {
         unsafe impl<T: $crate::CType> $crate::CType for $name<T> {}
         unsafe impl<T: $crate::CFnArg> $crate::CFnArg for $name<T> {}
         unsafe impl<T: $crate::CFnReturn> $crate::CFnReturn for $name<T> {}
-        impl<T: $crate::Encode> $crate::Encode for $name<T> {}
-        impl<T: $crate::EncodeUnchecked> $crate::EncodeUnchecked for $name<T> {}
-        impl<'d, T: $crate::Decode<'d>> $crate::Decode<'d> for $name<T> {}
+        impl<T: $crate::convert::Encode> $crate::convert::Encode for $name<T> {}
+        impl<T: $crate::convert::EncodeUnchecked> $crate::convert::EncodeUnchecked for $name<T> {}
+        impl<'d, T: $crate::convert::Decode<'d>> $crate::convert::Decode<'d> for $name<T> {}
         unsafe impl<T: $crate::transmute::AbiCompatible<CType: Sized>> $crate::transmute::AbiCompatible for $name<T> {}
         unsafe impl<T: $crate::transmute::AbiCompatibleValidate<CType: Sized>> $crate::transmute::AbiCompatibleValidate for $name<T> {
             unsafe fn is_valid(value: &Self::CType) -> bool {
@@ -48,7 +48,7 @@ macro_rules! impl_niche_payload {
             }
         }
         $crate::option::impl_niche_payload!(@codecs $name,
-            $crate::stored::EncodeMove, $crate::stored::EncodeMoveUnchecked, $crate::stored::DecodeMove);
+            $crate::convert::EncodeMove, $crate::convert::EncodeMoveUnchecked, $crate::convert::DecodeMove);
         const _: () = {
             use $crate::borrow::BorrowedEncode;
             use $crate::borrow::BorrowedEncodeUnchecked;
@@ -299,77 +299,90 @@ option_codecs!(EncodeMove, EncodeMoveUnchecked, DecodeMove);
 const _: () = {
     use crate::borrow::{BorrowedDecode, BorrowedEncode, BorrowedEncodeUnchecked};
     unsafe impl<T: BorrowedEncodeUnchecked> BorrowedEncodeUnchecked for Option<T> {
-            type Owner = RustOption<T::Owner>;
-            type SoftStore = RustOption<T::SoftStore>;
+        type Owner = RustOption<T::Owner>;
+        type SoftStore = RustOption<T::SoftStore>;
 
-            unsafe fn soft_encode_unchecked<'itm>(
-                self,
-                store: &'itm mut Self::SoftStore, owner: &'itm mut Self::Owner) -> Self::CType
-            where
-                Self: 'itm,
-            {
-                match self {
-                    Self::None => {
-                        *store = None;
+        unsafe fn soft_encode_unchecked<'itm>(
+            self,
+            store: &'itm mut Self::SoftStore,
+            owner: &'itm mut Self::Owner,
+        ) -> Self::CType
+        where
+            Self: 'itm,
+        {
+            match self {
+                Self::None => {
+                    *store = None;
                     *owner = None;
-                        COption::None()
-                    }
-                    Self::Some(value) => COption::Some(unsafe {
-                        value.soft_encode_unchecked(store.insert(Default::default()), owner.insert(Default::default()))
-                    }),
+                    COption::None()
                 }
+                Self::Some(value) => COption::Some(unsafe {
+                    value.soft_encode_unchecked(
+                        store.insert(Default::default()),
+                        owner.insert(Default::default()),
+                    )
+                }),
             }
         }
-        unsafe impl<T: BorrowedEncode> BorrowedEncode for Option<T> {
-            type Store = RustOption<T::Store>;
+    }
+    unsafe impl<T: BorrowedEncode> BorrowedEncode for Option<T> {
+        type Store = RustOption<T::Store>;
 
-            fn soft_encode<'a>(self, store: &'a mut Self::Store, owner: &'a mut Self::Owner) -> Self::CType
-            where
-                Self: 'a,
-            {
-                match self {
-                    Self::None => {
-                        *store = None;
+        fn soft_encode<'a>(
+            self,
+            store: &'a mut Self::Store,
+            owner: &'a mut Self::Owner,
+        ) -> Self::CType
+        where
+            Self: 'a,
+        {
+            match self {
+                Self::None => {
+                    *store = None;
                     *owner = None;
-                        COption::None()
-                    }
-                    Self::Some(value) => COption::Some(BorrowedEncode::soft_encode(value, store.insert(Default::default()), owner.insert(Default::default()))),
+                    COption::None()
                 }
+                Self::Some(value) => COption::Some(BorrowedEncode::soft_encode(
+                    value,
+                    store.insert(Default::default()),
+                    owner.insert(Default::default()),
+                )),
             }
         }
-        unsafe impl<'d, T: BorrowedDecode<'d>> BorrowedDecode<'d> for Option<T> {
-            type Store = RustOption<T::Store>;
+    }
+    unsafe impl<'d, T: BorrowedDecode<'d>> BorrowedDecode<'d> for Option<T> {
+        type Store = RustOption<T::Store>;
 
-            unsafe fn soft_decode<'a: 'd>(
-                source: Self::CType,
-                store: &'a mut Self::Store,
-            ) -> RustOption<Self> {
-                match source.into_option()? {
-                    None => {
-                        *store = None;
-                        Some(Self::None)
-                    }
-                    Some(value) => Some(Self::Some(unsafe {
-                        T::soft_decode(value, store.insert(Default::default()))?
-                    })),
+        unsafe fn soft_decode<'a: 'd>(
+            source: Self::CType,
+            store: &'a mut Self::Store,
+        ) -> RustOption<Self> {
+            match source.into_option()? {
+                None => {
+                    *store = None;
+                    Some(Self::None)
                 }
-            }
-
-            unsafe fn soft_decode_unchecked<'a: 'd>(
-                source: Self::CType,
-                store: &'a mut Self::Store,
-            ) -> Self {
-                match unsafe { source.into_option().unwrap_unchecked() } {
-                    None => {
-                        *store = None;
-                        Self::None
-                    }
-                    Some(value) => Self::Some(unsafe {
-                        T::soft_decode_unchecked(value, store.insert(Default::default()))
-                    }),
-                }
+                Some(value) => Some(Self::Some(unsafe {
+                    T::soft_decode(value, store.insert(Default::default()))?
+                })),
             }
         }
+
+        unsafe fn soft_decode_unchecked<'a: 'd>(
+            source: Self::CType,
+            store: &'a mut Self::Store,
+        ) -> Self {
+            match unsafe { source.into_option().unwrap_unchecked() } {
+                None => {
+                    *store = None;
+                    Self::None
+                }
+                Some(value) => Self::Some(unsafe {
+                    T::soft_decode_unchecked(value, store.insert(Default::default()))
+                }),
+            }
+        }
+    }
 };
 
 unsafe impl<'a, T: ReprC<CType: Copy> + 'a, __Interior: ExclusiveKind> SoftEncodeRefUnchecked<'a>

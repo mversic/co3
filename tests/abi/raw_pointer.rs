@@ -1,28 +1,29 @@
-use co3::{ReprC, ops::CFn1, primitives::CBool, transmute::AbiCompatible};
 use core::{cell::UnsafeCell, ptr::NonNull};
+
+use co3::{ReprC, ops::CFn1, primitives::Bool, transmute::AbiCompatible};
 use static_assertions::{assert_impl_all, assert_not_impl_any, assert_type_eq_all};
 
-assert_type_eq_all!(<*const bool as ReprC>::CType, *const CBool);
-assert_type_eq_all!(<*mut bool as ReprC>::CType, *mut CBool);
-assert_type_eq_all!(<*const [bool] as ReprC>::CType, *const [CBool]);
+assert_type_eq_all!(<*const bool as ReprC>::CType, *const Bool);
+assert_type_eq_all!(<*mut bool as ReprC>::CType, *mut Bool);
+assert_type_eq_all!(<*const [bool] as ReprC>::CType, *const [Bool]);
 assert_type_eq_all!(
     <NonNull<bool> as ReprC>::CType,
-    co3::num::NonZero<*mut CBool>
+    co3::num::NonZero<*mut Bool>
 );
 assert_type_eq_all!(
     <*const String as ReprC>::CType,
     *const co3::utf8::Utf8String
 );
-assert_not_impl_any!(*const String: co3::Encode, co3::EncodeUnchecked, co3::Decode<'static>, AbiCompatible);
-assert_not_impl_any!(*mut String: co3::Encode, co3::EncodeUnchecked, co3::Decode<'static>, AbiCompatible);
-assert_not_impl_any!(NonNull<String>: co3::Encode, co3::Decode<'static>);
+assert_not_impl_any!(*const String: co3::convert::Encode, co3::convert::EncodeUnchecked, co3::convert::Decode<'static>, AbiCompatible);
+assert_not_impl_any!(*mut String: co3::convert::Encode, co3::convert::EncodeUnchecked, co3::convert::Decode<'static>, AbiCompatible);
+assert_not_impl_any!(NonNull<String>: co3::convert::Encode, co3::convert::Decode<'static>);
 assert_type_eq_all!(
     <*const core::ffi::CStr as ReprC>::CType,
     *const co3::ffi::c_char
 );
-assert_not_impl_any!(*const core::ffi::CStr: co3::Encode, co3::Decode<'static>);
-assert_impl_all!(*const [bool]: co3::Encode, co3::Decode<'static>, AbiCompatible);
-assert_impl_all!(*mut [bool]: co3::Encode, co3::Decode<'static>, AbiCompatible);
+assert_not_impl_any!(*const core::ffi::CStr: co3::convert::Encode, co3::convert::Decode<'static>);
+assert_impl_all!(*const [bool]: co3::convert::Encode, co3::convert::Decode<'static>, AbiCompatible);
+assert_impl_all!(*mut [bool]: co3::convert::Encode, co3::convert::Decode<'static>, AbiCompatible);
 
 fn identity_const(value: *const bool) -> *const bool {
     value
@@ -39,7 +40,7 @@ co3::raw! {
 fn raw_pointer_companions_lower_pointees_without_moving_them() {
     let mut value = true;
     let source = core::ptr::from_mut(&mut value);
-    let encoded: *mut CBool = co3::encode(source);
+    let encoded: *mut Bool = co3::encode(source);
     assert_eq!(encoded.cast::<bool>(), source);
     let callback: unsafe extern "C" fn(_) -> _ = identity_mut_raw;
     let output: Option<*mut bool> = unsafe { callback.call(source) };
@@ -63,25 +64,25 @@ fn raw_pointer_companions_lower_pointees_without_moving_them() {
 fn wide_pointer_conversion_preserves_address_and_length() {
     let mut values = [true, false, true];
     let source = core::ptr::slice_from_raw_parts_mut(values.as_mut_ptr(), values.len());
-    let encoded: *mut [CBool] = co3::encode(source);
+    let encoded: *mut [Bool] = co3::encode(source);
     assert_eq!(encoded.cast::<bool>(), source.cast::<bool>());
     assert_eq!(encoded.len(), source.len());
     let decoded = unsafe { co3::decode::<*mut [bool]>(encoded) }.unwrap();
     assert!(core::ptr::eq(decoded, source));
-    let encoded: *const [CBool] = co3::encode(source.cast_const());
+    let encoded: *const [Bool] = co3::encode(source.cast_const());
     let decoded = unsafe { co3::decode::<*const [bool]>(encoded) }.unwrap();
     assert!(core::ptr::eq(decoded, source.cast_const()));
 }
 
 #[test]
 fn raw_pointer_conversion_does_not_validate_or_read_the_pointee() {
-    let bytes = UnsafeCell::new(CBool(255));
+    let bytes = UnsafeCell::new(Bool(255));
     let source = bytes.get().cast::<bool>();
     let encoded = co3::encode(source);
     assert_eq!(encoded, bytes.get());
     assert_eq!(unsafe { co3::decode::<*mut bool>(encoded) }, Some(source));
     let null = core::ptr::slice_from_raw_parts(core::ptr::null::<bool>(), 17);
-    let encoded: *const [CBool] = co3::encode(null);
+    let encoded: *const [Bool] = co3::encode(null);
     assert!(encoded.is_null());
     assert_eq!(encoded.len(), 17);
     let decoded = unsafe { co3::decode::<*const [bool]>(encoded) }.unwrap();

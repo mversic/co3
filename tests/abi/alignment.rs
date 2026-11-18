@@ -1,4 +1,4 @@
-use co3::{ReprC, rust_spec::RustSpec, transmute::AbiCompatible};
+use co3::{ReprC, niche::Niche, rust_spec::RustSpec, transmute::AbiCompatible};
 use static_assertions::{assert_impl_all, assert_not_impl_any};
 
 #[derive(RustSpec, ReprC)]
@@ -97,40 +97,39 @@ fn explicit_repr_alignment_is_preserved_by_companion_types() {
 
 #[test]
 fn data_enum_carriers_construct_variants_and_report_tags() {
-    assert_eq!(<AlignedDataEnum as co3::ReprC>::CType::First(7).tag(), 0);
-    assert_eq!(<AlignedDataEnum as co3::ReprC>::CType::Second().tag(), 1);
+    assert_eq!(<AlignedDataEnum as ReprC>::CType::First(7).tag(), 0);
+    assert_eq!(<AlignedDataEnum as ReprC>::CType::Second().tag(), 1);
     assert_eq!(
-        <ExplicitCAlignedDataEnum as co3::ReprC>::CType::First(7).tag(),
+        <ExplicitCAlignedDataEnum as ReprC>::CType::First(7).tag(),
         0
     );
     assert_eq!(
-        <ExplicitCAlignedDataEnum as co3::ReprC>::CType::Second().tag(),
+        <ExplicitCAlignedDataEnum as ReprC>::CType::Second().tag(),
         1
     );
-    assert_eq!(<MixedDataEnum as co3::ReprC>::CType::First(3, 7).tag(), 0);
-    assert_eq!(<MixedDataEnum as co3::ReprC>::CType::Second(5, 11).tag(), 1);
+    assert_eq!(<MixedDataEnum as ReprC>::CType::First(3, 7).tag(), 0);
+    assert_eq!(<MixedDataEnum as ReprC>::CType::Second(5, 11).tag(), 1);
     assert_eq!(
-        format!("{:?}", <MixedDataEnum as co3::ReprC>::CType::Second(5, 11)),
+        format!("{:?}", <MixedDataEnum as ReprC>::CType::Second(5, 11)),
         "CMixedDataEnum::Second { small: 5, large: 11 }"
     );
     assert!(
-        <MixedDataEnum as co3::ReprC>::CType::First(3, 7)
-            < <MixedDataEnum as co3::ReprC>::CType::First(3, 8)
+        <MixedDataEnum as ReprC>::CType::First(3, 7) < <MixedDataEnum as ReprC>::CType::First(3, 8)
     );
 
-    let niche = <MixedDataEnum as co3::niche::Niche>::NICHE;
+    let niche = <MixedDataEnum as Niche>::NICHE;
     assert_eq!(niche.tag(), u8::MAX);
     assert!(unsafe { co3::decode::<MixedDataEnum>(niche) }.is_none());
 
-    let carrier = unsafe { <AlignedStruct as co3::ReprC>::CType::from_fields(3) };
+    let carrier = unsafe { <AlignedStruct as ReprC>::CType::from_fields(3) };
     let decoded: AlignedStruct = unsafe { co3::decode(carrier).unwrap() };
     assert_eq!(decoded.0, 3);
 
-    let carrier = unsafe { <GenericCarrier<u32> as co3::ReprC>::CType::from_fields(5) };
+    let carrier = unsafe { <GenericCarrier<u32> as ReprC>::CType::from_fields(5) };
     let (field,) = carrier.into_fields();
     assert_eq!(field, 5);
 
-    let carrier = unsafe { <GenericCarrier<u32> as co3::ReprC>::CType::from_fields(field) };
+    let carrier = unsafe { <GenericCarrier<u32> as ReprC>::CType::from_fields(field) };
     let decoded: GenericCarrier<u32> = unsafe { co3::decode(carrier).unwrap() };
     assert_eq!(decoded.0, 5);
 }

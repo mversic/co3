@@ -139,7 +139,7 @@ fn gen_import_wrapper(
     let (decode_bounds, decode) = if matches!(ty, syn::Type::FnPtr(_)) {
         (
             quote! {
-                #ty: #co3::Decode<'static, Store: #co3::stored::EmptyStore>,
+                #ty: #co3::convert::Decode<'static, Store: #co3::convert::EmptyStore>,
                 <#ty as #co3::ReprC>::CType: Copy,
             },
             quote!(#co3::decode::<'static, #ty>(source)),
@@ -147,7 +147,7 @@ fn gen_import_wrapper(
     } else {
         (
             quote! {
-                for<'__co3_decode> #ty: #co3::Decode<'__co3_decode, Store: #co3::stored::EmptyStore>,
+                for<'__co3_decode> #ty: #co3::convert::Decode<'__co3_decode, Store: #co3::convert::EmptyStore>,
                 <#ty as #co3::ReprC>::CType: Copy,
             },
             quote!(#co3::decode::<#ty>(source)),
@@ -159,10 +159,10 @@ fn gen_import_wrapper(
             #[inline]
             pub unsafe fn soft_read<'__co3_static_d>(
                 &self,
-                store: &'__co3_static_d mut <#ty as #co3::stored::DecodeMove<'__co3_static_d>>::Store,
+                store: &'__co3_static_d mut <#ty as #co3::convert::DecodeMove<'__co3_static_d>>::Store,
             ) -> Option<#ty>
             where
-                for<'_dummy> #ty: #co3::Decode<'__co3_static_d> + Copy,
+                for<'_dummy> #ty: #co3::convert::Decode<'__co3_static_d> + Copy,
                 <#ty as #co3::ReprC>::CType: Copy,
             {
                 let source = unsafe { core::ptr::read(core::ptr::addr_of!(#raw_ident)) };
@@ -174,10 +174,10 @@ fn gen_import_wrapper(
             #[inline]
             pub fn soft_read<'__co3_static_d>(
                 &self,
-                store: &'__co3_static_d mut <#ty as #co3::stored::DecodeMove<'__co3_static_d>>::Store,
+                store: &'__co3_static_d mut <#ty as #co3::convert::DecodeMove<'__co3_static_d>>::Store,
             ) -> Option<#ty>
             where
-                for<'_dummy> #ty: #co3::Decode<'__co3_static_d> + #co3::transmute::AbiCompatible + Copy,
+                for<'_dummy> #ty: #co3::convert::Decode<'__co3_static_d> + #co3::transmute::AbiCompatible + Copy,
                 for<'_dummy> <#ty as #co3::rust_spec::RustSpec>::Mutability: __Co3InteriorTrap<Trap = #co3::rust_spec::layout::Robust>,
                 <#ty as #co3::ReprC>::CType: Copy,
             {
@@ -242,7 +242,7 @@ fn gen_import_wrapper(
     let mutable_methods = mutable.then(|| quote! {
         #[inline]
         pub unsafe fn set(&self, value: #ty)
-        where for<'_dummy> #ty: #co3::Encode<Store: #co3::stored::EmptyStore>,
+        where for<'_dummy> #ty: #co3::convert::Encode<Store: #co3::convert::EmptyStore>,
         {
             let value = #co3::encode(value);
             unsafe { core::ptr::write(core::ptr::addr_of_mut!(#raw_ident), value); }
@@ -251,7 +251,7 @@ fn gen_import_wrapper(
         #[inline]
         pub unsafe fn take(&self) -> Option<#ty>
         where
-            for<'_dummy> #ty: #co3::Encode<Store: #co3::stored::EmptyStore> + core::default::Default,
+            for<'_dummy> #ty: #co3::convert::Encode<Store: #co3::convert::EmptyStore> + core::default::Default,
             #decode_bounds
         {
             let replacement = #co3::encode(<#ty as core::default::Default>::default());

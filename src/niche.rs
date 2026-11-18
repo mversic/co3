@@ -15,12 +15,11 @@ use crate::{
     CType, ReprC,
     num::NonZero,
     option::{COption, COptionSome},
-    primitives::CBool,
+    primitives::Bool,
     reference::{CRef, CRefMut, CSoftRef, CSoftRefMut},
     result::CResult,
     tuple::CTuple2,
-    wide::{CSoftWideRef, CSoftWideRefMut, CWideRef, CWideRefMut},
-    wide::{Wide, WideHeader},
+    wide::{CSoftWideRef, CSoftWideRefMut, CWideRef, CWideRefMut, Wide, WideHeader},
 };
 #[cfg(feature = "alloc")]
 use crate::{boxed::CBox, wide::CWideBox};
@@ -221,7 +220,7 @@ disjoint_impls! {
     where
         Self: ReprC<CType = COptionSome<bool>>,
     {
-        const NICHE: Self::CType = COptionSome(CBool(3));
+        const NICHE: Self::CType = COptionSome(Bool(3));
 
         fn is_niche(value: &Self::CType) -> bool {
             value.0.0 == 3
@@ -231,7 +230,7 @@ disjoint_impls! {
     where
         Self: ReprC<CType = COptionSome<Option<bool>>>,
     {
-        const NICHE: Self::CType = COptionSome(COptionSome(CBool(4)));
+        const NICHE: Self::CType = COptionSome(COptionSome(Bool(4)));
 
         fn is_niche(value: &Self::CType) -> bool {
             value.0.0.0 == 4
@@ -315,13 +314,15 @@ where
 mod tests {
     #[cfg(feature = "alloc")]
     use alloc::string::String;
-    use core::mem::ManuallyDrop;
-    use core::num::NonZero;
+    use core::{mem::ManuallyDrop, num::NonZero};
 
     use static_assertions::{assert_impl_all, assert_not_impl_any};
 
     use super::*;
-    use crate::{CType, Decode, Encode};
+    use crate::{
+        CType,
+        convert::{Decode, Encode},
+    };
 
     #[test]
     fn nested_option_niche_family() {
@@ -360,7 +361,7 @@ mod tests {
         assert!(<Option<Option<bool>>>::is_niche(
             &<Option<Option<bool>>>::NICHE
         ));
-        assert!(!bool::is_niche(&CBool(0)));
+        assert!(!bool::is_niche(&Bool(0)));
         assert_eq!(
             unsafe { crate::decode::<Option<bool>>(crate::encode(None::<bool>)) },
             Some(None)
@@ -382,15 +383,15 @@ mod tests {
             Some(None)
         );
         assert_eq!(
-            unsafe { crate::decode::<Option<Option<bool>>>(crate::encode(None::<Option<bool>>)) },
+            unsafe { crate::decode::<Option<Option<bool>>>(crate::encode(None::<Option<bool>>,)) },
             Some(None)
         );
         assert_eq!(
-            unsafe { crate::decode::<Option<(u8, bool)>>(crate::encode(None::<(u8, bool)>)) },
+            unsafe { crate::decode::<Option<(u8, bool)>>(crate::encode(None::<(u8, bool)>,)) },
             Some(None)
         );
         assert_eq!(
-            unsafe { crate::decode::<Result<bool, ()>>(crate::encode(Err::<bool, ()>(()))) },
+            unsafe { crate::decode::<Result<bool, ()>>(crate::encode(Err::<bool, ()>((),))) },
             Some(Err(()))
         );
     }

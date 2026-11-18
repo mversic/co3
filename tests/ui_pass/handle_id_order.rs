@@ -1,6 +1,6 @@
 use co3::{
     ffi,
-    tag::{Tagged, TagFamily},
+    tag::{TagFamily, Tagged},
 };
 
 ffi! {
@@ -46,8 +46,9 @@ ffi! {
 }
 
 mod provider {
-    use super::*;
     use co3::rust_spec::RustSpec;
+
+    use super::*;
 
     trait Custom<T> {
         fn kita1(&mut self, inc: &T) -> u8;

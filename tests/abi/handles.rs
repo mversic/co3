@@ -1,4 +1,4 @@
-use co3::ffi;
+use co3::{ffi, tag::Tagged};
 
 trait Custom {
     fn inc(&mut self, by: u8);
@@ -8,13 +8,13 @@ trait CustomDynSelf {
     fn set(&mut self, value: u8);
 }
 
-unsafe impl co3::tag::Tagged for Opaque<bool, u8> {
+unsafe impl Tagged for Opaque<bool, u8> {
     const TAG: u8 = 1;
 }
-unsafe impl co3::tag::Tagged for Opaque<bool, u32> {
+unsafe impl Tagged for Opaque<bool, u32> {
     const TAG: u8 = 2;
 }
-unsafe impl co3::tag::Tagged for Opaque<u8, bool> {
+unsafe impl Tagged for Opaque<u8, bool> {
     const TAG: u8 = 3;
 }
 
@@ -119,13 +119,13 @@ mod provider {
         DROP_COUNT.load(Ordering::Relaxed)
     }
 
-    unsafe impl co3::tag::Tagged for Opaque<bool, u8> {
+    unsafe impl Tagged for Opaque<bool, u8> {
         const TAG: u8 = 1;
     }
-    unsafe impl co3::tag::Tagged for Opaque<bool, u32> {
+    unsafe impl Tagged for Opaque<bool, u32> {
         const TAG: u8 = 2;
     }
-    unsafe impl co3::tag::Tagged for Opaque<u8, bool> {
+    unsafe impl Tagged for Opaque<u8, bool> {
         const TAG: u8 = 3;
     }
 

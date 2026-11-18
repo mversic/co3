@@ -1,6 +1,6 @@
 use core::marker::PhantomData;
 
-use co3::{ffi, rust_spec::RustSpec};
+use co3::{ffi, rust_spec::RustSpec, tag::Tagged};
 
 type TagKind = u8;
 
@@ -27,11 +27,11 @@ impl<T> Mixed<T> for Resource<T> {
     }
 }
 
-unsafe impl co3::tag::Tagged for Resource<u8> {
+unsafe impl Tagged for Resource<u8> {
     const TAG: u8 = 1;
 }
 
-unsafe impl co3::tag::Tagged for Resource<u16> {
+unsafe impl Tagged for Resource<u16> {
     const TAG: u8 = 2;
 }
 

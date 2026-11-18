@@ -17,7 +17,7 @@ struct GenericSlicePacket<T> {
 #[test]
 fn generic_slice_tail_has_generated_carrier_wide_impl() {
     assert_impl_all!(GenericSlicePacket<u8>: Wide);
-    assert_impl_all!(<GenericSlicePacket<u8> as co3::ReprC>::CType: Wide);
+    assert_impl_all!(<GenericSlicePacket<u8> as ReprC>::CType: Wide);
 }
 
 #[repr(transparent)]
@@ -36,9 +36,9 @@ fn transparent_multiple_fields_use_the_tail_header() {
     fn has_slice_header<T: Wide<Header = [u8; 0]> + ?Sized>() {}
 
     has_slice_header::<TransparentSlicePacket<u8>>();
-    has_slice_header::<<TransparentSlicePacket<u8> as co3::ReprC>::CType>();
+    has_slice_header::<<TransparentSlicePacket<u8> as ReprC>::CType>();
     has_slice_header::<TransparentGenericTail<[u8]>>();
-    has_slice_header::<<TransparentGenericTail<[u8]> as co3::ReprC>::CType>();
+    has_slice_header::<<TransparentGenericTail<[u8]> as ReprC>::CType>();
 
     let payload = [3u8, 5, 8];
     let ptr = core::ptr::slice_from_raw_parts(payload.as_ptr(), payload.len())

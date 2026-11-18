@@ -72,15 +72,26 @@ error[E0277]: the size for values of type `[u8]` cannot be known at compilation 
    |
    = help: within `Unsized<[u8]>`, the trait `std::marker::Sized` is not implemented for `[u8]`
 note: required because it appears within the type `Unsized<[u8]>`
-  --> tests/ui_fail/unsized_type_dispatch.rs:6:8
+  --> tests/ui_fail/unsized_type_dispatch.rs:6:27
    |
  6 | struct Unsized<T: ?Sized>(T);
-   |        ^^^^^^^
+   |                           ^ required by this field
 note: required by an implicit `Sized` bound in `__Co3DispatchParams`
   --> tests/ui_fail/unsized_type_dispatch.rs:42:18
    |
+37 | ffi! {
+38 |     #![unsafe(extern("C"))]
+39 |
+40 |     #![symbol_prefix = "kita"]
+41 |
 42 |     impl<dyn(u8) T = [u8]> Wrapper<T>
    |                  ^ required by the implicit `Sized` requirement on this type parameter in `__Co3DispatchParams`
+43 |     where
+44 |         use<T> @ <Unsized<[u8]>>,
+45 |     {
+46 |         fn take(self: move Self, tag_id: <dyn T>::TAG) -> usize;
+47 |     }
+48 | }
    = note: this error originates in the macro `ffi` (in Nightly builds, run with -Z macro-backtrace for more info)
 help: consider relaxing the implicit `Sized` restriction
    |

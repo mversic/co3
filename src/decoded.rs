@@ -1,5 +1,4 @@
 //! Referent-specific decoding and mutable writeback for unstable layouts.
-use crate::reference::SharedRefCarrier as _;
 #[cfg(feature = "alloc")]
 use alloc::{boxed::Box, vec::Vec};
 
@@ -13,12 +12,12 @@ use rust_spec::{
 
 use crate::{
     CType, ReprC,
+    convert::{DecodeMove, EmptyStore, EncodeMove, Store},
     ffi::NulTerminatedBuf,
     niche::Niche,
     option::{COption, COptionSome},
-    reference::{CSoftRef, CSoftRefMut, MutRefCarrier},
+    reference::{CSoftRef, CSoftRefMut, MutRefCarrier, SharedRefCarrier as _},
     result::{CResult, CResultErr, CResultOk},
-    stored::{DecodeMove, EmptyStore, EncodeMove, Store},
     sync::{ArrayStore, RefMutSizedDecodeStore, RefSizedDecodeStore, TakeDecoded},
 };
 #[cfg(feature = "alloc")]
@@ -2143,11 +2142,12 @@ where
 #[cfg(all(test, feature = "alloc", feature = "derive"))]
 mod tests {
     use alloc::{boxed::Box, vec};
+
     use co3::{
         ReprC,
+        convert::{DecodeMove, SoftDecodeMut, SoftDecodeRef, Store},
         reference::{CSoftRef, CSoftRefMut},
         rust_spec::RustSpec,
-        stored::{DecodeMove, SoftDecodeMut, SoftDecodeRef, Store},
     };
     use static_assertions::assert_not_impl_any;
 
@@ -2182,10 +2182,10 @@ mod tests {
 
     #[test]
     fn borrowed_boxed_stable_slice_validates_elements() {
-        use co3::{primitives::CBool, wide::CWideBox};
+        use co3::{primitives::Bool, wide::CWideBox};
 
         for raw in [0, 1, 2] {
-            let source = CWideBox::<[bool]>::from_box(vec![CBool(raw)].into_boxed_slice());
+            let source = CWideBox::<[bool]>::from_box(vec![Bool(raw)].into_boxed_slice());
             let mut store = Default::default();
             let decoded = unsafe {
                 <Box<[bool]> as crate::borrow::BorrowedDecode>::soft_decode(source, &mut store)

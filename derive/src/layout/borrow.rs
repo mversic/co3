@@ -27,14 +27,14 @@ fn gen_delegate_impls(name: &Ident, generics: &syn::Generics) -> TokenStream {
     let mut decode_generics = generics.clone();
     decode_generics.params.insert(0, parse_quote!('_dšč));
     let (decode_impl_generics, _, _) = decode_generics.split_for_impl();
-    let unchecked = quote!(co3::stored::EncodeMoveUnchecked);
-    let checked = quote!(co3::stored::EncodeMove);
-    let decode = quote!(co3::stored::DecodeMove<'_dšč>);
-    let unchecked_store = quote!(<Self as co3::stored::EncodeMoveUnchecked>::SoftStore);
-    let checked_store = quote!(<Self as co3::stored::EncodeMove>::Store);
+    let unchecked = quote!(co3::convert::EncodeMoveUnchecked);
+    let checked = quote!(co3::convert::EncodeMove);
+    let decode = quote!(co3::convert::DecodeMove<'_dšč>);
+    let unchecked_store = quote!(<Self as co3::convert::EncodeMoveUnchecked>::SoftStore);
+    let checked_store = quote!(<Self as co3::convert::EncodeMove>::Store);
     let unchecked_body =
-        quote!(unsafe { co3::stored::EncodeMoveUnchecked::soft_encode_unchecked(self, store) });
-    let checked_body = quote!(co3::stored::EncodeMove::soft_encode(self, store));
+        quote!(unsafe { co3::convert::EncodeMoveUnchecked::soft_encode_unchecked(self, store) });
+    let checked_body = quote!(co3::convert::EncodeMove::soft_encode(self, store));
     quote! {
         unsafe impl #impl_generics co3::borrow::BorrowedEncodeUnchecked for #name #ty_generics
         where #speculative Self: #unchecked, #predicates {
@@ -81,7 +81,7 @@ impl VisitMut for BorrowedCodecs {
         syn::visit_mut::visit_path_mut(self, path);
         if path.segments.len() < 3
             || path.segments[0].ident != "co3"
-            || path.segments[1].ident != "stored"
+            || path.segments[1].ident != "convert"
         {
             return;
         }
@@ -326,12 +326,12 @@ mod tests {
     #[test]
     fn borrowed_codecs_preserve_custom_validation_expressions() {
         let validator: syn::ExprClosure =
-            parse_quote!(|value| { co3::stored::EncodeMove::soft_encode(value, &mut ()) != 0 });
+            parse_quote!(|value| { co3::convert::EncodeMove::soft_encode(value, &mut ()) != 0 });
         let mut implementation: syn::ItemImpl = parse_quote! {
-            unsafe impl co3::stored::BorrowPlaceholder for Example {
+            unsafe impl co3::convert::BorrowPlaceholder for Example {
                 fn convert(value: u8) -> bool {
                     let validate = #validator;
-                    validate(co3::stored::EncodeMove::soft_encode(value, &mut ()))
+                    validate(co3::convert::EncodeMove::soft_encode(value, &mut ()))
                 }
             }
         };

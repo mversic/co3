@@ -1,4 +1,4 @@
-use co3::{ReprC, rust_spec::RustSpec};
+use co3::{ReprC, niche::Niche, rust_spec::RustSpec};
 
 #[derive(RustSpec, ReprC)]
 #[repr_c(is_valid = |a| *a != 42)]
@@ -63,7 +63,7 @@ pub struct UnsizedSlice<T>([T]);
 pub struct UnsizedStr(str);
 
 fn unsized_niches_cannot_be_used() {
-    fn require_niche<T: co3::niche::Niche + ?Sized>() {}
+    fn require_niche<T: Niche + ?Sized>() {}
     require_niche::<Parametrized<[u8]>>();
 }
 

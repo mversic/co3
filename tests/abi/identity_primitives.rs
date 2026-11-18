@@ -1,6 +1,7 @@
 use co3::{
     ReprC, ffi,
     ffi::{c_int, c_long},
+    niche::Niche,
     raw,
     rust_spec::RustSpec,
 };
@@ -116,10 +117,10 @@ fn c_alias_enum_field_round_trips() {
 
 #[test]
 fn c_alias_field_preserves_inferred_niche() {
-    let niche = <AliasWithNiche as co3::niche::Niche>::NICHE;
+    let niche = <AliasWithNiche as Niche>::NICHE;
     let _: c_int = niche.0;
-    assert!(<Option<bool> as co3::niche::Niche>::is_niche(&niche.1));
-    assert!(<AliasWithNiche as co3::niche::Niche>::is_niche(&niche));
+    assert!(<Option<bool> as Niche>::is_niche(&niche.1));
+    assert!(<AliasWithNiche as Niche>::is_niche(&niche));
 }
 
 #[test]
@@ -167,8 +168,7 @@ fn safe_carrier_constructors_accept_lowered_storage() {
     use co3::{
         boxed::CBox,
         reference::{CSoftRef, CSoftRefMut},
-        wide::CWideBox,
-        wide::{CSoftWideRef, CSoftWideRefMut},
+        wide::{CSoftWideRef, CSoftWideRefMut, CWideBox},
     };
 
     let boxed = CBox::from_box(Box::new(9_u8));

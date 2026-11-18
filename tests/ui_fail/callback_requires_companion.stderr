@@ -88,8 +88,6 @@ note: required for `NoRepr` to implement `CType`
    |                    ----- type parameter would need to implement `CType`
  4 | struct NoRepr(u8);
    |        ^^^^^^
-   = help: consider manually implementing `CType` to avoid undesired bounds caused by "imperfect derives"
-   = note: to learn more, visit <https://github.com/rust-lang/rust/issues/26925>
    = note: associated types for the current `impl` cannot be restricted in `where` clauses
    = note: associated types for the current `impl` cannot be restricted in `where` clauses
 note: required for `NoRepr` to implement `CFnArg`
@@ -99,8 +97,6 @@ note: required for `NoRepr` to implement `CFnArg`
    |                    ----- type parameter would need to implement `CFnArg`
  4 | struct NoRepr(u8);
    |        ^^^^^^
-   = help: consider manually implementing `CFnArg` to avoid undesired bounds caused by "imperfect derives"
-   = note: to learn more, visit <https://github.com/rust-lang/rust/issues/26925>
    = note: required for `extern "C" fn(NoRepr)` to implement `ReprC`
    = note: this error originates in the macro `ffi` which comes from the expansion of the derive macro `RustSpec` (in Nightly builds, run with -Z macro-backtrace for more info)
 
@@ -194,8 +190,6 @@ note: required for `NoRepr` to implement `CType`
    |                    ----- type parameter would need to implement `CType`
  4 | struct NoRepr(u8);
    |        ^^^^^^
-   = help: consider manually implementing `CType` to avoid undesired bounds caused by "imperfect derives"
-   = note: to learn more, visit <https://github.com/rust-lang/rust/issues/26925>
    = note: associated types for the current `impl` cannot be restricted in `where` clauses
    = note: associated types for the current `impl` cannot be restricted in `where` clauses
 note: required for `NoRepr` to implement `CFnArg`
@@ -205,8 +199,6 @@ note: required for `NoRepr` to implement `CFnArg`
    |                    ----- type parameter would need to implement `CFnArg`
  4 | struct NoRepr(u8);
    |        ^^^^^^
-   = help: consider manually implementing `CFnArg` to avoid undesired bounds caused by "imperfect derives"
-   = note: to learn more, visit <https://github.com/rust-lang/rust/issues/26925>
    = note: required for `extern "C" fn(NoRepr)` to implement `ReprC`
    = note: this error originates in the macro `_impls` which comes from the expansion of the derive macro `RustSpec` (in Nightly builds, run with -Z macro-backtrace for more info)
 

@@ -1,10 +1,10 @@
 use core::mem::MaybeUninit;
 
-use co3::ffi;
+use co3::{ffi, tag::Tagged};
 
 type TagKind = u8;
 
-trait Family: co3::tag::Tagged {
+trait Family: Tagged {
     type Source;
     type Owned;
 }

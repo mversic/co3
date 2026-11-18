@@ -1523,7 +1523,7 @@ fn gen_identity_codec_impls(
             type CType = Self;
         }
 
-        unsafe impl #impl_generics co3::stored::EncodeMove for #ident #ty_generics
+        unsafe impl #impl_generics co3::convert::EncodeMove for #ident #ty_generics
         where
             #sized_bound
             #predicates
@@ -1535,11 +1535,11 @@ fn gen_identity_codec_impls(
             where
                 Self: 'itm,
             {
-                use co3::stored::EncodeMoveUnchecked as _;
-                unsafe { co3::stored::EncodeMoveUnchecked::soft_encode_unchecked(self, &mut ()) }
+                use co3::convert::EncodeMoveUnchecked as _;
+                unsafe { co3::convert::EncodeMoveUnchecked::soft_encode_unchecked(self, &mut ()) }
             }
         }
-        unsafe impl #impl_generics co3::stored::EncodeMoveUnchecked for #ident #ty_generics
+        unsafe impl #impl_generics co3::convert::EncodeMoveUnchecked for #ident #ty_generics
         where
             #sized_bound
             #predicates
@@ -1550,7 +1550,7 @@ fn gen_identity_codec_impls(
                 self
             }
         }
-        unsafe impl #decode_impl_generics co3::stored::DecodeMove<'d> for #ident #ty_generics
+        unsafe impl #decode_impl_generics co3::convert::DecodeMove<'d> for #ident #ty_generics
         where
             #sized_bound
             #predicates
@@ -1563,17 +1563,17 @@ fn gen_identity_codec_impls(
             }
         }
 
-        impl #impl_generics co3::Encode for #ident #ty_generics
+        impl #impl_generics co3::convert::Encode for #ident #ty_generics
         where
             #sized_bound
             #predicates
         {}
-        impl #impl_generics co3::EncodeUnchecked for #ident #ty_generics
+        impl #impl_generics co3::convert::EncodeUnchecked for #ident #ty_generics
         where
             #sized_bound
             #predicates
         {}
-        impl #impl_generics co3::Decode<'_> for #ident #ty_generics
+        impl #impl_generics co3::convert::Decode<'_> for #ident #ty_generics
         where
             #sized_bound
             #predicates

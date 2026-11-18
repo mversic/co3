@@ -1,12 +1,18 @@
-//! ABI carriers for pointers derived from references.
+//! ABI carriers and conversion traits for Rust references.
 use core::cell::UnsafeCell;
 
 use rust_spec::RustSpec;
 
 use crate::{
-    CFnArg, CFnReturn, CType, Decode, Encode, ReprC,
-    stored::{DecodeMove, EncodeMove, EncodeMoveUnchecked},
+    CFnArg, CFnReturn, CType, ReprC,
+    convert::{Decode, DecodeMove, Encode, EncodeMove, EncodeMoveUnchecked},
     transmute::{AbiCompatible, AbiCompatibleValidate},
+};
+pub(crate) use crate::{
+    decoded::{
+        decode_mut_field, decode_mut_field_unchecked, decode_ref_field, decode_ref_field_unchecked,
+    },
+    mutable::impl_direct_mut,
 };
 
 /// Shared carrier operations used by internal conversion helpers.
@@ -469,7 +475,7 @@ macro_rules! impl_reference_identity {
             unsafe fn soft_decode<'itm: 'd>(source: Self::CType, (): &mut ()) -> Option<Self> { Some(source) }
         }
         impl<$($params)*> Encode for $ty<$($args)*> {}
-        impl<$($params)*> crate::EncodeUnchecked for $ty<$($args)*> {}
+        impl<$($params)*> crate::convert::EncodeUnchecked for $ty<$($args)*> {}
         impl<'d, $($params)*> Decode<'d> for $ty<$($args)*> {}
         unsafe impl<$($params)*> CType for $ty<$($args)*> {}
         unsafe impl<$($params)*> CFnArg for $ty<$($args)*> {}

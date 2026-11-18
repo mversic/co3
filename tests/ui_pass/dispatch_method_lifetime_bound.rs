@@ -1,8 +1,8 @@
-use co3::{ReprC,
-    Tag, ffi,
-    tag::{Tagged, TagFamily},
+use co3::{
+    ReprC, Tag, ffi,
+    rust_spec::RustSpec,
+    tag::{TagFamily, Tagged},
 };
-use co3::rust_spec::RustSpec;
 
 trait Attribute {}
 

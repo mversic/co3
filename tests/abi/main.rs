@@ -1,5 +1,7 @@
 // Unlike static_assertions' generic helper, this helper carries the
 // reference-mapping prerequisite of SoftEncodeRef and SoftEncodeRefUnchecked.
+use co3::{CType, ReprC};
+
 trait TransparentCarrier: Copy {
     type Payload: Copy;
 
@@ -9,19 +11,17 @@ trait TransparentCarrier: Copy {
     }
 }
 
-impl<R: co3::ReprC<CType: Copy + co3::CType + Sized>> TransparentCarrier
-    for co3::option::COptionSome<R>
-{
+impl<R: ReprC<CType: Copy + CType + Sized>> TransparentCarrier for co3::option::COptionSome<R> {
     type Payload = R::CType;
 }
 
-impl<Ok: co3::ReprC<CType: Copy + co3::CType + Sized>, Err: co3::ReprC> TransparentCarrier
+impl<Ok: ReprC<CType: Copy + CType + Sized>, Err: ReprC> TransparentCarrier
     for co3::result::CResultOk<Ok, Err>
 {
     type Payload = Ok::CType;
 }
 
-impl<Ok: co3::ReprC, Err: co3::ReprC<CType: Copy + co3::CType + Sized>> TransparentCarrier
+impl<Ok: ReprC, Err: ReprC<CType: Copy + CType + Sized>> TransparentCarrier
     for co3::result::CResultErr<Ok, Err>
 {
     type Payload = Err::CType;
@@ -30,13 +30,14 @@ impl<Ok: co3::ReprC, Err: co3::ReprC<CType: Copy + co3::CType + Sized>> Transpar
 macro_rules! assert_not_shared_encoder {
     ($ty:ty: $($encoder:path),+ $(,)?) => {
         const _: fn() = || {
+            use co3::ReprC;
             $(
                 {
                     trait AmbiguousIfImpl<A> { fn check() {} }
                     impl<T: ?Sized> AmbiguousIfImpl<()> for T {}
                     impl<T: ?Sized + $encoder> AmbiguousIfImpl<u8> for T
                     where
-                        &'static T: co3::ReprC<CType: Sized>,
+                        &'static T: ReprC<CType: Sized>,
                     {}
                     let _ = <$ty as AmbiguousIfImpl<_>>::check;
                 }

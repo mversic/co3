@@ -9,12 +9,12 @@ use rust_spec::{
 };
 
 use crate::{
-    CFnArg, CFnReturn, CType, Decode, Encode, EncodeUnchecked, ReprC, Thin,
-    niche::Niche,
-    stored::{
-        DecodeMove, EmptyStore, EncodeMove, EncodeMoveUnchecked, SoftEncodeRef,
-        SoftEncodeRefUnchecked,
+    CFnArg, CFnReturn, CType, ReprC, Thin,
+    convert::{
+        Decode, DecodeMove, EmptyStore, Encode, EncodeMove, EncodeMoveUnchecked, EncodeUnchecked,
+        SoftEncodeRef, SoftEncodeRefUnchecked,
     },
+    niche::Niche,
     sync::RefSizedEncodeStore,
     transmute::{AbiCompatible, AbiCompatibleValidate},
 };
@@ -275,114 +275,122 @@ macro_rules! result_codecs {
 result_codecs!(EncodeMove, EncodeMoveUnchecked, DecodeMove);
 const _: () = {
     use crate::borrow::{BorrowedDecode, BorrowedEncode, BorrowedEncodeUnchecked};
-    unsafe impl<T: BorrowedEncodeUnchecked<CType: Copy>, E: BorrowedEncodeUnchecked<CType: Copy>> BorrowedEncodeUnchecked
-            for Result<T, E>
+    unsafe impl<T: BorrowedEncodeUnchecked<CType: Copy>, E: BorrowedEncodeUnchecked<CType: Copy>>
+        BorrowedEncodeUnchecked for Result<T, E>
+    {
+        type Owner = Option<RustResult<T::Owner, E::Owner>>;
+        type SoftStore = Option<RustResult<T::SoftStore, E::SoftStore>>;
+
+        unsafe fn soft_encode_unchecked<'itm>(
+            self,
+            store: &'itm mut Self::SoftStore,
+            owner: &'itm mut Self::Owner,
+        ) -> Self::CType
+        where
+            Self: 'itm,
         {
-            type Owner = Option<RustResult<T::Owner, E::Owner>>;
-            type SoftStore = Option<RustResult<T::SoftStore, E::SoftStore>>;
-
-            unsafe fn soft_encode_unchecked<'itm>(
-                self,
-                store: &'itm mut Self::SoftStore, owner: &'itm mut Self::Owner) -> Self::CType
-            where
-                Self: 'itm,
-            {
-                match self {
-                    Self::Ok(value) => {
-                        let Ok(inner) = store.insert(Ok(Default::default())) else {
-                            unreachable!()
-                        };
-                        let Ok(inner_owner) = owner.insert(Ok(Default::default())) else {
-                            unreachable!()
-                        };
-                        CResult::Ok(unsafe { value.soft_encode_unchecked(inner, inner_owner) })
-                    }
-                    Self::Err(value) => {
-                        let Err(inner) = store.insert(Err(Default::default())) else {
-                            unreachable!()
-                        };
-                        let Err(inner_owner) = owner.insert(Err(Default::default())) else {
-                            unreachable!()
-                        };
-                        CResult::Err(unsafe { value.soft_encode_unchecked(inner, inner_owner) })
-                    }
+            match self {
+                Self::Ok(value) => {
+                    let Ok(inner) = store.insert(Ok(Default::default())) else {
+                        unreachable!()
+                    };
+                    let Ok(inner_owner) = owner.insert(Ok(Default::default())) else {
+                        unreachable!()
+                    };
+                    CResult::Ok(unsafe { value.soft_encode_unchecked(inner, inner_owner) })
+                }
+                Self::Err(value) => {
+                    let Err(inner) = store.insert(Err(Default::default())) else {
+                        unreachable!()
+                    };
+                    let Err(inner_owner) = owner.insert(Err(Default::default())) else {
+                        unreachable!()
+                    };
+                    CResult::Err(unsafe { value.soft_encode_unchecked(inner, inner_owner) })
                 }
             }
         }
-        unsafe impl<T: BorrowedEncode<CType: Copy>, E: BorrowedEncode<CType: Copy>> BorrowedEncode for Result<T, E> {
-            type Store = Option<RustResult<T::Store, E::Store>>;
+    }
+    unsafe impl<T: BorrowedEncode<CType: Copy>, E: BorrowedEncode<CType: Copy>> BorrowedEncode
+        for Result<T, E>
+    {
+        type Store = Option<RustResult<T::Store, E::Store>>;
 
-            fn soft_encode<'a>(self, store: &'a mut Self::Store, owner: &'a mut Self::Owner) -> Self::CType
-            where
-                Self: 'a,
-            {
-                match self {
-                    Self::Ok(value) => {
-                        let Ok(inner) = store.insert(Ok(Default::default())) else {
-                            unreachable!()
-                        };
-                        let Ok(inner_owner) = owner.insert(Ok(Default::default())) else {
-                            unreachable!()
-                        };
-                        CResult::Ok(BorrowedEncode::soft_encode(value, inner, inner_owner))
-                    }
-                    Self::Err(value) => {
-                        let Err(inner) = store.insert(Err(Default::default())) else {
-                            unreachable!()
-                        };
-                        let Err(inner_owner) = owner.insert(Err(Default::default())) else {
-                            unreachable!()
-                        };
-                        CResult::Err(BorrowedEncode::soft_encode(value, inner, inner_owner))
-                    }
-                }
-            }
-        }
-        unsafe impl<'d, T: BorrowedDecode<'d, CType: Copy>, E: BorrowedDecode<'d, CType: Copy>> BorrowedDecode<'d>
-            for Result<T, E>
+        fn soft_encode<'a>(
+            self,
+            store: &'a mut Self::Store,
+            owner: &'a mut Self::Owner,
+        ) -> Self::CType
+        where
+            Self: 'a,
         {
-            type Store = Option<RustResult<T::Store, E::Store>>;
-
-            unsafe fn soft_decode<'a: 'd>(
-                source: Self::CType,
-                store: &'a mut Self::Store,
-            ) -> Option<Self> {
-                match source.into_result()? {
-                    Ok(value) => {
-                        let Ok(inner) = store.insert(Ok(Default::default())) else {
-                            unreachable!()
-                        };
-                        Some(Self::Ok(unsafe { T::soft_decode(value, inner)? }))
-                    }
-                    Err(value) => {
-                        let Err(inner) = store.insert(Err(Default::default())) else {
-                            unreachable!()
-                        };
-                        Some(Self::Err(unsafe { E::soft_decode(value, inner)? }))
-                    }
+            match self {
+                Self::Ok(value) => {
+                    let Ok(inner) = store.insert(Ok(Default::default())) else {
+                        unreachable!()
+                    };
+                    let Ok(inner_owner) = owner.insert(Ok(Default::default())) else {
+                        unreachable!()
+                    };
+                    CResult::Ok(BorrowedEncode::soft_encode(value, inner, inner_owner))
                 }
-            }
-
-            unsafe fn soft_decode_unchecked<'a: 'd>(
-                source: Self::CType,
-                store: &'a mut Self::Store,
-            ) -> Self {
-                match unsafe { source.into_result().unwrap_unchecked() } {
-                    Ok(value) => {
-                        let Ok(inner) = store.insert(Ok(Default::default())) else {
-                            unreachable!()
-                        };
-                        Self::Ok(unsafe { T::soft_decode_unchecked(value, inner) })
-                    }
-                    Err(value) => {
-                        let Err(inner) = store.insert(Err(Default::default())) else {
-                            unreachable!()
-                        };
-                        Self::Err(unsafe { E::soft_decode_unchecked(value, inner) })
-                    }
+                Self::Err(value) => {
+                    let Err(inner) = store.insert(Err(Default::default())) else {
+                        unreachable!()
+                    };
+                    let Err(inner_owner) = owner.insert(Err(Default::default())) else {
+                        unreachable!()
+                    };
+                    CResult::Err(BorrowedEncode::soft_encode(value, inner, inner_owner))
                 }
             }
         }
+    }
+    unsafe impl<'d, T: BorrowedDecode<'d, CType: Copy>, E: BorrowedDecode<'d, CType: Copy>>
+        BorrowedDecode<'d> for Result<T, E>
+    {
+        type Store = Option<RustResult<T::Store, E::Store>>;
+
+        unsafe fn soft_decode<'a: 'd>(
+            source: Self::CType,
+            store: &'a mut Self::Store,
+        ) -> Option<Self> {
+            match source.into_result()? {
+                Ok(value) => {
+                    let Ok(inner) = store.insert(Ok(Default::default())) else {
+                        unreachable!()
+                    };
+                    Some(Self::Ok(unsafe { T::soft_decode(value, inner)? }))
+                }
+                Err(value) => {
+                    let Err(inner) = store.insert(Err(Default::default())) else {
+                        unreachable!()
+                    };
+                    Some(Self::Err(unsafe { E::soft_decode(value, inner)? }))
+                }
+            }
+        }
+
+        unsafe fn soft_decode_unchecked<'a: 'd>(
+            source: Self::CType,
+            store: &'a mut Self::Store,
+        ) -> Self {
+            match unsafe { source.into_result().unwrap_unchecked() } {
+                Ok(value) => {
+                    let Ok(inner) = store.insert(Ok(Default::default())) else {
+                        unreachable!()
+                    };
+                    Self::Ok(unsafe { T::soft_decode_unchecked(value, inner) })
+                }
+                Err(value) => {
+                    let Err(inner) = store.insert(Err(Default::default())) else {
+                        unreachable!()
+                    };
+                    Self::Err(unsafe { E::soft_decode_unchecked(value, inner) })
+                }
+            }
+        }
+    }
 };
 
 unsafe impl<'a, T: ReprC<CType: Copy> + 'a, E: ReprC<CType: Copy> + 'a, __Interior: ExclusiveKind>

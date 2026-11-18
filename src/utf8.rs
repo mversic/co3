@@ -9,11 +9,11 @@ use rust_spec::RustSpec;
 
 #[cfg(feature = "alloc")]
 use crate::{
-    CFnArg, CFnReturn, Decode, Encode,
+    CFnArg, CFnReturn,
     boxed::OwnedBoxCarrier,
+    convert::{Decode, DecodeMove, Encode, EncodeMove, EncodeMoveUnchecked},
     niche::Niche,
     primitives::primitive_derive,
-    stored::{DecodeMove, EncodeMove, EncodeMoveUnchecked},
     vec::CVec,
     wide::CWideBox,
 };
@@ -185,7 +185,7 @@ unsafe impl<'d> DecodeMove<'d> for String {
 #[cfg(feature = "alloc")]
 impl Encode for String {}
 #[cfg(feature = "alloc")]
-impl crate::EncodeUnchecked for String {}
+impl crate::convert::EncodeUnchecked for String {}
 #[cfg(feature = "alloc")]
 impl Decode<'_> for String {}
 

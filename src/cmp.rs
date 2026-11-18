@@ -1,17 +1,16 @@
 //! C-compatible representations of comparison types.
-use core::cmp::{Ordering, Reverse};
+use core::cmp::Reverse;
 
 use rust_spec::RustSpec;
 
 use crate::{
-    CFnArg, CFnReturn, CType, Decode, Encode, ReprC, Zeroable,
+    CFnArg, CFnReturn, CType, ReprC, Zeroable,
+    convert::{
+        Decode, DecodeMove, Encode, EncodeMove, EncodeMoveUnchecked, SoftDecodeMut, SoftDecodeRef,
+        SoftEncodeMut, SoftEncodeMutUnchecked, SoftEncodeRef, SoftEncodeRefUnchecked,
+    },
     niche::Niche,
     primitives::{fieldless_enum_derive, primitive_derive},
-    shared::{SoftEncodeRef, SoftEncodeRefUnchecked},
-    stored::{
-        DecodeMove, EncodeMove, EncodeMoveUnchecked, SoftDecodeMut, SoftDecodeRef, SoftEncodeMut,
-        SoftEncodeMutUnchecked,
-    },
     transmute::{AbiCompatible, AbiCompatibleValidate, transmute_owned},
 };
 
@@ -21,34 +20,34 @@ use crate::{
 #[derive(Debug, Clone, Copy, Default, RustSpec)]
 #[repr(transparent)]
 #[doc(hidden)]
-pub struct COrdering(pub i8);
+pub struct Ordering(pub i8);
 
-unsafe impl Zeroable for COrdering {}
+unsafe impl Zeroable for Ordering {}
 
-impl COrdering {
+impl Ordering {
     pub const LESS: Self = Self(-1);
     pub const EQUAL: Self = Self(0);
     pub const GREATER: Self = Self(1);
 }
 
-impl PartialEq for COrdering {
+impl PartialEq for Ordering {
     fn eq(&self, other: &Self) -> bool {
         matches!(self.0, -1..=1) && self.0 == other.0
     }
 }
 
-impl From<Ordering> for COrdering {
+impl From<core::cmp::Ordering> for Ordering {
     #[inline(always)]
-    fn from(value: Ordering) -> Self {
+    fn from(value: core::cmp::Ordering) -> Self {
         Self(value as i8)
     }
 }
 
-impl TryFrom<COrdering> for Ordering {
-    type Error = COrdering;
+impl TryFrom<Ordering> for core::cmp::Ordering {
+    type Error = Ordering;
 
     #[inline(always)]
-    fn try_from(value: COrdering) -> Result<Self, Self::Error> {
+    fn try_from(value: Ordering) -> Result<Self, Self::Error> {
         match value.0 {
             -1 => Ok(Self::Less),
             0 => Ok(Self::Equal),
@@ -58,13 +57,13 @@ impl TryFrom<COrdering> for Ordering {
     }
 }
 
-primitive_derive! { COrdering }
+primitive_derive! { Ordering }
 fieldless_enum_derive! {
-    Ordering => COrdering: {COrdering(-2)}:
-    |i: &COrdering| Ordering::try_from(*i).is_ok();
-    |source: COrdering| Ordering::try_from(source).ok();
-    |source: Ordering| COrdering::from(source);
-    |source: COrdering| unsafe { Ordering::try_from(source).unwrap_unchecked() }
+    core::cmp::Ordering => Ordering: {Ordering(-2)}:
+    |i: &Ordering| core::cmp::Ordering::try_from(*i).is_ok();
+    |source: Ordering| core::cmp::Ordering::try_from(source).ok();
+    |source: core::cmp::Ordering| Ordering::from(source);
+    |source: Ordering| unsafe { core::cmp::Ordering::try_from(source).unwrap_unchecked() }
 }
 
 impl<T: ReprC<CType: Sized>> ReprC for Reverse<T> {
@@ -124,47 +123,58 @@ reverse_codecs!(EncodeMove, EncodeMoveUnchecked, DecodeMove);
 const _: () = {
     use crate::borrow::{BorrowedDecode, BorrowedEncode, BorrowedEncodeUnchecked};
     unsafe impl<T: BorrowedEncodeUnchecked<CType: Sized>> BorrowedEncodeUnchecked for Reverse<T> {
-            type Owner = T::Owner;
-            type SoftStore = T::SoftStore;
+        type Owner = T::Owner;
+        type SoftStore = T::SoftStore;
 
-            unsafe fn soft_encode_unchecked<'a>(self, store: &'a mut Self::SoftStore, owner: &'a mut Self::Owner) -> Self::CType
-            where
-                Self: 'a,
-            {
-                unsafe { core::cmp::Reverse(self.0.soft_encode_unchecked(store, owner)) }
-            }
+        unsafe fn soft_encode_unchecked<'a>(
+            self,
+            store: &'a mut Self::SoftStore,
+            owner: &'a mut Self::Owner,
+        ) -> Self::CType
+        where
+            Self: 'a,
+        {
+            unsafe { core::cmp::Reverse(self.0.soft_encode_unchecked(store, owner)) }
         }
-        unsafe impl<T: BorrowedEncode<CType: Sized>> BorrowedEncode for Reverse<T> {
-            type Store = T::Store;
+    }
+    unsafe impl<T: BorrowedEncode<CType: Sized>> BorrowedEncode for Reverse<T> {
+        type Store = T::Store;
 
-            fn soft_encode<'a>(self, store: &'a mut Self::Store, owner: &'a mut Self::Owner) -> Self::CType
-            where
-                Self: 'a,
-            {
-                core::cmp::Reverse(BorrowedEncode::soft_encode(self.0, store, owner))
-            }
+        fn soft_encode<'a>(
+            self,
+            store: &'a mut Self::Store,
+            owner: &'a mut Self::Owner,
+        ) -> Self::CType
+        where
+            Self: 'a,
+        {
+            core::cmp::Reverse(BorrowedEncode::soft_encode(self.0, store, owner))
         }
-        unsafe impl<'d, T: BorrowedDecode<'d, CType: Sized>> BorrowedDecode<'d> for Reverse<T> {
-            type Store = T::Store;
+    }
+    unsafe impl<'d, T: BorrowedDecode<'d, CType: Sized>> BorrowedDecode<'d> for Reverse<T> {
+        type Store = T::Store;
 
-            unsafe fn soft_decode<'a: 'd>(
-                source: Self::CType,
-                store: &'a mut Self::Store,
-            ) -> Option<Self> {
-                unsafe { T::soft_decode(source.0, store) }.map(Self)
-            }
-
-            unsafe fn soft_decode_unchecked<'a: 'd>(
-                source: Self::CType,
-                store: &'a mut Self::Store,
-            ) -> Self {
-                Self(unsafe { T::soft_decode_unchecked(source.0, store) })
-            }
+        unsafe fn soft_decode<'a: 'd>(
+            source: Self::CType,
+            store: &'a mut Self::Store,
+        ) -> Option<Self> {
+            unsafe { T::soft_decode(source.0, store) }.map(Self)
         }
+
+        unsafe fn soft_decode_unchecked<'a: 'd>(
+            source: Self::CType,
+            store: &'a mut Self::Store,
+        ) -> Self {
+            Self(unsafe { T::soft_decode_unchecked(source.0, store) })
+        }
+    }
 };
 
 impl<T: Encode<CType: Sized>> Encode for Reverse<T> {}
-impl<T: crate::EncodeUnchecked<CType: Sized>> crate::EncodeUnchecked for Reverse<T> {}
+impl<T: crate::convert::EncodeUnchecked<CType: Sized>> crate::convert::EncodeUnchecked
+    for Reverse<T>
+{
+}
 impl<'d, T: Decode<'d, CType: Sized>> Decode<'d> for Reverse<T> {}
 
 unsafe impl<T: AbiCompatibleValidate<CType: Sized>> AbiCompatibleValidate for Reverse<T> {
@@ -318,15 +328,16 @@ mod tests {
     use static_assertions::{assert_impl_all, assert_type_eq_all};
 
     use super::*;
-    use crate::{decode, encode, option::COptionSome, primitives::CBool};
+    use crate::{decode, encode, option::COptionSome, primitives::Bool};
 
     #[test]
     fn reverse_reference_codecs_dispatch_stable_inner() {
-        use co3::stored::{
+        use core::cmp::Reverse;
+
+        use co3::convert::{
             SoftDecodeMut, SoftDecodeRef, SoftEncodeMut, SoftEncodeMutUnchecked, SoftEncodeRef,
             SoftEncodeRefUnchecked,
         };
-        use core::cmp::Reverse;
 
         let mut value = Reverse(7_u32);
         let mut decode_store = ();
@@ -349,7 +360,8 @@ mod tests {
         decoded.0 = 11;
         assert_eq!(value.0, 11);
 
-        let carrier = unsafe { SoftEncodeMutUnchecked::soft_encode_mut_unchecked(&mut value, &mut ()) };
+        let carrier =
+            unsafe { SoftEncodeMutUnchecked::soft_encode_mut_unchecked(&mut value, &mut ()) };
         let decoded = unsafe {
             <Reverse<u32> as SoftDecodeMut>::soft_decode_mut_unchecked(carrier, &mut decode_store)
         };
@@ -359,40 +371,50 @@ mod tests {
 
     #[test]
     fn ordering_conversions_validate_the_carrier() {
-        for value in [Ordering::Less, Ordering::Equal, Ordering::Greater] {
-            let carrier = COrdering::from(value);
-            assert_eq!(Ordering::try_from(carrier), Ok(value));
+        for value in [
+            core::cmp::Ordering::Less,
+            core::cmp::Ordering::Equal,
+            core::cmp::Ordering::Greater,
+        ] {
+            let carrier = Ordering::from(value);
+            assert_eq!(core::cmp::Ordering::try_from(carrier), Ok(value));
             assert_eq!(encode(value), carrier);
-            assert_eq!(unsafe { decode::<Ordering>(carrier) }, Some(value));
+            assert_eq!(
+                unsafe { decode::<core::cmp::Ordering>(carrier) },
+                Some(value)
+            );
         }
         for raw in i8::MIN..=i8::MAX {
-            let carrier = COrdering(raw);
+            let carrier = Ordering(raw);
             assert_eq!(carrier == carrier, (-1..=1).contains(&raw));
-            assert_eq!(Ordering::try_from(carrier).is_ok(), (-1..=1).contains(&raw));
             assert_eq!(
-                unsafe { decode::<Ordering>(carrier) }.is_some(),
+                core::cmp::Ordering::try_from(carrier).is_ok(),
+                (-1..=1).contains(&raw)
+            );
+            assert_eq!(
+                unsafe { decode::<core::cmp::Ordering>(carrier) }.is_some(),
                 (-1..=1).contains(&raw)
             );
         }
-        assert_ne!(COrdering::LESS, COrdering::EQUAL);
-        assert_ne!(COrdering::EQUAL, COrdering::GREATER);
+        assert_ne!(Ordering::LESS, Ordering::EQUAL);
+        assert_ne!(Ordering::EQUAL, Ordering::GREATER);
     }
 
     #[test]
     fn reverse_delegates_to_inner_carrier_and_niche() {
         assert_type_eq_all!(
             <Reverse<bool> as ReprC>::CType,
-            core::cmp::Reverse<crate::primitives::CBool>
+            core::cmp::Reverse<crate::primitives::Bool>
         );
         assert_impl_all!(Reverse<bool>: Encode, Decode<'static>, Niche, AbiCompatible);
         assert_impl_all!(&'static Reverse<bool>: Encode, Decode<'static>);
-        assert_eq!(encode(Reverse(true)), core::cmp::Reverse(CBool::TRUE));
+        assert_eq!(encode(Reverse(true)), core::cmp::Reverse(Bool::TRUE));
         assert_eq!(
-            unsafe { decode::<Reverse<bool>>(core::cmp::Reverse(CBool::TRUE)) },
+            unsafe { decode::<Reverse<bool>>(core::cmp::Reverse(Bool::TRUE)) },
             Some(Reverse(true))
         );
         assert_eq!(
-            unsafe { decode::<Reverse<bool>>(core::cmp::Reverse(CBool(2))) },
+            unsafe { decode::<Reverse<bool>>(core::cmp::Reverse(Bool(2))) },
             None
         );
         let none: COptionSome<Reverse<bool>> = encode(None::<Reverse<bool>>);
@@ -418,7 +440,7 @@ mod tests {
     fn reverse_shared_unstable_value_uses_inner_stores() {
         use alloc::{vec, vec::Vec};
 
-        use crate::stored::Store;
+        use crate::convert::Store;
 
         let value = Reverse(vec![(3_u8,), (7,)]);
         let mut encode_store = Default::default();
@@ -437,7 +459,7 @@ mod tests {
     fn reverse_mutable_value_synchronizes_changes() {
         use alloc::{vec, vec::Vec};
 
-        use crate::stored::Store;
+        use crate::convert::Store;
 
         let mut value = Reverse(vec![false, true]);
         let mut encode_store = Default::default();

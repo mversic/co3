@@ -1,6 +1,6 @@
-use co3::{Tag, ffi};
+use co3::{Tag, ffi, tag::Tagged};
 
-trait Field<H>: co3::tag::Tagged<Kind = u8> {}
+trait Field<H>: Tagged<Kind = u8> {}
 
 ffi! {
     #![unsafe(extern("C"))]

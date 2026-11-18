@@ -1,7 +1,7 @@
 #![expect(non_camel_case_types, non_snake_case)]
 use std::{ffi::c_void, marker::PhantomData};
 
-use co3::{ReprC, Tag, ffi, rust_spec::RustSpec, pack::Unpack2};
+use co3::{ReprC, Tag, ffi, pack::Unpack2, rust_spec::RustSpec};
 
 pub trait OdbcVersion {}
 
@@ -117,8 +117,7 @@ co3::ffi! {
     }
 }
 
-#[derive(Clone)]
-#[derive(RustSpec)]
+#[derive(Clone, RustSpec)]
 #[rust_spec(opaque)]
 struct SQLHENV2(u32);
 

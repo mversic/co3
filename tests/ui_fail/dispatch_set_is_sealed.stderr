@@ -55,7 +55,21 @@ note: required by a bound in `first_sealed2::DispatchSet`
 14 | |     #![unsafe(extern("C"))]
 15 | |
 16 | |     impl First {
-...  |
+17 | |         fn sealed1<T>(value: move T)
+18 | |         where
+19 | |             use<T> @ <Self>;
+20 | |
+21 | |         fn sealed2<T>(value: move T)
+22 | |         where
+23 | |             use<T> @ <Self>;
+24 | |     }
+25 | |
+26 | |     pub fn sealed1<T>(value: move T)
+27 | |     where
+28 | |         use<T> @ <First>;
+29 | |
+30 | |     pub fn sealed2<T>(value: move T)
+31 | |     where
 32 | |         use<T> @ <First>;
 33 | | }
    | |_^ required by this bound in `DispatchSet`
@@ -88,7 +102,21 @@ note: required by a bound in `sealed2::DispatchSet`
 14 | |     #![unsafe(extern("C"))]
 15 | |
 16 | |     impl First {
-...  |
+17 | |         fn sealed1<T>(value: move T)
+18 | |         where
+19 | |             use<T> @ <Self>;
+20 | |
+21 | |         fn sealed2<T>(value: move T)
+22 | |         where
+23 | |             use<T> @ <Self>;
+24 | |     }
+25 | |
+26 | |     pub fn sealed1<T>(value: move T)
+27 | |     where
+28 | |         use<T> @ <First>;
+29 | |
+30 | |     pub fn sealed2<T>(value: move T)
+31 | |     where
 32 | |         use<T> @ <First>;
 33 | | }
    | |_^ required by this bound in `DispatchSet`

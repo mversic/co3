@@ -84,8 +84,9 @@ pub(crate) fn try_map_vec<'a, I: ExactSizeIterator, U, S: Default>(
 
 #[cfg(all(test, feature = "alloc"))]
 mod tests {
-    use super::*;
     use core::cell::Cell;
+
+    use super::*;
 
     struct CountDrop<'a>(&'a Cell<usize>);
     impl Drop for CountDrop<'_> {

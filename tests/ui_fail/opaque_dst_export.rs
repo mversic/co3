@@ -1,6 +1,6 @@
-use co3::{ffi, rust_spec::RustSpec};
+use co3::{ffi, rust_spec::RustSpec, tag::Tagged};
 
-unsafe impl co3::tag::Tagged for OpaqueSlice<u8> {
+unsafe impl Tagged for OpaqueSlice<u8> {
     const TAG: u8 = 0;
 }
 

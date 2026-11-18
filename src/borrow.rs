@@ -1,41 +1,35 @@
 #[cfg(feature = "alloc")]
 pub use alloc::borrow::ToOwned;
+#[cfg(feature = "alloc")]
+use alloc::{boxed::Box, vec::Vec};
+use core::marker::PhantomData;
 
+use disjoint_impls::disjoint_impls;
+#[cfg(feature = "alloc")]
+use rust_spec::size::NulTerminated;
+use rust_spec::{
+    Gt, RustSpec,
+    layout::LayoutKind,
+    mutability::{Exclusive, WithInterior, WithoutInterior},
+    niche::{WithNiche, WithoutNiche},
+    size::{Sized as RustSpecSized, SizedKind, Zero},
+};
+#[cfg(feature = "alloc")]
+use rust_spec::{Stable, Unstable};
+
+use crate::{
+    CFnArg, CFnReturn, CType, ReprC,
+    convert::{Decode, DecodeMove, EmptyStore, Encode, EncodeMove, EncodeMoveUnchecked, Store},
+    niche::Niche,
+    option::COptionSome,
+    result::{CResult, CResultErr, CResultOk},
+    transmute::{AbiCompatible, AbiCompatibleValidate},
+};
 #[cfg(feature = "alloc")]
 use crate::{
     boxed::CBox,
     vec::CVec,
     wide::{CWideBox, Wide},
-};
-#[cfg(feature = "alloc")]
-use alloc::{boxed::Box, vec::Vec};
-#[cfg(feature = "alloc")]
-use rust_spec::size::NulTerminated;
-#[cfg(feature = "alloc")]
-use rust_spec::{Stable, Unstable};
-
-use crate::{
-    niche::Niche,
-    option::COptionSome,
-    result::{CResult, CResultErr, CResultOk},
-};
-use core::marker::PhantomData;
-use disjoint_impls::disjoint_impls;
-use rust_spec::{
-    Gt,
-    layout::LayoutKind,
-    niche::{WithNiche, WithoutNiche},
-    size::{Sized as RustSpecSized, SizedKind, Zero},
-};
-use rust_spec::{
-    RustSpec,
-    mutability::{Exclusive, WithInterior, WithoutInterior},
-};
-
-use crate::{
-    CFnArg, CFnReturn, CType, Decode, Encode, ReprC,
-    stored::{DecodeMove, EmptyStore, EncodeMove, EncodeMoveUnchecked, Store},
-    transmute::{AbiCompatible, AbiCompatibleValidate},
 };
 
 /// Encode a borrowed carrier without retaining conversion storage.
@@ -1410,11 +1404,11 @@ macro_rules! __impl_borrowed_identity {
     (@impl [$($speculative:tt)*] [$($generics:tt)*] $ty:ty $(where $($bounds:tt)*)?) => {
         unsafe impl<$($generics)*> $crate::borrow::BorrowedEncodeUnchecked for $ty
         where
-            $($speculative)* Self: $crate::stored::EncodeMoveUnchecked,
+            $($speculative)* Self: $crate::convert::EncodeMoveUnchecked,
             $($($bounds)*)?
         {
             type Owner = ();
-            type SoftStore = <Self as $crate::stored::EncodeMoveUnchecked>::SoftStore;
+            type SoftStore = <Self as $crate::convert::EncodeMoveUnchecked>::SoftStore;
 
             unsafe fn soft_encode_unchecked<'itm>(
                 self,
@@ -1422,15 +1416,15 @@ macro_rules! __impl_borrowed_identity {
             where
                 Self: 'itm,
             {
-                unsafe { $crate::stored::EncodeMoveUnchecked::soft_encode_unchecked(self, store) }
+                unsafe { $crate::convert::EncodeMoveUnchecked::soft_encode_unchecked(self, store) }
             }
         }
         unsafe impl<$($generics)*> $crate::borrow::BorrowedEncode for $ty
         where
-            $($speculative)* Self: $crate::stored::EncodeMove,
+            $($speculative)* Self: $crate::convert::EncodeMove,
             $($($bounds)*)?
         {
-            type Store = <Self as $crate::stored::EncodeMove>::Store;
+            type Store = <Self as $crate::convert::EncodeMove>::Store;
 
             fn soft_encode<'itm>(
                 self,
@@ -1440,27 +1434,27 @@ macro_rules! __impl_borrowed_identity {
             where
                 Self: 'itm,
             {
-                $crate::stored::EncodeMove::soft_encode(self, store)
+                $crate::convert::EncodeMove::soft_encode(self, store)
             }
         }
         unsafe impl<'_co3_d, $($generics)*> $crate::borrow::BorrowedDecode<'_co3_d> for $ty
         where
-            $($speculative)* Self: $crate::stored::DecodeMove<'_co3_d>,
+            $($speculative)* Self: $crate::convert::DecodeMove<'_co3_d>,
             $($($bounds)*)?
         {
-            type Store = <Self as $crate::stored::DecodeMove<'_co3_d>>::Store;
+            type Store = <Self as $crate::convert::DecodeMove<'_co3_d>>::Store;
 
             unsafe fn soft_decode<'itm: '_co3_d>(
                 source: Self::CType,
                 store: &'itm mut Self::Store,
             ) -> core::option::Option<Self> {
-                unsafe { $crate::stored::DecodeMove::soft_decode(source, store) }
+                unsafe { $crate::convert::DecodeMove::soft_decode(source, store) }
             }
             unsafe fn soft_decode_unchecked<'itm: '_co3_d>(
                 source: Self::CType,
                 store: &'itm mut Self::Store,
             ) -> Self {
-                unsafe { $crate::stored::DecodeMove::soft_decode_unchecked(source, store) }
+                unsafe { $crate::convert::DecodeMove::soft_decode_unchecked(source, store) }
             }
         }
     };
@@ -1735,12 +1729,13 @@ unsafe impl<'d, T: BorrowedDecode<'d>, const N: usize> BorrowedDecode<'d> for [T
 
 #[cfg(all(test, feature = "alloc", feature = "derive"))]
 mod tests {
-    use crate::{ReprC, Store, rust_spec::RustSpec};
     use alloc::{boxed::Box, vec::Vec};
     use core::{
         cell::Cell,
         sync::atomic::{AtomicUsize, Ordering},
     };
+
+    use crate::{ReprC, Store, rust_spec::RustSpec};
 
     // Deliberately not Clone: borrowing converts each field on the original type.
     #[derive(RustSpec, ReprC)]
@@ -1751,8 +1746,9 @@ mod tests {
 
     #[test]
     fn strings_borrow_through_their_owned_buffers_without_soft() {
-        use crate::borrow::{BorrowedEncodeUnchecked, encode};
         use alloc::{ffi::CString, string::String};
+
+        use crate::borrow::{BorrowedEncodeUnchecked, encode};
 
         for text in ["", "héllo"] {
             let mut owner = Default::default();
@@ -1949,12 +1945,12 @@ mod tests {
     fn borrowed_container_decode_rejects_bad_headers_and_values() {
         use crate::{
             borrow::{CBorrowed, decode},
-            primitives::CBool,
+            primitives::Bool,
             vec::CVec,
         };
         assert!(unsafe { decode(CBorrowed::<alloc::vec::Vec<u8>>(CVec::null())) }.is_none());
         assert!(unsafe { decode(CBorrowed::<Box<u8>>(crate::boxed::CBox::null())) }.is_none());
-        let mut foreign = alloc::vec![CBool(1), CBool(2)];
+        let mut foreign = alloc::vec![Bool(1), Bool(2)];
         let header = unsafe {
             CVec::<bool>::from_raw_parts(foreign.as_mut_ptr(), foreign.len(), foreign.capacity())
         };
@@ -2041,39 +2037,39 @@ mod tests {
 
         static_assertions::assert_not_impl_any!(GenericOwner<u8>: crate::borrow::BorrowedDecode<'static>, crate::borrow::BorrowedEncode, crate::borrow::BorrowedEncodeUnchecked);
         static_assertions::assert_not_impl_any!(GenericOwner<bool>:
-            crate::stored::SoftDecodeRef<'static>, crate::stored::SoftDecodeMut<'static>);
+            crate::convert::SoftDecodeRef<'static>, crate::convert::SoftDecodeMut<'static>);
         static_assertions::assert_not_impl_any!(GenericOwner<u8>:
-            crate::stored::SoftDecodeRef<'static>, crate::stored::SoftDecodeMut<'static>);
+            crate::convert::SoftDecodeRef<'static>, crate::convert::SoftDecodeMut<'static>);
         static_assertions::assert_not_impl_any!(GenericOwner<bool>: crate::borrow::BorrowedDecode<'static>, crate::borrow::BorrowedEncode, crate::borrow::BorrowedEncodeUnchecked);
-        static_assertions::assert_impl_all!(&'static GenericOwner<bool>: crate::stored::DecodeMove<'static>);
-        static_assertions::assert_impl_all!(&'static mut GenericOwner<u8>: crate::stored::DecodeMove<'static>);
+        static_assertions::assert_impl_all!(&'static GenericOwner<bool>: crate::convert::DecodeMove<'static>);
+        static_assertions::assert_impl_all!(&'static mut GenericOwner<u8>: crate::convert::DecodeMove<'static>);
 
         static_assertions::assert_not_impl_any!(GenericOwner<alloc::string::String>:
-            crate::stored::SoftDecodeRef<'static>, crate::stored::SoftDecodeMut<'static>,
+            crate::convert::SoftDecodeRef<'static>, crate::convert::SoftDecodeMut<'static>,
             crate::borrow::BorrowedDecode<'static>);
         static_assertions::assert_not_impl_any!(NonCloneOwner: crate::borrow::BorrowedDecode<'static>);
 
         static_assertions::assert_not_impl_any!(StringOwner:
-            crate::stored::SoftDecodeRef<'static>, crate::stored::SoftDecodeMut<'static>,
+            crate::convert::SoftDecodeRef<'static>, crate::convert::SoftDecodeMut<'static>,
             crate::borrow::BorrowedDecode<'static>);
         static_assertions::assert_not_impl_any!(Aggregate:
-            crate::stored::SoftDecodeRef<'static>, crate::stored::SoftDecodeMut<'static>,
+            crate::convert::SoftDecodeRef<'static>, crate::convert::SoftDecodeMut<'static>,
             crate::borrow::BorrowedDecode<'static>);
         static_assertions::assert_not_impl_any!(Choice:
-            crate::stored::SoftDecodeRef<'static>, crate::stored::SoftDecodeMut<'static>,
+            crate::convert::SoftDecodeRef<'static>, crate::convert::SoftDecodeMut<'static>,
             crate::borrow::BorrowedDecode<'static>);
-        static_assertions::assert_not_impl_any!(&'static StringOwner: crate::stored::DecodeMove<'static>);
-        static_assertions::assert_not_impl_any!(&'static mut StringOwner: crate::stored::DecodeMove<'static>);
-        static_assertions::assert_impl_all!(StringOwner: crate::stored::DecodeMove<'static>);
+        static_assertions::assert_not_impl_any!(&'static StringOwner: crate::convert::DecodeMove<'static>);
+        static_assertions::assert_not_impl_any!(&'static mut StringOwner: crate::convert::DecodeMove<'static>);
+        static_assertions::assert_impl_all!(StringOwner: crate::convert::DecodeMove<'static>);
         static_assertions::assert_not_impl_any!(StringOwner: crate::borrow::BorrowedEncode, crate::borrow::BorrowedEncodeUnchecked);
-        static_assertions::assert_impl_all!(Aggregate: crate::stored::DecodeMove<'static>);
-        static_assertions::assert_impl_all!(Choice: crate::stored::DecodeMove<'static>);
+        static_assertions::assert_impl_all!(Aggregate: crate::convert::DecodeMove<'static>);
+        static_assertions::assert_impl_all!(Choice: crate::convert::DecodeMove<'static>);
 
         let value = alloc::string::String::from("transferred");
         let original = value.as_ptr();
-        let source = crate::stored::encode_move(StringOwner(value));
+        let source = crate::convert::encode_move(StringOwner(value));
         assert_eq!(DROPS.load(Ordering::SeqCst), 0);
-        let decoded = unsafe { crate::stored::decode_move::<StringOwner>(source) }.unwrap();
+        let decoded = unsafe { crate::convert::decode_move::<StringOwner>(source) }.unwrap();
         assert_eq!(decoded.0, "transferred");
         assert_eq!(decoded.0.as_ptr(), original);
         drop(decoded);
@@ -2108,7 +2104,7 @@ mod tests {
     fn owned_containers_with_empty_element_stores_encode_without_soft() {
         use crate::borrow::BorrowedEncode;
 
-        fn encode<T: BorrowedEncode<Store: crate::stored::EmptyStore>>(value: T) {
+        fn encode<T: BorrowedEncode<Store: crate::convert::EmptyStore>>(value: T) {
             let mut owner = Default::default();
             let _ = crate::borrow::encode(value, &mut owner);
         }
@@ -2133,7 +2129,7 @@ mod tests {
     fn mutable_bool_containers_require_soft_encoding() {
         use crate::{
             borrow::{BorrowedEncode, BorrowedEncodeUnchecked},
-            stored::{EmptyStore, EncodeMove, EncodeMoveUnchecked},
+            convert::{EmptyStore, EncodeMove, EncodeMoveUnchecked},
         };
         static_assertions::assert_type_eq_all!(
             <&'static mut bool as BorrowedEncode>::Store,
@@ -2164,7 +2160,7 @@ mod tests {
             let mut store = Default::default();
             let encoded = BorrowedEncode::soft_encode(Box::new(&mut value), &mut store, &mut owner);
             unsafe {
-                *(*encoded.as_ptr()).as_ptr() = crate::primitives::CBool(byte);
+                *(*encoded.as_ptr()).as_ptr() = crate::primitives::Bool(byte);
             }
             assert_eq!(store.sync(), (byte == 1).then_some(()));
             drop(owner);
@@ -2183,7 +2179,7 @@ mod tests {
             let encoded =
                 BorrowedEncode::soft_encode(alloc::vec![&mut value], &mut store, &mut owner);
             unsafe {
-                *(*encoded.as_ptr()).as_ptr() = crate::primitives::CBool(byte);
+                *(*encoded.as_ptr()).as_ptr() = crate::primitives::Bool(byte);
             }
             assert_eq!(store.sync(), (byte == 1).then_some(()));
             drop(owner);
@@ -2204,7 +2200,7 @@ mod tests {
             &mut owner,
         );
         unsafe {
-            *(*encoded.as_ptr()).as_ptr() = crate::primitives::CBool(1);
+            *(*encoded.as_ptr()).as_ptr() = crate::primitives::Bool(1);
         }
         store.sync().unwrap();
         drop(owner);
@@ -2265,10 +2261,12 @@ mod tests {
 
     #[test]
     fn identity_carriers_and_wrappers_implement_borrowed_codecs() {
+        use core::{mem::ManuallyDrop, num::NonZero};
+
+        use static_assertions::{assert_impl_all, assert_not_impl_any};
+
         use super::{BorrowedDecode, BorrowedEncode, BorrowedEncodeUnchecked};
         use crate::reference::CSoftRefMut;
-        use core::{mem::ManuallyDrop, num::NonZero};
-        use static_assertions::{assert_impl_all, assert_not_impl_any};
 
         #[derive(RustSpec, ReprC)]
         #[repr(transparent)]
@@ -2358,7 +2356,7 @@ unsafe impl<'d, T: ReprC<CType: Sized>> DecodeMove<'d> for CBorrowed<T> {
     }
 }
 impl<T: ReprC<CType: Sized>> Encode for CBorrowed<T> {}
-impl<T: ReprC<CType: Sized>> crate::EncodeUnchecked for CBorrowed<T> {}
+impl<T: ReprC<CType: Sized>> crate::convert::EncodeUnchecked for CBorrowed<T> {}
 impl<'d, T: ReprC<CType: Sized>> Decode<'d> for CBorrowed<T> {}
 crate::__impl_borrowed_identity!([T: ReprC<CType: Sized>] CBorrowed<T>);
 impl<T: ReprC<CType: Copy>> Copy for CBorrowed<T> {}

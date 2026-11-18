@@ -58,8 +58,9 @@ ffi! {
 mod provider {
     use core::ops::Add;
 
-    use super::*;
     use co3::rust_spec::RustSpec;
+
+    use super::*;
 
     #[derive(Debug, Clone, Copy, RustSpec)]
     #[rust_spec(opaque)]

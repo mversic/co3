@@ -3,10 +3,12 @@ use alloc::string::String;
 use core::marker::PhantomData;
 
 #[cfg(feature = "alloc")]
-use crate::stored::Owned;
+use crate::convert::Owned;
 use crate::{
-    CFnReturn, CType, Decode, Encode, EncodeUnchecked, ReprC,
-    stored::{DecodeMove, EmptyStore, EncodeMove, EncodeMoveUnchecked},
+    CFnReturn, CType, ReprC,
+    convert::{
+        Decode, DecodeMove, EmptyStore, Encode, EncodeMove, EncodeMoveUnchecked, EncodeUnchecked,
+    },
     transmute::{AbiCompatible, AbiCompatibleValidate},
     utf8::Utf8Str,
 };
@@ -60,7 +62,7 @@ unsafe impl AbiCompatibleValidate for () {
 unsafe impl AbiCompatible for () {}
 
 unsafe impl CType for () {}
-crate::mutable::impl_direct_mut!([]());
+crate::reference::impl_direct_mut!([]());
 unsafe impl CFnReturn for () {}
 
 unsafe impl EmptyStore for () {}
@@ -121,13 +123,15 @@ impl ReprC for str {
 
 #[cfg(test)]
 mod tests {
+    #[cfg(feature = "alloc")]
+    use alloc::boxed::Box;
+
+    use static_assertions::assert_impl_all;
+
     use super::*;
     use crate::niche::Niche;
     #[cfg(feature = "alloc")]
     use crate::wide::CWideBox;
-    #[cfg(feature = "alloc")]
-    use alloc::boxed::Box;
-    use static_assertions::assert_impl_all;
 
     #[test]
     fn str_is_supported() {

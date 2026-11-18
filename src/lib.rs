@@ -565,6 +565,7 @@ use alloc::boxed::Box;
 
 #[cfg(feature = "derive")]
 pub use co3_derive::*;
+use convert::{Decode, EmptyStore, Encode, EncodeUnchecked};
 #[doc(hidden)]
 pub use disjoint_impls::disjoint_impls;
 #[doc(hidden)]
@@ -586,11 +587,10 @@ use crate::ffi::NulTerminatedBuf;
 #[cfg(feature = "alloc")]
 use crate::{boxed::CBox, wide::CWideBox};
 use crate::{
+    convert::Store,
     niche::Niche,
     reference::{CRef, CRefMut, CSoftRef, CSoftRefMut},
-    stored::{DecodeMove, EmptyStore, EncodeMove, EncodeMoveUnchecked, Store},
-    wide::{CSoftWideRef, CSoftWideRefMut, CWideRef, CWideRefMut},
-    wide::{Wide, WideHeader},
+    wide::{CSoftWideRef, CSoftWideRefMut, CWideRef, CWideRefMut, Wide, WideHeader},
 };
 
 pub mod borrow;
@@ -599,7 +599,8 @@ pub(crate) use borrow::__impl_borrowed_identity;
 pub mod boxed;
 mod cell;
 pub mod cmp;
-pub mod decoded;
+pub mod convert;
+mod decoded;
 #[doc(hidden)]
 pub mod either;
 mod elements;
@@ -619,7 +620,7 @@ pub mod reference;
 pub mod result;
 mod shared;
 mod std_impls;
-pub mod stored;
+mod stored;
 pub mod sync;
 pub mod tag;
 pub mod transmute;
@@ -652,7 +653,7 @@ pub trait Error {
     fn soft_sync_error() -> Self;
 }
 
-/// Robust type with a C-compatible value representation that can cross FFI boundaries.
+/// Robust type with a C-compatible value representation.
 ///
 /// Note that, for raw pointers, ABI compatibility of referent is not guaranteed. Dereferencing
 /// opaque/extern type pointers which don't also implement `CType` is very likely to cause UB.
@@ -889,147 +890,13 @@ disjoint_impls! {
 
 }
 
-/// Facilitates unchecked conversion from a Rust type into a C-compatible representation.
-pub trait EncodeUnchecked: EncodeMoveUnchecked {}
-
-/// Facilitates conversion from a Rust type into a corresponding C-compatible representation.
-pub trait Encode: EncodeMove + EncodeUnchecked {}
-
-/// Facilitates conversion into a Rust type from a corresponding C-compatible representation.
-pub trait Decode<'d>: DecodeMove<'d> {}
-
-#[cfg(feature = "alloc")]
-const _: () = {
-    // An unstable box representation can still transfer its allocation when the
-    // pointee layout is stable (for example, a boxed slice).
-    trait BoxConversionLayout<R: ?Sized> {}
-    impl<R: ?Sized> BoxConversionLayout<R> for Stable {}
-    impl<R: RustSpec<Layout = Stable> + ?Sized> BoxConversionLayout<R> for Unstable {}
-
-    impl<R: ?Sized> EncodeUnchecked for Box<R> where
-        Self: RustSpec<Layout: BoxConversionLayout<R>> + EncodeMoveUnchecked
-    {
-    }
-    impl<R: ?Sized> Encode for Box<R> where Self: RustSpec<Layout: BoxConversionLayout<R>> + EncodeMove {}
-    impl<'d, R: ?Sized> Decode<'d> for Box<R> where
-        Self: RustSpec<Layout: BoxConversionLayout<R>> + DecodeMove<'d>
-    {
-    }
-};
-
-impl<R: ?Sized> Encode for &R where Self: EncodeMove {}
-impl<R: ?Sized> Encode for &mut R where Self: EncodeMove {}
-impl<R: ?Sized> EncodeUnchecked for &R where Self: EncodeMoveUnchecked {}
-impl<R: ?Sized> EncodeUnchecked for &mut R where Self: EncodeMoveUnchecked {}
-
-impl<'d, R: ?Sized> Decode<'d> for &'d R where Self: DecodeMove<'d> {}
-impl<'d, R: ?Sized> Decode<'d> for &'d mut R where Self: DecodeMove<'d> {}
-
-impl<R: Encode, const N: usize> Encode for [R; N] where Self: EncodeMove {}
-impl<R: EncodeUnchecked, const N: usize> EncodeUnchecked for [R; N] where Self: EncodeMoveUnchecked {}
-impl<'d, R: Decode<'d>, const N: usize> Decode<'d> for [R; N] where Self: DecodeMove<'d> {}
-
-/// Convert `T` into its C-compatible representation, [`T::CType`](ReprC::CType).
-pub fn encode<T: Encode<Store: EmptyStore>>(item: T) -> T::CType {
-    stored::encode_move(item)
-}
-
-/// Perform the conversion from [`T::CType`](ReprC::CType) into `T`.
-///
-/// # Safety
-///
-/// If decoding uses a pointer in `source` to access memory, form a reference, or take ownership,
-/// the caller must uphold the validity, lifetime, aliasing, ownership and allocation requirements
-/// of the resulting value.
-pub unsafe fn decode<'d, T: Decode<'d, Store: EmptyStore> + 'd>(source: T::CType) -> Option<T> {
-    unsafe { stored::decode_move(source) }
-}
-
-/// Convert `T` into [`T::CType`](ReprC::CType) using external storage.
-///
-/// Prefer using [`encode`] whenever possible
-pub fn soft_encode<T: Encode>(item: T, store: &mut T::Store) -> T::CType {
-    item.soft_encode(store)
-}
-
-/// Perform the conversion from [`ReprC::CType`] into `T` using external storage.
-///
-/// Prefer using [`decode`] whenever possible
-///
-/// # Safety
-///
-/// See safety section in [`decode`]
-pub unsafe fn soft_decode<'d, T: Decode<'d>>(
-    source: T::CType,
-    store: &'d mut T::Store,
-) -> Option<T> {
-    unsafe { T::soft_decode(source, store) }
-}
-
-/// Encode `T` whose unchecked store is empty.
-///
-/// Prefer using [`encode`] whenever possible
-///
-/// # Safety
-///
-/// The caller must ensure that foreign code preserves every invariant of the
-/// original Rust value, including validity of any pointees it can mutate.
-pub unsafe fn encode_unchecked<T: EncodeUnchecked<SoftStore: EmptyStore>>(item: T) -> T::CType {
-    unsafe { stored::encode_move_unchecked(item) }
-}
-
-/// Decode a value known to be accepted by [`decode`].
-///
-/// The default implementation still performs checked decoding. A type may
-/// override the unchecked path to avoid validation.
-///
-/// Prefer using [`decode`] whenever possible
-///
-/// # Safety
-///
-/// - The caller must uphold all of the safety obligations of [`decode`]. Additionally,
-/// - for the same values of `store` and `source` arguments, [`decode`] must return `Some`.
-pub unsafe fn decode_unchecked<'d, T: Decode<'d, Store: EmptyStore> + 'd>(source: T::CType) -> T {
-    unsafe { stored::decode_move_unchecked(source) }
-}
-
-/// Encode `T` using its unchecked conversion store.
-///
-/// Prefer using [`soft_encode`] whenever possible
-///
-/// # Safety
-///
-/// See safety section in [`encode_unchecked`]
-pub unsafe fn soft_encode_unchecked<T: EncodeUnchecked>(
-    item: T,
-    store: &mut T::SoftStore,
-) -> T::CType {
-    unsafe { T::soft_encode_unchecked(item, store) }
-}
-
-/// Decode a value known to be accepted by [`soft_decode`] using external storage.
-///
-/// Prefer using [`soft_decode`] whenever possible
-///
-/// # Safety
-///
-/// - The caller must uphold all of the safety obligations of [`soft_decode`]. Additionally,
-/// - for the same values of `store` and `source` arguments, [`soft_decode`] must return `Some`.
-pub unsafe fn soft_decode_unchecked<'d, T: Decode<'d>>(
-    source: T::CType,
-    store: &'d mut T::Store,
-) -> T {
-    unsafe { T::soft_decode_unchecked(source, store) }
-}
-
 // TODO: Check https://github.com/mversic/co3/issues/13
 
 #[cfg(test)]
 #[cfg(feature = "alloc")]
 mod tests {
     use super::*;
-    use crate::num::NonZero;
-    use crate::{option::COption, primitives::CBool};
+    use crate::{num::NonZero, option::COption, primitives::Bool};
 
     #[test]
     fn carrier_types_are_zeroable() {
@@ -1127,7 +994,7 @@ mod tests {
         };
 
         let encoded = encode(StableOption::Some(true));
-        assert_eq!(encoded.into_option(), Some(Some(CBool::TRUE)));
+        assert_eq!(encoded.into_option(), Some(Some(Bool::TRUE)));
         assert_eq!(
             unsafe { decode::<StableOption<bool>>(encoded) },
             Some(StableOption::Some(true))
@@ -1188,7 +1055,7 @@ mod tests {
         let mut value = StableResult::<u32, bool>::Ok(4);
         let mut store = Default::default();
         let carrier = crate::soft_encode(&mut value, &mut store);
-        unsafe { *carrier.as_ptr() = CResult::Err(CBool::TRUE) };
+        unsafe { *carrier.as_ptr() = CResult::Err(Bool::TRUE) };
         assert_eq!(store.sync(), Some(()));
         assert_eq!(value, StableResult::Err(true));
     }
@@ -1263,7 +1130,7 @@ mod tests {
     //        let encoded = soft_encode(slice_ref, &mut store);
     //        let c_slice = unsafe { encoded.into_mut().unwrap() };
 
-    //        c_slice[0] = Tuple2(100, CBool::TRUE);
+    //        c_slice[0] = Tuple2(100, Bool::TRUE);
     //        store.sync().unwrap();
     //    }
 
@@ -1284,7 +1151,7 @@ mod tests {
             let mut store = Default::default();
             let encoded = soft_encode(&mut value, &mut store);
             let original_data = unsafe { (*encoded.as_ptr()).as_ptr() };
-            let replacement = CBox::from_box(Box::new(CTuple2(100, CBool::TRUE)));
+            let replacement = CBox::from_box(Box::new(CTuple2(100, Bool::TRUE)));
             let replacement_data = replacement.as_ptr();
 
             unsafe {
@@ -1303,7 +1170,7 @@ mod tests {
     fn decode_stored_ref_mut_slice() {
         use tuple::CTuple2;
 
-        let mut tuples = [CTuple2(10_u32, CBool::TRUE)];
+        let mut tuples = [CTuple2(10_u32, Bool::TRUE)];
         let c_slice = CSoftWideRefMut::<[(u32, bool)], true>::from_mut(&mut tuples[..]);
 
         {
@@ -1321,71 +1188,72 @@ mod tests {
 
 #[cfg(test)]
 mod carrier_tests {
-    use super::*;
-    use crate::borrow::CBorrowed;
-    use crate::num::NonZero;
-    use core::cmp::Reverse;
     use core::{
         cell::{Cell, UnsafeCell},
+        cmp::Reverse,
         mem::{ManuallyDrop, MaybeUninit},
     };
+
     use static_assertions::{
         assert_impl_all, assert_not_impl_any, assert_type_eq_all, assert_type_ne_all,
     };
+
+    use super::*;
+    use crate::{borrow::CBorrowed, num::NonZero};
 
     #[test]
     fn wrappers_lower_contents_structurally() {
         assert_type_eq_all!(
             <ManuallyDrop<bool> as ReprC>::CType,
-            core::mem::ManuallyDrop<crate::primitives::CBool>
+            core::mem::ManuallyDrop<crate::primitives::Bool>
         );
         assert_type_eq_all!(
             <Cell<bool> as ReprC>::CType,
-            core::cell::Cell<crate::primitives::CBool>
+            core::cell::Cell<crate::primitives::Bool>
         );
         assert_type_eq_all!(
             <UnsafeCell<bool> as ReprC>::CType,
-            core::cell::UnsafeCell<crate::primitives::CBool>
+            core::cell::UnsafeCell<crate::primitives::Bool>
         );
         assert_type_eq_all!(
             <MaybeUninit<bool> as ReprC>::CType,
-            core::mem::MaybeUninit<crate::primitives::CBool>
+            core::mem::MaybeUninit<crate::primitives::Bool>
         );
         assert_type_eq_all!(
             <Reverse<bool> as ReprC>::CType,
-            core::cmp::Reverse<crate::primitives::CBool>
+            core::cmp::Reverse<crate::primitives::Bool>
         );
         assert_type_eq_all!(
-            <core::mem::ManuallyDrop<crate::primitives::CBool> as ReprC>::CType,
-            core::mem::ManuallyDrop<crate::primitives::CBool>
+            <core::mem::ManuallyDrop<crate::primitives::Bool> as ReprC>::CType,
+            core::mem::ManuallyDrop<crate::primitives::Bool>
         );
         assert_type_eq_all!(
-            <core::cell::Cell<crate::primitives::CBool> as ReprC>::CType,
-            core::cell::Cell<crate::primitives::CBool>
+            <core::cell::Cell<crate::primitives::Bool> as ReprC>::CType,
+            core::cell::Cell<crate::primitives::Bool>
         );
         assert_type_eq_all!(
-            <core::cell::UnsafeCell<crate::primitives::CBool> as ReprC>::CType,
-            core::cell::UnsafeCell<crate::primitives::CBool>
+            <core::cell::UnsafeCell<crate::primitives::Bool> as ReprC>::CType,
+            core::cell::UnsafeCell<crate::primitives::Bool>
         );
         assert_type_eq_all!(
-            <core::mem::MaybeUninit<crate::primitives::CBool> as ReprC>::CType,
-            core::mem::MaybeUninit<crate::primitives::CBool>
+            <core::mem::MaybeUninit<crate::primitives::Bool> as ReprC>::CType,
+            core::mem::MaybeUninit<crate::primitives::Bool>
         );
         assert_type_eq_all!(
-            <core::cmp::Reverse<crate::primitives::CBool> as ReprC>::CType,
-            core::cmp::Reverse<crate::primitives::CBool>
+            <core::cmp::Reverse<crate::primitives::Bool> as ReprC>::CType,
+            core::cmp::Reverse<crate::primitives::Bool>
         );
         assert_type_eq_all!(
-            <CBorrowed<crate::primitives::CBool> as ReprC>::CType,
-            CBorrowed<crate::primitives::CBool>
+            <CBorrowed<crate::primitives::Bool> as ReprC>::CType,
+            CBorrowed<crate::primitives::Bool>
         );
-        assert_not_impl_any!(core::cell::Cell<crate::primitives::CBool>: Copy);
-        assert_not_impl_any!(core::cell::UnsafeCell<crate::primitives::CBool>: Copy);
-        assert_impl_all!(core::mem::ManuallyDrop<crate::primitives::CBool>: Copy);
+        assert_not_impl_any!(core::cell::Cell<crate::primitives::Bool>: Copy);
+        assert_not_impl_any!(core::cell::UnsafeCell<crate::primitives::Bool>: Copy);
+        assert_impl_all!(core::mem::ManuallyDrop<crate::primitives::Bool>: Copy);
         assert_not_impl_any!(core::mem::ManuallyDrop<UnsafeCell<bool>>: Copy);
         assert_type_ne_all!(
-            core::cell::Cell<crate::primitives::CBool>,
-            core::cell::UnsafeCell<crate::primitives::CBool>
+            core::cell::Cell<crate::primitives::Bool>,
+            core::cell::UnsafeCell<crate::primitives::Bool>
         );
     }
 
@@ -1397,17 +1265,17 @@ mod carrier_tests {
             tuple::{CTuple2, Tuple2},
         };
         assert_type_eq_all!(<(u8, bool) as ReprC>::CType, CTuple2<u8, bool>);
-        assert_type_eq_all!(<Tuple2<u8, bool> as ReprC>::CType, Tuple2<u8, crate::primitives::CBool>);
+        assert_type_eq_all!(<Tuple2<u8, bool> as ReprC>::CType, Tuple2<u8, crate::primitives::Bool>);
         assert_type_eq_all!(<Option<u8> as ReprC>::CType, COption<u8>);
         assert_type_eq_all!(<crate::option::Option<u8> as ReprC>::CType, COption<u8, true>);
         assert_type_eq_all!(<Result<u8, u8> as ReprC>::CType, CResult<u8, u8>);
         assert_type_eq_all!(<crate::result::Result<u8, u8> as ReprC>::CType, CResult<u8, u8, true>);
         assert_type_eq_all!(<core::num::NonZeroU8 as ReprC>::CType, NonZero<u8>);
         assert_type_eq_all!(<crate::num::NonZero<u8> as ReprC>::CType, NonZero<u8>);
-        assert_type_ne_all!(CTuple2<u8, bool>, Tuple2<u8, crate::primitives::CBool>);
+        assert_type_ne_all!(CTuple2<u8, bool>, Tuple2<u8, crate::primitives::Bool>);
         assert_eq!(
             core::mem::size_of::<CTuple2<u8, bool>>(),
-            core::mem::size_of::<Tuple2<u8, crate::primitives::CBool>>()
+            core::mem::size_of::<Tuple2<u8, crate::primitives::Bool>>()
         );
         let source = Tuple2(7_u8, true);
         let encoded = crate::encode(source);
@@ -1420,8 +1288,9 @@ mod carrier_tests {
     #[cfg(feature = "alloc")]
     #[test]
     fn nested_vector_sources_round_trip_without_collapsing_identity() {
-        use crate::vec::CVec;
         use alloc::vec::Vec;
+
+        use crate::vec::CVec;
         assert_type_eq_all!(<Vec<bool> as ReprC>::CType, CVec<bool>);
         assert_type_eq_all!(<crate::vec::Vec<bool> as ReprC>::CType, CVec<bool, true>);
         assert_type_eq_all!(
@@ -1452,4 +1321,97 @@ mod carrier_tests {
         crate::Store::sync(decoded_store).unwrap();
         crate::Store::sync(store).unwrap();
     }
+}
+
+/// Convert `T` into its C-compatible representation, [`T::CType`](ReprC::CType).
+pub fn encode<T: Encode<Store: EmptyStore>>(item: T) -> T::CType {
+    convert::encode_move(item)
+}
+
+/// Perform the conversion from [`T::CType`](ReprC::CType) into `T`.
+///
+/// # Safety
+///
+/// If decoding uses a pointer in `source` to access memory, form a reference, or take ownership,
+/// the caller must uphold the validity, lifetime, aliasing, ownership and allocation requirements
+/// of the resulting value.
+pub unsafe fn decode<'d, T: Decode<'d, Store: EmptyStore> + 'd>(source: T::CType) -> Option<T> {
+    unsafe { convert::decode_move(source) }
+}
+
+/// Convert `T` into [`T::CType`](ReprC::CType) using external storage.
+///
+/// Prefer using [`encode`] whenever possible
+pub fn soft_encode<T: Encode>(item: T, store: &mut T::Store) -> T::CType {
+    item.soft_encode(store)
+}
+
+/// Perform the conversion from [`ReprC::CType`] into `T` using external storage.
+///
+/// Prefer using [`decode`] whenever possible
+///
+/// # Safety
+///
+/// See safety section in [`decode`]
+pub unsafe fn soft_decode<'d, T: Decode<'d>>(
+    source: T::CType,
+    store: &'d mut T::Store,
+) -> Option<T> {
+    unsafe { T::soft_decode(source, store) }
+}
+
+/// Encode `T` whose unchecked store is empty.
+///
+/// Prefer using [`encode`] whenever possible
+///
+/// # Safety
+///
+/// The caller must ensure that foreign code preserves every invariant of the
+/// original Rust value, including validity of any pointees it can mutate.
+pub unsafe fn encode_unchecked<T: EncodeUnchecked<SoftStore: EmptyStore>>(item: T) -> T::CType {
+    unsafe { crate::stored::encode_move_unchecked(item) }
+}
+
+/// Decode a value known to be accepted by [`decode`].
+///
+/// The default implementation still performs checked decoding. A type may
+/// override the unchecked path to avoid validation.
+///
+/// Prefer using [`decode`] whenever possible
+///
+/// # Safety
+///
+/// - The caller must uphold all of the safety obligations of [`decode`]. Additionally,
+/// - for the same values of `store` and `source` arguments, [`decode`] must return `Some`.
+pub unsafe fn decode_unchecked<'d, T: Decode<'d, Store: EmptyStore> + 'd>(source: T::CType) -> T {
+    unsafe { crate::stored::decode_move_unchecked(source) }
+}
+
+/// Encode `T` using its unchecked conversion store.
+///
+/// Prefer using [`soft_encode`] whenever possible
+///
+/// # Safety
+///
+/// See safety section in [`encode_unchecked`]
+pub unsafe fn soft_encode_unchecked<T: EncodeUnchecked>(
+    item: T,
+    store: &mut T::SoftStore,
+) -> T::CType {
+    unsafe { T::soft_encode_unchecked(item, store) }
+}
+
+/// Decode a value known to be accepted by [`soft_decode`] using external storage.
+///
+/// Prefer using [`soft_decode`] whenever possible
+///
+/// # Safety
+///
+/// - The caller must uphold all of the safety obligations of [`soft_decode`]. Additionally,
+/// - for the same values of `store` and `source` arguments, [`soft_decode`] must return `Some`.
+pub unsafe fn soft_decode_unchecked<'d, T: Decode<'d>>(
+    source: T::CType,
+    store: &'d mut T::Store,
+) -> T {
+    unsafe { T::soft_decode_unchecked(source, store) }
 }

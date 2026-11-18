@@ -21,6 +21,10 @@ use rust_spec::{
 
 use crate::{
     CType, ReprC, Thin,
+    convert::{
+        SoftDecodeMut, SoftDecodeRef, SoftEncodeMut, SoftEncodeMutUnchecked, SoftEncodeRef,
+        SoftEncodeRefUnchecked,
+    },
     niche::Niche,
     option::COptionSome,
     reference::{CRef, CRefMut, CSoftRef, CSoftRefMut, MutRefCarrier, SharedRefCarrier},
@@ -39,11 +43,6 @@ use crate::{
     ffi::NulTerminatedBuf,
     vec::CVec,
     wide::CWideBox,
-};
-pub use crate::{
-    decoded::{SoftDecodeMut, SoftDecodeRef},
-    mutable::{SoftEncodeMut, SoftEncodeMutUnchecked},
-    shared::{SoftEncodeRef, SoftEncodeRefUnchecked},
 };
 
 // TODO: Could the store just be synced on drop?
@@ -2534,8 +2533,9 @@ unsafe fn decode_unchecked_array_elements<'d, 'itm: 'd, R: DecodeMove<'d>, const
 mod tests {
     #[test]
     fn constructs_lifetime_bearing_shared_carriers() {
-        use super::{CRef, CRefMut, CWideRef, CWideRefMut, FromSharedRef, FromSharedWideRef};
         use core::cell::UnsafeCell;
+
+        use super::{CRef, CRefMut, CWideRef, CWideRefMut, FromSharedRef, FromSharedWideRef};
 
         let value = 7_u8;
         let carrier: CRef<'_, u8> = unsafe { FromSharedRef::from_shared_ref(&value) };
@@ -2560,18 +2560,17 @@ mod tests {
 
     #[cfg(all(feature = "alloc", feature = "derive"))]
     use alloc::{boxed::Box, vec, vec::Vec};
-
     #[cfg(all(feature = "alloc", feature = "derive"))]
     use core::{
         cell::UnsafeCell,
         mem::{ManuallyDrop, MaybeUninit},
     };
 
+    use co3::convert::{Decode, Encode};
     #[cfg(all(feature = "alloc", feature = "derive"))]
     use co3::{
-        Decode, Encode,
-        primitives::CBool,
-        stored::{EmptyStore, EncodeMove, EncodeMoveUnchecked, Store},
+        convert::{EmptyStore, EncodeMove, EncodeMoveUnchecked, Store},
+        primitives::Bool,
         transmute::AbiCompatible,
     };
     #[cfg(all(feature = "alloc", feature = "derive"))]
@@ -2596,7 +2595,7 @@ mod tests {
     }
 
     #[cfg(feature = "alloc")]
-    unsafe impl co3::stored::EncodeMove for RawProbe {
+    unsafe impl co3::convert::EncodeMove for RawProbe {
         type Store = ();
 
         fn soft_encode<'itm>(self, (): &'itm mut ()) -> Self::CType
@@ -2626,7 +2625,7 @@ mod tests {
     unsafe impl AbiCompatible for RawProbe {}
 
     #[cfg(feature = "alloc")]
-    impl co3::EncodeUnchecked for RawProbe {}
+    impl co3::convert::EncodeUnchecked for RawProbe {}
 
     #[cfg(feature = "alloc")]
     impl Encode for RawProbe {}
@@ -2641,7 +2640,7 @@ mod tests {
     }
 
     #[cfg(all(feature = "alloc", feature = "derive"))]
-    unsafe impl co3::stored::EncodeMove for UncheckedOnly {
+    unsafe impl co3::convert::EncodeMove for UncheckedOnly {
         type Store = ();
 
         fn soft_encode<'itm>(self, (): &'itm mut ()) -> Self::CType
@@ -2653,12 +2652,12 @@ mod tests {
     }
 
     #[cfg(all(feature = "alloc", feature = "derive"))]
-    unsafe impl co3::stored::EncodeMoveUnchecked for UncheckedOnly {
+    unsafe impl co3::convert::EncodeMoveUnchecked for UncheckedOnly {
         type SoftStore = ();
 
         unsafe fn soft_encode_unchecked<'itm>(
             self,
-            _store: &'itm mut <Self as co3::stored::EncodeMoveUnchecked>::SoftStore,
+            _store: &'itm mut <Self as co3::convert::EncodeMoveUnchecked>::SoftStore,
         ) -> Self::CType
         where
             Self: 'itm,
@@ -2670,7 +2669,7 @@ mod tests {
     #[cfg(all(feature = "alloc", feature = "derive"))]
     impl Encode for UncheckedOnly {}
     #[cfg(all(feature = "alloc", feature = "derive"))]
-    impl co3::EncodeUnchecked for UncheckedOnly {}
+    impl co3::convert::EncodeUnchecked for UncheckedOnly {}
 
     #[cfg(all(feature = "alloc", feature = "derive"))]
     #[test]
@@ -2736,7 +2735,7 @@ mod tests {
     #[cfg(all(feature = "alloc", feature = "derive"))]
     impl Encode for StoredDirect {}
     #[cfg(all(feature = "alloc", feature = "derive"))]
-    impl co3::EncodeUnchecked for StoredDirect {}
+    impl co3::convert::EncodeUnchecked for StoredDirect {}
 
     #[cfg(all(feature = "alloc", feature = "derive"))]
     #[derive(co3::rust_spec::RustSpec, co3::ReprC)]
@@ -2845,10 +2844,10 @@ mod tests {
     #[test]
     fn unchecked_encode_exposes_the_original_mutable_bool() {
         let mut value = false;
-        let original = core::ptr::from_mut(&mut value).cast::<CBool>();
+        let original = core::ptr::from_mut(&mut value).cast::<Bool>();
         let encoded = unsafe { co3::encode_unchecked(&mut value) };
         assert_eq!(encoded.as_ptr(), original);
-        unsafe { *encoded.as_ptr() = CBool::TRUE };
+        unsafe { *encoded.as_ptr() = Bool::TRUE };
         assert!(value);
 
         let encoded = unsafe { co3::encode_unchecked(TransparentMut(&mut value)) };
@@ -2864,7 +2863,7 @@ mod tests {
         let original = core::ptr::from_ref(&*boxed).cast_mut().cast();
         let encoded = unsafe { co3::encode_unchecked(boxed) };
         assert_eq!(encoded.as_ptr(), original);
-        unsafe { *(*encoded.as_ptr()).as_ptr() = CBool::TRUE };
+        unsafe { *(*encoded.as_ptr()).as_ptr() = Bool::TRUE };
         drop(unsafe { encoded.into_box().unwrap() });
         assert!(value);
     }
@@ -2878,7 +2877,7 @@ mod tests {
         let original = boxed.as_ptr().cast_mut().cast();
         let encoded = unsafe { co3::encode_unchecked(boxed) };
         assert_eq!(encoded.as_ptr(), original);
-        unsafe { *(*encoded.as_ptr()).as_ptr() = CBool::TRUE };
+        unsafe { *(*encoded.as_ptr()).as_ptr() = Bool::TRUE };
         drop(unsafe { encoded.into_box().unwrap() });
         assert!(value);
     }
@@ -2887,7 +2886,7 @@ mod tests {
     #[test]
     fn unchecked_encode_propagates_through_wrappers() {
         let mut value = false;
-        let original = core::ptr::from_mut(&mut value).cast::<CBool>();
+        let original = core::ptr::from_mut(&mut value).cast::<Bool>();
 
         let optional = unsafe { co3::encode_unchecked(Some(&mut value)) };
         assert_eq!(optional.0.as_ptr(), original);
@@ -2902,7 +2901,7 @@ mod tests {
             })
         };
         assert_eq!(record.value.as_ptr(), original);
-        unsafe { *record.value.as_ptr() = CBool::TRUE };
+        unsafe { *record.value.as_ptr() = Bool::TRUE };
         assert!(value);
 
         let tuple = unsafe { co3::encode_unchecked((&mut value, 7_u8)) };
@@ -3010,7 +3009,7 @@ mod tests {
         let mut value = false;
         let mut store = Default::default();
         let encoded = co3::soft_encode(ManuallyDrop::new(&mut value), &mut store);
-        unsafe { *encoded.as_ptr() = CBool::TRUE };
+        unsafe { *encoded.as_ptr() = Bool::TRUE };
         store.sync().unwrap();
         assert!(value);
     }
@@ -3022,7 +3021,7 @@ mod tests {
         let mut value = false;
         let mut store = Default::default();
         let encoded = co3::soft_encode(ManuallyDrop::new(Box::new(&mut value)), &mut store);
-        unsafe { *(*encoded.as_ptr()).as_ptr() = CBool::TRUE };
+        unsafe { *(*encoded.as_ptr()).as_ptr() = Bool::TRUE };
         drop(unsafe {
             core::mem::ManuallyDrop::into_inner(encoded)
                 .into_box()
@@ -3039,7 +3038,7 @@ mod tests {
         let mut values = [false, false];
         let mut store = Default::default();
         let encoded = co3::soft_encode(values.iter_mut().collect::<Vec<_>>(), &mut store);
-        unsafe { *(*encoded.as_ptr()).as_ptr() = CBool::TRUE };
+        unsafe { *(*encoded.as_ptr()).as_ptr() = Bool::TRUE };
         drop(unsafe { encoded.into_vec().unwrap() });
         store.sync().unwrap();
         assert_eq!(values, [true, false]);
@@ -3051,7 +3050,7 @@ mod tests {
         let mut value = false;
         let mut store = Default::default();
         let encoded = co3::soft_encode(Some(&mut value), &mut store);
-        unsafe { *encoded.0.as_ptr() = CBool::TRUE };
+        unsafe { *encoded.0.as_ptr() = Bool::TRUE };
         store.sync().unwrap();
         assert!(value);
 
@@ -3068,7 +3067,7 @@ mod tests {
         let mut value = false;
         let mut store = Default::default();
         let encoded = co3::soft_encode(vec![Some(&mut value), None], &mut store);
-        unsafe { *(*encoded.as_ptr()).0.as_ptr() = CBool::TRUE };
+        unsafe { *(*encoded.as_ptr()).0.as_ptr() = Bool::TRUE };
         drop(unsafe { encoded.into_vec().unwrap() });
         store.sync().unwrap();
         assert!(value);
@@ -3104,7 +3103,7 @@ mod tests {
         let mut value = false;
         let mut store = Default::default();
         let encoded = co3::soft_encode(TransparentMut(&mut value), &mut store);
-        unsafe { *encoded.0.as_ptr() = CBool::TRUE };
+        unsafe { *encoded.0.as_ptr() = Bool::TRUE };
         store.sync().unwrap();
         assert!(value);
     }
@@ -3115,7 +3114,7 @@ mod tests {
         let mut value = false;
         let mut store = Default::default();
         let encoded = co3::soft_encode(Some(TransparentMut(&mut value)), &mut store);
-        unsafe { *encoded.0.0.as_ptr() = CBool::TRUE };
+        unsafe { *encoded.0.0.as_ptr() = Bool::TRUE };
         store.sync().unwrap();
         assert!(value);
 
@@ -3137,7 +3136,7 @@ mod tests {
             },
             &mut store,
         );
-        unsafe { *encoded.value.as_ptr() = CBool::TRUE };
+        unsafe { *encoded.value.as_ptr() = Bool::TRUE };
         assert_eq!(encoded.tag, 7);
         store.sync().unwrap();
         assert!(value);
@@ -3156,7 +3155,7 @@ mod tests {
             }],
             &mut store,
         );
-        unsafe { *(*encoded.as_ptr()).value.as_ptr() = CBool::TRUE };
+        unsafe { *(*encoded.as_ptr()).value.as_ptr() = Bool::TRUE };
         drop(unsafe { encoded.into_vec().unwrap() });
         store.sync().unwrap();
         assert!(value);

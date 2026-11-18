@@ -1,8 +1,8 @@
 //! Operators
 
 use crate::{
-    CFnArg, CFnReturn, CType, Decode, Encode,
-    stored::{EmptyStore, Store},
+    CFnArg, CFnReturn, CType,
+    convert::{Decode, EmptyStore, Encode, Store},
 };
 
 #[doc(hidden)]

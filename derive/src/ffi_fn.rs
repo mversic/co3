@@ -357,7 +357,7 @@ pub(crate) fn gen_regular_drop_definition_body(
 
     if !soft {
         return quote! {{
-            let Some(__co3_value) = (unsafe { co3::stored::decode_move::<#self_ty>(__co3_self) }) else {
+            let Some(__co3_value) = (unsafe { co3::convert::decode_move::<#self_ty>(__co3_self) }) else {
                 #decode_error
             };
             core::mem::drop(__co3_value);
@@ -367,15 +367,15 @@ pub(crate) fn gen_regular_drop_definition_body(
 
     let sync_error = gen_sync_error(failure_mode);
     quote! {{
-        let mut __co3_store = <#self_ty as co3::stored::DecodeMove<'_>>::Store::default();
+        let mut __co3_store = <#self_ty as co3::convert::DecodeMove<'_>>::Store::default();
         let __co3_value = unsafe {
-            <#self_ty as co3::stored::DecodeMove>::soft_decode(__co3_self, &mut __co3_store)
+            <#self_ty as co3::convert::DecodeMove>::soft_decode(__co3_self, &mut __co3_store)
         };
         let Some(__co3_value) = __co3_value else {
             #decode_error
         };
         core::mem::drop(__co3_value);
-        if co3::stored::Store::sync(__co3_store).is_none() {
+        if co3::convert::Store::sync(__co3_store).is_none() {
             #sync_error
         }
         #output
@@ -409,8 +409,8 @@ pub(crate) fn gen_return_borrow_check(return_ty: &syn::Type, fn_by_val: bool) ->
     quote! {
         const {
             assert!(
-                co3::impls!((#return_ty): co3::borrow::BorrowedEncode<Store: co3::stored::EmptyStore>)
-                    && co3::impls!((#return_ty): co3::borrow::BorrowedEncodeUnchecked<Owner: co3::stored::EmptyStore>),
+                co3::impls!((#return_ty): co3::borrow::BorrowedEncode<Store: co3::convert::EmptyStore>)
+                    && co3::impls!((#return_ty): co3::borrow::BorrowedEncodeUnchecked<Owner: co3::convert::EmptyStore>),
                 "Mark the return type with `move` to transfer ownership",
             );
         }
@@ -665,7 +665,7 @@ pub(crate) fn gen_analyzed_input_decode_stmts(
             if input.is_borrowed() {
                 quote!(<#decode_ty as co3::borrow::BorrowedDecode<'_>>::Store)
             } else {
-                quote!(<#decode_ty as co3::stored::DecodeMove<'_>>::Store)
+                quote!(<#decode_ty as co3::convert::DecodeMove<'_>>::Store)
             }
         } else {
             quote!(())
@@ -743,7 +743,7 @@ pub(crate) fn gen_store_sync_stmts(len: usize) -> TokenStream {
     quote! {{
         let mut __co3_sync_errors = [false; #len]; #(
 
-        if __co3_input_present[#idxs] && co3::stored::Store::sync(__co3_input_stores.#idxs).is_none() {
+        if __co3_input_present[#idxs] && co3::convert::Store::sync(__co3_input_stores.#idxs).is_none() {
             __co3_sync_errors[#idxs] = true;
         })*
 

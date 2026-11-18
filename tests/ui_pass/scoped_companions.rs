@@ -1,4 +1,4 @@
-use co3::{ReprC, wide::Wide};
+use co3::{CType, ReprC, wide::Wide};
 
 mod public {
     use co3::{ReprC, rust_spec::RustSpec};
@@ -43,7 +43,7 @@ fn main() {
         public::CChoice,
         public::COwnedHandle,
     );
-    static_assertions::assert_impl_all!(<public::OwnedHandle as ReprC>::CType: co3::CType);
+    static_assertions::assert_impl_all!(<public::OwnedHandle as ReprC>::CType: CType);
     let carrier: <public::Value<u32> as ReprC>::CType = co3::encode(public::Value(7));
     let decoded = unsafe { co3::decode::<public::Value<u32>>(carrier) }.unwrap();
     assert_eq!(decoded.0, 7);

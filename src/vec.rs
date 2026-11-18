@@ -11,8 +11,8 @@ use core::{
 use rust_spec::RustSpec;
 
 use crate::{
-    CFnArg, CFnReturn, CType, Decode, Encode, EncodeUnchecked, ReprC, Zeroable,
-    stored::{DecodeMove, EncodeMove, EncodeMoveUnchecked},
+    CFnArg, CFnReturn, CType, ReprC, Zeroable,
+    convert::{Decode, DecodeMove, Encode, EncodeMove, EncodeMoveUnchecked, EncodeUnchecked},
     transmute::{AbiCompatible, AbiCompatibleValidate},
     wide::impl_identity_carrier,
 };
@@ -358,8 +358,8 @@ impl<T> Extend<T> for Vec<T> {
         owner.value.as_mut().unwrap().extend(iter);
     }
 }
-impl<T> Encode for Vec<T> where Self: EncodeMove + crate::EncodeUnchecked {}
-impl<T> crate::EncodeUnchecked for Vec<T> where Self: EncodeMoveUnchecked {}
+impl<T> Encode for Vec<T> where Self: EncodeMove + crate::convert::EncodeUnchecked {}
+impl<T> crate::convert::EncodeUnchecked for Vec<T> where Self: EncodeMoveUnchecked {}
 impl<'d, T> Decode<'d> for Vec<T> where Self: DecodeMove<'d> {}
 impl<T: ReprC<CType: CType + Sized>> crate::niche::Niche for Vec<T> {
     const NICHE: Self::CType = CVec::null();

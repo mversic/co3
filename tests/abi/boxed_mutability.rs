@@ -29,7 +29,7 @@ fn stable_interior_slice_box_direct_round_trip_preserves_allocation() {
 
 #[test]
 fn unstable_interior_box_has_no_public_conversion() {
-    static_assertions::assert_not_impl_any!(Box<Cell<(u8,)>>: co3::Encode, co3::Decode<'static>);
+    static_assertions::assert_not_impl_any!(Box<Cell<(u8,)>>: co3::convert::Encode, co3::convert::Decode<'static>);
 }
 
 #[test]

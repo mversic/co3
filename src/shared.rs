@@ -16,16 +16,15 @@ use rust_spec::{Stable, Unstable, layout::Robust, mutability::WithInterior};
 
 use crate::{
     CType, ReprC,
+    convert::{
+        EncodeMove, EncodeMoveUnchecked, Store, encode_ref_field, encode_ref_field_unchecked,
+    },
     niche::Niche,
     option::{COption, COptionSome},
     reference::CSoftRef,
     result::{CResult, CResultErr, CResultOk},
-    stored::{
-        EncodeMove, EncodeMoveUnchecked, Store, encode_ref_field, encode_ref_field_unchecked,
-    },
     sync::{ArrayStore, RefSizedEncodeStore},
-    wide::{CSoftWideRef, WideRefCarrier},
-    wide::{Wide, WideHeader},
+    wide::{CSoftWideRef, Wide, WideHeader, WideRefCarrier},
 };
 #[cfg(feature = "alloc")]
 use crate::{
@@ -534,7 +533,7 @@ disjoint_impls! {
             'a: 'itm,
         {
             store.encode(|fields| {
-                let view = crate::stored::EncodeMove::soft_encode(&**self, fields);
+                let view = crate::convert::EncodeMove::soft_encode(&**self, fields);
                 // Only the header is borrowed; the pointee remains owned by self or its store.
                 unsafe { CBox::from_raw(view.as_ptr().cast_mut()) }
             })
@@ -560,7 +559,7 @@ disjoint_impls! {
             'a: 'itm,
         {
             store.encode(|fields| {
-                let view = crate::stored::EncodeMove::soft_encode(&**self, fields);
+                let view = crate::convert::EncodeMove::soft_encode(&**self, fields);
                 // Only the header is borrowed; the pointee remains owned by self or its store.
                 unsafe { CWideBox::from_raw_nullable(view.as_ptr().cast_mut(), view.metadata()) }
             })
@@ -586,7 +585,7 @@ disjoint_impls! {
             'a: 'itm,
         {
             store.encode(|fields| {
-                let view = crate::stored::EncodeMove::soft_encode(&**self, fields);
+                let view = crate::convert::EncodeMove::soft_encode(&**self, fields);
                 // Only the header is borrowed; the pointee remains owned by self or its store.
                 unsafe { CWideBox::from_raw_nullable(view.as_ptr(), view.metadata()) }
             })
@@ -608,7 +607,7 @@ disjoint_impls! {
             'a: 'itm,
         {
             store.encode(|fields| {
-                let view = crate::stored::EncodeMove::soft_encode(&**self, fields);
+                let view = crate::convert::EncodeMove::soft_encode(&**self, fields);
                 // Only the header is borrowed; the pointee remains owned by self or its store.
                 unsafe { CBox::from_raw(view.as_ptr()) }
             })
@@ -645,7 +644,7 @@ disjoint_impls! {
     where
         &'a Self: crate::ReprC<CType = crate::reference::CSoftRef<Self>>,
         T: RustSpec<Layout = Unstable>,
-        Self: crate::stored::SoftEncodeRefUnchecked<'a> + ReprC<CType = CVec<T>>,
+        Self: crate::convert::SoftEncodeRefUnchecked<'a> + ReprC<CType = CVec<T>>,
         Self: RustSpec<Mutability = Exclusive<__Interior>, Size: crate::Thin> + 'a,
         &'a T: EncodeMove + ReprC<CType = CSoftRef<T>>,
     {
@@ -936,7 +935,7 @@ unsafe impl<'a, T: ReprC<CType: CType + Copy + Sized>, __Interior: ExclusiveKind
     for crate::vec::Vec<T>
 where
     &'a Self: crate::ReprC<CType = crate::reference::CSoftRef<Self>>,
-    Self: crate::stored::SoftEncodeRefUnchecked<'a> + ReprC<CType = CVec<T, true>>,
+    Self: crate::convert::SoftEncodeRefUnchecked<'a> + ReprC<CType = CVec<T, true>>,
     Self: RustSpec<Mutability = Exclusive<__Interior>, Size: crate::Thin> + 'a,
     &'a T: EncodeMove + ReprC<CType = CSoftRef<T>>,
 {
@@ -1107,7 +1106,7 @@ where
     where
         'a: 'itm,
     {
-        store.encode(|fields| crate::stored::EncodeMove::soft_encode(*self, fields))
+        store.encode(|fields| crate::convert::EncodeMove::soft_encode(*self, fields))
     }
 }
 
@@ -1163,7 +1162,7 @@ where
         'a: 'itm,
     {
         store.encode(|fields| {
-            let value = crate::stored::EncodeMove::soft_encode(&**self, fields);
+            let value = crate::convert::EncodeMove::soft_encode(&**self, fields);
             const {
                 assert!(
                     core::mem::size_of::<<Self as ReprC>::CType>()
@@ -1250,16 +1249,18 @@ where
 
 #[cfg(all(test, feature = "alloc", feature = "derive"))]
 mod tests {
+    use alloc::{boxed::Box, string::String, vec, vec::Vec};
+    use core::ffi::CStr;
+
+    use rust_spec::RustSpec;
+
     use crate::{
         ReprC,
-        stored::{
+        convert::{
             EncodeMove, EncodeMoveUnchecked, SoftEncodeMut, SoftEncodeMutUnchecked, SoftEncodeRef,
             SoftEncodeRefUnchecked, Store,
         },
     };
-    use alloc::{boxed::Box, string::String, vec, vec::Vec};
-    use core::ffi::CStr;
-    use rust_spec::RustSpec;
 
     macro_rules! assert_not_shared_encoder {
         ($ty:ty: $($encoder:path),+ $(,)?) => {
@@ -1440,7 +1441,7 @@ mod tests {
 
     // This downstream type needs neither Clone nor owned encoding. Its checked
     // shared conversion has state, whereas its unchecked conversion has none.
-    unsafe impl<'a> co3::stored::SoftEncodeRefUnchecked<'a> for RefOnly {
+    unsafe impl<'a> co3::convert::SoftEncodeRefUnchecked<'a> for RefOnly {
         type SoftStore = co3::sync::RefSizedEncodeStore<Self, ()>;
         unsafe fn soft_encode_ref_unchecked<'itm>(
             &'a self,
@@ -1452,7 +1453,7 @@ mod tests {
             store.encode(|_fields| self.0)
         }
     }
-    unsafe impl<'a> co3::stored::SoftEncodeRef<'a> for RefOnly {
+    unsafe impl<'a> co3::convert::SoftEncodeRef<'a> for RefOnly {
         type Store = co3::sync::RefSizedEncodeStore<Self, CheckedStore>;
         fn soft_encode_ref<'itm>(
             &'a self,
@@ -1691,7 +1692,7 @@ mod tests {
     fn cells_cannot_be_snapshotted_by_shared_encoders() {
         use core::cell::{Cell, UnsafeCell};
 
-        use co3::stored::{SoftEncodeRef, SoftEncodeRefUnchecked};
+        use co3::convert::{SoftEncodeRef, SoftEncodeRefUnchecked};
         use static_assertions::{assert_impl_all, assert_not_impl_any};
 
         assert_not_shared_encoder!(Cell<u32>: SoftEncodeRefUnchecked<'static>, SoftEncodeRef<'static>);
@@ -1730,7 +1731,7 @@ mod tests {
 
     #[test]
     fn aggregates_encode_stable_fields_without_encode_ref_impls() {
-        use co3::stored::{SoftEncodeRef, SoftEncodeRefUnchecked};
+        use co3::convert::{SoftEncodeRef, SoftEncodeRefUnchecked};
         assert_not_shared_encoder!(u32: SoftEncodeRefUnchecked<'static>, SoftEncodeRef<'static>);
 
         assert_not_shared_encoder!(Record<NoClone>: SoftEncodeRefUnchecked<'static>, SoftEncodeRef<'static>);
@@ -1791,7 +1792,7 @@ mod tests {
     #[test]
     fn shared_borrow_of_mutable_slice_reference_preserves_metadata() {
         assert_not_shared_encoder!(&mut Vec<core::cell::Cell<bool>>:
-            co3::stored::SoftEncodeRef<'static>);
+            co3::convert::SoftEncodeRef<'static>);
         let mut values = [NoClone(3), NoClone(5)];
         let pointer = values.as_ptr();
         let reference = &mut values[..];
@@ -1962,9 +1963,9 @@ mod tests {
     #[test]
     fn transparent_cstr_has_nul_terminated_buffer() {
         static_assertions::assert_impl_all!(WrappedCStr: co3::ffi::NulTerminatedBuf);
-        assert_shared_encoder!(WrappedCStr: co3::stored::SoftEncodeRef<'static>, co3::stored::SoftEncodeRefUnchecked<'static>);
+        assert_shared_encoder!(WrappedCStr: co3::convert::SoftEncodeRef<'static>, co3::convert::SoftEncodeRefUnchecked<'static>);
         static_assertions::assert_not_impl_any!(WrappedCStr:
-            co3::stored::SoftEncodeMut<'static>, co3::stored::SoftEncodeMutUnchecked<'static>);
+            co3::convert::SoftEncodeMut<'static>, co3::convert::SoftEncodeMutUnchecked<'static>);
 
         let value = c"hello";
         let wrapper = unsafe { &*(value as *const CStr as *const WrappedCStr) };
@@ -1980,8 +1981,8 @@ mod tests {
 
     #[test]
     fn nontransparent_nul_tail_has_no_reference_encoder() {
-        assert_not_shared_encoder!(CStrTail: co3::stored::SoftEncodeRef<'static>, co3::stored::SoftEncodeRefUnchecked<'static>);
-        static_assertions::assert_not_impl_any!(CStrTail: co3::stored::SoftEncodeMut<'static>, co3::stored::SoftEncodeMutUnchecked<'static>);
+        assert_not_shared_encoder!(CStrTail: co3::convert::SoftEncodeRef<'static>, co3::convert::SoftEncodeRefUnchecked<'static>);
+        static_assertions::assert_not_impl_any!(CStrTail: co3::convert::SoftEncodeMut<'static>, co3::convert::SoftEncodeMutUnchecked<'static>);
     }
 
     #[repr(C)]
@@ -1997,7 +1998,7 @@ mod tests {
 
     #[test]
     fn transparent_wide_wrapper_delegates_reference_encoding() {
-        use co3::stored::{SoftEncodeMut, SoftEncodeMutUnchecked, SoftEncodeRefUnchecked};
+        use co3::convert::{SoftEncodeMut, SoftEncodeMutUnchecked, SoftEncodeRefUnchecked};
         assert_shared_encoder!(WrappedSlice<u32>: SoftEncodeRef<'static>, SoftEncodeRefUnchecked<'static>,
             SoftEncodeMut<'static>, SoftEncodeMutUnchecked<'static>);
         assert_shared_encoder!(WrappedSlice<core::ffi::CStr>: SoftEncodeRef<'static>, SoftEncodeRefUnchecked<'static>);
@@ -2029,7 +2030,7 @@ mod tests {
 
     #[test]
     fn derived_wide_aggregate_reference_encoders_are_unsupported() {
-        use co3::stored::{SoftEncodeMut, SoftEncodeMutUnchecked, SoftEncodeRefUnchecked};
+        use co3::convert::{SoftEncodeMut, SoftEncodeMutUnchecked, SoftEncodeRefUnchecked};
         assert_not_shared_encoder!(Packet: SoftEncodeRef<'static>, SoftEncodeRefUnchecked<'static>);
         static_assertions::assert_not_impl_any!(Packet: SoftEncodeMut<'static>, SoftEncodeMutUnchecked<'static>);
         assert_shared_encoder!(GenericPacket<u8>: SoftEncodeRef<'static>, SoftEncodeRefUnchecked<'static>);

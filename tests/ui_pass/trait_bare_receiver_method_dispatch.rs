@@ -1,10 +1,10 @@
-use co3::{Tag, ffi};
+use co3::{Tag, ffi, tag::Tagged};
 
 #[derive(Tag)]
 #[tag(u8, unsafe(1))]
 struct Host;
 
-trait Selected: co3::tag::Tagged<Kind = u8> + Sized {
+trait Selected: Tagged<Kind = u8> + Sized {
     fn plain();
 }
 

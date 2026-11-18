@@ -1,4 +1,4 @@
-use co3::{ReprC, rust_spec::RustSpec};
+use co3::{ReprC, niche::Niche, rust_spec::RustSpec};
 use static_assertions::assert_type_eq_all;
 
 macro_rules! exhaustive_enums {
@@ -57,20 +57,16 @@ fn fieldless_enums_preserve_named_companions() {
     );
     assert_eq!(co3::encode(TransparentTags::Second).0, 1u8);
     assert_eq!(
-        unsafe {
-            co3::decode::<TransparentTags>(<TransparentTags as co3::ReprC>::CType::from_u8(1))
-        },
+        unsafe { co3::decode::<TransparentTags>(<TransparentTags as ReprC>::CType::from_u8(1)) },
         Some(TransparentTags::Second)
     );
     assert_eq!(
-        unsafe {
-            co3::decode::<TransparentTags>(<TransparentTags as co3::ReprC>::CType::from_u8(2))
-        },
+        unsafe { co3::decode::<TransparentTags>(<TransparentTags as ReprC>::CType::from_u8(2)) },
         None
     );
     assert_eq!(co3::encode(TransparentUnit::Only).0, ());
     assert_eq!(
-        unsafe { co3::decode::<TransparentUnit>(<TransparentUnit as co3::ReprC>::CType::Only()) },
+        unsafe { co3::decode::<TransparentUnit>(<TransparentUnit as ReprC>::CType::Only()) },
         Some(TransparentUnit::Only)
     );
 }
@@ -96,13 +92,13 @@ fn exhaustive_enum_preserves_identity_with_or_without_drop() {
         <<AllTagsWithDrop as ReprC>::CType as ReprC>::CType,
         <AllTagsWithDrop as ReprC>::CType
     );
-    static_assertions::assert_not_impl_any!(AllTags: co3::niche::Niche);
-    static_assertions::assert_not_impl_any!(AllTagsWithDrop: co3::niche::Niche);
+    static_assertions::assert_not_impl_any!(AllTags: Niche);
+    static_assertions::assert_not_impl_any!(AllTagsWithDrop: Niche);
 
     assert_eq!(co3::encode(AllTags::V0).0, 0u8);
     assert_eq!(co3::encode(AllTags::V255).0, 255u8);
     assert_eq!(
-        unsafe { co3::decode::<AllTags>(<AllTags as co3::ReprC>::CType::from_u8(255)) },
+        unsafe { co3::decode::<AllTags>(<AllTags as ReprC>::CType::from_u8(255)) },
         Some(AllTags::V255)
     );
 }

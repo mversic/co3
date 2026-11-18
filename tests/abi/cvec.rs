@@ -76,7 +76,6 @@ fn raw_carrier_construction_needs_no_allocation_invariants() {
 
 #[test]
 fn owned_encoding_preserves_capacity_and_validates_elements() {
-    use co3::stored::Store;
     let mut value = Vec::with_capacity(32);
     value.extend([1u32, 2, 3]);
     let cap = value.capacity();
@@ -88,17 +87,16 @@ fn owned_encoding_preserves_capacity_and_validates_elements() {
         .unwrap();
     assert_eq!(value.capacity(), cap);
     assert_eq!(&*value, &[1, 2, 3]);
-    assert_eq!(encode_store.sync(), Some(()));
-    let invalid = CVec::<bool, true>::from_vec(vec![co3::primitives::CBool(2)]);
+    assert_eq!(co3::convert::Store::sync(encode_store), Some(()));
+    let invalid = CVec::<bool, true>::from_vec(vec![co3::primitives::Bool(2)]);
     assert!(
-        unsafe { co3::soft_decode::<co3::vec::Vec::<bool>>(invalid, &mut Default::default()) }
+        unsafe { co3::soft_decode::<co3::vec::Vec<bool>>(invalid, &mut Default::default()) }
             .is_none()
     );
 }
 
 #[test]
 fn unstable_elements_and_value_traits() {
-    use co3::stored::Store;
     let value: co3::vec::Vec<_> = vec![(1u32,), (2,)].into();
     let mut encode_store = Default::default();
     let carrier = co3::soft_encode(value, &mut encode_store);
@@ -106,8 +104,8 @@ fn unstable_elements_and_value_traits() {
     let decoded =
         unsafe { co3::soft_decode::<co3::vec::Vec<(u32,)>>(carrier, &mut decode_store) }.unwrap();
     assert_eq!(decoded, vec![(1u32,), (2,)].into());
-    assert_eq!(decode_store.sync(), Some(()));
-    assert_eq!(encode_store.sync(), Some(()));
+    assert_eq!(co3::convert::Store::sync(decode_store), Some(()));
+    assert_eq!(co3::convert::Store::sync(encode_store), Some(()));
     let mut values = co3::vec::Vec::new();
     values.extend([1, 2]);
     assert!(values < vec![1, 3].into());
@@ -116,7 +114,6 @@ fn unstable_elements_and_value_traits() {
 
 #[test]
 fn standard_vec_preserves_spare_capacity() {
-    use co3::stored::Store;
     let mut value = Vec::with_capacity(64);
     value.extend([3u32, 4]);
     let cap = value.capacity();
@@ -127,36 +124,36 @@ fn standard_vec_preserves_spare_capacity() {
     let value = unsafe { co3::soft_decode::<Vec<u32>>(carrier, &mut Default::default()) }.unwrap();
     assert_eq!(value.capacity(), cap);
     assert_eq!(value, [3, 4]);
-    assert_eq!(encode_store.sync(), Some(()));
+    assert_eq!(co3::convert::Store::sync(encode_store), Some(()));
 }
 
 #[test]
 fn boxed_unstable_elements_have_no_public_conversion() {
-    static_assertions::assert_not_impl_any!(Box<[(u32,)]>: co3::Encode, co3::Decode<'static>);
+    static_assertions::assert_not_impl_any!(Box<[(u32,)]>: co3::convert::Encode, co3::convert::Decode<'static>);
 }
 
 #[test]
 fn mutable_slice_writeback_uses_an_explicit_slice_header() {
-    use co3::stored::Store;
     let mut values = [false, true];
     let mut store = Default::default();
     let carrier = co3::soft_encode(values.as_mut_slice(), &mut store);
     assert_eq!(carrier.metadata(), 2);
     unsafe {
-        carrier.as_ptr().write(co3::primitives::CBool(1));
+        carrier.as_ptr().write(co3::primitives::Bool(1));
     }
-    assert_eq!(store.sync(), Some(()));
+    assert_eq!(co3::convert::Store::sync(store), Some(()));
     assert_eq!(values, [true, true]);
 }
 
 #[test]
 fn derived_carrier_spec_preserves_header_and_pointee_properties() {
+    use core::cell::UnsafeCell;
+
     use co3::rust_spec::{
         self, RustSpec, Stable,
         layout::Robust,
         mutability::{Exclusive, WithInterior, WithoutInterior},
     };
-    use core::cell::UnsafeCell;
     use static_assertions::assert_impl_all;
 
     assert_impl_all!(CVec<()>: RustSpec<
@@ -170,7 +167,7 @@ fn derived_carrier_spec_preserves_header_and_pointee_properties() {
         Opacity = rust_spec::NonOpaque,
         __IndirectTrap = Robust,
     >);
-    // bool lowers to the robust CBool carrier, including inside UnsafeCell.
+    // bool lowers to the robust Bool carrier, including inside UnsafeCell.
     assert_impl_all!(CVec<UnsafeCell<bool>>: RustSpec<
         Layout = Stable,
         Trap = Robust,

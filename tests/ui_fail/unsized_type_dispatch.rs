@@ -1,4 +1,4 @@
-use co3::{ReprC, Tag, ffi, rust_spec::RustSpec};
+use co3::{ReprC, Tag, ffi, rust_spec::RustSpec, tag::Tagged};
 
 #[derive(RustSpec, ReprC, Tag)]
 #[tag(u8)]
@@ -9,7 +9,7 @@ struct Unsized<T: ?Sized>(T);
 #[repr(C)]
 struct Wrapper<T: ?Sized>(Box<T>);
 
-unsafe impl co3::tag::Tagged for Unsized<[u8]> {
+unsafe impl Tagged for Unsized<[u8]> {
     const TAG: u8 = 0;
 }
 

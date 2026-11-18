@@ -1,5 +1,4 @@
-use co3::ffi::c_char;
-use co3::{ReprC, ffi, rust_spec::RustSpec};
+use co3::{ReprC, ffi, ffi::c_char, rust_spec::RustSpec};
 
 #[derive(Clone, Copy, RustSpec, ReprC)]
 #[repr_c(identity)]
@@ -40,7 +39,7 @@ static_assertions::assert_type_eq_all!(<Integer as ReprC>::CType, Integer);
 static_assertions::assert_type_eq_all!(<NonCopy as ReprC>::CType, NonCopy);
 static_assertions::assert_type_eq_all!(<Generic<u32> as ReprC>::CType, Generic<u32>);
 static_assertions::assert_impl_all!(GenericAliasFields<u32>: ReprC);
-static_assertions::assert_impl_all!(NonCopy: co3::Encode);
+static_assertions::assert_impl_all!(NonCopy: co3::convert::Encode);
 static_assertions::assert_not_impl_any!(Generic<bool>: ReprC);
 
 ffi! {

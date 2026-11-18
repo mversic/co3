@@ -1,8 +1,4 @@
-use co3::{
-    ReprC,
-    ffi,
-};
-use co3::rust_spec::RustSpec;
+use co3::{ReprC, ffi, rust_spec::RustSpec};
 
 #[derive(Clone, Copy, RustSpec, ReprC)]
 enum State {

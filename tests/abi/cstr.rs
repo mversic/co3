@@ -21,7 +21,7 @@ struct NamedWrappedCStr {
 fn transparent_cstr_uses_char_data() {
     static_assertions::assert_type_eq_all!(<CStr as ReprC>::CType, c_char);
     static_assertions::assert_impl_all!(WrappedCStr: co3::ffi::NulTerminatedBuf<Header = c_char>);
-    static_assertions::assert_impl_all!(Box<WrappedCStr>: co3::stored::EncodeMove, co3::stored::DecodeMove<'static>);
+    static_assertions::assert_impl_all!(Box<WrappedCStr>: co3::convert::EncodeMove, co3::convert::DecodeMove<'static>);
     static_assertions::assert_impl_all!(WrappedCStrWithMarkers: co3::ffi::NulTerminatedBuf<Header = c_char>);
     static_assertions::assert_impl_all!(NamedWrappedCStr: co3::ffi::NulTerminatedBuf<Header = c_char>);
 

@@ -1,6 +1,6 @@
 use core::marker::PhantomData;
 
-use co3::{ReprC, Tag, encode, ffi, rust_spec::RustSpec, pack::Unpack2};
+use co3::{ReprC, Tag, encode, ffi, pack::Unpack2, rust_spec::RustSpec};
 
 trait Prop {
     type DefinedBy;
@@ -30,19 +30,12 @@ struct Parts<D>(u32, u16, PhantomData<fn() -> D>);
 
 impl<D> Unpack2<u32, <AttrLength<D> as ReprC>::CType> for Parts<D> {
     type Error = core::convert::Infallible;
-    fn unpack(
-        value: Self::CType,
-    ) -> Result<(u32, <AttrLength<D> as ReprC>::CType), Self::Error> {
+    fn unpack(value: Self::CType) -> Result<(u32, <AttrLength<D> as ReprC>::CType), Self::Error> {
         Ok((value.0, encode(AttrLength(value.1, PhantomData))))
     }
 }
 
-impl<D>
-    Unpack2<
-        <AttrPointer<D> as ReprC>::CType,
-        <AttrLength<D> as ReprC>::CType,
-    > for Parts<D>
-{
+impl<D> Unpack2<<AttrPointer<D> as ReprC>::CType, <AttrLength<D> as ReprC>::CType> for Parts<D> {
     type Error = core::convert::Infallible;
     fn unpack(
         value: Self::CType,

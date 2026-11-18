@@ -1,6 +1,6 @@
 use std::cell::{Cell, UnsafeCell};
 
-use co3::{ReprC, rust_spec::RustSpec};
+use co3::{ReprC, niche::Niche, rust_spec::RustSpec, transmute::AbiCompatible};
 use static_assertions::{assert_impl_all, assert_not_impl_any};
 
 #[derive(RustSpec, ReprC)]
@@ -188,34 +188,30 @@ struct FieldSlice<T>([T]);
 #[test]
 fn field_representation_maps_owned_conversion_and_transmutation() {
     assert_impl_all!(<FieldHandle as ReprC>::CType: ReprC<CType = <FieldHandle as ReprC>::CType>);
-    assert_not_impl_any!(FieldHandle: co3::transmute::AbiCompatible);
-    assert_impl_all!(StableFieldHandle: co3::transmute::AbiCompatible);
-    assert_impl_all!(TransparentFieldHandle: co3::transmute::AbiCompatible);
-    assert_impl_all!(FieldHandle: co3::stored::EncodeMoveUnchecked);
-    assert_impl_all!(StableFieldHandle: co3::stored::EncodeMoveUnchecked);
-    assert_impl_all!(TransparentFieldHandle: co3::stored::EncodeMoveUnchecked);
+    assert_not_impl_any!(FieldHandle: AbiCompatible);
+    assert_impl_all!(StableFieldHandle: AbiCompatible);
+    assert_impl_all!(TransparentFieldHandle: AbiCompatible);
+    assert_impl_all!(FieldHandle: co3::convert::EncodeMoveUnchecked);
+    assert_impl_all!(StableFieldHandle: co3::convert::EncodeMoveUnchecked);
+    assert_impl_all!(TransparentFieldHandle: co3::convert::EncodeMoveUnchecked);
     assert!(!unsafe {
         <ValidatedByte as co3::transmute::AbiCompatibleValidate>::is_valid(
-            &<ValidatedByte as co3::ReprC>::CType::from_fields(10),
+            &<ValidatedByte as ReprC>::CType::from_fields(10),
         )
     });
     assert!(unsafe {
         <ValidatedByte as co3::transmute::AbiCompatibleValidate>::is_valid(
-            &<ValidatedByte as co3::ReprC>::CType::from_fields(11),
+            &<ValidatedByte as ReprC>::CType::from_fields(11),
         )
     });
     assert!(
-        unsafe {
-            co3::decode::<ValidatedByte>(<ValidatedByte as co3::ReprC>::CType::from_fields(10))
-        }
-        .is_none()
+        unsafe { co3::decode::<ValidatedByte>(<ValidatedByte as ReprC>::CType::from_fields(10)) }
+            .is_none()
     );
     assert_eq!(
-        unsafe {
-            co3::decode::<ValidatedByte>(<ValidatedByte as co3::ReprC>::CType::from_fields(11))
-        }
-        .unwrap()
-        .0,
+        unsafe { co3::decode::<ValidatedByte>(<ValidatedByte as ReprC>::CType::from_fields(11)) }
+            .unwrap()
+            .0,
         11
     );
     assert!(!unsafe {
@@ -223,16 +219,16 @@ fn field_representation_maps_owned_conversion_and_transmutation() {
     });
     assert!(unsafe {
         <NonZeroField as co3::transmute::AbiCompatibleValidate>::is_valid(
-            &<NonZeroField as co3::ReprC>::CType::from_fields(co3::num::NonZero(1)),
+            &<NonZeroField as ReprC>::CType::from_fields(co3::num::NonZero(1)),
         )
     });
     assert_impl_all!(<FieldSlice<u8> as ReprC>::CType: ReprC<CType = <FieldSlice<u8> as ReprC>::CType>);
-    assert_impl_all!(FieldSlice<u8>: co3::transmute::AbiCompatible);
+    assert_impl_all!(FieldSlice<u8>: AbiCompatible);
     assert_impl_all!(<FieldSlice<core::mem::MaybeUninit<u8>> as ReprC>::CType: ReprC<CType = <FieldSlice<core::mem::MaybeUninit<u8>> as ReprC>::CType>);
-    assert_impl_all!(FieldSlice<core::mem::MaybeUninit<u8>>: co3::transmute::AbiCompatible);
+    assert_impl_all!(FieldSlice<core::mem::MaybeUninit<u8>>: AbiCompatible);
     assert_eq!(co3::encode(FieldHandle(7)).0, 7);
     assert_eq!(
-        unsafe { co3::decode::<FieldHandle>(<FieldHandle as co3::ReprC>::CType::from_fields(7)) }
+        unsafe { co3::decode::<FieldHandle>(<FieldHandle as ReprC>::CType::from_fields(7)) }
             .unwrap()
             .0,
         7
@@ -241,8 +237,8 @@ fn field_representation_maps_owned_conversion_and_transmutation() {
 
 #[test]
 fn field_representation_preserves_inner_niche() {
-    assert_impl_all!(NonZeroField: co3::niche::Niche<CType = <NonZeroField as co3::ReprC>::CType>);
-    assert_eq!(<NonZeroField as co3::niche::Niche>::NICHE.0.0, 0);
+    assert_impl_all!(NonZeroField: Niche<CType = <NonZeroField as ReprC>::CType>);
+    assert_eq!(<NonZeroField as Niche>::NICHE.0.0, 0);
     assert!(matches!(
         unsafe { co3::decode::<Option<NonZeroField>>(core::mem::zeroed()) },
         Some(None)

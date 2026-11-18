@@ -25,8 +25,9 @@ struct Array2([u8; 8]);
 struct StableButNotCStatic(u32);
 
 mod provider {
-    use super::*;
     use co3::rust_spec::RustSpec;
+
+    use super::*;
 
     #[derive(Clone, RustSpec)]
     #[rust_spec(opaque)]
@@ -70,7 +71,7 @@ mod provider {
             type Owned = OwnedOpaqueZst;
 
             #[symbol_name = "my_type_new"]
-            fn to_owned(&self) -> <Self as ToOwned>::Owned;
+            fn to_owned(&self) -> move <Self as ToOwned>::Owned;
         }
     }
 
@@ -127,7 +128,6 @@ mod provider {
             fn me(self);
         }
     }
-
 }
 
 ffi! {

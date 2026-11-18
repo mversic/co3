@@ -27,8 +27,8 @@ static_assertions::assert_type_eq_all!(
     <ConcreteBox as ReprC>::CType
 );
 static_assertions::assert_type_ne_all!(
-    <Transparent<Box<u8>> as co3::ReprC>::CType,
-    <ConcreteBox as co3::ReprC>::CType,
+    <Transparent<Box<u8>> as ReprC>::CType,
+    <ConcreteBox as ReprC>::CType,
     co3::boxed::CBox<u8>
 );
 

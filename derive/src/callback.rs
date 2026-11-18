@@ -349,23 +349,23 @@ fn add_generic_companion_bounds(
         {
             if let Some(lifetime) = decode_lifetime {
                 if soft_for_arg(&arg.attrs) {
-                    predicates.push(parse_quote!(#ty: co3::Decode<#lifetime>));
+                    predicates.push(parse_quote!(#ty: co3::convert::Decode<#lifetime>));
                 } else {
                     predicates.push(parse_quote!(
-                        #ty: co3::Decode<#lifetime, Store: co3::stored::EmptyStore>
+                        #ty: co3::convert::Decode<#lifetime, Store: co3::convert::EmptyStore>
                     ));
                 }
             } else if soft_for_arg(&arg.attrs) {
-                predicates.push(parse_quote!(for<'__co3_d> #ty: co3::Decode<'__co3_d>));
+                predicates.push(parse_quote!(for<'__co3_d> #ty: co3::convert::Decode<'__co3_d>));
             } else {
                 predicates.push(parse_quote!(
-                    for<'__co3_d> #ty: co3::Decode<'__co3_d, Store: co3::stored::EmptyStore>
+                    for<'__co3_d> #ty: co3::convert::Decode<'__co3_d, Store: co3::convert::EmptyStore>
                 ));
             }
         } else {
             let borrowed = quote!(#ty);
             let store_bound =
-                (!soft_for_arg(&arg.attrs)).then(|| quote!(, Store: co3::stored::EmptyStore));
+                (!soft_for_arg(&arg.attrs)).then(|| quote!(, Store: co3::convert::EmptyStore));
             if let Some(lifetime) = decode_lifetime {
                 predicates
                     .push(parse_quote!(#borrowed: co3::borrow::BorrowedDecode<#lifetime #store_bound> + #lifetime));
@@ -380,11 +380,12 @@ fn add_generic_companion_bounds(
         && detector.type_mentions_param(ty)
     {
         if ffi_fn::ownership_mode(ty, fn_by_val) == crate::generate::OwnershipMode::ByValue {
-            predicates.push(parse_quote!(#ty: co3::Encode<Store: co3::stored::EmptyStore>));
+            predicates
+                .push(parse_quote!(#ty: co3::convert::Encode<Store: co3::convert::EmptyStore>));
         } else {
             predicates.push(parse_quote!(#ty: co3::borrow::BorrowedEncode<
-                    Store: co3::stored::EmptyStore,
-                    Owner: co3::stored::EmptyStore,
+                    Store: co3::convert::EmptyStore,
+                    Owner: co3::convert::EmptyStore,
                 >));
         }
     }

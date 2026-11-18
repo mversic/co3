@@ -1,4 +1,4 @@
-use co3::{reference::CSoftRef, stored::Store, utf8::Utf8String, vec::CVec};
+use co3::{reference::CSoftRef, utf8::Utf8String, vec::CVec};
 
 #[test]
 fn shared_string_decodes_without_taking_source_ownership() {
@@ -13,7 +13,7 @@ fn shared_string_decodes_without_taking_source_ownership() {
         assert_eq!(decoded, text);
         assert_eq!(decoded.capacity(), source.capacity());
         assert_ne!(decoded.as_ptr(), source.as_ptr());
-        assert_eq!(store.sync(), Some(()));
+        assert_eq!(co3::convert::Store::sync(store), Some(()));
         // The source allocation still belongs to its original owner.
         let original = unsafe { source.0.into_vec() }.unwrap();
         assert_eq!(original, text.as_bytes());

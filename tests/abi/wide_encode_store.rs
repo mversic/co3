@@ -1,6 +1,5 @@
 use co3::{
-    primitives::CBool,
-    stored::Store,
+    primitives::Bool,
     sync::{RefMutWideEncodeStore, RefWideEncodeStore},
     tuple::{Tuple2, Tuple3},
     wide::Wide,
@@ -11,11 +10,11 @@ fn mutable_store_uses_rust_pointee_and_its_c_representation() {
     let mut result = false;
     let mut store = RefMutWideEncodeStore::<[bool], (), &mut bool>::default();
     let carrier = store.encode(
-        |_| (vec![CBool::FALSE].into_boxed_slice(), &mut result),
-        |value, result| *result = value[0] == CBool::TRUE,
+        |_| (vec![Bool::FALSE].into_boxed_slice(), &mut result),
+        |value, result| *result = value[0] == Bool::TRUE,
     );
-    unsafe { carrier.into_mut().unwrap()[0] = CBool::TRUE };
-    assert_eq!(store.sync(), Some(()));
+    unsafe { carrier.into_mut().unwrap()[0] = Bool::TRUE };
+    assert_eq!(co3::convert::Store::sync(store), Some(()));
     assert!(result);
 }
 
@@ -28,7 +27,7 @@ fn shared_reuse_keeps_previous_pointee_alive_during_construction() {
         vec![value + 1].into_boxed_slice()
     });
     assert_eq!(unsafe { current.into_ref().unwrap() }, &[8]);
-    assert_eq!(store.sync(), Some(()));
+    assert_eq!(co3::convert::Store::sync(store), Some(()));
 }
 
 #[test]
@@ -45,7 +44,7 @@ fn mutable_reuse_only_writes_back_the_latest_value() {
         |value, target| *target = value[0],
     );
     unsafe { current.into_mut().unwrap()[0] = 30 };
-    assert_eq!(store.sync(), Some(()));
+    assert_eq!(co3::convert::Store::sync(store), Some(()));
     assert_eq!(first, 1);
     assert_eq!(second, 30);
 }
@@ -62,13 +61,13 @@ fn builder_panic_cancels_pending_mutable_writeback() {
         store.encode(|_| panic!("builder failed"), |_, _| unreachable!());
     }));
     assert!(result.is_err());
-    assert_eq!(store.sync(), Some(()));
+    assert_eq!(co3::convert::Store::sync(store), Some(()));
     assert_eq!(source, 1);
 }
 
-fn sync_after_move<S: Store>(store: S) -> Option<()> {
+fn sync_after_move<S: co3::convert::Store>(store: S) -> Option<()> {
     let moved = Box::new(store);
-    (*moved).sync()
+    co3::convert::Store::sync(*moved)
 }
 
 #[test]
@@ -103,28 +102,25 @@ fn wide_tuple_preserves_data_and_metadata() {
 
 #[test]
 fn one_field_wide_tuples_are_unsupported() {
-    use co3::{
-        stored::{SoftEncodeMut, SoftEncodeMutUnchecked, SoftEncodeRef, SoftEncodeRefUnchecked},
-        tuple::Tuple1,
-    };
-    assert_not_shared_encoder!(Tuple1<[u8]>: SoftEncodeRef<'static>, SoftEncodeRefUnchecked<'static>);
-    static_assertions::assert_not_impl_any!(Tuple1<[u8]>: Wide, SoftEncodeMut<'static>, SoftEncodeMutUnchecked<'static>);
-    assert_not_shared_encoder!(([u8],): SoftEncodeRef<'static>, SoftEncodeRefUnchecked<'static>);
-    static_assertions::assert_not_impl_any!(([u8],): SoftEncodeMut<'static>, SoftEncodeMutUnchecked<'static>);
-    assert_not_shared_encoder!((u32, [u8]): SoftEncodeRef<'static>, SoftEncodeRefUnchecked<'static>);
-    static_assertions::assert_not_impl_any!((u32, [u8]): SoftEncodeMut<'static>, SoftEncodeMutUnchecked<'static>);
-    assert_not_shared_encoder!(Tuple2<u32, [u8]>: SoftEncodeRef<'static>, SoftEncodeRefUnchecked<'static>);
-    static_assertions::assert_not_impl_any!(Tuple2<u32, [u8]>: SoftEncodeMut<'static>, SoftEncodeMutUnchecked<'static>);
-    static_assertions::assert_impl_all!(&'static Tuple1<u8>: co3::Encode, co3::EncodeUnchecked);
+    use co3::tuple::Tuple1;
+    assert_not_shared_encoder!(Tuple1<[u8]>: co3::convert::SoftEncodeRef<'static>, co3::convert::SoftEncodeRefUnchecked<'static>);
+    static_assertions::assert_not_impl_any!(Tuple1<[u8]>: Wide, co3::convert::SoftEncodeMut<'static>, co3::convert::SoftEncodeMutUnchecked<'static>);
+    assert_not_shared_encoder!(([u8],): co3::convert::SoftEncodeRef<'static>, co3::convert::SoftEncodeRefUnchecked<'static>);
+    static_assertions::assert_not_impl_any!(([u8],): co3::convert::SoftEncodeMut<'static>, co3::convert::SoftEncodeMutUnchecked<'static>);
+    assert_not_shared_encoder!((u32, [u8]): co3::convert::SoftEncodeRef<'static>, co3::convert::SoftEncodeRefUnchecked<'static>);
+    static_assertions::assert_not_impl_any!((u32, [u8]): co3::convert::SoftEncodeMut<'static>, co3::convert::SoftEncodeMutUnchecked<'static>);
+    assert_not_shared_encoder!(Tuple2<u32, [u8]>: co3::convert::SoftEncodeRef<'static>, co3::convert::SoftEncodeRefUnchecked<'static>);
+    static_assertions::assert_not_impl_any!(Tuple2<u32, [u8]>: co3::convert::SoftEncodeMut<'static>, co3::convert::SoftEncodeMutUnchecked<'static>);
+    static_assertions::assert_impl_all!(&'static Tuple1<u8>: co3::convert::Encode, co3::convert::EncodeUnchecked);
     let tuple = Tuple1(7_u8);
     let carrier: co3::reference::CRef<'_, Tuple1<u8>> = co3::encode(&tuple);
     assert_eq!(
         carrier.as_ptr().cast::<()>(),
         core::ptr::from_ref(&tuple).cast::<()>()
     );
-    assert_not_shared_encoder!(Tuple1<core::ffi::CStr>: SoftEncodeRef<'static>, SoftEncodeRefUnchecked<'static>);
-    assert_not_shared_encoder!(Tuple2<u32, core::ffi::CStr>: SoftEncodeRef<'static>, SoftEncodeRefUnchecked<'static>);
-    assert_not_shared_encoder!((u32, core::ffi::CStr): SoftEncodeRef<'static>, SoftEncodeRefUnchecked<'static>);
+    assert_not_shared_encoder!(Tuple1<core::ffi::CStr>: co3::convert::SoftEncodeRef<'static>, co3::convert::SoftEncodeRefUnchecked<'static>);
+    assert_not_shared_encoder!(Tuple2<u32, core::ffi::CStr>: co3::convert::SoftEncodeRef<'static>, co3::convert::SoftEncodeRefUnchecked<'static>);
+    assert_not_shared_encoder!((u32, core::ffi::CStr): co3::convert::SoftEncodeRef<'static>, co3::convert::SoftEncodeRefUnchecked<'static>);
 }
 
 #[test]

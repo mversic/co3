@@ -1,7 +1,6 @@
 use core::{marker::PhantomData, num::NonZeroU8};
 
-use co3::ReprC;
-use co3::rust_spec::RustSpec;
+use co3::{ReprC, niche::Niche, rust_spec::RustSpec};
 
 #[derive(RustSpec, ReprC)]
 #[rust_spec(custom_niche)]
@@ -22,12 +21,12 @@ struct OverridesInferredNiche<T>(NonZeroU8, PhantomData<T>);
 #[repr_c(NICHE = unsafe { core::mem::zeroed() })]
 struct MaybeUnsized<T: ?Sized>(T);
 
-static_assertions::assert_impl_all!(MaybeUnsized<u8>: co3::niche::Niche);
-static_assertions::assert_not_impl_any!(MaybeUnsized<[u8]>: co3::niche::Niche);
-static_assertions::assert_not_impl_any!(MaybeUnsized<str>: co3::niche::Niche);
+static_assertions::assert_impl_all!(MaybeUnsized<u8>: Niche);
+static_assertions::assert_not_impl_any!(MaybeUnsized<[u8]>: Niche);
+static_assertions::assert_not_impl_any!(MaybeUnsized<str>: Niche);
 
-static_assertions::assert_impl_all!(Valid<()>: co3::niche::Niche);
-static_assertions::assert_not_impl_any!(MissingCustomNiche<()>: co3::niche::Niche);
-static_assertions::assert_not_impl_any!(OverridesInferredNiche<()>: co3::niche::Niche);
+static_assertions::assert_impl_all!(Valid<()>: Niche);
+static_assertions::assert_not_impl_any!(MissingCustomNiche<()>: Niche);
+static_assertions::assert_not_impl_any!(OverridesInferredNiche<()>: Niche);
 
 fn main() {}

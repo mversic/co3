@@ -1,9 +1,12 @@
 //! C-compatible representations and conversions for [`core::num`].
-use crate::stored::{DecodeMove, EncodeMove, EncodeMoveUnchecked};
-use crate::transmute::{AbiCompatible, AbiCompatibleValidate};
-use crate::{CFnArg, CFnReturn, CType, Decode, Encode, ReprC};
-use crate::{EncodeUnchecked, Zeroable, transmute};
 use rust_spec::RustSpec;
+
+use crate::{
+    CFnArg, CFnReturn, CType, ReprC, Zeroable,
+    convert::{Decode, DecodeMove, Encode, EncodeMove, EncodeMoveUnchecked, EncodeUnchecked},
+    transmute,
+    transmute::{AbiCompatible, AbiCompatibleValidate},
+};
 /// Transparent Rust wrapper recording a nonzero value intent.
 ///
 /// This wrapper also permits zero in its C representation.
