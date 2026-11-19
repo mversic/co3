@@ -6,12 +6,12 @@ use core::{
 
 use co3::{
     ReprC,
+    marker::AbiCompatible,
     rust_spec::{
         RustSpec,
         layout::{NonRobust, Robust},
         mutability::{Exclusive, WithInterior},
     },
-    transmute::AbiCompatible,
 };
 use static_assertions::{assert_impl_all, assert_not_impl_any};
 
@@ -118,7 +118,7 @@ fn maybe_uninit_cells_allow_shared_validation_without_inspecting_contents() {
     assert!(core::ptr::eq(decoded, &boxed));
 
     // Zero is invalid for NonZeroU8, but valid as uninterpreted MaybeUninit bytes.
-    let representation = core::mem::MaybeUninit::<UnsafeCell<co3::num::NonZero<u8>>>::new(
+    let representation = core::mem::MaybeUninit::<UnsafeCell<co3::marker::NonZero<u8>>>::new(
         core::cell::UnsafeCell::new(unsafe { core::mem::zeroed() }),
     );
     let encoded = unsafe { co3::reference::Ref::from_raw(core::ptr::from_ref(&representation)) };
@@ -158,7 +158,7 @@ fn robust_cells_do_not_hide_other_invalid_fields() {
     // The invalid boolean exists only in the robust C representation.
     let invalid = unsafe {
         <Mixed<UnsafeCell<u8>> as ReprC>::CType::from_fields(
-            co3::primitives::Bool(2),
+            co3::primitive::abi::bool(2),
             core::cell::UnsafeCell::new(7),
         )
     };
@@ -177,7 +177,7 @@ fn shared_plain_data_and_exclusive_cells_still_decode() {
     assert_eq!(**decoded, 7);
 
     let source = co3::boxed::abi::Box::from_box(Box::new(core::cell::UnsafeCell::new(
-        co3::num::NonZero(7_u8),
+        co3::marker::NonZero(7_u8),
     )));
     let decoded = unsafe { co3::decode::<Box<UnsafeCell<NonZeroU8>>>(source) }.unwrap();
     assert_eq!((*decoded).into_inner().get(), 7);

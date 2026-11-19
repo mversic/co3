@@ -1,6 +1,6 @@
 use core::{cell::UnsafeCell, mem::ManuallyDrop, num::NonZeroU8};
 
-use co3::transmute::AbiCompatible;
+use co3::marker::AbiCompatible;
 use static_assertions::{assert_impl_all, assert_not_impl_any};
 
 #[derive(co3::rust_spec::RustSpec, co3::ReprC)]

@@ -1,6 +1,6 @@
 use std::{cmp::Ordering, ffi::c_void};
 
-use co3::{ffi, rust_spec::RustSpec, utf8::Utf8String};
+use co3::{ffi, rust_spec::RustSpec, string::abi::String as AbiString};
 
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, RustSpec)]
 #[rust_spec(opaque)]
@@ -46,16 +46,16 @@ impl FfiStruct {
 
 unsafe extern "C" {
     #[link_name = "export_shared__FfiStruct__new"]
-    fn new_raw(name: Utf8String) -> *mut c_void;
+    fn new_raw(name: AbiString) -> *mut c_void;
 
     #[link_name = "export_shared__FfiStruct__clone_box"]
     fn clone_raw(value: *const c_void) -> *mut c_void;
 
     #[link_name = "export_shared__FfiStruct__equals"]
-    fn equals_raw(value: *const c_void, other: *const c_void) -> co3::primitives::Bool;
+    fn equals_raw(value: *const c_void, other: *const c_void) -> co3::primitive::abi::bool;
 
     #[link_name = "export_shared__FfiStruct__compare"]
-    fn compare_raw(value: *const c_void, other: *const c_void) -> co3::cmp::Ordering;
+    fn compare_raw(value: *const c_void, other: *const c_void) -> co3::cmp::abi::Ordering;
 
     #[link_name = "export_shared__Drop__FfiStruct__drop"]
     fn drop_raw(value: *mut c_void);

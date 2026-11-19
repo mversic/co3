@@ -1,4 +1,4 @@
-use co3::{option::abi, primitives::Bool, reference::SoftRefMut};
+use co3::{option::abi, reference::SoftRefMut};
 
 #[test]
 fn decoding_none_has_no_active_store() {
@@ -13,7 +13,7 @@ fn decoding_none_has_no_active_store() {
     assert_eq!(co3::convert::Store::sync(untagged), Some(()));
 
     let mut niche = Default::default();
-    let mut source = Bool::TRUE;
+    let mut source = co3::primitive::abi::bool::TRUE;
     let encoded = unsafe { SoftRefMut::<<bool as co3::ReprC>::CType>::from_raw(&mut source) };
     let decoded = unsafe {
         co3::soft_decode::<Option<&mut bool>>(co3::option::abi::OptionSome(encoded), &mut niche)

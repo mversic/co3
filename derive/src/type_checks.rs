@@ -170,6 +170,10 @@ impl<'ast> Visit<'ast> for TypeChecks {
                     "`Option` must resolve to `core::option::Option` or `co3::option::Option`"
                         .to_owned()
                 }
+                crate::known_type::Kind::String => {
+                    "`String` must resolve to `alloc::string::String` or `co3::string::String`"
+                        .to_owned()
+                }
                 crate::known_type::Kind::Vec => {
                     "`Vec` must resolve to `alloc::vec::Vec` or `co3::vec::Vec`".to_owned()
                 }
@@ -178,7 +182,7 @@ impl<'ast> Visit<'ast> for TypeChecks {
                         .to_owned()
                 }
                 crate::known_type::Kind::NonZero => {
-                    "`NonZero` must resolve to `core::num::NonZero` or `co3::num::NonZero`"
+                    "`NonZero` must resolve to `core::num::NonZero` or `co3::marker::NonZero`"
                         .to_owned()
                 }
                 crate::known_type::Kind::Box if name == "Box" => {

@@ -1,7 +1,4 @@
-use co3::{
-    ffi,
-    ffi::{c_char, c_int},
-};
+use co3::{ffi, ffi::{c_char, c_int}};
 
 macro_rules! macro_owned_type {
     (raw fn($($arg:tt)*)) => {

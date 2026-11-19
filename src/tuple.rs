@@ -5,24 +5,13 @@
 //! Unlike Rust's native tuples, these have a guaranteed C-compatible
 //! memory layout with fields in the order of declaration.
 //!
-//! Native Rust tuples lower to `abi::TupleN<E, ...>` with lowered field types.
-//! These carriers lower to themselves. `STABLE` defaults to `false` for native
-//! tuples. `TupleN<T, ...>` lowers to `abi::TupleN<T::CType, ..., true>`.
-//!
-//! ```
-//! use co3::tuple::Tuple2;
-//! let pair: Tuple2<_, _> = Tuple2(23, 23);
-//! assert_eq!(pair.into_tuple(), (23, 23));
-//! ```
-//!
 //! # Niche Optimization
 //!
 //! When one of the tuple elements has a niche value (trap representations), `Option<(A, B, ...)>` is
 //! optimized to use niche value of the **first element with a niche** to represent [`None`] value.
 //! Values of all the other tuple elements of the niche are zeroed (NOT a stable guarantee yet)
 //!
-//! When none of the tuple elements have a niche value, `Option<(A, B, ...)>` is represented as a
-//! a tagged `option::abi::Option` containing the lowered tuple.
+//! When no tuple element has a niche value, `Option<(A, B, ...)>` is represented as tagged.
 //!
 //! # Example
 //!
@@ -30,7 +19,7 @@
 //! use core::mem::size_of;
 //!
 //! use co3::{
-//!     encode, niche::Niche, option::abi, primitives::Bool, ReprC,
+//!     encode, niche::Niche, option::abi, ReprC,
 //! };
 //!
 //! type TupleWithNiche1<'a> = (u8, bool, &'a bool);
@@ -38,31 +27,32 @@
 //! type TupleWithoutNiche = (u64, u32, u8);
 //!
 //! assert_eq!(
+//!     size_of::<<Option<TupleWithNiche1> as ReprC>::CType>(),
 //!     size_of::<<TupleWithNiche1 as ReprC>::CType>(),
-//!     size_of::<<Option::<TupleWithNiche1> as ReprC>::CType>()
 //! );
 //! assert_eq!(
+//!     size_of::<<Option<TupleWithNiche2> as ReprC>::CType>(),
 //!     size_of::<<TupleWithNiche2 as ReprC>::CType>(),
-//!     size_of::<<Option::<TupleWithNiche2> as ReprC>::CType>());
+//! );
 //!
 //! assert_eq!(
+//!     size_of::<<Option<TupleWithoutNiche> as ReprC>::CType>(),
 //!     8 + size_of::<<TupleWithoutNiche as ReprC>::CType>(),
-//!     size_of::<<Option::<TupleWithoutNiche> as ReprC>::CType>()
 //! );
 //!
 //! let none_value_1: Option<TupleWithNiche1> = None;
-//! let encoded_none_value_1: abi::OptionSome<<TupleWithNiche1 as ReprC>::CType> = encode(none_value_1);
+//! let encoded_none_value_1: abi::OptionSome<TupleWithNiche1::CType> = encode(none_value_1);
 //! let payload_1 = &encoded_none_value_1.0;
 //! assert_eq!(payload_1.0, 0);
 //! assert!(bool::is_niche(&payload_1.1));
 //! assert!(payload_1.2.as_ptr().is_null());
 //!
 //! let none_value_2: Option<TupleWithNiche2> = None;
-//! let encoded_none_value_2: abi::OptionSome<<TupleWithNiche2 as ReprC>::CType> = encode(none_value_2);
+//! let encoded_none_value_2: abi::OptionSome<TupleWithNiche2::CType> = encode(none_value_2);
 //! let payload_2 = &encoded_none_value_2.0;
 //! assert_eq!(payload_2.0, 0);
 //! assert!(payload_2.1.as_ptr().is_null());
-//! assert_eq!(payload_2.2, Bool::FALSE);
+//! assert_eq!(payload_2.2, co3::primitive::abi::bool::FALSE);
 //!
 //! let none_value_3: Option<TupleWithoutNiche> = None;
 //! assert_eq!(encode(none_value_3), abi::Option::None());
@@ -75,12 +65,13 @@ use rust_spec::{
 
 use crate::{
     CFnArg, CFnReturn, CType, ReprC, Store,
+    convert::AbiCompatibleValidate,
     convert::{
         Decode, DecodeMove, Encode, EncodeMove, EncodeMoveUnchecked, SoftEncodeRef,
         SoftEncodeRefUnchecked,
     },
+    marker::AbiCompatible,
     niche::Niche,
-    transmute::{AbiCompatible, AbiCompatibleValidate},
 };
 
 macro_rules! impl_tuple {
@@ -95,7 +86,7 @@ macro_rules! impl_tuple {
                 Self: 'itm
             {
                 let ($($ty,)*) = self;
-                $ffi_ty::<$($ty),*>($($ty),*).soft_encode(store).with_source()
+                $ffi_ty::<$($ty),*>($($ty),*).soft_encode(store).0
             }
 
         }
@@ -112,7 +103,7 @@ macro_rules! impl_tuple {
 
                 let $ffi_ty($($ty),*) = self;
                 let store: private_store::Store<$($ty::Store,)*> = store.into();
-                abi::$carrier($( $encode::soft_encode($ty, store.$ty) ),*)
+                crate::marker::Stable(abi::$carrier($( $encode::soft_encode($ty, store.$ty) ),*))
             }
 
         }
@@ -122,7 +113,7 @@ macro_rules! impl_tuple {
             #[expect(non_snake_case)]
             unsafe fn soft_encode_unchecked<'itm>(self, store: &'itm mut Self::SoftStore) -> Self::CType where Self: 'itm {
                 let ($($ty,)*) = self;
-                unsafe { $ffi_ty::<$($ty),*>($($ty),*).soft_encode_unchecked(store).with_source() }
+                unsafe { $ffi_ty::<$($ty),*>($($ty),*).soft_encode_unchecked(store).0 }
             }
         }
         unsafe impl<$($ty: $unchecked),*> $unchecked for $ffi_ty<$($ty),*> {
@@ -134,7 +125,7 @@ macro_rules! impl_tuple {
 
                 let $ffi_ty($($ty),*) = self;
                 let store: private_store::Store<$($ty::SoftStore,)*> = store.into();
-                abi::$carrier($(unsafe { $ty.soft_encode_unchecked(store.$ty) }),*)
+                crate::marker::Stable(abi::$carrier($(unsafe { $ty.soft_encode_unchecked(store.$ty) }),*))
             }
         }
         unsafe impl<'d, $($ty: $decode<'d>),*> $decode<'d> for ($($ty,)*) {
@@ -144,7 +135,7 @@ macro_rules! impl_tuple {
             #[expect(non_snake_case)]
             unsafe fn soft_decode<'itm: 'd>(source: Self::CType, store: &'itm mut Self::Store) -> Option<Self> {
                 let $ffi_ty($($ty),*) = unsafe {
-                    <$ffi_ty<$($ty),*> as $decode<'d>>::soft_decode(source.with_source(), store)
+                    <$ffi_ty<$($ty),*> as $decode<'d>>::soft_decode(crate::marker::Stable(source), store)
                 }?;
                 Some(($($ty,)*))
             }
@@ -153,7 +144,7 @@ macro_rules! impl_tuple {
             #[expect(non_snake_case)]
             unsafe fn soft_decode_unchecked<'itm: 'd>(source: Self::CType, store: &'itm mut Self::Store) -> Self {
                 let $ffi_ty($($ty),*) = unsafe {
-                    <$ffi_ty<$($ty),*> as $decode<'d>>::soft_decode_unchecked(source.with_source(), store)
+                    <$ffi_ty<$($ty),*> as $decode<'d>>::soft_decode_unchecked(crate::marker::Stable(source), store)
                 };
                 ($($ty,)*)
             }
@@ -166,7 +157,7 @@ macro_rules! impl_tuple {
             unsafe fn soft_decode<'itm: 'd>(source: Self::CType, store: &'itm mut Self::Store) -> Option<Self> {
                 impl_tuple! {@decl_priv_store $($ty),*}
 
-                let abi::$carrier($($ty),*) = source;
+                let crate::marker::Stable(abi::$carrier($($ty),*)) = source;
                 let store: private_store::Store<$($ty::Store,)*> = store.into();
                 Some(unsafe { $ffi_ty($( $ty::soft_decode($ty, store.$ty)? ),*) })
             }
@@ -176,7 +167,7 @@ macro_rules! impl_tuple {
             unsafe fn soft_decode_unchecked<'itm: 'd>(source: Self::CType, store: &'itm mut Self::Store) -> Self {
                 impl_tuple! {@decl_priv_store $($ty),*}
 
-                let abi::$carrier($($ty),*) = source;
+                let crate::marker::Stable(abi::$carrier($($ty),*)) = source;
                 let store: private_store::Store<$($ty::Store),*> = store.into();
                 unsafe { $ffi_ty($( $ty::soft_decode_unchecked($ty, store.$ty) ),*) }
             }
@@ -201,7 +192,7 @@ macro_rules! impl_tuple {
                 Self: 'itm
             {
                 let ($($ty,)*) = self;
-                $ffi_ty::<$($ty),*>($($ty),*).soft_encode(store, owner).with_source()
+                $ffi_ty::<$($ty),*>($($ty),*).soft_encode(store, owner).0
             }
 
         }
@@ -219,7 +210,7 @@ macro_rules! impl_tuple {
                 let $ffi_ty($($ty),*) = self;
                 let store: private_store::Store<$($ty::Store,)*> = store.into();
                         let owner: private_store::Store<$($ty::Owner,)*> = owner.into();
-                abi::$carrier($( BorrowedEncode::soft_encode($ty, store.$ty, owner.$ty) ),*)
+                crate::marker::Stable(abi::$carrier($( BorrowedEncode::soft_encode($ty, store.$ty, owner.$ty) ),*))
             }
 
         }
@@ -230,7 +221,7 @@ macro_rules! impl_tuple {
             #[expect(non_snake_case)]
             unsafe fn soft_encode_unchecked<'itm>(self, store: &'itm mut Self::SoftStore, owner: &'itm mut Self::Owner) -> Self::CType where Self: 'itm {
                 let ($($ty,)*) = self;
-                unsafe { $ffi_ty::<$($ty),*>($($ty),*).soft_encode_unchecked(store, owner).with_source() }
+                unsafe { $ffi_ty::<$($ty),*>($($ty),*).soft_encode_unchecked(store, owner).0 }
             }
         }
         unsafe impl<$($ty: BorrowedEncodeUnchecked),*> BorrowedEncodeUnchecked for $ffi_ty<$($ty),*> {
@@ -244,7 +235,7 @@ macro_rules! impl_tuple {
                 let $ffi_ty($($ty),*) = self;
                 let store: private_store::Store<$($ty::SoftStore,)*> = store.into();
                         let owner: private_store::Store<$($ty::Owner,)*> = owner.into();
-                abi::$carrier($(unsafe { $ty.soft_encode_unchecked(store.$ty, owner.$ty) }),*)
+                crate::marker::Stable(abi::$carrier($(unsafe { $ty.soft_encode_unchecked(store.$ty, owner.$ty) }),*))
             }
         }
         unsafe impl<'d, $($ty: BorrowedDecode<'d>),*> BorrowedDecode<'d> for ($($ty,)*) {
@@ -254,7 +245,7 @@ macro_rules! impl_tuple {
             #[expect(non_snake_case)]
             unsafe fn soft_decode<'itm: 'd>(source: Self::CType, store: &'itm mut Self::Store) -> Option<Self> {
                 let $ffi_ty($($ty),*) = unsafe {
-                    <$ffi_ty<$($ty),*> as BorrowedDecode<'d>>::soft_decode(source.with_source(), store)
+                    <$ffi_ty<$($ty),*> as BorrowedDecode<'d>>::soft_decode(crate::marker::Stable(source), store)
                 }?;
                 Some(($($ty,)*))
             }
@@ -263,7 +254,7 @@ macro_rules! impl_tuple {
             #[expect(non_snake_case)]
             unsafe fn soft_decode_unchecked<'itm: 'd>(source: Self::CType, store: &'itm mut Self::Store) -> Self {
                 let $ffi_ty($($ty),*) = unsafe {
-                    <$ffi_ty<$($ty),*> as BorrowedDecode<'d>>::soft_decode_unchecked(source.with_source(), store)
+                    <$ffi_ty<$($ty),*> as BorrowedDecode<'d>>::soft_decode_unchecked(crate::marker::Stable(source), store)
                 };
                 ($($ty,)*)
             }
@@ -276,7 +267,7 @@ macro_rules! impl_tuple {
             unsafe fn soft_decode<'itm: 'd>(source: Self::CType, store: &'itm mut Self::Store) -> Option<Self> {
                 impl_tuple! {@decl_priv_store $($ty),*}
 
-                let abi::$carrier($($ty),*) = source;
+                let crate::marker::Stable(abi::$carrier($($ty),*)) = source;
                 let store: private_store::Store<$($ty::Store,)*> = store.into();
                 Some(unsafe { $ffi_ty($( $ty::soft_decode($ty, store.$ty)? ),*) })
             }
@@ -286,7 +277,7 @@ macro_rules! impl_tuple {
             unsafe fn soft_decode_unchecked<'itm: 'd>(source: Self::CType, store: &'itm mut Self::Store) -> Self {
                 impl_tuple! {@decl_priv_store $($ty),*}
 
-                let abi::$carrier($($ty),*) = source;
+                let crate::marker::Stable(abi::$carrier($($ty),*)) = source;
                 let store: private_store::Store<$($ty::Store),*> = store.into();
                 unsafe { $ffi_ty($( $ty::soft_decode_unchecked($ty, store.$ty) ),*) }
             }
@@ -328,7 +319,7 @@ macro_rules! impl_tuple {
 
         unsafe impl<'d, $($ty: ReprC<CType: crate::CType + Sized> + RustSpec + 'd),+> crate::convert::SoftDecodeRef<'d> for $ffi_ty<$($ty),*>
         where
-            Self: RustSpec + ReprC<CType = abi::$carrier<$(<$ty as ReprC>::CType),*, true>>,
+            Self: RustSpec + ReprC<CType = crate::marker::Stable<abi::$carrier<$(<$ty as ReprC>::CType),*>>>,
             &'d Self: ReprC<CType = crate::reference::SoftRef<<Self as ReprC>::CType>>,
             $(&'d $ty: DecodeMove<'d> + ReprC<CType: crate::reference::RefCarrier<$ty>>,)+
             $(crate::sync::DecodedField<
@@ -341,7 +332,7 @@ macro_rules! impl_tuple {
                 store.decode(|fields| Some($ffi_ty($(
                     unsafe {
                         crate::reference::decode_ref_field::<$ty>(
-                            crate::reference::RefCarrier::from_shared_ptr(&source.$idx),
+                            crate::reference::RefCarrier::from_shared_ptr(&source.0.$idx),
                             &mut fields.$idx,
                         )
                     }?,
@@ -352,7 +343,7 @@ macro_rules! impl_tuple {
                 store.decode(|fields| Some($ffi_ty($(
                     unsafe {
                         crate::reference::decode_ref_field_unchecked::<$ty>(
-                            crate::reference::RefCarrier::from_shared_ptr(&source.$idx),
+                            crate::reference::RefCarrier::from_shared_ptr(&source.0.$idx),
                             &mut fields.$idx,
                         )
                     },
@@ -385,7 +376,7 @@ macro_rules! impl_tuple {
         unsafe impl<'d, $($ty: ReprC<CType: crate::CType + Copy> + 'd),+> crate::convert::SoftDecodeMut<'d> for $ffi_ty<$($ty),*>
         where
             $($ty: crate::borrow::BorrowedDecode<'d>,)*
-            Self: EncodeMove<Store: crate::convert::EmptyStore> + RustSpec + ReprC<CType = abi::$carrier<$(<$ty as ReprC>::CType),*, true>>,
+            Self: EncodeMove<Store: crate::convert::EmptyStore> + RustSpec + ReprC<CType = crate::marker::Stable<abi::$carrier<$(<$ty as ReprC>::CType),*>>>,
             &'d mut Self: ReprC<CType = crate::reference::SoftRefMut<<Self as ReprC>::CType>>,
         {
             type Store = crate::sync::RefMutSizedDecodeStore<Self, ($(<$ty as crate::borrow::BorrowedDecode<'d>>::Store,)*)>;
@@ -393,14 +384,14 @@ macro_rules! impl_tuple {
                 let pointer = source.as_ptr();
                 let source = unsafe { pointer.as_ref()? };
                 unsafe { store.decode(pointer, |fields| Some($ffi_ty($(
-                    crate::reference::decode_mut_field::<$ty>(source.$idx, &mut fields.$idx)?,
+                    crate::reference::decode_mut_field::<$ty>(source.0.$idx, &mut fields.$idx)?,
                 )*))) }
             }
             unsafe fn soft_decode_mut_unchecked<'itm: 'd>(source: <&'d mut Self as ReprC>::CType, store: &'itm mut Self::Store) -> &'d mut Self {
                 let pointer = source.as_ptr();
                 let source = unsafe { &*pointer };
                 unsafe { store.decode(pointer, |fields| Some($ffi_ty($(
-                    crate::reference::decode_mut_field_unchecked::<$ty>(source.$idx, &mut fields.$idx),
+                    crate::reference::decode_mut_field_unchecked::<$ty>(source.0.$idx, &mut fields.$idx),
                 )*))) }.expect("unchecked decoding produces a value")
             }
         }
@@ -443,7 +434,7 @@ macro_rules! impl_tuple {
                     impl_tuple! {@decl_priv_store $($ty),*}
                     let $ffi_ty($($ty),*) = self;
                     let fields: private_store::Store<$(<&'a $ty as EncodeMove>::Store,)*> = fields.into();
-                    abi::$carrier($($crate::stored::encode_ref_field($ty, fields.$ty)),*)
+                    crate::marker::Stable(abi::$carrier($($crate::stored::encode_ref_field($ty, fields.$ty)),*))
                 })
             }
         }
@@ -479,7 +470,7 @@ macro_rules! impl_tuple {
                     impl_tuple! {@decl_priv_store $($ty),*}
                     let $ffi_ty($($ty),*) = self;
                     let fields: private_store::Store<$(<&'a $ty as EncodeMoveUnchecked>::SoftStore,)*> = fields.into();
-                    abi::$carrier($(unsafe { $crate::stored::encode_ref_field_unchecked($ty, fields.$ty) }),*)
+                    crate::marker::Stable(abi::$carrier($(unsafe { $crate::stored::encode_ref_field_unchecked($ty, fields.$ty) }),*))
                 })
             }
         }
@@ -531,14 +522,14 @@ macro_rules! impl_tuple {
             type CType = abi::$carrier<$($head::CType,)* $last::CType>;
         }
         impl<$($head: ReprC<CType: Sized>,)* $last: ReprC + ?Sized> ReprC for $ffi_ty<$($head,)* $last> {
-            type CType = abi::$carrier<$($head::CType,)* $last::CType, true>;
+            type CType = crate::marker::Stable<abi::$carrier<$($head::CType,)* $last::CType>>;
         }
 
         unsafe impl<$($head: AbiCompatibleValidate<CType: Copy>,)* $last: AbiCompatibleValidate + ?Sized> AbiCompatibleValidate for $ffi_ty<$($head,)* $last> {
             #[inline(always)]
             #[expect(non_snake_case)]
             unsafe fn is_valid(target: &Self::CType) -> bool {
-                let abi::$carrier($($head,)* $last) = target;
+                let crate::marker::Stable(abi::$carrier($($head,)* $last)) = target;
                 true $(&& unsafe { $head::is_valid($head) })* && unsafe { $last::is_valid($last) }
             }
         }
@@ -698,9 +689,10 @@ impl_tuple_niche_recursive! {
 mod tests {
     #[test]
     fn tuple_families_lower_and_decode() {
-        use crate::{decode, encode, primitives::Bool, tuple::Tuple2};
+        use crate::{decode, encode, tuple::Tuple2};
         let stable: Tuple2<_, _> = Tuple2(23_u32, true);
-        let encoded: super::abi::Tuple2<u32, Bool, true> = encode(stable);
+        let encoded: crate::marker::Stable<super::abi::Tuple2<u32, crate::primitive::abi::bool>> =
+            encode(stable);
         assert_eq!(
             unsafe { decode::<Tuple2<u32, bool>>(encoded) },
             Some(stable)
@@ -710,7 +702,7 @@ mod tests {
             encode((23_u32, true));
         assert_eq!(unsafe { decode::<(u32, bool)>(encoded) }, Some((23, true)));
         assert_eq!(encode(encoded), encoded);
-        static_assertions::assert_type_ne_all!(super::abi::Tuple2<u32, <bool as crate::ReprC>::CType>, Tuple2<u32, Bool>);
+        static_assertions::assert_type_ne_all!(super::abi::Tuple2<u32, <bool as crate::ReprC>::CType>, Tuple2<u32, bool>);
     }
 
     #[test]
@@ -720,15 +712,18 @@ mod tests {
         assert_not_impl_any!(abi::Tuple1<<core::cell::Cell<u8> as crate::ReprC>::CType>: Copy);
         assert_type_eq_all!(<abi::Tuple2<<bool as crate::ReprC>::CType, u8> as ReprC>::CType, abi::Tuple2<<bool as crate::ReprC>::CType, u8>);
         assert_type_eq_all!(<(bool, u8) as ReprC>::CType, abi::Tuple2<<bool as crate::ReprC>::CType, u8>);
-        assert_type_eq_all!(<Tuple2<bool, u8> as ReprC>::CType, abi::Tuple2<crate::primitives::Bool, u8, true>);
-        static_assertions::assert_type_ne_all!(abi::Tuple2<u8, u32>, abi::Tuple2<u8, u32, true>);
+        assert_type_eq_all!(
+            <Tuple2<bool, u8> as ReprC>::CType,
+            crate::marker::Stable<abi::Tuple2<crate::primitive::abi::bool, u8>>
+        );
+        static_assertions::assert_type_ne_all!(abi::Tuple2<u8, u32>, crate::marker::Stable<abi::Tuple2<u8, u32>>);
         assert_eq!(
             core::mem::size_of::<abi::Tuple2<u8, u32>>(),
-            core::mem::size_of::<abi::Tuple2<u8, u32, true>>()
+            core::mem::size_of::<crate::marker::Stable<abi::Tuple2<u8, u32>>>()
         );
         assert_eq!(
             core::mem::align_of::<abi::Tuple2<u8, u32>>(),
-            core::mem::align_of::<abi::Tuple2<u8, u32, true>>()
+            core::mem::align_of::<crate::marker::Stable<abi::Tuple2<u8, u32>>>()
         );
 
         struct Payload<'a>(&'a core::cell::Cell<usize>);
@@ -740,7 +735,7 @@ mod tests {
         }
         let drops = core::cell::Cell::new(0);
         let native = abi::Tuple1::<_>(Payload(&drops));
-        let stable: abi::Tuple1<Payload<'_>, true> = native.with_source();
+        let stable: crate::marker::Stable<abi::Tuple1<Payload<'_>>> = crate::marker::Stable(native);
         assert_eq!(drops.get(), 0);
         drop(stable);
         assert_eq!(drops.get(), 1);
@@ -752,7 +747,10 @@ mod tests {
         use crate::wide::Wide;
         type TailHeader = <[u64] as Wide>::Header;
         static_assertions::assert_type_eq_all!(<abi::Tuple2<u8, [u64]> as Wide>::Header, abi::Tuple2<u8, TailHeader>);
-        static_assertions::assert_type_eq_all!(<abi::Tuple2<u8, [u64], true> as Wide>::Header, abi::Tuple2<u8, TailHeader, true>);
+        static_assertions::assert_type_eq_all!(
+            <crate::marker::Stable<abi::Tuple2<u8, [u64]>> as Wide>::Header,
+            crate::marker::Stable<abi::Tuple2<u8, TailHeader>>
+        );
         let fields: alloc::boxed::Box<Tuple2<u8, [u64]>> =
             alloc::boxed::Box::new(Tuple2(7, [11, 22, 33]));
         let pointer = core::ptr::from_ref(&*fields).cast::<()>();
@@ -936,7 +934,7 @@ mod tests {
         let niche = <(u8, StdNonZero<u8>, bool)>::NICHE;
         assert_eq!(
             (niche.0, niche.1.0, niche.2),
-            (0, 0, crate::primitives::Bool::FALSE)
+            (0, 0, crate::primitive::abi::bool::FALSE)
         );
 
         assert_impl_all!((u8, StdNonZero<u8>, bool):
@@ -1007,94 +1005,91 @@ pub mod abi {
     use super::*;
     macro_rules! impl_abi_tuple {
         ([$($ty:ident),+] [$($head:ident:$head_idx:tt,)*] $last:ident:$last_idx:tt -> $ffi_ty:ident) => {
-        /// Tuple representation with lowered fields and a storage-free source discriminator.
+        /// Tuple representation with lowered fields.
         #[doc(hidden)]
         #[repr(C)]
         #[derive(RustSpec)]
-        pub struct $ffi_ty<$($head: CType,)* $last: CType + ?Sized, const STABLE: bool = false>($(pub $head,)* pub $last);
+        pub struct $ffi_ty<$($head: CType,)* $last: CType + ?Sized>($(pub $head,)* pub $last);
 
-        impl<$($head: CType,)* $last: CType + ?Sized, const STABLE: bool> ReprC for $ffi_ty<$($head,)* $last, STABLE> {
+        impl<$($head: CType,)* $last: CType + ?Sized> ReprC for $ffi_ty<$($head,)* $last> {
             type CType = Self;
         }
-        unsafe impl<$($head: CType,)* $last: CType + ?Sized, const STABLE: bool> CType for $ffi_ty<$($head,)* $last, STABLE> {}
-        unsafe impl<$($head: CType,)* $last: CType + ?Sized, const STABLE: bool> AbiCompatibleValidate for $ffi_ty<$($head,)* $last, STABLE> {
+        unsafe impl<$($head: CType,)* $last: CType + ?Sized> CType for $ffi_ty<$($head,)* $last> {}
+        unsafe impl<$($head: CType,)* $last: CType + ?Sized> AbiCompatibleValidate for $ffi_ty<$($head,)* $last> {
             unsafe fn is_valid(_: &Self) -> bool { true }
         }
-        unsafe impl<$($head: CType,)* $last: CType + ?Sized, const STABLE: bool> AbiCompatible for $ffi_ty<$($head,)* $last, STABLE> {}
+        unsafe impl<$($head: CType,)* $last: CType + ?Sized> AbiCompatible for $ffi_ty<$($head,)* $last> {}
 
-        impl<$($head: CType,)* $last: CType, const STABLE: bool> $ffi_ty<$($head,)* $last, STABLE> {
-            pub(super) fn with_source<const OTHER: bool>(self) -> $ffi_ty<$($head,)* $last, OTHER> {
-                $ffi_ty($(self.$head_idx,)* self.$last_idx)
-            }
+        impl<$($head: CType,)* $last: CType> $ffi_ty<$($head,)* $last> {
             /// Return the lowered fields without decoding them.
             pub fn into_tuple(self) -> ($($head,)* $last,) {
                 ($(self.$head_idx,)* self.$last_idx,)
             }
         }
-        impl<$($head: CType + Copy,)* $last: CType + Copy, const STABLE: bool> Copy for $ffi_ty<$($head,)* $last, STABLE> {}
-        impl<$($head: CType + Clone,)* $last: CType + Clone, const STABLE: bool> Clone for $ffi_ty<$($head,)* $last, STABLE> {
+        impl<$($head: CType + Copy,)* $last: CType + Copy> Copy for $ffi_ty<$($head,)* $last> {}
+        impl<$($head: CType + Clone,)* $last: CType + Clone> Clone for $ffi_ty<$($head,)* $last> {
             fn clone(&self) -> Self { Self($(self.$head_idx.clone(),)* self.$last_idx.clone()) }
         }
-        impl<$($head: CType + core::fmt::Debug + Sized,)* $last: CType + core::fmt::Debug + Sized, const STABLE: bool> core::fmt::Debug for $ffi_ty<$($head,)* $last, STABLE> {
+        impl<$($head: CType + core::fmt::Debug + Sized,)* $last: CType + core::fmt::Debug + Sized> core::fmt::Debug for $ffi_ty<$($head,)* $last> {
             fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
                 f.debug_tuple(stringify!($ffi_ty))$(.field(&self.$head_idx))*.field(&self.$last_idx).finish()
             }
         }
-        impl<$($head: CType + PartialEq + Sized,)* $last: CType + PartialEq + Sized, const STABLE: bool> PartialEq for $ffi_ty<$($head,)* $last, STABLE> {
+        impl<$($head: CType + PartialEq + Sized,)* $last: CType + PartialEq + Sized> PartialEq for $ffi_ty<$($head,)* $last> {
             fn eq(&self, other: &Self) -> bool { true $(&& self.$head_idx == other.$head_idx)* && self.$last_idx == other.$last_idx }
         }
-        impl<$($head: CType + Eq + Sized,)* $last: CType + Eq + Sized, const STABLE: bool> Eq for $ffi_ty<$($head,)* $last, STABLE> {}
-        impl<$($head: CType + Default,)* $last: CType + Default, const STABLE: bool> Default for $ffi_ty<$($head,)* $last, STABLE> {
+        impl<$($head: CType + Eq + Sized,)* $last: CType + Eq + Sized> Eq for $ffi_ty<$($head,)* $last> {}
+        impl<$($head: CType + Default,)* $last: CType + Default> Default for $ffi_ty<$($head,)* $last> {
             fn default() -> Self { Self($(<$head>::default(),)* <$last>::default()) }
         }
-        impl<$($head: CType + PartialOrd + Sized,)* $last: CType + PartialOrd + Sized, const STABLE: bool> PartialOrd for $ffi_ty<$($head,)* $last, STABLE> {
+        impl<$($head: CType + PartialOrd + Sized,)* $last: CType + PartialOrd + Sized> PartialOrd for $ffi_ty<$($head,)* $last> {
             fn partial_cmp(&self, other: &Self) -> Option<core::cmp::Ordering> {
                 ($( &self.$head_idx,)* &self.$last_idx,).partial_cmp(&($( &other.$head_idx,)* &other.$last_idx,))
             }
         }
-        impl<$($head: CType + Ord + Sized,)* $last: CType + Ord + Sized, const STABLE: bool> Ord for $ffi_ty<$($head,)* $last, STABLE> {
+        impl<$($head: CType + Ord + Sized,)* $last: CType + Ord + Sized> Ord for $ffi_ty<$($head,)* $last> {
             fn cmp(&self, other: &Self) -> core::cmp::Ordering {
                 ($( &self.$head_idx,)* &self.$last_idx,).cmp(&($( &other.$head_idx,)* &other.$last_idx,))
             }
         }
-        impl<$($head: CType + core::hash::Hash + Sized,)* $last: CType + core::hash::Hash + Sized, const STABLE: bool> core::hash::Hash for $ffi_ty<$($head,)* $last, STABLE> {
+        impl<$($head: CType + core::hash::Hash + Sized,)* $last: CType + core::hash::Hash + Sized> core::hash::Hash for $ffi_ty<$($head,)* $last> {
             fn hash<__Hasher: core::hash::Hasher>(&self, state: &mut __Hasher) { $(core::hash::Hash::hash(&self.$head_idx, state);)* core::hash::Hash::hash(&self.$last_idx, state); }
         }
 
 
-        unsafe impl<$($ty: CType),*, const STABLE: bool> EncodeMove for $ffi_ty<$($ty),*, STABLE> {
+        unsafe impl<$($ty: CType),*> EncodeMove for $ffi_ty<$($ty),*> {
             type Store = ();
             fn soft_encode<'a>(self, _: &'a mut ()) -> Self where Self: 'a { self }
         }
-        unsafe impl<$($ty: CType),*, const STABLE: bool> EncodeMoveUnchecked for $ffi_ty<$($ty),*, STABLE> {
+        unsafe impl<$($ty: CType),*> EncodeMoveUnchecked for $ffi_ty<$($ty),*> {
             type SoftStore = ();
             unsafe fn soft_encode_unchecked<'a>(self, _: &'a mut ()) -> Self where Self: 'a { self }
         }
-        unsafe impl<'d, $($ty: CType),*, const STABLE: bool> DecodeMove<'d> for $ffi_ty<$($ty),*, STABLE> {
+        unsafe impl<'d, $($ty: CType),*> DecodeMove<'d> for $ffi_ty<$($ty),*> {
             type Store = ();
             unsafe fn soft_decode<'a: 'd>(source: Self, _: &'a mut ()) -> Option<Self> { Some(source) }
         }
-        impl<$($ty: CType),*, const STABLE: bool> Encode for $ffi_ty<$($ty),*, STABLE> {}
-        impl<$($ty: CType),*, const STABLE: bool> crate::convert::EncodeUnchecked for $ffi_ty<$($ty),*, STABLE> {}
-        impl<'d, $($ty: CType),*, const STABLE: bool> Decode<'d> for $ffi_ty<$($ty),*, STABLE> {}
-        crate::__impl_borrowed_identity!([$($ty: CType,)* const STABLE: bool] $ffi_ty<$($ty),*, STABLE>);
-        unsafe impl<$($ty: CType),*, const STABLE: bool> CFnArg for $ffi_ty<$($ty),*, STABLE>
+        impl<$($ty: CType),*> Encode for $ffi_ty<$($ty),*> {}
+        impl<$($ty: CType),*> crate::convert::EncodeUnchecked for $ffi_ty<$($ty),*> {}
+        impl<'d, $($ty: CType),*> Decode<'d> for $ffi_ty<$($ty),*> {}
+        crate::borrow::__impl_borrowed_identity!([$($ty: CType,)* ] $ffi_ty<$($ty),*>);
+        unsafe impl<$($ty: CType),*> CFnArg for $ffi_ty<$($ty),*>
         where Self: RustSpec<Size = rust_spec::size::Sized<rust_spec::Gt<rust_spec::Zero>>> {}
-        unsafe impl<$($ty: CType),*, const STABLE: bool> CFnReturn for $ffi_ty<$($ty),*, STABLE>
+        unsafe impl<$($ty: CType),*> CFnReturn for $ffi_ty<$($ty),*>
         where Self: RustSpec<Size = rust_spec::size::Sized<rust_spec::Gt<rust_spec::Zero>>> {}
-impl<$($head: CType,)* __Co3WideHeader: CType, const STABLE: bool> crate::wide::WideHeader for $ffi_ty<$($head,)* __Co3WideHeader, STABLE> {
+impl<$($head: CType,)* __Co3WideHeader: CType> crate::wide::WideHeader for $ffi_ty<$($head,)* __Co3WideHeader> {
     type Data = Self;
 }
 impl_abi_tuple!(@wide [$($head,)*] $last -> $ffi_ty);
 };
 (@wide [] $last:ident -> $ffi_ty:ident) => {};
 (@wide [$($head:ident,)+] $last:ident -> $ffi_ty:ident) => {
-        unsafe impl<$($head: CType,)+ $last: CType + crate::wide::Wide<Metadata = usize> + RustSpec<Size = rust_spec::size::MetaSized<rust_spec::size::SliceLike>> + ?Sized, const STABLE: bool>
-            crate::wide::Wide for $ffi_ty<$($head,)+ $last, STABLE>
+        unsafe impl<$($head: CType,)+ $last: CType + crate::wide::Wide<Metadata = usize> + RustSpec<Size = rust_spec::size::MetaSized<rust_spec::size::SliceLike>> + ?Sized>
+            crate::wide::Wide for $ffi_ty<$($head,)+ $last>
         where
             <$last as crate::wide::Wide>::Header: CType + Sized,
         {
-            type Header = $ffi_ty<$($head,)+ <$last as crate::wide::Wide>::Header, STABLE>;
+            type Header = $ffi_ty<$($head,)+ <$last as crate::wide::Wide>::Header>;
             type Metadata = usize;
 
             fn metadata(ptr: *const Self) -> usize {

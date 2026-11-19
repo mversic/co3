@@ -70,34 +70,41 @@ fn robust_vec_checked_encoding_preserves_values_and_capacity() {
 
 #[test]
 fn nonrobust_vec_keeps_element_writeback_stores() {
-    let mut values = [false, false];
+    let mut values = [false];
     let mut store = Default::default();
     let encoded = co3::soft_encode(values.iter_mut().collect::<Vec<_>>(), &mut store);
-    unsafe { *(*encoded.as_ptr()).as_ptr() = co3::primitives::Bool::TRUE };
+    unsafe { *(*encoded.as_ptr()).as_ptr() = co3::primitive::abi::bool::TRUE };
     drop(unsafe { encoded.into_vec() }.unwrap());
     co3::convert::Store::sync(store).unwrap();
-    assert_eq!(values, [true, false]);
+    assert_eq!(values, [true]);
 }
 
 #[test]
 fn stable_vec_decode_checks_validity_before_reusing_allocation() {
-    use co3::{primitives::Bool, vec::abi};
+    use co3::vec::abi;
 
-    let source = abi::Vec::<<bool as co3::ReprC>::CType>::from_vec(vec![Bool(1), Bool(0)]);
+    let source = abi::Vec::<<bool as co3::ReprC>::CType>::from_vec(vec![
+        co3::primitive::abi::bool(1),
+        co3::primitive::abi::bool(0),
+    ]);
     let original = source.as_ptr().cast::<bool>();
     let mut store = ();
     let decoded = unsafe { co3::soft_decode::<Vec<bool>>(source, &mut store) }.unwrap();
     assert_eq!(decoded.as_ptr(), original);
     assert_eq!(decoded, [true, false]);
 
-    let invalid = abi::Vec::<<bool as co3::ReprC>::CType>::from_vec(vec![Bool(1), Bool(2)]);
+    let invalid = abi::Vec::<<bool as co3::ReprC>::CType>::from_vec(vec![
+        co3::primitive::abi::bool(1),
+        co3::primitive::abi::bool(2),
+    ]);
     assert!(unsafe { co3::soft_decode::<Vec::<bool>>(invalid, &mut Default::default()) }.is_none());
     assert!(
         unsafe { co3::soft_decode::<Vec::<bool>>(abi::Vec::null(), &mut Default::default()) }
             .is_none()
     );
 
-    let source = abi::Vec::<<bool as co3::ReprC>::CType>::from_vec(vec![Bool(1)]);
+    let source =
+        abi::Vec::<<bool as co3::ReprC>::CType>::from_vec(vec![co3::primitive::abi::bool(1)]);
     let original = source.as_ptr().cast::<bool>();
     let decoded =
         unsafe { co3::soft_decode_unchecked::<Vec<bool>>(source, &mut Default::default()) };

@@ -1,6 +1,6 @@
 use std::cell::{Cell, UnsafeCell};
 
-use co3::{ReprC, niche::Niche, rust_spec::RustSpec, transmute::AbiCompatible};
+use co3::{ReprC, marker::AbiCompatible, niche::Niche, rust_spec::RustSpec};
 use static_assertions::{assert_impl_all, assert_not_impl_any};
 
 #[derive(RustSpec, ReprC)]
@@ -195,12 +195,12 @@ fn field_representation_maps_owned_conversion_and_transmutation() {
     assert_impl_all!(StableFieldHandle: co3::convert::EncodeMoveUnchecked);
     assert_impl_all!(TransparentFieldHandle: co3::convert::EncodeMoveUnchecked);
     assert!(!unsafe {
-        <ValidatedByte as co3::transmute::AbiCompatibleValidate>::is_valid(
+        <ValidatedByte as co3::convert::AbiCompatibleValidate>::is_valid(
             &<ValidatedByte as ReprC>::CType::from_fields(10),
         )
     });
     assert!(unsafe {
-        <ValidatedByte as co3::transmute::AbiCompatibleValidate>::is_valid(
+        <ValidatedByte as co3::convert::AbiCompatibleValidate>::is_valid(
             &<ValidatedByte as ReprC>::CType::from_fields(11),
         )
     });
@@ -215,11 +215,11 @@ fn field_representation_maps_owned_conversion_and_transmutation() {
         11
     );
     assert!(!unsafe {
-        <NonZeroField as co3::transmute::AbiCompatibleValidate>::is_valid(&core::mem::zeroed())
+        <NonZeroField as co3::convert::AbiCompatibleValidate>::is_valid(&core::mem::zeroed())
     });
     assert!(unsafe {
-        <NonZeroField as co3::transmute::AbiCompatibleValidate>::is_valid(
-            &<NonZeroField as ReprC>::CType::from_fields(co3::num::NonZero(1)),
+        <NonZeroField as co3::convert::AbiCompatibleValidate>::is_valid(
+            &<NonZeroField as ReprC>::CType::from_fields(co3::marker::NonZero(1)),
         )
     });
     assert_impl_all!(<FieldSlice<u8> as ReprC>::CType: ReprC<CType = <FieldSlice<u8> as ReprC>::CType>);

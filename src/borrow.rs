@@ -1,3 +1,7 @@
+//! A module for working with borrowed data.
+
+#[doc(hidden)]
+// TODO: Questionable export
 #[cfg(feature = "alloc")]
 pub use alloc::borrow::ToOwned;
 #[cfg(feature = "alloc")]
@@ -18,16 +22,17 @@ use rust_spec::{
 use rust_spec::{Stable, Unstable};
 
 use crate::{
-    CFnArg, CFnReturn, CType, ReprC,
-    convert::{Decode, DecodeMove, EmptyStore, Encode, EncodeMove, EncodeMoveUnchecked, Store},
+    CType, ReprC,
+    convert::{DecodeMove, EmptyStore, EncodeMove, EncodeMoveUnchecked, Store},
+    marker::Borrowed,
     niche::Niche,
     option::abi::OptionSome as AbiOptionSome,
     result::abi::{Result as AbiResult, ResultErr as AbiResultErr, ResultOk as AbiResultOk},
-    transmute::{AbiCompatible, AbiCompatibleValidate},
 };
 #[cfg(feature = "alloc")]
 use crate::{
     boxed::abi::Box as AbiBox,
+    marker::AbiCompatible,
     vec::abi::Vec as AbiVec,
     wide::{Wide, abi::WideBox as AbiWideBox},
 };
@@ -267,7 +272,7 @@ disjoint_impls! {
             let _ = store;
             *owner = Default::default();
             let value = owner.0.insert(self);
-            unsafe { AbiVec::from_raw_parts(value.as_mut_ptr().cast(), value.len(), value.capacity()) }
+            unsafe { crate::marker::Stable(AbiVec::from_raw_parts(value.as_mut_ptr().cast(), value.len(), value.capacity())) }
         }
     }
 
@@ -295,35 +300,7 @@ disjoint_impls! {
                 &mut owner.1,
                 |value, store, owner| unsafe { T::soft_encode_unchecked(value, store, owner) },
             );
-            unsafe { AbiVec::from_raw_parts(owner.0.as_mut_ptr(), owner.0.len(), owner.0.capacity()) }
-        }
-    }
-
-    #[cfg(feature = "alloc")]
-    unsafe impl<T> BorrowedEncodeUnchecked for Vec<T>
-    where
-        T: ReprC<CType: CType + Sized>,
-        crate::vec::Vec<T>: BorrowedEncodeUnchecked + ReprC<CType = AbiVec<<T as ReprC>::CType, true>>,
-    {
-        type Owner = <crate::vec::Vec<T> as BorrowedEncodeUnchecked>::Owner;
-        type SoftStore = <crate::vec::Vec<T> as BorrowedEncodeUnchecked>::SoftStore;
-
-        unsafe fn soft_encode_unchecked<'itm>(
-            self,
-            store: &'itm mut Self::SoftStore,
-            owner: &'itm mut Self::Owner,
-        ) -> Self::CType
-        where
-            Self: 'itm,
-        {
-            unsafe {
-                <crate::vec::Vec<T> as BorrowedEncodeUnchecked>::soft_encode_unchecked(
-                    self.into(),
-                    store,
-                    owner,
-                )
-            }
-            .with_source()
+            unsafe { crate::marker::Stable(AbiVec::from_raw_parts(owner.0.as_mut_ptr(), owner.0.len(), owner.0.capacity())) }
         }
     }
 
@@ -345,7 +322,7 @@ disjoint_impls! {
         {
             unsafe {
                 BorrowedEncodeUnchecked::soft_encode_unchecked(crate::option::Option::from(self), store, owner)
-                    .with_source()
+                    .0
             }
         }
     }
@@ -401,7 +378,7 @@ disjoint_impls! {
         {
             unsafe {
                 BorrowedEncodeUnchecked::soft_encode_unchecked(crate::result::Result::from(self), store, owner)
-                    .with_source()
+                    .0
             }
         }
     }
@@ -470,6 +447,7 @@ disjoint_impls! {
         }
     }
 }
+
 disjoint_impls! {
     /// Checked borrowed encoding.
     ///
@@ -486,7 +464,7 @@ disjoint_impls! {
         /// Conceptually, serves a role similar to the "context" captured by a closure.
         type Store: Store + Default;
 
-        /// Convert [`Self`] into its checked carrier, [`Self::CType`].
+        /// Convert [`Self`] into its checked carrier, [`ReprC::CType`].
         ///
         /// Use [`encode`] when no conversion storage is required.
         fn soft_encode<'itm>(
@@ -688,7 +666,7 @@ disjoint_impls! {
                 &mut owner.2,
                 |value, store, owner| T::soft_encode(value, store, owner),
             );
-            unsafe { AbiVec::from_raw_parts(owner.1.as_mut_ptr(), owner.1.len(), owner.1.capacity()) }
+            unsafe { crate::marker::Stable(AbiVec::from_raw_parts(owner.1.as_mut_ptr(), owner.1.len(), owner.1.capacity())) }
         }
     }
 
@@ -715,27 +693,7 @@ disjoint_impls! {
                 &mut owner.1,
                 |value, store, owner| T::soft_encode(value, store, owner),
             );
-            unsafe { AbiVec::from_raw_parts(owner.0.as_mut_ptr(), owner.0.len(), owner.0.capacity()) }
-        }
-    }
-
-    #[cfg(feature = "alloc")]
-    unsafe impl<T> BorrowedEncode for Vec<T>
-    where
-        T: ReprC<CType: CType + Sized>,
-        crate::vec::Vec<T>: BorrowedEncode + ReprC<CType = AbiVec<<T as ReprC>::CType, true>>,
-    {
-        type Store = <crate::vec::Vec<T> as BorrowedEncode>::Store;
-
-        fn soft_encode<'itm>(
-            self,
-            store: &'itm mut Self::Store,
-            owner: &'itm mut Self::Owner,
-        ) -> Self::CType
-        where
-            Self: 'itm,
-        {
-            <crate::vec::Vec<T> as BorrowedEncode>::soft_encode(self.into(), store, owner).with_source()
+            unsafe { crate::marker::Stable(AbiVec::from_raw_parts(owner.0.as_mut_ptr(), owner.0.len(), owner.0.capacity())) }
         }
     }
 
@@ -810,7 +768,7 @@ disjoint_impls! {
         {
             crate::option::Option::from(self)
                 .soft_encode(store, owner)
-                .with_source()
+                .0
         }
     }
     unsafe impl<R: BorrowedEncode + Niche, N: LayoutKind> BorrowedEncode for Option<R>
@@ -860,7 +818,7 @@ disjoint_impls! {
         {
             crate::result::Result::from(self)
                 .soft_encode(store, owner)
-                .with_source()
+                .0
         }
     }
     unsafe impl<R: BorrowedEncode + Niche, E: ReprC<CType: CType + Sized>, N: LayoutKind> BorrowedEncode for Result<R, E>
@@ -916,6 +874,7 @@ disjoint_impls! {
         }
     }
 }
+
 disjoint_impls! {
     /// Decodes a borrowed carrier into the original Rust type.
     ///
@@ -1044,100 +1003,6 @@ disjoint_impls! {
         }
     }
 
-    #[cfg(feature = "alloc")]
-    unsafe impl<'d, T: BorrowedDecode<'d>> BorrowedDecode<'d> for Vec<T>
-    where
-        T: ReprC<CType: CType + Copy + Sized>,
-        Self: ReprC<CType = AbiVec<<T as ReprC>::CType, false>>,
-    {
-        type Store = Box<[T::Store]>;
-
-        unsafe fn soft_decode<'itm: 'd>(
-            source: Self::CType,
-            store: &'itm mut Self::Store,
-        ) -> Option<Self> {
-            if source.len() > source.capacity() {
-                return None;
-            }
-            let fields = unsafe { borrowed_decode_slice(source.as_ptr(), source.len())? };
-            unsafe { decode_borrowed_elements::<T, _>(fields, store) }
-        }
-
-        unsafe fn soft_decode_unchecked<'itm: 'd>(
-            source: Self::CType,
-            store: &'itm mut Self::Store,
-        ) -> Self {
-            let fields = unsafe { core::slice::from_raw_parts(source.as_ptr(), source.len()) };
-            unsafe { decode_borrowed_elements_unchecked::<T, _>(fields, store) }
-        }
-    }
-
-    #[cfg(feature = "alloc")]
-    unsafe impl<'d, T: BorrowedDecode<'d>> BorrowedDecode<'d> for crate::vec::Vec<T>
-    where
-        T: ReprC<CType: CType + Copy + Sized>,
-        Self: ReprC<CType = AbiVec<<T as ReprC>::CType, true>>,
-    {
-        type Store = Box<[T::Store]>;
-
-        unsafe fn soft_decode<'itm: 'd>(
-            source: Self::CType,
-            store: &'itm mut Self::Store,
-        ) -> Option<Self> {
-            if source.len() > source.capacity() {
-                return None;
-            }
-            let fields = unsafe { borrowed_decode_slice(source.as_ptr(), source.len())? };
-            unsafe { decode_borrowed_elements::<T, _>(fields, store) }
-        }
-
-        unsafe fn soft_decode_unchecked<'itm: 'd>(
-            source: Self::CType,
-            store: &'itm mut Self::Store,
-        ) -> Self {
-            let fields = unsafe { core::slice::from_raw_parts(source.as_ptr(), source.len()) };
-            unsafe { decode_borrowed_elements_unchecked::<T, _>(fields, store) }
-        }
-    }
-
-    #[cfg(feature = "alloc")]
-    unsafe impl<'d> BorrowedDecode<'d> for alloc::string::String {
-        type Store = ();
-
-        unsafe fn soft_decode<'itm: 'd>(source: Self::CType, _: &'itm mut Self::Store) -> Option<Self> {
-            if source.len() > source.capacity() {
-                return None;
-            }
-            let bytes = unsafe { borrowed_decode_slice(source.as_ptr(), source.len())? };
-            Some(core::str::from_utf8(bytes).ok()?.to_owned())
-        }
-
-        unsafe fn soft_decode_unchecked<'itm: 'd>(
-            source: Self::CType,
-            _: &'itm mut Self::Store,
-        ) -> Self {
-            let bytes = unsafe { core::slice::from_raw_parts(source.as_ptr(), source.len()) };
-            unsafe { core::str::from_utf8_unchecked(bytes) }.to_owned()
-        }
-    }
-
-    #[cfg(feature = "alloc")]
-    unsafe impl<'d> BorrowedDecode<'d> for alloc::ffi::CString {
-        type Store = ();
-
-        unsafe fn soft_decode<'itm: 'd>(source: Self::CType, _: &'itm mut Self::Store) -> Option<Self> {
-            let ptr = core::ptr::NonNull::new(source.as_ptr())?;
-            Some(unsafe { core::ffi::CStr::from_ptr(ptr.as_ptr().cast()) }.to_owned())
-        }
-
-        unsafe fn soft_decode_unchecked<'itm: 'd>(
-            source: Self::CType,
-            _: &'itm mut Self::Store,
-        ) -> Self {
-            unsafe { core::ffi::CStr::from_ptr(source.as_ptr().cast()) }.to_owned()
-        }
-    }
-
     unsafe impl<'d, R: BorrowedDecode<'d>> BorrowedDecode<'d> for Option<R>
     where
         R: RustSpec<Niche = WithoutNiche>,
@@ -1151,7 +1016,7 @@ disjoint_impls! {
         ) -> Option<Self> {
             unsafe {
                 <crate::option::Option<R> as BorrowedDecode<'d>>::soft_decode(
-                    source.with_source(),
+                    crate::marker::Stable(source),
                     store,
                 )
             }
@@ -1165,7 +1030,7 @@ disjoint_impls! {
         ) -> Self {
             unsafe {
                 <crate::option::Option<R> as BorrowedDecode<'d>>::soft_decode_unchecked(
-                    source.with_source(),
+                    crate::marker::Stable(source),
                     store,
                 )
             }
@@ -1224,7 +1089,7 @@ disjoint_impls! {
         ) -> Option<Self> {
             unsafe {
                 <crate::result::Result<R, E> as BorrowedDecode<'d>>::soft_decode(
-                    source.with_source(),
+                    crate::marker::Stable(source),
                     store,
                 )
             }
@@ -1238,7 +1103,7 @@ disjoint_impls! {
         ) -> Self {
             unsafe {
                 <crate::result::Result<R, E> as BorrowedDecode<'d>>::soft_decode_unchecked(
-                    source.with_source(),
+                    crate::marker::Stable(source),
                     store,
                 )
             }
@@ -1313,93 +1178,13 @@ disjoint_impls! {
     }
 }
 
-#[cfg(feature = "alloc")]
-unsafe impl BorrowedEncodeUnchecked for alloc::string::String {
-    type Owner = <Vec<u8> as BorrowedEncodeUnchecked>::Owner;
-    type SoftStore = <Vec<u8> as BorrowedEncodeUnchecked>::SoftStore;
-
-    unsafe fn soft_encode_unchecked<'itm>(
-        self,
-        store: &'itm mut Self::SoftStore,
-        owner: &'itm mut Self::Owner,
-    ) -> Self::CType
-    where
-        Self: 'itm,
-    {
-        let carrier = unsafe {
-            <Vec<u8> as BorrowedEncodeUnchecked>::soft_encode_unchecked(
-                self.into_bytes(),
-                store,
-                owner,
-            )
-        };
-        crate::utf8::Utf8String(carrier)
-    }
-}
-
-#[cfg(feature = "alloc")]
-unsafe impl BorrowedEncode for alloc::string::String {
-    type Store = <Vec<u8> as BorrowedEncode>::Store;
-
-    fn soft_encode<'itm>(
-        self,
-        store: &'itm mut Self::Store,
-        owner: &'itm mut Self::Owner,
-    ) -> Self::CType
-    where
-        Self: 'itm,
-    {
-        let carrier = <Vec<u8> as BorrowedEncode>::soft_encode(self.into_bytes(), store, owner);
-        crate::utf8::Utf8String(carrier)
-    }
-}
-
-#[cfg(feature = "alloc")]
-unsafe impl BorrowedEncodeUnchecked for alloc::ffi::CString {
-    type Owner = <Box<core::ffi::CStr> as BorrowedEncodeUnchecked>::Owner;
-    type SoftStore = <Box<core::ffi::CStr> as BorrowedEncodeUnchecked>::SoftStore;
-
-    unsafe fn soft_encode_unchecked<'itm>(
-        self,
-        store: &'itm mut Self::SoftStore,
-        owner: &'itm mut Self::Owner,
-    ) -> Self::CType
-    where
-        Self: 'itm,
-    {
-        unsafe {
-            <Box<core::ffi::CStr> as BorrowedEncodeUnchecked>::soft_encode_unchecked(
-                self.into_boxed_c_str(),
-                store,
-                owner,
-            )
-        }
-    }
-}
-
-#[cfg(feature = "alloc")]
-unsafe impl BorrowedEncode for alloc::ffi::CString {
-    type Store = <Box<core::ffi::CStr> as BorrowedEncode>::Store;
-
-    fn soft_encode<'itm>(
-        self,
-        store: &'itm mut Self::Store,
-        owner: &'itm mut Self::Owner,
-    ) -> Self::CType
-    where
-        Self: 'itm,
-    {
-        <Box<core::ffi::CStr> as BorrowedEncode>::soft_encode(self.into_boxed_c_str(), store, owner)
-    }
-}
-
 /// Implements borrowed conversion by delegating to ordinary value conversion.
 macro_rules! __impl_borrowed_identity {
     ([] $ty:ty $(where $($bounds:tt)*)?) => {
-        $crate::__impl_borrowed_identity!(@impl [for<'_co3>] [] $ty $(where $($bounds)*)?);
+        $crate::borrow::__impl_borrowed_identity!(@impl [for<'_co3>] [] $ty $(where $($bounds)*)?);
     };
     ([$($generics:tt)+] $ty:ty $(where $($bounds:tt)*)?) => {
-        $crate::__impl_borrowed_identity!(@impl [] [$($generics)+] $ty $(where $($bounds)*)?);
+        $crate::borrow::__impl_borrowed_identity!(@impl [] [$($generics)+] $ty $(where $($bounds)*)?);
     };
     (@impl [$($speculative:tt)*] [$($generics:tt)*] $ty:ty $(where $($bounds:tt)*)?) => {
         unsafe impl<$($generics)*> $crate::borrow::BorrowedEncodeUnchecked for $ty
@@ -1463,7 +1248,10 @@ macro_rules! __impl_borrowed_identity {
 // Borrowed payloads must be Copy: CType alone does not permit duplicating ownership
 // or inspecting shared interior-mutable memory.
 #[cfg(feature = "alloc")]
-unsafe fn borrowed_decode_slice<'a, C: Copy>(data: *const C, len: usize) -> Option<&'a [C]> {
+pub(crate) unsafe fn borrowed_decode_slice<'a, C: Copy>(
+    data: *const C,
+    len: usize,
+) -> Option<&'a [C]> {
     if data.is_null() || len.checked_mul(core::mem::size_of::<C>())? > isize::MAX as usize {
         return None;
     }
@@ -1472,7 +1260,7 @@ unsafe fn borrowed_decode_slice<'a, C: Copy>(data: *const C, len: usize) -> Opti
 }
 
 #[cfg(feature = "alloc")]
-unsafe fn decode_borrowed_elements<'d, 'itm: 'd, T, B>(
+pub(crate) unsafe fn decode_borrowed_elements<'d, 'itm: 'd, T, B>(
     fields: &[T::CType],
     stores: &'itm mut Box<[T::Store]>,
 ) -> Option<B>
@@ -1491,7 +1279,7 @@ where
 }
 
 #[cfg(feature = "alloc")]
-unsafe fn decode_borrowed_elements_unchecked<'d, 'itm: 'd, T, B>(
+pub(crate) unsafe fn decode_borrowed_elements_unchecked<'d, 'itm: 'd, T, B>(
     fields: &[T::CType],
     stores: &'itm mut Box<[T::Store]>,
 ) -> B
@@ -1686,7 +1474,7 @@ unsafe impl<T: BorrowedEncodeUnchecked, const N: usize> BorrowedEncodeUnchecked 
         Self: 'itm,
     {
         let mut owners = owner.0.iter_mut();
-        crate::elements::map_array(self, &mut store.0, |value, store| unsafe {
+        crate::stored::map_array(self, &mut store.0, |value, store| unsafe {
             T::soft_encode_unchecked(value, store, owners.next().unwrap())
         })
     }
@@ -1702,7 +1490,7 @@ unsafe impl<T: BorrowedEncode, const N: usize> BorrowedEncode for [T; N] {
         Self: 'itm,
     {
         let mut owners = owner.0.iter_mut();
-        crate::elements::map_array(self, &mut store.0, |value, store| {
+        crate::stored::map_array(self, &mut store.0, |value, store| {
             T::soft_encode(value, store, owners.next().unwrap())
         })
     }
@@ -1713,7 +1501,7 @@ unsafe impl<'d, T: BorrowedDecode<'d>, const N: usize> BorrowedDecode<'d> for [T
         source: Self::CType,
         store: &'itm mut Self::Store,
     ) -> core::option::Option<Self> {
-        crate::elements::try_map_array(source, &mut store.0, |value, store| unsafe {
+        crate::stored::try_map_array(source, &mut store.0, |value, store| unsafe {
             T::soft_decode(value, store)
         })
     }
@@ -1721,7 +1509,7 @@ unsafe impl<'d, T: BorrowedDecode<'d>, const N: usize> BorrowedDecode<'d> for [T
         source: Self::CType,
         store: &'itm mut Self::Store,
     ) -> Self {
-        crate::elements::map_array(source, &mut store.0, |value, store| unsafe {
+        crate::stored::map_array(source, &mut store.0, |value, store| unsafe {
             T::soft_decode_unchecked(value, store)
         })
     }
@@ -1922,7 +1710,7 @@ mod tests {
 
     #[test]
     fn borrowed_vectors_decode_directly_without_soft() {
-        use crate::borrow::{Borrowed, decode};
+        use crate::{borrow::decode, marker::Borrowed};
         let foreign = crate::encode(alloc::vec![3_u8, 5, 8]);
         let decoded = unsafe { decode::<alloc::vec::Vec<u8>>(Borrowed(foreign)) }.unwrap();
         assert_eq!(decoded, [3, 5, 8]);
@@ -1945,14 +1733,10 @@ mod tests {
 
     #[test]
     fn borrowed_container_decode_rejects_bad_headers_and_values() {
-        use crate::{
-            borrow::{Borrowed, decode},
-            primitives::Bool,
-            vec::abi::Vec as AbiVec,
-        };
+        use crate::{borrow::decode, marker::Borrowed, vec::abi::Vec as AbiVec};
         assert!(unsafe { decode::<alloc::vec::Vec<u8>>(Borrowed(AbiVec::null())) }.is_none());
         assert!(unsafe { decode::<Box<u8>>(Borrowed(crate::boxed::abi::Box::null())) }.is_none());
-        let mut foreign = alloc::vec![Bool(1), Bool(2)];
+        let mut foreign = alloc::vec![co3::primitive::abi::bool(1), co3::primitive::abi::bool(2)];
         let header = unsafe {
             AbiVec::<<bool as crate::ReprC>::CType>::from_raw_parts(
                 foreign.as_mut_ptr(),
@@ -2166,7 +1950,7 @@ mod tests {
             let mut store = Default::default();
             let encoded = BorrowedEncode::soft_encode(Box::new(&mut value), &mut store, &mut owner);
             unsafe {
-                *(*encoded.as_ptr()).as_ptr() = crate::primitives::Bool(byte);
+                *(*encoded.as_ptr()).as_ptr() = crate::primitive::abi::bool(byte);
             }
             assert_eq!(store.sync(), (byte == 1).then_some(()));
             drop(owner);
@@ -2185,7 +1969,7 @@ mod tests {
             let encoded =
                 BorrowedEncode::soft_encode(alloc::vec![&mut value], &mut store, &mut owner);
             unsafe {
-                *(*encoded.as_ptr()).as_ptr() = crate::primitives::Bool(byte);
+                *(*encoded.as_ptr()).as_ptr() = crate::primitive::abi::bool(byte);
             }
             assert_eq!(store.sync(), (byte == 1).then_some(()));
             drop(owner);
@@ -2206,7 +1990,7 @@ mod tests {
             &mut owner,
         );
         unsafe {
-            *(*encoded.as_ptr()).as_ptr() = crate::primitives::Bool(1);
+            *(*encoded.as_ptr()).as_ptr() = crate::primitive::abi::bool(1);
         }
         store.sync().unwrap();
         drop(owner);
@@ -2217,21 +2001,21 @@ mod tests {
     fn imports_encode_owned_bytes_and_tuples_without_soft() {
         #[unsafe(export_name = "co3_unit_owned_bytes")]
         extern "C" fn bytes(
-            value: crate::borrow::Borrowed<<alloc::vec::Vec<u8> as co3::ReprC>::CType>,
+            value: crate::marker::Borrowed<<alloc::vec::Vec<u8> as co3::ReprC>::CType>,
         ) -> u8 {
             assert_eq!(value.0.len(), 1);
             unsafe { *value.0.as_ptr() }
         }
         #[unsafe(export_name = "co3_unit_owned_tuples")]
         extern "C" fn tuples(
-            value: crate::borrow::Borrowed<<alloc::vec::Vec<(u8,)> as co3::ReprC>::CType>,
+            value: crate::marker::Borrowed<<alloc::vec::Vec<(u8,)> as co3::ReprC>::CType>,
         ) -> u8 {
             assert_eq!(value.0.len(), 1);
             unsafe { (*value.0.as_ptr()).0 }
         }
         #[unsafe(export_name = "co3_unit_owned_box_tuple")]
         extern "C" fn boxed(
-            value: crate::borrow::Borrowed<<Box<(u8,)> as co3::ReprC>::CType>,
+            value: crate::marker::Borrowed<<Box<(u8,)> as co3::ReprC>::CType>,
         ) -> u8 {
             unsafe { (*value.0.as_ptr()).0 }
         }
@@ -2257,7 +2041,7 @@ mod tests {
         static_assertions::assert_impl_all!(InteriorMutableField:
             RustSpec<Mutability = co3::rust_spec::mutability::WithInterior<co3::rust_spec::layout::Robust>>,
         );
-        static_assertions::assert_impl_all!(co3::borrow::Borrowed< <InteriorMutableField as co3::ReprC>::CType >:
+        static_assertions::assert_impl_all!(co3::marker::Borrowed< <InteriorMutableField as co3::ReprC>::CType >:
             RustSpec<
                 Layout = rust_spec::Stable,
                 Size = <InteriorMutableField as RustSpec>::Size,
@@ -2308,84 +2092,8 @@ mod tests {
             Result<NonZero<u8>, ()>, Result<(), NonZero<u8>>,
             Cell<u8>, ManuallyDrop<u8>, SoftRefMut<u8>);
         assert_not_impl_any!(Bytes: BorrowedEncode);
-        assert_not_impl_any!(crate::borrow::Borrowed< <() as co3::ReprC>::CType >: crate::CFnArg, crate::CFnReturn);
+        assert_not_impl_any!(crate::marker::Borrowed< <() as co3::ReprC>::CType >: crate::CFnArg, crate::CFnReturn);
     }
 }
-
-/// Marks a lowered ABI value that is borrowed across the FFI boundary.
-#[repr(transparent)]
-#[derive(RustSpec)]
-pub struct Borrowed<T: CType>(pub T);
-
-impl<T: CType> ReprC for Borrowed<T> {
-    type CType = Self;
-}
-unsafe impl<T: CType> CType for Borrowed<T> {}
-unsafe impl<T: CType> AbiCompatibleValidate for Borrowed<T> {
-    unsafe fn is_valid(_: &Self) -> bool {
-        true
-    }
-}
-unsafe impl<T: CType> AbiCompatible for Borrowed<T> {}
-unsafe impl<T: CType> CFnArg for Borrowed<T> where T: CFnArg {}
-unsafe impl<T: CType> CFnReturn for Borrowed<T>
-where
-    T: CFnReturn,
-    Self: RustSpec<Size = rust_spec::size::Sized<rust_spec::Gt<rust_spec::Zero>>>,
-{
-}
-impl<T: CType> Borrowed<T> {
-    pub const fn new(value: T) -> Self {
-        Self(value)
-    }
-    pub fn into_inner(self) -> T {
-        self.0
-    }
-}
-unsafe impl<T: CType> EncodeMoveUnchecked for Borrowed<T> {
-    type SoftStore = ();
-    unsafe fn soft_encode_unchecked<'a>(self, _: &'a mut ()) -> Self
-    where
-        Self: 'a,
-    {
-        self
-    }
-}
-unsafe impl<T: CType> EncodeMove for Borrowed<T> {
-    type Store = ();
-    fn soft_encode<'a>(self, _: &'a mut ()) -> Self
-    where
-        Self: 'a,
-    {
-        self
-    }
-}
-unsafe impl<'d, T: CType> DecodeMove<'d> for Borrowed<T> {
-    type Store = ();
-    unsafe fn soft_decode<'a: 'd>(value: Self, _: &'a mut ()) -> Option<Self> {
-        Some(value)
-    }
-}
-impl<T: CType> Encode for Borrowed<T> {}
-impl<T: CType> crate::convert::EncodeUnchecked for Borrowed<T> {}
-impl<'d, T: CType> Decode<'d> for Borrowed<T> {}
-crate::__impl_borrowed_identity!([T: CType] Borrowed<T>);
-impl<T: CType + Copy> Copy for Borrowed<T> {}
-impl<T: CType + Copy> Clone for Borrowed<T> {
-    fn clone(&self) -> Self {
-        *self
-    }
-}
-impl<T: CType + core::fmt::Debug> core::fmt::Debug for Borrowed<T> {
-    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
-        f.debug_tuple("Borrowed").field(&self.0).finish()
-    }
-}
-impl<T: CType + PartialEq> PartialEq for Borrowed<T> {
-    fn eq(&self, other: &Self) -> bool {
-        self.0 == other.0
-    }
-}
-impl<T: CType + Eq> Eq for Borrowed<T> {}
 
 pub(crate) use __impl_borrowed_identity;

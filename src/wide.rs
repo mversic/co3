@@ -2,7 +2,6 @@
 
 #[cfg(feature = "alloc")]
 use alloc::{borrow::ToOwned, boxed::Box};
-
 use core::{
     cell::{Cell, UnsafeCell},
     fmt::Debug,
@@ -17,9 +16,10 @@ use rust_spec::{
 };
 
 use crate::{
-    CFnArg, CFnReturn, CType, ReprC, Zeroable,
+    CFnArg, CFnReturn, CType, ReprC,
     convert::{Decode, DecodeMove, Encode, EncodeMove, EncodeMoveUnchecked},
-    transmute::AbiCompatible,
+    marker::AbiCompatible,
+    marker::Zeroable,
 };
 
 pub(crate) type WideData<R> = <<R as Wide>::Header as WideHeader>::Data;
@@ -470,7 +470,7 @@ macro_rules! impl_identity_carrier {
         impl<'d, $($params)*> Decode<'d> for $ty<$($args)*> {}
 
 
-        unsafe impl<$($params)*> $crate::transmute::AbiCompatibleValidate for $ty<$($args)*> {
+        unsafe impl<$($params)*> $crate::convert::AbiCompatibleValidate for $ty<$($args)*> {
             #[inline(always)]
             unsafe fn is_valid(_: &Self::CType) -> bool {
                 true
@@ -486,7 +486,7 @@ macro_rules! impl_identity_carrier {
 
 macro_rules! impl_carrier_borrow {
     ($ty:ident, [$($params:tt)*], [$($args:tt)*]) => {
-        $crate::__impl_borrowed_identity!([$($params)*] $ty<$($args)*>);
+        $crate::borrow::__impl_borrowed_identity!([$($params)*] $ty<$($args)*>);
     };
 }
 
@@ -496,14 +496,14 @@ macro_rules! impl_non_null_wide {
         where
             R: ReprC<CType: Wide<Header: CType + WideHeader<Data: CType>>> + Wide + ?Sized,
         {
-            type CType = abi::$carrier<$($lifetime,)? R::CType, $($flags)* true>;
+            type CType = crate::marker::Stable<abi::$carrier<$($lifetime,)? R::CType>>;
         }
 
         impl<$($lifetime,)? R> crate::niche::Niche for $direct<$($lifetime,)? R>
         where
             R: ReprC<CType: Wide<Header: CType + WideHeader<Data: CType>>> + Wide + ?Sized,
         {
-            const NICHE: Self::CType = abi::$carrier::null();
+            const NICHE: Self::CType = crate::marker::Stable(abi::$carrier::null());
 
             fn is_niche(value: &Self::CType) -> bool {
                 value.data.is_null()
@@ -517,7 +517,7 @@ macro_rules! impl_non_null_wide {
         unsafe impl<$($lifetime,)? R> EncodeMoveUnchecked for $direct<$($lifetime,)? R>
         where
             R: CType + ReprC<CType = R> + Wide<Header: CType + WideHeader<Data: CType>> + ?Sized,
-            Self: ReprC<CType = abi::$carrier<$($lifetime,)? <R as ReprC>::CType, $($flags)* true>>,
+            Self: ReprC<CType = crate::marker::Stable<abi::$carrier<$($lifetime,)? <R as ReprC>::CType>>>,
         {
             type SoftStore = ();
 
@@ -526,18 +526,18 @@ macro_rules! impl_non_null_wide {
                 Self: 'itm,
             {
                 let value = core::mem::ManuallyDrop::new(self);
-                abi::$carrier {
+                crate::marker::Stable(abi::$carrier {
                     data: value.data.as_ptr(),
                     metadata: value.metadata,
                     $(lifetime: PhantomData::<&$lifetime ()>,)?
-                }
+                })
             }
         }
 
         unsafe impl<$($lifetime,)? R> EncodeMove for $direct<$($lifetime,)? R>
         where
             R: CType + ReprC<CType = R> + Wide<Header: CType + WideHeader<Data: CType>> + ?Sized,
-            Self: ReprC<CType = abi::$carrier<$($lifetime,)? <R as ReprC>::CType, $($flags)* true>>,
+            Self: ReprC<CType = crate::marker::Stable<abi::$carrier<$($lifetime,)? <R as ReprC>::CType>>>,
         {
             type Store = ();
 
@@ -552,7 +552,7 @@ macro_rules! impl_non_null_wide {
         unsafe impl<'d, $($lifetime,)? R> DecodeMove<'d> for $direct<$($lifetime,)? R>
         where
             R: CType + ReprC<CType = R> + Wide<Header: CType + WideHeader<Data: CType>> + ?Sized,
-            Self: ReprC<CType = abi::$carrier<$($lifetime,)? <R as ReprC>::CType, $($flags)* true>>,
+            Self: ReprC<CType = crate::marker::Stable<abi::$carrier<$($lifetime,)? <R as ReprC>::CType>>>,
         {
             type Store = ();
 
@@ -576,8 +576,8 @@ macro_rules! impl_non_null_wide {
     };
 }
 
-crate::__impl_borrowed_identity!(['a, R: Wide + ?Sized] WideRef<'a, R>);
-crate::__impl_borrowed_identity!(['a, R: Wide + ?Sized] WideRefMut<'a, R>);
+crate::borrow::__impl_borrowed_identity!(['a, R: Wide + ?Sized] WideRef<'a, R>);
+crate::borrow::__impl_borrowed_identity!(['a, R: Wide + ?Sized] WideRefMut<'a, R>);
 
 impl_non_null_wide! { @codecs ['a,] WideRef => WideRef [] }
 impl_non_null_wide! { @codecs ['a mut,] WideRefMut => WideRefMut [] }
@@ -684,8 +684,8 @@ unsafe impl<R: ReprC<CType: Wide<Header: WideHeader<Data: CType>>> + ?Sized> Wid
     }
 }
 
-unsafe impl<'a, R: ReprC<CType: Wide<Header: WideHeader<Data: CType>>> + ?Sized, const STABLE: bool>
-    WideRefCarrier<R> for abi::WideRefMut<'a, R::CType, STABLE>
+unsafe impl<'a, R: ReprC<CType: Wide<Header: WideHeader<Data: CType>>> + ?Sized> WideRefCarrier<R>
+    for abi::WideRefMut<'a, R::CType>
 where
     Self: CType,
 {
@@ -795,7 +795,7 @@ pub(crate) mod tests {
     }
 
     #[cfg(feature = "alloc")]
-    use alloc::{boxed::Box, vec};
+    use alloc::boxed::Box;
     #[cfg(feature = "alloc")]
     use core::ptr::NonNull;
     use core::{
@@ -817,14 +817,14 @@ pub(crate) mod tests {
         pub(crate) marker: u32,
     }
     unsafe impl CType for Metadata {}
-    unsafe impl crate::Zeroable for Metadata {}
+    unsafe impl crate::marker::Zeroable for Metadata {}
 
     #[repr(transparent)]
     #[derive(crate::rust_spec::RustSpec)]
     pub(crate) struct Custom(pub(crate) [u8]);
     unsafe impl CType for Custom {}
     // Identity lowering preserves the complete pointee ABI.
-    unsafe impl crate::transmute::AbiCompatible for Custom {}
+    unsafe impl crate::marker::AbiCompatible for Custom {}
     impl crate::ReprC for Custom {
         type CType = Self;
     }
@@ -872,9 +872,11 @@ pub(crate) mod tests {
         use crate::{ReprC, niche::Niche};
 
         type Source = WideRef<'static, [(u8,)]>;
-        type Carrier = abi::SoftWideRef<<[(u8,)] as crate::ReprC>::CType, true>;
+        type Carrier = crate::marker::Stable<abi::SoftWideRef<<[(u8,)] as crate::ReprC>::CType>>;
         static_assertions::assert_type_eq_all!(<Source as ReprC>::CType, Carrier);
-        assert!(Source::is_niche(&Carrier::null()));
+        assert!(Source::is_niche(&crate::marker::Stable(
+            abi::SoftWideRef::null()
+        )));
     }
 
     #[test]
@@ -885,11 +887,11 @@ pub(crate) mod tests {
         type Unstable = WideRefMut<'static, [(u8,)]>;
         static_assertions::assert_type_eq_all!(
             <Stable as ReprC>::CType,
-            abi::SoftWideRefMut<<[bool] as crate::ReprC>::CType, true>
+            crate::marker::Stable<abi::SoftWideRefMut<<[bool] as crate::ReprC>::CType>>
         );
         static_assertions::assert_type_eq_all!(
             <Unstable as ReprC>::CType,
-            abi::SoftWideRefMut<<[(u8,)] as crate::ReprC>::CType, true>
+            crate::marker::Stable<abi::SoftWideRefMut<<[(u8,)] as crate::ReprC>::CType>>
         );
         assert!(Stable::is_niche(&<Stable as Niche>::NICHE));
         assert!(Unstable::is_niche(&<Unstable as Niche>::NICHE));
@@ -897,9 +899,9 @@ pub(crate) mod tests {
 
     #[test]
     fn direct_wide_references_preserve_the_pointee_and_metadata() {
-        assert_impl_all!(WideRef<'static, Custom>: Copy, crate::ReprC<CType = super::abi::WideRef<'static, <Custom as crate::ReprC>::CType, true>>);
+        assert_impl_all!(WideRef<'static, Custom>: Copy, crate::ReprC<CType = crate::marker::Stable<super::abi::WideRef<'static, <Custom as crate::ReprC>::CType>>>);
         assert_not_impl_any!(WideRef<'static, Custom>: CType);
-        assert_impl_all!(WideRefMut<'static, Custom>: crate::ReprC<CType = super::abi::WideRefMut<'static, <Custom as crate::ReprC>::CType, true>>);
+        assert_impl_all!(WideRefMut<'static, Custom>: crate::ReprC<CType = crate::marker::Stable<super::abi::WideRefMut<'static, <Custom as crate::ReprC>::CType>>>);
         assert_not_impl_any!(WideRefMut<'static, Custom>: Copy);
         assert_not_impl_any!(WideRef<'static, [bool]>: CType);
 
@@ -914,7 +916,8 @@ pub(crate) mod tests {
                 marker: 7
             }
         );
-        let null = super::abi::WideRef::<<Custom as crate::ReprC>::CType, true>::null();
+        let null =
+            crate::marker::Stable(super::abi::WideRef::<<Custom as crate::ReprC>::CType>::null());
         assert!(unsafe { crate::decode::<WideRef<'_, Custom>>(null) }.is_none());
         let absent = crate::encode(None::<WideRef<'_, Custom>>);
         assert!(absent.0.as_ptr().is_null());
@@ -927,7 +930,9 @@ pub(crate) mod tests {
         let decoded = unsafe { crate::decode::<WideRef<'_, Custom>>(encoded) }.unwrap();
         assert_eq!(&unsafe { decoded.into_ref() }.0, &values);
 
-        let null = super::abi::WideRefMut::<<Custom as crate::ReprC>::CType, true>::null();
+        let null = crate::marker::Stable(
+            super::abi::WideRefMut::<<Custom as crate::ReprC>::CType>::null(),
+        );
         assert!(unsafe { crate::decode::<WideRefMut<'_, Custom>>(null) }.is_none());
 
         let exclusive = WideRefMut::<Custom>::from_mut(unsafe {
@@ -954,7 +959,7 @@ pub(crate) mod tests {
     fn direct_wide_box_transfers_the_original_allocation() {
         use super::WideBox;
 
-        assert_impl_all!(WideBox<[u8]>: crate::ReprC<CType = abi::WideBox<[u8], true>>);
+        assert_impl_all!(WideBox<[u8]>: crate::ReprC<CType = crate::marker::Stable<abi::WideBox<[u8]>>>);
         assert_impl_all!(WideBox<[u8]>: rust_spec::RustSpec<
             Niche = rust_spec::niche::WithNiche<rust_spec::Unstable>,
         >);
@@ -969,7 +974,7 @@ pub(crate) mod tests {
             __IndirectTrap = crate::rust_spec::layout::NonRobust,
         >);
         let item = Rc::new(());
-        let boxed = WideBox::from_box(vec![Rc::clone(&item)].into_boxed_slice());
+        let boxed = WideBox::from_box(alloc::vec![Rc::clone(&item)].into_boxed_slice());
         assert_eq!(Rc::strong_count(&item), 2);
         let cloned = boxed.to_owned();
         assert_ne!(boxed.as_ptr(), cloned.as_ptr());
@@ -984,16 +989,16 @@ pub(crate) mod tests {
         assert_ne!(text.as_ptr(), owned.as_ptr());
         assert_eq!(&*unsafe { owned.into_box() }, "wide");
 
-        let null = abi::WideBox::<[u8], true>::null();
+        let null = crate::marker::Stable(abi::WideBox::<[u8]>::null());
         assert!(unsafe { crate::decode::<WideBox<[u8]>>(null) }.is_none());
-        let source = vec![1_u8, 2].into_boxed_slice();
+        let source = alloc::vec![1_u8, 2].into_boxed_slice();
         let address = source.as_ptr();
         let encoded = crate::encode(WideBox::from_box(source));
         let decoded = unsafe { crate::decode::<WideBox<[u8]>>(encoded) }.unwrap();
         let recovered = unsafe { decoded.into_box() };
         assert_eq!(recovered.as_ptr(), address);
 
-        let source = vec![true, false].into_boxed_slice();
+        let source = alloc::vec![true, false].into_boxed_slice();
         let address = source.as_ptr();
         let carrier = WideBox::from_box(source);
         assert_eq!(carrier.as_ptr().cast_const(), address);
@@ -1008,7 +1013,7 @@ pub(crate) mod tests {
     fn wide_boxes_preserve_custom_metadata() {
         type Pointee = Custom;
         fn boxed() -> Box<Pointee> {
-            let bytes = vec![1_u8, 2, 3].into_boxed_slice();
+            let bytes = alloc::vec![1_u8, 2, 3].into_boxed_slice();
             unsafe { Box::from_raw(Box::into_raw(bytes) as *mut Pointee) }
         }
         let expected = Metadata {
@@ -1271,7 +1276,7 @@ pub mod abi {
     #[derive(RustSpec)]
     #[repr(C)]
     #[doc(hidden)]
-    pub struct SoftWideRef<R: CType + Wide + ?Sized, const STABLE: bool = false> {
+    pub struct SoftWideRef<R: CType + Wide + ?Sized> {
         pub(super) data: *const PointeeData<R>,
         pub(super) metadata: <R as Wide>::Metadata,
     }
@@ -1282,14 +1287,12 @@ pub mod abi {
     #[derive(RustSpec)]
     #[repr(C)]
     #[doc(hidden)]
-    pub struct SoftWideRefMut<R: CType + Wide + ?Sized, const STABLE: bool = false> {
+    pub struct SoftWideRefMut<R: CType + Wide + ?Sized> {
         pub(super) data: *mut PointeeData<R>,
         pub(super) metadata: <R as Wide>::Metadata,
     }
 
-    impl<R: CType + Wide<Header: WideHeader<Data: CType>> + ?Sized, const STABLE: bool>
-        SoftWideRef<R, STABLE>
-    {
+    impl<R: CType + Wide<Header: WideHeader<Data: CType>> + ?Sized> SoftWideRef<R> {
         /// Construct an absent carrier with initialized metadata.
         pub const fn null() -> Self {
             Self {
@@ -1319,9 +1322,7 @@ pub mod abi {
         }
     }
 
-    impl<R: CType + Wide<Header: WideHeader<Data: CType>> + ?Sized, const STABLE: bool>
-        SoftWideRefMut<R, STABLE>
-    {
+    impl<R: CType + Wide<Header: WideHeader<Data: CType>> + ?Sized> SoftWideRefMut<R> {
         /// Construct an absent carrier with initialized metadata.
         pub const fn null() -> Self {
             Self {
@@ -1351,7 +1352,7 @@ pub mod abi {
         }
     }
 
-    impl<R: CType + Wide + ?Sized, const STABLE: bool> SoftWideRef<R, STABLE> {
+    impl<R: CType + Wide + ?Sized> SoftWideRef<R> {
         /// Recover a shared wide reference, returning `None` for a null pointer.
         ///
         /// # Safety
@@ -1369,7 +1370,7 @@ pub mod abi {
         }
     }
 
-    impl<R: CType + Wide + ?Sized, const STABLE: bool> SoftWideRefMut<R, STABLE> {
+    impl<R: CType + Wide + ?Sized> SoftWideRefMut<R> {
         /// Recover a mutable wide reference, returning `None` for a null pointer.
         ///
         /// # Safety
@@ -1390,12 +1391,11 @@ pub mod abi {
 
     /// Shared reference to a C-compatible wide pointee.
     ///
-    /// A null data pointer is the niche. `STABLE` distinguishes `WideRef`
-    /// (`true`) from native Rust references (`false`).
+    /// A null data pointer is the niche. Co3 sources wrap this carrier in [`crate::marker::Stable`].
     #[derive(RustSpec)]
     #[repr(C)]
     #[doc(hidden)]
-    pub struct WideRef<'a, R: CType + Wide + ?Sized, const STABLE: bool = false> {
+    pub struct WideRef<'a, R: CType + Wide + ?Sized> {
         pub(super) data: *const PointeeData<R>,
         pub(super) metadata: <R as Wide>::Metadata,
         pub(super) lifetime: PhantomData<&'a ()>,
@@ -1403,20 +1403,18 @@ pub mod abi {
 
     /// Wide carrier with a writable data pointer.
     ///
-    /// `STABLE = true` identifies an exclusive `WideRefMut`. Native exclusive wide
-    /// references use `WideRef` with `STABLE = false`.
+    /// Co3 exclusive wide references wrap this carrier in [`crate::marker::Stable`].
+    /// Native exclusive wide references use the bare `WideRef` carrier.
     #[derive(RustSpec)]
     #[repr(C)]
     #[doc(hidden)]
-    pub struct WideRefMut<'a, R: CType + Wide + ?Sized, const STABLE: bool = false> {
+    pub struct WideRefMut<'a, R: CType + Wide + ?Sized> {
         pub(super) data: *mut PointeeData<R>,
         pub(super) metadata: <R as Wide>::Metadata,
         pub(super) lifetime: PhantomData<&'a ()>,
     }
 
-    impl<'a, R: CType + Wide<Header: WideHeader<Data: CType>> + ?Sized, const STABLE: bool>
-        WideRefMut<'a, R, STABLE>
-    {
+    impl<'a, R: CType + Wide<Header: WideHeader<Data: CType>> + ?Sized> WideRefMut<'a, R> {
         /// Construct an absent carrier with initialized metadata.
         pub const fn null() -> Self {
             Self {
@@ -1429,7 +1427,7 @@ pub mod abi {
         /// Construct the carrier from raw parts.
         ///
         /// # Safety
-        /// Non-null parts must describe a valid pointee for `'a`. With `STABLE = true`,
+        /// Non-null parts must describe a valid pointee for `'a`. For co3 exclusive references,
         /// access must be exclusive. Otherwise, writes must obey the pointee's
         /// interior-mutability and synchronization rules.
         pub const unsafe fn from_raw_parts_mut(
@@ -1454,17 +1452,13 @@ pub mod abi {
         }
     }
 
-    impl<R: CType + Wide<Header: WideHeader<Data: CType>> + ?Sized, const STABLE: bool> Default
-        for WideRefMut<'_, R, STABLE>
-    {
+    impl<R: CType + Wide<Header: WideHeader<Data: CType>> + ?Sized> Default for WideRefMut<'_, R> {
         fn default() -> Self {
             Self::null()
         }
     }
 
-    impl<'a, R: CType + Wide<Header: WideHeader<Data: CType>> + ?Sized, const STABLE: bool>
-        WideRef<'a, R, STABLE>
-    {
+    impl<'a, R: CType + Wide<Header: WideHeader<Data: CType>> + ?Sized> WideRef<'a, R> {
         /// Construct an absent carrier with initialized metadata.
         pub const fn null() -> Self {
             Self {
@@ -1500,14 +1494,14 @@ pub mod abi {
         }
     }
 
-    impl<'a, R: CType + Wide + ?Sized, const STABLE: bool> WideRef<'a, R, STABLE> {
+    impl<'a, R: CType + Wide + ?Sized> WideRef<'a, R> {
         #[allow(dead_code)]
         pub(crate) const fn data(&self) -> *const PointeeData<R> {
             self.data
         }
     }
 
-    impl<'a, R: CType + Wide + ?Sized, const STABLE: bool> WideRef<'a, R, STABLE> {
+    impl<'a, R: CType + Wide + ?Sized> WideRef<'a, R> {
         /// Recover a shared wide reference, returning `None` for a null pointer.
         ///
         /// # Safety
@@ -1546,13 +1540,13 @@ pub mod abi {
     };
 }
 
-    impl_wide_ref_pointer_methods! { SoftWideRef, [R: CType + Wide + ?Sized, const STABLE: bool], [R, STABLE], [], [, STABLE], const, [] }
+    impl_wide_ref_pointer_methods! { SoftWideRef, [R: CType + Wide + ?Sized], [R], [], [], const, [] }
 
-    impl_wide_ref_pointer_methods! { SoftWideRefMut, [R: CType + Wide + ?Sized, const STABLE: bool], [R, STABLE], [], [, STABLE], mut, [] }
+    impl_wide_ref_pointer_methods! { SoftWideRefMut, [R: CType + Wide + ?Sized], [R], [], [], mut, [] }
 
-    impl_wide_ref_pointer_methods! { WideRef, ['a, R: CType + Wide + ?Sized, const STABLE: bool], ['a, R, STABLE], ['a,], [, STABLE], const, [lifetime: PhantomData,] }
+    impl_wide_ref_pointer_methods! { WideRef, ['a, R: CType + Wide + ?Sized], ['a, R], ['a,], [], const, [lifetime: PhantomData,] }
 
-    impl_wide_ref_pointer_methods! { WideRefMut, ['a, R: CType + Wide + ?Sized, const STABLE: bool], ['a, R, STABLE], ['a,], [, STABLE], mut, [lifetime: PhantomData,] }
+    impl_wide_ref_pointer_methods! { WideRefMut, ['a, R: CType + Wide + ?Sized], ['a, R], ['a,], [], mut, [lifetime: PhantomData,] }
 
     macro_rules! impl_wide_raw_methods {
     ($ty:ident, [$($params:tt)*], [$($args:tt)*]) => {
@@ -1586,53 +1580,47 @@ pub mod abi {
     };
 }
 
-    impl<'a, R: CType + Wide<Header: WideHeader<Data: CType>> + ?Sized, const STABLE: bool> Default
-        for WideRef<'a, R, STABLE>
-    {
+    impl<'a, R: CType + Wide<Header: WideHeader<Data: CType>> + ?Sized> Default for WideRef<'a, R> {
         fn default() -> Self {
             Self::null()
         }
     }
 
-    unsafe impl<R: CType + Wide + ?Sized, const STABLE: bool> Zeroable for WideRefMut<'_, R, STABLE> {}
+    unsafe impl<R: CType + Wide + ?Sized> Zeroable for WideRefMut<'_, R> {}
 
-    impl_wide_raw_methods! { WideRef, ['a, R: CType + Wide + ?Sized, const STABLE: bool], ['a, R, STABLE] }
+    impl_wide_raw_methods! { WideRef, ['a, R: CType + Wide + ?Sized], ['a, R] }
 
-    impl_wide_raw_methods! { WideRefMut, ['a, R: CType + Wide + ?Sized, const STABLE: bool], ['a, R, STABLE] }
+    impl_wide_raw_methods! { WideRefMut, ['a, R: CType + Wide + ?Sized], ['a, R] }
 
-    impl_carrier_borrow! { WideRef, ['a, R: CType + Wide + ?Sized, const STABLE: bool], ['a, R, STABLE] }
+    impl_carrier_borrow! { WideRef, ['a, R: CType + Wide + ?Sized], ['a, R] }
 
-    impl_carrier_borrow! { WideRefMut, ['a, R: CType + Wide + ?Sized, const STABLE: bool], ['a, R, STABLE] }
+    impl_carrier_borrow! { WideRefMut, ['a, R: CType + Wide + ?Sized], ['a, R] }
 
-    impl_identity_carrier! { WideRef, ['a, R: CType + Wide<Header: WideHeader<Data: CType>> + ?Sized, const STABLE: bool], ['a, R, STABLE] }
+    impl_identity_carrier! { WideRef, ['a, R: CType + Wide<Header: WideHeader<Data: CType>> + ?Sized], ['a, R] }
 
-    impl_identity_carrier! { WideRefMut, ['a, R: CType + Wide<Header: WideHeader<Data: CType>> + ?Sized, const STABLE: bool], ['a, R, STABLE] }
+    impl_identity_carrier! { WideRefMut, ['a, R: CType + Wide<Header: WideHeader<Data: CType>> + ?Sized], ['a, R] }
 
-    unsafe impl<'a, R: CType + Wide + ?Sized, const STABLE: bool> Zeroable for WideRef<'a, R, STABLE> {}
+    unsafe impl<'a, R: CType + Wide + ?Sized> Zeroable for WideRef<'a, R> {}
 
-    impl_wide_raw_methods! { SoftWideRef, [R: CType + Wide + ?Sized, const STABLE: bool], [R, STABLE] }
+    impl_wide_raw_methods! { SoftWideRef, [R: CType + Wide + ?Sized], [R] }
 
-    impl_wide_raw_methods! { SoftWideRefMut, [R: CType + Wide + ?Sized, const STABLE: bool], [R, STABLE] }
+    impl_wide_raw_methods! { SoftWideRefMut, [R: CType + Wide + ?Sized], [R] }
 
-    impl_carrier_borrow! { SoftWideRef, [R: CType + Wide + ?Sized, const STABLE: bool], [R, STABLE] }
+    impl_carrier_borrow! { SoftWideRef, [R: CType + Wide + ?Sized], [R] }
 
-    impl_carrier_borrow! { SoftWideRefMut, [R: CType + Wide + ?Sized, const STABLE: bool], [R, STABLE] }
+    impl_carrier_borrow! { SoftWideRefMut, [R: CType + Wide + ?Sized], [R] }
 
-    impl_identity_carrier! { SoftWideRef, [R: CType + Wide<Header: WideHeader<Data: CType>> + ?Sized, const STABLE: bool], [R, STABLE] }
+    impl_identity_carrier! { SoftWideRef, [R: CType + Wide<Header: WideHeader<Data: CType>> + ?Sized], [R] }
 
-    impl_identity_carrier! { SoftWideRefMut, [R: CType + Wide<Header: WideHeader<Data: CType>> + ?Sized, const STABLE: bool], [R, STABLE] }
+    impl_identity_carrier! { SoftWideRefMut, [R: CType + Wide<Header: WideHeader<Data: CType>> + ?Sized], [R] }
 
-    impl<R: CType + Wide<Header: WideHeader<Data: CType>> + ?Sized, const STABLE: bool> Default
-        for SoftWideRef<R, STABLE>
-    {
+    impl<R: CType + Wide<Header: WideHeader<Data: CType>> + ?Sized> Default for SoftWideRef<R> {
         fn default() -> Self {
             Self::null()
         }
     }
 
-    impl<R: CType + Wide<Header: WideHeader<Data: CType>> + ?Sized, const STABLE: bool> Default
-        for SoftWideRefMut<R, STABLE>
-    {
+    impl<R: CType + Wide<Header: WideHeader<Data: CType>> + ?Sized> Default for SoftWideRefMut<R> {
         fn default() -> Self {
             Self::null()
         }
@@ -1642,28 +1630,24 @@ pub mod abi {
     /// Owned wide pointee with a defined C ABI layout.
     ///
     /// If the data pointer is set to `null`, the struct represents an absent box.
-    /// `STABLE` selects the direct `WideBox` source when true.
+    /// The direct `WideBox` source wraps this carrier in [`crate::marker::Stable`].
     #[derive(RustSpec)]
     #[repr(C)]
     #[doc(hidden)]
-    pub struct WideBox<R: CType + Wide + ?Sized, const STABLE: bool = false> {
+    pub struct WideBox<R: CType + Wide + ?Sized> {
         pub(super) data: *mut PointeeData<R>,
         pub(super) metadata: <R as Wide>::Metadata,
     }
 
     #[cfg(feature = "alloc")]
-    impl<R: CType + Wide<Header: WideHeader<Data: CType>> + ?Sized, const STABLE: bool> Default
-        for WideBox<R, STABLE>
-    {
+    impl<R: CType + Wide<Header: WideHeader<Data: CType>> + ?Sized> Default for WideBox<R> {
         fn default() -> Self {
             Self::null()
         }
     }
 
     #[cfg(feature = "alloc")]
-    impl<R: CType + Wide<Header: WideHeader<Data: CType>> + ?Sized, const STABLE: bool>
-        WideBox<R, STABLE>
-    {
+    impl<R: CType + Wide<Header: WideHeader<Data: CType>> + ?Sized> WideBox<R> {
         /// Construct an absent carrier with initialized metadata.
         pub const fn null() -> Self {
             Self {
@@ -1713,7 +1697,7 @@ pub mod abi {
     }
 
     #[cfg(feature = "alloc")]
-    impl<R: CType + Wide + ?Sized, const STABLE: bool> WideBox<R, STABLE> {
+    impl<R: CType + Wide + ?Sized> WideBox<R> {
         pub const fn as_ptr(self) -> *mut PointeeData<R> {
             self.data
         }
@@ -1724,18 +1708,18 @@ pub mod abi {
     }
 
     #[cfg(feature = "alloc")]
-    impl_wide_raw_methods! { WideBox, [R: CType + Wide + ?Sized, const STABLE: bool], [R, STABLE] }
+    impl_wide_raw_methods! { WideBox, [R: CType + Wide + ?Sized], [R] }
 
     #[cfg(feature = "alloc")]
-    impl_identity_carrier! { WideBox, [R: CType + Wide<Header: WideHeader<Data: CType>> + ?Sized, const STABLE: bool], [R, STABLE] }
+    impl_identity_carrier! { WideBox, [R: CType + Wide<Header: WideHeader<Data: CType>> + ?Sized], [R] }
 
     #[cfg(feature = "alloc")]
-    impl_carrier_borrow! { WideBox, [R: CType + Wide<Header: WideHeader<Data: CType>> + ?Sized, const STABLE: bool], [R, STABLE] }
+    impl_carrier_borrow! { WideBox, [R: CType + Wide<Header: WideHeader<Data: CType>> + ?Sized], [R] }
 
-    unsafe impl<R: CType + Wide + ?Sized, const STABLE: bool> Zeroable for SoftWideRef<R, STABLE> {}
+    unsafe impl<R: CType + Wide + ?Sized> Zeroable for SoftWideRef<R> {}
 
-    unsafe impl<R: CType + Wide + ?Sized, const STABLE: bool> Zeroable for SoftWideRefMut<R, STABLE> {}
+    unsafe impl<R: CType + Wide + ?Sized> Zeroable for SoftWideRefMut<R> {}
 
     #[cfg(feature = "alloc")]
-    unsafe impl<R: CType + Wide + ?Sized, const STABLE: bool> Zeroable for WideBox<R, STABLE> {}
+    unsafe impl<R: CType + Wide + ?Sized> Zeroable for WideBox<R> {}
 }

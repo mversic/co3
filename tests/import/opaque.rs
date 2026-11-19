@@ -156,7 +156,7 @@ fn imported_opaque_drop_sends_pointer() {
 fn owned_handle_has_null_niche() {
     use core::mem::{align_of, size_of};
 
-    use co3::{ReprC, niche::Niche, owned::Owned};
+    use co3::{ReprC, marker::Owned, niche::Niche};
 
     type Carrier = <OwnedOpaqueStruct as ReprC>::CType;
     assert_eq!(size_of::<Option<OwnedOpaqueStruct>>(), size_of::<Carrier>());

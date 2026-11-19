@@ -4,7 +4,7 @@ use core::{
     num::NonZero,
 };
 
-use co3::{CFnArg, CFnReturn, CType, ReprC, rust_spec::RustSpec, transmute::AbiCompatible};
+use co3::{CFnArg, CFnReturn, CType, ReprC, marker::AbiCompatible, rust_spec::RustSpec};
 use static_assertions::{assert_impl_all, assert_not_impl_any};
 
 #[derive(Debug, Clone, PartialEq, Eq, RustSpec, ReprC)]

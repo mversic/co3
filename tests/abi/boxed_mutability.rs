@@ -36,7 +36,7 @@ fn unstable_interior_box_has_no_public_conversion() {
 
 #[test]
 fn interior_box_validation_checks_null_and_pointee() {
-    use co3::{boxed::abi, transmute::AbiCompatibleValidate};
+    use co3::{boxed::abi, convert::AbiCompatibleValidate};
 
     assert!(!unsafe { Box::<Cell<bool>>::is_valid(&abi::Box::null()) });
     let carrier = unsafe { co3::encode_unchecked(Box::new(Cell::new(true))) };

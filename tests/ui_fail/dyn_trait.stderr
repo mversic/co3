@@ -61,8 +61,8 @@ error[E0277]: the trait bound `&(dyn Trait + '__co3_0): co3::_::ReprC_cfg0<_, _,
              `&'_lšč0 R` implements `co3::_::ReprC_cfg0<<R as ReprC>::CType, <R as RustSpec>::Layout, NulTerminated>`
              `&'_lšč0 R` implements `co3::_::ReprC_cfg0<<R as ReprC>::CType, Unstable, _TŠČ0>`
              `&'_lšč0 R` implements `co3::_::ReprC_cfg0<_TŠČ0, Unstable, co3::rust_spec::size::MetaSized<SliceLike>>`
-             `&'a R` implements `co3::_::ReprC_cfg0<<R as ReprC>::CType, Stable, _TŠČ0>`
-             `&'a R` implements `co3::_::ReprC_cfg0<_TŠČ0, Stable, co3::rust_spec::size::MetaSized<SliceLike>>`
+             `&'a R` implements `co3::_::ReprC_cfg0<<R as ReprC>::CType, co3::rust_spec::Stable, _TŠČ0>`
+             `&'a R` implements `co3::_::ReprC_cfg0<_TŠČ0, co3::rust_spec::Stable, co3::rust_spec::size::MetaSized<SliceLike>>`
    = note: required for `&'__co3_0 (dyn Trait + '__co3_0)` to implement `ReprC`
    = note: this error originates in the macro `ffi` (in Nightly builds, run with -Z macro-backtrace for more info)
 
@@ -102,7 +102,7 @@ help: the following other types implement trait `co3::stored::_::DecodeMove_cfg0
    | |         Self: RustSpec<Layout = Stable> + ReprC<CType: crate::CType + RefCarrier<R>>,
    | |         R: RustSpec<Layout = Stable, Size: Thin>,
    | |         <R as RustSpec>::Mutability: InteriorTrap<Trap = Robust>,
-   | |________________________________________________________________^ `&'r R` implements `co3::stored::_::DecodeMove_cfg0<'d, Stable, Stable, <R as RustSpec>::Mutability, _TŠČ1>`
+   | |________________________________________________________________^ `&'r R` implements `co3::stored::_::DecodeMove_cfg0<'d, co3::rust_spec::Stable, co3::rust_spec::Stable, <R as RustSpec>::Mutability, _TŠČ1>`
 ...
    | /     unsafe impl<
    | |         'd,
@@ -111,7 +111,7 @@ help: the following other types implement trait `co3::stored::_::DecodeMove_cfg0
 ...  |
    | |         R: Wide<Metadata = usize>,
    | |         <R as RustSpec>::Mutability: InteriorTrap<Trap = Robust>,
-   | |________________________________________________________________^ `&'r R` implements `co3::stored::_::DecodeMove_cfg0<'d, Unstable, Stable, <R as RustSpec>::Mutability, co3::rust_spec::size::MetaSized<SliceLike>>`
+   | |________________________________________________________________^ `&'r R` implements `co3::stored::_::DecodeMove_cfg0<'d, Unstable, co3::rust_spec::Stable, <R as RustSpec>::Mutability, co3::rust_spec::size::MetaSized<SliceLike>>`
 ...
    | /     unsafe impl<'d, R: SoftDecodeRef<'d> + ?Sized> DecodeMove<'d> for &'d R
    | |     where

@@ -93,21 +93,21 @@ pub(super) fn gen_stable_direct_mut_impls(input: &syn::DeriveInput) -> TokenStre
             quote!(co3::reference::SoftRefMut<<Self as co3::ReprC>::CType>)
         };
         let abi_bound = if unchecked {
-            quote!(co3::transmute::AbiCompatible)
+            quote!(co3::marker::AbiCompatible)
         } else {
-            quote!(co3::transmute::AbiCompatibleValidate)
+            quote!(co3::convert::AbiCompatibleValidate)
         };
         let validation = (!unchecked).then(|| quote! {
-            debug_assert!(unsafe { <&'_ršč mut Self as co3::transmute::AbiCompatibleValidate>::is_valid(&encoded) }, "encoding failed AbiCompatibleValidate::is_valid");
+            debug_assert!(unsafe { <&'_ršč mut Self as co3::convert::AbiCompatibleValidate>::is_valid(&encoded) }, "encoding failed AbiCompatibleValidate::is_valid");
         });
         let encode = quote!(co3::convert::EncodeMove::soft_encode(value, fields));
         let nonrobust = (!unchecked).then(|| quote! {
             unsafe impl #impl_generics #trait_name<'_ršč> for #name #ty_generics
             where
-                #speculative Self: Clone + #move_trait + co3::transmute::AbiCompatible
+                #speculative Self: Clone + #move_trait + co3::marker::AbiCompatible
                     + co3::ReprC<CType: co3::CType + Sized>
                     + co3::convert::DecodeMove<'_ršč, Store: co3::convert::EmptyStore + '_ršč> + '_ršč,
-                &'_ršč mut Self: co3::ReprC<CType = co3::reference::SoftRefMut<<Self as co3::ReprC>::CType>> + co3::transmute::AbiCompatible,
+                &'_ršč mut Self: co3::ReprC<CType = co3::reference::SoftRefMut<<Self as co3::ReprC>::CType>> + co3::marker::AbiCompatible,
                 #(#field_bounds,)*
                 #predicates
             {

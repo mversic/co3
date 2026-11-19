@@ -29,8 +29,8 @@ use crate::{
 #[cfg(feature = "alloc")]
 use crate::{
     boxed::abi::Box as AbiBox,
+    marker::AbiCompatible,
     sync::{RefVecEncodeStore, RefWideEncodeStore},
-    transmute::AbiCompatible,
     vec::abi::Vec as AbiVec,
     wide::abi::WideBox as AbiWideBox,
 };
@@ -806,7 +806,7 @@ unsafe impl<'a, R: ReprC, __Interior: ExclusiveKind> SoftEncodeRefUnchecked<'a>
     for crate::vec::Vec<R>
 where
     &'a Self: crate::ReprC<CType = crate::reference::SoftRef<<Self as ReprC>::CType>>,
-    Self: ReprC<CType = AbiVec<<R as ReprC>::CType, true>>,
+    Self: ReprC<CType = crate::marker::Stable<AbiVec<<R as ReprC>::CType>>>,
     <R as ReprC>::CType: Copy,
     Self: RustSpec<Mutability = Exclusive<__Interior>, Size: crate::Thin> + 'a,
     &'a R: EncodeMoveUnchecked + ReprC<CType = SoftRef<<R as ReprC>::CType>>,
@@ -828,7 +828,7 @@ where
 
             store
                 .encode(|stores| unsafe { encode_vec_unchecked(self, self.capacity(), stores) })
-                .with_source()
+                .into()
         })
     }
 }
@@ -839,7 +839,7 @@ unsafe impl<'a, T: ReprC<CType: CType + Copy + Sized>, __Interior: ExclusiveKind
 where
     &'a Self: crate::ReprC<CType = crate::reference::SoftRef<<Self as ReprC>::CType>>,
     Self: crate::convert::SoftEncodeRefUnchecked<'a>
-        + ReprC<CType = AbiVec<<T as ReprC>::CType, true>>,
+        + ReprC<CType = crate::marker::Stable<AbiVec<<T as ReprC>::CType>>>,
     Self: RustSpec<Mutability = Exclusive<__Interior>, Size: crate::Thin> + 'a,
     &'a T: EncodeMove + ReprC<CType = SoftRef<<T as ReprC>::CType>>,
 {
@@ -858,7 +858,7 @@ where
 
             store
                 .encode(|stores| encode_vec(self, self.capacity(), stores))
-                .with_source()
+                .into()
         })
     }
 }
@@ -919,7 +919,7 @@ where
         'a: 'itm,
     {
         store.encode(|stores| {
-            crate::elements::map_boxed_slice(self.iter(), stores, |item, store| unsafe {
+            map_boxed_slice(self.iter(), stores, |item, store| unsafe {
                 encode_ref_field_unchecked(item, store)
             })
         })
@@ -941,9 +941,7 @@ where
     where
         'a: 'itm,
     {
-        store.encode(|stores| {
-            crate::elements::map_boxed_slice(self.iter(), stores, encode_ref_field)
-        })
+        store.encode(|stores| map_boxed_slice(self.iter(), stores, encode_ref_field))
     }
 }
 
@@ -1113,7 +1111,7 @@ macro_rules! impl_buffer_shared {
 impl_buffer_shared!(
     alloc::string::String,
     |value: &alloc::string::String| unsafe {
-        crate::utf8::Utf8String(AbiVec::from_raw_parts(
+        crate::string::abi::String(AbiVec::from_raw_parts(
             value.as_ptr().cast_mut(),
             value.len(),
             value.capacity(),
@@ -1126,6 +1124,21 @@ impl_buffer_shared!(alloc::ffi::CString, |value: &alloc::ffi::CString| unsafe {
 });
 
 #[cfg(feature = "alloc")]
+fn map_boxed_slice<'a, I: ExactSizeIterator, U, S: Default>(
+    values: I,
+    stores: &'a mut Box<[S]>,
+    mut convert: impl FnMut(I::Item, &'a mut S) -> U,
+) -> Box<[U]> {
+    *stores = core::iter::repeat_with(S::default)
+        .take(values.len())
+        .collect();
+    values
+        .zip(stores.iter_mut())
+        .map(|(value, store)| convert(value, store))
+        .collect()
+}
+
+#[cfg(feature = "alloc")]
 fn encode_vec<'a, T: ReprC<CType: CType + Copy> + 'a>(
     source: &'a [T],
     capacity: usize,
@@ -1134,7 +1147,7 @@ fn encode_vec<'a, T: ReprC<CType: CType + Copy> + 'a>(
 where
     &'a T: EncodeMove<CType: crate::reference::RefCarrier<T>, Store: Store + Default>,
 {
-    crate::elements::map_vec(source.iter(), capacity, stores, encode_ref_field)
+    crate::stored::map_vec(source.iter(), capacity, stores, encode_ref_field)
 }
 
 #[cfg(feature = "alloc")]
@@ -1146,14 +1159,14 @@ unsafe fn encode_vec_unchecked<'a, T: ReprC<CType: CType + Copy> + 'a>(
 where
     &'a T: EncodeMoveUnchecked<CType: crate::reference::RefCarrier<T>, SoftStore: Store + Default>,
 {
-    crate::elements::map_vec(source.iter(), capacity, stores, |item, store| unsafe {
+    crate::stored::map_vec(source.iter(), capacity, stores, |item, store| unsafe {
         encode_ref_field_unchecked(item, store)
     })
 }
 
 #[cfg(all(test, feature = "alloc", feature = "derive"))]
 mod tests {
-    use alloc::{boxed::Box, string::String, vec, vec::Vec};
+    use alloc::{boxed::Box, string::String, vec::Vec};
     use core::ffi::CStr;
 
     use rust_spec::RustSpec;
@@ -1204,7 +1217,7 @@ mod tests {
 
     #[test]
     fn stable_vec_borrows_non_clone_elements() {
-        let values = vec![NoClone(7), NoClone(11)];
+        let values = alloc::vec![NoClone(7), NoClone(11)];
         let mut store = Default::default();
         let encoded = co3::soft_encode(&values, &mut store);
         let header = unsafe { &*encoded.as_ptr() };
@@ -1223,7 +1236,7 @@ mod tests {
 
     #[test]
     fn nested_shared_vec_refs_borrow_elements() {
-        let values = vec![NoClone(7), NoClone(11)];
+        let values = alloc::vec![NoClone(7), NoClone(11)];
         let reference = &values;
         let nested = &reference;
         let mut store = Default::default();
@@ -1247,7 +1260,7 @@ mod tests {
 
     #[test]
     fn stable_vec_handles_empty_zst_and_non_robust_elements() {
-        for values in [vec![], vec![false, true]] {
+        for values in [alloc::vec![], alloc::vec![false, true]] {
             let mut store = Default::default();
             let encoded = co3::soft_encode(&values, &mut store);
             let header = unsafe { &*encoded.as_ptr() };
@@ -1255,7 +1268,7 @@ mod tests {
             assert_eq!(header.len(), values.len());
             assert_eq!(store.sync(), Some(()));
         }
-        let values = vec![(); 3];
+        let values = alloc::vec![(); 3];
         let mut store = Default::default();
         let encoded = co3::soft_encode(&values, &mut store);
         assert_eq!(unsafe { (*encoded.as_ptr()).len() }, 3);
@@ -1287,7 +1300,7 @@ mod tests {
 
     #[test]
     fn unstable_vec_converts_elements() {
-        let values = vec![(19_u32,), (23,)];
+        let values = alloc::vec![(19_u32,), (23,)];
         let mut store = Default::default();
         let encoded = co3::soft_encode(&values, &mut store);
         let header = unsafe { *encoded.as_ptr() };
@@ -1304,7 +1317,7 @@ mod tests {
     #[test]
     fn checked_vec_of_cells_borrows_element_storage() {
         use core::cell::Cell;
-        let values = vec![Cell::new(29_u32)];
+        let values = alloc::vec![Cell::new(29_u32)];
         let mut store = Default::default();
         let encoded = co3::soft_encode(&values, &mut store);
         let header = unsafe { *encoded.as_ptr() };
@@ -1329,7 +1342,7 @@ mod tests {
     #[derive(RustSpec)]
     struct RefOnly(u32);
 
-    crate::__impl_borrowed_identity!([] RefOnly);
+    crate::borrow::__impl_borrowed_identity!([] RefOnly);
 
     impl co3::ReprC for RefOnly {
         type CType = u32;
@@ -1408,7 +1421,7 @@ mod tests {
     #[test]
     fn derived_struct_and_transparent_wrapper_delegate_without_clone() {
         let value = Nested {
-            values: vec![NoClone(41)],
+            values: alloc::vec![NoClone(41)],
             text: String::from("borrowed"),
             boxed: Box::new((43,)),
         };
@@ -1432,7 +1445,7 @@ mod tests {
 
     #[test]
     fn tuples_arrays_options_results_and_manually_drop_delegate() {
-        let value = (vec![NoClone(47)],);
+        let value = (alloc::vec![NoClone(47)],);
         let mut store = Default::default();
         let encoded = co3::soft_encode(&value, &mut store);
         assert_eq!(
@@ -1448,7 +1461,7 @@ mod tests {
         assert_eq!(encoded[0].as_ptr().cast_const(), array[0].as_ptr());
         assert_eq!(store.sync(), Some(()));
 
-        let elements = vec![NoClone(53)];
+        let elements = alloc::vec![NoClone(53)];
         let pointer = elements.as_ptr();
         let value = Some(elements);
         let mut store = Default::default();
@@ -1477,7 +1490,7 @@ mod tests {
 
     #[test]
     fn unstable_vec_delegates_to_non_clone_shared_only_elements() {
-        let values = vec![(RefOnly(59),), (RefOnly(61),)];
+        let values = alloc::vec![(RefOnly(59),), (RefOnly(61),)];
         let mut store = Default::default();
         let encoded = co3::soft_encode(&values, &mut store);
         let header = unsafe { &*encoded.as_ptr() };
@@ -1515,7 +1528,7 @@ mod tests {
         assert_eq!(header.as_ptr().cast_const(), &*value as *const NoClone);
         assert_eq!(().sync(), Some(()));
 
-        let value = vec![NoClone(79)].into_boxed_slice();
+        let value = alloc::vec![NoClone(79)].into_boxed_slice();
         let mut store = Default::default();
         let header = co3::soft_encode(&value, &mut store);
         let header = unsafe { &*header.as_ptr() };
@@ -1622,7 +1635,7 @@ mod tests {
         assert_eq!(header.as_ptr().cast::<Cell<u32>>().cast_const(), &*value);
         assert_eq!(store.sync(), Some(()));
 
-        let values = vec![Cell::new(11_u32)].into_boxed_slice();
+        let values = alloc::vec![Cell::new(11_u32)].into_boxed_slice();
         let mut store = Default::default();
         let encoded = co3::soft_encode(&values, &mut store);
         let header = unsafe { &*encoded.as_ptr() };
@@ -1671,7 +1684,7 @@ mod tests {
 
     #[test]
     fn shared_borrow_of_mutable_reference_keeps_vec_shared() {
-        let mut values = vec![NoClone(7), NoClone(11)];
+        let mut values = alloc::vec![NoClone(7), NoClone(11)];
         let pointer = values.as_ptr();
         let reference = &mut values;
         let mut store = Default::default();
@@ -1713,7 +1726,7 @@ mod tests {
     #[test]
     fn shared_unstable_slice_encodes_without_clone() {
         static_assertions::assert_not_impl_any!([Element]: SoftEncodeMut<'static>, SoftEncodeMutUnchecked<'static>);
-        let values = [Element(vec![3, 5]), Element(vec![7])];
+        let values = [Element(alloc::vec![3, 5]), Element(alloc::vec![7])];
         let original = values[0].0.as_ptr();
         let mut store = Default::default();
         let encoded = co3::soft_encode(values.as_slice(), &mut store);
@@ -1808,7 +1821,7 @@ mod tests {
 
     #[test]
     fn downstream_unsized_type_delegates_through_reference_traits() {
-        let mut values = [Element(vec![23])];
+        let mut values = [Element(alloc::vec![23])];
         let value = unsafe { &mut *(values.as_mut_slice() as *mut [Element] as *mut SliceView) };
         let mut store = Default::default();
         let encoded = co3::soft_encode(&*value, &mut store);
@@ -1830,7 +1843,7 @@ mod tests {
 
     #[test]
     fn boxed_custom_wide_type_delegates_to_pointee_encoder() {
-        let values: Box<[Element]> = Box::new([Element(vec![23])]);
+        let values: Box<[Element]> = Box::new([Element(alloc::vec![23])]);
         let boxed: Box<SliceView> =
             unsafe { Box::from_raw(Box::into_raw(values) as *mut SliceView) };
         let mut store = Default::default();

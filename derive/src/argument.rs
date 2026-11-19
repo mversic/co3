@@ -169,7 +169,7 @@ impl<'a> Argument<'a> {
         let ty = &self.ty;
         if self.is_borrowed() {
             let co3 = co3_path();
-            parse_quote!(#co3::borrow::Borrowed< <#ty as #co3::ReprC>::CType >)
+            parse_quote!(#co3::marker::Borrowed< <#ty as #co3::ReprC>::CType >)
         } else {
             parse_quote!(<#ty as co3::ReprC>::CType)
         }
@@ -333,7 +333,7 @@ mod tests {
                 let co3 = co3_path();
                 assert_eq!(
                     borrowed.abi_ty(),
-                    parse_quote!(#co3::borrow::Borrowed< <#ty as #co3::ReprC>::CType >)
+                    parse_quote!(#co3::marker::Borrowed< <#ty as #co3::ReprC>::CType >)
                 );
                 assert_eq!(moved.abi_ty(), parse_quote!(<#ty as co3::ReprC>::CType));
             } else {

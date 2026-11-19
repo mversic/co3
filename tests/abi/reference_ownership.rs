@@ -1,9 +1,8 @@
 use core::cell::UnsafeCell;
 
 use co3::{
-    ReprC,
-    borrow::Borrowed,
-    ffi,
+    ReprC, ffi,
+    marker::Borrowed,
     ops::CFn1,
     raw,
     reference::{Ref, SoftRef},

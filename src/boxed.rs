@@ -1,15 +1,17 @@
 //! Owning C-ABI carrier types.
+#[doc(hidden)]
+// TODO: Questionable export
 pub use alloc::boxed::Box;
-
 use core::ptr::NonNull;
 
 use rust_spec::RustSpec;
 
 use crate::{
-    CFnArg, CFnReturn, CType, ReprC, Zeroable,
+    CFnArg, CFnReturn, CType, ReprC,
     convert::{Decode, DecodeMove, Encode, EncodeMove, EncodeMoveUnchecked},
+    marker::AbiCompatible,
+    marker::Zeroable,
     reference::impl_thin_pointer_traits,
-    transmute::AbiCompatible,
     wide::{abi::WideBox as AbiWideBox, impl_carrier_borrow, impl_identity_carrier},
 };
 
@@ -46,9 +48,10 @@ impl<R: CType> OwnedBoxCarrier<AbiWideBox<[R]>> for crate::vec::abi::Vec<R> {
 
 #[cfg(test)]
 mod tests {
-    use super::{Box, abi};
-    use crate::{CType, ReprC, primitives::Bool};
     use static_assertions::{assert_impl_all, assert_type_eq_all};
+
+    use super::{Box, abi};
+    use crate::{CType, ReprC};
 
     struct Payload;
     unsafe impl CType for Payload {}
@@ -57,7 +60,10 @@ mod tests {
     fn carrier_accepts_lowered_payload_without_source_mapping() {
         assert_impl_all!(abi::Box<Payload>: CType, ReprC);
         assert_type_eq_all!(<abi::Box<Payload> as ReprC>::CType, abi::Box<Payload>);
-        assert_type_eq_all!(<Box<bool> as ReprC>::CType, abi::Box<Bool>);
+        assert_type_eq_all!(
+            <Box<bool> as ReprC>::CType,
+            abi::Box<crate::primitive::abi::bool>
+        );
 
         let source = Box::new(Payload);
         let pointer = core::ptr::from_ref(&*source);

@@ -1013,7 +1013,7 @@ unsafe impl<'d, T: ReprC<CType: CType + Copy> + RustSpec + 'd> SoftDecodeRef<'d>
 where
     crate::sync::DecodedField<'d, T, <&'d T as DecodeMove<'d>>::Store, <T as RustSpec>::Layout>:
         TakeDecoded<Value = T>,
-    Self: ReprC<CType = AbiOption<<T as ReprC>::CType, true>>,
+    Self: ReprC<CType = crate::marker::Stable<AbiOption<<T as ReprC>::CType>>>,
     &'d Self: ReprC<CType = SoftRef<<Self as ReprC>::CType>>,
     &'d T: DecodeMove<'d, Store: Store + Default + Sized>
         + ReprC<CType: crate::reference::RefCarrier<T>>,
@@ -1077,7 +1077,7 @@ where
         TakeDecoded<Value = E>,
     crate::sync::DecodedField<'d, T, <&'d T as DecodeMove<'d>>::Store, <T as RustSpec>::Layout>:
         TakeDecoded<Value = T>,
-    Self: ReprC<CType = AbiResult<<T as ReprC>::CType, <E as ReprC>::CType, true>>,
+    Self: ReprC<CType = crate::marker::Stable<AbiResult<<T as ReprC>::CType, <E as ReprC>::CType>>>,
     &'d Self: ReprC<CType = SoftRef<<Self as ReprC>::CType>>,
     &'d T: DecodeMove<'d, Store: Store + Default + Sized>
         + ReprC<CType: crate::reference::RefCarrier<T>>,
@@ -1159,8 +1159,8 @@ where
 // Build an independently owned Vec, copying stable borrowed elements and
 // extracting reconstructed elements from their stores.
 #[cfg(feature = "alloc")]
-unsafe fn decode_vec_ref<'d, 'itm: 'd, T, const STABLE: bool>(
-    header: AbiVec<T::CType, STABLE>,
+unsafe fn decode_vec_ref<'d, 'itm: 'd, T>(
+    header: AbiVec<T::CType>,
     fields: &'itm mut Box<[<&'d T as DecodeMove<'d>>::Store]>,
 ) -> Option<Vec<T>>
 where
@@ -1187,8 +1187,8 @@ where
 }
 
 #[cfg(feature = "alloc")]
-unsafe fn decode_vec_ref_unchecked<'d, 'itm: 'd, T, const STABLE: bool>(
-    header: AbiVec<T::CType, STABLE>,
+unsafe fn decode_vec_ref_unchecked<'d, 'itm: 'd, T>(
+    header: AbiVec<T::CType>,
     fields: &'itm mut Box<[<&'d T as DecodeMove<'d>>::Store]>,
 ) -> Vec<T>
 where
@@ -1219,7 +1219,7 @@ unsafe impl<'d> SoftDecodeRef<'d> for alloc::string::String {
         source: <&'d Self as ReprC>::CType,
         store: &'itm mut Self::Store,
     ) -> Option<&'d Self> {
-        // Utf8String is Copy; only the header is read here.
+        // String is Copy; only the header is read here.
         let header = unsafe { *source.into_ref()? };
         store.decode(|fields| {
             let bytes = unsafe { decode_vec_ref(header.0, fields)? };
@@ -1282,7 +1282,7 @@ unsafe impl<'d, T: ReprC<CType: CType + Sized> + RustSpec + 'd> SoftDecodeRef<'d
 where
     crate::sync::DecodedField<'d, T, <&'d T as DecodeMove<'d>>::Store, <T as RustSpec>::Layout>:
         TakeDecoded<Value = T>,
-    Self: ReprC<CType = AbiVec<<T as ReprC>::CType, true>>,
+    Self: ReprC<CType = crate::marker::Stable<AbiVec<<T as ReprC>::CType>>>,
     &'d Self: ReprC<CType = SoftRef<<Self as ReprC>::CType>>,
     &'d T: DecodeMove<'d, Store: Store + Default + Sized>
         + ReprC<CType: crate::reference::RefCarrier<T>>,
@@ -1294,7 +1294,7 @@ where
         store: &'itm mut Self::Store,
     ) -> Option<&'d Self> {
         let header = unsafe { *source.into_ref()? };
-        store.decode(|fields| unsafe { decode_vec_ref(header, fields).map(Into::into) })
+        store.decode(|fields| unsafe { decode_vec_ref(header.0, fields).map(Into::into) })
     }
 
     unsafe fn soft_decode_ref_unchecked<'itm: 'd>(
@@ -1303,7 +1303,7 @@ where
     ) -> &'d Self {
         let header = unsafe { *source.into_ref().unwrap_unchecked() };
         store
-            .decode(|fields| Some(unsafe { decode_vec_ref_unchecked(header, fields) }.into()))
+            .decode(|fields| Some(unsafe { decode_vec_ref_unchecked(header.0, fields) }.into()))
             .expect("unchecked decoding produces a value")
     }
 }
@@ -1478,7 +1478,7 @@ where
     T: crate::borrow::BorrowedDecode<'d>,
     Self: EncodeMove<Store: EmptyStore>
         + RustSpec
-        + ReprC<CType = AbiOption<<T as ReprC>::CType, true>>,
+        + ReprC<CType = crate::marker::Stable<AbiOption<<T as ReprC>::CType>>>,
     &'d mut Self: ReprC<CType = SoftRefMut<<Self as ReprC>::CType>>,
 {
     type Store =
@@ -1533,7 +1533,7 @@ where
     E: crate::borrow::BorrowedDecode<'d>,
     Self: EncodeMove<Store: EmptyStore>
         + RustSpec
-        + ReprC<CType = AbiResult<<T as ReprC>::CType, <E as ReprC>::CType, true>>,
+        + ReprC<CType = crate::marker::Stable<AbiResult<<T as ReprC>::CType, <E as ReprC>::CType>>>,
     &'d mut Self: ReprC<CType = SoftRefMut<<Self as ReprC>::CType>>,
 {
     type Store = RefMutSizedDecodeStore<
@@ -1995,7 +1995,7 @@ where
 unsafe impl<'d, T: ReprC<CType: CType + Sized> + Clone + 'd> SoftDecodeMut<'d>
     for crate::vec::Vec<T>
 where
-    Self: RustSpec + ReprC<CType = AbiVec<<T as ReprC>::CType, true>>,
+    Self: RustSpec + ReprC<CType = crate::marker::Stable<AbiVec<<T as ReprC>::CType>>>,
     &'d mut Self: ReprC<CType = SoftRefMut<<Self as ReprC>::CType>>,
     &'d mut T: DecodeMove<'d> + ReprC<CType: MutRefCarrier<T>>,
 {
@@ -2192,11 +2192,11 @@ mod tests {
 
     #[test]
     fn borrowed_boxed_stable_slice_validates_elements() {
-        use co3::{primitives::Bool, wide::abi::WideBox as AbiWideBox};
+        use co3::wide::abi::WideBox as AbiWideBox;
 
         for raw in [0, 1, 2] {
             let source = AbiWideBox::<<[bool] as crate::ReprC>::CType>::from_box(
-                vec![Bool(raw)].into_boxed_slice(),
+                vec![co3::primitive::abi::bool(raw)].into_boxed_slice(),
             );
             let mut store = Default::default();
             let decoded = unsafe {
@@ -2341,7 +2341,9 @@ mod tests {
         });
         assert_eq!(unsafe { source.into_vec() }.unwrap(), [7, 11]);
 
-        let source = AbiVec::<<ReferenceOnly as crate::ReprC>::CType, true>::from_vec(vec![7, 11]);
+        let source = crate::marker::Stable(
+            AbiVec::<<ReferenceOnly as crate::ReprC>::CType>::from_vec(vec![7, 11]),
+        );
         check_shared_decode::<co3::vec::Vec<ReferenceOnly>, _>(&source, |value| {
             assert_eq!([value[0].0, value[1].0], [7, 11]);
         });
@@ -2362,7 +2364,7 @@ mod tests {
             assert!(value.is_none());
         });
         check_shared_decode::<co3::option::Option<ReferenceOnly>, _>(
-            &AbiOption::new(Some(7)),
+            &co3::marker::Stable(AbiOption::new(Some(7))),
             |value| assert!(matches!(value, co3::option::Option::Some(ReferenceOnly(7)))),
         );
         check_shared_decode::<Result<ReferenceOnly, ReferenceOnly>, _>(
@@ -2378,7 +2380,7 @@ mod tests {
             },
         );
         check_shared_decode::<co3::result::Result<ReferenceOnly, ReferenceOnly>, _>(
-            &AbiResult::new(Ok(7)),
+            &co3::marker::Stable(AbiResult::new(Ok(7))),
             |value| assert!(matches!(value, co3::result::Result::Ok(ReferenceOnly(7)))),
         );
     }
@@ -2392,7 +2394,7 @@ mod tests {
             assert_eq!((value.0, value.1.0), (5, 7))
         });
         check_shared_decode::<co3::tuple::Tuple2<u32, ReferenceOnly>, _>(
-            &co3::tuple::abi::Tuple2::<_, _, true>(5, 7),
+            &crate::marker::Stable(co3::tuple::abi::Tuple2::<_, _>(5, 7)),
             |value| assert_eq!((value.0, value.1.0), (5, 7)),
         );
         let source = unsafe { <Record as ReprC>::CType::from_fields(7, 5) };

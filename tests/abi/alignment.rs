@@ -1,4 +1,4 @@
-use co3::{ReprC, niche::Niche, rust_spec::RustSpec, transmute::AbiCompatible};
+use co3::{ReprC, marker::AbiCompatible, niche::Niche, rust_spec::RustSpec};
 use static_assertions::{assert_impl_all, assert_not_impl_any};
 
 #[derive(RustSpec, ReprC)]

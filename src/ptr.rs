@@ -5,10 +5,12 @@ use rust_spec::RustSpec;
 
 use crate::{
     ReprC,
-    convert::{Decode, DecodeMove, Encode, EncodeMove, EncodeMoveUnchecked},
-    num::NonZero,
-    transmute::{AbiCompatible, AbiCompatibleValidate},
+    convert::AbiCompatibleValidate,
+    convert::{Decode, DecodeMove, Encode, EncodeMove, EncodeMoveUnchecked, EncodeUnchecked},
+    marker::AbiCompatible,
+    marker::NonZero,
 };
+
 // Stable-Rust description of pointer metadata. Thin pointees use unit; wide
 // pointees use the metadata guaranteed by the unsafe Wide contract.
 pub(crate) trait PointerMetadata {
@@ -35,7 +37,18 @@ impl<T: crate::wide::Wide + ?Sized, K: rust_spec::size::MetadataKind> MetadataFo
     type Metadata = (K, T::Metadata);
 }
 
-crate::__impl_borrowed_identity!([T: ?Sized] NonNull<T>);
+crate::borrow::__impl_borrowed_identity!([T: ?Sized] NonNull<T>);
+
+impl<T: ?Sized, C: crate::CType> crate::niche::Niche for NonNull<T>
+where
+    Self: ReprC<CType = NonZero<*mut C>>,
+{
+    const NICHE: Self::CType = NonZero(core::ptr::null_mut());
+
+    fn is_niche(value: &Self::CType) -> bool {
+        value.0.is_null()
+    }
+}
 
 impl<T: ReprC + ?Sized> ReprC for NonNull<T> {
     type CType = NonZero<*mut T::CType>;
@@ -118,8 +131,6 @@ unsafe impl<T: AbiCompatible + PointerMetadata + ?Sized> AbiCompatible for NonNu
     T::CType: PointerMetadata<Metadata = <T as PointerMetadata>::Metadata>
 {
 }
-
-use crate::convert::EncodeUnchecked;
 
 #[cfg(test)]
 mod tests {

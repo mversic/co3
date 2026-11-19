@@ -8,8 +8,8 @@ use co3::{
     CType, ReprC,
     boxed::{Box, abi::Box as AbiBox},
     ffi,
+    marker::Owned,
     ops::CFn1,
-    owned::Owned,
     rust_spec::{self, RustSpec},
 };
 

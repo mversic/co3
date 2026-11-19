@@ -4,8 +4,9 @@
 pub use crate::stored::{AssignFromOwned, Owned};
 pub(crate) use crate::stored::{encode_ref_field, encode_ref_field_unchecked};
 #[cfg(feature = "alloc")]
-use crate::{RustSpec, Stable, Unstable, boxed::Box};
+use crate::{RustSpec, StableLayout, Unstable, boxed::Box};
 pub use crate::{
+    abi::AbiCompatibleValidate,
     decoded::{SoftDecodeMut, SoftDecodeRef},
     mutable::{SoftEncodeMut, SoftEncodeMutUnchecked},
     shared::{SoftEncodeRef, SoftEncodeRefUnchecked},
@@ -28,8 +29,8 @@ const _: () = {
     // An unstable box representation can still transfer its allocation when the
     // pointee layout is stable (for example, a boxed slice).
     trait BoxConversionLayout<R: ?Sized> {}
-    impl<R: ?Sized> BoxConversionLayout<R> for Stable {}
-    impl<R: RustSpec<Layout = Stable> + ?Sized> BoxConversionLayout<R> for Unstable {}
+    impl<R: ?Sized> BoxConversionLayout<R> for StableLayout {}
+    impl<R: RustSpec<Layout = StableLayout> + ?Sized> BoxConversionLayout<R> for Unstable {}
 
     impl<R: ?Sized> EncodeUnchecked for Box<R> where
         Self: RustSpec<Layout: BoxConversionLayout<R>> + EncodeMoveUnchecked

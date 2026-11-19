@@ -1,4 +1,9 @@
-use co3::{ReprC, ffi, ffi::c_char, rust_spec::RustSpec};
+use co3::{
+    ReprC,
+    ffi,
+    ffi::c_char,
+    rust_spec::RustSpec,
+};
 
 #[derive(Clone, Copy, RustSpec, ReprC)]
 #[repr_c(identity)]

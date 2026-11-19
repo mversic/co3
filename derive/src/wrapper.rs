@@ -767,7 +767,7 @@ fn gen_input_conversion_stmts(inputs: &[Argument<'_>]) -> TokenStream {
                     #(#cfg)*
                     let mut #store_name = Default::default();
                     #(#cfg)*
-                    let #arg_name = co3::borrow::Borrowed::< <#ty as co3::ReprC>::CType >(
+                    let #arg_name = co3::marker::Borrowed::< <#ty as co3::ReprC>::CType >(
                         <#ty as co3::borrow::BorrowedEncode>::soft_encode(
                             #arg_name, &mut #store_name, &mut #owner_name,
                         )

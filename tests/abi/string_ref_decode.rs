@@ -1,11 +1,11 @@
-use co3::{reference::SoftRef, utf8::Utf8String, vec::abi};
+use co3::{reference::SoftRef, string::abi::String as AbiString, vec::abi};
 
 #[test]
 fn shared_string_decodes_without_taking_source_ownership() {
     for text in ["", "héllo 🦀"] {
         let mut original = String::with_capacity(64);
         original.push_str(text);
-        let source = Utf8String::from_string(original);
+        let source = AbiString::from_string(original);
         let mut store = Default::default();
         let decoded =
             unsafe { co3::soft_decode::<&String>(SoftRef::from_ref(&source), &mut store) }.unwrap();
@@ -21,7 +21,7 @@ fn shared_string_decodes_without_taking_source_ownership() {
 
 #[test]
 fn shared_string_rejects_invalid_utf8_without_consuming_source() {
-    let source = Utf8String(abi::Vec::from_vec(vec![0xff, 0xfe]));
+    let source = AbiString(abi::Vec::from_vec(vec![0xff, 0xfe]));
     let mut store = Default::default();
     assert!(
         unsafe { co3::soft_decode::<&String>(SoftRef::from_ref(&source), &mut store) }.is_none()
@@ -38,10 +38,10 @@ fn shared_string_validates_carrier_headers() {
         unsafe { co3::soft_decode::<&String>(SoftRef::from_raw(core::ptr::null()), &mut store) }
             .is_none()
     );
-    let null = Utf8String::null();
+    let null = AbiString::null();
     assert!(unsafe { co3::soft_decode::<&String>(SoftRef::from_ref(&null), &mut store) }.is_none());
     let bytes = *b"a";
-    let invalid = Utf8String(unsafe { abi::Vec::from_raw_parts(bytes.as_ptr().cast_mut(), 2, 1) });
+    let invalid = AbiString(unsafe { abi::Vec::from_raw_parts(bytes.as_ptr().cast_mut(), 2, 1) });
     assert!(
         unsafe { co3::soft_decode::<&String>(SoftRef::from_ref(&invalid), &mut store) }.is_none()
     );
@@ -49,7 +49,7 @@ fn shared_string_validates_carrier_headers() {
 
 #[test]
 fn shared_string_unchecked_decodes_without_taking_source_ownership() {
-    let source = Utf8String::from_string(String::from("héllo"));
+    let source = AbiString::from_string(String::from("héllo"));
     let mut store = Default::default();
     let decoded =
         unsafe { co3::soft_decode_unchecked::<&String>(SoftRef::from_ref(&source), &mut store) };

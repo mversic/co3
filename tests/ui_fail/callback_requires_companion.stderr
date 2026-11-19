@@ -76,7 +76,7 @@ error[E0271]: type mismatch resolving `<NoRepr as RustSpec>::Layout == Stable`
 16 | | }
    | |_^ type mismatch resolving `<NoRepr as RustSpec>::Layout == Stable`
    |
-note: expected this to be `Stable`
+note: expected this to be `rust_spec::Stable`
   --> tests/ui_fail/callback_requires_companion.rs:3:10
    |
  3 | #[derive(RustSpec, ReprC)]

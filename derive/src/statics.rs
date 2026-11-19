@@ -177,7 +177,7 @@ fn gen_import_wrapper(
                 store: &'__co3_static_d mut <#ty as #co3::convert::DecodeMove<'__co3_static_d>>::Store,
             ) -> Option<#ty>
             where
-                for<'_dummy> #ty: #co3::convert::Decode<'__co3_static_d> + #co3::transmute::AbiCompatible + Copy,
+                for<'_dummy> #ty: #co3::convert::Decode<'__co3_static_d> + #co3::marker::AbiCompatible + Copy,
                 for<'_dummy> <#ty as #co3::rust_spec::RustSpec>::Mutability: __Co3InteriorTrap<Trap = #co3::rust_spec::layout::Robust>,
                 <#ty as #co3::ReprC>::CType: Copy,
             {
@@ -203,7 +203,7 @@ fn gen_import_wrapper(
             pub fn read(&self) -> Option<#ty>
             where
                 for<'_dummy> <#ty as #co3::rust_spec::RustSpec>::Mutability: __Co3InteriorTrap<Trap = #co3::rust_spec::layout::Robust>,
-                for<'_dummy> #ty: #co3::transmute::AbiCompatible + Copy,
+                for<'_dummy> #ty: #co3::marker::AbiCompatible + Copy,
                 #decode_bounds
             {
                 let source = unsafe { #raw_ident };
@@ -218,10 +218,10 @@ fn gen_import_wrapper(
             pub fn get(&self) -> Option<&#ty>
             where
                 for<'_dummy> <#ty as #co3::rust_spec::RustSpec>::Mutability: __Co3InteriorTrap<Trap = #co3::rust_spec::layout::Robust>,
-                for<'_dummy> #ty: #co3::transmute::AbiCompatibleValidate + Sync,
+                for<'_dummy> #ty: #co3::convert::AbiCompatibleValidate + Sync,
             {
                 let valid = unsafe {
-                    <#ty as #co3::transmute::AbiCompatibleValidate>::is_valid(
+                    <#ty as #co3::convert::AbiCompatibleValidate>::is_valid(
                         unsafe { &#raw_ident },
                     )
                 };
@@ -232,7 +232,7 @@ fn gen_import_wrapper(
 
             #[inline]
             pub unsafe fn get_unchecked(&self) -> &#ty
-            where for<'_dummy> #ty: #co3::transmute::AbiCompatible,
+            where for<'_dummy> #ty: #co3::marker::AbiCompatible,
             {
                 unsafe { &*(&#raw_ident as *const _ as *const #ty) }
             }

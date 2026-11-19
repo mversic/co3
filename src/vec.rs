@@ -1,5 +1,7 @@
 //! Stable vector ownership and its robust C-compatible representation.
 
+use alloc::boxed::Box;
+
 use core::{
     hash::Hash,
     mem::ManuallyDrop,
@@ -9,10 +11,17 @@ use core::{
 
 use rust_spec::RustSpec;
 
+#[cfg(feature = "alloc")]
+use crate::borrow::{
+    self, borrowed_decode_slice, decode_borrowed_elements, decode_borrowed_elements_unchecked,
+};
+
 use crate::{
-    CFnArg, CFnReturn, CType, ReprC, Zeroable,
+    CFnArg, CFnReturn, CType, ReprC,
+    convert::AbiCompatibleValidate,
     convert::{Decode, DecodeMove, Encode, EncodeMove, EncodeMoveUnchecked, EncodeUnchecked},
-    transmute::{AbiCompatible, AbiCompatibleValidate},
+    marker::AbiCompatible,
+    marker::Zeroable,
     wide::impl_identity_carrier,
 };
 
@@ -189,7 +198,7 @@ impl<T> From<Vec<T>> for alloc::vec::Vec<T> {
 }
 
 impl<T: ReprC<CType: Sized>> ReprC for Vec<T> {
-    type CType = abi::Vec<T::CType, true>;
+    type CType = crate::marker::Stable<abi::Vec<T::CType>>;
 }
 
 #[cfg(feature = "alloc")]
@@ -263,7 +272,7 @@ impl<T> Encode for Vec<T> where Self: EncodeMove + crate::convert::EncodeUncheck
 impl<T> crate::convert::EncodeUnchecked for Vec<T> where Self: EncodeMoveUnchecked {}
 impl<'d, T> Decode<'d> for Vec<T> where Self: DecodeMove<'d> {}
 impl<T: ReprC<CType: CType + Sized>> crate::niche::Niche for Vec<T> {
-    const NICHE: Self::CType = abi::Vec::null();
+    const NICHE: Self::CType = crate::marker::Stable(abi::Vec::null());
 
     fn is_niche(value: &Self::CType) -> bool {
         value.as_ptr().is_null()
@@ -295,32 +304,32 @@ pub mod abi {
     /// A null pointer is reserved as a niche and does not represent a vector.
     /// `T` is the lowered element type stored in the allocation.
     #[derive(RustSpec)]
-    /// `STABLE` identifies the co3 source family (`true`) or native Rust family (`false`).
+    /// Co3 sources select [`crate::marker::Stable<Self>`]; native Rust sources select this carrier directly.
     #[repr(C)]
     #[doc(hidden)]
-    pub struct Vec<T: CType, const STABLE: bool = false> {
+    pub struct Vec<T: CType> {
         pub(super) data: *mut T,
         pub(super) capacity: usize,
         pub(super) len: usize,
     }
 
-    unsafe impl<T: CType, const STABLE: bool> Zeroable for Vec<T, STABLE> {}
+    unsafe impl<T: CType> Zeroable for Vec<T> {}
 
-    impl<T: CType, const STABLE: bool> Copy for Vec<T, STABLE> {}
+    impl<T: CType> Copy for Vec<T> {}
 
-    impl<T: CType, const STABLE: bool> Clone for Vec<T, STABLE> {
+    impl<T: CType> Clone for Vec<T> {
         fn clone(&self) -> Self {
             *self
         }
     }
 
-    impl<T: CType, const STABLE: bool> Default for Vec<T, STABLE> {
+    impl<T: CType> Default for Vec<T> {
         fn default() -> Self {
             Self::null()
         }
     }
 
-    impl<T: CType, const STABLE: bool> Vec<T, STABLE> {
+    impl<T: CType> Vec<T> {
         pub const fn null() -> Self {
             Self {
                 data: core::ptr::null_mut(),
@@ -355,12 +364,7 @@ pub mod abi {
         }
     }
 
-    impl<T: CType, const STABLE: bool> Vec<T, STABLE> {
-        pub(crate) fn with_source<const OTHER: bool>(self) -> Vec<T, OTHER> {
-            // The source discriminator has no storage and does not affect layout.
-            unsafe { crate::transmute::transmute_owned(self) }
-        }
-
+    impl<T: CType> Vec<T> {
         pub const fn as_ptr(self) -> *mut T {
             self.data
         }
@@ -390,11 +394,11 @@ pub mod abi {
         }
     }
 
-    impl_identity_carrier! { Vec, [T: CType, const STABLE: bool], [T, STABLE] }
+    impl_identity_carrier! { Vec, [T: CType], [T] }
 
-    crate::wide::impl_carrier_borrow! { Vec, [T: CType, const STABLE: bool], [T, STABLE] }
+    crate::wide::impl_carrier_borrow! { Vec, [T: CType], [T] }
 
-    impl<T: CType, const STABLE: bool> core::fmt::Debug for Vec<T, STABLE> {
+    impl<T: CType> core::fmt::Debug for Vec<T> {
         fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
             f.debug_struct("Vec")
                 .field("data", &self.data)
@@ -404,7 +408,7 @@ pub mod abi {
         }
     }
 
-    impl<T: CType, const STABLE: bool> PartialEq for Vec<T, STABLE> {
+    impl<T: CType> PartialEq for Vec<T> {
         fn eq(&self, other: &Self) -> bool {
             !self.data.is_null()
                 && self.data == other.data
@@ -413,7 +417,7 @@ pub mod abi {
         }
     }
 
-    impl<T: CType, const STABLE: bool> PartialOrd for Vec<T, STABLE> {
+    impl<T: CType> PartialOrd for Vec<T> {
         fn partial_cmp(&self, other: &Self) -> Option<core::cmp::Ordering> {
             if self.data.is_null() || other.data.is_null() {
                 None
@@ -426,5 +430,110 @@ pub mod abi {
                 )
             }
         }
+    }
+}
+#[cfg(feature = "alloc")]
+unsafe impl<T> borrow::BorrowedEncodeUnchecked for alloc::vec::Vec<T>
+where
+    T: ReprC<CType: CType + Sized>,
+    Vec<T>: borrow::BorrowedEncodeUnchecked
+        + ReprC<CType = crate::marker::Stable<abi::Vec<<T as ReprC>::CType>>>,
+{
+    type Owner = <Vec<T> as borrow::BorrowedEncodeUnchecked>::Owner;
+    type SoftStore = <Vec<T> as borrow::BorrowedEncodeUnchecked>::SoftStore;
+
+    unsafe fn soft_encode_unchecked<'itm>(
+        self,
+        store: &'itm mut Self::SoftStore,
+        owner: &'itm mut Self::Owner,
+    ) -> Self::CType
+    where
+        Self: 'itm,
+    {
+        unsafe {
+            <Vec<T> as borrow::BorrowedEncodeUnchecked>::soft_encode_unchecked(
+                self.into(),
+                store,
+                owner,
+            )
+        }
+        .0
+    }
+}
+
+#[cfg(feature = "alloc")]
+unsafe impl<T> borrow::BorrowedEncode for alloc::vec::Vec<T>
+where
+    T: ReprC<CType: CType + Sized>,
+    Vec<T>: borrow::BorrowedEncode
+        + ReprC<CType = crate::marker::Stable<abi::Vec<<T as ReprC>::CType>>>,
+{
+    type Store = <Vec<T> as borrow::BorrowedEncode>::Store;
+
+    fn soft_encode<'itm>(
+        self,
+        store: &'itm mut Self::Store,
+        owner: &'itm mut Self::Owner,
+    ) -> Self::CType
+    where
+        Self: 'itm,
+    {
+        <Vec<T> as borrow::BorrowedEncode>::soft_encode(self.into(), store, owner).0
+    }
+}
+
+#[cfg(feature = "alloc")]
+unsafe impl<'d, T: borrow::BorrowedDecode<'d>> borrow::BorrowedDecode<'d> for alloc::vec::Vec<T>
+where
+    T: ReprC<CType: CType + Copy + Sized>,
+    Self: ReprC<CType = abi::Vec<<T as ReprC>::CType>>,
+{
+    type Store = Box<[T::Store]>;
+
+    unsafe fn soft_decode<'itm: 'd>(
+        source: Self::CType,
+        store: &'itm mut Self::Store,
+    ) -> Option<Self> {
+        if source.len() > source.capacity() {
+            return None;
+        }
+        let fields = unsafe { borrowed_decode_slice(source.as_ptr(), source.len())? };
+        unsafe { decode_borrowed_elements::<T, _>(fields, store) }
+    }
+
+    unsafe fn soft_decode_unchecked<'itm: 'd>(
+        source: Self::CType,
+        store: &'itm mut Self::Store,
+    ) -> Self {
+        let fields = unsafe { core::slice::from_raw_parts(source.as_ptr(), source.len()) };
+        unsafe { decode_borrowed_elements_unchecked::<T, _>(fields, store) }
+    }
+}
+
+#[cfg(feature = "alloc")]
+unsafe impl<'d, T: borrow::BorrowedDecode<'d>> borrow::BorrowedDecode<'d> for Vec<T>
+where
+    T: ReprC<CType: CType + Copy + Sized>,
+    Self: ReprC<CType = crate::marker::Stable<abi::Vec<<T as ReprC>::CType>>>,
+{
+    type Store = Box<[T::Store]>;
+
+    unsafe fn soft_decode<'itm: 'd>(
+        source: Self::CType,
+        store: &'itm mut Self::Store,
+    ) -> Option<Self> {
+        if source.len() > source.capacity() {
+            return None;
+        }
+        let fields = unsafe { borrowed_decode_slice(source.as_ptr(), source.len())? };
+        unsafe { decode_borrowed_elements::<T, _>(fields, store) }
+    }
+
+    unsafe fn soft_decode_unchecked<'itm: 'd>(
+        source: Self::CType,
+        store: &'itm mut Self::Store,
+    ) -> Self {
+        let fields = unsafe { core::slice::from_raw_parts(source.as_ptr(), source.len()) };
+        unsafe { decode_borrowed_elements_unchecked::<T, _>(fields, store) }
     }
 }

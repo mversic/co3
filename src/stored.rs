@@ -21,16 +21,18 @@ use rust_spec::{
 
 use crate::{
     CType, ReprC, Thin,
+    abi::{InteriorTrap, transmute_owned},
+    convert::AbiCompatibleValidate,
     convert::{
         SoftDecodeMut, SoftDecodeRef, SoftEncodeMut, SoftEncodeMutUnchecked, SoftEncodeRef,
         SoftEncodeRefUnchecked,
     },
+    marker::AbiCompatible,
     niche::Niche,
     option::abi::OptionSome as AbiOptionSome,
     reference::{MutRefCarrier, RefCarrier},
     result::abi::{Result as AbiResult, ResultErr as AbiResultErr, ResultOk as AbiResultOk},
     sync::ArrayStore,
-    transmute::{AbiCompatible, AbiCompatibleValidate, InteriorTrap, transmute_owned},
     wide::{Wide, WideData, WideHeader, WideRefCarrier, WideRefMutCarrier},
 };
 #[cfg(feature = "alloc")]
@@ -342,7 +344,7 @@ disjoint_impls! {
         where
             Self: 'itm,
         {
-            AbiVec::from_vec(unsafe { encode_vec_elements_unchecked(self.into(), store) })
+            crate::marker::Stable(AbiVec::from_vec(unsafe { encode_vec_elements_unchecked(self.into(), store) }))
         }
     }
 
@@ -509,7 +511,7 @@ disjoint_impls! {
         {
             unsafe {
                 EncodeMoveUnchecked::soft_encode_unchecked(crate::option::Option::from(self), store)
-                    .with_source()
+                    .0
             }
         }
     }
@@ -551,7 +553,7 @@ disjoint_impls! {
         {
             unsafe {
                 EncodeMoveUnchecked::soft_encode_unchecked(crate::result::Result::from(self), store)
-                    .with_source()
+                    .0
             }
         }
     }
@@ -629,7 +631,7 @@ disjoint_impls! {
         /// Conceptually, serves a role similar to the "context" captured by a closure.
         type Store: Store + Default;
 
-        /// Convert [`Self`] into its checked carrier, [`Self::CType`].
+        /// Convert [`Self`] into its checked carrier, [`ReprC::CType`].
         ///
         /// Prefer using [`crate::soft_encode`] whenever possible
         fn soft_encode<'itm>(self, store: &'itm mut Self::Store) -> Self::CType
@@ -1053,7 +1055,7 @@ disjoint_impls! {
         {
             crate::option::Option::from(self)
                 .soft_encode(store)
-                .with_source()
+                .0
         }
     }
     unsafe impl<R: EncodeMove + Niche, N: LayoutKind> EncodeMove for Option<R>
@@ -1094,7 +1096,7 @@ disjoint_impls! {
         {
             crate::result::Result::from(self)
                 .soft_encode(store)
-                .with_source()
+                .0
         }
     }
     unsafe impl<R: EncodeMove + Niche, E: ReprC<CType: CType + Sized>, N: LayoutKind> EncodeMove for Result<R, E>
@@ -1502,7 +1504,7 @@ disjoint_impls! {
     {
         type Store = ();
         unsafe fn soft_decode<'itm: 'd>(source: Self::CType, _: &'itm mut ()) -> Option<Self> {
-            if !unsafe { <Self as crate::transmute::AbiCompatibleValidate>::is_valid(&source) } {
+            if !unsafe { <Self as crate::convert::AbiCompatibleValidate>::is_valid(&source) } {
                 // Reclaim the carrier allocation without constructing invalid R values.
                 drop(unsafe { source.into_vec() });
                 return None;
@@ -1801,7 +1803,7 @@ disjoint_impls! {
             store: &'itm mut Self::Store,
         ) -> Option<Self> {
             unsafe {
-                <crate::option::Option<R> as DecodeMove<'d>>::soft_decode(source.with_source(), store)
+                <crate::option::Option<R> as DecodeMove<'d>>::soft_decode(crate::marker::Stable(source), store)
             }
             .map(Into::into)
         }
@@ -1813,7 +1815,7 @@ disjoint_impls! {
         ) -> Self {
             unsafe {
                 <crate::option::Option<R> as DecodeMove<'d>>::soft_decode_unchecked(
-                    source.with_source(),
+                    crate::marker::Stable(source),
                     store,
                 )
             }
@@ -1868,7 +1870,7 @@ disjoint_impls! {
         ) -> Option<Self> {
             unsafe {
                 <crate::result::Result<R, E> as DecodeMove<'d>>::soft_decode(
-                    source.with_source(),
+                    crate::marker::Stable(source),
                     store,
                 )
             }
@@ -1882,7 +1884,7 @@ disjoint_impls! {
         ) -> Self {
             unsafe {
                 <crate::result::Result<R, E> as DecodeMove<'d>>::soft_decode_unchecked(
-                    source.with_source(),
+                    crate::marker::Stable(source),
                     store,
                 )
             }
@@ -1963,7 +1965,7 @@ disjoint_impls! {
 unsafe impl<R: EncodeMove> EncodeMove for crate::vec::Vec<R>
 where
     R: ReprC<CType: CType + Sized>,
-    Self: EncodeMoveUnchecked + ReprC<CType = AbiVec<<R as ReprC>::CType, true>>,
+    Self: EncodeMoveUnchecked + ReprC<CType = crate::marker::Stable<AbiVec<<R as ReprC>::CType>>>,
 {
     type Store = Box<[R::Store]>;
 
@@ -1971,7 +1973,7 @@ where
     where
         Self: 'itm,
     {
-        AbiVec::from_vec(encode_vec_elements(self.into(), store))
+        crate::marker::Stable(AbiVec::from_vec(encode_vec_elements(self.into(), store)))
     }
 }
 
@@ -1992,7 +1994,8 @@ where
 #[cfg(feature = "alloc")]
 unsafe impl<R: ReprC<CType: CType + Sized>> EncodeMoveUnchecked for Vec<R>
 where
-    crate::vec::Vec<R>: EncodeMoveUnchecked + ReprC<CType = AbiVec<<R as ReprC>::CType, true>>,
+    crate::vec::Vec<R>:
+        EncodeMoveUnchecked + ReprC<CType = crate::marker::Stable<AbiVec<<R as ReprC>::CType>>>,
 {
     type SoftStore = <crate::vec::Vec<R> as EncodeMoveUnchecked>::SoftStore;
 
@@ -2000,18 +2003,15 @@ where
     where
         Self: 'itm,
     {
-        unsafe {
-            crate::vec::Vec::from(self)
-                .soft_encode_unchecked(store)
-                .with_source()
-        }
+        unsafe { crate::vec::Vec::from(self).soft_encode_unchecked(store).0 }
     }
 }
 
 #[cfg(feature = "alloc")]
 unsafe impl<R: ReprC<CType: CType + Sized>> EncodeMove for Vec<R>
 where
-    crate::vec::Vec<R>: EncodeMove + ReprC<CType = AbiVec<<R as ReprC>::CType, true>>,
+    crate::vec::Vec<R>:
+        EncodeMove + ReprC<CType = crate::marker::Stable<AbiVec<<R as ReprC>::CType>>>,
     Self: ReprC<CType = AbiVec<<R as ReprC>::CType>>,
 {
     type Store = <crate::vec::Vec<R> as EncodeMove>::Store;
@@ -2020,27 +2020,30 @@ where
     where
         Self: 'itm,
     {
-        crate::vec::Vec::from(self).soft_encode(store).with_source()
+        crate::vec::Vec::from(self).soft_encode(store).0
     }
 }
 
 #[cfg(feature = "alloc")]
 unsafe impl<'d, R: ReprC<CType: CType + Sized>> DecodeMove<'d> for Vec<R>
 where
-    crate::vec::Vec<R>: DecodeMove<'d> + ReprC<CType = AbiVec<<R as ReprC>::CType, true>>,
+    crate::vec::Vec<R>:
+        DecodeMove<'d> + ReprC<CType = crate::marker::Stable<AbiVec<<R as ReprC>::CType>>>,
 {
     type Store = <crate::vec::Vec<R> as DecodeMove<'d>>::Store;
     unsafe fn soft_decode<'itm: 'd>(
         source: Self::CType,
         store: &'itm mut Self::Store,
     ) -> Option<Self> {
-        unsafe { crate::vec::Vec::<R>::soft_decode(source.with_source(), store) }.map(Into::into)
+        unsafe { crate::vec::Vec::<R>::soft_decode(crate::marker::Stable(source), store) }
+            .map(Into::into)
     }
     unsafe fn soft_decode_unchecked<'itm: 'd>(
         source: Self::CType,
         store: &'itm mut Self::Store,
     ) -> Self {
-        unsafe { crate::vec::Vec::<R>::soft_decode_unchecked(source.with_source(), store) }.into()
+        unsafe { crate::vec::Vec::<R>::soft_decode_unchecked(crate::marker::Stable(source), store) }
+            .into()
     }
 }
 
@@ -2208,11 +2211,79 @@ where
     unsafe { R::Owned::soft_decode_unchecked(source, store) }.into()
 }
 
+// Shared traversal preserves each caller's conversion and access contracts.
+pub(crate) fn map_array<'a, T, U, S, const N: usize>(
+    values: [T; N],
+    stores: &'a mut [S; N],
+    mut convert: impl FnMut(T, &'a mut S) -> U,
+) -> [U; N] {
+    let mut stores = stores.iter_mut();
+    values.map(|value| convert(value, stores.next().unwrap()))
+}
+
+pub(crate) fn try_map_array<'a, T, U, S, const N: usize>(
+    values: [T; N],
+    stores: &'a mut [S; N],
+    convert: impl FnMut(T, &'a mut S) -> Option<U>,
+) -> Option<[U; N]> {
+    let converted = map_array(values, stores, convert);
+    if converted.iter().any(Option::is_none) {
+        return None;
+    }
+    Some(converted.map(Option::unwrap))
+}
+
+#[cfg(feature = "alloc")]
+fn zip_stores<I: ExactSizeIterator, S: Default>(
+    values: I,
+    stores: &mut Box<[S]>,
+) -> impl ExactSizeIterator<Item = (I::Item, &mut S)> {
+    *stores = core::iter::repeat_with(S::default)
+        .take(values.len())
+        .collect();
+    values.zip(stores.iter_mut())
+}
+
+#[cfg(feature = "alloc")]
+pub(crate) fn map_vec<'a, I: ExactSizeIterator, U, S: Default>(
+    values: I,
+    capacity: usize,
+    stores: &'a mut Box<[S]>,
+    mut convert: impl FnMut(I::Item, &'a mut S) -> U,
+) -> Vec<U> {
+    let values = zip_stores(values, stores);
+    let mut converted = Vec::with_capacity(capacity);
+    converted.extend(values.map(|(value, store)| convert(value, store)));
+    converted
+}
+
+/// Attempt every element, retaining successful values until all conversions
+/// finish. A failed conversion drops those values and leaves every store alive.
+#[cfg(feature = "alloc")]
+fn try_map_vec<'a, I: ExactSizeIterator, U, S: Default>(
+    values: I,
+    capacity: usize,
+    stores: &'a mut Box<[S]>,
+    mut convert: impl FnMut(I::Item, &'a mut S) -> Option<U>,
+) -> Option<Vec<U>> {
+    let values = zip_stores(values, stores);
+    let mut converted = Vec::with_capacity(capacity);
+    let mut valid = true;
+    for (value, store) in values {
+        if let Some(value) = convert(value, store) {
+            converted.push(value);
+        } else {
+            valid = false;
+        }
+    }
+    valid.then_some(converted)
+}
+
 #[cfg(feature = "alloc")]
 #[inline(always)]
 fn encode_vec_elements<R: EncodeMove>(value: Vec<R>, store: &mut Box<[R::Store]>) -> Vec<R::CType> {
     let capacity = value.capacity();
-    crate::elements::map_vec(
+    map_vec(
         value.into_iter(),
         capacity,
         store,
@@ -2227,7 +2298,7 @@ unsafe fn encode_vec_elements_unchecked<R: EncodeMoveUnchecked>(
     store: &mut Box<[R::SoftStore]>,
 ) -> Vec<R::CType> {
     let capacity = value.capacity();
-    crate::elements::map_vec(value.into_iter(), capacity, store, |item, store| unsafe {
+    map_vec(value.into_iter(), capacity, store, |item, store| unsafe {
         item.soft_encode_unchecked(store)
     })
 }
@@ -2239,7 +2310,7 @@ unsafe fn decode_vec_elements<'d, 'itm: 'd, R: DecodeMove<'d>>(
     store: &'itm mut Box<[R::Store]>,
 ) -> Option<Vec<R>> {
     let capacity = source.capacity();
-    crate::elements::try_map_vec(source.into_iter(), capacity, store, |item, store| unsafe {
+    try_map_vec(source.into_iter(), capacity, store, |item, store| unsafe {
         R::soft_decode(item, store)
     })
 }
@@ -2251,7 +2322,7 @@ unsafe fn decode_vec_elements_unchecked<'d, 'itm: 'd, R: DecodeMove<'d>>(
     store: &'itm mut Box<[R::Store]>,
 ) -> Vec<R> {
     let capacity = source.capacity();
-    crate::elements::map_vec(source.into_iter(), capacity, store, |item, store| unsafe {
+    map_vec(source.into_iter(), capacity, store, |item, store| unsafe {
         R::soft_decode_unchecked(item, store)
     })
 }
@@ -2293,7 +2364,7 @@ unsafe fn encode_unchecked_array_elements<R: EncodeMoveUnchecked, const N: usize
     value: [R; N],
     store: &mut ArrayStore<R::SoftStore, N>,
 ) -> [R::CType; N] {
-    crate::elements::map_array(value, &mut store.0, |item, store| unsafe {
+    map_array(value, &mut store.0, |item, store| unsafe {
         item.soft_encode_unchecked(store)
     })
 }
@@ -2302,14 +2373,14 @@ fn encode_array_elements<'itm, R: EncodeMove + 'itm, const N: usize>(
     value: [R; N],
     store: &'itm mut ArrayStore<R::Store, N>,
 ) -> [R::CType; N] {
-    crate::elements::map_array(value, &mut store.0, crate::stored::EncodeMove::soft_encode)
+    map_array(value, &mut store.0, crate::stored::EncodeMove::soft_encode)
 }
 
 unsafe fn decode_array_elements<'d, 'itm: 'd, R: DecodeMove<'d>, const N: usize>(
     source: [R::CType; N],
     store: &'itm mut ArrayStore<R::Store, N>,
 ) -> Option<[R; N]> {
-    crate::elements::try_map_array(source, &mut store.0, |item, store| unsafe {
+    try_map_array(source, &mut store.0, |item, store| unsafe {
         R::soft_decode(item, store)
     })
 }
@@ -2318,20 +2389,43 @@ unsafe fn decode_unchecked_array_elements<'d, 'itm: 'd, R: DecodeMove<'d>, const
     source: [R::CType; N],
     store: &'itm mut ArrayStore<R::Store, N>,
 ) -> [R; N] {
-    crate::elements::map_array(source, &mut store.0, |item, store| unsafe {
+    map_array(source, &mut store.0, |item, store| unsafe {
         R::soft_decode_unchecked(item, store)
     })
 }
 
 #[cfg(test)]
 mod tests {
+    #[cfg(feature = "alloc")]
+    #[test]
+    fn failure_finishes_conversion_before_dropping_successful_values() {
+        use core::cell::Cell;
+
+        struct CountDrop<'a>(&'a Cell<usize>);
+        impl Drop for CountDrop<'_> {
+            fn drop(&mut self) {
+                self.0.set(self.0.get() + 1);
+            }
+        }
+
+        let drops = Cell::new(0);
+        let mut stores = alloc::boxed::Box::default();
+        let result = super::try_map_vec(0..3, 8, &mut stores, |index, store| {
+            assert_eq!(drops.get(), 0);
+            *store = Some(index);
+            (index != 1).then(|| CountDrop(&drops))
+        });
+        assert!(result.is_none());
+        assert_eq!(&*stores, &[Some(0), Some(1), Some(2)]);
+        assert_eq!(drops.get(), 2);
+    }
+
     #[test]
     fn constructs_lifetime_bearing_shared_carriers() {
         use core::cell::UnsafeCell;
 
         use super::{RefCarrier, WideRefCarrier};
-        use crate::reference::Ref;
-        use crate::wide::abi::WideRef as AbiWideRef;
+        use crate::{reference::Ref, wide::abi::WideRef as AbiWideRef};
 
         let value = 7_u8;
         let carrier: Ref<'_, u8> = unsafe { RefCarrier::<u8>::from_shared_ptr(&value) };
@@ -2356,7 +2450,7 @@ mod tests {
     }
 
     #[cfg(all(feature = "alloc", feature = "derive"))]
-    use alloc::{boxed::Box, vec, vec::Vec};
+    use alloc::{boxed::Box, vec::Vec};
     #[cfg(all(feature = "alloc", feature = "derive"))]
     use core::{
         cell::UnsafeCell,
@@ -2367,8 +2461,7 @@ mod tests {
     #[cfg(all(feature = "alloc", feature = "derive"))]
     use co3::{
         convert::{EmptyStore, EncodeMove, EncodeMoveUnchecked, Store},
-        primitives::Bool,
-        transmute::AbiCompatible,
+        marker::AbiCompatible,
     };
     #[cfg(all(feature = "alloc", feature = "derive"))]
     use static_assertions::{assert_impl_all, assert_not_impl_any};
@@ -2414,7 +2507,7 @@ mod tests {
     }
 
     #[cfg(feature = "alloc")]
-    unsafe impl co3::transmute::AbiCompatibleValidate for RawProbe {
+    unsafe impl co3::convert::AbiCompatibleValidate for RawProbe {
         unsafe fn is_valid(_: &Self::CType) -> bool {
             true
         }
@@ -2494,7 +2587,7 @@ mod tests {
     struct StoredDirect(u8);
 
     #[cfg(all(feature = "alloc", feature = "derive"))]
-    crate::__impl_borrowed_identity!([] StoredDirect);
+    crate::borrow::__impl_borrowed_identity!([] StoredDirect);
 
     #[cfg(all(feature = "alloc", feature = "derive"))]
     impl co3::ReprC for StoredDirect {
@@ -2612,7 +2705,7 @@ mod tests {
         store.sync().unwrap();
 
         let mut store = Default::default();
-        let encoded = co3::soft_encode(vec![RawProbe(1), RawProbe(2)], &mut store);
+        let encoded = co3::soft_encode(alloc::vec![RawProbe(1), RawProbe(2)], &mut store);
         assert_eq!(unsafe { *encoded.as_ptr() }, 1);
         drop(unsafe { encoded.into_box().unwrap() });
         store.sync().unwrap();
@@ -2641,14 +2734,14 @@ mod tests {
     #[test]
     fn unchecked_encode_exposes_the_original_mutable_bool() {
         let mut value = false;
-        let original = core::ptr::from_mut(&mut value).cast::<Bool>();
+        let original = core::ptr::from_mut(&mut value).cast::<u8>();
         let encoded = unsafe { co3::encode_unchecked(&mut value) };
-        assert_eq!(encoded.as_ptr(), original);
-        unsafe { *encoded.as_ptr() = Bool::TRUE };
+        assert_eq!(encoded.as_ptr().cast::<u8>(), original);
+        unsafe { *encoded.as_ptr() = co3::primitive::abi::bool::TRUE };
         assert!(value);
 
         let encoded = unsafe { co3::encode_unchecked(TransparentMut(&mut value)) };
-        assert_eq!(encoded.0.as_ptr(), original);
+        assert_eq!(encoded.0.as_ptr().cast::<u8>(), original);
     }
 
     #[cfg(all(feature = "alloc", feature = "derive"))]
@@ -2657,10 +2750,10 @@ mod tests {
     fn unchecked_encode_reuses_a_boxed_mutable_bool_reference() {
         let mut value = false;
         let boxed = Box::new(&mut value);
-        let original = core::ptr::from_ref(&*boxed).cast_mut().cast();
+        let original = core::ptr::from_ref(&*boxed).cast_mut().cast::<u8>();
         let encoded = unsafe { co3::encode_unchecked(boxed) };
-        assert_eq!(encoded.as_ptr(), original);
-        unsafe { *(*encoded.as_ptr()).as_ptr() = Bool::TRUE };
+        assert_eq!(encoded.as_ptr().cast::<u8>(), original);
+        unsafe { *(*encoded.as_ptr()).as_ptr() = co3::primitive::abi::bool::TRUE };
         drop(unsafe { encoded.into_box().unwrap() });
         assert!(value);
     }
@@ -2670,11 +2763,11 @@ mod tests {
     #[test]
     fn unchecked_encode_reuses_a_boxed_slice_of_mutable_bool_references() {
         let mut value = false;
-        let boxed = vec![&mut value].into_boxed_slice();
-        let original = boxed.as_ptr().cast_mut().cast();
+        let boxed = alloc::vec![&mut value].into_boxed_slice();
+        let original = boxed.as_ptr().cast_mut().cast::<u8>();
         let encoded = unsafe { co3::encode_unchecked(boxed) };
-        assert_eq!(encoded.as_ptr(), original);
-        unsafe { *(*encoded.as_ptr()).as_ptr() = Bool::TRUE };
+        assert_eq!(encoded.as_ptr().cast::<u8>(), original);
+        unsafe { *(*encoded.as_ptr()).as_ptr() = co3::primitive::abi::bool::TRUE };
         drop(unsafe { encoded.into_box().unwrap() });
         assert!(value);
     }
@@ -2683,13 +2776,13 @@ mod tests {
     #[test]
     fn unchecked_encode_propagates_through_wrappers() {
         let mut value = false;
-        let original = core::ptr::from_mut(&mut value).cast::<Bool>();
+        let original = core::ptr::from_mut(&mut value).cast::<u8>();
 
         let optional = unsafe { co3::encode_unchecked(Some(&mut value)) };
-        assert_eq!(optional.0.as_ptr(), original);
+        assert_eq!(optional.0.as_ptr().cast::<u8>(), original);
 
         let result = unsafe { co3::encode_unchecked(Ok::<&mut bool, ()>(&mut value)) };
-        assert_eq!(result.0.as_ptr(), original);
+        assert_eq!(result.0.as_ptr().cast::<u8>(), original);
 
         let record = unsafe {
             co3::encode_unchecked(RecordMut {
@@ -2697,15 +2790,15 @@ mod tests {
                 tag: 7,
             })
         };
-        assert_eq!(record.value.as_ptr(), original);
-        unsafe { *record.value.as_ptr() = Bool::TRUE };
+        assert_eq!(record.value.as_ptr().cast::<u8>(), original);
+        unsafe { *record.value.as_ptr() = co3::primitive::abi::bool::TRUE };
         assert!(value);
 
         let tuple = unsafe { co3::encode_unchecked((&mut value, 7_u8)) };
-        assert_eq!(tuple.0.as_ptr(), original);
+        assert_eq!(tuple.0.as_ptr().cast::<u8>(), original);
 
         let array = unsafe { co3::encode_unchecked([&mut value]) };
-        assert_eq!(array[0].as_ptr(), original);
+        assert_eq!(array[0].as_ptr().cast::<u8>(), original);
     }
 
     #[cfg(all(feature = "alloc", feature = "derive"))]
@@ -2773,7 +2866,7 @@ mod tests {
         drop(unsafe { encoded.into_box().unwrap() });
         store.sync().unwrap();
 
-        let values = vec![RawRecord { value: 7, tag: 9 }];
+        let values = alloc::vec![RawRecord { value: 7, tag: 9 }];
         let ptr = values.as_ptr().cast_mut().cast();
         let mut store = Default::default();
         let encoded = co3::soft_encode(values, &mut store);
@@ -2806,7 +2899,7 @@ mod tests {
         let mut value = false;
         let mut store = Default::default();
         let encoded = co3::soft_encode(ManuallyDrop::new(&mut value), &mut store);
-        unsafe { *encoded.as_ptr() = Bool::TRUE };
+        unsafe { *encoded.as_ptr() = co3::primitive::abi::bool::TRUE };
         store.sync().unwrap();
         assert!(value);
     }
@@ -2818,7 +2911,7 @@ mod tests {
         let mut value = false;
         let mut store = Default::default();
         let encoded = co3::soft_encode(ManuallyDrop::new(Box::new(&mut value)), &mut store);
-        unsafe { *(*encoded.as_ptr()).as_ptr() = Bool::TRUE };
+        unsafe { *(*encoded.as_ptr()).as_ptr() = co3::primitive::abi::bool::TRUE };
         drop(unsafe {
             core::mem::ManuallyDrop::into_inner(encoded)
                 .into_box()
@@ -2835,7 +2928,7 @@ mod tests {
         let mut values = [false, false];
         let mut store = Default::default();
         let encoded = co3::soft_encode(values.iter_mut().collect::<Vec<_>>(), &mut store);
-        unsafe { *(*encoded.as_ptr()).as_ptr() = Bool::TRUE };
+        unsafe { *(*encoded.as_ptr()).as_ptr() = co3::primitive::abi::bool::TRUE };
         drop(unsafe { encoded.into_vec().unwrap() });
         store.sync().unwrap();
         assert_eq!(values, [true, false]);
@@ -2847,7 +2940,7 @@ mod tests {
         let mut value = false;
         let mut store = Default::default();
         let encoded = co3::soft_encode(Some(&mut value), &mut store);
-        unsafe { *encoded.0.as_ptr() = Bool::TRUE };
+        unsafe { *encoded.0.as_ptr() = co3::primitive::abi::bool::TRUE };
         store.sync().unwrap();
         assert!(value);
 
@@ -2863,8 +2956,8 @@ mod tests {
     fn vec_of_optional_mut_bool_syncs_present_elements() {
         let mut value = false;
         let mut store = Default::default();
-        let encoded = co3::soft_encode(vec![Some(&mut value), None], &mut store);
-        unsafe { *(*encoded.as_ptr()).0.as_ptr() = Bool::TRUE };
+        let encoded = co3::soft_encode(alloc::vec![Some(&mut value), None], &mut store);
+        unsafe { *(*encoded.as_ptr()).0.as_ptr() = co3::primitive::abi::bool::TRUE };
         drop(unsafe { encoded.into_vec().unwrap() });
         store.sync().unwrap();
         assert!(value);
@@ -2900,7 +2993,7 @@ mod tests {
         let mut value = false;
         let mut store = Default::default();
         let encoded = co3::soft_encode(TransparentMut(&mut value), &mut store);
-        unsafe { *encoded.0.as_ptr() = Bool::TRUE };
+        unsafe { *encoded.0.as_ptr() = co3::primitive::abi::bool::TRUE };
         store.sync().unwrap();
         assert!(value);
     }
@@ -2911,7 +3004,7 @@ mod tests {
         let mut value = false;
         let mut store = Default::default();
         let encoded = co3::soft_encode(Some(TransparentMut(&mut value)), &mut store);
-        unsafe { *encoded.0.0.as_ptr() = Bool::TRUE };
+        unsafe { *encoded.0.0.as_ptr() = co3::primitive::abi::bool::TRUE };
         store.sync().unwrap();
         assert!(value);
 
@@ -2933,7 +3026,7 @@ mod tests {
             },
             &mut store,
         );
-        unsafe { *encoded.value.as_ptr() = Bool::TRUE };
+        unsafe { *encoded.value.as_ptr() = co3::primitive::abi::bool::TRUE };
         assert_eq!(encoded.tag, 7);
         store.sync().unwrap();
         assert!(value);
@@ -2946,13 +3039,13 @@ mod tests {
         let mut value = false;
         let mut store = Default::default();
         let encoded = co3::soft_encode(
-            vec![RecordMut {
+            alloc::vec![RecordMut {
                 value: &mut value,
                 tag: 7,
             }],
             &mut store,
         );
-        unsafe { *(*encoded.as_ptr()).value.as_ptr() = Bool::TRUE };
+        unsafe { *(*encoded.as_ptr()).value.as_ptr() = co3::primitive::abi::bool::TRUE };
         drop(unsafe { encoded.into_vec().unwrap() });
         store.sync().unwrap();
         assert!(value);

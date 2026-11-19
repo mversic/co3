@@ -5,8 +5,9 @@ use rust_spec::RustSpec;
 
 use crate::{
     CFnArg, CFnReturn, CType, ReprC,
+    convert::AbiCompatibleValidate,
     convert::{Decode, DecodeMove, Encode, EncodeMove, EncodeMoveUnchecked},
-    transmute::{AbiCompatible, AbiCompatibleValidate},
+    marker::AbiCompatible,
 };
 pub(crate) use crate::{
     decoded::{
@@ -106,8 +107,8 @@ pub struct SoftRefMut<T: CType + ?Sized> {
     data: *mut T,
 }
 
-unsafe impl<T: CType> crate::Zeroable for SoftRef<T> {}
-unsafe impl<T: CType> crate::Zeroable for SoftRefMut<T> {}
+unsafe impl<T: CType> crate::marker::Zeroable for SoftRef<T> {}
+unsafe impl<T: CType> crate::marker::Zeroable for SoftRefMut<T> {}
 
 impl<T: CType> SoftRef<T> {
     /// Construct a carrier with a null data pointer.
@@ -233,8 +234,8 @@ pub struct RefMut<'a, T: CType + ?Sized> {
     lifetime: core::marker::PhantomData<&'a ()>,
 }
 
-unsafe impl<'a, T: CType> crate::Zeroable for Ref<'a, T> {}
-unsafe impl<'a, T: CType> crate::Zeroable for RefMut<'a, T> {}
+unsafe impl<'a, T: CType> crate::marker::Zeroable for Ref<'a, T> {}
+unsafe impl<'a, T: CType> crate::marker::Zeroable for RefMut<'a, T> {}
 
 impl<'a, T: CType> Ref<'a, T> {
     /// Construct a carrier with a null data pointer.
@@ -413,7 +414,7 @@ macro_rules! impl_reference_carrier {
             }
         }
 
-        crate::__impl_borrowed_identity!([$($params)*] $ty<$($args)*>);
+        crate::borrow::__impl_borrowed_identity!([$($params)*] $ty<$($args)*>);
 
     };
 }
@@ -494,7 +495,7 @@ mod tests {
         );
         static_assertions::assert_type_eq_all!(
             <&'static bool as ReprC>::CType,
-            Ref<'static, crate::primitives::Bool>
+            Ref<'static, crate::primitive::abi::bool>
         );
         static_assertions::assert_type_eq_all!(
             <SoftRef<Payload> as ReprC>::CType,
@@ -510,7 +511,7 @@ mod tests {
         );
         static_assertions::assert_type_eq_all!(
             <&'static mut bool as ReprC>::CType,
-            SoftRefMut<crate::primitives::Bool>
+            SoftRefMut<crate::primitive::abi::bool>
         );
         let mut payload = Payload;
         let pointer = core::ptr::from_ref(&payload);

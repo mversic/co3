@@ -88,8 +88,9 @@ fn owned_encoding_preserves_capacity_and_validates_elements() {
     assert_eq!(value.capacity(), cap);
     assert_eq!(&*value, &[1, 2, 3]);
     assert_eq!(co3::convert::Store::sync(encode_store), Some(()));
-    let invalid =
-        abi::Vec::<<bool as co3::ReprC>::CType, true>::from_vec(vec![co3::primitives::Bool(2)]);
+    let invalid = co3::marker::Stable(abi::Vec::<<bool as co3::ReprC>::CType>::from_vec(vec![
+        co3::primitive::abi::bool(2),
+    ]));
     assert!(
         unsafe { co3::soft_decode::<co3::vec::Vec<bool>>(invalid, &mut Default::default()) }
             .is_none()
@@ -140,7 +141,7 @@ fn mutable_slice_writeback_uses_an_explicit_slice_header() {
     let carrier = co3::soft_encode(values.as_mut_slice(), &mut store);
     assert_eq!(carrier.metadata(), 2);
     unsafe {
-        carrier.as_ptr().write(co3::primitives::Bool(1));
+        carrier.as_ptr().write(co3::primitive::abi::bool(1));
     }
     assert_eq!(co3::convert::Store::sync(store), Some(()));
     assert_eq!(values, [true, true]);
@@ -168,7 +169,7 @@ fn derived_carrier_spec_preserves_header_and_pointee_properties() {
         Opacity = rust_spec::NonOpaque,
         __IndirectTrap = Robust,
     >);
-    // bool lowers to the robust Bool carrier, including inside UnsafeCell.
+    // bool lowers to the robust bool carrier, including inside UnsafeCell.
     assert_impl_all!(abi::Vec<<UnsafeCell<bool> as co3::ReprC>::CType>: RustSpec<
         Layout = Stable,
         Trap = Robust,

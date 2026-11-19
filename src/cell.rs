@@ -5,7 +5,9 @@ use rust_spec::RustSpec;
 
 use crate::{
     CFnArg, CFnReturn, CType, ReprC,
-    convert::{Decode, DecodeMove, Encode, EncodeMove, EncodeMoveUnchecked},
+    convert::{
+        Decode, DecodeMove, EmptyStore, Encode, EncodeMove, EncodeMoveUnchecked, EncodeUnchecked,
+    },
 };
 
 impl<R: ReprC + ?Sized> ReprC for UnsafeCell<R> {
@@ -48,12 +50,10 @@ unsafe impl<T: CFnReturn> CFnReturn for Cell<T> where
 {
 }
 
-use crate::convert::{EmptyStore, EncodeUnchecked};
-
 #[cfg(test)]
 mod tests {
     #[cfg(feature = "alloc")]
-    use alloc::{boxed::Box, vec, vec::Vec};
+    use alloc::{boxed::Box, vec::Vec};
     use core::{mem::ManuallyDrop, num::NonZero};
 
     use static_assertions::{assert_impl_all, assert_not_impl_any};
@@ -61,21 +61,26 @@ mod tests {
     use super::*;
     #[cfg(feature = "alloc")]
     use crate::{boxed::abi::Box as AbiBox, wide::abi::WideBox as AbiWideBox};
-    use crate::{niche::Niche, option::abi::Option as AbiOption, transmute::AbiCompatible};
+    use crate::{marker::AbiCompatible, niche::Niche, option::abi::Option as AbiOption};
 
     #[test]
     fn cell_preserves_its_constructor_in_the_carrier() {
-        use crate::primitives::Bool;
-
-        assert_impl_all!(Cell<bool>: ReprC<CType = core::cell::Cell<crate::primitives::Bool>>);
-        assert_impl_all!(UnsafeCell<bool>: ReprC<CType = core::cell::UnsafeCell<crate::primitives::Bool>>);
+        assert_impl_all!(Cell<bool>: ReprC<CType = core::cell::Cell<crate::primitive::abi::bool>>);
+        assert_impl_all!(UnsafeCell<bool>: ReprC<CType = core::cell::UnsafeCell<crate::primitive::abi::bool>>);
 
         let encoded = crate::encode(Cell::new(true));
-        assert_eq!(encoded.into_inner(), Bool::TRUE);
-        let decoded =
-            unsafe { crate::decode::<Cell<bool>>(core::cell::Cell::new(Bool::TRUE)) }.unwrap();
+        assert_eq!(encoded.into_inner(), co3::primitive::abi::bool::TRUE);
+        let decoded = unsafe {
+            crate::decode::<Cell<bool>>(core::cell::Cell::new(co3::primitive::abi::bool::TRUE))
+        }
+        .unwrap();
         assert!(decoded.into_inner());
-        assert!(unsafe { crate::decode::<Cell<bool>>(core::cell::Cell::new(Bool(2))) }.is_none());
+        assert!(
+            unsafe {
+                crate::decode::<Cell<bool>>(core::cell::Cell::new(co3::primitive::abi::bool(2)))
+            }
+            .is_none()
+        );
     }
 
     #[test]
@@ -165,7 +170,7 @@ mod tests {
             crate::reference::SoftRefMut::from_raw(
                 value
                     .get()
-                    .cast::<core::cell::UnsafeCell<crate::num::NonZero<u8>>>(),
+                    .cast::<core::cell::UnsafeCell<crate::marker::NonZero<u8>>>(),
             )
         };
         let decoded = unsafe { crate::decode::<&mut UnsafeCell<NonZero<u8>>>(source) }.unwrap();
@@ -176,7 +181,7 @@ mod tests {
             crate::reference::SoftRefMut::from_raw(
                 invalid
                     .get()
-                    .cast::<core::cell::UnsafeCell<crate::num::NonZero<u8>>>(),
+                    .cast::<core::cell::UnsafeCell<crate::marker::NonZero<u8>>>(),
             )
         };
         assert!(unsafe { crate::decode::<&mut UnsafeCell<NonZero<u8>>>(source) }.is_none());
@@ -216,12 +221,12 @@ mod tests {
         };
         assert_eq!(unsafe { *cells[0].get() }, 9);
 
-        let boxed = crate::encode(vec![UnsafeCell::new(5_u8)].into_boxed_slice());
+        let boxed = crate::encode(alloc::vec![UnsafeCell::new(5_u8)].into_boxed_slice());
         unsafe { boxed.as_ptr().write(core::cell::UnsafeCell::new(7)) };
         let boxed = unsafe { crate::decode::<Box<[UnsafeCell<u8>]>>(boxed) }.unwrap();
         assert_eq!(unsafe { *boxed[0].get() }, 7);
 
-        let vector = crate::encode(vec![UnsafeCell::new(6_u8)]);
+        let vector = crate::encode(alloc::vec![UnsafeCell::new(6_u8)]);
         let vector = unsafe { crate::decode::<Vec<UnsafeCell<u8>>>(vector) }.unwrap();
         assert_eq!(unsafe { *vector[0].get() }, 6);
     }
@@ -257,7 +262,7 @@ mod tests {
         unsafe {
             encoded
                 .as_ptr()
-                .write(core::cell::Cell::new(crate::num::NonZero(4)))
+                .write(core::cell::Cell::new(crate::marker::NonZero(4)))
         };
         assert_eq!(store.sync(), Some(()));
         assert_eq!(value.get().get(), 4);
@@ -285,7 +290,7 @@ mod tests {
         unsafe {
             checked
                 .as_ptr()
-                .write(core::cell::UnsafeCell::new(crate::num::NonZero(0)))
+                .write(core::cell::UnsafeCell::new(crate::marker::NonZero(0)))
         };
         assert_eq!(store.sync(), None);
         assert_eq!(value.get_mut().get(), 3);
@@ -294,7 +299,7 @@ mod tests {
     #[test]
     fn non_robust_unsafe_cell() {
         assert_impl_all!(UnsafeCell<NonZero<u8>>:
-            ReprC<CType = core::cell::UnsafeCell<crate::num::NonZero<u8>>>,
+            ReprC<CType = core::cell::UnsafeCell<crate::marker::NonZero<u8>>>,
             Decode<'static>,
             Encode,
         );
@@ -317,14 +322,14 @@ mod tests {
         {
             // SAFETY: this test constructs the carrier for an interior-mutable cell value.
             let valid = AbiBox::from_box(Box::new(core::cell::UnsafeCell::new(
-                crate::num::NonZero(7u8),
+                crate::marker::NonZero(7u8),
             )));
             let decoded = unsafe { crate::decode::<Box<UnsafeCell<NonZero<u8>>>>(valid) }.unwrap();
             assert_eq!((*decoded).into_inner().get(), 7);
 
             // SAFETY: this test constructs the carrier for an interior-mutable cell value.
             let invalid = AbiBox::from_box(Box::new(core::cell::UnsafeCell::new(
-                crate::num::NonZero(0u8),
+                crate::marker::NonZero(0u8),
             )));
             // Miri verifies that rejection also releases this owned allocation.
             assert!(unsafe { crate::decode::<Box<UnsafeCell<NonZero<u8>>>>(invalid) }.is_none());
@@ -356,18 +361,19 @@ mod tests {
         );
         #[cfg(feature = "alloc")]
         {
-            let invalid = crate::vec::abi::Vec::from_vec(vec![core::cell::UnsafeCell::new(
-                crate::num::NonZero(0_u8),
+            let invalid = crate::vec::abi::Vec::from_vec(alloc::vec![core::cell::UnsafeCell::new(
+                crate::marker::NonZero(0_u8),
             )]);
             assert!(unsafe { crate::decode::<Vec<UnsafeCell<NonZero<u8>>>>(invalid) }.is_none());
 
             let invalid = AbiWideBox::from_box(
-                vec![core::cell::UnsafeCell::new(crate::num::NonZero(0_u8))].into_boxed_slice(),
+                alloc::vec![core::cell::UnsafeCell::new(crate::marker::NonZero(0_u8))]
+                    .into_boxed_slice(),
             );
             assert!(unsafe { crate::decode::<Box<[UnsafeCell<NonZero<u8>>]>>(invalid) }.is_none());
         }
         assert_impl_all!([UnsafeCell<NonZero<u8>>; 2]:
-            ReprC<CType = [core::cell::UnsafeCell<crate::num::NonZero<u8>>; 2]>,
+            ReprC<CType = [core::cell::UnsafeCell<crate::marker::NonZero<u8>>; 2]>,
             Decode<'static>,
             Encode,
         );

@@ -207,12 +207,12 @@ fn safe_carrier_constructors_accept_lowered_storage() {
     assert!(co3::encode(None::<String>).payload().as_ptr().is_null());
 
     let bytes: Box<[u8]> = Box::from("hello".as_bytes());
-    let utf8 = co3::utf8::Utf8String(co3::vec::abi::Vec::from_vec(bytes.into_vec()));
+    let utf8 = co3::string::abi::String(co3::vec::abi::Vec::from_vec(bytes.into_vec()));
     assert_eq!(unsafe { co3::decode::<String>(utf8) }.unwrap(), "hello");
 
     let bytes: Box<[u8]> = Box::from("world".as_bytes());
     let len = bytes.len();
-    let utf8 = co3::utf8::Utf8String(co3::vec::abi::Vec::from_vec(bytes.into_vec()));
+    let utf8 = co3::string::abi::String(co3::vec::abi::Vec::from_vec(bytes.into_vec()));
     assert_eq!(utf8.len(), len);
     assert_eq!(unsafe { co3::decode::<String>(utf8) }.unwrap(), "world");
 
@@ -237,14 +237,14 @@ fn round_trip_native_box(value: Box<bool>) -> Box<bool> {
 }
 
 fn pass_abi_box(
-    value: co3::boxed::abi::Box<co3::primitives::Bool>,
-) -> co3::boxed::abi::Box<co3::primitives::Bool> {
+    value: co3::boxed::abi::Box<co3::primitive::abi::bool>,
+) -> co3::boxed::abi::Box<co3::primitive::abi::bool> {
     value
 }
 
 co3::raw! {
     fn round_trip_native_box(value: move Box<bool>) -> move Box<bool>;
-    fn pass_abi_box(value: move co3::boxed::abi::Box<co3::primitives::Bool>) -> move co3::boxed::abi::Box<co3::primitives::Bool>;
+    fn pass_abi_box(value: move co3::boxed::abi::Box<co3::primitive::abi::bool>) -> move co3::boxed::abi::Box<co3::primitive::abi::bool>;
 }
 
 #[test]

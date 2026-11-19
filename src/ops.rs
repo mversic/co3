@@ -2,61 +2,78 @@
 
 use crate::{
     CFnArg, CFnReturn, CType,
-    convert::{Decode, EmptyStore, Encode, Store},
+    convert::{EmptyStore, Store},
 };
 
-#[doc(hidden)]
-pub struct PlainCall;
-#[doc(hidden)]
-pub struct BorrowedCall;
+use conversion::{DecodeFnReturn, EncodeFnArg};
 
-#[doc(hidden)]
-pub trait CallEncode<C, M>: Sized {
-    type Owner: Default;
-    type Store: Store + Default;
-    fn encode(self, store: &mut Self::Store, owner: &mut Self::Owner) -> C;
-}
-impl<T: Encode> CallEncode<T::CType, PlainCall> for T {
-    type Owner = ();
-    type Store = T::Store;
-    fn encode(self, store: &mut Self::Store, _: &mut Self::Owner) -> T::CType {
-        crate::soft_encode(self, store)
+mod conversion {
+    use disjoint_impls::disjoint_impls;
+
+    use crate::{
+        CType, ReprC,
+        borrow::{BorrowedDecode, BorrowedEncode},
+        convert::{Decode, EmptyStore, Encode, Store},
+        marker::Borrowed,
+    };
+
+    disjoint_impls! {
+        pub trait EncodeFnArg<T>: Sized {
+            type Owner: Default;
+            type Store: Store + Default;
+
+            fn encode(value: T, store: &mut Self::Store, owner: &mut Self::Owner) -> Self;
+        }
+
+        impl<C, T> EncodeFnArg<T> for C
+        where
+            T: ReprC<CType = C> + Encode,
+        {
+            type Owner = ();
+            type Store = T::Store;
+
+            fn encode(value: T, store: &mut Self::Store, _: &mut Self::Owner) -> Self {
+                crate::soft_encode(value, store)
+            }
+        }
+
+        impl<C: CType, T> EncodeFnArg<T> for Borrowed<C>
+        where
+            T: ReprC<CType = C> + BorrowedEncode,
+        {
+            type Owner = T::Owner;
+            type Store = T::Store;
+
+            fn encode(value: T, store: &mut Self::Store, owner: &mut Self::Owner) -> Self {
+                Borrowed(BorrowedEncode::soft_encode(value, store, owner))
+            }
+        }
     }
-}
 
-impl<T: crate::borrow::BorrowedEncode> CallEncode<crate::borrow::Borrowed<T::CType>, BorrowedCall>
-    for T
-{
-    type Owner = T::Owner;
-    type Store = T::Store;
-    fn encode(
-        self,
-        store: &mut Self::Store,
-        owner: &mut Self::Owner,
-    ) -> crate::borrow::Borrowed<T::CType> {
-        crate::borrow::Borrowed(crate::borrow::BorrowedEncode::soft_encode(
-            self, store, owner,
-        ))
-    }
-}
+    disjoint_impls::disjoint_impls! {
+        pub trait DecodeFnReturn<'d, T: 'd>: Sized {
+            /// # Safety
+            /// The carrier must satisfy the decoding contract for `T`.
+            unsafe fn decode(self) -> Option<T>;
+        }
 
-#[doc(hidden)]
-pub trait CallDecode<'d, C, M>: Sized {
-    /// # Safety
-    /// The input must satisfy the source type's decoding contract.
-    unsafe fn decode(source: C) -> Option<Self>;
-}
-impl<'d, T: Decode<'d, Store: EmptyStore> + 'd> CallDecode<'d, T::CType, PlainCall> for T {
-    unsafe fn decode(source: T::CType) -> Option<Self> {
-        unsafe { crate::decode(source) }
-    }
-}
+        impl<'d, C, T> DecodeFnReturn<'d, T> for C
+        where
+            T: ReprC<CType = C> + Decode<'d, Store: EmptyStore> + 'd,
+        {
+            unsafe fn decode(self) -> Option<T> {
+                unsafe { crate::decode(self) }
+            }
+        }
 
-impl<'d, T: crate::borrow::BorrowedDecode<'d, Store: EmptyStore> + 'd>
-    CallDecode<'d, crate::borrow::Borrowed<T::CType>, BorrowedCall> for T
-{
-    unsafe fn decode(source: crate::borrow::Borrowed<T::CType>) -> Option<Self> {
-        unsafe { crate::borrow::decode(source) }
+        impl<'d, C: CType, T> DecodeFnReturn<'d, T> for Borrowed<C>
+        where
+            T: ReprC<CType = C> + BorrowedDecode<'d, Store: EmptyStore + 'd> + 'd,
+        {
+            unsafe fn decode(self) -> Option<T> {
+                unsafe { crate::borrow::decode(self) }
+            }
+        }
     }
 }
 
@@ -73,7 +90,7 @@ macro_rules! define_fn_trait {
 
             /// Calls the function with Rust arguments.
             ///
-            /// Encodes arguments, calls the function, synchronizes conversion stores, and
+            /// Encodes arguments with empty conversion stores, calls the function, and
             /// decodes the result. `Borrowed` selects borrowed conversion; other carriers use ordinary conversion;
             /// borrowed argument owners remain alive until result decoding finishes.
             ///
@@ -88,25 +105,23 @@ macro_rules! define_fn_trait {
             /// requirement is satisfied by the generated conversions and lifetime checks,
             /// provided the wrapped Rust function's own safety requirements are upheld.
             #[allow(clippy::too_many_arguments)]
-            unsafe fn call<'d, $( $arg_ty, $carg, )* B, ReturnMode>(self $(, $arg: $arg_ty)*) -> Option<B>
+            unsafe fn call<'d, $( $arg_ty, )* B: 'd>(self $(, $arg: $arg_ty)*) -> Option<B>
             where $(
-                $arg_ty: CallEncode<Self::$carg, $carg>, )*
-                B: CallDecode<'d, Self::Output, ReturnMode> + 'd,
+                Self::$carg: EncodeFnArg<$arg_ty, Store: EmptyStore>, )*
+                Self::Output: DecodeFnReturn<'d, B>,
             {
-                $(#[allow(non_snake_case)] let mut $carg = <$arg_ty as CallEncode<Self::$carg, $carg>>::Owner::default();)*
-                $(#[allow(non_snake_case)] let mut $arg_ty = <$arg_ty as CallEncode<Self::$carg, $carg>>::Store::default();)*
-                let result = unsafe { self.call_raw($(<$arg_ty as CallEncode<Self::$carg, $carg>>::encode($arg, &mut $arg_ty, &mut $carg)),*) };
-                #[allow(unused_mut)]
-                let mut sync_ok = true;
-                $(sync_ok &= Store::sync($arg_ty).is_some();)*
-                unsafe { B::decode(result) }.filter(|_| sync_ok)
+                unsafe { self.soft_call($($arg),*) }
             }
 
+            /// Calls with argument conversion stores and synchronizes them afterwards.
+            ///
             /// # Safety
-            /// The arguments and return value must obey this function's ABI contract.
-            #[doc(hidden)]
+            /// The same safety requirements as for `call` apply.
             #[allow(clippy::too_many_arguments)]
-            unsafe fn call_raw(self, $($arg: Self::$carg),*) -> Self::Output;
+            unsafe fn soft_call<'d, $( $arg_ty, )* B: 'd>(self $(, $arg: $arg_ty)*) -> Option<B>
+            where $(
+                Self::$carg: EncodeFnArg<$arg_ty>, )*
+                Self::Output: DecodeFnReturn<'d, B>;
         }
 
         impl_fn_pointer_for_all_abis!($name; $( $arg_ty : $carg : $arg : $c_ty ),*);
@@ -122,10 +137,19 @@ macro_rules! impl_fn_pointer {
             type Output = U;
 
             #[allow(clippy::too_many_arguments)]
-            unsafe fn call_raw(self, $($arg: Self::$carg),*) -> Self::Output {
-                unsafe { self($($arg),*) }
+            unsafe fn soft_call<'d, $( $arg_ty, )* B: 'd>(self $(, $arg: $arg_ty)*) -> Option<B>
+            where $(
+                $c_ty: EncodeFnArg<$arg_ty>, )*
+                U: DecodeFnReturn<'d, B>,
+            {
+                $(#[allow(non_snake_case)] let mut $carg = Default::default();)*
+                $(#[allow(non_snake_case)] let mut $arg_ty = Default::default();)*
+                let result = unsafe { self($($c_ty::encode($arg, &mut $arg_ty, &mut $carg)),*) };
+                #[allow(unused_mut)]
+                let mut sync_ok = true;
+                $(sync_ok &= Store::sync($arg_ty).is_some();)*
+                unsafe { result.decode() }.filter(|_| sync_ok)
             }
-
         }
     };
 }
@@ -182,3 +206,31 @@ define_fn_trait!(CFn9, 9; A1:Arg1:arg1:T1, A2:Arg2:arg2:T2, A3:Arg3:arg3:T3, A4:
 define_fn_trait!(CFn10, 10; A1:Arg1:arg1:T1, A2:Arg2:arg2:T2, A3:Arg3:arg3:T3, A4:Arg4:arg4:T4, A5:Arg5:arg5:T5, A6:Arg6:arg6:T6, A7:Arg7:arg7:T7, A8:Arg8:arg8:T8, A9:Arg9:arg9:T9, A10:Arg10:arg10:T10);
 define_fn_trait!(CFn11, 11; A1:Arg1:arg1:T1, A2:Arg2:arg2:T2, A3:Arg3:arg3:T3, A4:Arg4:arg4:T4, A5:Arg5:arg5:T5, A6:Arg6:arg6:T6, A7:Arg7:arg7:T7, A8:Arg8:arg8:T8, A9:Arg9:arg9:T9, A10:Arg10:arg10:T10, A11:Arg11:arg11:T11);
 define_fn_trait!(CFn12, 12; A1:Arg1:arg1:T1, A2:Arg2:arg2:T2, A3:Arg3:arg3:T3, A4:Arg4:arg4:T4, A5:Arg5:arg5:T5, A6:Arg6:arg6:T6, A7:Arg7:arg7:T7, A8:Arg8:arg8:T8, A9:Arg9:arg9:T9, A10:Arg10:arg10:T10, A11:Arg11:arg11:T11, A12:Arg12:arg12:T12);
+
+#[cfg(all(test, feature = "alloc", feature = "derive"))]
+mod tests {
+    use alloc::boxed::Box;
+
+    use crate::{ops::CFn1, raw};
+
+    type Number = u32;
+
+    #[allow(clippy::boxed_local, clippy::redundant_allocation)]
+    fn update_box(value: Box<&mut bool>) -> Number {
+        **value = true;
+        1
+    }
+
+    raw! {
+        fn update_box(#[soft] value: Box<&mut bool>) -> Number;
+    }
+
+    #[test]
+    fn soft_call_retains_borrowed_owner_through_writeback() {
+        let mut value = false;
+        let callback: unsafe extern "C" fn(_) -> _ = update_box_raw;
+        let result: Number = unsafe { callback.soft_call(Box::new(&mut value)) }.unwrap();
+        assert_eq!(result, 1);
+        assert!(value);
+    }
+}

@@ -10,7 +10,7 @@ use disjoint_impls::disjoint_impls;
 
 use crate::{
     CType, ReprC,
-    num::NonZero,
+    marker::NonZero,
     option::abi::OptionSome as AbiOptionSome,
     result::abi::{ResultErr as AbiResultErr, ResultOk as AbiResultOk},
     tuple::abi::Tuple2 as AbiTuple2,

@@ -256,7 +256,7 @@ fn gen_pack_input_stmts(inputs: &[Argument<'_>], failure_mode: FailureMode) -> T
                 let source_ty = input.conversion_ty();
                 let packed = quote!(<#source_ty as co3::pack::Pack<<#part as co3::ReprC>::CType>>::pack(#name));
                 if input.is_borrowed() && !input.identity {
-                    quote!((#packed).map(co3::borrow::Borrowed::< <#source_ty as co3::ReprC>::CType >))
+                    quote!((#packed).map(co3::marker::Borrowed::< <#source_ty as co3::ReprC>::CType >))
                 } else {
                     packed
                 }
@@ -277,7 +277,7 @@ fn gen_pack_input_stmts(inputs: &[Argument<'_>], failure_mode: FailureMode) -> T
                 };
                 let packed = quote!(unsafe { <#decode_ty as co3::pack::Pack2<#first, #second>>::pack(#data, #metadata) });
                 if input.is_borrowed() && !input.identity {
-                    quote!((#packed).map(co3::borrow::Borrowed))
+                    quote!((#packed).map(co3::marker::Borrowed))
                 } else {
                     packed
                 }
@@ -1024,7 +1024,7 @@ pub(crate) fn lower_abi_fn_signature_with_plain_inputs(
         .cloned();
     let mut sig = lower_extern_fn_signature_with_plain_inputs(sig, failure_mode, plain_inputs);
     if let Some(ty) = borrowed_output {
-        sig.output = parse_quote!(-> co3::borrow::Borrowed< <#ty as co3::ReprC>::CType >);
+        sig.output = parse_quote!(-> co3::marker::Borrowed< <#ty as co3::ReprC>::CType >);
     }
     sig
 }

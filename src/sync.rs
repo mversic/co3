@@ -7,8 +7,10 @@ use core::marker::PhantomData;
 use crate::{
     CType,
     convert::AssignFromOwned,
-    wide::abi::{SoftWideRef as AbiSoftWideRef, SoftWideRefMut as AbiSoftWideRefMut},
-    wide::{Wide, WideHeader},
+    wide::{
+        Wide, WideHeader,
+        abi::{SoftWideRef as AbiSoftWideRef, SoftWideRefMut as AbiSoftWideRefMut},
+    },
 };
 use crate::{
     ReprC,
@@ -738,12 +740,24 @@ mod tests {
     }
 
     #[cfg(feature = "alloc")]
+    use alloc::boxed::Box;
+    #[cfg(feature = "alloc")]
     use alloc::sync::Arc;
+    #[cfg(feature = "alloc")]
+    use alloc::vec::Vec;
+    use core::cell::RefCell;
     #[cfg(feature = "alloc")]
     use core::sync::atomic::{AtomicUsize, Ordering};
 
     #[cfg(feature = "alloc")]
     use super::*;
+    use super::{
+        ArrayStore, RefMutSizedDecodeStore, RefSizedDecodeStore, RefSizedEncodeStore, Store,
+    };
+    #[cfg(feature = "alloc")]
+    use super::{RefMutWideEncodeStore, RefWideEncodeStore};
+    #[cfg(feature = "alloc")]
+    use crate::wide::tests::{Custom, Metadata};
 
     #[cfg(feature = "alloc")]
     #[derive(Clone)]
@@ -909,19 +923,6 @@ mod tests {
         dst_panic,
         dst_failure
     );
-    #[cfg(feature = "alloc")]
-    use alloc::vec::Vec;
-    #[cfg(feature = "alloc")]
-    use alloc::{boxed::Box, vec};
-    use core::cell::RefCell;
-
-    use super::{
-        ArrayStore, RefMutSizedDecodeStore, RefSizedDecodeStore, RefSizedEncodeStore, Store,
-    };
-    #[cfg(feature = "alloc")]
-    use super::{RefMutWideEncodeStore, RefWideEncodeStore};
-    #[cfg(feature = "alloc")]
-    use crate::wide::tests::{Custom, Metadata};
 
     #[cfg(feature = "alloc")]
     #[test]
@@ -929,7 +930,7 @@ mod tests {
         type Pointee = Custom;
         let mut store = RefWideEncodeStore::<Pointee, ()>::default();
         let carrier = store.encode(|_| {
-            let bytes: Box<[u8]> = vec![2, 4].into_boxed_slice();
+            let bytes: Box<[u8]> = alloc::vec![2, 4].into_boxed_slice();
             let ptr = Box::into_raw(bytes) as *mut Pointee;
             unsafe { Box::from_raw(ptr) }
         });
@@ -952,7 +953,7 @@ mod tests {
         let mut store = RefMutWideEncodeStore::<Pointee, (), &mut u8>::default();
         let carrier = store.encode(
             |_| {
-                let bytes = vec![2_u8, 4].into_boxed_slice();
+                let bytes = alloc::vec![2_u8, 4].into_boxed_slice();
                 let ptr = Box::into_raw(bytes) as *mut Pointee;
                 (unsafe { Box::from_raw(ptr) }, &mut result)
             },
@@ -1026,8 +1027,8 @@ mod tests {
         unsafe {
             // Both carriers point into live conversion stores. Only the first
             // carrier contains an invalid Rust bool representation.
-            *encoded.0.as_ptr() = crate::primitives::Bool(2);
-            *encoded.1.as_ptr() = crate::primitives::Bool::TRUE;
+            *encoded.0.as_ptr() = crate::primitive::abi::bool(2);
+            *encoded.1.as_ptr() = crate::primitive::abi::bool::TRUE;
         }
 
         assert_eq!(store.sync(), None);

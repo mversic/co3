@@ -26,19 +26,19 @@ assert_impl_all!(ResultOk<CustomNiche>: RustSpec<Layout = Stable, Trap = NonRobu
 assert_impl_all!(ResultErr<CustomNiche>: RustSpec<Layout = Stable, Trap = NonRobust>);
 assert_type_eq_all!(
     <OptionSome<CustomNiche> as ReprC>::CType,
-    option::abi::OptionSome<<CustomNiche as ReprC>::CType, true>
+    co3::marker::Stable<option::abi::OptionSome<<CustomNiche as ReprC>::CType>>
 );
 assert_type_eq_all!(
     <ResultOk<CustomNiche> as ReprC>::CType,
-    result::abi::ResultOk<<CustomNiche as ReprC>::CType, (), true>
+    co3::marker::Stable<result::abi::ResultOk<<CustomNiche as ReprC>::CType, ()>>
 );
 assert_type_eq_all!(
     <ResultErr<CustomNiche> as ReprC>::CType,
-    result::abi::ResultErr<(), <CustomNiche as ReprC>::CType, true>
+    co3::marker::Stable<result::abi::ResultErr<(), <CustomNiche as ReprC>::CType>>
 );
 assert_type_ne_all!(
     co3::option::abi::OptionSome<<CustomNiche as co3::ReprC>::CType>,
-    option::abi::OptionSome<<CustomNiche as ReprC>::CType, true>
+    co3::marker::Stable<option::abi::OptionSome<<CustomNiche as ReprC>::CType>>
 );
 
 assert_type_eq_all!(
@@ -55,11 +55,11 @@ assert_type_eq_all!(
 );
 assert_type_ne_all!(
     result::abi::ResultOk<<CustomNiche as ReprC>::CType, ()>,
-    result::abi::ResultOk<<CustomNiche as ReprC>::CType, (), true>
+    co3::marker::Stable<result::abi::ResultOk<<CustomNiche as ReprC>::CType, ()>>
 );
 assert_type_ne_all!(
     result::abi::ResultErr<(), <CustomNiche as ReprC>::CType>,
-    result::abi::ResultErr<(), <CustomNiche as ReprC>::CType, true>
+    co3::marker::Stable<result::abi::ResultErr<(), <CustomNiche as ReprC>::CType>>
 );
 
 fn option_payload(value: OptionSome<CustomNiche>) -> OptionSome<CustomNiche> {
@@ -102,27 +102,28 @@ fn public_payload_wrappers_preserve_custom_niches_without_a_tag() {
 
 #[test]
 fn public_payload_wrappers_preserve_nonzero_validity() {
-    use co3::num::NonZero;
+    use co3::marker::NonZero;
     assert_eq!(
         unsafe {
-            co3::decode::<OptionSome<NonZeroU8>>(option::abi::OptionSome::<_, true>(NonZero(0)))
+            co3::decode::<OptionSome<NonZeroU8>>(co3::marker::Stable(option::abi::OptionSome::<_>(
+                NonZero(0),
+            )))
         },
         None
     );
     assert_eq!(
         unsafe {
-            co3::decode::<ResultOk<NonZeroU8>>(result::abi::ResultOk::<_, (), true>(
+            co3::decode::<ResultOk<NonZeroU8>>(co3::marker::Stable(result::abi::ResultOk::<_, ()>(
                 NonZero(0),
                 core::marker::PhantomData,
-            ))
+            )))
         },
         None
     );
     assert_eq!(
         unsafe {
-            co3::decode::<ResultErr<NonZeroU8>>(result::abi::ResultErr::<(), _, true>(
-                NonZero(0),
-                core::marker::PhantomData,
+            co3::decode::<ResultErr<NonZeroU8>>(co3::marker::Stable(
+                result::abi::ResultErr::<(), _>(NonZero(0), core::marker::PhantomData),
             ))
         },
         None

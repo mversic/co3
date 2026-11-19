@@ -1,18 +1,24 @@
 //! C-compatible representations and conversions for [`core::mem`].
 use core::mem::{ManuallyDrop, MaybeUninit};
 
-use rust_spec::RustSpec;
+use rust_spec::{RustSpec, Stable};
 
 use crate::{
     CFnArg, CFnReturn, CType, ReprC,
-    convert::{Decode, DecodeMove, Encode, EncodeMove, EncodeMoveUnchecked},
-    transmute::{AbiCompatible, AbiCompatibleValidate},
+    convert::AbiCompatibleValidate,
+    convert::{
+        Decode, DecodeMove, EmptyStore, Encode, EncodeMove, EncodeMoveUnchecked, EncodeUnchecked,
+    },
+    marker::AbiCompatible,
+    niche::Niche,
+    wide::Wide,
 };
+
 impl<R: ReprC + ?Sized> ReprC for ManuallyDrop<R> {
     type CType = core::mem::ManuallyDrop<R::CType>;
 }
 
-crate::__impl_borrowed_identity!([T] MaybeUninit<T>);
+crate::borrow::__impl_borrowed_identity!([T] MaybeUninit<T>);
 
 impl<T: AbiCompatible<CType: Sized>> ReprC for MaybeUninit<T> {
     type CType = core::mem::MaybeUninit<T::CType>;
@@ -149,14 +155,6 @@ unsafe impl<T: CFnReturn> CFnReturn for ManuallyDrop<T> where
 
 unsafe impl<T: EmptyStore> EmptyStore for ManuallyDrop<T> {}
 
-use rust_spec::Stable;
-
-use crate::{
-    convert::{EmptyStore, EncodeUnchecked},
-    niche::Niche,
-    wide::Wide,
-};
-
 unsafe impl<R: EncodeMove> EncodeMove for ManuallyDrop<R>
 where
     Self: EncodeMoveUnchecked + ReprC<CType = core::mem::ManuallyDrop<<R as ReprC>::CType>>,
@@ -248,7 +246,7 @@ impl_wide_for_transparent_wrapper!(ManuallyDrop);
 #[cfg(test)]
 mod tests {
     #[cfg(feature = "alloc")]
-    use alloc::{boxed::Box, string::String, vec, vec::Vec};
+    use alloc::{boxed::Box, string::String, vec::Vec};
 
     use rust_spec::niche::WithNiche;
     use static_assertions::assert_impl_all;
@@ -311,13 +309,15 @@ mod tests {
             <Vec<(u8,)> as EncodeMove>::Store
         );
         let mut encode_store = Default::default();
-        let encoded =
-            crate::soft_encode(ManuallyDrop::new(vec![(3_u8,), (5_u8,)]), &mut encode_store);
+        let encoded = crate::soft_encode(
+            ManuallyDrop::new(alloc::vec![(3_u8,), (5_u8,)]),
+            &mut encode_store,
+        );
         let mut decode_store = Default::default();
         let decoded =
             unsafe { crate::soft_decode::<ManuallyDrop<Vec<(u8,)>>>(encoded, &mut decode_store) }
                 .unwrap();
-        assert_eq!(ManuallyDrop::into_inner(decoded), vec![(3,), (5,)]);
+        assert_eq!(ManuallyDrop::into_inner(decoded), alloc::vec![(3,), (5,)]);
     }
 
     #[test]
@@ -335,7 +335,7 @@ mod tests {
     #[test]
     fn maybe_uninit_lowers_without_validating_or_encoding_the_inner_value() {
         assert_impl_all!(MaybeUninit<bool>:
-            ReprC<CType = core::mem::MaybeUninit<crate::primitives::Bool>>,
+            ReprC<CType = core::mem::MaybeUninit<crate::primitive::abi::bool>>,
             AbiCompatible,
             Decode<'static>,
             Encode,

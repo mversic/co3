@@ -98,9 +98,9 @@ impl Ownership {
                 fn payload(&self) -> &#payload { self }
             }
 
-            impl #impl_generics #trait_name for co3::owned::Owned<#payload> where #speculative #payload: Sized, #bounds {
+            impl #impl_generics #trait_name for co3::marker::Owned<#payload> where #speculative #payload: Sized, #bounds {
                 type Payload = #payload;
-                fn wrap(value: #payload) -> Self { co3::owned::Owned(value) }
+                fn wrap(value: #payload) -> Self { co3::marker::Owned(value) }
                 fn unwrap(self) -> #payload { self.0 }
                 fn payload(&self) -> &#payload { &self.0 }
             }
@@ -148,7 +148,7 @@ impl Ownership {
                 impl<I: co3::rust_spec::drop::DropKind, P: co3::CType + ?Sized>
                     SelectCarrier<P> for co3::rust_spec::drop::CustomDrop<I>
                 {
-                    type Output = co3::owned::Owned<P>;
+                    type Output = co3::marker::Owned<P>;
                 }
 
                 impl #impl_generics co3::ReprC for #source

@@ -1,53 +1,61 @@
 //! C-compatible representations of comparison types.
-use core::cmp::Reverse;
+use core::cmp::{Ordering, Reverse};
 
 use rust_spec::RustSpec;
 
 use crate::{
-    CFnArg, CFnReturn, CType, ReprC, Zeroable,
+    CFnArg, CFnReturn, CType, ReprC,
+    abi::transmute_owned,
+    convert::AbiCompatibleValidate,
     convert::{
         Decode, DecodeMove, Encode, EncodeMove, EncodeMoveUnchecked, SoftDecodeMut, SoftDecodeRef,
         SoftEncodeMut, SoftEncodeMutUnchecked, SoftEncodeRef, SoftEncodeRefUnchecked,
     },
+    marker::AbiCompatible,
+    marker::Zeroable,
     niche::Niche,
-    primitives::{fieldless_enum_derive, primitive_derive},
-    transmute::{AbiCompatible, AbiCompatibleValidate, transmute_owned},
+    primitive::{fieldless_enum_derive, primitive_derive},
 };
 
-/// C-compatible carrier for [`core::cmp::Ordering`].
-///
-/// Every byte value is valid for this carrier; conversion to `Ordering` accepts only -1, 0, and 1.
-#[derive(Debug, Clone, Copy, Default, RustSpec)]
-#[repr(transparent)]
 #[doc(hidden)]
-pub struct Ordering(pub i8);
+pub mod abi {
+    use super::*;
 
-unsafe impl Zeroable for Ordering {}
+    /// C-compatible carrier for [`Ordering`].
+    ///
+    /// Every byte value is valid for this carrier; conversion to `Ordering` accepts only -1, 0, and 1.
+    #[derive(Debug, Clone, Copy, Default, RustSpec)]
+    #[repr(transparent)]
+    #[doc(hidden)]
+    pub struct Ordering(pub i8);
+}
 
-impl Ordering {
+unsafe impl Zeroable for abi::Ordering {}
+
+impl abi::Ordering {
     pub const LESS: Self = Self(-1);
     pub const EQUAL: Self = Self(0);
     pub const GREATER: Self = Self(1);
 }
 
-impl PartialEq for Ordering {
+impl PartialEq for abi::Ordering {
     fn eq(&self, other: &Self) -> bool {
         matches!(self.0, -1..=1) && self.0 == other.0
     }
 }
 
-impl From<core::cmp::Ordering> for Ordering {
+impl From<Ordering> for abi::Ordering {
     #[inline(always)]
-    fn from(value: core::cmp::Ordering) -> Self {
+    fn from(value: Ordering) -> Self {
         Self(value as i8)
     }
 }
 
-impl TryFrom<Ordering> for core::cmp::Ordering {
-    type Error = Ordering;
+impl TryFrom<abi::Ordering> for Ordering {
+    type Error = abi::Ordering;
 
     #[inline(always)]
-    fn try_from(value: Ordering) -> Result<Self, Self::Error> {
+    fn try_from(value: abi::Ordering) -> Result<Self, Self::Error> {
         match value.0 {
             -1 => Ok(Self::Less),
             0 => Ok(Self::Equal),
@@ -57,13 +65,13 @@ impl TryFrom<Ordering> for core::cmp::Ordering {
     }
 }
 
-primitive_derive! { Ordering }
+primitive_derive! { abi::Ordering }
 fieldless_enum_derive! {
-    core::cmp::Ordering => Ordering: {Ordering(-2)}:
-    |i: &Ordering| core::cmp::Ordering::try_from(*i).is_ok();
-    |source: Ordering| core::cmp::Ordering::try_from(source).ok();
-    |source: core::cmp::Ordering| Ordering::from(source);
-    |source: Ordering| unsafe { core::cmp::Ordering::try_from(source).unwrap_unchecked() }
+    Ordering => abi::Ordering: {abi::Ordering(-2)}:
+    |i: &abi::Ordering| Ordering::try_from(*i).is_ok();
+    |source: abi::Ordering| Ordering::try_from(source).ok();
+    |source: Ordering| abi::Ordering::from(source);
+    |source: abi::Ordering| unsafe { Ordering::try_from(source).unwrap_unchecked() }
 }
 
 impl<T: ReprC<CType: Sized>> ReprC for Reverse<T> {
@@ -328,7 +336,7 @@ mod tests {
     use static_assertions::{assert_impl_all, assert_type_eq_all};
 
     use super::*;
-    use crate::{decode, encode, option::abi::OptionSome as AbiOptionSome, primitives::Bool};
+    use crate::{decode, encode, option::abi::OptionSome as AbiOptionSome};
 
     #[test]
     fn reverse_reference_codecs_dispatch_stable_inner() {
@@ -371,50 +379,43 @@ mod tests {
 
     #[test]
     fn ordering_conversions_validate_the_carrier() {
-        for value in [
-            core::cmp::Ordering::Less,
-            core::cmp::Ordering::Equal,
-            core::cmp::Ordering::Greater,
-        ] {
-            let carrier = Ordering::from(value);
-            assert_eq!(core::cmp::Ordering::try_from(carrier), Ok(value));
+        for value in [Ordering::Less, Ordering::Equal, Ordering::Greater] {
+            let carrier = abi::Ordering::from(value);
+            assert_eq!(Ordering::try_from(carrier), Ok(value));
             assert_eq!(encode(value), carrier);
-            assert_eq!(
-                unsafe { decode::<core::cmp::Ordering>(carrier) },
-                Some(value)
-            );
+            assert_eq!(unsafe { decode::<Ordering>(carrier) }, Some(value));
         }
         for raw in i8::MIN..=i8::MAX {
-            let carrier = Ordering(raw);
+            let carrier = abi::Ordering(raw);
             assert_eq!(carrier == carrier, (-1..=1).contains(&raw));
+            assert_eq!(Ordering::try_from(carrier).is_ok(), (-1..=1).contains(&raw));
             assert_eq!(
-                core::cmp::Ordering::try_from(carrier).is_ok(),
-                (-1..=1).contains(&raw)
-            );
-            assert_eq!(
-                unsafe { decode::<core::cmp::Ordering>(carrier) }.is_some(),
+                unsafe { decode::<Ordering>(carrier) }.is_some(),
                 (-1..=1).contains(&raw)
             );
         }
-        assert_ne!(Ordering::LESS, Ordering::EQUAL);
-        assert_ne!(Ordering::EQUAL, Ordering::GREATER);
+        assert_ne!(abi::Ordering::LESS, abi::Ordering::EQUAL);
+        assert_ne!(abi::Ordering::EQUAL, abi::Ordering::GREATER);
     }
 
     #[test]
     fn reverse_delegates_to_inner_carrier_and_niche() {
         assert_type_eq_all!(
             <Reverse<bool> as ReprC>::CType,
-            core::cmp::Reverse<crate::primitives::Bool>
+            core::cmp::Reverse<crate::primitive::abi::bool>
         );
         assert_impl_all!(Reverse<bool>: Encode, Decode<'static>, Niche, AbiCompatible);
         assert_impl_all!(&'static Reverse<bool>: Encode, Decode<'static>);
-        assert_eq!(encode(Reverse(true)), core::cmp::Reverse(Bool::TRUE));
         assert_eq!(
-            unsafe { decode::<Reverse<bool>>(core::cmp::Reverse(Bool::TRUE)) },
+            encode(Reverse(true)),
+            core::cmp::Reverse(co3::primitive::abi::bool::TRUE)
+        );
+        assert_eq!(
+            unsafe { decode::<Reverse<bool>>(core::cmp::Reverse(co3::primitive::abi::bool::TRUE)) },
             Some(Reverse(true))
         );
         assert_eq!(
-            unsafe { decode::<Reverse<bool>>(core::cmp::Reverse(Bool(2))) },
+            unsafe { decode::<Reverse<bool>>(core::cmp::Reverse(co3::primitive::abi::bool(2))) },
             None
         );
         let none: AbiOptionSome<<Reverse<bool> as crate::ReprC>::CType> =
@@ -439,11 +440,11 @@ mod tests {
     #[cfg(feature = "alloc")]
     #[test]
     fn reverse_shared_unstable_value_uses_inner_stores() {
-        use alloc::{vec, vec::Vec};
+        use alloc::vec::Vec;
 
         use crate::convert::Store;
 
-        let value = Reverse(vec![(3_u8,), (7,)]);
+        let value = Reverse(alloc::vec![(3_u8,), (7,)]);
         let mut encode_store = Default::default();
         let carrier = crate::soft_encode(&value, &mut encode_store);
         let mut decode_store = Default::default();
@@ -458,11 +459,11 @@ mod tests {
     #[cfg(feature = "alloc")]
     #[test]
     fn reverse_mutable_value_synchronizes_changes() {
-        use alloc::{vec, vec::Vec};
+        use alloc::vec::Vec;
 
         use crate::convert::Store;
 
-        let mut value = Reverse(vec![false, true]);
+        let mut value = Reverse(alloc::vec![false, true]);
         let mut encode_store = Default::default();
         let carrier = crate::soft_encode(&mut value, &mut encode_store);
         let mut decode_store = Default::default();
@@ -472,6 +473,6 @@ mod tests {
         decoded.0[0] = true;
         decode_store.sync().unwrap();
         encode_store.sync().unwrap();
-        assert_eq!(value, Reverse(vec![true, true]));
+        assert_eq!(value, Reverse(alloc::vec![true, true]));
     }
 }

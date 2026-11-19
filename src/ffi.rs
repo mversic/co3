@@ -11,11 +11,14 @@ use core::{
 
 use rust_spec::RustSpec;
 
+#[cfg(feature = "alloc")]
+use crate::borrow::{self, ToOwned};
+
 use crate::{
     CFnArg, CFnReturn, CType, ReprC,
     convert::{Decode, DecodeMove, Encode, EncodeMove, EncodeMoveUnchecked},
-    primitives::primitive_derive,
-    transmute::AbiCompatible,
+    marker::AbiCompatible,
+    primitive::primitive_derive,
 };
 #[cfg(feature = "alloc")]
 use crate::{boxed::abi::Box as AbiBox, niche::Niche};
@@ -574,22 +577,103 @@ impl Niche for CString {
     }
 }
 
-crate::__impl_borrowed_identity!([] c_void);
+crate::borrow::__impl_borrowed_identity!([] c_void);
 
 impl ReprC for c_void {
     type CType = Self;
 }
 unsafe impl CType for c_void {}
 
+#[cfg(feature = "alloc")]
+unsafe impl<'d> borrow::BorrowedDecode<'d> for alloc::ffi::CString {
+    type Store = ();
+
+    unsafe fn soft_decode<'itm: 'd>(source: Self::CType, _: &'itm mut Self::Store) -> Option<Self> {
+        let ptr = core::ptr::NonNull::new(source.as_ptr())?;
+        Some(unsafe { core::ffi::CStr::from_ptr(ptr.as_ptr().cast()) }.to_owned())
+    }
+
+    unsafe fn soft_decode_unchecked<'itm: 'd>(
+        source: Self::CType,
+        _: &'itm mut Self::Store,
+    ) -> Self {
+        unsafe { core::ffi::CStr::from_ptr(source.as_ptr().cast()) }.to_owned()
+    }
+}
+
+#[cfg(feature = "alloc")]
+unsafe impl borrow::BorrowedEncodeUnchecked for alloc::ffi::CString {
+    type Owner = <Box<core::ffi::CStr> as borrow::BorrowedEncodeUnchecked>::Owner;
+    type SoftStore = <Box<core::ffi::CStr> as borrow::BorrowedEncodeUnchecked>::SoftStore;
+
+    unsafe fn soft_encode_unchecked<'itm>(
+        self,
+        store: &'itm mut Self::SoftStore,
+        owner: &'itm mut Self::Owner,
+    ) -> Self::CType
+    where
+        Self: 'itm,
+    {
+        unsafe {
+            <Box<core::ffi::CStr> as borrow::BorrowedEncodeUnchecked>::soft_encode_unchecked(
+                self.into_boxed_c_str(),
+                store,
+                owner,
+            )
+        }
+    }
+}
+
+#[cfg(feature = "alloc")]
+unsafe impl borrow::BorrowedEncode for alloc::ffi::CString {
+    type Store = <Box<core::ffi::CStr> as borrow::BorrowedEncode>::Store;
+
+    fn soft_encode<'itm>(
+        self,
+        store: &'itm mut Self::Store,
+        owner: &'itm mut Self::Owner,
+    ) -> Self::CType
+    where
+        Self: 'itm,
+    {
+        <Box<core::ffi::CStr> as borrow::BorrowedEncode>::soft_encode(
+            self.into_boxed_c_str(),
+            store,
+            owner,
+        )
+    }
+}
+
 #[cfg(test)]
 mod tests {
 
+    #[cfg(all(feature = "alloc", feature = "derive"))]
+    use alloc::string::String;
+    #[cfg(all(feature = "alloc", feature = "derive"))]
+    use alloc::vec::Vec;
     use core::cell::{Cell, UnsafeCell};
+    #[cfg(all(feature = "alloc", feature = "derive"))]
+    use core::{
+        ffi::CStr,
+        num::NonZeroU8,
+        sync::atomic::{AtomicUsize, Ordering},
+    };
 
     use static_assertions::{assert_impl_all, assert_not_impl_any};
 
     use super::*;
     use crate::convert::Decode;
+    #[cfg(all(feature = "alloc", feature = "derive"))]
+    use crate::{
+        Error, ffi,
+        marker::Borrowed,
+        ops::{CFn0, CFn1, CFn2, CFn12},
+        option::abi::Option as AbiOption,
+        raw,
+        reference::{Ref, SoftRef, SoftRefMut},
+        string::abi::String as AbiString,
+        tuple::abi::Tuple3 as AbiTuple3,
+    };
 
     #[test]
     fn c_int_checked_length_conversion() {
@@ -687,9 +771,6 @@ mod tests {
     }
 
     #[cfg(all(feature = "alloc", feature = "derive"))]
-    use alloc::string::String;
-
-    #[cfg(all(feature = "alloc", feature = "derive"))]
     #[derive(Clone, Copy, RustSpec, ReprC)]
     #[repr(C)]
     struct AliasFields<T>(c_int, T, c_long);
@@ -716,8 +797,8 @@ mod tests {
     struct Value(u8);
 
     #[cfg(all(feature = "alloc", feature = "derive"))]
-    extern "C" fn borrowed_return() -> co3::borrow::Borrowed<<Box<Value> as co3::ReprC>::CType> {
-        co3::borrow::Borrowed(co3::boxed::abi::Box::null())
+    extern "C" fn borrowed_return() -> co3::marker::Borrowed<<Box<Value> as co3::ReprC>::CType> {
+        co3::marker::Borrowed(co3::boxed::abi::Box::null())
     }
 
     #[cfg(all(feature = "alloc", feature = "derive"))]
@@ -747,7 +828,7 @@ mod tests {
             Composite,
             <(
                 String,
-                unsafe extern "C" fn(co3::borrow::Borrowed<<String as co3::ReprC>::CType>)
+                unsafe extern "C" fn(co3::marker::Borrowed<<String as co3::ReprC>::CType>)
             ) as ReprC>::CType
         );
     }
@@ -778,28 +859,6 @@ mod tests {
     }
 
     #[cfg(all(feature = "alloc", feature = "derive"))]
-    use alloc::{vec, vec::Vec};
-    #[cfg(all(feature = "alloc", feature = "derive"))]
-    use core::{
-        ffi::CStr,
-        num::NonZeroU8,
-        sync::atomic::{AtomicUsize, Ordering},
-    };
-
-    #[cfg(all(feature = "alloc", feature = "derive"))]
-    use crate::{
-        Error,
-        borrow::Borrowed,
-        ffi,
-        ops::{CFn0, CFn1, CFn2, CFn12},
-        option::abi::Option as AbiOption,
-        raw,
-        reference::{Ref, SoftRef, SoftRefMut},
-        tuple::abi::Tuple3 as AbiTuple3,
-        utf8::Utf8String,
-    };
-
-    #[cfg(all(feature = "alloc", feature = "derive"))]
     type Text = String;
     #[cfg(all(feature = "alloc", feature = "derive"))]
     #[allow(clippy::ptr_arg)] // Exercise the String reference ABI.
@@ -819,7 +878,7 @@ mod tests {
     #[test]
     #[cfg(all(feature = "alloc", feature = "derive"))]
     fn exported_shared_string_and_alias_use_the_decoder() {
-        let source = Utf8String::from_string(String::from("héllo"));
+        let source = AbiString::from_string(String::from("héllo"));
         assert_eq!(
             unsafe { string_len_raw(SoftRef::from_ref(&source)) },
             "héllo".len()
@@ -1157,7 +1216,7 @@ mod tests {
         let callback: unsafe extern "C" fn(_) -> _ = update_option;
         let mut value = Some(1_u8);
 
-        let result: Option<u32> = unsafe { callback.call(&mut value) };
+        let result: Option<u32> = unsafe { callback.soft_call(&mut value) };
 
         assert_eq!(result, Some(7));
         assert_eq!(value, Some(42));
@@ -1512,7 +1571,7 @@ mod tests {
         );
 
         let echo: BytesRaw = GenericCallbackHost::<Vec<u8>>::echo_raw;
-        let value: Vec<u8> = unsafe { echo.call(vec![1_u8, 2, 3]) }.unwrap();
+        let value: Vec<u8> = unsafe { echo.call(alloc::vec![1_u8, 2, 3]) }.unwrap();
         assert_eq!(value, [1, 2, 3]);
 
         let method: StringRaw = GenericCallbackHost::<u8>::method_raw::<String>;
@@ -1778,7 +1837,7 @@ mod tests {
         let _: Option<AliasExplicitAbi> = None;
         static_assertions::assert_type_eq_all!(AliasExplicitAbi, unsafe extern "system" fn(u8));
         static_assertions::assert_type_eq_all!(AliasInheritedAbi, unsafe extern "C" fn(u8));
-        static_assertions::assert_type_eq_all!(AliasOrdinary, co3::num::NonZero<u8>);
+        static_assertions::assert_type_eq_all!(AliasOrdinary, co3::marker::NonZero<u8>);
         static_assertions::assert_type_eq_all!(AliasRegular, Option<extern "C" fn(u8)>);
         static_assertions::assert_type_eq_all!(
             AliasSharedUnpacked,

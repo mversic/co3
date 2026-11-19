@@ -53,11 +53,11 @@ ffi! {
 
 static_assertions::assert_type_eq_all!(
     <OwnedGeneric<bool> as co3::ReprC>::CType,
-    co3::owned::Owned<*mut Generic<bool>>
+    co3::marker::Owned<*mut Generic<bool>>
 );
 static_assertions::assert_type_eq_all!(
     <OwnedGeneric<String> as co3::ReprC>::CType,
-    co3::owned::Owned<*mut Generic<String>>
+    co3::marker::Owned<*mut Generic<String>>
 );
 
 unsafe impl Send for SendOnly {}

@@ -193,12 +193,12 @@ pub(crate) fn recognize_path(path: &TypePath) -> Option<KnownType<'_>> {
         Kind::Primitive | Kind::Str => &["core::primitive", "std::primitive"],
         Kind::NonZeroInt => &["core::num", "std::num"],
         Kind::CStr => &["core::ffi", "std::ffi"],
-        Kind::String => &["alloc::string", "std::string"],
+        Kind::String => &["alloc::string", "std::string", "co3::string"],
         Kind::CString => &["alloc::ffi", "std::ffi"],
         Kind::Option => &["core::option", "std::option", "co3::option"],
         Kind::Vec => &["alloc::vec", "std::vec", "co3::vec"],
         Kind::Result => &["core::result", "std::result", "co3::result"],
-        Kind::NonZero => &["core::num", "std::num", "co3::num"],
+        Kind::NonZero => &["core::num", "std::num", "co3::marker"],
         Kind::Box => &["alloc::boxed", "std::boxed", "co3::boxed"],
         Kind::MaybeUninit | Kind::ManuallyDrop => &["core::mem", "std::mem"],
         Kind::Cell | Kind::UnsafeCell => &["core::cell", "std::cell"],
@@ -245,8 +245,9 @@ pub(crate) fn recognize_path(path: &TypePath) -> Option<KnownType<'_>> {
         alternate: match kind {
             Kind::Option => Some(parse_quote!(co3::option::Option<()>)),
             Kind::Vec => Some(parse_quote!(co3::vec::Vec<()>)),
+            Kind::String => Some(parse_quote!(co3::string::String)),
             Kind::Result => Some(parse_quote!(co3::result::Result<(), ()>)),
-            Kind::NonZero => Some(parse_quote!(co3::num::NonZero<u8>)),
+            Kind::NonZero => Some(parse_quote!(co3::marker::NonZero<u8>)),
             Kind::Box if name == "Box" => Some(parse_quote!(co3::boxed::abi::Box<()>)),
             _ => None,
         },
@@ -257,6 +258,21 @@ pub(crate) fn recognize_path(path: &TypePath) -> Option<KnownType<'_>> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn recognizes_nonzero_marker_path() {
+        let ty = parse_quote!(co3::marker::NonZero<*mut u8>);
+        let known = recognize(&ty).unwrap();
+        assert_eq!(known.kind, Kind::NonZero);
+        let expected: syn::Type = parse_quote!(*mut u8);
+        assert_eq!(known.inner, Some(&expected));
+        assert_eq!(known.canonical, parse_quote!(core::num::NonZero<u8>));
+        assert_eq!(
+            known.alternate,
+            Some(parse_quote!(co3::marker::NonZero<u8>))
+        );
+        assert!(recognize(&parse_quote!(co3::num::NonZero<u8>)).is_none());
+    }
 
     #[test]
     fn maybe_uninit_is_sized_and_checks_core_identity() {

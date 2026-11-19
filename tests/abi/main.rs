@@ -11,20 +11,18 @@ trait TransparentCarrier: Copy {
     }
 }
 
-impl<T: CType + Copy, const STABLE: bool> TransparentCarrier
-    for co3::option::abi::OptionSome<T, STABLE>
-{
+impl<T: CType + Copy> TransparentCarrier for co3::option::abi::OptionSome<T> {
     type Payload = T;
 }
-impl<T: CType + Copy, E: CType, const STABLE: bool> TransparentCarrier
-    for co3::result::abi::ResultOk<T, E, STABLE>
-{
+impl<T: CType + Copy, E: CType> TransparentCarrier for co3::result::abi::ResultOk<T, E> {
     type Payload = T;
 }
-impl<T: CType, E: CType + Copy, const STABLE: bool> TransparentCarrier
-    for co3::result::abi::ResultErr<T, E, STABLE>
-{
+impl<T: CType, E: CType + Copy> TransparentCarrier for co3::result::abi::ResultErr<T, E> {
     type Payload = E;
+}
+
+impl<T: CType + TransparentCarrier> TransparentCarrier for co3::marker::Stable<T> {
+    type Payload = T::Payload;
 }
 
 macro_rules! assert_not_shared_encoder {

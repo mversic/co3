@@ -2,11 +2,10 @@ use std::{cmp::Ordering, ffi::CStr};
 
 use co3::{
     ReprC,
-    cmp::Ordering as Co3Ordering,
+    cmp::abi::Ordering as Co3Ordering,
     encode, ffi,
     niche::Niche,
     option::abi,
-    primitives::Bool,
     reference::{Ref, SoftRef},
     rust_spec::RustSpec,
     soft_decode, soft_encode,
@@ -509,11 +508,11 @@ fn fieldless_enum_explicit_discriminants_round_trip() {
 fn fieldless_enum_carrier_conversions() {
     use static_assertions::{assert_impl_all, assert_not_impl_any};
 
-    assert_impl_all!(Bool: From<bool>, TryFrom<bool>);
+    assert_impl_all!(co3::primitive::abi::bool: From<bool>, TryFrom<bool>);
     assert_impl_all!(Co3Ordering: From<Ordering>, TryFrom<Ordering>);
-    assert_not_impl_any!(Bool: From<u8>, TryFrom<u8>);
-    assert_impl_all!(bool: TryFrom<Bool>);
-    assert_not_impl_any!(bool: From<Bool>);
+    assert_not_impl_any!(co3::primitive::abi::bool: From<u8>, TryFrom<u8>);
+    assert_impl_all!(bool: TryFrom<co3::primitive::abi::bool>);
+    assert_not_impl_any!(bool: From<co3::primitive::abi::bool>);
     assert_not_impl_any!(Co3Ordering: From<i8>, TryFrom<i8>);
     assert_impl_all!(Ordering: TryFrom<Co3Ordering>);
     assert_not_impl_any!(Ordering: From<Co3Ordering>);
@@ -522,9 +521,9 @@ fn fieldless_enum_carrier_conversions() {
     assert_not_impl_any!(<FieldlessNoReprEnum as ReprC>::CType: From<FieldlessNoReprEnum>, TryFrom<FieldlessNoReprEnum>);
     assert_not_impl_any!(FieldlessNoReprEnum: From<<FieldlessNoReprEnum as ReprC>::CType>, TryFrom<<FieldlessNoReprEnum as ReprC>::CType>);
 
-    assert_eq!(Bool::TRUE, encode(true));
-    assert_eq!(Bool::FALSE, encode(false));
-    assert_eq!(Bool(1), encode(true));
+    assert_eq!(co3::primitive::abi::bool::TRUE, encode(true));
+    assert_eq!(co3::primitive::abi::bool::FALSE, encode(false));
+    assert_eq!(co3::primitive::abi::bool(1), encode(true));
     assert_eq!(Co3Ordering::LESS, encode(Ordering::Less));
     assert_eq!(Co3Ordering::EQUAL, encode(Ordering::Equal));
     assert_eq!(Co3Ordering::GREATER, encode(Ordering::Greater));

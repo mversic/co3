@@ -943,7 +943,7 @@ fn gen_repr_c_impls(
     let selected = marked.then(|| quote!(#speculative Self: #carrier_bound,));
 
     quote! {
-        unsafe impl #impl_generics co3::transmute::AbiCompatibleValidate for #name #ty_generics
+        unsafe impl #impl_generics co3::convert::AbiCompatibleValidate for #name #ty_generics
         where
             #(#validation_bounds,)*
             #selected
@@ -956,7 +956,7 @@ fn gen_repr_c_impls(
                 #is_valid_body
             }
         }
-        unsafe impl #impl_generics co3::transmute::AbiCompatible for #name #ty_generics
+        unsafe impl #impl_generics co3::marker::AbiCompatible for #name #ty_generics
         where
             #(#checked_transmute_bounds,)*
             #selected
@@ -976,9 +976,9 @@ fn gen_checked_transmute_bounds(
     };
 
     let trait_ = if validate {
-        quote!(co3::transmute::AbiCompatibleValidate)
+        quote!(co3::convert::AbiCompatibleValidate)
     } else {
-        quote!(co3::transmute::AbiCompatible)
+        quote!(co3::marker::AbiCompatible)
     };
     let mut predicates = field_types(fields, generics)
         .filter(|field| !field.phantom)
@@ -1018,7 +1018,7 @@ fn gen_record_is_valid(
         .filter(|(_, field_ty)| !is_phantom_data(field_ty))
         .map(|(field_name, field_ty)| {
             quote! {
-                if !unsafe { <#field_ty as co3::transmute::AbiCompatibleValidate>::is_valid(#field_name)} {
+                if !unsafe { <#field_ty as co3::convert::AbiCompatibleValidate>::is_valid(#field_name)} {
                     return false;
                 }
             }
@@ -1144,11 +1144,11 @@ pub(super) fn derive_fieldless_enum(
         Some(ReprKind::C(None)) => unreachable!(),
         Some(ReprKind::Transparent | ReprKind::C(Some(_)) | ReprKind::Primitive(_)) => {
             quote! {
-                unsafe impl #impl_generics co3::transmute::AbiCompatibleValidate for #name #ty_generics #source_where {
+                unsafe impl #impl_generics co3::convert::AbiCompatibleValidate for #name #ty_generics #source_where {
                     #[inline(always)]
                     #checked_transmute_method
                 }
-                unsafe impl #impl_generics co3::transmute::AbiCompatible for #name #ty_generics #source_where {}
+                unsafe impl #impl_generics co3::marker::AbiCompatible for #name #ty_generics #source_where {}
             }
         }
     };
@@ -1304,15 +1304,15 @@ pub(super) fn derive_fieldless_enum(
         let output = encoder_output(quote!(&'_ršč Self));
         let unsafe_fn = unchecked.then(|| quote!(unsafe));
         let abi_bound = if unchecked {
-            quote!(co3::transmute::AbiCompatible)
+            quote!(co3::marker::AbiCompatible)
         } else {
-            quote!(co3::transmute::AbiCompatibleValidate)
+            quote!(co3::convert::AbiCompatibleValidate)
         };
         let validation = (!unchecked).then(|| quote! {
-            debug_assert!(unsafe { <&'_ršč Self as co3::transmute::AbiCompatibleValidate>::is_valid(&encoded) }, "encoding failed AbiCompatibleValidate::is_valid");
+            debug_assert!(unsafe { <&'_ršč Self as co3::convert::AbiCompatibleValidate>::is_valid(&encoded) }, "encoding failed AbiCompatibleValidate::is_valid");
         });
         let validation_bound = (!unchecked).then(|| quote! {
-            &'_ršč Self: co3::transmute::AbiCompatibleValidate,
+            &'_ršč Self: co3::convert::AbiCompatibleValidate,
         });
         quote! {
             unsafe impl #ref_impl_generics #trait_name<'_ršč> for #name #ty_generics
@@ -1694,15 +1694,15 @@ fn gen_codec_impls(
             let output = encoder_output(quote!(&'_ršč Self));
             let unsafe_fn = unchecked.then(|| quote!(unsafe));
             let abi_bound = if unchecked {
-                quote!(co3::transmute::AbiCompatible)
+                quote!(co3::marker::AbiCompatible)
             } else {
-                quote!(co3::transmute::AbiCompatibleValidate)
+                quote!(co3::convert::AbiCompatibleValidate)
             };
             let validation_bound = (!unchecked).then(|| quote! {
-                &'_ršč Self: co3::transmute::AbiCompatibleValidate,
+                &'_ršč Self: co3::convert::AbiCompatibleValidate,
             });
             let validation = (!unchecked).then(|| quote! {
-                debug_assert!(unsafe { <&'_ršč Self as co3::transmute::AbiCompatibleValidate>::is_valid(&encoded) }, "encoding failed AbiCompatibleValidate::is_valid");
+                debug_assert!(unsafe { <&'_ršč Self as co3::convert::AbiCompatibleValidate>::is_valid(&encoded) }, "encoding failed AbiCompatibleValidate::is_valid");
             });
             let (field_store, encode_body) = if unchecked {
                 (&direct_store, &wrap_unchecked)

@@ -1272,7 +1272,7 @@ fn dispatch_return_type(ty: &syn::Type, fn_by_val: bool) -> syn::Type {
     if ffi_fn::ownership_mode(ty, fn_by_val) == crate::generate::OwnershipMode::ByValue {
         item_fn_output_type(ty)
     } else {
-        parse_quote!(co3::borrow::Borrowed< <#ty as co3::ReprC>::CType >)
+        parse_quote!(co3::marker::Borrowed< <#ty as co3::ReprC>::CType >)
     }
 }
 
