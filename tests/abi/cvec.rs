@@ -1,4 +1,4 @@
-use co3::vec::CVec;
+use co3::vec::abi;
 
 #[test]
 fn raw_vector_roundtrip_preserves_allocation_and_capacity() {
@@ -6,7 +6,7 @@ fn raw_vector_roundtrip_preserves_allocation_and_capacity() {
     value.extend([1u32, 2, 3]);
     let data = value.as_ptr();
     let capacity = value.capacity();
-    let carrier = CVec::<u32>::from_vec(value);
+    let carrier = abi::Vec::<u32>::from_vec(value);
     assert_eq!(carrier.as_ptr(), data.cast_mut());
     assert_eq!(carrier.capacity(), capacity);
     let value = unsafe { carrier.into_vec() }.unwrap();
@@ -16,11 +16,11 @@ fn raw_vector_roundtrip_preserves_allocation_and_capacity() {
 
 #[test]
 fn empty_and_zero_sized_vectors_roundtrip() {
-    let empty = CVec::<u8>::from_vec(Vec::<u8>::new());
+    let empty = abi::Vec::<u8>::from_vec(Vec::<u8>::new());
     assert!(unsafe { empty.into_vec() }.unwrap().is_empty());
-    let zst = CVec::<()>::from_vec(vec![(); 3]);
+    let zst = abi::Vec::<()>::from_vec(vec![(); 3]);
     assert_eq!(unsafe { zst.into_vec() }.unwrap().len(), 3);
-    assert!(unsafe { CVec::<u8>::null().into_vec() }.is_none());
+    assert!(unsafe { abi::Vec::<u8>::null().into_vec() }.is_none());
 }
 
 #[test]
@@ -69,7 +69,7 @@ fn stable_vec_operations_preserve_ownership() {
 
 #[test]
 fn raw_carrier_construction_needs_no_allocation_invariants() {
-    let carrier = unsafe { CVec::<u8>::from_raw_parts(core::ptr::null_mut(), 7, 3) };
+    let carrier = unsafe { abi::Vec::<u8>::from_raw_parts(core::ptr::null_mut(), 7, 3) };
     assert_eq!(carrier.len(), 7);
     assert_eq!(carrier.capacity(), 3);
 }
@@ -88,7 +88,8 @@ fn owned_encoding_preserves_capacity_and_validates_elements() {
     assert_eq!(value.capacity(), cap);
     assert_eq!(&*value, &[1, 2, 3]);
     assert_eq!(co3::convert::Store::sync(encode_store), Some(()));
-    let invalid = CVec::<bool, true>::from_vec(vec![co3::primitives::Bool(2)]);
+    let invalid =
+        abi::Vec::<<bool as co3::ReprC>::CType, true>::from_vec(vec![co3::primitives::Bool(2)]);
     assert!(
         unsafe { co3::soft_decode::<co3::vec::Vec<bool>>(invalid, &mut Default::default()) }
             .is_none()
@@ -156,7 +157,7 @@ fn derived_carrier_spec_preserves_header_and_pointee_properties() {
     };
     use static_assertions::assert_impl_all;
 
-    assert_impl_all!(CVec<()>: RustSpec<
+    assert_impl_all!(abi::Vec<()>: RustSpec<
         Layout = Stable,
         Size = rust_spec::size::Sized<rust_spec::Gt<rust_spec::Zero>>,
         __Alignment = <usize as RustSpec>::__Alignment,
@@ -168,7 +169,7 @@ fn derived_carrier_spec_preserves_header_and_pointee_properties() {
         __IndirectTrap = Robust,
     >);
     // bool lowers to the robust Bool carrier, including inside UnsafeCell.
-    assert_impl_all!(CVec<UnsafeCell<bool>>: RustSpec<
+    assert_impl_all!(abi::Vec<<UnsafeCell<bool> as co3::ReprC>::CType>: RustSpec<
         Layout = Stable,
         Trap = Robust,
         Mutability = Exclusive<WithInterior<Robust>>,

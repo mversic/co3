@@ -5,19 +5,19 @@ use co3::{ReprC, ffi, ffi::c_char, rust_spec::RustSpec};
 #[repr(C)]
 struct Integer(i32);
 
-// Defining this name proves that `ReprC` did not synthesize `CInteger`.
-struct CInteger;
+// Defining this name proves that `ReprC` did not synthesize `IntegerCType`.
+struct IntegerCType;
 struct IntegerData;
-struct CIntegerData;
+struct IntegerDataCType;
 
 #[derive(RustSpec, ReprC)]
 #[repr_c(identity)]
 #[repr(C)]
 struct NonCopy(i32);
 
-struct CNonCopy;
+struct NonCopyCType;
 struct NonCopyData;
-struct CNonCopyData;
+struct NonCopyDataCType;
 
 #[derive(Clone, Copy, RustSpec, ReprC)]
 #[repr_c(identity)]

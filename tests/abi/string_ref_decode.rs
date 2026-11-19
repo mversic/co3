@@ -1,4 +1,4 @@
-use co3::{reference::SoftRef, utf8::Utf8String, vec::CVec};
+use co3::{reference::SoftRef, utf8::Utf8String, vec::abi};
 
 #[test]
 fn shared_string_decodes_without_taking_source_ownership() {
@@ -8,8 +8,7 @@ fn shared_string_decodes_without_taking_source_ownership() {
         let source = Utf8String::from_string(original);
         let mut store = Default::default();
         let decoded =
-            unsafe { co3::soft_decode::<&String>(SoftRef::from_ref(&source), &mut store) }
-                .unwrap();
+            unsafe { co3::soft_decode::<&String>(SoftRef::from_ref(&source), &mut store) }.unwrap();
         assert_eq!(decoded, text);
         assert_eq!(decoded.capacity(), source.capacity());
         assert_ne!(decoded.as_ptr(), source.as_ptr());
@@ -22,7 +21,7 @@ fn shared_string_decodes_without_taking_source_ownership() {
 
 #[test]
 fn shared_string_rejects_invalid_utf8_without_consuming_source() {
-    let source = Utf8String(CVec::from_vec(vec![0xff, 0xfe]));
+    let source = Utf8String(abi::Vec::from_vec(vec![0xff, 0xfe]));
     let mut store = Default::default();
     assert!(
         unsafe { co3::soft_decode::<&String>(SoftRef::from_ref(&source), &mut store) }.is_none()
@@ -40,11 +39,9 @@ fn shared_string_validates_carrier_headers() {
             .is_none()
     );
     let null = Utf8String::null();
-    assert!(
-        unsafe { co3::soft_decode::<&String>(SoftRef::from_ref(&null), &mut store) }.is_none()
-    );
+    assert!(unsafe { co3::soft_decode::<&String>(SoftRef::from_ref(&null), &mut store) }.is_none());
     let bytes = *b"a";
-    let invalid = Utf8String(unsafe { CVec::from_raw_parts(bytes.as_ptr().cast_mut(), 2, 1) });
+    let invalid = Utf8String(unsafe { abi::Vec::from_raw_parts(bytes.as_ptr().cast_mut(), 2, 1) });
     assert!(
         unsafe { co3::soft_decode::<&String>(SoftRef::from_ref(&invalid), &mut store) }.is_none()
     );

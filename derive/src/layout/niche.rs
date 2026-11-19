@@ -138,7 +138,7 @@ pub fn gen_struct_niche_ir(
     let carrier_bound = ownership.repr_bound(quote!());
     let selected = marked.then(|| {
         quote!(
-            Self: #carrier_bound,
+            #for_dummy Self: #carrier_bound,
             #for_dummy <Self as co3::ReprC>::CType: Copy,
         )
     });
@@ -169,7 +169,7 @@ fn build_tuple_value(fields: &[(Vec<usize>, TokenStream)], depth: usize) -> Toke
         return quote!(());
     }
     let count = fields.last().unwrap().0[depth] + 1;
-    let ident = quote::format_ident!("CTuple{count}");
+    let ident = quote::format_ident!("Tuple{count}");
     let members = (0..count).map(|index| {
         let group = fields
             .iter()
@@ -178,7 +178,7 @@ fn build_tuple_value(fields: &[(Vec<usize>, TokenStream)], depth: usize) -> Toke
             .collect::<Vec<_>>();
         build_tuple_value(&group, depth + 1)
     });
-    quote!(co3::tuple::#ident(#(#members),*))
+    quote!(co3::tuple::abi::#ident(#(#members),*))
 }
 
 pub(super) fn gen_enum_niche_tag(
@@ -446,9 +446,9 @@ mod tests {
                 };
                 assert!(ty.qself.is_none());
                 let segment = ty.path.segments.last().expect("Tuple path");
-                let expected_name = format!("CTuple{}", children.len());
+                let expected_name = format!("Tuple{}", children.len());
                 assert_eq!(
-                    ["co3", "tuple", expected_name.as_str()],
+                    ["co3", "tuple", "abi", expected_name.as_str()],
                     ty.path
                         .segments
                         .iter()
@@ -465,7 +465,7 @@ mod tests {
                     let syn::GenericArgument::Type(child) = argument else {
                         panic!("expected Tuple type argument, got {argument:?}");
                     };
-                    assert_rust_tuple_tree(child, expected_child);
+                    assert_c_tuple_tree(child, expected_child);
                 }
             }
         }

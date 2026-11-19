@@ -39,7 +39,7 @@ pub(crate) unsafe trait RefCarrier<R: ?Sized>: CType + Copy {
     }
 }
 
-unsafe impl<R: ReprC + ?Sized> RefCarrier<R> for SoftRef<<R as crate::ReprC>::CType> {
+unsafe impl<R: ReprC + ?Sized> RefCarrier<R> for SoftRef<R::CType> {
     fn as_ptr(&self) -> *const R::CType {
         self.data
     }
@@ -47,7 +47,7 @@ unsafe impl<R: ReprC + ?Sized> RefCarrier<R> for SoftRef<<R as crate::ReprC>::CT
         unsafe { Self::from_raw(data) }
     }
 }
-unsafe impl<'a, R: ReprC + ?Sized> RefCarrier<R> for Ref<'a, <R as crate::ReprC>::CType> {
+unsafe impl<'a, R: ReprC + ?Sized> RefCarrier<R> for Ref<'a, R::CType> {
     fn as_ptr(&self) -> *const R::CType {
         self.data
     }
@@ -66,7 +66,7 @@ pub(crate) unsafe trait MutRefCarrier<R: ReprC + ?Sized>: CType + Copy {
     /// The pointer must satisfy the destination carrier's lifetime and aliasing contract.
     unsafe fn from_mut_ptr(data: *mut R::CType) -> Self;
 }
-unsafe impl<R: ReprC + ?Sized> MutRefCarrier<R> for SoftRefMut<<R as crate::ReprC>::CType> {
+unsafe impl<R: ReprC + ?Sized> MutRefCarrier<R> for SoftRefMut<R::CType> {
     fn as_ptr(&self) -> *mut R::CType {
         self.data
     }
@@ -74,7 +74,7 @@ unsafe impl<R: ReprC + ?Sized> MutRefCarrier<R> for SoftRefMut<<R as crate::Repr
         unsafe { Self::from_raw(data) }
     }
 }
-unsafe impl<'a, R: ReprC + ?Sized> MutRefCarrier<R> for RefMut<'a, <R as crate::ReprC>::CType>
+unsafe impl<'a, R: ReprC + ?Sized> MutRefCarrier<R> for RefMut<'a, R::CType>
 where
     Self: CType,
 {
@@ -506,7 +506,7 @@ mod tests {
         );
         static_assertions::assert_type_eq_all!(
             <&'static UnsafeCell<(u32, u32)> as ReprC>::CType,
-            SoftRef<UnsafeCell<crate::tuple::CTuple2<u32, u32>>>
+            SoftRef<UnsafeCell<crate::tuple::abi::Tuple2<u32, u32>>>
         );
         static_assertions::assert_type_eq_all!(
             <&'static mut bool as ReprC>::CType,
@@ -571,9 +571,9 @@ mod tests {
         assert_impl_all!(&mut u8: Niche<CType = crate::reference::RefMut<'static, u8>>);
         assert_impl_all!(&UnsafeCell<u8>: Niche<CType = crate::reference::Ref<'static, UnsafeCell<u8>>>);
         assert_impl_all!(&mut UnsafeCell<u8>: Niche<CType = crate::reference::RefMut<'static, UnsafeCell<u8>>>);
-        assert_impl_all!(&mut [u8]: Niche<CType = crate::wide::CWideRef<'static, [u8]>>);
-        assert_impl_all!(&[UnsafeCell<u8>]: Niche<CType = crate::wide::CWideRef<'static, [UnsafeCell<u8>]>>);
-        assert_impl_all!(&mut [UnsafeCell<u8>]: Niche<CType = crate::wide::CWideRef<'static, [UnsafeCell<u8>]>>);
+        assert_impl_all!(&mut [u8]: Niche<CType = crate::wide::abi::WideRef<'static, [u8]>>);
+        assert_impl_all!(&[UnsafeCell<u8>]: Niche<CType = crate::wide::abi::WideRef<'static, [UnsafeCell<u8>]>>);
+        assert_impl_all!(&mut [UnsafeCell<u8>]: Niche<CType = crate::wide::abi::WideRef<'static, [UnsafeCell<u8>]>>);
 
         assert_eq!(
             core::mem::size_of::<crate::reference::RefMut<'static, u8>>(),

@@ -131,7 +131,7 @@ mod tests {
         static_assertions::assert_type_eq_all!(<NonNull<u32> as ReprC>::CType, NonZero<*mut u32>);
         static_assertions::assert_type_eq_all!(
             <Option<NonNull<u32>> as ReprC>::CType,
-            crate::option::COptionSome<NonNull<u32>>
+            crate::option::abi::OptionSome<<NonNull<u32> as crate::ReprC>::CType>
         );
 
         static_assertions::assert_not_impl_any!(NonNull<u32>: CType);

@@ -1721,7 +1721,7 @@ fn gen_export_owned_type_alias(ty: &syn::ForeignItemType) -> TokenStream {
         #(#type_cfg_attrs)*
         #[allow(type_alias_bounds)]
         #[doc = #owned_doc]
-        #vis type #owned_ident #impl_generics #where_clause = #co3::boxed::RustBox<#ident #ty_generics>;
+        #vis type #owned_ident #impl_generics #where_clause = #co3::boxed::Box<#ident #ty_generics>;
     }
 }
 
@@ -3267,11 +3267,8 @@ fn wrap_extern_type_decl(
 
     let owned_ident = gen_owned_extern_type_name(&ident);
     let owned_doc = gen_owned_extern_type_doc(&ident);
-    let owned_payload_name = gen_owned_payload_name(&ident);
-    let owned_payload_doc = format!("ABI pointer payload for `{owned_ident}`");
     let ident_impls = gen_extern_type_impls(id, id_value, &ident, &generics);
     let owned_impls = gen_owned_extern_type_impls(id, id_value, &ident, &generics);
-    let owned_payload_impls = gen_owned_payload_impls(&ident, &generics);
 
     let (impl_generics, ty_generics, where_clause) = generics.split_for_impl();
     use syn::GenericParam::*;
@@ -3342,24 +3339,14 @@ fn wrap_extern_type_decl(
         const _: () = {
             use #co3 as co3;
 
-            #[doc(hidden)]
-            #[repr(transparent)]
-            #[doc = #owned_payload_doc]
-            #vis struct #owned_payload_name #impl_generics (*mut #ident #ty_generics) #where_clause;
-
             #ident_impls
             #owned_impls
-            #owned_payload_impls
         };
     }
 }
 
 fn gen_owned_extern_type_name(ident: &syn::Ident) -> syn::Ident {
     format_ident!("Owned{ident}")
-}
-
-fn gen_owned_payload_name(ident: &syn::Ident) -> syn::Ident {
-    format_ident!("C{ident}")
 }
 
 fn gen_owned_extern_type_doc(ident: &syn::Ident) -> String {
@@ -3408,93 +3395,6 @@ fn gen_extern_type_impls(
     }
 }
 
-fn gen_owned_payload_impls(ident: &syn::Ident, generics: &syn::Generics) -> TokenStream {
-    let co3 = co3_path();
-    let (impl_generics, ty_generics, where_clause) = generics.split_for_impl();
-    let mut decode_generics = generics.clone();
-    decode_generics.params.insert(0, syn::parse_quote!('d));
-    let (decode_impl_generics, _, _) = decode_generics.split_for_impl();
-    let owned_payload_name = gen_owned_payload_name(ident);
-
-    let borrowed_impls =
-        crate::layout::borrow::gen_identity_borrow_impls(&owned_payload_name, generics);
-    quote! {
-        impl #impl_generics #owned_payload_name #ty_generics #where_clause {
-            fn is_none(&self) -> bool {
-                self.0.is_null()
-            }
-        }
-
-        impl #impl_generics Clone for #owned_payload_name #ty_generics #where_clause {
-            fn clone(&self) -> Self { *self }
-        }
-        impl #impl_generics Copy for #owned_payload_name #ty_generics #where_clause {}
-
-        unsafe impl #impl_generics #co3::rust_spec::RustSpec for #owned_payload_name #ty_generics #where_clause {
-            type Layout = #co3::rust_spec::Stable;
-            type Size = #co3::rust_spec::size::Sized<#co3::rust_spec::Gt<#co3::rust_spec::Zero>>;
-            type __Alignment = <usize as #co3::rust_spec::RustSpec>::__Alignment;
-            type Trap = #co3::rust_spec::layout::Robust;
-            type Niche = #co3::rust_spec::niche::WithoutNiche;
-            type Drop = #co3::rust_spec::drop::NoDrop;
-            type Mutability = #co3::rust_spec::mutability::Exclusive<#co3::rust_spec::mutability::WithoutInterior>;
-            type Opacity = #co3::rust_spec::NonOpaque;
-            type __IndirectTrap = #co3::rust_spec::layout::Robust;
-        }
-
-        impl #impl_generics #co3::ReprC for #owned_payload_name #ty_generics #where_clause {
-            type CType = Self;
-        }
-        unsafe impl #impl_generics #co3::convert::EncodeMove for #owned_payload_name #ty_generics #where_clause {
-            type Store = ();
-
-            #[inline(always)]
-            fn soft_encode<'itm>(self, (): &mut ()) -> Self::CType
-            where
-                Self: 'itm,
-            {
-                use #co3::convert::EncodeMoveUnchecked as _;
-                unsafe { self.soft_encode_unchecked(&mut ()) }
-            }
-        }
-        unsafe impl #impl_generics #co3::convert::EncodeMoveUnchecked for #owned_payload_name #ty_generics #where_clause {
-            type SoftStore = ();
-
-            unsafe fn soft_encode_unchecked<'itm>(self, (): &'itm mut ()) -> Self::CType where Self: 'itm {
-                self
-            }
-        }
-        unsafe impl #decode_impl_generics #co3::convert::DecodeMove<'d> for #owned_payload_name #ty_generics #where_clause {
-            type Store = ();
-
-            #[inline(always)]
-            unsafe fn soft_decode<'itm: 'd>(source: Self::CType, (): &mut ()) -> Option<Self> {
-                Some(source)
-            }
-        }
-
-        impl #impl_generics #co3::convert::Encode for #owned_payload_name #ty_generics #where_clause {}
-        impl #impl_generics #co3::convert::EncodeUnchecked for #owned_payload_name #ty_generics #where_clause {}
-        impl #impl_generics #co3::convert::Decode<'_> for #owned_payload_name #ty_generics #where_clause {}
-
-
-        unsafe impl #impl_generics #co3::transmute::AbiCompatibleValidate for #owned_payload_name #ty_generics #where_clause {
-            #[inline(always)]
-            unsafe fn is_valid(_: &Self::CType) -> bool {
-                true
-            }
-        }
-        unsafe impl #impl_generics #co3::transmute::AbiCompatible for #owned_payload_name #ty_generics #where_clause {}
-
-        unsafe impl #impl_generics #co3::CType for #owned_payload_name #ty_generics #where_clause {}
-        unsafe impl #impl_generics #co3::CFnArg for #owned_payload_name #ty_generics #where_clause {}
-        unsafe impl #impl_generics #co3::CFnReturn for #owned_payload_name #ty_generics #where_clause {}
-
-        #borrowed_impls
-
-    }
-}
-
 fn gen_owned_extern_type_impls(
     id: Option<&syn::Type>,
     id_value: Option<&syn::Expr>,
@@ -3508,7 +3408,6 @@ fn gen_owned_extern_type_impls(
     let (decode_impl_generics, _, _) = decode_generics.split_for_impl();
 
     let owned_ident = gen_owned_extern_type_name(ident);
-    let owned_payload_name = gen_owned_payload_name(ident);
     let speculative = speculative_marker(generics.params.is_empty());
     let clone_impl = cfg!(feature = "alloc").then(|| {
         let mut clone_generics = generics.clone();
@@ -3686,22 +3585,17 @@ fn gen_owned_extern_type_impls(
             #[inline(always)]
             unsafe fn is_valid(target: &Self::CType) -> bool {
                 // The Rust owner stores NonNull; null is reserved for Option::None.
-                !target.0.is_none()
+                !target.0.is_null()
             }
         }
         unsafe impl #impl_generics #co3::transmute::AbiCompatible for #owned_ident #ty_generics #where_clause {}
 
         impl #impl_generics #co3::ReprC for #owned_ident #ty_generics #where_clause {
-            type CType = #co3::owned::Owned<#owned_payload_name #ty_generics>;
-        }
-        impl #impl_generics core::cmp::PartialEq for #owned_payload_name #ty_generics #where_clause {
-            fn eq(&self, other: &Self) -> bool {
-                self.0 == other.0
-            }
+            type CType = #co3::owned::Owned<*mut #ident #ty_generics>;
         }
         impl #impl_generics #co3::niche::Niche for #owned_ident #ty_generics #where_clause {
-            const NICHE: Self::CType = #co3::owned::Owned(#owned_payload_name(core::ptr::null_mut()));
-            fn is_niche(value: &Self::CType) -> bool { value.0.is_none() }
+            const NICHE: Self::CType = #co3::owned::Owned(core::ptr::null_mut());
+            fn is_niche(value: &Self::CType) -> bool { value.0.is_null() }
         }
 
         unsafe impl #impl_generics #co3::convert::EncodeMove for #owned_ident #ty_generics #where_clause {
@@ -3720,7 +3614,7 @@ fn gen_owned_extern_type_impls(
             type SoftStore = ();
 
             unsafe fn soft_encode_unchecked<'itm>(self, (): &'itm mut ()) -> Self::CType where Self: 'itm {
-                #co3::owned::Owned(#owned_payload_name(core::mem::ManuallyDrop::new(self).0.as_ptr()))
+                #co3::owned::Owned(core::mem::ManuallyDrop::new(self).0.as_ptr())
             }
         }
         unsafe impl #decode_impl_generics #co3::convert::DecodeMove<'d> for #owned_ident #ty_generics #where_clause {
@@ -3728,13 +3622,13 @@ fn gen_owned_extern_type_impls(
 
             #[inline(always)]
             unsafe fn soft_decode<'itm: 'd>(source: Self::CType, (): &mut ()) -> Option<Self> {
-                let #co3::owned::Owned(#owned_payload_name(pointer)) = source;
+                let #co3::owned::Owned(pointer) = source;
                 core::ptr::NonNull::new(pointer).map(Self)
             }
 
             #[inline(always)]
             unsafe fn soft_decode_unchecked<'itm: 'd>(source: Self::CType, (): &mut ()) -> Self {
-                let #co3::owned::Owned(#owned_payload_name(pointer)) = source;
+                let #co3::owned::Owned(pointer) = source;
                 Self(unsafe { core::ptr::NonNull::new_unchecked(pointer) })
             }
         }

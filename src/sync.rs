@@ -7,7 +7,7 @@ use core::marker::PhantomData;
 use crate::{
     CType,
     convert::AssignFromOwned,
-    wide::{CSoftWideRef, CSoftWideRefMut},
+    wide::abi::{SoftWideRef as AbiSoftWideRef, SoftWideRefMut as AbiSoftWideRefMut},
     wide::{Wide, WideHeader},
 };
 use crate::{
@@ -52,7 +52,7 @@ pub struct RefSizedDecodeStore<R, S> {
 }
 
 impl<R: ReprC<CType: Sized>, S: Store> RefSizedEncodeStore<R, S> {
-    pub fn encode(&mut self, encode: impl FnOnce(&mut S) -> R::CType) -> SoftRef<<R as crate::ReprC>::CType> {
+    pub fn encode(&mut self, encode: impl FnOnce(&mut S) -> R::CType) -> SoftRef<R::CType> {
         self.ctype = None;
         let value = encode(&mut self.store);
         SoftRef::from_ref(self.ctype.insert(value))
@@ -235,7 +235,7 @@ impl<'d, R: DecodeMove<'d, Store: EmptyStore + 'd>, S: Store + Default>
         &mut self,
         original: &'d mut R,
         encode: impl FnOnce(&mut R, &mut S) -> R::CType,
-    ) -> SoftRefMut<<R as crate::ReprC>::CType> {
+    ) -> SoftRefMut<R::CType> {
         SoftRefMut::from_mut(self.state.encode(original, encode))
     }
 }
@@ -359,13 +359,16 @@ pub struct RefDstDecodeStore<R: ToOwned + ?Sized, S> {
 
 #[cfg(feature = "alloc")]
 impl<R: ReprC<CType: Wide<Header: WideHeader<Data: CType>>> + ?Sized, S> RefWideEncodeStore<R, S> {
-    pub fn encode(&mut self, encode: impl FnOnce(&mut S) -> Box<R::CType>) -> CSoftWideRef<R> {
+    pub fn encode(
+        &mut self,
+        encode: impl FnOnce(&mut S) -> Box<R::CType>,
+    ) -> AbiSoftWideRef<R::CType> {
         let previous = self.ctype.take();
         self.ctype = Some(encode(&mut self.fields));
         drop(previous);
         let value = &**self.ctype.as_ref().unwrap();
         unsafe {
-            CSoftWideRef::from_raw_parts(
+            AbiSoftWideRef::from_raw_parts(
                 <R::CType as Wide>::as_ptr(value).cast(),
                 <R::CType as Wide>::metadata(value),
             )
@@ -462,7 +465,7 @@ where
 pub struct RefMutSliceDecodeStore<R: ReprC<CType: Sized>, S> {
     value: Option<Vec<R>>,
     store: S,
-    source: Option<CSoftWideRefMut<[R]>>,
+    source: Option<AbiSoftWideRefMut<<[R] as crate::ReprC>::CType>>,
 }
 
 #[cfg(feature = "alloc")]
@@ -470,7 +473,7 @@ impl<R: ReprC<CType: Sized>, S> RefMutSliceDecodeStore<R, S> {
     /// The source must remain valid and exclusively accessible until synchronization.
     pub(crate) unsafe fn decode<'a>(
         &'a mut self,
-        source: CSoftWideRefMut<[R]>,
+        source: AbiSoftWideRefMut<<[R] as crate::ReprC>::CType>,
         decode: impl FnOnce(&'a [R::CType], &'a mut S) -> Option<Vec<R>>,
     ) -> Option<&'a mut [R]> {
         self.source = Some(source);
@@ -595,7 +598,7 @@ impl<
         &mut self,
         build: impl FnOnce(&mut S) -> (B, P),
         copy_back: fn(&R::CType, P),
-    ) -> CSoftWideRefMut<R> {
+    ) -> AbiSoftWideRefMut<R::CType> {
         self.writeback = None;
         let previous = self.ctype.take();
         let (value, state) = build(&mut self.fields);
@@ -604,7 +607,7 @@ impl<
         drop(previous);
         let value = &mut **self.ctype.as_mut().unwrap();
         unsafe {
-            CSoftWideRefMut::from_raw_parts_mut(
+            AbiSoftWideRefMut::from_raw_parts_mut(
                 <R::CType as Wide>::as_mut_ptr(value).cast(),
                 <R::CType as Wide>::metadata(value),
             )
@@ -698,10 +701,13 @@ impl<T: ReprC<CType: Sized>, S: Default> Default for RefVecEncodeStore<T, S> {
 
 #[cfg(feature = "alloc")]
 impl<T: ReprC<CType: CType + Sized>, S> RefVecEncodeStore<T, S> {
-    pub fn encode(&mut self, encode: impl FnOnce(&mut S) -> Vec<T::CType>) -> crate::vec::CVec<T> {
+    pub fn encode(
+        &mut self,
+        encode: impl FnOnce(&mut S) -> Vec<T::CType>,
+    ) -> crate::vec::abi::Vec<T::CType> {
         self.elements = encode(&mut self.fields);
         unsafe {
-            crate::vec::CVec::<T>::from_raw_parts(
+            crate::vec::abi::Vec::<T::CType>::from_raw_parts(
                 self.elements.as_mut_ptr(),
                 self.elements.len(),
                 self.elements.capacity(),

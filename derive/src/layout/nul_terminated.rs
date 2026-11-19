@@ -36,11 +36,11 @@ pub(super) fn expand(
     let alloc_method = cfg!(feature = "alloc").then(|| {
         quote! {
             fn into_non_null(
-                self: co3::boxed::RustBox<Self>,
+                self: co3::boxed::Box<Self>,
             ) -> core::ptr::NonNull<Self::Header> {
                 let inner = unsafe {
-                    co3::boxed::RustBox::from_raw(
-                        co3::boxed::RustBox::into_raw(self) as *mut #field_ty
+                    co3::boxed::Box::from_raw(
+                        co3::boxed::Box::into_raw(self) as *mut #field_ty
                     )
                 };
                 <#field_ty as co3::ffi::NulTerminatedBuf>::into_non_null(inner)
@@ -48,13 +48,13 @@ pub(super) fn expand(
 
             unsafe fn from_non_null(
                 ptr: core::ptr::NonNull<Self::Header>,
-            ) -> co3::boxed::RustBox<Self> {
+            ) -> co3::boxed::Box<Self> {
                 let inner = unsafe {
                     <#field_ty as co3::ffi::NulTerminatedBuf>::from_non_null(ptr.cast())
                 };
                 unsafe {
-                    co3::boxed::RustBox::from_raw(
-                        co3::boxed::RustBox::into_raw(inner) as *mut Self
+                    co3::boxed::Box::from_raw(
+                        co3::boxed::Box::into_raw(inner) as *mut Self
                     )
                 }
             }

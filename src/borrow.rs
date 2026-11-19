@@ -1,7 +1,7 @@
 #[cfg(feature = "alloc")]
 pub use alloc::borrow::ToOwned;
 #[cfg(feature = "alloc")]
-use alloc::{boxed::Box as RustBox, vec::Vec};
+use alloc::{boxed::Box, vec::Vec};
 use core::marker::PhantomData;
 
 use disjoint_impls::disjoint_impls;
@@ -21,15 +21,15 @@ use crate::{
     CFnArg, CFnReturn, CType, ReprC,
     convert::{Decode, DecodeMove, EmptyStore, Encode, EncodeMove, EncodeMoveUnchecked, Store},
     niche::Niche,
-    option::COptionSome,
-    result::{CResult, CResultErr, CResultOk},
+    option::abi::OptionSome as AbiOptionSome,
+    result::abi::{Result as AbiResult, ResultErr as AbiResultErr, ResultOk as AbiResultOk},
     transmute::{AbiCompatible, AbiCompatibleValidate},
 };
 #[cfg(feature = "alloc")]
 use crate::{
-    boxed::Box,
-    vec::CVec,
-    wide::{CWideBox, Wide},
+    boxed::abi::Box as AbiBox,
+    vec::abi::Vec as AbiVec,
+    wide::{Wide, abi::WideBox as AbiWideBox},
 };
 
 /// Encode a borrowed carrier without retaining conversion storage.
@@ -90,12 +90,12 @@ disjoint_impls! {
 
     #[cfg(feature = "alloc")]
     unsafe impl<T: AbiCompatible + BorrowedEncodeUnchecked, S: SizedKind> BorrowedEncodeUnchecked
-        for RustBox<T>
+        for Box<T>
     where
         T: RustSpec<Layout = Stable, Size = RustSpecSized<S>> + ReprC<CType: CType + Sized>,
-        Self: ReprC<CType = Box<<T as crate::ReprC>::CType>>,
+        Self: ReprC<CType = AbiBox<<T as ReprC>::CType>>,
     {
-        type Owner = (Option<Self>, Option<RustBox<T::CType>>, RustBox<T::Owner>);
+        type Owner = (Option<Self>, Option<Box<T::CType>>, Box<T::Owner>);
         type SoftStore = ();
 
         unsafe fn soft_encode_unchecked<'itm>(
@@ -110,18 +110,18 @@ disjoint_impls! {
             *owner = Default::default();
             let value = owner.0.insert(self);
             // The allocation stays owned here; only its address crosses FFI.
-            unsafe { Box::from_raw(core::ptr::from_mut(&mut **value).cast()) }
+            unsafe { AbiBox::from_raw(core::ptr::from_mut(&mut **value).cast()) }
         }
     }
 
     #[cfg(feature = "alloc")]
-    unsafe impl<T: BorrowedEncodeUnchecked, S: SizedKind> BorrowedEncodeUnchecked for RustBox<T>
+    unsafe impl<T: BorrowedEncodeUnchecked, S: SizedKind> BorrowedEncodeUnchecked for Box<T>
     where
         T: RustSpec<Layout = Unstable, Size = RustSpecSized<S>> + ReprC<CType: CType + Sized>,
-        Self: ReprC<CType = Box<<T as crate::ReprC>::CType>>,
+        Self: ReprC<CType = AbiBox<<T as ReprC>::CType>>,
     {
-        type Owner = (Option<RustBox<T::CType>>, RustBox<T::Owner>);
-        type SoftStore = RustBox<T::SoftStore>;
+        type Owner = (Option<Box<T::CType>>, Box<T::Owner>);
+        type SoftStore = Box<T::SoftStore>;
 
         unsafe fn soft_encode_unchecked<'itm>(
             self,
@@ -134,13 +134,13 @@ disjoint_impls! {
             **store = Default::default();
             *owner = Default::default();
             let value = unsafe { T::soft_encode_unchecked(*self, store, &mut owner.1) };
-            let value = owner.0.insert(RustBox::new(value));
-            unsafe { Box::from_raw(core::ptr::from_mut(&mut **value)) }
+            let value = owner.0.insert(Box::new(value));
+            unsafe { AbiBox::from_raw(core::ptr::from_mut(&mut **value)) }
         }
     }
 
     #[cfg(feature = "alloc")]
-    unsafe impl BorrowedEncodeUnchecked for RustBox<str> {
+    unsafe impl BorrowedEncodeUnchecked for Box<str> {
         type Owner = Option<Self>;
         type SoftStore = ();
 
@@ -159,18 +159,18 @@ disjoint_impls! {
             let data = core::ptr::NonNull::new(<str as Wide>::as_mut_ptr(ptr))
                 .unwrap()
                 .cast();
-            unsafe { CWideBox::from_raw_parts(data, len) }
+            unsafe { AbiWideBox::from_raw_parts(data, len) }
         }
     }
 
     #[cfg(feature = "alloc")]
-    unsafe impl<T: AbiCompatible + BorrowedEncodeUnchecked> BorrowedEncodeUnchecked for RustBox<[T]>
+    unsafe impl<T: AbiCompatible + BorrowedEncodeUnchecked> BorrowedEncodeUnchecked for Box<[T]>
     where
         T: RustSpec<Layout = Stable> + ReprC<CType: CType + Sized>,
         [T]: RustSpec<Layout = Stable>,
-        Self: ReprC<CType = CWideBox<[T]>>,
+        Self: ReprC<CType = AbiWideBox<<[T] as crate::ReprC>::CType>>,
     {
-        type Owner = (Option<Self>, Option<RustBox<[T::CType]>>, RustBox<[T::Owner]>);
+        type Owner = (Option<Self>, Option<Box<[T::CType]>>, Box<[T::Owner]>);
         type SoftStore = ();
 
         unsafe fn soft_encode_unchecked<'itm>(
@@ -185,19 +185,19 @@ disjoint_impls! {
             *owner = Default::default();
             let values = owner.0.insert(self);
             let data = core::ptr::NonNull::new(values.as_mut_ptr()).unwrap().cast();
-            unsafe { CWideBox::from_raw_parts(data, values.len()) }
+            unsafe { AbiWideBox::from_raw_parts(data, values.len()) }
         }
     }
 
     #[cfg(feature = "alloc")]
-    unsafe impl<T: BorrowedEncodeUnchecked> BorrowedEncodeUnchecked for RustBox<[T]>
+    unsafe impl<T: BorrowedEncodeUnchecked> BorrowedEncodeUnchecked for Box<[T]>
     where
         T: RustSpec<Layout = Unstable> + ReprC<CType: CType + Sized>,
         [T]: RustSpec<Layout = Unstable>,
-        Self: ReprC<CType = CWideBox<[T]>>,
+        Self: ReprC<CType = AbiWideBox<<[T] as crate::ReprC>::CType>>,
     {
-        type Owner = (Option<RustBox<[T::CType]>>, RustBox<[T::Owner]>);
-        type SoftStore = RustBox<[T::SoftStore]>;
+        type Owner = (Option<Box<[T::CType]>>, Box<[T::Owner]>);
+        type SoftStore = Box<[T::SoftStore]>;
 
         unsafe fn soft_encode_unchecked<'itm>(
             self,
@@ -217,17 +217,17 @@ disjoint_impls! {
             );
             let values = owner.0.insert(values);
             let data = core::ptr::NonNull::new(values.as_mut_ptr()).unwrap();
-            unsafe { CWideBox::from_raw_parts(data, values.len()) }
+            unsafe { AbiWideBox::from_raw_parts(data, values.len()) }
         }
     }
 
     #[cfg(feature = "alloc")]
-    unsafe impl<T: crate::ffi::NulTerminatedBuf + ?Sized> BorrowedEncodeUnchecked for RustBox<T>
+    unsafe impl<T: crate::ffi::NulTerminatedBuf + ?Sized> BorrowedEncodeUnchecked for Box<T>
     where
         T: RustSpec<Layout = Unstable, Size = NulTerminated> + ReprC<CType: CType + Sized>,
         <T as crate::ffi::NulTerminatedBuf>::Header:
             AbiCompatible<CType = <T as ReprC>::CType> + RustSpec<Layout = Stable>,
-        Self: ReprC<CType = Box<<T as crate::ReprC>::CType>>,
+        Self: ReprC<CType = AbiBox<<T as ReprC>::CType>>,
     {
         type Owner = Option<Self>;
         type SoftStore = ();
@@ -243,7 +243,7 @@ disjoint_impls! {
             let _ = store;
             let value = owner.insert(self);
             // The borrowed ABI permits no writes through this carrier.
-            unsafe { Box::from_raw(T::as_ptr(value).cast_mut().cast()) }
+            unsafe { AbiBox::from_raw(T::as_ptr(value).cast_mut().cast()) }
         }
     }
 
@@ -253,7 +253,7 @@ disjoint_impls! {
     where
         T: RustSpec<Layout = Stable> + ReprC<CType: CType + Sized>,
     {
-        type Owner = (Option<Self>, Vec<T::CType>, RustBox<[T::Owner]>);
+        type Owner = (Option<Self>, Vec<T::CType>, Box<[T::Owner]>);
         type SoftStore = ();
 
         unsafe fn soft_encode_unchecked<'itm>(
@@ -267,7 +267,7 @@ disjoint_impls! {
             let _ = store;
             *owner = Default::default();
             let value = owner.0.insert(self);
-            unsafe { CVec::from_raw_parts(value.as_mut_ptr().cast(), value.len(), value.capacity()) }
+            unsafe { AbiVec::from_raw_parts(value.as_mut_ptr().cast(), value.len(), value.capacity()) }
         }
     }
 
@@ -276,8 +276,8 @@ disjoint_impls! {
     where
         T: RustSpec<Layout = Unstable> + ReprC<CType: CType + Sized>,
     {
-        type Owner = (Vec<T::CType>, RustBox<[T::Owner]>);
-        type SoftStore = RustBox<[T::SoftStore]>;
+        type Owner = (Vec<T::CType>, Box<[T::Owner]>);
+        type SoftStore = Box<[T::SoftStore]>;
 
         unsafe fn soft_encode_unchecked<'itm>(
             self,
@@ -295,7 +295,7 @@ disjoint_impls! {
                 &mut owner.1,
                 |value, store, owner| unsafe { T::soft_encode_unchecked(value, store, owner) },
             );
-            unsafe { CVec::from_raw_parts(owner.0.as_mut_ptr(), owner.0.len(), owner.0.capacity()) }
+            unsafe { AbiVec::from_raw_parts(owner.0.as_mut_ptr(), owner.0.len(), owner.0.capacity()) }
         }
     }
 
@@ -303,7 +303,7 @@ disjoint_impls! {
     unsafe impl<T> BorrowedEncodeUnchecked for Vec<T>
     where
         T: ReprC<CType: CType + Sized>,
-        crate::vec::Vec<T>: BorrowedEncodeUnchecked + ReprC<CType = CVec<T, true>>,
+        crate::vec::Vec<T>: BorrowedEncodeUnchecked + ReprC<CType = AbiVec<<T as ReprC>::CType, true>>,
     {
         type Owner = <crate::vec::Vec<T> as BorrowedEncodeUnchecked>::Owner;
         type SoftStore = <crate::vec::Vec<T> as BorrowedEncodeUnchecked>::SoftStore;
@@ -366,24 +366,24 @@ disjoint_impls! {
             Self: 'itm,
         {
             match self {
-                Some(value) => COptionSome(unsafe {
+                Some(value) => AbiOptionSome(unsafe {
                     value.soft_encode_unchecked(store.insert(Default::default()), owner.insert(Default::default()))
                 }),
                 None => {
                     *store = None;
                     *owner = None;
-                    COptionSome(R::NICHE)
+                    AbiOptionSome(R::NICHE)
                 }
             }
         }
     }
     unsafe impl<
-        R: BorrowedEncodeUnchecked<CType: Copy>,
-        E: BorrowedEncodeUnchecked<CType: Copy>,
+        R: BorrowedEncodeUnchecked<CType: crate::CType + Copy>,
+        E: BorrowedEncodeUnchecked<CType: crate::CType + Copy>,
         K: SizedKind,
     > BorrowedEncodeUnchecked for Result<R, E>
     where
-        Self: ReprC<CType = CResult<R, E>>,
+        Self: ReprC<CType = AbiResult<<R as ReprC>::CType, <E as ReprC>::CType>>,
         R: RustSpec<Size = RustSpecSized<K>>,
         E: RustSpec<Size = RustSpecSized<K>>,
     {
@@ -405,10 +405,10 @@ disjoint_impls! {
             }
         }
     }
-    unsafe impl<R: BorrowedEncodeUnchecked + Niche, E: ReprC, N: LayoutKind> BorrowedEncodeUnchecked
+    unsafe impl<R: BorrowedEncodeUnchecked + Niche, E: ReprC<CType: CType + Sized>, N: LayoutKind> BorrowedEncodeUnchecked
         for Result<R, E>
     where
-        Self: ReprC<CType = CResultOk<R, E>>,
+        Self: ReprC<CType = AbiResultOk<<R as ReprC>::CType, <E as ReprC>::CType>>,
         R: RustSpec<Size = RustSpecSized<Gt<Zero>>, Niche = WithNiche<N>>,
         E: RustSpec<Size = RustSpecSized<Zero>>,
     {
@@ -425,22 +425,22 @@ disjoint_impls! {
             Self: 'itm,
         {
             match self {
-                Ok(ok) => CResultOk(
+                Ok(ok) => AbiResultOk(
                     unsafe { ok.soft_encode_unchecked(store.insert(Default::default()), owner.insert(Default::default())) },
                     PhantomData,
                 ),
                 Err(_) => {
                     *store = None;
                     *owner = None;
-                    CResultOk(R::NICHE, PhantomData)
+                    AbiResultOk(R::NICHE, PhantomData)
                 }
             }
         }
     }
-    unsafe impl<R: ReprC, E: BorrowedEncodeUnchecked + Niche, N: LayoutKind> BorrowedEncodeUnchecked
+    unsafe impl<R: ReprC<CType: CType + Sized>, E: BorrowedEncodeUnchecked + Niche, N: LayoutKind> BorrowedEncodeUnchecked
         for Result<R, E>
     where
-        Self: ReprC<CType = CResultErr<R, E>>,
+        Self: ReprC<CType = AbiResultErr<<R as ReprC>::CType, <E as ReprC>::CType>>,
         R: RustSpec<Size = RustSpecSized<Zero>>,
         E: RustSpec<Size = RustSpecSized<Gt<Zero>>, Niche = WithNiche<N>>,
     {
@@ -460,9 +460,9 @@ disjoint_impls! {
                 Ok(_) => {
                     *store = None;
                     *owner = None;
-                    CResultErr(E::NICHE, PhantomData)
+                    AbiResultErr(E::NICHE, PhantomData)
                 }
-                Err(err) => CResultErr(
+                Err(err) => AbiResultErr(
                     unsafe { err.soft_encode_unchecked(store.insert(Default::default()), owner.insert(Default::default())) },
                     PhantomData,
                 ),
@@ -498,12 +498,12 @@ disjoint_impls! {
             Self: 'itm;
     }
     #[cfg(feature = "alloc")]
-    unsafe impl<T: AbiCompatible + BorrowedEncode, S: SizedKind> BorrowedEncode for RustBox<T>
+    unsafe impl<T: AbiCompatible + BorrowedEncode, S: SizedKind> BorrowedEncode for Box<T>
     where
         T: RustSpec<Layout = Stable, Size = RustSpecSized<S>> + ReprC<CType: CType + Sized>,
-        Self: ReprC<CType = Box<<T as crate::ReprC>::CType>>,
+        Self: ReprC<CType = AbiBox<<T as ReprC>::CType>>,
     {
-        type Store = RustBox<T::Store>;
+        type Store = Box<T::Store>;
 
         fn soft_encode<'itm>(
             self,
@@ -517,9 +517,9 @@ disjoint_impls! {
             *owner = Default::default();
             // Move the pointee once, keeping its allocation for the ABI-compatible result.
             // On panic the uninitialized box frees the allocation without dropping T again.
-            let ptr = RustBox::into_raw(self);
+            let ptr = Box::into_raw(self);
             let mut allocation =
-                unsafe { RustBox::from_raw(ptr.cast::<core::mem::MaybeUninit<T::CType>>()) };
+                unsafe { Box::from_raw(ptr.cast::<core::mem::MaybeUninit<T::CType>>()) };
             let value = T::soft_encode(
                 unsafe { allocation.as_mut_ptr().cast::<T>().read() },
                 store,
@@ -527,17 +527,17 @@ disjoint_impls! {
             );
             allocation.write(value);
             let value = owner.1.insert(unsafe { allocation.assume_init() });
-            unsafe { Box::from_raw(core::ptr::from_mut(&mut **value)) }
+            unsafe { AbiBox::from_raw(core::ptr::from_mut(&mut **value)) }
         }
     }
 
     #[cfg(feature = "alloc")]
-    unsafe impl<T: BorrowedEncode, S: SizedKind> BorrowedEncode for RustBox<T>
+    unsafe impl<T: BorrowedEncode, S: SizedKind> BorrowedEncode for Box<T>
     where
         T: RustSpec<Layout = Unstable, Size = RustSpecSized<S>> + ReprC<CType: CType + Sized>,
-        Self: ReprC<CType = Box<<T as crate::ReprC>::CType>>,
+        Self: ReprC<CType = AbiBox<<T as ReprC>::CType>>,
     {
-        type Store = RustBox<T::Store>;
+        type Store = Box<T::Store>;
 
         fn soft_encode<'itm>(
             self,
@@ -550,13 +550,13 @@ disjoint_impls! {
             **store = Default::default();
             *owner = Default::default();
             let value = T::soft_encode(*self, store, &mut owner.1);
-            let value = owner.0.insert(RustBox::new(value));
-            unsafe { Box::from_raw(core::ptr::from_mut(&mut **value)) }
+            let value = owner.0.insert(Box::new(value));
+            unsafe { AbiBox::from_raw(core::ptr::from_mut(&mut **value)) }
         }
     }
 
     #[cfg(feature = "alloc")]
-    unsafe impl BorrowedEncode for RustBox<str> {
+    unsafe impl BorrowedEncode for Box<str> {
         type Store = ();
 
         fn soft_encode<'itm>(
@@ -574,18 +574,18 @@ disjoint_impls! {
             let data = core::ptr::NonNull::new(<str as Wide>::as_mut_ptr(ptr))
                 .unwrap()
                 .cast();
-            unsafe { CWideBox::from_raw_parts(data, len) }
+            unsafe { AbiWideBox::from_raw_parts(data, len) }
         }
     }
 
     #[cfg(feature = "alloc")]
-    unsafe impl<T: AbiCompatible + BorrowedEncode> BorrowedEncode for RustBox<[T]>
+    unsafe impl<T: AbiCompatible + BorrowedEncode> BorrowedEncode for Box<[T]>
     where
         T: RustSpec<Layout = Stable> + ReprC<CType: CType + Sized>,
         [T]: RustSpec<Layout = Stable>,
-        Self: ReprC<CType = CWideBox<[T]>>,
+        Self: ReprC<CType = AbiWideBox<<[T] as crate::ReprC>::CType>>,
     {
-        type Store = RustBox<[T::Store]>;
+        type Store = Box<[T::Store]>;
 
         fn soft_encode<'itm>(
             self,
@@ -605,18 +605,18 @@ disjoint_impls! {
             );
             let values = owner.1.insert(values);
             let data = core::ptr::NonNull::new(values.as_mut_ptr()).unwrap();
-            unsafe { CWideBox::from_raw_parts(data, values.len()) }
+            unsafe { AbiWideBox::from_raw_parts(data, values.len()) }
         }
     }
 
     #[cfg(feature = "alloc")]
-    unsafe impl<T: BorrowedEncode> BorrowedEncode for RustBox<[T]>
+    unsafe impl<T: BorrowedEncode> BorrowedEncode for Box<[T]>
     where
         T: RustSpec<Layout = Unstable> + ReprC<CType: CType + Sized>,
         [T]: RustSpec<Layout = Unstable>,
-        Self: ReprC<CType = CWideBox<[T]>>,
+        Self: ReprC<CType = AbiWideBox<<[T] as crate::ReprC>::CType>>,
     {
-        type Store = RustBox<[T::Store]>;
+        type Store = Box<[T::Store]>;
 
         fn soft_encode<'itm>(
             self,
@@ -636,17 +636,17 @@ disjoint_impls! {
             );
             let values = owner.0.insert(values);
             let data = core::ptr::NonNull::new(values.as_mut_ptr()).unwrap();
-            unsafe { CWideBox::from_raw_parts(data, values.len()) }
+            unsafe { AbiWideBox::from_raw_parts(data, values.len()) }
         }
     }
 
     #[cfg(feature = "alloc")]
-    unsafe impl<T: crate::ffi::NulTerminatedBuf + ?Sized> BorrowedEncode for RustBox<T>
+    unsafe impl<T: crate::ffi::NulTerminatedBuf + ?Sized> BorrowedEncode for Box<T>
     where
         T: RustSpec<Layout = Unstable, Size = NulTerminated> + ReprC<CType: CType + Sized>,
         <T as crate::ffi::NulTerminatedBuf>::Header:
             AbiCompatible<CType = <T as ReprC>::CType> + RustSpec<Layout = Stable>,
-        Self: ReprC<CType = Box<<T as crate::ReprC>::CType>>,
+        Self: ReprC<CType = AbiBox<<T as ReprC>::CType>>,
     {
         type Store = ();
 
@@ -661,7 +661,7 @@ disjoint_impls! {
             let _ = store;
             let value = owner.insert(self);
             // The borrowed ABI permits no writes through this carrier.
-            unsafe { Box::from_raw(T::as_ptr(value).cast_mut().cast()) }
+            unsafe { AbiBox::from_raw(T::as_ptr(value).cast_mut().cast()) }
         }
     }
 
@@ -670,7 +670,7 @@ disjoint_impls! {
     where
         T: RustSpec<Layout = Stable> + ReprC<CType: CType + Sized>,
     {
-        type Store = RustBox<[T::Store]>;
+        type Store = Box<[T::Store]>;
 
         fn soft_encode<'itm>(
             self,
@@ -688,7 +688,7 @@ disjoint_impls! {
                 &mut owner.2,
                 |value, store, owner| T::soft_encode(value, store, owner),
             );
-            unsafe { CVec::from_raw_parts(owner.1.as_mut_ptr(), owner.1.len(), owner.1.capacity()) }
+            unsafe { AbiVec::from_raw_parts(owner.1.as_mut_ptr(), owner.1.len(), owner.1.capacity()) }
         }
     }
 
@@ -697,7 +697,7 @@ disjoint_impls! {
     where
         T: RustSpec<Layout = Unstable> + ReprC<CType: CType + Sized>,
     {
-        type Store = RustBox<[T::Store]>;
+        type Store = Box<[T::Store]>;
 
         fn soft_encode<'itm>(
             self,
@@ -715,7 +715,7 @@ disjoint_impls! {
                 &mut owner.1,
                 |value, store, owner| T::soft_encode(value, store, owner),
             );
-            unsafe { CVec::from_raw_parts(owner.0.as_mut_ptr(), owner.0.len(), owner.0.capacity()) }
+            unsafe { AbiVec::from_raw_parts(owner.0.as_mut_ptr(), owner.0.len(), owner.0.capacity()) }
         }
     }
 
@@ -723,7 +723,7 @@ disjoint_impls! {
     unsafe impl<T> BorrowedEncode for Vec<T>
     where
         T: ReprC<CType: CType + Sized>,
-        crate::vec::Vec<T>: BorrowedEncode + ReprC<CType = CVec<T, true>>,
+        crate::vec::Vec<T>: BorrowedEncode + ReprC<CType = AbiVec<<T as ReprC>::CType, true>>,
     {
         type Store = <crate::vec::Vec<T> as BorrowedEncode>::Store;
 
@@ -799,7 +799,7 @@ disjoint_impls! {
     unsafe impl<R: BorrowedEncode> BorrowedEncode for Option<R>
     where
         R: RustSpec<Niche = WithoutNiche>,
-        Self: ReprC<CType = crate::option::COption<R>>,
+        Self: ReprC<CType = crate::option::abi::Option<<R as ReprC>::CType>>,
     {
         type Store = <crate::option::Option<R> as BorrowedEncode>::Store;
 
@@ -816,7 +816,7 @@ disjoint_impls! {
     unsafe impl<R: BorrowedEncode + Niche, N: LayoutKind> BorrowedEncode for Option<R>
     where
         R: RustSpec<Niche = WithNiche<N>>,
-        Self: ReprC<CType = COptionSome<R>>,
+        Self: ReprC<CType = AbiOptionSome<<R as ReprC>::CType>>,
     {
         type Store = Option<R::Store>;
 
@@ -832,18 +832,18 @@ disjoint_impls! {
             if let Some(value) = self {
                 let encoded = BorrowedEncode::soft_encode(value, store.insert(Default::default()), owner.insert(Default::default()));
                 debug_assert!(!R::is_niche(&encoded), "encoding produced NICHE value");
-                return COptionSome(encoded);
+                return AbiOptionSome(encoded);
             }
 
             *store = None;
                     *owner = None;
-            COptionSome(R::NICHE)
+            AbiOptionSome(R::NICHE)
         }
     }
-    unsafe impl<R: BorrowedEncode<CType: Copy>, E: BorrowedEncode<CType: Copy>, K: SizedKind>
+    unsafe impl<R: BorrowedEncode<CType: crate::CType + Copy>, E: BorrowedEncode<CType: crate::CType + Copy>, K: SizedKind>
         BorrowedEncode for Result<R, E>
     where
-        Self: ReprC<CType = CResult<R, E>>,
+        Self: ReprC<CType = AbiResult<<R as ReprC>::CType, <E as ReprC>::CType>>,
         R: RustSpec<Size = RustSpecSized<K>>,
         E: RustSpec<Size = RustSpecSized<K>>,
     {
@@ -863,9 +863,9 @@ disjoint_impls! {
                 .with_source()
         }
     }
-    unsafe impl<R: BorrowedEncode + Niche, E: ReprC, N: LayoutKind> BorrowedEncode for Result<R, E>
+    unsafe impl<R: BorrowedEncode + Niche, E: ReprC<CType: CType + Sized>, N: LayoutKind> BorrowedEncode for Result<R, E>
     where
-        Self: ReprC<CType = CResultOk<R, E>>,
+        Self: ReprC<CType = AbiResultOk<<R as ReprC>::CType, <E as ReprC>::CType>>,
         R: RustSpec<Size = RustSpecSized<Gt<Zero>>, Niche = WithNiche<N>>,
         E: RustSpec<Size = RustSpecSized<Zero>>,
     {
@@ -881,17 +881,17 @@ disjoint_impls! {
             Self: 'itm,
         {
             match self {
-                Ok(ok) => CResultOk(
+                Ok(ok) => AbiResultOk(
                     BorrowedEncode::soft_encode(ok, store.insert(Default::default()), owner.insert(Default::default())),
                     PhantomData,
                 ),
-                Err(_) => CResultOk(R::NICHE, PhantomData),
+                Err(_) => AbiResultOk(R::NICHE, PhantomData),
             }
         }
     }
-    unsafe impl<R: ReprC, E: BorrowedEncode + Niche, N: LayoutKind> BorrowedEncode for Result<R, E>
+    unsafe impl<R: ReprC<CType: CType + Sized>, E: BorrowedEncode + Niche, N: LayoutKind> BorrowedEncode for Result<R, E>
     where
-        Self: ReprC<CType = CResultErr<R, E>>,
+        Self: ReprC<CType = AbiResultErr<<R as ReprC>::CType, <E as ReprC>::CType>>,
         R: RustSpec<Size = RustSpecSized<Zero>>,
         E: RustSpec<Size = RustSpecSized<Gt<Zero>>, Niche = WithNiche<N>>,
     {
@@ -907,8 +907,8 @@ disjoint_impls! {
             Self: 'itm,
         {
             match self {
-                Ok(_) => CResultErr(E::NICHE, PhantomData),
-                Err(err) => CResultErr(
+                Ok(_) => AbiResultErr(E::NICHE, PhantomData),
+                Err(err) => AbiResultErr(
                     BorrowedEncode::soft_encode(err, store.insert(Default::default()), owner.insert(Default::default())),
                     PhantomData,
                 ),
@@ -953,12 +953,12 @@ disjoint_impls! {
         }
     }
     #[cfg(feature = "alloc")]
-    unsafe impl<'d, T: BorrowedDecode<'d>, S: SizedKind> BorrowedDecode<'d> for RustBox<T>
+    unsafe impl<'d, T: BorrowedDecode<'d>, S: SizedKind> BorrowedDecode<'d> for Box<T>
     where
         T: RustSpec<Size = RustSpecSized<S>> + ReprC<CType: CType + Copy + Sized>,
-        Self: ReprC<CType = Box<<T as crate::ReprC>::CType>>,
+        Self: ReprC<CType = AbiBox<<T as ReprC>::CType>>,
     {
-        type Store = RustBox<T::Store>;
+        type Store = Box<T::Store>;
 
         unsafe fn soft_decode<'itm: 'd>(
             source: Self::CType,
@@ -966,24 +966,24 @@ disjoint_impls! {
         ) -> Option<Self> {
             // Copy only the lowered payload; the foreign allocation remains borrowed.
             let source = unsafe { source.as_ptr().as_ref()? };
-            unsafe { T::soft_decode(*source, store) }.map(RustBox::new)
+            unsafe { T::soft_decode(*source, store) }.map(Box::new)
         }
 
         unsafe fn soft_decode_unchecked<'itm: 'd>(
             source: Self::CType,
             store: &'itm mut Self::Store,
         ) -> Self {
-            RustBox::new(unsafe { T::soft_decode_unchecked(source.as_ptr().read(), store) })
+            Box::new(unsafe { T::soft_decode_unchecked(source.as_ptr().read(), store) })
         }
     }
 
     #[cfg(feature = "alloc")]
-    unsafe impl<'d, T: BorrowedDecode<'d>> BorrowedDecode<'d> for RustBox<[T]>
+    unsafe impl<'d, T: BorrowedDecode<'d>> BorrowedDecode<'d> for Box<[T]>
     where
         T: ReprC<CType: CType + Copy + Sized>,
-        Self: ReprC<CType = CWideBox<[T]>>,
+        Self: ReprC<CType = AbiWideBox<<[T] as crate::ReprC>::CType>>,
     {
-        type Store = RustBox<[T::Store]>;
+        type Store = Box<[T::Store]>;
 
         unsafe fn soft_decode<'itm: 'd>(
             source: Self::CType,
@@ -1003,12 +1003,12 @@ disjoint_impls! {
     }
 
     #[cfg(feature = "alloc")]
-    unsafe impl<'d> BorrowedDecode<'d> for RustBox<str> {
+    unsafe impl<'d> BorrowedDecode<'d> for Box<str> {
         type Store = ();
 
         unsafe fn soft_decode<'itm: 'd>(source: Self::CType, _: &'itm mut Self::Store) -> Option<Self> {
             let bytes = unsafe { borrowed_decode_slice(source.as_ptr(), source.metadata())? };
-            Some(RustBox::from(core::str::from_utf8(bytes).ok()?))
+            Some(Box::from(core::str::from_utf8(bytes).ok()?))
         }
 
         unsafe fn soft_decode_unchecked<'itm: 'd>(
@@ -1016,16 +1016,16 @@ disjoint_impls! {
             _: &'itm mut Self::Store,
         ) -> Self {
             let bytes = unsafe { core::slice::from_raw_parts(source.as_ptr(), source.metadata()) };
-            RustBox::from(unsafe { core::str::from_utf8_unchecked(bytes) })
+            Box::from(unsafe { core::str::from_utf8_unchecked(bytes) })
         }
     }
 
     #[cfg(feature = "alloc")]
-    unsafe impl<'d, T: crate::ffi::NulTerminatedBuf + ToOwned + ?Sized> BorrowedDecode<'d> for RustBox<T>
+    unsafe impl<'d, T: crate::ffi::NulTerminatedBuf + ToOwned + ?Sized> BorrowedDecode<'d> for Box<T>
     where
         T: RustSpec<Size = NulTerminated> + ReprC<CType: CType + Copy + Sized>,
         <T as crate::ffi::NulTerminatedBuf>::Header: AbiCompatible<CType = <T as ReprC>::CType>,
-        Self: ReprC<CType = Box<<T as crate::ReprC>::CType>> + From<<T as ToOwned>::Owned>,
+        Self: ReprC<CType = AbiBox<<T as ReprC>::CType>> + From<<T as ToOwned>::Owned>,
     {
         type Store = ();
 
@@ -1048,9 +1048,9 @@ disjoint_impls! {
     unsafe impl<'d, T: BorrowedDecode<'d>> BorrowedDecode<'d> for Vec<T>
     where
         T: ReprC<CType: CType + Copy + Sized>,
-        Self: ReprC<CType = CVec<T, false>>,
+        Self: ReprC<CType = AbiVec<<T as ReprC>::CType, false>>,
     {
-        type Store = RustBox<[T::Store]>;
+        type Store = Box<[T::Store]>;
 
         unsafe fn soft_decode<'itm: 'd>(
             source: Self::CType,
@@ -1076,9 +1076,9 @@ disjoint_impls! {
     unsafe impl<'d, T: BorrowedDecode<'d>> BorrowedDecode<'d> for crate::vec::Vec<T>
     where
         T: ReprC<CType: CType + Copy + Sized>,
-        Self: ReprC<CType = CVec<T, true>>,
+        Self: ReprC<CType = AbiVec<<T as ReprC>::CType, true>>,
     {
-        type Store = RustBox<[T::Store]>;
+        type Store = Box<[T::Store]>;
 
         unsafe fn soft_decode<'itm: 'd>(
             source: Self::CType,
@@ -1206,12 +1206,12 @@ disjoint_impls! {
     }
     unsafe impl<
         'd,
-        R: BorrowedDecode<'d, CType: Copy>,
-        E: BorrowedDecode<'d, CType: Copy>,
+        R: BorrowedDecode<'d, CType: crate::CType + Copy>,
+        E: BorrowedDecode<'d, CType: crate::CType + Copy>,
         K: SizedKind,
     > BorrowedDecode<'d> for Result<R, E>
     where
-        Self: ReprC<CType = CResult<R, E>>,
+        Self: ReprC<CType = AbiResult<<R as ReprC>::CType, <E as ReprC>::CType>>,
         R: RustSpec<Size = RustSpecSized<K>>,
         E: RustSpec<Size = RustSpecSized<K>>,
     {
@@ -1245,10 +1245,10 @@ disjoint_impls! {
             .into()
         }
     }
-    unsafe impl<'d, R: BorrowedDecode<'d> + Niche, E: Default + ReprC, N: LayoutKind> BorrowedDecode<'d>
+    unsafe impl<'d, R: BorrowedDecode<'d> + Niche, E: Default + ReprC<CType: CType + Sized>, N: LayoutKind> BorrowedDecode<'d>
         for Result<R, E>
     where
-        Self: ReprC<CType = CResultOk<R, E>>,
+        Self: ReprC<CType = AbiResultOk<<R as ReprC>::CType, <E as ReprC>::CType>>,
         R: RustSpec<Size = RustSpecSized<Gt<Zero>>, Niche = WithNiche<N>>,
         E: RustSpec<Size = RustSpecSized<Zero>>,
     {
@@ -1278,10 +1278,10 @@ disjoint_impls! {
             Ok(unsafe { R::soft_decode_unchecked(source, store) })
         }
     }
-    unsafe impl<'d, R: Default + ReprC, E: BorrowedDecode<'d> + Niche, N: LayoutKind> BorrowedDecode<'d>
+    unsafe impl<'d, R: Default + ReprC<CType: CType + Sized>, E: BorrowedDecode<'d> + Niche, N: LayoutKind> BorrowedDecode<'d>
         for Result<R, E>
     where
-        Self: ReprC<CType = CResultErr<R, E>>,
+        Self: ReprC<CType = AbiResultErr<<R as ReprC>::CType, <E as ReprC>::CType>>,
         R: RustSpec<Size = RustSpecSized<Zero>>,
         E: RustSpec<Size = RustSpecSized<Gt<Zero>>, Niche = WithNiche<N>>,
     {
@@ -1356,8 +1356,8 @@ unsafe impl BorrowedEncode for alloc::string::String {
 
 #[cfg(feature = "alloc")]
 unsafe impl BorrowedEncodeUnchecked for alloc::ffi::CString {
-    type Owner = <RustBox<core::ffi::CStr> as BorrowedEncodeUnchecked>::Owner;
-    type SoftStore = <RustBox<core::ffi::CStr> as BorrowedEncodeUnchecked>::SoftStore;
+    type Owner = <Box<core::ffi::CStr> as BorrowedEncodeUnchecked>::Owner;
+    type SoftStore = <Box<core::ffi::CStr> as BorrowedEncodeUnchecked>::SoftStore;
 
     unsafe fn soft_encode_unchecked<'itm>(
         self,
@@ -1368,7 +1368,7 @@ unsafe impl BorrowedEncodeUnchecked for alloc::ffi::CString {
         Self: 'itm,
     {
         unsafe {
-            <RustBox<core::ffi::CStr> as BorrowedEncodeUnchecked>::soft_encode_unchecked(
+            <Box<core::ffi::CStr> as BorrowedEncodeUnchecked>::soft_encode_unchecked(
                 self.into_boxed_c_str(),
                 store,
                 owner,
@@ -1379,7 +1379,7 @@ unsafe impl BorrowedEncodeUnchecked for alloc::ffi::CString {
 
 #[cfg(feature = "alloc")]
 unsafe impl BorrowedEncode for alloc::ffi::CString {
-    type Store = <RustBox<core::ffi::CStr> as BorrowedEncode>::Store;
+    type Store = <Box<core::ffi::CStr> as BorrowedEncode>::Store;
 
     fn soft_encode<'itm>(
         self,
@@ -1389,11 +1389,7 @@ unsafe impl BorrowedEncode for alloc::ffi::CString {
     where
         Self: 'itm,
     {
-        <RustBox<core::ffi::CStr> as BorrowedEncode>::soft_encode(
-            self.into_boxed_c_str(),
-            store,
-            owner,
-        )
+        <Box<core::ffi::CStr> as BorrowedEncode>::soft_encode(self.into_boxed_c_str(), store, owner)
     }
 }
 
@@ -1478,7 +1474,7 @@ unsafe fn borrowed_decode_slice<'a, C: Copy>(data: *const C, len: usize) -> Opti
 #[cfg(feature = "alloc")]
 unsafe fn decode_borrowed_elements<'d, 'itm: 'd, T, B>(
     fields: &[T::CType],
-    stores: &'itm mut RustBox<[T::Store]>,
+    stores: &'itm mut Box<[T::Store]>,
 ) -> Option<B>
 where
     T: BorrowedDecode<'d, CType: Copy>,
@@ -1497,7 +1493,7 @@ where
 #[cfg(feature = "alloc")]
 unsafe fn decode_borrowed_elements_unchecked<'d, 'itm: 'd, T, B>(
     fields: &[T::CType],
-    stores: &'itm mut RustBox<[T::Store]>,
+    stores: &'itm mut Box<[T::Store]>,
 ) -> B
 where
     T: BorrowedDecode<'d, CType: Copy>,
@@ -1518,8 +1514,8 @@ where
 #[cfg(feature = "alloc")]
 fn encode_borrowed_elements<'a, T: 'a, C, S: Default, O: Default, B: FromIterator<C>>(
     values: impl ExactSizeIterator<Item = T>,
-    stores: &'a mut RustBox<[S]>,
-    owners: &'a mut RustBox<[O]>,
+    stores: &'a mut Box<[S]>,
+    owners: &'a mut Box<[O]>,
     mut encode: impl FnMut(T, &'a mut S, &'a mut O) -> C,
 ) -> B {
     let len = values.len();
@@ -1733,7 +1729,7 @@ unsafe impl<'d, T: BorrowedDecode<'d>, const N: usize> BorrowedDecode<'d> for [T
 
 #[cfg(all(test, feature = "alloc", feature = "derive"))]
 mod tests {
-    use alloc::{boxed::Box as RustBox, vec::Vec};
+    use alloc::{boxed::Box, vec::Vec};
     use core::{
         cell::Cell,
         sync::atomic::{AtomicUsize, Ordering},
@@ -1744,7 +1740,7 @@ mod tests {
     // Deliberately not Clone: borrowing converts each field on the original type.
     #[derive(RustSpec, ReprC)]
     struct Args<'a> {
-        owner: RustBox<u32>,
+        owner: Box<u32>,
         target: &'a mut u32,
     }
 
@@ -1812,7 +1808,7 @@ mod tests {
     #[test]
     fn aggregate_borrows_fields_without_cloning_the_aggregate() {
         let mut target = 9;
-        let owner = RustBox::new(7);
+        let owner = Box::new(7);
         let original = core::ptr::from_ref(&*owner);
         let mut encode_owner = Default::default();
         let mut encode_store = Default::default();
@@ -1841,23 +1837,23 @@ mod tests {
         drop(encode_owner);
     }
 
-    // The validator deliberately checks that it receives the original RustBox field.
+    // The validator deliberately checks that it receives the original Box field.
     #[allow(clippy::borrowed_box)]
-    fn nonzero_box(value: &RustBox<u32>) -> bool {
+    fn nonzero_box(value: &Box<u32>) -> bool {
         **value != 0
     }
 
     #[derive(RustSpec, ReprC)]
     #[rust_spec(non_robust)]
     #[repr_c(is_valid = |value| nonzero_box(value))]
-    struct NonZeroBox(RustBox<u32>);
+    struct NonZeroBox(Box<u32>);
 
     #[test]
     fn borrowed_validation_receives_original_fields() {
         let mut encode_owner = Default::default();
         let mut encode_store = Default::default();
         let carrier = crate::borrow::BorrowedEncode::soft_encode(
-            NonZeroBox(RustBox::new(5)),
+            NonZeroBox(Box::new(5)),
             &mut encode_store,
             &mut encode_owner,
         );
@@ -1871,9 +1867,11 @@ mod tests {
         encode_store.sync().unwrap();
         drop(encode_owner);
 
-        let owner = RustBox::new(0_u32);
+        let owner = Box::new(0_u32);
         let carrier = unsafe {
-            <NonZeroBox as crate::ReprC>::CType::from_fields(crate::boxed::Box::from_box(owner))
+            <NonZeroBox as crate::ReprC>::CType::from_fields(crate::boxed::abi::Box::from_box(
+                owner,
+            ))
         };
         let pointer = carrier.0;
         let mut decode_store = Default::default();
@@ -1894,7 +1892,7 @@ mod tests {
 
     #[derive(RustSpec, ReprC)]
     enum Choice<'a> {
-        Owner(RustBox<u32>),
+        Owner(Box<u32>),
         Reference(&'a mut u32),
     }
 
@@ -1903,7 +1901,7 @@ mod tests {
         let mut encode_owner = Default::default();
         let mut encode_store = Default::default();
         let encoded = crate::borrow::BorrowedEncode::soft_encode(
-            Choice::Owner(RustBox::new(12)),
+            Choice::Owner(Box::new(12)),
             &mut encode_store,
             &mut encode_owner,
         );
@@ -1950,18 +1948,22 @@ mod tests {
         use crate::{
             borrow::{Borrowed, decode},
             primitives::Bool,
-            vec::CVec,
+            vec::abi::Vec as AbiVec,
         };
-        assert!(unsafe { decode::<alloc::vec::Vec<u8>>(Borrowed(CVec::null())) }.is_none());
-        assert!(unsafe { decode::<RustBox<u8>>(Borrowed(crate::boxed::Box::null())) }.is_none());
+        assert!(unsafe { decode::<alloc::vec::Vec<u8>>(Borrowed(AbiVec::null())) }.is_none());
+        assert!(unsafe { decode::<Box<u8>>(Borrowed(crate::boxed::abi::Box::null())) }.is_none());
         let mut foreign = alloc::vec![Bool(1), Bool(2)];
         let header = unsafe {
-            CVec::<bool>::from_raw_parts(foreign.as_mut_ptr(), foreign.len(), foreign.capacity())
+            AbiVec::<<bool as crate::ReprC>::CType>::from_raw_parts(
+                foreign.as_mut_ptr(),
+                foreign.len(),
+                foreign.capacity(),
+            )
         };
         assert!(unsafe { decode::<alloc::vec::Vec<bool>>(Borrowed(header)) }.is_none());
         assert_eq!(foreign[1].0, 2);
         let invalid = unsafe {
-            CVec::<bool>::from_raw_parts(
+            AbiVec::<<bool as crate::ReprC>::CType>::from_raw_parts(
                 foreign.as_mut_ptr(),
                 foreign.capacity() + 1,
                 foreign.capacity(),
@@ -1974,8 +1976,8 @@ mod tests {
     fn borrowed_container_decode_does_not_read_shared_cells() {
         use crate::borrow::BorrowedDecode;
         static_assertions::assert_not_impl_any!(alloc::vec::Vec<Cell<u8>>: BorrowedDecode<'static>);
-        static_assertions::assert_not_impl_any!(RustBox<Cell<u8>>: BorrowedDecode<'static>);
-        static_assertions::assert_not_impl_any!(RustBox<[Cell<u8>]>: BorrowedDecode<'static>);
+        static_assertions::assert_not_impl_any!(Box<Cell<u8>>: BorrowedDecode<'static>);
+        static_assertions::assert_not_impl_any!(Box<[Cell<u8>]>: BorrowedDecode<'static>);
     }
 
     #[test]
@@ -2085,13 +2087,13 @@ mod tests {
         let mut encode_owner = Default::default();
         let mut encode_store = Default::default();
         let encoded = crate::borrow::BorrowedEncode::soft_encode(
-            [Cell::new(RustBox::new(3_u32))],
+            [Cell::new(Box::new(3_u32))],
             &mut encode_store,
             &mut encode_owner,
         );
         let mut decode_store = Default::default();
         let decoded = unsafe {
-            <[Cell<RustBox<u32>>; 1] as crate::borrow::BorrowedDecode>::soft_decode(
+            <[Cell<Box<u32>>; 1] as crate::borrow::BorrowedDecode>::soft_decode(
                 encoded,
                 &mut decode_store,
             )
@@ -2113,8 +2115,8 @@ mod tests {
             let _ = crate::borrow::encode(value, &mut owner);
         }
 
-        encode(RustBox::new(7_u8));
-        encode(RustBox::new((7_u8,)));
+        encode(Box::new(7_u8));
+        encode(Box::new((7_u8,)));
         encode(alloc::vec![7_u8]);
         encode(alloc::vec![(7_u8,)]);
         encode(alloc::vec![true, false]);
@@ -2144,13 +2146,13 @@ mod tests {
             <&'static mut bool as EncodeMoveUnchecked>::SoftStore
         );
         static_assertions::assert_not_impl_any!(
-            <RustBox<&'static mut bool> as BorrowedEncode>::Store: EmptyStore
+            <Box<&'static mut bool> as BorrowedEncode>::Store: EmptyStore
         );
         static_assertions::assert_not_impl_any!(
             <alloc::vec::Vec<&'static mut bool> as BorrowedEncode>::Store: EmptyStore
         );
         static_assertions::assert_not_impl_any!(
-            <RustBox<[&'static mut bool]> as BorrowedEncode>::Store: EmptyStore
+            <Box<[&'static mut bool]> as BorrowedEncode>::Store: EmptyStore
         );
     }
 
@@ -2162,8 +2164,7 @@ mod tests {
             let mut value = false;
             let mut owner = Default::default();
             let mut store = Default::default();
-            let encoded =
-                BorrowedEncode::soft_encode(RustBox::new(&mut value), &mut store, &mut owner);
+            let encoded = BorrowedEncode::soft_encode(Box::new(&mut value), &mut store, &mut owner);
             unsafe {
                 *(*encoded.as_ptr()).as_ptr() = crate::primitives::Bool(byte);
             }
@@ -2230,7 +2231,7 @@ mod tests {
         }
         #[unsafe(export_name = "co3_unit_owned_box_tuple")]
         extern "C" fn boxed(
-            value: crate::borrow::Borrowed<<RustBox<(u8,)> as co3::ReprC>::CType>,
+            value: crate::borrow::Borrowed<<Box<(u8,)> as co3::ReprC>::CType>,
         ) -> u8 {
             unsafe { (*value.0.as_ptr()).0 }
         }
@@ -2241,11 +2242,11 @@ mod tests {
             #[symbol_name = "co3_unit_owned_tuples"]
             fn imported_tuples(value: alloc::vec::Vec<(u8,)>) -> u8;
             #[symbol_name = "co3_unit_owned_box_tuple"]
-            fn imported_boxed(value: RustBox<(u8,)>) -> u8;
+            fn imported_boxed(value: Box<(u8,)>) -> u8;
         }
         assert_eq!(imported_bytes(alloc::vec![7]), 7);
         assert_eq!(imported_tuples(alloc::vec![(11,)]), 11);
-        assert_eq!(imported_boxed(RustBox::new((13,))), 13);
+        assert_eq!(imported_boxed(Box::new((13,))), 13);
     }
 
     #[derive(RustSpec, ReprC)]

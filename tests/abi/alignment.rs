@@ -111,7 +111,7 @@ fn data_enum_carriers_construct_variants_and_report_tags() {
     assert_eq!(<MixedDataEnum as ReprC>::CType::Second(5, 11).tag(), 1);
     assert_eq!(
         format!("{:?}", <MixedDataEnum as ReprC>::CType::Second(5, 11)),
-        "CMixedDataEnum::Second { small: 5, large: 11 }"
+        "MixedDataEnumCType::Second { small: 5, large: 11 }"
     );
     assert!(
         <MixedDataEnum as ReprC>::CType::First(3, 7) < <MixedDataEnum as ReprC>::CType::First(3, 8)

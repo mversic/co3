@@ -1,6 +1,6 @@
 // Unlike static_assertions' generic helper, this helper carries the
 // reference-mapping prerequisite of SoftEncodeRef and SoftEncodeRefUnchecked.
-use co3::{CType, ReprC};
+use co3::CType;
 
 trait TransparentCarrier: Copy {
     type Payload: Copy;
@@ -11,20 +11,20 @@ trait TransparentCarrier: Copy {
     }
 }
 
-impl<R: ReprC<CType: Copy + CType + Sized>> TransparentCarrier for co3::option::COptionSome<R> {
-    type Payload = R::CType;
-}
-
-impl<Ok: ReprC<CType: Copy + CType + Sized>, Err: ReprC> TransparentCarrier
-    for co3::result::CResultOk<Ok, Err>
+impl<T: CType + Copy, const STABLE: bool> TransparentCarrier
+    for co3::option::abi::OptionSome<T, STABLE>
 {
-    type Payload = Ok::CType;
+    type Payload = T;
 }
-
-impl<Ok: ReprC, Err: ReprC<CType: Copy + CType + Sized>> TransparentCarrier
-    for co3::result::CResultErr<Ok, Err>
+impl<T: CType + Copy, E: CType, const STABLE: bool> TransparentCarrier
+    for co3::result::abi::ResultOk<T, E, STABLE>
 {
-    type Payload = Err::CType;
+    type Payload = T;
+}
+impl<T: CType, E: CType + Copy, const STABLE: bool> TransparentCarrier
+    for co3::result::abi::ResultErr<T, E, STABLE>
+{
+    type Payload = E;
 }
 
 macro_rules! assert_not_shared_encoder {

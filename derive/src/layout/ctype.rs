@@ -174,7 +174,7 @@ pub(super) fn gen_fieldless_enum_ctype(
             #predicates;
     };
     // Keep the normal non-ZST CFnArg size guard. In particular, a one-variant
-    // fieldless enum is represented by `CEnum(())` and must not become a CFnArg.
+    // fieldless enum is represented by `EnumCType(())` and must not become a CFnArg.
     let impls = gen_struct_ctype_impls::<false>(&ctype, false, alignment, false);
     let is_valid_tag = if matches!(tag_type, syn::Type::Tuple(_)) {
         quote!(true)
@@ -856,7 +856,7 @@ fn gen_ctype_wide_impl(
     let name = &ctype.ident;
 
     let source_name = name.to_string();
-    let source_name = source_name.strip_prefix('C').unwrap();
+    let source_name = source_name.strip_suffix("CType").unwrap();
     let source_name = syn::Ident::new(source_name, name.span());
 
     let (impl_generics, ty_generics, where_clause) = ctype.generics.split_for_impl();
@@ -1650,14 +1650,14 @@ fn gen_copy_bounds(fields: &[&syn::Type]) -> Vec<TokenStream> {
 }
 
 pub(super) fn gen_ctype_name(item_name: &syn::Ident) -> syn::Ident {
-    format_ident!("C{item_name}")
+    format_ident!("{item_name}CType")
 }
 
 pub(super) fn gen_variant_struct_name(
     enum_name: &syn::Ident,
     variant_name: &syn::Ident,
 ) -> syn::Ident {
-    format_ident!("C{enum_name}{variant_name}")
+    format_ident!("{enum_name}{variant_name}CType")
 }
 
 struct UsedGenericsVisitor<'a> {

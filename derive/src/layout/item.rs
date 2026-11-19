@@ -939,7 +939,8 @@ fn gen_repr_c_impls(
     let ownership = Ownership::new(name, generics, marked);
     let target = ownership.apply("payload", quote!(target));
     let carrier_bound = ownership.repr_bound(quote!(+ Sized));
-    let selected = marked.then(|| quote!(Self: #carrier_bound,));
+    let speculative = speculative_marker(generics.params.is_empty());
+    let selected = marked.then(|| quote!(#speculative Self: #carrier_bound,));
 
     quote! {
         unsafe impl #impl_generics co3::transmute::AbiCompatibleValidate for #name #ty_generics
@@ -1655,7 +1656,8 @@ fn gen_codec_impls(
         quote!(co3::ReprC<CType = #carrier>)
     };
     let carrier_bound = ownership.repr_bound(quote!(+ Sized));
-    let selected = marked.then(|| quote!(Self: #carrier_bound,));
+    let speculative = speculative_marker(generics.params.is_empty());
+    let selected = marked.then(|| quote!(#speculative Self: #carrier_bound,));
 
     let extern_c_bounds = gen_extern_c_bounds_for_ctype(generics, fields);
 

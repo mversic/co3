@@ -88,16 +88,26 @@ error[E0277]: the trait bound `Tuple2<u8, u8>: Unpack2<u32, Utf8String>` is not 
 31 |     fn missing_into(#[unpack(u32, String)] value: Tuple2<u8, u8>);
    |                                                   ^^^^^^^^^^^^^^ the trait `Unpack2<u32, Utf8String>` is not implemented for `Tuple2<u8, u8>`
    |
+help: item with same name found
+  --> src/tuple.rs
+   |
+   |         pub struct $ffi_ty<$($head: CType,)* $last: CType + ?Sized, const STABLE: bool = false>($(pub $head,)* pub $last);
+   |         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+...
+   |     impl_abi_tuple!([A, B] [A:0,] B:1 -> Tuple2);
+   |     -------------------------------------------- in this macro invocation
+   = note: there are multiple different versions of crate `co3` in the dependency graph
    = help: the following other types implement trait `Unpack2<Part1, Part2>`:
              `&R` implements `Unpack2<Pointer, U>`
-             `&mut R` implements `Unpack2<*mut <<P as Wide>::Header as WideHeader>::Data, U>`
+             `&mut R` implements `Unpack2<*mut <<<R as ReprC>::CType as Wide>::Header as WideHeader>::Data, U>`
              `(A, B)` implements `Unpack2<Part1, Part2>`
-             `*const R` implements `Unpack2<*const <<P as Wide>::Header as WideHeader>::Data, U>`
-             `*mut R` implements `Unpack2<*mut <<P as Wide>::Header as WideHeader>::Data, U>`
+             `*const R` implements `Unpack2<*const <<<R as ReprC>::CType as Wide>::Header as WideHeader>::Data, U>`
+             `*mut R` implements `Unpack2<*mut <<<R as ReprC>::CType as Wide>::Header as WideHeader>::Data, U>`
+             `Box<R>` implements `Unpack2<*mut <<<R as ReprC>::CType as Wide>::Header as WideHeader>::Data, U>`
              `Cell<T>` implements `Unpack2<A, B>`
              `ManuallyDrop<T>` implements `Unpack2<A, B>`
-             `RustBox<R>` implements `Unpack2<*mut <<P as Wide>::Header as WideHeader>::Data, U>`
            and $N others
+   = note: this error originates in the macro `impl_abi_tuple` (in Nightly builds, run with -Z macro-backtrace for more info)
 
 error[E0277]: the trait bound `Tuple2<u8, u8>: Unpack2<u32, Utf8String>` is not satisfied
   --> tests/ui_fail/unpack_type.rs:28:1
@@ -110,17 +120,26 @@ error[E0277]: the trait bound `Tuple2<u8, u8>: Unpack2<u32, Utf8String>` is not 
 33 | | }
    | |_^ the trait `Unpack2<u32, Utf8String>` is not implemented for `Tuple2<u8, u8>`
    |
+help: item with same name found
+  --> src/tuple.rs
+   |
+   |         pub struct $ffi_ty<$($head: CType,)* $last: CType + ?Sized, const STABLE: bool = false>($(pub $head,)* pub $last);
+   |         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+...
+   |     impl_abi_tuple!([A, B] [A:0,] B:1 -> Tuple2);
+   |     -------------------------------------------- in this macro invocation
+   = note: there are multiple different versions of crate `co3` in the dependency graph
    = help: the following other types implement trait `Unpack2<Part1, Part2>`:
              `&R` implements `Unpack2<Pointer, U>`
-             `&mut R` implements `Unpack2<*mut <<P as Wide>::Header as WideHeader>::Data, U>`
+             `&mut R` implements `Unpack2<*mut <<<R as ReprC>::CType as Wide>::Header as WideHeader>::Data, U>`
              `(A, B)` implements `Unpack2<Part1, Part2>`
-             `*const R` implements `Unpack2<*const <<P as Wide>::Header as WideHeader>::Data, U>`
-             `*mut R` implements `Unpack2<*mut <<P as Wide>::Header as WideHeader>::Data, U>`
+             `*const R` implements `Unpack2<*const <<<R as ReprC>::CType as Wide>::Header as WideHeader>::Data, U>`
+             `*mut R` implements `Unpack2<*mut <<<R as ReprC>::CType as Wide>::Header as WideHeader>::Data, U>`
+             `Box<R>` implements `Unpack2<*mut <<<R as ReprC>::CType as Wide>::Header as WideHeader>::Data, U>`
              `Cell<T>` implements `Unpack2<A, B>`
              `ManuallyDrop<T>` implements `Unpack2<A, B>`
-             `RustBox<R>` implements `Unpack2<*mut <<P as Wide>::Header as WideHeader>::Data, U>`
            and $N others
-   = note: this error originates in the macro `ffi` (in Nightly builds, run with -Z macro-backtrace for more info)
+   = note: this error originates in the macro `ffi` which comes from the expansion of the macro `impl_abi_tuple` (in Nightly builds, run with -Z macro-backtrace for more info)
 
 error[E0277]: the trait bound `Tuple2<u8, u8>: Unpack2<u32, Utf8String>` is not satisfied
   --> tests/ui_fail/unpack_type.rs:32:55
@@ -128,13 +147,23 @@ error[E0277]: the trait bound `Tuple2<u8, u8>: Unpack2<u32, Utf8String>` is not 
 32 |     fn missing_into_try(#[unpack(u32, String)] value: Tuple2<u8, u8>);
    |                                                       ^^^^^^^^^^^^^^ the trait `Unpack2<u32, Utf8String>` is not implemented for `Tuple2<u8, u8>`
    |
+help: item with same name found
+  --> src/tuple.rs
+   |
+   |         pub struct $ffi_ty<$($head: CType,)* $last: CType + ?Sized, const STABLE: bool = false>($(pub $head,)* pub $last);
+   |         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+...
+   |     impl_abi_tuple!([A, B] [A:0,] B:1 -> Tuple2);
+   |     -------------------------------------------- in this macro invocation
+   = note: there are multiple different versions of crate `co3` in the dependency graph
    = help: the following other types implement trait `Unpack2<Part1, Part2>`:
              `&R` implements `Unpack2<Pointer, U>`
-             `&mut R` implements `Unpack2<*mut <<P as Wide>::Header as WideHeader>::Data, U>`
+             `&mut R` implements `Unpack2<*mut <<<R as ReprC>::CType as Wide>::Header as WideHeader>::Data, U>`
              `(A, B)` implements `Unpack2<Part1, Part2>`
-             `*const R` implements `Unpack2<*const <<P as Wide>::Header as WideHeader>::Data, U>`
-             `*mut R` implements `Unpack2<*mut <<P as Wide>::Header as WideHeader>::Data, U>`
+             `*const R` implements `Unpack2<*const <<<R as ReprC>::CType as Wide>::Header as WideHeader>::Data, U>`
+             `*mut R` implements `Unpack2<*mut <<<R as ReprC>::CType as Wide>::Header as WideHeader>::Data, U>`
+             `Box<R>` implements `Unpack2<*mut <<<R as ReprC>::CType as Wide>::Header as WideHeader>::Data, U>`
              `Cell<T>` implements `Unpack2<A, B>`
              `ManuallyDrop<T>` implements `Unpack2<A, B>`
-             `RustBox<R>` implements `Unpack2<*mut <<P as Wide>::Header as WideHeader>::Data, U>`
            and $N others
+   = note: this error originates in the macro `impl_abi_tuple` (in Nightly builds, run with -Z macro-backtrace for more info)

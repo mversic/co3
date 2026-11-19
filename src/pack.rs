@@ -11,13 +11,13 @@ use disjoint_impls::disjoint_impls;
 use crate::{
     CType, ReprC,
     num::NonZero,
-    option::COptionSome,
-    result::{CResultErr, CResultOk},
-    tuple::CTuple2,
+    option::abi::OptionSome as AbiOptionSome,
+    result::abi::{ResultErr as AbiResultErr, ResultOk as AbiResultOk},
+    tuple::abi::Tuple2 as AbiTuple2,
     wide::{PointeeData, Wide, WideHeader, WideRefCarrier, WideRefMutCarrier},
 };
 #[cfg(feature = "alloc")]
-use crate::{boxed::RustBox, wide::CWideBox};
+use crate::{boxed::Box, wide::abi::WideBox as AbiWideBox};
 
 /// Fallibly converts a C-compatible representation into one ABI argument.
 pub trait Unpack<Part: CType>: ReprC<CType: Sized> {
@@ -144,19 +144,19 @@ where
 
 impl<T: Pack2<Part1, Part2>, Part1: CType, Part2: CType> Pack2<Part1, Part2> for Option<T>
 where
-    Self: ReprC<CType = COptionSome<T>>,
+    Self: ReprC<CType = AbiOptionSome<<T as ReprC>::CType>>,
 {
     type Error = T::Error;
 
     #[inline(always)]
     unsafe fn pack(part1: Part1, part2: Part2) -> Result<Self::CType, Self::Error> {
-        unsafe { T::pack(part1, part2) }.map(COptionSome)
+        unsafe { T::pack(part1, part2) }.map(AbiOptionSome)
     }
 }
 
 impl<T: Unpack2<Part1, Part2>, Part1: CType, Part2: CType> Unpack2<Part1, Part2> for Option<T>
 where
-    Self: ReprC<CType = COptionSome<T>>,
+    Self: ReprC<CType = AbiOptionSome<<T as ReprC>::CType>>,
 {
     type Error = T::Error;
 
@@ -179,12 +179,12 @@ disjoint_impls! {
         fn unpack(value: Self::CType) -> Result<(Part1, Part2), Self::Error>;
     }
 
-    impl<Ok: Unpack2<A, B> + crate::niche::Niche, Err: ReprC, A: CType, B: CType>
+    impl<Ok: Unpack2<A, B> + crate::niche::Niche, Err: ReprC<CType: CType + Sized>, A: CType, B: CType>
         Unpack2<A, B> for Result<Ok, Err>
     where
         Ok: rust_spec::RustSpec<Size = rust_spec::size::Sized<rust_spec::Gt<rust_spec::Zero>>>,
         Err: rust_spec::RustSpec<Size = rust_spec::size::Sized<rust_spec::Zero>>,
-        Self: ReprC<CType = CResultOk<Ok, Err>>,
+        Self: ReprC<CType = AbiResultOk<<Ok as crate::ReprC>::CType, <Err as crate::ReprC>::CType>>,
     {
         type Error = Ok::Error;
         fn unpack(value: Self::CType) -> Result<(A, B), Self::Error> {
@@ -192,12 +192,12 @@ disjoint_impls! {
         }
     }
 
-    impl<Ok: ReprC, Err: Unpack2<A, B> + crate::niche::Niche, A: CType, B: CType>
+    impl<Ok: ReprC<CType: CType + Sized>, Err: Unpack2<A, B> + crate::niche::Niche, A: CType, B: CType>
         Unpack2<A, B> for Result<Ok, Err>
     where
         Ok: rust_spec::RustSpec<Size = rust_spec::size::Sized<rust_spec::Zero>>,
         Err: rust_spec::RustSpec<Size = rust_spec::size::Sized<rust_spec::Gt<rust_spec::Zero>>>,
-        Self: ReprC<CType = CResultErr<Ok, Err>>,
+        Self: ReprC<CType = AbiResultErr<<Ok as crate::ReprC>::CType, <Err as crate::ReprC>::CType>>,
     {
         type Error = Err::Error;
         fn unpack(value: Self::CType) -> Result<(A, B), Self::Error> {
@@ -221,29 +221,29 @@ disjoint_impls! {
         unsafe fn pack(part1: Part1, part2: Part2) -> Result<Self::CType, Self::Error>;
     }
 
-    impl<Ok: Pack2<A, B> + crate::niche::Niche, Err: ReprC, A: CType, B: CType>
+    impl<Ok: Pack2<A, B> + crate::niche::Niche, Err: ReprC<CType: CType + Sized>, A: CType, B: CType>
         Pack2<A, B> for Result<Ok, Err>
     where
         Ok: rust_spec::RustSpec<Size = rust_spec::size::Sized<rust_spec::Gt<rust_spec::Zero>>>,
         Err: rust_spec::RustSpec<Size = rust_spec::size::Sized<rust_spec::Zero>>,
-        Self: ReprC<CType = CResultOk<Ok, Err>>,
+        Self: ReprC<CType = AbiResultOk<<Ok as crate::ReprC>::CType, <Err as crate::ReprC>::CType>>,
     {
         type Error = Ok::Error;
         unsafe fn pack(a: A, b: B) -> Result<Self::CType, Self::Error> {
-            unsafe { Ok::pack(a, b) }.map(|value| CResultOk(value, PhantomData))
+            unsafe { Ok::pack(a, b) }.map(|value| AbiResultOk(value, PhantomData))
         }
     }
 
-    impl<Ok: ReprC, Err: Pack2<A, B> + crate::niche::Niche, A: CType, B: CType>
+    impl<Ok: ReprC<CType: CType + Sized>, Err: Pack2<A, B> + crate::niche::Niche, A: CType, B: CType>
         Pack2<A, B> for Result<Ok, Err>
     where
         Ok: rust_spec::RustSpec<Size = rust_spec::size::Sized<rust_spec::Zero>>,
         Err: rust_spec::RustSpec<Size = rust_spec::size::Sized<rust_spec::Gt<rust_spec::Zero>>>,
-        Self: ReprC<CType = CResultErr<Ok, Err>>,
+        Self: ReprC<CType = AbiResultErr<<Ok as crate::ReprC>::CType, <Err as crate::ReprC>::CType>>,
     {
         type Error = Err::Error;
         unsafe fn pack(a: A, b: B) -> Result<Self::CType, Self::Error> {
-            unsafe { Err::pack(a, b) }.map(|value| CResultErr(value, PhantomData))
+            unsafe { Err::pack(a, b) }.map(|value| AbiResultErr(value, PhantomData))
         }
     }
 }
@@ -254,11 +254,11 @@ impl<
         + Wide
         + ?Sized,
     U: CType,
-> Unpack2<*mut <<R::CType as Wide>::Header as WideHeader>::Data, U> for RustBox<R>
+> Unpack2<*mut <<R::CType as Wide>::Header as WideHeader>::Data, U> for Box<R>
 where
-    Self: ReprC<CType = CWideBox<R>>,
+    Self: ReprC<CType = AbiWideBox<<R as ReprC>::CType>>,
     <<R as Wide>::Header as WideHeader>::Data:
-        ReprC<CType = <<R::CType as Wide>::Header as WideHeader>::Data>,
+        ReprC<CType = <<<R as ReprC>::CType as Wide>::Header as WideHeader>::Data>,
 {
     type Error = <<R::CType as Wide>::Metadata as TryInto<U>>::Error;
     fn unpack(
@@ -272,25 +272,25 @@ where
 impl<
     R: ReprC<CType: Wide<Header: WideHeader<Data: CType + Sized>>> + Wide + ?Sized,
     U: CType + TryInto<<R::CType as Wide>::Metadata>,
-> Pack2<*mut <<R::CType as Wide>::Header as WideHeader>::Data, U> for RustBox<R>
+> Pack2<*mut <<R::CType as Wide>::Header as WideHeader>::Data, U> for Box<R>
 where
-    Self: ReprC<CType = CWideBox<R>>,
+    Self: ReprC<CType = AbiWideBox<<R as ReprC>::CType>>,
     <<R as Wide>::Header as WideHeader>::Data:
-        ReprC<CType = <<R::CType as Wide>::Header as WideHeader>::Data>,
+        ReprC<CType = <<<R as ReprC>::CType as Wide>::Header as WideHeader>::Data>,
 {
     type Error = <U as TryInto<<R::CType as Wide>::Metadata>>::Error;
     unsafe fn pack(
         data: *mut <<R::CType as Wide>::Header as WideHeader>::Data,
         metadata: U,
     ) -> Result<Self::CType, Self::Error> {
-        Ok(unsafe { CWideBox::from_raw_nullable(data, metadata.try_into()?) })
+        Ok(unsafe { AbiWideBox::from_raw_nullable(data, metadata.try_into()?) })
     }
 }
 
 impl<A: ReprC<CType = Part1>, B: ReprC<CType = Part2>, Part1: CType, Part2: CType>
     Unpack2<Part1, Part2> for (A, B)
 where
-    Self: ReprC<CType = CTuple2<A, B>>,
+    Self: ReprC<CType = AbiTuple2<<A as ReprC>::CType, <B as ReprC>::CType>>,
 {
     type Error = core::convert::Infallible;
 
@@ -303,13 +303,13 @@ where
 impl<A: ReprC<CType = Part1>, B: ReprC<CType = Part2>, Part1: CType, Part2: CType>
     Pack2<Part1, Part2> for (A, B)
 where
-    Self: ReprC<CType = CTuple2<A, B>>,
+    Self: ReprC<CType = AbiTuple2<<A as ReprC>::CType, <B as ReprC>::CType>>,
 {
     type Error = core::convert::Infallible;
 
     #[inline(always)]
     unsafe fn pack(part1: Part1, part2: Part2) -> Result<Self::CType, Self::Error> {
-        Ok(CTuple2(part1, part2))
+        Ok(AbiTuple2(part1, part2))
     }
 }
 
@@ -341,9 +341,9 @@ impl_transparent_pack2!(ManuallyDrop, Cell, UnsafeCell);
 mod tests {
     use core::ptr::NonNull;
 
-    use super::{NonZero, Unpack2};
     #[cfg(feature = "alloc")]
-    use super::{Pack2, RustBox};
+    use super::{Box, Pack2};
+    use super::{NonZero, Unpack2};
     use crate::wide::tests::{Custom, Metadata};
 
     #[test]
@@ -378,15 +378,12 @@ mod tests {
         type Pointee = [u8];
         let metadata = 3_usize;
         let carrier = unsafe {
-            <Option<RustBox<Pointee>> as Pack2<*mut u8, usize>>::pack(
-                core::ptr::null_mut(),
-                metadata,
-            )
+            <Option<Box<Pointee>> as Pack2<*mut u8, usize>>::pack(core::ptr::null_mut(), metadata)
         }
         .unwrap();
         assert!(carrier.0.as_ptr().is_null());
         let (pointer, unpacked) =
-            <Option<RustBox<Pointee>> as Unpack2<*mut u8, usize>>::unpack(carrier).unwrap();
+            <Option<Box<Pointee>> as Unpack2<*mut u8, usize>>::unpack(carrier).unwrap();
         assert!(pointer.is_null());
         assert_eq!(unpacked, metadata);
     }

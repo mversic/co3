@@ -3,8 +3,8 @@ use core::num::NonZeroU8;
 use co3::{
     ReprC,
     ops::CFn1,
-    option::OptionSome,
-    result::{ResultErr, ResultOk},
+    option::{self, OptionSome},
+    result::{self, ResultErr, ResultOk},
     rust_spec::{
         RustSpec, Stable,
         layout::{NonRobust, Robust},
@@ -15,7 +15,7 @@ use static_assertions::{assert_impl_all, assert_type_eq_all, assert_type_ne_all}
 #[repr(transparent)]
 #[derive(Debug, Clone, Copy, PartialEq, Eq, RustSpec, ReprC)]
 #[rust_spec(custom_niche)]
-#[repr_c(NICHE = CCustomNiche(0))]
+#[repr_c(NICHE = CustomNicheCType(0))]
 struct CustomNiche(u8);
 
 assert_impl_all!(OptionSome<u8>: RustSpec<Layout = Stable, Trap = Robust>);
@@ -26,19 +26,40 @@ assert_impl_all!(ResultOk<CustomNiche>: RustSpec<Layout = Stable, Trap = NonRobu
 assert_impl_all!(ResultErr<CustomNiche>: RustSpec<Layout = Stable, Trap = NonRobust>);
 assert_type_eq_all!(
     <OptionSome<CustomNiche> as ReprC>::CType,
-    OptionSome<<CustomNiche as ReprC>::CType>
+    option::abi::OptionSome<<CustomNiche as ReprC>::CType, true>
 );
 assert_type_eq_all!(
     <ResultOk<CustomNiche> as ReprC>::CType,
-    ResultOk<<CustomNiche as ReprC>::CType>
+    result::abi::ResultOk<<CustomNiche as ReprC>::CType, (), true>
 );
 assert_type_eq_all!(
     <ResultErr<CustomNiche> as ReprC>::CType,
-    ResultErr<<CustomNiche as ReprC>::CType>
+    result::abi::ResultErr<(), <CustomNiche as ReprC>::CType, true>
 );
 assert_type_ne_all!(
-    co3::option::COptionSome<CustomNiche>,
-    OptionSome<<CustomNiche as ReprC>::CType>
+    co3::option::abi::OptionSome<<CustomNiche as co3::ReprC>::CType>,
+    option::abi::OptionSome<<CustomNiche as ReprC>::CType, true>
+);
+
+assert_type_eq_all!(
+    <Option<CustomNiche> as ReprC>::CType,
+    option::abi::OptionSome<<CustomNiche as ReprC>::CType>
+);
+assert_type_eq_all!(
+    <Result<CustomNiche, ()> as ReprC>::CType,
+    result::abi::ResultOk<<CustomNiche as ReprC>::CType, ()>
+);
+assert_type_eq_all!(
+    <Result<(), CustomNiche> as ReprC>::CType,
+    result::abi::ResultErr<(), <CustomNiche as ReprC>::CType>
+);
+assert_type_ne_all!(
+    result::abi::ResultOk<<CustomNiche as ReprC>::CType, ()>,
+    result::abi::ResultOk<<CustomNiche as ReprC>::CType, (), true>
+);
+assert_type_ne_all!(
+    result::abi::ResultErr<(), <CustomNiche as ReprC>::CType>,
+    result::abi::ResultErr<(), <CustomNiche as ReprC>::CType, true>
 );
 
 fn option_payload(value: OptionSome<CustomNiche>) -> OptionSome<CustomNiche> {
@@ -83,15 +104,27 @@ fn public_payload_wrappers_preserve_custom_niches_without_a_tag() {
 fn public_payload_wrappers_preserve_nonzero_validity() {
     use co3::num::NonZero;
     assert_eq!(
-        unsafe { co3::decode::<OptionSome<NonZeroU8>>(OptionSome(NonZero(0))) },
+        unsafe {
+            co3::decode::<OptionSome<NonZeroU8>>(option::abi::OptionSome::<_, true>(NonZero(0)))
+        },
         None
     );
     assert_eq!(
-        unsafe { co3::decode::<ResultOk<NonZeroU8>>(ResultOk(NonZero(0))) },
+        unsafe {
+            co3::decode::<ResultOk<NonZeroU8>>(result::abi::ResultOk::<_, (), true>(
+                NonZero(0),
+                core::marker::PhantomData,
+            ))
+        },
         None
     );
     assert_eq!(
-        unsafe { co3::decode::<ResultErr<NonZeroU8>>(ResultErr(NonZero(0))) },
+        unsafe {
+            co3::decode::<ResultErr<NonZeroU8>>(result::abi::ResultErr::<(), _, true>(
+                NonZero(0),
+                core::marker::PhantomData,
+            ))
+        },
         None
     );
     let value = NonZeroU8::new(7).unwrap();

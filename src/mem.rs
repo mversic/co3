@@ -9,7 +9,7 @@ use crate::{
     transmute::{AbiCompatible, AbiCompatibleValidate},
 };
 impl<R: ReprC + ?Sized> ReprC for ManuallyDrop<R> {
-    type CType = core::mem::ManuallyDrop<<R as ReprC>::CType>;
+    type CType = core::mem::ManuallyDrop<R::CType>;
 }
 
 crate::__impl_borrowed_identity!([T] MaybeUninit<T>);
@@ -248,7 +248,7 @@ impl_wide_for_transparent_wrapper!(ManuallyDrop);
 #[cfg(test)]
 mod tests {
     #[cfg(feature = "alloc")]
-    use alloc::{boxed::Box as RustBox, string::String, vec, vec::Vec};
+    use alloc::{boxed::Box, string::String, vec, vec::Vec};
 
     use rust_spec::niche::WithNiche;
     use static_assertions::assert_impl_all;
@@ -259,8 +259,8 @@ mod tests {
 
     use super::*;
     #[cfg(feature = "alloc")]
-    use crate::{boxed::Box, wide::CWideBox};
-    use crate::{option::COption, reference::Ref};
+    use crate::{boxed::abi::Box as AbiBox, wide::abi::WideBox as AbiWideBox};
+    use crate::{option::abi::Option as AbiOption, reference::Ref};
 
     #[test]
     #[cfg(feature = "alloc")]
@@ -268,12 +268,12 @@ mod tests {
         use crate::borrow::{BorrowedDecode, BorrowedEncode, BorrowedEncodeUnchecked};
 
         assert_type_eq_all!(
-            <ManuallyDrop<RustBox<u8>> as BorrowedEncodeUnchecked>::Owner,
-            <RustBox<u8> as BorrowedEncodeUnchecked>::Owner
+            <ManuallyDrop<Box<u8>> as BorrowedEncodeUnchecked>::Owner,
+            <Box<u8> as BorrowedEncodeUnchecked>::Owner
         );
 
         for unchecked in [false, true] {
-            let value = RustBox::new(42_u8);
+            let value = Box::new(42_u8);
             let original = core::ptr::from_ref(&*value);
             let mut owner = Default::default();
             let mut encode_store = Default::default();
@@ -287,7 +287,7 @@ mod tests {
             };
             assert_eq!(encoded.as_ptr().cast_const(), original);
             let mut decode_store = Default::default();
-            let decoded: ManuallyDrop<RustBox<u8>> = if unchecked {
+            let decoded: ManuallyDrop<Box<u8>> = if unchecked {
                 unsafe { BorrowedDecode::soft_decode_unchecked(encoded, &mut decode_store) }
             } else {
                 unsafe { BorrowedDecode::soft_decode(encoded, &mut decode_store) }.unwrap()
@@ -304,11 +304,8 @@ mod tests {
     #[cfg(feature = "alloc")]
     fn manually_drop_stable_and_unstable_conversions() {
         assert_type_eq_all!(<ManuallyDrop<bool> as EncodeMove>::Store, ());
-        assert_type_eq_all!(<ManuallyDrop<RustBox<u8>> as EncodeMove>::Store, ());
-        assert_type_eq_all!(
-            <ManuallyDrop<RustBox<u8>> as DecodeMove<'static>>::Store,
-            ()
-        );
+        assert_type_eq_all!(<ManuallyDrop<Box<u8>> as EncodeMove>::Store, ());
+        assert_type_eq_all!(<ManuallyDrop<Box<u8>> as DecodeMove<'static>>::Store, ());
         assert_type_eq_all!(
             <ManuallyDrop<Vec<(u8,)>> as EncodeMove>::Store,
             <Vec<(u8,)> as EncodeMove>::Store
@@ -374,30 +371,30 @@ mod tests {
             Encode,
         );
         #[cfg(feature = "alloc")]
-        assert_impl_all!(RustBox<ManuallyDrop<u8>>:
-            Niche<CType = Box<<ManuallyDrop<u8> as crate::ReprC>::CType>>,
+        assert_impl_all!(Box<ManuallyDrop<u8>>:
+            Niche<CType = AbiBox<<ManuallyDrop<u8> as crate::ReprC>::CType>>,
             Decode<'static>,
             Encode,
         );
         assert_impl_all!(&[ManuallyDrop<u8>]:
-            Niche<CType = crate::wide::CWideRef<'static, [ManuallyDrop<u8>]>>,
+            Niche<CType = crate::wide::abi::WideRef<'static, <[ManuallyDrop<u8>] as crate::ReprC>::CType>>,
             Decode<'static>,
             Encode,
         );
         assert_impl_all!(&mut [ManuallyDrop<u8>]:
-            Niche<CType = crate::wide::CWideRef<'static, [ManuallyDrop<u8>]>>,
+            Niche<CType = crate::wide::abi::WideRef<'static, <[ManuallyDrop<u8>] as crate::ReprC>::CType>>,
             Decode<'static>,
             Encode,
         );
         #[cfg(feature = "alloc")]
-        assert_impl_all!(RustBox<[ManuallyDrop<u8>]>:
-            Niche<CType = CWideBox<[ManuallyDrop<u8>]>>,
+        assert_impl_all!(Box<[ManuallyDrop<u8>]>:
+            Niche<CType = AbiWideBox<<[ManuallyDrop<u8>] as crate::ReprC>::CType>>,
             Decode<'static>,
             Encode,
         );
         #[cfg(feature = "alloc")]
         assert_impl_all!(Vec<ManuallyDrop<u8>>:
-            Niche<CType = crate::vec::CVec<ManuallyDrop<u8>>>,
+            Niche<CType = crate::vec::abi::Vec<<ManuallyDrop<u8> as crate::ReprC>::CType>>,
             Decode<'static>,
             Encode,
         );
@@ -407,7 +404,7 @@ mod tests {
             Encode,
         );
         assert_impl_all!(Option<ManuallyDrop<u8>>:
-            Niche<CType = COption<ManuallyDrop<u8>>>,
+            Niche<CType = AbiOption<<ManuallyDrop<u8> as crate::ReprC>::CType>>,
             Decode<'static>,
             Encode,
         );
@@ -423,43 +420,43 @@ mod tests {
             Decode<'static>,
             Encode,
         );
-        assert_impl_all!(ManuallyDrop<RustBox<u8>>:
-            Niche<CType = core::mem::ManuallyDrop<crate::boxed::Box<u8>>>,
+        assert_impl_all!(ManuallyDrop<Box<u8>>:
+            Niche<CType = core::mem::ManuallyDrop<crate::boxed::abi::Box<u8>>>,
             Decode<'static>,
             Encode,
         );
-        assert_impl_all!(&ManuallyDrop<RustBox<u8>>:
-            Niche<CType = Ref<'static, <ManuallyDrop<RustBox<u8>> as crate::ReprC>::CType>>,
+        assert_impl_all!(&ManuallyDrop<Box<u8>>:
+            Niche<CType = Ref<'static, <ManuallyDrop<Box<u8>> as crate::ReprC>::CType>>,
         );
-        assert_impl_all!(&mut ManuallyDrop<RustBox<u8>>:
-            Niche<CType = crate::reference::SoftRefMut<<ManuallyDrop<RustBox<u8>> as crate::ReprC>::CType>>,
+        assert_impl_all!(&mut ManuallyDrop<Box<u8>>:
+            Niche<CType = crate::reference::SoftRefMut<<ManuallyDrop<Box<u8>> as crate::ReprC>::CType>>,
         );
-        assert_impl_all!(RustBox<ManuallyDrop<RustBox<u8>>>:
+        assert_impl_all!(Box<ManuallyDrop<Box<u8>>>:
             RustSpec<Niche = WithNiche<rust_spec::Stable>>,
-            Niche<CType = Box<<ManuallyDrop<RustBox<u8>> as crate::ReprC>::CType>>,
+            Niche<CType = AbiBox<<ManuallyDrop<Box<u8>> as crate::ReprC>::CType>>,
         );
-        assert_impl_all!(&[ManuallyDrop<RustBox<u8>>]:
-            Niche<CType = crate::wide::CWideRef<'static, [ManuallyDrop<RustBox<u8>>]>>,
+        assert_impl_all!(&[ManuallyDrop<Box<u8>>]:
+            Niche<CType = crate::wide::abi::WideRef<'static, <[ManuallyDrop<Box<u8>>] as crate::ReprC>::CType>>,
         );
-        assert_impl_all!(&mut [ManuallyDrop<RustBox<u8>>]:
-            Niche<CType = crate::wide::CSoftWideRefMut<[ManuallyDrop<RustBox<u8>>]>>,
+        assert_impl_all!(&mut [ManuallyDrop<Box<u8>>]:
+            Niche<CType = crate::wide::abi::SoftWideRefMut<<[ManuallyDrop<Box<u8>>] as crate::ReprC>::CType>>,
         );
-        assert_impl_all!(RustBox<[ManuallyDrop<RustBox<u8>>]>:
-            Niche<CType = CWideBox<[ManuallyDrop<RustBox<u8>>]>>,
+        assert_impl_all!(Box<[ManuallyDrop<Box<u8>>]>:
+            Niche<CType = AbiWideBox<<[ManuallyDrop<Box<u8>>] as crate::ReprC>::CType>>,
         );
-        assert_impl_all!(Vec<ManuallyDrop<RustBox<u8>>>:
-            Niche<CType = crate::vec::CVec<ManuallyDrop<RustBox<u8>>>>,
+        assert_impl_all!(Vec<ManuallyDrop<Box<u8>>>:
+            Niche<CType = crate::vec::abi::Vec<<ManuallyDrop<Box<u8>> as crate::ReprC>::CType>>,
         );
-        assert_impl_all!([ManuallyDrop<RustBox<u8>>; 2]:
-            Niche<CType = [core::mem::ManuallyDrop<crate::boxed::Box<u8>>; 2]>,
+        assert_impl_all!([ManuallyDrop<Box<u8>>; 2]:
+            Niche<CType = [core::mem::ManuallyDrop<crate::boxed::abi::Box<u8>>; 2]>,
         );
-        assert_impl_all!(Option<ManuallyDrop<RustBox<u8>>>:
-            ReprC<CType = crate::option::COptionSome<ManuallyDrop<RustBox<u8>>>>,
+        assert_impl_all!(Option<ManuallyDrop<Box<u8>>>:
+            ReprC<CType = crate::option::abi::OptionSome<<ManuallyDrop<Box<u8>> as crate::ReprC>::CType>>,
         );
-        assert_not_impl_any!(ManuallyDrop<RustBox<u8>>: CType);
+        assert_not_impl_any!(ManuallyDrop<Box<u8>>: CType);
 
-        let encoded = crate::encode(ManuallyDrop::new(RustBox::new(42u8)));
-        let decoded = unsafe { crate::decode::<ManuallyDrop<RustBox<u8>>>(encoded) }.unwrap();
+        let encoded = crate::encode(ManuallyDrop::new(Box::new(42u8)));
+        let decoded = unsafe { crate::decode::<ManuallyDrop<Box<u8>>>(encoded) }.unwrap();
         let decoded = ManuallyDrop::into_inner(decoded);
         assert_eq!(*decoded, 42);
 

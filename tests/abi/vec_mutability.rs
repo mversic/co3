@@ -81,22 +81,23 @@ fn nonrobust_vec_keeps_element_writeback_stores() {
 
 #[test]
 fn stable_vec_decode_checks_validity_before_reusing_allocation() {
-    use co3::{primitives::Bool, vec::CVec};
+    use co3::{primitives::Bool, vec::abi};
 
-    let source = CVec::<bool>::from_vec(vec![Bool(1), Bool(0)]);
+    let source = abi::Vec::<<bool as co3::ReprC>::CType>::from_vec(vec![Bool(1), Bool(0)]);
     let original = source.as_ptr().cast::<bool>();
     let mut store = ();
     let decoded = unsafe { co3::soft_decode::<Vec<bool>>(source, &mut store) }.unwrap();
     assert_eq!(decoded.as_ptr(), original);
     assert_eq!(decoded, [true, false]);
 
-    let invalid = CVec::<bool>::from_vec(vec![Bool(1), Bool(2)]);
+    let invalid = abi::Vec::<<bool as co3::ReprC>::CType>::from_vec(vec![Bool(1), Bool(2)]);
     assert!(unsafe { co3::soft_decode::<Vec::<bool>>(invalid, &mut Default::default()) }.is_none());
     assert!(
-        unsafe { co3::soft_decode::<Vec::<bool>>(CVec::null(), &mut Default::default()) }.is_none()
+        unsafe { co3::soft_decode::<Vec::<bool>>(abi::Vec::null(), &mut Default::default()) }
+            .is_none()
     );
 
-    let source = CVec::<bool>::from_vec(vec![Bool(1)]);
+    let source = abi::Vec::<<bool as co3::ReprC>::CType>::from_vec(vec![Bool(1)]);
     let original = source.as_ptr().cast::<bool>();
     let decoded =
         unsafe { co3::soft_decode_unchecked::<Vec<bool>>(source, &mut Default::default()) };

@@ -14,8 +14,7 @@ use crate::{
     convert::{Decode, DecodeMove, Encode, EncodeMove, EncodeMoveUnchecked},
     niche::Niche,
     primitives::primitive_derive,
-    vec::CVec,
-    wide::CWideBox,
+    vec, wide,
 };
 use crate::{
     CType, ReprC,
@@ -87,16 +86,16 @@ unsafe impl Wide for Utf8Str {
 #[cfg(feature = "alloc")]
 #[derive(Debug, Clone, Copy, PartialEq, PartialOrd, RustSpec)]
 #[repr(transparent)]
-pub struct Utf8String(pub CVec<u8>);
+pub struct Utf8String(pub vec::abi::Vec<u8>);
 
 #[cfg(feature = "alloc")]
 impl Utf8String {
     pub const fn null() -> Self {
-        Self(CVec::null())
+        Self(vec::abi::Vec::null())
     }
 
     pub fn from_string(value: String) -> Self {
-        Self(CVec::from_vec(value.into_bytes()))
+        Self(vec::abi::Vec::from_vec(value.into_bytes()))
     }
 
     pub const fn as_ptr(self) -> *mut u8 {
@@ -119,15 +118,17 @@ unsafe impl crate::Zeroable for Utf8String {}
 primitive_derive! { Utf8String }
 
 #[cfg(feature = "alloc")]
-impl OwnedBoxCarrier<CWideBox<str>> for Utf8String {
-    unsafe fn from_box_carrier(value: CWideBox<str>) -> Option<Self> {
+impl OwnedBoxCarrier<wide::abi::WideBox<<str as crate::ReprC>::CType>> for Utf8String {
+    unsafe fn from_box_carrier(
+        value: wide::abi::WideBox<<str as crate::ReprC>::CType>,
+    ) -> Option<Self> {
         let data = NonNull::new(value.as_ptr())?;
         let slice = core::ptr::slice_from_raw_parts_mut(data.as_ptr(), value.metadata());
         let bytes = unsafe { Box::from_raw(slice) }.into_vec();
-        Some(Self(CVec::from_vec(bytes)))
+        Some(Self(vec::abi::Vec::from_vec(bytes)))
     }
 
-    unsafe fn into_box_carrier(self) -> CWideBox<str> {
+    unsafe fn into_box_carrier(self) -> wide::abi::WideBox<<str as crate::ReprC>::CType> {
         let bytes = unsafe {
             self.0
                 .into_vec()
@@ -135,7 +136,7 @@ impl OwnedBoxCarrier<CWideBox<str>> for Utf8String {
         };
         let bytes = bytes.into_boxed_slice();
         let len = bytes.len();
-        unsafe { CWideBox::from_raw_parts(Box::into_non_null(bytes).cast(), len) }
+        unsafe { wide::abi::WideBox::from_raw_parts(Box::into_non_null(bytes).cast(), len) }
     }
 }
 

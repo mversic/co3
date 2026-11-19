@@ -6,7 +6,7 @@ use std::{
 
 use co3::{
     CType, ReprC,
-    boxed::{Box, RustBox},
+    boxed::{Box, abi::Box as AbiBox},
     ffi,
     ops::CFn1,
     owned::Owned,
@@ -14,12 +14,12 @@ use co3::{
 };
 
 type BatteryString = CString;
-type BatteryCStr = RustBox<CStr>;
+type BatteryCStr = Box<CStr>;
 
 #[derive(RustSpec, ReprC)]
 #[repr(transparent)]
 #[rust_spec(custom_drop)]
-struct RemoteString(Box<co3::ffi::c_char>);
+struct RemoteString(AbiBox<co3::ffi::c_char>);
 
 impl Clone for RemoteString {
     fn clone(&self) -> Self {

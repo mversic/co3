@@ -137,7 +137,8 @@ fn niche_optimized_option_and_result_are_function_values() {
 
 #[test]
 fn transparent_enum_carrier_constructs_its_variant() {
-    let carrier = <TransparentEnum<()> as ReprC>::CType::A(co3::boxed::Box::from_box(Box::new(())));
+    let carrier =
+        <TransparentEnum<()> as ReprC>::CType::A(co3::boxed::abi::Box::from_box(Box::new(())));
     assert_eq!(carrier.tag(), ());
     let decoded = unsafe { co3::decode::<TransparentEnum<()>>(carrier) }.unwrap();
     assert_eq!(decoded, TransparentEnum::A(Box::new(())));

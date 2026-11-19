@@ -447,15 +447,18 @@ pub(crate) use primitive_derive;
 #[cfg(test)]
 mod tests {
     #[cfg(feature = "alloc")]
-    use alloc::{boxed::Box as RustBox, vec::Vec};
+    use alloc::{boxed::Box, vec::Vec};
     use core::cmp::Ordering;
 
     use static_assertions::{assert_impl_all, assert_not_impl_any};
 
     use super::*;
     #[cfg(feature = "alloc")]
-    use crate::{boxed::Box, wide::CWideBox};
-    use crate::{cmp::Ordering as COrdering, convert::Encode, option::COption, reference::Ref};
+    use crate::{boxed::abi::Box as AbiBox, wide::abi::WideBox as AbiWideBox};
+    use crate::{
+        cmp::Ordering as COrdering, convert::Encode, option::abi::Option as AbiOption,
+        reference::Ref,
+    };
 
     #[test]
     fn scalar_carriers_accept_all_values_without_niches() {
@@ -466,9 +469,9 @@ mod tests {
         assert_not_impl_any!(Bool: Niche);
         assert_not_impl_any!(COrdering: Niche);
         assert_not_impl_any!(UnicodeChar: Niche);
-        assert_impl_all!(Option<Bool>: ReprC<CType = COption<Bool>>);
-        assert_impl_all!(Option<COrdering>: ReprC<CType = COption<COrdering>>);
-        assert_impl_all!(Option<UnicodeChar>: ReprC<CType = COption<UnicodeChar>>);
+        assert_impl_all!(Option<Bool>: ReprC<CType = AbiOption<Bool>>);
+        assert_impl_all!(Option<COrdering>: ReprC<CType = AbiOption<COrdering>>);
+        assert_impl_all!(Option<UnicodeChar>: ReprC<CType = AbiOption<UnicodeChar>>);
 
         for raw in u8::MIN..=u8::MAX {
             let boolean = Bool(raw);
@@ -561,10 +564,10 @@ mod tests {
 
         #[cfg(feature = "alloc")]
         {
-            assert_not_impl_any!(extern "C" fn(RustBox<u8>) -> (): ReprC);
-            assert_not_impl_any!(extern "C" fn() -> RustBox<u8>: ReprC);
-            assert_not_impl_any!(fn(RustBox<u8>) -> u8: ReprC);
-            type OwnedCallback = extern "C" fn(Box<u8>) -> Box<u8>;
+            assert_not_impl_any!(extern "C" fn(Box<u8>) -> (): ReprC);
+            assert_not_impl_any!(extern "C" fn() -> Box<u8>: ReprC);
+            assert_not_impl_any!(fn(Box<u8>) -> u8: ReprC);
+            type OwnedCallback = extern "C" fn(AbiBox<u8>) -> AbiBox<u8>;
             assert_impl_all!(OwnedCallback: ReprC<CType = Option<OwnedCallback>>, Encode, Decode<'static>);
         }
     }
@@ -588,30 +591,30 @@ mod tests {
             Encode,
         );
         #[cfg(feature = "alloc")]
-        assert_impl_all!(RustBox<u8>:
-            Niche<CType = Box<u8>>,
+        assert_impl_all!(Box<u8>:
+            Niche<CType = AbiBox<u8>>,
             Decode<'static>,
             Encode,
         );
         assert_impl_all!(&[u8]:
-            Niche<CType = crate::wide::CWideRef<'static, [u8]>>,
+            Niche<CType = crate::wide::abi::WideRef<'static, [u8]>>,
             Decode<'static>,
             Encode,
         );
         assert_impl_all!(&mut [u8]:
-            Niche<CType = crate::wide::CWideRef<'static, [u8]>>,
+            Niche<CType = crate::wide::abi::WideRef<'static, [u8]>>,
             Decode<'static>,
             Encode,
         );
         #[cfg(feature = "alloc")]
-        assert_impl_all!(RustBox<[u8]>:
-            Niche<CType = CWideBox<[u8]>>,
+        assert_impl_all!(Box<[u8]>:
+            Niche<CType = AbiWideBox<[u8]>>,
             Decode<'static>,
             Encode,
         );
         #[cfg(feature = "alloc")]
         assert_impl_all!(Vec<u8>:
-            Niche<CType = crate::vec::CVec<u8>>,
+            Niche<CType = crate::vec::abi::Vec<u8>>,
             Decode<'static>,
             Encode,
         );
@@ -621,7 +624,7 @@ mod tests {
             CType,
         );
         assert_impl_all!(Option<u8>:
-            Niche<CType = COption<u8>>,
+            Niche<CType = AbiOption<u8>>,
             Decode<'static>,
             Encode,
         );

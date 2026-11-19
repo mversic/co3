@@ -1,6 +1,5 @@
 //! Stable vector ownership and its robust C-compatible representation.
 
-use alloc::vec::Vec as RustVec;
 use core::{
     hash::Hash,
     mem::ManuallyDrop,
@@ -25,24 +24,9 @@ pub struct Vec<T> {
     len: usize,
 }
 
-/// An owned allocation represented by its data pointer, length, and capacity.
-/// A null pointer is reserved as a niche and does not represent a vector.
-/// `T` names the Rust element type; the allocation contains `T::CType` elements.
-#[derive(RustSpec)]
-/// `STABLE` identifies the co3 source family (`true`) or native Rust family (`false`).
-#[repr(C)]
-#[doc(hidden)]
-pub struct CVec<T: ReprC<CType: Sized>, const STABLE: bool = false> {
-    data: *mut T::CType,
-    capacity: usize,
-    len: usize,
-}
-
-unsafe impl<T: ReprC<CType: Sized>, const STABLE: bool> Zeroable for CVec<T, STABLE> {}
-
 struct VecOwner<'a, T> {
     target: &'a mut Vec<T>,
-    value: Option<RustVec<T>>,
+    value: Option<alloc::vec::Vec<T>>,
 }
 
 impl<T> Vec<T> {
@@ -59,7 +43,7 @@ impl<T> Vec<T> {
     }
 
     pub fn with_capacity(capacity: usize) -> Self {
-        RustVec::with_capacity(capacity).into()
+        alloc::vec::Vec::with_capacity(capacity).into()
     }
 
     pub const fn len(&self) -> usize {
@@ -126,13 +110,13 @@ impl<T: core::fmt::Debug> core::fmt::Debug for Vec<T> {
         core::fmt::Debug::fmt(&**self, f)
     }
 }
-// SAFETY: Vec uniquely owns its elements, just like RustVec.
+// SAFETY: Vec uniquely owns its elements, just like alloc::vec::Vec.
 unsafe impl<T: Send> Send for Vec<T> {}
 unsafe impl<T: Sync> Sync for Vec<T> {}
 
 impl<T> FromIterator<T> for Vec<T> {
     fn from_iter<I: IntoIterator<Item = T>>(iter: I) -> Self {
-        iter.into_iter().collect::<RustVec<T>>().into()
+        iter.into_iter().collect::<alloc::vec::Vec<T>>().into()
     }
 }
 impl<T> IntoIterator for Vec<T> {
@@ -140,7 +124,7 @@ impl<T> IntoIterator for Vec<T> {
     type IntoIter = alloc::vec::IntoIter<T>;
 
     fn into_iter(self) -> Self::IntoIter {
-        RustVec::from(self).into_iter()
+        alloc::vec::Vec::from(self).into_iter()
     }
 }
 impl<'a, T> IntoIterator for &'a Vec<T> {
@@ -163,7 +147,9 @@ impl<'a, T> IntoIterator for &'a mut Vec<T> {
 impl<T> Drop for Vec<T> {
     fn drop(&mut self) {
         // SAFETY: This wrapper uniquely owns the original allocation.
-        drop(unsafe { RustVec::from_raw_parts(self.data.as_ptr(), self.len, self.capacity) });
+        drop(unsafe {
+            alloc::vec::Vec::from_raw_parts(self.data.as_ptr(), self.len, self.capacity)
+        });
     }
 }
 
@@ -182,93 +168,8 @@ impl<T> DerefMut for Vec<T> {
     }
 }
 
-impl<T: ReprC<CType: Sized>, const STABLE: bool> Copy for CVec<T, STABLE> {}
-impl<T: ReprC<CType: Sized>, const STABLE: bool> Clone for CVec<T, STABLE> {
-    fn clone(&self) -> Self {
-        *self
-    }
-}
-
-impl<T: ReprC<CType: CType + Sized>, const STABLE: bool> Default for CVec<T, STABLE> {
-    fn default() -> Self {
-        Self::null()
-    }
-}
-
-impl<T: ReprC<CType: CType + Sized>, const STABLE: bool> CVec<T, STABLE> {
-    pub const fn null() -> Self {
-        Self {
-            data: core::ptr::null_mut(),
-            len: 0,
-            capacity: 0,
-        }
-    }
-
-    pub fn from_vec(value: RustVec<T::CType>) -> Self {
-        let (data, len, capacity) = value.into_raw_parts();
-        Self {
-            data,
-            len,
-            capacity,
-        }
-    }
-
-    /// Constructs a vector carrier from its allocation and initialized length.
-    ///
-    /// # Safety
-    /// For a non-null pointer, `data`, `len`, and `capacity` must describe valid
-    /// vector storage, with `len <= capacity`. This includes the aligned dangling
-    /// pointer used for zero-capacity vectors and zero-sized elements. The storage
-    /// must remain valid while the carrier is used. A null pointer represents no
-    /// allocation. This constructor does not transfer ownership by itself.
-    pub const unsafe fn from_raw_parts(data: *mut T::CType, len: usize, capacity: usize) -> Self {
-        Self {
-            data,
-            len,
-            capacity,
-        }
-    }
-}
-
-impl<T: ReprC<CType: Sized>, const STABLE: bool> CVec<T, STABLE> {
-    pub(crate) fn with_source<const OTHER: bool>(self) -> CVec<T, OTHER> {
-        // The source discriminator has no storage and does not affect layout.
-        unsafe { crate::transmute::transmute_owned(self) }
-    }
-
-    pub const fn as_ptr(self) -> *mut T::CType {
-        self.data
-    }
-    pub const fn len(self) -> usize {
-        self.len
-    }
-    pub const fn capacity(self) -> usize {
-        self.capacity
-    }
-    pub const fn is_empty(self) -> bool {
-        self.len == 0
-    }
-    /// Reconstructs an owning vector, rejecting null pointers and lengths above capacity.
-    ///
-    /// # Safety
-    ///
-    /// For a non-null pointer with `len <= capacity`, the parts must satisfy
-    /// `RustVec::from_raw_parts`, including initialized elements, correct
-    /// allocation layout, and unique ownership. Copying this header does not
-    /// duplicate ownership; reconstruct the allocation at most once.
-    pub unsafe fn into_vec(self) -> Option<RustVec<T::CType>> {
-        let data = NonNull::new(self.data)?;
-        if self.len > self.capacity {
-            return None;
-        }
-        Some(unsafe { RustVec::from_raw_parts(data.as_ptr(), self.len, self.capacity) })
-    }
-}
-impl_identity_carrier! { CVec, [T: ReprC<CType: CType + Sized>, const STABLE: bool], [T, STABLE] }
-crate::wide::impl_carrier_borrow! { CVec, [T: ReprC<CType: CType + Sized>, const STABLE: bool], [T, STABLE] }
-
-impl<T> From<RustVec<T>> for Vec<T> {
-    fn from(value: RustVec<T>) -> Self {
+impl<T> From<alloc::vec::Vec<T>> for Vec<T> {
+    fn from(value: alloc::vec::Vec<T>) -> Self {
         let (data, len, capacity) = value.into_raw_parts();
         Self {
             // SAFETY: Vec always provides a non-null data pointer, including for ZSTs.
@@ -279,28 +180,28 @@ impl<T> From<RustVec<T>> for Vec<T> {
     }
 }
 
-impl<T> From<Vec<T>> for RustVec<T> {
+impl<T> From<Vec<T>> for alloc::vec::Vec<T> {
     fn from(value: Vec<T>) -> Self {
         let (data, len, capacity) = value.into_raw_parts();
         // SAFETY: The consumed wrapper transfers its uniquely owned allocation.
-        unsafe { RustVec::from_raw_parts(data, len, capacity) }
+        unsafe { alloc::vec::Vec::from_raw_parts(data, len, capacity) }
     }
 }
 
 impl<T: ReprC<CType: Sized>> ReprC for Vec<T> {
-    type CType = CVec<T, true>;
+    type CType = abi::Vec<T::CType, true>;
 }
 
 #[cfg(feature = "alloc")]
-impl<R: ReprC<CType: Sized>> ReprC for RustVec<R> {
-    type CType = CVec<R>;
+impl<R: ReprC<CType: Sized>> ReprC for alloc::vec::Vec<R> {
+    type CType = abi::Vec<R::CType>;
 }
 #[cfg(feature = "alloc")]
-impl<R> Encode for RustVec<R> where Self: EncodeMove {}
+impl<R> Encode for alloc::vec::Vec<R> where Self: EncodeMove {}
 #[cfg(feature = "alloc")]
-impl<R> EncodeUnchecked for RustVec<R> where Self: EncodeMoveUnchecked {}
+impl<R> EncodeUnchecked for alloc::vec::Vec<R> where Self: EncodeMoveUnchecked {}
 #[cfg(feature = "alloc")]
-impl<'d, R> Decode<'d> for RustVec<R> where Self: DecodeMove<'d> {}
+impl<'d, R> Decode<'d> for alloc::vec::Vec<R> where Self: DecodeMove<'d> {}
 
 // The header has C layout; reachable element layout and mutability follow T.
 unsafe impl<T: RustSpec<Mutability: rust_spec::mutability::PointerMutability>> RustSpec for Vec<T> {
@@ -362,7 +263,7 @@ impl<T> Encode for Vec<T> where Self: EncodeMove + crate::convert::EncodeUncheck
 impl<T> crate::convert::EncodeUnchecked for Vec<T> where Self: EncodeMoveUnchecked {}
 impl<'d, T> Decode<'d> for Vec<T> where Self: DecodeMove<'d> {}
 impl<T: ReprC<CType: CType + Sized>> crate::niche::Niche for Vec<T> {
-    const NICHE: Self::CType = CVec::null();
+    const NICHE: Self::CType = abi::Vec::null();
 
     fn is_niche(value: &Self::CType) -> bool {
         value.as_ptr().is_null()
@@ -385,36 +286,145 @@ unsafe impl<T: AbiCompatible<CType: CType + Sized>> AbiCompatible for Vec<T> whe
     T: RustSpec<Layout = rust_spec::Stable, Mutability: rust_spec::mutability::PointerMutability>
 {
 }
-impl<T: ReprC<CType: Sized>, const STABLE: bool> core::fmt::Debug for CVec<T, STABLE> {
-    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
-        f.debug_struct("CVec")
-            .field("data", &self.data)
-            .field("len", &self.len)
-            .field("capacity", &self.capacity)
-            .finish()
-    }
-}
 
-impl<T: ReprC<CType: Sized>, const STABLE: bool> PartialEq for CVec<T, STABLE> {
-    fn eq(&self, other: &Self) -> bool {
-        !self.data.is_null()
-            && self.data == other.data
-            && self.len == other.len
-            && self.capacity == other.capacity
-    }
-}
+#[doc(hidden)]
+pub mod abi {
+    use super::*;
 
-impl<T: ReprC<CType: Sized>, const STABLE: bool> PartialOrd for CVec<T, STABLE> {
-    fn partial_cmp(&self, other: &Self) -> Option<core::cmp::Ordering> {
-        if self.data.is_null() || other.data.is_null() {
-            None
-        } else {
-            Some(
-                self.data
-                    .cmp(&other.data)
-                    .then_with(|| self.len.cmp(&other.len))
-                    .then_with(|| self.capacity.cmp(&other.capacity)),
-            )
+    /// An owned allocation represented by its data pointer, length, and capacity.
+    /// A null pointer is reserved as a niche and does not represent a vector.
+    /// `T` is the lowered element type stored in the allocation.
+    #[derive(RustSpec)]
+    /// `STABLE` identifies the co3 source family (`true`) or native Rust family (`false`).
+    #[repr(C)]
+    #[doc(hidden)]
+    pub struct Vec<T: CType, const STABLE: bool = false> {
+        pub(super) data: *mut T,
+        pub(super) capacity: usize,
+        pub(super) len: usize,
+    }
+
+    unsafe impl<T: CType, const STABLE: bool> Zeroable for Vec<T, STABLE> {}
+
+    impl<T: CType, const STABLE: bool> Copy for Vec<T, STABLE> {}
+
+    impl<T: CType, const STABLE: bool> Clone for Vec<T, STABLE> {
+        fn clone(&self) -> Self {
+            *self
+        }
+    }
+
+    impl<T: CType, const STABLE: bool> Default for Vec<T, STABLE> {
+        fn default() -> Self {
+            Self::null()
+        }
+    }
+
+    impl<T: CType, const STABLE: bool> Vec<T, STABLE> {
+        pub const fn null() -> Self {
+            Self {
+                data: core::ptr::null_mut(),
+                len: 0,
+                capacity: 0,
+            }
+        }
+
+        pub fn from_vec(value: alloc::vec::Vec<T>) -> Self {
+            let (data, len, capacity) = value.into_raw_parts();
+            Self {
+                data,
+                len,
+                capacity,
+            }
+        }
+
+        /// Constructs a vector carrier from its allocation and initialized length.
+        ///
+        /// # Safety
+        /// For a non-null pointer, `data`, `len`, and `capacity` must describe valid
+        /// vector storage, with `len <= capacity`. This includes the aligned dangling
+        /// pointer used for zero-capacity vectors and zero-sized elements. The storage
+        /// must remain valid while the carrier is used. A null pointer represents no
+        /// allocation. This constructor does not transfer ownership by itself.
+        pub const unsafe fn from_raw_parts(data: *mut T, len: usize, capacity: usize) -> Self {
+            Self {
+                data,
+                len,
+                capacity,
+            }
+        }
+    }
+
+    impl<T: CType, const STABLE: bool> Vec<T, STABLE> {
+        pub(crate) fn with_source<const OTHER: bool>(self) -> Vec<T, OTHER> {
+            // The source discriminator has no storage and does not affect layout.
+            unsafe { crate::transmute::transmute_owned(self) }
+        }
+
+        pub const fn as_ptr(self) -> *mut T {
+            self.data
+        }
+        pub const fn len(self) -> usize {
+            self.len
+        }
+        pub const fn capacity(self) -> usize {
+            self.capacity
+        }
+        pub const fn is_empty(self) -> bool {
+            self.len == 0
+        }
+        /// Reconstructs an owning vector, rejecting null pointers and lengths above capacity.
+        ///
+        /// # Safety
+        ///
+        /// For a non-null pointer with `len <= capacity`, the parts must satisfy
+        /// `alloc::vec::Vec::from_raw_parts`, including initialized elements, correct
+        /// allocation layout, and unique ownership. Copying this header does not
+        /// duplicate ownership; reconstruct the allocation at most once.
+        pub unsafe fn into_vec(self) -> core::option::Option<alloc::vec::Vec<T>> {
+            let data = NonNull::new(self.data)?;
+            if self.len > self.capacity {
+                return None;
+            }
+            Some(unsafe { alloc::vec::Vec::from_raw_parts(data.as_ptr(), self.len, self.capacity) })
+        }
+    }
+
+    impl_identity_carrier! { Vec, [T: CType, const STABLE: bool], [T, STABLE] }
+
+    crate::wide::impl_carrier_borrow! { Vec, [T: CType, const STABLE: bool], [T, STABLE] }
+
+    impl<T: CType, const STABLE: bool> core::fmt::Debug for Vec<T, STABLE> {
+        fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+            f.debug_struct("Vec")
+                .field("data", &self.data)
+                .field("len", &self.len)
+                .field("capacity", &self.capacity)
+                .finish()
+        }
+    }
+
+    impl<T: CType, const STABLE: bool> PartialEq for Vec<T, STABLE> {
+        fn eq(&self, other: &Self) -> bool {
+            !self.data.is_null()
+                && self.data == other.data
+                && self.len == other.len
+                && self.capacity == other.capacity
+        }
+    }
+
+    impl<T: CType, const STABLE: bool> PartialOrd for Vec<T, STABLE> {
+        fn partial_cmp(&self, other: &Self) -> Option<core::cmp::Ordering> {
+            if self.data.is_null() || other.data.is_null() {
+                None
+            } else {
+                Some(
+                    self.data
+                        .cmp(&other.data)
+                        .then_with(|| self.len.cmp(&other.len))
+                        .then_with(|| self.capacity.cmp(&other.capacity)),
+                )
+            }
         }
     }
 }

@@ -26,7 +26,7 @@ note: required for `Kita5` to implement `SoftDecodeMut<'_>`
    |                           ----- type parameter would need to implement `SoftDecodeMut<'_>`
  8 | struct Kita5(u32, Opaque);
    |        ^^^^^
-   = note: required for `&mut Kita5` to implement `co3::stored::_::DecodeMove_cfg1<'_, co3::reference::CSoftRefMut<Kita5, true>, Unstable, Unstable, rust_spec::size::Sized<Gt<rust_spec::Zero>>>`
+   = note: required for `&mut Kita5` to implement `co3::stored::_::DecodeMove_cfg1<'_, co3::reference::SoftRefMut<Kita5CType>, Unstable, Unstable, rust_spec::size::Sized<Gt<rust_spec::Zero>>>`
    = note: required for `&mut Kita5` to implement `DecodeMove<'_>`
    = note: required for `&mut Kita5` to implement `BorrowedDecode<'_>`
 
@@ -129,7 +129,7 @@ note: required for `Kita5` to implement `BorrowedDecode<'_>`
  8 | struct Kita5(u32, Opaque);
    |        ^^^^^
    = note: required for `[Kita5]` to implement `SoftDecodeMut<'_>`
-   = note: required for `&mut [Kita5]` to implement `co3::stored::_::DecodeMove_cfg1<'_, co3::wide::CSoftWideRefMut<[Kita5], true>, Unstable, Unstable, rust_spec::size::MetaSized<SliceLike>>`
+   = note: required for `&mut [Kita5]` to implement `co3::stored::_::DecodeMove_cfg1<'_, co3::wide::abi::SoftWideRefMut<[Kita5CType]>, Unstable, Unstable, rust_spec::size::MetaSized<SliceLike>>`
    = note: required for `&mut [Kita5]` to implement `DecodeMove<'_>`
    = note: 1 redundant requirement hidden
    = note: required for `&mut [Kita5]` to implement `BorrowedDecode<'_>`
@@ -189,7 +189,7 @@ help: the following other types implement trait `SoftDecodeMut<'d>`
    | |     SoftDecodeMut<'d> for [R]
    | | where
    | |     R: crate::borrow::BorrowedDecode<'d>,
-   | |     &'d mut Self: ReprC<CType = crate::wide::CSoftWideRefMut<Self, true>>,
+   | |     &'d mut Self: ReprC<CType = crate::wide::abi::SoftWideRefMut<<Self as ReprC>::CType>>,
    | |     [R]: RustSpec<Size = MetaSized<SliceLike>>,
    | |_______________________________________________^ `[R]`
 ...
@@ -197,9 +197,9 @@ help: the following other types implement trait `SoftDecodeMut<'d>`
    | | where
    | |     T: crate::borrow::BorrowedDecode<'d>,
    | |     Self: RustSpec + ReprC<CType = [<T as ReprC>::CType; N]> + EncodeMove<Store: EmptyStore>,
-   | |     &'d mut Self: ReprC<CType = CSoftRefMut<Self, true>>,
-   | |_________________________________________________________^ `[T; N]`
-note: required for `CKita5` to implement `Copy`
+   | |     &'d mut Self: ReprC<CType = SoftRefMut<<Self as ReprC>::CType>>,
+   | |____________________________________________________________________^ `[T; N]`
+note: required for `Kita5CType` to implement `Copy`
   --> tests/ui_fail/opaque_by_value.rs:7:27
    |
  7 | #[derive(Clone, RustSpec, ReprC)]

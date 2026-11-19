@@ -82,6 +82,7 @@ impl Ownership {
         let payload = &self.payload;
         let trait_name = &self.trait_name;
         let (impl_generics, _, _) = generics.split_for_impl();
+        let speculative = speculative_marker(generics.params.is_empty());
         quote! {
             trait #trait_name: co3::CType + Sized {
                 type Payload;
@@ -90,14 +91,14 @@ impl Ownership {
                 fn payload(&self) -> &Self::Payload;
             }
 
-            impl #impl_generics #trait_name for #payload where #payload: Sized, #bounds {
+            impl #impl_generics #trait_name for #payload where #speculative #payload: Sized, #bounds {
                 type Payload = #payload;
                 fn wrap(value: #payload) -> Self { value }
                 fn unwrap(self) -> #payload { self }
                 fn payload(&self) -> &#payload { self }
             }
 
-            impl #impl_generics #trait_name for co3::owned::Owned<#payload> where #payload: Sized, #bounds {
+            impl #impl_generics #trait_name for co3::owned::Owned<#payload> where #speculative #payload: Sized, #bounds {
                 type Payload = #payload;
                 fn wrap(value: #payload) -> Self { co3::owned::Owned(value) }
                 fn unwrap(self) -> #payload { self.0 }
@@ -579,12 +580,7 @@ pub(crate) fn derive_repr_c(input: &syn::DeriveInput) -> syn::Result<TokenStream
                 .iter()
                 .all(|v| matches!(v.fields, syn::Fields::Unit))
             {
-                derive_fieldless_enum(
-                    repr_attr,
-                    repr_alignment,
-                    input,
-                    true,
-                )
+                derive_fieldless_enum(repr_attr, repr_alignment, input, true)
             } else {
                 derive_item(
                     repr_attr,

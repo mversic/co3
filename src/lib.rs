@@ -284,7 +284,7 @@
 //!    input
 //! }
 //!
-//! fn clone_into(input: RustBox<u8>) {
+//! fn clone_into(input: Box<u8>) {
 //!    drop(input);
 //! }
 //!
@@ -295,7 +295,7 @@
 //!    fn passthrough(input: move Vec<u8>) -> move Vec<u8>;
 //!
 //!    // `input` is borrowed and cloned
-//!    fn clone_into(input: RustBox<u8>);
+//!    fn clone_into(input: Box<u8>);
 //! }
 //! # fn main() {}
 //! # }
@@ -333,7 +333,7 @@
 //!
 //! # Unpacking at the ABI boundary
 //!
-//! Rust slices are lowered into [`wide::CWideRef`] or [`wide::CWideRefMut`], or
+//! Rust slices are lowered into [`wide::abi::WideRef`] or [`wide::abi::WideRefMut`], or
 //! their soft counterparts when conversion can require temporary storage.
 //! These C-ABI containers hold a data pointer and a length.
 //!
@@ -414,7 +414,7 @@
 //! use co3::{ops::CFn2, ReprC, ffi, rust_spec::RustSpec};
 //!
 //! #[derive(Clone, Copy, RustSpec, ReprC)]
-//! // Without `#[repr_c(identity)]`, `ReprC` derive produces `CValue`, in which case you'd
+//! // Without `#[repr_c(identity)]`, `ReprC` derive produces `ValueCType`, in which case you'd
 //! // have to use that type (or `<Value as ReprC>::CType`) in your callback instead
 //! #[repr_c(identity)]
 //! #[repr(transparent)]
@@ -500,13 +500,13 @@
 //! }
 //!
 //! // If you have an existing function
-//! fn increment(value: RustBox<u8>) -> Value {
+//! fn increment(value: Box<u8>) -> Value {
 //!     Value(*value + 1)
 //! }
 //!
 //! raw! {
 //!     // The generated companion uses the C calling convention.
-//!     fn increment(value: move RustBox<u8>) -> Value;
+//!     fn increment(value: move Box<u8>) -> Value;
 //!
 //!     impl Value {
 //!         // Synthesize its C ABI companion method.
@@ -517,7 +517,7 @@
 //! ffi! {
 //!     #![unsafe(extern("C"))]
 //!
-//!     type Callback = raw extern "C" fn(move RustBox<u8>) -> Value;
+//!     type Callback = raw extern "C" fn(move Box<u8>) -> Value;
 //!     type MethodCallback<'a> = raw extern "C" fn(&'a Value) -> Value;
 //!
 //!     #[symbol_name = "doc_register_callback"]
@@ -561,7 +561,7 @@ extern crate alloc;
 extern crate self as co3;
 
 #[cfg(feature = "alloc")]
-use alloc::boxed::Box as RustBox;
+use alloc::boxed::Box;
 
 #[cfg(feature = "derive")]
 pub use co3_derive::*;
@@ -584,12 +584,18 @@ use rust_spec::{
 #[cfg(feature = "alloc")]
 use crate::ffi::NulTerminatedBuf;
 #[cfg(feature = "alloc")]
-use crate::{boxed::Box, wide::CWideBox};
+use crate::{boxed::abi::Box as AbiBox, wide::abi::WideBox as AbiWideBox};
 use crate::{
     convert::Store,
     niche::Niche,
-    reference::{SoftRef, SoftRefMut, Ref, RefMut},
-    wide::{CSoftWideRef, CSoftWideRefMut, CWideRef, Wide, WideHeader},
+    reference::{Ref, RefMut, SoftRef, SoftRefMut},
+    wide::{
+        Wide, WideHeader,
+        abi::{
+            SoftWideRef as AbiSoftWideRef, SoftWideRefMut as AbiSoftWideRefMut,
+            WideRef as AbiWideRef,
+        },
+    },
 };
 
 pub mod borrow;
@@ -725,108 +731,108 @@ disjoint_impls! {
     where
         R: RustSpec<Layout = Stable, Size: Thin>,
     {
-        type CType = Ref<'a, <R as crate::ReprC>::CType>;
+        type CType = Ref<'a, R::CType>;
     }
     impl<R: ReprC + ?Sized> ReprC for &R
     where
         R: RustSpec<Layout = Unstable, Size: Thin>,
     {
-        type CType = SoftRef<<R as crate::ReprC>::CType>;
+        type CType = SoftRef<R::CType>;
     }
     impl<R: ReprC + ?Sized> ReprC for &R
     where
         R: RustSpec<Size = NulTerminated>,
-        <R as ReprC>::CType: Sized,
+        <R as ReprC>::CType: crate::CType + Sized,
     {
-        type CType = SoftRef<<R as crate::ReprC>::CType>;
+        type CType = SoftRef<R::CType>;
     }
-    impl<'a, R: ReprC<CType: Wide<Header: WideHeader<Data: CType>, Metadata = usize>> + ?Sized> ReprC for &'a R
+    impl<'a, R: ReprC<CType: crate::CType + Wide<Header: WideHeader<Data: CType>, Metadata = usize>> + ?Sized> ReprC for &'a R
     where
         R: RustSpec<Layout = Stable, Size = MetaSized<SliceLike>>,
     {
-        type CType = CWideRef<'a, R>;
+        type CType = AbiWideRef<'a, R::CType>;
     }
-    impl<R: ReprC<CType: Wide<Header: WideHeader<Data: CType>, Metadata = usize>> + ?Sized> ReprC for &R
+    impl<R: ReprC<CType: crate::CType + Wide<Header: WideHeader<Data: CType>, Metadata = usize>> + ?Sized> ReprC for &R
     where
         R: RustSpec<Layout = Unstable, Size = MetaSized<SliceLike>>,
     {
-        type CType = CSoftWideRef<R>;
+        type CType = AbiSoftWideRef<R::CType>;
     }
     impl<'a, R: ReprC + ?Sized> ReprC for &'a mut R
     where
         R: RustSpec<Layout = Stable, Trap = Robust, Size: Thin>,
     {
-        type CType = RefMut<'a, <R as crate::ReprC>::CType>;
+        type CType = RefMut<'a, R::CType>;
     }
     impl<R: ReprC + ?Sized> ReprC for &mut R
     where
         R: RustSpec<Layout = Stable, Trap = NonRobust, Size: Thin>,
     {
-        type CType = SoftRefMut<<R as crate::ReprC>::CType>;
+        type CType = SoftRefMut<R::CType>;
     }
     impl<R: ReprC + ?Sized> ReprC for &mut R
     where
         R: RustSpec<Layout = Unstable, Size: Thin>,
     {
-        type CType = SoftRefMut<<R as crate::ReprC>::CType>;
+        type CType = SoftRefMut<R::CType>;
     }
-    impl<'a, R: ReprC<CType: Wide<Header: WideHeader<Data: CType>, Metadata = usize>> + ?Sized> ReprC for &'a mut R
+    impl<'a, R: ReprC<CType: crate::CType + Wide<Header: WideHeader<Data: CType>, Metadata = usize>> + ?Sized> ReprC for &'a mut R
     where
         R: RustSpec<Layout = Stable, Trap = Robust, Size = MetaSized<SliceLike>>,
     {
-        type CType = CWideRef<'a, R>;
+        type CType = AbiWideRef<'a, R::CType>;
     }
-    impl<R: ReprC<CType: Wide<Header: WideHeader<Data: CType>, Metadata = usize>> + ?Sized> ReprC for &mut R
+    impl<R: ReprC<CType: crate::CType + Wide<Header: WideHeader<Data: CType>, Metadata = usize>> + ?Sized> ReprC for &mut R
     where
         R: RustSpec<Layout = Stable, Trap = NonRobust, Size = MetaSized<SliceLike>>,
     {
-        type CType = CSoftWideRefMut<R>;
+        type CType = AbiSoftWideRefMut<R::CType>;
     }
-    impl<R: ReprC<CType: Wide<Header: WideHeader<Data: CType>, Metadata = usize>> + ?Sized> ReprC for &mut R
+    impl<R: ReprC<CType: crate::CType + Wide<Header: WideHeader<Data: CType>, Metadata = usize>> + ?Sized> ReprC for &mut R
     where
         R: RustSpec<Layout = Unstable, Size = MetaSized<SliceLike>>,
     {
-        type CType = CSoftWideRefMut<R>;
+        type CType = AbiSoftWideRefMut<R::CType>;
     }
 
     #[cfg(feature = "alloc")]
-    impl<R: ReprC, S: SizedKind> ReprC for RustBox<R>
+    impl<R: ReprC, S: SizedKind> ReprC for Box<R>
     where
         R: RustSpec<Size = rust_spec::size::Sized<S>>,
-        <R as ReprC>::CType: Sized,
+        <R as ReprC>::CType: crate::CType + Sized,
     {
-        type CType = Box<<R as crate::ReprC>::CType>;
+        type CType = AbiBox<R::CType>;
     }
     #[cfg(feature = "alloc")]
-    impl<R: NulTerminatedBuf<Header: ReprC> + ReprC<CType: CType + Sized> + ?Sized> ReprC for RustBox<R>
+    impl<R: NulTerminatedBuf<Header: ReprC> + ReprC<CType: CType + Sized> + ?Sized> ReprC for Box<R>
     where
         R: RustSpec<Size = NulTerminated>,
         <R as NulTerminatedBuf>::Header: Sized,
-        <<R as NulTerminatedBuf>::Header as ReprC>::CType: Sized,
+        <<R as NulTerminatedBuf>::Header as ReprC>::CType: crate::CType + Sized,
     {
-        type CType = Box<<R as crate::ReprC>::CType>;
+        type CType = AbiBox<R::CType>;
     }
     #[cfg(feature = "alloc")]
-    impl<R: ReprC<CType: Wide<Header: WideHeader<Data: CType + Sized>, Metadata = usize>> + ?Sized> ReprC for RustBox<R>
+    impl<R: ReprC<CType: crate::CType + Wide<Header: WideHeader<Data: CType + Sized>, Metadata = usize>> + ?Sized> ReprC for Box<R>
     where
         R: RustSpec<Size = MetaSized<SliceLike>>,
     {
-        type CType = CWideBox<R>;
+        type CType = AbiWideBox<R::CType>;
     }
 
     impl<R: ReprC> ReprC for Option<R>
     where
         R: RustSpec<Niche = WithoutNiche>,
-        <R as ReprC>::CType: Sized,
+        <R as ReprC>::CType: crate::CType + Sized,
     {
-        type CType = option::COption<R>;
+        type CType = option::abi::Option<R::CType>;
     }
     impl<R: Niche, N: LayoutKind> ReprC for Option<R>
     where
         R: RustSpec<Niche = WithNiche<N>>,
-        <R as ReprC>::CType: Sized,
+        <R as ReprC>::CType: crate::CType + Sized,
     {
-        type CType = option::COptionSome<R>;
+        type CType = option::abi::OptionSome<R::CType>;
     }
 
     impl<R: ReprC, E: ReprC, K: SizedKind> ReprC for Result<R, E>
@@ -834,64 +840,64 @@ disjoint_impls! {
         R: RustSpec<Size = rust_spec::size::Sized<K>>,
         E: RustSpec<Size = rust_spec::size::Sized<K>>,
         // TODO: There is an error in disjoint_impls! that doesn't allow to use
-        // `ReprC<CType: Copy>` constraint. Fix that! Check other Result sites
+        // `ReprC<CType: crate::CType + Copy>` constraint. Fix that! Check other Result sites
         <R as ReprC>::CType: CType + Copy,
         <E as ReprC>::CType: CType + Copy,
     {
-        type CType = result::CResult<R, E>;
+        type CType = result::abi::Result<R::CType, E::CType>;
     }
-    impl<R: Niche, E: ReprC> ReprC for Result<R, E>
+    impl<R: Niche, E: ReprC<CType: CType + Sized>> ReprC for Result<R, E>
     where
         R: RustSpec<Size = rust_spec::size::Sized<rust_spec::Gt<rust_spec::Zero>>>,
         E: RustSpec<Size = rust_spec::size::Sized<Zero>>,
-        <R as ReprC>::CType: Sized,
+        <R as ReprC>::CType: crate::CType + Sized,
     {
-        type CType = result::CResultOk<R, E>;
+        type CType = result::abi::ResultOk<R::CType, E::CType>;
     }
-    impl<R: ReprC, E: Niche> ReprC for Result<R, E>
+    impl<R: ReprC<CType: CType + Sized>, E: Niche> ReprC for Result<R, E>
     where
         R: RustSpec<Size = rust_spec::size::Sized<Zero>>,
         E: RustSpec<Size = rust_spec::size::Sized<rust_spec::Gt<rust_spec::Zero>>>,
-        <E as ReprC>::CType: Sized,
+        <E as ReprC>::CType: crate::CType + Sized,
     {
-        type CType = result::CResultErr<R, E>;
+        type CType = result::abi::ResultErr<R::CType, E::CType>;
     }
 
     impl<'a, R: ?Sized> ReprC for wide::WideRef<'a, R>
     where
-        R: ReprC<CType: wide::Wide<Header: CType + wide::WideHeader<Data: CType>>>
+        R: ReprC<CType: crate::CType + wide::Wide<Header: CType + wide::WideHeader<Data: CType>>>
             + wide::Wide + RustSpec<Layout = Stable>,
     {
-        type CType = wide::CWideRef<'a, R, true>;
+        type CType = wide::abi::WideRef<'a, R::CType, true>;
     }
     impl<'a, R: ?Sized> ReprC for wide::WideRef<'a, R>
     where
-        R: ReprC<CType: wide::Wide<Header: CType + wide::WideHeader<Data: CType>>>
+        R: ReprC<CType: crate::CType + wide::Wide<Header: CType + wide::WideHeader<Data: CType>>>
             + wide::Wide + RustSpec<Layout = rust_spec::Unstable>,
     {
-        type CType = wide::CSoftWideRef<R, true>;
+        type CType = wide::abi::SoftWideRef<R::CType, true>;
     }
 
     impl<'a, R: ?Sized> ReprC for wide::WideRefMut<'a, R>
     where
-        R: ReprC<CType: wide::Wide<Header: CType + wide::WideHeader<Data: CType>>>
+        R: ReprC<CType: crate::CType + wide::Wide<Header: CType + wide::WideHeader<Data: CType>>>
             + wide::Wide + RustSpec<Layout = Stable, Trap = rust_spec::layout::Robust>,
     {
-        type CType = wide::CWideRefMut<'a, R, true>;
+        type CType = wide::abi::WideRefMut<'a, R::CType, true>;
     }
     impl<'a, R: ?Sized> ReprC for wide::WideRefMut<'a, R>
     where
-        R: ReprC<CType: wide::Wide<Header: CType + wide::WideHeader<Data: CType>>>
+        R: ReprC<CType: crate::CType + wide::Wide<Header: CType + wide::WideHeader<Data: CType>>>
             + wide::Wide + RustSpec<Layout = Stable, Trap = rust_spec::layout::NonRobust>,
     {
-        type CType = wide::CSoftWideRefMut<R, true>;
+        type CType = wide::abi::SoftWideRefMut<R::CType, true>;
     }
     impl<'a, R: ?Sized> ReprC for wide::WideRefMut<'a, R>
     where
-        R: ReprC<CType: wide::Wide<Header: CType + wide::WideHeader<Data: CType>>>
+        R: ReprC<CType: crate::CType + wide::Wide<Header: CType + wide::WideHeader<Data: CType>>>
             + wide::Wide + RustSpec<Layout = rust_spec::Unstable>,
     {
-        type CType = wide::CSoftWideRefMut<R, true>;
+        type CType = wide::abi::SoftWideRefMut<R::CType, true>;
     }
 }
 
@@ -902,22 +908,22 @@ disjoint_impls! {
 mod tests {
     use super::*;
     use crate::{
-        num::NonZero, option::COption, primitives::Bool, reference::SoftRefMut,
-        wide::CSoftWideRefMut,
+        num::NonZero, option::abi::Option as AbiOption, primitives::Bool, reference::SoftRefMut,
+        wide::abi::SoftWideRefMut as AbiSoftWideRefMut,
     };
 
     #[test]
     fn carrier_types_are_zeroable() {
         static_assertions::assert_impl_all!(reference::SoftRef<u8>: Zeroable);
         static_assertions::assert_impl_all!(reference::SoftRefMut<u8>: Zeroable);
-        static_assertions::assert_impl_all!(wide::CSoftWideRef<[u8]>: Zeroable);
-        static_assertions::assert_impl_all!(wide::CSoftWideRefMut<[u8]>: Zeroable);
+        static_assertions::assert_impl_all!(wide::abi::SoftWideRef<[u8]>: Zeroable);
+        static_assertions::assert_impl_all!(wide::abi::SoftWideRefMut<[u8]>: Zeroable);
         static_assertions::assert_impl_all!(crate::reference::RefMut<'static, u8>: Zeroable);
-        static_assertions::assert_impl_all!(boxed::Box<u8>: Zeroable);
-        static_assertions::assert_impl_all!(crate::wide::CWideRef<'static, [u8]>: Zeroable);
-        static_assertions::assert_impl_all!(crate::wide::CWideRefMut<'static, [u8]>: Zeroable);
-        static_assertions::assert_impl_all!(wide::CWideBox<[u8]>: Zeroable);
-        static_assertions::assert_impl_all!(vec::CVec<u8>: Zeroable);
+        static_assertions::assert_impl_all!(boxed::abi::Box<u8>: Zeroable);
+        static_assertions::assert_impl_all!(crate::wide::abi::WideRef<'static, [u8]>: Zeroable);
+        static_assertions::assert_impl_all!(crate::wide::abi::WideRefMut<'static, [u8]>: Zeroable);
+        static_assertions::assert_impl_all!(wide::abi::WideBox<[u8]>: Zeroable);
+        static_assertions::assert_impl_all!(vec::abi::Vec<u8>: Zeroable);
     }
 
     #[test]
@@ -945,16 +951,18 @@ mod tests {
 
         use crate::{
             option::Option as TaggedOption,
-            result::{CResult, Result as TaggedResult},
+            result::{Result as TaggedResult, abi::Result as AbiResult},
             transmute::AbiCompatible,
         };
 
         static_assertions::assert_impl_all!(TaggedOption<NonZeroU8>: AbiCompatible);
         static_assertions::assert_impl_all!(TaggedResult<NonZeroU8, ()>: AbiCompatible);
         let value = NonZeroU8::new(7).unwrap();
-        let native: option::COptionSome<NonZeroU8> = encode(Some(value));
-        assert_eq!(option::COptionSome(NonZero(7)), native);
-        let tagged: COption<NonZeroU8, true> = encode(TaggedOption::Some(value));
+        let native: option::abi::OptionSome<<NonZeroU8 as crate::ReprC>::CType> =
+            encode(Some(value));
+        assert_eq!(option::abi::OptionSome(NonZero(7)), native);
+        let tagged: AbiOption<<NonZeroU8 as crate::ReprC>::CType, true> =
+            encode(TaggedOption::Some(value));
         assert_eq!(native.0.0, 7);
         assert_eq!(tagged.into_option(), Some(Some(NonZero(7))));
         assert_eq!(
@@ -965,16 +973,26 @@ mod tests {
             &encode(None::<NonZeroU8>).0
         ));
 
-        let native: result::CResultOk<NonZeroU8, ()> = encode(Result::<NonZeroU8, ()>::Err(()));
+        let native: result::abi::ResultOk<<NonZeroU8 as crate::ReprC>::CType, ()> =
+            encode(Result::<NonZeroU8, ()>::Err(()));
         assert_eq!(
-            result::CResultOk::<NonZeroU8, ()>(NonZero(7), core::marker::PhantomData).0,
+            result::abi::ResultOk::<<NonZeroU8 as crate::ReprC>::CType, ()>(
+                NonZero(7),
+                core::marker::PhantomData
+            )
+            .0,
             NonZero(7)
         );
         assert_eq!(
-            result::CResultErr::<(), NonZeroU8>(NonZero(7), core::marker::PhantomData).0,
+            result::abi::ResultErr::<(), <NonZeroU8 as crate::ReprC>::CType>(
+                NonZero(7),
+                core::marker::PhantomData
+            )
+            .0,
             NonZero(7)
         );
-        let tagged: CResult<NonZeroU8, (), true> = encode(TaggedResult::<NonZeroU8, ()>::Err(()));
+        let tagged: AbiResult<<NonZeroU8 as crate::ReprC>::CType, (), true> =
+            encode(TaggedResult::<NonZeroU8, ()>::Err(()));
         assert!(<NonZeroU8 as crate::niche::Niche>::is_niche(&native.0));
         assert_eq!(
             unsafe { decode::<TaggedResult<NonZeroU8, ()>>(tagged) },
@@ -998,7 +1016,7 @@ mod tests {
     fn explicit_option_and_result_round_trip_and_reject_invalid_tags() {
         use crate::{
             option::Option as StableOption,
-            result::{CResult, Result as StableResult},
+            result::{Result as StableResult, abi::Result as AbiResult},
         };
 
         let encoded = encode(StableOption::Some(true));
@@ -1007,12 +1025,20 @@ mod tests {
             unsafe { decode::<StableOption<bool>>(encoded) },
             Some(StableOption::Some(true))
         );
-        let niche =
-            unsafe { COption::<bool, true>::from_raw_parts(2, core::mem::MaybeUninit::uninit()) };
+        let niche = unsafe {
+            AbiOption::<<bool as crate::ReprC>::CType, true>::from_raw_parts(
+                2,
+                core::mem::MaybeUninit::uninit(),
+            )
+        };
         assert!(niche.is_niche());
-        assert!(!COption::<bool, true>::None().is_niche());
-        let other_tag =
-            unsafe { COption::<bool, true>::from_raw_parts(3, core::mem::MaybeUninit::uninit()) };
+        assert!(!AbiOption::<<bool as crate::ReprC>::CType, true>::None().is_niche());
+        let other_tag = unsafe {
+            AbiOption::<<bool as crate::ReprC>::CType, true>::from_raw_parts(
+                3,
+                core::mem::MaybeUninit::uninit(),
+            )
+        };
         assert!(!other_tag.is_niche());
         assert_eq!(unsafe { decode::<StableOption<bool>>(niche) }, None);
 
@@ -1022,12 +1048,18 @@ mod tests {
             Some(StableResult::Err(7))
         );
         let niche = unsafe {
-            CResult::<bool, u8, true>::from_raw_parts(2, Ok(core::mem::MaybeUninit::uninit()))
+            AbiResult::<<bool as crate::ReprC>::CType, u8, true>::from_raw_parts(
+                2,
+                Ok(core::mem::MaybeUninit::uninit()),
+            )
         };
         assert!(niche.is_niche());
-        assert!(!CResult::<bool, u8, true>::Err(7).is_niche());
+        assert!(!AbiResult::<<bool as crate::ReprC>::CType, u8, true>::Err(7).is_niche());
         let other_tag = unsafe {
-            CResult::<bool, u8, true>::from_raw_parts(3, Err(core::mem::MaybeUninit::uninit()))
+            AbiResult::<<bool as crate::ReprC>::CType, u8, true>::from_raw_parts(
+                3,
+                Err(core::mem::MaybeUninit::uninit()),
+            )
         };
         assert!(!other_tag.is_niche());
         assert_eq!(unsafe { decode::<StableResult<bool, u8>>(niche) }, None);
@@ -1056,14 +1088,14 @@ mod tests {
         let mut value = StableOption::Some(true);
         let mut store = Default::default();
         let carrier = crate::soft_encode(&mut value, &mut store);
-        unsafe { *carrier.as_ptr() = COption::None() };
+        unsafe { *carrier.as_ptr() = AbiOption::None() };
         assert_eq!(store.sync(), Some(()));
         assert_eq!(value, StableOption::None);
 
         let mut value = StableResult::<u32, bool>::Ok(4);
         let mut store = Default::default();
         let carrier = crate::soft_encode(&mut value, &mut store);
-        unsafe { *carrier.as_ptr() = CResult::Err(Bool::TRUE) };
+        unsafe { *carrier.as_ptr() = AbiResult::Err(Bool::TRUE) };
         assert_eq!(store.sync(), Some(()));
         assert_eq!(value, StableResult::Err(true));
     }
@@ -1078,7 +1110,7 @@ mod tests {
             let mut store = Default::default();
             let encoded = soft_encode(value_mut_ref, &mut store);
             unsafe {
-                *encoded.as_ptr() = COption::Some(other);
+                *encoded.as_ptr() = AbiOption::Some(other);
             }
             store.sync().unwrap();
         }
@@ -1090,7 +1122,7 @@ mod tests {
             let mut store = Default::default();
             let encoded = soft_encode(ref_mut, &mut store);
             let c_slice = unsafe { encoded.into_mut().unwrap() };
-            c_slice[0] = COption::Some(other);
+            c_slice[0] = AbiOption::Some(other);
             store.sync().unwrap();
         }
         assert_eq!(slice, [Some(42u8)]);
@@ -1098,7 +1130,7 @@ mod tests {
 
     #[test]
     fn decode_stored_mut_ref() {
-        let mut c_opt = COption::Some(1u8);
+        let mut c_opt = AbiOption::Some(1u8);
         let c_ptr = SoftRefMut::<<Option<u8> as crate::ReprC>::CType>::from_mut(&mut c_opt);
         let new_val: u8 = 42;
         {
@@ -1108,10 +1140,11 @@ mod tests {
             *decoded = Some(new_val);
             store.sync().unwrap();
         }
-        assert_eq!(c_opt, COption::Some(42u8));
+        assert_eq!(c_opt, AbiOption::Some(42u8));
 
-        let mut c_opts = [COption::Some(1u8)];
-        let c_slice = CSoftWideRefMut::<[Option<u8>]>::from_mut(&mut c_opts[..]);
+        let mut c_opts = [AbiOption::Some(1u8)];
+        let c_slice =
+            AbiSoftWideRefMut::<<[Option<u8>] as crate::ReprC>::CType>::from_mut(&mut c_opts[..]);
         let x: u8 = 10;
         {
             let mut store = Default::default();
@@ -1120,46 +1153,45 @@ mod tests {
             decoded[0] = Some(x);
             store.sync().unwrap();
         }
-        assert_eq!(c_opts[0], COption::Some(10u8));
+        assert_eq!(c_opts[0], AbiOption::Some(10u8));
     }
-
-    // FIXME:
-    //#[test]
-    //#[cfg(feature = "alloc")]
-    //fn encode_stored_ref_mut_slice() {
-    //    use tuple::Tuple2;
-
-    //    let mut tuples = [(1_u32, true)];
-    //    let slice_ref: &mut [_] = &mut tuples;
-
-    //    {
-    //        let mut store = Default::default();
-
-    //        let encoded = soft_encode(slice_ref, &mut store);
-    //        let c_slice = unsafe { encoded.into_mut().unwrap() };
-
-    //        c_slice[0] = Tuple2(100, Bool::TRUE);
-    //        store.sync().unwrap();
-    //    }
-
-    //    assert_eq!(tuples[0].0, 100);
-    //}
 
     #[test]
     #[cfg(feature = "alloc")]
-    // FIXME: This test demonstrates that ownership of &mut RustBox<(u32,)> is leaked
+    fn encode_stored_ref_mut_slice() {
+        use tuple::Tuple2;
+
+        let mut tuples = [(1_u32, true)];
+        let slice_ref: &mut [_] = &mut tuples;
+
+        {
+            let mut store = Default::default();
+
+            let encoded = soft_encode(slice_ref, &mut store);
+            let c_slice = unsafe { encoded.into_mut().unwrap() };
+
+            c_slice[0] = Tuple2(100_u32, Bool::TRUE);
+            store.sync().unwrap();
+        }
+
+        assert_eq!(tuples[0].0, 100);
+    }
+
+    #[test]
+    #[cfg(feature = "alloc")]
+    // FIXME: This test demonstrates that ownership of &mut Box<(u32,)> is leaked
     // from one side to the other: https://github.com/mversic/co3/issues/182
     fn encode_stored_mut_box_allows_pointer_replacement() {
-        use boxed::Box;
-        use tuple::CTuple2;
+        use boxed::abi::Box as AbiBox;
+        use tuple::abi::Tuple2 as AbiTuple2;
 
-        let mut value = RustBox::new((1_u32, true));
+        let mut value = Box::new((1_u32, true));
 
         {
             let mut store = Default::default();
             let encoded = soft_encode(&mut value, &mut store);
             let original_data = unsafe { (*encoded.as_ptr()).as_ptr() };
-            let replacement = Box::from_box(RustBox::new(CTuple2(100, Bool::TRUE)));
+            let replacement = AbiBox::from_box(Box::new(AbiTuple2(100, Bool::TRUE)));
             let replacement_data = replacement.as_ptr();
 
             unsafe {
@@ -1176,10 +1208,11 @@ mod tests {
     #[test]
     #[cfg(feature = "alloc")]
     fn decode_stored_ref_mut_slice() {
-        use tuple::CTuple2;
+        use tuple::abi::Tuple2 as AbiTuple2;
 
-        let mut tuples = [CTuple2(10_u32, Bool::TRUE)];
-        let c_slice = CSoftWideRefMut::<[(u32, bool)]>::from_mut(&mut tuples[..]);
+        let mut tuples = [AbiTuple2(10_u32, Bool::TRUE)];
+        let c_slice =
+            AbiSoftWideRefMut::<<[(u32, bool)] as crate::ReprC>::CType>::from_mut(&mut tuples[..]);
 
         {
             let mut store = Default::default();
@@ -1268,21 +1301,21 @@ mod carrier_tests {
     #[test]
     fn source_family_discriminators_do_not_change_layout() {
         use crate::{
-            option::COption,
-            result::CResult,
-            tuple::{CTuple2, Tuple2},
+            option::abi::Option as AbiOption,
+            result::abi::Result as AbiResult,
+            tuple::{Tuple2, abi::Tuple2 as AbiTuple2},
         };
-        assert_type_eq_all!(<(u8, bool) as ReprC>::CType, CTuple2<u8, bool>);
-        assert_type_eq_all!(<Tuple2<u8, bool> as ReprC>::CType, Tuple2<u8, crate::primitives::Bool>);
-        assert_type_eq_all!(<Option<u8> as ReprC>::CType, COption<u8>);
-        assert_type_eq_all!(<crate::option::Option<u8> as ReprC>::CType, COption<u8, true>);
-        assert_type_eq_all!(<Result<u8, u8> as ReprC>::CType, CResult<u8, u8>);
-        assert_type_eq_all!(<crate::result::Result<u8, u8> as ReprC>::CType, CResult<u8, u8, true>);
+        assert_type_eq_all!(<(u8, bool) as ReprC>::CType, AbiTuple2<u8, <bool as crate::ReprC>::CType>);
+        assert_type_eq_all!(<Tuple2<u8, bool> as ReprC>::CType, tuple::abi::Tuple2<u8, crate::primitives::Bool, true>);
+        assert_type_eq_all!(<Option<u8> as ReprC>::CType, AbiOption<u8>);
+        assert_type_eq_all!(<crate::option::Option<u8> as ReprC>::CType, AbiOption<u8, true>);
+        assert_type_eq_all!(<Result<u8, u8> as ReprC>::CType, AbiResult<u8, u8>);
+        assert_type_eq_all!(<crate::result::Result<u8, u8> as ReprC>::CType, AbiResult<u8, u8, true>);
         assert_type_eq_all!(<core::num::NonZeroU8 as ReprC>::CType, NonZero<u8>);
         assert_type_eq_all!(<crate::num::NonZero<u8> as ReprC>::CType, NonZero<u8>);
-        assert_type_ne_all!(CTuple2<u8, bool>, Tuple2<u8, crate::primitives::Bool>);
+        assert_type_ne_all!(AbiTuple2<u8, <bool as crate::ReprC>::CType>, Tuple2<u8, crate::primitives::Bool>);
         assert_eq!(
-            core::mem::size_of::<CTuple2<u8, bool>>(),
+            core::mem::size_of::<AbiTuple2<u8, <bool as crate::ReprC>::CType>>(),
             core::mem::size_of::<Tuple2<u8, crate::primitives::Bool>>()
         );
         let source = Tuple2(7_u8, true);
@@ -1298,16 +1331,19 @@ mod carrier_tests {
     fn nested_vector_sources_round_trip_without_collapsing_identity() {
         use alloc::vec::Vec;
 
-        use crate::vec::CVec;
-        assert_type_eq_all!(<Vec<bool> as ReprC>::CType, CVec<bool>);
-        assert_type_eq_all!(<crate::vec::Vec<bool> as ReprC>::CType, CVec<bool, true>);
+        use crate::vec::abi::Vec as AbiVec;
+        assert_type_eq_all!(
+            <Vec<bool> as ReprC>::CType,
+            AbiVec<<bool as crate::ReprC>::CType>
+        );
+        assert_type_eq_all!(<crate::vec::Vec<bool> as ReprC>::CType, AbiVec<<bool as crate::ReprC>::CType, true>);
         assert_type_eq_all!(
             <ManuallyDrop<Vec<bool>> as ReprC>::CType,
-            core::mem::ManuallyDrop<crate::vec::CVec<bool>>
+            core::mem::ManuallyDrop<crate::vec::abi::Vec<<bool as crate::ReprC>::CType>>
         );
         assert_type_ne_all!(
-            core::mem::ManuallyDrop<crate::vec::CVec<bool>>,
-            core::mem::ManuallyDrop<crate::vec::CVec<bool, true>>
+            core::mem::ManuallyDrop<crate::vec::abi::Vec<<bool as crate::ReprC>::CType>>,
+            core::mem::ManuallyDrop<crate::vec::abi::Vec<<bool as crate::ReprC>::CType, true>>
         );
         let source = Cell::new(Vec::from([true, false]));
         let mut store = Default::default();

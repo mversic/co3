@@ -131,7 +131,7 @@ mod tests {
     use super::*;
     use crate::niche::Niche;
     #[cfg(feature = "alloc")]
-    use crate::wide::CWideBox;
+    use crate::wide::abi::WideBox as AbiWideBox;
 
     #[test]
     fn str_is_supported() {
@@ -140,21 +140,21 @@ mod tests {
         assert_impl_all!(String: ReprC<CType = crate::utf8::Utf8String>);
 
         assert_impl_all!(&str:
-            Niche<CType = crate::wide::CWideRef<'static, str>>,
+            Niche<CType = crate::wide::abi::WideRef<'static, <str as crate::ReprC>::CType>>,
             Decode<'static>,
             Encode,
         );
 
         #[cfg(feature = "alloc")]
         assert_impl_all!(&mut str:
-            Niche<CType = crate::wide::CSoftWideRefMut<str>>,
+            Niche<CType = crate::wide::abi::SoftWideRefMut<<str as crate::ReprC>::CType>>,
             Decode<'static>,
             Encode,
         );
 
         #[cfg(feature = "alloc")]
         assert_impl_all!(Box<str>:
-            Niche<CType = CWideBox<str>>,
+            Niche<CType = AbiWideBox<<str as crate::ReprC>::CType>>,
             Decode<'static>,
             Encode,
         );
@@ -165,13 +165,13 @@ mod tests {
         let invalid = [0xff];
 
         let source =
-            unsafe { crate::wide::CWideRef::from_raw_parts(invalid.as_ptr(), invalid.len()) };
+            unsafe { crate::wide::abi::WideRef::from_raw_parts(invalid.as_ptr(), invalid.len()) };
         let decoded = unsafe { crate::decode::<&str>(source) };
         assert!(decoded.is_none());
 
         let mut invalid = [0xff];
         let source = unsafe {
-            crate::wide::CSoftWideRefMut::<_>::from_raw_parts_mut(
+            crate::wide::abi::SoftWideRefMut::<_>::from_raw_parts_mut(
                 invalid.as_mut_ptr(),
                 invalid.len(),
             )
@@ -182,7 +182,9 @@ mod tests {
         #[cfg(feature = "alloc")]
         {
             let allocation = Box::into_non_null(Box::new([0xff_u8])).cast();
-            let source = unsafe { CWideBox::<str>::from_raw_parts(allocation, 1) };
+            let source = unsafe {
+                AbiWideBox::<<str as crate::ReprC>::CType>::from_raw_parts(allocation, 1)
+            };
             let decoded = unsafe { crate::decode::<Box<str>>(source) };
             assert!(decoded.is_none());
         }
@@ -220,7 +222,7 @@ mod tests {
         assert_eq!(decoded.as_ptr(), pointer);
         assert_eq!(decoded.capacity(), capacity);
 
-        let invalid = crate::utf8::Utf8String(crate::vec::CVec::from_vec(alloc::vec![0xff]));
+        let invalid = crate::utf8::Utf8String(crate::vec::abi::Vec::from_vec(alloc::vec![0xff]));
         assert!(unsafe { crate::decode::<String>(invalid) }.is_none());
         assert!(unsafe { crate::decode::<String>(crate::utf8::Utf8String::null()) }.is_none());
     }

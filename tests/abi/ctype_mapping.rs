@@ -65,43 +65,49 @@ assert_type_eq_all!(<NonZeroUsize as ReprC>::CType, co3::num::NonZero<usize>);
 assert_type_eq_all!(<NonZeroIsize as ReprC>::CType, co3::num::NonZero<isize>);
 assert_type_eq_all!(
     <Option<NonZeroU8> as ReprC>::CType,
-    co3::option::COptionSome<NonZeroU8>
+    co3::option::abi::OptionSome<<NonZeroU8 as co3::ReprC>::CType>
 );
 assert_type_eq_all!(
     <Result<NonZeroU8, ()> as ReprC>::CType,
-    co3::result::CResultOk<NonZeroU8, ()>
+    co3::result::abi::ResultOk<<NonZeroU8 as co3::ReprC>::CType, ()>
 );
 assert_impl_all!(Result<NonZeroU32, ()>: CType);
 assert_impl_all!(Result<(), NonZeroU32>: CType);
 assert_impl_all!(Option<Callback>: CType);
 assert_impl_all!(Option<&u32>: CType);
-assert_not_impl_any!(co3::option::COptionSome<u8>: ReprC, CType, co3::convert::Decode<'static>, AbiCompatible);
-assert_impl_all!(co3::option::COptionSome<NonZeroU8>: ReprC, CType, co3::convert::Decode<'static>, AbiCompatible);
-assert_not_impl_any!(co3::result::CResultOk<u8, ()>: ReprC, CType, co3::convert::Decode<'static>, AbiCompatible);
-assert_not_impl_any!(co3::result::CResultErr<(), u8>: ReprC, CType, co3::convert::Decode<'static>, AbiCompatible);
-assert_not_impl_any!(co3::result::CResultOk<NonZeroU8, u8>: ReprC, CType, co3::convert::Decode<'static>, AbiCompatible);
-assert_not_impl_any!(co3::result::CResultErr<u8, NonZeroU8>: ReprC, CType, co3::convert::Decode<'static>, AbiCompatible);
-assert_impl_all!(co3::result::CResultOk<NonZeroU8, ()>: ReprC, CType, co3::convert::Decode<'static>, AbiCompatible);
-assert_impl_all!(co3::result::CResultErr<(), NonZeroU8>: ReprC, CType, co3::convert::Decode<'static>, AbiCompatible);
+assert_impl_all!(co3::option::abi::OptionSome<u8>: ReprC, CType, co3::convert::Decode<'static>, AbiCompatible);
+assert_impl_all!(co3::option::abi::OptionSome<<NonZeroU8 as co3::ReprC>::CType>: ReprC, CType, co3::convert::Decode<'static>, AbiCompatible);
+assert_impl_all!(co3::result::abi::ResultOk<u8, ()>: ReprC, CType, co3::convert::Decode<'static>, AbiCompatible);
+assert_impl_all!(co3::result::abi::ResultErr<(), u8>: ReprC, CType, co3::convert::Decode<'static>, AbiCompatible);
+assert_impl_all!(co3::result::abi::ResultOk<<NonZeroU8 as co3::ReprC>::CType, u8>: ReprC, CType, co3::convert::Decode<'static>, AbiCompatible);
+assert_impl_all!(co3::result::abi::ResultErr<u8, <NonZeroU8 as co3::ReprC>::CType>: ReprC, CType, co3::convert::Decode<'static>, AbiCompatible);
+assert_impl_all!(co3::result::abi::ResultOk<<NonZeroU8 as co3::ReprC>::CType, ()>: ReprC, CType, co3::convert::Decode<'static>, AbiCompatible);
+assert_impl_all!(co3::result::abi::ResultErr<(), <NonZeroU8 as co3::ReprC>::CType>: ReprC, CType, co3::convert::Decode<'static>, AbiCompatible);
 assert_impl_all!(Plain: CType);
 assert_impl_all!(Generic<u32>: CType);
 assert_impl_all!(ConditionalField: CType);
 assert_type_eq_all!(
     <co3::option::Option<bool> as ReprC>::CType,
-    co3::option::COption<bool, true>
+    co3::option::abi::Option<<bool as co3::ReprC>::CType, true>
 );
-assert_type_eq_all!(<co3::result::Result<bool, u8> as ReprC>::CType, co3::result::CResult<bool, u8, true>);
-assert_type_eq_all!(<Vec<bool> as ReprC>::CType, co3::vec::CVec<bool>);
+assert_type_eq_all!(<co3::result::Result<bool, u8> as ReprC>::CType, co3::result::abi::Result<<bool as co3::ReprC>::CType, u8, true>);
+assert_type_eq_all!(
+    <Vec<bool> as ReprC>::CType,
+    co3::vec::abi::Vec<<bool as co3::ReprC>::CType>
+);
 assert_type_eq_all!(
     <Vec<co3::primitives::Bool> as ReprC>::CType,
-    co3::vec::CVec<co3::primitives::Bool>
+    co3::vec::abi::Vec<co3::primitives::Bool>
 );
-assert_type_ne_all!(
-    co3::option::COption<bool>,
-    co3::option::COption<co3::primitives::Bool>
+assert_type_eq_all!(
+    co3::option::abi::Option<<bool as co3::ReprC>::CType>,
+    co3::option::abi::Option<co3::primitives::Bool>
 );
-assert_type_ne_all!(co3::result::CResult<bool, u8>, co3::result::CResult<co3::primitives::Bool, u8>);
-assert_type_ne_all!(co3::vec::CVec<bool>, co3::vec::CVec<co3::primitives::Bool>);
+assert_type_eq_all!(co3::result::abi::Result<<bool as co3::ReprC>::CType, u8>, co3::result::abi::Result<co3::primitives::Bool, u8>);
+assert_type_eq_all!(
+    co3::vec::abi::Vec<<bool as co3::ReprC>::CType>,
+    co3::vec::abi::Vec<co3::primitives::Bool>
+);
 
 assert_not_impl_any!(Option<u32>: CType);
 assert_not_impl_any!(Option<Box<u32>>: CType);
@@ -116,30 +122,30 @@ assert_not_impl_any!(HasDrop: CType);
 
 assert_type_eq_all!(
     <Option<&u32> as ReprC>::CType,
-    co3::option::COptionSome<&u32>
+    co3::option::abi::OptionSome<<&u32 as co3::ReprC>::CType>
 );
 assert_type_eq_all!(
     <Option<Box<u32>> as ReprC>::CType,
-    co3::option::COptionSome<Box<u32>>
+    co3::option::abi::OptionSome<<Box<u32> as co3::ReprC>::CType>
 );
 assert_type_eq_all!(
     <Option<&(u32,)> as ReprC>::CType,
-    co3::option::COptionSome<&(u32,)>
+    co3::option::abi::OptionSome<<&(u32,) as co3::ReprC>::CType>
 );
 assert_type_eq_all!(
     <Result<Box<u32>, ()> as ReprC>::CType,
-    co3::result::CResultOk<Box<u32>, ()>
+    co3::result::abi::ResultOk<<Box<u32> as co3::ReprC>::CType, ()>
 );
 assert_type_eq_all!(
     <Result<(), &(u32,)> as ReprC>::CType,
-    co3::result::CResultErr<(), &(u32,)>
+    co3::result::abi::ResultErr<(), <&(u32,) as co3::ReprC>::CType>
 );
 assert_type_ne_all!(
-    co3::result::CResultOk<u8, ()>,
-    co3::result::CResultOk<u8, PhantomData<u8>>,
-    co3::result::CResultErr<(), u8>
+    co3::result::abi::ResultOk<u8, ()>,
+    co3::result::abi::ResultOk<u8, PhantomData<u8>>
 );
-assert_impl_all!(co3::result::CResultOk<u8, core::cell::Cell<u8>>: Copy);
+assert_type_ne_all!(co3::result::abi::ResultOk<u8, ()>, co3::result::abi::ResultErr<(), u8>);
+assert_impl_all!(co3::result::abi::ResultOk<u8, <core::cell::Cell<u8> as co3::ReprC>::CType>: Copy);
 
 #[test]
 fn nonzero_carrier_preserves_integer_abi_and_niche() {
@@ -166,18 +172,18 @@ fn nonzero_carrier_preserves_integer_abi_and_niche() {
 fn result_niche_carriers_distinguish_arms() {
     use core::mem::{align_of, size_of};
 
-    use co3::result::{CResultErr, CResultOk};
+    use co3::result::abi::{ResultErr as AbiResultErr, ResultOk as AbiResultOk};
 
     assert_eq!(
-        size_of::<CResultOk<Box<u32>, ()>>(),
-        size_of::<co3::boxed::Box<u32>>()
+        size_of::<AbiResultOk<<Box<u32> as co3::ReprC>::CType, ()>>(),
+        size_of::<co3::boxed::abi::Box<u32>>()
     );
     assert_eq!(
-        align_of::<CResultErr<(), &u32>>(),
+        align_of::<AbiResultErr<(), <&u32 as co3::ReprC>::CType>>(),
         align_of::<co3::reference::SoftRef<u32>>()
     );
-    assert_impl_all!(CResultOk<Box<u32>, ()>: CType, CFnArg, CFnReturn);
-    assert_impl_all!(CResultErr<(), &u32>: CType, CFnArg, CFnReturn);
+    assert_impl_all!(AbiResultOk<<Box<u32> as co3::ReprC>::CType, ()>: CType, CFnArg, CFnReturn);
+    assert_impl_all!(AbiResultErr<(), <&u32 as co3::ReprC>::CType>: CType, CFnArg, CFnReturn);
 
     let ok = co3::encode(Result::<Box<u32>, ()>::Ok(Box::new(7)));
     assert!(!ok.payload().as_ptr().is_null());
@@ -203,14 +209,14 @@ fn optional_preserves_carrier_abi() {
     use core::mem::{align_of, size_of};
 
     assert_eq!(
-        size_of::<co3::option::COptionSome<Box<u32>>>(),
-        size_of::<co3::boxed::Box<u32>>()
+        size_of::<co3::option::abi::OptionSome<<Box<u32> as co3::ReprC>::CType>>(),
+        size_of::<co3::boxed::abi::Box<u32>>()
     );
     assert_eq!(
-        align_of::<co3::option::COptionSome<Box<u32>>>(),
-        align_of::<co3::boxed::Box<u32>>()
+        align_of::<co3::option::abi::OptionSome<<Box<u32> as co3::ReprC>::CType>>(),
+        align_of::<co3::boxed::abi::Box<u32>>()
     );
-    assert_impl_all!(co3::option::COptionSome<Box<u32>>: CType, CFnArg, CFnReturn);
+    assert_impl_all!(co3::option::abi::OptionSome<<Box<u32> as co3::ReprC>::CType>: CType, CFnArg, CFnReturn);
 
     let encoded = co3::encode(Some(Box::new(7_u32)));
     assert!(!encoded.payload().as_ptr().is_null());

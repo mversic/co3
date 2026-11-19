@@ -1,7 +1,7 @@
 //! Conversions for types in [`core::ffi`].
 
 #[cfg(feature = "alloc")]
-use alloc::{boxed::Box as RustBox, ffi::CString};
+use alloc::{boxed::Box, ffi::CString};
 #[cfg(feature = "alloc")]
 use core::ptr::NonNull;
 use core::{
@@ -18,7 +18,7 @@ use crate::{
     transmute::AbiCompatible,
 };
 #[cfg(feature = "alloc")]
-use crate::{boxed::Box, niche::Niche};
+use crate::{boxed::abi::Box as AbiBox, niche::Niche};
 
 macro_rules! c_alias_carrier {
     ($name:ident, $alias:ty) => {
@@ -456,9 +456,9 @@ pub unsafe trait NulTerminatedBuf {
     /// `'a`.
     unsafe fn from_raw<'a>(ptr: *const Self::Header) -> &'a Self;
 
-    /// Consumes the `RustBox`, returning a wrapped `NonNull` pointer.
+    /// Consumes the `Box`, returning a wrapped `NonNull` pointer.
     #[cfg(feature = "alloc")]
-    fn into_non_null(self: RustBox<Self>) -> NonNull<Self::Header>;
+    fn into_non_null(self: Box<Self>) -> NonNull<Self::Header>;
 
     /// Constructs a box from a `NonNull` pointer.
     ///
@@ -467,7 +467,7 @@ pub unsafe trait NulTerminatedBuf {
     /// `ptr` must come from `Self::into_non_null`, retain its allocation provenance,
     /// and still own the complete allocation.
     #[cfg(feature = "alloc")]
-    unsafe fn from_non_null(ptr: NonNull<Self::Header>) -> RustBox<Self>;
+    unsafe fn from_non_null(ptr: NonNull<Self::Header>) -> Box<Self>;
 }
 
 unsafe impl<R: NulTerminatedBuf + ?Sized> NulTerminatedBuf for ManuallyDrop<R> {
@@ -483,15 +483,15 @@ unsafe impl<R: NulTerminatedBuf + ?Sized> NulTerminatedBuf for ManuallyDrop<R> {
     }
 
     #[cfg(feature = "alloc")]
-    fn into_non_null(self: RustBox<Self>) -> NonNull<Self::Header> {
-        let inner = unsafe { RustBox::from_raw(RustBox::into_raw(self) as *mut R) };
+    fn into_non_null(self: Box<Self>) -> NonNull<Self::Header> {
+        let inner = unsafe { Box::from_raw(Box::into_raw(self) as *mut R) };
         R::into_non_null(inner)
     }
 
     #[cfg(feature = "alloc")]
-    unsafe fn from_non_null(ptr: NonNull<Self::Header>) -> RustBox<Self> {
+    unsafe fn from_non_null(ptr: NonNull<Self::Header>) -> Box<Self> {
         let inner = unsafe { R::from_non_null(ptr) };
-        unsafe { RustBox::from_raw(RustBox::into_raw(inner) as *mut Self) }
+        unsafe { Box::from_raw(Box::into_raw(inner) as *mut Self) }
     }
 }
 
@@ -511,20 +511,20 @@ unsafe impl NulTerminatedBuf for RustCStr {
     }
 
     #[cfg(feature = "alloc")]
-    fn into_non_null(self: RustBox<Self>) -> NonNull<Self::Header> {
+    fn into_non_null(self: Box<Self>) -> NonNull<Self::Header> {
         let raw = self.into_c_string().into_raw();
         unsafe { NonNull::new_unchecked(raw.cast()) }
     }
 
     #[cfg(feature = "alloc")]
-    unsafe fn from_non_null(ptr: NonNull<Self::Header>) -> RustBox<Self> {
+    unsafe fn from_non_null(ptr: NonNull<Self::Header>) -> Box<Self> {
         unsafe { CString::from_raw(ptr.cast().as_ptr()) }.into_boxed_c_str()
     }
 }
 
 #[cfg(feature = "alloc")]
 impl ReprC for CString {
-    type CType = Box<<RustCStr as crate::ReprC>::CType>;
+    type CType = AbiBox<<RustCStr as crate::ReprC>::CType>;
 }
 #[cfg(feature = "alloc")]
 unsafe impl EncodeMove for CString {
@@ -554,7 +554,7 @@ unsafe impl<'d> DecodeMove<'d> for CString {
     type Store = ();
 
     unsafe fn soft_decode<'itm: 'd>(source: Self::CType, (): &mut ()) -> Option<Self> {
-        unsafe { RustBox::<RustCStr>::soft_decode(source, &mut ()) }.map(Into::into)
+        unsafe { Box::<RustCStr>::soft_decode(source, &mut ()) }.map(Into::into)
     }
 }
 
@@ -567,7 +567,7 @@ impl Decode<'_> for CString {}
 
 #[cfg(feature = "alloc")]
 impl Niche for CString {
-    const NICHE: Self::CType = Box::null();
+    const NICHE: Self::CType = AbiBox::null();
 
     fn is_niche(value: &Self::CType) -> bool {
         value.as_ptr().is_null()
@@ -646,7 +646,7 @@ mod tests {
         assert_not_impl_any!(&mut RustCStr: Encode, Decode<'static>);
         #[cfg(feature = "alloc")]
         {
-            assert_impl_all!(RustBox<ManuallyDrop<RustCStr>>: EncodeMove, crate::convert::DecodeMove<'static>);
+            assert_impl_all!(Box<ManuallyDrop<RustCStr>>: EncodeMove, crate::convert::DecodeMove<'static>);
             assert_impl_all!(CString: Encode);
         }
     }
@@ -672,7 +672,7 @@ mod tests {
         let ptr = original.as_ptr();
         let encoded = crate::convert::encode_move(original);
         assert_eq!(encoded.as_ptr().cast_const().cast(), ptr);
-        let decoded: RustBox<RustCStr> = unsafe { crate::convert::decode_move(encoded) }.unwrap();
+        let decoded: Box<RustCStr> = unsafe { crate::convert::decode_move(encoded) }.unwrap();
         assert_eq!(decoded.as_ptr(), ptr);
         assert_eq!(&*decoded, c"owned");
     }
@@ -716,15 +716,14 @@ mod tests {
     struct Value(u8);
 
     #[cfg(all(feature = "alloc", feature = "derive"))]
-    extern "C" fn borrowed_return() -> co3::borrow::Borrowed<<RustBox<Value> as co3::ReprC>::CType>
-    {
-        co3::borrow::Borrowed(co3::boxed::Box::null())
+    extern "C" fn borrowed_return() -> co3::borrow::Borrowed<<Box<Value> as co3::ReprC>::CType> {
+        co3::borrow::Borrowed(co3::boxed::abi::Box::null())
     }
 
     #[cfg(all(feature = "alloc", feature = "derive"))]
     co3::ffi! {
         #![unsafe(extern("C"))]
-        type BorrowedReturn = raw extern "C" fn() -> RustBox<Value>;
+        type BorrowedReturn = raw extern "C" fn() -> Box<Value>;
         type InteriorUnpacked = extern "C" fn(#[unpack(*const core::cell::Cell<u8>, usize)] &[core::cell::Cell<u8>]) -> usize;
         type RegularUnpacked = extern "C" fn(#[unpack(_, _)] &mut [u8]) -> usize;
         type Composite = (String, raw fn(String));
@@ -793,10 +792,10 @@ mod tests {
         borrow::Borrowed,
         ffi,
         ops::{CFn0, CFn1, CFn2, CFn12},
-        option::COption,
+        option::abi::Option as AbiOption,
         raw,
-        reference::{SoftRef, SoftRefMut, Ref},
-        tuple::CTuple3,
+        reference::{Ref, SoftRef, SoftRefMut},
+        tuple::abi::Tuple3 as AbiTuple3,
         utf8::Utf8String,
     };
 
@@ -886,9 +885,11 @@ mod tests {
     unsafe extern "C" fn ignore_pointer(_: Ref<'_, u32>) {}
 
     #[cfg(all(feature = "alloc", feature = "derive"))]
-    unsafe extern "C" fn update_option(value: SoftRefMut<<Option<u8> as crate::ReprC>::CType>) -> u32 {
+    unsafe extern "C" fn update_option(
+        value: SoftRefMut<<Option<u8> as crate::ReprC>::CType>,
+    ) -> u32 {
         let value = value.as_ptr();
-        unsafe { *value = COption::Some(42) };
+        unsafe { *value = AbiOption::Some(42) };
         7
     }
 
@@ -979,7 +980,7 @@ mod tests {
     }
 
     #[cfg(all(feature = "alloc", feature = "derive"))]
-    fn return_owned(value: RustBox<CallbackValue>) -> RustBox<CallbackValue> {
+    fn return_owned(value: Box<CallbackValue>) -> Box<CallbackValue> {
         value
     }
 
@@ -1086,16 +1087,16 @@ mod tests {
     ffi! {
         #![unsafe(extern("C"))]
 
-        type CallbackBorrowedReturn = raw extern "C" fn() -> RustBox<CallbackValue>;
+        type CallbackBorrowedReturn = raw extern "C" fn() -> Box<CallbackValue>;
         type BorrowedRustValue = raw extern "C" fn(CallbackRustValue) -> CallbackRustValue;
-        type OwnedTransform = raw extern "C" fn(move RustBox<CallbackValue>) -> move RustBox<CallbackValue>;
+        type OwnedTransform = raw extern "C" fn(move Box<CallbackValue>) -> move Box<CallbackValue>;
         type CompanionCallback = raw extern "C" fn(CallbackValue, CallbackValue) -> CallbackValue;
     }
 
     #[cfg(all(feature = "alloc", feature = "derive"))]
     raw! {
         fn borrow_rust_value(value: CallbackRustValue) -> CallbackRustValue;
-        fn return_owned(value: move RustBox<CallbackValue>) -> move RustBox<CallbackValue>;
+        fn return_owned(value: move Box<CallbackValue>) -> move Box<CallbackValue>;
         fn double_rust(value: CallbackRustValue) -> move CallbackRustValue;
         pub fn sum_native(left: CallbackValue, right: CallbackValue) -> CallbackValue;
 
@@ -1195,10 +1196,10 @@ mod tests {
         let _: Option<CallbackBorrowedReturn> = None;
         let _: BorrowedRustValue = borrow_rust_value_raw;
         let _: OwnedTransform = return_owned_raw;
-        let result = unsafe { return_owned_raw(co3::encode(RustBox::new(CallbackValue(42)))) };
+        let result = unsafe { return_owned_raw(co3::encode(Box::new(CallbackValue(42)))) };
         assert_eq!(
-            unsafe { co3::decode::<RustBox<CallbackValue>>(result) },
-            Some(RustBox::new(CallbackValue(42)))
+            unsafe { co3::decode::<Box<CallbackValue>>(result) },
+            Some(Box::new(CallbackValue(42)))
         );
         fn assert_existing_fn_pointer_impls<T>(_: T) {}
         assert_existing_fn_pointer_impls(sum_native_raw as CCallback);
@@ -1209,9 +1210,8 @@ mod tests {
             Some(CallbackRustValue(42))
         );
         let encoded = co3::encode(CallbackRustValue(7));
-        let raw_result = unsafe {
-            CallbackRustValue::scaled_raw(Borrowed::new(SoftRef::from_ref(&encoded)), 6)
-        };
+        let raw_result =
+            unsafe { CallbackRustValue::scaled_raw(Borrowed::new(SoftRef::from_ref(&encoded)), 6) };
         assert_eq!(
             unsafe { co3::decode::<CallbackRustValue>(raw_result) },
             Some(CallbackRustValue(42))
@@ -1414,7 +1414,7 @@ mod tests {
     fn raw_companions_validate_fields_in_declaration_order() {
         assert_eq!(
             unsafe {
-                raw_order_tuple_raw(Borrowed::new(CTuple3(
+                raw_order_tuple_raw(Borrowed::new(AbiTuple3(
                     <RawOrderProbe as co3::ReprC>::CType::from_fields(1),
                     <RawOrderProbe as co3::ReprC>::CType::from_fields(2),
                     <RawOrderProbe as co3::ReprC>::CType::from_fields(3),
@@ -1795,10 +1795,10 @@ mod tests {
         let _: Option<AliasComposite> = None;
         static_assertions::assert_type_eq_all!(
             AliasMaybeCallback,
-            co3::option::COptionSome<unsafe extern "C" fn(u8)>
+            co3::option::abi::OptionSome<<unsafe extern "C" fn(u8) as crate::ReprC>::CType>
         );
-        static_assertions::assert_type_eq_all!(AliasNicheOk, co3::result::CResultOk<core::num::NonZeroU8, ()>);
-        static_assertions::assert_type_eq_all!(AliasNicheErr, co3::result::CResultErr<(), core::num::NonZeroU8>);
+        static_assertions::assert_type_eq_all!(AliasNicheOk, co3::result::abi::ResultOk<<core::num::NonZeroU8 as crate::ReprC>::CType, ()>);
+        static_assertions::assert_type_eq_all!(AliasNicheErr, co3::result::abi::ResultErr<(), <core::num::NonZeroU8 as crate::ReprC>::CType>);
         static_assertions::assert_type_eq_all!(
             AliasCompositeReturn,
             <(u8, unsafe extern "C" fn() -> u8) as ReprC>::CType
@@ -2012,7 +2012,11 @@ mod tests {
     #[unsafe(export_name = "field_order_tuple")]
     #[cfg(all(feature = "alloc", feature = "derive"))]
     extern "C" fn receive_tuple(
-        values: CTuple3<ImportedOrderProbe, ImportedOrderProbe, ImportedOrderProbe>,
+        values: AbiTuple3<
+            <ImportedOrderProbe as crate::ReprC>::CType,
+            <ImportedOrderProbe as crate::ReprC>::CType,
+            <ImportedOrderProbe as crate::ReprC>::CType,
+        >,
     ) -> u8 {
         values.0.0 + values.1.0 + values.2.0
     }

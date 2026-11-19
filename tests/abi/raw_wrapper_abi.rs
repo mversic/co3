@@ -69,10 +69,7 @@ ffi! {
 fn interior_slice_unpack_uses_plain_const_pointer() {
     let values = [Cell::new(7), Cell::new(11)];
     let callback: InteriorUnpacked = sum_cells_raw;
-    assert_eq!(
-        unsafe { callback(values.as_ptr(), values.len(),) },
-        18
-    );
+    assert_eq!(unsafe { callback(values.as_ptr(), values.len(),) }, 18);
     assert_eq!(interior(&values), 18);
     assert_eq!(values.each_ref().map(Cell::get), [7, 11]);
 }

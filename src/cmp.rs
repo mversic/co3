@@ -328,7 +328,7 @@ mod tests {
     use static_assertions::{assert_impl_all, assert_type_eq_all};
 
     use super::*;
-    use crate::{decode, encode, option::COptionSome, primitives::Bool};
+    use crate::{decode, encode, option::abi::OptionSome as AbiOptionSome, primitives::Bool};
 
     #[test]
     fn reverse_reference_codecs_dispatch_stable_inner() {
@@ -417,7 +417,8 @@ mod tests {
             unsafe { decode::<Reverse<bool>>(core::cmp::Reverse(Bool(2))) },
             None
         );
-        let none: COptionSome<Reverse<bool>> = encode(None::<Reverse<bool>>);
+        let none: AbiOptionSome<<Reverse<bool> as crate::ReprC>::CType> =
+            encode(None::<Reverse<bool>>);
         assert!(<Reverse<bool> as Niche>::is_niche(&none.0));
     }
 

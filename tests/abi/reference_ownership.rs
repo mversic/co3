@@ -6,7 +6,7 @@ use co3::{
     ffi,
     ops::CFn1,
     raw,
-    reference::{SoftRef, Ref},
+    reference::{Ref, SoftRef},
 };
 use static_assertions::assert_type_eq_all;
 
@@ -28,7 +28,9 @@ assert_type_eq_all!(
 );
 assert_type_eq_all!(
     SharedString<'static>,
-    unsafe extern "C" fn(SoftRef<<String as co3::ReprC>::CType>) -> SoftRef<<String as co3::ReprC>::CType>
+    unsafe extern "C" fn(
+        SoftRef<<String as co3::ReprC>::CType>,
+    ) -> SoftRef<<String as co3::ReprC>::CType>
 );
 assert_type_eq_all!(
     ExclusiveBox<'static>,

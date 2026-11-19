@@ -4,7 +4,7 @@
 pub use crate::stored::{AssignFromOwned, Owned};
 pub(crate) use crate::stored::{encode_ref_field, encode_ref_field_unchecked};
 #[cfg(feature = "alloc")]
-use crate::{RustSpec, Stable, Unstable, boxed::RustBox};
+use crate::{RustSpec, Stable, Unstable, boxed::Box};
 pub use crate::{
     decoded::{SoftDecodeMut, SoftDecodeRef},
     mutable::{SoftEncodeMut, SoftEncodeMutUnchecked},
@@ -31,15 +31,12 @@ const _: () = {
     impl<R: ?Sized> BoxConversionLayout<R> for Stable {}
     impl<R: RustSpec<Layout = Stable> + ?Sized> BoxConversionLayout<R> for Unstable {}
 
-    impl<R: ?Sized> EncodeUnchecked for RustBox<R> where
+    impl<R: ?Sized> EncodeUnchecked for Box<R> where
         Self: RustSpec<Layout: BoxConversionLayout<R>> + EncodeMoveUnchecked
     {
     }
-    impl<R: ?Sized> Encode for RustBox<R> where
-        Self: RustSpec<Layout: BoxConversionLayout<R>> + EncodeMove
-    {
-    }
-    impl<'d, R: ?Sized> Decode<'d> for RustBox<R> where
+    impl<R: ?Sized> Encode for Box<R> where Self: RustSpec<Layout: BoxConversionLayout<R>> + EncodeMove {}
+    impl<'d, R: ?Sized> Decode<'d> for Box<R> where
         Self: RustSpec<Layout: BoxConversionLayout<R>> + DecodeMove<'d>
     {
     }

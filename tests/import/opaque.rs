@@ -156,7 +156,7 @@ fn imported_opaque_drop_sends_pointer() {
 fn owned_handle_has_null_niche() {
     use core::mem::{align_of, size_of};
 
-    use co3::{CType, ReprC, niche::Niche, owned::Owned};
+    use co3::{ReprC, niche::Niche, owned::Owned};
 
     type Carrier = <OwnedOpaqueStruct as ReprC>::CType;
     assert_eq!(size_of::<Option<OwnedOpaqueStruct>>(), size_of::<Carrier>());
@@ -165,20 +165,17 @@ fn owned_handle_has_null_niche() {
         align_of::<Carrier>()
     );
 
-    let null = <OwnedOpaqueStruct as Niche>::NICHE;
-    fn assert_owned_payload<T: CType>(_: &Owned<T>) {
-        assert_eq!(
-            core::any::type_name::<T>().rsplit("::").next(),
-            Some("COpaqueStruct")
-        );
-    }
-    assert_owned_payload(&null);
+    let null: Owned<*mut OpaqueStruct> = <OwnedOpaqueStruct as Niche>::NICHE;
+    assert!(null.0.is_null());
     assert!(
         unsafe { co3::soft_decode::<OwnedOpaqueStruct>(null, &mut Default::default()) }.is_none()
     );
     assert!(matches!(
         unsafe {
-            co3::soft_decode::<Option<OwnedOpaqueStruct>>(co3::option::COptionSome(null), &mut None)
+            co3::soft_decode::<Option<OwnedOpaqueStruct>>(
+                co3::option::abi::OptionSome(null),
+                &mut None,
+            )
         },
         Some(None)
     ));

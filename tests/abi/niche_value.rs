@@ -5,9 +5,9 @@ use co3::{
     cmp::Ordering as Co3Ordering,
     encode, ffi,
     niche::Niche,
-    option::COption,
+    option::abi,
     primitives::Bool,
-    reference::{SoftRef, Ref},
+    reference::{Ref, SoftRef},
     rust_spec::RustSpec,
     soft_decode, soft_encode,
 };
@@ -17,12 +17,12 @@ use crate::TransparentCarrier;
 #[derive(Clone, Copy, PartialEq, Eq, RustSpec, ReprC)]
 #[repr(transparent)]
 #[rust_spec(custom_niche)]
-#[repr_c(NICHE = COverlappingCustomNiche(1))]
+#[repr_c(NICHE = OverlappingCustomNicheCType(1))]
 struct OverlappingCustomNiche(u8);
 
 #[derive(Clone, Copy, RustSpec, ReprC)]
 #[rust_spec(custom_niche)]
-#[repr_c(NICHE = CNonReflexiveCustomNiche(f32::NAN))]
+#[repr_c(NICHE = NonReflexiveCustomNicheCType(f32::NAN))]
 struct NonReflexiveCustomNiche(f32);
 
 #[test]
@@ -436,7 +436,7 @@ fn verify_enum_niche_value() {
     assert!(bool::is_niche(&encode(None::<bool>).payload()));
     assert!(Ordering::is_niche(&encode(None::<Ordering>).payload()));
 
-    assert_eq!(encode(None::<Opaque>), COption::None());
+    assert_eq!(encode(None::<Opaque>), abi::Option::None());
     assert!(OwnedExtern::is_niche(
         &encode(None::<OwnedExtern>).payload()
     ));
